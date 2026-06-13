@@ -31,6 +31,8 @@ serde_json = "1"
 portable-pty = "0.9"
 base64 = "0.22"
 tauri-plugin-dialog = "2.7.1"
+# Webview capture (DOM, WebGL, and occluded windows) uses one immutable plugin revision.
+tauri-plugin-webview-capture = { git = "https://github.com/min-median-max/tauri-plugin-webview-capture", rev = "3c0beee715e9342b5baf80a42d196c7466a4381f" }
 # 파일 트리 라이브 갱신용 파일시스템 워처(macOS=FSEvents, Linux=inotify, Win=ReadDirectoryChangesW).
 # 폴링 없이 OS 네이티브 이벤트. debouncer-mini 로 변경 폭주를 묶는다.
 notify-debouncer-mini = "0.6"
