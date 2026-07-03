@@ -4820,6 +4820,7 @@ name = "tauri-plugin-webview-capture"
 version = "0.0.1"
 source = "git+https://github.com/min-median-max/tauri-plugin-webview-capture?rev=3c0beee715e9342b5baf80a42d196c7466a4381f#3c0beee715e9342b5baf80a42d196c7466a4381f"
 dependencies = [
+ "base64 0.22.1",
  "block2",
  "cairo-rs",
  "gio",
