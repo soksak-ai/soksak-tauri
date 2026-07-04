@@ -34,5 +34,6 @@ src-tauri/binaries/
 # perf 측정 하니스의 컴파일 산출물(synth-input.swift 에서 재생성)
 scripts/perf/.build/
 crates/*/target/
+.do/
 
 secret/
