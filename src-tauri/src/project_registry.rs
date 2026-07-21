@@ -56,7 +56,8 @@ impl ProjectRegistry {
         roots
     }
 
-    /// root 의 현재 소유 창 label.
+    /// root 의 현재 소유 창 label. 레지스트리 API·테스트가 덮는다(프로덕션 배선은 소비처가 생기면).
+    #[allow(dead_code)]
     pub fn owner(&self, root: &str) -> Option<String> {
         self.map.lock().unwrap().get(root).cloned()
     }

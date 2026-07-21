@@ -340,6 +340,8 @@ fn content_view_of(window: &tauri::Window) -> Result<usize, String> {
     use std::sync::mpsc;
     let (tx, rx) = mpsc::sync_channel::<usize>(1);
     let win = window.clone();
+    // 엔진 호스트 컨테이너 취득은 macOS objc 경로에만 있어 다른 OS 에선 이 클론이 쓰이지 않는다.
+    #[cfg(target_os = "macos")]
     let label_for_host = label.clone();
     window
         .run_on_main_thread(move || {

@@ -61,6 +61,8 @@ pub struct DaemonStatus {
 struct DaemonEntry {
     root: String,
     name: String,
+    // 스폰 명령 — postmortem/점검용 보존. 리핑은 살아있는 프로세스의 실제 command 로 대조(reap_matches).
+    #[allow(dead_code)]
     cmd: String,
     /// 이 데몬을 소유한 창 라벨(P6: 창=프로젝트) — 창 파괴 시 함께 정리한다.
     window: String,

@@ -35,6 +35,8 @@ struct BrowserOpenPayload {
 
 // 로딩 상태 + 히스토리 가능 여부 — 툴바 스피너/정지 토글·뒤로/앞으로 활성의 단일 소스.
 // didStartProvisionalNavigation(Started)/didFinish(Finished) 시점에 emit(soksak-browser-kit nav-state 소비).
+// macOS WKWebView 네비게이션/타이틀 이벤트 페이로드 — emit 이 macOS objc 경로에만 있어 다른 OS 는 미구성.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LoadingPayload {
@@ -44,6 +46,7 @@ struct LoadingPayload {
     can_forward: bool,
 }
 
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 #[derive(Clone, Serialize)]
 struct TitlePayload {
     label: String,
@@ -156,6 +159,8 @@ mod status {
 
 // DOM 오버레이 영역(사이드바 등) 사각형 — CSS 논리 px, top-left 원점(webview_bounds 와
 // 동일 규약). 프론트가 getBoundingClientRect 로 측정해 webview_dom_holes 로 보고한다.
+// 커맨드는 크로스플랫폼(모든 OS 등록)이나 좌표를 실제로 소비하는 hitTest 적용은 macOS objc 경로뿐.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 #[derive(Clone, Deserialize)]
 pub(crate) struct Hole {
     x: f64,
@@ -844,6 +849,8 @@ pub fn webview_emit_native(window: tauri::Window, kind: String, x: f64, y: f64) 
 
 // hover 중인 divider(리사이즈 경계) 강조 — 프론트가 그 요소의 화면 rect 를 넘기면 코어가 accent 바를
 // 브라우저 위 네이티브 레이어에 그린다(rect=None → 숨김). 네이티브 child 위에서도 보이는 유일한 길.
+// 커맨드는 크로스플랫폼이나 rect 좌표를 그리는 네이티브 레이어는 macOS objc 경로뿐.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 #[derive(Deserialize)]
 pub struct HlRect {
     x: f64,
@@ -1483,7 +1490,7 @@ pub fn set_divider_highlight(app: &AppHandle, label: String, rect: Option<(f64, 
                     let bar = bars.entry(label.clone()).or_insert_with(|| {
                         let b: Retained<DividerHiliteBox> =
                             unsafe { msg_send![mtm.alloc::<DividerHiliteBox>(), init] };
-                        unsafe {
+                        {
                             b.setBoxType(NSBoxType::Custom); // 커스텀 = fillColor 로 단색 채움(테두리/타이틀 X)
                             b.setTitlePosition(NSTitlePosition::NoTitle);
                             b.setBorderWidth(0.0);
@@ -1492,7 +1499,7 @@ pub fn set_divider_highlight(app: &AppHandle, label: String, rect: Option<(f64, 
                         b
                     });
                     let view: &NSView = bar;
-                    unsafe {
+                    {
                         view.setFrame(frame);
                         view.removeFromSuperview();
                         content.addSubview(view); // 맨 위 subview = 브라우저 child 포함 모든 것 위.
@@ -1502,7 +1509,7 @@ pub fn set_divider_highlight(app: &AppHandle, label: String, rect: Option<(f64, 
                 None => {
                     if let Some(bar) = bars.get(&label) {
                         let view: &NSView = bar;
-                        unsafe { view.setHidden(true) };
+                        view.setHidden(true);
                     }
                 }
             }

@@ -69,6 +69,8 @@ pub fn window_create(
 }
 
 // 새 창 생성(기존 시그니처 유지 — Dock 메뉴 등 init 불요 호출부). 사용자 행위라 포커스한다.
+// 현재 유일 호출부가 macOS Dock 메뉴(dockmenu, cfg macos)라 다른 OS 에선 미사용.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn create_window(app: &AppHandle) -> Result<String, String> {
     create_window_init(app, None, true)
 }

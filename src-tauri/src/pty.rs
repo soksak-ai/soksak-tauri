@@ -1314,6 +1314,8 @@ mod daemon {
     // 디스크의 봉인-블롭 헤더 — cold restore 의 입력(개봉 전 메타). 봉투는 내용 불가지라
     // 터미널 메타(대체 화면 여부 등)를 담지 않는다 — 화면 의미는 개봉된 바이트 안에 있고 소비자가 푼다.
     struct ColdCheckpoint {
+        // 봉인 블롭의 디스크 출처 경로 — provenance 로 보존(cold restore 판정은 개봉 바이트만 쓴다).
+        #[allow(dead_code)]
         path: PathBuf,
         key_id: String,
         sealed: soksak_seal::SealedBox,

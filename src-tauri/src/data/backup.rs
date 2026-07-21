@@ -306,7 +306,6 @@ mod tests {
         assert_eq!(import(&conn, good).unwrap(), 1);
     }
 
-    use super::*;
     use serde_json::json;
 
     fn mem_file(dir: &Path, name: &str) -> PathBuf {
