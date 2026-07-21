@@ -14,6 +14,10 @@ import {
 import type { SidebarGroup } from "./sidebarLayout";
 import type { ProjectTab, ContentArea, ViewGroup, View } from "./sessions";
 import type { Pins } from "./projection";
+import {
+  normalizeRailPlacement,
+  type RailPlacement,
+} from "../lib/railPlacement";
 
 // ── 스냅샷 타입 ───────────────────────────────────────────────────────────────
 
@@ -64,6 +68,8 @@ export interface ProjectSnapshot {
   shell?: string;
   color?: string;
   sidebarOpen: boolean;
+  // 레일 프레임 위치 PIN. projection.pins(ref 고정)과 직교. 옵션은 구 스냅샷 호환.
+  leftRailPlacement?: RailPlacement;
   rightOpen: boolean;
   rightView: string | null;
   leftLayout: SplitSnapshot<SidebarGroup>;
@@ -132,6 +138,7 @@ export function serializeProject(
     ...(p.shell ? { shell: p.shell } : {}),
     ...(p.color ? { color: p.color } : {}),
     sidebarOpen: p.sidebarOpen,
+    leftRailPlacement: p.leftRailPlacement ?? { mode: "flow" },
     rightOpen: p.rightOpen,
     rightView: p.rightView,
     // 사이드바 레이아웃(SplitTree<SidebarGroup>) — leaf 페이로드는 plain JSON.
@@ -221,6 +228,7 @@ export function deserializeProject(
     ...(s.shell ? { shell: s.shell } : {}),
     ...(s.color ? { color: s.color } : {}),
     sidebarOpen: s.sidebarOpen,
+    leftRailPlacement: normalizeRailPlacement(s.leftRailPlacement),
     rightOpen: s.rightOpen,
     rightView: s.rightView,
     leftLayout: deserializeSplitTree(s.leftLayout, (g) => g, newSplitId),

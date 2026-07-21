@@ -422,14 +422,23 @@ body,
   display: flex;
   flex-direction: row;
 }
+.left-rail-plane {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  pointer-events: none;
+}
 /* 좌측 파일 트리 사이드바. 폭만 토글(0 ↔ SIDEBAR_W), 닫혀도 언마운트하지 않아
    트리 상태(펼침/스크롤)가 유지된다. overflow hidden 으로 접을 때 깔끔히 잘린다. */
 .sidebar {
-  flex: 0 0 auto;
-  height: 100%;
+  position: absolute;
+  top: 0;
+  bottom: 0;
   overflow: hidden;
+  border-left: 0 solid var(--bd);
   border-right: 1px solid var(--bd); /* §B2 */
   background: var(--bg);
+  pointer-events: auto;
 }
 .ft-sidebar {
   width: 100%;
@@ -496,11 +505,11 @@ body,
    네거티브 마진으로 양쪽 패널에 걸쳐 패널들은 경계선에서 맞붙고, 5px 히트
    영역만 위에 뜬다. 평소 투명, hover/drag 시 강조. */
 .sidebar-resizer {
-  flex: 0 0 auto;
+  position: absolute;
+  top: 0;
+  right: -2px;
+  bottom: 0;
   width: 5px;
-  height: 100%;
-  margin-left: -2px;
-  margin-right: -3px;
   cursor: col-resize;
   background: transparent;
   transition: background 0.12s ease;
@@ -509,6 +518,44 @@ body,
 .sidebar-resizer:hover,
 .sidebar-resizer:active {
   background: rgba(127, 127, 127, 0.4);
+}
+.left-rail-controls {
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  z-index: 30;
+  display: flex;
+  gap: 3px;
+  padding: 2px;
+  border: 1px solid var(--bd);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  box-shadow: var(--shadow);
+}
+.left-rail-grip,
+.left-rail-pin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--fg);
+  opacity: 0.62;
+  cursor: pointer;
+}
+.left-rail-grip {
+  cursor: col-resize;
+}
+.left-rail-grip:hover,
+.left-rail-pin:hover,
+.left-rail-pin.active {
+  background: var(--accbg);
+  color: var(--acc);
+  opacity: 1;
 }
 
 /* 콘텐츠 영역: 남은 가로폭. 상단 뷰 탭 + 뷰 본문(세로). */
@@ -523,6 +570,7 @@ body,
   position: relative;
   flex: 1 1 auto;
   min-height: 0;
+  overflow: hidden;
 }
 .content-pane {
   position: absolute;
@@ -694,9 +742,9 @@ body,
    — 위치 지정이 정당한 유일한 레이어. 본문 영역 = 셀 − 헤더 − 상태바. */
 .egroup-body-slot {
   position: absolute;
-  left: calc(var(--l) + var(--pane-inset));
+  left: calc(var(--l) + var(--rail-dx, 0px) + var(--pane-inset));
   top: calc(var(--t) + var(--pane-inset) + var(--header-h));
-  width: calc(var(--w) - var(--pane-inset) * 2);
+  width: calc(var(--w) + var(--rail-dw, 0px) - var(--pane-inset) * 2);
   height: calc(
     var(--h) - (var(--pane-inset) * 2 + var(--header-h) + var(--status-h))
   );
@@ -862,11 +910,11 @@ body,
 /* 드롭 인디케이터(포인터 드래그 중 시각용, 본문 영역 위). 이벤트는 받지 않음. */
 .drop-ind-wrap {
   position: absolute;
-  left: calc(var(--l) + var(--pane-inset));
+  left: calc(var(--l) + var(--rail-dx, 0px) + var(--pane-inset));
   /* 드롭 오프셋은 전용 변수(--drop-top-h)가 소유 — 기본 = --header-h(콘텐츠: 본문 위 덮음).
      사이드바는 --drop-top-h:0 으로 셀 전체를 덮되 --header-h(플러그인 row2 밴드 높이)는 건드리지 않는다. */
   top: calc(var(--t) + var(--pane-inset) + var(--drop-top-h, var(--header-h)));
-  width: calc(var(--w) - var(--pane-inset) * 2);
+  width: calc(var(--w) + var(--rail-dw, 0px) - var(--pane-inset) * 2);
   height: calc(
     var(--h) - (var(--pane-inset) * 2 + var(--drop-top-h, var(--header-h)) + var(--status-h))
   );
@@ -1721,9 +1769,9 @@ body,
    pointer-events 차단하지 않는다(본문 영역은 위의 슬롯 레이어가 받음). */
 .egroup-cell {
   position: absolute;
-  left: calc(var(--l) + var(--pane-inset));
+  left: calc(var(--l) + var(--rail-dx, 0px) + var(--pane-inset));
   top: calc(var(--t) + var(--pane-inset));
-  width: calc(var(--w) - var(--pane-inset) * 2);
+  width: calc(var(--w) + var(--rail-dw, 0px) - var(--pane-inset) * 2);
   height: calc(var(--h) - var(--pane-inset) * 2);
   display: flex;
   flex-direction: column;
@@ -1827,9 +1875,9 @@ body,
 }
 .egroup-frame {
   position: absolute;
-  left: calc(var(--l) + var(--pane-inset));
+  left: calc(var(--l) + var(--rail-dx, 0px) + var(--pane-inset));
   top: calc(var(--t) + var(--pane-inset));
-  width: calc(var(--w) - var(--pane-inset) * 2);
+  width: calc(var(--w) + var(--rail-dw, 0px) - var(--pane-inset) * 2);
   height: calc(var(--h) - var(--pane-inset) * 2);
   pointer-events: none;
   z-index: 5;
@@ -1858,7 +1906,6 @@ body,
   border: 1px solid var(--bd);
   border-radius: 14px;
 }
-
 /* 카드/플로팅: chrome(타이틀/탭/상태) 은 투명(카드 --card 가 비침), 본문 body-slot
    은 터미널 배경 --bg 로 채운다 — 터미널 fit 잔여(1셀 미만)가 --card 로 비쳐
    "100% 높이 안 참"처럼 보이던 문제 제거. 내부선(§B2)은 base 규칙이 소유. */

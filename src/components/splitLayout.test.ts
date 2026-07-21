@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeSplitLayout, hitTestCells } from "./splitLayout";
+import { computeSplitLayout, hitTestCells } from "../lib/splitLayout";
 import type { SplitTree } from "../state/splitTree";
 
 // 공유 분할 레이아웃 — 콘텐츠/사이드바 공통. leaf 값에 무관(L=string 으로 검증).

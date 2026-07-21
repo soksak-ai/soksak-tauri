@@ -22,6 +22,7 @@ import {
   transferViewFocus,
 } from "./plugins/viewFocus";
 import { LeftSidebarHost } from "./components/LeftSidebarHost";
+import { RailGridSurface } from "./components/RailGridSurface";
 import { PluginSidebar } from "./components/PluginSidebar";
 import { ContentTabs } from "./components/ContentTabs";
 import { GroupArea } from "./components/GroupArea";
@@ -47,6 +48,7 @@ import { useT } from "./i18n";
 import {
   allGroups,
   cwdPaneOf as resolveCwdPane,
+  leftRailGrid,
   useSessions,
   webviewDisplayName,
   type ProjectTab,
@@ -58,6 +60,11 @@ import {
 } from "./state/settings";
 import { useTheme } from "./state/theme";
 import { getPtyIo, hasPtyObservation } from "./terminal/ptyObservationStore";
+import {
+  effectiveRailStation,
+  railStationFromLeftPx,
+  snapRailStation,
+} from "./lib/railPlacement";
 import "./App.css";
 
 // 파일 경로를 셸·Claude Code 양쪽에서 안전하게: 영숫자와 안전문자 외에는 백슬래시
@@ -152,6 +159,73 @@ const ProjectPane = memo(function ProjectPane({
   startRightResize: (e: React.MouseEvent) => void;
 }) {
   const t = useT();
+  const setLeftRailPlacement = useSessions((s) => s.setLeftRailPlacement);
+  const railPlaneRef = useRef<HTMLDivElement>(null);
+  const railGrid = leftRailGrid(project);
+  const placement = project.leftRailPlacement ?? { mode: "flow" as const };
+  const effectiveStation = effectiveRailStation(
+    railGrid.cells,
+    railGrid.focusId,
+    placement,
+  );
+  const [dragStation, setDragStation] = useState<number | null>(null);
+  const renderedStation = dragStation ?? effectiveStation;
+
+  const toggleRailPin = useCallback(() => {
+    setLeftRailPlacement(
+      project.id,
+      placement.mode === "pin"
+        ? { mode: "flow" }
+        : { mode: "pin", station: effectiveStation },
+    );
+  }, [effectiveStation, placement.mode, project.id, setLeftRailPlacement]);
+
+  const startRailStationDrag = useCallback(
+    (e: React.MouseEvent) => {
+      if (e.button !== 0 || !project.sidebarOpen) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const plane = railPlaneRef.current;
+      const rail = e.currentTarget.closest<HTMLElement>(".sidebar");
+      if (!plane || !rail) return;
+      const planeRect = plane.getBoundingClientRect();
+      const offset = e.clientX - rail.getBoundingClientRect().left;
+      let next = effectiveStation;
+      const resolve = (clientX: number) => {
+        const raw = railStationFromLeftPx(
+          clientX - planeRect.left - offset,
+          planeRect.width,
+          sidebarW,
+        );
+        return snapRailStation(railGrid.cleanLines, raw);
+      };
+      const onMove = (ev: MouseEvent) => {
+        next = resolve(ev.clientX);
+        setDragStation((current) => (current === next ? current : next));
+      };
+      const onUp = (ev: MouseEvent) => {
+        next = resolve(ev.clientX);
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        setDragStation(null);
+        setLeftRailPlacement(project.id, { mode: "pin", station: next });
+      };
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    },
+    [
+      effectiveStation,
+      project.id,
+      project.sidebarOpen,
+      railGrid.cleanLines,
+      setLeftRailPlacement,
+      sidebarW,
+    ],
+  );
   // 콘텐츠 탭 전환 시 비활성 슬롯은 화면 밖으로 파킹된다(parkedStyle transform). 그 파킹/언파킹은
   // 이 렌더 커밋에서 DOM 에 반영되므로, 커밋 직후(useLayoutEffect, paint 전) 코어가 layout.reflow 를
   // 발화한다 → 네이티브 webview 를 소유한 플러그인(브라우저)이 최종 앵커로 bounds 를 1회 재스냅해
@@ -159,7 +233,14 @@ const ProjectPane = memo(function ProjectPane({
   // 못 쓴다(그걸로 측정하면 옛 위치를 읽어 webview 가 한 박자 늦는다).
   useLayoutEffect(() => {
     emitPluginEvent("layout.reflow", { activeSpaceId: project.activeContentId });
-  }, [project.activeContentId, isActiveProject]);
+  }, [
+    project.activeContentId,
+    project.sidebarOpen,
+    isActiveProject,
+    renderedStation,
+    sidebarW,
+    contentTabPosition,
+  ]);
   return (
     <div
       className="terminal-pane"
@@ -169,31 +250,7 @@ const ProjectPane = memo(function ProjectPane({
       // 남던 결함이 이 층의 누락이었다.
       style={parkedStyle(isActiveProject)}
     >
-      {/* 좌측 파일 트리 사이드바. 닫히면 width 0(언마운트 X → 상태 유지).
-          닫힐 때 우측 보더도 함께 제거 — 0폭이어도 보더는 1px 선으로 남아
-          사이드바 밖에 보더가 걸린 것처럼 보이기 때문. */}
-      <div
-        className="sidebar"
-        style={{
-          width: project.sidebarOpen ? sidebarW : 0,
-          borderRightWidth: project.sidebarOpen ? 1 : 0,
-        }}
-      >
-        <LeftSidebarHost
-          project={project}
-          paneId={cwdPaneOf(project) ?? ""}
-        />
-      </div>
-      {project.sidebarOpen && (
-        <div
-          className="sidebar-resizer"
-          onMouseDown={startResize}
-          title="사이드바 폭 조절"
-        />
-      )}
-
-      {/* 콘텐츠 영역: 컨텐츠 탭 바 + 각 컨텐츠의 에디터 그룹 그리드.
-          탭 위치 left 면 가로(행)로 배치해 좌측 세로 스트립 + 본문. */}
+      {/* 상위 콘텐츠 탭은 rail 밖에 남고, 선택된 패널 grid만 rail과 좌표계를 공유한다. */}
       <div
         className={`content${contentTabPosition === "left" ? " ctabs-left" : ""}`}
       >
@@ -206,7 +263,64 @@ const ProjectPane = memo(function ProjectPane({
           project={project}
           vertical={contentTabPosition === "left"}
         />
-        <div className="content-body">
+        <RailGridSurface
+          railPlane={
+            <div ref={railPlaneRef} className="left-rail-plane">
+              <div
+                className="sidebar"
+                style={{
+                  left: `calc(${renderedStation}% - ${(sidebarW * renderedStation) / 100}px)`,
+                  width: project.sidebarOpen ? sidebarW : 0,
+                  borderLeftWidth:
+                    project.sidebarOpen && renderedStation > 0 ? 1 : 0,
+                  borderRightWidth:
+                    project.sidebarOpen && renderedStation < 100 ? 1 : 0,
+                }}
+              >
+                <LeftSidebarHost
+                  project={project}
+                  paneId={cwdPaneOf(project) ?? ""}
+                />
+                {project.sidebarOpen && (
+                  <div className="left-rail-controls">
+                    <button
+                      type="button"
+                      className="left-rail-grip"
+                      data-native-drag
+                      title="유효한 그리드 선으로 옮겨 고정"
+                      onMouseDown={startRailStationDrag}
+                    >
+                      <Icon name="grip" size="sm" />
+                    </button>
+                    <button
+                      type="button"
+                      className={`left-rail-pin${placement.mode === "pin" ? " active" : ""}`}
+                      title={
+                        placement.mode === "pin"
+                          ? "PIN 해제 — 포커스 추종"
+                          : "현재 위치에 PIN"
+                      }
+                      onClick={toggleRailPin}
+                    >
+                      <Icon
+                        name={placement.mode === "pin" ? "pin-filled" : "pin"}
+                        size="sm"
+                      />
+                    </button>
+                  </div>
+                )}
+                {project.sidebarOpen && (
+                  <div
+                    className="sidebar-resizer"
+                    data-native-drag
+                    onMouseDown={startResize}
+                    title="사이드바 폭 조절"
+                  />
+                )}
+              </div>
+            </div>
+          }
+        >
           {project.contents.map((c) => {
             const isActiveContent = c.id === project.activeContentId;
             return (
@@ -222,11 +336,15 @@ const ProjectPane = memo(function ProjectPane({
                   content={c}
                   projectId={project.id}
                   surfaceActive={isActiveProject && isActiveContent}
+                  railStation={isActiveContent ? renderedStation : 0}
+                  railWidthPx={
+                    isActiveContent && project.sidebarOpen ? sidebarW : 0
+                  }
                 />
               </div>
             );
           })}
-        </div>
+        </RailGridSurface>
       </div>
 
       {/* 우측 플러그인 사이드바(⌥⌘B). 닫히면 width 0(언마운트 X — keep-alive). */}

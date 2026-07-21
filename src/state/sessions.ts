@@ -1,5 +1,12 @@
 import { create } from "zustand";
 import {
+  cleanRailLines,
+  isCleanRailStation,
+  type RailCell,
+  type RailPlacement,
+} from "../lib/railPlacement";
+import { computeSplitLayout } from "../lib/splitLayout";
+import {
   autorunCommandOf,
   getRegisteredProgram,
 } from "../plugins/programRegistry";
@@ -45,6 +52,8 @@ export type CmdErrCode =
   | "TARGET_NOT_FOUND"
   | "LAST_ITEM"
   | "INVALID_PARAMS"
+  // 요청 자체는 유효하지만 고정된 레일 선을 패널이 가로지르게 되는 레이아웃 변경.
+  | "LAYOUT_CONFLICT"
   // 요청은 유효하지만 영속 상태/OS 경계가 실패했다. INVALID_PARAMS로 원인을 위장하지 않는다.
   | "INTERNAL"
   // 플러그인 활성화에 사용자 동의가 필요(원격 enable 거부 — 플러그인 스펙 §0-5).
@@ -160,6 +169,9 @@ export interface ProjectTab {
   id: string;
   title: string; // 별칭
   sidebarOpen: boolean;
+  // 좌 레일 프레임의 위치 모드. projection ref 핀(레일 안의 내용)과 별도 축이다.
+  // 구 스냅샷/테스트 fixture의 부재는 FLOW로 해석한다.
+  leftRailPlacement?: RailPlacement;
   // 우측 플러그인 사이드바: 열림 + 활성 뷰("<pluginId>.<viewId>" | "manager" | null).
   rightOpen: boolean;
   rightView: string | null;
@@ -226,6 +238,10 @@ interface SessionsStore {
     },
   ) => CmdResult;
   toggleSidebar: (id: string) => CmdResult<{ sidebarOpen: boolean }>;
+  setLeftRailPlacement: (
+    id: string,
+    placement: RailPlacement,
+  ) => CmdResult<{ placement: RailPlacement }>;
   // 우측 플러그인 사이드바. open 명시 시 그 상태로(멱등), 생략 시 토글.
   toggleRightSidebar: (
     id: string,
@@ -621,6 +637,47 @@ function normalizeActiveGroupC(c: ContentArea): ContentArea {
   return { ...next, activeGroupId: groups[0]?.id ?? next.activeGroupId };
 }
 
+/** 현재 화면에 실제 표시되는 패널 평면. 최대화는 underlying split이 아니라 FULL_RECT다. */
+export function leftRailGrid(project: ProjectTab): {
+  cells: RailCell[];
+  focusId: string | null;
+  cleanLines: number[];
+} {
+  const content =
+    project.contents.find((item) => item.id === project.activeContentId) ??
+    project.contents[0];
+  if (!content) return { cells: [], focusId: null, cleanLines: [0, 100] };
+  const cells: RailCell[] = content.maximizedViewId
+    ? [
+        {
+          id: content.activeGroupId,
+          rect: { left: 0, top: 0, width: 100, height: 100 },
+        },
+      ]
+    : computeSplitLayout(content.layout).cells.map(({ value, rect }) => ({
+        id: value.id,
+        rect,
+      }));
+  return {
+    cells,
+    focusId: content.activeGroupId,
+    cleanLines: cleanRailLines(cells.map((cell) => cell.rect)),
+  };
+}
+
+function leftRailLayoutConflict(project: ProjectTab): CmdErr | null {
+  const placement = project.leftRailPlacement ?? { mode: "flow" as const };
+  if (placement.mode !== "pin") return null;
+  const { cleanLines } = leftRailGrid(project);
+  return isCleanRailStation(cleanLines, placement.station)
+    ? null
+    : err(
+        "LAYOUT_CONFLICT",
+        `고정된 좌 레일 선 ${placement.station}을 패널이 가로지를 수 없음`,
+        { station: placement.station, cleanLines },
+      );
+}
+
 // ── 터미널 pane resolver(플러그인 터미널 = substrate) ─────────────────────────
 
 // 뷰가 구동하는 PTY substrate 의 paneId 후보(있으면). 터미널 판정은 generic — 그 후보 id 가
@@ -784,6 +841,7 @@ function makeProject(id: string, opts: NewProjectOpts): ProjectTab {
     id,
     title: alias,
     sidebarOpen: true,
+    leftRailPlacement: { mode: "flow" },
     rightOpen: false,
     rightView: null,
     leftLayout: initialSidebarLayout([]),
@@ -947,6 +1005,48 @@ export const useSessions = create<SessionsStore>((set, get) => ({
     return r;
   },
 
+  setLeftRailPlacement: (id, placement) => {
+    let r: CmdResult<{ placement: RailPlacement }> = noProject(id);
+    if (
+      placement.mode === "pin" &&
+      (!Number.isFinite(placement.station) ||
+        placement.station < 0 ||
+        placement.station > 100)
+    ) {
+      return err("INVALID_PARAMS", "좌 레일 station은 0..100이어야 함");
+    }
+    set((s) => {
+      const project = s.tabs.find((item) => item.id === id);
+      if (!project) return s;
+      const current = project.leftRailPlacement ?? { mode: "flow" as const };
+      if (
+        current.mode === placement.mode &&
+        (current.mode === "flow" ||
+          (placement.mode === "pin" && current.station === placement.station))
+      ) {
+        r = ok({ placement: current });
+        return s;
+      }
+      const nextProject = { ...project, leftRailPlacement: placement };
+      const conflict = leftRailLayoutConflict(nextProject);
+      if (conflict) {
+        r = err(
+          "INVALID_PARAMS",
+          "좌 레일 PIN은 현재 그리드의 깨끗한 세로선에만 둘 수 있음",
+          conflict.data,
+        );
+        return s;
+      }
+      r = ok({ placement });
+      return {
+        tabs: s.tabs.map((item) =>
+          item.id === id ? { ...item, leftRailPlacement: placement } : item,
+        ),
+      };
+    });
+    return r;
+  },
+
   toggleRightSidebar: (id, open) => {
     let r: CmdResult<{ rightOpen: boolean }> = noProject(id);
     set((s) => {
@@ -1059,13 +1159,19 @@ export const useSessions = create<SessionsStore>((set, get) => ({
       const c = makeContent(tmsg("space.autoTitle", { n: nextNum }), program);
       const g = allGroups(c.layout)[0];
       const v = g.views[0];
+      const nextProject = {
+        ...t,
+        contents: [...t.contents, c],
+        activeContentId: c.id,
+      };
+      const conflict = leftRailLayoutConflict(nextProject);
+      if (conflict) {
+        r = conflict;
+        return s;
+      }
       r = ok({ contentId: c.id, groupId: g.id, ...(v ? idsOfView(v) : {}) });
       return {
-        tabs: mapProject(s.tabs, projectId, (x) => ({
-          ...x,
-          contents: [...x.contents, c],
-          activeContentId: c.id,
-        })),
+        tabs: mapProject(s.tabs, projectId, () => nextProject),
       };
     });
     return r;
@@ -1090,13 +1196,15 @@ export const useSessions = create<SessionsStore>((set, get) => ({
       if (activeContentId === contentId) {
         activeContentId = (contents[idx] ?? contents[idx - 1] ?? contents[0]).id;
       }
+      const nextProject = { ...t, contents, activeContentId };
+      const conflict = leftRailLayoutConflict(nextProject);
+      if (conflict) {
+        r = conflict;
+        return s;
+      }
       r = ok({ activeContentId });
       return {
-        tabs: mapProject(s.tabs, projectId, (x) => ({
-          ...x,
-          contents,
-          activeContentId,
-        })),
+        tabs: mapProject(s.tabs, projectId, () => nextProject),
       };
     });
     return r;
@@ -1111,13 +1219,19 @@ export const useSessions = create<SessionsStore>((set, get) => ({
         r = err("TARGET_NOT_FOUND", `컨텐츠 없음: ${contentId}`);
         return s;
       }
+      if (t.activeContentId === contentId) {
+        r = ok({});
+        return s; // 이미 활성(불필요 재렌더 방지)
+      }
+      const nextProject = { ...t, activeContentId: contentId };
+      const conflict = leftRailLayoutConflict(nextProject);
+      if (conflict) {
+        r = conflict;
+        return s;
+      }
       r = ok({});
-      if (t.activeContentId === contentId) return s; // 이미 활성(불필요 재렌더 방지)
       return {
-        tabs: mapProject(s.tabs, projectId, (x) => ({
-          ...x,
-          activeContentId: contentId,
-        })),
+        tabs: mapProject(s.tabs, projectId, () => nextProject),
       };
     });
     return r;
@@ -1308,11 +1422,15 @@ export const useSessions = create<SessionsStore>((set, get) => ({
           ...content,
           layout: splitLeaf({ ...grp!, views: [], activeViewId: "" }),
         });
+        const nextProject = mapContent(t, content.id, () => next);
+        const conflict = leftRailLayoutConflict(nextProject);
+        if (conflict) {
+          r = conflict;
+          return s;
+        }
         r = ok({ activeGroupId: next.activeGroupId, activeViewId: "" });
         return {
-          tabs: mapProject(s.tabs, projectId, (x) =>
-            mapContent(x, content.id, () => next),
-          ),
+          tabs: mapProject(s.tabs, projectId, () => nextProject),
         };
       }
       let next = normalizeActiveGroupC({ ...content, layout: tree });
@@ -1343,14 +1461,18 @@ export const useSessions = create<SessionsStore>((set, get) => ({
         }
       }
       const activeGroup = findGroup(next.layout, next.activeGroupId);
+      const nextProject = mapContent(t, content.id, () => next);
+      const conflict = leftRailLayoutConflict(nextProject);
+      if (conflict) {
+        r = conflict;
+        return s;
+      }
       r = ok({
         activeGroupId: next.activeGroupId,
         activeViewId: activeGroup?.activeViewId ?? "",
       });
       return {
-        tabs: mapProject(s.tabs, projectId, (x) =>
-          mapContent(x, content.id, () => next),
-        ),
+        tabs: mapProject(s.tabs, projectId, () => nextProject),
       };
     });
     return r;
@@ -1395,22 +1517,29 @@ export const useSessions = create<SessionsStore>((set, get) => ({
         r = err("TARGET_NOT_FOUND", `그룹 없음: ${groupId}`);
         return s;
       }
-      r = ok({});
       // 이미 활성이면 상태 변경 없음(본문 클릭마다 불필요한 재렌더 방지).
       if (
         content.id === t.activeContentId &&
         content.activeGroupId === groupId
       ) {
+        r = ok({});
         return s;
       }
-      return {
-        tabs: mapProject(s.tabs, projectId, (x) => ({
-          ...mapContent(x, content.id, (c) => ({
-            ...c,
-            activeGroupId: groupId,
-          })),
-          activeContentId: content.id,
+      const nextProject = {
+        ...mapContent(t, content.id, (c) => ({
+          ...c,
+          activeGroupId: groupId,
         })),
+        activeContentId: content.id,
+      };
+      const conflict = leftRailLayoutConflict(nextProject);
+      if (conflict) {
+        r = conflict;
+        return s;
+      }
+      r = ok({});
+      return {
+        tabs: mapProject(s.tabs, projectId, () => nextProject),
       };
     });
     return r;
@@ -1428,10 +1557,8 @@ export const useSessions = create<SessionsStore>((set, get) => ({
       }
       const grp = findGroupOfView(content.layout, viewId);
       if (!grp) return s;
-      r = ok({ viewId });
-      return {
-        tabs: mapProject(s.tabs, projectId, (x) => ({
-          ...mapContent(x, content.id, (c) => ({
+      const nextProject = {
+        ...mapContent(t, content.id, (c) => ({
             ...c,
             maximizedViewId: viewId,
             // 최대화 뷰 = 그 그룹의 활성 뷰 + 활성 그룹(표시·입력 일치).
@@ -1441,8 +1568,16 @@ export const useSessions = create<SessionsStore>((set, get) => ({
             })),
             activeGroupId: grp.id,
           })),
-          activeContentId: content.id,
-        })),
+        activeContentId: content.id,
+      };
+      const conflict = leftRailLayoutConflict(nextProject);
+      if (conflict) {
+        r = conflict;
+        return s;
+      }
+      r = ok({ viewId });
+      return {
+        tabs: mapProject(s.tabs, projectId, () => nextProject),
       };
     });
     return r;
@@ -1607,21 +1742,24 @@ export const useSessions = create<SessionsStore>((set, get) => ({
         }
         const { tree } = removeView(content.layout, viewId);
         if (!tree || !hasGroup(tree, targetGroupId)) return s;
+        const nextContent = normalizeActiveGroupC({
+          ...content,
+          layout: mapGroupNode(tree, targetGroupId, (g) => ({
+            ...g,
+            views: [...g.views, view],
+            activeViewId: view.id,
+          })),
+          activeGroupId: targetGroupId,
+        });
+        const nextProject = mapContent(t, content.id, () => nextContent);
+        const conflict = leftRailLayoutConflict(nextProject);
+        if (conflict) {
+          r = conflict;
+          return s;
+        }
         r = ok({ groupId: targetGroupId });
         return {
-          tabs: mapProject(s.tabs, projectId, (x) =>
-            mapContent(x, content.id, (c) =>
-              normalizeActiveGroupC({
-                ...c,
-                layout: mapGroupNode(tree, targetGroupId, (g) => ({
-                  ...g,
-                  views: [...g.views, view],
-                  activeViewId: view.id,
-                })),
-                activeGroupId: targetGroupId,
-              }),
-            ),
-          ),
+          tabs: mapProject(s.tabs, projectId, () => nextProject),
         };
       }
 
@@ -1633,17 +1771,20 @@ export const useSessions = create<SessionsStore>((set, get) => ({
       const { tree } = removeView(content.layout, viewId);
       if (!tree || !hasGroup(tree, targetGroupId)) return s;
       const fresh = makeGroup(view);
+      const nextContent = normalizeActiveGroupC({
+        ...content,
+        layout: splitAtGroup(tree, targetGroupId, zone, fresh),
+        activeGroupId: fresh.id,
+      });
+      const nextProject = mapContent(t, content.id, () => nextContent);
+      const conflict = leftRailLayoutConflict(nextProject);
+      if (conflict) {
+        r = conflict;
+        return s;
+      }
       r = ok({ groupId: fresh.id });
       return {
-        tabs: mapProject(s.tabs, projectId, (x) =>
-          mapContent(x, content.id, (c) =>
-            normalizeActiveGroupC({
-              ...c,
-              layout: splitAtGroup(tree, targetGroupId, zone, fresh),
-              activeGroupId: fresh.id,
-            }),
-          ),
-        ),
+        tabs: mapProject(s.tabs, projectId, () => nextProject),
       };
     });
     return r;
@@ -1666,11 +1807,15 @@ export const useSessions = create<SessionsStore>((set, get) => ({
       const { tree } = removeGroup(content.layout, groupId);
       if (!tree) return s;
       const next = normalizeActiveGroupC({ ...content, layout: tree });
+      const nextProject = mapContent(t, content.id, () => next);
+      const conflict = leftRailLayoutConflict(nextProject);
+      if (conflict) {
+        r = conflict;
+        return s;
+      }
       r = ok({ activeGroupId: next.activeGroupId });
       return {
-        tabs: mapProject(s.tabs, projectId, (x) =>
-          mapContent(x, content.id, () => next),
-        ),
+        tabs: mapProject(s.tabs, projectId, () => nextProject),
       };
     });
     return r;
@@ -1705,35 +1850,41 @@ export const useSessions = create<SessionsStore>((set, get) => ({
 
       if (zone === "center") {
         // target 으로 source 의 모든 탭을 병합(그룹 합치기).
+        const nextContent = normalizeActiveGroupC({
+          ...content,
+          layout: mapGroupNode(tree, targetGroupId, (g) => ({
+            ...g,
+            views: [...g.views, ...source.views],
+            activeViewId: source.activeViewId,
+          })),
+          activeGroupId: targetGroupId,
+        });
+        const nextProject = mapContent(t, content.id, () => nextContent);
+        const conflict = leftRailLayoutConflict(nextProject);
+        if (conflict) {
+          r = conflict;
+          return s;
+        }
         r = ok({ groupId: targetGroupId });
         return {
-          tabs: mapProject(s.tabs, projectId, (x) =>
-            mapContent(x, content.id, (c) =>
-              normalizeActiveGroupC({
-                ...c,
-                layout: mapGroupNode(tree, targetGroupId, (g) => ({
-                  ...g,
-                  views: [...g.views, ...source.views],
-                  activeViewId: source.activeViewId,
-                })),
-                activeGroupId: targetGroupId,
-              }),
-            ),
-          ),
+          tabs: mapProject(s.tabs, projectId, () => nextProject),
         };
       }
       // 그룹 통째로 target 옆에 재배치(같은 id·뷰 유지 → 본문 remount 없음).
+      const nextContent = normalizeActiveGroupC({
+        ...content,
+        layout: splitAtGroup(tree, targetGroupId, zone, source),
+        activeGroupId: source.id,
+      });
+      const nextProject = mapContent(t, content.id, () => nextContent);
+      const conflict = leftRailLayoutConflict(nextProject);
+      if (conflict) {
+        r = conflict;
+        return s;
+      }
       r = ok({ groupId: source.id });
       return {
-        tabs: mapProject(s.tabs, projectId, (x) =>
-          mapContent(x, content.id, (c) =>
-            normalizeActiveGroupC({
-              ...c,
-              layout: splitAtGroup(tree, targetGroupId, zone, source),
-              activeGroupId: source.id,
-            }),
-          ),
-        ),
+        tabs: mapProject(s.tabs, projectId, () => nextProject),
       };
     });
     return r;
@@ -1749,14 +1900,18 @@ export const useSessions = create<SessionsStore>((set, get) => ({
         r = err("TARGET_NOT_FOUND", `분할 없음: ${splitId}`);
         return s;
       }
+      const nextProject = mapContent(t, content.id, (c) => ({
+        ...c,
+        layout: mapSplitNode(c.layout, splitId, sizes),
+      }));
+      const conflict = leftRailLayoutConflict(nextProject);
+      if (conflict) {
+        r = conflict;
+        return s;
+      }
       r = ok({});
       return {
-        tabs: mapProject(s.tabs, projectId, (x) =>
-          mapContent(x, content.id, (c) => ({
-            ...c,
-            layout: mapSplitNode(c.layout, splitId, sizes),
-          })),
-        ),
+        tabs: mapProject(s.tabs, projectId, () => nextProject),
       };
     });
     return r;

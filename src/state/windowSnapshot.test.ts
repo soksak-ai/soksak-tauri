@@ -20,6 +20,7 @@ const project: ProjectTab = {
   root: "/repo",
   shell: "/bin/zsh",
   sidebarOpen: true,
+  leftRailPlacement: { mode: "pin", station: 60 },
   rightOpen: false,
   rightView: null,
   leftLayout: { type: "leaf", value: { viewKeys: [], activeViewKey: "" } },
@@ -84,6 +85,7 @@ describe("windowSnapshot 라운드트립", () => {
     expect(back.title).toBe("proj");
     expect(back.shell).toBe("/bin/zsh");
     expect(back.sidebarOpen).toBe(true);
+    expect(back.leftRailPlacement).toEqual({ mode: "pin", station: 60 });
     expect(back.activeContentId).toBe("c1");
 
     const c = back.contents[0];
@@ -153,6 +155,31 @@ describe("windowSnapshot 라운드트립", () => {
     const back = deserializeProject(snap, newSplitId);
     const g = (back.contents[0].layout as Extract<GroupNode, { type: "leaf" }>).value;
     expect(g.views[0].status).toBeUndefined();
+  });
+});
+
+describe("left rail FLOW/PIN persistence", () => {
+  it("round-trips the position PIN independently from projection ref pins", () => {
+    const snap = serializeProject(project, {
+      pins: { left: ["plugin.tree"], right: [] },
+      seen: { left: ["plugin.tree"], right: [] },
+    });
+    expect(snap.leftRailPlacement).toEqual({ mode: "pin", station: 60 });
+    expect(snap.projection?.pins.left).toEqual(["plugin.tree"]);
+
+    const back = deserializeProject(snap, newSplitId);
+    expect(back.leftRailPlacement).toEqual({ mode: "pin", station: 60 });
+  });
+
+  it("migrates snapshots without a placement field to the FLOW default", () => {
+    const legacy = serializeProject({
+      ...project,
+      leftRailPlacement: { mode: "flow" },
+    });
+    delete legacy.leftRailPlacement;
+    expect(deserializeProject(legacy, newSplitId).leftRailPlacement).toEqual({
+      mode: "flow",
+    });
   });
 });
 

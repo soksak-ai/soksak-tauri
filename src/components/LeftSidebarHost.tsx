@@ -21,7 +21,7 @@ import {
   hitTestCells,
   cellVars,
   type DropZone,
-} from "./splitLayout";
+} from "../lib/splitLayout";
 import {
   useViewRegistry,
   viewsForPlacement,

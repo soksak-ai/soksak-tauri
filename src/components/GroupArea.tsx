@@ -14,7 +14,7 @@ import {
   transferViewFocus,
 } from "../plugins/viewFocus";
 import { ViewTabs } from "./ViewTabs";
-import { computeSplitLayout, hitTestCells } from "./splitLayout";
+import { computeSplitLayout, hitTestCells } from "../lib/splitLayout";
 import { useT } from "../i18n";
 import { useTheme } from "../state/theme";
 import { useUi } from "../state/ui";
@@ -29,6 +29,11 @@ import {
   viewDisplayTitle,
 } from "../state/sessions";
 import { useHydration } from "../state/hydration";
+import {
+  projectRailCssRect,
+  projectRailCssSpan,
+  unprojectRailX,
+} from "../lib/railPlacement";
 
 // 콘텐츠 영역을 에디터 그룹으로 렌더. 핵심 원칙 둘:
 // 1) 본문(터미널/에디터)을 그룹 트리 구조와 분리해 viewId 로 키된 "영속 본문 레이어"에
@@ -109,12 +114,18 @@ export const GroupArea = memo(function GroupArea({
   content,
   projectId,
   surfaceActive = true,
+  railStation = 0,
+  railWidthPx = 0,
 }: {
   content: ContentArea;
   projectId: string;
   /** 이 스페이스(콘텐츠)가 활성인가 — 뷰 유효 가시성(스페이스 && 탭) 판정에 쓰인다. */
   // 이 그룹이 실린 표면(프로젝트+스페이스)이 지금 화면에 있는가 — 뷰 가시성의 상위 두 층.
   surfaceActive?: boolean;
+  /** 활성 콘텐츠 패널 평면에 삽입되는 좌 rail의 깨끗한 논리선(0..100). */
+  railStation?: number;
+  /** 고정 물리폭. 0이면 기존 연속 평면. */
+  railWidthPx?: number;
 }) {
   const t = useT();
   // B4 — 복원 hydration cold 집합 구독(평상시 빈 집합 → 리렌더 없음).
@@ -209,10 +220,24 @@ export const GroupArea = memo(function GroupArea({
       sourceGroupId?: string,
       selfCenterOnly = true,
     ): { groupId: string; zone: DropZone } | null => {
+      const physicalX = clientX - r.left;
+      const logicalX = unprojectRailX(
+        physicalX,
+        r.width,
+        railWidthPx,
+        railStation,
+      );
+      if (logicalX === null) return null;
+      const logicalRect = {
+        left: r.left,
+        top: r.top,
+        width: Math.max(0, r.width - railWidthPx),
+        height: r.height,
+      } as DOMRect;
       const res = hitTestCells(
-        clientX,
+        r.left + logicalX,
         clientY,
-        r,
+        logicalRect,
         cellsRef.current.map((c) => ({ value: c.group, rect: c.rect })),
         (g) => g.id,
         {
@@ -224,7 +249,7 @@ export const GroupArea = memo(function GroupArea({
       );
       return res ? { groupId: res.id, zone: res.zone } : null;
     },
-    [],
+    [railStation, railWidthPx],
   );
 
   // 포인터 드래그 시작(타이틀바=그룹, 탭=뷰). 임계 이상 움직이면 드래그, 아니면 클릭(전환).
@@ -347,7 +372,10 @@ export const GroupArea = memo(function GroupArea({
     const cont = containerRef.current;
     if (!cont) return;
     const contRect = cont.getBoundingClientRect();
-    const totalPx = d.dir === "row" ? contRect.width : contRect.height;
+    const totalPx =
+      d.dir === "row"
+        ? Math.max(0, contRect.width - railWidthPx)
+        : contRect.height;
     const splitPx = (totalPx * d.spanPct) / 100;
     if (splitPx <= 0) return;
     resizeDragActive = true; // 실제 드래그 개시 확정 후에만(위 early-return 은 잠그지 않음).
@@ -399,13 +427,35 @@ export const GroupArea = memo(function GroupArea({
     top: number;
     width: number;
     height: number;
-  }) =>
-    ({
+  }) => {
+    const projected =
+      railWidthPx > 0
+        ? projectRailCssRect(rect, railStation)
+        : { railLeft: 0, railWidth: 0 };
+    return ({
       "--l": `${rect.left}%`,
       "--t": `${rect.top}%`,
       "--w": `${rect.width}%`,
       "--h": `${rect.height}%`,
+      "--rail-dx": `${projected.railLeft * railWidthPx}px`,
+      "--rail-dw": `${projected.railWidth * railWidthPx}px`,
     }) as React.CSSProperties;
+  };
+
+  const dividerVars = (d: Divider) => {
+    if (railWidthPx <= 0) return {};
+    if (d.dir === "row") {
+      const after = d.rect.left > railStation ? 1 : 0;
+      return {
+        "--rail-dx": `${(after - d.rect.left / 100) * railWidthPx}px`,
+      } as React.CSSProperties;
+    }
+    const projected = projectRailCssSpan(d.rect, railStation);
+    return {
+      "--rail-dx": `${projected.railLeft * railWidthPx}px`,
+      "--rail-dw": `${projected.railWidth * railWidthPx}px`,
+    } as React.CSSProperties;
+  };
 
   return (
     <div
@@ -611,14 +661,16 @@ export const GroupArea = memo(function GroupArea({
           style={
             d.dir === "row"
               ? {
-                  left: `${d.rect.left}%`,
+                  left: `calc(${d.rect.left}% + var(--rail-dx, 0px))`,
                   top: `${d.rect.top}%`,
                   height: `${d.rect.height}%`,
+                  ...dividerVars(d),
                 }
               : {
-                  left: `${d.rect.left}%`,
+                  left: `calc(${d.rect.left}% + var(--rail-dx, 0px))`,
                   top: `${d.rect.top}%`,
-                  width: `${d.rect.width}%`,
+                  width: `calc(${d.rect.width}% + var(--rail-dw, 0px))`,
+                  ...dividerVars(d),
                 }
           }
           onMouseDown={onDividerDown(d)}

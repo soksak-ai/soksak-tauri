@@ -8,9 +8,15 @@ import { invoke } from "@tauri-apps/api/core";
 import { tmsg } from "../i18n";
 import { settleAnimationsForCapture } from "./captureSettle";
 import { suggestLayout, type MonitorFact, type WindowFact } from "../lib/layoutSuggest";
+import {
+  effectiveRailStation,
+  snapRailStation,
+  type RailPlacement,
+} from "../lib/railPlacement";
 import { listRecentProjects, removeRecentProject } from "../state/recentProjects";
 import {
   allGroups,
+  leftRailGrid,
   useSessions,
   type ContentArea,
   type DropZone,
@@ -325,6 +331,27 @@ function serializeContent(c: ContentArea, activeContentId: string) {
   };
 }
 
+// 좌 레일 위치의 공개 사실. 저장의 PIN station과 현재 그리드에서 실제로
+// 적용되는 station은 구분한다. 구 스냅샷의 dirty PIN을 조회했다는 이유만으로
+// 저장값을 변경하지 않으며, 명시적 PIN 명령만 유효 라인으로 스냅해 저장한다.
+function serializeLeftRailPosition(t: ProjectTab) {
+  const { cells, focusId, cleanLines } = leftRailGrid(t);
+  const placement: RailPlacement = t.leftRailPlacement ?? { mode: "flow" };
+  const effectiveStation = effectiveRailStation(
+    cells,
+    focusId,
+    placement,
+  );
+  return placement.mode === "pin"
+    ? {
+        mode: placement.mode,
+        station: placement.station,
+        effectiveStation,
+        cleanLines,
+      }
+    : { mode: placement.mode, effectiveStation, cleanLines };
+}
+
 function serializeTree() {
   const s = useSessions.getState();
   return {
@@ -335,6 +362,7 @@ function serializeTree() {
       root: t.root ?? null,
       color: t.color ?? null,
       sidebarOpen: t.sidebarOpen,
+      leftRailPosition: serializeLeftRailPosition(t),
       active: t.id === s.activeId,
       activeSpaceId: t.activeContentId,
       spaces: t.contents.map((c) => serializeContent(c, t.activeContentId)),
@@ -386,9 +414,10 @@ export function registerCatalog(): void {
 
   register("state.tree", {
     description:
-      "Full layout snapshot (address book): all ids and active state across project → space → panel (rect %) → view → pane. Use to discover ids before targeting other commands.",
+      "Full layout snapshot (address book): all ids and active state across project → space → panel (rect %) → view → pane, including each project's effective left-rail position and clean grid lines. Use to discover ids before targeting other commands.",
     params: {},
-    returns: "{ activeProjectId, projects[] } — panels[].rect is % of the content area",
+    returns:
+      "{ activeProjectId, projects[] } — panels[].rect is % of the content area; projects[].leftRailPosition has mode, persisted station?, effectiveStation, cleanLines[]",
     message: (d) => tmsg("msg.state.tree", { n: ((d.projects as unknown[]) ?? []).length }),
     examples: ["state.tree"],
     handler: () => serializeTree(),
@@ -773,6 +802,97 @@ export function registerCatalog(): void {
       const t = resolveProject(p, ctx);
       if (!t) return notFound("프로젝트 없음");
       return { projectId: t.id, layout: t.leftLayout };
+    },
+  });
+
+  register("sidebar.left.position", {
+    description:
+      "Read or set the project left rail position mode. Omit mode to query; flow follows the active panel; pin without station freezes the current effective line; pin with station snaps to the nearest clean full-height grid line.",
+    triggers: {
+      ko: "좌측 사이드바 레일 위치 플로우 포커스 추종 핀 고정 그립 스냅",
+    },
+    params: {
+      project: P.project,
+      mode: {
+        type: "string",
+        description: "flow | pin; omit to query current position",
+        enum: ["flow", "pin"],
+      },
+      station: {
+        type: "number",
+        description:
+          "Requested logical station in 0..100 for pin; omitted pin freezes the current effective station",
+      },
+    },
+    returns:
+      "{ projectId, leftRailPosition:{ mode, station?(persisted), effectiveStation, cleanLines[] } }",
+    message: () => tmsg("msg.sidebar.left.position"),
+    errors: ["TARGET_NOT_FOUND", "INVALID_PARAMS"],
+    examples: [
+      "sidebar.left.position",
+      'sidebar.left.position \'{"mode":"pin"}\'',
+      'sidebar.left.position \'{"mode":"pin","station":50}\'',
+      'sidebar.left.position \'{"mode":"flow"}\'',
+    ],
+    handler: (p, ctx) => {
+      const t = resolveProject(p, ctx);
+      if (!t) return notFound("프로젝트 없음");
+
+      const mode = p.mode as "flow" | "pin" | undefined;
+      const requested = p.station as number | undefined;
+      if (mode === undefined) {
+        if (requested !== undefined) {
+          return {
+            ok: false as const,
+            code: "INVALID_PARAMS",
+            message: "station은 mode=pin에서만 지정할 수 있음",
+          };
+        }
+        return {
+          projectId: t.id,
+          leftRailPosition: serializeLeftRailPosition(t),
+        };
+      }
+
+      if (mode === "flow") {
+        if (requested !== undefined) {
+          return {
+            ok: false as const,
+            code: "INVALID_PARAMS",
+            message: "FLOW는 station을 가지지 않음",
+          };
+        }
+        const changed = S().setLeftRailPlacement(t.id, { mode: "flow" });
+        if (!changed.ok) return changed;
+      } else {
+        if (
+          requested !== undefined &&
+          (!Number.isFinite(requested) || requested < 0 || requested > 100)
+        ) {
+          return {
+            ok: false as const,
+            code: "INVALID_PARAMS",
+            message: "station은 0..100이어야 함",
+          };
+        }
+        const current = serializeLeftRailPosition(t);
+        const station = snapRailStation(
+          current.cleanLines,
+          requested ?? current.effectiveStation,
+        );
+        const changed = S().setLeftRailPlacement(t.id, {
+          mode: "pin",
+          station,
+        });
+        if (!changed.ok) return changed;
+      }
+
+      const updated = S().tabs.find((item) => item.id === t.id);
+      if (!updated) return notFound("프로젝트 없음");
+      return {
+        projectId: updated.id,
+        leftRailPosition: serializeLeftRailPosition(updated),
+      };
     },
   });
 
