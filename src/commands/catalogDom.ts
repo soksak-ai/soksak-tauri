@@ -68,6 +68,34 @@ function resolveElement(addressStr: string): HTMLElement | null {
   return (visible ?? matches[0]).el;
 }
 
+// 좌표 위 최상단 요소를 shadow DOM 을 관통해 찾는다. document.elementFromPoint 는 shadow host
+// 에서 멈추므로(플러그인 뷰는 shadow 안에 마운트된다), shadowRoot.elementFromPoint 를 따라
+// 내려가 실제 최심 요소를 반환한다 — ui.tree/nodeScan 이 data-node 를 shadow 관통 수집하는
+// 것과 대칭. inner 가 host 자신이면 멈춘다(무한 루프 방지). doc 인자는 테스트 주입용.
+export function deepElementFromPoint(
+  x: number,
+  y: number,
+  doc: DocumentOrShadowRoot = document,
+): Element | null {
+  // elementFromPoint 는 레이아웃 엔진이 필요하다 — 실제 webview 엔 항상 있으나 일부 환경
+  // (jsdom 등)엔 없다. 없으면 좌표 히트테스트가 불가하므로 null(추측 금지).
+  const efp = (root: DocumentOrShadowRoot): Element | null =>
+    typeof root.elementFromPoint === "function" ? root.elementFromPoint(x, y) : null;
+  let el = efp(doc);
+  while (el?.shadowRoot) {
+    const inner = efp(el.shadowRoot);
+    if (!inner || inner === el) break;
+    el = inner;
+  }
+  return el;
+}
+
+// camelCase | kebab-case computed 속성 이름을 읽는다(getPropertyValue 는 kebab 을 원한다).
+function readComputed(cs: CSSStyleDeclaration, name: string): string {
+  const kebab = name.replace(/[A-Z]/g, (m) => "-" + m.toLowerCase());
+  return cs.getPropertyValue(kebab) || (cs as unknown as Record<string, string>)[name] || "";
+}
+
 export function registerDomCatalog(): void {
   register("ui.tree", {
     description:
@@ -100,12 +128,24 @@ export function registerDomCatalog(): void {
 
   register("ui.measure", {
     description:
-      "Measure an exposed node — returns its viewport rect (px) and key computed style values. Use for pixel-alignment diagnostics. Accepts structural addresses from ui.tree only; CSS selectors are rejected.",
-    triggers: { ko: "DOM 측정 레이아웃 rect 크기 스타일" },
+      "Measure an exposed node — its viewport rect (px) and computed style. style always includes the layout fields plus the interaction/visibility axis (pointerEvents, opacity, visibility) so you can tell whether a node is actually visible and clickable, not just where it sits. Pass props to read any extra computed properties by name (e.g. zIndex, transform, backgroundColor). Pass occlusion:true to also hit-test the node's center (through Shadow DOM) and report what covers it and whether it is reachable. Accepts structural addresses from ui.tree only; CSS selectors are rejected.",
+    triggers: { ko: "DOM 측정 레이아웃 rect 크기 스타일 포인터이벤트 가시성 가림 도달성" },
     params: {
       address: { type: "string", description: "Exposed node address from ui.tree", required: true },
+      props: {
+        type: "json",
+        description:
+          'Extra computed-style property names to read, camelCase or kebab (e.g. ["zIndex","backgroundColor"]) — lifts the fixed field set',
+        required: false,
+      },
+      occlusion: {
+        type: "boolean",
+        description:
+          "Also hit-test the node's center (Shadow-DOM-piercing): report the topmost element there and whether it is this node (reachable) or something covers it",
+        default: false,
+      },
     },
-    returns: "{ address, rect:{x,y,w,h}, style }",
+    returns: "{ address, rect:{x,y,w,h}, style, occlusion?:{ reachable, topTag, topNode } }",
     message: (d) =>
       tmsg("msg.ui.measure", {
         w: Number((d.rect as { w?: number })?.w ?? 0),
@@ -119,7 +159,28 @@ export function registerDomCatalog(): void {
       if (!el) return notExposed(addr);
       const r = el.getBoundingClientRect();
       const cs = getComputedStyle(el);
-      return {
+      const style: Record<string, string> = {
+        display: cs.display,
+        height: cs.height,
+        paddingTop: cs.paddingTop,
+        paddingBottom: cs.paddingBottom,
+        borderTop: cs.borderTopWidth,
+        borderBottom: cs.borderBottomWidth,
+        fontSize: cs.fontSize,
+        alignItems: cs.alignItems,
+        alignSelf: cs.alignSelf,
+        // 상호작용/가시성 축 — 레이아웃 필드만으론 "실제로 보이고 눌리는가"를 알 수 없다.
+        pointerEvents: cs.pointerEvents,
+        opacity: cs.opacity,
+        visibility: cs.visibility,
+      };
+      // props[] — 임의 computed 속성 요청(하드코딩 필드 집합의 한계 제거).
+      if (Array.isArray(p.props)) {
+        for (const name of p.props as unknown[]) {
+          if (typeof name === "string") style[name] = readComputed(cs, name);
+        }
+      }
+      const out: Record<string, unknown> = {
         address: addr,
         rect: {
           x: +r.x.toFixed(2),
@@ -127,18 +188,19 @@ export function registerDomCatalog(): void {
           w: +r.width.toFixed(2),
           h: +r.height.toFixed(2),
         },
-        style: {
-          display: cs.display,
-          height: cs.height,
-          paddingTop: cs.paddingTop,
-          paddingBottom: cs.paddingBottom,
-          borderTop: cs.borderTopWidth,
-          borderBottom: cs.borderBottomWidth,
-          fontSize: cs.fontSize,
-          alignItems: cs.alignItems,
-          alignSelf: cs.alignSelf,
-        },
+        style,
       };
+      // occlusion — rect 중심에서 shadow 관통 히트테스트로 "무엇이 가리나 + 도달 가능한가"를
+      // 판정. ui.hit 과 조합해 소비자가 파생할 수 있으나 흔한 판정이라 한 번에 제공(재발명 방지).
+      if (p.occlusion === true) {
+        const top = deepElementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+        out.occlusion = {
+          reachable: !!top && (top === el || el.contains(top) || top.contains(el)),
+          topTag: top ? top.tagName.toLowerCase() : null,
+          topNode: top instanceof HTMLElement ? (top.dataset.node ?? null) : null,
+        };
+      }
+      return out;
     },
   });
 
@@ -478,7 +540,7 @@ export function registerDomCatalog(): void {
 
   register("ui.hit", {
     description:
-      "Return the topmost DOM element at viewport x,y (tag, classes, data-* attrs, rect) — hit-test diagnostics for drag/click E2E (what would elementFromPoint see?).",
+      "Return the topmost DOM element at viewport x,y (tag, classes, data-* attrs, rect) — hit-test diagnostics for drag/click E2E (what would elementFromPoint see?). Pierces Shadow DOM: plugin views mount inside a shadow root, so this descends shadowRoots to the real deepest element instead of stopping at the shadow host (symmetric with ui.tree, which collects data-node across shadow boundaries).",
     params: {
       x: { type: "number", description: "viewport x", required: true },
       y: { type: "number", description: "viewport y", required: true },
@@ -487,7 +549,7 @@ export function registerDomCatalog(): void {
     message: (d) => (d.tag ? tmsg("msg.ui.hit.found", { tag: String(d.tag) }) : tmsg("msg.ui.hit.none")),
     examples: ['ui.hit \'{"x":200,"y":140}\''],
     handler: (p) => {
-      const el = document.elementFromPoint(Number(p.x), Number(p.y));
+      const el = deepElementFromPoint(Number(p.x), Number(p.y));
       if (!(el instanceof Element)) return { tag: null };
       const r = el.getBoundingClientRect();
       // SVG 의 className 은 SVGAnimatedString — getAttribute 로 통일. 조상 체인의 데이터도 유용해
