@@ -341,3 +341,51 @@ describe("projection.changed 지문 발화(§4.3) — 슬롯 해소 변화·부�
     off.dispose();
   });
 });
+
+describe("R6 승계 — 결부 뷰 닫힘 시 같은 스페이스의 focusHistory 최근 생존 뷰", () => {
+  it("A(g1)→B(g2)→A 순서 후 A 를 닫으면 결부는 인접탭 C 가 아니라 B", () => {
+    useViewRegistry.getState().register("termplug", decl("term"), provider);
+    const vA = pluginView("vA", "termplug", "term");
+    const vB = pluginView("vB", "termplug", "term");
+    const vC = pluginView("vC", "termplug", "term");
+    const t: ProjectTab = {
+      ...tab([], ""),
+      contents: [
+        {
+          id: "c1",
+          title: "1",
+          activeGroupId: "g1",
+          layout: {
+            type: "split",
+            id: "s1",
+            dir: "row",
+            sizes: [0.5, 0.5],
+            children: [
+              { type: "leaf", value: { id: "g1", views: [vA, vC], activeViewId: "vA" } },
+              { type: "leaf", value: { id: "g2", views: [vB], activeViewId: "vB" } },
+            ],
+          },
+        },
+      ],
+    };
+    useSessions.setState({ tabs: [t], activeId: "p1" });
+    const stop = startProjectionTracking();
+
+    // 결부 이력 만들기: A → B → A (활성 그룹 전환).
+    const setActive = (gid: string) => {
+      const cur = useSessions.getState().tabs[0];
+      useSessions.setState({
+        tabs: [{ ...cur, contents: [{ ...cur.contents[0], activeGroupId: gid }] }],
+      });
+    };
+    setActive("g2"); // B 결부
+    setActive("g1"); // A 결부
+    expect(useProjection.getState().byProject.p1.focusHistory.slice(0, 2)).toEqual(["vA", "vB"]);
+
+    const r = useSessions.getState().closeView("p1", "vA");
+    expect(r.ok).toBe(true);
+    const content = useSessions.getState().tabs[0].contents[0];
+    expect(content.activeGroupId).toBe("g2"); // R6: 최근 생존 = B(g2)
+    stop();
+  });
+});

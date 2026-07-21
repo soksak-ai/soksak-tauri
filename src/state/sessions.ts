@@ -24,6 +24,7 @@ import {
   hasSidebarView,
 } from "./sidebarLayout";
 import { browserViewIdFromLabel } from "../lib/webviewLabels";
+import { useProjection } from "./projection";
 
 // 3단 구조:
 //   - 최상단 탭 = 프로젝트(ProjectTab): 자체 사이드바(파일트리) + 컨텐츠 탭들
@@ -1314,7 +1315,33 @@ export const useSessions = create<SessionsStore>((set, get) => ({
           ),
         };
       }
-      const next = normalizeActiveGroupC({ ...content, layout: tree });
+      let next = normalizeActiveGroupC({ ...content, layout: tree });
+      // R6 승계(plans/sidebar-projection-spec.md) — 닫힌 뷰가 이 프로젝트의 결부 뷰(활성 체인
+      // 말단)였으면, 같은 스페이스의 focusHistory 최근 생존 뷰로 결부를 되돌린다. 인접 탭은
+      // 그 다음 폴백(위 removeView 기본 승계가 이미 해뒀다).
+      const wasBound =
+        content.id === t.activeContentId &&
+        grp?.id === content.activeGroupId &&
+        grp?.activeViewId === viewId;
+      if (wasBound) {
+        const history =
+          useProjection.getState().byProject[projectId]?.focusHistory ?? [];
+        for (const hv of history) {
+          if (hv === viewId) continue;
+          const hg = findGroupOfView(next.layout, hv);
+          if (hg) {
+            next = {
+              ...next,
+              activeGroupId: hg.id,
+              layout: mapGroupNode(next.layout, hg.id, (g) => ({
+                ...g,
+                activeViewId: hv,
+              })),
+            };
+            break;
+          }
+        }
+      }
       const activeGroup = findGroup(next.layout, next.activeGroupId);
       r = ok({
         activeGroupId: next.activeGroupId,
