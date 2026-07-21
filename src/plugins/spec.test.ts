@@ -1059,3 +1059,193 @@ describe("parseManifest — sidecars(engine 모듈 의존 선언)", () => {
     }
   });
 });
+
+describe("parseManifest — sidebar 투영 계약(§3.1)", () => {
+  // content 뷰 + sidebar 선언 매니페스트 빌더. blocks = self 참조 대상 rail 뷰.
+  const withSidebar = (sidebar: unknown, blocksPlacements: string[] = ["rail"]) =>
+    base({
+      permissions: ["ui"],
+      contributes: {
+        views: [
+          { id: "term", title: "터미널", icon: "T", placements: ["content"], sidebar },
+          { id: "blocks", title: "블록", icon: "B", placements: blocksPlacements },
+        ],
+      },
+    });
+
+  it("계약 주소 + self 참조 수용, 기본값 정규화(right=[], template=stack)", () => {
+    const { manifest, validation } = parseManifest(
+      withSidebar({
+        left: [
+          { contract: "soksak-spec-plugin-sidebar-file-tree", range: "^0.0.1", instance: "shared" },
+          { ref: "self.blocks", instance: "per-view" },
+        ],
+      }),
+      "demo",
+    );
+    expect(validation.errors).toEqual([]);
+    const term = manifest?.contributes.views.find((v) => v.id === "term");
+    expect(term?.sidebar).toEqual({
+      left: [
+        { contract: "soksak-spec-plugin-sidebar-file-tree", range: "^0.0.1", instance: "shared" },
+        { ref: "self.blocks", instance: "per-view" },
+      ],
+      right: [],
+      template: "stack",
+    });
+  });
+
+  it("rail / rail-footer placement 수용", () => {
+    expect(
+      errorsOf(
+        base({
+          permissions: ["ui"],
+          contributes: {
+            views: [
+              { id: "a", title: "A", icon: "a", placements: ["rail"] },
+              { id: "b", title: "B", icon: "b", placements: ["rail-footer"] },
+            ],
+          },
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it("fileViewer 의 sidebar 선언 수용", () => {
+    const { manifest, validation } = parseManifest(
+      base({
+        permissions: ["ui"],
+        contributes: {
+          fileViewers: [
+            {
+              id: "code",
+              extensions: ["ts"],
+              sidebar: { left: [{ contract: "soksak-spec-plugin-sidebar-file-tree", range: "^0.0.1", instance: "shared" }] },
+            },
+          ],
+        },
+      }),
+      "demo",
+    );
+    expect(validation.errors).toEqual([]);
+    expect(manifest?.contributes.fileViewers[0].sidebar).toEqual({
+      left: [{ contract: "soksak-spec-plugin-sidebar-file-tree", range: "^0.0.1", instance: "shared" }],
+      right: [],
+      template: "stack",
+    });
+  });
+
+  it("decoration 플래그 — 기본 false, true 수용, 비 boolean 거부", () => {
+    const on = parseManifest(
+      base({
+        permissions: ["ui"],
+        contributes: { views: [{ id: "fx", title: "FX", icon: "f", placements: ["content"], decoration: true }] },
+      }),
+      "demo",
+    );
+    expect(on.validation.errors).toEqual([]);
+    expect(on.manifest?.contributes.views[0].decoration).toBe(true);
+    const off = parseManifest(
+      base({
+        permissions: ["ui"],
+        contributes: { views: [{ id: "v", title: "V", icon: "v", placements: ["content"] }] },
+      }),
+      "demo",
+    );
+    expect(off.manifest?.contributes.views[0].decoration).toBe(false);
+    expect(
+      errorsOf(
+        base({
+          permissions: ["ui"],
+          contributes: { views: [{ id: "v", title: "V", icon: "v", placements: ["content"], decoration: "yes" }] },
+        }),
+      ).some((e) => e.includes("decoration")),
+    ).toBe(true);
+  });
+
+  it("거부: 슬롯의 ref·contract 동시 선언 또는 둘 다 부재", () => {
+    expect(
+      errorsOf(
+        withSidebar({ left: [{ ref: "self.blocks", contract: "c-x", range: "^1.0.0", instance: "shared" }] }),
+      ).some((e) => e.includes("sidebar")),
+    ).toBe(true);
+    expect(
+      errorsOf(withSidebar({ left: [{ instance: "shared" }] })).some((e) => e.includes("sidebar")),
+    ).toBe(true);
+  });
+
+  it("거부: contract 에 range 누락", () => {
+    expect(
+      errorsOf(withSidebar({ left: [{ contract: "c-tree", instance: "shared" }] })).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("거부: 이름-핀 참조(self 아닌 ref)", () => {
+    expect(
+      errorsOf(withSidebar({ left: [{ ref: "soksak-plugin-file-tree.tree", instance: "shared" }] })).some(
+        (e) => e.includes("self"),
+      ),
+    ).toBe(true);
+  });
+
+  it("거부: instance 부재·오값", () => {
+    expect(
+      errorsOf(withSidebar({ left: [{ ref: "self.blocks" }] })).some((e) => e.includes("instance")),
+    ).toBe(true);
+    expect(
+      errorsOf(withSidebar({ left: [{ ref: "self.blocks", instance: "per-panel" }] })).some((e) =>
+        e.includes("instance"),
+      ),
+    ).toBe(true);
+  });
+
+  it("거부: left 빈 배열 / template 오값", () => {
+    expect(errorsOf(withSidebar({ left: [] })).some((e) => e.includes("left"))).toBe(true);
+    expect(
+      errorsOf(
+        withSidebar({ left: [{ ref: "self.blocks", instance: "shared" }], template: "grid" }),
+      ).some((e) => e.includes("template")),
+    ).toBe(true);
+  });
+
+  it("거부: content 아닌 뷰의 sidebar 선언", () => {
+    expect(
+      errorsOf(
+        base({
+          permissions: ["ui"],
+          contributes: {
+            views: [
+              {
+                id: "side", title: "S", icon: "s", placements: ["rail"],
+                sidebar: { left: [{ contract: "c-tree", range: "^1.0.0", instance: "shared" }] },
+              },
+            ],
+          },
+        }),
+      ).some((e) => e.includes("content")),
+    ).toBe(true);
+  });
+
+  it("거부: self 참조 대상 뷰 미선언 / rail 미선언", () => {
+    expect(
+      errorsOf(
+        base({
+          permissions: ["ui"],
+          contributes: {
+            views: [
+              {
+                id: "term", title: "T", icon: "t", placements: ["content"],
+                sidebar: { left: [{ ref: "self.nope", instance: "shared" }] },
+              },
+            ],
+          },
+        }),
+      ).some((e) => e.includes("nope")),
+    ).toBe(true);
+    expect(
+      errorsOf(
+        withSidebar({ left: [{ ref: "self.blocks", instance: "shared" }] }, ["content"]),
+      ).some((e) => e.includes("rail")),
+    ).toBe(true);
+  });
+});

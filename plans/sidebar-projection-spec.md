@@ -73,7 +73,7 @@ UI 투영은 특권 채널이 아니라 배선 위의 소비자다.
   "placements": ["content"],
   "sidebar": {
     "left": [
-      { "contract": "soksak-contract-sidebar-file-tree", "range": "^0.0.1", "instance": "shared" },
+      { "contract": "soksak-spec-plugin-sidebar-file-tree", "range": "^0.0.1", "instance": "shared" },
       { "ref": "self.blocks", "instance": "per-view" }    // 선택: 스택의 둘째 칸
     ],
     "right": [],                                           // 우는 선택 — 빈 배열/생략 = 없음

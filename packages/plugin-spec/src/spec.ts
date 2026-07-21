@@ -123,14 +123,151 @@ export type ViewPlacement =
   | "sidebar-right"
   | "sidebar-left"
   | "sidebar-footer"
-  | "content";
+  | "content"
+  // 투영 모델(plans/sidebar-projection-spec.md §3.3): rail = 레일 투영·핀 가능 사이드바 뷰
+  // (sidebar-left/right 의 후속 — 좌/우 방향은 배치 시점의 결정이라 선언에 없다),
+  // rail-footer = 레일 하단 상주 슬롯(sidebar-footer 승계). 구 이름은 앨리어스 기간 동안 공존.
+  | "rail"
+  | "rail-footer";
 
 export const VIEW_PLACEMENTS: readonly ViewPlacement[] = [
   "sidebar-right",
   "sidebar-left",
   "sidebar-footer",
   "content",
+  "rail",
+  "rail-footer",
 ];
+
+// ── §2.5 사이드바 투영 계약 ──────────────────────────────────────────────────
+// content 뷰·파일뷰어의 사이드바 선언(plans/sidebar-projection-spec.md §3.1).
+// 참조 형태는 둘뿐이다: "self.<viewId>"(자기 rail 뷰) | {contract, range}(계약 주소).
+// `<pluginId>.<viewId>` 이름-핀은 금지(C3 L1) — 교차 플러그인은 계약 주소로만 참조하고
+// 코어가 활성 구현체로 해소한다. instance 는 인스턴스 축(A9): shared | per-view.
+
+export type SidebarInstance = "shared" | "per-view";
+export type SidebarTemplate = "stack" | "tabs";
+
+export interface SidebarSlot {
+  ref?: string; // "self.<viewId>" — 자기 플러그인의 rail 뷰
+  contract?: string; // 계약 id(교차 플러그인 참조)
+  range?: string; // semver range — contract 필수 동반
+  instance: SidebarInstance;
+}
+
+export interface ContributedSidebar {
+  left: SidebarSlot[]; // 1개 이상(A1 — 좌 필수)
+  right: SidebarSlot[]; // 파싱 시 기본 []
+  template: SidebarTemplate; // 파싱 시 기본 "stack" — 어휘는 코어 소유(A5)
+}
+
+const SIDEBAR_SELF_REF_RE = /^self\.[a-z0-9][a-z0-9-]*$/;
+const SIDEBAR_INSTANCES: readonly SidebarInstance[] = ["shared", "per-view"];
+const SIDEBAR_TEMPLATES: readonly SidebarTemplate[] = ["stack", "tabs"];
+
+function parseSidebarSlot(
+  raw: unknown,
+  label: string,
+  errors: string[],
+): SidebarSlot | null {
+  if (!isRecord(raw)) {
+    errors.push(`${label}: 객체여야 함`);
+    return null;
+  }
+  for (const k of Object.keys(raw)) {
+    if (!["ref", "contract", "range", "instance"].includes(k)) {
+      errors.push(`${label}: 알 수 없는 키 "${k}"`);
+      return null;
+    }
+  }
+  const hasRef = raw.ref !== undefined;
+  const hasContract = raw.contract !== undefined || raw.range !== undefined;
+  if (hasRef === hasContract) {
+    errors.push(
+      `${label}: ref("self.<viewId>") 또는 {contract, range} 중 정확히 하나`,
+    );
+    return null;
+  }
+  if (
+    typeof raw.instance !== "string" ||
+    !SIDEBAR_INSTANCES.includes(raw.instance as SidebarInstance)
+  ) {
+    errors.push(`${label}: instance 는 ${SIDEBAR_INSTANCES.join("|")}`);
+    return null;
+  }
+  const instance = raw.instance as SidebarInstance;
+  if (hasRef) {
+    if (typeof raw.ref !== "string" || !SIDEBAR_SELF_REF_RE.test(raw.ref)) {
+      errors.push(
+        `${label}: ref 는 "self.<viewId>" — 타 플러그인 이름-핀 금지, 교차 참조는 계약 주소({contract, range})`,
+      );
+      return null;
+    }
+    return { ref: raw.ref, instance };
+  }
+  // 계약 주소 — consumes 와 동일 문법(단일진실 = contracts.ts parseContractRequirement).
+  const req = parseContractRequirement(
+    { id: raw.contract, range: raw.range },
+    label,
+    errors,
+  );
+  if (!req) return null;
+  return { contract: req.id, range: req.range, instance };
+}
+
+function parseSidebarDecl(
+  raw: unknown,
+  label: string,
+  errors: string[],
+): ContributedSidebar | null {
+  if (!isRecord(raw)) {
+    errors.push(`${label}: 객체여야 함`);
+    return null;
+  }
+  for (const k of Object.keys(raw)) {
+    if (!["left", "right", "template"].includes(k)) {
+      errors.push(`${label}: 알 수 없는 키 "${k}"`);
+      return null;
+    }
+  }
+  if (!Array.isArray(raw.left) || raw.left.length === 0) {
+    errors.push(`${label}.left: 슬롯 1개 이상의 배열(좌 사이드바 필수 — A1)`);
+    return null;
+  }
+  const parseSide = (arr: unknown[], side: string): SidebarSlot[] | null => {
+    const out: SidebarSlot[] = [];
+    for (let i = 0; i < arr.length; i++) {
+      const s = parseSidebarSlot(arr[i], `${label}.${side}[${i}]`, errors);
+      if (!s) return null;
+      out.push(s);
+    }
+    return out;
+  };
+  const left = parseSide(raw.left, "left");
+  if (!left) return null;
+  let right: SidebarSlot[] = [];
+  if (raw.right !== undefined) {
+    if (!Array.isArray(raw.right)) {
+      errors.push(`${label}.right: 배열`);
+      return null;
+    }
+    const r = parseSide(raw.right, "right");
+    if (!r) return null;
+    right = r;
+  }
+  let template: SidebarTemplate = "stack";
+  if (raw.template !== undefined) {
+    if (
+      typeof raw.template !== "string" ||
+      !SIDEBAR_TEMPLATES.includes(raw.template as SidebarTemplate)
+    ) {
+      errors.push(`${label}.template: ${SIDEBAR_TEMPLATES.join("|")}`);
+      return null;
+    }
+    template = raw.template as SidebarTemplate;
+  }
+  return { left, right, template };
+}
 
 export interface ContributedView {
   id: string; // 플러그인 내 고유. 전역 키는 "<pluginId>.<id>"
@@ -150,6 +287,12 @@ export interface ContributedView {
   // 부재(undefined)는 파싱 거부가 아니라 C2 content-view-status 판정 위반(transparency.ts) —
   // 기존 매니페스트 마이그레이션은 게이트 래칫(warn→blocking 재입법)으로 간다.
   status?: string[];
+  // A1 예외 플래그(기계검사 축) — 사이드바 의무가 없는 장식 뷰의 명시 선언.
+  // transparent/nativeSurface 는 예외 사유가 아니다(브라우저 콘텐츠 뷰는 A1 대상). 기본 false.
+  decoration: boolean; // 파싱 시 기본 false
+  // 사이드바 투영 선언(§2.5) — content placement 뷰만. A1 강제(부재 거부)는 이행 4단계에서
+  // 활성화하며 그 전까지 부재는 런타임 강등(R5)으로 관용된다.
+  sidebar?: ContributedSidebar;
 }
 
 export interface ContributedCommand extends ServiceCommandFields {
@@ -174,6 +317,9 @@ export interface ContributedFileViewer {
   id: string; // 플러그인 내 고유. 전역 키는 "<pluginId>.<id>"
   extensions: string[]; // 처리할 확장자(점 없이). "*" = 폴백(더 구체적 매칭이 없을 때)
   priority?: number; // 겹칠 때 높은 값 우선(기본 0). 동일 priority 는 등록 순서
+  // 사이드바 투영 선언(§2.5) — 파일 패널이 결부될 때 이 뷰어의 선언이 투영 근거다.
+  // 부재 = 런타임 강등(R5). 코어가 특정 플러그인을 기본값으로 지명하지 않는다(A5).
+  sidebar?: ContributedSidebar;
 }
 
 // DOM 노출 노드 — 플러그인이 자기 뷰 안에서 외부(주소 클릭/측정)에 노출하는 요소 "종류"의 선언.
@@ -1004,7 +1150,7 @@ export function parseManifest(
       views = parseEntries(c.views, {
         label: "contributes.views",
         required: ["id", "title", "icon"],
-        optional: ["placements", "defaultPlacement", "transparent", "nativeSurface", "status"],
+        optional: ["placements", "defaultPlacement", "transparent", "nativeSurface", "status", "decoration", "sidebar"],
         parse: (v, errs) => {
           if (!isNonEmptyString(v.id) || !VIEW_ID_RE.test(v.id)) {
             errs.push("contributes.views: id 는 ^[a-z0-9][a-z0-9-]*$");
@@ -1079,6 +1225,30 @@ export function parseManifest(
             checkDuplicates(status, `contributes.views["${v.id}"].status`, errs);
             if (offCode.length > 0) return null;
           }
+          let decoration = false;
+          if (v.decoration !== undefined) {
+            if (typeof v.decoration !== "boolean") {
+              errs.push(`contributes.views["${v.id}"].decoration: boolean`);
+              return null;
+            }
+            decoration = v.decoration;
+          }
+          let sidebar: ContributedSidebar | undefined;
+          if (v.sidebar !== undefined) {
+            if (!placements.includes("content")) {
+              errs.push(
+                `contributes.views["${v.id}"].sidebar: content placement 뷰만 선언 가능`,
+              );
+              return null;
+            }
+            const sb = parseSidebarDecl(
+              v.sidebar,
+              `contributes.views["${v.id}"].sidebar`,
+              errs,
+            );
+            if (!sb) return null;
+            sidebar = sb;
+          }
           return {
             id: v.id.trim(),
             title: normalizeText(v.title as LocalizedText),
@@ -1088,6 +1258,8 @@ export function parseManifest(
             transparent,
             nativeSurface,
             ...(status !== undefined ? { status } : {}),
+            decoration,
+            ...(sidebar !== undefined ? { sidebar } : {}),
           };
         },
       }, errors);
@@ -1187,7 +1359,7 @@ export function parseManifest(
       fileViewers = parseEntries(c.fileViewers, {
         label: "contributes.fileViewers",
         required: ["id", "extensions"],
-        optional: ["priority"],
+        optional: ["priority", "sidebar"],
         parse: (v, errs) => {
           if (!isNonEmptyString(v.id) || !VIEW_ID_RE.test(v.id)) {
             errs.push("contributes.fileViewers: id 는 ^[a-z0-9][a-z0-9-]*$");
@@ -1209,16 +1381,56 @@ export function parseManifest(
             errs.push(`contributes.fileViewers["${v.id}"].priority: number`);
             return null;
           }
+          let sidebar: ContributedSidebar | undefined;
+          if (v.sidebar !== undefined) {
+            const sb = parseSidebarDecl(
+              v.sidebar,
+              `contributes.fileViewers["${v.id}"].sidebar`,
+              errs,
+            );
+            if (!sb) return null;
+            sidebar = sb;
+          }
           return {
             id: v.id.trim(),
             extensions: v.extensions as string[],
             ...(typeof v.priority === "number" ? { priority: v.priority } : {}),
+            ...(sidebar !== undefined ? { sidebar } : {}),
           };
         },
       }, errors);
       checkDuplicates(fileViewers.map((v) => v.id), "contributes.fileViewers.id", errors);
       if (fileViewers.length > 0 && !has("ui")) {
         errors.push('contributes.fileViewers: "ui" 권한 선언 필요');
+      }
+
+      // sidebar self 참조 정합성(§3.1) — 대상 뷰가 선언되어 있고 rail 배치를 지원해야 한다.
+      {
+        const declaredViews = new Map(views.map((v) => [v.id, v] as const));
+        const checkSelfRefs = (
+          sb: ContributedSidebar | undefined,
+          label: string,
+        ) => {
+          if (!sb) return;
+          for (const slot of [...sb.left, ...sb.right]) {
+            if (slot.ref === undefined) continue;
+            const target = slot.ref.slice("self.".length);
+            const tv = declaredViews.get(target);
+            if (!tv) {
+              errors.push(`${label}: self 참조 대상 뷰 "${target}" 미선언`);
+            } else if (!tv.placements.includes("rail")) {
+              errors.push(
+                `${label}: self 참조 대상 뷰 "${target}" 는 placements 에 "rail" 필요`,
+              );
+            }
+          }
+        };
+        for (const v of views) {
+          checkSelfRefs(v.sidebar, `contributes.views["${v.id}"].sidebar`);
+        }
+        for (const f of fileViewers) {
+          checkSelfRefs(f.sidebar, `contributes.fileViewers["${f.id}"].sidebar`);
+        }
       }
 
       // DOM 노출 노드(선언) — command/view 패턴 미러. id 정규식·중복 거부, ui 권한 필수.
