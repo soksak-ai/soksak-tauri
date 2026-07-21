@@ -85,7 +85,9 @@ git/clipboard/ai.session) and removes the violators.
    contracts/).
    Consumption is declare + discover: the consumer declares the unit NAME only (manifest
    `sidecars[]`, package.json dependencies) and resolution discovers it in the registrar
-   (`SOKSAK_HOME` env, default `~/.soksak-dev`). Symlinks and relative-topology paths
+   (the identity home — `~/.soksak-dev` for the dev identity; the app derives it from its bundle
+   identifier and injects it into child binaries as `SOKSAK_HOME`, which is how a sidecar or the
+   pty daemon reaches the same registrar). Symlinks and relative-topology paths
    (`../../`) are banned as resolution mechanisms — both break silently on relocation.
 4b. **Window identity** = opaque, never-reused. Runtime windows are labeled `w-<uuid4>` —
    an accidental label collision across sessions is impossible, so the ghost-restore class
