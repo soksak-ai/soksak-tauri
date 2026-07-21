@@ -81,7 +81,12 @@ export const ProjectionSlots = memo(function ProjectionSlots({
       .filter((s) => s.status === "live" && s.instanceKey)
       .map((s) => s.instanceKey as string),
   );
-  const degraded = slots.filter((s) => s.status === "degraded");
+  // 이행기 규율: "미선언"(undeclared) 은 배너 없이 조용히 접는다 — 배너는 선언했는데
+  // 해소가 실패한 경우(조치 가능한 정보)에만. 미선언 배너는 A1 파서 강제(§7 4단계)와
+  // 함께 활성화한다 — 그 전의 배너는 관용이 아니라 소음이다.
+  const degraded = slots.filter(
+    (s) => s.status === "degraded" && s.source !== "undeclared",
+  );
 
   // 보이는 것이 없으면 영역을 접는다 — keep-alive 마운트는 유지하되 레이아웃을 차지하지
   // 않게(display:none). 완전 무마운트면 렌더 자체 생략.
