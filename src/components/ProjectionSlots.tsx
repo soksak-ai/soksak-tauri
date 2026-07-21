@@ -11,6 +11,7 @@ import { useProjection } from "../state/projection";
 import { useSessions } from "../state/sessions";
 import { useViewRegistry, getRegisteredView } from "../plugins/viewRegistry";
 import { usePlugins } from "../state/plugins";
+import { useContractSelection } from "../state/contractSelection";
 import { useT } from "../i18n";
 
 export const ProjectionSlots = memo(function ProjectionSlots({
@@ -30,23 +31,49 @@ export const ProjectionSlots = memo(function ProjectionSlots({
   const regVersion = useViewRegistry((s) => s.version);
   const entry = useProjection((s) => s.byProject[projectId]);
   const plugins = usePlugins((s) => s.plugins);
+  // 계약 구현체 선택 변화도 슬롯 해소를 바꾼다(A6 — 사용자가 구현체 교체).
+  const selection = useContractSelection((s) => s.selected);
   const proj = useMemo(
     () => projectionFor(projectId),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [projectId, tab, regVersion, entry, plugins],
+    [projectId, tab, regVersion, entry, plugins, selection],
   );
 
-  // keep-alive 누적: instanceKey → resolvedRef. 등록 해제된 ref 는 정리(유령 마운트 방지).
+  // keep-alive 누적: instanceKey → resolvedRef.
   const mountedRef = useRef(new Map<string, string>());
   const sideProj = side === "left" ? proj?.left : (proj?.right ?? null);
   const slots = sideProj?.slots ?? [];
+  const absorbed = new Set(
+    slots
+      .filter((s) => s.status === "satisfied-by-pin" && s.instanceKey)
+      .map((s) => s.instanceKey as string),
+  );
   for (const s of slots) {
     if (s.status === "live" && s.instanceKey && s.resolvedRef) {
       mountedRef.current.set(s.instanceKey, s.resolvedRef);
     }
   }
+  // 정리 3종: 등록 해제 ref(유령), 핀 흡수 instanceKey(단일 렌더 — 핀 스택이 소유, A9),
+  // 죽은 결부 뷰의 per-view 인스턴스(key 3번째 조각 = viewId).
+  const liveViewIds = new Set<string>();
+  if (tab) {
+    for (const c of tab.contents) {
+      const walk = (n: { type: string; value?: { views: { id: string }[] }; children?: unknown[] }) => {
+        if (n.type === "leaf" && n.value) for (const v of n.value.views) liveViewIds.add(v.id);
+        else if (n.children) for (const ch of n.children) walk(ch as never);
+      };
+      walk(c.layout as never);
+    }
+  }
   for (const [key, ref] of [...mountedRef.current]) {
-    if (!getRegisteredView(ref)) mountedRef.current.delete(key);
+    const perViewId = key.split("|")[2];
+    if (
+      !getRegisteredView(ref) ||
+      absorbed.has(key) ||
+      (perViewId !== undefined && !liveViewIds.has(perViewId))
+    ) {
+      mountedRef.current.delete(key);
+    }
   }
 
   const liveKeys = new Set(
@@ -56,13 +83,19 @@ export const ProjectionSlots = memo(function ProjectionSlots({
   );
   const degraded = slots.filter((s) => s.status === "degraded");
 
-  // 렌더할 것이 전혀 없으면 영역 자체를 접는다(핀 스택이 전체를 쓴다).
-  if (liveKeys.size === 0 && degraded.length === 0 && mountedRef.current.size === 0) {
+  // 보이는 것이 없으면 영역을 접는다 — keep-alive 마운트는 유지하되 레이아웃을 차지하지
+  // 않게(display:none). 완전 무마운트면 렌더 자체 생략.
+  const visible = liveKeys.size > 0 || degraded.length > 0;
+  if (!visible && mountedRef.current.size === 0) {
     return null;
   }
 
   return (
-    <div className="proj-slots" data-node={`projection/${side}`}>
+    <div
+      className="proj-slots"
+      style={visible ? undefined : { display: "none" }}
+      data-node={`projection/${side}`}
+    >
       {[...mountedRef.current].map(([instanceKey, refKey]) => (
         <div
           key={instanceKey}

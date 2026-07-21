@@ -736,6 +736,17 @@ function mapContent(
   };
 }
 
+// 뷰 id(터미널 pane 포함 — pane=터미널 뷰)가 속한 프로젝트 — 호출자 컨텍스트(ctx.pane)
+// 라우팅의 단일 유틸. 없으면 null.
+export function projectIdOfView(viewId: string): string | null {
+  for (const t of useSessions.getState().tabs) {
+    for (const c of t.contents) {
+      if (allViews(c.layout).some((v) => v.id === viewId)) return t.id;
+    }
+  }
+  return null;
+}
+
 // 뷰를 어느 컨텐츠에 있든 변환(숨은 컨텐츠의 마운트된 뷰도 대상 — dirty/mode/focus 등).
 function mapViewEverywhere(
   t: ProjectTab,

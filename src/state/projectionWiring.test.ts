@@ -307,3 +307,37 @@ describe("핀 마이그레이션 배선(§7.1) — 기존 배치·레거시 plac
     stop();
   });
 });
+
+describe("projection.changed 지문 발화(§4.3) — 슬롯 해소 변화·부트 무발화", () => {
+  it("슬롯 degraded→live 전환(결부 불변)에도 발화하고, 첫 sync(부트)는 무발화", () => {
+    // 터미널: self 참조 선언 — 대상 rail 뷰는 아직 미등록(degraded).
+    useViewRegistry.getState().register(
+      "termplug",
+      decl("term", {
+        sidebar: {
+          left: [{ ref: "self.tree", instance: "shared" }],
+          right: [],
+          template: "stack",
+        },
+      }),
+      provider,
+    );
+    useSessions.setState({ tabs: [tab([pluginView("v1", "termplug", "term")], "v1")], activeId: "p1" });
+
+    const events: { projectId: string; viewId: string | null }[] = [];
+    const off = onPluginEvent("projection.changed", (e) => void events.push(e));
+    const stop = startProjectionTracking();
+    expect(events).toEqual([]); // 부트 관측은 발화하지 않는다(복원 리플레이 금지)
+
+    // rail 대상 등록 → 같은 결부에서 슬롯이 degraded→live — 발화해야 한다.
+    useViewRegistry.getState().register(
+      "termplug",
+      decl("tree", { placements: ["rail"], defaultPlacement: "rail" }),
+      provider,
+    );
+    expect(events.some((e) => e.projectId === "p1" && e.viewId === "v1")).toBe(true);
+
+    stop();
+    off.dispose();
+  });
+});

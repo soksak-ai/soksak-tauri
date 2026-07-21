@@ -253,7 +253,13 @@ export const LeftSidebarHost = memo(function LeftSidebarHost({
           // --drop-top-h:0 → 드롭 플레이스홀더(.drop-ind-wrap)가 셀 전체(탭 줄 포함)를 덮는다.
           // --header-h 는 건드리지 않는다(플러그인 row2 밴드 높이 = 콘텐츠 뷰탭 밴드와 동일 33px 상속).
           // (히트테스트의 헤더 오프셋은 JS SIDEBAR_HEADER_PX 가 따로 소유 — 시각/판정 분리.)
-          { "--drop-top-h": "0px", "--status-h": "0px", "--pane-inset": `${paneInset}px` } as CSSProperties
+          // 핀이 하나도 없으면 그리드를 접는다 — 투영 슬롯이 레일 전체를 쓴다(R4 병존의 빈 상태).
+          {
+            "--drop-top-h": "0px",
+            "--status-h": "0px",
+            "--pane-inset": `${paneInset}px`,
+            ...(registeredKeys.length === 0 ? { display: "none" } : {}),
+          } as CSSProperties
         }
       >
         {/* 셀(leaf 그룹) — 콘텐츠 egroup 처럼 % 절대 위치. 내부 = [탭 줄][본문]. */}

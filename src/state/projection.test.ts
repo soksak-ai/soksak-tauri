@@ -21,7 +21,7 @@ function deps(over: Partial<ProjectionDeps> = {}): ProjectionDeps {
 }
 
 function bound(sidebar: ContributedSidebar | null, viewId = "v1", owner = "termplug"): BoundView {
-  return { viewId, ownerPluginId: owner, sidebar };
+  return { viewId, groupId: "g1", contentId: "c1", ownerPluginId: owner, sidebar };
 }
 
 const NO_PINS = { left: [], right: [] };

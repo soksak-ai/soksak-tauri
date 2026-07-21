@@ -31,6 +31,9 @@ export interface ProjectionSide {
 // plugin 뷰: ownerPluginId = 그 플러그인. file 뷰: 담당 fileViewer 의 플러그인(§3.1).
 export interface BoundView {
   viewId: string;
+  // 결부 문맥(§4.1) — 결부 뷰가 속한 그룹·스페이스. UI 암묵 경로의 영향 범위(A6).
+  groupId: string | null;
+  contentId: string | null;
   ownerPluginId: string;
   sidebar: ContributedSidebar | null; // null = 선언 부재 → 좌 degraded(R5)
 }
@@ -50,11 +53,17 @@ export interface Pins {
 }
 
 export interface Projection {
-  binding: { viewId: string | null };
+  binding: {
+    viewId: string | null;
+    groupId: string | null;
+    contentId: string | null;
+  };
   left: ProjectionSide;
   right: ProjectionSide | null; // 우 미선언 = null(A1 — 우는 선택)
   pins: Pins;
 }
+
+const NULL_BINDING = { viewId: null, groupId: null, contentId: null };
 
 const EMPTY_SIDE: ProjectionSide = { slots: [], template: "single" };
 
@@ -126,12 +135,12 @@ export function resolveProjection(
   deps: ProjectionDeps,
 ): Projection {
   if (!bound) {
-    return { binding: { viewId: null }, left: EMPTY_SIDE, right: null, pins };
+    return { binding: NULL_BINDING, left: EMPTY_SIDE, right: null, pins };
   }
   if (!bound.sidebar) {
     // 선언 부재 = degraded 슬롯(R5) — 빈 슬롯 + 안내를 렌더할 자리.
     return {
-      binding: { viewId: bound.viewId },
+      binding: { viewId: bound.viewId, groupId: bound.groupId, contentId: bound.contentId },
       left: {
         slots: [
           {
@@ -148,7 +157,7 @@ export function resolveProjection(
       pins,
     };
   }
-  const { sidebar, ownerPluginId, viewId } = bound;
+  const { sidebar, ownerPluginId, viewId, groupId, contentId } = bound;
   const left = resolveSide(
     projectId, viewId, ownerPluginId, sidebar.left, sidebar.template, pins.left, deps,
   );
@@ -158,7 +167,7 @@ export function resolveProjection(
       : resolveSide(
           projectId, viewId, ownerPluginId, sidebar.right, sidebar.template, pins.right, deps,
         );
-  return { binding: { viewId }, left, right, pins };
+  return { binding: { viewId, groupId, contentId }, left, right, pins };
 }
 
 // ── 스토어 — 사용자 소유 상태만(focusHistory·pins). 해소 결과는 저장하지 않는다(파생). ──

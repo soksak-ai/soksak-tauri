@@ -24,6 +24,7 @@ import {
 } from "../plugins/viewRegistry";
 import { resolveFileViewer } from "../plugins/fileViewerRegistry";
 import { resolveContractImplementer } from "../plugins/contractResolve";
+import { useContractSelection } from "./contractSelection";
 import { emitPluginEvent } from "../plugins/hooks";
 
 // 활성 체인의 말단(활성 콘텐츠 뷰) → 선언 요약. plugin 뷰 = 등록 decl 의 sidebar,
@@ -37,18 +38,21 @@ export function boundViewOf(project: ProjectTab): BoundView | null {
   const group = groups.find((g) => g.id === content.activeGroupId) ?? groups[0];
   const view = group?.views.find((v) => v.id === group.activeViewId);
   if (!view) return null;
+  const ctx = { groupId: group?.id ?? null, contentId: content.id };
   if (view.kind === "plugin") {
     const reg = getRegisteredView(`${view.pluginId}.${view.view}`);
     return {
       viewId: view.id,
+      ...ctx,
       ownerPluginId: view.pluginId,
       sidebar: reg?.decl.sidebar ?? null,
     };
   }
   const viewer = resolveFileViewer(view.path);
-  if (!viewer) return { viewId: view.id, ownerPluginId: "", sidebar: null };
+  if (!viewer) return { viewId: view.id, ...ctx, ownerPluginId: "", sidebar: null };
   return {
     viewId: view.id,
+    ...ctx,
     ownerPluginId: viewer.pluginId,
     sidebar: viewer.decl.sidebar ?? null,
   };
@@ -80,9 +84,11 @@ export function projectionFor(projectId: string): Projection | null {
 // 세션 구독 — 결부 관측(R1: 그룹 내 탭 전환 포함) + 이력 정리 + 프로젝트 회수 + 이벤트.
 // 창당 1회(main 부트). 반환 = 해지.
 export function startProjectionTracking(): () => void {
-  const last = new Map<string, string | null>();
+  // 프로젝트별 지문 — 결부·슬롯 해소·핀의 요약. 지문이 바뀔 때만 발화한다(§4.3:
+  // 결부·슬롯·핀 변경 — 그룹 내 탭 전환, 강등↔승격, 핀 추가/해제 전부 포함).
+  const last = new Map<string, string>();
 
-  const sync = (tabs: ProjectTab[]) => {
+  const sync = (tabs: ProjectTab[], opts?: { silent?: boolean }) => {
     const proj = useProjection.getState();
     const alive = new Set(tabs.map((t) => t.id));
     for (const pid of Object.keys(proj.byProject)) {
@@ -91,6 +97,9 @@ export function startProjectionTracking(): () => void {
     for (const pid of [...last.keys()]) {
       if (!alive.has(pid)) last.delete(pid);
     }
+    // 발화는 sweep 루프 밖에서 일괄 — sweep 중 동기 emit 이 구독자를 통해 sync 를 재진입해
+    // 이력·핀 갱신과 얽히는 것을 차단한다.
+    const changed: { projectId: string; viewId: string | null }[] = [];
     for (const t of tabs) {
       // §7.1 핀 마이그레이션: 첫 관측 시 기존 배치(leftLayout)의 뷰들을 핀으로 채용하고,
       // 레거시 sidebar-left placement 뷰는 등장 시 자동 핀(오늘의 UX 유지). rail 뷰는
@@ -105,10 +114,17 @@ export function startProjectionTracking(): () => void {
         useProjection.getState().autoPin(t.id, "left", key);
       }
       const vid = boundViewOf(t)?.viewId ?? null;
-      if (last.get(t.id) !== vid) {
-        last.set(t.id, vid);
-        if (vid) useProjection.getState().noteBinding(t.id, vid);
-        emitPluginEvent("projection.changed", { projectId: t.id, viewId: vid });
+      if (vid) useProjection.getState().noteBinding(t.id, vid);
+      const resolved = projectionFor(t.id);
+      const fingerprint = JSON.stringify({
+        b: resolved?.binding ?? null,
+        l: resolved?.left.slots.map((x) => [x.source, x.resolvedRef, x.status]),
+        r: resolved?.right?.slots.map((x) => [x.source, x.resolvedRef, x.status]) ?? null,
+        p: resolved?.pins ?? null,
+      });
+      if (last.get(t.id) !== fingerprint) {
+        last.set(t.id, fingerprint);
+        changed.push({ projectId: t.id, viewId: vid });
       }
       // 죽은 뷰를 승계 재료에서 제거(R6).
       const entry = useProjection.getState().byProject[t.id];
@@ -124,16 +140,28 @@ export function startProjectionTracking(): () => void {
         }
       }
     }
+    if (!opts?.silent) {
+      for (const c of changed) emitPluginEvent("projection.changed", c);
+    }
   };
 
-  sync(useSessions.getState().tabs);
+  // 부트 관측은 지문만 심고 발화하지 않는다 — 복원이 이벤트로 리플레이되지 않게(R9).
+  sync(useSessions.getState().tabs, { silent: true });
   const offSessions = useSessions.subscribe((s) => sync(s.tabs));
-  // 레지스트리 변화(플러그인 활성/비활성)도 결부 해소·레거시 자동 핀에 영향 — 같은 sweep.
+  // 레지스트리·계약 선택 변화도 슬롯 해소에 영향(강등↔승격·구현체 교체) — 같은 sweep.
   const offRegistry = useViewRegistry.subscribe(() =>
+    sync(useSessions.getState().tabs),
+  );
+  const offSelection = useContractSelection.subscribe(() =>
+    sync(useSessions.getState().tabs),
+  );
+  const offProjection = useProjection.subscribe(() =>
     sync(useSessions.getState().tabs),
   );
   return () => {
     offSessions();
     offRegistry();
+    offSelection();
+    offProjection();
   };
 }

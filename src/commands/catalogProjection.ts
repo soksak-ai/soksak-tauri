@@ -3,17 +3,23 @@
 
 import { tmsg } from "../i18n";
 import { register } from "./registry";
-import { err, ok, useSessions } from "../state/sessions";
+import { err, ok, projectIdOfView, useSessions } from "../state/sessions";
 import { useProjection } from "../state/projection";
 import { projectionFor } from "../state/projectionWiring";
 import { getRegisteredView } from "../plugins/viewRegistry";
-import { emitPluginEvent } from "../plugins/hooks";
 
 const SIDES = ["left", "right"] as const;
 type Side = (typeof SIDES)[number];
 
-function targetProject(p: Record<string, unknown>): string {
-  return (p.project as string | undefined) ?? useSessions.getState().activeId;
+import type { CommandContext } from "./registry";
+
+// 대상 프로젝트: 명시 param > 호출자 pane 의 프로젝트(ctx) > 활성 프로젝트.
+function targetProject(p: Record<string, unknown>, ctx?: CommandContext): string {
+  return (
+    (p.project as string | undefined) ??
+    (ctx?.pane ? projectIdOfView(ctx.pane) ?? undefined : undefined) ??
+    useSessions.getState().activeId
+  );
 }
 
 function pinsOf(projectId: string) {
@@ -40,11 +46,13 @@ export function registerProjectionCatalog(): void {
         view: String((d.binding as { viewId?: string | null })?.viewId ?? "-"),
       }),
     examples: ["ui.projection.state", 'ui.projection.state \'{"project":"t1"}\''],
-    handler: (p) => {
-      const pid = targetProject(p);
+    handler: (p, ctx) => {
+      const pid = targetProject(p, ctx);
       const proj = projectionFor(pid);
       if (!proj) return err("TARGET_NOT_FOUND", `프로젝트 없음: ${pid}`);
-      return ok({ projectId: pid, ...proj });
+      const focusHistory =
+        useProjection.getState().byProject[pid]?.focusHistory ?? [];
+      return ok({ projectId: pid, ...proj, focusHistory });
     },
   });
 
@@ -67,8 +75,8 @@ export function registerProjectionCatalog(): void {
     returns: "{ pins: {left, right} }",
     message: () => tmsg("msg.ui.projection.pin"),
     examples: ['ui.projection.pin \'{"ref":"<pluginId>.<viewId>"}\''],
-    handler: (p) => {
-      const pid = targetProject(p);
+    handler: (p, ctx) => {
+      const pid = targetProject(p, ctx);
       if (!useSessions.getState().tabs.some((t) => t.id === pid)) {
         return err("TARGET_NOT_FOUND", `프로젝트 없음: ${pid}`);
       }
@@ -76,19 +84,31 @@ export function registerProjectionCatalog(): void {
       if (!SIDES.includes(side)) {
         return err("INVALID_PARAMS", "side 는 left|right");
       }
-      const ref = p.ref as string;
-      const reg = getRegisteredView(ref);
-      if (!reg || !reg.decl.placements.includes("rail")) {
+      // [임시] 우측 핀 스택 렌더러가 아직 없다 — 렌더 없는 흡수(뷰 소실)를 막기 위해 거부.
+      // 제거 조건: PluginSidebar 가 pins.right 스택을 렌더하는 유닛이 병합되는 즉시 개방.
+      if (side === "right") {
         return err(
           "INVALID_PARAMS",
-          `rail 뷰가 아님: ${ref} — 핀은 rail 배치로 등록된 뷰만(R4)`,
+          "우측 핀은 아직 지원 전(우 핀 스택 렌더러 부재) — 좌측만 가능",
         );
       }
+      const ref = p.ref as string;
+      const reg = getRegisteredView(ref);
+      // rail + 레거시 sidebar-* 앨리어스(§3.3 앨리어스 기간) 모두 핀 가능.
+      const pinnable =
+        !!reg &&
+        ["rail", "sidebar-left", "sidebar-right"].some((pl) =>
+          reg.decl.placements.includes(pl as never),
+        );
+      if (!pinnable) {
+        return err(
+          "INVALID_PARAMS",
+          `rail 뷰가 아님: ${ref} — 핀은 rail(또는 앨리어스 sidebar-*) 배치로 등록된 뷰만(R4)`,
+        );
+      }
+      // 발화는 스토어 구독(추적 sweep 지문)이 단일 경로로 담당 — 여기서 emit 하지 않는다
+      // (no-op 핀이면 스토어 무변경 → 무발화).
       useProjection.getState().pin(pid, side, ref);
-      emitPluginEvent("projection.changed", {
-        projectId: pid,
-        viewId: projectionFor(pid)?.binding.viewId ?? null,
-      });
       return ok({ pins: pinsOf(pid) });
     },
   });
@@ -108,8 +128,8 @@ export function registerProjectionCatalog(): void {
     returns: "{ pins: {left, right} }",
     message: () => tmsg("msg.ui.projection.unpin"),
     examples: ['ui.projection.unpin \'{"ref":"<pluginId>.<viewId>"}\''],
-    handler: (p) => {
-      const pid = targetProject(p);
+    handler: (p, ctx) => {
+      const pid = targetProject(p, ctx);
       if (!useSessions.getState().tabs.some((t) => t.id === pid)) {
         return err("TARGET_NOT_FOUND", `프로젝트 없음: ${pid}`);
       }
@@ -118,10 +138,6 @@ export function registerProjectionCatalog(): void {
         return err("INVALID_PARAMS", "side 는 left|right");
       }
       useProjection.getState().unpin(pid, side, p.ref as string);
-      emitPluginEvent("projection.changed", {
-        projectId: pid,
-        viewId: projectionFor(pid)?.binding.viewId ?? null,
-      });
       return ok({ pins: pinsOf(pid) });
     },
   });
@@ -145,8 +161,8 @@ export function registerProjectionCatalog(): void {
     message: (d) =>
       tmsg(d.existing ? "msg.ui.intent.open.existing" : "msg.ui.intent.open"),
     examples: ['ui.intent.open \'{"path":"/work/notes/plan.md"}\''],
-    handler: (p) => {
-      const pid = targetProject(p);
+    handler: (p, ctx) => {
+      const pid = targetProject(p, ctx);
       return useSessions.getState().openFileView(pid, p.path as string);
     },
   });

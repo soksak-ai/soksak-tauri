@@ -164,3 +164,37 @@ describe("ui.intent.open — R2(결부 문맥 배치·멱등 재사용)", () => 
     expect(spec.params.path?.required).toBe(true);
   });
 });
+
+describe("배치① 명령 정합 — 우측 핀 거부·alias 핀·확장 상태", () => {
+  it('side:"right" 핀은 우측 핀 스택 렌더러가 생기기 전까지 INVALID_PARAMS', async () => {
+    useViewRegistry.getState().register(
+      "termplug",
+      decl("tree", { placements: ["rail"], defaultPlacement: "rail" }),
+      provider,
+    );
+    useSessions.setState({ tabs: [tab([], "")], activeId: "p1" });
+    const r = (await execute("ui.projection.pin", { ref: "termplug.tree", side: "right" }, {})) as { ok: boolean; code: string };
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe("INVALID_PARAMS");
+  });
+
+  it("레거시 sidebar-left placement 뷰도 핀 가능(앨리어스 기간)", async () => {
+    useViewRegistry.getState().register(
+      "mailplug",
+      decl("inbox", { placements: ["sidebar-left"], defaultPlacement: "sidebar-left" }),
+      provider,
+    );
+    useSessions.setState({ tabs: [tab([], "")], activeId: "p1" });
+    const r = (await execute("ui.projection.pin", { ref: "mailplug.inbox" }, {})) as { ok: boolean };
+    expect(r.ok).toBe(true);
+  });
+
+  it("state 는 binding.groupId·contentId 와 focusHistory 를 포함한다(§4.1)", async () => {
+    useViewRegistry.getState().register("termplug", decl("term"), provider);
+    useSessions.setState({ tabs: [tab([pluginView("v1", "termplug", "term")], "v1")], activeId: "p1" });
+    useProjection.getState().noteBinding("p1", "v1");
+    const r = (await execute("ui.projection.state", {}, {})) as { data: Record<string, unknown> };
+    expect(r.data.binding).toMatchObject({ viewId: "v1", groupId: "g1", contentId: "c1" });
+    expect(r.data.focusHistory).toEqual(["v1"]);
+  });
+});
