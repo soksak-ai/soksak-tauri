@@ -6,6 +6,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { tmsg } from "../i18n";
+import { settleAnimationsForCapture } from "./captureSettle";
 import { suggestLayout, type MonitorFact, type WindowFact } from "../lib/layoutSuggest";
 import { listRecentProjects, removeRecentProject } from "../state/recentProjects";
 import {
@@ -2224,6 +2225,10 @@ export function registerCatalog(): void {
       'window.snapshot \'{"rect":{"x":100,"y":80,"w":400,"h":300},"base64":true}\'',
     ],
     handler: async (p) => {
+      // 캡처는 명령 — 창이 앞이든 뒤든 정확한 최종 프레임을 낸다. 비전면 창은 timeline 정지로
+      // 진입 애니메이션이 중간 프레임에 갇히므로(arm_capture 의 가림해제만으론 timeline 이 안
+      // 흐른다), 캡처 직전 유한 애니메이션을 명시 정착한다. 모든 캡처 경로 공통 앞단.
+      settleAnimationsForCapture();
       const rect = p.rect as
         | { x: number; y: number; w: number; h: number }
         | undefined;
