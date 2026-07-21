@@ -17,12 +17,11 @@ import { useSessions } from "../state/sessions";
 import { useSettings } from "../state/settings";
 import { useUi } from "../state/ui";
 import { PluginViewHost } from "./PluginViewHost";
+import { ProjectionSlots } from "./ProjectionSlots";
 import { ViewBadge } from "./ViewBadge";
 import { PluginConsentModal } from "./PluginConsentModal";
 import { localize, useT } from "../i18n";
 import { execute } from "../commands/registry";
-
-const MANAGER = "manager"; // 예약 키 — 뷰 전역 키는 항상 점을 포함하므로 충돌 없음.
 
 // memo 경계(원칙 2·3): 프로젝트 식별자만 받고 *자기가 쓰는 필드*(rightView/rightOpen/root)를
 // 셀렉터로 구독한다 — project 객체 전체를 prop 으로 받으면 activeContentId 같은 무관 필드 변경(탭
@@ -50,30 +49,28 @@ export const PluginSidebar = memo(function PluginSidebar({
   const rightMode = useSettings((s) => s.rightSidebarMode);
   const setRightMode = useSettings((s) => s.setRightSidebarMode);
 
-  // 열렸는데 선택이 없거나 사라진 뷰면: 첫 등록 뷰 → 없으면 관리 패널.
+  // 관리 패널은 레일 밖 모달로 이동(A5 — 레일 내용의 코어 하드코딩 제거).
+  const [managerOpen, setManagerOpen] = useState(false);
+
+  // 열렸는데 선택이 없거나 사라진 뷰면 첫 등록 뷰로. 구세션의 "manager" 값도 여기서 해소된다
+  // (더는 유효 뷰가 아니므로 첫 뷰 또는 null 로 재설정).
   useEffect(() => {
     if (!rightOpen) return;
-    const valid =
-      rightView === MANAGER || sidebarViews.some((v) => v.key === rightView);
+    const valid = sidebarViews.some((v) => v.key === rightView);
     if (rightView && valid) return;
-    setRightView(projectId, sidebarViews[0]?.key ?? MANAGER);
+    setRightView(projectId, sidebarViews[0]?.key ?? null);
   }, [rightOpen, projectId, rightView, sidebarViews, setRightView]);
 
   // keep-alive: 이 프로젝트에서 한 번 연 뷰 키 누적(등록 해제되면 자연 제외).
   const openedRef = useRef<Set<string>>(new Set());
-  if (rightView && rightView !== MANAGER) openedRef.current.add(rightView);
+  if (rightView) openedRef.current.add(rightView);
   const opened = [...openedRef.current].filter((k) =>
     sidebarViews.some((v) => v.key === k),
   );
 
   const activeTitleRaw = sidebarViews.find((v) => v.key === rightView)?.view
     .decl.title;
-  const activeTitle =
-    rightView === MANAGER
-      ? t("plugin.manager")
-      : activeTitleRaw
-        ? localize(activeTitleRaw)
-        : "";
+  const activeTitle = activeTitleRaw ? localize(activeTitleRaw) : "";
 
   return (
     <div className="plugin-side">
@@ -106,15 +103,22 @@ export const PluginSidebar = memo(function PluginSidebar({
         </button>
         <button
           type="button"
-          className={`icon-btn icon-btn--boxed plugin-rail-btn${rightView === MANAGER ? " active" : ""}`}
+          className={`icon-btn icon-btn--boxed plugin-rail-btn${managerOpen ? " active" : ""}`}
           title={t("plugin.manager")}
           data-node="plugin-manager-tab"
-          onClick={() => setRightView(projectId, MANAGER)}
+          onClick={() => setManagerOpen(true)}
         >
           <Icon name="settings" />
         </button>
       </div>
       <div className="plugin-side-main">
+        {/* 투영 슬롯(R1) — 결부 뷰의 우 사이드바 선언. 핀(아이콘 레일 선택) 뷰와 병존(R4). */}
+        <ProjectionSlots
+          projectId={projectId}
+          root={root ?? null}
+          paneId={null}
+          side="right"
+        />
         <div className="plugin-side-head">{activeTitle}</div>
         <div className="plugin-side-body">
           {opened.map((k) => (
@@ -131,14 +135,13 @@ export const PluginSidebar = memo(function PluginSidebar({
               />
             </div>
           ))}
-          {rightView === MANAGER && <PluginManagerPanel />}
-          {rightView !== MANAGER && opened.length === 0 && (
+          {opened.length === 0 && (
             <div className="plugin-side-empty">
               <div>{t("plugin.empty")}</div>
               <button
                 type="button"
                 className="dbtn"
-                onClick={() => setRightView(projectId, MANAGER)}
+                onClick={() => setManagerOpen(true)}
               >
                 {t("plugin.manager.open")}
               </button>
@@ -154,6 +157,31 @@ export const PluginSidebar = memo(function PluginSidebar({
           <span className="pss-right">{activeTitle}</span>
         </div>
       </div>
+      {/* 관리 모달 — 레일 밖(A5). dmodal 패턴(ConfirmCloseModal 등과 동일). */}
+      {managerOpen && (
+        <div className="dmodal-overlay" onMouseDown={() => setManagerOpen(false)}>
+          <div
+            className="dmodal-card dmodal-plugin-manager"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="dmodal-head">
+              <span className="dmodal-title">{t("plugin.manager")}</span>
+              <button
+                type="button"
+                className="icon-btn"
+                title={t("common.close")}
+                data-node="plugin-manager-close"
+                onClick={() => setManagerOpen(false)}
+              >
+                <Icon name="close" />
+              </button>
+            </div>
+            <div className="dmodal-plugin-manager-body">
+              <PluginManagerPanel />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 });

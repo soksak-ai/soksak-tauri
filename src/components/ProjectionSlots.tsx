@@ -21,7 +21,7 @@ export const ProjectionSlots = memo(function ProjectionSlots({
 }: {
   projectId: string;
   root: string | null;
-  paneId: string;
+  paneId: string | null;
   side: "left" | "right";
 }) {
   const t = useT();

@@ -1979,6 +1979,17 @@ body::after {
   overflow: hidden;
   color: var(--fg);
 }
+.dmodal-plugin-manager {
+  width: min(760px, 92vw);
+  max-height: calc(100% - 96px);
+}
+.dmodal-plugin-manager-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
 .dmodal-project {
   width: 460px;
   top: 120px;
