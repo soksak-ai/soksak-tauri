@@ -14,6 +14,9 @@ import {
   type ProjectSnapshot,
 } from "./windowSnapshot";
 import type { ProjectTab } from "./sessions";
+import type { Pins } from "./projection";
+
+export type ProjectionSeed = { pins: Pins; seen: Pins };
 
 export interface WindowSnapshot {
   activeId: string;
@@ -38,20 +41,32 @@ export interface WindowManifest {
 export function snapshotWindow(
   tabs: ProjectTab[],
   activeId: string,
+  projections?: Record<string, ProjectionSeed>,
 ): WindowSnapshot {
-  return { activeId, projects: tabs.map(serializeProject) };
+  return {
+    activeId,
+    projects: tabs.map((p) => serializeProject(p, projections?.[p.id])),
+  };
 }
 
 // 스냅샷 → ProjectTab[] (split id 재생성은 newSplitId 주입). 복원 후 호출부가 reseed.
 export function restoreWindow(
   snap: WindowSnapshot,
   newSplitId: () => string,
-): { tabs: ProjectTab[]; activeId: string } {
+): {
+  tabs: ProjectTab[];
+  activeId: string;
+  projections: Record<string, ProjectionSeed>;
+} {
   const tabs = snap.projects.map((p) => deserializeProject(p, newSplitId));
   const activeId = tabs.some((t) => t.id === snap.activeId)
     ? snap.activeId
     : (tabs[0]?.id ?? "");
-  return { tabs, activeId };
+  const projections: Record<string, ProjectionSeed> = {};
+  for (const p of snap.projects) {
+    if (p.projection) projections[p.id] = p.projection;
+  }
+  return { tabs, activeId, projections };
 }
 
 // 이 창의 manifest 항목 = label + 보유 root 목록 + 활성 root.

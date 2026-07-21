@@ -195,6 +195,8 @@ interface ProjectionStore {
   adoptPins(projectId: string, side: "left" | "right", refs: string[]): void;
   // 레거시 placement 뷰의 등장 시 자동 핀 — seen 이면 no-op(unpin 의사 존중).
   autoPin(projectId: string, side: "left" | "right", ref: string): void;
+  // 복원 씨딩(§4.5·R9) — 스냅샷의 pins·seen 을 부재 시에만 심는다(라이브 클로버 금지).
+  seedProject(projectId: string, entry: { pins: Pins; seen: Pins }): void;
   // 프로젝트 닫힘 — 상태 회수.
   dropProject(projectId: string): void;
 }
@@ -282,6 +284,21 @@ export const useProjection = create<ProjectionStore>((set) => ({
           [projectId]: {
             ...entry,
             pins: { ...entry.pins, [side]: entry.pins[side].filter((r) => r !== ref) },
+          },
+        },
+      };
+    }),
+
+  seedProject: (projectId, entry) =>
+    set((s) => {
+      if (s.byProject[projectId]) return s; // 라이브 상태 우선 — 복원은 첫 씨딩만
+      return {
+        byProject: {
+          ...s.byProject,
+          [projectId]: {
+            focusHistory: [],
+            pins: { left: [...entry.pins.left], right: [...entry.pins.right] },
+            seen: { left: [...entry.seen.left], right: [...entry.seen.right] },
           },
         },
       };

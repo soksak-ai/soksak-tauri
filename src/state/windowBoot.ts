@@ -20,6 +20,7 @@ import { claimRoots } from "./projectRegistry";
 import { beginRestoreHydration } from "./hydration";
 import { releaseWebviewGcHold } from "../lib/webviewGc";
 import { reseedSessionsSnapshot } from "../plugins/hooks";
+import { useProjection, type Pins } from "./projection";
 import { listRecentProjects } from "./recentProjects";
 import {
   useSessions,
@@ -110,7 +111,7 @@ export async function initWorkspacePersistence(
   try {
     const snap = await winStore.hydrate();
     if (snap.projects.length > 0) {
-      const { tabs, activeId } = restoreWindow(snap, nextSplitIdGen);
+      const { tabs, activeId, projections } = restoreWindow(snap, nextSplitIdGen);
       // root 존재 검증 — 부재/무효 root 는 탭을 지우지 않고 rootMissing 으로 격하한다
       // (무단 삭제 금지). 배너가 알리고, 경로가 돌아오면 다음 복원에서 자연 해소.
       await Promise.all(
@@ -143,6 +144,12 @@ export async function initWorkspacePersistence(
         : (owned[0]?.id ?? "");
       reseedIdCounters(owned);
       if (owned.length > 0) {
+        // 레일 핀·seen 복원(§4.5·R9) — 추적 sweep(첫 채용 판단)보다 먼저 씨딩되어야
+        // 구 스냅샷 폴백(§7.1 leftLayout 채용)이 오발동하지 않는다. main 부트 순서가 보장.
+        for (const t of owned) {
+          const seed = projections[t.id];
+          if (seed) useProjection.getState().seedProject(t.id, seed);
+        }
         useSessions.getState().restoreProjects(owned, active);
         // 복원은 생성이 아니다(§5 재생≠관찰) — diff 기준점을 지금으로 재씨딩해 복원 델타가
         // project.created(→ 플러그인 git.init 자동 실행 등)로 오인 발화되는 것을 원천 차단.
@@ -165,10 +172,16 @@ export async function initWorkspacePersistence(
   // (coreSync.ts 와 동일 패턴 — B1 정합성: 저장은 종료 시 flush 보장).
   const doPersist = () => {
     const { tabs, activeId } = useSessions.getState();
-    void persistNow(label, tabs, activeId, winStore, manifestStore);
+    const projections: Record<string, { pins: Pins; seen: Pins }> = {};
+    for (const [pid, e] of Object.entries(useProjection.getState().byProject)) {
+      projections[pid] = { pins: e.pins, seen: e.seen };
+    }
+    void persistNow(label, tabs, activeId, projections, winStore, manifestStore);
   };
   const persist = debounce(doPersist, 400);
   useSessions.subscribe(persist);
+  // 핀·seen 변화도 저장 트리거(§4.5) — 같은 디바운스로 coalesce.
+  useProjection.subscribe(persist);
   window.addEventListener("pagehide", doPersist);
   // 창 이동/리사이즈도 저장 트리거(B2 rect) — sessions 변화가 아니라 위 구독이 못 잡는다.
   // 네이티브 이벤트 기반(폴링 0), 같은 디바운스로 coalesce.
@@ -182,11 +195,12 @@ async function persistNow(
   label: string,
   tabs: ProjectTab[],
   activeId: string,
+  projections: Record<string, { pins: Pins; seen: Pins }>,
   winStore: ReturnType<typeof makeCoreStore<WindowSnapshot>>,
   manifestStore: ReturnType<typeof makeCoreStore<WindowManifest>>,
 ): Promise<void> {
   try {
-    await winStore.save(snapshotWindow(tabs, activeId));
+    await winStore.save(snapshotWindow(tabs, activeId, projections));
     const manifest = await manifestStore.hydrate();
     // 창 프레임(B2) — 리스폰이 같은 자리·크기로 되살린다(듀얼 모니터 배치 유지).
     const entry = { ...windowManifestEntry(label, tabs, activeId), rect: await currentFrame() };

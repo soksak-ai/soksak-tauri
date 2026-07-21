@@ -279,3 +279,26 @@ describe("저장 세션 마이그레이션 — 터미널 rename(soksak-plugin-te
     expect(term.view).toBe("content"); // view id(관례 content)는 rename 대상이 아니다
   });
 });
+
+describe("projection 핀 영속(§4.5) — 스냅샷 round-trip", () => {
+  it("serializeProject 에 projection 을 실으면 스냅샷에 남고 구 스냅샷은 필드 부재", async () => {
+    const { serializeProject } = await import("./windowSnapshot");
+    const tab = {
+      id: "t9", title: "P", root: "/tmp/p", sidebarOpen: true, rightOpen: false,
+      rightView: null,
+      leftLayout: { type: "leaf", value: { viewKeys: [], activeViewKey: "" } },
+      activeContentId: "c1",
+      contents: [{ id: "c1", title: "1", activeGroupId: "g1", layout: { type: "leaf", value: { id: "g1", views: [], activeViewId: "" } } }],
+    } as never;
+    const withProj = serializeProject(tab, {
+      pins: { left: ["a.t"], right: [] },
+      seen: { left: ["a.t"], right: [] },
+    });
+    expect(withProj.projection).toEqual({
+      pins: { left: ["a.t"], right: [] },
+      seen: { left: ["a.t"], right: [] },
+    });
+    const without = serializeProject(tab);
+    expect(without).not.toHaveProperty("projection");
+  });
+});

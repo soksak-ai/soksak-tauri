@@ -13,6 +13,7 @@ import {
 } from "./splitTree";
 import type { SidebarGroup } from "./sidebarLayout";
 import type { ProjectTab, ContentArea, ViewGroup, View } from "./sessions";
+import type { Pins } from "./projection";
 
 // ── 스냅샷 타입 ───────────────────────────────────────────────────────────────
 
@@ -68,6 +69,9 @@ export interface ProjectSnapshot {
   leftLayout: SplitSnapshot<SidebarGroup>;
   activeContentId: string;
   contents: ContentSnapshot[];
+  // 레일 핀·자동핀 인지 기록(§4.5) — 프로젝트와 함께 영속. 옵션(구 스냅샷 호환 — 부재 시
+  // 복원이 leftLayout 채용(§7.1 1회 마이그레이션)으로 폴백한다).
+  projection?: { pins: Pins; seen: Pins };
 }
 
 // ── serialize ─────────────────────────────────────────────────────────────────
@@ -116,8 +120,12 @@ const serializeContent = (c: ContentArea): ContentSnapshot => ({
   layout: serializeSplitTree(c.layout, serializeViewGroup), // GroupNode(leaf=ViewGroup)
 });
 
-export function serializeProject(p: ProjectTab): ProjectSnapshot {
+export function serializeProject(
+  p: ProjectTab,
+  projection?: { pins: Pins; seen: Pins },
+): ProjectSnapshot {
   return {
+    ...(projection ? { projection } : {}),
     id: p.id,
     title: p.title,
     root: p.root,
