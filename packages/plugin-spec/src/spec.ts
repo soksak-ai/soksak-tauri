@@ -152,6 +152,9 @@ export interface SidebarSlot {
   ref?: string; // "self.<viewId>" — 자기 플러그인의 rail 뷰
   contract?: string; // 계약 id(교차 플러그인 참조)
   range?: string; // semver range — contract 필수 동반
+  // 구현체에서 열 뷰 id — contract 필수 동반. 프로그램의 viewContract+view 페어링과 동일 패턴:
+  // 뷰 id 는 계약 관례의 일부이고 소비자가 선언한다(코어가 뷰 id 를 하드코딩하지 않는다).
+  view?: string;
   instance: SidebarInstance;
 }
 
@@ -175,13 +178,14 @@ function parseSidebarSlot(
     return null;
   }
   for (const k of Object.keys(raw)) {
-    if (!["ref", "contract", "range", "instance"].includes(k)) {
+    if (!["ref", "contract", "range", "view", "instance"].includes(k)) {
       errors.push(`${label}: 알 수 없는 키 "${k}"`);
       return null;
     }
   }
   const hasRef = raw.ref !== undefined;
-  const hasContract = raw.contract !== undefined || raw.range !== undefined;
+  const hasContract =
+    raw.contract !== undefined || raw.range !== undefined || raw.view !== undefined;
   if (hasRef === hasContract) {
     errors.push(
       `${label}: ref("self.<viewId>") 또는 {contract, range} 중 정확히 하나`,
@@ -212,7 +216,13 @@ function parseSidebarSlot(
     errors,
   );
   if (!req) return null;
-  return { contract: req.id, range: req.range, instance };
+  if (typeof raw.view !== "string" || !VIEW_ID_RE.test(raw.view)) {
+    errors.push(
+      `${label}: view 는 구현체에서 열 뷰 id(^[a-z0-9][a-z0-9-]*$) — contract 필수 동반`,
+    );
+    return null;
+  }
+  return { contract: req.id, range: req.range, view: raw.view, instance };
 }
 
 function parseSidebarDecl(

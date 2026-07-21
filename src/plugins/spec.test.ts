@@ -1077,7 +1077,7 @@ describe("parseManifest — sidebar 투영 계약(§3.1)", () => {
     const { manifest, validation } = parseManifest(
       withSidebar({
         left: [
-          { contract: "soksak-spec-plugin-sidebar-file-tree", range: "^0.0.1", instance: "shared" },
+          { contract: "soksak-spec-plugin-sidebar-file-tree", range: "^0.0.1", view: "tree", instance: "shared" },
           { ref: "self.blocks", instance: "per-view" },
         ],
       }),
@@ -1087,7 +1087,7 @@ describe("parseManifest — sidebar 투영 계약(§3.1)", () => {
     const term = manifest?.contributes.views.find((v) => v.id === "term");
     expect(term?.sidebar).toEqual({
       left: [
-        { contract: "soksak-spec-plugin-sidebar-file-tree", range: "^0.0.1", instance: "shared" },
+        { contract: "soksak-spec-plugin-sidebar-file-tree", range: "^0.0.1", view: "tree", instance: "shared" },
         { ref: "self.blocks", instance: "per-view" },
       ],
       right: [],
@@ -1120,7 +1120,7 @@ describe("parseManifest — sidebar 투영 계약(§3.1)", () => {
             {
               id: "code",
               extensions: ["ts"],
-              sidebar: { left: [{ contract: "soksak-spec-plugin-sidebar-file-tree", range: "^0.0.1", instance: "shared" }] },
+              sidebar: { left: [{ contract: "soksak-spec-plugin-sidebar-file-tree", range: "^0.0.1", view: "tree", instance: "shared" }] },
             },
           ],
         },
@@ -1129,7 +1129,7 @@ describe("parseManifest — sidebar 투영 계약(§3.1)", () => {
     );
     expect(validation.errors).toEqual([]);
     expect(manifest?.contributes.fileViewers[0].sidebar).toEqual({
-      left: [{ contract: "soksak-spec-plugin-sidebar-file-tree", range: "^0.0.1", instance: "shared" }],
+      left: [{ contract: "soksak-spec-plugin-sidebar-file-tree", range: "^0.0.1", view: "tree", instance: "shared" }],
       right: [],
       template: "stack",
     });
@@ -1178,6 +1178,23 @@ describe("parseManifest — sidebar 투영 계약(§3.1)", () => {
     expect(
       errorsOf(withSidebar({ left: [{ contract: "c-tree", instance: "shared" }] })).length,
     ).toBeGreaterThan(0);
+  });
+
+  it("거부: contract 에 view 누락·문법 위반", () => {
+    expect(
+      errorsOf(
+        withSidebar({
+          left: [{ contract: "soksak-spec-plugin-sidebar-file-tree", range: "^0.0.1", instance: "shared" }],
+        }),
+      ).some((e) => e.includes("view")),
+    ).toBe(true);
+    expect(
+      errorsOf(
+        withSidebar({
+          left: [{ contract: "soksak-spec-plugin-sidebar-file-tree", range: "^0.0.1", view: "Bad_Id", instance: "shared" }],
+        }),
+      ).some((e) => e.includes("view")),
+    ).toBe(true);
   });
 
   it("거부: 이름-핀 참조(self 아닌 ref)", () => {

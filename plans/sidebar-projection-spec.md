@@ -73,7 +73,7 @@ UI 투영은 특권 채널이 아니라 배선 위의 소비자다.
   "placements": ["content"],
   "sidebar": {
     "left": [
-      { "contract": "soksak-spec-plugin-sidebar-file-tree", "range": "^0.0.1", "instance": "shared" },
+      { "contract": "soksak-spec-plugin-sidebar-file-tree", "range": "^0.0.1", "view": "tree", "instance": "shared" },
       { "ref": "self.blocks", "instance": "per-view" }    // 선택: 스택의 둘째 칸
     ],
     "right": [],                                           // 우는 선택 — 빈 배열/생략 = 없음
@@ -84,7 +84,7 @@ UI 투영은 특권 채널이 아니라 배선 위의 소비자다.
 
 - 참조 형태는 둘뿐이다:
   - `ref: "self.<viewId>"` — 자기 플러그인의 rail 뷰.
-  - `{ contract, range }` — **계약 주소**. `<pluginId>.<viewId>` 이름-핀은 금지다(C3 L1). 코어가 계약의 활성 구현체로 해소한다(기존 viewContract/resolveContractImplementer와 동일 기계). 제공자(file-tree, bookmarks)는 해당 계약을 `implements`로 발행한다.
+  - `{ contract, range, view }` — **계약 주소**. `<pluginId>.<viewId>` 이름-핀은 금지다(C3 L1). 코어가 계약의 활성 구현체로 해소하고(기존 viewContract/resolveContractImplementer와 동일 기계), `view`는 구현체에서 열 뷰 id다 — 프로그램의 viewContract+view 페어링과 동일 패턴으로 뷰 id는 계약 관례의 일부이며 소비자가 선언한다. 제공자(file-tree, bookmarks)는 해당 계약을 `implements`로 발행한다.
 - `left`: 1개 이상 필수(A1). `right`: 0개 이상.
 - 템플릿 어휘(stack·tabs)는 코어 소유(A5) — 확장은 코어 버전업으로만. 플러그인의 임의 레이아웃 주입 금지.
 - `instance`: `"shared" | "per-view"` (A9).
