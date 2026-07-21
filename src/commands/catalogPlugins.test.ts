@@ -238,3 +238,17 @@ describe("plugin.dev.create — core build identity와 무관한 확장 개발",
     usePlugins.setState({ release: false, reload: previousReload });
   });
 });
+
+describe("plugin.dev.load — 홈 레인 게이트(dev identity 전용)", () => {
+  it("coreBuild 가 dev 가 아니면 INVALID_PARAMS", async () => {
+    invoke.mockImplementationOnce(async (cmd: unknown) =>
+      cmd === "app_environment" ? { coreBuild: "debug" } : undefined,
+    );
+    const r = (await execute("plugin.dev.load", { path: "/tmp/x" }, {})) as {
+      ok: boolean;
+      code: string;
+    };
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe("INVALID_PARAMS");
+  });
+});

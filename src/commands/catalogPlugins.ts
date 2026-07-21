@@ -1214,7 +1214,7 @@ export function registerPluginCatalog(): void {
 
   register("plugin.dev.load", {
     description:
-      "Select an existing absolute plugin workspace as this identity home's development source, validate its plugin.json, and load it without replacing a separate official installation. Available in every build, not only development builds. Dev-sourced plugins bypass the consent gate (spec §0-5 exception).",
+      "Select an existing absolute plugin workspace as this identity home's development source, validate its plugin.json, and load it without replacing a separate official installation. Development (dev) identity only — debug and release homes verify published installs (home-lane rule). Dev-sourced plugins bypass the consent gate (spec §0-5 exception).",
     triggers: { ko: "플러그인 개발 로드 dev 임시 적재" },
     params: {
       path: { type: "string", description: "Absolute path to the plugin directory", required: true },
@@ -1224,7 +1224,19 @@ export function registerPluginCatalog(): void {
     errors: ["TARGET_NOT_FOUND", "INVALID_PARAMS"],
     examples: ['plugin.dev.load \'{"path":"/path/to/my-plugin"}\''],
     danger: "inject",
-    handler: (p) => usePlugins.getState().devLoad(p.path as string),
+    handler: async (p) => {
+      // 홈 레인 강제: dev 소스 로드는 dev identity 전용 — debug·release 홈은 발행본 설치 검증.
+      // (Rust unit_dev 게이트와 같은 원칙의 프론트 경계 — 명령 레지스트리가 유일 진입.)
+      const env = (await invoke("app_environment")) as { coreBuild?: string };
+      if (env?.coreBuild !== "dev") {
+        return {
+          ok: false,
+          code: "INVALID_PARAMS",
+          message: `dev 소스 로드는 dev 환경 전용(현재: ${env?.coreBuild ?? "?"}) — 발행 후 설치로 검증하십시오`,
+        };
+      }
+      return usePlugins.getState().devLoad(p.path as string);
+    },
   });
 
   register("plugin.dev.create", {

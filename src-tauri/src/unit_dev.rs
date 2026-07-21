@@ -31,6 +31,8 @@ struct UnitDevConfig {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppEnvironment {
+    /// 읽기 경계에서 거부된 dev 유닛(타 identity 홈 소스) — 잔재 수습 안내용.
+    pub rejected_development_units: Vec<UnitDevSource>,
     core_build: String,
     identity: String,
     cli: String,
@@ -184,8 +186,31 @@ fn write_config_in(home: &Path, config: &UnitDevConfig) -> Result<(), String> {
     Ok(())
 }
 
+/// 설정의 유닛을 (유효, foreign-홈 거부) 로 분리한다 — 과거 게이트 이전에 기록된
+/// 타 identity 홈 소스가 조용히 로드되는 구멍을 막는다(읽기 경계 강제).
+fn partition_foreign(
+    units: Vec<UnitDevSource>,
+    home: &Path,
+) -> (Vec<UnitDevSource>, Vec<UnitDevSource>) {
+    units.into_iter().partition(|u| {
+        foreign_identity_home(Path::new(&u.source), home).is_none()
+    })
+}
+
+fn rejected_in(home: &Path) -> Result<Vec<UnitDevSource>, String> {
+    let (_, rejected) = partition_foreign(read_config_in(home)?.units, home);
+    Ok(rejected)
+}
+
 fn list_in(home: &Path) -> Result<Vec<UnitDevSource>, String> {
-    Ok(read_config_in(home)?.units)
+    let (valid, rejected) = partition_foreign(read_config_in(home)?.units, home);
+    for r in &rejected {
+        eprintln!(
+            "[unit-dev] 타 identity 홈 소스 거부(읽기 경계): {} {} — {}",
+            r.kind, r.id, r.source
+        );
+    }
+    Ok(valid)
 }
 
 fn set_in(home: &Path, kind: &str, id: &str, source: &Path) -> Result<UnitDevSource, String> {
@@ -235,8 +260,26 @@ pub fn unit_dev_list() -> Result<Vec<UnitDevSource>, String> {
     list_in(&crate::home::soksak_home())
 }
 
+/// dev 소스 작업은 dev identity 전용(홈 레인 원칙): debug·release 홈은 발행본 설치로 검증한다.
+/// 제거(unit_dev_remove)는 어디서나 허용 — 잔재 수습을 막지 않는다.
+pub(crate) fn ensure_dev_identity_build(core_build: &str) -> Result<(), String> {
+    if core_build == "dev" {
+        return Ok(());
+    }
+    Err(format!(
+        "dev 소스 작업은 dev 환경 전용입니다(현재: {core_build}).          debug·release 홈은 발행한 유닛을 설치해서 검증하십시오."
+    ))
+}
+
+fn ensure_dev_identity() -> Result<(), String> {
+    ensure_dev_identity_build(&crate::home::core_build_for_identifier(
+        &crate::home::identifier(),
+    ))
+}
+
 #[tauri::command]
 pub fn unit_dev_set(kind: String, id: String, source: String) -> Result<UnitDevSource, String> {
+    ensure_dev_identity()?;
     set_source(&kind, &id, Path::new(&source))
 }
 
@@ -258,7 +301,9 @@ pub fn app_environment() -> Result<AppEnvironment, String> {
     let core_build = crate::home::core_build_for_identifier(&identity);
     let cli = crate::home::cli_for_core_build(&core_build);
     let units = unit_dev_list()?;
+    let rejected = rejected_in(&crate::home::soksak_home())?;
     Ok(AppEnvironment {
+        rejected_development_units: rejected,
         updater_enabled: core_build == "release",
         unit_mode: if units.is_empty() {
             "official"
@@ -281,6 +326,37 @@ pub fn app_environment() -> Result<AppEnvironment, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dev_source_ops_are_dev_identity_only() {
+        assert!(ensure_dev_identity_build("dev").is_ok());
+        assert!(ensure_dev_identity_build("debug").is_err());
+        assert!(ensure_dev_identity_build("release").is_err());
+    }
+
+    #[test]
+    fn foreign_home_entries_are_rejected_at_read() {
+        let root = test_root("foreign-read");
+        let _ = std::fs::remove_dir_all(&root);
+        let home = root.join(".soksak-debug");
+        let foreign_src = root.join(".soksak-dev").join("plugins").join("x");
+        std::fs::create_dir_all(&foreign_src).unwrap();
+        let path = config_path(&home);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            format!(
+                r#"{{"version":1,"units":[{{"kind":"plugin","id":"x","source":"{}"}}]}}"#,
+                foreign_src.display()
+            ),
+        )
+        .unwrap();
+        assert!(list_in(&home).unwrap().is_empty());
+        let rejected = rejected_in(&home).unwrap();
+        assert_eq!(rejected.len(), 1);
+        assert_eq!(rejected[0].id, "x");
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     fn test_root(name: &str) -> PathBuf {
         let temp = std::env::temp_dir();
