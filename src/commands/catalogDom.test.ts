@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../lib/webviewLabels", () => ({ currentWindowLabel: () => "main" }));
 
-import { registerDomCatalog, deepElementFromPoint } from "./catalogDom";
+import { registerDomCatalog, deepElementFromPoint, deepActiveElement, viewContainerOf } from "./catalogDom";
 import { execute, getSpec, unregister } from "./registry";
 
 beforeEach(() => {
@@ -113,5 +113,47 @@ describe("ui.measure/ui.hit — 스펙 선언", () => {
     const spec = getSpec("ui.measure");
     expect(spec!.params.props).toBeDefined();
     expect(spec!.params.occlusion).toBeDefined();
+  });
+});
+
+describe("deepActiveElement — shadow 관통 포커스", () => {
+  it("shadow root 안 활성 요소를 관통해 반환한다", () => {
+    const leaf = document.createElement("input"); // shadowRoot 없음 → 종료
+    const host = document.createElement("div");
+    const sr = host.attachShadow({ mode: "open" });
+    Object.defineProperty(sr, "activeElement", { value: leaf, configurable: true });
+    const root = { activeElement: host } as unknown as DocumentOrShadowRoot;
+    expect(deepActiveElement(root)).toBe(leaf);
+  });
+
+  it("shadow 가 없으면 활성 요소를 그대로 반환한다", () => {
+    const el = document.createElement("button");
+    const root = { activeElement: el } as unknown as DocumentOrShadowRoot;
+    expect(deepActiveElement(root)).toBe(el);
+  });
+
+  it("활성 요소가 없으면 null", () => {
+    const root = { activeElement: null } as unknown as DocumentOrShadowRoot;
+    expect(deepActiveElement(root)).toBeNull();
+  });
+});
+
+describe("viewContainerOf — shadow 관통 뷰 판정", () => {
+  it("shadow 안 요소의 뷰 컨테이너를 shadow 경계 너머로 찾는다", () => {
+    const container = document.createElement("div");
+    container.className = "plugin-view-container";
+    container.dataset.paneId = "v9";
+    document.body.appendChild(container);
+    const sr = container.attachShadow({ mode: "open" });
+    const input = document.createElement("input");
+    sr.appendChild(input);
+    // light DOM closest 는 shadow 경계에서 막힌다 → host 로 올라가 재시도.
+    expect(viewContainerOf(input)).toBe(container);
+  });
+
+  it("뷰 컨테이너 밖 요소는 null", () => {
+    const loose = document.createElement("div");
+    document.body.appendChild(loose);
+    expect(viewContainerOf(loose)).toBeNull();
   });
 });

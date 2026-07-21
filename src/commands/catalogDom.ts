@@ -96,6 +96,29 @@ function readComputed(cs: CSSStyleDeclaration, name: string): string {
   return cs.getPropertyValue(kebab) || (cs as unknown as Record<string, string>)[name] || "";
 }
 
+// shadow DOM 을 관통한 최종 활성 요소. document.activeElement 는 shadow host 에서 멈추므로
+// (플러그인 뷰는 shadow 안에 마운트된다), shadowRoot.activeElement 를 따라 내려간다 —
+// deepElementFromPoint 와 대칭. root 인자는 테스트 주입용.
+export function deepActiveElement(root: DocumentOrShadowRoot = document): Element | null {
+  let ae = root.activeElement;
+  while (ae?.shadowRoot?.activeElement) ae = ae.shadowRoot.activeElement;
+  return ae;
+}
+
+// 요소가 속한 플러그인 뷰 컨테이너(.plugin-view-container[data-pane-id]). shadow 안 요소의
+// closest 는 shadow 경계를 못 넘으므로, 경계에서 막히면 shadow host 로 올라가 다시 시도한다
+// (shadow 관통 조상 탐색).
+export function viewContainerOf(el: Element | null): HTMLElement | null {
+  let cur: Node | null = el;
+  while (cur instanceof Element) {
+    const host = cur.closest<HTMLElement>(".plugin-view-container[data-pane-id]");
+    if (host) return host;
+    const root = cur.getRootNode();
+    cur = root instanceof ShadowRoot ? root.host : null;
+  }
+  return null;
+}
+
 export function registerDomCatalog(): void {
   register("ui.tree", {
     description:
@@ -256,7 +279,7 @@ export function registerDomCatalog(): void {
 
   register("ui.focus.state", {
     description:
-      "Return the keyboard-focus owner through the public view-host boundary: the requested view, whether its provider is mounted/delivered, and the view containing document.activeElement. Use after real-device input to verify that focus settled in the intended view without querying plugin-private DOM.",
+      "Return the keyboard-focus owner through the public view-host boundary: the requested view, whether its provider is mounted/delivered, and the view containing the active element. Pierces Shadow DOM — plugin views mount inside a shadow root, so this descends shadowRoot.activeElement to the real focused element (and finds its view across the shadow boundary) instead of stopping at the shadow host. Use after real-device input to verify focus settled in the intended view without querying plugin-private DOM.",
     triggers: { ko: "키보드 포커스 소유자 활성 뷰 포커스 상태" },
     params: {},
     returns:
@@ -268,13 +291,8 @@ export function registerDomCatalog(): void {
     examples: ["ui.focus.state"],
     handler: () => {
       const request = viewFocusSnapshot();
-      const active = document.activeElement;
-      const host =
-        active instanceof Element
-          ? active.closest<HTMLElement>(
-              ".plugin-view-container[data-pane-id]",
-            )
-          : null;
+      const active = deepActiveElement();
+      const host = viewContainerOf(active);
       const activeViewId = host?.dataset.paneId ?? null;
       return {
         ...request,
