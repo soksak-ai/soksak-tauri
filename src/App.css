@@ -3261,6 +3261,28 @@ select.dctl {
 }
 
 /* ── 좌측 사이드바 호스트(파일 트리 + sidebar-left 플러그인 뷰) ──────────── */
+/* 투영 슬롯(ProjectionSlots) — 결부 뷰의 사이드바 선언이 렌더되는 영역. 핀 그리드와 병존(R4). */
+.proj-slots {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.proj-slot {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.proj-slot-degraded {
+  flex: 0 0 auto;
+  padding: 14px 12px;
+  font-size: 11px;
+  opacity: 0.55;
+  text-align: center;
+}
 .left-host {
   display: flex;
   flex-direction: column;

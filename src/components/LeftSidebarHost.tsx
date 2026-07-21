@@ -27,6 +27,8 @@ import {
   viewsForPlacement,
   getRegisteredView,
 } from "../plugins/viewRegistry";
+import { ProjectionSlots } from "./ProjectionSlots";
+import { useProjection } from "../state/projection";
 import { useSessions, type ProjectTab } from "../state/sessions";
 import { useTheme } from "../state/theme";
 import { useViewLabels, resolveViewLabel } from "../state/viewLabels";
@@ -65,11 +67,21 @@ export const LeftSidebarHost = memo(function LeftSidebarHost({
   // 콘텐츠 그룹과 동일한 pane-inset(테마 paneStyle) — row2 정렬용.
   const paneStyle = useTheme((s) => s.spec.chrome.paneStyle);
   const paneInset = PANE_INSET[paneStyle] ?? 0;
-  const registeredKeys = useMemo(
-    () => viewsForPlacement("sidebar-left").map((v) => v.key),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [version],
+  // 핀 스택(§7.1) — 이 그리드는 이제 "등록된 전부"가 아니라 핀된 ref 만 배열한다.
+  // 투영 슬롯(결부 따라 전환)은 위의 ProjectionSlots 가 소유. 핀 채용·레거시 자동 핀은
+  // projectionWiring 의 추적 sweep 이 담당한다.
+  const pinnedLeft = useProjection(
+    (s) => s.byProject[project.id]?.pins.left,
   );
+  const registeredKeys = useMemo(() => {
+    const railish = new Set(
+      [...viewsForPlacement("sidebar-left"), ...viewsForPlacement("rail")].map(
+        (v) => v.key,
+      ),
+    );
+    return (pinnedLeft ?? []).filter((k) => railish.has(k));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [version, pinnedLeft]);
   const footerViews = useMemo(
     () => viewsForPlacement("sidebar-footer"),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -226,6 +238,13 @@ export const LeftSidebarHost = memo(function LeftSidebarHost({
 
   return (
     <div className="left-host">
+      {/* 투영 슬롯(R1) — 결부 뷰의 좌 사이드바 선언이 여기 렌더된다. 핀 스택과 병존(R4). */}
+      <ProjectionSlots
+        projectId={project.id}
+        root={project.root}
+        paneId={paneId}
+        side="left"
+      />
       {/* 셀이 % 절대 배치되는 그리드(콘텐츠 egroup-area 와 동일 모델) — footer 는 그 아래 흐름 밖. */}
       <div
         className="left-host-grid"

@@ -128,7 +128,7 @@ export const useViewRegistry = create<ViewRegistryState>((set, get) => ({
 
 // 배치별 뷰 목록(아이콘 레일/탭 스트립용) — 등록 순서 유지.
 export function viewsForPlacement(
-  placement: "sidebar-right" | "sidebar-left" | "sidebar-footer" | "content",
+  placement: import("./spec").ViewPlacement,
 ): { key: string; view: RegisteredView }[] {
   const { views } = useViewRegistry.getState();
   return Object.entries(views)
