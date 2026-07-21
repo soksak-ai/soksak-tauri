@@ -201,8 +201,8 @@ describe("projectionFor — 실 deps(계약 해소·rail 검증·consumes 게이
   });
 });
 
-describe("startProjectionTracking — 결부 관측·이벤트(R1·§4.3)", () => {
-  it("활성 뷰 전환마다 noteBinding + projection.changed 발화(탭 전환 포함)", () => {
+describe("startProjectionTracking — 스페이스별 단일 결부", () => {
+  it("패널 포커스는 이동 위치만 바꾸고 투영 콘텐츠는 교체하지 않는다", () => {
     useViewRegistry.getState().register("termplug", decl("term"), provider);
     const v1 = pluginView("v1", "termplug", "term");
     const v2 = pluginView("v2", "termplug", "term");
@@ -211,6 +211,7 @@ describe("startProjectionTracking — 결부 관측·이벤트(R1·§4.3)", () =
     const events: { projectId: string; viewId: string | null }[] = [];
     const off = onPluginEvent("projection.changed", (e) => void events.push(e));
     const stop = startProjectionTracking();
+    expect(projectionFor("p1")?.binding.viewId).toBe("v1");
 
     // 그룹 내 활성 탭 전환 = 결부 변경(A8).
     const t = useSessions.getState().tabs[0];
@@ -228,7 +229,8 @@ describe("startProjectionTracking — 결부 관측·이벤트(R1·§4.3)", () =
       ],
     });
 
-    expect(events.some((e) => e.projectId === "p1" && e.viewId === "v2")).toBe(true);
+    expect(projectionFor("p1")?.binding.viewId).toBe("v1");
+    expect(events.some((e) => e.projectId === "p1" && e.viewId === "v2")).toBe(false);
     expect(useProjection.getState().byProject.p1.focusHistory[0]).toBe("v2");
 
     stop();

@@ -1,6 +1,6 @@
 // 사이드바 투영 코어(plans/sidebar-projection-spec.md §4·R1~R7).
-// 결부의 정본은 세션 활성 체인(A8) — 이 모듈은 그 위의 확장만 소유한다:
-//   - 스토어: focusHistory(승계 재료)·pins(사용자 소유). 창 로컬(스토어 자체가 창 단위),
+// 패널 포커스는 rail 위치만 정한다. 투영 콘텐츠 결부는 ContentArea가 소유한다:
+//   - 스토어: focusHistory(승계 재료)·pins.
 //     프로젝트 키로 분리(R7: 스코프 = 창 × 프로젝트).
 //   - 해소: resolveProjection 순수 파생 — 결부 뷰의 sidebar 선언 → 레일 슬롯.
 // 배선(실제 deps: viewRegistry·contractResolve·plugins)은 소비 지점에서 주입한다 — 이

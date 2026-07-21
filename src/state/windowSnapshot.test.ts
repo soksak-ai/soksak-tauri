@@ -30,6 +30,7 @@ const project: ProjectTab = {
       id: "c1",
       title: "build",
       activeGroupId: "g2",
+      railBindingViewId: "v1",
       layout: {
         type: "split",
         id: "gs1",
@@ -92,6 +93,7 @@ describe("windowSnapshot 라운드트립", () => {
     expect(c.id).toBe("c1");
     expect(c.title).toBe("build");
     expect(c.activeGroupId).toBe("g2");
+    expect(c.railBindingViewId).toBe("v1");
 
     const gl = c.layout as Extract<GroupNode, { type: "split" }>;
     expect(gl.dir).toBe("row");

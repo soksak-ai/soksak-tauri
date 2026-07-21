@@ -155,6 +155,7 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
     ".orch-console input", // 오케스트레이터 콘솔 입력 — 폐곡선 윤곽
     ".orch-console button", // 오케스트레이터 실행 버튼 — 폐곡선 윤곽
     ".orch-feed-all", // 피드 전체-필터 해제 버튼 — 폐곡선 윤곽
+    ".left-rail-controls", // FLOW/PIN 그립·핀을 감싸는 폐곡선 컨트롤 팔레트
 
     ".dctl",
     ".dstepper",

@@ -57,6 +57,7 @@ interface ContentSnapshot {
   id: string;
   title: string;
   activeGroupId: string;
+  railBindingViewId?: string;
   maximizedViewId?: string;
   layout: SplitSnapshot<ViewGroupSnapshot>;
 }
@@ -122,6 +123,7 @@ const serializeContent = (c: ContentArea): ContentSnapshot => ({
   id: c.id,
   title: c.title,
   activeGroupId: c.activeGroupId,
+  ...(c.railBindingViewId ? { railBindingViewId: c.railBindingViewId } : {}),
   ...(c.maximizedViewId ? { maximizedViewId: c.maximizedViewId } : {}),
   layout: serializeSplitTree(c.layout, serializeViewGroup), // GroupNode(leaf=ViewGroup)
 });
@@ -207,6 +209,7 @@ const deserializeContent = (
   id: s.id,
   title: s.title,
   activeGroupId: s.activeGroupId,
+  ...(s.railBindingViewId ? { railBindingViewId: s.railBindingViewId } : {}),
   ...(s.maximizedViewId ? { maximizedViewId: s.maximizedViewId } : {}),
   layout: deserializeSplitTree(
     s.layout,

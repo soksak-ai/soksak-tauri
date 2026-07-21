@@ -1,6 +1,6 @@
 // projection 실배선(plans/sidebar-projection-spec.md §4) — 순수 코어(projection.ts)에
 // 실제 레지스트리를 주입한다. 레지스트리·스토어를 직접 읽는 것은 이 모듈뿐이다.
-//   - boundViewOf: 세션 활성 체인 → BoundView(A8 — 결부 정본은 활성 체인).
+//   - boundViewOf: 세션 활성 체인 → 최초 결부 후보. 결부 정본은 스페이스별 store lock.
 //   - realProjectionDeps: 계약 해소(contractResolve)·rail 등록 검증(viewRegistry)·
 //     consumes 게이트(plugins manifest).
 //   - projectionFor: 읽기 시점 파생 — 저장하지 않는다(이중진실 0).
@@ -29,14 +29,23 @@ import { emitPluginEvent } from "../plugins/hooks";
 
 // 활성 체인의 말단(활성 콘텐츠 뷰) → 선언 요약. plugin 뷰 = 등록 decl 의 sidebar,
 // file 뷰 = 담당 fileViewer 의 sidebar(§3.1). 뷰 없음 = null(빈 프로젝트).
-export function boundViewOf(project: ProjectTab): BoundView | null {
+function boundViewInContent(
+  project: ProjectTab,
+  contentId: string,
+  viewId?: string,
+): BoundView | null {
   const content =
-    project.contents.find((c) => c.id === project.activeContentId) ??
-    project.contents[0];
+    project.contents.find((c) => c.id === contentId) ?? null;
   if (!content) return null;
   const groups = leavesOf(content.layout);
-  const group = groups.find((g) => g.id === content.activeGroupId) ?? groups[0];
-  const view = group?.views.find((v) => v.id === group.activeViewId);
+  const activeGroup =
+    groups.find((g) => g.id === content.activeGroupId) ?? groups[0];
+  const group = viewId
+    ? groups.find((g) => g.views.some((v) => v.id === viewId))
+    : activeGroup;
+  const view = viewId
+    ? group?.views.find((v) => v.id === viewId)
+    : group?.views.find((v) => v.id === group.activeViewId);
   if (!view) return null;
   const ctx = { groupId: group?.id ?? null, contentId: content.id };
   if (view.kind === "plugin") {
@@ -56,6 +65,13 @@ export function boundViewOf(project: ProjectTab): BoundView | null {
     ownerPluginId: viewer.pluginId,
     sidebar: viewer.decl.sidebar ?? null,
   };
+}
+
+export function boundViewOf(project: ProjectTab): BoundView | null {
+  const content =
+    project.contents.find((c) => c.id === project.activeContentId) ??
+    project.contents[0];
+  return content ? boundViewInContent(project, content.id) : null;
 }
 
 export function realProjectionDeps(): ProjectionDeps {
@@ -78,7 +94,13 @@ export function projectionFor(projectId: string): Projection | null {
   if (!tab) return null;
   const pins =
     useProjection.getState().byProject[projectId]?.pins ?? { left: [], right: [] };
-  return resolveProjection(projectId, boundViewOf(tab), pins, realProjectionDeps());
+  const content =
+    tab.contents.find((c) => c.id === tab.activeContentId) ?? tab.contents[0];
+  const lockedId = content?.railBindingViewId;
+  const bound = content
+    ? boundViewInContent(tab, content.id, lockedId) ?? boundViewInContent(tab, content.id)
+    : null;
+  return resolveProjection(projectId, bound, pins, realProjectionDeps());
 }
 
 // 세션 구독 — 결부 관측(R1: 그룹 내 탭 전환 포함) + 이력 정리 + 프로젝트 회수 + 이벤트.
@@ -113,8 +135,12 @@ export function startProjectionTracking(): () => void {
       for (const { key } of viewsForPlacement("sidebar-left")) {
         useProjection.getState().autoPin(t.id, "left", key);
       }
-      const vid = boundViewOf(t)?.viewId ?? null;
-      if (vid) useProjection.getState().noteBinding(t.id, vid);
+      const candidate = boundViewOf(t);
+      const vid = candidate?.viewId ?? null;
+      if (candidate?.contentId && vid) {
+        useSessions.getState().bindContentRail(t.id, candidate.contentId, vid);
+        useProjection.getState().noteBinding(t.id, vid);
+      }
       const resolved = projectionFor(t.id);
       const fingerprint = JSON.stringify({
         b: resolved?.binding ?? null,

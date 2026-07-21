@@ -160,6 +160,8 @@ export interface ContentArea {
   title: string; // 1,2,3,… (이름변경 가능)
   layout: GroupNode; // 그룹(분할) 트리
   activeGroupId: string;
+  // 이 스페이스가 투영하는 단 하나의 sidebar 소유 뷰. 패널 포커스와 독립·스냅샷 영속.
+  railBindingViewId?: string;
   // 최대화된 뷰(컨텐츠 영역 전체 차지). 레이아웃 트리는 불변 — 표시 오버라이드만.
   // undefined = 보통. 뷰가 사라지면 normalize 가 해제한다.
   maximizedViewId?: string;
@@ -275,6 +277,11 @@ interface SessionsStore {
     contentId: string,
     title: string,
   ) => CmdResult;
+  bindContentRail: (
+    projectId: string,
+    contentId: string,
+    viewId: string,
+  ) => CmdResult<{ viewId: string }>;
 
   // 콘텐츠 뷰/그룹 레벨. 그룹에 프로그램별 새 뷰 탭(터미널/claude/codex/브라우저).
   // opts.command = 터미널 자동 실행 명령 직접 지정(내부용 — 프로그램 resolve 우회.
@@ -628,11 +635,17 @@ function splitAtGroup(
 // 활성 그룹이 사라졌으면 첫 그룹으로 보정 + 최대화 뷰가 사라졌으면 최대화 해제.
 function normalizeActiveGroupC(c: ContentArea): ContentArea {
   const groups = allGroups(c.layout);
-  const next =
+  let next =
     c.maximizedViewId &&
     !groups.some((g) => g.views.some((v) => v.id === c.maximizedViewId))
       ? { ...c, maximizedViewId: undefined }
       : c;
+  if (
+    next.railBindingViewId &&
+    !groups.some((g) => g.views.some((v) => v.id === next.railBindingViewId))
+  ) {
+    next = { ...next, railBindingViewId: undefined };
+  }
   if (groups.some((g) => g.id === next.activeGroupId)) return next;
   return { ...next, activeGroupId: groups[0]?.id ?? next.activeGroupId };
 }
@@ -1251,6 +1264,38 @@ export const useSessions = create<SessionsStore>((set, get) => ({
         tabs: mapProject(s.tabs, projectId, (x) =>
           mapContent(x, contentId, (c) => ({ ...c, title })),
         ),
+      };
+    });
+    return r;
+  },
+
+  bindContentRail: (projectId, contentId, viewId) => {
+    let r: CmdResult<{ viewId: string }> = noProject(projectId);
+    set((s) => {
+      const project = s.tabs.find((item) => item.id === projectId);
+      const content = project?.contents.find((item) => item.id === contentId);
+      if (!project || !content) {
+        r = err("TARGET_NOT_FOUND", `컨텐츠 없음: ${contentId}`);
+        return s;
+      }
+      if (content.railBindingViewId) {
+        r = ok({ viewId: content.railBindingViewId });
+        return s;
+      }
+      if (!allGroups(content.layout).some((g) => g.views.some((v) => v.id === viewId))) {
+        r = err("TARGET_NOT_FOUND", `뷰 없음: ${viewId}`);
+        return s;
+      }
+      r = ok({ viewId });
+      return {
+        tabs: mapProject(s.tabs, projectId, (item) => ({
+          ...item,
+          contents: item.contents.map((candidate) =>
+            candidate.id === contentId
+              ? { ...candidate, railBindingViewId: viewId }
+              : candidate,
+          ),
+        })),
       };
     });
     return r;
