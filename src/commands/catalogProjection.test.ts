@@ -198,3 +198,28 @@ describe("배치① 명령 정합 — 우측 핀 거부·alias 핀·확장 상�
     expect(r.data.focusHistory).toEqual(["v1"]);
   });
 });
+
+describe("배치② — per-view 참조 핀 거부(R4)", () => {
+  it("현재 per-view 로 투영 중인 ref 는 INVALID_PARAMS", async () => {
+    useViewRegistry.getState().register(
+      "dbplug",
+      decl("erd", {
+        sidebar: {
+          left: [{ ref: "self.nav", instance: "per-view" }],
+          right: [],
+          template: "stack",
+        },
+      }),
+      provider,
+    );
+    useViewRegistry.getState().register(
+      "dbplug",
+      decl("nav", { placements: ["rail"], defaultPlacement: "rail" }),
+      provider,
+    );
+    useSessions.setState({ tabs: [tab([pluginView("v1", "dbplug", "erd")], "v1")], activeId: "p1" });
+    const r = (await execute("ui.projection.pin", { ref: "dbplug.nav" }, {})) as { ok: boolean; code: string };
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe("INVALID_PARAMS");
+  });
+});

@@ -6,6 +6,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { pendingConsentChain, usePlugins, type PluginRuntime } from "../state/plugins";
 import { allGroups, useSessions } from "../state/sessions";
+import { useProjection } from "../state/projection";
 import { hasSidebarView as hasSidebarViewKey } from "../state/sidebarLayout";
 import { getRegisteredView, registeredViewIds } from "../plugins/viewRegistry";
 import { registeredFileViewerIds } from "../plugins/fileViewerRegistry";
@@ -1128,6 +1129,18 @@ export function registerPluginCatalog(): void {
         if (!project.sidebarOpen) s.toggleSidebar(projectId);
         s.setLeftTab(projectId, key);
         return { view: key, placement, projectId };
+      }
+      // rail(§3.3 재해석) = 레일 핀 추가 — 콘텐츠 실체화 금지(투영 모델 §7.1).
+      // rail-footer 는 상주 슬롯이라 열기 동작이 없다(핀 대상 아님) — 명시 거부.
+      if (placement === "rail") {
+        if (!project.sidebarOpen) s.toggleSidebar(projectId);
+        useProjection.getState().pin(projectId, "left", key);
+        return { view: key, placement, projectId };
+      }
+      if (placement === "rail-footer") {
+        return invalid(
+          `rail-footer 뷰는 상주 슬롯 — 열기 대상이 아님: ${key}`,
+        );
       }
       // content: 에디터 그룹 탭으로 — 드래그/분할/닫기는 일반 뷰와 동일.
       const r = s.openPluginView(

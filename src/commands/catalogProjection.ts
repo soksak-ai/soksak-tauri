@@ -106,6 +106,18 @@ export function registerProjectionCatalog(): void {
           `rail 뷰가 아님: ${ref} — 핀은 rail(또는 앨리어스 sidebar-*) 배치로 등록된 뷰만(R4)`,
         );
       }
+      // per-view 인스턴스는 핀 불가(R4) — 현재 투영에서 이 ref 가 per-view 슬롯로 해소 중이면 거부.
+      const cur = projectionFor(pid);
+      const perView = [
+        ...(cur?.left.slots ?? []),
+        ...(cur?.right?.slots ?? []),
+      ].some((sl) => sl.resolvedRef === ref && sl.instance === "per-view");
+      if (perView) {
+        return err(
+          "INVALID_PARAMS",
+          `per-view 참조는 핀 불가(R4): ${ref} — shared 참조·상주형만 핀 가능`,
+        );
+      }
       // 발화는 스토어 구독(추적 sweep 지문)이 단일 경로로 담당 — 여기서 emit 하지 않는다
       // (no-op 핀이면 스토어 무변경 → 무발화).
       useProjection.getState().pin(pid, side, ref);

@@ -83,7 +83,8 @@ export const LeftSidebarHost = memo(function LeftSidebarHost({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [version, pinnedLeft]);
   const footerViews = useMemo(
-    () => viewsForPlacement("sidebar-footer"),
+    // rail-footer(§3.3) + 레거시 sidebar-footer 앨리어스 — 같은 하단 상주 슬롯.
+    () => [...viewsForPlacement("rail-footer"), ...viewsForPlacement("sidebar-footer")],
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [version],
   );
