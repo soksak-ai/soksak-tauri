@@ -360,6 +360,21 @@ Count records in a collection (read-only). Narrow the count with an optional whe
 sok-debug data.count '{"ns":"soksak-plugin-<id>","coll":"messages"}'
 ```
 
+## `data.encrypt.changeRecovery` (danger: destructive)
+
+Change a scope's recovery code WITHOUT re-encrypting data: re-wrap the active private key under a fresh recovery code and return it once. Use when the old code is lost or exposed. Requires this device's OS-keychain KEK. The previous code stops working; store the new one. Cheaper than rotate — the key and sealed records are untouched, only the recovery blob is replaced. | 복구코드변경 복구코드재발급 복구코드교체
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `scope` | string | ✓ | Scope partition key |
+
+**Returns**: { recoveryCode }
+**Errors**: INVALID_PARAMS, INTERNAL
+
+```bash
+sok-debug data.encrypt.changeRecovery '{"scope":"projA"}'
+```
+
 ## `data.encrypt.convert` (danger: destructive)
 
 Seal records already stored plaintext in a scope under the active key (one transaction per record, idempotent, resumable). Run after data.encrypt.enable to protect pre-existing data. | 암호화변환 봉인변환 기존암호화
@@ -394,7 +409,7 @@ sok-debug data.encrypt.enable '{"scope":"projA"}'
 
 ## `data.encrypt.recover` (danger: destructive)
 
-Recover a scope's encryption private key from its one-time recovery code after a lost passphrase. Unlock the vault with a NEW passphrase first; this re-stores the recovered key under it. The recovered key must match the registered public key or recovery is refused. After success the scope's sealed records decrypt again. | 암호화복구 키복구 복구코드
+Recover a scope's encryption private key from its one-time recovery code on a machine that lacks it — a fresh install, a different OS, or a lost keychain. Re-stores the key under this device's OS-keychain KEK, which must be reachable. The recovered key must match the registered public key or recovery is refused. After success the scope's sealed records decrypt again on this machine. | 암호화복구 키복구 복구코드
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -410,13 +425,13 @@ sok-debug data.encrypt.recover '{"scope":"projA","recoveryCode":"XXXX-XXXX-..."}
 
 ## `data.encrypt.rotate` (danger: destructive)
 
-Rotate a scope's encryption key: generate a new keypair, re-seal every record from the old key to the new one (one transaction each, resumable), then dispose the old key only once nothing references it. Requires the vault unlocked. | 키회전 키교체 암호화회전
+Rotate a scope's encryption key: generate a new keypair, re-seal every record from the old key to the new one (one transaction each, resumable), re-issue the recovery blob under a NEW recovery code, then dispose the old key only once nothing references it. Requires this device's OS-keychain KEK. Returns the new recovery code ONCE — store it; the previous code no longer opens the data. | 키회전 키교체 암호화회전
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `scope` | string | ✓ | Scope partition key to rotate |
 
-**Returns**: { oldKeyId, newKeyId, rekeyed, oldDisposed }
+**Returns**: { oldKeyId, newKeyId, rekeyed, oldDisposed, recoveryCode }
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
@@ -636,6 +651,41 @@ Check the data store for corruption (full integrity check — it cross-checks ev
 
 ```bash
 sok-debug data.verify
+```
+
+## `debug.sleep` (danger: inject)
+
+DEV-ONLY: hold the reply for `ms` then return (ok by default; ok:false when fail=true). Simulates a held-reply process (exec-one onExit) so the scheduler's process_lease lease — no-kill while running, single in-flight, cancel-wakes-wait — can be e2e-tested without a real LLM. Absent in production builds. | 디버그 슬립 대기 보류 테스트 lease 스케줄러
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `fail` | boolean |  | Return ok:false instead of ok:true (exercises backoff/crash path). |
+| `ms` | number |  | Milliseconds to hold the reply before returning (default 3000). |
+
+**Returns**: { slept } (ok:true) | { ok:false } when fail
+**Errors**: INTERNAL
+
+```bash
+sok-debug debug.sleep '{"ms":5000}'
+sok-debug debug.sleep '{"ms":2000,"fail":true}'
+```
+
+## `dev.remoteConfirmMock` (danger: inject)
+
+DEV-ONLY: emit a mock remote destructive confirm request so the desktop RemoteConfirmModal renders without a paired phone. For visual verification and headless E2E only; does not touch the Rust confirm authority. Absent in production builds. | 원격 confirm mock 데스크톱 테스트 모달
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `command` | string |  | Command summary to show (default panel.close). |
+| `device_id` | string |  | Requesting device label to show (default iPhone-mock). |
+| `params` | string |  | Optional params summary string to show. |
+| `ttl_secs` | number |  | Countdown seconds to show (default 120). |
+
+**Returns**: { request_id }
+
+```bash
+sok-debug dev.remoteConfirmMock
+sok-debug dev.remoteConfirmMock '{"command":"terminal.clear","device_id":"Pixel-9"}'
 ```
 
 ## `editor.close`
@@ -1192,18 +1242,19 @@ sok-debug plugin.enable '{"id":"soksak-plugin-<id>"}'
 
 ## `plugin.implementers`
 
-Find plugins by the contract they implement (manifest implements, coupling law C3 L2 contract-pin). Discover by identity: pass the version-free contract id `{"id":"soksak-spec-<kind>-<domain>"}` and get every installed plugin declaring that contract id with its runtime status; omit it to map every declared contract to its implementers. Never pass a version or range here — discovery is version-blind; the call boundary enforces version compatibility from the manifest (`consumes`/`implements`). Discovery is contract-addressed and implementation-blind — resolve implementers here instead of hardcoding plugin ids. | 플러그인 계약 구현체 발견 구현 스펙 컨트랙트
+Find plugins whose exact {id, version} provider declaration implements a domain contract. Pass id alone to discover every implementer regardless of version; add range to filter by SemVer. Omit both to list exact provider evidence. Domain ids never embed a version. | 플러그인 계약 구현체 발견 구현 스펙 컨트랙트
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `id` | string |  | Version-free contract id "soksak-spec-<kind>-<domain>" — identity, never `@<major>`. Returns every implementer regardless of version; the call boundary enforces version compatibility from the manifest. Omit to list every declared contract with its implementers. |
+| `id` | string |  | Version-free public domain contract id. |
+| `range` | string |  | Supported SemVer range. Optional — omit to discover every version. |
 
-**Returns**: { contract, implementers: [{id, version, status}] } (id given) | { contracts: [{contract, implementers}] } (omitted)
+**Returns**: { contract, implementers: [{id, version, status}] } (contract given) | { contracts: [{contract, implementers}] } (omitted)
 **Errors**: INVALID_PARAMS
 
 ```bash
 sok-debug plugin.implementers
-sok-debug plugin.implementers '{"id":"soksak-spec-plugin-git"}'
+sok-debug plugin.implementers '{"id":"soksak-spec-plugin-git","range":"0.0.1"}'
 ```
 
 ## `plugin.install` (danger: destructive)
@@ -1951,24 +2002,9 @@ Schedule a registry command to fire once at an absolute epoch-ms timestamp. Gene
 sok-debug schedule.set '{"at":1750000000000,"command":"notify.show","params":{"title":"알림","body":"시간!"}}'
 ```
 
-## `secret.autolock`
-
-Set the idle auto-lock timeout in milliseconds (0 disables). When the vault stays idle past this, it locks itself and broadcasts secrets-locked to every window. Activity resets the timer via secret_touch. | 자동잠금 유휴잠금 오토락 잠금시간
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `ms` | number | ✓ | Idle timeout in milliseconds; 0 disables auto-lock |
-
-**Returns**: { ms }
-**Errors**: INVALID_PARAMS
-
-```bash
-sok-debug secret.autolock '{"ms":300000}'
-```
-
 ## `secret.backend`
 
-Query the vault backend type and current lock state. Use to check whether the vault is open before performing secret operations. | 시크릿 볼트 상태 백엔드 잠금여부
+Query the KEK backend label and whether sealing is available (compat shim over secret.status; unlocked = seal_available). Prefer secret.status. | 시크릿 볼트 상태 백엔드 봉인가능
 
 **Returns**: { backend, unlocked }
 **Errors**: INTERNAL
@@ -2008,20 +2044,9 @@ List the secret key names stored under a namespace (values are never returned). 
 sok-debug secret.keys '{"ns":"soksak-plugin-<id>"}'
 ```
 
-## `secret.lock`
-
-Lock the secret vault by zeroing the in-memory KEK. All subsequent operations are rejected until unlock is called again. | 시크릿 볼트 잠금 lock 닫기
-
-**Returns**: { ok }
-**Errors**: INTERNAL
-
-```bash
-sok-debug secret.lock
-```
-
 ## `secret.remove` (danger: destructive)
 
-Remove ns/key from the vault (removed=true if the key existed). Rejected if the vault is locked. | 시크릿 삭제 제거 지우기 delete
+Remove ns/key from the vault (removed=true if the key existed). Rejected when the OS key store is unavailable (no secret service). | 시크릿 삭제 제거 지우기 delete
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -2037,7 +2062,7 @@ sok-debug secret.remove '{"ns":"soksak-plugin-<id>","key":"anthropicKey"}'
 
 ## `secret.set` (danger: inject)
 
-Store a sensitive value under ns/key using envelope encryption (per-item DEK wrapped by the KEK). Overwrites the existing value if the key already exists. Rejected if the vault is locked. | 시크릿 저장 설정 키 값 set 보관
+Store a sensitive value under ns/key using envelope encryption (per-item DEK wrapped by the device KEK). Overwrites the existing value if the key already exists. Rejected when the OS key store is unavailable (no secret service). | 시크릿 저장 설정 키 값 set 보관
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -2052,19 +2077,15 @@ Store a sensitive value under ns/key using envelope encryption (per-item DEK wra
 sok-debug secret.set '{"ns":"soksak-plugin-<id>","key":"anthropicKey","value":"sk-ant-..."}'
 ```
 
-## `secret.unlock` (danger: inject)
+## `secret.status`
 
-Unlock the secret vault with a master passphrase (creates a new vault if one does not exist). Keeps the KEK in memory only — only ciphertext is on disk. For headless use, set SOKSAK_VAULT_KEY env to auto-unlock. | 시크릿 볼트 열기 잠금해제 unlock 마스터키
+Query the transparent-unlock status: KEK backend label, seal_available (whether the OS key store is reachable, so sealing/opening works), expect_vault (app.data envelope keys registered), and the stored app.data key ids. Use to check whether secrets can be sealed before performing operations. | 시크릿 볼트 상태 백엔드 봉인가능 status
 
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `passphrase` | string | ✓ | Master passphrase for the vault |
-
-**Returns**: { ok }
-**Errors**: INVALID_PARAMS, INTERNAL
+**Returns**: { backend, seal_available, expect_vault, data_key_ids }
+**Errors**: INTERNAL
 
 ```bash
-sok-debug secret.unlock '{"passphrase":"correct horse battery staple"}'
+sok-debug secret.status
 ```
 
 ## `service.status`
@@ -2522,7 +2543,7 @@ sok-debug ui.expect '{"selector":".egroup-status"}'
 
 ## `ui.focus.state`
 
-Return the keyboard-focus owner through the public view-host boundary: the requested view, whether its provider is mounted/delivered, and the view containing document.activeElement. Use after real-device input to verify that focus settled in the intended view without querying plugin-private DOM. | 키보드 포커스 소유자 활성 뷰 상태
+Return the keyboard-focus owner through the public view-host boundary: the requested view, whether its provider is mounted/delivered, and the view containing the active element. Pierces Shadow DOM — plugin views mount inside a shadow root, so this descends shadowRoot.activeElement to the real focused element (and finds its view across the shadow boundary) instead of stopping at the shadow host. Use after real-device input to verify focus settled in the intended view without querying plugin-private DOM. | 키보드 포커스 소유자 활성 뷰 상태
 
 **Returns**: { requestedViewId, mounted, delivered, activeViewId, settled, activeElement }
 
@@ -2532,7 +2553,7 @@ sok-debug ui.focus.state
 
 ## `ui.hit`
 
-Return the topmost DOM element at viewport x,y (tag, classes, data-* attrs, rect) — hit-test diagnostics for drag/click E2E (what would elementFromPoint see?).
+Return the topmost DOM element at viewport x,y (tag, classes, data-* attrs, rect) — hit-test diagnostics for drag/click E2E (what would elementFromPoint see?). Pierces Shadow DOM: plugin views mount inside a shadow root, so this descends shadowRoots to the real deepest element instead of stopping at the shadow host (symmetric with ui.tree, which collects data-node across shadow boundaries).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -2632,13 +2653,15 @@ sok-debug ui.input.fill '{"address":"win/main/content/view/x/node/url-input","va
 
 ## `ui.measure`
 
-Measure an exposed node — returns its viewport rect (px) and key computed style values. Use for pixel-alignment diagnostics. Accepts structural addresses from ui.tree only; CSS selectors are rejected. | DOM 측정 레이아웃 rect 크기 스타일
+Measure an exposed node — its viewport rect (px) and computed style. style always includes the layout fields plus the interaction/visibility axis (pointerEvents, opacity, visibility) so you can tell whether a node is actually visible and clickable, not just where it sits. Pass props to read any extra computed properties by name (e.g. zIndex, transform, backgroundColor). Pass occlusion:true to also hit-test the node's center (through Shadow DOM) and report what covers it and whether it is reachable. Accepts structural addresses from ui.tree only; CSS selectors are rejected. | DOM 측정 레이아웃 rect 크기 스타일 포인터이벤트 가시성 가림 도달성
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `address` | string | ✓ | Exposed node address from ui.tree |
+| `occlusion` | boolean |  | Also hit-test the node's center (Shadow-DOM-piercing): report the topmost element there and whether it is this node (reachable) or something covers it [default false] |
+| `props` | json |  | Extra computed-style property names to read, camelCase or kebab (e.g. ["zIndex","backgroundColor"]) — lifts the fixed field set |
 
-**Returns**: { address, rect:{x,y,w,h}, style }
+**Returns**: { address, rect:{x,y,w,h}, style, occlusion?:{ reachable, topTag, topNode } }
 **Errors**: NOT_EXPOSED, INVALID_PARAMS
 
 ```bash
