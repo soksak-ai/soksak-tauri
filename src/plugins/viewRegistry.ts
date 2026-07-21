@@ -14,6 +14,9 @@ export interface PluginViewContext {
   // 콘텐츠 배치 뷰의 sessions view.id(이 뷰 인스턴스의 안정 키 — 예: app.webview.label(viewId) 로
   // 인스턴스별 webview 라벨 생성). 사이드바 배치는 null.
   viewId: string | null;
+  // 레일 투영 마운트 전용(§4.4-lite): 이 사이드바 인스턴스가 섬기는 결부 콘텐츠 뷰의 id.
+  // per-view 인스턴스가 자기 문서/스토어를 정확히 연결하는 채널. 그 외 배치 = null.
+  boundViewId: string | null;
   // 이 뷰가 마운트 시 1회 자동 실행할 명령(에이전트 프로그램 — 터미널 뷰가 PTY 로 실행).
   // 프로그램 선언(ContributedProgram.command)이 source. 뷰 종류 무관 채널 — 자동 실행 여부는
   // 뷰 구현이 결정한다(터미널 뷰만 PTY 로 실행). 명령 없으면 null.

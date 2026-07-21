@@ -10,6 +10,7 @@ const context = {
   root: null,
   paneId: null,
   viewId: null,
+  boundViewId: null,
   command: null,
   restore: null,
   setBadge: () => {},

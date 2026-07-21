@@ -113,6 +113,7 @@ export const ProjectionSlots = memo(function ProjectionSlots({
             root={root}
             region={side}
             paneId={paneId}
+            boundViewId={instanceKey.split("|")[2] ?? proj?.binding.viewId ?? null}
           />
         </div>
       ))}
