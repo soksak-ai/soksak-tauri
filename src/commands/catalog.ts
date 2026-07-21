@@ -42,6 +42,7 @@ import { registerPluginCatalog } from "./catalogPlugins";
 import { registerDaemonCatalog } from "./catalogDaemon";
 import { registerUpdateCatalog } from "./catalogUpdate";
 import { registerUiCatalog } from "./catalogUi";
+import { registerProjectionCatalog } from "./catalogProjection";
 import { registerDomCatalog } from "./catalogDom";
 import { registerAiSessionCatalog } from "./catalogAiSession";
 import { registerDataCatalog } from "./catalogData";
@@ -2733,6 +2734,7 @@ export function registerCatalog(): void {
   registerDaemonCatalog();
   registerUpdateCatalog();
   registerUiCatalog();
+  registerProjectionCatalog();
   registerDomCatalog();
   registerDataCatalog();
   registerPtySessionCatalog();

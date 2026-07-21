@@ -30,6 +30,7 @@ import { recordRecentProject } from "./state/recentProjects";
 import { useSessions } from "./state/sessions";
 import { daemonOnProjectOpen } from "./commands/catalogDaemon";
 import { initSkillRefresh } from "./state/skillRefresh";
+import { startProjectionTracking } from "./state/projectionWiring";
 import {
   initWorkspacePersistence,
   respawnSavedWindows,
@@ -160,6 +161,9 @@ async function boot(): Promise<void> {
   }
   // 스킬 쓰기-스루 — 플러그인 활성 집합이 변하면 SKILL.md 를 재생성한다(P8).
   initSkillRefresh();
+  // 사이드바 투영 추적(A8·R1) — 세션 활성 체인 구독으로 결부를 관측하고 projection.changed 를
+  // 발화한다. 창당 1회.
+  startProjectionTracking();
   // 리스폰·첫 실행 부트스트랩은 컨트롤 플레인(main)이 소유한다 — 워크스페이스 창은 자기 복원
   // (스냅샷 또는 initRoot)만 책임지고, 그 둘 다 없으면 빈 상태(예외)로 시작한다.
   // StrictMode 비활성: dev 에서 effect 이중 실행이 플러그인 마운트/PTY spawn 을 두 번 돌려

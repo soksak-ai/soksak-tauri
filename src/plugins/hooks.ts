@@ -38,6 +38,9 @@ export interface PluginEventMap {
   // 새 프로젝트 생성(루트 확정 직후) — 루트 초기화 정책(git init 등)은
   // 코어가 아니라 이 이벤트를 구독하는 플러그인이 소유한다.
   "project.created": { projectId: string; root: string | null };
+  // 레일 결부 변경(사이드바 투영 §4.3) — 결부 뷰 전환(그룹 내 활성 탭 전환 포함)·해제·핀
+  // 변경 시. viewId=null 은 결부 없음(빈 프로젝트).
+  "projection.changed": { projectId: string; viewId: string | null };
   "view.activated": {
     projectId: string;
     viewId: string;
@@ -143,6 +146,7 @@ export interface PluginEventMap {
 export const PLUGIN_EVENTS: readonly (keyof PluginEventMap)[] = [
   "project.changed",
   "project.created",
+  "projection.changed",
   "view.activated",
   "file.opened",
   "file.closed",
