@@ -186,27 +186,36 @@ fn write_config_in(home: &Path, config: &UnitDevConfig) -> Result<(), String> {
     Ok(())
 }
 
-/// 설정의 유닛을 (유효, foreign-홈 거부) 로 분리한다 — 과거 게이트 이전에 기록된
-/// 타 identity 홈 소스가 조용히 로드되는 구멍을 막는다(읽기 경계 강제).
-fn partition_foreign(
+/// 설정의 유닛을 (유효, 거부) 로 분리한다 — 읽기 경계 강제(과거 기록도 예외 없음):
+/// non-dev identity 는 dev 소스 유닛 **전부**를 거부한다(홈 레인 원칙 — debug·release 는
+/// 발행본 설치로만 검증), dev identity 는 타 identity 홈 소스만 거부한다.
+fn partition_for_identity(
     units: Vec<UnitDevSource>,
     home: &Path,
+    core_build: &str,
 ) -> (Vec<UnitDevSource>, Vec<UnitDevSource>) {
+    if core_build != "dev" {
+        return (Vec::new(), units);
+    }
     units.into_iter().partition(|u| {
         foreign_identity_home(Path::new(&u.source), home).is_none()
     })
 }
 
-fn rejected_in(home: &Path) -> Result<Vec<UnitDevSource>, String> {
-    let (_, rejected) = partition_foreign(read_config_in(home)?.units, home);
+fn rejected_in(home: &Path, core_build: &str) -> Result<Vec<UnitDevSource>, String> {
+    let (_, rejected) = partition_for_identity(read_config_in(home)?.units, home, core_build);
     Ok(rejected)
 }
 
 fn list_in(home: &Path) -> Result<Vec<UnitDevSource>, String> {
-    let (valid, rejected) = partition_foreign(read_config_in(home)?.units, home);
+    list_in_for(home, &crate::home::core_build_for_identifier(&crate::home::identifier()))
+}
+
+fn list_in_for(home: &Path, core_build: &str) -> Result<Vec<UnitDevSource>, String> {
+    let (valid, rejected) = partition_for_identity(read_config_in(home)?.units, home, core_build);
     for r in &rejected {
         eprintln!(
-            "[unit-dev] 타 identity 홈 소스 거부(읽기 경계): {} {} — {}",
+            "[unit-dev] dev 소스 거부(읽기 경계, identity={core_build}): {} {} — {}",
             r.kind, r.id, r.source
         );
     }
@@ -301,7 +310,7 @@ pub fn app_environment() -> Result<AppEnvironment, String> {
     let core_build = crate::home::core_build_for_identifier(&identity);
     let cli = crate::home::cli_for_core_build(&core_build);
     let units = unit_dev_list()?;
-    let rejected = rejected_in(&crate::home::soksak_home())?;
+    let rejected = rejected_in(&crate::home::soksak_home(), &core_build)?;
     Ok(AppEnvironment {
         rejected_development_units: rejected,
         updater_enabled: core_build == "release",
@@ -335,6 +344,29 @@ mod tests {
     }
 
     #[test]
+    fn non_dev_identity_rejects_every_dev_source_at_read() {
+        let root = test_root("identity-read");
+        let _ = std::fs::remove_dir_all(&root);
+        let home = root.join(".soksak-debug");
+        let src = root.join("worktree-plugin");
+        std::fs::create_dir_all(&src).unwrap();
+        let path = config_path(&home);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            format!(
+                r#"{{"version":1,"units":[{{"kind":"plugin","id":"x","source":"{}"}}]}}"#,
+                src.display()
+            ),
+        )
+        .unwrap();
+        assert!(list_in_for(&home, "debug").unwrap().is_empty());
+        assert_eq!(rejected_in(&home, "debug").unwrap().len(), 1);
+        assert_eq!(list_in_for(&home, "dev").unwrap().len(), 1);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn foreign_home_entries_are_rejected_at_read() {
         let root = test_root("foreign-read");
         let _ = std::fs::remove_dir_all(&root);
@@ -351,8 +383,8 @@ mod tests {
             ),
         )
         .unwrap();
-        assert!(list_in(&home).unwrap().is_empty());
-        let rejected = rejected_in(&home).unwrap();
+        assert!(list_in_for(&home, "dev").unwrap().is_empty());
+        let rejected = rejected_in(&home, "dev").unwrap();
         assert_eq!(rejected.len(), 1);
         assert_eq!(rejected[0].id, "x");
         let _ = std::fs::remove_dir_all(&root);
@@ -377,10 +409,10 @@ mod tests {
 
         let selected = set_in(&home, "plugin", "weather", &source).unwrap();
         assert_eq!(selected.source, source.to_string_lossy());
-        assert_eq!(list_in(&home).unwrap(), vec![selected]);
+        assert_eq!(list_in_for(&home, "dev").unwrap(), vec![selected]);
         assert!(config_path(&home).is_file());
         assert!(remove_in(&home, "plugin", "weather").unwrap());
-        assert!(list_in(&home).unwrap().is_empty());
+        assert!(list_in_for(&home, "dev").unwrap().is_empty());
         assert!(!remove_in(&home, "plugin", "weather").unwrap());
 
         let _ = std::fs::remove_dir_all(&root);
@@ -448,7 +480,7 @@ mod tests {
         set_in(&home, "plugin", "weather", &source).unwrap();
         std::fs::remove_dir_all(&source).unwrap();
 
-        let units = list_in(&home).unwrap();
+        let units = list_in_for(&home, "dev").unwrap();
         assert_eq!(
             units.len(),
             1,
