@@ -82,6 +82,49 @@ describe("FLOW 포커스 패널 근접 투영", () => {
     expect(order(restored)).toEqual(["db", "design", "ghostty", "terminal", "kanban"]);
   });
 
+  it("멀리 있는 포커스는 가장 가까운 왼쪽 형제와만 교환한다 — 전역 재배열 금지(최소 이동)", () => {
+    // 신고 재현: 위 [terminal | playbox | astryxTop], 아래 [about | astryxBottom(2/3)].
+    // astryxTop의 왼쪽 선 66.67은 astryxBottom이 가로질러 막혀 있다. 맨 앞(0)으로 보내면
+    // 레일이 0으로 점프하고 전원이 재배열된다(최대 이동 — 결함). 올바른 투영은 바로 왼쪽
+    // 형제 playbox와의 교환 하나 — 포커스 왼쪽 선이 이미 깨끗한 33.33에 닿고, terminal·
+    // about·astryxBottom은 제자리다.
+    const reported: SplitTree<Panel> = {
+      type: "split",
+      id: "root",
+      dir: "col",
+      sizes: [0.5, 0.5],
+      children: [
+        {
+          type: "split",
+          id: "top",
+          dir: "row",
+          sizes: [1 / 3, 1 / 3, 1 / 3],
+          children: [leaf("terminal"), leaf("playbox"), leaf("astryxTop")],
+        },
+        {
+          type: "split",
+          id: "bottom",
+          dir: "row",
+          sizes: [1 / 3, 2 / 3],
+          children: [leaf("about"), leaf("astryxBottom")],
+        },
+      ],
+    };
+    const projected = projectFocusedPanelNearRail(reported, "astryxTop", true);
+    expect(order(projected)).toEqual([
+      "terminal",
+      "astryxTop",
+      "playbox",
+      "about",
+      "astryxBottom",
+    ]);
+    const layout = computeSplitLayout(projected);
+    const target = layout.cells.find((cell) => cell.value.id === "astryxTop")!;
+    expect(target.rect.left).toBeCloseTo(100 / 3, 5); // 스테이션 무이동 — 기존 33.33 선에 붙는다
+    const terminal = layout.cells.find((cell) => cell.value.id === "terminal")!;
+    expect(terminal.rect.left).toBeCloseTo(0, 5); // 비참여 패널은 제자리
+  });
+
   it("교환해도 깨끗한 선에 닿지 못하는 구조라면 잘못된 재배치를 적용하지 않는다", () => {
     const original: SplitTree<Panel> = {
       type: "split",
