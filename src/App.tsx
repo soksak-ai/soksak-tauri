@@ -13,6 +13,7 @@ import { listenThisWindow } from "./lib/windowEvents";
 import { addProjectClaimed, closeProjectReleased, useOtherWindowProjects } from "./state/projectRegistry";
 import { removeRecentProject, useRecentProjects } from "./state/recentProjects";
 import { rafThrottle } from "./lib/rafThrottle";
+import { useTransitionTravel } from "./ui/useTransitionTravel";
 import { parkedStyle } from "./lib/layerPark";
 import { emitPluginEvent } from "./plugins/hooks";
 import { resolveTerminalProgram } from "./plugins/terminalEngine";
@@ -172,6 +173,9 @@ const ProjectPane = memo(function ProjectPane({
   const renderedStation = dragStation ?? effectiveStation;
   // 레일 시각 모드(§12-⑤) — pane(분할창처럼) | ground(바닥 평면). 토글은 슬롯 프레임 헤더.
   const railLook = useSettings((s) => s.railLook);
+  // 주행 신호(§12-④) — left transition 이 도는 동안만 레일 평면이 pane 아래로 잠수한다.
+  const sidebarElRef = useRef<HTMLDivElement | null>(null);
+  const railTraveling = useTransitionTravel(sidebarElRef);
 
   const toggleRailPin = useCallback(() => {
     setLeftRailPlacement(
@@ -269,10 +273,19 @@ const ProjectPane = memo(function ProjectPane({
           railPlane={
             <div
               ref={railPlaneRef}
-              className={`left-rail-plane${dragStation !== null ? " dragging" : ""}`}
+              className={`left-rail-plane${railTraveling && dragStation === null ? " traveling" : ""}`}
             >
               <div
+                ref={sidebarElRef}
                 className={`sidebar rail-${railLook}${dragStation !== null ? " dragging" : ""}`}
+                onMouseDown={(e) => {
+                  // §12-① 헤더 = 이동 손잡이 — 프레임 헤더 아무 곳이나 잡으면 스테이션 드래그.
+                  // 헤더 위 상호작용 컨트롤(버튼)은 제외.
+                  const t = e.target as HTMLElement;
+                  if (t.closest(".proj-frame-header") && !t.closest("button")) {
+                    startRailStationDrag(e);
+                  }
+                }}
                 style={{
                   left: `calc(${renderedStation}% - ${(sidebarW * renderedStation) / 100}px)`,
                   width: project.sidebarOpen ? sidebarW : 0,
