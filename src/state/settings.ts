@@ -21,7 +21,7 @@ export type RightSidebarMode = "overlay" | "push";
 // 좌 레일 시각 모드(§12-⑤): pane=분할창처럼(카드 틴트+elevation), ground=바닥에 눕는 평면.
 export type RailLook = "pane" | "ground";
 // 레일-패널 관계면 표현 3안 스위치 — 비교 실험용 임시 축(결정 시 채택안만 남기고 소거).
-// tint=저농도 액센트 채움만(기본), moment=결부 변경 순간만 잠깐 플래시, stroke=현행(스트로크+라벨).
+// stroke=스트로크+라벨(기본 — 사용자 확정), moment=결부 변경 순간만 잠깐 플래시, tint=저농도 액센트 채움만.
 export type RailRelation = "tint" | "moment" | "stroke";
 
 interface SettingsState {
@@ -96,7 +96,7 @@ const DEFAULTS = {
   tabCloseConfirm: "warn" as TabCloseConfirm,
   rightSidebarMode: "overlay" as RightSidebarMode,
   railLook: "ground" as RailLook,
-  railRelation: "tint" as RailRelation,
+  railRelation: "stroke" as RailRelation,
   railFocusNear: false,
   appFontFamily:
     '"JetBrains Mono", "SF Mono", "Cascadia Code", Menlo, Consolas, "Courier New", monospace',

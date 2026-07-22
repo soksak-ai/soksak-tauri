@@ -20,18 +20,18 @@ import { useSettings } from "../state/settings";
 registerCatalog();
 
 beforeEach(() => {
-  useSettings.setState({ railRelation: "tint" });
+  useSettings.setState({ railRelation: "stroke" });
 });
 
 describe("settings.railRelation 명령 표면", () => {
-  it("settings.get 이 railRelation 을 반환한다(기본 tint)", async () => {
+  it("settings.get 이 railRelation 을 반환한다(기본 stroke)", async () => {
     const result = await execute("settings.get", {}, {});
     expect(result.ok).toBe(true);
-    expect((result.data as { railRelation: string }).railRelation).toBe("tint");
+    expect((result.data as { railRelation: string }).railRelation).toBe("stroke");
   });
 
   it("settings.set 으로 3안을 즉시 전환한다", async () => {
-    for (const mode of ["moment", "stroke", "tint"] as const) {
+    for (const mode of ["moment", "tint", "stroke"] as const) {
       const result = await execute(
         "settings.set",
         { key: "railRelation", value: mode },
@@ -49,6 +49,6 @@ describe("settings.railRelation 명령 표면", () => {
       {},
     );
     expect(result).toMatchObject({ ok: false, code: "INVALID_PARAMS" });
-    expect(useSettings.getState().railRelation).toBe("tint");
+    expect(useSettings.getState().railRelation).toBe("stroke");
   });
 });

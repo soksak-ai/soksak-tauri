@@ -6,7 +6,7 @@
 
 | 항목 | 스위치 | 안 | 상태 | 소거 조건 |
 |---|---|---|---|---|
-| 레일-패널 관계면 표현 | `settings.railRelation` (`sok settings.set '{"key":"railRelation","value":…}'`) | `tint`(기본: 바닥 틴트만) / `moment`(재결부 순간 600ms 스트로크 플래시) / `stroke`(현행: 아웃라인+라벨) | **비교중** (main 6506a9a0) | 사용자 채택 결정 시 — 채택안을 무스위치 기본으로 고정하고 railRelation 축·모드 CSS 갈래·relation 테스트 파일 소거 |
+| 레일-패널 관계면 표현 | `settings.railRelation` (`sok settings.set '{"key":"railRelation","value":…}'`) | `stroke`(기본 — 사용자 확정: 아웃라인+라벨) / `tint`(바닥 틴트만) / `moment`(재결부 순간 600ms 스트로크 플래시) | **비교중** (main 6506a9a0) | 사용자 채택 결정 시 — 채택안을 무스위치 기본으로 고정하고 railRelation 축·모드 CSS 갈래·relation 테스트 파일 소거 |
 | 레일 시각 모드 | `settings.railLook` | `ground`(기본: 바닥 크롬) / `pane`(카드) | **비교중** (main 86688bae — 디자인 정본은 ground) | 사용자 채택 결정 시 — 동일 규율 |
 
 폐기(소거 완료) 항목은 이 표에서 지우고 git 이력만 남긴다.
