@@ -30,9 +30,10 @@ const yOverlaps = (a: LayoutDivider, b: LayoutDivider): boolean =>
   b.rect.top < a.rect.top + a.rect.height - TINY;
 
 // 드래그 시작 시 앵커와 한 라인을 이루는 세로 디바이더 묶음(앵커 포함, top 오름차순).
-// y 가 겹치는 후보(나란한 딴 라인)는 앵커 x 에 가까운 것만 남는다. 묶음의 허용 x 교집합이
-// 앵커의 시작 x 를 포함하지 못하는 퇴화(최소폭에 눌린 이웃 세그먼트)면 앵커 단독으로
-// 물러난다 — 시작 x 는 항상 교집합 안(클램프 공집합 불가)이 이 함수의 보장이다.
+// y 가 겹치는 후보(나란한 딴 라인)는 앵커 x 에 가까운 것만 남는다. 허용 구간이 앵커의
+// 시작 x 를 담지 못하는 세그먼트(최소폭에 눌린 이웃)는 애초에 묶지 않는다 — 남는 묶음은
+// 앵커를 포함하면서 교집합이 시작 x 를 담는 최대 유효 부분집합이고(클램프 공집합 불가),
+// 일단 묶인 세그먼트는 드래그가 절대 찢지 않는다.
 export function collectLineGroup(
   dividers: LayoutDivider[],
   anchorSplitId: string,
@@ -44,25 +45,26 @@ export function collectLineGroup(
     (d) => d.splitId === anchorSplitId && d.index === anchorIndex,
   );
   if (!anchor) return [];
+  const anchorX = anchor.rect.left;
+  const reachesAnchorX = (d: LayoutDivider): boolean => {
+    const r = lineGroupRange([d]);
+    return anchorX >= r.min - TINY && anchorX <= r.max + TINY;
+  };
   const candidates = rows
     .filter(
-      (d) => d !== anchor && Math.abs(d.rect.left - anchor.rect.left) <= eps,
+      (d) =>
+        d !== anchor &&
+        Math.abs(d.rect.left - anchorX) <= eps &&
+        reachesAnchorX(d),
     )
     .sort(
       (a, b) =>
-        Math.abs(a.rect.left - anchor.rect.left) -
-          Math.abs(b.rect.left - anchor.rect.left) || a.rect.top - b.rect.top,
+        Math.abs(a.rect.left - anchorX) - Math.abs(b.rect.left - anchorX) ||
+        a.rect.top - b.rect.top,
     );
   const group = [anchor];
   for (const c of candidates) {
     if (group.every((m) => !yOverlaps(m, c))) group.push(c);
-  }
-  const range = lineGroupRange(group);
-  if (
-    anchor.rect.left < range.min - TINY ||
-    anchor.rect.left > range.max + TINY
-  ) {
-    return [anchor];
   }
   return group.sort((a, b) => a.rect.top - b.rect.top);
 }

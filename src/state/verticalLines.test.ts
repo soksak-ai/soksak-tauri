@@ -37,6 +37,15 @@ const stacked = (topSizes: number[], botSizes: number[]): SplitTree<string> =>
 const rowDividersOf = <L,>(tree: SplitTree<L>) =>
   computeSplitLayout(tree).dividers.filter((d) => d.dir === "row");
 
+const applyMoves = (
+  tree: SplitTree<string>,
+  moves: { splitId: string; sizes: number[] }[],
+) => moves.reduce((acc, m) => resizeSplitTree(acc, m.splitId, m.sizes), tree);
+
+const rowXAt = (tree: SplitTree<string>, splitId: string, index: number) =>
+  rowDividersOf(tree).find((d) => d.splitId === splitId && d.index === index)!
+    .rect.left;
+
 describe("collectLineGroup — 드래그 시작 시 라인 묶음", () => {
   it("같은 x 의 위·아래 세그먼트를 한 묶음으로 잡는다(top 오름차순)", () => {
     const { dividers } = computeSplitLayout(stacked([0.4, 0.6], [0.4, 0.6]));
@@ -78,13 +87,31 @@ describe("collectLineGroup — 드래그 시작 시 라인 묶음", () => {
     expect(collectLineGroup(dividers, "r", 0)).toHaveLength(1);
   });
 
-  it("교집합이 앵커 시작 x 를 포함 못 하는 퇴화면 앵커 단독으로 물러난다", () => {
+  it("앵커 x 로 못 오는 세그먼트는 묶지 않는다 — 유일한 동반 후보가 못 오면 앵커 단독", () => {
     // 아래 세그먼트의 오른쪽 이웃이 정확히 minFrac — 92.0 오른쪽으로 한 발도 못 간다.
     // 앵커(92.5)를 묶으면 교집합 상한(92.0)이 시작 x 아래로 내려가 클램프가 시작점을 끌어당긴다.
     const { dividers } = computeSplitLayout(stacked([0.925, 0.075], [0.92, 0.08]));
     expect(collectLineGroup(dividers, "top", 0).map((d) => d.splitId)).toEqual([
       "top",
     ]);
+  });
+
+  it("일부만 못 오는 퇴화면 최대 유효 부분집합으로 물러난다 — 92.5 두 세그먼트는 함께", () => {
+    // 최하단 세그먼트(92.0)만 오른쪽 이웃이 정확히 minFrac 이라 앵커 x(92.5)로 못 온다.
+    // 그 세그먼트만 빠지고 92.5 두 세그먼트는 한 묶음으로 남아 함께 움직여야 한다 —
+    // 앵커 단독 후퇴는 같은 x 의 92.5 라인을 드래그가 찢는다.
+    const tree = split("c", "col", [0.34, 0.33, 0.33], [
+      split("r0", "row", [0.925, 0.075], [leaf("a"), leaf("b")]),
+      split("r1", "row", [0.925, 0.075], [leaf("d"), leaf("e")]),
+      split("r2", "row", [0.92, 0.08], [leaf("f"), leaf("g")]),
+    ]);
+    const { dividers } = computeSplitLayout(tree);
+    const group = collectLineGroup(dividers, "r0", 0);
+    expect(group.map((d) => d.splitId)).toEqual(["r0", "r1"]);
+    const next = applyMoves(tree, moveLineGroup(group, 90).moves);
+    expect(rowXAt(next, "r0", 0)).toBeCloseTo(90, 10);
+    expect(rowXAt(next, "r1", 0)).toBeCloseTo(90, 10);
+    expect(rowXAt(next, "r2", 0)).toBeCloseTo(92, 10); // 못 오는 세그먼트는 제자리
   });
 });
 
@@ -124,11 +151,6 @@ describe("lineGroupRange — 허용 x 구간 교집합", () => {
 });
 
 describe("moveLineGroup — 묶음 전체가 같은 x 로", () => {
-  const applyMoves = (
-    tree: SplitTree<string>,
-    moves: { splitId: string; sizes: number[] }[],
-  ) => moves.reduce((acc, m) => resizeSplitTree(acc, m.splitId, m.sizes), tree);
-
   it("적용 후 두 세그먼트가 정확히 target 에 있고 sizes 합은 보존된다", () => {
     const tree = stacked([0.4, 0.6], [0.4, 0.6]);
     const { dividers } = computeSplitLayout(tree);
