@@ -8,6 +8,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { RAIL_TRAVEL_MS } from "../lib/railMotion";
 
 const css = readFileSync(join(process.cwd(), "src", "App.css"), "utf8");
 
@@ -76,10 +77,11 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
       expect(sync!.selector).toContain(sel);
     }
     expect(sync!.decls).not.toMatch(/transition\s*:/);
-    expect(sync!.decls).toMatch(/animation:\s*rail-flip-x 280ms cubic-bezier\(0\.4, 0, 0\.2, 1\)/);
+    expect(RAIL_TRAVEL_MS).toBe(340);
+    expect(sync!.decls).toMatch(/animation:\s*rail-flip-x var\(--rail-travel-ms\) cubic-bezier\(0\.4, 0, 0\.2, 1\)/);
     expect(css).toMatch(/@keyframes rail-flip-x\s*\{[\s\S]*from\s*\{\s*translate:\s*var\(--rail-flip-x/);
     const rail = rules().find((r) => r.selector === ".sidebar.traveling");
-    expect(rail?.decls).toMatch(/animation:\s*rail-flip-x 280ms cubic-bezier\(0\.4, 0, 0\.2, 1\)/);
+    expect(rail?.decls).toMatch(/animation:\s*rail-flip-x var\(--rail-travel-ms\) cubic-bezier\(0\.4, 0, 0\.2, 1\)/);
   });
 
   it("§12-④ 내용 교체는 A1→A0→B0→B1 순서이고 레일 셸은 투명해지지 않는다", () => {
@@ -89,7 +91,7 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
     expect(leavingFrames).toMatch(/38%,\s*100%\s*\{\s*opacity:\s*0/);
     expect(enteringFrames).toMatch(/0%,\s*46%\s*\{\s*opacity:\s*0/);
     expect(enteringFrames).toMatch(/88%,\s*100%\s*\{\s*opacity:\s*1/);
-    expect(css).toMatch(/\.proj-slot\.entering\s*\{[^}]*animation:\s*proj-slot-in 280ms/);
+    expect(css).toMatch(/\.proj-slot\.entering\s*\{[^}]*animation:\s*proj-slot-in var\(--rail-travel-ms\)/);
     const rail = rules().find((r) => r.selector === ".sidebar");
     expect(rail?.decls).not.toMatch(/opacity\s*:/);
   });

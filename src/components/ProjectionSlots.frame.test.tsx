@@ -206,8 +206,8 @@ describe("여정 디졸브(§12-④) — A1 → A0 → B0 → B1 순차 교체",
     expect(slotOf("nav-제목").className).toContain("entering");
     expect(slotOf("tree-제목").className).toContain("leaving");
     expect(slotOf("tree-제목").style.display).not.toBe("none");
-    // 여정(280ms) 종료 후: 퇴장 슬롯은 접히고 도착 슬롯의 효과 클래스도 제거된다.
-    act(() => vi.advanceTimersByTime(320));
+    // 여정(340ms) 종료 후: 퇴장 슬롯은 접히고 도착 슬롯의 효과 클래스도 제거된다.
+    act(() => vi.advanceTimersByTime(380));
     expect(slotOf("tree-제목").style.display).toBe("none");
     expect(slotOf("tree-제목").className).not.toContain("leaving");
     expect(slotOf("nav-제목").className).not.toContain("entering");

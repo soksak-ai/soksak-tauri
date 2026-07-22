@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
+import { RAIL_TRAVEL_MS } from "../lib/railMotion";
 
 /**
  * 콘텐츠 탭이 선택하는 패널 그리드의 좌표계.
@@ -15,7 +16,10 @@ export function RailGridSurface({
   traveling?: boolean;
 }) {
   return (
-    <div className={`content-body${traveling ? " rail-traveling" : ""}`}>
+    <div
+      className={`content-body${traveling ? " rail-traveling" : ""}`}
+      style={{ "--rail-travel-ms": `${RAIL_TRAVEL_MS}ms` } as CSSProperties}
+    >
       {children}
       {railPlane}
     </div>

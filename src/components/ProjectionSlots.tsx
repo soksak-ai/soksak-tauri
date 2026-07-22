@@ -93,7 +93,7 @@ export const ProjectionSlots = memo(function ProjectionSlots({
   const railLook = useSettings((s) => s.railLook);
   const setRailLook = useSettings((s) => s.setRailLook);
 
-  // 여정 인계(§12-④) — 레일 프레임의 실좌표 주행과 같은 280ms 안에서 내용만
+  // 여정 인계(§12-④) — 레일 프레임의 실좌표 주행과 같은 340ms 안에서 내용만
   // A1→A0→B0→B1 순서로 바뀐다. 두 내용을 섞지 않으며, 초기 마운트와 같은
   // instanceKey에는 효과를 만들지 않는다. 레일 셸 자체의 불투명도는 이 컴포넌트가 건드리지 않는다.
   const fingerprint = [...liveKeys].sort().join(",");

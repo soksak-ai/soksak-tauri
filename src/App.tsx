@@ -174,7 +174,7 @@ const ProjectPane = memo(function ProjectPane({
   const renderedStation = dragStation ?? effectiveStation;
   // 레일 시각 모드(§12-⑤) — pane(분할창처럼) | ground(바닥 평면). 토글은 슬롯 프레임 헤더.
   const railLook = useSettings((s) => s.railLook);
-  // 주행 위상(§12-④) — 스테이션이 바뀐 커밋부터 280ms: 레일(.sidebar left)과 pane 복도
+  // 주행 위상(§12-④) — 스테이션이 바뀐 커밋부터 340ms: 레일(.sidebar left)과 pane 복도
   // (railGap 소비자)가 같은 곡선으로 함께 미끄러진다. 레일은 이동 내내 보여야 한다 —
   // hide→show 금지. 드래그는 위상이 아니다(손 즉시 추종). 타이머는 위상 종료 1회용이다.
   const [travelFrom, setTravelFrom] = useState(effectiveStation);
