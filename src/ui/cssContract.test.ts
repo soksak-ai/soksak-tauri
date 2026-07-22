@@ -76,8 +76,8 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
     for (const sel of consumers) {
       expect(sync!.selector).toContain(sel);
     }
-    // 레일(.sidebar left 260ms)과 같은 시간 — 동조가 계약이다.
-    expect(sync!.decls).toMatch(/transition\s*:[^;]*260ms/);
+    // 레일(.sidebar left)과 같은 시간·곡선(디자인 정본 0.28s) — 동조가 계약이다.
+    expect(sync!.decls).toMatch(/transition\s*:[^;]*280ms cubic-bezier\(0\.4, 0, 0\.2, 1\)/);
   });
 
   it("R1: 죽은 변수(--tab-h/--ws-tab-h) 잔재 금지 — 계약 변수는 패딩뿐", () => {
