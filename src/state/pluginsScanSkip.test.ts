@@ -47,8 +47,6 @@ function goodManifest(id: string): string {
 }
 
 const installedState = '{"version":"1.0.0","repo":"https://x/y.git","branch":"main"}';
-const legacyDevState = '{"version":"dev"}';
-
 beforeEach(() => {
   invoke.mockClear();
   usePlugins.setState({ release: false, plugins: {}, rejected: [], consents: {}, enabledIds: [] });

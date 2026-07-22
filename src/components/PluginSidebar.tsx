@@ -33,8 +33,9 @@ export const PluginSidebar = memo(function PluginSidebar({
 }) {
   const t = useT();
   const version = useViewRegistry((s) => s.version);
+  // 우측 아이콘 레일 나열 = 상주형(resident) rail 뷰 — 우 핀 표면의 현행 형태.
   const sidebarViews = useMemo(
-    () => viewsForPlacement("sidebar-right"),
+    () => viewsForPlacement("rail").filter(({ view }) => view.decl.resident),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [version],
   );

@@ -94,15 +94,8 @@ export function registerProjectionCatalog(): void {
       }
       const ref = p.ref as string;
       const reg = getRegisteredView(ref);
-      // 핀 대상 = 상주형뿐(② — 사이드바 임의 탑재 제한): resident:true 를 선언한 rail 뷰,
-      // 또는 앨리어스 기간의 레거시 sidebar-* placement 뷰(상주형 함대의 구 매니페스트).
-      // 그 외 rail 뷰는 선언-투영 전용 — 콘텐츠 기능에 종속된다.
-      const legacyResident =
-        !!reg &&
-        ["sidebar-left", "sidebar-right", "sidebar-footer"].some((pl) =>
-          reg.decl.placements.includes(pl as never),
-        );
-      const pinnable = !!reg && (reg.decl.resident || legacyResident);
+      // 핀 대상 = 상주형(resident:true) rail 뷰뿐(②) — 그 외 rail 뷰는 선언-투영 전용.
+      const pinnable = !!reg && reg.decl.resident;
       if (!pinnable) {
         return err(
           "INVALID_PARAMS",

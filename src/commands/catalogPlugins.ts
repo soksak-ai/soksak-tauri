@@ -1120,17 +1120,7 @@ export function registerPluginCatalog(): void {
           `뷰 "${key}" 는 ${placement} 배치를 지원하지 않음(지원: ${reg.decl.placements.join(", ")})`,
         );
       }
-      if (placement === "sidebar-right") {
-        s.toggleRightSidebar(projectId, true);
-        s.setRightView(projectId, key);
-        return { view: key, placement, projectId };
-      }
-      if (placement === "sidebar-left") {
-        if (!project.sidebarOpen) s.toggleSidebar(projectId);
-        s.setLeftTab(projectId, key);
-        return { view: key, placement, projectId };
-      }
-      // rail(§3.3 재해석) = 레일 핀 추가 — 콘텐츠 실체화 금지(투영 모델 §7.1).
+      // rail = 레일 핀 추가 — 콘텐츠 실체화 금지(투영 모델).
       // rail-footer 는 상주 슬롯이라 열기 동작이 없다(핀 대상 아님) — 명시 거부.
       if (placement === "rail") {
         if (!reg.decl.resident) {

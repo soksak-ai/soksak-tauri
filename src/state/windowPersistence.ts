@@ -16,7 +16,7 @@ import {
 import type { ProjectTab } from "./sessions";
 import type { Pins } from "./projection";
 
-export type ProjectionSeed = { pins: Pins; seen: Pins };
+export type ProjectionSeed = { pins: Pins };
 
 export interface WindowSnapshot {
   activeId: string;

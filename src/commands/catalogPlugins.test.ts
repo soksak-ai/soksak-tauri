@@ -100,7 +100,7 @@ describe("plugin.conformance — C2 view-status(런타임 판정, viewStatusConf
             id: "canvas",
             title: "캔버스",
             icon: "C",
-            placements: ["content"],
+            placements: ["content"], decoration: true,
             ...(status !== undefined ? { status } : {}),
           },
         ],
@@ -198,7 +198,7 @@ describe("plugin.conformance — C2 정적 규칙(command-surface·view-nodes)",
     const manifest = manifestOf(id, {
       permissions: ["ui"],
       contributes: {
-        fileViewers: [{ id: "image", extensions: ["png"] }],
+        fileViewers: [{ id: "image", extensions: ["png"], sidebar: { left: [{ contract: "soksak-spec-plugin-sidebar-file-tree", range: "^0.0.1", view: "tree", instance: "shared" }] } }],
       },
     });
     usePlugins.setState({ plugins: { [id]: runtimeOf(manifest) } });

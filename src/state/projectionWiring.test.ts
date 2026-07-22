@@ -270,46 +270,6 @@ describe("startProjectionTracking — 스페이스별 단일 결부", () => {
   });
 });
 
-describe("핀 마이그레이션 배선(§7.1) — 기존 배치·레거시 placement → 핀", () => {
-  it("leftLayout 키 채용 + 레거시 sidebar-left 자동 핀, rail 뷰는 자동 핀 없음", () => {
-    useViewRegistry.getState().register(
-      "mailplug",
-      decl("inbox", { placements: ["sidebar-left"], defaultPlacement: "sidebar-left" }),
-      provider,
-    );
-    useViewRegistry.getState().register(
-      "railplug",
-      decl("tree", { placements: ["rail"], defaultPlacement: "rail" }),
-      provider,
-    );
-    const t = tab([], "");
-    t.leftLayout = initialSidebarLayout(["oldplug.panel"]);
-    useSessions.setState({ tabs: [t], activeId: "p1" });
-
-    const stop = startProjectionTracking();
-    const e = useProjection.getState().byProject.p1;
-    expect(e.pins.left).toContain("oldplug.panel"); // 기존 배치 채용
-    expect(e.pins.left).toContain("mailplug.inbox"); // 레거시 자동 핀
-    expect(e.pins.left).not.toContain("railplug.tree"); // rail 은 투영 모델 — 자동 핀 금지
-    stop();
-  });
-
-  it("unpin 후 재등록 sweep 이 되핀하지 않는다(seen)", () => {
-    useViewRegistry.getState().register(
-      "mailplug",
-      decl("inbox", { placements: ["sidebar-left"], defaultPlacement: "sidebar-left" }),
-      provider,
-    );
-    useSessions.setState({ tabs: [tab([], "")], activeId: "p1" });
-    const stop = startProjectionTracking();
-    expect(useProjection.getState().byProject.p1.pins.left).toContain("mailplug.inbox");
-    useProjection.getState().unpin("p1", "left", "mailplug.inbox");
-    // 레지스트리 변화 → sweep 재실행
-    useViewRegistry.getState().register("otherplug", decl("x", { placements: ["sidebar-left"], defaultPlacement: "sidebar-left" }), provider);
-    expect(useProjection.getState().byProject.p1.pins.left).not.toContain("mailplug.inbox");
-    stop();
-  });
-});
 
 describe("projection.changed 지문 발화(§4.3) — 슬롯 해소 변화·부트 무발화", () => {
   it("슬롯 degraded→live 전환(결부 불변)에도 발화하고, 첫 sync(부트)는 무발화", () => {

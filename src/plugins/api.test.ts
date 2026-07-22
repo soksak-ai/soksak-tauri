@@ -116,7 +116,7 @@ describe("파일 뷰어 등록(registerFileViewer — 선언 외 거부, A13)", 
   it("ui 권한 + contributes.fileViewers 선언 시 등록 → resolve 매칭", () => {
     const m = manifestOf({
       permissions: ["ui"],
-      contributes: { fileViewers: [{ id: "code", extensions: ["ts", "*"] }] },
+      contributes: { fileViewers: [{ id: "code", extensions: ["ts", "*"], sidebar: { left: [{ contract: "soksak-spec-plugin-sidebar-file-tree", range: "^0.0.1", view: "tree", instance: "shared" }] } }] },
     });
     const { api } = buildPluginApi(m, "/d", fakeDeps());
     const d = api.ui?.registerFileViewer?.("code", { mount() {} });
@@ -127,7 +127,7 @@ describe("파일 뷰어 등록(registerFileViewer — 선언 외 거부, A13)", 
   it("선언되지 않은 파일 뷰어 등록은 throw", () => {
     const m = manifestOf({
       permissions: ["ui"],
-      contributes: { fileViewers: [{ id: "code", extensions: ["ts"] }] },
+      contributes: { fileViewers: [{ id: "code", extensions: ["ts"], sidebar: { left: [{ contract: "soksak-spec-plugin-sidebar-file-tree", range: "^0.0.1", view: "tree", instance: "shared" }] } }] },
     });
     const { api } = buildPluginApi(m, "/d", fakeDeps());
     expect(() =>

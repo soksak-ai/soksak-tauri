@@ -21,8 +21,8 @@ beforeEach(() => {
 
 describe("registeredViewIds — declared≡actual 의 actual 관찰", () => {
   it("이 플러그인이 등록한 view id(등록 순서) — 타 플러그인 제외", () => {
-    useViewRegistry.getState().register("memo", decl("panel", ["sidebar-right"]), provider);
-    useViewRegistry.getState().register("memo", decl("side", ["sidebar-left"]), provider);
+    useViewRegistry.getState().register("memo", decl("panel", ["rail"]), provider);
+    useViewRegistry.getState().register("memo", decl("side", ["rail"]), provider);
     useViewRegistry.getState().register("other", decl("x", ["content"]), provider);
     expect(registeredViewIds("memo")).toEqual(["panel", "side"]);
     expect(registeredViewIds("none")).toEqual([]);
@@ -32,22 +32,22 @@ describe("registeredViewIds — declared≡actual 의 actual 관찰", () => {
 describe("viewRegistry", () => {
   it("등록 → 전역 키로 조회 가능 + version 증가", () => {
     const v0 = useViewRegistry.getState().version;
-    useViewRegistry.getState().register("memo", decl("panel", ["sidebar-right"]), provider);
+    useViewRegistry.getState().register("memo", decl("panel", ["rail"]), provider);
     expect(getRegisteredView("memo.panel")?.pluginId).toBe("memo");
     expect(useViewRegistry.getState().version).toBe(v0 + 1);
   });
 
   it("중복 등록은 거부(§0-3 침묵 충돌 금지)", () => {
-    useViewRegistry.getState().register("memo", decl("panel", ["sidebar-right"]), provider);
+    useViewRegistry.getState().register("memo", decl("panel", ["rail"]), provider);
     expect(() =>
-      useViewRegistry.getState().register("memo", decl("panel", ["sidebar-right"]), provider),
+      useViewRegistry.getState().register("memo", decl("panel", ["rail"]), provider),
     ).toThrow(/이미 등록된 뷰/);
   });
 
   it("해제는 멱등 + version 은 실제 변경 시에만 증가", () => {
     const remove = useViewRegistry
       .getState()
-      .register("memo", decl("panel", ["sidebar-right"]), provider);
+      .register("memo", decl("panel", ["rail"]), provider);
     remove();
     expect(getRegisteredView("memo.panel")).toBeNull();
     const v = useViewRegistry.getState().version;
@@ -57,7 +57,7 @@ describe("viewRegistry", () => {
 
   it("setViewBadge — 설정/해제, 0 정규화, version 미증가(뷰 remount 방지), 뷰 해제 시 배지 정리", () => {
     const st = useViewRegistry.getState();
-    const remove = st.register("memo", decl("panel", ["sidebar-right"]), provider);
+    const remove = st.register("memo", decl("panel", ["rail"]), provider);
     const v = useViewRegistry.getState().version;
 
     st.setViewBadge("memo.panel", 3);
@@ -77,15 +77,15 @@ describe("viewRegistry", () => {
   });
 
   it("viewsForPlacement 는 선언 배치로 필터", () => {
-    useViewRegistry.getState().register("memo", decl("panel", ["sidebar-right"]), provider);
+    useViewRegistry.getState().register("memo", decl("panel", ["rail"]), provider);
     useViewRegistry
       .getState()
-      .register("diff", decl("view", ["content", "sidebar-right"]), provider);
-    expect(viewsForPlacement("sidebar-right").map((x) => x.key)).toEqual([
+      .register("diff", decl("view", ["content", "rail"]), provider);
+    expect(viewsForPlacement("rail").map((x) => x.key)).toEqual([
       "memo.panel",
       "diff.view",
     ]);
     expect(viewsForPlacement("content").map((x) => x.key)).toEqual(["diff.view"]);
-    expect(viewsForPlacement("sidebar-left")).toEqual([]);
+    expect(viewsForPlacement("rail-footer")).toEqual([]);
   });
 });

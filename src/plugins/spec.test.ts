@@ -61,7 +61,7 @@ describe("parseManifest — 수용", () => {
     });
   });
 
-  it("뷰 기본 배치 정규화: placements=[sidebar-right], defaultPlacement=첫 항목", () => {
+  it("뷰 기본 배치 정규화: placements=[rail], defaultPlacement=첫 항목", () => {
     const { manifest } = parseManifest(
       base({
         permissions: ["ui"],
@@ -72,7 +72,8 @@ describe("parseManifest — 수용", () => {
               id: "diff",
               title: "디프",
               icon: "D",
-              placements: ["content", "sidebar-right"],
+              placements: ["content", "rail"],
+              decoration: true,
             },
           ],
         },
@@ -80,11 +81,11 @@ describe("parseManifest — 수용", () => {
       "demo",
     );
     expect(manifest?.contributes.views[0]).toMatchObject({
-      placements: ["sidebar-right"],
-      defaultPlacement: "sidebar-right",
+      placements: ["rail"],
+      defaultPlacement: "rail",
     });
     expect(manifest?.contributes.views[1]).toMatchObject({
-      placements: ["content", "sidebar-right"],
+      placements: ["content", "rail"],
       defaultPlacement: "content",
     });
   });
@@ -97,7 +98,7 @@ describe("parseManifest — 수용", () => {
         minAppVersion: "0.1.0",
         permissions: ["ui", "commands"],
         contributes: {
-          views: [{ id: "v", title: "뷰", icon: "V", defaultPlacement: "sidebar-right" }],
+          views: [{ id: "v", title: "뷰", icon: "V", defaultPlacement: "rail" }],
           commands: [{ name: "do.it", title: "실행" }],
         },
       }),
@@ -251,23 +252,28 @@ describe("parseManifest — fileViewers(A13)", () => {
         permissions: ["ui"],
         contributes: {
           fileViewers: [
-            { id: "code", extensions: ["ts", "*"], priority: 5 },
-            { id: "img", extensions: ["png"] },
+            { id: "code", extensions: ["ts", "*"], priority: 5, sidebar: { left: [{ contract: "soksak-spec-plugin-sidebar-file-tree", range: "^0.0.1", view: "tree", instance: "shared" }] } },
+            { id: "img", extensions: ["png"], sidebar: { left: [{ contract: "soksak-spec-plugin-sidebar-file-tree", range: "^0.0.1", view: "tree", instance: "shared" }] } },
           ],
         },
       }),
       "demo",
     );
     expect(validation.ok).toBe(true);
+    const SB = {
+      left: [{ contract: "soksak-spec-plugin-sidebar-file-tree", range: "^0.0.1", view: "tree", instance: "shared" }],
+      right: [],
+      template: "stack",
+    };
     expect(manifest?.contributes.fileViewers).toEqual([
-      { id: "code", extensions: ["ts", "*"], priority: 5 },
-      { id: "img", extensions: ["png"] },
+      { id: "code", extensions: ["ts", "*"], priority: 5, sidebar: SB },
+      { id: "img", extensions: ["png"], sidebar: SB },
     ]);
   });
 
   it("ui 권한 미선언이면 거부", () => {
     const errs = errorsOf(
-      base({ contributes: { fileViewers: [{ id: "code", extensions: ["ts"] }] } }),
+      base({ contributes: { fileViewers: [{ id: "code", extensions: ["ts"], sidebar: { left: [{ contract: "soksak-spec-plugin-sidebar-file-tree", range: "^0.0.1", view: "tree", instance: "shared" }] } }] } }),
     );
     expect(errs.some((e) => e.includes('"ui" 권한'))).toBe(true);
   });
@@ -290,8 +296,8 @@ describe("parseManifest — fileViewers(A13)", () => {
         permissions: ["ui"],
         contributes: {
           fileViewers: [
-            { id: "dup", extensions: ["ts"] },
-            { id: "dup", extensions: ["js"] },
+            { id: "dup", extensions: ["ts"], sidebar: { left: [{ contract: "soksak-spec-plugin-sidebar-file-tree", range: "^0.0.1", view: "tree", instance: "shared" }] } },
+            { id: "dup", extensions: ["js"], sidebar: { left: [{ contract: "soksak-spec-plugin-sidebar-file-tree", range: "^0.0.1", view: "tree", instance: "shared" }] } },
           ],
         },
       }),
@@ -452,7 +458,7 @@ describe("parseManifest — 기여 항목 검증", () => {
               id: "v",
               title: "뷰",
               icon: "V",
-              placements: ["sidebar-right"],
+              placements: ["rail"],
               defaultPlacement: "content",
             },
           ],
@@ -1148,7 +1154,7 @@ describe("parseManifest — sidebar 투영 계약(§3.1)", () => {
     const off = parseManifest(
       base({
         permissions: ["ui"],
-        contributes: { views: [{ id: "v", title: "V", icon: "v", placements: ["content"] }] },
+        contributes: { views: [{ id: "v", title: "V", icon: "v", placements: ["rail"] }] },
       }),
       "demo",
     );
@@ -1261,7 +1267,7 @@ describe("parseManifest — sidebar 투영 계약(§3.1)", () => {
     ).toBe(true);
     expect(
       errorsOf(
-        withSidebar({ left: [{ ref: "self.blocks", instance: "shared" }] }, ["content"]),
+        withSidebar({ left: [{ ref: "self.blocks", instance: "shared" }] }, ["rail-footer"]),
       ).some((e) => e.includes("rail")),
     ).toBe(true);
   });

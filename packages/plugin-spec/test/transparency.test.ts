@@ -32,7 +32,7 @@ function base(views: unknown[]): Record<string, unknown> {
 }
 
 function view(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return { id: "canvas", title: "캔버스", icon: "▣", placements: ["content"], ...overrides };
+  return { id: "canvas", title: "캔버스", icon: "▣", placements: ["content"], decoration: true, ...overrides };
 }
 
 describe("contributes.views[].status — 선언 축 파싱(M1)", () => {
@@ -95,7 +95,7 @@ function contributes(overrides: Record<string, unknown> = {}) {
 
 describe("isContentView — 콘텐츠 뷰 판별(설치본 실측 정의: placements 에 content 포함)", () => {
   it("content 단독 배치 → 콘텐츠 뷰", () => {
-    expect(isContentView({ placements: ["content"] })).toBe(true);
+    expect(isContentView({ placements: ["content"], decoration: true })).toBe(true);
   });
   it("혼합 배치(sidebar-right+content) → 콘텐츠 뷰(git-diff 형)", () => {
     expect(isContentView({ placements: ["sidebar-right", "content"] })).toBe(true);
@@ -109,7 +109,7 @@ describe("transparencyViolations — C2 정적 3규칙(M2)", () => {
   it("views>0 ∧ commands=0 → command-surface", () => {
     const v = transparencyViolations(
       contributes({
-        views: [{ id: "c", placements: ["content"], status: [] }],
+        views: [{ id: "c", placements: ["content"], decoration: true, status: [] }],
         nodes: [{ id: "root" }],
       }),
     );
@@ -131,7 +131,7 @@ describe("transparencyViolations — C2 정적 3규칙(M2)", () => {
   it("views>0 ∧ nodes=0 → view-nodes", () => {
     const v = transparencyViolations(
       contributes({
-        views: [{ id: "c", placements: ["content"], status: [] }],
+        views: [{ id: "c", placements: ["content"], decoration: true, status: [] }],
         commands: [{}],
       }),
     );
@@ -141,7 +141,7 @@ describe("transparencyViolations — C2 정적 3규칙(M2)", () => {
   it("콘텐츠 뷰 status 선언 부재 → content-view-status(뷰 id 를 지목)", () => {
     const v = transparencyViolations(
       contributes({
-        views: [{ id: "canvas", placements: ["content"] }],
+        views: [{ id: "canvas", placements: ["content"], decoration: true }],
         commands: [{}],
         nodes: [{ id: "root" }],
       }),
@@ -153,7 +153,7 @@ describe("transparencyViolations — C2 정적 3규칙(M2)", () => {
   it("빈 배열 선언 = 무상태 명시 → 위반 아님(침묵과 구분)", () => {
     const v = transparencyViolations(
       contributes({
-        views: [{ id: "canvas", placements: ["content"], status: [] }],
+        views: [{ id: "canvas", placements: ["content"], decoration: true, status: [] }],
         commands: [{}],
         nodes: [{ id: "root" }],
       }),
@@ -185,7 +185,7 @@ describe("transparencyViolations — C2 정적 3규칙(M2)", () => {
 
   it("복수 위반 동시 보고(은폐 0)", () => {
     const v = transparencyViolations(
-      contributes({ views: [{ id: "c", placements: ["content"] }] }),
+      contributes({ views: [{ id: "c", placements: ["content"], decoration: true }] }),
     );
     expect(v.map((x) => x.rule)).toEqual([
       "command-surface",

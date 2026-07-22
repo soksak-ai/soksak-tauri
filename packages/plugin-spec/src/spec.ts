@@ -119,21 +119,12 @@ export type { LocalizedText } from "./localizedText.js";
 // ── §2 뷰 배치 ───────────────────────────────────────────────────────────────
 // 뷰 구현(provider)과 배치는 직교(§0-6). placements = 지원 배치, 기본 우측 사이드바.
 
-export type ViewPlacement =
-  | "sidebar-right"
-  | "sidebar-left"
-  | "sidebar-footer"
-  | "content"
-  // 투영 모델(plans/sidebar-projection-spec.md §3.3): rail = 레일 투영·핀 가능 사이드바 뷰
-  // (sidebar-left/right 의 후속 — 좌/우 방향은 배치 시점의 결정이라 선언에 없다),
-  // rail-footer = 레일 하단 상주 슬롯(sidebar-footer 승계). 구 이름은 앨리어스 기간 동안 공존.
-  | "rail"
-  | "rail-footer";
+// 투영 모델(plans/sidebar-projection-spec.md §3.3): content = 콘텐츠 평면,
+// rail = 레일 뷰(투영 참조 대상·resident 면 핀 가능 — 좌/우 방향은 배치 시점의 결정이라
+// 선언에 없다), rail-footer = 레일 하단 상주 슬롯. 구 sidebar-* 이름은 존재하지 않는다.
+export type ViewPlacement = "content" | "rail" | "rail-footer";
 
 export const VIEW_PLACEMENTS: readonly ViewPlacement[] = [
-  "sidebar-right",
-  "sidebar-left",
-  "sidebar-footer",
   "content",
   "rail",
   "rail-footer",
@@ -283,7 +274,7 @@ export interface ContributedView {
   id: string; // 플러그인 내 고유. 전역 키는 "<pluginId>.<id>"
   title: LocalizedText;
   icon: string; // 아이콘 레일용 짧은 글리프(문자 1~2개/이모지). v1 은 SVG 미지원
-  placements: ViewPlacement[]; // 파싱 시 기본 ["sidebar-right"] 로 채움
+  placements: ViewPlacement[]; // 파싱 시 기본 ["rail"] 로 채움
   defaultPlacement: ViewPlacement; // 파싱 시 placements[0] 으로 채움
   // 콘텐츠 뷰 아래 네이티브 레이어(임베드 webview 등)가 비쳐야 함 — 코어가 그 셀을 투명 홀로 처리한다.
   // 브라우저류 뷰(child webview 임베드)가 선언한다(코어 하드 체크 없음 — 데이터 주도). 기본 false.
@@ -1171,7 +1162,7 @@ export function parseManifest(
           }
           if (!validateLocalizedText(v.title, "contributes.views.title", errs)) return null;
           if (!isNonEmptyString(v.icon)) return null;
-          let placements: ViewPlacement[] = ["sidebar-right"];
+          let placements: ViewPlacement[] = ["rail"];
           if (v.placements !== undefined) {
             if (
               !Array.isArray(v.placements) ||
@@ -1246,8 +1237,7 @@ export function parseManifest(
             }
             if (
               v.resident === true &&
-              !placements.some((pl) => pl === "rail" || pl === "rail-footer" ||
-                pl === "sidebar-left" || pl === "sidebar-right" || pl === "sidebar-footer")
+              !placements.some((pl) => pl === "rail" || pl === "rail-footer")
             ) {
               errs.push(
                 `contributes.views["${v.id}"].resident: rail 계열 placement 뷰만 선언 가능`,
@@ -1279,6 +1269,14 @@ export function parseManifest(
             );
             if (!sb) return null;
             sidebar = sb;
+          }
+          // A1 강제(스펙 §3.1 — 모든 콘텐츠 뷰는 좌 사이드바 선언을 가진다). 예외는
+          // 명시 decoration 뿐이다. transparent/nativeSurface 는 예외 사유가 아니다.
+          if (placements.includes("content") && sidebar === undefined && !decoration) {
+            errs.push(
+              `contributes.views["${v.id}"]: content 뷰는 sidebar.left 선언 필수(A1) — 장식 뷰는 decoration: true 로 명시`,
+            );
+            return null;
           }
           return {
             id: v.id.trim(),
@@ -1422,6 +1420,12 @@ export function parseManifest(
             );
             if (!sb) return null;
             sidebar = sb;
+          }
+          if (sidebar === undefined) {
+            errs.push(
+              `contributes.fileViewers["${v.id}"]: sidebar.left 선언 필수(A1) — 파일 패널 결부의 투영 근거`,
+            );
+            return null;
           }
           return {
             id: v.id.trim(),

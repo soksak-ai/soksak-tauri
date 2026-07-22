@@ -130,7 +130,7 @@ describe("activatePlugin — 투명성 규칙(매니페스트 정적) 활성화 
         manifestOf({
           permissions: ["ui"],
           contributes: {
-            fileViewers: [{ id: "image", extensions: ["png", "jpg"] }],
+            fileViewers: [{ id: "image", extensions: ["png", "jpg"], sidebar: { left: [{ contract: "soksak-spec-plugin-sidebar-file-tree", range: "^0.0.1", view: "tree", instance: "shared" }] } }],
           },
         }),
         "/d",
@@ -163,7 +163,7 @@ describe("activatePlugin — 투명성 규칙(매니페스트 정적) 활성화 
         manifestOf({
           permissions: ["ui", "commands"],
           contributes: {
-            views: [{ id: "canvas", title: "캔버스", icon: "C", placements: ["content"] }],
+            views: [{ id: "canvas", title: "캔버스", icon: "C", placements: ["content"], decoration: true }],
             commands: [{ name: "open", title: "열기" }],
             nodes: [{ id: "send" }],
           },

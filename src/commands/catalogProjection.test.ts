@@ -179,16 +179,6 @@ describe("배치① 명령 정합 — 우측 핀 거부·alias 핀·확장 상�
     expect(r.code).toBe("INVALID_PARAMS");
   });
 
-  it("레거시 sidebar-left placement 뷰도 핀 가능(앨리어스 기간)", async () => {
-    useViewRegistry.getState().register(
-      "mailplug",
-      decl("inbox", { placements: ["sidebar-left"], defaultPlacement: "sidebar-left" }),
-      provider,
-    );
-    useSessions.setState({ tabs: [tab([], "")], activeId: "p1" });
-    const r = (await execute("ui.projection.pin", { ref: "mailplug.inbox" }, {})) as { ok: boolean };
-    expect(r.ok).toBe(true);
-  });
 
   it("state 는 binding.groupId·contentId 와 focusHistory 를 포함한다(§4.1)", async () => {
     useViewRegistry.getState().register("termplug", decl("term"), provider);
@@ -213,16 +203,6 @@ describe("핀 제한(②) — resident 아닌 rail 뷰는 핀 불가", () => {
     expect(r.code).toBe("INVALID_PARAMS");
   });
 
-  it("레거시 sidebar-* placement 는 앨리어스 기간 동안 resident 간주 — 핀 가능 유지", async () => {
-    useViewRegistry.getState().register(
-      "mailplug",
-      decl("inbox", { placements: ["sidebar-left"], defaultPlacement: "sidebar-left" }),
-      provider,
-    );
-    useSessions.setState({ tabs: [tab([], "")], activeId: "p1" });
-    const r = (await execute("ui.projection.pin", { ref: "mailplug.inbox" }, {})) as { ok: boolean };
-    expect(r.ok).toBe(true);
-  });
 });
 
 describe("배치② — per-view 참조 핀 거부(R4)", () => {

@@ -7,7 +7,6 @@
 //   - startProjectionTracking: 세션 구독 → focusHistory 기록·정리 + projection.changed 발화.
 
 import { leavesOf } from "./splitTree";
-import { sidebarViewKeys } from "./sidebarLayout";
 import { useSessions, type ProjectTab } from "./sessions";
 import {
   resolveProjection,
@@ -17,11 +16,7 @@ import {
   type ProjectionDeps,
 } from "./projection";
 import { usePlugins } from "./plugins";
-import {
-  getRegisteredView,
-  useViewRegistry,
-  viewsForPlacement,
-} from "../plugins/viewRegistry";
+import { getRegisteredView, useViewRegistry } from "../plugins/viewRegistry";
 import { resolveFileViewer } from "../plugins/fileViewerRegistry";
 import { resolveContractImplementer } from "../plugins/contractResolve";
 import { useContractSelection } from "./contractSelection";
@@ -123,18 +118,6 @@ export function startProjectionTracking(): () => void {
     // 이력·핀 갱신과 얽히는 것을 차단한다.
     const changed: { projectId: string; viewId: string | null }[] = [];
     for (const t of tabs) {
-      // §7.1 핀 마이그레이션: 첫 관측 시 기존 배치(leftLayout)의 뷰들을 핀으로 채용하고,
-      // 레거시 sidebar-left placement 뷰는 등장 시 자동 핀(오늘의 UX 유지). rail 뷰는
-      // 투영 모델이므로 자동 핀하지 않는다. seen 이 unpin 의사를 지킨다.
-      if ((proj.byProject[t.id]?.seen.left ?? []).length === 0) {
-        const adopted = sidebarViewKeys(t.leftLayout);
-        if (adopted.length > 0) {
-          useProjection.getState().adoptPins(t.id, "left", adopted);
-        }
-      }
-      for (const { key } of viewsForPlacement("sidebar-left")) {
-        useProjection.getState().autoPin(t.id, "left", key);
-      }
       const candidate = boundViewOf(t);
       const vid = candidate?.viewId ?? null;
       if (candidate?.contentId && vid) {

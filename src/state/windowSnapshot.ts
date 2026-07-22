@@ -76,9 +76,8 @@ export interface ProjectSnapshot {
   leftLayout: SplitSnapshot<SidebarGroup>;
   activeContentId: string;
   contents: ContentSnapshot[];
-  // 레일 핀·자동핀 인지 기록(§4.5) — 프로젝트와 함께 영속. 옵션(구 스냅샷 호환 — 부재 시
-  // 복원이 leftLayout 채용(§7.1 1회 마이그레이션)으로 폴백한다).
-  projection?: { pins: Pins; seen: Pins };
+  // 레일 핀(§4.5) — 프로젝트와 함께 영속.
+  projection?: { pins: Pins };
 }
 
 // ── serialize ─────────────────────────────────────────────────────────────────
@@ -130,7 +129,7 @@ const serializeContent = (c: ContentArea): ContentSnapshot => ({
 
 export function serializeProject(
   p: ProjectTab,
-  projection?: { pins: Pins; seen: Pins },
+  projection?: { pins: Pins },
 ): ProjectSnapshot {
   return {
     ...(projection ? { projection } : {}),

@@ -53,15 +53,15 @@ function runGate(pluginsDir) {
 describe("scanPlugins — 설치본 순회 실측", () => {
   it("규칙별 위반 플러그인 목록을 집계한다(정적 3종)", () => {
     // command-surface 위반: 파일 뷰어만 기여.
-    writePlugin("soksak-plugin-viewer", { fileViewers: [{ id: "img", extensions: ["png"] }] }, ["ui"]);
+    writePlugin("soksak-plugin-viewer", { fileViewers: [{ id: "img", extensions: ["png"], sidebar: { left: [{ contract: "soksak-spec-plugin-sidebar-file-tree", range: "^0.0.1", view: "tree", instance: "shared" }] } }] }, ["ui"]);
     // view-nodes + content-view-status 위반: 콘텐츠 뷰(status 미선언) + command, nodes 없음.
     writePlugin("soksak-plugin-canvas", {
-      views: [{ id: "c", title: "C", icon: "C", placements: ["content"] }],
+      views: [{ id: "c", title: "C", icon: "C", placements: ["content"], decoration: true }],
       commands: [{ name: "open", title: "O" }],
     });
     // 위반 없음: 세 표면 + 콘텐츠 뷰 status 선언.
     writePlugin("soksak-plugin-clean", {
-      views: [{ id: "c", title: "C", icon: "C", placements: ["content"], status: ["busy"] }],
+      views: [{ id: "c", title: "C", icon: "C", placements: ["content"], decoration: true, status: ["busy"] }],
       commands: [{ name: "open", title: "O" }],
       nodes: [{ id: "root" }],
     });
@@ -90,7 +90,7 @@ describe("scanPlugins — 설치본 순회 실측", () => {
 // ── 시행 모드 — blocking 만 게이트를 깬다(warn = 래칫 측정치) ─────────────────
 describe("게이트 exit code — blocking 위반 0 실측", () => {
   it("blocking 규칙 위반 있으면 exit 1", () => {
-    writePlugin("soksak-plugin-viewer", { fileViewers: [{ id: "img", extensions: ["png"] }] }, ["ui"]);
+    writePlugin("soksak-plugin-viewer", { fileViewers: [{ id: "img", extensions: ["png"], sidebar: { left: [{ contract: "soksak-spec-plugin-sidebar-file-tree", range: "^0.0.1", view: "tree", instance: "shared" }] } }] }, ["ui"]);
     const r = runGate(root);
     expect(r.status).toBe(1);
     expect(r.out).toContain("command-surface(blocking): 위반 1");
@@ -98,7 +98,7 @@ describe("게이트 exit code — blocking 위반 0 실측", () => {
 
   it("content-view-status 위반은 blocking 승격분 — exit 1 로 거부", () => {
     writePlugin("soksak-plugin-status-gap", {
-      views: [{ id: "c", title: "C", icon: "C", placements: ["content"] }],
+      views: [{ id: "c", title: "C", icon: "C", placements: ["content"], decoration: true }],
       commands: [{ name: "open", title: "O" }],
       nodes: [{ id: "root" }],
     });
@@ -109,7 +109,7 @@ describe("게이트 exit code — blocking 위반 0 실측", () => {
 
   it("위반 0 이면 exit 0", () => {
     writePlugin("soksak-plugin-clean", {
-      views: [{ id: "c", title: "C", icon: "C", placements: ["content"], status: [] }],
+      views: [{ id: "c", title: "C", icon: "C", placements: ["content"], decoration: true, status: [] }],
       commands: [{ name: "open", title: "O" }],
       nodes: [{ id: "root" }],
     });
@@ -140,8 +140,8 @@ describe("게이트 exit code — blocking 위반 0 실측", () => {
 describe("judgeManifests — 모집단-무관 판정(소스 분리)", () => {
   it("entries 를 규칙별로 집계한다(dir 순회와 동일 판정)", () => {
     const r = judgeManifests([
-      { name: "soksak-plugin-viewer", text: JSON.stringify({ spec: "soksak-spec-plugin@0.0.1", id: "soksak-plugin-viewer", name: "v", version: "1.0.0", description: "f", permissions: ["ui"], contributes: { fileViewers: [{ id: "img", extensions: ["png"] }] } }) },
-      { name: "soksak-plugin-clean", text: JSON.stringify({ spec: "soksak-spec-plugin@0.0.1", id: "soksak-plugin-clean", name: "c", version: "1.0.0", description: "f", permissions: ["ui", "commands"], contributes: { views: [{ id: "c", title: "C", icon: "C", placements: ["content"], status: [] }], commands: [{ name: "o", title: "O" }], nodes: [{ id: "root" }] } }) },
+      { name: "soksak-plugin-viewer", text: JSON.stringify({ spec: "soksak-spec-plugin@0.0.1", id: "soksak-plugin-viewer", name: "v", version: "1.0.0", description: "f", permissions: ["ui"], contributes: { fileViewers: [{ id: "img", extensions: ["png"], sidebar: { left: [{ contract: "soksak-spec-plugin-sidebar-file-tree", range: "^0.0.1", view: "tree", instance: "shared" }] } }] } }) },
+      { name: "soksak-plugin-clean", text: JSON.stringify({ spec: "soksak-spec-plugin@0.0.1", id: "soksak-plugin-clean", name: "c", version: "1.0.0", description: "f", permissions: ["ui", "commands"], contributes: { views: [{ id: "c", title: "C", icon: "C", placements: ["content"], decoration: true, status: [] }], commands: [{ name: "o", title: "O" }], nodes: [{ id: "root" }] } }) },
     ]);
     expect(r.scanned).toBe(2);
     expect(r.perRule["command-surface"]).toEqual(["soksak-plugin-viewer"]);
@@ -159,7 +159,7 @@ describe("scanRegistry — 배포 모집단 실측(주입 fetcher, 무네트워�
   it("public 매니페스트를 같은 판정으로 스캔한다 — blocking 위반이면 게이트 실패 조건", async () => {
     // dev-home 은 0 이어도 public 이 blocking 규칙을 위반하면 승격이 불건전 — 이 모드가 그걸 잡는다.
     const fetchEntries = async () => [
-      { name: "soksak-plugin-lagging", text: JSON.stringify({ spec: "soksak-spec-plugin@0.0.1", id: "soksak-plugin-lagging", name: "l", version: "1.0.0", description: "f", permissions: ["ui"], contributes: { fileViewers: [{ id: "img", extensions: ["png"] }] } }) },
+      { name: "soksak-plugin-lagging", text: JSON.stringify({ spec: "soksak-spec-plugin@0.0.1", id: "soksak-plugin-lagging", name: "l", version: "1.0.0", description: "f", permissions: ["ui"], contributes: { fileViewers: [{ id: "img", extensions: ["png"], sidebar: { left: [{ contract: "soksak-spec-plugin-sidebar-file-tree", range: "^0.0.1", view: "tree", instance: "shared" }] } }] } }) },
     ];
     const r = await scanRegistry({ fetchEntries });
     expect(r.source).toBe("registry");
@@ -169,7 +169,7 @@ describe("scanRegistry — 배포 모집단 실측(주입 fetcher, 무네트워�
 
   it("public 이 전부 적합하면 위반 0(승격 건전)", async () => {
     const fetchEntries = async () => [
-      { name: "soksak-plugin-ok", text: JSON.stringify({ spec: "soksak-spec-plugin@0.0.1", id: "soksak-plugin-ok", name: "o", version: "1.0.0", description: "f", permissions: ["ui", "commands"], contributes: { views: [{ id: "c", title: "C", icon: "C", placements: ["content"], status: [] }], commands: [{ name: "o", title: "O" }], nodes: [{ id: "root" }] } }) },
+      { name: "soksak-plugin-ok", text: JSON.stringify({ spec: "soksak-spec-plugin@0.0.1", id: "soksak-plugin-ok", name: "o", version: "1.0.0", description: "f", permissions: ["ui", "commands"], contributes: { views: [{ id: "c", title: "C", icon: "C", placements: ["content"], decoration: true, status: [] }], commands: [{ name: "o", title: "O" }], nodes: [{ id: "root" }] } }) },
     ];
     const r = await scanRegistry({ fetchEntries });
     expect(blockingViolationCount(r.perRule)).toBe(0);

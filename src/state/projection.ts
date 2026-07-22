@@ -176,10 +176,7 @@ const HISTORY_CAP = 50;
 
 interface ProjectEntry {
   focusHistory: string[]; // 최근순. 세션 로컬(§4.5 — 복원 대상 아님)
-  pins: Pins; // 프로젝트와 함께 영속(§4.5) — 배선은 지속성 유닛에서
-  // 자동 핀(§7.1 마이그레이션)이 이미 다뤄본 ref — unpin 한 것을 세션 안에서 되핀하지
-  // 않기 위한 기록. 수동 pin 도 남긴다.
-  seen: Pins;
+  pins: Pins; // 프로젝트와 함께 영속(§4.5)
 }
 
 interface ProjectionStore {
@@ -191,12 +188,8 @@ interface ProjectionStore {
   // 핀(R4) — 멱등. 핀 가능 검증(rail 뷰 존재·shared/상주형)은 명령 계층 소유.
   pin(projectId: string, side: "left" | "right", ref: string): void;
   unpin(projectId: string, side: "left" | "right", ref: string): void;
-  // §7.1 마이그레이션: 기존 배치(leftLayout 등)의 ref 들을 핀으로 일괄 채용(+seen).
-  adoptPins(projectId: string, side: "left" | "right", refs: string[]): void;
-  // 레거시 placement 뷰의 등장 시 자동 핀 — seen 이면 no-op(unpin 의사 존중).
-  autoPin(projectId: string, side: "left" | "right", ref: string): void;
-  // 복원 씨딩(§4.5·R9) — 스냅샷의 pins·seen 을 부재 시에만 심는다(라이브 클로버 금지).
-  seedProject(projectId: string, entry: { pins: Pins; seen: Pins }): void;
+  // 복원 씨딩(§4.5·R9) — 스냅샷의 pins 를 부재 시에만 심는다(라이브 클로버 금지).
+  seedProject(projectId: string, entry: { pins: Pins }): void;
   // 프로젝트 닫힘 — 상태 회수.
   dropProject(projectId: string): void;
 }
@@ -204,19 +197,14 @@ interface ProjectionStore {
 const emptyEntry = (): ProjectEntry => ({
   focusHistory: [],
   pins: { left: [], right: [] },
-  seen: { left: [], right: [] },
 });
 
-// pin/adopt/autoPin 공용 — pins·seen 에 ref 를 더한 새 엔트리(이미 있으면 그 축 유지).
 function withPin(entry: ProjectEntry, side: "left" | "right", ref: string): ProjectEntry {
-  const pins = entry.pins[side].includes(ref)
-    ? entry.pins
-    : { ...entry.pins, [side]: [...entry.pins[side], ref] };
-  const seen = entry.seen[side].includes(ref)
-    ? entry.seen
-    : { ...entry.seen, [side]: [...entry.seen[side], ref] };
-  if (pins === entry.pins && seen === entry.seen) return entry;
-  return { ...entry, pins, seen };
+  if (entry.pins[side].includes(ref)) return entry;
+  return {
+    ...entry,
+    pins: { ...entry.pins, [side]: [...entry.pins[side], ref] },
+  };
 }
 
 export const useProjection = create<ProjectionStore>((set) => ({
@@ -258,22 +246,6 @@ export const useProjection = create<ProjectionStore>((set) => ({
       return { byProject: { ...s.byProject, [projectId]: next } };
     }),
 
-  adoptPins: (projectId, side, refs) =>
-    set((s) => {
-      let entry = s.byProject[projectId] ?? emptyEntry();
-      const before = entry;
-      for (const ref of refs) entry = withPin(entry, side, ref);
-      if (entry === before && s.byProject[projectId]) return s;
-      return { byProject: { ...s.byProject, [projectId]: entry } };
-    }),
-
-  autoPin: (projectId, side, ref) =>
-    set((s) => {
-      const entry = s.byProject[projectId] ?? emptyEntry();
-      if (entry.seen[side].includes(ref)) return s; // unpin 의사 존중
-      return { byProject: { ...s.byProject, [projectId]: withPin(entry, side, ref) } };
-    }),
-
   unpin: (projectId, side, ref) =>
     set((s) => {
       const entry = s.byProject[projectId];
@@ -298,7 +270,6 @@ export const useProjection = create<ProjectionStore>((set) => ({
           [projectId]: {
             focusHistory: [],
             pins: { left: [...entry.pins.left], right: [...entry.pins.right] },
-            seen: { left: [...entry.seen.left], right: [...entry.seen.right] },
           },
         },
       };

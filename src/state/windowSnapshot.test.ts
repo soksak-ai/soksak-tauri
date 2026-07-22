@@ -164,7 +164,6 @@ describe("left rail FLOW/PIN persistence", () => {
   it("round-trips the position PIN independently from projection ref pins", () => {
     const snap = serializeProject(project, {
       pins: { left: ["plugin.tree"], right: [] },
-      seen: { left: ["plugin.tree"], right: [] },
     });
     expect(snap.leftRailPlacement).toEqual({ mode: "pin", station: 60 });
     expect(snap.projection?.pins.left).toEqual(["plugin.tree"]);
@@ -321,11 +320,9 @@ describe("projection 핀 영속(§4.5) — 스냅샷 round-trip", () => {
     } as never;
     const withProj = serializeProject(tab, {
       pins: { left: ["a.t"], right: [] },
-      seen: { left: ["a.t"], right: [] },
     });
     expect(withProj.projection).toEqual({
       pins: { left: ["a.t"], right: [] },
-      seen: { left: ["a.t"], right: [] },
     });
     const without = serializeProject(tab);
     expect(without).not.toHaveProperty("projection");

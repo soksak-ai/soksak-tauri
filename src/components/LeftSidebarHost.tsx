@@ -74,25 +74,17 @@ export const LeftSidebarHost = memo(function LeftSidebarHost({
     (s) => s.byProject[project.id]?.pins.left,
   );
   const registeredKeys = useMemo(() => {
-    // 핀 렌더 대상 = 상주형뿐(②): resident 선언 rail 뷰 + 레거시 sidebar-* 앨리어스.
-    // 과거에 심긴 비상주형 핀(ref 기록)은 여기서 걸러져 자동 소거된다(기록은 무해).
+    // 핀 렌더 대상 = 상주형(resident) rail 뷰뿐(②). 비상주 핀 기록은 걸러진다(무해).
     const residentish = new Set(
-      [...viewsForPlacement("sidebar-left"), ...viewsForPlacement("rail")]
-        .filter(
-          ({ view }) =>
-            view.decl.resident ||
-            view.decl.placements.some((pl) =>
-              ["sidebar-left", "sidebar-right", "sidebar-footer"].includes(pl),
-            ),
-        )
+      viewsForPlacement("rail")
+        .filter(({ view }) => view.decl.resident)
         .map((v) => v.key),
     );
     return (pinnedLeft ?? []).filter((k) => residentish.has(k));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [version, pinnedLeft]);
   const footerViews = useMemo(
-    // rail-footer(§3.3) + 레거시 sidebar-footer 앨리어스 — 같은 하단 상주 슬롯.
-    () => [...viewsForPlacement("rail-footer"), ...viewsForPlacement("sidebar-footer")],
+    () => viewsForPlacement("rail-footer"),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [version],
   );

@@ -144,8 +144,7 @@ export async function initWorkspacePersistence(
         : (owned[0]?.id ?? "");
       reseedIdCounters(owned);
       if (owned.length > 0) {
-        // 레일 핀·seen 복원(§4.5·R9) — 추적 sweep(첫 채용 판단)보다 먼저 씨딩되어야
-        // 구 스냅샷 폴백(§7.1 leftLayout 채용)이 오발동하지 않는다. main 부트 순서가 보장.
+        // 레일 핀 복원(§4.5·R9) — 추적 sweep 이전 씨딩(main 부트 순서 보장).
         for (const t of owned) {
           const seed = projections[t.id];
           if (seed) useProjection.getState().seedProject(t.id, seed);
@@ -172,9 +171,9 @@ export async function initWorkspacePersistence(
   // (coreSync.ts 와 동일 패턴 — B1 정합성: 저장은 종료 시 flush 보장).
   const doPersist = () => {
     const { tabs, activeId } = useSessions.getState();
-    const projections: Record<string, { pins: Pins; seen: Pins }> = {};
+    const projections: Record<string, { pins: Pins }> = {};
     for (const [pid, e] of Object.entries(useProjection.getState().byProject)) {
-      projections[pid] = { pins: e.pins, seen: e.seen };
+      projections[pid] = { pins: e.pins };
     }
     void persistNow(label, tabs, activeId, projections, winStore, manifestStore);
   };
@@ -195,7 +194,7 @@ async function persistNow(
   label: string,
   tabs: ProjectTab[],
   activeId: string,
-  projections: Record<string, { pins: Pins; seen: Pins }>,
+  projections: Record<string, { pins: Pins }>,
   winStore: ReturnType<typeof makeCoreStore<WindowSnapshot>>,
   manifestStore: ReturnType<typeof makeCoreStore<WindowManifest>>,
 ): Promise<void> {

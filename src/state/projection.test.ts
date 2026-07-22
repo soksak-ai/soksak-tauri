@@ -222,34 +222,6 @@ describe("useProjection 스토어 — focusHistory·pins(사용자 소유 상태
   });
 });
 
-describe("핀 마이그레이션(§7.1) — adoptPins·autoPin·seen", () => {
-  beforeEach(() => {
-    useProjection.setState({ byProject: {} });
-  });
-
-  it("adoptPins — 기존 배치(leftLayout) 키를 핀으로 일괄 채용, seen 기록", () => {
-    const s = useProjection.getState();
-    s.adoptPins(P, "left", ["a.tree", "b.mail"]);
-    const e = useProjection.getState().byProject[P];
-    expect(e.pins.left).toEqual(["a.tree", "b.mail"]);
-    expect(e.seen.left).toEqual(["a.tree", "b.mail"]);
-  });
-
-  it("autoPin — 미인지 ref 만 핀, seen 이후엔 재핀 안 함(unpin 유지)", () => {
-    const s = useProjection.getState();
-    s.autoPin(P, "left", "a.tree");
-    expect(useProjection.getState().byProject[P].pins.left).toEqual(["a.tree"]);
-    s.unpin(P, "left", "a.tree");
-    s.autoPin(P, "left", "a.tree"); // seen — 재핀 금지
-    expect(useProjection.getState().byProject[P].pins.left).toEqual([]);
-  });
-
-  it("수동 pin 도 seen 을 남긴다", () => {
-    const s = useProjection.getState();
-    s.pin(P, "left", "a.tree");
-    expect(useProjection.getState().byProject[P].seen.left).toEqual(["a.tree"]);
-  });
-});
 
 describe("seedProject — 복원 씨딩(§4.5·R9)", () => {
   beforeEach(() => {
@@ -258,18 +230,11 @@ describe("seedProject — 복원 씨딩(§4.5·R9)", () => {
 
   it("부재 시에만 씨딩(라이브 상태 클로버 금지), pins·seen 복원", () => {
     const s = useProjection.getState();
-    s.seedProject(P, { pins: { left: ["a.t"], right: [] }, seen: { left: ["a.t", "b.m"], right: [] } });
+    s.seedProject(P, { pins: { left: ["a.t"], right: [] } });
     expect(useProjection.getState().byProject[P].pins.left).toEqual(["a.t"]);
-    expect(useProjection.getState().byProject[P].seen.left).toEqual(["a.t", "b.m"]);
     // 이미 있으면 no-op
-    s.seedProject(P, { pins: { left: ["x.y"], right: [] }, seen: { left: [], right: [] } });
+    s.seedProject(P, { pins: { left: ["x.y"], right: [] } });
     expect(useProjection.getState().byProject[P].pins.left).toEqual(["a.t"]);
   });
 
-  it("씨딩된 seen 은 auto-pin 부활을 막는다(R9 동형 — unpin 의사 보존)", () => {
-    const s = useProjection.getState();
-    s.seedProject(P, { pins: { left: [], right: [] }, seen: { left: ["mail.inbox"], right: [] } });
-    s.autoPin(P, "left", "mail.inbox");
-    expect(useProjection.getState().byProject[P].pins.left).toEqual([]);
-  });
 });
