@@ -1269,12 +1269,15 @@ function withCommonFields(out: CommandOutcome, name: string, ctx: CommandContext
       }
     }
   } else {
-    // 실패 hint 도 명령 자신이 먼저 짓는다(spec.hint 가 {code,message} 를 받아 원인별 안내 가능).
+    // 실패 hint 도 명령 자신이 먼저 짓는다(spec.hint 가 {code,message,data} 를 받아 원인별 안내 가능).
+    // data 는 실패 봉투의 구조화 데이터 그대로다 — hint 는 사람 문장(message)을 파싱하지 않고 이것을 읽는다.
     // 명령이 비워 두거나 예외를 일으키면 오류 코드별 표준 안내로 돌아간다 — 받은 쪽이 스스로 회복할 길을 연다.
     const spec = registry.get(name);
     if (spec?.hint) {
       try {
-        const own = spec.hint({ code: out.code, message: out.message }, ctx).slice(0, 3);
+        const own = spec
+          .hint({ code: out.code, message: out.message, data: out.data }, ctx)
+          .slice(0, 3);
         if (own.length) out.hint = own;
       } catch {
         /* 제시의 실패가 진단을 막지 않는다 */

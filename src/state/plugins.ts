@@ -176,6 +176,14 @@ export function pendingConsentChain(
   });
 }
 
+// CONSENT_REQUIRED 메시지 — 기제를 서사하지 않고 이 사례에 필요한 행동만 자연문으로 말한다.
+// 동의 대상이 자신뿐이면 그것만, 의존이 걸리면 동의가 필요한 대상들을 순서대로 나열한다
+// (의존 관계·권한 상세는 동의 화면이 보여준다 — 메시지가 가르치지 않는다).
+export function consentRequiredMessage(id: string, pending: string[]): string {
+  if (pending.length === 1 && pending[0] === id) return `${id} 활성화 동의가 필요합니다`;
+  return `${id} 활성화 시 ${pending.join(", ")} 동의가 필요합니다`;
+}
+
 // 프로그램 ensure(§2.6) — 활성화 시점에 선행 바이너리를 보장한다. 사용자
 // 로그인 셸 PATH 로 확인(shell_which)하고, 미설치면 공식 설치 명령을 새
 // 터미널 탭에서 가시 실행한다(은폐 금지 — 동의 화면에 고지된 그 명령 그대로).
@@ -565,7 +573,7 @@ export const usePlugins = create<PluginsState>((set, get) => {
         if (pending.length > 0) {
           setRuntime(id, {
             status: "disabled",
-            error: `재동의 필요(자신 또는 종속의 버전·권한 변경): ${pending.join(", ")}`,
+            error: `재동의 필요(자신 또는 의존 플러그인의 버전·권한 변경): ${pending.join(", ")}`,
           });
           continue;
         }
@@ -625,11 +633,9 @@ export const usePlugins = create<PluginsState>((set, get) => {
       // 종속 먼저 순서로 동의 팝업을 연속으로 띄우게 한다(반쪽 동의 금지).
       const pending = pendingConsentChain(id, get().plugins, get().consents);
       if (pending.length > 0) {
-        return err(
-          "CONSENT_REQUIRED",
-          `활성화 동의 필요: ${pending.join(", ")} — 종속 먼저 순서로 동의가 필요합니다`,
-          { pendingConsent: pending },
-        );
+        return err("CONSENT_REQUIRED", consentRequiredMessage(id, pending), {
+          pendingConsent: pending,
+        });
       }
       // 종속부터 활성화(cascade) — activationChain 순서로, 미활성·동의된 것만. 종속이 먼저 준비된다.
       const chain = activationChain(id, pluginDepNodes(get().plugins));

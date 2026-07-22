@@ -98,11 +98,11 @@ export function PluginConsentModal({
           </button>
         </div>
         <div className="dmodal-body">
-          {/* 연속 동의 안내 — 이 팝업이 종속(예: core)에 대한 것이면, 본체를 활성화하기 전에 종속도
-              사용자가 권한을 보고 동의해야 함을 알린다(반쪽 동의 금지 §0-2). */}
+          {/* 연속 동의 안내 — 이 팝업이 의존 플러그인(예: core)에 대한 것이면, 본체를 활성화하기
+              전에 의존 쪽도 사용자가 권한을 보고 동의해야 함을 알린다(반쪽 동의 금지 §0-2). */}
           {step?.isDependency && (
             <div className="plugin-consent-notice">
-              이 플러그인은 활성화하려는 플러그인의 종속입니다. 먼저 권한을 확인하고 동의해야
+              활성화하려는 플러그인이 이 플러그인에 의존합니다. 먼저 권한을 확인하고 동의해야
               합니다{step.remaining > 1 ? ` (남은 동의 ${step.remaining}개)` : ""}.
             </div>
           )}
