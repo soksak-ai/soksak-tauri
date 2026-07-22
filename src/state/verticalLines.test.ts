@@ -7,6 +7,7 @@ import {
   LINE_SNAP_EPS,
   MIN_PANE_FRAC,
   collectLineGroup,
+  equalizeLineGroup,
   lineGroupRange,
   moveLineGroup,
   normalizeVerticalLines,
@@ -184,6 +185,44 @@ describe("moveLineGroup — 묶음 전체가 같은 x 로", () => {
 
   it("빈 묶음은 이동 없음", () => {
     expect(moveLineGroup([], 50).moves).toEqual([]);
+  });
+});
+
+describe("equalizeLineGroup — 더블클릭 균등화도 라인 묶음 경로", () => {
+  it("위 0.4/0.6·아래 0.4/0.6 에서 위 세그먼트 더블클릭 → 두 라인 모두 50(찢어지지 않음)", () => {
+    const tree = stacked([0.4, 0.6], [0.4, 0.6]);
+    const { x, moves } = equalizeLineGroup(
+      computeSplitLayout(tree).dividers,
+      "top",
+      0,
+    );
+    expect(x).toBeCloseTo(50, 10);
+    expect(moves).toHaveLength(2);
+    const next = applyMoves(tree, moves);
+    for (const d of rowDividersOf(next)) expect(d.rect.left).toBeCloseTo(50, 10);
+  });
+
+  it("균등화 목표가 교집합 밖이면 클램프 — 묶음은 같은 x 로 함께 멈춘다", () => {
+    // 아래 가운데 패널 0.1 → 묶음 상한 42. 균등화 목표 50 은 42 로 클램프되고
+    // 두 세그먼트가 같은 42 에 함께 선다(정확한 반반보다 라인 불분할이 우선).
+    const tree = split("c", "col", [0.5, 0.5], [
+      split("top", "row", [0.4, 0.6], [leaf("a"), leaf("b")]),
+      split("bot", "row", [0.4, 0.1, 0.5], [leaf("d"), leaf("e"), leaf("f")]),
+    ]);
+    const { x, moves } = equalizeLineGroup(
+      computeSplitLayout(tree).dividers,
+      "top",
+      0,
+    );
+    expect(x).toBeCloseTo(42, 10);
+    const next = applyMoves(tree, moves);
+    expect(rowXAt(next, "top", 0)).toBeCloseTo(42, 10);
+    expect(rowXAt(next, "bot", 0)).toBeCloseTo(42, 10);
+    expect(rowXAt(next, "bot", 1)).toBeCloseTo(50, 10); // 묶음 밖 디바이더는 불변
+  });
+
+  it("앵커가 없으면 이동 없음", () => {
+    expect(equalizeLineGroup([], "nope", 0).moves).toEqual([]);
   });
 });
 

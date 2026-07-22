@@ -42,6 +42,7 @@ import { RAIL_TRAVEL_MS } from "../lib/railMotion";
 import {
   MIN_PANE_FRAC,
   collectLineGroup,
+  equalizeLineGroup,
   moveLineGroup,
   type LineMove,
 } from "../state/verticalLines";
@@ -420,8 +421,17 @@ export const GroupArea = memo(function GroupArea({
     [startDrag],
   );
 
-  // 더블클릭 = 인접 두 영역을 정확히 반반으로(합 보존 — 다른 형제 비율 불변).
+  // 더블클릭 = 인접 두 영역을 반반으로(합 보존 — 다른 형제 비율 불변). row 디바이더는
+  // 세로 불분할 명제를 따른다 — 균등화 목표 x 로 라인 묶음 전체가 이동(교집합 클램프)하고
+  // 한 커밋(resizeSplits)으로 적용돼 라인이 찢어지지 않는다. col 은 명제 밖 — 인접쌍만.
   const onDividerDoubleClick = (d: Divider) => () => {
+    if (d.dir === "row") {
+      resizeSplits(
+        projectId,
+        equalizeLineGroup(dividers, d.splitId, d.index).moves,
+      );
+      return;
+    }
     const sizes = [...d.sizes];
     const half = (sizes[d.index] + sizes[d.index + 1]) / 2;
     sizes[d.index] = half;

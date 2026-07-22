@@ -1,20 +1,28 @@
-// 세로 불분할 명제 — 세로 클린 라인은 전 높이에서 하나의 정체성을 가진다. 어느 세그먼트를
-// 끌든 라인 전체가 함께 움직이고, 드래그는 라인을 이동시킬 수 있을 뿐 쪼갤 수 없다.
-// 순수 로직의 단일 소유는 여기 — GroupArea 드래그 핸들러·복원(windowSnapshot)은 소비만 한다.
+// 세로 불분할 명제 — 세로 클린 라인은 전 높이에서 하나의 정체성을 가진다. 제스처 종류와
+// 무관하게(드래그·더블클릭 균등화) 어느 세그먼트를 잡든 라인 전체가 함께 움직이고, 제스처는
+// 라인을 이동시킬 수 있을 뿐 쪼갤 수 없다. 순수 로직의 단일 소유는 여기 — GroupArea
+// 제스처 핸들러·복원(windowSnapshot)은 소비만 한다.
 //
 // 라인 = x 가 허용오차 안에서 같고 y 구간이 서로 겹치지 않는 세로(row) 디바이더 세그먼트들.
 // 같은 y 구간을 공유하는 디바이더는 나란한 다른 라인이지 한 라인의 세그먼트가 아니다 — 이
 // 규칙이 조상/자손 디바이더도 배제하므로(자손의 y 는 조상 divider y 의 부분집합) 한 묶음의
 // 세그먼트들은 항상 서로 독립인 split 에 산다(한 번의 일괄 적용이 정확하다).
+//
+// 두 eps 는 역할이 다르다 — 값이 아니라 적용 시점이 경계다:
+// · LINE_GROUP_EPS(0.75) = 런타임 규칙. 제스처 시작 시 "같은 라인"으로 묶는 범위.
+// · LINE_SNAP_EPS(1.5) = 1회 레거시 치유. vlNormalized 마커 없는 구 스냅샷의 최초
+//   복원에서만 토막 라인을 스냅한다(windowSnapshot 이 게이트). 이후 복원은 무변환이라
+//   사용자가 런타임 규칙 밖(0.75~1.5)에 둔 별개 라인을 복원이 되쓰지 않는다.
 
 import { computeSplitLayout, type LayoutDivider } from "../lib/splitLayout";
 import { resizeSplitTree, type SplitTree } from "./splitTree";
 
 // 패널 최소 분율(해당 split 스팬 기준) — 드래그 클램프와 정규화 가드의 단일 소스.
 export const MIN_PANE_FRAC = 0.08;
-// 동반 드래그 묶음 판정 허용오차(%p) — 드래그 시작 시 같은 라인으로 잡는 범위.
+// 동반 묶음 판정 허용오차(%p) — 제스처 시작 시 같은 라인으로 잡는 범위(런타임 규칙).
 export const LINE_GROUP_EPS = 0.75;
-// 복원 정규화 허용오차(%p) — 오염되어 토막 난 라인을 공통 x 로 스냅하는 범위.
+// 복원 정규화 허용오차(%p) — 마커 없는 구 스냅샷의 토막 라인을 공통 x 로 스냅하는 범위
+// (1회 레거시 치유 전용 — 런타임 경로에서 쓰지 않는다).
 export const LINE_SNAP_EPS = 1.5;
 
 const TINY = 1e-9;
@@ -29,11 +37,11 @@ const yOverlaps = (a: LayoutDivider, b: LayoutDivider): boolean =>
   a.rect.top < b.rect.top + b.rect.height - TINY &&
   b.rect.top < a.rect.top + a.rect.height - TINY;
 
-// 드래그 시작 시 앵커와 한 라인을 이루는 세로 디바이더 묶음(앵커 포함, top 오름차순).
+// 제스처 시작 시 앵커와 한 라인을 이루는 세로 디바이더 묶음(앵커 포함, top 오름차순).
 // y 가 겹치는 후보(나란한 딴 라인)는 앵커 x 에 가까운 것만 남는다. 허용 구간이 앵커의
 // 시작 x 를 담지 못하는 세그먼트(최소폭에 눌린 이웃)는 애초에 묶지 않는다 — 남는 묶음은
 // 앵커를 포함하면서 교집합이 시작 x 를 담는 최대 유효 부분집합이고(클램프 공집합 불가),
-// 일단 묶인 세그먼트는 드래그가 절대 찢지 않는다.
+// 일단 묶인 세그먼트는 제스처가 절대 찢지 않는다.
 export function collectLineGroup(
   dividers: LayoutDivider[],
   anchorSplitId: string,
@@ -115,6 +123,26 @@ export function moveLineGroup(
     x,
     moves: [...sizesBySplit].map(([splitId, sizes]) => ({ splitId, sizes })),
   };
+}
+
+// 더블클릭 균등화 — 앵커 divider 의 인접 두 패널이 반반이 되는 목표 x 를 계산해 라인 묶음
+// 전체를 그 x 로 이동시킨다(교집합 클램프 포함). 명제는 제스처 종류와 무관하다 — 균등화도
+// 드래그와 같은 collectLineGroup+moveLineGroup 경로라 라인이 찢어지지 않는다. 목표가
+// 교집합 밖이면 정확한 반반보다 라인 불분할이 우선한다(클램프된 공통 x 에 함께 선다).
+export function equalizeLineGroup(
+  dividers: LayoutDivider[],
+  anchorSplitId: string,
+  anchorIndex: number,
+): { x: number; moves: LineMove[] } {
+  const group = collectLineGroup(dividers, anchorSplitId, anchorIndex);
+  const anchor = group.find(
+    (d) => d.splitId === anchorSplitId && d.index === anchorIndex,
+  );
+  if (!anchor) return { x: 0, moves: [] };
+  const half = (anchor.sizes[anchorIndex] + anchor.sizes[anchorIndex + 1]) / 2;
+  const targetX =
+    anchor.rect.left + (half - anchor.sizes[anchorIndex]) * anchor.spanPct;
+  return moveLineGroup(group, targetX);
 }
 
 // split id → 깊이(루트 0) — 정규화의 조상 우선 적용 순서.
