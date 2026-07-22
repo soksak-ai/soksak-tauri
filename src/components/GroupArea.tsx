@@ -39,6 +39,13 @@ import {
 } from "../lib/railPlacement";
 import { projectFocusedPanelNearRail } from "../lib/railFocusLayout";
 import { RAIL_TRAVEL_MS } from "../lib/railMotion";
+import {
+  MIN_PANE_FRAC,
+  collectLineGroup,
+  equalizeLineGroup,
+  moveLineGroup,
+  type LineMove,
+} from "../state/verticalLines";
 
 // 콘텐츠 영역을 에디터 그룹으로 렌더. 핵심 원칙 둘:
 // 1) 본문(터미널/에디터)을 그룹 트리 구조와 분리해 viewId 로 키된 "영속 본문 레이어"에
@@ -216,6 +223,7 @@ export const GroupArea = memo(function GroupArea({
   const moveViewToGroup = useSessions((s) => s.moveViewToGroup);
   const moveGroupToGroup = useSessions((s) => s.moveGroupToGroup);
   const resizeSplit = useSessions((s) => s.resizeSplit);
+  const resizeSplits = useSessions((s) => s.resizeSplits);
   const splitWithNewView = useSessions((s) => s.splitWithNewView);
   const pushOverlay = useUi((s) => s.pushOverlay);
   const popOverlay = useUi((s) => s.popOverlay);
@@ -413,8 +421,17 @@ export const GroupArea = memo(function GroupArea({
     [startDrag],
   );
 
-  // 더블클릭 = 인접 두 영역을 정확히 반반으로(합 보존 — 다른 형제 비율 불변).
+  // 더블클릭 = 인접 두 영역을 반반으로(합 보존 — 다른 형제 비율 불변). row 디바이더는
+  // 세로 불분할 명제를 따른다 — 균등화 목표 x 로 라인 묶음 전체가 이동(교집합 클램프)하고
+  // 한 커밋(resizeSplits)으로 적용돼 라인이 찢어지지 않는다. col 은 명제 밖 — 인접쌍만.
   const onDividerDoubleClick = (d: Divider) => () => {
+    if (d.dir === "row") {
+      resizeSplits(
+        projectId,
+        equalizeLineGroup(dividers, d.splitId, d.index).moves,
+      );
+      return;
+    }
     const sizes = [...d.sizes];
     const half = (sizes[d.index] + sizes[d.index + 1]) / 2;
     sizes[d.index] = half;
@@ -439,22 +456,32 @@ export const GroupArea = memo(function GroupArea({
     const startPos = d.dir === "row" ? e.clientX : e.clientY;
     const startSizes = [...d.sizes];
     const i = d.index;
-    const minFrac = 0.08;
+    // 세로 불분할 명제 — row 디바이더는 드래그 시작 시 같은 x 선상의 세그먼트 전부를 한
+    // 묶음으로 잡고(verticalLines 단일 소유), 내내 같은 x 로 함께 움직인다. 라인은 이동할
+    // 뿐 쪼개지지 않는다. col 은 명제 밖 — 기존 인접쌍 델타 교환 그대로.
+    const lineGroup =
+      d.dir === "row" ? collectLineGroup(dividers, d.splitId, d.index) : [];
+    const startX = d.rect.left;
     // 스토어 커밋은 프레임당 1회 상한(원칙 3·4) — mousemove 는 60Hz 를 넘는다.
-    const commitResize = rafThrottle((sizes: number[]) =>
-      resizeSplit(projectId, d.splitId, sizes),
+    // 묶음 전체가 한 커밋(resizeSplits) — 중간 상태로도 라인이 토막나지 않는다.
+    const commitResize = rafThrottle((moves: LineMove[]) =>
+      resizeSplits(projectId, moves),
     );
     const onMove = (ev: MouseEvent) => {
-      const cur = d.dir === "row" ? ev.clientX : ev.clientY;
-      let delta = (cur - startPos) / splitPx;
+      if (d.dir === "row") {
+        const targetX = startX + ((ev.clientX - startPos) / totalPx) * 100;
+        commitResize(moveLineGroup(lineGroup, targetX).moves);
+        return;
+      }
+      let delta = (ev.clientY - startPos) / splitPx;
       delta = Math.max(
-        -(startSizes[i] - minFrac),
-        Math.min(startSizes[i + 1] - minFrac, delta),
+        -(startSizes[i] - MIN_PANE_FRAC),
+        Math.min(startSizes[i + 1] - MIN_PANE_FRAC, delta),
       );
       const sizes = [...startSizes];
       sizes[i] = startSizes[i] + delta;
       sizes[i + 1] = startSizes[i + 1] - delta;
-      commitResize(sizes);
+      commitResize([{ splitId: d.splitId, sizes }]);
     };
     const onUp = () => {
       commitResize.flush(); // 리스너 제거 전에 — 마지막 프레임 유실 = 스냅백.
