@@ -13,7 +13,7 @@ import { listenThisWindow } from "./lib/windowEvents";
 import { addProjectClaimed, closeProjectReleased, useOtherWindowProjects } from "./state/projectRegistry";
 import { removeRecentProject, useRecentProjects } from "./state/recentProjects";
 import { rafThrottle } from "./lib/rafThrottle";
-import { useTransitionTravel } from "./ui/useTransitionTravel";
+import { railEdgeWidths } from "./ui/railEdges";
 import { parkedStyle } from "./lib/layerPark";
 import { emitPluginEvent } from "./plugins/hooks";
 import { resolveTerminalProgram } from "./plugins/terminalEngine";
@@ -173,9 +173,16 @@ const ProjectPane = memo(function ProjectPane({
   const renderedStation = dragStation ?? effectiveStation;
   // 레일 시각 모드(§12-⑤) — pane(분할창처럼) | ground(바닥 평면). 토글은 슬롯 프레임 헤더.
   const railLook = useSettings((s) => s.railLook);
-  // 주행 신호(§12-④) — left transition 이 도는 동안만 레일 평면이 pane 아래로 잠수한다.
-  const sidebarElRef = useRef<HTMLDivElement | null>(null);
-  const railTraveling = useTransitionTravel(sidebarElRef);
+  // 주행 위상(§12-④) — 스테이션이 바뀐 커밋부터 300ms: 레일(.sidebar left)과 pane 복도
+  // (railGap 소비자)가 같은 곡선으로 함께 미끄러진다. 레일은 이동 내내 보여야 한다 —
+  // hide→show 금지. 드래그는 위상이 아니다(손 즉시 추종). 타이머는 위상 종료 1회용이다.
+  const [travelFrom, setTravelFrom] = useState(effectiveStation);
+  const railTraveling = dragStation === null && travelFrom !== effectiveStation;
+  useEffect(() => {
+    if (!railTraveling) return;
+    const t = window.setTimeout(() => setTravelFrom(effectiveStation), 300);
+    return () => window.clearTimeout(t);
+  }, [railTraveling, effectiveStation]);
   // pane 그리드 행 계약 소비 — 레일 헤더가 pane 그룹 헤더와 같은 행에 앉도록
   // 같은 소스(GroupArea 상수 + 테마 paneStyle)의 치수를 레일 서브트리에 주입한다.
   const paneStyle = useTheme((s) => s.spec.chrome.paneStyle);
@@ -220,6 +227,7 @@ const ProjectPane = memo(function ProjectPane({
         document.body.style.cursor = "";
         document.body.style.userSelect = "";
         setDragStation(null);
+        setTravelFrom(next); // 드래그 착지는 주행 위상이 아니다 — 위상 기준점을 동기화.
         setLeftRailPlacement(project.id, { mode: "pin", station: next });
       };
       window.addEventListener("mousemove", onMove);
@@ -274,10 +282,11 @@ const ProjectPane = memo(function ProjectPane({
           vertical={contentTabPosition === "left"}
         />
         <RailGridSurface
+          traveling={railTraveling}
           railPlane={
             <div
               ref={railPlaneRef}
-              className={`left-rail-plane${railTraveling && dragStation === null ? " traveling" : ""}`}
+              className={`left-rail-plane${railTraveling ? " traveling" : ""}`}
               style={
                 {
                   "--pane-inset": `${railPaneInset}px`,
@@ -286,7 +295,6 @@ const ProjectPane = memo(function ProjectPane({
               }
             >
               <div
-                ref={sidebarElRef}
                 className={`sidebar rail-${railLook}${dragStation !== null ? " dragging" : ""}`}
                 onMouseDown={(e) => {
                   // §12-① 헤더 = 이동 손잡이 — 프레임 헤더 아무 곳이나 잡으면 스테이션 드래그.
@@ -299,10 +307,8 @@ const ProjectPane = memo(function ProjectPane({
                 style={{
                   left: `calc(${renderedStation}% - ${(sidebarW * renderedStation) / 100}px)`,
                   width: project.sidebarOpen ? sidebarW : 0,
-                  borderLeftWidth:
-                    project.sidebarOpen && renderedStation > 0 ? 1 : 0,
-                  borderRightWidth:
-                    project.sidebarOpen && renderedStation < 100 ? 1 : 0,
+                  borderLeftWidth: railEdgeWidths(railLook, project.sidebarOpen, renderedStation).left,
+                  borderRightWidth: railEdgeWidths(railLook, project.sidebarOpen, renderedStation).right,
                 }}
               >
                 <LeftSidebarHost

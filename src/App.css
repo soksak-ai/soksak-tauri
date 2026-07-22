@@ -433,6 +433,18 @@ body,
 .left-rail-plane.traveling {
   z-index: 2;
 }
+/* §12-④ 주행 동조 — 레일이 A→B 를 주행하는 위상 동안 pane 복도(railGap 소비자 전부)도 같은
+   시간·곡선으로 미끄러진다. 복도가 순간이동하면 레일이 pane 뒤에 통째로 가려져 hide→show 로
+   보인다(금지). 위상 밖(드래그·분할·리사이즈)에서는 transition 없음 — 손은 즉시 따른다. */
+.content-body.rail-traveling .egroup-cell,
+.content-body.rail-traveling .egroup-frame,
+.content-body.rail-traveling .egroup-body-slot,
+.content-body.rail-traveling .drop-ind-wrap,
+.content-body.rail-traveling .egroup-divider {
+  transition:
+    left 260ms cubic-bezier(0.2, 0.7, 0.3, 1),
+    width 260ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
 /* 좌측 파일 트리 사이드바. 폭만 토글(0 ↔ SIDEBAR_W), 닫혀도 언마운트하지 않아
    트리 상태(펼침/스크롤)가 유지된다. overflow hidden 으로 접을 때 깔끔히 잘린다. */
 .sidebar {
