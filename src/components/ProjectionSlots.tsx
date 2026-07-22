@@ -111,6 +111,22 @@ export const ProjectionSlots = memo(function ProjectionSlots({
   }, [fingerprint, midSwap, shownFp]);
   const shownKeys = new Set(shownFp ? shownFp.split(",") : []);
 
+  // 스르륵 크로스페이드 — 표시 지문이 갈릴 때 빠지는 슬롯은 즉시 접히지 않고 200ms 동안
+  // 오버레이(leaving)로 남아 새 내용의 페이드-인과 겹쳐 사라진다.
+  const [leaving, setLeaving] = useState<Set<string>>(new Set());
+  const prevShownRef = useRef(shownFp);
+  useEffect(() => {
+    if (prevShownRef.current === shownFp) return;
+    const prev = prevShownRef.current ? prevShownRef.current.split(",") : [];
+    prevShownRef.current = shownFp;
+    const now = new Set(shownFp ? shownFp.split(",") : []);
+    const out = prev.filter((k) => !now.has(k));
+    if (out.length === 0) return;
+    setLeaving(new Set(out));
+    const t = window.setTimeout(() => setLeaving(new Set()), 200);
+    return () => window.clearTimeout(t);
+  }, [shownFp]);
+
   // 보이는 것이 없으면 영역을 접는다 — keep-alive 마운트는 유지하되 레이아웃을 차지하지
   // 않게(display:none). 완전 무마운트면 렌더 자체 생략.
   const visible = shownKeys.size > 0 || degraded.length > 0;
@@ -130,14 +146,15 @@ export const ProjectionSlots = memo(function ProjectionSlots({
     >
       {[...mountedRef.current].map(([instanceKey, refKey]) => {
         const live = shownKeys.has(instanceKey);
+        const isLeaving = !live && leaving.has(instanceKey);
         const decl = getRegisteredView(refKey)?.decl;
         const showToggle = live && side === "left" && first;
         if (live) first = false;
         return (
           <div
             key={instanceKey}
-            className="proj-slot"
-            style={{ display: live ? "flex" : "none" }}
+            className={`proj-slot${isLeaving ? " leaving" : ""}`}
+            style={{ display: live || isLeaving ? "flex" : "none" }}
           >
             {/* 공통 양식(§12-①②) — 헤더는 호스트의 것(기능 정체 표시 + 레일 조작), 본문만 기능이 교체한다. */}
             <div className="proj-frame-header" data-node={`projection/${side}/frame/${refKey}`}>

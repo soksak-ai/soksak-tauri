@@ -3367,6 +3367,7 @@ select.dctl {
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  position: relative; /* leaving 오버레이의 기준 좌표계 */
 }
 @keyframes proj-slot-in {
   from { opacity: 0; }
@@ -3382,6 +3383,18 @@ select.dctl {
   /* 내용물 교체의 자연스러움 — keep-alive 슬롯이 display 복귀할 때마다 재생되는 페이드-인.
      이동(§12-④)과 별개로, 스왑 자체가 뚝 끊기지 않게 한다. */
   animation: proj-slot-in 220ms ease-out;
+}
+@keyframes proj-slot-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+/* 크로스페이드의 퇴장쪽 — 레이아웃에서 빠져 오버레이로 겹친 채 스르륵 사라진다.
+   forwards 로 끝값(투명)을 붙잡아 접히는 순간까지 번쩍임이 없다. */
+.proj-slot.leaving {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  animation: proj-slot-out 200ms ease-in forwards;
 }
 /* 슬롯 공통 양식(§12-①②) — 헤더는 호스트 소유(기능 정체 + 레일 조작), 본문만 기능이 교체. */
 .proj-frame-header {
