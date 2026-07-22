@@ -285,3 +285,33 @@ breaking 변경이므로 plugin-spec 버전을 정직하게 bump하고, 기존 �
 2. `plugin.view.open`의 rail 배치 = 열기 거부 — rail 뷰는 사이드바 선언으로만 나타난다.
 3. `resident`의 의미 재정의 — 우측 상주 표면(우 아이콘레일·향후 우 핀 스택) 표식. 좌 레일 존재를 부여하지 않는다.
 4. 좌측 정체성 플러그인 퇴역 — folderpop·sidebar-sky·memo를 `~/.soksak-dev/plugins-retired/`로 이동(repo·원격 무손실). 판별: 피드(activity)·관리면(agents-hooks)·콘텐츠 도구(memo)는 레일 부적격이라 resident 박탈, 몸체 있는 플러그인(activity·clipboard·mailbox·agents-hooks)은 존치.
+
+## 11. 확정 배정표 (2026-07-22, 함대 실선언 전수)
+
+기능 정형화(좌=Navigator·우=Inspector) 기준의 확정본. 함대 45유닛의 실제 선언과 일치한다.
+
+| 우주 | 기능 | 좌 (필수) | 우 (선택) |
+|---|---|---|---|
+| 파일 | terminal-xterm·terminal-ghostty·editor-codemirror·media-viewer(image·video·audio·pdf) | `[file-tree]tree` 공유 | — |
+| 웹 | browser-native·chromium·offscreen | `[bookmarks]list` 공유 | `[dom-picker]selections` 공유 |
+| 도구 | kanban | self.tree (per-view) | self.detail |
+| 도구 | design-studio | self.library (per-view) | self.inspector |
+| 도구 | db-studio | self.navigator (per-view) | self.properties |
+| 도구 | design-astryx | self.structure (per-view) | self.inspector |
+| 도구 | playbox | self.library (공유) | — |
+| 도구 | git-diff / git-review / git-history | self.files / self.files / self.commits (per-view) | — / self.comments / — |
+| 도구 | workflow | self.runs (per-view) | — |
+| 도구 | agents-clubhouse | self.roster (per-view) | — |
+| 도구 | runbook | self.list (per-view) | self.editor(선택 항목 편집 = Inspector) |
+
+미확정 해소: git-workspace 좌측은 file-tree 임시 채움 = 부적합 — 활성화 전 `self.worktrees` 신설로 교체한다. agent-claude-gui.sessions 레일은 미배선 잔존(공리 ⑦ 합법) — 에이전트 세션 허브가 콘텐츠 기능으로 설 때 그 좌측으로 배선한다. 뷰 없는 기능(acp·tmux-fake·lgtv·mascot·overlay·doctor·icons)은 대상 외.
+
+## 12. 레일 공통 양식 (2026-07-22 결정)
+
+좌 레일 슬롯은 기능별 제각각이 아니라 공통 양식을 가진다.
+
+1. **프레임**: 슬롯마다 호스트 소유 헤더(기능 아이콘·제목 + 레일 조작) + 본문. 테마는 호스트 CSS 변수로만(S6). 헤더는 향후 핀·드래그 이동의 손잡이가 된다.
+2. **내부만 교체**: 기능은 본문만 채운다. 헤더를 자기 뷰 안에 중복으로 그리는 플러그인은 걷어낸다(함대 정리 항목).
+3. **양식 공유**: 같은 참조를 선언한 기능들(터미널·편집기 → 파일트리)은 같은 양식·같은 인스턴스로 렌더된다.
+4. **이사 효과**: 재결부는 생성이 아니라 이사다 — 도착 전환(콘텐츠 쪽에서 미끄러져 들어옴, 170ms). 부트 관측은 무동작.
+5. **바닥 vs 분할창**: 레일 시각 모드 2종을 헤더 토글로 비교한다 — `pane`(카드 틴트+elevation, 분할창처럼) | `ground`(틴트·그림자 없이 바닥에 눕는 평면). 설정 `railLook` 영속.

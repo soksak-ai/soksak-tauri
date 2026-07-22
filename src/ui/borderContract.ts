@@ -77,6 +77,13 @@ export const BORDER_RULES: readonly BorderRule[] = [
     note: "§B3 — 좌측 트리 헤더가 하단 경계 소유",
   },
   {
+    id: "proj-frame-header-bottom",
+    selector: ".proj-frame-header",
+    kind: "edges",
+    edges: { bottom: "bd" },
+    note: "§B3 — 레일 슬롯 공통 양식 헤더가 하단 경계 소유(§12)",
+  },
+  {
     id: "plugin-side-head-bottom",
     selector: ".plugin-side-head",
     kind: "edges",

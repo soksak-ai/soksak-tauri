@@ -170,6 +170,8 @@ const ProjectPane = memo(function ProjectPane({
   );
   const [dragStation, setDragStation] = useState<number | null>(null);
   const renderedStation = dragStation ?? effectiveStation;
+  // 레일 시각 모드(§12-⑤) — pane(분할창처럼) | ground(바닥 평면). 토글은 슬롯 프레임 헤더.
+  const railLook = useSettings((s) => s.railLook);
 
   const toggleRailPin = useCallback(() => {
     setLeftRailPlacement(
@@ -267,7 +269,7 @@ const ProjectPane = memo(function ProjectPane({
           railPlane={
             <div ref={railPlaneRef} className="left-rail-plane">
               <div
-                className="sidebar"
+                className={`sidebar rail-${railLook}`}
                 style={{
                   left: `calc(${renderedStation}% - ${(sidebarW * renderedStation) / 100}px)`,
                   width: project.sidebarOpen ? sidebarW : 0,

@@ -446,6 +446,12 @@ body,
     -10px 0 24px -14px rgba(0, 0, 0, 0.35);
   pointer-events: auto;
 }
+/* 레일 시각 모드(§12-⑤) — ground: 분할창이 아니라 바닥에 눕는 평면. 틴트·그림자를 걷고
+   경계선만 남긴다. pane 은 위 기본값(카드 틴트+elevation) 그대로. */
+.sidebar.rail-ground {
+  background: var(--bg);
+  box-shadow: none;
+}
 .ft-sidebar {
   width: 100%;
   height: 100%;
@@ -3332,12 +3338,74 @@ select.dctl {
   flex: 1;
   min-height: 0;
 }
+/* 도착 애니메이션(§12-④) — 재결부는 생성이 아니라 이사: 콘텐츠 쪽에서 미끄러져 들어온다.
+   a/b 는 같은 동작의 이름만 다른 쌍(연속 재결부에서 CSS 애니메이션 재시작용). */
+@keyframes proj-arrive-a {
+  from { transform: translateX(10px); opacity: 0.4; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes proj-arrive-b {
+  from { transform: translateX(10px); opacity: 0.4; }
+  to { transform: none; opacity: 1; }
+}
+.proj-slots.proj-arrive-a { animation: proj-arrive-a 170ms ease-out; }
+.proj-slots.proj-arrive-b { animation: proj-arrive-b 170ms ease-out; }
 .proj-slot {
   flex: 1;
   min-height: 0;
   position: relative;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+}
+/* 슬롯 공통 양식(§12-①②) — 헤더는 호스트 소유(기능 정체 + 레일 조작), 본문만 기능이 교체. */
+.proj-frame-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px 0 10px;
+  height: var(--chrome-row-h);
+  font-size: 11px;
+  color: var(--fg);
+  opacity: 0.85;
+  border-bottom: 1px solid var(--bd);
+  user-select: none;
+}
+.proj-frame-icon {
+  flex: 0 0 auto;
+  font-size: 12px;
+  line-height: 1;
+}
+.proj-frame-title {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.proj-look-toggle {
+  flex: 0 0 auto;
+  border: none;
+  background: none;
+  color: var(--fg);
+  opacity: 0.5;
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 4px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.proj-look-toggle:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+}
+.proj-frame-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
   overflow: hidden;
 }
 .proj-slot-degraded {
