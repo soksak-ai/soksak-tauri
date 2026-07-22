@@ -51,6 +51,35 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
     expect(violations).toEqual([]);
   });
 
+  it("R1c: 레일 프레임 헤더는 pane 그리드 행 계약을 따른다 — 높이 --header-h·상단 --pane-inset", () => {
+    // 레일은 pane 그리드 안의 가구다 — 이웃은 크롬 행(37px)이 아니라 pane 그룹 헤더다.
+    // 높이·상단 오프셋이 테마 변수(--header-h/--pane-inset)를 따라야 어떤 테마에서도
+    // 상하 그리드가 정확히 맞는다(하드코딩·크롬행 변수 금지).
+    const header = rules().find((r) => r.selector === ".proj-frame-header");
+    expect(header?.decls).toMatch(/height\s*:\s*var\(--header-h/);
+    const host = rules().find((r) => r.selector === ".left-host");
+    expect(host?.decls).toMatch(/padding-top\s*:\s*var\(--pane-inset/);
+  });
+
+  it("§12-④ 주행 동조: railGap 소비 셀렉터는 rail-traveling 전환 규칙에 전부 등재 — 복도 순간이동 금지", () => {
+    // 레일이 A→B 로 주행할 때 pane 복도가 순간이동하면 레일이 pane 뒤에 통째로 가려져
+    // hide→show 로 보인다. --rail-dx 를 소비하는 모든 CSS 셀렉터(+GroupArea 인라인 divider)는
+    // 주행 위상에서 레일과 같은 시간의 transition 으로 함께 미끄러져야 한다.
+    const consumers = new Set(
+      rules()
+        .filter((r) => /var\(--rail-dx/.test(r.decls))
+        .map((r) => r.selector.split(",")[0].trim().split(" ").pop() as string),
+    );
+    consumers.add(".egroup-divider"); // 인라인 스타일 소비자(GroupArea)
+    const sync = rules().find((r) => r.selector.startsWith(".content-body.rail-traveling"));
+    expect(sync).toBeTruthy();
+    for (const sel of consumers) {
+      expect(sync!.selector).toContain(sel);
+    }
+    // 레일(.sidebar left 260ms)과 같은 시간 — 동조가 계약이다.
+    expect(sync!.decls).toMatch(/transition\s*:[^;]*260ms/);
+  });
+
   it("R1: 죽은 변수(--tab-h/--ws-tab-h) 잔재 금지 — 계약 변수는 패딩뿐", () => {
     expect(css).not.toMatch(/--tab-h\b|--ws-tab-h\b/);
   });

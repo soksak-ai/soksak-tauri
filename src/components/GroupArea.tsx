@@ -60,13 +60,14 @@ interface Divider {
 
 // 33 = 패딩4 + 칩24 + 패딩4 + 구분선1 — 내부(32)가 짝수라 칩도 짝수가 되고,
 // 칩 안의 짝수 콘텐츠(아이콘 12/14, 닫기 16)까지 정수 센터링된다(절반픽셀 불가).
-const HEADER_PX = 33;
+// 레일(App.tsx)도 같은 행 계약을 소비한다 — pane 그리드 행 치수의 단일 소유는 이 모듈.
+export const HEADER_PX = 33;
 const STATUS_PX = 24; // 스테이터스바 — 제품 계약 24px
 const CHROME_TOP = HEADER_PX; // 본문 상단 오프셋
 const DRAG_THRESHOLD = 5; // 이 픽셀 이상 움직여야 드래그로 간주(아니면 클릭)
 
 // paneStyle 토큰별 패널 간격(절반값 — 이웃 간 합산 10/12px, 제품 divider 실폭).
-const PANE_INSET: Record<string, number> = { flat: 0, card: 5, floating: 6 };
+export const PANE_INSET: Record<string, number> = { flat: 0, card: 5, floating: 6 };
 
 // 최대화 시 셀/슬롯이 차지하는 전체 rect(컨텐츠 영역 기준 %).
 const FULL_RECT = { left: 0, top: 0, width: 100, height: 100 };
