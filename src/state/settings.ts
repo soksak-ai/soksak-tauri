@@ -87,7 +87,7 @@ const DEFAULTS = {
   defaultProjectRoot: "",
   tabCloseConfirm: "warn" as TabCloseConfirm,
   rightSidebarMode: "overlay" as RightSidebarMode,
-  railLook: "pane" as RailLook,
+  railLook: "ground" as RailLook,
   appFontFamily:
     '"JetBrains Mono", "SF Mono", "Cascadia Code", Menlo, Consolas, "Courier New", monospace',
   appFontSize: 13,

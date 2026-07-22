@@ -442,8 +442,8 @@ body,
 .content-body.rail-traveling .drop-ind-wrap,
 .content-body.rail-traveling .egroup-divider {
   transition:
-    left 260ms cubic-bezier(0.2, 0.7, 0.3, 1),
-    width 260ms cubic-bezier(0.2, 0.7, 0.3, 1);
+    left 280ms cubic-bezier(0.4, 0, 0.2, 1),
+    width 280ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 /* 좌측 파일 트리 사이드바. 폭만 토글(0 ↔ SIDEBAR_W), 닫혀도 언마운트하지 않아
    트리 상태(펼침/스크롤)가 유지된다. overflow hidden 으로 접을 때 깔끔히 잘린다. */
@@ -464,7 +464,7 @@ body,
   pointer-events: auto;
   /* §12-④ 실이동 — 스테이션이 바뀌면 사이드바가 실제 좌표를 주행한다(창 뒤로).
      생성/등장 효과는 없다. 드래그 중에는 transition 을 끊어 손을 즉시 따른다. */
-  transition: left 260ms cubic-bezier(0.2, 0.7, 0.3, 1);
+  transition: left 280ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 .sidebar.dragging {
   transition: none;
@@ -474,6 +474,15 @@ body,
 .sidebar.rail-ground {
   background: var(--bg);
   box-shadow: none;
+}
+/* ground(SIDEBAR = CHROME) — 헤더도 카드 밴드가 아니라 책상 위 타이포그래피다:
+   밑줄 없이 소형 캡스 모노 제목(디자인 정본 SOKSAK Reorganized.dc.html). */
+.sidebar.rail-ground .proj-frame-header {
+  border-bottom: none;
+  font: 600 10px var(--app-font, ui-monospace, monospace);
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  opacity: 0.6;
 }
 .ft-sidebar {
   width: 100%;

@@ -132,13 +132,13 @@ describe("레일 슬롯 공통 양식(§12)", () => {
     registerFn("termplug", "term", "tree");
     useSessions.setState({ tabs: [tab([pluginView("v1", "termplug", "term")], "v1")], activeId: "p1" });
     render();
-    expect(useSettings.getState().railLook).toBe("pane"); // 기본값
+    expect(useSettings.getState().railLook).toBe("ground"); // 기본값 = SIDEBAR-CHROME(디자인 정본)
     const toggle = host.querySelector<HTMLElement>('[data-node="projection/left/look"]');
     expect(toggle).not.toBeNull();
     act(() => toggle!.click());
-    expect(useSettings.getState().railLook).toBe("ground");
-    act(() => toggle!.click());
     expect(useSettings.getState().railLook).toBe("pane");
+    act(() => toggle!.click());
+    expect(useSettings.getState().railLook).toBe("ground");
   });
 
   it("재결부의 콘텐츠 스왑에 등장/퇴장 효과 클래스가 붙지 않는다 — 이동은 레일 프레임의 실좌표 주행뿐(§12-④)", () => {
