@@ -20,15 +20,11 @@ export const ProjectionSlots = memo(function ProjectionSlots({
   root,
   paneId,
   side,
-  midSwap = false,
 }: {
   projectId: string;
   root: string | null;
   paneId: string | null;
   side: "left" | "right";
-  // §12-④ 반환점 교체 — 참이면(레일 주행 중) 재결부의 표시 교체를 여정의 절반(140ms)까지
-  // 늦춘다: 옛 내용으로 출발해 반환점에서 갈아탄다. 이동 없는 재결부는 즉시 교체.
-  midSwap?: boolean;
 }) {
   const t = useT();
   // 해소 입력 전부를 구독 — 활성 체인(sessions)·등록(viewRegistry)·핀(projection)·활성 플러그인.
@@ -96,36 +92,24 @@ export const ProjectionSlots = memo(function ProjectionSlots({
   const railLook = useSettings((s) => s.railLook);
   const setRailLook = useSettings((s) => s.setRailLook);
 
-  // 반환점 교체 — 표시 지문(shownFp)이 해소 지문을 뒤따른다: 주행 중엔 140ms(280ms 여정의
-  // 절반) 늦게, 주행이 없으면 즉시. 옛 슬롯은 keep-alive 라 그동안 그대로 렌더된다.
+  // 여정 디졸브(§12-④) — 교체는 출발 즉시 시작하고, 크로스페이드가 여정 전체(280ms)를
+  // 덮는다: 빠지는 슬롯은 오버레이(leaving)로 남아 서서히 사라지고 새 슬롯이 서서히 차올라
+  // 교차점(50%)이 여정의 중간에 온다. 이동 없는 재결부도 같은 디졸브다.
   const fingerprint = [...liveKeys].sort().join(",");
-  const [shownFp, setShownFp] = useState(fingerprint);
-  useEffect(() => {
-    if (shownFp === fingerprint) return;
-    if (!midSwap) {
-      setShownFp(fingerprint);
-      return;
-    }
-    const t = window.setTimeout(() => setShownFp(fingerprint), 140);
-    return () => window.clearTimeout(t);
-  }, [fingerprint, midSwap, shownFp]);
-  const shownKeys = new Set(shownFp ? shownFp.split(",") : []);
-
-  // 스르륵 크로스페이드 — 표시 지문이 갈릴 때 빠지는 슬롯은 즉시 접히지 않고 200ms 동안
-  // 오버레이(leaving)로 남아 새 내용의 페이드-인과 겹쳐 사라진다.
+  const shownKeys = liveKeys;
   const [leaving, setLeaving] = useState<Set<string>>(new Set());
-  const prevShownRef = useRef(shownFp);
+  const prevShownRef = useRef(fingerprint);
   useEffect(() => {
-    if (prevShownRef.current === shownFp) return;
+    if (prevShownRef.current === fingerprint) return;
     const prev = prevShownRef.current ? prevShownRef.current.split(",") : [];
-    prevShownRef.current = shownFp;
-    const now = new Set(shownFp ? shownFp.split(",") : []);
+    prevShownRef.current = fingerprint;
+    const now = new Set(fingerprint ? fingerprint.split(",") : []);
     const out = prev.filter((k) => !now.has(k));
     if (out.length === 0) return;
     setLeaving(new Set(out));
-    const t = window.setTimeout(() => setLeaving(new Set()), 200);
+    const t = window.setTimeout(() => setLeaving(new Set()), 280);
     return () => window.clearTimeout(t);
-  }, [shownFp]);
+  }, [fingerprint]);
 
   // 보이는 것이 없으면 영역을 접는다 — keep-alive 마운트는 유지하되 레이아웃을 차지하지
   // 않게(display:none). 완전 무마운트면 렌더 자체 생략.
