@@ -37,8 +37,8 @@ describe("settings.railFocusNear", () => {
 
 // 관계면 3안 비교 스위치 — 비교 실험용 임시 축(결정 시 채택안만 남기고 소거).
 describe("settings.railRelation", () => {
-  it("기본값은 tint(스트로크·라벨 없는 저농도 채움)", () => {
-    expect(useSettings.getState().railRelation).toBe("tint");
+  it("기본값은 stroke(보더+라벨 — 사용자 확정)", () => {
+    expect(useSettings.getState().railRelation).toBe("stroke");
   });
 
   it("setRailRelation 으로 3안(tint|moment|stroke) 전환·복원", () => {
