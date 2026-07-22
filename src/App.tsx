@@ -71,6 +71,7 @@ import {
 import {
   RAIL_TRAVEL_MS,
   railPresentationLayers,
+  railTravelGeometry,
   type RailPresentation,
 } from "./lib/railMotion";
 import "./App.css";
@@ -203,8 +204,13 @@ const ProjectPane = memo(function ProjectPane({
     generation: 0,
     station: effectiveStation,
   });
-  const travelFrom = railPresentation.station;
-  const railTraveling = dragStation === null && travelFrom !== effectiveStation;
+  const travelGeometry = railTravelGeometry(
+    railPresentation,
+    effectiveStation,
+    !!activeContent?.maximizedViewId,
+  );
+  const travelFrom = travelGeometry.fromStation;
+  const railTraveling = dragStation === null && travelGeometry.traveling;
   const railLayers = railPresentationLayers(
     railPresentation,
     dragStation ?? effectiveStation,

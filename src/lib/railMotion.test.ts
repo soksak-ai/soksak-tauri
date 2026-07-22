@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { railPresentationLayers } from "./railMotion";
+import { railPresentationLayers, railTravelGeometry } from "./railMotion";
 
 describe("FLOW 레일 영역 인계", () => {
   it("도착 레일은 처음부터 최종선에 있고 출발 레일은 pane 수축이 끝날 때까지 남는다", () => {
@@ -43,5 +43,11 @@ describe("FLOW 레일 영역 인계", () => {
         interactive: true,
       },
     ]);
+  });
+
+  it("최대화 평면은 이전 내부 station을 참조하지 않고 0선에서 원자적으로 시작한다", () => {
+    expect(
+      railTravelGeometry({ generation: 8, station: 33.333 }, 0, true),
+    ).toEqual({ fromStation: 0, traveling: false });
   });
 });
