@@ -171,8 +171,8 @@ describe("레일 슬롯 공통 양식(§12)", () => {
   });
 });
 
-describe("반환점 교체(§12-④) — 이동 중 재결부는 여정의 절반에서 내용이 갈아탄다", () => {
-  it("midSwap 중엔 옛 내용 유지 → 140ms 에 새 내용", () => {
+describe("여정 디졸브(§12-④) — 출발 즉시 크로스페이드가 시작되어 여정 전체를 덮는다", () => {
+  it("교체 순간 새 내용이 등장을 시작하고, 옛 내용은 leaving 오버레이로 여정 동안 사라진다", () => {
     vi.useFakeTimers();
     registerFn("termplug", "term", "tree");
     registerFn("kanplug", "board", "nav");
@@ -185,16 +185,7 @@ describe("반환점 교체(§12-④) — 이동 중 재결부는 여정의 절�
       ],
       activeId: "p1",
     });
-    act(() => {
-      root.render(
-        <ProjectionSlots projectId="p1" root="/tmp/p1" paneId={null} side="left" midSwap />,
-      );
-    });
-    const shown = () =>
-      [...host.querySelectorAll<HTMLElement>(".proj-slot")]
-        .filter((el) => el.style.display !== "none" && !el.className.includes("leaving"))
-        .map((el) => el.querySelector(".proj-frame-title")!.textContent);
-    expect(shown()).toEqual(["tree-제목"]);
+    render();
     act(() => {
       useSessions.setState((s) => ({
         tabs: s.tabs.map((t) => ({
@@ -206,53 +197,17 @@ describe("반환점 교체(§12-④) — 이동 중 재결부는 여정의 절�
         })),
       }) as never);
     });
-    expect(shown()).toEqual(["tree-제목"]); // 출발은 옛 내용으로
-    act(() => vi.advanceTimersByTime(150));
-    expect(shown()).toEqual(["nav-제목"]); // 반환점에서 교체
-    vi.useRealTimers();
-  });
-});
-
-describe("스르륵 크로스페이드 — 반환점에서 옛 내용은 겹친 채 사라진다", () => {
-  it("교체 순간 옛 슬롯은 leaving 오버레이로 남고, 200ms 뒤 접힌다", () => {
-    vi.useFakeTimers();
-    registerFn("termplug", "term", "tree");
-    registerFn("kanplug", "board", "nav");
-    useSessions.setState({
-      tabs: [
-        tab(
-          [pluginView("v1", "termplug", "term"), pluginView("v2", "kanplug", "board")],
-          "v1",
-        ),
-      ],
-      activeId: "p1",
-    });
-    act(() => {
-      root.render(
-        <ProjectionSlots projectId="p1" root="/tmp/p1" paneId={null} side="left" midSwap />,
-      );
-    });
-    act(() => {
-      useSessions.setState((s) => ({
-        tabs: s.tabs.map((t) => ({
-          ...t,
-          contents: t.contents.map((c) => ({
-            ...c,
-            layout: { ...c.layout, value: { ...(c.layout as { value: object }).value, activeViewId: "v2" } },
-          })),
-        })),
-      }) as never);
-    });
-    act(() => vi.advanceTimersByTime(150)); // 반환점 통과
     const slotOf = (title: string) =>
       [...host.querySelectorAll<HTMLElement>(".proj-slot")].find((el) =>
         el.querySelector(".proj-frame-title")!.textContent === title,
       )!;
-    expect(slotOf("tree-제목").className).toContain("leaving"); // 옛 내용 = 사라지는 중
+    // 출발 즉시: 새 내용 등장 시작 + 옛 내용은 겹친 채 퇴장 중(지연 없음).
+    expect(slotOf("nav-제목").style.display).not.toBe("none");
+    expect(slotOf("tree-제목").className).toContain("leaving");
     expect(slotOf("tree-제목").style.display).not.toBe("none");
-    expect(slotOf("nav-제목").style.display).not.toBe("none"); // 새 내용 = 등장 중
-    act(() => vi.advanceTimersByTime(250));
-    expect(slotOf("tree-제목").style.display).toBe("none"); // 퇴장 완료
+    // 여정(280ms) 종료 후: 퇴장 완료.
+    act(() => vi.advanceTimersByTime(320));
+    expect(slotOf("tree-제목").style.display).toBe("none");
     expect(slotOf("tree-제목").className).not.toContain("leaving");
     vi.useRealTimers();
   });
