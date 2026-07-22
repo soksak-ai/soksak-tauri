@@ -531,7 +531,9 @@ export const usePlugins = create<PluginsState>((set, get) => {
           rejected.push({
             dir: e.dir,
             errors: [
-              "공식 설치 디렉터리의 legacy dev marker는 지원하지 않습니다 — workspace를 절대경로로 unit.dev.set 하십시오",
+              // 레인별 올바른 처방만 안내한다 — debug·release 홈에서 unit.dev.set 을 권하면
+              // 금지된 행동을 안내하는 셈이다(홈 레인 원칙).
+              "공식 설치 디렉터리에 legacy dev marker — 설치본이 아닙니다. dev 홈이면 workspace를 unit.dev.set 으로 선택하고, debug·release 홈에서는 이 디렉터리를 제거한 뒤 발행본을 설치하십시오",
             ],
           });
           continue;
