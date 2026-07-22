@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  insetClippedEdges,
   railLinkBoxes,
   railLinkPolygon,
   roundedOrthogonalPath,
@@ -56,5 +57,15 @@ describe("레일 결부 관계 도형", () => {
     expect(roundedOrthogonalPath(points, 0)).toBe("M 0 0 L 100 0 L 100 50 L 0 50 Z");
     expect(roundedOrthogonalPath(points, 10)).toContain("Q 100 0 100 10");
     expect(points).toEqual(before);
+  });
+
+  it("외곽 clip 경계의 stroke만 선 두께 절반 안쪽으로 옮기고 내부 그리드선은 유지한다", () => {
+    expect(insetClippedEdges([
+      { x: 300, y: 0 }, { x: 1200, y: 0 },
+      { x: 1200, y: 800 }, { x: 300, y: 800 },
+    ], 1200, 800, 0.75)).toEqual([
+      { x: 300, y: 0.75 }, { x: 1199.25, y: 0.75 },
+      { x: 1199.25, y: 799.25 }, { x: 300, y: 799.25 },
+    ]);
   });
 });

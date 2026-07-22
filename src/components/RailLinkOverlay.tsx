@@ -1,6 +1,7 @@
 import { memo, useLayoutEffect, useRef, useState } from "react";
 import type { RailRect } from "../lib/railPlacement";
 import {
+  insetClippedEdges,
   railLinkBoxes,
   railLinkPolygon,
   roundedOrthogonalPath,
@@ -36,6 +37,7 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
 }) {
   const t = useT();
   const radius = useTheme((state) => state.spec.relation.radius);
+  const strokeWidth = useTheme((state) => state.spec.relation.strokeWidth);
   const hostRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<Size>({ width: 0, height: 0 });
 
@@ -67,7 +69,17 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
     targetRect,
   );
   const polygon = boxes ? railLinkPolygon(boxes.rail, boxes.panel) : null;
-  const path = polygon ? roundedOrthogonalPath(polygon, radius) : "";
+  const path = polygon
+    ? roundedOrthogonalPath(
+        insetClippedEdges(
+          polygon,
+          size.width,
+          size.height,
+          strokeWidth / 2,
+        ),
+        radius,
+      )
+    : "";
 
   return (
     <div

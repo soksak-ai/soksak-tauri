@@ -6,7 +6,7 @@ import { RailLinkOverlay } from "./RailLinkOverlay";
 
 vi.mock("../state/theme", () => ({
   useTheme: (select: (state: unknown) => unknown) =>
-    select({ spec: { relation: { radius: 12 } } }),
+    select({ spec: { relation: { radius: 12, strokeWidth: 1.5 } } }),
 }));
 vi.mock("../i18n", () => ({ useT: () => () => "LINKED" }));
 

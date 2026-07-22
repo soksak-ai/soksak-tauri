@@ -16,6 +16,20 @@ export interface PixelBox {
   height: number;
 }
 
+/** SVG viewport 경계에 놓인 stroke의 바깥 절반이 clip되지 않도록 외곽선만 안으로 넣는다. */
+export function insetClippedEdges(
+  points: Point[],
+  width: number,
+  height: number,
+  inset: number,
+): Point[] {
+  const amount = Math.max(0, inset);
+  return points.map(({ x, y }) => ({
+    x: x <= 0 ? amount : x >= width ? Math.max(amount, width - amount) : x,
+    y: y <= 0 ? amount : y >= height ? Math.max(amount, height - amount) : y,
+  }));
+}
+
 /** 논리 패널 rect와 고정폭 레일을 같은 px 좌표계로 해소한다. */
 export function railLinkBoxes(
   hostWidth: number,
