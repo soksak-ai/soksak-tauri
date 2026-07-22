@@ -320,15 +320,6 @@ const ProjectPane = memo(function ProjectPane({
                   <div className="left-rail-controls">
                     <button
                       type="button"
-                      className="left-rail-grip"
-                      data-native-drag
-                      title="유효한 그리드 선으로 옮겨 고정"
-                      onMouseDown={startRailStationDrag}
-                    >
-                      <Icon name="grip" size="sm" />
-                    </button>
-                    <button
-                      type="button"
                       className={`left-rail-pin${placement.mode === "pin" ? " active" : ""}`}
                       title={
                         placement.mode === "pin"

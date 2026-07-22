@@ -474,15 +474,6 @@ body,
   background: var(--bg);
   box-shadow: none;
 }
-/* ground(SIDEBAR = CHROME) — 헤더도 카드 밴드가 아니라 책상 위 타이포그래피다:
-   밑줄 없이 소형 캡스 모노 제목(디자인 정본 SOKSAK Reorganized.dc.html). */
-.sidebar.rail-ground .proj-frame-header {
-  border-bottom: none;
-  font: 600 10px var(--app-font, ui-monospace, monospace);
-  letter-spacing: 1.6px;
-  text-transform: uppercase;
-  opacity: 0.6;
-}
 .ft-sidebar {
   width: 100%;
   height: 100%;
@@ -576,7 +567,6 @@ body,
   background: color-mix(in srgb, var(--bg) 88%, transparent);
   box-shadow: var(--shadow);
 }
-.left-rail-grip,
 .left-rail-pin {
   display: inline-flex;
   align-items: center;
@@ -591,10 +581,6 @@ body,
   opacity: 0.62;
   cursor: pointer;
 }
-.left-rail-grip {
-  cursor: col-resize;
-}
-.left-rail-grip:hover,
 .left-rail-pin:hover,
 .left-rail-pin.active {
   background: var(--accbg);
