@@ -80,20 +80,9 @@ interface PluginScanEntry {
   dir: string;
   dir_name: string;
   manifest: string | null;
-  // .soksak.json 원문 — 공식 설치 상태. 과거 version=dev|local 단일-폴더 모델은
-  // development-units.json과 충돌하므로 loader가 명시적으로 거부한다.
+  // .soksak.json 원문 — 공식 설치 상태.
   state: string | null;
   error: string | null;
-}
-
-function hasLegacyDevMarker(state: string | null): boolean {
-  if (!state) return false;
-  try {
-    const v = (JSON.parse(state) as { version?: string })?.version;
-    return v === "dev" || v === "local";
-  } catch {
-    return false;
-  }
 }
 
 interface PluginsState {
@@ -525,17 +514,6 @@ export const usePlugins = create<PluginsState>((set, get) => {
           // 상태는 있는데 manifest 만 없으면 진짜 깨진 설치본이라 거부로 드러낸다(침묵 금지).
           if (e.state == null) continue;
           rejected.push({ dir: e.dir, errors: [e.error ?? "manifest 없음"] });
-          continue;
-        }
-        if (hasLegacyDevMarker(e.state)) {
-          rejected.push({
-            dir: e.dir,
-            errors: [
-              // 레인별 올바른 처방만 안내한다 — debug·release 홈에서 unit.dev.set 을 권하면
-              // 금지된 행동을 안내하는 셈이다(홈 레인 원칙).
-              "공식 설치 디렉터리에 legacy dev marker — 설치본이 아닙니다. dev 홈이면 workspace를 unit.dev.set 으로 선택하고, debug·release 홈에서는 이 디렉터리를 제거한 뒤 발행본을 설치하십시오",
-            ],
-          });
           continue;
         }
         const rt = parseRuntime(e.manifest, e.dir, e.dir_name, "installed", rejected);
