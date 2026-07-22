@@ -425,8 +425,13 @@ body,
 .left-rail-plane {
   position: absolute;
   inset: 0;
-  z-index: 12;
+  /* 평상시 pane(z 3~4) 아래 — 정차 중엔 railGap 이 비어 있어 차이가 없고, 스테이션 간
+     주행(§12-④ 실이동) 중에는 창 뒤로 지나간다. 사용자 드래그 중에만 전면(가시 피드백). */
+  z-index: 2;
   pointer-events: none;
+}
+.left-rail-plane.dragging {
+  z-index: 12;
 }
 /* 좌측 파일 트리 사이드바. 폭만 토글(0 ↔ SIDEBAR_W), 닫혀도 언마운트하지 않아
    트리 상태(펼침/스크롤)가 유지된다. overflow hidden 으로 접을 때 깔끔히 잘린다. */
@@ -445,6 +450,12 @@ body,
     10px 0 24px -14px rgba(0, 0, 0, 0.35),
     -10px 0 24px -14px rgba(0, 0, 0, 0.35);
   pointer-events: auto;
+  /* §12-④ 실이동 — 스테이션이 바뀌면 사이드바가 실제 좌표를 주행한다(창 뒤로).
+     생성/등장 효과는 없다. 드래그 중에는 transition 을 끊어 손을 즉시 따른다. */
+  transition: left 260ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+.sidebar.dragging {
+  transition: none;
 }
 /* 레일 시각 모드(§12-⑤) — ground: 분할창이 아니라 바닥에 눕는 평면. 틴트·그림자를 걷고
    경계선만 남긴다. pane 은 위 기본값(카드 틴트+elevation) 그대로. */
@@ -3338,18 +3349,6 @@ select.dctl {
   flex: 1;
   min-height: 0;
 }
-/* 도착 애니메이션(§12-④) — 재결부는 생성이 아니라 이사: 콘텐츠 쪽에서 미끄러져 들어온다.
-   a/b 는 같은 동작의 이름만 다른 쌍(연속 재결부에서 CSS 애니메이션 재시작용). */
-@keyframes proj-arrive-a {
-  from { transform: translateX(10px); opacity: 0.4; }
-  to { transform: none; opacity: 1; }
-}
-@keyframes proj-arrive-b {
-  from { transform: translateX(10px); opacity: 0.4; }
-  to { transform: none; opacity: 1; }
-}
-.proj-slots.proj-arrive-a { animation: proj-arrive-a 170ms ease-out; }
-.proj-slots.proj-arrive-b { animation: proj-arrive-b 170ms ease-out; }
 .proj-slot {
   flex: 1;
   min-height: 0;
