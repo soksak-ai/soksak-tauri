@@ -141,7 +141,7 @@ describe("레일 슬롯 공통 양식(§12)", () => {
     expect(useSettings.getState().railLook).toBe("pane");
   });
 
-  it("재결부(해소 변경)에 도착 애니메이션 클래스가 붙는다 — 생성이 아니라 이사", () => {
+  it("재결부의 콘텐츠 스왑에 등장/퇴장 효과 클래스가 붙지 않는다 — 이동은 레일 프레임의 실좌표 주행뿐(§12-④)", () => {
     registerFn("termplug", "term", "tree");
     registerFn("kanplug", "board", "nav");
     useSessions.setState({
@@ -154,8 +154,6 @@ describe("레일 슬롯 공통 양식(§12)", () => {
       activeId: "p1",
     });
     render();
-    const before = host.querySelector<HTMLElement>(".proj-slots")!;
-    expect(before.className).not.toMatch(/proj-arrive/); // 첫 렌더는 이사 아님
     // 활성 뷰 전환 → 해소가 termplug.tree → kanplug.nav 로 바뀜(재결부).
     act(() => {
       useSessions.setState((s) => ({
@@ -168,7 +166,7 @@ describe("레일 슬롯 공통 양식(§12)", () => {
         })),
       }) as never);
     });
-    const after = host.querySelector<HTMLElement>(".proj-slots")!;
-    expect(after.className).toMatch(/proj-arrive/);
+    const slots = host.querySelector<HTMLElement>(".proj-slots")!;
+    expect(slots.className).toBe("proj-slots"); // 효과 클래스 없음 — hide→show 연출 금지
   });
 });

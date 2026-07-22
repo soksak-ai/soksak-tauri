@@ -267,9 +267,12 @@ const ProjectPane = memo(function ProjectPane({
         />
         <RailGridSurface
           railPlane={
-            <div ref={railPlaneRef} className="left-rail-plane">
+            <div
+              ref={railPlaneRef}
+              className={`left-rail-plane${dragStation !== null ? " dragging" : ""}`}
+            >
               <div
-                className={`sidebar rail-${railLook}`}
+                className={`sidebar rail-${railLook}${dragStation !== null ? " dragging" : ""}`}
                 style={{
                   left: `calc(${renderedStation}% - ${(sidebarW * renderedStation) / 100}px)`,
                   width: project.sidebarOpen ? sidebarW : 0,

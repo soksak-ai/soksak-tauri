@@ -4,7 +4,7 @@
 // satisfied-by-pin = 렌더 없음(핀 스택이 그 인스턴스를 이미 렌더 — R4 흡수).
 // keep-alive: 한 번 산 인스턴스는 display 토글로 유지(R1 — 구조 상태 보존).
 
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useMemo, useRef } from "react";
 import { PluginViewHost } from "./PluginViewHost";
 import { projectionFor } from "../state/projectionWiring";
 import { useProjection } from "../state/projection";
@@ -89,19 +89,6 @@ export const ProjectionSlots = memo(function ProjectionSlots({
     (s) => s.status === "degraded" && s.source !== "undeclared",
   );
 
-  // 도착 애니메이션(§12-④) — 재결부는 생성이 아니라 이사. 해소 지문(live instanceKey 집합)이
-  // 바뀔 때만 클래스를 부여하고, 첫 관측(부트·마운트)은 이사가 아니라 무동작. a/b 교대는
-  // 연속 재결부에서도 애니메이션이 재트리거되게 하는 CSS 재시작 장치다.
-  const fingerprint = [...liveKeys].sort().join(",");
-  const prevFpRef = useRef<string | null>(null);
-  const [arrive, setArrive] = useState(0);
-  useEffect(() => {
-    if (prevFpRef.current !== null && prevFpRef.current !== fingerprint && fingerprint) {
-      setArrive((a) => a + 1);
-    }
-    prevFpRef.current = fingerprint;
-  }, [fingerprint]);
-
   const railLook = useSettings((s) => s.railLook);
   const setRailLook = useSettings((s) => s.setRailLook);
 
@@ -112,12 +99,13 @@ export const ProjectionSlots = memo(function ProjectionSlots({
     return null;
   }
 
-  const arriveClass = arrive === 0 ? "" : arrive % 2 ? " proj-arrive-a" : " proj-arrive-b";
+  // §12-④ 이동은 여기서 만들지 않는다 — 재결부의 콘텐츠 스왑에 등장/퇴장 효과는 금지.
+  // 실이동은 레일 프레임(.sidebar)의 좌표 주행(transition)이 유일한 표현이다.
   let first = true;
 
   return (
     <div
-      className={`proj-slots${arriveClass}`}
+      className="proj-slots"
       style={visible ? undefined : { display: "none" }}
       data-node={`projection/${side}`}
     >
