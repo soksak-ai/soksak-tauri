@@ -157,3 +157,33 @@ describe("viewContainerOf — shadow 관통 뷰 판정", () => {
     expect(viewContainerOf(loose)).toBeNull();
   });
 });
+
+describe("ui.input.click — 합성 이벤트가 Shadow DOM 경계를 넘는다(composed, 실클릭 등가)", () => {
+  it("shadow 안 노드 클릭이 경계 밖 캡처 리스너(본문 클릭 활성화 경로)에 닿는다", async () => {
+    // 실구조 등가: 뷰 컨테이너(스캔 스코프) > shadow host > shadow 안 data-node.
+    // 바깥 캡처 리스너 = GroupArea 본문 슬롯의 클릭 활성화 경로와 같은 위치 관계다.
+    const container = document.createElement("div");
+    container.className = "plugin-view-container";
+    container.dataset.viewAddr = "content/view/tplug.v";
+    container.dataset.paneId = "p1";
+    document.body.appendChild(container);
+    const host = document.createElement("div");
+    container.appendChild(host);
+    const sr = host.attachShadow({ mode: "open" });
+    const btn = document.createElement("button");
+    btn.setAttribute("data-node", "sbtest/leaf");
+    sr.appendChild(btn);
+    const seen: boolean[] = [];
+    container.addEventListener("mousedown", (e) => seen.push(e.composed), true);
+
+    const tree = (await execute("ui.tree", {}, {})) as {
+      ok: boolean;
+      data: { nodes: { address: string }[] };
+    };
+    const addr = tree.data.nodes.map((n) => n.address).find((a) => a.includes("sbtest/leaf"));
+    expect(addr).toBeTruthy(); // 노드 스캔이 shadow 를 관통해 노출해야 한다
+    const r = (await execute("ui.input.click", { address: addr }, {})) as { ok: boolean };
+    expect(r.ok).toBe(true);
+    expect(seen).toEqual([true]); // 경계를 넘어 도달했고 composed 다
+  });
+});

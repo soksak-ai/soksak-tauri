@@ -334,7 +334,7 @@ export function registerDomCatalog(): void {
       const y = r.top + r.height / 2;
       for (const type of ["mousedown", "mouseup", "click"]) {
         el.dispatchEvent(
-          new MouseEvent(type, { clientX: x, clientY: y, bubbles: true, button: 0, view: window }),
+          new MouseEvent(type, { clientX: x, clientY: y, bubbles: true, composed: true, button: 0 }),
         );
       }
       return { clicked: true, address: addr };
@@ -362,7 +362,7 @@ export function registerDomCatalog(): void {
       const y = r.top + r.height / 2;
       const fire = (type: string) =>
         el.dispatchEvent(
-          new MouseEvent(type, { clientX: x, clientY: y, bubbles: true, button: 0, view: window }),
+          new MouseEvent(type, { clientX: x, clientY: y, bubbles: true, composed: true, button: 0 }),
         );
       // React onDoubleClick 은 네이티브 dblclick 을 듣는다 — 두 click 으로 자연 발생하지 않으니 명시 디스패치.
       fire("mousedown"); fire("mouseup"); fire("click");
@@ -396,7 +396,7 @@ export function registerDomCatalog(): void {
       if (el.isContentEditable) {
         el.focus();
         el.textContent = p.value as string;
-        el.dispatchEvent(new InputEvent("input", { bubbles: true }));
+        el.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true }));
         el.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
         return { filled: true, contentEditable: true, address: addr };
       }
@@ -411,8 +411,8 @@ export function registerDomCatalog(): void {
           ? HTMLTextAreaElement.prototype
           : HTMLInputElement.prototype;
       Object.getOwnPropertyDescriptor(proto, "value")?.set?.call(el, p.value as string);
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-      el.dispatchEvent(new Event("change", { bubbles: true }));
+      el.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
       return { filled: true, address: addr };
     },
   });
@@ -462,7 +462,7 @@ export function registerDomCatalog(): void {
       }
       const fire = (type: string, x: number, y: number, target: EventTarget) =>
         target.dispatchEvent(
-          new MouseEvent(type, { clientX: x, clientY: y, bubbles: true, button: 0, view: window }),
+          new MouseEvent(type, { clientX: x, clientY: y, bubbles: true, composed: true, button: 0 }),
         );
       const dist = Math.hypot(toPt.x - fromPt.x, toPt.y - fromPt.y);
       // mousedown 은 잡는 요소(divider/탭)에, move/up 은 window 에 — divider 리사이즈는 window 레벨
