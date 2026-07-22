@@ -308,6 +308,55 @@ describe("저장 세션 마이그레이션 — 터미널 rename(soksak-plugin-te
   });
 });
 
+describe("복원 1회 정규화 — 세로 라인 자가 치유(세로 불분할 명제)", () => {
+  it("토막 난 세로 라인(40.6/39.5)은 복원 시 최상단 세그먼트의 x 로 스냅된다", async () => {
+    const { computeSplitLayout } = await import("../lib/splitLayout");
+    sid = 0;
+    const g = (id: string): GroupNode => ({
+      type: "leaf",
+      value: { id, activeViewId: "", views: [] },
+    });
+    const torn: ProjectTab = {
+      ...project,
+      contents: [
+        {
+          id: "c1",
+          title: "1",
+          activeGroupId: "g-a",
+          layout: {
+            type: "split",
+            id: "col",
+            dir: "col",
+            sizes: [0.5, 0.5],
+            children: [
+              {
+                type: "split",
+                id: "top",
+                dir: "row",
+                sizes: [0.406, 0.594],
+                children: [g("g-a"), g("g-b")],
+              },
+              {
+                type: "split",
+                id: "bot",
+                dir: "row",
+                sizes: [0.395, 0.605],
+                children: [g("g-c"), g("g-d")],
+              },
+            ],
+          },
+        },
+      ],
+    };
+    const back = deserializeProject(serializeProject(torn), newSplitId);
+    const rows = computeSplitLayout(back.contents[0].layout).dividers.filter(
+      (d) => d.dir === "row",
+    );
+    expect(rows).toHaveLength(2);
+    for (const d of rows) expect(d.rect.left).toBeCloseTo(40.6, 10);
+  });
+});
+
 describe("projection 핀 영속(§4.5) — 스냅샷 round-trip", () => {
   it("serializeProject 에 projection 을 실으면 스냅샷에 남고 구 스냅샷은 필드 부재", async () => {
     const { serializeProject } = await import("./windowSnapshot");

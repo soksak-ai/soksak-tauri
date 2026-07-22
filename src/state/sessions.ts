@@ -367,6 +367,12 @@ interface SessionsStore {
     splitId: string,
     sizes: number[],
   ) => CmdResult;
+  // 여러 split 의 sizes 를 한 커밋으로(세로 라인 동반 드래그 — 중간 토막 상태 없음).
+  // 레일 충돌 검사는 최종 상태 1회 — 거부 시 전체 무변경.
+  resizeSplits: (
+    projectId: string,
+    updates: { splitId: string; sizes: number[] }[],
+  ) => CmdResult;
   // targetGroup 옆에 새 뷰 그룹을 분할 생성(split 버튼 / title 모드 ⌘T / 명령).
   // program 미지정/미등록이면 빈 그룹(빈 패널) — viewId 없음(Partial).
   splitWithNewView: (
@@ -1945,19 +1951,35 @@ export const useSessions = create<SessionsStore>((set, get) => ({
     return r;
   },
 
-  resizeSplit: (projectId, splitId, sizes) => {
+  resizeSplit: (projectId, splitId, sizes) =>
+    get().resizeSplits(projectId, [{ splitId, sizes }]),
+
+  resizeSplits: (projectId, updates) => {
     let r: CmdResult = noProject(projectId);
     set((s) => {
       const t = s.tabs.find((x) => x.id === projectId);
       if (!t) return s;
-      const content = t.contents.find((c) => findSplit(c.layout, splitId));
+      if (updates.length === 0) {
+        r = ok({});
+        return s;
+      }
+      // 묶음은 한 레이아웃의 라인 — 모든 splitId 를 가진 콘텐츠 하나에만 적용한다.
+      const content = t.contents.find((c) =>
+        updates.every((u) => findSplit(c.layout, u.splitId)),
+      );
       if (!content) {
-        r = err("TARGET_NOT_FOUND", `분할 없음: ${splitId}`);
+        r = err(
+          "TARGET_NOT_FOUND",
+          `분할 없음: ${updates.map((u) => u.splitId).join(", ")}`,
+        );
         return s;
       }
       const nextProject = mapContent(t, content.id, (c) => ({
         ...c,
-        layout: mapSplitNode(c.layout, splitId, sizes),
+        layout: updates.reduce(
+          (layout, u) => mapSplitNode(layout, u.splitId, u.sizes),
+          c.layout,
+        ),
       }));
       const conflict = leftRailLayoutConflict(nextProject);
       if (conflict) {

@@ -18,6 +18,7 @@ import {
   normalizeRailPlacement,
   type RailPlacement,
 } from "../lib/railPlacement";
+import { normalizeVerticalLines } from "./verticalLines";
 
 // ── 스냅샷 타입 ───────────────────────────────────────────────────────────────
 
@@ -210,10 +211,14 @@ const deserializeContent = (
   activeGroupId: s.activeGroupId,
   ...(s.railBindingViewId ? { railBindingViewId: s.railBindingViewId } : {}),
   ...(s.maximizedViewId ? { maximizedViewId: s.maximizedViewId } : {}),
-  layout: deserializeSplitTree(
-    s.layout,
-    (g) => deserializeViewGroup(g, newSplitId),
-    newSplitId,
+  // 복원 1회 정규화(세로 불분할 명제) — 동반 드래그 이전에 토막 난 세로 라인(예: 상단
+  // 40.6/하단 39.5)을 최상단 세그먼트의 x 로 스냅해 자가 치유한다(멱등 — 정렬돼 있으면 무변화).
+  layout: normalizeVerticalLines(
+    deserializeSplitTree(
+      s.layout,
+      (g) => deserializeViewGroup(g, newSplitId),
+      newSplitId,
+    ),
   ),
 });
 
