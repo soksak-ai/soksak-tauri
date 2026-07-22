@@ -30,6 +30,15 @@ export function insetClippedEdges(
   }));
 }
 
+// 비인접 억제 허용오차(논리 %p). 결부 셀은 항상 clean line(레일 station)에서 시작하므로
+// 이보다 큰 간격은 부동소수 오차가 아니라 사이에 다른 패널이 낀 원거리 결부다.
+export const RAIL_LINK_ADJACENT_TOLERANCE = 1;
+
+/** 레일 변과 결부 셀 변의 논리 간격이 허용오차 이내인가 — 관계면 렌더 게이트. */
+export function railLinkAdjacent(station: number, target: RailRect): boolean {
+  return Math.abs(target.left - station) <= RAIL_LINK_ADJACENT_TOLERANCE;
+}
+
 /** 논리 패널 rect와 고정폭 레일을 같은 px 좌표계로 해소한다. */
 export function railLinkBoxes(
   hostWidth: number,

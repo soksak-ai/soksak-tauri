@@ -473,6 +473,31 @@ body,
 :root[data-relation-label="none"] .rail-link-label {
   display: none;
 }
+/* [임시 — 관계면 3안 비교 스위치] railRelation 설정(tint|moment|stroke)의 CSS 갈래.
+   stroke 안은 위 기본 규칙 그대로가 기준점이다. 3안 중 하나로 결정되면 채택안만 남기고
+   이 블록·모드 클래스·설정 축을 소거한다(제거 조건: 사용자 판정 확정 —
+   RailLinkOverlay.relation.test 가 동반 소거 대상). */
+.rail-link-overlay.relation-tint .rail-link-shape {
+  /* 레일과 결부 패널이 같은 바닥 톤을 공유하는 극저농도 액센트 틴트 — 스트로크·성공색 금지. */
+  fill: color-mix(in srgb, var(--acc) 5%, transparent);
+  stroke: none;
+}
+.rail-link-overlay.relation-tint .rail-link-label,
+.rail-link-overlay.relation-moment .rail-link-label {
+  display: none;
+}
+.rail-link-overlay.relation-moment .rail-link-shape {
+  /* 평시는 tint 와 동일 — 플래시 해제 시 이 값으로 페이드아웃(전이가 소유). */
+  fill: color-mix(in srgb, var(--acc) 5%, transparent);
+  stroke: transparent;
+  transition: stroke 400ms ease-out, fill 400ms ease-out;
+}
+.rail-link-overlay.relation-moment[data-flash="true"] .rail-link-shape {
+  /* 결부 대상이 바뀐 순간 600ms(RELATION_MOMENT_MS)만 테마 관계 토큰 노출. */
+  fill: var(--relation-fill);
+  stroke: var(--relation-stroke);
+  transition: none;
+}
 /* §12-④ FLIP 주행 — 최종 레이아웃은 먼저 확정하고, 출발점과의 차이만 compositor translate로
    되감아 0까지 보간한다. left/width 레이아웃 보간은 패널별 페인트가 어긋나 중간 프레임을
    찢으므로 금지한다. */
