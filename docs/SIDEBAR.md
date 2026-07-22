@@ -13,10 +13,10 @@ Every window lays out as `[left rail | content | right rail]`. Splitting is recu
 A rail is composed of three bands:
 
 - **Projection slots** — the sidebar declared by the space's single bound content view (`railBindingViewId`). Activating a view rebinds the space **only when its resolved sidebar differs** — same-function moves (terminal to terminal) keep the binding and move only the FLOW position; switching to a different function (or another per-view document) swaps the projection. Rail interaction changes neither.
-- **Pin stack** — user-pinned rail views, arranged by the same split/tab machine as content. Pins survive binding changes.
+- **Pin stack** — reserved. The left rail carries no user pin axis: it renders projections only. A plugin-owned resident surface belongs to the right rail and opens when its renderer ships. Stale pins from older snapshots render tolerantly and are removable with `ui.projection.unpin`.
 - **Rail footer** — resident `rail-footer` views, pinned to the bottom.
 
-Tools do not render sidebars inside their own view. A content view *declares* its sidebar; the rail projects it. Left is mandatory in the declaration, right is optional. During the migration window an undeclared legacy tool collapses the projection band silently; the loud A1 parser gate activates only after the fleet has declared (§7 of the decision record).
+Tools do not render sidebars inside their own view. A content view *declares* its sidebar; the rail projects it. Left is mandatory in the declaration, right is optional; a content view without a declaration is a parse error (A1), and `decoration: true` is the only exemption.
 
 ## 2. Declarations
 
@@ -32,7 +32,7 @@ Tools do not render sidebars inside their own view. A content view *declares* it
 
 - A slot references either the plugin's own rail view (`ref: "self.<viewId>"`) or a **contract address** (`{contract, range, view}`) resolved to the active implementer — plugin-id name pins are rejected (parent C3). Cross-plugin contract references require the matching `consumes` pin.
 - `instance` is the identity axis: `shared` = one instance per project (`projectId|ref`), `per-view` = one per bound content view (`projectId|ref|viewId`).
-- A referenced view carries the `rail` placement. `rail-footer` is the bottom resident slot. The legacy names `sidebar-left`, `sidebar-right`, `sidebar-footer` are accepted as aliases for one version.
+- A referenced view carries the `rail` placement. `rail-footer` is the bottom resident slot. `resident: true` marks a rail view for the right-side resident surface; it grants no left-rail presence.
 - `decoration: true` marks a content view exempt from the sidebar obligation. `transparent`/`nativeSurface` do not exempt.
 
 Resolution failure — unimplemented contract, disabled provider, missing consumes — degrades that slot to an empty slot with a notice, without touching other slots or pins, and promotes losslessly when the cause clears.
@@ -41,21 +41,21 @@ Resolution failure — unimplemented contract, disabled provider, missing consum
 
 - **Stability**: each space owns one binding, rebound only when the active view's resolution differs. Same-resolution focus moves only the FLOW position while slots, instances, scroll, and state stay unchanged.
 - **Keep-alive**: projected instances stay mounted and display-toggled. Dead per-view instances (their bound view closed) and absorbed instances are evicted.
-- **Absorption**: a pinned shared ref absorbs its projection slot (`satisfied-by-pin`) — the pin stack owns the single render.
+- **Absorption**: a stale pinned shared ref (from an older snapshot) absorbs its projection slot (`satisfied-by-pin`) — the pin stack owns the single render until the pin is removed.
 - **Open intents**: a rail view opens resources through the binding context — the bound group — adding a tab without replacing existing panels, reusing an existing view for the same resource. With no binding it places into the active group. Cross-tool actions beyond that go through commands under contract pins, exactly like any other consumer.
 - **Succession**: when the bound view closes, the binding falls back to the most recent surviving focus-history view in the same space, then to tab adjacency.
-- **Restore**: cold restart reproduces the projection isomorphically — per-space binding, slot composition, instanceKey links, pins, structural state. Pins and the auto-pin memory (`seen`) persist in the per-project window snapshot.
+- **Restore**: cold restart reproduces the projection isomorphically — per-space binding, slot composition, instanceKey links, structural state. Stale pins persist in the per-project window snapshot until removed.
 
 ## 4. Commands and Events
 
 | Surface | Behavior |
 |---|---|
 | `ui.projection.state` | Read a project's binding (view/group/content), resolved slots with status (`live`/`degraded`/`satisfied-by-pin`), pins, and focus history. |
-| `ui.projection.pin` / `unpin` | Pin/unpin a ref on a side. Pins are refs; only **resident** rail views (`resident: true`, or legacy alias placements during the alias window) pin — every other rail view is declaration-projected only; per-view-projected refs are rejected; the right side is rejected until the right pin stack renders. Idempotent. |
+| `ui.projection.pin` / `unpin` | `pin` rejects both sides: the left rail is projection-only (no pin axis), and the right side is the reserved plugin surface, rejected until its pin stack renderer ships. `unpin` removes stale pins idempotently. |
 | `ui.intent.open` | Open a path through the binding context (same path the rail uses). |
 | `projection.changed` | Fires when the resolution fingerprint changes — space rebinding, slot statuses, or pins. Same-resolution focus moves do not fire it. Boot observation is silent. |
 
-`plugin.view.open` routes the `rail` placement to a left-rail pin (opening the rail) and rejects `rail-footer` as an open target. Dev-source loading is development-identity only; debug and release homes verify published installs.
+`plugin.view.open` rejects the `rail` and `rail-footer` placements as open targets — rail views appear only through sidebar declarations. Dev-source loading is development-identity only; debug and release homes verify published installs.
 
 ## 5. Principles (S1–S10)
 
@@ -97,13 +97,13 @@ Rail conformance is proven: `ui.projection.state` assertions for binding and slo
 
 - **Frame-only / no-hardcode**: grepping the host for a view name or a built-in tab yields zero; the rails render only registered providers.
 - **Projection**: bind a declaring view → `ui.projection.state` shows the resolved slot `live` with the declared instanceKey; switch to another consumer of the same shared contract → instanceKey unchanged, no remount.
-- **Absorption**: pin the projected shared ref → slot flips to `satisfied-by-pin` with a single render; unpin → `live`.
+- **Projection-only left rail**: `ui.projection.pin` rejects both sides; unpinning a stale absorbed ref flips its slot from `satisfied-by-pin` back to `live`.
 - **Degradation**: disable the provider → slot degrades in place; re-enable → promotes with state intact.
 - **Restore**: compose binding+pins+structure → restart → `ui.projection.state` isomorphic + snapshot visual match → repeat warm.
 
 ---
 
-Version: 0.0.2
+Version: 0.0.3
 Status: AUTHORITATIVE
 Parent: `docs/ARCHITECTURE.md` (inherited, not restated) · Decision record: `plans/sidebar-projection-spec.md`
 Single source of truth: `@soksak-ai/plugin-spec` (`packages/plugin-spec/src/spec.ts`), `src/state/projection.ts`, `src/state/projectionWiring.ts`, `src/plugins/viewRegistry.ts`, `src/commands/catalogProjection.ts`

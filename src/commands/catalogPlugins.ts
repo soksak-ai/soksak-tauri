@@ -6,7 +6,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { pendingConsentChain, usePlugins, type PluginRuntime } from "../state/plugins";
 import { allGroups, useSessions } from "../state/sessions";
-import { useProjection } from "../state/projection";
 import { hasSidebarView as hasSidebarViewKey } from "../state/sidebarLayout";
 import { getRegisteredView, registeredViewIds } from "../plugins/viewRegistry";
 import { registeredFileViewerIds } from "../plugins/fileViewerRegistry";
@@ -1118,17 +1117,12 @@ export function registerPluginCatalog(): void {
           `뷰 "${key}" 는 ${placement} 배치를 지원하지 않음(지원: ${reg.decl.placements.join(", ")})`,
         );
       }
-      // rail = 레일 핀 추가 — 콘텐츠 실체화 금지(투영 모델).
-      // rail-footer 는 상주 슬롯이라 열기 동작이 없다(핀 대상 아님) — 명시 거부.
+      // rail 뷰는 결부된 콘텐츠 기능의 선언-투영으로만 나타난다(좌 레일 = 투영 전용).
+      // 상주(resident) 표면은 우측 레일의 몫이며 그 렌더러가 생기기 전까지 열기 대상이 아니다.
       if (placement === "rail") {
-        if (!reg.decl.resident) {
-          return invalid(
-            `선언-투영 전용 rail 뷰: ${key} — 상주형(resident)만 열기로 핀된다(②)`,
-          );
-        }
-        if (!project.sidebarOpen) s.toggleSidebar(projectId);
-        useProjection.getState().pin(projectId, "left", key);
-        return { view: key, placement, projectId };
+        return invalid(
+          `rail 뷰는 열기 대상이 아님: ${key} — 결부된 기능의 사이드바 선언으로만 투영된다`,
+        );
       }
       if (placement === "rail-footer") {
         return invalid(

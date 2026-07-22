@@ -120,8 +120,9 @@ export type { LocalizedText } from "./localizedText.js";
 // 뷰 구현(provider)과 배치는 직교(§0-6). placements = 지원 배치, 기본 우측 사이드바.
 
 // 투영 모델(plans/sidebar-projection-spec.md §3.3): content = 콘텐츠 평면,
-// rail = 레일 뷰(투영 참조 대상·resident 면 핀 가능 — 좌/우 방향은 배치 시점의 결정이라
-// 선언에 없다), rail-footer = 레일 하단 상주 슬롯. 구 sidebar-* 이름은 존재하지 않는다.
+// rail = 레일 뷰(투영 참조 대상 — 좌 레일은 투영 전용, resident 는 우측 상주 표면 표식이며
+// 좌/우 방향은 배치 시점의 결정이라 선언에 없다), rail-footer = 레일 하단 상주 슬롯.
+// 구 sidebar-* 이름은 존재하지 않는다.
 export type ViewPlacement = "content" | "rail" | "rail-footer";
 
 export const VIEW_PLACEMENTS: readonly ViewPlacement[] = [

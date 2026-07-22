@@ -6,7 +6,6 @@ import { register } from "./registry";
 import { err, ok, projectIdOfView, useSessions } from "../state/sessions";
 import { useProjection } from "../state/projection";
 import { projectionFor } from "../state/projectionWiring";
-import { getRegisteredView } from "../plugins/viewRegistry";
 
 const SIDES = ["left", "right"] as const;
 type Side = (typeof SIDES)[number];
@@ -58,7 +57,7 @@ export function registerProjectionCatalog(): void {
 
   register("ui.projection.pin", {
     description:
-      "Pin a rail view ref to a rail side. Pins are user-owned state that persists across binding changes; a pinned shared ref absorbs the matching projection slot (satisfied-by-pin). Only registered views carrying the rail placement are pinnable.",
+      "Reserved. The left rail is projection-only — it renders the bound content view's declared sidebar and nothing user-pinned, so left pins are always rejected. Right-side pinning is the reserved plugin surface and stays rejected until the right pin stack renderer ships. Use unpin to clean stale pins from old snapshots.",
     triggers: { ko: "핀 고정 레일핀 pin rail" },
     params: {
       ref: {
@@ -84,40 +83,17 @@ export function registerProjectionCatalog(): void {
       if (!SIDES.includes(side)) {
         return err("INVALID_PARAMS", "side 는 left|right");
       }
+      // 좌 레일은 결부된 기능의 투영 전용이다(2026-07-22 결정) — 사용자 핀 축이 없다.
+      // 상주(플러그인 소유) 표면은 우측 레일의 몫으로만 남는다.
+      if (side === "left") {
+        return err(
+          "INVALID_PARAMS",
+          "좌 레일은 결부된 기능의 투영 전용 — 핀이 없습니다. 상주 표면은 우측 레일의 몫입니다",
+        );
+      }
       // [임시] 우측 핀 스택 렌더러가 아직 없다 — 렌더 없는 흡수(뷰 소실)를 막기 위해 거부.
       // 제거 조건: PluginSidebar 가 pins.right 스택을 렌더하는 유닛이 병합되는 즉시 개방.
-      if (side === "right") {
-        return err(
-          "INVALID_PARAMS",
-          "우측 핀은 아직 지원 전(우 핀 스택 렌더러 부재) — 좌측만 가능",
-        );
-      }
-      const ref = p.ref as string;
-      const reg = getRegisteredView(ref);
-      // 핀 대상 = 상주형(resident:true) rail 뷰뿐(②) — 그 외 rail 뷰는 선언-투영 전용.
-      const pinnable = !!reg && reg.decl.resident;
-      if (!pinnable) {
-        return err(
-          "INVALID_PARAMS",
-          `핀 불가: ${ref} — 핀은 상주형(resident) 뷰만. 그 외 사이드바는 콘텐츠 기능의 선언으로만 나타난다(R4·②)`,
-        );
-      }
-      // per-view 인스턴스는 핀 불가(R4) — 현재 투영에서 이 ref 가 per-view 슬롯로 해소 중이면 거부.
-      const cur = projectionFor(pid);
-      const perView = [
-        ...(cur?.left.slots ?? []),
-        ...(cur?.right?.slots ?? []),
-      ].some((sl) => sl.resolvedRef === ref && sl.instance === "per-view");
-      if (perView) {
-        return err(
-          "INVALID_PARAMS",
-          `per-view 참조는 핀 불가(R4): ${ref} — shared 참조·상주형만 핀 가능`,
-        );
-      }
-      // 발화는 스토어 구독(추적 sweep 지문)이 단일 경로로 담당 — 여기서 emit 하지 않는다
-      // (no-op 핀이면 스토어 무변경 → 무발화).
-      useProjection.getState().pin(pid, side, ref);
-      return ok({ pins: pinsOf(pid) });
+      return err("INVALID_PARAMS", "우측 핀은 아직 지원 전(우 핀 스택 렌더러 부재)");
     },
   });
 
