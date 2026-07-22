@@ -1,11 +1,13 @@
-import { memo, useLayoutEffect, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { RailRect } from "../lib/railPlacement";
 import {
   insetClippedEdges,
+  railLinkAdjacent,
   railLinkBoxes,
   railLinkPolygon,
   roundedOrthogonalPath,
 } from "../lib/railLinkShape";
+import { useSettings } from "../state/settings";
 import { useTheme } from "../state/theme";
 import { useT } from "../i18n";
 
@@ -14,9 +16,16 @@ interface Size {
   height: number;
 }
 
+// moment 모드 플래시 유지 시간(ms) — 해제 후 페이드아웃은 CSS transition 이 소유.
+export const RELATION_MOMENT_MS = 600;
+
 /**
  * 레일과 결부 패널의 관계를 한 합집합 경로로 표시한다. 패널 DOM/테마 보더를 읽지
  * 않으며, ResizeObserver 이벤트와 공개 레이아웃 rect만 소비한다.
+ *
+ * 표현은 railRelation 설정(tint|moment|stroke)의 모드 클래스로 CSS 가 갈래를 나눈다
+ * — 비교 실험용 임시 스위치(결정 시 채택안만 남기고 소거, App.css 갈래 참조).
+ * 비인접(레일 변과 셀 변의 논리 간격 1%p 초과)이면 모든 모드에서 아예 렌더하지 않는다.
  */
 export const RailLinkOverlay = memo(function RailLinkOverlay({
   contentId,
@@ -38,10 +47,13 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
   const t = useT();
   const radius = useTheme((state) => state.spec.relation.radius);
   const strokeWidth = useTheme((state) => state.spec.relation.strokeWidth);
+  const railRelation = useSettings((state) => state.railRelation);
   const hostRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<Size>({ width: 0, height: 0 });
+  const adjacent = railLinkAdjacent(railStation, targetRect);
 
   useLayoutEffect(() => {
+    // 비인접 렌더 억제 중엔 host 가 없다 — 인접 복귀 때 이 effect 가 다시 붙는다.
     const host = hostRef.current;
     if (!host) return;
     const commit = (width: number, height: number) => {
@@ -59,7 +71,22 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
     });
     observer.observe(host);
     return () => observer.disconnect();
-  }, []);
+  }, [adjacent]);
+
+  // moment: 결부 정체성(boundViewId/targetRect)이 바뀐 순간만 잠깐 관계 토큰을 노출.
+  const identity = `${boundViewId}|${targetRect.left}|${targetRect.top}|${targetRect.width}|${targetRect.height}`;
+  const [flash, setFlash] = useState(false);
+  useEffect(() => {
+    if (railRelation !== "moment") {
+      setFlash(false);
+      return;
+    }
+    setFlash(true);
+    const timer = setTimeout(() => setFlash(false), RELATION_MOMENT_MS);
+    return () => clearTimeout(timer);
+  }, [railRelation, identity]);
+
+  if (!adjacent) return null;
 
   const boxes = railLinkBoxes(
     size.width,
@@ -84,11 +111,12 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
   return (
     <div
       ref={hostRef}
-      className="rail-link-overlay"
+      className={`rail-link-overlay relation-${railRelation}`}
       data-node={`relation/rail/${contentId}`}
       data-bound-view={boundViewId}
       data-bound-panel={boundPanelId}
       data-connected={path ? "true" : "false"}
+      data-flash={railRelation === "moment" ? String(flash) : undefined}
       aria-hidden="true"
     >
       {path && boxes && (

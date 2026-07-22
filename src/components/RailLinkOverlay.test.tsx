@@ -83,7 +83,7 @@ describe("RailLinkOverlay — 실시간 그리드 추종", () => {
     act(() => root.unmount());
   });
 
-  it("PIN 등으로 사이에 다른 패널이 끼면 거짓 연결선과 채움을 그리지 않는다", () => {
+  it("PIN 등으로 사이에 다른 패널이 끼면 관계면을 아예 렌더하지 않는다", () => {
     const host = document.createElement("div");
     document.body.appendChild(host);
     const root = createRoot(host);
@@ -94,9 +94,8 @@ describe("RailLinkOverlay — 실시간 그리드 추종", () => {
         targetRect={{ left: 50, top: 0, width: 50, height: 100 }}
       />,
     ));
-    expect(host.querySelector(".rail-link-shape")).toBeNull();
-    expect(host.querySelector<HTMLElement>(".rail-link-overlay")?.dataset.connected)
-      .toBe("false");
+    // 비인접(간격 1%p 초과) 억제 — 억지 원거리 연결은 빈 오버레이 DOM 도 남기지 않는다.
+    expect(host.querySelector(".rail-link-overlay")).toBeNull();
     act(() => root.unmount());
   });
 });
