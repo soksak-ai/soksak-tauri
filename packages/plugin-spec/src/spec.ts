@@ -300,6 +300,9 @@ export interface ContributedView {
   // A1 예외 플래그(기계검사 축) — 사이드바 의무가 없는 장식 뷰의 명시 선언.
   // transparent/nativeSurface 는 예외 사유가 아니다(브라우저 콘텐츠 뷰는 A1 대상). 기본 false.
   decoration: boolean; // 파싱 시 기본 false
+  // 상주형 명시(R4) — 사용자가 레일에 핀할 수 있는 rail 뷰. 미선언 rail 뷰는 선언-투영
+  // 전용이다(사이드바는 콘텐츠 기능에 종속 — 임의 탑재 제한). rail 계열 placement 에만 허용.
+  resident: boolean; // 파싱 시 기본 false
   // 사이드바 투영 선언(§2.5) — content placement 뷰만. A1 강제(부재 거부)는 이행 4단계에서
   // 활성화하며 그 전까지 부재는 런타임 강등(R5)으로 관용된다.
   sidebar?: ContributedSidebar;
@@ -1160,7 +1163,7 @@ export function parseManifest(
       views = parseEntries(c.views, {
         label: "contributes.views",
         required: ["id", "title", "icon"],
-        optional: ["placements", "defaultPlacement", "transparent", "nativeSurface", "status", "decoration", "sidebar"],
+        optional: ["placements", "defaultPlacement", "transparent", "nativeSurface", "status", "decoration", "resident", "sidebar"],
         parse: (v, errs) => {
           if (!isNonEmptyString(v.id) || !VIEW_ID_RE.test(v.id)) {
             errs.push("contributes.views: id 는 ^[a-z0-9][a-z0-9-]*$");
@@ -1235,6 +1238,24 @@ export function parseManifest(
             checkDuplicates(status, `contributes.views["${v.id}"].status`, errs);
             if (offCode.length > 0) return null;
           }
+          let resident = false;
+          if (v.resident !== undefined) {
+            if (typeof v.resident !== "boolean") {
+              errs.push(`contributes.views["${v.id}"].resident: boolean`);
+              return null;
+            }
+            if (
+              v.resident === true &&
+              !placements.some((pl) => pl === "rail" || pl === "rail-footer" ||
+                pl === "sidebar-left" || pl === "sidebar-right" || pl === "sidebar-footer")
+            ) {
+              errs.push(
+                `contributes.views["${v.id}"].resident: rail 계열 placement 뷰만 선언 가능`,
+              );
+              return null;
+            }
+            resident = v.resident;
+          }
           let decoration = false;
           if (v.decoration !== undefined) {
             if (typeof v.decoration !== "boolean") {
@@ -1269,6 +1290,7 @@ export function parseManifest(
             nativeSurface,
             ...(status !== undefined ? { status } : {}),
             decoration,
+            resident,
             ...(sidebar !== undefined ? { sidebar } : {}),
           };
         },

@@ -435,9 +435,15 @@ body,
   top: 0;
   bottom: 0;
   overflow: hidden;
-  border-left: 0 solid var(--bd);
+  /* 레일 시각 언어 — 분할 pane 과 즉시 구분되게: 카드 틴트 배경 + 양측 elevation.
+     FLOW 로 그리드 중간에 설 때도 "패널 사이에 떠 있는 가구"로 읽힌다. 팔레트는
+     테마 변수 조합만(S6 — 리컬러 시 자동 추종). */
+  border-left: 1px solid var(--bd);
   border-right: 1px solid var(--bd); /* §B2 */
-  background: var(--bg);
+  background: color-mix(in srgb, var(--card) 55%, var(--bg));
+  box-shadow:
+    10px 0 24px -14px rgba(0, 0, 0, 0.35),
+    -10px 0 24px -14px rgba(0, 0, 0, 0.35);
   pointer-events: auto;
 }
 .ft-sidebar {

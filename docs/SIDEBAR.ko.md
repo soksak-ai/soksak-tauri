@@ -51,7 +51,7 @@
 | 표면 | 동작 |
 |---|---|
 | `ui.projection.state` | 프로젝트의 결부(뷰/그룹/스페이스), 해소된 슬롯과 상태(`live`/`degraded`/`satisfied-by-pin`), 핀, focus history 를 읽는다. |
-| `ui.projection.pin` / `unpin` | ref를 핀/해제. 핀은 ref다; rail placement(또는 레거시 앨리어스) 뷰만 핀 가능; per-view로 투영 중인 ref는 거부; 우측은 우 핀 스택 렌더러가 생기기 전까지 거부. 멱등. |
+| `ui.projection.pin` / `unpin` | ref를 핀/해제. 핀은 ref다; **상주형**(`resident: true`, 앨리어스 기간엔 레거시 sidebar-* placement 포함)만 핀 가능 — 그 외 rail 뷰는 선언-투영 전용; per-view로 투영 중인 ref는 거부; 우측은 우 핀 스택 렌더러가 생기기 전까지 거부. 멱등. |
 | `ui.intent.open` | 결부 문맥으로 경로를 연다(레일이 쓰는 것과 같은 경로). |
 | `projection.changed` | 해소 지문 — 스페이스 재결부·슬롯 상태·핀 — 이 바뀔 때 발화한다. 같은 해소의 포커스 이동은 발화하지 않는다. 부트 관측은 무발화다. |
 

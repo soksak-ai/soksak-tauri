@@ -74,12 +74,20 @@ export const LeftSidebarHost = memo(function LeftSidebarHost({
     (s) => s.byProject[project.id]?.pins.left,
   );
   const registeredKeys = useMemo(() => {
-    const railish = new Set(
-      [...viewsForPlacement("sidebar-left"), ...viewsForPlacement("rail")].map(
-        (v) => v.key,
-      ),
+    // 핀 렌더 대상 = 상주형뿐(②): resident 선언 rail 뷰 + 레거시 sidebar-* 앨리어스.
+    // 과거에 심긴 비상주형 핀(ref 기록)은 여기서 걸러져 자동 소거된다(기록은 무해).
+    const residentish = new Set(
+      [...viewsForPlacement("sidebar-left"), ...viewsForPlacement("rail")]
+        .filter(
+          ({ view }) =>
+            view.decl.resident ||
+            view.decl.placements.some((pl) =>
+              ["sidebar-left", "sidebar-right", "sidebar-footer"].includes(pl),
+            ),
+        )
+        .map((v) => v.key),
     );
-    return (pinnedLeft ?? []).filter((k) => railish.has(k));
+    return (pinnedLeft ?? []).filter((k) => residentish.has(k));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [version, pinnedLeft]);
   const footerViews = useMemo(

@@ -32,6 +32,7 @@ function decl(id: string, over: Partial<ContributedView> = {}): ContributedView 
     transparent: false,
     nativeSurface: false,
     decoration: false,
+    resident: false,
     ...over,
   };
 }
@@ -126,7 +127,7 @@ describe("ui.projection.pin / unpin — R4(핀 = ref, rail 뷰만)", () => {
     );
     useViewRegistry.getState().register(
       "termplug",
-      decl("tree", { placements: ["rail"], defaultPlacement: "rail" }),
+      decl("tree", { placements: ["rail"], defaultPlacement: "rail", resident: true }),
       provider,
     );
     useSessions.setState({ tabs: [tab([pluginView("v1", "termplug", "term")], "v1")], activeId: "p1" });
@@ -196,6 +197,31 @@ describe("배치① 명령 정합 — 우측 핀 거부·alias 핀·확장 상�
     const r = (await execute("ui.projection.state", {}, {})) as { data: Record<string, unknown> };
     expect(r.data.binding).toMatchObject({ viewId: "v1", groupId: "g1", contentId: "c1" });
     expect(r.data.focusHistory).toEqual(["v1"]);
+  });
+});
+
+describe("핀 제한(②) — resident 아닌 rail 뷰는 핀 불가", () => {
+  it("resident 미선언 rail 뷰 핀 → INVALID_PARAMS(선언-투영 전용)", async () => {
+    useViewRegistry.getState().register(
+      "ftplug",
+      decl("tree", { placements: ["rail"], defaultPlacement: "rail" }),
+      provider,
+    );
+    useSessions.setState({ tabs: [tab([], "")], activeId: "p1" });
+    const r = (await execute("ui.projection.pin", { ref: "ftplug.tree" }, {})) as { ok: boolean; code: string };
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe("INVALID_PARAMS");
+  });
+
+  it("레거시 sidebar-* placement 는 앨리어스 기간 동안 resident 간주 — 핀 가능 유지", async () => {
+    useViewRegistry.getState().register(
+      "mailplug",
+      decl("inbox", { placements: ["sidebar-left"], defaultPlacement: "sidebar-left" }),
+      provider,
+    );
+    useSessions.setState({ tabs: [tab([], "")], activeId: "p1" });
+    const r = (await execute("ui.projection.pin", { ref: "mailplug.inbox" }, {})) as { ok: boolean };
+    expect(r.ok).toBe(true);
   });
 });
 

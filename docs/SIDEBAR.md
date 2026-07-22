@@ -51,7 +51,7 @@ Resolution failure — unimplemented contract, disabled provider, missing consum
 | Surface | Behavior |
 |---|---|
 | `ui.projection.state` | Read a project's binding (view/group/content), resolved slots with status (`live`/`degraded`/`satisfied-by-pin`), pins, and focus history. |
-| `ui.projection.pin` / `unpin` | Pin/unpin a ref on a side. Pins are refs; only rail-placement views (or legacy alias placements) pin; per-view-projected refs are rejected; the right side is rejected until the right pin stack renders. Idempotent. |
+| `ui.projection.pin` / `unpin` | Pin/unpin a ref on a side. Pins are refs; only **resident** rail views (`resident: true`, or legacy alias placements during the alias window) pin — every other rail view is declaration-projected only; per-view-projected refs are rejected; the right side is rejected until the right pin stack renders. Idempotent. |
 | `ui.intent.open` | Open a path through the binding context (same path the rail uses). |
 | `projection.changed` | Fires when the resolution fingerprint changes — space rebinding, slot statuses, or pins. Same-resolution focus moves do not fire it. Boot observation is silent. |
 

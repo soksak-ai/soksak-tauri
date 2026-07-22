@@ -1133,6 +1133,11 @@ export function registerPluginCatalog(): void {
       // rail(§3.3 재해석) = 레일 핀 추가 — 콘텐츠 실체화 금지(투영 모델 §7.1).
       // rail-footer 는 상주 슬롯이라 열기 동작이 없다(핀 대상 아님) — 명시 거부.
       if (placement === "rail") {
+        if (!reg.decl.resident) {
+          return invalid(
+            `선언-투영 전용 rail 뷰: ${key} — 상주형(resident)만 열기로 핀된다(②)`,
+          );
+        }
         if (!project.sidebarOpen) s.toggleSidebar(projectId);
         useProjection.getState().pin(projectId, "left", key);
         return { view: key, placement, projectId };

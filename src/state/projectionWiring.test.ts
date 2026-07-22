@@ -37,6 +37,7 @@ function decl(id: string, over: Partial<ContributedView> = {}): ContributedView 
     transparent: false,
     nativeSurface: false,
     decoration: false,
+    resident: false,
     ...over,
   };
 }

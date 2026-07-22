@@ -1266,3 +1266,33 @@ describe("parseManifest — sidebar 투영 계약(§3.1)", () => {
     ).toBe(true);
   });
 });
+
+describe("parseManifest — resident 축(핀 가능 상주형 명시)", () => {
+  it("rail 뷰의 resident:true 수용(기본 false), rail 계열 아닌 뷰의 선언은 거부", () => {
+    const on = parseManifest(
+      base({
+        permissions: ["ui"],
+        contributes: { views: [{ id: "inbox", title: "메일", icon: "M", placements: ["rail"], resident: true }] },
+      }),
+      "demo",
+    );
+    expect(on.validation.errors).toEqual([]);
+    expect(on.manifest?.contributes.views[0].resident).toBe(true);
+    const off = parseManifest(
+      base({
+        permissions: ["ui"],
+        contributes: { views: [{ id: "tree", title: "트리", icon: "T", placements: ["rail"] }] },
+      }),
+      "demo",
+    );
+    expect(off.manifest?.contributes.views[0].resident).toBe(false);
+    expect(
+      errorsOf(
+        base({
+          permissions: ["ui"],
+          contributes: { views: [{ id: "v", title: "V", icon: "v", placements: ["content"], resident: true }] },
+        }),
+      ).some((e) => e.includes("resident")),
+    ).toBe(true);
+  });
+});

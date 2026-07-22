@@ -94,16 +94,19 @@ export function registerProjectionCatalog(): void {
       }
       const ref = p.ref as string;
       const reg = getRegisteredView(ref);
-      // rail + 레거시 sidebar-* 앨리어스(§3.3 앨리어스 기간) 모두 핀 가능.
-      const pinnable =
+      // 핀 대상 = 상주형뿐(② — 사이드바 임의 탑재 제한): resident:true 를 선언한 rail 뷰,
+      // 또는 앨리어스 기간의 레거시 sidebar-* placement 뷰(상주형 함대의 구 매니페스트).
+      // 그 외 rail 뷰는 선언-투영 전용 — 콘텐츠 기능에 종속된다.
+      const legacyResident =
         !!reg &&
-        ["rail", "sidebar-left", "sidebar-right"].some((pl) =>
+        ["sidebar-left", "sidebar-right", "sidebar-footer"].some((pl) =>
           reg.decl.placements.includes(pl as never),
         );
+      const pinnable = !!reg && (reg.decl.resident || legacyResident);
       if (!pinnable) {
         return err(
           "INVALID_PARAMS",
-          `rail 뷰가 아님: ${ref} — 핀은 rail(또는 앨리어스 sidebar-*) 배치로 등록된 뷰만(R4)`,
+          `핀 불가: ${ref} — 핀은 상주형(resident) 뷰만. 그 외 사이드바는 콘텐츠 기능의 선언으로만 나타난다(R4·②)`,
         );
       }
       // per-view 인스턴스는 핀 불가(R4) — 현재 투영에서 이 ref 가 per-view 슬롯로 해소 중이면 거부.
