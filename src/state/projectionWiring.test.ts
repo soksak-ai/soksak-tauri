@@ -391,3 +391,38 @@ describe("R6 승계 — 결부 뷰 닫힘 시 같은 스페이스의 focusHistor
     stop();
   });
 });
+
+describe("재결부 — 활성 콘텐츠 뷰가 스페이스 결부를 정한다(③)", () => {
+  it("다른 기능 뷰 활성화 시 슬롯이 그 기능의 선언으로 교체된다", () => {
+    useViewRegistry.getState().register(
+      "kanplug",
+      decl("board", {
+        sidebar: { left: [{ ref: "self.tree", instance: "per-view" }], right: [], template: "stack" },
+      }),
+      provider,
+    );
+    useViewRegistry.getState().register("kanplug", decl("tree", { placements: ["rail"], defaultPlacement: "rail" }), provider);
+    useViewRegistry.getState().register(
+      "runplug",
+      decl("runbook", {
+        sidebar: { left: [{ ref: "self.list", instance: "per-view" }], right: [], template: "stack" },
+      }),
+      provider,
+    );
+    useViewRegistry.getState().register("runplug", decl("list", { placements: ["rail"], defaultPlacement: "rail" }), provider);
+
+    const vA = pluginView("vA", "kanplug", "board");
+    const vB = pluginView("vB", "runplug", "runbook");
+    useSessions.setState({ tabs: [tab([vA, vB], "vA")], activeId: "p1" });
+    const stop = startProjectionTracking();
+    expect(projectionFor("p1")?.left.slots[0]?.resolvedRef).toBe("kanplug.tree");
+
+    // 활성 탭 전환 = 기능 전환 → 결부·슬롯 교체.
+    const t = useSessions.getState().tabs[0];
+    useSessions.setState({
+      tabs: [{ ...t, contents: [{ ...t.contents[0], layout: { type: "leaf", value: { id: "g1", views: [vA, vB], activeViewId: "vB" } } }] }],
+    });
+    expect(projectionFor("p1")?.left.slots[0]?.resolvedRef).toBe("runplug.list");
+    stop();
+  });
+});

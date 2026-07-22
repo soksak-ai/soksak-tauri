@@ -1278,8 +1278,11 @@ export const useSessions = create<SessionsStore>((set, get) => ({
         r = err("TARGET_NOT_FOUND", `컨텐츠 없음: ${contentId}`);
         return s;
       }
-      if (content.railBindingViewId) {
-        r = ok({ viewId: content.railBindingViewId });
+      // 재결부 허용: 활성 콘텐츠 뷰가 스페이스의 결부를 정한다 — 같은 뷰면 멱등, 다른
+      // 뷰면 교체. 같은 해소(instanceKey)면 R1 이 슬롯 전환을 막아 레일은 차분하고, 빈
+      // 그룹 포커스는 이 경로를 타지 않아(호출부가 활성 뷰 있을 때만) 기존 결부가 유지된다.
+      if (content.railBindingViewId === viewId) {
+        r = ok({ viewId });
         return s;
       }
       if (!allGroups(content.layout).some((g) => g.views.some((v) => v.id === viewId))) {

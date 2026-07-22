@@ -138,7 +138,25 @@ export function startProjectionTracking(): () => void {
       const candidate = boundViewOf(t);
       const vid = candidate?.viewId ?? null;
       if (candidate?.contentId && vid) {
-        useSessions.getState().bindContentRail(t.id, candidate.contentId, vid);
+        // 재결부 규칙(③·fd2f66f5 조화): 활성 뷰의 해소 결과가 현재 결부의 해소와 다를
+        // 때만 스페이스 결부를 교체한다 — 같은 기능·같은 해소(터미널↔터미널)는 유지되어
+        // FLOW 위치만 움직이고, 다른 기능(칸반→런북)이나 per-view 문서 전환은 교체된다.
+        const pinsNow =
+          useProjection.getState().byProject[t.id]?.pins ?? { left: [], right: [] };
+        const sideFp = (side: { slots: { source: string; resolvedRef: string | null; instanceKey: string | null }[] } | null) =>
+          side?.slots.map((x) => [x.source, x.resolvedRef, x.instanceKey]) ?? null;
+        const candProj = resolveProjection(
+          t.id, candidate, pinsNow, realProjectionDeps(),
+        );
+        const curProj = projectionFor(t.id);
+        const differs =
+          JSON.stringify([sideFp(candProj.left), sideFp(candProj.right)]) !==
+          JSON.stringify([sideFp(curProj?.left ?? null), sideFp(curProj?.right ?? null)]);
+        const locked = t.contents.find((c) => c.id === candidate.contentId)
+          ?.railBindingViewId;
+        if (differs || !locked) {
+          useSessions.getState().bindContentRail(t.id, candidate.contentId, vid);
+        }
         useProjection.getState().noteBinding(t.id, vid);
       }
       const resolved = projectionFor(t.id);

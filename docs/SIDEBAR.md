@@ -12,7 +12,7 @@ Every window lays out as `[left rail | content | right rail]`. Splitting is recu
 
 A rail is composed of three bands:
 
-- **Projection slots** — the sidebar declared by the single content view fixed in the space's `railBindingViewId`. Panel, group, and active-tab focus move only the FLOW position; they do not replace projected content. Rail interaction changes neither.
+- **Projection slots** — the sidebar declared by the space's single bound content view (`railBindingViewId`). Activating a view rebinds the space **only when its resolved sidebar differs** — same-function moves (terminal to terminal) keep the binding and move only the FLOW position; switching to a different function (or another per-view document) swaps the projection. Rail interaction changes neither.
 - **Pin stack** — user-pinned rail views, arranged by the same split/tab machine as content. Pins survive binding changes.
 - **Rail footer** — resident `rail-footer` views, pinned to the bottom.
 
@@ -39,7 +39,7 @@ Resolution failure — unimplemented contract, disabled provider, missing consum
 
 ## 3. Projection Behavior
 
-- **Stability**: each space owns one binding. Panel focus moves only the FLOW position while slots, instances, scroll, and state stay unchanged.
+- **Stability**: each space owns one binding, rebound only when the active view's resolution differs. Same-resolution focus moves only the FLOW position while slots, instances, scroll, and state stay unchanged.
 - **Keep-alive**: projected instances stay mounted and display-toggled. Dead per-view instances (their bound view closed) and absorbed instances are evicted.
 - **Absorption**: a pinned shared ref absorbs its projection slot (`satisfied-by-pin`) — the pin stack owns the single render.
 - **Open intents**: a rail view opens resources through the binding context — the bound group — adding a tab without replacing existing panels, reusing an existing view for the same resource. With no binding it places into the active group. Cross-tool actions beyond that go through commands under contract pins, exactly like any other consumer.
@@ -53,7 +53,7 @@ Resolution failure — unimplemented contract, disabled provider, missing consum
 | `ui.projection.state` | Read a project's binding (view/group/content), resolved slots with status (`live`/`degraded`/`satisfied-by-pin`), pins, and focus history. |
 | `ui.projection.pin` / `unpin` | Pin/unpin a ref on a side. Pins are refs; only rail-placement views (or legacy alias placements) pin; per-view-projected refs are rejected; the right side is rejected until the right pin stack renders. Idempotent. |
 | `ui.intent.open` | Open a path through the binding context (same path the rail uses). |
-| `projection.changed` | Fires when the resolution fingerprint changes — space binding, slot statuses, or pins. Focus-only changes do not fire it. Boot observation is silent. |
+| `projection.changed` | Fires when the resolution fingerprint changes — space rebinding, slot statuses, or pins. Same-resolution focus moves do not fire it. Boot observation is silent. |
 
 `plugin.view.open` routes the `rail` placement to a left-rail pin (opening the rail) and rejects `rail-footer` as an open target. Dev-source loading is development-identity only; debug and release homes verify published installs.
 
