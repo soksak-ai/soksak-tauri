@@ -83,9 +83,20 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
     expect(sync!.decls).not.toMatch(/transition\s*:/);
     expect(RAIL_TRAVEL_MS).toBe(340);
     expect(sync!.decls).toMatch(/animation:\s*rail-flip-x var\(--rail-travel-ms\) cubic-bezier\(0\.4, 0, 0\.2, 1\)/);
-    expect(css).toMatch(/@keyframes rail-flip-x\s*\{[\s\S]*from\s*\{\s*translate:\s*var\(--rail-flip-x/);
+    expect(css).toMatch(/@keyframes rail-flip-x\s*\{[\s\S]*from\s*\{\s*translate:\s*calc\(var\(--rail-flip-x/);
     // pane만 FLIP한다. 레일 표상은 출발·도착 그리드선에 정지해 있다.
     expect(rules().find((r) => r.selector === ".sidebar.traveling")).toBeUndefined();
+  });
+
+  it("§5.1-F7 근접 패널 교환도 레이아웃 transition 없이 같은 compositor FLIP을 쓴다", () => {
+    const sync = rules().find((r) =>
+      r.selector.startsWith(".egroup-area.focus-layout-traveling"),
+    );
+    expect(sync?.selector).toContain(".egroup-cell");
+    expect(sync?.selector).toContain(".egroup-frame");
+    expect(sync?.selector).toContain(".egroup-body-slot");
+    expect(sync?.decls).toMatch(/animation:\s*rail-flip-x var\(--rail-travel-ms\)/);
+    expect(sync?.decls).not.toMatch(/transition\s*:/);
   });
 
   it("§12-④ 영역 인계는 페이드나 레일 오버레이 없이 pane의 수축·확장이 드러낸다", () => {

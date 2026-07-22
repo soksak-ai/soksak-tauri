@@ -45,6 +45,8 @@ interface SettingsState {
   tabCloseConfirm: TabCloseConfirm;
   rightSidebarMode: RightSidebarMode;
   railLook: RailLook;
+  // FLOW에서 포커스 패널의 자체 왼쪽 선이 막혔을 때 같은 row 형제를 화면에서만 교환.
+  railFocusNear: boolean;
   // 앱 UI 폰트(=앱 크롬 전역). 터미널 폰트와 무관 — 터미널 폰트는 터미널 플러그인이 별도 소유.
   // appFontFamily → --app-font(루트 font-family), appFontSize → --app-font-size(루트 font-size).
   appFontFamily: string;
@@ -68,6 +70,7 @@ interface SettingsState {
   setTabCloseConfirm: (v: TabCloseConfirm) => void;
   setRightSidebarMode: (v: RightSidebarMode) => void;
   setRailLook: (v: RailLook) => void;
+  setRailFocusNear: (v: boolean) => void;
   setAppFontFamily: (v: string) => void;
   setAppFontSize: (v: number) => void;
   setOrchestratorAgent: (v: string) => void;
@@ -88,6 +91,7 @@ const DEFAULTS = {
   tabCloseConfirm: "warn" as TabCloseConfirm,
   rightSidebarMode: "overlay" as RightSidebarMode,
   railLook: "ground" as RailLook,
+  railFocusNear: false,
   appFontFamily:
     '"JetBrains Mono", "SF Mono", "Cascadia Code", Menlo, Consolas, "Courier New", monospace',
   appFontSize: 13,
@@ -115,6 +119,7 @@ function serialize(s: SettingsState): PersistedSettings {
     tabCloseConfirm: s.tabCloseConfirm,
     rightSidebarMode: s.rightSidebarMode,
     railLook: s.railLook,
+    railFocusNear: s.railFocusNear,
     appFontFamily: s.appFontFamily,
     appFontSize: s.appFontSize,
     orchestratorAgent: s.orchestratorAgent,
@@ -188,6 +193,10 @@ export const useSettings = create<SettingsState>((set, get) => {
     },
     setRailLook: (railLook) => {
       set({ railLook });
+      save();
+    },
+    setRailFocusNear: (railFocusNear) => {
+      set({ railFocusNear });
       save();
     },
     setRightSidebarMode: (rightSidebarMode) => {

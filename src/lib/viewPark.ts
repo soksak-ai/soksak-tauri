@@ -8,6 +8,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { emitPluginEvent } from "../plugins/hooks";
 import { browserLabel } from "./webviewLabels";
+import { parkedStyle } from "./layerPark";
 
 // 뷰가 실제로 보이는가 — **세 층이 모두 참일 때만** 참이다: 프로젝트가 활성이고, 그 프로젝트 안에서
 // 그 스페이스가 활성이고, 그 스페이스 안에서 그 뷰가 활성 탭이다. 한 층이라도 빠지면 코어는 보이지 않는
@@ -16,6 +17,19 @@ import { browserLabel } from "./webviewLabels";
 // CSS 는 이 층들을 각자 숨기지만 네이티브 층은 CSS 밖에 있으므로, 판정은 한 식으로 모은다.
 export function surfaceShown(projectActive: boolean, spaceActive: boolean, tabActive: boolean): boolean {
   return projectActive && spaceActive && tabActive;
+}
+
+/**
+ * 뷰 슬롯의 DOM/GPU 합성 계약. 평상시 비활성 탭은 세션 크기를 보존하는 오프스크린
+ * 파킹을 쓰지만, 최대화처럼 한 표면만 존재해야 하는 exclusive 상태에서는 제외 슬롯을
+ * display:none으로 합성 트리에서도 제거한다. DOM과 플러그인 인스턴스는 언마운트하지
+ * 않으며, 복원 커밋의 layout.reflow가 다시 현재 슬롯 크기를 전달한다.
+ */
+export function viewSurfaceStyle(visible: boolean, exclusive: boolean) {
+  return {
+    ...parkedStyle(visible),
+    display: exclusive && !visible ? "none" : undefined,
+  };
 }
 
 const visibleByView = new Map<string, boolean>();

@@ -24,3 +24,13 @@ describe("settings.tabCloseConfirm", () => {
     expect(useSettings.getState().tabCloseConfirm).toBe("warn");
   });
 });
+
+describe("settings.railFocusNear", () => {
+  it("기본은 원본 배열 유지이며 사용자가 근접 배치를 켜고 끌 수 있다", () => {
+    expect(useSettings.getState().railFocusNear).toBe(false);
+    useSettings.getState().setRailFocusNear(true);
+    expect(useSettings.getState().railFocusNear).toBe(true);
+    useSettings.getState().setRailFocusNear(false);
+    expect(useSettings.getState().railFocusNear).toBe(false);
+  });
+});

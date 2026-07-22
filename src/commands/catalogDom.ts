@@ -168,7 +168,8 @@ export function registerDomCatalog(): void {
         default: false,
       },
     },
-    returns: "{ address, rect:{x,y,w,h}, style, occlusion?:{ reachable, topTag, topNode } }",
+    returns:
+      "{ address, dataset, rect:{x,y,w,h}, style, occlusion?:{ reachable, topTag, topNode } } — dataset contains every declared data-* field on the exposed node",
     message: (d) =>
       tmsg("msg.ui.measure", {
         w: Number((d.rect as { w?: number })?.w ?? 0),
@@ -205,6 +206,9 @@ export function registerDomCatalog(): void {
       }
       const out: Record<string, unknown> = {
         address: addr,
+        // 모든 data-* 선언은 공개 상태다. 자동화/플러그인은 private DOM 속성명을
+        // 다시 추측하지 않고 ui.tree → ui.measure 한 경로로 읽는다.
+        dataset: Object.fromEntries(Object.entries(el.dataset)),
         rect: {
           x: +r.x.toFixed(2),
           y: +r.y.toFixed(2),

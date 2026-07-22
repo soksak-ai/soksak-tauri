@@ -69,6 +69,17 @@ function mountNode(html: string): void {
 const ADDR = "win/main/content/view/test.v/node/btn";
 
 describe("ui.measure — 상호작용/가시성 축", () => {
+  it("노출 노드의 data-* 상태를 함께 반환해 private DOM 추측을 없앤다", async () => {
+    mountNode(`<div data-node="btn" data-projection="focus-near" data-traveling="true">x</div>`);
+    const r = await execute("ui.measure", { address: ADDR }, {});
+    expect(r.ok).toBe(true);
+    expect((r.data as { dataset: Record<string, string> }).dataset).toMatchObject({
+      node: "btn",
+      projection: "focus-near",
+      traveling: "true",
+    });
+  });
+
   it("style 에 pointerEvents/opacity/visibility 를 상시 포함한다", async () => {
     mountNode(`<button data-node="btn" style="pointer-events:none;opacity:0.5;visibility:hidden">x</button>`);
     const r = await execute("ui.measure", { address: ADDR }, {});
@@ -176,7 +187,7 @@ describe("ui.input.click — 합성 이벤트가 Shadow DOM 경계를 넘는다(
     const seen: boolean[] = [];
     container.addEventListener("mousedown", (e) => seen.push(e.composed), true);
 
-    const tree = (await execute("ui.tree", {}, {})) as {
+    const tree = (await execute("ui.tree", {}, {})) as unknown as {
       ok: boolean;
       data: { nodes: { address: string }[] };
     };

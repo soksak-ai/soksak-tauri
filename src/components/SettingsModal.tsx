@@ -285,6 +285,17 @@ export function SettingsModal({
               <option value="left">{t("position.left")}</option>
             </select>
           </div>
+          <div className="drow">
+            <span className="drow-label">{t("settings.railFocusNear")}</span>
+            <select
+              className="dctl"
+              value={s.railFocusNear ? "on" : "off"}
+              onChange={(e) => s.setRailFocusNear(e.target.value === "on")}
+            >
+              <option value="off">{t("railFocusNear.off")}</option>
+              <option value="on">{t("railFocusNear.on")}</option>
+            </select>
+          </div>
           {/* 분할 패널 헤더 설정 — 탭 모드로 고정(2026-06 결정: 제목표시줄 모드
               비노출). 재노출 시 아래 주석 해제 + GroupArea 의 고정값 복원.
           <div className="drow">

@@ -167,8 +167,13 @@ const ProjectPane = memo(function ProjectPane({
   const t = useT();
   const setLeftRailPlacement = useSessions((s) => s.setLeftRailPlacement);
   const railPlaneRef = useRef<HTMLDivElement>(null);
-  const railGrid = leftRailGrid(project);
   const placement = project.leftRailPlacement ?? { mode: "flow" as const };
+  const railFocusNear = useSettings((s) => s.railFocusNear);
+  const focusNearEnabled = railFocusNear && placement.mode === "flow";
+  const activeContent =
+    project.contents.find((content) => content.id === project.activeContentId) ??
+    project.contents[0];
+  const railGrid = leftRailGrid(project, focusNearEnabled);
   const effectiveStation = effectiveRailStation(
     railGrid.cells,
     railGrid.focusId,
@@ -275,6 +280,8 @@ const ProjectPane = memo(function ProjectPane({
   useLayoutEffect(() => {
     emitPluginEvent("layout.reflow", { activeSpaceId: project.activeContentId });
   }, [
+    activeContent?.activeGroupId,
+    activeContent?.maximizedViewId,
     project.activeContentId,
     project.sidebarOpen,
     isActiveProject,
@@ -322,6 +329,7 @@ const ProjectPane = memo(function ProjectPane({
                 <div
                   key={layer.key}
                   className={`sidebar rail-${railLook}`}
+                  data-node={layer.interactive ? "rail/left" : undefined}
                   data-rail-role={layer.role}
                   aria-hidden={!layer.interactive || undefined}
                   onMouseDown={
@@ -409,6 +417,7 @@ const ProjectPane = memo(function ProjectPane({
                   content={c}
                   projectId={project.id}
                   surfaceActive={isActiveProject && isActiveContent}
+                  focusNearRail={focusNearEnabled}
                   railStation={isActiveContent ? renderedStation : 0}
                   railTravelFrom={isActiveContent ? travelFrom : 0}
                   railWidthPx={

@@ -42,6 +42,7 @@ import { useIconRegistry } from "../ui/icons/registry";
 import { hasPtyObservation } from "../terminal/ptyObservationStore";
 import { resolveTermPane } from "./termResolve";
 import { computeLayout } from "../components/GroupArea";
+import { projectFocusedPanelNearRail } from "../lib/railFocusLayout";
 import { catalogJson, register, type CommandContext, type CommandHint } from "./registry";
 import { registerFsWatchCatalog } from "./catalogFsWatch";
 import { registerPluginCatalog } from "./catalogPlugins";
@@ -307,15 +308,66 @@ function serializeLayout(node: GroupNode): object {
   };
 }
 
-function serializeContent(c: ContentArea, activeContentId: string) {
-  const { cells } = computeLayout(c.layout);
+function serializeContent(
+  c: ContentArea,
+  activeContentId: string,
+  focusNearRail = false,
+) {
+  const displayLayout = projectFocusedPanelNearRail(
+    c.layout,
+    c.activeGroupId,
+    focusNearRail && !c.maximizedViewId,
+  );
+  const canonicalLayout = serializeLayout(c.layout);
+  const canonicalCells = computeLayout(c.layout).cells;
+  const projectedCells = computeLayout(displayLayout).cells;
+  const maximizedGroup = c.maximizedViewId
+    ? (projectedCells.find(({ group }) => group.id === c.activeGroupId) ??
+      projectedCells.find(({ group }) =>
+        group.views.some((view) => view.id === c.maximizedViewId),
+      ) ?? null)
+    : null;
+  const cells = maximizedGroup
+    ? [{ group: maximizedGroup.group, rect: { left: 0, top: 0, width: 100, height: 100 } }]
+    : projectedCells;
+  const canonicalOrder = canonicalCells.map(({ group }) => group.id);
+  const projectedOrder = projectedCells.map(({ group }) => group.id);
+  const swappedPanels = canonicalOrder.filter(
+    (id, index) => projectedOrder[index] !== id,
+  );
+  const projection = c.maximizedViewId
+    ? {
+        kind: "maximized" as const,
+        applied: true,
+        focusedPanelId: c.activeGroupId,
+        swappedPanels: [] as string[],
+      }
+    : displayLayout !== c.layout
+      ? {
+          kind: "focus-near" as const,
+          applied: true,
+          focusedPanelId: c.activeGroupId,
+          swappedPanels,
+        }
+      : {
+          kind: "canonical" as const,
+          applied: false,
+          focusedPanelId: c.activeGroupId,
+          swappedPanels: [] as string[],
+        };
   return {
     id: c.id,
     title: c.title,
     active: c.id === activeContentId,
     activePanelId: c.activeGroupId,
     maximizedViewId: c.maximizedViewId ?? null,
-    layout: serializeLayout(c.layout),
+    // layout/panels = 지금 화면. canonicalLayout = 저장된 SplitTree의 읽기 전용 직렬화.
+    // 소비자는 투영 결과를 정본으로 오인하거나 private store를 읽을 필요가 없다.
+    layout: maximizedGroup
+      ? { panel: maximizedGroup.group.id }
+      : serializeLayout(displayLayout),
+    canonicalLayout,
+    projection,
     panels: cells.map(({ group, rect }) => ({
       id: group.id,
       rect: {
@@ -334,8 +386,8 @@ function serializeContent(c: ContentArea, activeContentId: string) {
 // 좌 레일 위치의 공개 사실. 저장의 PIN station과 현재 그리드에서 실제로
 // 적용되는 station은 구분한다. 구 스냅샷의 dirty PIN을 조회했다는 이유만으로
 // 저장값을 변경하지 않으며, 명시적 PIN 명령만 유효 라인으로 스냅해 저장한다.
-function serializeLeftRailPosition(t: ProjectTab) {
-  const { cells, focusId, cleanLines } = leftRailGrid(t);
+function serializeLeftRailPosition(t: ProjectTab, focusNearRail = false) {
+  const { cells, focusId, cleanLines } = leftRailGrid(t, focusNearRail);
   const placement: RailPlacement = t.leftRailPlacement ?? { mode: "flow" };
   const effectiveStation = effectiveRailStation(
     cells,
@@ -354,6 +406,7 @@ function serializeLeftRailPosition(t: ProjectTab) {
 
 function serializeTree() {
   const s = useSessions.getState();
+  const focusNearRail = useSettings.getState().railFocusNear;
   return {
     activeProjectId: s.activeId,
     projects: s.tabs.map((t) => ({
@@ -362,10 +415,17 @@ function serializeTree() {
       root: t.root ?? null,
       color: t.color ?? null,
       sidebarOpen: t.sidebarOpen,
-      leftRailPosition: serializeLeftRailPosition(t),
+      leftRailPosition: serializeLeftRailPosition(t, focusNearRail),
       active: t.id === s.activeId,
       activeSpaceId: t.activeContentId,
-      spaces: t.contents.map((c) => serializeContent(c, t.activeContentId)),
+      spaces: t.contents.map((c) =>
+        serializeContent(
+          c,
+          t.activeContentId,
+          focusNearRail &&
+            (t.leftRailPlacement?.mode ?? "flow") === "flow",
+        ),
+      ),
     })),
   };
 }
@@ -414,10 +474,10 @@ export function registerCatalog(): void {
 
   register("state.tree", {
     description:
-      "Full layout snapshot (address book): all ids and active state across project → space → panel (rect %) → view → pane, including each project's effective left-rail position and clean grid lines. Use to discover ids before targeting other commands.",
+      "Full layout snapshot (address book): all ids and active state across project → space → panel (display rect %) → view → pane. Each space exposes displayed and canonical stored layouts plus projection provenance; each project exposes its effective left-rail position and clean grid lines.",
     params: {},
     returns:
-      "{ activeProjectId, projects[] } — panels[].rect is % of the content area; projects[].leftRailPosition has mode, persisted station?, effectiveStation, cleanLines[]",
+      "{ activeProjectId, projects[].{ leftRailPosition, spaces[].{ layout, canonicalLayout, projection:{kind,applied,focusedPanelId,swappedPanels}, panels[] } } } — layout/panels are displayed state; canonicalLayout is the stored SplitTree",
     message: (d) => tmsg("msg.state.tree", { n: ((d.projects as unknown[]) ?? []).length }),
     examples: ["state.tree"],
     handler: () => serializeTree(),
@@ -850,7 +910,10 @@ export function registerCatalog(): void {
         }
         return {
           projectId: t.id,
-          leftRailPosition: serializeLeftRailPosition(t),
+          leftRailPosition: serializeLeftRailPosition(
+            t,
+            useSettings.getState().railFocusNear,
+          ),
         };
       }
 
@@ -875,7 +938,10 @@ export function registerCatalog(): void {
             message: "station은 0..100이어야 함",
           };
         }
-        const current = serializeLeftRailPosition(t);
+        const current = serializeLeftRailPosition(
+          t,
+          useSettings.getState().railFocusNear,
+        );
         const station = snapRailStation(
           current.cleanLines,
           requested ?? current.effectiveStation,
@@ -891,7 +957,10 @@ export function registerCatalog(): void {
       if (!updated) return notFound("프로젝트 없음");
       return {
         projectId: updated.id,
-        leftRailPosition: serializeLeftRailPosition(updated),
+        leftRailPosition: serializeLeftRailPosition(
+          updated,
+          useSettings.getState().railFocusNear,
+        ),
       };
     },
   });
@@ -1171,9 +1240,11 @@ export function registerCatalog(): void {
 
   // ----- panel -----
   register("panel.list", {
-    description: "List panels (split panes) in a space, including their rect (%) and the split tree.",
+    description:
+      "List displayed panels in a space, including rect (%), displayed layout, immutable canonical layout, and projection provenance.",
     params: { project: P.project, space: P.space },
-    returns: "{ activePanelId, layout, panels[] }",
+    returns:
+      "{ activePanelId, layout, canonicalLayout, projection:{kind,applied,focusedPanelId,swappedPanels}, panels[] }",
     message: (d) => tmsg("msg.panel.list", { n: ((d.panels as unknown[]) ?? []).length }),
     errors: ["TARGET_NOT_FOUND"],
     examples: ["panel.list"],
@@ -1185,10 +1256,17 @@ export function registerCatalog(): void {
         : (resolveCtx(ctx)?.content ??
           t.contents.find((x) => x.id === t.activeContentId));
       if (!c) return notFound(`스페이스 없음: ${p.space}`);
-      const out = serializeContent(c, t.activeContentId);
+      const out = serializeContent(
+        c,
+        t.activeContentId,
+        useSettings.getState().railFocusNear &&
+          (t.leftRailPlacement?.mode ?? "flow") === "flow",
+      );
       return {
         activePanelId: out.activePanelId,
         layout: out.layout,
+        canonicalLayout: out.canonicalLayout,
+        projection: out.projection,
         panels: out.panels,
       };
     },
@@ -1920,6 +1998,7 @@ export function registerCatalog(): void {
     "iconSet",
     "iconBox",
     "focusIndicator",
+    "railFocusNear",
     "appFontFamily",
     "appFontSize",
     "orchestratorAgent",
@@ -1941,6 +2020,7 @@ export function registerCatalog(): void {
         iconSet: s.iconSet,
         iconBox: s.iconBox,
         focusIndicator: s.focusIndicator,
+        railFocusNear: s.railFocusNear,
         appFontFamily: s.appFontFamily,
         appFontSize: s.appFontSize,
         orchestratorAgent: s.orchestratorAgent,
@@ -1969,7 +2049,7 @@ export function registerCatalog(): void {
       value: {
         type: "json",
         description:
-          "Value — language:ko|en, projectTabPosition:top|left, iconSet:string (registered set id — unregistered falls back to lucide), iconBox:boolean, focusIndicator:outline|corners, appFontFamily:string (CSS font-family stack), appFontSize:number (6-40), orchestratorAgent:string (agent CLI command or path the natural-language console spawns), orchestratorModel:string (--model alias for the agent; empty = CLI default)",
+          "Value — language:ko|en, projectTabPosition:top|left, iconSet:string (registered set id — unregistered falls back to lucide), iconBox:boolean, focusIndicator:outline|corners, railFocusNear:boolean, appFontFamily:string (CSS font-family stack), appFontSize:number (6-40), orchestratorAgent:string (agent CLI command or path the natural-language console spawns), orchestratorModel:string (--model alias for the agent; empty = CLI default)",
         required: true,
       },
     },
@@ -2010,6 +2090,10 @@ export function registerCatalog(): void {
         case "focusIndicator":
           if (v !== "outline" && v !== "corners") return bad("outline|corners");
           s.setFocusIndicator(v);
+          break;
+        case "railFocusNear":
+          if (typeof v !== "boolean") return bad("boolean");
+          s.setRailFocusNear(v);
           break;
         case "appFontFamily":
           if (typeof v !== "string" || !v.trim())

@@ -15,6 +15,8 @@ import { registerCatalog } from "./catalog";
 import { execute, getSpec } from "./registry";
 import { useSessions, type ProjectTab, type ViewGroup } from "../state/sessions";
 import { initialSidebarLayout } from "../state/sidebarLayout";
+import { useSettings } from "../state/settings";
+import { leavesOf, splitLeaf } from "../state/splitTree";
 
 const group = (id: string): ViewGroup => ({ id, views: [], activeViewId: "" });
 
@@ -51,10 +53,53 @@ function project(
   };
 }
 
+function nearProject(): ProjectTab {
+  const base = project({ mode: "flow" });
+  return {
+    ...base,
+    contents: [
+      {
+        ...base.contents[0],
+        activeGroupId: "ghostty",
+        layout: {
+          type: "split",
+          id: "root",
+          dir: "row",
+          sizes: [1 / 3, 1 / 3, 1 / 3],
+          children: [
+            splitLeaf(group("db")),
+            {
+              type: "split",
+              id: "middle",
+              dir: "col",
+              sizes: [0.5, 0.5],
+              children: [
+                {
+                  type: "split",
+                  id: "top",
+                  dir: "row",
+                  sizes: [0.5, 0.5],
+                  children: [
+                    splitLeaf(group("design")),
+                    splitLeaf(group("ghostty")),
+                  ],
+                },
+                splitLeaf(group("terminal")),
+              ],
+            },
+            splitLeaf(group("kanban")),
+          ],
+        },
+      },
+    ],
+  };
+}
+
 registerCatalog();
 
 beforeEach(() => {
   useSessions.setState({ tabs: [project()], activeId: "t1" });
+  useSettings.getState().setRailFocusNear(false);
 });
 
 type Position = {
@@ -194,5 +239,89 @@ describe("state.tree leftRailPosition", () => {
       effectiveStation: 50,
       cleanLines: [0, 50, 100],
     });
+  });
+
+  it("근접 배치를 표시 rect와 layout에 노출하되 세션 정본은 바꾸지 않고 포커스 이탈 시 복귀한다", async () => {
+    const original = nearProject();
+    const canonical = original.contents[0].layout;
+    useSessions.setState({ tabs: [original], activeId: original.id });
+    useSettings.getState().setRailFocusNear(true);
+
+    const projected = await execute("state.tree", {}, {});
+    const firstSpace = (projected.data as {
+      projects: Array<{
+        spaces: Array<{
+          layout: { children: unknown[] };
+          canonicalLayout: { children: unknown[] };
+          projection: {
+            kind: "focus-near" | "canonical" | "maximized";
+            applied: boolean;
+            focusedPanelId: string;
+            swappedPanels: string[];
+          };
+          panels: Array<{ id: string; rect: { left: number } }>;
+        }>;
+      }>;
+    }).projects[0].spaces[0];
+    expect(firstSpace.projection).toEqual({
+      kind: "focus-near",
+      applied: true,
+      focusedPanelId: "ghostty",
+      swappedPanels: ["design", "ghostty"],
+    });
+    expect(firstSpace.canonicalLayout).not.toEqual(firstSpace.layout);
+    expect(firstSpace.panels.find((panel) => panel.id === "ghostty")?.rect.left)
+      .toBe(33.3);
+    expect(firstSpace.panels.find((panel) => panel.id === "design")?.rect.left)
+      .toBe(50);
+    expect(leavesOf(useSessions.getState().tabs[0].contents[0].layout).map((g) => g.id))
+      .toEqual(["db", "design", "ghostty", "terminal", "kanban"]);
+    expect(useSessions.getState().tabs[0].contents[0].layout).toBe(canonical);
+
+    useSessions.getState().setActiveGroup(original.id, "terminal");
+    const restored = await execute("state.tree", {}, {});
+    const restoredPanels = (restored.data as {
+      projects: Array<{ spaces: Array<{
+        projection: { kind: string; applied: boolean; swappedPanels: string[] };
+        panels: Array<{ id: string; rect: { left: number } }>
+      }> }>;
+    }).projects[0].spaces[0].panels;
+    expect(restoredPanels.find((panel) => panel.id === "design")?.rect.left).toBe(33.3);
+    expect(restoredPanels.find((panel) => panel.id === "ghostty")?.rect.left).toBe(50);
+  });
+
+  it("최대화는 공개 layout/panels도 실제 [sidebar|feature] 평면으로 노출한다", async () => {
+    const original = nearProject();
+    useSessions.setState({ tabs: [original], activeId: original.id });
+    useSettings.getState().setRailFocusNear(true);
+    useSessions.getState().maximizeView(original.id, "");
+    // fixture 그룹은 뷰가 없으므로 공개 상태를 직접 세팅해 유실/숨김 직렬화만 검증한다.
+    useSessions.setState((s) => ({
+      tabs: s.tabs.map((t) => ({
+        ...t,
+        contents: t.contents.map((c) => ({ ...c, activeGroupId: "ghostty", maximizedViewId: "v-max" })),
+      })),
+    }));
+
+    const result = await execute("state.tree", {}, {});
+    const space = (result.data as {
+      projects: Array<{ spaces: Array<{
+        layout: { panel: string };
+        canonicalLayout: { children: unknown[] };
+        projection: { kind: string; applied: boolean; focusedPanelId: string; swappedPanels: string[] };
+        panels: Array<{ id: string; rect: { left: number; top: number; width: number; height: number } }>;
+      }> }>;
+    }).projects[0].spaces[0];
+    expect(space.layout).toEqual({ panel: "ghostty" });
+    expect(space.panels).toEqual([
+      { id: "ghostty", rect: { left: 0, top: 0, width: 100, height: 100 }, active: true, activeViewId: "", views: [] },
+    ]);
+    expect(space.projection).toEqual({
+      kind: "maximized",
+      applied: true,
+      focusedPanelId: "ghostty",
+      swappedPanels: [],
+    });
+    expect(space.canonicalLayout.children).toHaveLength(3);
   });
 });

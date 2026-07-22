@@ -2,8 +2,11 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { rafThrottle } from "../lib/rafThrottle";
 import { emitPluginEvent } from "../plugins/hooks";
-import { parkedStyle } from "../lib/layerPark";
-import { commitViewVisibility, surfaceShown } from "../lib/viewPark";
+import {
+  commitViewVisibility,
+  surfaceShown,
+  viewSurfaceStyle,
+} from "../lib/viewPark";
 import { Icon } from "../ui/icons/Icon";
 import { FileViewerHost } from "./FileViewerHost";
 import { GroupStatusBar } from "./GroupStatusBar";
@@ -34,6 +37,8 @@ import {
   projectRailCssSpan,
   unprojectRailX,
 } from "../lib/railPlacement";
+import { projectFocusedPanelNearRail } from "../lib/railFocusLayout";
+import { RAIL_TRAVEL_MS } from "../lib/railMotion";
 
 // 콘텐츠 영역을 에디터 그룹으로 렌더. 핵심 원칙 둘:
 // 1) 본문(터미널/에디터)을 그룹 트리 구조와 분리해 viewId 로 키된 "영속 본문 레이어"에
@@ -118,6 +123,7 @@ export const GroupArea = memo(function GroupArea({
   railStation = 0,
   railTravelFrom = railStation,
   railWidthPx = 0,
+  focusNearRail = false,
 }: {
   content: ContentArea;
   projectId: string;
@@ -130,19 +136,65 @@ export const GroupArea = memo(function GroupArea({
   railTravelFrom?: number;
   /** 고정 물리폭. 0이면 기존 연속 평면. */
   railWidthPx?: number;
+  /** FLOW에서 막힌 포커스 패널을 같은 row의 가까운 쪽에 화면 투영한다. */
+  focusNearRail?: boolean;
 }) {
   const t = useT();
+  const displayLayout = useMemo(
+    () =>
+      projectFocusedPanelNearRail(
+        content.layout,
+        content.activeGroupId,
+        focusNearRail && !content.maximizedViewId,
+      ),
+    [content.activeGroupId, content.layout, content.maximizedViewId, focusNearRail],
+  );
+  const focusProjectionApplied = displayLayout !== content.layout;
+  const [focusLayoutFrom, setFocusLayoutFrom] = useState(displayLayout);
+  const fromLayoutCells = useMemo(
+    () => computeLayout(focusLayoutFrom).cells,
+    [focusLayoutFrom],
+  );
+  const toLayoutCells = useMemo(
+    () => computeLayout(displayLayout).cells,
+    [displayLayout],
+  );
+  // 근접 투영은 같은 크기의 직접 row 형제만 교환한다. 따라서 모든 패널의 크기·세로선이
+  // 같고 x만 달라진 경우에 한해 compositor FLIP을 쓸 수 있다. 실제 분할 편집/리사이즈는
+  // 이 조건을 통과하지 않아 임의 애니메이션으로 오염되지 않는다.
+  const focusLayoutTraveling =
+    focusLayoutFrom !== displayLayout &&
+    fromLayoutCells.length === toLayoutCells.length &&
+    toLayoutCells.every(({ group, rect }) => {
+      const from = fromLayoutCells.find((cell) => cell.group.id === group.id)?.rect;
+      return !!from &&
+        Math.abs(from.top - rect.top) < 1e-9 &&
+        Math.abs(from.width - rect.width) < 1e-9 &&
+        Math.abs(from.height - rect.height) < 1e-9;
+    });
+  useEffect(() => {
+    if (focusLayoutFrom === displayLayout) return;
+    if (!focusLayoutTraveling) {
+      setFocusLayoutFrom(displayLayout);
+      return;
+    }
+    const timer = window.setTimeout(
+      () => setFocusLayoutFrom(displayLayout),
+      RAIL_TRAVEL_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [displayLayout, focusLayoutFrom, focusLayoutTraveling]);
   // B4 — 복원 hydration cold 집합 구독(평상시 빈 집합 → 리렌더 없음).
   const coldSet = useHydration((s) => s.cold);
   // 보이는 cold 뷰는 즉시 승격(렌더 중 set 금지 — effect). shown 판정과 동일 규칙.
   useEffect(() => {
     if (coldSet.size === 0) return;
     const maximizedId2 = content.maximizedViewId ?? null;
-    for (const g of allGroups(content.layout)) {
+    for (const g of allGroups(displayLayout)) {
       const visibleId = maximizedId2 ?? g.activeViewId;
       if (coldSet.has(visibleId)) useHydration.getState().promote(visibleId);
     }
-  }, [coldSet, content]);
+  }, [coldSet, content.maximizedViewId, displayLayout]);
   // 분할 패널 헤더 = 탭 모드 고정(2026-06 결정 — 설정 비노출). title 모드 분기는
   // 재노출 대비 보존: 복원하려면 useSettings((s) => s.splitHeaderMode) 로 되돌린다.
   const splitHeaderMode = "tabs" as "title" | "tabs";
@@ -181,8 +233,8 @@ export const GroupArea = memo(function GroupArea({
   );
 
   const { cells, dividers } = useMemo(
-    () => computeLayout(content.layout),
-    [content.layout],
+    () => computeLayout(displayLayout),
+    [displayLayout],
   );
   // 최대화(maximizedViewId): 한 뷰가 컨텐츠 영역 전체를 차지. 분할 트리는
   // 불변 — 셀/프레임만 그 그룹 하나(전체 rect)로 바꿔 그리고, 나머지 그룹의
@@ -431,7 +483,7 @@ export const GroupArea = memo(function GroupArea({
     top: number;
     width: number;
     height: number;
-  }) => {
+  }, groupId?: string) => {
     const projected =
       railWidthPx > 0
         ? projectRailCssRect(rect, railStation)
@@ -440,6 +492,12 @@ export const GroupArea = memo(function GroupArea({
       railWidthPx > 0
         ? projectRailCssRect(rect, railTravelFrom)
         : projected;
+    const fromRect = focusLayoutTraveling && groupId
+      ? fromLayoutCells.find((cell) => cell.group.id === groupId)?.rect
+      : undefined;
+    const focusFlipX = fromRect
+      ? ((fromRect.left - rect.left) / rect.width) * 100
+      : 0;
     return ({
       "--l": `${rect.left}%`,
       "--t": `${rect.top}%`,
@@ -448,6 +506,7 @@ export const GroupArea = memo(function GroupArea({
       "--rail-dx": `${projected.railLeft * railWidthPx}px`,
       "--rail-dw": `${projected.railWidth * railWidthPx}px`,
       "--rail-flip-x": `${(fromProjected.railLeft - projected.railLeft) * railWidthPx}px`,
+      "--focus-flip-x": `${focusFlipX}%`,
     }) as React.CSSProperties;
   };
 
@@ -472,7 +531,18 @@ export const GroupArea = memo(function GroupArea({
 
   return (
     <div
-      className="egroup-area"
+      className={`egroup-area${focusLayoutTraveling ? " focus-layout-traveling" : ""}`}
+      data-node={`layout/grid/${content.id}`}
+      data-projection={
+        content.maximizedViewId
+          ? "maximized"
+          : focusProjectionApplied
+            ? "focus-near"
+            : "canonical"
+      }
+      data-focused-panel={content.activeGroupId}
+      data-maximized-view={content.maximizedViewId ?? ""}
+      data-traveling={focusLayoutTraveling ? "true" : "false"}
       ref={containerRef}
       style={
         {
@@ -499,7 +569,8 @@ export const GroupArea = memo(function GroupArea({
           <div
             key={`cell-${group.id}`}
             className={`egroup-cell${holeCell ? " cell-hole" : ""}`}
-            style={cellVars(rect)}
+            data-node={`layout/panel/${group.id}`}
+            style={cellVars(rect, group.id)}
           >
             {maxCell ? (
               /* 최대화 헤더: 탭·+ 대신 타이틀 — 더블클릭/버튼으로 원래 분할 복원 */
@@ -594,7 +665,7 @@ export const GroupArea = memo(function GroupArea({
           className={`egroup-frame${
             group.id === content.activeGroupId ? " focus" : ""
           }`}
-          style={cellVars(rect)}
+          style={cellVars(rect, group.id)}
         />
       ))}
 
@@ -619,9 +690,13 @@ export const GroupArea = memo(function GroupArea({
               // 네이티브 클릭 판정용(App.tsx native-mousedown → elementFromPoint).
               data-group-id={group.id}
               data-project-id={projectId}
-              // 비활성 슬롯은 화면 밖으로 파킹(R12 단일 진실 parkedStyle) — WebGL 터미널 캔버스가 활성
-              // 브라우저 홀로 비치는 것을 막는다. 콘텐츠 영역(App.tsx)과 동일 규칙·동일 헬퍼.
-              style={{ ...cellVars(slotRect), ...parkedStyle(shown) }}
+              data-node={`layout/slot/${view.id}`}
+              // 평상시 비활성 슬롯은 화면 밖으로 파킹하고, 최대화의 제외 슬롯은 합성 트리에서도
+              // 제거한다(viewSurfaceStyle 단일 진실). 둘 다 DOM/플러그인 인스턴스는 유지한다.
+              style={{
+                ...cellVars(slotRect, group.id),
+                ...viewSurfaceStyle(shown, !!maxCell),
+              }}
               onMouseDownCapture={() => {
                 if (group.activeViewId) {
                   transferViewFocus(
@@ -694,7 +769,10 @@ export const GroupArea = memo(function GroupArea({
 
       {/* ── 드롭 인디케이터(드래그 중, 시각용) — 본문 영역 좌표는 CSS 규칙 소유 ── */}
       {drag && hover && hoverCell && (
-        <div className="drop-ind-wrap" style={cellVars(hoverCell.rect)}>
+        <div
+          className="drop-ind-wrap"
+          style={cellVars(hoverCell.rect, hoverCell.group.id)}
+        >
           <div className={`drop-ind ${hover.zone}`} />
         </div>
       )}

@@ -6,6 +6,7 @@ import {
   type RailPlacement,
 } from "../lib/railPlacement";
 import { computeSplitLayout } from "../lib/splitLayout";
+import { projectFocusedPanelNearRail } from "../lib/railFocusLayout";
 import {
   autorunCommandOf,
   getRegisteredProgram,
@@ -651,7 +652,7 @@ function normalizeActiveGroupC(c: ContentArea): ContentArea {
 }
 
 /** 현재 화면에 실제 표시되는 패널 평면. 최대화는 underlying split이 아니라 FULL_RECT다. */
-export function leftRailGrid(project: ProjectTab): {
+export function leftRailGrid(project: ProjectTab, focusNear = false): {
   cells: RailCell[];
   focusId: string | null;
   cleanLines: number[];
@@ -660,6 +661,12 @@ export function leftRailGrid(project: ProjectTab): {
     project.contents.find((item) => item.id === project.activeContentId) ??
     project.contents[0];
   if (!content) return { cells: [], focusId: null, cleanLines: [0, 100] };
+  const placement = project.leftRailPlacement ?? { mode: "flow" as const };
+  const displayLayout = projectFocusedPanelNearRail(
+    content.layout,
+    content.activeGroupId,
+    focusNear && placement.mode === "flow" && !content.maximizedViewId,
+  );
   const cells: RailCell[] = content.maximizedViewId
     ? [
         {
@@ -667,7 +674,7 @@ export function leftRailGrid(project: ProjectTab): {
           rect: { left: 0, top: 0, width: 100, height: 100 },
         },
       ]
-    : computeSplitLayout(content.layout).cells.map(({ value, rect }) => ({
+    : computeSplitLayout(displayLayout).cells.map(({ value, rect }) => ({
         id: value.id,
         rect,
       }));
