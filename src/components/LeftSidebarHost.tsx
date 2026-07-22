@@ -59,9 +59,12 @@ function zoneToDrop(targetKey: string, zone: DropZone): SidebarDrop {
 export const LeftSidebarHost = memo(function LeftSidebarHost({
   project,
   paneId,
+  traveling = false,
 }: {
   project: ProjectTab;
   paneId: string;
+  // 레일 주행 중 여부 — 투영 슬롯의 반환점 교체(§12-④) 신호로 전달.
+  traveling?: boolean;
 }) {
   const version = useViewRegistry((s) => s.version);
   // 콘텐츠 그룹과 동일한 pane-inset(테마 paneStyle) — row2 정렬용.
@@ -245,6 +248,7 @@ export const LeftSidebarHost = memo(function LeftSidebarHost({
         root={project.root}
         paneId={paneId}
         side="left"
+        midSwap={traveling}
       />
       {/* 셀이 % 절대 배치되는 그리드(콘텐츠 egroup-area 와 동일 모델) — footer 는 그 아래 흐름 밖. */}
       <div

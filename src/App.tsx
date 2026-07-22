@@ -314,6 +314,7 @@ const ProjectPane = memo(function ProjectPane({
                 <LeftSidebarHost
                   project={project}
                   paneId={cwdPaneOf(project) ?? ""}
+                  traveling={railTraveling}
                 />
                 {project.sidebarOpen && (
                   <div className="left-rail-controls">
