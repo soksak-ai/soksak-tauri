@@ -38,7 +38,7 @@ import {
   unprojectRailX,
 } from "../lib/railPlacement";
 import { projectFocusedPanelNearRail } from "../lib/railFocusLayout";
-import { RAIL_TRAVEL_MS } from "../lib/railMotion";
+import { useFocusLayoutPhase } from "./useFocusLayoutPhase";
 import {
   MIN_PANE_FRAC,
   collectLineGroup,
@@ -157,40 +157,16 @@ export const GroupArea = memo(function GroupArea({
     [content.activeGroupId, content.layout, content.maximizedViewId, focusNearRail],
   );
   const focusProjectionApplied = displayLayout !== content.layout;
-  const [focusLayoutFrom, setFocusLayoutFrom] = useState(displayLayout);
+  // 근접 투영은 같은 크기의 직접 row 형제만 교환한다. 따라서 모든 패널의 크기·세로선이
+  // 같고 x만 달라진 경우에 한해 compositor FLIP을 쓸 수 있다. 실제 분할 편집/리사이즈는
+  // 이 조건을 통과하지 않아 임의 애니메이션으로 오염되지 않는다. 위상 종료 시 네이티브
+  // 웹뷰 재스냅 신호(layout.reflow)까지 훅이 소유한다.
+  const { from: focusLayoutFrom, traveling: focusLayoutTraveling } =
+    useFocusLayoutPhase(displayLayout, content.id);
   const fromLayoutCells = useMemo(
     () => computeLayout(focusLayoutFrom).cells,
     [focusLayoutFrom],
   );
-  const toLayoutCells = useMemo(
-    () => computeLayout(displayLayout).cells,
-    [displayLayout],
-  );
-  // 근접 투영은 같은 크기의 직접 row 형제만 교환한다. 따라서 모든 패널의 크기·세로선이
-  // 같고 x만 달라진 경우에 한해 compositor FLIP을 쓸 수 있다. 실제 분할 편집/리사이즈는
-  // 이 조건을 통과하지 않아 임의 애니메이션으로 오염되지 않는다.
-  const focusLayoutTraveling =
-    focusLayoutFrom !== displayLayout &&
-    fromLayoutCells.length === toLayoutCells.length &&
-    toLayoutCells.every(({ group, rect }) => {
-      const from = fromLayoutCells.find((cell) => cell.group.id === group.id)?.rect;
-      return !!from &&
-        Math.abs(from.top - rect.top) < 1e-9 &&
-        Math.abs(from.width - rect.width) < 1e-9 &&
-        Math.abs(from.height - rect.height) < 1e-9;
-    });
-  useEffect(() => {
-    if (focusLayoutFrom === displayLayout) return;
-    if (!focusLayoutTraveling) {
-      setFocusLayoutFrom(displayLayout);
-      return;
-    }
-    const timer = window.setTimeout(
-      () => setFocusLayoutFrom(displayLayout),
-      RAIL_TRAVEL_MS,
-    );
-    return () => window.clearTimeout(timer);
-  }, [displayLayout, focusLayoutFrom, focusLayoutTraveling]);
   // B4 — 복원 hydration cold 집합 구독(평상시 빈 집합 → 리렌더 없음).
   const coldSet = useHydration((s) => s.cold);
   // 보이는 cold 뷰는 즉시 승격(렌더 중 set 금지 — effect). shown 판정과 동일 규칙.
