@@ -276,3 +276,12 @@ breaking 변경이므로 plugin-spec 버전을 정직하게 bump하고, 기존 �
 6. 핀 의미론 — ref 전용, shared·상주형만, 핀-투영 중복은 핀이 흡수 (minor+major).
 7. 결부 null intent 정의 (minor).
 8. 기존 사이드바 명령·스냅샷 마이그레이션 절 신설 (major).
+
+## 10. 개정 (2026-07-22) — 좌 레일 투영 전용
+
+사용자 결정: 좌 레일은 결부된 기능의 투영에만 종속되고 수정을 최소화한다. 독립 사이드바 플러그인 범주는 퇴역하고, 발전 과정에서 필요할 때 선별 재수용한다. 플러그인 소유 사이드바 표면의 여지는 우측 레일에만 남는다.
+
+1. 좌 핀 축 폐지 — `ui.projection.pin`은 left를 거부한다(투영 전용). §5.1의 PIN 미결은 삭제로 해소. `unpin`은 잔존 핀 청소용으로 유지.
+2. `plugin.view.open`의 rail 배치 = 열기 거부 — rail 뷰는 사이드바 선언으로만 나타난다.
+3. `resident`의 의미 재정의 — 우측 상주 표면(우 아이콘레일·향후 우 핀 스택) 표식. 좌 레일 존재를 부여하지 않는다.
+4. 좌측 정체성 플러그인 퇴역 — folderpop·sidebar-sky·memo를 `~/.soksak-dev/plugins-retired/`로 이동(repo·원격 무손실). 판별: 피드(activity)·관리면(agents-hooks)·콘텐츠 도구(memo)는 레일 부적격이라 resident 박탈, 몸체 있는 플러그인(activity·clipboard·mailbox·agents-hooks)은 존치.

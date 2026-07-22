@@ -105,46 +105,29 @@ describe("ui.projection.state", () => {
   });
 });
 
-describe("ui.projection.pin / unpin — R4(핀 = ref, rail 뷰만)", () => {
-  it("rail 미등록 ref 는 INVALID_PARAMS", async () => {
-    useSessions.setState({ tabs: [tab([], "")], activeId: "p1" });
-    const r = (await execute("ui.projection.pin", { ref: "nope.tree" }, {})) as { ok: boolean; code: string };
-    expect(r.ok).toBe(false);
-    expect(r.code).toBe("INVALID_PARAMS");
-  });
-
-  it("핀 추가는 멱등이고 shared 투영을 흡수한다(satisfied-by-pin)", async () => {
-    useViewRegistry.getState().register(
-      "termplug",
-      decl("term", {
-        sidebar: {
-          left: [{ ref: "self.tree", instance: "shared" }],
-          right: [],
-          template: "stack",
-        },
-      }),
-      provider,
-    );
+describe("ui.projection.pin / unpin — 좌 레일은 투영 전용(핀 축 없음)", () => {
+  it("좌측 핀은 상주형이어도 INVALID_PARAMS — 좌 레일은 결부 투영 전용", async () => {
     useViewRegistry.getState().register(
       "termplug",
       decl("tree", { placements: ["rail"], defaultPlacement: "rail", resident: true }),
       provider,
     );
-    useSessions.setState({ tabs: [tab([pluginView("v1", "termplug", "term")], "v1")], activeId: "p1" });
+    useSessions.setState({ tabs: [tab([], "")], activeId: "p1" });
+    const r = (await execute("ui.projection.pin", { ref: "termplug.tree" }, {})) as { ok: boolean; code: string; message: string };
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe("INVALID_PARAMS");
+    expect(String(r.message)).toContain("투영 전용");
+  });
 
-    const r1 = (await execute("ui.projection.pin", { ref: "termplug.tree" }, {})) as { ok: boolean };
+  it("unpin 은 잔존 핀(구 스냅샷) 청소용으로 살아 있고 멱등이다", async () => {
+    useSessions.setState({ tabs: [tab([], "")], activeId: "p1" });
+    useProjection.getState().pin("p1", "left", "gone.tree"); // 구 스냅샷 잔존 시뮬레이션
+    const r1 = (await execute("ui.projection.unpin", { ref: "gone.tree" }, {})) as { ok: boolean };
     expect(r1.ok).toBe(true);
-    await execute("ui.projection.pin", { ref: "termplug.tree" }, {}); // 멱등
-
-    const st = (await execute("ui.projection.state", {}, {})) as { ok: boolean; code: string; data: Record<string, unknown> };
-    expect((st.data.pins as { left: string[] }).left).toEqual(["termplug.tree"]);
-    const left = st.data.left as { slots: { status: string }[] };
-    expect(left.slots[0].status).toBe("satisfied-by-pin");
-
-    const r2 = (await execute("ui.projection.unpin", { ref: "termplug.tree" }, {})) as { ok: boolean };
-    expect(r2.ok).toBe(true);
-    const st2 = (await execute("ui.projection.state", {}, {})) as { ok: boolean; code: string; data: Record<string, unknown> };
-    expect((st2.data.pins as { left: string[] }).left).toEqual([]);
+    const st = (await execute("ui.projection.state", {}, {})) as { data: Record<string, unknown> };
+    expect((st.data.pins as { left: string[] }).left).toEqual([]);
+    const r2 = (await execute("ui.projection.unpin", { ref: "gone.tree" }, {})) as { ok: boolean };
+    expect(r2.ok).toBe(true); // 멱등
   });
 });
 
@@ -190,42 +173,3 @@ describe("배치① 명령 정합 — 우측 핀 거부·alias 핀·확장 상�
   });
 });
 
-describe("핀 제한(②) — resident 아닌 rail 뷰는 핀 불가", () => {
-  it("resident 미선언 rail 뷰 핀 → INVALID_PARAMS(선언-투영 전용)", async () => {
-    useViewRegistry.getState().register(
-      "ftplug",
-      decl("tree", { placements: ["rail"], defaultPlacement: "rail" }),
-      provider,
-    );
-    useSessions.setState({ tabs: [tab([], "")], activeId: "p1" });
-    const r = (await execute("ui.projection.pin", { ref: "ftplug.tree" }, {})) as { ok: boolean; code: string };
-    expect(r.ok).toBe(false);
-    expect(r.code).toBe("INVALID_PARAMS");
-  });
-
-});
-
-describe("배치② — per-view 참조 핀 거부(R4)", () => {
-  it("현재 per-view 로 투영 중인 ref 는 INVALID_PARAMS", async () => {
-    useViewRegistry.getState().register(
-      "dbplug",
-      decl("erd", {
-        sidebar: {
-          left: [{ ref: "self.nav", instance: "per-view" }],
-          right: [],
-          template: "stack",
-        },
-      }),
-      provider,
-    );
-    useViewRegistry.getState().register(
-      "dbplug",
-      decl("nav", { placements: ["rail"], defaultPlacement: "rail" }),
-      provider,
-    );
-    useSessions.setState({ tabs: [tab([pluginView("v1", "dbplug", "erd")], "v1")], activeId: "p1" });
-    const r = (await execute("ui.projection.pin", { ref: "dbplug.nav" }, {})) as { ok: boolean; code: string };
-    expect(r.ok).toBe(false);
-    expect(r.code).toBe("INVALID_PARAMS");
-  });
-});

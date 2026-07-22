@@ -252,3 +252,33 @@ describe("plugin.dev.load — 홈 레인 게이트(dev identity 전용)", () => 
     expect(r.code).toBe("INVALID_PARAMS");
   });
 });
+
+describe("plugin.view.open — rail 배치는 열기 대상이 아니다(좌 레일 투영 전용)", () => {
+  it("resident rail 뷰라도 INVALID_PARAMS — 선언-투영으로만 나타난다", async () => {
+    const { useViewRegistry } = await import("../plugins/viewRegistry");
+    useViewRegistry.getState().register(
+      "railplug",
+      {
+        id: "tree",
+        title: "tree",
+        icon: "x",
+        placements: ["rail"],
+        defaultPlacement: "rail",
+        transparent: false,
+        nativeSurface: false,
+        decoration: false,
+        resident: true,
+      },
+      { mount: () => {} },
+    );
+    useSessions.setState({ tabs: [tabWith([])], activeId: "t1" } as never);
+    const r = (await execute("plugin.view.open", { view: "railplug.tree" }, {})) as {
+      ok: boolean;
+      code: string;
+      message: string;
+    };
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe("INVALID_PARAMS");
+    expect(String(r.message)).toContain("투영");
+  });
+});
