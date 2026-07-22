@@ -4,7 +4,7 @@
 // satisfied-by-pin = 렌더 없음(핀 스택이 그 인스턴스를 이미 렌더 — R4 흡수).
 // keep-alive: 한 번 산 인스턴스는 display 토글로 유지(R1 — 구조 상태 보존).
 
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { PluginViewHost } from "./PluginViewHost";
 import { projectionFor } from "../state/projectionWiring";
 import { useProjection } from "../state/projection";
@@ -14,6 +14,7 @@ import { useViewRegistry, getRegisteredView } from "../plugins/viewRegistry";
 import { usePlugins } from "../state/plugins";
 import { useContractSelection } from "../state/contractSelection";
 import { localize, useT } from "../i18n";
+import { RAIL_TRAVEL_MS } from "../lib/railMotion";
 
 export const ProjectionSlots = memo(function ProjectionSlots({
   projectId,
@@ -92,22 +93,28 @@ export const ProjectionSlots = memo(function ProjectionSlots({
   const railLook = useSettings((s) => s.railLook);
   const setRailLook = useSettings((s) => s.setRailLook);
 
-  // 여정 디졸브(§12-④) — 교체는 출발 즉시 시작하고, 크로스페이드가 여정 전체(280ms)를
-  // 덮는다: 빠지는 슬롯은 오버레이(leaving)로 남아 서서히 사라지고 새 슬롯이 서서히 차올라
-  // 교차점(50%)이 여정의 중간에 온다. 이동 없는 재결부도 같은 디졸브다.
+  // 여정 인계(§12-④) — 레일 프레임의 실좌표 주행과 같은 280ms 안에서 내용만
+  // A1→A0→B0→B1 순서로 바뀐다. 두 내용을 섞지 않으며, 초기 마운트와 같은
+  // instanceKey에는 효과를 만들지 않는다. 레일 셸 자체의 불투명도는 이 컴포넌트가 건드리지 않는다.
   const fingerprint = [...liveKeys].sort().join(",");
   const shownKeys = liveKeys;
   const [leaving, setLeaving] = useState<Set<string>>(new Set());
+  const [entering, setEntering] = useState<Set<string>>(new Set());
   const prevShownRef = useRef(fingerprint);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (prevShownRef.current === fingerprint) return;
     const prev = prevShownRef.current ? prevShownRef.current.split(",") : [];
     prevShownRef.current = fingerprint;
     const now = new Set(fingerprint ? fingerprint.split(",") : []);
     const out = prev.filter((k) => !now.has(k));
-    if (out.length === 0) return;
+    const incoming = [...now].filter((k) => !prev.includes(k));
+    if (out.length === 0 && incoming.length === 0) return;
     setLeaving(new Set(out));
-    const t = window.setTimeout(() => setLeaving(new Set()), 280);
+    setEntering(new Set(incoming));
+    const t = window.setTimeout(() => {
+      setLeaving(new Set());
+      setEntering(new Set());
+    }, RAIL_TRAVEL_MS);
     return () => window.clearTimeout(t);
   }, [fingerprint]);
 
@@ -131,13 +138,14 @@ export const ProjectionSlots = memo(function ProjectionSlots({
       {[...mountedRef.current].map(([instanceKey, refKey]) => {
         const live = shownKeys.has(instanceKey);
         const isLeaving = !live && leaving.has(instanceKey);
+        const isEntering = live && entering.has(instanceKey);
         const decl = getRegisteredView(refKey)?.decl;
         const showToggle = live && side === "left" && first;
         if (live) first = false;
         return (
           <div
             key={instanceKey}
-            className={`proj-slot${isLeaving ? " leaving" : ""}`}
+            className={`proj-slot${isLeaving ? " leaving" : ""}${isEntering ? " entering" : ""}`}
             style={{ display: live || isLeaving ? "flex" : "none" }}
           >
             {/* 공통 양식(§12-①②) — 헤더는 호스트의 것(기능 정체 표시 + 레일 조작), 본문만 기능이 교체한다. */}

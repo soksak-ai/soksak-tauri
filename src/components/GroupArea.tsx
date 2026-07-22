@@ -116,6 +116,7 @@ export const GroupArea = memo(function GroupArea({
   projectId,
   surfaceActive = true,
   railStation = 0,
+  railTravelFrom = railStation,
   railWidthPx = 0,
 }: {
   content: ContentArea;
@@ -125,6 +126,8 @@ export const GroupArea = memo(function GroupArea({
   surfaceActive?: boolean;
   /** 활성 콘텐츠 패널 평면에 삽입되는 좌 rail의 깨끗한 논리선(0..100). */
   railStation?: number;
+  /** FLIP 시작선. 최종 배치는 railStation으로 즉시 확정하고 이 선과의 차이만 합성 이동한다. */
+  railTravelFrom?: number;
   /** 고정 물리폭. 0이면 기존 연속 평면. */
   railWidthPx?: number;
 }) {
@@ -433,6 +436,10 @@ export const GroupArea = memo(function GroupArea({
       railWidthPx > 0
         ? projectRailCssRect(rect, railStation)
         : { railLeft: 0, railWidth: 0 };
+    const fromProjected =
+      railWidthPx > 0
+        ? projectRailCssRect(rect, railTravelFrom)
+        : projected;
     return ({
       "--l": `${rect.left}%`,
       "--t": `${rect.top}%`,
@@ -440,6 +447,7 @@ export const GroupArea = memo(function GroupArea({
       "--h": `${rect.height}%`,
       "--rail-dx": `${projected.railLeft * railWidthPx}px`,
       "--rail-dw": `${projected.railWidth * railWidthPx}px`,
+      "--rail-flip-x": `${(fromProjected.railLeft - projected.railLeft) * railWidthPx}px`,
     }) as React.CSSProperties;
   };
 
@@ -447,14 +455,18 @@ export const GroupArea = memo(function GroupArea({
     if (railWidthPx <= 0) return {};
     if (d.dir === "row") {
       const after = d.rect.left > railStation ? 1 : 0;
+      const fromAfter = d.rect.left > railTravelFrom ? 1 : 0;
       return {
         "--rail-dx": `${(after - d.rect.left / 100) * railWidthPx}px`,
+        "--rail-flip-x": `${(fromAfter - after) * railWidthPx}px`,
       } as React.CSSProperties;
     }
     const projected = projectRailCssSpan(d.rect, railStation);
+    const fromProjected = projectRailCssSpan(d.rect, railTravelFrom);
     return {
       "--rail-dx": `${projected.railLeft * railWidthPx}px`,
       "--rail-dw": `${projected.railWidth * railWidthPx}px`,
+      "--rail-flip-x": `${(fromProjected.railLeft - projected.railLeft) * railWidthPx}px`,
     } as React.CSSProperties;
   };
 

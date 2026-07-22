@@ -66,6 +66,7 @@ import {
   railStationFromLeftPx,
   snapRailStation,
 } from "./lib/railPlacement";
+import { RAIL_TRAVEL_MS } from "./lib/railMotion";
 import "./App.css";
 
 // 파일 경로를 셸·Claude Code 양쪽에서 안전하게: 영숫자와 안전문자 외에는 백슬래시
@@ -173,14 +174,14 @@ const ProjectPane = memo(function ProjectPane({
   const renderedStation = dragStation ?? effectiveStation;
   // 레일 시각 모드(§12-⑤) — pane(분할창처럼) | ground(바닥 평면). 토글은 슬롯 프레임 헤더.
   const railLook = useSettings((s) => s.railLook);
-  // 주행 위상(§12-④) — 스테이션이 바뀐 커밋부터 300ms: 레일(.sidebar left)과 pane 복도
+  // 주행 위상(§12-④) — 스테이션이 바뀐 커밋부터 280ms: 레일(.sidebar left)과 pane 복도
   // (railGap 소비자)가 같은 곡선으로 함께 미끄러진다. 레일은 이동 내내 보여야 한다 —
   // hide→show 금지. 드래그는 위상이 아니다(손 즉시 추종). 타이머는 위상 종료 1회용이다.
   const [travelFrom, setTravelFrom] = useState(effectiveStation);
   const railTraveling = dragStation === null && travelFrom !== effectiveStation;
   useEffect(() => {
     if (!railTraveling) return;
-    const t = window.setTimeout(() => setTravelFrom(effectiveStation), 300);
+    const t = window.setTimeout(() => setTravelFrom(effectiveStation), RAIL_TRAVEL_MS);
     return () => window.clearTimeout(t);
   }, [railTraveling, effectiveStation]);
   // pane 그리드 행 계약 소비 — 레일 헤더가 pane 그룹 헤더와 같은 행에 앉도록
@@ -256,6 +257,7 @@ const ProjectPane = memo(function ProjectPane({
     project.sidebarOpen,
     isActiveProject,
     renderedStation,
+    railTraveling,
     sidebarW,
     contentTabPosition,
   ]);
@@ -295,7 +297,7 @@ const ProjectPane = memo(function ProjectPane({
               }
             >
               <div
-                className={`sidebar rail-${railLook}${dragStation !== null ? " dragging" : ""}`}
+                className={`sidebar rail-${railLook}${railTraveling ? " traveling" : ""}${dragStation !== null ? " dragging" : ""}`}
                 onMouseDown={(e) => {
                   // §12-① 헤더 = 이동 손잡이 — 프레임 헤더 아무 곳이나 잡으면 스테이션 드래그.
                   // 헤더 위 상호작용 컨트롤(버튼)은 제외.
@@ -304,12 +306,17 @@ const ProjectPane = memo(function ProjectPane({
                     startRailStationDrag(e);
                   }
                 }}
-                style={{
-                  left: `calc(${renderedStation}% - ${(sidebarW * renderedStation) / 100}px)`,
-                  width: project.sidebarOpen ? sidebarW : 0,
-                  borderLeftWidth: railEdgeWidths(railLook, project.sidebarOpen, renderedStation).left,
-                  borderRightWidth: railEdgeWidths(railLook, project.sidebarOpen, renderedStation).right,
-                }}
+                style={
+                  {
+                    left: `calc(${renderedStation}% - ${(sidebarW * renderedStation) / 100}px)`,
+                    width: project.sidebarOpen ? sidebarW : 0,
+                    "--rail-flip-x": railTraveling
+                      ? `calc(${travelFrom - renderedStation}% - ${(sidebarW * (travelFrom - renderedStation)) / 100}px)`
+                      : "0px",
+                    borderLeftWidth: railEdgeWidths(railLook, project.sidebarOpen, renderedStation).left,
+                    borderRightWidth: railEdgeWidths(railLook, project.sidebarOpen, renderedStation).right,
+                  } as React.CSSProperties
+                }
               >
                 <LeftSidebarHost
                   project={project}
@@ -362,6 +369,7 @@ const ProjectPane = memo(function ProjectPane({
                   projectId={project.id}
                   surfaceActive={isActiveProject && isActiveContent}
                   railStation={isActiveContent ? renderedStation : 0}
+                  railTravelFrom={isActiveContent ? travelFrom : 0}
                   railWidthPx={
                     isActiveContent && project.sidebarOpen ? sidebarW : 0
                   }

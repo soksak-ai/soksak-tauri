@@ -141,7 +141,7 @@ describe("레일 슬롯 공통 양식(§12)", () => {
     expect(useSettings.getState().railLook).toBe("ground");
   });
 
-  it("재결부의 콘텐츠 스왑에 등장/퇴장 효과 클래스가 붙지 않는다 — 이동은 레일 프레임의 실좌표 주행뿐(§12-④)", () => {
+  it("내용 인계 효과는 슬롯에만 붙고 레일 셸 컨테이너에는 붙지 않는다(§12-④)", () => {
     registerFn("termplug", "term", "tree");
     registerFn("kanplug", "board", "nav");
     useSessions.setState({
@@ -167,12 +167,12 @@ describe("레일 슬롯 공통 양식(§12)", () => {
       }) as never);
     });
     const slots = host.querySelector<HTMLElement>(".proj-slots")!;
-    expect(slots.className).toBe("proj-slots"); // 효과 클래스 없음 — hide→show 연출 금지
+    expect(slots.className).toBe("proj-slots"); // 셸은 불투명 유지 — 내용 슬롯만 인계한다.
   });
 });
 
-describe("여정 디졸브(§12-④) — 출발 즉시 크로스페이드가 시작되어 여정 전체를 덮는다", () => {
-  it("교체 순간 새 내용이 등장을 시작하고, 옛 내용은 leaving 오버레이로 여정 동안 사라진다", () => {
+describe("여정 디졸브(§12-④) — A1 → A0 → B0 → B1 순차 교체", () => {
+  it("교체 순간 옛 내용은 leaving, 새 내용은 entering 상태로 같은 여정을 공유한다", () => {
     vi.useFakeTimers();
     registerFn("termplug", "term", "tree");
     registerFn("kanplug", "board", "nav");
@@ -201,14 +201,16 @@ describe("여정 디졸브(§12-④) — 출발 즉시 크로스페이드가 시
       [...host.querySelectorAll<HTMLElement>(".proj-slot")].find((el) =>
         el.querySelector(".proj-frame-title")!.textContent === title,
       )!;
-    // 출발 즉시: 새 내용 등장 시작 + 옛 내용은 겹친 채 퇴장 중(지연 없음).
+    // 출발 즉시: 옛 내용은 먼저 소거되고 새 내용은 중립 구간까지 투명하게 기다린다.
     expect(slotOf("nav-제목").style.display).not.toBe("none");
+    expect(slotOf("nav-제목").className).toContain("entering");
     expect(slotOf("tree-제목").className).toContain("leaving");
     expect(slotOf("tree-제목").style.display).not.toBe("none");
-    // 여정(280ms) 종료 후: 퇴장 완료.
+    // 여정(280ms) 종료 후: 퇴장 슬롯은 접히고 도착 슬롯의 효과 클래스도 제거된다.
     act(() => vi.advanceTimersByTime(320));
     expect(slotOf("tree-제목").style.display).toBe("none");
     expect(slotOf("tree-제목").className).not.toContain("leaving");
+    expect(slotOf("nav-제목").className).not.toContain("entering");
     vi.useRealTimers();
   });
 });

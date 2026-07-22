@@ -61,10 +61,9 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
     expect(host?.decls).toMatch(/padding-top\s*:\s*var\(--pane-inset/);
   });
 
-  it("§12-④ 주행 동조: railGap 소비 셀렉터는 rail-traveling 전환 규칙에 전부 등재 — 복도 순간이동 금지", () => {
-    // 레일이 A→B 로 주행할 때 pane 복도가 순간이동하면 레일이 pane 뒤에 통째로 가려져
-    // hide→show 로 보인다. --rail-dx 를 소비하는 모든 CSS 셀렉터(+GroupArea 인라인 divider)는
-    // 주행 위상에서 레일과 같은 시간의 transition 으로 함께 미끄러져야 한다.
+  it("§12-④ 주행 동조: railGap 소비자는 레이아웃 보간 없이 같은 FLIP transform을 쓴다", () => {
+    // left/width 보간은 패널마다 독립 레이아웃·페인트를 유발해 중간 프레임을 찢는다.
+    // 최종 레이아웃을 먼저 확정하고, 모든 railGap 소비자는 같은 compositor translate로 복귀한다.
     const consumers = new Set(
       rules()
         .filter((r) => /var\(--rail-dx/.test(r.decls))
@@ -76,8 +75,23 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
     for (const sel of consumers) {
       expect(sync!.selector).toContain(sel);
     }
-    // 레일(.sidebar left)과 같은 시간·곡선(디자인 정본 0.28s) — 동조가 계약이다.
-    expect(sync!.decls).toMatch(/transition\s*:[^;]*280ms cubic-bezier\(0\.4, 0, 0\.2, 1\)/);
+    expect(sync!.decls).not.toMatch(/transition\s*:/);
+    expect(sync!.decls).toMatch(/animation:\s*rail-flip-x 280ms cubic-bezier\(0\.4, 0, 0\.2, 1\)/);
+    expect(css).toMatch(/@keyframes rail-flip-x\s*\{[\s\S]*from\s*\{\s*translate:\s*var\(--rail-flip-x/);
+    const rail = rules().find((r) => r.selector === ".sidebar.traveling");
+    expect(rail?.decls).toMatch(/animation:\s*rail-flip-x 280ms cubic-bezier\(0\.4, 0, 0\.2, 1\)/);
+  });
+
+  it("§12-④ 내용 교체는 A1→A0→B0→B1 순서이고 레일 셸은 투명해지지 않는다", () => {
+    const leavingFrames = css.match(/@keyframes proj-slot-out\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
+    const enteringFrames = css.match(/@keyframes proj-slot-in\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
+    expect(leavingFrames).toMatch(/0%\s*\{\s*opacity:\s*1/);
+    expect(leavingFrames).toMatch(/38%,\s*100%\s*\{\s*opacity:\s*0/);
+    expect(enteringFrames).toMatch(/0%,\s*46%\s*\{\s*opacity:\s*0/);
+    expect(enteringFrames).toMatch(/88%,\s*100%\s*\{\s*opacity:\s*1/);
+    expect(css).toMatch(/\.proj-slot\.entering\s*\{[^}]*animation:\s*proj-slot-in 280ms/);
+    const rail = rules().find((r) => r.selector === ".sidebar");
+    expect(rail?.decls).not.toMatch(/opacity\s*:/);
   });
 
   it("R1: 죽은 변수(--tab-h/--ws-tab-h) 잔재 금지 — 계약 변수는 패딩뿐", () => {
