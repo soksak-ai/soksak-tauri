@@ -286,7 +286,7 @@ const ProjectPane = memo(function ProjectPane({
           railPlane={
             <div
               ref={railPlaneRef}
-              className={`left-rail-plane${railTraveling ? " traveling" : ""}`}
+              className="left-rail-plane"
               style={
                 {
                   "--pane-inset": `${railPaneInset}px`,
