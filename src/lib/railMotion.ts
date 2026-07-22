@@ -1,9 +1,19 @@
 /** FLOW에서 pane 복도가 출발 배치에서 도착 배치로 수축·확장되는 시간. */
 export const RAIL_TRAVEL_MS = 340;
 
+/** 레일 주행을 공유할 수 있는 패널 평면의 identity. split/merge로 선 집합이 바뀌면 새 평면이다. */
+export function railGeometryScopeId(
+  spaceId: string | undefined,
+  cleanLines: readonly number[],
+): string {
+  return `${spaceId ?? ""}:${cleanLines.join(",")}`;
+}
+
 export type RailPresentation = {
   generation: number;
   station: number;
+  /** station이 유효한 패널 평면의 identity(space + 깨끗한 세로선 집합). */
+  scopeId?: string;
 };
 
 export type RailPresentationLayer = {
@@ -22,7 +32,15 @@ export function railTravelGeometry(
   presentation: RailPresentation,
   targetStation: number,
   exclusive: boolean,
-): { fromStation: number; traveling: boolean } {
+  scopeId?: string,
+): { fromStation: number; traveling: boolean; rebase?: boolean } {
+  if (
+    scopeId !== undefined &&
+    presentation.scopeId !== undefined &&
+    presentation.scopeId !== scopeId
+  ) {
+    return { fromStation: targetStation, traveling: false, rebase: true };
+  }
   if (exclusive) return { fromStation: targetStation, traveling: false };
   return {
     fromStation: presentation.station,

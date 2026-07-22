@@ -162,6 +162,29 @@ export function projectRailCssRect(
   };
 }
 
+export interface RailCssTransition {
+  source: RailCssRect;
+  target: RailCssRect;
+}
+
+/**
+ * FLOW 전환의 두 기하를 한 계약으로 투영한다. 출발 station은 출발 rect에,
+ * 도착 station은 도착 rect에만 적용한다. 패널 배열과 레일 선이 같은 렌더에서
+ * 함께 바뀔 때 서로 다른 시점의 값을 섞으면 유효했던 출발 선이 도착 패널을
+ * 가로지르게 되므로, 호출자가 두 project 호출을 따로 조립하지 못하게 한다.
+ */
+export function projectRailCssTransition(
+  sourceRect: RailRect,
+  sourceStation: number,
+  targetRect: RailRect,
+  targetStation: number,
+): RailCssTransition {
+  return {
+    source: projectRailCssRect(sourceRect, sourceStation),
+    target: projectRailCssRect(targetRect, targetStation),
+  };
+}
+
 /**
  * divider처럼 레일을 가로질러도 되는 장식 span의 CSS 사상. 패널에는 사용 금지.
  * 레일을 가로지르는 span은 물리 gap까지 포함하고, 실제 rail frame이 그 위를 덮는다.

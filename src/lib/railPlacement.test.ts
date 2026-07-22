@@ -5,6 +5,7 @@ import {
   flowRailStation,
   isCleanRailStation,
   projectRailRect,
+  projectRailCssTransition,
   railLeftPx,
   railStationFromLeftPx,
   snapRailStation,
@@ -81,6 +82,18 @@ describe("left rail clean-line contract", () => {
 });
 
 describe("real-space rail insertion", () => {
+  it("projects a FLOW handoff from the source rect instead of crossing the target rect", () => {
+    const source = { left: 50, top: 0, width: 100 / 3, height: 50 };
+    const target = { left: 100 / 3, top: 0, width: 100 / 3, height: 50 };
+
+    expect(() => projectRailCssTransition(source, 50, target, 100 / 3))
+      .not.toThrow();
+    expect(projectRailCssTransition(source, 50, target, 100 / 3)).toMatchObject({
+      source: { left: 50 },
+      target: { left: 100 / 3 },
+    });
+  });
+
   it("reserves a fixed pixel gap without changing vertical geometry", () => {
     const left = projectRailRect(twoColumns[0].rect, 50, 1_000, 200);
     const right = projectRailRect(twoColumns[1].rect, 50, 1_000, 200);

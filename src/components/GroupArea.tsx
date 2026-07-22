@@ -33,7 +33,7 @@ import {
 } from "../state/sessions";
 import { useHydration } from "../state/hydration";
 import {
-  projectRailCssRect,
+  projectRailCssTransition,
   projectRailCssSpan,
   unprojectRailX,
 } from "../lib/railPlacement";
@@ -484,17 +484,19 @@ export const GroupArea = memo(function GroupArea({
     width: number;
     height: number;
   }, groupId?: string) => {
-    const projected =
-      railWidthPx > 0
-        ? projectRailCssRect(rect, railStation)
-        : { railLeft: 0, railWidth: 0 };
-    const fromProjected =
-      railWidthPx > 0
-        ? projectRailCssRect(rect, railTravelFrom)
-        : projected;
     const fromRect = focusLayoutTraveling && groupId
       ? fromLayoutCells.find((cell) => cell.group.id === groupId)?.rect
       : undefined;
+    const transition = railWidthPx > 0
+      ? projectRailCssTransition(
+          fromRect ?? rect,
+          railTravelFrom,
+          rect,
+          railStation,
+        )
+      : null;
+    const projected = transition?.target ?? { railLeft: 0, railWidth: 0 };
+    const fromProjected = transition?.source ?? projected;
     const focusFlipX = fromRect
       ? ((fromRect.left - rect.left) / rect.width) * 100
       : 0;

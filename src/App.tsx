@@ -71,6 +71,7 @@ import {
 import {
   RAIL_TRAVEL_MS,
   railPresentationLayers,
+  railGeometryScopeId,
   railTravelGeometry,
   type RailPresentation,
 } from "./lib/railMotion";
@@ -193,6 +194,10 @@ const ProjectPane = memo(function ProjectPane({
     railGrid.focusId,
     placement,
   );
+  const railGeometryScope = railGeometryScopeId(
+    activeContent?.id,
+    railGrid.cleanLines,
+  );
   const [dragStation, setDragStation] = useState<number | null>(null);
   const renderedStation = dragStation ?? effectiveStation;
   // 레일 시각 모드(§12-⑤) — pane(분할창처럼) | ground(바닥 평면). 토글은 슬롯 프레임 헤더.
@@ -203,11 +208,13 @@ const ProjectPane = memo(function ProjectPane({
   const [railPresentation, setRailPresentation] = useState<RailPresentation>({
     generation: 0,
     station: effectiveStation,
+    scopeId: railGeometryScope,
   });
   const travelGeometry = railTravelGeometry(
     railPresentation,
     effectiveStation,
     !!activeContent?.maximizedViewId,
+    railGeometryScope,
   );
   const travelFrom = travelGeometry.fromStation;
   const railTraveling = dragStation === null && travelGeometry.traveling;
@@ -217,6 +224,14 @@ const ProjectPane = memo(function ProjectPane({
     railTraveling,
   );
   useEffect(() => {
+    if (travelGeometry.rebase) {
+      setRailPresentation((current) => ({
+        generation: current.generation + 1,
+        station: effectiveStation,
+        scopeId: railGeometryScope,
+      }));
+      return;
+    }
     if (!railTraveling) return;
     const nextGeneration = railPresentation.generation + 1;
     const t = window.setTimeout(
@@ -224,11 +239,18 @@ const ProjectPane = memo(function ProjectPane({
         setRailPresentation({
           generation: nextGeneration,
           station: effectiveStation,
+          scopeId: railGeometryScope,
         }),
       RAIL_TRAVEL_MS,
     );
     return () => window.clearTimeout(t);
-  }, [effectiveStation, railPresentation.generation, railTraveling]);
+  }, [
+    effectiveStation,
+    railGeometryScope,
+    railPresentation.generation,
+    railTraveling,
+    travelGeometry.rebase,
+  ]);
   // pane 그리드 행 계약 소비 — 레일 헤더가 pane 그룹 헤더와 같은 행에 앉도록
   // 같은 소스(GroupArea 상수 + 테마 paneStyle)의 치수를 레일 서브트리에 주입한다.
   const paneStyle = useTheme((s) => s.spec.chrome.paneStyle);
