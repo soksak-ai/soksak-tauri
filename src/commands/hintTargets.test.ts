@@ -27,16 +27,17 @@ const ALL_NAMES = new Set(catalogJson().map((c) => c.name));
 const CLI_AUX = new Set(["commands", "help", "docs", "--window"]);
 
 // hint 를 성공형/실패형 여러 데이터로 확률(probe)한다. CONSENT_REQUIRED 는 plugin.enable 의
-// message 파싱 분기를 함께 태운다(파싱 성공 시 정밀 cmd, 실패 시 빈 배열 폴백 — 둘 다 안전해야 함).
+// data.pendingConsent 분기를 함께 태운다(구조화 데이터 있으면 정밀 cmd, 없으면 빈 배열 폴백 — 둘 다 안전해야 함).
 const PROBE_DATA: Record<string, unknown>[] = [
   {},
   { code: "TARGET_NOT_FOUND", message: "대상 없음" },
   { code: "INVALID_PARAMS", message: "잘못된 값" },
   {
     code: "CONSENT_REQUIRED",
-    message:
-      "활성화 동의 필요: soksak-plugin-x, soksak-plugin-y — 종속 먼저 순서로 동의가 필요합니다",
+    message: "soksak-plugin-y 활성화 시 soksak-plugin-x, soksak-plugin-y 동의가 필요합니다",
+    data: { pendingConsent: ["soksak-plugin-x", "soksak-plugin-y"] },
   },
+  { code: "CONSENT_REQUIRED", message: "soksak-plugin-x 활성화 동의가 필요합니다" },
 ];
 
 // "sok " 다음 첫 토큰 — 명령 이름 또는 CLI 보조 서브커맨드/플래그.

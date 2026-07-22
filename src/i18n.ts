@@ -263,7 +263,7 @@ const ko = {
   "plugin.consent.dangerousCommands": "위험 명령(원격 호출 시 게이트)",
   "plugin.consent.danger.destructive": "파괴적",
   "plugin.consent.danger.inject": "주입",
-  "plugin.consent.dependencies": "종속성",
+  "plugin.consent.dependencies": "의존성",
   "plugin.consent.dep.plugin": "플러그인",
   "plugin.consent.dep.library": "라이브러리(외부 CLI)",
   "plugin.consent.dep.forceInstall": "동의 시 미설치 라이브러리는 강제 설치됩니다(아래 명령 그대로).",

@@ -1,6 +1,7 @@
 // 전이 동의 체인 — studio 활성화 시 종속 core 도 동의 대상(종속 먼저 순서). 반쪽 동의 방지 계약 고정.
 import { describe, expect, it } from "vitest";
 import {
+  consentRequiredMessage,
   consentValid,
   pendingConsentChain,
   type ConsentRecord,
@@ -76,6 +77,24 @@ describe("pendingConsentChain — 미동의 체인(종속 먼저)", () => {
       "acp-studio": rt("acp-studio", ["ui"], { "acp-core": "^0.1.0" }),
     };
     expect(pendingConsentChain("acp-studio", devCore, {})).toEqual(["acp-studio"]);
+  });
+
+  it("consentRequiredMessage: 동의 대상이 자신뿐 — 대상 동의만 자연문으로", () => {
+    expect(consentRequiredMessage("soksak-plugin-kanban", ["soksak-plugin-kanban"])).toBe(
+      "soksak-plugin-kanban 활성화 동의가 필요합니다",
+    );
+  });
+
+  it("consentRequiredMessage: 의존까지 미동의 — 동의 대상들을 순서대로 나열", () => {
+    expect(consentRequiredMessage("acp-studio", ["acp-core", "acp-studio"])).toBe(
+      "acp-studio 활성화 시 acp-core, acp-studio 동의가 필요합니다",
+    );
+  });
+
+  it("consentRequiredMessage: 자신은 동의됐고 의존만 남음 — 같은 형태로 나열", () => {
+    expect(consentRequiredMessage("acp-studio", ["acp-core"])).toBe(
+      "acp-studio 활성화 시 acp-core 동의가 필요합니다",
+    );
   });
 
   it("consentValid: 버전·권한 모두 일치해야 유효", () => {

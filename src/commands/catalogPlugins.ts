@@ -634,7 +634,7 @@ export function registerPluginCatalog(): void {
   register("plugin.deps", {
     description:
       "Inspect the plugin dependency graph. With an id, returns that plugin's dependencies, dependents, reference count, and cascade impact. Without an id, returns all version integrity issues across installed plugins.",
-    triggers: { ko: "플러그인 의존성 의존 그래프 종속" },
+    triggers: { ko: "플러그인 의존성 의존 그래프" },
     params: {
       id: { type: "string", description: "Plugin id. Omit to list all version integrity issues." },
     },
@@ -738,13 +738,11 @@ export function registerPluginCatalog(): void {
     examples: ["plugin.enable <name>", 'plugin.enable \'{"id":"soksak-plugin-<id>"}\''],
     danger: "inject",
     hint: (d) => {
-      // CONSENT_REQUIRED 는 message 에 미동의 id 목록이 실린다("활성화 동의 필요: id1, id2 …") —
-      // 첫 id(종속 먼저 순서)를 뽑을 수 있으면 정밀 안내, 형식이 어긋나면 표준 안내로 폴백(무리한 파싱 금지).
+      // CONSENT_REQUIRED 는 data.pendingConsent 에 미동의 체인(위상순 — 첫 항목이 먼저 동의할
+      // 대상)이 실린다. 구조화 데이터만 읽는다 — 사람 문장(message) 파싱 금지. 없으면 표준 안내로 폴백.
       if (d.code !== "CONSENT_REQUIRED") return [];
-      const prefix = "활성화 동의 필요: ";
-      const msg = String(d.message ?? "");
-      if (!msg.startsWith(prefix)) return [];
-      const first = msg.slice(prefix.length).split(" — ")[0]?.split(",")[0]?.trim();
+      const pending = (d.data as { pendingConsent?: unknown } | undefined)?.pendingConsent;
+      const first = Array.isArray(pending) && typeof pending[0] === "string" ? pending[0] : null;
       if (!first) return [];
       return [
         {
