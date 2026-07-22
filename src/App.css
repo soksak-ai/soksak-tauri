@@ -425,13 +425,11 @@ body,
 .left-rail-plane {
   position: absolute;
   inset: 0;
-  /* 정차·드래그 중에는 위(레일 상호작용 소유). 주행(left transition) 동안만 .traveling 으로
-     pane 그리드(z:3) 아래로 잠수해 창 뒤로 지나간다(§12-④). */
-  z-index: 12;
-  pointer-events: none;
-}
-.left-rail-plane.traveling {
+  /* 레일 = 책상 바닥의 크롬(디자인 정본) — 항상 pane 그리드(z:3) 아래다. 카드들이 위에 떠
+     있고, 주행하는 레일은 카드 밑을 지나 복도가 열린 곳에서 드러난다. 정차 시 상호작용은
+     그리드 컨테이너의 pointer-events 투명화(아래 규칙)가 보장한다. */
   z-index: 2;
+  pointer-events: none;
 }
 /* §12-④ 주행 동조 — 레일이 A→B 를 주행하는 위상 동안 pane 복도(railGap 소비자 전부)도 같은
    시간·곡선으로 미끄러진다. 복도가 순간이동하면 레일이 pane 뒤에 통째로 가려져 hide→show 로
@@ -620,8 +618,18 @@ body,
 .content-pane {
   position: absolute;
   inset: 0;
-  /* 레일 주행(.left-rail-plane.traveling, z:2)보다 위 — 주행하는 레일이 이 그리드 뒤로 지나간다. */
+  /* 레일 평면(z:2)보다 위 — 주행하는 레일이 이 그리드(카드들) 뒤로 지나간다. 컨테이너 자체는
+     히트 투명(복도의 빈 영역 클릭은 아래 레일의 것) — 실요소가 각자 이벤트를 소유한다. */
   z-index: 3;
+  pointer-events: none;
+}
+.egroup-area {
+  pointer-events: none;
+}
+.egroup-cell,
+.egroup-body-slot,
+.egroup-divider {
+  pointer-events: auto;
 }
 
 /* ── 컨텐츠 탭 바(3단의 가운데) ── */
@@ -3373,6 +3381,10 @@ select.dctl {
   flex: 1;
   min-height: 0;
 }
+@keyframes proj-slot-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
 .proj-slot {
   flex: 1;
   min-height: 0;
@@ -3380,6 +3392,9 @@ select.dctl {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* 내용물 교체의 자연스러움 — keep-alive 슬롯이 display 복귀할 때마다 재생되는 페이드-인.
+     이동(§12-④)과 별개로, 스왑 자체가 뚝 끊기지 않게 한다. */
+  animation: proj-slot-in 220ms ease-out;
 }
 /* 슬롯 공통 양식(§12-①②) — 헤더는 호스트 소유(기능 정체 + 레일 조작), 본문만 기능이 교체. */
 .proj-frame-header {
