@@ -26,7 +26,7 @@ import { LeftSidebarHost } from "./components/LeftSidebarHost";
 import { RailGridSurface } from "./components/RailGridSurface";
 import { PluginSidebar } from "./components/PluginSidebar";
 import { ContentTabs } from "./components/ContentTabs";
-import { GroupArea } from "./components/GroupArea";
+import { GroupArea, HEADER_PX, PANE_INSET } from "./components/GroupArea";
 import { NewProjectModal } from "./components/NewProjectModal";
 import { ProjectSettingsModal } from "./components/ProjectSettingsModal";
 import { Icon } from "./ui/icons/Icon";
@@ -176,6 +176,10 @@ const ProjectPane = memo(function ProjectPane({
   // 주행 신호(§12-④) — left transition 이 도는 동안만 레일 평면이 pane 아래로 잠수한다.
   const sidebarElRef = useRef<HTMLDivElement | null>(null);
   const railTraveling = useTransitionTravel(sidebarElRef);
+  // pane 그리드 행 계약 소비 — 레일 헤더가 pane 그룹 헤더와 같은 행에 앉도록
+  // 같은 소스(GroupArea 상수 + 테마 paneStyle)의 치수를 레일 서브트리에 주입한다.
+  const paneStyle = useTheme((s) => s.spec.chrome.paneStyle);
+  const railPaneInset = PANE_INSET[paneStyle] ?? 0;
 
   const toggleRailPin = useCallback(() => {
     setLeftRailPlacement(
@@ -274,6 +278,12 @@ const ProjectPane = memo(function ProjectPane({
             <div
               ref={railPlaneRef}
               className={`left-rail-plane${railTraveling && dragStation === null ? " traveling" : ""}`}
+              style={
+                {
+                  "--pane-inset": `${railPaneInset}px`,
+                  "--header-h": `${HEADER_PX}px`,
+                } as React.CSSProperties
+              }
             >
               <div
                 ref={sidebarElRef}

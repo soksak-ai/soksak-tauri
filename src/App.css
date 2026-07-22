@@ -544,7 +544,8 @@ body,
 }
 .left-rail-controls {
   position: absolute;
-  top: 5px;
+  /* 프레임 헤더 행(--pane-inset 아래 --header-h) 안에 정수 센터링 — 컨트롤 총높이 28. */
+  top: calc(var(--pane-inset, 0px) + 2px);
   right: 6px;
   z-index: 30;
   display: flex;
@@ -3366,7 +3367,9 @@ select.dctl {
   align-items: center;
   gap: 6px;
   padding: 0 6px 0 10px;
-  height: var(--chrome-row-h);
+  /* 레일은 pane 그리드 안의 가구 — 이웃은 pane 그룹 헤더라 같은 행 계약(--header-h)을 따른다.
+     상단 오프셋은 .left-host 의 --pane-inset 패딩과 합으로 그리드에 정렬(R1c). */
+  height: var(--header-h, 33px);
   font-size: 11px;
   color: var(--fg);
   opacity: 0.85;
@@ -3427,6 +3430,9 @@ select.dctl {
   height: 100%;
   width: 100%;
   min-width: 0;
+  /* pane 셀이 그리드 상단에서 --pane-inset 만큼 내려앉듯, 레일 내용도 같은 만큼 내려앉아야
+     프레임 헤더가 pane 그룹 헤더와 같은 행에 앉는다(R1c — 테마 paneStyle 별로 자동 추종). */
+  padding-top: var(--pane-inset, 0px);
 }
 /* 셀이 % 절대위치로 깔리는 그리드 — 콘텐츠 egroup-area 와 동일 모델. footer 는 그 아래 흐름. */
 .left-host-grid {
