@@ -146,20 +146,50 @@ describe("view focus ownership", () => {
     target.appendChild(clickedInput);
     document.body.appendChild(target);
     const focus = vi.fn();
+    const setFocused = vi.fn();
 
     coordinator.registerMountedView(
       "target",
       target,
-      provider({ focus }),
+      provider({ focus, setFocused }),
       () => context,
     );
 
     coordinator.requestFocus("target");
+    expect(setFocused).toHaveBeenLastCalledWith(target, context, true);
     clickedInput.focus();
     flushFrame();
 
     expect(focus).not.toHaveBeenCalled();
+    expect(setFocused).toHaveBeenCalledOnce();
+    expect(setFocused).toHaveBeenLastCalledWith(target, context, true);
     expect(document.activeElement).toBe(clickedInput);
+  });
+
+  it("publishes focus ownership independently from keyboard focus execution", () => {
+    const { coordinator, flushFrame } = fixture();
+    const source = document.createElement("section");
+    const target = document.createElement("section");
+    document.body.append(source, target);
+    const sourceFocused = vi.fn();
+    const targetFocused = vi.fn();
+    coordinator.registerMountedView(
+      "source",
+      source,
+      provider({ setFocused: sourceFocused }),
+      () => context,
+    );
+    coordinator.registerMountedView(
+      "target",
+      target,
+      provider({ setFocused: targetFocused }),
+      () => context,
+    );
+
+    coordinator.transferFocus("source", "target", () => {});
+    expect(sourceFocused).toHaveBeenLastCalledWith(source, context, false);
+    expect(targetFocused).toHaveBeenLastCalledWith(target, context, true);
+    flushFrame();
   });
 
   it("lets only the latest request focus after delayed mount or async readiness", () => {

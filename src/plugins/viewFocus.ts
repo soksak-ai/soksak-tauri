@@ -35,6 +35,7 @@ export class ViewFocusCoordinator {
   private readonly schedule: (callback: FrameRequestCallback) => number;
   private readonly onError: (error: unknown) => void;
   private intent: FocusIntent | null = null;
+  private focusedViewId: string | null = null;
 
   constructor(options: ViewFocusCoordinatorOptions = {}) {
     this.schedule =
@@ -55,6 +56,7 @@ export class ViewFocusCoordinator {
     }
     const mounted = { container, provider, context };
     this.mounted.set(viewId, mounted);
+    if (this.intent?.viewId === viewId) this.publishFocused(viewId, true);
     this.queueCurrentIntent();
 
     return () => {
@@ -91,6 +93,7 @@ export class ViewFocusCoordinator {
           this.onError(error);
         }
       }
+      this.publishFocused(sourceViewId, false);
     }
 
     const result = activate();
@@ -107,9 +110,13 @@ export class ViewFocusCoordinator {
       !this.intent.delivered &&
       !this.intent.controller.signal.aborted
     ) {
+      this.publishFocused(viewId, true);
       return this.intent.controller.signal;
     }
 
+    if (this.focusedViewId && this.focusedViewId !== viewId) {
+      this.publishFocused(this.focusedViewId, false);
+    }
     this.intent?.controller.abort();
     this.intent = {
       viewId,
@@ -117,11 +124,13 @@ export class ViewFocusCoordinator {
       queued: false,
       delivered: false,
     };
+    this.publishFocused(viewId, true);
     this.queueCurrentIntent();
     return this.intent.controller.signal;
   }
 
   clear(): void {
+    if (this.focusedViewId) this.publishFocused(this.focusedViewId, false);
     this.intent?.controller.abort();
     this.intent = null;
   }
@@ -172,6 +181,18 @@ export class ViewFocusCoordinator {
       target.provider.focus(target.container, target.context(), {
         signal: intent.controller.signal,
       });
+    } catch (error) {
+      this.onError(error);
+    }
+  }
+
+  private publishFocused(viewId: string, focused: boolean): void {
+    const mounted = this.mounted.get(viewId);
+    if (focused) this.focusedViewId = viewId;
+    else if (this.focusedViewId === viewId) this.focusedViewId = null;
+    if (!mounted?.provider.setFocused) return;
+    try {
+      mounted.provider.setFocused(mounted.container, mounted.context(), focused);
     } catch (error) {
       this.onError(error);
     }

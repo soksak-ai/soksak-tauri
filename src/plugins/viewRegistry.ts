@@ -52,6 +52,9 @@ export interface PluginViewFocusRequest {
 export interface PluginViewProvider {
   mount(container: HTMLElement, ctx: PluginViewContext): void;
   unmount?(container: HTMLElement): void;
+  // 현재 활성-chain이 이 뷰를 가리키는지 알린다. 입력 실행 focus()와 별개이므로, 이미
+  // descendant가 DOM focus를 가진 경우에도 반드시 전달된다.
+  setFocused?(container: HTMLElement, ctx: PluginViewContext, focused: boolean): void;
   // 다른 뷰로 떠나기 전 동기 경계. 조합/프리에딧 등 유실 가능한 일시 입력을 확정하되,
   // 자기 container 밖 DOM 을 조회하거나 포커스하지 않는다.
   prepareFocusTransfer?(container: HTMLElement, ctx: PluginViewContext): void;
