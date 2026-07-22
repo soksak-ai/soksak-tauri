@@ -127,6 +127,33 @@ describe("ui.measure/ui.hit — 스펙 선언", () => {
   });
 });
 
+describe("ui.input.drag — 실시간 재현 표면", () => {
+  it("steps/durationMs를 공개하고 지정 단계마다 mousemove를 보낸다", async () => {
+    const spec = getSpec("ui.input.drag");
+    expect(spec?.params.steps).toBeDefined();
+    expect(spec?.params.durationMs).toBeDefined();
+    mountNode(`<div data-node="btn">drag</div>`);
+    const node = document.querySelector<HTMLElement>("[data-node=btn]")!;
+    vi.spyOn(node, "getBoundingClientRect").mockReturnValue({
+      x: 10, y: 10, left: 10, top: 10, right: 30, bottom: 30,
+      width: 20, height: 20, toJSON: () => ({}),
+    });
+    const xs: number[] = [];
+    const onMove = (event: MouseEvent) => xs.push(event.clientX);
+    window.addEventListener("mousemove", onMove);
+    const result = await execute(
+      "ui.input.drag",
+      { from: ADDR, dx: 100, steps: 5, durationMs: 0 },
+      {},
+    );
+    window.removeEventListener("mousemove", onMove);
+    expect(result.ok).toBe(true);
+    expect(xs).toHaveLength(5);
+    expect(xs[0]).toBe(40);
+    expect(xs[4]).toBe(120);
+  });
+});
+
 describe("deepActiveElement — shadow 관통 포커스", () => {
   it("shadow root 안 활성 요소를 관통해 반환한다", () => {
     const leaf = document.createElement("input"); // shadowRoot 없음 → 종료

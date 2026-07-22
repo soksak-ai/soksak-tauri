@@ -1,0 +1,102 @@
+// @vitest-environment jsdom
+import { act } from "react";
+import { createRoot } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { RailLinkOverlay } from "./RailLinkOverlay";
+
+vi.mock("../state/theme", () => ({
+  useTheme: (select: (state: unknown) => unknown) =>
+    select({ spec: { relation: { radius: 12 } } }),
+}));
+vi.mock("../i18n", () => ({ useT: () => () => "LINKED" }));
+
+let observed: ((entries: Array<{ contentRect: DOMRect }>) => void) | undefined;
+class ResizeObserverMock {
+  constructor(callback: typeof observed) {
+    observed = callback;
+  }
+  observe() {}
+  disconnect() {}
+}
+
+let hostSize = { width: 1200, height: 800 };
+
+describe("RailLinkOverlay — 실시간 그리드 추종", () => {
+  beforeEach(() => {
+    observed = undefined;
+    hostSize = { width: 1200, height: 800 };
+    vi.stubGlobal("ResizeObserver", ResizeObserverMock);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+      () => ({
+        x: 0, y: 0, left: 0, top: 0, right: hostSize.width,
+        bottom: hostSize.height, width: hostSize.width, height: hostSize.height,
+        toJSON: () => ({}),
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    document.body.innerHTML = "";
+  });
+
+  it("resize·분할비 변경에 path 하나만 즉시 다시 계산하고 DOM 상태를 노출한다", () => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    const render = (width: number) => (
+      <RailLinkOverlay
+        contentId="c1"
+        boundViewId="v2"
+        boundPanelId="g2"
+        label="Design Studio"
+        railWidth={300}
+        railStation={50}
+        targetRect={{ left: 50, top: 0, width, height: 50 }}
+      />
+    );
+
+    act(() => root.render(render(25)));
+    const overlay = host.querySelector<HTMLElement>(".rail-link-overlay")!;
+    const first = host.querySelector<SVGPathElement>(".rail-link-shape")!.getAttribute("d");
+    expect(overlay.dataset).toMatchObject({
+      node: "relation/rail/c1",
+      boundView: "v2",
+      boundPanel: "g2",
+      connected: "true",
+    });
+    expect(host.querySelectorAll(".rail-link-shape")).toHaveLength(1);
+
+    act(() => root.render(render(40)));
+    const splitResize = host.querySelector<SVGPathElement>(".rail-link-shape")!.getAttribute("d");
+    expect(splitResize).not.toBe(first);
+
+    hostSize = { width: 1000, height: 700 };
+    act(() => observed?.([{ contentRect: {
+      ...hostSize, x: 0, y: 0, left: 0, top: 0,
+      right: 1000, bottom: 700, toJSON: () => ({}),
+    } as DOMRect }]));
+    const windowResize = host.querySelector<SVGPathElement>(".rail-link-shape")!.getAttribute("d");
+    expect(windowResize).not.toBe(splitResize);
+
+    act(() => root.unmount());
+  });
+
+  it("PIN 등으로 사이에 다른 패널이 끼면 거짓 연결선과 채움을 그리지 않는다", () => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    act(() => root.render(
+      <RailLinkOverlay
+        contentId="c1" boundViewId="v2" boundPanelId="g2" label="Feature"
+        railWidth={300} railStation={0}
+        targetRect={{ left: 50, top: 0, width: 50, height: 100 }}
+      />,
+    ));
+    expect(host.querySelector(".rail-link-shape")).toBeNull();
+    expect(host.querySelector<HTMLElement>(".rail-link-overlay")?.dataset.connected)
+      .toBe("false");
+    act(() => root.unmount());
+  });
+});

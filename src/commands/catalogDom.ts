@@ -423,7 +423,7 @@ export function registerDomCatalog(): void {
 
   register("ui.input.drag", {
     description:
-      "Drive a pointer drag (mousedown on `from` -> mousemove -> mouseup). Two modes: (1) drop onto a target — give `to` (+ optional zone: center default, left/right/top/bottom edge for directional split), drives drag-merge tab UIs; (2) drag by a pixel delta — give `dx`/`dy` instead of `to`, grabs `from` at its center and drags that many CSS px (for resize handles / split dividers). mousemove+mouseup dispatch on window so window-level drag listeners (divider resize) receive them. Unexposed addresses return NOT_EXPOSED. Occluded/unfocused windows pause rAF and may not respond — call window.focus to bring the window forward first.",
+      "Drive a pointer drag (mousedown on `from` -> mousemove -> mouseup). Two modes: (1) drop onto a target — give `to` (+ optional zone); (2) drag by dx/dy for resize handles. steps and durationMs expose a finite real-time sequence for animation/layout verification; defaults preserve the immediate two-move behavior. mousemove+mouseup dispatch on window so window-level drag listeners receive them.",
     triggers: { ko: "드래그 주입 드롭 탭이동 분할 합치기 리사이즈 디바이더 E2E 포인터드래그" },
     params: {
       from: { type: "string", description: "Source node address (the tab / divider / element to grab)", required: true },
@@ -435,8 +435,18 @@ export function registerDomCatalog(): void {
       },
       dx: { type: "number", description: "Horizontal drag distance in CSS px from `from` center (mode 2 — resize/divider). Alternative to `to`.", required: false },
       dy: { type: "number", description: "Vertical drag distance in CSS px from `from` center (mode 2).", required: false },
+      steps: {
+        type: "number",
+        description: "Number of evenly spaced mousemove events (1..120). Default 2.",
+        default: 2,
+      },
+      durationMs: {
+        type: "number",
+        description: "Total finite drag duration in milliseconds (0..10000). Default 0.",
+        default: 0,
+      },
     },
-    returns: "{ dragged, from, to?, zone?, dx?, dy? }",
+    returns: "{ dragged, from, to?, zone?, dx?, dy?, steps, durationMs }",
     message: (d) => (d.dragged ? tmsg("msg.ui.input.drag.dragged") : tmsg("msg.ui.input.drag.tap")),
     errors: ["NOT_EXPOSED", "INVALID_PARAMS"],
     danger: "inject",
@@ -444,7 +454,15 @@ export function registerDomCatalog(): void {
       'ui.input.drag \'{"from":"win/main/chrome/tab/left/a.x","to":"win/main/chrome/tab/left/b.y","zone":"center"}\'',
       'ui.input.drag \'{"from":"win/main/chrome/divider/s0/0","dx":120}\'',
     ],
-    handler: (p) => {
+    handler: async (p) => {
+      const steps = p.steps === undefined ? 2 : Number(p.steps);
+      const durationMs = p.durationMs === undefined ? 0 : Number(p.durationMs);
+      if (!Number.isInteger(steps) || steps < 1 || steps > 120) {
+        return { ok: false as const, code: "INVALID_PARAMS", message: "steps는 1..120 정수여야 함" };
+      }
+      if (!Number.isFinite(durationMs) || durationMs < 0 || durationMs > 10_000) {
+        return { ok: false as const, code: "INVALID_PARAMS", message: "durationMs는 0..10000이어야 함" };
+      }
       const fromEl = resolveElement(p.from as string);
       if (!fromEl) return notExposed(p.from as string);
       const fr = fromEl.getBoundingClientRect();
@@ -473,14 +491,25 @@ export function registerDomCatalog(): void {
       // mousemove/mouseup 리스너를 onDividerDown 이 등록하므로 window 로 보내야 받는다.
       fire("mousedown", fromPt.x, fromPt.y, fromEl);
       if (dist >= 5) {
-        const mid = { x: (fromPt.x + toPt.x) / 2, y: (fromPt.y + toPt.y) / 2 };
-        fire("mousemove", mid.x, mid.y, window);
-        fire("mousemove", toPt.x, toPt.y, window);
+        for (let step = 1; step <= steps; step += 1) {
+          const progress = step / steps;
+          fire(
+            "mousemove",
+            fromPt.x + (toPt.x - fromPt.x) * progress,
+            fromPt.y + (toPt.y - fromPt.y) * progress,
+            window,
+          );
+          if (durationMs > 0 && step < steps) {
+            await new Promise((resolve) =>
+              window.setTimeout(resolve, durationMs / steps),
+            );
+          }
+        }
       }
       fire("mouseup", toPt.x, toPt.y, window);
       return byDelta
-        ? { dragged: dist >= 5, from: p.from, dx: p.dx ?? 0, dy: p.dy ?? 0 }
-        : { dragged: dist >= 5, click: dist < 5, from: p.from, to: p.to, zone: p.zone ?? "center" };
+        ? { dragged: dist >= 5, from: p.from, dx: p.dx ?? 0, dy: p.dy ?? 0, steps, durationMs }
+        : { dragged: dist >= 5, click: dist < 5, from: p.from, to: p.to, zone: p.zone ?? "center", steps, durationMs };
     },
   });
 

@@ -35,6 +35,13 @@ export const BUILTIN_THEMES: unknown[] = [
       ok: "#48c781",
       shadow: "0 24px 60px rgba(0,0,0,.5)",
     },
+    relation: {
+      stroke: "var(--acc)",
+      fill: "color-mix(in srgb, var(--acc) 7%, transparent)",
+      strokeWidth: 1.5,
+      radius: 12,
+      label: "badge",
+    },
     chrome: {
       titlebar: "side",
       tabBar: "side",
@@ -77,6 +84,13 @@ export const BUILTIN_THEMES: unknown[] = [
       accbg: "rgba(90,98,230,.1)",
       ok: "#1f9d55",
       shadow: "0 20px 50px rgba(25,27,38,.14)",
+    },
+    relation: {
+      stroke: "var(--acc)",
+      fill: "color-mix(in srgb, var(--acc) 10%, transparent)",
+      strokeWidth: 1,
+      radius: 16,
+      label: "badge",
     },
     chrome: {
       titlebar: "gradient",
@@ -121,6 +135,13 @@ export const BUILTIN_THEMES: unknown[] = [
       ok: "#67c98e",
       shadow: "0 16px 44px rgba(0,0,0,.5)",
     },
+    relation: {
+      stroke: "var(--acc)",
+      fill: "color-mix(in srgb, var(--acc) 4%, transparent)",
+      strokeWidth: 1,
+      radius: 0,
+      label: "badge",
+    },
     chrome: {
       titlebar: "transparent",
       tabBar: "transparent",
@@ -163,6 +184,13 @@ export const BUILTIN_THEMES: unknown[] = [
       accbg: "#e7e0c8",
       ok: "#14633a",
       shadow: "0 18px 46px rgba(70,60,20,.16)",
+    },
+    relation: {
+      stroke: "var(--acc)",
+      fill: "color-mix(in srgb, var(--acc) 9%, transparent)",
+      strokeWidth: 1,
+      radius: 0,
+      label: "badge",
     },
     chrome: {
       titlebar: "side",
@@ -211,6 +239,13 @@ export const BUILTIN_THEMES: unknown[] = [
       accbg: "rgba(221,141,99,.16)",
       ok: "#9bc283",
       shadow: "0 18px 46px rgba(0,0,0,.45)",
+    },
+    relation: {
+      stroke: "var(--acc)",
+      fill: "color-mix(in srgb, var(--acc) 8%, transparent)",
+      strokeWidth: 1.5,
+      radius: 18,
+      label: "badge",
     },
     chrome: {
       titlebar: "transparent",

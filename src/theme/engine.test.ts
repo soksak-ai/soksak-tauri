@@ -3,7 +3,11 @@
 //   paneStyle flat(프레임 무) + divider overlay(휴면 무선) = 패널 사이 경계 0.
 // red/green: 이 테스트가 먼저 불변식을 강제하고, 내장 테마가 그에 정합한다.
 import { describe, expect, it } from "vitest";
-import { applyThemeToDom, parseTheme } from "./engine";
+import {
+  DEFAULT_THEME_RELATION,
+  applyThemeToDom,
+  parseTheme,
+} from "./engine";
 import { BUILTIN_THEMES } from "./builtin";
 
 function themeWith(chrome: Record<string, unknown>) {
@@ -69,6 +73,63 @@ describe("data-theme-epoch — 테마 적용 단일 신호", () => {
       const { theme, validation } = parseTheme(raw, "builtin");
       expect(validation.errors, `${(raw as { name: string }).name}`).toEqual([]);
       expect(theme).not.toBeNull();
+    }
+  });
+});
+
+describe("테마 relation 표면 계약", () => {
+  it("구 테마는 relation 전체 기본값으로 정규화되어 호환된다", () => {
+    const { theme, validation } = parseTheme(themeWith({}), "legacy.json");
+    expect(validation.errors).toEqual([]);
+    expect(theme?.relation).toEqual(DEFAULT_THEME_RELATION);
+  });
+
+  it("relation을 선언하면 전 슬롯을 검증하고 DOM 토큰으로 공개한다", () => {
+    const raw = {
+      ...themeWith({}),
+      relation: {
+        stroke: "var(--ok)",
+        fill: "color-mix(in srgb, var(--ok) 9%, transparent)",
+        strokeWidth: 2,
+        radius: 13,
+        label: "badge",
+      },
+    };
+    const { theme, validation } = parseTheme(raw, "test");
+    expect(validation.errors).toEqual([]);
+    applyThemeToDom(theme!, "dark");
+    const root = document.documentElement;
+    expect(root.style.getPropertyValue("--relation-stroke")).toBe("var(--ok)");
+    expect(root.style.getPropertyValue("--relation-fill")).toContain("var(--ok)");
+    expect(root.style.getPropertyValue("--relation-stroke-w")).toBe("2px");
+    expect(root.style.getPropertyValue("--relation-radius")).toBe("13px");
+    expect(root.dataset.relationLabel).toBe("badge");
+  });
+
+  it("새 relation 객체는 부분 선언과 범위 밖 수치를 거부한다", () => {
+    const partial = parseTheme(
+      { ...themeWith({}), relation: { stroke: "var(--acc)" } },
+      "partial.json",
+    );
+    expect(partial.theme).toBeNull();
+    expect(partial.validation.errors.some((e) => e.includes("relation.fill"))).toBe(true);
+
+    const invalid = parseTheme(
+      {
+        ...themeWith({}),
+        relation: {
+          stroke: "var(--acc)", fill: "transparent", strokeWidth: 8,
+          radius: -1, label: "always",
+        },
+      },
+      "invalid.json",
+    );
+    expect(invalid.theme).toBeNull();
+  });
+
+  it("내장 테마는 relation을 명시해 시각 언어를 우연한 폴백에 맡기지 않는다", () => {
+    for (const raw of BUILTIN_THEMES as Array<Record<string, unknown>>) {
+      expect(raw.relation, String(raw.name)).toBeTruthy();
     }
   });
 });

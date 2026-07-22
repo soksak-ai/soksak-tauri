@@ -121,23 +121,12 @@ export function startProjectionTracking(): () => void {
       const candidate = boundViewOf(t);
       const vid = candidate?.viewId ?? null;
       if (candidate?.contentId && vid) {
-        // 재결부 규칙(③·fd2f66f5 조화): 활성 뷰의 해소 결과가 현재 결부의 해소와 다를
-        // 때만 스페이스 결부를 교체한다 — 같은 기능·같은 해소(터미널↔터미널)는 유지되어
-        // FLOW 위치만 움직이고, 다른 기능(칸반→런북)이나 per-view 문서 전환은 교체된다.
-        const pinsNow =
-          useProjection.getState().byProject[t.id]?.pins ?? { left: [], right: [] };
-        const sideFp = (side: { slots: { source: string; resolvedRef: string | null; instanceKey: string | null }[] } | null) =>
-          side?.slots.map((x) => [x.source, x.resolvedRef, x.instanceKey]) ?? null;
-        const candProj = resolveProjection(
-          t.id, candidate, pinsNow, realProjectionDeps(),
-        );
-        const curProj = projectionFor(t.id);
-        const differs =
-          JSON.stringify([sideFp(candProj.left), sideFp(candProj.right)]) !==
-          JSON.stringify([sideFp(curProj?.left ?? null), sideFp(curProj?.right ?? null)]);
+        // 결부 대상은 언제나 현재 활성 뷰다. 같은 rail 구현을 공유하는 뷰 사이에서도
+        // 이 id를 고정하면 FLOW 위치·관계 외곽선·공개 상태가 이전 패널을 가리킨다.
+        // DOM 인스턴스 안정성은 resolveProjection의 instanceKey가 별도로 소유한다.
         const locked = t.contents.find((c) => c.id === candidate.contentId)
           ?.railBindingViewId;
-        if (differs || !locked) {
+        if (locked !== vid) {
           useSessions.getState().bindContentRail(t.id, candidate.contentId, vid);
         }
         useProjection.getState().noteBinding(t.id, vid);

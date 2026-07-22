@@ -8,10 +8,12 @@ import { RAIL_TRAVEL_MS } from "../lib/railMotion";
 export function RailGridSurface({
   children,
   railPlane,
+  relationOverlay,
   traveling = false,
 }: {
   children: ReactNode;
   railPlane: ReactNode;
+  relationOverlay?: ReactNode;
   // §12-④ 주행 위상 — 이 동안 railGap 소비자들이 레일과 동조해 미끄러진다(App.css 동조 규칙).
   traveling?: boolean;
 }) {
@@ -22,6 +24,7 @@ export function RailGridSurface({
     >
       {children}
       {railPlane}
+      {relationOverlay}
     </div>
   );
 }

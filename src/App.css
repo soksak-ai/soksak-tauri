@@ -430,6 +430,49 @@ body,
   z-index: 0;
   pointer-events: none;
 }
+/* 레일-기능 결부 관계면. paneStyle의 보더·gap·radius를 재사용하지 않고 테마 relation
+   토큰과 공개 rect의 합집합 SVG가 단독 소유한다. 따라서 flat/card/floating 모두 같은
+   의미를 유지하며 실제 패널 경계는 덧그리지 않는다. */
+.rail-link-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  overflow: hidden;
+}
+.rail-link-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.rail-link-shape {
+  fill: var(--relation-fill);
+  stroke: var(--relation-stroke);
+  stroke-width: var(--relation-stroke-w);
+  vector-effect: non-scaling-stroke;
+  stroke-linejoin: round;
+}
+.rail-link-label {
+  position: absolute;
+  max-width: 260px;
+  padding: 3px 10px;
+  overflow: hidden;
+  border-radius: calc(var(--relation-radius) * 0.55);
+  background: var(--relation-stroke);
+  color: var(--bg);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:root[data-relation-label="none"] .rail-link-label {
+  display: none;
+}
 /* §12-④ FLIP 주행 — 최종 레이아웃은 먼저 확정하고, 출발점과의 차이만 compositor translate로
    되감아 0까지 보간한다. left/width 레이아웃 보간은 패널별 페인트가 어긋나 중간 프레임을
    찢으므로 금지한다. */

@@ -69,6 +69,25 @@ export interface ThemeEffects {
   amb: string | null; // 보조 액센트
 }
 
+// 레일과 결부 패널의 관계 표면. 색은 CSS 변수 참조를 허용해 light/dark 색 레이어를
+// 자동 추종하고, geometry를 바꾸는 수치는 제한된 px 숫자로 검증한다. 구 v1 테마는
+// relation 블록 전체가 없을 때만 이 완전한 기본값으로 승격된다.
+export interface ThemeRelation {
+  stroke: string;
+  fill: string;
+  strokeWidth: number;
+  radius: number;
+  label: "badge" | "none";
+}
+
+export const DEFAULT_THEME_RELATION: Readonly<ThemeRelation> = Object.freeze({
+  stroke: "var(--acc)",
+  fill: "color-mix(in srgb, var(--acc) 7%, transparent)",
+  strokeWidth: 1,
+  radius: 10,
+  label: "badge",
+});
+
 export interface ThemeSpec {
   name: string;
   defaultMode: ThemeMode;
@@ -76,6 +95,7 @@ export interface ThemeSpec {
   colorsAlt?: ThemeColors; // 반대 모드(없으면 모드 고정 테마)
   chrome: ThemeChrome;
   effects: ThemeEffects;
+  relation: ThemeRelation;
   // 출처(내장/외부 파일 경로) — 동작엔 영향 없음(표시용).
   source: "builtin" | string;
 }
@@ -144,6 +164,52 @@ function validateColors(
   }
 }
 
+function parseRelation(
+  value: unknown,
+  errors: string[],
+): ThemeRelation {
+  if (value === undefined) return { ...DEFAULT_THEME_RELATION };
+  if (!isRecord(value)) {
+    errors.push("relation: 객체가 아님");
+    return { ...DEFAULT_THEME_RELATION };
+  }
+  for (const slot of ["stroke", "fill"] as const) {
+    if (typeof value[slot] !== "string" || !value[slot].trim()) {
+      errors.push(`relation.${slot}: 필수 CSS 색상 누락`);
+    }
+  }
+  if (
+    typeof value.strokeWidth !== "number" ||
+    value.strokeWidth < 0.5 ||
+    value.strokeWidth > 4
+  ) {
+    errors.push("relation.strokeWidth: 0.5..4 숫자여야 함");
+  }
+  if (
+    typeof value.radius !== "number" ||
+    value.radius < 0 ||
+    value.radius > 32
+  ) {
+    errors.push("relation.radius: 0..32 숫자여야 함");
+  }
+  if (value.label !== "badge" && value.label !== "none") {
+    errors.push("relation.label: badge|none 중 하나여야 함");
+  }
+  return {
+    stroke: typeof value.stroke === "string" ? value.stroke : DEFAULT_THEME_RELATION.stroke,
+    fill: typeof value.fill === "string" ? value.fill : DEFAULT_THEME_RELATION.fill,
+    strokeWidth:
+      typeof value.strokeWidth === "number"
+        ? value.strokeWidth
+        : DEFAULT_THEME_RELATION.strokeWidth,
+    radius: typeof value.radius === "number" ? value.radius : DEFAULT_THEME_RELATION.radius,
+    label:
+      value.label === "badge" || value.label === "none"
+        ? value.label
+        : DEFAULT_THEME_RELATION.label,
+  };
+}
+
 // 외부 JSON(unknown) → 검증된 ThemeSpec. 실패 시 errors 에 사유(부분 테마 금지).
 export function parseTheme(
   raw: unknown,
@@ -196,6 +262,7 @@ export function parseTheme(
         : 0,
     amb: typeof eff.amb === "string" ? eff.amb : null,
   };
+  const relation = parseRelation(raw.relation, errors);
 
   // 경계 보장 불변식(UI 헌법 §B1: 패널 경계는 무조건 존재) — 토큰 조합이 경계를
   // 소멸시키면 거부: flat(프레임 무)에는 divider "solid"(상시 seam 선)가 필수.
@@ -216,6 +283,7 @@ export function parseTheme(
       colorsAlt: raw.colorsAlt as unknown as ThemeColors | undefined,
       chrome: raw.chrome as unknown as ThemeChrome,
       effects,
+      relation,
       source,
     },
     validation: { ok: true, errors, warnings },
@@ -254,6 +322,10 @@ export function applyThemeToDom(theme: ThemeSpec, mode: ThemeMode): ThemeMode {
   s.setProperty("--glow", theme.effects.glow ?? "none");
   s.setProperty("--scan", String(theme.effects.scanlines));
   s.setProperty("--amb", theme.effects.amb ?? colors.acc);
+  s.setProperty("--relation-stroke", theme.relation.stroke);
+  s.setProperty("--relation-fill", theme.relation.fill);
+  s.setProperty("--relation-stroke-w", `${theme.relation.strokeWidth}px`);
+  s.setProperty("--relation-radius", `${theme.relation.radius}px`);
   s.setProperty("--pane-pad", theme.chrome.panePad);
   root.dataset.themeMode = effective;
   root.dataset.tabShape = theme.chrome.tabShape;
@@ -263,6 +335,7 @@ export function applyThemeToDom(theme: ThemeSpec, mode: ThemeMode): ThemeMode {
   root.dataset.statusBg = theme.chrome.statusBg;
   root.dataset.divider = theme.chrome.divider;
   root.dataset.chromeFont = theme.chrome.font;
+  root.dataset.relationLabel = theme.relation.label;
   // [성능 RULE] 테마 변경 단일 신호 — 플러그인(터미널)이 색 토큰 재적용 시점을 이 한 속성으로만 안다.
   // 색은 `style`(--bg 등 setProperty)로 들어가지만, 플러그인이 `style` 전체를 관찰하면 ⌘±(--app-font-size)
   // 같은 테마-무관 style 변이에도 전 터미널이 reflow+clearTextureAtlas+refresh 한다(결합 → CPU 폭풍).

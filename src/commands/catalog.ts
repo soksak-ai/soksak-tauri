@@ -312,6 +312,8 @@ function serializeContent(
   c: ContentArea,
   activeContentId: string,
   focusNearRail = false,
+  railStation?: number,
+  railOpen = true,
 ) {
   const displayLayout = projectFocusedPanelNearRail(
     c.layout,
@@ -355,6 +357,22 @@ function serializeContent(
           focusedPanelId: c.activeGroupId,
           swappedPanels: [] as string[],
         };
+  const boundPanel = c.railBindingViewId
+    ? cells.find(({ group }) =>
+        group.views.some((view) => view.id === c.railBindingViewId),
+      )
+    : undefined;
+  const railRelation = c.railBindingViewId
+    ? {
+        boundViewId: c.railBindingViewId,
+        boundPanelId: boundPanel?.group.id ?? null,
+        connected:
+          railOpen &&
+          !!boundPanel &&
+          railStation !== undefined &&
+          Math.abs(boundPanel.rect.left - railStation) <= 0.01,
+      }
+    : null;
   return {
     id: c.id,
     title: c.title,
@@ -368,6 +386,7 @@ function serializeContent(
       : serializeLayout(displayLayout),
     canonicalLayout,
     projection,
+    railRelation,
     panels: cells.map(({ group, rect }) => ({
       id: group.id,
       rect: {
@@ -409,24 +428,29 @@ function serializeTree() {
   const focusNearRail = useSettings.getState().railFocusNear;
   return {
     activeProjectId: s.activeId,
-    projects: s.tabs.map((t) => ({
-      id: t.id,
-      title: t.title,
-      root: t.root ?? null,
-      color: t.color ?? null,
-      sidebarOpen: t.sidebarOpen,
-      leftRailPosition: serializeLeftRailPosition(t, focusNearRail),
-      active: t.id === s.activeId,
-      activeSpaceId: t.activeContentId,
-      spaces: t.contents.map((c) =>
-        serializeContent(
-          c,
-          t.activeContentId,
-          focusNearRail &&
-            (t.leftRailPlacement?.mode ?? "flow") === "flow",
+    projects: s.tabs.map((t) => {
+      const leftRailPosition = serializeLeftRailPosition(t, focusNearRail);
+      return {
+        id: t.id,
+        title: t.title,
+        root: t.root ?? null,
+        color: t.color ?? null,
+        sidebarOpen: t.sidebarOpen,
+        leftRailPosition,
+        active: t.id === s.activeId,
+        activeSpaceId: t.activeContentId,
+        spaces: t.contents.map((c) =>
+          serializeContent(
+            c,
+            t.activeContentId,
+            focusNearRail &&
+              (t.leftRailPlacement?.mode ?? "flow") === "flow",
+            leftRailPosition.effectiveStation,
+            t.sidebarOpen,
+          ),
         ),
-      ),
-    })),
+      };
+    }),
   };
 }
 
@@ -477,7 +501,7 @@ export function registerCatalog(): void {
       "Full layout snapshot (address book): all ids and active state across project → space → panel (display rect %) → view → pane. Each space exposes displayed and canonical stored layouts plus projection provenance; each project exposes its effective left-rail position and clean grid lines.",
     params: {},
     returns:
-      "{ activeProjectId, projects[].{ leftRailPosition, spaces[].{ layout, canonicalLayout, projection:{kind,applied,focusedPanelId,swappedPanels}, panels[] } } } — layout/panels are displayed state; canonicalLayout is the stored SplitTree",
+      "{ activeProjectId, projects[].{ leftRailPosition, spaces[].{ layout, canonicalLayout, projection, railRelation:{boundViewId,boundPanelId,connected}?, panels[] } } } — layout/panels are displayed state; canonicalLayout is the stored SplitTree",
     message: (d) => tmsg("msg.state.tree", { n: ((d.projects as unknown[]) ?? []).length }),
     examples: ["state.tree"],
     handler: () => serializeTree(),
@@ -1244,7 +1268,7 @@ export function registerCatalog(): void {
       "List displayed panels in a space, including rect (%), displayed layout, immutable canonical layout, and projection provenance.",
     params: { project: P.project, space: P.space },
     returns:
-      "{ activePanelId, layout, canonicalLayout, projection:{kind,applied,focusedPanelId,swappedPanels}, panels[] }",
+      "{ activePanelId, layout, canonicalLayout, projection, railRelation:{boundViewId,boundPanelId,connected}?, panels[] }",
     message: (d) => tmsg("msg.panel.list", { n: ((d.panels as unknown[]) ?? []).length }),
     errors: ["TARGET_NOT_FOUND"],
     examples: ["panel.list"],
@@ -1261,12 +1285,18 @@ export function registerCatalog(): void {
         t.activeContentId,
         useSettings.getState().railFocusNear &&
           (t.leftRailPlacement?.mode ?? "flow") === "flow",
+        serializeLeftRailPosition(
+          t,
+          useSettings.getState().railFocusNear,
+        ).effectiveStation,
+        t.sidebarOpen,
       );
       return {
         activePanelId: out.activePanelId,
         layout: out.layout,
         canonicalLayout: out.canonicalLayout,
         projection: out.projection,
+        railRelation: out.railRelation,
         panels: out.panels,
       };
     },
@@ -2857,7 +2887,8 @@ export function registerCatalog(): void {
       "List available themes (built-in + external ~/.soksak/themes), including files that failed validation and their reasons.",
     triggers: { ko: "테마 목록 테마 보기 사용 가능 테마" },
     params: {},
-    returns: "{ current, mode, themes:[{name,defaultMode,modes,source,warnings}], rejected }",
+    returns:
+      "{ current, mode, themes:[{name,defaultMode,modes,source,warnings,relation}], rejected }",
     message: (d) => tmsg("msg.theme.list", { n: ((d.themes as unknown[]) ?? []).length }),
     examples: ["theme.list"],
     handler: () => {
@@ -2871,6 +2902,7 @@ export function registerCatalog(): void {
           modes: th.colorsAlt ? ["light", "dark"] : [th.defaultMode],
           source: th.source,
           warnings: s.warnings[th.name] ?? [],
+          relation: th.relation,
         })),
         rejected: s.rejected,
       };

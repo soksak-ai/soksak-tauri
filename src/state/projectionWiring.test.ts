@@ -203,7 +203,7 @@ describe("projectionFor — 실 deps(계약 해소·rail 검증·consumes 게이
 });
 
 describe("startProjectionTracking — 스페이스별 단일 결부", () => {
-  it("패널 포커스는 이동 위치만 바꾸고 투영 콘텐츠는 교체하지 않는다", () => {
+  it("같은 rail 인스턴스를 공유해도 결부 대상은 현재 활성 뷰로 이동한다", () => {
     useViewRegistry.getState().register("termplug", decl("term"), provider);
     const v1 = pluginView("v1", "termplug", "term");
     const v2 = pluginView("v2", "termplug", "term");
@@ -230,8 +230,8 @@ describe("startProjectionTracking — 스페이스별 단일 결부", () => {
       ],
     });
 
-    expect(projectionFor("p1")?.binding.viewId).toBe("v1");
-    expect(events.some((e) => e.projectId === "p1" && e.viewId === "v2")).toBe(false);
+    expect(projectionFor("p1")?.binding.viewId).toBe("v2");
+    expect(events.some((e) => e.projectId === "p1" && e.viewId === "v2")).toBe(true);
     expect(useProjection.getState().byProject.p1.focusHistory[0]).toBe("v2");
 
     stop();

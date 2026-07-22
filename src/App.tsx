@@ -24,6 +24,7 @@ import {
 } from "./plugins/viewFocus";
 import { LeftSidebarHost } from "./components/LeftSidebarHost";
 import { RailGridSurface } from "./components/RailGridSurface";
+import { RailLinkOverlay } from "./components/RailLinkOverlay";
 import { PluginSidebar } from "./components/PluginSidebar";
 import { ContentTabs } from "./components/ContentTabs";
 import { GroupArea, HEADER_PX, PANE_INSET } from "./components/GroupArea";
@@ -51,6 +52,7 @@ import {
   cwdPaneOf as resolveCwdPane,
   leftRailGrid,
   useSessions,
+  viewDisplayTitle,
   webviewDisplayName,
   type ProjectTab,
 } from "./state/sessions";
@@ -174,6 +176,17 @@ const ProjectPane = memo(function ProjectPane({
     project.contents.find((content) => content.id === project.activeContentId) ??
     project.contents[0];
   const railGrid = leftRailGrid(project, focusNearEnabled);
+  const boundGroup = activeContent?.railBindingViewId
+    ? allGroups(activeContent.layout).find((group) =>
+        group.views.some((view) => view.id === activeContent.railBindingViewId),
+      )
+    : undefined;
+  const boundView = boundGroup?.views.find(
+    (view) => view.id === activeContent?.railBindingViewId,
+  );
+  const boundCell = boundGroup
+    ? railGrid.cells.find((cell) => cell.id === boundGroup.id)
+    : undefined;
   const effectiveStation = effectiveRailStation(
     railGrid.cells,
     railGrid.focusId,
@@ -314,6 +327,19 @@ const ProjectPane = memo(function ProjectPane({
         />
         <RailGridSurface
           traveling={railTraveling}
+          relationOverlay={
+            project.sidebarOpen && activeContent && boundGroup && boundView && boundCell ? (
+              <RailLinkOverlay
+                contentId={activeContent.id}
+                boundViewId={boundView.id}
+                boundPanelId={boundGroup.id}
+                label={viewDisplayTitle(boundView)}
+                railWidth={sidebarW}
+                railStation={renderedStation}
+                targetRect={boundCell.rect}
+              />
+            ) : undefined
+          }
           railPlane={
             <div
               ref={railPlaneRef}

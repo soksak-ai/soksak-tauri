@@ -18,7 +18,19 @@ import { initialSidebarLayout } from "../state/sidebarLayout";
 import { useSettings } from "../state/settings";
 import { leavesOf, splitLeaf } from "../state/splitTree";
 
-const group = (id: string): ViewGroup => ({ id, views: [], activeViewId: "" });
+const group = (id: string, viewId?: string): ViewGroup => ({
+  id,
+  views: viewId
+    ? [{
+        id: viewId,
+        kind: "plugin",
+        title: id,
+        pluginId: "test.plugin",
+        view: "main",
+      }]
+    : [],
+  activeViewId: viewId ?? "",
+});
 
 function project(
   placement?: ProjectTab["leftRailPlacement"],
@@ -223,6 +235,40 @@ describe("sidebar.left.position", () => {
 });
 
 describe("state.tree leftRailPosition", () => {
+  it("레일 결부의 view·panel·실제 인접 여부를 공개한다", async () => {
+    const linked = project({ mode: "flow" });
+    linked.contents[0] = {
+      ...linked.contents[0],
+      railBindingViewId: "v2",
+      layout: {
+        type: "split",
+        id: "s1",
+        dir: "row",
+        sizes: [0.5, 0.5],
+        children: [
+          splitLeaf(group("g1", "v1")),
+          splitLeaf(group("g2", "v2")),
+        ],
+      },
+    };
+    useSessions.setState({ tabs: [linked], activeId: linked.id });
+    const result = await execute("state.tree", {}, {});
+    const relation = (result.data as {
+      projects: Array<{ spaces: Array<{ railRelation: unknown }> }>;
+    }).projects[0].spaces[0].railRelation;
+    expect(relation).toEqual({
+      boundViewId: "v2",
+      boundPanelId: "g2",
+      connected: true,
+    });
+
+    linked.sidebarOpen = false;
+    useSessions.setState({ tabs: [linked], activeId: linked.id });
+    const closed = await execute("panel.list", { space: "c1" }, {});
+    expect((closed.data as { railRelation: { connected: boolean } }).railRelation.connected)
+      .toBe(false);
+  });
+
   it("명령 조회와 동일한 계산을 사용해 위치 사실을 노출한다", async () => {
     useSessions.setState({
       tabs: [project({ mode: "pin", station: 31 })],
