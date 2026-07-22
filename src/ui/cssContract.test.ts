@@ -71,7 +71,11 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
         .map((r) => r.selector.split(",")[0].trim().split(" ").pop() as string),
     );
     consumers.add(".egroup-divider"); // 인라인 스타일 소비자(GroupArea)
-    const sync = rules().find((r) => r.selector.startsWith(".content-body.rail-traveling"));
+    const sync = rules().find(
+      (r) =>
+        r.selector.startsWith(".content-body.rail-traveling") &&
+        r.selector.includes(".egroup-cell"),
+    );
     expect(sync).toBeTruthy();
     for (const sel of consumers) {
       expect(sync!.selector).toContain(sel);
@@ -80,20 +84,19 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
     expect(RAIL_TRAVEL_MS).toBe(340);
     expect(sync!.decls).toMatch(/animation:\s*rail-flip-x var\(--rail-travel-ms\) cubic-bezier\(0\.4, 0, 0\.2, 1\)/);
     expect(css).toMatch(/@keyframes rail-flip-x\s*\{[\s\S]*from\s*\{\s*translate:\s*var\(--rail-flip-x/);
-    const rail = rules().find((r) => r.selector === ".sidebar.traveling");
-    expect(rail?.decls).toMatch(/animation:\s*rail-flip-x var\(--rail-travel-ms\) cubic-bezier\(0\.4, 0, 0\.2, 1\)/);
+    // pane만 FLIP한다. 레일 표상은 출발·도착 그리드선에 정지해 있다.
+    expect(rules().find((r) => r.selector === ".sidebar.traveling")).toBeUndefined();
   });
 
-  it("§12-④ 내용 교체는 A1→A0→B0→B1 순서이고 레일 셸은 투명해지지 않는다", () => {
-    const leavingFrames = css.match(/@keyframes proj-slot-out\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
-    const enteringFrames = css.match(/@keyframes proj-slot-in\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
-    expect(leavingFrames).toMatch(/0%\s*\{\s*opacity:\s*1/);
-    expect(leavingFrames).toMatch(/38%,\s*100%\s*\{\s*opacity:\s*0/);
-    expect(enteringFrames).toMatch(/0%,\s*46%\s*\{\s*opacity:\s*0/);
-    expect(enteringFrames).toMatch(/88%,\s*100%\s*\{\s*opacity:\s*1/);
-    expect(css).toMatch(/\.proj-slot\.entering\s*\{[^}]*animation:\s*proj-slot-in var\(--rail-travel-ms\)/);
+  it("§12-④ 영역 인계는 페이드나 레일 오버레이 없이 pane의 수축·확장이 드러낸다", () => {
+    expect(css).not.toMatch(/@keyframes proj-slot-(in|out)/);
+    expect(css).not.toMatch(/\.proj-slot\.(entering|leaving)/);
     const rail = rules().find((r) => r.selector === ".sidebar");
     expect(rail?.decls).not.toMatch(/opacity\s*:/);
+    const restingPlane = rules().find((r) => r.selector === ".left-rail-plane");
+    expect(restingPlane?.decls).toMatch(/z-index\s*:\s*0/);
+    // 출발·도착 레일은 둘 다 바닥에 있어 pane이 자연스럽게 가리고 드러낸다.
+    expect(css).not.toMatch(/\.content-body\.rail-traveling \.left-rail-plane\s*\{/);
   });
 
   it("R1: 죽은 변수(--tab-h/--ws-tab-h) 잔재 금지 — 계약 변수는 패딩뿐", () => {

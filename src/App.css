@@ -425,9 +425,7 @@ body,
 .left-rail-plane {
   position: absolute;
   inset: 0;
-  /* 레일 = 책상 바닥의 크롬(디자인 정본) — 항상 카드 아래다. 활성 콘텐츠 pane 의 z 는
-     parkedStyle 인라인(zIndex:1)이 소유하므로, 레일은 그보다 낮은 0. 주행하는 레일은 카드
-     밑을 지나 복도가 열린 곳에서 드러난다. 정차 시 상호작용은 그리드 컨테이너의
+  /* 레일 표상은 정차·영역 인계 모두 그리드 바닥이다. 상호작용은 그리드 컨테이너의
      pointer-events 투명화(아래 규칙)가 보장한다. */
   z-index: 0;
   pointer-events: none;
@@ -464,14 +462,8 @@ body,
     10px 0 24px -14px rgba(0, 0, 0, 0.35),
     -10px 0 24px -14px rgba(0, 0, 0, 0.35);
   pointer-events: auto;
-  /* 정차 좌표는 실제 left가 소유한다. 주행 표현은 아래 FLIP 합성만 사용한다. */
-}
-.sidebar.traveling {
-  animation: rail-flip-x var(--rail-travel-ms) cubic-bezier(0.4, 0, 0.2, 1);
-  will-change: translate;
-}
-.sidebar.dragging {
-  animation: none;
+  /* 출발·도착 스테이션에 놓인 레일 표상은 pane이 닫고 여는 복도로 가린다.
+     레일 자체에는 보간·페이드·z축 승격을 적용하지 않는다. */
 }
 /* 레일 시각 모드(§12-⑤) — ground: 분할창이 아니라 바닥에 눕는 평면. 틴트·그림자를 걷고
    경계선만 남긴다. pane 은 위 기본값(카드 틴트+elevation) 그대로. */
@@ -3372,11 +3364,7 @@ select.dctl {
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  position: relative; /* leaving 오버레이의 기준 좌표계 */
-}
-@keyframes proj-slot-in {
-  0%, 46% { opacity: 0; }
-  88%, 100% { opacity: 1; }
+  position: relative;
 }
 .proj-slot {
   flex: 1;
@@ -3385,22 +3373,6 @@ select.dctl {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-}
-@keyframes proj-slot-out {
-  0% { opacity: 1; }
-  38%, 100% { opacity: 0; }
-}
-/* 레일 셸은 계속 보이고 내용만 A1→A0→B0→B1로 인계한다. 38–46%의 짧은 중립
-   구간에는 양쪽 내용이 모두 투명하므로 서로 다른 기능이 겹쳐 시선을 빼앗지 않는다. */
-.proj-slot.leaving {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  animation: proj-slot-out var(--rail-travel-ms) cubic-bezier(0.4, 0, 0.2, 1) forwards;
-}
-.proj-slot.entering {
-  pointer-events: none;
-  animation: proj-slot-in var(--rail-travel-ms) cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 /* 슬롯 공통 양식(§12-①②) — 헤더는 호스트 소유(기능 정체 + 레일 조작), 본문만 기능이 교체. */
 .proj-frame-header {

@@ -14,18 +14,20 @@ import { useViewRegistry, getRegisteredView } from "../plugins/viewRegistry";
 import { usePlugins } from "../state/plugins";
 import { useContractSelection } from "../state/contractSelection";
 import { localize, useT } from "../i18n";
-import { RAIL_TRAVEL_MS } from "../lib/railMotion";
 
 export const ProjectionSlots = memo(function ProjectionSlots({
   projectId,
   root,
   paneId,
   side,
+  commitProjection = true,
 }: {
   projectId: string;
   root: string | null;
   paneId: string | null;
   side: "left" | "right";
+  /** 레일 스테이션과 함께 전환하는 부모 표시 커밋. false면 현재 identity를 유지한다. */
+  commitProjection?: boolean;
 }) {
   const t = useT();
   // 해소 입력 전부를 구독 — 활성 체인(sessions)·등록(viewRegistry)·핀(projection)·활성 플러그인.
@@ -93,30 +95,18 @@ export const ProjectionSlots = memo(function ProjectionSlots({
   const railLook = useSettings((s) => s.railLook);
   const setRailLook = useSettings((s) => s.setRailLook);
 
-  // 여정 인계(§12-④) — 레일 프레임의 실좌표 주행과 같은 340ms 안에서 내용만
-  // A1→A0→B0→B1 순서로 바뀐다. 두 내용을 섞지 않으며, 초기 마운트와 같은
-  // instanceKey에는 효과를 만들지 않는다. 레일 셸 자체의 불투명도는 이 컴포넌트가 건드리지 않는다.
+  // 영역 인계(§12-④) — 이 컴포넌트는 독립 타이머를 소유하지 않는다.
+  // 출발 표상은 commitProjection=false로 이전 identity를 유지하고, 새로 놓인 도착
+  // 표상은 현재 identity를 즉시 사용한다. pane의 FLIP이 둘을 가리고 드러낸다.
   const fingerprint = [...liveKeys].sort().join(",");
-  const shownKeys = liveKeys;
-  const [leaving, setLeaving] = useState<Set<string>>(new Set());
-  const [entering, setEntering] = useState<Set<string>>(new Set());
-  const prevShownRef = useRef(fingerprint);
+  const [shownFingerprint, setShownFingerprint] = useState(fingerprint);
+  const shownKeys = new Set(
+    shownFingerprint ? shownFingerprint.split(",") : [],
+  );
   useLayoutEffect(() => {
-    if (prevShownRef.current === fingerprint) return;
-    const prev = prevShownRef.current ? prevShownRef.current.split(",") : [];
-    prevShownRef.current = fingerprint;
-    const now = new Set(fingerprint ? fingerprint.split(",") : []);
-    const out = prev.filter((k) => !now.has(k));
-    const incoming = [...now].filter((k) => !prev.includes(k));
-    if (out.length === 0 && incoming.length === 0) return;
-    setLeaving(new Set(out));
-    setEntering(new Set(incoming));
-    const t = window.setTimeout(() => {
-      setLeaving(new Set());
-      setEntering(new Set());
-    }, RAIL_TRAVEL_MS);
-    return () => window.clearTimeout(t);
-  }, [fingerprint]);
+    if (!commitProjection || shownFingerprint === fingerprint) return;
+    setShownFingerprint(fingerprint);
+  }, [commitProjection, fingerprint, shownFingerprint]);
 
   // 보이는 것이 없으면 영역을 접는다 — keep-alive 마운트는 유지하되 레이아웃을 차지하지
   // 않게(display:none). 완전 무마운트면 렌더 자체 생략.
@@ -137,16 +127,14 @@ export const ProjectionSlots = memo(function ProjectionSlots({
     >
       {[...mountedRef.current].map(([instanceKey, refKey]) => {
         const live = shownKeys.has(instanceKey);
-        const isLeaving = !live && leaving.has(instanceKey);
-        const isEntering = live && entering.has(instanceKey);
         const decl = getRegisteredView(refKey)?.decl;
         const showToggle = live && side === "left" && first;
         if (live) first = false;
         return (
           <div
             key={instanceKey}
-            className={`proj-slot${isLeaving ? " leaving" : ""}${isEntering ? " entering" : ""}`}
-            style={{ display: live || isLeaving ? "flex" : "none" }}
+            className="proj-slot"
+            style={{ display: live ? "flex" : "none" }}
           >
             {/* 공통 양식(§12-①②) — 헤더는 호스트의 것(기능 정체 표시 + 레일 조작), 본문만 기능이 교체한다. */}
             <div className="proj-frame-header" data-node={`projection/${side}/frame/${refKey}`}>

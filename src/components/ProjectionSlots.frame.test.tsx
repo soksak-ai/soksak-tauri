@@ -107,10 +107,16 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-const render = () =>
+const render = (commitProjection = true) =>
   act(() => {
     root.render(
-      <ProjectionSlots projectId="p1" root="/tmp/p1" paneId={null} side="left" />,
+      <ProjectionSlots
+        projectId="p1"
+        root="/tmp/p1"
+        paneId={null}
+        side="left"
+        commitProjection={commitProjection}
+      />,
     );
   });
 
@@ -141,7 +147,7 @@ describe("레일 슬롯 공통 양식(§12)", () => {
     expect(useSettings.getState().railLook).toBe("ground");
   });
 
-  it("내용 인계 효과는 슬롯에만 붙고 레일 셸 컨테이너에는 붙지 않는다(§12-④)", () => {
+  it("영역 인계는 슬롯 표시만 바꾸고 레일 셸에 효과 클래스를 만들지 않는다(§12-④)", () => {
     registerFn("termplug", "term", "tree");
     registerFn("kanplug", "board", "nav");
     useSessions.setState({
@@ -171,9 +177,8 @@ describe("레일 슬롯 공통 양식(§12)", () => {
   });
 });
 
-describe("여정 디졸브(§12-④) — A1 → A0 → B0 → B1 순차 교체", () => {
-  it("교체 순간 옛 내용은 leaving, 새 내용은 entering 상태로 같은 여정을 공유한다", () => {
-    vi.useFakeTimers();
+describe("영역 인계(§12-④)", () => {
+  it("출발 표상은 이전 identity를 유지하고 도착 표상은 현재 identity를 사용한다", () => {
     registerFn("termplug", "term", "tree");
     registerFn("kanplug", "board", "nav");
     useSessions.setState({
@@ -186,6 +191,7 @@ describe("여정 디졸브(§12-④) — A1 → A0 → B0 → B1 순차 교체",
       activeId: "p1",
     });
     render();
+    render(false);
     act(() => {
       useSessions.setState((s) => ({
         tabs: s.tabs.map((t) => ({
@@ -201,16 +207,14 @@ describe("여정 디졸브(§12-④) — A1 → A0 → B0 → B1 순차 교체",
       [...host.querySelectorAll<HTMLElement>(".proj-slot")].find((el) =>
         el.querySelector(".proj-frame-title")!.textContent === title,
       )!;
-    // 출발 즉시: 옛 내용은 먼저 소거되고 새 내용은 중립 구간까지 투명하게 기다린다.
-    expect(slotOf("nav-제목").style.display).not.toBe("none");
-    expect(slotOf("nav-제목").className).toContain("entering");
-    expect(slotOf("tree-제목").className).toContain("leaving");
+    // 출발 표상은 pane에 완전히 가려질 때까지 A를 유지한다.
+    expect(slotOf("nav-제목").style.display).toBe("none");
     expect(slotOf("tree-제목").style.display).not.toBe("none");
-    // 여정(340ms) 종료 후: 퇴장 슬롯은 접히고 도착 슬롯의 효과 클래스도 제거된다.
-    act(() => vi.advanceTimersByTime(380));
+    // 도착 표상은 시작부터 B를 사용한다. 자체 타이머는 없다.
+    render(true);
     expect(slotOf("tree-제목").style.display).toBe("none");
-    expect(slotOf("tree-제목").className).not.toContain("leaving");
-    expect(slotOf("nav-제목").className).not.toContain("entering");
-    vi.useRealTimers();
+    expect(slotOf("nav-제목").style.display).not.toBe("none");
+    expect(slotOf("tree-제목").className).toBe("proj-slot");
+    expect(slotOf("nav-제목").className).toBe("proj-slot");
   });
 });

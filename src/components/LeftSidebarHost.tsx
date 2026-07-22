@@ -59,9 +59,11 @@ function zoneToDrop(targetKey: string, zone: DropZone): SidebarDrop {
 export const LeftSidebarHost = memo(function LeftSidebarHost({
   project,
   paneId,
+  commitProjection,
 }: {
   project: ProjectTab;
   paneId: string;
+  commitProjection: boolean;
 }) {
   const version = useViewRegistry((s) => s.version);
   // 콘텐츠 그룹과 동일한 pane-inset(테마 paneStyle) — row2 정렬용.
@@ -245,6 +247,7 @@ export const LeftSidebarHost = memo(function LeftSidebarHost({
         root={project.root}
         paneId={paneId}
         side="left"
+        commitProjection={commitProjection}
       />
       {/* 셀이 % 절대 배치되는 그리드(콘텐츠 egroup-area 와 동일 모델) — footer 는 그 아래 흐름 밖. */}
       <div
