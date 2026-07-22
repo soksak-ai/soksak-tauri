@@ -34,3 +34,19 @@ describe("settings.railFocusNear", () => {
     expect(useSettings.getState().railFocusNear).toBe(false);
   });
 });
+
+// 관계면 3안 비교 스위치 — 비교 실험용 임시 축(결정 시 채택안만 남기고 소거).
+describe("settings.railRelation", () => {
+  it("기본값은 tint(스트로크·라벨 없는 저농도 채움)", () => {
+    expect(useSettings.getState().railRelation).toBe("tint");
+  });
+
+  it("setRailRelation 으로 3안(tint|moment|stroke) 전환·복원", () => {
+    useSettings.getState().setRailRelation("moment");
+    expect(useSettings.getState().railRelation).toBe("moment");
+    useSettings.getState().setRailRelation("stroke");
+    expect(useSettings.getState().railRelation).toBe("stroke");
+    useSettings.getState().setRailRelation("tint");
+    expect(useSettings.getState().railRelation).toBe("tint");
+  });
+});

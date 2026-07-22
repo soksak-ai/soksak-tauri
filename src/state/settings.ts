@@ -20,6 +20,9 @@ export type TabCloseConfirm = "warn" | "off";
 export type RightSidebarMode = "overlay" | "push";
 // 좌 레일 시각 모드(§12-⑤): pane=분할창처럼(카드 틴트+elevation), ground=바닥에 눕는 평면.
 export type RailLook = "pane" | "ground";
+// 레일-패널 관계면 표현 3안 스위치 — 비교 실험용 임시 축(결정 시 채택안만 남기고 소거).
+// tint=저농도 액센트 채움만(기본), moment=결부 변경 순간만 잠깐 플래시, stroke=현행(스트로크+라벨).
+export type RailRelation = "tint" | "moment" | "stroke";
 
 interface SettingsState {
   language: Language;
@@ -45,6 +48,7 @@ interface SettingsState {
   tabCloseConfirm: TabCloseConfirm;
   rightSidebarMode: RightSidebarMode;
   railLook: RailLook;
+  railRelation: RailRelation;
   // FLOW에서 포커스 패널의 자체 왼쪽 선이 막혔을 때 같은 row 형제를 화면에서만 교환.
   railFocusNear: boolean;
   // 앱 UI 폰트(=앱 크롬 전역). 터미널 폰트와 무관 — 터미널 폰트는 터미널 플러그인이 별도 소유.
@@ -70,6 +74,7 @@ interface SettingsState {
   setTabCloseConfirm: (v: TabCloseConfirm) => void;
   setRightSidebarMode: (v: RightSidebarMode) => void;
   setRailLook: (v: RailLook) => void;
+  setRailRelation: (v: RailRelation) => void;
   setRailFocusNear: (v: boolean) => void;
   setAppFontFamily: (v: string) => void;
   setAppFontSize: (v: number) => void;
@@ -91,6 +96,7 @@ const DEFAULTS = {
   tabCloseConfirm: "warn" as TabCloseConfirm,
   rightSidebarMode: "overlay" as RightSidebarMode,
   railLook: "ground" as RailLook,
+  railRelation: "tint" as RailRelation,
   railFocusNear: false,
   appFontFamily:
     '"JetBrains Mono", "SF Mono", "Cascadia Code", Menlo, Consolas, "Courier New", monospace',
@@ -119,6 +125,7 @@ function serialize(s: SettingsState): PersistedSettings {
     tabCloseConfirm: s.tabCloseConfirm,
     rightSidebarMode: s.rightSidebarMode,
     railLook: s.railLook,
+    railRelation: s.railRelation,
     railFocusNear: s.railFocusNear,
     appFontFamily: s.appFontFamily,
     appFontSize: s.appFontSize,
@@ -193,6 +200,10 @@ export const useSettings = create<SettingsState>((set, get) => {
     },
     setRailLook: (railLook) => {
       set({ railLook });
+      save();
+    },
+    setRailRelation: (railRelation) => {
+      set({ railRelation });
       save();
     },
     setRailFocusNear: (railFocusNear) => {
