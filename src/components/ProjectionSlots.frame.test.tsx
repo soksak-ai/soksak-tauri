@@ -170,3 +170,45 @@ describe("레일 슬롯 공통 양식(§12)", () => {
     expect(slots.className).toBe("proj-slots"); // 효과 클래스 없음 — hide→show 연출 금지
   });
 });
+
+describe("반환점 교체(§12-④) — 이동 중 재결부는 여정의 절반에서 내용이 갈아탄다", () => {
+  it("midSwap 중엔 옛 내용 유지 → 140ms 에 새 내용", () => {
+    vi.useFakeTimers();
+    registerFn("termplug", "term", "tree");
+    registerFn("kanplug", "board", "nav");
+    useSessions.setState({
+      tabs: [
+        tab(
+          [pluginView("v1", "termplug", "term"), pluginView("v2", "kanplug", "board")],
+          "v1",
+        ),
+      ],
+      activeId: "p1",
+    });
+    act(() => {
+      root.render(
+        <ProjectionSlots projectId="p1" root="/tmp/p1" paneId={null} side="left" midSwap />,
+      );
+    });
+    const shown = () =>
+      [...host.querySelectorAll<HTMLElement>(".proj-slot")]
+        .filter((el) => el.style.display !== "none")
+        .map((el) => el.querySelector(".proj-frame-title")!.textContent);
+    expect(shown()).toEqual(["tree-제목"]);
+    act(() => {
+      useSessions.setState((s) => ({
+        tabs: s.tabs.map((t) => ({
+          ...t,
+          contents: t.contents.map((c) => ({
+            ...c,
+            layout: { ...c.layout, value: { ...(c.layout as { value: object }).value, activeViewId: "v2" } },
+          })),
+        })),
+      }) as never);
+    });
+    expect(shown()).toEqual(["tree-제목"]); // 출발은 옛 내용으로
+    act(() => vi.advanceTimersByTime(150));
+    expect(shown()).toEqual(["nav-제목"]); // 반환점에서 교체
+    vi.useRealTimers();
+  });
+});

@@ -4,7 +4,7 @@
 // satisfied-by-pin = 렌더 없음(핀 스택이 그 인스턴스를 이미 렌더 — R4 흡수).
 // keep-alive: 한 번 산 인스턴스는 display 토글로 유지(R1 — 구조 상태 보존).
 
-import { memo, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { PluginViewHost } from "./PluginViewHost";
 import { projectionFor } from "../state/projectionWiring";
 import { useProjection } from "../state/projection";
@@ -20,11 +20,15 @@ export const ProjectionSlots = memo(function ProjectionSlots({
   root,
   paneId,
   side,
+  midSwap = false,
 }: {
   projectId: string;
   root: string | null;
   paneId: string | null;
   side: "left" | "right";
+  // §12-④ 반환점 교체 — 참이면(레일 주행 중) 재결부의 표시 교체를 여정의 절반(140ms)까지
+  // 늦춘다: 옛 내용으로 출발해 반환점에서 갈아탄다. 이동 없는 재결부는 즉시 교체.
+  midSwap?: boolean;
 }) {
   const t = useT();
   // 해소 입력 전부를 구독 — 활성 체인(sessions)·등록(viewRegistry)·핀(projection)·활성 플러그인.
@@ -92,9 +96,24 @@ export const ProjectionSlots = memo(function ProjectionSlots({
   const railLook = useSettings((s) => s.railLook);
   const setRailLook = useSettings((s) => s.setRailLook);
 
+  // 반환점 교체 — 표시 지문(shownFp)이 해소 지문을 뒤따른다: 주행 중엔 140ms(280ms 여정의
+  // 절반) 늦게, 주행이 없으면 즉시. 옛 슬롯은 keep-alive 라 그동안 그대로 렌더된다.
+  const fingerprint = [...liveKeys].sort().join(",");
+  const [shownFp, setShownFp] = useState(fingerprint);
+  useEffect(() => {
+    if (shownFp === fingerprint) return;
+    if (!midSwap) {
+      setShownFp(fingerprint);
+      return;
+    }
+    const t = window.setTimeout(() => setShownFp(fingerprint), 140);
+    return () => window.clearTimeout(t);
+  }, [fingerprint, midSwap, shownFp]);
+  const shownKeys = new Set(shownFp ? shownFp.split(",") : []);
+
   // 보이는 것이 없으면 영역을 접는다 — keep-alive 마운트는 유지하되 레이아웃을 차지하지
   // 않게(display:none). 완전 무마운트면 렌더 자체 생략.
-  const visible = liveKeys.size > 0 || degraded.length > 0;
+  const visible = shownKeys.size > 0 || degraded.length > 0;
   if (!visible && mountedRef.current.size === 0) {
     return null;
   }
@@ -110,7 +129,7 @@ export const ProjectionSlots = memo(function ProjectionSlots({
       data-node={`projection/${side}`}
     >
       {[...mountedRef.current].map(([instanceKey, refKey]) => {
-        const live = liveKeys.has(instanceKey);
+        const live = shownKeys.has(instanceKey);
         const decl = getRegisteredView(refKey)?.decl;
         const showToggle = live && side === "left" && first;
         if (live) first = false;
