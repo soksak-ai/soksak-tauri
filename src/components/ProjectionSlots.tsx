@@ -4,15 +4,16 @@
 // satisfied-by-pin = 렌더 없음(핀 스택이 그 인스턴스를 이미 렌더 — R4 흡수).
 // keep-alive: 한 번 산 인스턴스는 display 토글로 유지(R1 — 구조 상태 보존).
 
-import { memo, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { PluginViewHost } from "./PluginViewHost";
 import { projectionFor } from "../state/projectionWiring";
 import { useProjection } from "../state/projection";
 import { useSessions } from "../state/sessions";
+import { useSettings } from "../state/settings";
 import { useViewRegistry, getRegisteredView } from "../plugins/viewRegistry";
 import { usePlugins } from "../state/plugins";
 import { useContractSelection } from "../state/contractSelection";
-import { useT } from "../i18n";
+import { localize, useT } from "../i18n";
 
 export const ProjectionSlots = memo(function ProjectionSlots({
   projectId,
@@ -88,6 +89,22 @@ export const ProjectionSlots = memo(function ProjectionSlots({
     (s) => s.status === "degraded" && s.source !== "undeclared",
   );
 
+  // 도착 애니메이션(§12-④) — 재결부는 생성이 아니라 이사. 해소 지문(live instanceKey 집합)이
+  // 바뀔 때만 클래스를 부여하고, 첫 관측(부트·마운트)은 이사가 아니라 무동작. a/b 교대는
+  // 연속 재결부에서도 애니메이션이 재트리거되게 하는 CSS 재시작 장치다.
+  const fingerprint = [...liveKeys].sort().join(",");
+  const prevFpRef = useRef<string | null>(null);
+  const [arrive, setArrive] = useState(0);
+  useEffect(() => {
+    if (prevFpRef.current !== null && prevFpRef.current !== fingerprint && fingerprint) {
+      setArrive((a) => a + 1);
+    }
+    prevFpRef.current = fingerprint;
+  }, [fingerprint]);
+
+  const railLook = useSettings((s) => s.railLook);
+  const setRailLook = useSettings((s) => s.setRailLook);
+
   // 보이는 것이 없으면 영역을 접는다 — keep-alive 마운트는 유지하되 레이아웃을 차지하지
   // 않게(display:none). 완전 무마운트면 렌더 자체 생략.
   const visible = liveKeys.size > 0 || degraded.length > 0;
@@ -95,28 +112,55 @@ export const ProjectionSlots = memo(function ProjectionSlots({
     return null;
   }
 
+  const arriveClass = arrive === 0 ? "" : arrive % 2 ? " proj-arrive-a" : " proj-arrive-b";
+  let first = true;
+
   return (
     <div
-      className="proj-slots"
+      className={`proj-slots${arriveClass}`}
       style={visible ? undefined : { display: "none" }}
       data-node={`projection/${side}`}
     >
-      {[...mountedRef.current].map(([instanceKey, refKey]) => (
-        <div
-          key={instanceKey}
-          className="proj-slot"
-          style={{ display: liveKeys.has(instanceKey) ? "flex" : "none" }}
-        >
-          <PluginViewHost
-            viewKey={refKey}
-            projectId={projectId}
-            root={root}
-            region={side}
-            paneId={paneId}
-            boundViewId={instanceKey.split("|")[2] ?? proj?.binding.viewId ?? null}
-          />
-        </div>
-      ))}
+      {[...mountedRef.current].map(([instanceKey, refKey]) => {
+        const live = liveKeys.has(instanceKey);
+        const decl = getRegisteredView(refKey)?.decl;
+        const showToggle = live && side === "left" && first;
+        if (live) first = false;
+        return (
+          <div
+            key={instanceKey}
+            className="proj-slot"
+            style={{ display: live ? "flex" : "none" }}
+          >
+            {/* 공통 양식(§12-①②) — 헤더는 호스트의 것(기능 정체 표시 + 레일 조작), 본문만 기능이 교체한다. */}
+            <div className="proj-frame-header" data-node={`projection/${side}/frame/${refKey}`}>
+              <span className="proj-frame-icon">{decl?.icon ?? ""}</span>
+              <span className="proj-frame-title">{decl ? localize(decl.title) : refKey}</span>
+              {showToggle && (
+                <button
+                  type="button"
+                  className="proj-look-toggle"
+                  data-node="projection/left/look"
+                  title={t("projection.look.toggle")}
+                  onClick={() => setRailLook(railLook === "pane" ? "ground" : "pane")}
+                >
+                  {railLook === "pane" ? "▦" : "▬"}
+                </button>
+              )}
+            </div>
+            <div className="proj-frame-body">
+              <PluginViewHost
+                viewKey={refKey}
+                projectId={projectId}
+                root={root}
+                region={side}
+                paneId={paneId}
+                boundViewId={instanceKey.split("|")[2] ?? proj?.binding.viewId ?? null}
+              />
+            </div>
+          </div>
+        );
+      })}
       {degraded.map((s, i) => (
         <div key={`deg-${i}`} className="proj-slot proj-slot-degraded" data-node={`projection/${side}/degraded`}>
           {s.source === "undeclared"

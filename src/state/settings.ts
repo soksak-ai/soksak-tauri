@@ -18,6 +18,8 @@ export type FocusIndicator = "outline" | "corners";
 export type TabCloseConfirm = "warn" | "off";
 // 우측 플러그인 사이드바 배치: overlay=콘텐츠 위에 뜸(기존), push=좌측 사이드바처럼 영역 차지(콘텐츠 밀어냄).
 export type RightSidebarMode = "overlay" | "push";
+// 좌 레일 시각 모드(§12-⑤): pane=분할창처럼(카드 틴트+elevation), ground=바닥에 눕는 평면.
+export type RailLook = "pane" | "ground";
 
 interface SettingsState {
   language: Language;
@@ -42,6 +44,7 @@ interface SettingsState {
   // 탭 닫기 확인 정책(R6 — warn 기본).
   tabCloseConfirm: TabCloseConfirm;
   rightSidebarMode: RightSidebarMode;
+  railLook: RailLook;
   // 앱 UI 폰트(=앱 크롬 전역). 터미널 폰트와 무관 — 터미널 폰트는 터미널 플러그인이 별도 소유.
   // appFontFamily → --app-font(루트 font-family), appFontSize → --app-font-size(루트 font-size).
   appFontFamily: string;
@@ -64,6 +67,7 @@ interface SettingsState {
   setDefaultProjectRoot: (root: string) => void;
   setTabCloseConfirm: (v: TabCloseConfirm) => void;
   setRightSidebarMode: (v: RightSidebarMode) => void;
+  setRailLook: (v: RailLook) => void;
   setAppFontFamily: (v: string) => void;
   setAppFontSize: (v: number) => void;
   setOrchestratorAgent: (v: string) => void;
@@ -83,6 +87,7 @@ const DEFAULTS = {
   defaultProjectRoot: "",
   tabCloseConfirm: "warn" as TabCloseConfirm,
   rightSidebarMode: "overlay" as RightSidebarMode,
+  railLook: "pane" as RailLook,
   appFontFamily:
     '"JetBrains Mono", "SF Mono", "Cascadia Code", Menlo, Consolas, "Courier New", monospace',
   appFontSize: 13,
@@ -109,6 +114,7 @@ function serialize(s: SettingsState): PersistedSettings {
     defaultProjectRoot: s.defaultProjectRoot,
     tabCloseConfirm: s.tabCloseConfirm,
     rightSidebarMode: s.rightSidebarMode,
+    railLook: s.railLook,
     appFontFamily: s.appFontFamily,
     appFontSize: s.appFontSize,
     orchestratorAgent: s.orchestratorAgent,
@@ -178,6 +184,10 @@ export const useSettings = create<SettingsState>((set, get) => {
     },
     setTabCloseConfirm: (tabCloseConfirm) => {
       set({ tabCloseConfirm });
+      save();
+    },
+    setRailLook: (railLook) => {
+      set({ railLook });
       save();
     },
     setRightSidebarMode: (rightSidebarMode) => {
