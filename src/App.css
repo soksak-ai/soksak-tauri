@@ -425,13 +425,13 @@ body,
 .left-rail-plane {
   position: absolute;
   inset: 0;
-  /* 평상시 pane(z 3~4) 아래 — 정차 중엔 railGap 이 비어 있어 차이가 없고, 스테이션 간
-     주행(§12-④ 실이동) 중에는 창 뒤로 지나간다. 사용자 드래그 중에만 전면(가시 피드백). */
-  z-index: 2;
+  /* 정차·드래그 중에는 위(레일 상호작용 소유). 주행(left transition) 동안만 .traveling 으로
+     pane 그리드(z:3) 아래로 잠수해 창 뒤로 지나간다(§12-④). */
+  z-index: 12;
   pointer-events: none;
 }
-.left-rail-plane.dragging {
-  z-index: 12;
+.left-rail-plane.traveling {
+  z-index: 2;
 }
 /* 좌측 파일 트리 사이드바. 폭만 토글(0 ↔ SIDEBAR_W), 닫혀도 언마운트하지 않아
    트리 상태(펼침/스크롤)가 유지된다. overflow hidden 으로 접을 때 깔끔히 잘린다. */
@@ -598,6 +598,8 @@ body,
 .content-pane {
   position: absolute;
   inset: 0;
+  /* 레일 주행(.left-rail-plane.traveling, z:2)보다 위 — 주행하는 레일이 이 그리드 뒤로 지나간다. */
+  z-index: 3;
 }
 
 /* ── 컨텐츠 탭 바(3단의 가운데) ── */
@@ -3370,6 +3372,11 @@ select.dctl {
   opacity: 0.85;
   border-bottom: 1px solid var(--bd);
   user-select: none;
+  /* §12-① 헤더 전체가 이동 손잡이 — 잡으면 스테이션 드래그(App.tsx 위임). */
+  cursor: grab;
+}
+.proj-frame-header:active {
+  cursor: grabbing;
 }
 .proj-frame-icon {
   flex: 0 0 auto;
