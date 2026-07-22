@@ -308,52 +308,73 @@ describe("저장 세션 마이그레이션 — 터미널 rename(soksak-plugin-te
   });
 });
 
-describe("복원 1회 정규화 — 세로 라인 자가 치유(세로 불분할 명제)", () => {
-  it("토막 난 세로 라인(40.6/39.5)은 복원 시 최상단 세그먼트의 x 로 스냅된다", async () => {
-    const { computeSplitLayout } = await import("../lib/splitLayout");
-    sid = 0;
-    const g = (id: string): GroupNode => ({
-      type: "leaf",
-      value: { id, activeViewId: "", views: [] },
-    });
-    const torn: ProjectTab = {
-      ...project,
-      contents: [
-        {
-          id: "c1",
-          title: "1",
-          activeGroupId: "g-a",
-          layout: {
-            type: "split",
-            id: "col",
-            dir: "col",
-            sizes: [0.5, 0.5],
-            children: [
-              {
-                type: "split",
-                id: "top",
-                dir: "row",
-                sizes: [0.406, 0.594],
-                children: [g("g-a"), g("g-b")],
-              },
-              {
-                type: "split",
-                id: "bot",
-                dir: "row",
-                sizes: [0.395, 0.605],
-                children: [g("g-c"), g("g-d")],
-              },
-            ],
-          },
+describe("복원 정규화 — 스냅샷당 1회 마이그레이션(세로 불분할 명제)", () => {
+  // 40.6/39.5 — 간격 1.1 은 드래그 묶음 규칙(0.75) 밖이라 새 코드로 합법적으로 만들 수
+  // 있는 별개 라인이면서, 레거시 치유 범위(1.5) 안이라 마커 없는 구 스냅샷에선 스냅된다.
+  const g = (id: string): GroupNode => ({
+    type: "leaf",
+    value: { id, activeViewId: "", views: [] },
+  });
+  const torn: ProjectTab = {
+    ...project,
+    contents: [
+      {
+        id: "c1",
+        title: "1",
+        activeGroupId: "g-a",
+        layout: {
+          type: "split",
+          id: "col",
+          dir: "col",
+          sizes: [0.5, 0.5],
+          children: [
+            {
+              type: "split",
+              id: "top",
+              dir: "row",
+              sizes: [0.406, 0.594],
+              children: [g("g-a"), g("g-b")],
+            },
+            {
+              type: "split",
+              id: "bot",
+              dir: "row",
+              sizes: [0.395, 0.605],
+              children: [g("g-c"), g("g-d")],
+            },
+          ],
         },
-      ],
-    };
-    const back = deserializeProject(serializeProject(torn), newSplitId);
-    const rows = computeSplitLayout(back.contents[0].layout).dividers.filter(
-      (d) => d.dir === "row",
-    );
-    expect(rows).toHaveLength(2);
-    for (const d of rows) expect(d.rect.left).toBeCloseTo(40.6, 10);
+      },
+    ],
+  };
+  const rowXs = async (tab: ProjectTab): Promise<number[]> => {
+    const { computeSplitLayout } = await import("../lib/splitLayout");
+    return computeSplitLayout(tab.contents[0].layout)
+      .dividers.filter((d) => d.dir === "row")
+      .sort((a, b) => a.rect.top - b.rect.top)
+      .map((d) => d.rect.left);
+  };
+
+  it("마커 없는 구 스냅샷은 1회 치유되고, 재직렬화에 마커가 박힌다", async () => {
+    sid = 0;
+    const legacy = serializeProject(torn);
+    delete legacy.vlNormalized; // 마커 도입 전 구 스냅샷 시뮬레이션
+    const back = deserializeProject(legacy, newSplitId);
+    const xs = await rowXs(back);
+    expect(xs).toHaveLength(2);
+    for (const x of xs) expect(x).toBeCloseTo(40.6, 10);
+    // 치유된 상태의 재직렬화는 마커를 기록한다 — 이후 복원은 무변환.
+    expect(serializeProject(back).vlNormalized).toBe(true);
+  });
+
+  it("마커 있는 스냅샷은 드래그 규칙 밖 간격(0.75~1.5)을 보존한다 — 복원은 동형", async () => {
+    sid = 0;
+    const snap = serializeProject(torn);
+    expect(snap.vlNormalized).toBe(true); // 직렬화는 항상 마커를 기록한다
+    const back = deserializeProject(snap, newSplitId);
+    const xs = await rowXs(back);
+    expect(xs[0]).toBeCloseTo(40.6, 10);
+    expect(xs[1]).toBeCloseTo(39.5, 10); // 사용자가 만든 별개 라인 — 되쓰지 않는다
   });
 });
 

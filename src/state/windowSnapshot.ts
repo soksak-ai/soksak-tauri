@@ -69,6 +69,10 @@ export interface ProjectSnapshot {
   root: string;
   shell?: string;
   color?: string;
+  // 세로 라인 정규화 마이그레이션 마커 — 직렬화는 항상 기록한다. 마커 없는 구 스냅샷만
+  // 복원 시 1회 normalizeVerticalLines 로 치유하고, 마커 있는 복원은 무변환(동형)이다 —
+  // 사용자가 드래그 규칙(LINE_GROUP_EPS) 밖에 둔 별개 라인을 복원이 되쓰지 않는다.
+  vlNormalized?: true;
   sidebarOpen: boolean;
   // 레일 프레임 위치 PIN. projection.pins(ref 고정)과 직교. 옵션은 구 스냅샷 호환.
   leftRailPlacement?: RailPlacement;
@@ -139,6 +143,7 @@ export function serializeProject(
     root: p.root,
     ...(p.shell ? { shell: p.shell } : {}),
     ...(p.color ? { color: p.color } : {}),
+    vlNormalized: true,
     sidebarOpen: p.sidebarOpen,
     leftRailPlacement: p.leftRailPlacement ?? { mode: "flow" },
     rightOpen: p.rightOpen,
@@ -205,22 +210,26 @@ const deserializeViewGroup = (
 const deserializeContent = (
   s: ContentSnapshot,
   newSplitId: () => string,
-): ContentArea => ({
-  id: s.id,
-  title: s.title,
-  activeGroupId: s.activeGroupId,
-  ...(s.railBindingViewId ? { railBindingViewId: s.railBindingViewId } : {}),
-  ...(s.maximizedViewId ? { maximizedViewId: s.maximizedViewId } : {}),
-  // 복원 1회 정규화(세로 불분할 명제) — 동반 드래그 이전에 토막 난 세로 라인(예: 상단
-  // 40.6/하단 39.5)을 최상단 세그먼트의 x 로 스냅해 자가 치유한다(멱등 — 정렬돼 있으면 무변화).
-  layout: normalizeVerticalLines(
-    deserializeSplitTree(
-      s.layout,
-      (g) => deserializeViewGroup(g, newSplitId),
-      newSplitId,
-    ),
-  ),
-});
+  normalize: boolean,
+): ContentArea => {
+  const layout = deserializeSplitTree(
+    s.layout,
+    (g) => deserializeViewGroup(g, newSplitId),
+    newSplitId,
+  );
+  return {
+    id: s.id,
+    title: s.title,
+    activeGroupId: s.activeGroupId,
+    ...(s.railBindingViewId ? { railBindingViewId: s.railBindingViewId } : {}),
+    ...(s.maximizedViewId ? { maximizedViewId: s.maximizedViewId } : {}),
+    // 스냅샷당 1회 마이그레이션(세로 불분할 명제) — vlNormalized 마커 없는 구 스냅샷만
+    // 동반 드래그 이전에 토막 난 세로 라인(예: 상단 40.6/하단 39.5)을 최상단 세그먼트의
+    // x 로 스냅해 치유한다. 마커 있는 복원은 무변환 — 사용자 레이아웃을 되쓰지 않는다.
+    // [제거 조건] 마커 없는 스냅샷이 현장에서 소멸(재저장으로 마커 기록)하면 게이트 제거.
+    layout: normalize ? normalizeVerticalLines(layout) : layout,
+  };
+};
 
 // newSplitId 는 호출부(sessions)가 주입 — split id 생성기. 보존 id 와의 충돌 방지는 호출부가
 // 복원 후 카운터를 보존 최대치 위로 올려 처리(A5).
@@ -240,6 +249,8 @@ export function deserializeProject(
     rightView: s.rightView,
     leftLayout: deserializeSplitTree(s.leftLayout, (g) => g, newSplitId),
     activeContentId: s.activeContentId,
-    contents: s.contents.map((c) => deserializeContent(c, newSplitId)),
+    contents: s.contents.map((c) =>
+      deserializeContent(c, newSplitId, !s.vlNormalized),
+    ),
   };
 }
