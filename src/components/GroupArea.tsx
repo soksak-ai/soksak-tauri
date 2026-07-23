@@ -1,7 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { rafThrottle } from "../lib/rafThrottle";
-import { emitPluginEvent } from "../plugins/hooks";
 import {
   commitViewVisibility,
   surfaceShown,
@@ -17,6 +15,7 @@ import {
   transferViewFocus,
 } from "../plugins/viewFocus";
 import { armSlotActivation } from "../lib/slotGesture";
+import { beginLayoutMotion, endLayoutMotion } from "../lib/layoutMotion";
 import { ViewTabs } from "./ViewTabs";
 import { computeSplitLayout, hitTestCells } from "../lib/splitLayout";
 import { useT } from "../i18n";
@@ -113,10 +112,9 @@ let resizeDragActive = false;
 //    같은 사실을 통지(webview_overlay_active 의 surface-occluded 패턴과 동형).
 // resizeDragActive 가드 뒤에서만 호출되므로 시작/끝이 항상 짝을 이룬다.
 function emitResizeGesture(active: boolean): void {
-  emitPluginEvent("layout.resize-gesture", { active });
-  void invoke("webview_resize_gesture", { active }).catch(() => {
-    // 비-macOS 등 릴레이 미지원은 무해 — 플러그인 채널은 이미 전달됨.
-  });
+  // 단일 진실 layoutMotion 으로 위임 — 드래그·주행·FLIP 이 겹쳐도 에지 짝이 보장된다.
+  if (active) beginLayoutMotion();
+  else endLayoutMotion();
 }
 
 // divider 안정 키(hover 강조 매칭용) — data-divider-key 로 노출, App 이 그 요소 rect 를 코어에 넘겨
@@ -163,8 +161,15 @@ export const GroupArea = memo(function GroupArea({
   // 같고 x만 달라진 경우에 한해 compositor FLIP을 쓸 수 있다. 실제 분할 편집/리사이즈는
   // 이 조건을 통과하지 않아 임의 애니메이션으로 오염되지 않는다. 위상 종료 시 네이티브
   // 웹뷰 재스냅 신호(layout.reflow)까지 훅이 소유한다.
+  // (아래 선언 후 효과에서 소비 — FLIP 주행 모션 신호)
   const { from: focusLayoutFrom, traveling: focusLayoutTraveling } =
     useFocusLayoutPhase(displayLayout, content.id);
+  // FLIP 주행 중 네이티브 child 라이브 정합 — 모션 신호로 브라우저 freeze-frame/추종 발동.
+  useEffect(() => {
+    if (!focusLayoutTraveling) return;
+    beginLayoutMotion();
+    return () => endLayoutMotion();
+  }, [focusLayoutTraveling]);
   const fromLayoutCells = useMemo(
     () => computeLayout(focusLayoutFrom).cells,
     [focusLayoutFrom],
