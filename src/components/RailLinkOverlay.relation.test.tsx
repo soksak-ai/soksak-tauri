@@ -210,6 +210,16 @@ describe("railRelation 모드 CSS 갈래 (App.css)", () => {
     expect(css).toMatch(
       /\.egroup-area\[data-focus-dim\] \.egroup-body-slot\.spot-clear \{[^}]*background-color: transparent/,
     );
+    // 홀 규칙(:has(.browser-view) background:transparent — 고특이성)이 베일을 이겨 브라우저만
+    // 안 어두워졌던 실측 결함. 축 충돌의 자리(홀 규칙 옆)에 예외를 명시한다: 스포트라이트
+    // 베일은 반투명이라 홀을 막지 않으면서 아래 네이티브를 어둡힌다.
+    for (const pane of ["card", "floating"]) {
+      expect(css).toMatch(
+        new RegExp(
+          `:root\\[data-pane-style="${pane}"\\] \\.egroup-area\\[data-focus-dim\\] \\.egroup-body-slot:not\\(\\.spot-clear\\):has\\(\\.browser-view\\)`,
+        ),
+      );
+    }
   });
 
   it("결부 바탕 스위치: fill-none=바탕 제거, fill-faint=아주 옅은 틴트", () => {
