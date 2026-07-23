@@ -15,6 +15,7 @@ interface FocusIntent {
   controller: AbortController;
   queued: boolean;
   delivered: boolean;
+  retried?: boolean;
 }
 
 interface ViewFocusCoordinatorOptions {
@@ -169,14 +170,19 @@ export class ViewFocusCoordinator {
     const target = this.mounted.get(intent.viewId);
     if (!target) return;
 
-    const active = target.container.ownerDocument.activeElement;
-    if (active && target.container.contains(active)) {
+    const landed = (): boolean => {
+      const active = target.container.ownerDocument.activeElement;
+      return !!active && target.container.contains(active);
+    };
+    if (landed()) {
       intent.delivered = true;
       return;
     }
 
-    intent.delivered = true;
-    if (!target.provider.focus) return;
+    if (!target.provider.focus) {
+      intent.delivered = true;
+      return;
+    }
     try {
       target.provider.focus(target.container, target.context(), {
         signal: intent.controller.signal,
@@ -184,6 +190,25 @@ export class ViewFocusCoordinator {
     } catch (error) {
       this.onError(error);
     }
+    // 배달 선언의 근거는 착지다 — provider 호출이 입력 포커스를 못 옮겼으면(실측 지문:
+    // 클릭 후 activeElement 가 body 에 남음) 다음 프레임 1회 재시도하고, 그래도 미착지면
+    // 어느 뷰인지 보고한다(침묵 금지). 비동기 준비(콜드 스폰) 제공자는 재시도가 흡수한다.
+    if (landed()) {
+      intent.delivered = true;
+      return;
+    }
+    if (!intent.retried) {
+      intent.retried = true;
+      intent.queued = true;
+      this.schedule(() => this.deliver(intent));
+      return;
+    }
+    intent.delivered = true;
+    this.onError(
+      new Error(
+        `포커스 미착지: ${intent.viewId} — provider.focus 가 입력 포커스를 옮기지 못함`,
+      ),
+    );
   }
 
   private publishFocused(viewId: string, focused: boolean): void {
