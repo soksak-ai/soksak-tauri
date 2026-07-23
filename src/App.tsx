@@ -24,7 +24,7 @@ import {
   endLayoutMotion,
   onLayoutMotion,
 } from "./lib/layoutMotion";
-import { trackRailHoleClip } from "./lib/railHoleClip";
+import { applyRailHoleClip, trackRailHoleClip } from "./lib/railHoleClip";
 import {
   activeSessionViewId,
   startViewFocusSync,
@@ -242,9 +242,14 @@ const ProjectPane = memo(function ProjectPane({
     beginLayoutMotion();
     return () => endLayoutMotion();
   }, [railTraveling]);
-  // 움직이는 사이드바는 기능창 아래로 지나간다(사용자 규정). DOM 표면은 z(레일 0 < 셀 1)로
-  // 성립하지만 홀 뷰의 네이티브 표면은 DOM 전체 뒤라, 모션 동안 레일 평면이 홀 영역을
-  // 클립으로 제외해 그 위에 칠하지 않는다(railHoleClip).
+  // 사이드바는 홀(브라우저 네이티브 표면) 위에 칠하지 않는다 — 상시 계약(사용자 규정:
+  // 겹치면 언제나 사이드바가 브라우저 아래). DOM 표면은 z(레일 0 < 셀 1)로 성립하지만
+  // 홀 뷰의 네이티브 표면은 DOM 전체 뒤라 클립 제외만이 유일한 방법이다(railHoleClip).
+  // 정적 상태는 매 커밋에서, 애니메이션 중간 프레임은 모션 위상 rAF 가 갱신한다.
+  useLayoutEffect(() => {
+    const plane = railPlaneRef.current;
+    if (plane) applyRailHoleClip(plane);
+  });
   useEffect(() => {
     let stop: (() => void) | undefined;
     const off = onLayoutMotion((active) => {

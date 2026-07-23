@@ -7,7 +7,9 @@ export type ClipRect = { x: number; y: number; w: number; h: number };
 const px = (n: number) => `${Math.round(n * 100) / 100}`;
 
 /**
- * 호스트 좌표계 기준 홀 목록을 path() 클립으로 합성한다. 홀이 없으면 빈 문자열(클립 해제).
+ * 호스트 좌표계 기준 홀 목록을 path() 클립으로 합성한다. 홀이 없어도 외곽 전체-박스
+ * 클립을 반환한다(시각 무영향) — "모션 중엔 항상 클립이 걸려 있다"가 명령면(ui.measure)
+ * 에서 추적기 생존 신호로 실측되게 하는 계약이다. 해제("")는 모션 종료 시 추적기만 한다.
  * path() 의 fill-rule 인자는 WebKit 이 파싱하지 못해 값 전체가 무시되므로 쓰지 않는다 —
  * 기본 nonzero 권선에서 홀이 뚫리도록 외곽(시계)과 홀(반시계)을 반대 방향으로 그린다.
  */
@@ -15,8 +17,8 @@ export function holeClipPath(
   host: { w: number; h: number },
   holes: ClipRect[],
 ): string {
-  if (holes.length === 0) return "";
   const outer = `M0 0H${px(host.w)}V${px(host.h)}H0Z`;
+  if (holes.length === 0) return `path("${outer}")`;
   const cuts = holes
     .map(
       (r) =>
@@ -44,7 +46,11 @@ export function visibleHoles(
   return out;
 }
 
-const HOLE_SLOT_SELECTOR = ".egroup-cell.cell-hole .egroup-body-slot";
+// 실제 홀을 뚫는 CSS 와 같은 기준을 본다: 슬롯 내용 기반(:has(.browser-view), App.css 홀
+// 규칙과 동일 셀렉터)이 정본이고, decl 기반(cell-hole)은 합집합으로 겸용한다 — 두 기준이
+// 어긋나면 클립이 실홀을 놓친다(실측: cell-hole 만 보다가 홀 미절단).
+const HOLE_SLOT_SELECTOR =
+  ".egroup-body-slot:has(.browser-view), .egroup-cell.cell-hole .egroup-body-slot";
 
 /**
  * 모션 위상 동안 레일 평면의 clip-path 를 홀 rect 에 프레임 동기로 맞춘다.
@@ -53,29 +59,46 @@ const HOLE_SLOT_SELECTOR = ".egroup-cell.cell-hole .egroup-body-slot";
  */
 let warnedRejected = false;
 
-export function trackRailHoleClip(plane: HTMLElement): () => void {
-  let raf = 0;
-  const tick = () => {
-    const host = plane.getBoundingClientRect();
-    const rects = Array.from(
-      document.querySelectorAll<HTMLElement>(HOLE_SLOT_SELECTOR),
-      (el) => el.getBoundingClientRect(),
-    );
+/**
+ * 상시 계약: 사이드바는 홀(브라우저 네이티브 표면) 위에 픽셀을 칠하지 않는다 — 모션
+ * 여부와 무관하게, 겹치면 언제나 사이드바가 브라우저 아래다(사용자 규정). 클립은 평면이
+ * 아니라 각 레일 레이어(.sidebar)에 건다 — 시각 효과는 같고, 노출 노드(rail/left)의
+ * computed clipPath 로 상태를 명령면(ui.measure)에서 실측할 수 있다. clip-path 좌표계는
+ * 요소 자신의 박스이므로 홀 rect 를 레이어별 상대 좌표로 옮긴다.
+ * 호출 시점: 매 React 커밋(정적 상태) + 애니메이션 위상 rAF(중간 프레임) 둘 다.
+ */
+export function applyRailHoleClip(plane: HTMLElement): void {
+  const holeRects = Array.from(
+    document.querySelectorAll<HTMLElement>(HOLE_SLOT_SELECTOR),
+    (el) => el.getBoundingClientRect(),
+  );
+  for (const layer of Array.from(
+    plane.querySelectorAll<HTMLElement>(".sidebar"),
+  )) {
+    const box = layer.getBoundingClientRect();
     const clip = holeClipPath(
-      { w: host.width, h: host.height },
-      visibleHoles(host, rects),
+      { w: box.width, h: box.height },
+      visibleHoles(box, holeRects),
     );
-    plane.style.clipPath = clip;
+    layer.style.clipPath = clip;
     // 수용 검증 — 엔진이 값을 거부하면 조용한 무클립이 된다. 침묵 금지.
-    if (clip !== "" && plane.style.clipPath === "" && !warnedRejected) {
+    if (clip !== "" && layer.style.clipPath === "" && !warnedRejected) {
       warnedRejected = true;
       console.warn("[railHoleClip] clip-path 값이 거부됨:", clip);
     }
+  }
+}
+
+/** 애니메이션 위상 동안 프레임 동기 재계산. 종료 시 해제가 아니라 최종 기하로 1회 정착한다(상시 계약). */
+export function trackRailHoleClip(plane: HTMLElement): () => void {
+  let raf = 0;
+  const tick = () => {
+    applyRailHoleClip(plane);
     raf = requestAnimationFrame(tick);
   };
   raf = requestAnimationFrame(tick);
   return () => {
     cancelAnimationFrame(raf);
-    plane.style.clipPath = "";
+    applyRailHoleClip(plane);
   };
 }

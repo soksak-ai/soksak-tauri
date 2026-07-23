@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 import { holeClipPath, visibleHoles } from "./railHoleClip";
 
 describe("holeClipPath", () => {
-  it("홀이 없으면 클립도 없다(빈 문자열 = 스타일 해제)", () => {
-    expect(holeClipPath({ w: 800, h: 600 }, [])).toBe("");
+  it("홀이 없어도 외곽 전체-박스 클립 — 모션 중 추적기 생존 신호(시각 무영향)", () => {
+    expect(holeClipPath({ w: 800, h: 600 }, [])).toBe(
+      'path("M0 0H800V600H0Z")',
+    );
   });
 
   it("fill-rule 인자 없이(WebKit 미지원) 외곽=시계·홀=반시계 권선으로 뚫는다", () => {
