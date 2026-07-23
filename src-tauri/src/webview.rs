@@ -532,12 +532,10 @@ pub fn webview_overlay_active(window: tauri::Window, active: bool) {
     let _ = (window, active);
 }
 
-// 레이아웃 모션 위상 릴레이 — 프론트(layoutMotion)가 위상 시작/끝에 호출한다.
-// ① 엔진 사이드카(CEF)에 같은 호스트 사실을 통지(모듈이 자기 surface 를 유예/추종).
-// ② 코어 child(WKWebView)의 크기 커밋 유예 래치: 위상 동안 매 프레임 set_size 를 하면
-//    WebKit 재배치가 못 따라와 위상 내내 blank 가 된다(실측: 교차 8~9프레임 공백). 위상
-//    중엔 위치만 즉시 적용하고(재배치 없음 — 보이는 채로 미끄러짐) 크기는 위상 종료에
-//    1회 커밋한다(라이브 리사이즈 정석).
+// 패널 디바이더 드래그 제스처 릴레이 — 프론트(GroupArea)가 드래그 시작/끝에 호출한다.
+// 코어 layer 안의 child(WKWebView)는 DOM freeze-frame 이 위에서 덮으므로 조치 불요하나,
+// 엔진 사이드카(CEF) surface 는 코어 layer 밖(DOM 위)이라 모듈이 직접 숨김/유예해야 한다
+// → 같은 호스트 사실을 로드된 모듈 전부에 통지(webview_overlay_active 와 동형, relay 만).
 #[tauri::command]
 pub fn webview_resize_gesture(window: tauri::Window, active: bool) {
     crate::sidecar::notify_all(&serde_json::json!({
@@ -545,47 +543,6 @@ pub fn webview_resize_gesture(window: tauri::Window, active: bool) {
         "window": window.label(),
         "active": active,
     }));
-    let wl = window.label().to_string();
-    if active {
-        if let Ok(mut s) = MOTION_WINDOWS.lock() {
-            s.insert(wl);
-        }
-        return;
-    }
-    if let Ok(mut s) = MOTION_WINDOWS.lock() {
-        s.remove(&wl);
-    }
-    // 위상 종료 — 유예된 크기를 최종 기하로 1회 커밋.
-    let pending: Vec<String> = match PENDING_RESIZE.lock() {
-        Ok(mut p) => p.drain().collect(),
-        Err(_) => return,
-    };
-    let app = window.app_handle();
-    for label in pending {
-        let raw = RAW_BOUNDS.lock().ok().and_then(|m| m.get(&label).copied());
-        if let (Some(raw), Some(wv)) = (raw, app.get_webview(&label)) {
-            let _ = apply_child_bounds(&wv, &label, raw);
-        }
-    }
-}
-
-// 모션 위상이 활성인 창 집합 + 위상 중 크기 커밋을 미룬 child 집합.
-static MOTION_WINDOWS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashSet<String>>> =
-    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashSet::new()));
-static PENDING_RESIZE: std::sync::LazyLock<std::sync::Mutex<std::collections::HashSet<String>>> =
-    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashSet::new()));
-
-// 크기 커밋 유예 판정 — 위상 중 + 이미 적용된 크기가 있고 + 요청 크기가 그와 다를 때만.
-// (첫 적용은 유예 대상이 아니다: 화면에 아직 없는 child 는 즉시 완전한 기하로 나타나야 한다.)
-pub(crate) fn defer_size(
-    motion: bool,
-    applied: Option<(f64, f64)>,
-    requested: (f64, f64),
-) -> bool {
-    match (motion, applied) {
-        (true, Some((aw, ah))) => (aw - requested.0).abs() > 0.5 || (ah - requested.1).abs() > 0.5,
-        _ => false,
-    }
 }
 
 // DOM 오버레이 홀 동기화 — 프론트가 사이드바 열림/닫힘·폭 변화·창 리사이즈 시 측정해 보고.
@@ -1011,29 +968,11 @@ fn apply_child_bounds(
     let (x, y, w, h) = scale_bounds(raw, f);
     wv.set_position(LogicalPosition::new(x, y))
         .map_err(|e| e.to_string())?;
-    // 모션 위상 중 크기 변경은 유예(위 defer_size 주석) — 위치는 위에서 이미 적용됐다.
-    // 가시성 판정은 화면에 실재하는(적용된) 크기로 한다.
-    let motion = MOTION_WINDOWS
-        .lock()
-        .map(|s| s.contains(win.label()))
-        .unwrap_or(false);
-    let applied = APPLIED_SIZE.lock().ok().and_then(|m| m.get(label).copied());
-    let (eff_w, eff_h) = if defer_size(motion, applied, (w, h)) {
-        if let Ok(mut p) = PENDING_RESIZE.lock() {
-            p.insert(label.to_string());
-        }
-        applied.unwrap_or((w, h))
-    } else {
-        wv.set_size(LogicalSize::new(w, h))
-            .map_err(|e| e.to_string())?;
-        if let Ok(mut m) = APPLIED_SIZE.lock() {
-            m.insert(label.to_string(), (w, h));
-        }
-        (w, h)
-    };
+    wv.set_size(LogicalSize::new(w, h))
+        .map_err(|e| e.to_string())?;
     if let (Ok(size), Ok(scale)) = (win.inner_size(), win.scale_factor()) {
         let (ww, wh) = (size.width as f64 / scale, size.height as f64 / scale);
-        let visible = x + eff_w > 0.0 && y + eff_h > 0.0 && x < ww && y < wh;
+        let visible = x + w > 0.0 && y + h > 0.0 && x < ww && y < wh;
         let mut map = BOUNDS_VIS.lock().unwrap();
         if map.get(label).copied() != Some(visible) {
             if visible {
@@ -1046,9 +985,6 @@ fn apply_child_bounds(
     }
     Ok(())
 }
-
-static APPLIED_SIZE: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, (f64, f64)>>> =
-    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
 
 static BOUNDS_VIS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, bool>>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
@@ -1248,12 +1184,6 @@ pub fn webview_close(app: AppHandle, label: String) -> Result<(), String> {
         }
         if let Ok(mut m) = VIEW_ZOOM.lock() {
             m.remove(&label);
-        }
-        if let Ok(mut m) = APPLIED_SIZE.lock() {
-            m.remove(&label);
-        }
-        if let Ok(mut p) = PENDING_RESIZE.lock() {
-            p.remove(&label);
         }
         // Backend N 레지스트리 회수 — close 전에 surface 포인터를 집합에서 제거(위생; 미제거여도
         // 형제 순회가 live subview 만 보므로 자가치유되나 누수 방지).
@@ -1731,19 +1661,7 @@ pub fn install_live_resize_monitor(app: &AppHandle) {
 
 #[cfg(test)]
 mod zoom_bounds_tests {
-    use super::{defer_size, scale_bounds};
-
-    // 모션 위상 크기 유예 — 위상 중 + 기적용 크기와 다를 때만 미룬다. 첫 적용(화면 부재)과
-    // 위치-전용 변화(크기 동일)는 즉시 경로다. 유예가 없으면 매 프레임 set_size 가 WebKit
-    // 재배치 폭풍을 만들어 위상 내내 child 가 blank 로 비었다(실측: 교차 8~9프레임 공백).
-    #[test]
-    fn defers_size_only_during_motion_and_only_when_size_actually_changes() {
-        assert!(defer_size(true, Some((720.0, 402.0)), (496.0, 402.0)));
-        assert!(!defer_size(true, Some((720.0, 402.0)), (720.0, 402.0))); // 위치-전용
-        assert!(!defer_size(true, None, (496.0, 402.0))); // 첫 적용
-        assert!(!defer_size(false, Some((720.0, 402.0)), (496.0, 402.0))); // 위상 밖
-        assert!(!defer_size(true, Some((720.2, 402.1)), (720.0, 402.0))); // 서브픽셀 잡음
-    }
+    use super::scale_bounds;
 
     #[test]
     fn scales_every_component_by_the_window_factor() {
