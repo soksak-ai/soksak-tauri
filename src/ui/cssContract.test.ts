@@ -110,6 +110,21 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
     expect(css).not.toMatch(/\.content-body\.rail-traveling \.left-rail-plane\s*\{/);
   });
 
+  it("§12-④ 주행 불활성: 이동 중인 표면은 입력을 받지 않는다 — 클릭 찢김(straddle) 금지", () => {
+    // 한 클릭의 mousedown 이 스왑을 시작시키면, mouseup 은 미끄러지는 중인 다른 패널 위에
+    // 떨어져 그쪽이 활성화를 도로 가져간다(왕복 = 제자리 결함). 두 주행 위상 모두에서
+    // 셀·본문 슬롯·디바이더는 pointer-events:none 이어야 한다.
+    for (const scope of [".content-body.rail-traveling", ".egroup-area.focus-layout-traveling"]) {
+      const rule = rules().find(
+        (r) => r.selector.includes(scope) && /pointer-events\s*:\s*none/.test(r.decls),
+      );
+      expect(rule, scope).toBeTruthy();
+      for (const part of [".egroup-cell", ".egroup-body-slot", ".egroup-divider"]) {
+        expect(rule!.selector, scope + part).toContain(scope + " " + part);
+      }
+    }
+  });
+
   it("R1: 죽은 변수(--tab-h/--ws-tab-h) 잔재 금지 — 계약 변수는 패딩뿐", () => {
     expect(css).not.toMatch(/--tab-h\b|--ws-tab-h\b/);
   });
