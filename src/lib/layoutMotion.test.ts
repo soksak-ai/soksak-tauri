@@ -4,7 +4,12 @@
 // freeze-frame·CEF 릴레이)는 에지에서만 통지받는다. 실측 근거: 주행 중 DOM 은 미끄러지는데
 // 네이티브 child 는 끝에서 점프(영상 f062 — 파일트리가 Google 위로 슬라이드).
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { beginLayoutMotion, endLayoutMotion, __resetLayoutMotionForTest } from "./layoutMotion";
+import {
+  beginLayoutMotion,
+  endLayoutMotion,
+  onLayoutMotion,
+  __resetLayoutMotionForTest,
+} from "./layoutMotion";
 
 const emits: boolean[] = [];
 vi.mock("../plugins/hooks", () => ({
@@ -31,5 +36,18 @@ describe("layoutMotion — 레퍼카운트 에지 통지", () => {
     beginLayoutMotion();
     endLayoutMotion();
     expect(emits).toEqual([true, false]);
+  });
+
+  it("로컬 리스너도 같은 에지를 받고, 해지 후엔 받지 않는다", () => {
+    const seen: boolean[] = [];
+    const off = onLayoutMotion((a) => seen.push(a));
+    beginLayoutMotion();
+    beginLayoutMotion();
+    endLayoutMotion();
+    endLayoutMotion();
+    expect(seen).toEqual([true, false]);
+    off();
+    beginLayoutMotion();
+    expect(seen).toEqual([true, false]);
   });
 });

@@ -19,7 +19,12 @@ import { emitPluginEvent } from "./plugins/hooks";
 import { resolveTerminalProgram } from "./plugins/terminalEngine";
 import { startPointerOrderRepair } from "./lib/pointerOrderRepair";
 import { applyWindowZoom, isPrimaryModifier, routeZoom } from "./lib/zoomIntent";
-import { beginLayoutMotion, endLayoutMotion } from "./lib/layoutMotion";
+import {
+  beginLayoutMotion,
+  endLayoutMotion,
+  onLayoutMotion,
+} from "./lib/layoutMotion";
+import { trackRailHoleClip } from "./lib/railHoleClip";
 import {
   activeSessionViewId,
   startViewFocusSync,
@@ -227,13 +232,32 @@ const ProjectPane = memo(function ProjectPane({
     dragStation ?? effectiveStation,
     railTraveling,
   );
-  // 레일 주행 중 네이티브 child 라이브 정합 — 모션 신호로 브라우저 freeze-frame/추종 발동
+  // 레일 주행 중 네이티브 child 라이브 정합 — 모션 신호로 브라우저 추종 루프 발동
   // (실측: 주행 중 DOM 은 미끄러지고 child 는 끝에서 점프하는 이질감의 근치).
   useEffect(() => {
     if (!railTraveling) return;
     beginLayoutMotion();
     return () => endLayoutMotion();
   }, [railTraveling]);
+  // 움직이는 사이드바는 기능창 아래로 지나간다(사용자 규정). DOM 표면은 z(레일 0 < 셀 1)로
+  // 성립하지만 홀 뷰의 네이티브 표면은 DOM 전체 뒤라, 모션 동안 레일 평면이 홀 영역을
+  // 클립으로 제외해 그 위에 칠하지 않는다(railHoleClip).
+  useEffect(() => {
+    let stop: (() => void) | undefined;
+    const off = onLayoutMotion((active) => {
+      if (active) {
+        const plane = railPlaneRef.current;
+        if (plane && !stop) stop = trackRailHoleClip(plane);
+      } else {
+        stop?.();
+        stop = undefined;
+      }
+    });
+    return () => {
+      off();
+      stop?.();
+    };
+  }, []);
   useEffect(() => {
     if (travelGeometry.rebase) {
       setRailPresentation((current) => ({
