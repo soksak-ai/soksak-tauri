@@ -52,6 +52,7 @@ interface SettingsState {
   railLook: RailLook;
   railRelation: RailRelation;
   railFill: RailFill;
+  focusDim: boolean;
   // FLOW에서 포커스 패널의 자체 왼쪽 선이 막혔을 때 같은 row 형제를 화면에서만 교환.
   railFocusNear: boolean;
   // 앱 UI 폰트(=앱 크롬 전역). 터미널 폰트와 무관 — 터미널 폰트는 터미널 플러그인이 별도 소유.
@@ -79,6 +80,7 @@ interface SettingsState {
   setRailLook: (v: RailLook) => void;
   setRailRelation: (v: RailRelation) => void;
   setRailFill: (v: RailFill) => void;
+  setFocusDim: (v: boolean) => void;
   setRailFocusNear: (v: boolean) => void;
   setAppFontFamily: (v: string) => void;
   setAppFontSize: (v: number) => void;
@@ -102,6 +104,7 @@ const DEFAULTS = {
   railLook: "ground" as RailLook,
   railRelation: "stroke" as RailRelation,
   railFill: "none" as RailFill,
+  focusDim: false,
   railFocusNear: false,
   appFontFamily:
     '"JetBrains Mono", "SF Mono", "Cascadia Code", Menlo, Consolas, "Courier New", monospace',
@@ -132,6 +135,7 @@ function serialize(s: SettingsState): PersistedSettings {
     railLook: s.railLook,
     railRelation: s.railRelation,
     railFill: s.railFill,
+    focusDim: s.focusDim,
     railFocusNear: s.railFocusNear,
     appFontFamily: s.appFontFamily,
     appFontSize: s.appFontSize,
@@ -214,6 +218,10 @@ export const useSettings = create<SettingsState>((set, get) => {
     },
     setRailFill: (railFill) => {
       set({ railFill });
+      save();
+    },
+    setFocusDim: (focusDim) => {
+      set({ focusDim });
       save();
     },
     setRailFocusNear: (railFocusNear) => {

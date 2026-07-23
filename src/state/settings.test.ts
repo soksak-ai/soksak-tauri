@@ -35,6 +35,19 @@ describe("settings.railFocusNear", () => {
   });
 });
 
+// 포커스 스포트라이트 실험 — 전체를 가라앉히고 선택만 명확하게(결정 시 소거).
+describe("settings.focusDim", () => {
+  it("기본값은 off", () => {
+    expect(useSettings.getState().focusDim).toBe(false);
+  });
+  it("setFocusDim 으로 on/off", () => {
+    useSettings.getState().setFocusDim(true);
+    expect(useSettings.getState().focusDim).toBe(true);
+    useSettings.getState().setFocusDim(false);
+    expect(useSettings.getState().focusDim).toBe(false);
+  });
+});
+
 // 결부 바탕 2안 비교 스위치(사용자 요청: ① 빼기 ② 아주 옅게) — 결정 시 채택안만 남기고 소거.
 describe("settings.railFill", () => {
   it("기본값은 none(바탕 없음 — 1안 선행)", () => {

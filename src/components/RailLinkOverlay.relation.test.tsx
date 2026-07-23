@@ -191,6 +191,18 @@ describe("railRelation 모드 CSS 갈래 (App.css)", () => {
     expect(d).not.toMatch(/var\(--relation-stroke\)/);
   });
 
+  it("포커스 스포트라이트: 전체 dim + 활성만 filter 해제(선택만 명확)", () => {
+    // 사용자 개념: "전체를 흐리게 하고 선택된 것만 명확하게". blur 는 텍스트를 뭉개므로
+    // 밝기·채도 하강만 쓴다. 전이가 있어 활성 이동 시 어둠이 옮겨간다.
+    for (const part of [".egroup-cell", ".egroup-body-slot"]) {
+      const dim = decls(`.egroup-area[data-focus-dim] ${part}`);
+      expect(dim).toMatch(/filter:\s*brightness\(0\.93\)\s*saturate\(0\.85\)/);
+      expect(dim).toMatch(/transition:[^;]*filter/);
+      const clear = decls(`.egroup-area[data-focus-dim] ${part}.spot-clear`);
+      expect(clear).toMatch(/filter:\s*none/);
+    }
+  });
+
   it("결부 바탕 스위치: fill-none=바탕 제거, fill-faint=아주 옅은 틴트", () => {
     // 사용자 비교 실험(① 빼기 ② 아주 옅게) — stroke 안의 fill 만 갈래친다.
     const none = decls(".rail-link-overlay.relation-stroke.fill-none .rail-link-shape");

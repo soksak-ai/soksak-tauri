@@ -21,6 +21,7 @@ import { ViewTabs } from "./ViewTabs";
 import { computeSplitLayout, hitTestCells } from "../lib/splitLayout";
 import { useT } from "../i18n";
 import { useTheme } from "../state/theme";
+import { useSettings } from "../state/settings";
 import { useUi } from "../state/ui";
 import {
   type ContentArea,
@@ -184,6 +185,8 @@ export const GroupArea = memo(function GroupArea({
   const splitHeaderMode = "tabs" as "title" | "tabs";
   // 구조 토큰 소비: paneStyle 에 따라 패널 간격(카드/플로팅은 실폭 디바이더).
   const paneStyle = useTheme((s) => s.spec.chrome.paneStyle);
+  // 포커스 스포트라이트 실험 — 전체를 가라앉히고 선택만 명확하게(결정 시 소거).
+  const focusDim = useSettings((s) => s.focusDim);
   const inset = PANE_INSET[paneStyle] ?? 0;
   const setActiveGroup = useSessions((s) => s.setActiveGroup);
   const setActiveView = useSessions((s) => s.setActiveView);
@@ -538,6 +541,7 @@ export const GroupArea = memo(function GroupArea({
   return (
     <div
       className={`egroup-area${focusLayoutTraveling ? " focus-layout-traveling" : ""}`}
+      data-focus-dim={focusDim ? "1" : undefined}
       data-node={`layout/grid/${content.id}`}
       data-projection={
         content.maximizedViewId
@@ -574,7 +578,9 @@ export const GroupArea = memo(function GroupArea({
         return (
           <div
             key={`cell-${group.id}`}
-            className={`egroup-cell${holeCell ? " cell-hole" : ""}`}
+            className={`egroup-cell${holeCell ? " cell-hole" : ""}${
+              group.id === content.activeGroupId ? " spot-clear" : ""
+            }`}
             data-node={`layout/panel/${group.id}`}
             style={cellVars(rect, group.id)}
           >
@@ -692,7 +698,9 @@ export const GroupArea = memo(function GroupArea({
           return (
             <div
               key={view.id}
-              className="egroup-body-slot"
+              className={`egroup-body-slot${
+                group.id === content.activeGroupId ? " spot-clear" : ""
+              }`}
               // 네이티브 클릭 판정용(App.tsx native-mousedown → elementFromPoint).
               data-group-id={group.id}
               data-project-id={projectId}
