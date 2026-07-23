@@ -3823,6 +3823,12 @@ select.dctl {
 .left-host:has(.left-host-tabs) .ft-header {
   height: var(--header-h, 33px);
 }
+/* 행 그리드 공동 계약(PLUGIN-CONTRACT §Toolbar row) — 레일 투영 본문의 상단 보조 행
+   (파일트리 core 바 등)은 패널 툴바 행과 같은 토큰을 소비한다. 2행 높이의 단일 진실은
+   --toolbar-h 하나다: 레일·기능·플러그인이 공동사용해야 수평 그리드가 이어진다. */
+.proj-frame-body .ft-header {
+  height: var(--toolbar-h, 28px);
+}
 
 /* ── 인앱 알림 배너(NotifyHost) ── 포커스 시 우상단 오버레이. 클릭=딥링크. */
 .notify-host {
