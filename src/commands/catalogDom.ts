@@ -151,8 +151,8 @@ export function registerDomCatalog(): void {
 
   register("ui.measure", {
     description:
-      "Measure an exposed node — its viewport rect (px) and computed style. style always includes the layout fields plus the interaction/visibility axis (pointerEvents, opacity, visibility) so you can tell whether a node is actually visible and clickable, not just where it sits. Pass props to read any extra computed properties by name (e.g. zIndex, transform, backgroundColor). Pass occlusion:true to also hit-test the node's center (through Shadow DOM) and report what covers it and whether it is reachable. Accepts structural addresses from ui.tree only; CSS selectors are rejected.",
-    triggers: { ko: "DOM 측정 레이아웃 rect 크기 스타일 포인터이벤트 가시성 가림 도달성" },
+      "Measure an exposed node — its viewport rect (px) and computed style. style always includes the layout fields plus the interaction/visibility axis (pointerEvents, opacity, visibility) so you can tell whether a node is actually visible and clickable, not just where it sits. Pass props to read any extra computed properties by name (e.g. zIndex, transform, backgroundColor). Pass occlusion:true to also hit-test the node's center (through Shadow DOM) and report what covers it and whether it is reachable. Pass screen:true to also get the node's GLOBAL logical screen coordinates (screen.x/y = rect origin, screen.cx/cy = center) — feed cx/cy straight to an OS pointer tool (e.g. cliclick c:cx,cy) when a real hit-tested click is required; synthetic ui.input.click bypasses hit-testing and default actions, so it cannot verify pointer-events or focus-on-mouseup behavior. Accepts structural addresses from ui.tree only; CSS selectors are rejected.",
+    triggers: { ko: "DOM 측정 레이아웃 rect 크기 스타일 포인터이벤트 가시성 가림 도달성 스크린 전역좌표 실클릭" },
     params: {
       address: { type: "string", description: "Exposed node address from ui.tree", required: true },
       props: {
@@ -167,9 +167,15 @@ export function registerDomCatalog(): void {
           "Also hit-test the node's center (Shadow-DOM-piercing): report the topmost element there and whether it is this node (reachable) or something covers it",
         default: false,
       },
+      screen: {
+        type: "boolean",
+        description:
+          "Also return global logical screen coordinates (window inner origin + viewport rect). cx/cy is the node center — pass it directly to an OS-level pointer tool for a real hit-tested click",
+        default: false,
+      },
     },
     returns:
-      "{ address, dataset, rect:{x,y,w,h}, style, occlusion?:{ reachable, topTag, topNode } } — dataset contains every declared data-* field on the exposed node",
+      "{ address, dataset, rect:{x,y,w,h}, style, occlusion?:{ reachable, topTag, topNode }, screen?:{ x, y, cx, cy } } — dataset contains every declared data-* field on the exposed node",
     message: (d) =>
       tmsg("msg.ui.measure", {
         w: Number((d.rect as { w?: number })?.w ?? 0),
@@ -177,7 +183,7 @@ export function registerDomCatalog(): void {
       }),
     errors: ["NOT_EXPOSED", "INVALID_PARAMS"],
     examples: ['ui.measure \'{"address":"content/view/soksak-plugin-<id>.<view>/node/send"}\''],
-    handler: (p) => {
+    handler: async (p) => {
       const addr = p.address as string;
       const el = resolveElement(addr);
       if (!el) return notExposed(addr);
@@ -225,6 +231,24 @@ export function registerDomCatalog(): void {
           reachable: !!top && (top === el || el.contains(top) || top.contains(el)),
           topTag: top ? top.tagName.toLowerCase() : null,
           topNode: top instanceof HTMLElement ? (top.dataset.node ?? null) : null,
+        };
+      }
+      // screen — 전역 논리 좌표. 합성 dispatch 는 히트테스팅·기본동작을 재현하지 못하므로,
+      // 실포인터 검증(OS 클릭 도구)이 소비할 좌표 환산을 코어가 한 경로로 제공한다.
+      if (p.screen === true) {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        const win = getCurrentWindow();
+        const [pos, scale] = await Promise.all([
+          win.innerPosition(),
+          win.scaleFactor(),
+        ]);
+        const ox = pos.x / scale;
+        const oy = pos.y / scale;
+        out.screen = {
+          x: +(ox + r.x).toFixed(2),
+          y: +(oy + r.y).toFixed(2),
+          cx: +(ox + r.x + r.width / 2).toFixed(2),
+          cy: +(oy + r.y + r.height / 2).toFixed(2),
         };
       }
       return out;
