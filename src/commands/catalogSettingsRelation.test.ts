@@ -53,7 +53,7 @@ describe("settings.railFill 명령 표면", () => {
   it("settings.get 이 railFill 을 반환한다(기본 none)", async () => {
     const result = await execute("settings.get", {}, {});
     expect(result.ok).toBe(true);
-    expect((result.data as { railFill: string }).railFill).toBe("faint");
+    expect((result.data as { railFill: string }).railFill).toBe("none");
   });
 
   it("settings.set 으로 none|faint 전환, 그 외 값은 거부", async () => {

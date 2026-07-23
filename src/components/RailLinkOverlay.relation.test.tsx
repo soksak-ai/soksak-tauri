@@ -222,6 +222,19 @@ describe("railRelation 모드 CSS 갈래 (App.css)", () => {
     }
   });
 
+  it("railFill 갈래는 두 채움 경로(shape=자연 인접·fill=교체 분리 렌더)를 모두 덮는다", () => {
+    // 실측 결함: fill 갈래가 .rail-link-shape 만 겨냥해 교체-인접(B안 .rail-link-fill)만
+    // 테마 기본 채움이 들어갔다 — "어디는 들어가고 어디는 안 들어가는" 불일치의 원인.
+    for (const mode of ["none", "faint"]) {
+      const rule = css.match(
+        new RegExp(
+          `\\.rail-link-overlay\\.relation-stroke\\.fill-${mode} \\.rail-link-shape,\\s*\\.rail-link-overlay\\.relation-stroke\\.fill-${mode} \\.rail-link-fill\\s*\\{`,
+        ),
+      );
+      expect(rule, `fill-${mode} 두 경로 커버`).not.toBeNull();
+    }
+  });
+
   it("결부 바탕 스위치: fill-none=바탕 제거, fill-faint=아주 옅은 틴트", () => {
     // 사용자 비교 실험(① 빼기 ② 아주 옅게) — stroke 안의 fill 만 갈래친다.
     const none = decls(".rail-link-overlay.relation-stroke.fill-none .rail-link-shape");

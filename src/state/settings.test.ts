@@ -61,10 +61,10 @@ describe("settings.railSeamStyle", () => {
   });
 });
 
-// 결부 패널 바탕(정식 설정, 기본 faint=액센트 1%).
+// 결부 패널 바탕(정식 설정, 기본 none — 사용자 확정).
 describe("settings.railFill", () => {
-  it("기본값은 faint(액센트 1% — 사용자 확정)", () => {
-    expect(useSettings.getState().railFill).toBe("faint");
+  it("기본값은 none(바탕 없음 — 사용자 확정)", () => {
+    expect(useSettings.getState().railFill).toBe("none");
   });
 
   it("setRailFill 로 none|faint 전환·복원", () => {
