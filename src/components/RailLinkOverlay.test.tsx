@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RailLinkOverlay } from "./RailLinkOverlay";
+import { useSettings } from "../state/settings";
 
 vi.mock("../state/theme", () => ({
   useTheme: (select: (state: unknown) => unknown) =>
@@ -99,7 +100,7 @@ describe("RailLinkOverlay — 실시간 그리드 추종", () => {
   });
 
 // 상위 describe 의 beforeEach(ResizeObserver·rect 목)를 상속한다 — 중첩 의도.
-describe("교체-인접 봉합선(seam)", () => {
+describe("교체-인접 표시", () => {
   const renderProps = (projected: boolean) => (
     <RailLinkOverlay
       contentId="c1"
@@ -112,22 +113,39 @@ describe("교체-인접 봉합선(seam)", () => {
     />
   );
 
-  it("projected=true 면 공유변에 같은 두께의 점선 seam 을 그리고 data-projected 를 노출한다", () => {
+  it("기본(edge): projected=true 면 바깥 변 점선 분리 렌더 + data-projected 노출", () => {
     const host = document.createElement("div");
     document.body.appendChild(host);
     const root = createRoot(host);
     act(() => root.render(renderProps(true)));
     const overlay = host.querySelector<HTMLElement>(".rail-link-overlay")!;
     expect(overlay.dataset.projected).toBe("true");
-    expect(host.querySelector(".rail-link-seam")).not.toBeNull();
+    expect(host.querySelector(".rail-link-edge")).not.toBeNull();
+    expect(host.querySelector(".rail-link-rest")).not.toBeNull();
+    expect(host.querySelector(".rail-link-seam")).toBeNull();
   });
 
-  it("자연 인접(projected=false)은 봉합선이 없다 — 한 몸", () => {
+  it("seam 옵션: 내부 공유변 점선을 그린다(정식 선택지)", () => {
+    useSettings.setState({ railSeamStyle: "seam" });
+    try {
+      const host = document.createElement("div");
+      document.body.appendChild(host);
+      const root = createRoot(host);
+      act(() => root.render(renderProps(true)));
+      expect(host.querySelector(".rail-link-seam")).not.toBeNull();
+      expect(host.querySelector(".rail-link-edge")).toBeNull();
+    } finally {
+      useSettings.setState({ railSeamStyle: "edge" });
+    }
+  });
+
+  it("자연 인접(projected=false)은 어떤 표시도 없다 — 한 몸", () => {
     const host = document.createElement("div");
     document.body.appendChild(host);
     const root = createRoot(host);
     act(() => root.render(renderProps(false)));
     expect(host.querySelector(".rail-link-seam")).toBeNull();
+    expect(host.querySelector(".rail-link-edge")).toBeNull();
     const overlay = host.querySelector<HTMLElement>(".rail-link-overlay")!;
     expect(overlay.dataset.projected).toBeUndefined();
   });

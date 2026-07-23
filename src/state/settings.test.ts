@@ -48,10 +48,10 @@ describe("settings.focusDim", () => {
   });
 });
 
-// 봉합 표시 2안 비교 스위치(사용자 요청: A seam vs B 오른쪽 변 점선) — 결정 시 소거.
+// 교체-인접 표시 — 정식 설정(기본 edge=사용자 채택, seam 은 선택지로 유지).
 describe("settings.railSeamStyle", () => {
-  it("기본값은 seam", () => {
-    expect(useSettings.getState().railSeamStyle).toBe("seam");
+  it("기본값은 edge(바깥 변 점선 — 사용자 채택)", () => {
+    expect(useSettings.getState().railSeamStyle).toBe("edge");
   });
   it("setRailSeamStyle 로 seam|edge 전환", () => {
     useSettings.getState().setRailSeamStyle("edge");
