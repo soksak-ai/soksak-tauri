@@ -205,10 +205,10 @@ describe("railRelation 모드 CSS 갈래 (App.css)", () => {
     // 아래에서 비침) 때문에 CSS filter 는 네이티브 콘텐츠에 닿지 않는다. 슬롯의 반투명
     // 배경이 홀 위에 깔려 아래의 모든 네이티브 표면(CEF·웹뷰 child)을 균일하게 어둡힌다.
     expect(css).toMatch(
-      /\.egroup-area\[data-focus-dim\] \.egroup-body-slot \{[^}]*background: color-mix\(in srgb, #000 7%, transparent\);[^}]*transition:[^;}]*background/,
+      /\.egroup-area\[data-focus-dim\] \.egroup-body-slot \{[^}]*background-color: color-mix\(in srgb, #000 7%, transparent\);[^}]*transition:[^;}]*background-color/,
     );
     expect(css).toMatch(
-      /\.egroup-area\[data-focus-dim\] \.egroup-body-slot\.spot-clear \{[^}]*background: transparent/,
+      /\.egroup-area\[data-focus-dim\] \.egroup-body-slot\.spot-clear \{[^}]*background-color: transparent/,
     );
   });
 
