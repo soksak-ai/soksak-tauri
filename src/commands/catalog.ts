@@ -2034,7 +2034,6 @@ export function registerCatalog(): void {
     "railFill",
     // 포커스 스포트라이트 실험 — 전체를 가라앉히고 선택만 명확하게(결정 시 소거).
     "focusDim",
-    // 봉합 표시 2안 비교 스위치 — 결정 시 소거.
     "railSeamStyle",
     "railFocusNear",
     "appFontFamily",

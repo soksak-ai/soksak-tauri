@@ -25,7 +25,7 @@ export type RailLook = "pane" | "ground";
 export type RailRelation = "tint" | "moment" | "stroke";
 // 결부 바탕 2안 비교 스위치(사용자 요청) — 결정 시 채택안만 남기고 소거.
 export type RailFill = "none" | "faint";
-// 봉합 표시 2안 비교 스위치(A seam=내부 공유변 점선 | B edge=바깥 오른쪽 변 점선) — 결정 시 소거.
+// 교체-인접 표시(정식 설정) — edge=바깥 오른쪽 변 점선(기본·사용자 채택) | seam=내부 공유변 점선.
 export type RailSeamStyle = "seam" | "edge";
 
 interface SettingsState {
@@ -109,7 +109,7 @@ const DEFAULTS = {
   railRelation: "stroke" as RailRelation,
   railFill: "none" as RailFill,
   focusDim: false,
-  railSeamStyle: "seam" as RailSeamStyle,
+  railSeamStyle: "edge" as RailSeamStyle,
   railFocusNear: false,
   appFontFamily:
     '"JetBrains Mono", "SF Mono", "Cascadia Code", Menlo, Consolas, "Courier New", monospace',
