@@ -122,6 +122,16 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
       for (const part of [".egroup-cell", ".egroup-body-slot", ".egroup-divider"]) {
         expect(rule!.selector, scope + part).toContain(scope + " " + part);
       }
+      // 예외 — 제스처를 시작한 당사자 슬롯(mousedown 대상)은 위상 중에도 입력을 받는다.
+      // 이게 없으면 비결부 뷰 클릭(=주행 시작)의 mouseup 이 차단되어 xterm 입력 포커스가
+      // 영영 못 앉는다(실측: 비결부 클릭만 실패, 결부 클릭은 정상).
+      const exempt = rules().find(
+        (r) =>
+          r.selector.includes(scope) &&
+          r.selector.includes('[data-gesture-owner="1"]') &&
+          /pointer-events\s*:\s*auto/.test(r.decls),
+      );
+      expect(exempt, scope + " gesture-owner 예외").toBeTruthy();
     }
   });
 
