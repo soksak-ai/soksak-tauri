@@ -246,3 +246,33 @@ describe("ui.input.click — 합성 이벤트가 Shadow DOM 경계를 넘는다(
     expect(seen).toEqual([true]); // 경계를 넘어 도달했고 composed 다
   });
 });
+
+describe("ui.input.click — phase 분해(게스처 중간 상태의 검증 가능화)", () => {
+  // 한 호출로 down→up→click 을 묶으면 게스처 '중간'(mousedown 이후, mouseup 이전)을
+  // 바깥에서 관찰할 수 없다 — 주행 불활성/게스처-당사자 예외처럼 그 중간 상태가 계약인
+  // 기능은 검증 불가가 된다. phase 로 시퀀스를 쪼개 down 후 ui.hit/ui.measure 로 중간
+  // 상태를 실검증하고 up 으로 마무리한다.
+  it('phase:"down" 은 mousedown 만, phase:"up" 은 mouseup+click 만 보낸다', async () => {
+    mountNode(`<button data-node="btn">x</button>`);
+    const el = document.querySelector('[data-node="btn"]')!;
+    const seen: string[] = [];
+    for (const t of ["mousedown", "mouseup", "click"])
+      el.addEventListener(t, () => seen.push(t));
+    const down = await execute("ui.input.click", { address: ADDR, phase: "down" }, {});
+    expect(down.ok).toBe(true);
+    expect(seen).toEqual(["mousedown"]);
+    const up = await execute("ui.input.click", { address: ADDR, phase: "up" }, {});
+    expect(up.ok).toBe(true);
+    expect(seen).toEqual(["mousedown", "mouseup", "click"]);
+  });
+
+  it("phase 를 생략하면 종전과 동일한 3종 시퀀스다(하위호환)", async () => {
+    mountNode(`<button data-node="btn">x</button>`);
+    const el = document.querySelector('[data-node="btn"]')!;
+    const seen: string[] = [];
+    for (const t of ["mousedown", "mouseup", "click"])
+      el.addEventListener(t, () => seen.push(t));
+    await execute("ui.input.click", { address: ADDR }, {});
+    expect(seen).toEqual(["mousedown", "mouseup", "click"]);
+  });
+});

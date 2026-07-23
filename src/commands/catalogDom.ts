@@ -341,12 +341,18 @@ export function registerDomCatalog(): void {
 
   register("ui.input.click", {
     description:
-      "Dispatch a real-click sequence (mousedown → mouseup → click) to an exposed node (E2E injection). Use to drive UI flows programmatically or in tests. Unexposed addresses return NOT_EXPOSED — no guessing. Occluded/unfocused windows pause rAF and may not respond — call window.focus to bring the window forward first.",
-    triggers: { ko: "클릭 주입 ui클릭 버튼클릭 E2E" },
+      "Dispatch a real-click sequence (mousedown → mouseup → click) to an exposed node (E2E injection). Use to drive UI flows programmatically or in tests. Pass phase:'down' to send only the mousedown, then observe the mid-gesture state (ui.hit / ui.measure), then phase:'up' to finish with mouseup+click — the only way to verify contracts that live BETWEEN down and up (e.g. travel-phase inertness with its gesture-owner exemption). Unexposed addresses return NOT_EXPOSED — no guessing. Occluded/unfocused windows pause rAF and may not respond — call window.focus to bring the window forward first.",
+    triggers: { ko: "클릭 주입 ui클릭 버튼클릭 E2E 게스처 다운 업 분해" },
     params: {
       address: { type: "string", description: "Exposed node address from ui.tree", required: true },
+      phase: {
+        type: "string",
+        description:
+          "'down' = mousedown only; 'up' = mouseup+click only; omit for the full sequence",
+        required: false,
+      },
     },
-    returns: "{ clicked, address }",
+    returns: "{ clicked, address, phase? }",
     message: () => tmsg("msg.ui.input.click"),
     errors: ["NOT_EXPOSED", "INVALID_PARAMS"],
     danger: "inject",
@@ -357,15 +363,33 @@ export function registerDomCatalog(): void {
       if (!el) return notExposed(addr);
       // 실제 클릭과 등가 시퀀스 — el.click()(click 단발)은 mousedown 기반 요소(사이드바 탭
       // 드래그-선택 등)를 못 누른다. dblclick 커맨드와 동일 패턴의 1라운드.
+      // phase 분해: down/up 사이가 계약인 기능(주행 불활성·게스처-당사자)은 중간 관찰이
+      // 필요하므로 시퀀스를 쪼갤 수 있다.
+      const phase = p.phase as string | undefined;
+      if (phase !== undefined && phase !== "down" && phase !== "up") {
+        return {
+          ok: false,
+          code: "INVALID_PARAMS",
+          message: `phase must be 'down' or 'up', got: ${phase}`,
+        };
+      }
+      const types =
+        phase === "down"
+          ? ["mousedown"]
+          : phase === "up"
+            ? ["mouseup", "click"]
+            : ["mousedown", "mouseup", "click"];
       const r = el.getBoundingClientRect();
       const x = r.left + r.width / 2;
       const y = r.top + r.height / 2;
-      for (const type of ["mousedown", "mouseup", "click"]) {
+      for (const type of types) {
         el.dispatchEvent(
           new MouseEvent(type, { clientX: x, clientY: y, bubbles: true, composed: true, button: 0 }),
         );
       }
-      return { clicked: true, address: addr };
+      return phase
+        ? { clicked: true, address: addr, phase }
+        : { clicked: true, address: addr };
     },
   });
 
