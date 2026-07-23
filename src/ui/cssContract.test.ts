@@ -110,41 +110,21 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
     expect(css).not.toMatch(/\.content-body\.rail-traveling \.left-rail-plane\s*\{/);
   });
 
-  it("§12-④ 주행 불활성: 실제 이동하는 표면만 입력을 받지 않는다 — straddle 방지, 새 클릭은 허용", () => {
-    // 한 클릭의 mousedown 이 스왑을 시작시키면, mouseup 은 미끄러지는 중인 다른 패널 위에
-    // 떨어져 그쪽이 활성화를 도로 가져간다 — 이동 중 표면의 불활성은 유지한다. 그러나
-    // 전면 블랭킷(모든 슬롯 none)은 주행 중 도착하는 **새 클릭**을 content-body 로 떨어뜨려
-    // 죽인다(실측 trace: mousedown 대상 "content-body rail-traveling" → 포커스가 직전/첫
-    // 페인으로 재배달 — "무조건 제일 앞으로 간다"). 원칙 그대로: 이동 중인 표면 =
-    // [data-travel-moved="1"] 만 불활성, 정지한 표면은 언제나 클릭 가능.
+  it("§12-④ 개정: 주행 중에도 입력은 열려 있다 — 셀·슬롯·디바이더 히트 차단 금지", () => {
+    // 실측(포커스 trace): 주행 중 불활성(전면이든 이동요소 한정이든 — 레일 주행은 스테이션
+    // 뒤 전 셀을 밀므로 사실상 전면)은 주행 중 도착하는 실클릭을 content-body 로 떨어뜨려
+    // 죽였고, 재배달이 직전/첫 페인으로 가서 "클릭한 곳에 포커스가 안 간다"가 됐다.
+    // straddle 방지는 히트 차단이 아니라 활성화 귀속이 담당한다(armSlotActivation —
+    // 활성화는 게스처 완결 시점에, 게스처를 시작한 슬롯에 귀속). 그러므로 어떤 주행
+    // 위상도 입력면을 차단하지 않는다.
     for (const scope of [".content-body.rail-traveling", ".egroup-area.focus-layout-traveling"]) {
-      const rule = rules().find(
-        (r) => r.selector.includes(scope) && /pointer-events\s*:\s*none/.test(r.decls),
-      );
-      expect(rule, scope).toBeTruthy();
-      for (const part of [".egroup-cell", ".egroup-body-slot", ".egroup-divider"]) {
-        expect(
-          rule!.selector,
-          scope + part + " — 이동 요소만 스코프",
-        ).toContain(scope + " " + part + '[data-travel-moved="1"]');
-        expect(
-          rule!.selector.includes(scope + " " + part + ","),
-          scope + part + " 블랭킷 금지",
-        ).toBe(false);
-        expect(
-          rule!.selector.includes(scope + " " + part + " {"),
-          scope + part + " 블랭킷 금지(말단)",
-        ).toBe(false);
-      }
-      // 예외 — 제스처를 시작한 당사자 슬롯(mousedown 대상)은 자기가 이동 중이어도 입력을
-      // 받는다(mouseup 이 xterm 입력 포커스 지점).
-      const exempt = rules().find(
+      const blocking = rules().filter(
         (r) =>
           r.selector.includes(scope) &&
-          r.selector.includes('[data-gesture-owner="1"]') &&
-          /pointer-events\s*:\s*auto/.test(r.decls),
+          /pointer-events\s*:\s*none/.test(r.decls) &&
+          /(egroup-cell|egroup-body-slot|egroup-divider)/.test(r.selector),
       );
-      expect(exempt, scope + " gesture-owner 예외").toBeTruthy();
+      expect(blocking.map((b) => b.selector), scope + " 입력 차단 금지").toEqual([]);
     }
   });
 

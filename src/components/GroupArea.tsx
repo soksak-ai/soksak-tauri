@@ -16,6 +16,7 @@ import {
   activeSessionViewId,
   transferViewFocus,
 } from "../plugins/viewFocus";
+import { armSlotActivation } from "../lib/slotGesture";
 import { ViewTabs } from "./ViewTabs";
 import { computeSplitLayout, hitTestCells } from "../lib/splitLayout";
 import { useT } from "../i18n";
@@ -481,7 +482,7 @@ export const GroupArea = memo(function GroupArea({
   // 셀 좌표 — CSS 변수 4개만 전달하고 산수(calc)는 CSS 단일 규칙이 소유한다.
   // (좌표 문자열을 렌더마다 조립해 흩뿌리던 레거시 제거 — 치수 상수는 아래
   // 컨테이너에서 1회 주입되는 --header-h/--status-h/--pane-inset 이 단일 소스)
-  const cellCalc = (rect: {
+  const cellVars = (rect: {
     left: number;
     top: number;
     width: number;
@@ -503,11 +504,7 @@ export const GroupArea = memo(function GroupArea({
     const focusFlipX = fromRect
       ? ((fromRect.left - rect.left) / rect.width) * 100
       : 0;
-    // 주행 표식 — 이 셀이 이번 위상에서 실제로 이동하는가(§12-④: 이동 요소만 불활성).
-    const moved =
-      Math.abs((fromProjected.railLeft - projected.railLeft) * railWidthPx) > 0.5 ||
-      Math.abs(focusFlipX) > 0.001;
-    return { moved, style: ({
+    return ({
       "--l": `${rect.left}%`,
       "--t": `${rect.top}%`,
       "--w": `${rect.width}%`,
@@ -516,14 +513,8 @@ export const GroupArea = memo(function GroupArea({
       "--rail-dw": `${projected.railWidth * railWidthPx}px`,
       "--rail-flip-x": `${(fromProjected.railLeft - projected.railLeft) * railWidthPx}px`,
       "--focus-flip-x": `${focusFlipX}%`,
-    }) as React.CSSProperties };
+    }) as React.CSSProperties;
   };
-
-  // 좌표 변수만 필요한 소비자용(호버 프레임 등) — 계산은 cellCalc 한 곳.
-  const cellVars = (
-    rect: { left: number; top: number; width: number; height: number },
-    groupId?: string,
-  ) => cellCalc(rect, groupId).style;
 
   const dividerVars = (d: Divider) => {
     if (railWidthPx <= 0) return {};
@@ -585,8 +576,7 @@ export const GroupArea = memo(function GroupArea({
             key={`cell-${group.id}`}
             className={`egroup-cell${holeCell ? " cell-hole" : ""}`}
             data-node={`layout/panel/${group.id}`}
-            style={cellCalc(rect, group.id).style}
-            data-travel-moved={cellCalc(rect, group.id).moved ? "1" : undefined}
+            style={cellVars(rect, group.id)}
           >
             {maxCell ? (
               /* 최대화 헤더: 탭·+ 대신 타이틀 — 더블클릭/버튼으로 원래 분할 복원 */
@@ -710,32 +700,25 @@ export const GroupArea = memo(function GroupArea({
               // 평상시 비활성 슬롯은 화면 밖으로 파킹하고, 최대화의 제외 슬롯은 합성 트리에서도
               // 제거한다(viewSurfaceStyle 단일 진실). 둘 다 DOM/플러그인 인스턴스는 유지한다.
               style={{
-                ...cellCalc(slotRect, group.id).style,
+                ...cellVars(slotRect, group.id),
                 ...viewSurfaceStyle(shown, !!maxCell),
               }}
-              data-travel-moved={cellCalc(slotRect, group.id).moved ? "1" : undefined}
-              onMouseDownCapture={(e) => {
-                // 제스처 당사자 표식 — 이 mousedown 이 주행(재결부·FLIP)을 시작시켜도, 당사자
-                // 슬롯만은 위상 불활성에서 면제되어 자기 mouseup(xterm 입력 포커스 지점)을
-                // 받는다(App.css 예외 규칙). window mouseup 1회로 반드시 해제(잔존 금지).
-                const slot = e.currentTarget;
-                slot.dataset.gestureOwner = "1";
-                window.addEventListener(
-                  "mouseup",
-                  () => {
-                    delete slot.dataset.gestureOwner;
-                  },
-                  { capture: true, once: true },
-                );
-                if (group.activeViewId) {
-                  transferViewFocus(
-                    activeSessionViewId(),
-                    group.activeViewId,
-                    () => setActiveGroup(projectId, group.id),
-                  );
-                } else {
-                  setActiveGroup(projectId, group.id);
-                }
+              onMouseDownCapture={() => {
+                // 클릭 확인 후 이동(§12-④ 개정) — 활성화와 그에 따르는 투영 주행은 게스처
+                // 완결(mouseup) 뒤에 시작한다. 게스처 전 구간이 정지한 기하 위에서 끝나므로
+                // 클릭(페인 추적·xterm 자기 포커스)은 항상 확인되고, 활성화는 시작 슬롯에
+                // 귀속된다(straddle 불능).
+                armSlotActivation(() => {
+                  if (group.activeViewId) {
+                    transferViewFocus(
+                      activeSessionViewId(),
+                      group.activeViewId,
+                      () => setActiveGroup(projectId, group.id),
+                    );
+                  } else {
+                    setActiveGroup(projectId, group.id);
+                  }
+                });
               }}
             >
               {!hydrated ? null : view.kind === "file" ? (
