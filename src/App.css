@@ -461,7 +461,7 @@ body,
   fill: none;
 }
 .rail-link-overlay.relation-stroke.fill-faint .rail-link-shape {
-  fill: color-mix(in srgb, var(--acc) 3%, transparent);
+  fill: color-mix(in srgb, var(--acc) 1%, transparent);
 }
 /* [임시 — 관계면 3안 비교 스위치] railRelation 설정(tint|moment|stroke)의 CSS 갈래.
    stroke 안은 위 기본 규칙 그대로가 기준점이다. 3안 중 하나로 결정되면 채택안만 남기고
