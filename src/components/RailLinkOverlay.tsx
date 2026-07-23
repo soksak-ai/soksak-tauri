@@ -33,6 +33,7 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
   railWidth,
   railStation,
   targetRect,
+  projected = false,
 }: {
   contentId: string;
   boundViewId: string;
@@ -40,6 +41,8 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
   railWidth: number;
   railStation: number;
   targetRect: RailRect;
+  /** 이 인접이 focus-near 투영(교체)으로 성립했는가 — 봉합선 표시의 유일 입력. */
+  projected?: boolean;
 }) {
   const radius = useTheme((state) => state.spec.relation.radius);
   const strokeWidth = useTheme((state) => state.spec.relation.strokeWidth);
@@ -113,6 +116,7 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
       data-bound-view={boundViewId}
       data-bound-panel={boundPanelId}
       data-connected={path ? "true" : "false"}
+      data-projected={projected ? "true" : undefined}
       data-flash={railRelation === "moment" ? String(flash) : undefined}
       aria-hidden="true"
     >
@@ -123,6 +127,31 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
           preserveAspectRatio="none"
         >
           <path className="rail-link-shape" d={path} />
+          {projected && (() => {
+            // 교체-인접 봉합선 — 합집합 외곽선의 내부 공유변. 자연 인접은 한 몸이라 봉합선이
+            // 없고, 투영(교체)으로 성립한 인접만 같은 두께의 점선으로 "꿰맨 자국"을 남긴다.
+            const eps = 1;
+            const seamX =
+              Math.abs(boxes.rail.x + boxes.rail.width - boxes.panel.x) < eps
+                ? boxes.panel.x
+                : Math.abs(boxes.panel.x + boxes.panel.width - boxes.rail.x) < eps
+                  ? boxes.rail.x
+                  : null;
+            const y0 = Math.max(boxes.rail.y, boxes.panel.y);
+            const y1 = Math.min(
+              boxes.rail.y + boxes.rail.height,
+              boxes.panel.y + boxes.panel.height,
+            );
+            return seamX !== null && y1 > y0 ? (
+              <line
+                className="rail-link-seam"
+                x1={seamX}
+                y1={y0}
+                x2={seamX}
+                y2={y1}
+              />
+            ) : null;
+          })()}
         </svg>
       )}
     </div>

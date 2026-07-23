@@ -662,11 +662,14 @@ export function leftRailGrid(project: ProjectTab, focusNear = false): {
   cells: RailCell[];
   focusId: string | null;
   cleanLines: number[];
+  /** focus-near 투영(교체)이 실제 적용됐는가 — 결부 인접이 "만들어진" 것인지의 단일 진실. */
+  projected: boolean;
 } {
   const content =
     project.contents.find((item) => item.id === project.activeContentId) ??
     project.contents[0];
-  if (!content) return { cells: [], focusId: null, cleanLines: [0, 100] };
+  if (!content)
+    return { cells: [], focusId: null, cleanLines: [0, 100], projected: false };
   const placement = project.leftRailPlacement ?? { mode: "flow" as const };
   const displayLayout = projectFocusedPanelNearRail(
     content.layout,
@@ -688,6 +691,7 @@ export function leftRailGrid(project: ProjectTab, focusNear = false): {
     cells,
     focusId: content.activeGroupId,
     cleanLines: cleanRailLines(cells.map((cell) => cell.rect)),
+    projected: !content.maximizedViewId && displayLayout !== content.layout,
   };
 }
 

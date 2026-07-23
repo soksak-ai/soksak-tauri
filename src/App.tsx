@@ -364,6 +364,7 @@ const ProjectPane = memo(function ProjectPane({
                 railWidth={sidebarW}
                 railStation={renderedStation}
                 targetRect={boundCell.rect}
+                projected={railGrid.projected}
               />
             ) : undefined
           }
