@@ -434,7 +434,7 @@ export function registerDomCatalog(): void {
 
   register("ui.input.click", {
     description:
-      "Dispatch a real-click sequence (mousedown → mouseup → click) to an exposed node (E2E injection). Use to drive UI flows programmatically or in tests. Pass phase:'down' to send only the mousedown, then observe the mid-gesture state (ui.hit / ui.measure), then phase:'up' to finish with mouseup+click — the only way to verify contracts that live BETWEEN down and up (e.g. travel-phase inertness with its gesture-owner exemption). Unexposed addresses return NOT_EXPOSED — no guessing. Occluded/unfocused windows pause rAF and may not respond — call window.focus to bring the window forward first.",
+      "Dispatch a real-click sequence (mousedown → mouseup → click) to an exposed node (E2E injection). Use to drive UI flows programmatically or in tests. Pass phase:'down' to send only the mousedown, then observe the mid-gesture state (ui.hit / ui.measure), then phase:'up' to finish with mouseup+click — the only way to verify contracts that live BETWEEN down and up (e.g. that a mid-gesture surface stays hittable, or that activation waits for gesture completion). Unexposed addresses return NOT_EXPOSED — no guessing. Occluded/unfocused windows pause rAF and may not respond — call window.focus to bring the window forward first.",
     triggers: { ko: "클릭 주입 ui클릭 버튼클릭 E2E 게스처 다운 업 분해" },
     params: {
       address: { type: "string", description: "Exposed node address from ui.tree", required: true },
@@ -456,7 +456,7 @@ export function registerDomCatalog(): void {
       if (!el) return notExposed(addr);
       // 실제 클릭과 등가 시퀀스 — el.click()(click 단발)은 mousedown 기반 요소(사이드바 탭
       // 드래그-선택 등)를 못 누른다. dblclick 커맨드와 동일 패턴의 1라운드.
-      // phase 분해: down/up 사이가 계약인 기능(주행 불활성·게스처-당사자)은 중간 관찰이
+      // phase 분해: down/up 사이가 계약인 기능(히트 가능성·활성화 이연)은 중간 관찰이
       // 필요하므로 시퀀스를 쪼갤 수 있다.
       const phase = p.phase as string | undefined;
       if (phase !== undefined && phase !== "down" && phase !== "up") {

@@ -320,7 +320,7 @@ describe("ui.focus.trace — 클릭 순간의 포커스 인과 타임라인", ()
 
 describe("ui.input.click — phase 분해(게스처 중간 상태의 검증 가능화)", () => {
   // 한 호출로 down→up→click 을 묶으면 게스처 '중간'(mousedown 이후, mouseup 이전)을
-  // 바깥에서 관찰할 수 없다 — 주행 불활성/게스처-당사자 예외처럼 그 중간 상태가 계약인
+  // 바깥에서 관찰할 수 없다 — 게스처 중간의 히트 가능성·활성화 이연처럼 그 중간 상태가 계약인
   // 기능은 검증 불가가 된다. phase 로 시퀀스를 쪼개 down 후 ui.hit/ui.measure 로 중간
   // 상태를 실검증하고 up 으로 마무리한다.
   it('phase:"down" 은 mousedown 만, phase:"up" 은 mouseup+click 만 보낸다', async () => {
