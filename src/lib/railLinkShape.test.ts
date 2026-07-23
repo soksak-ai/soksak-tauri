@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   insetClippedEdges,
+  openOrthogonalPath,
   railLinkBoxes,
   railLinkPolygon,
   roundedOrthogonalPath,
+  splitRightEdge,
 } from "./railLinkShape";
 
 describe("레일 결부 관계 도형", () => {
@@ -67,5 +69,34 @@ describe("레일 결부 관계 도형", () => {
       { x: 300, y: 0.75 }, { x: 1199.25, y: 0.75 },
       { x: 1199.25, y: 799.25 }, { x: 300, y: 799.25 },
     ]);
+  });
+});
+
+describe("오른쪽 변 분리(B안 — 바깥 변 점선)", () => {
+  // 사각 다각형(시계): (0,0)→(10,0)→(10,8)→(0,8). 최우측 수직 변 = (10,0)-(10,8).
+  const square = [
+    { x: 0, y: 0 },
+    { x: 10, y: 0 },
+    { x: 10, y: 8 },
+    { x: 0, y: 8 },
+  ];
+
+  it("최우측 수직 변과 나머지 열린 점열로 분리한다", () => {
+    const split = splitRightEdge(square)!;
+    expect(split.edge).toEqual([
+      { x: 10, y: 0 },
+      { x: 10, y: 8 },
+    ]);
+    // 열린 경로: 변의 끝점에서 시작해 반대편으로 돌아 변의 시작점에서 끝난다.
+    expect(split.rest[0]).toEqual({ x: 10, y: 8 });
+    expect(split.rest[split.rest.length - 1]).toEqual({ x: 10, y: 0 });
+    expect(split.rest).toHaveLength(4);
+  });
+
+  it("열린 경로는 Z 로 닫지 않는다", () => {
+    const split = splitRightEdge(square)!;
+    const d = openOrthogonalPath(split.rest, 0);
+    expect(d.startsWith("M")).toBe(true);
+    expect(d.includes("Z")).toBe(false);
   });
 });

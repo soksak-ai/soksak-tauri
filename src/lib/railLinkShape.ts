@@ -132,3 +132,67 @@ export function roundedOrthogonalPath(points: Point[], radius: number): string {
     "Z",
   ].join(" ");
 }
+
+/** 다각형에서 최우측 수직 변(패널 바깥 오른쪽)을 분리한다 — B안(변 점선)의 기하.
+ * edge = [시작점, 끝점](다각형 순서), rest = 변의 끝점에서 반대편으로 돌아 변의
+ * 시작점으로 끝나는 열린 점열. 최우측 수직 변이 없으면 null. */
+export function splitRightEdge(
+  points: Point[],
+): { edge: [Point, Point]; rest: Point[] } | null {
+  if (points.length < 3) return null;
+  const maxX = Math.max(...points.map((p) => p.x));
+  const eps = 1e-6;
+  for (let i = 0; i < points.length; i += 1) {
+    const a = points[i];
+    const b = points[(i + 1) % points.length];
+    if (Math.abs(a.x - maxX) < eps && Math.abs(b.x - maxX) < eps) {
+      const rest: Point[] = [];
+      for (let k = 1; k <= points.length; k += 1) {
+        rest.push(points[(i + k) % points.length]);
+      }
+      return { edge: [a, b], rest };
+    }
+  }
+  return null;
+}
+
+/** 열린 직교 경로 — roundedOrthogonalPath 의 열린 변형. 끝점은 라운딩 없이 그대로,
+ * 내부 코너만 radius 라운딩. Z 로 닫지 않는다(변 분리 렌더용). */
+export function openOrthogonalPath(points: Point[], radius: number): string {
+  if (points.length < 2) return "";
+  if (radius <= 0) {
+    return points
+      .map((p, i) => (i === 0 ? "M" : "L") + " " + fmt(p.x) + " " + fmt(p.y))
+      .join(" ");
+  }
+  const parts: string[] = ["M " + fmt(points[0].x) + " " + fmt(points[0].y)];
+  for (let i = 1; i < points.length - 1; i += 1) {
+    const previous = points[i - 1];
+    const current = points[i];
+    const next = points[i + 1];
+    const beforeLength = Math.hypot(current.x - previous.x, current.y - previous.y);
+    const afterLength = Math.hypot(next.x - current.x, next.y - current.y);
+    const r = Math.min(radius, beforeLength / 2, afterLength / 2);
+    const toward = (other: Point, distance: number): Point => ({
+      x:
+        current.x +
+        ((other.x - current.x) /
+          Math.hypot(other.x - current.x, other.y - current.y)) *
+          distance,
+      y:
+        current.y +
+        ((other.y - current.y) /
+          Math.hypot(other.x - current.x, other.y - current.y)) *
+          distance,
+    });
+    const before = toward(previous, r);
+    const after = toward(next, r);
+    parts.push(
+      "L " + fmt(before.x) + " " + fmt(before.y),
+      "Q " + fmt(current.x) + " " + fmt(current.y) + " " + fmt(after.x) + " " + fmt(after.y),
+    );
+  }
+  const last = points[points.length - 1];
+  parts.push("L " + fmt(last.x) + " " + fmt(last.y));
+  return parts.join(" ");
+}

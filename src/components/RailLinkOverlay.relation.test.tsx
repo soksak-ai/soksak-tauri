@@ -237,6 +237,15 @@ describe("railRelation 모드 CSS 갈래 (App.css)", () => {
     expect(d).toMatch(/stroke-dasharray/);
   });
 
+  it("B안 변 점선 CSS: 분리된 오른쪽 변은 점선, 나머지 열린 외곽선은 실선·무채움", () => {
+    const edge = decls(".rail-link-edge");
+    expect(edge).toMatch(/stroke:\s*var\(--relation-stroke\)/);
+    expect(edge).toMatch(/stroke-dasharray/);
+    const rest = decls(".rail-link-rest");
+    expect(rest).toMatch(/fill:\s*none/);
+    expect(rest).toMatch(/stroke:\s*var\(--relation-stroke\)/);
+  });
+
   it("떠다니는 관계 라벨 금지 — 결부 이름은 호스트 헤더(.proj-frame-bound) 한 곳", () => {
     // 관계 표시 단순화(사용자 결정): "연결됨 · 이름" 배지 폐지. 이름은 사이드바 헤더가
     // 소유한다(ProjectionSlots.frame.test 가 표시를 검증). 라벨 CSS 를 되살리지 마라.

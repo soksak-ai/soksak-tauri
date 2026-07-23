@@ -462,6 +462,25 @@ body,
   stroke-dasharray: 4 4;
   vector-effect: non-scaling-stroke;
 }
+/* [임시 — 봉합 표시 2안 비교 스위치] railSeamStyle=edge: 바깥 오른쪽 변만 점선으로 분리,
+   나머지 외곽선은 열린 실선, 채움은 닫힌 원경로가 소유. 결정 시 채택안만 남기고 소거. */
+.rail-link-fill {
+  fill: var(--relation-fill);
+  stroke: none;
+}
+.rail-link-rest {
+  fill: none;
+  stroke: var(--relation-stroke);
+  stroke-width: var(--relation-stroke-w);
+  vector-effect: non-scaling-stroke;
+  stroke-linejoin: round;
+}
+.rail-link-edge {
+  stroke: var(--relation-stroke);
+  stroke-width: var(--relation-stroke-w);
+  stroke-dasharray: 4 4;
+  vector-effect: non-scaling-stroke;
+}
 /* [임시 — 포커스 스포트라이트 실험] focusDim: 전체를 가라앉히고 선택만 명확하게(사용자
    개념). blur 는 텍스트를 뭉개므로 밝기·채도 하강만. 전이로 활성 이동 시 어둠이 옮겨간다.
    네이티브 child(브라우저 등)는 이 단계에선 대상 밖(캐비앳 — 실험 대장). 결정 시 소거. */

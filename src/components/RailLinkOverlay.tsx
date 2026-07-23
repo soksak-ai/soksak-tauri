@@ -2,6 +2,8 @@ import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { RailRect } from "../lib/railPlacement";
 import {
   insetClippedEdges,
+  openOrthogonalPath,
+  splitRightEdge,
   railLinkAdjacent,
   railLinkBoxes,
   railLinkPolygon,
@@ -48,6 +50,7 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
   const strokeWidth = useTheme((state) => state.spec.relation.strokeWidth);
   const railRelation = useSettings((state) => state.railRelation);
   const railFill = useSettings((state) => state.railFill);
+  const railSeamStyle = useSettings((state) => state.railSeamStyle);
   const hostRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<Size>({ width: 0, height: 0 });
   const adjacent = railLinkAdjacent(railStation, targetRect);
@@ -126,8 +129,37 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
           viewBox={`0 0 ${size.width} ${size.height}`}
           preserveAspectRatio="none"
         >
-          <path className="rail-link-shape" d={path} />
-          {projected && (() => {
+          {projected && railSeamStyle === "edge" ? (() => {
+            // B안 — 바깥 오른쪽 변 점선: 외곽선에서 최우측 변만 분리해 점선으로,
+            // 나머지는 열린 실선으로 그린다. 채움은 닫힌 원경로가 소유(스트로크 없음).
+            const inset = insetClippedEdges(
+              polygon!,
+              size.width,
+              size.height,
+              strokeWidth / 2,
+            );
+            const split = splitRightEdge(inset);
+            if (!split) return <path className="rail-link-shape" d={path} />;
+            return (
+              <>
+                <path className="rail-link-fill" d={path} />
+                <path
+                  className="rail-link-rest"
+                  d={openOrthogonalPath(split.rest, radius)}
+                />
+                <line
+                  className="rail-link-edge"
+                  x1={split.edge[0].x}
+                  y1={split.edge[0].y}
+                  x2={split.edge[1].x}
+                  y2={split.edge[1].y}
+                />
+              </>
+            );
+          })() : (
+            <path className="rail-link-shape" d={path} />
+          )}
+          {projected && railSeamStyle === "seam" && (() => {
             // 교체-인접 봉합선 — 합집합 외곽선의 내부 공유변. 자연 인접은 한 몸이라 봉합선이
             // 없고, 투영(교체)으로 성립한 인접만 같은 두께의 점선으로 "꿰맨 자국"을 남긴다.
             const eps = 1;

@@ -2034,6 +2034,8 @@ export function registerCatalog(): void {
     "railFill",
     // 포커스 스포트라이트 실험 — 전체를 가라앉히고 선택만 명확하게(결정 시 소거).
     "focusDim",
+    // 봉합 표시 2안 비교 스위치 — 결정 시 소거.
+    "railSeamStyle",
     "railFocusNear",
     "appFontFamily",
     "appFontSize",
@@ -2059,6 +2061,7 @@ export function registerCatalog(): void {
         railRelation: s.railRelation,
         railFill: s.railFill,
         focusDim: s.focusDim,
+        railSeamStyle: s.railSeamStyle,
         railFocusNear: s.railFocusNear,
         appFontFamily: s.appFontFamily,
         appFontSize: s.appFontSize,
@@ -2088,7 +2091,7 @@ export function registerCatalog(): void {
       value: {
         type: "json",
         description:
-          "Value — language:ko|en, projectTabPosition:top|left, iconSet:string (registered set id — unregistered falls back to lucide), iconBox:boolean, focusIndicator:outline|corners, railRelation:tint|moment|stroke (rail-panel relation surface — tint fill only, moment flash on rebind, stroke outline+label), railFill:none|faint (bound-panel background in stroke mode — none removes it, faint is a 1% accent tint), focusDim:boolean (spotlight — every panel dims except the active one; native child views such as the browser engine do not dim in this stage), railFocusNear:boolean, appFontFamily:string (CSS font-family stack), appFontSize:number (6-40), orchestratorAgent:string (agent CLI command or path the natural-language console spawns), orchestratorModel:string (--model alias for the agent; empty = CLI default)",
+          "Value — language:ko|en, projectTabPosition:top|left, iconSet:string (registered set id — unregistered falls back to lucide), iconBox:boolean, focusIndicator:outline|corners, railRelation:tint|moment|stroke (rail-panel relation surface — tint fill only, moment flash on rebind, stroke outline+label), railFill:none|faint (bound-panel background in stroke mode — none removes it, faint is a 1% accent tint), focusDim:boolean (spotlight — every panel dims except the active one), railSeamStyle:seam|edge (how a manufactured adjacency is marked: seam dashes the inner shared edge, edge dashes the outer right edge), railFocusNear:boolean, appFontFamily:string (CSS font-family stack), appFontSize:number (6-40), orchestratorAgent:string (agent CLI command or path the natural-language console spawns), orchestratorModel:string (--model alias for the agent; empty = CLI default)",
         required: true,
       },
     },
@@ -2142,6 +2145,10 @@ export function registerCatalog(): void {
         case "focusDim":
           if (typeof v !== "boolean") return bad("boolean");
           s.setFocusDim(v);
+          break;
+        case "railSeamStyle":
+          if (v !== "seam" && v !== "edge") return bad("seam|edge");
+          s.setRailSeamStyle(v);
           break;
         case "railFocusNear":
           if (typeof v !== "boolean") return bad("boolean");

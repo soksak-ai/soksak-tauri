@@ -48,6 +48,19 @@ describe("settings.focusDim", () => {
   });
 });
 
+// 봉합 표시 2안 비교 스위치(사용자 요청: A seam vs B 오른쪽 변 점선) — 결정 시 소거.
+describe("settings.railSeamStyle", () => {
+  it("기본값은 seam", () => {
+    expect(useSettings.getState().railSeamStyle).toBe("seam");
+  });
+  it("setRailSeamStyle 로 seam|edge 전환", () => {
+    useSettings.getState().setRailSeamStyle("edge");
+    expect(useSettings.getState().railSeamStyle).toBe("edge");
+    useSettings.getState().setRailSeamStyle("seam");
+    expect(useSettings.getState().railSeamStyle).toBe("seam");
+  });
+});
+
 // 결부 바탕 2안 비교 스위치(사용자 요청: ① 빼기 ② 아주 옅게) — 결정 시 채택안만 남기고 소거.
 describe("settings.railFill", () => {
   it("기본값은 none(바탕 없음 — 1안 선행)", () => {
