@@ -852,10 +852,11 @@ pub fn webview_zoom(window: tauri::Window, factor: f64) -> Result<(), String> {
     }
     let child_prefix = format!("b-{label}-");
     for (wl, wv) in app.webviews() {
-        if wl == label || wl.starts_with(&child_prefix) {
+        if wl == label {
             wv.set_zoom(f).map_err(|e| e.to_string())?;
         }
         if wl.starts_with(&child_prefix) {
+            wv.set_zoom(f * view_zoom_of(&wl)).map_err(|e| e.to_string())?;
             // 프레임도 같은 배율로 즉시 재배치 — 프론트 레이아웃(CSS px)은 불변이라 여기서만 안다.
             let raw = RAW_BOUNDS.lock().ok().and_then(|m| m.get(&wl).copied());
             if let Some(raw) = raw {
@@ -864,6 +865,21 @@ pub fn webview_zoom(window: tauri::Window, factor: f64) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// 뷰-단위 페이지 줌(플랜 3단계) — 브라우저 뷰 포커스 시 ⌘±의 응답. 유효 배율 =
+/// 창 배율 × 뷰 배율(프레임은 창 배율만 — 콘텐츠 전용 축). 0.25..4.0 클램프(브라우저 관례).
+#[tauri::command]
+pub fn webview_zoom_view(app: AppHandle, label: String, factor: f64) -> Result<f64, String> {
+    let f = factor.clamp(0.25, 4.0);
+    if let Ok(mut m) = VIEW_ZOOM.lock() {
+        m.insert(label.clone(), f);
+    }
+    if let Some(wv) = app.get_webview(&label) {
+        let win_f = window_zoom_of(wv.window().label());
+        wv.set_zoom(win_f * f).map_err(|e| e.to_string())?;
+    }
+    Ok(f)
 }
 
 #[tauri::command]
@@ -915,6 +931,19 @@ static WINDOW_ZOOM: std::sync::LazyLock<std::sync::Mutex<std::collections::HashM
 // 불변) 여기 캐시로 전 자식을 새 배율로 즉시 재배치한다.
 static RAW_BOUNDS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, (f64, f64, f64, f64)>>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+// 자식 라벨 → 뷰 자체 줌(브라우저 페이지 줌 등). 콘텐츠 유효 배율 = 창 배율 × 뷰 배율,
+// 프레임(bounds)은 창 배율만 따른다 — 뷰 줌은 콘텐츠만 키우는 축(줌 불변식).
+static VIEW_ZOOM: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, f64>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+fn view_zoom_of(label: &str) -> f64 {
+    VIEW_ZOOM
+        .lock()
+        .ok()
+        .and_then(|m| m.get(label).copied())
+        .unwrap_or(1.0)
+}
 
 fn window_zoom_of(label: &str) -> f64 {
     WINDOW_ZOOM
@@ -1151,6 +1180,9 @@ pub fn webview_close(app: AppHandle, label: String) -> Result<(), String> {
         // 파괴 예고(webview_health) — 닫히는 webview 의 프로세스 종료를 크래시로 오분류하지 않는다.
         crate::webview_health::mark_expected_teardown(&app, &label);
         if let Ok(mut m) = RAW_BOUNDS.lock() {
+            m.remove(&label);
+        }
+        if let Ok(mut m) = VIEW_ZOOM.lock() {
             m.remove(&label);
         }
         // Backend N 레지스트리 회수 — close 전에 surface 포인터를 집합에서 제거(위생; 미제거여도
