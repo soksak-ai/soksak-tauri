@@ -409,11 +409,13 @@ const ProjectPane = memo(function ProjectPane({
                         railLook,
                         project.sidebarOpen,
                         layer.station,
+                        paneStyle,
                       ).left,
                       borderRightWidth: railEdgeWidths(
                         railLook,
                         project.sidebarOpen,
                         layer.station,
+                        paneStyle,
                       ).right,
                       pointerEvents: layer.interactive ? "auto" : "none",
                     } as React.CSSProperties
