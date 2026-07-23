@@ -35,6 +35,20 @@ describe("settings.railFocusNear", () => {
   });
 });
 
+// 결부 바탕 2안 비교 스위치(사용자 요청: ① 빼기 ② 아주 옅게) — 결정 시 채택안만 남기고 소거.
+describe("settings.railFill", () => {
+  it("기본값은 none(바탕 없음 — 1안 선행)", () => {
+    expect(useSettings.getState().railFill).toBe("none");
+  });
+
+  it("setRailFill 로 none|faint 전환·복원", () => {
+    useSettings.getState().setRailFill("faint");
+    expect(useSettings.getState().railFill).toBe("faint");
+    useSettings.getState().setRailFill("none");
+    expect(useSettings.getState().railFill).toBe("none");
+  });
+});
+
 // 관계면 3안 비교 스위치 — 비교 실험용 임시 축(결정 시 채택안만 남기고 소거).
 describe("settings.railRelation", () => {
   it("기본값은 stroke(보더+라벨 — 사용자 확정)", () => {

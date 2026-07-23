@@ -10,3 +10,12 @@
 | 레일 시각 모드 | `settings.railLook` | `ground`(기본: 바닥 크롬) / `pane`(카드) | **비교중** (main 86688bae — 디자인 정본은 ground) | 사용자 채택 결정 시 — 동일 규율 |
 
 폐기(소거 완료) 항목은 이 표에서 지우고 git 이력만 남긴다.
+
+## railFill — 결부 바탕 2안 (2026-07-23, 진행 중)
+
+사용자 요청: "연결된 화면의 바탕색을 ① 빼보자 ② 아주 옅게만 넣자".
+
+- 스위치: `sok settings.set '{"railFill":"none"}'`(기본, 1안) | `'{"railFill":"faint"}'`(2안, 액센트 3%)
+- 적용 범위: relation-stroke 안의 fill 만. tint/moment 갈래 불간섭.
+- 결정 시: 채택안만 남기고 축·CSS 갈래·테스트 갈래 소거(settings.railFill, App.css fill-none/faint).
+
