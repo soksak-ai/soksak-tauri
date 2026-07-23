@@ -25,6 +25,8 @@ export type RailLook = "pane" | "ground";
 export type RailRelation = "tint" | "moment" | "stroke";
 // 결부 바탕 2안 비교 스위치(사용자 요청) — 결정 시 채택안만 남기고 소거.
 export type RailFill = "none" | "faint";
+// 봉합 표시 2안 비교 스위치(A seam=내부 공유변 점선 | B edge=바깥 오른쪽 변 점선) — 결정 시 소거.
+export type RailSeamStyle = "seam" | "edge";
 
 interface SettingsState {
   language: Language;
@@ -53,6 +55,7 @@ interface SettingsState {
   railRelation: RailRelation;
   railFill: RailFill;
   focusDim: boolean;
+  railSeamStyle: RailSeamStyle;
   // FLOW에서 포커스 패널의 자체 왼쪽 선이 막혔을 때 같은 row 형제를 화면에서만 교환.
   railFocusNear: boolean;
   // 앱 UI 폰트(=앱 크롬 전역). 터미널 폰트와 무관 — 터미널 폰트는 터미널 플러그인이 별도 소유.
@@ -81,6 +84,7 @@ interface SettingsState {
   setRailRelation: (v: RailRelation) => void;
   setRailFill: (v: RailFill) => void;
   setFocusDim: (v: boolean) => void;
+  setRailSeamStyle: (v: RailSeamStyle) => void;
   setRailFocusNear: (v: boolean) => void;
   setAppFontFamily: (v: string) => void;
   setAppFontSize: (v: number) => void;
@@ -105,6 +109,7 @@ const DEFAULTS = {
   railRelation: "stroke" as RailRelation,
   railFill: "none" as RailFill,
   focusDim: false,
+  railSeamStyle: "seam" as RailSeamStyle,
   railFocusNear: false,
   appFontFamily:
     '"JetBrains Mono", "SF Mono", "Cascadia Code", Menlo, Consolas, "Courier New", monospace',
@@ -136,6 +141,7 @@ function serialize(s: SettingsState): PersistedSettings {
     railRelation: s.railRelation,
     railFill: s.railFill,
     focusDim: s.focusDim,
+    railSeamStyle: s.railSeamStyle,
     railFocusNear: s.railFocusNear,
     appFontFamily: s.appFontFamily,
     appFontSize: s.appFontSize,
@@ -222,6 +228,10 @@ export const useSettings = create<SettingsState>((set, get) => {
     },
     setFocusDim: (focusDim) => {
       set({ focusDim });
+      save();
+    },
+    setRailSeamStyle: (railSeamStyle) => {
+      set({ railSeamStyle });
       save();
     },
     setRailFocusNear: (railFocusNear) => {

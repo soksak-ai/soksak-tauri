@@ -36,6 +36,19 @@ describe("settings.focusDim 명령 표면", () => {
   });
 });
 
+describe("settings.railSeamStyle 명령 표면", () => {
+  it("get 반환(기본 seam) + set seam|edge, 그 외 거부", async () => {
+    const g = await execute("settings.get", {}, {});
+    expect((g.data as { railSeamStyle: string }).railSeamStyle).toBe("seam");
+    const on = await execute("settings.set", { key: "railSeamStyle", value: "edge" }, {});
+    expect(on.ok).toBe(true);
+    expect(useSettings.getState().railSeamStyle).toBe("edge");
+    const bad = await execute("settings.set", { key: "railSeamStyle", value: "dotted" }, {});
+    expect(bad.ok).toBe(false);
+    await execute("settings.set", { key: "railSeamStyle", value: "seam" }, {});
+  });
+});
+
 describe("settings.railFill 명령 표면", () => {
   it("settings.get 이 railFill 을 반환한다(기본 none)", async () => {
     const result = await execute("settings.get", {}, {});
