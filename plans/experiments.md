@@ -50,3 +50,12 @@ DOM 크롬까지 덮는 오답이고, 정공법 = **홀 위의 DOM 슬롯에 반
 ## 종결 원칙 (2026-07-23, 사용자 확정)
 
 "지금이 기본, 나머지는 옵션" — 현행 라이브 상태(focusDim on·railFill faint·railRelation stroke·railSeamStyle edge·railFocusNear on)를 기본값으로 확정하고, 모든 비교 축은 소거 대신 **정식 설정으로 승격**해 선택지를 유지한다.
+
+## zoom — CEF·astryx 캐비앗 (2026-07-23)
+
+포커스-범위 줌(플랜 golden-swinging-lynx) 1~4단계 완료: 창 줌(webview_zoom, 자식 bounds 배율 동기)
++ 뷰 훅(xterm·ghostty 폰트 / browser-native 페이지 줌 webview_zoom_view 합성 / 에디터 --view-font-size
+범용 폴백). **CEF 사이드카(chromium·chromium-offscreen)와 astryx 는 프로토콜에 zoom 메시지가 없어
+창 줌·뷰 줌 둘 다 미적용** — 사이드카 계약 확장 레인에서 창 배율×뷰 배율 합성값을 소비시킨다
+(스포트라이트 2단계와 동일 패턴).
+
