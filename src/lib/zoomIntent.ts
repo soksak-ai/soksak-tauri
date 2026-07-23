@@ -4,6 +4,7 @@
 // 프레임 선택은 새 상태가 아니라 DOM 포커스의 자연 상태다 — 크롬 클릭이 곧 진입.
 import { invoke } from "@tauri-apps/api/core";
 import { deepActiveElement, viewContainerOf } from "../commands/catalogDom";
+import { emitPluginEvent } from "../plugins/hooks";
 import { zoomFocusedView } from "../plugins/viewFocus";
 import { useSettings } from "../state/settings";
 
@@ -46,6 +47,8 @@ export function applyWindowZoom(factor: number): void {
   void invoke("webview_zoom", { factor }).catch((e) =>
     console.error("창 줌 적용 실패:", e),
   );
+  // 웹뷰 밖 표면(CEF 엔진 등)에 방송 — 각 엔진 플러그인이 창×뷰 합성 배율을 자기 표면에 적용.
+  emitPluginEvent("window.zoom", { factor });
 }
 
 const defaultDeps: ZoomDeps = {
