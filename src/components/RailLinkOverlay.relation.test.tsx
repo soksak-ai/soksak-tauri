@@ -210,16 +210,14 @@ describe("railRelation 모드 CSS 갈래 (App.css)", () => {
     expect(css).toMatch(
       /\.egroup-area\[data-focus-dim\] \.egroup-body-slot\.spot-clear \{[^}]*background-color: transparent/,
     );
-    // 홀 규칙(:has(.browser-view) background:transparent — 고특이성)이 베일을 이겨 브라우저만
-    // 안 어두워졌던 실측 결함. 축 충돌의 자리(홀 규칙 옆)에 예외를 명시한다: 스포트라이트
-    // 베일은 반투명이라 홀을 막지 않으면서 아래 네이티브를 어둡힌다.
-    for (const pane of ["card", "floating"]) {
-      expect(css).toMatch(
-        new RegExp(
-          `:root\\[data-pane-style="${pane}"\\] \\.egroup-area\\[data-focus-dim\\] \\.egroup-body-slot:not\\(\\.spot-clear\\):has\\(\\.browser-view\\)`,
-        ),
-      );
-    }
+    // 홀 기준은 뷰의 transparent 선언 하나(hole-slot — 슬롯은 영속 레이어의 형제라 슬롯
+    // 자신에 새긴다. PLUGIN-CONTRACT §Transparent). 홀 규칙이 베일을 이겨 브라우저만 안
+    // 어두워졌던 실측 결함의 예외를 같은 기준 위에 명시한다: 스포트라이트 베일은 반투명이라
+    // 홀을 막지 않으면서 아래 네이티브를 어둡힌다. pane 스타일 무관(홀은 표면 종류의 사실).
+    expect(css).toMatch(/\.egroup-body-slot\.hole-slot \{[^}]*background: transparent/);
+    expect(css).toMatch(
+      /\.egroup-area\[data-focus-dim\] \.egroup-body-slot\.hole-slot:not\(\.spot-clear\) \{[^}]*background-color: color-mix\(in srgb, #000 7%, transparent\)/,
+    );
   });
 
   it("railFill 갈래는 두 채움 경로(shape=자연 인접·fill=교체 분리 렌더)를 모두 덮는다", () => {

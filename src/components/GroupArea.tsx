@@ -85,6 +85,16 @@ export const PANE_INSET: Record<string, number> = { flat: 0, card: 5, floating: 
 // 최대화 시 셀/슬롯이 차지하는 전체 rect(컨텐츠 영역 기준 %).
 const FULL_RECT = { left: 0, top: 0, width: 100, height: 100 };
 
+// 홀 판정의 단일 진실 — 뷰의 transparent 선언(레지스트리 decl) 하나. 셀(cell-hole 밴드)과
+// 슬롯(hole-slot 배경·베일·레일 클립)이 같은 함수를 소비한다. 제2 기준(콘텐츠 클래스 등)
+// 도입 금지 — 기준이 갈라지면 절반의 소비자가 못 보는 홀이 생긴다(PLUGIN-CONTRACT §Transparent).
+function isHoleView(view: View | undefined | null): boolean {
+  return (
+    view?.kind === "plugin" &&
+    !!getRegisteredView(`${view.pluginId}.${view.view}`)?.decl.transparent
+  );
+}
+
 // 콘텐츠 셀 레이아웃 = 공유 머신(computeSplitLayout). leaf 값(ViewGroup)을 cell.group 으로 매핑.
 // [중복 제거] 좌측 사이드바와 동일한 레이아웃/히트테스트를 공유한다(splitLayout.ts).
 export function computeLayout(node: GroupNode): {
@@ -576,10 +586,7 @@ export const GroupArea = memo(function GroupArea({
         // 홀 셀(레이어 원칙): 활성 뷰 아래 네이티브 레이어(임베드 webview)가 비쳐야 하면 본문 영역에
         // 배경을 칠하면 안 된다 — CSS 가 헤더/상태바 밴드만 칠하도록 클래스로 표시. 데이터 주도:
         // transparent 선언 플러그인 콘텐츠 뷰(예: 브라우저 플러그인)만 홀로 처리(코어 하드 체크 없음).
-        const holeCell =
-          active?.kind === "plugin" &&
-          !!getRegisteredView(`${active.pluginId}.${active.view}`)?.decl
-            .transparent;
+        const holeCell = isHoleView(active);
         return (
           <div
             key={`cell-${group.id}`}
@@ -703,7 +710,11 @@ export const GroupArea = memo(function GroupArea({
           return (
             <div
               key={view.id}
-              className={`egroup-body-slot${
+              // hole-slot: 슬롯은 셀의 자식이 아니라 영속 레이어의 형제라서, 홀 표시는
+              // 셀렉터 조합(.cell-hole 하위)이 아니라 슬롯 자신의 클래스여야 한다.
+              // 기준은 셀과 동일한 단일 선언 축(isHoleView) — 홀 배경·베일·레일 클립이
+              // 전부 이 클래스 하나를 본다.
+              className={`egroup-body-slot${isHoleView(view) ? " hole-slot" : ""}${
                 group.id === content.activeGroupId ? " spot-clear" : ""
               }`}
               // 네이티브 클릭 판정용(App.tsx native-mousedown → elementFromPoint).

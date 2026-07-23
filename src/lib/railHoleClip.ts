@@ -46,10 +46,11 @@ export function visibleHoles(
   return out;
 }
 
-// 홀 기준은 뷰의 transparent 선언 하나다(GroupArea 가 셀에 cell-hole 로 표시) — App.css
-// 홀 배경 규칙과 같은 기준. 콘텐츠 클래스 등 제2 기준을 들이지 마라: 기준이 갈라지면
-// 한쪽만 아는 홀이 생겨 사이드바가 그 표면 위에 칠해진다(실측: OSR 미절단 사고).
-const HOLE_SLOT_SELECTOR = ".egroup-cell.cell-hole .egroup-body-slot";
+// 홀 기준은 뷰의 transparent 선언 하나다 — GroupArea 가 슬롯 자신에 hole-slot 으로 새긴다
+// (슬롯은 셀의 자식이 아니라 영속 레이어의 형제 — 셀렉터 조합으로는 절대 못 잡는다. 실측:
+// .cell-hole 하위 셀렉터가 공집합이라 네이티브 클립까지 통째로 퇴행했던 사고). App.css 홀
+// 배경 규칙과 같은 기준. 콘텐츠 클래스 등 제2 기준 도입 금지.
+const HOLE_SLOT_SELECTOR = ".egroup-body-slot.hole-slot";
 
 /**
  * 모션 위상 동안 레일 평면의 clip-path 를 홀 rect 에 프레임 동기로 맞춘다.
