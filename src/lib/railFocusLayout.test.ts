@@ -125,6 +125,45 @@ describe("FLOW 포커스 패널 근접 투영", () => {
     expect(terminal.rect.left).toBeCloseTo(0, 5); // 비참여 패널은 제자리
   });
 
+  it("폭이 다른 형제도 sizes 를 함께 교환해 연결한다 — 각 폭 보존, 위치만 맞바꿈", () => {
+    // 신고 재현: 위 [t1|t2](반반), 아래 [about(1/3)|astryx(2/3)]. astryx 왼쪽 33.3은 위가
+    // 가로질러 더럽고, 파트너 about 과 폭이 달라 종전 가드는 교환을 거부했다 — 결과:
+    // 활성은 되는데 레일이 영원히 못 붙는다("하단 우측에 포커스가 가지 않는다" 체감).
+    // 교환은 children 과 sizes 를 함께 — astryx 는 자기 폭(2/3) 그대로 0에 앉는다(0은 항상 깨끗).
+    const reported: SplitTree<Panel> = {
+      type: "split",
+      id: "root",
+      dir: "col",
+      sizes: [0.5, 0.5],
+      children: [
+        {
+          type: "split",
+          id: "top",
+          dir: "row",
+          sizes: [0.5, 0.5],
+          children: [leaf("t1"), leaf("t2")],
+        },
+        {
+          type: "split",
+          id: "bottom",
+          dir: "row",
+          sizes: [1 / 3, 2 / 3],
+          children: [leaf("about"), leaf("astryx")],
+        },
+      ],
+    };
+    const projected = projectFocusedPanelNearRail(reported, "astryx", true);
+    expect(order(projected)).toEqual(["t1", "t2", "astryx", "about"]);
+    const layout = computeSplitLayout(projected);
+    const astryx = layout.cells.find((cell) => cell.value.id === "astryx")!;
+    const about = layout.cells.find((cell) => cell.value.id === "about")!;
+    expect(astryx.rect.left).toBeCloseTo(0, 5);
+    expect(astryx.rect.width).toBeCloseTo(200 / 3, 5); // 폭 보존
+    expect(about.rect.width).toBeCloseTo(100 / 3, 5); // 폭 보존
+    const t1 = layout.cells.find((cell) => cell.value.id === "t1")!;
+    expect(t1.rect.left).toBeCloseTo(0, 5); // 비참여 row 제자리
+  });
+
   it("교환해도 깨끗한 선에 닿지 못하는 구조라면 잘못된 재배치를 적용하지 않는다", () => {
     const original: SplitTree<Panel> = {
       type: "split",
@@ -160,7 +199,7 @@ describe("FLOW 포커스 패널 근접 투영", () => {
     expect(projectFocusedPanelNearRail(original, "target", true)).toBe(original);
   });
 
-  it("서로 다른 폭의 형제는 콘텐츠를 늘이거나 줄이지 않도록 교환하지 않는다", () => {
+  it("서로 다른 폭의 형제는 sizes 를 함께 교환한다 — 어떤 패널도 늘거나 줄지 않는다", () => {
     const original: SplitTree<Panel> = {
       type: "split",
       id: "root",
@@ -177,6 +216,13 @@ describe("FLOW 포커스 패널 근접 투영", () => {
         leaf("bottom"),
       ],
     };
-    expect(projectFocusedPanelNearRail(original, "target", true)).toBe(original);
+    const projected = projectFocusedPanelNearRail(original, "target", true);
+    expect(order(projected)).toEqual(["target", "a", "bottom"]);
+    const layout = computeSplitLayout(projected);
+    const target = layout.cells.find((cell) => cell.value.id === "target")!;
+    const a = layout.cells.find((cell) => cell.value.id === "a")!;
+    expect(target.rect.left).toBeCloseTo(0, 5);
+    expect(target.rect.width).toBeCloseTo(70, 5); // 폭 보존
+    expect(a.rect.width).toBeCloseTo(30, 5); // 폭 보존
   });
 });
