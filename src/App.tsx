@@ -17,6 +17,7 @@ import { railEdgeWidths } from "./ui/railEdges";
 import { parkedStyle } from "./lib/layerPark";
 import { emitPluginEvent } from "./plugins/hooks";
 import { resolveTerminalProgram } from "./plugins/terminalEngine";
+import { startPointerOrderRepair } from "./lib/pointerOrderRepair";
 import {
   activeSessionViewId,
   startViewFocusSync,
@@ -636,6 +637,8 @@ function App() {
   // 활성 project/space/panel/view 체인과 실제 키보드 포커스는 하나의 계약이다.
   // 마운트 시 자동포커스하지 않고, 최신 활성 뷰 의도만 provider 에 전달한다.
   useEffect(() => startViewFocusSync(), []);
+  // 유령 홀드 복구 — 창 활성화 클릭의 mouseup 유실이 터미널 드래그 선택으로 번지는 것을 차단.
+  useEffect(() => startPointerOrderRepair(), []);
 
   // dev 전용 mock 트리거 — 라이브 폰 없이 모달을 띄워 시각 검증(import.meta.env.DEV 게이트). 프로덕션
   // 번들(DEV=false)에선 아무것도 설치 안 한다. window.__soksakMockRemoteConfirm() 으로 mock 요청 emit.
