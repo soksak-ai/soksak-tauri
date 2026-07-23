@@ -196,7 +196,7 @@ describe("railRelation 모드 CSS 갈래 (App.css)", () => {
     const none = decls(".rail-link-overlay.relation-stroke.fill-none .rail-link-shape");
     expect(none).toMatch(/fill:\s*none/);
     const faint = decls(".rail-link-overlay.relation-stroke.fill-faint .rail-link-shape");
-    expect(faint).toMatch(/fill:\s*color-mix\(in srgb, var\(--acc\)\s*3%,\s*transparent\)/);
+    expect(faint).toMatch(/fill:\s*color-mix\(in srgb, var\(--acc\)\s*1%,\s*transparent\)/);
   });
 
   it("떠다니는 관계 라벨 금지 — 결부 이름은 호스트 헤더(.proj-frame-bound) 한 곳", () => {

@@ -15,7 +15,7 @@
 
 사용자 요청: "연결된 화면의 바탕색을 ① 빼보자 ② 아주 옅게만 넣자".
 
-- 스위치: `sok settings.set '{"railFill":"none"}'`(기본, 1안) | `'{"railFill":"faint"}'`(2안, 액센트 3%)
+- 스위치: `sok settings.set '{"railFill":"none"}'`(기본, 1안) | `'{"railFill":"faint"}'`(2안, 액센트 1% — 사용자 하향 판정 3%→1%)
 - 적용 범위: relation-stroke 안의 fill 만. tint/moment 갈래 불간섭.
 - 결정 시: 채택안만 남기고 축·CSS 갈래·테스트 갈래 소거(settings.railFill, App.css fill-none/faint).
 
