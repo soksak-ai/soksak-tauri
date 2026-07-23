@@ -2,8 +2,7 @@ import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { RailRect } from "../lib/railPlacement";
 import {
   insetClippedEdges,
-  openOrthogonalPath,
-  splitRightEdge,
+  splitRightEdgeRounded,
   railLinkAdjacent,
   railLinkBoxes,
   railLinkPolygon,
@@ -138,15 +137,12 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
               size.height,
               strokeWidth / 2,
             );
-            const split = splitRightEdge(inset);
+            const split = splitRightEdgeRounded(inset, radius);
             if (!split) return <path className="rail-link-shape" d={path} />;
             return (
               <>
                 <path className="rail-link-fill" d={path} />
-                <path
-                  className="rail-link-rest"
-                  d={openOrthogonalPath(split.rest, radius)}
-                />
+                <path className="rail-link-rest" d={split.solid} />
                 <line
                   className="rail-link-edge"
                   x1={split.edge[0].x}
