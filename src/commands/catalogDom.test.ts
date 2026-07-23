@@ -291,6 +291,12 @@ describe("ui.focus.trace — 클릭 순간의 포커스 인과 타임라인", ()
   // 실기기 클릭의 "그 순간"에 무엇이 포커스를 받고 무엇이 빼앗는지는 이벤트 타임라인만이
   // 증언한다. start 는 focusin/focusout/mousedown/mouseup 리스너를 달고 ms 후 스스로 멈춘다
   // (무한 감시 금지) — read 는 기록을 반환한다.
+  it("상한은 3분 — 사용자 실조작 왕복(간헐 재현 다회 시도)을 한 타임라인에 담는다", async () => {
+    const r = await execute("ui.focus.trace.start", { ms: 999_999_999 }, {});
+    expect(r.ok).toBe(true);
+    expect((r.data as { ms: number }).ms).toBe(180_000);
+  });
+
   it("start→이벤트 기록→read, ms 경과 후 자기종료한다", async () => {
     vi.useFakeTimers();
     try {
