@@ -2059,6 +2059,13 @@ body,
 :root[data-pane-style="floating"] .egroup-body-slot:has(.browser-view) {
   background: transparent;
 }
+/* 홀 규칙의 유일한 예외 — 스포트라이트 베일. 반투명이라 홀을 막지 않으면서 아래의
+   네이티브 표면을 어둡힌다. 이 규칙이 위의 홀 규칙보다 특이성이 높아야 성립하므로
+   충돌이 사는 이 자리에서 명시한다(떨어진 곳의 특이성 전쟁 금지). */
+:root[data-pane-style="card"] .egroup-area[data-focus-dim] .egroup-body-slot:not(.spot-clear):has(.browser-view),
+:root[data-pane-style="floating"] .egroup-area[data-focus-dim] .egroup-body-slot:not(.spot-clear):has(.browser-view) {
+  background-color: color-mix(in srgb, #000 7%, transparent);
+}
 :root[data-pane-style="card"] .egroup-tabs .view-tabs-wrap,
 :root[data-pane-style="floating"] .egroup-tabs .view-tabs-wrap {
   background: transparent;
