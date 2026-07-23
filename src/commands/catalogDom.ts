@@ -644,7 +644,7 @@ export function registerDomCatalog(): void {
       x: { type: "number", description: "viewport x", required: true },
       y: { type: "number", description: "viewport y", required: true },
     },
-    returns: "{ tag, className, data, rect } | { tag: null }",
+    returns: "{ tag, className, dataset, host, rect } | { tag: null }",
     message: (d) => (d.tag ? tmsg("msg.ui.hit.found", { tag: String(d.tag) }) : tmsg("msg.ui.hit.none")),
     examples: ['ui.hit \'{"x":200,"y":140}\''],
     handler: (p) => {
@@ -653,13 +653,14 @@ export function registerDomCatalog(): void {
       const r = el.getBoundingClientRect();
       // SVG 의 className 은 SVGAnimatedString — getAttribute 로 통일. 조상 체인의 데이터도 유용해
       // 가장 가까운 [data-node]/[class] 보유 HTML 조상을 closest 로 함께 보고한다.
+      // 필드명은 dataset — data 는 봉투 예약키라 정규화가 페이로드를 삼킨다(ui.measure 와 정렬).
       const host = el.closest<HTMLElement>("[data-node], button, a, [class]");
       return {
         tag: el.tagName.toLowerCase(),
         className: el.getAttribute("class") ?? "",
-        data: el instanceof HTMLElement ? { ...el.dataset } : {},
+        dataset: el instanceof HTMLElement ? { ...el.dataset } : {},
         host: host
-          ? { tag: host.tagName.toLowerCase(), className: host.className, data: { ...host.dataset } }
+          ? { tag: host.tagName.toLowerCase(), className: host.className, dataset: { ...host.dataset } }
           : null,
         rect: { x: +r.x.toFixed(1), y: +r.y.toFixed(1), w: +r.width.toFixed(1), h: +r.height.toFixed(1) },
       };

@@ -266,6 +266,33 @@ describe("ui.input.click — phase 분해(게스처 중간 상태의 검증 가�
     expect(seen).toEqual(["mousedown", "mouseup", "click"]);
   });
 
+  it("ui.hit 결과에 tag/rect 가 살아서 돌아온다 — 봉투 예약키 'data' 와 충돌 금지", async () => {
+    // 실측 결함: 핸들러 페이로드 필드명이 봉투 예약키 data 라서 정규화가 그 값만 남기고
+    // tag/className/rect 를 전부 버렸다 — 모든 좌표가 "요소 없음"으로 보고됐다(라이브
+    // w-d9683c0c, 터미널 center 히트가 canvas 인데 null 보고). 도메인 페이로드는 예약키
+    // (ok/code/message/data/media)를 쓰지 않는다 — dataset 명명은 ui.measure 와 정렬.
+    const btn = document.createElement("button");
+    btn.dataset.node = "hit-target";
+    document.body.appendChild(btn);
+    const orig = document.elementFromPoint;
+    Object.defineProperty(document, "elementFromPoint", {
+      value: () => btn,
+      configurable: true,
+    });
+    try {
+      const r = await execute("ui.hit", { x: 5, y: 5 }, {});
+      expect(r.ok).toBe(true);
+      const d = r.data as { tag?: string; dataset?: Record<string, string> };
+      expect(d.tag).toBe("button");
+      expect(d.dataset).toMatchObject({ node: "hit-target" });
+    } finally {
+      Object.defineProperty(document, "elementFromPoint", {
+        value: orig,
+        configurable: true,
+      });
+    }
+  });
+
   it("phase 를 생략하면 종전과 동일한 3종 시퀀스다(하위호환)", async () => {
     mountNode(`<button data-node="btn">x</button>`);
     const el = document.querySelector('[data-node="btn"]')!;
