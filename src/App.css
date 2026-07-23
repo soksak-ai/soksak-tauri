@@ -520,28 +520,13 @@ body,
   animation: rail-flip-x var(--rail-travel-ms) cubic-bezier(0.4, 0, 0.2, 1);
   will-change: translate;
 }
-/* §12-④ 주행 불활성 — 이동 중인 표면"만" 입력을 받지 않는다. 한 클릭의 mousedown 이 스왑을
-   시작시키면 mouseup 은 미끄러지는 중인 다른 패널 위에 떨어져 그쪽 리스너가 활성화를 도로
-   가져간다(왕복 = "움직였다 제자리" 결함) — 이동 요소의 불활성이 이를 막는다. 단, 전면
-   블랭킷은 주행 중 도착하는 새 클릭을 content-body 로 떨어뜨려 죽인다(실측 trace) — 정지한
-   표면은 언제나 히트 가능해야 한다. 이동 여부는 GroupArea 가 flip 델타로 계산해
-   data-travel-moved="1" 로 표식한다. */
-.content-body.rail-traveling .egroup-cell[data-travel-moved="1"],
-.content-body.rail-traveling .egroup-body-slot[data-travel-moved="1"],
-.content-body.rail-traveling .egroup-divider[data-travel-moved="1"],
-.egroup-area.focus-layout-traveling .egroup-cell[data-travel-moved="1"],
-.egroup-area.focus-layout-traveling .egroup-body-slot[data-travel-moved="1"],
-.egroup-area.focus-layout-traveling .egroup-divider[data-travel-moved="1"] {
-  pointer-events: none;
-}
+/* §12-④ 개정 — 주행 중에도 입력은 열려 있다. straddle 방지는 히트 차단이 아니라 활성화
+   귀속이 담당한다(slotGesture.armSlotActivation: 활성화=게스처 완결 시점, 시작 슬롯 귀속).
+   이전의 불활성 규칙(전면→이동요소 한정)은 주행 중 도착하는 실클릭을 content-body 로
+   떨어뜨려 죽였다(실측 trace) — 입력면 차단 규칙을 다시 들이지 마라. */
 
 /* 예외 — 제스처를 시작한 당사자 슬롯은 위상 중에도 입력을 받는다. mousedown 대상의
    mouseup(xterm 이 입력 포커스를 잡는 지점)까지 막으면 비결부 뷰 클릭이 UI 활성만 되고
-   터미널 포커스를 영영 못 받는다. 다른(지나가는) 표면은 여전히 불활성 — straddle 방어 유지. */
-.content-body.rail-traveling .egroup-body-slot[data-gesture-owner="1"],
-.egroup-area.focus-layout-traveling .egroup-body-slot[data-gesture-owner="1"] {
-  pointer-events: auto;
-}
 /* 좌측 파일 트리 사이드바. 폭만 토글(0 ↔ SIDEBAR_W), 닫혀도 언마운트하지 않아
    트리 상태(펼침/스크롤)가 유지된다. overflow hidden 으로 접을 때 깔끔히 잘린다. */
 .sidebar {
