@@ -847,10 +847,20 @@ pub fn webview_zoom(window: tauri::Window, factor: f64) -> Result<(), String> {
     let f = factor.clamp(0.5, 2.0);
     let label = window.label().to_string();
     let app = window.app_handle();
+    if let Ok(mut m) = WINDOW_ZOOM.lock() {
+        m.insert(label.clone(), f);
+    }
     let child_prefix = format!("b-{label}-");
     for (wl, wv) in app.webviews() {
         if wl == label || wl.starts_with(&child_prefix) {
             wv.set_zoom(f).map_err(|e| e.to_string())?;
+        }
+        if wl.starts_with(&child_prefix) {
+            // 프레임도 같은 배율로 즉시 재배치 — 프론트 레이아웃(CSS px)은 불변이라 여기서만 안다.
+            let raw = RAW_BOUNDS.lock().ok().and_then(|m| m.get(&wl).copied());
+            if let Some(raw) = raw {
+                apply_child_bounds(&wv, &wl, raw)?;
+            }
         }
     }
     Ok(())
@@ -895,6 +905,58 @@ pub fn webview_divider_highlight(window: tauri::Window, rect: Option<HlRect>) {
 // bounds 기반 가시성 동기화 상태 — 마지막으로 적용한 visible 값(라벨별). 변화시에만 show/hide
 // 를 호출한다(bounds 는 드래그 중 ~30Hz — 매번 show 하면 WebKit 재합성 낭비). webview_close 가
 // 지운다(라벨 재사용 시 stale 판정 방지).
+// 창별 줌 배율(webview_zoom 이 기록) — 자식 웹뷰 배치는 CSS px 로 오므로, 메인 웹뷰가
+// 줌되면 화면상 위치·크기는 배율만큼 이동한다. bounds 적용 시 이 배율을 곱해야 프레임과
+// 콘텐츠(자식 자체 줌)가 나머지 UI 와 한 몸으로 스케일된다(실측: 미적용 시 프레임 제자리
+// + 콘텐츠만 확대 = 브라우저 깨짐).
+static WINDOW_ZOOM: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, f64>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+// 자식 라벨 → 마지막 CSS bounds(원값). 줌 변경 순간 프론트는 rect 변화를 모르므로(레이아웃
+// 불변) 여기 캐시로 전 자식을 새 배율로 즉시 재배치한다.
+static RAW_BOUNDS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, (f64, f64, f64, f64)>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+fn window_zoom_of(label: &str) -> f64 {
+    WINDOW_ZOOM
+        .lock()
+        .ok()
+        .and_then(|m| m.get(label).copied())
+        .unwrap_or(1.0)
+}
+
+/// CSS bounds → 창 줌 배율 적용 논리 bounds. 순수 함수(단위 테스트 대상).
+pub(crate) fn scale_bounds(b: (f64, f64, f64, f64), f: f64) -> (f64, f64, f64, f64) {
+    (b.0 * f, b.1 * f, b.2 * f, b.3 * f)
+}
+
+fn apply_child_bounds(
+    wv: &tauri::Webview,
+    label: &str,
+    raw: (f64, f64, f64, f64),
+) -> Result<(), String> {
+    let win = wv.window();
+    let f = window_zoom_of(win.label());
+    let (x, y, w, h) = scale_bounds(raw, f);
+    wv.set_position(LogicalPosition::new(x, y))
+        .map_err(|e| e.to_string())?;
+    wv.set_size(LogicalSize::new(w, h))
+        .map_err(|e| e.to_string())?;
+    if let (Ok(size), Ok(scale)) = (win.inner_size(), win.scale_factor()) {
+        let (ww, wh) = (size.width as f64 / scale, size.height as f64 / scale);
+        let visible = x + w > 0.0 && y + h > 0.0 && x < ww && y < wh;
+        let mut map = BOUNDS_VIS.lock().unwrap();
+        if map.get(label).copied() != Some(visible) {
+            if visible {
+                wv.show().map_err(|e| e.to_string())?;
+            } else {
+                wv.hide().map_err(|e| e.to_string())?;
+            }
+            map.insert(label.to_string(), visible);
+        }
+    }
+    Ok(())
+}
+
 static BOUNDS_VIS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, bool>>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
 
@@ -916,24 +978,10 @@ pub fn webview_bounds(
     h: f64,
 ) -> Result<(), String> {
     if let Some(wv) = app.get_webview(&label) {
-        wv.set_position(LogicalPosition::new(x, y))
-            .map_err(|e| e.to_string())?;
-        wv.set_size(LogicalSize::new(w, h))
-            .map_err(|e| e.to_string())?;
-        let win = wv.window();
-        if let (Ok(size), Ok(scale)) = (win.inner_size(), win.scale_factor()) {
-            let (ww, wh) = (size.width as f64 / scale, size.height as f64 / scale);
-            let visible = x + w > 0.0 && y + h > 0.0 && x < ww && y < wh;
-            let mut map = BOUNDS_VIS.lock().unwrap();
-            if map.get(&label).copied() != Some(visible) {
-                if visible {
-                    wv.show().map_err(|e| e.to_string())?;
-                } else {
-                    wv.hide().map_err(|e| e.to_string())?;
-                }
-                map.insert(label, visible);
-            }
+        if let Ok(mut m) = RAW_BOUNDS.lock() {
+            m.insert(label.clone(), (x, y, w, h));
         }
+        apply_child_bounds(&wv, &label, (x, y, w, h))?;
     }
     Ok(())
 }
@@ -1102,6 +1150,9 @@ pub fn webview_close(app: AppHandle, label: String) -> Result<(), String> {
     if let Some(wv) = app.get_webview(&label) {
         // 파괴 예고(webview_health) — 닫히는 webview 의 프로세스 종료를 크래시로 오분류하지 않는다.
         crate::webview_health::mark_expected_teardown(&app, &label);
+        if let Ok(mut m) = RAW_BOUNDS.lock() {
+            m.remove(&label);
+        }
         // Backend N 레지스트리 회수 — close 전에 surface 포인터를 집합에서 제거(위생; 미제거여도
         // 형제 순회가 live subview 만 보므로 자가치유되나 누수 방지).
         #[cfg(target_os = "macos")]
@@ -1573,5 +1624,19 @@ pub fn install_live_resize_monitor(app: &AppHandle) {
         };
         // 옵저버는 앱 수명 동안 유지 — 의도된 leak(앱 전역, 설치 1회).
         std::mem::forget(token);
+    }
+}
+
+#[cfg(test)]
+mod zoom_bounds_tests {
+    use super::scale_bounds;
+
+    #[test]
+    fn scales_every_component_by_the_window_factor() {
+        assert_eq!(
+            scale_bounds((100.0, 50.0, 300.0, 200.0), 1.2),
+            (120.0, 60.0, 360.0, 240.0)
+        );
+        assert_eq!(scale_bounds((10.0, 20.0, 30.0, 40.0), 1.0), (10.0, 20.0, 30.0, 40.0));
     }
 }
