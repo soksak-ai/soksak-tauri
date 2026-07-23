@@ -26,4 +26,36 @@ describe("슬롯 게스처 귀속 — 클릭 확인 후 이동", () => {
     expect(activate).toHaveBeenCalledTimes(1);
     other.remove();
   });
+
+  it("mouseup 이 유실·선행되어도(창전환 활성화 클릭 뒤엉킴) 폴백으로 완결된다", () => {
+    // 실측(포커스 trace): macOS 창 활성화 클릭은 mouseup(4449)→mousedown(4451) 순서로
+    // 뒤엉켜 배달될 수 있다 — mouseup 만 기다리면 활성화가 다음 무관한 클릭에 잘못
+    // 귀속된다("되었다 안 되었다"). 완결 신호는 셋 중 선착: mouseup·다음 mousedown·타이머.
+    vi.useFakeTimers();
+    try {
+      const activate = vi.fn();
+      armSlotActivation(activate);
+      vi.advanceTimersByTime(400);
+      expect(activate).toHaveBeenCalledTimes(1);
+      window.dispatchEvent(new MouseEvent("mouseup")); // 늦은 up — 중복 실행 금지
+      expect(activate).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("다음 mousedown 도착 = 이전 게스처 종결 — 대기 중 활성화를 먼저 실행한다", () => {
+    vi.useFakeTimers();
+    try {
+      const activate = vi.fn();
+      armSlotActivation(activate);
+      window.dispatchEvent(new MouseEvent("mousedown"));
+      expect(activate).toHaveBeenCalledTimes(1);
+      window.dispatchEvent(new MouseEvent("mouseup"));
+      vi.advanceTimersByTime(400);
+      expect(activate).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
