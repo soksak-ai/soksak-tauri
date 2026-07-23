@@ -74,6 +74,8 @@ export interface PluginEventMap {
   // 코어가 발화한다 — 네이티브 webview 를 소유한 플러그인이 자기 앵커로 bounds 를 1회 재스냅하는
   // 신호. 위치 이동(크기 무변)이라 ResizeObserver 가 못 잡는 전환을 이 이벤트가 덮는다.
   "layout.reflow": { activeSpaceId: string | null };
+  // 창 줌 배율 변경(§Zoom) — 웹뷰 밖 네이티브 표면(CEF 엔진 등)이 유효 배율(창×뷰) 합성에 쓴다.
+  "window.zoom": { factor: number };
   // 뷰 본문 슬롯의 유효 가시성(스페이스 활성 && 탭 활성) 변화 — 코어가 단일 소유(R12 네이티브 층 확장).
   // 네이티브 표면(엔진 서피스·child webview)을 가진 플러그인이 표시/숨김과 재스냅을 이 사실에 맞춘다
   // (뷰포트 추측 IntersectionObserver 대체). parked=true 는 화면 밖 파킹, false 는 복귀.
@@ -157,6 +159,7 @@ export const PLUGIN_EVENTS: readonly (keyof PluginEventMap)[] = [
   "window.live-resize",
   "layout.resize-gesture",
   "layout.reflow",
+  "window.zoom",
   "view.parked",
   "webview.health",
   "bookmarks.changed",
