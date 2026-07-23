@@ -462,9 +462,20 @@ body,
   filter: brightness(0.93) saturate(0.85);
   transition: filter 160ms ease;
 }
+/* 네이티브 표면 셰이드 — 레이어 역전(DOM 최상위·엔진/child 웹뷰는 투명 홀로 아래에서 비침)
+   때문에 filter 는 네이티브 콘텐츠에 닿지 않는다. 슬롯 배경이 홀 위에 깔려 아래의 모든
+   네이티브 표면(CEF 오프스크린·웹뷰 child·astryx)을 균일하게 어둡힌다. DOM 뷰(터미널 등)는
+   자기 불투명 배경 뒤라 이중 적용 없음. 배경은 이벤트를 막지 않는다(클릭 관통 보장). */
+.egroup-area[data-focus-dim] .egroup-body-slot {
+  background: color-mix(in srgb, #000 7%, transparent);
+  transition: filter 160ms ease, background 160ms ease;
+}
 .egroup-area[data-focus-dim] .egroup-cell.spot-clear,
 .egroup-area[data-focus-dim] .egroup-body-slot.spot-clear {
   filter: none;
+}
+.egroup-area[data-focus-dim] .egroup-body-slot.spot-clear {
+  background: transparent;
 }
 /* [임시 — 결부 바탕 2안 비교 스위치] railFill 설정(none|faint) — 사용자 요청(① 빼기
    ② 아주 옅게). stroke 안의 fill 만 갈래친다(tint/moment 는 fill 이 본질이라 불간섭).
