@@ -467,15 +467,17 @@ body,
    네이티브 표면(CEF 오프스크린·웹뷰 child·astryx)을 균일하게 어둡힌다. DOM 뷰(터미널 등)는
    자기 불투명 배경 뒤라 이중 적용 없음. 배경은 이벤트를 막지 않는다(클릭 관통 보장). */
 .egroup-area[data-focus-dim] .egroup-body-slot {
-  background: color-mix(in srgb, #000 7%, transparent);
-  transition: filter 160ms ease, background 160ms ease;
+  /* background 쇼트핸드+color-mix 는 이 WebKit 이 선언을 드롭한다(실측: computed 가
+     transparent — filter 는 같은 셀렉터로 적용되는데 배경만 죽음). 롱핸드로 고정. */
+  background-color: color-mix(in srgb, #000 7%, transparent);
+  transition: filter 160ms ease, background-color 160ms ease;
 }
 .egroup-area[data-focus-dim] .egroup-cell.spot-clear,
 .egroup-area[data-focus-dim] .egroup-body-slot.spot-clear {
   filter: none;
 }
 .egroup-area[data-focus-dim] .egroup-body-slot.spot-clear {
-  background: transparent;
+  background-color: transparent;
 }
 /* [임시 — 결부 바탕 2안 비교 스위치] railFill 설정(none|faint) — 사용자 요청(① 빼기
    ② 아주 옅게). stroke 안의 fill 만 갈래친다(tint/moment 는 fill 이 본질이라 불간섭).
