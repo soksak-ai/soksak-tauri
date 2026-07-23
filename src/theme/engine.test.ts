@@ -106,6 +106,36 @@ describe("테마 relation 표면 계약", () => {
     expect(root.dataset.relationLabel).toBe("badge");
   });
 
+  it("toolbar 토큰 — 생략 시 기본값(28/8) 주입, 선언 시 테마 값 주입", () => {
+    // 기능 툴바 행 계약: 값(높이·수평 패딩)은 테마가 소유하고 코어가 변수로 주입한다.
+    // 툴바는 선택 표면 — 기능이 안 쓰면 생략, 쓰면 이 변수를 소비해야 한다.
+    const def = parseTheme(themeWith({}), "def.json");
+    expect(def.validation.errors).toEqual([]);
+    applyThemeToDom(def.theme!, "light");
+    const root = document.documentElement;
+    expect(root.style.getPropertyValue("--toolbar-h")).toBe("28px");
+    expect(root.style.getPropertyValue("--toolbar-pad-x")).toBe("8px");
+
+    const custom = parseTheme(
+      { ...themeWith({}), toolbar: { height: 32, padX: 12 } },
+      "custom.json",
+    );
+    expect(custom.validation.errors).toEqual([]);
+    applyThemeToDom(custom.theme!, "light");
+    expect(root.style.getPropertyValue("--toolbar-h")).toBe("32px");
+    expect(root.style.getPropertyValue("--toolbar-pad-x")).toBe("12px");
+  });
+
+  it("toolbar 토큰 — 범위 밖 수치는 거부한다", () => {
+    const bad = parseTheme(
+      { ...themeWith({}), toolbar: { height: 8, padX: 99 } },
+      "bad.json",
+    );
+    expect(bad.theme).toBeNull();
+    expect(bad.validation.errors.some((e) => e.includes("toolbar.height"))).toBe(true);
+    expect(bad.validation.errors.some((e) => e.includes("toolbar.padX"))).toBe(true);
+  });
+
   it("새 relation 객체는 부분 선언과 범위 밖 수치를 거부한다", () => {
     const partial = parseTheme(
       { ...themeWith({}), relation: { stroke: "var(--acc)" } },

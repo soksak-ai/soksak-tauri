@@ -80,6 +80,18 @@ export interface ThemeRelation {
   label: "badge" | "none";
 }
 
+// 기능 툴바 행(선택 표면) 토큰 — 값은 테마가 소유한다. 툴바를 쓰는 기능은 이 변수를
+// 소비해야 하고(--toolbar-h/--toolbar-pad-x), 안 쓰는 기능은 행 자체를 생략한다.
+export interface ThemeToolbar {
+  height: number; // px, 20..48
+  padX: number; // px, 0..24
+}
+
+export const DEFAULT_THEME_TOOLBAR: Readonly<ThemeToolbar> = Object.freeze({
+  height: 28,
+  padX: 8,
+});
+
 export const DEFAULT_THEME_RELATION: Readonly<ThemeRelation> = Object.freeze({
   stroke: "var(--acc)",
   fill: "color-mix(in srgb, var(--acc) 7%, transparent)",
@@ -96,6 +108,7 @@ export interface ThemeSpec {
   chrome: ThemeChrome;
   effects: ThemeEffects;
   relation: ThemeRelation;
+  toolbar: ThemeToolbar;
   // 출처(내장/외부 파일 경로) — 동작엔 영향 없음(표시용).
   source: "builtin" | string;
 }
@@ -162,6 +175,25 @@ function validateColors(
   if (r3 !== null && r3 < 3) {
     warnings.push(`${label}.fg3 대비 ${r3.toFixed(2)}:1 < 3:1 (WCAG 미달)`);
   }
+}
+
+function parseToolbar(value: unknown, errors: string[]): ThemeToolbar {
+  if (value === undefined) return { ...DEFAULT_THEME_TOOLBAR };
+  if (!isRecord(value)) {
+    errors.push("toolbar: 객체가 아님");
+    return { ...DEFAULT_THEME_TOOLBAR };
+  }
+  if (typeof value.height !== "number" || value.height < 20 || value.height > 48) {
+    errors.push("toolbar.height: 20..48 숫자여야 함");
+  }
+  if (typeof value.padX !== "number" || value.padX < 0 || value.padX > 24) {
+    errors.push("toolbar.padX: 0..24 숫자여야 함");
+  }
+  return {
+    height:
+      typeof value.height === "number" ? value.height : DEFAULT_THEME_TOOLBAR.height,
+    padX: typeof value.padX === "number" ? value.padX : DEFAULT_THEME_TOOLBAR.padX,
+  };
 }
 
 function parseRelation(
@@ -263,6 +295,7 @@ export function parseTheme(
     amb: typeof eff.amb === "string" ? eff.amb : null,
   };
   const relation = parseRelation(raw.relation, errors);
+  const toolbar = parseToolbar(raw.toolbar, errors);
 
   // 경계 보장 불변식(UI 헌법 §B1: 패널 경계는 무조건 존재) — 토큰 조합이 경계를
   // 소멸시키면 거부: flat(프레임 무)에는 divider "solid"(상시 seam 선)가 필수.
@@ -284,6 +317,7 @@ export function parseTheme(
       chrome: raw.chrome as unknown as ThemeChrome,
       effects,
       relation,
+      toolbar,
       source,
     },
     validation: { ok: true, errors, warnings },
@@ -322,6 +356,8 @@ export function applyThemeToDom(theme: ThemeSpec, mode: ThemeMode): ThemeMode {
   s.setProperty("--glow", theme.effects.glow ?? "none");
   s.setProperty("--scan", String(theme.effects.scanlines));
   s.setProperty("--amb", theme.effects.amb ?? colors.acc);
+  s.setProperty("--toolbar-h", `${theme.toolbar.height}px`);
+  s.setProperty("--toolbar-pad-x", `${theme.toolbar.padX}px`);
   s.setProperty("--relation-stroke", theme.relation.stroke);
   s.setProperty("--relation-fill", theme.relation.fill);
   s.setProperty("--relation-stroke-w", `${theme.relation.strokeWidth}px`);

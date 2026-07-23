@@ -128,6 +128,17 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
     }
   });
 
+  it("툴바 행 계약: 코어 툴바(.fv-toolbar)는 테마 토큰을 소비한다 — 자체 치수 재창조 금지", () => {
+    // 기능 상단 바가 저마다 치수를 발명해 그리드가 어긋났다(실측: 브라우저·에디터·칸반
+    // 3행 전부 상이). 계약: 툴바는 선택 표면이되, 존재하면 var(--toolbar-h)/
+    // var(--toolbar-pad-x)를 소비한다. 코어 내장 표면(파일 뷰어)이 1호 준수자다.
+    const rule = rules().find((r) => r.selector.split(",").some((s2) => s2.trim() === ".fv-toolbar"));
+    expect(rule).toBeTruthy();
+    expect(rule!.decls).toMatch(/height:\s*var\(--toolbar-h\)/);
+    expect(rule!.decls).toMatch(/padding:\s*0\s*var\(--toolbar-pad-x\)/);
+    expect(rule!.decls).not.toMatch(/height:\s*\d/);
+  });
+
   it("R1: 죽은 변수(--tab-h/--ws-tab-h) 잔재 금지 — 계약 변수는 패딩뿐", () => {
     expect(css).not.toMatch(/--tab-h\b|--ws-tab-h\b/);
   });
