@@ -240,3 +240,60 @@ describe("view focus ownership", () => {
     expect(focused).toEqual(["b", "b"]);
   });
 });
+
+describe("delivery lands or reports", () => {
+  it("미착지 배달은 다음 프레임 1회 재시도해 착지시킨다", () => {
+    const { coordinator, flushFrame } = fixture();
+    const container = document.createElement("div");
+    const input = document.createElement("input");
+    container.append(input);
+    document.body.append(container);
+    let calls = 0;
+    coordinator.registerMountedView(
+      "v1",
+      container,
+      provider({
+        focus: () => {
+          calls += 1;
+          if (calls >= 2) input.focus(); // 1차는 준비 전(무연산) — 실측: ghostty 미착지 시그니처
+        },
+      }),
+      () => context,
+    );
+    coordinator.requestFocus("v1");
+    flushFrame(); // 1차 배달 — 미착지
+    expect(document.activeElement).not.toBe(input);
+    flushFrame(); // 재시도 — 착지해야 한다
+    expect(document.activeElement).toBe(input);
+    expect(coordinator.snapshot().delivered).toBe(true);
+  });
+
+  it("재시도 후에도 미착지면 어느 뷰인지 보고한다 — 침묵 금지", () => {
+    const errors: unknown[] = [];
+    const frames: FrameRequestCallback[] = [];
+    const coordinator = new ViewFocusCoordinator({
+      schedule: (cb) => {
+        frames.push(cb);
+        return frames.length;
+      },
+      onError: (error) => errors.push(error),
+    });
+    const flushFrame = () => {
+      const pending = frames.splice(0);
+      for (const cb of pending) cb(performance.now());
+    };
+    const container = document.createElement("div");
+    document.body.append(container);
+    coordinator.registerMountedView(
+      "v9",
+      container,
+      provider({ focus: () => {} }), // 영원히 미착지
+      () => context,
+    );
+    coordinator.requestFocus("v9");
+    flushFrame();
+    flushFrame();
+    expect(errors.length).toBe(1);
+    expect(String(errors[0])).toContain("v9");
+  });
+});
