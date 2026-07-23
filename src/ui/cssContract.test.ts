@@ -145,7 +145,7 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
     // 사용자 표준: 2행(툴바급 행)은 레일과 패널이 '공동사용'한다 — 사이드바 core 바가
     // --chrome-row-h(37)를 쓰면 패널 툴바(28)와 그리드가 어긋난다(실측 스크린샷).
     expect(css).toMatch(
-      /\.proj-frame-body \.ft-header \{[^}]*height: var\(--toolbar-h/,
+      /\.proj-frame-body \.ft-sidebar \.ft-header \{[^}]*height: var\(--toolbar-h/,
     );
   });
 
