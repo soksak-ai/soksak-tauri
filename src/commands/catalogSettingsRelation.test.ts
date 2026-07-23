@@ -26,13 +26,13 @@ beforeEach(() => {
 describe("settings.focusDim 명령 표면", () => {
   it("settings.get 반환(기본 false) + set 으로 토글, 비불리언 거부", async () => {
     const g = await execute("settings.get", {}, {});
-    expect((g.data as { focusDim: boolean }).focusDim).toBe(false);
-    const on = await execute("settings.set", { key: "focusDim", value: true }, {});
-    expect(on.ok).toBe(true);
-    expect(useSettings.getState().focusDim).toBe(true);
+    expect((g.data as { focusDim: boolean }).focusDim).toBe(true);
+    const off = await execute("settings.set", { key: "focusDim", value: false }, {});
+    expect(off.ok).toBe(true);
+    expect(useSettings.getState().focusDim).toBe(false);
     const bad = await execute("settings.set", { key: "focusDim", value: "yes" }, {});
     expect(bad.ok).toBe(false);
-    await execute("settings.set", { key: "focusDim", value: false }, {});
+    await execute("settings.set", { key: "focusDim", value: true }, {});
   });
 });
 
@@ -53,7 +53,7 @@ describe("settings.railFill 명령 표면", () => {
   it("settings.get 이 railFill 을 반환한다(기본 none)", async () => {
     const result = await execute("settings.get", {}, {});
     expect(result.ok).toBe(true);
-    expect((result.data as { railFill: string }).railFill).toBe("none");
+    expect((result.data as { railFill: string }).railFill).toBe("faint");
   });
 
   it("settings.set 으로 none|faint 전환, 그 외 값은 거부", async () => {

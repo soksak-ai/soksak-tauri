@@ -26,8 +26,8 @@ describe("settings.tabCloseConfirm", () => {
 });
 
 describe("settings.railFocusNear", () => {
-  it("기본은 원본 배열 유지이며 사용자가 근접 배치를 켜고 끌 수 있다", () => {
-    expect(useSettings.getState().railFocusNear).toBe(false);
+  it("기본은 근접 배치 on(사용자 확정 — 현행이 기본)이며 켜고 끌 수 있다", () => {
+    expect(useSettings.getState().railFocusNear).toBe(true);
     useSettings.getState().setRailFocusNear(true);
     expect(useSettings.getState().railFocusNear).toBe(true);
     useSettings.getState().setRailFocusNear(false);
@@ -35,10 +35,10 @@ describe("settings.railFocusNear", () => {
   });
 });
 
-// 포커스 스포트라이트 실험 — 전체를 가라앉히고 선택만 명확하게(결정 시 소거).
+// 포커스 스포트라이트(정식 설정, 기본 on) — 전체를 가라앉히고 선택만 명확하게.
 describe("settings.focusDim", () => {
-  it("기본값은 off", () => {
-    expect(useSettings.getState().focusDim).toBe(false);
+  it("기본값은 on(사용자 확정 — 현행이 기본)", () => {
+    expect(useSettings.getState().focusDim).toBe(true);
   });
   it("setFocusDim 으로 on/off", () => {
     useSettings.getState().setFocusDim(true);
@@ -61,10 +61,10 @@ describe("settings.railSeamStyle", () => {
   });
 });
 
-// 결부 바탕 2안 비교 스위치(사용자 요청: ① 빼기 ② 아주 옅게) — 결정 시 채택안만 남기고 소거.
+// 결부 패널 바탕(정식 설정, 기본 faint=액센트 1%).
 describe("settings.railFill", () => {
-  it("기본값은 none(바탕 없음 — 1안 선행)", () => {
-    expect(useSettings.getState().railFill).toBe("none");
+  it("기본값은 faint(액센트 1% — 사용자 확정)", () => {
+    expect(useSettings.getState().railFill).toBe("faint");
   });
 
   it("setRailFill 로 none|faint 전환·복원", () => {
@@ -75,7 +75,7 @@ describe("settings.railFill", () => {
   });
 });
 
-// 관계면 3안 비교 스위치 — 비교 실험용 임시 축(결정 시 채택안만 남기고 소거).
+// 관계면 표현(정식 설정) — stroke 기본.
 describe("settings.railRelation", () => {
   it("기본값은 stroke(보더+라벨 — 사용자 확정)", () => {
     expect(useSettings.getState().railRelation).toBe("stroke");
