@@ -201,6 +201,15 @@ describe("railRelation 모드 CSS 갈래 (App.css)", () => {
       const clear = decls(`.egroup-area[data-focus-dim] ${part}.spot-clear`);
       expect(clear).toMatch(/filter:\s*none/);
     }
+    // 네이티브 표면 셰이드 — 이 앱의 레이어 역전(DOM 최상위, 엔진·child 웹뷰는 투명 홀로
+    // 아래에서 비침) 때문에 CSS filter 는 네이티브 콘텐츠에 닿지 않는다. 슬롯의 반투명
+    // 배경이 홀 위에 깔려 아래의 모든 네이티브 표면(CEF·웹뷰 child)을 균일하게 어둡힌다.
+    expect(css).toMatch(
+      /\.egroup-area\[data-focus-dim\] \.egroup-body-slot \{[^}]*background: color-mix\(in srgb, #000 7%, transparent\);[^}]*transition:[^;}]*background/,
+    );
+    expect(css).toMatch(
+      /\.egroup-area\[data-focus-dim\] \.egroup-body-slot\.spot-clear \{[^}]*background: transparent/,
+    );
   });
 
   it("결부 바탕 스위치: fill-none=바탕 제거, fill-faint=아주 옅은 틴트", () => {

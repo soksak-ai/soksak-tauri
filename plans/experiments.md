@@ -28,17 +28,14 @@
 - 캐비앳: 네이티브 child(브라우저·astryx)는 1단계 대상 밖 — 채택 시 2단계(엔진 협조 dim) 별도 레인.
 - 결정 시: 채택안 고정 후 focusDim 축·CSS 갈래·테스트 갈래 소거.
 
-## focusDim 2단계 — 네이티브 표면 셰이드 (2026-07-23, 설계 확정·구현 중)
+## focusDim 2단계 — 네이티브 표면 셰이드 (2026-07-23, 완결)
 
 사용자 지시: 정공법. offscreen(CEF)·웹뷰 child·astryx 전부 지원, 꼼수 금지.
 
-설계(코어 소유 표면 관리 seam = src-tauri/src/webview.rs layer 모듈):
-1. Rust `webview_shade_rects(window, rects[])` — 창별 셰이드 CALayer 풀을 네이티브 child 위 z에 유지.
-   CSS px rect → view 좌표 변환은 기존 Hole/divider 변환 패턴 재사용. 클릭 관통 = CALayer 본성.
-   1차: backgroundFilters(CIColorControls brightness -0.07/saturation 0.85 — CSS 파리티) 시도,
-   원격 레이어(WKWebView/CEF)에 안 먹으면 검정 7% 알파 폴백(시각 검증으로 판정).
-2. TS: sessions+settings(focusDim) 구독 모듈이 "네이티브 표면 보유 && 비활성" 슬롯 rect를 계산해 invoke.
-   네이티브 표면 판별 = ownsSurfaceFromManifests(webviewGc) + browser 뷰 kind — 이벤트 구동(폴링 금지).
-3. 검증: TS rect 계산 RED→GREEN + Rust 컴파일 + 재시작 후 브라우저(Google) 열고 비활성 dim 캡처(R3).
-4. 캐비앳: 네이티브 코드라 HMR 불가 — 완성 시 dev 재시작 1회 필요(사용자 인지).
+**채택 설계(레이어 역전 발견으로 CALayer 안 폐기)**: 이 앱은 DOM 이 항상 최상위이고 엔진·child
+웹뷰는 메인 웹뷰 **아래**에서 투명 홀로 비친다(lower_below_main). 따라서 contentView CALayer 안은
+DOM 크롬까지 덮는 오답이고, 정공법 = **홀 위의 DOM 슬롯에 반투명 셰이드 배경**:
+`.egroup-area[data-focus-dim] .egroup-body-slot { background: color-mix(#000 7%) }` + spot-clear 해제.
+아래의 모든 네이티브 표면(CEF·웹뷰 child·astryx·미래 엔진)이 한 규칙으로 균일 dim, DOM 뷰는 자기
+불투명 배경 뒤라 이중 적용 없음, 배경은 이벤트를 안 막아 클릭 관통 보장, Rust·재시작 불요(HMR).
 
