@@ -247,6 +247,44 @@ describe("ui.input.click — 합성 이벤트가 Shadow DOM 경계를 넘는다(
   });
 });
 
+describe("ui.focus.state — 위젯 수준 포커스 판별 축", () => {
+  // 실측 결함: settled=true(activeElement 포함 검사)인데 터미널 커서가 안 그려졌다 —
+  // 사용자 판정 기준은 "포커스 착지=검은 커서". DOM activeElement 만으론 위젯(xterm)이
+  // 자신을 포커스로 아는지(focus 이벤트 수신·focus 클래스·커서 페인트)와 창이 key 인지
+  // (document.hasFocus — 미key 창은 위젯이 커서를 안 그린다)를 가를 수 없다. 두 축을
+  // 관측면으로 노출한다: windowFocused + activeElement 조상 클래스 체인.
+  it("windowFocused(document.hasFocus)와 activeElement.ancestors 클래스 체인을 보고한다", async () => {
+    mountNode(
+      `<div data-node="btn" class="terminal xterm focus"><textarea class="xterm-helper-textarea"></textarea></div>`,
+    );
+    const ta = document.querySelector("textarea") as HTMLTextAreaElement;
+    ta.focus();
+    const orig = document.hasFocus;
+    Object.defineProperty(document, "hasFocus", {
+      value: () => true,
+      configurable: true,
+    });
+    try {
+      const r = await execute("ui.focus.state", {}, {});
+      expect(r.ok).toBe(true);
+      const d = r.data as {
+        windowFocused?: boolean;
+        activeElement?: { ancestors?: { tag: string; className: string }[] };
+      };
+      expect(d.windowFocused).toBe(true);
+      const chain = (d.activeElement?.ancestors ?? [])
+        .map((a) => a.className)
+        .join("|");
+      expect(chain).toContain("focus"); // 위젯 포커스 클래스가 체인으로 드러난다
+    } finally {
+      Object.defineProperty(document, "hasFocus", {
+        value: orig,
+        configurable: true,
+      });
+    }
+  });
+});
+
 describe("ui.input.click — phase 분해(게스처 중간 상태의 검증 가능화)", () => {
   // 한 호출로 down→up→click 을 묶으면 게스처 '중간'(mousedown 이후, mouseup 이전)을
   // 바깥에서 관찰할 수 없다 — 주행 불활성/게스처-당사자 예외처럼 그 중간 상태가 계약인
