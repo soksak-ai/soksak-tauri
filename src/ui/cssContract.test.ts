@@ -110,21 +110,34 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
     expect(css).not.toMatch(/\.content-body\.rail-traveling \.left-rail-plane\s*\{/);
   });
 
-  it("§12-④ 주행 불활성: 이동 중인 표면은 입력을 받지 않는다 — 클릭 찢김(straddle) 금지", () => {
+  it("§12-④ 주행 불활성: 실제 이동하는 표면만 입력을 받지 않는다 — straddle 방지, 새 클릭은 허용", () => {
     // 한 클릭의 mousedown 이 스왑을 시작시키면, mouseup 은 미끄러지는 중인 다른 패널 위에
-    // 떨어져 그쪽이 활성화를 도로 가져간다(왕복 = 제자리 결함). 두 주행 위상 모두에서
-    // 셀·본문 슬롯·디바이더는 pointer-events:none 이어야 한다.
+    // 떨어져 그쪽이 활성화를 도로 가져간다 — 이동 중 표면의 불활성은 유지한다. 그러나
+    // 전면 블랭킷(모든 슬롯 none)은 주행 중 도착하는 **새 클릭**을 content-body 로 떨어뜨려
+    // 죽인다(실측 trace: mousedown 대상 "content-body rail-traveling" → 포커스가 직전/첫
+    // 페인으로 재배달 — "무조건 제일 앞으로 간다"). 원칙 그대로: 이동 중인 표면 =
+    // [data-travel-moved="1"] 만 불활성, 정지한 표면은 언제나 클릭 가능.
     for (const scope of [".content-body.rail-traveling", ".egroup-area.focus-layout-traveling"]) {
       const rule = rules().find(
         (r) => r.selector.includes(scope) && /pointer-events\s*:\s*none/.test(r.decls),
       );
       expect(rule, scope).toBeTruthy();
       for (const part of [".egroup-cell", ".egroup-body-slot", ".egroup-divider"]) {
-        expect(rule!.selector, scope + part).toContain(scope + " " + part);
+        expect(
+          rule!.selector,
+          scope + part + " — 이동 요소만 스코프",
+        ).toContain(scope + " " + part + '[data-travel-moved="1"]');
+        expect(
+          rule!.selector.includes(scope + " " + part + ","),
+          scope + part + " 블랭킷 금지",
+        ).toBe(false);
+        expect(
+          rule!.selector.includes(scope + " " + part + " {"),
+          scope + part + " 블랭킷 금지(말단)",
+        ).toBe(false);
       }
-      // 예외 — 제스처를 시작한 당사자 슬롯(mousedown 대상)은 위상 중에도 입력을 받는다.
-      // 이게 없으면 비결부 뷰 클릭(=주행 시작)의 mouseup 이 차단되어 xterm 입력 포커스가
-      // 영영 못 앉는다(실측: 비결부 클릭만 실패, 결부 클릭은 정상).
+      // 예외 — 제스처를 시작한 당사자 슬롯(mousedown 대상)은 자기가 이동 중이어도 입력을
+      // 받는다(mouseup 이 xterm 입력 포커스 지점).
       const exempt = rules().find(
         (r) =>
           r.selector.includes(scope) &&
