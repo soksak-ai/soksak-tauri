@@ -1339,8 +1339,10 @@ body,
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  height: 28px;
-  padding: 0 8px;
+  /* 툴바 행 계약 — 치수는 테마 토큰이 소유한다(자체 재창조 금지). 툴바는 선택 표면:
+     쓰는 기능만 이 변수를 소비하고, 안 쓰면 행을 생략한다. */
+  height: var(--toolbar-h);
+  padding: 0 var(--toolbar-pad-x);
   border-bottom: 1px solid var(--bd-soft);
 }
 .fv-modes {
