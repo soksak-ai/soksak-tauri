@@ -41,13 +41,15 @@ describe("routeZoom — 포커스가 범위를 정한다", () => {
     expect(win).toHaveBeenCalledWith("out");
   });
 
-  it("포커스 뷰가 줌 미구현이면 무시한다 — 창 줌으로 새지 않는다(옵트인 규약)", () => {
-    mountView("v8");
+  it("포커스 뷰가 줌 미구현이면 범용 폴백 — 컨테이너 --view-font-size 스텝(창 줌으로 새지 않음)", () => {
+    const c = mountView("v8");
     const view = vi.fn(() => false); // 훅 없음
     const win = vi.fn();
     routeZoom("in", { zoomView: view, stepWindow: win });
-    expect(view).toHaveBeenCalled();
     expect(win).not.toHaveBeenCalled();
+    expect(c.style.getPropertyValue("--view-font-size")).toBe("14px");
+    routeZoom("reset", { zoomView: view, stepWindow: win });
+    expect(c.style.getPropertyValue("--view-font-size")).toBe("13px");
   });
 });
 
