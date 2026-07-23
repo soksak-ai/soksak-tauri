@@ -104,13 +104,15 @@ export function railLinkPolygon(
 
 const fmt = (value: number) => Number(value.toFixed(2)).toString();
 
-/** 직교 다각형을 테마 radius로 라운딩한 SVG path. */
-export function roundedOrthogonalPath(points: Point[], radius: number): string {
-  if (points.length < 3) return "";
-  if (radius <= 0) {
-    return `${points.map((p, i) => `${i === 0 ? "M" : "L"} ${fmt(p.x)} ${fmt(p.y)}`).join(" ")} Z`;
-  }
-  const corners = points.map((current, index) => {
+interface RoundedCorner {
+  current: Point;
+  before: Point;
+  after: Point;
+}
+
+// 코너 라운딩 산출 — 닫힌 경로·분리 경로가 같은 기하를 공유한다(형태 불변 계약).
+function roundedCorners(points: Point[], radius: number): RoundedCorner[] {
+  return points.map((current, index) => {
     const previous = points[(index - 1 + points.length) % points.length];
     const next = points[(index + 1) % points.length];
     const beforeLength = Math.hypot(current.x - previous.x, current.y - previous.y);
@@ -122,6 +124,15 @@ export function roundedOrthogonalPath(points: Point[], radius: number): string {
     });
     return { current, before: toward(previous, r), after: toward(next, r) };
   });
+}
+
+/** 직교 다각형을 테마 radius로 라운딩한 SVG path. */
+export function roundedOrthogonalPath(points: Point[], radius: number): string {
+  if (points.length < 3) return "";
+  if (radius <= 0) {
+    return `${points.map((p, i) => `${i === 0 ? "M" : "L"} ${fmt(p.x)} ${fmt(p.y)}`).join(" ")} Z`;
+  }
+  const corners = roundedCorners(points, radius);
   const last = corners[corners.length - 1];
   return [
     `M ${fmt(last.after.x)} ${fmt(last.after.y)}`,
@@ -133,66 +144,37 @@ export function roundedOrthogonalPath(points: Point[], radius: number): string {
   ].join(" ");
 }
 
-/** 다각형에서 최우측 수직 변(패널 바깥 오른쪽)을 분리한다 — B안(변 점선)의 기하.
- * edge = [시작점, 끝점](다각형 순서), rest = 변의 끝점에서 반대편으로 돌아 변의
- * 시작점으로 끝나는 열린 점열. 최우측 수직 변이 없으면 null. */
-export function splitRightEdge(
+
+/** B안(변 점선)의 라운드 보존 분리 — 최우측 수직 변을 찾아, 점선은 그 변의 두 코너
+ * 아크 "사이" 직선 구간만, 실선은 코너 아크를 포함한 나머지 전부(열린 경로)로 나눈다.
+ * 합치면 원래 라운드 외곽선과 동일한 형태다(형태 불변 계약 — 직각 모서리 금지). */
+export function splitRightEdgeRounded(
   points: Point[],
-): { edge: [Point, Point]; rest: Point[] } | null {
+  radius: number,
+): { solid: string; edge: [Point, Point] } | null {
   if (points.length < 3) return null;
   const maxX = Math.max(...points.map((p) => p.x));
   const eps = 1e-6;
+  let start = -1;
   for (let i = 0; i < points.length; i += 1) {
     const a = points[i];
     const b = points[(i + 1) % points.length];
     if (Math.abs(a.x - maxX) < eps && Math.abs(b.x - maxX) < eps) {
-      const rest: Point[] = [];
-      for (let k = 1; k <= points.length; k += 1) {
-        rest.push(points[(i + k) % points.length]);
-      }
-      return { edge: [a, b], rest };
+      start = i;
+      break;
     }
   }
-  return null;
-}
-
-/** 열린 직교 경로 — roundedOrthogonalPath 의 열린 변형. 끝점은 라운딩 없이 그대로,
- * 내부 코너만 radius 라운딩. Z 로 닫지 않는다(변 분리 렌더용). */
-export function openOrthogonalPath(points: Point[], radius: number): string {
-  if (points.length < 2) return "";
-  if (radius <= 0) {
-    return points
-      .map((p, i) => (i === 0 ? "M" : "L") + " " + fmt(p.x) + " " + fmt(p.y))
-      .join(" ");
-  }
-  const parts: string[] = ["M " + fmt(points[0].x) + " " + fmt(points[0].y)];
-  for (let i = 1; i < points.length - 1; i += 1) {
-    const previous = points[i - 1];
-    const current = points[i];
-    const next = points[i + 1];
-    const beforeLength = Math.hypot(current.x - previous.x, current.y - previous.y);
-    const afterLength = Math.hypot(next.x - current.x, next.y - current.y);
-    const r = Math.min(radius, beforeLength / 2, afterLength / 2);
-    const toward = (other: Point, distance: number): Point => ({
-      x:
-        current.x +
-        ((other.x - current.x) /
-          Math.hypot(other.x - current.x, other.y - current.y)) *
-          distance,
-      y:
-        current.y +
-        ((other.y - current.y) /
-          Math.hypot(other.x - current.x, other.y - current.y)) *
-          distance,
-    });
-    const before = toward(previous, r);
-    const after = toward(next, r);
+  if (start < 0) return null;
+  const corners = roundedCorners(points, Math.max(radius, 0));
+  const a = corners[start]; // 변의 시작 코너 — 아크는 실선 소유, after 가 점선 시작점.
+  const b = corners[(start + 1) % points.length]; // 변의 끝 코너 — before 가 점선 끝점.
+  const parts: string[] = [`M ${fmt(b.before.x)} ${fmt(b.before.y)}`];
+  for (let k = 1; k <= points.length; k += 1) {
+    const c = corners[(start + k) % points.length];
+    if (k > 1) parts.push(`L ${fmt(c.before.x)} ${fmt(c.before.y)}`);
     parts.push(
-      "L " + fmt(before.x) + " " + fmt(before.y),
-      "Q " + fmt(current.x) + " " + fmt(current.y) + " " + fmt(after.x) + " " + fmt(after.y),
+      `Q ${fmt(c.current.x)} ${fmt(c.current.y)} ${fmt(c.after.x)} ${fmt(c.after.y)}`,
     );
   }
-  const last = points[points.length - 1];
-  parts.push("L " + fmt(last.x) + " " + fmt(last.y));
-  return parts.join(" ");
+  return { solid: parts.join(" "), edge: [a.after, b.before] };
 }

@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   insetClippedEdges,
-  openOrthogonalPath,
   railLinkBoxes,
   railLinkPolygon,
   roundedOrthogonalPath,
-  splitRightEdge,
+  splitRightEdgeRounded,
 } from "./railLinkShape";
 
 describe("레일 결부 관계 도형", () => {
@@ -72,31 +71,29 @@ describe("레일 결부 관계 도형", () => {
   });
 });
 
-describe("오른쪽 변 분리(B안 — 바깥 변 점선)", () => {
-  // 사각 다각형(시계): (0,0)→(10,0)→(10,8)→(0,8). 최우측 수직 변 = (10,0)-(10,8).
-  const square = [
+describe("오른쪽 변 분리(B안 — 바깥 변 점선, 라운드 보존)", () => {
+  // 실측 결함: 분리 렌더가 코너 아크를 버려 오른쪽 두 모서리가 직각이 됐다("원래처럼
+  // 라운드되어야지"). 계약: 코너 아크는 실선 경로가 소유하고, 점선은 두 아크 사이의
+  // 직선 구간만이다 — 외곽 형태는 분리 전과 동일해야 한다.
+  const squareR = [
     { x: 0, y: 0 },
     { x: 10, y: 0 },
     { x: 10, y: 8 },
     { x: 0, y: 8 },
   ];
 
-  it("최우측 수직 변과 나머지 열린 점열로 분리한다", () => {
-    const split = splitRightEdge(square)!;
+  it("splitRightEdgeRounded: 점선=아크 사이 직선, 실선=아크 포함 열린 경로", () => {
+    const split = splitRightEdgeRounded(squareR, 2)!;
     expect(split.edge).toEqual([
-      { x: 10, y: 0 },
-      { x: 10, y: 8 },
+      { x: 10, y: 2 },
+      { x: 10, y: 6 },
     ]);
-    // 열린 경로: 변의 끝점에서 시작해 반대편으로 돌아 변의 시작점에서 끝난다.
-    expect(split.rest[0]).toEqual({ x: 10, y: 8 });
-    expect(split.rest[split.rest.length - 1]).toEqual({ x: 10, y: 0 });
-    expect(split.rest).toHaveLength(4);
+    expect(split.solid.startsWith("M 10 6 Q 10 8")).toBe(true); // B 코너 아크로 시작
+    expect(split.solid.endsWith("Q 10 0 10 2")).toBe(true); // A 코너 아크로 끝
+    expect(split.solid.includes("Z")).toBe(false);
   });
 
-  it("열린 경로는 Z 로 닫지 않는다", () => {
-    const split = splitRightEdge(square)!;
-    const d = openOrthogonalPath(split.rest, 0);
-    expect(d.startsWith("M")).toBe(true);
-    expect(d.includes("Z")).toBe(false);
-  });
+  // 사각 다각형(시계): (0,0)→(10,0)→(10,8)→(0,8). 최우측 수직 변 = (10,0)-(10,8).
+
+
 });
