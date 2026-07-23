@@ -2030,6 +2030,8 @@ export function registerCatalog(): void {
     "focusIndicator",
     // 관계면 3안 비교 스위치 — 비교 실험용 임시 축(결정 시 소거).
     "railRelation",
+    // 결부 바탕 2안 비교 스위치 — 비교 실험용 임시 축(결정 시 소거).
+    "railFill",
     "railFocusNear",
     "appFontFamily",
     "appFontSize",
@@ -2053,6 +2055,7 @@ export function registerCatalog(): void {
         iconBox: s.iconBox,
         focusIndicator: s.focusIndicator,
         railRelation: s.railRelation,
+        railFill: s.railFill,
         railFocusNear: s.railFocusNear,
         appFontFamily: s.appFontFamily,
         appFontSize: s.appFontSize,
@@ -2082,7 +2085,7 @@ export function registerCatalog(): void {
       value: {
         type: "json",
         description:
-          "Value — language:ko|en, projectTabPosition:top|left, iconSet:string (registered set id — unregistered falls back to lucide), iconBox:boolean, focusIndicator:outline|corners, railRelation:tint|moment|stroke (rail-panel relation surface — tint fill only, moment flash on rebind, stroke outline+label), railFocusNear:boolean, appFontFamily:string (CSS font-family stack), appFontSize:number (6-40), orchestratorAgent:string (agent CLI command or path the natural-language console spawns), orchestratorModel:string (--model alias for the agent; empty = CLI default)",
+          "Value — language:ko|en, projectTabPosition:top|left, iconSet:string (registered set id — unregistered falls back to lucide), iconBox:boolean, focusIndicator:outline|corners, railRelation:tint|moment|stroke (rail-panel relation surface — tint fill only, moment flash on rebind, stroke outline+label), railFill:none|faint (bound-panel background in stroke mode — none removes it, faint is a 3% accent tint), railFocusNear:boolean, appFontFamily:string (CSS font-family stack), appFontSize:number (6-40), orchestratorAgent:string (agent CLI command or path the natural-language console spawns), orchestratorModel:string (--model alias for the agent; empty = CLI default)",
         required: true,
       },
     },
@@ -2128,6 +2131,10 @@ export function registerCatalog(): void {
           if (v !== "tint" && v !== "moment" && v !== "stroke")
             return bad("tint|moment|stroke");
           s.setRailRelation(v);
+          break;
+        case "railFill":
+          if (v !== "none" && v !== "faint") return bad("none|faint");
+          s.setRailFill(v);
           break;
         case "railFocusNear":
           if (typeof v !== "boolean") return bad("boolean");
