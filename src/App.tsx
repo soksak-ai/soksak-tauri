@@ -19,6 +19,7 @@ import { emitPluginEvent } from "./plugins/hooks";
 import { resolveTerminalProgram } from "./plugins/terminalEngine";
 import { startPointerOrderRepair } from "./lib/pointerOrderRepair";
 import { applyWindowZoom, isPrimaryModifier, routeZoom } from "./lib/zoomIntent";
+import { beginLayoutMotion, endLayoutMotion } from "./lib/layoutMotion";
 import {
   activeSessionViewId,
   startViewFocusSync,
@@ -174,7 +175,9 @@ const ProjectPane = memo(function ProjectPane({
   const railPlaneRef = useRef<HTMLDivElement>(null);
   const placement = project.leftRailPlacement ?? { mode: "flow" as const };
   const railFocusNear = useSettings((s) => s.railFocusNear);
-  const focusNearEnabled = railFocusNear && placement.mode === "flow";
+  // 사이드바가 꺼져 있으면 붙을 레일이 없다 — 근접 투영(스왑 이동) 전면 비활성(사용자 규정).
+  const focusNearEnabled =
+    railFocusNear && placement.mode === "flow" && project.sidebarOpen;
   const activeContent =
     project.contents.find((content) => content.id === project.activeContentId) ??
     project.contents[0];
@@ -224,6 +227,13 @@ const ProjectPane = memo(function ProjectPane({
     dragStation ?? effectiveStation,
     railTraveling,
   );
+  // 레일 주행 중 네이티브 child 라이브 정합 — 모션 신호로 브라우저 freeze-frame/추종 발동
+  // (실측: 주행 중 DOM 은 미끄러지고 child 는 끝에서 점프하는 이질감의 근치).
+  useEffect(() => {
+    if (!railTraveling) return;
+    beginLayoutMotion();
+    return () => endLayoutMotion();
+  }, [railTraveling]);
   useEffect(() => {
     if (travelGeometry.rebase) {
       setRailPresentation((current) => ({
