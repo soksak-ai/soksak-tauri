@@ -1,3 +1,4 @@
+import { applyWindowZoom } from "../lib/zoomIntent";
 import { useEffect, useState } from "react";
 import { usePlugins } from "../state/plugins";
 import { PluginSettingsPanel } from "./PluginSettingsPanel";
@@ -212,14 +213,18 @@ export function SettingsModal({
             />
           </div>
           <div className="drow">
-            <span className="drow-label">{t("settings.appFontSize")}</span>
+            <span className="drow-label">{t("settings.windowZoom")}</span>
             <input
               className="dctl"
               type="number"
-              min={6}
-              max={40}
-              value={s.appFontSize}
-              onChange={(e) => s.setAppFontSize(Number(e.target.value))}
+              min={0.5}
+              max={2}
+              step={0.1}
+              value={s.windowZoom}
+              onChange={(e) => {
+                s.setWindowZoom(Number(e.target.value));
+                applyWindowZoom(useSettings.getState().windowZoom);
+              }}
             />
           </div>
           <div className="drow">

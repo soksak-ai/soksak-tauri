@@ -58,6 +58,14 @@ export interface PluginViewProvider {
   // 다른 뷰로 떠나기 전 동기 경계. 조합/프리에딧 등 유실 가능한 일시 입력을 확정하되,
   // 자기 container 밖 DOM 을 조회하거나 포커스하지 않는다.
   prepareFocusTransfer?(container: HTMLElement, ctx: PluginViewContext): void;
+  // 줌 인텐트(선택 표면 — PLUGIN-CONTRACT §Zoom). 뷰가 자기 관례로 응답한다:
+  // 터미널=폰트 스텝, 브라우저=페이지 줌, 에디터=본문 폰트. 행 그리드(헤더·툴바 밴드)에는
+  // 절대 손대지 않는다(줌 불변식). 미구현이면 코어가 무시한다(생략 가능 규약).
+  zoom?(
+    container: HTMLElement,
+    ctx: PluginViewContext,
+    action: "in" | "out" | "reset",
+  ): void;
   // 코어의 최신 포커스 의도를 자기 canonical input 으로 시행한다. 비동기 준비가 필요하면
   // request.signal 을 보존하고, aborted 뒤에는 절대 포커스하지 않는다.
   focus?(

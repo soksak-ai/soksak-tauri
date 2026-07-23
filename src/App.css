@@ -73,9 +73,9 @@ body,
     Consolas,
     monospace
   );
-  /* 앱 UI 기준 글자 크기 = 설정/⌘±(--app-font-size). 컴포넌트 px 규칙은 절대값이라
-     스케일되지 않지만, px 를 명시하지 않고 상속받는 루트 텍스트는 이 크기를 따른다. */
-  font-size: var(--app-font-size, 13px);
+  /* 앱 UI 기준 글자 크기. 크기 변수 축(appFontSize)은 소거됐다 — 밀도 조절은 줌
+     (⌘±: 뷰 포커스=뷰 줌, 프레임 선택=창 줌)이 담당한다. */
+  font-size: 13px;
 }
 
 .app-root {

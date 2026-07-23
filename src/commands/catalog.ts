@@ -35,6 +35,7 @@ import {
   transferViewFocus,
 } from "../plugins/viewFocus";
 import { useSettings } from "../state/settings";
+import { applyWindowZoom } from "../lib/zoomIntent";
 import { useViewLabels } from "../state/viewLabels";
 import { useBookmarks } from "../state/bookmarks";
 import { useTheme } from "../state/theme";
@@ -2034,7 +2035,7 @@ export function registerCatalog(): void {
     "railSeamStyle",
     "railFocusNear",
     "appFontFamily",
-    "appFontSize",
+    "windowZoom",
     "orchestratorAgent",
     "orchestratorModel",
   ] as const;
@@ -2060,7 +2061,7 @@ export function registerCatalog(): void {
         railSeamStyle: s.railSeamStyle,
         railFocusNear: s.railFocusNear,
         appFontFamily: s.appFontFamily,
-        appFontSize: s.appFontSize,
+        windowZoom: s.windowZoom,
         orchestratorAgent: s.orchestratorAgent,
         orchestratorModel: s.orchestratorModel,
         // 선택 가능한 아이콘 셋 목록(내장 + 활성 플러그인 등록분).
@@ -2087,7 +2088,7 @@ export function registerCatalog(): void {
       value: {
         type: "json",
         description:
-          "Value — language:ko|en, projectTabPosition:top|left, iconSet:string (registered set id — unregistered falls back to lucide), iconBox:boolean, focusIndicator:outline|corners, railRelation:tint|moment|stroke (rail-panel relation surface — tint fill only, moment flash on rebind, stroke outline+label), railFill:none|faint (bound-panel background in stroke mode — none is the default, faint is a 1% accent tint), focusDim:boolean (spotlight — every panel dims except the active one), railSeamStyle:seam|edge (how a manufactured adjacency is marked: seam dashes the inner shared edge, edge dashes the outer right edge), railFocusNear:boolean, appFontFamily:string (CSS font-family stack), appFontSize:number (6-40), orchestratorAgent:string (agent CLI command or path the natural-language console spawns), orchestratorModel:string (--model alias for the agent; empty = CLI default)",
+          "Value — language:ko|en, projectTabPosition:top|left, iconSet:string (registered set id — unregistered falls back to lucide), iconBox:boolean, focusIndicator:outline|corners, railRelation:tint|moment|stroke (rail-panel relation surface — tint fill only, moment flash on rebind, stroke outline+label), railFill:none|faint (bound-panel background in stroke mode — none is the default, faint is a 1% accent tint), focusDim:boolean (spotlight — every panel dims except the active one), railSeamStyle:seam|edge (how a manufactured adjacency is marked: seam dashes the inner shared edge, edge dashes the outer right edge), railFocusNear:boolean, appFontFamily:string (CSS font-family stack), windowZoom:number (0.5-2.0 — whole-window zoom factor applied to the main webview and every child webview), orchestratorAgent:string (agent CLI command or path the natural-language console spawns), orchestratorModel:string (--model alias for the agent; empty = CLI default)",
         required: true,
       },
     },
@@ -2155,10 +2156,11 @@ export function registerCatalog(): void {
             return bad("string(CSS font-family 스택)");
           s.setAppFontFamily(v.trim());
           break;
-        case "appFontSize":
+        case "windowZoom":
           if (typeof v !== "number" || !Number.isFinite(v))
-            return bad("number(6~40 클램프)");
-          s.setAppFontSize(v);
+            return bad("number(0.5~2.0 클램프)");
+          s.setWindowZoom(v);
+          applyWindowZoom(useSettings.getState().windowZoom);
           break;
         case "orchestratorAgent":
           if (typeof v !== "string" || !v.trim())

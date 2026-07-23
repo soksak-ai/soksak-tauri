@@ -61,7 +61,7 @@ interface SettingsState {
   // 앱 UI 폰트(=앱 크롬 전역). 터미널 폰트와 무관 — 터미널 폰트는 터미널 플러그인이 별도 소유.
   // appFontFamily → --app-font(루트 font-family), appFontSize → --app-font-size(루트 font-size).
   appFontFamily: string;
-  appFontSize: number;
+  windowZoom: number;
   // 오케스트레이터 자연어 콘솔이 스폰하는 에이전트 CLI(로그인셸 PATH 에서 해소). 기본 claude —
   // E2E 는 각본 스텁 경로를 넣어 결정적으로 검증한다(orchestrator/agent.ts).
   orchestratorAgent: string;
@@ -87,7 +87,7 @@ interface SettingsState {
   setRailSeamStyle: (v: RailSeamStyle) => void;
   setRailFocusNear: (v: boolean) => void;
   setAppFontFamily: (v: string) => void;
-  setAppFontSize: (v: number) => void;
+  setWindowZoom: (v: number) => void;
   setOrchestratorAgent: (v: string) => void;
   setOrchestratorModel: (v: string) => void;
 }
@@ -113,7 +113,8 @@ const DEFAULTS = {
   railFocusNear: true,
   appFontFamily:
     '"JetBrains Mono", "SF Mono", "Cascadia Code", Menlo, Consolas, "Courier New", monospace',
-  appFontSize: 13,
+  // 창 전체 줌 배율(프레임 선택 시 ⌘±) — 값 하나를 전 표면(메인+자식 웹뷰)이 공동사용.
+  windowZoom: 1,
   orchestratorAgent: "claude",
   orchestratorModel: "haiku",
 };
@@ -144,7 +145,7 @@ function serialize(s: SettingsState): PersistedSettings {
     railSeamStyle: s.railSeamStyle,
     railFocusNear: s.railFocusNear,
     appFontFamily: s.appFontFamily,
-    appFontSize: s.appFontSize,
+    windowZoom: s.windowZoom,
     orchestratorAgent: s.orchestratorAgent,
     orchestratorModel: s.orchestratorModel,
   };
@@ -161,10 +162,25 @@ export const initSettingsPersistence = (deps: CoreStoreDeps): (() => void) =>
   settingsSync.init(deps);
 
 function load(): PersistedSettings {
-  return { ...DEFAULTS, ...settingsSync.loadSync() };
+  // 알 수 없는(소거된) 키는 버린다 — 예: 구 appFontSize. 죽은 축이 상태로 부활하지 않게
+  // DEFAULTS 에 존재하는 키만 수용한다.
+  const stored = settingsSync.loadSync() as Record<string, unknown>;
+  const known: Record<string, unknown> = {};
+  for (const k of Object.keys(DEFAULTS)) {
+    if (k in stored) known[k] = stored[k];
+  }
+  return { ...DEFAULTS, ...known } as PersistedSettings;
 }
 
 export const useSettings = create<SettingsState>((set, get) => {
+  let saveTimer: ReturnType<typeof setTimeout> | null = null;
+  const saveDebounced = () => {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      save();
+    }, 300);
+  };
   const save = () => {
     settingsSync.save(serialize(get()));
   };
@@ -246,10 +262,10 @@ export const useSettings = create<SettingsState>((set, get) => {
       set({ appFontFamily });
       save();
     },
-    setAppFontSize: (appFontSize) => {
-      // 앱 UI 폰트 크기 클램프(터미널 폰트와 동일 안전 범위).
-      set({ appFontSize: Math.max(6, Math.min(40, appFontSize)) });
-      save();
+    setWindowZoom: (windowZoom) => {
+      // 창 줌 배율 클램프(0.5..2.0). 연타 폭풍 방지 — persist 는 디바운스(300ms).
+      set({ windowZoom: Math.max(0.5, Math.min(2, windowZoom)) });
+      saveDebounced();
     },
     setOrchestratorAgent: (orchestratorAgent) => {
       set({ orchestratorAgent });

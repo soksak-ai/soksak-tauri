@@ -18,6 +18,7 @@ import { parkedStyle } from "./lib/layerPark";
 import { emitPluginEvent } from "./plugins/hooks";
 import { resolveTerminalProgram } from "./plugins/terminalEngine";
 import { startPointerOrderRepair } from "./lib/pointerOrderRepair";
+import { applyWindowZoom, isPrimaryModifier, routeZoom } from "./lib/zoomIntent";
 import {
   activeSessionViewId,
   startViewFocusSync,
@@ -647,19 +648,17 @@ function App() {
   // 번들(DEV=false)에선 아무것도 설치 안 한다. window.__soksakMockRemoteConfirm() 으로 mock 요청 emit.
   useEffect(() => installRemoteConfirmDevTrigger(), []);
 
-  // 앱 UI(앱 크롬) 전역 폰트 — 코어 소유. 터미널 폰트와 무관(터미널 플러그인 별도 소유).
-  // appFontFamily → --app-font(루트 font-family), appFontSize → --app-font-size(루트 font-size).
+  // 앱 UI(앱 크롬) 전역 폰트 family — 코어 소유(상속으로 실동작). 크기 축(appFontSize)은
+  // 소거됐다: 죽은 반쪽(px 크롬 미스케일·표면 자체 소유)이었고, 창 줌+뷰 줌이 대체한다.
   const appFontFamily = useSettings((s) => s.appFontFamily);
-  const appFontSize = useSettings((s) => s.appFontSize);
   useEffect(() => {
     document.documentElement.style.setProperty("--app-font", appFontFamily);
   }, [appFontFamily]);
+  // 창 줌 복원 — 저장된 배율을 부팅 시 1회 적용(값 하나, 소비 전원).
+  const windowZoom = useSettings((s) => s.windowZoom);
   useEffect(() => {
-    document.documentElement.style.setProperty(
-      "--app-font-size",
-      `${appFontSize}px`,
-    );
-  }, [appFontSize]);
+    if (windowZoom !== 1) applyWindowZoom(windowZoom);
+  }, [windowZoom]);
 
   // 네이티브 child webview(브라우저) 위 클릭은 메인 DOM 에 이벤트가 오지 않아
   // 포커스 추적이 끊긴다 — 네이티브 모니터(browser.rs)가 emit 한 좌표를
@@ -866,29 +865,24 @@ function App() {
   // ⌘D 좌우분할 / ⌘⇧D 상하분할 / ⌘W pane→뷰 닫기 / ⌘T 새 터미널 / ⌘B 사이드바.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (!e.metaKey) return;
       const key = e.key.toLowerCase();
+      // ⌘±/0 = 줌 인텐트(3플랫폼: mac=⌘, Win/Linux=Ctrl — 나머지 단축키의 metaKey
+      // 가드보다 먼저 처리해야 Ctrl 경로가 산다). 포커스가 범위를 정한다.
+      if (
+        isPrimaryModifier(e) &&
+        !e.shiftKey &&
+        !e.altKey &&
+        (key === "=" || key === "+" || key === "-" || key === "0")
+      ) {
+        e.preventDefault();
+        routeZoom(key === "-" ? "out" : key === "0" ? "reset" : "in");
+        return;
+      }
+      if (!e.metaKey) return;
       // ⌘N 새 창(독립 작업공간) — 프로젝트 무관이라 가장 먼저 처리.
       if (key === "n" && !e.shiftKey && !e.altKey) {
         e.preventDefault();
         invoke("window_create").catch((err) => console.error("새 창 실패:", err));
-        return;
-      }
-      // ⌘+ 앱 글자 크게 / ⌘- 작게 / ⌘0 기본(13). 앱 UI(앱 크롬) 전역 폰트만 — 코어 소유.
-      // 터미널 폰트는 터미널 플러그인이 별도로 소유한다(여기서 건드리지 않음).
-      if (key === "=" || key === "+") {
-        e.preventDefault();
-        const st = useSettings.getState();
-        st.setAppFontSize(st.appFontSize + 1);
-        return;
-      } else if (key === "-") {
-        e.preventDefault();
-        const st = useSettings.getState();
-        st.setAppFontSize(st.appFontSize - 1);
-        return;
-      } else if (key === "0") {
-        e.preventDefault();
-        useSettings.getState().setAppFontSize(13);
         return;
       }
       const s = useSessions.getState();

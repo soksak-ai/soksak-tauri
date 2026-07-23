@@ -839,6 +839,23 @@ pub fn webview_open(
 // 위 divider 드래그를 실제 마우스 없이 E2E 자가검증한다(ui.input.drag 와 짝: 이건 native 경로,
 // 그건 DOM 경로). kind = native-mousedown | native-mousemove | native-mouseup. 전역 emit —
 // App 의 getCurrentWebviewWindow().listen 은 전역 이벤트도 받는다.
+/// 창 전체 줌(플랜 golden-swinging-lynx §2단계) — "값 하나, 소비 전원": 메인 웹뷰와 이 창의
+/// 모든 자식 웹뷰(b-<label>-*)에 같은 배율을 일괄 적용한다. CEF 엔진 표면은 사이드카 계약
+/// 확장(후속 레인). 배율은 0.5..2.0 클램프(프론트 계약과 동일).
+#[tauri::command]
+pub fn webview_zoom(window: tauri::Window, factor: f64) -> Result<(), String> {
+    let f = factor.clamp(0.5, 2.0);
+    let label = window.label().to_string();
+    let app = window.app_handle();
+    let child_prefix = format!("b-{label}-");
+    for (wl, wv) in app.webviews() {
+        if wl == label || wl.starts_with(&child_prefix) {
+            wv.set_zoom(f).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn webview_emit_native(window: tauri::Window, kind: String, x: f64, y: f64) {
     use tauri::Emitter;
