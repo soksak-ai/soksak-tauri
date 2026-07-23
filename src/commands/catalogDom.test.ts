@@ -101,6 +101,27 @@ describe("ui.measure — 상호작용/가시성 축", () => {
     expect(style.backgroundColor).toBe("rgb(1, 2, 3)");
   });
 
+  it("screen:true 면 전역 논리(스크린) 좌표를 함께 반환한다 — OS 포인터 도구가 그대로 소비", async () => {
+    // 합성 dispatch 는 히트테스팅·기본동작(포커스)을 재현하지 못한다 — 실포인터 검증은
+    // OS 좌표가 필요하다. 그 환산(물리 innerPosition/scale + viewport rect)을 소비자가
+    // 재발명하지 않도록 코어가 한 경로로 노출한다.
+    vi.doMock("@tauri-apps/api/window", () => ({
+      getCurrentWindow: () => ({
+        innerPosition: async () => ({ x: 100, y: 200 }),
+        scaleFactor: async () => 2,
+      }),
+    }));
+    mountNode(`<button data-node="btn">x</button>`);
+    const el = document.querySelector('[data-node="btn"]') as HTMLElement;
+    el.getBoundingClientRect = () =>
+      ({ x: 10, y: 20, width: 30, height: 40 } as DOMRect);
+    const r = await execute("ui.measure", { address: ADDR, screen: true }, {});
+    expect(r.ok).toBe(true);
+    const screen = (r.data as { screen?: Record<string, number> }).screen;
+    // 창 논리 원점 (100/2, 200/2) + viewport rect. cx/cy 는 중심 — 클릭 도구가 바로 쓴다.
+    expect(screen).toEqual({ x: 60, y: 120, cx: 75, cy: 140 });
+  });
+
   it("occlusion:true 면 도달성 판정을 함께 반환한다", async () => {
     mountNode(`<button data-node="btn">x</button>`);
     const r = await execute("ui.measure", { address: ADDR, occlusion: true }, {});
