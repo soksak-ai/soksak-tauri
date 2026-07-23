@@ -3,6 +3,7 @@ import type { SplitTree } from "../state/splitTree";
 import { computeSplitLayout } from "../lib/splitLayout";
 import { RAIL_TRAVEL_MS } from "../lib/railMotion";
 import { emitPluginEvent } from "../plugins/hooks";
+import { redeliverViewFocusIfLost } from "../plugins/viewFocus";
 
 type Identified = { id: string };
 
@@ -43,6 +44,9 @@ export function useFocusLayoutPhase<L extends Identified>(
     const timer = window.setTimeout(() => {
       setFrom(displayLayout);
       emitPluginEvent("layout.reflow", { activeSpaceId: spaceId });
+      // 투영 재배열의 reparent 가 떨군 입력 포커스를 이동 종료 시점에 재배달한다 —
+      // "바깥(그룹 활성)만 되고 내부(위젯) 포커스는 안 오는" 결함의 봉합점.
+      redeliverViewFocusIfLost();
     }, RAIL_TRAVEL_MS);
     return () => window.clearTimeout(timer);
   }, [displayLayout, from, traveling, spaceId]);

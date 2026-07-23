@@ -140,6 +140,26 @@ export class ViewFocusCoordinator {
     this.intent = null;
   }
 
+  /**
+   * 레이아웃 이동(투영 재배열의 reparent) 은 그 안의 입력 포커스를 body 로 떨군다 —
+   * "배달 완료"는 "정착"이 아니므로, 이동이 끝난 시점에 포커스가 몸을 잃었으면 같은
+   * 인텐트를 재배달한다. 사용자가 다른 요소(body 아님)에 의도적으로 둔 포커스는
+   * 훔치지 않는다.
+   */
+  redeliverIfLost(): void {
+    const intent = this.intent;
+    if (!intent || intent.controller.signal.aborted) return;
+    const target = this.mounted.get(intent.viewId);
+    if (!target) return;
+    const doc = target.container.ownerDocument;
+    const active = doc.activeElement;
+    if (active && target.container.contains(active)) return; // 정착 유지
+    if (active && active !== doc.body) return; // 의도 포커스 — 불가침
+    intent.delivered = false;
+    intent.retries = 0;
+    this.queueCurrentIntent();
+  }
+
   snapshot(): {
     requestedViewId: string | null;
     mounted: boolean;
@@ -282,4 +302,9 @@ export function viewFocusSnapshot(): ReturnType<
   ViewFocusCoordinator["snapshot"]
 > {
   return coordinator.snapshot();
+}
+
+/** 레이아웃 이동 종료 지점에서 호출 — 이동이 떨군 포커스를 같은 인텐트로 재배달한다. */
+export function redeliverViewFocusIfLost(): void {
+  coordinator.redeliverIfLost();
 }
