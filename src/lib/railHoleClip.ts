@@ -46,11 +46,10 @@ export function visibleHoles(
   return out;
 }
 
-// 실제 홀을 뚫는 CSS 와 같은 기준을 본다: 슬롯 내용 기반(:has(.browser-view), App.css 홀
-// 규칙과 동일 셀렉터)이 정본이고, decl 기반(cell-hole)은 합집합으로 겸용한다 — 두 기준이
-// 어긋나면 클립이 실홀을 놓친다(실측: cell-hole 만 보다가 홀 미절단).
-const HOLE_SLOT_SELECTOR =
-  ".egroup-body-slot:has(.browser-view), .egroup-cell.cell-hole .egroup-body-slot";
+// 홀 기준은 뷰의 transparent 선언 하나다(GroupArea 가 셀에 cell-hole 로 표시) — App.css
+// 홀 배경 규칙과 같은 기준. 콘텐츠 클래스 등 제2 기준을 들이지 마라: 기준이 갈라지면
+// 한쪽만 아는 홀이 생겨 사이드바가 그 표면 위에 칠해진다(실측: OSR 미절단 사고).
+const HOLE_SLOT_SELECTOR = ".egroup-cell.cell-hole .egroup-body-slot";
 
 /**
  * 모션 위상 동안 레일 평면의 clip-path 를 홀 rect 에 프레임 동기로 맞춘다.

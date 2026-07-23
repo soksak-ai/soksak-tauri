@@ -2085,16 +2085,18 @@ body,
   background: var(--bg);
   border: none;
 }
-/* 브라우저 슬롯은 홀(레이어 원칙) — 어떤 pane 스타일에서도 배경을 칠하지 않는다. */
-:root[data-pane-style="card"] .egroup-body-slot:has(.browser-view),
-:root[data-pane-style="floating"] .egroup-body-slot:has(.browser-view) {
+/* 홀 슬롯은 배경을 칠하지 않는다(레이어 원칙) — 기준은 뷰의 transparent 선언 하나다
+   (GroupArea 가 셀에 cell-hole 로 표시). 콘텐츠 클래스(:has(.browser-view)) 기준은 폐지:
+   선언 없이 우연히 성립하는 홀도, 선언했는데 새는 홀도 없어야 한다(모든 홀 소비자 —
+   이 배경 규칙·아래 베일 예외·레일-홀 클립 — 가 같은 한 기준에서 파생된다). pane 스타일
+   무관: 홀은 스타일이 아니라 표면 종류의 사실이다. */
+.egroup-cell.cell-hole .egroup-body-slot {
   background: transparent;
 }
 /* 홀 규칙의 유일한 예외 — 스포트라이트 베일. 반투명이라 홀을 막지 않으면서 아래의
    네이티브 표면을 어둡힌다. 이 규칙이 위의 홀 규칙보다 특이성이 높아야 성립하므로
    충돌이 사는 이 자리에서 명시한다(떨어진 곳의 특이성 전쟁 금지). */
-:root[data-pane-style="card"] .egroup-area[data-focus-dim] .egroup-body-slot:not(.spot-clear):has(.browser-view),
-:root[data-pane-style="floating"] .egroup-area[data-focus-dim] .egroup-body-slot:not(.spot-clear):has(.browser-view) {
+.egroup-area[data-focus-dim] .egroup-cell.cell-hole .egroup-body-slot:not(.spot-clear) {
   background-color: color-mix(in srgb, #000 7%, transparent);
 }
 :root[data-pane-style="card"] .egroup-tabs .view-tabs-wrap,
