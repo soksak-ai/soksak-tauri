@@ -19,3 +19,12 @@
 - 적용 범위: relation-stroke 안의 fill 만. tint/moment 갈래 불간섭.
 - 결정 시: 채택안만 남기고 축·CSS 갈래·테스트 갈래 소거(settings.railFill, App.css fill-none/faint).
 
+## focusDim — 포커스 스포트라이트 (2026-07-23, 진행 중)
+
+사용자 개념: "전체를 흐리게 하고 선택된 것만 명확하게".
+
+- 스위치: `sok settings.set '{"key":"focusDim","value":true}'` | `false`(기본)
+- 표현: 비활성 셀·본문 슬롯 brightness(.93)+saturate(.85), 활성만 filter:none, 전이 160ms(어둠이 옮겨감). blur 금지(텍스트 가독).
+- 캐비앳: 네이티브 child(브라우저·astryx)는 1단계 대상 밖 — 채택 시 2단계(엔진 협조 dim) 별도 레인.
+- 결정 시: 채택안 고정 후 focusDim 축·CSS 갈래·테스트 갈래 소거.
+

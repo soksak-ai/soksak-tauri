@@ -454,6 +454,18 @@ body,
   vector-effect: non-scaling-stroke;
   stroke-linejoin: round;
 }
+/* [임시 — 포커스 스포트라이트 실험] focusDim: 전체를 가라앉히고 선택만 명확하게(사용자
+   개념). blur 는 텍스트를 뭉개므로 밝기·채도 하강만. 전이로 활성 이동 시 어둠이 옮겨간다.
+   네이티브 child(브라우저 등)는 이 단계에선 대상 밖(캐비앳 — 실험 대장). 결정 시 소거. */
+.egroup-area[data-focus-dim] .egroup-cell,
+.egroup-area[data-focus-dim] .egroup-body-slot {
+  filter: brightness(0.93) saturate(0.85);
+  transition: filter 160ms ease;
+}
+.egroup-area[data-focus-dim] .egroup-cell.spot-clear,
+.egroup-area[data-focus-dim] .egroup-body-slot.spot-clear {
+  filter: none;
+}
 /* [임시 — 결부 바탕 2안 비교 스위치] railFill 설정(none|faint) — 사용자 요청(① 빼기
    ② 아주 옅게). stroke 안의 fill 만 갈래친다(tint/moment 는 fill 이 본질이라 불간섭).
    결정 시 채택안만 남기고 소거. */
