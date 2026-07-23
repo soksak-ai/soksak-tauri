@@ -454,6 +454,14 @@ body,
   vector-effect: non-scaling-stroke;
   stroke-linejoin: round;
 }
+/* 교체-인접 봉합선 — focus-near 투영으로 성립한 인접의 내부 공유변. 관계 스트로크와
+   같은 두께의 점선(사용자 확정: "같은 두께"). 자연 인접은 한 몸이라 봉합선이 없다. */
+.rail-link-seam {
+  stroke: var(--relation-stroke);
+  stroke-width: var(--relation-stroke-w);
+  stroke-dasharray: 4 4;
+  vector-effect: non-scaling-stroke;
+}
 /* [임시 — 포커스 스포트라이트 실험] focusDim: 전체를 가라앉히고 선택만 명확하게(사용자
    개념). blur 는 텍스트를 뭉개므로 밝기·채도 하강만. 전이로 활성 이동 시 어둠이 옮겨간다.
    네이티브 child(브라우저 등)는 이 단계에선 대상 밖(캐비앳 — 실험 대장). 결정 시 소거. */

@@ -97,4 +97,39 @@ describe("RailLinkOverlay — 실시간 그리드 추종", () => {
     expect(host.querySelector(".rail-link-overlay")).toBeNull();
     act(() => root.unmount());
   });
+
+// 상위 describe 의 beforeEach(ResizeObserver·rect 목)를 상속한다 — 중첩 의도.
+describe("교체-인접 봉합선(seam)", () => {
+  const renderProps = (projected: boolean) => (
+    <RailLinkOverlay
+      contentId="c1"
+      boundViewId="v2"
+      boundPanelId="g2"
+      railWidth={300}
+      railStation={50}
+      targetRect={{ left: 50, top: 0, width: 25, height: 50 }}
+      projected={projected}
+    />
+  );
+
+  it("projected=true 면 공유변에 같은 두께의 점선 seam 을 그리고 data-projected 를 노출한다", () => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    act(() => root.render(renderProps(true)));
+    const overlay = host.querySelector<HTMLElement>(".rail-link-overlay")!;
+    expect(overlay.dataset.projected).toBe("true");
+    expect(host.querySelector(".rail-link-seam")).not.toBeNull();
+  });
+
+  it("자연 인접(projected=false)은 봉합선이 없다 — 한 몸", () => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    act(() => root.render(renderProps(false)));
+    expect(host.querySelector(".rail-link-seam")).toBeNull();
+    const overlay = host.querySelector<HTMLElement>(".rail-link-overlay")!;
+    expect(overlay.dataset.projected).toBeUndefined();
+  });
+});
 });

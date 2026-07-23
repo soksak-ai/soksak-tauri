@@ -230,6 +230,13 @@ describe("railRelation 모드 CSS 갈래 (App.css)", () => {
     expect(faint).toMatch(/fill:\s*color-mix\(in srgb, var\(--acc\)\s*1%,\s*transparent\)/);
   });
 
+  it("봉합선 CSS: 관계 스트로크와 같은 두께의 점선", () => {
+    const d = decls(".rail-link-seam");
+    expect(d).toMatch(/stroke:\s*var\(--relation-stroke\)/);
+    expect(d).toMatch(/stroke-width:\s*var\(--relation-stroke-w\)/);
+    expect(d).toMatch(/stroke-dasharray/);
+  });
+
   it("떠다니는 관계 라벨 금지 — 결부 이름은 호스트 헤더(.proj-frame-bound) 한 곳", () => {
     // 관계 표시 단순화(사용자 결정): "연결됨 · 이름" 배지 폐지. 이름은 사이드바 헤더가
     // 소유한다(ProjectionSlots.frame.test 가 표시를 검증). 라벨 CSS 를 되살리지 마라.
