@@ -291,9 +291,34 @@ describe("delivery lands or reports", () => {
       () => context,
     );
     coordinator.requestFocus("v9");
-    flushFrame();
-    flushFrame();
+    for (let i = 0; i < 31; i += 1) flushFrame(); // 유한 재시도 상한까지
     expect(errors.length).toBe(1);
     expect(String(errors[0])).toContain("v9");
+  });
+});
+
+describe("readiness window", () => {
+  it("웜 복원 창(여러 프레임 뒤 준비)도 유한 재시도가 덮는다 — 5번째 프레임 착지", () => {
+    const { coordinator, flushFrame } = fixture();
+    const container = document.createElement("div");
+    const input = document.createElement("input");
+    container.append(input);
+    document.body.append(container);
+    let calls = 0;
+    coordinator.registerMountedView(
+      "v1",
+      container,
+      provider({
+        focus: () => {
+          calls += 1;
+          if (calls >= 5) input.focus(); // 리로드 직후 엔진 재부착이 수 프레임 걸리는 실측 창
+        },
+      }),
+      () => context,
+    );
+    coordinator.requestFocus("v1");
+    for (let i = 0; i < 5; i += 1) flushFrame();
+    expect(document.activeElement).toBe(input);
+    expect(coordinator.snapshot().delivered).toBe(true);
   });
 });
