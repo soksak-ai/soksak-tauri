@@ -321,4 +321,73 @@ describe("readiness window", () => {
     expect(document.activeElement).toBe(input);
     expect(coordinator.snapshot().delivered).toBe(true);
   });
+
+  it("배달 후 레이아웃 이동이 포커스를 떨구면 redeliverIfLost 가 같은 인텐트를 재배달한다", () => {
+    // 실측 결함(사이드바 연결 이후): 연결 클릭 → 투영 재배열이 React 키 순서를 바꿔
+    // DOM 을 reparent → 브라우저가 그 안의 포커스를 body 로 떨굼. 코디네이터는 이미
+    // delivered=true 라 다시 잡지 않았다 — "배달 완료"는 "정착"이 아니다. 이동이 끝나면
+    // 재배달까지가 코디네이터 책임이다.
+    const { coordinator, flushFrame } = fixture();
+    const container = document.createElement("section");
+    const input = document.createElement("textarea");
+    container.append(input);
+    document.body.append(container);
+    let calls = 0;
+    coordinator.registerMountedView(
+      "v1",
+      container,
+      provider({
+        focus: () => {
+          calls += 1;
+          input.focus();
+        },
+      }),
+      () => context,
+    );
+    coordinator.requestFocus("v1");
+    flushFrame();
+    expect(document.activeElement).toBe(input);
+    // 투영 재배열의 DOM 이동 등가 — remove+insert 는 포커스를 body 로 떨군다.
+    container.remove();
+    document.body.append(container);
+    expect(document.activeElement).not.toBe(input);
+    coordinator.redeliverIfLost();
+    flushFrame();
+    expect(calls).toBe(2);
+    expect(document.activeElement).toBe(input);
+  });
+
+  it("redeliverIfLost 는 정착 유지·의도 포커스를 건드리지 않는다", () => {
+    const { coordinator, frames, flushFrame } = fixture();
+    const container = document.createElement("section");
+    const input = document.createElement("textarea");
+    container.append(input);
+    document.body.append(container);
+    let calls = 0;
+    coordinator.registerMountedView(
+      "v1",
+      container,
+      provider({
+        focus: () => {
+          calls += 1;
+          input.focus();
+        },
+      }),
+      () => context,
+    );
+    coordinator.requestFocus("v1");
+    flushFrame();
+    expect(calls).toBe(1);
+    // 정착 유지 — 재배달 없음.
+    coordinator.redeliverIfLost();
+    flushFrame();
+    expect(calls).toBe(1);
+    // 사용자가 다른 곳(body 아님)에 의도적으로 포커스 — 훔치지 않는다.
+    const outside = document.createElement("input");
+    document.body.append(outside);
+    outside.focus();
+    coordinator.redeliverIfLost();
+    expect(frames.length).toBe(0);
+    expect(document.activeElement).toBe(outside);
+  });
 });
