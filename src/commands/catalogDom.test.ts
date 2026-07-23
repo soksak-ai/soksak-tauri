@@ -21,6 +21,7 @@ beforeEach(() => {
 afterEach(() => {
   for (const c of [
     "ui.tree", "ui.measure", "ui.slot", "ui.focus.state",
+    "ui.focus.trace.start", "ui.focus.trace.read",
     "ui.input.click", "ui.input.dblclick", "ui.input.fill",
     "ui.input.drag", "ui.input.dnd", "ui.hit", "webview.emitNative",
   ]) unregister(c);
@@ -281,6 +282,38 @@ describe("ui.focus.state — 위젯 수준 포커스 판별 축", () => {
         value: orig,
         configurable: true,
       });
+    }
+  });
+});
+
+describe("ui.focus.trace — 클릭 순간의 포커스 인과 타임라인", () => {
+  // 사후 상태 읽기는 오염된다(사용자가 창을 떠나면 blur 로 activeElement 가 body 로 돌아감).
+  // 실기기 클릭의 "그 순간"에 무엇이 포커스를 받고 무엇이 빼앗는지는 이벤트 타임라인만이
+  // 증언한다. start 는 focusin/focusout/mousedown/mouseup 리스너를 달고 ms 후 스스로 멈춘다
+  // (무한 감시 금지) — read 는 기록을 반환한다.
+  it("start→이벤트 기록→read, ms 경과 후 자기종료한다", async () => {
+    vi.useFakeTimers();
+    try {
+      const s = await execute("ui.focus.trace.start", { ms: 500 }, {});
+      expect(s.ok).toBe(true);
+      mountNode(`<button data-node="btn">x</button>`);
+      const el = document.querySelector('[data-node="btn"]') as HTMLElement;
+      el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+      el.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+      const r1 = await execute("ui.focus.trace.read", {}, {});
+      expect(r1.ok).toBe(true);
+      const d1 = r1.data as { recording: boolean; events: { type: string; dataNode: string | null }[] };
+      expect(d1.recording).toBe(true);
+      expect(d1.events.map((e) => e.type)).toEqual(["mousedown", "focusin"]);
+      expect(d1.events[0].dataNode).toBe("btn");
+      vi.advanceTimersByTime(600);
+      el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true })); // 종료 후 이벤트는 무기록
+      const r2 = await execute("ui.focus.trace.read", {}, {});
+      const d2 = r2.data as { recording: boolean; events: unknown[] };
+      expect(d2.recording).toBe(false);
+      expect(d2.events.length).toBe(2);
+    } finally {
+      vi.useRealTimers();
     }
   });
 });

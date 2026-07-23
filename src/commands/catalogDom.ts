@@ -14,6 +14,17 @@ import { register } from "./registry";
 import { tmsg } from "../i18n";
 import { viewFocusSnapshot } from "../plugins/viewFocus";
 
+type FocusTraceEntry = {
+  t: number;
+  type: string;
+  tag: string | null;
+  className: string;
+  dataNode: string | null;
+  hasFocus: boolean;
+};
+let focusTrace: { events: FocusTraceEntry[]; recording: boolean } | null = null;
+let focusTraceStop: (() => void) | null = null;
+
 const notExposed = (addr: string) => ({
   ok: false as const,
   code: "NOT_EXPOSED" as const,
@@ -351,6 +362,74 @@ export function registerDomCatalog(): void {
             : null,
       };
     },
+  });
+
+  // ── 포커스 인과 타임라인 ────────────────────────────────────────────────
+  // 사후 상태 읽기는 오염된다(사용자가 창을 떠나면 blur 가 activeElement 를 되돌린다).
+  // 실기기 입력의 "그 순간"에 무엇이 포커스를 받고 무엇이 빼앗는지는 이벤트 기록만이
+  // 증언한다. 리스너 4종을 달고 ms 후 스스로 정리한다 — 무한 감시 아님.
+  register("ui.focus.trace.start", {
+    description:
+      "Start recording a focus-causality timeline: every mousedown/mouseup/focusin/focusout (capture, Shadow-DOM composed target) with document.hasFocus() at each event. Self-terminates after ms and removes its listeners. Use when focus lands wrong under real input: start the trace, have the real click happen, then ui.focus.trace.read for the timeline — post-hoc state reads are contaminated by the window blurring when the user switches away.",
+    triggers: { ko: "포커스 추적 타임라인 기록 클릭 인과" },
+    params: {
+      ms: {
+        type: "number",
+        description: "Recording window in ms (default 10000, max 30000)",
+        required: false,
+      },
+    },
+    returns: "{ recording: true, ms }",
+    message: (d) => tmsg("msg.ui.focus.trace.start", { ms: Number(d.ms ?? 0) }),
+    examples: ['ui.focus.trace.start \'{"ms":10000}\''],
+    handler: (p) => {
+      focusTraceStop?.();
+      const ms = Math.min(Math.max(Number(p.ms) || 10_000, 100), 30_000);
+      const buf: FocusTraceEntry[] = [];
+      const t0 = performance.now();
+      const record = (e: Event) => {
+        if (buf.length >= 300) return;
+        const path = e.composedPath?.();
+        const target = (path && path.length ? path[0] : e.target) as Element | null;
+        const el = target instanceof HTMLElement ? target : null;
+        buf.push({
+          t: Math.round(performance.now() - t0),
+          type: e.type,
+          tag: target instanceof Element ? target.tagName.toLowerCase() : null,
+          className: (el?.className ?? "").slice(0, 80),
+          dataNode: el?.dataset.node ?? null,
+          hasFocus: document.hasFocus(),
+        });
+      };
+      const types = ["mousedown", "mouseup", "focusin", "focusout"] as const;
+      for (const t of types) window.addEventListener(t, record, true);
+      const timer = window.setTimeout(() => focusTraceStop?.(), ms);
+      focusTrace = { events: buf, recording: true };
+      focusTraceStop = () => {
+        window.clearTimeout(timer);
+        for (const t of types) window.removeEventListener(t, record, true);
+        if (focusTrace) focusTrace.recording = false;
+        focusTraceStop = null;
+      };
+      return { recording: true, ms };
+    },
+  });
+
+  register("ui.focus.trace.read", {
+    description:
+      "Read the focus-causality timeline recorded by ui.focus.trace.start (idempotent; keeps the last trace after it self-terminates). recording tells whether the window is still open; each event carries its composed target and document.hasFocus() at that instant.",
+    triggers: { ko: "포커스 추적 읽기 타임라인 결과" },
+    params: {},
+    returns: "{ recording, events: [{ t, type, tag, className, dataNode, hasFocus }] }",
+    message: (d) =>
+      tmsg("msg.ui.focus.trace.read", {
+        n: Array.isArray(d.events) ? (d.events as unknown[]).length : 0,
+      }),
+    examples: ["ui.focus.trace.read"],
+    handler: () => ({
+      recording: focusTrace?.recording ?? false,
+      events: focusTrace?.events ?? [],
+    }),
   });
 
   register("ui.input.click", {
