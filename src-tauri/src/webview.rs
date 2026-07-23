@@ -1007,6 +1007,17 @@ pub fn webview_bounds(
     h: f64,
 ) -> Result<(), String> {
     if let Some(wv) = app.get_webview(&label) {
+        // 갱신 케이던스 실측 트레이스(디버그 빌드 전용) — 위치 추종이 굼뜰 때 JS→Rust 송신
+        // 주기를 dev 로그에서 바로 읽는다(스크린 녹화 없이 병목 층위 판정).
+        #[cfg(debug_assertions)]
+        eprintln!(
+            "[bounds-trace] {} t={:.1} x={x:.0} y={y:.0} w={w:.0} h={h:.0}",
+            label,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs_f64() * 1000.0)
+                .unwrap_or(0.0)
+        );
         if let Ok(mut m) = RAW_BOUNDS.lock() {
             m.insert(label.clone(), (x, y, w, h));
         }
