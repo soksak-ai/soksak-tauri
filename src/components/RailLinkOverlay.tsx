@@ -44,6 +44,7 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
   const radius = useTheme((state) => state.spec.relation.radius);
   const strokeWidth = useTheme((state) => state.spec.relation.strokeWidth);
   const railRelation = useSettings((state) => state.railRelation);
+  const railFill = useSettings((state) => state.railFill);
   const hostRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<Size>({ width: 0, height: 0 });
   const adjacent = railLinkAdjacent(railStation, targetRect);
@@ -107,7 +108,7 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
   return (
     <div
       ref={hostRef}
-      className={`rail-link-overlay relation-${railRelation}`}
+      className={`rail-link-overlay relation-${railRelation} fill-${railFill}`}
       data-node={`relation/rail/${contentId}`}
       data-bound-view={boundViewId}
       data-bound-panel={boundPanelId}

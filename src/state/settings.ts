@@ -23,6 +23,8 @@ export type RailLook = "pane" | "ground";
 // 레일-패널 관계면 표현 3안 스위치 — 비교 실험용 임시 축(결정 시 채택안만 남기고 소거).
 // stroke=스트로크+라벨(기본 — 사용자 확정), moment=결부 변경 순간만 잠깐 플래시, tint=저농도 액센트 채움만.
 export type RailRelation = "tint" | "moment" | "stroke";
+// 결부 바탕 2안 비교 스위치(사용자 요청) — 결정 시 채택안만 남기고 소거.
+export type RailFill = "none" | "faint";
 
 interface SettingsState {
   language: Language;
@@ -49,6 +51,7 @@ interface SettingsState {
   rightSidebarMode: RightSidebarMode;
   railLook: RailLook;
   railRelation: RailRelation;
+  railFill: RailFill;
   // FLOW에서 포커스 패널의 자체 왼쪽 선이 막혔을 때 같은 row 형제를 화면에서만 교환.
   railFocusNear: boolean;
   // 앱 UI 폰트(=앱 크롬 전역). 터미널 폰트와 무관 — 터미널 폰트는 터미널 플러그인이 별도 소유.
@@ -75,6 +78,7 @@ interface SettingsState {
   setRightSidebarMode: (v: RightSidebarMode) => void;
   setRailLook: (v: RailLook) => void;
   setRailRelation: (v: RailRelation) => void;
+  setRailFill: (v: RailFill) => void;
   setRailFocusNear: (v: boolean) => void;
   setAppFontFamily: (v: string) => void;
   setAppFontSize: (v: number) => void;
@@ -97,6 +101,7 @@ const DEFAULTS = {
   rightSidebarMode: "overlay" as RightSidebarMode,
   railLook: "ground" as RailLook,
   railRelation: "stroke" as RailRelation,
+  railFill: "none" as RailFill,
   railFocusNear: false,
   appFontFamily:
     '"JetBrains Mono", "SF Mono", "Cascadia Code", Menlo, Consolas, "Courier New", monospace',
@@ -126,6 +131,7 @@ function serialize(s: SettingsState): PersistedSettings {
     rightSidebarMode: s.rightSidebarMode,
     railLook: s.railLook,
     railRelation: s.railRelation,
+    railFill: s.railFill,
     railFocusNear: s.railFocusNear,
     appFontFamily: s.appFontFamily,
     appFontSize: s.appFontSize,
@@ -204,6 +210,10 @@ export const useSettings = create<SettingsState>((set, get) => {
     },
     setRailRelation: (railRelation) => {
       set({ railRelation });
+      save();
+    },
+    setRailFill: (railFill) => {
+      set({ railFill });
       save();
     },
     setRailFocusNear: (railFocusNear) => {

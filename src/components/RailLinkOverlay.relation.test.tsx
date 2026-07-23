@@ -191,6 +191,14 @@ describe("railRelation 모드 CSS 갈래 (App.css)", () => {
     expect(d).not.toMatch(/var\(--relation-stroke\)/);
   });
 
+  it("결부 바탕 스위치: fill-none=바탕 제거, fill-faint=아주 옅은 틴트", () => {
+    // 사용자 비교 실험(① 빼기 ② 아주 옅게) — stroke 안의 fill 만 갈래친다.
+    const none = decls(".rail-link-overlay.relation-stroke.fill-none .rail-link-shape");
+    expect(none).toMatch(/fill:\s*none/);
+    const faint = decls(".rail-link-overlay.relation-stroke.fill-faint .rail-link-shape");
+    expect(faint).toMatch(/fill:\s*color-mix\(in srgb, var\(--acc\)\s*3%,\s*transparent\)/);
+  });
+
   it("떠다니는 관계 라벨 금지 — 결부 이름은 호스트 헤더(.proj-frame-bound) 한 곳", () => {
     // 관계 표시 단순화(사용자 결정): "연결됨 · 이름" 배지 폐지. 이름은 사이드바 헤더가
     // 소유한다(ProjectionSlots.frame.test 가 표시를 검증). 라벨 CSS 를 되살리지 마라.
