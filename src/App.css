@@ -454,25 +454,6 @@ body,
   vector-effect: non-scaling-stroke;
   stroke-linejoin: round;
 }
-.rail-link-label {
-  position: absolute;
-  max-width: 260px;
-  padding: 3px 10px;
-  overflow: hidden;
-  border-radius: calc(var(--relation-radius) * 0.55);
-  background: var(--relation-stroke);
-  color: var(--bg);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  line-height: 1.2;
-  text-transform: uppercase;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-:root[data-relation-label="none"] .rail-link-label {
-  display: none;
-}
 /* [임시 — 관계면 3안 비교 스위치] railRelation 설정(tint|moment|stroke)의 CSS 갈래.
    stroke 안은 위 기본 규칙 그대로가 기준점이다. 3안 중 하나로 결정되면 채택안만 남기고
    이 블록·모드 클래스·설정 축을 소거한다(제거 조건: 사용자 판정 확정 —
@@ -481,10 +462,6 @@ body,
   /* 레일과 결부 패널이 같은 바닥 톤을 공유하는 극저농도 액센트 틴트 — 스트로크·성공색 금지. */
   fill: color-mix(in srgb, var(--acc) 5%, transparent);
   stroke: none;
-}
-.rail-link-overlay.relation-tint .rail-link-label,
-.rail-link-overlay.relation-moment .rail-link-label {
-  display: none;
 }
 .rail-link-overlay.relation-moment .rail-link-shape {
   /* 평시는 tint 와 동일 — 플래시 해제 시 이 값으로 페이드아웃(전이가 소유). */
@@ -3481,6 +3458,15 @@ select.dctl {
   flex: 0 0 auto;
   font-size: 12px;
   line-height: 1;
+}
+.proj-frame-bound {
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--fg);
+  opacity: 0.5;
+  font-size: 0.85em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .proj-frame-title {
   flex: 1;

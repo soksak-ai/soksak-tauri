@@ -177,6 +177,21 @@ describe("레일 슬롯 공통 양식(§12)", () => {
   });
 });
 
+describe("호스트 헤더 결부 이름(§12-①)", () => {
+  it("헤더에 결부 뷰 이름이 박힌다 — 별도 '연결됨' 배지 불요", () => {
+    // 관계 표시 단순화(사용자 결정): 떠다니는 "연결됨 · 이름" 배지를 없애고, 사이드바가
+    // 누구를 섬기는지는 호스트 헤더의 이름 한 곳이 말한다.
+    registerFn("termplug", "term", "tree");
+    useSessions.setState({
+      tabs: [tab([pluginView("v1", "termplug", "term")], "v1")],
+      activeId: "p1",
+    });
+    render();
+    const bound = host.querySelector<HTMLElement>(".proj-frame-bound");
+    expect(bound?.textContent).toBe("v1"); // viewDisplayTitle(결부 뷰)
+  });
+});
+
 describe("영역 인계(§12-④)", () => {
   it("출발 표상은 이전 identity를 유지하고 도착 표상은 현재 identity를 사용한다", () => {
     registerFn("termplug", "term", "tree");
