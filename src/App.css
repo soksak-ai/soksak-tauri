@@ -3823,14 +3823,9 @@ select.dctl {
 .left-host:has(.left-host-tabs) .ft-header {
   height: var(--header-h, 33px);
 }
-/* 행 그리드 공동 계약(PLUGIN-CONTRACT §Toolbar row) — 레일 투영 본문의 상단 보조 행
-   (파일트리 core 바 등)은 패널 툴바 행과 같은 토큰을 소비한다. 2행 높이의 단일 진실은
-   --toolbar-h 하나다: 레일·기능·플러그인이 공동사용해야 수평 그리드가 이어진다. */
-/* 특이성 주의 — 위 .left-host:has(.left-host-tabs) 규칙(0,3,0)을 이겨야 하므로 동급
-   특이성 + 후순위로 둔다. 투영 본문에서는 좌호스트 컨텍스트라도 2행 표준이 우선이다. */
-.proj-frame-body .ft-sidebar .ft-header {
-  height: var(--toolbar-h, 28px);
-}
+/* 행 그리드 공동 계약(PLUGIN-CONTRACT §Toolbar row) — 레일 투영 본문의 상단 보조 행은
+   패널 툴바 행과 같은 토큰(--toolbar-h)을 소비한다. 이 표면은 플러그인이 렌더하므로
+   (파일트리 .sk-files-header — 자기 repo 에서 계약 준수·테스트), 코어에는 규칙이 없다. */
 
 /* ── 인앱 알림 배너(NotifyHost) ── 포커스 시 우상단 오버레이. 클릭=딥링크. */
 .notify-host {

@@ -141,14 +141,6 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
     expect(rule!.decls).not.toMatch(/height:\s*\d/);
   });
 
-  it("행 그리드 공동 계약: 레일 본문의 보조 행도 패널 툴바와 같은 토큰(--toolbar-h)", () => {
-    // 사용자 표준: 2행(툴바급 행)은 레일과 패널이 '공동사용'한다 — 사이드바 core 바가
-    // --chrome-row-h(37)를 쓰면 패널 툴바(28)와 그리드가 어긋난다(실측 스크린샷).
-    expect(css).toMatch(
-      /\.proj-frame-body \.ft-sidebar \.ft-header \{[^}]*height: var\(--toolbar-h/,
-    );
-  });
-
   it("R1: 죽은 변수(--tab-h/--ws-tab-h) 잔재 금지 — 계약 변수는 패딩뿐", () => {
     expect(css).not.toMatch(/--tab-h\b|--ws-tab-h\b/);
   });
