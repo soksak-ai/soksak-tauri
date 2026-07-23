@@ -15,8 +15,12 @@ interface FocusIntent {
   controller: AbortController;
   queued: boolean;
   delivered: boolean;
-  retried?: boolean;
+  retries?: number;
 }
+
+// 착지 재시도 상한 — 리로드 직후 웜 복원(엔진 재부착)이 수 프레임 걸리는 실측 창을 덮는다.
+// 인텐트가 교체·중단되면 즉시 멈추므로 상한은 최악 케이스 보고 시점일 뿐이다.
+const FOCUS_LANDING_RETRY_LIMIT = 30;
 
 interface ViewFocusCoordinatorOptions {
   schedule?: (callback: FrameRequestCallback) => number;
@@ -191,14 +195,16 @@ export class ViewFocusCoordinator {
       this.onError(error);
     }
     // 배달 선언의 근거는 착지다 — provider 호출이 입력 포커스를 못 옮겼으면(실측 지문:
-    // 클릭 후 activeElement 가 body 에 남음) 다음 프레임 1회 재시도하고, 그래도 미착지면
-    // 어느 뷰인지 보고한다(침묵 금지). 비동기 준비(콜드 스폰) 제공자는 재시도가 흡수한다.
+    // 클릭 후 activeElement 가 body 에 남음) 준비 창을 덮는 유한 재시도로 매 프레임
+    // 다시 배달하고, 상한까지 미착지면 어느 뷰인지 보고한다(침묵 금지). 리로드 직후
+    // 웜 복원처럼 엔진 재부착이 수 프레임 걸리는 창이 이 재시도의 존재 이유다.
     if (landed()) {
       intent.delivered = true;
       return;
     }
-    if (!intent.retried) {
-      intent.retried = true;
+    const retries = (intent.retries ?? 0) + 1;
+    intent.retries = retries;
+    if (retries < FOCUS_LANDING_RETRY_LIMIT) {
       intent.queued = true;
       this.schedule(() => this.deliver(intent));
       return;
