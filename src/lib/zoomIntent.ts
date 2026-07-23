@@ -53,12 +53,27 @@ const defaultDeps: ZoomDeps = {
   stepWindow: stepWindowZoom,
 };
 
+/** 훅 없는 뷰의 범용 폴백(§Zoom) — 컨테이너의 --view-font-size 를 스텝한다. 본문 폰트를
+ * 이 변수로 선언한 뷰(파일 뷰어 등)는 자동으로 줌을 얻고, 미소비 뷰에는 무해하다(옵트인).
+ * 행 그리드는 변수 소비 지점이 본문뿐이라 불가침(줌 불변식). */
+export const VIEW_FONT_BASE = 13;
+
+export function stepContainerFontVar(host: HTMLElement, action: ZoomAction): void {
+  const raw = host.style.getPropertyValue("--view-font-size");
+  const current = raw ? Number.parseFloat(raw) : VIEW_FONT_BASE;
+  const next =
+    action === "reset"
+      ? VIEW_FONT_BASE
+      : Math.max(6, Math.min(40, current + (action === "in" ? 1 : -1)));
+  host.style.setProperty("--view-font-size", `${next}px`);
+}
+
 export function routeZoom(action: ZoomAction, deps: ZoomDeps = defaultDeps): void {
   const active = deepActiveElement();
   const host = viewContainerOf(active);
   const viewId = host?.dataset.paneId ?? null;
-  if (viewId) {
-    deps.zoomView(viewId, action);
+  if (viewId && host) {
+    if (!deps.zoomView(viewId, action)) stepContainerFontVar(host, action);
     return;
   }
   deps.stepWindow(action);
