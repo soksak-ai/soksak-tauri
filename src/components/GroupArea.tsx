@@ -481,7 +481,7 @@ export const GroupArea = memo(function GroupArea({
   // 셀 좌표 — CSS 변수 4개만 전달하고 산수(calc)는 CSS 단일 규칙이 소유한다.
   // (좌표 문자열을 렌더마다 조립해 흩뿌리던 레거시 제거 — 치수 상수는 아래
   // 컨테이너에서 1회 주입되는 --header-h/--status-h/--pane-inset 이 단일 소스)
-  const cellVars = (rect: {
+  const cellCalc = (rect: {
     left: number;
     top: number;
     width: number;
@@ -503,7 +503,11 @@ export const GroupArea = memo(function GroupArea({
     const focusFlipX = fromRect
       ? ((fromRect.left - rect.left) / rect.width) * 100
       : 0;
-    return ({
+    // 주행 표식 — 이 셀이 이번 위상에서 실제로 이동하는가(§12-④: 이동 요소만 불활성).
+    const moved =
+      Math.abs((fromProjected.railLeft - projected.railLeft) * railWidthPx) > 0.5 ||
+      Math.abs(focusFlipX) > 0.001;
+    return { moved, style: ({
       "--l": `${rect.left}%`,
       "--t": `${rect.top}%`,
       "--w": `${rect.width}%`,
@@ -512,8 +516,14 @@ export const GroupArea = memo(function GroupArea({
       "--rail-dw": `${projected.railWidth * railWidthPx}px`,
       "--rail-flip-x": `${(fromProjected.railLeft - projected.railLeft) * railWidthPx}px`,
       "--focus-flip-x": `${focusFlipX}%`,
-    }) as React.CSSProperties;
+    }) as React.CSSProperties };
   };
+
+  // 좌표 변수만 필요한 소비자용(호버 프레임 등) — 계산은 cellCalc 한 곳.
+  const cellVars = (
+    rect: { left: number; top: number; width: number; height: number },
+    groupId?: string,
+  ) => cellCalc(rect, groupId).style;
 
   const dividerVars = (d: Divider) => {
     if (railWidthPx <= 0) return {};
@@ -575,7 +585,8 @@ export const GroupArea = memo(function GroupArea({
             key={`cell-${group.id}`}
             className={`egroup-cell${holeCell ? " cell-hole" : ""}`}
             data-node={`layout/panel/${group.id}`}
-            style={cellVars(rect, group.id)}
+            style={cellCalc(rect, group.id).style}
+            data-travel-moved={cellCalc(rect, group.id).moved ? "1" : undefined}
           >
             {maxCell ? (
               /* 최대화 헤더: 탭·+ 대신 타이틀 — 더블클릭/버튼으로 원래 분할 복원 */
@@ -699,9 +710,10 @@ export const GroupArea = memo(function GroupArea({
               // 평상시 비활성 슬롯은 화면 밖으로 파킹하고, 최대화의 제외 슬롯은 합성 트리에서도
               // 제거한다(viewSurfaceStyle 단일 진실). 둘 다 DOM/플러그인 인스턴스는 유지한다.
               style={{
-                ...cellVars(slotRect, group.id),
+                ...cellCalc(slotRect, group.id).style,
                 ...viewSurfaceStyle(shown, !!maxCell),
               }}
+              data-travel-moved={cellCalc(slotRect, group.id).moved ? "1" : undefined}
               onMouseDownCapture={(e) => {
                 // 제스처 당사자 표식 — 이 mousedown 이 주행(재결부·FLIP)을 시작시켜도, 당사자
                 // 슬롯만은 위상 불활성에서 면제되어 자기 mouseup(xterm 입력 포커스 지점)을
