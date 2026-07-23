@@ -452,6 +452,8 @@ export interface SoksakPluginApi {
     visible: (label: string, visible: boolean) => Promise<void>;
     /** URL 이동. */
     navigate: (label: string, url: string) => Promise<void>;
+    /** 뷰-단위 페이지 줌(0.25..4.0) — 유효 배율 = 창 줌 × 이 값. 적용된 뷰 배율을 반환. */
+    zoom: (label: string, factor: number) => Promise<number>;
     /** URL 을 독립 OS 창(새 브라우저 윈도우)으로 연다. label 키 webview 와 무관 — 코어가 popup
      *  윈도우를 직접 만든다(범용 webview 호스트 표면 — 새 링크를 새 창으로 여는 플러그인이 쓴다). */
     openWindow: (url: string) => Promise<void>;
@@ -1841,6 +1843,8 @@ export function buildPluginApi(
             deps.invoke("webview_visible", { label, visible }) as Promise<void>,
           navigate: (label, url) =>
             deps.invoke("webview_navigate", { label, url }) as Promise<void>,
+          zoom: (label, factor) =>
+            deps.invoke("webview_zoom_view", { label, factor }) as Promise<number>,
           openWindow: (url) =>
             deps.invoke("webview_open_window", { url }) as Promise<void>,
           history: (label, delta) =>
