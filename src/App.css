@@ -532,6 +532,14 @@ body,
 .egroup-area.focus-layout-traveling .egroup-divider {
   pointer-events: none;
 }
+
+/* 예외 — 제스처를 시작한 당사자 슬롯은 위상 중에도 입력을 받는다. mousedown 대상의
+   mouseup(xterm 이 입력 포커스를 잡는 지점)까지 막으면 비결부 뷰 클릭이 UI 활성만 되고
+   터미널 포커스를 영영 못 받는다. 다른(지나가는) 표면은 여전히 불활성 — straddle 방어 유지. */
+.content-body.rail-traveling .egroup-body-slot[data-gesture-owner="1"],
+.egroup-area.focus-layout-traveling .egroup-body-slot[data-gesture-owner="1"] {
+  pointer-events: auto;
+}
 /* 좌측 파일 트리 사이드바. 폭만 토글(0 ↔ SIDEBAR_W), 닫혀도 언마운트하지 않아
    트리 상태(펼침/스크롤)가 유지된다. overflow hidden 으로 접을 때 깔끔히 잘린다. */
 .sidebar {

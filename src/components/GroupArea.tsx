@@ -702,7 +702,19 @@ export const GroupArea = memo(function GroupArea({
                 ...cellVars(slotRect, group.id),
                 ...viewSurfaceStyle(shown, !!maxCell),
               }}
-              onMouseDownCapture={() => {
+              onMouseDownCapture={(e) => {
+                // 제스처 당사자 표식 — 이 mousedown 이 주행(재결부·FLIP)을 시작시켜도, 당사자
+                // 슬롯만은 위상 불활성에서 면제되어 자기 mouseup(xterm 입력 포커스 지점)을
+                // 받는다(App.css 예외 규칙). window mouseup 1회로 반드시 해제(잔존 금지).
+                const slot = e.currentTarget;
+                slot.dataset.gestureOwner = "1";
+                window.addEventListener(
+                  "mouseup",
+                  () => {
+                    delete slot.dataset.gestureOwner;
+                  },
+                  { capture: true, once: true },
+                );
                 if (group.activeViewId) {
                   transferViewFocus(
                     activeSessionViewId(),
