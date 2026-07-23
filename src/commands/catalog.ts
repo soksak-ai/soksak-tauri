@@ -2028,11 +2028,8 @@ export function registerCatalog(): void {
     "iconSet",
     "iconBox",
     "focusIndicator",
-    // 관계면 3안 비교 스위치 — 비교 실험용 임시 축(결정 시 소거).
     "railRelation",
-    // 결부 바탕 2안 비교 스위치 — 비교 실험용 임시 축(결정 시 소거).
     "railFill",
-    // 포커스 스포트라이트 실험 — 전체를 가라앉히고 선택만 명확하게(결정 시 소거).
     "focusDim",
     "railSeamStyle",
     "railFocusNear",

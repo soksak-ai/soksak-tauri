@@ -23,7 +23,7 @@ export type RailLook = "pane" | "ground";
 // 레일-패널 관계면 표현 3안 스위치 — 비교 실험용 임시 축(결정 시 채택안만 남기고 소거).
 // stroke=스트로크+라벨(기본 — 사용자 확정), moment=결부 변경 순간만 잠깐 플래시, tint=저농도 액센트 채움만.
 export type RailRelation = "tint" | "moment" | "stroke";
-// 결부 바탕 2안 비교 스위치(사용자 요청) — 결정 시 채택안만 남기고 소거.
+// 결부 패널 바탕(정식 설정) — faint(기본·액센트 1%)|none.
 export type RailFill = "none" | "faint";
 // 교체-인접 표시(정식 설정) — edge=바깥 오른쪽 변 점선(기본·사용자 채택) | seam=내부 공유변 점선.
 export type RailSeamStyle = "seam" | "edge";
@@ -107,10 +107,10 @@ const DEFAULTS = {
   rightSidebarMode: "overlay" as RightSidebarMode,
   railLook: "ground" as RailLook,
   railRelation: "stroke" as RailRelation,
-  railFill: "none" as RailFill,
-  focusDim: false,
+  railFill: "faint" as RailFill,
+  focusDim: true,
   railSeamStyle: "edge" as RailSeamStyle,
-  railFocusNear: false,
+  railFocusNear: true,
   appFontFamily:
     '"JetBrains Mono", "SF Mono", "Cascadia Code", Menlo, Consolas, "Courier New", monospace',
   appFontSize: 13,
