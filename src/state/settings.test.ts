@@ -48,6 +48,22 @@ describe("settings.focusDim", () => {
   });
 });
 
+// 창 줌(플랜 golden-swinging-lynx) — 프레임 선택 시 ⌘±의 값. appFontSize(죽은 축)를 대체.
+describe("settings.windowZoom", () => {
+  it("기본 1.0, 0.5..2.0 클램프", () => {
+    expect(useSettings.getState().windowZoom).toBe(1);
+    useSettings.getState().setWindowZoom(9);
+    expect(useSettings.getState().windowZoom).toBe(2);
+    useSettings.getState().setWindowZoom(0.1);
+    expect(useSettings.getState().windowZoom).toBe(0.5);
+    useSettings.getState().setWindowZoom(1);
+  });
+
+  it("appFontSize 축은 소거됐다(죽은 반쪽 — 창 줌·뷰 줌이 대체)", () => {
+    expect("appFontSize" in useSettings.getState()).toBe(false);
+  });
+});
+
 // 교체-인접 표시 — 정식 설정(기본 edge=사용자 채택, seam 은 선택지로 유지).
 describe("settings.railSeamStyle", () => {
   it("기본값은 edge(바깥 변 점선 — 사용자 채택)", () => {

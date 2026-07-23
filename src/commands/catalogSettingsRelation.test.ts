@@ -23,6 +23,19 @@ beforeEach(() => {
   useSettings.setState({ railRelation: "stroke" });
 });
 
+describe("settings.windowZoom 명령 표면", () => {
+  it("get 반환(기본 1) + set 클램프 적용, appFontSize 키는 거부", async () => {
+    const g = await execute("settings.get", {}, {});
+    expect((g.data as { windowZoom: number }).windowZoom).toBe(1);
+    const on = await execute("settings.set", { key: "windowZoom", value: 1.5 }, {});
+    expect(on.ok).toBe(true);
+    expect(useSettings.getState().windowZoom).toBe(1.5);
+    const dead = await execute("settings.set", { key: "appFontSize", value: 14 }, {});
+    expect(dead.ok).toBe(false);
+    await execute("settings.set", { key: "windowZoom", value: 1 }, {});
+  });
+});
+
 describe("settings.focusDim 명령 표면", () => {
   it("settings.get 반환(기본 false) + set 으로 토글, 비불리언 거부", async () => {
     const g = await execute("settings.get", {}, {});

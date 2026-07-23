@@ -160,6 +160,17 @@ export class ViewFocusCoordinator {
     this.queueCurrentIntent();
   }
 
+  zoomView(viewId: string, action: "in" | "out" | "reset"): boolean {
+    const mounted = this.mounted.get(viewId);
+    if (!mounted?.provider.zoom) return false;
+    try {
+      mounted.provider.zoom(mounted.container, mounted.context(), action);
+    } catch (error) {
+      this.onError(error);
+    }
+    return true;
+  }
+
   snapshot(): {
     requestedViewId: string | null;
     mounted: boolean;
@@ -307,4 +318,13 @@ export function viewFocusSnapshot(): ReturnType<
 /** 레이아웃 이동 종료 지점에서 호출 — 이동이 떨군 포커스를 같은 인텐트로 재배달한다. */
 export function redeliverViewFocusIfLost(): void {
   coordinator.redeliverIfLost();
+}
+
+/** 줌 인텐트 위임(플랜 golden-swinging-lynx) — 마운트된 뷰의 선택 훅 zoom 을 호출한다.
+ * 훅 미구현·미마운트면 false. 코어는 라우팅만 소유하고 의미(폰트/페이지 줌)는 뷰가 정한다. */
+export function zoomFocusedView(
+  viewId: string,
+  action: "in" | "out" | "reset",
+): boolean {
+  return coordinator.zoomView(viewId, action);
 }
