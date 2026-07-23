@@ -17,18 +17,21 @@ function swapRowSiblingCandidates<L extends Identified>(
       // 이 정책은 패널 대 패널 교환만 한다. subtree를 통째로 옮기거나 중첩 구조를
       // 재작성하지 않는다. 후보는 **가까운 왼쪽 형제부터**(최소 이동) — 채택자는
       // 처음으로 깨끗한 선에 닿는 후보에서 멈추므로, 멀리 있는 포커스라도 비참여
-      // 패널들은 제자리에 남는다.
+      // 패널들은 제자리에 남는다. sizes 도 함께 교환한다 — 폭이 다른 형제라도 각
+      // 패널은 자기 폭 그대로 위치만 맞바꾸므로 어떤 콘텐츠도 늘거나 줄지 않는다
+      // (같은 폭이면 sizes 교환은 무연산 = 종전 동작 그대로).
       const out: SplitTree<L>[] = [];
       for (let j = targetIndex - 1; j >= 0; j -= 1) {
         const sibling = node.children[j];
         if (sibling.type !== "leaf") continue;
-        if (Math.abs(node.sizes[j] - node.sizes[targetIndex]) >= 1e-9) continue;
         const children = [...node.children];
         [children[j], children[targetIndex]] = [
           children[targetIndex],
           children[j],
         ];
-        out.push({ ...node, children });
+        const sizes = [...node.sizes];
+        [sizes[j], sizes[targetIndex]] = [sizes[targetIndex], sizes[j]];
+        out.push({ ...node, children, sizes });
       }
       return out;
     }
