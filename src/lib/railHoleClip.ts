@@ -6,7 +6,11 @@ export type ClipRect = { x: number; y: number; w: number; h: number };
 
 const px = (n: number) => `${Math.round(n * 100) / 100}`;
 
-/** 호스트 좌표계 기준 홀 목록을 path(evenodd) 클립으로 합성한다. 홀이 없으면 빈 문자열(클립 해제). */
+/**
+ * 호스트 좌표계 기준 홀 목록을 path() 클립으로 합성한다. 홀이 없으면 빈 문자열(클립 해제).
+ * path() 의 fill-rule 인자는 WebKit 이 파싱하지 못해 값 전체가 무시되므로 쓰지 않는다 —
+ * 기본 nonzero 권선에서 홀이 뚫리도록 외곽(시계)과 홀(반시계)을 반대 방향으로 그린다.
+ */
 export function holeClipPath(
   host: { w: number; h: number },
   holes: ClipRect[],
@@ -16,10 +20,10 @@ export function holeClipPath(
   const cuts = holes
     .map(
       (r) =>
-        `M${px(r.x)} ${px(r.y)}h${px(r.w)}v${px(r.h)}h${px(-r.w)}Z`,
+        `M${px(r.x)} ${px(r.y)}v${px(r.h)}h${px(r.w)}v${px(-r.h)}Z`,
     )
     .join("");
-  return `path(evenodd, "${outer}${cuts}")`;
+  return `path("${outer}${cuts}")`;
 }
 
 /** 뷰포트 rect 들을 호스트 상대 좌표로 옮기고, 호스트와 실교차하는 유효 홀만 남긴다. */
@@ -47,6 +51,8 @@ const HOLE_SLOT_SELECTOR = ".egroup-cell.cell-hole .egroup-body-slot";
  * rAF 는 폴링이 아니라 진행 중인 레이아웃 애니메이션의 프레임 추적이며, 반환된 정지
  * 함수(모션 종료 에지)가 루프와 클립을 함께 회수한다.
  */
+let warnedRejected = false;
+
 export function trackRailHoleClip(plane: HTMLElement): () => void {
   let raf = 0;
   const tick = () => {
@@ -55,10 +61,16 @@ export function trackRailHoleClip(plane: HTMLElement): () => void {
       document.querySelectorAll<HTMLElement>(HOLE_SLOT_SELECTOR),
       (el) => el.getBoundingClientRect(),
     );
-    plane.style.clipPath = holeClipPath(
+    const clip = holeClipPath(
       { w: host.width, h: host.height },
       visibleHoles(host, rects),
     );
+    plane.style.clipPath = clip;
+    // 수용 검증 — 엔진이 값을 거부하면 조용한 무클립이 된다. 침묵 금지.
+    if (clip !== "" && plane.style.clipPath === "" && !warnedRejected) {
+      warnedRejected = true;
+      console.warn("[railHoleClip] clip-path 값이 거부됨:", clip);
+    }
     raf = requestAnimationFrame(tick);
   };
   raf = requestAnimationFrame(tick);

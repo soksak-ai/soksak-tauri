@@ -7,13 +7,12 @@ describe("holeClipPath", () => {
     expect(holeClipPath({ w: 800, h: 600 }, [])).toBe("");
   });
 
-  it("외곽 + 홀 서브패스를 evenodd 로 합성한다", () => {
+  it("fill-rule 인자 없이(WebKit 미지원) 외곽=시계·홀=반시계 권선으로 뚫는다", () => {
     const clip = holeClipPath({ w: 800, h: 600 }, [
       { x: 100, y: 50, w: 200, h: 150 },
     ]);
-    expect(clip).toBe(
-      'path(evenodd, "M0 0H800V600H0ZM100 50h200v150h-200Z")',
-    );
+    expect(clip).toBe('path("M0 0H800V600H0ZM100 50v150h200v-150Z")');
+    expect(clip).not.toContain("evenodd");
   });
 
   it("홀 여러 개가 각자 서브패스로 들어간다", () => {
@@ -21,8 +20,8 @@ describe("holeClipPath", () => {
       { x: 0, y: 0, w: 10, h: 10 },
       { x: 50, y: 50, w: 20, h: 20 },
     ]);
-    expect(clip).toContain("M0 0h10v10h-10Z");
-    expect(clip).toContain("M50 50h20v20h-20Z");
+    expect(clip).toContain("M0 0v10h10v-10Z");
+    expect(clip).toContain("M50 50v20h20v-20Z");
   });
 
   it("소수 좌표는 1/100px 로 반올림한다(경로 문자열 폭주 방지)", () => {
@@ -30,7 +29,7 @@ describe("holeClipPath", () => {
       { x: 10.126, y: 0, w: 5.001, h: 5 },
     ]);
     expect(clip).toContain("H100.33V100");
-    expect(clip).toContain("M10.13 0h5v5h-5Z");
+    expect(clip).toContain("M10.13 0v5h5v-5Z");
   });
 });
 

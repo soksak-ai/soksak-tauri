@@ -137,11 +137,14 @@ function useResizableWidth(
       window.removeEventListener("mouseup", onUp);
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
+      endLayoutMotion();
       setW((cur) => {
         localStorage.setItem(key, String(cur));
         return cur;
       });
     };
+    // 폭 드래그도 레이아웃 모션 위상(홀 클립·native 추종) — 사이드바·레일·우측 공통.
+    beginLayoutMotion();
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
     document.body.style.cursor = "col-resize";
@@ -329,11 +332,14 @@ const ProjectPane = memo(function ProjectPane({
         window.removeEventListener("mouseup", onUp);
         document.body.style.cursor = "";
         document.body.style.userSelect = "";
+        endLayoutMotion();
         setDragStation(null);
         // 드래그 착지는 주행 위상이 아니다 — 표시 기준점을 손 위치에 동기화한다.
         setRailPresentation((current) => ({ ...current, station: next }));
         setLeftRailPlacement(project.id, { mode: "pin", station: next });
       };
+      // 손 드래그도 레이아웃 모션 위상 — 자동 주행과 같은 신호(홀 클립·native 추종)를 받는다.
+      beginLayoutMotion();
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
       document.body.style.cursor = "col-resize";
