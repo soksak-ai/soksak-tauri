@@ -375,7 +375,7 @@ export function registerDomCatalog(): void {
     params: {
       ms: {
         type: "number",
-        description: "Recording window in ms (default 10000, max 30000)",
+        description: "Recording window in ms (default 10000, max 180000)",
         required: false,
       },
     },
@@ -384,7 +384,7 @@ export function registerDomCatalog(): void {
     examples: ['ui.focus.trace.start \'{"ms":10000}\''],
     handler: (p) => {
       focusTraceStop?.();
-      const ms = Math.min(Math.max(Number(p.ms) || 10_000, 100), 30_000);
+      const ms = Math.min(Math.max(Number(p.ms) || 10_000, 100), 180_000);
       const buf: FocusTraceEntry[] = [];
       const t0 = performance.now();
       const record = (e: Event) => {
