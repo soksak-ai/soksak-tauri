@@ -509,10 +509,12 @@ body,
 /* [임시 — 결부 바탕 2안 비교 스위치] railFill 설정(none|faint) — 사용자 요청(① 빼기
    ② 아주 옅게). stroke 안의 fill 만 갈래친다(tint/moment 는 fill 이 본질이라 불간섭).
    결정 시 채택안만 남기고 소거. */
-.rail-link-overlay.relation-stroke.fill-none .rail-link-shape {
+.rail-link-overlay.relation-stroke.fill-none .rail-link-shape,
+.rail-link-overlay.relation-stroke.fill-none .rail-link-fill {
   fill: none;
 }
-.rail-link-overlay.relation-stroke.fill-faint .rail-link-shape {
+.rail-link-overlay.relation-stroke.fill-faint .rail-link-shape,
+.rail-link-overlay.relation-stroke.fill-faint .rail-link-fill {
   fill: color-mix(in srgb, var(--acc) 1%, transparent);
 }
 /* [임시 — 관계면 3안 비교 스위치] railRelation 설정(tint|moment|stroke)의 CSS 갈래.
