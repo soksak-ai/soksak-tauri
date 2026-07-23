@@ -52,7 +52,6 @@ import {
   cwdPaneOf as resolveCwdPane,
   leftRailGrid,
   useSessions,
-  viewDisplayTitle,
   webviewDisplayName,
   type ProjectTab,
 } from "./state/sessions";
@@ -361,7 +360,6 @@ const ProjectPane = memo(function ProjectPane({
                 contentId={activeContent.id}
                 boundViewId={boundView.id}
                 boundPanelId={boundGroup.id}
-                label={viewDisplayTitle(boundView)}
                 railWidth={sidebarW}
                 railStation={renderedStation}
                 targetRect={boundCell.rect}

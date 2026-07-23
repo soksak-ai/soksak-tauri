@@ -9,7 +9,6 @@ import {
 } from "../lib/railLinkShape";
 import { useSettings } from "../state/settings";
 import { useTheme } from "../state/theme";
-import { useT } from "../i18n";
 
 interface Size {
   width: number;
@@ -31,7 +30,6 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
   contentId,
   boundViewId,
   boundPanelId,
-  label,
   railWidth,
   railStation,
   targetRect,
@@ -39,12 +37,10 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
   contentId: string;
   boundViewId: string;
   boundPanelId: string;
-  label: string;
   railWidth: number;
   railStation: number;
   targetRect: RailRect;
 }) {
-  const t = useT();
   const radius = useTheme((state) => state.spec.relation.radius);
   const strokeWidth = useTheme((state) => state.spec.relation.strokeWidth);
   const railRelation = useSettings((state) => state.railRelation);
@@ -120,21 +116,13 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
       aria-hidden="true"
     >
       {path && boxes && (
-        <>
-          <svg
-            className="rail-link-canvas"
-            viewBox={`0 0 ${size.width} ${size.height}`}
-            preserveAspectRatio="none"
-          >
-            <path className="rail-link-shape" d={path} />
-          </svg>
-          <div
-            className="rail-link-label"
-            style={{ left: boxes.rail.x + 14, top: 4 }}
-          >
-            {t("railRelation.linked")} · {label}
-          </div>
-        </>
+        <svg
+          className="rail-link-canvas"
+          viewBox={`0 0 ${size.width} ${size.height}`}
+          preserveAspectRatio="none"
+        >
+          <path className="rail-link-shape" d={path} />
+        </svg>
       )}
     </div>
   );

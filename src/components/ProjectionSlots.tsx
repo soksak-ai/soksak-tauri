@@ -8,7 +8,7 @@ import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { PluginViewHost } from "./PluginViewHost";
 import { projectionFor } from "../state/projectionWiring";
 import { useProjection } from "../state/projection";
-import { useSessions } from "../state/sessions";
+import { findViewById, useSessions, viewDisplayTitle } from "../state/sessions";
 import { useSettings } from "../state/settings";
 import { useViewRegistry, getRegisteredView } from "../plugins/viewRegistry";
 import { usePlugins } from "../state/plugins";
@@ -130,6 +130,10 @@ export const ProjectionSlots = memo(function ProjectionSlots({
         const decl = getRegisteredView(refKey)?.decl;
         const showToggle = live && side === "left" && first;
         if (live) first = false;
+        // 결부 뷰 이름 — 사이드바가 누구를 섬기는지는 호스트 헤더의 이 한 곳이 말한다
+        // (떠다니는 "연결됨" 배지 폐지 — 관계 표시 단순화, 사용자 결정).
+        const boundId = instanceKey.split("|")[2] ?? proj?.binding.viewId ?? null;
+        const boundView = boundId && tab ? findViewById([tab], boundId) : null;
         return (
           <div
             key={instanceKey}
@@ -140,6 +144,9 @@ export const ProjectionSlots = memo(function ProjectionSlots({
             <div className="proj-frame-header" data-node={`projection/${side}/frame/${refKey}`}>
               <span className="proj-frame-icon">{decl?.icon ?? ""}</span>
               <span className="proj-frame-title">{decl ? localize(decl.title) : refKey}</span>
+              {boundView && (
+                <span className="proj-frame-bound">{viewDisplayTitle(boundView)}</span>
+              )}
               {showToggle && (
                 <button
                   type="button"

@@ -45,7 +45,6 @@ function overlayProps(overrides: Partial<{
     contentId: "c1",
     boundViewId: overrides.boundViewId ?? "v2",
     boundPanelId: "g2",
-    label: "Design Studio",
     railWidth: 300,
     railStation: overrides.railStation ?? 50,
     targetRect: overrides.targetRect ?? adjacentRect,
@@ -192,12 +191,11 @@ describe("railRelation 모드 CSS 갈래 (App.css)", () => {
     expect(d).not.toMatch(/var\(--relation-stroke\)/);
   });
 
-  it("tint·moment: 라벨 숨김", () => {
-    const rule = css.match(
-      /\.rail-link-overlay\.relation-tint \.rail-link-label,\s*\.rail-link-overlay\.relation-moment \.rail-link-label\s*\{([^}]*)\}/,
-    );
-    expect(rule).not.toBeNull();
-    expect(rule![1]).toMatch(/display:\s*none/);
+  it("떠다니는 관계 라벨 금지 — 결부 이름은 호스트 헤더(.proj-frame-bound) 한 곳", () => {
+    // 관계 표시 단순화(사용자 결정): "연결됨 · 이름" 배지 폐지. 이름은 사이드바 헤더가
+    // 소유한다(ProjectionSlots.frame.test 가 표시를 검증). 라벨 CSS 를 되살리지 마라.
+    expect(css).not.toMatch(/rail-link-label/);
+    expect(css).toMatch(/\.proj-frame-bound\s*\{/);
   });
 
   it("moment: 평시 tint 동일 + 플래시 때만 relation 토큰, 해제 시 페이드아웃", () => {
