@@ -307,11 +307,11 @@ export function registerDomCatalog(): void {
 
   register("ui.focus.state", {
     description:
-      "Return the keyboard-focus owner through the public view-host boundary: the requested view, whether its provider is mounted/delivered, and the view containing the active element. Pierces Shadow DOM — plugin views mount inside a shadow root, so this descends shadowRoot.activeElement to the real focused element (and finds its view across the shadow boundary) instead of stopping at the shadow host. Use after real-device input to verify focus settled in the intended view without querying plugin-private DOM.",
-    triggers: { ko: "키보드 포커스 소유자 활성 뷰 포커스 상태" },
+      "Return the keyboard-focus owner through the public view-host boundary: the requested view, whether its provider is mounted/delivered, and the view containing the active element. Pierces Shadow DOM — plugin views mount inside a shadow root, so this descends shadowRoot.activeElement to the real focused element (and finds its view across the shadow boundary) instead of stopping at the shadow host. settled only proves the DOM active element — widgets paint their focused state (e.g. a terminal's block cursor) only when they received a focus event AND the window is key, so also check windowFocused (document.hasFocus) and activeElement.ancestors (class chain up to the view container — a widget's own focus class appears here). Use after real-device input to verify focus settled in the intended view without querying plugin-private DOM.",
+    triggers: { ko: "키보드 포커스 소유자 활성 뷰 포커스 상태 창키 커서" },
     params: {},
     returns:
-      "{ requestedViewId, mounted, delivered, activeViewId, settled, activeElement }",
+      "{ requestedViewId, mounted, delivered, activeViewId, settled, windowFocused, activeElement:{ tag, dataNode, className, ancestors } }",
     message: (d) =>
       tmsg("msg.ui.focus.state", {
         view: String(d.activeViewId ?? "none"),
@@ -322,17 +322,31 @@ export function registerDomCatalog(): void {
       const active = deepActiveElement();
       const host = viewContainerOf(active);
       const activeViewId = host?.dataset.paneId ?? null;
+      // 조상 클래스 체인(뷰 컨테이너까지) — 위젯은 focus 이벤트를 받아야 자기 포커스
+      // 표식(클래스·커서 페인트)을 켠다. activeElement 만으론 그 축이 안 보인다.
+      const ancestors: { tag: string; className: string }[] = [];
+      for (
+        let el = active instanceof HTMLElement ? active.parentElement : null;
+        el && el !== host?.parentElement && ancestors.length < 12;
+        el = el.parentElement ?? ((el.getRootNode() as ShadowRoot).host as HTMLElement | null)
+      ) {
+        ancestors.push({ tag: el.tagName.toLowerCase(), className: el.className });
+        if (el === host) break;
+      }
       return {
         ...request,
         activeViewId,
         settled:
           request.delivered && request.requestedViewId === activeViewId,
+        // 창이 key 가 아니면 위젯은 포커스 표식을 안 그린다 — settled 와 독립 축.
+        windowFocused: document.hasFocus(),
         activeElement:
           active instanceof HTMLElement
             ? {
                 tag: active.tagName.toLowerCase(),
                 dataNode: active.dataset.node ?? null,
                 className: active.className,
+                ancestors,
               }
             : null,
       };
