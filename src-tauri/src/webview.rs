@@ -722,8 +722,21 @@ pub fn webview_open(
     w: f64,
     h: f64,
 ) -> Result<(), String> {
-    if app.get_webview(&label).is_some() {
-        return Ok(());
+    if let Some(existing) = app.get_webview(&label) {
+        // 실물 생존 검사 — 라벨은 registry 에 살아있어도 native view 가 창에서 떨어져 나간
+        // 좀비일 수 있다(실사고: close 가 반쯤 진행된 라벨에 open 이 no-op → 영구 빈 홀,
+        // visible/list 도 건강 오판). open 의 계약은 "호출하면 반드시 살아있는 child"다 —
+        // 좀비면 잔재를 정리하고 아래에서 신규 생성한다. 검사·정리는 메인스레드 인라인.
+        if native_child_alive(&existing) {
+            return Ok(());
+        }
+        #[cfg(debug_assertions)]
+        eprintln!("[vis-trace] webview_open {label}: 좀비 감지 — 정리 후 재생성");
+        let _ = existing.close();
+        if app.get_webview(&label).is_some() {
+            // close 정리가 아직 안 끝났다 — 충돌 생성 대신 명시 실패(호출자 힐이 재시도한다).
+            return Err(format!("webview {label} 좀비 정리 대기 — 재시도 필요"));
+        }
     }
     // window = 이 명령을 invoke 한 창(MW2 — Tauri 가 호출 창을 주입). 그 창에 child webview 를
     // 붙이므로 멀티 윈도우에서 BrowserView 가 실행된 창에 정확히 들어간다(프론트 label 전달 불요).
@@ -1370,6 +1383,43 @@ pub fn webview_stop(app: AppHandle, label: String) -> Result<(), String> {
         let _ = wv;
     }
     Ok(())
+}
+
+// native child 실물 생존 — 라벨 registry 생존과 별개로, view 가 실제 창에 부착돼 있는가.
+// 메인스레드 인라인(with_webview 동기 경로)이라 커맨드 문맥에서 동기적으로 판정된다.
+fn native_child_alive(wv: &tauri::Webview) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        let alive = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = alive.clone();
+        let _ = wv.with_webview(move |pw| unsafe {
+            use objc2::msg_send;
+            use objc2::runtime::AnyObject;
+            let view = pw.inner() as *mut AnyObject;
+            if view.is_null() {
+                return;
+            }
+            let win: *mut AnyObject = msg_send![&*view, window];
+            if !win.is_null() {
+                flag.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+        });
+        alive.load(std::sync::atomic::Ordering::SeqCst)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = wv;
+        true
+    }
+}
+
+// 실물 생존 관측면 — 소비자(플러그인 자가치유)가 "열림을 믿는 상태"와 실물을 대조한다.
+// list/visible 은 registry 기준이라 좀비를 건강 오판한다 — 이 커맨드만이 실물을 답한다.
+#[tauri::command]
+pub fn webview_alive(app: AppHandle, label: String) -> bool {
+    app.get_webview(&label)
+        .map(|wv| native_child_alive(&wv))
+        .unwrap_or(false)
 }
 
 // hide 를 거친 child 라벨 — show 시 재부착(뷰어빌리티 기상)이 필요한 대상. webview_close 가 지운다.
