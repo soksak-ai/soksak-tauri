@@ -38,8 +38,22 @@ export function phaseOffsetPx(
  * 위상 시작 에지 1회 호출 — 화면에 보이는 홀 슬롯의 네이티브 child 를 FLIP 델타만큼 CA 구동.
  * 파킹 슬롯(오프스크린/미표시)·무이동 슬롯은 제외. 실패는 무해(추종 루프 + 종료 스냅이
  * 정확성 그물).
+ *
+ * 샘플링 시점 계약: 레이아웃 이펙트가 아니라 rAF(첫 페인트 직전) — 레이아웃 이펙트는 다른
+ * 컴포넌트의 커밋과 인터리브되어 FLIP 변수의 직전 위상 값을 읽을 수 있다(실측: 연속 3회
+ * 전환 중 3번째가 이전 부호를 읽어 child 가 화면 밖으로 구동됨). rAF 는 DOM 애니메이션의
+ * 첫 프레임과 같은 스타일을 본다 — 두 컴포지터가 같은 t0 기하에서 출발한다.
  */
+let pendingFrame = 0;
 export function animateHoleChildrenToFinal(): void {
+  if (pendingFrame) return; // 같은 커밋 폭풍에서 두 위상 에지가 겹쳐도 샘플은 1회
+  pendingFrame = requestAnimationFrame(() => {
+    pendingFrame = 0;
+    sampleAndDrive();
+  });
+}
+
+function sampleAndDrive(): void {
   const vw = window.innerWidth;
   const vh = window.innerHeight;
   for (const slot of Array.from(
