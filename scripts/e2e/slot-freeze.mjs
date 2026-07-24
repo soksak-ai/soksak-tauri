@@ -244,6 +244,31 @@ async function main() {
     }
   }
 
+  // 6) 기하 소유권 불변식 — 간접 사건(다른 뷰 포커스)은 브라우저 슬롯을 1px 도 못 움직인다.
+  // 근본 원칙(NATIVE-SURFACES §2): 네이티브 표면의 기하는 직접 조작으로만 변한다. 이 게이트가
+  // 깨지면 어떤 새 기능(레일 이주·투영·스왑)이 간접 이동을 재도입한 것이다 — 기능을 고쳐라.
+  {
+    await rpc("view.activate", { view: browserView }, win);
+    await sleep(600);
+    const before = (await measure())?.rect;
+    for (let i = 0; i < 3; i++) {
+      await rpc("view.activate", { view: termView }, win);
+      await sleep(500);
+    }
+    const after = (await measure())?.rect;
+    const same =
+      before && after &&
+      Math.abs(before.x - after.x) < 1 && Math.abs(before.y - after.y) < 1 &&
+      Math.abs(before.w - after.w) < 1 && Math.abs(before.h - after.h) < 1;
+    assert(
+      "기하 소유권 — 간접 포커스 사건에 브라우저 슬롯 부동",
+      !!same,
+      same ? "" : `${JSON.stringify(before)} → ${JSON.stringify(after)}`,
+    );
+  }
+
+
+
 
 
   } finally {

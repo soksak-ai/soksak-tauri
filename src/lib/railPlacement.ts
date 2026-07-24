@@ -128,13 +128,17 @@ export function effectiveRailStation(
   placement: RailPlacement | undefined,
   fallback = 0,
 ): number {
-  if (placement?.mode === "pin") {
-    return snapRailStation(
-      cleanRailLines(cells.map((cell) => cell.rect)),
-      placement.station,
-    );
+  // 기본 = 글로벌 정박(pin@0) — 투영 공리: 레일은 서 있는 투명 뼈대이고 포커스는 '내용'만
+  // 갈아입는다. flow(포커스 추종 이주)는 명시적 선택일 때만 — 이주는 삽입 폭만큼 이웃
+  // 패널을 밀어내므로(실사고: 브라우저 무관 클릭마다 브라우저가 224px 왕복) 기본값이 될 수
+  // 없다.
+  if (placement?.mode === "flow") {
+    return flowRailStation(cells, focusId, RAIL_EPSILON, fallback);
   }
-  return flowRailStation(cells, focusId, RAIL_EPSILON, fallback);
+  return snapRailStation(
+    cleanRailLines(cells.map((cell) => cell.rect)),
+    placement?.mode === "pin" ? placement.station : 0,
+  );
 }
 
 type RailSide = "before" | "after";
