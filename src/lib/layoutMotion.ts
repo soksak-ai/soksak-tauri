@@ -19,7 +19,7 @@ export type LayoutMotionKind = "move" | "resize";
 
 const counts: Record<LayoutMotionKind, number> = { move: 0, resize: 0 };
 let lastEmittedKey: string | null = null; // 마지막 발화 상태(active+kinds) — 중복 발화 억제
-type MotionListener = (active: boolean) => void;
+type MotionListener = (active: boolean, kinds: LayoutMotionKind[]) => void;
 const listeners = new Set<MotionListener>();
 
 /** 모션 에지(시작/끝) 구독. 반환 함수로 해지한다. */
@@ -48,13 +48,14 @@ function syncEmit(): void {
   const kinds = activeKinds();
   const key = `${active}:${kinds.join(",")}`;
   if (key === lastEmittedKey) return;
-  const wasActive = lastEmittedKey?.startsWith("true") ?? false;
   lastEmittedKey = key;
   emitPluginEvent("layout.resize-gesture", { active, kinds });
   void invoke("webview_resize_gesture", { active }).catch(() => {
     // 비-macOS 등 릴레이 미지원은 무해 — 플러그인 채널은 이미 전달됨.
   });
-  if (active !== wasActive) for (const l of listeners) l(active);
+  // 로컬 리스너: 에지에서 부르되(기존 계약), 활성 중 종별 변화도 전달한다 — 코어 소비자
+  // (슬롯 동결)가 kinds 재평가를 해야 하므로 플러그인 채널과 같은 조건으로 부른다.
+  for (const l of listeners) l(active, kinds);
 }
 
 /** 모션 위상 활성 여부(레퍼카운트 > 0). */

@@ -87,3 +87,20 @@ describe("layoutMotion — kind 축(move|resize)", () => {
     expect(payloads[payloads.length - 1]).toEqual({ active: true, kinds: ["move"] });
   });
 });
+
+describe("layoutMotion — 로컬 리스너 kinds 전달", () => {
+  it("리스너는 (active, kinds)를 받고, 활성 중 종별 변화도 통지받는다", () => {
+    const seen: [boolean, string[]][] = [];
+    onLayoutMotion((a, k) => seen.push([a, k]));
+    beginLayoutMotion("move");
+    beginLayoutMotion("resize");
+    endLayoutMotion("resize");
+    endLayoutMotion("move");
+    expect(seen).toEqual([
+      [true, ["move"]],
+      [true, ["move", "resize"]],
+      [true, ["move"]],
+      [false, []],
+    ]);
+  });
+});
