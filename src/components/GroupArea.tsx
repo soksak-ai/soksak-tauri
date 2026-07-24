@@ -179,17 +179,36 @@ export const GroupArea = memo(function GroupArea({
   // useLayoutEffect(페인트 전)이어야 한다: 같은 커밋의 layout.reflow(App, 역시 페인트 전)보다
   // 위상 사실이 먼저 퍼져야 플러그인 재스냅 게이트가 서고, CA 애니가 t0 좌표에서 출발한다 —
   // useEffect(페인트 후)면 reflow 재스냅이 최종 좌표로 먼저 적용돼 child 가 텔레포트한다(실측).
-  useLayoutEffect(() => {
-    if (!focusLayoutTraveling) return;
-    beginLayoutMotion("move");
-    // 홀 자식은 시작 에지에 최종 박스로 CA 구동(App 레일 주행과 동일 근거).
-    animateHoleChildrenToFinal();
-    return () => endLayoutMotion("move");
-  }, [focusLayoutTraveling]);
   const fromLayoutCells = useMemo(
     () => computeLayout(focusLayoutFrom).cells,
     [focusLayoutFrom],
   );
+  useLayoutEffect(() => {
+    if (!focusLayoutTraveling) return;
+    // 영향 범위 = 이 스왑에서 rect 가 실제로 변하는 그룹들의 뷰 — 슬롯 동결이 이 뷰들만
+    // 동결한다. 범위 밖 표면(다른 패널의 브라우저)은 남의 스왑에 베일 펄스를 맞지 않고
+    // 위상 내내 라이브로 남는다(실사고: 무관한 탭 포커스 이동마다 브라우저가 깜빡).
+    const toCells = computeLayout(displayLayout).cells;
+    const moved = new Set<string>();
+    for (const c of toCells) {
+      const from = fromLayoutCells.find((f) => f.group.id === c.group.id)?.rect;
+      const r = c.rect;
+      if (
+        !from ||
+        Math.abs(from.left - r.left) > 0.01 ||
+        Math.abs(from.top - r.top) > 0.01 ||
+        Math.abs(from.width - r.width) > 0.01 ||
+        Math.abs(from.height - r.height) > 0.01
+      ) {
+        for (const v of c.group.views) moved.add(v.id);
+      }
+    }
+    beginLayoutMotion("move", moved);
+    // 홀 자식은 시작 에지에 최종 박스로 CA 구동(App 레일 주행과 동일 근거).
+    animateHoleChildrenToFinal();
+    return () => endLayoutMotion("move");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusLayoutTraveling]);
   // B4 — 복원 hydration cold 집합 구독(평상시 빈 집합 → 리렌더 없음).
   const coldSet = useHydration((s) => s.cold);
   // 보이는 cold 뷰는 즉시 승격(렌더 중 set 금지 — effect). shown 판정과 동일 규칙.

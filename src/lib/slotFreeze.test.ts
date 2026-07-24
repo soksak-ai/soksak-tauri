@@ -162,3 +162,29 @@ describe("slotFreeze — dim 상태 캡처 배제(포커스 장식 박제 금지
     expect(slot.dataset.freezeSnapAt).toBeDefined();
   });
 });
+
+describe("slotFreeze — scope 축(영향 범위 밖 표면 불가침)", () => {
+  it("scope 밖 슬롯은 동결하지 않는다 — 남의 스왑에 베일 펄스 금지", async () => {
+    const a = makeSlot("vA");
+    const b = makeSlot("vB");
+    const f = build();
+    f.captureSettled();
+    await microtasks();
+    f.onMotion(true, ["move"], new Set(["vA"]));
+    expect(a.querySelector("img")).not.toBeNull();
+    expect(b.querySelector("img")).toBeNull(); // 범위 밖 — 라이브 유지
+    expect(veils.filter(([v]) => v === "vB")).toEqual([]);
+    f.onMotion(false, []);
+  });
+  it("scope=null(전역)은 전 홀 동결(레일 주행)", async () => {
+    const a = makeSlot("vA");
+    const b = makeSlot("vB");
+    const f = build();
+    f.captureSettled();
+    await microtasks();
+    f.onMotion(true, ["move"], null);
+    expect(a.querySelector("img")).not.toBeNull();
+    expect(b.querySelector("img")).not.toBeNull();
+    f.onMotion(false, []);
+  });
+});

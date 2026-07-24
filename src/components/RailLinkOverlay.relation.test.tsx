@@ -201,14 +201,24 @@ describe("railRelation 모드 CSS 갈래 (App.css)", () => {
       const clear = decls(`.egroup-area[data-focus-dim] ${part}.spot-clear`);
       expect(clear).toMatch(/filter:\s*none/);
     }
-    // 네이티브 표면 셰이드 — 이 앱의 레이어 역전(DOM 최상위, 엔진·child 웹뷰는 투명 홀로
-    // 아래에서 비침) 때문에 CSS filter 는 네이티브 콘텐츠에 닿지 않는다. 슬롯의 반투명
-    // 배경이 홀 위에 깔려 아래의 모든 네이티브 표면(CEF·웹뷰 child)을 균일하게 어둡힌다.
+    // 네이티브 표면 셰이드 — 레이어 역전(DOM 최상위, 엔진·child 웹뷰는 투명 홀 아래) 때문에
+    // filter 는 네이티브에 닿지 않는다. 셰이드는 홀 위 라이브 계층(::after z4) — 동결 스탠드인
+    // (z3)보다 위라 스냅에 구워진 상태와 무관하게 현재 포커스를 따라 전이한다(배경이던 시절
+    // 스탠드인이 베일을 가려 스왑마다 포커스 플랩으로 보였다 — 실측). 홀 슬롯은 filter 제외
+    // (네이티브는 베일만 받으니 스탠드인도 베일만 받아야 dim 강도가 일치한다).
     expect(css).toMatch(
-      /\.egroup-area\[data-focus-dim\] \.egroup-body-slot \{[^}]*background-color: color-mix\(in srgb, #000 7%, transparent\);[^}]*transition:[^;}]*background-color/,
+      /\.egroup-area\[data-focus-dim\] \.egroup-body-slot\.hole-slot \{[^}]*filter: none/,
     );
     expect(css).toMatch(
-      /\.egroup-area\[data-focus-dim\] \.egroup-body-slot\.spot-clear \{[^}]*background-color: transparent/,
+      /\.egroup-area\[data-focus-dim\] \.egroup-body-slot\.hole-slot::after \{[^}]*background-color: color-mix\(in srgb, #000 7%, transparent\);[^}]*transition:[^;}]*background-color/,
+    );
+    expect(css).toMatch(
+      /\.egroup-area\[data-focus-dim\] \.egroup-body-slot\.hole-slot\.spot-clear::after \{[^}]*background-color: transparent/,
+    );
+    // pane 스타일 배경은 홀을 원천 제외한다(특이성 전쟁 금지 — 홀은 스타일이 아니라 표면
+    // 종류의 사실. 실사고: pane 규칙이 홀 투명을 이겨 card/floating 에서 전 홀 폐쇄).
+    expect(css).toMatch(
+      /:root\[data-pane-style="card"\] \.egroup-body-slot:not\(\.hole-slot\)/,
     );
     // 홀 기준은 뷰의 transparent 선언 하나(hole-slot — 슬롯은 영속 레이어의 형제라 슬롯
     // 자신에 새긴다. PLUGIN-CONTRACT §Transparent). 홀 규칙이 베일을 이겨 브라우저만 안

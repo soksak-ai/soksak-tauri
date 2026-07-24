@@ -40,8 +40,10 @@ export interface SlotFreezeDeps {
 export interface SlotFreeze {
   /** 정착 에지에서 호출 — 가시 홀-슬롯 전체를 선캡처하고 즉시 디코드까지 끝내 둔다. */
   captureSettled(): void;
-  /** 모션 신호 수신부 — onLayoutMotion (active, kinds) 를 그대로 넘긴다. */
-  onMotion(active: boolean, kinds: string[]): void;
+  /** 모션 신호 수신부 — onLayoutMotion (active, kinds, scope) 를 그대로 넘긴다.
+   *  scope: 이 위상이 움직이는 viewId 집합(null=전역). 범위 밖 슬롯은 동결하지 않는다 —
+   *  관련 없는 표면이 남의 스왑에 베일 펄스를 맞지 않는다(라이브 유지). */
+  onMotion(active: boolean, kinds: string[], scope?: Set<string> | null): void;
   /** 스탠드인·상태 회수(테스트·종료). 표면 가시성은 veil(false)로 이미 복귀된 상태여야 한다. */
   dispose(): void;
 }
@@ -143,13 +145,26 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
 
   return {
     captureSettled,
-    onMotion(active, kinds) {
+    onMotion(active, kinds, scope) {
       const want =
         active && kinds.length > 0 && kinds.every((k) => k === "move");
       if (want) {
         const root = deps.root();
         if (!root) return;
-        for (const slot of holeSlots(root)) freezeSlot(slot);
+        for (const slot of holeSlots(root)) {
+          if (scope != null) {
+            const vid = viewIdOf(slot);
+            if (vid == null || !scope.has(vid)) continue; // 범위 밖 — 라이브 유지
+          }
+          freezeSlot(slot);
+        }
+        // 범위 축소 재발화(위상 겹침 해소 등)로 범위 밖이 된 동결은 즉시 해동한다.
+        for (const slot of Array.from(frozen.keys())) {
+          if (scope != null) {
+            const vid = viewIdOf(slot);
+            if (vid == null || !scope.has(vid)) thawSlot(slot);
+          }
+        }
       } else {
         for (const slot of Array.from(frozen.keys())) thawSlot(slot);
       }

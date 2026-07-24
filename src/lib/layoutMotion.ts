@@ -18,8 +18,24 @@ import { emitPluginEvent } from "../plugins/hooks";
 export type LayoutMotionKind = "move" | "resize";
 
 const counts: Record<LayoutMotionKind, number> = { move: 0, resize: 0 };
+// 진행 중 위상들의 영향 범위(viewId 집합) — null 요소 = 전역(전 슬롯 이동: 레일 주행 등).
+// 소비자(슬롯 동결)는 합집합만 동결한다: 관련 없는 표면이 남의 스왑에 베일 펄스를 맞는
+// 결함(실사고)의 근치 — 움직이지 않는 슬롯은 위상 내내 라이브로 남는다.
+const scopes: (Set<string> | null)[] = [];
+
+// 합산 범위 — 하나라도 전역(null)이면 전역. 아니면 viewId 합집합.
+function activeScope(): Set<string> | null {
+  if (scopes.some((s) => s === null)) return null;
+  const u = new Set<string>();
+  for (const s of scopes) for (const v of s ?? []) u.add(v);
+  return u;
+}
 let lastEmittedKey: string | null = null; // 마지막 발화 상태(active+kinds) — 중복 발화 억제
-type MotionListener = (active: boolean, kinds: LayoutMotionKind[]) => void;
+type MotionListener = (
+  active: boolean,
+  kinds: LayoutMotionKind[],
+  scope: Set<string> | null,
+) => void;
 const listeners = new Set<MotionListener>();
 
 /** 모션 에지(시작/끝) 구독. 반환 함수로 해지한다. */
@@ -54,8 +70,9 @@ function syncEmit(): void {
     // 비-macOS 등 릴레이 미지원은 무해 — 플러그인 채널은 이미 전달됨.
   });
   // 로컬 리스너: 에지에서 부르되(기존 계약), 활성 중 종별 변화도 전달한다 — 코어 소비자
-  // (슬롯 동결)가 kinds 재평가를 해야 하므로 플러그인 채널과 같은 조건으로 부른다.
-  for (const l of listeners) l(active, kinds);
+  // (슬롯 동결)가 kinds·scope 재평가를 해야 하므로 플러그인 채널과 같은 조건으로 부른다.
+  const scope = activeScope();
+  for (const l of listeners) l(active, kinds, scope);
 }
 
 /** 모션 위상 활성 여부(레퍼카운트 > 0). */
@@ -63,20 +80,24 @@ export function isLayoutMotionActive(): boolean {
   return depth() > 0;
 }
 
-export function beginLayoutMotion(kind: LayoutMotionKind): void {
+/** scope: 이 위상이 움직이는 뷰들의 viewId. 생략(undefined)=전역(모든 슬롯 이동). */
+export function beginLayoutMotion(kind: LayoutMotionKind, scope?: Iterable<string>): void {
   counts[kind] += 1;
+  scopes.push(scope ? new Set(scope) : null);
   syncEmit();
 }
 
 export function endLayoutMotion(kind: LayoutMotionKind): void {
   if (counts[kind] === 0) return; // 잉여 end 무시 — 음수 카운트 금지
   counts[kind] -= 1;
+  scopes.pop();
   syncEmit();
 }
 
 export function __resetLayoutMotionForTest(): void {
   counts.move = 0;
   counts.resize = 0;
+  scopes.length = 0;
   lastEmittedKey = null;
   listeners.clear();
 }
