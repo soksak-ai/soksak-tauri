@@ -1366,7 +1366,12 @@ pub fn webview_stop(app: AppHandle, label: String) -> Result<(), String> {
 
 // 탭/뷰 전환 시 표시/숨김(native 레이어는 DOM 위에 떠서 CSS visibility 가 안 닿는다).
 #[tauri::command]
-pub fn webview_visible(app: AppHandle, label: String, visible: bool) -> Result<(), String> {
+pub fn webview_visible(
+    app: AppHandle,
+    label: String,
+    visible: bool,
+    focus: Option<bool>,
+) -> Result<(), String> {
     if let Some(wv) = app.get_webview(&label) {
         if visible {
             wv.show().map_err(|e| e.to_string())?;
@@ -1374,7 +1379,9 @@ pub fn webview_visible(app: AppHandle, label: String, visible: bool) -> Result<(
             // hide→show 첫 클릭 무시 방지는 활성 창 안(탭 전환)에서만 필요하고, 백그라운드 창의
             // 뷰 mount(부팅 리스폰·플러그인 활성화 ~수초 뒤)가 그 창을 앞으로 끌어오는 지연 포커스
             // 탈취를 없앤다. set_focus 는 child webview 지만 macOS 에서 부모 창을 key 로 만든다.
-            if wv.window().is_focused().unwrap_or(false) {
+            // focus:false = 표현 전용 복귀(슬롯 동결 해동 등) — 사용자의 포커스 결정을 존중해
+            // responder 를 건드리지 않는다(캡처·스탠드인 계층은 포커스를 탈취하지 않는다).
+            if focus.unwrap_or(true) && wv.window().is_focused().unwrap_or(false) {
                 let _ = wv.set_focus();
             }
         } else {

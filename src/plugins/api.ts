@@ -449,7 +449,7 @@ export interface SoksakPluginApi {
     /** 슬롯 rect 동기화(분할/리사이즈 — 프레임당 1회 권장). */
     bounds: (label: string, x: number, y: number, w: number, h: number) => Promise<void>;
     /** 표시/숨김(탭 전환·최대화의 숨김 슬롯). */
-    visible: (label: string, visible: boolean) => Promise<void>;
+    visible: (label: string, visible: boolean, focus?: boolean) => Promise<void>;
     /** URL 이동. */
     navigate: (label: string, url: string) => Promise<void>;
     /** 뷰-단위 페이지 줌(0.25..4.0) — 유효 배율 = 창 줌 × 이 값. 적용된 뷰 배율을 반환. */
@@ -1839,8 +1839,8 @@ export function buildPluginApi(
             deps.invoke("webview_open", { label, ...o }) as Promise<void>,
           bounds: (label, x, y, w, h) =>
             deps.invoke("webview_bounds", { label, x, y, w, h }) as Promise<void>,
-          visible: (label, visible) =>
-            deps.invoke("webview_visible", { label, visible }) as Promise<void>,
+          visible: (label, visible, focus) =>
+            deps.invoke("webview_visible", { label, visible, focus }) as Promise<void>,
           navigate: (label, url) =>
             deps.invoke("webview_navigate", { label, url }) as Promise<void>,
           zoom: (label, factor) =>
