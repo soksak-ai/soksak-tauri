@@ -413,6 +413,12 @@ mod layer {
             let content = main_view.superview()?; // contentView(코어 소유) — 컨테이너의 부모.
             let bounds = content.bounds();
             let host = NSView::initWithFrame(NSView::alloc(mtm), bounds);
+            // 합성 호스트는 레이어-백드여야 한다 — Chromium windowed 는 GPU 프로세스의 원격
+            // CALayer(CAContext) 를 자기 뷰 레이어에 호스팅하는데, 부모 사슬이 레이어-백드가
+            // 아니면 그 레이어가 창의 합성 트리에 영영 안 올라간다(실사고: 페이지 DOM 생존·
+            // 뷰 정위치·unhidden 인데 픽셀만 없음 — 단독 하니스(winit 레이어-백드)는 GREEN,
+            // 앱 임베딩만 블랭크). OSR 은 프레젠터가 자기 CALayer 를 직접 붙여 무사했다.
+            host.setWantsLayer(true);
             // 컨테이너는 콘텐츠 전면을 채우고 리사이즈를 따라간다(원점 0,0 유지 → 좌표 identity).
             host.setAutoresizingMask(
                 NSAutoresizingMaskOptions::ViewWidthSizable
@@ -475,7 +481,7 @@ mod layer {
         let _ = std::fmt::Write::write_fmt(
             out,
             format_args!(
-                "{}{} frame=({}, {}, {}, {}) hidden={} ptr={:p}\n",
+                "{}{} frame=({}, {}, {}, {}) hidden={} layer={} wants={} ptr={:p}\n",
                 "  ".repeat(depth),
                 view.class().name().to_string_lossy(),
                 f.origin.x,
@@ -483,11 +489,13 @@ mod layer {
                 f.size.width,
                 f.size.height,
                 view.isHidden(),
+                unsafe { view.layer().is_some() },
+                unsafe { view.wantsLayer() },
                 view as *const NSView,
             ),
         );
-        if depth >= 3 {
-            return;
+        if depth >= 6 {
+            return; // CEF windowed 의 원격 레이어 호스트(WebContentsViewCocoa 하위)까지 관측
         }
         for sub in view.subviews().iter() {
             dump_view(&sub, depth + 1, out);
@@ -1490,6 +1498,10 @@ fn wake_child_if_was_hidden(wv: &tauri::Webview, label: &str) {
         let _: () = msg_send![&*view, removeFromSuperview];
         let _: () = msg_send![&*superview, addSubview: &*kept];
     });
+    // 재부착은 최상위로 붙는다 — 레이어 원칙(child 는 DOM 아래) 복원 필수. 이게 빠지면
+    // 기상한 child 가 DOM 위에 떠서 홀 계약 밖에서 "우연히 보이는" 위장 상태가 된다(실사고:
+    // 홀이 닫혀 있는데도 WK 만 보여 진단을 흐렸다).
+    layer::lower_below_main(wv, wv.window().label());
 }
 
 // 탭/뷰 전환 시 표시/숨김(native 레이어는 DOM 위에 떠서 CSS visibility 가 안 닿는다).
