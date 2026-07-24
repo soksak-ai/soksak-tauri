@@ -2112,12 +2112,10 @@ body,
 .egroup-body-slot.hole-slot {
   background: transparent;
 }
-/* 홀 규칙의 유일한 예외 — 스포트라이트 베일. 반투명이라 홀을 막지 않으면서 아래의
-   네이티브 표면을 어둡힌다. 이 규칙이 위의 홀 규칙보다 특이성이 높아야 성립하므로
-   충돌이 사는 이 자리에서 명시한다(떨어진 곳의 특이성 전쟁 금지). */
-.egroup-area[data-focus-dim] .egroup-body-slot.hole-slot:not(.spot-clear) {
-  background-color: color-mix(in srgb, #000 7%, transparent);
-}
+/* 스포트라이트 베일은 ::after 단일 축이다(§포커스 스포트라이트 블록) — 슬롯 자체 배경
+   베일과의 이중 적용은 금지: 동결 스탠드인(z3)이 슬롯 배경(자식 아래)만 가리고 ::after(z4)
+   는 못 가려, 위상마다 dim 이 반감→복귀하는 밝음-펄스를 만들었다(실측: 상호작용마다
+   187→202→187 휘도 계단 = "포커스 인/아웃" 오인의 진원). */
 :root[data-pane-style="card"] .egroup-tabs .view-tabs-wrap,
 :root[data-pane-style="floating"] .egroup-tabs .view-tabs-wrap {
   background: transparent;

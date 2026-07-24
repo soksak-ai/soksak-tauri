@@ -225,8 +225,10 @@ describe("railRelation 모드 CSS 갈래 (App.css)", () => {
     // 어두워졌던 실측 결함의 예외를 같은 기준 위에 명시한다: 스포트라이트 베일은 반투명이라
     // 홀을 막지 않으면서 아래 네이티브를 어둡힌다. pane 스타일 무관(홀은 표면 종류의 사실).
     expect(css).toMatch(/\.egroup-body-slot\.hole-slot \{[^}]*background: transparent/);
-    expect(css).toMatch(
-      /\.egroup-area\[data-focus-dim\] \.egroup-body-slot\.hole-slot:not\(\.spot-clear\) \{[^}]*background-color: color-mix\(in srgb, #000 7%, transparent\)/,
+    // 이중 베일 금지 — 슬롯 자체 배경 베일이 되살아나면 동결 스탠드인이 그 층만 가려
+    // 위상마다 밝음-펄스가 재발한다(실사고). ::after 가 유일 베일이다.
+    expect(css).not.toMatch(
+      /\.egroup-body-slot\.hole-slot:not\(\.spot-clear\) \{[^}]*background-color: color-mix/,
     );
   });
 
