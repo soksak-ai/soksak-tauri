@@ -219,11 +219,15 @@ const ProjectPane = memo(function ProjectPane({
   const boundCell = boundGroup
     ? railGrid.cells.find((cell) => cell.id === boundGroup.id)
     : undefined;
+  // 미해소 포커스 렌더에서 station 이 0 으로 붕괴하지 않게 직전 확정값을 폴백으로 준다.
+  const lastStationRef = useRef(0);
   const effectiveStation = effectiveRailStation(
     railGrid.cells,
     railGrid.focusId,
     placement,
+    lastStationRef.current,
   );
+  lastStationRef.current = effectiveStation;
   const railGeometryScope = railGeometryScopeId(
     activeContent?.id,
     railGrid.cleanLines,
@@ -259,7 +263,11 @@ const ProjectPane = memo(function ProjectPane({
   // 위상 사실이 먼저 퍼져야 플러그인 재스냅 게이트가 선다(GroupArea FLIP 주석과 동일 근거).
   useLayoutEffect(() => {
     if (!railTraveling) return;
-    beginLayoutMotion("move", undefined, "rail-travel");
+    beginLayoutMotion(
+      "move",
+      undefined,
+      `rail-travel:${travelGeometry.fromStation.toFixed(3)}->${effectiveStation.toFixed(3)}`,
+    );
     // 홀 자식은 시작 에지에 최종 박스로 CA 구동 — 추종 루프의 에지 굶주림(bounds-trace)을 우회.
     animateHoleChildrenToFinal();
     return () => endLayoutMotion("move");
@@ -324,6 +332,13 @@ const ProjectPane = memo(function ProjectPane({
       stop?.();
     };
   }, []);
+  // 재정박은 발화 시점의 현재값을 쓴다 — 무장 시점 캡처는 전환 중 일시값(예: placement 미적재
+  // 0)을 station 에 박아, 이후 모든 포커스 변화가 0→실위치 유령 여정을 재개하게 했다(실사고:
+  // 레일 rect 무변화인데 전역 이동 위상 — 브라우저 전면 베일 펄스).
+  const effectiveStationRef = useRef(effectiveStation);
+  effectiveStationRef.current = effectiveStation;
+  const railScopeRef = useRef(railGeometryScope);
+  railScopeRef.current = railGeometryScope;
   useEffect(() => {
     if (travelGeometry.rebase) {
       setRailPresentation((current) => ({
@@ -339,8 +354,8 @@ const ProjectPane = memo(function ProjectPane({
       () =>
         setRailPresentation({
           generation: nextGeneration,
-          station: effectiveStation,
-          scopeId: railGeometryScope,
+          station: effectiveStationRef.current,
+          scopeId: railScopeRef.current,
         }),
       RAIL_TRAVEL_MS,
     );

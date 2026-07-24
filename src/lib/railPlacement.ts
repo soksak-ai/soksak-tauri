@@ -73,9 +73,14 @@ export function flowRailStation(
   cells: RailCell[],
   focusId: string | null | undefined,
   eps: number = RAIL_EPSILON,
+  fallback = 0,
 ): number {
   const focused = cells.find((cell) => cell.id === focusId);
-  if (!focused) return 0;
+  // 미해소 포커스는 무의견이다 — 0(맨 앞)으로의 이동 결정이 아니라 현 위치 유지(fallback).
+  // 포커스 전환의 중간 렌더마다 조회가 비어 station 이 0으로 붕괴했고, 그 왕복(실위치→0→
+  // 실위치)이 레일 rect 무변화의 유령 전역 이동 위상을 열어 화면의 모든 브라우저에 베일
+  // 펄스를 먹였다(실사고 — sender 스탬프 68.8→0→68.8 왕복으로 확증).
+  if (!focused) return fallback;
   const wanted = focused.rect.left;
   let station = 0;
   for (const line of cleanRailLines(
@@ -121,6 +126,7 @@ export function effectiveRailStation(
   cells: RailCell[],
   focusId: string | null | undefined,
   placement: RailPlacement | undefined,
+  fallback = 0,
 ): number {
   if (placement?.mode === "pin") {
     return snapRailStation(
@@ -128,7 +134,7 @@ export function effectiveRailStation(
       placement.station,
     );
   }
-  return flowRailStation(cells, focusId);
+  return flowRailStation(cells, focusId, RAIL_EPSILON, fallback);
 }
 
 type RailSide = "before" | "after";

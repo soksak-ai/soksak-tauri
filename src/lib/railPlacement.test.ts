@@ -136,3 +136,16 @@ describe("real-space rail insertion", () => {
     ).toThrow(/crosses/i);
   });
 });
+
+describe("flowRailStation — 미해소 포커스는 무의견(현 위치 유지)", () => {
+  const cells = [
+    { id: "a", rect: { left: 0, top: 0, width: 30, height: 100 } },
+    { id: "b", rect: { left: 30, top: 0, width: 70, height: 100 } },
+  ];
+  it("포커스 조회 미스면 fallback 을 반환한다(0 붕괴 금지)", () => {
+    expect(flowRailStation(cells, "ghost", undefined, 68.8)).toBe(68.8);
+  });
+  it("포커스가 해소되면 실위치를 반환한다", () => {
+    expect(flowRailStation(cells, "b", undefined, 68.8)).toBe(30);
+  });
+});
