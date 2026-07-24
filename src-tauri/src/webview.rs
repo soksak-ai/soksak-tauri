@@ -958,6 +958,27 @@ pub(crate) fn scale_bounds(b: (f64, f64, f64, f64), f: f64) -> (f64, f64, f64, f
     (b.0 * f, b.1 * f, b.2 * f, b.3 * f)
 }
 
+// 바뀐 축만 판정(순수) — 드래그바 표준: 강조바는 "변한 것만" 보낸다. child 도 같은 규율로,
+// 위치가 변하면 위치만·크기가 변하면 크기만 적용한다. 순수 이동에 매 프레임 set_size 를
+// 얹으면 WKWebView 가 프레임마다 내용 재배치를 태워 추종이 무거워진다(강조바 NSBox 와의
+// 실체 차이가 정확히 이것이었다).
+pub(crate) fn bounds_delta(
+    prev: Option<(f64, f64, f64, f64)>,
+    next: (f64, f64, f64, f64),
+) -> (bool, bool) {
+    match prev {
+        None => (true, true),
+        Some((px, py, pw, ph)) => (
+            (px - next.0).abs() > 0.01 || (py - next.1).abs() > 0.01,
+            (pw - next.2).abs() > 0.01 || (ph - next.3).abs() > 0.01,
+        ),
+    }
+}
+
+static APPLIED_BOUNDS: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<String, (f64, f64, f64, f64)>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
 fn apply_child_bounds(
     wv: &tauri::Webview,
     label: &str,
@@ -966,10 +987,19 @@ fn apply_child_bounds(
     let win = wv.window();
     let f = window_zoom_of(win.label());
     let (x, y, w, h) = scale_bounds(raw, f);
-    wv.set_position(LogicalPosition::new(x, y))
-        .map_err(|e| e.to_string())?;
-    wv.set_size(LogicalSize::new(w, h))
-        .map_err(|e| e.to_string())?;
+    let prev = APPLIED_BOUNDS.lock().ok().and_then(|m| m.get(label).copied());
+    let (moved, resized) = bounds_delta(prev, (x, y, w, h));
+    if moved {
+        wv.set_position(LogicalPosition::new(x, y))
+            .map_err(|e| e.to_string())?;
+    }
+    if resized {
+        wv.set_size(LogicalSize::new(w, h))
+            .map_err(|e| e.to_string())?;
+    }
+    if let Ok(mut m) = APPLIED_BOUNDS.lock() {
+        m.insert(label.to_string(), (x, y, w, h));
+    }
     if let (Ok(size), Ok(scale)) = (win.inner_size(), win.scale_factor()) {
         let (ww, wh) = (size.width as f64 / scale, size.height as f64 / scale);
         let visible = x + w > 0.0 && y + h > 0.0 && x < ww && y < wh;
@@ -1402,6 +1432,9 @@ pub fn webview_close(app: AppHandle, label: String) -> Result<(), String> {
             m.remove(&label);
         }
         if let Ok(mut m) = VIEW_ZOOM.lock() {
+            m.remove(&label);
+        }
+        if let Ok(mut m) = APPLIED_BOUNDS.lock() {
             m.remove(&label);
         }
         // Backend N 레지스트리 회수 — close 전에 surface 포인터를 집합에서 제거(위생; 미제거여도
@@ -1880,7 +1913,19 @@ pub fn install_live_resize_monitor(app: &AppHandle) {
 
 #[cfg(test)]
 mod zoom_bounds_tests {
-    use super::scale_bounds;
+    use super::{bounds_delta, scale_bounds};
+
+    // 드래그바 표준 — 변한 축만 적용한다. 순수 이동에 set_size 를 얹지 않는 것이
+    // 강조바(NSBox)가 매끄러운 실체적 이유였고, child 도 같은 규율을 따른다.
+    #[test]
+    fn applies_only_the_axis_that_changed() {
+        let prev = Some((100.0, 50.0, 700.0, 400.0));
+        assert_eq!(bounds_delta(prev, (120.0, 50.0, 700.0, 400.0)), (true, false)); // 순수 이동
+        assert_eq!(bounds_delta(prev, (100.0, 50.0, 720.0, 400.0)), (false, true)); // 순수 크기
+        assert_eq!(bounds_delta(prev, (120.0, 60.0, 720.0, 410.0)), (true, true)); // 둘 다
+        assert_eq!(bounds_delta(prev, (100.0, 50.0, 700.0, 400.0)), (false, false)); // 무변화
+        assert_eq!(bounds_delta(None, (1.0, 2.0, 3.0, 4.0)), (true, true)); // 첫 적용
+    }
 
     #[test]
     fn scales_every_component_by_the_window_factor() {
