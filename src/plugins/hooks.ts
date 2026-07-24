@@ -80,6 +80,9 @@ export interface PluginEventMap {
   // 네이티브 표면(엔진 서피스·child webview)을 가진 플러그인이 표시/숨김과 재스냅을 이 사실에 맞춘다
   // (뷰포트 추측 IntersectionObserver 대체). parked=true 는 화면 밖 파킹, false 는 복귀.
   "view.parked": { viewId: string; parked: boolean };
+  // 표면 가림(코어 슬롯 동결) — 스탠드인이 선 동안 네이티브 표면을 숨기라는 신호.
+  // view.parked 와 동형의 릴레이 계약: 사이드카 표면 소유자는 veiled 를 hidden 으로 넘긴다.
+  "view.veiled": { viewId: string; veiled: boolean };
   // webview 건강(서킷 브레이커) 전이 — 코어(webview_health.rs)가 렌더러 프로세스 종료를
   // 감지·복구하며 그 창에 emit_to 한다. state: recovering=자동 복구 예약(attempt 동반),
   // open=상한 소진(자동 복구 중단 — webview.recover 로 수동 복구), closed=정상 복귀.
@@ -161,6 +164,7 @@ export const PLUGIN_EVENTS: readonly (keyof PluginEventMap)[] = [
   "layout.reflow",
   "window.zoom",
   "view.parked",
+  "view.veiled",
   "webview.health",
   "bookmarks.changed",
   "command.started",

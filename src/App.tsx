@@ -26,6 +26,7 @@ import {
   onLayoutMotion,
 } from "./lib/layoutMotion";
 import { applyRailHoleClip, trackRailHoleClip } from "./lib/railHoleClip";
+import { createSlotFreeze } from "./lib/slotFreeze";
 import {
   animateHoleChildrenToFinal,
   noteHoleSlotSizes,
@@ -186,6 +187,17 @@ const ProjectPane = memo(function ProjectPane({
 }) {
   const t = useT();
   const setLeftRailPlacement = useSessions((s) => s.setLeftRailPlacement);
+  // 슬롯 동결 엔진 핸들 + 정착 캡처 디바운스 — reflow(탭 전환·파킹)·위상 끝이 같은 길로 모인다.
+  const slotFreezeRef = useRef<ReturnType<typeof createSlotFreeze> | null>(null);
+  const settleCaptureTimer = useRef<number | null>(null);
+  const scheduleSettleCapture = useCallback(() => {
+    if (settleCaptureTimer.current != null) window.clearTimeout(settleCaptureTimer.current);
+    settleCaptureTimer.current = window.setTimeout(() => {
+      settleCaptureTimer.current = null;
+      slotFreezeRef.current?.captureSettled();
+    }, 350);
+  }, []);
+
   const railPlaneRef = useRef<HTMLDivElement>(null);
   const placement = project.leftRailPlacement ?? { mode: "flow" as const };
   const railFocusNear = useSettings((s) => s.railFocusNear);
@@ -265,6 +277,36 @@ const ProjectPane = memo(function ProjectPane({
     // dedup 이 no-op 으로 거른다.
     if (isLayoutMotionActive()) animateHoleChildrenToFinal();
   });
+  // 코어 소유 이동-동결(§4.6 시행) — move 위상에 홀-슬롯 표면을 DOM 스탠드인으로 대체한다.
+  // 정착 스냅 갱신은 이벤트 에지(위상 끝·reflow 뒤 디바운스·부팅 1회)에서만 — 폴링 아님.
+  useEffect(() => {
+    const sf = createSlotFreeze({
+      root: () => document,
+      capture: async (r) => {
+        const b64 = (await invoke("plugin:webview-capture|snapshot_region", {
+          x: r.x,
+          y: r.y,
+          w: r.w,
+          h: r.h,
+        })) as string;
+        return `data:image/png;base64,${b64}`;
+      },
+      emitVeil: (viewId, veiled) => emitPluginEvent("view.veiled", { viewId, veiled }),
+    });
+    slotFreezeRef.current = sf;
+    const off = onLayoutMotion((active, kinds) => {
+      sf.onMotion(active, kinds);
+      if (!active) scheduleSettleCapture();
+    });
+    const boot = window.setTimeout(() => sf.captureSettled(), 1200);
+    return () => {
+      off();
+      window.clearTimeout(boot);
+      slotFreezeRef.current = null;
+      sf.dispose();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useEffect(() => {
     let stop: (() => void) | undefined;
     const off = onLayoutMotion((active) => {
@@ -382,6 +424,7 @@ const ProjectPane = memo(function ProjectPane({
   // 못 쓴다(그걸로 측정하면 옛 위치를 읽어 webview 가 한 박자 늦는다).
   useLayoutEffect(() => {
     emitPluginEvent("layout.reflow", { activeSpaceId: project.activeContentId });
+    scheduleSettleCapture(); // 레이아웃 정착 에지 — 슬롯 동결 스냅 갱신(디바운스)
   }, [
     activeContent?.activeGroupId,
     activeContent?.maximizedViewId,
