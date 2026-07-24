@@ -1005,6 +1005,8 @@ fn apply_child_bounds(
         let visible = x + w > 0.0 && y + h > 0.0 && x < ww && y < wh;
         let mut map = BOUNDS_VIS.lock().unwrap();
         if map.get(label).copied() != Some(visible) {
+            #[cfg(debug_assertions)]
+            eprintln!("[vis-trace] bounds-vis {label} -> {visible} (x={x:.0} y={y:.0} w={w:.0} h={h:.0})");
             if visible {
                 wv.show().map_err(|e| e.to_string())?;
             } else {
@@ -1364,6 +1366,11 @@ pub fn webview_stop(app: AppHandle, label: String) -> Result<(), String> {
     Ok(())
 }
 
+// hide 를 거친 child 라벨 — show 시 재부착(뷰어빌리티 기상)이 필요한 대상. webview_close 가 지운다.
+#[cfg(target_os = "macos")]
+static HIDDEN_CHILDREN: std::sync::LazyLock<std::sync::Mutex<std::collections::HashSet<String>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashSet::new()));
+
 // 탭/뷰 전환 시 표시/숨김(native 레이어는 DOM 위에 떠서 CSS visibility 가 안 닿는다).
 #[tauri::command]
 pub fn webview_visible(
@@ -1372,9 +1379,34 @@ pub fn webview_visible(
     visible: bool,
     focus: Option<bool>,
 ) -> Result<(), String> {
+    #[cfg(debug_assertions)]
+    eprintln!("[vis-trace] webview_visible {label} visible={visible} focus={focus:?}");
     if let Some(wv) = app.get_webview(&label) {
         if visible {
             wv.show().map_err(|e| e.to_string())?;
+            // hide→show 를 겪은 WKWebView 는 뷰어빌리티를 되찾지 못하고 레이어를 비운 채
+            // 잠들 수 있다(실측: 페이지 JS 는 살아있고 frame·hidden 정상인데 픽셀만 없음 —
+            // 리사이즈로도 안 깨어남). 재부착이 didMoveToWindow 를 태워 뷰어빌리티를 재평가
+            // 시키는 공인 기상 경로다. 숨겼던 child 에만 적용한다(평시 show 는 무간섭).
+            #[cfg(target_os = "macos")]
+            if HIDDEN_CHILDREN.lock().map(|mut s| s.remove(&label)).unwrap_or(false) {
+                let _ = wv.with_webview(|pw| unsafe {
+                    use objc2::rc::Retained;
+                    use objc2::runtime::AnyObject;
+                    use objc2::msg_send;
+                    let view = pw.inner() as *mut AnyObject;
+                    if view.is_null() {
+                        return;
+                    }
+                    let superview: *mut AnyObject = msg_send![&*view, superview];
+                    if superview.is_null() {
+                        return;
+                    }
+                    let kept: Retained<AnyObject> = Retained::retain(view).unwrap();
+                    let _: () = msg_send![&*view, removeFromSuperview];
+                    let _: () = msg_send![&*superview, addSubview: &*kept];
+                });
+            }
             // 포커스를 임의로 옮기지 않는다 — 부모 창이 이미 활성일 때만 webview 에 포커스를 준다.
             // hide→show 첫 클릭 무시 방지는 활성 창 안(탭 전환)에서만 필요하고, 백그라운드 창의
             // 뷰 mount(부팅 리스폰·플러그인 활성화 ~수초 뒤)가 그 창을 앞으로 끌어오는 지연 포커스
@@ -1385,6 +1417,10 @@ pub fn webview_visible(
                 let _ = wv.set_focus();
             }
         } else {
+            #[cfg(target_os = "macos")]
+            if let Ok(mut s) = HIDDEN_CHILDREN.lock() {
+                s.insert(label.clone());
+            }
             // 숨기기 전에, 이 webview(또는 그 자손)가 firstResponder 면 반납한다 — 숨은 WKWebView 가
             // responder 를 쥔 채 남으면 다음 실클릭 한 번이 responder 전환에 소모되어 앱 DOM 의 첫
             // 클릭(탭 전환 등)이 무시된다. show 쪽 set_focus(3d639a5)의 대칭: native↔native 전환은

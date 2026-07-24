@@ -168,6 +168,14 @@ async function main() {
     );
     return (s.media?.base64 ?? "").length; // media 는 봉투 예약키(최상위) — data 아님
   };
+  // 단일 사이클이 아니라 반복 사이클 뒤에 판정한다 — hide→show 를 여러 번 겪은 WKWebView 가
+  // 뷰어빌리티를 잃고 빈 레이어로 잠드는 회귀(실사고)는 반복 후에만 드러난다.
+  for (let i = 0; i < 3; i++) {
+    await rpc("view.activate", { view: termView }, win);
+    await sleep(500);
+    await rpc("view.activate", { view: browserView }, win);
+    await sleep(700);
+  }
   const focusedLen = await slotShot();
   await rpc("view.activate", { view: termView }, win);
   await sleep(600);
