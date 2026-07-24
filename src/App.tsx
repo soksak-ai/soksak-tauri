@@ -238,7 +238,9 @@ const ProjectPane = memo(function ProjectPane({
   );
   // 레일 주행 중 네이티브 child 라이브 정합 — 모션 신호로 브라우저 추종 루프 발동
   // (실측: 주행 중 DOM 은 미끄러지고 child 는 끝에서 점프하는 이질감의 근치).
-  useEffect(() => {
+  // useLayoutEffect(페인트 전) — 같은 커밋의 layout.reflow 발화(아래, 선언 순서상 뒤)보다
+  // 위상 사실이 먼저 퍼져야 플러그인 재스냅 게이트가 선다(GroupArea FLIP 주석과 동일 근거).
+  useLayoutEffect(() => {
     if (!railTraveling) return;
     beginLayoutMotion();
     // 홀 자식은 시작 에지에 최종 박스로 CA 구동 — 추종 루프의 에지 굶주림(bounds-trace)을 우회.

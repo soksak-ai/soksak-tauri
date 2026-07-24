@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { rafThrottle } from "../lib/rafThrottle";
 import {
   commitViewVisibility,
@@ -175,8 +175,11 @@ export const GroupArea = memo(function GroupArea({
   // (아래 선언 후 효과에서 소비 — FLIP 주행 모션 신호)
   const { from: focusLayoutFrom, traveling: focusLayoutTraveling } =
     useFocusLayoutPhase(displayLayout, content.id);
-  // FLIP 주행 중 네이티브 child 라이브 정합 — 모션 신호로 브라우저 freeze-frame/추종 발동.
-  useEffect(() => {
+  // FLIP 주행 중 네이티브 child 라이브 정합 — 모션 신호로 브라우저 추종/CA 구동 발동.
+  // useLayoutEffect(페인트 전)이어야 한다: 같은 커밋의 layout.reflow(App, 역시 페인트 전)보다
+  // 위상 사실이 먼저 퍼져야 플러그인 재스냅 게이트가 서고, CA 애니가 t0 좌표에서 출발한다 —
+  // useEffect(페인트 후)면 reflow 재스냅이 최종 좌표로 먼저 적용돼 child 가 텔레포트한다(실측).
+  useLayoutEffect(() => {
     if (!focusLayoutTraveling) return;
     beginLayoutMotion();
     // 홀 자식은 시작 에지에 최종 박스로 CA 구동(App 레일 주행과 동일 근거).
