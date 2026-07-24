@@ -6,7 +6,6 @@
 //   - 모든 등록은 내부 tracker 가 자동 수거 — 비활성화 시 누수 불가(§0-4).
 //   - 의존성은 deps 로 주입(테스트 가능 구조 — 꼼수가 아니라 구조로 해결).
 
-import { registerMirror, snapRect } from "../lib/nativeMirror";
 import type {
   CommandContext,
   CommandOutcome,
@@ -449,8 +448,6 @@ export interface SoksakPluginApi {
     ) => Promise<void>;
     /** 슬롯 rect 동기화(분할/리사이즈 — 프레임당 1회 권장). */
     bounds: (label: string, x: number, y: number, w: number, h: number) => Promise<void>;
-    /** DOM 앵커 추종을 코어 미러 단일 기계에 위임(드래그바 방식의 계약화) — 자체 rAF 루프 금지. */
-    mirror: (label: string, el: HTMLElement) => Disposable;
     /** 표시/숨김(탭 전환·최대화의 숨김 슬롯). */
     visible: (label: string, visible: boolean) => Promise<void>;
     /** URL 이동. */
@@ -1842,26 +1839,6 @@ export function buildPluginApi(
             deps.invoke("webview_open", { label, ...o }) as Promise<void>,
           bounds: (label, x, y, w, h) =>
             deps.invoke("webview_bounds", { label, x, y, w, h }) as Promise<void>,
-          mirror: (label, el) =>
-            tracker.wrap(
-              registerMirror(
-                `wv:${label}`,
-                () => {
-                  if (!el.isConnected) return null;
-                  const r = el.getBoundingClientRect();
-                  if (r.width <= 0 || r.height <= 0) return null;
-                  return snapRect(r);
-                },
-                (r) =>
-                  void (deps.invoke("webview_bounds", {
-                    label,
-                    x: r.x,
-                    y: r.y,
-                    w: r.w,
-                    h: r.h,
-                  }) as Promise<void>).catch(() => {}),
-              ),
-            ),
           visible: (label, visible) =>
             deps.invoke("webview_visible", { label, visible }) as Promise<void>,
           navigate: (label, url) =>

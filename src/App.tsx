@@ -22,15 +22,15 @@ import { applyWindowZoom, isPrimaryModifier, routeZoom } from "./lib/zoomIntent"
 import {
   beginLayoutMotion,
   endLayoutMotion,
+  isLayoutMotionActive,
   onLayoutMotion,
 } from "./lib/layoutMotion";
 import { applyRailHoleClip, trackRailHoleClip } from "./lib/railHoleClip";
 import {
-  armMirrors,
-  registerMirror,
-  setMirrorPhase,
-  tickMirrors,
-} from "./lib/nativeMirror";
+  animateHoleChildrenToFinal,
+  noteHoleSlotSizes,
+  __clearHolePhaseIssued,
+} from "./lib/holePhaseAnimate";
 import {
   activeSessionViewId,
   startViewFocusSync,
@@ -248,6 +248,8 @@ const ProjectPane = memo(function ProjectPane({
   useLayoutEffect(() => {
     if (!railTraveling) return;
     beginLayoutMotion();
+    // 홀 자식은 시작 에지에 최종 박스로 CA 구동 — 추종 루프의 에지 굶주림(bounds-trace)을 우회.
+    animateHoleChildrenToFinal();
     return () => endLayoutMotion();
   }, [railTraveling]);
   // 사이드바는 홀(브라우저 네이티브 표면) 위에 칠하지 않는다 — 상시 계약(사용자 규정:
@@ -257,19 +259,22 @@ const ProjectPane = memo(function ProjectPane({
   useLayoutEffect(() => {
     const plane = railPlaneRef.current;
     if (plane) applyRailHoleClip(plane);
-    // 네이티브 미러 커밋 동기 틱 — 기하가 바뀌는 순간(커밋)은 rAF 와 달리 굶지 않는다.
-    tickMirrors();
+    noteHoleSlotSizes(); // 크기 장부 상시 갱신 — 위상 t0 크기 델타의 "이전" 원천
+    // 위상 중 커밋마다 재샘플 — 클릭 위상은 여러 커밋에 걸쳐 FLIP 변수를 갱신한다(실측:
+    // DOM 은 var 를 라이브로 타는데 CA 는 t0 박제 → ~75px 이탈). 같은 t0 입력은 발행
+    // dedup 이 no-op 으로 거른다.
+    if (isLayoutMotionActive()) animateHoleChildrenToFinal();
   });
   useEffect(() => {
     let stop: (() => void) | undefined;
     const off = onLayoutMotion((active) => {
-      setMirrorPhase(active); // 미러 기계 — 위상 동안 rAF 추종, 종료 에지 정확 스냅
       if (active) {
         const plane = railPlaneRef.current;
         if (plane && !stop) stop = trackRailHoleClip(plane);
       } else {
         stop?.();
         stop = undefined;
+        __clearHolePhaseIssued(); // 다음 위상은 새 발행 사이클
       }
     });
     return () => {
@@ -801,8 +806,9 @@ function App() {
   }, []);
 
   // hover/드래그 중인 divider → 코어가 그 화면 rect 에 accent 바를 브라우저 위(네이티브)에 그린다.
-  // 추종은 네이티브 미러 단일 기계(nativeMirror — 이 바가 증명한 방식의 계약화)가 소유한다:
-  // 커밋 동기 틱 + 위상 rAF, 동일-rect 스킵. 드래그 동안은 위상 arm 으로 프레임 추종.
+  // 네이티브 child 위에선 DOM 강조가 안 보이므로 유일한 길. rAF 추적 루프: 드래그(리사이즈)로 DOM
+  // divider 가 움직이면 매 프레임 rect 를 재측정해 네이티브 바가 정확히 따라간다 — 1회성 배치는 드래그
+  // 중 바가 제자리에 남는다(회귀). rect 가 안 변한 프레임은 IPC 를 보내지 않는다(변화시에만 invoke).
   const dividerHoverKey = useDividerHover((s) => s.key);
   useEffect(() => {
     const send = (rect: { x: number; y: number; w: number; h: number } | null) => {
@@ -813,19 +819,23 @@ function App() {
       return;
     }
     const sel = `.egroup-divider[data-divider-key="${CSS.escape(dividerHoverKey)}"]`;
-    const off = registerMirror(
-      `divider-hilite`,
-      () => {
-        const el = document.querySelector(sel);
-        if (!(el instanceof HTMLElement)) return null;
+    let raf = 0;
+    let last = "";
+    const tick = () => {
+      const el = document.querySelector(sel);
+      if (el instanceof HTMLElement) {
         const r = el.getBoundingClientRect();
-        return { x: r.left, y: r.top, w: r.width, h: r.height };
-      },
-      (r) => send(r),
-    );
-    armMirrors(); // 호버 진입 프레임부터 추종(드래그는 모션 위상이 이어받는다)
+        const sig = `${r.left.toFixed(1)},${r.top.toFixed(1)},${r.width.toFixed(1)},${r.height.toFixed(1)}`;
+        if (sig !== last) {
+          last = sig;
+          send({ x: r.left, y: r.top, w: r.width, h: r.height });
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    tick();
     return () => {
-      off();
+      cancelAnimationFrame(raf);
       send(null);
     };
   }, [dividerHoverKey]);

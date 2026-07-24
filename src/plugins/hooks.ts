@@ -5,7 +5,6 @@
 // 리스너 실패는 호스트를 죽이지 못한다(§0-4) — 콜백마다 try/catch.
 
 import { invoke } from "@tauri-apps/api/core";
-import { armMirrors } from "../lib/nativeMirror";
 import { safeListen } from "../lib/safeListen";
 import { listenThisWindow } from "../lib/windowEvents";
 import { currentWindowLabel } from "../lib/webviewLabels";
@@ -500,7 +499,6 @@ export function startPluginHooks(): void {
   // 드래그만 받는다(프론트 필터 불필요). window-focus → app.focus 와 동형 배선.
   listenThisWindow<boolean>("window-live-resize", (e) => {
     emitPluginEvent("window.live-resize", { active: e.payload });
-      armMirrors(); // 창 라이브 리사이즈는 React 커밋 밖 — 미러 rAF 추종을 깨운다
   });
 
   // webview 건강 전이(코어 webview_health emit_to) → 플러그인 이벤트. 이 창에 emit_to 된
