@@ -1046,10 +1046,17 @@ pub fn webview_animate_bounds(
     dy: f64,
     duration_ms: f64,
     easing: [f64; 4],
+    dbg: Option<String>,
 ) -> Result<(), String> {
     let Some(wv) = app.get_webview(&label) else {
         return Ok(());
     };
+    #[cfg(debug_assertions)]
+    if let Some(d) = &dbg {
+        eprintln!("[animate-trace] dbg: {d}");
+    }
+    #[cfg(not(debug_assertions))]
+    let _ = dbg;
     let win = wv.window();
     let f = window_zoom_of(win.label());
     let (sdx, sdy) = (dx * f, dy * f);

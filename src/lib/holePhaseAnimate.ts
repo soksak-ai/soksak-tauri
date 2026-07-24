@@ -60,6 +60,7 @@ export function animateHoleChildrenToFinal(): void {
       dy: 0,
       durationMs: RAIL_TRAVEL_MS,
       easing: PHASE_EASING,
+      dbg: `rail=${railFlipPx} focus=${focusFlipPct} w=${slot.offsetWidth} node=${slot.dataset.node}`,
     }).catch(() => {
       // 없는 label(홀이지만 코어 소유 child 아님 — 엔진 서피스 등)·비-macOS 는 무해.
     });
