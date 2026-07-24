@@ -69,6 +69,15 @@ function rpc(method, params = {}, window) {
   });
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function pollUntilGentle(label, deadlineMs, intervalMs, fn) {
+  const t0 = Date.now();
+  for (;;) {
+    const v = await fn();
+    if (v) return v;
+    if (Date.now() - t0 > deadlineMs) throw new Error(`시한 초과: ${label}`);
+    await sleep(intervalMs);
+  }
+}
 async function pollUntil(label, deadlineMs, fn) {
   const t0 = Date.now();
   for (;;) {
@@ -111,6 +120,25 @@ async function main() {
   const bv = await rpc("view.open", { program: "browser" }, win);
   if (!bv.ok) throw new Error(`browser view.open 실패: ${bv.message}`);
   const browserView = bv.data?.viewId;
+  // 명시 URL 항행 + 로드 신원 검증 — 기본 홈페이지에 기대지 않는다. 픽셀 판정은 "알려진
+  // 페이지가 실제로 로드됐다"가 전제될 때만 의미가 있다(빈 페이지를 빈 페이지 하한으로
+  // 통과시키는 검사는 검사가 아니다).
+  // webview 준비 대기 — 생성 완료 전 navigate 는 유실/파손 레이스다(조기 항행 함정).
+  // 기본 홈(example.com)의 h1 이 읽히면 웹뷰·페이지 파이프라인 전체가 준비된 것이다.
+  // 준비 신호는 비침습이어야 한다 — dom.* 는 페이지에 JS 를 주입하므로 초기 로드와 경합해
+  // 로드 자체를 죽인다(실측: 폴링한 창만 <body> 빈 문서로 남음 — 감시가 대상을 파괴).
+  // 뷰 타이틀은 플러그인이 코어에 올리는 이벤트라 페이지 무접촉이다.
+  // 생성 정착 대기(고정 4s — 조기 dom 프로브는 초기 로드를 죽인다: 300ms 폴링에 body 가
+  // 영영 빈 문서로 남던 실측) 후 명시 항행, 2s 간격의 완만한 프로브로 신원을 단언한다.
+  await sleep(4000);
+  await rpc("plugin.soksak-plugin-browser-native.navigate", { url: "https://example.com/" }, win);
+  await sleep(2000);
+  await pollUntilGentle("example.com 로드(h1 텍스트)", 20000, 2000, async () => {
+    const q = await rpc("plugin.soksak-plugin-browser-native.dom.text", { selector: "h1" }, win);
+    const txt = JSON.stringify(q.data ?? "");
+    return txt.includes("Example Domain") ? true : null;
+  });
+  console.log("✓ 페이지 신원 — example.com h1 확인");
   const tv = await rpc("panel.split", { side: "right", program: "terminal" }, win);
   if (!tv.ok) throw new Error(`panel.split 실패: ${tv.message}`);
   const termView = tv.data?.viewId;
@@ -180,6 +208,11 @@ async function main() {
   await rpc("view.activate", { view: termView }, win);
   await sleep(600);
   const unfocusedLen = await slotShot();
+  const alive = await rpc("plugin.soksak-plugin-browser-native.dom.text", { selector: "h1" }, win);
+  assert(
+    "포커스 보존 — 사이클 후 페이지 신원 유지(h1)",
+    JSON.stringify(alive.data ?? "").includes("Example Domain"),
+  );
   assert("포커스 보존 — 포커스 시 렌더", focusedLen > BLANK_FLOOR, `len=${focusedLen}`);
   assert("포커스 보존 — 포커스 아웃 시 렌더", unfocusedLen > BLANK_FLOOR, `len=${unfocusedLen}`);
   assert(
@@ -188,9 +221,36 @@ async function main() {
     `${unfocusedLen}/${focusedLen}`,
   );
 
+    // 5) 홀 페인트 게이트 — 홀-슬롯은 어떤 pane 스타일에서도 스스로 배경을 칠하지 않는다.
+  // RED 근거(실사고): pane-style 배경 규칙이 홀 투명 규칙을 특이성으로 이겨 card/floating
+  // 에서 모든 홀이 닫혔다(포커스 시 블랭크로 위장). ui.hit painters 가 슬롯을 지목하면 RED.
+  {
+    const d0 = await measure();
+    const r0 = d0?.rect;
+    if (r0) {
+      const cx = Math.round(r0.x + r0.w / 2);
+      const cy = Math.round(r0.y + r0.h / 2);
+      await rpc("view.activate", { view: browserView }, win);
+      await sleep(400);
+      // pane 스타일은 테마 소유(설정 축 아님) — 현재 활성 스타일 하에서 단언한다.
+      // 계약은 스타일 무관("홀은 표면 종류의 사실")이므로 어떤 테마에서 돌아도 유효하다.
+      const hit = await rpc("ui.hit", { x: cx, y: cy }, win);
+      const painters = hit.data?.painters ?? [];
+      const slotPaints = painters.some(
+        (q) => typeof q.node === "string" && q.node.startsWith("layout/slot/"),
+      );
+      assert("홀 페인트 게이트 — 홀-슬롯 무배경(현 테마)", !slotPaints,
+        slotPaints ? JSON.stringify(painters[0]) : "");
+    }
+  }
+
+
+
   } finally {
-    // ── 자기정리 — 실패 경로 포함 픽스처 창 폐쇄(멱등: 다음 실행은 새로 연다) ──
-    await rpc("window.close", { label: win }).catch(() => {});
+  // ── 자기정리 — 실패 경로 포함 픽스처 창 폐쇄(멱등: 다음 실행은 새로 연다).
+    // KEEP=1 이면 검안을 위해 보존한다(brestore 와 동일 관례).
+    if (process.env.KEEP !== "1") await rpc("window.close", { label: win }).catch(() => {});
+    else console.log(`KEEP=1 — 픽스처 창 보존: ${win}`);
   }
 
   if (failures > 0) {
