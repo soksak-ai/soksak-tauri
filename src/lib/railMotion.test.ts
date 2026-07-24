@@ -5,8 +5,8 @@ import {
   railTravelGeometry,
 } from "./railMotion";
 
-describe("FLOW 레일 영역 인계", () => {
-  it("도착 레일은 처음부터 최종선에 있고 출발 레일은 pane 수축이 끝날 때까지 남는다", () => {
+describe("FLOW 레일 단일 표상 활주", () => {
+  it("주행 = 한 레이어가 내용째 최종선에 배치(FLIP 되감기는 CSS 소유) — key 안정, 입력만 잠금", () => {
     expect(
       railPresentationLayers(
         { generation: 7, station: 64 },
@@ -16,31 +16,24 @@ describe("FLOW 레일 영역 인계", () => {
     ).toEqual([
       {
         key: 7,
-        station: 64,
-        role: "source",
-        commitProjection: false,
-        interactive: false,
-      },
-      {
-        key: 8,
         station: 20,
-        role: "target",
+        role: "traveling",
         commitProjection: true,
-        interactive: true,
+        interactive: false,
       },
     ]);
   });
 
-  it("수축이 끝나면 도착 레일 하나만 남긴다", () => {
+  it("정착도 같은 key — 도착 시 재마운트·내용 순간이동이 없어야 한다", () => {
     expect(
       railPresentationLayers(
-        { generation: 8, station: 20 },
+        { generation: 7, station: 20 },
         20,
         false,
       ),
     ).toEqual([
       {
-        key: 8,
+        key: 7,
         station: 20,
         role: "resting",
         commitProjection: true,

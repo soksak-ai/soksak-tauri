@@ -553,6 +553,13 @@ body,
   animation: rail-flip-x var(--rail-travel-ms) cubic-bezier(0.4, 0, 0.2, 1);
   will-change: translate;
 }
+/* 레일 자신도 같은 FLIP 문법으로 활주한다(단일 표상 — 내용째 한 몸). 되감기 오프셋은
+   시작 에지가 레이어에 주입(--rail-flip-x px). 도착 프레임이 비어 기다리는 두-영역
+   여닫기의 이질감(빈부분 생겼다 채워짐 — 실측)을 폐지한 형태. */
+.content-body.rail-traveling .left-rail-plane .sidebar {
+  animation: rail-flip-x var(--rail-travel-ms) cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: translate;
+}
 .egroup-area.focus-layout-traveling .egroup-cell,
 .egroup-area.focus-layout-traveling .egroup-frame,
 .egroup-area.focus-layout-traveling .egroup-body-slot,

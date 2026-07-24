@@ -19,7 +19,7 @@ export type RailPresentation = {
 export type RailPresentationLayer = {
   key: number;
   station: number;
-  role: "source" | "target" | "resting";
+  role: "traveling" | "resting";
   commitProjection: boolean;
   interactive: boolean;
 };
@@ -49,40 +49,24 @@ export function railTravelGeometry(
 }
 
 /**
- * 레일은 이동 물체가 아니라 그리드가 열고 닫는 두 영역이다. 전환 중 도착 레일은
- * 최종선에 즉시 놓여 확장되는 복도로 드러나고, 출발 레일은 기존 내용을 유지한 채
- * 수축하는 pane에 가려진다. 종료 뒤에는 도착 레이어 하나만 남는다.
+ * 레일은 내용째 한 몸으로 활주하는 단일 표상이다 — pane 과 같은 FLIP 문법(최종 배치 +
+ * translate 되감기, 같은 곡선·시간). 이전의 두-영역 여닫기(도착 레일 즉시 배치 + 출발
+ * 내용 유지)는 도착 프레임이 위상 내내 비어 있다가 종료에 내용이 순간이동해 채워지는
+ * 이질감의 원인이었다(실측: 프레임 궤적 — 브라우저·pane 전부 동조 후 유일한 비동조 요소).
+ * key 는 generation 으로 안정 — 주행/정착 전환에 재마운트가 없어 투영 인스턴스가 보존된다.
  */
 export function railPresentationLayers(
   presentation: RailPresentation,
   targetStation: number,
   traveling: boolean,
 ): RailPresentationLayer[] {
-  if (!traveling) {
-    return [
-      {
-        key: presentation.generation,
-        station: targetStation,
-        role: "resting",
-        commitProjection: true,
-        interactive: true,
-      },
-    ];
-  }
   return [
     {
       key: presentation.generation,
-      station: presentation.station,
-      role: "source",
-      commitProjection: false,
-      interactive: false,
-    },
-    {
-      key: presentation.generation + 1,
       station: targetStation,
-      role: "target",
+      role: traveling ? "traveling" : "resting",
       commitProjection: true,
-      interactive: true,
+      interactive: !traveling,
     },
   ];
 }
