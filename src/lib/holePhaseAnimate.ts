@@ -81,14 +81,6 @@ function sampleAndDrive(): void {
     const railFlipPx = parseFloat(cs.getPropertyValue("--rail-flip-x")) || 0;
     const focusFlipPct = parseFloat(cs.getPropertyValue("--focus-flip-x")) || 0;
     const varOffset = phaseOffsetPx(railFlipPx, focusFlipPct, slot.offsetWidth);
-    // 남은 이동량은 변수가 아니라 **살아있는 애니메이션 값**(계산된 translate)에서 읽는다 —
-    // 변수 재해석·단위 합성·커밋 간 갱신에 전부 면역. child 는 presentation 기준으로
-    // 정확히 이만큼만 더 가면 DOM 과 같은 점에 선다(Rust 가 presentation 을 base 로 삼음).
-    const remaining = translateXOf(cs.translate);
-    if (Math.abs(varOffset) < 0.5 && Math.abs(remaining) < 0.5) continue; // 무이동 위상
-    const key = `${railFlipPx}|${focusFlipPct}|${slot.offsetWidth}`;
-    if (issued.get(viewId) === key) continue; // 같은 t0 입력 — 이미 구동됨
-    issued.set(viewId, key);
     let elapsedMs = 0;
     try {
       for (const a of slot.getAnimations()) {
@@ -100,6 +92,16 @@ function sampleAndDrive(): void {
     } catch {
       // getAnimations 미지원 환경 — 보상 없이 진행(추종 그물 유지).
     }
+    // 남은 이동량: t0(애니 미시작 — 계산된 translate 가 아직 기저값 0)는 FLIP 변수로,
+    // 진행 중(재구동 — 변수 갱신 커밋)은 **살아있는 애니메이션 값**(계산된 translate)으로
+    // 읽는다. 살아있는 값은 변수 재해석·단위 합성·커밋 간 갱신에 전부 면역이고, child 는
+    // presentation 기준으로 이만큼만 더 가면 DOM 과 같은 점에 선다(Rust base=presentation).
+    const live = translateXOf(cs.translate);
+    const remaining = elapsedMs > 8 || Math.abs(live) >= 0.5 ? live : varOffset;
+    if (Math.abs(varOffset) < 0.5 && Math.abs(remaining) < 0.5) continue; // 무이동 위상
+    const key = `${railFlipPx}|${focusFlipPct}|${slot.offsetWidth}`;
+    if (issued.get(viewId) === key) continue; // 같은 t0 입력 — 이미 구동됨
+    issued.set(viewId, key);
     void invoke("webview_animate_bounds", {
       label: browserLabel(viewId),
       dx: -remaining,
