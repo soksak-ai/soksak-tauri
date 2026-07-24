@@ -27,6 +27,11 @@ function emit(active: boolean): void {
   for (const l of listeners) l(active);
 }
 
+/** 모션 위상 활성 여부(레퍼카운트 > 0). */
+export function isLayoutMotionActive(): boolean {
+  return depth > 0;
+}
+
 export function beginLayoutMotion(): void {
   depth += 1;
   if (depth === 1) emit(true);

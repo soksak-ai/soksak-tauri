@@ -4,7 +4,12 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { PHASE_EASING, phaseOffsetPx, viewIdFromSlotNode } from "./holePhaseAnimate";
+import {
+  PHASE_EASING,
+  phaseOffsetPx,
+  translateXOf,
+  viewIdFromSlotNode,
+} from "./holePhaseAnimate";
 import { RAIL_TRAVEL_MS } from "./railMotion";
 
 describe("holePhaseAnimate — DOM 곡선 동조 계약", () => {
@@ -24,6 +29,13 @@ describe("holePhaseAnimate — DOM 곡선 동조 계약", () => {
     expect(viewIdFromSlotNode("layout/slot/v12")).toBe("v12");
     expect(viewIdFromSlotNode("layout/panel/g5")).toBeNull();
     expect(viewIdFromSlotNode(undefined)).toBeNull();
+  });
+
+  it("살아있는 translate 문자열에서 x(px)를 읽는다 — 재구동의 남은 이동량 원천", () => {
+    expect(translateXOf("none")).toBe(0);
+    expect(translateXOf("")).toBe(0);
+    expect(translateXOf("-224px 0px")).toBe(-224);
+    expect(translateXOf("136.5px")).toBe(136.5);
   });
 
   it("위상 오프셋 = rail-flip(px) + focus-flip(%)×슬롯폭 — 두 위상 합성", () => {

@@ -22,10 +22,14 @@ import { applyWindowZoom, isPrimaryModifier, routeZoom } from "./lib/zoomIntent"
 import {
   beginLayoutMotion,
   endLayoutMotion,
+  isLayoutMotionActive,
   onLayoutMotion,
 } from "./lib/layoutMotion";
 import { applyRailHoleClip, trackRailHoleClip } from "./lib/railHoleClip";
-import { animateHoleChildrenToFinal } from "./lib/holePhaseAnimate";
+import {
+  animateHoleChildrenToFinal,
+  __clearHolePhaseIssued,
+} from "./lib/holePhaseAnimate";
 import {
   activeSessionViewId,
   startViewFocusSync,
@@ -254,6 +258,10 @@ const ProjectPane = memo(function ProjectPane({
   useLayoutEffect(() => {
     const plane = railPlaneRef.current;
     if (plane) applyRailHoleClip(plane);
+    // 위상 중 커밋마다 재샘플 — 클릭 위상은 여러 커밋에 걸쳐 FLIP 변수를 갱신한다(실측:
+    // DOM 은 var 를 라이브로 타는데 CA 는 t0 박제 → ~75px 이탈). 같은 t0 입력은 발행
+    // dedup 이 no-op 으로 거른다.
+    if (isLayoutMotionActive()) animateHoleChildrenToFinal();
   });
   useEffect(() => {
     let stop: (() => void) | undefined;
@@ -264,6 +272,7 @@ const ProjectPane = memo(function ProjectPane({
       } else {
         stop?.();
         stop = undefined;
+        __clearHolePhaseIssued(); // 다음 위상은 새 발행 사이클
       }
     });
     return () => {

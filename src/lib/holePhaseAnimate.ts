@@ -45,12 +45,26 @@ export function phaseOffsetPx(
  * 첫 프레임과 같은 스타일을 본다 — 두 컴포지터가 같은 t0 기하에서 출발한다.
  */
 let pendingFrame = 0;
+// 발행 dedup: viewId → t0 입력(FLIP 변수) 키. 위상 중 변수가 갱신되는 커밋(클릭 위상은
+// 여러 커밋에 걸친다 — 실측: 커밋 간 var 갱신을 DOM 은 라이브로 타고 CA 는 박제돼 ~75px
+// 이탈)마다 키가 바뀌어 재구동된다. 같은 키 재커밋은 no-op.
+const issued = new Map<string, string>();
+export function __clearHolePhaseIssued(): void {
+  issued.clear();
+}
 export function animateHoleChildrenToFinal(): void {
-  if (pendingFrame) return; // 같은 커밋 폭풍에서 두 위상 에지가 겹쳐도 샘플은 1회
+  if (pendingFrame) return; // 프레임당 1회(겹친 에지 합침) — 위상당 1회가 아니다
   pendingFrame = requestAnimationFrame(() => {
     pendingFrame = 0;
     sampleAndDrive();
   });
+}
+
+/** 계산된 translate 문자열("12px 0px"|"none")의 x(px). 파싱 실패는 0. */
+export function translateXOf(value: string): number {
+  if (!value || value === "none") return 0;
+  const m = /^(-?[\d.]+)px/.exec(value.trim());
+  return m ? parseFloat(m[1]) : 0;
 }
 
 function sampleAndDrive(): void {
@@ -66,10 +80,15 @@ function sampleAndDrive(): void {
     const cs = getComputedStyle(slot);
     const railFlipPx = parseFloat(cs.getPropertyValue("--rail-flip-x")) || 0;
     const focusFlipPct = parseFloat(cs.getPropertyValue("--focus-flip-x")) || 0;
-    const offset = phaseOffsetPx(railFlipPx, focusFlipPct, slot.offsetWidth);
-    if (Math.abs(offset) < 0.5) continue; // 이 슬롯은 이동하지 않는 위상
-    // 시작 시각 동기 — DOM 애니는 이미 몇 ms 진행했을 수 있고(커밋~rAF), invoke 는 IPC 를
-    // 건넌다. 둘 다 CA timeOffset 으로 보상해 두 컴포지터가 같은 곡선의 같은 t 에서 만난다.
+    const varOffset = phaseOffsetPx(railFlipPx, focusFlipPct, slot.offsetWidth);
+    // 남은 이동량은 변수가 아니라 **살아있는 애니메이션 값**(계산된 translate)에서 읽는다 —
+    // 변수 재해석·단위 합성·커밋 간 갱신에 전부 면역. child 는 presentation 기준으로
+    // 정확히 이만큼만 더 가면 DOM 과 같은 점에 선다(Rust 가 presentation 을 base 로 삼음).
+    const remaining = translateXOf(cs.translate);
+    if (Math.abs(varOffset) < 0.5 && Math.abs(remaining) < 0.5) continue; // 무이동 위상
+    const key = `${railFlipPx}|${focusFlipPct}|${slot.offsetWidth}`;
+    if (issued.get(viewId) === key) continue; // 같은 t0 입력 — 이미 구동됨
+    issued.set(viewId, key);
     let elapsedMs = 0;
     try {
       for (const a of slot.getAnimations()) {
@@ -83,13 +102,13 @@ function sampleAndDrive(): void {
     }
     void invoke("webview_animate_bounds", {
       label: browserLabel(viewId),
-      dx: -offset,
+      dx: -remaining,
       dy: 0,
       durationMs: RAIL_TRAVEL_MS,
       easing: PHASE_EASING,
       elapsedMs,
       sentAtMs: Date.now(),
-      dbg: `rail=${railFlipPx} focus=${focusFlipPct} w=${slot.offsetWidth} node=${slot.dataset.node}`,
+      dbg: `rem=${remaining.toFixed(1)} rail=${railFlipPx} focus=${focusFlipPct} node=${slot.dataset.node}`,
     }).catch(() => {
       // 없는 label(홀이지만 코어 소유 child 아님 — 엔진 서피스 등)·비-macOS 는 무해.
     });

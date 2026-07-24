@@ -1103,16 +1103,31 @@ pub fn webview_animate_bounds(
                 .unwrap_or(sent_at_ms);
             let ipc_ms = (now_ms - sent_at_ms).clamp(0.0, 200.0);
             let time_offset_s = ((elapsed_ms.max(0.0) + ipc_ms) / 1000.0).min(dur_s);
+            // 재구동 자기교정: dx 는 "지금 보이는 위치에서 남은 이동량"(JS 가 살아있는
+            // translate 에서 산출)이므로 base 는 모델이 아니라 **presentation**(현재 보이는
+            // 위치)이다 — 진행 중 애니 위에 재구동해도 이어달리듯 끊김이 없다.
             let old_pos: objc2_foundation::NSPoint = msg_send![layer, position];
+            let pres: *mut AnyObject = msg_send![layer, presentationLayer];
+            let base: objc2_foundation::NSPoint = if pres.is_null() {
+                old_pos
+            } else {
+                msg_send![pres, position]
+            };
+            // AppKit y 는 bottom-up — JS 의 아래(+dy)는 ns 에선 −. position 은 anchor(0,0)
+            // 기준이라 frame origin 과 동일 축.
+            let target_pos = objc2_foundation::NSPoint {
+                x: base.x + sdx,
+                y: base.y - sdy,
+            };
             let cur: objc2_foundation::NSRect = msg_send![view, frame];
-            // AppKit y 는 bottom-up — JS 의 아래(+dy)는 ns 에선 −.
             let target = objc2_foundation::NSPoint {
-                x: cur.origin.x + sdx,
-                y: cur.origin.y - sdy,
+                x: cur.origin.x + (target_pos.x - old_pos.x),
+                y: cur.origin.y + (target_pos.y - old_pos.y),
             };
             // 모델은 즉시 최종값(암시적 애니 없는 일반 set) — 표시 보간은 아래 명시적 CA 가 소유.
             let () = msg_send![view, setFrameOrigin: target];
             let new_pos: objc2_foundation::NSPoint = msg_send![layer, position];
+            let old_pos = base; // 애니 fromValue = 보이는 위치
             let (c0, c1, c2, c3) = (
                 easing[0] as f32,
                 easing[1] as f32,
