@@ -404,6 +404,10 @@ pub fn run() {
                     // 창=프로젝트 수명(P6): 창이 파괴되면 그 창이 소유한 프로젝트 데몬도 함께 종료한다.
                     app.state::<crate::daemon::DaemonManager>()
                         .kill_by_window(window.label());
+                    // 창=플러그인 런타임 수명: 그 창의 플러그인이 스폰한 서브프로세스도 회수한다
+                    // (detached 생존 사이드카 제외). 파이프는 앱이 쥐고 있어 창이 죽어도 자식에
+                    // stdin EOF 가 가지 않는다 — 여기서 거두지 않으면 침묵 좀비다.
+                    app.state::<ProcessManager>().kill_by_window(window.label());
                     // 프로젝트 전역 단일 오픈(P6): 죽은 창의 점유를 해제해 다른 창이 그 프로젝트를
                     // 열 수 있게 한다(해제 없으면 앱 재시작까지 유령 점유).
                     crate::project_registry::on_window_destroyed(&app, window.label());

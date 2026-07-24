@@ -59,6 +59,10 @@ struct ProcessSession {
     group: bool,
     // detach(setsid)로 스폰됨 — 앱 종료를 넘어 산다. kill_all(앱 종료 회수)에서 제외된다.
     detached: bool,
+    // 스폰한 창 label — 창 파괴 시 그 창의 자식을 회수하는 키(kill_by_window). 창이 죽으면
+    // 파이프 소유자(그 창의 플러그인 런타임)가 사라지는데 파이프 자체는 앱이 계속 쥐고 있어
+    // 자식에 EOF 가 가지 않는다 — 창 단위 회수가 없으면 침묵 좀비다.
+    window: String,
 }
 
 #[derive(Default)]
@@ -76,6 +80,26 @@ impl ProcessManager {
             for (_, sess) in sessions.drain() {
                 if !sess.detached {
                     kill_session(&sess);
+                }
+            }
+        }
+    }
+
+    // 창 파괴 회수 — 그 창(플러그인 런타임)이 스폰한 자식을 거둔다(PTY kill_by_window 대칭).
+    // detached(생존 서비스 사이드카)는 창 수명 밖이라 살리되, 소유 런타임이 사라져 핸들이
+    // 도달 불가가 된 엔트리는 걷는다.
+    pub fn kill_by_window(&self, label: &str) {
+        if let Ok(mut sessions) = self.sessions.lock() {
+            let ids: Vec<u32> = sessions
+                .iter()
+                .filter(|(_, s)| s.window == label)
+                .map(|(id, _)| *id)
+                .collect();
+            for id in ids {
+                if let Some(sess) = sessions.remove(&id) {
+                    if !sess.detached {
+                        kill_session(&sess);
+                    }
                 }
             }
         }
@@ -239,6 +263,8 @@ pub fn process_spawn(
     on_stdout: Channel<InvokeResponseBody>,
     on_stderr: Channel<InvokeResponseBody>,
     on_exit: Channel<i32>,
+    // 호출 창 — 세션에 스폰 창 label 을 기록해 창 파괴 회수(kill_by_window)의 키로 쓴다.
+    window: tauri::Window,
     manager: State<'_, ProcessManager>,
     secrets_state: State<'_, SecretsState>,
 ) -> Result<u32, String> {
@@ -357,6 +383,7 @@ pub fn process_spawn(
             stdin,
             group,
             detached,
+            window: window.label().to_string(),
         },
     );
     Ok(id)
@@ -649,6 +676,7 @@ mod tests {
                 stdin: None,
                 group: false,
                 detached: false,
+                window: "w-test".into(),
             },
         );
         mgr.sessions.lock().unwrap().insert(
@@ -658,6 +686,7 @@ mod tests {
                 stdin: None,
                 group: false,
                 detached: true,
+                window: "w-test".into(),
             },
         );
 
@@ -678,5 +707,91 @@ mod tests {
         // 정리 — 살아남은 detached 를 명시 종료·회수.
         let _ = detached_child.lock().unwrap().kill();
         let _ = detached_child.lock().unwrap().wait();
+    }
+
+    // 창 파괴 회수 — 그 창이 스폰한 일반 자식만 죽이고, 타 창 자식과 detached(생존 서비스)는
+    // 살린다. 스폰 창이 죽으면 파이프 소유자(플러그인 런타임)가 사라져 자식에 stdin EOF 조차
+    // 가지 않으므로(파이프는 앱 프로세스가 계속 쥔다) 창 단위 회수가 없으면 침묵 좀비가 된다.
+    #[cfg(unix)]
+    #[test]
+    fn kill_by_window_reaps_that_windows_children_only() {
+        use std::os::unix::process::CommandExt;
+        let mine = Command::new("sleep").arg("30").spawn().expect("spawn");
+        let other = Command::new("sleep").arg("30").spawn().expect("spawn");
+        let mut det = Command::new("sleep");
+        det.arg("30");
+        unsafe {
+            det.pre_exec(|| {
+                libc::setsid();
+                Ok(())
+            });
+        }
+        let survivor = det.spawn().expect("spawn detached");
+
+        let mine_child = Arc::new(Mutex::new(mine));
+        let other_child = Arc::new(Mutex::new(other));
+        let survivor_child = Arc::new(Mutex::new(survivor));
+        let mgr = ProcessManager::default();
+        {
+            let mut sessions = mgr.sessions.lock().unwrap();
+            sessions.insert(
+                1,
+                ProcessSession {
+                    child: mine_child.clone(),
+                    stdin: None,
+                    group: false,
+                    detached: false,
+                    window: "w-a".into(),
+                },
+            );
+            sessions.insert(
+                2,
+                ProcessSession {
+                    child: other_child.clone(),
+                    stdin: None,
+                    group: false,
+                    detached: false,
+                    window: "w-b".into(),
+                },
+            );
+            sessions.insert(
+                3,
+                ProcessSession {
+                    child: survivor_child.clone(),
+                    stdin: None,
+                    group: false,
+                    detached: true,
+                    window: "w-a".into(),
+                },
+            );
+        }
+
+        mgr.kill_by_window("w-a");
+        std::thread::sleep(std::time::Duration::from_millis(200));
+
+        assert!(
+            mine_child.lock().unwrap().try_wait().unwrap().is_some(),
+            "그 창의 일반 자식은 창 파괴가 회수한다"
+        );
+        assert!(
+            other_child.lock().unwrap().try_wait().unwrap().is_none(),
+            "타 창 자식은 무관하다"
+        );
+        assert!(
+            survivor_child.lock().unwrap().try_wait().unwrap().is_none(),
+            "detached 는 창 파괴에도 생존한다"
+        );
+        // 회수된 창의 엔트리는 detached 포함 전부 걷힌다(소유 런타임 소멸 = 핸들 도달 불가).
+        assert!(
+            mgr.sessions.lock().unwrap().keys().all(|id| *id == 2),
+            "w-a 엔트리는 전부 제거되고 w-b 만 남는다"
+        );
+
+        // 정리 — 남은 자식 명시 종료·회수(좀비 방지).
+        for child in [&other_child, &survivor_child] {
+            let _ = child.lock().unwrap().kill();
+            let _ = child.lock().unwrap().wait();
+        }
+        let _ = mine_child.lock().unwrap().wait();
     }
 }
