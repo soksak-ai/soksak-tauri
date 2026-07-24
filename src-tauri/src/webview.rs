@@ -722,12 +722,16 @@ pub fn webview_open(
     w: f64,
     h: f64,
 ) -> Result<(), String> {
+    #[cfg(debug_assertions)]
+    eprintln!("[open-trace] webview_open {label} 진입 (url={url})");
     if let Some(existing) = app.get_webview(&label) {
         // 실물 생존 검사 — 라벨은 registry 에 살아있어도 native view 가 창에서 떨어져 나간
         // 좀비일 수 있다(실사고: close 가 반쯤 진행된 라벨에 open 이 no-op → 영구 빈 홀,
         // visible/list 도 건강 오판). open 의 계약은 "호출하면 반드시 살아있는 child"다 —
         // 좀비면 잔재를 정리하고 아래에서 신규 생성한다. 검사·정리는 메인스레드 인라인.
         if child_is_newborn(&label) || native_child_alive(&existing) {
+            #[cfg(debug_assertions)]
+            eprintln!("[open-trace] webview_open {label}: 기존 생존 — no-op");
             return Ok(());
         }
         #[cfg(debug_assertions)]
@@ -816,7 +820,13 @@ pub fn webview_open(
         });
     let webview = window
         .add_child(builder, LogicalPosition::new(x, y), LogicalSize::new(w, h))
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            #[cfg(debug_assertions)]
+            eprintln!("[open-trace] webview_open {label}: add_child 실패 — {e}");
+            e.to_string()
+        })?;
+    #[cfg(debug_assertions)]
+    eprintln!("[open-trace] webview_open {label}: 생성 완료");
     // 출생 기록 — 부착 완료 전 신생아를 생존 프로브(webview_alive/open 좀비 검사)가
     // 좀비로 오판해 정리하는 자멸을 막는다(유예 NEWBORN_GRACE_MS).
     if let Ok(mut m) = CHILD_BORN_AT.lock() {
@@ -1440,9 +1450,15 @@ pub fn webview_alive(app: AppHandle, label: String) -> bool {
     if child_is_newborn(&label) {
         return true; // 부착 전 신생아 — 좀비 아님
     }
-    app.get_webview(&label)
-        .map(|wv| native_child_alive(&wv))
-        .unwrap_or(false)
+    let registered = app.get_webview(&label);
+    let alive = registered.as_ref().map(native_child_alive).unwrap_or(false);
+    #[cfg(debug_assertions)]
+    eprintln!(
+        "[vis-trace] webview_alive {label}: registered={} alive={alive} thread_main={}",
+        registered.is_some(),
+        std::thread::current().name().map(|n| n == "main").unwrap_or(false),
+    );
+    alive
 }
 
 // hide 를 거친 child 라벨 — show 시 재부착(뷰어빌리티 기상)이 필요한 대상. webview_close 가 지운다.
