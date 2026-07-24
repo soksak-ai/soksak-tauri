@@ -2091,9 +2091,16 @@ body,
 :root[data-pane-style="floating"] .egroup-status {
   background: transparent; /* 내부선(§B2)은 base 가 소유 — 여기선 배경만 */
 }
+/* 홀 제외를 규칙의 원천에서 명시한다 — 홀 규칙(.hole-slot, 아래)과의 특이성 전쟁 금지.
+   pane 배경(0-3-0)이 홀 투명(0-2-0)을 이겨 card/floating 에서 모든 홀이 닫히던 실사고:
+   비포커스에서만 dim 베일(0-5-0, 반투명)이 우연히 이걸 눌러 열려 "포커스 때만 블랭크"로
+   위장됐다. 표면 종류의 사실(홀)은 스타일(pane)보다 우선한다. */
+:root[data-pane-style="card"] .egroup-body-slot:not(.hole-slot),
+:root[data-pane-style="floating"] .egroup-body-slot:not(.hole-slot) {
+  background: var(--bg);
+}
 :root[data-pane-style="card"] .egroup-body-slot,
 :root[data-pane-style="floating"] .egroup-body-slot {
-  background: var(--bg);
   border: none;
 }
 /* 홀 슬롯은 배경을 칠하지 않는다(레이어 원칙) — 기준은 뷰의 transparent 선언 하나이며,
