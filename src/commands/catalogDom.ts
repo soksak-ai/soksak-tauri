@@ -748,6 +748,24 @@ export function registerDomCatalog(): void {
       // 가장 가까운 [data-node]/[class] 보유 HTML 조상을 closest 로 함께 보고한다.
       // 필드명은 dataset — data 는 봉투 예약키라 정규화가 페이로드를 삼킨다(ui.measure 와 정렬).
       const host = el.closest<HTMLElement>("[data-node], button, a, [class]");
+      // 페인트 진단 사슬 — 홀(투명 슬롯) 위를 무엇이 칠하는지 지목한다: 히트 지점의 조상
+      // 사슬에서 배경이 투명이 아닌 요소만 배경색과 함께 보고(레이어 원칙 §NATIVE-SURFACES —
+      // "홀이 닫혔다" 진단은 이 사슬로 판독한다). 전체 사슬 나열은 소음이라 페인터만 남긴다.
+      const painters: { tag: string; className: string; bg: string; node?: string }[] = [];
+      for (let n: Element | null = el; n instanceof Element; n = n.parentElement ?? ((n.getRootNode() as ShadowRoot).host ?? null)) {
+        if (!(n instanceof HTMLElement)) continue;
+        const cs = getComputedStyle(n);
+        const bg = cs.backgroundColor;
+        if (bg && bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent") {
+          painters.push({
+            tag: n.tagName.toLowerCase(),
+            className: typeof n.className === "string" ? n.className.slice(0, 60) : "",
+            bg,
+            ...(n.dataset.node ? { node: n.dataset.node } : {}),
+          });
+        }
+        if (painters.length >= 6) break;
+      }
       return {
         tag: el.tagName.toLowerCase(),
         className: el.getAttribute("class") ?? "",
@@ -755,6 +773,7 @@ export function registerDomCatalog(): void {
         host: host
           ? { tag: host.tagName.toLowerCase(), className: host.className, dataset: { ...host.dataset } }
           : null,
+        painters,
         rect: { x: +r.x.toFixed(1), y: +r.y.toFixed(1), w: +r.width.toFixed(1), h: +r.height.toFixed(1) },
       };
     },
