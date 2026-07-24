@@ -1141,8 +1141,8 @@ pub fn webview_animate_bounds(
                             }
                             let pres: *mut AnyObject = msg_send![layer, presentationLayer];
                             let src: *mut AnyObject = if pres.is_null() { layer } else { pres };
-                            let pos: objc2_foundation::CGPoint = msg_send![src, position];
-                            let model_pos: objc2_foundation::CGPoint = msg_send![layer, position];
+                            let pos: objc2_foundation::NSPoint = msg_send![src, position];
+                            let model_pos: objc2_foundation::NSPoint = msg_send![layer, position];
                             eprintln!(
                                 "[animate-trace] mid: presentation=({:.0},{:.0}) model=({:.0},{:.0}) pres_null={}",
                                 pos.x, pos.y, model_pos.x, model_pos.y, pres.is_null()
