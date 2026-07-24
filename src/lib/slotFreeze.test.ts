@@ -73,10 +73,10 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
     f.onMotion(true, ["move"]);
     expect(slot.querySelector("img.slot-freeze-frame")).not.toBeNull();
     expect(slot.dataset.freeze).toBe("1");
-    expect(veils).toEqual([]); // 페인트 커밋 전 — 표면은 아직 보인다
     flushRaf();
     flushRaf();
-    expect(veils).toEqual([["v1", true]]);
+    // 표면 숨김 없음 — 스탠드인이 곧 베일(숨김 복귀 사이클 = 깜빡의 진원이라 제거).
+    expect(veils).toEqual([]);
   });
 
   it("resize 가 끼면(단독·혼합) 동결하지 않는다", async () => {
@@ -118,11 +118,8 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
     flushRaf();
     flushRaf();
     f.onMotion(false, []);
-    expect(veils).toEqual([
-      ["v1", true],
-      ["v1", false],
-    ]);
-    expect(slot.querySelector("img")).not.toBeNull(); // 복귀 프레임 아래 잠시 유지
+    expect(veils).toEqual([]); // 해동에도 표면 조작 없음
+    expect(slot.querySelector("img")).not.toBeNull(); // 착지 스냅 아래 잠시 유지
     vi.advanceTimersByTime(120);
     expect(slot.querySelector("img")).toBeNull();
   });
@@ -136,10 +133,7 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
     flushRaf();
     flushRaf();
     f.onMotion(true, ["move", "resize"]);
-    expect(veils).toEqual([
-      ["v1", true],
-      ["v1", false],
-    ]);
+    expect(veils).toEqual([]);
     expect(slot.dataset.freeze).toBe("0");
   });
 });

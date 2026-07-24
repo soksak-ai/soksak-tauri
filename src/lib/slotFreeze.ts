@@ -123,14 +123,11 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
     slot.appendChild(img);
     frozen.set(slot, { img, viewId });
     slot.dataset.freeze = "1"; // 관측면(ui.hit)
-    // 표면 가림은 스탠드인 페인트가 커밋된 다음 프레임에 — 반대 순서는 투명 홀이 한 프레임
-    // 배경을 노출한다(시작 직전 깜빡의 근원, 실측). 같은 픽셀의 한 프레임 겹침은 무해하다.
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
-        const cur = frozen.get(slot);
-        if (cur && cur.img === img) deps.emitVeil(viewId, true);
-      }),
-    );
+    // 표면은 숨기지 않는다 — 스탠드인이 곧 베일이다. 유일한 홀(슬롯)은 불투명 img 가 덮고
+    // 홀 밖 DOM 은 원래 불투명이라 표면은 어차피 보이지 않는다. 여기서 숨김을 걸면 복귀
+    // 사이클(WK 기상 재부착 1프레임 소실·CEF hidden 토글 재페인트)이 스왑마다 화면 깜빡을
+    // 만든다(실사고 — veil 숨김 자체가 깜빡의 진원). emitVeil 은 이 판정에서 발화하지 않고,
+    // 착지 정합은 위상-끝 신호(layout.resize-gesture end)의 강제 스냅이 이미 소유한다.
   };
 
   const thawSlot = (slot: HTMLElement): void => {
@@ -138,8 +135,8 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
     if (!cur) return;
     frozen.delete(slot);
     slot.dataset.freeze = "0";
-    deps.emitVeil(cur.viewId, false);
-    // 복귀 프레임이 스탠드인 아래에서 먼저 서고, 스탠드인은 한 박자 뒤에 물러난다(깜빡 0).
+    // 표면은 내내 살아 추종했으므로 복귀 절차가 없다 — 스탠드인만 한 박자 뒤 물러난다
+    // (착지 강제 스냅이 그 사이 정확 좌표를 확정한다. 깜빡 0).
     window.setTimeout(() => cur.img.remove(), 90);
   };
 
