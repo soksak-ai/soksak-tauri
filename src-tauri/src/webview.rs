@@ -1021,9 +1021,15 @@ pub fn webview_bounds(
         if let Ok(mut m) = RAW_BOUNDS.lock() {
             m.insert(label.clone(), (x, y, w, h));
         }
-        // 파라메트릭 위상 애니메이션 진행 중 — 추종 루프의 중간 샘플은 CA 보간과 싸우므로
-        // 기록만 하고 적용하지 않는다(종료 리컨사일이 최신 RAW_BOUNDS 를 확정 적용).
+        // 파라메트릭 위상 애니메이션 진행 중 — 위치 샘플은 CA 보간과 싸우므로 기록만 한다
+        // (종료 리컨사일이 최신 RAW_BOUNDS 를 확정 적용). 단 **크기는 즉시 적용**한다:
+        // DOM 슬롯 크기는 위상 t0 에 최종값으로 스냅되므로(FLIP 은 translate 전용) 크기를
+        // 리컨사일까지 미루면 그 차이가 빈 띠로 보였다 채워진다(실측 스크린샷). 크기는
+        // position 키패스 애니와 싸우지 않는다.
         if ANIMATING.lock().map(|m| m.contains_key(&label)).unwrap_or(false) {
+            let f = window_zoom_of(wv.window().label());
+            let (_, _, sw, sh) = scale_bounds((x, y, w, h), f);
+            let _ = wv.set_size(LogicalSize::new(sw, sh));
             return Ok(());
         }
         apply_child_bounds(&wv, &label, (x, y, w, h))?;
@@ -1046,6 +1052,8 @@ pub fn webview_animate_bounds(
     dy: f64,
     duration_ms: f64,
     easing: [f64; 4],
+    elapsed_ms: f64,
+    sent_at_ms: f64,
     dbg: Option<String>,
 ) -> Result<(), String> {
     let Some(wv) = app.get_webview(&label) else {
@@ -1081,43 +1089,63 @@ pub fn webview_animate_bounds(
                 eprintln!("[animate-trace] superview null — 미부착, 애니 불가");
                 return;
             }
+            let layer: *mut AnyObject = msg_send![view, layer];
+            if layer.is_null() {
+                #[cfg(debug_assertions)]
+                eprintln!("[animate-trace] layer null — 애니 불가");
+                return;
+            }
+            // 시작 시각 동기 — DOM 애니 진행분(elapsed) + IPC 지연을 timeOffset 으로 보상해
+            // 곡선의 같은 t 에서 합류하고, 종료 시각도 DOM 과 정렬된다(로컬 시간 선행 소진).
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs_f64() * 1000.0)
+                .unwrap_or(sent_at_ms);
+            let ipc_ms = (now_ms - sent_at_ms).clamp(0.0, 200.0);
+            let time_offset_s = ((elapsed_ms.max(0.0) + ipc_ms) / 1000.0).min(dur_s);
+            let old_pos: objc2_foundation::NSPoint = msg_send![layer, position];
             let cur: objc2_foundation::NSRect = msg_send![view, frame];
             // AppKit y 는 bottom-up — JS 의 아래(+dy)는 ns 에선 −.
             let target = objc2_foundation::NSPoint {
                 x: cur.origin.x + sdx,
                 y: cur.origin.y - sdy,
             };
-            let ctx_cls = objc2::runtime::AnyClass::get(c"NSAnimationContext").unwrap();
-            let tf_cls = objc2::runtime::AnyClass::get(c"CAMediaTimingFunction").unwrap();
-            let () = msg_send![ctx_cls, beginGrouping];
-            let ctx: *mut AnyObject = msg_send![ctx_cls, currentContext];
-            let () = msg_send![ctx, setDuration: dur_s];
+            // 모델은 즉시 최종값(암시적 애니 없는 일반 set) — 표시 보간은 아래 명시적 CA 가 소유.
+            let () = msg_send![view, setFrameOrigin: target];
+            let new_pos: objc2_foundation::NSPoint = msg_send![layer, position];
             let (c0, c1, c2, c3) = (
                 easing[0] as f32,
                 easing[1] as f32,
                 easing[2] as f32,
                 easing[3] as f32,
             );
+            let tf_cls = objc2::runtime::AnyClass::get(c"CAMediaTimingFunction").unwrap();
             // functionWithControlPoints:::: 는 빈 선택자 조각이라 msg_send! 문법 밖 — sel! + send_message.
             let tf: *mut AnyObject = objc2::runtime::MessageReceiver::send_message(
                 tf_cls,
                 objc2::sel!(functionWithControlPoints::::),
                 (c0, c1, c2, c3),
             );
+            let anim_cls = objc2::runtime::AnyClass::get(c"CABasicAnimation").unwrap();
+            let key_path = objc2_foundation::NSString::from_str("position");
+            let anim: *mut AnyObject =
+                msg_send![anim_cls, animationWithKeyPath: &*key_path];
+            let val_cls = objc2::runtime::AnyClass::get(c"NSValue").unwrap();
+            let from_v: *mut AnyObject = msg_send![val_cls, valueWithPoint: old_pos];
+            let to_v: *mut AnyObject = msg_send![val_cls, valueWithPoint: new_pos];
+            let () = msg_send![anim, setFromValue: from_v];
+            let () = msg_send![anim, setToValue: to_v];
+            let () = msg_send![anim, setDuration: dur_s];
             if !tf.is_null() {
-                let () = msg_send![ctx, setTimingFunction: tf];
+                let () = msg_send![anim, setTimingFunction: tf];
             }
-            let animator: *mut AnyObject = msg_send![view, animator];
-            let () = msg_send![animator, setFrameOrigin: target];
-            let () = msg_send![ctx_cls, endGrouping];
+            let () = msg_send![anim, setTimeOffset: time_offset_s];
+            let anim_key = objc2_foundation::NSString::from_str("soksak-phase-move");
+            let () = msg_send![layer, addAnimation: anim, forKey: &*anim_key];
             #[cfg(debug_assertions)]
             eprintln!(
-                "[animate-trace] CA grouped: tf_null={} from_ns=({:.0},{:.0}) target_ns=({:.0},{:.0})",
-                tf.is_null(),
-                cur.origin.x,
-                cur.origin.y,
-                target.x,
-                target.y
+                "[animate-trace] CA explicit: from_ns=({:.0},{:.0}) target_ns=({:.0},{:.0}) elapsed={elapsed_ms:.0}ms ipc={ipc_ms:.0}ms offset={time_offset_s:.3}s",
+                old_pos.x, old_pos.y, new_pos.x, new_pos.y
             );
         })
         .map_err(|e| e.to_string())?;

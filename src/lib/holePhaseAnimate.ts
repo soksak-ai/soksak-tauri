@@ -68,12 +68,27 @@ function sampleAndDrive(): void {
     const focusFlipPct = parseFloat(cs.getPropertyValue("--focus-flip-x")) || 0;
     const offset = phaseOffsetPx(railFlipPx, focusFlipPct, slot.offsetWidth);
     if (Math.abs(offset) < 0.5) continue; // 이 슬롯은 이동하지 않는 위상
+    // 시작 시각 동기 — DOM 애니는 이미 몇 ms 진행했을 수 있고(커밋~rAF), invoke 는 IPC 를
+    // 건넌다. 둘 다 CA timeOffset 으로 보상해 두 컴포지터가 같은 곡선의 같은 t 에서 만난다.
+    let elapsedMs = 0;
+    try {
+      for (const a of slot.getAnimations()) {
+        if ((a as CSSAnimation).animationName === "rail-flip-x") {
+          elapsedMs = Number(a.currentTime ?? 0) || 0;
+          break;
+        }
+      }
+    } catch {
+      // getAnimations 미지원 환경 — 보상 없이 진행(추종 그물 유지).
+    }
     void invoke("webview_animate_bounds", {
       label: browserLabel(viewId),
       dx: -offset,
       dy: 0,
       durationMs: RAIL_TRAVEL_MS,
       easing: PHASE_EASING,
+      elapsedMs,
+      sentAtMs: Date.now(),
       dbg: `rail=${railFlipPx} focus=${focusFlipPct} w=${slot.offsetWidth} node=${slot.dataset.node}`,
     }).catch(() => {
       // 없는 label(홀이지만 코어 소유 child 아님 — 엔진 서피스 등)·비-macOS 는 무해.
