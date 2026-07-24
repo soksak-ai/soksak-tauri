@@ -1062,6 +1062,11 @@ pub fn webview_animate_bounds(
         m.insert(label.clone(), t);
         t
     };
+    #[cfg(debug_assertions)]
+    eprintln!(
+        "[animate-trace] {} start to=({x:.0},{y:.0},{w:.0},{h:.0}) dur={duration_ms}ms",
+        label
+    );
     #[cfg(target_os = "macos")]
     {
         use objc2::msg_send;
@@ -1071,6 +1076,8 @@ pub fn webview_animate_bounds(
             let view = pw.inner() as *mut AnyObject;
             let superview: *mut AnyObject = msg_send![view, superview];
             if superview.is_null() {
+                #[cfg(debug_assertions)]
+                eprintln!("[animate-trace] superview null — 미부착, 애니 불가");
                 return;
             }
             // AppKit 좌표(bottom-up) 변환 — set_position(LogicalPosition, top-down)과 동일 기하.
@@ -1105,8 +1112,46 @@ pub fn webview_animate_bounds(
             let animator: *mut AnyObject = msg_send![view, animator];
             let () = msg_send![animator, setFrameOrigin: objc2_foundation::NSPoint { x: sx, y: ns_y }];
             let () = msg_send![ctx_cls, endGrouping];
+            #[cfg(debug_assertions)]
+            eprintln!(
+                "[animate-trace] CA grouped: tf_null={} target_ns=({sx:.0},{ns_y:.0})",
+                tf.is_null()
+            );
         })
         .map_err(|e| e.to_string())?;
+        // 시각 보간 실측 — 중간 시점의 presentation layer 위치를 찍는다(model 은 즉시 목표값이
+        // 되므로 frame 으론 애니 여부를 판정할 수 없다). debug 빌드 전용 프로브.
+        #[cfg(debug_assertions)]
+        {
+            let app3 = app.clone();
+            let label3 = label.clone();
+            let mid = (duration_ms * 0.5) as u64;
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(mid.max(1)));
+                let _ = app3.clone().run_on_main_thread(move || {
+                    if let Some(wv3) = app3.get_webview(&label3) {
+                        let _ = wv3.with_webview(move |pw| unsafe {
+                            use objc2::msg_send;
+                            use objc2::runtime::AnyObject;
+                            let view = pw.inner() as *mut AnyObject;
+                            let layer: *mut AnyObject = msg_send![view, layer];
+                            if layer.is_null() {
+                                eprintln!("[animate-trace] mid: layer null");
+                                return;
+                            }
+                            let pres: *mut AnyObject = msg_send![layer, presentationLayer];
+                            let src: *mut AnyObject = if pres.is_null() { layer } else { pres };
+                            let pos: objc2_foundation::CGPoint = msg_send![src, position];
+                            let model_pos: objc2_foundation::CGPoint = msg_send![layer, position];
+                            eprintln!(
+                                "[animate-trace] mid: presentation=({:.0},{:.0}) model=({:.0},{:.0}) pres_null={}",
+                                pos.x, pos.y, model_pos.x, model_pos.y, pres.is_null()
+                            );
+                        });
+                    }
+                });
+            });
+        }
     }
     #[cfg(not(target_os = "macos"))]
     let _ = (sx, sy, sw, sh);
