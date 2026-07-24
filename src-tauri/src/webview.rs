@@ -1021,15 +1021,10 @@ pub fn webview_bounds(
         if let Ok(mut m) = RAW_BOUNDS.lock() {
             m.insert(label.clone(), (x, y, w, h));
         }
-        // 파라메트릭 위상 애니메이션 진행 중 — 위치 샘플은 CA 보간과 싸우므로 기록만 한다
-        // (종료 리컨사일이 최신 RAW_BOUNDS 를 확정 적용). 단 **크기는 즉시 적용**한다:
-        // DOM 슬롯 크기는 위상 t0 에 최종값으로 스냅되므로(FLIP 은 translate 전용) 크기를
-        // 리컨사일까지 미루면 그 차이가 빈 띠로 보였다 채워진다(실측 스크린샷). 크기는
-        // position 키패스 애니와 싸우지 않는다.
+        // 파라메트릭 위상 애니메이션 진행 중 — 추종 샘플은 위치·크기 모두 기록만 한다.
+        // 위치는 CA 소유, 크기는 t0 구동(webview_animate_bounds 의 dw/dh)이 이미 적용했다 —
+        // 여기서 매 샘플 크기를 또 적용하면 WebKit 재배치 폭풍이 위상 중 재발한다.
         if ANIMATING.lock().map(|m| m.contains_key(&label)).unwrap_or(false) {
-            let f = window_zoom_of(wv.window().label());
-            let (_, _, sw, sh) = scale_bounds((x, y, w, h), f);
-            let _ = wv.set_size(LogicalSize::new(sw, sh));
             return Ok(());
         }
         apply_child_bounds(&wv, &label, (x, y, w, h))?;
@@ -1050,6 +1045,8 @@ pub fn webview_animate_bounds(
     label: String,
     dx: f64,
     dy: f64,
+    dw: f64,
+    dh: f64,
     duration_ms: f64,
     easing: [f64; 4],
     elapsed_ms: f64,
@@ -1068,6 +1065,15 @@ pub fn webview_animate_bounds(
     let win = wv.window();
     let f = window_zoom_of(win.label());
     let (sdx, sdy) = (dx * f, dy * f);
+    // 크기 델타는 t0 에 1회 즉시 적용 — 슬롯이 t0 에 최종 크기로 스냅되는 것과 동기.
+    // (추종 루프에 맡기면 위상 에지 rAF 굶주림만큼 홀-child 크기 밴드가 노출된다 — #36.)
+    if dw.abs() > 0.5 || dh.abs() > 0.5 {
+        if let Ok(size) = wv.size() {
+            let scale = wv.window().scale_factor().unwrap_or(1.0);
+            let (cw, ch) = (size.width as f64 / scale, size.height as f64 / scale);
+            let _ = wv.set_size(LogicalSize::new(cw + dw * f, ch + dh * f));
+        }
+    }
     let token = {
         let mut m = ANIMATING.lock().map_err(|_| "animating lock".to_string())?;
         let t = m.get(&label).copied().unwrap_or(0) + 1;

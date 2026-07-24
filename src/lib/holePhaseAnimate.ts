@@ -49,8 +49,21 @@ let pendingFrame = 0;
 // 여러 커밋에 걸친다 — 실측: 커밋 간 var 갱신을 DOM 은 라이브로 타고 CA 는 박제돼 ~75px
 // 이탈)마다 키가 바뀌어 재구동된다. 같은 키 재커밋은 no-op.
 const issued = new Map<string, string>();
+// 직전 커밋의 슬롯 크기(viewId → w,h) — 위상 t0 의 크기 델타 산출용. 슬롯 크기는 위상
+// 시작 커밋에 이미 최종값이므로, "이전" 은 상시 갱신되는 이 맵에서만 얻을 수 있다.
+const lastSlotSize = new Map<string, { w: number; h: number }>();
 export function __clearHolePhaseIssued(): void {
   issued.clear();
+}
+
+/** 매 커밋 호출(모션 여부 무관) — 홀 슬롯 크기 장부 갱신. 위상 밖 크기 변화는 추종 루프가 처리한다. */
+export function noteHoleSlotSizes(): void {
+  for (const slot of Array.from(
+    document.querySelectorAll<HTMLElement>(".egroup-body-slot.hole-slot"),
+  )) {
+    const viewId = viewIdFromSlotNode(slot.dataset.node);
+    if (viewId) lastSlotSize.set(viewId, { w: slot.offsetWidth, h: slot.offsetHeight });
+  }
 }
 export function animateHoleChildrenToFinal(): void {
   if (pendingFrame) return; // 프레임당 1회(겹친 에지 합침) — 위상당 1회가 아니다
@@ -98,14 +111,23 @@ function sampleAndDrive(): void {
     // presentation 기준으로 이만큼만 더 가면 DOM 과 같은 점에 선다(Rust base=presentation).
     const live = translateXOf(cs.translate);
     const remaining = elapsedMs > 8 || Math.abs(live) >= 0.5 ? live : varOffset;
-    if (Math.abs(varOffset) < 0.5 && Math.abs(remaining) < 0.5) continue; // 무이동 위상
-    const key = `${railFlipPx}|${focusFlipPct}|${slot.offsetWidth}`;
+    // 크기 델타 — 슬롯은 t0 에 최종 크기로 스냅되므로 child 도 같은 델타를 t0 에 받아야
+    // 한다. 추종 루프에 맡기면 위상 에지의 rAF 굶주림(실측 100~240ms)만큼 홀-child
+    // 크기 불일치 밴드가 노출된다(#36). 이전 크기는 상시 장부(noteHoleSlotSizes)의 것.
+    const prev = lastSlotSize.get(viewId);
+    const dw = prev ? slot.offsetWidth - prev.w : 0;
+    const dh = prev ? slot.offsetHeight - prev.h : 0;
+    lastSlotSize.set(viewId, { w: slot.offsetWidth, h: slot.offsetHeight });
+    if (Math.abs(varOffset) < 0.5 && Math.abs(remaining) < 0.5 && !dw && !dh) continue; // 무이동 위상
+    const key = `${railFlipPx}|${focusFlipPct}|${slot.offsetWidth}x${slot.offsetHeight}`;
     if (issued.get(viewId) === key) continue; // 같은 t0 입력 — 이미 구동됨
     issued.set(viewId, key);
     void invoke("webview_animate_bounds", {
       label: browserLabel(viewId),
       dx: -remaining,
       dy: 0,
+      dw,
+      dh,
       durationMs: RAIL_TRAVEL_MS,
       easing: PHASE_EASING,
       elapsedMs,
