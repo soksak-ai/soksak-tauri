@@ -16,7 +16,6 @@ import {
 } from "../plugins/viewFocus";
 import { armSlotActivation } from "../lib/slotGesture";
 import { beginLayoutMotion, endLayoutMotion } from "../lib/layoutMotion";
-import { animateHoleChildrenToFinal } from "../lib/holePhaseAnimate";
 import { ViewTabs } from "./ViewTabs";
 import { computeSplitLayout, hitTestCells } from "../lib/splitLayout";
 import { useT } from "../i18n";
@@ -182,8 +181,6 @@ export const GroupArea = memo(function GroupArea({
   useLayoutEffect(() => {
     if (!focusLayoutTraveling) return;
     beginLayoutMotion();
-    // 홀 자식은 시작 에지에 최종 박스로 CA 구동(App 레일 주행과 동일 근거).
-    animateHoleChildrenToFinal();
     return () => endLayoutMotion();
   }, [focusLayoutTraveling]);
   const fromLayoutCells = useMemo(
