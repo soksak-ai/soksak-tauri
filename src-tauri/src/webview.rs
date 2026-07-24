@@ -727,7 +727,7 @@ pub fn webview_open(
         // 좀비일 수 있다(실사고: close 가 반쯤 진행된 라벨에 open 이 no-op → 영구 빈 홀,
         // visible/list 도 건강 오판). open 의 계약은 "호출하면 반드시 살아있는 child"다 —
         // 좀비면 잔재를 정리하고 아래에서 신규 생성한다. 검사·정리는 메인스레드 인라인.
-        if native_child_alive(&existing) {
+        if child_is_newborn(&label) || native_child_alive(&existing) {
             return Ok(());
         }
         #[cfg(debug_assertions)]
@@ -817,6 +817,11 @@ pub fn webview_open(
     let webview = window
         .add_child(builder, LogicalPosition::new(x, y), LogicalSize::new(w, h))
         .map_err(|e| e.to_string())?;
+    // 출생 기록 — 부착 완료 전 신생아를 생존 프로브(webview_alive/open 좀비 검사)가
+    // 좀비로 오판해 정리하는 자멸을 막는다(유예 NEWBORN_GRACE_MS).
+    if let Ok(mut m) = CHILD_BORN_AT.lock() {
+        m.insert(label.clone(), std::time::Instant::now());
+    }
     // 레이어 원칙: child 는 DOM(부모 창 메인 webview) 아래 — 생성 직후 z-순서 강하.
     #[cfg(target_os = "macos")]
     {
@@ -1385,6 +1390,21 @@ pub fn webview_stop(app: AppHandle, label: String) -> Result<(), String> {
     Ok(())
 }
 
+// child 생성 시각 장부 — 갓 생성된 view 는 창 부착이 다음 틱이라 생존 프로브가 좀비로
+// 오판한다(실사고: 이중 open 의 두 번째가 신생아를 정리해 영구 빈 홀). 유예 창 안의
+// 라벨은 무조건 살아있다고 답한다. webview_close 가 지운다.
+static CHILD_BORN_AT: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, std::time::Instant>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+const NEWBORN_GRACE_MS: u128 = 2_000;
+
+fn child_is_newborn(label: &str) -> bool {
+    CHILD_BORN_AT
+        .lock()
+        .ok()
+        .and_then(|m| m.get(label).map(|t| t.elapsed().as_millis() < NEWBORN_GRACE_MS))
+        .unwrap_or(false)
+}
+
 // native child 실물 생존 — 라벨 registry 생존과 별개로, view 가 실제 창에 부착돼 있는가.
 // 메인스레드 인라인(with_webview 동기 경로)이라 커맨드 문맥에서 동기적으로 판정된다.
 fn native_child_alive(wv: &tauri::Webview) -> bool {
@@ -1417,6 +1437,9 @@ fn native_child_alive(wv: &tauri::Webview) -> bool {
 // list/visible 은 registry 기준이라 좀비를 건강 오판한다 — 이 커맨드만이 실물을 답한다.
 #[tauri::command]
 pub fn webview_alive(app: AppHandle, label: String) -> bool {
+    if child_is_newborn(&label) {
+        return true; // 부착 전 신생아 — 좀비 아님
+    }
     app.get_webview(&label)
         .map(|wv| native_child_alive(&wv))
         .unwrap_or(false)
@@ -1553,6 +1576,9 @@ pub fn webview_close(app: AppHandle, label: String) -> Result<(), String> {
         wv.close().map_err(|e| e.to_string())?;
     }
     BOUNDS_VIS.lock().unwrap().remove(&label);
+    if let Ok(mut m) = CHILD_BORN_AT.lock() {
+        m.remove(&label);
+    }
     Ok(())
 }
 
