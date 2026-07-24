@@ -259,7 +259,7 @@ const ProjectPane = memo(function ProjectPane({
   // 위상 사실이 먼저 퍼져야 플러그인 재스냅 게이트가 선다(GroupArea FLIP 주석과 동일 근거).
   useLayoutEffect(() => {
     if (!railTraveling) return;
-    beginLayoutMotion("move");
+    beginLayoutMotion("move", undefined, "rail-travel");
     // 홀 자식은 시작 에지에 최종 박스로 CA 구동 — 추종 루프의 에지 굶주림(bounds-trace)을 우회.
     animateHoleChildrenToFinal();
     return () => endLayoutMotion("move");
@@ -402,7 +402,7 @@ const ProjectPane = memo(function ProjectPane({
         setLeftRailPlacement(project.id, { mode: "pin", station: next });
       };
       // 손 드래그도 레이아웃 모션 위상 — 자동 주행과 같은 신호(홀 클립·native 추종)를 받는다.
-      beginLayoutMotion("move");
+      beginLayoutMotion("move", undefined, "station-drag");
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
       document.body.style.cursor = "col-resize";

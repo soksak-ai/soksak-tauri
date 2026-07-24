@@ -80,11 +80,26 @@ export function isLayoutMotionActive(): boolean {
   return depth() > 0;
 }
 
-/** scope: 이 위상이 움직이는 뷰들의 viewId. 생략(undefined)=전역(모든 슬롯 이동). */
-export function beginLayoutMotion(kind: LayoutMotionKind, scope?: Iterable<string>): void {
+/** scope: 이 위상이 움직이는 뷰들의 viewId. 생략(undefined)=전역(모든 슬롯 이동).
+ *  sender: 발신자 식별(진단) — 전역 위상이 잘못 열릴 때 어느 begin 인지 즉답한다. */
+export function beginLayoutMotion(
+  kind: LayoutMotionKind,
+  scope?: Iterable<string>,
+  sender?: string,
+): void {
   counts[kind] += 1;
   scopes.push(scope ? new Set(scope) : null);
+  if (import.meta.env?.DEV && !scope && sender) lastGlobalSender = sender;
   syncEmit();
+}
+
+// 마지막 전역 begin 의 발신자(진단 관측면) — window.__lastGlobalMotionSender 로 노출.
+let lastGlobalSender = "";
+if (typeof window !== "undefined") {
+  Object.defineProperty(window, "__lastGlobalMotionSender", {
+    get: () => lastGlobalSender,
+    configurable: true,
+  });
 }
 
 export function endLayoutMotion(kind: LayoutMotionKind): void {

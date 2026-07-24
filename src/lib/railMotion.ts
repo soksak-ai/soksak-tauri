@@ -44,7 +44,10 @@ export function railTravelGeometry(
   if (exclusive) return { fromStation: targetStation, traveling: false };
   return {
     fromStation: presentation.station,
-    traveling: presentation.station !== targetStation,
+    // 동등 위치는 이동이 아니다 — station 은 재계산되는 float(cleanLines 위치)라 미세 오차가
+    // `!==` 를 참으로 만들어 유령 주행(레일 rect 픽셀 동일인데 전역 이동 위상 개시)을 열었다
+    // (실사고: 같은 그룹 내 탭 전환마다 모든 브라우저가 동결 펄스). 0.5 미만 = 무이동.
+    traveling: Math.abs(presentation.station - targetStation) >= 0.5,
   };
 }
 

@@ -81,3 +81,15 @@ describe("FLOW 레일 영역 인계", () => {
     ).toEqual({ fromStation: 100 / 3, traveling: false, rebase: true });
   });
 });
+
+describe("railTravelGeometry — 유령 주행 금지(ε 판정)", () => {
+  it("float 재계산 미세 오차는 이동이 아니다 — traveling=false", () => {
+    expect(
+      railTravelGeometry({ generation: 1, station: 68.81606765327696 }, 68.81606765327699, false)
+        .traveling,
+    ).toBe(false);
+  });
+  it("실이동(≥0.5)은 traveling=true", () => {
+    expect(railTravelGeometry({ generation: 1, station: 30 }, 68.8, false).traveling).toBe(true);
+  });
+});

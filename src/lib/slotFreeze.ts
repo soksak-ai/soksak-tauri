@@ -156,6 +156,11 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
             const vid = viewIdOf(slot);
             if (vid == null || !scope.has(vid)) continue; // 범위 밖 — 라이브 유지
           }
+          slot.dataset.freezeScope = scope == null ? "global" : `scoped:${scope.size}`; // 관측면
+          if (scope == null)
+            slot.dataset.freezeSender = String(
+              (window as unknown as { __lastGlobalMotionSender?: string }).__lastGlobalMotionSender ?? "?",
+            );
           freezeSlot(slot);
         }
         // 범위 축소 재발화(위상 겹침 해소 등)로 범위 밖이 된 동결은 즉시 해동한다.
