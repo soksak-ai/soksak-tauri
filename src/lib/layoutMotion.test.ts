@@ -12,42 +12,78 @@ import {
 } from "./layoutMotion";
 
 const emits: boolean[] = [];
+const payloads: { active: boolean; kinds: string[] }[] = [];
 vi.mock("../plugins/hooks", () => ({
-  emitPluginEvent: (_e: string, p: { active: boolean }) => emits.push(p.active),
+  emitPluginEvent: (_e: string, p: { active: boolean; kinds: string[] }) => {
+    emits.push(p.active);
+    payloads.push(p);
+  },
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: async () => {} }));
 
 afterEach(() => {
   emits.length = 0;
+  payloads.length = 0;
   __resetLayoutMotionForTest();
 });
 
 describe("layoutMotion — 레퍼카운트 에지 통지", () => {
   it("첫 begin 에만 true, 마지막 end 에만 false", () => {
-    beginLayoutMotion();
-    beginLayoutMotion(); // 겹침(드래그+주행)
-    endLayoutMotion();
-    endLayoutMotion();
+    beginLayoutMotion("move");
+    beginLayoutMotion("move"); // 겹침(주행 두 겹)
+    endLayoutMotion("move");
+    endLayoutMotion("move");
     expect(emits).toEqual([true, false]);
   });
 
   it("잉여 end 는 무시한다(음수 카운트 금지)", () => {
-    endLayoutMotion();
-    beginLayoutMotion();
-    endLayoutMotion();
+    endLayoutMotion("move");
+    beginLayoutMotion("move");
+    endLayoutMotion("move");
     expect(emits).toEqual([true, false]);
   });
 
   it("로컬 리스너도 같은 에지를 받고, 해지 후엔 받지 않는다", () => {
     const seen: boolean[] = [];
     const off = onLayoutMotion((a) => seen.push(a));
-    beginLayoutMotion();
-    beginLayoutMotion();
-    endLayoutMotion();
-    endLayoutMotion();
+    beginLayoutMotion("move");
+    beginLayoutMotion("move");
+    endLayoutMotion("move");
+    endLayoutMotion("move");
     expect(seen).toEqual([true, false]);
     off();
-    beginLayoutMotion();
+    beginLayoutMotion("move");
     expect(seen).toEqual([true, false]);
+  });
+});
+
+describe("layoutMotion — kind 축(move|resize)", () => {
+  it("페이로드 kinds 가 활성 종별을 싣는다", () => {
+    beginLayoutMotion("move");
+    expect(payloads[payloads.length - 1]).toEqual({ active: true, kinds: ["move"] });
+    endLayoutMotion("move");
+    expect(payloads[payloads.length - 1]).toEqual({ active: false, kinds: [] });
+  });
+
+  it("활성 중 종별 구성이 바뀌면 active:true 를 재발화한다(freeze 재평가 근거)", () => {
+    beginLayoutMotion("move");
+    beginLayoutMotion("resize"); // 주행 중 디바이더 개입
+    expect(payloads[payloads.length - 1]).toEqual({ active: true, kinds: ["move", "resize"] });
+    endLayoutMotion("resize");
+    expect(payloads[payloads.length - 1]).toEqual({ active: true, kinds: ["move"] });
+    endLayoutMotion("move");
+    expect(payloads[payloads.length - 1]).toEqual({ active: false, kinds: [] });
+  });
+
+  it("같은 종별 겹침은 재발화하지 않는다(중복 억제)", () => {
+    beginLayoutMotion("move");
+    beginLayoutMotion("move");
+    expect(payloads.length).toBe(1);
+  });
+
+  it("종별별 잉여 end 는 무시한다", () => {
+    beginLayoutMotion("move");
+    endLayoutMotion("resize"); // resize 는 시작된 적 없다
+    expect(payloads[payloads.length - 1]).toEqual({ active: true, kinds: ["move"] });
   });
 });

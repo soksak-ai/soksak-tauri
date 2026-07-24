@@ -124,8 +124,8 @@ let resizeDragActive = false;
 // resizeDragActive 가드 뒤에서만 호출되므로 시작/끝이 항상 짝을 이룬다.
 function emitResizeGesture(active: boolean): void {
   // 단일 진실 layoutMotion 으로 위임 — 드래그·주행·FLIP 이 겹쳐도 에지 짝이 보장된다.
-  if (active) beginLayoutMotion();
-  else endLayoutMotion();
+  if (active) beginLayoutMotion("resize");
+  else endLayoutMotion("resize");
 }
 
 // divider 안정 키(hover 강조 매칭용) — data-divider-key 로 노출, App 이 그 요소 rect 를 코어에 넘겨
@@ -181,10 +181,10 @@ export const GroupArea = memo(function GroupArea({
   // useEffect(페인트 후)면 reflow 재스냅이 최종 좌표로 먼저 적용돼 child 가 텔레포트한다(실측).
   useLayoutEffect(() => {
     if (!focusLayoutTraveling) return;
-    beginLayoutMotion();
+    beginLayoutMotion("move");
     // 홀 자식은 시작 에지에 최종 박스로 CA 구동(App 레일 주행과 동일 근거).
     animateHoleChildrenToFinal();
-    return () => endLayoutMotion();
+    return () => endLayoutMotion("move");
   }, [focusLayoutTraveling]);
   const fromLayoutCells = useMemo(
     () => computeLayout(focusLayoutFrom).cells,

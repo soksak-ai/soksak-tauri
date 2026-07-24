@@ -143,14 +143,14 @@ function useResizableWidth(
       window.removeEventListener("mouseup", onUp);
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
-      endLayoutMotion();
+      endLayoutMotion("resize");
       setW((cur) => {
         localStorage.setItem(key, String(cur));
         return cur;
       });
     };
     // 폭 드래그도 레이아웃 모션 위상(홀 클립·native 추종) — 사이드바·레일·우측 공통.
-    beginLayoutMotion();
+    beginLayoutMotion("resize");
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
     document.body.style.cursor = "col-resize";
@@ -247,10 +247,10 @@ const ProjectPane = memo(function ProjectPane({
   // 위상 사실이 먼저 퍼져야 플러그인 재스냅 게이트가 선다(GroupArea FLIP 주석과 동일 근거).
   useLayoutEffect(() => {
     if (!railTraveling) return;
-    beginLayoutMotion();
+    beginLayoutMotion("move");
     // 홀 자식은 시작 에지에 최종 박스로 CA 구동 — 추종 루프의 에지 굶주림(bounds-trace)을 우회.
     animateHoleChildrenToFinal();
-    return () => endLayoutMotion();
+    return () => endLayoutMotion("move");
   }, [railTraveling]);
   // 사이드바는 홀(브라우저 네이티브 표면) 위에 칠하지 않는다 — 상시 계약(사용자 규정:
   // 겹치면 언제나 사이드바가 브라우저 아래). DOM 표면은 z(레일 0 < 셀 1)로 성립하지만
@@ -353,14 +353,14 @@ const ProjectPane = memo(function ProjectPane({
         window.removeEventListener("mouseup", onUp);
         document.body.style.cursor = "";
         document.body.style.userSelect = "";
-        endLayoutMotion();
+        endLayoutMotion("move");
         setDragStation(null);
         // 드래그 착지는 주행 위상이 아니다 — 표시 기준점을 손 위치에 동기화한다.
         setRailPresentation((current) => ({ ...current, station: next }));
         setLeftRailPlacement(project.id, { mode: "pin", station: next });
       };
       // 손 드래그도 레이아웃 모션 위상 — 자동 주행과 같은 신호(홀 클립·native 추종)를 받는다.
-      beginLayoutMotion();
+      beginLayoutMotion("move");
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
       document.body.style.cursor = "col-resize";
