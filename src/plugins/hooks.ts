@@ -69,7 +69,7 @@ export interface PluginEventMap {
   // 동형의 레이아웃-내부 제스처 채널. 네이티브 표면 제공자(브라우저 플러그인)가 드래그 중
   // bounds 커밋을 유예하고 시각 연속 스탠드인(freeze-frame)을 띄우는 근거 신호. 발화는
   // GroupArea 디바이더 핸들러(실드래그·네이티브 브리지·E2E 합성 모두 같은 경로). 권한 불요.
-  "layout.resize-gesture": { active: boolean };
+  "layout.resize-gesture": { active: boolean; kinds?: ("move" | "resize")[] };
   // 콘텐츠 탭 전환 등으로 콘텐츠 슬롯이 파킹/언파킹된 뒤(코어 useLayoutEffect = React 커밋 후)
   // 코어가 발화한다 — 네이티브 webview 를 소유한 플러그인이 자기 앵커로 bounds 를 1회 재스냅하는
   // 신호. 위치 이동(크기 무변)이라 ResizeObserver 가 못 잡는 전환을 이 이벤트가 덮는다.
