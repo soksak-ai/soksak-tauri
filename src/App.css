@@ -490,20 +490,31 @@ body,
   transition: filter 160ms ease;
 }
 /* 네이티브 표면 셰이드 — 레이어 역전(DOM 최상위·엔진/child 웹뷰는 투명 홀로 아래에서 비침)
-   때문에 filter 는 네이티브 콘텐츠에 닿지 않는다. 슬롯 배경이 홀 위에 깔려 아래의 모든
-   네이티브 표면(CEF 오프스크린·웹뷰 child·astryx)을 균일하게 어둡힌다. DOM 뷰(터미널 등)는
-   자기 불투명 배경 뒤라 이중 적용 없음. 배경은 이벤트를 막지 않는다(클릭 관통 보장). */
-.egroup-area[data-focus-dim] .egroup-body-slot {
-  /* background 쇼트핸드+color-mix 는 이 WebKit 이 선언을 드롭한다(실측: computed 가
-     transparent — filter 는 같은 셀렉터로 적용되는데 배경만 죽음). 롱핸드로 고정. */
+   때문에 filter 는 네이티브 콘텐츠에 닿지 않는다. 셰이드는 슬롯 배경이 아니라 ::after(z4) —
+   동결 스탠드인(z3)보다 위의 라이브 계층이라, 스냅에 구워진 상태와 무관하게 현재 포커스를
+   따라 전이한다(배경이던 시절엔 스탠드인이 베일을 가려 스왑마다 포커스 인/아웃 플랩으로
+   보였다 — 실측). pseudo 는 히트테스트가 없어 클릭 관통이 보장된다. hole-slot 한정 —
+   DOM 뷰는 자기 불투명 배경 뒤라 filter 로 충분하다.
+   (background 쇼트핸드+color-mix 는 이 WebKit 이 선언을 드롭한다 — 롱핸드 고정.) */
+.egroup-area[data-focus-dim] .egroup-body-slot.hole-slot {
+  /* 스탠드인(img)이 filter 를 받으면 네이티브(베일만 받음)와 dim 강도가 어긋난다 —
+     홀 슬롯은 filter 제외, dim = ::after 베일 단일 축. */
+  filter: none;
+}
+.egroup-area[data-focus-dim] .egroup-body-slot.hole-slot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
   background-color: color-mix(in srgb, #000 7%, transparent);
-  transition: filter 160ms ease, background-color 160ms ease;
+  transition: background-color 160ms ease;
 }
 .egroup-area[data-focus-dim] .egroup-cell.spot-clear,
 .egroup-area[data-focus-dim] .egroup-body-slot.spot-clear {
   filter: none;
 }
-.egroup-area[data-focus-dim] .egroup-body-slot.spot-clear {
+.egroup-area[data-focus-dim] .egroup-body-slot.hole-slot.spot-clear::after {
   background-color: transparent;
 }
 /* [임시 — 결부 바탕 2안 비교 스위치] railFill 설정(none|faint) — 사용자 요청(① 빼기

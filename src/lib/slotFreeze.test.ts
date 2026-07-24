@@ -143,3 +143,22 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
     expect(slot.dataset.freeze).toBe("0");
   });
 });
+
+describe("slotFreeze — dim 상태 캡처 배제(포커스 장식 박제 금지)", () => {
+  it("focus-dim 이 걸린(비활성) 슬롯은 정착 캡처를 건너뛴다 — 청정 스냅만 굽는다", async () => {
+    const area = document.createElement("div");
+    area.className = "egroup-area";
+    area.setAttribute("data-focus-dim", "1");
+    document.body.appendChild(area);
+    const slot = makeSlot("v1");
+    area.appendChild(slot); // dim 대상(스팟 아님)
+    const f = build();
+    f.captureSettled();
+    await microtasks();
+    expect(slot.dataset.freezeSnapAt).toBeUndefined();
+    slot.classList.add("spot-clear"); // 활성(청정) — 이제 캡처된다
+    f.captureSettled();
+    await microtasks();
+    expect(slot.dataset.freezeSnapAt).toBeDefined();
+  });
+});

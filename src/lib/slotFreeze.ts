@@ -78,6 +78,10 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
       const w = Math.floor(r.right) - x;
       const h = Math.floor(r.bottom) - y;
       if (w < 2 || h < 2) continue;
+      // 포커스 장식 박제 금지 — dim 이 걸린(스팟 아닌) 슬롯의 창 픽셀엔 셰이드 베일이 구워져
+      // 있다. 그걸 스탠드인으로 쓰면 동결 중 라이브 dim 과 어긋나 "포커스 인/아웃" 플랩으로
+      // 보인다(실측). 청정(스팟) 상태의 스냅만 굽고, dim 은 라이브 계층(::after·filter)이 얹는다.
+      if (slot.closest("[data-focus-dim]") && !slot.classList.contains("spot-clear")) continue;
       // 화면 밖(파킹) 슬롯은 캡처 대상이 아니다 — 그 rect 의 창 픽셀은 남의 것이다.
       if (typeof window !== "undefined") {
         if (x + w <= 0 || y + h <= 0 || x >= window.innerWidth || y >= window.innerHeight) continue;
