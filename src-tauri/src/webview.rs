@@ -1021,10 +1021,122 @@ pub fn webview_bounds(
         if let Ok(mut m) = RAW_BOUNDS.lock() {
             m.insert(label.clone(), (x, y, w, h));
         }
+        // 파라메트릭 위상 애니메이션 진행 중 — 추종 루프의 중간 샘플은 CA 보간과 싸우므로
+        // 기록만 하고 적용하지 않는다(종료 리컨사일이 최신 RAW_BOUNDS 를 확정 적용).
+        if ANIMATING.lock().map(|m| m.contains_key(&label)).unwrap_or(false) {
+            return Ok(());
+        }
         apply_child_bounds(&wv, &label, (x, y, w, h))?;
     }
     Ok(())
 }
+
+// 위상 이동 파라메트릭 애니메이션 — 교차(레일 주행·FLIP 스왑)의 기하는 t0 에 전부 결정되므로,
+// 매 프레임 JS 샘플-복사 대신 DOM 과 같은 곡선(duration + cubic-bezier)을 CA 에 한 번 건네
+// 네이티브 컴포지터가 보간한다. 실측 근거: 추종 루프의 중반 케이던스는 60Hz 로 정상이지만
+// 위상 에지의 메인스레드 혼잡이 rAF 를 굶겨 머뭇→점프→늦은 스냅이 됐다(bounds-trace).
+// 애니는 현 모델값에서 목표로 — from 전달 불요. 진행 중 webview_bounds 는 기록만 된다(위 래치).
+#[tauri::command]
+pub fn webview_animate_bounds(
+    app: AppHandle,
+    label: String,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    duration_ms: f64,
+    easing: [f64; 4],
+) -> Result<(), String> {
+    let Some(wv) = app.get_webview(&label) else {
+        return Ok(());
+    };
+    if let Ok(mut m) = RAW_BOUNDS.lock() {
+        m.insert(label.clone(), (x, y, w, h));
+    }
+    let win = wv.window();
+    let f = window_zoom_of(win.label());
+    let (sx, sy, sw, sh) = scale_bounds((x, y, w, h), f);
+    let token = {
+        let mut m = ANIMATING.lock().map_err(|_| "animating lock".to_string())?;
+        let t = m.get(&label).copied().unwrap_or(0) + 1;
+        m.insert(label.clone(), t);
+        t
+    };
+    #[cfg(target_os = "macos")]
+    {
+        use objc2::msg_send;
+        use objc2::runtime::AnyObject;
+        let dur_s = (duration_ms / 1000.0).max(0.0);
+        wv.with_webview(move |pw| unsafe {
+            let view = pw.inner() as *mut AnyObject;
+            let superview: *mut AnyObject = msg_send![view, superview];
+            if superview.is_null() {
+                return;
+            }
+            // AppKit 좌표(bottom-up) 변환 — set_position(LogicalPosition, top-down)과 동일 기하.
+            let sup_frame: objc2_foundation::NSRect = msg_send![superview, frame];
+            let ns_y = sup_frame.size.height - (sy + sh);
+            let ctx_cls = objc2::runtime::AnyClass::get(c"NSAnimationContext").unwrap();
+            let tf_cls = objc2::runtime::AnyClass::get(c"CAMediaTimingFunction").unwrap();
+            let () = msg_send![ctx_cls, beginGrouping];
+            let ctx: *mut AnyObject = msg_send![ctx_cls, currentContext];
+            let () = msg_send![ctx, setDuration: dur_s];
+            let (c0, c1, c2, c3) = (
+                easing[0] as f32,
+                easing[1] as f32,
+                easing[2] as f32,
+                easing[3] as f32,
+            );
+            // functionWithControlPoints:::: 는 빈 선택자 조각이라 msg_send! 문법 밖 — sel! + send_message.
+            let tf: *mut AnyObject = objc2::runtime::MessageReceiver::send_message(
+                tf_cls,
+                objc2::sel!(functionWithControlPoints::::),
+                (c0, c1, c2, c3),
+            );
+            if !tf.is_null() {
+                let () = msg_send![ctx, setTimingFunction: tf];
+            }
+            // 크기 변화는 즉시(무애니) — 교차는 위치-전용이 사실상 전부(실측: w 토글 ±1px)라
+            // 크기 애니로 WebKit 재배치를 위상 동안 끌고 다니지 않는다.
+            let cur: objc2_foundation::NSRect = msg_send![view, frame];
+            if (cur.size.width - sw).abs() > 1.5 || (cur.size.height - sh).abs() > 1.5 {
+                let () = msg_send![view, setFrameSize: objc2_foundation::NSSize { width: sw, height: sh }];
+            }
+            let animator: *mut AnyObject = msg_send![view, animator];
+            let () = msg_send![animator, setFrameOrigin: objc2_foundation::NSPoint { x: sx, y: ns_y }];
+            let () = msg_send![ctx_cls, endGrouping];
+        })
+        .map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (sx, sy, sw, sh);
+    // 종료 리컨사일 — 애니 완료 후 최신 RAW_BOUNDS 를 확정 적용(모델·캐시 정합 + 늦은 목표 반영).
+    let app2 = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(duration_ms as u64 + 60));
+        let _ = app2.clone().run_on_main_thread(move || {
+            let still = ANIMATING
+                .lock()
+                .map(|m| m.get(&label).copied() == Some(token))
+                .unwrap_or(false);
+            if !still {
+                return;
+            }
+            if let Ok(mut m) = ANIMATING.lock() {
+                m.remove(&label);
+            }
+            let raw = RAW_BOUNDS.lock().ok().and_then(|m| m.get(&label).copied());
+            if let (Some(raw), Some(wv)) = (raw, app2.get_webview(&label)) {
+                let _ = apply_child_bounds(&wv, &label, raw);
+            }
+        });
+    });
+    Ok(())
+}
+
+// 위상 애니 진행 중인 child(label → 애니 토큰). 토큰은 후속 애니가 이전 리컨사일을 무효화한다.
+static ANIMATING: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, u64>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
 
 #[tauri::command]
 pub fn webview_navigate(app: AppHandle, label: String, url: String) -> Result<(), String> {

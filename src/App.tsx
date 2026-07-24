@@ -25,6 +25,7 @@ import {
   onLayoutMotion,
 } from "./lib/layoutMotion";
 import { applyRailHoleClip, trackRailHoleClip } from "./lib/railHoleClip";
+import { animateHoleChildrenToFinal } from "./lib/holePhaseAnimate";
 import {
   activeSessionViewId,
   startViewFocusSync,
@@ -240,6 +241,8 @@ const ProjectPane = memo(function ProjectPane({
   useEffect(() => {
     if (!railTraveling) return;
     beginLayoutMotion();
+    // 홀 자식은 시작 에지에 최종 박스로 CA 구동 — 추종 루프의 에지 굶주림(bounds-trace)을 우회.
+    animateHoleChildrenToFinal();
     return () => endLayoutMotion();
   }, [railTraveling]);
   // 사이드바는 홀(브라우저 네이티브 표면) 위에 칠하지 않는다 — 상시 계약(사용자 규정:
