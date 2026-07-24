@@ -243,20 +243,10 @@ const ProjectPane = memo(function ProjectPane({
   useLayoutEffect(() => {
     if (!railTraveling) return;
     beginLayoutMotion();
-    // 레일 자신도 pane 과 같은 FLIP 문법으로 활주한다: 최종 left 는 레이아웃이 소유하고,
-    // 출발선과의 차이만 되감기 변수로 주입(페인트 전) — CSS 가 같은 곡선으로 0 까지 보간.
-    const plane = railPlaneRef.current;
-    if (plane) {
-      const planeW = plane.getBoundingClientRect().width;
-      const flipPx = ((travelFrom - effectiveStation) / 100) * (planeW - sidebarW);
-      for (const el of Array.from(plane.querySelectorAll<HTMLElement>(".sidebar"))) {
-        el.style.setProperty("--rail-flip-x", `${flipPx}px`);
-      }
-    }
     // 홀 자식은 시작 에지에 최종 박스로 CA 구동 — 추종 루프의 에지 굶주림(bounds-trace)을 우회.
     animateHoleChildrenToFinal();
     return () => endLayoutMotion();
-  }, [railTraveling, travelFrom, effectiveStation, sidebarW]);
+  }, [railTraveling]);
   // 사이드바는 홀(브라우저 네이티브 표면) 위에 칠하지 않는다 — 상시 계약(사용자 규정:
   // 겹치면 언제나 사이드바가 브라우저 아래). DOM 표면은 z(레일 0 < 셀 1)로 성립하지만
   // 홀 뷰의 네이티브 표면은 DOM 전체 뒤라 클립 제외만이 유일한 방법이다(railHoleClip).
@@ -291,15 +281,14 @@ const ProjectPane = memo(function ProjectPane({
       return;
     }
     if (!railTraveling) return;
-    // 정착은 station 동기화만 — generation(=레이어 key)을 올리면 도착 순간 재마운트로
-    // 투영 내용이 순간이동한다(단일 표상 활주 계약 위반). key 는 rebase(좌표계 교체)만 바꾼다.
+    const nextGeneration = railPresentation.generation + 1;
     const t = window.setTimeout(
       () =>
-        setRailPresentation((current) => ({
-          generation: current.generation,
+        setRailPresentation({
+          generation: nextGeneration,
           station: effectiveStation,
           scopeId: railGeometryScope,
-        })),
+        }),
       RAIL_TRAVEL_MS,
     );
     return () => window.clearTimeout(t);
