@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { PHASE_EASING, viewIdFromSlotNode } from "./holePhaseAnimate";
+import { PHASE_EASING, phaseOffsetPx, viewIdFromSlotNode } from "./holePhaseAnimate";
 import { RAIL_TRAVEL_MS } from "./railMotion";
 
 describe("holePhaseAnimate — DOM 곡선 동조 계약", () => {
@@ -24,5 +24,12 @@ describe("holePhaseAnimate — DOM 곡선 동조 계약", () => {
     expect(viewIdFromSlotNode("layout/slot/v12")).toBe("v12");
     expect(viewIdFromSlotNode("layout/panel/g5")).toBeNull();
     expect(viewIdFromSlotNode(undefined)).toBeNull();
+  });
+
+  it("위상 오프셋 = rail-flip(px) + focus-flip(%)×슬롯폭 — 두 위상 합성", () => {
+    expect(phaseOffsetPx(224, 0, 720)).toBe(224);
+    expect(phaseOffsetPx(0, 50, 720)).toBe(360);
+    expect(phaseOffsetPx(-224, -50, 720)).toBe(-584);
+    expect(phaseOffsetPx(0, 0, 720)).toBe(0);
   });
 });

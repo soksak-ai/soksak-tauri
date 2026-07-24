@@ -3,6 +3,11 @@
 // 위상 에지의 메인스레드 혼잡에 rAF 가 굶어 머뭇→점프→늦은 스냅이 된다(bounds-trace 실측:
 // 중반 60Hz 정상, 에지 240ms 침묵). 그래서 시작 에지에 DOM 과 같은 곡선(duration+bezier)을
 // 네이티브(CA)에 한 번 건네 두 컴포지터가 같은 궤도를 병렬 주행하게 한다.
+//
+// 구동은 절대 박스가 아니라 **델타**다: 코어는 child 가 슬롯 안 어디에 앵커되는지(플러그인
+// 크롬 오프셋)를 모른다 — 절대 박스로 몰면 위상 동안 툴바 높이만큼 어긋난다(실측 28px).
+// child 목표 = 현 모델 위치 + (슬롯의 FLIP 이동량) 이며, 이동량의 단일 진실은 슬롯 자신의
+// FLIP 변수(--rail-flip-x px + --focus-flip-x %)다 — 두 위상 모두 이 변수로 표현된다.
 import { invoke } from "@tauri-apps/api/core";
 import { browserLabel } from "./webviewLabels";
 import { RAIL_TRAVEL_MS } from "./railMotion";
@@ -18,26 +23,21 @@ export function viewIdFromSlotNode(node: string | undefined): string | null {
 }
 
 /**
- * 무변환(레이아웃) 뷰포트 박스 — FLIP 의 translate 를 무시한 최종 자리. offset 축은
- * transform 을 모르므로, 슬롯의 offset 좌표 + (비변환) offsetParent 의 뷰포트 원점으로 얻는다.
+ * FLIP 변수 → 위상 시작 시점의 시각 오프셋(px). 키프레임은 translate(오프셋)→0 으로
+ * 되감으므로 child 가 최종 자리로 가려면 −오프셋 만큼 이동해야 한다(부호는 호출부가 적용).
  */
-export function untransformedViewportBox(
-  el: HTMLElement,
-): { x: number; y: number; w: number; h: number } | null {
-  const op = el.offsetParent as HTMLElement | null;
-  if (!op) return null; // display:none / 미부착
-  const base = op.getBoundingClientRect();
-  return {
-    x: base.left + el.offsetLeft,
-    y: base.top + el.offsetTop,
-    w: el.offsetWidth,
-    h: el.offsetHeight,
-  };
+export function phaseOffsetPx(
+  railFlipPx: number,
+  focusFlipPct: number,
+  slotWidthPx: number,
+): number {
+  return railFlipPx + (focusFlipPct / 100) * slotWidthPx;
 }
 
 /**
- * 위상 시작 에지 1회 호출 — 화면에 보이는 홀 슬롯의 네이티브 child 를 최종 박스로 CA 구동.
- * 파킹 슬롯(오프스크린/미표시)은 제외. 실패는 무해(추종 루프 + 종료 스냅이 정확성 그물).
+ * 위상 시작 에지 1회 호출 — 화면에 보이는 홀 슬롯의 네이티브 child 를 FLIP 델타만큼 CA 구동.
+ * 파킹 슬롯(오프스크린/미표시)·무이동 슬롯은 제외. 실패는 무해(추종 루프 + 종료 스냅이
+ * 정확성 그물).
  */
 export function animateHoleChildrenToFinal(): void {
   const vw = window.innerWidth;
@@ -49,14 +49,15 @@ export function animateHoleChildrenToFinal(): void {
     if (!viewId) continue;
     const now = slot.getBoundingClientRect();
     if (now.right <= 0 || now.bottom <= 0 || now.left >= vw || now.top >= vh) continue; // 파킹
-    const fin = untransformedViewportBox(slot);
-    if (!fin) continue;
+    const cs = getComputedStyle(slot);
+    const railFlipPx = parseFloat(cs.getPropertyValue("--rail-flip-x")) || 0;
+    const focusFlipPct = parseFloat(cs.getPropertyValue("--focus-flip-x")) || 0;
+    const offset = phaseOffsetPx(railFlipPx, focusFlipPct, slot.offsetWidth);
+    if (Math.abs(offset) < 0.5) continue; // 이 슬롯은 이동하지 않는 위상
     void invoke("webview_animate_bounds", {
       label: browserLabel(viewId),
-      x: fin.x,
-      y: fin.y,
-      w: fin.w,
-      h: fin.h,
+      dx: -offset,
+      dy: 0,
       durationMs: RAIL_TRAVEL_MS,
       easing: PHASE_EASING,
     }).catch(() => {

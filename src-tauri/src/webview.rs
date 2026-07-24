@@ -1035,27 +1035,24 @@ pub fn webview_bounds(
 // 매 프레임 JS 샘플-복사 대신 DOM 과 같은 곡선(duration + cubic-bezier)을 CA 에 한 번 건네
 // 네이티브 컴포지터가 보간한다. 실측 근거: 추종 루프의 중반 케이던스는 60Hz 로 정상이지만
 // 위상 에지의 메인스레드 혼잡이 rAF 를 굶겨 머뭇→점프→늦은 스냅이 됐다(bounds-trace).
-// 애니는 현 모델값에서 목표로 — from 전달 불요. 진행 중 webview_bounds 는 기록만 된다(위 래치).
+// 입력은 **델타**다: 코어는 child 가 슬롯 안 어디에 앵커되는지(플러그인 크롬)를 모른다 —
+// 절대 박스로 몰면 위상 동안 툴바 높이만큼 어긋난다(실측 28px). 목표 = 현 모델 위치 + 델타.
+// 진행 중 webview_bounds 는 기록만 된다(래치) — 종료 리컨사일이 최신 기록을 확정 적용한다.
 #[tauri::command]
 pub fn webview_animate_bounds(
     app: AppHandle,
     label: String,
-    x: f64,
-    y: f64,
-    w: f64,
-    h: f64,
+    dx: f64,
+    dy: f64,
     duration_ms: f64,
     easing: [f64; 4],
 ) -> Result<(), String> {
     let Some(wv) = app.get_webview(&label) else {
         return Ok(());
     };
-    if let Ok(mut m) = RAW_BOUNDS.lock() {
-        m.insert(label.clone(), (x, y, w, h));
-    }
     let win = wv.window();
     let f = window_zoom_of(win.label());
-    let (sx, sy, sw, sh) = scale_bounds((x, y, w, h), f);
+    let (sdx, sdy) = (dx * f, dy * f);
     let token = {
         let mut m = ANIMATING.lock().map_err(|_| "animating lock".to_string())?;
         let t = m.get(&label).copied().unwrap_or(0) + 1;
@@ -1063,10 +1060,7 @@ pub fn webview_animate_bounds(
         t
     };
     #[cfg(debug_assertions)]
-    eprintln!(
-        "[animate-trace] {} start to=({x:.0},{y:.0},{w:.0},{h:.0}) dur={duration_ms}ms",
-        label
-    );
+    eprintln!("[animate-trace] {label} start d=({dx:.0},{dy:.0}) dur={duration_ms}ms");
     #[cfg(target_os = "macos")]
     {
         use objc2::msg_send;
@@ -1080,9 +1074,12 @@ pub fn webview_animate_bounds(
                 eprintln!("[animate-trace] superview null — 미부착, 애니 불가");
                 return;
             }
-            // AppKit 좌표(bottom-up) 변환 — set_position(LogicalPosition, top-down)과 동일 기하.
-            let sup_frame: objc2_foundation::NSRect = msg_send![superview, frame];
-            let ns_y = sup_frame.size.height - (sy + sh);
+            let cur: objc2_foundation::NSRect = msg_send![view, frame];
+            // AppKit y 는 bottom-up — JS 의 아래(+dy)는 ns 에선 −.
+            let target = objc2_foundation::NSPoint {
+                x: cur.origin.x + sdx,
+                y: cur.origin.y - sdy,
+            };
             let ctx_cls = objc2::runtime::AnyClass::get(c"NSAnimationContext").unwrap();
             let tf_cls = objc2::runtime::AnyClass::get(c"CAMediaTimingFunction").unwrap();
             let () = msg_send![ctx_cls, beginGrouping];
@@ -1103,19 +1100,17 @@ pub fn webview_animate_bounds(
             if !tf.is_null() {
                 let () = msg_send![ctx, setTimingFunction: tf];
             }
-            // 크기 변화는 즉시(무애니) — 교차는 위치-전용이 사실상 전부(실측: w 토글 ±1px)라
-            // 크기 애니로 WebKit 재배치를 위상 동안 끌고 다니지 않는다.
-            let cur: objc2_foundation::NSRect = msg_send![view, frame];
-            if (cur.size.width - sw).abs() > 1.5 || (cur.size.height - sh).abs() > 1.5 {
-                let () = msg_send![view, setFrameSize: objc2_foundation::NSSize { width: sw, height: sh }];
-            }
             let animator: *mut AnyObject = msg_send![view, animator];
-            let () = msg_send![animator, setFrameOrigin: objc2_foundation::NSPoint { x: sx, y: ns_y }];
+            let () = msg_send![animator, setFrameOrigin: target];
             let () = msg_send![ctx_cls, endGrouping];
             #[cfg(debug_assertions)]
             eprintln!(
-                "[animate-trace] CA grouped: tf_null={} target_ns=({sx:.0},{ns_y:.0})",
-                tf.is_null()
+                "[animate-trace] CA grouped: tf_null={} from_ns=({:.0},{:.0}) target_ns=({:.0},{:.0})",
+                tf.is_null(),
+                cur.origin.x,
+                cur.origin.y,
+                target.x,
+                target.y
             );
         })
         .map_err(|e| e.to_string())?;
@@ -1154,7 +1149,7 @@ pub fn webview_animate_bounds(
         }
     }
     #[cfg(not(target_os = "macos"))]
-    let _ = (sx, sy, sw, sh);
+    let _ = (sdx, sdy);
     // 종료 리컨사일 — 애니 완료 후 최신 RAW_BOUNDS 를 확정 적용(모델·캐시 정합 + 늦은 목표 반영).
     let app2 = app.clone();
     std::thread::spawn(move || {
