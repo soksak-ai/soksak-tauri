@@ -14,6 +14,7 @@
 //  - 스냅 부재·낡음·크기 드리프트는 폴백 = 라이브 추종(동결 없음).
 //  - bounds 커밋은 이 계층과 무관하게 계속 흐른다(동결은 표현이지 정책이 아니다).
 import { HOLE_SLOT_SELECTOR } from "./railHoleClip";
+import { surfaceRectOf } from "./surfaceRect";
 
 interface SlotSnap {
   img: HTMLImageElement;
@@ -76,6 +77,9 @@ function viewIdOf(slot: HTMLElement): string | null {
   return id.length > 0 ? id : null;
 }
 
+/** 부동소수 잔재를 CSS 에 흘리지 않는다(0.7999999999999545px) — 0.01px 격자면 충분하다. */
+const cssPx = (n: number): string => `${Math.round(n * 100) / 100}px`;
+
 function holeSlots(root: ParentNode): HTMLElement[] {
   return Array.from(root.querySelectorAll<HTMLElement>(HOLE_SLOT_SELECTOR));
 }
@@ -104,11 +108,9 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
       const viewId = viewIdOf(slot);
       if (!viewId) continue;
       if (inFlight.has(slot) || frozen.has(slot)) continue;
-      const r = slot.getBoundingClientRect();
-      const x = Math.ceil(r.left);
-      const y = Math.ceil(r.top);
-      const w = Math.floor(r.right) - x;
-      const h = Math.floor(r.bottom) - y;
+      // 표면이 실제로 서 있는 정수 rect 를 캡처한다 — 슬롯의 분수 rect 를 캡처하면 표면 픽셀에
+      // 이웃 픽셀이 섞이고, 그 사진을 되돌려 놓을 자리도 없다(§4.6, surfaceRect 규칙).
+      const { x, y, w, h } = surfaceRectOf(slot.getBoundingClientRect());
       if (w < 2 || h < 2) continue;
       // 포커스 장식 박제 금지 — dim 이 걸린(스팟 아닌) 슬롯의 창 픽셀엔 셰이드 베일이 구워져
       // 있다. 그걸 스탠드인으로 쓰면 동결 중 라이브 dim 과 어긋나 "포커스 인/아웃" 플랩으로
@@ -145,16 +147,23 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
     const snap = snaps.get(slot);
     if (!snap || !fresh(snap)) return;
     const r = slot.getBoundingClientRect();
-    // 스냅 이후 슬롯 크기가 변했으면 세우지 않는다 — 늘어난 정지 사진은 박제다.
-    if (Math.abs(r.width - snap.w) > 2 || Math.abs(r.height - snap.h) > 2) return;
+    const surface = surfaceRectOf(r);
+    // 스냅 이후 표면 크기가 변했으면 세우지 않는다 — 늘어난 정지 사진은 박제다. 판정도 표면
+    // 규칙으로 한다(분수 슬롯 폭과 정수 스냅 폭을 섞어 재면 언제나 1px 어긋난 값이 나온다).
+    if (Math.abs(surface.w - snap.w) > 1 || Math.abs(surface.h - snap.h) > 1) return;
     const img = snap.img; // 정착 에지에서 디코드 완료 — append 즉시 페인트
     img.className = "slot-freeze-frame";
     // 관측 주소 — "스탠드인이 유일한 홀을 완전히 덮는다"가 표면 무숨김(§4.6-3)의 load-bearing
     // 가정이다. 히트테스트로는 확인할 수 없으므로(pointer-events:none) 주소를 주어 rect 를
     // 직접 재게 한다. 이 가정이 깨지면 활강 내내 표면이 스탠드인 위로 드러난다.
     img.dataset.node = `layout/standin/${viewId}`;
+    // 표면이 서 있던 그 자리에, 캡처한 그 크기로 — 1:1. 슬롯에 꽉 채우면(inset:0 + 100%)
+    // 분수 슬롯에서 사진이 늘어나고(리샘플) 표면이 없던 자리로 올라간다: 실측 상단 0.8px,
+    // 하단 2.6px 밀림이 동결 에지와 착지 에지에 각각 한 번씩 보인다. 캡처 픽셀은 늘리지 않고
+    // 온 자리에 그대로 되돌려 놓는다.
     img.style.cssText =
-      "position:absolute;inset:0;width:100%;height:100%;object-fit:fill;pointer-events:none;z-index:3;";
+      `position:absolute;left:${cssPx(surface.x - r.left)};top:${cssPx(surface.y - r.top)};` +
+      `width:${snap.w}px;height:${snap.h}px;pointer-events:none;z-index:3;`;
     slot.appendChild(img);
     frozen.set(slot, { img, viewId });
     slot.dataset.freeze = "1"; // 관측면(ui.hit)
@@ -194,6 +203,13 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
     if (!cur) return;
     frozen.delete(slot);
     slot.dataset.freeze = "0";
+    // 도착 자리의 접힘으로 다시 놓는다 — 스탠드인은 출발 자리의 ceil 잔차를 들고 미끄러졌고,
+    // 표면은 도착 자리의 잔차로 되살아난다. 분수부가 달라졌으면 교대하는 그 한 프레임에서
+    // 둘이 1px 어긋난다. 여기가 사용자가 실제로 보는 유일한 교대 프레임이다.
+    const lr = slot.getBoundingClientRect();
+    const land = surfaceRectOf(lr);
+    cur.img.style.left = cssPx(land.x - lr.left);
+    cur.img.style.top = cssPx(land.y - lr.top);
     // 해동 = 착지 신호. 소유자가 이 에지에 정확히 한 번 최종 rect 로 쓴다. 스탠드인은 그 쓰기가
     // 실제로 도착한 뒤 물러난다 — 시간으로 추측하면(옛 90ms 고정) 느린 사이드카 경로에서 홀이
     // 표면보다 먼저 열려 한 프레임이 빈다. 상한은 소유자가 끝내 쓰지 않는 경우의 바닥일 뿐이다.
@@ -213,10 +229,10 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
         if (!slot || !slot.isConnected) continue;
         const snap = snaps.get(slot);
         if (!snap || !fresh(snap)) return false;
-        // 크기 판정은 스냅을 구울 때와 같은 원천(bounding rect)으로 — 다른 원천을 섞으면
-        // 같은 슬롯을 두 기준이 다르게 재고, 세울 수 있는 스탠드인을 거절한다.
-        const r = slot.getBoundingClientRect();
-        if (Math.abs(r.width - snap.w) > 2 || Math.abs(r.height - snap.h) > 2) {
+        // 크기 판정은 스탠드인을 세울 때와 같은 규칙으로 — 다른 규칙을 섞으면 같은 슬롯을 두
+        // 기준이 다르게 재고, 세울 수 있는 스탠드인을 거절한다.
+        const surface = surfaceRectOf(slot.getBoundingClientRect());
+        if (Math.abs(surface.w - snap.w) > 1 || Math.abs(surface.h - snap.h) > 1) {
           return false;
         }
       }

@@ -1855,15 +1855,21 @@ export function buildPluginApi(
               w,
               h,
             }) as Promise<void>;
-            // 착지 쓰기 관측 — 코어가 자기 쓰기 경로에서 본다. 스탠드인은 이 사실 위에서
-            // 물러난다(시간으로 추측하면 느린 경로에서 홀이 표면보다 먼저 열린다). 사이드카가
-            // 자기 표면을 직접 옮기는 계열(CEF)은 이 경로를 지나지 않아 상한 바닥을 쓴다.
-            const viewId = browserViewIdFromLabel(label);
-            if (viewId) void applied.then(() => noteSurfaceWrite(viewId), () => {});
             return applied;
           },
-          visible: (label, visible, focus) =>
-            deps.invoke("webview_visible", { label, visible, focus }) as Promise<void>,
+          visible: (label, visible, focus) => {
+            const done = deps.invoke("webview_visible", {
+              label,
+              visible,
+              focus,
+            }) as Promise<void>;
+            // 착지 관측 — 스탠드인은 표면이 **제자리에 놓이고 다시 보이게 된 뒤**에 물러난다.
+            // bounds 쓰기만 보고 걷으면 표면이 아직 감춰진 채라 홀이 먼저 열려 배경이 한두
+            // 프레임 드러난다(소유자는 bounds → visible 순서로 부른다). 시간 추측은 하지 않는다.
+            const viewId = visible ? browserViewIdFromLabel(label) : null;
+            if (viewId) void done.then(() => noteSurfaceWrite(viewId), () => {});
+            return done;
+          },
           alive: (label) => deps.invoke("webview_alive", { label }) as Promise<boolean>,
           navigate: (label, url) =>
             deps.invoke("webview_navigate", { label, url }) as Promise<void>,

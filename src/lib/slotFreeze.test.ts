@@ -85,6 +85,54 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
     expect(veils).toEqual([["v1", true, false], ["v1", true, true]]);
   });
 
+  it("스탠드인은 표면이 서 있던 정수 rect 에 1:1 로 선다(분수 슬롯에서도 늘리지 않는다)", async () => {
+    // 홀 슬롯 rect 는 분수다(실측 340 / 632.2 / 866.42 / 416.78). 네이티브 표면은 창 좌표의
+    // 정수 픽셀에만 설 수 있어 소유자는 ceil/floor 로 접는다(340,633,866,415). 스탠드인을
+    // 슬롯 rect 에 꽉 채우면(inset:0 + 100%) 표면이 없던 0.8px 위에서 1.78px 늘어난 사진이
+    // 서고, 패널 하단에서 콘텐츠가 2.6px 밀린다 — 동결 에지와 착지 에지에 각각 한 번씩 보인다.
+    const slot = makeSlot("v1");
+    slot.getBoundingClientRect = () =>
+      ({
+        left: 340,
+        top: 632.2,
+        right: 1206.42,
+        bottom: 1048.98,
+        width: 866.42,
+        height: 416.78,
+      }) as DOMRect;
+    const f = build();
+    f.captureSettled();
+    await microtasks();
+    f.onMotion(true, ["move"]);
+    const standin = slot.querySelector<HTMLElement>("img.slot-freeze-frame")!;
+    expect(standin.style.left).toBe("0px"); // ceil(340) - 340
+    expect(standin.style.top).toBe("0.8px"); // ceil(632.2) - 632.2
+    expect(standin.style.width).toBe("866px"); // floor(1206.42) - 340
+    expect(standin.style.height).toBe("415px"); // floor(1048.98) - 633
+    // 늘림이 남아 있으면 리샘플이 일어난다 — 스탠드인은 캡처 픽셀을 그대로 되돌려 놓는다.
+    expect(standin.style.inset).toBe("");
+  });
+
+  it("착지 에지에 스탠드인을 도착 자리의 접힘으로 다시 놓는다(교대 프레임 정합)", async () => {
+    // 스탠드인은 동결 시점의 접힘(ceil 잔차)을 들고 미끄러진다. 표면은 도착 자리의 접힘으로
+    // 되살아난다 — 슬롯의 분수부가 여정 중에 바뀌면 교대하는 그 한 프레임에서 둘이 1px 어긋난다.
+    // 사용자가 보는 순간이 정확히 그 순간이므로, 걷기 직전에 도착 접힘으로 다시 놓는다.
+    const slot = makeSlot("v1");
+    slot.getBoundingClientRect = () =>
+      ({ left: 10.6, top: 10, right: 310.6, bottom: 210, width: 300, height: 200 }) as DOMRect;
+    const f = build();
+    f.captureSettled();
+    await microtasks();
+    f.onMotion(true, ["move"]);
+    const standin = slot.querySelector<HTMLElement>("img.slot-freeze-frame")!;
+    expect(standin.style.left).toBe("0.4px"); // ceil(10.6) - 10.6
+    // 도착 자리는 분수부가 다르다 — 표면은 여기서 ceil(120.2)=121 에 선다.
+    slot.getBoundingClientRect = () =>
+      ({ left: 120.2, top: 10, right: 420.2, bottom: 210, width: 300, height: 200 }) as DOMRect;
+    f.onMotion(false, []);
+    expect(standin.style.left).toBe("0.8px"); // ceil(120.2) - 120.2
+  });
+
   it("resize 가 끼면(단독·혼합) 동결하지 않는다", async () => {
     const slot = makeSlot("v1");
     const f = build();
