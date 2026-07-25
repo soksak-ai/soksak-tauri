@@ -238,6 +238,22 @@ export function moveOffsetPx(
 }
 
 /**
+ * 레일 자신의 이동량. 레일은 복도이면서 동시에 **하나뿐인 인스턴스**다 — 출발선·도착선에
+ * 표상을 둘 두면 도착 표상이 새로 마운트되고(접힘·스크롤·플러그인 내용 초기화) 사용자가 쓰던
+ * 쪽이 사라진다. 열려 있던 것이 접혀야 하고, 그것이 그대로 도착선에 서야 한다.
+ *
+ * 이동량은 셀과 같은 두 축이되 레일의 left 는 자기 폭을 스테이션 비율만큼 빼서 앉으므로
+ * (calc(s% - railW*s/100)) 레일 항이 -(Δs/100) 이다. 합성은 moveOffsetPx 한 곳에서 끝난다.
+ */
+export function railMoveAcross(
+  fromStation: number,
+  toStation: number,
+): ArrangementMove {
+  const d = fromStation - toStation;
+  return { id: "rail", dLeftPct: d, dRailUnits: -d / 100 };
+}
+
+/**
  * 장식 span(디바이더·드롭 표시)의 이동량. span 은 패널이 아니라 복도의 일부다 — 배열 교환에
  * 참여하지 않으므로 이동의 유일한 원천은 삽입 지점 변화이고, 레일을 관통하는 span 은 물리 gap
  * 까지 포함해 사상된다(패널 규칙과 구분).

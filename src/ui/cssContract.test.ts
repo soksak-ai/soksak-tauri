@@ -98,8 +98,14 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
     expect(sync!.selector).toContain(".egroup-divider.flip-move");
     expect(sync!.selector).toContain(".drop-ind-wrap.flip-move");
     expect(sync!.selector).not.toMatch(/\.egroup-divider\s*\{/);
-    // pane만 FLIP한다. 레일 표상은 출발·도착 그리드선에 정지해 있다.
-    expect(rules().find((r) => r.selector === ".sidebar.traveling")).toBeUndefined();
+    // 레일도 같은 대열이다. 이전 기준("레일 표상은 출발·도착 그리드선에 정지해 있다")은
+    // 표상을 둘 두는 것을 전제했고, 그 대가로 도착 표상이 새로 마운트돼 사용자가 쓰던
+    // 사이드바가 버려졌다(접힘·스크롤·플러그인 내용 초기화, 접을 때도 갓 마운트된 것이
+    // 접힘). 사용자 규정: 열려 있던 그 인스턴스가 접히고 그것이 도착선에 선다. 인스턴스가
+    // 하나면 여정은 평행이동뿐이고, 복도(패널 사이 간격)도 같은 곡선으로 보간되므로
+    // 화면에 보이는 결과는 두 표상 방식과 같다.
+    expect(sync!.selector).toContain(".sidebar.flip-move");
+    expect(sync!.selector).not.toMatch(/\.sidebar,/);
   });
 
   it("§5.1-F7 위상 클래스는 하나뿐이다 — 스위칭도 주행과 같은 한 위상이다", () => {

@@ -24,22 +24,41 @@ const SOCKET =
 // 픽스처 루트 — 고정 경로 재사용(멱등, /tmp 금지 규율). 창 폐쇄가 회수를 담당한다.
 const FIXTURE_ROOT = path.join(os.homedir(), ".soksak-e2e", "slot-freeze");
 
-let sock;
-let seq = 0;
-const pending = new Map();
-let rbuf = "";
-function connect() {
+// 소켓 클라이언트 — 연결마다 독립 봉투 큐. 둘 이상 열 수 있어야 한다: 녹화(window.record)는
+// 프레임 수만큼 응답을 붙잡으므로, 같은 연결로는 녹화 도중 위상을 태울 수 없다(실측: 활강이
+// 한 프레임도 안 찍히거나 이미 정착한 화면만 남았다). 카메라와 조작자는 다른 연결을 쓴다.
+function openClient() {
+  const state = { sock: null, seq: 0, pending: new Map(), buf: "" };
   return new Promise((resolve, reject) => {
-    sock = net.createConnection(SOCKET);
-    sock.setNoDelay(true);
-    sock.once("connect", resolve);
-    sock.once("error", reject);
-    sock.on("data", (d) => {
-      rbuf += d.toString("utf8");
+    state.sock = net.createConnection(SOCKET);
+    state.sock.setNoDelay(true);
+    state.sock.once("error", reject);
+    state.sock.once("connect", () =>
+      resolve({
+        rpc(method, params = {}, window) {
+          return new Promise((res, rej) => {
+            const id = ++state.seq;
+            state.pending.set(id, res);
+            const req = { id, method, params };
+            if (window) req.window = window;
+            state.sock.write(`${JSON.stringify(req)}\n`);
+            setTimeout(() => {
+              if (state.pending.has(id)) {
+                state.pending.delete(id);
+                rej(new Error(`TIMEOUT ${method}`));
+              }
+            }, 30000);
+          });
+        },
+        close: () => state.sock.destroy(),
+      }),
+    );
+    state.sock.on("data", (d) => {
+      state.buf += d.toString("utf8");
       let i;
-      while ((i = rbuf.indexOf("\n")) >= 0) {
-        const line = rbuf.slice(0, i);
-        rbuf = rbuf.slice(i + 1);
+      while ((i = state.buf.indexOf("\n")) >= 0) {
+        const line = state.buf.slice(0, i);
+        state.buf = state.buf.slice(i + 1);
         if (!line.trim()) continue;
         let msg;
         try {
@@ -47,31 +66,22 @@ function connect() {
         } catch {
           continue;
         }
-        const p = pending.get(msg.id);
+        const p = state.pending.get(msg.id);
         if (p) {
-          pending.delete(msg.id);
+          state.pending.delete(msg.id);
           p(msg);
         }
       }
     });
   });
 }
-// 요청 봉투(MESSAGE-PROTOCOL·multiwindow.mjs 와 동형): { id, method, params, window? }.
-function rpc(method, params = {}, window) {
-  return new Promise((resolve, reject) => {
-    const id = ++seq;
-    pending.set(id, resolve);
-    const req = { id, method, params };
-    if (window) req.window = window;
-    sock.write(`${JSON.stringify(req)}\n`);
-    setTimeout(() => {
-      if (pending.has(id)) {
-        pending.delete(id);
-        reject(new Error(`TIMEOUT ${method}`));
-      }
-    }, 15000);
-  });
+
+let primary;
+async function connect() {
+  primary = await openClient();
 }
+// 요청 봉투(MESSAGE-PROTOCOL·multiwindow.mjs 와 동형): { id, method, params, window? }.
+const rpc = (method, params, window) => primary.rpc(method, params, window);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function pollUntilGentle(label, deadlineMs, intervalMs, fn) {
   const t0 = Date.now();
@@ -231,14 +241,20 @@ async function main() {
       await sleep(40);
     }
     const slotNow = (await measure())?.rect;
+    // 기준은 슬롯 rect 가 아니라 **표면 rect** 다. 슬롯은 분수고(실측 866.42×416.78) 네이티브
+    // 표면은 정수 픽셀에만 선다(866×415) — 슬롯에 맞춰 늘린 스탠드인은 표면이 없던 자리에서
+    // 늘어난 사진이고, 실측으로 하단 콘텐츠가 2.6px 밀렸다. 스탠드인은 표면 자리에 1:1 로 선다.
+    const surf = slotNow
+      ? {
+          w: Math.floor(slotNow.x + slotNow.w) - Math.ceil(slotNow.x),
+          h: Math.floor(slotNow.y + slotNow.h) - Math.ceil(slotNow.y),
+        }
+      : null;
     assert(
-      "스탠드인 피복 — 활강 중 스탠드인이 홀 슬롯을 정확히 덮는다",
-      !!covered &&
-        !!slotNow &&
-        Math.abs(covered.w - slotNow.w) < 1.5 &&
-        Math.abs(covered.h - slotNow.h) < 1.5,
+      "스탠드인 정합 — 활강 중 스탠드인이 표면 rect 에 1:1 로 선다(늘리지 않는다)",
+      !!covered && !!surf && Math.abs(covered.w - surf.w) <= 1 && Math.abs(covered.h - surf.h) <= 1,
       covered
-        ? `standin=${JSON.stringify(covered)} slot=${JSON.stringify(slotNow)}`
+        ? `standin=${JSON.stringify(covered)} surface=${JSON.stringify(surf)} slot=${JSON.stringify(slotNow)}`
         : "동결 중 스탠드인 주소가 잡히지 않았다",
     );
     await sleep(600);
@@ -430,6 +446,36 @@ async function main() {
     }
   }
 
+  // 9.5) 절대 정합 — 델타 비교는 일정한 오프셋을 통과시킨다. 착지 후 네이티브 child 의
+  //      좌·우 경계가 슬롯의 그것과 같은 자리인지 절대값으로 잰다(가로는 오프셋이 없어야
+  //      한다 — 세로만 플러그인 크롬 높이만큼 다르다).
+  {
+    await rpc("view.activate", { view: browserView }, win);
+    await sleep(1100);
+    const slot = (await measure())?.rect;
+    const h = await rpc("window.layers", {}, win);
+    let child = null;
+    for (const line of String(h.data?.hierarchy ?? "").split("\n")) {
+      if (!line.includes("WryWebView") || line.includes("NSKVONotifying_")) continue;
+      const m = /frame=\((-?[\d.]+), (-?[\d.]+), (-?[\d.]+), (-?[\d.]+)\)/.exec(line);
+      if (!m) continue;
+      const [x, y, w, hh] = m.slice(1, 5).map(parseFloat);
+      if (Math.abs(w - slot.w) < 8 && (!child || Math.abs(w - slot.w) < Math.abs(child.w - slot.w)))
+        child = { x, y, w, h: hh };
+    }
+    // 슬롯의 분수 rect 를 표면 규칙(ceil-left / floor-right)으로 접은 것이 표면이 서야 할 자리다.
+    const sx = Math.ceil(slot.x);
+    const sw = Math.floor(slot.x + slot.w) - sx;
+    assert(
+      "절대 정합 — 착지한 표면이 접힌 표면 rect 에 정확히 선다(±1px)",
+      !!child && Math.abs(child.x - sx) <= 1 && Math.abs(child.w - sw) <= 1,
+      child
+        ? `child x=${child.x} w=${child.w} / surface x=${sx} w=${sw} (slot x=${slot.x} w=${slot.w})`
+        : "child 판독 실패",
+    );
+  }
+
+
   // 10) 행 불일치 스위칭 — 사용자가 규정한 예외 규칙의 라이브 증명. 아래를 둘로 나눠
   //     [위 1 / 아래 2] 를 만들고 아래 뒷쪽을 포커스하면, 그 패널이 앞으로 스위칭되고
   //     해가 만들어진 인접(switched)을 보고해야 한다(점선 봉합의 근거).
@@ -469,11 +515,15 @@ async function main() {
     await sleep(500);
     await rpc("view.activate", { view: browserView }, win);
     await sleep(900);
-    // 명령은 소켓에서 순차 처리된다 — 녹화를 먼저 걸면 activate 가 녹화가 끝날 때까지 대기해
-    // 활강이 한 프레임도 안 찍힌다(실측: 45프레임 전부 파티클 노이즈뿐). 위상을 먼저 태우고
-    // 곧바로 녹화한다: 상태 변경은 즉시 반환하고 CSS 활강은 그 뒤 340ms 동안 이어진다.
+    // 카메라를 먼저 돌리고 위상을 태운다 — 한 연결로는 불가능하다(녹화가 프레임 수만큼 응답을
+    // 붙잡는다). 위상을 먼저 태우고 녹화하면 카메라 준비 지연만큼 앞이 잘려 이미 정착한 화면만
+    // 남는다(실측 두 번). 카메라 = 별 연결, 조작자 = 주 연결.
+    const cam = await openClient();
+    const rec = cam.rpc("window.record", { dir, frames: 34, intervalMs: 16 }, win);
+    await sleep(220); // 카메라 준비(첫 프레임까지의 지연)
     await rpc("view.activate", { view: termView }, win);
-    const done = await rpc("window.record", { dir, frames: 34, intervalMs: 16 }, win);
+    const done = await rec;
+    cam.close();
     console.log(`  모션 프레임: ${done.data?.frames ?? "?"}장 → ${done.data?.dir ?? dir}`);
     await sleep(500);
   }
