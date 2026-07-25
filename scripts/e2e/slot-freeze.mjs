@@ -9,6 +9,10 @@
 //   3) 재캡처 — 사이클 뒤 freezeSnapAt 이 전진한다(착지 정착 에지가 다음 스냅을 굽는다)
 //   4) 포커스 보존 — 포커스 인/아웃 양쪽에서 슬롯 영역 스냅샷이 블랭크가 아니다
 //      (백지 판정 휴리스틱: 렌더된 영역의 PNG base64 는 블랭크보다 뚜렷이 크다)
+//   6) 해 == 관측 — layout.arrangement 의 답이 실측(ui.measure)과 같다
+//   7) 복도 계약 — 무관 포커스 변화의 허용 변화는 레일 복도의 railW 평행이동 하나뿐
+//      (가로지른 패널만 정확히 railW, 폭·y 불변, 가로지르지 않은 패널 0)
+//   8) 착지 일치 — 네이티브 child 이동량 == 슬롯 이동량(위상 중 표면 무이동 + 착지 1회의 결과)
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -117,6 +121,14 @@ async function main() {
   });
 
   try {
+  // 픽스처 루트의 영속 상태는 지난 실행이 남긴 것이다 — 패널이 없는 스페이스로 복원될 수
+  // 있으므로(중단된 실행의 잔재) 쓸 수 있는 평면을 보장한다. 멱등: 이미 패널이 있으면 무동작.
+  const panels = await rpc("panel.list", {}, win);
+  if (!panels.ok || !(panels.data?.panels ?? []).length) {
+    const made = await rpc("space.create", {}, win);
+    if (!made.ok) throw new Error(`스페이스 생성 실패: ${made.message}`);
+    await sleep(400);
+  }
   const bv = await rpc("view.open", { program: "browser" }, win);
   if (!bv.ok) throw new Error(`browser view.open 실패: ${bv.message}`);
   const browserView = bv.data?.viewId;
@@ -139,9 +151,34 @@ async function main() {
     return txt.includes("Example Domain") ? true : null;
   });
   console.log("✓ 페이지 신원 — example.com h1 확인");
-  const tv = await rpc("panel.split", { side: "right", program: "terminal" }, win);
+  // 터미널 프로그램 적재 대기 — 브라우저만 기다리고 분할하면 뷰 없는 빈 패널이 생겨
+  // 이후 활성 전환이 INVALID_PARAMS 로 떨어진다(하니스 레이스, 실측).
+  // 교차 활성 상대의 program id 는 목록에서 해소한다 — "terminal" 은 등록 id 가 아니라
+  // 엔진 별칭이고, 미등록 id 는 계약대로 빈 패널(뷰 없음)을 만든다. 그러면 이후 활성 전환이
+  // INVALID_PARAMS 로 떨어져 위상이 아예 서지 않는다(실측 — 하니스가 낡아 있었다).
+  const termProgram = await pollUntil("terminal 엔진 program id", 20000, async () => {
+    const progs = await rpc("program.list", {}, win);
+    const ids = (progs.data?.programs ?? []).map((p) => p.id);
+    return ids.find((id) => id.startsWith("terminal-")) ?? null;
+  });
+  const tv = await rpc("panel.split", { side: "right", program: termProgram }, win);
   if (!tv.ok) throw new Error(`panel.split 실패: ${tv.message}`);
   const termView = tv.data?.viewId;
+  if (!termView) throw new Error(`분할이 뷰를 만들지 못함: ${JSON.stringify(tv.data)}`);
+  // 분할 응답은 착지한 배치를 싣는다 — 변경 직후 퍼즐이 이미 풀려 있다는 계약.
+  assert(
+    "분할 응답에 배치 동봉(station·cleanLines)",
+    Number.isFinite(tv.data?.arrangement?.station) &&
+      Array.isArray(tv.data?.arrangement?.cleanLines),
+    JSON.stringify(tv.data?.arrangement ?? null),
+  );
+  // 배치를 명시한다 — 픽스처 루트에 영속된 옛 PIN 에 기대면 게이트가 환경에 따라 갈린다.
+  const flowSet = await rpc("sidebar.left.position", { mode: "flow" }, win);
+  assert(
+    "레일 배치 = flow(포커스 추종)",
+    flowSet.data?.leftRailPosition?.mode === "flow",
+    JSON.stringify(flowSet.data?.leftRailPosition ?? flowSet.message),
+  );
   const slotAddr = `win/${win}/chrome/layout/slot/${browserView}`;
 
   const measure = async () => {
@@ -160,7 +197,37 @@ async function main() {
   assert("정착 선캡처 — freezeSnapAt 존재", Number.isFinite(snapAt0), String(snapAt0));
 
   // 2) 동결 사이클 — 교차 활성이 move 위상을 태우고, 착지에서 해동돼 있어야 한다.
-  await rpc("view.activate", { view: termView }, win);
+  // 위상이 서지 않으면 원인을 즉시 판독할 수 있게 계기를 찍는다: 해(station)가 실제로
+  // 바뀌었는지, 그리드가 주행 위상에 들어갔는지, 슬롯이 동결 대상이었는지.
+  {
+    const spaceId = (await rpc("state.tree", {}, win)).data?.projects?.[0]?.activeSpaceId;
+    const before = await rpc("layout.arrangement", {}, win);
+    const act = await rpc("view.activate", { view: termView }, win);
+    console.log(
+      `  활성 전환: ok=${act.ok} code=${act.code} data=${JSON.stringify(act.data ?? null)} ` +
+        `before.cells=${JSON.stringify(before.data?.cells?.map((c) => [c.id, c.rect.left]))} ` +
+        `activePanel=${JSON.stringify((await rpc("panel.list", {}, win)).data?.activePanelId)}`,
+    );
+    const probes = [];
+    for (let i = 0; i < 12; i++) {
+      const grid = await rpc("ui.measure", { address: `win/${win}/chrome/layout/grid/${spaceId}` }, win);
+      const slot = await measure();
+      probes.push({
+        t: i,
+        traveling: grid.data?.dataset?.traveling,
+        freeze: slot?.dataset?.freeze,
+        scope: slot?.dataset?.freezeScope,
+        x: slot?.rect?.x,
+      });
+      if (probes.at(-1).freeze === "1") break;
+      await sleep(60);
+    }
+    const after = await rpc("layout.arrangement", {}, win);
+    console.log(
+      `  계기: station ${before.data?.station} → ${after.data?.station} · ` +
+        probes.map((q) => `${q.t}:trav=${q.traveling},frz=${q.freeze ?? "-"},x=${q.x}`).join(" | "),
+    );
+  }
   await sleep(700);
   await rpc("view.activate", { view: browserView }, win);
   const cycled = await pollUntil("동결 사이클(freeze=0)", 10000, async () => {
@@ -244,59 +311,88 @@ async function main() {
     }
   }
 
-  // 6) 기하 소유권 불변식 — 간접 사건(다른 뷰 포커스)은 브라우저 슬롯을 1px 도 못 움직인다.
-  // 근본 원칙(NATIVE-SURFACES §2): 네이티브 표면의 기하는 직접 조작으로만 변한다. 이 게이트가
-  // 깨지면 어떤 새 기능(레일 이주·투영·스왑)이 간접 이동을 재도입한 것이다 — 기능을 고쳐라.
+  // 6) 해 == 관측 — layout.arrangement 가 답한 셀 rect 가 실측 슬롯 rect 와 같은가.
+  //    소수점까지 본다(정수로 자르면 소수 변화가 숨는다).
   {
     await rpc("view.activate", { view: browserView }, win);
     await sleep(600);
-    const before = (await measure())?.rect;
-    for (let i = 0; i < 3; i++) {
-      await rpc("view.activate", { view: termView }, win);
-      await sleep(500);
-    }
-    const after = (await measure())?.rect;
-    const same =
-      before && after &&
-      Math.abs(before.x - after.x) < 1 && Math.abs(before.y - after.y) < 1 &&
-      Math.abs(before.w - after.w) < 1 && Math.abs(before.h - after.h) < 1;
+    const solved = await rpc("layout.arrangement", {}, win);
+    const cells = solved.data?.cells ?? [];
+    const railW = (await rpc("ui.measure", { address: `win/${win}/chrome/rail/left` }, win))
+      ?.data?.rect?.w;
     assert(
-      "기하 소유권 — 간접 포커스 사건에 브라우저 슬롯 부동",
-      !!same,
-      same ? "" : `${JSON.stringify(before)} → ${JSON.stringify(after)}`,
+      "해 조회 — 셀·station·레일 폭이 사실로 나온다",
+      cells.length >= 2 && Number.isFinite(solved.data?.station) && railW > 0,
+      JSON.stringify({ cells: cells.length, station: solved.data?.station, railW }),
     );
-  }
 
-  // 7) 시각 효과 소유권(런타임) — 무관 포커스 사건의 위상 중, 브라우저 슬롯의 합성 상태가
-  // 중립이어야 한다. 정적 게이트(visualEffectOwnership.test.ts)가 CSS 규칙을 막고, 이 게이트는
-  // 실제 계산값을 막는다: 위상마다 붙는 animation/will-change 가 레이어를 올렸다 내리며
-  // DOM(주소표시줄)을 움찔거린 실사고의 재발 금지.
-  {
-    await rpc("view.activate", { view: browserView }, win);
-    await sleep(600);
+    // 7) 복도 계약 — 무관 포커스 변화가 허용하는 기하 변화는 레일 복도의 railW 평행이동
+    //    하나뿐이다: 레일이 가로지른 패널만 정확히 railW 이동하고, 폭·높이·y 는 불변이며,
+    //    가로지르지 않은 패널은 0 이동. 그 밖의 어떤 이동도 결함이다.
+    const rectOf = async (view) => {
+      const m = await rpc("ui.measure", { address: `win/${win}/chrome/layout/slot/${view}` }, win);
+      return m.ok ? m.data.rect : null;
+    };
+    const b0 = await rectOf(browserView);
+    const t0r = await rectOf(termView);
     await rpc("view.activate", { view: termView }, win);
-    await sleep(60); // 위상 중 — 애니메이션이 붙었다면 지금 잡힌다
-    const m = await rpc(
-      "ui.measure",
-      { address: slotAddr, props: ["animationName", "willChange", "transform"] },
-      win,
-    );
-    const st = m.data?.style ?? {};
-    const neutral =
-      (st.animationName ?? "none") === "none" &&
-      (st.willChange ?? "auto") === "auto";
+    await sleep(900); // 340ms 주행 + 착지 스냅 여유
+    const b1 = await rectOf(browserView);
+    const t1r = await rectOf(termView);
+    const dx = Math.abs(b1.x - b0.x);
     assert(
-      "시각 효과 소유권 — 무관 위상 중 슬롯 합성 중립(anim/will-change)",
-      neutral,
-      neutral ? "" : `anim=${st.animationName} wc=${st.willChange}`,
+      "복도 계약 — 레일이 가로지른 브라우저만 railW 평행이동(폭·y 불변)",
+      Math.abs(dx - railW) < 1.5 &&
+        Math.abs(b1.w - b0.w) < 1 &&
+        Math.abs(b1.h - b0.h) < 1 &&
+        Math.abs(b1.y - b0.y) < 1,
+      `dx=${dx.toFixed(3)} railW=${railW} w=${b0.w}->${b1.w} y=${b0.y}->${b1.y}`,
     );
-    await sleep(500);
+    assert(
+      "복도 계약 — 가로지르지 않은 터미널은 전 축 0 이동",
+      Math.abs(t1r.x - t0r.x) < 1 &&
+        Math.abs(t1r.y - t0r.y) < 1 &&
+        Math.abs(t1r.w - t0r.w) < 1,
+      `${JSON.stringify(t0r)} → ${JSON.stringify(t1r)}`,
+    );
+
+    // 8) 착지 일치 — 네이티브 child 의 프레임 이동량이 슬롯 이동량과 같다. 위상 중 표면은
+    //    움직이지 않고 착지에서 한 번 놓이므로, 착지 후 둘은 정확히 같은 만큼 옮겨져 있어야
+    //    한다(오프셋 무관 델타 비교 — 플러그인 크롬 높이를 코어는 모른다).
+    // 브라우저 child 는 창의 네이티브 계층에서 WryWebView 로 선다(메인 웹뷰는 KVO 래핑된
+    // 전체 창 크기 항목이라 제외). 슬롯과 폭이 같은 항목이 그 child 다 — 높이는 플러그인
+    // 툴바만큼 짧고, 코어는 그 오프셋을 모르므로 폭으로 짚고 이동량(델타)만 비교한다.
+    const childX = async (slotW) => {
+      const h = await rpc("window.layers", {}, win);
+      const lines = String(h.data?.hierarchy ?? "").split("\n");
+      let best = null;
+      for (const line of lines) {
+        if (!line.includes("WryWebView") || line.includes("NSKVONotifying_")) continue;
+        const m = /frame=\((-?[\d.]+), (-?[\d.]+), (-?[\d.]+), (-?[\d.]+)\)/.exec(line);
+        if (!m) continue;
+        const [x, , w] = [parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3])];
+        const d = Math.abs(w - slotW);
+        if (d < 8 && (!best || d < best.d)) best = { x, d };
+      }
+      return best?.x ?? null;
+    };
+    const c1 = await childX(b1.w);
+    await rpc("view.activate", { view: browserView }, win);
+    await sleep(900);
+    const b2 = await rectOf(browserView);
+    const c2 = await childX(b2.w);
+    if (c1 == null || c2 == null) {
+      assert("착지 일치 — 네이티브 프레임 판독", false, `c1=${c1} c2=${c2} slotW=${b1.w}`);
+    } else {
+      const slotDelta = b2.x - b1.x;
+      const childDelta = c2 - c1;
+      assert(
+        "착지 일치 — 네이티브 child 이동량 == 슬롯 이동량(±1.5px)",
+        Math.abs(slotDelta - childDelta) < 1.5,
+        `slot=${slotDelta.toFixed(2)} child=${childDelta.toFixed(2)}`,
+      );
+    }
   }
-
-
-
-
-
 
   } finally {
   // ── 자기정리 — 실패 경로 포함 픽스처 창 폐쇄(멱등: 다음 실행은 새로 연다).

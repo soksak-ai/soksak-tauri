@@ -97,6 +97,25 @@ function asSurface(r: object): object {
   return out;
 }
 
+// 구조를 바꾼 명령의 응답에 착지한 배치를 실어 준다 — 호출자가 "어디로 정렬됐는지"를 알기 위해
+// 다시 조회할 필요가 없다(퍼즐은 변경 직후 이미 풀려 있다). 실패 응답에는 붙이지 않는다.
+function withArrangement(projectId: string, result: object): object {
+  const rec = result as Record<string, unknown>;
+  if (rec.ok === false || rec.code) return result;
+  const t = useSessions.getState().tabs.find((item) => item.id === projectId);
+  const solved = t ? projectArrangement(t) : null;
+  if (!solved) return result;
+  return {
+    ...rec,
+    arrangement: {
+      station: solved.station,
+      switched: solved.swapped,
+      cleanLines: solved.cleanLines,
+      cells: solved.cells.map((cell) => ({ id: cell.id, rect: cell.rect })),
+    },
+  };
+}
+
 interface Location {
   project: ProjectTab;
   content: ContentArea;
@@ -499,6 +518,49 @@ export function registerCatalog(): void {
     message: (d) => tmsg("msg.state.tree", { n: ((d.projects as unknown[]) ?? []).length }),
     examples: ["state.tree"],
     handler: () => serializeTree(),
+  });
+
+  // 배치의 해 — station·스위칭·이동량은 (그리드, 포커스)의 순수 함수이고, 이 명령은 그 해를
+  // 그대로 노출한다. 관측(ui.measure 실측)과 이 답을 대조하면 화면이 계약대로인지 판정된다.
+  // 배치를 직접 설정하는 명령은 두지 않는다 — 해는 트리와 포커스에서 나오므로 그것을 직접
+  // 쓰는 표면은 두 번째 진실이 된다(위치는 sidebar.left.position, 구조는 panel.* 이 소유).
+  register("layout.arrangement", {
+    description:
+      "The solved arrangement of the active space: the rail station, whether the focused panel was switched to the front (row-mismatch rule), the displayed cell rects, and the move list a focus change would produce. Read-only — the arrangement is a function of the split tree and the focus, so panel.*/sidebar.left.position are the ways to change it.",
+    triggers: {
+      ko: "배치 해 레일 스테이션 이동량 스위칭 정렬 계산 확인",
+    },
+    params: { project: P.project },
+    returns:
+      "{ projectId, spaceId, station, cleanLines[], switched, cells[].{id,rect,railSide}, movesFrom:{focusId, moves[].{id,dLeftPct,dRailUnits}} }",
+    message: (d) => tmsg("msg.layout.arrangement", { n: Number(d.station) }),
+    errors: ["TARGET_NOT_FOUND"],
+    examples: ["layout.arrangement"],
+    handler: (p, ctx) => {
+      const t = resolveProject(p, ctx);
+      if (!t) return notFound("프로젝트 없음");
+      const solved = projectArrangement(t);
+      if (!solved) return notFound("스페이스 없음");
+      const railOpen = t.sidebarOpen;
+      return {
+        projectId: t.id,
+        spaceId: t.activeContentId,
+        station: solved.station,
+        cleanLines: solved.cleanLines,
+        switched: solved.swapped,
+        railOpen,
+        cells: solved.cells.map((cell) => ({
+          id: cell.id,
+          rect: {
+            left: cell.rect.left,
+            top: cell.rect.top,
+            width: cell.rect.width,
+            height: cell.rect.height,
+          },
+          railSide: cell.rect.left >= solved.station - 0.01 ? "after" : "before",
+        })),
+      };
+    },
   });
 
   register("state.commands", {
@@ -1295,7 +1357,7 @@ export function registerCatalog(): void {
       side: { ...P.side, required: true },
       program: P.program,
     },
-    returns: "{ panelId(new panel), viewId, paneId? }",
+    returns: "{ panelId(new panel), viewId, paneId?, arrangement:{station,switched,cleanLines[],cells[]} }",
     message: () => tmsg("msg.panel.split"),
     errors: ["TARGET_NOT_FOUND"],
     hint: (d) => {
@@ -1315,12 +1377,15 @@ export function registerCatalog(): void {
     handler: (p, ctx) => {
       const loc = resolveGroup(p, ctx);
       if (!loc) return notFound("대상 패널 없음");
-      return asSurface(
-        S().splitWithNewView(
-          loc.project.id,
-          loc.group.id,
-          p.side as Side,
-          p.program as Program,
+      return withArrangement(
+        loc.project.id,
+        asSurface(
+          S().splitWithNewView(
+            loc.project.id,
+            loc.group.id,
+            p.side as Side,
+            p.program as Program,
+          ),
         ),
       );
     },
@@ -1341,12 +1406,15 @@ export function registerCatalog(): void {
     handler: (p, ctx) => {
       const loc = locateGroup(p.src as string) ?? resolveGroup(p, ctx);
       if (!loc) return notFound(`패널 없음: ${p.src}`);
-      return asSurface(
-        S().moveGroupToGroup(
-          loc.project.id,
-          p.src as string,
-          p.dst as string,
-          "center",
+      return withArrangement(
+        loc.project.id,
+        asSurface(
+          S().moveGroupToGroup(
+            loc.project.id,
+            p.src as string,
+            p.dst as string,
+            "center",
+          ),
         ),
       );
     },
@@ -1368,12 +1436,15 @@ export function registerCatalog(): void {
     handler: (p) => {
       const loc = locateGroup(p.src as string);
       if (!loc) return notFound(`패널 없음: ${p.src}`);
-      return asSurface(
-        S().moveGroupToGroup(
-          loc.project.id,
-          p.src as string,
-          p.dst as string,
-          p.zone as DropZone,
+      return withArrangement(
+        loc.project.id,
+        asSurface(
+          S().moveGroupToGroup(
+            loc.project.id,
+            p.src as string,
+            p.dst as string,
+            p.zone as DropZone,
+          ),
         ),
       );
     },
@@ -1391,7 +1462,10 @@ export function registerCatalog(): void {
     handler: (p) => {
       const loc = locateGroup(p.panel as string);
       if (!loc) return notFound(`패널 없음: ${p.panel}`);
-      return asSurface(S().closeGroup(loc.project.id, p.panel as string));
+      return withArrangement(
+        loc.project.id,
+        asSurface(S().closeGroup(loc.project.id, p.panel as string)),
+      );
     },
   });
 
