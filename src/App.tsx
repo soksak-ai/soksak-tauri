@@ -199,7 +199,21 @@ const ProjectPane = memo(function ProjectPane({
   // 배치 위상(§12-④) — pane 복도만 340ms 로 수축·확장하고 출발·도착 레일을 그 아래 바닥에 둔다.
   // 위상 추적은 이 훅 하나뿐이고, **화면에 무엇이 서 있는지도 위상이 소유한다**(주행 중 도착한
   // 해는 대기열에서 기다린다 — 표시를 즉시 갈면 달리는 애니메이션이 튄다).
-  const phase = useArrangementPhase(solved, railGeometryScope);
+  // 내용 identity — 패널별 뷰 구성. 위상은 기하만 붙잡으므로 내용 변화는 이 서명으로 알려
+  // 즉시 반영하게 한다(뷰 열림·닫힘·탭 전환이 화면에 안 나타나던 결함의 봉합점).
+  const contentKey = useMemo(
+    () =>
+      activeContent
+        ? allGroups(activeContent.layout)
+            .map(
+              (group) =>
+                `${group.id}:${group.activeViewId}:${group.views.map((v) => v.id).join("+")}`,
+            )
+            .join("|")
+        : "",
+    [activeContent],
+  );
+  const phase = useArrangementPhase(solved, railGeometryScope, contentKey);
   const arrangement = phase.displayed;
   const railCells = arrangement?.cells ?? [];
   const railCleanLines = arrangement?.cleanLines ?? [0, 100];

@@ -44,13 +44,15 @@ const solve = (layout: SplitTree<G>, focusId: string) =>
 function Probe({
   arrangement,
   scopeId,
+  contentKey = "",
   onPhase,
 }: {
   arrangement: Arrangement<G>;
   scopeId: string;
+  contentKey?: string;
   onPhase?: (rebase: () => void) => void;
 }) {
-  const phase = useArrangementPhase(arrangement, scopeId);
+  const phase = useArrangementPhase(arrangement, scopeId, contentKey);
   onPhase?.(phase.rebase);
   return (
     <div
@@ -58,6 +60,7 @@ function Probe({
       data-traveling={phase.traveling ? "1" : "0"}
       data-moves={phase.moves.map((m) => m.id).join(",")}
       data-station={String(phase.displayed?.station ?? "")}
+      data-content={String(phase.displayed === arrangement ? "live" : "stale")}
     />
   );
 }
@@ -156,6 +159,27 @@ describe("useArrangementPhase", () => {
     expect(el().dataset.station).toBe(String(solve(threeColumns, "a").station));
     act(() => vi.advanceTimersByTime(RAIL_TRAVEL_MS + 10));
     expect(el().dataset.traveling).toBe("0");
+  });
+
+  it("기하가 안 바뀌는 변화(뷰 추가·탭 전환)는 표시가 즉시 반영한다", () => {
+    // 표시의 주인이 위상이라면, 위상은 '기하'만 붙잡아야 한다. 내용 변화(패널에 뷰가 열림)를
+    // 기하 서명으로만 판정하면 표시가 옛 트리에 영구히 머물고 새 뷰가 화면에 나타나지 않는다
+    // (라이브 실증: view.open 이 v2 를 만들었는데 패널에 탭조차 없었다).
+    const at = solve(twoColumns, "a");
+    act(() =>
+      root.render(<Probe arrangement={at} scopeId={scopeOf(at)} contentKey="g1:v1|g2:v2" />),
+    );
+    expect(el().dataset.content).toBe("live");
+
+    // 같은 기하, 다른 내용 — 뷰가 하나 열렸다.
+    const same = solve(twoColumns, "a");
+    act(() =>
+      root.render(
+        <Probe arrangement={same} scopeId={scopeOf(same)} contentKey="g1:v1+v3|g2:v2" />,
+      ),
+    );
+    expect(el().dataset.content).toBe("live"); // 즉시 최신 해를 표시한다
+    expect(el().dataset.traveling).toBe("0"); // 기하는 안 움직였으니 여정도 없다
   });
 
   it("rebase 는 다음 해를 여정 없이 받는다 — 손 드래그 착지는 여정이 아니다", () => {
