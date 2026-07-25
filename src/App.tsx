@@ -82,9 +82,8 @@ import {
   railStationFromLeftPx,
   snapRailStation,
 } from "./lib/railPlacement";
-import { railGeometryScopeId } from "./lib/railMotion";
+import { railGeometryScopeId, railPresentationLayers } from "./lib/railMotion";
 import { useArrangementPhase } from "./components/useArrangementPhase";
-import { moveOffsetPx, railMoveAcross } from "./lib/railArrangement";
 import "./App.css";
 
 // 파일 경로를 셸·Claude Code 양쪽에서 안전하게: 영숫자와 안전문자 외에는 백슬래시
@@ -252,15 +251,15 @@ const ProjectPane = memo(function ProjectPane({
   // 불만이었다. 덮을 수 없으면 활강하지 않는다 — 즉시 스냅은 못생겨도 결코 추하지 않다.
   const railTraveling =
     dragStation === null && phase.traveling && canGlideViews(movingViewIds);
-  // 레일이 설 선 — 최종 배치를 먼저 확정하고(§12-④), 출발선과의 차이만 compositor translate 로
-  // 되감아 0 까지 보간한다. 패널·디바이더와 같은 곡선·같은 변수(--flip-x)·같은 합성 함수다.
-  const railFlipPx = railTraveling
-    ? moveOffsetPx(
-        railMoveAcross(phase.from?.station ?? renderedStation, renderedStation),
-        railPlaneRef.current?.offsetWidth ?? 0,
-        project.sidebarOpen ? sidebarW : 0,
-      )
-    : 0;
+  // 빠질 자리와 생길 자리 — 출발선 레이어는 서 있던 인스턴스(그것이 닫힌다), 도착선 레이어는
+  // 새것(그것이 열려 상주가 된다). 레일 자신은 평행이동하지 않는다: 패널이 덮고 드러내는 것이
+  // 곧 닫힘·열림이다(세대 전진은 착지에서만 — useArrangementPhase).
+  const railLayers = railPresentationLayers(
+    phase.generation,
+    phase.from?.station ?? renderedStation,
+    renderedStation,
+    railTraveling,
+  );
   // 위상 신호(§4.6) — 이동하는 표면을 코어가 스탠드인으로 덮는 근거. 위상 중 네이티브 표면은
   // 움직이지 않으므로(스탠드인이 시각을 전담) 여기서 네이티브를 구동하지 않는다.
   useLayoutEffect(() => {
@@ -427,74 +426,87 @@ const ProjectPane = memo(function ProjectPane({
                 } as React.CSSProperties
               }
             >
-              {/* 레일은 하나다. 출발선·도착선에 표상을 둘 두면 도착 표상이 새로 마운트돼
-                  사용자가 쓰던 사이드바(접힘·스크롤·플러그인 내용)가 버려지고, 접을 때도
-                  열려 있던 것 대신 갓 마운트된 것이 접힌다. 열려 있던 그 인스턴스가 접히고,
-                  그 인스턴스가 도착선에 선다 — 여정은 패널과 같은 FLIP 하나로 탄다. */}
-              <div
-                className={`sidebar rail-${railLook}${railTraveling ? " flip-move" : ""}`}
-                data-node="rail/left"
-                onMouseDown={(e) => {
-                  // §12-① 헤더 = 이동 손잡이 — 프레임 헤더 아무 곳이나 잡으면 스테이션 드래그.
-                  // 헤더 위 상호작용 컨트롤(버튼)은 제외.
-                  const t = e.target as HTMLElement;
-                  if (t.closest(".proj-frame-header") && !t.closest("button")) {
-                    startRailStationDrag(e);
+              {railLayers.map((layer) => (
+                <div
+                  // key = identity. 출발선 레이어는 서 있던 인스턴스의 key 를 그대로 받아
+                  // **원래 있던 그것이 닫힌다**. 도착선만 새 key 로 열리고, 착지에 상주 세대가
+                  // 그 key 로 전진해 재마운트 없이 상주가 된다(useArrangementPhase).
+                  key={layer.key}
+                  className={`sidebar rail-${railLook}`}
+                  // 빠지는 자리도 관측면이다 — 주소가 없으면 "원래 있던 것이 닫힌다"를 밖에서
+                  // 잴 방법이 없다. 상주·도착은 rail/left, 출발은 rail/left/leaving.
+                  data-node={layer.role === "source" ? "rail/left/leaving" : "rail/left"}
+                  data-rail-role={layer.role}
+                  aria-hidden={!layer.interactive || undefined}
+                  onMouseDown={
+                    layer.interactive
+                      ? (e) => {
+                          // §12-① 헤더 = 이동 손잡이 — 프레임 헤더 아무 곳이나 잡으면 스테이션 드래그.
+                          // 헤더 위 상호작용 컨트롤(버튼)은 제외.
+                          const t = e.target as HTMLElement;
+                          if (
+                            t.closest(".proj-frame-header") &&
+                            !t.closest("button")
+                          ) {
+                            startRailStationDrag(e);
+                          }
+                        }
+                      : undefined
                   }
-                }}
-                style={
-                  {
-                    left: `calc(${renderedStation}% - ${(sidebarW * renderedStation) / 100}px)`,
-                    width: project.sidebarOpen ? sidebarW : 0,
-                    borderLeftWidth: railEdgeWidths(
-                      railLook,
-                      project.sidebarOpen,
-                      renderedStation,
-                      paneStyle,
-                    ).left,
-                    borderRightWidth: railEdgeWidths(
-                      railLook,
-                      project.sidebarOpen,
-                      renderedStation,
-                      paneStyle,
-                    ).right,
-                    "--flip-x": `${railFlipPx}px`,
-                  } as React.CSSProperties
-                }
-              >
-                <LeftSidebarHost
-                  project={project}
-                  paneId={cwdPaneOf(project) ?? ""}
-                  commitProjection
-                />
-                {project.sidebarOpen && (
-                  <div className="left-rail-controls">
-                    <button
-                      type="button"
-                      className={`left-rail-pin${placement.mode === "pin" ? " active" : ""}`}
-                      title={
-                        placement.mode === "pin"
-                          ? "PIN 해제 — 포커스 추종"
-                          : "현재 위치에 PIN"
-                      }
-                      onClick={toggleRailPin}
-                    >
-                      <Icon
-                        name={placement.mode === "pin" ? "pin-filled" : "pin"}
-                        size="sm"
-                      />
-                    </button>
-                  </div>
-                )}
-                {project.sidebarOpen && (
-                  <div
-                    className="sidebar-resizer"
-                    data-native-drag
-                    onMouseDown={startResize}
-                    title="사이드바 폭 조절"
+                  style={
+                    {
+                      left: `calc(${layer.station}% - ${(sidebarW * layer.station) / 100}px)`,
+                      width: project.sidebarOpen ? sidebarW : 0,
+                      borderLeftWidth: railEdgeWidths(
+                        railLook,
+                        project.sidebarOpen,
+                        layer.station,
+                        paneStyle,
+                      ).left,
+                      borderRightWidth: railEdgeWidths(
+                        railLook,
+                        project.sidebarOpen,
+                        layer.station,
+                        paneStyle,
+                      ).right,
+                      pointerEvents: layer.interactive ? "auto" : "none",
+                    } as React.CSSProperties
+                  }
+                >
+                  <LeftSidebarHost
+                    project={project}
+                    paneId={cwdPaneOf(project) ?? ""}
+                    commitProjection={layer.commitProjection}
                   />
-                )}
-              </div>
+                  {project.sidebarOpen && layer.interactive && (
+                    <div className="left-rail-controls">
+                      <button
+                        type="button"
+                        className={`left-rail-pin${placement.mode === "pin" ? " active" : ""}`}
+                        title={
+                          placement.mode === "pin"
+                            ? "PIN 해제 — 포커스 추종"
+                            : "현재 위치에 PIN"
+                        }
+                        onClick={toggleRailPin}
+                      >
+                        <Icon
+                          name={placement.mode === "pin" ? "pin-filled" : "pin"}
+                          size="sm"
+                        />
+                      </button>
+                    </div>
+                  )}
+                  {project.sidebarOpen && layer.interactive && (
+                    <div
+                      className="sidebar-resizer"
+                      data-native-drag
+                      onMouseDown={startResize}
+                      title="사이드바 폭 조절"
+                    />
+                  )}
+                </div>
+              ))}
             </div>
           }
         >

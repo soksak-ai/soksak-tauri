@@ -26,7 +26,12 @@ export interface ArrangementPhase<L> {
   /** 실제로 움직이는 패널만. 비어 있으면 위상이 아니다. */
   moves: ArrangementMove[];
   traveling: boolean;
-  /** 레일 레이어 key — 위상마다 전진한다. */
+  /**
+   * 상주 레일의 identity(레일 레이어 key). **도착이 상주가 되는 순간에만** 전진한다 —
+   * 위상 시작에 전진시키면 출발선 레이어도 새 key 를 받아 서 있던 사이드바가 파괴되고
+   * 빠질 자리에 새것이 끼워져 그것이 닫힌다. 빠지는 자리는 원래 있던 게 닫히면 끝이다.
+   * 내용 변화·평면 변화도 전진시키지 않는다(레일은 프로젝트 것이고 재마운트할 이유가 없다).
+   */
   generation: number;
   /** 다음 해를 여정 없이 받아들인다(손 드래그 착지 — 이미 손이 옮겨 놓았다). */
   rebase: () => void;
@@ -94,7 +99,7 @@ export function useArrangementPhase<L extends { id: string }>(
     setPhase((p) => ({
       from: latest.current,
       displayed: latest.current,
-      generation: p.generation + 1,
+      generation: p.generation, // 여정이 아니다 — 상주 레일의 identity 는 그대로
       scopeId: latestScope.current,
       contentKey: latestContent.current,
     }));
@@ -138,7 +143,8 @@ export function useArrangementPhase<L extends { id: string }>(
     setPhase((p) => ({
       from: p.displayed,
       displayed: latest.current,
-      generation: p.generation + 1,
+      // 출발선 레이어 = 서 있던 인스턴스. 여기서 전진시키면 그 인스턴스가 파괴된다.
+      generation: p.generation,
       scopeId: latestScope.current,
       contentKey: latestContent.current,
     }));
@@ -158,7 +164,7 @@ export function useArrangementPhase<L extends { id: string }>(
         return {
           from: p.displayed,
           displayed: advances ? next : p.displayed,
-          generation: p.generation + 1,
+          generation: p.generation + 1, // 도착 레이어가 상주가 된다
           scopeId: latestScope.current,
           contentKey: latestContent.current,
         };

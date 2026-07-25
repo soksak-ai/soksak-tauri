@@ -68,6 +68,34 @@ arrangement in their reply; `layout.arrangement` reads it directly. There is
 no command that sets an arrangement — it is a function of the tree and the
 focus, so a setter would be a second truth.
 
+## 3.6 The Handoff — What Closes, What Opens
+
+A station change is two places, not one moving object: the place the rail leaves
+and the place it reaches. The panels do the revealing and the covering, so the
+rail representations never translate.
+
+| Place | Rule | Address |
+|---|---|---|
+| Leaving | The instance that was already standing closes there. Never insert a fresh one to close — its content, fold state and scroll are what the user was looking at. It keeps the projection it was holding (`commitProjection: false`), takes no input, and is reclaimed when the phase lands. | `rail/left/leaving` |
+| Reaching | A new instance opens on the arriving line with the current projection, and becomes the standing one when the phase lands — with no remount, because the resting key advances to the key it already has. | `rail/left` |
+
+The key contract carries this. `phase.generation` is the identity of the
+standing rail, and it advances **only when a journey lands** — never when one
+starts, and never on a content or plane change. Advance it at the start and both
+layers get fresh keys: the standing sidebar is destroyed, a newly mounted one is
+inserted where the rail should be leaving, and that one plays the close.
+
+What has to be continuous is the surface, not the object. Two instances are fine
+— they are corridors. But a projected view is mounted per corridor, so the
+arriving corridor renders a fresh provider mount: a view whose state lives in
+the mount opens blank, and blank is exactly what "replaced with a new one" looks
+like. A projected view keeps its state outside the mount, keyed by project and
+region, and tolerates being mounted in both corridors at once.
+
+`scripts/e2e/slot-freeze.mjs` gates the two places live: mid-travel one
+`rail/left` and one `rail/left/leaving` stand together, each holding a
+projection surface, and the leaving place is gone after the landing.
+
 ## 4. Commands and Events
 
 | Surface | Behavior |

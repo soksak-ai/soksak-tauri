@@ -476,6 +476,49 @@ async function main() {
   }
 
 
+  // 9.7) 레일 영역 인계 — 빠질 자리와 생길 자리. 규정: 빠지는 자리는 **원래 서 있던 것**이
+  //      닫히고(새것을 끼워넣지 않는다), 생기는 자리에 새것이 열린다. 이어져야 하는 것은
+  //      표면이므로 두 자리가 각자 투영 표면을 들고 있어야 한다 — 도착 자리가 빈 채로 열리면
+  //      그것이 "새것으로 교체"로 보인다. 주행 한복판에 투영 프레임 수와 x 를 직접 센다.
+  {
+    await rpc("view.activate", { view: browserView }, win);
+    await sleep(900);
+    const places = async () => {
+      const t = await rpc("ui.tree", {}, win);
+      const nodes = JSON.stringify(t.data ?? {});
+      const n = (re) => (nodes.match(re) ?? []).length;
+      return {
+        // 상주·도착 = rail/left, 빠지는 자리 = rail/left/leaving. nodePath 만 센다
+        // (address 가 같은 문자열을 한 번 더 싣는다).
+        standing: n(/"nodePath":"rail\/left"/g),
+        leaving: n(/"nodePath":"rail\/left\/leaving"/g),
+        // 표면 — 각 자리가 자기 투영 프레임을 들고 있어야 한다(빈 자리가 열리면 "교체"다).
+        surfaces: n(/"nodePath":"projection\/left\/frame\//g),
+      };
+    };
+    const resting = await places();
+    await rpc("view.activate", { view: termView }, win);
+    let during = { standing: 0, leaving: 0, surfaces: 0 };
+    for (let i = 0; i < 8; i++) {
+      const now = await places();
+      if (now.leaving > during.leaving) during = now;
+      if (during.leaving >= 1) break;
+    }
+    await sleep(900);
+    const landed = await places();
+    assert(
+      "레일 영역 인계 — 주행 중 빠질 자리와 생길 자리가 함께 서고 각자 표면을 든다",
+      resting.standing === 1 &&
+        resting.leaving === 0 &&
+        during.standing === 1 &&
+        during.leaving === 1 &&
+        during.surfaces >= 2 &&
+        landed.standing === 1 &&
+        landed.leaving === 0,
+      `정차=${JSON.stringify(resting)} 주행중=${JSON.stringify(during)} 착지=${JSON.stringify(landed)}`,
+    );
+  }
+
   // 10) 행 불일치 스위칭 — 사용자가 규정한 예외 규칙의 라이브 증명. 아래를 둘로 나눠
   //     [위 1 / 아래 2] 를 만들고 아래 뒷쪽을 포커스하면, 그 패널이 앞으로 스위칭되고
   //     해가 만들어진 인접(switched)을 보고해야 한다(점선 봉합의 근거).

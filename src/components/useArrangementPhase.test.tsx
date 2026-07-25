@@ -61,6 +61,7 @@ function Probe({
       data-moves={phase.moves.map((m) => m.id).join(",")}
       data-station={String(phase.displayed?.station ?? "")}
       data-content={String(phase.displayed === arrangement ? "live" : "stale")}
+      data-gen={String(phase.generation)}
     />
   );
 }
@@ -100,6 +101,38 @@ describe("useArrangementPhase", () => {
     expect(el().dataset.traveling).toBe("0");
     // 재배열이 떨군 입력 포커스는 착지 시점에 1회 재배달한다.
     expect(redeliverViewFocusIfLost).toHaveBeenCalledTimes(1);
+  });
+
+  it("세대(레일 key)는 도착이 상주가 되는 순간에만 전진한다 — 닫히는 레일은 서 있던 그것이다", () => {
+    // 세대는 레일 레이어의 React key 다. 위상 시작에 전진시키면 출발선 레이어도 새 key 를 받아
+    // **서 있던 사이드바가 파괴되고 빠질 자리에 새것이 끼워진다**(그것이 닫힌다). 사용자 규정:
+    // 빠지는 자리는 원래 있던 게 닫히면 끝이고, 새것은 생기는 자리에서만 열린다.
+    const at = solve(twoColumns, "a");
+    const to = solve(twoColumns, "b");
+    act(() => root.render(<Probe arrangement={at} scopeId={scopeOf(at)} />));
+    const standing = el().dataset.gen;
+
+    act(() => root.render(<Probe arrangement={to} scopeId={scopeOf(to)} />));
+    expect(el().dataset.traveling).toBe("1");
+    expect(el().dataset.gen).toBe(standing); // 출발선 레이어 = 서 있던 인스턴스
+
+    act(() => vi.advanceTimersByTime(RAIL_TRAVEL_MS + 10));
+    expect(Number(el().dataset.gen)).toBe(Number(standing) + 1); // 도착 레이어가 상주가 된다
+  });
+
+  it("내용 변화(뷰 열림·탭 전환)는 세대를 전진시키지 않는다 — 사이드바 재마운트 금지", () => {
+    const at = solve(twoColumns, "a");
+    act(() =>
+      root.render(<Probe arrangement={at} scopeId={scopeOf(at)} contentKey="v1" />),
+    );
+    const standing = el().dataset.gen;
+    act(() =>
+      root.render(
+        <Probe arrangement={solve(twoColumns, "a")} scopeId={scopeOf(at)} contentKey="v1,v2" />,
+      ),
+    );
+    expect(el().dataset.traveling).toBe("0");
+    expect(el().dataset.gen).toBe(standing);
   });
 
   it("같은 해가 다시 렌더돼도 주행하지 않는다(유령 위상 금지)", () => {
