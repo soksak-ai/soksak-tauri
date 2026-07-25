@@ -525,6 +525,36 @@ export const GroupArea = memo(function GroupArea({
   // 셀 좌표 — CSS 변수 4개만 전달하고 산수(calc)는 CSS 단일 규칙이 소유한다.
   // (좌표 문자열을 렌더마다 조립해 흩뿌리던 레거시 제거 — 치수 상수는 아래
   // 컨테이너에서 1회 주입되는 --header-h/--status-h/--pane-inset 이 단일 소스)
+  // FLIP 실이동 판정 — 위상 중이라도 델타 0인 요소는 애니메이션 대상이 아니다.
+  // 근거(실사고): focus-layout-traveling 하위 전체 선택자가 모든 슬롯에 animation +
+  // will-change: translate 를 걸어, 움직이지 않는 브라우저 슬롯까지 위상마다 합성 레이어
+  // 승격/해제를 겪었다 — 그 재래스터가 DOM(주소표시줄 포함)의 "움찔"로 보였다.
+  const flipMoves = (
+    rect: { left: number; top: number; width: number; height: number },
+    groupId?: string,
+  ): boolean => {
+    // 레일 주행 신호 = FLIP 시작선이 최종선과 다름(코어가 그 차이만 합성 이동한다).
+    const railTraveling = Math.abs(railTravelFrom - railStation) > 0.001;
+    if (!focusLayoutTraveling && !railTraveling) return false;
+    const fromRect = groupId
+      ? fromLayoutCells.find((cell) => cell.group.id === groupId)?.rect
+      : undefined;
+    const focusFlipX = fromRect ? ((fromRect.left - rect.left) / rect.width) * 100 : 0;
+    if (Math.abs(focusFlipX) > 0.05) return true;
+    if (railWidthPx > 0) {
+      const transition = projectRailCssTransition(
+        fromRect ?? rect,
+        railTravelFrom,
+        rect,
+        railStation,
+      );
+      const d =
+        (transition?.source.railLeft ?? 0) - (transition?.target.railLeft ?? 0);
+      if (Math.abs(d * railWidthPx) > 0.5) return true;
+    }
+    return false;
+  };
+
   const cellVars = (rect: {
     left: number;
     top: number;
@@ -617,7 +647,7 @@ export const GroupArea = memo(function GroupArea({
             key={`cell-${group.id}`}
             className={`egroup-cell${holeCell ? " cell-hole" : ""}${
               group.id === content.activeGroupId ? " spot-clear" : ""
-            }`}
+            }${flipMoves(rect, group.id) ? " flip-move" : ""}`}
             data-node={`layout/panel/${group.id}`}
             style={cellVars(rect, group.id)}
           >
@@ -741,7 +771,7 @@ export const GroupArea = memo(function GroupArea({
               // 전부 이 클래스 하나를 본다.
               className={`egroup-body-slot${isHoleView(view) ? " hole-slot" : ""}${
                 group.id === content.activeGroupId ? " spot-clear" : ""
-              }`}
+              }${flipMoves(slotRect, group.id) ? " flip-move" : ""}`}
               // 네이티브 클릭 판정용(App.tsx native-mousedown → elementFromPoint).
               data-group-id={group.id}
               data-project-id={projectId}

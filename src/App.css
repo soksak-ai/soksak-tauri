@@ -556,17 +556,22 @@ body,
   from { translate: calc(var(--rail-flip-x, 0px) + var(--focus-flip-x, 0%)) 0; }
   to { translate: 0 0; }
 }
-.content-body.rail-traveling .egroup-cell,
+/* 활강 애니메이션은 실제로 이동하는 요소에만 붙는다(GroupArea.flipMoves → .flip-move).
+   위상 하위 전체 선택은 델타 0 인 요소까지 animation + will-change 로 합성 레이어에
+   올렸다 내리며 위상마다 재래스터를 일으켰다 — 움직이지 않는 브라우저의 DOM(주소표시줄)
+   까지 "움찔"하던 실사고의 진원. 셀·슬롯은 클래스로 게이트하고, 셀 내부(frame)·보조
+   장식(drop-ind-wrap·divider)은 셀과 함께/무관하게 종전 규칙을 유지한다. */
+.content-body.rail-traveling .egroup-cell.flip-move,
 .content-body.rail-traveling .egroup-frame,
-.content-body.rail-traveling .egroup-body-slot,
+.content-body.rail-traveling .egroup-body-slot.flip-move,
 .content-body.rail-traveling .drop-ind-wrap,
 .content-body.rail-traveling .egroup-divider {
   animation: rail-flip-x var(--rail-travel-ms) cubic-bezier(0.4, 0, 0.2, 1);
   will-change: translate;
 }
-.egroup-area.focus-layout-traveling .egroup-cell,
+.egroup-area.focus-layout-traveling .egroup-cell.flip-move,
 .egroup-area.focus-layout-traveling .egroup-frame,
-.egroup-area.focus-layout-traveling .egroup-body-slot,
+.egroup-area.focus-layout-traveling .egroup-body-slot.flip-move,
 .egroup-area.focus-layout-traveling .drop-ind-wrap {
   animation: rail-flip-x var(--rail-travel-ms) cubic-bezier(0.4, 0, 0.2, 1);
   will-change: translate;
