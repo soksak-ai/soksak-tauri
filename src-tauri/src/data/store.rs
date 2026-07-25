@@ -418,7 +418,9 @@ pub fn put(
     )
     // 실패는 어느 단계인지와 함께 올린다 — "out of memory" 만으로는 레코드 쓰기인지 FTS 색인인지
     // 가릴 수 없어 진단이 추측이 된다(실측: 같은 문구가 두 단계에서 나와 원인 추적이 막혔다).
-    .map_err(|e| format!("records 쓰기: {e}"))?;
+    // 확장 코드까지 싣는다: SQLite 는 같은 문구를 메모리 부족과 층이 다른 실패(VFS·상한 초과)에
+    // 모두 쓴다 — 그 구분은 확장 코드로만 된다.
+    .map_err(|e| format!("records 쓰기: {e} ({e:?})"))?;
 
     if let Some(meta) = &meta {
         sync_fts(&tx, meta, ns, coll, &id, &doc, enc, &idx_fields)?;

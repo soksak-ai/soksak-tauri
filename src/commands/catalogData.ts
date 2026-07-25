@@ -183,16 +183,17 @@ export function registerDataCatalog(): void {
   // 안의 한도·메모리로만 가려진다(밖에서 파일을 열어 보면 판이 달라 답이 갈린다).
   register("data.stats", {
     description:
-      "Report the data store as the app's own SQLite sees it: version, heap limits, memory used and highwater, page cache settings, page/freelist counts, and how many indexes sit on the shared records table. Read-only. Use this when a store call answers out of memory — the limits and memory figures say what starved it.",
+      "Report the data store as the app's own SQLite sees it: the boot write-gate verdict, version, heap limits, memory used and highwater, page cache settings, page/freelist counts, and how many indexes sit on the shared records table. Read-only. Use this when a store call answers out of memory — bootGate says whether writes worked at startup, and the limits and memory figures say what starved it.",
     triggers: { ko: "데이터 저장소 상태 통계 메모리 한도" },
     params: {},
     returns:
-      "{ sqliteVersion, softHeapLimit, hardHeapLimit, memoryUsed, memoryHighwater, cacheSize, pageSize, pageCount, freelistCount, recordsIndexes }",
+      "{ bootGate, sqliteVersion, softHeapLimit, hardHeapLimit, memoryUsed, memoryHighwater, cacheSize, pageSize, pageCount, freelistCount, recordsIndexes }",
     message: (d) => tmsg("msg.data.stats", { n: Number(d.memoryUsed) }),
     errors: ["INTERNAL"],
     examples: ["data.stats"],
     handler: async () => {
       const s = await invoke<{
+        boot_gate: string;
         sqlite_version: string;
         soft_heap_limit: number;
         hard_heap_limit: number;
@@ -205,6 +206,7 @@ export function registerDataCatalog(): void {
         records_indexes: number;
       }>("data_stats");
       return {
+        bootGate: s.boot_gate,
         sqliteVersion: s.sqlite_version,
         softHeapLimit: s.soft_heap_limit,
         hardHeapLimit: s.hard_heap_limit,

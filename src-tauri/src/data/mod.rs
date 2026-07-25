@@ -97,6 +97,16 @@ pub fn open(path: &Path) -> Result<Connection, String> {
     init_base(&conn)?;
     // [M0] 부팅 시 FTS 정합 backstop(과거 비원자 put crash 의 orphan 청소). 멱등·저비용.
     store::reconcile_fts(&conn)?;
+    // 쓰기 게이트 — 위의 검사들은 전부 읽기라, 읽기는 성하고 쓰기만 무너진 저장소를 통과시킨다
+    // (실측: 조회·검색·백업은 되는데 모든 레코드 쓰기가 `out of memory`. 사용자에게는 저장이
+    // 조용히 실패하는 앱으로 보였다). 한 줄 써 보고 되돌린 뒤, 막혀 있으면 치유를 한 번 시도한다.
+    // 치유가 안 되면 부팅은 계속한다 — 읽기라도 살리는 편이 낫고, 실패는 쓰기마다 증거와 함께 뜬다.
+    // 판정만 남기고 고치지는 않는다 — 원인을 모르는 채 부팅마다 저장소를 자동으로 다시 쓰는 것은
+    // 증상 위에 얹는 우회다. 치유는 사람·에이전트가 부르는 명시적 표면(data.repair)이 소유한다.
+    match integrity::write_canary(&conn) {
+        Ok(()) => integrity::record_boot_gate("부팅 쓰기 정상"),
+        Err(why) => integrity::record_boot_gate(format!("부팅 쓰기 막힘: {why}")),
+    }
     Ok(conn)
 }
 

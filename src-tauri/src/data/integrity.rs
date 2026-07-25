@@ -148,9 +148,10 @@ pub fn repair(conn: &Connection) -> Result<Repair, String> {
 pub fn failure_evidence(conn: &Connection) -> String {
     let f = findings(conn);
     let head = f.first().cloned().unwrap_or_else(|| "없음".to_string());
+    let proc = process_memory_probe();
     match stats(conn) {
         Ok(s) => format!(
-            "진단 {}건(첫 항목: {head}) | SQLite {} 사용 {}B 최고 {}B 한도 soft {} hard {} | 페이지 {}x{} free {} | records 인덱스 {}",
+            "진단 {}건(첫 항목: {head}) | SQLite {} 사용 {}B 최고 {}B 한도 soft {} hard {} | 페이지 {}x{} free {} | records 인덱스 {} | {proc}",
             f.len(),
             s.sqlite_version,
             s.memory_used,
@@ -162,8 +163,66 @@ pub fn failure_evidence(conn: &Connection) -> String {
             s.freelist_count,
             s.records_indexes,
         ),
-        Err(e) => format!("진단 {}건(첫 항목: {head}) | 실황 실패: {e}", f.len()),
+        Err(e) => format!("진단 {}건(첫 항목: {head}) | 실황 실패: {e} | {proc}", f.len()),
     }
+}
+
+/// 프로세스가 정말 메모리를 못 받는가 — 한도와 실제 할당 가능 여부를 그 순간에 확인한다.
+///
+/// SQLite 의 `out of memory` 는 저장소가 아파서일 수도, 프로세스가 굶어서일 수도 있다. 그 둘은 사후에
+/// 구분할 수 없다(파일은 밖에서 열면 멀쩡하고, 프로세스는 이미 사라졌다). 그래서 실패한 자리에서
+/// 직접 재 본다: 한도가 걸려 있는가, 지금 64MiB 를 받을 수 있는가.
+fn process_memory_probe() -> String {
+    let lim = |res: libc::c_int| -> String {
+        let mut rl = libc::rlimit {
+            rlim_cur: 0,
+            rlim_max: 0,
+        };
+        if unsafe { libc::getrlimit(res, &mut rl) } == 0 {
+            if rl.rlim_cur == libc::RLIM_INFINITY {
+                "무제한".to_string()
+            } else {
+                format!("{}B", rl.rlim_cur)
+            }
+        } else {
+            "?".to_string()
+        }
+    };
+    // 64MiB 시험 할당 — 성공하면 프로세스는 굶지 않은 것이고, 그 `out of memory` 는 저장소 쪽 신호다.
+    const PROBE: usize = 64 * 1024 * 1024;
+    let got = {
+        let p = unsafe { libc::malloc(PROBE) };
+        if p.is_null() {
+            false
+        } else {
+            unsafe { libc::free(p) };
+            true
+        }
+    };
+    format!(
+        "프로세스 한도 DATA {} AS {} | 64MiB 시험할당 {}",
+        lim(libc::RLIMIT_DATA),
+        lim(libc::RLIMIT_AS),
+        if got { "성공" } else { "실패" }
+    )
+}
+
+/// 쓸 수 있는가 — 레코드 표에 한 줄 넣어 보고 되돌린다(남기지 않는다).
+///
+/// 읽기는 멀쩡하고 쓰기만 무너진 저장소가 실재한다(실측: 조회·검색·백업은 되는데 모든 레코드 쓰기가
+/// `out of memory`). 부팅 게이트(quick_check)도 전수 진단도 그것을 잡지 못했다 — 진단은 읽기이기
+/// 때문이다. 쓸 수 있는지는 써 봐야만 안다.
+pub fn write_canary(conn: &Connection) -> Result<(), String> {
+    conn.execute_batch(
+        "BEGIN IMMEDIATE;\
+         INSERT INTO records(ns,coll,scope,id,doc,created,updated,enc)\
+         VALUES('__canary__','__canary__','','probe','{}',0,0,0);\
+         ROLLBACK;",
+    )
+    .map_err(|e| {
+        let _ = conn.execute_batch("ROLLBACK;"); // 실패 지점에 따라 열려 있을 수 있다
+        e.to_string()
+    })
 }
 
 /// 아직 낫지 않았는가 — 진단이 문제를 보고하거나 진단 자체가 끝나지 못하면 낫지 않은 것이다.
@@ -200,6 +259,9 @@ fn reindex_each(conn: &Connection) -> Vec<String> {
 /// 지금 쓰는 메모리와 최고치, 페이지 캐시 설정, 그리고 SQLite 판(밖의 CLI 와 다르다).
 #[derive(Debug, serde::Serialize)]
 pub struct Stats {
+    /// 부팅 쓰기 게이트가 남긴 판정(관측면) — 게이트는 부팅 때 한 번 돌고 사라진다. 그 결과를
+    /// 읽을 수 없으면 "돌았는지" 조차 확인할 수 없어, 자가치유가 있었다고 주장만 하게 된다.
+    pub boot_gate: String,
     pub sqlite_version: String,
     pub soft_heap_limit: i64,
     pub hard_heap_limit: i64,
@@ -212,6 +274,23 @@ pub struct Stats {
     pub records_indexes: i64,
 }
 
+// 부팅 게이트 판정 보관 — 프로세스 1개당 1개. 게이트가 끝난 뒤에도 읽을 수 있어야 한다.
+static BOOT_GATE: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
+/// 부팅 게이트가 자기 판정을 남긴다.
+pub fn record_boot_gate(verdict: impl Into<String>) {
+    if let Ok(mut g) = BOOT_GATE.lock() {
+        *g = verdict.into();
+    }
+}
+
+fn boot_gate_verdict() -> String {
+    BOOT_GATE
+        .lock()
+        .map(|g| g.clone())
+        .unwrap_or_else(|_| "?".to_string())
+}
+
 pub fn stats(conn: &Connection) -> Result<Stats, String> {
     let one = |sql: &str| -> i64 {
         conn.query_row(sql, [], |r| r.get::<_, i64>(0))
@@ -221,6 +300,7 @@ pub fn stats(conn: &Connection) -> Result<Stats, String> {
         .query_row("SELECT sqlite_version()", [], |r| r.get(0))
         .map_err(|e| e.to_string())?;
     Ok(Stats {
+        boot_gate: boot_gate_verdict(),
         sqlite_version: version,
         soft_heap_limit: one("PRAGMA soft_heap_limit"),
         hard_heap_limit: one("PRAGMA hard_heap_limit"),
@@ -337,7 +417,15 @@ mod tests {
     #[ignore = "수동 진단 — SOKSAK_PROBE_DB 로 사본 경로를 준다"]
     fn probe_store_copy() {
         let path = std::env::var("SOKSAK_PROBE_DB").expect("SOKSAK_PROBE_DB 필요(사본 경로)");
-        let conn = Connection::open(&path).expect("사본 열기");
+        // SOKSAK_PROBE_OPEN=app 이면 앱과 같은 개방 절차(PRAGMA·부팅 게이트·스키마·FTS 정합)를 그대로
+        // 탄다 — 밖에서 파일만 열어 보는 것과 앱이 여는 것이 다르면 그 차이가 원인이기 때문이다.
+        let conn = if std::env::var("SOKSAK_PROBE_OPEN").as_deref() == Ok("app") {
+            println!("open: app(super::open)");
+            crate::data::open(std::path::Path::new(&path)).expect("앱 개방 절차")
+        } else {
+            println!("open: plain");
+            Connection::open(&path).expect("사본 열기")
+        };
         // 앱과 같은 조건으로 본다 — 개방 PRAGMA 가 다르면 답도 다르다(temp_store 가 특히 그렇다:
         // MEMORY 면 무거운 연산이 디스크로 흘리지 못하고 메모리만 요구한다).
         if let Ok(pragmas) = std::env::var("SOKSAK_PROBE_PRAGMAS") {
@@ -487,6 +575,29 @@ mod tests {
         let conn2 = Connection::open(&db).unwrap();
         let sick = failure_evidence(&conn2);
         assert!(!sick.contains("진단 0건"), "아픈 저장소는 문제를 싣는다: {sick}");
+    }
+
+    // 카나리는 성한 저장소에서 통과하고, 흔적을 남기지 않는다 — 부팅마다 도는 검사가 데이터를
+    // 남기면 그 자체가 오염이다.
+    #[test]
+    fn write_canary_passes_and_leaves_nothing() {
+        let db = scratch();
+        let conn = Connection::open(&db).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE records (ns TEXT NOT NULL, coll TEXT NOT NULL, scope TEXT NOT NULL,\
+             id TEXT NOT NULL, doc TEXT NOT NULL, created INTEGER NOT NULL, updated INTEGER NOT NULL,\
+             enc INTEGER NOT NULL DEFAULT 0, keyId TEXT, PRIMARY KEY(ns, coll, id));",
+        )
+        .unwrap();
+
+        write_canary(&conn).expect("성한 저장소는 쓸 수 있다");
+        let n: i64 = conn
+            .query_row("SELECT count(*) FROM records", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 0, "카나리는 흔적을 남기지 않는다");
+
+        // 두 번 돌려도 같다(멱등) — 부팅마다 도는 검사의 최소 조건.
+        write_canary(&conn).expect("두 번째도 통과");
     }
 
     #[test]
