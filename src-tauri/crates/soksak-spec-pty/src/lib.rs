@@ -64,6 +64,15 @@ pub const LOW_WATERMARK: usize = 500_000;
 
 /// Deliver once a batch reaches this size. A single read larger than this is
 /// delivered whole — a read is never split across deliveries.
+///
+/// It also sets the flow-ack cadence, because the consumer acks parsed bytes
+/// once its accumulator passes a threshold: while the delivery unit was ~1030 B
+/// the front needed five arrivals to reach its 5000-byte threshold, which is
+/// the recorded 20,512 acks per 100 MB. One delivery now clears that threshold
+/// on its own, so acks track deliveries one-for-one instead of outnumbering
+/// them. That only holds while several deliveries still fit inside the window
+/// slack — otherwise the reader stalls at the high mark waiting for an ack that
+/// a single coarse delivery has not yet earned. The test below pins that.
 pub const DELIVERY_BATCH_BYTES: usize = 64 * 1024;
 
 /// Forms delivery units out of reads. Deliberately free of clocks and threads:
@@ -477,6 +486,17 @@ mod tests {
         let held = batcher.take().expect("an open batch is always takeable");
         assert_eq!(held, b"$ ");
         assert!(!batcher.is_open(), "taking closes the batch");
+    }
+
+    /// 전달 단위가 창 여유를 여러 조각으로 나눠야 리더가 ack 를 기다리며 멈추지 않는다.
+    /// 단위를 키우다 이 관계를 깨면 처리량이 다시 ack 왕복에 묶인다.
+    #[test]
+    fn several_deliveries_fit_inside_the_flow_window_slack() {
+        let slack = HIGH_WATERMARK - LOW_WATERMARK;
+        assert!(
+            DELIVERY_BATCH_BYTES * 4 <= slack,
+            "delivery unit {DELIVERY_BATCH_BYTES} is too coarse for a {slack} B window slack — the reader would stall at the high mark waiting on one ack",
+        );
     }
 
     #[test]
