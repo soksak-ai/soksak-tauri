@@ -106,13 +106,66 @@ fn quote_ident(name: &str) -> String {
 /// 통째로 잃지 않는다 — 무엇을 봤고 무엇을 못 했는지 둘 다 싣는다.
 pub fn repair(conn: &Connection) -> Result<Repair, String> {
     let before = findings(conn);
-    let reindex_error = conn.execute_batch("REINDEX").err().map(|e| e.to_string());
+    let mut reindex_error = conn.execute_batch("REINDEX").err().map(|e| e.to_string());
+    if reindex_error.is_some() {
+        // 한 번에 전부 다시 만들기가 실패하면 인덱스를 하나씩 만든다 — 전체 실패는 저장소 전체를
+        // 못 고친다는 뜻이 아니다(하나가 걸리면 나머지도 함께 죽는다). 고칠 수 있는 것부터 고치고,
+        // 끝내 안 되는 인덱스만 이름으로 남긴다.
+        let stuck = reindex_each(conn);
+        reindex_error = if stuck.is_empty() {
+            None // 하나씩은 전부 성공 — 치유됐다
+        } else {
+            Some(format!("일괄 실패 후 개별 재작성도 실패: {}", stuck.join(", ")))
+        };
+    }
+    // 인덱스를 다시 만들어도 진단이 낫지 않으면 남은 것은 표 자체의 물리 상태다 — VACUUM 이
+    // 저장소를 논리 내용에서 통째로 다시 쓰고(행은 그대로) WAL 을 접는다. 인덱스 재작성이
+    // 닿지 못하는 층이라 여기서 한 번 더 올라간다. 실패하면 그 사유를 싣는다(삼키지 않는다).
+    let vacuum_error = if findings_are_unhealed(conn) {
+        conn.execute_batch("VACUUM;").err().map(|e| e.to_string())
+    } else {
+        None
+    };
+    if let Some(v) = vacuum_error {
+        reindex_error = Some(match reindex_error {
+            Some(r) => format!("{r} / VACUUM: {v}"),
+            None => format!("VACUUM: {v}"),
+        });
+    }
     let after = findings(conn);
     Ok(Repair {
         before,
         after,
         reindex_error,
     })
+}
+
+/// 아직 낫지 않았는가 — 진단이 문제를 보고하거나 진단 자체가 끝나지 못하면 낫지 않은 것이다.
+fn findings_are_unhealed(conn: &Connection) -> bool {
+    !findings(conn).is_empty()
+}
+
+/// 인덱스를 하나씩 재작성 — 실패한 인덱스 이름만 돌려준다(성공한 것은 조용하다).
+fn reindex_each(conn: &Connection) -> Vec<String> {
+    let names: Vec<String> = match conn
+        .prepare("SELECT name FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%'")
+        .and_then(|mut s| {
+            s.query_map([], |r| r.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()
+        }) {
+        Ok(v) => v,
+        Err(e) => return vec![format!("인덱스 목록 실패: {e}")],
+    };
+    let mut stuck = Vec::new();
+    for n in names {
+        if conn
+            .execute_batch(&format!("REINDEX {}", quote_ident(&n)))
+            .is_err()
+        {
+            stuck.push(n);
+        }
+    }
+    stuck
 }
 
 /// 저장소 실황 — 앱 **안의** SQLite 가 자기 상태를 답한다. 밖에서 파일을 열어 보는 것은 판이 달라
@@ -311,6 +364,36 @@ mod tests {
             t.elapsed()
         );
 
+        // FTS5 쓰기 — 실물에서 이 경로만 무너졌다(FTS 선언 컬렉션의 put 만 실패, 없는 것은 성공).
+        // 각 FTS 표에 DELETE+INSERT 를 넣어 보고(롤백) 어느 표가 무너지는지 지목한다.
+        let fts_tables: Vec<String> = conn
+            .prepare(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'fts\\_%' ESCAPE '\\' \
+                 AND name NOT LIKE '%\\_data' ESCAPE '\\' AND name NOT LIKE '%\\_idx' ESCAPE '\\' \
+                 AND name NOT LIKE '%\\_content' ESCAPE '\\' AND name NOT LIKE '%\\_docsize' ESCAPE '\\' \
+                 AND name NOT LIKE '%\\_config' ESCAPE '\\'",
+            )
+            .and_then(|mut s| {
+                s.query_map([], |r| r.get::<_, String>(0))?
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .unwrap_or_default();
+        for tbl in &fts_tables {
+            let _ = hw();
+            let t = std::time::Instant::now();
+            let sql = format!(
+                "BEGIN; DELETE FROM \"{tbl}\" WHERE rowid=999999999; \
+                 INSERT INTO \"{tbl}\"(rowid, text) VALUES(999999999, '프로브 probe text'); ROLLBACK;"
+            );
+            match conn.execute_batch(&sql) {
+                Ok(()) => println!("FTS 쓰기 {tbl}: ok | 최고 {:.1}MB | {:?}", hw(), t.elapsed()),
+                Err(e) => {
+                    let _ = conn.execute_batch("ROLLBACK;");
+                    println!("FTS 쓰기 {tbl}: 실패 {e} | 최고 {:.1}MB", hw());
+                }
+            }
+        }
+
         let _ = hw();
         let t = std::time::Instant::now();
         let r = repair(&conn).expect("치유 보고");
@@ -348,6 +431,19 @@ mod tests {
             per.iter().any(|p| p.starts_with("t:")),
             "손상을 가진 표를 지목한다: {per:?}",
         );
+    }
+
+    // 개별 재작성은 성한 저장소에서 아무 것도 남기지 않는다(전부 성공) — 그리고 손상 위에서도
+    // 고칠 수 있는 인덱스를 고친다. 전체 REINDEX 한 번의 성패로 치유를 끝내지 않는다.
+    #[test]
+    fn reindex_each_rebuilds_every_index() {
+        let db = scratch();
+        seeded(&db);
+        desync_index(&db);
+
+        let conn = Connection::open(&db).unwrap();
+        assert_eq!(reindex_each(&conn), Vec::<String>::new(), "전부 다시 만들어진다");
+        assert_eq!(check(&conn).unwrap(), Vec::<String>::new(), "손상이 사라진다");
     }
 
     #[test]

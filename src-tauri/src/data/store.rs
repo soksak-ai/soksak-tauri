@@ -416,7 +416,9 @@ pub fn put(
          ON CONFLICT(ns,coll,id) DO UPDATE SET scope=excluded.scope, doc=excluded.doc, updated=excluded.updated, enc=excluded.enc, keyId=excluded.keyId",
         (ns, coll, scope, &id, &doc_s, now, enc, &key_id),
     )
-    .map_err(|e| e.to_string())?;
+    // 실패는 어느 단계인지와 함께 올린다 — "out of memory" 만으로는 레코드 쓰기인지 FTS 색인인지
+    // 가릴 수 없어 진단이 추측이 된다(실측: 같은 문구가 두 단계에서 나와 원인 추적이 막혔다).
+    .map_err(|e| format!("records 쓰기: {e}"))?;
 
     if let Some(meta) = &meta {
         sync_fts(&tx, meta, ns, coll, &id, &doc, enc, &idx_fields)?;
@@ -446,10 +448,10 @@ fn sync_fts(
             (ns, coll, id),
             |r| r.get(0),
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| format!("FTS rowid 조회: {e}"))?;
     let tbl = fts_table(meta.cid);
     tx.execute(&format!("DELETE FROM {tbl} WHERE rowid=?1"), [rowid])
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| format!("FTS 삭제({tbl}): {e}"))?;
     let fts_fields: Vec<String> = if enc == 1 {
         meta.fts
             .iter()
@@ -461,11 +463,12 @@ fn sync_fts(
     };
     let text = fts_text(doc, &fts_fields);
     if !text.is_empty() {
+        let chars = text.chars().count();
         tx.execute(
             &format!("INSERT INTO {tbl}(rowid, text) VALUES(?1, ?2)"),
             (rowid, text),
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| format!("FTS 색인({tbl}, {chars}자): {e}"))?;
     }
     Ok(())
 }
