@@ -63,6 +63,11 @@ struct ProcessSession {
     // 파이프 소유자(그 창의 플러그인 런타임)가 사라지는데 파이프 자체는 앱이 계속 쥐고 있어
     // 자식에 EOF 가 가지 않는다 — 창 단위 회수가 없으면 침묵 좀비다.
     window: String,
+    // 무엇을 돌리는가(해석된 실행 파일 + args). 목록 표면이 없으면 앱이 낳은 자식은 밖에서
+    // 보이지 않는다 — 고아가 생겨도 아무도 모른다. 그래서 세션이 제 신원을 들고 있는다.
+    cmd: String,
+    // OS pid. 핸들 id(작은 카운터)와 다르다 — 둘을 혼동하면 "그 프로세스 살아있나" 를 물을 수 없다.
+    pid: u32,
 }
 
 #[derive(Default)]
@@ -337,6 +342,7 @@ pub fn process_spawn(
     let stdin = child.stdin.take();
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
+    let child_pid = child.id();
     let child = Arc::new(Mutex::new(child));
 
     // stderr reader — 스트리밍. Channel 죽으면 drain 으로 계속 비운다(자식 stderr 파이프가 차서
@@ -384,6 +390,12 @@ pub fn process_spawn(
             group,
             detached,
             window: window.label().to_string(),
+            cmd: if args.is_empty() {
+                cmd.clone()
+            } else {
+                format!("{} {}", cmd, args.join(" "))
+            },
+            pid: child_pid,
         },
     );
     Ok(id)
@@ -413,6 +425,67 @@ pub fn process_stdin_close(id: u32, manager: State<'_, ProcessManager>) -> Resul
     let session = sessions.get_mut(&id).ok_or("no such process")?;
     drop(session.stdin.take());
     Ok(())
+}
+
+/// 이 창의 앞선 플러그인 런타임이 남긴 자식을 거둔다. 창 파괴 회수(kill_by_window)와 같은
+/// 규칙·같은 예외(detached 사이드카는 살린다)를 쓰되, 트리거가 다르다: 창은 살아 있고 그 안의
+/// 런타임만 새로 선 경우(웹뷰 리로드·HMR·크래시 복구)를 위한 자리다. 새 런타임은 아직 아무것도
+/// 스폰하지 않았으므로 이 시점에 이 창 앞으로 남은 것은 전부 앞선 런타임의 고아다.
+#[tauri::command]
+pub fn process_reclaim_window(window: tauri::Window, manager: State<'_, ProcessManager>) -> u32 {
+    let before = manager
+        .sessions
+        .lock()
+        .map(|s| s.values().filter(|x| x.window == window.label()).count())
+        .unwrap_or(0) as u32;
+    manager.kill_by_window(window.label());
+    before
+}
+
+/// 앱이 낳은 자식 프로세스 한 줄.
+#[derive(serde::Serialize)]
+pub struct ProcessInfo {
+    /// 플러그인이 쥔 핸들 id(작은 카운터). OS pid 가 아니다.
+    pub id: u32,
+    /// OS pid — 이걸로만 "살아있나" 를 물을 수 있다.
+    pub pid: u32,
+    /// 스폰한 창 label. 창이 죽으면 이 키로 회수된다(kill_by_window).
+    pub window: String,
+    pub cmd: String,
+    pub group: bool,
+    pub detached: bool,
+    /// 아직 살아있는가. 죽었는데 세션에 남아 있으면 그것이 곧 고아다.
+    pub alive: bool,
+}
+
+/// 앱이 낳은 자식 프로세스 전부. 코어는 플러그인 대신 프로세스를 쥐고 있으면서 그 목록을
+/// 내놓지 않았다 — 그래서 회수에 실패한 자식(고아)이 밖에서는 보이지 않았다. 읽기 전용.
+#[tauri::command]
+pub fn process_list(manager: State<'_, ProcessManager>) -> Vec<ProcessInfo> {
+    let mut out = Vec::new();
+    if let Ok(sessions) = manager.sessions.lock() {
+        for (id, sess) in sessions.iter() {
+            // try_wait 은 이미 끝난 자식을 거두면서 살아있음 여부를 준다(블록하지 않는다).
+            let alive = sess
+                .child
+                .lock()
+                .ok()
+                .and_then(|mut c| c.try_wait().ok())
+                .map(|status| status.is_none())
+                .unwrap_or(false);
+            out.push(ProcessInfo {
+                id: *id,
+                pid: sess.pid,
+                window: sess.window.clone(),
+                cmd: sess.cmd.clone(),
+                group: sess.group,
+                detached: sess.detached,
+                alive,
+            });
+        }
+    }
+    out.sort_by_key(|p| p.id);
+    out
 }
 
 #[tauri::command]
@@ -677,6 +750,8 @@ mod tests {
                 group: false,
                 detached: false,
                 window: "w-test".into(),
+                cmd: "test".into(),
+                pid: 0,
             },
         );
         mgr.sessions.lock().unwrap().insert(
@@ -687,6 +762,8 @@ mod tests {
                 group: false,
                 detached: true,
                 window: "w-test".into(),
+                cmd: "test".into(),
+                pid: 0,
             },
         );
 
@@ -742,6 +819,8 @@ mod tests {
                     group: false,
                     detached: false,
                     window: "w-a".into(),
+                    cmd: "test".into(),
+                    pid: 0,
                 },
             );
             sessions.insert(
@@ -752,6 +831,8 @@ mod tests {
                     group: false,
                     detached: false,
                     window: "w-b".into(),
+                    cmd: "test".into(),
+                    pid: 0,
                 },
             );
             sessions.insert(
@@ -762,6 +843,8 @@ mod tests {
                     group: false,
                     detached: true,
                     window: "w-a".into(),
+                    cmd: "test".into(),
+                    pid: 0,
                 },
             );
         }

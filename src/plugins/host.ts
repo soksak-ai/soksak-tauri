@@ -9,6 +9,15 @@ import { usePlugins } from "../state/plugins";
 import { useRegistry } from "../state/registry";
 
 export async function initPluginHost(): Promise<void> {
+  // 이 창의 플러그인 런타임이 새로 서는 자리. 앞선 런타임(창은 살아 있는데 프론트만 다시 뜬
+  // 경우 — 웹뷰 리로드·개발 중 HMR·크래시 복구)이 스폰한 자식은 소유자가 사라진 채 남는다:
+  // 창 파괴 회수는 창이 죽어야 도는데 창은 죽지 않았다. 지금 스폰한 것이 하나도 없는 이 시점에
+  // 이 창 앞으로 등록된 자식은 정의상 전부 앞선 런타임의 고아다(detached 사이드카는 제외된다).
+  try {
+    await invoke("process_reclaim_window");
+  } catch (e) {
+    console.warn("이전 런타임 자식 회수 실패:", e);
+  }
   startPluginHooks();
   // Install the certified archive-extraction handler so plugin.install resolves a
   // real native installer instead of INSTALL_RUNTIME_UNAVAILABLE.

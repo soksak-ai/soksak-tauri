@@ -484,6 +484,8 @@ pub fn run() {
             process::process_write,
             process::process_stdin_close,
             process::process_kill,
+            process::process_list,
+            process::process_reclaim_window,
             network::net_udp_send,
             network::net_udp_request,
             ws::ws_connect,

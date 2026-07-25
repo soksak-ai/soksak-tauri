@@ -838,6 +838,30 @@ export function registerCatalog(): void {
     },
   });
 
+  // 앱이 낳은 자식 프로세스는 코어가 쥐고 있는데 목록 표면이 없었다 — 회수에 실패한 자식이
+  // 밖에서 보이지 않으니, 고아가 쌓여도 사용자도 도구도 알 수 없었다. 읽기 전용 관찰면.
+  register("process.list", {
+    description:
+      "List the child processes the app spawned for plugins: handle id, OS pid, the window that spawned it, the command, and whether it is still alive. The handle id is a small counter and is not an OS pid — ask liveness with pid. An entry that is no longer alive but still listed is an orphan its owner failed to reclaim. Read-only.",
+    triggers: { ko: "프로세스 목록 자식 프로세스 고아 좀비 사이드카 스폰 생존" },
+    params: {
+      alive: { type: "boolean", description: "Only entries that are still running" },
+      window: { type: "string", description: "Only entries spawned by this window label" },
+    },
+    returns: "{ processes: [{id, pid, window, cmd, group, detached, alive}], count }",
+    message: (d) => tmsg("msg.process.list", { n: Number(d.count ?? 0) }),
+    examples: ["process.list", 'process.list \'{"alive":true}\''],
+    handler: async (p) => {
+      const all = (await invoke("process_list")) as Array<Record<string, unknown>>;
+      const processes = all.filter(
+        (r) =>
+          (p.alive !== true || r.alive === true) &&
+          (typeof p.window !== "string" || r.window === p.window),
+      );
+      return { processes, count: processes.length };
+    },
+  });
+
   register("project.rightbar.toggle", {
     description: "Toggle the right plugin sidebar (⌥⌘B). Provide open to set state explicitly (idempotent).",
     triggers: { ko: "우측 사이드바 오른쪽 패널 플러그인 바 열기 닫기" },
