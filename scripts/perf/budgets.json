@@ -4,9 +4,10 @@
     "protocol": "make perf-gate (run-t.sh --identity debug, t1=100MB fixtures, scenario order t5,t6,t2,t1_plain,t1_ansi)",
     "conditions": {
       "identity": "debug",
+      "cargoProfile": "dev",
       "machine": "Apple M1 Pro",
       "windowsOpen": 7,
-      "note": "t5/t6 measure the whole app group (every open window) — compare only under the same window population; baselines below embed windowsOpen=7 ambient load"
+      "note": "Enforced by check-budgets.mjs — a report whose meta disagrees with any scalar key here is INVALID_CONDITIONS, not a comparison. t5/t6 measure the whole app group (every open window), so the window population is part of the condition. cargoProfile=dev records what these baselines actually measured: `make build-debug` is `tauri build --debug`, i.e. cargo's dev profile (opt-level=0, debug-assertions, overflow-checks). Reports taken before this field existed cannot be compared against these budgets — that is the correct outcome, not a regression."
     },
     "headroom": {
       "throughput.min": "baseline x 0.7",

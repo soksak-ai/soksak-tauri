@@ -15,7 +15,11 @@
 # 주의: t5/t6 은 앱 "전체"(열린 창 전부) 측정이다 — 창 개수(meta.windowsOpen)가 다르면 수치가
 # 다르다. 예산 비교는 같은 창 개수 조건에서만 유효.
 #
-# 게이트: budgets.json 이 있으면 check-budgets.mjs 로 대조, 위반 시 exit 1 (--no-gate 로 리포트만).
+# 게이트: check-budgets.mjs 가 budgets.json(회귀)과 targets.json(절대 목표)을 함께 본다.
+#   exit 1 = 회귀·조건 불일치·무효 런, exit 3 = 회귀는 없지만 절대 목표 미달(초록 아님).
+#   (--no-gate 로 리포트만.)
+# 리포트 meta.cargoProfile 은 실행 중 바이너리 경로에서 발견한다 — 프로파일이 다른
+# 수치는 비교 대상이 아니다(docs/PERFORMANCE.md 원칙 8).
 # 전제: 대상 앱 실행 중 + 창이 화면에 보여야 함(백그라운드 WKWebView 스로틀 — run.sh 와 동일).
 set -euo pipefail
 
@@ -126,8 +130,10 @@ done
 GIT_SHA="$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 MACHINE="$(sysctl -n machdep.cpu.brand_string 2>/dev/null || uname -m)"
 WINDOWS_OPEN="$(jq -r '.windowsOpen // 0' <<< "$IDS")"
+# 프로파일은 실행물에서 발견한다 — 게이트가 조건으로 강제하므로 리포트에 반드시 실린다.
+CARGO_PROFILE="$(identity_cargo_profile "$(echo "$PIDS" | awk '{print $1}')")"
 {
-  echo -n "{\"meta\":{\"identity\":\"$IDENTITY\",\"label\":\"$LABEL\",\"git\":\"$GIT_SHA\",\"date\":\"$TS\",\"t1mb\":$T1MB,\"windowsOpen\":$WINDOWS_OPEN,\"machine\":$(jq -Rn --arg m "$MACHINE" '$m')},\"scenarios\":{"
+  echo -n "{\"meta\":{\"identity\":\"$IDENTITY\",\"cargoProfile\":\"$CARGO_PROFILE\",\"label\":\"$LABEL\",\"git\":\"$GIT_SHA\",\"date\":\"$TS\",\"t1mb\":$T1MB,\"windowsOpen\":$WINDOWS_OPEN,\"machine\":$(jq -Rn --arg m "$MACHINE" '$m')},\"scenarios\":{"
   (IFS=,; echo -n "${PARTS[*]}")
   echo "}}"
 } | jq . > "$OUT_JSON"

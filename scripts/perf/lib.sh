@@ -34,6 +34,22 @@ identity_app_name() {
   esac
 }
 
+# 대상이 어느 cargo 프로파일로 빌드됐나 — 실행 중 바이너리 경로에서 발견한다.
+# cargo 는 dev 프로파일을 target/debug 에, release 를 target/release 에 떨군다. 세 정체성
+# 전부(dev=target/debug/soksak-dev, debug=target/debug/bundle/..., release=target/release/bundle/...)
+# 이 규칙 위에 있으므로 별도 선언 없이 실행물 자체에서 읽는다(선언 사본 금지).
+# 성능 수치는 프로파일을 명시하지 않으면 무효다(docs/PERFORMANCE.md 원칙 8).
+identity_cargo_profile() {
+  local pid="$1" exe=""
+  exe="$(ps -o comm= -p "$pid" 2>/dev/null || true)"
+  # ps 는 상대경로를 그대로 돌려줄 수 있다(`target/debug/soksak-dev`) — 선행 슬래시를 요구하지 않는다.
+  case "$exe" in
+    *target/release/*) echo "release" ;;
+    *target/debug/*)   echo "dev" ;;
+    *)                 echo "unknown" ;;
+  esac
+}
+
 identity_lsof_pattern() {
   # WebKit XPC 프로세스를 앱에 귀속시키는 lsof 문자열.
   case "$1" in
