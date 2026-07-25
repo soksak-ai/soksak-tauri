@@ -1,12 +1,12 @@
 import { create } from "zustand";
 import {
+  DEFAULT_RAIL_PLACEMENT,
   cleanRailLines,
   isCleanRailStation,
   type RailCell,
   type RailPlacement,
 } from "../lib/railPlacement";
 import { computeSplitLayout } from "../lib/splitLayout";
-import { projectFocusedPanelNearRail } from "../lib/railFocusLayout";
 import {
   autorunCommandOf,
   getRegisteredProgram,
@@ -670,12 +670,13 @@ export function leftRailGrid(project: ProjectTab, focusNear = false): {
     project.contents[0];
   if (!content)
     return { cells: [], focusId: null, cleanLines: [0, 100], projected: false };
-  const placement = project.leftRailPlacement ?? { mode: "flow" as const };
-  const displayLayout = projectFocusedPanelNearRail(
-    content.layout,
-    content.activeGroupId,
-    focusNear && placement.mode === "flow" && !content.maximizedViewId,
-  );
+  // 근접 투영(포커스 패널을 레일 옆으로 옮기는 레이아웃 교체) 폐지 — 포커스 이동이 모든
+  // 패널의 기하를 바꾸는 기능이었다. 레일이 제자리에 있어도 배치가 스왑돼 무관한 표면
+  // (브라우저 등)이 밀렸다(실사고·녹화 판독). 기하 소유권 불변식(NATIVE-SURFACES §2):
+  // 표면의 기하는 자기 패널에 대한 직접 조작으로만 변한다. 레일은 서 있는 뼈대이고
+  // 포커스는 그 '내용'(파일트리·북마크 투영)만 갈아입는다 — 배치는 불변이다.
+  void focusNear; // 레거시 호출 호환(무시됨)
+  const displayLayout = content.layout;
   const cells: RailCell[] = content.maximizedViewId
     ? [
         {
@@ -691,7 +692,7 @@ export function leftRailGrid(project: ProjectTab, focusNear = false): {
     cells,
     focusId: content.activeGroupId,
     cleanLines: cleanRailLines(cells.map((cell) => cell.rect)),
-    projected: !content.maximizedViewId && displayLayout !== content.layout,
+    projected: false, // 투영 교체 폐지 — 만들어진 인접은 더 이상 없다
   };
 }
 
@@ -871,7 +872,7 @@ function makeProject(id: string, opts: NewProjectOpts): ProjectTab {
     id,
     title: alias,
     sidebarOpen: true,
-    leftRailPlacement: { mode: "flow" },
+    leftRailPlacement: DEFAULT_RAIL_PLACEMENT, // 정박 기본(이주 폐지 — 기하 소유권 §2)
     rightOpen: false,
     rightView: null,
     leftLayout: initialSidebarLayout([]),
@@ -1048,12 +1049,8 @@ export const useSessions = create<SessionsStore>((set, get) => ({
     set((s) => {
       const project = s.tabs.find((item) => item.id === id);
       if (!project) return s;
-      const current = project.leftRailPlacement ?? { mode: "flow" as const };
-      if (
-        current.mode === placement.mode &&
-        (current.mode === "flow" ||
-          (placement.mode === "pin" && current.station === placement.station))
-      ) {
+      const current = project.leftRailPlacement ?? DEFAULT_RAIL_PLACEMENT;
+      if (current.station === placement.station) {
         r = ok({ placement: current });
         return s;
       }

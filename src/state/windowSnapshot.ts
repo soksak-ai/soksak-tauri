@@ -14,7 +14,7 @@ import {
 import type { SidebarGroup } from "./sidebarLayout";
 import type { ProjectTab, ContentArea, ViewGroup, View } from "./sessions";
 import type { Pins } from "./projection";
-import {
+import { DEFAULT_RAIL_PLACEMENT,
   normalizeRailPlacement,
   type RailPlacement,
 } from "../lib/railPlacement";
@@ -145,7 +145,7 @@ export function serializeProject(
     ...(p.color ? { color: p.color } : {}),
     vlNormalized: true,
     sidebarOpen: p.sidebarOpen,
-    leftRailPlacement: p.leftRailPlacement ?? { mode: "flow" },
+    leftRailPlacement: p.leftRailPlacement ?? DEFAULT_RAIL_PLACEMENT,
     rightOpen: p.rightOpen,
     rightView: p.rightView,
     // 사이드바 레이아웃(SplitTree<SidebarGroup>) — leaf 페이로드는 plain JSON.

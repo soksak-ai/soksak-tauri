@@ -9,6 +9,7 @@ import { tmsg } from "../i18n";
 import { settleAnimationsForCapture } from "./captureSettle";
 import { suggestLayout, type MonitorFact, type WindowFact } from "../lib/layoutSuggest";
 import {
+  DEFAULT_RAIL_PLACEMENT,
   effectiveRailStation,
   snapRailStation,
   type RailPlacement,
@@ -408,7 +409,7 @@ function serializeContent(
 // 저장값을 변경하지 않으며, 명시적 PIN 명령만 유효 라인으로 스냅해 저장한다.
 function serializeLeftRailPosition(t: ProjectTab, focusNearRail = false) {
   const { cells, focusId, cleanLines } = leftRailGrid(t, focusNearRail);
-  const placement: RailPlacement = t.leftRailPlacement ?? { mode: "flow" };
+  const placement: RailPlacement = t.leftRailPlacement ?? DEFAULT_RAIL_PLACEMENT;
   const effectiveStation = effectiveRailStation(
     cells,
     focusId,
@@ -444,8 +445,8 @@ function serializeTree() {
           serializeContent(
             c,
             t.activeContentId,
-            focusNearRail &&
-              (t.leftRailPlacement?.mode ?? "flow") === "flow",
+            false, // 근접 투영 폐지 — 레일 이주와 한 몸이었다(기하 소유권 §2)
+
             leftRailPosition.effectiveStation,
             t.sidebarOpen,
           ),
@@ -892,7 +893,7 @@ export function registerCatalog(): void {
 
   register("sidebar.left.position", {
     description:
-      "Read or set the project left rail position mode. Omit mode to query; flow follows the active panel; pin without station freezes the current effective line; pin with station snaps to the nearest clean full-height grid line.",
+      "Read or set the project left rail station. Omit params to query. The rail is always pinned — follow-focus relocation (flow) is abolished: an indirect event must never move an unrelated surface's geometry (NATIVE-SURFACES §2 geometry ownership), and the rail is a standing frame whose contents change, not a travelling object. pin without station freezes the current effective line; pin with station snaps to the nearest clean full-height grid line; a legacy flow request is normalized to a pin at the current line.",
     triggers: {
       ko: "좌측 사이드바 레일 위치 플로우 포커스 추종 핀 고정 그립 스냅",
     },
@@ -900,7 +901,7 @@ export function registerCatalog(): void {
       project: P.project,
       mode: {
         type: "string",
-        description: "flow | pin; omit to query current position",
+        description: "pin (flow is accepted for legacy callers and normalized to pin); omit to query",
         enum: ["flow", "pin"],
       },
       station: {
@@ -943,14 +944,12 @@ export function registerCatalog(): void {
       }
 
       if (mode === "flow") {
-        if (requested !== undefined) {
-          return {
-            ok: false as const,
-            code: "INVALID_PARAMS",
-            message: "FLOW는 station을 가지지 않음",
-          };
-        }
-        const changed = S().setLeftRailPlacement(t.id, { mode: "flow" });
+        // 레거시 호출 정규화 — 이주는 폐지됐다. 현 유효선에 정박시켜 화면 튐 없이 이행한다.
+        const cur = serializeLeftRailPosition(t, useSettings.getState().railFocusNear);
+        const changed = S().setLeftRailPlacement(t.id, {
+          mode: "pin",
+          station: cur.effectiveStation,
+        });
         if (!changed.ok) return changed;
       } else {
         if (

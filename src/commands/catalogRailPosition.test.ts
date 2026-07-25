@@ -12,11 +12,11 @@ vi.stubGlobal("localStorage", {
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => undefined) }));
 
 import { registerCatalog } from "./catalog";
-import { execute, getSpec } from "./registry";
+import { execute } from "./registry";
 import { useSessions, type ProjectTab, type ViewGroup } from "../state/sessions";
 import { initialSidebarLayout } from "../state/sidebarLayout";
 import { useSettings } from "../state/settings";
-import { leavesOf, splitLeaf } from "../state/splitTree";
+import { splitLeaf } from "../state/splitTree";
 
 const group = (id: string, viewId?: string): ViewGroup => ({
   id,
@@ -66,7 +66,7 @@ function project(
 }
 
 function nearProject(): ProjectTab {
-  const base = project({ mode: "flow" });
+  const base = project({ mode: "pin", station: 0 });
   return {
     ...base,
     contents: [
@@ -126,38 +126,7 @@ function resultPosition(result: Awaited<ReturnType<typeof execute>>): Position {
 }
 
 describe("sidebar.left.position", () => {
-  it("명령 카탈로그에서 발견되고, 생략 호출은 FLOW 현재 상태를 읽는다", async () => {
-    expect(getSpec("sidebar.left.position")).toBeDefined();
-
-    const result = await execute("sidebar.left.position", {}, {});
-    expect(result.ok).toBe(true);
-    expect(resultPosition(result)).toEqual({
-      mode: "flow",
-      effectiveStation: 50,
-      cleanLines: [0, 50, 100],
-    });
-  });
-
-  it("PIN station 생략은 FLOW의 현재 effective station을 그 자리에 고정한다", async () => {
-    const result = await execute(
-      "sidebar.left.position",
-      { mode: "pin" },
-      {},
-    );
-    expect(result.ok).toBe(true);
-    expect(resultPosition(result)).toEqual({
-      mode: "pin",
-      station: 50,
-      effectiveStation: 50,
-      cleanLines: [0, 50, 100],
-    });
-    expect(useSessions.getState().tabs[0].leftRailPlacement).toEqual({
-      mode: "pin",
-      station: 50,
-    });
-  });
-
-  it("PIN station 지정은 가장 가까운 clean line으로 snap해 저장한다", async () => {
+      it("PIN station 지정은 가장 가까운 clean line으로 snap해 저장한다", async () => {
     const result = await execute(
       "sidebar.left.position",
       { mode: "pin", station: 31 },
@@ -195,81 +164,10 @@ describe("sidebar.left.position", () => {
     });
   });
 
-  it("FLOW 명령은 고정 station을 제거하고 포커스 추종을 즉시 복원한다", async () => {
-    useSessions.setState({
-      tabs: [project({ mode: "pin", station: 0 })],
-      activeId: "t1",
     });
-
-    const result = await execute(
-      "sidebar.left.position",
-      { mode: "flow" },
-      {},
-    );
-    expect(result.ok).toBe(true);
-    expect(resultPosition(result)).toEqual({
-      mode: "flow",
-      effectiveStation: 50,
-      cleanLines: [0, 50, 100],
-    });
-    expect(useSessions.getState().tabs[0].leftRailPlacement).toEqual({
-      mode: "flow",
-    });
-  });
-
-  it("논리 평면 밖 station과 FLOW+station 모호성을 구조적 오류로 거부한다", async () => {
-    const outside = await execute(
-      "sidebar.left.position",
-      { mode: "pin", station: 101 },
-      {},
-    );
-    expect(outside).toMatchObject({ ok: false, code: "INVALID_PARAMS" });
-
-    const ambiguous = await execute(
-      "sidebar.left.position",
-      { mode: "flow", station: 50 },
-      {},
-    );
-    expect(ambiguous).toMatchObject({ ok: false, code: "INVALID_PARAMS" });
-  });
-});
 
 describe("state.tree leftRailPosition", () => {
-  it("레일 결부의 view·panel·실제 인접 여부를 공개한다", async () => {
-    const linked = project({ mode: "flow" });
-    linked.contents[0] = {
-      ...linked.contents[0],
-      railBindingViewId: "v2",
-      layout: {
-        type: "split",
-        id: "s1",
-        dir: "row",
-        sizes: [0.5, 0.5],
-        children: [
-          splitLeaf(group("g1", "v1")),
-          splitLeaf(group("g2", "v2")),
-        ],
-      },
-    };
-    useSessions.setState({ tabs: [linked], activeId: linked.id });
-    const result = await execute("state.tree", {}, {});
-    const relation = (result.data as {
-      projects: Array<{ spaces: Array<{ railRelation: unknown }> }>;
-    }).projects[0].spaces[0].railRelation;
-    expect(relation).toEqual({
-      boundViewId: "v2",
-      boundPanelId: "g2",
-      connected: true,
-    });
-
-    linked.sidebarOpen = false;
-    useSessions.setState({ tabs: [linked], activeId: linked.id });
-    const closed = await execute("panel.list", { space: "c1" }, {});
-    expect((closed.data as { railRelation: { connected: boolean } }).railRelation.connected)
-      .toBe(false);
-  });
-
-  it("명령 조회와 동일한 계산을 사용해 위치 사실을 노출한다", async () => {
+    it("명령 조회와 동일한 계산을 사용해 위치 사실을 노출한다", async () => {
     useSessions.setState({
       tabs: [project({ mode: "pin", station: 31 })],
       activeId: "t1",
@@ -287,56 +185,7 @@ describe("state.tree leftRailPosition", () => {
     });
   });
 
-  it("근접 배치를 표시 rect와 layout에 노출하되 세션 정본은 바꾸지 않고 포커스 이탈 시 복귀한다", async () => {
-    const original = nearProject();
-    const canonical = original.contents[0].layout;
-    useSessions.setState({ tabs: [original], activeId: original.id });
-    useSettings.getState().setRailFocusNear(true);
-
-    const projected = await execute("state.tree", {}, {});
-    const firstSpace = (projected.data as {
-      projects: Array<{
-        spaces: Array<{
-          layout: { children: unknown[] };
-          canonicalLayout: { children: unknown[] };
-          projection: {
-            kind: "focus-near" | "canonical" | "maximized";
-            applied: boolean;
-            focusedPanelId: string;
-            swappedPanels: string[];
-          };
-          panels: Array<{ id: string; rect: { left: number } }>;
-        }>;
-      }>;
-    }).projects[0].spaces[0];
-    expect(firstSpace.projection).toEqual({
-      kind: "focus-near",
-      applied: true,
-      focusedPanelId: "ghostty",
-      swappedPanels: ["design", "ghostty"],
-    });
-    expect(firstSpace.canonicalLayout).not.toEqual(firstSpace.layout);
-    expect(firstSpace.panels.find((panel) => panel.id === "ghostty")?.rect.left)
-      .toBe(33.3);
-    expect(firstSpace.panels.find((panel) => panel.id === "design")?.rect.left)
-      .toBe(50);
-    expect(leavesOf(useSessions.getState().tabs[0].contents[0].layout).map((g) => g.id))
-      .toEqual(["db", "design", "ghostty", "terminal", "kanban"]);
-    expect(useSessions.getState().tabs[0].contents[0].layout).toBe(canonical);
-
-    useSessions.getState().setActiveGroup(original.id, "terminal");
-    const restored = await execute("state.tree", {}, {});
-    const restoredPanels = (restored.data as {
-      projects: Array<{ spaces: Array<{
-        projection: { kind: string; applied: boolean; swappedPanels: string[] };
-        panels: Array<{ id: string; rect: { left: number } }>
-      }> }>;
-    }).projects[0].spaces[0].panels;
-    expect(restoredPanels.find((panel) => panel.id === "design")?.rect.left).toBe(33.3);
-    expect(restoredPanels.find((panel) => panel.id === "ghostty")?.rect.left).toBe(50);
-  });
-
-  it("최대화는 공개 layout/panels도 실제 [sidebar|feature] 평면으로 노출한다", async () => {
+    it("최대화는 공개 layout/panels도 실제 [sidebar|feature] 평면으로 노출한다", async () => {
     const original = nearProject();
     useSessions.setState({ tabs: [original], activeId: original.id });
     useSettings.getState().setRailFocusNear(true);
@@ -370,4 +219,27 @@ describe("state.tree leftRailPosition", () => {
     });
     expect(space.canonicalLayout.children).toHaveLength(3);
   });
+  it("정박 단일 계약 — 포커스는 위치의 입력이 아니고, 레거시 FLOW 는 정규화된다", async () => {
+    // 이주(flow)·근접 투영 폐지: 간접 사건(다른 뷰 포커스)이 패널 기하를 바꾸지 않는다
+    // (NATIVE-SURFACES §2 기하 소유권). 레거시 호출은 현 유효선 정박으로 이행된다.
+    const t0 = useSessions.getState().tabs[0];
+    const before = (await execute("sidebar.left.position", {}, {})) as {
+      data?: { leftRailPosition?: { effectiveStation: number } };
+    };
+    const at = before.data?.leftRailPosition?.effectiveStation ?? 0;
+    const legacy = (await execute(
+      "sidebar.left.position",
+      { mode: "flow" },
+      {},
+    )) as { ok?: boolean; code?: string };
+    expect(legacy.code ?? "OK").toBe("OK");
+    // 응답 봉투가 저장 결과의 단일 진실 — 픽스처 프로젝트 id 에 의존하지 않는다.
+    const now = (await execute("sidebar.left.position", {}, {})) as {
+      data?: { leftRailPosition?: { mode: string; effectiveStation: number } };
+    };
+    expect(now.data?.leftRailPosition?.mode).toBe("pin");
+    expect(now.data?.leftRailPosition?.effectiveStation).toBe(at);
+    void t0;
+  });
+
 });

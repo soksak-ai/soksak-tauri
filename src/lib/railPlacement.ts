@@ -2,9 +2,11 @@
 // 깨끗한 세로선에 고정 px 폭의 불연속 구간으로 삽입된다. DOM 포커스나 픽셀 측정은
 // 위치의 정본이 아니다: FLOW 입력은 세션 활성 체인의 panel id다.
 
-export type RailPlacement =
-  | { mode: "flow" }
-  | { mode: "pin"; station: number };
+// 레일은 정박한다 — flow(포커스 추종 이주)는 폐지됐다. 간접 사건(다른 뷰 포커스)이 무관
+// 표면(브라우저 등)의 기하를 바꾸는 기능이었고, 기하 소유권 불변식(NATIVE-SURFACES §2)과
+// 투영 공리(레일은 서 있는 뼈대 — 포커스는 그 내용만 갈아입는다) 양쪽을 위반했다.
+// 레거시 저장값 { mode: "flow" } 는 파서가 현 위치 pin 으로 정규화한다(화면 튐 없음).
+export type RailPlacement = { mode: "pin"; station: number };
 
 export interface RailRect {
   left: number;
@@ -25,7 +27,7 @@ export interface RailCssRect extends RailRect {
   railWidth: number;
 }
 
-export const DEFAULT_RAIL_PLACEMENT: RailPlacement = { mode: "flow" };
+export const DEFAULT_RAIL_PLACEMENT: RailPlacement = { mode: "pin", station: 0 };
 export const RAIL_EPSILON = 0.01;
 
 const clampStation = (value: number): number =>
@@ -68,30 +70,6 @@ export function cleanRailLines(
   );
 }
 
-/** FLOW: 활성 패널 왼쪽선, 더러운 선이면 그 앞(왼쪽)의 가장 가까운 깨끗한 선. */
-export function flowRailStation(
-  cells: RailCell[],
-  focusId: string | null | undefined,
-  eps: number = RAIL_EPSILON,
-  fallback = 0,
-): number {
-  const focused = cells.find((cell) => cell.id === focusId);
-  // 미해소 포커스는 무의견이다 — 0(맨 앞)으로의 이동 결정이 아니라 현 위치 유지(fallback).
-  // 포커스 전환의 중간 렌더마다 조회가 비어 station 이 0으로 붕괴했고, 그 왕복(실위치→0→
-  // 실위치)이 레일 rect 무변화의 유령 전역 이동 위상을 열어 화면의 모든 브라우저에 베일
-  // 펄스를 먹였다(실사고 — sender 스탬프 68.8→0→68.8 왕복으로 확증).
-  if (!focused) return fallback;
-  const wanted = focused.rect.left;
-  let station = 0;
-  for (const line of cleanRailLines(
-    cells.map((cell) => cell.rect),
-    eps,
-  )) {
-    if (line <= wanted + eps) station = line;
-    else break;
-  }
-  return station;
-}
 
 /** 그립/PIN 정규화: 가장 가까운 깨끗한 선. 동률이면 앞(왼쪽) 선. */
 export function snapRailStation(lines: number[], wanted: number): number {
@@ -124,20 +102,17 @@ export function isCleanRailStation(
 
 export function effectiveRailStation(
   cells: RailCell[],
-  focusId: string | null | undefined,
+  // focusId 는 계약상 무시된다 — 포커스는 레일 위치의 입력이 아니다(이주 폐지의 뜻).
+  // 시그니처는 호출측 호환을 위해 유지하고, 값을 읽지 않음을 여기 명시한다.
+  _focusId: string | null | undefined,
   placement: RailPlacement | undefined,
   fallback = 0,
 ): number {
-  // 기본 = 글로벌 정박(pin@0) — 투영 공리: 레일은 서 있는 투명 뼈대이고 포커스는 '내용'만
-  // 갈아입는다. flow(포커스 추종 이주)는 명시적 선택일 때만 — 이주는 삽입 폭만큼 이웃
-  // 패널을 밀어내므로(실사고: 브라우저 무관 클릭마다 브라우저가 224px 왕복) 기본값이 될 수
-  // 없다.
-  if (placement?.mode === "flow") {
-    return flowRailStation(cells, focusId, RAIL_EPSILON, fallback);
-  }
+  // 정박 단일 산식 — 요청 station 을 그리드의 깨끗한 선에 스냅한다. 포커스는 입력이 아니다
+  // (그것이 flow 폐지의 뜻이다): 같은 배치는 어떤 포커스에서도 같은 선을 답한다.
   return snapRailStation(
     cleanRailLines(cells.map((cell) => cell.rect)),
-    placement?.mode === "pin" ? placement.station : 0,
+    placement?.station ?? fallback,
   );
 }
 
@@ -271,10 +246,8 @@ export function unprojectRailX(
 }
 
 export function normalizeRailPlacement(value: unknown): RailPlacement {
-  if (!value || typeof value !== "object") return { mode: "flow" };
-  const placement = value as { mode?: unknown; station?: unknown };
+  const placement = (value ?? {}) as { mode?: unknown; station?: unknown };
   if (
-    placement.mode === "pin" &&
     typeof placement.station === "number" &&
     Number.isFinite(placement.station) &&
     placement.station >= 0 &&
@@ -282,5 +255,6 @@ export function normalizeRailPlacement(value: unknown): RailPlacement {
   ) {
     return { mode: "pin", station: placement.station };
   }
-  return { mode: "flow" };
+  // 레거시 flow(또는 손상된 값) — 정박 기본선으로 정규화한다. 이주 기능은 폐지됐다.
+  return DEFAULT_RAIL_PLACEMENT;
 }

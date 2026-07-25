@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  normalizeRailPlacement,
+  DEFAULT_RAIL_PLACEMENT,
   cleanRailLines,
   effectiveRailStation,
-  flowRailStation,
   isCleanRailStation,
   projectRailRect,
   projectRailCssTransition,
@@ -55,11 +56,10 @@ describe("left rail clean-line contract", () => {
     expect(lines[1]).toBeCloseTo(33.333333, 5);
   });
 
-  it("FLOW follows the focused panel or the nearest clean line in front", () => {
-    expect(flowRailStation(twoColumns, "b")).toBe(50);
-    expect(flowRailStation(twoColumns, "a")).toBe(0);
-    expect(flowRailStation(nested, "b")).toBe(0);
-    expect(flowRailStation(crossed, "b")).toBe(0);
+  it("이주 폐지 — 포커스는 위치의 입력이 아니다(같은 pin, 다른 포커스, 같은 답)", () => {
+    const pin = { mode: "pin" as const, station: 50 };
+    expect(effectiveRailStation(twoColumns, "b", pin)).toBe(50);
+    expect(effectiveRailStation(twoColumns, "a", pin)).toBe(50);
   });
 
   it("PIN snaps to a valid line, with an exact tie resolved toward the front", () => {
@@ -68,9 +68,10 @@ describe("left rail clean-line contract", () => {
     expect(
       effectiveRailStation(nested, "c", { mode: "pin", station: 40 }),
     ).toBe(66);
+    // 기본값은 글로벌 정박(station 0) — 포커스가 b 여도 앞선으로 남는다(이주 폐지).
     expect(
-      effectiveRailStation(twoColumns, "b", { mode: "flow" }),
-    ).toBe(50);
+      effectiveRailStation(twoColumns, "b", DEFAULT_RAIL_PLACEMENT),
+    ).toBe(0);
   });
 
   it("distinguishes an exact committed PIN from a drag preview that may snap", () => {
@@ -137,15 +138,24 @@ describe("real-space rail insertion", () => {
   });
 });
 
-describe("flowRailStation — 미해소 포커스는 무의견(현 위치 유지)", () => {
+describe("레일 정박 단일 계약 — 이주(flow) 폐지", () => {
   const cells = [
     { id: "a", rect: { left: 0, top: 0, width: 30, height: 100 } },
     { id: "b", rect: { left: 30, top: 0, width: 70, height: 100 } },
   ];
-  it("포커스 조회 미스면 fallback 을 반환한다(0 붕괴 금지)", () => {
-    expect(flowRailStation(cells, "ghost", undefined, 68.8)).toBe(68.8);
+  it("포커스는 위치의 입력이 아니다 — 어떤 focusId 에서도 같은 선", () => {
+    const pin = { mode: "pin" as const, station: 30 };
+    expect(effectiveRailStation(cells, "a", pin)).toBe(
+      effectiveRailStation(cells, "b", pin),
+    );
   });
-  it("포커스가 해소되면 실위치를 반환한다", () => {
-    expect(flowRailStation(cells, "b", undefined, 68.8)).toBe(30);
+  it("레거시 flow 저장값은 정박으로 정규화된다", () => {
+    expect(normalizeRailPlacement(DEFAULT_RAIL_PLACEMENT)).toEqual(DEFAULT_RAIL_PLACEMENT);
+    expect(normalizeRailPlacement(undefined)).toEqual(DEFAULT_RAIL_PLACEMENT);
+    expect(normalizeRailPlacement({ mode: "pin", station: 42 })).toEqual({
+      mode: "pin",
+      station: 42,
+    });
   });
 });
+

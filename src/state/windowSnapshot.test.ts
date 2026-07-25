@@ -172,14 +172,14 @@ describe("left rail FLOW/PIN persistence", () => {
     expect(back.leftRailPlacement).toEqual({ mode: "pin", station: 60 });
   });
 
-  it("migrates snapshots without a placement field to the FLOW default", () => {
+  it("migrates snapshots without a placement field to the pinned default", () => {
     const legacy = serializeProject({
       ...project,
-      leftRailPlacement: { mode: "flow" },
+      leftRailPlacement: { mode: "pin", station: 0 },
     });
     delete legacy.leftRailPlacement;
     expect(deserializeProject(legacy, newSplitId).leftRailPlacement).toEqual({
-      mode: "flow",
+      mode: "pin", station: 0,
     });
   });
 });

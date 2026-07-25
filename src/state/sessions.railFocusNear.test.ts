@@ -58,7 +58,7 @@ function projectFixture(): ProjectTab {
   };
   return {
     ...base,
-    leftRailPlacement: { mode: "flow" },
+    leftRailPlacement: { mode: "pin", station: 0 },
     contents: [
       {
         ...base.contents[0],
@@ -73,19 +73,20 @@ beforeEach(() => {
   useSessions.setState({ tabs: [], activeId: "" });
 });
 
-describe("FLOW 가까운 쪽 화면 투영과 정본 보존", () => {
-  it("ghostty 포커스는 표시 rect만 design 앞으로 바꾸고 세션 트리는 유지한다", () => {
+describe("근접 투영 폐지 — 포커스는 배치를 바꾸지 않는다", () => {
+  it("포커스가 어디든 표시 rect는 정본 배열 그대로다(투영 교체 없음)", () => {
+    // 폐지 전 계약: 포커스 패널을 레일 옆으로 옮겨 표시했다(design↔ghostty 교체) — 간접
+    // 사건이 모든 패널의 기하를 바꾸는 기능이라 폐지했다(NATIVE-SURFACES §2 기하 소유권).
     const project = projectFixture();
     const canonical = project.contents[0].layout;
     useSessions.setState({ tabs: [project], activeId: project.id });
 
-    const grid = leftRailGrid(project, true);
+    const grid = leftRailGrid(project, true); // 인자는 무시된다(폐지)
     const design = grid.cells.find((cell) => cell.id === "design")!;
     const ghostty = grid.cells.find((cell) => cell.id === "ghostty")!;
-    expect(ghostty.rect.left).toBeCloseTo(100 / 3);
-    expect(design.rect.left).toBeCloseTo(50);
-    expect(effectiveRailStation(grid.cells, grid.focusId, { mode: "flow" }))
-      .toBeCloseTo(100 / 3);
+    expect(design.rect.left).toBeCloseTo(100 / 3); // 정본 순서 유지
+    expect(ghostty.rect.left).toBeCloseTo(50);
+    expect(grid.projected).toBe(false);
     expect(useSessions.getState().tabs[0].contents[0].layout).toBe(canonical);
   });
 
@@ -118,7 +119,7 @@ describe("FLOW 가까운 쪽 화면 투영과 정본 보존", () => {
     expect(grid.cells).toEqual([
       { id: "ghostty", rect: { left: 0, top: 0, width: 100, height: 100 } },
     ]);
-    expect(effectiveRailStation(grid.cells, grid.focusId, { mode: "flow" })).toBe(0);
+    expect(effectiveRailStation(grid.cells, grid.focusId, { mode: "pin", station: 0 })).toBe(0);
     expect(maximized.sidebarOpen).toBe(true);
     expect(maximized.contents[0].layout).toEqual(canonical);
 

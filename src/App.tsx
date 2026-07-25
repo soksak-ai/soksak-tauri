@@ -78,6 +78,7 @@ import {
 import { useTheme } from "./state/theme";
 import { getPtyIo, hasPtyObservation } from "./terminal/ptyObservationStore";
 import {
+  DEFAULT_RAIL_PLACEMENT,
   effectiveRailStation,
   railStationFromLeftPx,
   snapRailStation,
@@ -199,11 +200,10 @@ const ProjectPane = memo(function ProjectPane({
   }, []);
 
   const railPlaneRef = useRef<HTMLDivElement>(null);
-  const placement = project.leftRailPlacement ?? { mode: "flow" as const };
-  const railFocusNear = useSettings((s) => s.railFocusNear);
-  // 사이드바가 꺼져 있으면 붙을 레일이 없다 — 근접 투영(스왑 이동) 전면 비활성(사용자 규정).
-  const focusNearEnabled =
-    railFocusNear && placement.mode === "flow" && project.sidebarOpen;
+  const placement = project.leftRailPlacement ?? DEFAULT_RAIL_PLACEMENT;
+  // 근접 투영은 폐지됐다(기하 소유권 §2) — leftRailGrid 는 인자를 무시한다. 하드코딩 게이트
+  // 대신 폐지 사실을 여기서 명시한다: 포커스는 레일의 내용만 바꾸고 배치는 건드리지 않는다.
+  const focusNearEnabled = false;
   const activeContent =
     project.contents.find((content) => content.id === project.activeContentId) ??
     project.contents[0];
@@ -372,14 +372,10 @@ const ProjectPane = memo(function ProjectPane({
   const paneStyle = useTheme((s) => s.spec.chrome.paneStyle);
   const railPaneInset = PANE_INSET[paneStyle] ?? 0;
 
+  // 그립 조작 = 현 위치를 명시 정박(이주 모드는 폐지 — 토글 상대가 없다).
   const toggleRailPin = useCallback(() => {
-    setLeftRailPlacement(
-      project.id,
-      placement.mode === "pin"
-        ? { mode: "flow" }
-        : { mode: "pin", station: effectiveStation },
-    );
-  }, [effectiveStation, placement.mode, project.id, setLeftRailPlacement]);
+    setLeftRailPlacement(project.id, { mode: "pin", station: effectiveStation });
+  }, [effectiveStation, project.id, setLeftRailPlacement]);
 
   const startRailStationDrag = useCallback(
     (e: React.MouseEvent) => {
