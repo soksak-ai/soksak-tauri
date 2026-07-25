@@ -123,11 +123,11 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
     slot.appendChild(img);
     frozen.set(slot, { img, viewId });
     slot.dataset.freeze = "1"; // 관측면(ui.hit)
-    // 표면은 숨기지 않는다 — 스탠드인이 곧 베일이다. 유일한 홀(슬롯)은 불투명 img 가 덮고
-    // 홀 밖 DOM 은 원래 불투명이라 표면은 어차피 보이지 않는다. 여기서 숨김을 걸면 복귀
-    // 사이클(WK 기상 재부착 1프레임 소실·CEF hidden 토글 재페인트)이 스왑마다 화면 깜빡을
-    // 만든다(실사고 — veil 숨김 자체가 깜빡의 진원). emitVeil 은 이 판정에서 발화하지 않고,
-    // 착지 정합은 위상-끝 신호(layout.resize-gesture end)의 강제 스냅이 이미 소유한다.
+    // veil = "이 표면은 지금 스탠드인 뒤에 있다: 따라가지 말고, 해동 에지에 정확히 한 번
+    // 착지하라". 표면을 숨기라는 뜻이 아니다 — 유일한 홀(슬롯)은 불투명 img 가 덮고 홀 밖
+    // DOM 은 원래 불투명이라 표면은 어차피 보이지 않는다. 숨김을 걸면 복귀 사이클(WK 기상
+    // 재부착 1프레임 소실·CEF hidden 토글 재페인트)이 스왑마다 화면 깜빡을 만든다(실사고).
+    deps.emitVeil(viewId, true);
   };
 
   const thawSlot = (slot: HTMLElement): void => {
@@ -135,8 +135,9 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
     if (!cur) return;
     frozen.delete(slot);
     slot.dataset.freeze = "0";
-    // 표면은 내내 살아 추종했으므로 복귀 절차가 없다 — 스탠드인만 한 박자 뒤 물러난다
-    // (착지 강제 스냅이 그 사이 정확 좌표를 확정한다. 깜빡 0).
+    // 해동 = 착지 신호. 표면 소유자가 이 에지에 정확히 한 번 최종 rect 로 스냅하고, 스탠드인은
+    // 한 박자 뒤 물러난다(그 사이에 착지가 확정되므로 깜빡 0).
+    deps.emitVeil(cur.viewId, false);
     window.setTimeout(() => cur.img.remove(), 90);
   };
 

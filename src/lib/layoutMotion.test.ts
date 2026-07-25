@@ -105,20 +105,30 @@ describe("layoutMotion — 로컬 리스너 kinds 전달", () => {
   });
 });
 
-describe("layoutMotion — 플러그인 채널 범위(무관 표면 침묵)", () => {
-  it("시작은 범위를 싣고, 종료는 전원 통지(범위 없음)", () => {
+describe("layoutMotion — 채널은 사실만, 범위는 로컬 소비자에게", () => {
+  it("플러그인 채널은 범위를 싣지 않는다 — 대상 통지는 view.veiled 가 정확히 한다", () => {
     beginLayoutMotion("move", ["vA"]);
     expect(payloads[payloads.length - 1]).toEqual({
       active: true,
       kinds: ["move"],
-      views: ["vA"],
     });
     endLayoutMotion("move");
     expect(payloads[payloads.length - 1]).toEqual({ active: false, kinds: [] });
   });
-  it("전역 위상은 범위를 싣지 않는다(모든 표면 대상)", () => {
-    beginLayoutMotion("move");
-    expect(payloads[payloads.length - 1]).toEqual({ active: true, kinds: ["move"] });
+
+  it("범위가 바뀌면 로컬 소비자에게 재통지한다 — 중복 억제 키가 범위를 안다", () => {
+    // 키가 범위를 모르면 두 번째 스코프 위상의 시작이 삼켜지고, 실제로 움직이는 표면이
+    // 자기 위상을 통보받지 못한다(실사고). active·kinds 가 같아도 범위는 다른 사실이다.
+    const seen: (string[] | null)[] = [];
+    const off = onLayoutMotion((_active, _kinds, scope) =>
+      seen.push(scope ? [...scope].sort() : null),
+    );
+    beginLayoutMotion("move", ["vA"]);
+    beginLayoutMotion("move", ["vB"]);
     endLayoutMotion("move");
+    endLayoutMotion("move");
+    off();
+    // 종료 통지의 범위는 뜻이 없다(활성 위상 0) — 소비자는 active:false 에 전부 해동한다.
+    expect(seen).toEqual([["vA"], ["vA", "vB"], ["vA"], []]);
   });
 });

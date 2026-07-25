@@ -20,11 +20,6 @@ function makeSlot(viewId: string): HTMLElement {
 }
 
 let rafQ: FrameRequestCallback[] = [];
-function flushRaf(): void {
-  const q = rafQ;
-  rafQ = [];
-  for (const cb of q) cb(0);
-}
 async function microtasks(): Promise<void> {
   for (let i = 0; i < 8; i++) await Promise.resolve();
 }
@@ -64,7 +59,7 @@ afterEach(() => {
 });
 
 describe("slotFreeze — 코어 소유 이동-동결", () => {
-  it("정착 캡처 후 move 위상: 스탠드인 부착 → 이중 rAF 뒤 veil(true)", async () => {
+  it("정착 캡처 후 move 위상: 스탠드인 부착 + veil(true) 통지", async () => {
     const slot = makeSlot("v1");
     const f = build();
     f.captureSettled();
@@ -73,10 +68,9 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
     f.onMotion(true, ["move"]);
     expect(slot.querySelector("img.slot-freeze-frame")).not.toBeNull();
     expect(slot.dataset.freeze).toBe("1");
-    flushRaf();
-    flushRaf();
-    // 표면 숨김 없음 — 스탠드인이 곧 베일(숨김 복귀 사이클 = 깜빡의 진원이라 제거).
-    expect(veils).toEqual([]);
+    // veil = "스탠드인 뒤에 있다: 따라가지 말고 해동 에지에 한 번 착지하라". 숨기라는 뜻이
+    // 아니다(숨김 복귀 사이클 = 깜빡의 진원). 동결된 슬롯의 뷰에만 정확히 간다.
+    expect(veils).toEqual([["v1", true]]);
   });
 
   it("resize 가 끼면(단독·혼합) 동결하지 않는다", async () => {
@@ -108,18 +102,17 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
     expect(slot.querySelector("img")).toBeNull();
   });
 
-  it("위상 끝: veil(false) 즉시, 스탠드인은 한 박자 뒤 제거", async () => {
+  it("위상 끝: veil(false)=착지 신호 즉시, 스탠드인은 한 박자 뒤 제거", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout"] }); // rAF 스텁은 수동 큐 유지
     const slot = makeSlot("v1");
     const f = build();
     f.captureSettled();
     await microtasks();
     f.onMotion(true, ["move"]);
-    flushRaf();
-    flushRaf();
     f.onMotion(false, []);
-    expect(veils).toEqual([]); // 해동에도 표면 조작 없음
-    expect(slot.querySelector("img")).not.toBeNull(); // 착지 스냅 아래 잠시 유지
+    // 해동 에지가 표면 소유자의 유일한 쓰기 시점이다 — 스탠드인은 그 착지를 덮은 채 물러난다.
+    expect(veils).toEqual([["v1", true], ["v1", false]]);
+    expect(slot.querySelector("img")).not.toBeNull();
     vi.advanceTimersByTime(120);
     expect(slot.querySelector("img")).toBeNull();
   });
@@ -130,10 +123,9 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
     f.captureSettled();
     await microtasks();
     f.onMotion(true, ["move"]);
-    flushRaf();
-    flushRaf();
     f.onMotion(true, ["move", "resize"]);
-    expect(veils).toEqual([]);
+    // resize 가 끼면 즉시 해동 — 변하는 크기 밑 정지 사진은 박제다(§4.6-1). 착지 신호도 간다.
+    expect(veils).toEqual([["v1", true], ["v1", false]]);
     expect(slot.dataset.freeze).toBe("0");
   });
 });

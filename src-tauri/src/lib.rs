@@ -581,7 +581,6 @@ pub fn run() {
             clipboard::clipboard_watch_stop,
             webview::webview_open,
             webview::webview_bounds,
-            webview::webview_animate_bounds,
             webview::webview_navigate,
             webview::webview_devtools,
             webview::webview_history,

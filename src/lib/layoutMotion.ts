@@ -62,20 +62,16 @@ function activeKinds(): LayoutMotionKind[] {
 function syncEmit(): void {
   const active = depth() > 0;
   const kinds = activeKinds();
-  const key = `${active}:${kinds.join(",")}`;
+  const scopeViews = activeScope();
+  // 중복 억제 키는 범위까지 본다 — 범위가 바뀌면 그것은 다른 사실이다. 키가 범위를 모르면
+  // 스코프 위상이 연달아 시작될 때 두 번째 통지가 삼켜지고, 실제로 움직이는 표면이 자기
+  // 위상을 통보받지 못한다(실사고).
+  const key = `${active}:${kinds.join(",")}:${scopeViews ? [...scopeViews].sort().join("+") : "*"}`;
   if (key === lastEmittedKey) return;
   lastEmittedKey = key;
-  // scope 를 플러그인 채널에도 싣는다 — 무관 표면이 위상마다 작업(bounds 강제 재전송·생존
-  // 프로브·재스냅)을 하던 결함의 근치(실측: 무관 스왑 3회에 브라우저 생존 프로브 4회).
-  // views 생략 = 전역 위상(모든 표면 대상). 구 소비자는 이 필드를 몰라도 종전대로 동작한다.
-  const scopeViews = activeScope();
-  // 종료(active:false)는 범위를 싣지 않는다 — 종료 통지는 전원에게 가야 한다(범위 밖이라
-  // 무시하면 위상 중 세운 상태를 걷을 기회를 잃는다). 시작·종별변화에만 범위를 싣는다.
-  emitPluginEvent("layout.resize-gesture", {
-    active,
-    kinds,
-    ...(active && scopeViews ? { views: [...scopeViews] } : {}),
-  });
+  // 플러그인 채널은 사실만 싣는다(active·kinds). 어느 표면이 이 위상의 대상인지는 브로드캐스트
+  // 로 추측할 일이 아니다 — 코어가 동결한 슬롯에 view.veiled 로 정확히 통지한다(§4.6).
+  emitPluginEvent("layout.resize-gesture", { active, kinds });
   void invoke("webview_resize_gesture", { active }).catch(() => {
     // 비-macOS 등 릴레이 미지원은 무해 — 플러그인 채널은 이미 전달됨.
   });
