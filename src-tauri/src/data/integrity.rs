@@ -149,6 +149,12 @@ pub fn failure_evidence(conn: &Connection) -> String {
     let f = findings(conn);
     let head = f.first().cloned().unwrap_or_else(|| "없음".to_string());
     let proc = process_memory_probe();
+    let log = recent_sqlite_log();
+    let proc = if log.is_empty() {
+        proc
+    } else {
+        format!("{proc} | SQLite 로그: {}", log.join(" ; "))
+    };
     match stats(conn) {
         Ok(s) => format!(
             "진단 {}건(첫 항목: {head}) | SQLite {} 사용 {}B 최고 {}B 한도 soft {} hard {} | 페이지 {}x{} free {} | records 인덱스 {} | {proc}",
@@ -306,6 +312,50 @@ pub struct Stats {
     pub page_count: i64,
     pub freelist_count: i64,
     pub records_indexes: i64,
+}
+
+// SQLite 자기 로그 — SQLite 는 내부 실패를 errorlog 로 남긴다(실패한 할당의 크기까지). 그것을 안 보면
+// 우리에게 오는 것은 `out of memory` 한 줄뿐이고, 그 한 줄로는 무엇이 얼마를 요구하다 막혔는지 알 수
+// 없다(실측: 프로세스는 그 순간 64MiB 를 받는데 SQLite 는 거절당했다 — 크기를 몰라 추적이 막혔다).
+// SQLite 문서가 권하는 기본 설치물이다.
+static SQLITE_LOG: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+const SQLITE_LOG_KEEP: usize = 24;
+
+unsafe extern "C" fn sqlite_log_cb(
+    _ctx: *mut std::ffi::c_void,
+    code: std::os::raw::c_int,
+    msg: *const std::os::raw::c_char,
+) {
+    if msg.is_null() {
+        return;
+    }
+    let text = unsafe { std::ffi::CStr::from_ptr(msg) }
+        .to_string_lossy()
+        .into_owned();
+    if let Ok(mut log) = SQLITE_LOG.lock() {
+        if log.len() >= SQLITE_LOG_KEEP {
+            log.remove(0);
+        }
+        log.push(format!("[{code}] {text}"));
+    }
+}
+
+/// SQLite 에러 로그를 설치한다(멱등·최선노력). sqlite3_initialize 이전에 불러야 먹으므로 저장소 개방
+/// 첫머리에서 한 번 부른다 — 늦게 불리면 SQLite 가 거절하고, 그때는 로그 없이 간다.
+pub fn install_sqlite_log() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| unsafe {
+        rusqlite::ffi::sqlite3_config(
+            rusqlite::ffi::SQLITE_CONFIG_LOG,
+            sqlite_log_cb as unsafe extern "C" fn(*mut std::ffi::c_void, std::os::raw::c_int, *const std::os::raw::c_char),
+            std::ptr::null_mut::<std::ffi::c_void>(),
+        );
+    });
+}
+
+/// 최근 SQLite 내부 로그 — 실패 증거에 싣는다.
+pub fn recent_sqlite_log() -> Vec<String> {
+    SQLITE_LOG.lock().map(|l| l.clone()).unwrap_or_default()
 }
 
 // 부팅 게이트 판정 보관 — 프로세스 1개당 1개. 게이트가 끝난 뒤에도 읽을 수 있어야 한다.

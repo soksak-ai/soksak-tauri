@@ -58,6 +58,9 @@ pub fn db_path() -> Result<PathBuf, String> {
 
 // 연결 + PRAGMA + 기본 스키마. 테스트는 임시 경로를 주입(plugins.rs 패턴).
 pub fn open(path: &Path) -> Result<Connection, String> {
+    // SQLite 자기 로그부터 — 내부 실패(할당 크기 포함)를 남기게 한다. sqlite3_initialize 이전이라야
+    // 먹으므로 저장소를 열기 직전, 프로세스에서 SQLite 를 처음 쓰는 이 자리에서 설치한다.
+    integrity::install_sqlite_log();
     let conn = Connection::open(path).map_err(|e| e.to_string())?;
     // 로컬 사용자 전용(0600) — DB 는 봉투 키·레코드를 담는 data-at-rest 저장소라 group/other 접근을
     // 차단한다(ipc.rs 소켓 0600 선례와 동형). best-effort: :memory:·권한 미지원 FS 는 조용히 무시.
