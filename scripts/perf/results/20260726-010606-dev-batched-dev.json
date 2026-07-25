@@ -1,0 +1,62 @@
+{
+  "meta": {
+    "identity": "dev",
+    "cargoProfile": "dev",
+    "label": "dev-batched",
+    "git": "0d5c4927",
+    "date": "20260726-010606",
+    "t1mb": 100,
+    "windowsOpen": 3,
+    "machine": "Apple M1 Pro"
+  },
+  "scenarios": {
+    "t2": {
+      "samples": 50,
+      "minMs": 1,
+      "medianMs": 1,
+      "p95Ms": 2,
+      "maxMs": 2,
+      "measurementPoint": "plugin write -> PTY echo -> onData arrival (socket RPC/paint excluded)"
+    },
+    "t1_plain": {
+      "fixture": "plain-100mb.txt",
+      "bytes": 104857662,
+      "durationMs": 4110,
+      "mbps": 24.33,
+      "exitCode": 0,
+      "counters": {
+        "writtenBytesDelta": 106010873,
+        "ackSentDelta": 1653,
+        "writeCbLagMsDelta": 20576,
+        "rafFramesDelta": 198,
+        "webglActive": true,
+        "scrollbackRows": 10000
+      },
+      "cpu": {
+        "avg": 48.7,
+        "max": 192.8,
+        "samples": 19
+      }
+    },
+    "t1_ansi": {
+      "fixture": "ansi-100mb.txt",
+      "bytes": 104857624,
+      "durationMs": 4561,
+      "mbps": 21.93,
+      "exitCode": 0,
+      "counters": {
+        "writtenBytesDelta": 106228827,
+        "ackSentDelta": 1644,
+        "writeCbLagMsDelta": 22153,
+        "rafFramesDelta": 197,
+        "webglActive": true,
+        "scrollbackRows": 10000
+      },
+      "cpu": {
+        "avg": 47.0,
+        "max": 185.8,
+        "samples": 19
+      }
+    }
+  }
+}
