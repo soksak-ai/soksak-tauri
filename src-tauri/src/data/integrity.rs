@@ -207,6 +207,40 @@ fn process_memory_probe() -> String {
     )
 }
 
+/// 메모리 압박이 지나갈 때까지 다시 해 본다 — `out of memory` 는 저장소의 상태가 아니라 그 순간의
+/// 형편일 수 있다(실측: 무거운 컴파일이 도는 8초 동안 모든 레코드 쓰기가 실패했고, 컴파일이 끝나자
+/// 같은 쓰기가 그대로 통과했다. 파일은 내내 성했다).
+///
+/// SQLite 는 이미 잠금 경합(`SQLITE_BUSY`)을 busy_timeout 으로 흡수한다. 압박 하의 `SQLITE_NOMEM` 은
+/// 그 메모리판이다 — 한 번 실패했다고 사용자의 저장을 버리면, 기계가 바쁜 몇 초 때문에 데이터를
+/// 잃는다. 되돌려진 트랜잭션을 다시 여는 것이라 재시도는 안전하다.
+///
+/// 끝내 안 되면 그대로 실패한다 — 무한히 매달리지 않는다(호출자는 응답을 기다리는 중이다).
+pub fn with_nomem_retry<T>(
+    attempts: u32,
+    backoff: std::time::Duration,
+    mut op: impl FnMut() -> Result<T, String>,
+) -> Result<T, String> {
+    let mut waited = backoff;
+    for left in (1..attempts.max(1)).rev() {
+        match op() {
+            Ok(v) => return Ok(v),
+            Err(e) if is_transient_memory(&e) => {
+                let _ = left;
+                std::thread::sleep(waited);
+                waited *= 2; // 압박은 몇 초 단위로 오간다 — 물러서며 기다린다
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    op()
+}
+
+/// 그 순간의 형편인가 — SQLite 가 돌려준 메모리 실패는 다시 하면 되는 부류다.
+fn is_transient_memory(err: &str) -> bool {
+    err.contains("out of memory")
+}
+
 /// 쓸 수 있는가 — 레코드 표에 한 줄 넣어 보고 되돌린다(남기지 않는다).
 ///
 /// 읽기는 멀쩡하고 쓰기만 무너진 저장소가 실재한다(실측: 조회·검색·백업은 되는데 모든 레코드 쓰기가
@@ -598,6 +632,46 @@ mod tests {
 
         // 두 번 돌려도 같다(멱등) — 부팅마다 도는 검사의 최소 조건.
         write_canary(&conn).expect("두 번째도 통과");
+    }
+
+    // 압박이 지나가면 같은 쓰기가 통과한다 — 그 몇 초 때문에 사용자의 저장을 버리지 않는다.
+    #[test]
+    fn a_write_starved_by_pressure_is_retried_until_it_passes() {
+        let mut tries = 0;
+        let out = with_nomem_retry(4, std::time::Duration::from_millis(1), || {
+            tries += 1;
+            if tries < 3 {
+                Err("out of memory".to_string())
+            } else {
+                Ok("저장됨")
+            }
+        });
+        assert_eq!(out.unwrap(), "저장됨");
+        assert_eq!(tries, 3, "압박이 풀린 시도에서 통과한다");
+    }
+
+    // 메모리와 무관한 실패는 즉시 올린다 — 잘못된 쓰기를 반복하는 것은 재시도가 아니라 고집이다.
+    #[test]
+    fn a_real_error_is_not_retried() {
+        let mut tries = 0;
+        let out: Result<(), String> = with_nomem_retry(4, std::time::Duration::from_millis(1), || {
+            tries += 1;
+            Err("UNIQUE constraint failed".to_string())
+        });
+        assert!(out.is_err());
+        assert_eq!(tries, 1, "한 번만 시도한다");
+    }
+
+    // 끝내 안 되면 실패한다 — 무한히 매달리지 않는다.
+    #[test]
+    fn retry_gives_up_and_reports() {
+        let mut tries = 0;
+        let out: Result<(), String> = with_nomem_retry(3, std::time::Duration::from_millis(1), || {
+            tries += 1;
+            Err("out of memory".to_string())
+        });
+        assert!(out.is_err());
+        assert_eq!(tries, 3, "정해진 횟수만 시도한다");
     }
 
     #[test]

@@ -129,7 +129,7 @@ pub fn data_put(
     validate_ns(&ns)?;
     let scope_s = scope.unwrap_or_default();
     let new_id = with_conn(&state, |c| {
-        store::put(c, &ns, &coll, &scope_s, id, &doc).map_err(|e| with_evidence(c, e))
+        write_with_retry(c, || store::put(c, &ns, &coll, &scope_s, id.clone(), &doc))
     })?;
     emit_change(
         &app,
@@ -595,6 +595,28 @@ fn with_evidence(conn: &rusqlite::Connection, err: String) -> String {
         return err;
     }
     format!("{err} [저장소 실황: {}]", super::integrity::failure_evidence(conn))
+}
+
+// 쓰기 = 압박을 견디고, 끝내 안 되면 증거와 함께 실패한다. 기계가 바쁜 몇 초 때문에 사용자의 저장을
+// 버리지 않는다(integrity.rs with_nomem_retry 머리말). 되돌려진 트랜잭션을 다시 여는 것이라 안전하다.
+const WRITE_ATTEMPTS: u32 = 4;
+const WRITE_BACKOFF: std::time::Duration = std::time::Duration::from_millis(60);
+
+fn write_with_retry<T>(
+    conn: &rusqlite::Connection,
+    op: impl FnMut() -> Result<T, String>,
+) -> Result<T, String> {
+    super::integrity::with_nomem_retry(WRITE_ATTEMPTS, WRITE_BACKOFF, op)
+        .map_err(|e| with_evidence(conn, e))
+}
+
+// 지금 쓸 수 있는가 — 한 줄 써 보고 되돌린다(남기지 않는다). 진단은 전부 읽기라 쓰기 고장을 못 본다
+// (integrity.rs write_canary 머리말). 읽기만 성한 저장소를 부작용 없이 확인하는 표면.
+#[tauri::command]
+pub fn data_canary(state: State<'_, DbState>) -> Result<(), String> {
+    with_conn(&state, |c| {
+        write_with_retry(c, || super::integrity::write_canary(c))
+    })
 }
 
 // 저장소 자기 진단 — 전수 대조(integrity_check). 부팅 게이트(quick_check)는 인덱스↔테이블 대조를

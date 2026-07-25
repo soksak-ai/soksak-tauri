@@ -239,6 +239,22 @@ export function registerDataCatalog(): void {
     },
   });
 
+  // 쓰기 가능 여부 — 진단(integrity_check)은 읽기라 쓰기 고장을 보지 못한다. 한 줄 써 보고 되돌린다.
+  register("data.canary", {
+    description:
+      "Check whether the store can actually be written: inserts one row and rolls it back, leaving nothing. The integrity check only reads, so a store that reads fine and fails every write passes it — this is the surface that catches that. Failures carry the diagnosis and the process's memory figures.",
+    triggers: { ko: "데이터 쓰기 확인 저장 가능" },
+    params: {},
+    returns: "{ writable }",
+    message: () => "저장소 쓰기 가능",
+    errors: ["INTERNAL"],
+    examples: ["data.canary"],
+    handler: async () => {
+      await invoke<void>("data_canary");
+      return { writable: true };
+    },
+  });
+
   // 치유 — 인덱스를 테이블에서 다시 만든다(REINDEX). 데이터 행은 건드리지 않으므로 파괴적이지
   // 않지만, 저장소를 고쳐 쓰는 일이라 danger 로 둔다(원격 호출은 권한 게이트를 지난다).
   register("data.repair", {
