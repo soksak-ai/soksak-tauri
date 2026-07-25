@@ -706,8 +706,8 @@ function App() {
         })) as string;
         return `data:image/png;base64,${b64}`;
       },
-      emitVeil: (viewId, veiled) =>
-        emitPluginEvent("view.veiled", { viewId, veiled }),
+      emitVeil: (viewId, veiled, hidden) =>
+        emitPluginEvent("view.veiled", { viewId, veiled, hidden }),
     });
     const boot = window.setTimeout(() => scheduleSlotSettleCapture(), 1200);
     return () => {

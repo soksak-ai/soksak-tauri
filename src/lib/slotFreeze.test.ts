@@ -20,18 +20,23 @@ function makeSlot(viewId: string): HTMLElement {
 }
 
 let rafQ: FrameRequestCallback[] = [];
+function flushRaf(): void {
+  const q = rafQ;
+  rafQ = [];
+  for (const cb of q) cb(0);
+}
 async function microtasks(): Promise<void> {
   for (let i = 0; i < 8; i++) await Promise.resolve();
 }
 
-let veils: [string, boolean][] = [];
+let veils: [string, boolean, boolean][] = [];
 let sf: SlotFreeze | null = null;
 
 function build(over: Partial<Parameters<typeof createSlotFreeze>[0]> = {}): SlotFreeze {
   sf = createSlotFreeze({
     root: () => document,
     capture: () => Promise.resolve(PNG),
-    emitVeil: (viewId, veiled) => veils.push([viewId, veiled]),
+    emitVeil: (viewId, veiled, hidden) => veils.push([viewId, veiled, hidden]),
     imageFactory: () => {
       const im = document.createElement("img");
       (im as unknown as { decode: () => Promise<void> }).decode = () => Promise.resolve();
@@ -59,7 +64,7 @@ afterEach(() => {
 });
 
 describe("slotFreeze — 코어 소유 이동-동결", () => {
-  it("정착 캡처 후 move 위상: 스탠드인 부착 + veil(true) 통지", async () => {
+  it("정착 캡처 후 move 위상: 스탠드인 부착 → 페인트 커밋 뒤에야 veil(true)", async () => {
     const slot = makeSlot("v1");
     const f = build();
     f.captureSettled();
@@ -71,9 +76,13 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
     // 피복은 관측 가능해야 한다 — 주소가 없으면 "덮고 있다"를 잴 방법이 없다.
     expect(standin.dataset.node).toBe("layout/standin/v1");
     expect(slot.dataset.freeze).toBe("1");
-    // veil = "스탠드인 뒤에 있다: 따라가지 말고 해동 에지에 한 번 착지하라". 숨기라는 뜻이
-    // 아니다(숨김 복귀 사이클 = 깜빡의 진원). 동결된 슬롯의 뷰에만 정확히 간다.
-    expect(veils).toEqual([["v1", true]]);
+    // 순서 계약(§5-2): 스탠드인 페인트가 커밋되기 전에는 표면을 건드리지 않는다 — 반대 순서는
+    // 투명 홀이 배경을 노출한다. 이중 rAF 뒤에 비로소 veil(true).
+    // 추종 정지는 즉시, 감춤은 페인트 커밋 뒤 — 다른 에지다.
+    expect(veils).toEqual([["v1", true, false]]);
+    flushRaf();
+    flushRaf();
+    expect(veils).toEqual([["v1", true, false], ["v1", true, true]]);
   });
 
   it("resize 가 끼면(단독·혼합) 동결하지 않는다", async () => {
@@ -112,8 +121,14 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
     f.captureSettled();
     await microtasks();
     f.onMotion(true, ["move"]);
+    flushRaf();
+    flushRaf();
     f.onMotion(false, []);
-    expect(veils).toEqual([["v1", true], ["v1", false]]);
+    expect(veils).toEqual([
+      ["v1", true, false],
+      ["v1", true, true],
+      ["v1", false, false],
+    ]);
     // 시간이 흘러도 착지가 오지 않았으면 스탠드인은 서 있는다 — 홀이 표면보다 먼저 열리면
     // 그 프레임은 빈 구멍이다(느린 사이드카 경로의 실제 위험).
     vi.advanceTimersByTime(200);
@@ -172,9 +187,15 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
     f.captureSettled();
     await microtasks();
     f.onMotion(true, ["move"]);
+    flushRaf();
+    flushRaf();
     f.onMotion(true, ["move", "resize"]);
     // resize 가 끼면 즉시 해동 — 변하는 크기 밑 정지 사진은 박제다(§4.6-1). 착지 신호도 간다.
-    expect(veils).toEqual([["v1", true], ["v1", false]]);
+    expect(veils).toEqual([
+      ["v1", true, false],
+      ["v1", true, true],
+      ["v1", false, false],
+    ]);
     expect(slot.dataset.freeze).toBe("0");
   });
 
@@ -186,9 +207,15 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
     f.captureSettled();
     return microtasks().then(() => {
       f.onMotion(true, ["move"]);
-      expect(veils).toEqual([["v1", true]]);
+      flushRaf();
+      flushRaf();
+      expect(veils).toEqual([["v1", true, false], ["v1", true, true]]);
       f.dispose();
-      expect(veils).toEqual([["v1", true], ["v1", false]]);
+      expect(veils).toEqual([
+        ["v1", true, false],
+        ["v1", true, true],
+        ["v1", false, false],
+      ]);
       expect(slot.querySelector("img")).toBeNull();
     });
   });

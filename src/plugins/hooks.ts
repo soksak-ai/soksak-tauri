@@ -82,7 +82,10 @@ export interface PluginEventMap {
   "view.parked": { viewId: string; parked: boolean };
   // 표면 가림(코어 슬롯 동결) — 스탠드인이 선 동안 네이티브 표면을 숨기라는 신호.
   // view.parked 와 동형의 릴레이 계약: 사이드카 표면 소유자는 veiled 를 hidden 으로 넘긴다.
-  "view.veiled": { viewId: string; veiled: boolean };
+  // 표면 릴레이 — veiled = 따라가지 마라(위상 중 bounds 쓰기 금지), hidden = 지금 감춰라.
+  // 둘은 다른 에지다: 추종 정지는 위상 시작 즉시, 감춤은 스탠드인 페인트가 커밋된 뒤에 온다
+  // (반대 순서면 투명 홀이 배경을 노출한다 — NATIVE-SURFACES §4.6).
+  "view.veiled": { viewId: string; veiled: boolean; hidden: boolean };
   // webview 건강(서킷 브레이커) 전이 — 코어(webview_health.rs)가 렌더러 프로세스 종료를
   // 감지·복구하며 그 창에 emit_to 한다. state: recovering=자동 복구 예약(attempt 동반),
   // open=상한 소진(자동 복구 중단 — webview.recover 로 수동 복구), closed=정상 복귀.

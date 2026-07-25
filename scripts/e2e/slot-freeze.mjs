@@ -458,6 +458,26 @@ async function main() {
     }
   }
 
+  // 10.5) 모션 판독(옵션) — SLOT_FREEZE_MOTION 으로 활강 구간을 프레임 열로 남긴다.
+  //       정착 스냅샷·계수는 모션에 대해 아무것도 증명하지 않는다(핸드오프 §1·§6-4): 출력
+  //       픽셀만이 근거다. 모션 프레임은 창이 전면일 때만 찍힌다(가려진 창은 애니를 최종
+  //       프레임으로 settle 한다) — 그래서 이 단계만 창을 전면으로 가져온다.
+  if (process.env.SLOT_FREEZE_MOTION) {
+    const dir =
+      process.env.SLOT_FREEZE_MOTION_DIR || path.join(os.tmpdir(), "slot-freeze-motion");
+    await rpc("window.focus", {}, win);
+    await sleep(500);
+    await rpc("view.activate", { view: browserView }, win);
+    await sleep(900);
+    // 명령은 소켓에서 순차 처리된다 — 녹화를 먼저 걸면 activate 가 녹화가 끝날 때까지 대기해
+    // 활강이 한 프레임도 안 찍힌다(실측: 45프레임 전부 파티클 노이즈뿐). 위상을 먼저 태우고
+    // 곧바로 녹화한다: 상태 변경은 즉시 반환하고 CSS 활강은 그 뒤 340ms 동안 이어진다.
+    await rpc("view.activate", { view: termView }, win);
+    const done = await rpc("window.record", { dir, frames: 34, intervalMs: 16 }, win);
+    console.log(`  모션 프레임: ${done.data?.frames ?? "?"}장 → ${done.data?.dir ?? dir}`);
+    await sleep(500);
+  }
+
   // 11) 시각 확인(옵션) — SLOT_FREEZE_SHOTS 로 정지 프레임 두 장을 남긴다: 브라우저 포커스와
   //    터미널 포커스. 레일이 포커스 패널의 왼쪽 선에 서 있는지, 복도가 열린 자리가 맞는지,
   //    표면이 온전히 렌더되는지는 사람이 픽셀로 확인해야 하는 사실이다(R3).

@@ -27,8 +27,12 @@ export interface SlotFreezeDeps {
   root: () => ParentNode | null;
   /** 창 좌표 rect(CSS px)를 PNG data URL 로 캡처한다. */
   capture: (rect: { x: number; y: number; w: number; h: number }) => Promise<string>;
-  /** 표면 가림 릴레이 — view.veiled { viewId, veiled } 발화(사이드카 표면 소유자가 소비). */
-  emitVeil: (viewId: string, veiled: boolean) => void;
+  /**
+   * 표면 릴레이 — view.veiled { viewId, veiled, hidden } 발화(표면 소유자가 소비).
+   * veiled = 따라가지 마라(위상 중 쓰기 금지). hidden = 지금 감춰라.
+   * 둘은 다른 에지다: 추종 정지는 위상 시작 즉시, 감춤은 스탠드인 페인트가 커밋된 뒤(§5-2).
+   */
+  emitVeil: (viewId: string, veiled: boolean, hidden: boolean) => void;
   /** 착지 쓰기가 오지 않을 때 스탠드인을 걷는 상한(ms). 기본 400 — 340ms 주행보다 길다. */
   landingTimeoutMs?: number;
   /** 정착 스냅 신선도 상한(ms). 기본 120초. */
@@ -154,11 +158,26 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
     slot.appendChild(img);
     frozen.set(slot, { img, viewId });
     slot.dataset.freeze = "1"; // 관측면(ui.hit)
-    // veil = "이 표면은 지금 스탠드인 뒤에 있다: 따라가지 말고, 해동 에지에 정확히 한 번
-    // 착지하라". 표면을 숨기라는 뜻이 아니다 — 유일한 홀(슬롯)은 불투명 img 가 덮고 홀 밖
-    // DOM 은 원래 불투명이라 표면은 어차피 보이지 않는다. 숨김을 걸면 복귀 사이클(WK 기상
-    // 재부착 1프레임 소실·CEF hidden 토글 재페인트)이 스왑마다 화면 깜빡을 만든다(실사고).
-    deps.emitVeil(viewId, true);
+    // veil = "스탠드인이 섰다: 표면을 감추고, 따라가지 말고, 해동 에지에 정확히 한 번 착지하라."
+    //
+    // 숨김이 필요한 이유(실측): 활강 중 표면은 제자리에 머무는데 슬롯과 스탠드인은 미끄러진다.
+    // DOM 이 그 옛 자리를 전부 덮어 준다는 보장이 없다 — 레일 홀 클립은 매 프레임 슬롯의
+    // 애니 rect 로 갱신되므로, 표면이 남아 있는 자리에 칠하지 않는 창이 열린다. 녹화 프레임에서
+    // 페이지가 둘로 보였다(미끄러지는 스탠드인 + 레일 안쪽에 삐져나온 표면 띠).
+    //
+    // 숨김이 깜빡이지 않으려면 순서가 계약이다(§5-2): 스탠드인 페인트가 **커밋된 뒤** 숨긴다.
+    // 반대 순서는 투명 홀이 1~2프레임 배경을 노출한다("사라졌다 나타난다"). 스냅은 정착 에지에
+    // 이미 디코드돼 있으므로(§5-3) append 즉시 페인트되고, 이중 rAF 뒤면 그 페인트는 커밋됐다.
+    // ① 즉시: 따라가지 마라. 늦추면 그 사이 추종 루프가 최종 좌표로 한 번 써서 표면이 t0 에
+    //    목적지로 텔레포트한다(계수 게이트가 잡는다).
+    deps.emitVeil(viewId, true, false);
+    // ② 페인트 커밋 뒤: 감춰라. 반대 순서는 투명 홀이 1~2프레임 배경을 노출한다.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        if (frozen.get(slot)?.img !== img) return; // 그새 해동됨 — 감추지 않는다
+        deps.emitVeil(viewId, true, true);
+      }),
+    );
   };
 
   /** 스탠드인 철수 — 착지가 확정된 뒤에만. 남은 타이머는 정리한다. */
@@ -178,7 +197,7 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
     // 해동 = 착지 신호. 소유자가 이 에지에 정확히 한 번 최종 rect 로 쓴다. 스탠드인은 그 쓰기가
     // 실제로 도착한 뒤 물러난다 — 시간으로 추측하면(옛 90ms 고정) 느린 사이드카 경로에서 홀이
     // 표면보다 먼저 열려 한 프레임이 빈다. 상한은 소유자가 끝내 쓰지 않는 경우의 바닥일 뿐이다.
-    deps.emitVeil(cur.viewId, false);
+    deps.emitVeil(cur.viewId, false, false);
     const timer = window.setTimeout(() => withdraw(cur.viewId), landingTimeout);
     awaiting.set(cur.viewId, { img: cur.img, timer });
   };
@@ -249,7 +268,7 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
         slot.dataset.freeze = "0";
         // 회수도 착지 에지다 — veil 을 켠 채 사라지면 소유자는 "따라가지 마라"를 영구히
         // 지키고, 그 표면은 이후 어떤 이동에도 bounds 를 보내지 않는다(정지 좌초).
-        deps.emitVeil(cur.viewId, false);
+        deps.emitVeil(cur.viewId, false, false);
       }
       frozen.clear();
     },
