@@ -84,6 +84,7 @@ import {
 } from "./lib/railPlacement";
 import { railGeometryScopeId, railPresentationLayers } from "./lib/railMotion";
 import { useArrangementPhase } from "./components/useArrangementPhase";
+import { arrangementMoves, viewIdsOfMoves } from "./lib/railArrangement";
 import "./App.css";
 
 // 파일 경로를 셸·Claude Code 양쪽에서 안전하게: 영숫자와 안전문자 외에는 백슬래시
@@ -213,7 +214,13 @@ const ProjectPane = memo(function ProjectPane({
         : "",
     [activeContent],
   );
-  const phase = useArrangementPhase(solved, railGeometryScope, contentKey);
+  const phase = useArrangementPhase(
+    solved,
+    railGeometryScope,
+    contentKey,
+    // 여정 모드 판정 — 위상이 시작에 한 번 묻는다(매 렌더 재평가 금지).
+    (from, to) => canGlideViews(viewIdsOfMoves(from.displayLayout, arrangementMoves(from, to))),
+  );
   const arrangement = phase.displayed;
   const railCells = arrangement?.cells ?? [];
   const railCleanLines = arrangement?.cleanLines ?? [0, 100];
@@ -237,20 +244,28 @@ const ProjectPane = memo(function ProjectPane({
   // 간다: 움직이지 않는 표면은 위상 내내 라이브로 남고 통지조차 받지 않는다.
   const movingViewIds = useMemo(() => {
     if (!activeContent || phase.moves.length === 0) return [];
-    const groups = allGroups(phase.from?.displayLayout ?? activeContent.layout);
-    return phase.moves.flatMap(
-      (move) =>
-        groups
-          .find((group) => group.id === move.id)
-          ?.views.map((view) => view.id) ?? [],
+    return viewIdsOfMoves(
+      phase.from?.displayLayout ?? activeContent.layout,
+      phase.moves,
     );
   }, [activeContent, phase.from, phase.moves]);
   const movingKey = movingViewIds.join(",");
   // 활강의 전제(§4.6-5) — 이동하는 홀 표면을 전부 스탠드인으로 덮을 수 있을 때만 활강한다.
   // 덮을 수 없는 표면이 끼면 그 표면은 위상 내내 샘플링 추종으로 끌려가고 그 스터터가 애초의
   // 불만이었다. 덮을 수 없으면 활강하지 않는다 — 즉시 스냅은 못생겨도 결코 추하지 않다.
-  const railTraveling =
-    dragStation === null && phase.traveling && canGlideViews(movingViewIds);
+  //
+  // 판정은 **위상이 시작에 한 번** 한다(phase.glide). 매 렌더 재평가는 위상 한복판에 레일 표상을
+  // 1장↔2장으로 바꾸고, 그 1장 렌더에서 서 있던 사이드바가 새 투영으로 커밋된 뒤 빠지는 자리로
+  // 밀려난다 — 빠지는 자리가 새 투영을 든 채 닫히던 실측 결함의 진원.
+  const railTraveling = dragStation === null && phase.traveling && phase.glide;
+  // 위상이 아직 받아들이지 않은 변화 — 포커스는 이미 바뀌었지만 여정은 다음 커밋에 시작된다.
+  // 그 한 렌더 동안 서 있는 레일이 새 투영을 커밋하면, 다음 커밋에 그 인스턴스가 빠지는 자리가
+  // 되면서 **새 투영을 든 채 닫힌다**(실측: 즐겨찾기가 서 있던 자리에서 파일트리가 닫혔다).
+  // 표시의 주인은 위상이다 — 기하와 마찬가지로 내용도 위상이 받아들일 때 바뀐다.
+  const arrangementPending =
+    !!solved &&
+    !!phase.displayed &&
+    arrangementMoves(phase.displayed, solved).length > 0;
   // 빠질 자리와 생길 자리 — 출발선 레이어는 서 있던 인스턴스(그것이 닫힌다), 도착선 레이어는
   // 새것(그것이 열려 상주가 된다). 레일 자신은 평행이동하지 않는다: 패널이 덮고 드러내는 것이
   // 곧 닫힘·열림이다(세대 전진은 착지에서만 — useArrangementPhase).
@@ -476,7 +491,7 @@ const ProjectPane = memo(function ProjectPane({
                   <LeftSidebarHost
                     project={project}
                     paneId={cwdPaneOf(project) ?? ""}
-                    commitProjection={layer.commitProjection}
+                    commitProjection={layer.commitProjection && !arrangementPending}
                   />
                   {project.sidebarOpen && layer.interactive && (
                     <div className="left-rail-controls">

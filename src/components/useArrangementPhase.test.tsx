@@ -46,13 +46,15 @@ function Probe({
   scopeId,
   contentKey = "",
   onPhase,
+  canGlide,
 }: {
   arrangement: Arrangement<G>;
   scopeId: string;
   contentKey?: string;
   onPhase?: (rebase: () => void) => void;
+  canGlide?: () => boolean;
 }) {
-  const phase = useArrangementPhase(arrangement, scopeId, contentKey);
+  const phase = useArrangementPhase(arrangement, scopeId, contentKey, canGlide);
   onPhase?.(phase.rebase);
   return (
     <div
@@ -62,6 +64,7 @@ function Probe({
       data-station={String(phase.displayed?.station ?? "")}
       data-content={String(phase.displayed === arrangement ? "live" : "stale")}
       data-gen={String(phase.generation)}
+      data-glide={phase.glide ? "1" : "0"}
     />
   );
 }
@@ -133,6 +136,38 @@ describe("useArrangementPhase", () => {
     );
     expect(el().dataset.traveling).toBe("0");
     expect(el().dataset.gen).toBe(standing);
+  });
+
+  it("여정 모드(활강 가능)는 시작에 한 번 정해지고 위상 중에 바뀌지 않는다", () => {
+    // 모드가 위상 한복판에 바뀌면 레일 표상이 1장(도착선)↔2장(빠질·생길 자리)으로 형태를
+    // 바꾼다. 1장 렌더에서 서 있던 사이드바가 새 투영으로 커밋되고, 다음 프레임에 그것이
+    // 빠지는 자리로 밀려나 **새 투영을 든 채 닫힌다**(실측 결함).
+    const at = solve(twoColumns, "a");
+    const to = solve(twoColumns, "b");
+    let glide = true;
+    const canGlide = () => glide;
+    act(() =>
+      root.render(<Probe arrangement={at} scopeId={scopeOf(at)} canGlide={canGlide} />),
+    );
+    act(() =>
+      root.render(<Probe arrangement={to} scopeId={scopeOf(to)} canGlide={canGlide} />),
+    );
+    expect(el().dataset.traveling).toBe("1");
+    expect(el().dataset.glide).toBe("1");
+
+    glide = false; // 위상 중 스냅이 낡거나 뷰가 바뀌어 활강 전제가 깨진다
+    act(() =>
+      root.render(<Probe arrangement={to} scopeId={scopeOf(to)} canGlide={canGlide} />),
+    );
+    expect(el().dataset.glide).toBe("1"); // 이 여정의 모드는 이미 정해졌다
+
+    act(() => vi.advanceTimersByTime(RAIL_TRAVEL_MS + 10));
+    const back = solve(twoColumns, "a"); // 같은 평면의 다음 여정
+    act(() =>
+      root.render(<Probe arrangement={back} scopeId={scopeOf(back)} canGlide={canGlide} />),
+    );
+    expect(el().dataset.traveling).toBe("1");
+    expect(el().dataset.glide).toBe("0"); // 다음 여정은 그때의 전제로 정해진다
   });
 
   it("같은 해가 다시 렌더돼도 주행하지 않는다(유령 위상 금지)", () => {

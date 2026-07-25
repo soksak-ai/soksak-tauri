@@ -27,6 +27,13 @@ export interface ArrangementPhase<L> {
   moves: ArrangementMove[];
   traveling: boolean;
   /**
+   * 이 여정의 모드 — 활강(패널 FLIP + 빠질·생길 두 자리)인가. **시작에 한 번** 정해지고 위상
+   * 내내 바뀌지 않는다. 중간에 바뀌면 레일 표상이 1장↔2장으로 형태를 바꾸고, 1장 렌더에서
+   * 서 있던 사이드바가 새 투영으로 커밋된 뒤 빠지는 자리로 밀려난다(그것이 새 투영을 든 채
+   * 닫힌다 — 실측 결함).
+   */
+  glide: boolean;
+  /**
    * 상주 레일의 identity(레일 레이어 key). **도착이 상주가 되는 순간에만** 전진한다 —
    * 위상 시작에 전진시키면 출발선 레이어도 새 key 를 받아 서 있던 사이드바가 파괴되고
    * 빠질 자리에 새것이 끼워져 그것이 닫힌다. 빠지는 자리는 원래 있던 게 닫히면 끝이다.
@@ -43,6 +50,8 @@ interface PhaseState<L> {
   generation: number;
   scopeId: string;
   contentKey: string;
+  /** 시작 시점에 굳힌 여정 모드. 정차 중에는 의미 없다. */
+  glide: boolean;
 }
 
 /** 위상 재무장 판정용 해 서명 — 렌더마다 새 객체가 오므로 값으로 비교한다. */
@@ -64,6 +73,12 @@ export function useArrangementPhase<L extends { id: string }>(
    * 기하가 그대로면 내용 변화는 여정 없이 즉시 반영한다.
    */
   contentKey: string,
+  /**
+   * 이 여정을 활강으로 태울 수 있는가(이동하는 홀 표면을 전부 스탠드인으로 덮을 수 있는가).
+   * 위상 시작에 **한 번** 물어보고 그 답을 여정 내내 고정한다 — 매 렌더 재평가는 위상 한복판에
+   * 표상 형태를 바꾼다. 생략하면 항상 활강이다.
+   */
+  canGlide?: (from: Arrangement<L>, to: Arrangement<L>) => boolean,
 ): ArrangementPhase<L> {
   const [phase, setPhase] = useState<PhaseState<L>>({
     from: current,
@@ -71,6 +86,7 @@ export function useArrangementPhase<L extends { id: string }>(
     generation: 0,
     scopeId,
     contentKey,
+    glide: true,
   });
 
   // 커밋 시점의 최신값 — 무장 시점 캡처는 전환 중 일시값(placement 미적재 등)을 기준점에 박아
@@ -81,6 +97,11 @@ export function useArrangementPhase<L extends { id: string }>(
   latestScope.current = scopeId;
   const latestContent = useRef(contentKey);
   latestContent.current = contentKey;
+  const latestCanGlide = useRef(canGlide);
+  latestCanGlide.current = canGlide;
+  /** 여정 시작 시점의 모드 결정 — 여기 한 곳만이 물어본다. */
+  const decideGlide = (from: Arrangement<L> | null, to: Arrangement<L> | null): boolean =>
+    from && to ? (latestCanGlide.current?.(from, to) ?? true) : true;
   /** 주행 중 도착한 최신 해(깊이 1) — 표시는 여정이 끝난 뒤에 갈아탄다. */
   const queued = useRef<Arrangement<L> | null>(null);
   /** 다음 해를 여정 없이 받는다 — 손 드래그가 이미 그 자리로 옮겨 놓은 경우. */
@@ -102,6 +123,7 @@ export function useArrangementPhase<L extends { id: string }>(
       generation: p.generation, // 여정이 아니다 — 상주 레일의 identity 는 그대로
       scopeId: latestScope.current,
       contentKey: latestContent.current,
+      glide: p.glide,
     }));
   }, []);
 
@@ -147,6 +169,7 @@ export function useArrangementPhase<L extends { id: string }>(
       generation: p.generation,
       scopeId: latestScope.current,
       contentKey: latestContent.current,
+      glide: decideGlide(p.displayed, latest.current),
     }));
     // current 는 렌더마다 새 객체다 — 값 서명(currentKey·contentKey)만이 안정된 의존이다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -167,6 +190,7 @@ export function useArrangementPhase<L extends { id: string }>(
           generation: p.generation + 1, // 도착 레이어가 상주가 된다
           scopeId: latestScope.current,
           contentKey: latestContent.current,
+          glide: advances ? decideGlide(p.displayed, next) : p.glide,
         };
       });
       // 재배열이 떨군 입력 포커스를 착지 시점에 재배달한다 — "바깥(그룹 활성)만 되고 내부
@@ -181,6 +205,7 @@ export function useArrangementPhase<L extends { id: string }>(
     from: traveling ? phase.from : phase.displayed,
     moves,
     traveling,
+    glide: phase.glide,
     generation: phase.generation,
     rebase,
   };

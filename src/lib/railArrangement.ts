@@ -7,7 +7,7 @@
 // 불변식: 해의 station 은 그 해의 셀들에 대해 항상 깨끗한 선이다(어떤 패널도 가로지르지 않음).
 // 그래서 소비자는 projectRailCssRect 를 안전하게 쓸 수 있다.
 
-import type { SplitTree } from "../state/splitTree";
+import { leavesOf, type SplitTree } from "../state/splitTree";
 import { computeSplitLayout, type Rect } from "./splitLayout";
 import {
   RAIL_EPSILON,
@@ -238,22 +238,6 @@ export function moveOffsetPx(
 }
 
 /**
- * 레일 자신의 이동량. 레일은 복도이면서 동시에 **하나뿐인 인스턴스**다 — 출발선·도착선에
- * 표상을 둘 두면 도착 표상이 새로 마운트되고(접힘·스크롤·플러그인 내용 초기화) 사용자가 쓰던
- * 쪽이 사라진다. 열려 있던 것이 접혀야 하고, 그것이 그대로 도착선에 서야 한다.
- *
- * 이동량은 셀과 같은 두 축이되 레일의 left 는 자기 폭을 스테이션 비율만큼 빼서 앉으므로
- * (calc(s% - railW*s/100)) 레일 항이 -(Δs/100) 이다. 합성은 moveOffsetPx 한 곳에서 끝난다.
- */
-export function railMoveAcross(
-  fromStation: number,
-  toStation: number,
-): ArrangementMove {
-  const d = fromStation - toStation;
-  return { id: "rail", dLeftPct: d, dRailUnits: -d / 100 };
-}
-
-/**
  * 장식 span(디바이더·드롭 표시)의 이동량. span 은 패널이 아니라 복도의 일부다 — 배열 교환에
  * 참여하지 않으므로 이동의 유일한 원천은 삽입 지점 변화이고, 레일을 관통하는 span 은 물리 gap
  * 까지 포함해 사상된다(패널 규칙과 구분).
@@ -273,4 +257,19 @@ export function spanMoveAcross(
       projectRailCssSpan(rect, fromStation).railLeft -
       projectRailCssSpan(rect, toStation).railLeft,
   };
+}
+
+/**
+ * 이동량이 지시한 패널들의 뷰 id. 동결·veil·활강 전제가 모두 이 집합으로만 간다 — 움직이지
+ * 않는 표면은 위상 내내 라이브로 남고 통지조차 받지 않는다. 판정과 렌더가 같은 규칙을 써야
+ * "전제는 덮을 수 있다고 했는데 다른 표면이 움직인다"가 생기지 않는다.
+ */
+export function viewIdsOfMoves<
+  L extends { id: string; views: ReadonlyArray<{ id: string }> },
+>(layout: SplitTree<L>, moves: readonly ArrangementMove[]): string[] {
+  if (moves.length === 0) return [];
+  const groups = leavesOf(layout);
+  return moves.flatMap(
+    (move) => groups.find((g) => g.id === move.id)?.views.map((v) => v.id) ?? [],
+  );
 }

@@ -494,6 +494,11 @@ async function main() {
         leaving: n(/"nodePath":"rail\/left\/leaving"/g),
         // 표면 — 각 자리가 자기 투영 프레임을 들고 있어야 한다(빈 자리가 열리면 "교체"다).
         surfaces: n(/"nodePath":"projection\/left\/frame\//g),
+        // 어떤 표면인지 — 빠지는 자리는 자기가 들고 있던 투영으로 닫혀야 한다. 두 자리가
+        // 같은 refKey 면 빠지는 자리가 새 투영으로 교체된 것이다(= 새로 마운트됐다).
+        refKeys: (nodes.match(/"nodePath":"projection\/left\/frame\/([^"]+)"/g) ?? []).map(
+          (m) => m.replace(/.*frame\//, "").replace(/"$/, ""),
+        ),
       };
     };
     const resting = await places();
@@ -563,7 +568,10 @@ async function main() {
     // 남는다(실측 두 번). 카메라 = 별 연결, 조작자 = 주 연결.
     const cam = await openClient();
     const rec = cam.rpc("window.record", { dir, frames: 34, intervalMs: 16 }, win);
-    await sleep(220); // 카메라 준비(첫 프레임까지의 지연)
+    // 카메라 준비 — 첫 프레임은 요청 즉시가 아니라 캡처 파이프라인이 서는 뒤에 떨어진다
+    // (실측 프레임 간격 ~108ms, 첫 프레임 지연 ~500ms). 짧게 기다리면 위상이 카메라보다
+    // 앞서 끝나 꼬리만 남는다.
+    await sleep(800);
     await rpc("view.activate", { view: termView }, win);
     const done = await rec;
     cam.close();

@@ -7,7 +7,6 @@ import {
   arrangementMoves,
   moveOffsetPx,
   solveArrangement,
-  railMoveAcross,
   spanMoveAcross,
 } from "./railArrangement";
 
@@ -284,24 +283,6 @@ describe("이동량 — 해가 지시한 패널만, 폭은 절대 변하지 않�
       children: [leaf("a"), leaf("b"), leaf("c")],
     };
     expect(arrangementMoves(from, solve(drifted, "b"))).toEqual([]);
-  });
-});
-
-describe("레일 자신의 이동량 — 인스턴스는 하나고 그 하나가 복도를 탄다", () => {
-  it("레일 이동량 = 두 스테이션의 left 차이(자기 폭 항 포함)", () => {
-    // 레일은 calc(s% - railW*s/100) 에 앉는다. 두 스테이션의 그 값 차이가 이동량이다 —
-    // 표상을 둘(출발·도착) 두면 도착 쪽이 새로 마운트돼 열려 있던 사이드바가 버려진다.
-    const leftPx = (s: number) => (HOST_W * s) / 100 - (RAIL_W * s) / 100;
-    for (const [from, to] of [[0, 100], [100, 0], [50, 0], [0, 50], [50, 50]]) {
-      expect(moveOffsetPx(railMoveAcross(from, to), HOST_W, RAIL_W)).toBeCloseTo(
-        leftPx(from) - leftPx(to),
-        6,
-      );
-    }
-  });
-
-  it("정차(같은 스테이션)는 이동량 0 — 유령 주행 금지", () => {
-    expect(moveOffsetPx(railMoveAcross(37.5, 37.5), HOST_W, RAIL_W)).toBe(0);
   });
 });
 
