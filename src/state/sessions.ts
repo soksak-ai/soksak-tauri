@@ -659,6 +659,20 @@ function normalizeActiveGroupC(c: ContentArea): ContentArea {
 }
 
 /**
+ * 최대화가 채우는 그룹 — 최대화된 뷰를 실제로 담고 있는 그룹. 최대화 아님(또는 대상이 어느
+ * 그룹에도 없음)이면 null 이고, 그때는 분할 배치가 그대로 표시된다. 대상을 못 찾았다고 빈
+ * 화면으로 접지 않는다: 화면이 사라지는 것보다 최대화가 안 걸리는 편이 언제나 낫다.
+ */
+function maximizedGroupId(content: ContentArea): string | null {
+  const target = content.maximizedViewId;
+  if (!target) return null;
+  const owner = allGroups(content.layout).find((g) =>
+    g.views.some((v) => v.id === target),
+  );
+  return owner?.id ?? null;
+}
+
+/**
  * 현재 화면에 실제 표시되는 배치 — 배치 해결기 단일 호출. 콘텐츠가 없으면 평면도 없다(null).
  * fallbackStation: 미해소 포커스 렌더에서 지킬 현 위치(호출자가 직전 확정값을 준다).
  */
@@ -676,7 +690,11 @@ export function projectArrangement(
     placement: project.leftRailPlacement ?? DEFAULT_RAIL_PLACEMENT,
     railOpen: project.sidebarOpen,
     // 최대화는 밑 분할 위의 이동이 아니라 [레일 | 기능] 단일 평면으로의 원자적 전환이다.
-    maximizedId: content.maximizedViewId ? content.activeGroupId : null,
+    // 채우는 패널은 최대화된 뷰가 든 그룹이다 — 활성 그룹이 아니다. 둘은 어긋날 수 있고
+    // (다른 그룹의 탭을 더블클릭하는 순간 그렇게 된다), 어긋난 채 활성 그룹으로 접으면
+    // 최대화된 뷰가 없는 패널만 남아 화면에 아무것도 안 그려진다(실측: maximizedViewId=v35
+    // 가 g3 소속인데 layout={"panel":"g5"}, DOM 슬롯 0개, 창 전체 백지).
+    maximizedId: maximizedGroupId(content),
     fallbackStation,
   });
 }

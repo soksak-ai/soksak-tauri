@@ -138,3 +138,38 @@ describe("세션 배치 — 표시는 해가 정하고 정본은 불변이다", 
     expect(solved.swapped).toBe(false);
   });
 });
+
+// 최대화는 "이 뷰가 공간을 채운다" 이므로, 채우는 패널은 그 뷰가 든 그룹이다. 투영이 활성
+// 그룹을 대신 쓰면 두 값이 어긋나는 순간 — 다른 그룹의 탭을 더블클릭하는 순간 — 최대화된
+// 뷰가 없는 패널로 접히고 화면에 아무것도 남지 않는다(실측: maximizedViewId=v35(g3 소속)
+// 인데 layout={"panel":"g5"}, DOM 슬롯 0개, 창 전체 백지).
+describe("최대화 — 채우는 패널은 그 뷰가 든 그룹이다", () => {
+  it("최대화 뷰가 활성 그룹 밖이면 그 뷰의 그룹으로 접힌다", () => {
+    const project = projectFixture();
+    const content = project.contents[0];
+    // 활성 그룹은 ghostty, 최대화 대상은 kanban 의 뷰 — 어긋난 상태.
+    const withMax: ProjectTab = {
+      ...project,
+      contents: [{ ...content, activeGroupId: "ghostty", maximizedViewId: "v-kanban" }],
+    };
+    useSessions.setState({ tabs: [withMax], activeId: withMax.id });
+
+    const solved = projectArrangement(useSessions.getState().tabs[0])!;
+    const shown = solved.cells.filter((c) => c.rect.width > 0 && c.rect.height > 0);
+    expect(shown.map((c) => c.id)).toEqual(["kanban"]);
+  });
+
+  it("최대화 뷰가 활성 그룹 안이면 그대로 그 그룹으로 접힌다", () => {
+    const project = projectFixture();
+    const content = project.contents[0];
+    const withMax: ProjectTab = {
+      ...project,
+      contents: [{ ...content, activeGroupId: "ghostty", maximizedViewId: "v-ghostty" }],
+    };
+    useSessions.setState({ tabs: [withMax], activeId: withMax.id });
+
+    const solved = projectArrangement(useSessions.getState().tabs[0])!;
+    const shown = solved.cells.filter((c) => c.rect.width > 0 && c.rect.height > 0);
+    expect(shown.map((c) => c.id)).toEqual(["ghostty"]);
+  });
+});
