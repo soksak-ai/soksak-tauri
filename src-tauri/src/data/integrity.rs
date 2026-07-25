@@ -106,6 +106,21 @@ fn quote_ident(name: &str) -> String {
 /// 통째로 잃지 않는다 — 무엇을 봤고 무엇을 못 했는지 둘 다 싣는다.
 pub fn repair(conn: &Connection) -> Result<Repair, String> {
     let before = findings(conn);
+    // 먼저 WAL 을 접는다 — 가장 싸고, 되돌릴 것이 없는 정비다. WAL 이 길게 자라면 그것을 따라가는
+    // 구조(wal-index)도 함께 커지고, 그 위에서 도는 쓰기·전수 진단이 먼저 무너진다. 여기서 낫는다면
+    // 손상이 아니라 자란 WAL 이 문제였다는 뜻이다.
+    let checkpoint_error = conn
+        .execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+        .err()
+        .map(|e| e.to_string());
+    if checkpoint_error.is_none() && !findings_are_unhealed(conn) {
+        // WAL 을 접는 것으로 끝났다 — 인덱스를 다시 만들 이유가 없다.
+        return Ok(Repair {
+            before,
+            after: findings(conn),
+            reindex_error: None,
+        });
+    }
     let mut reindex_error = conn.execute_batch("REINDEX").err().map(|e| e.to_string());
     if reindex_error.is_some() {
         // 한 번에 전부 다시 만들기가 실패하면 인덱스를 하나씩 만든다 — 전체 실패는 저장소 전체를
@@ -302,6 +317,8 @@ pub struct Stats {
     /// 부팅 쓰기 게이트가 남긴 판정(관측면) — 게이트는 부팅 때 한 번 돌고 사라진다. 그 결과를
     /// 읽을 수 없으면 "돌았는지" 조차 확인할 수 없어, 자가치유가 있었다고 주장만 하게 된다.
     pub boot_gate: String,
+    /// SQLite 가 스스로 남긴 최근 내부 로그 — 실패한 할당의 크기가 여기에만 있다.
+    pub sqlite_log: Vec<String>,
     pub sqlite_version: String,
     pub soft_heap_limit: i64,
     pub hard_heap_limit: i64,
@@ -385,6 +402,7 @@ pub fn stats(conn: &Connection) -> Result<Stats, String> {
         .map_err(|e| e.to_string())?;
     Ok(Stats {
         boot_gate: boot_gate_verdict(),
+        sqlite_log: recent_sqlite_log(),
         sqlite_version: version,
         soft_heap_limit: one("PRAGMA soft_heap_limit"),
         hard_heap_limit: one("PRAGMA hard_heap_limit"),

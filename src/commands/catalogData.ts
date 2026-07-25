@@ -194,6 +194,7 @@ export function registerDataCatalog(): void {
     handler: async () => {
       const s = await invoke<{
         boot_gate: string;
+        sqlite_log: string[];
         sqlite_version: string;
         soft_heap_limit: number;
         hard_heap_limit: number;
@@ -207,6 +208,7 @@ export function registerDataCatalog(): void {
       }>("data_stats");
       return {
         bootGate: s.boot_gate,
+        sqliteLog: s.sqlite_log,
         sqliteVersion: s.sqlite_version,
         softHeapLimit: s.soft_heap_limit,
         hardHeapLimit: s.hard_heap_limit,
