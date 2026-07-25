@@ -343,11 +343,56 @@ export function stageRepository(root, repositoryName, output) {
   return output;
 }
 
+// 툴체인 실행 경로 발견 — PATH 에만 기대면 제한 PATH 환경(GUI 셸·CI 최소 이미지·부모 프로세스
+// 상속 실패)에서 게이트가 "무관한 실패"로 보고돼 진짜 결함을 가린다. 규약: 전용 env →
+// PATH → 표준 설치 경로. 발견 실패는 침묵하지 않고 후보 목록을 말한다(진단 가능성).
+const TOOL_CANDIDATES = {
+  cargo: () => [
+    process.env.CARGO,
+    "cargo",
+    join(process.env.HOME ?? "", ".cargo/bin/cargo"),
+    "/usr/local/bin/cargo",
+    "/opt/homebrew/bin/cargo",
+  ],
+  pnpm: () => [
+    process.env.PNPM,
+    "pnpm",
+    "/opt/homebrew/bin/pnpm",
+    "/usr/local/bin/pnpm",
+    join(process.env.HOME ?? "", "Library/pnpm/pnpm"),
+  ],
+};
+const toolCache = new Map();
+function toolBin(name) {
+  const cached = toolCache.get(name);
+  if (cached) return cached;
+  const candidates = (TOOL_CANDIDATES[name]?.() ?? [name]).filter(Boolean);
+  for (const bin of candidates) {
+    const probeEnv = {
+      ...process.env,
+      PATH: [dirname(process.execPath), process.env.PATH ?? ""].filter(Boolean).join(":"),
+    };
+    if (spawnSync(bin, ["--version"], { encoding: "utf8", env: probeEnv }).status === 0) {
+      toolCache.set(name, bin);
+      return bin;
+    }
+  }
+  throw new Error(
+    `${name} 를 찾지 못했다 — 후보: ${candidates.join(", ")}. ${name.toUpperCase()} 환경변수로 지정하거나 설치를 확인하라.`,
+  );
+}
+
 function run(command, args, options = {}) {
+  if (TOOL_CANDIDATES[command]) command = toolBin(command);
+  // 자식의 인터프리터 보장 — pnpm 류는 `#!/usr/bin/env node` 스크립트라 PATH 에 node 가
+  // 없으면 발견에 성공해도 실행이 실패한다. 지금 이 프로세스가 그 node 다(process.execPath)
+  // — 사실을 그대로 자식 PATH 앞에 놓는다(추측·하드코딩 아님).
+  const nodeDir = dirname(process.execPath);
+  const childPath = [nodeDir, process.env.PATH ?? ""].filter(Boolean).join(":");
   const result = spawnSync(command, args, {
     cwd: options.cwd ?? REPO_ROOT,
     encoding: "utf8",
-    env: { ...process.env, ...options.env },
+    env: { ...process.env, PATH: childPath, ...options.env },
   });
   if (result.status !== 0) {
     throw new Error(`${command} ${args.join(" ")} failed\n${result.stdout ?? ""}${result.stderr ?? ""}`);
