@@ -85,20 +85,19 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
     expect(sync!.decls).not.toMatch(/transition\s*:/);
     expect(RAIL_TRAVEL_MS).toBe(340);
     expect(sync!.decls).toMatch(/animation:\s*rail-flip-x var\(--rail-travel-ms\) cubic-bezier\(0\.4, 0, 0\.2, 1\)/);
-    expect(css).toMatch(/@keyframes rail-flip-x\s*\{[\s\S]*from\s*\{\s*translate:\s*calc\(var\(--rail-flip-x/);
+    // 이동량 합성은 한 변수(--flip-x)에서 끝난다 — 두 축을 CSS 에서 더하면 배열 교환과 주행이
+    // 겹치는 위상에서 어긋난다(해결기가 px 로 접어 준다).
+    expect(css).toMatch(/@keyframes rail-flip-x\s*\{[\s\S]*from\s*\{\s*translate:\s*var\(--flip-x/);
+    expect(css).not.toMatch(/--rail-flip-x/);
+    expect(css).not.toMatch(/--focus-flip-x/);
     // pane만 FLIP한다. 레일 표상은 출발·도착 그리드선에 정지해 있다.
     expect(rules().find((r) => r.selector === ".sidebar.traveling")).toBeUndefined();
   });
 
-  it("§5.1-F7 근접 패널 교환도 레이아웃 transition 없이 같은 compositor FLIP을 쓴다", () => {
-    const sync = rules().find((r) =>
-      r.selector.startsWith(".egroup-area.focus-layout-traveling"),
-    );
-    expect(sync?.selector).toContain(".egroup-cell");
-    expect(sync?.selector).toContain(".egroup-frame");
-    expect(sync?.selector).toContain(".egroup-body-slot");
-    expect(sync?.decls).toMatch(/animation:\s*rail-flip-x var\(--rail-travel-ms\)/);
-    expect(sync?.decls).not.toMatch(/transition\s*:/);
+  it("§5.1-F7 위상 클래스는 하나뿐이다 — 스위칭도 주행과 같은 한 위상이다", () => {
+    // 위상 추적이 둘이면(레일 주행 · 패널 교환) 한 클릭에 둘이 겹칠 때 서로 다른 출발점을
+    // 보고 어긋난다. 배치 해결기가 두 축을 한 해로 풀므로 클래스도 하나다.
+    expect(css).not.toMatch(/focus-layout-traveling/);
   });
 
   it("§12-④ 영역 인계는 페이드나 레일 오버레이 없이 pane의 수축·확장이 드러낸다", () => {
@@ -119,7 +118,7 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
     // straddle 방지는 히트 차단이 아니라 활성화 귀속이 담당한다(armSlotActivation —
     // 활성화는 게스처 완결 시점에, 게스처를 시작한 슬롯에 귀속). 그러므로 어떤 주행
     // 위상도 입력면을 차단하지 않는다.
-    for (const scope of [".content-body.rail-traveling", ".egroup-area.focus-layout-traveling"]) {
+    for (const scope of [".content-body.rail-traveling"]) {
       const blocking = rules().filter(
         (r) =>
           r.selector.includes(scope) &&

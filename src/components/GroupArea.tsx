@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { rafThrottle } from "../lib/rafThrottle";
 import {
   commitViewVisibility,
@@ -16,7 +16,6 @@ import {
 } from "../plugins/viewFocus";
 import { armSlotActivation } from "../lib/slotGesture";
 import { beginLayoutMotion, endLayoutMotion } from "../lib/layoutMotion";
-import { animateHoleChildrenToFinal } from "../lib/holePhaseAnimate";
 import { ViewTabs } from "./ViewTabs";
 import { computeSplitLayout, hitTestCells } from "../lib/splitLayout";
 import { useT } from "../i18n";
@@ -35,12 +34,15 @@ import {
 } from "../state/sessions";
 import { useHydration } from "../state/hydration";
 import {
-  projectRailCssTransition,
+  projectRailCssRect,
   projectRailCssSpan,
   unprojectRailX,
 } from "../lib/railPlacement";
-import { projectFocusedPanelNearRail } from "../lib/railFocusLayout";
-import { useFocusLayoutPhase } from "./useFocusLayoutPhase";
+import {
+  moveOffsetPx,
+  type ArrangementMove,
+} from "../lib/railArrangement";
+import type { SplitTree } from "../state/splitTree";
 import {
   MIN_PANE_FRAC,
   collectLineGroup,
@@ -141,7 +143,8 @@ export const GroupArea = memo(function GroupArea({
   railStation = 0,
   railTravelFrom = railStation,
   railWidthPx = 0,
-  focusNearRail = false,
+  displayLayout: solvedLayout,
+  moves,
 }: {
   content: ContentArea;
   projectId: string;
@@ -150,65 +153,21 @@ export const GroupArea = memo(function GroupArea({
   surfaceActive?: boolean;
   /** 활성 콘텐츠 패널 평면에 삽입되는 좌 rail의 깨끗한 논리선(0..100). */
   railStation?: number;
-  /** FLIP 시작선. 최종 배치는 railStation으로 즉시 확정하고 이 선과의 차이만 합성 이동한다. */
+  /** 장식 span(디바이더·드롭 표시) 전용 출발선. 패널 기하는 moves 가 소유한다. */
   railTravelFrom?: number;
   /** 고정 물리폭. 0이면 기존 연속 평면. */
   railWidthPx?: number;
-  /** FLOW에서 막힌 포커스 패널을 같은 row의 가까운 쪽에 화면 투영한다. */
-  focusNearRail?: boolean;
+  /** 해결기가 푼 표시 배열. 생략하면 정본 배열(비활성 콘텐츠). */
+  displayLayout?: SplitTree<ViewGroup>;
+  /** 해가 지시한 이동량 — 위상 중에만 실린다. 여기 없는 패널은 움직이지 않는다. */
+  moves?: ArrangementMove[];
 }) {
   const t = useT();
-  const displayLayout = useMemo(
-    () =>
-      projectFocusedPanelNearRail(
-        content.layout,
-        content.activeGroupId,
-        focusNearRail && !content.maximizedViewId,
-      ),
-    [content.activeGroupId, content.layout, content.maximizedViewId, focusNearRail],
-  );
+  const displayLayout = solvedLayout ?? content.layout;
   const focusProjectionApplied = displayLayout !== content.layout;
-  // 근접 투영은 같은 크기의 직접 row 형제만 교환한다. 따라서 모든 패널의 크기·세로선이
-  // 같고 x만 달라진 경우에 한해 compositor FLIP을 쓸 수 있다. 실제 분할 편집/리사이즈는
-  // 이 조건을 통과하지 않아 임의 애니메이션으로 오염되지 않는다. 위상 종료 시 네이티브
-  // 웹뷰 재스냅 신호(layout.reflow)까지 훅이 소유한다.
-  // (아래 선언 후 효과에서 소비 — FLIP 주행 모션 신호)
-  const { from: focusLayoutFrom, traveling: focusLayoutTraveling } =
-    useFocusLayoutPhase(displayLayout, content.id);
-  // FLIP 주행 중 네이티브 child 라이브 정합 — 모션 신호로 브라우저 추종/CA 구동 발동.
-  // useLayoutEffect(페인트 전)이어야 한다: 같은 커밋의 layout.reflow(App, 역시 페인트 전)보다
-  // 위상 사실이 먼저 퍼져야 플러그인 재스냅 게이트가 서고, CA 애니가 t0 좌표에서 출발한다 —
-  // useEffect(페인트 후)면 reflow 재스냅이 최종 좌표로 먼저 적용돼 child 가 텔레포트한다(실측).
-  const fromLayoutCells = useMemo(
-    () => computeLayout(focusLayoutFrom).cells,
-    [focusLayoutFrom],
-  );
-  useLayoutEffect(() => {
-    if (!focusLayoutTraveling) return;
-    // 영향 범위 = 이 스왑에서 rect 가 실제로 변하는 그룹들의 뷰 — 슬롯 동결이 이 뷰들만
-    // 동결한다. 범위 밖 표면(다른 패널의 브라우저)은 남의 스왑에 베일 펄스를 맞지 않고
-    // 위상 내내 라이브로 남는다(실사고: 무관한 탭 포커스 이동마다 브라우저가 깜빡).
-    const toCells = computeLayout(displayLayout).cells;
-    const moved = new Set<string>();
-    for (const c of toCells) {
-      const from = fromLayoutCells.find((f) => f.group.id === c.group.id)?.rect;
-      const r = c.rect;
-      if (
-        !from ||
-        Math.abs(from.left - r.left) > 0.01 ||
-        Math.abs(from.top - r.top) > 0.01 ||
-        Math.abs(from.width - r.width) > 0.01 ||
-        Math.abs(from.height - r.height) > 0.01
-      ) {
-        for (const v of c.group.views) moved.add(v.id);
-      }
-    }
-    beginLayoutMotion("move", moved);
-    // 홀 자식은 시작 에지에 최종 박스로 CA 구동(App 레일 주행과 동일 근거).
-    animateHoleChildrenToFinal();
-    return () => endLayoutMotion("move");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusLayoutTraveling]);
+  const traveling = (moves?.length ?? 0) > 0;
+  const moveOf = (groupId?: string) =>
+    groupId ? moves?.find((move) => move.id === groupId) : undefined;
   // B4 — 복원 hydration cold 집합 구독(평상시 빈 집합 → 리렌더 없음).
   const coldSet = useHydration((s) => s.cold);
   // 보이는 cold 뷰는 즉시 승격(렌더 중 set 금지 — effect). shown 판정과 동일 규칙.
@@ -253,6 +212,9 @@ export const GroupArea = memo(function GroupArea({
   );
 
   const containerRef = useRef<HTMLDivElement>(null);
+  // 합성 폭은 측정값 — 논리 이동량(% · 레일 폭 배수)을 px 로 접는 유일한 지점이다.
+  // 위상 중에만 읽는다(정차 중 강제 레이아웃 금지).
+  const hostWidthPx = traveling ? (containerRef.current?.offsetWidth ?? 0) : 0;
   const [drag, setDrag] = useState<{ kind: "view" | "group"; id: string } | null>(
     null,
   );
@@ -525,34 +487,15 @@ export const GroupArea = memo(function GroupArea({
   // 셀 좌표 — CSS 변수 4개만 전달하고 산수(calc)는 CSS 단일 규칙이 소유한다.
   // (좌표 문자열을 렌더마다 조립해 흩뿌리던 레거시 제거 — 치수 상수는 아래
   // 컨테이너에서 1회 주입되는 --header-h/--status-h/--pane-inset 이 단일 소스)
-  // FLIP 실이동 판정 — 위상 중이라도 델타 0인 요소는 애니메이션 대상이 아니다.
-  // 근거(실사고): focus-layout-traveling 하위 전체 선택자가 모든 슬롯에 animation +
-  // will-change: translate 를 걸어, 움직이지 않는 브라우저 슬롯까지 위상마다 합성 레이어
-  // 승격/해제를 겪었다 — 그 재래스터가 DOM(주소표시줄 포함)의 "움찔"로 보였다.
-  const flipMoves = (
-    rect: { left: number; top: number; width: number; height: number },
-    groupId?: string,
-  ): boolean => {
-    // 레일 주행 신호 = FLIP 시작선이 최종선과 다름(코어가 그 차이만 합성 이동한다).
-    const railTraveling = Math.abs(railTravelFrom - railStation) > 0.001;
-    if (!focusLayoutTraveling && !railTraveling) return false;
-    const fromRect = groupId
-      ? fromLayoutCells.find((cell) => cell.group.id === groupId)?.rect
-      : undefined;
-    const focusFlipX = fromRect ? ((fromRect.left - rect.left) / rect.width) * 100 : 0;
-    if (Math.abs(focusFlipX) > 0.05) return true;
-    if (railWidthPx > 0) {
-      const transition = projectRailCssTransition(
-        fromRect ?? rect,
-        railTravelFrom,
-        rect,
-        railStation,
-      );
-      const d =
-        (transition?.source.railLeft ?? 0) - (transition?.target.railLeft ?? 0);
-      if (Math.abs(d * railWidthPx) > 0.5) return true;
-    }
-    return false;
+  // 실이동 판정 — 해가 이동을 지시한 패널만 애니메이션 대상이다. 위상 하위 전체 선택자는
+  // 델타 0 인 요소까지 animation + will-change 로 합성 레이어에 올렸다 내려 위상마다 재래스터를
+  // 일으켰고, 그 재래스터가 DOM(주소표시줄 포함)의 "움찔"로 보였다(실사고).
+  const flipMoves = (groupId?: string): boolean => !!moveOf(groupId);
+
+  /** 이동량 → 시작 오프셋(px). 합성은 여기 한 곳뿐이다(두 축을 각자 보간하면 어긋난다). */
+  const flipOffsetPx = (groupId?: string): number => {
+    const move = moveOf(groupId);
+    return move ? moveOffsetPx(move, hostWidthPx, railWidthPx) : 0;
   };
 
   const cellVars = (rect: {
@@ -561,22 +504,10 @@ export const GroupArea = memo(function GroupArea({
     width: number;
     height: number;
   }, groupId?: string) => {
-    const fromRect = focusLayoutTraveling && groupId
-      ? fromLayoutCells.find((cell) => cell.group.id === groupId)?.rect
-      : undefined;
-    const transition = railWidthPx > 0
-      ? projectRailCssTransition(
-          fromRect ?? rect,
-          railTravelFrom,
-          rect,
-          railStation,
-        )
-      : null;
-    const projected = transition?.target ?? { railLeft: 0, railWidth: 0 };
-    const fromProjected = transition?.source ?? projected;
-    const focusFlipX = fromRect
-      ? ((fromRect.left - rect.left) / rect.width) * 100
-      : 0;
+    const projected =
+      railWidthPx > 0
+        ? projectRailCssRect(rect, railStation)
+        : { railLeft: 0, railWidth: 0 };
     return ({
       "--l": `${rect.left}%`,
       "--t": `${rect.top}%`,
@@ -584,11 +515,12 @@ export const GroupArea = memo(function GroupArea({
       "--h": `${rect.height}%`,
       "--rail-dx": `${projected.railLeft * railWidthPx}px`,
       "--rail-dw": `${projected.railWidth * railWidthPx}px`,
-      "--rail-flip-x": `${(fromProjected.railLeft - projected.railLeft) * railWidthPx}px`,
-      "--focus-flip-x": `${focusFlipX}%`,
+      "--flip-x": `${flipOffsetPx(groupId)}px`,
     }) as React.CSSProperties;
   };
 
+  // 장식 span(디바이더·드롭 표시)은 패널이 아니라 복도의 일부다 — 자기 이동량은 삽입 지점
+  // 변화 하나뿐이므로 두 station 으로 직접 낸다(배열 교환에 참여하지 않는다).
   const dividerVars = (d: Divider) => {
     if (railWidthPx <= 0) return {};
     if (d.dir === "row") {
@@ -596,7 +528,7 @@ export const GroupArea = memo(function GroupArea({
       const fromAfter = d.rect.left > railTravelFrom ? 1 : 0;
       return {
         "--rail-dx": `${(after - d.rect.left / 100) * railWidthPx}px`,
-        "--rail-flip-x": `${(fromAfter - after) * railWidthPx}px`,
+        "--flip-x": `${(fromAfter - after) * railWidthPx}px`,
       } as React.CSSProperties;
     }
     const projected = projectRailCssSpan(d.rect, railStation);
@@ -604,25 +536,25 @@ export const GroupArea = memo(function GroupArea({
     return {
       "--rail-dx": `${projected.railLeft * railWidthPx}px`,
       "--rail-dw": `${projected.railWidth * railWidthPx}px`,
-      "--rail-flip-x": `${(fromProjected.railLeft - projected.railLeft) * railWidthPx}px`,
+      "--flip-x": `${(fromProjected.railLeft - projected.railLeft) * railWidthPx}px`,
     } as React.CSSProperties;
   };
 
   return (
     <div
-      className={`egroup-area${focusLayoutTraveling ? " focus-layout-traveling" : ""}`}
+      className="egroup-area"
       data-focus-dim={focusDim ? "1" : undefined}
       data-node={`layout/grid/${content.id}`}
       data-projection={
         content.maximizedViewId
           ? "maximized"
           : focusProjectionApplied
-            ? "focus-near"
+            ? "switched"
             : "canonical"
       }
       data-focused-panel={content.activeGroupId}
       data-maximized-view={content.maximizedViewId ?? ""}
-      data-traveling={focusLayoutTraveling ? "true" : "false"}
+      data-traveling={traveling ? "true" : "false"}
       ref={containerRef}
       style={
         {
@@ -647,7 +579,7 @@ export const GroupArea = memo(function GroupArea({
             key={`cell-${group.id}`}
             className={`egroup-cell${holeCell ? " cell-hole" : ""}${
               group.id === content.activeGroupId ? " spot-clear" : ""
-            }${flipMoves(rect, group.id) ? " flip-move" : ""}`}
+            }${flipMoves(group.id) ? " flip-move" : ""}`}
             data-node={`layout/panel/${group.id}`}
             style={cellVars(rect, group.id)}
           >
@@ -771,7 +703,7 @@ export const GroupArea = memo(function GroupArea({
               // 전부 이 클래스 하나를 본다.
               className={`egroup-body-slot${isHoleView(view) ? " hole-slot" : ""}${
                 group.id === content.activeGroupId ? " spot-clear" : ""
-              }${shown && flipMoves(slotRect, group.id) ? " flip-move" : ""}`}
+              }${shown && flipMoves(group.id) ? " flip-move" : ""}`}
               // 네이티브 클릭 판정용(App.tsx native-mousedown → elementFromPoint).
               data-group-id={group.id}
               data-project-id={projectId}

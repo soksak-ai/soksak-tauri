@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -22,16 +23,10 @@ import { applyWindowZoom, isPrimaryModifier, routeZoom } from "./lib/zoomIntent"
 import {
   beginLayoutMotion,
   endLayoutMotion,
-  isLayoutMotionActive,
   onLayoutMotion,
 } from "./lib/layoutMotion";
 import { applyRailHoleClip, trackRailHoleClip } from "./lib/railHoleClip";
 import { createSlotFreeze } from "./lib/slotFreeze";
-import {
-  animateHoleChildrenToFinal,
-  noteHoleSlotSizes,
-  __clearHolePhaseIssued,
-} from "./lib/holePhaseAnimate";
 import {
   activeSessionViewId,
   startViewFocusSync,
@@ -65,7 +60,7 @@ import { useT } from "./i18n";
 import {
   allGroups,
   cwdPaneOf as resolveCwdPane,
-  leftRailGrid,
+  projectArrangement,
   useSessions,
   webviewDisplayName,
   type ProjectTab,
@@ -79,17 +74,11 @@ import { useTheme } from "./state/theme";
 import { getPtyIo, hasPtyObservation } from "./terminal/ptyObservationStore";
 import {
   DEFAULT_RAIL_PLACEMENT,
-  effectiveRailStation,
   railStationFromLeftPx,
   snapRailStation,
 } from "./lib/railPlacement";
-import {
-  RAIL_TRAVEL_MS,
-  railPresentationLayers,
-  railGeometryScopeId,
-  railTravelGeometry,
-  type RailPresentation,
-} from "./lib/railMotion";
+import { railPresentationLayers, railGeometryScopeId } from "./lib/railMotion";
+import { useArrangementPhase } from "./components/useArrangementPhase";
 import "./App.css";
 
 // 파일 경로를 셸·Claude Code 양쪽에서 안전하게: 영숫자와 안전문자 외에는 백슬래시
@@ -201,13 +190,17 @@ const ProjectPane = memo(function ProjectPane({
 
   const railPlaneRef = useRef<HTMLDivElement>(null);
   const placement = project.leftRailPlacement ?? DEFAULT_RAIL_PLACEMENT;
-  // 근접 투영은 폐지됐다(기하 소유권 §2) — leftRailGrid 는 인자를 무시한다. 하드코딩 게이트
-  // 대신 폐지 사실을 여기서 명시한다: 포커스는 레일의 내용만 바꾸고 배치는 건드리지 않는다.
-  const focusNearEnabled = false;
   const activeContent =
     project.contents.find((content) => content.id === project.activeContentId) ??
     project.contents[0];
-  const railGrid = leftRailGrid(project, focusNearEnabled);
+  // 미해소 포커스 렌더에서 station 이 0 으로 붕괴하지 않게 직전 확정값을 폴백으로 준다.
+  const lastStationRef = useRef(0);
+  // 배치는 해결기가 푼다 — station·배열·만들어진 인접·이동량의 단일 진실(재계산 금지).
+  const arrangement = projectArrangement(project, lastStationRef.current);
+  const railCells = arrangement?.cells ?? [];
+  const railCleanLines = arrangement?.cleanLines ?? [0, 100];
+  const effectiveStation = arrangement?.station ?? 0;
+  lastStationRef.current = effectiveStation;
   const boundGroup = activeContent?.railBindingViewId
     ? allGroups(activeContent.layout).find((group) =>
         group.views.some((view) => view.id === activeContent.railBindingViewId),
@@ -217,61 +210,48 @@ const ProjectPane = memo(function ProjectPane({
     (view) => view.id === activeContent?.railBindingViewId,
   );
   const boundCell = boundGroup
-    ? railGrid.cells.find((cell) => cell.id === boundGroup.id)
+    ? railCells.find((cell) => cell.id === boundGroup.id)
     : undefined;
-  // 미해소 포커스 렌더에서 station 이 0 으로 붕괴하지 않게 직전 확정값을 폴백으로 준다.
-  const lastStationRef = useRef(0);
-  const effectiveStation = effectiveRailStation(
-    railGrid.cells,
-    railGrid.focusId,
-    placement,
-    lastStationRef.current,
-  );
-  lastStationRef.current = effectiveStation;
   const railGeometryScope = railGeometryScopeId(
     activeContent?.id,
-    railGrid.cleanLines,
+    railCleanLines,
   );
   const [dragStation, setDragStation] = useState<number | null>(null);
   const renderedStation = dragStation ?? effectiveStation;
   // 레일 시각 모드(§12-⑤) — pane(분할창처럼) | ground(바닥 평면). 토글은 슬롯 프레임 헤더.
   const railLook = useSettings((s) => s.railLook);
-  // 주행 위상(§12-④) — 레일을 가로질러 옮기지 않는다. pane 복도만 340ms FLIP으로
-  // 수축·확장하고, 출발 레일과 도착 레일을 그 아래 바닥에 둔다. 도착 레일은 열린 만큼
-  // 즉시 드러나며 출발 레일은 닫히는 pane에 가려진 뒤 제거된다.
-  const [railPresentation, setRailPresentation] = useState<RailPresentation>({
-    generation: 0,
-    station: effectiveStation,
-    scopeId: railGeometryScope,
-  });
-  const travelGeometry = railTravelGeometry(
-    railPresentation,
-    effectiveStation,
-    !!activeContent?.maximizedViewId,
-    railGeometryScope,
-  );
-  const travelFrom = travelGeometry.fromStation;
-  const railTraveling = dragStation === null && travelGeometry.traveling;
+  // 배치 위상(§12-④) — 레일을 가로질러 옮기지 않는다. pane 복도만 340ms 로 수축·확장하고,
+  // 출발 레일과 도착 레일을 그 아래 바닥에 둔다. 도착 레일은 열린 만큼 즉시 드러나며 출발
+  // 레일은 닫히는 pane 에 가려진 뒤 제거된다. 위상 추적은 이 훅 하나뿐이다.
+  const phase = useArrangementPhase(arrangement, railGeometryScope);
+  const railTraveling = dragStation === null && phase.traveling;
   const railLayers = railPresentationLayers(
-    railPresentation,
+    phase.generation,
+    phase.from?.station ?? effectiveStation,
     dragStation ?? effectiveStation,
     railTraveling,
   );
-  // 레일 주행 중 네이티브 child 라이브 정합 — 모션 신호로 브라우저 추종 루프 발동
-  // (실측: 주행 중 DOM 은 미끄러지고 child 는 끝에서 점프하는 이질감의 근치).
-  // useLayoutEffect(페인트 전) — 같은 커밋의 layout.reflow 발화(아래, 선언 순서상 뒤)보다
-  // 위상 사실이 먼저 퍼져야 플러그인 재스냅 게이트가 선다(GroupArea FLIP 주석과 동일 근거).
+  // 위상이 실제로 움직이는 뷰들 — 해가 지시한 패널(그룹)의 뷰만. 동결도 veil 도 이 집합으로만
+  // 간다: 움직이지 않는 표면은 위상 내내 라이브로 남고 통지조차 받지 않는다.
+  const movingViewIds = useMemo(() => {
+    if (!activeContent || phase.moves.length === 0) return [];
+    const groups = allGroups(phase.from?.displayLayout ?? activeContent.layout);
+    return phase.moves.flatMap(
+      (move) =>
+        groups
+          .find((group) => group.id === move.id)
+          ?.views.map((view) => view.id) ?? [],
+    );
+  }, [activeContent, phase.from, phase.moves]);
+  const movingKey = movingViewIds.join(",");
+  // 위상 신호(§4.6) — 이동하는 표면을 코어가 스탠드인으로 덮는 근거. 위상 중 네이티브 표면은
+  // 움직이지 않으므로(스탠드인이 시각을 전담) 여기서 네이티브를 구동하지 않는다.
   useLayoutEffect(() => {
     if (!railTraveling) return;
-    beginLayoutMotion(
-      "move",
-      undefined,
-      `rail-travel:${travelGeometry.fromStation.toFixed(3)}->${effectiveStation.toFixed(3)}`,
-    );
-    // 홀 자식은 시작 에지에 최종 박스로 CA 구동 — 추종 루프의 에지 굶주림(bounds-trace)을 우회.
-    animateHoleChildrenToFinal();
+    beginLayoutMotion("move", movingViewIds, `rail-travel:${movingKey}`);
     return () => endLayoutMotion("move");
-  }, [railTraveling]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [railTraveling, movingKey]);
   // 사이드바는 홀(브라우저 네이티브 표면) 위에 칠하지 않는다 — 상시 계약(사용자 규정:
   // 겹치면 언제나 사이드바가 브라우저 아래). DOM 표면은 z(레일 0 < 셀 1)로 성립하지만
   // 홀 뷰의 네이티브 표면은 DOM 전체 뒤라 클립 제외만이 유일한 방법이다(railHoleClip).
@@ -279,11 +259,6 @@ const ProjectPane = memo(function ProjectPane({
   useLayoutEffect(() => {
     const plane = railPlaneRef.current;
     if (plane) applyRailHoleClip(plane);
-    noteHoleSlotSizes(); // 크기 장부 상시 갱신 — 위상 t0 크기 델타의 "이전" 원천
-    // 위상 중 커밋마다 재샘플 — 클릭 위상은 여러 커밋에 걸쳐 FLIP 변수를 갱신한다(실측:
-    // DOM 은 var 를 라이브로 타는데 CA 는 t0 박제 → ~75px 이탈). 같은 t0 입력은 발행
-    // dedup 이 no-op 으로 거른다.
-    if (isLayoutMotionActive()) animateHoleChildrenToFinal();
   });
   // 코어 소유 이동-동결(§4.6 시행) — move 위상에 홀-슬롯 표면을 DOM 스탠드인으로 대체한다.
   // 정착 스냅 갱신은 이벤트 에지(위상 끝·reflow 뒤 디바운스·부팅 1회)에서만 — 폴링 아님.
@@ -302,8 +277,8 @@ const ProjectPane = memo(function ProjectPane({
       emitVeil: (viewId, veiled) => emitPluginEvent("view.veiled", { viewId, veiled }),
     });
     slotFreezeRef.current = sf;
-    const off = onLayoutMotion((active, kinds) => {
-      sf.onMotion(active, kinds);
+    const off = onLayoutMotion((active, kinds, scope) => {
+      sf.onMotion(active, kinds, scope);
       if (!active) scheduleSettleCapture();
     });
     const boot = window.setTimeout(() => sf.captureSettled(), 1200);
@@ -324,7 +299,6 @@ const ProjectPane = memo(function ProjectPane({
       } else {
         stop?.();
         stop = undefined;
-        __clearHolePhaseIssued(); // 다음 위상은 새 발행 사이클
       }
     });
     return () => {
@@ -332,50 +306,20 @@ const ProjectPane = memo(function ProjectPane({
       stop?.();
     };
   }, []);
-  // 재정박은 발화 시점의 현재값을 쓴다 — 무장 시점 캡처는 전환 중 일시값(예: placement 미적재
-  // 0)을 station 에 박아, 이후 모든 포커스 변화가 0→실위치 유령 여정을 재개하게 했다(실사고:
-  // 레일 rect 무변화인데 전역 이동 위상 — 브라우저 전면 베일 펄스).
-  const effectiveStationRef = useRef(effectiveStation);
-  effectiveStationRef.current = effectiveStation;
-  const railScopeRef = useRef(railGeometryScope);
-  railScopeRef.current = railGeometryScope;
-  useEffect(() => {
-    if (travelGeometry.rebase) {
-      setRailPresentation((current) => ({
-        generation: current.generation + 1,
-        station: effectiveStation,
-        scopeId: railGeometryScope,
-      }));
-      return;
-    }
-    if (!railTraveling) return;
-    const nextGeneration = railPresentation.generation + 1;
-    const t = window.setTimeout(
-      () =>
-        setRailPresentation({
-          generation: nextGeneration,
-          station: effectiveStationRef.current,
-          scopeId: railScopeRef.current,
-        }),
-      RAIL_TRAVEL_MS,
-    );
-    return () => window.clearTimeout(t);
-  }, [
-    effectiveStation,
-    railGeometryScope,
-    railPresentation.generation,
-    railTraveling,
-    travelGeometry.rebase,
-  ]);
   // pane 그리드 행 계약 소비 — 레일 헤더가 pane 그룹 헤더와 같은 행에 앉도록
   // 같은 소스(GroupArea 상수 + 테마 paneStyle)의 치수를 레일 서브트리에 주입한다.
   const paneStyle = useTheme((s) => s.spec.chrome.paneStyle);
   const railPaneInset = PANE_INSET[paneStyle] ?? 0;
 
-  // 그립 조작 = 현 위치를 명시 정박(이주 모드는 폐지 — 토글 상대가 없다).
+  // 핀 = 현 위치 정박 / 해제 = 포커스 추종(flow). 레일이 기능 탭에 붙는 것이 기본이다.
   const toggleRailPin = useCallback(() => {
-    setLeftRailPlacement(project.id, { mode: "pin", station: effectiveStation });
-  }, [effectiveStation, project.id, setLeftRailPlacement]);
+    setLeftRailPlacement(
+      project.id,
+      placement.mode === "pin"
+        ? { mode: "flow" }
+        : { mode: "pin", station: effectiveStation },
+    );
+  }, [effectiveStation, placement.mode, project.id, setLeftRailPlacement]);
 
   const startRailStationDrag = useCallback(
     (e: React.MouseEvent) => {
@@ -394,7 +338,7 @@ const ProjectPane = memo(function ProjectPane({
           planeRect.width,
           sidebarW,
         );
-        return snapRailStation(railGrid.cleanLines, raw);
+        return snapRailStation(railCleanLines, raw);
       };
       const onMove = (ev: MouseEvent) => {
         next = resolve(ev.clientX);
@@ -409,7 +353,7 @@ const ProjectPane = memo(function ProjectPane({
         endLayoutMotion("move");
         setDragStation(null);
         // 드래그 착지는 주행 위상이 아니다 — 표시 기준점을 손 위치에 동기화한다.
-        setRailPresentation((current) => ({ ...current, station: next }));
+        phase.rebase();
         setLeftRailPlacement(project.id, { mode: "pin", station: next });
       };
       // 손 드래그도 레이아웃 모션 위상 — 자동 주행과 같은 신호(홀 클립·native 추종)를 받는다.
@@ -421,9 +365,10 @@ const ProjectPane = memo(function ProjectPane({
     },
     [
       effectiveStation,
+      phase,
       project.id,
       project.sidebarOpen,
-      railGrid.cleanLines,
+      railCleanLines,
       setLeftRailPlacement,
       sidebarW,
     ],
@@ -480,7 +425,7 @@ const ProjectPane = memo(function ProjectPane({
                 railWidth={sidebarW}
                 railStation={renderedStation}
                 targetRect={boundCell.rect}
-                projected={railGrid.projected}
+                projected={arrangement?.swapped ?? false}
               />
             ) : undefined
           }
@@ -589,9 +534,12 @@ const ProjectPane = memo(function ProjectPane({
                   content={c}
                   projectId={project.id}
                   surfaceActive={isActiveProject && isActiveContent}
-                  focusNearRail={focusNearEnabled}
+                  // 배치는 해가 정한다 — 비활성 콘텐츠는 자기 정본 배열 그대로(레일 없음).
+                  displayLayout={
+                    isActiveContent ? arrangement?.displayLayout : undefined
+                  }
+                  moves={isActiveContent && railTraveling ? phase.moves : undefined}
                   railStation={isActiveContent ? renderedStation : 0}
-                  railTravelFrom={isActiveContent ? travelFrom : 0}
                   railWidthPx={
                     isActiveContent && project.sidebarOpen ? sidebarW : 0
                   }

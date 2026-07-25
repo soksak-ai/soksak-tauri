@@ -556,7 +556,7 @@ body,
    되감아 0까지 보간한다. left/width 레이아웃 보간은 패널별 페인트가 어긋나 중간 프레임을
    찢으므로 금지한다. */
 @keyframes rail-flip-x {
-  from { translate: calc(var(--rail-flip-x, 0px) + var(--focus-flip-x, 0%)) 0; }
+  from { translate: var(--flip-x, 0px) 0; }
   to { translate: 0 0; }
 }
 /* 활강 애니메이션은 실제로 이동하는 요소에만 붙는다(GroupArea.flipMoves → .flip-move).
@@ -569,13 +569,6 @@ body,
 .content-body.rail-traveling .egroup-body-slot.flip-move,
 .content-body.rail-traveling .drop-ind-wrap,
 .content-body.rail-traveling .egroup-divider {
-  animation: rail-flip-x var(--rail-travel-ms) cubic-bezier(0.4, 0, 0.2, 1);
-  will-change: translate;
-}
-.egroup-area.focus-layout-traveling .egroup-cell.flip-move,
-.egroup-area.focus-layout-traveling .egroup-frame,
-.egroup-area.focus-layout-traveling .egroup-body-slot.flip-move,
-.egroup-area.focus-layout-traveling .drop-ind-wrap {
   animation: rail-flip-x var(--rail-travel-ms) cubic-bezier(0.4, 0, 0.2, 1);
   will-change: translate;
 }

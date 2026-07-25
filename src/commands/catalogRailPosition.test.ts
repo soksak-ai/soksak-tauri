@@ -15,7 +15,6 @@ import { registerCatalog } from "./catalog";
 import { execute } from "./registry";
 import { useSessions, type ProjectTab, type ViewGroup } from "../state/sessions";
 import { initialSidebarLayout } from "../state/sidebarLayout";
-import { useSettings } from "../state/settings";
 import { splitLeaf } from "../state/splitTree";
 
 const group = (id: string, viewId?: string): ViewGroup => ({
@@ -65,8 +64,9 @@ function project(
   };
 }
 
-function nearProject(): ProjectTab {
-  const base = project({ mode: "pin", station: 0 });
+/** 행별 세로선이 안 맞는 배치 — ghostty 의 왼쪽 50 은 terminal 이 가로질러 막혀 있다. */
+function switchProject(): ProjectTab {
+  const base = project({ mode: "flow" });
   return {
     ...base,
     contents: [
@@ -111,7 +111,6 @@ registerCatalog();
 
 beforeEach(() => {
   useSessions.setState({ tabs: [project()], activeId: "t1" });
-  useSettings.getState().setRailFocusNear(false);
 });
 
 type Position = {
@@ -126,7 +125,32 @@ function resultPosition(result: Awaited<ReturnType<typeof execute>>): Position {
 }
 
 describe("sidebar.left.position", () => {
-      it("PIN station 지정은 가장 가까운 clean line으로 snap해 저장한다", async () => {
+  it("생략 호출은 FLOW 현재 상태를 읽는다 — 레일은 포커스 패널의 왼쪽 선에 선다", async () => {
+    const result = await execute("sidebar.left.position", {}, {});
+    expect(result.ok).toBe(true);
+    expect(resultPosition(result)).toEqual({
+      mode: "flow",
+      effectiveStation: 50, // 활성 패널 g2 의 왼쪽 선
+      cleanLines: [0, 50, 100],
+    });
+  });
+
+  it("PIN station 생략은 FLOW 의 현재 유효선을 그 자리에 고정한다", async () => {
+    const result = await execute("sidebar.left.position", { mode: "pin" }, {});
+    expect(result.ok).toBe(true);
+    expect(resultPosition(result)).toEqual({
+      mode: "pin",
+      station: 50,
+      effectiveStation: 50,
+      cleanLines: [0, 50, 100],
+    });
+    expect(useSessions.getState().tabs[0].leftRailPlacement).toEqual({
+      mode: "pin",
+      station: 50,
+    });
+  });
+
+  it("PIN station 지정은 가장 가까운 clean line 으로 snap 해 저장한다", async () => {
     const result = await execute(
       "sidebar.left.position",
       { mode: "pin", station: 31 },
@@ -144,7 +168,7 @@ describe("sidebar.left.position", () => {
     });
   });
 
-  it("기존 dirty PIN은 조용히 재저장하지 않고 persisted/effective station을 구분해 읽는다", async () => {
+  it("기존 dirty PIN 은 조용히 재저장하지 않고 persisted/effective 를 구분해 읽는다", async () => {
     useSessions.setState({
       tabs: [project({ mode: "pin", station: 31 })],
       activeId: "t1",
@@ -164,10 +188,43 @@ describe("sidebar.left.position", () => {
     });
   });
 
+  it("FLOW 명령은 고정 station 을 제거하고 포커스 추종을 즉시 복원한다", async () => {
+    useSessions.setState({
+      tabs: [project({ mode: "pin", station: 0 })],
+      activeId: "t1",
     });
 
-describe("state.tree leftRailPosition", () => {
-    it("명령 조회와 동일한 계산을 사용해 위치 사실을 노출한다", async () => {
+    const result = await execute("sidebar.left.position", { mode: "flow" }, {});
+    expect(result.ok).toBe(true);
+    expect(resultPosition(result)).toEqual({
+      mode: "flow",
+      effectiveStation: 50,
+      cleanLines: [0, 50, 100],
+    });
+    expect(useSessions.getState().tabs[0].leftRailPlacement).toEqual({
+      mode: "flow",
+    });
+  });
+
+  it("논리 평면 밖 station 과 FLOW+station 모호성을 구조적 오류로 거부한다", async () => {
+    const outside = await execute(
+      "sidebar.left.position",
+      { mode: "pin", station: 101 },
+      {},
+    );
+    expect(outside).toMatchObject({ ok: false, code: "INVALID_PARAMS" });
+
+    const ambiguous = await execute(
+      "sidebar.left.position",
+      { mode: "flow", station: 50 },
+      {},
+    );
+    expect(ambiguous).toMatchObject({ ok: false, code: "INVALID_PARAMS" });
+  });
+});
+
+describe("state.tree — 해가 공개 사실이다", () => {
+  it("명령 조회와 동일한 계산으로 위치를 노출한다", async () => {
     useSessions.setState({
       tabs: [project({ mode: "pin", station: 31 })],
       activeId: "t1",
@@ -185,16 +242,57 @@ describe("state.tree leftRailPosition", () => {
     });
   });
 
-    it("최대화는 공개 layout/panels도 실제 [sidebar|feature] 평면으로 노출한다", async () => {
-    const original = nearProject();
+  it("행 불일치 스위칭을 표시 layout·panels 에 노출하고 정본은 함께 보고한다", async () => {
+    const original = switchProject();
     useSessions.setState({ tabs: [original], activeId: original.id });
-    useSettings.getState().setRailFocusNear(true);
-    useSessions.getState().maximizeView(original.id, "");
-    // fixture 그룹은 뷰가 없으므로 공개 상태를 직접 세팅해 유실/숨김 직렬화만 검증한다.
+
+    const result = await execute("state.tree", {}, {});
+    const space = (result.data as {
+      projects: Array<{
+        leftRailPosition: Position;
+        spaces: Array<{
+          layout: { children: unknown[] };
+          canonicalLayout: { children: unknown[] };
+          projection: {
+            kind: string;
+            applied: boolean;
+            focusedPanelId: string;
+            swappedPanels: string[];
+          };
+          panels: Array<{ id: string; rect: { left: number } }>;
+        }>;
+      }>;
+    }).projects[0];
+
+    expect(space.leftRailPosition.effectiveStation).toBeCloseTo(100 / 3, 1);
+    const first = space.spaces[0];
+    expect(first.projection).toEqual({
+      kind: "switched",
+      applied: true,
+      focusedPanelId: "ghostty",
+      swappedPanels: ["design", "ghostty"],
+    });
+    expect(first.canonicalLayout).not.toEqual(first.layout);
+    expect(first.panels.find((panel) => panel.id === "ghostty")?.rect.left).toBe(33.3);
+    expect(first.panels.find((panel) => panel.id === "design")?.rect.left).toBe(50);
+    // 세션 정본은 절대 바뀌지 않는다 — 표시만 스위칭된다.
+    expect(useSessions.getState().tabs[0].contents[0].layout).toBe(
+      original.contents[0].layout,
+    );
+  });
+
+  it("최대화는 공개 layout/panels 도 실제 [sidebar|feature] 평면으로 노출한다", async () => {
+    const original = switchProject();
+    useSessions.setState({ tabs: [original], activeId: original.id });
+    // fixture 그룹은 뷰가 없으므로 공개 상태를 직접 세팅해 직렬화만 검증한다.
     useSessions.setState((s) => ({
       tabs: s.tabs.map((t) => ({
         ...t,
-        contents: t.contents.map((c) => ({ ...c, activeGroupId: "ghostty", maximizedViewId: "v-max" })),
+        contents: t.contents.map((c) => ({
+          ...c,
+          activeGroupId: "ghostty",
+          maximizedViewId: "v-max",
+        })),
       })),
     }));
 
@@ -219,27 +317,4 @@ describe("state.tree leftRailPosition", () => {
     });
     expect(space.canonicalLayout.children).toHaveLength(3);
   });
-  it("정박 단일 계약 — 포커스는 위치의 입력이 아니고, 레거시 FLOW 는 정규화된다", async () => {
-    // 이주(flow)·근접 투영 폐지: 간접 사건(다른 뷰 포커스)이 패널 기하를 바꾸지 않는다
-    // (NATIVE-SURFACES §2 기하 소유권). 레거시 호출은 현 유효선 정박으로 이행된다.
-    const t0 = useSessions.getState().tabs[0];
-    const before = (await execute("sidebar.left.position", {}, {})) as {
-      data?: { leftRailPosition?: { effectiveStation: number } };
-    };
-    const at = before.data?.leftRailPosition?.effectiveStation ?? 0;
-    const legacy = (await execute(
-      "sidebar.left.position",
-      { mode: "flow" },
-      {},
-    )) as { ok?: boolean; code?: string };
-    expect(legacy.code ?? "OK").toBe("OK");
-    // 응답 봉투가 저장 결과의 단일 진실 — 픽스처 프로젝트 id 에 의존하지 않는다.
-    const now = (await execute("sidebar.left.position", {}, {})) as {
-      data?: { leftRailPosition?: { mode: string; effectiveStation: number } };
-    };
-    expect(now.data?.leftRailPosition?.mode).toBe("pin");
-    expect(now.data?.leftRailPosition?.effectiveStation).toBe(at);
-    void t0;
-  });
-
 });

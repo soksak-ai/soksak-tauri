@@ -10,14 +10,13 @@ import { settleAnimationsForCapture } from "./captureSettle";
 import { suggestLayout, type MonitorFact, type WindowFact } from "../lib/layoutSuggest";
 import {
   DEFAULT_RAIL_PLACEMENT,
-  effectiveRailStation,
   snapRailStation,
   type RailPlacement,
 } from "../lib/railPlacement";
 import { listRecentProjects, removeRecentProject } from "../state/recentProjects";
 import {
   allGroups,
-  leftRailGrid,
+  projectArrangement,
   useSessions,
   type ContentArea,
   type DropZone,
@@ -44,7 +43,7 @@ import { useIconRegistry } from "../ui/icons/registry";
 import { hasPtyObservation } from "../terminal/ptyObservationStore";
 import { resolveTermPane } from "./termResolve";
 import { computeLayout } from "../components/GroupArea";
-import { projectFocusedPanelNearRail } from "../lib/railFocusLayout";
+import type { Arrangement } from "../lib/railArrangement";
 import { catalogJson, register, type CommandContext, type CommandHint } from "./registry";
 import { registerFsWatchCatalog } from "./catalogFsWatch";
 import { registerPluginCatalog } from "./catalogPlugins";
@@ -313,15 +312,12 @@ function serializeLayout(node: GroupNode): object {
 function serializeContent(
   c: ContentArea,
   activeContentId: string,
-  focusNearRail = false,
+  /** 이 스페이스의 해(배치 해결기). 레일이 없는 비활성 스페이스는 null — 정본 배열 그대로. */
+  arrangement: Arrangement<ViewGroup> | null,
   railStation?: number,
   railOpen = true,
 ) {
-  const displayLayout = projectFocusedPanelNearRail(
-    c.layout,
-    c.activeGroupId,
-    focusNearRail && !c.maximizedViewId,
-  );
+  const displayLayout = arrangement?.displayLayout ?? c.layout;
   const canonicalLayout = serializeLayout(c.layout);
   const canonicalCells = computeLayout(c.layout).cells;
   const projectedCells = computeLayout(displayLayout).cells;
@@ -348,7 +344,7 @@ function serializeContent(
       }
     : displayLayout !== c.layout
       ? {
-          kind: "focus-near" as const,
+          kind: "switched" as const,
           applied: true,
           focusedPanelId: c.activeGroupId,
           swappedPanels,
@@ -407,14 +403,11 @@ function serializeContent(
 // 좌 레일 위치의 공개 사실. 저장의 PIN station과 현재 그리드에서 실제로
 // 적용되는 station은 구분한다. 구 스냅샷의 dirty PIN을 조회했다는 이유만으로
 // 저장값을 변경하지 않으며, 명시적 PIN 명령만 유효 라인으로 스냅해 저장한다.
-function serializeLeftRailPosition(t: ProjectTab, focusNearRail = false) {
-  const { cells, focusId, cleanLines } = leftRailGrid(t, focusNearRail);
+function serializeLeftRailPosition(t: ProjectTab) {
+  const arrangement = projectArrangement(t);
+  const cleanLines = arrangement?.cleanLines ?? [0, 100];
   const placement: RailPlacement = t.leftRailPlacement ?? DEFAULT_RAIL_PLACEMENT;
-  const effectiveStation = effectiveRailStation(
-    cells,
-    focusId,
-    placement,
-  );
+  const effectiveStation = arrangement?.station ?? 0;
   return placement.mode === "pin"
     ? {
         mode: placement.mode,
@@ -427,11 +420,11 @@ function serializeLeftRailPosition(t: ProjectTab, focusNearRail = false) {
 
 function serializeTree() {
   const s = useSessions.getState();
-  const focusNearRail = useSettings.getState().railFocusNear;
   return {
     activeProjectId: s.activeId,
     projects: s.tabs.map((t) => {
-      const leftRailPosition = serializeLeftRailPosition(t, focusNearRail);
+      const leftRailPosition = serializeLeftRailPosition(t);
+      const arrangement = projectArrangement(t);
       return {
         id: t.id,
         title: t.title,
@@ -445,8 +438,7 @@ function serializeTree() {
           serializeContent(
             c,
             t.activeContentId,
-            false, // 근접 투영 폐지 — 레일 이주와 한 몸이었다(기하 소유권 §2)
-
+            c.id === t.activeContentId ? arrangement : null,
             leftRailPosition.effectiveStation,
             t.sidebarOpen,
           ),
@@ -893,7 +885,7 @@ export function registerCatalog(): void {
 
   register("sidebar.left.position", {
     description:
-      "Read or set the project left rail station. Omit params to query. The rail is always pinned — follow-focus relocation (flow) is abolished: an indirect event must never move an unrelated surface's geometry (NATIVE-SURFACES §2 geometry ownership), and the rail is a standing frame whose contents change, not a travelling object. pin without station freezes the current effective line; pin with station snaps to the nearest clean full-height grid line; a legacy flow request is normalized to a pin at the current line.",
+      "Read or set the project left rail position mode. Omit mode to query. flow (default) stands the rail at the focused panel's clean left line and travels with focus; pin without station freezes the current effective line; pin with station snaps to the nearest clean full-height grid line. The solved arrangement is what state.tree reports.",
     triggers: {
       ko: "좌측 사이드바 레일 위치 플로우 포커스 추종 핀 고정 그립 스냅",
     },
@@ -901,7 +893,7 @@ export function registerCatalog(): void {
       project: P.project,
       mode: {
         type: "string",
-        description: "pin (flow is accepted for legacy callers and normalized to pin); omit to query",
+        description: "flow | pin; omit to query current position",
         enum: ["flow", "pin"],
       },
       station: {
@@ -936,20 +928,19 @@ export function registerCatalog(): void {
         }
         return {
           projectId: t.id,
-          leftRailPosition: serializeLeftRailPosition(
-            t,
-            useSettings.getState().railFocusNear,
-          ),
+          leftRailPosition: serializeLeftRailPosition(t),
         };
       }
 
       if (mode === "flow") {
-        // 레거시 호출 정규화 — 이주는 폐지됐다. 현 유효선에 정박시켜 화면 튐 없이 이행한다.
-        const cur = serializeLeftRailPosition(t, useSettings.getState().railFocusNear);
-        const changed = S().setLeftRailPlacement(t.id, {
-          mode: "pin",
-          station: cur.effectiveStation,
-        });
+        if (requested !== undefined) {
+          return {
+            ok: false as const,
+            code: "INVALID_PARAMS",
+            message: "FLOW는 station을 가지지 않음",
+          };
+        }
+        const changed = S().setLeftRailPlacement(t.id, { mode: "flow" });
         if (!changed.ok) return changed;
       } else {
         if (
@@ -962,10 +953,7 @@ export function registerCatalog(): void {
             message: "station은 0..100이어야 함",
           };
         }
-        const current = serializeLeftRailPosition(
-          t,
-          useSettings.getState().railFocusNear,
-        );
+        const current = serializeLeftRailPosition(t);
         const station = snapRailStation(
           current.cleanLines,
           requested ?? current.effectiveStation,
@@ -981,10 +969,7 @@ export function registerCatalog(): void {
       if (!updated) return notFound("프로젝트 없음");
       return {
         projectId: updated.id,
-        leftRailPosition: serializeLeftRailPosition(
-          updated,
-          useSettings.getState().railFocusNear,
-        ),
+        leftRailPosition: serializeLeftRailPosition(updated),
       };
     },
   });
@@ -1280,15 +1265,13 @@ export function registerCatalog(): void {
         : (resolveCtx(ctx)?.content ??
           t.contents.find((x) => x.id === t.activeContentId));
       if (!c) return notFound(`스페이스 없음: ${p.space}`);
+      const arrangement =
+        c.id === t.activeContentId ? projectArrangement(t) : null;
       const out = serializeContent(
         c,
         t.activeContentId,
-        useSettings.getState().railFocusNear &&
-          (t.leftRailPlacement?.mode ?? "flow") === "flow",
-        serializeLeftRailPosition(
-          t,
-          useSettings.getState().railFocusNear,
-        ).effectiveStation,
+        arrangement,
+        serializeLeftRailPosition(t).effectiveStation,
         t.sidebarOpen,
       );
       return {
@@ -2032,7 +2015,6 @@ export function registerCatalog(): void {
     "railFill",
     "focusDim",
     "railSeamStyle",
-    "railFocusNear",
     "appFontFamily",
     "windowZoom",
     "orchestratorAgent",
@@ -2058,7 +2040,6 @@ export function registerCatalog(): void {
         railFill: s.railFill,
         focusDim: s.focusDim,
         railSeamStyle: s.railSeamStyle,
-        railFocusNear: s.railFocusNear,
         appFontFamily: s.appFontFamily,
         windowZoom: s.windowZoom,
         orchestratorAgent: s.orchestratorAgent,
@@ -2087,7 +2068,7 @@ export function registerCatalog(): void {
       value: {
         type: "json",
         description:
-          "Value — language:ko|en, projectTabPosition:top|left, iconSet:string (registered set id — unregistered falls back to lucide), iconBox:boolean, focusIndicator:outline|corners, railRelation:tint|moment|stroke (rail-panel relation surface — tint fill only, moment flash on rebind, stroke outline+label), railFill:none|faint (bound-panel background in stroke mode — none is the default, faint is a 1% accent tint), focusDim:boolean (spotlight — every panel dims except the active one), railSeamStyle:seam|edge (how a manufactured adjacency is marked: seam dashes the inner shared edge, edge dashes the outer right edge), railFocusNear:boolean, appFontFamily:string (CSS font-family stack), windowZoom:number (0.5-2.0 — whole-window zoom factor applied to the main webview and every child webview), orchestratorAgent:string (agent CLI command or path the natural-language console spawns), orchestratorModel:string (--model alias for the agent; empty = CLI default)",
+          "Value — language:ko|en, projectTabPosition:top|left, iconSet:string (registered set id — unregistered falls back to lucide), iconBox:boolean, focusIndicator:outline|corners, railRelation:tint|moment|stroke (rail-panel relation surface — tint fill only, moment flash on rebind, stroke outline+label), railFill:none|faint (bound-panel background in stroke mode — none is the default, faint is a 1% accent tint), focusDim:boolean (spotlight — every panel dims except the active one), railSeamStyle:seam|edge (how a manufactured adjacency is marked: seam dashes the inner shared edge, edge dashes the outer right edge), appFontFamily:string (CSS font-family stack), windowZoom:number (0.5-2.0 — whole-window zoom factor applied to the main webview and every child webview), orchestratorAgent:string (agent CLI command or path the natural-language console spawns), orchestratorModel:string (--model alias for the agent; empty = CLI default)",
         required: true,
       },
     },
@@ -2145,10 +2126,6 @@ export function registerCatalog(): void {
         case "railSeamStyle":
           if (v !== "seam" && v !== "edge") return bad("seam|edge");
           s.setRailSeamStyle(v);
-          break;
-        case "railFocusNear":
-          if (typeof v !== "boolean") return bad("boolean");
-          s.setRailFocusNear(v);
           break;
         case "appFontFamily":
           if (typeof v !== "string" || !v.trim())

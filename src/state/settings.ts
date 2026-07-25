@@ -57,7 +57,6 @@ interface SettingsState {
   focusDim: boolean;
   railSeamStyle: RailSeamStyle;
   // FLOW에서 포커스 패널의 자체 왼쪽 선이 막혔을 때 같은 row 형제를 화면에서만 교환.
-  railFocusNear: boolean;
   // 앱 UI 폰트(=앱 크롬 전역). 터미널 폰트와 무관 — 터미널 폰트는 터미널 플러그인이 별도 소유.
   // appFontFamily → --app-font(루트 font-family), appFontSize → --app-font-size(루트 font-size).
   appFontFamily: string;
@@ -85,7 +84,6 @@ interface SettingsState {
   setRailFill: (v: RailFill) => void;
   setFocusDim: (v: boolean) => void;
   setRailSeamStyle: (v: RailSeamStyle) => void;
-  setRailFocusNear: (v: boolean) => void;
   setAppFontFamily: (v: string) => void;
   setWindowZoom: (v: number) => void;
   setOrchestratorAgent: (v: string) => void;
@@ -110,7 +108,6 @@ const DEFAULTS = {
   railFill: "none" as RailFill,
   focusDim: true,
   railSeamStyle: "edge" as RailSeamStyle,
-  railFocusNear: true,
   appFontFamily:
     '"JetBrains Mono", "SF Mono", "Cascadia Code", Menlo, Consolas, "Courier New", monospace',
   // 창 전체 줌 배율(프레임 선택 시 ⌘±) — 값 하나를 전 표면(메인+자식 웹뷰)이 공동사용.
@@ -143,7 +140,6 @@ function serialize(s: SettingsState): PersistedSettings {
     railFill: s.railFill,
     focusDim: s.focusDim,
     railSeamStyle: s.railSeamStyle,
-    railFocusNear: s.railFocusNear,
     appFontFamily: s.appFontFamily,
     windowZoom: s.windowZoom,
     orchestratorAgent: s.orchestratorAgent,
@@ -248,10 +244,6 @@ export const useSettings = create<SettingsState>((set, get) => {
     },
     setRailSeamStyle: (railSeamStyle) => {
       set({ railSeamStyle });
-      save();
-    },
-    setRailFocusNear: (railFocusNear) => {
-      set({ railFocusNear });
       save();
     },
     setRightSidebarMode: (rightSidebarMode) => {

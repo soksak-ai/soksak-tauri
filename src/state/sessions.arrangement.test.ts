@@ -1,8 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { effectiveRailStation } from "../lib/railPlacement";
 import { splitLeaf, type SplitTree } from "./splitTree";
 import {
-  leftRailGrid,
+  projectArrangement,
   useSessions,
   type ProjectTab,
   type ViewGroup,
@@ -58,7 +57,7 @@ function projectFixture(): ProjectTab {
   };
   return {
     ...base,
-    leftRailPlacement: { mode: "pin", station: 0 },
+    leftRailPlacement: { mode: "flow" },
     contents: [
       {
         ...base.contents[0],
@@ -73,39 +72,36 @@ beforeEach(() => {
   useSessions.setState({ tabs: [], activeId: "" });
 });
 
-describe("근접 투영 폐지 — 포커스는 배치를 바꾸지 않는다", () => {
-  it("포커스가 어디든 표시 rect는 정본 배열 그대로다(투영 교체 없음)", () => {
-    // 폐지 전 계약: 포커스 패널을 레일 옆으로 옮겨 표시했다(design↔ghostty 교체) — 간접
-    // 사건이 모든 패널의 기하를 바꾸는 기능이라 폐지했다(NATIVE-SURFACES §2 기하 소유권).
+describe("세션 배치 — 표시는 해가 정하고 정본은 불변이다", () => {
+  it("막힌 포커스(ghostty)는 스위칭된 배열로 표시되고 세션 트리는 그대로다", () => {
+    // 픽스처: [db | col([design | ghostty], terminal) | kanban]. ghostty 의 왼쪽 50 은
+    // terminal 이 가로질러 막혀 있다 — 사용자 규칙대로 앞으로 스위칭해 33.33 선에 붙는다.
     const project = projectFixture();
     const canonical = project.contents[0].layout;
     useSessions.setState({ tabs: [project], activeId: project.id });
 
-    const grid = leftRailGrid(project, true); // 인자는 무시된다(폐지)
-    const design = grid.cells.find((cell) => cell.id === "design")!;
-    const ghostty = grid.cells.find((cell) => cell.id === "ghostty")!;
-    expect(design.rect.left).toBeCloseTo(100 / 3); // 정본 순서 유지
-    expect(ghostty.rect.left).toBeCloseTo(50);
-    expect(grid.projected).toBe(false);
+    const solved = projectArrangement(useSessions.getState().tabs[0])!;
+    expect(solved.swapped).toBe(true);
+    expect(solved.cells.find((cell) => cell.id === "ghostty")!.rect.left).toBeCloseTo(100 / 3);
+    expect(solved.cells.find((cell) => cell.id === "design")!.rect.left).toBeCloseTo(50);
+    expect(solved.station).toBeCloseTo(100 / 3);
     expect(useSessions.getState().tabs[0].contents[0].layout).toBe(canonical);
   });
 
-  it("비영향 terminal로 포커스를 옮기면 원래 design→ghostty 배열로 복귀한다", () => {
+  it("막히지 않은 포커스로 옮기면 정본 배열이 그대로 표시된다", () => {
     const project = projectFixture();
     const canonical = project.contents[0].layout;
     useSessions.setState({ tabs: [project], activeId: project.id });
     useSessions.getState().setActiveGroup(project.id, "terminal");
 
-    const current = useSessions.getState().tabs[0];
-    const grid = leftRailGrid(current, true);
-    const design = grid.cells.find((cell) => cell.id === "design")!;
-    const ghostty = grid.cells.find((cell) => cell.id === "ghostty")!;
-    expect(design.rect.left).toBeCloseTo(100 / 3);
-    expect(ghostty.rect.left).toBeCloseTo(50);
-    expect(current.contents[0].layout).toBe(canonical);
+    const solved = projectArrangement(useSessions.getState().tabs[0])!;
+    expect(solved.swapped).toBe(false);
+    expect(solved.displayLayout).toBe(canonical);
+    expect(solved.cells.find((cell) => cell.id === "design")!.rect.left).toBeCloseTo(100 / 3);
+    expect(solved.cells.find((cell) => cell.id === "ghostty")!.rect.left).toBeCloseTo(50);
   });
 
-  it("탭 최대화는 [사이드바|기능창] 전체 평면을 만들고 복원 시 원본 배열을 되살린다", () => {
+  it("탭 최대화는 [사이드바|기능창] 단일 평면이고 복원은 원본 배열을 되살린다", () => {
     const project = projectFixture();
     const canonical = project.contents[0].layout;
     useSessions.setState({ tabs: [project], activeId: project.id });
@@ -115,11 +111,11 @@ describe("근접 투영 폐지 — 포커스는 배치를 바꾸지 않는다", 
       viewId: "v-ghostty",
     });
     const maximized = useSessions.getState().tabs[0];
-    const grid = leftRailGrid(maximized, true);
-    expect(grid.cells).toEqual([
+    const solved = projectArrangement(maximized)!;
+    expect(solved.cells).toEqual([
       { id: "ghostty", rect: { left: 0, top: 0, width: 100, height: 100 } },
     ]);
-    expect(effectiveRailStation(grid.cells, grid.focusId, { mode: "pin", station: 0 })).toBe(0);
+    expect(solved.station).toBe(0);
     expect(maximized.sidebarOpen).toBe(true);
     expect(maximized.contents[0].layout).toEqual(canonical);
 
@@ -130,5 +126,15 @@ describe("근접 투영 폐지 — 포커스는 배치를 바꾸지 않는다", 
     const restored = useSessions.getState().tabs[0];
     expect(restored.contents[0].maximizedViewId).toBeUndefined();
     expect(restored.contents[0].layout).toEqual(canonical);
+  });
+
+  it("사이드바가 닫히면 붙을 레일이 없다 — 스위칭하지 않는다", () => {
+    const project = projectFixture();
+    useSessions.setState({
+      tabs: [{ ...project, sidebarOpen: false }],
+      activeId: project.id,
+    });
+    const solved = projectArrangement(useSessions.getState().tabs[0])!;
+    expect(solved.swapped).toBe(false);
   });
 });

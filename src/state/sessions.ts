@@ -1,12 +1,13 @@
 import { create } from "zustand";
 import {
   DEFAULT_RAIL_PLACEMENT,
-  cleanRailLines,
   isCleanRailStation,
-  type RailCell,
   type RailPlacement,
 } from "../lib/railPlacement";
-import { computeSplitLayout } from "../lib/splitLayout";
+import {
+  solveArrangement,
+  type Arrangement,
+} from "../lib/railArrangement";
 import {
   autorunCommandOf,
   getRegisteredProgram,
@@ -657,49 +658,33 @@ function normalizeActiveGroupC(c: ContentArea): ContentArea {
   return { ...next, activeGroupId: groups[0]?.id ?? next.activeGroupId };
 }
 
-/** 현재 화면에 실제 표시되는 패널 평면. 최대화는 underlying split이 아니라 FULL_RECT다. */
-export function leftRailGrid(project: ProjectTab, focusNear = false): {
-  cells: RailCell[];
-  focusId: string | null;
-  cleanLines: number[];
-  /** focus-near 투영(교체)이 실제 적용됐는가 — 결부 인접이 "만들어진" 것인지의 단일 진실. */
-  projected: boolean;
-} {
+/**
+ * 현재 화면에 실제 표시되는 배치 — 배치 해결기 단일 호출. 콘텐츠가 없으면 평면도 없다(null).
+ * fallbackStation: 미해소 포커스 렌더에서 지킬 현 위치(호출자가 직전 확정값을 준다).
+ */
+export function projectArrangement(
+  project: ProjectTab,
+  fallbackStation = 0,
+): Arrangement<ViewGroup> | null {
   const content =
     project.contents.find((item) => item.id === project.activeContentId) ??
     project.contents[0];
-  if (!content)
-    return { cells: [], focusId: null, cleanLines: [0, 100], projected: false };
-  // 근접 투영(포커스 패널을 레일 옆으로 옮기는 레이아웃 교체) 폐지 — 포커스 이동이 모든
-  // 패널의 기하를 바꾸는 기능이었다. 레일이 제자리에 있어도 배치가 스왑돼 무관한 표면
-  // (브라우저 등)이 밀렸다(실사고·녹화 판독). 기하 소유권 불변식(NATIVE-SURFACES §2):
-  // 표면의 기하는 자기 패널에 대한 직접 조작으로만 변한다. 레일은 서 있는 뼈대이고
-  // 포커스는 그 '내용'(파일트리·북마크 투영)만 갈아입는다 — 배치는 불변이다.
-  void focusNear; // 레거시 호출 호환(무시됨)
-  const displayLayout = content.layout;
-  const cells: RailCell[] = content.maximizedViewId
-    ? [
-        {
-          id: content.activeGroupId,
-          rect: { left: 0, top: 0, width: 100, height: 100 },
-        },
-      ]
-    : computeSplitLayout(displayLayout).cells.map(({ value, rect }) => ({
-        id: value.id,
-        rect,
-      }));
-  return {
-    cells,
+  if (!content) return null;
+  return solveArrangement<ViewGroup>({
+    layout: content.layout,
     focusId: content.activeGroupId,
-    cleanLines: cleanRailLines(cells.map((cell) => cell.rect)),
-    projected: false, // 투영 교체 폐지 — 만들어진 인접은 더 이상 없다
-  };
+    placement: project.leftRailPlacement ?? DEFAULT_RAIL_PLACEMENT,
+    railOpen: project.sidebarOpen,
+    // 최대화는 밑 분할 위의 이동이 아니라 [레일 | 기능] 단일 평면으로의 원자적 전환이다.
+    maximizedId: content.maximizedViewId ? content.activeGroupId : null,
+    fallbackStation,
+  });
 }
 
 function leftRailLayoutConflict(project: ProjectTab): CmdErr | null {
-  const placement = project.leftRailPlacement ?? { mode: "flow" as const };
+  const placement = project.leftRailPlacement ?? DEFAULT_RAIL_PLACEMENT;
   if (placement.mode !== "pin") return null;
-  const { cleanLines } = leftRailGrid(project);
+  const cleanLines = projectArrangement(project)?.cleanLines ?? [0, 100];
   return isCleanRailStation(cleanLines, placement.station)
     ? null
     : err(
@@ -872,7 +857,7 @@ function makeProject(id: string, opts: NewProjectOpts): ProjectTab {
     id,
     title: alias,
     sidebarOpen: true,
-    leftRailPlacement: DEFAULT_RAIL_PLACEMENT, // 정박 기본(이주 폐지 — 기하 소유권 §2)
+    leftRailPlacement: DEFAULT_RAIL_PLACEMENT, // flow — 레일은 포커스 패널에 붙는다
     rightOpen: false,
     rightView: null,
     leftLayout: initialSidebarLayout([]),
@@ -1050,7 +1035,11 @@ export const useSessions = create<SessionsStore>((set, get) => ({
       const project = s.tabs.find((item) => item.id === id);
       if (!project) return s;
       const current = project.leftRailPlacement ?? DEFAULT_RAIL_PLACEMENT;
-      if (current.station === placement.station) {
+      if (
+        current.mode === placement.mode &&
+        (current.mode === "flow" ||
+          (placement.mode === "pin" && current.station === placement.station))
+      ) {
         r = ok({ placement: current });
         return s;
       }

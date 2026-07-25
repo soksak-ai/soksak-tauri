@@ -25,16 +25,6 @@ describe("settings.tabCloseConfirm", () => {
   });
 });
 
-describe("settings.railFocusNear", () => {
-  it("기본은 근접 배치 on(사용자 확정 — 현행이 기본)이며 켜고 끌 수 있다", () => {
-    expect(useSettings.getState().railFocusNear).toBe(true);
-    useSettings.getState().setRailFocusNear(true);
-    expect(useSettings.getState().railFocusNear).toBe(true);
-    useSettings.getState().setRailFocusNear(false);
-    expect(useSettings.getState().railFocusNear).toBe(false);
-  });
-});
-
 // 포커스 스포트라이트(정식 설정, 기본 on) — 전체를 가라앉히고 선택만 명확하게.
 describe("settings.focusDim", () => {
   it("기본값은 on(사용자 확정 — 현행이 기본)", () => {

@@ -3,7 +3,6 @@ import {
   normalizeRailPlacement,
   DEFAULT_RAIL_PLACEMENT,
   cleanRailLines,
-  effectiveRailStation,
   isCleanRailStation,
   projectRailRect,
   projectRailCssTransition,
@@ -56,22 +55,10 @@ describe("left rail clean-line contract", () => {
     expect(lines[1]).toBeCloseTo(33.333333, 5);
   });
 
-  it("이주 폐지 — 포커스는 위치의 입력이 아니다(같은 pin, 다른 포커스, 같은 답)", () => {
-    const pin = { mode: "pin" as const, station: 50 };
-    expect(effectiveRailStation(twoColumns, "b", pin)).toBe(50);
-    expect(effectiveRailStation(twoColumns, "a", pin)).toBe(50);
-  });
-
   it("PIN snaps to a valid line, with an exact tie resolved toward the front", () => {
     expect(snapRailStation([0, 66, 100], 40)).toBe(66);
     expect(snapRailStation([0, 100], 50)).toBe(0);
-    expect(
-      effectiveRailStation(nested, "c", { mode: "pin", station: 40 }),
-    ).toBe(66);
-    // 기본값은 글로벌 정박(station 0) — 포커스가 b 여도 앞선으로 남는다(이주 폐지).
-    expect(
-      effectiveRailStation(twoColumns, "b", DEFAULT_RAIL_PLACEMENT),
-    ).toBe(0);
+    expect(snapRailStation(cleanRailLines(nested.map((item) => item.rect)), 40)).toBe(66);
   });
 
   it("distinguishes an exact committed PIN from a drag preview that may snap", () => {
@@ -138,24 +125,18 @@ describe("real-space rail insertion", () => {
   });
 });
 
-describe("레일 정박 단일 계약 — 이주(flow) 폐지", () => {
-  const cells = [
-    { id: "a", rect: { left: 0, top: 0, width: 30, height: 100 } },
-    { id: "b", rect: { left: 30, top: 0, width: 70, height: 100 } },
-  ];
-  it("포커스는 위치의 입력이 아니다 — 어떤 focusId 에서도 같은 선", () => {
-    const pin = { mode: "pin" as const, station: 30 };
-    expect(effectiveRailStation(cells, "a", pin)).toBe(
-      effectiveRailStation(cells, "b", pin),
-    );
-  });
-  it("레거시 flow 저장값은 정박으로 정규화된다", () => {
+describe("배치 복원 파스", () => {
+  it("기본은 flow 이고 손상된 PIN 은 기본으로 되돌린다", () => {
     expect(normalizeRailPlacement(DEFAULT_RAIL_PLACEMENT)).toEqual(DEFAULT_RAIL_PLACEMENT);
     expect(normalizeRailPlacement(undefined)).toEqual(DEFAULT_RAIL_PLACEMENT);
     expect(normalizeRailPlacement({ mode: "pin", station: 42 })).toEqual({
       mode: "pin",
       station: 42,
     });
+    expect(normalizeRailPlacement({ mode: "flow" })).toEqual({ mode: "flow" });
+    expect(normalizeRailPlacement({ mode: "pin", station: 101 })).toEqual(
+      DEFAULT_RAIL_PLACEMENT,
+    );
   });
 });
 

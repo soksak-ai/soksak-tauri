@@ -292,9 +292,7 @@ describe("railRelation 모드 CSS 갈래 (App.css)", () => {
   it("활강 애니메이션은 실이동 요소(.flip-move)에만 — 델타 0 요소의 레이어 승격 금지", () => {
     // 실사고: 위상 하위 전체 선택이 움직이지 않는 브라우저 슬롯까지 animation +
     // will-change 로 승격시켜, 위상마다 재래스터가 DOM(주소표시줄)을 움찔거렸다.
-    expect(css).toMatch(/\.focus-layout-traveling \.egroup-body-slot\.flip-move/);
     expect(css).toMatch(/\.rail-traveling \.egroup-body-slot\.flip-move/);
-    expect(css).not.toMatch(/\.focus-layout-traveling \.egroup-body-slot,/);
     expect(css).not.toMatch(/\.rail-traveling \.egroup-body-slot,/);
   });
 });

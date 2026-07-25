@@ -1,12 +1,12 @@
-// 좌 레일 위치 계약. 패널 그리드는 0..100 논리 평면을 유지하고, 레일은 그 평면의
-// 깨끗한 세로선에 고정 px 폭의 불연속 구간으로 삽입된다. DOM 포커스나 픽셀 측정은
-// 위치의 정본이 아니다: FLOW 입력은 세션 활성 체인의 panel id다.
+// 좌 레일 기하. 패널 그리드는 0..100 논리 평면을 유지하고, 레일은 그 평면의 깨끗한
+// 세로선에 고정 px 폭의 불연속 구간으로 삽입된다. 이 파일은 **기하 사상**만 소유한다 —
+// 어느 선에 서는지(station)와 어떤 배열을 그리는지는 배치 해결기(railArrangement)가 푼다.
+// DOM 포커스나 픽셀 측정은 위치의 정본이 아니다: FLOW 입력은 세션 활성 체인의 panel id다.
 
-// 레일은 정박한다 — flow(포커스 추종 이주)는 폐지됐다. 간접 사건(다른 뷰 포커스)이 무관
-// 표면(브라우저 등)의 기하를 바꾸는 기능이었고, 기하 소유권 불변식(NATIVE-SURFACES §2)과
-// 투영 공리(레일은 서 있는 뼈대 — 포커스는 그 내용만 갈아입는다) 양쪽을 위반했다.
-// 레거시 저장값 { mode: "flow" } 는 파서가 현 위치 pin 으로 정규화한다(화면 튐 없음).
-export type RailPlacement = { mode: "pin"; station: number };
+// flow = 레일이 포커스 패널의 왼쪽 클린 라인에 선다(사용자 확정 설계 — 사이드바가 기능 탭에
+// 붙는다). pin = 그립으로 정박시킨 선에 선다. 폭은 station 과 무관하게 불변이므로 삽입 지점이
+// 바뀌어도 어떤 패널도 늘거나 줄지 않는다 — 레일이 가로지른 패널만 레일 폭만큼 평행이동한다.
+export type RailPlacement = { mode: "flow" } | { mode: "pin"; station: number };
 
 export interface RailRect {
   left: number;
@@ -27,7 +27,7 @@ export interface RailCssRect extends RailRect {
   railWidth: number;
 }
 
-export const DEFAULT_RAIL_PLACEMENT: RailPlacement = { mode: "pin", station: 0 };
+export const DEFAULT_RAIL_PLACEMENT: RailPlacement = { mode: "flow" };
 export const RAIL_EPSILON = 0.01;
 
 const clampStation = (value: number): number =>
@@ -97,22 +97,6 @@ export function isCleanRailStation(
   return (
     Number.isFinite(station) &&
     lines.some((line) => Math.abs(line - station) <= eps)
-  );
-}
-
-export function effectiveRailStation(
-  cells: RailCell[],
-  // focusId 는 계약상 무시된다 — 포커스는 레일 위치의 입력이 아니다(이주 폐지의 뜻).
-  // 시그니처는 호출측 호환을 위해 유지하고, 값을 읽지 않음을 여기 명시한다.
-  _focusId: string | null | undefined,
-  placement: RailPlacement | undefined,
-  fallback = 0,
-): number {
-  // 정박 단일 산식 — 요청 station 을 그리드의 깨끗한 선에 스냅한다. 포커스는 입력이 아니다
-  // (그것이 flow 폐지의 뜻이다): 같은 배치는 어떤 포커스에서도 같은 선을 답한다.
-  return snapRailStation(
-    cleanRailLines(cells.map((cell) => cell.rect)),
-    placement?.station ?? fallback,
   );
 }
 
@@ -245,16 +229,16 @@ export function unprojectRailX(
   return null;
 }
 
+/** 복원 파스 — 평면 밖 station 이나 손상된 값은 기본(flow)으로 되돌린다. */
 export function normalizeRailPlacement(value: unknown): RailPlacement {
   const placement = (value ?? {}) as { mode?: unknown; station?: unknown };
-  if (
-    typeof placement.station === "number" &&
-    Number.isFinite(placement.station) &&
-    placement.station >= 0 &&
-    placement.station <= 100
-  ) {
-    return { mode: "pin", station: placement.station };
+  if (placement.mode === "pin") {
+    return typeof placement.station === "number" &&
+      Number.isFinite(placement.station) &&
+      placement.station >= 0 &&
+      placement.station <= 100
+      ? { mode: "pin", station: placement.station }
+      : DEFAULT_RAIL_PLACEMENT;
   }
-  // 레거시 flow(또는 손상된 값) — 정박 기본선으로 정규화한다. 이주 기능은 폐지됐다.
   return DEFAULT_RAIL_PLACEMENT;
 }
