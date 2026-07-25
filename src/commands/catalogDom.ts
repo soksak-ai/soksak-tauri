@@ -486,6 +486,55 @@ export function registerDomCatalog(): void {
     },
   });
 
+  // 키보드로만 닿는 기능(팔레트 화살표·Esc·Ctrl+R 같은 단축키)은 클릭 주입으로 검증할 수 없다.
+  // 그 자리에 표면이 없으면 "키보드 경로는 확인 못 했다" 가 남는다 — 그래서 키를 넣는다.
+  register("ui.input.key", {
+    description:
+      "Dispatch a keydown (and keyup) to an exposed node — the only way to drive keyboard-only paths: palette arrows, Escape, Enter, and shortcuts like Ctrl+R. key takes a KeyboardEvent key value ('Enter', 'Escape', 'ArrowDown', 'r'). Modifiers are separate booleans. Returns defaultPrevented so you can tell whether a handler claimed the key or it fell through. Unexposed addresses return NOT_EXPOSED — no guessing.",
+    triggers: { ko: "키 입력 키보드 단축키 방향키 엔터 이스케이프 주입 E2E" },
+    params: {
+      address: { type: "string", description: "Exposed node address from ui.tree", required: true },
+      key: { type: "string", description: "KeyboardEvent key value: Enter, Escape, ArrowDown, Tab, r, …", required: true },
+      ctrl: { type: "boolean", description: "Ctrl held" },
+      meta: { type: "boolean", description: "Meta/Cmd held" },
+      shift: { type: "boolean", description: "Shift held" },
+      alt: { type: "boolean", description: "Alt/Option held" },
+    },
+    returns: "{ key, address, defaultPrevented }",
+    message: (d) => tmsg("msg.ui.input.key", { key: String(d.key ?? "") }),
+    errors: ["NOT_EXPOSED", "INVALID_PARAMS"],
+    danger: "inject",
+    examples: [
+      'ui.input.key \'{"address":"win/main/content/view/x/node/composer-input","key":"r","ctrl":true}\'',
+      'ui.input.key \'{"address":"…/node/composer-input","key":"ArrowDown"}\'',
+    ],
+    handler: (p) => {
+      const addr = p.address as string;
+      const key = p.key as string;
+      if (typeof key !== "string" || key.length === 0) {
+        return { ok: false as const, code: "INVALID_PARAMS" as const, message: "key is required" };
+      }
+      const el = resolveElement(addr);
+      if (!el) return notExposed(addr);
+      const init: KeyboardEventInit = {
+        key,
+        ctrlKey: p.ctrl === true,
+        metaKey: p.meta === true,
+        shiftKey: p.shift === true,
+        altKey: p.alt === true,
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+      };
+      // 포커스가 없으면 핸들러가 붙은 요소에 이벤트가 닿아도 브라우저 기본 동작이 어긋난다.
+      if (el instanceof HTMLElement) el.focus();
+      const down = new KeyboardEvent("keydown", init);
+      el.dispatchEvent(down);
+      el.dispatchEvent(new KeyboardEvent("keyup", init));
+      return { key, address: addr, defaultPrevented: down.defaultPrevented };
+    },
+  });
+
   register("ui.input.dblclick", {
     description:
       "Dispatch a double-click (two clicks + a dblclick event) to an exposed node (E2E injection). Use to drive double-click UI flows like inline tab/label rename. Unexposed addresses return NOT_EXPOSED — no guessing. Occluded/unfocused windows pause rAF and may not respond — call window.focus to bring the window forward first.",

@@ -13,18 +13,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("../lib/webviewLabels", () => ({ currentWindowLabel: () => "main" }));
 
 import { registerDomCatalog, deepElementFromPoint, deepActiveElement, viewContainerOf } from "./catalogDom";
-import { execute, getSpec, unregister } from "./registry";
+import { catalogJson, execute, getSpec, unregister } from "./registry";
 
 beforeEach(() => {
   registerDomCatalog();
 });
 afterEach(() => {
-  for (const c of [
-    "ui.tree", "ui.measure", "ui.slot", "ui.focus.state",
-    "ui.focus.trace.start", "ui.focus.trace.read",
-    "ui.input.click", "ui.input.dblclick", "ui.input.fill",
-    "ui.input.drag", "ui.input.dnd", "ui.hit", "webview.emitNative",
-  ]) unregister(c);
+  // 카탈로그가 등록한 것을 전부 회수한다 — 손으로 적은 목록은 새 명령이 하나 늘 때마다
+  // 다음 beforeEach 를 "중복 등록"으로 죽인다(실측: ui.input.key 추가에 23건 실패).
+  for (const { name } of catalogJson()) {
+    if (name.startsWith("ui.") || name === "webview.emitNative") unregister(name);
+  }
   document.body.innerHTML = "";
 });
 
@@ -378,5 +377,39 @@ describe("ui.input.click — phase 분해(게스처 중간 상태의 검증 가�
       el.addEventListener(t, () => seen.push(t));
     await execute("ui.input.click", { address: ADDR }, {});
     expect(seen).toEqual(["mousedown", "mouseup", "click"]);
+  });
+});
+
+describe("ui.input.key — 키보드로만 닿는 경로의 구동면", () => {
+  // 팔레트 화살표·Esc·Ctrl+R 같은 경로는 클릭 주입으로 검증할 수 없다. 그 자리에 표면이
+  // 없으면 "키보드 경로는 확인 못 했다"가 남는다. 그래서 키를 넣고, 핸들러가 그 키를
+  // 집었는지(defaultPrevented)까지 돌려준다 — 삼켜졌는지 흘렀는지 밖에서 갈린다.
+  it("노출 노드에 keydown·keyup 을 넣고 수정자와 소진 여부를 보고한다", async () => {
+    mountNode(`<div data-node="btn" tabindex="0">x</div>`);
+    const el = document.querySelector("[data-node=btn]") as HTMLElement;
+    const seen: string[] = [];
+    el.addEventListener("keydown", (e) => {
+      seen.push(`down:${e.key}:${e.ctrlKey ? "ctrl" : ""}`);
+      if (e.key === "r") e.preventDefault(); // 핸들러가 집었다
+    });
+    el.addEventListener("keyup", (e) => seen.push(`up:${e.key}`));
+
+    const r = await execute("ui.input.key", { address: ADDR, key: "r", ctrl: true }, {});
+    expect(r.ok).toBe(true);
+    expect(seen).toEqual(["down:r:ctrl", "up:r"]);
+    expect((r.data as { defaultPrevented: boolean }).defaultPrevented).toBe(true);
+
+    const fell = await execute("ui.input.key", { address: ADDR, key: "ArrowDown" }, {});
+    expect((fell.data as { defaultPrevented: boolean }).defaultPrevented).toBe(false);
+  });
+
+  it("노출되지 않은 주소는 NOT_EXPOSED, 빈 key 는 INVALID_PARAMS — 추측하지 않는다", async () => {
+    mountNode(`<div data-node="btn">x</div>`);
+    const ghost = await execute("ui.input.key", { address: "win/main/content/view/test.v/node/nope", key: "Enter" }, {});
+    expect(ghost.ok).toBe(false);
+    expect(ghost.code).toBe("NOT_EXPOSED");
+    const empty = await execute("ui.input.key", { address: ADDR, key: "" }, {});
+    expect(empty.ok).toBe(false);
+    expect(empty.code).toBe("INVALID_PARAMS");
   });
 });

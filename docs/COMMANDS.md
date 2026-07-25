@@ -2740,6 +2740,27 @@ Set the value of an exposed input/textarea node and dispatch input+change events
 sok-dev ui.input.fill '{"address":"win/main/content/view/x/node/url-input","value":"/path/clip.mp4"}'
 ```
 
+## `ui.input.key` (danger: inject)
+
+Dispatch a keydown (and keyup) to an exposed node — the only way to drive keyboard-only paths: palette arrows, Escape, Enter, and shortcuts like Ctrl+R. key takes a KeyboardEvent key value ('Enter', 'Escape', 'ArrowDown', 'r'). Modifiers are separate booleans. Returns defaultPrevented so you can tell whether a handler claimed the key or it fell through. Unexposed addresses return NOT_EXPOSED — no guessing. | 키 입력 키보드 단축키 방향키 엔터 이스케이프 주입 E2E
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `address` | string | ✓ | Exposed node address from ui.tree |
+| `alt` | boolean |  | Alt/Option held |
+| `ctrl` | boolean |  | Ctrl held |
+| `key` | string | ✓ | KeyboardEvent key value: Enter, Escape, ArrowDown, Tab, r, … |
+| `meta` | boolean |  | Meta/Cmd held |
+| `shift` | boolean |  | Shift held |
+
+**Returns**: { key, address, defaultPrevented }
+**Errors**: NOT_EXPOSED, INVALID_PARAMS
+
+```bash
+sok-dev ui.input.key '{"address":"win/main/content/view/x/node/composer-input","key":"r","ctrl":true}'
+sok-dev ui.input.key '{"address":"…/node/composer-input","key":"ArrowDown"}'
+```
+
 ## `ui.intent.open`
 
 Open a resource through the binding context (R2): places the view as a tab in the bound group without replacing existing panels, reusing the existing view for the same resource (idempotent). The same path the rail's open affordance uses. With no binding (empty project) it places into the active group. | 인텐트열기 결부열기 intent open
