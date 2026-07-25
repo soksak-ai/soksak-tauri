@@ -535,6 +535,7 @@ export const GroupArea = memo(function GroupArea({
           railWidthPx,
         )
       : 0;
+  const spanMovesPx = (rect: Rect): boolean => Math.abs(spanFlipPx(rect)) > 0.5;
   const dividerVars = (d: Divider) => {
     if (railWidthPx <= 0) return {};
     if (d.dir === "row") {
@@ -780,7 +781,7 @@ export const GroupArea = memo(function GroupArea({
           key={`div-${d.splitId}-${d.index}`}
           data-divider-key={dividerKey(d)}
           data-node={`divider/${d.splitId}/${d.index}`}
-          className={`egroup-divider ${d.dir}`}
+          className={`egroup-divider ${d.dir}${spanMovesPx(d.rect) ? " flip-move" : ""}`}
           style={
             d.dir === "row"
               ? {
@@ -805,7 +806,7 @@ export const GroupArea = memo(function GroupArea({
       {/* ── 드롭 인디케이터(드래그 중, 시각용) — 본문 영역 좌표는 CSS 규칙 소유 ── */}
       {drag && hover && hoverCell && (
         <div
-          className="drop-ind-wrap"
+          className={`drop-ind-wrap${flipMoves(hoverCell.group.id) ? " flip-move" : ""}`}
           style={cellVars(hoverCell.rect, hoverCell.group.id)}
         >
           <div className={`drop-ind ${hover.zone}`} />

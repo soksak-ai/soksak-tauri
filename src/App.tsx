@@ -26,7 +26,12 @@ import {
   onLayoutMotion,
 } from "./lib/layoutMotion";
 import { applyRailHoleClip, trackRailHoleClip } from "./lib/railHoleClip";
-import { createSlotFreeze } from "./lib/slotFreeze";
+import {
+  canGlideViews,
+  disposeSlotFreezeHost,
+  ensureSlotFreezeHost,
+  scheduleSlotSettleCapture,
+} from "./lib/slotFreezeHost";
 import {
   activeSessionViewId,
   startViewFocusSync,
@@ -177,17 +182,6 @@ const ProjectPane = memo(function ProjectPane({
 }) {
   const t = useT();
   const setLeftRailPlacement = useSessions((s) => s.setLeftRailPlacement);
-  // 슬롯 동결 엔진 핸들 + 정착 캡처 디바운스 — reflow(탭 전환·파킹)·위상 끝이 같은 길로 모인다.
-  const slotFreezeRef = useRef<ReturnType<typeof createSlotFreeze> | null>(null);
-  const settleCaptureTimer = useRef<number | null>(null);
-  const scheduleSettleCapture = useCallback(() => {
-    if (settleCaptureTimer.current != null) window.clearTimeout(settleCaptureTimer.current);
-    settleCaptureTimer.current = window.setTimeout(() => {
-      settleCaptureTimer.current = null;
-      slotFreezeRef.current?.captureSettled();
-    }, 350);
-  }, []);
-
   const railPlaneRef = useRef<HTMLDivElement>(null);
   const placement = project.leftRailPlacement ?? DEFAULT_RAIL_PLACEMENT;
   const activeContent =
@@ -196,11 +190,20 @@ const ProjectPane = memo(function ProjectPane({
   // 미해소 포커스 렌더에서 station 이 0 으로 붕괴하지 않게 직전 확정값을 폴백으로 준다.
   const lastStationRef = useRef(0);
   // 배치는 해결기가 푼다 — station·배열·만들어진 인접·이동량의 단일 진실(재계산 금지).
-  const arrangement = projectArrangement(project, lastStationRef.current);
+  const solved = projectArrangement(project, lastStationRef.current);
+  lastStationRef.current = solved?.station ?? 0;
+  const railGeometryScope = railGeometryScopeId(
+    activeContent?.id,
+    solved?.cleanLines ?? [0, 100],
+  );
+  // 배치 위상(§12-④) — pane 복도만 340ms 로 수축·확장하고 출발·도착 레일을 그 아래 바닥에 둔다.
+  // 위상 추적은 이 훅 하나뿐이고, **화면에 무엇이 서 있는지도 위상이 소유한다**(주행 중 도착한
+  // 해는 대기열에서 기다린다 — 표시를 즉시 갈면 달리는 애니메이션이 튄다).
+  const phase = useArrangementPhase(solved, railGeometryScope);
+  const arrangement = phase.displayed;
   const railCells = arrangement?.cells ?? [];
   const railCleanLines = arrangement?.cleanLines ?? [0, 100];
   const effectiveStation = arrangement?.station ?? 0;
-  lastStationRef.current = effectiveStation;
   const boundGroup = activeContent?.railBindingViewId
     ? allGroups(activeContent.layout).find((group) =>
         group.views.some((view) => view.id === activeContent.railBindingViewId),
@@ -212,25 +215,10 @@ const ProjectPane = memo(function ProjectPane({
   const boundCell = boundGroup
     ? railCells.find((cell) => cell.id === boundGroup.id)
     : undefined;
-  const railGeometryScope = railGeometryScopeId(
-    activeContent?.id,
-    railCleanLines,
-  );
   const [dragStation, setDragStation] = useState<number | null>(null);
   const renderedStation = dragStation ?? effectiveStation;
   // 레일 시각 모드(§12-⑤) — pane(분할창처럼) | ground(바닥 평면). 토글은 슬롯 프레임 헤더.
   const railLook = useSettings((s) => s.railLook);
-  // 배치 위상(§12-④) — 레일을 가로질러 옮기지 않는다. pane 복도만 340ms 로 수축·확장하고,
-  // 출발 레일과 도착 레일을 그 아래 바닥에 둔다. 도착 레일은 열린 만큼 즉시 드러나며 출발
-  // 레일은 닫히는 pane 에 가려진 뒤 제거된다. 위상 추적은 이 훅 하나뿐이다.
-  const phase = useArrangementPhase(arrangement, railGeometryScope);
-  const railTraveling = dragStation === null && phase.traveling;
-  const railLayers = railPresentationLayers(
-    phase.generation,
-    phase.from?.station ?? effectiveStation,
-    dragStation ?? effectiveStation,
-    railTraveling,
-  );
   // 위상이 실제로 움직이는 뷰들 — 해가 지시한 패널(그룹)의 뷰만. 동결도 veil 도 이 집합으로만
   // 간다: 움직이지 않는 표면은 위상 내내 라이브로 남고 통지조차 받지 않는다.
   const movingViewIds = useMemo(() => {
@@ -244,6 +232,17 @@ const ProjectPane = memo(function ProjectPane({
     );
   }, [activeContent, phase.from, phase.moves]);
   const movingKey = movingViewIds.join(",");
+  // 활강의 전제(§4.6-5) — 이동하는 홀 표면을 전부 스탠드인으로 덮을 수 있을 때만 활강한다.
+  // 덮을 수 없는 표면이 끼면 그 표면은 위상 내내 샘플링 추종으로 끌려가고 그 스터터가 애초의
+  // 불만이었다. 덮을 수 없으면 활강하지 않는다 — 즉시 스냅은 못생겨도 결코 추하지 않다.
+  const railTraveling =
+    dragStation === null && phase.traveling && canGlideViews(movingViewIds);
+  const railLayers = railPresentationLayers(
+    phase.generation,
+    phase.from?.station ?? effectiveStation,
+    dragStation ?? effectiveStation,
+    railTraveling,
+  );
   // 위상 신호(§4.6) — 이동하는 표면을 코어가 스탠드인으로 덮는 근거. 위상 중 네이티브 표면은
   // 움직이지 않으므로(스탠드인이 시각을 전담) 여기서 네이티브를 구동하지 않는다.
   useLayoutEffect(() => {
@@ -260,36 +259,6 @@ const ProjectPane = memo(function ProjectPane({
     const plane = railPlaneRef.current;
     if (plane) applyRailHoleClip(plane);
   });
-  // 코어 소유 이동-동결(§4.6 시행) — move 위상에 홀-슬롯 표면을 DOM 스탠드인으로 대체한다.
-  // 정착 스냅 갱신은 이벤트 에지(위상 끝·reflow 뒤 디바운스·부팅 1회)에서만 — 폴링 아님.
-  useEffect(() => {
-    const sf = createSlotFreeze({
-      root: () => document,
-      capture: async (r) => {
-        const b64 = (await invoke("plugin:webview-capture|snapshot_region", {
-          x: r.x,
-          y: r.y,
-          w: r.w,
-          h: r.h,
-        })) as string;
-        return `data:image/png;base64,${b64}`;
-      },
-      emitVeil: (viewId, veiled) => emitPluginEvent("view.veiled", { viewId, veiled }),
-    });
-    slotFreezeRef.current = sf;
-    const off = onLayoutMotion((active, kinds, scope) => {
-      sf.onMotion(active, kinds, scope);
-      if (!active) scheduleSettleCapture();
-    });
-    const boot = window.setTimeout(() => sf.captureSettled(), 1200);
-    return () => {
-      off();
-      window.clearTimeout(boot);
-      slotFreezeRef.current = null;
-      sf.dispose();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
   useEffect(() => {
     let stop: (() => void) | undefined;
     const off = onLayoutMotion((active) => {
@@ -380,7 +349,7 @@ const ProjectPane = memo(function ProjectPane({
   // 못 쓴다(그걸로 측정하면 옛 위치를 읽어 webview 가 한 박자 늦는다).
   useLayoutEffect(() => {
     emitPluginEvent("layout.reflow", { activeSpaceId: project.activeContentId });
-    scheduleSettleCapture(); // 레이아웃 정착 에지 — 슬롯 동결 스냅 갱신(디바운스)
+    scheduleSlotSettleCapture(); // 레이아웃 정착 에지 — 슬롯 동결 스냅 갱신(디바운스)
   }, [
     activeContent?.activeGroupId,
     activeContent?.maximizedViewId,
@@ -708,6 +677,30 @@ function App() {
   // 원격 destructive confirm 배선(폰-링크 안전모델) — Rust app.emit("remote-confirm-request")를
   // store 큐에 잇고, 결정 sink 를 remote_confirm_resolve 로 잇는다(데스크톱 단일 권위). 부팅 1회.
   useEffect(() => wireRemoteConfirm(), []);
+  // 코어 소유 이동-동결(§4.6 시행) — 창에 엔진 하나. 홀 슬롯은 창의 DOM 에 살고 모션 신호도
+  // 창 단위이므로 소유자도 창이다(프로젝트마다 하나씩 만들면 같은 슬롯을 N 번 덮고 캡처도
+  // N 배로 나간다). 정착 스냅 갱신은 이벤트 에지에서만 — 폴링 아님.
+  useEffect(() => {
+    ensureSlotFreezeHost({
+      root: () => document,
+      capture: async (r) => {
+        const b64 = (await invoke("plugin:webview-capture|snapshot_region", {
+          x: r.x,
+          y: r.y,
+          w: r.w,
+          h: r.h,
+        })) as string;
+        return `data:image/png;base64,${b64}`;
+      },
+      emitVeil: (viewId, veiled) =>
+        emitPluginEvent("view.veiled", { viewId, veiled }),
+    });
+    const boot = window.setTimeout(() => scheduleSlotSettleCapture(), 1200);
+    return () => {
+      window.clearTimeout(boot);
+      disposeSlotFreezeHost();
+    };
+  }, []);
 
   // 활성 project/space/panel/view 체인과 실제 키보드 포커스는 하나의 계약이다.
   // 마운트 시 자동포커스하지 않고, 최신 활성 뷰 의도만 provider 에 전달한다.

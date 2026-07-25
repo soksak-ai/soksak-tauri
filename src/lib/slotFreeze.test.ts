@@ -102,7 +102,7 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
     expect(slot.querySelector("img")).toBeNull();
   });
 
-  it("위상 끝: veil(false)=착지 신호 즉시, 스탠드인은 한 박자 뒤 제거", async () => {
+  it("위상 끝: veil(false)=착지 신호, 스탠드인은 '착지 쓰기가 도착한 뒤' 물러난다", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout"] }); // rAF 스텁은 수동 큐 유지
     const slot = makeSlot("v1");
     const f = build();
@@ -110,11 +110,55 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
     await microtasks();
     f.onMotion(true, ["move"]);
     f.onMotion(false, []);
-    // 해동 에지가 표면 소유자의 유일한 쓰기 시점이다 — 스탠드인은 그 착지를 덮은 채 물러난다.
     expect(veils).toEqual([["v1", true], ["v1", false]]);
+    // 시간이 흘러도 착지가 오지 않았으면 스탠드인은 서 있는다 — 홀이 표면보다 먼저 열리면
+    // 그 프레임은 빈 구멍이다(느린 사이드카 경로의 실제 위험).
+    vi.advanceTimersByTime(200);
     expect(slot.querySelector("img")).not.toBeNull();
-    vi.advanceTimersByTime(120);
+    f.noteSurfaceWrite("v1");
     expect(slot.querySelector("img")).toBeNull();
+  });
+
+  it("착지가 끝내 오지 않으면 상한에서 걷는다 — 스탠드인이 영구히 남지 않는다", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    const slot = makeSlot("v1");
+    const f = build({ landingTimeoutMs: 400 });
+    f.captureSettled();
+    await microtasks();
+    f.onMotion(true, ["move"]);
+    f.onMotion(false, []);
+    vi.advanceTimersByTime(401);
+    expect(slot.querySelector("img")).toBeNull();
+  });
+
+  it("활강의 전제 — 스탠드인을 세울 수 없는 홀이 있으면 canFreezeAll 이 거절한다", async () => {
+    const a = makeSlot("vA");
+    makeSlot("vB");
+    const f = build();
+    f.captureSettled();
+    await microtasks();
+    // 둘 다 스냅이 구워졌다.
+    expect(f.canFreezeAll(["vA", "vB"])).toBe(true);
+    // 항행 등 내용 변화로 하나가 버려지면 그 위상은 활강 대상이 아니다(스냅이 정답).
+    f.invalidate("vB");
+    expect(f.canFreezeAll(["vA", "vB"])).toBe(false);
+    expect(f.canFreezeAll(["vA"])).toBe(true);
+    // 홀이 아닌 뷰(스냅 없음·슬롯 없음)는 스탠드인이 필요 없다 — 거절 사유가 아니다.
+    expect(f.canFreezeAll(["vA", "terminal-view"])).toBe(true);
+    void a;
+  });
+
+  it("나이는 정확성의 축이 아니다 — 오래된 스냅도 내용이 그대로면 세운다", async () => {
+    const slot = makeSlot("v1");
+    let clock = 0;
+    const f = build({ now: () => clock });
+    f.captureSettled();
+    await microtasks();
+    clock = 60 * 60 * 1000; // 한 시간 뒤
+    f.onMotion(true, ["move"]);
+    // 낡음을 이유로 폴백하면 그 위상은 샘플링 추종으로 끌려간다 — 내용 변화(항행·크기)만이
+    // 스냅을 버릴 근거다.
+    expect(slot.dataset.freeze).toBe("1");
   });
 
   it("활성 중 resize 개입(종별 재발화)이면 즉시 해동한다", async () => {

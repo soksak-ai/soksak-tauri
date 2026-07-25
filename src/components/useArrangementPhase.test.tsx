@@ -57,6 +57,7 @@ function Probe({
       data-testid="p"
       data-traveling={phase.traveling ? "1" : "0"}
       data-moves={phase.moves.map((m) => m.id).join(",")}
+      data-station={String(phase.displayed?.station ?? "")}
     />
   );
 }
@@ -118,7 +119,46 @@ describe("useArrangementPhase", () => {
     expect(el().dataset.traveling).toBe("0");
   });
 
-  it("rebase 는 주행을 즉시 끝낸다 — 손 드래그 착지는 여정이 아니다", () => {
+  it("주행 중 도착한 해는 표시를 갈아치우지 않고 대기한다 — 달리는 여정은 튀지 않는다", () => {
+    // 표시를 즉시 갈면 CSS 변수 갱신으로 달리는 애니메이션의 출발 오프셋이 재해석돼 요소가
+    // 남은 진행도만큼 튄다(최대 두 이동량의 합). 대기열은 그 결함을 구조적으로 없앤다.
+    const at = solve(threeColumns, "a"); // station 0
+    act(() => root.render(<Probe arrangement={at} scopeId={scopeOf(at)} />));
+    const toB = solve(threeColumns, "b"); // station 33.33
+    act(() => root.render(<Probe arrangement={toB} scopeId={scopeOf(toB)} />));
+    expect(el().dataset.traveling).toBe("1");
+    expect(el().dataset.station).toBe(String(toB.station));
+
+    // 여정 한복판에 세 번째 해가 도착한다 — 표시는 여전히 첫 목표다.
+    const toC = solve(threeColumns, "c"); // station 66.67
+    act(() => root.render(<Probe arrangement={toC} scopeId={scopeOf(toC)} />));
+    expect(el().dataset.station).toBe(String(toB.station));
+
+    // 첫 여정이 끝나면 그 자리에서 최신 목표로 다음 여정이 출발한다.
+    act(() => vi.advanceTimersByTime(RAIL_TRAVEL_MS + 10));
+    expect(el().dataset.station).toBe(String(toC.station));
+    expect(el().dataset.traveling).toBe("1");
+    act(() => vi.advanceTimersByTime(RAIL_TRAVEL_MS + 10));
+    expect(el().dataset.traveling).toBe("0");
+  });
+
+  it("클릭을 몇 번 하든 위상은 최대 둘이다 — 중간 목표는 접힌다", () => {
+    const at = solve(threeColumns, "a");
+    act(() => root.render(<Probe arrangement={at} scopeId={scopeOf(at)} />));
+    const toB = solve(threeColumns, "b");
+    act(() => root.render(<Probe arrangement={toB} scopeId={scopeOf(toB)} />));
+    // 여정 중 b→c→a 로 연달아 바뀐다 — 마지막 하나만 살아남는다.
+    for (const id of ["c", "a"]) {
+      const next = solve(threeColumns, id);
+      act(() => root.render(<Probe arrangement={next} scopeId={scopeOf(next)} />));
+    }
+    act(() => vi.advanceTimersByTime(RAIL_TRAVEL_MS + 10));
+    expect(el().dataset.station).toBe(String(solve(threeColumns, "a").station));
+    act(() => vi.advanceTimersByTime(RAIL_TRAVEL_MS + 10));
+    expect(el().dataset.traveling).toBe("0");
+  });
+
+  it("rebase 는 다음 해를 여정 없이 받는다 — 손 드래그 착지는 여정이 아니다", () => {
     const at = solve(twoColumns, "a");
     let rebase = () => {};
     const capture = (fn: () => void) => {
@@ -137,6 +177,16 @@ describe("useArrangementPhase", () => {
     );
     expect(el().dataset.traveling).toBe("1");
     act(() => rebase());
+    expect(el().dataset.traveling).toBe("0");
+
+    // 손이 옮겨 놓은 자리를 커밋한 해가 뒤이어 도착해도 여정을 열지 않는다(옛 결함: 착지
+    // 직후 커밋이 0→실위치 유령 여정을 재개했다).
+    const committed = solve(twoColumns, "b");
+    act(() =>
+      root.render(
+        <Probe arrangement={committed} scopeId={scopeOf(committed)} onPhase={capture} />,
+      ),
+    );
     expect(el().dataset.traveling).toBe("0");
   });
 });

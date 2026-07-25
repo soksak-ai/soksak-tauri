@@ -29,8 +29,8 @@ export interface SlotFreezeDeps {
   capture: (rect: { x: number; y: number; w: number; h: number }) => Promise<string>;
   /** 표면 가림 릴레이 — view.veiled { viewId, veiled } 발화(사이드카 표면 소유자가 소비). */
   emitVeil: (viewId: string, veiled: boolean) => void;
-  /** 정착 스냅 신선도 상한(ms). 기본 120초. */
-  maxSnapAgeMs?: number;
+  /** 착지 쓰기가 오지 않을 때 스탠드인을 걷는 상한(ms). 기본 400 — 340ms 주행보다 길다. */
+  landingTimeoutMs?: number;
   /** 테스트 주입 — 기본 performance.now. */
   now?: () => number;
   /** 테스트 주입 — 기본 new Image() 동등의 <img> 생성. */
@@ -40,6 +40,19 @@ export interface SlotFreezeDeps {
 export interface SlotFreeze {
   /** 정착 에지에서 호출 — 가시 홀-슬롯 전체를 선캡처하고 즉시 디코드까지 끝내 둔다. */
   captureSettled(): void;
+  /**
+   * 이 뷰들 중 홀 표면인 것을 전부 스탠드인으로 덮을 수 있는가. 활강의 전제다 —
+   * 스탠드인 없는 홀이 하나라도 끼면 그 표면은 위상 내내 샘플링 추종으로 끌려다니고,
+   * 그 스터터가 애초의 불만이었다. 덮을 수 없으면 활강하지 않고 스냅하는 것이 낫다.
+   */
+  canFreezeAll(viewIds: readonly string[]): boolean;
+  /** 내용이 바뀐 뷰의 스냅을 버린다(항행 등) — 낡은 프레임을 세우지 않기 위한 유일한 축. */
+  invalidate(viewId: string): void;
+  /**
+   * 표면 소유자가 실제로 착지 좌표를 쓴 사실. 코어가 자기 쓰기 경로(webview.bounds)에서
+   * 관측한다 — 스탠드인은 이 사실 위에서 물러난다(시간 추측 금지).
+   */
+  noteSurfaceWrite(viewId: string): void;
   /** 모션 신호 수신부 — onLayoutMotion (active, kinds, scope) 를 그대로 넘긴다.
    *  scope: 이 위상이 움직이는 viewId 집합(null=전역). 범위 밖 슬롯은 동결하지 않는다 —
    *  관련 없는 표면이 남의 스왑에 베일 펄스를 맞지 않는다(라이브 유지). */
@@ -62,17 +75,23 @@ function holeSlots(root: ParentNode): HTMLElement[] {
 }
 
 export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
-  const maxAge = deps.maxSnapAgeMs ?? 120_000;
+  const landingTimeout = deps.landingTimeoutMs ?? 400;
   const now = deps.now ?? (() => performance.now());
   const makeImage = deps.imageFactory ?? (() => document.createElement("img"));
   const snaps = new WeakMap<HTMLElement, SlotSnap>();
   const inFlight = new WeakSet<HTMLElement>();
   const frozen = new Map<HTMLElement, { img: HTMLImageElement; viewId: string }>();
+  // viewId → 그 뷰의 홀 슬롯(스냅 조회·무효화용). 슬롯 엘리먼트는 뷰가 살아 있는 동안 안정적이다.
+  const byView = new Map<string, HTMLElement>();
+  // 해동 뒤 착지 쓰기를 기다리는 스탠드인 — 소유자가 실제로 쓰면 그 프레임에 걷는다.
+  const awaiting = new Map<string, { img: HTMLImageElement; timer: number }>();
 
   const captureSettled = (): void => {
     const root = deps.root();
     if (!root) return;
     for (const slot of holeSlots(root)) {
+      const viewId = viewIdOf(slot);
+      if (!viewId) continue;
       if (inFlight.has(slot) || frozen.has(slot)) continue;
       const r = slot.getBoundingClientRect();
       const x = Math.ceil(r.left);
@@ -98,6 +117,7 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
           img.src = url;
           await img.decode();
           snaps.set(slot, { img, t: now(), w, h });
+          byView.set(viewId, slot);
           slot.dataset.freezeSnapAt = String(Math.round(now())); // 관측면(ui.hit)
         })
         .catch(() => {})
@@ -112,7 +132,9 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
     const viewId = viewIdOf(slot);
     if (!viewId) return;
     const snap = snaps.get(slot);
-    if (!snap || now() - snap.t > maxAge) return;
+    // 나이는 정확성의 축이 아니다 — 스탠드인은 340ms 만 서 있고, 그것을 틀리게 만드는 것은
+    // 시계가 아니라 내용 변화다(항행·크기). 그 둘만 스냅을 버릴 근거다.
+    if (!snap) return;
     const r = slot.getBoundingClientRect();
     // 스냅 이후 슬롯 크기가 변했으면 세우지 않는다 — 늘어난 정지 사진은 박제다.
     if (Math.abs(r.width - snap.w) > 2 || Math.abs(r.height - snap.h) > 2) return;
@@ -130,19 +152,57 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
     deps.emitVeil(viewId, true);
   };
 
+  /** 스탠드인 철수 — 착지가 확정된 뒤에만. 남은 타이머는 정리한다. */
+  const withdraw = (viewId: string): void => {
+    const pending = awaiting.get(viewId);
+    if (!pending) return;
+    awaiting.delete(viewId);
+    window.clearTimeout(pending.timer);
+    pending.img.remove();
+  };
+
   const thawSlot = (slot: HTMLElement): void => {
     const cur = frozen.get(slot);
     if (!cur) return;
     frozen.delete(slot);
     slot.dataset.freeze = "0";
-    // 해동 = 착지 신호. 표면 소유자가 이 에지에 정확히 한 번 최종 rect 로 스냅하고, 스탠드인은
-    // 한 박자 뒤 물러난다(그 사이에 착지가 확정되므로 깜빡 0).
+    // 해동 = 착지 신호. 소유자가 이 에지에 정확히 한 번 최종 rect 로 쓴다. 스탠드인은 그 쓰기가
+    // 실제로 도착한 뒤 물러난다 — 시간으로 추측하면(옛 90ms 고정) 느린 사이드카 경로에서 홀이
+    // 표면보다 먼저 열려 한 프레임이 빈다. 상한은 소유자가 끝내 쓰지 않는 경우의 바닥일 뿐이다.
     deps.emitVeil(cur.viewId, false);
-    window.setTimeout(() => cur.img.remove(), 90);
+    const timer = window.setTimeout(() => withdraw(cur.viewId), landingTimeout);
+    awaiting.set(cur.viewId, { img: cur.img, timer });
   };
 
   return {
     captureSettled,
+    canFreezeAll(viewIds) {
+      const root = deps.root();
+      if (!root) return false;
+      for (const viewId of viewIds) {
+        const slot = byView.get(viewId);
+        // 홀이 아닌 뷰(DOM 표면)는 스탠드인이 필요 없다 — 스스로 활강한다.
+        if (!slot || !slot.isConnected) continue;
+        const snap = snaps.get(slot);
+        if (!snap) return false;
+        // 크기 판정은 스냅을 구울 때와 같은 원천(bounding rect)으로 — 다른 원천을 섞으면
+        // 같은 슬롯을 두 기준이 다르게 재고, 세울 수 있는 스탠드인을 거절한다.
+        const r = slot.getBoundingClientRect();
+        if (Math.abs(r.width - snap.w) > 2 || Math.abs(r.height - snap.h) > 2) {
+          return false;
+        }
+      }
+      return true;
+    },
+    invalidate(viewId) {
+      const slot = byView.get(viewId);
+      if (!slot) return;
+      snaps.delete(slot);
+      delete slot.dataset.freezeSnapAt;
+    },
+    noteSurfaceWrite(viewId) {
+      withdraw(viewId);
+    },
     onMotion(active, kinds, scope) {
       const want =
         active && kinds.length > 0 && kinds.every((k) => k === "move");
@@ -173,6 +233,8 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
       }
     },
     dispose() {
+      for (const viewId of Array.from(awaiting.keys())) withdraw(viewId);
+      byView.clear();
       for (const [slot, cur] of frozen) {
         cur.img.remove();
         slot.dataset.freeze = "0";

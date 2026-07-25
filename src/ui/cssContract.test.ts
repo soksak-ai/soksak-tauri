@@ -94,6 +94,10 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
     // 승격 churn 이 "무관한 표면이 움찔하는" 실사고의 기제였다(§2 시각효과 소유권).
     expect(sync!.selector).toContain(".egroup-frame.flip-move");
     expect(sync!.selector).not.toMatch(/\.egroup-frame,/);
+    // 장식 span 도 같은 규칙 — 실제로 이동하는 것만 승격한다.
+    expect(sync!.selector).toContain(".egroup-divider.flip-move");
+    expect(sync!.selector).toContain(".drop-ind-wrap.flip-move");
+    expect(sync!.selector).not.toMatch(/\.egroup-divider\s*\{/);
     // pane만 FLIP한다. 레일 표상은 출발·도착 그리드선에 정지해 있다.
     expect(rules().find((r) => r.selector === ".sidebar.traveling")).toBeUndefined();
   });

@@ -13,7 +13,15 @@ import type {
   ParamSpec,
 } from "../commands/registry";
 import { Channel } from "@tauri-apps/api/core";
-import { browserLabel, currentWindowLabel } from "../lib/webviewLabels";
+import {
+  browserLabel,
+  browserViewIdFromLabel,
+  currentWindowLabel,
+} from "../lib/webviewLabels";
+import {
+  invalidateSlotSnapshot,
+  noteSurfaceWrite,
+} from "../lib/slotFreezeHost";
 import { busEmit, busOn } from "./bus";
 import {
   onPluginEvent,
@@ -1839,8 +1847,21 @@ export function buildPluginApi(
           label: (viewId: string) => browserLabel(viewId),
           open: (label, o) =>
             deps.invoke("webview_open", { label, ...o }) as Promise<void>,
-          bounds: (label, x, y, w, h) =>
-            deps.invoke("webview_bounds", { label, x, y, w, h }) as Promise<void>,
+          bounds: (label, x, y, w, h) => {
+            const applied = deps.invoke("webview_bounds", {
+              label,
+              x,
+              y,
+              w,
+              h,
+            }) as Promise<void>;
+            // 착지 쓰기 관측 — 코어가 자기 쓰기 경로에서 본다. 스탠드인은 이 사실 위에서
+            // 물러난다(시간으로 추측하면 느린 경로에서 홀이 표면보다 먼저 열린다). 사이드카가
+            // 자기 표면을 직접 옮기는 계열(CEF)은 이 경로를 지나지 않아 상한 바닥을 쓴다.
+            const viewId = browserViewIdFromLabel(label);
+            if (viewId) void applied.then(() => noteSurfaceWrite(viewId), () => {});
+            return applied;
+          },
           visible: (label, visible, focus) =>
             deps.invoke("webview_visible", { label, visible, focus }) as Promise<void>,
           alive: (label) => deps.invoke("webview_alive", { label }) as Promise<boolean>,
@@ -1867,7 +1888,17 @@ export function buildPluginApi(
             return tracker.wrap(() => {}); // WKUserScript 개별 제거 미지원(webview 수명까지)
           },
           on: (label, event, cb) =>
-            tracker.wrap(deps.subscribeWebview(label, event, cb)),
+            tracker.wrap(
+              deps.subscribeWebview(label, event, (payload) => {
+                // 항행 = 내용이 바뀌었다는 뜻. 낡은 프레임을 스탠드인으로 세우지 않으려면
+                // 이 순간 스냅을 버려야 한다 — 나이(시계)가 아니라 내용 변화가 유일한 축이다.
+                if (event === "nav") {
+                  const viewId = browserViewIdFromLabel(label);
+                  if (viewId) invalidateSlotSnapshot(viewId);
+                }
+                cb(payload);
+              }),
+            ),
           list: async (prefix) => {
             const all = (await deps.invoke("webview_list", {})) as string[];
             return prefix ? all.filter((l) => l.startsWith(prefix)) : all;
