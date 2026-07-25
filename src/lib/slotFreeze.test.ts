@@ -133,6 +133,32 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
     expect(standin.style.left).toBe("0.8px"); // ceil(120.2) - 120.2
   });
 
+  it("파킹된 뷰(비활성 탭)는 활강 전제를 죽이지 않는다 — 보이지 않는 것은 덮을 필요가 없다", async () => {
+    // 한 패널에 브라우저 탭이 둘 이상이면 비활성 탭은 화면 밖(파킹)에 있다. 그 뷰의 스냅은
+    // 굽히지도 않고 낡아 가는데, 활강 전제가 그것까지 물으면 **탭이 둘 이상인 패널은 영원히
+    // 활강하지 못한다**(사용자 실측: 브라우저 탭 3개 패널에서 여정이 통째로 순간이동).
+    // 보이지 않는 표면은 옛 자리를 드러낼 수 없으므로 스탠드인이 필요 없다.
+    const shown = makeSlot("v1");
+    const parked = makeSlot("v2");
+    const f = build();
+    f.captureSettled();
+    await microtasks();
+    // 파킹 — 화면 밖으로 이동(layerPark 와 같은 규칙: 큰 음수 좌표).
+    parked.getBoundingClientRect = () =>
+      ({ left: -3484, top: 10, right: -3184, bottom: 210, width: 300, height: 200 }) as DOMRect;
+    // 파킹된 슬롯의 스냅이 낡았더라도 전제를 깨지 않는다 — 그 표면은 보이지 않는다.
+    f.invalidate("v2");
+    expect(f.canFreezeAll(["v1", "v2"])).toBe(true);
+
+    // 그리고 파킹된 슬롯은 동결 대상도 아니다. 동결하면 해동 에지에 veil(false) 가 가고,
+    // 표면 소유자는 그 신호에 좌표를 쓰고 **다시 보이게** 한다 — 비활성 탭의 페이지가 여정마다
+    // 한 번씩 번쩍인다(사용자 실측: 브라우저 탭 여럿인 패널에서 깜빡임).
+    f.onMotion(true, ["move"]);
+    expect(shown.querySelector("img.slot-freeze-frame")).not.toBeNull();
+    expect(parked.querySelector("img.slot-freeze-frame")).toBeNull();
+    expect(veils.map((v) => v[0])).toEqual(["v1"]);
+  });
+
   it("resize 가 끼면(단독·혼합) 동결하지 않는다", async () => {
     const slot = makeSlot("v1");
     const f = build();

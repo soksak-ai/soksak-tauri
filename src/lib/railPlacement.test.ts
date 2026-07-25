@@ -59,6 +59,8 @@ describe("left rail clean-line contract", () => {
     expect(snapRailStation([0, 66, 100], 40)).toBe(66);
     expect(snapRailStation([0, 100], 50)).toBe(0);
     expect(snapRailStation(cleanRailLines(nested.map((item) => item.rect)), 40)).toBe(66);
+    // 선이 하나도 없는 평면(패널 없음)에서도 답은 있어야 한다 — 정박지 없음은 0(맨 앞)이다.
+    expect(snapRailStation([], 40)).toBe(0);
   });
 
   it("distinguishes an exact committed PIN from a drag preview that may snap", () => {

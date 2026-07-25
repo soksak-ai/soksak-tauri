@@ -77,6 +77,27 @@ function viewIdOf(slot: HTMLElement): string | null {
   return id.length > 0 ? id : null;
 }
 
+/**
+ * 화면 밖(파킹) 슬롯인가. 비활성 탭의 뷰는 코어가 화면 밖으로 옮겨 둔다(layerPark) — 그 표면은
+ * 보이지 않으므로 덮을 것도, 옛 자리를 드러낼 일도 없다. 세 곳이 같은 기준을 봐야 한다:
+ *  - 캡처: 그 rect 의 창 픽셀은 남의 것이다.
+ *  - 활강 전제: 보이지 않는 뷰의 스냅이 없다고 여정 전체를 스냅으로 떨어뜨리면, 브라우저 탭이
+ *    둘 이상인 패널은 영원히 활강하지 못한다.
+ *  - 동결: 파킹된 슬롯을 동결하면 해동 에지에 veil(false) 가 가고, 표면 소유자는 그 신호에
+ *    좌표를 쓰고 다시 보이게 한다 — 비활성 탭이 여정마다 번쩍인다(실측 깜빡임).
+ */
+function parkedSlot(r: {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}): boolean {
+  if (typeof window === "undefined") return false;
+  return (
+    r.right <= 0 || r.bottom <= 0 || r.left >= window.innerWidth || r.top >= window.innerHeight
+  );
+}
+
 /** 부동소수 잔재를 CSS 에 흘리지 않는다(0.7999999999999545px) — 0.01px 격자면 충분하다. */
 const cssPx = (n: number): string => `${Math.round(n * 100) / 100}px`;
 
@@ -110,16 +131,14 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
       if (inFlight.has(slot) || frozen.has(slot)) continue;
       // 표면이 실제로 서 있는 정수 rect 를 캡처한다 — 슬롯의 분수 rect 를 캡처하면 표면 픽셀에
       // 이웃 픽셀이 섞이고, 그 사진을 되돌려 놓을 자리도 없다(§4.6, surfaceRect 규칙).
-      const { x, y, w, h } = surfaceRectOf(slot.getBoundingClientRect());
+      const rect = slot.getBoundingClientRect();
+      const { x, y, w, h } = surfaceRectOf(rect);
       if (w < 2 || h < 2) continue;
       // 포커스 장식 박제 금지 — dim 이 걸린(스팟 아닌) 슬롯의 창 픽셀엔 셰이드 베일이 구워져
       // 있다. 그걸 스탠드인으로 쓰면 동결 중 라이브 dim 과 어긋나 "포커스 인/아웃" 플랩으로
       // 보인다(실측). 청정(스팟) 상태의 스냅만 굽고, dim 은 라이브 계층(::after·filter)이 얹는다.
       if (slot.closest("[data-focus-dim]") && !slot.classList.contains("spot-clear")) continue;
-      // 화면 밖(파킹) 슬롯은 캡처 대상이 아니다 — 그 rect 의 창 픽셀은 남의 것이다.
-      if (typeof window !== "undefined") {
-        if (x + w <= 0 || y + h <= 0 || x >= window.innerWidth || y >= window.innerHeight) continue;
-      }
+      if (parkedSlot(rect)) continue;
       inFlight.add(slot);
       void deps
         .capture({ x, y, w, h })
@@ -147,6 +166,7 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
     const snap = snaps.get(slot);
     if (!snap || !fresh(snap)) return;
     const r = slot.getBoundingClientRect();
+    if (parkedSlot(r)) return; // 보이지 않는 표면 — 덮을 것도, 해동에 되살릴 것도 없다
     const surface = surfaceRectOf(r);
     // 스냅 이후 표면 크기가 변했으면 세우지 않는다 — 늘어난 정지 사진은 박제다. 판정도 표면
     // 규칙으로 한다(분수 슬롯 폭과 정수 스냅 폭을 섞어 재면 언제나 1px 어긋난 값이 나온다).
@@ -227,11 +247,13 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
         const slot = byView.get(viewId);
         // 홀이 아닌 뷰(DOM 표면)는 스탠드인이 필요 없다 — 스스로 활강한다.
         if (!slot || !slot.isConnected) continue;
+        const rect = slot.getBoundingClientRect();
+        if (parkedSlot(rect)) continue; // 비활성 탭 — 이 뷰 때문에 여정이 스냅으로 떨어지지 않는다
         const snap = snaps.get(slot);
         if (!snap || !fresh(snap)) return false;
         // 크기 판정은 스탠드인을 세울 때와 같은 규칙으로 — 다른 규칙을 섞으면 같은 슬롯을 두
         // 기준이 다르게 재고, 세울 수 있는 스탠드인을 거절한다.
-        const surface = surfaceRectOf(slot.getBoundingClientRect());
+        const surface = surfaceRectOf(rect);
         if (Math.abs(surface.w - snap.w) > 1 || Math.abs(surface.h - snap.h) > 1) {
           return false;
         }

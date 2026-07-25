@@ -379,10 +379,16 @@ const ProjectPane = memo(function ProjectPane({
   // 발화한다 → 네이티브 webview 를 소유한 플러그인(브라우저)이 최종 앵커로 bounds 를 1회 재스냅해
   // 클릭에 즉시 반응한다. 전환 신호(view.activated)는 store diff 마이크로태스크라 커밋 전이라 여기서
   // 못 쓴다(그걸로 측정하면 옛 위치를 읽어 webview 가 한 박자 늦는다).
+  //
+  // 탭 전환(패널 안에서 활성 뷰 교체)도 이 에지다 — contentKey 가 그것을 싣는다. 빠져 있으면 두
+  // 결함이 함께 온다: ① 새로 활성이 된 뷰는 스냅이 없어 다음 여정의 활강 전제가 깨지고 그리드가
+  // 통째로 순간이동한다 ② 파킹에서 돌아온 표면이 최종 앵커로 재스냅되지 않아 한 박자 늦는다
+  // (사용자 실측: 브라우저 탭이 여럿인 패널에서 다른 탭을 고르면 이질감과 깜빡임).
   useLayoutEffect(() => {
     emitPluginEvent("layout.reflow", { activeSpaceId: project.activeContentId });
     scheduleSlotSettleCapture(); // 레이아웃 정착 에지 — 슬롯 동결 스냅 갱신(디바운스)
   }, [
+    contentKey,
     activeContent?.activeGroupId,
     activeContent?.maximizedViewId,
     project.activeContentId,

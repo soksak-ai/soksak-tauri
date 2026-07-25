@@ -23,6 +23,16 @@ const SOCKET =
   path.join(os.homedir(), ".soksak-debug", "com.soksak.debug.sock");
 // 픽스처 루트 — 고정 경로 재사용(멱등, /tmp 금지 규율). 창 폐쇄가 회수를 담당한다.
 const FIXTURE_ROOT = path.join(os.homedir(), ".soksak-e2e", "slot-freeze");
+// 검증 대상 엔진 — 홀(네이티브 표면) 뷰는 엔진마다 표면 소유자가 다르다(자식 웹뷰 vs 사이드카
+// 프로세스). 한 엔진만 태우면 나머지는 검증되지 않은 채 남는다(실측: chromium 경로에서 깜빡임).
+// BROWSER_ENGINE=browser|browser-chromium|browser-chromium-offscreen.
+const ENGINE = process.env.BROWSER_ENGINE || "browser";
+const ENGINE_PLUGIN = {
+  browser: "soksak-plugin-browser-native",
+  "browser-chromium": "soksak-plugin-browser-chromium",
+  "browser-chromium-offscreen": "soksak-plugin-browser-chromium-offscreen",
+}[ENGINE];
+if (!ENGINE_PLUGIN) throw new Error(`알 수 없는 엔진: ${ENGINE}`);
 
 // 소켓 클라이언트 — 연결마다 독립 봉투 큐. 둘 이상 열 수 있어야 한다: 녹화(window.record)는
 // 프레임 수만큼 응답을 붙잡으므로, 같은 연결로는 녹화 도중 위상을 태울 수 없다(실측: 활강이
@@ -114,7 +124,7 @@ async function main() {
     process.exit(1);
   }, 90_000).unref?.();
   await connect();
-  console.log(`소켓 연결: ${SOCKET}`);
+  console.log(`소켓 연결: ${SOCKET} — 엔진 ${ENGINE}`);
 
   // ── 픽스처: 전용 임시 root 창 + 브라우저(홀 뷰) + 터미널(교차 활성 상대) ──
   console.log(`픽스처 창 열기: ${FIXTURE_ROOT}`);
@@ -127,7 +137,7 @@ async function main() {
   await pollUntil("browser 프로그램 적재", 20000, async () => {
     const progs = await rpc("program.list", {}, win);
     const ids = (progs.data?.programs ?? []).map((p) => p.id);
-    return ids.includes("browser") ? true : null;
+    return ids.includes(ENGINE) ? true : null;
   });
 
   try {
@@ -139,7 +149,7 @@ async function main() {
     if (!made.ok) throw new Error(`스페이스 생성 실패: ${made.message}`);
     await sleep(400);
   }
-  const bv = await rpc("view.open", { program: "browser" }, win);
+  const bv = await rpc("view.open", { program: ENGINE }, win);
   if (!bv.ok) throw new Error(`browser view.open 실패: ${bv.message}`);
   const browserView = bv.data?.viewId;
   // 명시 URL 항행 + 로드 신원 검증 — 기본 홈페이지에 기대지 않는다. 픽셀 판정은 "알려진
@@ -153,10 +163,10 @@ async function main() {
   // 생성 정착 대기(고정 4s — 조기 dom 프로브는 초기 로드를 죽인다: 300ms 폴링에 body 가
   // 영영 빈 문서로 남던 실측) 후 명시 항행, 2s 간격의 완만한 프로브로 신원을 단언한다.
   await sleep(4000);
-  await rpc("plugin.soksak-plugin-browser-native.navigate", { url: "https://example.com/" }, win);
+  await rpc(`plugin.${ENGINE_PLUGIN}.navigate`, { url: "https://example.com/" }, win);
   await sleep(2000);
   await pollUntilGentle("example.com 로드(h1 텍스트)", 20000, 2000, async () => {
-    const q = await rpc("plugin.soksak-plugin-browser-native.dom.text", { selector: "h1" }, win);
+    const q = await rpc(`plugin.${ENGINE_PLUGIN}.dom.text`, { selector: "h1" }, win);
     const txt = JSON.stringify(q.data ?? "");
     return txt.includes("Example Domain") ? true : null;
   });
@@ -299,7 +309,7 @@ async function main() {
   await rpc("view.activate", { view: termView }, win);
   await sleep(600);
   const unfocusedLen = await slotShot();
-  const alive = await rpc("plugin.soksak-plugin-browser-native.dom.text", { selector: "h1" }, win);
+  const alive = await rpc(`plugin.${ENGINE_PLUGIN}.dom.text`, { selector: "h1" }, win);
   assert(
     "포커스 보존 — 사이클 후 페이지 신원 유지(h1)",
     JSON.stringify(alive.data ?? "").includes("Example Domain"),
@@ -384,7 +394,7 @@ async function main() {
     //    결과이고, 이것은 그 결과가 "아무도 안 썼기 때문"임을 증명한다.
     {
       const sendsOf = async () => {
-        const r = await rpc("plugin.soksak-plugin-browser-native.surface.stats", {}, win);
+        const r = await rpc(`plugin.${ENGINE_PLUGIN}.surface.stats`, {}, win);
         const row = (r.data?.views ?? []).find((v) => v.viewId === browserView);
         return row ? Number(row.sends) : -1;
       };
