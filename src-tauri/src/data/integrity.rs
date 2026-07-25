@@ -32,18 +32,87 @@ pub fn check(conn: &Connection) -> Result<Vec<String>, String> {
 
 /// 치유 결과 — 전후 문제 목록. after 가 비지 않았다면 REINDEX 로는 낫지 않는 손상이다(테이블 자체의
 /// 손상 등) — 나았다고 주장하지 않고 남은 문제를 그대로 실어 보낸다.
+/// reindex_error 가 있으면 치유를 시도했지만 못 했다는 뜻이다(시도조차 안 한 것과 구분된다).
 #[derive(Debug, serde::Serialize)]
 pub struct Repair {
     pub before: Vec<String>,
     pub after: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reindex_error: Option<String>,
+}
+
+/// 진단을 시도하되 실패를 삼키지 않는다 — 못 본 것은 "진단 실패"로 실어 치유 판단에 남긴다.
+/// 진단이 실패했다고 목록이 비어 보이면(=문제 없음) 그것이 거짓 보고가 된다.
+///
+/// 끝내지 못한 진단은 정상도 앱 오류도 아니다 — 손상의 신호다. 그것을 오류로 던지면 호출자는
+/// "저장소가 아프다"가 아니라 "명령이 실패했다"로 읽는다(실측: `out of memory` 를 머신 메모리
+/// 압박으로 오독했다). 그래서 진단 표면은 이 목록을 돌려준다.
+pub fn findings(conn: &Connection) -> Vec<String> {
+    match check(conn) {
+        Ok(problems) => problems,
+        Err(e) => {
+            // 전수 진단이 끝내지 못했으면 표를 하나씩 본다 — "어디가 아픈지"를 잃지 않기 위해서다.
+            // 전수 진단은 한 번에 저장소 전체를 훑어 실패도 전체로 온다(무엇 때문인지 알 수 없다).
+            // 표 단위 진단은 범위가 작아 통과하는 표가 대부분이고, 걸리는 표만 남는다.
+            let mut out = vec![format!("진단 실패: {e}")];
+            out.extend(per_table(conn));
+            out
+        }
+    }
+}
+
+/// 표 단위 진단 — 실패한 표만 남긴다(통과한 표는 조용하다). 표 목록조차 읽지 못하면 그 사실을 싣는다.
+fn per_table(conn: &Connection) -> Vec<String> {
+    let tables: Vec<String> = match conn
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+        .and_then(|mut s| {
+            s.query_map([], |r| r.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()
+        }) {
+        Ok(v) => v,
+        Err(e) => return vec![format!("표 목록 실패: {e}")],
+    };
+    let mut out = Vec::new();
+    for t in tables {
+        // PRAGMA integrity_check(<table>) — 그 표와 그 인덱스만 본다(SQLite 3.33+).
+        let sql = format!("PRAGMA integrity_check({})", quote_ident(&t));
+        match conn.prepare(&sql).and_then(|mut s| {
+            s.query_map([], |r| r.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()
+        }) {
+            Ok(rows) => {
+                for line in rows {
+                    if line != "ok" {
+                        out.push(format!("{t}: {line}"));
+                    }
+                }
+            }
+            Err(e) => out.push(format!("{t}: 진단 실패: {e}")),
+        }
+    }
+    out
+}
+
+// 식별자 인용 — 표 이름은 사용자/플러그인이 만든 값이라 그대로 이어 붙이지 않는다.
+fn quote_ident(name: &str) -> String {
+    format!("\"{}\"", name.replace('"', "\"\""))
 }
 
 /// 인덱스를 테이블에서 다시 만든다(REINDEX). 데이터 행은 건드리지 않는다.
+///
+/// 치유는 진단에 매이지 않는다. 손상이 심할수록 진단이 먼저 무너지는데(실측: 인덱스 손상 위에서
+/// 전수 진단과 삽입이 SQLITE_NOMEM), 진단 성공을 치유의 전제로 두면 가장 필요한 순간에 치유가
+/// 닫힌다. 진단 실패는 보고에 실어 보내고 치유는 그대로 시도한다. 치유가 실패해도 진단 결과를
+/// 통째로 잃지 않는다 — 무엇을 봤고 무엇을 못 했는지 둘 다 싣는다.
 pub fn repair(conn: &Connection) -> Result<Repair, String> {
-    let before = check(conn)?;
-    conn.execute_batch("REINDEX").map_err(|e| e.to_string())?;
-    let after = check(conn)?;
-    Ok(Repair { before, after })
+    let before = findings(conn);
+    let reindex_error = conn.execute_batch("REINDEX").err().map(|e| e.to_string());
+    let after = findings(conn);
+    Ok(Repair {
+        before,
+        after,
+        reindex_error,
+    })
 }
 
 /// 저장소 실황 — 앱 **안의** SQLite 가 자기 상태를 답한다. 밖에서 파일을 열어 보는 것은 판이 달라
@@ -170,11 +239,147 @@ mod tests {
         let r = repair(&conn).unwrap();
         assert!(!r.before.is_empty(), "치유 전에는 문제가 있었다");
         assert_eq!(r.after, Vec::<String>::new(), "치유 후에는 없다");
+        assert!(r.reindex_error.is_none(), "치유는 성공했다");
 
         // 행은 하나도 잃지 않았다 — 인덱스만 다시 만든 것이다.
         let n: i64 = conn
             .query_row("SELECT count(*) FROM t", [], |r| r.get(0))
             .unwrap();
         assert_eq!(n, 200);
+    }
+
+    // 실물 저장소 진단 프로브(수동) — 앱과 **같은** SQLite(번들 rusqlite)로 사본을 본다. 밖의
+    // sqlite3 CLI 는 판이 달라 표현식 인덱스에 유령 손상을 보고한다(실측) — 그 답으로 저장소를
+    // 판정하면 안 된다. 사본에 대고 진단·치유를 돌려 "이 손상이 REINDEX 로 낫는가"를 실물로
+    // 가른다. 라이브 저장소는 건드리지 않는다(사본 경로만 받는다).
+    //
+    //   SOKSAK_PROBE_DB=/path/to/copy.db cargo test probe_store_copy -- --ignored --nocapture
+    #[test]
+    #[ignore = "수동 진단 — SOKSAK_PROBE_DB 로 사본 경로를 준다"]
+    fn probe_store_copy() {
+        let path = std::env::var("SOKSAK_PROBE_DB").expect("SOKSAK_PROBE_DB 필요(사본 경로)");
+        let conn = Connection::open(&path).expect("사본 열기");
+        // 앱과 같은 조건으로 본다 — 개방 PRAGMA 가 다르면 답도 다르다(temp_store 가 특히 그렇다:
+        // MEMORY 면 무거운 연산이 디스크로 흘리지 못하고 메모리만 요구한다).
+        if let Ok(pragmas) = std::env::var("SOKSAK_PROBE_PRAGMAS") {
+            conn.execute_batch(&pragmas).expect("프로브 PRAGMA");
+            println!("pragmas: {pragmas}");
+        }
+        let version: String = conn
+            .query_row("SELECT sqlite_version()", [], |r| r.get(0))
+            .unwrap();
+        println!("sqlite: {version}");
+        // 연산별 메모리 수요 — 무엇이 얼마를 요구하는지 모르면 구조를 고칠 근거가 없다.
+        let hw = || unsafe { rusqlite::ffi::sqlite3_memory_highwater(1) } as f64 / 1_048_576.0;
+        let used = || unsafe { rusqlite::ffi::sqlite3_memory_used() } as f64 / 1_048_576.0;
+        let _ = hw(); // 기준선 리셋
+        let t = std::time::Instant::now();
+        let all = findings(&conn);
+        println!(
+            "진단(전체): {:?} | 최고 {:.1}MB | 현재 {:.1}MB | {:?}",
+            all,
+            hw(),
+            used(),
+            t.elapsed()
+        );
+
+        let _ = hw();
+        let t = std::time::Instant::now();
+        let rec: Result<Vec<String>, _> = conn
+            .prepare("PRAGMA integrity_check(\"records\")")
+            .and_then(|mut s| {
+                s.query_map([], |r| r.get::<_, String>(0))?
+                    .collect::<Result<Vec<_>, _>>()
+            });
+        println!(
+            "진단(records): {:?} | 최고 {:.1}MB | {:?}",
+            rec.map(|v| v.len()),
+            hw(),
+            t.elapsed()
+        );
+
+        let _ = hw();
+        let t = std::time::Instant::now();
+        let w = conn.execute_batch(
+            "BEGIN; INSERT INTO records(ns,coll,id,scope,doc,created,updated) \
+             VALUES('probe','probe','p1','','{\"a\":1}',1,1); ROLLBACK;",
+        );
+        println!(
+            "쓰기(records INSERT): {:?} | 최고 {:.1}MB | {:?}",
+            w.err().map(|e| e.to_string()),
+            hw(),
+            t.elapsed()
+        );
+
+        let _ = hw();
+        let t = std::time::Instant::now();
+        let r = repair(&conn).expect("치유 보고");
+        println!(
+            "치유(REINDEX): 오류 {:?} | 최고 {:.1}MB | {:?}",
+            r.reindex_error,
+            hw(),
+            t.elapsed()
+        );
+    }
+
+    // 진단 자체가 무너지는 손상 — 페이지 헤더가 깨지면 전수 진단은 문제 목록을 돌려주는 게 아니라
+    // 오류로 끝난다(실측한 저장소에서는 `out of memory` 였다: 인덱스 손상 위의 진단·삽입이
+    // SQLITE_NOMEM). 커넥션 밖으로 새는 전역 설정(hard_heap_limit 은 프로세스 전역이다)을 쓰지
+    // 않기 위해 파일을 직접 깨뜨린다.
+    fn corrupt_header(path: &std::path::Path) {
+        use std::io::{Seek, SeekFrom, Write};
+        let mut f = std::fs::OpenOptions::new().write(true).open(path).unwrap();
+        f.seek(SeekFrom::Start(0)).unwrap();
+        f.write_all(&[0xFFu8; 100]).unwrap();
+        f.flush().unwrap();
+    }
+
+    // 표 단위 진단은 손상을 가진 표를 지목한다 — 전수 진단이 통째로 무너져도 범위를 좁힐 수 있어야
+    // "어디가 아픈지"를 말할 수 있다.
+    #[test]
+    fn per_table_names_the_sick_table() {
+        let db = scratch();
+        seeded(&db);
+        desync_index(&db);
+
+        let conn = Connection::open(&db).unwrap();
+        let per = per_table(&conn);
+        assert!(
+            per.iter().any(|p| p.starts_with("t:")),
+            "손상을 가진 표를 지목한다: {per:?}",
+        );
+    }
+
+    #[test]
+    fn per_table_is_quiet_on_a_healthy_store() {
+        let db = scratch();
+        seeded(&db);
+        let conn = Connection::open(&db).unwrap();
+        assert_eq!(per_table(&conn), Vec::<String>::new(), "성한 표는 조용하다");
+    }
+
+    // 손상이 심하면 진단이 먼저 무너진다. 그때 치유를 진단에 매어 두면 — 가장 필요한 순간에
+    // 치유가 닫힌다. 치유는 진단 실패에 막히지 않고, 못 본 것은 "진단 실패"로 실어 보낸다.
+    // (진단이 실패했는데 문제 목록이 비어 보이면 그것이 거짓 보고다.)
+    #[test]
+    fn a_failed_diagnosis_does_not_block_healing() {
+        let db = scratch();
+        seeded(&db);
+        corrupt_header(&db);
+
+        let conn = Connection::open(&db).unwrap();
+        assert!(check(&conn).is_err(), "이 손상에서 진단은 오류로 끝난다");
+
+        let r = repair(&conn).expect("진단이 실패해도 치유 보고는 돌아온다");
+        assert!(
+            r.before.iter().any(|p| p.contains("진단 실패")),
+            "못 본 것을 못 봤다고 싣는다: {:?}",
+            r.before
+        );
+        // 치유가 실패했다면 그 사유도 싣는다 — 시도조차 안 한 것과 구분된다.
+        assert!(
+            r.reindex_error.is_some(),
+            "이 손상에서는 REINDEX 도 실패한다 — 그 사유를 실어야 한다",
+        );
     }
 }

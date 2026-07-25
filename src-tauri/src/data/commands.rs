@@ -587,9 +587,11 @@ pub fn data_ns_remove(ns: String, state: State<'_, DbState>) -> Result<serde_jso
 
 // 저장소 자기 진단 — 전수 대조(integrity_check). 부팅 게이트(quick_check)는 인덱스↔테이블 대조를
 // 하지 않아 인덱스 손상을 통과시킨다(integrity.rs 머리말). 읽기 전용.
+// 진단이 끝내지 못하면 그 사유를 문제 목록에 실어 돌려준다 — 오류로 던지면 저장소가 아프다는
+// 신호가 "명령 실패"로 읽힌다(integrity.rs findings 머리말).
 #[tauri::command]
 pub fn data_verify(state: State<'_, DbState>) -> Result<Vec<String>, String> {
-    with_conn(&state, |c| super::integrity::check(c))
+    with_conn(&state, |c| Ok(super::integrity::findings(c)))
 }
 
 // 저장소 실황 — 앱 안의 SQLite 가 자기 한도·메모리·페이지 상태를 답한다(integrity.rs 머리말).

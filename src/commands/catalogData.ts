@@ -241,17 +241,27 @@ export function registerDataCatalog(): void {
   // 않지만, 저장소를 고쳐 쓰는 일이라 danger 로 둔다(원격 호출은 권한 게이트를 지난다).
   register("data.repair", {
     description:
-      "Rebuild the data store's indexes from the table rows (REINDEX) and report the problems before and after. Rows are neither created nor deleted. Use when data.verify reports index problems — a store whose indexes are broken reads fine and fails on write.",
+      "Rebuild the data store's indexes from the table rows (REINDEX) and report the problems before and after. Rows are neither created nor deleted. Use when data.verify reports index problems — a store whose indexes are broken reads fine and fails on write. Healing is attempted even when the diagnosis itself fails; reindexError carries the reason when the rebuild could not run.",
     triggers: { ko: "데이터 복구 인덱스 재생성 치유" },
     params: {},
     danger: "destructive",
-    returns: "{ before: string[], after: string[], healed }",
-    message: (d) => tmsg("msg.data.repair", { n: (d.after as string[]).length }),
+    returns: "{ before: string[], after: string[], healed, reindexError? }",
+    message: (d) =>
+      d.reindexError
+        ? `치유 실패: ${String(d.reindexError)}`
+        : tmsg("msg.data.repair", { n: (d.after as string[]).length }),
     errors: ["INTERNAL"],
     examples: ["data.repair"],
     handler: async () => {
-      const r = await invoke<{ before: string[]; after: string[] }>("data_repair");
-      return { ...r, healed: r.before.length - r.after.length };
+      const r = await invoke<{ before: string[]; after: string[]; reindex_error?: string }>(
+        "data_repair",
+      );
+      return {
+        before: r.before,
+        after: r.after,
+        healed: r.before.length - r.after.length,
+        ...(r.reindex_error ? { reindexError: r.reindex_error } : {}),
+      };
     },
   });
 
