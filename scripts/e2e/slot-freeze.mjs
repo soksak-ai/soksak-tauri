@@ -394,6 +394,19 @@ async function main() {
     }
   }
 
+  // 9) 시각 확인(옵션) — SLOT_FREEZE_SHOTS 로 정지 프레임 두 장을 남긴다: 브라우저 포커스와
+  //    터미널 포커스. 레일이 포커스 패널의 왼쪽 선에 서 있는지, 복도가 열린 자리가 맞는지,
+  //    표면이 온전히 렌더되는지는 사람이 픽셀로 확인해야 하는 사실이다(R3).
+  if (process.env.SLOT_FREEZE_SHOTS) {
+    const dir = process.env.SLOT_FREEZE_SHOTS_DIR || path.join(os.tmpdir(), "slot-freeze-shots");
+    for (const [name, view] of [["browser-focus", browserView], ["terminal-focus", termView]]) {
+      await rpc("view.activate", { view }, win);
+      await sleep(900);
+      const shot = await rpc("window.snapshot", { path: path.join(dir, `${name}.png`) }, win);
+      console.log(`  캡처 ${name}: ${shot.ok ? shot.media?.path ?? shot.data?.media?.path : shot.message}`);
+    }
+  }
+
   } finally {
   // ── 자기정리 — 실패 경로 포함 픽스처 창 폐쇄(멱등: 다음 실행은 새로 연다).
     // KEEP=1 이면 검안을 위해 보존한다(brestore 와 동일 관례).
