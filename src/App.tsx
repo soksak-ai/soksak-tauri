@@ -365,7 +365,7 @@ const ProjectPane = memo(function ProjectPane({
     },
     [
       effectiveStation,
-      phase,
+      phase.rebase,
       project.id,
       project.sidebarOpen,
       railCleanLines,
@@ -539,6 +539,14 @@ const ProjectPane = memo(function ProjectPane({
                     isActiveContent ? arrangement?.displayLayout : undefined
                   }
                   moves={isActiveContent && railTraveling ? phase.moves : undefined}
+                  travel={
+                    isActiveContent && railTraveling
+                      ? {
+                          from: phase.from?.station ?? renderedStation,
+                          to: renderedStation,
+                        }
+                      : undefined
+                  }
                   railStation={isActiveContent ? renderedStation : 0}
                   railWidthPx={
                     isActiveContent && project.sidebarOpen ? sidebarW : 0

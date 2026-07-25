@@ -90,6 +90,10 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
     expect(css).toMatch(/@keyframes rail-flip-x\s*\{[\s\S]*from\s*\{\s*translate:\s*var\(--flip-x/);
     expect(css).not.toMatch(/--rail-flip-x/);
     expect(css).not.toMatch(/--focus-flip-x/);
+    // 프레임도 실이동 요소만 활강한다 — 델타 0 요소를 위상마다 합성 레이어로 올렸다 내리는
+    // 승격 churn 이 "무관한 표면이 움찔하는" 실사고의 기제였다(§2 시각효과 소유권).
+    expect(sync!.selector).toContain(".egroup-frame.flip-move");
+    expect(sync!.selector).not.toMatch(/\.egroup-frame,/);
     // pane만 FLIP한다. 레일 표상은 출발·도착 그리드선에 정지해 있다.
     expect(rules().find((r) => r.selector === ".sidebar.traveling")).toBeUndefined();
   });

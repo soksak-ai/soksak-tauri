@@ -565,7 +565,7 @@ body,
    까지 "움찔"하던 실사고의 진원. 셀·슬롯은 클래스로 게이트하고, 셀 내부(frame)·보조
    장식(drop-ind-wrap·divider)은 셀과 함께/무관하게 종전 규칙을 유지한다. */
 .content-body.rail-traveling .egroup-cell.flip-move,
-.content-body.rail-traveling .egroup-frame,
+.content-body.rail-traveling .egroup-frame.flip-move,
 .content-body.rail-traveling .egroup-body-slot.flip-move,
 .content-body.rail-traveling .drop-ind-wrap,
 .content-body.rail-traveling .egroup-divider {

@@ -7,6 +7,7 @@ import {
   arrangementMoves,
   moveOffsetPx,
   solveArrangement,
+  spanMoveAcross,
 } from "./railArrangement";
 
 type Panel = { id: string };
@@ -282,5 +283,27 @@ describe("이동량 — 해가 지시한 패널만, 폭은 절대 변하지 않�
       children: [leaf("a"), leaf("b"), leaf("c")],
     };
     expect(arrangementMoves(from, solve(drifted, "b"))).toEqual([]);
+  });
+});
+
+describe("장식 span 이동량 — 복도는 패널과 같은 곡선으로 움직여야 한다", () => {
+  it("레일이 가로지른 디바이더는 railW 만큼, 지나치지 않은 것은 0", () => {
+    // 디바이더는 패널이 아니라 복도의 일부다 — 배열 교환에 참여하지 않으므로 이동량의
+    // 유일한 원천은 삽입 지점 변화다. 이것이 0 이면 셀은 활강하는데 디바이더만 t0 에
+    // 도착지로 순간이동해 위상 내내 화면이 찢긴다.
+    const at50 = { left: 50, top: 0, width: 0, height: 100 };
+    const crossed = spanMoveAcross(at50, 0, 100);
+    expect(moveOffsetPx(crossed, HOST_W, RAIL_W)).toBeCloseTo(RAIL_W, 6);
+    const untouched = spanMoveAcross(at50, 50, 50);
+    expect(moveOffsetPx(untouched, HOST_W, RAIL_W)).toBeCloseTo(0, 6);
+  });
+
+  it("레일을 관통하게 된 가로 span 은 시작 오프셋을 갖는다(폭 변화는 translate 밖)", () => {
+    // 전 폭 col 디바이더: station 0 에서는 레일 오른쪽에서 시작하고, station 50 에서는 레일을
+    // 관통해 0 부터 gap 까지 이어진다 — 왼쪽 끝이 railW 만큼 이동한다. 같은 전환에서 span 의
+    // '길이'도 변하는데 그것은 translate 로 표현할 수 없다(선 길이라 시각 영향 미미) — 알려진
+    // 한계로 남긴다.
+    const wide = { left: 0, top: 50, width: 100, height: 0 };
+    expect(moveOffsetPx(spanMoveAcross(wide, 0, 50), HOST_W, RAIL_W)).toBeCloseTo(RAIL_W, 6);
   });
 });

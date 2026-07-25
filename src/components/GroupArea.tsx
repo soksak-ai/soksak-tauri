@@ -40,6 +40,7 @@ import {
 } from "../lib/railPlacement";
 import {
   moveOffsetPx,
+  spanMoveAcross,
   type ArrangementMove,
 } from "../lib/railArrangement";
 import type { SplitTree } from "../state/splitTree";
@@ -141,10 +142,10 @@ export const GroupArea = memo(function GroupArea({
   projectId,
   surfaceActive = true,
   railStation = 0,
-  railTravelFrom = railStation,
   railWidthPx = 0,
   displayLayout: solvedLayout,
   moves,
+  travel,
 }: {
   content: ContentArea;
   projectId: string;
@@ -153,14 +154,15 @@ export const GroupArea = memo(function GroupArea({
   surfaceActive?: boolean;
   /** 활성 콘텐츠 패널 평면에 삽입되는 좌 rail의 깨끗한 논리선(0..100). */
   railStation?: number;
-  /** 장식 span(디바이더·드롭 표시) 전용 출발선. 패널 기하는 moves 가 소유한다. */
-  railTravelFrom?: number;
   /** 고정 물리폭. 0이면 기존 연속 평면. */
   railWidthPx?: number;
   /** 해결기가 푼 표시 배열. 생략하면 정본 배열(비활성 콘텐츠). */
   displayLayout?: SplitTree<ViewGroup>;
   /** 해가 지시한 이동량 — 위상 중에만 실린다. 여기 없는 패널은 움직이지 않는다. */
   moves?: ArrangementMove[];
+  /** 위상의 두 station. 장식 span(디바이더)의 이동량은 이것에서 나온다 — moves 와 같은 위상에서
+   *  같이 와야 한다(하나만 오면 셀은 활강하고 복도만 순간이동해 화면이 찢긴다). */
+  travel?: { from: number; to: number };
 }) {
   const t = useT();
   const displayLayout = solvedLayout ?? content.layout;
@@ -492,10 +494,14 @@ export const GroupArea = memo(function GroupArea({
   // 일으켰고, 그 재래스터가 DOM(주소표시줄 포함)의 "움찔"로 보였다(실사고).
   const flipMoves = (groupId?: string): boolean => !!moveOf(groupId);
 
-  /** 이동량 → 시작 오프셋(px). 합성은 여기 한 곳뿐이다(두 축을 각자 보간하면 어긋난다). */
+  /** 이동량 → 시작 오프셋(px). 합성은 여기 한 곳뿐이다(두 축을 각자 보간하면 어긋난다).
+   *  컨테이너 폭 실측이 아직 없으면(위상 중 첫 마운트) 배열 교환 항을 접을 수 없다 — 절반만
+   *  적용하면 엉뚱한 방향으로 미끄러지므로 그 위상은 활강하지 않는다(스냅). */
   const flipOffsetPx = (groupId?: string): number => {
     const move = moveOf(groupId);
-    return move ? moveOffsetPx(move, hostWidthPx, railWidthPx) : 0;
+    if (!move) return 0;
+    if (hostWidthPx <= 0 && Math.abs(move.dLeftPct) > 0.05) return 0;
+    return moveOffsetPx(move, hostWidthPx, railWidthPx);
   };
 
   const cellVars = (rect: {
@@ -519,24 +525,30 @@ export const GroupArea = memo(function GroupArea({
     }) as React.CSSProperties;
   };
 
-  // 장식 span(디바이더·드롭 표시)은 패널이 아니라 복도의 일부다 — 자기 이동량은 삽입 지점
-  // 변화 하나뿐이므로 두 station 으로 직접 낸다(배열 교환에 참여하지 않는다).
+  // 장식 span(디바이더·드롭 표시)은 패널이 아니라 복도의 일부다 — 이동량의 유일한 원천은
+  // 삽입 지점 변화이고, 해결기의 같은 사상(spanMoveAcross)이 그것을 소유한다.
+  const spanFlipPx = (rect: Rect): number =>
+    travel
+      ? moveOffsetPx(
+          spanMoveAcross(rect, travel.from, travel.to),
+          hostWidthPx,
+          railWidthPx,
+        )
+      : 0;
   const dividerVars = (d: Divider) => {
     if (railWidthPx <= 0) return {};
     if (d.dir === "row") {
       const after = d.rect.left > railStation ? 1 : 0;
-      const fromAfter = d.rect.left > railTravelFrom ? 1 : 0;
       return {
         "--rail-dx": `${(after - d.rect.left / 100) * railWidthPx}px`,
-        "--flip-x": `${(fromAfter - after) * railWidthPx}px`,
+        "--flip-x": `${spanFlipPx(d.rect)}px`,
       } as React.CSSProperties;
     }
     const projected = projectRailCssSpan(d.rect, railStation);
-    const fromProjected = projectRailCssSpan(d.rect, railTravelFrom);
     return {
       "--rail-dx": `${projected.railLeft * railWidthPx}px`,
       "--rail-dw": `${projected.railWidth * railWidthPx}px`,
-      "--flip-x": `${(fromProjected.railLeft - projected.railLeft) * railWidthPx}px`,
+      "--flip-x": `${spanFlipPx(d.rect)}px`,
     } as React.CSSProperties;
   };
 
@@ -675,7 +687,7 @@ export const GroupArea = memo(function GroupArea({
           key={`frame-${group.id}`}
           className={`egroup-frame${
             group.id === content.activeGroupId ? " focus" : ""
-          }`}
+          }${flipMoves(group.id) ? " flip-move" : ""}`}
           style={cellVars(rect, group.id)}
         />
       ))}

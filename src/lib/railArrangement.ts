@@ -14,6 +14,7 @@ import {
   cleanRailLines,
   isCleanRailStation,
   projectRailCssRect,
+  projectRailCssSpan,
   snapRailStation,
   type RailPlacement,
 } from "./railPlacement";
@@ -234,4 +235,26 @@ export function moveOffsetPx(
   railWidthPx: number,
 ): number {
   return (hostWidthPx * move.dLeftPct) / 100 + railWidthPx * move.dRailUnits;
+}
+
+/**
+ * 장식 span(디바이더·드롭 표시)의 이동량. span 은 패널이 아니라 복도의 일부다 — 배열 교환에
+ * 참여하지 않으므로 이동의 유일한 원천은 삽입 지점 변화이고, 레일을 관통하는 span 은 물리 gap
+ * 까지 포함해 사상된다(패널 규칙과 구분).
+ *
+ * 이 값이 0 이면 셀은 활강하는데 span 만 t0 에 도착지로 순간이동해 위상 내내 화면이 찢긴다 —
+ * 복도 동조(§12-③)의 실패 모드다. 그래서 패널 이동량과 같은 타입·같은 합성 함수를 쓴다.
+ */
+export function spanMoveAcross(
+  rect: Rect,
+  fromStation: number,
+  toStation: number,
+): ArrangementMove {
+  return {
+    id: "",
+    dLeftPct: 0,
+    dRailUnits:
+      projectRailCssSpan(rect, fromStation).railLeft -
+      projectRailCssSpan(rect, toStation).railLeft,
+  };
 }
