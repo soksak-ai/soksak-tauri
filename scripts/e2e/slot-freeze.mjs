@@ -197,37 +197,7 @@ async function main() {
   assert("정착 선캡처 — freezeSnapAt 존재", Number.isFinite(snapAt0), String(snapAt0));
 
   // 2) 동결 사이클 — 교차 활성이 move 위상을 태우고, 착지에서 해동돼 있어야 한다.
-  // 위상이 서지 않으면 원인을 즉시 판독할 수 있게 계기를 찍는다: 해(station)가 실제로
-  // 바뀌었는지, 그리드가 주행 위상에 들어갔는지, 슬롯이 동결 대상이었는지.
-  {
-    const spaceId = (await rpc("state.tree", {}, win)).data?.projects?.[0]?.activeSpaceId;
-    const before = await rpc("layout.arrangement", {}, win);
-    const act = await rpc("view.activate", { view: termView }, win);
-    console.log(
-      `  활성 전환: ok=${act.ok} code=${act.code} data=${JSON.stringify(act.data ?? null)} ` +
-        `before.cells=${JSON.stringify(before.data?.cells?.map((c) => [c.id, c.rect.left]))} ` +
-        `activePanel=${JSON.stringify((await rpc("panel.list", {}, win)).data?.activePanelId)}`,
-    );
-    const probes = [];
-    for (let i = 0; i < 12; i++) {
-      const grid = await rpc("ui.measure", { address: `win/${win}/chrome/layout/grid/${spaceId}` }, win);
-      const slot = await measure();
-      probes.push({
-        t: i,
-        traveling: grid.data?.dataset?.traveling,
-        freeze: slot?.dataset?.freeze,
-        scope: slot?.dataset?.freezeScope,
-        x: slot?.rect?.x,
-      });
-      if (probes.at(-1).freeze === "1") break;
-      await sleep(60);
-    }
-    const after = await rpc("layout.arrangement", {}, win);
-    console.log(
-      `  계기: station ${before.data?.station} → ${after.data?.station} · ` +
-        probes.map((q) => `${q.t}:trav=${q.traveling},frz=${q.freeze ?? "-"},x=${q.x}`).join(" | "),
-    );
-  }
+  await rpc("view.activate", { view: termView }, win);
   await sleep(700);
   await rpc("view.activate", { view: browserView }, win);
   const cycled = await pollUntil("동결 사이클(freeze=0)", 10000, async () => {
@@ -356,7 +326,35 @@ async function main() {
       `${JSON.stringify(t0r)} → ${JSON.stringify(t1r)}`,
     );
 
-    // 8) 착지 일치 — 네이티브 child 의 프레임 이동량이 슬롯 이동량과 같다. 위상 중 표면은
+    // 8) 위상 쓰기 0 / 착지 1 — 표면 소유자의 송신 누계를 veil 전후로 읽는다. 착지 일치는
+    //    결과이고, 이것은 그 결과가 "아무도 안 썼기 때문"임을 증명한다.
+    {
+      const sendsOf = async () => {
+        const r = await rpc("plugin.soksak-plugin-browser-native.surface.stats", {}, win);
+        const row = (r.data?.views ?? []).find((v) => v.viewId === browserView);
+        return row ? Number(row.sends) : -1;
+      };
+      await rpc("view.activate", { view: browserView }, win);
+      await sleep(900);
+      const s0 = await sendsOf();
+      await rpc("view.activate", { view: termView }, win);
+      await sleep(120); // 위상 한복판(340ms 주행 중)
+      const sMid = await sendsOf();
+      await sleep(1200); // 착지 + 정착
+      const s1 = await sendsOf();
+      assert(
+        "위상 쓰기 0 — 스탠드인 뒤에서는 아무도 표면에 쓰지 않는다",
+        s0 >= 0 && sMid === s0,
+        `before=${s0} mid=${sMid}`,
+      );
+      assert(
+        "착지 1 — 해동 에지에 정확히 한 번 쓴다",
+        s1 - s0 === 1,
+        `before=${s0} after=${s1}`,
+      );
+    }
+
+    // 9) 착지 일치 — 네이티브 child 의 프레임 이동량이 슬롯 이동량과 같다. 위상 중 표면은
     //    움직이지 않고 착지에서 한 번 놓이므로, 착지 후 둘은 정확히 같은 만큼 옮겨져 있어야
     //    한다(오프셋 무관 델타 비교 — 플러그인 크롬 높이를 코어는 모른다).
     // 브라우저 child 는 창의 네이티브 계층에서 WryWebView 로 선다(메인 웹뷰는 KVO 래핑된
@@ -394,7 +392,35 @@ async function main() {
     }
   }
 
-  // 9) 시각 확인(옵션) — SLOT_FREEZE_SHOTS 로 정지 프레임 두 장을 남긴다: 브라우저 포커스와
+  // 10) 행 불일치 스위칭 — 사용자가 규정한 예외 규칙의 라이브 증명. 아래를 둘로 나눠
+  //     [위 1 / 아래 2] 를 만들고 아래 뒷쪽을 포커스하면, 그 패널이 앞으로 스위칭되고
+  //     해가 만들어진 인접(switched)을 보고해야 한다(점선 봉합의 근거).
+  {
+    await rpc("view.activate", { view: termView }, win);
+    const below = await rpc("panel.split", { side: "bottom", program: termProgram }, win);
+    if (below.ok) {
+      const rear = await rpc("panel.split", { side: "right", program: termProgram }, win);
+      if (rear.ok && rear.data?.viewId) {
+        await rpc("view.activate", { view: rear.data.viewId }, win);
+        await sleep(700);
+        const solved = await rpc("layout.arrangement", {}, win);
+        const cells = solved.data?.cells ?? [];
+        const focusedLeft = cells.find((c) => c.id === rear.data.panelId)?.rect?.left;
+        assert(
+          "행 불일치 스위칭 — 뒷쪽 포커스가 앞으로 서고 해가 그것을 보고한다",
+          solved.data?.switched === true &&
+            Math.abs((focusedLeft ?? -1) - solved.data.station) < 0.01,
+          `switched=${solved.data?.switched} focusedLeft=${focusedLeft} station=${solved.data?.station}`,
+        );
+      } else {
+        assert("행 불일치 스위칭 — 픽스처 분할", false, JSON.stringify(rear.data ?? rear.message));
+      }
+    } else {
+      assert("행 불일치 스위칭 — 픽스처 분할", false, JSON.stringify(below.message));
+    }
+  }
+
+  // 11) 시각 확인(옵션) — SLOT_FREEZE_SHOTS 로 정지 프레임 두 장을 남긴다: 브라우저 포커스와
   //    터미널 포커스. 레일이 포커스 패널의 왼쪽 선에 서 있는지, 복도가 열린 자리가 맞는지,
   //    표면이 온전히 렌더되는지는 사람이 픽셀로 확인해야 하는 사실이다(R3).
   if (process.env.SLOT_FREEZE_SHOTS) {
