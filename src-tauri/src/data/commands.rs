@@ -128,7 +128,9 @@ pub fn data_put(
 ) -> Result<String, String> {
     validate_ns(&ns)?;
     let scope_s = scope.unwrap_or_default();
-    let new_id = with_conn(&state, |c| store::put(c, &ns, &coll, &scope_s, id, &doc))?;
+    let new_id = with_conn(&state, |c| {
+        store::put(c, &ns, &coll, &scope_s, id, &doc).map_err(|e| with_evidence(c, e))
+    })?;
     emit_change(
         &app,
         &ns,
@@ -583,6 +585,16 @@ pub fn data_ns_remove(ns: String, state: State<'_, DbState>) -> Result<serde_jso
         "records": out.records,
         "kv": out.kv,
     }))
+}
+
+// 물리 이상이 의심되는 쓰기 실패에 그 순간의 증거를 붙인다. SQLite 가 `out of memory` 를 돌려주는
+// 쓰기는 메모리가 없어서가 아니라 저장소가 아파서일 수 있고(integrity.rs 머리말), 그 구분은 실패한
+// 그 순간에만 가능하다 — 사후에 파일을 밖에서 열면 멀쩡해 보인다(실측). 그 외 실패는 그대로 둔다.
+fn with_evidence(conn: &rusqlite::Connection, err: String) -> String {
+    if !err.contains("out of memory") {
+        return err;
+    }
+    format!("{err} [저장소 실황: {}]", super::integrity::failure_evidence(conn))
 }
 
 // 저장소 자기 진단 — 전수 대조(integrity_check). 부팅 게이트(quick_check)는 인덱스↔테이블 대조를

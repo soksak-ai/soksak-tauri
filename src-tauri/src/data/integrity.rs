@@ -140,6 +140,32 @@ pub fn repair(conn: &Connection) -> Result<Repair, String> {
     })
 }
 
+/// 물리 이상이 의심되는 실패에 붙일 증거 한 줄 — 그 순간의 진단 요약과 저장소 실황.
+///
+/// `out of memory` 만 남기고 사라지는 실패는 사후에 재현할 수 없다(실측: 파일을 밖에서 열면 멀쩡하고,
+/// 앱 안에서만 무너지는 상태였다 — 원인 추적에 두 시간이 들었고 그마저 못 밝혔다). 실패한 그 순간의
+/// 저장소가 자기 상태를 말하게 해 다음 발생을 추측 없이 잡는다.
+pub fn failure_evidence(conn: &Connection) -> String {
+    let f = findings(conn);
+    let head = f.first().cloned().unwrap_or_else(|| "없음".to_string());
+    match stats(conn) {
+        Ok(s) => format!(
+            "진단 {}건(첫 항목: {head}) | SQLite {} 사용 {}B 최고 {}B 한도 soft {} hard {} | 페이지 {}x{} free {} | records 인덱스 {}",
+            f.len(),
+            s.sqlite_version,
+            s.memory_used,
+            s.memory_highwater,
+            s.soft_heap_limit,
+            s.hard_heap_limit,
+            s.page_count,
+            s.page_size,
+            s.freelist_count,
+            s.records_indexes,
+        ),
+        Err(e) => format!("진단 {}건(첫 항목: {head}) | 실황 실패: {e}", f.len()),
+    }
+}
+
 /// 아직 낫지 않았는가 — 진단이 문제를 보고하거나 진단 자체가 끝나지 못하면 낫지 않은 것이다.
 fn findings_are_unhealed(conn: &Connection) -> bool {
     !findings(conn).is_empty()
@@ -444,6 +470,23 @@ mod tests {
         let conn = Connection::open(&db).unwrap();
         assert_eq!(reindex_each(&conn), Vec::<String>::new(), "전부 다시 만들어진다");
         assert_eq!(check(&conn).unwrap(), Vec::<String>::new(), "손상이 사라진다");
+    }
+
+    // 증거는 성한 저장소에서도 답을 내야 한다 — 실패 순간에만 쓰는 코드가 그때 처음 돌면 그 자체가
+    // 또 하나의 미지수다. 손상 위에서는 무엇이 문제인지 첫 항목으로 싣는다.
+    #[test]
+    fn failure_evidence_speaks_on_both_healthy_and_sick_stores() {
+        let db = scratch();
+        seeded(&db);
+        let conn = Connection::open(&db).unwrap();
+        let healthy = failure_evidence(&conn);
+        assert!(healthy.contains("진단 0건"), "성한 저장소: {healthy}");
+        assert!(healthy.contains("SQLite"), "실황을 싣는다: {healthy}");
+
+        desync_index(&db);
+        let conn2 = Connection::open(&db).unwrap();
+        let sick = failure_evidence(&conn2);
+        assert!(!sick.contains("진단 0건"), "아픈 저장소는 문제를 싣는다: {sick}");
     }
 
     #[test]
