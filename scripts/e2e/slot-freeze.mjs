@@ -27,12 +27,20 @@ const FIXTURE_ROOT = path.join(os.homedir(), ".soksak-e2e", "slot-freeze");
 // 프로세스). 한 엔진만 태우면 나머지는 검증되지 않은 채 남는다(실측: chromium 경로에서 깜빡임).
 // BROWSER_ENGINE=browser|browser-chromium|browser-chromium-offscreen.
 const ENGINE = process.env.BROWSER_ENGINE || "browser";
+// 표면을 담는 뷰 클래스는 엔진마다 다르다 — 자식 웹뷰(WryWebView)와 CEF 호스트 뷰
+// (CefBrowserHostView). 한 클래스만 찾으면 다른 엔진의 표면은 "판독 실패"로 남고, 위상 쓰기·
+// 착지 게이트가 그 엔진에 대해 아무것도 증명하지 못한다(실측: chromium 4게이트 판정 불가).
+const SURFACE_CLASS = /WryWebView|CefBrowserHostView/;
 const ENGINE_PLUGIN = {
   browser: "soksak-plugin-browser-native",
   "browser-chromium": "soksak-plugin-browser-chromium",
   "browser-chromium-offscreen": "soksak-plugin-browser-chromium-offscreen",
 }[ENGINE];
 if (!ENGINE_PLUGIN) throw new Error(`알 수 없는 엔진: ${ENGINE}`);
+// 표면 모델 — native: 창 자식 표면(자식 웹뷰·CEF 호스트 뷰)이라 동결·veil·착지 계약의 대상.
+// dom: 오프스크린 렌더를 DOM 으로 합성하므로 네이티브 표면이 없다(§4.6 면제) — 그 엔진에서
+// 표면 계수·프레임 판독 게이트는 적용 대상이 아니다. 조용히 건너뛰지 않고 그 사실을 출력한다.
+const ENGINE_SURFACE = ENGINE === "browser-chromium-offscreen" ? "dom" : "native";
 
 // 소켓 클라이언트 — 연결마다 독립 봉투 큐. 둘 이상 열 수 있어야 한다: 녹화(window.record)는
 // 프레임 수만큼 응답을 붙잡으므로, 같은 연결로는 녹화 도중 위상을 태울 수 없다(실측: 활강이
@@ -209,12 +217,22 @@ async function main() {
   // 1) 정착 선캡처 — 청정(스팟) 슬롯만 구워진다(dim 슬롯 skip 정책). 분할 직후엔 터미널이
   // 활성이라 브라우저 슬롯이 dim — 실사용처럼 브라우저를 먼저 활성해 스팟 상태에서 기다린다.
   await rpc("view.activate", { view: browserView }, win);
-  const settled = await pollUntil("정착 스냅(freezeSnapAt)", 15000, async () => {
+  // 존재만 보면 아무것도 증명하지 못한다 — 분할 전에 구운 스냅(454px)이 분할 후(221px) 슬롯에
+  // 남아 있어도 이 게이트는 통과했고, 그 낡은 크기가 모든 여정의 활강 전제를 거부해 그리드가
+  // 통째로 순간이동했다(실측 freezeGlide=no:size:221x449!=454x449). 엔진의 판정을 직접 읽는다.
+  const surfaceSizeOf = (rect) =>
+    `${Math.floor(rect.x + rect.w) - Math.ceil(rect.x)}x${Math.floor(rect.y + rect.h) - Math.ceil(rect.y)}`;
+  const settled = await pollUntil("정착 스냅(현재 크기)", 20000, async () => {
     const d = await measure();
-    return d?.dataset?.freezeSnapAt ? d : null;
+    if (!d?.dataset?.freezeSnapAt) return null;
+    return d.dataset.freezeSnapSize === surfaceSizeOf(d.rect) ? d : null;
   });
   const snapAt0 = Number(settled.dataset.freezeSnapAt);
-  assert("정착 선캡처 — freezeSnapAt 존재", Number.isFinite(snapAt0), String(snapAt0));
+  assert(
+    "정착 선캡처 — 현재 슬롯 크기로 구운 스냅이 서 있다",
+    Number.isFinite(snapAt0) && settled.dataset.freezeSnapSize === surfaceSizeOf(settled.rect),
+    `snapAt=${snapAt0} snapSize=${settled.dataset.freezeSnapSize} slot=${surfaceSizeOf(settled.rect)}`,
+  );
 
   // 2) 동결 사이클 — 교차 활성이 move 위상을 태우고, 착지에서 해동돼 있어야 한다.
   await rpc("view.activate", { view: termView }, win);
@@ -392,7 +410,12 @@ async function main() {
 
     // 8) 위상 쓰기 0 / 착지 1 — 표면 소유자의 송신 누계를 veil 전후로 읽는다. 착지 일치는
     //    결과이고, 이것은 그 결과가 "아무도 안 썼기 때문"임을 증명한다.
-    {
+    //    DOM 합성 엔진은 네이티브 표면이 없어 쓸 것도 없다 — 적용 대상이 아님을 밝히고 넘긴다.
+    if (ENGINE_SURFACE === "dom") {
+      console.log(
+        "· 표면 계수·프레임 게이트 — DOM 합성 엔진(네이티브 표면 없음)이라 적용 대상 아님",
+      );
+    } else {
       const sendsOf = async () => {
         const r = await rpc(`plugin.${ENGINE_PLUGIN}.surface.stats`, {}, win);
         const row = (r.data?.views ?? []).find((v) => v.viewId === browserView);
@@ -418,55 +441,57 @@ async function main() {
       );
     }
 
-    // 9) 착지 일치 — 네이티브 child 의 프레임 이동량이 슬롯 이동량과 같다. 위상 중 표면은
-    //    움직이지 않고 착지에서 한 번 놓이므로, 착지 후 둘은 정확히 같은 만큼 옮겨져 있어야
-    //    한다(오프셋 무관 델타 비교 — 플러그인 크롬 높이를 코어는 모른다).
-    // 브라우저 child 는 창의 네이티브 계층에서 WryWebView 로 선다(메인 웹뷰는 KVO 래핑된
-    // 전체 창 크기 항목이라 제외). 슬롯과 폭이 같은 항목이 그 child 다 — 높이는 플러그인
-    // 툴바만큼 짧고, 코어는 그 오프셋을 모르므로 폭으로 짚고 이동량(델타)만 비교한다.
-    const childX = async (slotW) => {
-      const h = await rpc("window.layers", {}, win);
-      const lines = String(h.data?.hierarchy ?? "").split("\n");
-      let best = null;
-      for (const line of lines) {
-        if (!line.includes("WryWebView") || line.includes("NSKVONotifying_")) continue;
-        const m = /frame=\((-?[\d.]+), (-?[\d.]+), (-?[\d.]+), (-?[\d.]+)\)/.exec(line);
-        if (!m) continue;
-        const [x, , w] = [parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3])];
-        const d = Math.abs(w - slotW);
-        if (d < 8 && (!best || d < best.d)) best = { x, d };
+    if (ENGINE_SURFACE === "native") {
+      // 9) 착지 일치 — 네이티브 child 의 프레임 이동량이 슬롯 이동량과 같다. 위상 중 표면은
+      //    움직이지 않고 착지에서 한 번 놓이므로, 착지 후 둘은 정확히 같은 만큼 옮겨져 있어야
+      //    한다(오프셋 무관 델타 비교 — 플러그인 크롬 높이를 코어는 모른다).
+      // 브라우저 child 는 창의 네이티브 계층에서 WryWebView 로 선다(메인 웹뷰는 KVO 래핑된
+      // 전체 창 크기 항목이라 제외). 슬롯과 폭이 같은 항목이 그 child 다 — 높이는 플러그인
+      // 툴바만큼 짧고, 코어는 그 오프셋을 모르므로 폭으로 짚고 이동량(델타)만 비교한다.
+      const childX = async (slotW) => {
+        const h = await rpc("window.layers", {}, win);
+        const lines = String(h.data?.hierarchy ?? "").split("\n");
+        let best = null;
+        for (const line of lines) {
+          if (!SURFACE_CLASS.test(line) || line.includes("NSKVONotifying_")) continue;
+          const m = /frame=\((-?[\d.]+), (-?[\d.]+), (-?[\d.]+), (-?[\d.]+)\)/.exec(line);
+          if (!m) continue;
+          const [x, , w] = [parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3])];
+          const d = Math.abs(w - slotW);
+          if (d < 8 && (!best || d < best.d)) best = { x, d };
+        }
+        return best?.x ?? null;
+      };
+      const c1 = await childX(b1.w);
+      await rpc("view.activate", { view: browserView }, win);
+      await sleep(900);
+      const b2 = await rectOf(browserView);
+      const c2 = await childX(b2.w);
+      if (c1 == null || c2 == null) {
+        assert("착지 일치 — 네이티브 프레임 판독", false, `c1=${c1} c2=${c2} slotW=${b1.w}`);
+      } else {
+        const slotDelta = b2.x - b1.x;
+        const childDelta = c2 - c1;
+        assert(
+          "착지 일치 — 네이티브 child 이동량 == 슬롯 이동량(±1.5px)",
+          Math.abs(slotDelta - childDelta) < 1.5,
+          `slot=${slotDelta.toFixed(2)} child=${childDelta.toFixed(2)}`,
+        );
       }
-      return best?.x ?? null;
-    };
-    const c1 = await childX(b1.w);
-    await rpc("view.activate", { view: browserView }, win);
-    await sleep(900);
-    const b2 = await rectOf(browserView);
-    const c2 = await childX(b2.w);
-    if (c1 == null || c2 == null) {
-      assert("착지 일치 — 네이티브 프레임 판독", false, `c1=${c1} c2=${c2} slotW=${b1.w}`);
-    } else {
-      const slotDelta = b2.x - b1.x;
-      const childDelta = c2 - c1;
-      assert(
-        "착지 일치 — 네이티브 child 이동량 == 슬롯 이동량(±1.5px)",
-        Math.abs(slotDelta - childDelta) < 1.5,
-        `slot=${slotDelta.toFixed(2)} child=${childDelta.toFixed(2)}`,
-      );
     }
-  }
+    }
 
   // 9.5) 절대 정합 — 델타 비교는 일정한 오프셋을 통과시킨다. 착지 후 네이티브 child 의
   //      좌·우 경계가 슬롯의 그것과 같은 자리인지 절대값으로 잰다(가로는 오프셋이 없어야
   //      한다 — 세로만 플러그인 크롬 높이만큼 다르다).
-  {
+  if (ENGINE_SURFACE === "native") {
     await rpc("view.activate", { view: browserView }, win);
     await sleep(1100);
     const slot = (await measure())?.rect;
     const h = await rpc("window.layers", {}, win);
     let child = null;
     for (const line of String(h.data?.hierarchy ?? "").split("\n")) {
-      if (!line.includes("WryWebView") || line.includes("NSKVONotifying_")) continue;
+      if (!SURFACE_CLASS.test(line) || line.includes("NSKVONotifying_")) continue;
       const m = /frame=\((-?[\d.]+), (-?[\d.]+), (-?[\d.]+), (-?[\d.]+)\)/.exec(line);
       if (!m) continue;
       const [x, y, w, hh] = m.slice(1, 5).map(parseFloat);

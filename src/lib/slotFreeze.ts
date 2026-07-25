@@ -128,18 +128,46 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
     for (const slot of holeSlots(root)) {
       const viewId = viewIdOf(slot);
       if (!viewId) continue;
-      if (inFlight.has(slot) || frozen.has(slot)) continue;
+      // 시도 계수 — "정착 에지가 이 슬롯을 보았다"는 사실. 이것이 늘지 않으면 에지가 오지 않은
+      // 것이고, 늘면서 snapAt 이 그대로면 아래 건너뛰기 중 하나에 걸린 것이다. 둘을 가르지
+      // 못하면 "왜 스냅이 낡았는가"를 추측하게 된다.
+      slot.dataset.freezeSnapTry = String(Number(slot.dataset.freezeSnapTry ?? 0) + 1);
+      const skip = (why: string): void => {
+        slot.dataset.freezeSnapSkip = why; // 건너뛴 이유 — 추측 금지
+      };
+      if (inFlight.has(slot)) {
+        skip("inflight");
+        continue;
+      }
+      if (frozen.has(slot)) {
+        skip("frozen");
+        continue;
+      }
       // 표면이 실제로 서 있는 정수 rect 를 캡처한다 — 슬롯의 분수 rect 를 캡처하면 표면 픽셀에
       // 이웃 픽셀이 섞이고, 그 사진을 되돌려 놓을 자리도 없다(§4.6, surfaceRect 규칙).
       const rect = slot.getBoundingClientRect();
       const { x, y, w, h } = surfaceRectOf(rect);
-      if (w < 2 || h < 2) continue;
+      if (w < 2 || h < 2) {
+        skip("tiny");
+        continue;
+      }
       // 포커스 장식 박제 금지 — dim 이 걸린(스팟 아닌) 슬롯의 창 픽셀엔 셰이드 베일이 구워져
       // 있다. 그걸 스탠드인으로 쓰면 동결 중 라이브 dim 과 어긋나 "포커스 인/아웃" 플랩으로
       // 보인다(실측). 청정(스팟) 상태의 스냅만 굽고, dim 은 라이브 계층(::after·filter)이 얹는다.
-      if (slot.closest("[data-focus-dim]") && !slot.classList.contains("spot-clear")) continue;
-      if (parkedSlot(rect)) continue;
+      if (slot.closest("[data-focus-dim]") && !slot.classList.contains("spot-clear")) {
+        skip("dim");
+        continue;
+      }
+      if (parkedSlot(rect)) {
+        skip("parked");
+        continue;
+      }
+      delete slot.dataset.freezeSnapSkip;
       inFlight.add(slot);
+      // 엔진 자기 상태도 관측면이다 — 캡처가 매달려 있거나 실패하면 스냅이 낡고, 낡은 스냅은
+      // 활강 전제를 깨서 여정이 통째로 순간이동한다. 그때 밖에서 볼 수 있는 것이 없으면 "왜
+      // 활강하지 않는가"를 추측하게 된다(실측: chromium 슬롯의 snapAt 이 한 값에 멈춰 있었다).
+      slot.dataset.freezePending = "1";
       void deps
         .capture({ x, y, w, h })
         .then(async (url) => {
@@ -151,10 +179,18 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
           snaps.set(slot, { img, t: now(), w, h });
           byView.set(viewId, slot);
           slot.dataset.freezeSnapAt = String(Math.round(now())); // 관측면(ui.hit)
+          // 구운 크기도 관측면이다 — 스냅의 존재만으로는 아무것도 보장되지 않는다. 분할 전
+          // 크기의 스냅이 남아 있으면 활강 전제가 매번 거부되고, 밖에서는 그 이유를 알 수 없다.
+          slot.dataset.freezeSnapSize = `${w}x${h}`;
         })
-        .catch(() => {})
+        .catch(() => {
+          slot.dataset.freezeSnapFail = String(
+            Number(slot.dataset.freezeSnapFail ?? 0) + 1,
+          );
+        })
         .finally(() => {
           inFlight.delete(slot);
+          delete slot.dataset.freezePending;
         });
     }
   };
@@ -168,9 +204,14 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
     const r = slot.getBoundingClientRect();
     if (parkedSlot(r)) return; // 보이지 않는 표면 — 덮을 것도, 해동에 되살릴 것도 없다
     const surface = surfaceRectOf(r);
-    // 스냅 이후 표면 크기가 변했으면 세우지 않는다 — 늘어난 정지 사진은 박제다. 판정도 표면
-    // 규칙으로 한다(분수 슬롯 폭과 정수 스냅 폭을 섞어 재면 언제나 1px 어긋난 값이 나온다).
-    if (Math.abs(surface.w - snap.w) > 1 || Math.abs(surface.h - snap.h) > 1) return;
+    // 스냅 이후 표면 크기가 변했으면 세우지 않고 그 스냅을 버린다 — 늘어난 정지 사진은 박제이고,
+    // 남겨 두면 다시 구워지지 못한 채 활강 전제를 계속 거부한다(canFreezeAll 과 같은 규칙).
+    if (Math.abs(surface.w - snap.w) > 1 || Math.abs(surface.h - snap.h) > 1) {
+      snaps.delete(slot);
+      delete slot.dataset.freezeSnapAt;
+      delete slot.dataset.freezeSnapSize;
+      return;
+    }
     const img = snap.img; // 정착 에지에서 디코드 완료 — append 즉시 페인트
     img.className = "slot-freeze-frame";
     // 관측 주소 — "스탠드인이 유일한 홀을 완전히 덮는다"가 표면 무숨김(§4.6-3)의 load-bearing
@@ -243,6 +284,11 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
     canFreezeAll(viewIds) {
       const root = deps.root();
       if (!root) return false;
+      // 전제 판정의 근거도 관측면이다 — "왜 활강하지 않는가"는 이 판정 하나에 달려 있고,
+      // 그것이 보이지 않으면 여정이 통째로 순간이동하는 것을 밖에서 설명할 수 없다.
+      const verdict = (slot: HTMLElement | undefined, why: string): void => {
+        if (slot) slot.dataset.freezeGlide = why;
+      };
       for (const viewId of viewIds) {
         const slot = byView.get(viewId);
         // 홀이 아닌 뷰(DOM 표면)는 스탠드인이 필요 없다 — 스스로 활강한다.
@@ -250,13 +296,30 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
         const rect = slot.getBoundingClientRect();
         if (parkedSlot(rect)) continue; // 비활성 탭 — 이 뷰 때문에 여정이 스냅으로 떨어지지 않는다
         const snap = snaps.get(slot);
-        if (!snap || !fresh(snap)) return false;
+        if (!snap) {
+          verdict(slot, "no:nosnap");
+          return false;
+        }
+        if (!fresh(snap)) {
+          verdict(slot, `no:stale:${Math.round(now() - snap.t)}`);
+          return false;
+        }
         // 크기 판정은 스탠드인을 세울 때와 같은 규칙으로 — 다른 규칙을 섞으면 같은 슬롯을 두
         // 기준이 다르게 재고, 세울 수 있는 스탠드인을 거절한다.
         const surface = surfaceRectOf(rect);
         if (Math.abs(surface.w - snap.w) > 1 || Math.abs(surface.h - snap.h) > 1) {
+          // 크기가 어긋난 스냅은 **버린다**. 남겨 두면 영구 결함이 된다: 분할·병합으로 슬롯
+          // 크기가 바뀐 뒤 그 뷰가 비활성(dim)이면 재캡처가 건너뛰어지고(셰이드 박제 금지),
+          // 낡은 크기의 스냅이 계속 남아 모든 여정의 활강 전제를 거부한다 — 그리드가 매번
+          // 통째로 순간이동한다(실측 no:size:221x449!=454x449). 버리면 그 뷰가 다음에
+          // 청정(스팟)해지는 순간 정착 에지가 맞는 크기로 굽고 스스로 회복한다.
+          verdict(slot, `no:size:${surface.w}x${surface.h}!=${snap.w}x${snap.h}`);
+          snaps.delete(slot);
+          delete slot.dataset.freezeSnapAt;
+          delete slot.dataset.freezeSnapSize;
           return false;
         }
+        verdict(slot, "yes");
       }
       return true;
     },
@@ -265,6 +328,7 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
       if (!slot) return;
       snaps.delete(slot);
       delete slot.dataset.freezeSnapAt;
+      delete slot.dataset.freezeSnapSize;
     },
     noteSurfaceWrite(viewId) {
       withdraw(viewId);

@@ -159,6 +159,26 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
     expect(veils.map((v) => v[0])).toEqual(["v1"]);
   });
 
+  it("크기가 어긋난 스냅은 버려진다 — 낡은 크기가 활강을 영구히 막지 못한다", async () => {
+    // 실측 결함: 분할 전(454px)에 구운 스냅이 분할 후(221px) 슬롯에 남아 canFreezeAll 이
+    // 매번 no:size 로 거부했고, 그 뷰가 비활성(dim)이면 재캡처는 셰이드 박제 금지로 건너뛰어져
+    // 스냅이 영원히 갱신되지 않았다 — 모든 여정이 통째로 순간이동했다. 버려야 회복한다.
+    const slot = makeSlot("v1");
+    const f = build();
+    f.captureSettled();
+    await microtasks();
+    expect(slot.dataset.freezeSnapAt).toBeDefined();
+    // 분할 — 슬롯이 좁아진다.
+    slot.getBoundingClientRect = () =>
+      ({ left: 10, top: 10, right: 160, bottom: 210, width: 150, height: 200 }) as DOMRect;
+    expect(f.canFreezeAll(["v1"])).toBe(false); // 이 여정은 활강하지 않는다(정당)
+    expect(slot.dataset.freezeSnapAt).toBeUndefined(); // 그리고 낡은 스냅은 남지 않는다
+    // 청정해진 다음 정착 에지가 맞는 크기로 굽고 전제가 회복된다.
+    f.captureSettled();
+    await microtasks();
+    expect(f.canFreezeAll(["v1"])).toBe(true);
+  });
+
   it("resize 가 끼면(단독·혼합) 동결하지 않는다", async () => {
     const slot = makeSlot("v1");
     const f = build();
