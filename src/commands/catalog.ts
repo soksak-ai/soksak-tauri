@@ -85,7 +85,7 @@ const notFound = (what: string) => ({
 // 바꾸지 않는다(§ 계약). 핸들러가 store 결과를 그대로 반환하는 지점에서만 이 경계를 지나
 // 공개 명칭으로 옮긴다: groupId→panelId, contentId→spaceId, activeGroupId→activePanelId,
 // activeContentId→activeSpaceId, contents→spaces. 그 외 키는 그대로 통과(에러 응답도 무해).
-function asSurface(r: object): object {
+export function asSurface(r: object): object {
   const rec = r as Record<string, unknown>;
   const { groupId, contentId, activeGroupId, activeContentId, contents, ...rest } = rec;
   const out: Record<string, unknown> = rest;

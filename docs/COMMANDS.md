@@ -2,9 +2,9 @@
 
 > 자동 생성 문서 — 원천은 `command.docs`(앱 Command Registry + 레지스트리 카탈로그).
 
-모든 명령: `sok-debug <command> [값 | '{JSON}']` — 값 하나는 유일한 필수 매개변수로 전달(기본형). 대상 id 생략 시 호출 컨텍스트($SOKSAK_PANE) 기본.
+모든 명령: `sok-dev <command> [값 | '{JSON}']` — 값 하나는 유일한 필수 매개변수로 전달(기본형). 대상 id 생략 시 호출 컨텍스트($SOKSAK_PANE) 기본.
 
-코어 명령만 수록한다(--core — 리포지토리 문서용, 설치본 무관). 전체는 `sok-debug docs`.
+코어 명령만 수록한다(--core — 리포지토리 문서용, 설치본 무관). 전체는 `sok-dev docs`.
 
 ## `activity.recent`
 
@@ -18,8 +18,8 @@ Query the app-wide activity stream (P12 execution visibility): registry command 
 **Returns**: { entries: [{ seq, ts, kind, source, payload }] }
 
 ```bash
-sok-debug activity.recent '{"limit":20}'
-sok-debug activity.recent '{"since":1234}'
+sok-dev activity.recent '{"limit":20}'
+sok-dev activity.recent '{"since":1234}'
 ```
 
 ## `ai.session.detect`
@@ -34,7 +34,7 @@ Detect whether a shell command launches a tracked AI agent (claude or codex). Re
 **Errors**: INVALID_PARAMS
 
 ```bash
-sok-debug ai.session.detect '{"command":"claude --resume"}'
+sok-dev ai.session.detect '{"command":"claude --resume"}'
 ```
 
 ## `ai.session.find`
@@ -49,7 +49,7 @@ Find the most recent claude session for a working directory by reading its sessi
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug ai.session.find '{"cwd":"/Users/me/proj"}'
+sok-dev ai.session.find '{"cwd":"/Users/me/proj"}'
 ```
 
 ## `ai.session.inspect`
@@ -64,7 +64,7 @@ Read a claude/codex session jsonl file's header and return its sessionId and cwd
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug ai.session.inspect '{"path":"~/.claude/projects/-Users-me-proj/<id>.jsonl"}'
+sok-dev ai.session.inspect '{"path":"~/.claude/projects/-Users-me-proj/<id>.jsonl"}'
 ```
 
 ## `ai.session.lineage`
@@ -80,7 +80,7 @@ Read the session-transition history for a working directory (and optionally one 
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug ai.session.lineage '{"cwd":"/Users/me/proj"}'
+sok-dev ai.session.lineage '{"cwd":"/Users/me/proj"}'
 ```
 
 ## `app.environment`
@@ -90,7 +90,7 @@ Read this app's compile-time core identity, isolated home, matching CLI name, bu
 **Returns**: { coreBuild, identity, cli, home, buildProfile, updaterEnabled, unitMode, developmentUnits[] }
 
 ```bash
-sok-debug app.environment
+sok-dev app.environment
 ```
 
 ## `bookmark.add`
@@ -105,7 +105,7 @@ Add a URL to browser bookmarks. | 즐겨찾기 추가 북마크 저장
 **Returns**: {}
 
 ```bash
-sok-debug bookmark.add '{"url":"https://example.com"}'
+sok-dev bookmark.add '{"url":"https://example.com"}'
 ```
 
 ## `bookmark.list`
@@ -115,7 +115,7 @@ List saved browser bookmarks. | 즐겨찾기 목록 북마크
 **Returns**: { bookmarks: [{url,title}] }
 
 ```bash
-sok-debug bookmark.list
+sok-dev bookmark.list
 ```
 
 ## `bookmark.remove`
@@ -129,7 +129,7 @@ Remove a URL from browser bookmarks. | 즐겨찾기 삭제 북마크 제거
 **Returns**: {}
 
 ```bash
-sok-debug bookmark.remove '{"url":"https://example.com"}'
+sok-dev bookmark.remove '{"url":"https://example.com"}'
 ```
 
 ## `clipboard.read`
@@ -140,7 +140,7 @@ Read the current text from the system clipboard. Returns an empty string when th
 **Errors**: INTERNAL
 
 ```bash
-sok-debug clipboard.read
+sok-dev clipboard.read
 ```
 
 ## `clipboard.write` (danger: inject)
@@ -155,7 +155,7 @@ Write text to the system clipboard, overwriting existing content. The core suppr
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug clipboard.write '{"text":"복사할 내용"}'
+sok-dev clipboard.write '{"text":"복사할 내용"}'
 ```
 
 ## `command.docs`
@@ -170,9 +170,9 @@ The whole executable command surface in one call: core command specs, installed 
 **Returns**: { core: [spec], plugins: { [pluginId]: [spec] }, registry: [{registryId,unitId,id,kind,version,manifest,reports,installed}] }
 
 ```bash
-sok-debug command.docs
-sok-debug docs
-sok-debug command.docs '{"lang":"ko"}'
+sok-dev command.docs
+sok-dev docs
+sok-dev command.docs '{"lang":"ko"}'
 ```
 
 ## `daemon.add`
@@ -189,7 +189,7 @@ Register a long-running project process (dev server, watcher, database) as a dae
 **Errors**: TARGET_NOT_FOUND, INVALID_PARAMS
 
 ```bash
-sok-debug daemon.add '{"name":"dev","cmd":"npm run dev"}'
+sok-dev daemon.add '{"name":"dev","cmd":"npm run dev"}'
 ```
 
 ## `daemon.autostart`
@@ -206,8 +206,8 @@ Allow or revoke automatic start when this project opens (omit name = every decla
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug daemon.autostart '{"name":"dev","on":true}'
-sok-debug daemon.autostart '{"on":true}'
+sok-dev daemon.autostart '{"name":"dev","on":true}'
+sok-dev daemon.autostart '{"on":true}'
 ```
 
 ## `daemon.list`
@@ -222,7 +222,7 @@ List the project's daemons — Procfile declarations merged with runtime state (
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug daemon.list
+sok-dev daemon.list
 ```
 
 ## `daemon.logs`
@@ -239,8 +239,8 @@ Read a daemon's recent output from the in-memory ring buffer (last 500 lines at 
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug daemon.logs dev
-sok-debug daemon.logs '{"name":"dev","lines":300}'
+sok-dev daemon.logs dev
+sok-dev daemon.logs '{"name":"dev","lines":300}'
 ```
 
 ## `daemon.remove` (danger: destructive)
@@ -256,7 +256,7 @@ Remove a daemon declaration from the project's Procfile. A running instance is s
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug daemon.remove dev
+sok-dev daemon.remove dev
 ```
 
 ## `daemon.restart`
@@ -272,7 +272,7 @@ Restart a daemon — stop (tree kill or managed stop command) and start again. |
 **Errors**: TARGET_NOT_FOUND, INTERNAL
 
 ```bash
-sok-debug daemon.restart dev
+sok-dev daemon.restart dev
 ```
 
 ## `daemon.set`
@@ -289,7 +289,7 @@ Set per-daemon local options — currently the stop command for detached tools w
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug daemon.set '{"name":"db","stop":"docker compose down"}'
+sok-dev daemon.set '{"name":"db","stop":"docker compose down"}'
 ```
 
 ## `daemon.start`
@@ -305,8 +305,8 @@ Start a declared daemon (omit name = every declared daemon that is not running).
 **Errors**: TARGET_NOT_FOUND, INTERNAL
 
 ```bash
-sok-debug daemon.start dev
-sok-debug daemon.start
+sok-dev daemon.start dev
+sok-dev daemon.start
 ```
 
 ## `daemon.stop`
@@ -322,8 +322,8 @@ Stop a running daemon (omit name = all). The whole process tree is terminated �
 **Errors**: TARGET_NOT_FOUND, INTERNAL
 
 ```bash
-sok-debug daemon.stop dev
-sok-debug daemon.stop
+sok-dev daemon.stop dev
+sok-dev daemon.stop
 ```
 
 ## `data.backup`
@@ -338,8 +338,19 @@ Snapshot the entire data store to a single .db file via VACUUM INTO (absorbs WAL
 **Errors**: INTERNAL
 
 ```bash
-sok-debug data.backup
-sok-debug data.backup '{"path":"/tmp/soksak.db"}'
+sok-dev data.backup
+sok-dev data.backup '{"path":"/tmp/soksak.db"}'
+```
+
+## `data.canary`
+
+Check whether the store can actually be written: inserts one row and rolls it back, leaving nothing. The integrity check only reads, so a store that reads fine and fails every write passes it — this is the surface that catches that. Failures carry the diagnosis and the process's memory figures. | 데이터 쓰기 확인 저장 가능
+
+**Returns**: { writable }
+**Errors**: INTERNAL
+
+```bash
+sok-dev data.canary
 ```
 
 ## `data.count`
@@ -357,7 +368,7 @@ Count records in a collection (read-only). Narrow the count with an optional whe
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug data.count '{"ns":"soksak-plugin-<id>","coll":"messages"}'
+sok-dev data.count '{"ns":"soksak-plugin-<id>","coll":"messages"}'
 ```
 
 ## `data.encrypt.changeRecovery` (danger: destructive)
@@ -372,7 +383,7 @@ Change a scope's recovery code WITHOUT re-encrypting data: re-wrap the active pr
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug data.encrypt.changeRecovery '{"scope":"projA"}'
+sok-dev data.encrypt.changeRecovery '{"scope":"projA"}'
 ```
 
 ## `data.encrypt.convert` (danger: destructive)
@@ -389,7 +400,7 @@ Seal records already stored plaintext in a scope under the active key (one trans
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug data.encrypt.convert '{"ns":"soksak-plugin-<id>","coll":"command_blocks","scope":"projA"}'
+sok-dev data.encrypt.convert '{"ns":"soksak-plugin-<id>","coll":"command_blocks","scope":"projA"}'
 ```
 
 ## `data.encrypt.enable` (danger: destructive)
@@ -404,7 +415,7 @@ Enable encryption for a scope: generate an X25519 keypair, wrap the private key 
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug data.encrypt.enable '{"scope":"projA"}'
+sok-dev data.encrypt.enable '{"scope":"projA"}'
 ```
 
 ## `data.encrypt.recover` (danger: destructive)
@@ -420,7 +431,7 @@ Recover a scope's encryption private key from its one-time recovery code on a ma
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug data.encrypt.recover '{"scope":"projA","recoveryCode":"XXXX-XXXX-..."}'
+sok-dev data.encrypt.recover '{"scope":"projA","recoveryCode":"XXXX-XXXX-..."}'
 ```
 
 ## `data.encrypt.rotate` (danger: destructive)
@@ -435,7 +446,7 @@ Rotate a scope's encryption key: generate a new keypair, re-seal every record fr
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug data.encrypt.rotate '{"scope":"projA"}'
+sok-dev data.encrypt.rotate '{"scope":"projA"}'
 ```
 
 ## `data.encrypt.status`
@@ -450,7 +461,7 @@ Report encryption state for a scope: enabled (an active key = sealing trigger), 
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug data.encrypt.status '{"scope":"projA"}'
+sok-dev data.encrypt.status '{"scope":"projA"}'
 ```
 
 ## `data.export`
@@ -466,7 +477,7 @@ Export data as JSONL (meta + record + kv rows). Scope by ns/coll; omit both for 
 **Errors**: INTERNAL
 
 ```bash
-sok-debug data.export '{"ns":"soksak-plugin-<id>"}'
+sok-dev data.export '{"ns":"soksak-plugin-<id>"}'
 ```
 
 ## `data.import` (danger: destructive)
@@ -481,7 +492,7 @@ Import JSONL produced by data.export: meta rows call define, record rows upsert,
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug data.import '{"jsonl":"..."}'
+sok-dev data.import '{"jsonl":"..."}'
 ```
 
 ## `data.kv.delete` (danger: destructive)
@@ -497,7 +508,7 @@ Delete one kv row from a namespace. Deleting an absent key reports deleted:false
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug data.kv.delete '{"ns":"soksak-plugin-<id>","key":"team:t1"}'
+sok-dev data.kv.delete '{"ns":"soksak-plugin-<id>","key":"team:t1"}'
 ```
 
 ## `data.kv.get`
@@ -513,7 +524,7 @@ Read one kv value from a namespace. Returns null when absent. | 키값 조회
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug data.kv.get '{"ns":"soksak-plugin-<id>","key":"team:t1"}'
+sok-dev data.kv.get '{"ns":"soksak-plugin-<id>","key":"team:t1"}'
 ```
 
 ## `data.kv.keys`
@@ -529,7 +540,7 @@ List kv keys in a namespace, optionally filtered by prefix. | 키 목록
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug data.kv.keys '{"ns":"soksak-plugin-<id>","prefix":"team:"}'
+sok-dev data.kv.keys '{"ns":"soksak-plugin-<id>","prefix":"team:"}'
 ```
 
 ## `data.kv.set`
@@ -546,7 +557,7 @@ Write one kv value (JSON) into a namespace. The store is a core SQLite singleton
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug data.kv.set '{"ns":"soksak-plugin-<id>","key":"team:t1","value":{"agents":[]}}'
+sok-dev data.kv.set '{"ns":"soksak-plugin-<id>","key":"team:t1","value":{"agents":[]}}'
 ```
 
 ## `data.ns.remove` (danger: destructive)
@@ -561,7 +572,7 @@ Remove a data namespace and everything it made: its records, kv rows, collection
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug data.ns.remove '{"ns":"plugin:probe-lane"}'
+sok-dev data.ns.remove '{"ns":"plugin:probe-lane"}'
 ```
 
 ## `data.query`
@@ -583,18 +594,18 @@ Query a collection (read-only). Filter fields must be declared as indexes in def
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug data.query '{"ns":"soksak-plugin-<id>","coll":"messages","scope":"projA"}'
+sok-dev data.query '{"ns":"soksak-plugin-<id>","coll":"messages","scope":"projA"}'
 ```
 
 ## `data.repair` (danger: destructive)
 
-Rebuild the data store's indexes from the table rows (REINDEX) and report the problems before and after. Rows are neither created nor deleted. Use when data.verify reports index problems — a store whose indexes are broken reads fine and fails on write. | 데이터 복구 인덱스 재생성 치유
+Rebuild the data store's indexes from the table rows (REINDEX) and report the problems before and after. Rows are neither created nor deleted. Use when data.verify reports index problems — a store whose indexes are broken reads fine and fails on write. Healing is attempted even when the diagnosis itself fails; reindexError carries the reason when the rebuild could not run. | 데이터 복구 인덱스 재생성 치유
 
-**Returns**: { before: string[], after: string[], healed }
+**Returns**: { before: string[], after: string[], healed, reindexError? }
 **Errors**: INTERNAL
 
 ```bash
-sok-debug data.repair
+sok-dev data.repair
 ```
 
 ## `data.restore` (danger: destructive)
@@ -609,7 +620,7 @@ Restore the entire data store from a backup .db file: validates, safely copies t
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug data.restore '{"path":"/tmp/soksak.db"}'
+sok-dev data.restore '{"path":"/tmp/soksak.db"}'
 ```
 
 ## `data.search`
@@ -628,18 +639,18 @@ Full-text search a collection using FTS5 trigram (CJK-aware). Queries shorter th
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug data.search '{"ns":"soksak-plugin-<id>","coll":"messages","query":"빌드 실패"}'
+sok-dev data.search '{"ns":"soksak-plugin-<id>","coll":"messages","query":"빌드 실패"}'
 ```
 
 ## `data.stats`
 
-Report the data store as the app's own SQLite sees it: version, heap limits, memory used and highwater, page cache settings, page/freelist counts, and how many indexes sit on the shared records table. Read-only. Use this when a store call answers out of memory — the limits and memory figures say what starved it. | 데이터 저장소 상태 통계 메모리 한도
+Report the data store as the app's own SQLite sees it: the boot write-gate verdict, version, heap limits, memory used and highwater, page cache settings, page/freelist counts, and how many indexes sit on the shared records table. Read-only. Use this when a store call answers out of memory — bootGate says whether writes worked at startup, and the limits and memory figures say what starved it. | 데이터 저장소 상태 통계 메모리 한도
 
-**Returns**: { sqliteVersion, softHeapLimit, hardHeapLimit, memoryUsed, memoryHighwater, cacheSize, pageSize, pageCount, freelistCount, recordsIndexes }
+**Returns**: { bootGate, sqliteVersion, softHeapLimit, hardHeapLimit, memoryUsed, memoryHighwater, cacheSize, pageSize, pageCount, freelistCount, recordsIndexes }
 **Errors**: INTERNAL
 
 ```bash
-sok-debug data.stats
+sok-dev data.stats
 ```
 
 ## `data.verify`
@@ -650,7 +661,7 @@ Check the data store for corruption (full integrity check — it cross-checks ev
 **Errors**: INTERNAL
 
 ```bash
-sok-debug data.verify
+sok-dev data.verify
 ```
 
 ## `debug.sleep` (danger: inject)
@@ -666,8 +677,8 @@ DEV-ONLY: hold the reply for `ms` then return (ok by default; ok:false when fail
 **Errors**: INTERNAL
 
 ```bash
-sok-debug debug.sleep '{"ms":5000}'
-sok-debug debug.sleep '{"ms":2000,"fail":true}'
+sok-dev debug.sleep '{"ms":5000}'
+sok-dev debug.sleep '{"ms":2000,"fail":true}'
 ```
 
 ## `dev.remoteConfirmMock` (danger: inject)
@@ -684,8 +695,8 @@ DEV-ONLY: emit a mock remote destructive confirm request so the desktop RemoteCo
 **Returns**: { request_id }
 
 ```bash
-sok-debug dev.remoteConfirmMock
-sok-debug dev.remoteConfirmMock '{"command":"terminal.clear","device_id":"Pixel-9"}'
+sok-dev dev.remoteConfirmMock
+sok-dev dev.remoteConfirmMock '{"command":"terminal.clear","device_id":"Pixel-9"}'
 ```
 
 ## `editor.close`
@@ -700,7 +711,7 @@ Close an editor view (same as view.close).
 **Errors**: TARGET_NOT_FOUND, LAST_ITEM
 
 ```bash
-sok-debug editor.close '{"view":"v4"}'
+sok-dev editor.close '{"view":"v4"}'
 ```
 
 ## `editor.open`
@@ -716,7 +727,7 @@ Open a file in an editor view. If already open, activates that tab instead. | �
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug editor.open '{"path":"/Users/me/work/src/main.rs"}'
+sok-dev editor.open '{"path":"/Users/me/work/src/main.rs"}'
 ```
 
 ## `explorer.list`
@@ -732,8 +743,8 @@ List direct children of a directory (same view as the file tree). Omit path to u
 **Errors**: TARGET_NOT_FOUND, INTERNAL
 
 ```bash
-sok-debug explorer.list
-sok-debug explorer.list '{"path":"/tmp"}'
+sok-dev explorer.list
+sok-dev explorer.list '{"path":"/tmp"}'
 ```
 
 ## `fs.unwatch`
@@ -748,7 +759,7 @@ Release one fs.watch subscription for a directory. The OS watch is removed only 
 **Errors**: INTERNAL
 
 ```bash
-sok-debug fs.unwatch '{"path":"/Users/me/work"}'
+sok-dev fs.unwatch '{"path":"/Users/me/work"}'
 ```
 
 ## `fs.watch`
@@ -763,7 +774,7 @@ Watch a directory for changes using OS-native file events (non-recursive, no pol
 **Errors**: INTERNAL
 
 ```bash
-sok-debug fs.watch '{"path":"/Users/me/work"}'
+sok-dev fs.watch '{"path":"/Users/me/work"}'
 ```
 
 ## `layout.apply`
@@ -780,8 +791,23 @@ Apply a layout by building fresh spaces — never destroys existing spaces. Hier
 **Errors**: INVALID_PARAMS, TARGET_NOT_FOUND
 
 ```bash
-sok-debug layout.apply dev
-sok-debug layout.apply '{"preset":"facets","spaces":[{"title":"docs","panels":[{"program":"browser"}]}]}'
+sok-dev layout.apply dev
+sok-dev layout.apply '{"preset":"facets","spaces":[{"title":"docs","panels":[{"program":"browser"}]}]}'
+```
+
+## `layout.arrangement`
+
+The solved arrangement of the active space: the rail station, whether the focused panel was switched to the front (row-mismatch rule), the displayed cell rects, and the move list a focus change would produce. Read-only — the arrangement is a function of the split tree and the focus, so panel.*/sidebar.left.position are the ways to change it. | 배치 해 레일 스테이션 이동량 스위칭 정렬 계산 확인
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `project` | string |  | Target project id (omit = caller's context project) |
+
+**Returns**: { projectId, spaceId, station, cleanLines[], switched, cells[].{id,rect,railSide}, movesFrom:{focusId, moves[].{id,dLeftPct,dRailUnits}} }
+**Errors**: TARGET_NOT_FOUND
+
+```bash
+sok-dev layout.arrangement
 ```
 
 ## `layout.suggest`
@@ -796,7 +822,7 @@ Suggest window placements from current monitor/window facts (pure strategy — n
 **Returns**: { placements: [{label,monitor,x,y,w,h}] }
 
 ```bash
-sok-debug layout.suggest '{"strategy":"spread","roles":{"main":"orchestrator"}}'
+sok-dev layout.suggest '{"strategy":"spread","roles":{"main":"orchestrator"}}'
 ```
 
 ## `media.proxy.info` (danger: inject)
@@ -807,7 +833,7 @@ Return the local media-stream proxy endpoint { base, port, token }. The proxy fe
 **Errors**: INTERNAL
 
 ```bash
-sok-debug media.proxy.info
+sok-dev media.proxy.info
 ```
 
 ## `media.proxy.playlist` (danger: inject)
@@ -824,7 +850,7 @@ Build a proxied URL for an HLS playlist (.m3u8). The proxy fetches the playlist 
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug media.proxy.playlist '{"url":"https://cdn.example/play.m3u8","referer":"https://page.example/"}'
+sok-dev media.proxy.playlist '{"url":"https://cdn.example/play.m3u8","referer":"https://page.example/"}'
 ```
 
 ## `media.proxy.stream` (danger: inject)
@@ -841,7 +867,7 @@ Build a proxied URL for a single binary media resource (a .ts/fMP4 segment, key,
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug media.proxy.stream '{"url":"https://cdn.example/seg0.ts","referer":"https://page.example/"}'
+sok-dev media.proxy.stream '{"url":"https://cdn.example/seg0.ts","referer":"https://page.example/"}'
 ```
 
 ## `net.http.request` (danger: inject)
@@ -864,8 +890,8 @@ Send an arbitrary-origin HTTP request (method/url/headers/query/body) → {statu
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug net.http.request '{"method":"GET","url":"https://api.example.com/v1/ping"}'
-sok-debug net.http.request '{"method":"GET","url":"https://blocked.example.com","impersonate":"chrome"}'
+sok-dev net.http.request '{"method":"GET","url":"https://api.example.com/v1/ping"}'
+sok-dev net.http.request '{"method":"GET","url":"https://blocked.example.com","impersonate":"chrome"}'
 ```
 
 ## `net.udp.request` (danger: inject)
@@ -884,7 +910,7 @@ UDP request-response on a single socket: send data (hex) to host:port, then coll
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug net.udp.request '{"host":"239.255.255.250","port":1900,"data":"...","timeoutMs":3000}'
+sok-dev net.udp.request '{"host":"239.255.255.250","port":1900,"data":"...","timeoutMs":3000}'
 ```
 
 ## `net.udp.send` (danger: inject)
@@ -902,7 +928,7 @@ Send a UDP datagram to any host:port, including broadcast addresses (e.g. Wake-o
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug net.udp.send '{"host":"255.255.255.255","port":9,"data":"ffffffffffff","broadcast":true}'
+sok-dev net.udp.send '{"host":"255.255.255.255","port":9,"data":"ffffffffffff","broadcast":true}'
 ```
 
 ## `notify.show`
@@ -918,7 +944,7 @@ Show an OS desktop notification (title + body). Behaves like a push notification
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug notify.show '{"title":"배포 완료","body":"prod 배포가 끝났습니다"}'
+sok-dev notify.show '{"title":"배포 완료","body":"prod 배포가 끝났습니다"}'
 ```
 
 ## `panel.close` (danger: destructive)
@@ -933,7 +959,7 @@ Close a panel and all its tabs. Refuses to close the last panel. | 패널 닫기
 **Errors**: TARGET_NOT_FOUND, LAST_ITEM
 
 ```bash
-sok-debug panel.close '{"panel":"g2"}'
+sok-dev panel.close '{"panel":"g2"}'
 ```
 
 ## `panel.equalize`
@@ -950,8 +976,8 @@ Equalize split ratios — with index, halves the two areas at that divider (same
 **Errors**: TARGET_NOT_FOUND, INVALID_PARAMS
 
 ```bash
-sok-debug panel.equalize '{"split":"s1"}'
-sok-debug panel.equalize '{"split":"s1","index":0}'
+sok-dev panel.equalize '{"split":"s1"}'
+sok-dev panel.equalize '{"split":"s1","index":0}'
 ```
 
 ## `panel.focus`
@@ -966,23 +992,23 @@ Focus (activate) a panel, making it the active group. | 패널 포커스 활성�
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug panel.focus '{"panel":"g2"}'
+sok-dev panel.focus '{"panel":"g2"}'
 ```
 
 ## `panel.list`
 
-List panels (split panes) in a space, including their rect (%) and the split tree.
+List displayed panels in a space, including rect (%), displayed layout, immutable canonical layout, and projection provenance.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `project` | string |  | Target project id (omit = caller's context project) |
 | `space` | string |  | Target space tab id |
 
-**Returns**: { activePanelId, layout, panels[] }
+**Returns**: { activePanelId, layout, canonicalLayout, projection, railRelation:{boundViewId,boundPanelId,connected}?, panels[] }
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug panel.list
+sok-dev panel.list
 ```
 
 ## `panel.merge`
@@ -999,7 +1025,7 @@ Merge panels — move all tabs from src into dst; empty src panel is removed aut
 **Errors**: TARGET_NOT_FOUND, LAST_ITEM
 
 ```bash
-sok-debug panel.merge '{"src":"g2","dst":"g1"}'
+sok-dev panel.merge '{"src":"g2","dst":"g1"}'
 ```
 
 ## `panel.move`
@@ -1017,7 +1043,7 @@ Reposition a panel — move the entire src panel to the zone position relative t
 **Errors**: TARGET_NOT_FOUND, LAST_ITEM
 
 ```bash
-sok-debug panel.move '{"src":"g2","dst":"g1","zone":"left"}'
+sok-dev panel.move '{"src":"g2","dst":"g1","zone":"left"}'
 ```
 
 ## `panel.resize`
@@ -1034,7 +1060,7 @@ Adjust split ratios — provide the splitId (layout.split.id from state.tree) an
 **Errors**: TARGET_NOT_FOUND, INVALID_PARAMS
 
 ```bash
-sok-debug panel.resize '{"split":"s1","sizes":[0.7,0.3]}'
+sok-dev panel.resize '{"split":"s1","sizes":[0.7,0.3]}'
 ```
 
 ## `panel.split`
@@ -1048,12 +1074,12 @@ Split a panel — add a new panel beside the target on a given side (optionally 
 | `project` | string |  | Target project id (omit = caller's context project) |
 | `side` | string | ✓ | Split direction (left|right|top|bottom) |
 
-**Returns**: { panelId(new panel), viewId, paneId? }
+**Returns**: { panelId(new panel), viewId, paneId?, arrangement:{station,switched,cleanLines[],cells[]} }
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug panel.split '{"side":"right"}'
-sok-debug panel.split '{"side":"bottom","program":"browser"}'
+sok-dev panel.split '{"side":"right"}'
+sok-dev panel.split '{"side":"bottom","program":"browser"}'
 ```
 
 ## `plugin.catalog`
@@ -1069,8 +1095,8 @@ List authenticated plugin release references from configured registries, merged 
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug plugin.catalog
-sok-debug plugin.catalog '{"refresh":true}'
+sok-dev plugin.catalog
+sok-dev plugin.catalog '{"refresh":true}'
 ```
 
 ## `plugin.conformance`
@@ -1084,7 +1110,7 @@ Report a plugin's declared-vs-actual conformance: manifest declarations vs what 
 **Returns**: { id, commands/views/fileViewers/iconSets: { declared, registered, missing }, nodes: { declared, wired, missing, orphan }, implements: { declared, violations }, c2: { violations: [{ rule, detail }], viewStatus: { mounted, reported, unreported, undeclared: [{ viewId, view, code }] } }, calls: { literals, dynamic, unresolved } }
 
 ```bash
-sok-debug plugin.conformance soksak-plugin-<id>
+sok-dev plugin.conformance soksak-plugin-<id>
 ```
 
 ## `plugin.consent.chain`
@@ -1099,7 +1125,7 @@ Return the ordered list of plugins still needing consent before the target plugi
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug plugin.consent.chain '{"id":"soksak-plugin-<id>"}'
+sok-dev plugin.consent.chain '{"id":"soksak-plugin-<id>"}'
 ```
 
 ## `plugin.consent.grant` (danger: destructive)
@@ -1114,7 +1140,7 @@ Grant consent for a plugin's requested permissions — the CLI/headless equivale
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug plugin.consent.grant '{"id":"soksak-plugin-<id>"}'
+sok-dev plugin.consent.grant '{"id":"soksak-plugin-<id>"}'
 ```
 
 ## `plugin.consent.preview`
@@ -1129,8 +1155,8 @@ Open the consent modal for inspection without activating the plugin. Use when a 
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug plugin.consent.preview '{"id":"soksak-plugin-<id>"}'
-sok-debug plugin.consent.preview '{"id":""}'  # 닫기
+sok-dev plugin.consent.preview '{"id":"soksak-plugin-<id>"}'
+sok-dev plugin.consent.preview '{"id":""}'  # 닫기
 ```
 
 ## `plugin.consent.revoke` (danger: destructive)
@@ -1145,7 +1171,7 @@ Revoke a recorded consent, putting the plugin back into a re-consent-required st
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug plugin.consent.revoke '{"id":"soksak-plugin-<id>"}'
+sok-dev plugin.consent.revoke '{"id":"soksak-plugin-<id>"}'
 ```
 
 ## `plugin.consent.summary`
@@ -1160,12 +1186,12 @@ Fetch the consent display data for a plugin — permissions, contribution counts
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug plugin.consent.summary '{"id":"soksak-plugin-<id>"}'
+sok-dev plugin.consent.summary '{"id":"soksak-plugin-<id>"}'
 ```
 
 ## `plugin.deps`
 
-Inspect the plugin dependency graph. With an id, returns that plugin's dependencies, dependents, reference count, and cascade impact. Without an id, returns all version integrity issues across installed plugins. | 플러그인 의존성 의존 그래프 종속
+Inspect the plugin dependency graph. With an id, returns that plugin's dependencies, dependents, reference count, and cascade impact. Without an id, returns all version integrity issues across installed plugins. | 플러그인 의존성 의존 그래프
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -1175,8 +1201,8 @@ Inspect the plugin dependency graph. With an id, returns that plugin's dependenc
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug plugin.deps
-sok-debug plugin.deps '{"id":"soksak-plugin-<id>"}'
+sok-dev plugin.deps
+sok-dev plugin.deps '{"id":"soksak-plugin-<id>"}'
 ```
 
 ## `plugin.dev.create` (danger: inject)
@@ -1191,12 +1217,12 @@ Scaffold a new plugin in the current identity home's workspaces/plugins/<id> dir
 **Errors**: INVALID_PARAMS
 
 ```bash
-sok-debug plugin.dev.create '{"id":"soksak-plugin-<id>"}'
+sok-dev plugin.dev.create '{"id":"soksak-plugin-<id>"}'
 ```
 
 ## `plugin.dev.load` (danger: inject)
 
-Select an existing absolute plugin workspace as this identity home's development source, validate its plugin.json, and load it without replacing a separate official installation. Available in every build, not only development builds. Dev-sourced plugins bypass the consent gate (spec §0-5 exception). | 플러그인 개발 로드 dev 임시 적재
+Select an existing absolute plugin workspace as this identity home's development source, validate its plugin.json, and load it without replacing a separate official installation. Development (dev) identity only — debug and release homes verify published installs (home-lane rule). Dev-sourced plugins bypass the consent gate (spec §0-5 exception). | 플러그인 개발 로드 dev 임시 적재
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -1206,7 +1232,7 @@ Select an existing absolute plugin workspace as this identity home's development
 **Errors**: TARGET_NOT_FOUND, INVALID_PARAMS
 
 ```bash
-sok-debug plugin.dev.load '{"path":"/path/to/my-plugin"}'
+sok-dev plugin.dev.load '{"path":"/path/to/my-plugin"}'
 ```
 
 ## `plugin.disable` (danger: destructive)
@@ -1221,7 +1247,7 @@ Deactivate a plugin and revoke all of its registered commands, views, and extens
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug plugin.disable '{"id":"soksak-plugin-<id>"}'
+sok-dev plugin.disable '{"id":"soksak-plugin-<id>"}'
 ```
 
 ## `plugin.enable` (danger: inject)
@@ -1236,8 +1262,8 @@ Activate a plugin so its code begins executing. Returns CONSENT_REQUIRED if the 
 **Errors**: TARGET_NOT_FOUND, CONSENT_REQUIRED, INTERNAL
 
 ```bash
-sok-debug plugin.enable <name>
-sok-debug plugin.enable '{"id":"soksak-plugin-<id>"}'
+sok-dev plugin.enable <name>
+sok-dev plugin.enable '{"id":"soksak-plugin-<id>"}'
 ```
 
 ## `plugin.implementers`
@@ -1253,8 +1279,8 @@ Find plugins whose exact {id, version} provider declaration implements a domain 
 **Errors**: INVALID_PARAMS
 
 ```bash
-sok-debug plugin.implementers
-sok-debug plugin.implementers '{"id":"soksak-spec-plugin-git","range":"0.0.1"}'
+sok-dev plugin.implementers
+sok-dev plugin.implementers '{"id":"soksak-spec-plugin-git","range":"0.0.1"}'
 ```
 
 ## `plugin.install` (danger: destructive)
@@ -1271,8 +1297,8 @@ Install one authenticated plugin release and its complete plugin/sidecar/kit dep
 **Errors**: INVALID_PARAMS, TARGET_NOT_FOUND, AMBIGUOUS_TARGET, INTERNAL
 
 ```bash
-sok-debug plugin.install activity
-sok-debug plugin.install '{"registryId":"community","unitId":"soksak-plugin-<id>"}'
+sok-dev plugin.install activity
+sok-dev plugin.install '{"registryId":"community","unitId":"soksak-plugin-<id>"}'
 ```
 
 ## `plugin.list`
@@ -1282,7 +1308,7 @@ List all installed and dev plugins with their runtime status, permissions, and r
 **Returns**: { plugins: [{id, name, version, status, permissions, …}], rejected: [{dir, errors}] }
 
 ```bash
-sok-debug plugin.list
+sok-dev plugin.list
 ```
 
 ## `plugin.new`
@@ -1296,7 +1322,7 @@ Scaffold a new releasable plugin under the plugins workspace: package.json (soks
 **Returns**: { ok, dir, id }
 
 ```bash
-sok-debug plugin.new '{"name":"widget"}'
+sok-dev plugin.new '{"name":"widget"}'
 ```
 
 ## `plugin.reload`
@@ -1311,8 +1337,8 @@ Rescan the plugins directory and reactivate every plugin whose consent is still 
 **Errors**: TARGET_NOT_FOUND, CONSENT_REQUIRED
 
 ```bash
-sok-debug plugin.reload
-sok-debug plugin.reload '{"id":"soksak-plugin-<id>"}'
+sok-dev plugin.reload
+sok-dev plugin.reload '{"id":"soksak-plugin-<id>"}'
 ```
 
 ## `plugin.remove` (danger: destructive)
@@ -1328,8 +1354,8 @@ Remove a plugin and its directory. Plugin-owned data (plugins-data) is preserved
 **Errors**: TARGET_NOT_FOUND, CASCADE_REQUIRED, INTERNAL
 
 ```bash
-sok-debug plugin.remove '{"id":"soksak-plugin-<id>"}'
-sok-debug plugin.remove '{"id":"soksak-plugin-<id>","cascade":true}'
+sok-dev plugin.remove '{"id":"soksak-plugin-<id>"}'
+sok-dev plugin.remove '{"id":"soksak-plugin-<id>","cascade":true}'
 ```
 
 ## `plugin.settings.get`
@@ -1347,8 +1373,8 @@ Read plugin setting values at a given scope. Scope 'effective' (default) merges 
 **Errors**: TARGET_NOT_FOUND, INVALID_PARAMS
 
 ```bash
-sok-debug plugin.settings.get '{"id":"soksak-plugin-<id>"}'
-sok-debug plugin.settings.get '{"id":"soksak-plugin-<id>","key":"defaultAgent","scope":"global"}'
+sok-dev plugin.settings.get '{"id":"soksak-plugin-<id>"}'
+sok-dev plugin.settings.get '{"id":"soksak-plugin-<id>","key":"defaultAgent","scope":"global"}'
 ```
 
 ## `plugin.settings.open`
@@ -1363,8 +1389,8 @@ Open the unified settings modal. With a plugin id, navigates directly to that pl
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug plugin.settings.open
-sok-debug plugin.settings.open '{"id":"soksak-plugin-<id>"}'
+sok-dev plugin.settings.open
+sok-dev plugin.settings.open '{"id":"soksak-plugin-<id>"}'
 ```
 
 ## `plugin.settings.reset`
@@ -1382,7 +1408,7 @@ Remove a setting override and restore the default value. Scope defaults to globa
 **Errors**: TARGET_NOT_FOUND, INVALID_PARAMS
 
 ```bash
-sok-debug plugin.settings.reset '{"id":"soksak-plugin-<id>","key":"defaultAgent"}'
+sok-dev plugin.settings.reset '{"id":"soksak-plugin-<id>","key":"defaultAgent"}'
 ```
 
 ## `plugin.settings.schema`
@@ -1397,7 +1423,7 @@ Return the plugin's settings schema from its manifest configuration block. This 
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug plugin.settings.schema '{"id":"soksak-plugin-<id>"}'
+sok-dev plugin.settings.schema '{"id":"soksak-plugin-<id>"}'
 ```
 
 ## `plugin.settings.set`
@@ -1416,8 +1442,8 @@ Write a plugin setting value after schema validation. Scope defaults to global; 
 **Errors**: TARGET_NOT_FOUND, INVALID_PARAMS
 
 ```bash
-sok-debug plugin.settings.set '{"id":"soksak-plugin-<id>","key":"defaultAgent","value":"codex"}'
-sok-debug plugin.settings.set '{"id":"soksak-plugin-<id>","key":"defaultAgent","value":"gemini","scope":"project"}'
+sok-dev plugin.settings.set '{"id":"soksak-plugin-<id>","key":"defaultAgent","value":"codex"}'
+sok-dev plugin.settings.set '{"id":"soksak-plugin-<id>","key":"defaultAgent","value":"gemini","scope":"project"}'
 ```
 
 ## `plugin.update` (danger: destructive)
@@ -1433,7 +1459,7 @@ Replace an installed plugin and its complete dependency closure with the greates
 **Errors**: TARGET_NOT_FOUND, INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug plugin.update '{"id":"soksak-plugin-<id>"}'
+sok-dev plugin.update '{"id":"soksak-plugin-<id>"}'
 ```
 
 ## `plugin.view.close`
@@ -1449,7 +1475,7 @@ Close a plugin view. Sidebar placements are deselected and revert to the file tr
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug plugin.view.close '{"view":"soksak-plugin-<id>.<view>"}'
+sok-dev plugin.view.close '{"view":"soksak-plugin-<id>.<view>"}'
 ```
 
 ## `plugin.view.open`
@@ -1458,7 +1484,7 @@ Open a plugin view in the specified placement. Defaults to the view's declared d
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `placement` | string |  | Where to place the view. Defaults to the view's defaultPlacement. (sidebar-right|sidebar-left|sidebar-footer|content) |
+| `placement` | string |  | Where to place the view. Defaults to the view's defaultPlacement. (content|rail|rail-footer) |
 | `project` | string |  | Project id. Defaults to the active project. |
 | `view` | string | ✓ | Global view key in the form "<pluginId>.<viewId>" |
 
@@ -1466,8 +1492,24 @@ Open a plugin view in the specified placement. Defaults to the view's declared d
 **Errors**: TARGET_NOT_FOUND, INVALID_PARAMS
 
 ```bash
-sok-debug plugin.view.open '{"view":"soksak-plugin-<id>.<view>"}'
-sok-debug plugin.view.open '{"view":"soksak-plugin-<id>.<view>","placement":"content"}'
+sok-dev plugin.view.open '{"view":"soksak-plugin-<id>.<view>"}'
+sok-dev plugin.view.open '{"view":"soksak-plugin-<id>.<view>","placement":"content"}'
+```
+
+## `process.list`
+
+List the child processes the app spawned for plugins: handle id, OS pid, the window that spawned it, the command, and whether it is still alive. The handle id is a small counter and is not an OS pid — ask liveness with pid. An entry that is no longer alive but still listed is an orphan its owner failed to reclaim. Read-only. | 프로세스 목록 자식 고아 좀비 사이드카 스폰 생존
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `alive` | boolean |  | Only entries that are still running |
+| `window` | string |  | Only entries spawned by this window label |
+
+**Returns**: { processes: [{id, pid, window, cmd, group, detached, alive}], count }
+
+```bash
+sok-dev process.list
+sok-dev process.list '{"alive":true}'
 ```
 
 ## `program.list`
@@ -1477,7 +1519,7 @@ List all programs available in the new-tab menu. Every entry is plugin-registere
 **Returns**: { programs: [{ id, title, path?, kind, pluginId }] }
 
 ```bash
-sok-debug program.list
+sok-dev program.list
 ```
 
 ## `project.activate`
@@ -1492,7 +1534,7 @@ Switch to a different project, making it active. | 프로젝트 전환 바꾸기
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug project.activate '{"project":"t2"}'
+sok-dev project.activate '{"project":"t2"}'
 ```
 
 ## `project.close` (danger: destructive)
@@ -1507,7 +1549,7 @@ Close a project. Refuses to close the last remaining project. | 프로젝트 닫
 **Errors**: TARGET_NOT_FOUND, LAST_ITEM
 
 ```bash
-sok-debug project.close '{"project":"t2"}'
+sok-dev project.close '{"project":"t2"}'
 ```
 
 ## `project.color`
@@ -1523,7 +1565,7 @@ Set the accent color for a project (rail chip and tab highlight). Omit color to 
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug project.color '{"project":"t1","color":"#4a8fe8"}'
+sok-dev project.color '{"project":"t1","color":"#4a8fe8"}'
 ```
 
 ## `project.list`
@@ -1533,7 +1575,7 @@ List all projects with id, title, root path, and active state. | 프로젝트 �
 **Returns**: { projects: [{id,title,root,active}] }
 
 ```bash
-sok-debug project.list
+sok-dev project.list
 ```
 
 ## `project.open`
@@ -1552,8 +1594,8 @@ Open a project (creates it if it doesn't exist yet). When root is omitted, folde
 **Errors**: INVALID_PARAMS
 
 ```bash
-sok-debug project.open '{"root":"/Users/me/work","program":"claude"}'
-sok-debug project.open '{"folder":"my-project"}'
+sok-dev project.open '{"root":"/Users/me/work","program":"claude"}'
+sok-dev project.open '{"folder":"my-project"}'
 ```
 
 ## `project.recent`
@@ -1563,7 +1605,7 @@ List recent projects (the cross-window recents feeding the control-plane project
 **Returns**: { recents: [{root, alias, lastOpenedAt}] }
 
 ```bash
-sok-debug project.recent
+sok-dev project.recent
 ```
 
 ## `project.recent.remove`
@@ -1577,7 +1619,7 @@ Remove a project from the recents list (project map/rail). Does not touch the pr
 **Returns**: { ok }
 
 ```bash
-sok-debug project.recent.remove '{"root":"/Users/me/old"}'
+sok-dev project.recent.remove '{"root":"/Users/me/old"}'
 ```
 
 ## `project.rename`
@@ -1593,7 +1635,7 @@ Rename a project tab. | 프로젝트 이름 바꾸기 변경 제목
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug project.rename '{"project":"t1","title":"백엔드"}'
+sok-dev project.rename '{"project":"t1","title":"백엔드"}'
 ```
 
 ## `project.rightbar.toggle`
@@ -1609,8 +1651,8 @@ Toggle the right plugin sidebar (⌥⌘B). Provide open to set state explicitly 
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug project.rightbar.toggle
-sok-debug project.rightbar.toggle '{"open":true}'
+sok-dev project.rightbar.toggle
+sok-dev project.rightbar.toggle '{"open":true}'
 ```
 
 ## `project.sidebar.toggle`
@@ -1625,7 +1667,7 @@ Toggle the file-tree sidebar for a project. | 사이드바 파일트리 열기 �
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug project.sidebar.toggle
+sok-dev project.sidebar.toggle
 ```
 
 ## `project.update`
@@ -1643,7 +1685,7 @@ Batch-update project settings. Omitted fields are preserved; "" removes the over
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug project.update '{"project":"t1","title":"백엔드","program":"claude"}'
+sok-dev project.update '{"project":"t1","title":"백엔드","program":"claude"}'
 ```
 
 ## `pty.daemon.restart` (danger: destructive)
@@ -1654,7 +1696,7 @@ Restart the PTY session daemon. Destructive: every daemon-owned shell and its ch
 **Errors**: INTERNAL
 
 ```bash
-sok-debug pty.daemon.restart
+sok-dev pty.daemon.restart
 ```
 
 ## `pty.daemon.status`
@@ -1665,7 +1707,7 @@ Report the PTY session daemon (soksak-ptyd): whether it is running, its pid and 
 **Errors**: INTERNAL
 
 ```bash
-sok-debug pty.daemon.status
+sok-dev pty.daemon.status
 ```
 
 ## `pty.daemon.upgrade`
@@ -1676,7 +1718,7 @@ Hot-upgrade the PTY session daemon in place — no restart, no lost sessions. Th
 **Errors**: INTERNAL
 
 ```bash
-sok-debug pty.daemon.upgrade
+sok-dev pty.daemon.upgrade
 ```
 
 ## `pty.session.alive`
@@ -1691,7 +1733,7 @@ Report whether the PTY daemon still holds a live shell for this pane id — true
 **Errors**: INVALID_PARAMS
 
 ```bash
-sok-debug pty.session.alive '{"pane":"agent-k3f9a2-1"}'
+sok-dev pty.session.alive '{"pane":"agent-k3f9a2-1"}'
 ```
 
 ## `pty.session.kill` (danger: destructive)
@@ -1706,7 +1748,7 @@ Close a headless PTY session and its daemon shell. | 헤드리스 세션 종료
 **Errors**: INVALID_PARAMS, TARGET_NOT_FOUND
 
 ```bash
-sok-debug pty.session.kill '{"pane":"agent-k3f9a2-1"}'
+sok-dev pty.session.kill '{"pane":"agent-k3f9a2-1"}'
 ```
 
 ## `pty.session.list`
@@ -1716,7 +1758,7 @@ List headless PTY sessions attached in this window. | 헤드리스 세션 목록
 **Returns**: { sessions: [{pane, bytesSeen, spawnedAt}] }
 
 ```bash
-sok-debug pty.session.list
+sok-dev pty.session.list
 ```
 
 ## `pty.session.read`
@@ -1732,7 +1774,7 @@ Read the raw output tail of a headless PTY session (bounded ring, ANSI included 
 **Errors**: INVALID_PARAMS, TARGET_NOT_FOUND
 
 ```bash
-sok-debug pty.session.read '{"pane":"agent-k3f9a2-1","lines":200}'
+sok-dev pty.session.read '{"pane":"agent-k3f9a2-1","lines":200}'
 ```
 
 ## `pty.session.spawn` (danger: inject)
@@ -1752,7 +1794,7 @@ Spawn (or warm-reattach) a headless daemon-backed PTY session under a caller-cho
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug pty.session.spawn '{"pane":"agent-k3f9a2-1","cwd":"/tmp"}'
+sok-dev pty.session.spawn '{"pane":"agent-k3f9a2-1","cwd":"/tmp"}'
 ```
 
 ## `pty.session.write` (danger: inject)
@@ -1768,7 +1810,7 @@ Write raw bytes (text) to a headless PTY session created by pty.session.spawn. |
 **Errors**: INVALID_PARAMS, TARGET_NOT_FOUND
 
 ```bash
-sok-debug pty.session.write '{"pane":"agent-k3f9a2-1","data":"ls\r"}'
+sok-dev pty.session.write '{"pane":"agent-k3f9a2-1","data":"ls\r"}'
 ```
 
 ## `registry.add`
@@ -1783,7 +1825,7 @@ Add a public or private registry descriptor. The descriptor is strict: a credent
 **Errors**: INVALID_PARAMS, ALREADY_EXISTS
 
 ```bash
-sok-debug registry.add '{"descriptor":{"id":"community","name":"Community","indexUrl":"https://registry.example/index.json","visibility":"public","trustedPublicKey":{"algorithm":"ed25519","keyId":"publisher-1","value":"<base64-32-byte-public-key>"}}}'
+sok-dev registry.add '{"descriptor":{"id":"community","name":"Community","indexUrl":"https://registry.example/index.json","visibility":"public","trustedPublicKey":{"algorithm":"ed25519","keyId":"publisher-1","value":"<base64-32-byte-public-key>"}}}'
 ```
 
 ## `registry.list`
@@ -1793,7 +1835,7 @@ List configured official, public, and private registry descriptors with pinned p
 **Returns**: { registries: [{id,name,indexUrl,visibility,trustedPublicKey,credentialRef?,status,unitCount,lastFetchedAt,error}] }
 
 ```bash
-sok-debug registry.list
+sok-dev registry.list
 ```
 
 ## `registry.refresh`
@@ -1809,8 +1851,8 @@ Fetch and verify one registry or all registries. Only an index signed by the des
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug registry.refresh
-sok-debug registry.refresh '{"registryId":"community"}'
+sok-dev registry.refresh
+sok-dev registry.refresh '{"registryId":"community"}'
 ```
 
 ## `registry.remove` (danger: destructive)
@@ -1825,7 +1867,7 @@ Remove a user-added registry descriptor and its cached units. The built-in offic
 **Errors**: INVALID_PARAMS, TARGET_NOT_FOUND
 
 ```bash
-sok-debug registry.remove '{"registryId":"community"}'
+sok-dev registry.remove '{"registryId":"community"}'
 ```
 
 ## `registry.status`
@@ -1840,8 +1882,8 @@ Read per-registry fetch, certification, error, last-fetch, and recent lifecycle-
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug registry.status
-sok-debug registry.status '{"registryId":"official"}'
+sok-dev registry.status
+sok-dev registry.status '{"registryId":"official"}'
 ```
 
 ## `release.build`
@@ -1860,7 +1902,7 @@ Build the owner release manifest (release.json) + 3 conformance reports for a un
 **Returns**: { ok, releaseJson, manifestSha256, matrix }
 
 ```bash
-sok-debug release.build '{"unitRoot":"…","specRoot":".pipeline","commit":"<40hex>","tag":"v0.0.1","artifacts":"dist","out":"dist-release"}'
+sok-dev release.build '{"unitRoot":"…","specRoot":".pipeline","commit":"<40hex>","tag":"v0.0.1","artifacts":"dist","out":"dist-release"}'
 ```
 
 ## `release.publish` (danger: destructive)
@@ -1880,7 +1922,7 @@ Cut the immutable GitHub release for a unit: require owner-enforced immutable re
 **Returns**: { ok, url }
 
 ```bash
-sok-debug release.publish '{"repo":"soksak-ai/soksak-sidecar-db-studio","tag":"v0.0.1","commit":"<sha>","artifactsDir":"dist","releaseDir":"dist-release","confirm":true}'
+sok-dev release.publish '{"repo":"soksak-ai/soksak-sidecar-db-studio","tag":"v0.0.1","commit":"<sha>","artifactsDir":"dist","releaseDir":"dist-release","confirm":true}'
 ```
 
 ## `release.validate`
@@ -1896,7 +1938,7 @@ Validate a built release directory (release.json + 3 conformance reports) agains
 **Returns**: { ok, stdout }
 
 ```bash
-sok-debug release.validate '{"unitRoot":"…","specRoot":".pipeline","releaseDir":"dist-release"}'
+sok-dev release.validate '{"unitRoot":"…","specRoot":".pipeline","releaseDir":"dist-release"}'
 ```
 
 ## `remote.confirm` (danger: destructive)
@@ -1915,7 +1957,7 @@ Show the desktop human confirm modal for a destructive remote action and await t
 **Returns**: { approve }
 
 ```bash
-sok-debug remote.confirm '{"request_id":42,"device_id":"iphone-15","command":"panel.close","danger":true,"ttl_secs":30}'
+sok-dev remote.confirm '{"request_id":42,"device_id":"iphone-15","command":"panel.close","danger":true,"ttl_secs":30}'
 ```
 
 ## `schedule.cancel`
@@ -1930,7 +1972,7 @@ Cancel a pending schedule by id. Returns removed=true if the schedule existed. |
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug schedule.cancel '{"id":"sch-3"}'
+sok-dev schedule.cancel '{"id":"sch-3"}'
 ```
 
 ## `schedule.list`
@@ -1941,7 +1983,7 @@ List all jobs sorted by next fire time ascending. Each: { id, trigger, command, 
 **Errors**: INTERNAL
 
 ```bash
-sok-debug schedule.list
+sok-dev schedule.list
 ```
 
 ## `schedule.poke` (danger: inject)
@@ -1956,8 +1998,8 @@ Fire a job immediately (completion trigger / external change). id given = that j
 **Errors**: INTERNAL
 
 ```bash
-sok-debug schedule.poke
-sok-debug schedule.poke '{"id":"sch-3"}'
+sok-dev schedule.poke
+sok-dev schedule.poke '{"id":"sch-3"}'
 ```
 
 ## `schedule.register` (danger: inject)
@@ -1980,8 +2022,8 @@ Register a scheduler job (trigger + registry command to fire). trigger = { kind:
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug schedule.register '{"trigger":{"kind":"every","every_ms":60000},"command":"notify.show","params":{"title":"틱","body":"1분"}}'
-sok-debug schedule.register '{"trigger":{"kind":"reconcile"},"command":"plugin.soksak-plugin-<id>.<command>","process_lease":true,"retry":{"max":5,"base_ms":2000,"max_ms":60000}}'
+sok-dev schedule.register '{"trigger":{"kind":"every","every_ms":60000},"command":"notify.show","params":{"title":"틱","body":"1분"}}'
+sok-dev schedule.register '{"trigger":{"kind":"reconcile"},"command":"plugin.soksak-plugin-<id>.<command>","process_lease":true,"retry":{"max":5,"base_ms":2000,"max_ms":60000}}'
 ```
 
 ## `schedule.set` (danger: inject)
@@ -1999,7 +2041,7 @@ Schedule a registry command to fire once at an absolute epoch-ms timestamp. Gene
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug schedule.set '{"at":1750000000000,"command":"notify.show","params":{"title":"알림","body":"시간!"}}'
+sok-dev schedule.set '{"at":1750000000000,"command":"notify.show","params":{"title":"알림","body":"시간!"}}'
 ```
 
 ## `secret.backend`
@@ -2010,7 +2052,7 @@ Query the KEK backend label and whether sealing is available (compat shim over s
 **Errors**: INTERNAL
 
 ```bash
-sok-debug secret.backend
+sok-dev secret.backend
 ```
 
 ## `secret.has`
@@ -2026,7 +2068,7 @@ Check whether ns/key exists in the vault without exposing the value (plaintext r
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug secret.has '{"ns":"soksak-plugin-<id>","key":"anthropicKey"}'
+sok-dev secret.has '{"ns":"soksak-plugin-<id>","key":"anthropicKey"}'
 ```
 
 ## `secret.keys`
@@ -2041,7 +2083,7 @@ List the secret key names stored under a namespace (values are never returned). 
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug secret.keys '{"ns":"soksak-plugin-<id>"}'
+sok-dev secret.keys '{"ns":"soksak-plugin-<id>"}'
 ```
 
 ## `secret.remove` (danger: destructive)
@@ -2057,7 +2099,7 @@ Remove ns/key from the vault (removed=true if the key existed). Rejected when th
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug secret.remove '{"ns":"soksak-plugin-<id>","key":"anthropicKey"}'
+sok-dev secret.remove '{"ns":"soksak-plugin-<id>","key":"anthropicKey"}'
 ```
 
 ## `secret.set` (danger: inject)
@@ -2074,7 +2116,7 @@ Store a sensitive value under ns/key using envelope encryption (per-item DEK wra
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug secret.set '{"ns":"soksak-plugin-<id>","key":"anthropicKey","value":"sk-ant-..."}'
+sok-dev secret.set '{"ns":"soksak-plugin-<id>","key":"anthropicKey","value":"sk-ant-..."}'
 ```
 
 ## `secret.status`
@@ -2085,7 +2127,7 @@ Query the transparent-unlock status: KEK backend label, seal_available (whether 
 **Errors**: INTERNAL
 
 ```bash
-sok-debug secret.status
+sok-dev secret.status
 ```
 
 ## `service.status`
@@ -2100,35 +2142,35 @@ Report resident plugin services and their live status. Without `plugin`: { servi
 **Errors**: INTERNAL
 
 ```bash
-sok-debug service.status
-sok-debug service.status '{"plugin":"<plugin-id>"}'
+sok-dev service.status
+sok-dev service.status '{"plugin":"<plugin-id>"}'
 ```
 
 ## `settings.get`
 
 Retrieve all application settings. | 설정 확인 앱 조회 환경설정
 
-**Returns**: { language, projectTabPosition, iconSet, iconBox, focusIndicator, appFontFamily, appFontSize, orchestratorAgent, orchestratorModel, bg }
+**Returns**: { language, projectTabPosition, iconSet, iconBox, focusIndicator, railRelation, railFill, focusDim, railSeamStyle, appFontFamily, windowZoom, orchestratorAgent, orchestratorModel, bg }
 
 ```bash
-sok-debug settings.get
+sok-dev settings.get
 ```
 
 ## `settings.set`
 
-Change an application setting. key: language|projectTabPosition|iconSet|iconBox|focusIndicator|appFontFamily|appFontSize|orchestratorAgent|orchestratorModel | 설정 변경 바꾸기 환경설정 폰트 크기 언어
+Change an application setting. key: language|projectTabPosition|iconSet|iconBox|focusIndicator|railRelation|railFill|focusDim|railSeamStyle|appFontFamily|windowZoom|orchestratorAgent|orchestratorModel | 설정 변경 바꾸기 환경설정 폰트 크기 언어
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `key` | string | ✓ | Setting key (language|projectTabPosition|iconSet|iconBox|focusIndicator|appFontFamily|appFontSize|orchestratorAgent|orchestratorModel) |
-| `value` | json | ✓ | Value — language:ko|en, projectTabPosition:top|left, iconSet:string (registered set id — unregistered falls back to lucide), iconBox:boolean, focusIndicator:outline|corners, appFontFamily:string (CSS font-family stack), appFontSize:number (6-40), orchestratorAgent:string (agent CLI command or path the natural-language console spawns), orchestratorModel:string (--model alias for the agent; empty = CLI default) |
+| `key` | string | ✓ | Setting key (language|projectTabPosition|iconSet|iconBox|focusIndicator|railRelation|railFill|focusDim|railSeamStyle|appFontFamily|windowZoom|orchestratorAgent|orchestratorModel) |
+| `value` | json | ✓ | Value — language:ko|en, projectTabPosition:top|left, iconSet:string (registered set id — unregistered falls back to lucide), iconBox:boolean, focusIndicator:outline|corners, railRelation:tint|moment|stroke (rail-panel relation surface — tint fill only, moment flash on rebind, stroke outline+label), railFill:none|faint (bound-panel background in stroke mode — none is the default, faint is a 1% accent tint), focusDim:boolean (spotlight — every panel dims except the active one), railSeamStyle:seam|edge (how a manufactured adjacency is marked: seam dashes the inner shared edge, edge dashes the outer right edge), appFontFamily:string (CSS font-family stack), windowZoom:number (0.5-2.0 — whole-window zoom factor applied to the main webview and every child webview), orchestratorAgent:string (agent CLI command or path the natural-language console spawns), orchestratorModel:string (--model alias for the agent; empty = CLI default) |
 
 **Returns**: { key, value }
 **Errors**: INVALID_PARAMS
 
 ```bash
-sok-debug settings.set '{"key":"projectTabPosition","value":"left"}'
-sok-debug settings.set '{"key":"iconBox","value":true}'
+sok-dev settings.set '{"key":"projectTabPosition","value":"left"}'
+sok-dev settings.set '{"key":"iconBox","value":true}'
 ```
 
 ## `sidebar.left.move`
@@ -2146,7 +2188,27 @@ Drag-merge a left sidebar view — into=merge as a tab, left/right=horizontal sp
 **Errors**: TARGET_NOT_FOUND, INVALID_PARAMS
 
 ```bash
-sok-debug sidebar.left.move '{"view":"soksak-plugin-<id>.<view>","target":"soksak-plugin-<other-id>.<view>","zone":"right"}'
+sok-dev sidebar.left.move '{"view":"soksak-plugin-<id>.<view>","target":"soksak-plugin-<other-id>.<view>","zone":"right"}'
+```
+
+## `sidebar.left.position`
+
+Read or set the project left rail position mode. Omit mode to query. flow (default) stands the rail at the focused panel's clean left line and travels with focus; pin without station freezes the current effective line; pin with station snaps to the nearest clean full-height grid line. The solved arrangement is what state.tree reports. | 좌측 사이드바 레일 위치 플로우 포커스 추종 핀 고정 그립 스냅
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `mode` | string |  | flow | pin; omit to query current position (flow|pin) |
+| `project` | string |  | Target project id (omit = caller's context project) |
+| `station` | number |  | Requested logical station in 0..100 for pin; omitted pin freezes the current effective station |
+
+**Returns**: { projectId, leftRailPosition:{ mode, station?(persisted), effectiveStation, cleanLines[] } }
+**Errors**: TARGET_NOT_FOUND, INVALID_PARAMS
+
+```bash
+sok-dev sidebar.left.position
+sok-dev sidebar.left.position '{"mode":"pin"}'
+sok-dev sidebar.left.position '{"mode":"pin","station":50}'
+sok-dev sidebar.left.position '{"mode":"flow"}'
 ```
 
 ## `sidebar.left.resize`
@@ -2163,7 +2225,7 @@ Resize a left sidebar split by ratio — sizes parallel to the split's children 
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug sidebar.left.resize '{"split":"s7","sizes":[0.6,0.4]}'
+sok-dev sidebar.left.resize '{"split":"s7","sizes":[0.6,0.4]}'
 ```
 
 ## `sidebar.left.tree`
@@ -2178,7 +2240,7 @@ Return the left sidebar layout tree (SplitTree of tab groups) — split ids, siz
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug sidebar.left.tree
+sok-dev sidebar.left.tree
 ```
 
 ## `sidebar.right.mode`
@@ -2193,8 +2255,8 @@ Right sidebar layout mode — overlay (floats over content) or push (occupies ar
 **Errors**: INVALID_PARAMS
 
 ```bash
-sok-debug sidebar.right.mode
-sok-debug sidebar.right.mode '{"mode":"push"}'
+sok-dev sidebar.right.mode
+sok-dev sidebar.right.mode '{"mode":"push"}'
 ```
 
 ## `sidecar.new`
@@ -2209,7 +2271,7 @@ Scaffold a new releasable service sidecar under the sidecars workspace: Cargo.to
 **Returns**: { ok, dir, id }
 
 ```bash
-sok-debug sidecar.new '{"name":"widget"}'
+sok-dev sidecar.new '{"name":"widget"}'
 ```
 
 ## `space.activate`
@@ -2225,7 +2287,7 @@ Switch to a specific space tab, making it active. | 탭 이동 전환 바꾸기
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug space.activate '{"space":"c2"}'
+sok-dev space.activate '{"space":"c2"}'
 ```
 
 ## `space.close` (danger: destructive)
@@ -2241,7 +2303,7 @@ Close a space tab. Refuses to close the last remaining space. | 탭 닫기 스�
 **Errors**: TARGET_NOT_FOUND, LAST_ITEM
 
 ```bash
-sok-debug space.close '{"space":"c2"}'
+sok-dev space.close '{"space":"c2"}'
 ```
 
 ## `space.create`
@@ -2257,7 +2319,7 @@ Create a new space tab. Program priority: explicit > project setting > global se
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug space.create '{"program":"browser"}'
+sok-dev space.create '{"program":"browser"}'
 ```
 
 ## `space.list`
@@ -2272,7 +2334,7 @@ List space tabs in a project.
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug space.list
+sok-dev space.list
 ```
 
 ## `space.rename`
@@ -2289,7 +2351,7 @@ Rename a space tab.
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug space.rename '{"space":"c1","title":"빌드"}'
+sok-dev space.rename '{"space":"c1","title":"빌드"}'
 ```
 
 ## `space.switchScan`
@@ -2311,8 +2373,8 @@ Measure a space-tab switch as the user sees it: record the switch and report whe
 **Returns**: { frames, frameMs, switchFrame, switchFrames (consecutive changed = jank spread), clean, diffsPct }
 
 ```bash
-sok-debug space.switchScan '{"from":"c1","to":"c3"}'
-sok-debug space.switchScan '{"to":"c3","frames":40}'
+sok-dev space.switchScan '{"from":"c1","to":"c3"}'
+sok-dev space.switchScan '{"to":"c3","frames":40}'
 ```
 
 ## `state.commands`
@@ -2322,7 +2384,7 @@ Full command catalog with parameter schemas, returns, errors, and examples — t
 **Returns**: { commands: [{name,description,params,returns,errors,examples}] }
 
 ```bash
-sok-debug commands
+sok-dev commands
 ```
 
 ## `state.context`
@@ -2337,17 +2399,17 @@ Resolve the caller's position: project/space/panel/view that $SOKSAK_PANE belong
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug state.context
+sok-dev state.context
 ```
 
 ## `state.tree`
 
-Full layout snapshot (address book): all ids and active state across project → space → panel (rect %) → view → pane. Use to discover ids before targeting other commands.
+Full layout snapshot (address book): all ids and active state across project → space → panel (display rect %) → view → pane. Each space exposes displayed and canonical stored layouts plus projection provenance; each project exposes its effective left-rail position and clean grid lines.
 
-**Returns**: { activeProjectId, projects[] } — panels[].rect is % of the content area
+**Returns**: { activeProjectId, projects[].{ leftRailPosition, spaces[].{ layout, canonicalLayout, projection, railRelation:{boundViewId,boundPanelId,connected}?, panels[] } } } — layout/panels are displayed state; canonicalLayout is the stored SplitTree
 
 ```bash
-sok-debug state.tree
+sok-dev state.tree
 ```
 
 ## `status.query`
@@ -2361,8 +2423,8 @@ Query the status each view reports (R8 회신) — what setStatus / file dirty /
 **Returns**: { statuses: Array<{ viewId, code, message? }> }
 
 ```bash
-sok-debug status.query
-sok-debug status.query '{"view":"v3"}'
+sok-dev status.query
+sok-dev status.query '{"view":"v3"}'
 ```
 
 ## `system.hello`
@@ -2372,7 +2434,7 @@ Greet the app and read the socket protocol version, the oldest client protocol s
 **Returns**: { protocol, minClientProtocol, appVersion, identity, pid, startedAt, capabilities[] } — the socket protocol version, the oldest client protocol still served, and app identity.
 
 ```bash
-sok-debug hello
+sok-dev hello
 ```
 
 ## `term.cwd`
@@ -2387,7 +2449,7 @@ Get the current working directory of a terminal pane (requires shell integration
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug term.cwd
+sok-dev term.cwd
 ```
 
 ## `term.exec` (danger: inject)
@@ -2403,7 +2465,7 @@ Execute a shell command in a terminal (sends the text plus Enter). Returns immed
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug term.exec '{"cmd":"git status"}'
+sok-dev term.exec '{"cmd":"git status"}'
 ```
 
 ## `term.read`
@@ -2419,8 +2481,8 @@ Read terminal screen and scrollback text (TUI shows current screen only). Use to
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug term.read
-sok-debug term.read '{"lines":50}'
+sok-dev term.read
+sok-dev term.read '{"lines":50}'
 ```
 
 ## `term.send` (danger: inject)
@@ -2436,8 +2498,8 @@ Inject raw key input into a terminal (for TUI control). Pass control characters 
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug term.send '{"text":"ls\r"}'
-sok-debug term.send '{"text":"\u0003"}'
+sok-dev term.send '{"text":"ls\r"}'
+sok-dev term.send '{"text":"\u0003"}'
 ```
 
 ## `theme.apply`
@@ -2453,8 +2515,8 @@ Apply a theme (replaces all token slots). Omit mode to keep the current mode. | 
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug theme.apply '{"name":"Paper"}'
-sok-debug theme.apply '{"name":"Midnight","mode":"light"}'
+sok-dev theme.apply '{"name":"Paper"}'
+sok-dev theme.apply '{"name":"Midnight","mode":"light"}'
 ```
 
 ## `theme.install`
@@ -2469,17 +2531,17 @@ Install a theme JSON file into ~/.soksak/themes (immediately usable if validatio
 **Errors**: INTERNAL
 
 ```bash
-sok-debug theme.install '{"path":"/tmp/dracula.json"}'
+sok-dev theme.install '{"path":"/tmp/dracula.json"}'
 ```
 
 ## `theme.list`
 
 List available themes (built-in + external ~/.soksak/themes), including files that failed validation and their reasons. | 테마 목록 보기 사용 가능
 
-**Returns**: { current, mode, themes:[{name,defaultMode,modes,source,warnings}], rejected }
+**Returns**: { current, mode, themes:[{name,defaultMode,modes,source,warnings,relation}], rejected }
 
 ```bash
-sok-debug theme.list
+sok-dev theme.list
 ```
 
 ## `theme.reload`
@@ -2489,7 +2551,7 @@ Re-scan the external theme directory (~/.soksak/themes) and re-apply the current
 **Returns**: { count, rejected }
 
 ```bash
-sok-debug theme.reload
+sok-dev theme.reload
 ```
 
 ## `turn.idleDetection`
@@ -2505,7 +2567,7 @@ Toggle the idle-output heuristic turn.ended provider (off by default). When enab
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-debug turn.idleDetection '{"enabled":true,"ms":1500}'
+sok-dev turn.idleDetection '{"enabled":true,"ms":1500}'
 ```
 
 ## `turn.signal`
@@ -2524,7 +2586,7 @@ Emit a turn.ended event (open signal). Use when any provider — ACP, external t
 **Errors**: INTERNAL
 
 ```bash
-sok-debug turn.signal '{"source":"acp","root":"/Users/me/proj","command":"claude 응답 완료"}'
+sok-dev turn.signal '{"source":"acp","root":"/Users/me/proj","command":"claude 응답 완료"}'
 ```
 
 ## `ui.expect`
@@ -2538,17 +2600,41 @@ Look up which border rules apply to a given DOM selector according to the contra
 **Returns**: { matchedElements, rules: [{id, active, kind, edges?, seam?, note}] }
 
 ```bash
-sok-debug ui.expect '{"selector":".egroup-status"}'
+sok-dev ui.expect '{"selector":".egroup-status"}'
 ```
 
 ## `ui.focus.state`
 
-Return the keyboard-focus owner through the public view-host boundary: the requested view, whether its provider is mounted/delivered, and the view containing the active element. Pierces Shadow DOM — plugin views mount inside a shadow root, so this descends shadowRoot.activeElement to the real focused element (and finds its view across the shadow boundary) instead of stopping at the shadow host. Use after real-device input to verify focus settled in the intended view without querying plugin-private DOM. | 키보드 포커스 소유자 활성 뷰 상태
+Return the keyboard-focus owner through the public view-host boundary: the requested view, whether its provider is mounted/delivered, and the view containing the active element. Pierces Shadow DOM — plugin views mount inside a shadow root, so this descends shadowRoot.activeElement to the real focused element (and finds its view across the shadow boundary) instead of stopping at the shadow host. settled only proves the DOM active element — widgets paint their focused state (e.g. a terminal's block cursor) only when they received a focus event AND the window is key, so also check windowFocused (document.hasFocus) and activeElement.ancestors (class chain up to the view container — a widget's own focus class appears here). Use after real-device input to verify focus settled in the intended view without querying plugin-private DOM. | 키보드 포커스 소유자 활성 뷰 상태 창키 커서
 
-**Returns**: { requestedViewId, mounted, delivered, activeViewId, settled, activeElement }
+**Returns**: { requestedViewId, mounted, delivered, activeViewId, settled, windowFocused, activeElement:{ tag, dataNode, className, ancestors } }
 
 ```bash
-sok-debug ui.focus.state
+sok-dev ui.focus.state
+```
+
+## `ui.focus.trace.read`
+
+Read the focus-causality timeline recorded by ui.focus.trace.start (idempotent; keeps the last trace after it self-terminates). recording tells whether the window is still open; each event carries its composed target and document.hasFocus() at that instant. | 포커스 추적 읽기 타임라인 결과
+
+**Returns**: { recording, events: [{ t, type, tag, className, dataNode, hasFocus }] }
+
+```bash
+sok-dev ui.focus.trace.read
+```
+
+## `ui.focus.trace.start`
+
+Start recording a focus-causality timeline: every mousedown/mouseup/focusin/focusout (capture, Shadow-DOM composed target) with document.hasFocus() at each event. Self-terminates after ms and removes its listeners. Use when focus lands wrong under real input: start the trace, have the real click happen, then ui.focus.trace.read for the timeline — post-hoc state reads are contaminated by the window blurring when the user switches away. | 포커스 추적 타임라인 기록 클릭 인과
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `ms` | number |  | Recording window in ms (default 10000, max 180000) |
+
+**Returns**: { recording: true, ms }
+
+```bash
+sok-dev ui.focus.trace.start '{"ms":10000}'
 ```
 
 ## `ui.hit`
@@ -2560,25 +2646,26 @@ Return the topmost DOM element at viewport x,y (tag, classes, data-* attrs, rect
 | `x` | number | ✓ | viewport x |
 | `y` | number | ✓ | viewport y |
 
-**Returns**: { tag, className, data, rect } | { tag: null }
+**Returns**: { tag, className, dataset, host, rect } | { tag: null }
 
 ```bash
-sok-debug ui.hit '{"x":200,"y":140}'
+sok-dev ui.hit '{"x":200,"y":140}'
 ```
 
 ## `ui.input.click` (danger: inject)
 
-Dispatch a real-click sequence (mousedown → mouseup → click) to an exposed node (E2E injection). Use to drive UI flows programmatically or in tests. Unexposed addresses return NOT_EXPOSED — no guessing. Occluded/unfocused windows pause rAF and may not respond — call window.focus to bring the window forward first. | 클릭 주입 ui클릭 버튼클릭 E2E
+Dispatch a real-click sequence (mousedown → mouseup → click) to an exposed node (E2E injection). Use to drive UI flows programmatically or in tests. Pass phase:'down' to send only the mousedown, then observe the mid-gesture state (ui.hit / ui.measure), then phase:'up' to finish with mouseup+click — the only way to verify contracts that live BETWEEN down and up (e.g. that a mid-gesture surface stays hittable, or that activation waits for gesture completion). Unexposed addresses return NOT_EXPOSED — no guessing. Occluded/unfocused windows pause rAF and may not respond — call window.focus to bring the window forward first. | 클릭 주입 ui클릭 버튼클릭 E2E 게스처 다운 업 분해
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `address` | string | ✓ | Exposed node address from ui.tree |
+| `phase` | string |  | 'down' = mousedown only; 'up' = mouseup+click only; omit for the full sequence |
 
-**Returns**: { clicked, address }
+**Returns**: { clicked, address, phase? }
 **Errors**: NOT_EXPOSED, INVALID_PARAMS
 
 ```bash
-sok-debug ui.input.click '{"address":"win/main/chrome/modal/consent/agree"}'
+sok-dev ui.input.click '{"address":"win/main/chrome/modal/consent/agree"}'
 ```
 
 ## `ui.input.dblclick` (danger: inject)
@@ -2593,7 +2680,7 @@ Dispatch a double-click (two clicks + a dblclick event) to an exposed node (E2E 
 **Errors**: NOT_EXPOSED, INVALID_PARAMS
 
 ```bash
-sok-debug ui.input.dblclick '{"address":"win/main/chrome/tab/left/a.x"}'
+sok-dev ui.input.dblclick '{"address":"win/main/chrome/tab/left/a.x"}'
 ```
 
 ## `ui.input.dnd` (danger: inject)
@@ -2611,28 +2698,30 @@ Synthesize an HTML5 drag-and-drop sequence (dragstart on `from` -> dragenter/dra
 **Errors**: NOT_EXPOSED, INVALID_PARAMS
 
 ```bash
-sok-debug ui.input.dnd '{"from":".../node/section/s2","to":".../node/section/s5","position":"after"}'
-sok-debug ui.input.dnd '{"to":".../node/img/s2/hero","files":[{"name":"a.png","type":"image/png","base64":"…"}]}'
+sok-dev ui.input.dnd '{"from":".../node/section/s2","to":".../node/section/s5","position":"after"}'
+sok-dev ui.input.dnd '{"to":".../node/img/s2/hero","files":[{"name":"a.png","type":"image/png","base64":"…"}]}'
 ```
 
 ## `ui.input.drag` (danger: inject)
 
-Drive a pointer drag (mousedown on `from` -> mousemove -> mouseup). Two modes: (1) drop onto a target — give `to` (+ optional zone: center default, left/right/top/bottom edge for directional split), drives drag-merge tab UIs; (2) drag by a pixel delta — give `dx`/`dy` instead of `to`, grabs `from` at its center and drags that many CSS px (for resize handles / split dividers). mousemove+mouseup dispatch on window so window-level drag listeners (divider resize) receive them. Unexposed addresses return NOT_EXPOSED. Occluded/unfocused windows pause rAF and may not respond — call window.focus to bring the window forward first. | 드래그 주입 드롭 탭이동 분할 합치기 리사이즈 디바이더 E2E 포인터드래그
+Drive a pointer drag (mousedown on `from` -> mousemove -> mouseup). Two modes: (1) drop onto a target — give `to` (+ optional zone); (2) drag by dx/dy for resize handles. steps and durationMs expose a finite real-time sequence for animation/layout verification; defaults preserve the immediate two-move behavior. mousemove+mouseup dispatch on window so window-level drag listeners receive them. | 드래그 주입 드롭 탭이동 분할 합치기 리사이즈 디바이더 E2E 포인터드래그
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
+| `durationMs` | number |  | Total finite drag duration in milliseconds (0..10000). Default 0. [default 0] |
 | `dx` | number |  | Horizontal drag distance in CSS px from `from` center (mode 2 — resize/divider). Alternative to `to`. |
 | `dy` | number |  | Vertical drag distance in CSS px from `from` center (mode 2). |
 | `from` | string | ✓ | Source node address (the tab / divider / element to grab) |
+| `steps` | number |  | Number of evenly spaced mousemove events (1..120). Default 2. [default 2] |
 | `to` | string |  | Target node address to drop onto (mode 1). Omit when using dx/dy. |
 | `zone` | string |  | center | left | right | top | bottom — point within the target rect (mode 1) (center|left|right|top|bottom) |
 
-**Returns**: { dragged, from, to?, zone?, dx?, dy? }
+**Returns**: { dragged, from, to?, zone?, dx?, dy?, steps, durationMs }
 **Errors**: NOT_EXPOSED, INVALID_PARAMS
 
 ```bash
-sok-debug ui.input.drag '{"from":"win/main/chrome/tab/left/a.x","to":"win/main/chrome/tab/left/b.y","zone":"center"}'
-sok-debug ui.input.drag '{"from":"win/main/chrome/divider/s0/0","dx":120}'
+sok-dev ui.input.drag '{"from":"win/main/chrome/tab/left/a.x","to":"win/main/chrome/tab/left/b.y","zone":"center"}'
+sok-dev ui.input.drag '{"from":"win/main/chrome/divider/s0/0","dx":120}'
 ```
 
 ## `ui.input.fill` (danger: inject)
@@ -2648,24 +2737,87 @@ Set the value of an exposed input/textarea node and dispatch input+change events
 **Errors**: NOT_EXPOSED, INVALID_PARAMS
 
 ```bash
-sok-debug ui.input.fill '{"address":"win/main/content/view/x/node/url-input","value":"/path/clip.mp4"}'
+sok-dev ui.input.fill '{"address":"win/main/content/view/x/node/url-input","value":"/path/clip.mp4"}'
+```
+
+## `ui.intent.open`
+
+Open a resource through the binding context (R2): places the view as a tab in the bound group without replacing existing panels, reusing the existing view for the same resource (idempotent). The same path the rail's open affordance uses. With no binding (empty project) it places into the active group. | 인텐트열기 결부열기 intent open
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `path` | string | ✓ | Absolute file path to open |
+| `project` | string |  | Project id (omit for the active project) |
+
+**Returns**: { viewId, panelId, existing }
+
+```bash
+sok-dev ui.intent.open '{"path":"/work/notes/plan.md"}'
 ```
 
 ## `ui.measure`
 
-Measure an exposed node — its viewport rect (px) and computed style. style always includes the layout fields plus the interaction/visibility axis (pointerEvents, opacity, visibility) so you can tell whether a node is actually visible and clickable, not just where it sits. Pass props to read any extra computed properties by name (e.g. zIndex, transform, backgroundColor). Pass occlusion:true to also hit-test the node's center (through Shadow DOM) and report what covers it and whether it is reachable. Accepts structural addresses from ui.tree only; CSS selectors are rejected. | DOM 측정 레이아웃 rect 크기 스타일 포인터이벤트 가시성 가림 도달성
+Measure an exposed node — its viewport rect (px) and computed style. style always includes the layout fields plus the interaction/visibility axis (pointerEvents, opacity, visibility) so you can tell whether a node is actually visible and clickable, not just where it sits. Pass props to read any extra computed properties by name (e.g. zIndex, transform, backgroundColor). Pass occlusion:true to also hit-test the node's center (through Shadow DOM) and report what covers it and whether it is reachable. Pass screen:true to also get the node's GLOBAL logical screen coordinates (screen.x/y = rect origin, screen.cx/cy = center) — feed cx/cy straight to an OS pointer tool (e.g. cliclick c:cx,cy) when a real hit-tested click is required; synthetic ui.input.click bypasses hit-testing and default actions, so it cannot verify pointer-events or focus-on-mouseup behavior. Accepts structural addresses from ui.tree only; CSS selectors are rejected. | DOM 측정 레이아웃 rect 크기 스타일 포인터이벤트 가시성 가림 도달성 스크린 전역좌표 실클릭
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `address` | string | ✓ | Exposed node address from ui.tree |
 | `occlusion` | boolean |  | Also hit-test the node's center (Shadow-DOM-piercing): report the topmost element there and whether it is this node (reachable) or something covers it [default false] |
 | `props` | json |  | Extra computed-style property names to read, camelCase or kebab (e.g. ["zIndex","backgroundColor"]) — lifts the fixed field set |
+| `screen` | boolean |  | Also return global logical screen coordinates (window inner origin + viewport rect). cx/cy is the node center — pass it directly to an OS-level pointer tool for a real hit-tested click [default false] |
 
-**Returns**: { address, rect:{x,y,w,h}, style, occlusion?:{ reachable, topTag, topNode } }
+**Returns**: { address, dataset, rect:{x,y,w,h}, style, occlusion?:{ reachable, topTag, topNode }, screen?:{ x, y, cx, cy } } — dataset contains every declared data-* field on the exposed node
 **Errors**: NOT_EXPOSED, INVALID_PARAMS
 
 ```bash
-sok-debug ui.measure '{"address":"content/view/soksak-plugin-<id>.<view>/node/send"}'
+sok-dev ui.measure '{"address":"content/view/soksak-plugin-<id>.<view>/node/send"}'
+```
+
+## `ui.projection.pin`
+
+Reserved. The left rail is projection-only — it renders the bound content view's declared sidebar and nothing user-pinned, so left pins are always rejected. Right-side pinning is the reserved plugin surface and stays rejected until the right pin stack renderer ships. Use unpin to clean stale pins from old snapshots. | 핀 고정 레일핀 pin rail
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `project` | string |  | Project id (omit for the active project) |
+| `ref` | string | ✓ | Rail view ref "<pluginId>.<viewId>" |
+| `side` | string |  | "left" (default) | "right" |
+
+**Returns**: { pins: {left, right} }
+
+```bash
+sok-dev ui.projection.pin '{"ref":"<pluginId>.<viewId>"}'
+```
+
+## `ui.projection.state`
+
+Read the sidebar projection state of a project: the bound content view (binding follows the session active chain — switching the active tab inside a group changes the binding too), resolved left/right rail slots with instanceKey and status (live|degraded|satisfied-by-pin), and pinned refs. | 투영상태 결부 사이드바상태 레일상태 projection binding rail
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `project` | string |  | Project id (omit for the active project) |
+
+**Returns**: { projectId, binding: {viewId|null}, left: {slots:[{source,resolvedRef,instance,instanceKey,status}], template}, right|null, pins: {left,right} }
+
+```bash
+sok-dev ui.projection.state
+sok-dev ui.projection.state '{"project":"t1"}'
+```
+
+## `ui.projection.unpin`
+
+Remove a pinned ref from a rail side. Idempotent — unpinning an absent ref succeeds. No rail-registration check: a ref must stay removable after its plugin is gone. | 핀해제 언핀 unpin
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `project` | string |  | Project id (omit for the active project) |
+| `ref` | string | ✓ | Pinned ref |
+| `side` | string |  | "left" (default) | "right" |
+
+**Returns**: { pins: {left, right} }
+
+```bash
+sok-dev ui.projection.unpin '{"ref":"<pluginId>.<viewId>"}'
 ```
 
 ## `ui.slot`
@@ -2680,7 +2832,7 @@ Measure a content view's slot rectangle — the bare host container a view rende
 **Errors**: NOT_EXPOSED, INVALID_PARAMS
 
 ```bash
-sok-debug ui.slot '{"address":"win/main/content/view/soksak-plugin-<id>.<view>"}'
+sok-dev ui.slot '{"address":"win/main/content/view/soksak-plugin-<id>.<view>"}'
 ```
 
 ## `ui.tree`
@@ -2694,8 +2846,8 @@ Return the exposed DOM address tree — absolute addresses of nodes declared via
 **Returns**: { window, count, nodes: [{ address, nodePath, rect? }] }
 
 ```bash
-sok-debug ui.tree
-sok-debug ui.tree '{"rects":true}'
+sok-dev ui.tree
+sok-dev ui.tree '{"rects":true}'
 ```
 
 ## `ui.validate`
@@ -2709,8 +2861,8 @@ Validate the border ownership contract (docs/UI.md §B) against the live DOM. Co
 **Returns**: { pass, rulesActive, elementsChecked, violations: [{rule, selector, index, edge, expected, actual}] }
 
 ```bash
-sok-debug ui.validate
-sok-debug ui.validate '{"rule":"status"}'
+sok-dev ui.validate
+sok-dev ui.validate '{"rule":"status"}'
 ```
 
 ## `unit.dev.list`
@@ -2720,7 +2872,7 @@ List development source selections for plugins, sidecars, and kits in this CLI i
 **Returns**: { unitMode: official|mixed, units: Array<{kind,id,source}> }
 
 ```bash
-sok-debug unit.dev.list
+sok-dev unit.dev.list
 ```
 
 ## `unit.dev.remove`
@@ -2735,7 +2887,7 @@ Remove one development source selection without deleting its workspace. A plugin
 **Returns**: { kind, id, removed }
 
 ```bash
-sok-debug unit.dev.remove '{"kind":"plugin","id":"weather"}'
+sok-dev unit.dev.remove '{"kind":"plugin","id":"weather"}'
 ```
 
 ## `unit.dev.set` (danger: inject)
@@ -2752,7 +2904,7 @@ Select an existing absolute directory as a unit's development source in this ide
 **Errors**: INVALID_PARAMS, TARGET_NOT_FOUND
 
 ```bash
-sok-debug unit.dev.set '{"kind":"plugin","id":"weather","source":"/absolute/path/weather"}'
+sok-dev unit.dev.set '{"kind":"plugin","id":"weather","source":"/absolute/path/weather"}'
 ```
 
 ## `update.apply` (danger: destructive)
@@ -2769,8 +2921,8 @@ Apply updates across every hot axis, least-disruptive first: authenticated plugi
 **Errors**: INTERNAL
 
 ```bash
-sok-debug update.apply
-sok-debug update.apply '{"app":false}'
+sok-dev update.apply
+sok-dev update.apply '{"app":false}'
 ```
 
 ## `update.check`
@@ -2781,7 +2933,7 @@ Survey what can be updated without applying anything. Reports the app body (rele
 **Errors**: INTERNAL
 
 ```bash
-sok-debug update.check
+sok-dev update.check
 ```
 
 ## `view.activate`
@@ -2796,7 +2948,7 @@ Activate (switch to) a specific view tab. | 탭 전환 선택 뷰 활성화
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug view.activate '{"view":"v3"}'
+sok-dev view.activate '{"view":"v3"}'
 ```
 
 ## `view.close` (danger: destructive)
@@ -2811,7 +2963,7 @@ Close a view tab — if it was the last view in a panel, the panel is also remov
 **Errors**: TARGET_NOT_FOUND, LAST_ITEM
 
 ```bash
-sok-debug view.close '{"view":"v3"}'
+sok-dev view.close '{"view":"v3"}'
 ```
 
 ## `view.label.get`
@@ -2825,8 +2977,8 @@ Get the custom tab label override for a sidebar view (empty = none, caller falls
 **Returns**: { labels } or { view, label }
 
 ```bash
-sok-debug view.label.get
-sok-debug view.label.get '{"view":"x.y"}'
+sok-dev view.label.get
+sok-dev view.label.get '{"view":"x.y"}'
 ```
 
 ## `view.label.set`
@@ -2842,7 +2994,7 @@ Set a custom tab label for a sidebar view (overrides the manifest title). Empty 
 **Errors**: INVALID_PARAMS
 
 ```bash
-sok-debug view.label.set '{"view":"soksak-plugin-<id>.<view>","label":"내 라벨"}'
+sok-dev view.label.set '{"view":"soksak-plugin-<id>.<view>","label":"내 라벨"}'
 ```
 
 ## `view.list`
@@ -2857,7 +3009,7 @@ List the views (tabs) inside a panel.
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug view.list
+sok-dev view.list
 ```
 
 ## `view.maximize`
@@ -2872,8 +3024,8 @@ Maximize a view to fill the entire space. The split tree is preserved; only the 
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug view.maximize '{"view":"v3"}'
-sok-debug view.maximize
+sok-dev view.maximize '{"view":"v3"}'
+sok-dev view.maximize
 ```
 
 ## `view.move`
@@ -2890,7 +3042,7 @@ Move a view tab to the zone position of dst panel (center = move into panel; oth
 **Errors**: TARGET_NOT_FOUND, LAST_ITEM
 
 ```bash
-sok-debug view.move '{"view":"v3","dst":"g1","zone":"right"}'
+sok-dev view.move '{"view":"v3","dst":"g1","zone":"right"}'
 ```
 
 ## `view.open`
@@ -2906,7 +3058,7 @@ Open a new view tab in a panel by program id (terminal / claude / codex / a plug
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug view.open '{"program":"claude"}'
+sok-dev view.open '{"program":"claude"}'
 ```
 
 ## `view.rename`
@@ -2922,8 +3074,8 @@ Set a custom label for a view tab (grid tab). Overrides the dynamic content titl
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug view.rename '{"view":"v3","title":"작업 브라우저"}'
-sok-debug view.rename '{"view":"v3","title":""}'
+sok-dev view.rename '{"view":"v3","title":"작업 브라우저"}'
+sok-dev view.rename '{"view":"v3","title":""}'
 ```
 
 ## `view.restore`
@@ -2937,7 +3089,7 @@ Exit view maximize mode and restore the original split layout for the active spa
 **Returns**: { viewId(restored view | null = was not maximized) }
 
 ```bash
-sok-debug view.restore
+sok-dev view.restore
 ```
 
 ## `webview.emitNative`
@@ -2953,7 +3105,7 @@ Emit a native mouse-bridge event (native-mousedown/move/up) at viewport x,y — 
 **Returns**: { ok, kind }
 
 ```bash
-sok-debug webview.emitNative '{"kind":"native-mousedown","x":400,"y":300}'
+sok-dev webview.emitNative '{"kind":"native-mousedown","x":400,"y":300}'
 ```
 
 ## `webview.health.query`
@@ -2963,7 +3115,7 @@ Report webview renderer-process health per label: circuit-breaker state (closed 
 **Returns**: { count, entries: [{label, state, attempt, crashesInWindow, totalCrashes, lastCrashAgoMs, lastReason}] }
 
 ```bash
-sok-debug webview.health.query
+sok-dev webview.health.query
 ```
 
 ## `webview.recover`
@@ -2978,7 +3130,7 @@ Manually recover a webview: reset its circuit breaker (clears the crash window a
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug webview.recover '{"label":"b-w-1234-v7"}'
+sok-dev webview.recover '{"label":"b-w-1234-v7"}'
 ```
 
 ## `window.close`
@@ -2992,7 +3144,7 @@ Close a specific window. | 창 닫기 윈도우
 **Returns**: { ok }
 
 ```bash
-sok-debug window.close '{"label":"w-<uuid>"}'
+sok-dev window.close '{"label":"w-<uuid>"}'
 ```
 
 ## `window.focus`
@@ -3006,8 +3158,8 @@ Bring a window to the front and focus it. Without label, focuses the window this
 **Returns**: { focused: true }
 
 ```bash
-sok-debug window.focus
-sok-debug window.focus '{"label":"w-<uuid>"}'
+sok-dev window.focus
+sok-dev window.focus '{"label":"w-<uuid>"}'
 ```
 
 ## `window.info`
@@ -3017,7 +3169,7 @@ Get window screen position, size, and scale factor (for automation validation �
 **Returns**: { x, y, w, h, scale }
 
 ```bash
-sok-debug window.info
+sok-dev window.info
 ```
 
 ## `window.layers`
@@ -3027,7 +3179,7 @@ Dump the window's native view hierarchy (class / frame / hidden, indented text).
 **Returns**: { hierarchy } — indented text, one view per line
 
 ```bash
-sok-debug window.layers
+sok-dev window.layers
 ```
 
 ## `window.list`
@@ -3037,7 +3189,7 @@ List open window labels. Use to discover targets for commands that accept a wind
 **Returns**: { labels }
 
 ```bash
-sok-debug window.list
+sok-dev window.list
 ```
 
 ## `window.maximize`
@@ -3053,9 +3205,9 @@ Maximize a window to fill the screen (native window maximize — distinct from v
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-debug window.maximize
-sok-debug window.maximize '{"off":true}'
-sok-debug window.maximize '{"label":"w-<uuid>"}'
+sok-dev window.maximize
+sok-dev window.maximize '{"off":true}'
+sok-dev window.maximize '{"label":"w-<uuid>"}'
 ```
 
 ## `window.monitors`
@@ -3065,7 +3217,7 @@ Monitor and window placement facts (physical px): every monitor's rect/scale/nam
 **Returns**: { monitors: [{index,name,x,y,w,h,scale}], windows: [{label,title,x,y,w,h,focused,monitor}] }
 
 ```bash
-sok-debug window.monitors
+sok-dev window.monitors
 ```
 
 ## `window.move`
@@ -3080,7 +3232,7 @@ Move the window to a screen position in physical pixels (for automation and mult
 **Returns**: { x, y }
 
 ```bash
-sok-debug window.move '{"x":0,"y":0}'
+sok-dev window.move '{"x":0,"y":0}'
 ```
 
 ## `window.occlusion`
@@ -3094,7 +3246,7 @@ Toggle occlusion detection. When false, rendering continues even when fully cove
 **Returns**: { occlusion }
 
 ```bash
-sok-debug window.occlusion '{"enabled":false}'
+sok-dev window.occlusion '{"enabled":false}'
 ```
 
 ## `window.open`
@@ -3112,8 +3264,8 @@ Open a new project window for a project root (P6: if the root is already open in
 **Errors**: INVALID_PARAMS
 
 ```bash
-sok-debug window.open '{"root":"/Users/me/work"}'
-sok-debug window.open '{"mode":"orchestrator"}'
+sok-dev window.open '{"root":"/Users/me/work"}'
+sok-dev window.open '{"mode":"orchestrator"}'
 ```
 
 ## `window.place`
@@ -3131,7 +3283,7 @@ Place a window at an exact frame (physical px — the window.monitors coordinate
 **Returns**: { ok }
 
 ```bash
-sok-debug window.place '{"label":"main","x":2560,"y":0,"w":2560,"h":1440}'
+sok-dev window.place '{"label":"main","x":2560,"y":0,"w":2560,"h":1440}'
 ```
 
 ## `window.projects`
@@ -3141,7 +3293,7 @@ Map open windows to the project each one hosts (root path + name + window label)
 **Returns**: { projects: [{ root, name, window }] }
 
 ```bash
-sok-debug window.projects
+sok-dev window.projects
 ```
 
 ## `window.record`
@@ -3157,8 +3309,8 @@ Capture the window as a sequence of PNGs (dir/f0000.png ...) for use as a video 
 **Returns**: { dir, frames }
 
 ```bash
-sok-debug window.record '{"dir":"/tmp/rec"}'
-sok-debug window.record '{"dir":"/tmp/rec","frames":120,"intervalMs":33}'
+sok-dev window.record '{"dir":"/tmp/rec"}'
+sok-dev window.record '{"dir":"/tmp/rec","frames":120,"intervalMs":33}'
 ```
 
 ## `window.reload`
@@ -3168,7 +3320,7 @@ Fully reload the app webview (location.reload). Picks up core/plugin code change
 **Returns**: { reloaded: true }
 
 ```bash
-sok-debug window.reload
+sok-dev window.reload
 ```
 
 ## `window.resize`
@@ -3183,7 +3335,7 @@ Resize the window to a physical pixel size (for automation and resize-path E2E �
 **Returns**: { w, h }
 
 ```bash
-sok-debug window.resize '{"w":1200,"h":800}'
+sok-dev window.resize '{"w":1200,"h":800}'
 ```
 
 ## `window.snapshot`
@@ -3200,9 +3352,9 @@ Capture the window contents to a PNG. Captures even when fully occluded by other
 **Errors**: INVALID_PARAMS
 
 ```bash
-sok-debug window.snapshot
-sok-debug window.snapshot '{"path":"/tmp/shot.png"}'
-sok-debug window.snapshot '{"rect":{"x":100,"y":80,"w":400,"h":300},"base64":true}'
+sok-dev window.snapshot
+sok-dev window.snapshot '{"path":"/tmp/shot.png"}'
+sok-dev window.snapshot '{"rect":{"x":100,"y":80,"w":400,"h":300},"base64":true}'
 ```
 
 ## `window.themeScan`
@@ -3224,7 +3376,7 @@ Measure whether a dark/light theme transition is atomic across screen regions. R
 **Returns**: { frames, frameMs (measured capture interval), spreadFrames, spreadMs, atomic, regions:[{name,start,end,transitionFrame}] }
 
 ```bash
-sok-debug window.themeScan
-sok-debug window.themeScan '{"theme":"Midnight","frames":48}'
+sok-dev window.themeScan
+sok-dev window.themeScan '{"theme":"Midnight","frames":48}'
 ```
 

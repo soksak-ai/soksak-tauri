@@ -3,6 +3,7 @@
 
 import { tmsg } from "../i18n";
 import { register } from "./registry";
+import { asSurface } from "./catalog";
 import { err, ok, projectIdOfView, useSessions } from "../state/sessions";
 import { useProjection } from "../state/projection";
 import { projectionFor } from "../state/projectionWiring";
@@ -147,14 +148,9 @@ export function registerProjectionCatalog(): void {
     examples: ['ui.intent.open \'{"path":"/work/notes/plan.md"}\''],
     handler: (p, ctx) => {
       const pid = targetProject(p, ctx);
-      const r = useSessions.getState().openFileView(pid, p.path as string);
-      if (!r.ok) return r;
-      // 공개 어휘는 panelId 다 — 이 명령만 세션 내부 이름(groupId)을 그대로 흘려 명령 표면의
-      // 어휘가 갈려 있었다(docs 감사 게이트가 잡음). 사상은 catalog.ts 의 asSurface 가 소유하는
-      // 것이 맞지만 그 파일은 지금 다른 레인이 쓰고 있어 여기서 직접 사상한다.
-      // [임시] 제거 조건: catalog.ts 가 자유로워지면 asSurface 를 export 해 이 두 줄을 지운다.
-      const { groupId, ...rest } = r as unknown as Record<string, unknown>;
-      return { ...rest, panelId: groupId };
+      // 공개 어휘 사상(groupId → panelId)은 asSurface 한 곳이 소유한다 — 이 명령만 세션 내부
+      // 이름을 그대로 흘려 명령 표면의 어휘가 갈려 있었다(docs 감사 게이트가 잡음).
+      return asSurface(useSessions.getState().openFileView(pid, p.path as string));
     },
   });
 }
