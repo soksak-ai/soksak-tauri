@@ -16,15 +16,13 @@ REGISTRY_URL := https://raw.githubusercontent.com/soksak-ai/soksak-plugin-regist
 RELEASE_CONFIG := src-tauri/tauri.release.conf.json
 RELEASE_CONFIG_GENERATED := src-tauri/target/release-config/tauri.conf.json
 DEBUG_CONFIG   := src-tauri/tauri.debug.conf.json
-PERF_CONFIG    := src-tauri/tauri.perf.conf.json
 
 RELEASE_APP := src-tauri/target/release/bundle/macos/soksak.app
 DEBUG_APP   := src-tauri/target/debug/bundle/macos/soksak-debug.app
-PERF_APP    := src-tauri/target/release/bundle/macos/soksak-perf.app
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install icons dev build build-debug build-perf build-perf-dev-profile run run-debug typecheck check test test-front verify gates clean stop cli cli-dev cli-debug install-cli install-cli-dev install-cli-debug docs registry
+.PHONY: help install icons dev build build-debug run run-debug typecheck check test test-front verify gates clean stop cli cli-dev cli-debug install-cli install-cli-dev install-cli-debug docs registry
 
 help: ## 사용 가능한 명령 목록
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -58,20 +56,6 @@ build: spec-gate cli ## 릴리스 번들 빌드 → "soksak.app"(기본 아이�
 
 build-debug: spec-gate cli-debug ## 디버그 번들 빌드 → "soksak-debug.app"(주황 아이콘) + sok-debug
 	$(PNPM) tauri build --debug --config $(DEBUG_CONFIG)
-
-# 측정 전용 정체성(com.soksak.perf → ~/.soksak-perf). 측정 리그가 사람이 쓰는 정체성을
-# 빌려 쓰던 것이 하니스 재현성 문제의 뿌리였다 — 예산이 windowsOpen=7 의 주변 부하를 안고
-# 잡혔고 같은 조건 4런이 6.1배로 흩어졌다. 빈 홈·알려진 플러그인 집합·사용자 창 0 인 자기
-# 정체성이라야 수치가 재현된다. 키체인 항목도 이 바이너리가 만들어 소유하므로 인가 프롬프트가
-# 없다(서비스명 = identifier, home.rs 단일진실 — 런타임 override 표면은 없다).
-#
-# 두 타깃은 프론트와 정체성이 같고 cargo 프로파일만 다르다 — 그래야 델타가 프로파일의 델타다.
-# release 정체성이 아니므로 updater 서명키가 필요 없다.
-build-perf: spec-gate ## 측정 리그(최적화 프로파일, perf 정체성) → target/release/bundle
-	$(PNPM) tauri build --config $(PERF_CONFIG)
-
-build-perf-dev-profile: spec-gate ## 측정 리그(비최적화 프로파일, 같은 정체성) → target/debug/bundle
-	$(PNPM) tauri build --debug --config $(PERF_CONFIG)
 
 run: ## 릴리스 soksak.app 실행(새 인스턴스)
 	@test -d "$(RELEASE_APP)" || { echo "먼저 'make build' 를 실행하세요."; exit 1; }
