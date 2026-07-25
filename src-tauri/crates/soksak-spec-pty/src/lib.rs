@@ -33,17 +33,85 @@ pub const PTYD_MIN_COMPATIBLE_CLIENT_PROTOCOL: u32 = 1;
 /// (pty.rs in-process and soksak-ptyd). The reader pauses while an attached
 /// client has this many unacked bytes, and resumes at the low mark.
 ///
-/// The high mark is the throughput ceiling: bulk output moves in
-/// pause/drain cycles, so sustained rate ≈ window / ack-loop round trip.
-/// The daemon leg lengthens that loop (front ack → app → control socket),
-/// and the previous 100k window capped t1 at ~3 MB/s against a ~4.5 MB/s
-/// in-process measurement under the same load (perf results
-/// 20260711-141852 / -142405 vs the ab-local run). 1 MB covers the longer
-/// loop; the low mark resumes at half-window so acks still in flight keep
-/// the pipe moving. Memory cost stays bounded per pane and the front still
-/// acks every 5k parsed bytes.
+/// These bound memory per pane. They are not the throughput ceiling: widening
+/// the window from 100k to 1 MB — a factor of ten — moved t1_plain from 3.02 to
+/// 3.35 MB/s, a factor of 1.11 (results 20260711-141852 vs -145114). The
+/// ceiling lives in the delivery unit below, not here. The low mark resumes at
+/// half-window so acks still in flight keep the pipe moving.
 pub const HIGH_WATERMARK: usize = 1_000_000;
 pub const LOW_WATERMARK: usize = 500_000;
+
+// ── Delivery unit contract ───────────────────────────────────────────────────
+// The delivery unit of PTY output is not the read unit. A producer accumulates
+// reads and delivers when the batch reaches DELIVERY_BATCH_BYTES — or, before
+// that, as soon as it has taken everything already queued behind it.
+//
+// Why this is a contract and not a local optimization: cost is attached to the
+// number of deliveries, not to the bytes. t1_ansi (4.49 MB/s) and t1_plain
+// (4.58) land 2% apart, so a stream dense with escape sequences costs what
+// plain text costs. And the recorded delivery unit is ~1030 B — across all nine
+// recorded t1 runs, writtenBytesDelta/ackSentDelta is 5127..5231 against a
+// 5000-byte ack threshold, which puts the unit just past tauri's
+// `bytes.len() < 1024` direct-execute guard. Every one of those ~1 KB units
+// pays a script eval and an ipc:// round trip.
+//
+// A batch forms out of backlog, never out of waiting. There is no timer here
+// and nothing is ever held for bytes that have not arrived: a keystroke echo on
+// a quiet pty is delivered on the pass it arrived, and under bulk output the
+// producer races ahead until the flow window stops it, so the queue is deep and
+// every batch fills. Backlog is the signal, and it reads correctly in both
+// directions — which is why the rule needs neither a deadline nor a poll.
+
+/// Deliver once a batch reaches this size. A single read larger than this is
+/// delivered whole — a read is never split across deliveries.
+///
+/// It also sets the flow-ack cadence, because the consumer acks parsed bytes
+/// once its accumulator passes a threshold: while the delivery unit was ~1030 B
+/// the front needed five arrivals to reach its 5000-byte threshold, which is
+/// the recorded 20,512 acks per 100 MB. One delivery now clears that threshold
+/// on its own, so acks track deliveries one-for-one instead of outnumbering
+/// them. That only holds while several deliveries still fit inside the window
+/// slack — otherwise the reader stalls at the high mark waiting for an ack that
+/// a single coarse delivery has not yet earned. The test below pins that.
+pub const DELIVERY_BATCH_BYTES: usize = 64 * 1024;
+
+/// Forms delivery units out of reads. Deliberately free of clocks and threads:
+/// the caller owns the source and its queue, and asks this type only what a
+/// delivery unit is. That keeps the rule in one place while each producer keeps
+/// its own read loop idiomatic.
+#[derive(Debug, Default)]
+pub struct OutputBatcher {
+    buf: Vec<u8>,
+}
+
+impl OutputBatcher {
+    pub fn new() -> Self {
+        Self { buf: Vec::with_capacity(DELIVERY_BATCH_BYTES) }
+    }
+
+    /// Append one read. Returns the batch when it reaches the size threshold.
+    pub fn push(&mut self, bytes: &[u8]) -> Option<Vec<u8>> {
+        self.buf.extend_from_slice(bytes);
+        if self.buf.len() >= DELIVERY_BATCH_BYTES {
+            return self.take();
+        }
+        None
+    }
+
+    /// Whether a batch is open. An open batch is why the caller waits with a
+    /// deadline instead of blocking; a closed one is why it blocks.
+    pub fn is_open(&self) -> bool {
+        !self.buf.is_empty()
+    }
+
+    /// Take whatever is buffered — the deadline elapsed, or the source ended.
+    pub fn take(&mut self) -> Option<Vec<u8>> {
+        if self.buf.is_empty() {
+            return None;
+        }
+        Some(std::mem::replace(&mut self.buf, Vec::with_capacity(DELIVERY_BATCH_BYTES)))
+    }
+}
 
 
 // ── Identity-home path contract ──────────────────────────────────────────────
@@ -352,6 +420,93 @@ pub fn err_reply(code: &str, message: &str) -> serde_json::Value {
 mod tests {
     use super::*;
     use soksak_spec_socket::Compat;
+
+    // ── delivery unit contract ──────────────────────────────────────────────
+
+    /// The defect this contract exists to forbid: one delivery per read. A pty
+    /// master read on macOS returns ~1 KB, so a read-sized delivery unit pins
+    /// the crossing count at bytes/1KB — 4 MB becomes ~4000 crossings.
+    #[test]
+    fn a_read_sized_stream_still_delivers_in_batches() {
+        let chunk = vec![b'x'; 1030]; // measured pty master read size
+        let total = 4 * 1024 * 1024;
+        let reads = total / chunk.len();
+
+        let mut batcher = OutputBatcher::new();
+        let mut delivered = 0usize;
+        let mut bytes_out = 0usize;
+        for _ in 0..reads {
+            if let Some(batch) = batcher.push(&chunk) {
+                delivered += 1;
+                bytes_out += batch.len();
+            }
+        }
+        if let Some(tail) = batcher.take() {
+            delivered += 1;
+            bytes_out += tail.len();
+        }
+
+        assert_eq!(bytes_out, reads * chunk.len(), "batching must not drop bytes");
+        let ceiling = (reads * chunk.len()).div_ceil(DELIVERY_BATCH_BYTES) + 1;
+        assert!(
+            delivered <= ceiling,
+            "delivered {delivered} units for {reads} reads — the delivery unit is still the read unit (ceiling {ceiling})",
+        );
+    }
+
+    #[test]
+    fn a_batch_carries_the_bytes_in_order() {
+        let mut batcher = OutputBatcher::new();
+        let mut expected = Vec::new();
+        let mut got = Vec::new();
+        for i in 0..5000u32 {
+            let chunk = i.to_le_bytes();
+            expected.extend_from_slice(&chunk);
+            if let Some(batch) = batcher.push(&chunk) {
+                got.extend_from_slice(&batch);
+            }
+        }
+        if let Some(tail) = batcher.take() {
+            got.extend_from_slice(&tail);
+        }
+        assert_eq!(got, expected);
+    }
+
+    #[test]
+    fn a_single_keystroke_echo_is_not_held_for_a_full_batch() {
+        let mut batcher = OutputBatcher::new();
+        assert!(batcher.take().is_none(), "nothing buffered — nothing to deliver");
+        assert!(
+            batcher.push(b"$ ").is_none(),
+            "a small echo does not fill a batch",
+        );
+        // With no backlog behind it the caller takes it right away — the echo
+        // never waits on a batch that will not fill.
+        assert!(batcher.is_open(), "an open batch must be visible to the caller");
+        let held = batcher.take().expect("an open batch is always takeable");
+        assert_eq!(held, b"$ ");
+        assert!(!batcher.is_open(), "taking closes the batch");
+    }
+
+    /// 전달 단위가 창 여유를 여러 조각으로 나눠야 리더가 ack 를 기다리며 멈추지 않는다.
+    /// 단위를 키우다 이 관계를 깨면 처리량이 다시 ack 왕복에 묶인다.
+    #[test]
+    fn several_deliveries_fit_inside_the_flow_window_slack() {
+        let slack = HIGH_WATERMARK - LOW_WATERMARK;
+        assert!(
+            DELIVERY_BATCH_BYTES * 4 <= slack,
+            "delivery unit {DELIVERY_BATCH_BYTES} is too coarse for a {slack} B window slack — the reader would stall at the high mark waiting on one ack",
+        );
+    }
+
+    #[test]
+    fn an_oversized_read_is_delivered_whole() {
+        let mut batcher = OutputBatcher::new();
+        let big = vec![b'y'; DELIVERY_BATCH_BYTES * 3];
+        let batch = batcher.push(&big).expect("crossing the threshold delivers");
+        assert_eq!(batch.len(), big.len(), "never split a read across deliveries");
+        assert!(!batcher.is_open());
+    }
 
     // ── path contract: protocol-keyed names under the identity home ─────────
 

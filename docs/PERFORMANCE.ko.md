@@ -86,6 +86,36 @@ WebKit 의 합성(비동기) 스크롤·합성 레이어를 깨는 CSS 를 금�
 시나리오(S1~S7)와 게이트 절차는 `scripts/perf/README.md` 참조. 본구간(active)과
 테일(tail) 둘 다 본다 — 테일 악화는 부수효과 스톰의 신호다.
 
+### 8. 프로파일 없는 수치는 측정이 아니다
+
+모든 성능 수치는 어느 cargo 프로파일에서 잡혔는지 함께 적고, 프로파일이 다른
+수치끼리는 비교하지 않는다. `scripts/perf/run-t.sh` 가 실행 중 바이너리 경로에서
+프로파일을 발견해(`lib.sh` 의 `identity_cargo_profile` — cargo 는 `dev` 를
+`target/debug` 에, `release` 를 `target/release` 에 떨군다) `meta.cargoProfile` 에
+쓰고, `check-budgets.mjs` 가 불일치를 `INVALID_CONDITIONS` 로 거부한다.
+
+이것이 주석이 아니라 원칙인 이유: 워크스페이스에 `[profile.release]` 만 있어서
+`make dev` 도 `make build-debug`(`tauri build --debug`)도 cargo 의 `dev` 프로파일 —
+`opt-level=0`, `debug-assertions`, `overflow-checks` — 로 의존 트리 전체를(번들 C
+SQLite 포함) 빌드한다. 저장소의 `RawRing::push` 를 그 운영 조건(256 KiB 링,
+8192 B 청크, 100 MB)으로 실측하면 같은 코드가 `opt-level=0` 에서 **77.09 MB/s**,
+`opt-level=3` 에서 **737.03 MB/s** — 핫루프 하나에서 9.56배 차이다. `budgets.json`
+의 모든 예산이 비최적화 프로파일에서 잡혔다. 어느 프로파일에서 나온 수치인지
+말하지 않는 숫자로는 아무것도 판단할 수 없다.
+
+### 9. 회귀 게이트와 절대 목표는 파일을 나눈다
+
+`budgets.json` 은 `baseline × headroom` 이다 — 회귀를 잡는 데는 옳은 모양이고,
+절대 결함을 잡는 데는 틀린 모양이다. baseline 자체가 이미 그 결함이 만든 값이기
+때문이다. 기록된 결과: 유휴 CPU baseline 46.4 에서 예산 60 이 파생돼, 게이트가
+반쪽 코어를 쉬는 상태의 정상값으로 인증하고 51.5 짜리 런이 통과한다.
+
+`targets.json` 은 건강한 수치가 **무엇인가**를 담는다. 목표는 실측이나 실측
+위의 산술에서 도출하고 발명하지 않는다. 각 항목은 도출 근거와 재현 명령을 함께
+싣는다. 런을 통과시키려고 목표를 넓히지 않는다 — 못 맞추면 다음 병목을 실측으로
+특정해 기록한다. 회귀한 런은 실패(exit 1), 회귀는 없지만 목표를 못 맞춘 런은
+exit 3 이고 초록이라 부르지 않는다.
+
 ## 플러그인 성능 계약
 
 플러그인 이벤트 핸들러(`onDidChangeActiveView` 등)는 **메인스레드에서 동기

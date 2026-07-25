@@ -1,0 +1,36 @@
+{
+  "meta": {
+    "purpose": "Absolute health targets — what a healthy number IS, independent of what soksak happens to do today. Kept apart from budgets.json on purpose: budgets are baseline x headroom, which detects regression but cannot detect an absolute defect, because the baseline is whatever the defect already produced. Recorded consequence: budgets.json derives t5_idle.cpu.avg max 60 from a 46.4 baseline, so the gate certifies half a core burned at rest.",
+    "rule": "A target is never invented. Each entry carries the measurement or the arithmetic it was derived from, and the command that reproduces it. A target is never widened to make a run pass — if it cannot be met, the next bottleneck is located by measurement.",
+    "gate": "check-budgets.mjs reports a miss as BELOW_TARGET and exits 3. Exit 3 means: no regression, but not green either.",
+    "derivations": {
+      "t1_plain.mbps / t1_ansi.mbps": {
+        "target": 100,
+        "measured": {
+          "observed": "4.58 MB/s (results/20260711-075708-baseline-debug.json, t1_plain)",
+          "deliveryUnit": "~1030 B. Derived from every recorded t1 run: writtenBytesDelta/ackSentDelta = 5127..5231 while FLOW_ACK_SIZE=5000 (soksak-plugin-terminal-xterm/src/terminal.ts:25). The ack fires at the first cumulative >= 5000, so the observed value is unit*ceil(5000/unit): unit=8192 would give 8192, unit~1030 gives 5150. Reproduce: jq over scripts/perf/results/*.json.",
+          "costIsPerCrossing": "t1_ansi 4.49 vs t1_plain 4.58 = 2% apart. A stream dense with escape sequences costs the same as plain text, so the cost is attached to the number of crossings, not to the bytes.",
+          "fastPathThreshold": "tauri channel.rs:39 MAX_RAW_DIRECT_EXECUTE_THRESHOLD = 1024, guarded by `bytes.len() < 1024` — a ~1030 B chunk misses the direct path and pays a script eval plus an ipc:// fetch round trip."
+        },
+        "arithmetic": "A 64 KiB batch replaces 65536/1030 = 63.6 crossings with one. If crossings were the whole cost, 4.58 x 63.6 = 291 MB/s. Real paths never recover the full factor, so the target is set at 100 — 34% of the projected ceiling.",
+        "onMiss": "Do not widen this number. Locate the next bottleneck by measurement and record it here."
+      },
+      "t5_idle.cpu.avg": {
+        "target": 5,
+        "measured": "30s CPU-time delta on the running dev instance, 2 windows, zero input (2026-07-25): WebContent 82658 = 8.00%, soksak-dev 82541 = 4.17%, GPU 82625 = 3.90%, and the three idle siblings 82626/82627/82749 = 0.03/0.03/0.00%. Reproduce: difference `ps -o time=` over the attributed pid set across a fixed window.",
+        "arithmetic": "The sibling renderers prove the floor: a WebKit process with nothing to do costs ~0.0% of a core. Idle is by definition the state where there is no work, so the healthy number is near zero. 5% across the whole app group is generous headroom, not a compromise.",
+        "onMiss": "Attribute per process before changing anything — a whole-group sum hides which process is guilty (see W-M2)."
+      }
+    },
+    "notDerivedYet": {
+      "t1_plain.cpu.avg": "No honest absolute number exists yet. Today's 100.0 measures a main thread saturated by crossings at 4.58 MB/s; the CPU cost of a healthy path can only be measured once the delivery unit is fixed. Derive it from the run that first meets t1_plain.mbps >= 100, and record the derivation here.",
+      "t6_memory.rssMb": "RSS is the wrong instrument — macOS compresses and swaps under pressure and RSS excludes exactly that, so the metric stops rising when pressure starts. Replace with physical footprint (W-M3), re-baseline under a stated window population, then derive.",
+      "t2.medianMs": "1 ms is good, but the measurement point excludes paint (driver.mjs records 'socket RPC/paint excluded'). A key-to-paint target needs the scenario that measures it (s14) to exist first."
+    }
+  },
+  "targets": {
+    "t1_plain.mbps": { "min": 100 },
+    "t1_ansi.mbps": { "min": 100 },
+    "t5_idle.cpu.avg": { "max": 5 }
+  }
+}

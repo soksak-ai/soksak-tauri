@@ -96,6 +96,40 @@ A change that touches performance ships with before/after numbers from
 `scripts/perf/README.md`. Read both the active phase and the tail — tail
 regressions signal side-effect storms.
 
+### 8. A number without its profile is not a measurement
+
+Every performance number states the cargo profile it was taken under, and numbers
+from different profiles are never compared. `scripts/perf/run-t.sh` discovers the
+profile from the running executable's path (`identity_cargo_profile` in `lib.sh`:
+cargo puts the `dev` profile in `target/debug` and `release` in `target/release`)
+and writes it to `meta.cargoProfile`; `check-budgets.mjs` rejects a mismatch as
+`INVALID_CONDITIONS`.
+
+Why this is a principle and not a note: the workspace declares only
+`[profile.release]`, so `make dev` and `make build-debug` (`tauri build --debug`)
+both produce cargo's `dev` profile — `opt-level=0`, `debug-assertions`,
+`overflow-checks` — for the whole dependency tree, the bundled C SQLite included.
+Measured on the repo's own `RawRing::push` under its operating conditions
+(256 KiB ring, 8192 B chunks, 100 MB), the same code runs at **77.09 MB/s** at
+`opt-level=0` and **737.03 MB/s** at `opt-level=3` — a 9.56x gap on one hot loop.
+Every budget in `budgets.json` was taken on the unoptimized profile. A number
+that does not say which profile produced it cannot be acted on.
+
+### 9. Regression gates and absolute targets are separate files
+
+`budgets.json` holds `baseline x headroom` — the right shape for catching a
+regression, and the wrong shape for catching an absolute defect, because the
+baseline is whatever the defect already produced. Recorded consequence: an idle
+CPU baseline of 46.4% derives a budget of 60, so the gate certifies half a core
+burned at rest, and a run at 51.5% passes.
+
+`targets.json` holds what a healthy number *is*. Targets are derived from a
+measurement or from arithmetic over measurements, never invented, and each entry
+carries its derivation and the command that reproduces it. A target is never
+widened to make a run pass — when one cannot be met, the next bottleneck is
+located by measurement and recorded. A run that regresses fails (exit 1); a run
+that holds the line but misses a target exits 3 and is not called green.
+
 ## Plugin performance contract
 
 Plugin event handlers (`onDidChangeActiveView` etc.) run **synchronously on

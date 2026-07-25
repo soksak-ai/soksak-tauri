@@ -28,6 +28,9 @@ use tauri::State;
 
 use soksak_spec_pty::{HIGH_WATERMARK, LOW_WATERMARK};
 
+use crate::pty_delivery::spawn_delivery;
+
+
 struct FlowState {
     unacked: usize,
     paused: bool,
@@ -439,6 +442,8 @@ pub fn spawn_terminal(
         let flow = flow.clone();
         let on_output = on_output.clone();
         std::thread::spawn(move || {
+            // 전달 단위는 read 단위가 아니다 — 크로싱은 배치가 소유한다(spawn_delivery).
+            let (deliver, delivery) = spawn_delivery(on_output);
             let mut buf = vec![0u8; 8192];
             loop {
                 // 일시정지 상태면 ack 로 깨어날 때까지 대기.
@@ -452,12 +457,10 @@ pub fn spawn_terminal(
                 match reader.read(&mut buf) {
                     Ok(0) => break, // EOF (셸 종료)
                     Ok(n) => {
-                        if on_output
-                            .send(InvokeResponseBody::Raw(buf[..n].to_vec()))
-                            .is_err()
-                        {
+                        if deliver.send(buf[..n].to_vec()).is_err() {
                             break;
                         }
+                        // 플로우 회계는 읽은 바이트 기준 — 배치가 언제 나가든 창은 같다.
                         let (lock, _) = &*flow;
                         let mut st = lock.lock().unwrap();
                         st.unacked += n;
@@ -468,6 +471,8 @@ pub fn spawn_terminal(
                     Err(_) => break,
                 }
             }
+            drop(deliver); // 마지막 부분 배치를 내보내고 끝난다
+            let _ = delivery.join();
         });
     }
 
@@ -854,6 +859,9 @@ mod daemon {
     use soksak_spec_pty as proto;
     use tauri::ipc::{Channel, InvokeResponseBody};
 
+    // 전달 단위 소유자는 하나 — 인프로세스 백엔드와 같은 모듈을 쓴다(사본 금지).
+    use crate::pty_delivery::spawn_delivery;
+
     // control 연결 1본(요청-응답 직렬) — 명령 빈도가 낮아(입력·리사이즈·ack) 충분하다.
     struct Control {
         reader: BufReader<UnixStream>,
@@ -1101,20 +1109,22 @@ mod daemon {
         {
             let app = app.clone();
             std::thread::spawn(move || {
+                // 데몬 레그도 같은 크로싱으로 끝난다 — 전달 단위 소유자는 하나다.
+                let (deliver, delivery) = spawn_delivery(on_output);
                 let mut buf = vec![0u8; 8192];
                 loop {
                     match stream.read(&mut buf) {
                         Ok(0) | Err(_) => break,
                         Ok(n) => {
-                            if on_output
-                                .send(InvokeResponseBody::Raw(buf[..n].to_vec()))
-                                .is_err()
-                            {
+                            if deliver.send(buf[..n].to_vec()).is_err() {
                                 break; // 프론트 사라짐(창 리로드 등) — 데몬은 계속 산다
                             }
                         }
                     }
                 }
+                // 스트림 종료를 고지하기 전에 마지막 배치를 내보낸다 — 순서가 뒤집히면 꼬리가 잘린다.
+                drop(deliver);
+                let _ = delivery.join();
                 on_stream_end(&app);
             });
         }
@@ -1484,6 +1494,7 @@ mod daemon {
 #[cfg(test)]
 mod tests {
     use super::{shell_safe_base_env, ReplayControl};
+
 
     // 셸 env 화이트리스트 — (a) 내부 시크릿·임의 비밀은 0, (b) 필수 표준·SSH 핸들은 승계.
     // env_clear 후 자식 셸에 실제로 들어갈 목록을 순수 함수 수준에서 못박는다(Local·Daemon 공통).

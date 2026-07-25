@@ -22,6 +22,7 @@ mod plugins;
 mod process;
 mod project_registry;
 mod pty;
+mod pty_delivery;
 mod runtime_dep;
 mod schedule;
 mod secrets;
