@@ -55,12 +55,24 @@ pub const LOW_WATERMARK: usize = 500_000;
 // `bytes.len() < 1024` direct-execute guard. Every one of those ~1 KB units
 // pays a script eval and an ipc:// round trip.
 //
-// A batch forms out of backlog, never out of waiting. There is no timer here
-// and nothing is ever held for bytes that have not arrived: a keystroke echo on
-// a quiet pty is delivered on the pass it arrived, and under bulk output the
-// producer races ahead until the flow window stops it, so the queue is deep and
-// every batch fills. Backlog is the signal, and it reads correctly in both
-// directions — which is why the rule needs neither a deadline nor a poll.
+// Backlog alone does not form a batch, and the rig measured that: with the
+// producer feeding one read at a time, written/ackSent came out at 5,428 B
+// against a 5,000-byte ack threshold — a ~1,086 B delivery unit, unchanged
+// (results/20260726-001819-batched-release-perf.json). Delivering into the
+// webview costs the webview, not this side, so the delivery thread outruns the
+// reader and finds an empty queue on every pass. An empty queue never meant
+// "nothing more is coming".
+//
+// So an open batch is held — but only when its own size says it belongs to a
+// stream. A read off a pty master is on the order of a kilobyte; a keystroke
+// echo is a handful of bytes. A batch that has not reached DELIVERY_MIN_HOLD_BYTES
+// is smaller than a single read and is therefore interactive: it goes now. A
+// batch at or above it is stream output: it waits up to DELIVERY_DEADLINE for
+// the next read, and repeats until it reaches DELIVERY_BATCH_BYTES.
+//
+// The wait is bounded, armed only while a batch is open, and released by the
+// batch closing — never a poll, and never on the echo path. Only the tail of a
+// burst pays it, at under half a 60 Hz frame.
 
 /// Deliver once a batch reaches this size. A single read larger than this is
 /// delivered whole — a read is never split across deliveries.
@@ -74,6 +86,16 @@ pub const LOW_WATERMARK: usize = 500_000;
 /// slack — otherwise the reader stalls at the high mark waiting for an ack that
 /// a single coarse delivery has not yet earned. The test below pins that.
 pub const DELIVERY_BATCH_BYTES: usize = 64 * 1024;
+
+/// Smallest open batch worth holding for more. Below this the bytes are smaller
+/// than one pty master read (measured ~1,086 B on the rig) and so cannot be
+/// stream output — an echo, a prompt — and they go immediately.
+pub const DELIVERY_MIN_HOLD_BYTES: usize = 512;
+
+/// Longest an open batch waits for the next read before it goes anyway. Under
+/// half a 60 Hz frame, so the tail of a burst never costs a visible frame, and
+/// far above the ~0.13 ms inter-read spacing a stream actually arrives at.
+pub const DELIVERY_DEADLINE: std::time::Duration = std::time::Duration::from_millis(8);
 
 /// Forms delivery units out of reads. Deliberately free of clocks and threads:
 /// the caller owns the source and its queue, and asks this type only what a
@@ -102,6 +124,16 @@ impl OutputBatcher {
     /// deadline instead of blocking; a closed one is why it blocks.
     pub fn is_open(&self) -> bool {
         !self.buf.is_empty()
+    }
+
+    /// Bytes currently held. The caller decides whether an open batch is worth
+    /// holding for more, and that decision is the batch's own size.
+    pub fn len(&self) -> usize {
+        self.buf.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.buf.is_empty()
     }
 
     /// Take whatever is buffered — the deadline elapsed, or the source ended.

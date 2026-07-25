@@ -64,6 +64,7 @@ activate_identity() {
   case "$IDENTITY" in
     debug)   bundle="$REPO_ROOT/src-tauri/target/debug/bundle/macos/soksak-debug.app" ;;
     release) bundle="$REPO_ROOT/src-tauri/target/release/bundle/macos/soksak.app" ;;
+    perf)    bundle="$REPO_ROOT/src-tauri/target/release/bundle/macos/soksak-perf.app" ;;
   esac
   if [ -n "$bundle" ] && [ -d "$bundle" ]; then
     open "$bundle"

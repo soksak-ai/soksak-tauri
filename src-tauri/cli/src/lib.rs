@@ -142,22 +142,38 @@ fn default_env() -> &'static str {
 /// 파생한다(P9 와 같은 원천) — help/docs/usage 의 예제 프리픽스가 이 이름을 쓴다. 규칙은 코어
 /// home.rs::cli_for_core_build(release→sok, 그 외→sok-{env}) 를 미러한다 — CLI 는 분리된
 /// 워크스페이스 멤버라 앱 크레이트를 링크할 수 없어 규칙을 여기서 다시 둔다(하드 바이너리 경계).
-fn bin_name_for_env(env: &str) -> &'static str {
-    match env {
-        "dev" => "sok-dev",
-        "debug" => "sok-debug",
-        _ => "sok",
+fn bin_name_for_env(env: &str) -> String {
+    if env == "app" {
+        "sok".to_string()
+    } else {
+        format!("sok-{env}")
     }
 }
 
 // --window 전역 플래그(있으면). main 이 1회 설정 — send_request 의 창 해소에서 env 보다 우선.
 static WINDOW_OVERRIDE: OnceLock<Option<String>> = OnceLock::new();
 
-// env 토큰 검증(dev|debug|app 만). 그 외는 에러.
+// env 토큰 검증. 코어 home.rs 는 identifier 마지막 세그먼트를 그대로 정체성으로 받는다
+// ("새 identity 자동 수용" — identity_suffix_contract). 여기서 목록을 닫아 두면 코어가
+// 인정하는 정체성을 CLI 가 거부해 계약이 갈린다(측정 리그 com.soksak.perf 에서 실제로
+// 갈렸다). 그래서 목록이 아니라 모양으로 검증한다 — 소문자 영숫자 한 세그먼트만.
+// 경로 조립에 쓰이므로 구분자·상위경로·빈 값은 여기서 막힌다.
 fn validate_env(env: &str) -> Result<&str, String> {
-    match env {
-        "dev" | "debug" | "app" => Ok(env),
-        other => Err(format!("알 수 없는 환경: '{other}' (dev|debug|app)")),
+    // release 채널의 env 토큰은 "app" 이다(identifier = com.soksak.app). 모양만 보면
+    // "release" 도 통과하므로, 알려진 오인 하나는 이름을 대며 막는다.
+    if env == "release" {
+        return Err("release 채널의 환경 토큰은 'app' 입니다 (identifier = com.soksak.app)".to_string());
+    }
+    let shaped = !env.is_empty()
+        && env.len() <= 32
+        && env.starts_with(|c: char| c.is_ascii_lowercase())
+        && env.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit());
+    if shaped {
+        Ok(env)
+    } else {
+        Err(format!(
+            "알 수 없는 환경: '{env}' (소문자로 시작하는 영숫자 한 세그먼트 — 예: app, dev, debug, perf)"
+        ))
     }
 }
 
@@ -1723,6 +1739,8 @@ mod tests {
         assert_eq!(bin_name_for_env("dev"), "sok-dev");
         assert_eq!(bin_name_for_env("debug"), "sok-debug");
         assert_eq!(bin_name_for_env("app"), "sok");
+        // 코어가 새 정체성을 자동 수용하므로 이름 규칙도 목록이 아니라 규칙이다.
+        assert_eq!(bin_name_for_env("perf"), "sok-perf");
         // 카탈로그 예제는 명령 형태만 담는다(프리픽스 없음) — format_command_md 가 이 바이너리 이름을
         // 붙여 렌더한다. 프리픽스는 데이터가 아니라 표시자의 정체성이므로, 렌더 산물엔 bin 이 정확히
         // 한 번(이중 프리픽스 없이) 붙는다.
@@ -1878,13 +1896,26 @@ mod tests {
 
     // env 토큰 검증 — dev|debug|app 만.
     #[test]
-    fn env_validation_rejects_unknown() {
+    fn env_validation_is_shape_not_a_closed_list() {
         assert!(validate_env("dev").is_ok());
         assert!(validate_env("debug").is_ok());
         assert!(validate_env("app").is_ok());
-        assert!(validate_env("prod").is_err());
+        // 코어는 identifier 마지막 세그먼트를 그대로 정체성으로 받는다(home.rs
+        // identity_suffix_contract: "새 identity 자동 수용"). 목록을 닫아 두면 코어가
+        // 인정하는 정체성을 CLI 가 거부한다 — 측정 리그 com.soksak.perf 에서 실제로 갈렸다.
+        assert!(validate_env("perf").is_ok());
+        assert!(validate_env("beta2").is_ok());
+        // 잘 생겼지만 존재하지 않는 정체성은 여기서 통과하고 소켓 해소에서 명확히 실패한다
+        // ("soksak(zzz) 미실행 — 소켓 없음: ..."). 그게 목록보다 정확한 실패다.
+        assert!(validate_env("zzz").is_ok());
+        // 다만 알려진 오인 하나는 이름을 대며 막는다 — release 채널의 토큰은 app 이다.
         assert!(validate_env("release").is_err());
+        // 모양 검증은 그대로 — 이 값은 경로 조립에 들어간다.
         assert!(validate_env("").is_err());
+        assert!(validate_env("../etc").is_err());
+        assert!(validate_env("Dev").is_err());
+        assert!(validate_env("de v").is_err());
+        assert!(validate_env("a".repeat(33).as_str()).is_err());
     }
 
     // env 토큰 → 소켓 파일명(identifier 와 일치).

@@ -1,0 +1,74 @@
+{
+  "meta": {
+    "identity": "perf",
+    "cargoProfile": "release",
+    "label": "batched-v2",
+    "git": "70e423e2",
+    "date": "20260726-002930",
+    "t1mb": 100,
+    "windowsOpen": 3,
+    "machine": "Apple M1 Pro"
+  },
+  "scenarios": {
+    "t5_idle": {
+      "seconds": 10,
+      "cpu": {
+        "avg": 7.2,
+        "max": 33.4,
+        "samples": 10
+      }
+    },
+    "t6_memory": {
+      "rssMb": 232.9,
+      "pids": 5
+    },
+    "t2": {
+      "samples": 50,
+      "minMs": 0,
+      "medianMs": 1,
+      "p95Ms": 2,
+      "maxMs": 3,
+      "measurementPoint": "plugin write -> PTY echo -> onData arrival (socket RPC/paint excluded)"
+    },
+    "t1_plain": {
+      "fixture": "plain-100mb.txt",
+      "bytes": 104857662,
+      "durationMs": 2449,
+      "mbps": 40.83,
+      "exitCode": 0,
+      "counters": {
+        "writtenBytesDelta": 106010943,
+        "ackSentDelta": 1641,
+        "writeCbLagMsDelta": 10059,
+        "rafFramesDelta": 134,
+        "webglActive": true,
+        "scrollbackRows": 10000
+      },
+      "cpu": {
+        "avg": 14.7,
+        "max": 72.3,
+        "samples": 18
+      }
+    },
+    "t1_ansi": {
+      "fixture": "ansi-100mb.txt",
+      "bytes": 104857624,
+      "durationMs": 2972,
+      "mbps": 33.65,
+      "exitCode": 0,
+      "counters": {
+        "writtenBytesDelta": 106228877,
+        "ackSentDelta": 1640,
+        "writeCbLagMsDelta": 11672,
+        "rafFramesDelta": 142,
+        "webglActive": true,
+        "scrollbackRows": 10000
+      },
+      "cpu": {
+        "avg": 10.1,
+        "max": 71.9,
+        "samples": 18
+      }
+    }
+  }
+}

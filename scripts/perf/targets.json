@@ -13,7 +13,14 @@
           "fastPathThreshold": "tauri channel.rs:39 MAX_RAW_DIRECT_EXECUTE_THRESHOLD = 1024, guarded by `bytes.len() < 1024` — a ~1030 B chunk misses the direct path and pays a script eval plus an ipc:// fetch round trip."
         },
         "arithmetic": "A 64 KiB batch replaces 65536/1030 = 63.6 crossings with one. If crossings were the whole cost, 4.58 x 63.6 = 291 MB/s. Real paths never recover the full factor, so the target is set at 100 — 34% of the projected ceiling.",
-        "onMiss": "Do not widen this number. Locate the next bottleneck by measurement and record it here."
+        "onMiss": "Do not widen this number. Locate the next bottleneck by measurement and record it here.",
+        "progress": {
+          "run": "results/20260726-002930-batched-v2-perf.json — perf identity, cargoProfile=release, windowsOpen=3",
+          "measured": "t1_plain 40.83 MB/s, t1_ansi 33.65. Against the same rig one build earlier (20260726-001819, delivery still per read) that is 8.4 and 7.83; against the original recorded baseline, 4.58 on the dev profile.",
+          "deliveryUnit": "writtenBytesDelta/ackSentDelta = 64,601 B, i.e. exactly DELIVERY_BATCH_BYTES. The unit is doing what the contract says.",
+          "stillShort": "40.83 against a target of 100. The constraint moved: writeCbLagMs accumulated 10,059 ms across a 2,449 ms run, so several writes are in flight at once and the backlog now lives inside the terminal's parse rather than in the crossing — which is where it belongs, and which is the next thing to measure. rafFrames 134 over 2.449 s is 55 fps, so the renderer is keeping up. Next step is to attribute inside xterm (parse vs render vs addon hooks) before changing anything.",
+          "notRegressed": "t2 median 1 ms, p95 2, max 3 — the interactive path took nothing from the batch hold, which is the property DELIVERY_MIN_HOLD_BYTES exists to keep."
+        }
       },
       "t5_idle.cpu.avg": {
         "target": 5,

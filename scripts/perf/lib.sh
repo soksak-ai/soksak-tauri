@@ -12,6 +12,8 @@ identity_socket() {
     debug)   echo "$HOME/.soksak-debug/com.soksak.debug.sock" ;;
     dev)     echo "$HOME/.soksak-dev/com.soksak.dev.sock" ;;
     release) echo "$HOME/.soksak/com.soksak.app.sock" ;;
+    # 측정 전용 정체성 — 사람이 쓰는 홈을 빌리지 않는다(make build-perf).
+    perf)    echo "$HOME/.soksak-perf/com.soksak.perf.sock" ;;
     *) echo "unknown identity: $1" >&2; return 1 ;;
   esac
 }
@@ -22,6 +24,7 @@ identity_proc_pattern() {
     debug)   echo "soksak-debug.app/Contents/MacOS/soksak-debug" ;;
     dev)     echo "target/debug/soksak-dev" ;;
     release) echo "soksak.app/Contents/MacOS/soksak" ;;
+    perf)    echo "soksak-perf.app/Contents/MacOS/soksak-perf" ;;
   esac
 }
 
@@ -31,6 +34,7 @@ identity_app_name() {
     debug)   echo "soksak-debug" ;;
     dev)     echo "soksak-dev" ;;
     release) echo "soksak" ;;
+    perf)    echo "soksak-perf" ;;
   esac
 }
 
@@ -56,6 +60,7 @@ identity_lsof_pattern() {
     debug)   echo "com.soksak.debug" ;;
     dev)     echo "soksak-dev" ;;
     release) echo "com.soksak/" ;;  # com.soksak.debug/dev 와 구분 위해 / 포함
+    perf)    echo "soksak-perf" ;;
   esac
 }
 

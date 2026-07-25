@@ -1,7 +1,7 @@
 // PTY 출력의 전달 단위를 소유한다 — 계약은 soksak_spec_pty(DELIVERY_BATCH_BYTES,
 // OutputBatcher), 이 파일은 그 계약을 webview 크로싱에 적용하는 한 지점이다.
 // 인프로세스 백엔드와 데몬 릴레이가 같은 함수를 쓴다(사본 금지).
-use soksak_spec_pty::OutputBatcher;
+use soksak_spec_pty::{self as proto, OutputBatcher};
 use tauri::ipc::{Channel, InvokeResponseBody};
 
 /// Turns reads into delivery units on their way to the webview.
@@ -15,14 +15,16 @@ use tauri::ipc::{Channel, InvokeResponseBody};
 /// Only this crossing batches. The daemon's socket write is left alone on
 /// purpose — one owner per crossing is the whole point.
 ///
-/// A batch forms out of backlog, never out of waiting. This thread blocks for
-/// the first read, then takes only what the producer has *already* queued and
-/// delivers. Nothing is ever held for bytes that have not arrived, so an echo
-/// on a quiet pty crosses on the pass it arrived — no deadline sits on the
-/// interactive path (t2 median 1 ms, budget 4.5). Under bulk output the reader
-/// races ahead of this crossing until the flow window stops it, so the queue is
-/// deep and every batch fills. The backlog is the signal, and it is exactly
-/// right in both directions.
+/// The thread blocks for the first read, then takes everything already queued.
+/// When the queue runs dry the open batch decides for itself whether to wait:
+/// below `DELIVERY_MIN_HOLD_BYTES` it is smaller than a single pty read and so
+/// cannot be stream output — an echo, a prompt — and it goes now; at or above
+/// it, the batch waits up to `DELIVERY_DEADLINE` for the next read.
+///
+/// An earlier cut had no wait at all and read an empty queue as "nothing more
+/// is coming". The rig refuted it: written/ackSent stayed at 5,428 B, a ~1,086 B
+/// unit, unchanged. Delivering costs the webview and not this side, so this
+/// thread simply outruns the reader and the queue is empty on every pass.
 ///
 /// Returns the sender a reader thread feeds, and the handle to join before
 /// declaring the stream over — the final partial batch is delivered on drop of
@@ -40,20 +42,32 @@ pub(crate) fn spawn_delivery(
         'stream: loop {
             // 조용한 pty 에서는 여기서 블록한다 — 유휴 비용 0.
             let Ok(first) = rx.recv() else { break };
-            if let Some(batch) = batcher.push(&first) {
-                if !emit(batch) {
-                    return; // 프론트 사라짐
-                }
-                continue;
-            }
-            // 이미 큐에 쌓인 것만 흡수한다. 더 오기를 기다리지 않는다.
+            let mut open = batcher.push(&first);
             loop {
-                let Ok(more) = rx.try_recv() else { break };
-                if let Some(batch) = batcher.push(&more) {
+                if let Some(batch) = open.take() {
                     if !emit(batch) {
-                        return;
+                        return; // 프론트 사라짐
                     }
                     continue 'stream;
+                }
+                // 이미 쌓인 것은 기다릴 것 없이 흡수한다.
+                match rx.try_recv() {
+                    Ok(more) => {
+                        open = batcher.push(&more);
+                        continue;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => break 'stream,
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                }
+                // 큐가 비었다 ≠ 더 올 게 없다(리그 실측). 붙들지 말지는 배치 자신의
+                // 크기가 정한다 — read 한 번보다 작으면 스트림일 수 없다(에코·프롬프트).
+                if batcher.len() < proto::DELIVERY_MIN_HOLD_BYTES {
+                    break;
+                }
+                match rx.recv_timeout(proto::DELIVERY_DEADLINE) {
+                    Ok(more) => open = batcher.push(&more),
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => break,
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break 'stream,
                 }
             }
             if let Some(batch) = batcher.take() {
@@ -148,6 +162,69 @@ mod tests {
 
         drop(deliver);
         delivery.join().unwrap();
+    }
+
+    /// 실측이 반증한 경우 — backlog 만으로는 배치가 서지 않는다.
+    ///
+    /// 리그 실측(20260726-001819, perf/release): 100 MB 를 흘렸는데 written/ackSent 가
+    /// 5,428 B 였다. ack 임계가 5000 이므로 전달 단위는 여전히 ~1,086 B — 배칭 전과 같은
+    /// 자릿수다. Rust 쪽 send 가 싸서 전달 스레드가 리더보다 빠르고, 그래서 매 패스마다
+    /// 큐가 비어 있다. 큐가 비었다는 것이 "더 올 게 없다"는 뜻이 아니었다.
+    ///
+    /// 이 테스트는 그 도착 패턴을 그대로 만든다: 한 번에 한 read 씩, 사이를 띄워서
+    /// 전달 스레드가 항상 빈 큐를 보게 한다.
+    #[test]
+    fn a_paced_bulk_stream_still_batches_even_though_the_queue_is_always_empty() {
+        let (channel, crossings, got) = counting_channel();
+        let (deliver, delivery) = spawn_delivery(channel);
+
+        let chunk = vec![b'x'; 1086]; // 리그에서 실측된 도착 단위
+        let reads = 400;
+        for _ in 0..reads {
+            deliver.send(chunk.clone()).expect("delivery thread alive");
+            std::thread::sleep(std::time::Duration::from_micros(130)); // 실측 도착 간격
+        }
+        drop(deliver);
+        delivery.join().expect("delivery thread joins");
+
+        let sent = crossings.load(Ordering::SeqCst);
+        let bytes = reads * chunk.len();
+        assert_eq!(got.lock().unwrap().len(), bytes, "배치가 바이트를 잃으면 안 된다");
+        eprintln!("  페이스드: {bytes} B / read {reads}회 → 크로싱 {sent}회");
+        assert!(
+            sent * 4 <= reads,
+            "크로싱 {sent}회 / read {reads}회 — 큐가 비어도 배치가 서야 한다",
+        );
+    }
+
+    /// 그리고 그 대기가 인터랙티브 경로를 물어서는 안 된다. 에코는 read 한 번보다도
+    /// 작으므로, 배치를 붙들 이유가 되는 크기에 미치지 못한다.
+    #[test]
+    fn a_stream_of_tiny_echoes_never_waits() {
+        let (channel, crossings, got) = counting_channel();
+        let (deliver, delivery) = spawn_delivery(channel);
+
+        let started = std::time::Instant::now();
+        for i in 0..50u8 {
+            deliver.send(vec![b'a' + (i % 26)]).unwrap();
+            // 앞선 전달 직후에 오는 에코 — 왕복 50회(t2 와 같은 모양).
+            let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
+            while crossings.load(Ordering::SeqCst) <= i as usize
+                && std::time::Instant::now() < deadline
+            {
+                std::thread::yield_now();
+            }
+        }
+        let elapsed = started.elapsed();
+        drop(deliver);
+        delivery.join().unwrap();
+
+        assert_eq!(got.lock().unwrap().len(), 50, "에코 바이트가 전부 건너가야 한다");
+        assert_eq!(crossings.load(Ordering::SeqCst), 50, "에코는 하나씩 즉시 건너간다");
+        assert!(
+            elapsed < std::time::Duration::from_millis(100),
+            "왕복 50회에 {elapsed:?} — 에코가 배치 대기를 물었다",
+        );
     }
 
     /// 꼬리 손실 금지: 마지막 부분 배치는 스트림 종료를 고지하기 전에 나가야 한다.
