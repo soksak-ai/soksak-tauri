@@ -248,7 +248,7 @@ export function registerDataCatalog(): void {
     triggers: { ko: "데이터 쓰기 확인 저장 가능" },
     params: {},
     returns: "{ writable }",
-    message: () => "저장소 쓰기 가능",
+    message: () => tmsg("msg.data.canary"),
     errors: ["INTERNAL"],
     examples: ["data.canary"],
     handler: async () => {
