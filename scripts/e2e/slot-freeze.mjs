@@ -206,6 +206,44 @@ async function main() {
   });
   assert("동결 사이클 — 동결→해동 완주(freeze=0)", cycled.dataset.freeze === "0");
 
+  // 2.5) 스탠드인 피복 — §4.6-3(표면을 숨기지 않는다)이 전적으로 기대는 가정: 스탠드인이
+  //      유일한 홀을 완전히 덮는다. 이 가정이 깨지면 표면이 스탠드인 위로 드러나 활강 내내
+  //      옛 자리의 픽셀이 보인다(핸드오프 §8 경고). 위상 한복판에 슬롯 중심을 히트해 최상단이
+  //      동결 프레임인지 직접 확인한다.
+  {
+    await rpc("view.activate", { view: browserView }, win);
+    await sleep(900);
+    const r0 = (await measure())?.rect;
+    const standinRect = async () => {
+      const m = await rpc(
+        "ui.measure",
+        { address: `win/${win}/chrome/layout/standin/${browserView}` },
+        win,
+      );
+      return m.ok ? m.data.rect : null;
+    };
+    await rpc("view.activate", { view: termView }, win);
+    let covered = null;
+    for (let i = 0; i < 10 && covered === null; i++) {
+      const st = await standinRect();
+      if (st) covered = st;
+      else if ((await measure())?.dataset?.freeze !== "1") break; // 위상 종료 — 더 볼 것 없음
+      await sleep(40);
+    }
+    const slotNow = (await measure())?.rect;
+    assert(
+      "스탠드인 피복 — 활강 중 스탠드인이 홀 슬롯을 정확히 덮는다",
+      !!covered &&
+        !!slotNow &&
+        Math.abs(covered.w - slotNow.w) < 1.5 &&
+        Math.abs(covered.h - slotNow.h) < 1.5,
+      covered
+        ? `standin=${JSON.stringify(covered)} slot=${JSON.stringify(slotNow)}`
+        : "동결 중 스탠드인 주소가 잡히지 않았다",
+    );
+    await sleep(600);
+  }
+
   // 3) 재캡처 — 착지 정착 에지가 다음 스냅을 굽는다(freezeSnapAt 전진).
   const recaptured = await pollUntil("착지 재캡처(freezeSnapAt 전진)", 10000, async () => {
     const d = await measure();

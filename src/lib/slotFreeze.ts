@@ -31,6 +31,8 @@ export interface SlotFreezeDeps {
   emitVeil: (viewId: string, veiled: boolean) => void;
   /** 착지 쓰기가 오지 않을 때 스탠드인을 걷는 상한(ms). 기본 400 — 340ms 주행보다 길다. */
   landingTimeoutMs?: number;
+  /** 정착 스냅 신선도 상한(ms). 기본 120초. */
+  maxSnapAgeMs?: number;
   /** 테스트 주입 — 기본 performance.now. */
   now?: () => number;
   /** 테스트 주입 — 기본 new Image() 동등의 <img> 생성. */
@@ -76,6 +78,11 @@ function holeSlots(root: ParentNode): HTMLElement[] {
 
 export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
   const landingTimeout = deps.landingTimeoutMs ?? 400;
+  // 낡은 스냅은 세우지 않는다(§5-3, 사용자 확정 규칙). 항행 무효화만으로는 부족하다 — 영상·피드·
+  // SPA 는 항행 없이 내용이 바뀌므로 나이가 유일한 방어다. 낡아서 못 세우면 활강 자체를 포기하고
+  // 스냅한다(canFreezeAll → 활강 전제) — 샘플링 추종으로 끌려가지 않으므로 폴백이 안전하다.
+  const maxAge = deps.maxSnapAgeMs ?? 120_000;
+  const fresh = (snap: SlotSnap): boolean => now() - snap.t <= maxAge;
   const now = deps.now ?? (() => performance.now());
   const makeImage = deps.imageFactory ?? (() => document.createElement("img"));
   const snaps = new WeakMap<HTMLElement, SlotSnap>();
@@ -132,14 +139,16 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
     const viewId = viewIdOf(slot);
     if (!viewId) return;
     const snap = snaps.get(slot);
-    // 나이는 정확성의 축이 아니다 — 스탠드인은 340ms 만 서 있고, 그것을 틀리게 만드는 것은
-    // 시계가 아니라 내용 변화다(항행·크기). 그 둘만 스냅을 버릴 근거다.
-    if (!snap) return;
+    if (!snap || !fresh(snap)) return;
     const r = slot.getBoundingClientRect();
     // 스냅 이후 슬롯 크기가 변했으면 세우지 않는다 — 늘어난 정지 사진은 박제다.
     if (Math.abs(r.width - snap.w) > 2 || Math.abs(r.height - snap.h) > 2) return;
     const img = snap.img; // 정착 에지에서 디코드 완료 — append 즉시 페인트
     img.className = "slot-freeze-frame";
+    // 관측 주소 — "스탠드인이 유일한 홀을 완전히 덮는다"가 표면 무숨김(§4.6-3)의 load-bearing
+    // 가정이다. 히트테스트로는 확인할 수 없으므로(pointer-events:none) 주소를 주어 rect 를
+    // 직접 재게 한다. 이 가정이 깨지면 활강 내내 표면이 스탠드인 위로 드러난다.
+    img.dataset.node = `layout/standin/${viewId}`;
     img.style.cssText =
       "position:absolute;inset:0;width:100%;height:100%;object-fit:fill;pointer-events:none;z-index:3;";
     slot.appendChild(img);
@@ -184,7 +193,7 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
         // 홀이 아닌 뷰(DOM 표면)는 스탠드인이 필요 없다 — 스스로 활강한다.
         if (!slot || !slot.isConnected) continue;
         const snap = snaps.get(slot);
-        if (!snap) return false;
+        if (!snap || !fresh(snap)) return false;
         // 크기 판정은 스냅을 구울 때와 같은 원천(bounding rect)으로 — 다른 원천을 섞으면
         // 같은 슬롯을 두 기준이 다르게 재고, 세울 수 있는 스탠드인을 거절한다.
         const r = slot.getBoundingClientRect();

@@ -66,7 +66,10 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
     await microtasks();
     expect(slot.dataset.freezeSnapAt).toBeDefined();
     f.onMotion(true, ["move"]);
-    expect(slot.querySelector("img.slot-freeze-frame")).not.toBeNull();
+    const standin = slot.querySelector<HTMLElement>("img.slot-freeze-frame")!;
+    expect(standin).not.toBeNull();
+    // 피복은 관측 가능해야 한다 — 주소가 없으면 "덮고 있다"를 잴 방법이 없다.
+    expect(standin.dataset.node).toBe("layout/standin/v1");
     expect(slot.dataset.freeze).toBe("1");
     // veil = "스탠드인 뒤에 있다: 따라가지 말고 해동 에지에 한 번 착지하라". 숨기라는 뜻이
     // 아니다(숨김 복귀 사이클 = 깜빡의 진원). 동결된 슬롯의 뷰에만 정확히 간다.
@@ -148,17 +151,19 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
     void a;
   });
 
-  it("나이는 정확성의 축이 아니다 — 오래된 스냅도 내용이 그대로면 세운다", async () => {
+  it("낡은 스냅은 세우지 않는다 — 항행 없이 바뀌는 내용(영상·피드)의 유일한 방어", async () => {
+    // 사용자 확정 규칙(§5-3): kinds 미탑재·스냅 부재·낡은 스냅은 라이브 폴백. 항행 무효화만으로는
+    // 부족하다 — 영상·피드·SPA 는 항행 없이 픽셀이 바뀐다. 낡아서 못 세우면 활강 자체를 포기하고
+    // 스냅하므로(활강 전제) 폴백이 샘플링 추종으로 끌려가지 않는다.
     const slot = makeSlot("v1");
     let clock = 0;
     const f = build({ now: () => clock });
     f.captureSettled();
     await microtasks();
     clock = 60 * 60 * 1000; // 한 시간 뒤
+    expect(f.canFreezeAll(["v1"])).toBe(false); // 활강 전제 불성립 → 활강 대신 스냅
     f.onMotion(true, ["move"]);
-    // 낡음을 이유로 폴백하면 그 위상은 샘플링 추종으로 끌려간다 — 내용 변화(항행·크기)만이
-    // 스냅을 버릴 근거다.
-    expect(slot.dataset.freeze).toBe("1");
+    expect(slot.dataset.freeze).not.toBe("1");
   });
 
   it("활성 중 resize 개입(종별 재발화)이면 즉시 해동한다", async () => {
