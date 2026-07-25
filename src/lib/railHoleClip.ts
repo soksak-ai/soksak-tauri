@@ -31,7 +31,7 @@ export function holeClipPath(
 /** 뷰포트 rect 들을 호스트 상대 좌표로 옮기고, 호스트와 실교차하는 유효 홀만 남긴다. */
 export function visibleHoles(
   host: { left: number; top: number; width: number; height: number },
-  rects: Array<{ left: number; top: number; width: number; height: number }>,
+  rects: ReadonlyArray<{ left: number; top: number; width: number; height: number }>,
 ): ClipRect[] {
   const out: ClipRect[] = [];
   for (const r of rects) {
@@ -68,38 +68,34 @@ let warnedRejected = false;
  * 요소 자신의 박스이므로 홀 rect 를 레이어별 상대 좌표로 옮긴다.
  * 호출 시점: 매 React 커밋(정적 상태) + 애니메이션 위상 rAF(중간 프레임) 둘 다.
  */
-export function applyRailHoleClip(plane: HTMLElement): void {
-  const holeRects = Array.from(
-    document.querySelectorAll<HTMLElement>(HOLE_SLOT_SELECTOR),
-    (el) => el.getBoundingClientRect(),
-  );
-  for (const layer of Array.from(
-    plane.querySelectorAll<HTMLElement>(".sidebar"),
-  )) {
+export function applyRailHoleClip(
+  plane: HTMLElement,
+  holeRects: ReadonlyArray<{ left: number; top: number; width: number; height: number }>,
+): void {
+  // 읽기를 전부 끝낸 뒤 쓰기를 전부 한다. 레이어마다 read→write 를 번갈아 하면 한 번의
+  // clipPath 쓰기가 다음 getBoundingClientRect 를 강제 재레이아웃으로 만든다(레이아웃 스래싱).
+  const layers = Array.from(plane.querySelectorAll<HTMLElement>(".sidebar"));
+  const clips = layers.map((layer) => {
     const box = layer.getBoundingClientRect();
-    const clip = holeClipPath(
-      { w: box.width, h: box.height },
-      visibleHoles(box, holeRects),
-    );
+    return holeClipPath({ w: box.width, h: box.height }, visibleHoles(box, holeRects));
+  });
+  layers.forEach((layer, i) => {
+    const clip = clips[i];
     layer.style.clipPath = clip;
     // 수용 검증 — 엔진이 값을 거부하면 조용한 무클립이 된다. 침묵 금지.
     if (clip !== "" && layer.style.clipPath === "" && !warnedRejected) {
       warnedRejected = true;
       console.warn("[railHoleClip] clip-path 값이 거부됨:", clip);
     }
-  }
+  });
 }
 
-/** 애니메이션 위상 동안 프레임 동기 재계산. 종료 시 해제가 아니라 최종 기하로 1회 정착한다(상시 계약). */
-export function trackRailHoleClip(plane: HTMLElement): () => void {
-  let raf = 0;
-  const tick = () => {
-    applyRailHoleClip(plane);
-    raf = requestAnimationFrame(tick);
-  };
-  raf = requestAnimationFrame(tick);
-  return () => {
-    cancelAnimationFrame(raf);
-    applyRailHoleClip(plane);
-  };
+/**
+ * 홀 rect 수집 — 문서 전체 스캔이다. 홀은 창의 사실이지 어느 프로젝트의 사실이 아니므로
+ * 한 패스에 한 번만 부른다(railHoleClipHost 가 그 소유자다).
+ */
+export function collectHoleRects(): DOMRect[] {
+  return Array.from(document.querySelectorAll<HTMLElement>(HOLE_SLOT_SELECTOR), (el) =>
+    el.getBoundingClientRect(),
+  );
 }

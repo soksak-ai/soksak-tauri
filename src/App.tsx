@@ -20,12 +20,8 @@ import { emitPluginEvent } from "./plugins/hooks";
 import { resolveTerminalProgram } from "./plugins/terminalEngine";
 import { startPointerOrderRepair } from "./lib/pointerOrderRepair";
 import { applyWindowZoom, isPrimaryModifier, routeZoom } from "./lib/zoomIntent";
-import {
-  beginLayoutMotion,
-  endLayoutMotion,
-  onLayoutMotion,
-} from "./lib/layoutMotion";
-import { applyRailHoleClip, trackRailHoleClip } from "./lib/railHoleClip";
+import { beginLayoutMotion, endLayoutMotion } from "./lib/layoutMotion";
+import { registerRailPlane, requestRailHoleClipSync } from "./lib/railHoleClipHost";
 import {
   canGlideViews,
   disposeSlotFreezeHost,
@@ -287,26 +283,15 @@ const ProjectPane = memo(function ProjectPane({
   // 겹치면 언제나 사이드바가 브라우저 아래). DOM 표면은 z(레일 0 < 셀 1)로 성립하지만
   // 홀 뷰의 네이티브 표면은 DOM 전체 뒤라 클립 제외만이 유일한 방법이다(railHoleClip).
   // 정적 상태는 매 커밋에서, 애니메이션 중간 프레임은 모션 위상 rAF 가 갱신한다.
+  // 소유자는 창이다(railHoleClipHost). pane 은 자기 평면을 맡기고 커밋마다 동기를 요청만
+  // 한다 — 문서 스캔도 위상 rAF 도 창에 하나뿐이라 프로젝트 수에 비례하지 않는다.
   useLayoutEffect(() => {
     const plane = railPlaneRef.current;
-    if (plane) applyRailHoleClip(plane);
-  });
-  useEffect(() => {
-    let stop: (() => void) | undefined;
-    const off = onLayoutMotion((active) => {
-      if (active) {
-        const plane = railPlaneRef.current;
-        if (plane && !stop) stop = trackRailHoleClip(plane);
-      } else {
-        stop?.();
-        stop = undefined;
-      }
-    });
-    return () => {
-      off();
-      stop?.();
-    };
+    return plane ? registerRailPlane(plane) : undefined;
   }, []);
+  useLayoutEffect(() => {
+    requestRailHoleClipSync();
+  });
   // pane 그리드 행 계약 소비 — 레일 헤더가 pane 그룹 헤더와 같은 행에 앉도록
   // 같은 소스(GroupArea 상수 + 테마 paneStyle)의 치수를 레일 서브트리에 주입한다.
   const paneStyle = useTheme((s) => s.spec.chrome.paneStyle);

@@ -57,6 +57,13 @@ build: spec-gate cli ## 릴리스 번들 빌드 → "soksak.app"(기본 아이�
 build-debug: spec-gate cli-debug ## 디버그 번들 빌드 → "soksak-debug.app"(주황 아이콘) + sok-debug
 	$(PNPM) tauri build --debug --config $(DEBUG_CONFIG)
 
+# 프로파일 A/B 리그(docs/PERFORMANCE.md 원칙 8). build-debug 와 정체성·프론트가 같고 cargo
+# 프로파일만 다르다 — 같은 홈(~/.soksak-debug), 같은 프로덕션 vite 번들, opt-level 만 0↔3.
+# 그래야 델타가 프로파일의 델타다. release 정체성이 아니므로 updater 서명키가 필요 없고,
+# 사용자 dev 인스턴스와도 홈이 갈린다. 산출물은 target/release/bundle 로 나온다.
+build-debug-optimized: spec-gate cli-debug ## 최적화 프로파일 + debug 정체성 — 프로파일 A/B 의 반대편
+	$(PNPM) tauri build --config $(DEBUG_CONFIG)
+
 run: ## 릴리스 soksak.app 실행(새 인스턴스)
 	@test -d "$(RELEASE_APP)" || { echo "먼저 'make build' 를 실행하세요."; exit 1; }
 	open -n "$(RELEASE_APP)"
