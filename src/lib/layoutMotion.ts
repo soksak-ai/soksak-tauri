@@ -65,14 +65,23 @@ function syncEmit(): void {
   const key = `${active}:${kinds.join(",")}`;
   if (key === lastEmittedKey) return;
   lastEmittedKey = key;
-  emitPluginEvent("layout.resize-gesture", { active, kinds });
+  // scope 를 플러그인 채널에도 싣는다 — 무관 표면이 위상마다 작업(bounds 강제 재전송·생존
+  // 프로브·재스냅)을 하던 결함의 근치(실측: 무관 스왑 3회에 브라우저 생존 프로브 4회).
+  // views 생략 = 전역 위상(모든 표면 대상). 구 소비자는 이 필드를 몰라도 종전대로 동작한다.
+  const scopeViews = activeScope();
+  // 종료(active:false)는 범위를 싣지 않는다 — 종료 통지는 전원에게 가야 한다(범위 밖이라
+  // 무시하면 위상 중 세운 상태를 걷을 기회를 잃는다). 시작·종별변화에만 범위를 싣는다.
+  emitPluginEvent("layout.resize-gesture", {
+    active,
+    kinds,
+    ...(active && scopeViews ? { views: [...scopeViews] } : {}),
+  });
   void invoke("webview_resize_gesture", { active }).catch(() => {
     // 비-macOS 등 릴레이 미지원은 무해 — 플러그인 채널은 이미 전달됨.
   });
   // 로컬 리스너: 에지에서 부르되(기존 계약), 활성 중 종별 변화도 전달한다 — 코어 소비자
   // (슬롯 동결)가 kinds·scope 재평가를 해야 하므로 플러그인 채널과 같은 조건으로 부른다.
-  const scope = activeScope();
-  for (const l of listeners) l(active, kinds, scope);
+  for (const l of listeners) l(active, kinds, scopeViews);
 }
 
 /** 모션 위상 활성 여부(레퍼카운트 > 0). */

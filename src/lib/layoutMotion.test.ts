@@ -104,3 +104,21 @@ describe("layoutMotion — 로컬 리스너 kinds 전달", () => {
     ]);
   });
 });
+
+describe("layoutMotion — 플러그인 채널 범위(무관 표면 침묵)", () => {
+  it("시작은 범위를 싣고, 종료는 전원 통지(범위 없음)", () => {
+    beginLayoutMotion("move", ["vA"]);
+    expect(payloads[payloads.length - 1]).toEqual({
+      active: true,
+      kinds: ["move"],
+      views: ["vA"],
+    });
+    endLayoutMotion("move");
+    expect(payloads[payloads.length - 1]).toEqual({ active: false, kinds: [] });
+  });
+  it("전역 위상은 범위를 싣지 않는다(모든 표면 대상)", () => {
+    beginLayoutMotion("move");
+    expect(payloads[payloads.length - 1]).toEqual({ active: true, kinds: ["move"] });
+    endLayoutMotion("move");
+  });
+});
