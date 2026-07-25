@@ -484,10 +484,13 @@ body,
 /* [임시 — 포커스 스포트라이트 실험] focusDim: 전체를 가라앉히고 선택만 명확하게(사용자
    개념). blur 는 텍스트를 뭉개므로 밝기·채도 하강만. 전이로 활성 이동 시 어둠이 옮겨간다.
    네이티브 child(브라우저 등)는 이 단계에선 대상 밖(캐비앳 — 실험 대장). 결정 시 소거. */
+/* dim 은 값 전이를 하지 않는다 — filter 는 합성 레이어를 만들고, 전이를 걸면 포커스가
+   바뀔 때마다 160ms 동안 매 프레임 그 레이어를 재래스터한다(실사고: 무관한 탭 클릭에
+   패널이 움찔). 상시 승격 자체는 무해하니 filter 는 남기고 전이만 걷는다. 전이감이 필요한
+   곳은 ::after 베일(페인트만, 승격 무관)이 담당한다 — 홀 슬롯 규칙 참조. */
 .egroup-area[data-focus-dim] .egroup-cell,
 .egroup-area[data-focus-dim] .egroup-body-slot {
   filter: brightness(0.93) saturate(0.85);
-  transition: filter 160ms ease;
 }
 /* 네이티브 표면 셰이드 — 레이어 역전(DOM 최상위·엔진/child 웹뷰는 투명 홀로 아래에서 비침)
    때문에 filter 는 네이티브 콘텐츠에 닿지 않는다. 셰이드는 슬롯 배경이 아니라 ::after(z4) —

@@ -197,7 +197,9 @@ describe("railRelation 모드 CSS 갈래 (App.css)", () => {
     for (const part of [".egroup-cell", ".egroup-body-slot"]) {
       const dim = decls(`.egroup-area[data-focus-dim] ${part}`);
       expect(dim).toMatch(/filter:\s*brightness\(0\.93\)\s*saturate\(0\.85\)/);
-      expect(dim).toMatch(/transition:[^;]*filter/);
+      // filter 전이는 금지다 — 포커스마다 승격된 레이어를 160ms 재래스터해 패널이 움찔했다
+      // (실사고). 전이감은 ::after 베일(페인트만)이 담당한다.
+      expect(dim).not.toMatch(/transition:[^;]*filter/);
       const clear = decls(`.egroup-area[data-focus-dim] ${part}.spot-clear`);
       expect(clear).toMatch(/filter:\s*none/);
     }

@@ -267,6 +267,33 @@ async function main() {
     );
   }
 
+  // 7) 시각 효과 소유권(런타임) — 무관 포커스 사건의 위상 중, 브라우저 슬롯의 합성 상태가
+  // 중립이어야 한다. 정적 게이트(visualEffectOwnership.test.ts)가 CSS 규칙을 막고, 이 게이트는
+  // 실제 계산값을 막는다: 위상마다 붙는 animation/will-change 가 레이어를 올렸다 내리며
+  // DOM(주소표시줄)을 움찔거린 실사고의 재발 금지.
+  {
+    await rpc("view.activate", { view: browserView }, win);
+    await sleep(600);
+    await rpc("view.activate", { view: termView }, win);
+    await sleep(60); // 위상 중 — 애니메이션이 붙었다면 지금 잡힌다
+    const m = await rpc(
+      "ui.measure",
+      { address: slotAddr, props: ["animationName", "willChange", "transform"] },
+      win,
+    );
+    const st = m.data?.style ?? {};
+    const neutral =
+      (st.animationName ?? "none") === "none" &&
+      (st.willChange ?? "auto") === "auto";
+    assert(
+      "시각 효과 소유권 — 무관 위상 중 슬롯 합성 중립(anim/will-change)",
+      neutral,
+      neutral ? "" : `anim=${st.animationName} wc=${st.willChange}`,
+    );
+    await sleep(500);
+  }
+
+
 
 
 

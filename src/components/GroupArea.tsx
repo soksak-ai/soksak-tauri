@@ -771,7 +771,7 @@ export const GroupArea = memo(function GroupArea({
               // 전부 이 클래스 하나를 본다.
               className={`egroup-body-slot${isHoleView(view) ? " hole-slot" : ""}${
                 group.id === content.activeGroupId ? " spot-clear" : ""
-              }${flipMoves(slotRect, group.id) ? " flip-move" : ""}`}
+              }${shown && flipMoves(slotRect, group.id) ? " flip-move" : ""}`}
               // 네이티브 클릭 판정용(App.tsx native-mousedown → elementFromPoint).
               data-group-id={group.id}
               data-project-id={projectId}
