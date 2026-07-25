@@ -176,6 +176,9 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
       for (const [slot, cur] of frozen) {
         cur.img.remove();
         slot.dataset.freeze = "0";
+        // 회수도 착지 에지다 — veil 을 켠 채 사라지면 소유자는 "따라가지 마라"를 영구히
+        // 지키고, 그 표면은 이후 어떤 이동에도 bounds 를 보내지 않는다(정지 좌초).
+        deps.emitVeil(cur.viewId, false);
       }
       frozen.clear();
     },

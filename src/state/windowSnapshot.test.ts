@@ -172,6 +172,33 @@ describe("left rail FLOW/PIN persistence", () => {
     expect(back.leftRailPlacement).toEqual({ mode: "pin", station: 60 });
   });
 
+  it("폐지 시대의 pin 잔재는 1회 정규화로 기본(flow)으로 되돌린다", () => {
+    // 레일 이주가 폐지돼 있던 동안 직렬화는 placement 미설정 프로젝트에도 pin@0 을 적어
+    // 넣었다(그때의 기본값). 그 스냅샷을 그대로 믿으면 복원된 프로젝트는 영구히 정박해
+    // 레일이 포커스를 따라가지 않는다 — 기능이 조용히 죽어 보인다. 마커 없는 스냅샷은
+    // 저장된 placement 를 한 번 버린다(vlNormalized 와 같은 1회 마이그레이션).
+    const legacy = serializeProject({
+      ...project,
+      leftRailPlacement: { mode: "pin", station: 0 },
+    });
+    delete legacy.railPlacementNormalized;
+    expect(deserializeProject(legacy, newSplitId).leftRailPlacement).toEqual({
+      mode: "flow",
+    });
+  });
+
+  it("마커가 있으면 사용자가 고른 PIN 을 그대로 존중한다(1회성 보장)", () => {
+    const marked = serializeProject({
+      ...project,
+      leftRailPlacement: { mode: "pin", station: 60 },
+    });
+    expect(marked.railPlacementNormalized).toBe(true);
+    expect(deserializeProject(marked, newSplitId).leftRailPlacement).toEqual({
+      mode: "pin",
+      station: 60,
+    });
+  });
+
   it("placement 필드가 없는 스냅샷은 기본(flow)으로 복원한다", () => {
     const legacy = serializeProject({
       ...project,

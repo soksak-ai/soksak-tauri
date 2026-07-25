@@ -73,6 +73,10 @@ export interface ProjectSnapshot {
   // 복원 시 1회 normalizeVerticalLines 로 치유하고, 마커 있는 복원은 무변환(동형)이다 —
   // 사용자가 드래그 규칙(LINE_GROUP_EPS) 밖에 둔 별개 라인을 복원이 되쓰지 않는다.
   vlNormalized?: true;
+  // 배치 1회 마이그레이션 마커 — 레일 이주가 폐지돼 있던 동안 직렬화가 placement 미설정
+  // 프로젝트에도 정박(pin@0)을 적어 넣었다. 마커 없는 스냅샷의 placement 는 그 시대의
+  // 기본값일 수 있으므로 한 번 버린다(제거 조건: 마커 없는 스냅샷이 현장에서 사라졌을 때).
+  railPlacementNormalized?: true;
   sidebarOpen: boolean;
   // 레일 프레임 위치 PIN. projection.pins(ref 고정)과 직교. 옵션은 구 스냅샷 호환.
   leftRailPlacement?: RailPlacement;
@@ -144,6 +148,7 @@ export function serializeProject(
     ...(p.shell ? { shell: p.shell } : {}),
     ...(p.color ? { color: p.color } : {}),
     vlNormalized: true,
+    railPlacementNormalized: true,
     sidebarOpen: p.sidebarOpen,
     leftRailPlacement: p.leftRailPlacement ?? DEFAULT_RAIL_PLACEMENT,
     rightOpen: p.rightOpen,
@@ -244,7 +249,11 @@ export function deserializeProject(
     ...(s.shell ? { shell: s.shell } : {}),
     ...(s.color ? { color: s.color } : {}),
     sidebarOpen: s.sidebarOpen,
-    leftRailPlacement: normalizeRailPlacement(s.leftRailPlacement),
+    // 마커 없는 구 스냅샷은 저장값을 신뢰하지 않는다 — 폐지 시대의 기본값(pin@0)과 사용자가
+    // 고른 정박을 구분할 방법이 없으므로 1회 기본(flow)으로 되돌린다. 마커가 있으면 그대로 존중.
+    leftRailPlacement: s.railPlacementNormalized
+      ? normalizeRailPlacement(s.leftRailPlacement)
+      : DEFAULT_RAIL_PLACEMENT,
     rightOpen: s.rightOpen,
     rightView: s.rightView,
     leftLayout: deserializeSplitTree(s.leftLayout, (g) => g, newSplitId),

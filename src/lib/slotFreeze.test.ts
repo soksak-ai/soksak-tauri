@@ -128,6 +128,21 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
     expect(veils).toEqual([["v1", true], ["v1", false]]);
     expect(slot.dataset.freeze).toBe("0");
   });
+
+  it("회수(dispose)도 착지 신호를 보낸다 — veil 을 켠 채 사라지면 표면이 영구히 안 따라온다", () => {
+    // 위상 중 프로젝트 pane 이 언마운트되면 동결만 걷히고 veil(true) 이 남는다. 소비자는
+    // "따라가지 마라"를 계속 지키므로 이후 어떤 리사이즈에도 bounds 를 보내지 않는다.
+    const slot = makeSlot("v1");
+    const f = build();
+    f.captureSettled();
+    return microtasks().then(() => {
+      f.onMotion(true, ["move"]);
+      expect(veils).toEqual([["v1", true]]);
+      f.dispose();
+      expect(veils).toEqual([["v1", true], ["v1", false]]);
+      expect(slot.querySelector("img")).toBeNull();
+    });
+  });
 });
 
 describe("slotFreeze — dim 상태 캡처 배제(포커스 장식 박제 금지)", () => {
