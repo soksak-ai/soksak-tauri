@@ -47,10 +47,33 @@ Resolution failure — unimplemented contract, disabled provider, missing consum
 - **Succession**: when the bound view closes, the binding falls back to the most recent surviving focus-history view in the same space, then to tab adjacency.
 - **Restore**: cold restart reproduces the projection isomorphically — per-space binding, slot composition, instanceKey links, structural state. Stale pins persist in the per-project window snapshot until removed.
 
+## 3.5 The Arrangement Standard
+
+Where the rail stands and which panel moves where is not decided at render
+time — it is solved. `solveArrangement` (`src/lib/railArrangement.ts`) is a
+pure function of the split tree, the focus, the placement, and whether the
+sidebar is open, and it is the only place any of these decisions live:
+
+| Output | Rule |
+|---|---|
+| `station` | flow: the focused panel's left clean line (a full-height vertical line no panel crosses); if that line is blocked, the nearest clean line in front of it. pin: the stored station snapped to the nearest clean line. An unresolved focus holds the current position — it is not an instruction to go to zero. |
+| `displayLayout` / `switched` | Rows do not always line up (a wide panel above two below it). When the focused panel's left line is blocked, it switches with the nearest leaf sibling to its left — the first candidate that makes the line clean wins, so panels not involved stay put, and sizes swap with the panels so no content is resized. `switched` is the single reason a manufactured adjacency gets the dashed seam; natural adjacency is unmarked. |
+| `cells` | The displayed rects in the 0..100 plane. Widths are computed on `hostWidth - railWidth` regardless of station, so a station change never resizes a panel. |
+| moves (`arrangementMoves`) | The panels that actually move between two arrangements, as logical deltas: container % for a swap, rail-width multiples for a change of insertion side. The consumer with the measured host width folds them into one pixel offset (`moveOffsetPx`); folding the two axes anywhere else gets a click that both switches and travels wrong. Deltas below the epsilon are not movement — they are float residue from a resize, and treating them as travel opens a phantom phase on every tab switch. |
+
+Everything downstream reads that solution: the rail frame, the panel grid, the
+travel phase, freeze scope, the seam overlay, and `state.tree`. The split,
+merge, move and close commands run the tree change and report the landed
+arrangement in their reply; `layout.arrangement` reads it directly. There is
+no command that sets an arrangement — it is a function of the tree and the
+focus, so a setter would be a second truth.
+
 ## 4. Commands and Events
 
 | Surface | Behavior |
 |---|---|
+| `layout.arrangement` | Read the solved arrangement of the active space: station, clean lines, whether the focused panel was switched, and the displayed cells with their side of the rail. |
+| `sidebar.left.position` | Read or set the rail position mode — `flow` (default, stands at the focused panel's clean left line) or `pin` (frozen at a station). |
 | `ui.projection.state` | Read a project's binding (view/group/content), resolved slots with status (`live`/`degraded`/`satisfied-by-pin`), pins, and focus history. |
 | `ui.projection.pin` / `unpin` | `pin` rejects both sides: the left rail is projection-only (no pin axis), and the right side is the reserved plugin surface, rejected until its pin stack renderer ships. `unpin` removes stale pins idempotently. |
 | `ui.intent.open` | Open a path through the binding context (same path the rail uses). |
