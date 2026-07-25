@@ -164,11 +164,30 @@ pub fn failure_evidence(conn: &Connection) -> String {
     let f = findings(conn);
     let head = f.first().cloned().unwrap_or_else(|| "없음".to_string());
     let proc = process_memory_probe();
+    // SQLite 로그는 마지막 몇 줄만, 그것도 짧게 싣는다 — 증거는 오류 메시지에 실려 사람 눈앞까지
+    // 가는데, 스물몇 줄의 SQL 전문을 그대로 실으면 화면을 삼킨다(실사고: 레일이 로그로 도배됐다).
+    // 전문은 data.stats 가 따로 들고 있으니, 여기서는 무엇이 걸렸는지 알아볼 만큼만 남긴다.
+    const LOG_TAIL: usize = 3;
+    const LOG_LINE_MAX: usize = 90;
     let log = recent_sqlite_log();
     let proc = if log.is_empty() {
         proc
     } else {
-        format!("{proc} | SQLite 로그: {}", log.join(" ; "))
+        let tail: Vec<String> = log
+            .iter()
+            .rev()
+            .take(LOG_TAIL)
+            .rev()
+            .map(|l| {
+                let t: String = l.chars().take(LOG_LINE_MAX).collect();
+                if l.chars().count() > LOG_LINE_MAX {
+                    format!("{t}…")
+                } else {
+                    t
+                }
+            })
+            .collect();
+        format!("{proc} | SQLite 로그(최근 {}줄): {}", tail.len(), tail.join(" ; "))
     };
     match stats(conn) {
         Ok(s) => format!(
