@@ -190,14 +190,68 @@ pub fn publish(app: &AppHandle, kind: &str, source: &str, payload: Value) -> Val
             // 불변식: 영속 행은 PERSIST_DOC_CAP 을 넘지 않는다(초대형 행 하나가 json 파스에서
             // 수백 MB malloc 을 유발해 앱을 즉사시켰던 실측의 재발 방지 — 방어가 아니라 계약).
             let persisted = summarize_for_persist(&entry);
-            if let Err(e) = crate::data::store::put(conn, NS, COLL, scope, id, &persisted) {
-                eprintln!("[activity] 영속 실패: {e}");
+            // 회복 드레인 — 큐가 비었거나 첫 건이 성공하는 동안만(실패 지속 중 헛시도 방지).
+            if let Ok(mut q) = PENDING.lock() {
+                while let Some(row) = q.front() {
+                    match crate::data::store::put(conn, NS, COLL, row.scope, row.id.clone(), &row.doc) {
+                        Ok(_) => {
+                            q.pop_front();
+                        }
+                        Err(_) => break,
+                    }
+                }
+            }
+            if let Err(e) = crate::data::store::put(conn, NS, COLL, scope, id.clone(), &persisted) {
+                note_persist_failure(&e.to_string());
+                if let Ok(mut q) = PENDING.lock() {
+                    let dropped = pending_push(&mut q, PendingRow { scope, id, doc: persisted });
+                    if dropped > 0 {
+                        PERSIST_DROPS.fetch_add(dropped, std::sync::atomic::Ordering::Relaxed);
+                    }
+                }
             } else {
                 let _ = crate::data::store::retention_trim(conn, NS, COLL, scope, PERSIST_CAP);
             }
         }
     }
     entry
+}
+
+// ── 영속 실패 회복 큐 ────────────────────────────────────────────────────────
+// 호스트 메모리 고갈(실측: 스왑 55.8/57.3GB — sqlite malloc 이 SQLITE_NOMEM(7))에서 영속이
+// 연쇄 실패하면 관찰 사실(boot.step 등)이 통째로 사라지고, 매 건 eprintln 이 로그를 폭주시켰다
+// (실측 3,391줄 — 이 로그 자체가 부하다). 실패분은 상한 큐에 보관했다가 회복되면 순서대로
+// 늦게라도 영속한다. 상한 초과는 오래된 것부터 드롭하되 드롭 수를 센다(침묵 유실 금지).
+const PENDING_CAP: usize = 512;
+const FAIL_LOG_EVERY: u64 = 100;
+struct PendingRow {
+    scope: &'static str,
+    id: Option<String>,
+    doc: Value,
+}
+static PENDING: std::sync::Mutex<std::collections::VecDeque<PendingRow>> =
+    std::sync::Mutex::new(std::collections::VecDeque::new());
+static PERSIST_FAILS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static PERSIST_DROPS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// 큐에 실패분을 넣는다(상한 초과 = 앞에서 드롭). 반환 = 드롭 수 증가분.
+fn pending_push(q: &mut std::collections::VecDeque<PendingRow>, row: PendingRow) -> u64 {
+    q.push_back(row);
+    let mut dropped = 0;
+    while q.len() > PENDING_CAP {
+        q.pop_front();
+        dropped += 1;
+    }
+    dropped
+}
+
+/// 실패 1건 보고 — 첫 실패와 매 FAIL_LOG_EVERY 회마다만 로그(집계 동반).
+fn note_persist_failure(err: &str) {
+    let n = PERSIST_FAILS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+    if n == 1 || n % FAIL_LOG_EVERY == 0 {
+        let dropped = PERSIST_DROPS.load(std::sync::atomic::Ordering::Relaxed);
+        eprintln!("[activity] 영속 실패 누적 {n}건(드롭 {dropped}) — 최근: {err}");
+    }
 }
 
 /// 활동 컬렉션 정의(부트 1회, 멱등) — kind 인덱스(필터 조회).
@@ -354,3 +408,29 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod pending_tests {
+    use super::*;
+    use serde_json::json;
+
+    // 회복 큐 계약 — 실측 RED: 스왑 고갈(55.8/57.3GB)에서 영속 연쇄 실패 시 관찰 사실이
+    // 통째로 사라졌고(boot.step 부재로 복원 결함 규명이 막혔다) 로그가 3,391줄 폭주했다.
+    #[test]
+    fn pending_keeps_order_and_caps_with_counted_drops() {
+        let mut q = std::collections::VecDeque::new();
+        let mut dropped = 0;
+        for i in 0..(PENDING_CAP + 7) {
+            dropped += pending_push(
+                &mut q,
+                PendingRow { scope: SCOPE, id: Some(format!("a{i}")), doc: json!({ "i": i }) },
+            );
+        }
+        assert_eq!(q.len(), PENDING_CAP, "상한 유지");
+        assert_eq!(dropped, 7, "초과분은 드롭으로 센다 — 침묵 유실 금지");
+        // 남은 첫 항목 = 가장 오래된 생존자(드롭된 7 다음) — FIFO 순서 보존.
+        assert_eq!(q.front().unwrap().id.as_deref(), Some("a7"));
+        assert_eq!(q.back().unwrap().id.as_deref(), Some(&format!("a{}", PENDING_CAP + 6)[..]));
+    }
+}
+
