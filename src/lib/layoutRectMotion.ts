@@ -34,6 +34,8 @@ export function createRectMotionTracker(): RectMotionTracker {
   // 겹치면 두 애니메이션이 동시에 살아 겹침·잔상이 되고(실측: 사용자 화면), 진행 중 gBCR
   // (보간값)을 prev 로 삼아 다음 FLIP 의 출발점까지 오염된다.
   const running = new WeakMap<HTMLElement, Animation>();
+  // 직전 flush 에서 flip-move(CSS 레일 활강 소유)였는지 — 제거 커밋의 정산 스킵에 쓴다.
+  const wasFlipMove = new WeakMap<HTMLElement, boolean>();
   return {
     ref: (el) => {
       if (el) els.add(el);
@@ -81,6 +83,17 @@ export function createRectMotionTracker(): RectMotionTracker {
         const offscreen = (r2: Snap) => r2.x + r2.w <= 0 || r2.x >= vw;
         if (offscreen(was) || offscreen(now)) {
           noteRectMotionSkip(el.dataset.node ?? el.className, "park-transition");
+          continue;
+        }
+        // 레일 활강(CSS rail-flip-x)이 소유한 이동은 보간하지 않는다 — 한 이동 한 모션.
+        // flip-move 가 붙은 커밋은 CSS 가 활강을 그리고, 제거되는 커밋의 rect 변화는 그
+        // 활강의 실좌표 정산이다(실측 원장 2026-07-27: 클릭 1회에 CSS 활강 → 350ms 뒤
+        // 같은 이동의 JS FLIP 여정 — 화면이 두 번 미끄러졌다. 사용자 실측 "2번 움직인다").
+        const fm = el.classList.contains("flip-move");
+        const fmWas = wasFlipMove.get(el) === true;
+        wasFlipMove.set(el, fm);
+        if (fm || fmWas) {
+          noteRectMotionSkip(el.dataset.node ?? el.className, "rail-flip-owned");
           continue;
         }
         const tabId = el.dataset.node?.startsWith("layout/tab/")
