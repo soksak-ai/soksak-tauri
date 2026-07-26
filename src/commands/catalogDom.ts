@@ -763,6 +763,10 @@ export function registerDomCatalog(): void {
       filter: { type: "string", description: "Only addresses containing this substring" },
       props: { type: "json", description: "Extra computed-style property names, e.g. [\"backgroundColor\",\"zIndex\"]" },
     },
+    examples: [
+      "ui.snapshot.dom",
+      'ui.snapshot.dom \'{"filter":"pane","props":["backgroundColor"]}\'',
+    ],
     returns: "{ count, nodes: [{ address, nodePath, rect, style? }] }",
     message: (d) => tmsg("msg.ui.snapshot.dom", { count: String(d.count ?? 0) }),
     errors: ["INVALID_PARAMS"],

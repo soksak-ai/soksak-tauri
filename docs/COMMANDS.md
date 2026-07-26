@@ -69,12 +69,12 @@ sok-dev ai.session.inspect '{"path":"~/.claude/projects/-Users-me-proj/<id>.json
 
 ## `ai.session.lineage`
 
-Read the session-transition history for a working directory (and optionally one viewId), oldest first. Each row is {viewId, fromSession, toSession, kind, time} — the time-ordered from→to chain is the flow, and one fromSession branching to several toSession is a fork. This is what we observe via watch since claude doesn't record /clear·/resume branches itself. | 세션계보 세션흐름 세션분기 lineage
+Read the session-transition history for a working directory (and optionally one tab), oldest first. Each row is the stored transition record {viewId (stored key for the tab), fromSession, toSession, kind, time} — the time-ordered from→to chain is the flow, and one fromSession branching to several toSession is a fork. This is what we observe via watch since claude doesn't record /clear·/resume branches itself. | 세션계보 세션흐름 세션분기 lineage
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `cwd` | string | ✓ | Working directory (scope) to read lineage for |
-| `viewId` | string |  | Limit to one terminal view; omit for all in this cwd |
+| `tabId` | string |  | Limit to one terminal tab; omit for all in this cwd |
 
 **Returns**: { rows }
 **Errors**: INVALID_PARAMS, INTERNAL
@@ -185,7 +185,7 @@ Register a long-running project process (dev server, watcher, database) as a dae
 | `name` | string | ✓ | Daemon name from the Procfile |
 | `project` | string |  | Project id (omit = active project) |
 
-**Returns**: { name, cmd }
+**Returns**: { projectId, name, cmd }
 **Errors**: TARGET_NOT_FOUND, INVALID_PARAMS
 
 ```bash
@@ -202,7 +202,7 @@ Allow or revoke automatic start when this project opens (omit name = every decla
 | `on` | boolean | ✓ | true = start when the project opens |
 | `project` | string |  | Project id (omit = active project) |
 
-**Returns**: { autostart: Record<name, boolean> }
+**Returns**: { projectId, autostart: Record<name, boolean> }
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
@@ -218,7 +218,7 @@ List the project's daemons — Procfile declarations merged with runtime state (
 |---|---|---|---|
 | `project` | string |  | Project id (omit = active project) |
 
-**Returns**: { daemons: [{ name, cmd, running, pid?, uptimeMs?, autostart, managed, exitCode? }] }
+**Returns**: { projectId, daemons: [{ name, cmd, running, pid?, uptimeMs?, autostart, managed, exitCode? }] }
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
@@ -235,7 +235,7 @@ Read a daemon's recent output from the in-memory ring buffer (last 500 lines at 
 | `name` | string | ✓ | Daemon name from the Procfile |
 | `project` | string |  | Project id (omit = active project) |
 
-**Returns**: { name, lines: [string] }
+**Returns**: { projectId, name, lines: [string] }
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
@@ -252,7 +252,7 @@ Remove a daemon declaration from the project's Procfile. A running instance is s
 | `name` | string | ✓ | Daemon name from the Procfile |
 | `project` | string |  | Project id (omit = active project) |
 
-**Returns**: { name, removed }
+**Returns**: { projectId, name, removed }
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
@@ -268,7 +268,7 @@ Restart a daemon — stop (tree kill or managed stop command) and start again. |
 | `name` | string | ✓ | Daemon name from the Procfile |
 | `project` | string |  | Project id (omit = active project) |
 
-**Returns**: { name, pid }
+**Returns**: { projectId, name, pid }
 **Errors**: TARGET_NOT_FOUND, INTERNAL
 
 ```bash
@@ -285,7 +285,7 @@ Set per-daemon local options — currently the stop command for detached tools w
 | `project` | string |  | Project id (omit = active project) |
 | `stop` | string |  | Command that shuts the daemon down (empty string clears it) |
 
-**Returns**: { name, stop? }
+**Returns**: { projectId, name, stop? }
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
@@ -301,7 +301,7 @@ Start a declared daemon (omit name = every declared daemon that is not running).
 | `name` | string |  | Daemon name from the Procfile |
 | `project` | string |  | Project id (omit = active project) |
 
-**Returns**: { started: [{ name, pid }] }
+**Returns**: { projectId, started: [{ name, pid }] }
 **Errors**: TARGET_NOT_FOUND, INTERNAL
 
 ```bash
@@ -318,7 +318,7 @@ Stop a running daemon (omit name = all). The whole process tree is terminated �
 | `name` | string |  | Daemon name from the Procfile |
 | `project` | string |  | Project id (omit = active project) |
 
-**Returns**: { stopped: [name] }
+**Returns**: { projectId, stopped: [name] }
 **Errors**: TARGET_NOT_FOUND, INTERNAL
 
 ```bash
@@ -687,7 +687,7 @@ DEV-ONLY: emit a mock remote destructive confirm request so the desktop RemoteCo
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `command` | string |  | Command summary to show (default panel.close). |
+| `command` | string |  | Command summary to show (default pane.close). |
 | `device_id` | string |  | Requesting device label to show (default iPhone-mock). |
 | `params` | string |  | Optional params summary string to show. |
 | `ttl_secs` | number |  | Countdown seconds to show (default 120). |
@@ -699,37 +699,6 @@ sok-dev dev.remoteConfirmMock
 sok-dev dev.remoteConfirmMock '{"command":"terminal.clear","device_id":"Pixel-9"}'
 ```
 
-## `editor.close`
-
-Close an editor view (same as view.close).
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `view` | string | ✓ | Target view id (omit = caller's context view) |
-
-**Returns**: { activePanelId, activeViewId }
-**Errors**: TARGET_NOT_FOUND, LAST_ITEM
-
-```bash
-sok-dev editor.close '{"view":"v4"}'
-```
-
-## `editor.open`
-
-Open a file in an editor view. If already open, activates that tab instead. | 파일 열기 에디터 편집 코드
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `path` | string | ✓ | Absolute file path |
-| `project` | string |  | Target project id (omit = caller's context project) |
-
-**Returns**: { viewId, panelId, existing }
-**Errors**: TARGET_NOT_FOUND
-
-```bash
-sok-dev editor.open '{"path":"/Users/me/work/src/main.rs"}'
-```
-
 ## `explorer.list`
 
 List direct children of a directory (same view as the file tree). Omit path to use the project root (falls back to HOME). | 파일 목록 디렉토리 폴더 내용 탐색
@@ -739,7 +708,7 @@ List direct children of a directory (same view as the file tree). Omit path to u
 | `path` | string |  | Absolute directory path |
 | `project` | string |  | Target project id (omit = caller's context project) |
 
-**Returns**: { root, children: [{name,dir}] }
+**Returns**: { projectId|null, root, children: [{name,dir}] }
 **Errors**: TARGET_NOT_FOUND, INTERNAL
 
 ```bash
@@ -779,25 +748,25 @@ sok-dev fs.watch '{"path":"/Users/me/work"}'
 
 ## `layout.apply`
 
-Apply a layout by building fresh spaces — never destroys existing spaces. Hierarchy: first-level spaces are independent switchable screens; second-level panels are the splits inside each space. preset dev = a terminal plus a browser side by side (if no browser program is installed, that panel is skipped and reported in skipped). preset facets = build the named spaces you pass in (spaces required). Verify by switching to a space with space.activate, then capturing with window.snapshot. | 화면 구성 레이아웃 적용 스페이스 배치 개발 나란히 dev facets
+Apply a layout by building fresh spaces — never destroys existing spaces. Hierarchy: first-level spaces are independent switchable screens; second-level panes are the splits inside each space. preset dev = a terminal plus a browser side by side (if no browser program is installed, that pane is skipped and reported in skipped). preset facets = build the named spaces you pass in (spaces required). Verify by switching to a space with space.activate, then capturing with window.snapshot. | 화면 구성 레이아웃 적용 스페이스 배치 개발 나란히 dev facets
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `preset` | string | ✓ | dev = a terminal plus a browser side by side; facets = build the named spaces passed in spaces (dev|facets) |
 | `project` | string |  | Target project id (omit = caller's context project) |
-| `spaces` | json |  | Named spaces to build (required for facets): [{ title, panels?: [{ program, side? }] }] |
+| `spaces` | json |  | Named spaces to build (required for facets): [{ title, panes?: [{ program, side? }] }] |
 
-**Returns**: { spaces: [{ spaceId, title, panels: [{ panelId, program }] }], skipped? } — skipped lists panels dropped because their program is missing
+**Returns**: { projectId, spaces: [{ spaceId, title, panes: [{ paneId, program }] }], skipped? } — skipped lists panes dropped because their program is missing
 **Errors**: INVALID_PARAMS, TARGET_NOT_FOUND
 
 ```bash
 sok-dev layout.apply dev
-sok-dev layout.apply '{"preset":"facets","spaces":[{"title":"docs","panels":[{"program":"browser"}]}]}'
+sok-dev layout.apply '{"preset":"facets","spaces":[{"title":"docs","panes":[{"program":"browser"}]}]}'
 ```
 
 ## `layout.arrangement`
 
-The solved arrangement of the active space: the rail station, whether the focused panel was switched to the front (row-mismatch rule), the displayed cell rects, and the move list a focus change would produce. Read-only — the arrangement is a function of the split tree and the focus, so panel.*/sidebar.left.position are the ways to change it. | 배치 해 레일 스테이션 이동량 스위칭 정렬 계산 확인
+The solved arrangement of the active space: the rail station, whether the focused pane was switched to the front (row-mismatch rule), the displayed cell rects, and the move list a focus change would produce. Read-only — the arrangement is a function of the split tree and the focus, so pane.*/sidebar.left.position are the ways to change it. | 배치 해 레일 스테이션 이동량 스위칭 정렬 계산 확인
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -947,139 +916,140 @@ Show an OS desktop notification (title + body). Behaves like a push notification
 sok-dev notify.show '{"title":"배포 완료","body":"prod 배포가 끝났습니다"}'
 ```
 
-## `panel.close` (danger: destructive)
+## `pane.activate`
 
-Close a panel and all its tabs. Refuses to close the last panel. | 패널 닫기 제거
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `panel` | string | ✓ | Target panel id (omit = caller's context panel) |
-
-**Returns**: { activePanelId }
-**Errors**: TARGET_NOT_FOUND, LAST_ITEM
-
-```bash
-sok-dev panel.close '{"panel":"g2"}'
-```
-
-## `panel.equalize`
-
-Equalize split ratios — with index, halves the two areas at that divider (same as double-clicking the divider); without index, distributes all children equally. | 패널 균등 같은 크기 반반 균등화
+Activate a pane, making it the focused one. | 칸 포커스 활성화 선택
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `index` | number |  | Divider index (0 = first boundary). Omit to equalize all children. |
-| `project` | string |  | Target project id (omit = caller's context project) |
-| `split` | string | ✓ | Split node id (e.g. s1) |
+| `pane` | string | ✓ | Target pane id (omit = caller's context pane) |
 
-**Returns**: { sizes }
-**Errors**: TARGET_NOT_FOUND, INVALID_PARAMS
-
-```bash
-sok-dev panel.equalize '{"split":"s1"}'
-sok-dev panel.equalize '{"split":"s1","index":0}'
-```
-
-## `panel.focus`
-
-Focus (activate) a panel, making it the active group. | 패널 포커스 활성화 선택
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `panel` | string | ✓ | Target panel id (omit = caller's context panel) |
-
-**Returns**: {}
+**Returns**: { paneId }
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-dev panel.focus '{"panel":"g2"}'
+sok-dev pane.activate '{"pane":"pan-p2q3r4"}'
 ```
 
-## `panel.list`
+## `pane.close` (danger: destructive)
 
-List displayed panels in a space, including rect (%), displayed layout, immutable canonical layout, and projection provenance.
+Close a pane and all its tabs. Refuses to close the last pane. | 칸 닫기 제거
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `pane` | string | ✓ | Target pane id (omit = caller's context pane) |
+
+**Returns**: { paneId(closed), activePaneId }
+**Errors**: TARGET_NOT_FOUND, LAST_ITEM
+
+```bash
+sok-dev pane.close '{"pane":"pan-p2q3r4"}'
+```
+
+## `pane.equalize`
+
+Even out a gutter — halves the two areas the seam divides (what double-clicking it does). Pass all:true to give every area along that seam's axis the same share instead of just the two neighbours. | 칸 균등 같은 크기 반반 균등화
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `all` | boolean |  | Equalize every area along that seam's axis, not just the two neighbours |
+| `edge` | string | ✓ | Which of the pane's edges the gutter sits on — right|bottom are canonical, left|top name the same gutter from the neighbour's side (right|bottom|left|top) |
+| `pane` | string |  | Target pane id (omit = caller's context pane) |
+
+**Returns**: { paneId, gutter:{pane,edge}(canonical), sizes }
+**Errors**: TARGET_NOT_FOUND, INVALID_PARAMS
+
+```bash
+sok-dev pane.equalize '{"edge":"right"}'
+sok-dev pane.equalize '{"pane":"pan-g2h3j4","edge":"bottom","all":true}'
+```
+
+## `pane.list`
+
+List displayed panes in a space, including rect (%), displayed layout, immutable canonical layout, and projection provenance.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `project` | string |  | Target project id (omit = caller's context project) |
 | `space` | string |  | Target space tab id |
 
-**Returns**: { activePanelId, layout, canonicalLayout, projection, railRelation:{boundViewId,boundPanelId,connected}?, panels[] }
+**Returns**: { projectId, spaceId, activePaneId, layout, canonicalLayout, projection, railRelation:{boundTabId,boundPaneId,connected}?, panes[] }
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-dev panel.list
+sok-dev pane.list
 ```
 
-## `panel.merge`
+## `pane.merge`
 
-Merge panels — move all tabs from src into dst; empty src panel is removed automatically. | 패널 합치기 병합 탭 이동 합병
+Merge panes — move all tabs from src into dst; empty src pane is removed automatically. | 칸 합치기 병합 탭 이동 합병
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `dst` | string | ✓ | Destination panel id |
+| `dst` | string | ✓ | Destination pane id |
 | `project` | string |  | Target project id (omit = caller's context project) |
-| `src` | string | ✓ | Source panel id |
+| `src` | string | ✓ | Source pane id |
 
-**Returns**: { panelId(merged panel) }
+**Returns**: { projectId, paneId(merged pane) }
 **Errors**: TARGET_NOT_FOUND, LAST_ITEM
 
 ```bash
-sok-dev panel.merge '{"src":"g2","dst":"g1"}'
+sok-dev pane.merge '{"src":"pan-p2q3r4","dst":"pan-g2h3j4"}'
 ```
 
-## `panel.move`
+## `pane.move`
 
-Reposition a panel — move the entire src panel to the zone position relative to dst. | 패널 이동 재배치 위치 옮기기
+Reposition a pane — move the entire src pane to the zone position relative to dst. | 칸 이동 재배치 위치 옮기기
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `dst` | string | ✓ | Destination panel id |
+| `dst` | string | ✓ | Destination pane id |
 | `project` | string |  | Target project id (omit = caller's context project) |
-| `src` | string | ✓ | Source panel id |
+| `src` | string | ✓ | Source pane id |
 | `zone` | string | ✓ | Drop zone (center = move/merge; others = split in that direction) (center|left|right|top|bottom) |
 
-**Returns**: { panelId }
+**Returns**: { projectId, paneId }
 **Errors**: TARGET_NOT_FOUND, LAST_ITEM
 
 ```bash
-sok-dev panel.move '{"src":"g2","dst":"g1","zone":"left"}'
+sok-dev pane.move '{"src":"pan-p2q3r4","dst":"pan-g2h3j4","zone":"left"}'
 ```
 
-## `panel.resize`
+## `pane.resize`
 
-Adjust split ratios — provide the splitId (layout.split.id from state.tree) and an array of sizes that sum to 1. | 패널 크기 조절 비율 분할 조정 바꾸기
+Move one gutter — the seam on the given edge of a pane. ratio is the new share of the area on that pane's side of the seam; the neighbour on the other side takes the rest, and the panes further along keep their sizes. Every seam is some pane's right or bottom edge (left/top name the same seam from the neighbour's side), so no interior layout id is ever needed. | 칸 크기 조절 비율 골 조정 바꾸기 경계 끌기
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `project` | string |  | Target project id (omit = caller's context project) |
-| `sizes` | number[] | ✓ | Child ratios array summing to 1 (e.g. [0.7,0.3]) |
-| `split` | string | ✓ | Split node id (e.g. s1) |
+| `edge` | string | ✓ | Which of the pane's edges the gutter sits on — right|bottom are canonical, left|top name the same gutter from the neighbour's side (right|bottom|left|top) |
+| `pane` | string |  | Target pane id (omit = caller's context pane) |
+| `ratio` | number | ✓ | New share (0..1, exclusive) of the two adjacent areas for the side the pane sits on |
 
-**Returns**: {}
+**Returns**: { paneId, gutter:{pane,edge}(canonical), sizes }
 **Errors**: TARGET_NOT_FOUND, INVALID_PARAMS
 
 ```bash
-sok-dev panel.resize '{"split":"s1","sizes":[0.7,0.3]}'
+sok-dev pane.resize '{"edge":"right","ratio":0.7}'
+sok-dev pane.resize '{"pane":"pan-g2h3j4","edge":"bottom","ratio":0.35}'
 ```
 
-## `panel.split`
+## `pane.split`
 
-Split a panel — add a new panel beside the target on a given side (optionally running a program). Use when arranging the layout or opening something side by side. | 패널 나누기 분할 화면 옆에 열기 나란히
+Split a pane — add a new pane beside the target on a given side (optionally running a program). Use when arranging the layout or opening something side by side. | 칸 나누기 분할 화면 옆에 열기 나란히
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `panel` | string |  | Target panel id (omit = caller's context panel) |
-| `program` | string |  | Program id — plugin-registered only (see program.list; no built-in default). Omitted or unregistered id opens a blank panel |
+| `pane` | string |  | Target pane id (omit = caller's context pane) |
+| `program` | string |  | Program id — plugin-registered only (see program.list; no built-in default). Omitted or unregistered id opens a blank pane |
 | `project` | string |  | Target project id (omit = caller's context project) |
 | `side` | string | ✓ | Split direction (left|right|top|bottom) |
 
-**Returns**: { panelId(new panel), viewId, paneId?, arrangement:{station,switched,cleanLines[],cells[]} }
+**Returns**: { projectId, paneId(new pane), tabId?, arrangement:{station,switched,cleanLines[],cells[]} }
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-dev panel.split '{"side":"right"}'
-sok-dev panel.split '{"side":"bottom","program":"browser"}'
+sok-dev pane.split '{"side":"right"}'
+sok-dev pane.split '{"side":"bottom","program":"browser"}'
 ```
 
 ## `plugin.catalog`
@@ -1369,7 +1339,7 @@ Read plugin setting values at a given scope. Scope 'effective' (default) merges 
 | `project` | string |  | Project id. Defaults to active project. Applies to project and effective scopes. |
 | `scope` | string |  | effective (default, merges global+project) | global | project (effective|global|project) |
 
-**Returns**: { id, scope, values } or { id, scope, key, value }
+**Returns**: { id, scope, projectId, values } or { id, scope, projectId, key, value }
 **Errors**: TARGET_NOT_FOUND, INVALID_PARAMS
 
 ```bash
@@ -1379,7 +1349,7 @@ sok-dev plugin.settings.get '{"id":"soksak-plugin-<id>","key":"defaultAgent","sc
 
 ## `plugin.settings.open`
 
-Open the unified settings modal. With a plugin id, navigates directly to that plugin's settings panel. Omit id for the general preferences section. Pass an empty string to close the modal. Idempotent. | 설정 열기 환경설정 모달 플러그인 패널
+Open the unified settings modal. With a plugin id, navigates directly to that plugin's settings section. Omit id for the general preferences section. Pass an empty string to close the modal. Idempotent. | 설정 열기 환경설정 모달 플러그인 패널
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -1404,7 +1374,7 @@ Remove a setting override and restore the default value. Scope defaults to globa
 | `project` | string |  | Project id. Defaults to active project. Applies when scope=project. |
 | `scope` | string |  | global (default) | project (global|project) |
 
-**Returns**: { id, scope, key, project? }
+**Returns**: { id, scope, key, projectId?, projectRoot? }
 **Errors**: TARGET_NOT_FOUND, INVALID_PARAMS
 
 ```bash
@@ -1438,7 +1408,7 @@ Write a plugin setting value after schema validation. Scope defaults to global; 
 | `scope` | string |  | global (default) | project (global|project) |
 | `value` | json | ✓ | Value to set (boolean | number | string — must match schema type) |
 
-**Returns**: { id, scope, key, value, project? }
+**Returns**: { id, scope, key, value, projectId?, projectRoot? }
 **Errors**: TARGET_NOT_FOUND, INVALID_PARAMS
 
 ```bash
@@ -1464,36 +1434,36 @@ sok-dev plugin.update '{"id":"soksak-plugin-<id>"}'
 
 ## `plugin.view.close`
 
-Close a plugin view. Sidebar placements are deselected and revert to the file tree. Content placements close the tab in every editor group where the view is open. | 플러그인 뷰 닫기 사이드바 탭 제거
+Close a plugin view. Sidebar placements are deselected and revert to the file tree. Content placements close the tab in every pane where the view is open. | 플러그인 뷰 닫기 사이드바 탭 제거
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `project` | string |  | Project id. Defaults to the active project. |
-| `view` | string | ✓ | Global view key in the form "<pluginId>.<viewId>" |
+| `viewKey` | string | ✓ | Global view key in the form "<pluginId>.<viewId>" |
 
-**Returns**: { view, closed: [placement list] }
+**Returns**: { viewKey, projectId, closed: [placement list], tabIds: [closed content tab ids] }
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-dev plugin.view.close '{"view":"soksak-plugin-<id>.<view>"}'
+sok-dev plugin.view.close '{"viewKey":"soksak-plugin-<id>.<view>"}'
 ```
 
 ## `plugin.view.open`
 
-Open a plugin view in the specified placement. Defaults to the view's declared defaultPlacement when placement is omitted. View implementation and placement are orthogonal (spec §0-6). | 플러그인 뷰 열기 사이드바 패널 탭 보기
+Open a plugin view in the specified placement. Defaults to the view's declared defaultPlacement when placement is omitted. View implementation and placement are orthogonal (spec §0-6). | 플러그인 뷰 열기 사이드바 칸 탭 보기
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `placement` | string |  | Where to place the view. Defaults to the view's defaultPlacement. (content|rail|rail-footer) |
 | `project` | string |  | Project id. Defaults to the active project. |
-| `view` | string | ✓ | Global view key in the form "<pluginId>.<viewId>" |
+| `viewKey` | string | ✓ | Global view key in the form "<pluginId>.<viewId>" |
 
-**Returns**: { view, placement, projectId } (sidebar placements) | { view, placement, projectId, viewId, panelId, existing } (content placement)
+**Returns**: { viewKey, placement, projectId } (sidebar placements) | { viewKey, placement, projectId, paneId, tabId, existing } (content placement)
 **Errors**: TARGET_NOT_FOUND, INVALID_PARAMS
 
 ```bash
-sok-dev plugin.view.open '{"view":"soksak-plugin-<id>.<view>"}'
-sok-dev plugin.view.open '{"view":"soksak-plugin-<id>.<view>","placement":"content"}'
+sok-dev plugin.view.open '{"viewKey":"soksak-plugin-<id>.<view>"}'
+sok-dev plugin.view.open '{"viewKey":"soksak-plugin-<id>.<view>","placement":"content"}'
 ```
 
 ## `process.list`
@@ -1561,11 +1531,11 @@ Set the accent color for a project (rail chip and tab highlight). Omit color to 
 | `color` | string |  | CSS color (e.g. #4a8fe8). Omit to revert to default. |
 | `project` | string | ✓ | Target project id (omit = caller's context project) |
 
-**Returns**: {}
+**Returns**: { projectId }
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-dev project.color '{"project":"t1","color":"#4a8fe8"}'
+sok-dev project.color '{"project":"pjt-a2b3c4","color":"#4a8fe8"}'
 ```
 
 ## `project.list`
@@ -1590,7 +1560,7 @@ Open a project (creates it if it doesn't exist yet). When root is omitted, folde
 | `root` | string |  | Project root directory (absolute path — home/root forbidden) |
 | `shell` | string |  | Terminal shell path (omit = global setting → $SHELL) |
 
-**Returns**: { projectId, spaceId, panelId, viewId, paneId?, existing? } | { existingWindow } (already open in another window — focused instead) | { routedWindow } (called on the control-plane window — opened in a new project window instead)
+**Returns**: { projectId, spaceId, paneId, tabId, existing? } | { existingWindow } (already open in another window — focused instead) | { routedWindow } (called on the control-plane window — opened in a new project window instead)
 **Errors**: INVALID_PARAMS
 
 ```bash
@@ -1631,11 +1601,11 @@ Rename a project tab. | 프로젝트 이름 바꾸기 변경 제목
 | `project` | string | ✓ | Target project id (omit = caller's context project) |
 | `title` | string | ✓ | New project name |
 
-**Returns**: {}
+**Returns**: { projectId }
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-dev project.rename '{"project":"t1","title":"백엔드"}'
+sok-dev project.rename '{"project":"pjt-a1b2c3","title":"백엔드"}'
 ```
 
 ## `project.rightbar.toggle`
@@ -1647,7 +1617,7 @@ Toggle the right plugin sidebar (⌥⌘B). Provide open to set state explicitly 
 | `open` | boolean |  | When provided, force open or closed |
 | `project` | string |  | Target project id (omit = caller's context project) |
 
-**Returns**: { rightOpen }
+**Returns**: { projectId, rightOpen }
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
@@ -1663,7 +1633,7 @@ Toggle the file-tree sidebar for a project. | 사이드바 파일트리 열기 �
 |---|---|---|---|
 | `project` | string |  | Target project id (omit = caller's context project) |
 
-**Returns**: { sidebarOpen }
+**Returns**: { projectId, sidebarOpen }
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
@@ -1681,11 +1651,11 @@ Batch-update project settings. Omitted fields are preserved; "" removes the over
 | `shell` | string |  | Terminal shell path ("" = default) |
 | `title` | string |  | Alias (empty string is ignored) |
 
-**Returns**: {}
+**Returns**: { projectId }
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-dev project.update '{"project":"t1","title":"백엔드","program":"claude"}'
+sok-dev project.update '{"project":"pjt-a2b3c4","title":"백엔드","shell":"/bin/zsh"}'
 ```
 
 ## `pty.daemon.restart` (danger: destructive)
@@ -1723,17 +1693,17 @@ sok-dev pty.daemon.upgrade
 
 ## `pty.session.alive`
 
-Report whether the PTY daemon still holds a live shell for this pane id — true even across an app restart before anything reattaches. Distinct from being attached in this window (see pty.session.list). | 헤드리스 세션 생존 확인
+Report whether the PTY daemon still holds a live shell for this session id — true even across an app restart before anything reattaches. Distinct from being attached in this window (see pty.session.list). | 헤드리스 세션 생존 확인
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `pane` | string | ✓ | Session pane id |
+| `session` | string | ✓ | Session id |
 
-**Returns**: { pane, alive, attached }
+**Returns**: { session, alive, attached }
 **Errors**: INVALID_PARAMS
 
 ```bash
-sok-dev pty.session.alive '{"pane":"agent-k3f9a2-1"}'
+sok-dev pty.session.alive '{"session":"agent-k3f9a2-1"}'
 ```
 
 ## `pty.session.kill` (danger: destructive)
@@ -1742,20 +1712,20 @@ Close a headless PTY session and its daemon shell. | 헤드리스 세션 종료
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `pane` | string | ✓ | Session pane id |
+| `session` | string | ✓ | Session id |
 
-**Returns**: { pane }
+**Returns**: { session }
 **Errors**: INVALID_PARAMS, TARGET_NOT_FOUND
 
 ```bash
-sok-dev pty.session.kill '{"pane":"agent-k3f9a2-1"}'
+sok-dev pty.session.kill '{"session":"agent-k3f9a2-1"}'
 ```
 
 ## `pty.session.list`
 
 List headless PTY sessions attached in this window. | 헤드리스 세션 목록
 
-**Returns**: { sessions: [{pane, bytesSeen, spawnedAt}] }
+**Returns**: { sessions: [{session, bytesSeen, spawnedAt}] }
 
 ```bash
 sok-dev pty.session.list
@@ -1768,33 +1738,33 @@ Read the raw output tail of a headless PTY session (bounded ring, ANSI included 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `lines` | number |  | Trailing lines to keep (default all buffered) |
-| `pane` | string | ✓ | Session pane id |
+| `session` | string | ✓ | Session id |
 
-**Returns**: { pane, tail, bytesSeen }
+**Returns**: { session, tail, bytesSeen }
 **Errors**: INVALID_PARAMS, TARGET_NOT_FOUND
 
 ```bash
-sok-dev pty.session.read '{"pane":"agent-k3f9a2-1","lines":200}'
+sok-dev pty.session.read '{"session":"agent-k3f9a2-1","lines":200}'
 ```
 
 ## `pty.session.spawn` (danger: inject)
 
-Spawn (or warm-reattach) a headless daemon-backed PTY session under a caller-chosen pane id. No view is created; the core drains and acks output into a bounded raw tail readable via pty.session.read. Respawning the same pane id reattaches to the still-running shell; pass replayFromSeq to skip ring replay up to a sequence already consumed. | 헤드리스 터미널 세션 생성 재부착
+Spawn (or warm-reattach) a headless daemon-backed PTY session under a caller-chosen session id. No tab is created; the core drains and acks output into a bounded raw tail readable via pty.session.read. Respawning the same session id reattaches to the still-running shell; pass replayFromSeq to skip ring replay up to a sequence already consumed. | 헤드리스 터미널 세션 생성 재부착
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `cols` | number |  | Columns (default 200) |
 | `cwd` | string |  | Working directory |
-| `pane` | string | ✓ | Caller-owned session pane id |
 | `replayFromSeq` | number |  | Warm-reattach: attach the daemon ring from this sequence |
 | `rows` | number |  | Rows (default 50) |
+| `session` | string | ✓ | Caller-owned session id |
 | `shell` | string |  | Shell binary (default: user shell) |
 
-**Returns**: { pane, attached }
+**Returns**: { session, attached }
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
-sok-dev pty.session.spawn '{"pane":"agent-k3f9a2-1","cwd":"/tmp"}'
+sok-dev pty.session.spawn '{"session":"agent-k3f9a2-1","cwd":"/tmp"}'
 ```
 
 ## `pty.session.write` (danger: inject)
@@ -1804,13 +1774,13 @@ Write raw bytes (text) to a headless PTY session created by pty.session.spawn. |
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `data` | string | ✓ | Raw text to write |
-| `pane` | string | ✓ | Session pane id |
+| `session` | string | ✓ | Session id |
 
-**Returns**: { pane, bytes }
+**Returns**: { session, bytes }
 **Errors**: INVALID_PARAMS, TARGET_NOT_FOUND
 
 ```bash
-sok-dev pty.session.write '{"pane":"agent-k3f9a2-1","data":"ls\r"}'
+sok-dev pty.session.write '{"session":"agent-k3f9a2-1","data":"ls\r"}'
 ```
 
 ## `registry.add`
@@ -1947,7 +1917,7 @@ Show the desktop human confirm modal for a destructive remote action and await t
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `command` | string | ✓ | Human-readable command summary to show (e.g. panel.close). |
+| `command` | string | ✓ | Human-readable command summary to show (e.g. pane.close). |
 | `danger` | boolean |  | Always true on this path (destructive only). |
 | `device_id` | string | ✓ | Requesting remote device label to show. |
 | `params` | string |  | Optional params summary string to show. |
@@ -1957,7 +1927,7 @@ Show the desktop human confirm modal for a destructive remote action and await t
 **Returns**: { approve }
 
 ```bash
-sok-dev remote.confirm '{"request_id":42,"device_id":"iphone-15","command":"panel.close","danger":true,"ttl_secs":30}'
+sok-dev remote.confirm '{"request_id":42,"device_id":"iphone-15","command":"pane.close","danger":true,"ttl_secs":30}'
 ```
 
 ## `schedule.cancel`
@@ -2163,7 +2133,7 @@ Change an application setting. key: language|projectTabPosition|iconSet|iconBox|
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `key` | string | ✓ | Setting key (language|projectTabPosition|iconSet|iconBox|focusIndicator|railRelation|railFill|focusDim|railSeamStyle|appFontFamily|windowZoom|orchestratorAgent|orchestratorModel) |
-| `value` | json | ✓ | Value — language:ko|en, projectTabPosition:top|left, iconSet:string (registered set id — unregistered falls back to lucide), iconBox:boolean, focusIndicator:outline|corners, railRelation:tint|moment|stroke (rail-panel relation surface — tint fill only, moment flash on rebind, stroke outline+label), railFill:none|faint (bound-panel background in stroke mode — none is the default, faint is a 1% accent tint), focusDim:boolean (spotlight — every panel dims except the active one), railSeamStyle:seam|edge (how a manufactured adjacency is marked: seam dashes the inner shared edge, edge dashes the outer right edge), appFontFamily:string (CSS font-family stack), windowZoom:number (0.5-2.0 — whole-window zoom factor applied to the main webview and every child webview), orchestratorAgent:string (agent CLI command or path the natural-language console spawns), orchestratorModel:string (--model alias for the agent; empty = CLI default) |
+| `value` | json | ✓ | Value — language:ko|en, projectTabPosition:top|left, iconSet:string (registered set id — unregistered falls back to lucide), iconBox:boolean, focusIndicator:outline|corners, railRelation:tint|moment|stroke (rail-pane relation surface — tint fill only, moment flash on rebind, stroke outline+label), railFill:none|faint (bound-pane background in stroke mode — none is the default, faint is a 1% accent tint), focusDim:boolean (spotlight — every pane dims except the active one), railSeamStyle:seam|edge (how a manufactured adjacency is marked: seam dashes the inner shared edge, edge dashes the outer right edge), appFontFamily:string (CSS font-family stack), windowZoom:number (0.5-2.0 — whole-window zoom factor applied to the main webview and every child webview), orchestratorAgent:string (agent CLI command or path the natural-language console spawns), orchestratorModel:string (--model alias for the agent; empty = CLI default) |
 
 **Returns**: { key, value }
 **Errors**: INVALID_PARAMS
@@ -2181,19 +2151,19 @@ Drag-merge a left sidebar view — into=merge as a tab, left/right=horizontal sp
 |---|---|---|---|
 | `project` | string |  | Target project id (omit = caller's context project) |
 | `target` | string | ✓ | target viewKey (a view in the target group) |
-| `view` | string | ✓ | viewKey to move |
+| `viewKey` | string | ✓ | viewKey to move |
 | `zone` | string | ✓ | into | left | right | top | bottom (4-direction, same as content area) (into|left|right|top|bottom) |
 
-**Returns**: {}
+**Returns**: { projectId }
 **Errors**: TARGET_NOT_FOUND, INVALID_PARAMS
 
 ```bash
-sok-dev sidebar.left.move '{"view":"soksak-plugin-<id>.<view>","target":"soksak-plugin-<other-id>.<view>","zone":"right"}'
+sok-dev sidebar.left.move '{"viewKey":"soksak-plugin-<id>.<view>","target":"soksak-plugin-<other-id>.<view>","zone":"right"}'
 ```
 
 ## `sidebar.left.position`
 
-Read or set the project left rail position mode. Omit mode to query. flow (default) stands the rail at the focused panel's clean left line and travels with focus; pin without station freezes the current effective line; pin with station snaps to the nearest clean full-height grid line. The solved arrangement is what state.tree reports. | 좌측 사이드바 레일 위치 플로우 포커스 추종 핀 고정 그립 스냅
+Read or set the project left rail position mode. Omit mode to query. flow (default) stands the rail at the focused pane's clean left line and travels with focus; pin without station freezes the current effective line; pin with station snaps to the nearest clean full-height grid line. The solved arrangement is what state.tree reports. | 좌측 사이드바 레일 위치 플로우 포커스 추종 핀 고정 그립 스냅
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -2213,24 +2183,24 @@ sok-dev sidebar.left.position '{"mode":"flow"}'
 
 ## `sidebar.left.resize`
 
-Resize a left sidebar split by ratio — sizes parallel to the split's children (sum 1). Split ids from sidebar.left.tree. | 좌측 사이드바 분할 비율 크기 조절
+Resize the left sidebar split that holds a view — sizes are parallel to that split's children (sum 1). The tree's interior nodes have no name, so the split is named by one of the views inside it (viewKeys from sidebar.left.tree). | 좌측 사이드바 분할 비율 크기 조절
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `project` | string |  | Target project id (omit = caller's context project) |
 | `sizes` | number[] | ✓ | Ratio per child, sum 1 |
-| `split` | string | ✓ | Sidebar split id |
+| `viewKey` | string | ✓ | A viewKey inside the split to resize (its own tab group's split) |
 
-**Returns**: {}
-**Errors**: TARGET_NOT_FOUND
+**Returns**: { projectId, sizes }
+**Errors**: TARGET_NOT_FOUND, INVALID_PARAMS
 
 ```bash
-sok-dev sidebar.left.resize '{"split":"s7","sizes":[0.6,0.4]}'
+sok-dev sidebar.left.resize '{"viewKey":"soksak-plugin-<id>.<view>","sizes":[0.6,0.4]}'
 ```
 
 ## `sidebar.left.tree`
 
-Return the left sidebar layout tree (SplitTree of tab groups) — split ids, sizes, each leaf's viewKeys + active. Source for sidebar.left.move/resize targets. | 좌측 사이드바 레이아웃 트리 탭 분할 구조
+Return the left sidebar layout tree (SplitTree of tab groups) — direction, sizes, each leaf's viewKeys + active. Source for sidebar.left.move/resize targets, which name a viewKey (the tree's interior nodes have no name). | 좌측 사이드바 레이아웃 트리 탭 분할 구조
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -2283,11 +2253,11 @@ Switch to a specific space tab, making it active. | 탭 이동 전환 바꾸기
 | `project` | string |  | Target project id (omit = caller's context project) |
 | `space` | string | ✓ | Target space tab id |
 
-**Returns**: {}
+**Returns**: { projectId, spaceId }
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-dev space.activate '{"space":"c2"}'
+sok-dev space.activate '{"space":"spc-d5e6f7"}'
 ```
 
 ## `space.close` (danger: destructive)
@@ -2299,11 +2269,11 @@ Close a space tab. Refuses to close the last remaining space. | 탭 닫기 스�
 | `project` | string |  | Target project id (omit = caller's context project) |
 | `space` | string | ✓ | Target space tab id |
 
-**Returns**: { activeSpaceId }
+**Returns**: { projectId, spaceId(closed), activeSpaceId }
 **Errors**: TARGET_NOT_FOUND, LAST_ITEM
 
 ```bash
-sok-dev space.close '{"space":"c2"}'
+sok-dev space.close '{"space":"spc-d5e6f7"}'
 ```
 
 ## `space.create`
@@ -2312,10 +2282,10 @@ Create a new space tab. Program priority: explicit > project setting > global se
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `program` | string |  | Program id — plugin-registered only (see program.list; no built-in default). Omitted or unregistered id opens a blank panel |
+| `program` | string |  | Program id — plugin-registered only (see program.list; no built-in default). Omitted or unregistered id opens a blank pane |
 | `project` | string |  | Target project id (omit = caller's context project) |
 
-**Returns**: { spaceId, panelId, viewId, paneId? }
+**Returns**: { projectId, spaceId, paneId, tabId? }
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
@@ -2330,7 +2300,7 @@ List space tabs in a project.
 |---|---|---|---|
 | `project` | string |  | Target project id (omit = caller's context project) |
 
-**Returns**: { spaces: [{id,title,program,active}] }
+**Returns**: { projectId, spaces: [{id,title,active}] }
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
@@ -2347,11 +2317,11 @@ Rename a space tab.
 | `space` | string | ✓ | Target space tab id |
 | `title` | string | ✓ | New name |
 
-**Returns**: {}
+**Returns**: { projectId, spaceId }
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
-sok-dev space.rename '{"space":"c1","title":"빌드"}'
+sok-dev space.rename '{"space":"spc-d5e6f7","title":"빌드"}'
 ```
 
 ## `space.switchScan`
@@ -2365,16 +2335,16 @@ Measure a space-tab switch as the user sees it: record the switch and report whe
 | `from` | string |  | Space id to start on (default: current active) |
 | `intervalMs` | number |  | Frame interval ms (default 16) |
 | `project` | string |  | Target project id (omit = caller's context project) |
-| `region` | json |  | Content area fractional rect {x0,y0,x1,y1} (0..1). Default covers the main content pane. |
+| `region` | json |  | Content area fractional rect {x0,y0,x1,y1} (0..1). Default covers the space's content area. |
 | `settleMs` | number |  | Settle wait on the start space (default 600) |
 | `threshold` | number |  | Noise floor (changed-pixel fraction) below which no switch is reported (default 0.003). Detection above the floor is peak-relative, so it adapts to the switch's magnitude. |
 | `to` | string | ✓ | Target space tab id |
 
-**Returns**: { frames, frameMs, switchFrame, switchFrames (consecutive changed = jank spread), clean, diffsPct }
+**Returns**: { projectId, spaceId(measured), frames, frameMs, switchFrame, switchFrames (consecutive changed = jank spread), clean, diffsPct }
 
 ```bash
-sok-dev space.switchScan '{"from":"c1","to":"c3"}'
-sok-dev space.switchScan '{"to":"c3","frames":40}'
+sok-dev space.switchScan '{"from":"spc-d5e6f7","to":"spc-h2j3k4"}'
+sok-dev space.switchScan '{"to":"spc-h2j3k4","frames":40}'
 ```
 
 ## `state.commands`
@@ -2389,13 +2359,13 @@ sok-dev commands
 
 ## `state.context`
 
-Resolve the caller's position: project/space/panel/view that $SOKSAK_PANE belongs to (falls back to active chain when called outside a terminal).
+Resolve the caller's position: project/space/pane/tab that $SOKSAK_CALLER_TAB belongs to (falls back to active chain when called outside a terminal).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `pane` | string |  | Target pane id (omit = caller's context pane, $SOKSAK_PANE) |
+| `tab` | string |  | Target tab id (omit = caller's context tab, $SOKSAK_CALLER_TAB) |
 
-**Returns**: { projectId, spaceId, panelId, viewId?, paneId? } — viewId is absent when the panel is empty
+**Returns**: { projectId, spaceId, paneId, tabId?, callerTab? } — tabId is absent when the pane is empty; callerTab is the terminal tab this call came from
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
@@ -2404,9 +2374,9 @@ sok-dev state.context
 
 ## `state.tree`
 
-Full layout snapshot (address book): all ids and active state across project → space → panel (display rect %) → view → pane. Each space exposes displayed and canonical stored layouts plus projection provenance; each project exposes its effective left-rail position and clean grid lines.
+Full layout snapshot (address book): all ids and active state across project → space → pane (display rect %) → tab. Each space exposes displayed and canonical stored layouts plus projection provenance; each project exposes its effective left-rail position and clean grid lines.
 
-**Returns**: { activeProjectId, projects[].{ leftRailPosition, spaces[].{ layout, canonicalLayout, projection, railRelation:{boundViewId,boundPanelId,connected}?, panels[] } } } — layout/panels are displayed state; canonicalLayout is the stored SplitTree
+**Returns**: { activeProjectId, projects[].{ leftRailPosition, spaces[].{ layout, canonicalLayout, projection, railRelation:{boundTabId,boundPaneId,connected}?, panes[] } } } — layout/panes are displayed state; canonicalLayout is the stored SplitTree
 
 ```bash
 sok-dev state.tree
@@ -2414,17 +2384,17 @@ sok-dev state.tree
 
 ## `status.query`
 
-Query the status each view reports (R8 회신) — what setStatus / file dirty / terminal running pushed. Omit view to list all reporting views. | 상태 조회 뷰 status 무엇이 도는지
+Query the status each view reports (R8 회신) — what setStatus / file dirty / terminal running pushed. Omit tab to list every reporting tab. | 상태 조회 뷰 status 무엇이 도는지
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `view` | string |  | Target view id (omit = caller's context view) |
+| `tab` | string |  | Target tab id (omit = caller's context tab, $SOKSAK_CALLER_TAB) |
 
-**Returns**: { statuses: Array<{ viewId, code, message? }> }
+**Returns**: { statuses: Array<{ tabId, code, message? }> }
 
 ```bash
 sok-dev status.query
-sok-dev status.query '{"view":"v3"}'
+sok-dev status.query '{"tab":"tab-k5m6n7"}'
 ```
 
 ## `system.hello`
@@ -2437,15 +2407,172 @@ Greet the app and read the socket protocol version, the oldest client protocol s
 sok-dev hello
 ```
 
-## `term.cwd`
+## `tab.activate`
 
-Get the current working directory of a terminal pane (requires shell integration). | 현재 디렉토리 cwd 작업 폴더 터미널 경로
+Activate (switch to) a specific tab. | 탭 전환 선택 활성화
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `pane` | string |  | Target pane id (omit = caller's context pane, $SOKSAK_PANE) |
+| `tab` | string | ✓ | Target tab id (omit = caller's context tab, $SOKSAK_CALLER_TAB) |
 
-**Returns**: { paneId, cwd|null }
+**Returns**: { tabId }
+**Errors**: TARGET_NOT_FOUND
+
+```bash
+sok-dev tab.activate '{"tab":"tab-k5m6n7"}'
+```
+
+## `tab.close` (danger: destructive)
+
+Close a tab — if it was the last tab in a pane, the pane is also removed. Refuses to close the last tab in a space. | 탭 닫기
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `tab` | string | ✓ | Target tab id (omit = caller's context tab, $SOKSAK_CALLER_TAB) |
+
+**Returns**: { tabId(closed), activePaneId, activeTabId }
+**Errors**: TARGET_NOT_FOUND, LAST_ITEM
+
+```bash
+sok-dev tab.close '{"tab":"tab-k5m6n7"}'
+```
+
+## `tab.label.get`
+
+Get the custom tab label override for a sidebar view (empty = none, caller falls back to manifest title). Omit viewKey to list all overrides. | 사이드바 탭 라벨 조회 뷰 제목
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `viewKey` | string |  | viewKey; omit to list all overrides |
+
+**Returns**: { labels } or { viewKey, label }
+
+```bash
+sok-dev tab.label.get
+sok-dev tab.label.get '{"viewKey":"x.y"}'
+```
+
+## `tab.label.set`
+
+Set a custom tab label for a sidebar view (overrides the manifest title). Empty label clears the override (manifest fallback). viewKey = '<pluginId>.<viewId>' from ui.tree (tab/left/<key>). | 사이드바 탭 이름변경 라벨 뷰 제목 변경
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `label` | string | ✓ | Custom label; empty to clear |
+| `viewKey` | string | ✓ | viewKey '<pluginId>.<viewId>' |
+
+**Returns**: { viewKey, label }
+**Errors**: INVALID_PARAMS
+
+```bash
+sok-dev tab.label.set '{"viewKey":"soksak-plugin-<id>.<view>","label":"내 라벨"}'
+```
+
+## `tab.list`
+
+List the tabs inside a pane.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `pane` | string |  | Target pane id (omit = caller's context pane) |
+
+**Returns**: { paneId, activeTabId, tabs[] }
+**Errors**: TARGET_NOT_FOUND
+
+```bash
+sok-dev tab.list
+```
+
+## `tab.maximize`
+
+Maximize a tab to fill the entire space. The split tree is preserved; only the display is toggled. Same as double-clicking a tab. Omit tab to maximize the active one. | 최대화 전체화면 탭 크게 보기
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `tab` | string |  | Target tab id (omit = caller's context tab, $SOKSAK_CALLER_TAB) |
+
+**Returns**: { tabId }
+**Errors**: TARGET_NOT_FOUND
+
+```bash
+sok-dev tab.maximize '{"tab":"tab-k5m6n7"}'
+sok-dev tab.maximize
+```
+
+## `tab.move`
+
+Move a tab to the zone position of the dst pane (center = move into that pane; other = split and create a new pane). | 탭 이동 다른 칸으로
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `dst` | string | ✓ | Destination pane id |
+| `tab` | string | ✓ | Target tab id (omit = caller's context tab, $SOKSAK_CALLER_TAB) |
+| `zone` | string | ✓ | Drop zone (center = move/merge; others = split in that direction) (center|left|right|top|bottom) |
+
+**Returns**: { tabId, paneId(moved or created pane) }
+**Errors**: TARGET_NOT_FOUND, LAST_ITEM
+
+```bash
+sok-dev tab.move '{"tab":"tab-k5m6n7","dst":"pan-g2h3j4","zone":"right"}'
+```
+
+## `tab.open`
+
+Open a new tab in a pane by program id (terminal / claude / codex / a plugin view program). The answer waits until the view is mounted, so the returned tabId can be acted on immediately; mounted:false means it did not come up in time and commands aimed at it will not find it yet. | 탭 열기 추가 claude 터미널
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `mountTimeoutMs` | number |  | How long to wait for the view to become actionable (default 5000). 0 answers as soon as the tab exists — mounted will be false and commands aimed at the tab may not find it yet. |
+| `pane` | string |  | Target pane id (omit = caller's context pane) |
+| `program` | string | ✓ | Program id — plugin-registered only (see program.list; no built-in default). Omitted or unregistered id opens a blank pane |
+
+**Returns**: { paneId, tabId, mounted }
+**Errors**: TARGET_NOT_FOUND
+
+```bash
+sok-dev tab.open '{"program":"claude"}'
+```
+
+## `tab.rename`
+
+Set a custom label for a content tab. Overrides the dynamic content title (e.g. a browser page <title> keeps updating underneath; the override wins on display). Empty title clears the override and the dynamic title returns. Sidebar views use tab.label.set instead. | 탭 이름변경 탭명 변경 라벨
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `tab` | string | ✓ | Target tab id (omit = caller's context tab, $SOKSAK_CALLER_TAB) |
+| `title` | string | ✓ | Custom label; empty to clear the override |
+
+**Returns**: { tabId, label }
+**Errors**: TARGET_NOT_FOUND
+
+```bash
+sok-dev tab.rename '{"tab":"tab-k5m6n7","title":"작업 브라우저"}'
+sok-dev tab.rename '{"tab":"tab-k5m6n7","title":""}'
+```
+
+## `tab.restore`
+
+Exit tab maximize mode and restore the original split layout for the active space. | 최대화 해제 원래대로 레이아웃 복원
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `project` | string |  | Target project id (omit = caller's context project) |
+
+**Returns**: { projectId, tabId(restored tab | null = was not maximized) }
+
+```bash
+sok-dev tab.restore
+```
+
+## `term.cwd`
+
+Get the current working directory of a terminal tab (requires shell integration). | 현재 디렉토리 cwd 작업 폴더 터미널 경로
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `tab` | string |  | Target terminal tab id (omit = caller's context tab) |
+
+**Returns**: { tabId, cwd|null }
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
@@ -2459,9 +2586,9 @@ Execute a shell command in a terminal (sends the text plus Enter). Returns immed
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `cmd` | string | ✓ | Shell command to run |
-| `pane` | string |  | Target pane id (omit = caller's context pane, $SOKSAK_PANE) |
+| `tab` | string |  | Target terminal tab id (omit = caller's context tab) |
 
-**Returns**: { paneId }
+**Returns**: { tabId }
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
@@ -2475,9 +2602,9 @@ Read terminal screen and scrollback text (TUI shows current screen only). Use to
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `lines` | number |  | Last N lines only (omit = all) |
-| `pane` | string |  | Target pane id (omit = caller's context pane, $SOKSAK_PANE) |
+| `tab` | string |  | Target terminal tab id (omit = caller's context tab) |
 
-**Returns**: { paneId, text }
+**Returns**: { tabId, text }
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
@@ -2491,10 +2618,10 @@ Inject raw key input into a terminal (for TUI control). Pass control characters 
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `pane` | string |  | Target pane id (omit = caller's context pane, $SOKSAK_PANE) |
+| `tab` | string |  | Target terminal tab id (omit = caller's context tab) |
 | `text` | string | ✓ | Bytes to inject (escapes allowed) |
 
-**Returns**: { paneId }
+**Returns**: { tabId }
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
@@ -2556,7 +2683,7 @@ sok-dev theme.reload
 
 ## `turn.idleDetection`
 
-Toggle the idle-output heuristic turn.ended provider (off by default). When enabled, a pane with no output for N ms is treated as a completed turn; false positives are possible. | 유휴감지 턴감지 아이들 idle 자동턴종료
+Toggle the idle-output heuristic turn.ended provider (off by default). When enabled, a terminal with no output for N ms is treated as a completed turn; false positives are possible. | 유휴감지 턴감지 아이들 idle 자동턴종료
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -2577,12 +2704,12 @@ Emit a turn.ended event (open signal). Use when any provider — ACP, external t
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `command` | string |  | Description of the completed task or command (optional, enriches event body) |
-| `paneId` | string |  | Related pane id (optional) |
 | `project` | string |  | Project id (optional) |
 | `root` | string |  | Project root path — scope key used by subscribers to filter events |
 | `source` | string |  | Signal origin (shell / idle / acp — defaults to acp) |
+| `tabId` | string |  | Related tab id (optional) |
 
-**Returns**: { emitted }
+**Returns**: { emitted, projectId }
 **Errors**: INTERNAL
 
 ```bash
@@ -2600,14 +2727,14 @@ Look up which border rules apply to a given DOM selector according to the contra
 **Returns**: { matchedElements, rules: [{id, active, kind, edges?, seam?, note}] }
 
 ```bash
-sok-dev ui.expect '{"selector":".egroup-status"}'
+sok-dev ui.expect '{"selector":".pane-status"}'
 ```
 
 ## `ui.focus.state`
 
 Return the keyboard-focus owner through the public view-host boundary: the requested view, whether its provider is mounted/delivered, and the view containing the active element. Pierces Shadow DOM — plugin views mount inside a shadow root, so this descends shadowRoot.activeElement to the real focused element (and finds its view across the shadow boundary) instead of stopping at the shadow host. settled only proves the DOM active element — widgets paint their focused state (e.g. a terminal's block cursor) only when they received a focus event AND the window is key, so also check windowFocused (document.hasFocus) and activeElement.ancestors (class chain up to the view container — a widget's own focus class appears here). Use after real-device input to verify focus settled in the intended view without querying plugin-private DOM. | 키보드 포커스 소유자 활성 뷰 상태 창키 커서
 
-**Returns**: { requestedViewId, mounted, delivered, activeViewId, settled, windowFocused, activeElement:{ tag, dataNode, className, ancestors } }
+**Returns**: { requestedTabId, mounted, delivered, activeTabId, settled, windowFocused, activeElement:{ tag, dataNode, className, ancestors } }
 
 ```bash
 sok-dev ui.focus.state
@@ -2709,9 +2836,9 @@ Drive a pointer drag (mousedown on `from` -> mousemove -> mouseup). Two modes: (
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `durationMs` | number |  | Total finite drag duration in milliseconds (0..10000). Default 0. [default 0] |
-| `dx` | number |  | Horizontal drag distance in CSS px from `from` center (mode 2 — resize/divider). Alternative to `to`. |
+| `dx` | number |  | Horizontal drag distance in CSS px from `from` center (mode 2 — resize/gutter). Alternative to `to`. |
 | `dy` | number |  | Vertical drag distance in CSS px from `from` center (mode 2). |
-| `from` | string | ✓ | Source node address (the tab / divider / element to grab) |
+| `from` | string | ✓ | Source node address (the tab / gutter / element to grab) |
 | `steps` | number |  | Number of evenly spaced mousemove events (1..120). Default 2. [default 2] |
 | `to` | string |  | Target node address to drop onto (mode 1). Omit when using dx/dy. |
 | `zone` | string |  | center | left | right | top | bottom — point within the target rect (mode 1) (center|left|right|top|bottom) |
@@ -2721,7 +2848,7 @@ Drive a pointer drag (mousedown on `from` -> mousemove -> mouseup). Two modes: (
 
 ```bash
 sok-dev ui.input.drag '{"from":"win/main/chrome/tab/left/a.x","to":"win/main/chrome/tab/left/b.y","zone":"center"}'
-sok-dev ui.input.drag '{"from":"win/main/chrome/divider/s0/0","dx":120}'
+sok-dev ui.input.drag '{"from":"win/main/chrome/gutter/pan-g2h3j4/right","dx":120}'
 ```
 
 ## `ui.input.fill` (danger: inject)
@@ -2763,30 +2890,30 @@ sok-dev ui.input.key '{"address":"…/node/composer-input","key":"ArrowDown"}'
 
 ## `ui.input.pointer` (danger: inject)
 
-Drive the pointer the way the OS does: enter/move onto an exposed node, or leave (no address = the pointer is not over us). Hover state that a native child surface can steal — divider highlight — is owned by app state, not CSS :hover, precisely so it can be driven and read back here. Returns the divider-hover key now held, so a test can assert both the arming and the release. | 포인터 이동 hover 강조 진입 이탈 마우스 주입 E2E
+Drive the pointer the way the OS does: enter/move onto an exposed node, or leave (no address = the pointer is not over us). Hover state that a native child surface can steal — gutter highlight — is owned by app state, not CSS :hover, precisely so it can be driven and read back here. Returns the gutter-hover key now held, so a test can assert both the arming and the release. | 포인터 이동 hover 강조 진입 이탈 마우스 주입 E2E
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `address` | string |  | Exposed node to move onto. Omit to signal the pointer left us. |
 
-**Returns**: { address, dividerHover }
+**Returns**: { address, gutterHover }
 **Errors**: NOT_EXPOSED, AMBIGUOUS
 
 ```bash
-sok-dev ui.input.pointer '{"address":"win/main/chrome/divider/s1/0"}'
+sok-dev ui.input.pointer '{"address":"win/main/chrome/gutter/pan-g2h3j4/right"}'
 sok-dev ui.input.pointer   # 이탈(강조 해제)
 ```
 
 ## `ui.intent.open`
 
-Open a resource through the binding context (R2): places the view as a tab in the bound group without replacing existing panels, reusing the existing view for the same resource (idempotent). The same path the rail's open affordance uses. With no binding (empty project) it places into the active group. | 인텐트열기 결부열기 intent open
+Open a resource through the binding context (R2): places the view as a tab in the bound pane without replacing existing panes, reusing the existing tab for the same resource (idempotent). The same path the rail's open affordance uses. With no binding (empty project) it places into the active pane. | 인텐트열기 결부열기 intent open
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `path` | string | ✓ | Absolute file path to open |
 | `project` | string |  | Project id (omit for the active project) |
 
-**Returns**: { viewId, panelId, existing }
+**Returns**: { projectId, paneId, tabId, existing }
 
 ```bash
 sok-dev ui.intent.open '{"path":"/work/notes/plan.md"}'
@@ -2838,7 +2965,7 @@ Reserved. The left rail is projection-only — it renders the bound content view
 | `ref` | string | ✓ | Rail view ref "<pluginId>.<viewId>" |
 | `side` | string |  | "left" (default) | "right" |
 
-**Returns**: { pins: {left, right} }
+**Returns**: { projectId, pins: {left, right} }
 
 ```bash
 sok-dev ui.projection.pin '{"ref":"<pluginId>.<viewId>"}'
@@ -2852,7 +2979,7 @@ Read the sidebar projection state of a project: the bound content view (binding 
 |---|---|---|---|
 | `project` | string |  | Project id (omit for the active project) |
 
-**Returns**: { projectId, binding: {viewId|null}, left: {slots:[{source,resolvedRef,instance,instanceKey,status}], template}, right|null, pins: {left,right} }
+**Returns**: { projectId, binding: {tabId|null}, left: {slots:[{source,resolvedRef,instance,instanceKey,status}], template}, right|null, pins: {left,right} }
 
 ```bash
 sok-dev ui.projection.state
@@ -2869,7 +2996,7 @@ Remove a pinned ref from a rail side. Idempotent — unpinning an absent ref suc
 | `ref` | string | ✓ | Pinned ref |
 | `side` | string |  | "left" (default) | "right" |
 
-**Returns**: { pins: {left, right} }
+**Returns**: { projectId, pins: {left, right} }
 
 ```bash
 sok-dev ui.projection.unpin '{"ref":"<pluginId>.<viewId>"}'
@@ -2892,7 +3019,7 @@ sok-dev ui.slot '{"address":"win/main/content/view/soksak-plugin-<id>.<view>"}'
 
 ## `ui.snapshot.dom`
 
-Measure every exposed node in one pass — one consistent instant, not several round trips that drift apart. Returns address, rect, and the requested computed properties for each, so you can read where a line sits, how wide a panel is, and how big its children are, all from the same moment. Pair with ui.motion hold to stop time first. filter narrows by address substring. | 돔 일괄 측정 스냅샷 좌표 폭 한번에 관측 선 위치
+Measure every exposed node in one pass — one consistent instant, not several round trips that drift apart. Returns address, rect, and the requested computed properties for each, so you can read where a line sits, how wide a pane is, and how big its children are, all from the same moment. Pair with ui.motion hold to stop time first. filter narrows by address substring. | 돔 일괄 측정 스냅샷 좌표 폭 한번에 관측 선 위치
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -2901,6 +3028,11 @@ Measure every exposed node in one pass — one consistent instant, not several r
 
 **Returns**: { count, nodes: [{ address, nodePath, rect, style? }] }
 **Errors**: INVALID_PARAMS
+
+```bash
+sok-dev ui.snapshot.dom
+sok-dev ui.snapshot.dom '{"filter":"pane","props":["backgroundColor"]}'
+```
 
 ## `ui.tree`
 
@@ -2934,9 +3066,9 @@ sok-dev ui.validate '{"rule":"status"}'
 
 ## `ui.verify`
 
-Check this window's structural invariants and report each by name. Answers whether the window is coherent right now: every exposed address resolves to exactly one node, no rail layer is left behind after a travel, no visible slot has collapsed to nothing, and the motion clocks agree. Use after any layout change, and as the assertion in end-to-end gates — a failing check names the invariant and shows the offending addresses. | 창 점검 불변식 검증 무결성 주소중복 레일잔존 빈슬롯 자가진단
+Check this window's structural invariants and report each by name. Answers whether the window is coherent right now: every exposed address resolves to exactly one node, no rail layer is left behind after a travel, no visible tab body has collapsed to nothing, and the motion clocks agree. Use after any layout change, and as the assertion in end-to-end gates — read passed (the verdict) and checks[].detail, which names the invariant and shows the offending addresses; the envelope only says the query ran. | 창 점검 불변식 검증 무결성 주소중복 레일잔존 빈슬롯 자가진단
 
-**Returns**: { ok, failed, checks: [{ name, ok, detail }] }
+**Returns**: { passed, failed, checks: [{ name, ok, detail }] }
 
 ```bash
 sok-dev ui.verify
@@ -3011,162 +3143,6 @@ Survey what can be updated without applying anything. Reports the app body (rele
 
 ```bash
 sok-dev update.check
-```
-
-## `view.activate`
-
-Activate (switch to) a specific view tab. | 탭 전환 선택 뷰 활성화
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `view` | string | ✓ | Target view id (omit = caller's context view) |
-
-**Returns**: {}
-**Errors**: TARGET_NOT_FOUND
-
-```bash
-sok-dev view.activate '{"view":"v3"}'
-```
-
-## `view.close` (danger: destructive)
-
-Close a view tab — if it was the last view in a panel, the panel is also removed. Refuses to close the last view in a space. | 탭 닫기 뷰
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `view` | string | ✓ | Target view id (omit = caller's context view) |
-
-**Returns**: { activePanelId, activeViewId }
-**Errors**: TARGET_NOT_FOUND, LAST_ITEM
-
-```bash
-sok-dev view.close '{"view":"v3"}'
-```
-
-## `view.label.get`
-
-Get the custom tab label override for a sidebar view (empty = none, caller falls back to manifest title). Omit view to list all overrides. | 사이드바 탭 라벨 조회 뷰 제목
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `view` | string |  | viewKey; omit to list all overrides |
-
-**Returns**: { labels } or { view, label }
-
-```bash
-sok-dev view.label.get
-sok-dev view.label.get '{"view":"x.y"}'
-```
-
-## `view.label.set`
-
-Set a custom tab label for a sidebar view (overrides the manifest title). Empty label clears the override (manifest fallback). viewKey = '<pluginId>.<viewId>' from ui.tree (tab/left/<key>). | 사이드바 탭 이름변경 라벨 뷰 제목 변경
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `label` | string | ✓ | Custom label; empty to clear |
-| `view` | string | ✓ | viewKey '<pluginId>.<viewId>' |
-
-**Returns**: { view, label }
-**Errors**: INVALID_PARAMS
-
-```bash
-sok-dev view.label.set '{"view":"soksak-plugin-<id>.<view>","label":"내 라벨"}'
-```
-
-## `view.list`
-
-List the views (tabs) inside a panel.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `panel` | string |  | Target panel id (omit = caller's context panel) |
-
-**Returns**: { panelId, activeViewId, views[] }
-**Errors**: TARGET_NOT_FOUND
-
-```bash
-sok-dev view.list
-```
-
-## `view.maximize`
-
-Maximize a view to fill the entire space. The split tree is preserved; only the display is toggled. Same as double-clicking a tab. Omit view to maximize the active view. | 최대화 전체화면 탭 크게 보기
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `view` | string |  | Target view id (omit = caller's context view) |
-
-**Returns**: { viewId }
-**Errors**: TARGET_NOT_FOUND
-
-```bash
-sok-dev view.maximize '{"view":"v3"}'
-sok-dev view.maximize
-```
-
-## `view.move`
-
-Move a view tab to the zone position of dst panel (center = move into panel; other = split and create new panel). | 탭 이동 뷰 다른 패널로
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `dst` | string | ✓ | Destination panel id |
-| `view` | string | ✓ | Target view id (omit = caller's context view) |
-| `zone` | string | ✓ | Drop zone (center = move/merge; others = split in that direction) (center|left|right|top|bottom) |
-
-**Returns**: { panelId(moved or created panel) }
-**Errors**: TARGET_NOT_FOUND, LAST_ITEM
-
-```bash
-sok-dev view.move '{"view":"v3","dst":"g1","zone":"right"}'
-```
-
-## `view.open`
-
-Open a new view tab in a panel by program id (terminal / claude / codex / a plugin view program). | 뷰 열기 탭 추가 claude 터미널
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `panel` | string |  | Target panel id (omit = caller's context panel) |
-| `program` | string | ✓ | Program id — plugin-registered only (see program.list; no built-in default). Omitted or unregistered id opens a blank panel |
-
-**Returns**: { panelId, viewId, paneId? }
-**Errors**: TARGET_NOT_FOUND
-
-```bash
-sok-dev view.open '{"program":"claude"}'
-```
-
-## `view.rename`
-
-Set a custom label for a view tab (grid tab). Overrides the dynamic content title (e.g. a browser page <title> keeps updating underneath; the override wins on display). Empty title clears the override and the dynamic title returns. Sidebar views use view.label.set instead. | 탭 이름변경 탭명 변경 뷰 이름 바꾸기 라벨
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `title` | string | ✓ | Custom label; empty to clear the override |
-| `view` | string | ✓ | Target view id (omit = caller's context view) |
-
-**Returns**: { label }
-**Errors**: TARGET_NOT_FOUND
-
-```bash
-sok-dev view.rename '{"view":"v3","title":"작업 브라우저"}'
-sok-dev view.rename '{"view":"v3","title":""}'
-```
-
-## `view.restore`
-
-Exit view maximize mode and restore the original split layout for the active space. | 최대화 해제 원래대로 레이아웃 복원
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `project` | string |  | Target project id (omit = caller's context project) |
-
-**Returns**: { viewId(restored view | null = was not maximized) }
-
-```bash
-sok-dev view.restore
 ```
 
 ## `webview.emitNative`
@@ -3274,7 +3250,7 @@ sok-dev window.list
 
 ## `window.maximize`
 
-Maximize a window to fill the screen (native window maximize — distinct from view.maximize, which only enlarges one view within a space). Without label, targets the window this command runs in; with label, targets that window (see window.list). Pass off:true to restore (unmaximize). | 창 최대화 전체화면 키우기 해제
+Maximize a window to fill the screen (native window maximize — distinct from tab.maximize, which only enlarges one tab within a space). Without label, targets the window this command runs in; with label, targets that window (see window.list). Pass off:true to restore (unmaximize). | 창 최대화 전체화면 키우기 해제
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -3407,7 +3383,7 @@ sok-dev window.reload
 
 ## `window.resize`
 
-Resize the window to a physical pixel size (for automation and resize-path E2E — drives the native window resize, the same path as edge-drag, which panel.resize does not exercise).
+Resize the window to a physical pixel size (for automation and resize-path E2E — drives the native window resize, the same path as edge-drag, which pane.resize does not exercise).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
