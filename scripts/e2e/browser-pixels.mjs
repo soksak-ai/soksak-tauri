@@ -238,14 +238,14 @@ async function main() {
         );
         await sleep(SETTLE_MS);
         const m = must(
-          await c.rpc("ui.measure", { address: `win/${window}/chrome/layout/tab/${o.viewId}` }, window),
+          await c.rpc("ui.measure", { address: `win/${window}/chrome/layout/tab/${o.tabId}` }, window),
           "ui.measure",
         );
         const r = m.rect;
         out.rect = r;
         // 빈 화면의 이유를 이 자리에서 말할 수 있어야 한다 — 표면이 슬롯 밖이면 픽셀은
         // 당연히 비어 있다. 창을 닫은 뒤에 재면 그 뷰는 이미 없다.
-        out.surface = await surfaceBoundsOf(c, window, owner, o.viewId);
+        out.surface = await surfaceBoundsOf(c, window, owner, o.tabId);
         // 본문만 — 크롬(URL 바)은 DOM 이라 항상 그려진다. 위 40px 을 떼고 본문을 본다.
         const shot = must(
           await c.rpc(
