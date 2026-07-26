@@ -73,6 +73,7 @@ const ALLOWED: { file: string; mark: string; event: string; why: string }[] = [
   { file: "src-tauri/src/data/ring.rs", mark: "MIN_INTERVAL: Duration = Duration::from_secs(3600)", event: "ring-prune-min-interval", why: "링 정리 최소 간격(유휴 하한)" },
   { file: "src-tauri/src/data/ring.rs", mark: "busy_timeout(Duration::from_secs(5))", event: "sqlite-busy-timeout", why: "SQLite busy_timeout — DB 계약" },
   { file: "src-tauri/src/mediaproxy.rs", mark: "timeout(Duration::from_secs(60))", event: "http-client-timeout", why: "원격 HTTP 상한 — 네트워크는 사건을 보장하지 않는다" },
+  { file: "src-tauri/src/webview.rs", mark: ".recv_timeout(std::time::Duration::from_secs(2))", event: "engine-surface-stats-reply", why: "메인 스레드 서피스 판독 회신 대기의 유한 안전장치 — 회신 채널이 사건이고 상한은 관측 명령의 무한 대기 방지" },
   { file: "src-tauri/src/pty.rs", mark: "from_millis(400)", event: "ptyd-shutdown-grace", why: "옛 데몬의 종료 유예(응답 후 150ms) 계약을 넘긴다 — 재기동 1회 한정" },
   { file: "src-tauri/src/pty.rs", mark: "from_millis(400)", event: "ptyd-socket-rebind", why: "구 데몬 소켓 해제→신 데몬 bind 사이 — 소켓 계승 신호가 없다" },
   { file: "src-tauri/src/webview.rs", mark: "from_millis(450)", event: "wk-inspector-async-show", why: "WebKit _inspector show 는 비동기이고 완료 콜백이 없다(SPI)" },
