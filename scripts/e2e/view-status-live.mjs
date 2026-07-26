@@ -145,14 +145,21 @@ async function main() {
   const opened = data(await rpc("window.open", { root: FIXTURE }));
   const win = opened.label || opened.window || opened.existingWindow;
   ok(typeof win === "string" && win.startsWith("w-"), `workspace window opened (${win})`);
-  await sleep(1500); // let the window's plugin host activate
-
   const w = { window: win };
-  const programs = new Set(
-    (data(await rpc("program.list", {}, w)).programs || []).map((p) =>
-      typeof p === "string" ? p : p.id,
-    ),
-  );
+  // 새 창의 플러그인 적재는 비동기다 — 요구한 프로그램이 목록에 설 때까지 대기(부팅 한정
+  // 유한 재시도, slot-freeze 와 같은 계약). 1.5s 고정 대기는 갓 부팅한 앱에서 늘 모자랐다
+  // (실측: programs available: (none) → mount 0 — 가짜 RED).
+  let programs = new Set();
+  const wanted = MOUNTS.map((m) => m.program);
+  for (let i = 0; i < 40; i++) {
+    programs = new Set(
+      (data(await rpc("program.list", {}, w)).programs || []).map((p) =>
+        typeof p === "string" ? p : p.id,
+      ),
+    );
+    if (wanted.every((id) => programs.has(id))) break;
+    await sleep(500);
+  }
   console.log(`   programs available: ${[...programs].join(", ") || "(none)"}`);
 
   // ── b. mount the configured content views ──────────────────────────────────
@@ -234,10 +241,12 @@ async function main() {
   ok(!labels.includes(win), `window ${win} is gone from window.list`);
 
   console.log(`\nresult: ${pass} pass / ${fail} fail`);
+  // 판정은 코어 입법(conformance.ts)을 승계한다: null=보고할 것 없음(정상), 순간-미보고
+  // 규칙은 2026-07-11 폐지 — unreported 는 진단 정보이지 위반이 아니다. 위반은 undeclared 뿐.
   console.log(
-    totalUnreported === 0 && totalUndeclared === 0
-      ? "verdict: GREEN — mounted content views agree with their declarations (view-status promotion-ready)"
-      : `verdict: RED — ${totalUnreported} unreported + ${totalUndeclared} undeclared across mounted content views`,
+    totalUndeclared === 0
+      ? `verdict: GREEN — no undeclared status codes (unreported=${totalUnreported} informational)`
+      : `verdict: RED — ${totalUndeclared} undeclared status codes across mounted content views`,
   );
   sock.end();
   process.exit(fail > 0 ? 1 : 0);

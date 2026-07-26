@@ -69,11 +69,39 @@ startActivityFeed();
 // (project.created 등)는 리스너가 등록된 후에 발화해야 유실되지 않는다
 // (신규 환경에서 첫 프로젝트의 git init 이 유실되던 사고의 원인).
 // 실패 시에도 렌더는 진행(프로젝트 0개 = 부트 실패만의 예외 상태, 사유는 콘솔).
+// 부트 단계 스탬프 — 백지 진단의 관찰면. ① document.title(IPC 무관 — 웹뷰가 살아 있으면
+// CGWindowList 창 이름으로 밖에서 읽힌다) ② activity 허브 boot.step(IPC 경유 — records 로
+// 영속되면 IPC 생존 증명). 두 채널의 차이가 곧 판별이다: title 만 전진하면 IPC 사망.
+const initialTitle = typeof document !== "undefined" ? document.title : "";
+function bootStamp(step: string): void {
+  try {
+    document.title = `boot:${step}`;
+  } catch {
+    /* 비-DOM 테스트 */
+  }
+  void bootInvoke("activity_publish", {
+    kind: "boot.step",
+    source: "boot",
+    payload: { step, message: `· boot ${step}` },
+  }).catch(() => {});
+}
+
+// 부팅 완주 — 스탬프가 창 제목에 남지 않게 원복(이후는 initWindowTitle 소유).
+function bootDone(): void {
+  try {
+    document.title = initialTitle;
+  } catch {
+    /* 비-DOM 테스트 */
+  }
+}
+
 async function boot(): Promise<void> {
+  bootStamp("enter");
   // 이 앱의 CLI 이름(sok/sok-dev/sok-debug)을 창 종류 분기 전에 캐시한다 — 앱-전역 정체성이라
   // 오케스트레이터(main)와 워크스페이스(w-*) 둘 다 필요하다(hint 프리픽스·에이전트 스폰 단일 출처).
   // 실패해도 기본 sok 로 폴백(내부에서 흡수). 게이트가 아니라 준비물이므로 렌더를 막지 않는다.
   await loadCliName();
+  bootStamp("cli-name");
   // 코어 영속 상태(설정·테마·즐겨찾기·플러그인 설정·플러그인 동의/활성)를 app.data 권위 +
   // 멀티창 broadcast 로 동기화(coreSync). 동기 초기상태는 이미 ls 캐시에서 로드됨 — 여기선
   // app.data hydrate + 다른 창 변경 구독을 켠다. 플러그인 호스트(enabledIds 소비)보다 먼저.
@@ -93,15 +121,18 @@ async function boot(): Promise<void> {
   // 곧 컨트롤 플레인이고, 워크스페이스는 전부 w-<uuid> 창이다. 코어 영속(테마·설정) 이후 분기해
   // 셸만 렌더한다. 셸은 커맨드·이벤트 표면만 소비(외부 클라이언트와 같은 자격 — P13).
   // 커맨드 카탈로그·활동 계측은 module-level. 리스폰(전 워크스페이스 slot)도 여기가 소유한다.
+  bootStamp("persist-init");
   if (currentWindowLabel() === "main") {
     // 플러그인 호스트를 돌리지 않는다 — 레지스트리가 이미 최종 상태이므로 준비 게이트를 즉시
     // 해제한다(잠긴 채 두면 이 창으로 온 미등록 명령이 타임아웃까지 대기).
     markCommandHostReady();
+    bootStamp("main-ready");
     void initControlPlaneFrame();
     void respawnSavedWindows();
     ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
       <OrchestratorApp />,
     );
+    bootDone();
     return;
   }
   try {
@@ -171,6 +202,7 @@ async function boot(): Promise<void> {
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <App />,
   );
+  bootDone();
 }
 
 void boot();
