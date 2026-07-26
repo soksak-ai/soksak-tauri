@@ -588,9 +588,12 @@ const ProjectPlane = memo(function ProjectPlane({
 const cwdTabOf = (project: Project): string | undefined =>
   resolveCwdTab(project, hasPtyObservation);
 
-// 빌드 정체성 배지: DEV(HMR 개발 서버) / DEBUG(디버그 번들 soksak-debug) / 없음(릴리스).
-// HMR 은 import.meta.env.DEV 로 즉시 알고, 빌드 번들(DEV=false)은 둘을 앱 이름(getName)
-// 으로 가른다 — productName 이 soksak-dev / soksak-debug / soksak 로 정체성을 인코딩한다.
+// 빌드 정체성 배지: DEV(dev identity) / DEBUG(디버그 번들 soksak-debug) / 없음(릴리스).
+// 축은 identity 다 — 로드 방식(HMR/번들)이 아니다. 예전엔 "DEV=HMR 일 때만"이어서 같은
+// dev identity 라도 번들 빌드는 무배지 = 릴리스와 시각 구분 불가였다(실측: 사용자가
+// "dev 빌드가 아니네?"라고 오인). HMR 은 dev identity 에서만 도니 DEV 로 즉시, 번들은
+// 앱 이름(getName)으로 가른다 — productName 이 soksak-dev / soksak-debug / soksak 로
+// 정체성을 인코딩한다.
 function BuildBadge() {
   const [label, setLabel] = useState<string | null>(
     import.meta.env.DEV ? "DEV" : null,
@@ -601,7 +604,9 @@ function BuildBadge() {
     import("@tauri-apps/api/app")
       .then((m) => m.getName())
       .then((name) => {
-        if (alive && name.includes("debug")) setLabel("DEBUG");
+        if (!alive) return;
+        if (name.includes("debug")) setLabel("DEBUG");
+        else if (name.includes("dev")) setLabel("DEV");
       })
       .catch(() => {});
     return () => {
