@@ -146,8 +146,19 @@ export function registerProjectionCatalog(): void {
       tmsg(d.existing ? "msg.ui.intent.open.existing" : "msg.ui.intent.open"),
     examples: ['ui.intent.open \'{"path":"/work/notes/plan.md"}\''],
     handler: (p, ctx) => {
+      const path = p.path as string;
+      // 절대경로만 — 계약 그대로 경계가 강제한다. 상대경로는 어느 root 기준인지 문맥마다
+      // 갈리는데, 여기서 조용히 받으면 그 문자열이 탭에 영속되고 복원이 "No such file
+      // or directory" 죽은 탭으로 깨어난다(실측: "README.md" 로 열린 탭이 재시작 후 사망).
+      if (!path.startsWith("/")) {
+        return {
+          ok: false as const,
+          code: "INVALID_PARAMS" as const,
+          message: `path 는 절대경로여야 합니다: ${path}`,
+        };
+      }
       const pid = targetProject(p, ctx);
-      const r = useSessions.getState().openFileView(pid, p.path as string);
+      const r = useSessions.getState().openFileView(pid, path);
       if (!r.ok) return r;
       return { projectId: pid, paneId: r.groupId, tabId: r.viewId, existing: r.existing };
     },

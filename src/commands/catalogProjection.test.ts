@@ -132,6 +132,19 @@ describe("ui.projection.pin / unpin — 좌 레일은 투영 전용(핀 축 없�
 });
 
 describe("ui.intent.open — R2(결부 문맥 배치·멱등 재사용)", () => {
+  it("상대경로는 경계에서 거부한다 — 조용히 받으면 죽은 탭으로 영속된다(실측 RED)", async () => {
+    // 계약은 절대경로(params.path: "Absolute file path")다. 상대경로가 통과하면 그 문자열이
+    // 탭에 영속되고 복원이 "No such file or directory" 죽은 탭으로 깨어난다(2026-07-26 실측:
+    // "README.md" 로 열린 탭이 재시작 후 사망 — 사용자 화면으로 발견됐다).
+    useSessions.setState({ projects: [tab([], "")], activeId: "p1" });
+    const r = (await execute("ui.intent.open", { path: "README.md" }, {})) as {
+      ok: boolean;
+      code?: string;
+    };
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe("INVALID_PARAMS");
+  });
+
   it("파일을 결부 그룹에 탭으로 열고, 같은 리소스는 기존 뷰를 재사용한다", async () => {
     useSessions.setState({ projects: [tab([], "")], activeId: "p1" });
     const r1 = (await execute("ui.intent.open", { path: "/tmp/p1/a.md" }, {})) as { ok: boolean; data: Record<string, unknown> };
