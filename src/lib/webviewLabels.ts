@@ -34,6 +34,14 @@ export function browserLabelPrefix(): string {
   return `b-${currentWindowLabel()}-`;
 }
 
+// 전역 고아 판정 — 부모 창이 살아있지 않은 브라우저 child label. label 문법(b-<창>-<뷰>)의
+// 소유는 이 모듈이므로 판정도 여기 산다(inline 재구성 금지 게이트의 대상 문법).
+export function orphanBrowserLabels(labels: string[], windows: string[]): string[] {
+  return labels.filter(
+    (l) => l.startsWith("b-") && !windows.some((w) => l.startsWith(`b-${w}-`)),
+  );
+}
+
 // browserLabel 의 역파생 — *이 창의* 브라우저 label 이면 viewId 를, 아니면 null.
 // 다른 창의 브라우저(b-<다른창>-…)와 비-브라우저 webview 는 이 창이 이름을 모른다.
 export function browserViewIdFromLabel(label: string): string | null {

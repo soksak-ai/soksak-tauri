@@ -835,6 +835,13 @@ pub fn webview_open(
         })?;
     #[cfg(debug_assertions)]
     eprintln!("[open-trace] webview_open {label}: 생성 완료");
+    crate::activity::publish(
+        &app,
+        "webview.lifecycle",
+        "webview",
+        serde_json::json!({ "label": label, "event": "created", "origin": "internal",
+            "message": format!("· webview created {label}") }),
+    );
     // 출생 기록 — 부착 완료 전 신생아를 생존 프로브(webview_alive/open 좀비 검사)가
     // 좀비로 오판해 정리하는 자멸을 막는다(유예 NEWBORN_GRACE_MS).
     if let Ok(mut m) = CHILD_BORN_AT.lock() {
@@ -1394,6 +1401,13 @@ pub fn webview_close(app: AppHandle, label: String) -> Result<(), String> {
             let _ = wv.with_webview(|pw| layer::unregister_surface(pw.inner() as usize));
         }
         wv.close().map_err(|e| e.to_string())?;
+        crate::activity::publish(
+            &app,
+            "webview.lifecycle",
+            "webview",
+            serde_json::json!({ "label": label, "event": "closed", "origin": "internal",
+                "message": format!("· webview closed {label}") }),
+        );
     }
     BOUNDS_VIS.lock().unwrap().remove(&label);
     if let Ok(mut m) = CHILD_BORN_AT.lock() {

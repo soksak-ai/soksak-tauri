@@ -7,6 +7,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { register, type CommandHint } from "./registry";
 import { tmsg } from "../i18n";
+import { allViews, useSessions } from "../state/sessions";
+import { browserLabelPrefix, browserViewIdFromLabel, orphanBrowserLabels } from "../lib/webviewLabels";
 
 interface LabelHealth {
   label: string;
@@ -19,6 +21,54 @@ interface LabelHealth {
 }
 
 export function registerWebviewCatalog(): void {
+  register("webview.surfaces", {
+    description:
+      "Reconcile this window's state (which views exist) against the browser child webviews actually alive for this window. ghosts = child webviews whose view no longer exists in state — a stale native surface floating over the window (the 'browser over an empty window' mismatch); a non-empty ghosts list is always a defect fact. Judged from the same sources the app itself uses (state store + webview_list), no pixels involved.",
+    triggers: { ko: "표면 정합 유령 웹뷰 잔존 브라우저 대조 확인" },
+    params: {},
+    returns: "{ window, actual: [label], ghosts: [label], orphans: [label], stateViews }",
+    message: (d) => {
+      const bad =
+        Number((d.ghosts as string[] | undefined)?.length ?? 0) +
+        Number((d.orphans as string[] | undefined)?.length ?? 0);
+      return bad > 0
+        ? tmsg("msg.webview.surfaces.ghost", { n: bad })
+        : tmsg("msg.webview.surfaces.clean", { n: Number(d.stateViews ?? 0) });
+    },
+    examples: ["webview.surfaces"],
+    handler: async () => {
+      const labels = await invoke<string[]>("webview_list");
+      const mine = labels.filter((l) => l.startsWith(browserLabelPrefix()));
+      // 전역 고아 — 부모 창이 이미 닫힌 child(b-<win>-…)는 어느 창의 접두사에도 안 걸려
+      // 창-로컬 대조가 영영 못 본다(실사고: 빈 main 창 위에 닫힌 하니스 창의 브라우저가
+      // 떠 있었다). 부모 생존은 창 목록 접두사 매칭으로 판정한다 — label 문법 b-<창>-<view>.
+      const windows = await invoke<string[]>("window_list").catch(() => [] as string[]);
+      const orphans = orphanBrowserLabels(labels, windows);
+      const viewIds = new Set<string>();
+      for (const t of useSessions.getState().projects)
+        for (const c of t.spaces) for (const v of allViews(c.layout)) viewIds.add(v.id);
+      const ghosts = mine.filter((l) => {
+        const v = browserViewIdFromLabel(l);
+        return v !== null && !viewIds.has(v);
+      });
+      if (ghosts.length > 0 || orphans.length > 0) {
+        // 유령은 발견 즉시 활동 허브에 사실로 남는다 — 픽셀 없이 판독 가능(sok events).
+        void invoke("activity_publish", {
+          kind: "surface.ghost",
+          source: "webview",
+          payload: {
+            ghosts,
+            orphans,
+            stateViews: viewIds.size,
+            message: `· surface ghost ×${ghosts.length} orphan ×${orphans.length}: ${[...ghosts, ...orphans].join(", ")}`,
+            origin: "internal",
+          },
+        }).catch(() => {});
+      }
+      return { actual: mine, ghosts, orphans, stateViews: viewIds.size };
+    },
+  });
+
   register("webview.health.query", {
     description:
       "Report webview renderer-process health per label: circuit-breaker state (closed / recovering / open), crash counts in the rolling 60s window, lifetime total, and the last termination reason if the platform provided one. Labels: a window label is that window's main webview, b-<win>-<view> is a browser child. state=open means automatic recovery is exhausted — recover it manually with webview.recover.",
