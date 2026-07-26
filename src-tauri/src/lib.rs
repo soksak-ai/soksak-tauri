@@ -146,15 +146,11 @@ pub fn run() {
                     }
                 }
                 crate::webview::set_engine_host_hidden(&app, label.clone(), true);
-                // 엔진 모듈에 가림 통지 — 서피스 가시성의 소유자는 모듈이다(코어 setHidden 은
-                // 모듈이 되돌린다, 실측). 오버레이·드래그가 쓰는 검증된 계약(surface-occluded)을
-                // 렌더러 재부팅에도 적용한다: 모듈이 자기 서피스를 숨기고, 부트 말미의 해제
-                // (engine_host_visible)에서 자기 상태 기준으로 복원한다.
-                crate::sidecar::notify_all(&serde_json::json!({
-                    "type": "surface-occluded",
-                    "window": label,
-                    "occluded": true,
-                }));
+                // surface-occluded 릴레이는 여기서 금지 — 사이드카의 occluded 는 창 구분 없는
+                // 프로세스 전역 present 정지라, 한 창(하니스)의 reload 가 다른 창의 브라우저
+                // 그리기까지 멈춘다(실사고: 스위트 실행 후 사용자 창 NAVER 검정). 재부팅 숨김은
+                // 컨테이너(이 창 소유)와 b-* wv.hide() 로 충분하고, 개별 표면은 플러그인 장부가
+                // 소유한다(NATIVE-SURFACES §4.7).
                 if !hidden.is_empty() {
                     crate::activity::publish(
                         &app,

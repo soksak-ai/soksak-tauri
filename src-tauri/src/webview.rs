@@ -581,12 +581,6 @@ pub fn set_engine_host_hidden(app: &AppHandle, label: String, hidden: bool) {
 pub fn engine_host_visible(app: AppHandle, window: tauri::Window, visible: bool) {
     #[cfg(target_os = "macos")]
     set_engine_host_hidden(&app, window.label().to_string(), !visible);
-    // 가림 해제 — 모듈이 자기 상태(view.parked 재생 반영 후) 기준으로 서피스를 복원한다.
-    crate::sidecar::notify_all(&serde_json::json!({
-        "type": "surface-occluded",
-        "window": window.label(),
-        "occluded": !visible,
-    }));
     #[cfg(not(target_os = "macos"))]
     let _ = (app, window, visible);
 }
