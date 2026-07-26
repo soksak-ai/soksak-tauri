@@ -245,6 +245,12 @@ mod layer {
         SURFACES.lock().map(|s| s.len()).unwrap_or(0)
     }
 
+    // 등록된 서피스 포인터 스냅샷 — 서피스별 실측(isHidden·frame)용. 메인 스레드에서
+    // 각 포인터를 NSView 로 직독한다(관측 기준을 "카운트"에서 "개별 가시 사실"로 내린다).
+    pub fn surface_ptrs() -> Vec<usize> {
+        SURFACES.lock().map(|s| s.iter().copied().collect()).unwrap_or_default()
+    }
+
     // 창의 엔진 호스트 컨테이너 포인터(0=미생성) — 재부팅 구간 숨김의 손잡이.
     pub fn engine_host_ptr(label: &str) -> usize {
         LAYERS
@@ -544,6 +550,14 @@ pub(crate) fn layer_ensure_engine_host(label: &str) -> Option<usize> {
 pub fn set_engine_host_hidden(app: &AppHandle, label: String, hidden: bool) {
     let app2 = app.clone();
     let _ = app.clone().run_on_main_thread(move || {
+        // 숨김은 개별 서피스 전부에 건다 — 컨테이너만 숨기면 격리 계약을 벗어나
+        // contentView 에 폴백-부착된 서피스가 그대로 보인다(실측: hostHidden=True 인데
+        // visible=1 — 부트 내내 이전 프레임이 떠 있던 유령의 정체). 복귀(hidden=false)도
+        // 대칭으로 개별 해제한다 — 겹침·좌표는 이후 재스냅이 정렬한다.
+        for sp in layer::surface_ptrs() {
+            let v: &objc2_app_kit::NSView = unsafe { &*(sp as *const objc2_app_kit::NSView) };
+            v.setHidden(hidden);
+        }
         let ptr = layer::engine_host_ptr(&label);
         if ptr == 0 {
             return;
@@ -569,21 +583,59 @@ pub fn set_engine_host_hidden(app: &AppHandle, label: String, hidden: bool) {
 pub fn engine_host_visible(app: AppHandle, window: tauri::Window, visible: bool) {
     #[cfg(target_os = "macos")]
     set_engine_host_hidden(&app, window.label().to_string(), !visible);
+    // 가림 해제 — 모듈이 자기 상태(view.parked 재생 반영 후) 기준으로 서피스를 복원한다.
+    crate::sidecar::notify_all(&serde_json::json!({
+        "type": "surface-occluded",
+        "window": window.label(),
+        "occluded": !visible,
+    }));
     #[cfg(not(target_os = "macos"))]
     let _ = (app, window, visible);
 }
 
 // 엔진 서피스 관측 — webview.surfaces 의 engine 축(WKWebView 목록이 못 보는 표면).
+// 서피스별 실측: isHidden(자기 축)·effectivelyHidden(조상 포함 — 화면 사실)·frame 을
+// 메인 스레드에서 직독한다. "registered 카운트" 기준은 유령을 못 갈랐다(실사고: 사용자는
+// 이전 프레임을 보는데 카운트는 정상) — 판정 축은 개별 가시 사실이다.
 #[tauri::command]
-pub fn engine_surface_stats(window: tauri::Window) -> serde_json::Value {
+pub async fn engine_surface_stats(app: AppHandle, window: tauri::Window) -> serde_json::Value {
     #[cfg(target_os = "macos")]
-    return serde_json::json!({
-        "registered": layer::surface_count(),
-        "hostPresent": layer::engine_host_ptr(window.label()) != 0,
-    });
+    {
+        let label = window.label().to_string();
+        let (tx, rx) = std::sync::mpsc::channel::<serde_json::Value>();
+        let _ = app.run_on_main_thread(move || {
+            let host = layer::engine_host_ptr(&label);
+            let host_hidden = if host != 0 {
+                let v: &objc2_app_kit::NSView = unsafe { &*(host as *const objc2_app_kit::NSView) };
+                v.isHidden()
+            } else {
+                true
+            };
+            let mut surfaces = Vec::new();
+            for ptr in layer::surface_ptrs() {
+                let v: &objc2_app_kit::NSView = unsafe { &*(ptr as *const objc2_app_kit::NSView) };
+                let f = v.frame();
+                surfaces.push(serde_json::json!({
+                    "ptr": ptr,
+                    "hidden": v.isHidden(),
+                    "effectivelyHidden": unsafe { v.isHiddenOrHasHiddenAncestor() },
+                    "frame": { "x": f.origin.x, "y": f.origin.y, "w": f.size.width, "h": f.size.height },
+                }));
+            }
+            let _ = tx.send(serde_json::json!({
+                "registered": surfaces.len(),
+                "hostPresent": host != 0,
+                "hostHidden": host_hidden,
+                "surfaces": surfaces,
+            }));
+        });
+        return rx
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .unwrap_or_else(|_| serde_json::json!({ "error": "main-thread timeout" }));
+    }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = window;
+        let _ = (app, window);
         serde_json::json!({ "registered": 0, "hostPresent": false })
     }
 }

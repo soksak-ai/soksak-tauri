@@ -146,6 +146,15 @@ pub fn run() {
                     }
                 }
                 crate::webview::set_engine_host_hidden(&app, label.clone(), true);
+                // 엔진 모듈에 가림 통지 — 서피스 가시성의 소유자는 모듈이다(코어 setHidden 은
+                // 모듈이 되돌린다, 실측). 오버레이·드래그가 쓰는 검증된 계약(surface-occluded)을
+                // 렌더러 재부팅에도 적용한다: 모듈이 자기 서피스를 숨기고, 부트 말미의 해제
+                // (engine_host_visible)에서 자기 상태 기준으로 복원한다.
+                crate::sidecar::notify_all(&serde_json::json!({
+                    "type": "surface-occluded",
+                    "window": label,
+                    "occluded": true,
+                }));
                 if !hidden.is_empty() {
                     crate::activity::publish(
                         &app,
