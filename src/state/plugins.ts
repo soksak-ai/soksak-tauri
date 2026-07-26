@@ -32,6 +32,7 @@ import {
   activationChain,
   cascadeRemovalSet,
   transitiveDependents,
+  activationLevels,
   type DepNode,
 } from "../plugins/dependencyGraph";
 import { err, ok, useSessions, type CmdResult } from "./sessions";
@@ -558,9 +559,10 @@ export const usePlugins = create<PluginsState>((set, get) => {
       set({ plugins: next, rejected });
 
       // 동의 유효한 enabled 목록 재활성화. 실패는 status 로 표시(§0-4 — 침묵 금지).
-      // 계측(boot.step) — 부트 병목의 실체는 플러그인별 활성화 시간이다(복원 300ms 기준).
-      const bootT0 = performance.now();
-      const perPlugin: Array<[string, number]> = [];
+      // 게이트(템플릿·동의)를 먼저 걷고, 활성 대상을 의존 층위별로 동시에 올린다 — 순차
+      // 46개 합계 2.4s(실측)에서 IPC 읽기·플러그인 내부 대기가 겹치도록. 층(activationLevels)
+      // 이 "종속이 먼저"를 보장하고, 실패 격리는 플러그인별 try 그대로다(§0-4).
+      const ready: string[] = [];
       for (const id of get().enabledIds) {
         const p = get().plugins[id];
         if (!p) continue;
@@ -580,17 +582,29 @@ export const usePlugins = create<PluginsState>((set, get) => {
           });
           continue;
         }
-        try {
-          const t = performance.now();
-          await activateRuntime(p);
-          perPlugin.push([id, Math.round(performance.now() - t)]);
-          setRuntime(id, { status: "enabled", error: undefined });
-        } catch (e) {
-          setRuntime(id, {
-            status: "error",
-            error: e instanceof Error && e.stack ? e.stack : String(e),
-          });
-        }
+        ready.push(id);
+      }
+      // 계측(boot.step) — 부트 병목의 실체는 플러그인별 활성화 시간이다(복원 300ms 기준).
+      const bootT0 = performance.now();
+      const perPlugin: Array<[string, number]> = [];
+      for (const level of activationLevels(ready, pluginDepNodes(get().plugins))) {
+        await Promise.all(
+          level.map(async (id) => {
+            const p = get().plugins[id];
+            if (!p) return;
+            try {
+              const t = performance.now();
+              await activateRuntime(p);
+              perPlugin.push([id, Math.round(performance.now() - t)]);
+              setRuntime(id, { status: "enabled", error: undefined });
+            } catch (e) {
+              setRuntime(id, {
+                status: "error",
+                error: e instanceof Error && e.stack ? e.stack : String(e),
+              });
+            }
+          }),
+        );
       }
       {
         const total = Math.round(performance.now() - bootT0);

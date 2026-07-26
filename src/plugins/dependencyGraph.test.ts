@@ -1,6 +1,6 @@
 // 의존 그래프 해소 — cascade·refcount·전이·버전 무결성 계약 고정.
 import { describe, expect, it } from "vitest";
-import {
+import { activationLevels,
   activationChain,
   directDependents,
   transitiveDependents,
@@ -135,5 +135,37 @@ describe("activationChain — 활성화 체인(종속 먼저, id 마지막)", ()
       { id: "studio", version: "1", dependencies: { core: "*" } },
     ];
     expect(activationChain("studio", partial)).toEqual(["studio"]);
+  });
+});
+
+describe("activationLevels — 동시 활성의 안전 경계", () => {
+  const node = (id: string, deps: string[] = []) => ({
+    id,
+    version: "1.0.0",
+    dependencies: Object.fromEntries(deps.map((d) => [d, "*"])),
+  });
+
+  it("독립 플러그인들은 한 층 — 전부 동시에 올라간다", () => {
+    const installed = [node("a"), node("b"), node("c")];
+    expect(activationLevels(["a", "b", "c"], installed)).toEqual([["a", "b", "c"]]);
+  });
+
+  it("의존 체인은 종속이 먼저 오는 층 순서다", () => {
+    const installed = [node("lib"), node("mid", ["lib"]), node("app", ["mid"])];
+    expect(activationLevels(["app", "mid", "lib"], installed)).toEqual([
+      ["lib"],
+      ["mid"],
+      ["app"],
+    ]);
+  });
+
+  it("대상 밖 의존은 층을 만들지 않는다(설치 플로 소유)", () => {
+    const installed = [node("a", ["missing"]), node("b")];
+    expect(activationLevels(["a", "b"], installed)).toEqual([["a", "b"]]);
+  });
+
+  it("순환은 남은 전부를 마지막 층으로 묶는다 — 진행이 멈추지 않는다", () => {
+    const installed = [node("x", ["y"]), node("y", ["x"]), node("z")];
+    expect(activationLevels(["x", "y", "z"], installed)).toEqual([["z"], ["x", "y"]]);
   });
 });
