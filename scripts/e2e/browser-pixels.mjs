@@ -236,7 +236,6 @@ async function main() {
           await c.rpc(`plugin.${owner}.navigate`, { url: URL, viewId: o.tabId }, window),
           `navigate ${owner}`,
         );
-        await sleep(SETTLE_MS);
         const m = must(
           await c.rpc("ui.measure", { address: `win/${window}/chrome/layout/tab/${o.tabId}` }, window),
           "ui.measure",
@@ -247,18 +246,24 @@ async function main() {
         // 당연히 비어 있다. 창을 닫은 뒤에 재면 그 뷰는 이미 없다.
         out.surface = await surfaceBoundsOf(c, window, owner, o.tabId);
         // 본문만 — 크롬(URL 바)은 DOM 이라 항상 그려진다. 위 40px 을 떼고 본문을 본다.
-        const shot = must(
-          await c.rpc(
+        // 정착 판정은 사건이 아니라 실측 반복이다: 첫 페인트는 엔진 첫 기동(CEF dlopen+헬퍼
+        // 스폰)에서 고정 sleep 보다 늦을 수 있다(실측: 부팅 직후 첫 라운드만 검정 — 플래키).
+        // SETTLE_MS 는 폴링 상한으로 재해석한다(하한 5s 보장, 1s 간격 완만).
+        const snapRect = { x: Math.round(r.x), y: Math.round(r.y) + 40, w: Math.round(r.w), h: Math.round(r.h) - 48 };
+        const deadline = Date.now() + Math.max(SETTLE_MS, 5000) + 10_000;
+        let v = { unique: 0, rendered: false };
+        while (Date.now() < deadline) {
+          const shot = must(
+            await c.rpc("window.snapshot", { rect: snapRect }, window),
             "window.snapshot",
-            { rect: { x: Math.round(r.x), y: Math.round(r.y) + 40, w: Math.round(r.w), h: Math.round(r.h) - 48 } },
-            window,
-          ),
-          "window.snapshot",
-        );
-        const b64 = shot.media?.base64 ?? shot?.base64;
-        if (!b64) throw new Error("스냅샷에 base64 없음");
-        const png = decodePng(Buffer.from(b64, "base64"));
-        const v = looksRendered(png);
+          );
+          const b64 = shot.media?.base64 ?? shot?.base64;
+          if (!b64) throw new Error("스냅샷에 base64 없음");
+          const png = decodePng(Buffer.from(b64, "base64"));
+          v = looksRendered(png);
+          if (v.rendered) break;
+          await sleep(1000);
+        }
         out.unique = v.unique;
         out.rendered = v.rendered;
         // 안 그렸으면 증거를 남긴다 — 판정만 남기고 화면을 버리면 다음 사람이 처음부터 다시
