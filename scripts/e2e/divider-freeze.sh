@@ -44,7 +44,8 @@ jqpy() { python3 -c "import json,sys; d=json.load(sys.stdin); $1"; }
 node "$E2E_DIR/../perf/driver.mjs" teardown >/dev/null 2>&1
 IDS=$(node "$E2E_DIR/../perf/driver.mjs" setup 2>/dev/null | tail -1)
 [ -n "$IDS" ] || { echo "RED: 하니스 setup 실패" >&2; exit 1; }
-ROOT_SPLIT=$(echo "$IDS" | jqpy "print(d['rootSplitId'])")
+# 골 주소는 pane 기준이다(IDENTITY §4) — 루트 좌|우 경계 = 좌측 pane 의 right.
+ROOT_PANE=$(echo "$IDS" | jqpy "print(d['gLeft'])")
 "$SOK" plugin.dev.load "{\"path\":\"$E2E_DIR/fixtures/soksak-plugin-e2e-probe\"}" >/dev/null 2>&1
 "$SOK" plugin.enable '{"id":"soksak-plugin-e2e-probe"}' >/dev/null 2>&1
 "$SOK" plugin.soksak-plugin-e2e-probe.clear >/dev/null 2>&1
@@ -63,7 +64,7 @@ for l in d['hierarchy'].splitlines():
 }
 
 # ── 드래그 좌표: 루트 디바이더 rect 의 x중앙, y 75%(가로 디바이더 교차 회피) ──
-C=$("$SOK" ui.measure "{\"address\":\"win/main/chrome/divider/$ROOT_SPLIT/0\"}" 2>/dev/null \
+C=$("$SOK" ui.measure "{\"address\":\"win/main/chrome/gutter/$ROOT_PANE/right\"}" 2>/dev/null \
   | jqpy "r=d['rect']; print(int(r['x']+r['w']/2), int(r['y']+r['h']*0.75))")
 X=$(echo "$C" | cut -d' ' -f1); Y=$(echo "$C" | cut -d' ' -f2)
 [ -n "$X" ] || { echo "RED: 디바이더 측정 실패" >&2; exit 1; }

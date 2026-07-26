@@ -8,9 +8,16 @@
 export const HOST_CHROME_TOKENS: readonly string[] = [
   ".left-host-tabs",
   ".left-host-tab",
+  // 크롬 어휘 이행 구간(IDENTITY 2026-07-26) — 옛·새 이름을 둘 다 지킨다. 한쪽만 지키면
+  // 다른 세대의 코어와 만난 플러그인이 무방비가 된다. 제거 조건: 옛 이름을 그리는 코어가
+  // 지원 범위에서 사라지는 날(옛 토큰 행만 걷는다).
   ".content-tabs",
+  ".space-tabs",
   ".view-tabs",
   ".view-tab",
+  ".tab-band",
+  ".project-tabs",
+  ".project-tab",
   ".ft-header",
   ".plugin-side-head",
   ".titlebar",

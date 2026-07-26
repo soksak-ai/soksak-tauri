@@ -1,7 +1,7 @@
 // divider 강조 대칭 E2E — 켜졌으면 꺼질 수 있어야 한다.
 //
 // RED 근거(실측 2026-07-26): accent 세로선이 창 본문 전체 높이로 브라우저 표면들을 가로지른 채
-// 굳어 있었다. ui.hit 이 그 자리에서 `egroup-divider s1:0` 을 반환했고, 그 rect(985.4, 82, 6, 997)
+// 굳어 있었다. ui.hit 이 그 자리에서 골 요소를 반환했고, 그 rect(985.4, 82, 6, 997)
 // 는 네이티브 강조바 프레임과 정확히 같았다 — DOM 강조와 네이티브 바가 같은 굳은 상태의 두 얼굴.
 //
 // 원인은 소유권이었다. 강조를 CSS :hover 가 소유했는데, 포인터가 네이티브 자식(브라우저 표면)
@@ -82,7 +82,7 @@ async function main() {
     const tree = must(await c.rpc("ui.tree", {}, window), "ui.tree");
     const addr = JSON.stringify(tree).match(
       // 정본 주소는 프로젝트 축을 싣는다(주소 공리 A1) — 생략형만 찾으면 조용히 건너뛴다.
-      new RegExp(`"win/${window}/(?:proj/[^/"]+/)?chrome/divider/[^"]+"`),
+      new RegExp(`"win/${window}/(?:proj/[^/"]+/)?chrome/gutter/[^"]+"`),
     )?.[0];
     if (!addr) {
       console.log("✓ divider-hover 건너뜀 — 이 창에 분할 divider 가 없다");

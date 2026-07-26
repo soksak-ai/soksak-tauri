@@ -238,7 +238,7 @@ async function main() {
         );
         await sleep(SETTLE_MS);
         const m = must(
-          await c.rpc("ui.measure", { address: `win/${window}/chrome/layout/slot/${o.viewId}` }, window),
+          await c.rpc("ui.measure", { address: `win/${window}/chrome/layout/tab/${o.viewId}` }, window),
           "ui.measure",
         );
         const r = m.rect;
@@ -340,7 +340,7 @@ async function main() {
       for (const v of views) {
         const b = maps[v.id];
         if (b == null) continue; // 표면 기하를 보고하지 않는 엔진(native) — 이 축의 대상 아님
-        const m = (await c.rpc("ui.measure", { address: `win/${win}/chrome/layout/slot/${v.id}` }, win)).data;
+        const m = (await c.rpc("ui.measure", { address: `win/${win}/chrome/layout/tab/${v.id}` }, win)).data;
         const r = m?.rect;
         if (!r) continue;
         // 표면은 슬롯과 같지 않다 — 브라우저 자체 툴바(URL 바) 아래에 놓이므로 위가 잘린다

@@ -207,7 +207,7 @@ async function main() {
     flowSet.data?.leftRailPosition?.mode === "flow",
     JSON.stringify(flowSet.data?.leftRailPosition ?? flowSet.message),
   );
-  const slotAddr = `win/${win}/chrome/layout/slot/${browserView}`;
+  const slotAddr = `win/${win}/chrome/layout/tab/${browserView}`;
 
   const measure = async () => {
     const m = await rpc("ui.measure", { address: slotAddr }, win);
@@ -356,7 +356,7 @@ async function main() {
       const hit = await rpc("ui.hit", { x: cx, y: cy }, win);
       const painters = hit.data?.painters ?? [];
       const slotPaints = painters.some(
-        (q) => typeof q.node === "string" && q.node.startsWith("layout/slot/"),
+        (q) => typeof q.node === "string" && q.node.startsWith("layout/tab/"),
       );
       assert("홀 페인트 게이트 — 홀-슬롯 무배경(현 테마)", !slotPaints,
         slotPaints ? JSON.stringify(painters[0]) : "");
@@ -382,7 +382,7 @@ async function main() {
     //    하나뿐이다: 레일이 가로지른 패널만 정확히 railW 이동하고, 폭·높이·y 는 불변이며,
     //    가로지르지 않은 패널은 0 이동. 그 밖의 어떤 이동도 결함이다.
     const rectOf = async (view) => {
-      const m = await rpc("ui.measure", { address: `win/${win}/chrome/layout/slot/${view}` }, win);
+      const m = await rpc("ui.measure", { address: `win/${win}/chrome/layout/tab/${view}` }, win);
       return m.ok ? m.data.rect : null;
     };
     const b0 = await rectOf(browserView);

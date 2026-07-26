@@ -23,10 +23,13 @@
 //     하는 것은 기준을 낮추는 것이 아니다: 주석 속 단어는 이름이 아니므로 고칠 대상도 아니다.
 //
 // 뜻이 갈리는 두 단어의 판별 기준(토큰 금지만으로는 뜻을 못 가른다 — §2-2 가 그 주장을 철회했다):
-//   pane  — 새 뜻(칸)으로 살아 있다. 살아 있는 이름은 §1-4 규칙 2 가 정한 것뿐이다:
-//           `.pane` · `.pane-body` · `.pane-border` · 그리고 경계 실체 `.pane-gutter`.
-//           역할 단어를 새로 만든 `.pane-leaf` · `.pane-host` · `.pane-resize-handle` 은 위반이다.
-//           프로퍼티는 요소가 아니라 값을 부르므로 이 접미 규칙 밖이고, `--pane-inset` 만 허용한다.
+//   pane  — 새 뜻(칸)으로 살아 있다. 판정은 접미의 성격이다(IDENTITY §5 정정 2026-07-26):
+//           실체 파생(`-gutter`·`-tabs`)과 부품을 내용대로 부르는 이름(`-body`·`-border`·
+//           `-title`·`-status`)은 허용 — 부품명은 실체를 가리지 않는다. 금지는 **감싸개 역할
+//           명사**다: 실체를 별명으로 가리는 slot·cell·grid·frame·container·leaf·host·
+//           handle·group·panel. 초판이 허용을 4개 화이트리스트로 좁혔는데 그것은 게이트가
+//           표준을 앞지른 것이었다 — 정본(IDENTITY §5)과 함께 정정했다.
+//           프로퍼티는 요소가 아니라 값을 부르므로 이 규칙 밖이고, `--pane-inset` 만 허용한다.
 //   view  — 종류(플러그인이 선언하는 `contributes.views`)로 살아 있다. 그러나 CSS 는 화면 위의
 //           실체를 칠하므로 CSS 이름의 `view` 는 종류일 수 없다 — 전부 인스턴스 뜻이고 전부 위반이다.
 //
@@ -51,8 +54,16 @@ const propNames = () => uniq([...CSS.matchAll(/--[a-zA-Z][a-zA-Z0-9_-]*/g)].map(
 
 /** §1-5 목록 중 세그먼트 정확 일치만으로 판정되는 것들. */
 const DEAD = ["panel", "group", "egroup", "cell", "grid", "bodywrap", "divider"];
-/** 새 뜻(칸)으로 살아 있는 클래스 이름 전부 — §1-4 규칙 2(남는 접미는 -border·-body)+ 경계 실체. */
-const PANE_ALIVE = new Set([".pane", ".pane-body", ".pane-border", ".pane-gutter"]);
+/** pane 세그먼트와 결합이 금지되는 감싸개 역할 명사 — 실체를 별명으로 가리는 단어들.
+ *  부품명(-body·-border·-title·-status)과 실체 파생(-gutter·-tabs·-hole 수정자)은 허용이다. */
+const WRAPPER_ROLE_NOUNS = new Set([
+  "slot", "cell", "grid", "frame", "container", "leaf", "host", "handle", "group", "panel",
+]);
+const paneNameViolates = (name: string): boolean => {
+  const segs = name.slice(1).split("-");
+  if (!segs.includes("pane")) return false;
+  return segs.some((sg) => WRAPPER_ROLE_NOUNS.has(sg));
+};
 /** 새 뜻으로 살아 있는 프로퍼티 — §1-4b. */
 const PANE_PROP_ALIVE = new Set(["--pane-inset"]);
 
@@ -62,8 +73,11 @@ function deadWordsIn(name: string, kind: "class" | "prop"): string[] {
   const hit = DEAD.filter((w) => segs.includes(w));
   if (kind === "class" && segs[0] === "content" && segs.length > 1) hit.push("content-");
   if (segs.includes("pane")) {
-    const alive = kind === "class" ? PANE_ALIVE.has(name) : PANE_PROP_ALIVE.has(name);
-    if (!alive) hit.push("pane");
+    // 클래스: 감싸개 역할 명사와의 결합만 위반(부품명·실체 파생은 허용 — 머리말 판별 기준).
+    // 프로퍼티: 값을 부르는 축이라 --pane-inset 만 허용(기존 그대로).
+    const violates =
+      kind === "class" ? paneNameViolates(name) : !PANE_PROP_ALIVE.has(name);
+    if (violates) hit.push("pane");
   }
   if (segs.includes("view")) hit.push("view");
   return hit;
