@@ -152,9 +152,23 @@ async function boot(): Promise<void> {
   try {
     const stale = await bootInvoke<string[]>("webview_list");
     const prefix = browserLabelPrefix();
-    for (const l of stale)
-      if (l.startsWith(prefix))
-        void bootInvoke("webview_visible", { label: l, visible: false }).catch(() => {});
+    const survivors = stale.filter((l) => l.startsWith(prefix));
+    for (const l of survivors)
+      void bootInvoke("webview_visible", { label: l, visible: false }).catch(() => {});
+    // 시작 시점 생존 표면은 원장 사실로 남긴다 — webview.surfaces 는 렌더러가 살아야 돌아
+    // 부트 초기 유령에 눈이 없었다(관측 공백). 이 발행이 그 구간의 유일한 목격자다.
+    if (survivors.length > 0)
+      void bootInvoke("activity_publish", {
+        kind: "webview.lifecycle",
+        source: "webview",
+        payload: {
+          event: "survived-boot",
+          labels: survivors,
+          hidden: true,
+          origin: "internal",
+          message: `· webview survived boot ×${survivors.length} (hidden until restore)`,
+        },
+      }).catch(() => {});
   } catch {
     /* child 없음/조회 실패 — 부트를 막지 않는다 */
   }
