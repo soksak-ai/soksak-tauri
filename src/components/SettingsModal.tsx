@@ -1,7 +1,7 @@
 import { applyWindowZoom } from "../lib/zoomIntent";
 import { useEffect, useState } from "react";
 import { usePlugins } from "../state/plugins";
-import { PluginSettingsPanel } from "./PluginSettingsPanel";
+import { PluginSettings } from "./PluginSettings";
 import { ContractEngineSettings } from "./ContractEngineSettings";
 import { SecuritySettings } from "./SecuritySettings";
 import {
@@ -134,15 +134,15 @@ export function SettingsModal({
               </button>
             ))}
           </div>
-          <div className="dmodal-body settings-pane">
+          <div className="dmodal-body settings-detail">
             {section === "general" ? (
               <>
                 <div className="dsec">{t("settings.theme")}</div>
-          <div className="th-grid">
+          <div className="th-list">
             {Object.values(themes).map((th) => (
               <span
                 key={th.name}
-                className={`th-cell${th.name === themeName ? " active" : ""}`}
+                className={`th-item${th.name === themeName ? " active" : ""}`}
                 data-node={`settings/theme-cell/${th.name}`}
                 onClick={() => applyTheme(th.name)}
               >
@@ -308,7 +308,7 @@ export function SettingsModal({
           */}
 
           {/* 터미널 외형(글꼴/크기/커서/깜빡임/리사이즈 리플로우/렌더러/스크롤백/셸)은
-              코어 설정이 아니다 — 터미널 플러그인의 설정 패널(아래 PluginSettingsPanel)이
+              코어 설정이 아니다 — 터미널 플러그인의 설정 패널(아래 PluginSettings)이
               소유한다(manifest configuration 단일진실, 중복 제거). */}
 
           {/* 계약별 구현체 선택(제네릭·계약-무지) — 활성 구현체 ≥2 계약만 자동 노출.
@@ -346,7 +346,7 @@ export function SettingsModal({
           <SecuritySettings />
               </>
             ) : (
-              <PluginSettingsPanel pluginId={section} />
+              <PluginSettings pluginId={section} />
             )}
           </div>
         </div>

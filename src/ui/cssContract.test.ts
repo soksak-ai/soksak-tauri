@@ -25,15 +25,15 @@ function rules(): Array<{ selector: string; decls: string }> {
   return out;
 }
 
-// 탭류 박스 클래스(밴드 형제 박스 계약 대상). \w- 경계로 .tabs/.tab-dot 등은 제외.
-const BAND_ITEM = /\.(view-tab|view-add|ctab-add|tab-add|ctab|tab)(?![\w-])/;
+// 탭류 박스 클래스(밴드 형제 박스 계약 대상). \w- 경계로 .project-tabs/.project-tab-dot 등은 제외.
+const BAND_ITEM = /\.(tab|tab-add|space-tab-add|project-tab-add|space-tab|project-tab)(?![\w-])/;
 
 // 계약 밖 예외: 세로 레일(정사각 칩)·세로 리스트 모드 — 가로 밴드가 아니다.
-const EXEMPT = /\.project-rail|\.content-tabs\.vertical/;
+const EXEMPT = /\.project-rail|\.space-tabs\.vertical/;
 
 // 크롬 행 band(타이틀바 아래 가로줄의 탭/헤더 스트립). 높이는 테마 표준 변수만 소유(--chrome-row-h=탭행,
-// --header-h=타이틀바/뷰 탭행). 하드코딩 px 금지. \.tabs 는 .content-tabs/.view-tabs 를 매치하지 않는다.
-const CHROME_ROW = /\.(ft-header|plugin-side-head|left-host-tabs|content-tabs|tabs)(?![\w-])/;
+// --header-h=타이틀바/뷰 탭행). 하드코딩 px 금지. \.project-tabs 는 .space-tabs/.tabs 를 매치하지 않는다.
+const CHROME_ROW = /\.(ft-header|plugin-side-head|left-host-tabs|space-tabs|project-tabs)(?![\w-])/;
 // 허용 표준 변수(둘 다 테마 소유) — 크롬 행 높이는 이 중 하나의 var() 만.
 // 공인 행 높이 토큰 — chrome-row(밴드 1행)·header(패널/레일 헤더)·toolbar(2행 공동 그리드,
 // 테마 소유). 이 셋 밖의 행 높이 발명 금지.
@@ -72,11 +72,11 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
         .filter((r) => /var\(--rail-dx/.test(r.decls))
         .map((r) => r.selector.split(",")[0].trim().split(" ").pop() as string),
     );
-    consumers.add(".egroup-divider"); // 인라인 스타일 소비자(GroupArea)
+    consumers.add(".pane-gutter"); // 인라인 스타일 소비자(GroupArea)
     const sync = rules().find(
       (r) =>
-        r.selector.startsWith(".content-body.rail-traveling") &&
-        r.selector.includes(".egroup-cell"),
+        r.selector.startsWith(".space-body.rail-traveling") &&
+        r.selector.includes(".pane"),
     );
     expect(sync).toBeTruthy();
     for (const sel of consumers) {
@@ -92,12 +92,12 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
     expect(css).not.toMatch(/--focus-flip-x/);
     // 프레임도 실이동 요소만 활강한다 — 델타 0 요소를 위상마다 합성 레이어로 올렸다 내리는
     // 승격 churn 이 "무관한 표면이 움찔하는" 실사고의 기제였다(§2 시각효과 소유권).
-    expect(sync!.selector).toContain(".egroup-frame.flip-move");
-    expect(sync!.selector).not.toMatch(/\.egroup-frame,/);
+    expect(sync!.selector).toContain(".pane-border.flip-move");
+    expect(sync!.selector).not.toMatch(/\.pane-border,/);
     // 장식 span 도 같은 규칙 — 실제로 이동하는 것만 승격한다.
-    expect(sync!.selector).toContain(".egroup-divider.flip-move");
+    expect(sync!.selector).toContain(".pane-gutter.flip-move");
     expect(sync!.selector).toContain(".drop-ind-wrap.flip-move");
-    expect(sync!.selector).not.toMatch(/\.egroup-divider\s*\{/);
+    expect(sync!.selector).not.toMatch(/\.pane-gutter\s*\{/);
     // pane 만 FLIP 한다. 레일은 이동 물체가 아니라 빠질 자리와 생길 자리이고, 패널이 덮고
     // 드러내는 것이 곧 닫힘·열림이다. 레일에 평행이동을 얹으면 두 자리 규칙과 겹쳐 이중
     // 이동이 된다. 어느 레일 표상도 활강 애니메이션을 받지 않는다.
@@ -118,22 +118,22 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
     const restingPlane = rules().find((r) => r.selector === ".left-rail-plane");
     expect(restingPlane?.decls).toMatch(/z-index\s*:\s*0/);
     // 출발·도착 레일은 둘 다 바닥에 있어 pane이 자연스럽게 가리고 드러낸다.
-    expect(css).not.toMatch(/\.content-body\.rail-traveling \.left-rail-plane\s*\{/);
+    expect(css).not.toMatch(/\.space-body\.rail-traveling \.left-rail-plane\s*\{/);
   });
 
   it("§12-④ 개정: 주행 중에도 입력은 열려 있다 — 셀·슬롯·디바이더 히트 차단 금지", () => {
     // 실측(포커스 trace): 주행 중 불활성(전면이든 이동요소 한정이든 — 레일 주행은 스테이션
-    // 뒤 전 셀을 밀므로 사실상 전면)은 주행 중 도착하는 실클릭을 content-body 로 떨어뜨려
+    // 뒤 전 셀을 밀므로 사실상 전면)은 주행 중 도착하는 실클릭을 space-body 로 떨어뜨려
     // 죽였고, 재배달이 직전/첫 페인으로 가서 "클릭한 곳에 포커스가 안 간다"가 됐다.
     // straddle 방지는 히트 차단이 아니라 활성화 귀속이 담당한다(armSlotActivation —
     // 활성화는 게스처 완결 시점에, 게스처를 시작한 슬롯에 귀속). 그러므로 어떤 주행
     // 위상도 입력면을 차단하지 않는다.
-    for (const scope of [".content-body.rail-traveling"]) {
+    for (const scope of [".space-body.rail-traveling"]) {
       const blocking = rules().filter(
         (r) =>
           r.selector.includes(scope) &&
           /pointer-events\s*:\s*none/.test(r.decls) &&
-          /(egroup-cell|egroup-body-slot|egroup-divider)/.test(r.selector),
+          /(pane|tab-body|pane-gutter)/.test(r.selector),
       );
       expect(blocking.map((b) => b.selector), scope + " 입력 차단 금지").toEqual([]);
     }
@@ -170,12 +170,12 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
 
   it("R1 계약 규칙 존재: 스트립이 패딩 변수를, 항목이 stretch 를 소비한다", () => {
     // 각 밴드 스트립은 자신의 패딩 변수를 소비한다.
-    expect(css).toMatch(/\.view-tabs \{[^}]*padding: var\(--tab-pad/);
-    expect(css).toMatch(/\.content-tabs \{[^}]*padding: var\(--ws-pad/);
-    expect(css).toMatch(/\.tabs \{[^}]*padding-block: var\(--ws-pad/);
+    expect(css).toMatch(/\.tabs \{[^}]*padding: var\(--tab-pad/);
+    expect(css).toMatch(/\.space-tabs \{[^}]*padding: var\(--ws-pad/);
+    expect(css).toMatch(/\.project-tabs \{[^}]*padding-block: var\(--ws-pad/);
     // 항목 일괄 stretch 계약 블록.
     expect(css).toMatch(
-      /\.view-tabs \.view-tab,\s*\.view-tabs \.view-add,\s*\.tab,\s*\.ctab,\s*\.tab-add,\s*\.ctab-add \{[^}]*align-self: stretch/,
+      /\.tabs \.tab,\s*\.tabs \.tab-add,\s*\.project-tab,\s*\.space-tab,\s*\.project-tab-add,\s*\.space-tab-add \{[^}]*align-self: stretch/,
     );
   });
 
@@ -246,7 +246,7 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
     ".dremote-confirm-notice", // 원격 confirm 자동거부 안내 박스 — 폐곡선 윤곽(경계면 아님)
     ".plugin-consent-cmd", // 명령 원문 코드 박스 — 폐곡선 윤곽
     ".plugin-contrib-chip", // 역할 칩 — 폐곡선 윤곽
-    ".egs-item", // 상태바 플러그인 항목 칩(claude-GUI 의 "gui" 등) — 폐곡선 윤곽
+    ".pane-status-item", // 상태바 플러그인 항목 칩(claude-GUI 의 "gui" 등) — 폐곡선 윤곽
     ".notify-banner", // 인앱 알림 배너 카드 + 액션 버튼(-action) — 폐곡선 윤곽
     ".webview-health-badge", // webview 복구 소진 배지 카드 + 버튼 — 폐곡선 윤곽(notify-banner 동형)
     ".root-missing-banner", // root 부재 격하 배너(B1) — 배너 카드 윤곽(notify-banner 동형)
@@ -260,22 +260,22 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
 
     ".dctl",
     ".dstepper",
-    ".th-cell",
+    ".th-item",
     ".th-swatch",
     ".color-swatch",
     ".rail-add",
     ".plugin-rejected",
-    ".ctab-rename",
-    ".tab-rename",
+    ".space-tab-rename",
+    ".project-tab-rename",
     ".rail-rename",
     ".bv-url",
     ".cmf-input",
     ".cmf-field",
     ".icon-btn",
     ".drop-ind",
-    ".view-tab", // 칩 윤곽(테마 변형) — 칩 자체의 폐곡선
-    ".tab",
-    ".ctab",
+    ".tab", // 칩 윤곽(테마 변형) — 칩 자체의 폐곡선
+    ".project-tab",
+    ".space-tab",
     ".dbtn",
     ".rail-chip",
   ];
@@ -287,7 +287,7 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
     );
     const inContract = (selector: string) =>
       contractSelectors.some((cs) => {
-        const head = cs.split(":")[0]; // ".content-tabs:not(...)" → ".content-tabs"
+        const head = cs.split(":")[0]; // ".space-tabs:not(...)" → ".space-tabs"
         return selector.includes(head);
       });
     const isWidget = (selector: string) =>

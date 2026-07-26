@@ -1,5 +1,5 @@
 // docs 전문 검사 — 생성된 명령 레퍼런스(sok docs)가 표면 계약을 충분히 노출하는지 자동 점검한다.
-// 검사 축: ① 확정 용어(스페이스/탭/패널 — 옛 용어 잔존 금지) ② danger 표기 ③ 사용 예시(examples)
+// 검사 축: ① 확정 용어(프로젝트/스페이스/칸/탭 — 옛 용어 잔존 금지) ② danger 표기 ③ 사용 예시(examples)
 // ④ 개명 잔존 ⑤ 매개변수 표 존재. 사람 눈검증을 대체하지 않고 앞단에서 기계 점검을 맡는다.
 // 사용: node scripts/docs-audit.mjs docs/COMMANDS.md
 import { readFileSync } from "node:fs";
@@ -16,7 +16,7 @@ const sections = [...text.matchAll(/^## `([^`]+)`([^\n]*)\n([\s\S]*?)(?=^## `|\n
 if (sections.length < 100) failures.push(`명령 절이 너무 적습니다: ${sections.length}`);
 
 // ① 옛 이름 잔존 — 이벤트 이름(project.created 등)과 대조표 문서는 예외.
-const OLD = [/\bcontent\.(list|create|close|activate|rename|switchScan)\b/, /\bproject\.create\b(?!d)/, /\bwindow\.new\b/, /\bproject\.recent\.forget\b/, /\bsecret\.delete\b/, /"group"\s*:/, /\bgroupId\b/, /\bcontentId\b/];
+const OLD = [/\bcontent\.(list|create|close|activate|rename|switchScan)\b/, /\bproject\.create\b(?!d)/, /\bwindow\.new\b/, /\bproject\.recent\.forget\b/, /\bsecret\.delete\b/, /"group"\s*:/, /\bgroupId\b/, /\bcontentId\b/, /\bpanel\.[a-z]/, /(?<!plugin\.)\bview\.(list|open|close|activate|rename|maximize|restore|move|label)\b/, /\beditor\.(open|close)\b/, /\bpanelId\b/, /\bactiveViewId\b/];
 for (const s of sections) {
   for (const re of OLD) {
     const m = s.body.match(re);
@@ -25,7 +25,7 @@ for (const s of sections) {
 }
 
 // ② danger 명령의 헤딩 표기 — 알려진 파괴 명령 표본이 표기를 갖는지.
-const MUST_DANGER = ["plugin.install", "plugin.remove", "view.close", "space.close", "panel.close", "secret.remove"];
+const MUST_DANGER = ["plugin.install", "plugin.remove", "tab.close", "space.close", "pane.close", "secret.remove"];
 for (const n of MUST_DANGER) {
   const s = sections.find((x) => x.name === n);
   if (!s) { warns.push(`명령 절 없음: ${n}`); continue; }

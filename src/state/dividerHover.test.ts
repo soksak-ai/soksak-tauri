@@ -3,14 +3,14 @@
 // 끊긴 것과 "그 자리에 멈춰 있다"가 구별되지 않아 강조가 영원히 남는다.
 //
 // 실측된 결과(2026-07-26): accent 세로선이 창 본문 전체 높이로 브라우저 표면들을 가로지른 채
-// 굳었다. ui.hit 이 그 자리에서 `egroup-divider` s1:0 을 반환했고, rect(985.4, 82, 6, 997)가
+// 굳었다. ui.hit 이 그 자리에서 `pane-gutter` s1:0 을 반환했고, rect(985.4, 82, 6, 997)가
 // 네이티브 강조바 프레임과 정확히 같았다 — DOM 강조와 네이티브 바가 같은 굳은 상태의 두 얼굴.
 //
 // 여기서 고정하는 것은 상태의 대칭이다: 세팅과 해제가 짝을 이룬다.
 import { beforeEach, describe, expect, it } from "vitest";
 import { useDividerHover } from "./dividerHover";
 
-describe("dividerHover — 들어가면 나올 수 있어야 한다", () => {
+describe("gutterHover — 들어가면 나올 수 있어야 한다", () => {
   beforeEach(() => useDividerHover.setState({ key: null }));
 
   it("hover 로 켜지고 null 로 꺼진다", () => {

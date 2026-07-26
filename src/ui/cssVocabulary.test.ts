@@ -122,7 +122,7 @@ describe("판정 기준 자체를 못박는다 — 게이트가 표준을 앞지
 
   it("한 이름에 죽은 단어가 둘이면 둘 다 적는다", () => {
     expect(deadWordsIn(".pane-panel", "class").sort()).toEqual(["pane", "panel"]);
-    expect(deadWordsIn(".content-pane", "class").sort()).toEqual(["content-", "pane"]);
+    expect(deadWordsIn(".content-cell", "class").sort()).toEqual(["cell", "content-"]);
   });
 
   it("pane 은 새 뜻만 살아 있다 — 역할 단어를 새로 만든 것은 위반", () => {

@@ -50,7 +50,7 @@ describe("RailLinkOverlay — 실시간 그리드 추종", () => {
       <RailLinkOverlay
         contentId="c1"
         boundViewId="v2"
-        boundPanelId="g2"
+        boundPaneId="g2"
         railWidth={300}
         railStation={50}
         targetRect={{ left: 50, top: 0, width, height: 50 }}
@@ -63,7 +63,7 @@ describe("RailLinkOverlay — 실시간 그리드 추종", () => {
     expect(overlay.dataset).toMatchObject({
       node: "relation/rail/c1",
       boundView: "v2",
-      boundPanel: "g2",
+      boundPane: "g2",
       connected: "true",
     });
     expect(host.querySelectorAll(".rail-link-shape")).toHaveLength(1);
@@ -89,7 +89,7 @@ describe("RailLinkOverlay — 실시간 그리드 추종", () => {
     const root = createRoot(host);
     act(() => root.render(
       <RailLinkOverlay
-        contentId="c1" boundViewId="v2" boundPanelId="g2"
+        contentId="c1" boundViewId="v2" boundPaneId="g2"
         railWidth={300} railStation={0}
         targetRect={{ left: 50, top: 0, width: 50, height: 100 }}
       />,
@@ -105,7 +105,7 @@ describe("교체-인접 표시", () => {
     <RailLinkOverlay
       contentId="c1"
       boundViewId="v2"
-      boundPanelId="g2"
+      boundPaneId="g2"
       railWidth={300}
       railStation={50}
       targetRect={{ left: 50, top: 0, width: 25, height: 50 }}

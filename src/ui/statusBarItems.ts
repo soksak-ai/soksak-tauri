@@ -40,7 +40,7 @@ export function registerStatusBarItem(item: StatusBarItem): () => void {
 }
 
 /** 특정 pane 에 연관된 아이템들(등록 순). */
-export function statusBarItemsForPane(paneId: string): StatusBarItem[] {
+export function statusBarItemsForTab(paneId: string): StatusBarItem[] {
   const out: StatusBarItem[] = [];
   for (const it of items.values()) if (it.paneId === paneId) out.push(it);
   return out;

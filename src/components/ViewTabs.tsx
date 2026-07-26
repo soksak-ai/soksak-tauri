@@ -100,7 +100,7 @@ export const ViewTabs = memo(function ViewTabs({
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const active = el.querySelector<HTMLElement>(".view-tab.active");
+    const active = el.querySelector<HTMLElement>(".tab.active");
     if (!active) return;
     const elR = el.getBoundingClientRect();
     const aR = active.getBoundingClientRect();
@@ -132,12 +132,12 @@ export const ViewTabs = memo(function ViewTabs({
   };
 
   return (
-    <div className="view-tabs-wrap">
-      <div className="view-tabs" ref={scrollRef}>
+    <div className="tabs-wrap">
+      <div className="tabs" ref={scrollRef}>
         {group.tabs.map((v) => (
           <div
             key={v.id}
-            className={`view-tab${v.id === group.activeTabId ? " active" : ""}`}
+            className={`tab${v.id === group.activeTabId ? " active" : ""}`}
             data-node={`tab/view/${v.id}`}
             onMouseDown={(e) => onTabPointerDown(v.id, e)}
             // 더블클릭 = 최대화(컨텐츠 영역 전체) — 헤더가 타이틀로 바뀌고
@@ -147,7 +147,7 @@ export const ViewTabs = memo(function ViewTabs({
               v.kind === "file" ? v.path : `${v.pluginId}.${v.view}`
             }
           >
-            <span className="view-tab-icon icon-inline">
+            <span className="tab-icon icon-inline">
               {v.kind === "file" ? (
                 <Icon name="file" size="sm" />
               ) : v.icon ? (
@@ -164,15 +164,15 @@ export const ViewTabs = memo(function ViewTabs({
                 ))
               )}
             </span>
-            <span className="view-tab-title">{viewDisplayTitle(v)}</span>
+            <span className="tab-title">{viewDisplayTitle(v)}</span>
             {v.kind === "file" && v.status?.code === "dirty" && (
-              <span className="view-tab-dirty" title={t("viewer.unsaved")}>
+              <span className="tab-dirty" title={t("viewer.unsaved")}>
                 <Icon name="dirty" size="xs" />
               </span>
             )}
             <button
               type="button"
-              className="icon-btn icon-btn--mini view-tab-close"
+              className="icon-btn icon-btn--mini tab-close"
               data-node={`tab/view/${v.id}/close`}
               title={t("view.close")}
               onMouseDown={(e) => e.stopPropagation()}
@@ -190,7 +190,7 @@ export const ViewTabs = memo(function ViewTabs({
           <button
             ref={addBtnRef}
             type="button"
-            className="icon-btn view-add"
+            className="icon-btn tab-add"
             title={t("view.new")}
             onMouseDown={(e) => e.stopPropagation()}
             onClick={() => {
@@ -217,9 +217,9 @@ export const ViewTabs = memo(function ViewTabs({
         />
       )}
       {thumb && (
-        <div className="view-scrollbar">
+        <div className="tabs-scrollbar">
           <div
-            className="view-scrollbar-thumb"
+            className="tabs-scrollbar-thumb"
             style={{ left: thumb.left, width: thumb.width }}
             onMouseDown={onThumbDown}
           />

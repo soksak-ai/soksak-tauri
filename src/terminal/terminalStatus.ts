@@ -1,17 +1,17 @@
 // 터미널 status 브리지(M5) — 셸 통합 OSC 이벤트(command.started/finished, 폴링 0)에
-// status 를 얹는다. paneId → 터미널 뷰(paneToView) → setViewStatus({code:"running", message:명령라인}).
+// status 를 얹는다. paneId → 터미널 뷰(locateTab) → setViewStatus({code:"running", message:명령라인}).
 // raw·미통합 셸은 이벤트가 안 와 running 미보고 → 즉시 닫힘(가드 없음, 안전 §13).
 import {
   subscribeAnyCommandFinished,
   subscribeAnyCommandStarted,
-} from "./paneHosts";
-import { paneToView, useSessions } from "../state/sessions";
+} from "./ptyBridge";
+import { locateTab, useSessions } from "../state/sessions";
 
 export function reportTerminalRunning(
   paneId: string,
   commandLine: string,
 ): void {
-  const loc = paneToView(useSessions.getState().projects, paneId);
+  const loc = locateTab(useSessions.getState().projects, paneId);
   if (loc)
     useSessions.getState().setViewStatus(loc.projectId, loc.viewId, {
       code: "running",
@@ -20,7 +20,7 @@ export function reportTerminalRunning(
 }
 
 export function clearTerminalRunning(paneId: string): void {
-  const loc = paneToView(useSessions.getState().projects, paneId);
+  const loc = locateTab(useSessions.getState().projects, paneId);
   if (loc) useSessions.getState().setViewStatus(loc.projectId, loc.viewId, null);
 }
 

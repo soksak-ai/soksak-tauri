@@ -25,7 +25,7 @@ function plane(): HTMLElement {
 
 function hole(): HTMLElement {
   const h = document.createElement("div");
-  h.className = "egroup-body-slot hole-slot";
+  h.className = "tab-body tab-body-hole";
   document.body.appendChild(h);
   return h;
 }
@@ -71,9 +71,9 @@ test("같은 커밋에서 늦게 등록된 plane 도 그 패스에 클립을 받
   const late = plane();
 
   registerRailPlane(first);
-  requestRailHoleClipSync(); // pane1 의 layout effect
+  requestRailHoleClipSync(); // 첫 번째 칸의 layout effect
   registerRailPlane(late);
-  requestRailHoleClipSync(); // pane2 의 layout effect — 억제된다
+  requestRailHoleClipSync(); // 두 번째 칸의 layout effect — 억제된다
 
   await Promise.resolve();
   expect(scans).toBe(1);

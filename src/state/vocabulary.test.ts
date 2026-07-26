@@ -59,12 +59,73 @@ const ROOTS: Record<Scope, { dir: string; exts: string[] }> = {
 const SELF = "vocabulary.test.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 판정표 — 빈 상태로 시작한다. 전수 추출 → 뜻 판정 → 여기 등재가 이 게이트의 절차다.
-// 등재 형식: [식별자]: "tab" (옛 뜻·개명 대상) | "pane" (새 뜻·존치)
+// 판정표 — 전수 추출 → 뜻 판정 → 여기 등재가 이 게이트의 절차다.
+// 등재 형식: [식별자]: "tab" (옛 뜻 = 탭 인스턴스) | "pane" (새 뜻 = 칸)
+//
+// 판정은 **뜻**이고 생존은 별개 축이다. "tab" 판정을 받고도 소스에 남는 이름이 있다 — 계약면
+// (플러그인 API·와이어 필드·env)은 이름이 곧 계약이라 개명이 곧 파괴다. 그런 이름은 이행 기간에
+// 두 이름을 함께 싣고(docs/NAMING.md 2026-07-26 이행표), 제거 조건이 충족되면 사라진다. 판정을
+// "pane" 으로 적어 존치를 정당화하는 것은 뜻을 거짓으로 적는 것이므로 하지 않는다.
+//
+// 뜻이 layout 실체가 아닌 이름 두 갈래(둘 다 개명 대상이 아니므로 "pane"):
+//   ① 남의 어휘 — lucide 아이콘 id `panel-left`/`panel-right`. 우리가 지은 이름이 아니다.
+//   ② 명령 표면의 옛 낱말 — `panel.*` 명령명·`activePanelId` 응답 필드 등. 가리키는 것은 칸이라
+//      뜻은 새 뜻이고, `panel`→`pane` 철자 교정은 명령 표면 레인이 따로 옮긴다.
 // ─────────────────────────────────────────────────────────────────────────────
 const VERDICTS: Record<Scope, Record<string, Verdict>> = {
-  src: {},
-  "src-tauri": {},
+  src: {
+    // ── 새 뜻(칸) — 배치 실체와 그 응답·스펙 필드 ─────────────────────────────
+    Pane: "pane",
+    PaneNode: "pane",
+    pane: "pane",
+    panes: "pane",
+    panel: "pane", // 위 ①② 두 갈래만 남았다
+    panelId: "pane", // 명령 응답 필드 — 가리키는 것은 칸
+    panels: "pane",
+    activePaneId: "pane",
+    activePanelId: "pane",
+    focusedPaneId: "pane",
+    firstPaneId: "pane",
+    boundPane: "pane", // 결부 탭을 담은 칸
+    boundPaneId: "pane",
+    builtPanes: "pane",
+    maximizedPane: "pane", // 최대화된 탭을 담은 칸
+    locatePane: "pane", // pane id → 위치
+    resolvePane: "pane",
+    swappedPanes: "pane",
+    LayoutPaneSpec: "pane", // layout.apply 의 panes[] 항목
+    emptyPane: "pane", // "빈 칸" 메시지 키
+    emptyActivePane: "pane",
+    emptyPanelContext: "pane",
+    emptypanel: "pane", // 그 테스트의 픽스처 루트 이름
+    // ── 새 뜻 — 칸의 시각 토큰(테마가 소유) ──────────────────────────────────
+    paneStyle: "pane",
+    PaneStyle: "pane",
+    paneInset: "pane",
+    panePad: "pane",
+    railPaneInset: "pane", // 레일에 주입하는 칸 인셋 — 같은 토큰
+    paneBottom: "pane", // 결부 도형이 읽는 칸 rect 변
+    paneRight: "pane",
+    paneWidth: "pane", // 레일을 뺀 칸 평면 폭
+    paneNameViolates: "pane", // CSS 게이트의 칸 이름 판별기
+    paneInvariant: "pane", // 그 불변식 게이트의 파일 이름(주석 인용)
+    // ── 옛 뜻(탭 인스턴스) — 계약면이라 이행 기간 동안 이름이 남는다 ──────────
+    paneId: "tab", // 플러그인 계약면의 타깃/호출자 파라미터 — 이행표가 tabId·callerTab 으로 옮긴다
+    paneAlive: "tab", // app.pty.paneAlive — 플러그인 API 표면
+    pty_pane_alive: "tab", // invoke 이름(와이어)
+    pty_pane_pid: "tab",
+  },
+  "src-tauri": {
+    // 전부 옛 뜻이고 전부 와이어다 — invoke 이름·요청 필드·사이드카 계약 enum.
+    // 와이어 이름은 독립 발행된 양쪽이 같은 문자열로 만나는 지점이므로 한쪽만 못 바꾼다:
+    // pty 사이드카 계약(soksak-spec-pty)은 버전 범프와 두 구현 동시 이행이 개명의 전제다.
+    pty_pane_alive: "tab",
+    pty_pane_pid: "tab",
+    PanePid: "tab", // soksak_spec_pty::Request::PanePid — 계약 enum 변형
+    pane_id: "tab", // 그 요청의 필드
+    pane: "tab", // ipc 요청의 호출자 위치 필드(=$SOKSAK_CALLER_TAB 의 옛 이름)
+    panel: "pane", // "panel.split" 명령명 픽스처 — 가리키는 것은 칸
+  },
 };
 
 const IDENT = /(?:[A-Za-z_][A-Za-z0-9_]*)?(?:[Pp]ane|[Pp]anel)[A-Za-z0-9_]*/g;

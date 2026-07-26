@@ -8,7 +8,7 @@ import { qualifiedViewId, type ContributedView } from "./spec";
 export interface PluginViewContext {
   projectId: string;
   root: string | null;
-  // 이 뷰가 추종/연관하는 터미널 pane(cwd 추종 대상). 사이드바=cwdPaneOf(활성 그룹의 포커스 터미널),
+  // 이 뷰가 추종/연관하는 터미널 pane(cwd 추종 대상). 사이드바=cwdTabOf(활성 그룹의 포커스 터미널),
   // 그 외 배치=null. app.terminal.getCwd/onCwd 와 함께 cwd 추종에 쓴다(계약 A13/S7). 없으면 null.
   paneId: string | null;
   // 콘텐츠 배치 뷰의 sessions view.id(이 뷰 인스턴스의 안정 키 — 예: app.webview.label(viewId) 로

@@ -88,15 +88,15 @@ export function railLinkPolygon(
 ): Point[] | null {
   const railRight = rail.x + rail.width;
   if (Math.abs(panel.x - railRight) > epsilon) return null;
-  const panelRight = panel.x + panel.width;
-  const panelBottom = panel.y + panel.height;
+  const paneRight = panel.x + panel.width;
+  const paneBottom = panel.y + panel.height;
   return compact([
     { x: rail.x, y: rail.y },
     { x: railRight, y: rail.y },
     { x: railRight, y: panel.y },
-    { x: panelRight, y: panel.y },
-    { x: panelRight, y: panelBottom },
-    { x: railRight, y: panelBottom },
+    { x: paneRight, y: panel.y },
+    { x: paneRight, y: paneBottom },
+    { x: railRight, y: paneBottom },
     { x: railRight, y: rail.y + rail.height },
     { x: rail.x, y: rail.y + rail.height },
   ]);

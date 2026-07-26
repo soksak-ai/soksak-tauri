@@ -59,19 +59,19 @@ function MenuLevel({
         o.kind === "item" ? (
           <div
             key={node.items[o.idx].id}
-            className="ctab-menu-item"
+            className="space-tab-menu-item"
             data-node={`menu/program/${node.items[o.idx].id}`}
             onClick={() => onPick(node.items[o.idx].id)}
           >
             {node.items[o.idx].title}
           </div>
         ) : (
-          <div key={`sub:${o.name}`} className="ctab-menu-item has-sub">
+          <div key={`sub:${o.name}`} className="space-tab-menu-item has-sub">
             <span>{o.name}</span>
-            <span className="ctab-menu-caret icon-inline">
+            <span className="space-tab-menu-caret icon-inline">
               <Icon name="chevron-right" size="sm" />
             </span>
-            <div className="ctab-submenu">
+            <div className="space-tab-submenu">
               <MenuLevel node={node.subs.get(o.name)!} onPick={onPick} />
             </div>
           </div>
@@ -152,11 +152,11 @@ export function ProgramMenu({
   return createPortal(
     <div
       ref={menuRef}
-      className={place.flip ? "ctab-menu flip-sub" : "ctab-menu"}
+      className={place.flip ? "space-tab-menu flip-sub" : "space-tab-menu"}
       style={{ left: place.left, top: place.top }}
     >
       {order.length === 0 ? (
-        <div className="ctab-menu-empty">{t("program.empty")}</div>
+        <div className="space-tab-menu-empty">{t("program.empty")}</div>
       ) : (
         <MenuLevel node={root} onPick={onPick} />
       )}

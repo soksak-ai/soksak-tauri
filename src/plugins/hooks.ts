@@ -22,7 +22,7 @@ import { setAnyOutputSink } from "../terminal/ptyObservationStore";
 import {
   subscribeAnyCommandFinished,
   subscribeAnyCommandStarted,
-} from "../terminal/paneHosts";
+} from "../terminal/ptyBridge";
 import { busOn } from "./bus";
 import { configureIdleTurnDetector } from "../terminal/idleTurnDetector";
 import type { PluginPermission } from "./spec";
@@ -415,7 +415,7 @@ export function startPluginHooks(): void {
     void (async () => {
       const pid = await invoke<number | null>("pty_pane_pid", { paneId }).catch(() => null);
       emitPluginEvent("command.started", {
-        projectId: projectOfPane(paneId),
+        projectId: projectOfTab(paneId),
         paneId,
         commandLine,
         cwd,
@@ -434,7 +434,7 @@ export function startPluginHooks(): void {
   // 터미널 명령 종료 → 플러그인 이벤트(git 뷰 자동 갱신 등). 이산 이벤트라
   // coalesce 불필요 — 발생 빈도 = 사용자가 명령을 끝내는 빈도.
   subscribeAnyCommandFinished((paneId, commandLine, cwd, exitCode) => {
-    const info = projectInfoOfPane(paneId);
+    const info = projectInfoOfTab(paneId);
     emitPluginEvent("command.finished", {
       projectId: info?.id ?? null,
       paneId,
@@ -468,7 +468,7 @@ export function startPluginHooks(): void {
   // idle provider 배선(기본 OFF — turn.idleDetection 커맨드로 켬). emit/projectInfo 주입(순환 import 회피).
   configureIdleTurnDetector({
     emit: (p) => emitPluginEvent("turn.ended", p),
-    projectInfoOf: (paneId) => projectInfoOfPane(paneId),
+    projectInfoOf: (paneId) => projectInfoOfTab(paneId),
   });
 
   // acp provider 채널 통합 — 오픈 bus 의 "turn.ended"(ACP 플러그인 발행)를 hooks 채널로 미러.
@@ -520,7 +520,7 @@ export function startPluginHooks(): void {
 //
 // 관찰 substrate 의 paneId = 플러그인 터미널 뷰의 sessions view.id(= app.pty.spawn 에 넘긴 paneId).
 // 코어는 터미널 뷰를 소유하지 않는다(터미널도 플러그인 뷰).
-function projectInfoOfPane(paneId: string): { id: string; root: string | null } | null {
+function projectInfoOfTab(paneId: string): { id: string; root: string | null } | null {
   for (const t of useSessions.getState().projects) {
     for (const c of t.spaces) {
       for (const g of allGroups(c.layout)) {
@@ -536,6 +536,6 @@ function projectInfoOfPane(paneId: string): { id: string; root: string | null } 
 }
 
 // pane 이 속한 프로젝트 id(command.started 등 id-만 필요한 곳).
-function projectOfPane(paneId: string): string | null {
-  return projectInfoOfPane(paneId)?.id ?? null;
+function projectOfTab(paneId: string): string | null {
+  return projectInfoOfTab(paneId)?.id ?? null;
 }

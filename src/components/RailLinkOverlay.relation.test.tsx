@@ -44,7 +44,7 @@ function overlayProps(overrides: Partial<{
   return {
     contentId: "c1",
     boundViewId: overrides.boundViewId ?? "v2",
-    boundPanelId: "g2",
+    boundPaneId: "g2",
     railWidth: 300,
     railStation: overrides.railStation ?? 50,
     targetRect: overrides.targetRect ?? adjacentRect,
@@ -194,13 +194,13 @@ describe("railRelation 모드 CSS 갈래 (App.css)", () => {
   it("포커스 스포트라이트: 전체 dim + 활성만 filter 해제(선택만 명확)", () => {
     // 사용자 개념: "전체를 흐리게 하고 선택된 것만 명확하게". blur 는 텍스트를 뭉개므로
     // 밝기·채도 하강만 쓴다. 전이가 있어 활성 이동 시 어둠이 옮겨간다.
-    for (const part of [".egroup-cell", ".egroup-body-slot"]) {
-      const dim = decls(`.egroup-area[data-focus-dim] ${part}`);
+    for (const part of [".pane", ".tab-body"]) {
+      const dim = decls(`.space[data-focus-dim] ${part}`);
       expect(dim).toMatch(/filter:\s*brightness\(0\.93\)\s*saturate\(0\.85\)/);
       // filter 전이는 금지다 — 포커스마다 승격된 레이어를 160ms 재래스터해 패널이 움찔했다
       // (실사고). 전이감은 ::after 베일(페인트만)이 담당한다.
       expect(dim).not.toMatch(/transition:[^;]*filter/);
-      const clear = decls(`.egroup-area[data-focus-dim] ${part}.spot-clear`);
+      const clear = decls(`.space[data-focus-dim] ${part}.spot-clear`);
       expect(clear).toMatch(/filter:\s*none/);
     }
     // 네이티브 표면 셰이드 — 레이어 역전(DOM 최상위, 엔진·child 웹뷰는 투명 홀 아래) 때문에
@@ -209,28 +209,28 @@ describe("railRelation 모드 CSS 갈래 (App.css)", () => {
     // 스탠드인이 베일을 가려 스왑마다 포커스 플랩으로 보였다 — 실측). 홀 슬롯은 filter 제외
     // (네이티브는 베일만 받으니 스탠드인도 베일만 받아야 dim 강도가 일치한다).
     expect(css).toMatch(
-      /\.egroup-area\[data-focus-dim\] \.egroup-body-slot\.hole-slot \{[^}]*filter: none/,
+      /\.space\[data-focus-dim\] \.tab-body\.tab-body-hole \{[^}]*filter: none/,
     );
     expect(css).toMatch(
-      /\.egroup-area\[data-focus-dim\] \.egroup-body-slot\.hole-slot::after \{[^}]*background-color: color-mix\(in srgb, #000 7%, transparent\);[^}]*transition:[^;}]*background-color/,
+      /\.space\[data-focus-dim\] \.tab-body\.tab-body-hole::after \{[^}]*background-color: color-mix\(in srgb, #000 7%, transparent\);[^}]*transition:[^;}]*background-color/,
     );
     expect(css).toMatch(
-      /\.egroup-area\[data-focus-dim\] \.egroup-body-slot\.hole-slot\.spot-clear::after \{[^}]*background-color: transparent/,
+      /\.space\[data-focus-dim\] \.tab-body\.tab-body-hole\.spot-clear::after \{[^}]*background-color: transparent/,
     );
     // pane 스타일 배경은 홀을 원천 제외한다(특이성 전쟁 금지 — 홀은 스타일이 아니라 표면
     // 종류의 사실. 실사고: pane 규칙이 홀 투명을 이겨 card/floating 에서 전 홀 폐쇄).
     expect(css).toMatch(
-      /:root\[data-pane-style="card"\] \.egroup-body-slot:not\(\.hole-slot\)/,
+      /:root\[data-pane-style="card"\] \.tab-body:not\(\.tab-body-hole\)/,
     );
-    // 홀 기준은 뷰의 transparent 선언 하나(hole-slot — 슬롯은 영속 레이어의 형제라 슬롯
+    // 홀 기준은 뷰의 transparent 선언 하나(tab-body-hole — 슬롯은 영속 레이어의 형제라 슬롯
     // 자신에 새긴다. PLUGIN-CONTRACT §Transparent). 홀 규칙이 베일을 이겨 브라우저만 안
     // 어두워졌던 실측 결함의 예외를 같은 기준 위에 명시한다: 스포트라이트 베일은 반투명이라
     // 홀을 막지 않으면서 아래 네이티브를 어둡힌다. pane 스타일 무관(홀은 표면 종류의 사실).
-    expect(css).toMatch(/\.egroup-body-slot\.hole-slot \{[^}]*background: transparent/);
+    expect(css).toMatch(/\.tab-body\.tab-body-hole \{[^}]*background: transparent/);
     // 이중 베일 금지 — 슬롯 자체 배경 베일이 되살아나면 동결 스탠드인이 그 층만 가려
     // 위상마다 밝음-펄스가 재발한다(실사고). ::after 가 유일 베일이다.
     expect(css).not.toMatch(
-      /\.egroup-body-slot\.hole-slot:not\(\.spot-clear\) \{[^}]*background-color: color-mix/,
+      /\.tab-body\.tab-body-hole:not\(\.spot-clear\) \{[^}]*background-color: color-mix/,
     );
   });
 
@@ -292,7 +292,7 @@ describe("railRelation 모드 CSS 갈래 (App.css)", () => {
   it("활강 애니메이션은 실이동 요소(.flip-move)에만 — 델타 0 요소의 레이어 승격 금지", () => {
     // 실사고: 위상 하위 전체 선택이 움직이지 않는 브라우저 슬롯까지 animation +
     // will-change 로 승격시켜, 위상마다 재래스터가 DOM(주소표시줄)을 움찔거렸다.
-    expect(css).toMatch(/\.rail-traveling \.egroup-body-slot\.flip-move/);
-    expect(css).not.toMatch(/\.rail-traveling \.egroup-body-slot,/);
+    expect(css).toMatch(/\.rail-traveling \.tab-body\.flip-move/);
+    expect(css).not.toMatch(/\.rail-traveling \.tab-body,/);
   });
 });

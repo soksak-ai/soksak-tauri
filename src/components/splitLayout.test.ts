@@ -7,9 +7,9 @@ type T = SplitTree<string>;
 
 describe("computeSplitLayout", () => {
   it("leaf 하나 = 전체 rect", () => {
-    const { cells, dividers } = computeSplitLayout<string>({ type: "leaf", value: "a" });
+    const { cells, gutters } = computeSplitLayout<string>({ type: "leaf", value: "a" });
     expect(cells).toEqual([{ value: "a", rect: { left: 0, top: 0, width: 100, height: 100 } }]);
-    expect(dividers).toEqual([]);
+    expect(gutters).toEqual([]);
   });
 
   it("col 분할 = 세로 2셀 + divider 1", () => {
@@ -23,12 +23,12 @@ describe("computeSplitLayout", () => {
         { type: "leaf", value: "b" },
       ],
     };
-    const { cells, dividers } = computeSplitLayout(t);
+    const { cells, gutters } = computeSplitLayout(t);
     expect(cells.map((c) => c.value)).toEqual(["a", "b"]);
     expect(cells[0].rect).toEqual({ left: 0, top: 0, width: 100, height: 70 });
     expect(cells[1].rect).toEqual({ left: 0, top: 70, width: 100, height: 30 });
-    expect(dividers).toHaveLength(1);
-    expect(dividers[0]).toMatchObject({ splitId: "s1", dir: "col", index: 0 });
+    expect(gutters).toHaveLength(1);
+    expect(gutters[0]).toMatchObject({ splitId: "s1", dir: "col", index: 0 });
   });
 
   it("row 분할 = 가로 2셀", () => {

@@ -193,8 +193,8 @@ describe("② 빈 pane 은 유효하다 — 탭 0개 이상", () => {
     const j = src.indexOf("\nfunction ", i + 1);
     const body = src.slice(i, j < 0 ? src.length : j);
     // pane 이 없으면 위치가 없다(끊는다). 탭이 없는 것은 정상이므로 끊지 않는다.
-    expect(/if \(!group\) return null;/.test(body)).toBe(true);
-    expect(/if \(!view\) return null;/.test(body)).toBe(false);
+    expect(/if \(!pane\) return null;/.test(body)).toBe(true);
+    expect(/if \(!tab\) return null;/.test(body)).toBe(false);
   });
 });
 

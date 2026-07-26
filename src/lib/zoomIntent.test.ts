@@ -12,7 +12,9 @@ afterEach(() => {
 
 function mountView(viewId: string): HTMLElement {
   const c = document.createElement("div");
-  c.className = "plugin-view-container";
+  // 실물과 같은 두 이름 — commands 층 판정(viewContainerOf)이 아직 옛 이름으로 뷰를 가른다.
+  // 픽스처가 실물보다 앞서가면 통과하는 테스트가 실물의 결함을 못 본다.
+  c.className = "tab-container plugin-view-container";
   c.dataset.viewAddr = "content/view/test.v";
   c.dataset.paneId = viewId;
   const input = document.createElement("textarea");
@@ -41,15 +43,32 @@ describe("routeZoom — 포커스가 범위를 정한다", () => {
     expect(win).toHaveBeenCalledWith("out");
   });
 
-  it("포커스 뷰가 줌 미구현이면 범용 폴백 — 컨테이너 --view-font-size 스텝(창 줌으로 새지 않음)", () => {
+  it("포커스 뷰가 줌 미구현이면 범용 폴백 — 컨테이너 폰트 변수 스텝(창 줌으로 새지 않음)", () => {
     const c = mountView("v8");
     const view = vi.fn(() => false); // 훅 없음
     const win = vi.fn();
     routeZoom("in", { zoomView: view, stepWindow: win });
     expect(win).not.toHaveBeenCalled();
-    expect(c.style.getPropertyValue("--view-font-size")).toBe("14px");
+    expect(c.style.getPropertyValue("--tab-font-size")).toBe("14px");
     routeZoom("reset", { zoomView: view, stepWindow: win });
-    expect(c.style.getPropertyValue("--view-font-size")).toBe("13px");
+    expect(c.style.getPropertyValue("--tab-font-size")).toBe("13px");
+  });
+
+  it("옛 이름도 같은 값으로 함께 쓴다 — 옛 이름으로 선언한 플러그인 뷰의 줌이 죽지 않는다", () => {
+    // 계약면 이행(zoomIntent.ts 머리말 제거 조건)까지 두 이름은 언제나 같은 값이다.
+    const c = mountView("v9");
+    routeZoom("in", { zoomView: () => false, stepWindow: vi.fn() });
+    expect(c.style.getPropertyValue("--view-font-size")).toBe("14px");
+    expect(c.style.getPropertyValue("--view-font-size")).toBe(
+      c.style.getPropertyValue("--tab-font-size"),
+    );
+  });
+
+  it("옛 이름만 선언된 컨테이너에서도 그 값에서 이어 스텝한다", () => {
+    const c = mountView("v10");
+    c.style.setProperty("--view-font-size", "20px");
+    routeZoom("in", { zoomView: () => false, stepWindow: vi.fn() });
+    expect(c.style.getPropertyValue("--tab-font-size")).toBe("21px");
   });
 });
 

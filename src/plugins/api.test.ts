@@ -146,11 +146,11 @@ describe("터미널 cwd 표면(A13 raw — terminal 권한)", () => {
       "/d",
       fakeDeps({ getCwd, subscribeCwd, subscribeCommandFinished }),
     );
-    expect(api.terminal?.getCwd?.("pane1")).toBe("/cwd");
-    expect(getCwd).toHaveBeenCalledWith("pane1");
-    api.terminal?.onCwd?.("pane1", () => {});
+    expect(api.terminal?.getCwd?.("tab-aaaaaa")).toBe("/cwd");
+    expect(getCwd).toHaveBeenCalledWith("tab-aaaaaa");
+    api.terminal?.onCwd?.("tab-aaaaaa", () => {});
     expect(subscribeCwd).toHaveBeenCalled();
-    api.terminal?.onCommandFinished?.("pane1", () => {});
+    api.terminal?.onCommandFinished?.("tab-aaaaaa", () => {});
     expect(subscribeCommandFinished).toHaveBeenCalled();
   });
 
@@ -506,7 +506,7 @@ describe("ui — 선언 외 뷰 거부 + 레지스트리 연동", () => {
     await api.ui!.openView("panel", "content");
     expect(d.execute).toHaveBeenCalledWith(
       "plugin.view.open",
-      { view: "demo.panel", placement: "content" },
+      { viewKey: "demo.panel", placement: "content" },
       {},
     );
   });

@@ -78,7 +78,7 @@ describe("resizeSplits — 여러 split 을 한 커밋으로", () => {
       PaneNode,
       { type: "split" }
     >;
-    const rows = computeSplitLayout(layout).dividers.filter((d) => d.dir === "row");
+    const rows = computeSplitLayout(layout).gutters.filter((d) => d.dir === "row");
     expect(rows.map((d) => d.rect.left)).toEqual([60, 60]);
   });
 

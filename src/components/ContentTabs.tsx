@@ -51,11 +51,11 @@ export const ContentTabs = memo(function ContentTabs({
   };
 
   return (
-    <div className={`content-tabs${vertical ? " vertical" : ""}`}>
+    <div className={`space-tabs${vertical ? " vertical" : ""}`}>
       {project.spaces.map((c, idx) => (
         <div
           key={c.id}
-          className={`ctab${c.id === project.activeSpaceId ? " active" : ""}${editingId === c.id ? " editing" : ""}`}
+          className={`space-tab${c.id === project.activeSpaceId ? " active" : ""}${editingId === c.id ? " editing" : ""}`}
           data-node={`tab/space/${idx}`}
           onClick={() => setActiveContent(project.id, c.id)}
           onDoubleClick={() => setEditingId(c.id)}
@@ -63,7 +63,7 @@ export const ContentTabs = memo(function ContentTabs({
         >
           {editingId === c.id ? (
             <input
-              className="ctab-rename"
+              className="space-tab-rename"
               defaultValue={c.title}
               autoFocus
               onClick={(e) => e.stopPropagation()}
@@ -77,12 +77,12 @@ export const ContentTabs = memo(function ContentTabs({
               }}
             />
           ) : (
-            <span className="ctab-title">{c.title}</span>
+            <span className="space-tab-title">{c.title}</span>
           )}
           {project.spaces.length > 1 && editingId !== c.id && (
             <button
               type="button"
-              className="icon-btn icon-btn--mini ctab-close"
+              className="icon-btn icon-btn--mini space-tab-close"
               data-node={`tab/space/${idx}/close`}
               title={t("space.close")}
               onClick={(e) => {
@@ -100,7 +100,7 @@ export const ContentTabs = memo(function ContentTabs({
         <button
           ref={addBtnRef}
           type="button"
-          className="icon-btn ctab-add"
+          className="icon-btn space-tab-add"
           title={t("space.new")}
           onClick={toggleMenu}
         >

@@ -110,7 +110,7 @@ export const LeftSidebarHost = memo(function LeftSidebarHost({
   const opened = [...openedRef.current].filter((k) => registeredKeys.includes(k));
 
   // 공유 머신으로 셀/divider 계산.
-  const { cells, dividers } = useMemo(() => computeSplitLayout(layout), [layout]);
+  const { cells, gutters } = useMemo(() => computeSplitLayout(layout), [layout]);
   const cellsRef = useRef(cells);
   cellsRef.current = cells;
   // 각 셀(leaf 그룹)의 고유 id = viewKeys join(레이아웃 내 유일).
@@ -199,8 +199,8 @@ export const LeftSidebarHost = memo(function LeftSidebarHost({
     [project.id, hitTest, moveSidebarView, setLeftTab],
   );
 
-  // divider 드래그(분할 비율). 콘텐츠 onDividerDown 과 동일 로직.
-  const onDividerDown = (d: (typeof dividers)[number]) => (e: React.MouseEvent) => {
+  // divider 드래그(분할 비율). 콘텐츠 onGutterDown 과 동일 로직.
+  const onGutterDown = (d: (typeof gutters)[number]) => (e: React.MouseEvent) => {
     e.preventDefault();
     const cont = containerRef.current;
     if (!cont) return;
@@ -249,9 +249,9 @@ export const LeftSidebarHost = memo(function LeftSidebarHost({
         side="left"
         commitProjection={commitProjection}
       />
-      {/* 셀이 % 절대 배치되는 그리드(콘텐츠 egroup-area 와 동일 모델) — footer 는 그 아래 흐름 밖. */}
+      {/* 셀이 % 절대 배치되는 그리드(콘텐츠 space 와 동일 모델) — footer 는 그 아래 흐름 밖. */}
       <div
-        className="left-host-grid"
+        className="left-panes"
         ref={containerRef}
         style={
           // --drop-top-h:0 → 드롭 플레이스홀더(.drop-ind-wrap)가 셀 전체(탭 줄 포함)를 덮는다.
@@ -266,13 +266,14 @@ export const LeftSidebarHost = memo(function LeftSidebarHost({
           } as CSSProperties
         }
       >
-        {/* 셀(leaf 그룹) — 콘텐츠 egroup 처럼 % 절대 위치. 내부 = [탭 줄][본문]. */}
+        {/* 칸(leaf pane) — 콘텐츠 space 처럼 % 절대 위치. 내부 = [탭 줄][본문]. */}
         {cells.map(({ value: group, rect }, i) => (
           <div
             key={cellId(group)}
-            className="left-host-cell"
-            // 셀 드롭 타겟(E2E/AI): ui.input.drag 의 to 로 셀(인덱스)을 가리키고 zone 으로 분할/합류.
-            data-node={`cell/${i}`}
+            className="left-pane"
+            // 칸 드롭 타겟(E2E/AI): ui.input.drag 의 to 로 칸(인덱스)을 가리키고 zone 으로 분할/합류.
+            // 좌 영역의 칸은 발급된 id 가 없어 인덱스로 부른다(콘텐츠는 layout/pane/<pan-id>).
+            data-node={`pane/left/${i}`}
             style={cellVars(rect) as CSSProperties}
           >
             <SidebarLeaf
@@ -287,16 +288,16 @@ export const LeftSidebarHost = memo(function LeftSidebarHost({
         ))}
 
         {/* 분할 경계(divider) — 콘텐츠와 동일 클래스/시각. */}
-        {dividers.map((d) => (
+        {gutters.map((d) => (
           <div
-            key={`div-${d.splitId}-${d.index}`}
-            className={`egroup-divider ${d.dir}`}
+            key={`gutter-${d.splitId}-${d.index}`}
+            className={`pane-gutter ${d.dir}`}
             style={
               d.dir === "row"
                 ? { left: `${d.rect.left}%`, top: `${d.rect.top}%`, height: `${d.rect.height}%` }
                 : { left: `${d.rect.left}%`, top: `${d.rect.top}%`, width: `${d.rect.width}%` }
             }
-            onMouseDown={onDividerDown(d)}
+            onMouseDown={onGutterDown(d)}
           />
         ))}
 
@@ -355,12 +356,12 @@ function SidebarLeaf({
           const fallback = reg ? localize(reg.decl.title) : key;
           const label = resolveViewLabel(key, fallback);
           const editing = editingKey === key;
-          // 콘텐츠 탭(.ctab, 상단 탭 줄)과 *동일 구조/디자인* 재사용 — 편집 박스는 .ctab.editing 이,
-          // 입력은 .ctab-rename(투명·font:inherit)이 소유한다(라벨과 폰트/모양 동일). left-host-tab 은 드래그 마커만.
+          // 콘텐츠 탭(.space-tab, 상단 탭 줄)과 *동일 구조/디자인* 재사용 — 편집 박스는 .space-tab.editing 이,
+          // 입력은 .space-tab-rename(투명·font:inherit)이 소유한다(라벨과 폰트/모양 동일). left-host-tab 은 드래그 마커만.
           return (
             <div
               key={key}
-              className={`ctab left-host-tab${active === key ? " active" : ""}${editing ? " editing" : ""}${dragging === key ? " dragging" : ""}`}
+              className={`space-tab left-host-tab${active === key ? " active" : ""}${editing ? " editing" : ""}${dragging === key ? " dragging" : ""}`}
               data-node={`tab/left/${key}`}
               title={label}
               onMouseDown={editing ? undefined : startDrag(key)}
@@ -368,7 +369,7 @@ function SidebarLeaf({
             >
               {editing ? (
                 <input
-                  className="ctab-rename"
+                  className="space-tab-rename"
                   data-node={`tab/left/${key}/rename`}
                   defaultValue={label}
                   autoFocus
@@ -390,7 +391,7 @@ function SidebarLeaf({
                 />
               ) : (
                 <>
-                  <span className="ctab-title">{label}</span>
+                  <span className="space-tab-title">{label}</span>
                   <ViewBadge viewKey={key} />
                 </>
               )}
@@ -398,7 +399,7 @@ function SidebarLeaf({
           );
         })}
       </div>
-      <div className="left-host-body-wrap" data-node="bodywrap">
+      <div className="left-host-body-wrap" data-node="body/left">
         {hosted.map((k) => (
           <div
             key={k}

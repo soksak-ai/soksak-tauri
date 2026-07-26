@@ -36,7 +36,7 @@ const stacked = (topSizes: number[], botSizes: number[]): SplitTree<string> =>
   ]);
 
 const rowDividersOf = <L,>(tree: SplitTree<L>) =>
-  computeSplitLayout(tree).dividers.filter((d) => d.dir === "row");
+  computeSplitLayout(tree).gutters.filter((d) => d.dir === "row");
 
 const applyMoves = (
   tree: SplitTree<string>,
@@ -49,18 +49,18 @@ const rowXAt = (tree: SplitTree<string>, splitId: string, index: number) =>
 
 describe("collectLineGroup — 드래그 시작 시 라인 묶음", () => {
   it("같은 x 의 위·아래 세그먼트를 한 묶음으로 잡는다(top 오름차순)", () => {
-    const { dividers } = computeSplitLayout(stacked([0.4, 0.6], [0.4, 0.6]));
-    const group = collectLineGroup(dividers, "top", 0);
+    const { gutters } = computeSplitLayout(stacked([0.4, 0.6], [0.4, 0.6]));
+    const group = collectLineGroup(gutters, "top", 0);
     expect(group.map((d) => d.splitId)).toEqual(["top", "bot"]);
     // 아래 세그먼트를 끌어도 같은 묶음이다 — 어느 세그먼트든 라인 전체.
-    const fromBot = collectLineGroup(dividers, "bot", 0);
+    const fromBot = collectLineGroup(gutters, "bot", 0);
     expect(fromBot.map((d) => d.splitId)).toEqual(["top", "bot"]);
   });
 
   it("허용오차 이내(0.6)는 묶고 밖(1.1)은 묶지 않는다", () => {
-    const near = computeSplitLayout(stacked([0.406, 0.594], [0.4, 0.6])).dividers;
+    const near = computeSplitLayout(stacked([0.406, 0.594], [0.4, 0.6])).gutters;
     expect(collectLineGroup(near, "top", 0)).toHaveLength(2);
-    const far = computeSplitLayout(stacked([0.406, 0.594], [0.395, 0.605])).dividers;
+    const far = computeSplitLayout(stacked([0.406, 0.594], [0.395, 0.605])).gutters;
     expect(
       collectLineGroup(far, "top", 0, LINE_GROUP_EPS).map((d) => d.splitId),
     ).toEqual(["top"]);
@@ -71,8 +71,8 @@ describe("collectLineGroup — 드래그 시작 시 라인 묶음", () => {
       leaf("a"),
       split("c", "col", [0.5, 0.5], [leaf("b"), leaf("d")]),
     ]);
-    const { dividers } = computeSplitLayout(tree);
-    const group = collectLineGroup(dividers, "r", 0);
+    const { gutters } = computeSplitLayout(tree);
+    const group = collectLineGroup(gutters, "r", 0);
     expect(group.every((d) => d.dir === "row")).toBe(true);
     expect(group).toHaveLength(1);
   });
@@ -83,16 +83,16 @@ describe("collectLineGroup — 드래그 시작 시 라인 묶음", () => {
       leaf("b"),
       leaf("d"),
     ]);
-    const { dividers } = computeSplitLayout(tree);
+    const { gutters } = computeSplitLayout(tree);
     // 40 과 40.6 — x 는 허용오차 안이지만 둘 다 전 높이(같은 y)라 별개의 나란한 라인.
-    expect(collectLineGroup(dividers, "r", 0)).toHaveLength(1);
+    expect(collectLineGroup(gutters, "r", 0)).toHaveLength(1);
   });
 
   it("앵커 x 로 못 오는 세그먼트는 묶지 않는다 — 유일한 동반 후보가 못 오면 앵커 단독", () => {
     // 아래 세그먼트의 오른쪽 이웃이 정확히 minFrac — 92.0 오른쪽으로 한 발도 못 간다.
     // 앵커(92.5)를 묶으면 교집합 상한(92.0)이 시작 x 아래로 내려가 클램프가 시작점을 끌어당긴다.
-    const { dividers } = computeSplitLayout(stacked([0.925, 0.075], [0.92, 0.08]));
-    expect(collectLineGroup(dividers, "top", 0).map((d) => d.splitId)).toEqual([
+    const { gutters } = computeSplitLayout(stacked([0.925, 0.075], [0.92, 0.08]));
+    expect(collectLineGroup(gutters, "top", 0).map((d) => d.splitId)).toEqual([
       "top",
     ]);
   });
@@ -106,8 +106,8 @@ describe("collectLineGroup — 드래그 시작 시 라인 묶음", () => {
       split("r1", "row", [0.925, 0.075], [leaf("d"), leaf("e")]),
       split("r2", "row", [0.92, 0.08], [leaf("f"), leaf("g")]),
     ]);
-    const { dividers } = computeSplitLayout(tree);
-    const group = collectLineGroup(dividers, "r0", 0);
+    const { gutters } = computeSplitLayout(tree);
+    const group = collectLineGroup(gutters, "r0", 0);
     expect(group.map((d) => d.splitId)).toEqual(["r0", "r1"]);
     const next = applyMoves(tree, moveLineGroup(group, 90).moves);
     expect(rowXAt(next, "r0", 0)).toBeCloseTo(90, 10);
@@ -118,23 +118,23 @@ describe("collectLineGroup — 드래그 시작 시 라인 묶음", () => {
 
 describe("lineGroupRange — 허용 x 구간 교집합", () => {
   it("단일 세그먼트 = minFrac 클램프 구간", () => {
-    const { dividers } = computeSplitLayout(
+    const { gutters } = computeSplitLayout(
       split("r", "row", [0.4, 0.6], [leaf("a"), leaf("b")]),
     );
-    const range = lineGroupRange(dividers);
+    const range = lineGroupRange(gutters);
     expect(range.min).toBeCloseTo(40 - (0.4 - MIN_PANE_FRAC) * 100, 10);
     expect(range.max).toBeCloseTo(40 + (0.6 - MIN_PANE_FRAC) * 100, 10);
   });
 
   it("묶음은 각 세그먼트 구간의 교집합", () => {
     // 위: [8, 92], 아래: 오른쪽 이웃 0.1 → 상한 40 + (0.1-0.08)*100 = 42.
-    const { dividers } = computeSplitLayout(
+    const { gutters } = computeSplitLayout(
       split("c", "col", [0.5, 0.5], [
         split("top", "row", [0.4, 0.6], [leaf("a"), leaf("b")]),
         split("bot", "row", [0.4, 0.1, 0.5], [leaf("d"), leaf("e"), leaf("f")]),
       ]),
     );
-    const group = collectLineGroup(dividers, "top", 0);
+    const group = collectLineGroup(gutters, "top", 0);
     expect(group).toHaveLength(2);
     const range = lineGroupRange(group);
     expect(range.min).toBeCloseTo(8, 10);
@@ -142,10 +142,10 @@ describe("lineGroupRange — 허용 x 구간 교집합", () => {
   });
 
   it("이미 minFrac 미만인 이웃은 현재 x 가 경계 — 구간은 시작 x 를 항상 포함한다", () => {
-    const { dividers } = computeSplitLayout(
+    const { gutters } = computeSplitLayout(
       split("r", "row", [0.05, 0.95], [leaf("a"), leaf("b")]),
     );
-    const range = lineGroupRange(dividers);
+    const range = lineGroupRange(gutters);
     expect(range.min).toBeCloseTo(5, 10);
     expect(range.min).toBeLessThanOrEqual(range.max);
   });
@@ -154,8 +154,8 @@ describe("lineGroupRange — 허용 x 구간 교집합", () => {
 describe("moveLineGroup — 묶음 전체가 같은 x 로", () => {
   it("적용 후 두 세그먼트가 정확히 target 에 있고 sizes 합은 보존된다", () => {
     const tree = stacked([0.4, 0.6], [0.4, 0.6]);
-    const { dividers } = computeSplitLayout(tree);
-    const group = collectLineGroup(dividers, "top", 0);
+    const { gutters } = computeSplitLayout(tree);
+    const group = collectLineGroup(gutters, "top", 0);
     const { x, moves } = moveLineGroup(group, 55);
     expect(x).toBe(55);
     expect(moves).toHaveLength(2);
@@ -167,7 +167,7 @@ describe("moveLineGroup — 묶음 전체가 같은 x 로", () => {
 
   it("교집합 밖 target 은 경계로 클램프된다", () => {
     const tree = stacked([0.4, 0.6], [0.4, 0.6]);
-    const group = collectLineGroup(computeSplitLayout(tree).dividers, "top", 0);
+    const group = collectLineGroup(computeSplitLayout(tree).gutters, "top", 0);
     const { x, moves } = moveLineGroup(group, 99);
     expect(x).toBeCloseTo(92, 10);
     const next = applyMoves(tree, moves);
@@ -176,7 +176,7 @@ describe("moveLineGroup — 묶음 전체가 같은 x 로", () => {
 
   it("허용오차 안에서 어긋난 묶음도 드래그로 한 x 에 합류한다(치유)", () => {
     const tree = stacked([0.406, 0.594], [0.402, 0.598]);
-    const group = collectLineGroup(computeSplitLayout(tree).dividers, "top", 0);
+    const group = collectLineGroup(computeSplitLayout(tree).gutters, "top", 0);
     expect(group).toHaveLength(2);
     const { moves } = moveLineGroup(group, 50);
     const next = applyMoves(tree, moves);
@@ -192,7 +192,7 @@ describe("equalizeLineGroup — 더블클릭 균등화도 라인 묶음 경로",
   it("위 0.4/0.6·아래 0.4/0.6 에서 위 세그먼트 더블클릭 → 두 라인 모두 50(찢어지지 않음)", () => {
     const tree = stacked([0.4, 0.6], [0.4, 0.6]);
     const { x, moves } = equalizeLineGroup(
-      computeSplitLayout(tree).dividers,
+      computeSplitLayout(tree).gutters,
       "top",
       0,
     );
@@ -210,7 +210,7 @@ describe("equalizeLineGroup — 더블클릭 균등화도 라인 묶음 경로",
       split("bot", "row", [0.4, 0.1, 0.5], [leaf("d"), leaf("e"), leaf("f")]),
     ]);
     const { x, moves } = equalizeLineGroup(
-      computeSplitLayout(tree).dividers,
+      computeSplitLayout(tree).gutters,
       "top",
       0,
     );

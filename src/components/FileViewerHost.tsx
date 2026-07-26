@@ -61,18 +61,18 @@ export const FileViewerHost = memo(function FileViewerHost({
 
   // 매칭 뷰어 없음(파일 뷰어 플러그인 미설치/비활성) → 빈 상태 안내. 에러는 겹쳐 표시.
   const overlay = !reg ? (
-    <div className="plugin-view-empty">{t("plugin.view.missing")}</div>
+    <div className="plugin-empty">{t("plugin.view.missing")}</div>
   ) : error ? (
-    <div className="plugin-view-error">
-      <div className="plugin-view-error-title">{t("plugin.view.error")}</div>
-      <div className="plugin-view-error-msg">{error}</div>
+    <div className="plugin-error">
+      <div className="plugin-error-title">{t("plugin.view.error")}</div>
+      <div className="plugin-error-msg">{error}</div>
     </div>
   ) : null;
 
   return (
-    <div className="plugin-view-host">
+    <div className="plugin-host">
       <div
-        className="plugin-view-container"
+        className="tab-container"
         ref={containerRef}
         style={overlay ? { display: "none" } : undefined}
       />

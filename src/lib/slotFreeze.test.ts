@@ -10,8 +10,8 @@ const PNG = "data:image/png;base64,x";
 
 function makeSlot(viewId: string): HTMLElement {
   const el = document.createElement("div");
-  el.className = "egroup-body-slot hole-slot";
-  el.setAttribute("data-node", `layout/slot/${viewId}`);
+  el.className = "tab-body tab-body-hole";
+  el.setAttribute("data-node", `layout/tab/${viewId}`);
   document.body.appendChild(el);
   // jsdom 은 레이아웃이 없다 — 가시 슬롯 rect 를 명시 주입한다.
   el.getBoundingClientRect = () =>
@@ -318,7 +318,7 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
 describe("slotFreeze — dim 상태 캡처 배제(포커스 장식 박제 금지)", () => {
   it("focus-dim 이 걸린(비활성) 슬롯은 정착 캡처를 건너뛴다 — 청정 스냅만 굽는다", async () => {
     const area = document.createElement("div");
-    area.className = "egroup-area";
+    area.className = "space";
     area.setAttribute("data-focus-dim", "1");
     document.body.appendChild(area);
     const slot = makeSlot("v1");

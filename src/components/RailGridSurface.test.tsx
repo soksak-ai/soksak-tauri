@@ -17,11 +17,11 @@ describe("RailGridSurface", () => {
     act(() => {
       root.render(
         <div className="content">
-          <div className="content-tabs" data-testid="tabs" />
+          <div className="space-tabs" data-testid="tabs" />
           <RailGridSurface
             railPlane={<div className="left-rail-plane" data-testid="rail" />}
           >
-            <div className="content-pane" data-testid="grid" />
+            <div className="space-plane" data-testid="grid" />
           </RailGridSurface>
         </div>,
       );
@@ -31,7 +31,7 @@ describe("RailGridSurface", () => {
     const rail = host.querySelector<HTMLElement>("[data-testid=rail]")!;
     const grid = host.querySelector<HTMLElement>("[data-testid=grid]")!;
     expect(rail.parentElement).toBe(grid.parentElement);
-    expect(rail.parentElement?.classList.contains("content-body")).toBe(true);
+    expect(rail.parentElement?.classList.contains("space-body")).toBe(true);
     expect(tabs.contains(rail)).toBe(false);
 
     act(() => root.unmount());

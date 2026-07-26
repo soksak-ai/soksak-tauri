@@ -30,8 +30,8 @@ CEF_PIDS=$(pgrep -f "soksak-sidecar-browser-chromium" | tr '\n' ' ')
 PIDS="$MAIN_PID $CEF_PIDS"
 [ -n "$MAIN_PID" ] || { echo "앱 pid 못 찾음($IDENTITY)" >&2; exit 1; }
 
-DIV=$($SOK ui.tree 2>/dev/null | grep -o '"win/main/chrome/divider/[^"]*"' | sort -u | tail -1 | tr -d '"')
-[ -n "$DIV" ] || { echo "divider 없음(분할 레이아웃 필요)" >&2; exit 1; }
+DIV=$($SOK ui.tree 2>/dev/null | grep -o '"win/main/chrome/gutter/[^"]*"' | sort -u | tail -1 | tr -d '"')
+[ -n "$DIV" ] || { echo "골 없음(분할 레이아웃 필요)" >&2; exit 1; }
 R=$($SOK ui.measure "{\"address\":\"$DIV\"}" 2>/dev/null | python3 -c "import json,sys; r=json.load(sys.stdin)['rect']; print(int(r['x']+r['w']/2), int(r['y']+r['h']*0.5))")
 X=$(echo "$R" | cut -d' ' -f1); Y=$(echo "$R" | cut -d' ' -f2)
 

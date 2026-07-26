@@ -10,16 +10,16 @@ import {
   spanMoveAcross,
 } from "./railArrangement";
 
-type Panel = { id: string };
-const leaf = (id: string): SplitTree<Panel> => ({ type: "leaf", value: { id } });
-const order = (tree: SplitTree<Panel>): string[] =>
+type Pane = { id: string };
+const leaf = (id: string): SplitTree<Pane> => ({ type: "leaf", value: { id } });
+const order = (tree: SplitTree<Pane>): string[] =>
   leavesOf(tree).map((p) => p.id);
 
 const HOST_W = 1000;
 const RAIL_W = 246;
 
 /** [a | b | c] 균등 3열. */
-const threeColumns = (): SplitTree<Panel> => ({
+const threeColumns = (): SplitTree<Pane> => ({
   type: "split",
   id: "root",
   dir: "row",
@@ -28,7 +28,7 @@ const threeColumns = (): SplitTree<Panel> => ({
 });
 
 /** 상단 1 / 하단 2(반반) — 행별 세로선이 안 맞는 사용자 케이스. */
-const oneOverTwo = (): SplitTree<Panel> => ({
+const oneOverTwo = (): SplitTree<Pane> => ({
   type: "split",
   id: "root",
   dir: "col",
@@ -46,11 +46,11 @@ const oneOverTwo = (): SplitTree<Panel> => ({
 });
 
 const solve = (
-  layout: SplitTree<Panel>,
+  layout: SplitTree<Pane>,
   focusId: string | null,
-  extra: Partial<Parameters<typeof solveArrangement<Panel>>[0]> = {},
+  extra: Partial<Parameters<typeof solveArrangement<Pane>>[0]> = {},
 ) =>
-  solveArrangement<Panel>({
+  solveArrangement<Pane>({
     layout,
     focusId,
     placement: { mode: "flow" },
@@ -130,7 +130,7 @@ describe("배치 해결기 — 행 불일치 예외(스위칭 + 점선 근거)",
 
   it("멀리 있는 포커스도 가까운 왼쪽 형제 하나와만 교환한다 — 전역 재배열 금지", () => {
     // 위 [terminal | playbox | astryxTop], 아래 [about(1/3) | astryxBottom(2/3)].
-    const reported: SplitTree<Panel> = {
+    const reported: SplitTree<Pane> = {
       type: "split",
       id: "root",
       dir: "col",
@@ -165,7 +165,7 @@ describe("배치 해결기 — 행 불일치 예외(스위칭 + 점선 근거)",
   });
 
   it("폭이 다른 형제는 sizes 를 함께 교환한다 — 각 패널의 폭이 보존된다", () => {
-    const uneven: SplitTree<Panel> = {
+    const uneven: SplitTree<Pane> = {
       type: "split",
       id: "root",
       dir: "col",
@@ -197,7 +197,7 @@ describe("배치 해결기 — 행 불일치 예외(스위칭 + 점선 근거)",
   it("교환 후보가 없으면 원본 배열 + 앞쪽 클린 라인이다", () => {
     // 상단 wide / 하단 [r | col(p, q)]. q 는 row 의 직접 leaf 자식이 아니라 col 안에 있어
     // 교환 상대가 없다. 막힌 포커스는 억지로 배열을 흔들지 않고 앞(왼쪽) 클린 라인에 선다.
-    const blocked: SplitTree<Panel> = {
+    const blocked: SplitTree<Pane> = {
       type: "split",
       id: "root",
       dir: "col",
@@ -275,7 +275,7 @@ describe("이동량 — 해가 지시한 패널만, 폭은 절대 변하지 않�
 
     // 균등화가 남긴 미세 float 차 — station 도 셀 left 도 소수점 끝자리만 다르다.
     // 이것을 이동으로 세면 탭 전환마다 유령 주행 위상이 열린다(실사고).
-    const drifted: SplitTree<Panel> = {
+    const drifted: SplitTree<Pane> = {
       type: "split",
       id: "root",
       dir: "row",

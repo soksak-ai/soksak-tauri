@@ -181,13 +181,13 @@ export function projectRailRect(
   railWidthPx: number,
 ): RailRect {
   const side = sideOf(rect, station);
-  const panelWidth = Math.max(0, hostWidthPx - railWidthPx);
+  const paneWidth = Math.max(0, hostWidthPx - railWidthPx);
   return {
     left:
-      (panelWidth * rect.left) / 100 +
+      (paneWidth * rect.left) / 100 +
       (side === "after" ? railWidthPx : 0),
     top: rect.top,
-    width: (panelWidth * rect.width) / 100,
+    width: (paneWidth * rect.width) / 100,
     height: rect.height,
   };
 }
@@ -208,9 +208,9 @@ export function railStationFromLeftPx(
   hostWidthPx: number,
   railWidthPx: number,
 ): number {
-  const panelWidth = Math.max(0, hostWidthPx - railWidthPx);
-  if (panelWidth === 0) return 0;
-  return clampStation((railLeft / panelWidth) * 100);
+  const paneWidth = Math.max(0, hostWidthPx - railWidthPx);
+  if (paneWidth === 0) return 0;
+  return clampStation((railLeft / paneWidth) * 100);
 }
 
 /**

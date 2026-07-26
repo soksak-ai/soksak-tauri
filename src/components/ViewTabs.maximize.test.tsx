@@ -67,7 +67,7 @@ describe("기능 탭 최대화 문법", () => {
       );
     });
     act(() => {
-      host.querySelector(".view-tab")!.dispatchEvent(
+      host.querySelector(".tab")!.dispatchEvent(
         new MouseEvent("dblclick", { bubbles: true }),
       );
     });

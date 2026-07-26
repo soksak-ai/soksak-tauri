@@ -50,7 +50,7 @@ import { playSound, BUILTIN_SOUNDS } from "../ui/sound";
 import {
   runningCommands,
   subscribeOutput,
-} from "../terminal/paneHosts";
+} from "../terminal/ptyBridge";
 import {
   registerPtyObservation,
   feedPtyOutput,
@@ -104,7 +104,7 @@ export interface PluginApiDeps {
   // 클립보드 변경(clipboard-change) 전 창 구독 — 바뀐 텍스트를 콜백. 반환=해지. (선례 onFsChange.)
   // 폴링은 macOS 한정(NSPasteboard 이벤트 없음); Win/X11/Wayland 은 네이티브 이벤트 — 코어가 흡수.
   onClipboardChange: (cb: (text: string) => void) => () => void;
-  // 터미널 pane cwd 스냅샷/구독 + 명령 종료 구독(코어 paneHosts 브리지). app.terminal 이 노출.
+  // 터미널 pane cwd 스냅샷/구독 + 명령 종료 구독(코어 ptyBridge 브리지). app.terminal 이 노출.
   getCwd: (paneId: string) => string | undefined;
   subscribeCwd: (paneId: string, cb: (cwd: string) => void) => () => void;
   subscribeCommandFinished: (paneId: string, cb: () => void) => () => void;
@@ -1404,7 +1404,7 @@ export function buildPluginApi(
             deps.execute(
               "plugin.view.open",
               {
-                view: qualifiedViewId(id, viewId),
+                viewKey: qualifiedViewId(id, viewId),
                 ...(placement ? { placement } : {}),
               },
               pluginCtx,

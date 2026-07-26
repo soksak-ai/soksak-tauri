@@ -31,10 +31,10 @@ export type DropZone = "center" | "left" | "right" | "top" | "bottom";
 // SplitTree → 셀(% 좌표) + 분할 경계. row=가로 분할, col=세로 분할. (GroupArea.computeLayout 일반화.)
 export function computeSplitLayout<L>(node: SplitTree<L>): {
   cells: LayoutCell<L>[];
-  dividers: LayoutDivider[];
+  gutters: LayoutDivider[];
 } {
   const cells: LayoutCell<L>[] = [];
-  const dividers: LayoutDivider[] = [];
+  const gutters: LayoutDivider[] = [];
   const walk = (n: SplitTree<L>, r: Rect) => {
     if (n.type === "leaf") {
       cells.push({ value: n.value, rect: r });
@@ -47,7 +47,7 @@ export function computeSplitLayout<L>(node: SplitTree<L>): {
         walk(c, { left: x, top: r.top, width: w, height: r.height });
         x += w;
         if (i < n.children.length - 1) {
-          dividers.push({
+          gutters.push({
             splitId: n.id,
             dir: "row",
             index: i,
@@ -64,7 +64,7 @@ export function computeSplitLayout<L>(node: SplitTree<L>): {
         walk(c, { left: r.left, top: y, width: r.width, height: h });
         y += h;
         if (i < n.children.length - 1) {
-          dividers.push({
+          gutters.push({
             splitId: n.id,
             dir: "col",
             index: i,
@@ -77,7 +77,7 @@ export function computeSplitLayout<L>(node: SplitTree<L>): {
     }
   };
   walk(node, { left: 0, top: 0, width: 100, height: 100 });
-  return { cells, dividers };
+  return { cells, gutters };
 }
 
 // 포인터(clientX/Y) + 컨테이너 rect → 어느 셀의 어느 zone. (GroupArea.hitTest 일반화.)

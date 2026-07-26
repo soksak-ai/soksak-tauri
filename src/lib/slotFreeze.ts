@@ -68,10 +68,10 @@ export interface SlotFreeze {
   dispose(): void;
 }
 
-// 슬롯의 view 귀속 — 슬롯이 공개하는 노드 주소(data-node="layout/slot/<viewId>")가 원천이다.
+// 슬롯의 탭 귀속 — 슬롯이 공개하는 노드 주소(data-node="layout/tab/<tab-id>")가 원천이다.
 function viewIdOf(slot: HTMLElement): string | null {
   const node = slot.getAttribute("data-node");
-  const prefix = "layout/slot/";
+  const prefix = "layout/tab/";
   if (!node || !node.startsWith(prefix)) return null;
   const id = node.slice(prefix.length);
   return id.length > 0 ? id : null;

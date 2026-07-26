@@ -1,5 +1,5 @@
 // 노드 스캔 — 플러그인 뷰 컨테이너 안에서 data-node 로 노출된 DOM 요소를 절대 주소로 수집한다.
-// 스캔 루트 = PluginViewHost 의 .plugin-view-container(단일 진실). 호스트 크롬도 같은 data-node 규칙.
+// 스캔 루트 = PluginViewHost 의 .tab-container(단일 진실). 호스트 크롬도 같은 data-node 규칙.
 //
 // 노출 = 명시(data-node 속성). 미노출 요소는 수집되지 않음 → 주소 트리 부재 → 접근 시 NOT_EXPOSED.
 // 동적 목록은 data-node="<id>/<key>". Shadow DOM(erd)은 querySelectorAll 이 경계를 못 뚫으므로 재귀 순회.

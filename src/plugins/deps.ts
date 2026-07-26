@@ -14,7 +14,7 @@ import {
   getCwdOfHost,
   subscribeCwd,
   subscribeCommandFinished,
-} from "../terminal/paneHosts";
+} from "../terminal/ptyBridge";
 import { onPluginEvent } from "./hooks";
 import { usePlugins } from "../state/plugins";
 import { manifestImplements } from "./contractDiscovery";
@@ -51,7 +51,7 @@ export function defaultPluginDeps(appVersion: string): PluginApiDeps {
     // clipboard-change(코어 네이티브 watcher — Win/X11/Wayland 이벤트, macOS changeCount 폴링)
     // 전 창 구독 → 바뀐 텍스트를 콜백.
     onClipboardChange: (cb) => subscribe<string>("clipboard-change", cb),
-    // 터미널 pane cwd 스냅샷/구독 + 명령 종료 구독 — 코어 paneHosts 브리지(app.terminal 노출).
+    // 터미널 pane cwd 스냅샷/구독 + 명령 종료 구독 — 코어 ptyBridge 브리지(app.terminal 노출).
     getCwd: (paneId) => getCwdOfHost(paneId),
     subscribeCwd: (paneId, cb) => subscribeCwd(paneId, cb),
     subscribeCommandFinished: (paneId, cb) => subscribeCommandFinished(paneId, cb),

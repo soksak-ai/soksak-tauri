@@ -1,6 +1,6 @@
 // 우측 플러그인 사이드바 — 아이콘 레일(등록된 sidebar-right 뷰들 + ⚙ 관리) + 활성 뷰.
 // keep-alive: 한 번 연 뷰는 숨김(display)으로 유지 — 프로젝트별 인스턴스(App.tsx 의
-// terminal-pane 안에서 렌더되므로 프로젝트 전환에도 세션 유지, 앱 관례 동일).
+// project-plane 안에서 렌더되므로 프로젝트 전환에도 세션 유지, 앱 관례 동일).
 // 관리 패널: 인증된 release 설치·동의·활성/비활성·갱신·제거·rejected 사유 — 설정 모달과
 // 분리된 플러그인 전용 관리 표면.
 
@@ -125,7 +125,7 @@ export const PluginSidebar = memo(function PluginSidebar({
           {opened.map((k) => (
             <div
               key={k}
-              className="plugin-view-slot"
+              className="plugin-slot"
               style={{ display: rightView === k ? "flex" : "none" }}
             >
               <PluginViewHost
@@ -149,7 +149,7 @@ export const PluginSidebar = memo(function PluginSidebar({
             </div>
           )}
         </div>
-        {/* 하단 스테이터스바 — 터미널 패널(egroup-status)과 같은 시각 언어:
+        {/* 하단 스테이터스바 — 터미널 패널(pane-status)과 같은 시각 언어:
             좌측 컨텍스트(프로젝트 루트), 우측 현재 뷰 제목. */}
         <div className="plugin-side-status">
           <span className="pss-left" title={root}>
@@ -178,7 +178,7 @@ export const PluginSidebar = memo(function PluginSidebar({
               </button>
             </div>
             <div className="dmodal-plugin-manager-body">
-              <PluginManagerPanel />
+              <PluginManager />
             </div>
           </div>
         </div>
@@ -272,7 +272,7 @@ function RegistrySection({
   );
 }
 
-function PluginManagerPanel() {
+function PluginManager() {
   const t = useT();
   const plugins = usePlugins((s) => s.plugins);
   const rejected = usePlugins((s) => s.rejected);

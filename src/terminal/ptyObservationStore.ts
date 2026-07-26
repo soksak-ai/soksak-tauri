@@ -1,12 +1,12 @@
 // PTY 관찰 store — paneId(문자열) 키로 cwd/명령 시작·종료/출력 관찰을 모은다.
 //
 // [원칙] 관찰은 터미널-프로토콜 레벨 = 범용 substrate(누구든 app.pty 를 구동하는 쪽)가 채운다.
-// 코어 터미널 뷰의 paneHosts 가 사적으로 들고 있던 cwd/명령/출력 구독을 여기로 옮겨, 코어 뷰가
+// 코어 터미널 뷰의 ptyBridge 가 사적으로 들고 있던 cwd/명령/출력 구독을 여기로 옮겨, 코어 뷰가
 // 사라져도(플러그인 터미널만 남아도) app.terminal.* + command.*/turn.ended + idle/status 가
 // 계속 동작하게 한다. 키는 app.terminal.* / 파일트리 / sok CLI 가 쓰는 그 paneId(문자열).
 //
 // [단일 producer 불변식 — 이중 발화 방지] 하나의 paneId 는 정확히 한 PTY producer 가 채운다:
-//   - 코어 터미널 뷰: paneHosts.getHost 가 그 pane 의 PTY 출력을 feedPtyOutput 으로 흘린다.
+//   - 코어 터미널 뷰: ptyBridge.getHost 가 그 pane 의 PTY 출력을 feedPtyOutput 으로 흘린다.
 //   - 플러그인 터미널: app.pty.spawn 이 그 pane 의 PTY 출력을 feedPtyOutput 으로 흘린다.
 // 같은 paneId 를 두 producer 가 동시에 쓰는 일이 없으므로 OSC 가 한 번만 파싱된다(중복 emit 0).
 
@@ -17,13 +17,13 @@ import {
 
 // PTY-driver 가 등록하는 IO 핸들러(GAP2) — 화면 버퍼 읽기 + PTY 입력 쓰기. 코어 호스트도
 // 플러그인 터미널도 같은 paneId 키로 등록한다. app.terminal.readBuffer/sendText 가 이걸 우선 쓴다
-// (코어 paneHosts host-div 비의존 — 코어 터미널 뷰 제거 후에도 플러그인 터미널에 닿는다).
+// (코어 ptyBridge host-div 비의존 — 코어 터미널 뷰 제거 후에도 플러그인 터미널에 닿는다).
 export interface PtyIo {
   readBuffer: (lines?: number) => string;
   sendInput: (data: string) => void;
 }
 
-interface PaneObservation {
+interface TabObservation {
   parser: PtyObservationParser;
   cwd: string | undefined;
   running: { commandLine: string; cwd: string | null } | null;
@@ -34,7 +34,7 @@ interface PaneObservation {
   io?: PtyIo;
 }
 
-const panes = new Map<string, PaneObservation>();
+const observations = new Map<string, TabObservation>();
 
 // 전역(어느 pane 이든) 명령 시작/종료 구독자 — 플러그인 이벤트(command.started/finished,
 // turn.ended) 중계용. 끝난 명령라인·cwd 도 함께 전달(turn.ended 본문 enrich).
@@ -50,8 +50,8 @@ const anyCmdFinishedSubs = new Set<
  * 이후 feedPtyOutput(paneId, …) 로 출력을 먹이면 OSC 가 파싱되어 구독자에 흐른다.
  */
 export function registerPtyObservation(paneId: string): void {
-  if (panes.has(paneId)) return;
-  const obs: PaneObservation = {
+  if (observations.has(paneId)) return;
+  const obs: TabObservation = {
     parser: undefined as unknown as PtyObservationParser,
     cwd: undefined,
     running: null,
@@ -80,7 +80,7 @@ export function registerPtyObservation(paneId: string): void {
         cb(paneId, fin?.commandLine ?? null, fin?.cwd ?? null, exitCode);
     },
   });
-  panes.set(paneId, obs);
+  observations.set(paneId, obs);
 }
 
 // 전 pane 출력 활동 sink(B3) — hooks 가 주입해 lastActivity 를 기록한다(스로틀은 주입측 소유).
@@ -92,7 +92,7 @@ export function setAnyOutputSink(cb: ((paneId: string) => void) | null): void {
 
 /** PTY 출력 청크를 그 paneId 의 관찰 파서에 먹인다 + output 구독자 통지. 미등록이면 no-op. */
 export function feedPtyOutput(paneId: string, chunk: string | Uint8Array): void {
-  const obs = panes.get(paneId);
+  const obs = observations.get(paneId);
   if (!obs) return;
   obs.parser.write(chunk);
   if (obs.outputSubs.size) for (const cb of [...obs.outputSubs]) cb();
@@ -106,7 +106,7 @@ export function feedPtyOutput(paneId: string, chunk: string | Uint8Array): void 
 
 /** 코어 producer: cwd 변경 푸시(실제 변경 시에만 통지). */
 export function pushObservedCwd(paneId: string, cwd: string): void {
-  const obs = panes.get(paneId);
+  const obs = observations.get(paneId);
   if (!obs || !cwd || cwd === obs.cwd) return;
   obs.cwd = cwd;
   for (const cb of [...obs.cwdSubs]) cb(cwd);
@@ -114,7 +114,7 @@ export function pushObservedCwd(paneId: string, cwd: string): void {
 
 /** 코어 producer: 명령 시작 푸시(명령라인 동반 — 전역 구독자 통지 + running 갱신). */
 export function pushObservedCommandStart(paneId: string, commandLine: string): void {
-  const obs = panes.get(paneId);
+  const obs = observations.get(paneId);
   if (!obs) return;
   obs.running = { commandLine, cwd: obs.cwd ?? null };
   for (const cb of [...anyCmdStartSubs]) cb(paneId, commandLine, obs.cwd ?? null);
@@ -122,7 +122,7 @@ export function pushObservedCommandStart(paneId: string, commandLine: string): v
 
 /** 코어 producer: 명령 종료 푸시(pane + 전역 구독자, 끝난 명령라인·cwd·exitCode(R2) 동반, running clear). */
 export function pushObservedCommandFinished(paneId: string, exitCode?: number): void {
-  const obs = panes.get(paneId);
+  const obs = observations.get(paneId);
   if (!obs) return;
   const fin = obs.running;
   obs.running = null;
@@ -133,47 +133,47 @@ export function pushObservedCommandFinished(paneId: string, exitCode?: number): 
 
 /** 코어 producer: 출력 변경 푸시(화면 갱신 통지 — 라이브 스트림·입력 검증용). */
 export function pushObservedOutput(paneId: string): void {
-  const obs = panes.get(paneId);
+  const obs = observations.get(paneId);
   if (!obs || !obs.outputSubs.size) return;
   for (const cb of [...obs.outputSubs]) cb();
 }
 
 /** pane 의 관찰 종료(PTY close / pane 영구 닫힘). cwd 스냅샷·구독 전부 회수. */
 export function disposePtyObservation(paneId: string): void {
-  const obs = panes.get(paneId);
+  const obs = observations.get(paneId);
   if (!obs) return;
   obs.cwdSubs.clear();
   obs.cmdFinishedSubs.clear();
   obs.outputSubs.clear();
-  panes.delete(paneId);
+  observations.delete(paneId);
 }
 
 /** pane 의 현재 cwd 스냅샷(셸 통합 전이면 undefined). */
 export function getObservedCwd(paneId: string): string | undefined {
-  return panes.get(paneId)?.cwd;
+  return observations.get(paneId)?.cwd;
 }
 
 /** 이 id 가 PTY substrate 를 구동하는가(터미널 generic 신호 — pluginId 무관). 등록된 관찰이
- *  있으면 true. 파일트리 cwdPaneOf 가 코어/플러그인 터미널을 구분 없이 따라가는 데 쓴다. */
+ *  있으면 true. 파일트리 cwdTabOf 가 코어/플러그인 터미널을 구분 없이 따라가는 데 쓴다. */
 export function hasPtyObservation(paneId: string): boolean {
-  return panes.has(paneId);
+  return observations.has(paneId);
 }
 
 /** PTY-driver(코어 호스트/플러그인 터미널)가 이 paneId 의 IO 핸들러를 등록(GAP2). 관찰이
  *  아직 없으면 함께 선등록(멱등). 반환=해지(등록 해제). app.terminal.readBuffer/sendText 우선 경로. */
 export function registerPtyIo(paneId: string, io: PtyIo): () => void {
   registerPtyObservation(paneId); // 관찰 선등록(구독·IO 가 spawn 보다 먼저여도 안전)
-  const obs = panes.get(paneId)!;
+  const obs = observations.get(paneId)!;
   obs.io = io;
   return () => {
-    const cur = panes.get(paneId);
+    const cur = observations.get(paneId);
     if (cur && cur.io === io) cur.io = undefined;
   };
 }
 
 /** 이 paneId 의 등록된 IO 핸들러(없으면 undefined). app.terminal.readBuffer/sendText 가 조회. */
 export function getPtyIo(paneId: string): PtyIo | undefined {
-  return panes.get(paneId)?.io;
+  return observations.get(paneId)?.io;
 }
 
 /** 지금 실행 중인 모든 명령 스냅샷(pane 당 최대 1). */
@@ -183,7 +183,7 @@ export function observedRunningCommands(): {
   cwd: string | null;
 }[] {
   const out: { paneId: string; commandLine: string; cwd: string | null }[] = [];
-  for (const [paneId, obs] of panes) {
+  for (const [paneId, obs] of observations) {
     if (obs.running)
       out.push({ paneId, commandLine: obs.running.commandLine, cwd: obs.running.cwd });
   }
@@ -196,7 +196,7 @@ export function subscribeObservedCwd(
   cb: (cwd: string) => void,
 ): () => void {
   registerPtyObservation(paneId); // 구독이 spawn 보다 먼저여도 안전(빈 관찰 선등록)
-  const obs = panes.get(paneId)!;
+  const obs = observations.get(paneId)!;
   obs.cwdSubs.add(cb);
   if (obs.cwd) cb(obs.cwd);
   return () => {
@@ -210,7 +210,7 @@ export function subscribeObservedCommandFinished(
   cb: () => void,
 ): () => void {
   registerPtyObservation(paneId);
-  const obs = panes.get(paneId)!;
+  const obs = observations.get(paneId)!;
   obs.cmdFinishedSubs.add(cb);
   return () => {
     obs.cmdFinishedSubs.delete(cb);
@@ -223,7 +223,7 @@ export function subscribeObservedOutput(
   cb: () => void,
 ): () => void {
   registerPtyObservation(paneId);
-  const obs = panes.get(paneId)!;
+  const obs = observations.get(paneId)!;
   obs.outputSubs.add(cb);
   return () => {
     obs.outputSubs.delete(cb);
@@ -252,7 +252,7 @@ export function subscribeAnyCommandFinished(
 
 // 테스트용 — 전체 초기화.
 export function resetPtyObservationStoreForTest(): void {
-  panes.clear();
+  observations.clear();
   anyCmdStartSubs.clear();
   anyCmdFinishedSubs.clear();
 }

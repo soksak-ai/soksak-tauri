@@ -48,7 +48,7 @@ describe("시각 효과 소유권 — 위상 하위 전체 선택 금지", () =>
       for (const branch of sel.split(",").map((s) => s.trim())) {
         const last = branch.split(/\s+/).pop() ?? "";
         const bare =
-          /^\.egroup-body-slot$/.test(last) || /^\.egroup-cell$/.test(last);
+          /^\.tab-body$/.test(last) || /^\.pane$/.test(last);
         if (bare) offenders.push(`${branch} → ${props.join(",")}`);
       }
     }
@@ -57,14 +57,14 @@ describe("시각 효과 소유권 — 위상 하위 전체 선택 금지", () =>
 
   it("홀 슬롯은 filter 축에서 제외된다(스탠드인과 네이티브의 dim 강도 일치)", () => {
     expect(css).toMatch(
-      /\.egroup-area\[data-focus-dim\] \.egroup-body-slot\.hole-slot \{[^}]*filter: none/,
+      /\.space\[data-focus-dim\] \.tab-body\.tab-body-hole \{[^}]*filter: none/,
     );
   });
 
   it("슬롯 기하(left/top/width/height)에는 transition 을 걸지 않는다(네이티브 추종 불가)", () => {
     const offenders: string[] = [];
     for (const [sel, body] of rules()) {
-      if (!/egroup-body-slot/.test(sel)) continue;
+      if (!/tab-body/.test(sel)) continue;
       const tr = /transition:\s*([^;]+)/.exec(body)?.[1] ?? "";
       if (/\b(left|top|width|height|all)\b/.test(tr)) offenders.push(`${sel} → ${tr}`);
     }

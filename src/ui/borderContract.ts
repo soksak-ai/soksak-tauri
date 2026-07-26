@@ -39,7 +39,7 @@ export const BORDER_RULES: readonly BorderRule[] = [
   // "존재해야 하는 상태"와 "존재하면 안 되는 상태"를 모두 단언한다.
   {
     id: "perimeter-frame",
-    selector: ".egroup-frame",
+    selector: ".pane-border",
     kind: "edges",
     edges: { top: "bd", right: "bd", bottom: "bd", left: "bd" },
     when: { paneStyle: ["card", "floating"] },
@@ -47,7 +47,7 @@ export const BORDER_RULES: readonly BorderRule[] = [
   },
   {
     id: "perimeter-frame-flat",
-    selector: ".egroup-frame",
+    selector: ".pane-border",
     kind: "edges",
     edges: { top: "none", right: "none", bottom: "none", left: "none" },
     when: { paneStyle: ["flat"] },
@@ -63,8 +63,8 @@ export const BORDER_RULES: readonly BorderRule[] = [
     note: "§B3 — 타이틀바가 하단 경계 소유(배경 토큰과 무관)",
   },
   {
-    id: "content-tabs-bottom",
-    selector: ".content-tabs:not(.vertical)",
+    id: "space-tabs-bottom",
+    selector: ".space-tabs:not(.vertical)",
     kind: "edges",
     edges: { bottom: "bd" },
     note: "§B3 — 컨텐츠 탭 밴드가 하단 경계 소유",
@@ -137,22 +137,22 @@ export const BORDER_RULES: readonly BorderRule[] = [
 
   // ── B2 패널 내부선 — 크롬 밴드가 본문 쪽 변 소유, 톤 bd-soft ──────────────
   {
-    id: "view-tabs-bottom",
-    selector: ".view-tabs-wrap",
+    id: "tabs-wrap-bottom",
+    selector: ".tabs-wrap",
     kind: "edges",
     edges: { bottom: "bd-soft" },
     note: "§B2 — 패널 헤더(탭 모드)가 본문과의 경계 소유",
   },
   {
-    id: "egroup-title-bottom",
-    selector: ".egroup-title",
+    id: "pane-title-bottom",
+    selector: ".pane-title",
     kind: "edges",
     edges: { bottom: "bd-soft" },
     note: "§B2 — 패널 헤더(타이틀 모드)가 본문과의 경계 소유",
   },
   {
-    id: "egroup-status-top",
-    selector: ".egroup-status",
+    id: "pane-status-top",
+    selector: ".pane-status",
     kind: "edges",
     edges: { top: "bd-soft" },
     note: "§B2 — 스테이터스바가 본문과의 경계 소유(이미지 12 결손의 정정)",
@@ -160,8 +160,8 @@ export const BORDER_RULES: readonly BorderRule[] = [
 
   // ── B2 본문 무보더 단언 ───────────────────────────────────────────────────
   {
-    id: "body-slot-none",
-    selector: ".egroup-body-slot",
+    id: "tab-body-none",
+    selector: ".tab-body",
     kind: "edges",
     edges: { top: "none", right: "none", bottom: "none", left: "none" },
     note: "§B2 — 본문은 선을 소유하지 않는다",
@@ -178,32 +178,16 @@ export const BORDER_RULES: readonly BorderRule[] = [
 
   // ── B6 예외: 불투명 콘텐츠 사이 seam(divider 토큰 소비) ───────────────────
   {
-    id: "pane-seam-solid",
-    selector: ".pane-resize-handle",
+    id: "pane-gutter-seam-solid",
+    selector: ".pane-gutter",
     kind: "seam",
     seam: "bd-soft",
     when: { divider: ["solid"] },
-    note: "§B6 예외 — solid 테마에서 도구가 1px 중앙선 표시(소유 위임)",
+    note: "§B6 예외 — pane 사이 골도 동일",
   },
   {
-    id: "pane-seam-overlay",
-    selector: ".pane-resize-handle",
-    kind: "seam",
-    seam: "rest-transparent",
-    when: { divider: ["overlay"] },
-    note: "§B6 — overlay 테마에서 휴면 완전 투명(hover 강조만)",
-  },
-  {
-    id: "group-seam-solid",
-    selector: ".egroup-divider",
-    kind: "seam",
-    seam: "bd-soft",
-    when: { divider: ["solid"] },
-    note: "§B6 예외 — 그룹 분할 seam 도 동일",
-  },
-  {
-    id: "group-seam-overlay",
-    selector: ".egroup-divider",
+    id: "pane-gutter-seam-overlay",
+    selector: ".pane-gutter",
     kind: "seam",
     seam: "rest-transparent",
     when: { divider: ["overlay"] },
@@ -242,8 +226,8 @@ export const BORDER_RULES: readonly BorderRule[] = [
 
   // ── 세로 모드 컨텐츠 탭(설정 조건 — 부재 시 매치 0으로 자연 skip) ─────────
   {
-    id: "content-tabs-vertical-right",
-    selector: ".content-tabs.vertical",
+    id: "space-tabs-vertical-right",
+    selector: ".space-tabs.vertical",
     kind: "edges",
     edges: { right: "bd" },
     note: "§B2 — 좌측 세로 탭 스트립은 right 소유",
@@ -252,7 +236,7 @@ export const BORDER_RULES: readonly BorderRule[] = [
   // ── 떠 있는 표면(B4 톤 bd) ────────────────────────────────────────────────
   {
     id: "float-surfaces",
-    selector: ".dmodal-card, .ctab-menu, .ctab-submenu, .cm-find",
+    selector: ".dmodal-card, .space-tab-menu, .space-tab-submenu, .cm-find",
     kind: "edges",
     edges: { top: "bd", right: "bd", bottom: "bd", left: "bd" },
     note: "§B4 — 떠 있는 표면은 4변 bd",

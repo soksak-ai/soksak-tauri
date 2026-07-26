@@ -377,7 +377,7 @@ describe("복원 정규화 — 스냅샷당 1회 마이그레이션(세로 불�
   const rowXs = async (tab: Project): Promise<number[]> => {
     const { computeSplitLayout } = await import("../lib/splitLayout");
     return computeSplitLayout(tab.spaces[0].layout)
-      .dividers.filter((d) => d.dir === "row")
+      .gutters.filter((d) => d.dir === "row")
       .sort((a, b) => a.rect.top - b.rect.top)
       .map((d) => d.rect.left);
   };

@@ -19,6 +19,7 @@ import { beginLayoutMotion, endLayoutMotion } from "../lib/layoutMotion";
 import { useDividerHover } from "../state/dividerHover";
 import { ViewTabs } from "./ViewTabs";
 import { computeSplitLayout, hitTestCells } from "../lib/splitLayout";
+import { gutterAddress, gutterOwnerOf } from "../lib/gutterAddress";
 import { useT } from "../i18n";
 import { useTheme } from "../state/theme";
 import { useSettings } from "../state/settings";
@@ -67,7 +68,7 @@ export interface Cell {
   group: Pane;
   rect: Rect;
 }
-interface Divider {
+interface Gutter {
   splitId: string;
   dir: "row" | "col";
   index: number;
@@ -90,8 +91,8 @@ export const PANE_INSET: Record<string, number> = { flat: 0, card: 5, floating: 
 // 최대화 시 셀/슬롯이 차지하는 전체 rect(컨텐츠 영역 기준 %).
 const FULL_RECT = { left: 0, top: 0, width: 100, height: 100 };
 
-// 홀 판정의 단일 진실 — 뷰의 transparent 선언(레지스트리 decl) 하나. 셀(cell-hole 밴드)과
-// 슬롯(hole-slot 배경·베일·레일 클립)이 같은 함수를 소비한다. 제2 기준(콘텐츠 클래스 등)
+// 홀 판정의 단일 진실 — 뷰의 transparent 선언(레지스트리 decl) 하나. 셀(pane-hole 밴드)과
+// 슬롯(tab-body-hole 배경·베일·레일 클립)이 같은 함수를 소비한다. 제2 기준(콘텐츠 클래스 등)
 // 도입 금지 — 기준이 갈라지면 절반의 소비자가 못 보는 홀이 생긴다(PLUGIN-CONTRACT §Transparent).
 function isHoleView(view: Tab | undefined | null): boolean {
   return (
@@ -104,12 +105,12 @@ function isHoleView(view: Tab | undefined | null): boolean {
 // [중복 제거] 좌측 사이드바와 동일한 레이아웃/히트테스트를 공유한다(splitLayout.ts).
 export function computeLayout(node: PaneNode): {
   cells: Cell[];
-  dividers: Divider[];
+  gutters: Gutter[];
 } {
-  const { cells, dividers } = computeSplitLayout(node);
+  const { cells, gutters } = computeSplitLayout(node);
   return {
     cells: cells.map((c) => ({ group: c.value, rect: c.rect })),
-    dividers,
+    gutters,
   };
 }
 
@@ -132,9 +133,10 @@ function emitResizeGesture(active: boolean): void {
   else endLayoutMotion("resize");
 }
 
-// divider 안정 키(hover 강조 매칭용) — data-divider-key 로 노출, App 이 그 요소 rect 를 코어에 넘겨
-// 네이티브 강조바를 브라우저 위에 그린다(seam=child 물림 방식은 밀림/리플로우라 폐기).
-const dividerKey = (d: Divider): string => `${d.splitId}:${d.index}`;
+// 골 안정 키(hover 강조 매칭용) = 그 골의 정본 주소. App 이 이 키로 요소 rect 를 찾아 코어에
+// 넘겨 네이티브 강조바를 브라우저 위에 그린다(seam=child 물림 방식은 밀림/리플로우라 폐기).
+// 키가 곧 주소인 이유: 내부 split id 를 DOM 에 새기면 이름 없는 것이 밖으로 나가고(IDENTITY §4),
+// 그 값은 재시작하면 무효라 스크립트가 붙잡을 데가 없다. 정본 주소는 둘 다 아니다.
 
 // memo 경계 = content 데이터 경계(원칙 2): content X 의 store 쓰기는 content Y 의
 // 객체 정체성을 보존(mapContent)하므로 다른 컨텐츠/프로젝트의 GroupArea 는 건너뛴다.
@@ -225,7 +227,7 @@ export const GroupArea = memo(function GroupArea({
     null,
   );
 
-  const { cells, dividers } = useMemo(
+  const { cells, gutters } = useMemo(
     () => computeLayout(displayLayout),
     [displayLayout],
   );
@@ -233,7 +235,7 @@ export const GroupArea = memo(function GroupArea({
   // 불변 — 셀/프레임만 그 그룹 하나(전체 rect)로 바꿔 그리고, 나머지 그룹의
   // 슬롯은 숨김 유지(세션 보존: 터미널/webview 마운트는 절대 깨지 않는다).
   // 강조 소유자는 이 상태 하나다(divider :hover 대체) — 셀렉터 구독(원칙 1).
-  const dividerHoverKey = useDividerHover((s) => s.key);
+  const gutterHoverKey = useDividerHover((s) => s.key);
   const maximizedId = content.maximizedTabId ?? null;
   const maxCell = maximizedId
     ? (cells.find((c) => c.group.tabs.some((v) => v.id === maximizedId)) ??
@@ -411,11 +413,11 @@ export const GroupArea = memo(function GroupArea({
   // 더블클릭 = 인접 두 영역을 반반으로(합 보존 — 다른 형제 비율 불변). row 디바이더는
   // 세로 불분할 명제를 따른다 — 균등화 목표 x 로 라인 묶음 전체가 이동(교집합 클램프)하고
   // 한 커밋(resizeSplits)으로 적용돼 라인이 찢어지지 않는다. col 은 명제 밖 — 인접쌍만.
-  const onDividerDoubleClick = (d: Divider) => () => {
+  const onGutterDoubleClick = (d: Gutter) => () => {
     if (d.dir === "row") {
       resizeSplits(
         projectId,
-        equalizeLineGroup(dividers, d.splitId, d.index).moves,
+        equalizeLineGroup(gutters, d.splitId, d.index).moves,
       );
       return;
     }
@@ -426,7 +428,7 @@ export const GroupArea = memo(function GroupArea({
     resizeSplit(projectId, d.splitId, sizes);
   };
 
-  const onDividerDown = (d: Divider) => (e: React.MouseEvent) => {
+  const onGutterDown = (d: Gutter) => (e: React.MouseEvent) => {
     e.preventDefault();
     if (resizeDragActive) return; // 중복 시작(DOM + 네이티브 합성) 무시.
     const cont = containerRef.current;
@@ -447,7 +449,7 @@ export const GroupArea = memo(function GroupArea({
     // 묶음으로 잡고(verticalLines 단일 소유), 내내 같은 x 로 함께 움직인다. 라인은 이동할
     // 뿐 쪼개지지 않는다. col 은 명제 밖 — 기존 인접쌍 델타 교환 그대로.
     const lineGroup =
-      d.dir === "row" ? collectLineGroup(dividers, d.splitId, d.index) : [];
+      d.dir === "row" ? collectLineGroup(gutters, d.splitId, d.index) : [];
     const startX = d.rect.left;
     // 스토어 커밋은 프레임당 1회 상한(원칙 3·4) — mousemove 는 60Hz 를 넘는다.
     // 묶음 전체가 한 커밋(resizeSplits) — 중간 상태로도 라인이 토막나지 않는다.
@@ -488,6 +490,14 @@ export const GroupArea = memo(function GroupArea({
   };
 
   const hoverCell = hover && cells.find((c) => c.group.id === hover.groupId);
+
+  // 내부 좌표(splitId·index) → 정본 골 주소. 트리를 손에 든 이 자리에서만 변환하고, DOM 에는
+  // 이름 있는 좌표만 새긴다. 해소 못 하면(트리와 divider 목록이 한 프레임 어긋난 순간) 주소를
+  // 짓지 않는다 — 틀린 주소가 없는 주소보다 나쁘다.
+  const gutterKey = (d: Gutter): string | undefined => {
+    const owner = gutterOwnerOf(displayLayout, d.splitId, d.index, (g) => g.id);
+    return owner ? gutterAddress(owner.pane, owner.side) : undefined;
+  };
 
   // 셀 좌표 — CSS 변수 4개만 전달하고 산수(calc)는 CSS 단일 규칙이 소유한다.
   // (좌표 문자열을 렌더마다 조립해 흩뿌리던 레거시 제거 — 치수 상수는 아래
@@ -539,7 +549,7 @@ export const GroupArea = memo(function GroupArea({
         )
       : 0;
   const spanMovesPx = (rect: Rect): boolean => Math.abs(spanFlipPx(rect)) > 0.5;
-  const dividerVars = (d: Divider) => {
+  const gutterVars = (d: Gutter) => {
     if (railWidthPx <= 0) return {};
     if (d.dir === "row") {
       const after = d.rect.left > railStation ? 1 : 0;
@@ -558,9 +568,9 @@ export const GroupArea = memo(function GroupArea({
 
   return (
     <div
-      className="egroup-area"
+      className="space"
       data-focus-dim={focusDim ? "1" : undefined}
-      data-node={`layout/grid/${content.id}`}
+      data-node={`layout/space/${content.id}`}
       data-projection={
         content.maximizedTabId
           ? "maximized"
@@ -568,8 +578,8 @@ export const GroupArea = memo(function GroupArea({
             ? "switched"
             : "canonical"
       }
-      data-focused-panel={content.activePaneId}
-      data-maximized-view={content.maximizedTabId ?? ""}
+      data-focused-pane={content.activePaneId}
+      data-maximized-tab={content.maximizedTabId ?? ""}
       data-traveling={traveling ? "true" : "false"}
       ref={containerRef}
       style={
@@ -593,32 +603,32 @@ export const GroupArea = memo(function GroupArea({
         return (
           <div
             key={`cell-${group.id}`}
-            className={`egroup-cell${holeCell ? " cell-hole" : ""}${
+            className={`pane${holeCell ? " pane-hole" : ""}${
               group.id === content.activePaneId ? " spot-clear" : ""
             }${flipMoves(group.id) ? " flip-move" : ""}`}
-            data-node={`layout/panel/${group.id}`}
+            data-node={`layout/pane/${group.id}`}
             style={cellVars(rect, group.id)}
           >
             {maxCell ? (
               /* 최대화 헤더: 탭·+ 대신 타이틀 — 더블클릭/버튼으로 원래 분할 복원 */
               <div
-                className="egroup-title active"
+                className="pane-title active"
                 title={t("view.restoreHint")}
                 onDoubleClick={() => restoreView(projectId)}
               >
-                <span className="egt-icon icon-inline">
+                <span className="pane-title-icon icon-inline">
                   {active?.kind === "file" ? (
                     <Icon name="file" size="sm" />
                   ) : (
                     <Icon name="plugin" size="sm" />
                   )}
                 </span>
-                <span className="egt-name">
+                <span className="pane-title-name">
                   {titleOf(active)}
                 </span>
                 <button
                   type="button"
-                  className="icon-btn egt-btn"
+                  className="icon-btn pane-title-btn"
                   title={t("view.restore")}
                   onClick={() => restoreView(projectId)}
                 >
@@ -627,7 +637,7 @@ export const GroupArea = memo(function GroupArea({
               </div>
             ) : splitHeaderMode === "tabs" ? (
               /* 탭 모드: 탭바(탭 드래그=뷰 이동, +=새 탭) */
-              <div className="egroup-tabs">
+              <div className="pane-tabs">
                 <ViewTabs
                   projectId={projectId}
                   group={group}
@@ -637,23 +647,23 @@ export const GroupArea = memo(function GroupArea({
             ) : (
               /* title 모드(현재 비노출 — 재노출 대비 보존): 바 전체=그룹 드래그 핸들 */
               <div
-                className={`egroup-title${isActiveGroup ? " active" : ""}`}
+                className={`pane-title${isActiveGroup ? " active" : ""}`}
                 title={t("panel.move")}
                 onMouseDown={startDrag("group", group.id)}
               >
-                <span className="egt-icon icon-inline">
+                <span className="pane-title-icon icon-inline">
                   {active?.kind === "file" ? (
                     <Icon name="file" size="sm" />
                   ) : (
                     <Icon name="plugin" size="sm" />
                   )}
                 </span>
-                <span className="egt-name">
+                <span className="pane-title-name">
                   {titleOf(active)}
                 </span>
                 <button
                   type="button"
-                  className="icon-btn egt-btn"
+                  className="icon-btn pane-title-btn"
                   title={t("panel.split")}
                   onMouseDown={(e) => e.stopPropagation()}
                   onClick={() => splitWithNewView(projectId, group.id, "right")}
@@ -662,7 +672,7 @@ export const GroupArea = memo(function GroupArea({
                 </button>
                 <button
                   type="button"
-                  className="icon-btn egt-btn"
+                  className="icon-btn pane-title-btn"
                   title={t("view.close")}
                   onMouseDown={(e) => e.stopPropagation()}
                   onClick={() => closeView(projectId, group.activeTabId)}
@@ -671,8 +681,8 @@ export const GroupArea = memo(function GroupArea({
                 </button>
               </div>
             )}
-            <div className="egc-body-space" />
-            <div className="egroup-status-wrap">
+            <div className="pane-body" />
+            <div className="pane-status-wrap">
               <GroupStatusBar group={group} />
             </div>
           </div>
@@ -689,7 +699,7 @@ export const GroupArea = memo(function GroupArea({
       {displayCells.map(({ group, rect }) => (
         <div
           key={`frame-${group.id}`}
-          className={`egroup-frame${
+          className={`pane-border${
             group.id === content.activePaneId ? " focus" : ""
           }${flipMoves(group.id) ? " flip-move" : ""}`}
           style={cellVars(rect, group.id)}
@@ -713,17 +723,19 @@ export const GroupArea = memo(function GroupArea({
           return (
             <div
               key={view.id}
-              // hole-slot: 슬롯은 셀의 자식이 아니라 영속 레이어의 형제라서, 홀 표시는
-              // 셀렉터 조합(.cell-hole 하위)이 아니라 슬롯 자신의 클래스여야 한다.
+              // tab-body-hole: 슬롯은 셀의 자식이 아니라 영속 레이어의 형제라서, 홀 표시는
+              // 셀렉터 조합(.pane-hole 하위)이 아니라 슬롯 자신의 클래스여야 한다.
               // 기준은 셀과 동일한 단일 선언 축(isHoleView) — 홀 배경·베일·레일 클립이
               // 전부 이 클래스 하나를 본다.
-              className={`egroup-body-slot${isHoleView(view) ? " hole-slot" : ""}${
+              className={`tab-body${isHoleView(view) ? " tab-body-hole" : ""}${
                 group.id === content.activePaneId ? " spot-clear" : ""
               }${shown && flipMoves(group.id) ? " flip-move" : ""}`}
               // 네이티브 클릭 판정용(App.tsx native-mousedown → elementFromPoint).
-              data-group-id={group.id}
+              // 이름에 -id 를 안 붙인다: data-pane-id 는 탭 인스턴스 id 의 옛 이름으로 아직 살아
+              // 있어(viewHostAnchors) 한 이름이 두 뜻을 갖게 된다. 그 별칭이 사라지면 합친다.
+              data-pane={group.id}
               data-project-id={projectId}
-              data-node={`layout/slot/${view.id}`}
+              data-node={`layout/tab/${view.id}`}
               // 평상시 비활성 슬롯은 화면 밖으로 파킹하고, 최대화의 제외 슬롯은 합성 트리에서도
               // 제거한다(viewSurfaceStyle 단일 진실). 둘 다 DOM/플러그인 인스턴스는 유지한다.
               style={{
@@ -779,19 +791,19 @@ export const GroupArea = memo(function GroupArea({
 
       {/* ── 리사이저(분할 경계 — 위치 지정이 본질인 요소). 최대화 중엔 경계 없음 ── */}
       {!maxCell &&
-        dividers.map((d) => (
+        gutters.map((d) => (
         <div
-          key={`div-${d.splitId}-${d.index}`}
-          data-divider-key={dividerKey(d)}
-          data-node={`divider/${d.splitId}/${d.index}`}
+          key={`gutter-${d.splitId}-${d.index}`}
+          data-gutter-key={gutterKey(d)}
+          data-node={gutterKey(d)}
           // 강조는 CSS :hover 가 아니라 우리가 소유한 상태에서 온다. :hover 는 포인터가
           // 네이티브 자식(브라우저 표면)으로 빠져나갈 때 leave 이벤트를 못 받아 그대로
           // 붙들리고, 그러면 accent 세로선이 창 본문 전체 높이로 브라우저를 가로지른 채
           // 남는다(실측 2026-07-26). 게다가 :hover 는 스크립트로 켜거나 끌 수 없어 구동도
           // 검증도 불가능하다 — 소유권을 상태로 옮겨야 두 문제가 함께 풀린다.
-          data-hover={dividerHoverKey === dividerKey(d) ? "1" : undefined}
-          className={`egroup-divider ${d.dir}${spanMovesPx(d.rect) ? " flip-move" : ""}`}
-          onPointerEnter={() => useDividerHover.getState().set(dividerKey(d))}
+          data-hover={gutterHoverKey === gutterKey(d) ? "1" : undefined}
+          className={`pane-gutter ${d.dir}${spanMovesPx(d.rect) ? " flip-move" : ""}`}
+          onPointerEnter={() => useDividerHover.getState().set(gutterKey(d) ?? null)}
           onPointerLeave={() => useDividerHover.getState().set(null)}
           style={
             d.dir === "row"
@@ -799,17 +811,17 @@ export const GroupArea = memo(function GroupArea({
                   left: `calc(${d.rect.left}% + var(--rail-dx, 0px))`,
                   top: `${d.rect.top}%`,
                   height: `${d.rect.height}%`,
-                  ...dividerVars(d),
+                  ...gutterVars(d),
                 }
               : {
                   left: `calc(${d.rect.left}% + var(--rail-dx, 0px))`,
                   top: `${d.rect.top}%`,
                   width: `calc(${d.rect.width}% + var(--rail-dw, 0px))`,
-                  ...dividerVars(d),
+                  ...gutterVars(d),
                 }
           }
-          onMouseDown={onDividerDown(d)}
-          onDoubleClick={onDividerDoubleClick(d)}
+          onMouseDown={onGutterDown(d)}
+          onDoubleClick={onGutterDoubleClick(d)}
           title={t("divider.equalize")}
         />
       ))}

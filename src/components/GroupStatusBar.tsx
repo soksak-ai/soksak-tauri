@@ -1,11 +1,11 @@
 import { memo, useEffect, useState } from "react";
-import { getCwdOfHost, subscribeCwd } from "../terminal/paneHosts";
+import { getCwdOfHost, subscribeCwd } from "../terminal/ptyBridge";
 import { hasPtyObservation } from "../terminal/ptyObservationStore";
 import { Icon } from "../ui/icons/Icon";
 import type { Tab, Pane } from "../state/sessions";
 import { useT } from "../i18n";
 import {
-  statusBarItemsForPane,
+  statusBarItemsForTab,
   subscribeStatusBarItems,
   type StatusBarItem,
 } from "../ui/statusBarItems";
@@ -23,24 +23,24 @@ function TerminalStatus({ paneId }: { paneId: string }) {
   }, [paneId]);
   // 이 pane 에 연관된 플러그인 상태바 아이템(예: claude-GUI 의 "gui") 구독.
   const [items, setItems] = useState<StatusBarItem[]>(() =>
-    statusBarItemsForPane(paneId),
+    statusBarItemsForTab(paneId),
   );
   useEffect(() => {
-    const update = () => setItems(statusBarItemsForPane(paneId));
+    const update = () => setItems(statusBarItemsForTab(paneId));
     update();
     return subscribeStatusBarItems(update);
   }, [paneId]);
   return (
     <>
-      <span className="egs-left" title={cwd}>
+      <span className="pane-status-left" title={cwd}>
         {cwd ?? "~"}
       </span>
-      <span className="egs-right">
+      <span className="pane-status-right">
         {items.map((it) => (
           <button
             key={it.id}
             type="button"
-            className={`egs-item${it.active ? " active" : ""}`}
+            className={`pane-status-item${it.active ? " active" : ""}`}
             title={it.title}
             onClick={(e) => {
               e.stopPropagation();
@@ -50,7 +50,7 @@ function TerminalStatus({ paneId }: { paneId: string }) {
             {it.label}
           </button>
         ))}
-        {items.length > 0 && <span className="egs-sep">|</span>}
+        {items.length > 0 && <span className="pane-status-sep">|</span>}
         {t("view.terminal")}
       </span>
     </>
@@ -61,10 +61,10 @@ function FileStatus({ view }: { view: Extract<Tab, { kind: "file" }> }) {
   const t = useT();
   return (
     <>
-      <span className="egs-left" title={view.path}>
+      <span className="pane-status-left" title={view.path}>
         {view.path}
       </span>
-      <span className="egs-right icon-inline" style={{ gap: 4 }}>
+      <span className="pane-status-right icon-inline" style={{ gap: 4 }}>
         {view.status?.code === "dirty" && <Icon name="dirty" size="xs" />}
         {view.mode === "code" ? t("viewer.code") : t("viewer.preview")}
       </span>
@@ -82,7 +82,7 @@ export const GroupStatusBar = memo(function GroupStatusBar({
   // 터미널 = PTY 관찰을 가진 플러그인 뷰(view.id = paneId). cwd/상태바 아이템은 substrate 키.
   const isTerminal = active != null && hasPtyObservation(active.id);
   return (
-    <div className="egroup-status">
+    <div className="pane-status">
       {isTerminal ? (
         <TerminalStatus paneId={active.id} />
       ) : active?.kind === "file" ? (

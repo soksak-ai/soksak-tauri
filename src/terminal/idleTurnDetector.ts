@@ -7,7 +7,7 @@ import {
   subscribeAnyCommandStarted,
   subscribeAnyCommandFinished,
   subscribeOutput,
-} from "./paneHosts";
+} from "./ptyBridge";
 
 export interface IdleTurnPayload {
   projectId: string | null;
@@ -51,13 +51,13 @@ export function setIdleTurnDetection(enabled: boolean, ms?: number): void {
 
 function startDetector(): { dispose: () => void } {
   // pane 별 출력 구독 + 디바운스 타이머. 명령 시작 시 부착, 종료 시 해제.
-  const perPane = new Map<
+  const perTab = new Map<
     string,
     { unOut: () => void; timer: ReturnType<typeof setTimeout> | null }
   >();
 
   const arm = (paneId: string) => {
-    const e = perPane.get(paneId);
+    const e = perTab.get(paneId);
     if (!e) return;
     if (e.timer) clearTimeout(e.timer);
     e.timer = setTimeout(() => {
@@ -72,18 +72,18 @@ function startDetector(): { dispose: () => void } {
   };
 
   const detach = (paneId: string) => {
-    const e = perPane.get(paneId);
+    const e = perTab.get(paneId);
     if (!e) return;
     e.unOut();
     if (e.timer) clearTimeout(e.timer);
-    perPane.delete(paneId);
+    perTab.delete(paneId);
   };
 
   // 명령 시작 → 그 pane 출력 모니터 시작(첫 출력 후부터 타이머 — 출력 없는 즉시 오탐 방지).
   const unStart = subscribeAnyCommandStarted((paneId) => {
-    if (perPane.has(paneId)) return;
+    if (perTab.has(paneId)) return;
     const unOut = subscribeOutput(paneId, () => arm(paneId));
-    perPane.set(paneId, { unOut, timer: null });
+    perTab.set(paneId, { unOut, timer: null });
   });
   // 명령 종료 → 모니터 해제(턴 단위가 아니라 프로그램 종료 — command.finished 가 shell 소스로 별도 발화).
   const unFinish = subscribeAnyCommandFinished((paneId) => detach(paneId));
@@ -92,7 +92,7 @@ function startDetector(): { dispose: () => void } {
     dispose: () => {
       unStart();
       unFinish();
-      for (const paneId of [...perPane.keys()]) detach(paneId);
+      for (const paneId of [...perTab.keys()]) detach(paneId);
     },
   };
 }

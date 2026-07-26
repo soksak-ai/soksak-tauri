@@ -19,7 +19,9 @@ export function RailGridSurface({
 }) {
   return (
     <div
-      className={`content-body${traveling ? " rail-traveling" : ""}`}
+      // 옛 이름 동반 — commands 층이 `.content-body.rail-traveling` 로 주행 위상을 읽는다.
+      // 제거 조건: catalogDom 의 그 셀렉터가 `.space-body` 로 이행하면 두 번째 토큰을 지운다.
+      className={`space-body content-body${traveling ? " rail-traveling" : ""}`}
       // 선언은 맨 길이다 — 배수를 여기서 곱하면 안 된다. 느리게 보는 축은 Web Animations 의
       // playbackRate 하나이고, 그것이 이 전이를 이미 늘린다. 선언까지 곱하면 화면은 배수의
       // 제곱만큼 느려지는데 위상을 닫는 JS 타이머는 한 번만 곱하므로, 이동이 몇 %만 진행된

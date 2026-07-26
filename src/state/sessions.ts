@@ -679,17 +679,17 @@ function leftRailLayoutConflict(project: Project): CmdErr | null {
 
 // ── 터미널 pane resolver(플러그인 터미널 = substrate) ─────────────────────────
 
-// 뷰가 구동하는 PTY substrate 의 paneId 후보(있으면). 터미널 판정은 generic — 그 후보 id 가
+// 탭이 구동하는 PTY substrate 키 후보(있으면). 터미널 판정은 generic — 그 후보 id 가
 // PTY 관찰을 가지면(app.pty 를 구동하면) 터미널이다(pluginId·kind 하드코딩 없음, hasPty 주입).
-// 코어는 터미널 뷰를 소유하지 않으므로 후보는 항상 view.id(플러그인이 app.pty.spawn 에 넘긴 paneId).
-function ptyPaneOfView(v: Tab, hasPty: (id: string) => boolean): string | undefined {
+// 코어는 터미널 뷰를 소유하지 않으므로 후보는 항상 탭 id(플러그인이 app.pty.spawn 에 넘긴 그 키).
+function ptyKeyOfTab(v: Tab, hasPty: (id: string) => boolean): string | undefined {
   return hasPty(v.id) ? v.id : undefined;
 }
 
 // 프로젝트의 사이드바(파일트리)가 따라갈 터미널 pane(= 현재 cwd 출처). 순수 resolver — PTY
 // 관찰 predicate(hasPty)를 주입받아 플러그인 터미널을 따라간다(generic).
 // 활성 컨텐츠의 활성 그룹의 활성(=포커스된) 뷰가 터미널이면 그 pane, 아니면 아무 터미널 뷰의 pane.
-export function cwdPaneOf(
+export function cwdTabOf(
   project: Project,
   hasPty: (id: string) => boolean,
 ): string | undefined {
@@ -704,13 +704,13 @@ export function cwdPaneOf(
     (v) => v.id === activeGroup.activeTabId,
   );
   if (active) {
-    const pane = ptyPaneOfView(active, hasPty);
-    if (pane) return pane;
+    const key = ptyKeyOfTab(active, hasPty);
+    if (key) return key;
   }
   for (const g of groups) {
     for (const v of g.tabs) {
-      const pane = ptyPaneOfView(v, hasPty);
-      if (pane) return pane;
+      const key = ptyKeyOfTab(v, hasPty);
+      if (key) return key;
     }
   }
   return undefined;
@@ -740,7 +740,7 @@ export function webviewDisplayName(label: string, projects: Project[]): string {
 }
 
 // paneId(=플러그인 터미널 view.id) 의 {projectId, viewId}(M5 — terminal status 브리지용). 없으면 null.
-export function paneToView(
+export function locateTab(
   projects: Project[],
   paneId: string,
 ): { projectId: string; viewId: string } | null {

@@ -1,4 +1,4 @@
-// idle provider — 출력 버스트 후 무출력 디바운스로 turn.ended(idle) 발화. paneHosts 는 mock.
+// idle provider — 출력 버스트 후 무출력 디바운스로 turn.ended(idle) 발화. ptyBridge 는 mock.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const handlers: {
@@ -7,7 +7,7 @@ const handlers: {
   out?: () => void;
 } = {};
 
-vi.mock("./paneHosts", () => ({
+vi.mock("./ptyBridge", () => ({
   subscribeAnyCommandStarted: (cb: typeof handlers.start) => {
     handlers.start = cb;
     return () => {
@@ -20,7 +20,7 @@ vi.mock("./paneHosts", () => ({
       handlers.finish = undefined;
     };
   },
-  subscribeOutput: (_paneId: string, cb: () => void) => {
+  subscribeOutput: (_tabId: string, cb: () => void) => {
     handlers.out = cb;
     return () => {
       handlers.out = undefined;
@@ -53,7 +53,7 @@ describe("idleTurnDetector", () => {
     setIdleTurnDetection(true, 1000);
     expect(isIdleTurnDetectionOn()).toBe(true);
 
-    handlers.start?.("pane1", "claude", null); // 모니터 시작(출력 전엔 타이머 없음)
+    handlers.start?.("tab-aaaaaa", "claude", null); // 모니터 시작(출력 전엔 타이머 없음)
     vi.advanceTimersByTime(2000);
     expect(emitted).toHaveLength(0); // 출력 없으면 오탐 없음
 
@@ -61,15 +61,15 @@ describe("idleTurnDetector", () => {
     vi.advanceTimersByTime(999);
     expect(emitted).toHaveLength(0);
     vi.advanceTimersByTime(1); // 1000ms 무출력 → 발화
-    expect(emitted).toEqual([{ projectId: "t1", root: "projA", paneId: "pane1", source: "idle" }]);
+    expect(emitted).toEqual([{ projectId: "t1", root: "projA", paneId: "tab-aaaaaa", source: "idle" }]);
   });
 
   it("명령 종료 시 모니터 해제(이후 출력은 무시)", () => {
     const emitted: unknown[] = [];
     configureIdleTurnDetector({ emit: (p) => emitted.push(p), projectInfoOf: () => null });
     setIdleTurnDetection(true, 500);
-    handlers.start?.("pane1", "x", null);
-    handlers.finish?.("pane1"); // 해제
+    handlers.start?.("tab-aaaaaa", "x", null);
+    handlers.finish?.("tab-aaaaaa"); // 해제
     handlers.out?.(); // 해제 후 출력 — 무시(handlers.out 은 unsub 으로 비워짐)
     vi.advanceTimersByTime(1000);
     expect(emitted).toHaveLength(0);

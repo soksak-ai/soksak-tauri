@@ -56,19 +56,32 @@ const defaultDeps: ZoomDeps = {
   stepWindow: stepWindowZoom,
 };
 
-/** 훅 없는 뷰의 범용 폴백(§Zoom) — 컨테이너의 --view-font-size 를 스텝한다. 본문 폰트를
+/** 훅 없는 뷰의 범용 폴백(§Zoom) — 컨테이너의 본문 폰트 변수를 스텝한다. 본문 폰트를
  * 이 변수로 선언한 뷰(파일 뷰어 등)는 자동으로 줌을 얻고, 미소비 뷰에는 무해하다(옵트인).
- * 행 그리드는 변수 소비 지점이 본문뿐이라 불가침(줌 불변식). */
+ * 행 그리드는 변수 소비 지점이 본문뿐이라 불가침(줌 불변식).
+ *
+ * 이름 두 벌: 정본은 --tab-font-size(어휘 표준 — 인스턴스는 탭이다), 옛 이름 --view-font-size 도
+ * 같은 값으로 함께 쓴다. 이 변수는 docs/PLUGIN-CONTRACT.md 가 공개한 계약면이고 옛 이름으로
+ * 선언한 플러그인(editor-codemirror)이 이미 산다 — 한쪽만 쓰면 그 뷰의 줌이 죽는다.
+ * 읽기도 새 이름 우선·옛 이름 폴백이다(플러그인이 인라인으로 초기값을 준 경우까지 잇는다).
+ * 제거 조건: 이 변수를 선언한 플러그인 전부가 --tab-font-size 로 이행(검증 = 각 플러그인 repo
+ * 의 grep 이 0) + PLUGIN-CONTRACT 문서 갱신. 그때 옛 이름 set/get 두 줄을 지운다. */
 export const VIEW_FONT_BASE = 13;
 
+const TAB_FONT_VAR = "--tab-font-size";
+const TAB_FONT_VAR_LEGACY = "--view-font-size";
+
 export function stepContainerFontVar(host: HTMLElement, action: ZoomAction): void {
-  const raw = host.style.getPropertyValue("--view-font-size");
+  const raw =
+    host.style.getPropertyValue(TAB_FONT_VAR) ||
+    host.style.getPropertyValue(TAB_FONT_VAR_LEGACY);
   const current = raw ? Number.parseFloat(raw) : VIEW_FONT_BASE;
   const next =
     action === "reset"
       ? VIEW_FONT_BASE
       : Math.max(6, Math.min(40, current + (action === "in" ? 1 : -1)));
-  host.style.setProperty("--view-font-size", `${next}px`);
+  host.style.setProperty(TAB_FONT_VAR, `${next}px`);
+  host.style.setProperty(TAB_FONT_VAR_LEGACY, `${next}px`);
 }
 
 export function routeZoom(action: ZoomAction, deps: ZoomDeps = defaultDeps): void {

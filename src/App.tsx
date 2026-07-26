@@ -54,14 +54,14 @@ import { wireRemoteConfirm } from "./state/remoteConfirmWire";
 import { installRemoteConfirmDevTrigger } from "./state/remoteConfirmDev";
 import { ConsentPreviewHost } from "./components/ConsentPreviewHost";
 import { NotifyHost } from "./ui/NotifyHost";
-import { MotionDebugPanel } from "./components/MotionDebugPanel";
+import { MotionDebug } from "./components/MotionDebug";
 import { PluginHeaderActions } from "./ui/PluginHeaderActions";
 import { useUi } from "./state/ui";
 import { useDividerHover } from "./state/dividerHover";
 import { useT } from "./i18n";
 import {
   allGroups,
-  cwdPaneOf as resolveCwdPane,
+  cwdTabOf as resolveCwdTab,
   projectArrangement,
   useSessions,
   webviewDisplayName,
@@ -116,7 +116,7 @@ function useResizableWidth(
     const v = Number(localStorage.getItem(key));
     return v >= min && v <= max ? v : def;
   });
-  // begin 은 참조 안정(useCallback) — memo 된 ProjectPane 에 prop 으로 내려가도
+  // begin 은 참조 안정(useCallback) — memo 된 ProjectPlane 에 prop 으로 내려가도
   // 경계를 깨지 않는다(원칙 2). 현재 폭은 ref 로 읽는다.
   const wRef = useRef(w);
   wRef.current = w;
@@ -159,7 +159,7 @@ function useResizableWidth(
 // memo 경계 = project 데이터 경계(원칙 2, docs/PERFORMANCE.md): 프로젝트 X 의
 // store 쓰기는 프로젝트 Y 의 객체 정체성을 보존(mapProject)하므로 Y 서브트리는
 // 리렌더되지 않는다. 모든 prop 은 참조/값 안정이어야 한다 — 커스텀 비교자 금지.
-const ProjectPane = memo(function ProjectPane({
+const ProjectPlane = memo(function ProjectPlane({
   project,
   isActiveProject,
   sidebarW,
@@ -387,7 +387,7 @@ const ProjectPane = memo(function ProjectPane({
   ]);
   return (
     <div
-      className="terminal-pane"
+      className="project-plane"
       // 주소 공리 A1 의 앵커 — 이 평면 안의 크롬 노드는 프로젝트마다 한 벌씩 산다.
       // 주소가 프로젝트를 실어야 rail/left 가 하나로 풀린다(collectExposed 가 읽는다).
       data-project-plane={project.id}
@@ -400,7 +400,7 @@ const ProjectPane = memo(function ProjectPane({
     >
       {/* 상위 콘텐츠 탭은 rail 밖에 남고, 선택된 패널 grid만 rail과 좌표계를 공유한다. */}
       <div
-        className={`content${contentTabPosition === "left" ? " ctabs-left" : ""}`}
+        className={`content${contentTabPosition === "left" ? " space-tabs-left" : ""}`}
       >
         {project.rootMissing && (
           <div className="root-missing-banner" data-node="banner/root-missing">
@@ -418,7 +418,7 @@ const ProjectPane = memo(function ProjectPane({
               <RailLinkOverlay
                 contentId={activeContent.id}
                 boundViewId={boundView.id}
-                boundPanelId={boundGroup.id}
+                boundPaneId={boundGroup.id}
                 railWidth={sidebarW}
                 railStation={renderedStation}
                 targetRect={boundCell.rect}
@@ -486,7 +486,7 @@ const ProjectPane = memo(function ProjectPane({
                 >
                   <LeftSidebarHost
                     project={project}
-                    paneId={cwdPaneOf(project) ?? ""}
+                    paneId={cwdTabOf(project) ?? ""}
                     commitProjection={layer.commitProjection && !arrangementPending}
                   />
                   {project.sidebarOpen && layer.interactive && (
@@ -526,7 +526,7 @@ const ProjectPane = memo(function ProjectPane({
             return (
               <div
                 key={c.id}
-                className="content-pane"
+                className="space-plane"
                 // 비활성 콘텐츠는 화면 밖으로 파킹(R12 단일 진실) — visibility:hidden 만으로는 그 안의
                 // 터미널 WebGL 캔버스가 GPU 레이어로 합성돼 활성 콘텐츠의 브라우저 홀로 비친다. 뷰 슬롯
                 // (GroupArea)과 동일 규칙을 같은 헬퍼로 적용(층 간 일치).
@@ -583,10 +583,10 @@ const ProjectPane = memo(function ProjectPane({
 });
 
 // 프로젝트의 사이드바(파일트리)가 따라갈 터미널 pane(= 현재 cwd 출처). 순수 resolver 는
-// sessions.cwdPaneOf — 여기서는 PTY 관찰 predicate(hasPtyObservation)를 주입해 호출한다.
+// sessions.cwdTabOf — 여기서는 PTY 관찰 predicate(hasPtyObservation)를 주입해 호출한다.
 // 코어/플러그인 터미널 구분 없음 — PTY substrate 를 구동하는(관찰을 가진) 뷰면 따라간다.
-const cwdPaneOf = (project: Project): string | undefined =>
-  resolveCwdPane(project, hasPtyObservation);
+const cwdTabOf = (project: Project): string | undefined =>
+  resolveCwdTab(project, hasPtyObservation);
 
 // 빌드 정체성 배지: DEV(HMR 개발 서버) / DEBUG(디버그 번들 soksak-debug) / 없음(릴리스).
 // HMR 은 import.meta.env.DEV 로 즉시 알고, 빌드 번들(DEV=false)은 둘을 앱 이름(getName)
@@ -610,20 +610,20 @@ function BuildBadge() {
   }, []);
   // 배지는 모션 관측 패널의 손잡이다 — 개발 정체성에서만 존재하므로 릴리스에는 그 표면이
   // 아예 없다. 사람이 여기서 느리게 돌리고 멈춘 뒤, 같은 순간을 ui.snapshot.dom 이 읽는다.
-  const [panelOpen, setPanelOpen] = useState(false);
+  const [debugOpen, setDebugOpen] = useState(false);
   if (!label) return null;
   return (
     <span className="dev-badge-wrap">
       <button
         type="button"
         data-node="dev-badge"
-        className={`dev-badge${label === "DEBUG" ? " debug" : ""}${panelOpen ? " on" : ""}`}
+        className={`dev-badge${label === "DEBUG" ? " debug" : ""}${debugOpen ? " on" : ""}`}
         title="모션 관측(배속·정지)"
-        onClick={() => setPanelOpen((v) => !v)}
+        onClick={() => setDebugOpen((v) => !v)}
       >
         {label}
       </button>
-      {panelOpen && <MotionDebugPanel onClose={() => setPanelOpen(false)} />}
+      {debugOpen && <MotionDebug onClose={() => setDebugOpen(false)} />}
     </span>
   );
 }
@@ -747,7 +747,7 @@ function App() {
     };
   }, []);
 
-  // 활성 project/space/panel/view 체인과 실제 키보드 포커스는 하나의 계약이다.
+  // 활성 project/space/pane/tab 체인과 실제 키보드 포커스는 하나의 계약이다.
   // 마운트 시 자동포커스하지 않고, 최신 활성 뷰 의도만 provider 에 전달한다.
   useEffect(() => startViewFocusSync(), []);
   // 유령 홀드 복구 — 창 활성화 클릭의 mouseup 유실이 터미널 드래그 선택으로 번지는 것을 차단.
@@ -802,13 +802,13 @@ function App() {
       // 네이티브 child 위 드래그 중계 대상: 분할 divider + [data-native-drag] 선언 요소(범용 계약 —
       // 플러그인 내부 리사이저 등). 드래그가 child 영역에 들어가면 실 이벤트는 child 가 삼키므로,
       // 여기서 mousedown 을 쏘고 move/up 을 window 로 중계해야 DOM 드래그가 이어진다.
-      const divider = el?.closest<HTMLElement>(".egroup-divider, [data-native-drag]");
+      const divider = el?.closest<HTMLElement>(".pane-gutter, [data-native-drag]");
       if (divider) {
         dragging = true;
         fire(divider, "mousedown", x, y);
         return;
       }
-      const slot = el?.closest<HTMLElement>("[data-group-id]");
+      const slot = el?.closest<HTMLElement>("[data-pane]");
       const { groupId, projectId } = slot?.dataset ?? {};
       if (groupId && projectId) {
         const state = useSessions.getState();
@@ -838,7 +838,7 @@ function App() {
       // (elementFromPoint 는 DOM 만 보므로 네이티브 밑의 divider 를 반환)를 store 에 기록한다. GroupArea 가
       // 그걸 강조 + 좌우 셀을 잠깐 물려 divider 를 드러낸다. divider 아니면 null(강조 해제).
       const el = document.elementFromPoint(e.payload.x, e.payload.y);
-      const div = el?.closest<HTMLElement>(".egroup-divider");
+      const div = el?.closest<HTMLElement>(".pane-gutter");
       useDividerHover.getState().set(div?.dataset.dividerKey ?? null);
     });
     const offUp = listenThisWindow<{ x: number; y: number }>("native-mouseup", (e) => {
@@ -866,16 +866,16 @@ function App() {
   // 네이티브 child 위에선 DOM 강조가 안 보이므로 유일한 길. rAF 추적 루프: 드래그(리사이즈)로 DOM
   // divider 가 움직이면 매 프레임 rect 를 재측정해 네이티브 바가 정확히 따라간다 — 1회성 배치는 드래그
   // 중 바가 제자리에 남는다(회귀). rect 가 안 변한 프레임은 IPC 를 보내지 않는다(변화시에만 invoke).
-  const dividerHoverKey = useDividerHover((s) => s.key);
+  const gutterHoverKey = useDividerHover((s) => s.key);
   useEffect(() => {
     const send = (rect: { x: number; y: number; w: number; h: number } | null) => {
       void invoke("webview_divider_highlight", { rect }).catch(() => {});
     };
-    if (!dividerHoverKey) {
+    if (!gutterHoverKey) {
       send(null);
       return;
     }
-    const sel = `.egroup-divider[data-divider-key="${CSS.escape(dividerHoverKey)}"]`;
+    const sel = `.pane-gutter[data-gutter-key="${CSS.escape(gutterHoverKey)}"]`;
     let raf = 0;
     let last = "";
     const tick = () => {
@@ -895,7 +895,7 @@ function App() {
       cancelAnimationFrame(raf);
       send(null);
     };
-  }, [dividerHoverKey]);
+  }, [gutterHoverKey]);
 
   // 구독 최소 원칙(docs/PERFORMANCE.md 1): 필드/액션별 셀렉터만 — bare 훅 금지.
   // zustand 액션은 create() 시점에 고정되는 안정 참조라 액션 셀렉터는 리렌더 없음.
@@ -914,7 +914,7 @@ function App() {
   const activeProject = projects.find((t) => t.id === activeId);
 
   // spawn 옵션 provider 는 main.tsx 부트(렌더 전)가 등록한다 — effect(마운트
-  // 후)는 자식 PaneLeaf ref 의 첫 spawn 보다 늦어 첫 터미널이 cwd 없이(홈)
+  // 후)는 자식 pane ref 의 첫 spawn 보다 늦어 첫 터미널이 cwd 없이(홈)
   // 시작하던 잠복 버그의 원인이었다.
 
   // 드래그로 조절되는 패널 폭들(전역, localStorage 영속).
@@ -1048,7 +1048,7 @@ function App() {
       if (!paths || paths.length === 0) return;
       const s = useSessions.getState();
       const proj = s.projects.find((t) => t.id === s.activeId);
-      const paneId = proj ? cwdPaneOf(proj) : undefined;
+      const paneId = proj ? cwdTabOf(proj) : undefined;
       if (!paneId) return;
       getPtyIo(paneId)?.sendInput(paths.map(shellEscape).join(" "));
     });
@@ -1064,18 +1064,18 @@ function App() {
       {projects.map((proj) => (
         <div
           key={proj.id}
-          className={`tab${proj.id === activeId ? " active" : ""}`}
+          className={`project-tab${proj.id === activeId ? " active" : ""}`}
           onClick={() => setActive(proj.id)}
           onDoubleClick={() => setProjectSettingsFor(proj.id)}
         >
           {proj.color && (
-            <span className="tab-dot" style={{ background: proj.color }} />
+            <span className="project-tab-dot" style={{ background: proj.color }} />
           )}
-          <span className="tab-title">{proj.title}</span>
+          <span className="project-tab-title">{proj.title}</span>
           {projects.length > 1 && (
             <button
               type="button"
-              className="icon-btn icon-btn--mini tab-close"
+              className="icon-btn icon-btn--mini project-tab-close"
               title={t("project.close")}
               onClick={(e) => {
                 e.stopPropagation();
@@ -1089,7 +1089,7 @@ function App() {
       ))}
       <button
         type="button"
-        className="icon-btn tab-add"
+        className="icon-btn project-tab-add"
         title={t("project.new")}
         onClick={() => setNewProjectOpen(true)}
       >
@@ -1207,12 +1207,12 @@ function App() {
             탭(상단 모드)은 이 뒤부터 쌓인다. 릴리스(soksak)는 배지 없음. */}
         <BuildBadge />
         {projectTabPosition === "top" ? (
-          <div className="tabs" data-tauri-drag-region>
+          <div className="project-tabs" data-tauri-drag-region>
             {projectTabsList}
           </div>
         ) : (
           /* 좌측 모드: 타이틀바엔 탭 없이 드래그 영역만(탭은 좌측 레일로). */
-          <div className="tabs" data-tauri-drag-region />
+          <div className="project-tabs" data-tauri-drag-region />
         )}
         <div className="titlebar-right">
           <PluginHeaderActions />
@@ -1314,7 +1314,7 @@ function App() {
         {/* 모든 프로젝트를 마운트해 세션 유지(비활성은 visibility 로 숨김). */}
         <div className="terminal-stack">
           {projects.map((project) => (
-            <ProjectPane
+            <ProjectPlane
               key={project.id}
               project={project}
               isActiveProject={project.id === activeId}

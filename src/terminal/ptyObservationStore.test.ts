@@ -62,8 +62,8 @@ describe("ptyObservationStore", () => {
     registerPtyObservation("p1");
     feedPtyOutput("p1", "\x1b]633;P;Cwd=/proj\x07");
     feedPtyOutput("p1", "\x1b]633;E;build\x07");
-    let paneFinished = 0;
-    subscribeObservedCommandFinished("p1", () => paneFinished++);
+    let tabFinished = 0;
+    subscribeObservedCommandFinished("p1", () => tabFinished++);
     const fins: {
       paneId: string;
       cmd: string | null | undefined;
@@ -73,7 +73,7 @@ describe("ptyObservationStore", () => {
       fins.push({ paneId, cmd, cwd }),
     );
     feedPtyOutput("p1", "\x1b]133;D;0\x07");
-    expect(paneFinished).toBe(1);
+    expect(tabFinished).toBe(1);
     expect(fins).toEqual([{ paneId: "p1", cmd: "build", cwd: "/proj" }]);
     expect(observedRunningCommands()).toEqual([]);
   });
@@ -113,7 +113,7 @@ describe("ptyObservationStore", () => {
   });
 
   // hasPtyObservation = "이 id 가 PTY substrate 를 구동하는가"(터미널 generic 신호 —
-  // pluginId 무관). 파일트리 cwdPaneOf 가 코어/플러그인 터미널을 구분 없이 따라가는 데 쓴다.
+  // pluginId 무관). 파일트리 cwdTabOf 가 코어/플러그인 터미널을 구분 없이 따라가는 데 쓴다.
   it("hasPtyObservation 은 등록된 paneId 에만 true, dispose 후 false", () => {
     expect(hasPtyObservation("p1")).toBe(false);
     registerPtyObservation("p1");
@@ -164,8 +164,8 @@ describe("ptyObservationStore", () => {
     subscribeObservedCwd("core", (c) => cwds.push(c));
     const starts: string[] = [];
     subscribeAnyCommandStarted((_p, cmd) => starts.push(cmd));
-    let paneFin = 0;
-    subscribeObservedCommandFinished("core", () => paneFin++);
+    let tabFin = 0;
+    subscribeObservedCommandFinished("core", () => tabFin++);
     const fins: (string | null | undefined)[] = [];
     subscribeAnyCommandFinished((_p, cmd) => {
       fins.push(cmd);
@@ -182,7 +182,7 @@ describe("ptyObservationStore", () => {
     expect(getObservedCwd("core")).toBe("/core/dir");
     expect(starts).toEqual(["make build"]);
     expect(out).toBe(1);
-    expect(paneFin).toBe(1);
+    expect(tabFin).toBe(1);
     expect(fins).toEqual(["make build"]);
     expect(observedRunningCommands()).toEqual([]);
   });

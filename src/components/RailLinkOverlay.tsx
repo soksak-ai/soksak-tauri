@@ -30,7 +30,7 @@ export const RELATION_MOMENT_MS = 600;
 export const RailLinkOverlay = memo(function RailLinkOverlay({
   contentId,
   boundViewId,
-  boundPanelId,
+  boundPaneId,
   railWidth,
   railStation,
   targetRect,
@@ -38,7 +38,7 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
 }: {
   contentId: string;
   boundViewId: string;
-  boundPanelId: string;
+  boundPaneId: string;
   railWidth: number;
   railStation: number;
   targetRect: RailRect;
@@ -116,7 +116,7 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
       className={`rail-link-overlay relation-${railRelation} fill-${railFill}`}
       data-node={`relation/rail/${contentId}`}
       data-bound-view={boundViewId}
-      data-bound-panel={boundPanelId}
+      data-bound-pane={boundPaneId}
       data-connected={path ? "true" : "false"}
       data-projected={projected ? "true" : undefined}
       data-flash={railRelation === "moment" ? String(flash) : undefined}

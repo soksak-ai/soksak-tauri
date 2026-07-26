@@ -43,12 +43,12 @@ const yOverlaps = (a: LayoutDivider, b: LayoutDivider): boolean =>
 // 앵커를 포함하면서 교집합이 시작 x 를 담는 최대 유효 부분집합이고(클램프 공집합 불가),
 // 일단 묶인 세그먼트는 제스처가 절대 찢지 않는다.
 export function collectLineGroup(
-  dividers: LayoutDivider[],
+  gutters: LayoutDivider[],
   anchorSplitId: string,
   anchorIndex: number,
   eps: number = LINE_GROUP_EPS,
 ): LayoutDivider[] {
-  const rows = dividers.filter((d) => d.dir === "row");
+  const rows = gutters.filter((d) => d.dir === "row");
   const anchor = rows.find(
     (d) => d.splitId === anchorSplitId && d.index === anchorIndex,
   );
@@ -130,11 +130,11 @@ export function moveLineGroup(
 // 드래그와 같은 collectLineGroup+moveLineGroup 경로라 라인이 찢어지지 않는다. 목표가
 // 교집합 밖이면 정확한 반반보다 라인 불분할이 우선한다(클램프된 공통 x 에 함께 선다).
 export function equalizeLineGroup(
-  dividers: LayoutDivider[],
+  gutters: LayoutDivider[],
   anchorSplitId: string,
   anchorIndex: number,
 ): { x: number; moves: LineMove[] } {
-  const group = collectLineGroup(dividers, anchorSplitId, anchorIndex);
+  const group = collectLineGroup(gutters, anchorSplitId, anchorIndex);
   const anchor = group.find(
     (d) => d.splitId === anchorSplitId && d.index === anchorIndex,
   );
@@ -168,7 +168,7 @@ export function normalizeVerticalLines<L>(
 ): SplitTree<L> {
   if (tree.type === "leaf") return tree;
   const rows = computeSplitLayout(tree)
-    .dividers.filter((d) => d.dir === "row")
+    .gutters.filter((d) => d.dir === "row")
     .sort((a, b) => a.rect.left - b.rect.left || a.rect.top - b.rect.top);
   // x 근접 클러스터(클러스터 최솟값 기준 eps) → 라인 후보.
   const clusters: LayoutDivider[][] = [];
@@ -211,7 +211,7 @@ export function normalizeVerticalLines<L>(
   for (const plan of plans) {
     const d: LayoutDivider | undefined = computeSplitLayout(
       current,
-    ).dividers.find(
+    ).gutters.find(
       (v) =>
         v.dir === "row" && v.splitId === plan.splitId && v.index === plan.index,
     );

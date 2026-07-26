@@ -41,12 +41,12 @@
 
 /* 탭 줄(프로젝트/뷰 탭): 네이티브 오버레이 막대를 확실히 제거. macOS 오버레이
    스크롤바는 두께 스타일이 무시되므로 display:none 으로 숨기고 트랙패드/휠로 스크롤. */
-.tabs,
-.view-tabs {
+.project-tabs,
+.tabs {
   scrollbar-width: none;
 }
-.tabs::-webkit-scrollbar,
-.view-tabs::-webkit-scrollbar {
+.project-tabs::-webkit-scrollbar,
+.tabs::-webkit-scrollbar {
   display: none;
 }
 
@@ -119,7 +119,7 @@ body,
   user-select: none;
 }
 
-.tabs {
+.project-tabs {
   display: flex;
   /* 크롬 행 표준 — 좌측 사이드바 탭(.left-host-tabs)·우측 헤더(.plugin-side-head)와 같은 가로줄·같은
      높이. 높이는 크롬 행 계약(파일 하단, --chrome-row-h)이 단독 소유 — 여기서 지정 금지(cssContract R3).
@@ -133,7 +133,7 @@ body,
   overflow: visible;
 }
 
-.tab {
+.project-tab {
   position: relative;
   display: flex;
   align-items: center;
@@ -146,23 +146,23 @@ body,
   cursor: pointer;
   white-space: nowrap;
 }
-.tab.active {
+.project-tab.active {
   background: rgba(127, 127, 127, 0.28);
   color: var(--fg);
 }
-.tab:hover {
+.project-tab:hover {
   background: rgba(127, 127, 127, 0.22);
 }
 /* 닫기 버튼: 뷰 탭과 동일한 인라인 × (.icon-btn--mini 가 기하 소유). */
-.tab-close {
+.project-tab-close {
   opacity: 0.55;
 }
-.tab:hover .tab-close,
-.tab-close:hover {
+.project-tab:hover .project-tab-close,
+.project-tab-close:hover {
   opacity: 1;
   background: var(--inset);
 }
-.tab-add {
+.project-tab-add {
   border: none;
   background: transparent;
   color: rgba(127, 127, 127, 0.9);
@@ -172,7 +172,7 @@ body,
   padding: 0 6px;
   border-radius: 5px;
 }
-.tab-add:hover {
+.project-tab-add:hover {
   background: rgba(127, 127, 127, 0.18);
 }
 
@@ -453,15 +453,15 @@ body,
 .project-rail-resizer:active {
   background: rgba(127, 127, 127, 0.4);
 }
-.project-rail .tab {
+.project-rail .project-tab {
   width: 100%;
 }
 /* 레일은 overflow 로 클리핑되므로 닫기 버튼을 탭 안쪽 우상단에. */
-.project-rail .tab-close {
+.project-rail .project-tab-close {
   top: 3px;
   right: 3px;
 }
-.project-rail .tab-add {
+.project-rail .project-tab-add {
   width: 100%;
   height: 24px;
 }
@@ -473,7 +473,7 @@ body,
   min-height: 0;
   overflow: hidden;
 }
-.terminal-pane {
+.project-plane {
   position: absolute;
   inset: 0;
   display: flex;
@@ -545,23 +545,23 @@ body,
    바뀔 때마다 160ms 동안 매 프레임 그 레이어를 재래스터한다(실사고: 무관한 탭 클릭에
    패널이 움찔). 상시 승격 자체는 무해하니 filter 는 남기고 전이만 걷는다. 전이감이 필요한
    곳은 ::after 베일(페인트만, 승격 무관)이 담당한다 — 홀 슬롯 규칙 참조. */
-.egroup-area[data-focus-dim] .egroup-cell,
-.egroup-area[data-focus-dim] .egroup-body-slot {
+.space[data-focus-dim] .pane,
+.space[data-focus-dim] .tab-body {
   filter: brightness(0.93) saturate(0.85);
 }
 /* 네이티브 표면 셰이드 — 레이어 역전(DOM 최상위·엔진/child 웹뷰는 투명 홀로 아래에서 비침)
    때문에 filter 는 네이티브 콘텐츠에 닿지 않는다. 셰이드는 슬롯 배경이 아니라 ::after(z4) —
    동결 스탠드인(z3)보다 위의 라이브 계층이라, 스냅에 구워진 상태와 무관하게 현재 포커스를
    따라 전이한다(배경이던 시절엔 스탠드인이 베일을 가려 스왑마다 포커스 인/아웃 플랩으로
-   보였다 — 실측). pseudo 는 히트테스트가 없어 클릭 관통이 보장된다. hole-slot 한정 —
+   보였다 — 실측). pseudo 는 히트테스트가 없어 클릭 관통이 보장된다. tab-body-hole 한정 —
    DOM 뷰는 자기 불투명 배경 뒤라 filter 로 충분하다.
    (background 쇼트핸드+color-mix 는 이 WebKit 이 선언을 드롭한다 — 롱핸드 고정.) */
-.egroup-area[data-focus-dim] .egroup-body-slot.hole-slot {
+.space[data-focus-dim] .tab-body.tab-body-hole {
   /* 스탠드인(img)이 filter 를 받으면 네이티브(베일만 받음)와 dim 강도가 어긋난다 —
      홀 슬롯은 filter 제외, dim = ::after 베일 단일 축. */
   filter: none;
 }
-.egroup-area[data-focus-dim] .egroup-body-slot.hole-slot::after {
+.space[data-focus-dim] .tab-body.tab-body-hole::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -570,11 +570,11 @@ body,
   background-color: color-mix(in srgb, #000 7%, transparent);
   transition: background-color 160ms ease;
 }
-.egroup-area[data-focus-dim] .egroup-cell.spot-clear,
-.egroup-area[data-focus-dim] .egroup-body-slot.spot-clear {
+.space[data-focus-dim] .pane.spot-clear,
+.space[data-focus-dim] .tab-body.spot-clear {
   filter: none;
 }
-.egroup-area[data-focus-dim] .egroup-body-slot.hole-slot.spot-clear::after {
+.space[data-focus-dim] .tab-body.tab-body-hole.spot-clear::after {
   background-color: transparent;
 }
 /* [임시 — 결부 바탕 2안 비교 스위치] railFill 설정(none|faint) — 사용자 요청(① 빼기
@@ -621,17 +621,17 @@ body,
    올렸다 내리며 위상마다 재래스터를 일으켰다 — 움직이지 않는 브라우저의 DOM(주소표시줄)
    까지 "움찔"하던 실사고의 진원. 셀·슬롯은 클래스로 게이트하고, 셀 내부(frame)·보조
    장식(drop-ind-wrap·divider)은 셀과 함께/무관하게 종전 규칙을 유지한다. */
-.content-body.rail-traveling .egroup-cell.flip-move,
-.content-body.rail-traveling .egroup-frame.flip-move,
-.content-body.rail-traveling .egroup-body-slot.flip-move,
-.content-body.rail-traveling .drop-ind-wrap.flip-move,
-.content-body.rail-traveling .egroup-divider.flip-move {
+.space-body.rail-traveling .pane.flip-move,
+.space-body.rail-traveling .pane-border.flip-move,
+.space-body.rail-traveling .tab-body.flip-move,
+.space-body.rail-traveling .drop-ind-wrap.flip-move,
+.space-body.rail-traveling .pane-gutter.flip-move {
   animation: rail-flip-x var(--rail-travel-ms) cubic-bezier(0.4, 0, 0.2, 1);
   will-change: translate;
 }
 /* §12-④ 개정 — 주행 중에도 입력은 열려 있다. straddle 방지는 히트 차단이 아니라 활성화
    귀속이 담당한다(slotGesture.armSlotActivation: 활성화=게스처 완결 시점, 시작 슬롯 귀속).
-   이전의 불활성 규칙(전면→이동요소 한정)은 주행 중 도착하는 실클릭을 content-body 로
+   이전의 불활성 규칙(전면→이동요소 한정)은 주행 중 도착하는 실클릭을 space-body 로
    떨어뜨려 죽였다(실측 trace) — 입력면 차단 규칙을 다시 들이지 마라. */
 
 /* 예외 — 제스처를 시작한 당사자 슬롯은 위상 중에도 입력을 받는다. mousedown 대상의
@@ -784,13 +784,13 @@ body,
   display: flex;
   flex-direction: column;
 }
-.content-body {
+.space-body {
   position: relative;
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
 }
-.content-pane {
+.space-plane {
   position: absolute;
   inset: 0;
   /* z 는 parkedStyle 인라인(active=1)이 소유 — CSS 로 덮지 않는다(인라인이 이긴다).
@@ -798,17 +798,17 @@ body,
      히트 투명(복도의 빈 영역 클릭은 아래 레일의 것) — 실요소가 각자 이벤트를 소유한다. */
   pointer-events: none;
 }
-.egroup-area {
+.space {
   pointer-events: none;
 }
-.egroup-cell,
-.egroup-body-slot,
-.egroup-divider {
+.pane,
+.tab-body,
+.pane-gutter {
   pointer-events: auto;
 }
 
 /* ── 컨텐츠 탭 바(3단의 가운데) ── */
-.content-tabs {
+.space-tabs {
   flex: 0 0 auto;
   display: flex;
   align-items: stretch;
@@ -822,7 +822,7 @@ body,
   -webkit-user-select: none;
   user-select: none;
 }
-.ctab {
+.space-tab {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -834,29 +834,29 @@ body,
   cursor: pointer;
   white-space: nowrap;
 }
-.ctab.active {
+.space-tab.active {
   background: rgba(127, 127, 127, 0.24);
   color: var(--fg);
 }
 /* 이름 편집 중 — 탭 자체가 input 박스가 된다(박스 안 박스 금지). accent 테두리로 편집 표시,
    outline-offset 음수로 탭 크기 변동 없이 라벨↔input 모양만 동일하게. */
-.ctab.editing {
+.space-tab.editing {
   background: var(--inset);
   outline: 1px solid var(--acc);
   outline-offset: -1px;
   color: var(--fg);
 }
-.ctab:hover {
+.space-tab:hover {
   background: rgba(127, 127, 127, 0.18);
 }
-.ctab-title {
+.space-tab-title {
   max-width: 160px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.ctab-rename {
-  /* 박스 안 박스 금지 — input 은 투명 텍스트 필드일 뿐, 편집 박스(테두리/배경)는 탭(.ctab.editing)이 소유.
-     라벨(.ctab-title) 자리를 그대로 채워 모양이 라벨과 같다. */
+.space-tab-rename {
+  /* 박스 안 박스 금지 — input 은 투명 텍스트 필드일 뿐, 편집 박스(테두리/배경)는 탭(.space-tab.editing)이 소유.
+     라벨(.space-tab-title) 자리를 그대로 채워 모양이 라벨과 같다. */
   width: 100%;
   min-width: 0;
   background: transparent;
@@ -867,7 +867,7 @@ body,
   padding: 0;
   margin: 0;
 }
-.ctab-close {
+.space-tab-close {
   border: none;
   background: transparent;
   color: inherit;
@@ -878,15 +878,15 @@ body,
   opacity: 0.55;
   border-radius: 3px;
 }
-.ctab-close:hover {
+.space-tab-close:hover {
   opacity: 1;
   background: rgba(127, 127, 127, 0.3);
 }
-.ctab-add-wrap {
+.space-tab-add-wrap {
   position: relative;
   align-self: center;
 }
-.ctab-add {
+.space-tab-add {
   border: none;
   background: transparent;
   color: rgba(127, 127, 127, 0.9);
@@ -896,12 +896,12 @@ body,
   padding: 0 8px;
   border-radius: 5px;
 }
-.ctab-add:hover {
+.space-tab-add:hover {
   background: rgba(127, 127, 127, 0.16);
 }
 /* + 메뉴: 터미널 / 에이전트(호버 서브메뉴) / 브라우저.
    fixed — 탭 바의 overflow 클리핑/스태킹과 무관하게 항상 위에 뜬다(좌표는 JS 가 지정). */
-.ctab-menu {
+.space-tab-menu {
   position: fixed;
   z-index: 1000;
   min-width: 130px;
@@ -914,13 +914,13 @@ body,
   color: var(--fg);
 }
 /* 빈 메뉴 안내(내장 프로그램 없음 §2.6 — 플러그인 미설치 상태) */
-.ctab-menu-empty {
+.space-tab-menu-empty {
   padding: 6px 10px;
   color: var(--fg3);
   font-size: 12px;
   white-space: nowrap;
 }
-.ctab-menu-item {
+.space-tab-menu-item {
   position: relative;
   display: flex;
   align-items: center;
@@ -930,15 +930,15 @@ body,
   cursor: pointer;
   white-space: nowrap;
 }
-.ctab-menu-item:hover {
+.space-tab-menu-item:hover {
   background: rgba(127, 127, 127, 0.18);
 }
-.ctab-menu-caret {
+.space-tab-menu-caret {
   margin-left: auto;
   opacity: 0.6;
   font-size: 10px;
 }
-.ctab-submenu {
+.space-tab-submenu {
   display: none;
   position: absolute;
   top: -5px;
@@ -950,17 +950,17 @@ body,
   border-radius: 6px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
-.ctab-menu-item.has-sub:hover > .ctab-submenu {
+.space-tab-menu-item.has-sub:hover > .space-tab-submenu {
   display: block;
 }
 /* 메뉴가 오른쪽 끝이라 서브메뉴 펼칠 자리가 없으면 왼쪽으로 뒤집는다(ProgramMenu flip). */
-.ctab-menu.flip-sub .ctab-submenu {
+.space-tab-menu.flip-sub .space-tab-submenu {
   left: auto;
   right: 100%;
 }
 
 /* ── 에디터 그룹 영역(드래그 분할) ── */
-.egroup-area {
+.space {
   position: absolute;
   inset: 0;
 }
@@ -970,7 +970,7 @@ body,
 
 /* 영속 본문 슬롯: viewId 키로 이동해도 remount 없음(CodeMirror/터미널 세션 보존)
    — 위치 지정이 정당한 유일한 레이어. 본문 영역 = 셀 − 헤더 − 상태바. */
-.egroup-body-slot {
+.tab-body {
   position: absolute;
   left: calc(var(--l) + var(--rail-dx, 0px) + var(--pane-inset));
   top: calc(var(--t) + var(--pane-inset) + var(--header-h));
@@ -981,7 +981,7 @@ body,
   overflow: hidden;
 }
 /* 그룹 타이틀바(셀 flex 첫 행) = 그룹 드래그 핸들. 활성 그룹은 파란 강조선. */
-.egroup-title {
+.pane-title {
   flex: 0 0 var(--header-h);
   display: flex;
   align-items: center;
@@ -996,24 +996,24 @@ body,
   -webkit-user-select: none;
   user-select: none;
 }
-.egroup-title:active {
+.pane-title:active {
   cursor: grabbing;
 }
-.egroup-title.active {
+.pane-title.active {
   color: var(--fg);
 }
-.egt-icon {
+.pane-title-icon {
   font-size: 10px;
   opacity: 0.7;
 }
-.egt-name {
+.pane-title-name {
   flex: 1 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 /* 타이틀바 우측 버튼(분할/닫기). */
-.egt-btn {
+.pane-title-btn {
   flex: 0 0 auto;
   border: none;
   background: transparent;
@@ -1025,12 +1025,12 @@ body,
   opacity: 0.55;
   border-radius: 3px;
 }
-.egt-btn:hover {
+.pane-title-btn:hover {
   opacity: 1;
   background: rgba(127, 127, 127, 0.3);
 }
 /* 그룹 탭 바 스트립(타이틀바 아래). 높이는 인라인(TAB_PX)과 일치. */
-.egroup-tabs {
+.pane-tabs {
   flex: 0 0 var(--header-h);
   position: relative;
   overflow: hidden;
@@ -1038,18 +1038,18 @@ body,
   user-select: none;
 }
 /* 본문 공간(셀 flex 가운데) — 비워두고 영속 슬롯이 그 위에 뜬다. */
-.egc-body-space {
+.pane-body {
   flex: 1 1 auto;
   min-height: 0;
 }
 /* 그룹 스테이터스바(셀 flex 마지막 행). */
-.egroup-status-wrap {
+.pane-status-wrap {
   flex: 0 0 var(--status-h);
   overflow: hidden;
   -webkit-user-select: none;
   user-select: none;
 }
-.egroup-status {
+.pane-status {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1061,12 +1061,12 @@ body,
   font-size: 11px;
   color: rgba(127, 127, 127, 0.85);
 }
-.egs-left {
+.pane-status-left {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.egs-right {
+.pane-status-right {
   flex: 0 0 auto;
   opacity: 0.8;
   display: inline-flex;
@@ -1076,7 +1076,7 @@ body,
 /* 플러그인 상태바 항목(예: claude-GUI 의 "gui"). 칩 윗 윤곽(위젯 — §B8 WIDGET_OUTLINE).
    off = 투명 + 옅은 보더, on = --acc 솔리드 채움(반전 글자) — 토글 상태가 한눈에.
    보더는 토큰만(§B4). */
-.egs-item {
+.pane-status-item {
   display: inline-flex;
   align-items: center;
   font: inherit;
@@ -1090,14 +1090,14 @@ body,
   opacity: 0.85;
   cursor: pointer;
 }
-.egs-item:hover {
+.pane-status-item:hover {
   background: var(--accbg);
   border-color: var(--acc);
   opacity: 1;
 }
 /* on — accent 솔리드 채움 + 반전 글자(--bg). hover 보다 명확히 강한 표면. */
-.egs-item.active,
-.egs-item.active:hover {
+.pane-status-item.active,
+.pane-status-item.active:hover {
   background: var(--acc);
   border-color: var(--acc);
   color: var(--bg);
@@ -1105,33 +1105,33 @@ body,
   font-weight: 600;
 }
 /* 상태바 항목과 뷰 종류 라벨 사이 구분선("GUI | 터미널"). */
-.egs-sep {
+.pane-status-sep {
   opacity: 0.4;
 }
 /* 그룹 사이 리사이저(절대 배치). 얇은 선 + 드래그 히트영역. */
-.egroup-divider {
+.pane-gutter {
   position: absolute;
   z-index: 4;
   background: transparent;
 }
-.egroup-divider.row {
+.pane-gutter.row {
   width: 6px;
   transform: translateX(-3px);
   cursor: col-resize;
 }
-.egroup-divider.col {
+.pane-gutter.col {
   height: 6px;
   transform: translateY(-3px);
   cursor: row-resize;
 }
 /* §B6 예외 — solid 테마: 그룹 분할 seam 에 1px 중앙선(소유 위임). */
-:root[data-divider="solid"] .egroup-divider.row {
+:root[data-divider="solid"] .pane-gutter.row {
   background-image: linear-gradient(var(--bd-soft), var(--bd-soft));
   background-size: 1px 100%;
   background-position: center;
   background-repeat: no-repeat;
 }
-:root[data-divider="solid"] .egroup-divider.col {
+:root[data-divider="solid"] .pane-gutter.col {
   background-image: linear-gradient(var(--bd-soft), var(--bd-soft));
   background-size: 100% 1px;
   background-position: center;
@@ -1186,14 +1186,14 @@ body,
 }
 
 /* 콘텐츠 뷰 탭 줄(터미널/파일 전환) + 커스텀 가로 스크롤바 래퍼. */
-.view-tabs-wrap {
+.tabs-wrap {
   position: relative;
   width: 100%;
   height: 100%;
   background: var(--bg);
   border-bottom: 1px solid var(--bd-soft); /* §B2 — 패널 헤더가 본문과의 경계 소유 */
 }
-.view-tabs {
+.tabs {
   height: 100%;
   display: flex;
   /* 밴드 패딩 계약: 스트립이 --tab-pad 로 상하 여백을 소유, 항목은 stretch. */
@@ -1204,7 +1204,7 @@ body,
 }
 /* 커스텀 3px 가로 스크롤바: 네이티브 오버레이는 숨기고(전역 display:none) 여기서 그린다.
    배경에 동화되는 옅은 회색. ViewTabs 가 위치/폭을 동기화. */
-.view-scrollbar {
+.tabs-scrollbar {
   position: absolute;
   left: 0;
   bottom: 0;
@@ -1212,7 +1212,7 @@ body,
   height: 3px;
   pointer-events: none;
 }
-.view-scrollbar-thumb {
+.tabs-scrollbar-thumb {
   position: absolute;
   bottom: 0;
   height: 3px;
@@ -1221,10 +1221,10 @@ body,
   pointer-events: auto;
   cursor: pointer;
 }
-.view-scrollbar-thumb:hover {
+.tabs-scrollbar-thumb:hover {
   background: rgba(127, 127, 127, 0.4);
 }
-.view-tab {
+.tab {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1239,31 +1239,31 @@ body,
   white-space: nowrap;
   max-width: 220px;
 }
-.view-tab.active {
+.tab.active {
   background: rgba(127, 127, 127, 0.22);
   color: var(--fg);
 }
-.view-tab:hover {
+.tab:hover {
   background: rgba(127, 127, 127, 0.16);
 }
-.view-tab.active:hover {
+.tab.active:hover {
   background: rgba(127, 127, 127, 0.26);
 }
-.view-tab-icon {
+.tab-icon {
   font-size: 10px;
   opacity: 0.75;
 }
-.view-tab-title {
+.tab-title {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.view-tab-dirty {
+.tab-dirty {
   color: #c0a020;
   font-size: 9px;
   line-height: 1;
   padding: 0 1px;
 }
-.view-tab-close {
+.tab-close {
   border: none;
   background: transparent;
   color: inherit;
@@ -1274,11 +1274,11 @@ body,
   opacity: 0.55;
   border-radius: 3px;
 }
-.view-tab-close:hover {
+.tab-close:hover {
   opacity: 1;
   background: rgba(127, 127, 127, 0.3);
 }
-.view-add {
+.tab-add {
   align-self: center;
   border: none;
   background: transparent;
@@ -1289,21 +1289,15 @@ body,
   padding: 0 8px;
   border-radius: 5px;
 }
-.view-add:hover {
+.tab-add:hover {
   background: rgba(127, 127, 127, 0.16);
 }
 
 /* ── 브라우저 패널(child webview + URL 바 + 즐겨찾기) ──
    컨테이너는 투명(레이어 원칙) — .bv-area 가 홀이라 아래 webview 가 비친다.
-   URL 바/즐겨찾기는 각자 불투명 배경을 소유한다. */
-.browser-view {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  height: 100%;
-  background: transparent;
-  color: var(--fg);
-}
+   URL 바/즐겨찾기는 각자 불투명 배경을 소유한다.
+   컨테이너 자체(브라우저 플러그인의 뷰 루트)는 그 플러그인이 자기 CSS 로 선언한다 —
+   코어는 같은 선언을 중복 소유하지 않는다. */
 .bv-bar {
   flex: 0 0 auto;
   display: flex;
@@ -1677,84 +1671,9 @@ body,
   color: #4ea1ff;
 }
 
-/* pane 레이아웃: PanelGroup/Panel 이 탭 영역을 가득 채우고, 각 leaf 가 그 안에서
-   터미널을 100% 로 띄운다. */
-.pane-group {
-  width: 100%;
-  height: 100%;
-}
-.pane-panel {
-  overflow: hidden;
-}
-.pane-leaf {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-}
-/* 레지스트리 소유 호스트 div(이 안에 xterm 이 attach). 마운트 포인트를 가득 채운다. */
-.pane-host {
-  width: 100%;
-  height: 100%;
-}
-/* 포커스 표시의 단일 소유자는 프레임(.egroup-frame.focus — 설정 focusIndicator).
-   과거의 헤더 인셋 섀도(.egroup-title.active box-shadow)·전면 1px 윤곽선은 이중
+/* 포커스 표시의 단일 소유자는 프레임(.pane-border.focus — 설정 focusIndicator).
+   과거의 헤더 인셋 섀도(.pane-title.active box-shadow)·전면 1px 윤곽선은 이중
    표시라 제거 — 최대화 헤더에 상단 빨간 줄로 새던 사고의 원인. */
-
-/* 얇은 4px 드래그 가능한 분할선. hover/active 시 미세한 색 강조.
-   라이브러리가 flexBasis:auto, flexGrow/Shrink:0, cursor 를 inline 으로 설정하므로
-   크기는 width/height 로(flex shorthand 는 inline 에 밀린다), 상태는 data-separator 로. */
-.pane-resize-handle {
-  /* §B6 — 도구는 선을 소유하지 않는다: overlay 휴면 완전 투명. solid 테마에선
-     소유 위임으로 1px 중앙선만 표시(불투명 pane 사이엔 선을 들 DOM 이 없다). */
-  background: transparent;
-  transition: background-color 0.12s ease;
-}
-:root[data-divider="solid"] .pane-resize-handle.horizontal {
-  background-image: linear-gradient(var(--bd-soft), var(--bd-soft));
-  background-size: 1px 100%;
-  background-position: center;
-  background-repeat: no-repeat;
-}
-:root[data-divider="solid"] .pane-resize-handle.vertical {
-  background-image: linear-gradient(var(--bd-soft), var(--bd-soft));
-  background-size: 100% 1px;
-  background-position: center;
-  background-repeat: no-repeat;
-}
-.pane-resize-handle.horizontal {
-  width: 4px;
-  align-self: stretch;
-}
-.pane-resize-handle.vertical {
-  height: 4px;
-  align-self: stretch;
-}
-.pane-resize-handle:hover,
-.pane-resize-handle[data-separator="active"],
-.pane-resize-handle[data-separator="focus"] {
-  background-color: var(--accbg); /* 강조는 --accbg(§B4) */
-}
-
-.terminal-view {
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  background: var(--bg);
-}
-
-/* 패딩 없이 꽉 채운다. FitAddon 이 정수 행/열을 계산하므로 우/하단에 1셀 미만의
-   잔여만 남고, 그 잔여는 xterm-viewport 의 배경색이 var(--bg) 로 칠해져
-   보이지 않는다. */
-.terminal-view .xterm {
-  width: 100%;
-  height: 100%;
-  padding: 0;
-}
-
-.terminal-view .xterm .xterm-viewport {
-  background-color: var(--bg) !important;
-}
 
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1780,25 +1699,25 @@ body,
 
 /* ── 워크스페이스(컨텐츠) 탭 바 — 기하(height/padding-block)는 기본 규칙이
    소유(밴드 패딩 계약), SKIN 은 표면(배경/구분선/간격)만 덮는다. ── */
-.content-tabs {
+.space-tabs {
   padding-inline: 10px;
   gap: 6px;
   background: var(--side);
   border-bottom: 1px solid var(--bd);
 }
-:root[data-tab-bar="transparent"] .content-tabs {
+:root[data-tab-bar="transparent"] .space-tabs {
   background: transparent;
 }
-.view-tabs-wrap {
+.tabs-wrap {
   background: var(--side); /* 내부선(§B2)은 base 가 소유 — 여기선 표면색만 */
 }
-:root[data-tab-bar="transparent"] .view-tabs-wrap {
+:root[data-tab-bar="transparent"] .tabs-wrap {
   background: transparent;
 }
 
-/* ── 워크스페이스급 탭(.tab 프로젝트 / .ctab 컨텐츠) — SKIN wsA/wsI ── */
-.tab,
-.ctab {
+/* ── 워크스페이스급 탭(.project-tab 프로젝트 / .space-tab 컨텐츠) — SKIN wsA/wsI ── */
+.project-tab,
+.space-tab {
   padding: 0 12px;
   border-radius: 7px;
   font-size: 13px;
@@ -1806,12 +1725,12 @@ body,
   border: 1px solid transparent;
   color: var(--fg2);
 }
-.tab:hover,
-.ctab:hover {
+.project-tab:hover,
+.space-tab:hover {
   background: var(--inset);
 }
-.tab.active,
-.ctab.active {
+.project-tab.active,
+.space-tab.active {
   font-weight: 600;
   background: var(--card);
   border-color: var(--bd);
@@ -1822,12 +1741,12 @@ body,
 :root[data-tab-shape="pill"] {
   --ws-pad: 4px;
 }
-:root[data-tab-shape="pill"] .tab,
-:root[data-tab-shape="pill"] .ctab {
+:root[data-tab-shape="pill"] .project-tab,
+:root[data-tab-shape="pill"] .space-tab {
   border-radius: 8px;
 }
-:root[data-tab-shape="pill"] .tab.active,
-:root[data-tab-shape="pill"] .ctab.active {
+:root[data-tab-shape="pill"] .project-tab.active,
+:root[data-tab-shape="pill"] .space-tab.active {
   background: var(--inset);
   border-color: var(--bd);
   box-shadow: none;
@@ -1836,21 +1755,21 @@ body,
 :root[data-tab-shape="underline"] {
   --ws-pad: 0px;
 }
-:root[data-tab-shape="underline"] .tab,
-:root[data-tab-shape="underline"] .ctab {
+:root[data-tab-shape="underline"] .project-tab,
+:root[data-tab-shape="underline"] .space-tab {
   padding: 0 3px;
   border-radius: 0;
   font-size: 12.5px;
   border: none;
   border-bottom: 1.5px solid transparent;
 }
-:root[data-tab-shape="underline"] .tab:hover,
-:root[data-tab-shape="underline"] .ctab:hover {
+:root[data-tab-shape="underline"] .project-tab:hover,
+:root[data-tab-shape="underline"] .space-tab:hover {
   background: transparent;
   color: var(--fg);
 }
-:root[data-tab-shape="underline"] .tab.active,
-:root[data-tab-shape="underline"] .ctab.active {
+:root[data-tab-shape="underline"] .project-tab.active,
+:root[data-tab-shape="underline"] .space-tab.active {
   background: transparent;
   box-shadow: none;
   border-bottom-color: var(--fg);
@@ -1859,15 +1778,15 @@ body,
 :root[data-tab-shape="inverse"] {
   --ws-pad: 6px;
 }
-:root[data-tab-shape="inverse"] .tab,
-:root[data-tab-shape="inverse"] .ctab {
+:root[data-tab-shape="inverse"] .project-tab,
+:root[data-tab-shape="inverse"] .space-tab {
   padding: 0 10px;
   border-radius: 0;
   font-size: 12.5px;
   border: none;
 }
-:root[data-tab-shape="inverse"] .tab.active,
-:root[data-tab-shape="inverse"] .ctab.active {
+:root[data-tab-shape="inverse"] .project-tab.active,
+:root[data-tab-shape="inverse"] .space-tab.active {
   font-weight: 700;
   background: var(--acc);
   color: var(--bg);
@@ -1877,24 +1796,24 @@ body,
 :root[data-tab-shape="round"] {
   --ws-pad: 4px;
 }
-:root[data-tab-shape="round"] .tab,
-:root[data-tab-shape="round"] .ctab {
+:root[data-tab-shape="round"] .project-tab,
+:root[data-tab-shape="round"] .space-tab {
   padding: 0 14px;
   border-radius: 99px;
 }
-:root[data-tab-shape="round"] .tab.active,
-:root[data-tab-shape="round"] .ctab.active {
+:root[data-tab-shape="round"] .project-tab.active,
+:root[data-tab-shape="round"] .space-tab.active {
   background: var(--card);
   border-color: var(--bd);
   box-shadow: 0 1px 3px rgba(80, 65, 40, 0.08);
 }
 
 /* ── 패널(뷰) 탭(32px 바) — SKIN pt: 기하는 기본 규칙 소유, 표면만 덮는다 ── */
-.view-tabs {
+.tabs {
   gap: 5px;
   padding-inline: 8px;
 }
-.view-tab {
+.tab {
   padding: 0 11px;
   border-radius: 6px;
   font-size: 12px;
@@ -1902,38 +1821,38 @@ body,
   border: 1px solid transparent;
   color: var(--fg2);
 }
-.view-tab:hover {
+.tab:hover {
   background: var(--inset);
 }
-.view-tab.active {
+.tab.active {
   font-weight: 600;
   background: var(--card);
   border-color: var(--bd);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
   color: var(--fg);
 }
-.view-tab.active:hover {
+.tab.active:hover {
   background: var(--card);
 }
 /* 뷰 칩 = 32 − 3×2 = 26 */
 :root[data-tab-shape="pill"] {
   --tab-pad: 3px;
 }
-:root[data-tab-shape="pill"] .view-tab {
+:root[data-tab-shape="pill"] .tab {
   border-radius: 7px;
 }
-:root[data-tab-shape="pill"] .view-tab.active {
+:root[data-tab-shape="pill"] .tab.active {
   background: var(--inset);
   border-color: var(--bd);
   box-shadow: none;
 }
-:root[data-tab-shape="underline"] .view-tab {
+:root[data-tab-shape="underline"] .tab {
   padding: 0 4px;
   border-radius: 0;
   font-size: 11.5px;
   border: none;
 }
-:root[data-tab-shape="underline"] .view-tab.active {
+:root[data-tab-shape="underline"] .tab.active {
   background: transparent;
   box-shadow: none;
   color: var(--fg);
@@ -1942,13 +1861,13 @@ body,
 :root[data-tab-shape="inverse"] {
   --tab-pad: 5px;
 }
-:root[data-tab-shape="inverse"] .view-tab {
+:root[data-tab-shape="inverse"] .tab {
   padding: 0 10px;
   border-radius: 0;
   font-size: 11.5px;
   border: none;
 }
-:root[data-tab-shape="inverse"] .view-tab.active {
+:root[data-tab-shape="inverse"] .tab.active {
   font-weight: 700;
   background: var(--inset);
   box-shadow: none;
@@ -1958,11 +1877,11 @@ body,
 :root[data-tab-shape="round"] {
   --tab-pad: 4px;
 }
-:root[data-tab-shape="round"] .view-tab {
+:root[data-tab-shape="round"] .tab {
   padding: 0 13px;
   border-radius: 99px;
 }
-:root[data-tab-shape="round"] .view-tab.active {
+:root[data-tab-shape="round"] .tab.active {
   background: var(--accbg);
   border-color: transparent;
   box-shadow: none;
@@ -1970,36 +1889,36 @@ body,
 }
 
 /* ── 분할 패널 헤더(타이틀바 모드)·스테이터스바 ── */
-.egroup-title {
+.pane-title {
   background: var(--side);
   color: var(--fg2);
   font-size: 12px;
 }
-.egroup-title.active {
+.pane-title.active {
   color: var(--fg);
 }
-.egroup-status {
+.pane-status {
   font-size: 11.5px;
   padding: 0 12px;
   background: var(--side);
   color: var(--fg3);
 }
-:root[data-status-bg="inset"] .egroup-status {
+:root[data-status-bg="inset"] .pane-status {
   background: var(--inset);
 }
-:root[data-status-bg="transparent"] .egroup-status {
+:root[data-status-bg="transparent"] .pane-status {
   background: transparent;
 }
 
 /* ── 패널 처리(paneStyle, 레퍼런스 SKIN.pane): 패널 전체를 단일 카드 하나로.
-   그룹 셀(.egroup-cell)이 유일한 보더/배경/라운드. 내부 chrome(타이틀/탭/본문/
+   그룹 셀(.pane)이 유일한 보더/배경/라운드. 내부 chrome(타이틀/탭/본문/
    상태)은 투명·무보더 → 상하좌우 이음새(이중선) 제거. flat 은 카드 없음(투명). ── */
 /* 백킹 카드(z:0): --card 배경 + 라운드 + (floating)그림자. 보더는 여기 두지 않는다
    (불투명 터미널이 덮어 좌우/하단이 사라지므로). flat 은 배경 없음(투명). */
 /* 그룹 셀(z:0): 유일한 위치 지정 레이어 — 카드 배경/라운드 소유 + 내부 flex
    column([헤더][본문 공간][상태바]). 헤더/상태바 인터랙션을 받으므로
    pointer-events 차단하지 않는다(본문 영역은 위의 슬롯 레이어가 받음). */
-.egroup-cell {
+.pane {
   position: absolute;
   left: calc(var(--l) + var(--rail-dx, 0px) + var(--pane-inset));
   top: calc(var(--t) + var(--pane-inset));
@@ -2009,8 +1928,8 @@ body,
   flex-direction: column;
   z-index: 0;
 }
-:root[data-pane-style="card"] .egroup-cell,
-:root[data-pane-style="floating"] .egroup-cell {
+:root[data-pane-style="card"] .pane,
+:root[data-pane-style="floating"] .pane {
   background: var(--card);
   border-radius: 11px;
   overflow: hidden;
@@ -2018,15 +1937,15 @@ body,
 /* 홀 셀(레이어 원칙, browser.rs 머리말): 활성 뷰가 브라우저면 본문 영역이 홀 —
    카드 배경을 헤더/상태바 밴드로만 칠한다(중간은 투명, bv-bar 는 자체 배경).
    라운드 모서리는 overflow:hidden 이 밴드를 그대로 클립한다. */
-:root[data-pane-style="card"] .egroup-cell.cell-hole,
-:root[data-pane-style="floating"] .egroup-cell.cell-hole {
+:root[data-pane-style="card"] .pane.pane-hole,
+:root[data-pane-style="floating"] .pane.pane-hole {
   background:
     linear-gradient(var(--card), var(--card)) top / 100% var(--header-h)
       no-repeat,
     linear-gradient(var(--card), var(--card)) bottom / 100% var(--status-h)
       no-repeat;
 }
-:root[data-pane-style="floating"] .egroup-cell {
+:root[data-pane-style="floating"] .pane {
   border-radius: 14px;
   box-shadow: var(--shadow);
 }
@@ -2038,11 +1957,11 @@ body,
    flat 처럼 보더 없는 스타일에서도 동작. 스타일은 설정(focusIndicator →
    :root[data-focus-ind])이 선택: outline=사각 아웃라인(프레임 radius 추종),
    corners=모서리 꺽쇠 4개(radius 클리핑 회피로 2px 인셋). */
-:root[data-focus-ind="outline"] .egroup-frame.focus {
+:root[data-focus-ind="outline"] .pane-border.focus {
   outline: 1px solid var(--acc);
   outline-offset: -1px;
 }
-:root[data-focus-ind="corners"] .egroup-frame.focus {
+:root[data-focus-ind="corners"] .pane-border.focus {
   --fk-len: 14px; /* 꺽쇠 팔 길이 */
   --fk-th: 1px; /* 꺽쇠 두께 = 경계선 폭(같은 레인) */
   /* 꺽쇠는 본문(헤더/스테이터스 사이) 네 모서리 — 기존 1px 경계선 레인(헤더
@@ -2073,8 +1992,8 @@ body,
 /* 세로팔 — 프레임 좌/우 보더 레인 위 1px 스트립(::before=좌, ::after=우).
    absolute offset 은 padding-box 기준이라 -1px 로 보더 위에 정렬(flat 은
    보더 0 이라 0). 상/하 팔은 스트립 안 그라데이션 2개. */
-:root[data-focus-ind="corners"] .egroup-frame.focus::before,
-:root[data-focus-ind="corners"] .egroup-frame.focus::after {
+:root[data-focus-ind="corners"] .pane-border.focus::before,
+:root[data-focus-ind="corners"] .pane-border.focus::after {
   content: "";
   position: absolute;
   top: -1px;
@@ -2088,24 +2007,24 @@ body,
   background-size: 1px var(--fk-len);
   background-repeat: no-repeat;
 }
-:root[data-focus-ind="corners"] .egroup-frame.focus::before {
+:root[data-focus-ind="corners"] .pane-border.focus::before {
   left: -1px;
 }
-:root[data-focus-ind="corners"] .egroup-frame.focus::after {
+:root[data-focus-ind="corners"] .pane-border.focus::after {
   right: -1px;
 }
-:root[data-focus-ind="corners"][data-pane-style="flat"] .egroup-frame.focus::before {
+:root[data-focus-ind="corners"][data-pane-style="flat"] .pane-border.focus::before {
   left: 0;
 }
-:root[data-focus-ind="corners"][data-pane-style="flat"] .egroup-frame.focus::after {
+:root[data-focus-ind="corners"][data-pane-style="flat"] .pane-border.focus::after {
   right: 0;
 }
-:root[data-focus-ind="corners"][data-pane-style="flat"] .egroup-frame.focus::before,
-:root[data-focus-ind="corners"][data-pane-style="flat"] .egroup-frame.focus::after {
+:root[data-focus-ind="corners"][data-pane-style="flat"] .pane-border.focus::before,
+:root[data-focus-ind="corners"][data-pane-style="flat"] .pane-border.focus::after {
   top: 0;
   bottom: 0;
 }
-.egroup-frame {
+.pane-border {
   position: absolute;
   left: calc(var(--l) + var(--rail-dx, 0px) + var(--pane-inset));
   top: calc(var(--t) + var(--pane-inset));
@@ -2114,7 +2033,7 @@ body,
   pointer-events: none;
   z-index: 5;
 }
-:root[data-pane-style="card"] .egroup-frame {
+:root[data-pane-style="card"] .pane-border {
   border: 1px solid var(--bd);
   border-radius: 11px;
 }
@@ -2122,66 +2041,66 @@ body,
    덮는다 — 상단 밴드는 첫 줄(가시 여백 위 −1px), 하단 스테이터스는 마지막 줄.
    보더가 있는 pane 스타일에서만 1px 을 보정해 "보이는" 위/아래 여백을 대칭으로.
    (flat 은 보더가 없어 박스 여백 = 가시 여백 — 보정하면 오히려 비대칭.) */
-:root[data-pane-style="card"] .view-tabs,
-:root[data-pane-style="floating"] .view-tabs {
+:root[data-pane-style="card"] .tabs,
+:root[data-pane-style="floating"] .tabs {
   padding-top: calc(var(--tab-pad, 4px) + 1px);
 }
-:root[data-pane-style="card"] .egroup-title,
-:root[data-pane-style="floating"] .egroup-title {
+:root[data-pane-style="card"] .pane-title,
+:root[data-pane-style="floating"] .pane-title {
   padding-top: 1px;
 }
-:root[data-pane-style="card"] .egroup-status,
-:root[data-pane-style="floating"] .egroup-status {
+:root[data-pane-style="card"] .pane-status,
+:root[data-pane-style="floating"] .pane-status {
   padding-bottom: 1px;
 }
-:root[data-pane-style="floating"] .egroup-frame {
+:root[data-pane-style="floating"] .pane-border {
   border: 1px solid var(--bd);
   border-radius: 14px;
 }
 /* 카드/플로팅: chrome(타이틀/탭/상태) 은 투명(카드 --card 가 비침), 본문 body-slot
    은 터미널 배경 --bg 로 채운다 — 터미널 fit 잔여(1셀 미만)가 --card 로 비쳐
    "100% 높이 안 참"처럼 보이던 문제 제거. 내부선(§B2)은 base 규칙이 소유. */
-:root[data-pane-style="card"] .egroup-title,
-:root[data-pane-style="card"] .egroup-tabs,
-:root[data-pane-style="card"] .egroup-status,
-:root[data-pane-style="floating"] .egroup-title,
-:root[data-pane-style="floating"] .egroup-tabs,
-:root[data-pane-style="floating"] .egroup-status {
+:root[data-pane-style="card"] .pane-title,
+:root[data-pane-style="card"] .pane-tabs,
+:root[data-pane-style="card"] .pane-status,
+:root[data-pane-style="floating"] .pane-title,
+:root[data-pane-style="floating"] .pane-tabs,
+:root[data-pane-style="floating"] .pane-status {
   background: transparent; /* 내부선(§B2)은 base 가 소유 — 여기선 배경만 */
 }
-/* 홀 제외를 규칙의 원천에서 명시한다 — 홀 규칙(.hole-slot, 아래)과의 특이성 전쟁 금지.
+/* 홀 제외를 규칙의 원천에서 명시한다 — 홀 규칙(.tab-body-hole, 아래)과의 특이성 전쟁 금지.
    pane 배경(0-3-0)이 홀 투명(0-2-0)을 이겨 card/floating 에서 모든 홀이 닫히던 실사고:
    비포커스에서만 dim 베일(0-5-0, 반투명)이 우연히 이걸 눌러 열려 "포커스 때만 블랭크"로
    위장됐다. 표면 종류의 사실(홀)은 스타일(pane)보다 우선한다. */
-:root[data-pane-style="card"] .egroup-body-slot:not(.hole-slot),
-:root[data-pane-style="floating"] .egroup-body-slot:not(.hole-slot) {
+:root[data-pane-style="card"] .tab-body:not(.tab-body-hole),
+:root[data-pane-style="floating"] .tab-body:not(.tab-body-hole) {
   background: var(--bg);
 }
-:root[data-pane-style="card"] .egroup-body-slot,
-:root[data-pane-style="floating"] .egroup-body-slot {
+:root[data-pane-style="card"] .tab-body,
+:root[data-pane-style="floating"] .tab-body {
   border: none;
 }
 /* 홀 슬롯은 배경을 칠하지 않는다(레이어 원칙) — 기준은 뷰의 transparent 선언 하나이며,
-   슬롯은 셀의 자식이 아니라 영속 레이어의 형제이므로 GroupArea 가 슬롯 자신에 hole-slot
+   슬롯은 셀의 자식이 아니라 영속 레이어의 형제이므로 GroupArea 가 슬롯 자신에 tab-body-hole
    으로 새긴다. 콘텐츠 클래스(:has(.browser-view)) 기준은 폐지: 선언 없이 우연히 성립하는
    홀도, 선언했는데 새는 홀도 없어야 한다(모든 홀 소비자 — 이 배경 규칙·아래 베일 예외·
    레일-홀 클립 — 가 같은 한 기준에서 파생된다). pane 스타일 무관: 홀은 스타일이 아니라
    표면 종류의 사실이다. */
-.egroup-body-slot.hole-slot {
+.tab-body.tab-body-hole {
   background: transparent;
 }
 /* 스포트라이트 베일은 ::after 단일 축이다(§포커스 스포트라이트 블록) — 슬롯 자체 배경
    베일과의 이중 적용은 금지: 동결 스탠드인(z3)이 슬롯 배경(자식 아래)만 가리고 ::after(z4)
    는 못 가려, 위상마다 dim 이 반감→복귀하는 밝음-펄스를 만들었다(실측: 상호작용마다
    187→202→187 휘도 계단 = "포커스 인/아웃" 오인의 진원). */
-:root[data-pane-style="card"] .egroup-tabs .view-tabs-wrap,
-:root[data-pane-style="floating"] .egroup-tabs .view-tabs-wrap {
+:root[data-pane-style="card"] .pane-tabs .tabs-wrap,
+:root[data-pane-style="floating"] .pane-tabs .tabs-wrap {
   background: transparent;
 }
 
 /* ── 떠 있는 표면(card): 메뉴/모달/찾기 위젯 ── */
-.ctab-menu,
-.ctab-submenu,
+.space-tab-menu,
+.space-tab-submenu,
 .cm-find {
   background: var(--card);
   border-color: var(--bd);
@@ -2192,7 +2111,6 @@ body,
 
 /* ── 눌린 표면(inset): 입력류 ── */
 .bv-url,
-.tab-rename,
 .cmf-input {
   background: var(--inset);
   color: var(--fg);
@@ -2213,7 +2131,7 @@ body,
    네이티브 자식(브라우저 표면)으로 빠질 때 leave 가 안 와 붙들리고, accent 세로선이 창 본문
    전체 높이로 브라우저를 가로지른 채 남는다(실측). :hover 는 스크립트로 구동·해제할 수 없어
    검증도 불가능하다 — 상태로 옮기면 둘 다 풀린다. */
-.egroup-divider[data-hover] {
+.pane-gutter[data-hover] {
   background: var(--accbg);
 }
 .drop-ind {
@@ -2223,21 +2141,21 @@ body,
 
 /* ── 크롬 폰트(font: mono → JetBrains Mono, 레퍼런스 fontFam) ── */
 :root[data-chrome-font="mono"] .titlebar,
-:root[data-chrome-font="mono"] .content-tabs,
-:root[data-chrome-font="mono"] .view-tabs-wrap,
-:root[data-chrome-font="mono"] .egroup-title,
-:root[data-chrome-font="mono"] .egroup-status,
-:root[data-chrome-font="mono"] .ctab-menu,
+:root[data-chrome-font="mono"] .space-tabs,
+:root[data-chrome-font="mono"] .tabs-wrap,
+:root[data-chrome-font="mono"] .pane-title,
+:root[data-chrome-font="mono"] .pane-status,
+:root[data-chrome-font="mono"] .space-tab-menu,
 :root[data-chrome-font="mono"] .ft-sidebar {
   font-family: "JetBrains Mono", monospace;
 }
 
 /* ── 효과: 글로우(크롬 텍스트) + 스캔라인 오버레이 ── */
 .titlebar,
-.content-tabs,
-.view-tabs-wrap,
-.egroup-title,
-.egroup-status {
+.space-tabs,
+.tabs-wrap,
+.pane-title,
+.pane-status {
   text-shadow: var(--glow, none);
 }
 body::after {
@@ -2473,7 +2391,7 @@ body::after {
   padding: 12px 10px 4px;
   text-transform: uppercase;
 }
-.settings-pane {
+.settings-detail {
   flex: 1;
   min-width: 0;
 }
@@ -2630,11 +2548,11 @@ body::after {
   align-items: center;
   width: 100%;
 }
-.settings-list-cell {
+.settings-list-field {
   flex: 1;
   min-width: 0;
 }
-.settings-map-cell {
+.settings-map-field {
   flex: 1;
   min-width: 0;
 }
@@ -2863,12 +2781,12 @@ select.dctl {
 }
 
 /* 테마 그리드(레퍼런스: 86px 셀, 스와치 34px + acc 점, 활성 = acc 보더) */
-.th-grid {
+.th-list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(86px, 1fr));
   gap: 7px;
 }
-.th-cell {
+.th-item {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -2877,7 +2795,7 @@ select.dctl {
   border: 1.5px solid var(--bd);
   cursor: pointer;
 }
-.th-cell.active {
+.th-item.active {
   border-color: var(--acc);
 }
 .th-swatch {
@@ -2953,7 +2871,7 @@ select.dctl {
 }
 
 /* 프로젝트 식별 색 점(상단 탭) + 색상 팔레트(프로젝트 설정 모달). */
-.tab-dot {
+.project-tab-dot {
   flex: 0 0 auto;
   width: 8px;
   height: 8px;
@@ -3027,10 +2945,10 @@ select.dctl {
 }
 
 /* ── 컨텐츠 탭 좌측 모드: content 를 행으로, 탭을 세로 스트립(제품 계약 138px) ── */
-.content.ctabs-left {
+.content.space-tabs-left {
   flex-direction: row;
 }
-.content-tabs.vertical {
+.space-tabs.vertical {
   flex-direction: column;
   align-items: stretch;
   width: 138px;
@@ -3043,25 +2961,25 @@ select.dctl {
   overflow-y: auto;
 }
 /* 세로 리스트 = 가로 밴드 계약 밖(게이트 예외) — 항목 높이를 직접 소유한다. */
-.content-tabs.vertical .ctab {
+.space-tabs.vertical .space-tab {
   width: 100%;
   height: 26px;
   flex: 0 0 auto;
   justify-content: flex-start;
 }
-.content-tabs.vertical .ctab-add {
+.space-tabs.vertical .space-tab-add {
   width: 100%;
   height: 26px;
   flex: 0 0 auto;
 }
-.content.ctabs-left .content-body {
+.content.space-tabs-left .space-body {
   flex: 1 1 auto;
   min-width: 0;
 }
 
 /* ── 우측 플러그인 사이드바 (오버레이) ────────────────────────────────────────
    분할(flex)이 아니라 콘텐츠 위에 떠 있는 오버레이다 — 토글해도 본문(터미널/에디터)이
-   리사이즈되지 않는다. .terminal-pane(position:absolute inset:0) 기준으로 absolute. */
+   리사이즈되지 않는다. .project-plane(position:absolute inset:0) 기준으로 absolute. */
 .sidebar-right {
   position: absolute;
   top: 0;
@@ -3139,10 +3057,10 @@ select.dctl {
   padding: 0;
 }
 
-/* 사이드바 탭 읽지않음 배지(view-badge). 매니저 칩(.plugin-badge — 출처/상태 칩)과 다른 클래스로
+/* 사이드바 탭 읽지않음 배지(tab-badge). 매니저 칩(.plugin-badge — 출처/상태 칩)과 다른 클래스로
    분리(이전엔 같은 .plugin-badge 를 재사용해 매니저 칩 배경을 덮어쓰던 충돌이 있었음).
    레일(아이콘)=우상단 절대배치, 좌측 탭=인라인 핀. 배경=강조색(테마 토큰). */
-.view-badge {
+.tab-badge {
   box-sizing: border-box;
   background: var(--acc);
   color: #fff; /* 강조색 위 텍스트(보더 아님 — B4 무관) */
@@ -3151,7 +3069,7 @@ select.dctl {
   line-height: 1;
   border-radius: 999px;
 }
-.view-badge-count {
+.tab-badge-count {
   min-width: 15px;
   height: 15px;
   padding: 0 4px;
@@ -3159,24 +3077,24 @@ select.dctl {
   align-items: center;
   justify-content: center;
 }
-.view-badge-dot {
+.tab-badge-dot {
   width: 8px;
   height: 8px;
   display: inline-block;
 }
-.plugin-rail-btn .view-badge-count {
+.plugin-rail-btn .tab-badge-count {
   position: absolute;
   top: -3px;
   right: -3px;
   /* 배경색 링(아이콘과 분리) — box-shadow 사용(보더 직색 금지 §B4 회피). */
   box-shadow: 0 0 0 1.5px var(--bg2);
 }
-.plugin-rail-btn .view-badge-dot {
+.plugin-rail-btn .tab-badge-dot {
   position: absolute;
   top: 1px;
   right: 1px;
 }
-.left-host-tab .view-badge {
+.left-host-tab .tab-badge {
   margin-left: 4px;
   vertical-align: middle;
 }
@@ -3217,9 +3135,9 @@ select.dctl {
   flex-direction: column;
   overflow: hidden;
 }
-.plugin-view-slot {
+.plugin-slot {
   /* sidebar-right 플러그인 뷰 슬롯 — flex:1 로 본문 높이를 차지하고 position:relative 로
-     containing block 을 세워 .plugin-view-host(absolute inset:0)가 이 박스를 채우게 한다. */
+     containing block 을 세워 .plugin-host(absolute inset:0)가 이 박스를 채우게 한다. */
   flex: 1;
   min-height: 0;
   position: relative;
@@ -3228,20 +3146,20 @@ select.dctl {
    배치(content/sidebar-left/sidebar-right)마다 PluginViewHost 를 담는 "슬롯"이 있다.
    - 독립성: 각 슬롯은 자기 크기·위치를 스스로 정한다(content=절대배치 픽셀, 사이드바=flex:1).
      단, 공통 계약 하나 — 슬롯은 positioned(position:relative/absolute) containing block 이어야 한다.
-       · content    .egroup-body-slot   = position:absolute + definite px (GroupArea)
-       · sidebar-R  .plugin-view-slot    = flex:1 + position:relative   (PluginSidebar)
+       · content    .tab-body   = position:absolute + definite px (GroupArea)
+       · sidebar-R  .plugin-slot    = flex:1 + position:relative   (PluginSidebar)
        · sidebar-L  .left-host-body      = flex:1 + position:relative   (LeftSidebarHost)
-   - 상속: .plugin-view-host 는 그 슬롯을 absolute inset:0 로 균일하게 꽉 채운다(배치 불문 동일).
+   - 상속: .plugin-host 는 그 슬롯을 absolute inset:0 로 균일하게 꽉 채운다(배치 불문 동일).
      (flex:1 은 부모가 flex 일 때만 유효 → content 슬롯[block]에서 무효였다. absolute inset:0 는
       positioned 부모면 배치에 무관하게 가로·세로 definite 픽셀을 부여 → 어떤 플러그인도 100%/
       absolute 로 채울 수 있다.) 새 배치 추가 시 슬롯을 positioned 로 만드는 것이 유일한 의무. */
-.plugin-view-host {
+.plugin-host {
   position: absolute;
   inset: 0;
   display: flex;
   flex-direction: column;
 }
-.plugin-view-container {
+.tab-container {
   /* definite-높이 flex 컬럼 host 안의 flex:1 → 컨테이너도 definite 높이(+가로 stretch).
      position:relative = 플러그인이 absolute 콘텐츠를 쓸 때의 containing block. */
   position: relative;
@@ -3258,26 +3176,26 @@ select.dctl {
 /* transparent 선언 콘텐츠 뷰(브라우저 등 네이티브 child webview 를 셀-hole 아래로 비치게
    하는 뷰)는 컨테이너 배경을 비운다 — var(--bg) 가 hole 을 덮어 네이티브 webview 가
    안 보이는 것을 막는다(레거시 코어 브라우저는 이 래퍼 없이 셀에 직접 렌더됐다). */
-.plugin-view-container.transparent {
+.tab-container.transparent {
   background: transparent;
 }
-.plugin-view-empty,
-.plugin-view-error {
+.plugin-empty,
+.plugin-error {
   padding: 14px;
   color: var(--fg3);
   font-size: 12px;
 }
-.plugin-view-error-title {
+.plugin-error-title {
   font-weight: 600;
   color: #e5534b;
 }
-.plugin-view-error-msg {
+.plugin-error-msg {
   margin-top: 4px;
   font: 11px "JetBrains Mono", monospace;
   word-break: break-all;
   color: var(--fg2);
 }
-/* 하단 스테이터스바 — egroup-status 와 동일한 시각 언어(24px, --side 배경). */
+/* 하단 스테이터스바 — pane-status 와 동일한 시각 언어(24px, --side 배경). */
 .plugin-side-status {
   flex: 0 0 24px;
   height: 24px;
@@ -3669,14 +3587,14 @@ select.dctl {
      프레임 헤더가 pane 그룹 헤더와 같은 행에 앉는다(R1c — 테마 paneStyle 별로 자동 추종). */
   padding-top: var(--pane-inset, 0px);
 }
-/* 셀이 % 절대위치로 깔리는 그리드 — 콘텐츠 egroup-area 와 동일 모델. footer 는 그 아래 흐름. */
-.left-host-grid {
+/* 셀이 % 절대위치로 깔리는 그리드 — 콘텐츠 space 와 동일 모델. footer 는 그 아래 흐름. */
+.left-panes {
   position: relative;
   flex: 1;
   min-height: 0;
 }
 /* leaf 셀 — computeSplitLayout 의 % rect 로 절대 배치(콘텐츠 영역과 동일 레이아웃 머신). */
-.left-host-cell {
+.left-pane {
   position: absolute;
   left: var(--l);
   top: var(--t);
@@ -3706,7 +3624,7 @@ select.dctl {
 .left-host-tabs {
   flex: 0 0 auto;
   display: flex;
-  /* 콘텐츠 탭 줄(.content-tabs)과 *동일* — stretch + 세로패딩 5px 로 탭이 26px 칩이 되어 콘텐츠 탭과
+  /* 콘텐츠 탭 줄(.space-tabs)과 *동일* — stretch + 세로패딩 5px 로 탭이 26px 칩이 되어 콘텐츠 탭과
      치수·정렬 일치(높이는 --chrome-row-h 계약 소유, 패딩은 칩 높이 결정). */
   align-items: stretch;
   gap: 2px;
@@ -3714,17 +3632,17 @@ select.dctl {
   overflow-x: auto;
   border-bottom: 1px solid var(--bd);
 }
-/* 사이드바 탭은 .view-tab(콘텐츠 뷰 탭) 디자인을 그대로 쓴다 — left-host-tab 은 드래그 마커뿐.
-   시각 속성은 .view-tab 가 단독 소유(중복/충돌 금지). */
+/* 사이드바 탭은 .tab(콘텐츠 뷰 탭) 디자인을 그대로 쓴다 — left-host-tab 은 드래그 마커뿐.
+   시각 속성은 .tab 가 단독 소유(중복/충돌 금지). */
 .left-host-tab.dragging {
   opacity: 0.5;
 }
 /* 탭 이름변경 인라인 입력(B1) — 탭과 같은 폰트/패딩, accent 윤곽만. 박스 안 박스 회피. */
-/* 좌측 탭 rename 은 콘텐츠 탭과 동일하게 .ctab.editing(박스) + .ctab-rename(투명 입력) 재사용 —
+/* 좌측 탭 rename 은 콘텐츠 탭과 동일하게 .space-tab.editing(박스) + .space-tab-rename(투명 입력) 재사용 —
    별도 .left-host-tab-rename 은 제거(폰트/박스 이중정의 방지). */
 .left-host-body {
   /* sidebar-left 플러그인 뷰 슬롯 — flex:1 + position:relative containing block(슬롯 계약).
-     .plugin-view-host(absolute inset:0)가 이 박스를 채운다. */
+     .plugin-host(absolute inset:0)가 이 박스를 채운다. */
   flex: 1;
   min-height: 0;
   position: relative;
@@ -3747,7 +3665,7 @@ select.dctl {
 }
 /* footer 슬롯의 뷰 호스트는 absolute(inset:0)가 아니라 일반 흐름 — 콘텐츠가 높이를 만든다
    (sidebar/content 는 부모 flex:1 박스를 채우지만, footer 는 콘텐츠 높이가 슬롯 높이). */
-.left-host-footer .plugin-view-host {
+.left-host-footer .plugin-host {
   position: static;
   inset: auto;
 }
@@ -3798,28 +3716,28 @@ select.dctl {
   height: 16px;
   border-radius: 50%;
 }
-/* 닫기 x(3종: 프로젝트=tab-close / 콘텐츠=ctab-close / 뷰=view-tab-close) — icon-btn--mini(16px)
+/* 닫기 x(3종: 프로젝트=project-tab-close / 콘텐츠=space-tab-close / 뷰=tab-close) — icon-btn--mini(16px)
    박스가 작아 그 안의 글리프도 작아진다. 박스를 키우고, close 글리프(lucide x)가 viewBox 가운데
    절반만 그리므로 svg 를 박스보다 키워 × 를 또렷이. opacity 는 같은 요소의 .icon-btn(0.7)을 특이성
    한 단으로 이겨 베어 0.85, hover 100%. 세 종류 모두 동일 규칙 — 하나라도 빠지면 그 탭만 작게 남는다. */
-.icon-btn.tab-close,
-.icon-btn.ctab-close,
-.icon-btn.view-tab-close {
+.icon-btn.project-tab-close,
+.icon-btn.space-tab-close,
+.icon-btn.tab-close {
   width: 14px;
   height: 14px;
   padding: 0;
   opacity: 0.85;
 }
-.icon-btn.tab-close svg,
-.icon-btn.ctab-close svg,
-.icon-btn.view-tab-close svg {
+.icon-btn.project-tab-close svg,
+.icon-btn.space-tab-close svg,
+.icon-btn.tab-close svg {
   width: 18px;
   height: 18px;
 }
-.tab:hover .icon-btn.tab-close,
-.icon-btn.tab-close:hover,
-.icon-btn.ctab-close:hover,
-.icon-btn.view-tab-close:hover {
+.project-tab:hover .icon-btn.project-tab-close,
+.icon-btn.project-tab-close:hover,
+.icon-btn.space-tab-close:hover,
+.icon-btn.tab-close:hover {
   opacity: 1;
 }
 /* 탭 타입 아이콘 등 비버튼 아이콘 정렬용 래퍼. */
@@ -3854,24 +3772,24 @@ select.dctl {
    - 패딩이 정수면 항목 y 도 항상 정수 — 절반픽셀 센터링(상하 공백 차이) 불가.
    - 테마 자유 = :root 변수(--tab-pad 뷰 밴드 / --ws-pad ws 밴드)만. 항목에
      height 직접 지정 금지(vitest 게이트 강제 — 세로 리스트/레일만 예외). */
-.view-tabs .view-tab,
-.view-tabs .view-add,
-.tab,
-.ctab,
-.tab-add,
-.ctab-add {
+.tabs .tab,
+.tabs .tab-add,
+.project-tab,
+.space-tab,
+.project-tab-add,
+.space-tab-add {
   height: auto;
   align-self: stretch;
   margin: 0;
 }
-.ctab-add-wrap {
+.space-tab-add-wrap {
   align-self: stretch;
   display: flex;
   align-items: stretch;
 }
-.view-add,
 .tab-add,
-.ctab-add {
+.project-tab-add,
+.space-tab-add {
   width: auto;
   padding: 0 10px;
   border-radius: 6px;
@@ -3890,8 +3808,8 @@ select.dctl {
    컨텐츠 탭)는 같은 행 — 높이는 이 규칙이 소유(개별 블록 height 지정 금지: cssContract R3). */
 .plugin-side-head,
 .left-host-tabs,
-.content-tabs,
-.tabs {
+.space-tabs,
+.project-tabs {
   height: var(--chrome-row-h, 37px);
 }
 
