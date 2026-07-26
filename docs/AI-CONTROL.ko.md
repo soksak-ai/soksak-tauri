@@ -94,7 +94,7 @@ soksak 의 모든 기능을 AI 에게 주는 방식의 정본 규칙. 세 가지
 
 ### CLI (`sok`)
 - **사용대상**: 터미널 안 사람 + 터미널 안 에이전트(claude/codex 가 PTY 안에서 `sok` 실행).
-- **제공기능**: 임의 명령 `sok <cmd> '{json}'`, 발견 `sok commands`/`help <cmd>`/`docs`, 스트림 팔로우 `sok events [--kinds] [--since]`(JSONL, Ctrl-C 종료), MCP 브리지 `sok mcp`, 교육 설치 `sok skill install` / 출력 `sok skill print`(라이브 SKILL.md stdout — 헤드리스 에이전트의 프롬프트 재료). SOKSAK_PANE/WINDOW/SOCKET 자동 인지로 자기 위치 기본 타겟, `--window <label>` 은 타겟 창 명시 오버라이드(SOKSAK_WINDOW 보다 우선 — 셸 권한이 `sok …` 접두만 허용하는 에이전트의 창 지정 수단).
+- **제공기능**: 임의 명령 `sok <cmd> '{json}'`, 발견 `sok commands`/`help <cmd>`/`docs`, 스트림 팔로우 `sok events [--kinds] [--since]`(JSONL, Ctrl-C 종료), MCP 브리지 `sok mcp`, 교육 설치 `sok skill install` / 출력 `sok skill print`(라이브 SKILL.md stdout — 헤드리스 에이전트의 프롬프트 재료). SOKSAK_CALLER_TAB/WINDOW/SOCKET 자동 인지로 자기 위치 기본 타겟, `--window <label>` 은 타겟 창 명시 오버라이드(SOKSAK_WINDOW 보다 우선 — 셸 권한이 `sok …` 접두만 허용하는 에이전트의 창 지정 수단).
 - **상관**: `SOKSAK_PARENT`(오케스트레이터가 스폰한 에이전트에 주입)가 모든 요청에 meta `parent` 로 실려 활동 엔트리 `payload.parentId` 가 된다 — 실행들이 그 대화 턴으로 묶인다(MESSAGE-PROTOCOL §4). PANE/WINDOW 와 같은 env 컨텍스트 모델, MCP `soksak.run` 도 같은 지점을 지난다.
 - **제공방법**: 워크스페이스 `cli` 크레이트 → `sok` 바이너리. `resolve_socket`. `run_request`/`run_help`/`run_docs` 전부 `fetch_commands()`=`state.commands` 파생, `run_events` 는 연결을 push 스트림으로 전환.
 - **무엇**: 현 구현 유지. help/docs 가 `catalogJson` 파생임을 규칙으로 고정. 정적 명령 목록 하드코딩 금지.
@@ -139,7 +139,7 @@ soksak 의 모든 기능을 AI 에게 주는 방식의 정본 규칙. 세 가지
 - CLI 완비: `resolve_socket`/`request`/`run_request`/`run_help`/`run_docs`/`run_events`.
 - MCP 구현: `sok mcp` = stdio JSON-RPC 2.0, 발견형 메타툴.
 - Skill 설치기: AUTO-GENERATED 헤더의 트리거 스킬.
-- PTY env 자동 주입: SOKSAK_PANE + SOKSAK_SOCKET(+ SOKSAK_WINDOW).
+- PTY env 자동 주입: SOKSAK_CALLER_TAB + SOKSAK_SOCKET(+ SOKSAK_WINDOW; SOKSAK_PANE 은 전 세션 교체까지의 이행용 옛 이름).
 - 플러그인 명령 기여: `contributes.commands`→`plugin.<id>.<name>` → 같은 registry → CLI/MCP 자동 노출.
 - 활동 허브(P11–P12): 링 cap 2000+단조 seq, 전 창 `activity` 브로드캐스트, core/activity 영속(retention), `activity.recent` 커맨드, `events.subscribe` 소켓 push(kinds 필터·since 백필·bounded drop-oldest 구독자), registry execute 계측(파라미터 키만).
 

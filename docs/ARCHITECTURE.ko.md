@@ -41,7 +41,7 @@ soksak 은 뼈대다. 공통 인터페이스를 관리하며, 그 외에는 아�
 | **커맨드 레지스트리(단일진실)** | `src/commands/registry.ts` | 레지스트리는 하나다. 모든 명령(코어·플러그인)은 타입드 파라미터 스키마와 danger 게이트로 1회 등록한다. `catalogJson()` 이 같은 집합을 CLI·MCP·docs 에 자동 노출한다. 이 레지스트리 밖의 명령은 존재하지 않는다. |
 | **Capability API(`app.*`)** | `src/plugins/api.ts` | 플러그인이 받는 유일한 런타임 표면. 권한 게이트 — 미선언 권한은 부재(undefined) capability 가 된다. 플러그인별 네임스페이스(`data[ns=pluginId]`, `secrets[ns=pluginId]`, `plugin.<id>.<cmd>`). |
 | **이벤트 버스** | `src/plugins/hooks.ts`, `src/plugins/bus.ts` | 시스템 이벤트(`project.*`, `file.*`, `command.*`, `turn.ended`, `theme.changed`, `locale.changed`, `app.focus`, `bookmarks.changed`)는 권한 게이트다. `bus.*` 는 코어 상태와 무관한 플러그인 간 pub/sub 다. |
-| **프로그램(+메뉴) 레지스트리** | `src/plugins/programRegistry.ts` | 선언적 `contributes.programs[]`. 각 프로그램은 `kind` 를 선언한다. +메뉴와 `view.open` 이 `kind` 로 라우팅한다. 플러그인이 프로그램을 선언하고, 뼈대가 라우팅한다. |
+| **프로그램(+메뉴) 레지스트리** | `src/plugins/programRegistry.ts` | 선언적 `contributes.programs[]`. 각 프로그램은 `kind` 를 선언한다. +메뉴와 `tab.open` 이 `kind` 로 라우팅한다. 플러그인이 프로그램을 선언하고, 뼈대가 라우팅한다. |
 | **뷰 배치·포커스 레지스트리** | `src/plugins/viewRegistry.ts`, `src/plugins/viewFocus.ts` | `registerView(viewId, provider)` + 배치(`content`, `sidebar-left`, `sidebar-right`, `footer`). mount/unmount 는 수명만 소유한다. 선택적 `prepareFocusTransfer` / `focus` 가 유일한 키보드 포커스 경계다. 코어는 목적지와 순서를 소유하고 provider 는 자기 컨테이너만 다룬다. 마운트는 포커스 의도가 아니며 지연 포커스는 전달된 `AbortSignal`을 반드시 지킨다. |
 | **네이티브 범용 capability** | `src-tauri/src/*` | PTY spawn/IO/흐름제어(`pty.rs`), child-webview 수명 + 레이어 역전 + hole-punch(`browser.rs`), 미디어 프록시(`mediaproxy.rs`), 데이터 스토어(rusqlite + FTS5), 시크릿 볼트, 프로세스/WebSocket/HTTP 클라이언트, 파일시스템. 전부 범용 — 어떤 것도 구체 기능 소비자의 이름을 갖지 않는다. |
 
@@ -100,7 +100,7 @@ soksak 은 뼈대다. 공통 인터페이스를 관리하며, 그 외에는 아�
 플러그인 뷰는 오직 shadow root 로 전파되는 호스트 주입 CSS 커스텀 프로퍼티로만 테마를 상속한다. 플러그인은 테마 스토어를 읽거나, 팔레트 값을 하드코딩하거나, 테마 이름으로 분기해서는 안 된다. 호스트를 다시 칠하면 규격을 따르는 모든 플러그인이 플러그인 수정 없이 다시 칠해진다.
 
 ### A11. 에디터는 플러그인이다 — 뼈대는 라우팅만 하고 편집하지 않는다.
-경로를 콘텐츠로 여는 것은 범용 뼈대 라우팅 커맨드(`editor.open` — 경로를-콘텐츠로)를 지나, 그 파일 타입의 뷰어를 등록한(`registerFileViewer`) 플러그인으로 디스패치된다. 뼈대는 에디터 인스턴스를 소유하지 않고 에디터 엔진을 공급하지 않는다. 에디터 플러그인이 자기 엔진(기본 CodeMirror, 교체로 Monaco 등)을 소유하고 스스로 번들하며 자기 확장 표면을 노출한다; 포매터·언어 플러그인은 뼈대가 아니라 에디터 플러그인에 매니페스트 `dependencies` 로 의존한다. 활성 파일 읽기/쓰기는 에디터 플러그인의 capability 이며 커맨드/이벤트 표면으로 중개된다 — 뼈대 소유 에디터가 아니다.
+경로를 콘텐츠로 여는 것은 범용 뼈대 라우팅 커맨드(`ui.intent.open` — 경로를-콘텐츠로)를 지나, 그 파일 타입의 뷰어를 등록한(`registerFileViewer`) 플러그인으로 디스패치된다. 뼈대는 에디터 인스턴스를 소유하지 않고 에디터 엔진을 공급하지 않는다. 에디터 플러그인이 자기 엔진(기본 CodeMirror, 교체로 Monaco 등)을 소유하고 스스로 번들하며 자기 확장 표면을 노출한다; 포매터·언어 플러그인은 뼈대가 아니라 에디터 플러그인에 매니페스트 `dependencies` 로 의존한다. 활성 파일 읽기/쓰기는 에디터 플러그인의 capability 이며 커맨드/이벤트 표면으로 중개된다 — 뼈대 소유 에디터가 아니다.
 
 ### A12. 검증하라, 가정하지 마라.
 적합성은 주장이 아니라 증명이다(6장). "분리돼 보인다"는 분리가 아니다. 매치를 돌려주는 grep 은 스타일 노트가 아니라 실패한 분리 테스트다.

@@ -73,19 +73,19 @@ Codex·Gemini 도 동일 패턴: `codex mcp add` / `gemini mcp add` (네이티�
 ### 사용 (에이전트가 자연어로)
 
 1. `soksak_commands` → 무엇이 가능한지(도메인 지도)
-2. `soksak_help {command:"panel.split"}` → 그 명령 스키마
-3. `soksak_run {command:"panel.split", params:{side:"right"}}` → 실행
+2. `soksak_help {command:"pane.split"}` → 그 명령 스키마
+3. `soksak_run {command:"pane.split", params:{side:"right"}}` → 실행
 
 `soksak_run` 인자 키는 **`command`** + 선택 `params`(JSON). 잘못된 키(`method` 등)는 `command 필수` 에러.
 
 ## 3. 검증 워크플로 (always verify)
 
 1. `sok state.tree` 로 타겟 발견(모든 id + 화면 rect).
-2. 명령 실행 → 응답에서 결과 id 확인(예 `panel.split` → `{panelId, viewId, paneId}`).
+2. 명령 실행 → 응답에서 결과 id 확인(예 `pane.split` → `{paneId, tabId}`).
 3. `sok state.tree` / `sok term.read` 로 교차검증.
 4. 에러는 구조적: `{ok:false, code:"TARGET_NOT_FOUND|LAST_ITEM|INVALID_PARAMS|TIMEOUT", message}`.
 
-터미널 안에서는 `$SOKSAK_PANE`/`$SOKSAK_WINDOW` 가 자기 위치를 표시 — 타겟 id 를 생략하면 자기 위치가
+터미널 안에서는 `$SOKSAK_CALLER_TAB`/`$SOKSAK_WINDOW` 가 자기 위치를 표시 — 타겟 id 를 생략하면 자기 위치가
 기본 타겟이다.
 
 ### 기본형 문법과 응답 공통 필드

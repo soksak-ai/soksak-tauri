@@ -2,7 +2,7 @@
 
 > 자동 생성 문서 — 원천은 `command.docs`(앱 Command Registry + 레지스트리 카탈로그).
 
-모든 명령: `sok-dev <command> [값 | '{JSON}']` — 값 하나는 유일한 필수 매개변수로 전달(기본형). 대상 id 생략 시 호출 컨텍스트($SOKSAK_PANE) 기본.
+모든 명령: `sok-dev <command> [값 | '{JSON}']` — 값 하나는 유일한 필수 매개변수로 전달(기본형). 대상 id 생략 시 호출 컨텍스트($SOKSAK_CALLER_TAB) 기본.
 
 코어 명령만 수록한다(--core — 리포지토리 문서용, 설치본 무관). 전체는 `sok-dev docs`.
 

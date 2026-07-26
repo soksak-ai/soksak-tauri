@@ -394,7 +394,7 @@ ctx.subscriptions.push(d); // 비활성화 시 자동 해지
 
 새 탭(+) 메뉴에는 **내장 항목이 없다(§2.6)** — 터미널·에이전트·브라우저 전부
 플러그인이 기여한다. **코어는 어떤 program 도 특권화하지 않는다**(program-무지):
-지정 없는 `panel.split` 은 터미널이 아니라 **블랭크 패널**이고, 코어에 기본 program
+지정 없는 `pane.split` 은 터미널이 아니라 **블랭크 칸**이고, 코어에 기본 program
 은 없다(새 엔진이 생길 때마다 코어를 고치지 않는다 — R7). 프로그램은 languages 처럼
 **매니페스트 선언만으로 자동 등록**된다(명령형 API 없음) — 실행/설치 명령이 전부
 선언에 있어 **동의 화면이 플러그인의 역할(코어 연결만 / 명령 실행 / 미설치 시
@@ -432,7 +432,7 @@ ctx.subscriptions.push(d); // 비활성화 시 자동 해지
 }
 ```
 
-- 등록 즉시 + 메뉴·`program.list`·`view.open '{"program":"<id>"}'` 에 노출(§0-1).
+- 등록 즉시 + 메뉴·`program.list`·`tab.open '{"program":"<id>"}'` 에 노출(§0-1).
 - `viewContract` 구현체가 ≥2 이면 사용자가 설정에서 엔진을 고른다(그 계약만 드롭다운
   노출); 0개면 빈 그룹으로 열화한다 — 코어는 폴백 program 을 만들지 않는다.
 - 등록 프로그램이 0개면 + 버튼 자체가 렌더되지 않는다.
@@ -572,7 +572,7 @@ readBuffer 는 alternate screen(=TUI 화면)만 본다 — 셸 스크롤백·다
 
 ```bash
 sok plugin.list / install / update / remove / enable / disable / reload / dev.load
-sok plugin.view.open '{"view":"soksak-git-diff.view","placement":"content"}'
+sok plugin.view.open '{"viewKey":"soksak-git-diff.view","placement":"content"}'
 sok plugin.view.close '{"view":"soksak-git-diff.view"}'
 sok git.log / git.show / git.diff
 sok editor.format

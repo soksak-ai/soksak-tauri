@@ -77,7 +77,7 @@ command.executed { …, parentId: turnId }              ← the commands the tur
 chat.answer { text, parentId: turnId, ok, code }      ← closes the set (agent's final answer)
 ```
 
-- **Carrier**: when the orchestrator (`orchestrator.ask`) spawns the agent it injects env `SOKSAK_PARENT=turnId`. `sok` puts it on the request envelope as meta `parent` (same model as `SOKSAK_PANE`/`SOKSAK_WINDOW`), and it rides socket → executor `ctx.parent` → registry trace `parentId` → activity entry `payload.parentId`. MCP (`soksak.run`) passes the same point, so it is covered automatically.
+- **Carrier**: when the orchestrator (`orchestrator.ask`) spawns the agent it injects env `SOKSAK_PARENT=turnId`. `sok` puts it on the request envelope as meta `parent` (same model as `SOKSAK_CALLER_TAB`/`SOKSAK_WINDOW`), and it rides socket → executor `ctx.parent` → registry trace `parentId` → activity entry `payload.parentId`. MCP (`soksak.run`) passes the same point, so it is covered automatically.
 - **Anchor**: the set's display unit is the parent (`chat.prompt`) — card visibility follows the parent, so the set shows whole even when children ran in other windows (w-*). Orphaned children whose parent fell off the ring/buffer display standalone (nothing is lost).
 - **Order is factual**: an execution already in flight when the turn is stopped lands after the answer and is shown as-is — the set is a seq-ordered record, not a staged narrative.
 - **Narration**: `chat.prompt` (the user's own words), `chat.answer` (AI utterance), and progress deltas never carry `speak` — silent. `command.executed` children narrate per their own speak spec (§3).

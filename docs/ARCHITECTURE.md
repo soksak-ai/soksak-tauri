@@ -41,7 +41,7 @@ The skeleton owns exactly these common interfaces. Each line states the guarante
 | **Command registry (single source of truth)** | `src/commands/registry.ts` | One registry. Every command (core or plugin) registers once with a typed param schema and danger gate. `catalogJson()` auto-exposes the same set to CLI, MCP, and docs. No command exists outside this registry. |
 | **Capability API (`app.*`)** | `src/plugins/api.ts` | The only runtime surface a plugin receives. Permission-gated: an undeclared permission yields an absent (undefined) capability. Namespaced per plugin (`data[ns=pluginId]`, `secrets[ns=pluginId]`, `plugin.<id>.<cmd>`). |
 | **Event bus** | `src/plugins/hooks.ts`, `src/plugins/bus.ts` | System events (`project.*`, `file.*`, `command.*`, `turn.ended`, `theme.changed`, `locale.changed`, `app.focus`, `bookmarks.changed`) are permission-gated. `bus.*` is plugin-to-plugin pub/sub independent of core state. |
-| **Program (+menu) registry** | `src/plugins/programRegistry.ts` | Declarative `contributes.programs[]`. Each program declares a `kind`. The +menu and `view.open` route by `kind`. Plugins declare programs; the skeleton routes them. |
+| **Program (+menu) registry** | `src/plugins/programRegistry.ts` | Declarative `contributes.programs[]`. Each program declares a `kind`. The +menu and `tab.open` route by `kind`. Plugins declare programs; the skeleton routes them. |
 | **View placement & focus registry** | `src/plugins/viewRegistry.ts`, `src/plugins/viewFocus.ts` | `registerView(viewId, provider)` with placements (`content`, `sidebar-left`, `sidebar-right`, `footer`). Mount/unmount owns lifetime. Optional `prepareFocusTransfer` / `focus` form the only keyboard-focus boundary: core owns the destination and ordering; a provider may touch only its own container. Mount is never focus intent, and deferred focus must honor the supplied `AbortSignal`. |
 | **Native generic capabilities** | `src-tauri/src/*` | PTY spawn/IO/flow-control (`pty.rs`), child-webview lifecycle + layer inversion + hole-punch (`browser.rs`), media proxy (`mediaproxy.rs`), data store (rusqlite + FTS5), secrets vault, process/WebSocket/HTTP clients, filesystem. All generic — none named after a concrete feature consumer. |
 
@@ -100,7 +100,7 @@ Adding a new plugin must require zero changes to the skeleton. If a new plugin f
 Plugin views inherit theme strictly through host-injected CSS custom properties propagated into the shadow root. A plugin must not read the theme store, hardcode palette values, or branch on theme name. Recoloring the host recolors every conforming plugin with no plugin change.
 
 ### A11. The editor is a plugin; the skeleton routes, it does not edit.
-Opening a path as content flows through a generic skeleton routing command (`editor.open` — open-path-as-content) that dispatches to whichever plugin registered a viewer for that file type (`registerFileViewer`). The skeleton owns no editor instance and vends no editor engine. The editor plugin owns its engine (CodeMirror by default, Monaco or any other by substitution), bundles it itself, and exposes its own extension surface; formatter and language plugins depend on the editor plugin through manifest `dependencies`, not on the skeleton. Active-file read/write is the editor plugin's capability, mediated through the command/event surface — not a skeleton-owned editor.
+Opening a path as content flows through a generic skeleton routing command (`ui.intent.open` — open-path-as-content) that dispatches to whichever plugin registered a viewer for that file type (`registerFileViewer`). The skeleton owns no editor instance and vends no editor engine. The editor plugin owns its engine (CodeMirror by default, Monaco or any other by substitution), bundles it itself, and exposes its own extension surface; formatter and language plugins depend on the editor plugin through manifest `dependencies`, not on the skeleton. Active-file read/write is the editor plugin's capability, mediated through the command/event surface — not a skeleton-owned editor.
 
 ### A12. Verify, never assume.
 Conformance is proven, not asserted (Section 6). "Looks decoupled" is not decoupled. A grep that returns matches is a failing separation test, not a stylistic note.
@@ -136,7 +136,7 @@ For each subsystem: what STAYS in the skeleton (the generic interface), what MOV
 
 **Status: extracted, and now a replaceable engine seam.** `soksak-plugin-terminal-xterm`
 (xterm.js) and `soksak-plugin-terminal-ghostty` both implement `soksak-spec-plugin-terminal`; the core
-names no terminal engine and hardcodes no default program (an unspecified `panel.split` is a
+names no terminal engine and hardcodes no default program (an unspecified `pane.split` is a
 blank panel, not a terminal). Consumers (agents, ⌘T) reference the contract via `viewContract`
 and the core resolves it to the user-selected implementer (NAMING §4, §8). The ruling below is
 the original extraction plan it was carried out under.

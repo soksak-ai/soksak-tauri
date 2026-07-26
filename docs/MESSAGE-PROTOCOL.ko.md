@@ -77,7 +77,7 @@ command.executed { …, parentId: turnId }              ← 턴이 낳은 명령
 chat.answer { text, parentId: turnId, ok, code }      ← 세트 닫음(에이전트 최종 답변)
 ```
 
-- **운반**: 오케스트레이터(`orchestrator.ask`)가 에이전트를 스폰할 때 env `SOKSAK_PARENT=turnId`를 주입한다. `sok`이 이를 요청 봉투 meta `parent`로 싣고(`SOKSAK_PANE`/`SOKSAK_WINDOW`와 같은 모델), 소켓 → executor `ctx.parent` → registry trace `parentId` → 활동 엔트리 `payload.parentId`로 관통한다. MCP(`soksak.run`)도 같은 지점을 지나므로 자동 커버.
+- **운반**: 오케스트레이터(`orchestrator.ask`)가 에이전트를 스폰할 때 env `SOKSAK_PARENT=turnId`를 주입한다. `sok`이 이를 요청 봉투 meta `parent`로 싣고(`SOKSAK_CALLER_TAB`/`SOKSAK_WINDOW`와 같은 모델), 소켓 → executor `ctx.parent` → registry trace `parentId` → 활동 엔트리 `payload.parentId`로 관통한다. MCP(`soksak.run`)도 같은 지점을 지나므로 자동 커버.
 - **정박**: 세트의 표시 단위는 부모(`chat.prompt`)다 — 카드 가시성은 부모 기준이며, 자식이 다른 창(w-*)의 실행이어도 세트는 완전체로 보인다. 부모가 링/버퍼 밖으로 밀려난 고아 자식은 단독 표시된다(유실 없음).
 - **순서는 사실 그대로**: 중단(stop) 뒤 이미 발사된 실행이 늦게 도착하면 답변 뒤에 그대로 표시된다 — 세트는 seq 순의 기록이지 연출이 아니다.
 - **낭독과의 관계**: `chat.prompt`(사용자 자신의 말)·`chat.answer`(AI 발화)·진행 델타에는 `speak`가 실리지 않는다 — 침묵. 턴 안의 `command.executed`는 각자의 speak 스펙(§3)대로 낭독된다.

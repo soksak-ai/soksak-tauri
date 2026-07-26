@@ -96,7 +96,7 @@ Evidence: `catalogJson()` (registry.ts) is exposed as `state.commands`, and the 
 
 ### CLI (`sok`)
 - **Audience**: humans in the terminal + agents in the terminal (claude/codex running `sok` inside a PTY).
-- **Capability**: any command `sok <cmd> '{json}'`, discovery `sok commands`/`help <cmd>`/`docs`, stream follow `sok events [--kinds] [--since]` (JSONL, Ctrl-C to stop), MCP bridge `sok mcp`, teaching install `sok skill install` / print `sok skill print` (live SKILL.md to stdout — prompt material for headless agents). SOKSAK_PANE/WINDOW/SOCKET auto-detection targets "where I am" by default; `--window <label>` overrides the target window explicitly (beats `SOKSAK_WINDOW` — the vehicle for agents whose shell permission only admits `sok …` prefixes).
+- **Capability**: any command `sok <cmd> '{json}'`, discovery `sok commands`/`help <cmd>`/`docs`, stream follow `sok events [--kinds] [--since]` (JSONL, Ctrl-C to stop), MCP bridge `sok mcp`, teaching install `sok skill install` / print `sok skill print` (live SKILL.md to stdout — prompt material for headless agents). SOKSAK_CALLER_TAB/WINDOW/SOCKET auto-detection targets "where I am" by default; `--window <label>` overrides the target window explicitly (beats `SOKSAK_WINDOW` — the vehicle for agents whose shell permission only admits `sok …` prefixes).
 - **Correlation**: `SOKSAK_PARENT` (injected by the orchestrator into agents it spawns) rides every request as meta `parent` → activity entries carry `payload.parentId`, binding the executions to their conversation turn (MESSAGE-PROTOCOL §4). Same env-context model as PANE/WINDOW; MCP `soksak.run` passes the same point.
 - **Mechanism**: the workspace `cli` crate → `sok` binary. `resolve_socket` (env→`~/.soksak` scan). `run_request`/`run_help`/`run_docs` all derive from `fetch_commands()` = `state.commands`; `run_events` switches the connection into the push stream.
 - **What**: keep the current implementation. help/docs derive from `catalogJson` as a fixed rule. No hardcoded static command lists.
@@ -138,10 +138,10 @@ Client conventions (2026 official docs): trigger skills = Claude `.claude/skills
 - Unix socket JSON-RPC server: `~/.soksak/{id}.sock` bound 0600; envelope `{id?,method,params?,pane?,window?,timeoutMs?}`.
 - Multi-window routing: an explicit `window` targets that window; omitting it walks a ladder over the **live** windows only, because a focus record does not own a window and may outlive one. Plugin commands (`plugin.*`) never fall back to the control plane, which loads no plugins: last focused workspace window (if live) → lowest-sorted live workspace label (deterministic) → `NO_WORKSPACE_WINDOW`. Every other command: last focused window (if live) → `main` (if live) → lowest-sorted live workspace → `NO_WINDOW`. Delivery is `emit_to` (target window only, not broadcast), client id echo + internal u64 seq matching.
 - Danger gate (substrate): `ctx.remote && spec.danger` → permissionGate, UI bypass. Plugin commands gate end-to-end via `PluginCommandSpec.danger`.
-- CLI complete: `resolve_socket`/`request` (SOKSAK_PANE/WINDOW injection)/`run_request`/`run_help`/`run_docs`/`run_events`.
+- CLI complete: `resolve_socket`/`request` (SOKSAK_CALLER_TAB/WINDOW injection)/`run_request`/`run_help`/`run_docs`/`run_events`.
 - MCP implemented: `sok mcp` = stdio JSON-RPC 2.0 (initialize/ping/tools/list/tools/call), discovery meta-tools.
 - Skill installer: trigger-skill writer with AUTO-GENERATED header.
-- PTY env auto-injection: SOKSAK_PANE + SOKSAK_SOCKET (+ SOKSAK_WINDOW).
+- PTY env auto-injection: SOKSAK_CALLER_TAB + SOKSAK_SOCKET (+ SOKSAK_WINDOW; SOKSAK_PANE remains as the transitional old name until every session is replaced).
 - Plugin command contribution: `contributes.commands` → `plugin.<id>.<name>`, flowing into the same registry → auto-exposed to CLI/MCP.
 - Activity hub (P11–P12): ring cap 2000 + monotonic seq, app-wide `activity` broadcast, core/activity persistence with retention, `activity.recent` command, `events.subscribe` socket push (kinds filter, since backfill, bounded drop-oldest subscribers), registry execute instrumentation (param keys only).
 

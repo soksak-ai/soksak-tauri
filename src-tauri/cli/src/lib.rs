@@ -9,7 +9,7 @@
 //   sok docs                      # 전체 매뉴얼 마크다운(stdout)
 //   sok skill install [--claude|--gemini|--codex|--all] [--dir DIR]   (환경별 스킬: soksak(-dev|-debug))
 //
-// 컨텍스트: soksak 터미널 안에서는 $SOKSAK_PANE/$SOKSAK_SOCKET 이 자동 주입되어
+// 컨텍스트: soksak 터미널 안에서는 $SOKSAK_CALLER_TAB/$SOKSAK_SOCKET 이 자동 주입되어
 // 대상 id 를 생략하면 "내 위치"가 기본이 된다.
 
 use std::io::{BufRead, BufReader, Write};
@@ -106,8 +106,8 @@ fn print_usage() {
                                       MCP 서버 등록(네이티브 mcp add, SOKSAK_SOCKET 핀)
 
 컨텍스트:
-  soksak 터미널 안에서는 $SOKSAK_PANE 이 자동 주입되어, 대상 id 를 생략하면
-  호출한 pane 의 위치(패널/컨텐츠/프로젝트)가 기본 대상이 된다.
+  soksak 터미널 안에서는 $SOKSAK_CALLER_TAB 이 자동 주입되어, 대상 id 를 생략하면
+  호출한 탭의 위치(칸/스페이스/프로젝트)가 기본 대상이 된다.
   멀티 윈도우: {bin} --window <label> <command> 또는 $SOKSAK_WINDOW 로 특정 창을 지정
   (생략 시 활성 창). 창 목록은 {bin} window.list, 새 창은 {bin} window.open.
   상관: $SOKSAK_PARENT 가 있으면 요청에 parent 로 실려 활동 엔트리가 그 턴으로 묶인다.
@@ -249,7 +249,7 @@ fn take_flag_value(args: &mut Vec<String>, flag: &str) -> Option<String> {
 }
 
 fn request(method: &str, mut params: Value) -> Result<Value, String> {
-    // pane/window 는 env(SOKSAK_PANE/WINDOW)에서 — 터미널 안 "내 위치" 기본 타겟.
+    // 대상 탭/window 는 env(SOKSAK_CALLER_TAB/WINDOW)에서 — 터미널 안 "내 위치" 기본 타겟(SOKSAK_PANE 은 이행 구간의 옛 이름).
     // params 안의 timeoutMs 는 응답 대기 상한(envelope)으로 hoist — 커맨드 자체 params 검증에선 빠진다.
     // record/캡처처럼 기본 10s 를 넘는 장시간 커맨드가 이걸로 상한을 키운다(코어가 [1s,600s] 클램프). 숫자 아니면 무시.
     let timeout_ms = params
@@ -445,7 +445,7 @@ fn run_hello() -> ExitCode {
     }
 }
 
-// 소켓 JSON-RPC 1회 왕복. pane/window/timeout 명시값이 있으면 우선, 없으면 env(SOKSAK_PANE/WINDOW) 사용.
+// 소켓 JSON-RPC 1회 왕복. 대상/window/timeout 명시값이 있으면 우선, 없으면 env(SOKSAK_CALLER_TAB/WINDOW) 사용.
 // MCP soksak.run 은 명시값을 넘긴다(서브프로세스라 PTY env 없음).
 fn send_request(
     method: &str,
@@ -724,7 +724,7 @@ fn run_docs(core_only: bool, format: &str, lang: &str) -> ExitCode {
     println!(
         "> 자동 생성 문서 — 원천은 `command.docs`(앱 Command Registry + 레지스트리 카탈로그).\n"
     );
-    println!("모든 명령: `{bin} <command> [값 | '{{JSON}}']` — 값 하나는 유일한 필수 매개변수로 전달(기본형). 대상 id 생략 시 호출 컨텍스트($SOKSAK_PANE) 기본.\n");
+    println!("모든 명령: `{bin} <command> [값 | '{{JSON}}']` — 값 하나는 유일한 필수 매개변수로 전달(기본형). 대상 id 생략 시 호출 컨텍스트($SOKSAK_CALLER_TAB) 기본.\n");
     if core_only {
         println!(
             "코어 명령만 수록한다(--core — 리포지토리 문서용, 설치본 무관). 전체는 `{bin} docs`.\n"
