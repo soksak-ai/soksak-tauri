@@ -554,8 +554,20 @@ pub fn set_engine_host_hidden(app: &AppHandle, label: String, hidden: bool) {
         // contentView 에 폴백-부착된 서피스가 그대로 보인다(실측: hostHidden=True 인데
         // visible=1 — 부트 내내 이전 프레임이 떠 있던 유령의 정체). 복귀(hidden=false)도
         // 대칭으로 개별 해제한다 — 겹침·좌표는 이후 재스냅이 정렬한다.
+        let ns_win = app2
+            .get_window(&label)
+            .and_then(|w| w.ns_window().ok())
+            .map(|p| p as usize)
+            .unwrap_or(0);
         for sp in layer::surface_ptrs() {
             let v: &objc2_app_kit::NSView = unsafe { &*(sp as *const objc2_app_kit::NSView) };
+            let owner = v
+                .window()
+                .map(|w| objc2::rc::Retained::as_ptr(&w) as usize)
+                .unwrap_or(0);
+            if ns_win != 0 && owner != ns_win {
+                continue; // 남의 창 서피스는 건드리지 않는다(창 독립)
+            }
             v.setHidden(hidden);
         }
         let ptr = layer::engine_host_ptr(&label);
@@ -602,6 +614,7 @@ pub async fn engine_surface_stats(app: AppHandle, window: tauri::Window) -> serd
     #[cfg(target_os = "macos")]
     {
         let label = window.label().to_string();
+        let ns_win = window.ns_window().ok().map(|p| p as usize).unwrap_or(0);
         let (tx, rx) = std::sync::mpsc::channel::<serde_json::Value>();
         let _ = app.run_on_main_thread(move || {
             let host = layer::engine_host_ptr(&label);
@@ -611,9 +624,22 @@ pub async fn engine_surface_stats(app: AppHandle, window: tauri::Window) -> serd
             } else {
                 true
             };
+            // 창 소속은 판독 시점에 AppKit 실측 — 레지스트리는 ptr 만 알고(사이드카 발행에
+            // 창 정보가 없다), NSView.window() 가 소속의 단일 진실이다. 남의 창 서피스를
+            // 자기 화면 기준으로 판정하던 오염(실사고: 브라우저 없는 창에서 misplaced ×2,
+            // holes 0)을 스코프로 막는다. 남의 창 것은 숫자만 남긴다(숨기지 않는다).
             let mut surfaces = Vec::new();
+            let mut other_windows = 0usize;
             for ptr in layer::surface_ptrs() {
                 let v: &objc2_app_kit::NSView = unsafe { &*(ptr as *const objc2_app_kit::NSView) };
+                let owner = v
+                    .window()
+                    .map(|w| objc2::rc::Retained::as_ptr(&w) as usize)
+                    .unwrap_or(0);
+                if ns_win != 0 && owner != ns_win {
+                    other_windows += 1;
+                    continue;
+                }
                 let f = v.frame();
                 surfaces.push(serde_json::json!({
                     "ptr": ptr,
@@ -624,6 +650,7 @@ pub async fn engine_surface_stats(app: AppHandle, window: tauri::Window) -> serd
             }
             let _ = tx.send(serde_json::json!({
                 "registered": surfaces.len(),
+                "otherWindows": other_windows,
                 "hostPresent": host != 0,
                 "hostHidden": host_hidden,
                 "surfaces": surfaces,

@@ -56,17 +56,32 @@ export function judgeSurfaces(
   return { misplaced, stacked, surfaces: surfaces.length, holes: holes.length };
 }
 
-/** 보이는 홀 슬롯 rect 수집 — 파킹(화면 밖)·숨김은 자리가 아니다. */
-function visibleHoleRects(): AuditRect[] {
-  const out: AuditRect[] = [];
-  for (const el of document.querySelectorAll<HTMLElement>(".tab-body.hole")) {
-    if (el.style.visibility === "hidden" || el.style.display === "none") continue;
-    const r = el.getBoundingClientRect();
-    if (r.width < 4 || r.height < 4) continue;
-    if (r.x + r.width <= 0 || r.x >= window.innerWidth) continue; // 파킹(오프스크린)
-    out.push({ x: r.x, y: r.y, w: r.width, h: r.height });
+/** 보이는 네이티브 앵커 rect 수집 — 정본 앵커는 .bv-area("bounds 구동원 — 네이티브
+ *  webview 가 DOM 슬롯(.bv-area)을 추종한다", 두 브라우저 플러그인 공통 계약)다.
+ *  .tab-body.hole(툴바 포함 탭 전체)을 앵커로 삼으면 툴바 높이만큼 어긋나 정상 배치를
+ *  오배치로 오판한다(실측: 48px 오프셋 misplaced ×2 — 첫 판의 측정 앵커 오류).
+ *  플러그인 뷰는 shadow root 안에 그리므로 라이트 DOM 과 shadow 둘 다 훑는다.
+ *  bv-area 가 하나도 없으면 hole 로 폴백(브라우저 외 네이티브 표면). */
+export function visibleAnchorRects(): { rects: AuditRect[]; source: string } {
+  const collect = (els: Iterable<HTMLElement>, out: AuditRect[]) => {
+    for (const el of els) {
+      if (el.style.visibility === "hidden" || el.style.display === "none") continue;
+      const r = el.getBoundingClientRect();
+      if (r.width < 4 || r.height < 4) continue;
+      if (r.x + r.width <= 0 || r.x >= window.innerWidth) continue; // 파킹(오프스크린)
+      out.push({ x: r.x, y: r.y, w: r.width, h: r.height });
+    }
+  };
+  const bv: AuditRect[] = [];
+  collect(document.querySelectorAll<HTMLElement>(".bv-area"), bv);
+  for (const hostEl of document.querySelectorAll<HTMLElement>(".tab-viewer")) {
+    const sr = hostEl.shadowRoot;
+    if (sr) collect(sr.querySelectorAll<HTMLElement>(".bv-area"), bv);
   }
-  return out;
+  if (bv.length > 0) return { rects: bv, source: "bv-area" };
+  const holes: AuditRect[] = [];
+  collect(document.querySelectorAll<HTMLElement>(".tab-body.hole"), holes);
+  return { rects: holes, source: "hole" };
 }
 
 interface EngineStats {
@@ -89,7 +104,8 @@ async function runAudit(): Promise<void> {
       w: s.frame.w,
       h: s.frame.h,
     }));
-  const verdict = judgeSurfaces(visible, visibleHoleRects());
+  const anchors = visibleAnchorRects();
+  const verdict = judgeSurfaces(visible, anchors.rects);
   const bad = verdict.misplaced.length > 0 || verdict.stacked.length > 0;
   const signature = bad
     ? JSON.stringify([verdict.misplaced, verdict.stacked.map((l) => l.length)])
@@ -106,6 +122,7 @@ async function runAudit(): Promise<void> {
       stacked: verdict.stacked,
       surfaces: verdict.surfaces,
       holes: verdict.holes,
+      anchorSource: anchors.source,
       origin: "internal",
       message: bad
         ? `· surface misplaced ×${verdict.misplaced.length} stacked ×${verdict.stacked.length} (surfaces ${verdict.surfaces}/holes ${verdict.holes})`

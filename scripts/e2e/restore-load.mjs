@@ -226,6 +226,9 @@ async function main() {
       const preTabs = (pre.projects ?? []).flatMap((p) => (p.spaces ?? []).flatMap((sp) => (sp.panes ?? []).flatMap((pa) => pa.tabs ?? [])));
       console.log(`   tabs before reload: ${preTabs.length}`);
     }
+    // 표면 감사 시행점 — reload 이후 자동 감사(surface.misplaced)가 한 건도 없어야 한다.
+    // 관측은 기계적이다(앱이 스스로 발행) — 게이트는 원장에서 그 부재를 단언할 뿐이다.
+    const auditSince = (data(await rpc("activity.recent", { limit: 1 }, await resolveControlWindow(rpc))).entries ?? []).at(-1)?.seq ?? 0;
     await rpc("window.reload", {}, win).catch(() => {
       /* 렌더러 재부팅 중 회신 유실은 정상 — 소켓은 앱이 쥐고 있다 */
     });
@@ -256,6 +259,17 @@ async function main() {
       ok(
         u >= 6,
         `restored tab loads: ${t.kind}${t.path ? ` ${path.basename(String(t.path))}` : ""} (unique=${u})`,
+      );
+    }
+    // 정착 대기 후 원장 판독 — 감사 디바운스(400ms)+발행 여유.
+    await sleep(1500);
+    {
+      const es = data(await rpc("activity.recent", { since: auditSince, limit: 500 }, await resolveControlWindow(rpc))).entries ?? [];
+      const bad = es.filter((e) => e.kind === "surface.misplaced");
+      ok(
+        bad.length === 0,
+        `no surface.misplaced after reload (audit clean)`,
+        JSON.stringify(bad.map((e) => e.payload?.message)).slice(0, 200),
       );
     }
   } finally {
