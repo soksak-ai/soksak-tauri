@@ -35,27 +35,27 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { allGroups, allViews, type GroupNode, type View, type ViewGroup } from "./sessions";
+import { allGroups, allViews, type PaneNode, type Tab, type Pane } from "./sessions";
 import { leavesOf } from "./splitTree";
 
 const SRC_ROOT = join(__dirname, "..");
 const CATALOG_DIR = join(SRC_ROOT, "commands");
 
 // ── 픽스처: 배치 트리 ────────────────────────────────────────────────────────
-const tab = (id: string): View => ({
+const tab = (id: string): Tab => ({
   id,
   kind: "plugin",
   title: id,
   pluginId: "p",
   view: "content",
 });
-const pane = (id: string, views: View[]): ViewGroup => ({
+const pane = (id: string, tabs: Tab[]): Pane => ({
   id,
-  views,
-  activeViewId: views[0]?.id ?? "",
+  tabs,
+  activeTabId: tabs[0]?.id ?? "",
 });
-const leaf = (v: ViewGroup): GroupNode => ({ type: "leaf", value: v });
-const split = (id: string, children: GroupNode[]): GroupNode => ({
+const leaf = (v: Pane): PaneNode => ({ type: "leaf", value: v });
+const split = (id: string, children: PaneNode[]): PaneNode => ({
   type: "split",
   id,
   dir: "row",
@@ -70,7 +70,7 @@ function nodesHoldingTabs(node: unknown, acc: object[] = []): object[] {
     return acc;
   }
   if (node && typeof node === "object") {
-    if (Array.isArray((node as { views?: unknown }).views)) acc.push(node as object);
+    if (Array.isArray((node as { tabs?: unknown }).tabs)) acc.push(node as object);
     for (const v of Object.values(node)) nodesHoldingTabs(v, acc);
   }
   return acc;
@@ -155,18 +155,18 @@ describe("① 탭이 살 수 있는 곳은 pane 뿐이다", () => {
   });
 
   it("내부 노드에는 탭을 담을 자리 자체가 없다", () => {
-    const inner = (n: GroupNode, acc: object[] = []): object[] => {
+    const inner = (n: PaneNode, acc: object[] = []): object[] => {
       if (n.type === "leaf") return acc;
       acc.push(n);
       for (const c of n.children) inner(c, acc);
       return acc;
     };
-    const offenders = inner(tree).filter((n) => "views" in n || "value" in n);
+    const offenders = inner(tree).filter((n) => "tabs" in n || "value" in n);
     expect(offenders).toEqual([]);
   });
 
   it("배치 안의 탭 전체는 pane 이 담은 탭의 합집합과 정확히 같다", () => {
-    expect(allViews(tree)).toEqual(allGroups(tree).flatMap((g) => g.views));
+    expect(allViews(tree)).toEqual(allGroups(tree).flatMap((g) => g.tabs));
     expect(allViews(tree).map((v) => v.id)).toEqual(["tab-1", "tab-2", "tab-3"]);
   });
 });

@@ -1,4 +1,4 @@
-// sessions 의 plugin View variant 계약 — openPluginView dedupe/활성화/닫기 경로.
+// sessions 의 plugin Tab variant 계약 — openPluginView dedupe/활성화/닫기 경로.
 // (close/move/drag 는 view id 제네릭이라 기존 동작 그대로 — 여기선 plugin 특화만 고정.)
 import { beforeEach, describe, expect, it } from "vitest";
 import { allGroups, allViews, useSessions } from "./sessions";
@@ -12,19 +12,19 @@ import { parseManifest } from "../plugins/spec";
 useSessions.getState().bootstrapFirstProject("/tmp/soksak-test-root");
 
 // 시작 상태 스냅샷(데이터만) — 각 테스트 전 복원.
-const pristineTabs = JSON.parse(JSON.stringify(useSessions.getState().tabs));
+const pristineTabs = JSON.parse(JSON.stringify(useSessions.getState().projects));
 const pristineActive = useSessions.getState().activeId;
 
 function activeLayout() {
   const s = useSessions.getState();
-  const t = s.tabs.find((x) => x.id === s.activeId)!;
-  const c = t.contents.find((x) => x.id === t.activeContentId)!;
+  const t = s.projects.find((x) => x.id === s.activeId)!;
+  const c = t.spaces.find((x) => x.id === t.activeSpaceId)!;
   return { t, c, groups: allGroups(c.layout) };
 }
 
 beforeEach(() => {
   useSessions.setState({
-    tabs: JSON.parse(JSON.stringify(pristineTabs)),
+    projects: JSON.parse(JSON.stringify(pristineTabs)),
     activeId: pristineActive,
   });
 });
@@ -38,9 +38,9 @@ describe("openPluginView", () => {
     if (!r.ok) return;
     const { c, groups } = activeLayout();
     const grp = groups.find((g) => g.id === r.groupId)!;
-    expect(c.activeGroupId).toBe(r.groupId);
-    expect(grp.activeViewId).toBe(r.viewId);
-    const v = grp.views.find((x) => x.id === r.viewId)!;
+    expect(c.activePaneId).toBe(r.groupId);
+    expect(grp.activeTabId).toBe(r.viewId);
+    const v = grp.tabs.find((x) => x.id === r.viewId)!;
     expect(v).toMatchObject({
       kind: "plugin",
       pluginId: "soksak-plugin-memo",
@@ -73,7 +73,7 @@ describe("openPluginView", () => {
       viewId: first.viewId,
     });
     const after = activeLayout();
-    expect(after.groups.find((g) => g.id === (again as { groupId: string }).groupId)!.activeViewId).toBe(
+    expect(after.groups.find((g) => g.id === (again as { groupId: string }).groupId)!.activeTabId).toBe(
       first.viewId,
     );
   });
@@ -109,7 +109,7 @@ describe("closeView — plugin 뷰", () => {
     expect(closed.ok).toBe(true);
     const { groups } = activeLayout();
     expect(
-      groups.flatMap((g) => g.views).some((v) => v.id === r.viewId),
+      groups.flatMap((g) => g.tabs).some((v) => v.id === r.viewId),
     ).toBe(false);
   });
 });
@@ -131,7 +131,7 @@ describe("addContent — kind=view 프로그램", () => {
       const { c, groups } = activeLayout();
       expect(c.id).toBe(r.contentId);
       const grp = groups.find((g) => g.id === r.groupId)!;
-      const v = grp.views.find((x) => x.id === r.viewId)!;
+      const v = grp.tabs.find((x) => x.id === r.viewId)!;
       expect(v).toMatchObject({
         kind: "plugin",
         pluginId: "soksak-plugin-erd",
@@ -162,13 +162,13 @@ describe("addContent — kind=view 프로그램", () => {
       if (!r.ok) return;
       const { groups } = activeLayout();
       const grp = groups.find((g) => g.id === r.groupId)!;
-      const v = grp.views.find((x) => x.id === r.viewId)!;
+      const v = grp.tabs.find((x) => x.id === r.viewId)!;
       expect(v).toMatchObject({
         kind: "plugin",
         pluginId: "soksak-plugin-terminal-xterm", // viewPlugin — 뷰 소유 플러그인(자기 plugin 아님)
         view: "content",
         title: "Claude",
-        command: "claude", // 자동실행 명령이 plugin View 에 실린다
+        command: "claude", // 자동실행 명령이 plugin Tab 에 실린다
       });
     } finally {
       dispose();
@@ -189,7 +189,7 @@ describe("addContent — kind=view 프로그램", () => {
       if (!r.ok) return;
       const { groups } = activeLayout();
       const grp = groups.find((g) => g.id === r.groupId)!;
-      const v = grp.views.find((x) => x.id === r.viewId)!;
+      const v = grp.tabs.find((x) => x.id === r.viewId)!;
       expect(v).toMatchObject({
         kind: "plugin",
         pluginId: "soksak-plugin-terminal-xterm",
@@ -222,10 +222,10 @@ describe("addProject — 초기 program", () => {
       expect(r.ok).toBe(true);
       if (!r.ok) return;
       expect(r.viewId).toBeTruthy();
-      const t = useSessions.getState().tabs.find((x) => x.id === r.projectId)!;
-      const grp = allGroups(t.contents[0].layout).find((g) => g.id === r.groupId)!;
-      expect(grp.activeViewId).toBe(r.viewId);
-      const v = grp.views.find((x) => x.id === r.viewId)!;
+      const t = useSessions.getState().projects.find((x) => x.id === r.projectId)!;
+      const grp = allGroups(t.spaces[0].layout).find((g) => g.id === r.groupId)!;
+      expect(grp.activeTabId).toBe(r.viewId);
+      const v = grp.tabs.find((x) => x.id === r.viewId)!;
       expect(v).toMatchObject({
         kind: "plugin",
         pluginId: "soksak-plugin-terminal-xterm",
@@ -245,8 +245,8 @@ describe("addProject — 초기 program", () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.viewId).toBeUndefined();
-    const t = useSessions.getState().tabs.find((x) => x.id === r.projectId)!;
-    expect(allViews(t.contents[0].layout)).toHaveLength(0);
+    const t = useSessions.getState().projects.find((x) => x.id === r.projectId)!;
+    expect(allViews(t.spaces[0].layout)).toHaveLength(0);
   });
 
   it("미등록 program 은 빈 스켈레톤으로 격하(뷰 생성 불가 — makeContent 계약)", () => {
@@ -316,7 +316,7 @@ describe("addViewToGroup — viewContract(계약-핀) 해소", () => {
 
   function viewOf(r: { groupId: string; viewId: string }): { pluginId?: string } & Record<string, unknown> {
     const { groups } = activeLayout();
-    return groups.find((g) => g.id === r.groupId)!.views.find((x) => x.id === r.viewId)! as unknown as {
+    return groups.find((g) => g.id === r.groupId)!.tabs.find((x) => x.id === r.viewId)! as unknown as {
       pluginId?: string;
     } & Record<string, unknown>;
   }

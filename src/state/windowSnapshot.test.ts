@@ -1,20 +1,20 @@
 import { describe, it, expect } from "vitest";
 import { serializeProject, deserializeProject } from "./windowSnapshot";
-import type { ProjectTab, GroupNode, View } from "./sessions";
+import type { Project, PaneNode, Tab } from "./sessions";
 
-// 직렬화 라운드트립 — GroupNode serializeSplitTree 경로. id 보존, split id 만 재생성,
+// 직렬화 라운드트립 — PaneNode serializeSplitTree 경로. id 보존, split id 만 재생성,
 // live status 제외. 구조·순서·sizes·active·view 파라미터 보존이 불변식. 터미널도 플러그인 뷰다.
 
 let sid = 0;
 const newSplitId = () => `S${++sid}`;
 
-const leafOf = (n: GroupNode, i: number) => {
-  const s = n as Extract<GroupNode, { type: "split" }>;
-  const c = s.children[i] as Extract<GroupNode, { type: "leaf" }>;
+const leafOf = (n: PaneNode, i: number) => {
+  const s = n as Extract<PaneNode, { type: "split" }>;
+  const c = s.children[i] as Extract<PaneNode, { type: "leaf" }>;
   return c.value;
 };
 
-const project: ProjectTab = {
+const project: Project = {
   id: "t1",
   title: "proj",
   root: "/repo",
@@ -24,13 +24,13 @@ const project: ProjectTab = {
   rightOpen: false,
   rightView: null,
   leftLayout: { type: "leaf", value: { viewKeys: [], activeViewKey: "" } },
-  activeContentId: "c1",
-  contents: [
+  activeSpaceId: "c1",
+  spaces: [
     {
       id: "c1",
       title: "build",
-      activeGroupId: "g2",
-      railBindingViewId: "v1",
+      activePaneId: "g2",
+      railBindingTabId: "v1",
       layout: {
         type: "split",
         id: "gs1",
@@ -41,8 +41,8 @@ const project: ProjectTab = {
             type: "leaf",
             value: {
               id: "g1",
-              activeViewId: "v1",
-              views: [
+              activeTabId: "v1",
+              tabs: [
                 {
                   id: "v1",
                   kind: "plugin",
@@ -58,8 +58,8 @@ const project: ProjectTab = {
             type: "leaf",
             value: {
               id: "g2",
-              activeViewId: "v3",
-              views: [
+              activeTabId: "v3",
+              tabs: [
                 { id: "v2", kind: "file", title: "a.ts", path: "/repo/a.ts", mode: "code" },
                 { id: "v3", kind: "plugin", title: "B", pluginId: "soksak-plugin-browser-native", view: "content" },
                 { id: "v4", kind: "plugin", title: "ERD", pluginId: "soksak-plugin-erd", view: "studio" },
@@ -87,23 +87,23 @@ describe("windowSnapshot 라운드트립", () => {
     expect(back.shell).toBe("/bin/zsh");
     expect(back.sidebarOpen).toBe(true);
     expect(back.leftRailPlacement).toEqual({ mode: "pin", station: 60 });
-    expect(back.activeContentId).toBe("c1");
+    expect(back.activeSpaceId).toBe("c1");
 
-    const c = back.contents[0];
+    const c = back.spaces[0];
     expect(c.id).toBe("c1");
     expect(c.title).toBe("build");
-    expect(c.activeGroupId).toBe("g2");
-    expect(c.railBindingViewId).toBe("v1");
+    expect(c.activePaneId).toBe("g2");
+    expect(c.railBindingTabId).toBe("v1");
 
-    const gl = c.layout as Extract<GroupNode, { type: "split" }>;
+    const gl = c.layout as Extract<PaneNode, { type: "split" }>;
     expect(gl.dir).toBe("row");
     expect(gl.sizes).toEqual([0.6, 0.4]);
     expect(gl.id).not.toBe("gs1"); // split id 재생성됨
 
     const g1 = leafOf(c.layout, 0);
     expect(g1.id).toBe("g1");
-    expect(g1.activeViewId).toBe("v1");
-    const term = g1.views[0] as Extract<View, { kind: "plugin" }>;
+    expect(g1.activeTabId).toBe("v1");
+    const term = g1.tabs[0] as Extract<Tab, { kind: "plugin" }>;
     expect(term.kind).toBe("plugin");
     expect(term.pluginId).toBe("soksak-plugin-terminal-xterm");
     expect(term.view).toBe("content");
@@ -111,33 +111,33 @@ describe("windowSnapshot 라운드트립", () => {
     expect(term.command).toBeUndefined();
 
     const g2 = leafOf(c.layout, 1);
-    expect(g2.views.map((v) => v.kind)).toEqual(["file", "plugin", "plugin"]);
-    const file = g2.views[0] as Extract<View, { kind: "file" }>;
+    expect(g2.tabs.map((v) => v.kind)).toEqual(["file", "plugin", "plugin"]);
+    const file = g2.tabs[0] as Extract<Tab, { kind: "file" }>;
     expect(file.path).toBe("/repo/a.ts");
     expect(file.mode).toBe("code");
-    const webview = g2.views[1] as Extract<View, { kind: "plugin" }>;
+    const webview = g2.tabs[1] as Extract<Tab, { kind: "plugin" }>;
     expect(webview.pluginId).toBe("soksak-plugin-browser-native");
     expect(webview.view).toBe("content");
-    const plug = g2.views[2] as Extract<View, { kind: "plugin" }>;
+    const plug = g2.tabs[2] as Extract<Tab, { kind: "plugin" }>;
     expect(plug.pluginId).toBe("soksak-plugin-erd");
     expect(plug.view).toBe("studio");
   });
 
   it("live status 는 직렬화에서 제외", () => {
     sid = 0;
-    const p2: ProjectTab = {
+    const p2: Project = {
       ...project,
-      contents: [
+      spaces: [
         {
           id: "c1",
           title: "1",
-          activeGroupId: "g1",
+          activePaneId: "g1",
           layout: {
             type: "leaf",
             value: {
               id: "g1",
-              activeViewId: "v1",
-              views: [
+              activeTabId: "v1",
+              tabs: [
                 {
                   id: "v1",
                   kind: "plugin",
@@ -155,8 +155,8 @@ describe("windowSnapshot 라운드트립", () => {
     const snap = serializeProject(p2);
     expect(JSON.stringify(snap)).not.toContain("busy");
     const back = deserializeProject(snap, newSplitId);
-    const g = (back.contents[0].layout as Extract<GroupNode, { type: "leaf" }>).value;
-    expect(g.views[0].status).toBeUndefined();
+    const g = (back.spaces[0].layout as Extract<PaneNode, { type: "leaf" }>).value;
+    expect(g.tabs[0].status).toBeUndefined();
   });
 });
 
@@ -213,19 +213,19 @@ describe("left rail FLOW/PIN persistence", () => {
 
 describe("B3 — cwd·lastActivity 영속 round-trip", () => {
   it("plugin 뷰의 cwd/lastActivity 가 직렬화·복원을 통과한다(옵션 — 없으면 생략)", () => {
-    const tab: ProjectTab = {
+    const tab: Project = {
       ...project,
-      contents: [
+      spaces: [
         {
           id: "c1",
           title: "1",
-          activeGroupId: "g1",
+          activePaneId: "g1",
           layout: {
             type: "leaf",
             value: {
               id: "g1",
-              activeViewId: "v1",
-              views: [
+              activeTabId: "v1",
+              tabs: [
                 {
                   id: "v1",
                   kind: "plugin",
@@ -244,9 +244,9 @@ describe("B3 — cwd·lastActivity 영속 round-trip", () => {
     };
     const snap = serializeProject(tab);
     const back = deserializeProject(snap, newSplitId);
-    const g = (back.contents[0].layout as Extract<GroupNode, { type: "leaf" }>).value;
-    const v1 = g.views.find((v) => v.id === "v1") as Extract<View, { kind: "plugin" }>;
-    const v2 = g.views.find((v) => v.id === "v2") as Extract<View, { kind: "plugin" }>;
+    const g = (back.spaces[0].layout as Extract<PaneNode, { type: "leaf" }>).value;
+    const v1 = g.tabs.find((v) => v.id === "v1") as Extract<Tab, { kind: "plugin" }>;
+    const v2 = g.tabs.find((v) => v.id === "v2") as Extract<Tab, { kind: "plugin" }>;
     expect(v1.cwd).toBe("/tmp/somewhere");
     expect(v1.lastActivity).toBe(1234567890);
     expect(v2.cwd).toBeUndefined();
@@ -254,19 +254,19 @@ describe("B3 — cwd·lastActivity 영속 round-trip", () => {
   });
 
   it("plugin 뷰의 state(관찰 상태)·customLabel(사용자 라벨)이 왕복을 통과한다", () => {
-    const tab: ProjectTab = {
+    const tab: Project = {
       ...project,
-      contents: [
+      spaces: [
         {
           id: "c1",
           title: "1",
-          activeGroupId: "g1",
+          activePaneId: "g1",
           layout: {
             type: "leaf",
             value: {
               id: "g1",
-              activeViewId: "v1",
-              views: [
+              activeTabId: "v1",
+              tabs: [
                 {
                   id: "v1",
                   kind: "plugin",
@@ -285,9 +285,9 @@ describe("B3 — cwd·lastActivity 영속 round-trip", () => {
       ],
     };
     const back = deserializeProject(serializeProject(tab), newSplitId);
-    const g = (back.contents[0].layout as Extract<GroupNode, { type: "leaf" }>).value;
-    const v1 = g.views.find((v) => v.id === "v1") as Extract<View, { kind: "plugin" }>;
-    const v2 = g.views.find((v) => v.id === "v2") as Extract<View, { kind: "plugin" }>;
+    const g = (back.spaces[0].layout as Extract<PaneNode, { type: "leaf" }>).value;
+    const v1 = g.tabs.find((v) => v.id === "v1") as Extract<Tab, { kind: "plugin" }>;
+    const v2 = g.tabs.find((v) => v.id === "v2") as Extract<Tab, { kind: "plugin" }>;
     expect(v1.state).toEqual({ url: "https://naver.com/" });
     expect(v1.customLabel).toBe("내 브라우저");
     expect(v1.icon).toBe("https://naver.com/favicon.ico");
@@ -299,19 +299,19 @@ describe("B3 — cwd·lastActivity 영속 round-trip", () => {
 describe("저장 세션 마이그레이션 — 터미널 rename(soksak-plugin-terminal → -xterm)", () => {
   it("옛 pluginId 스냅샷은 새 id 로 복원된다(view id 는 그대로)", () => {
     sid = 0;
-    const legacy: ProjectTab = {
+    const legacy: Project = {
       ...project,
-      contents: [
+      spaces: [
         {
           id: "c1",
           title: "1",
-          activeGroupId: "g1",
+          activePaneId: "g1",
           layout: {
             type: "leaf",
             value: {
               id: "g1",
-              activeViewId: "v1",
-              views: [
+              activeTabId: "v1",
+              tabs: [
                 {
                   id: "v1",
                   kind: "plugin",
@@ -328,8 +328,8 @@ describe("저장 세션 마이그레이션 — 터미널 rename(soksak-plugin-te
     // 직렬화는 옛 id 를 그대로 담는다 — 마이그레이션은 복원(deserialize) 시점에 일어난다.
     const snap = serializeProject(legacy);
     const back = deserializeProject(snap, newSplitId);
-    const g = (back.contents[0].layout as Extract<GroupNode, { type: "leaf" }>).value;
-    const term = g.views[0] as Extract<View, { kind: "plugin" }>;
+    const g = (back.spaces[0].layout as Extract<PaneNode, { type: "leaf" }>).value;
+    const term = g.tabs[0] as Extract<Tab, { kind: "plugin" }>;
     expect(term.pluginId).toBe("soksak-plugin-terminal-xterm");
     expect(term.view).toBe("content"); // view id(관례 content)는 rename 대상이 아니다
   });
@@ -338,17 +338,17 @@ describe("저장 세션 마이그레이션 — 터미널 rename(soksak-plugin-te
 describe("복원 정규화 — 스냅샷당 1회 마이그레이션(세로 불분할 명제)", () => {
   // 40.6/39.5 — 간격 1.1 은 드래그 묶음 규칙(0.75) 밖이라 새 코드로 합법적으로 만들 수
   // 있는 별개 라인이면서, 레거시 치유 범위(1.5) 안이라 마커 없는 구 스냅샷에선 스냅된다.
-  const g = (id: string): GroupNode => ({
+  const g = (id: string): PaneNode => ({
     type: "leaf",
-    value: { id, activeViewId: "", views: [] },
+    value: { id, activeTabId: "", tabs: [] },
   });
-  const torn: ProjectTab = {
+  const torn: Project = {
     ...project,
-    contents: [
+    spaces: [
       {
         id: "c1",
         title: "1",
-        activeGroupId: "g-a",
+        activePaneId: "g-a",
         layout: {
           type: "split",
           id: "col",
@@ -374,9 +374,9 @@ describe("복원 정규화 — 스냅샷당 1회 마이그레이션(세로 불�
       },
     ],
   };
-  const rowXs = async (tab: ProjectTab): Promise<number[]> => {
+  const rowXs = async (tab: Project): Promise<number[]> => {
     const { computeSplitLayout } = await import("../lib/splitLayout");
-    return computeSplitLayout(tab.contents[0].layout)
+    return computeSplitLayout(tab.spaces[0].layout)
       .dividers.filter((d) => d.dir === "row")
       .sort((a, b) => a.rect.top - b.rect.top)
       .map((d) => d.rect.left);
@@ -412,8 +412,8 @@ describe("projection 핀 영속(§4.5) — 스냅샷 round-trip", () => {
       id: "t9", title: "P", root: "/tmp/p", sidebarOpen: true, rightOpen: false,
       rightView: null,
       leftLayout: { type: "leaf", value: { viewKeys: [], activeViewKey: "" } },
-      activeContentId: "c1",
-      contents: [{ id: "c1", title: "1", activeGroupId: "g1", layout: { type: "leaf", value: { id: "g1", views: [], activeViewId: "" } } }],
+      activeSpaceId: "c1",
+      spaces: [{ id: "c1", title: "1", activePaneId: "g1", layout: { type: "leaf", value: { id: "g1", tabs: [], activeTabId: "" } } }],
     } as never;
     const withProj = serializeProject(tab, {
       pins: { left: ["a.t"], right: [] },

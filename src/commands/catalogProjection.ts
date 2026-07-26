@@ -77,7 +77,7 @@ export function registerProjectionCatalog(): void {
     examples: ['ui.projection.pin \'{"ref":"<pluginId>.<viewId>"}\''],
     handler: (p, ctx) => {
       const pid = targetProject(p, ctx);
-      if (!useSessions.getState().tabs.some((t) => t.id === pid)) {
+      if (!useSessions.getState().projects.some((t) => t.id === pid)) {
         return err("TARGET_NOT_FOUND", `프로젝트 없음: ${pid}`);
       }
       const side = ((p.side as string | undefined) ?? "left") as Side;
@@ -115,7 +115,7 @@ export function registerProjectionCatalog(): void {
     examples: ['ui.projection.unpin \'{"ref":"<pluginId>.<viewId>"}\''],
     handler: (p, ctx) => {
       const pid = targetProject(p, ctx);
-      if (!useSessions.getState().tabs.some((t) => t.id === pid)) {
+      if (!useSessions.getState().projects.some((t) => t.id === pid)) {
         return err("TARGET_NOT_FOUND", `프로젝트 없음: ${pid}`);
       }
       const side = ((p.side as string | undefined) ?? "left") as Side;

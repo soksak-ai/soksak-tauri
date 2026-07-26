@@ -2,7 +2,7 @@ import { memo, useEffect, useState } from "react";
 import { getCwdOfHost, subscribeCwd } from "../terminal/paneHosts";
 import { hasPtyObservation } from "../terminal/ptyObservationStore";
 import { Icon } from "../ui/icons/Icon";
-import type { View, ViewGroup } from "../state/sessions";
+import type { Tab, Pane } from "../state/sessions";
 import { useT } from "../i18n";
 import {
   statusBarItemsForPane,
@@ -57,7 +57,7 @@ function TerminalStatus({ paneId }: { paneId: string }) {
   );
 }
 
-function FileStatus({ view }: { view: Extract<View, { kind: "file" }> }) {
+function FileStatus({ view }: { view: Extract<Tab, { kind: "file" }> }) {
   const t = useT();
   return (
     <>
@@ -76,9 +76,9 @@ function FileStatus({ view }: { view: Extract<View, { kind: "file" }> }) {
 export const GroupStatusBar = memo(function GroupStatusBar({
   group,
 }: {
-  group: ViewGroup;
+  group: Pane;
 }) {
-  const active = group.views.find((v) => v.id === group.activeViewId);
+  const active = group.tabs.find((v) => v.id === group.activeTabId);
   // 터미널 = PTY 관찰을 가진 플러그인 뷰(view.id = paneId). cwd/상태바 아이템은 substrate 키.
   const isTerminal = active != null && hasPtyObservation(active.id);
   return (

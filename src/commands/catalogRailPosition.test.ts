@@ -13,13 +13,13 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => undefined) })
 
 import { registerCatalog } from "./catalog";
 import { execute } from "./registry";
-import { useSessions, type ProjectTab, type ViewGroup } from "../state/sessions";
+import { useSessions, type Project, type Pane } from "../state/sessions";
 import { initialSidebarLayout } from "../state/sidebarLayout";
 import { splitLeaf } from "../state/splitTree";
 
-const group = (id: string, viewId?: string): ViewGroup => ({
+const group = (id: string, viewId?: string): Pane => ({
   id,
-  views: viewId
+  tabs: viewId
     ? [{
         id: viewId,
         kind: "plugin",
@@ -28,12 +28,12 @@ const group = (id: string, viewId?: string): ViewGroup => ({
         view: "main",
       }]
     : [],
-  activeViewId: viewId ?? "",
+  activeTabId: viewId ?? "",
 });
 
 function project(
-  placement?: ProjectTab["leftRailPlacement"],
-): ProjectTab {
+  placement?: Project["leftRailPlacement"],
+): Project {
   return {
     id: "t1",
     title: "P",
@@ -43,7 +43,7 @@ function project(
     rightOpen: false,
     rightView: null,
     leftLayout: initialSidebarLayout([]),
-    contents: [
+    spaces: [
       {
         id: "c1",
         title: "1",
@@ -57,22 +57,22 @@ function project(
             { type: "leaf", value: group("g2") },
           ],
         },
-        activeGroupId: "g2",
+        activePaneId: "g2",
       },
     ],
-    activeContentId: "c1",
+    activeSpaceId: "c1",
   };
 }
 
 /** 행별 세로선이 안 맞는 배치 — ghostty 의 왼쪽 50 은 terminal 이 가로질러 막혀 있다. */
-function switchProject(): ProjectTab {
+function switchProject(): Project {
   const base = project({ mode: "flow" });
   return {
     ...base,
-    contents: [
+    spaces: [
       {
-        ...base.contents[0],
-        activeGroupId: "ghostty",
+        ...base.spaces[0],
+        activePaneId: "ghostty",
         layout: {
           type: "split",
           id: "root",
@@ -110,7 +110,7 @@ function switchProject(): ProjectTab {
 registerCatalog();
 
 beforeEach(() => {
-  useSessions.setState({ tabs: [project()], activeId: "t1" });
+  useSessions.setState({ projects: [project()], activeId: "t1" });
 });
 
 type Position = {
@@ -144,7 +144,7 @@ describe("sidebar.left.position", () => {
       effectiveStation: 50,
       cleanLines: [0, 50, 100],
     });
-    expect(useSessions.getState().tabs[0].leftRailPlacement).toEqual({
+    expect(useSessions.getState().projects[0].leftRailPlacement).toEqual({
       mode: "pin",
       station: 50,
     });
@@ -162,7 +162,7 @@ describe("sidebar.left.position", () => {
       station: 50,
       effectiveStation: 50,
     });
-    expect(useSessions.getState().tabs[0].leftRailPlacement).toEqual({
+    expect(useSessions.getState().projects[0].leftRailPlacement).toEqual({
       mode: "pin",
       station: 50,
     });
@@ -170,7 +170,7 @@ describe("sidebar.left.position", () => {
 
   it("기존 dirty PIN 은 조용히 재저장하지 않고 persisted/effective 를 구분해 읽는다", async () => {
     useSessions.setState({
-      tabs: [project({ mode: "pin", station: 31 })],
+      projects: [project({ mode: "pin", station: 31 })],
       activeId: "t1",
     });
 
@@ -182,7 +182,7 @@ describe("sidebar.left.position", () => {
       effectiveStation: 50,
       cleanLines: [0, 50, 100],
     });
-    expect(useSessions.getState().tabs[0].leftRailPlacement).toEqual({
+    expect(useSessions.getState().projects[0].leftRailPlacement).toEqual({
       mode: "pin",
       station: 31,
     });
@@ -190,7 +190,7 @@ describe("sidebar.left.position", () => {
 
   it("FLOW 명령은 고정 station 을 제거하고 포커스 추종을 즉시 복원한다", async () => {
     useSessions.setState({
-      tabs: [project({ mode: "pin", station: 0 })],
+      projects: [project({ mode: "pin", station: 0 })],
       activeId: "t1",
     });
 
@@ -201,7 +201,7 @@ describe("sidebar.left.position", () => {
       effectiveStation: 50,
       cleanLines: [0, 50, 100],
     });
-    expect(useSessions.getState().tabs[0].leftRailPlacement).toEqual({
+    expect(useSessions.getState().projects[0].leftRailPlacement).toEqual({
       mode: "flow",
     });
   });
@@ -226,7 +226,7 @@ describe("sidebar.left.position", () => {
 describe("state.tree — 해가 공개 사실이다", () => {
   it("명령 조회와 동일한 계산으로 위치를 노출한다", async () => {
     useSessions.setState({
-      tabs: [project({ mode: "pin", station: 31 })],
+      projects: [project({ mode: "pin", station: 31 })],
       activeId: "t1",
     });
     const result = await execute("state.tree", {}, {});
@@ -244,7 +244,7 @@ describe("state.tree — 해가 공개 사실이다", () => {
 
   it("행 불일치 스위칭을 표시 layout·panels 에 노출하고 정본은 함께 보고한다", async () => {
     const original = switchProject();
-    useSessions.setState({ tabs: [original], activeId: original.id });
+    useSessions.setState({ projects: [original], activeId: original.id });
 
     const result = await execute("state.tree", {}, {});
     const space = (result.data as {
@@ -276,22 +276,22 @@ describe("state.tree — 해가 공개 사실이다", () => {
     expect(first.panels.find((panel) => panel.id === "ghostty")?.rect.left).toBe(33.3);
     expect(first.panels.find((panel) => panel.id === "design")?.rect.left).toBe(50);
     // 세션 정본은 절대 바뀌지 않는다 — 표시만 스위칭된다.
-    expect(useSessions.getState().tabs[0].contents[0].layout).toBe(
-      original.contents[0].layout,
+    expect(useSessions.getState().projects[0].spaces[0].layout).toBe(
+      original.spaces[0].layout,
     );
   });
 
   it("최대화는 공개 layout/panels 도 실제 [sidebar|feature] 평면으로 노출한다", async () => {
     const original = switchProject();
-    useSessions.setState({ tabs: [original], activeId: original.id });
+    useSessions.setState({ projects: [original], activeId: original.id });
     // fixture 그룹은 뷰가 없으므로 공개 상태를 직접 세팅해 직렬화만 검증한다.
     useSessions.setState((s) => ({
-      tabs: s.tabs.map((t) => ({
+      projects: s.projects.map((t) => ({
         ...t,
-        contents: t.contents.map((c) => ({
+        spaces: t.spaces.map((c) => ({
           ...c,
-          activeGroupId: "ghostty",
-          maximizedViewId: "v-max",
+          activePaneId: "ghostty",
+          maximizedTabId: "v-max",
         })),
       })),
     }));

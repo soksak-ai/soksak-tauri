@@ -7,23 +7,23 @@ import {
   upsertManifest,
   type WindowManifest,
 } from "./windowPersistence";
-import type { ProjectTab, GroupNode } from "./sessions";
+import type { Project, PaneNode } from "./sessions";
 
 let sid = 0;
 const newSplitId = () => `S${++sid}`;
 
-const leafGroup = (gid: string, vid: string): GroupNode => ({
+const leafGroup = (gid: string, vid: string): PaneNode => ({
   type: "leaf",
   value: {
     id: gid,
-    activeViewId: vid,
-    views: [
+    activeTabId: vid,
+    tabs: [
       { id: vid, kind: "plugin", title: "B", pluginId: "soksak-plugin-browser-native", view: "content" },
     ],
   },
 });
 
-const proj = (id: string, root: string): ProjectTab => ({
+const proj = (id: string, root: string): Project => ({
   id,
   title: id,
   root,
@@ -31,19 +31,19 @@ const proj = (id: string, root: string): ProjectTab => ({
   rightOpen: false,
   rightView: null,
   leftLayout: { type: "leaf", value: { viewKeys: [], activeViewKey: "" } },
-  activeContentId: "c1",
-  contents: [{ id: "c1", title: "1", activeGroupId: "g1", layout: leafGroup("g1", "v1") }],
+  activeSpaceId: "c1",
+  spaces: [{ id: "c1", title: "1", activePaneId: "g1", layout: leafGroup("g1", "v1") }],
 });
 
 describe("snapshot/restore 창 단위 라운드트립", () => {
   it("projects + activeId 보존", () => {
     sid = 0;
-    const tabs = [proj("t1", "/a"), proj("t2", "/b")];
-    const snap = snapshotWindow(tabs, "t2");
+    const projects = [proj("t1", "/a"), proj("t2", "/b")];
+    const snap = snapshotWindow(projects, "t2");
     const back = restoreWindow(snap, newSplitId);
     expect(back.activeId).toBe("t2");
-    expect(back.tabs.map((t) => t.root)).toEqual(["/a", "/b"]);
-    expect(back.tabs.map((t) => t.id)).toEqual(["t1", "t2"]);
+    expect(back.projects.map((t) => t.root)).toEqual(["/a", "/b"]);
+    expect(back.projects.map((t) => t.id)).toEqual(["t1", "t2"]);
   });
 
   it("activeId 가 복원본에 없으면 첫 프로젝트로 보정", () => {
@@ -55,15 +55,15 @@ describe("snapshot/restore 창 단위 라운드트립", () => {
   it("빈 창은 빈 복원", () => {
     const snap = snapshotWindow([], "");
     const back = restoreWindow(snap, newSplitId);
-    expect(back.tabs).toEqual([]);
+    expect(back.projects).toEqual([]);
     expect(back.activeId).toBe("");
   });
 });
 
 describe("windowManifestEntry", () => {
   it("label + roots + activeRoot", () => {
-    const tabs = [proj("t1", "/a"), proj("t2", "/b")];
-    expect(windowManifestEntry("main", tabs, "t2")).toEqual({
+    const projects = [proj("t1", "/a"), proj("t2", "/b")];
+    expect(windowManifestEntry("main", projects, "t2")).toEqual({
       label: "main",
       roots: ["/a", "/b"],
       activeRoot: "/b",

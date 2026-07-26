@@ -24,11 +24,11 @@ import { useTheme } from "../state/theme";
 import { useSettings } from "../state/settings";
 import { useUi } from "../state/ui";
 import {
-  type ContentArea,
+  type Space,
   type DropZone,
-  type GroupNode,
-  type View,
-  type ViewGroup,
+  type PaneNode,
+  type Tab,
+  type Pane,
   allGroups,
   useSessions,
   viewDisplayTitle,
@@ -64,7 +64,7 @@ import {
 
 export type Rect = { left: number; top: number; width: number; height: number }; // %
 export interface Cell {
-  group: ViewGroup;
+  group: Pane;
   rect: Rect;
 }
 interface Divider {
@@ -93,16 +93,16 @@ const FULL_RECT = { left: 0, top: 0, width: 100, height: 100 };
 // 홀 판정의 단일 진실 — 뷰의 transparent 선언(레지스트리 decl) 하나. 셀(cell-hole 밴드)과
 // 슬롯(hole-slot 배경·베일·레일 클립)이 같은 함수를 소비한다. 제2 기준(콘텐츠 클래스 등)
 // 도입 금지 — 기준이 갈라지면 절반의 소비자가 못 보는 홀이 생긴다(PLUGIN-CONTRACT §Transparent).
-function isHoleView(view: View | undefined | null): boolean {
+function isHoleView(view: Tab | undefined | null): boolean {
   return (
     view?.kind === "plugin" &&
     !!getRegisteredView(`${view.pluginId}.${view.view}`)?.decl.transparent
   );
 }
 
-// 콘텐츠 셀 레이아웃 = 공유 머신(computeSplitLayout). leaf 값(ViewGroup)을 cell.group 으로 매핑.
+// 콘텐츠 셀 레이아웃 = 공유 머신(computeSplitLayout). leaf 값(Pane)을 cell.group 으로 매핑.
 // [중복 제거] 좌측 사이드바와 동일한 레이아웃/히트테스트를 공유한다(splitLayout.ts).
-export function computeLayout(node: GroupNode): {
+export function computeLayout(node: PaneNode): {
   cells: Cell[];
   dividers: Divider[];
 } {
@@ -113,7 +113,7 @@ export function computeLayout(node: GroupNode): {
   };
 }
 
-const titleOf = (v: View | undefined): string => (v ? viewDisplayTitle(v) : "");
+const titleOf = (v: Tab | undefined): string => (v ? viewDisplayTitle(v) : "");
 
 // divider 리사이즈 드래그 중복 시작 가드. divider 가 네이티브 child 없는 gap 위면 실제 DOM mousedown
 // 과, 코어 네이티브-마우스 브릿지(App.tsx)가 재생하는 합성 mousedown 이 둘 다 도착할 수 있다 — 먼저
@@ -148,7 +148,7 @@ export const GroupArea = memo(function GroupArea({
   moves,
   travel,
 }: {
-  content: ContentArea;
+  content: Space;
   projectId: string;
   /** 이 스페이스(콘텐츠)가 활성인가 — 뷰 유효 가시성(스페이스 && 탭) 판정에 쓰인다. */
   // 이 그룹이 실린 표면(프로젝트+스페이스)이 지금 화면에 있는가 — 뷰 가시성의 상위 두 층.
@@ -158,7 +158,7 @@ export const GroupArea = memo(function GroupArea({
   /** 고정 물리폭. 0이면 기존 연속 평면. */
   railWidthPx?: number;
   /** 해결기가 푼 표시 배열. 생략하면 정본 배열(비활성 콘텐츠). */
-  displayLayout?: SplitTree<ViewGroup>;
+  displayLayout?: SplitTree<Pane>;
   /** 해가 지시한 이동량 — 위상 중에만 실린다. 여기 없는 패널은 움직이지 않는다. */
   moves?: ArrangementMove[];
   /** 위상의 두 station. 장식 span(디바이더)의 이동량은 이것에서 나온다 — moves 와 같은 위상에서
@@ -176,12 +176,12 @@ export const GroupArea = memo(function GroupArea({
   // 보이는 cold 뷰는 즉시 승격(렌더 중 set 금지 — effect). shown 판정과 동일 규칙.
   useEffect(() => {
     if (coldSet.size === 0) return;
-    const maximizedId2 = content.maximizedViewId ?? null;
+    const maximizedId2 = content.maximizedTabId ?? null;
     for (const g of allGroups(displayLayout)) {
-      const visibleId = maximizedId2 ?? g.activeViewId;
+      const visibleId = maximizedId2 ?? g.activeTabId;
       if (coldSet.has(visibleId)) useHydration.getState().promote(visibleId);
     }
-  }, [coldSet, content.maximizedViewId, displayLayout]);
+  }, [coldSet, content.maximizedTabId, displayLayout]);
   // 분할 패널 헤더 = 탭 모드 고정(2026-06 결정 — 설정 비노출). title 모드 분기는
   // 재노출 대비 보존: 복원하려면 useSettings((s) => s.splitHeaderMode) 로 되돌린다.
   const splitHeaderMode = "tabs" as "title" | "tabs";
@@ -211,7 +211,7 @@ export const GroupArea = memo(function GroupArea({
   const popOverlay = useUi((s) => s.popOverlay);
   // 플러그인 뷰(콘텐츠 배치) 호스트에 넘길 프로젝트 루트.
   const projectRoot = useSessions(
-    (s) => s.tabs.find((x) => x.id === projectId)?.root ?? null,
+    (s) => s.projects.find((x) => x.id === projectId)?.root ?? null,
   );
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -229,14 +229,14 @@ export const GroupArea = memo(function GroupArea({
     () => computeLayout(displayLayout),
     [displayLayout],
   );
-  // 최대화(maximizedViewId): 한 뷰가 컨텐츠 영역 전체를 차지. 분할 트리는
+  // 최대화(maximizedTabId): 한 탭이 스페이스 전체를 차지. 분할 트리는
   // 불변 — 셀/프레임만 그 그룹 하나(전체 rect)로 바꿔 그리고, 나머지 그룹의
   // 슬롯은 숨김 유지(세션 보존: 터미널/webview 마운트는 절대 깨지 않는다).
   // 강조 소유자는 이 상태 하나다(divider :hover 대체) — 셀렉터 구독(원칙 1).
   const dividerHoverKey = useDividerHover((s) => s.key);
-  const maximizedId = content.maximizedViewId ?? null;
+  const maximizedId = content.maximizedTabId ?? null;
   const maxCell = maximizedId
-    ? (cells.find((c) => c.group.views.some((v) => v.id === maximizedId)) ??
+    ? (cells.find((c) => c.group.tabs.some((v) => v.id === maximizedId)) ??
       null)
     : null;
   const displayCells = maxCell
@@ -248,8 +248,8 @@ export const GroupArea = memo(function GroupArea({
   // 후(effect) 실행이라 파킹 스타일이 이미 적용된 시점이고, commit 은 멱등이라 비용은 변화 시에만.
   useEffect(() => {
     for (const { group } of cells) {
-      for (const v of group.views) {
-        const tabActive = maxCell ? v.id === maximizedId : v.id === group.activeViewId;
+      for (const v of group.tabs) {
+        const tabActive = maxCell ? v.id === maximizedId : v.id === group.activeTabId;
         commitViewVisibility(v.id, surfaceShown(surfaceActive, true, tabActive));
       }
     }
@@ -320,11 +320,11 @@ export const GroupArea = memo(function GroupArea({
       const sourceGroup =
         kind === "group"
           ? cells.find((c) => c.group.id === id)?.group
-          : cells.find((c) => c.group.views.some((v) => v.id === id))?.group;
+          : cells.find((c) => c.group.tabs.some((v) => v.id === id))?.group;
       const sourceGroupId = sourceGroup?.id;
       // 다중-뷰 그룹의 탭 드래그만 자기 영역 가장자리 분할 허용(탭 분리).
       const selfCenterOnly =
-        kind === "group" || !sourceGroup || sourceGroup.views.length <= 1;
+        kind === "group" || !sourceGroup || sourceGroup.tabs.length <= 1;
       let moved = false;
       let rect: DOMRect | null = null;
       // 호버 갱신은 프레임당 1회(원칙 4) + 같은 {그룹,존}이면 상태를 유지해
@@ -363,7 +363,7 @@ export const GroupArea = memo(function GroupArea({
             ? hitTest(ev.clientX, ev.clientY, rect, sourceGroupId, selfCenterOnly)
             : null;
           if (target) {
-            // 드롭 = 활성(스토어가 도착 그룹을 activeGroupId 로 만든다) — 활성은
+            // 드롭 = 활성(스토어가 도착 칸을 activePaneId 로 만든다) — 활성은
             // 실포커스와 분리될 수 없다(클릭 분기와 동일 불변식). 분할 드롭은
             // 새 그룹이 생성되므로 결과의 groupId 로 포커스한다.
             if (kind === "view")
@@ -375,7 +375,7 @@ export const GroupArea = memo(function GroupArea({
             setActiveView(projectId, id),
           ); // 클릭 = 탭 전환 + 실포커스
         } else {
-          const targetViewId = sourceGroup?.activeViewId;
+          const targetViewId = sourceGroup?.activeTabId;
           if (targetViewId) {
             transferViewFocus(activeSessionViewId(), targetViewId, () =>
               setActiveGroup(projectId, id),
@@ -562,14 +562,14 @@ export const GroupArea = memo(function GroupArea({
       data-focus-dim={focusDim ? "1" : undefined}
       data-node={`layout/grid/${content.id}`}
       data-projection={
-        content.maximizedViewId
+        content.maximizedTabId
           ? "maximized"
           : focusProjectionApplied
             ? "switched"
             : "canonical"
       }
-      data-focused-panel={content.activeGroupId}
-      data-maximized-view={content.maximizedViewId ?? ""}
+      data-focused-panel={content.activePaneId}
+      data-maximized-view={content.maximizedTabId ?? ""}
       data-traveling={traveling ? "true" : "false"}
       ref={containerRef}
       style={
@@ -584,8 +584,8 @@ export const GroupArea = memo(function GroupArea({
           flex column 정상 흐름 — [헤더][본문 공간][상태바]. 헤더/상태바 좌표
           산수는 존재하지 않는다. 본문 공간은 비워두고 영속 슬롯이 그 위에 뜬다. */}
       {displayCells.map(({ group, rect }) => {
-        const isActiveGroup = group.id === content.activeGroupId;
-        const active = group.views.find((v) => v.id === group.activeViewId);
+        const isActiveGroup = group.id === content.activePaneId;
+        const active = group.tabs.find((v) => v.id === group.activeTabId);
         // 홀 셀(레이어 원칙): 활성 뷰 아래 네이티브 레이어(임베드 webview)가 비쳐야 하면 본문 영역에
         // 배경을 칠하면 안 된다 — CSS 가 헤더/상태바 밴드만 칠하도록 클래스로 표시. 데이터 주도:
         // transparent 선언 플러그인 콘텐츠 뷰(예: 브라우저 플러그인)만 홀로 처리(코어 하드 체크 없음).
@@ -594,7 +594,7 @@ export const GroupArea = memo(function GroupArea({
           <div
             key={`cell-${group.id}`}
             className={`egroup-cell${holeCell ? " cell-hole" : ""}${
-              group.id === content.activeGroupId ? " spot-clear" : ""
+              group.id === content.activePaneId ? " spot-clear" : ""
             }${flipMoves(group.id) ? " flip-move" : ""}`}
             data-node={`layout/panel/${group.id}`}
             style={cellVars(rect, group.id)}
@@ -665,7 +665,7 @@ export const GroupArea = memo(function GroupArea({
                   className="icon-btn egt-btn"
                   title={t("view.close")}
                   onMouseDown={(e) => e.stopPropagation()}
-                  onClick={() => closeView(projectId, group.activeViewId)}
+                  onClick={() => closeView(projectId, group.activeTabId)}
                 >
                   <Icon name="close" size="sm" />
                 </button>
@@ -690,7 +690,7 @@ export const GroupArea = memo(function GroupArea({
         <div
           key={`frame-${group.id}`}
           className={`egroup-frame${
-            group.id === content.activeGroupId ? " focus" : ""
+            group.id === content.activePaneId ? " focus" : ""
           }${flipMoves(group.id) ? " flip-move" : ""}`}
           style={cellVars(rect, group.id)}
         />
@@ -700,11 +700,11 @@ export const GroupArea = memo(function GroupArea({
           위치 지정의 정당한 사유를 가진다(그룹 간 이동에도 CodeMirror/터미널
           세션 보존). 본문 영역 좌표는 CSS 규칙(셀 변수 + 치수 변수)이 계산. ── */}
       {cells.flatMap(({ group, rect }) =>
-        group.views.map((view) => {
+        group.tabs.map((view) => {
           // 최대화 중엔 최대화 뷰만 보인다(전체 rect) — 나머지는 숨김 유지.
           const shown = maxCell
             ? view.id === maximizedId
-            : view.id === group.activeViewId;
+            : view.id === group.activeTabId;
           const slotRect = maxCell && shown ? FULL_RECT : rect;
           // B4 복원 hydration 게이트 — cold(복원됐지만 아직 안 보인) 뷰는 본문 마운트를
           // 미룬다(PTY 동시 spawn 분산). 보이는 순간·idle 체인이 승격한다. 평상시 cold 는
@@ -718,7 +718,7 @@ export const GroupArea = memo(function GroupArea({
               // 기준은 셀과 동일한 단일 선언 축(isHoleView) — 홀 배경·베일·레일 클립이
               // 전부 이 클래스 하나를 본다.
               className={`egroup-body-slot${isHoleView(view) ? " hole-slot" : ""}${
-                group.id === content.activeGroupId ? " spot-clear" : ""
+                group.id === content.activePaneId ? " spot-clear" : ""
               }${shown && flipMoves(group.id) ? " flip-move" : ""}`}
               // 네이티브 클릭 판정용(App.tsx native-mousedown → elementFromPoint).
               data-group-id={group.id}
@@ -736,10 +736,10 @@ export const GroupArea = memo(function GroupArea({
                 // 클릭(페인 추적·xterm 자기 포커스)은 항상 확인되고, 활성화는 시작 슬롯에
                 // 귀속된다(straddle 불능).
                 armSlotActivation(() => {
-                  if (group.activeViewId) {
+                  if (group.activeTabId) {
                     transferViewFocus(
                       activeSessionViewId(),
-                      group.activeViewId,
+                      group.activeTabId,
                       () => setActiveGroup(projectId, group.id),
                     );
                   } else {

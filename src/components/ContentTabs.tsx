@@ -2,7 +2,7 @@ import { memo, useRef, useState } from "react";
 import { isComposingEnter } from "../lib/imeKeys";
 import { Icon } from "../ui/icons/Icon";
 import { ProgramMenu } from "./ProgramMenu";
-import { useSessions, type Program, type ProjectTab } from "../state/sessions";
+import { useSessions, type Program, type Project } from "../state/sessions";
 import { useCloseConfirm } from "../state/closeConfirm";
 import { useProgramRegistry } from "../plugins/programRegistry";
 import { useT } from "../i18n";
@@ -16,7 +16,7 @@ export const ContentTabs = memo(function ContentTabs({
   project,
   vertical = false,
 }: {
-  project: ProjectTab;
+  project: Project;
   vertical?: boolean;
 }) {
   const t = useT();
@@ -52,10 +52,10 @@ export const ContentTabs = memo(function ContentTabs({
 
   return (
     <div className={`content-tabs${vertical ? " vertical" : ""}`}>
-      {project.contents.map((c, idx) => (
+      {project.spaces.map((c, idx) => (
         <div
           key={c.id}
-          className={`ctab${c.id === project.activeContentId ? " active" : ""}${editingId === c.id ? " editing" : ""}`}
+          className={`ctab${c.id === project.activeSpaceId ? " active" : ""}${editingId === c.id ? " editing" : ""}`}
           data-node={`tab/space/${idx}`}
           onClick={() => setActiveContent(project.id, c.id)}
           onDoubleClick={() => setEditingId(c.id)}
@@ -79,7 +79,7 @@ export const ContentTabs = memo(function ContentTabs({
           ) : (
             <span className="ctab-title">{c.title}</span>
           )}
-          {project.contents.length > 1 && editingId !== c.id && (
+          {project.spaces.length > 1 && editingId !== c.id && (
             <button
               type="button"
               className="icon-btn icon-btn--mini ctab-close"

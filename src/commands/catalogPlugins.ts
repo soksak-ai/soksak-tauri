@@ -879,7 +879,7 @@ export function registerPluginCatalog(): void {
   const projectRoot = (projectId?: string): string | undefined => {
     const s = useSessions.getState();
     const id = projectId ?? s.activeId;
-    return s.tabs.find((t) => t.id === id)?.root ?? undefined;
+    return s.projects.find((t) => t.id === id)?.root ?? undefined;
   };
 
   register("plugin.settings.schema", {
@@ -1103,7 +1103,7 @@ export function registerPluginCatalog(): void {
     handler: (p) => {
       const s = useSessions.getState();
       const projectId = (p.project as string | undefined) ?? s.activeId;
-      const project = s.tabs.find((t) => t.id === projectId);
+      const project = s.projects.find((t) => t.id === projectId);
       if (!project) return notFound(`프로젝트 없음: ${projectId}`);
       const key = p.view as string;
       const reg = getRegisteredView(key);
@@ -1167,7 +1167,7 @@ export function registerPluginCatalog(): void {
     handler: (p) => {
       const s = useSessions.getState();
       const projectId = (p.project as string | undefined) ?? s.activeId;
-      const project = s.tabs.find((t) => t.id === projectId);
+      const project = s.projects.find((t) => t.id === projectId);
       if (!project) return notFound(`프로젝트 없음: ${projectId}`);
       const key = p.view as string;
       const closed: string[] = [];
@@ -1181,9 +1181,9 @@ export function registerPluginCatalog(): void {
         closed.push("sidebar-left");
       }
       // content 배치: 전 컨텐츠에서 이 플러그인 뷰 탭을 전부 닫는다.
-      for (const content of project.contents) {
+      for (const content of project.spaces) {
         for (const g of allGroups(content.layout)) {
-          for (const v of g.views) {
+          for (const v of g.tabs) {
             if (
               v.kind === "plugin" &&
               `${v.pluginId}.${v.view}` === key
@@ -1293,10 +1293,10 @@ export function registerPluginCatalog(): void {
       //   정적 판정은 선언 부재만 보고 코드 누락은 여기서만 드러난다).
       // 콘텐츠 배치 뷰만 sessions 레이아웃에 실린다(사이드바는 setStatus no-op) → 여기 걸린 건 전부 콘텐츠 뷰.
       const observed: ViewStatusObservation[] = [];
-      for (const t of useSessions.getState().tabs)
-        for (const ca of t.contents)
+      for (const t of useSessions.getState().projects)
+        for (const ca of t.spaces)
           for (const g of allGroups(ca.layout))
-            for (const v of g.views)
+            for (const v of g.tabs)
               if (v.kind === "plugin" && v.pluginId === id)
                 observed.push({ viewId: v.id, view: v.view, code: v.status?.code ?? null });
       const mounted = observed.map((v) => v.viewId);

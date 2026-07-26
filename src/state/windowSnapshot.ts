@@ -1,5 +1,10 @@
-// 워크스페이스 직렬화 — 레이아웃을 plain JSON 스냅샷으로(영속·복원, A2). 두 트리(GroupNode·
-// PaneNode)는 splitTree.ts 의 serializeSplitTree 동일 경로로 직렬화된다(중복 없음).
+// 워크스페이스 직렬화 — 레이아웃을 plain JSON 스냅샷으로(영속·복원, A2). 두 트리(PaneNode·
+// SidebarLayout)는 splitTree.ts 의 serializeSplitTree 동일 경로로 직렬화된다(중복 없음).
+//
+// [RULE] 와이어 키는 구형을 유지한다(contents·views·activeViewId·activeGroupId·activeContentId·
+// maximizedViewId·railBindingViewId) — 마이그레이션(P0-5)이 옮긴다. 메모리 필드는 이미 새 어휘
+// (spaces·tabs·activeTabId·activePaneId·activeSpaceId·maximizedTabId·railBindingTabId)이므로 이
+// 파일의 serialize/deserialize 안에서만 둘을 잇는다. 기존 사용자 스냅샷은 그대로 열린다.
 //
 // [RULE] leaf payload id(group/pane)·view id·content id 는 보존한다 → active 참조
 // (activeContentId/activeGroupId/activeViewId/focusedPaneId/maximizedViewId)가 무손상으로 동작.
@@ -12,7 +17,7 @@ import {
   type SplitSnapshot,
 } from "./splitTree";
 import type { SidebarGroup } from "./sidebarLayout";
-import type { ProjectTab, ContentArea, ViewGroup, View } from "./sessions";
+import type { Project, Space, Pane, Tab } from "./sessions";
 import type { Pins } from "./projection";
 import { DEFAULT_RAIL_PLACEMENT,
   normalizeRailPlacement,
@@ -91,7 +96,7 @@ export interface ProjectSnapshot {
 
 // ── serialize ─────────────────────────────────────────────────────────────────
 
-function serializeView(v: View): ViewSnapshot {
+function serializeView(v: Tab): ViewSnapshot {
   switch (v.kind) {
     case "file":
       return {
@@ -121,23 +126,23 @@ function serializeView(v: View): ViewSnapshot {
   }
 }
 
-const serializeViewGroup = (g: ViewGroup): ViewGroupSnapshot => ({
+const serializeViewGroup = (g: Pane): ViewGroupSnapshot => ({
   id: g.id,
-  activeViewId: g.activeViewId,
-  views: g.views.map(serializeView),
+  activeViewId: g.activeTabId,
+  views: g.tabs.map(serializeView),
 });
 
-const serializeContent = (c: ContentArea): ContentSnapshot => ({
+const serializeContent = (c: Space): ContentSnapshot => ({
   id: c.id,
   title: c.title,
-  activeGroupId: c.activeGroupId,
-  ...(c.railBindingViewId ? { railBindingViewId: c.railBindingViewId } : {}),
-  ...(c.maximizedViewId ? { maximizedViewId: c.maximizedViewId } : {}),
-  layout: serializeSplitTree(c.layout, serializeViewGroup), // GroupNode(leaf=ViewGroup)
+  activeGroupId: c.activePaneId,
+  ...(c.railBindingTabId ? { railBindingViewId: c.railBindingTabId } : {}),
+  ...(c.maximizedTabId ? { maximizedViewId: c.maximizedTabId } : {}),
+  layout: serializeSplitTree(c.layout, serializeViewGroup), // PaneNode(leaf=Pane)
 });
 
 export function serializeProject(
-  p: ProjectTab,
+  p: Project,
   projection?: { pins: Pins },
 ): ProjectSnapshot {
   return {
@@ -155,8 +160,8 @@ export function serializeProject(
     rightView: p.rightView,
     // 사이드바 레이아웃(SplitTree<SidebarGroup>) — leaf 페이로드는 plain JSON.
     leftLayout: serializeSplitTree(p.leftLayout, (g) => g),
-    activeContentId: p.activeContentId,
-    contents: p.contents.map(serializeContent),
+    activeContentId: p.activeSpaceId,
+    contents: p.spaces.map(serializeContent),
   };
 }
 
@@ -175,7 +180,7 @@ function migratePluginId(id: string): string {
   return LEGACY_PLUGIN_IDS[id] ?? id;
 }
 
-function deserializeView(s: ViewSnapshot, _newSplitId: () => string): View {
+function deserializeView(s: ViewSnapshot, _newSplitId: () => string): Tab {
   switch (s.kind) {
     case "file":
       return {
@@ -206,17 +211,17 @@ function deserializeView(s: ViewSnapshot, _newSplitId: () => string): View {
 const deserializeViewGroup = (
   s: ViewGroupSnapshot,
   newSplitId: () => string,
-): ViewGroup => ({
+): Pane => ({
   id: s.id,
-  activeViewId: s.activeViewId,
-  views: s.views.map((v) => deserializeView(v, newSplitId)),
+  activeTabId: s.activeViewId,
+  tabs: s.views.map((v) => deserializeView(v, newSplitId)),
 });
 
 const deserializeContent = (
   s: ContentSnapshot,
   newSplitId: () => string,
   normalize: boolean,
-): ContentArea => {
+): Space => {
   const layout = deserializeSplitTree(
     s.layout,
     (g) => deserializeViewGroup(g, newSplitId),
@@ -225,9 +230,9 @@ const deserializeContent = (
   return {
     id: s.id,
     title: s.title,
-    activeGroupId: s.activeGroupId,
-    ...(s.railBindingViewId ? { railBindingViewId: s.railBindingViewId } : {}),
-    ...(s.maximizedViewId ? { maximizedViewId: s.maximizedViewId } : {}),
+    activePaneId: s.activeGroupId,
+    ...(s.railBindingViewId ? { railBindingTabId: s.railBindingViewId } : {}),
+    ...(s.maximizedViewId ? { maximizedTabId: s.maximizedViewId } : {}),
     // 스냅샷당 1회 마이그레이션(세로 불분할 명제) — vlNormalized 마커 없는 구 스냅샷만
     // 동반 드래그 이전에 토막 난 세로 라인(예: 상단 40.6/하단 39.5)을 최상단 세그먼트의
     // x 로 스냅해 치유한다. 마커 있는 복원은 무변환 — 사용자 레이아웃을 되쓰지 않는다.
@@ -241,7 +246,7 @@ const deserializeContent = (
 export function deserializeProject(
   s: ProjectSnapshot,
   newSplitId: () => string,
-): ProjectTab {
+): Project {
   return {
     id: s.id,
     title: s.title,
@@ -257,8 +262,8 @@ export function deserializeProject(
     rightOpen: s.rightOpen,
     rightView: s.rightView,
     leftLayout: deserializeSplitTree(s.leftLayout, (g) => g, newSplitId),
-    activeContentId: s.activeContentId,
-    contents: s.contents.map((c) =>
+    activeSpaceId: s.activeContentId,
+    spaces: s.contents.map((c) =>
       deserializeContent(c, newSplitId, !s.vlNormalized),
     ),
   };

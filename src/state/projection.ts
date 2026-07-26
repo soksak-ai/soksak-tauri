@@ -1,5 +1,5 @@
 // 사이드바 투영 코어(plans/sidebar-projection-spec.md §4·R1~R7).
-// 패널 포커스는 rail 위치만 정한다. 투영 콘텐츠 결부는 ContentArea가 소유한다:
+// 패널 포커스는 rail 위치만 정한다. 투영 콘텐츠 결부는 Space가 소유한다:
 //   - 스토어: focusHistory(승계 재료)·pins.
 //     프로젝트 키로 분리(R7: 스코프 = 창 × 프로젝트).
 //   - 해소: resolveProjection 순수 파생 — 결부 뷰의 sidebar 선언 → 레일 슬롯.
@@ -27,7 +27,7 @@ export interface ProjectionSide {
   template: "single" | "stack" | "tabs";
 }
 
-// 결부 뷰의 선언 요약 — 소비 지점이 세션 View 에서 만들어 넘긴다.
+// 결부 뷰의 선언 요약 — 소비 지점이 세션 Tab 에서 만들어 넘긴다.
 // plugin 뷰: ownerPluginId = 그 플러그인. file 뷰: 담당 fileViewer 의 플러그인(§3.1).
 export interface BoundView {
   viewId: string;

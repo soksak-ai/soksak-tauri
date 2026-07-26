@@ -13,7 +13,7 @@ import {
   deserializeProject,
   type ProjectSnapshot,
 } from "./windowSnapshot";
-import type { ProjectTab } from "./sessions";
+import type { Project } from "./sessions";
 import type { Pins } from "./projection";
 
 export type ProjectionSeed = { pins: Pins };
@@ -39,46 +39,46 @@ export interface WindowManifest {
 
 // 창의 현재 sessions 상태 → 직렬화 스냅샷(창 단위).
 export function snapshotWindow(
-  tabs: ProjectTab[],
+  projects: Project[],
   activeId: string,
   projections?: Record<string, ProjectionSeed>,
 ): WindowSnapshot {
   return {
     activeId,
-    projects: tabs.map((p) => serializeProject(p, projections?.[p.id])),
+    projects: projects.map((p) => serializeProject(p, projections?.[p.id])),
   };
 }
 
-// 스냅샷 → ProjectTab[] (split id 재생성은 newSplitId 주입). 복원 후 호출부가 reseed.
+// 스냅샷 → Project[] (split id 재생성은 newSplitId 주입). 복원 후 호출부가 reseed.
 export function restoreWindow(
   snap: WindowSnapshot,
   newSplitId: () => string,
 ): {
-  tabs: ProjectTab[];
+  projects: Project[];
   activeId: string;
   projections: Record<string, ProjectionSeed>;
 } {
-  const tabs = snap.projects.map((p) => deserializeProject(p, newSplitId));
-  const activeId = tabs.some((t) => t.id === snap.activeId)
+  const projects = snap.projects.map((p) => deserializeProject(p, newSplitId));
+  const activeId = projects.some((t) => t.id === snap.activeId)
     ? snap.activeId
-    : (tabs[0]?.id ?? "");
+    : (projects[0]?.id ?? "");
   const projections: Record<string, ProjectionSeed> = {};
   for (const p of snap.projects) {
     if (p.projection) projections[p.id] = p.projection;
   }
-  return { tabs, activeId, projections };
+  return { projects, activeId, projections };
 }
 
 // 이 창의 manifest 항목 = label + 보유 root 목록 + 활성 root.
 export function windowManifestEntry(
   label: string,
-  tabs: ProjectTab[],
+  projects: Project[],
   activeId: string,
 ): ManifestEntry {
   return {
     label,
-    roots: tabs.map((t) => t.root),
-    activeRoot: tabs.find((t) => t.id === activeId)?.root ?? null,
+    roots: projects.map((t) => t.root),
+    activeRoot: projects.find((t) => t.id === activeId)?.root ?? null,
   };
 }
 

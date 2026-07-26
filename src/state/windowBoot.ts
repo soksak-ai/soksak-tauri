@@ -26,7 +26,7 @@ import {
   useSessions,
   nextSplitIdGen,
   migrateSpaceTitle,
-  type ProjectTab,
+  type Project,
 } from "./sessions";
 import {
   snapshotWindow,
@@ -110,11 +110,11 @@ export async function initWorkspacePersistence(
   try {
     const snap = await winStore.hydrate();
     if (snap.projects.length > 0) {
-      const { tabs, activeId, projections } = restoreWindow(snap, nextSplitIdGen);
+      const { projects, activeId, projections } = restoreWindow(snap, nextSplitIdGen);
       // root 존재 검증 — 부재/무효 root 는 탭을 지우지 않고 rootMissing 으로 격하한다
       // (무단 삭제 금지). 배너가 알리고, 경로가 돌아오면 다음 복원에서 자연 해소.
       await Promise.all(
-        tabs.map(async (t) => {
+        projects.map(async (t) => {
           try {
             await validateProjectRoot(t.root);
           } catch {
@@ -125,16 +125,16 @@ export async function initWorkspacePersistence(
       );
       // P6(전역 단일 오픈): 이 창 스냅샷의 root 들을 일괄 점유. 다른 창이 이미 점유한
       // root 의 탭은 이 창에서 드롭한다(같은 프로젝트 중복 창 금지 — 우아한 열화).
-      const denied = await claimRoots(tabs.map((t) => t.root));
-      const owned = tabs
+      const denied = await claimRoots(projects.map((t) => t.root));
+      const owned = projects
         .filter((t) => !denied.has(t.root))
         // 로드-타임 마이그레이션 — 구 순수 숫자 스페이스 타이틀("3")을 "스페이스 3"(i18n)으로 승격(멱등,
         // 엑셀식 명명으로 스페이스임을 명확히). 사용자가 바꾼 타이틀은 보존(순수 숫자만 대상).
         .map((t) => ({
           ...t,
-          contents: t.contents.map((c) => ({ ...c, title: migrateSpaceTitle(c.title) })),
+          spaces: t.spaces.map((c) => ({ ...c, title: migrateSpaceTitle(c.title) })),
         }));
-      for (const t of tabs) {
+      for (const t of projects) {
         if (denied.has(t.root))
           console.warn(`[P6] 복원 탭 드롭(다른 창 점유): ${t.root}`);
       }
@@ -155,7 +155,7 @@ export async function initWorkspacePersistence(
         // spawn 분산), idle 체인이 lastActivity 순으로 채운다. 외형은 즉시 전부.
         beginRestoreHydration();
       }
-      restored = useSessions.getState().tabs.length > 0;
+      restored = useSessions.getState().projects.length > 0;
     }
   } catch (e) {
     console.error("워크스페이스 복원 실패 — 기본 부트로 폴백:", e);
@@ -168,12 +168,12 @@ export async function initWorkspacePersistence(
   // 직전)에 잔여 기록을 즉시 flush — 디바운스 창(≤400ms) 내 종료의 마지막 변경 유실 방지
   // (coreSync.ts 와 동일 패턴 — B1 정합성: 저장은 종료 시 flush 보장).
   const doPersist = () => {
-    const { tabs, activeId } = useSessions.getState();
+    const { projects, activeId } = useSessions.getState();
     const projections: Record<string, { pins: Pins }> = {};
     for (const [pid, e] of Object.entries(useProjection.getState().byProject)) {
       projections[pid] = { pins: e.pins };
     }
-    void persistNow(label, tabs, activeId, projections, winStore, manifestStore);
+    void persistNow(label, projects, activeId, projections, winStore, manifestStore);
   };
   const persist = debounce(doPersist, 400);
   useSessions.subscribe(persist);
@@ -190,17 +190,17 @@ export async function initWorkspacePersistence(
 
 async function persistNow(
   label: string,
-  tabs: ProjectTab[],
+  projects: Project[],
   activeId: string,
   projections: Record<string, { pins: Pins }>,
   winStore: ReturnType<typeof makeCoreStore<WindowSnapshot>>,
   manifestStore: ReturnType<typeof makeCoreStore<WindowManifest>>,
 ): Promise<void> {
   try {
-    await winStore.save(snapshotWindow(tabs, activeId, projections));
+    await winStore.save(snapshotWindow(projects, activeId, projections));
     const manifest = await manifestStore.hydrate();
     // 창 프레임(B2) — 리스폰이 같은 자리·크기로 되살린다(듀얼 모니터 배치 유지).
-    const entry = { ...windowManifestEntry(label, tabs, activeId), rect: await currentFrame() };
+    const entry = { ...windowManifestEntry(label, projects, activeId), rect: await currentFrame() };
     let next = upsertManifest(manifest, entry);
     // 마지막 포커스 창(B2) — 재시작 후 그 창을 앞으로.
     if (document.hasFocus()) next = setManifestFocused(next, label);

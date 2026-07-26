@@ -33,7 +33,7 @@ export function ProjectSettingsModal({
   const t = useT();
   // 오버레이 등록 — 모달이 떠 있는 동안 브라우저 홀의 마우스 통과를 차단한다.
   useOverlayActive();
-  const project = useSessions((s) => s.tabs.find((x) => x.id === projectId));
+  const project = useSessions((s) => s.projects.find((x) => x.id === projectId));
   const updateProject = useSessions((s) => s.updateProject);
   const setProjectColor = useSessions((s) => s.setProjectColor);
   const defaultProjectRoot = useSettings((s) => s.defaultProjectRoot);

@@ -150,7 +150,7 @@ export function PluginSettingsPanel({ pluginId }: { pluginId: string }) {
   const plugin = usePlugins((s) => s.plugins[pluginId]);
   // 전체 구독 — 값 변경 시 즉시 재렌더(모달이 열려 있는 동안만 마운트).
   const ps = usePluginSettings();
-  const root = useSessions((s) => s.tabs.find((x) => x.id === s.activeId)?.root) ?? undefined;
+  const root = useSessions((s) => s.projects.find((x) => x.id === s.activeId)?.root) ?? undefined;
   const [scope, setScope] = useState<Scope>("global");
   if (!plugin) return null;
   const schema = plugin.manifest.configuration ?? [];

@@ -16,7 +16,7 @@ import {
   startProjectionTracking,
 } from "./projectionWiring";
 import { useProjection } from "./projection";
-import { useSessions, type ProjectTab, type View } from "./sessions";
+import { useSessions, type Project, type Tab } from "./sessions";
 import { initialSidebarLayout } from "./sidebarLayout";
 import { useViewRegistry, type PluginViewProvider } from "../plugins/viewRegistry";
 import { useFileViewerRegistry } from "../plugins/fileViewerRegistry";
@@ -58,11 +58,11 @@ function runtime(raw: Record<string, unknown>): PluginRuntime {
   return { manifest, dir: `/tmp/${manifest.id}`, source: "dev", status: "enabled" };
 }
 
-function pluginView(id: string, pluginId: string, view: string): View {
+function pluginView(id: string, pluginId: string, view: string): Tab {
   return { id, kind: "plugin", title: id, pluginId, view };
 }
 
-function tab(views: View[], activeViewId: string): ProjectTab {
+function tab(tabs: Tab[], activeTabId: string): Project {
   return {
     id: "p1",
     title: "P",
@@ -71,15 +71,15 @@ function tab(views: View[], activeViewId: string): ProjectTab {
     rightView: null,
     leftLayout: initialSidebarLayout([]),
     root: "/tmp/p1",
-    contents: [
+    spaces: [
       {
         id: "c1",
         title: "1",
-        layout: { type: "leaf", value: { id: "g1", views, activeViewId } },
-        activeGroupId: "g1",
+        layout: { type: "leaf", value: { id: "g1", tabs, activeTabId } },
+        activePaneId: "g1",
       },
     ],
-    activeContentId: "c1",
+    activeSpaceId: "c1",
   };
 }
 
@@ -88,7 +88,7 @@ beforeEach(() => {
   useFileViewerRegistry.setState({ viewers: {}, version: 0 });
   usePlugins.setState({ plugins: {} });
   useProjection.setState({ byProject: {} });
-  useSessions.setState({ tabs: [], activeId: "" });
+  useSessions.setState({ projects: [], activeId: "" });
 });
 
 describe("boundViewOf — 세션 활성 체인 → BoundView(A8)", () => {
@@ -124,14 +124,14 @@ describe("boundViewOf — 세션 활성 체인 → BoundView(A8)", () => {
       },
       { mount: () => {} },
     );
-    const fileView: View = { id: "v2", kind: "file", title: "b.ts", path: "/a/b.ts", mode: "code" };
+    const fileView: Tab = { id: "v2", kind: "file", title: "b.ts", path: "/a/b.ts", mode: "code" };
     const bound = boundViewOf(tab([fileView], "v2"));
     expect(bound).toMatchObject({ viewId: "v2", ownerPluginId: "edplug" });
     expect(bound?.sidebar?.left[0]).toMatchObject({ ref: "self.outline" });
   });
 
   it("담당 뷰어 없는 file 뷰 → 선언 부재(null sidebar)", () => {
-    const fileView: View = { id: "v3", kind: "file", title: "x.zzz", path: "/x.zzz", mode: "code" };
+    const fileView: Tab = { id: "v3", kind: "file", title: "x.zzz", path: "/x.zzz", mode: "code" };
     const bound = boundViewOf(tab([fileView], "v3"));
     expect(bound?.sidebar).toBeNull();
   });
@@ -161,7 +161,7 @@ describe("projectionFor — 실 deps(계약 해소·rail 검증·consumes 게이
       decl("tree", { placements: ["rail"], defaultPlacement: "rail" }),
       provider,
     );
-    useSessions.setState({ tabs: [tab([pluginView("v1", "termplug", "term")], "v1")], activeId: "p1" });
+    useSessions.setState({ projects: [tab([pluginView("v1", "termplug", "term")], "v1")], activeId: "p1" });
     const p = projectionFor("p1");
     expect(p?.left.slots[0]).toMatchObject({
       resolvedRef: "filetree.tree",
@@ -193,7 +193,7 @@ describe("projectionFor — 실 deps(계약 해소·rail 검증·consumes 게이
       decl("tree", { placements: ["rail"], defaultPlacement: "rail" }),
       provider,
     );
-    useSessions.setState({ tabs: [tab([pluginView("v1", "termplug", "term")], "v1")], activeId: "p1" });
+    useSessions.setState({ projects: [tab([pluginView("v1", "termplug", "term")], "v1")], activeId: "p1" });
     expect(projectionFor("p1")?.left.slots[0].status).toBe("degraded");
   });
 
@@ -207,7 +207,7 @@ describe("startProjectionTracking — 스페이스별 단일 결부", () => {
     useViewRegistry.getState().register("termplug", decl("term"), provider);
     const v1 = pluginView("v1", "termplug", "term");
     const v2 = pluginView("v2", "termplug", "term");
-    useSessions.setState({ tabs: [tab([v1, v2], "v1")], activeId: "p1" });
+    useSessions.setState({ projects: [tab([v1, v2], "v1")], activeId: "p1" });
 
     const events: { projectId: string; viewId: string | null }[] = [];
     const off = onPluginEvent("projection.changed", (e) => void events.push(e));
@@ -215,15 +215,15 @@ describe("startProjectionTracking — 스페이스별 단일 결부", () => {
     expect(projectionFor("p1")?.binding.viewId).toBe("v1");
 
     // 그룹 내 활성 탭 전환 = 결부 변경(A8).
-    const t = useSessions.getState().tabs[0];
+    const t = useSessions.getState().projects[0];
     useSessions.setState({
-      tabs: [
+      projects: [
         {
           ...t,
-          contents: [
+          spaces: [
             {
-              ...t.contents[0],
-              layout: { type: "leaf", value: { id: "g1", views: [v1, v2], activeViewId: "v2" } },
+              ...t.spaces[0],
+              layout: { type: "leaf", value: { id: "g1", tabs: [v1, v2], activeTabId: "v2" } },
             },
           ],
         },
@@ -242,29 +242,29 @@ describe("startProjectionTracking — 스페이스별 단일 결부", () => {
     useViewRegistry.getState().register("termplug", decl("term"), provider);
     const v1 = pluginView("v1", "termplug", "term");
     const v2 = pluginView("v2", "termplug", "term");
-    useSessions.setState({ tabs: [tab([v1, v2], "v1")], activeId: "p1" });
+    useSessions.setState({ projects: [tab([v1, v2], "v1")], activeId: "p1" });
     const stop = startProjectionTracking();
 
-    const t = useSessions.getState().tabs[0];
+    const t = useSessions.getState().projects[0];
     // v2 활성 → v1 로 복귀 → 이력 [v1, v2]
     useSessions.setState({
-      tabs: [{ ...t, contents: [{ ...t.contents[0], layout: { type: "leaf", value: { id: "g1", views: [v1, v2], activeViewId: "v2" } } }] }],
+      projects: [{ ...t, spaces: [{ ...t.spaces[0], layout: { type: "leaf", value: { id: "g1", tabs: [v1, v2], activeTabId: "v2" } } }] }],
     });
-    const t2 = useSessions.getState().tabs[0];
+    const t2 = useSessions.getState().projects[0];
     useSessions.setState({
-      tabs: [{ ...t2, contents: [{ ...t2.contents[0], layout: { type: "leaf", value: { id: "g1", views: [v1, v2], activeViewId: "v1" } } }] }],
+      projects: [{ ...t2, spaces: [{ ...t2.spaces[0], layout: { type: "leaf", value: { id: "g1", tabs: [v1, v2], activeTabId: "v1" } } }] }],
     });
     expect(useProjection.getState().byProject.p1.focusHistory).toEqual(["v1", "v2"]);
 
     // v2 닫힘 → 이력에서 제거(R6 재료 정리).
-    const t3 = useSessions.getState().tabs[0];
+    const t3 = useSessions.getState().projects[0];
     useSessions.setState({
-      tabs: [{ ...t3, contents: [{ ...t3.contents[0], layout: { type: "leaf", value: { id: "g1", views: [v1], activeViewId: "v1" } } }] }],
+      projects: [{ ...t3, spaces: [{ ...t3.spaces[0], layout: { type: "leaf", value: { id: "g1", tabs: [v1], activeTabId: "v1" } } }] }],
     });
     expect(useProjection.getState().byProject.p1.focusHistory).toEqual(["v1"]);
 
     // 프로젝트 닫힘 → 회수.
-    useSessions.setState({ tabs: [], activeId: "" });
+    useSessions.setState({ projects: [], activeId: "" });
     expect(useProjection.getState().byProject.p1).toBeUndefined();
     stop();
   });
@@ -285,7 +285,7 @@ describe("projection.changed 지문 발화(§4.3) — 슬롯 해소 변화·부�
       }),
       provider,
     );
-    useSessions.setState({ tabs: [tab([pluginView("v1", "termplug", "term")], "v1")], activeId: "p1" });
+    useSessions.setState({ projects: [tab([pluginView("v1", "termplug", "term")], "v1")], activeId: "p1" });
 
     const events: { projectId: string; viewId: string | null }[] = [];
     const off = onPluginEvent("projection.changed", (e) => void events.push(e));
@@ -311,34 +311,34 @@ describe("R6 승계 — 결부 뷰 닫힘 시 같은 스페이스의 focusHistor
     const vA = pluginView("vA", "termplug", "term");
     const vB = pluginView("vB", "termplug", "term");
     const vC = pluginView("vC", "termplug", "term");
-    const t: ProjectTab = {
+    const t: Project = {
       ...tab([], ""),
-      contents: [
+      spaces: [
         {
           id: "c1",
           title: "1",
-          activeGroupId: "g1",
+          activePaneId: "g1",
           layout: {
             type: "split",
             id: "s1",
             dir: "row",
             sizes: [0.5, 0.5],
             children: [
-              { type: "leaf", value: { id: "g1", views: [vA, vC], activeViewId: "vA" } },
-              { type: "leaf", value: { id: "g2", views: [vB], activeViewId: "vB" } },
+              { type: "leaf", value: { id: "g1", tabs: [vA, vC], activeTabId: "vA" } },
+              { type: "leaf", value: { id: "g2", tabs: [vB], activeTabId: "vB" } },
             ],
           },
         },
       ],
     };
-    useSessions.setState({ tabs: [t], activeId: "p1" });
+    useSessions.setState({ projects: [t], activeId: "p1" });
     const stop = startProjectionTracking();
 
     // 결부 이력 만들기: A → B → A (활성 그룹 전환).
     const setActive = (gid: string) => {
-      const cur = useSessions.getState().tabs[0];
+      const cur = useSessions.getState().projects[0];
       useSessions.setState({
-        tabs: [{ ...cur, contents: [{ ...cur.contents[0], activeGroupId: gid }] }],
+        projects: [{ ...cur, spaces: [{ ...cur.spaces[0], activePaneId: gid }] }],
       });
     };
     setActive("g2"); // B 결부
@@ -347,8 +347,8 @@ describe("R6 승계 — 결부 뷰 닫힘 시 같은 스페이스의 focusHistor
 
     const r = useSessions.getState().closeView("p1", "vA");
     expect(r.ok).toBe(true);
-    const content = useSessions.getState().tabs[0].contents[0];
-    expect(content.activeGroupId).toBe("g2"); // R6: 최근 생존 = B(g2)
+    const content = useSessions.getState().projects[0].spaces[0];
+    expect(content.activePaneId).toBe("g2"); // R6: 최근 생존 = B(g2)
     stop();
   });
 });
@@ -374,14 +374,14 @@ describe("재결부 — 활성 콘텐츠 뷰가 스페이스 결부를 정한다
 
     const vA = pluginView("vA", "kanplug", "board");
     const vB = pluginView("vB", "runplug", "runbook");
-    useSessions.setState({ tabs: [tab([vA, vB], "vA")], activeId: "p1" });
+    useSessions.setState({ projects: [tab([vA, vB], "vA")], activeId: "p1" });
     const stop = startProjectionTracking();
     expect(projectionFor("p1")?.left.slots[0]?.resolvedRef).toBe("kanplug.tree");
 
     // 활성 탭 전환 = 기능 전환 → 결부·슬롯 교체.
-    const t = useSessions.getState().tabs[0];
+    const t = useSessions.getState().projects[0];
     useSessions.setState({
-      tabs: [{ ...t, contents: [{ ...t.contents[0], layout: { type: "leaf", value: { id: "g1", views: [vA, vB], activeViewId: "vB" } } }] }],
+      projects: [{ ...t, spaces: [{ ...t.spaces[0], layout: { type: "leaf", value: { id: "g1", tabs: [vA, vB], activeTabId: "vB" } } }] }],
     });
     expect(projectionFor("p1")?.left.slots[0]?.resolvedRef).toBe("runplug.list");
     stop();

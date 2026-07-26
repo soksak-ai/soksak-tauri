@@ -12,7 +12,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { rafThrottle } from "./rafThrottle";
-import { allGroups, useSessions, type ProjectTab } from "../state/sessions";
+import { allGroups, useSessions, type Project } from "../state/sessions";
 import { usePlugins } from "../state/plugins";
 import { browserLabel, browserLabelPrefix } from "./webviewLabels";
 
@@ -30,15 +30,15 @@ function ownsSurfaceFromManifests(pluginId: string, viewId: string): boolean {
 // 순수 — tabs 에서 webview 를 소유하는(선언한) 모든 뷰의 label 집합. ownsSurface/labelOf 주입으로
 // 플러그인 상태·창 네임스페이스(currentWindowLabel)에 의존하지 않는 단위검증이 가능하다.
 export function collectWebviewLabels(
-  tabs: readonly ProjectTab[],
+  tabs: readonly Project[],
   ownsSurface: OwnsSurface,
   labelOf: (viewId: string) => string = browserLabel,
 ): Set<string> {
   const live = new Set<string>();
   for (const t of tabs) {
-    for (const c of t.contents) {
+    for (const c of t.spaces) {
       for (const g of allGroups(c.layout)) {
-        for (const v of g.views) {
+        for (const v of g.tabs) {
           // nativeSurface 선언 뷰 — browserLabel(view.id) 스킴으로 child webview/surface 소유.
           if (v.kind === "plugin" && ownsSurface(v.pluginId, v.view))
             live.add(labelOf(v.id));
@@ -50,7 +50,7 @@ export function collectWebviewLabels(
 }
 
 function liveBrowserLabels(): Set<string> {
-  return collectWebviewLabels(useSessions.getState().tabs, ownsSurfaceFromManifests);
+  return collectWebviewLabels(useSessions.getState().projects, ownsSurfaceFromManifests);
 }
 
 let started = false;

@@ -22,7 +22,7 @@ vi.mock("./PluginViewHost", () => ({
 
 import { ProjectionSlots } from "./ProjectionSlots";
 import { useProjection } from "../state/projection";
-import { useSessions, type ProjectTab, type View } from "../state/sessions";
+import { useSessions, type Project, type Tab } from "../state/sessions";
 import { useSettings } from "../state/settings";
 import { initialSidebarLayout } from "../state/sidebarLayout";
 import { useViewRegistry, type PluginViewProvider } from "../plugins/viewRegistry";
@@ -45,11 +45,11 @@ function decl(id: string, over: Partial<ContributedView> = {}): ContributedView 
   };
 }
 
-function pluginView(id: string, pluginId: string, view: string): View {
+function pluginView(id: string, pluginId: string, view: string): Tab {
   return { id, kind: "plugin", title: id, pluginId, view };
 }
 
-function tab(views: View[], activeViewId: string): ProjectTab {
+function tab(tabs: Tab[], activeTabId: string): Project {
   return {
     id: "p1",
     title: "P",
@@ -58,16 +58,16 @@ function tab(views: View[], activeViewId: string): ProjectTab {
     rightView: null,
     leftLayout: initialSidebarLayout([]),
     root: "/tmp/p1",
-    contents: [
+    spaces: [
       {
         id: "c1",
         title: "1",
-        layout: { type: "leaf", value: { id: "g1", views, activeViewId } },
-        activeGroupId: "g1",
+        layout: { type: "leaf", value: { id: "g1", tabs, activeTabId } },
+        activePaneId: "g1",
       },
     ],
-    activeContentId: "c1",
-  } as unknown as ProjectTab;
+    activeSpaceId: "c1",
+  } as unknown as Project;
 }
 
 function registerFn(plug: string, content: string, railView: string) {
@@ -95,7 +95,7 @@ let root: Root;
 beforeEach(() => {
   useViewRegistry.setState({ views: {}, version: 0, badges: {} });
   useProjection.setState({ byProject: {} });
-  useSessions.setState({ tabs: [], activeId: "" });
+  useSessions.setState({ projects: [], activeId: "" });
   useSettings.setState({ language: "ko" });
   host = document.createElement("div");
   document.body.appendChild(host);
@@ -123,7 +123,7 @@ const render = (commitProjection = true) =>
 describe("레일 슬롯 공통 양식(§12)", () => {
   it("live 슬롯은 호스트 헤더(아이콘+제목)와 본문으로 렌더된다 — 내부만 기능의 것", () => {
     registerFn("termplug", "term", "tree");
-    useSessions.setState({ tabs: [tab([pluginView("v1", "termplug", "term")], "v1")], activeId: "p1" });
+    useSessions.setState({ projects: [tab([pluginView("v1", "termplug", "term")], "v1")], activeId: "p1" });
     render();
     const header = host.querySelector<HTMLElement>(".proj-frame-header");
     expect(header).not.toBeNull();
@@ -136,7 +136,7 @@ describe("레일 슬롯 공통 양식(§12)", () => {
 
   it("좌측 첫 슬롯 헤더의 토글이 railLook 을 pane↔ground 로 바꾸고 영속된다", () => {
     registerFn("termplug", "term", "tree");
-    useSessions.setState({ tabs: [tab([pluginView("v1", "termplug", "term")], "v1")], activeId: "p1" });
+    useSessions.setState({ projects: [tab([pluginView("v1", "termplug", "term")], "v1")], activeId: "p1" });
     render();
     expect(useSettings.getState().railLook).toBe("ground"); // 기본값 = SIDEBAR-CHROME(디자인 정본)
     const toggle = host.querySelector<HTMLElement>('[data-node="projection/left/look"]');
@@ -151,7 +151,7 @@ describe("레일 슬롯 공통 양식(§12)", () => {
     registerFn("termplug", "term", "tree");
     registerFn("kanplug", "board", "nav");
     useSessions.setState({
-      tabs: [
+      projects: [
         tab(
           [pluginView("v1", "termplug", "term"), pluginView("v2", "kanplug", "board")],
           "v1",
@@ -163,11 +163,11 @@ describe("레일 슬롯 공통 양식(§12)", () => {
     // 활성 뷰 전환 → 해소가 termplug.tree → kanplug.nav 로 바뀜(재결부).
     act(() => {
       useSessions.setState((s) => ({
-        tabs: s.tabs.map((t) => ({
+        projects: s.projects.map((t) => ({
           ...t,
-          contents: t.contents.map((c) => ({
+          spaces: t.spaces.map((c) => ({
             ...c,
-            layout: { ...c.layout, value: { ...(c.layout as { value: object }).value, activeViewId: "v2" } },
+            layout: { ...c.layout, value: { ...(c.layout as { value: object }).value, activeTabId: "v2" } },
           })),
         })),
       }) as never);
@@ -183,7 +183,7 @@ describe("호스트 헤더 결부 이름(§12-①)", () => {
     // 누구를 섬기는지는 호스트 헤더의 이름 한 곳이 말한다.
     registerFn("termplug", "term", "tree");
     useSessions.setState({
-      tabs: [tab([pluginView("v1", "termplug", "term")], "v1")],
+      projects: [tab([pluginView("v1", "termplug", "term")], "v1")],
       activeId: "p1",
     });
     render();
@@ -197,7 +197,7 @@ describe("영역 인계(§12-④)", () => {
     registerFn("termplug", "term", "tree");
     registerFn("kanplug", "board", "nav");
     useSessions.setState({
-      tabs: [
+      projects: [
         tab(
           [pluginView("v1", "termplug", "term"), pluginView("v2", "kanplug", "board")],
           "v1",
@@ -209,11 +209,11 @@ describe("영역 인계(§12-④)", () => {
     render(false);
     act(() => {
       useSessions.setState((s) => ({
-        tabs: s.tabs.map((t) => ({
+        projects: s.projects.map((t) => ({
           ...t,
-          contents: t.contents.map((c) => ({
+          spaces: t.spaces.map((c) => ({
             ...c,
-            layout: { ...c.layout, value: { ...(c.layout as { value: object }).value, activeViewId: "v2" } },
+            layout: { ...c.layout, value: { ...(c.layout as { value: object }).value, activeTabId: "v2" } },
           })),
         })),
       }) as never);

@@ -7,16 +7,16 @@ import { splitLeaf, leavesOf } from "./splitTree";
 // 사라져 tree=null 이 된다. closeView 가 그 경로를 `if(!tree) return s` 로 흘려보내면 r 이 초기값
 // noProject 로 남아 "프로젝트 없음" 이라는 거짓 에러를 낸다(실제론 프로젝트가 멀쩡함).
 beforeEach(() => {
-  useSessions.setState({ tabs: [], activeId: "" });
+  useSessions.setState({ projects: [], activeId: "" });
 });
 
 describe("closeView — split 한쪽이 빈 탭", () => {
   it("빈 그룹과 split 된 뷰를 닫으면 빈 탭으로 유지(거짓 '프로젝트 없음' 금지)", () => {
     // bootstrap: t1, content = splitLeaf(빈 그룹) — 빈 탭(순수 스켈레톤)
     useSessions.getState().bootstrapFirstProject("/test/root");
-    const base = useSessions.getState().tabs.find((x) => x.id === "t1")!;
-    const content = base.contents[0];
-    const emptyGroup = leavesOf(content.layout)[0]; // { views:[], activeViewId:"" }
+    const base = useSessions.getState().projects.find((x) => x.id === "t1")!;
+    const content = base.spaces[0];
+    const emptyGroup = leavesOf(content.layout)[0]; // { tabs:[], activeTabId:"" }
 
     // content.layout 을 split(빈 그룹, 뷰 1개 그룹) 으로 직접 구성(실앱의 split 결과와 동형).
     const view = {
@@ -26,7 +26,7 @@ describe("closeView — split 한쪽이 빈 탭", () => {
       pluginId: "p",
       view: "content",
     };
-    const viewGroup = { id: "g99", views: [view], activeViewId: "v99" };
+    const viewGroup = { id: "g99", tabs: [view], activeTabId: "v99" };
     const layout = {
       type: "split" as const,
       id: "s1",
@@ -35,8 +35,8 @@ describe("closeView — split 한쪽이 빈 탭", () => {
       children: [splitLeaf(emptyGroup), splitLeaf(viewGroup)],
     };
     useSessions.setState({
-      tabs: [
-        { ...base, contents: [{ ...content, layout, activeGroupId: "g99" }] },
+      projects: [
+        { ...base, spaces: [{ ...content, layout, activePaneId: "g99" }] },
       ],
     });
 
@@ -45,8 +45,8 @@ describe("closeView — split 한쪽이 빈 탭", () => {
     expect(r.ok).toBe(true);
 
     // 프로젝트·컨텐츠는 살아있다(빈 탭 = 정당한 스켈레톤 상태).
-    const after = useSessions.getState().tabs.find((x) => x.id === "t1");
+    const after = useSessions.getState().projects.find((x) => x.id === "t1");
     expect(after).toBeTruthy();
-    expect(after!.contents.length).toBe(1);
+    expect(after!.spaces.length).toBe(1);
   });
 });

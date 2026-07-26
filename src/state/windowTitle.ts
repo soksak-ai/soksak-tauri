@@ -15,7 +15,7 @@ export async function initWindowTitle(): Promise<void> {
   let last = "";
   const apply = () => {
     const s = useSessions.getState();
-    const t = s.tabs.find((x) => x.id === s.activeId);
+    const t = s.projects.find((x) => x.id === s.activeId);
     const next = t ? t.title : base;
     if (next === last) return; // sessions 는 고빈도 스토어 — 실변경만 IPC
     last = next;

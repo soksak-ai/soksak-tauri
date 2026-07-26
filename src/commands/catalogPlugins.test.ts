@@ -14,7 +14,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 import { registerPluginCatalog } from "./catalogPlugins";
 import { execute, getSpec } from "./registry";
 import { usePlugins, type PluginRuntime } from "../state/plugins";
-import { useSessions, type ProjectTab, type View } from "../state/sessions";
+import { useSessions, type Project, type Tab } from "../state/sessions";
 import { parseManifest, type PluginManifest } from "../plugins/spec";
 
 function manifestOf(id: string, overrides: Record<string, unknown> = {}): PluginManifest {
@@ -39,23 +39,23 @@ function runtimeOf(manifest: PluginManifest): PluginRuntime {
 }
 
 // 콘텐츠 영역 하나에 플러그인 뷰 인스턴스들을 실은 최소 탭(핸들러가 읽는 경로만 채운다).
-function tabWith(views: View[]): ProjectTab {
+function tabWith(tabs: Tab[]): Project {
   return {
     id: "t1",
-    contents: [
+    spaces: [
       {
         id: "c1",
         title: "1",
-        layout: { type: "leaf", value: { id: "g1", views, activeViewId: views[0]?.id ?? "" } },
-        activeGroupId: "g1",
+        layout: { type: "leaf", value: { id: "g1", tabs, activeTabId: tabs[0]?.id ?? "" } },
+        activePaneId: "g1",
       },
     ],
-    activeContentId: "c1",
-  } as unknown as ProjectTab;
+    activeSpaceId: "c1",
+  } as unknown as Project;
 }
 
-const pluginView = (over: Partial<View> & { id: string; pluginId: string; view: string }): View =>
-  ({ kind: "plugin", title: "Canvas", ...over }) as View;
+const pluginView = (over: Partial<Tab> & { id: string; pluginId: string; view: string }): Tab =>
+  ({ kind: "plugin", title: "Canvas", ...over }) as Tab;
 
 beforeAll(() => {
   if (!getSpec("plugin.conformance")) registerPluginCatalog();
@@ -64,12 +64,12 @@ beforeAll(() => {
 beforeEach(() => {
   invoke.mockClear();
   usePlugins.setState({ plugins: {} });
-  useSessions.setState({ tabs: [] });
+  useSessions.setState({ projects: [] });
 });
 
 afterEach(() => {
   usePlugins.setState({ plugins: {} });
-  useSessions.setState({ tabs: [] });
+  useSessions.setState({ projects: [] });
 });
 
 describe("plugin.conformance 등록(발견성)", () => {
@@ -114,7 +114,7 @@ describe("plugin.conformance — C2 view-status(런타임 판정, viewStatusConf
     usePlugins.setState({ plugins: { [id]: runtimeOf(declaredManifest(id, ["idle", "busy"])) } });
     // 콘텐츠 뷰 두 인스턴스: v1 은 status 미보고(선언 있음 → 위반), v2 는 선언된 코드 보고.
     useSessions.setState({
-      tabs: [
+      projects: [
         tabWith([
           pluginView({ id: "v1", pluginId: id, view: "canvas" }),
           pluginView({ id: "v2", pluginId: id, view: "canvas", status: { code: "idle" } }),
@@ -137,7 +137,7 @@ describe("plugin.conformance — C2 view-status(런타임 판정, viewStatusConf
     const id = "demo";
     usePlugins.setState({ plugins: { [id]: runtimeOf(declaredManifest(id, ["running"])) } });
     useSessions.setState({
-      tabs: [tabWith([pluginView({ id: "v1", pluginId: id, view: "canvas", status: { code: "running" } })])],
+      projects: [tabWith([pluginView({ id: "v1", pluginId: id, view: "canvas", status: { code: "running" } })])],
     });
 
     const r = await execute("plugin.conformance", { id }, {});
@@ -152,7 +152,7 @@ describe("plugin.conformance — C2 view-status(런타임 판정, viewStatusConf
     const id = "demo";
     usePlugins.setState({ plugins: { [id]: runtimeOf(declaredManifest(id, [])) } });
     useSessions.setState({
-      tabs: [tabWith([pluginView({ id: "v1", pluginId: id, view: "canvas" })])],
+      projects: [tabWith([pluginView({ id: "v1", pluginId: id, view: "canvas" })])],
     });
 
     const r = await execute("plugin.conformance", { id }, {});
@@ -167,7 +167,7 @@ describe("plugin.conformance — C2 view-status(런타임 판정, viewStatusConf
     const id = "demo";
     usePlugins.setState({ plugins: { [id]: runtimeOf(declaredManifest(id, undefined)) } });
     useSessions.setState({
-      tabs: [tabWith([pluginView({ id: "v1", pluginId: id, view: "canvas", status: { code: "idle" } })])],
+      projects: [tabWith([pluginView({ id: "v1", pluginId: id, view: "canvas", status: { code: "idle" } })])],
     });
 
     const r = await execute("plugin.conformance", { id }, {});
@@ -181,7 +181,7 @@ describe("plugin.conformance — C2 view-status(런타임 판정, viewStatusConf
     const id = "demo";
     usePlugins.setState({ plugins: { [id]: runtimeOf(declaredManifest(id, ["ready"])) } });
     useSessions.setState({
-      tabs: [tabWith([pluginView({ id: "v1", pluginId: id, view: "canvas", status: { code: "wat" } })])],
+      projects: [tabWith([pluginView({ id: "v1", pluginId: id, view: "canvas", status: { code: "wat" } })])],
     });
 
     const r = await execute("plugin.conformance", { id }, {});
@@ -271,7 +271,7 @@ describe("plugin.view.open — rail 배치는 열기 대상이 아니다(좌 레
       },
       { mount: () => {} },
     );
-    useSessions.setState({ tabs: [tabWith([])], activeId: "t1" } as never);
+    useSessions.setState({ projects: [tabWith([])], activeId: "t1" } as never);
     const r = (await execute("plugin.view.open", { view: "railplug.tree" }, {})) as {
       ok: boolean;
       code: string;

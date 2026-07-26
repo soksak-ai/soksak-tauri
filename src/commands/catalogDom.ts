@@ -360,7 +360,7 @@ export function registerDomCatalog(): void {
       "{ requestedViewId, mounted, delivered, activeViewId, settled, windowFocused, activeElement:{ tag, dataNode, className, ancestors } }",
     message: (d) =>
       tmsg("msg.ui.focus.state", {
-        view: String(d.activeViewId ?? "none"),
+        view: String(d.activeTabId ?? "none"),
       }),
     examples: ["ui.focus.state"],
     handler: () => {

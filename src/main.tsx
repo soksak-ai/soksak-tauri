@@ -156,7 +156,7 @@ async function boot(): Promise<void> {
   // 프로젝트 데몬 열림 훅 — 기록된 잔존 pid 회수 후, 사용자가 허용한 데몬만 자동 기동한다
   // (Procfile 발견만으로는 아무것도 실행하지 않는다 — 보안 계약). 실패해도 부트를 막지 않는다.
   {
-    const root = useSessions.getState().tabs.find((t) => t.id === useSessions.getState().activeId)?.root;
+    const root = useSessions.getState().projects.find((t) => t.id === useSessions.getState().activeId)?.root;
     if (root) void daemonOnProjectOpen(root);
   }
   // 스킬 쓰기-스루 — 플러그인 활성 집합이 변하면 SKILL.md 를 재생성한다(P8).

@@ -4,7 +4,7 @@ import {
   useSessions,
   viewDisplayTitle,
   type Program,
-  type ViewGroup,
+  type Pane,
 } from "../state/sessions";
 import { useCloseConfirm } from "../state/closeConfirm";
 import { getRegisteredView } from "../plugins/viewRegistry";
@@ -46,7 +46,7 @@ export const ViewTabs = memo(function ViewTabs({
   onTabPointerDown,
 }: {
   projectId: string;
-  group: ViewGroup;
+  group: Pane;
   onTabPointerDown: (viewId: string, e: React.MouseEvent) => void;
 }) {
   const t = useT();
@@ -95,7 +95,7 @@ export const ViewTabs = memo(function ViewTabs({
 
   useLayoutEffect(() => {
     recompute();
-  }, [group.views.length]);
+  }, [group.tabs.length]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -108,7 +108,7 @@ export const ViewTabs = memo(function ViewTabs({
     const target = center - el.clientWidth / 2;
     const max = el.scrollWidth - el.clientWidth;
     el.scrollTo({ left: Math.max(0, Math.min(max, target)), behavior: "smooth" });
-  }, [group.activeViewId, group.views.length]);
+  }, [group.activeTabId, group.tabs.length]);
 
   const onThumbDown = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -134,10 +134,10 @@ export const ViewTabs = memo(function ViewTabs({
   return (
     <div className="view-tabs-wrap">
       <div className="view-tabs" ref={scrollRef}>
-        {group.views.map((v) => (
+        {group.tabs.map((v) => (
           <div
             key={v.id}
-            className={`view-tab${v.id === group.activeViewId ? " active" : ""}`}
+            className={`view-tab${v.id === group.activeTabId ? " active" : ""}`}
             data-node={`tab/view/${v.id}`}
             onMouseDown={(e) => onTabPointerDown(v.id, e)}
             // 더블클릭 = 최대화(컨텐츠 영역 전체) — 헤더가 타이틀로 바뀌고

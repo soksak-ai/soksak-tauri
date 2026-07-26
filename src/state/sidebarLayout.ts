@@ -3,7 +3,7 @@
 //
 // [RULE] 사이드바 뷰는 registry 가 소유(viewsForPlacement)하고, 레이아웃은 그 viewKey 들의 *배치*만
 // 담는다. 등록 변화(플러그인 활성/비활성)와 reconcile 해 새 뷰는 첫 leaf 에 추가, 사라진 뷰는 제거한다.
-// 순회·split·remove 는 splitTree.ts 단일 구현(GroupNode/PaneNode 와 동일 코드).
+// 순회·split·remove 는 splitTree.ts 단일 구현(PaneNode 와 동일 코드).
 
 import {
   type SplitTree,

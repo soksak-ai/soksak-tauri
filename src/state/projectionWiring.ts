@@ -7,7 +7,7 @@
 //   - startProjectionTracking: 세션 구독 → focusHistory 기록·정리 + projection.changed 발화.
 
 import { leavesOf } from "./splitTree";
-import { useSessions, type ProjectTab } from "./sessions";
+import { useSessions, type Project } from "./sessions";
 import {
   resolveProjection,
   useProjection,
@@ -25,22 +25,22 @@ import { emitPluginEvent } from "../plugins/hooks";
 // 활성 체인의 말단(활성 콘텐츠 뷰) → 선언 요약. plugin 뷰 = 등록 decl 의 sidebar,
 // file 뷰 = 담당 fileViewer 의 sidebar(§3.1). 뷰 없음 = null(빈 프로젝트).
 function boundViewInContent(
-  project: ProjectTab,
+  project: Project,
   contentId: string,
   viewId?: string,
 ): BoundView | null {
   const content =
-    project.contents.find((c) => c.id === contentId) ?? null;
+    project.spaces.find((c) => c.id === contentId) ?? null;
   if (!content) return null;
   const groups = leavesOf(content.layout);
   const activeGroup =
-    groups.find((g) => g.id === content.activeGroupId) ?? groups[0];
+    groups.find((g) => g.id === content.activePaneId) ?? groups[0];
   const group = viewId
-    ? groups.find((g) => g.views.some((v) => v.id === viewId))
+    ? groups.find((g) => g.tabs.some((v) => v.id === viewId))
     : activeGroup;
   const view = viewId
-    ? group?.views.find((v) => v.id === viewId)
-    : group?.views.find((v) => v.id === group.activeViewId);
+    ? group?.tabs.find((v) => v.id === viewId)
+    : group?.tabs.find((v) => v.id === group.activeTabId);
   if (!view) return null;
   const ctx = { groupId: group?.id ?? null, contentId: content.id };
   if (view.kind === "plugin") {
@@ -62,10 +62,10 @@ function boundViewInContent(
   };
 }
 
-export function boundViewOf(project: ProjectTab): BoundView | null {
+export function boundViewOf(project: Project): BoundView | null {
   const content =
-    project.contents.find((c) => c.id === project.activeContentId) ??
-    project.contents[0];
+    project.spaces.find((c) => c.id === project.activeSpaceId) ??
+    project.spaces[0];
   return content ? boundViewInContent(project, content.id) : null;
 }
 
@@ -85,13 +85,13 @@ export function realProjectionDeps(): ProjectionDeps {
 
 // 프로젝트의 현재 투영 — 읽기 시점 파생. 미존재 프로젝트 = null.
 export function projectionFor(projectId: string): Projection | null {
-  const tab = useSessions.getState().tabs.find((t) => t.id === projectId);
+  const tab = useSessions.getState().projects.find((t) => t.id === projectId);
   if (!tab) return null;
   const pins =
     useProjection.getState().byProject[projectId]?.pins ?? { left: [], right: [] };
   const content =
-    tab.contents.find((c) => c.id === tab.activeContentId) ?? tab.contents[0];
-  const lockedId = content?.railBindingViewId;
+    tab.spaces.find((c) => c.id === tab.activeSpaceId) ?? tab.spaces[0];
+  const lockedId = content?.railBindingTabId;
   const bound = content
     ? boundViewInContent(tab, content.id, lockedId) ?? boundViewInContent(tab, content.id)
     : null;
@@ -105,7 +105,7 @@ export function startProjectionTracking(): () => void {
   // 결부·슬롯·핀 변경 — 그룹 내 탭 전환, 강등↔승격, 핀 추가/해제 전부 포함).
   const last = new Map<string, string>();
 
-  const sync = (tabs: ProjectTab[], opts?: { silent?: boolean }) => {
+  const sync = (tabs: Project[], opts?: { silent?: boolean }) => {
     const proj = useProjection.getState();
     const alive = new Set(tabs.map((t) => t.id));
     for (const pid of Object.keys(proj.byProject)) {
@@ -124,8 +124,8 @@ export function startProjectionTracking(): () => void {
         // 결부 대상은 언제나 현재 활성 뷰다. 같은 rail 구현을 공유하는 뷰 사이에서도
         // 이 id를 고정하면 FLOW 위치·관계 외곽선·공개 상태가 이전 패널을 가리킨다.
         // DOM 인스턴스 안정성은 resolveProjection의 instanceKey가 별도로 소유한다.
-        const locked = t.contents.find((c) => c.id === candidate.contentId)
-          ?.railBindingViewId;
+        const locked = t.spaces.find((c) => c.id === candidate.contentId)
+          ?.railBindingTabId;
         if (locked !== vid) {
           useSessions.getState().bindContentRail(t.id, candidate.contentId, vid);
         }
@@ -146,9 +146,9 @@ export function startProjectionTracking(): () => void {
       const entry = useProjection.getState().byProject[t.id];
       if (entry && entry.focusHistory.length > 0) {
         const ids = new Set<string>();
-        for (const c of t.contents) {
+        for (const c of t.spaces) {
           for (const g of leavesOf(c.layout)) {
-            for (const v of g.views) ids.add(v.id);
+            for (const v of g.tabs) ids.add(v.id);
           }
         }
         for (const v of entry.focusHistory) {
@@ -162,17 +162,17 @@ export function startProjectionTracking(): () => void {
   };
 
   // 부트 관측은 지문만 심고 발화하지 않는다 — 복원이 이벤트로 리플레이되지 않게(R9).
-  sync(useSessions.getState().tabs, { silent: true });
-  const offSessions = useSessions.subscribe((s) => sync(s.tabs));
+  sync(useSessions.getState().projects, { silent: true });
+  const offSessions = useSessions.subscribe((s) => sync(s.projects));
   // 레지스트리·계약 선택 변화도 슬롯 해소에 영향(강등↔승격·구현체 교체) — 같은 sweep.
   const offRegistry = useViewRegistry.subscribe(() =>
-    sync(useSessions.getState().tabs),
+    sync(useSessions.getState().projects),
   );
   const offSelection = useContractSelection.subscribe(() =>
-    sync(useSessions.getState().tabs),
+    sync(useSessions.getState().projects),
   );
   const offProjection = useProjection.subscribe(() =>
-    sync(useSessions.getState().tabs),
+    sync(useSessions.getState().projects),
   );
   return () => {
     offSessions();

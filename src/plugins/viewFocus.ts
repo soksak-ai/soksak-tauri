@@ -328,14 +328,14 @@ export function transferViewFocus<T>(
 
 export function activeSessionViewId(): string | null {
   const state = useSessions.getState();
-  const project = state.tabs.find((item) => item.id === state.activeId);
-  const space = project?.contents.find(
-    (item) => item.id === project.activeContentId,
+  const project = state.projects.find((item) => item.id === state.activeId);
+  const space = project?.spaces.find(
+    (item) => item.id === project.activeSpaceId,
   );
   const panel = space
-    ? allGroups(space.layout).find((item) => item.id === space.activeGroupId)
+    ? allGroups(space.layout).find((item) => item.id === space.activePaneId)
     : null;
-  return panel?.activeViewId ?? null;
+  return panel?.activeTabId ?? null;
 }
 
 /** Keep focus intent aligned with every active-chain state transition. */

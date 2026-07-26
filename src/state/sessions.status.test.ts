@@ -1,22 +1,22 @@
 // sessions view.status 채널(R1 보고 / R4 회수) — setViewStatus set·clear·미존재 뷰.
 import { beforeEach, describe, expect, it } from "vitest";
-import { allGroups, useSessions, type View } from "./sessions";
+import { allGroups, useSessions, type Tab } from "./sessions";
 
 useSessions.getState().bootstrapFirstProject("/tmp/soksak-status-test");
-const pristineTabs = JSON.parse(JSON.stringify(useSessions.getState().tabs));
+const pristineTabs = JSON.parse(JSON.stringify(useSessions.getState().projects));
 const pristineActive = useSessions.getState().activeId;
 
-function findView(viewId: string): View | undefined {
-  for (const t of useSessions.getState().tabs)
-    for (const c of t.contents)
+function findView(viewId: string): Tab | undefined {
+  for (const t of useSessions.getState().projects)
+    for (const c of t.spaces)
       for (const g of allGroups(c.layout))
-        for (const v of g.views) if (v.id === viewId) return v;
+        for (const v of g.tabs) if (v.id === viewId) return v;
   return undefined;
 }
 
 beforeEach(() => {
   useSessions.setState({
-    tabs: JSON.parse(JSON.stringify(pristineTabs)),
+    projects: JSON.parse(JSON.stringify(pristineTabs)),
     activeId: pristineActive,
   });
 });

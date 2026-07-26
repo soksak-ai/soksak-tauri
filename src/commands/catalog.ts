@@ -18,14 +18,14 @@ import {
   allGroups,
   projectArrangement,
   useSessions,
-  type ContentArea,
+  type Space,
   type DropZone,
-  type GroupNode,
+  type PaneNode,
   type Program,
-  type ProjectTab,
+  type Project,
   type Side,
-  type View,
-  type ViewGroup,
+  type Tab,
+  type Pane,
 } from "../state/sessions";
 import { addProjectClaimed, closeProjectReleased } from "../state/projectRegistry";
 import { getRegisteredProgram, listPrograms } from "../plugins/programRegistry";
@@ -85,17 +85,17 @@ const notFound = (what: string) => ({
 
 // 표면 반환 경계 변환(단일 진실) — store(sessions.ts 등) 내부 필드는 표면이 아니므로 이름을
 // 바꾸지 않는다(§ 계약). 핸들러가 store 결과를 그대로 반환하는 지점에서만 이 경계를 지나
-// 공개 명칭으로 옮긴다: groupId→panelId, contentId→spaceId, activeGroupId→activePanelId,
-// activeContentId→activeSpaceId, contents→spaces. 그 외 키는 그대로 통과(에러 응답도 무해).
+// 공개 명칭으로 옮긴다: groupId→panelId, contentId→spaceId, activePaneId→activePanelId,
+// activeTabId→activeViewId. 그 외 키는 그대로 통과(에러 응답도 무해) — 메모리 어휘와 표면
+// 명칭이 이미 같은 activeSpaceId·spaces 는 번역할 것이 없다.
 export function asSurface(r: object): object {
   const rec = r as Record<string, unknown>;
-  const { groupId, contentId, activeGroupId, activeContentId, contents, ...rest } = rec;
+  const { groupId, contentId, activePaneId, activeTabId, ...rest } = rec;
   const out: Record<string, unknown> = rest;
   if ("groupId" in rec) out.panelId = groupId;
   if ("contentId" in rec) out.spaceId = contentId;
-  if ("activeGroupId" in rec) out.activePanelId = activeGroupId;
-  if ("activeContentId" in rec) out.activeSpaceId = activeContentId;
-  if ("contents" in rec) out.spaces = contents;
+  if ("activePaneId" in rec) out.activePanelId = activePaneId;
+  if ("activeTabId" in rec) out.activeViewId = activeTabId;
   return out;
 }
 
@@ -104,7 +104,7 @@ export function asSurface(r: object): object {
 function withArrangement(projectId: string, result: object): object {
   const rec = result as Record<string, unknown>;
   if (rec.ok === false || rec.code) return result;
-  const t = useSessions.getState().tabs.find((item) => item.id === projectId);
+  const t = useSessions.getState().projects.find((item) => item.id === projectId);
   const solved = t ? projectArrangement(t) : null;
   if (!solved) return result;
   return {
@@ -119,11 +119,11 @@ function withArrangement(projectId: string, result: object): object {
 }
 
 interface Location {
-  project: ProjectTab;
-  content: ContentArea;
-  group: ViewGroup;
+  project: Project;
+  content: Space;
+  group: Pane;
   /** 빈 패널(뷰 0개)은 위치로 유효하되 view 만 없다 — view 를 전제하는 소비처는 부재를 처리한다. */
-  view?: View;
+  view?: Tab;
 }
 
 // layout.apply 저작 형태 — 1차 스페이스, 2차 각 스페이스의 패널(분할). 표면 계약(space/panel)과 같은 결.
@@ -139,10 +139,10 @@ interface LayoutSpaceSpec {
 // paneId 가 속한 위치를 전 프로젝트에서 검색.
 // splitId 로 분할 노드를 프로젝트 전체에서 검색(panel.equalize 의 현재 비율 조회용).
 function findSplitNode(
-  t: ProjectTab,
+  t: Project,
   splitId: string,
-): Extract<GroupNode, { type: "split" }> | null {
-  const walk = (n: GroupNode): Extract<GroupNode, { type: "split" }> | null => {
+): Extract<PaneNode, { type: "split" }> | null {
+  const walk = (n: PaneNode): Extract<PaneNode, { type: "split" }> | null => {
     if (n.type === "leaf") return null;
     if (n.id === splitId) return n;
     for (const c of n.children) {
@@ -151,7 +151,7 @@ function findSplitNode(
     }
     return null;
   };
-  for (const c of t.contents) {
+  for (const c of t.spaces) {
     const r = walk(c.layout);
     if (r) return r;
   }
@@ -161,10 +161,10 @@ function findSplitNode(
 // paneId = 플러그인 터미널의 view.id(코어 터미널 제거 — 터미널도 플러그인 뷰). 그 뷰의 위치.
 function locatePane(paneId: string): Location | null {
   const s = useSessions.getState();
-  for (const project of s.tabs) {
-    for (const content of project.contents) {
+  for (const project of s.projects) {
+    for (const content of project.spaces) {
       for (const group of allGroups(content.layout)) {
-        for (const view of group.views) {
+        for (const view of group.tabs) {
           if (view.id === paneId) {
             return { project, content, group, view };
           }
@@ -178,10 +178,10 @@ function locatePane(paneId: string): Location | null {
 // viewId 가 속한 위치를 전 프로젝트에서 검색.
 function locateView(viewId: string): Location | null {
   const s = useSessions.getState();
-  for (const project of s.tabs) {
-    for (const content of project.contents) {
+  for (const project of s.projects) {
+    for (const content of project.spaces) {
       for (const group of allGroups(content.layout)) {
-        const view = group.views.find((v) => v.id === viewId);
+        const view = group.tabs.find((v) => v.id === viewId);
         if (view) return { project, content, group, view };
       }
     }
@@ -192,13 +192,13 @@ function locateView(viewId: string): Location | null {
 // groupId 가 속한 위치(view = 그 그룹의 활성 뷰).
 function locateGroup(groupId: string): Location | null {
   const s = useSessions.getState();
-  for (const project of s.tabs) {
-    for (const content of project.contents) {
+  for (const project of s.projects) {
+    for (const content of project.spaces) {
       const group = allGroups(content.layout).find((g) => g.id === groupId);
       if (group) {
         const view =
-          group.views.find((v) => v.id === group.activeViewId) ??
-          group.views[0];
+          group.tabs.find((v) => v.id === group.activeTabId) ??
+          group.tabs[0];
         return { project, content, group, view };
       }
     }
@@ -209,18 +209,18 @@ function locateGroup(groupId: string): Location | null {
 // 활성 체인(활성 프로젝트 → 활성 컨텐츠 → 활성 그룹 → 활성 뷰).
 function activeChain(): Location | null {
   const s = useSessions.getState();
-  const project = s.tabs.find((t) => t.id === s.activeId);
+  const project = s.projects.find((t) => t.id === s.activeId);
   if (!project) return null;
   const content =
-    project.contents.find((c) => c.id === project.activeContentId) ??
-    project.contents[0];
+    project.spaces.find((c) => c.id === project.activeSpaceId) ??
+    project.spaces[0];
   if (!content) return null;
   const group =
-    allGroups(content.layout).find((g) => g.id === content.activeGroupId) ??
+    allGroups(content.layout).find((g) => g.id === content.activePaneId) ??
     allGroups(content.layout)[0];
   if (!group) return null;
   const view =
-    group.views.find((v) => v.id === group.activeViewId) ?? group.views[0];
+    group.tabs.find((v) => v.id === group.activeTabId) ?? group.tabs[0];
   // 빈 패널(전부 이동·닫힘)도 유효한 위치다 — 패널 대상 명령(view.open 등)은 계속 동작해야
   // 하므로 여기서 끊지 않고, view 를 전제하는 소비처가 부재를 처리한다(INTERNAL 사망 금지, 실측).
   return { project, content, group, view };
@@ -239,10 +239,10 @@ function resolveCtx(ctx: CommandContext): Location | null {
 function resolveProject(
   params: Record<string, unknown>,
   ctx: CommandContext,
-): ProjectTab | null {
+): Project | null {
   const id = params.project as string | undefined;
   if (id) {
-    return useSessions.getState().tabs.find((t) => t.id === id) ?? null;
+    return useSessions.getState().projects.find((t) => t.id === id) ?? null;
   }
   return resolveCtx(ctx)?.project ?? null;
 }
@@ -271,7 +271,7 @@ function terminalContextPane(
     return { paneId: loc.view.id };
   }
   for (const g of allGroups(loc.content.layout)) {
-    for (const v of g.views) {
+    for (const v of g.tabs) {
       if (hasPtyObservation(v.id)) return { paneId: v.id };
     }
   }
@@ -298,7 +298,7 @@ function findBrowserProgram(): string | undefined {
 
 // ── 직렬화(state.tree) ──────────────────────────────────────────────────────
 
-function serializeView(v: View) {
+function serializeView(v: Tab) {
   if (v.kind === "file") {
     return {
       id: v.id,
@@ -322,7 +322,7 @@ function serializeView(v: View) {
 }
 
 // 그룹 트리(분할 구조 — splitId/dir/sizes 는 panel.resize 의 대상).
-function serializeLayout(node: GroupNode): object {
+function serializeLayout(node: PaneNode): object {
   if (node.type === "leaf") return { panel: node.value.id };
   return {
     split: { id: node.id, dir: node.dir, sizes: node.sizes },
@@ -331,10 +331,10 @@ function serializeLayout(node: GroupNode): object {
 }
 
 function serializeContent(
-  c: ContentArea,
-  activeContentId: string,
+  c: Space,
+  activeSpaceId: string,
   /** 이 스페이스의 해(배치 해결기). 레일이 없는 비활성 스페이스는 null — 정본 배열 그대로. */
-  arrangement: Arrangement<ViewGroup> | null,
+  arrangement: Arrangement<Pane> | null,
   railStation?: number,
   railOpen = true,
 ) {
@@ -342,10 +342,10 @@ function serializeContent(
   const canonicalLayout = serializeLayout(c.layout);
   const canonicalCells = computeLayout(c.layout).cells;
   const projectedCells = computeLayout(displayLayout).cells;
-  const maximizedGroup = c.maximizedViewId
-    ? (projectedCells.find(({ group }) => group.id === c.activeGroupId) ??
+  const maximizedGroup = c.maximizedTabId
+    ? (projectedCells.find(({ group }) => group.id === c.activePaneId) ??
       projectedCells.find(({ group }) =>
-        group.views.some((view) => view.id === c.maximizedViewId),
+        group.tabs.some((view) => view.id === c.maximizedTabId),
       ) ?? null)
     : null;
   const cells = maximizedGroup
@@ -356,34 +356,34 @@ function serializeContent(
   const swappedPanels = canonicalOrder.filter(
     (id, index) => projectedOrder[index] !== id,
   );
-  const projection = c.maximizedViewId
+  const projection = c.maximizedTabId
     ? {
         kind: "maximized" as const,
         applied: true,
-        focusedPanelId: c.activeGroupId,
+        focusedPanelId: c.activePaneId,
         swappedPanels: [] as string[],
       }
     : displayLayout !== c.layout
       ? {
           kind: "switched" as const,
           applied: true,
-          focusedPanelId: c.activeGroupId,
+          focusedPanelId: c.activePaneId,
           swappedPanels,
         }
       : {
           kind: "canonical" as const,
           applied: false,
-          focusedPanelId: c.activeGroupId,
+          focusedPanelId: c.activePaneId,
           swappedPanels: [] as string[],
         };
-  const boundPanel = c.railBindingViewId
+  const boundPanel = c.railBindingTabId
     ? cells.find(({ group }) =>
-        group.views.some((view) => view.id === c.railBindingViewId),
+        group.tabs.some((view) => view.id === c.railBindingTabId),
       )
     : undefined;
-  const railRelation = c.railBindingViewId
+  const railRelation = c.railBindingTabId
     ? {
-        boundViewId: c.railBindingViewId,
+        boundViewId: c.railBindingTabId,
         boundPanelId: boundPanel?.group.id ?? null,
         connected:
           railOpen &&
@@ -395,9 +395,9 @@ function serializeContent(
   return {
     id: c.id,
     title: c.title,
-    active: c.id === activeContentId,
-    activePanelId: c.activeGroupId,
-    maximizedViewId: c.maximizedViewId ?? null,
+    active: c.id === activeSpaceId,
+    activePanelId: c.activePaneId,
+    maximizedViewId: c.maximizedTabId ?? null,
     // layout/panels = 지금 화면. canonicalLayout = 저장된 SplitTree의 읽기 전용 직렬화.
     // 소비자는 투영 결과를 정본으로 오인하거나 private store를 읽을 필요가 없다.
     layout: maximizedGroup
@@ -414,9 +414,9 @@ function serializeContent(
         width: Math.round(rect.width * 10) / 10,
         height: Math.round(rect.height * 10) / 10,
       },
-      active: group.id === c.activeGroupId,
-      activeViewId: group.activeViewId,
-      views: group.views.map(serializeView),
+      active: group.id === c.activePaneId,
+      activeViewId: group.activeTabId,
+      views: group.tabs.map(serializeView),
     })),
   };
 }
@@ -424,7 +424,7 @@ function serializeContent(
 // 좌 레일 위치의 공개 사실. 저장의 PIN station과 현재 그리드에서 실제로
 // 적용되는 station은 구분한다. 구 스냅샷의 dirty PIN을 조회했다는 이유만으로
 // 저장값을 변경하지 않으며, 명시적 PIN 명령만 유효 라인으로 스냅해 저장한다.
-function serializeLeftRailPosition(t: ProjectTab) {
+function serializeLeftRailPosition(t: Project) {
   const arrangement = projectArrangement(t);
   const cleanLines = arrangement?.cleanLines ?? [0, 100];
   const placement: RailPlacement = t.leftRailPlacement ?? DEFAULT_RAIL_PLACEMENT;
@@ -443,7 +443,7 @@ function serializeTree() {
   const s = useSessions.getState();
   return {
     activeProjectId: s.activeId,
-    projects: s.tabs.map((t) => {
+    projects: s.projects.map((t) => {
       const leftRailPosition = serializeLeftRailPosition(t);
       const arrangement = projectArrangement(t);
       return {
@@ -454,12 +454,12 @@ function serializeTree() {
         sidebarOpen: t.sidebarOpen,
         leftRailPosition,
         active: t.id === s.activeId,
-        activeSpaceId: t.activeContentId,
-        spaces: t.contents.map((c) =>
+        activeSpaceId: t.activeSpaceId,
+        spaces: t.spaces.map((c) =>
           serializeContent(
             c,
-            t.activeContentId,
-            c.id === t.activeContentId ? arrangement : null,
+            t.activeSpaceId,
+            c.id === t.activeSpaceId ? arrangement : null,
             leftRailPosition.effectiveStation,
             t.sidebarOpen,
           ),
@@ -570,7 +570,7 @@ export function registerCatalog(): void {
       const railOpen = t.sidebarOpen;
       return {
         projectId: t.id,
-        spaceId: t.activeContentId,
+        spaceId: t.activeSpaceId,
         station: solved.station,
         cleanLines: solved.cleanLines,
         switched: solved.swapped,
@@ -638,7 +638,7 @@ export function registerCatalog(): void {
     message: (d) => tmsg("msg.project.list", { n: ((d.projects as unknown[]) ?? []).length }),
     examples: ["project.list"],
     handler: () => ({
-      projects: S().tabs.map((t) => ({
+      projects: S().projects.map((t) => ({
         id: t.id,
         title: t.title,
         root: t.root ?? null,
@@ -1077,7 +1077,7 @@ export function registerCatalog(): void {
         if (!changed.ok) return changed;
       }
 
-      const updated = S().tabs.find((item) => item.id === t.id);
+      const updated = S().projects.find((item) => item.id === t.id);
       if (!updated) return notFound("프로젝트 없음");
       return {
         projectId: updated.id,
@@ -1156,10 +1156,10 @@ export function registerCatalog(): void {
       const t = resolveProject(p, ctx);
       if (!t) return notFound("프로젝트 없음");
       return asSurface({
-        contents: t.contents.map((c) => ({
+        spaces: t.spaces.map((c) => ({
           id: c.id,
           title: c.title,
-          active: c.id === t.activeContentId,
+          active: c.id === t.activeSpaceId,
         })),
       });
     },
@@ -1272,7 +1272,7 @@ export function registerCatalog(): void {
       const t = resolveProject(p, ctx);
       if (!t) return notFound("프로젝트 없음");
       const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-      const prev = t.activeContentId;
+      const prev = t.activeSpaceId;
       const to = p.to as string;
       const from = (p.from as string | undefined) ?? prev;
       const frames = (p.frames as number | undefined) ?? 30;
@@ -1373,15 +1373,15 @@ export function registerCatalog(): void {
       const t = resolveProject(p, ctx);
       if (!t) return notFound("프로젝트 없음");
       const c = p.space
-        ? t.contents.find((x) => x.id === p.space)
+        ? t.spaces.find((x) => x.id === p.space)
         : (resolveCtx(ctx)?.content ??
-          t.contents.find((x) => x.id === t.activeContentId));
+          t.spaces.find((x) => x.id === t.activeSpaceId));
       if (!c) return notFound(`스페이스 없음: ${p.space}`);
       const arrangement =
-        c.id === t.activeContentId ? projectArrangement(t) : null;
+        c.id === t.activeSpaceId ? projectArrangement(t) : null;
       const out = serializeContent(
         c,
-        t.activeContentId,
+        t.activeSpaceId,
         arrangement,
         serializeLeftRailPosition(t).effectiveStation,
         t.sidebarOpen,
@@ -1530,11 +1530,11 @@ export function registerCatalog(): void {
     handler: (p) => {
       const loc = locateGroup(p.panel as string);
       if (!loc) return notFound(`패널 없음: ${p.panel}`);
-      if (!loc.group.activeViewId)
+      if (!loc.group.activeTabId)
         return S().setActiveGroup(loc.project.id, p.panel as string);
       return transferViewFocus(
         activeSessionViewId(),
-        loc.group.activeViewId,
+        loc.group.activeTabId,
         () => S().setActiveGroup(loc.project.id, p.panel as string),
       );
     },
@@ -1751,8 +1751,8 @@ export function registerCatalog(): void {
       if (!loc) return notFound("패널 없음");
       return asSurface({
         groupId: loc.group.id,
-        activeViewId: loc.group.activeViewId,
-        views: loc.group.views.map(serializeView),
+        activeViewId: loc.group.activeTabId,
+        views: loc.group.tabs.map(serializeView),
       });
     },
   });
@@ -1923,10 +1923,10 @@ export function registerCatalog(): void {
     handler: (p) => {
       const only = p.view as string | undefined;
       const statuses: { viewId: string; code: string; message?: string }[] = [];
-      for (const t of S().tabs)
-        for (const c of t.contents)
+      for (const t of S().projects)
+        for (const c of t.spaces)
           for (const g of allGroups(c.layout))
-            for (const v of g.views)
+            for (const v of g.tabs)
               if (v.status && (!only || v.id === only))
                 statuses.push({
                   viewId: v.id,

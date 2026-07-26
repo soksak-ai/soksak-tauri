@@ -21,7 +21,7 @@ let host: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
-  useSessions.setState({ tabs: [], activeId: "" });
+  useSessions.setState({ projects: [], activeId: "" });
   useSessions.getState().bootstrapFirstProject("/test/root");
   host = document.createElement("div");
   document.body.appendChild(host);
@@ -35,13 +35,13 @@ afterEach(() => {
 
 describe("기능 탭 최대화 문법", () => {
   it("탭 더블클릭은 그 기능 뷰를 최대화한다", () => {
-    const base = useSessions.getState().tabs[0];
-    const content = base.contents[0];
+    const base = useSessions.getState().projects[0];
+    const content = base.spaces[0];
     const viewId = "v-max";
     const group = {
       ...allGroups(content.layout)[0],
-      activeViewId: viewId,
-      views: [
+      activeTabId: viewId,
+      tabs: [
         {
           id: viewId,
           kind: "plugin" as const,
@@ -53,9 +53,9 @@ describe("기능 탭 최대화 문법", () => {
     };
     const project = {
       ...base,
-      contents: [{ ...content, activeGroupId: group.id, layout: splitLeaf(group) }],
+      spaces: [{ ...content, activePaneId: group.id, layout: splitLeaf(group) }],
     };
-    useSessions.setState({ tabs: [project], activeId: project.id });
+    useSessions.setState({ projects: [project], activeId: project.id });
 
     act(() => {
       root.render(
@@ -73,7 +73,7 @@ describe("기능 탭 최대화 문법", () => {
     });
 
     expect(
-      useSessions.getState().tabs[0].contents[0].maximizedViewId,
+      useSessions.getState().projects[0].spaces[0].maximizedTabId,
     ).toBe(viewId);
   });
 });

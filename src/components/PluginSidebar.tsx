@@ -24,7 +24,7 @@ import { localize, useT } from "../i18n";
 import { execute } from "../commands/registry";
 
 // memo 경계(원칙 2·3): 프로젝트 식별자만 받고 *자기가 쓰는 필드*(rightView/rightOpen/root)를
-// 셀렉터로 구독한다 — project 객체 전체를 prop 으로 받으면 activeContentId 같은 무관 필드 변경(탭
+// 셀렉터로 구독한다 — project 객체 전체를 prop 으로 받으면 activeSpaceId 같은 무관 필드 변경(탭
 // 전환)에도 정체성이 바뀌어 리렌더된다. 슬라이스 구독이면 그 필드가 실제 바뀔 때만 리렌더된다.
 export const PluginSidebar = memo(function PluginSidebar({
   projectId,
@@ -41,12 +41,12 @@ export const PluginSidebar = memo(function PluginSidebar({
   );
   const setRightView = useSessions((s) => s.setRightView);
   const rightView = useSessions(
-    (s) => s.tabs.find((x) => x.id === projectId)?.rightView,
+    (s) => s.projects.find((x) => x.id === projectId)?.rightView,
   );
   const rightOpen = useSessions(
-    (s) => s.tabs.find((x) => x.id === projectId)?.rightOpen ?? false,
+    (s) => s.projects.find((x) => x.id === projectId)?.rightOpen ?? false,
   );
-  const root = useSessions((s) => s.tabs.find((x) => x.id === projectId)?.root);
+  const root = useSessions((s) => s.projects.find((x) => x.id === projectId)?.root);
   const rightMode = useSettings((s) => s.rightSidebarMode);
   const setRightMode = useSettings((s) => s.setRightSidebarMode);
 

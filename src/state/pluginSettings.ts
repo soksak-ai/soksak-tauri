@@ -7,7 +7,7 @@ import type { CoreStoreDeps } from "./coreStore";
 // 저장은 "오버라이드된 값"만(기본값은 매니페스트 configuration 이 단일 진실 — 여기 안 둔다).
 // effective = 프로젝트 오버라이드 ?? 글로벌 ?? 스키마 기본(호출부가 def 로 넘김).
 //
-// 프로젝트 정체성 = root 경로(ProjectTab.root, P4) — 세션-스코프 tab id 가 아니라 영속 키.
+// 프로젝트 정체성 = root 경로(Project.root, P4) — 세션-스코프 tab id 가 아니라 영속 키.
 
 // list(문자열 배열)·map({key,value} 배열) 타입 설정값 포함 — 설정 모달이 행별 add/remove 로 편집.
 export type SettingValue = boolean | number | string | string[] | MapEntry[];

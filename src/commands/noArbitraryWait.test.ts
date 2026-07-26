@@ -48,47 +48,47 @@ const ROOT = join(__dirname, "..", "..");
  *     wait_timeout, 죽은 사이드카 recv_timeout). 무한 대기 방지가 목적이지 페이싱이 아니다.
  *
  *  여기 없는 새 타이머는 게이트가 잡는다 — 이 표가 게이트의 존재 이유다. */
-const ALLOWED: { site: string; event: string; why: string }[] = [
+const ALLOWED: { file: string; mark: string; event: string; why: string }[] = [
   // ── ① 사용자 파라미터 대기 ──
-  { site: "src/commands/catalog.ts:1274", event: "caller-specified", why: "sleep 헬퍼 — 소비처는 전부 호출자 지정 ms" },
-  { site: "src/commands/catalog.ts:1296", event: "caller-specified", why: "settleMs 파라미터 — 캡처 정착 시간을 호출자가 발화" },
-  { site: "src/commands/catalog.ts:1304", event: "caller-specified", why: "applyAtMs 파라미터" },
-  { site: "src/commands/catalog.ts:2915", event: "caller-specified", why: "sleep 헬퍼(테마 스캔)" },
-  { site: "src/commands/catalog.ts:2956", event: "caller-specified", why: "settleMs 파라미터" },
-  { site: "src/commands/catalog.ts:2987", event: "caller-specified", why: "applyAtMs 파라미터" },
-  { site: "src/commands/catalogDebug.ts:11", event: "caller-specified", why: "debug.sleep — 대기 자체가 명령의 기능" },
-  { site: "src/commands/catalogDebug.ts:31", event: "caller-specified", why: "debug.sleep 본체" },
-  { site: "src/commands/catalogDom.ts:441", event: "caller-specified", why: "focus trace 자동 종료 ms — 호출자 지정" },
-  { site: "src/commands/catalogDom.ts:933", event: "caller-specified", why: "드래그 durationMs/steps — 호출자 지정" },
-  { site: "src/commands/catalogRemote.ts:83", event: "caller-specified", why: "remote.confirm TTL(ttlSecs 파라미터) — 만료=Deny 가 계약(fail-closed)" },
+  { file: "src/commands/catalog.ts", mark: "const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));", event: "caller-specified", why: "sleep 헬퍼 — 소비처는 전부 호출자 지정 ms" },
+  { file: "src/commands/catalog.ts", mark: "await sleep(settleMs);", event: "caller-specified", why: "settleMs 파라미터 — 캡처 정착 시간을 호출자가 발화" },
+  { file: "src/commands/catalog.ts", mark: "await sleep(applyAtMs);", event: "caller-specified", why: "applyAtMs 파라미터" },
+  { file: "src/commands/catalog.ts", mark: "const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));", event: "caller-specified", why: "sleep 헬퍼(테마 스캔)" },
+  { file: "src/commands/catalog.ts", mark: "await sleep(settleMs);", event: "caller-specified", why: "settleMs 파라미터" },
+  { file: "src/commands/catalog.ts", mark: "await sleep(applyAtMs);", event: "caller-specified", why: "applyAtMs 파라미터" },
+  { file: "src/commands/catalogDebug.ts", mark: "const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));", event: "caller-specified", why: "debug.sleep — 대기 자체가 명령의 기능" },
+  { file: "src/commands/catalogDebug.ts", mark: "await sleep(ms);", event: "caller-specified", why: "debug.sleep 본체" },
+  { file: "src/commands/catalogDom.ts", mark: "window.setTimeout(() => focusTraceStop?.(), ms)", event: "caller-specified", why: "focus trace 자동 종료 ms — 호출자 지정" },
+  { file: "src/commands/catalogDom.ts", mark: "window.setTimeout(resolve, durationMs / steps)", event: "caller-specified", why: "드래그 durationMs/steps — 호출자 지정" },
+  { file: "src/commands/catalogRemote.ts", mark: "setTimeout(() => {", event: "caller-specified", why: "remote.confirm TTL(ttlSecs 파라미터) — 만료=Deny 가 계약(fail-closed)" },
   // ── ② 프로토콜·OS 경계 유예(TS) ──
-  { site: "src/commands/catalogDom.ts:990", event: "dnd-frame-pacing", why: "합성 DragEvent 시퀀스의 프레임 간격 — 브라우저 DnD 상태기계가 같은 틱의 연속 이벤트를 접는다" },
+  { file: "src/commands/catalogDom.ts", mark: "new Promise((r) => setTimeout(r, 50))", event: "dnd-frame-pacing", why: "합성 DragEvent 시퀀스의 프레임 간격 — 브라우저 DnD 상태기계가 같은 틱의 연속 이벤트를 접는다" },
   // ── ② 프로토콜·OS 경계 유예 ──
-  { site: "src/commands/catalog.ts:2416", event: "self-destruct-reply-flush", why: "자기 파괴 명령은 답을 먼저 흘린다 — 통로가 파괴로 함께 죽는다(window.reload)" },
-  { site: "src/commands/catalog.ts:2571", event: "self-destruct-reply-flush", why: "동일 계약(window.close 자기 창)" },
-  { site: "src/commands/catalog.ts:2978", event: "theme-css-cascade", why: "테마 클래스 전환 후 CSS 캐스케이드 반영 유예 — 브라우저가 완료 신호를 주지 않는다" },
-  { site: "src-tauri/src/clipboard.rs:22", event: "self-write-ttl", why: "자기 쓰기 판별 시간창(TTL 상수) — 타이머가 아니라 판별 기준" },
-  { site: "src-tauri/src/data/commands.rs:603", event: "sqlite-write-backoff", why: "SQLITE_BUSY 재시도 백오프" },
-  { site: "src-tauri/src/data/ring.rs:20", event: "ring-prune-min-interval", why: "링 정리 최소 간격(유휴 하한)" },
-  { site: "src-tauri/src/data/ring.rs:63", event: "sqlite-busy-timeout", why: "SQLite busy_timeout — DB 계약" },
-  { site: "src-tauri/src/mediaproxy.rs:287", event: "http-client-timeout", why: "원격 HTTP 상한 — 네트워크는 사건을 보장하지 않는다" },
-  { site: "src-tauri/src/pty.rs:767", event: "ptyd-shutdown-grace", why: "옛 데몬의 종료 유예(응답 후 150ms) 계약을 넘긴다 — 재기동 1회 한정" },
-  { site: "src-tauri/src/pty.rs:805", event: "ptyd-socket-rebind", why: "구 데몬 소켓 해제→신 데몬 bind 사이 — 소켓 계승 신호가 없다" },
-  { site: "src-tauri/src/webview.rs:1131", event: "wk-inspector-async-show", why: "WebKit _inspector show 는 비동기이고 완료 콜백이 없다(SPI)" },
-  { site: "src-tauri/src/daemon.rs:424", event: "child-exit-poll", why: "child try_wait 유한 폴링(limit 상한·초과 시 kill) — waitpid 블로킹은 ring 수집과 양립 불가" },
-  { site: "src-tauri/src/daemon.rs:233", event: "child-exit-poll", why: "상주 데몬 종료 감시 — 동일 사유" },
-  { site: "src-tauri/src/schedule.rs:621", event: "scheduler-idle-cap", why: "다음 예약 없음 상태의 유휴 상한(스케줄 등록이 즉시 깨운다)" },
-  { site: "src-tauri/src/watcher.rs:43", event: "fs-debounce", why: "파일와처 디바운스 — 이벤트 병합 창" },
+  { file: "src/commands/catalog.ts", mark: "setTimeout(() => window.location.reload(), 30);", event: "self-destruct-reply-flush", why: "자기 파괴 명령은 답을 먼저 흘린다 — 통로가 파괴로 함께 죽는다(window.reload)" },
+  { file: "src/commands/catalog.ts", mark: "setTimeout(() => void invoke(\"window_close\", { label }), 30);", event: "self-destruct-reply-flush", why: "동일 계약(window.close 자기 창)" },
+  { file: "src/commands/catalog.ts", mark: "await sleep(250);", event: "theme-css-cascade", why: "테마 클래스 전환 후 CSS 캐스케이드 반영 유예 — 브라우저가 완료 신호를 주지 않는다" },
+  { file: "src-tauri/src/clipboard.rs", mark: "SELF_WRITE_TTL: Duration = Duration::from_secs(2)", event: "self-write-ttl", why: "자기 쓰기 판별 시간창(TTL 상수) — 타이머가 아니라 판별 기준" },
+  { file: "src-tauri/src/data/commands.rs", mark: "WRITE_BACKOFF: std::time::Duration = std::time::Duration::from_millis(60)", event: "sqlite-write-backoff", why: "SQLITE_BUSY 재시도 백오프" },
+  { file: "src-tauri/src/data/ring.rs", mark: "MIN_INTERVAL: Duration = Duration::from_secs(3600)", event: "ring-prune-min-interval", why: "링 정리 최소 간격(유휴 하한)" },
+  { file: "src-tauri/src/data/ring.rs", mark: "busy_timeout(Duration::from_secs(5))", event: "sqlite-busy-timeout", why: "SQLite busy_timeout — DB 계약" },
+  { file: "src-tauri/src/mediaproxy.rs", mark: "timeout(Duration::from_secs(60))", event: "http-client-timeout", why: "원격 HTTP 상한 — 네트워크는 사건을 보장하지 않는다" },
+  { file: "src-tauri/src/pty.rs", mark: "from_millis(400)", event: "ptyd-shutdown-grace", why: "옛 데몬의 종료 유예(응답 후 150ms) 계약을 넘긴다 — 재기동 1회 한정" },
+  { file: "src-tauri/src/pty.rs", mark: "from_millis(400)", event: "ptyd-socket-rebind", why: "구 데몬 소켓 해제→신 데몬 bind 사이 — 소켓 계승 신호가 없다" },
+  { file: "src-tauri/src/webview.rs", mark: "from_millis(450)", event: "wk-inspector-async-show", why: "WebKit _inspector show 는 비동기이고 완료 콜백이 없다(SPI)" },
+  { file: "src-tauri/src/daemon.rs", mark: "from_millis(200)", event: "child-exit-poll", why: "child try_wait 유한 폴링(limit 상한·초과 시 kill) — waitpid 블로킹은 ring 수집과 양립 불가" },
+  { file: "src-tauri/src/daemon.rs", mark: "from_millis(300)", event: "child-exit-poll", why: "상주 데몬 종료 감시 — 동일 사유" },
+  { file: "src-tauri/src/schedule.rs", mark: "Duration::from_secs(3_600)", event: "scheduler-idle-cap", why: "다음 예약 없음 상태의 유휴 상한(스케줄 등록이 즉시 깨운다)" },
+  { file: "src-tauri/src/watcher.rs", mark: "from_millis(250)", event: "fs-debounce", why: "파일와처 디바운스 — 이벤트 병합 창" },
   // ── ③ 유한 안전망 ──
-  { site: "src-tauri/src/activity.rs:71", event: "condvar-safety-net", why: "cv 사건이 주 경로 — 1s 는 closed 플래그 재확인 안전망" },
-  { site: "src-tauri/src/service.rs:363", event: "condvar-safety-net", why: "크래시 전이가 cv 를 울린다 — 20ms 는 유실 안전망" },
-  { site: "src-tauri/src/sidecar.rs:308", event: "sidecar-reply-cap", why: "죽은 사이드카에 무한 대기 방지(10s)" },
-  { site: "src-tauri/src/sidecar.rs:385", event: "sidecar-reply-cap", why: "동일(2s)" },
-  { site: "src-tauri/src/webview.rs:594", event: "main-thread-dispatch-cap", why: "메인스레드 디스패치 응답 상한(3s)" },
-  { site: "src-tauri/src/webview.rs:1566", event: "main-thread-dispatch-cap", why: "동일(15s — 콜드 부트 포함)" },
-  { site: "src-tauri/src/pty.rs:1251", event: "ptyd-bootstrap-handshake", why: "스폰 직후 소켓 준비 유한 재시도(2s 상한) — 감시는 소켓 에러 사건이 담당" },
-  { site: "src-tauri/src/pty.rs:1259", event: "ptyd-bootstrap-handshake", why: "동일 루프의 재시도 간격" },
-  { site: "src-tauri/src/webview.rs:1483", event: "extraction-page-settle", why: "추출용 임시 webview 의 페이지 정착 유한 재시도(timeout 상한)" },
+  { file: "src-tauri/src/activity.rs", mark: "wait_timeout(q, Duration::from_secs(1))", event: "condvar-safety-net", why: "cv 사건이 주 경로 — 1s 는 closed 플래그 재확인 안전망" },
+  { file: "src-tauri/src/service.rs", mark: "wait_timeout(inner, Duration::from_millis(20))", event: "condvar-safety-net", why: "크래시 전이가 cv 를 울린다 — 20ms 는 유실 안전망" },
+  { file: "src-tauri/src/sidecar.rs", mark: "recv_timeout(std::time::Duration::from_secs(10))", event: "sidecar-reply-cap", why: "죽은 사이드카에 무한 대기 방지(10s)" },
+  { file: "src-tauri/src/sidecar.rs", mark: "recv_timeout(std::time::Duration::from_secs(2))", event: "sidecar-reply-cap", why: "동일(2s)" },
+  { file: "src-tauri/src/webview.rs", mark: "recv_timeout(Duration::from_secs(3))", event: "main-thread-dispatch-cap", why: "메인스레드 디스패치 응답 상한(3s)" },
+  { file: "src-tauri/src/webview.rs", mark: "recv_timeout(Duration::from_secs(15))", event: "main-thread-dispatch-cap", why: "동일(15s — 콜드 부트 포함)" },
+  { file: "src-tauri/src/pty.rs", mark: "from_secs(2)", event: "ptyd-bootstrap-handshake", why: "스폰 직후 소켓 준비 유한 재시도(2s 상한) — 감시는 소켓 에러 사건이 담당" },
+  { file: "src-tauri/src/pty.rs", mark: "from_millis(50)", event: "ptyd-bootstrap-handshake", why: "동일 루프의 재시도 간격" },
+  { file: "src-tauri/src/webview.rs", mark: "tokio::time::sleep(Duration::from_millis(400))", event: "extraction-page-settle", why: "추출용 임시 webview 의 페이지 정착 유한 재시도(timeout 상한)" },
 ];
 
 /** grep -r 과 같은 순회 — 숨김/빌드 산출물은 grep 도 안 읽는 곳만 건너뛴다. */
@@ -118,11 +118,15 @@ function grepLines(dir: string, pattern: RegExp): string[] {
   return out;
 }
 
-const registered = new Set(ALLOWED.map((a) => a.site));
-
-/** 예외표에 사건 이름과 함께 등록되지 않은 자리들. */
+/** 예외표에 사건 이름과 함께 등록되지 않은 자리들.
+ *  앵커는 행 번호가 아니라 **그 줄의 내용**이다 — 행 번호는 무관한 편집(윗줄 추가)에도
+ *  깨진다(실측: pty.rs 에 7줄이 들어가자 아래 사이트 전부가 미등록으로 오탐됐다). */
 function unregistered(sites: string[]): string[] {
-  return sites.map((s) => s.split(":").slice(0, 2).join(":")).filter((s) => !registered.has(s));
+  return sites.filter((s) => {
+    const file = s.split(":")[0];
+    const text = s.split(":").slice(2).join(":");
+    return !ALLOWED.some((a) => a.file === file && text.includes(a.mark));
+  });
 }
 
 /** 질의1 — 명령 핸들러의 숫자 리터럴 타이머. */
@@ -189,10 +193,13 @@ describe("예외는 사건 이름과 함께만 산다", () => {
   });
 
   it("등록된 예외는 실재하는 자리를 가리킨다 — 사라진 자리를 표가 붙잡고 있지 않다", () => {
-    const measured = new Set(
-      [...tsSites(), ...rsSites()].map((s) => s.split(":").slice(0, 2).join(":")),
-    );
-    const stale = ALLOWED.map((a) => a.site).filter((s) => !measured.has(s));
+    const sites = [...tsSites(), ...rsSites()];
+    const stale = ALLOWED.filter(
+      (a) =>
+        !sites.some(
+          (s) => s.split(":")[0] === a.file && s.split(":").slice(2).join(":").includes(a.mark),
+        ),
+    ).map((a) => `${a.file} :: ${a.mark}`);
     expect(stale).toEqual([]);
   });
 });

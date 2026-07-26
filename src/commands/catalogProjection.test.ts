@@ -13,7 +13,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => undefined) })
 import { registerProjectionCatalog } from "./catalogProjection";
 import { execute, getSpec } from "./registry";
 import { useProjection } from "../state/projection";
-import { useSessions, type ProjectTab, type View } from "../state/sessions";
+import { useSessions, type Project, type Tab } from "../state/sessions";
 import { initialSidebarLayout } from "../state/sidebarLayout";
 import { useViewRegistry, type PluginViewProvider } from "../plugins/viewRegistry";
 import type { ContributedView } from "../plugins/spec";
@@ -37,11 +37,11 @@ function decl(id: string, over: Partial<ContributedView> = {}): ContributedView 
   };
 }
 
-function pluginView(id: string, pluginId: string, view: string): View {
+function pluginView(id: string, pluginId: string, view: string): Tab {
   return { id, kind: "plugin", title: id, pluginId, view };
 }
 
-function tab(views: View[], activeViewId: string): ProjectTab {
+function tab(tabs: Tab[], activeTabId: string): Project {
   return {
     id: "p1",
     title: "P",
@@ -50,22 +50,22 @@ function tab(views: View[], activeViewId: string): ProjectTab {
     rightView: null,
     leftLayout: initialSidebarLayout([]),
     root: "/tmp/p1",
-    contents: [
+    spaces: [
       {
         id: "c1",
         title: "1",
-        layout: { type: "leaf", value: { id: "g1", views, activeViewId } },
-        activeGroupId: "g1",
+        layout: { type: "leaf", value: { id: "g1", tabs, activeTabId } },
+        activePaneId: "g1",
       },
     ],
-    activeContentId: "c1",
+    activeSpaceId: "c1",
   };
 }
 
 beforeEach(() => {
   useViewRegistry.setState({ views: {}, version: 0, badges: {} });
   useProjection.setState({ byProject: {} });
-  useSessions.setState({ tabs: [], activeId: "" });
+  useSessions.setState({ projects: [], activeId: "" });
 });
 
 describe("ui.projection.state", () => {
@@ -86,7 +86,7 @@ describe("ui.projection.state", () => {
       decl("tree", { placements: ["rail"], defaultPlacement: "rail" }),
       provider,
     );
-    useSessions.setState({ tabs: [tab([pluginView("v1", "termplug", "term")], "v1")], activeId: "p1" });
+    useSessions.setState({ projects: [tab([pluginView("v1", "termplug", "term")], "v1")], activeId: "p1" });
 
     const r = (await execute("ui.projection.state", {}, {})) as { ok: boolean; code: string; data: Record<string, unknown> };
     expect(r.ok).toBe(true);
@@ -112,7 +112,7 @@ describe("ui.projection.pin / unpin — 좌 레일은 투영 전용(핀 축 없�
       decl("tree", { placements: ["rail"], defaultPlacement: "rail", resident: true }),
       provider,
     );
-    useSessions.setState({ tabs: [tab([], "")], activeId: "p1" });
+    useSessions.setState({ projects: [tab([], "")], activeId: "p1" });
     const r = (await execute("ui.projection.pin", { ref: "termplug.tree" }, {})) as { ok: boolean; code: string; message: string };
     expect(r.ok).toBe(false);
     expect(r.code).toBe("INVALID_PARAMS");
@@ -120,7 +120,7 @@ describe("ui.projection.pin / unpin — 좌 레일은 투영 전용(핀 축 없�
   });
 
   it("unpin 은 잔존 핀(구 스냅샷) 청소용으로 살아 있고 멱등이다", async () => {
-    useSessions.setState({ tabs: [tab([], "")], activeId: "p1" });
+    useSessions.setState({ projects: [tab([], "")], activeId: "p1" });
     useProjection.getState().pin("p1", "left", "gone.tree"); // 구 스냅샷 잔존 시뮬레이션
     const r1 = (await execute("ui.projection.unpin", { ref: "gone.tree" }, {})) as { ok: boolean };
     expect(r1.ok).toBe(true);
@@ -133,7 +133,7 @@ describe("ui.projection.pin / unpin — 좌 레일은 투영 전용(핀 축 없�
 
 describe("ui.intent.open — R2(결부 문맥 배치·멱등 재사용)", () => {
   it("파일을 결부 그룹에 탭으로 열고, 같은 리소스는 기존 뷰를 재사용한다", async () => {
-    useSessions.setState({ tabs: [tab([], "")], activeId: "p1" });
+    useSessions.setState({ projects: [tab([], "")], activeId: "p1" });
     const r1 = (await execute("ui.intent.open", { path: "/tmp/p1/a.md" }, {})) as { ok: boolean; data: Record<string, unknown> };
     expect(r1.ok).toBe(true);
     expect(r1.data.existing).toBe(false);
@@ -156,7 +156,7 @@ describe("배치① 명령 정합 — 우측 핀 거부·alias 핀·확장 상�
       decl("tree", { placements: ["rail"], defaultPlacement: "rail" }),
       provider,
     );
-    useSessions.setState({ tabs: [tab([], "")], activeId: "p1" });
+    useSessions.setState({ projects: [tab([], "")], activeId: "p1" });
     const r = (await execute("ui.projection.pin", { ref: "termplug.tree", side: "right" }, {})) as { ok: boolean; code: string };
     expect(r.ok).toBe(false);
     expect(r.code).toBe("INVALID_PARAMS");
@@ -165,7 +165,7 @@ describe("배치① 명령 정합 — 우측 핀 거부·alias 핀·확장 상�
 
   it("state 는 binding.groupId·contentId 와 focusHistory 를 포함한다(§4.1)", async () => {
     useViewRegistry.getState().register("termplug", decl("term"), provider);
-    useSessions.setState({ tabs: [tab([pluginView("v1", "termplug", "term")], "v1")], activeId: "p1" });
+    useSessions.setState({ projects: [tab([pluginView("v1", "termplug", "term")], "v1")], activeId: "p1" });
     useProjection.getState().noteBinding("p1", "v1");
     const r = (await execute("ui.projection.state", {}, {})) as { data: Record<string, unknown> };
     expect(r.data.binding).toMatchObject({ viewId: "v1", groupId: "g1", contentId: "c1" });

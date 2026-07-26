@@ -11,7 +11,7 @@ export function reportTerminalRunning(
   paneId: string,
   commandLine: string,
 ): void {
-  const loc = paneToView(useSessions.getState().tabs, paneId);
+  const loc = paneToView(useSessions.getState().projects, paneId);
   if (loc)
     useSessions.getState().setViewStatus(loc.projectId, loc.viewId, {
       code: "running",
@@ -20,7 +20,7 @@ export function reportTerminalRunning(
 }
 
 export function clearTerminalRunning(paneId: string): void {
-  const loc = paneToView(useSessions.getState().tabs, paneId);
+  const loc = paneToView(useSessions.getState().projects, paneId);
   if (loc) useSessions.getState().setViewStatus(loc.projectId, loc.viewId, null);
 }
 

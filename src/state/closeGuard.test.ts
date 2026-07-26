@@ -4,10 +4,10 @@ import {
   viewCloseReason,
   contentCloseReasons,
 } from "./closeGuard";
-import type { View, ViewStatus, ContentArea } from "./sessions";
+import type { Tab, TabStatus, Space } from "./sessions";
 
 // 테스트용 뷰/콘텐츠 팩토리 — status 만 다르게.
-const fileView = (status?: ViewStatus, id = "v1"): View => ({
+const fileView = (status?: TabStatus, id = "v1"): Tab => ({
   id,
   kind: "file",
   title: "a.ts",
@@ -16,17 +16,17 @@ const fileView = (status?: ViewStatus, id = "v1"): View => ({
   status,
 });
 
-const leafContent = (views: View[]): ContentArea => ({
+const leafContent = (tabs: Tab[]): Space => ({
   id: "c1",
   title: "1",
   layout: {
     type: "leaf",
-    value: { id: "g1", views, activeViewId: views[0]?.id ?? "" },
+    value: { id: "g1", tabs, activeTabId: tabs[0]?.id ?? "" },
   },
-  activeGroupId: "g1",
+  activePaneId: "g1",
 });
 
-const splitContent = (left: View[], right: View[]): ContentArea => ({
+const splitContent = (left: Tab[], right: Tab[]): Space => ({
   id: "c1",
   title: "1",
   layout: {
@@ -35,11 +35,11 @@ const splitContent = (left: View[], right: View[]): ContentArea => ({
     dir: "row",
     sizes: [0.5, 0.5],
     children: [
-      { type: "leaf", value: { id: "g1", views: left, activeViewId: left[0]?.id ?? "" } },
-      { type: "leaf", value: { id: "g2", views: right, activeViewId: right[0]?.id ?? "" } },
+      { type: "leaf", value: { id: "g1", tabs: left, activeTabId: left[0]?.id ?? "" } },
+      { type: "leaf", value: { id: "g2", tabs: right, activeTabId: right[0]?.id ?? "" } },
     ],
   },
-  activeGroupId: "g1",
+  activePaneId: "g1",
 });
 
 describe("STATUS_BLOCKING 어휘(R2)", () => {

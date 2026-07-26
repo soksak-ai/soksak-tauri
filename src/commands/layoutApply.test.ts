@@ -43,7 +43,7 @@ const terminalEnginePlugins: Record<string, PluginRuntime> = {
 useSessions.getState().bootstrapFirstProject("/tmp/soksak-layout-apply");
 registerCatalog();
 
-const pristineTabs = JSON.parse(JSON.stringify(useSessions.getState().tabs));
+const pristineTabs = JSON.parse(JSON.stringify(useSessions.getState().projects));
 const pristineActive = useSessions.getState().activeId;
 
 // 브라우저 계열 프로그램은 테스트별로 붙였다 뗀다(건너뛰기 경로 검증). register 는 중복 id 를
@@ -61,7 +61,7 @@ let unregBrowser: (() => void) | null = null;
 
 beforeEach(() => {
   useSessions.setState({
-    tabs: JSON.parse(JSON.stringify(pristineTabs)),
+    projects: JSON.parse(JSON.stringify(pristineTabs)),
     activeId: pristineActive,
   });
   // 터미널 엔진(계약 구현체)을 활성 상태로 되돌린다 — 개별 테스트가 지운 뒤 복구.
@@ -75,7 +75,7 @@ afterEach(() => {
 
 function firstProject() {
   const s = useSessions.getState();
-  return s.tabs.find((t) => t.id === s.activeId)!;
+  return s.projects.find((t) => t.id === s.activeId)!;
 }
 
 describe("layout.apply", () => {
@@ -159,11 +159,11 @@ describe("layout.apply", () => {
   });
 
   it("기존 스페이스를 파괴하지 않는다 — 새 스페이스를 더한다", async () => {
-    const before = firstProject().contents.length; // 부트 스페이스 1개
-    const beforeId = firstProject().contents[0].id;
+    const before = firstProject().spaces.length; // 부트 스페이스 1개
+    const beforeId = firstProject().spaces[0].id;
     const r = await execute("layout.apply", { preset: "dev" }, {});
     expect(r.ok).toBe(true);
-    const after = firstProject().contents;
+    const after = firstProject().spaces;
     expect(after.length).toBe(before + 1);
     // 원래 스페이스가 그대로 남아 있다.
     expect(after.some((c) => c.id === beforeId)).toBe(true);

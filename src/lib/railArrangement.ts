@@ -265,11 +265,11 @@ export function spanMoveAcross(
  * "전제는 덮을 수 있다고 했는데 다른 표면이 움직인다"가 생기지 않는다.
  */
 export function viewIdsOfMoves<
-  L extends { id: string; views: ReadonlyArray<{ id: string }> },
+  L extends { id: string; tabs: ReadonlyArray<{ id: string }> },
 >(layout: SplitTree<L>, moves: readonly ArrangementMove[]): string[] {
   if (moves.length === 0) return [];
   const groups = leavesOf(layout);
   return moves.flatMap(
-    (move) => groups.find((g) => g.id === move.id)?.views.map((v) => v.id) ?? [],
+    (move) => groups.find((g) => g.id === move.id)?.tabs.map((v) => v.id) ?? [],
   );
 }

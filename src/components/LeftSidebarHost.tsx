@@ -29,7 +29,7 @@ import {
 } from "../plugins/viewRegistry";
 import { ProjectionSlots } from "./ProjectionSlots";
 import { useProjection } from "../state/projection";
-import { useSessions, type ProjectTab } from "../state/sessions";
+import { useSessions, type Project } from "../state/sessions";
 import { useTheme } from "../state/theme";
 import { useViewLabels, resolveViewLabel } from "../state/viewLabels";
 import {
@@ -61,7 +61,7 @@ export const LeftSidebarHost = memo(function LeftSidebarHost({
   paneId,
   commitProjection,
 }: {
-  project: ProjectTab;
+  project: Project;
   paneId: string;
   commitProjection: boolean;
 }) {
@@ -333,7 +333,7 @@ function SidebarLeaf({
   startDrag,
 }: {
   group: SidebarGroup;
-  project: ProjectTab;
+  project: Project;
   paneId: string;
   opened: string[];
   dragging: string | null;

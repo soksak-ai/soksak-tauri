@@ -46,8 +46,8 @@ describe("startPluginHooks — sessions diff coalescing", () => {
     expect(split.ok).toBe(true);
 
     // 분할 노드 id 를 찾아 리사이즈 스톰.
-    const tab = useSessions.getState().tabs.find((t) => t.id === projectId)!;
-    const content = tab.contents[0];
+    const tab = useSessions.getState().projects.find((t) => t.id === projectId)!;
+    const content = tab.spaces[0];
     const splitId =
       content.layout.type === "split" ? content.layout.id : null;
     expect(splitId).not.toBeNull();
@@ -103,7 +103,7 @@ describe("startPluginHooks — sessions diff coalescing", () => {
     await flush(); // 프로젝트 추가 이벤트를 먼저 소화
     events.length = 0;
 
-    const tab = useSessions.getState().tabs.find((t) => t.title === "perf2")!;
+    const tab = useSessions.getState().projects.find((t) => t.title === "perf2")!;
     const opened = useSessions
       .getState()
       .openFileView(tab.id, "/tmp/perf-test/b.txt");

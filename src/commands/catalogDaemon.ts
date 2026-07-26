@@ -32,8 +32,8 @@ const policyKey = (root: string) => `daemon/${root}`;
 function resolveRoot(params: Record<string, unknown>): string | null {
   const s = useSessions.getState();
   const t = params.project
-    ? s.tabs.find((x) => x.id === params.project)
-    : (s.tabs.find((x) => x.id === s.activeId) ?? s.tabs[0]);
+    ? s.projects.find((x) => x.id === params.project)
+    : (s.projects.find((x) => x.id === s.activeId) ?? s.projects[0]);
   return t?.root ?? null;
 }
 

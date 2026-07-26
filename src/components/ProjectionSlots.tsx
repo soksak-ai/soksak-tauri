@@ -31,7 +31,7 @@ export const ProjectionSlots = memo(function ProjectionSlots({
 }) {
   const t = useT();
   // 해소 입력 전부를 구독 — 활성 체인(sessions)·등록(viewRegistry)·핀(projection)·활성 플러그인.
-  const tab = useSessions((s) => s.tabs.find((x) => x.id === projectId));
+  const tab = useSessions((s) => s.projects.find((x) => x.id === projectId));
   const regVersion = useViewRegistry((s) => s.version);
   const entry = useProjection((s) => s.byProject[projectId]);
   const plugins = usePlugins((s) => s.plugins);
@@ -61,9 +61,9 @@ export const ProjectionSlots = memo(function ProjectionSlots({
   // 죽은 결부 뷰의 per-view 인스턴스(key 3번째 조각 = viewId).
   const liveViewIds = new Set<string>();
   if (tab) {
-    for (const c of tab.contents) {
-      const walk = (n: { type: string; value?: { views: { id: string }[] }; children?: unknown[] }) => {
-        if (n.type === "leaf" && n.value) for (const v of n.value.views) liveViewIds.add(v.id);
+    for (const c of tab.spaces) {
+      const walk = (n: { type: string; value?: { tabs: { id: string }[] }; children?: unknown[] }) => {
+        if (n.type === "leaf" && n.value) for (const v of n.value.tabs) liveViewIds.add(v.id);
         else if (n.children) for (const ch of n.children) walk(ch as never);
       };
       walk(c.layout as never);

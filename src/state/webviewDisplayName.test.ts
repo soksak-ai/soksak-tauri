@@ -9,11 +9,11 @@ import { describe, expect, it } from "vitest";
 import {
   viewDisplayTitle,
   webviewDisplayName,
-  type ProjectTab,
-  type View,
+  type Project,
+  type Tab,
 } from "./sessions";
 
-const browser = (viewId: string, title: string, customLabel?: string): View => ({
+const browser = (viewId: string, title: string, customLabel?: string): Tab => ({
   id: viewId,
   kind: "plugin",
   title,
@@ -22,7 +22,7 @@ const browser = (viewId: string, title: string, customLabel?: string): View => (
   view: "content",
 });
 
-const tab = (id: string, views: View[]): ProjectTab => ({
+const tab = (id: string, tabs: Tab[]): Project => ({
   id,
   title: id,
   sidebarOpen: false,
@@ -30,18 +30,18 @@ const tab = (id: string, views: View[]): ProjectTab => ({
   rightView: null,
   leftLayout: { type: "leaf", value: { viewKeys: [], activeViewKey: "" } },
   root: "/r",
-  contents: [
+  spaces: [
     {
       id: "c1",
       title: "1",
       layout: {
         type: "leaf",
-        value: { id: "g1", views, activeViewId: views[0]?.id ?? "" },
+        value: { id: "g1", tabs, activeTabId: tabs[0]?.id ?? "" },
       },
-      activeGroupId: "g1",
+      activePaneId: "g1",
     },
   ],
-  activeContentId: "c1",
+  activeSpaceId: "c1",
 });
 
 describe("viewDisplayTitle", () => {

@@ -1,4 +1,4 @@
-// 제네릭 split-tree — 뷰 그룹(leaf=ViewGroup)·좌측 사이드바(leaf=SidebarGroup)가 공유하는 단일 추상.
+// 제네릭 split-tree — 뷰 그룹(leaf=Pane)·좌측 사이드바(leaf=SidebarGroup)가 공유하는 단일 추상.
 // [RULE] split 트리의 데이터·연산(split/remove/resize/find)·직렬화는 여기 하나뿐이다(중복 구현 금지).
 // 소비자는 leaf 페이로드 L 만 다르다. 렌더링만 각자 특화(GroupArea / 사이드바 호스트).
 
@@ -124,7 +124,7 @@ export function insertBeside<L>(
 }
 
 // ── 직렬화 ───────────────────────────────────────────────────────────────────
-// split id 는 담지 않는다(복원 시 재생성). leaf 는 변환기로 L↔S 매핑(L=ViewGroup→스냅샷 등).
+// split id 는 담지 않는다(복원 시 재생성). leaf 는 변환기로 L↔S 매핑(L=Pane→스냅샷 등).
 
 export type SplitSnapshot<S> =
   | { t: "l"; v: S }

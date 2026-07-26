@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { splitLeaf } from "./splitTree";
-import { useSessions, type ProjectTab, type ViewGroup } from "./sessions";
+import { useSessions, type Project, type Pane } from "./sessions";
 
-function group(id: string, viewId: string): ViewGroup {
+function group(id: string, viewId: string): Pane {
   return {
     id,
-    activeViewId: viewId,
-    views: [
+    activeTabId: viewId,
+    tabs: [
       {
         id: viewId,
         kind: "plugin",
@@ -18,18 +18,18 @@ function group(id: string, viewId: string): ViewGroup {
   };
 }
 
-function twoColumnProject(): ProjectTab {
+function twoColumnProject(): Project {
   useSessions.getState().bootstrapFirstProject("/test/root");
-  const base = useSessions.getState().tabs[0];
+  const base = useSessions.getState().projects[0];
   const left = group("g-left", "v-left");
   const right = group("g-right", "v-right");
   return {
     ...base,
     leftRailPlacement: { mode: "pin", station: 50 },
-    contents: [
+    spaces: [
       {
-        ...base.contents[0],
-        activeGroupId: right.id,
+        ...base.spaces[0],
+        activePaneId: right.id,
         layout: {
           type: "split",
           id: "s-columns",
@@ -43,31 +43,31 @@ function twoColumnProject(): ProjectTab {
 }
 
 beforeEach(() => {
-  useSessions.setState({ tabs: [], activeId: "" });
+  useSessions.setState({ projects: [], activeId: "" });
 });
 
 describe("position PIN guards the clean grid line", () => {
   it("rejects a horizontal resize that would move the pinned line", () => {
     const project = twoColumnProject();
-    useSessions.setState({ tabs: [project], activeId: project.id });
-    const before = useSessions.getState().tabs[0];
+    useSessions.setState({ projects: [project], activeId: project.id });
+    const before = useSessions.getState().projects[0];
 
     const result = useSessions
       .getState()
       .resizeSplit(project.id, "s-columns", [0.6, 0.4]);
 
     expect(result).toMatchObject({ ok: false, code: "LAYOUT_CONFLICT" });
-    expect(useSessions.getState().tabs[0]).toBe(before);
+    expect(useSessions.getState().projects[0]).toBe(before);
   });
 
   it("allows a focus change without moving the persisted PIN", () => {
     const project = twoColumnProject();
-    useSessions.setState({ tabs: [project], activeId: project.id });
+    useSessions.setState({ projects: [project], activeId: project.id });
 
     expect(useSessions.getState().setActiveGroup(project.id, "g-left")).toEqual({
       ok: true,
     });
-    expect(useSessions.getState().tabs[0].leftRailPlacement).toEqual({
+    expect(useSessions.getState().projects[0].leftRailPlacement).toEqual({
       mode: "pin",
       station: 50,
     });
@@ -75,13 +75,13 @@ describe("position PIN guards the clean grid line", () => {
 
   it("rejects maximizing a panel across an internal PIN but allows an edge PIN", () => {
     const project = twoColumnProject();
-    useSessions.setState({ tabs: [project], activeId: project.id });
+    useSessions.setState({ projects: [project], activeId: project.id });
 
     expect(useSessions.getState().maximizeView(project.id, "v-right")).toMatchObject({
       ok: false,
       code: "LAYOUT_CONFLICT",
     });
-    expect(useSessions.getState().tabs[0].contents[0].maximizedViewId).toBeUndefined();
+    expect(useSessions.getState().projects[0].spaces[0].maximizedTabId).toBeUndefined();
 
     useSessions.getState().setLeftRailPlacement(project.id, {
       mode: "pin",
@@ -95,12 +95,12 @@ describe("position PIN guards the clean grid line", () => {
 
   it("rejects removing the boundary that owns the PIN", () => {
     const project = twoColumnProject();
-    useSessions.setState({ tabs: [project], activeId: project.id });
-    const before = useSessions.getState().tabs[0];
+    useSessions.setState({ projects: [project], activeId: project.id });
+    const before = useSessions.getState().projects[0];
 
     const result = useSessions.getState().closeGroup(project.id, "g-left");
 
     expect(result).toMatchObject({ ok: false, code: "LAYOUT_CONFLICT" });
-    expect(useSessions.getState().tabs[0]).toBe(before);
+    expect(useSessions.getState().projects[0]).toBe(before);
   });
 });

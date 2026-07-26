@@ -259,6 +259,57 @@ Address: `ui.tree` node addresses `tab/content/N` and `tab/content/N/close` →
 tree) is a distinct namespace and is unaffected — it names a screen region, not the
 sheet concept.
 
+### 2026-07 sheet → space (follow-up)
+
+Commit 3741ca8d renamed `sheet` to `space` across every surface after the table
+above was written; read that table's `sheet.*` entries as `space.*` today.
+
+### 2026-07-26 identity standard (docs/IDENTITY.md is the canon)
+
+The layout-entity vocabulary was unified — one concept, one name, one prefix.
+Canonical rationale, invariants, and rejected candidates: `docs/IDENTITY.md`.
+
+Entities and ids:
+
+| axis | before | after |
+|---|---|---|
+| project id | `t<n>` (counter) | `pjt-<base32·6>` |
+| space id | `c<n>` | `spc-<base32·6>` |
+| pane id | `g<n>` | `pan-<base32·6>` |
+| tab id | `v<n>` | `tab-<base32·6>` |
+| shell session | (tab-derived) | `sh-<base32·6>` |
+| window label | `w-<uuid4>` | unchanged |
+| interior split node | `s<n>` | unchanged, **never exposed** |
+
+State-layer types and fields (memory only; snapshot wire keys migrate via
+`scripts/migrations/2026-07-26-entity-ids.sh`):
+
+| before | after |
+|---|---|
+| `ProjectTab` / store `tabs` | `Project` / store `projects` |
+| `ContentArea` / `contents` / `activeContentId` | `Space` / `spaces` / `activeSpaceId` |
+| `ViewGroup` / `GroupNode` / `activeGroupId` | `Pane` / `PaneNode` / `activePaneId` |
+| `View` / `views` / `activeViewId` | `Tab` / `tabs` / `activeTabId` |
+| `maximizedViewId` / `railBindingViewId` | `maximizedTabId` / `railBindingTabId` |
+
+The two meanings of the old `paneId` split into two axes — renaming it in one
+stroke would have collapsed a reply that carries both:
+
+| axis | before | after |
+|---|---|---|
+| target (which tab the command acts on) | `paneId` / `pane` param | `tabId` / `tab` |
+| caller context ("my location" in a terminal) | `paneId` / `$SOKSAK_PANE` | `callerTab` / `$SOKSAK_CALLER_TAB` |
+
+Transition: both env names are injected and both are read (new first) for one
+release; removal condition = every session replaced. `data-pane-id` →
+`data-tab-id` and `statusBarItem({paneId})` → `{tabId}` ship with dual fields
+under the same condition.
+
+Seams: `divider` → `gutter` (`divider/<splitId>/<i>` addresses → 
+`gutter/<pan-id>/<right|bottom>`; region seams `win/<l>/gutter/rail`,
+`win/<l>/proj/<id>/gutter/<left|right>`). Theme attr `data-divider` →
+`data-gutter`.
+
 ## 5. Normalization Backlog (documented drift — separate pass, do not mix into feature work)
 
 Registry names are public and stay. The mechanical invoke-stem aligns are done

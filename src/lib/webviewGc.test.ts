@@ -8,7 +8,7 @@
 import { describe, expect, it } from "vitest";
 import { collectWebviewLabels, gateAfterConsume, type OwnsSurface } from "./webviewGc";
 import { splitLeaf } from "../state/splitTree";
-import type { ProjectTab, View, ViewGroup, ContentArea } from "../state/sessions";
+import type { Project, Tab, Pane, Space } from "../state/sessions";
 
 // 테스트 label 더블: 창 네임스페이스(currentWindowLabel) 비의존 — viewId 를 그대로 b-<id> 로.
 // 인라인 템플릿이 아니라 문자열 결합으로 구성한다(단일 진실 가드는 인라인 템플릿만 막는다 —
@@ -26,15 +26,15 @@ const decls: Record<string, Record<string, boolean>> = {
 const ownsSurface: OwnsSurface = (pluginId, viewId) =>
   decls[pluginId]?.[viewId] === true;
 
-function group(views: View[]): ViewGroup {
-  return { id: "g1", views, activeViewId: views[0]?.id ?? "" };
+function group(tabs: Tab[]): Pane {
+  return { id: "g1", tabs, activeTabId: tabs[0]?.id ?? "" };
 }
 
-function content(views: View[]): ContentArea {
-  return { id: "c1", title: "1", layout: splitLeaf(group(views)), activeGroupId: "g1" };
+function content(views: Tab[]): Space {
+  return { id: "c1", title: "1", layout: splitLeaf(group(views)), activePaneId: "g1" };
 }
 
-function tab(views: View[]): ProjectTab {
+function tab(views: Tab[]): Project {
   return {
     id: "t1",
     title: "p",
@@ -43,12 +43,12 @@ function tab(views: View[]): ProjectTab {
     rightView: null,
     leftLayout: splitLeaf({ viewKeys: [], activeViewKey: "" }),
     root: "/tmp",
-    contents: [content(views)],
-    activeContentId: "c1",
+    spaces: [content(views)],
+    activeSpaceId: "c1",
   };
 }
 
-const pluginView = (id: string, pluginId: string, view = "content"): View => ({
+const pluginView = (id: string, pluginId: string, view = "content"): Tab => ({
   id,
   kind: "plugin",
   title: "P",
@@ -108,15 +108,15 @@ describe("collectWebviewLabels — 선언(nativeSurface) 기반 webview 소유 �
   });
 
   it("여러 콘텐츠/그룹에 흩어진 소유 뷰를 전부 모은다", () => {
-    const t: ProjectTab = {
+    const t: Project = {
       ...tab([pluginView("v1", "soksak-plugin-browser-native")]),
-      contents: [
+      spaces: [
         content([pluginView("v1", "soksak-plugin-browser-native")]),
         content([pluginView("v2", "soksak-plugin-browser-native")]),
       ],
     };
     // 두 번째 content 의 id 충돌 회피
-    t.contents[1] = { ...t.contents[1], id: "c2" };
+    t.spaces[1] = { ...t.spaces[1], id: "c2" };
     const live = collectWebviewLabels([t], ownsSurface, labelOf);
     expect(live).toEqual(new Set(["b-v1", "b-v2"]));
   });

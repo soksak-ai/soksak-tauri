@@ -2,7 +2,7 @@
 // closeView/closeContent 는 동기 CmdResult 라 그 안에서 비동기 확인창을 못 띄운다 → 이 store 가 중재.
 //   x 클릭 → request*: 설정 warn 이고 blocking 이면 pending(확인창), 아니면 즉시 close. off 면 항상 즉시.
 import { create } from "zustand";
-import { allViews, useSessions, type ContentArea, type View } from "./sessions";
+import { allViews, useSessions, type Space, type Tab } from "./sessions";
 import { useSettings } from "./settings";
 import { contentCloseReasons, viewCloseReason } from "./closeGuard";
 
@@ -21,10 +21,10 @@ interface CloseConfirmState {
   cancel: () => void; // 취소 → 닫지 않고 pending 비움
 }
 
-function findView(projectId: string, viewId: string): View | undefined {
-  const t = useSessions.getState().tabs.find((x) => x.id === projectId);
+function findView(projectId: string, viewId: string): Tab | undefined {
+  const t = useSessions.getState().projects.find((x) => x.id === projectId);
   if (!t) return undefined;
-  for (const c of t.contents)
+  for (const c of t.spaces)
     for (const v of allViews(c.layout)) if (v.id === viewId) return v;
   return undefined;
 }
@@ -32,9 +32,9 @@ function findView(projectId: string, viewId: string): View | undefined {
 function findContent(
   projectId: string,
   contentId: string,
-): ContentArea | undefined {
-  const t = useSessions.getState().tabs.find((x) => x.id === projectId);
-  return t?.contents.find((c) => c.id === contentId);
+): Space | undefined {
+  const t = useSessions.getState().projects.find((x) => x.id === projectId);
+  return t?.spaces.find((c) => c.id === contentId);
 }
 
 const isWarn = () => useSettings.getState().tabCloseConfirm === "warn";

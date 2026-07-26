@@ -80,10 +80,14 @@ DOM 요소는 임의 CSS selector(취약·불명확)가 아니라 **구조적 pa
 진실은 `src/commands/address.ts`:
 
 ```
-호스트 뷰:   win/<label>/proj/<root|alias>/<region>/pane/<idx|active>/view/<pluginId.viewId>/inst/<viewId>/node/<nodePath>
+호스트 뷰:   win/<label>/proj/<root|alias>/<region>/pane/<idx|active>/view/<pluginId.viewId>/tab/<tab-id>/node/<nodePath>
 호스트 크롬:  win/<label>/proj/<root|alias>/chrome/<chromePath>
+골(gutter):  gutter/<pan-id>/<right|bottom> · win/<l>/gutter/rail · win/<l>/proj/<id>/gutter/<left|right>
 region ∈ { left | content | right }
 ```
+
+어휘(실체·접두·참조 규칙·기각표)의 정본은 **`docs/IDENTITY.md`** 다 — 이 절은 주소 문법의
+DOM 측 적용만 다루고 어휘를 재서술하지 않는다.
 
 `content` 는 여기서 **레이아웃 region 이름**(패널 트리를 담는 중앙 화면 영역)이지,
 워크스페이스 탭(스페이스) 개념이 아니다 — 두 층이 같은 단어를 쓰던 시절의 잔재를

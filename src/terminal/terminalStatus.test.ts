@@ -14,11 +14,11 @@ import {
   reportTerminalRunning,
   clearTerminalRunning,
 } from "./terminalStatus";
-import { allGroups, allViews, useSessions, type View } from "../state/sessions";
+import { allGroups, allViews, useSessions, type Tab } from "../state/sessions";
 import { useProgramRegistry } from "../plugins/programRegistry";
 
 useSessions.getState().bootstrapFirstProject("/tmp/soksak-termstatus");
-const pristineTabs = JSON.parse(JSON.stringify(useSessions.getState().tabs));
+const pristineTabs = JSON.parse(JSON.stringify(useSessions.getState().projects));
 const pristineActive = useSessions.getState().activeId;
 
 // 터미널 프로그램 등록(코어 터미널 제거 — addViewToGroup("terminal-xterm")은 터미널 플러그인 뷰를 연다).
@@ -29,23 +29,23 @@ useProgramRegistry.getState().register("soksak-plugin-terminal-xterm", {
   view: "content",
 });
 
-function findView(viewId: string): View | undefined {
-  for (const t of useSessions.getState().tabs)
-    for (const c of t.contents)
+function findView(viewId: string): Tab | undefined {
+  for (const t of useSessions.getState().projects)
+    for (const c of t.spaces)
       for (const v of allViews(c.layout)) if (v.id === viewId) return v;
   return undefined;
 }
 
 function activeGroupId(): string {
   const s = useSessions.getState();
-  const t = s.tabs.find((x) => x.id === s.activeId)!;
-  const c = t.contents.find((x) => x.id === t.activeContentId)!;
+  const t = s.projects.find((x) => x.id === s.activeId)!;
+  const c = t.spaces.find((x) => x.id === t.activeSpaceId)!;
   return allGroups(c.layout)[0].id;
 }
 
 beforeEach(() => {
   useSessions.setState({
-    tabs: JSON.parse(JSON.stringify(pristineTabs)),
+    projects: JSON.parse(JSON.stringify(pristineTabs)),
     activeId: pristineActive,
   });
 });

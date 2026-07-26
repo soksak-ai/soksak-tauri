@@ -1,9 +1,9 @@
 // cwdPaneOf — 파일트리가 따라갈 터미널 pane 을 generic 하게 고른다. 터미널 판정은 주입된
 // hasPty(id) predicate 로만(플러그인 터미널 = view.id). pluginId·kind 하드코딩 없음.
 import { describe, expect, it } from "vitest";
-import { cwdPaneOf, type ProjectTab, type View } from "./sessions";
+import { cwdPaneOf, type Project, type Tab } from "./sessions";
 
-const plugin = (viewId: string, pluginId: string, view: string): View => ({
+const plugin = (viewId: string, pluginId: string, view: string): Tab => ({
   id: viewId,
   kind: "plugin",
   title: "P",
@@ -11,7 +11,7 @@ const plugin = (viewId: string, pluginId: string, view: string): View => ({
   view,
 });
 
-const file = (viewId: string, path: string): View => ({
+const file = (viewId: string, path: string): Tab => ({
   id: viewId,
   kind: "file",
   title: "F",
@@ -19,8 +19,8 @@ const file = (viewId: string, path: string): View => ({
   mode: "code",
 });
 
-// 단일 그룹(g1)에 views, 활성 뷰 = activeViewId(기본 첫 뷰).
-const tab = (views: View[], activeViewId?: string): ProjectTab => ({
+// 단일 그룹(g1)에 tabs, 활성 탭 = activeTabId(기본 첫 탭).
+const tab = (tabs: Tab[], activeTabId?: string): Project => ({
   id: "t1",
   title: "t1",
   sidebarOpen: false,
@@ -28,7 +28,7 @@ const tab = (views: View[], activeViewId?: string): ProjectTab => ({
   rightView: null,
   leftLayout: { type: "leaf", value: { viewKeys: [], activeViewKey: "" } },
   root: "/r",
-  contents: [
+  spaces: [
     {
       id: "c1",
       title: "1",
@@ -36,14 +36,14 @@ const tab = (views: View[], activeViewId?: string): ProjectTab => ({
         type: "leaf",
         value: {
           id: "g1",
-          views,
-          activeViewId: activeViewId ?? views[0]?.id ?? "",
+          tabs,
+          activeTabId: activeTabId ?? tabs[0]?.id ?? "",
         },
       },
-      activeGroupId: "g1",
+      activePaneId: "g1",
     },
   ],
-  activeContentId: "c1",
+  activeSpaceId: "c1",
 });
 
 describe("cwdPaneOf", () => {

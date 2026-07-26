@@ -16,7 +16,7 @@ import { useSessions } from "../state/sessions";
 
 useSessions.getState().bootstrapFirstProject("/tmp/soksak-statusquery");
 registerCatalog();
-const pristineTabs = JSON.parse(JSON.stringify(useSessions.getState().tabs));
+const pristineTabs = JSON.parse(JSON.stringify(useSessions.getState().projects));
 const pristineActive = useSessions.getState().activeId;
 
 let seq = 0;
@@ -31,7 +31,7 @@ type StatusRes = { statuses: { viewId: string; code: string; message?: string }[
 
 beforeEach(() => {
   useSessions.setState({
-    tabs: JSON.parse(JSON.stringify(pristineTabs)),
+    projects: JSON.parse(JSON.stringify(pristineTabs)),
     activeId: pristineActive,
   });
 });

@@ -13,19 +13,19 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => undefined) })
 
 import { registerCatalog } from "./catalog";
 import { execute } from "./registry";
-import { projectArrangement, useSessions, type ProjectTab, type ViewGroup } from "../state/sessions";
+import { projectArrangement, useSessions, type Project, type Pane } from "../state/sessions";
 import { initialSidebarLayout } from "../state/sidebarLayout";
 import { splitLeaf } from "../state/splitTree";
 
-const group = (id: string): ViewGroup => ({
+const group = (id: string): Pane => ({
   id,
-  activeViewId: `v-${id}`,
-  views: [
+  activeTabId: `v-${id}`,
+  tabs: [
     { id: `v-${id}`, kind: "plugin", title: id, pluginId: "fixture", view: "content" },
   ],
 });
 
-function project(activeGroupId: string): ProjectTab {
+function project(activePaneId: string): Project {
   return {
     id: "t1",
     title: "P",
@@ -35,11 +35,11 @@ function project(activeGroupId: string): ProjectTab {
     rightOpen: false,
     rightView: null,
     leftLayout: initialSidebarLayout([]),
-    contents: [
+    spaces: [
       {
         id: "c1",
         title: "1",
-        activeGroupId,
+        activePaneId,
         layout: {
           type: "split",
           id: "s1",
@@ -49,21 +49,21 @@ function project(activeGroupId: string): ProjectTab {
         },
       },
     ],
-    activeContentId: "c1",
+    activeSpaceId: "c1",
   };
 }
 
 registerCatalog();
 
 beforeEach(() => {
-  useSessions.setState({ tabs: [project("g2")], activeId: "t1" });
+  useSessions.setState({ projects: [project("g2")], activeId: "t1" });
 });
 
 describe("layout.arrangement", () => {
   it("해결기의 답을 그대로 노출한다 — 명령과 화면이 같은 계산을 쓴다", async () => {
     const result = await execute("layout.arrangement", {}, {});
     expect(result.ok).toBe(true);
-    const solved = projectArrangement(useSessions.getState().tabs[0])!;
+    const solved = projectArrangement(useSessions.getState().projects[0])!;
     const data = result.data as {
       station: number;
       switched: boolean;

@@ -40,7 +40,7 @@ export function defaultPluginDeps(appVersion: string): PluginApiDeps {
     on: onPluginEvent,
     currentProject: () => {
       const s = useSessions.getState();
-      const project = s.tabs.find((t) => t.id === s.activeId);
+      const project = s.projects.find((t) => t.id === s.activeId);
       return project ? { id: project.id, root: project.root ?? null } : null;
     },
     // fs-change(코어 watcher, 폴링 없음) 구독 → 변경된 부모 디렉토리 문자열을 콜백. 반환 = 해지.

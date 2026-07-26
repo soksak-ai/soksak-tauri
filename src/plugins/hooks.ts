@@ -263,11 +263,11 @@ function snapshotSessions(s: SessionsState): SessionsSnapshot {
   const rootByProject = new Map<string, string | null>();
   const fileViews = new Map<string, { projectId: string; path: string }>();
   let activeView: ActiveViewKey | null = null;
-  for (const project of s.tabs) {
+  for (const project of s.projects) {
     rootByProject.set(project.id, project.root ?? null);
-    for (const content of project.contents) {
+    for (const content of project.spaces) {
       for (const group of allGroups(content.layout)) {
-        for (const view of group.views) {
+        for (const view of group.tabs) {
           if (view.kind === "file") {
             fileViews.set(view.id, { projectId: project.id, path: view.path });
           }
@@ -275,14 +275,14 @@ function snapshotSessions(s: SessionsState): SessionsSnapshot {
       }
     }
     if (project.id === s.activeId) {
-      const content = project.contents.find(
-        (c) => c.id === project.activeContentId,
+      const content = project.spaces.find(
+        (c) => c.id === project.activeSpaceId,
       );
       if (content) {
         const group = allGroups(content.layout).find(
-          (g) => g.id === content.activeGroupId,
+          (g) => g.id === content.activePaneId,
         );
-        const view = group?.views.find((v) => v.id === group.activeViewId);
+        const view = group?.tabs.find((v) => v.id === group.activeTabId);
         if (view) {
           activeView = {
             projectId: project.id,
@@ -521,10 +521,10 @@ export function startPluginHooks(): void {
 // 관찰 substrate 의 paneId = 플러그인 터미널 뷰의 sessions view.id(= app.pty.spawn 에 넘긴 paneId).
 // 코어는 터미널 뷰를 소유하지 않는다(터미널도 플러그인 뷰).
 function projectInfoOfPane(paneId: string): { id: string; root: string | null } | null {
-  for (const t of useSessions.getState().tabs) {
-    for (const c of t.contents) {
+  for (const t of useSessions.getState().projects) {
+    for (const c of t.spaces) {
       for (const g of allGroups(c.layout)) {
-        for (const v of g.views) {
+        for (const v of g.tabs) {
           if (v.id === paneId) {
             return { id: t.id, root: t.root ?? null };
           }

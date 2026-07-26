@@ -52,7 +52,7 @@ export async function addProjectClaimed(
       await invoke("window_focus", { label: c.ownedBy }).catch(() => {});
       return { ok: true as const, existingWindow: c.ownedBy };
     }
-    const held = useSessions.getState().tabs.find((t) => t.root === opts.root);
+    const held = useSessions.getState().projects.find((t) => t.root === opts.root);
     if (held) {
       useSessions.getState().closeTab(held.id);
     }
@@ -77,7 +77,7 @@ export async function addProjectClaimed(
  *  release 는 닫기 성공 시에만(마지막 프로젝트 거부 등 실패면 점유 유지가 옳다). */
 export async function closeProjectReleased(projectId: string) {
   const s = useSessions.getState();
-  const root = s.tabs.find((t) => t.id === projectId)?.root;
+  const root = s.projects.find((t) => t.id === projectId)?.root;
   const r = s.closeTab(projectId);
   if (r.ok && root) await releaseProject(root);
   return r;

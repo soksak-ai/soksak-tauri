@@ -65,7 +65,7 @@ import {
   projectArrangement,
   useSessions,
   webviewDisplayName,
-  type ProjectTab,
+  type Project,
 } from "./state/sessions";
 import {
   useSettings,
@@ -169,7 +169,7 @@ const ProjectPane = memo(function ProjectPane({
   startResize,
   startRightResize,
 }: {
-  project: ProjectTab;
+  project: Project;
   isActiveProject: boolean;
   sidebarW: number;
   rightW: number;
@@ -183,8 +183,8 @@ const ProjectPane = memo(function ProjectPane({
   const railPlaneRef = useRef<HTMLDivElement>(null);
   const placement = project.leftRailPlacement ?? DEFAULT_RAIL_PLACEMENT;
   const activeContent =
-    project.contents.find((content) => content.id === project.activeContentId) ??
-    project.contents[0];
+    project.spaces.find((content) => content.id === project.activeSpaceId) ??
+    project.spaces[0];
   // 미해소 포커스 렌더에서 station 이 0 으로 붕괴하지 않게 직전 확정값을 폴백으로 준다.
   const lastStationRef = useRef(0);
   // 배치는 해결기가 푼다 — station·배열·만들어진 인접·이동량의 단일 진실(재계산 금지).
@@ -205,7 +205,7 @@ const ProjectPane = memo(function ProjectPane({
         ? allGroups(activeContent.layout)
             .map(
               (group) =>
-                `${group.id}:${group.activeViewId}:${group.views.map((v) => v.id).join("+")}`,
+                `${group.id}:${group.activeTabId}:${group.tabs.map((v) => v.id).join("+")}`,
             )
             .join("|")
         : "",
@@ -222,13 +222,13 @@ const ProjectPane = memo(function ProjectPane({
   const railCells = arrangement?.cells ?? [];
   const railCleanLines = arrangement?.cleanLines ?? [0, 100];
   const effectiveStation = arrangement?.station ?? 0;
-  const boundGroup = activeContent?.railBindingViewId
+  const boundGroup = activeContent?.railBindingTabId
     ? allGroups(activeContent.layout).find((group) =>
-        group.views.some((view) => view.id === activeContent.railBindingViewId),
+        group.tabs.some((view) => view.id === activeContent.railBindingTabId),
       )
     : undefined;
-  const boundView = boundGroup?.views.find(
-    (view) => view.id === activeContent?.railBindingViewId,
+  const boundView = boundGroup?.tabs.find(
+    (view) => view.id === activeContent?.railBindingTabId,
   );
   const boundCell = boundGroup
     ? railCells.find((cell) => cell.id === boundGroup.id)
@@ -371,13 +371,13 @@ const ProjectPane = memo(function ProjectPane({
   // 통째로 순간이동한다 ② 파킹에서 돌아온 표면이 최종 앵커로 재스냅되지 않아 한 박자 늦는다
   // (사용자 실측: 브라우저 탭이 여럿인 패널에서 다른 탭을 고르면 이질감과 깜빡임).
   useLayoutEffect(() => {
-    emitPluginEvent("layout.reflow", { activeSpaceId: project.activeContentId });
+    emitPluginEvent("layout.reflow", { activeSpaceId: project.activeSpaceId });
     scheduleSlotSettleCapture(); // 레이아웃 정착 에지 — 슬롯 동결 스냅 갱신(디바운스)
   }, [
     contentKey,
-    activeContent?.activeGroupId,
-    activeContent?.maximizedViewId,
-    project.activeContentId,
+    activeContent?.activePaneId,
+    activeContent?.maximizedTabId,
+    project.activeSpaceId,
     project.sidebarOpen,
     isActiveProject,
     renderedStation,
@@ -521,8 +521,8 @@ const ProjectPane = memo(function ProjectPane({
             </div>
           }
         >
-          {project.contents.map((c) => {
-            const isActiveContent = c.id === project.activeContentId;
+          {project.spaces.map((c) => {
+            const isActiveContent = c.id === project.activeSpaceId;
             return (
               <div
                 key={c.id}
@@ -585,7 +585,7 @@ const ProjectPane = memo(function ProjectPane({
 // 프로젝트의 사이드바(파일트리)가 따라갈 터미널 pane(= 현재 cwd 출처). 순수 resolver 는
 // sessions.cwdPaneOf — 여기서는 PTY 관찰 predicate(hasPtyObservation)를 주입해 호출한다.
 // 코어/플러그인 터미널 구분 없음 — PTY substrate 를 구동하는(관찰을 가진) 뷰면 따라간다.
-const cwdPaneOf = (project: ProjectTab): string | undefined =>
+const cwdPaneOf = (project: Project): string | undefined =>
   resolveCwdPane(project, hasPtyObservation);
 
 // 빌드 정체성 배지: DEV(HMR 개발 서버) / DEBUG(디버그 번들 soksak-debug) / 없음(릴리스).
@@ -637,7 +637,7 @@ function WebviewHealthBadges() {
   const t = useT();
   // 배지는 사용자 표면 — raw label(b-<창>-<viewId>) 대신 탭 표시명으로 해소한다
   // (webviewDisplayName). 식별(key·data-node·recover 인자)은 label 유지 — 기계 경로 불변.
-  const tabs = useSessions((s) => s.tabs);
+  const projects = useSessions((s) => s.projects);
   const [openLabels, setOpenLabels] = useState<string[]>([]);
   useEffect(() => {
     return listenThisWindow<{ label: string; state: string }>(
@@ -660,7 +660,7 @@ function WebviewHealthBadges() {
       {openLabels.map((label) => (
         <div key={label} className="webview-health-badge">
           <span>
-            {t("webview.exhausted", { label: webviewDisplayName(label, tabs) })}
+            {t("webview.exhausted", { label: webviewDisplayName(label, projects) })}
           </span>
           <button
             type="button"
@@ -812,14 +812,14 @@ function App() {
       const { groupId, projectId } = slot?.dataset ?? {};
       if (groupId && projectId) {
         const state = useSessions.getState();
-        const project = state.tabs.find((item) => item.id === projectId);
-        const space = project?.contents.find(
-          (item) => item.id === project.activeContentId,
+        const project = state.projects.find((item) => item.id === projectId);
+        const space = project?.spaces.find(
+          (item) => item.id === project.activeSpaceId,
         );
         const group = space
           ? allGroups(space.layout).find((item) => item.id === groupId)
           : null;
-        const targetViewId = group?.activeViewId;
+        const targetViewId = group?.activeTabId;
         if (targetViewId) {
           transferViewFocus(activeSessionViewId(), targetViewId, () =>
             state.setActiveGroup(projectId, groupId),
@@ -899,7 +899,7 @@ function App() {
 
   // 구독 최소 원칙(docs/PERFORMANCE.md 1): 필드/액션별 셀렉터만 — bare 훅 금지.
   // zustand 액션은 create() 시점에 고정되는 안정 참조라 액션 셀렉터는 리렌더 없음.
-  const tabs = useSessions((s) => s.tabs);
+  const projects = useSessions((s) => s.projects);
   const activeId = useSessions((s) => s.activeId);
   const setActive = useSessions((s) => s.setActive);
   const toggleSidebar = useSessions((s) => s.toggleSidebar);
@@ -911,7 +911,7 @@ function App() {
     null,
   );
   const [newProjectOpen, setNewProjectOpen] = useState(false);
-  const activeProject = tabs.find((t) => t.id === activeId);
+  const activeProject = projects.find((t) => t.id === activeId);
 
   // spawn 옵션 provider 는 main.tsx 부트(렌더 전)가 등록한다 — effect(마운트
   // 후)는 자식 PaneLeaf ref 의 첫 spawn 보다 늦어 첫 터미널이 cwd 없이(홈)
@@ -1004,11 +1004,11 @@ function App() {
         return;
       }
       const s = useSessions.getState();
-      const project = s.tabs.find((t) => t.id === s.activeId);
+      const project = s.projects.find((t) => t.id === s.activeId);
       if (!project) return;
       const content =
-        project.contents.find((c) => c.id === project.activeContentId) ??
-        project.contents[0];
+        project.spaces.find((c) => c.id === project.activeSpaceId) ??
+        project.spaces[0];
       if (!content) return;
       // ⌥⌘B 우측 플러그인 사이드바. ⌥ 조합은 e.key 가 합성문자("∫")라 e.code 로 판정.
       if (e.altKey && !e.shiftKey && e.code === "KeyB") {
@@ -1018,8 +1018,8 @@ function App() {
       }
       const groups = allGroups(content.layout);
       const grp =
-        groups.find((g) => g.id === content.activeGroupId) ?? groups[0];
-      const view = grp?.views.find((v) => v.id === grp.activeViewId);
+        groups.find((g) => g.id === content.activePaneId) ?? groups[0];
+      const view = grp?.tabs.find((v) => v.id === grp.activeTabId);
       if (key === "w" && !e.shiftKey) {
         // ⌘W 활성 뷰 닫기(코어 터미널 pane 분할 제거 — 뷰 단위 닫기만).
         e.preventDefault();
@@ -1047,7 +1047,7 @@ function App() {
       const { paths } = event.payload;
       if (!paths || paths.length === 0) return;
       const s = useSessions.getState();
-      const proj = s.tabs.find((t) => t.id === s.activeId);
+      const proj = s.projects.find((t) => t.id === s.activeId);
       const paneId = proj ? cwdPaneOf(proj) : undefined;
       if (!paneId) return;
       getPtyIo(paneId)?.sendInput(paths.map(shellEscape).join(" "));
@@ -1061,7 +1061,7 @@ function App() {
   // 더블클릭 = 프로젝트 설정 모달(이름 + 식별 색 — 인라인 rename 대체).
   const projectTabsList = (
     <>
-      {tabs.map((proj) => (
+      {projects.map((proj) => (
         <div
           key={proj.id}
           className={`tab${proj.id === activeId ? " active" : ""}`}
@@ -1072,7 +1072,7 @@ function App() {
             <span className="tab-dot" style={{ background: proj.color }} />
           )}
           <span className="tab-title">{proj.title}</span>
-          {tabs.length > 1 && (
+          {projects.length > 1 && (
             <button
               type="button"
               className="icon-btn icon-btn--mini tab-close"
@@ -1105,13 +1105,13 @@ function App() {
   const recentAll = useRecentProjects();
   // 어디에도 안 열린 최근 = 전체 최근 − 내 창 root − 타창 root.
   const openRoots = new Set([
-    ...tabs.map((p) => p.root),
+    ...projects.map((p) => p.root),
     ...otherProjects.map((o) => o.root),
   ]);
   const recentClosed = recentAll.filter((r) => !openRoots.has(r.root));
   const projectRailList = (
     <>
-      {tabs.map((proj) => (
+      {projects.map((proj) => (
         <div
           key={proj.id}
           className={`rail-chip${proj.id === activeId ? " active" : ""}`}
@@ -1125,7 +1125,7 @@ function App() {
           onDoubleClick={() => setProjectSettingsFor(proj.id)}
           onContextMenu={(e) => {
             e.preventDefault();
-            if (tabs.length > 1) void closeProjectReleased(proj.id); // P6 해제 동반
+            if (projects.length > 1) void closeProjectReleased(proj.id); // P6 해제 동반
           }}
         >
           <span className="rail-chip-label">
@@ -1306,14 +1306,14 @@ function App() {
         )}
         {/* 프로젝트 0개 = 예외 상태(P6 열화·복원 드롭)뿐 — 열기·생성은 컨트롤 플레인의 표면이다.
             빈 워크스페이스 창은 생성 경로가 없으므로(window.new root 필수) 안내만 남긴다. */}
-        {tabs.length === 0 && (
+        {projects.length === 0 && (
           <div className="window-empty" data-node="window/empty">
             {t("window.empty")}
           </div>
         )}
         {/* 모든 프로젝트를 마운트해 세션 유지(비활성은 visibility 로 숨김). */}
         <div className="terminal-stack">
-          {tabs.map((project) => (
+          {projects.map((project) => (
             <ProjectPane
               key={project.id}
               project={project}

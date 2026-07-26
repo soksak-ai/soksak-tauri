@@ -29,27 +29,27 @@ useProgramRegistry
 
 useSessions.getState().bootstrapFirstProject("/tmp/soksak-emptypanel");
 registerCatalog();
-const pristineTabs = JSON.parse(JSON.stringify(useSessions.getState().tabs));
+const pristineTabs = JSON.parse(JSON.stringify(useSessions.getState().projects));
 const pristineActive = useSessions.getState().activeId;
 
 beforeEach(() => {
   useSessions.setState({
-    tabs: JSON.parse(JSON.stringify(pristineTabs)),
+    projects: JSON.parse(JSON.stringify(pristineTabs)),
     activeId: pristineActive,
   });
 });
 
 /** 활성 스페이스의 활성 패널을 뷰 0개로 만든다(실측 상태의 재현). */
 function emptyActivePanel(): void {
-  const tabs = structuredClone(useSessions.getState().tabs);
-  const project = tabs.find((t) => t.id === useSessions.getState().activeId)!;
+  const projects = structuredClone(useSessions.getState().projects);
+  const project = projects.find((t) => t.id === useSessions.getState().activeId)!;
   const content =
-    project.contents.find((c) => c.id === project.activeContentId) ?? project.contents[0];
+    project.spaces.find((c) => c.id === project.activeSpaceId) ?? project.spaces[0];
   const groups = allGroups(content.layout);
-  const g = groups.find((x) => x.id === content.activeGroupId) ?? groups[0];
-  g.views = [];
-  g.activeViewId = "";
-  useSessions.setState({ tabs });
+  const g = groups.find((x) => x.id === content.activePaneId) ?? groups[0];
+  g.tabs = [];
+  g.activeTabId = "";
+  useSessions.setState({ projects });
 }
 
 /** 정상 사슬 재현 — 활성 패널에 뷰 하나를 연다(부트스트랩은 테스트 환경에서 뷰를 만들지 않는다). */

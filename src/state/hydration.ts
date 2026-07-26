@@ -37,13 +37,13 @@ export function beginRestoreHydration(): void {
   const s = useSessions.getState();
   const cold: string[] = [];
   const activity = new Map<string, number>();
-  for (const t of s.tabs) {
-    for (const c of t.contents) {
-      const contentVisible = t.id === s.activeId && c.id === t.activeContentId;
+  for (const t of s.projects) {
+    for (const c of t.spaces) {
+      const contentVisible = t.id === s.activeId && c.id === t.activeSpaceId;
       for (const g of allGroups(c.layout)) {
-        for (const v of g.views) {
+        for (const v of g.tabs) {
           if (v.kind !== "plugin") continue; // 파일 뷰는 가벼움 — 게이트 밖
-          const visible = contentVisible && g.activeViewId === v.id;
+          const visible = contentVisible && g.activeTabId === v.id;
           if (!visible) {
             cold.push(v.id);
             activity.set(v.id, v.lastActivity ?? 0);
