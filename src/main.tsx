@@ -38,6 +38,7 @@ import {
   coreStoreDeps,
 } from "./state/windowBoot";
 import { initWindowTitle } from "./state/windowTitle";
+import { installSwapObserver, installInputObserver } from "./lib/motionDebug";
 import { initViewLabelsPersistence } from "./state/viewLabels";
 import { initSettingsPersistence } from "./state/settings";
 import { initContractSelectionPersistence } from "./state/contractSelection";
@@ -144,6 +145,8 @@ async function boot(): Promise<void> {
     <App />,
   );
   bootStamp("render");
+  installSwapObserver(); // 교체(파킹↔등장) 관측 — 렌더 이후 문서 전체 1회
+  installInputObserver(); // 입력 발화 관측(제스처→활성화 인과 사슬)
   bootStamp("plugin-body:begin");
   try {
     await initPluginHost();

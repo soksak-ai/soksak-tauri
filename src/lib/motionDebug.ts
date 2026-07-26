@@ -170,6 +170,209 @@ export function endJourney(
   publishJourney("end", j);
 }
 
+// ── 스왑 원장(swaps) — 교체(파킹↔등장)의 실행 사실을 DOM 변이에서 직접 기록한다.
+// 여정 원장은 FLIP 보간의 자기보고다 — 파킹 전환은 보간하지 않으므로(좌표 계약) 그 축을 볼
+// 눈이 없다. 사용자 실측 "a↔b 가 두 번 교체된다"(2026-07-27)를 잡으려면 어떤 코드 경로가
+// 스타일을 썼든 화면의 사실을 봐야 한다 — MutationObserver 는 쓴 주체와 무관하게 파킹이
+// 걸리는 세 층(project plane·space plane·tab 슬롯)의 인라인 스타일 전환을 전부 본다.
+// 정상 교체는 탭 층 전환 정확히 2건(나가는 탭 visible→parked, 들어오는 탭 parked→visible)이다.
+export interface SwapRecord {
+  at: string; // layout/tab/<id> · project/<id> · space-plane
+  kind: "park" | "restyle"; // park = 파킹 축 전환, restyle = 파킹 불변인데 다른 선언이 바뀜
+  from: string; // park: visible|parked, restyle: 바뀐 선언 이름들(요약)
+  to: string;
+  t: number; // performance.now()
+}
+const SWAPS_CAP = 128;
+const swaps: SwapRecord[] = [];
+export function motionSwaps(): SwapRecord[] {
+  return [...swaps];
+}
+function publishSwap(s: SwapRecord): void {
+  void invoke("activity_publish", {
+    kind: "motion.swap",
+    source: "motion",
+    payload: {
+      at: s.at,
+      kind: s.kind,
+      from: s.from,
+      to: s.to,
+      t: Math.round(s.t * 10) / 10,
+      message: `· swap ${s.at} [${s.kind}] ${s.from}→${s.to}`,
+      origin: "internal",
+    },
+  }).catch(() => {});
+}
+// 파킹 판정은 인라인 스타일 직독이다(parkedStyle 이 인라인으로 쓴다) — computed 는 반영
+// 시차로 거짓을 말한다(실측: 파킹 좌표를 읽는 순간에도 visible — #15 의 가시성 프록시 오판).
+const parkedInText = (style: string | null): boolean =>
+  !!style && (/visibility:\s*hidden/.test(style) || /display:\s*none/.test(style));
+const swapName = (el: HTMLElement): string | null => {
+  const node = el.dataset.node;
+  if (node && node.startsWith("layout/tab/")) return node;
+  if (el.dataset.projectPlane) return `project/${el.dataset.projectPlane}`;
+  if (el.classList.contains("space-plane")) return "space-plane";
+  return null;
+};
+let swapObserver: MutationObserver | null = null;
+/** 스왑 감시 설치 — App 마운트에서 1회(멱등). 관측은 본체를 못 막는다(발행 실패는 삼킨다). */
+export function installSwapObserver(): void {
+  if (swapObserver || typeof MutationObserver === "undefined" || typeof document === "undefined")
+    return;
+  // 선언 텍스트를 이름→값으로 — restyle 사건의 "무엇이 바뀌었나"를 이름으로 요약한다.
+  const declsOf = (text: string): Map<string, string> => {
+    const m = new Map<string, string>();
+    for (const part of text.split(";")) {
+      const i = part.indexOf(":");
+      if (i > 0) m.set(part.slice(0, i).trim(), part.slice(i + 1).trim());
+    }
+    return m;
+  };
+  const record = (rec: SwapRecord) => {
+    swaps.push(rec);
+    if (swaps.length > SWAPS_CAP) swaps.shift();
+    publishSwap(rec);
+  };
+  swapObserver = new MutationObserver((muts) => {
+    // 배치 재구성 — 변이 i 의 결과값은 변이 i+1 의 oldValue 다. 현재 el.style 은 배치의
+    // 최종값이라, 그걸 매 변이의 결과로 읽으면 중간 왕복이 전부 최종 상태로 뭉개진다
+    // (첫 판의 오판: 한 배치 4변이가 전부 parked→visible 로 보였다).
+    const byEl = new Map<HTMLElement, MutationRecord[]>();
+    const t0 = typeof performance === "undefined" ? 0 : performance.now();
+    for (const m of muts) {
+      const el = m.target;
+      if (!(el instanceof HTMLElement)) continue;
+      const name = swapName(el);
+      if (!name) continue;
+      // class 축 — .flip-move 류 클래스 부착이 CSS 키프레임(rail-flip-x)을 발화시킨다.
+      // 스타일 축만 보면 "두 번 미끄러짐"의 원인(클래스 재부착 = 애니메이션 재발화)에 눈이 없다.
+      if (m.attributeName === "class") {
+        const oldCls = new Set((m.oldValue ?? "").split(/\s+/).filter(Boolean));
+        const newCls = new Set(el.className.split(/\s+/).filter(Boolean));
+        const delta: string[] = [];
+        for (const c of newCls) if (!oldCls.has(c)) delta.push(`+${c}`);
+        for (const c of oldCls) if (!newCls.has(c)) delta.push(`-${c}`);
+        if (delta.length > 0)
+          record({ at: name, kind: "restyle", from: "class", to: delta.join(" "), t: t0 });
+        continue;
+      }
+      const list = byEl.get(el);
+      if (list) list.push(m);
+      else byEl.set(el, [m]);
+    }
+    const t = typeof performance === "undefined" ? 0 : performance.now();
+    for (const [el, list] of byEl) {
+      const at = swapName(el);
+      if (!at) continue;
+      const finalText = el.getAttribute("style") ?? "";
+      for (let i = 0; i < list.length; i++) {
+        const oldText = list[i].oldValue ?? "";
+        const newText = i + 1 < list.length ? (list[i + 1].oldValue ?? "") : finalText;
+        if (oldText === newText) continue;
+        const was = parkedInText(oldText);
+        const now = parkedInText(newText);
+        if (was !== now) {
+          record({ at, kind: "park", from: was ? "parked" : "visible", to: now ? "parked" : "visible", t });
+          continue;
+        }
+        // 파킹 축 불변 — 어떤 선언이 바뀌었는지(움직임의 실체는 transform·크기 재작성이다).
+        const a = declsOf(oldText);
+        const b = declsOf(newText);
+        // 제거 마커로 접두사를 깎으면 CSS 변수(--x)의 이름이 상한다 — 키 집합으로 정직하게.
+        const keys = new Set<string>([...a.keys(), ...b.keys()]);
+        const changed = [...keys].filter((k) => a.get(k) !== b.get(k));
+        if (changed.length === 0) continue;
+        record({
+          at,
+          kind: "restyle",
+          from: changed.map((k) => `${k}:${a.get(k) ?? "∅"}`).join(" "),
+          to: changed.map((k) => `${k}:${b.get(k) ?? "∅"}`).join(" "),
+          t,
+        });
+      }
+    }
+  });
+  swapObserver.observe(document.body, {
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["style", "class"],
+    attributeOldValue: true,
+  });
+}
+
+// ── 발화 원장(triggers) — "이벤트가 실제로 몇 번 발화했나"를 원인 축에서 기록한다.
+// 사용자 가설(2026-07-27): 교체가 두 번 보이는 건 활성화가 두 번 발화하기 때문일 수 있다
+// (down/up 이중발화 류). 판정 지점은 상태 변이의 단일 소유자(sessions.setActiveView/
+// setActiveGroup)다 — 어느 UI 경로가 부르든 전부 여기로 모이므로, 호출마다 호출 스택 서명을
+// 남기면 한 제스처가 몇 번·어떤 경로로 활성화를 쐈는지 그대로 드러난다. 입력 층(pointerdown/
+// up/click)도 문서 캡처로 함께 기록해 제스처→발화→교체의 인과 사슬을 한 시간축에 놓는다.
+export interface TriggerRecord {
+  what: string; // setActiveView | setActiveGroup | pointerdown | pointerup | click
+  target: string; // 뷰/칸 id 또는 입력 대상의 data-node
+  via: string; // 호출 스택 서명(상태 발화) 또는 입력 좌표
+  t: number; // performance.now()
+}
+const TRIGGERS_CAP = 128;
+const triggers: TriggerRecord[] = [];
+export function motionTriggers(): TriggerRecord[] {
+  return [...triggers];
+}
+function recordTrigger(rec: TriggerRecord): void {
+  triggers.push(rec);
+  if (triggers.length > TRIGGERS_CAP) triggers.shift();
+  void invoke("activity_publish", {
+    kind: "motion.trigger",
+    source: "motion",
+    payload: {
+      what: rec.what,
+      target: rec.target,
+      via: rec.via,
+      t: Math.round(rec.t * 10) / 10,
+      message: `· trigger ${rec.what} ${rec.target}`,
+      origin: "internal",
+    },
+  }).catch(() => {});
+}
+/** 상태 발화 기록 — 상태 액션(단일 소유 지점)이 부른다. 스택 서명으로 경로를 남긴다. */
+export function noteActivation(what: string, target: string): void {
+  const stack = (new Error().stack ?? "")
+    .split("\n")
+    .slice(2, 7)
+    .map((l) => l.trim().replace(/^at /, "").split(/[ @]/)[0])
+    .filter((f) => f && !f.startsWith("http"))
+    .join("<");
+  recordTrigger({
+    what,
+    target,
+    via: stack,
+    t: typeof performance === "undefined" ? 0 : performance.now(),
+  });
+}
+let inputObserved = false;
+/** 입력 층 기록 — 탭/칸 표면에 닿은 pointerdown/up/click 만(캡처 단계, 본체 무간섭). */
+export function installInputObserver(): void {
+  if (inputObserved || typeof document === "undefined") return;
+  inputObserved = true;
+  for (const type of ["pointerdown", "pointerup", "click"] as const) {
+    document.addEventListener(
+      type,
+      (e) => {
+        const el = e.target instanceof Element ? e.target.closest("[data-node],[data-tab-id],[data-pane]") : null;
+        if (!(el instanceof HTMLElement)) return;
+        const target =
+          el.dataset.node ?? (el.dataset.tabId ? `tab:${el.dataset.tabId}` : `pane:${el.dataset.pane}`);
+        recordTrigger({
+          what: type,
+          target,
+          via: `${Math.round((e as MouseEvent).clientX)},${Math.round((e as MouseEvent).clientY)}`,
+          t: typeof performance === "undefined" ? 0 : performance.now(),
+        });
+      },
+      { capture: true, passive: true },
+    );
+  }
+}
+
 /** 위상 스킵 사실 — 원장에 남겨 "감속이 안 걸렸다"의 원인을 실측 가능하게 한다(#15 규명). */
 export function noteRectMotionSkip(at: string, why: string): void {
   recentBirths.push({ at, what: `layout-rect-skipped(${why})`, declaredMs: 0, rate: 1 });

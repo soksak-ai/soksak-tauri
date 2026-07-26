@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { issueId } from "./ids";
+import { noteActivation } from "../lib/motionDebug";
 import {
   DEFAULT_RAIL_PLACEMENT,
   isCleanRailStation,
@@ -1516,6 +1517,7 @@ export const useSessions = create<SessionsStore>((set, get) => ({
   },
 
   setActiveView: (projectId, viewId) => {
+    noteActivation("setActiveView", viewId); // 발화 원장 — 몇 번·어떤 경로로 불렸는지(관측)
     let r: CmdResult = noProject(projectId);
     set((s) => {
       const t = s.projects.find((x) => x.id === projectId);
@@ -1545,6 +1547,7 @@ export const useSessions = create<SessionsStore>((set, get) => ({
   },
 
   setActiveGroup: (projectId, groupId) => {
+    noteActivation("setActiveGroup", groupId); // 발화 원장(관측)
     let r: CmdResult = noProject(projectId);
     set((s) => {
       const t = s.projects.find((x) => x.id === projectId);
