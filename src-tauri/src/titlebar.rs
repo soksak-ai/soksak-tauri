@@ -162,15 +162,18 @@ unsafe fn apply_inset(window: &NSWindow, x: f64, y: f64) {
     bar_rect.size.height = bar_height;
     container.setFrame(bar_rect);
 
-    // 비활성 위젯의 backdrop 합성 복원 — 점 모양 그대로의 원형 백킹 3개(§상단 주석).
-    // 활성 상태에선 숨김(점이 불투명 컬러라 불필요 + 테마 전환 이질감 제거).
-    ensure_backing([&close, &miniaturize, &zoom], window.isKeyWindow());
-
-    for (i, button) in [close, miniaturize, zoom].into_iter().enumerate() {
-        let mut rect = NSView::frame(&button);
+    for (i, button) in [&close, &miniaturize, &zoom].into_iter().enumerate() {
+        let mut rect = NSView::frame(button);
         rect.origin.x = x + (i as f64 * space);
         button.setFrameOrigin(rect.origin);
     }
+
+    // 비활성 위젯의 backdrop 합성 복원 — 점 모양 그대로의 원형 백킹 3개(§상단 주석).
+    // 활성 상태에선 숨김(점이 불투명 컬러라 불필요 + 테마 전환 이질감 제거).
+    // 반드시 버튼 "이동 뒤" — 백킹은 호출 시점의 버튼 프레임으로 깔리므로, 이동 전에 깔면
+    // 첫 적용에서 백킹은 옛 자리·버튼은 새 자리로 반쯤 어긋난 회색 원이 남는다
+    // (실측: 비활성 창 신호등이 반쪽 원 3개로 보인 사용자 스크린샷, 2026-07-27).
+    ensure_backing([&close, &miniaturize, &zoom], window.isKeyWindow());
 }
 
 // 버튼마다 그 프레임과 동일한 원형 백킹(NSBox, cornerRadius=½)을 바로 아래에 깐다.
