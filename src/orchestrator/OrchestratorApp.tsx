@@ -47,7 +47,7 @@ function commandLabel(cmd: string, t: TFn, carried?: unknown): string {
 
 // 응답 media 렌더 — 봉투가 선언한 표시 미디어만 그린다(MESSAGE-PROTOCOL: 소비자는 키 추측 금지).
 // base64 는 즉시 data URI, path 는 read_file_base64 로 지연 로드(실패 시 조용히 생략 — 파일 삭제됨 등).
-function MediaView({ media, onZoom }: { media: unknown; onZoom: (src: string) => void }) {
+function MediaView({ media, seq, onZoom }: { media: unknown; seq: number; onZoom: (src: string) => void }) {
   const m = media as { kind?: string; base64?: string; path?: string } | undefined;
   const isImage = typeof m?.kind === "string" && m.kind.startsWith("image/");
   const [src, setSrc] = useState<string | null>(null);
@@ -75,7 +75,7 @@ function MediaView({ media, onZoom }: { media: unknown; onZoom: (src: string) =>
       className="orch-shot"
       alt=""
       src={src}
-      data-node="orch/turn/media"
+      data-node={`orch/turn/${seq}/media`}
       title="클릭: 확대"
       onClick={(e) => {
         e.stopPropagation(); // 버블의 원문 JSON 토글과 분리
@@ -134,20 +134,20 @@ function renderEntry(
     const ok = p.ok !== false;
     return (
       <div key={e.seq} className={`orch-turn${sys}`}>
-        <div className="orch-bubble req" data-node="orch/turn/req">
+        <div className="orch-bubble req" data-node={`orch/turn/${e.seq}/req`}>
           <div className="orch-bubble-meta">{meta(Number(p.startedAt))}</div>
           <div className="orch-bubble-body">{commandLabel(String(p.command), t, p.title)}</div>
         </div>
         {/* 진행 델타 — 요청과 응답 사이, 실행 중 "무엇을 했는지"의 흔적(§2). */}
         {deltas?.map((d) => (
-          <div key={d.seq} className="orch-delta" data-node="orch/turn/delta">
+          <div key={d.seq} className="orch-delta" data-node={`orch/turn/${e.seq}/delta/${d.seq}`}>
             ⋯ {String((d.payload as { delta?: unknown }).delta ?? "")}
           </div>
         ))}
         {/* 응답 = 표준 답변 message. 클릭하면 원문 JSON(봉투 전체)을 펼친다. */}
         <div
           className={`orch-bubble res ${ok ? "ok" : "err"}${isExpanded ? " open" : ""}`}
-          data-node="orch/turn/res"
+          data-node={`orch/turn/${e.seq}/res`}
           title="클릭: 원문 JSON"
           onClick={() => onToggle(e.seq)}
         >
@@ -158,7 +158,7 @@ function renderEntry(
             {ok ? "✓" : `✗ ${String(p.code ?? "")}`} {String(p.message ?? "")}
           </div>
           {/* 응답이 media 를 선언하면 그대로 렌더(표준 — 키 추측 없음): base64 즉시, path 는 지연 로드. */}
-          <MediaView media={p.media} onZoom={onZoom} />
+          <MediaView media={p.media} seq={e.seq} onZoom={onZoom} />
         </div>
         {raw}
       </div>
@@ -189,8 +189,8 @@ function renderChatCard(
 ) {
   const prompt = card.prompt;
   return (
-    <div key={`chat-${prompt.seq}`} className="orch-chat" data-node="orch/chat">
-      <div className="orch-bubble req chat" data-node="orch/chat/prompt">
+    <div key={`chat-${prompt.seq}`} className="orch-chat" data-node={`orch/chat/${prompt.seq}`}>
+      <div className="orch-bubble req chat" data-node={`orch/chat/${prompt.seq}/prompt`}>
         <div className="orch-bubble-meta">
           {fmtTime(prompt.ts)}
           {showWho ? ` · ${t("orch.console")}` : ""}
@@ -201,7 +201,7 @@ function renderChatCard(
         {card.body.map((e) => {
           if (e.kind === "command.progress") {
             return (
-              <div key={e.seq} className="orch-delta" data-node="orch/chat/delta">
+              <div key={e.seq} className="orch-delta" data-node={`orch/chat/${prompt.seq}/delta/${e.seq}`}>
                 ⋯ {String((e.payload as { delta?: unknown }).delta ?? "")}
               </div>
             );
@@ -213,7 +213,7 @@ function renderChatCard(
               <div
                 key={e.seq}
                 className={`orch-bubble res chat ${ok ? "ok" : "err"}${open ? " open" : ""}`}
-                data-node="orch/chat/answer"
+                data-node={`orch/chat/${prompt.seq}/answer`}
                 title="클릭: 원문 JSON"
                 onClick={() => onToggle(e.seq)}
               >
@@ -227,9 +227,9 @@ function renderChatCard(
         })}
       </div>
       {!card.closed && (
-        <div className="orch-chat-running" data-node="orch/chat/running">
+        <div className="orch-chat-running" data-node={`orch/chat/${prompt.seq}/running`}>
           <span>⋯ {t("orch.chatRunning")}</span>
-          <button type="button" data-node="orch/chat/stop" onClick={onStop}>
+          <button type="button" data-node={`orch/chat/${prompt.seq}/stop`} onClick={onStop}>
             {t("orch.stop")}
           </button>
         </div>

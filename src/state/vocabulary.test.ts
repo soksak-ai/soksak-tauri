@@ -110,7 +110,10 @@ const VERDICTS: Record<Scope, Record<string, Verdict>> = {
     paneNameViolates: "pane", // CSS 게이트의 칸 이름 판별기
     paneInvariant: "pane", // 그 불변식 게이트의 파일 이름(주석 인용)
     // ── 옛 뜻(탭 인스턴스) — 계약면이라 이행 기간 동안 이름이 남는다 ──────────
-    paneId: "tab", // 플러그인 계약면의 타깃/호출자 파라미터 — 이행표가 tabId·callerTab 으로 옮긴다
+    // 뜻-분기(감사 적발): 옛 뜻(탭 인스턴스) 사이트는 tabId·callerTab 으로 이행하지만,
+    // **개명 후의 pane 축 에코**(targetEcho 표준 AXIS_ECHO pane→paneId, pane.resize 의
+    // paneId: loc.pane.id)는 새 뜻(칸)의 정본이다 — 이 표를 근거로 일괄 개명하지 마라.
+    paneId: "pane", // 플러그인 계약면의 타깃/호출자 파라미터 — 이행표가 tabId·callerTab 으로 옮긴다
     legacyPaneId: "tab", // 엔티티 id 마이그레이션이 탭 레코드·스냅샷에 남긴 이행 키
     paneAlive: "tab", // app.pty.paneAlive — 플러그인 API 표면
     pty_pane_alive: "tab", // invoke 이름(와이어)

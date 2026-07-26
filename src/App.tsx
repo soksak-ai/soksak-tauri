@@ -839,7 +839,9 @@ function App() {
       // 그걸 강조 + 좌우 셀을 잠깐 물려 divider 를 드러낸다. divider 아니면 null(강조 해제).
       const el = document.elementFromPoint(e.payload.x, e.payload.y);
       const div = el?.closest<HTMLElement>(".pane-gutter");
-      useDividerHover.getState().set(div?.dataset.dividerKey ?? null);
+      // 발행(GroupArea data-gutter-key)과 같은 이름을 읽는다 — 개명에서 이 판독부만 남아
+      // dataset.dividerKey 가 항상 undefined 였다(네이티브 child 위 gutter 강조 무음 사망, 감사 적발).
+      useDividerHover.getState().set(div?.dataset.gutterKey ?? null);
     });
     const offUp = listenThisWindow<{ x: number; y: number }>("native-mouseup", (e) => {
       if (!dragging) return;
