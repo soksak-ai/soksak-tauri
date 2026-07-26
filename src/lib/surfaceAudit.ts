@@ -86,12 +86,35 @@ export function visibleAnchorRects(): { rects: AuditRect[]; source: string } {
   return { rects: holes, source: "hole" };
 }
 
+/** 빈 본문 뷰(dark) 수집 — 보이는 plugin 뷰 컨테이너인데 본문이 아무것도 없다(라이트 DOM
+ *  자식 0 && shadow 자식 0, 오버레이도 없음). 실사고: 활성 구글 페인이 통검정인데 앵커
+ *  (bv-area)조차 없어 missing 판정이 성립 안 했다 — 뷰 마운트/child 생성 실패는 앵커
+ *  이전의 실패라 자기만의 축이 필요하다. */
+function darkViewRects(): AuditRect[] {
+  const out: AuditRect[] = [];
+  for (const el of document.querySelectorAll<HTMLElement>(".tab-viewer.plugin-view-container")) {
+    const r = el.getBoundingClientRect();
+    if (r.width < 40 || r.height < 40) continue;
+    if (r.x + r.width <= 0 || r.x >= window.innerWidth) continue; // 파킹
+    const body = el.parentElement; // .plugin-body — 오버레이(로딩/에러/부재)는 형제로 선다
+    const hasOverlay = !!body?.querySelector(
+      ".plugin-loading, .plugin-empty, .plugin-error",
+    );
+    const lightEmpty = el.childElementCount === 0;
+    const shadowEmpty = !el.shadowRoot || el.shadowRoot.childElementCount === 0;
+    if (lightEmpty && shadowEmpty && !hasOverlay)
+      out.push({ x: r.x, y: r.y, w: r.width, h: r.height });
+  }
+  return out;
+}
+
 interface EngineStats {
   surfaces?: { hidden: boolean; effectivelyHidden: boolean; frame: AuditRect }[];
 }
 
 let lastSignature = "";
 let lastMissingSig = "[]";
+let lastDarkSig = "[]";
 let settle: ReturnType<typeof setTimeout> | null = null;
 
 async function runAudit(): Promise<void> {
@@ -115,10 +138,18 @@ async function runAudit(): Promise<void> {
   const missingSig = JSON.stringify(verdict.missing);
   const missingPersists = verdict.missing.length > 0 && missingSig === lastMissingSig;
   lastMissingSig = missingSig;
+  // dark(빈 본문 뷰)도 지속 2회일 때만 — 마운트 직후 한 프레임은 정상적으로 비어 있다.
+  const dark = darkViewRects();
+  const darkSig = JSON.stringify(dark);
+  const darkPersists = dark.length > 0 && darkSig === lastDarkSig;
+  lastDarkSig = darkSig;
   const bad =
-    verdict.misplaced.length > 0 || verdict.stacked.length > 0 || missingPersists;
+    verdict.misplaced.length > 0 ||
+    verdict.stacked.length > 0 ||
+    missingPersists ||
+    darkPersists;
   const signature = bad
-    ? JSON.stringify([verdict.misplaced, verdict.stacked.map((l) => l.length), missingPersists ? verdict.missing : []])
+    ? JSON.stringify([verdict.misplaced, verdict.stacked.map((l) => l.length), missingPersists ? verdict.missing : [], darkPersists ? dark : []])
     : "clean";
   if (signature === lastSignature) return; // 같은 사실의 반복 발행 금지(원장 소음 절제)
   const wasBad = lastSignature !== "" && lastSignature !== "clean";
@@ -131,12 +162,13 @@ async function runAudit(): Promise<void> {
       misplaced: verdict.misplaced,
       stacked: verdict.stacked,
       missing: missingPersists ? verdict.missing : [],
+      dark: darkPersists ? dark : [],
       surfaces: verdict.surfaces,
       holes: verdict.holes,
       anchorSource: anchors.source,
       origin: "internal",
       message: bad
-        ? `· surface misplaced ×${verdict.misplaced.length} stacked ×${verdict.stacked.length} missing ×${missingPersists ? verdict.missing.length : 0} (surfaces ${verdict.surfaces}/holes ${verdict.holes})`
+        ? `· surface misplaced ×${verdict.misplaced.length} stacked ×${verdict.stacked.length} missing ×${missingPersists ? verdict.missing.length : 0} dark ×${darkPersists ? dark.length : 0} (surfaces ${verdict.surfaces}/holes ${verdict.holes})`
         : "· surfaces realigned — audit clean",
     },
   }).catch(() => {});
@@ -177,6 +209,7 @@ export function __resetSurfaceAuditForTest(): void {
   installed = false;
   lastSignature = "";
   lastMissingSig = "[]";
+  lastDarkSig = "[]";
   if (settle !== null) clearTimeout(settle);
   settle = null;
 }

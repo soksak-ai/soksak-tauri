@@ -100,26 +100,31 @@ async function main() {
     }
   }
 
-  console.log("a. window with an engine browser parked behind a terminal");
+  console.log("a. window with engine browsers parked behind a terminal");
   const opened = data(await rpc("window.open", { root: FIXTURE }, await resolveControlWindow(rpc)));
   const win = opened.label || opened.existingWindow;
   ok(typeof win === "string" && win.startsWith("w-"), `window opened (${win})`);
   let term = null;
-  let browser = null;
-  for (let i = 0; i < 40 && (!term || !browser); i++) {
+  let browsers = [];
+  for (let i = 0; i < 40 && (!term || browsers.length === 0); i++) {
     const ids = (data(await rpc("program.list", {}, win)).programs || []).map((p) => p.id);
     term = ids.find((id) => id.startsWith("terminal-")) ?? term;
-    // 엔진 서피스를 쓰는 브라우저 우선(chromium) — 겹침의 실증 축. 없으면 아무 브라우저.
-    browser =
-      ids.find((id) => id.startsWith("browser-") && id.includes("chromium")) ??
-      ids.find((id) => id.startsWith("browser-")) ??
-      browser;
-    if (!term || !browser) await sleep(500);
+    // 전 엔진 순회 — 한 엔진만 보고 통과 판정하지 않는다(사용자 규칙: 전 축 GREEN 이어야
+    // OK). native(WKWebView)·chromium(CEF)·offscreen 각각이 자기 실패 모드를 가진다.
+    browsers = ids.filter((id) => id.startsWith("browser-"));
+    if (!term || browsers.length === 0) await sleep(500);
   }
-  ok(!!term && !!browser, `programs (${term}, ${browser})`);
-  const tBrowser = data(await rpc("tab.open", { program: browser }, win)).tabId;
+  ok(!!term && browsers.length > 0, `programs (${term}; ${browsers.join(", ")})`);
+  const tabsByEngine = [];
+  for (const b of browsers) {
+    const r = await rpc("tab.open", { program: b }, win);
+    const id = (r.data ?? r).tabId;
+    ok(typeof id === "string", `tab opened for ${b} (${id})`, JSON.stringify(r).slice(0, 120));
+    if (typeof id === "string") tabsByEngine.push([b, id]);
+  }
+  const tBrowser = tabsByEngine[0]?.[1];
   const tTerm = data(await rpc("tab.open", { program: term }, win)).tabId;
-  ok(typeof tBrowser === "string" && typeof tTerm === "string", `tabs (${tBrowser}, ${tTerm})`);
+  ok(typeof tTerm === "string", `terminal tab (${tTerm})`);
   // 브라우저에 실 페이지 — 서피스가 실제로 생성되게.
   await sleep(2500);
   // 터미널을 활성으로 → 브라우저 파킹(서피스는 숨겨져야 한다).
@@ -155,26 +160,28 @@ async function main() {
   // 활성 표면의 기상을 우회해 검은 페인을 만들었는데 게이트는 GREEN 이었다). 브라우저를
   // 활성으로 되돌리고, 감사 missing 무발행 + 표면 정합(webview.surfaces)이 가시 서피스를
   // 실제로 세는지 둘 다 단언한다.
-  {
+  for (const [engine, tab] of tabsByEngine) {
     const since2 = (data(await rpc("activity.recent", { limit: 1 }, ctrl)).entries ?? []).at(-1)?.seq ?? 0;
-    await rpc("tab.activate", { tab: tBrowser }, win);
+    await rpc("tab.activate", { tab }, win);
     await sleep(3000); // 표면 복귀·재페인트·감사 2회(지속 판정) 여유
     const sf = data(await rpc("webview.surfaces", {}, win));
     const engineVisible = ((sf.engine ?? {}).surfaces ?? []).filter((x) => !x.effectivelyHidden).length;
     const nativeAlive = (sf.actual ?? []).length;
     ok(
       engineVisible + nativeAlive >= 1,
-      `active browser has a live surface (engine ${engineVisible}, native ${nativeAlive})`,
-      JSON.stringify(sf.engine).slice(0, 200),
+      `${engine}: active browser has a live surface (engine ${engineVisible}, native ${nativeAlive})`,
+      JSON.stringify(sf.engine).slice(0, 160),
     );
     const es2 = data(await rpc("activity.recent", { since: since2, limit: 500 }, ctrl)).entries ?? [];
-    const missing = es2.filter(
-      (e) => e.kind === "surface.misplaced" && ((e.payload?.missing ?? []).length > 0),
+    const badVis = es2.filter(
+      (e) =>
+        e.kind === "surface.misplaced" &&
+        (((e.payload?.missing ?? []).length > 0) || ((e.payload?.dark ?? []).length > 0)),
     );
     ok(
-      missing.length === 0,
-      "no persistent surface.missing while browser is active",
-      JSON.stringify(missing.map((e) => e.payload?.message)).slice(0, 220),
+      badVis.length === 0,
+      `${engine}: no persistent missing/dark while active`,
+      JSON.stringify(badVis.map((e) => e.payload?.message)).slice(0, 220),
     );
   }
 
