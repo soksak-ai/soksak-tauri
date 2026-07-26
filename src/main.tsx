@@ -24,7 +24,7 @@ import { loadCliName } from "./lib/cliIdentity";
 import { startWebviewGc } from "./lib/webviewGc";
 import { initPluginHost } from "./plugins/host";
 import { initNotify } from "./lib/notify";
-import { currentWindowLabel } from "./lib/webviewLabels";
+import { browserLabelPrefix, currentWindowLabel } from "./lib/webviewLabels";
 import { claimRoots } from "./state/projectRegistry";
 import { recordRecentProject } from "./state/recentProjects";
 import { useSessions } from "./state/sessions";
@@ -39,6 +39,8 @@ import {
 } from "./state/windowBoot";
 import { initWindowTitle } from "./state/windowTitle";
 import { installSwapObserver, installInputObserver } from "./lib/motionDebug";
+import { beginBootPluginEventBuffer, flushBootPluginEvents } from "./plugins/hooks";
+import { useBootPhase } from "./state/bootPhase";
 import { initViewLabelsPersistence } from "./state/viewLabels";
 import { initSettingsPersistence } from "./state/settings";
 import { initContractSelectionPersistence } from "./state/contractSelection";
@@ -141,28 +143,27 @@ async function boot(): Promise<void> {
   // (미등록 뷰 = 플레이스홀더 계약, PluginViewHost), 슬롯은 활성화가 도착하는 대로 채워진다.
   // 순서 계약은 그대로다: 복원(project.created 발화)은 여전히 플러그인 호스트 "뒤" —
   // 리스너 등록 전 발화로 이벤트가 유실되던 사고(git init 미실행)의 재발 없음.
+  beginBootPluginEventBuffer(); // 부트 구간 발화는 큐로 — flush 는 부트 말미(구독자 완비 후)
+  useBootPhase.getState().setPhase("restoring");
+  // 이전 세션의 child webview 는 Rust 소유라 렌더러 재부팅(reload)에서 살아남는다 — 그대로
+  // 두면 복원 전 빈 화면 위에 이전 브라우저가 떠 보인다(실사고: 빈 창 위 Example Domain,
+  // 사용자 실측 2026-07-27). 부트 서두에 이 창의 child 를 전부 숨긴다 — 복원 렌더가 활성
+  // 뷰만 다시 표시한다(commitViewVisibility — 새 컨텍스트라 맵이 비어 재발행이 보장된다).
+  try {
+    const stale = await bootInvoke<string[]>("webview_list");
+    const prefix = browserLabelPrefix();
+    for (const l of stale)
+      if (l.startsWith(prefix))
+        void bootInvoke("webview_visible", { label: l, visible: false }).catch(() => {});
+  } catch {
+    /* child 없음/조회 실패 — 부트를 막지 않는다 */
+  }
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <App />,
   );
   bootStamp("render");
   installSwapObserver(); // 교체(파킹↔등장) 관측 — 렌더 이후 문서 전체 1회
   installInputObserver(); // 입력 발화 관측(제스처→활성화 인과 사슬)
-  bootStamp("plugin-body:begin");
-  try {
-    await initPluginHost();
-  } catch (e) {
-    console.error("플러그인 호스트 초기화 실패:", e);
-  }
-  bootStamp("plugin-body:end");
-  // 부팅 준비 게이트 해제 — 이 전에 도착해 대기 중이던 미등록(플러그인) 명령 요청이 실행된다.
-  // 실패로 빠져나와도 반드시 해제한다(게이트가 영영 잠기면 원격 요청이 타임아웃으로만 죽는다).
-  markCommandHostReady();
-  // 알림 클릭(OS)·외부/콜드스타트 딥링크 라우팅 — command 레지스트리+플러그인 준비 후 1회.
-  try {
-    await initNotify();
-  } catch (e) {
-    console.error("알림/딥링크 초기화 실패:", e);
-  }
   // 프로그래매틱 오픈(window.new{root}) — 창 생성자가 부트 지시를 URL 쿼리로 전달한다
   // (창별 JS 컨텍스트 분리의 유일한 통로). 지시가 있으면 복원보다 우선: 사용자 의도가
   // "이 창에서 그 프로젝트"이므로. claim 실패(생성↔부트 레이스)면 빈 상태로 열화(안내가 오케스트레이터를 가리킨다).
@@ -205,6 +206,34 @@ async function boot(): Promise<void> {
   } catch (e) {
     console.error("워크스페이스 영속 초기화 실패:", e);
   }
+  // 복원이 화면의 사실이 되는 지점 — 플러그인 호스트는 이 "뒤"다(복원 300ms 기준).
+  // 예전엔 호스트(플러그인 활성화 합계 실측 2.3s)가 복원(4ms) 앞을 막아 빈 화면이 3초였다.
+  // 순서가 지던 이벤트 유실 계약은 부트 이벤트 버퍼(hooks.flushBootPluginEvents)가 진다.
+  bootStamp("restore-visible");
+  useBootPhase.getState().setPhase("activating");
+  // 첫 페인트 근사 — 렌더 커밋 뒤 다음 프레임. 사람이 "화면이 떴다"고 느끼는 시점의 하한.
+  // (가려진 창은 rAF 가 멈춰 이 스탬프가 안 올 수 있다 — 타이밍 실측은 전면 창에서.)
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      bootStamp("painted");
+    });
+  });
+  bootStamp("plugin-body:begin");
+  try {
+    await initPluginHost();
+  } catch (e) {
+    console.error("플러그인 호스트 초기화 실패:", e);
+  }
+  bootStamp("plugin-body:end");
+  // 부팅 준비 게이트 해제 — 이 전에 도착해 대기 중이던 미등록(플러그인) 명령 요청이 실행된다.
+  // 실패로 빠져나와도 반드시 해제한다(게이트가 영영 잠기면 원격 요청이 타임아웃으로만 죽는다).
+  markCommandHostReady();
+  // 알림 클릭(OS)·외부/콜드스타트 딥링크 라우팅 — command 레지스트리+플러그인 준비 후 1회.
+  try {
+    await initNotify();
+  } catch (e) {
+    console.error("알림/딥링크 초기화 실패:", e);
+  }
   // 창 네이티브 타이틀 = 활성 프로젝트(Dock 창 목록·Mission Control 구분 — 실측: 전 창이
   // 앱 이름 하나로 보였음). 자동 저장과 무관한 표시 전용 구독.
   void initWindowTitle();
@@ -223,16 +252,12 @@ async function boot(): Promise<void> {
   // (스냅샷 또는 initRoot)만 책임지고, 그 둘 다 없으면 빈 상태(예외)로 시작한다.
   // StrictMode 비활성: dev 에서 effect 이중 실행이 플러그인 마운트/PTY spawn 을 두 번 돌려
   // 잠깐 중복 세션을 만드는 것을 피한다(dev 동작 단순화).
-  // 렌더는 부트 서두(플러그인 호스트 전)에서 이미 했다 — 여기는 복원까지 끝난 시점.
-  bootStamp("restore-visible");
-  // 첫 페인트 근사 — 렌더 커밋 뒤 다음 프레임. 사람이 "화면이 떴다"고 느끼는 시점의 하한.
-  // (가려진 창은 rAF 가 멈춰 이 스탬프가 안 올 수 있다 — 타이밍 실측은 전면 창에서.)
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      bootStamp("painted");
-      bootDone();
-    });
-  });
+  // 부트 이벤트 버퍼 재생 — 코어 구독자·플러그인 훅이 전부 선 뒤 한 번(FIFO). 이 지점의
+  // 전달 시점은 예전 "호스트 → 복원" 순서와 같다 — 유실도, 이른 발화도 없다.
+  flushBootPluginEvents();
+  useBootPhase.getState().setPhase("ready");
+  bootStamp("boot:done");
+  bootDone();
 }
 
 void boot();

@@ -214,7 +214,35 @@ export function onPluginEvent<K extends keyof PluginEventMap>(
   };
 }
 
-export function emitPluginEvent<K extends keyof PluginEventMap>(
+// ── 부트 이벤트 버퍼 — 복원이 플러그인 호스트를 기다리지 않기 위한 계약(복원 300ms 기준).
+// 예전 순서(호스트 → 복원)는 "리스너 등록 전 발화 유실"(git init 미실행 사고)을 순서로 막았고,
+// 그 값이 부트 2.5s 였다(플러그인 활성화 합계 실측 2.3s 가 복원 4ms 앞을 막았다). 이제 순서
+// 대신 버퍼가 그 계약을 진다: 부트 구간 발화는 큐에만 쌓고, 호스트·코어 구독자가 전부 선 뒤
+// flushBootPluginEvents 가 FIFO 재생한다 — 전달 시점은 예전 순서와 같고, 상태(복원)만 앞선다.
+// 버퍼는 부트가 명시적으로 켜는 모드다 — 기본은 즉시 전달(테스트·오케스트레이터 등 부트
+// 버퍼 계약 밖의 진입점은 현행 그대로). 워크스페이스 부트만 begin→flush 한 쌍을 계약한다.
+let bootBuffering = false;
+const bootQueue: Array<[keyof PluginEventMap, unknown]> = [];
+
+export function beginBootPluginEventBuffer(): void {
+  bootBuffering = true;
+}
+
+export function flushBootPluginEvents(): void {
+  if (!bootBuffering) return;
+  bootBuffering = false;
+  for (const [ev, pl] of bootQueue.splice(0)) {
+    dispatchPluginEvent(ev, pl as PluginEventMap[typeof ev]);
+  }
+}
+
+/** 테스트 전용 — 버퍼 상태 초기화(창 부트 1회 계약을 테스트마다 재현). */
+export function __resetBootPluginEventsForTest(): void {
+  bootBuffering = false;
+  bootQueue.length = 0;
+}
+
+function dispatchPluginEvent<K extends keyof PluginEventMap>(
   event: K,
   payload: PluginEventMap[K],
 ): void {
@@ -228,6 +256,17 @@ export function emitPluginEvent<K extends keyof PluginEventMap>(
       console.error(`플러그인 이벤트 리스너 실패(${String(event)}):`, e);
     }
   }
+}
+
+export function emitPluginEvent<K extends keyof PluginEventMap>(
+  event: K,
+  payload: PluginEventMap[K],
+): void {
+  if (bootBuffering) {
+    bootQueue.push([event, payload]);
+    return;
+  }
+  dispatchPluginEvent(event, payload);
 }
 
 // FileViewer 저장 성공 시 1회 호출(저장 성공은 store 신호만으로 구분 불가).

@@ -10,7 +10,7 @@ import { registerDebugCatalog } from "./catalogDebug";
 import { registerOrchestratorCatalog } from "./catalogOrchestrator";
 import { registerRemoteCatalog } from "./catalogRemote";
 import { registerRemoteConfirmDevCatalog } from "./catalogRemoteConfirmDev";
-import { execute, setPermissionGate } from "./registry";
+import { getSpec, execute, setPermissionGate } from "./registry";
 
 interface CmdRequest {
   id: number;
@@ -73,9 +73,11 @@ export function startExecutor(): void {
   // 두 창에서 중복 실행 → 창별 독립 붕괴). lib/windowEvents 머리말 참조.
   listenThisWindow<CmdRequest>("cmd-request", async (e) => {
     const { id, method, params, pane, window, parent, origin } = e.payload;
-    // 호스트 미준비 = 플러그인 활성화 진행 중 — 완료까지 대기 후 실행.
-    // (완료 후에도 미등록이면 그때의 UNKNOWN_COMMAND 가 진짜다.)
-    if (!hostReady) await hostReadyGate;
+    // 호스트 미준비 = 플러그인 활성화 진행 중. 게이트는 **미등록 명령만** 세운다 — 이미
+    // 등록된 코어 명령(state.tree 등)까지 잡으면 복원은 231ms 에 끝났는데 소켓 응답이
+    // 플러그인 활성화(실측 2.5s) 뒤로 밀린다(복원 300ms 기준의 마지막 병목이 이 게이트였다).
+    // 미등록 명령은 완료까지 대기 — 그 뒤에도 미등록이면 그때의 UNKNOWN_COMMAND 가 진짜다.
+    if (!hostReady && getSpec(method) === undefined) await hostReadyGate;
     // 소켓 경유 = 원격(AI/CLI) 호출 → 권한 게이트 적용 대상. window 는 자기 창 label
     // (라우팅 확인·명령 컨텍스트용).
     const result = await execute(method, params ?? {}, {

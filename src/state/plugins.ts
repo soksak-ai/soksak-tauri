@@ -558,6 +558,9 @@ export const usePlugins = create<PluginsState>((set, get) => {
       set({ plugins: next, rejected });
 
       // 동의 유효한 enabled 목록 재활성화. 실패는 status 로 표시(§0-4 — 침묵 금지).
+      // 계측(boot.step) — 부트 병목의 실체는 플러그인별 활성화 시간이다(복원 300ms 기준).
+      const bootT0 = performance.now();
+      const perPlugin: Array<[string, number]> = [];
       for (const id of get().enabledIds) {
         const p = get().plugins[id];
         if (!p) continue;
@@ -578,7 +581,9 @@ export const usePlugins = create<PluginsState>((set, get) => {
           continue;
         }
         try {
+          const t = performance.now();
           await activateRuntime(p);
+          perPlugin.push([id, Math.round(performance.now() - t)]);
           setRuntime(id, { status: "enabled", error: undefined });
         } catch (e) {
           setRuntime(id, {
@@ -586,6 +591,21 @@ export const usePlugins = create<PluginsState>((set, get) => {
             error: e instanceof Error && e.stack ? e.stack : String(e),
           });
         }
+      }
+      {
+        const total = Math.round(performance.now() - bootT0);
+        const top = [...perPlugin].sort((x, y) => y[1] - x[1]).slice(0, 12);
+        void invoke("activity_publish", {
+          kind: "boot.step",
+          source: "boot",
+          payload: {
+            step: "plugin-activate",
+            ms: total,
+            top: top.map(([id, ms]) => `${id}:${ms}`),
+            message: `· plugin-activate ${total}ms`,
+            origin: "internal",
+          },
+        }).catch(() => {});
       }
       await get().syncLedger();
     },
