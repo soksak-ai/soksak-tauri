@@ -11,7 +11,14 @@
 //  - 위상 중(isLayoutMotionActive): 드래그·활강은 기존 시스템이 이동을 소유한다.
 //  - 홀 요소(.hole): 네이티브 표면은 보간 프레임을 따라가지 못한다(visualEffectOwnership).
 import { LAYOUT_MOTION_MS, layoutMotionFacts } from "./layoutMotion";
-import { adoptLayoutAnimation, beginJourney, endJourney, noteRectMotionSkip } from "./motionDebug";
+import {
+  adoptLayoutAnimation,
+  beginJourney,
+  endJourney,
+  motionDebugState,
+  noteRectMotionSkip,
+  onMotionDebugChange,
+} from "./motionDebug";
 
 interface Snap {
   x: number;
@@ -36,6 +43,66 @@ export function createRectMotionTracker(): RectMotionTracker {
   const running = new WeakMap<HTMLElement, Animation>();
   // 직전 flush 에서 flip-move(CSS 레일 활강 소유)였는지 — 제거 커밋의 정산 스킵에 쓴다.
   const wasFlipMove = new WeakMap<HTMLElement, boolean>();
+  // 정지(hold) 중 태어난 변화의 동결 — pause/currentTime 고정은 브라우저의 pending 커밋
+  // 타이밍에 진다(실측: 고정에도 1프레임 진행 동결, 3/10). 정지 중엔 애니메이션을 만들지
+  // 않고 옛 rect 를 인라인으로 박아 화면을 세운다. 해제 전이에서 인라인을 걷고 그 자리에서
+  // FLIP 을 시작한다(정지 해제 = 활강 시작 — 의미도 정확하다).
+  const frozen = new Map<HTMLElement, { was: Snap }>();
+  const startFlip = (el: HTMLElement, was: Snap, now: Snap): void => {
+    const dx = was.x - now.x;
+    const dy = was.y - now.y;
+    const dw = was.w - now.w;
+    const dh = was.h - now.h;
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5 && Math.abs(dw) < 0.5 && Math.abs(dh) < 0.5)
+      return;
+    const cs = getComputedStyle(el);
+    const L = parseFloat(cs.left) || 0;
+    const T = parseFloat(cs.top) || 0;
+    try {
+      const a = el.animate(
+        [
+          {
+            left: `${L + dx}px`,
+            top: `${T + dy}px`,
+            width: `${now.w + dw}px`,
+            height: `${now.h + dh}px`,
+          },
+          { left: `${L}px`, top: `${T}px`, width: `${now.w}px`, height: `${now.h}px` },
+        ],
+        { duration: LAYOUT_MOTION_MS, easing: "ease" },
+      );
+      running.set(el, a);
+      const j = beginJourney(el.dataset.node ?? el.className, was, now);
+      const landRect = () => {
+        const lr = el.getBoundingClientRect();
+        return { x: lr.x, y: lr.y, w: lr.width, h: lr.height };
+      };
+      a.onfinish = () => {
+        if (running.get(el) === a) running.delete(el);
+        endJourney(j, "finish", landRect());
+      };
+      a.oncancel = () => {
+        endJourney(j, "cancel", landRect());
+      };
+      adoptLayoutAnimation(a, el.dataset.node ?? el.className, LAYOUT_MOTION_MS);
+    } catch {
+      /* 애니메이션 불가 환경(테스트 jsdom 등) — 즉시 반영 그대로 */
+    }
+  };
+  // hold 해제 전이 — 동결분을 걷고 그 자리에서 활강 시작.
+  onMotionDebugChange(() => {
+    if (motionDebugState().hold || frozen.size === 0) return;
+    for (const [el, f] of [...frozen]) {
+      frozen.delete(el);
+      el.style.removeProperty("left");
+      el.style.removeProperty("top");
+      el.style.removeProperty("width");
+      el.style.removeProperty("height");
+      if (!el.isConnected) continue;
+      const r = el.getBoundingClientRect();
+      startFlip(el, f.was, { x: r.x, y: r.y, w: r.width, h: r.height });
+    }
+  });
   return {
     ref: (el) => {
       if (el) els.add(el);
@@ -105,54 +172,33 @@ export function createRectMotionTracker(): RectMotionTracker {
           noteRectMotionSkip(el.dataset.node ?? el.className, facts.kinds.join("+") || "live");
           continue;
         }
-        const dx = was.x - now.x;
-        const dy = was.y - now.y;
-        const dw = was.w - now.w;
-        const dh = was.h - now.h;
-        if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5 && Math.abs(dw) < 0.5 && Math.abs(dh) < 0.5)
+        const dxq = was.x - now.x;
+        const dyq = was.y - now.y;
+        const dwq = was.w - now.w;
+        const dhq = was.h - now.h;
+        if (
+          Math.abs(dxq) < 0.5 &&
+          Math.abs(dyq) < 0.5 &&
+          Math.abs(dwq) < 0.5 &&
+          Math.abs(dhq) < 0.5
+        )
           continue;
-        const cs = getComputedStyle(el);
-        const L = parseFloat(cs.left) || 0;
-        const T = parseFloat(cs.top) || 0;
-        try {
-          // keyframe 은 시작·끝 두 개다 — 단일 keyframe 은 WAAPI 에서 to 로 해석돼 종료 시
-          // 시작값으로 스냅한다(실측: 정상 활강 뒤 원점 점프 — 품질 오라클이 잡음). 끝 px 는
-          // 취소-후-측정한 진짜 현재값이라 CSS 계산값과의 오차가 없다. "종료 후 1회 더"의
-          // 실제 원인은 끝 px 가 아니라 요소당 애니메이션 중복이었고, 그것은 cancel 단일화가
-          // 막는다.
-          const a = el.animate(
-            [
-              {
-                left: `${L + dx}px`,
-                top: `${T + dy}px`,
-                width: `${now.w + dw}px`,
-                height: `${now.h + dh}px`,
-              },
-              { left: `${L}px`, top: `${T}px`, width: `${now.w}px`, height: `${now.h}px` },
-            ],
-            { duration: LAYOUT_MOTION_MS, easing: "ease" },
-          );
-          running.set(el, a);
-          const j = beginJourney(
-            el.dataset.node ?? el.className,
-            { x: was.x, y: was.y, w: was.w, h: was.h },
-            now,
-          );
-          const landRect = () => {
-            const lr = el.getBoundingClientRect();
-            return { x: lr.x, y: lr.y, w: lr.width, h: lr.height };
-          };
-          a.onfinish = () => {
-            if (running.get(el) === a) running.delete(el);
-            endJourney(j, "finish", landRect());
-          };
-          a.oncancel = () => {
-            endJourney(j, "cancel", landRect());
-          };
-          adoptLayoutAnimation(a, el.dataset.node ?? el.className, LAYOUT_MOTION_MS);
-        } catch {
-          /* 애니메이션 불가 환경(테스트 jsdom 등) — 즉시 반영 그대로 */
+        // 정지(hold) 중의 변화 — 애니메이션 대신 옛 rect 인라인 동결(위 frozen 머리말).
+        if (motionDebugState().hold) {
+          const cs0 = getComputedStyle(el);
+          const L0 = parseFloat(cs0.left) || 0;
+          const T0 = parseFloat(cs0.top) || 0;
+          el.style.left = `${L0 + dxq}px`;
+          el.style.top = `${T0 + dyq}px`;
+          el.style.width = `${now.w + dwq}px`;
+          el.style.height = `${now.h + dhq}px`;
+          if (!frozen.has(el)) frozen.set(el, { was });
+          noteRectMotionSkip(el.dataset.node ?? el.className, "held-frozen");
+          continue;
         }
+        // keyframe 은 시작·끝 두 개다 — 단일 keyframe 은 WAAPI 에서 to 로 해석돼 종료 시
+        // 시작값으로 스냅한다(실측). 본문은 startFlip(위 추출)이 소유한다.
+        startFlip(el, was, now);
       }
     },
   };

@@ -387,6 +387,31 @@ export function adoptLayoutAnimation(a: Animation, at: string, declaredMs: numbe
   recentBirths.push({ at, what: "layout-rect", declaredMs, rate: motionPlaybackRate() });
   if (recentBirths.length > RECENT_BIRTHS_CAP) recentBirths.shift();
   applyMotionTo(a as unknown as Retimable);
+  // 정지 중의 탄생은 0 에서 얼린다 — pause() 는 pending 커밋이라 브라우저가 첫 프레임에서
+  // play 를 먼저 커밋하면 한 프레임이 샌다(실측: 정지 중 rect 가 정확히 1프레임 전진 후
+  // 동결, 3회 중 1회). 탄생은 정의상 진행 전이므로 currentTime=0 고정이 정당하다 —
+  // 이미 달리던 애니메이션의 동결 위치(applyMotionTo)는 건드리지 않는다.
+  if (motionDebugState().hold) {
+    try {
+      a.currentTime = 0;
+    } catch {
+      /* 이미 끝났거나 분리됨 — 무해 */
+    }
+    // pending pause 중의 currentTime 세팅은 WebKit 이 무시할 수 있다(실측: 위 고정에도
+    // 1프레임(≈17ms, ease 20%)에서 동결). ready(커밋 완료) 시점에 0 을 재고정한다 —
+    // 커밋 순서와 무관하게 최종적으로 0 이 이긴다. 그 사이 hold 가 풀렸으면 손대지 않는다.
+    void (a as { ready?: Promise<unknown> }).ready
+      ?.then(() => {
+        if (motionDebugState().hold) {
+          try {
+            a.currentTime = 0;
+          } catch {
+            /* 무해 */
+          }
+        }
+      })
+      .catch(() => {});
+  }
 }
 
 /** 이 애니메이션 하나에 현재 설정을 적용한다. 멱등 — 같은 값이면 브라우저가 무시한다. */

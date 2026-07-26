@@ -343,6 +343,13 @@ async function main() {
       "held layout rect does not advance",
       `from=${JSON.stringify(heldTr.from)} to=${JSON.stringify(heldTr.to)}`,
     );
+    if (heldTr.moved !== false) {
+      // 실패 진단 — 정지를 뚫은 진행의 시계열과, 그 순간의 애니메이션 원장(배속·pause 흔적).
+      console.log(`    samples: ${JSON.stringify((heldTr.samples ?? []).map((x) => [Math.round(x.t), Math.round(x.w * 10) / 10]))}`);
+      const mo = data(await rpc("ui.motion", {}, win));
+      console.log(`    births(전체): ${JSON.stringify((mo.recentBirths ?? []).map((b) => b.at + "|" + b.what))}`);
+      console.log(`    running: ${mo.running} rates: ${JSON.stringify(mo.rates ?? [])} hold: ${mo.hold}`);
+    }
     await rpc("ui.motion", { hold: false, scale: 1 }, win);
     await sleep(800);
     const done = data(await rpc("ui.motion", {}, win));
