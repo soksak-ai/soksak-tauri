@@ -14,6 +14,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { resolveControlWindow } from "./lib/client.mjs";
 
 const SOCKET =
   process.env.SOKSAK_SOCKET ||
@@ -76,8 +77,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function main() {
   const c = await openClient();
   try {
-    const wins = must(await c.rpc("window.list"), "window.list").labels ?? [];
-    const window = wins.find((l) => l !== "main");
+    const ctrl = await resolveControlWindow(c.rpc);
+    const wins = must(await c.rpc("window.list", {}, ctrl), "window.list").labels ?? [];
+    const window = wins.find((l) => l.startsWith("w-"));
     if (!window) throw new Error("워크스페이스 창 없음");
     const tree = must(await c.rpc("ui.tree", {}, window), "ui.tree");
     const addr = JSON.stringify(tree).match(

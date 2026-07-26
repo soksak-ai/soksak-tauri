@@ -16,6 +16,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { resolveControlWindow } from "./lib/client.mjs";
 
 const SOCKET =
   process.env.SOKSAK_SOCKET ||
@@ -98,8 +99,14 @@ function ok(cond, msg) {
   return cond;
 }
 
+// 컨트롤 봉투 어댑터 — 이 파일의 rpc 는 data 를 평탄화하므로 해소 유틸이 읽는 원형으로 되돌린다.
+const ctrlWindow = (exclude) =>
+  resolveControlWindow(
+    (m, p) => rpc(m, p).then((r) => ({ ok: r.ok, code: r.code, data: { labels: r.labels, candidates: r.candidates } })),
+    exclude,
+  );
 async function listLabels() {
-  const r = await rpc("window.list");
+  const r = await rpc("window.list", {}, await ctrlWindow());
   return r.labels || [];
 }
 // 창 상태 지문(id·ok echo 제외 — 매 호출 달라지므로). window 생략 시 활성 창.
@@ -236,7 +243,7 @@ async function main() {
   for (const r of [home, path.join(os.tmpdir(), "soksak-e2e-mw-a"),
                    path.join(os.tmpdir(), "soksak-e2e-mw-b"),
                    path.join(os.tmpdir(), "soksak-e2e-p6")]) {
-    await rpc("project.recent.remove", { root: r }, "main");
+    await rpc("project.recent.remove", { root: r }, await ctrlWindow());
   }
 
   console.log(`\n결과: ${pass} pass / ${fail} fail`);

@@ -15,6 +15,7 @@ import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
 import zlib from "node:zlib";
+import { resolveControlWindow } from "./lib/client.mjs";
 
 const SOCKET =
   process.env.SOKSAK_SOCKET ||
@@ -197,19 +198,20 @@ async function main() {
 
   // 잔재 창 회수(멱등).
   {
-    const wl = data(await rpc("window.list", {}, "main")).labels || [];
+    const ctrl = await resolveControlWindow(rpc);
+    const wl = data(await rpc("window.list", {}, ctrl)).labels || [];
     for (const l of wl) {
       if (!String(l).startsWith("w-")) continue;
       const tr = data(await rpc("state.tree", {}, l).catch(() => null));
       if ((tr.projects ?? []).some((p) => String(p.root ?? "").includes("tab-ghost"))) {
-        await rpc("window.close", { label: l }, "main").catch(() => {});
+        await rpc("window.close", { label: l }, await resolveControlWindow(rpc, l).catch(() => l)).catch(() => {});
         await sleep(500);
       }
     }
   }
 
   console.log("a. one pane, two very different tabs (terminal + file)");
-  const opened = data(await rpc("window.open", { root: FIXTURE }));
+  const opened = data(await rpc("window.open", { root: FIXTURE }, await resolveControlWindow(rpc)));
   const win = opened.label || opened.existingWindow;
   ok(typeof win === "string" && win.startsWith("w-"), `window opened (${win})`);
   let term = null;
@@ -280,6 +282,21 @@ async function main() {
       await sleep(600);
       ok(await parkedOf(tA), `round ${i + 1}: previous tab is parked (computed contract)`);
     }
+    // 파킹-크로싱 부재 — 탭 교체의 파킹 이동(layerPark = 화면 좌측 밖 -200vw)은 레이아웃
+    // 모션이 아니다: FLIP 이 이걸 보간하면 슬롯이 화면을 가로질러 날며 "a↔b 가 두 번
+    // 교체되는" 이중 모션·겹침이 된다(사용자 실측 2026-07-27, 여정 원장으로 실증). 판정은
+    // 모션 여정 원장(ui.motion.journeys — 렌더러가 스스로 기록한 from→to)이다: 출발이든
+    // 도착이든 좌측 화면 밖 rect(x+w≤0)가 실린 여정 = 파킹이 보간된 회귀.
+    {
+      const mo = data(await rpc("ui.motion", {}, win));
+      const offLeft = (r) => r && r.x + r.w <= 0;
+      const crossing = (mo.journeys ?? []).filter((j) => offLeft(j.from) || offLeft(j.to));
+      ok(
+        crossing.length === 0,
+        `no park-crossing journeys (journeys=${(mo.journeys ?? []).length})`,
+        JSON.stringify(crossing.slice(0, 3)),
+      );
+    }
     // 왕복 재현성(상대 판정) — 절대 diff 는 파티클(벚꽃 등 장식 오버레이)이 오염시킨다
     // (실측: 내용 동일한데 33% 상이 — 증거 PGM 판독으로 꽃잎 궤적 확인). 잔상의 정의는
     // "B 의 픽셀이 남았다"이므로, 복귀한 A 가 기준 A 보다 B 에 가까워졌는지를 본다:
@@ -305,7 +322,7 @@ async function main() {
       console.log(`    evidence: ${dir}/baseA.pgm vs backA.pgm`);
     }
   } finally {
-    await rpc("window.close", { label: win }, "main").catch(() => {});
+    await rpc("window.close", { label: win }, await resolveControlWindow(rpc, win).catch(() => win)).catch(() => {});
   }
 
   console.log(`\nresult: ${pass} pass / ${fail} fail`);

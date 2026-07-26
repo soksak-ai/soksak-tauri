@@ -34,6 +34,7 @@ import path from "node:path";
 import process from "node:process";
 import fs from "node:fs";
 import { execFileSync } from "node:child_process";
+import { resolveControlWindow } from "./lib/client.mjs";
 
 const SOCKET =
   process.env.SOKSAK_SOCKET ||
@@ -227,17 +228,20 @@ async function main() {
   }
 
   // ── e. tear the window down (leave no residue) ──────────────────────────────
-  // Route the close through "main": closing a window that hosts a terminal tears down its
-  // PTY and webview, and a reply routed through the dying window times out even though the
-  // close took effect. Verify the outcome by the window's absence, not the ack.
+  // Route the close through another live window: closing a window that hosts a terminal
+  // tears down its PTY and webview, and a reply routed through the dying window times out
+  // even though the close took effect. Verify the outcome by the window's absence, not the
+  // ack. (Never hardcode "main" — the control-plane window can itself be closed.)
   console.log("\ne. close the opened window");
+  const ctrlOf = (exclude) =>
+    resolveControlWindow((m, p, w) => rpc(m, p, w ? { window: w } : {}), exclude);
   try {
-    await rpc("window.close", { label: win }, { window: "main" });
+    await rpc("window.close", { label: win }, { window: await ctrlOf(win).catch(() => win) });
   } catch {
     /* TIMEOUT here is expected — the closing window can drop the reply. */
   }
   await sleep(1000);
-  const labels = (data(await rpc("window.list", {}, { window: "main" })).labels) || [];
+  const labels = (data(await rpc("window.list", {}, { window: await ctrlOf() })).labels) || [];
   ok(!labels.includes(win), `window ${win} is gone from window.list`);
 
   console.log(`\nresult: ${pass} pass / ${fail} fail`);

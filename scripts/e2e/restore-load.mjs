@@ -16,6 +16,7 @@ import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
 import zlib from "node:zlib";
+import { resolveControlWindow } from "./lib/client.mjs";
 
 const SOCKET =
   process.env.SOKSAK_SOCKET ||
@@ -176,19 +177,20 @@ async function main() {
 
   // 잔재 창 회수(멱등).
   {
-    const wl = data(await rpc("window.list", {}, "main")).labels || [];
+    const ctrl = await resolveControlWindow(rpc);
+    const wl = data(await rpc("window.list", {}, ctrl)).labels || [];
     for (const l of wl) {
       if (!String(l).startsWith("w-")) continue;
       const tr = data(await rpc("state.tree", {}, l).catch(() => null));
       if ((tr.projects ?? []).some((p) => String(p.root ?? "").includes("restore-load"))) {
-        await rpc("window.close", { label: l }, "main").catch(() => {});
+        await rpc("window.close", { label: l }, await resolveControlWindow(rpc, l).catch(() => l)).catch(() => {});
         await sleep(500);
       }
     }
   }
 
   console.log("a. build a window: terminal + file tab");
-  const opened = data(await rpc("window.open", { root: FIXTURE }));
+  const opened = data(await rpc("window.open", { root: FIXTURE }, await resolveControlWindow(rpc)));
   const win = opened.label || opened.existingWindow;
   ok(typeof win === "string" && win.startsWith("w-"), `window opened (${win})`);
   let term = null;
@@ -258,7 +260,7 @@ async function main() {
     }
   } finally {
     if (process.env.RESTORE_LOAD_KEEP) console.log(`   kept window for autopsy: ${win}`);
-    else await rpc("window.close", { label: win }, "main").catch(() => {});
+    else await rpc("window.close", { label: win }, await resolveControlWindow(rpc, win).catch(() => win)).catch(() => {});
   }
 
   console.log(`\nresult: ${pass} pass / ${fail} fail`);

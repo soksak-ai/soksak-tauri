@@ -67,8 +67,30 @@ export const must = (r, what) => {
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** 워크스페이스 창 라벨들(main = 컨트롤 플레인이라 제외). */
+/** 컨트롤 봉투 해소 — 창-무관 명령(window.*·project.*)이 지목할 살아있는 창 하나를 정한다.
+ *  특정 라벨("main")을 하드코딩하지 않는다: main 은 닫힐 수 있는 창이다(실사고 2026-07-27 —
+ *  main 부재 상태에서 "main" 봉투가 전부 WINDOW_NOT_FOUND 로 죽고, teardown 실패로 남은
+ *  잔재 창이 포커스 폴백을 점유해 봉투 없는 컨트롤 명령까지 통째로 TIMEOUT). 해소는 라우터
+ *  계약 그대로다: 봉투 없는 window.list 는 폴백이 서면 어느 창에서든 목록을 내고, 서지
+ *  않으면 AMBIGUOUS_WINDOW 가 후보를 실어 거절한다 — 정렬 첫 항목이 결정적 타겟이다
+ *  (main 은 정렬상 w-* 앞이라 살아있으면 자연히 컨트롤 플레인이 뽑힌다). exclude 는
+ *  "닫으려는 창 자신"을 빼는 용도(자기 경유 close 는 회신이 유실된다) — 남는 창이 없으면
+ *  그 라벨을 그대로 쓴다(회신은 잃어도 닫힘은 성사된다). */
+export async function resolveControlWindow(rpc, exclude) {
+  const r = await rpc("window.list", {});
+  const pool =
+    r?.ok === true ? r.data?.labels
+    : r?.code === "AMBIGUOUS_WINDOW" ? r.data?.candidates
+    : null;
+  if (!Array.isArray(pool) || pool.length === 0)
+    throw new Error(`컨트롤 창 해소 실패: ${JSON.stringify(r)?.slice(0, 240)}`);
+  const alive = pool.filter((l) => l !== exclude).sort();
+  return alive[0] ?? exclude;
+}
+
+/** 워크스페이스 창 라벨들 — w-* 만(NAMING §1-4b). 컨트롤 플레인 등 그 외 라벨은 제외. */
 export async function workspaceWindows(c) {
-  const labels = must(await c.rpc("window.list"), "window.list").labels ?? [];
-  return labels.filter((l) => l !== "main");
+  const ctrl = await resolveControlWindow(c.rpc);
+  const labels = must(await c.rpc("window.list", {}, ctrl), "window.list").labels ?? [];
+  return labels.filter((l) => l.startsWith("w-"));
 }

@@ -17,6 +17,7 @@ import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
 import zlib from "node:zlib";
+import { resolveControlWindow } from "./lib/client.mjs";
 
 const SOCKET =
   process.env.SOKSAK_SOCKET ||
@@ -157,19 +158,20 @@ async function main() {
 
   // 잔재 창 회수(멱등) — 이 픽스처 루트를 든 창이 남아 있으면 닫는다.
   {
-    const wl = data(await rpc("window.list", {}, "main")).labels || [];
+    const ctrl = await resolveControlWindow(rpc);
+    const wl = data(await rpc("window.list", {}, ctrl)).labels || [];
     for (const l of wl) {
       if (!String(l).startsWith("w-")) continue;
       const tr = data(await rpc("state.tree", {}, l).catch(() => null));
       if ((tr.projects ?? []).some((p) => String(p.root ?? "").includes("motion-slow"))) {
-        await rpc("window.close", { label: l }, "main").catch(() => {});
+        await rpc("window.close", { label: l }, await resolveControlWindow(rpc, l).catch(() => l)).catch(() => {});
         await sleep(500);
       }
     }
   }
 
   console.log("a. fixture window");
-  const opened = data(await rpc("window.open", { root: FIXTURE }));
+  const opened = data(await rpc("window.open", { root: FIXTURE }, await resolveControlWindow(rpc)));
   const win = opened.label || opened.existingWindow;
   ok(typeof win === "string" && win.startsWith("w-"), `window opened (${win})`);
 
@@ -309,6 +311,19 @@ async function main() {
     const tailStill = tail.length >= 3 && Math.abs(tail[tail.length - 1] - tail[0]) < 0.5;
     ok(tailStill, "still after landing (no post-finish jump)", `tail=${JSON.stringify(tail.slice(-5))}`);
 
+    // 여정 원장 생존 — 위 활강은 FLIP 이므로 여정(from→to)이 원장(ui.motion.journeys)에
+    // 기록돼야 한다. 이 양성 단언이 있어야 tab-switch-ghost 의 "crossing 여정 0" 오라클이
+    // 원장 사망과 구분된다(0 은 "깨끗함"과 "관측 죽음"의 두 얼굴을 가진다). 파킹 지문
+    // (좌측 화면 밖 x+w≤0 — layerPark 는 -200vw) 여정은 여기서도 금지다.
+    {
+      const mo = data(await rpc("ui.motion", {}, win));
+      const js = mo.journeys ?? [];
+      ok(js.length >= 1, `motion journeys recorded (${js.length})`);
+      const offLeft = (r) => r && r.x + r.w <= 0;
+      const crossing = js.filter((j) => offLeft(j.from) || offLeft(j.to));
+      ok(crossing.length === 0, "no park-crossing journeys", JSON.stringify(crossing.slice(0, 3)));
+    }
+
     // ── B. 정지: hold 는 화면을 실제로 얼려야 한다 ────────────────────────────────
     // 유발은 resize(요소 지속 — FLIP 보간이 성립)로 한다. maximize 는 셀 재마운트 축이라
     // 보간 대상이 아니다(후속 과제로 기록 — 재마운트 모션).
@@ -335,7 +350,7 @@ async function main() {
   } finally {
     // 원복 — 설정과 창 둘 다(멱등). 실패해도 다음 실행의 회수 단계가 걷는다.
     await rpc("ui.motion", { scale: 1, hold: false }, win).catch(() => {});
-    await rpc("window.close", { label: win }, "main").catch(() => {});
+    await rpc("window.close", { label: win }, await resolveControlWindow(rpc, win).catch(() => win)).catch(() => {});
   }
 
   console.log(`\nresult: ${pass} pass / ${fail} fail`);

@@ -18,6 +18,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import zlib from "node:zlib";
+import { resolveControlWindow } from "./lib/client.mjs";
 
 const SOCKET =
   process.env.SOKSAK_SOCKET ||
@@ -199,7 +200,11 @@ async function main() {
   const reclaimErrors = [];
   try {
     const opened = must(
-      await c.rpc("project.open", { root: FIXTURE_ROOT, alias: "browser-pixels" }, "main"),
+      await c.rpc(
+        "project.open",
+        { root: FIXTURE_ROOT, alias: "browser-pixels" },
+        await resolveControlWindow(c.rpc),
+      ),
       "project.open",
     );
     window = opened.routedWindow ?? opened.existingWindow ?? null;
@@ -318,8 +323,9 @@ async function main() {
   // 표면이 자기 슬롯에 있는가.
   const drift = [];
   try {
-    const wins = (await c.rpc("window.list")).data?.labels ?? [];
-    for (const win of wins.filter((l) => l !== "main")) {
+    const ctrl = await resolveControlWindow(c.rpc);
+    const wins = (await c.rpc("window.list", {}, ctrl)).data?.labels ?? [];
+    for (const win of wins.filter((l) => l.startsWith("w-"))) {
       const tree = (await c.rpc("state.tree", {}, win)).data;
       const views = [];
       for (const p of tree?.projects ?? []) {
