@@ -458,7 +458,9 @@ fn send_request(
     let req = build_request(
         method,
         params,
-        pane.or_else(|| std::env::var("SOKSAK_PANE").ok()),
+        // 새 이름 우선, 옛 이름 폴백(이행 구간 — 기존 셸의 env 는 spawn 시점 고정).
+        pane.or_else(|| std::env::var("SOKSAK_CALLER_TAB").ok())
+            .or_else(|| std::env::var("SOKSAK_PANE").ok()),
         // 멀티 윈도우 타겟 창: 명시 > --window > SOKSAK_WINDOW. 생략 시 코어가 활성 창으로 라우팅.
         window
             .or_else(|| WINDOW_OVERRIDE.get().cloned().flatten())

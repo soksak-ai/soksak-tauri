@@ -34,10 +34,11 @@ pub const AI_SESSION_ENV: [&str; 8] = [
 // 자식에 정당히 전달하는 SOKSAK_* 인터페이스(tmux $TMUX_PANE 계열 — 자식이 앱과 대화하는 핸들).
 // 이 목록 밖의 SOKSAK_* 는 전부 내부 전용(볼트 마스터키·시크릿 페이로드·격리 볼트 경로·테스트 훅)
 // 으로 간주해 상속 env 에서 벗긴다. 새 내부 SOKSAK_* 가 늘어도 기본 차단(fail-closed).
-const SOKSAK_CHILD_ALLOW: [&str; 6] = [
+const SOKSAK_CHILD_ALLOW: [&str; 7] = [
     "SOKSAK_HOME",
     "SOKSAK_SOCKET",
-    "SOKSAK_PANE",
+    "SOKSAK_CALLER_TAB",
+    "SOKSAK_PANE", // 이행 구간의 옛 이름 — 제거 조건: 모든 세션 교체
     "SOKSAK_WINDOW",
     "SOKSAK_PARENT",
     "SOKSAK_CLI_DIR",

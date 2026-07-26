@@ -308,6 +308,12 @@ fn build_session_env(
     env.push(("TERM".into(), "xterm-256color".into()));
     env.push(("COLORTERM".into(), "truecolor".into()));
     if let Some(pane) = pane_id {
+        // 호출자 문맥 축 — "터미널 안 내 위치"다. 옛 이름 SOKSAK_PANE 은 뜻이 뒤집힌
+        // 세대(pane=탭 인스턴스)의 잔재라 SOKSAK_CALLER_TAB 으로 개명한다(IDENTITY §3).
+        // 이행 구간: 둘 다 주입한다 — PTY 는 spawn 시점 env 가 고정이라 기존 셸이 옛
+        // 이름을 들고 있고, 외부 스크립트도 옛 이름을 읽을 수 있다.
+        // 제거 조건: 모든 세션 교체(옛 이름을 읽는 세션 소멸).
+        env.push(("SOKSAK_CALLER_TAB".into(), pane.clone()));
         env.push(("SOKSAK_PANE".into(), pane.clone()));
     }
     // 멀티윈도우: 내 창 label 주입(PANE 과 대칭) — 빈 문자열은 미주입.
