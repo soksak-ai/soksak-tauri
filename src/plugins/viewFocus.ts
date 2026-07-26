@@ -50,6 +50,36 @@ export class ViewFocusCoordinator {
       ((error) => console.error("플러그인 뷰 포커스 전환 실패:", error));
   }
 
+  /** 아직 안 온 마운트를 기다리는 호출자들. 마운트 순간에만 깨어난다. */
+  private readonly mountWaiters = new Map<string, Set<() => void>>();
+
+  /**
+   * 이 뷰가 명령을 받을 수 있을 때까지 기다린다. 이미 되어 있으면 즉시 true.
+   *
+   * 왜 필요한가: view.open 은 상태를 바꾸는 즉시 답하는데 플러그인 뷰는 그 다음 렌더에
+   * 마운트된다. 그 사이에 그 뷰로 명령을 보내면 플러그인은 자기 뷰를 모른다(실측:
+   * view.open 직후 navigate 가 NO_VIEW — 코어는 만들었다는데 쓸 수 없었다).
+   * 명령이 ok 를 답했다면 그 결과는 쓸 수 있어야 한다.
+   */
+  awaitMounted(viewId: string, timeoutMs: number): Promise<boolean> {
+    if (this.mounted.has(viewId)) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (ok: boolean) => {
+        if (done) return;
+        done = true;
+        this.mountWaiters.get(viewId)?.delete(wake);
+        clearTimeout(timer);
+        resolve(ok);
+      };
+      const wake = () => finish(true);
+      const timer = setTimeout(() => finish(false), timeoutMs);
+      const set = this.mountWaiters.get(viewId) ?? new Set<() => void>();
+      set.add(wake);
+      this.mountWaiters.set(viewId, set);
+    });
+  }
+
   registerMountedView(
     viewId: string,
     container: HTMLElement,
@@ -61,6 +91,13 @@ export class ViewFocusCoordinator {
     }
     const mounted = { container, provider, context };
     this.mounted.set(viewId, mounted);
+    // 이 뷰가 이제 명령을 받을 수 있다 — provider.mount 가 끝난 뒤이므로 플러그인은 자기
+    // 뷰를 등록해 두었다. 기다리던 호출자를 깨운다(폴링 없이 이 한 지점이 신호다).
+    const waiters = this.mountWaiters.get(viewId);
+    if (waiters) {
+      this.mountWaiters.delete(viewId);
+      for (const w of waiters) w();
+    }
     if (this.intent?.viewId === viewId) this.publishFocused(viewId, true);
     this.queueCurrentIntent();
 
@@ -270,6 +307,11 @@ export function registerMountedViewFocus(
   context: () => PluginViewContext,
 ): () => void {
   return coordinator.registerMountedView(viewId, container, provider, context);
+}
+
+/** 그 뷰가 명령을 받을 수 있는가 — 되면 true, 제한 시간 안에 안 되면 false. */
+export function awaitViewMounted(viewId: string, timeoutMs = 5000): Promise<boolean> {
+  return coordinator.awaitMounted(viewId, timeoutMs);
 }
 
 export function requestViewFocus(viewId: string): AbortSignal {

@@ -34,6 +34,11 @@ const ENGINES = (process.env.BROWSER_ENGINES ?? "browser,browser-chromium,browse
 // 정적이고 확실히 렌더되는 페이지. 정적이라는 점이 핵심이다 — 손상이 없어 박자가 끊기면
 // 영영 안 그려지는, 바로 그 조건을 만든다.
 const URL = process.env.BROWSER_PIXELS_URL ?? "https://example.com/";
+// 항행 후 정착 대기 — 로딩 완료 신호가 없는 엔진이 있어 유한 대기로 수렴시킨다. 값을 밖에서
+// 바꿀 수 있어야 "안 그린다"와 "아직 안 그렸다"를 가를 수 있다.
+const SETTLE_MS = Number(process.env.BROWSER_PIXELS_SETTLE_MS ?? 5000);
+// 실패 증거를 남길 자리. 고정 경로라 다음 실행이 덮어쓴다(쌓이지 않는다).
+const EVIDENCE_DIR = process.env.BROWSER_PIXELS_EVIDENCE ?? path.join(os.tmpdir(), "soksak-browser-pixels");
 
 function openClient() {
   const state = { sock: null, seq: 0, pending: new Map(), buf: "" };
@@ -161,6 +166,31 @@ function looksRendered(png) {
   return { unique: seen.size, sampled, rendered: seen.size >= 8 };
 }
 
+/** 이 뷰의 표면에 엔진이 실제로 적용한 기하. 보고하지 않는 엔진(native)이면 null. */
+async function surfaceBoundsOf(c, window, plugin, viewId) {
+  const d = (await c.rpc(`plugin.${plugin}.stats`, {}, window)).data ?? {};
+  const surfaces = (d.engine ?? d).surfaces ?? [];
+  const byId = Object.fromEntries(surfaces.map((x) => [x.id, x.bounds ?? null]));
+  const pairs = plugin.endsWith("offscreen")
+    ? (d.ids ?? []).map((x) => [x.viewId, x.surfaceId])
+    : Object.entries(d.idMap ?? {}).map(([k, v]) => [k.replace("chromium-", ""), v]);
+  for (const [vid, sid] of pairs) if (vid === viewId) return byId[sid] ?? null;
+  return null;
+}
+
+/** 이 뷰를 소유한 플러그인 — 상태에 적혀 있는 사실이다. 짐작하지 않는다. */
+async function ownerPluginOf(c, window, viewId) {
+  const tree = (await c.rpc("state.tree", {}, window)).data;
+  for (const p of tree?.projects ?? []) {
+    for (const sp of p.spaces ?? []) {
+      for (const pan of sp.panels ?? []) {
+        for (const v of pan.views ?? []) if (v.id === viewId) return v.plugin ?? null;
+      }
+    }
+  }
+  return null;
+}
+
 async function main() {
   const c = await openClient();
   let window = null;
@@ -192,23 +222,30 @@ async function main() {
       try {
         const o = must(await c.rpc("view.open", { panel, program: engine }, window), `view.open ${engine}`);
         out.viewId = o.viewId;
+        out.mounted = o.mounted === true;
         openedViews.push(o.viewId);
+        // view.open 은 쓸 수 있는 뷰를 답한다 — 아니라고 답했으면 그 사실을 그대로 들고 간다.
+        if (!out.mounted) throw new Error("view.open 이 mounted:false 로 답함(뷰가 제때 안 떴다)");
         await c.rpc("view.activate", { view: o.viewId }, window);
-        // 항행 후 정착 — 로딩 완료 신호가 없는 엔진이 있어 유한 대기로 수렴시킨다.
-        for (const plug of [
-          "soksak-plugin-browser-native",
-          "soksak-plugin-browser-chromium",
-          "soksak-plugin-browser-chromium-offscreen",
-        ]) {
-          await c.rpc(`plugin.${plug}.navigate`, { url: URL }, window).catch(() => {});
-        }
-        await sleep(5000);
+        // 이 뷰를 누가 소유하는지는 물어보면 답이 있다 — 엔진 셋에 다 쏘고 실패를 버리면
+        // 안 된다(실측: 활동 로그에 NO_VIEW 가 남았다. 뷰가 없는 플러그인에 지시가 간 것이다).
+        // navigate 는 viewId 를 받으므로 "활성 뷰가 맞겠지"라는 짐작도 필요 없다.
+        const owner = await ownerPluginOf(c, window, o.viewId);
+        if (!owner) throw new Error(`뷰 ${o.viewId} 의 소유 플러그인을 못 찾음`);
+        must(
+          await c.rpc(`plugin.${owner}.navigate`, { url: URL, viewId: o.viewId }, window),
+          `navigate ${owner}`,
+        );
+        await sleep(SETTLE_MS);
         const m = must(
           await c.rpc("ui.measure", { address: `win/${window}/chrome/layout/slot/${o.viewId}` }, window),
           "ui.measure",
         );
         const r = m.rect;
         out.rect = r;
+        // 빈 화면의 이유를 이 자리에서 말할 수 있어야 한다 — 표면이 슬롯 밖이면 픽셀은
+        // 당연히 비어 있다. 창을 닫은 뒤에 재면 그 뷰는 이미 없다.
+        out.surface = await surfaceBoundsOf(c, window, owner, o.viewId);
         // 본문만 — 크롬(URL 바)은 DOM 이라 항상 그려진다. 위 40px 을 떼고 본문을 본다.
         const shot = must(
           await c.rpc(
@@ -224,12 +261,21 @@ async function main() {
         const v = looksRendered(png);
         out.unique = v.unique;
         out.rendered = v.rendered;
+        // 안 그렸으면 증거를 남긴다 — 판정만 남기고 화면을 버리면 다음 사람이 처음부터 다시
+        // 재현해야 한다. 창 전체를 찍어 "이 엔진만 빈 것인지 창이 통째로 빈 것인지"를 남긴다.
+        if (!v.rendered) {
+          const full = must(
+            await c.rpc("window.snapshot", { path: `${EVIDENCE_DIR}/${engine}.png` }, window),
+            "window.snapshot(evidence)",
+          );
+          out.evidence = full.saved ?? null;
+        }
       } catch (e) {
         out.note = String(e?.message ?? e).slice(0, 160);
       }
       results.push(out);
       console.log(
-        `  ${out.engine.padEnd(34)} view=${String(out.viewId).padEnd(5)} 고유색=${String(out.unique).padStart(4)} ${out.rendered ? "GREEN" : "RED"}${out.note ? ` (${out.note})` : ""}`,
+        `  ${out.engine.padEnd(34)} view=${String(out.viewId).padEnd(5)} mounted=${out.mounted ? "y" : "n"} 슬롯${out.rect ? `(${Math.round(out.rect.x)},${Math.round(out.rect.y)} ${Math.round(out.rect.w)}x${Math.round(out.rect.h)})` : "(-)"} 표면${out.surface ? `(${out.surface.x},${out.surface.y} ${out.surface.w}x${out.surface.h})` : "(보고없음)"} 고유색=${String(out.unique).padStart(4)} ${out.rendered ? "GREEN" : "RED"}${out.evidence ? ` 증거=${out.evidence}` : ""}${out.note ? ` (${out.note})` : ""}`,
       );
     }
   } finally {

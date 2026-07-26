@@ -37,6 +37,7 @@ import {
 import { useSettings } from "../state/settings";
 import { applyWindowZoom } from "../lib/zoomIntent";
 import { currentWindowLabel } from "../lib/webviewLabels";
+import { awaitViewMounted } from "../plugins/viewFocus";
 import { useViewLabels } from "../state/viewLabels";
 import { useBookmarks } from "../state/bookmarks";
 import { useTheme } from "../state/theme";
@@ -1757,26 +1758,40 @@ export function registerCatalog(): void {
   });
 
   register("view.open", {
-    description: "Open a new view tab in a panel by program id (terminal / claude / codex / a plugin view program).",
+    description:
+      "Open a new view tab in a panel by program id (terminal / claude / codex / a plugin view program). The answer waits until the view is mounted, so the returned viewId can be acted on immediately; mounted:false means it did not come up in time and commands aimed at it will not find it yet.",
     triggers: { ko: "뷰 열기 탭 추가 claude 열기 터미널 열기" },
     params: {
       panel: P.panel,
       program: { ...P.program, required: true },
+      mountTimeoutMs: {
+        type: "number",
+        description:
+          "How long to wait for the view to become actionable (default 5000). 0 answers as soon as the tab exists — mounted will be false and commands aimed at the view may not find it yet.",
+      },
     },
-    returns: "{ panelId, viewId, paneId? }",
+    returns: "{ panelId, viewId, mounted, paneId? }",
     message: () => tmsg("msg.view.open"),
     errors: ["TARGET_NOT_FOUND"],
     examples: ['view.open \'{"program":"claude"}\''],
-    handler: (p, ctx) => {
+    handler: async (p, ctx) => {
       const loc = resolveGroup(p, ctx);
       if (!loc) return notFound("패널 없음");
-      return asSurface(
+      const out = asSurface(
         S().addViewToGroup(
           loc.project.id,
           p.program as Program,
           loc.group.id,
         ),
-      );
+      ) as Record<string, unknown>;
+      // 답이 ok 면 그 결과는 쓸 수 있어야 한다. 상태는 즉시 바뀌지만 플러그인 뷰는 다음
+      // 렌더에 마운트되므로, 그 사이에 이 viewId 로 명령을 보내면 플러그인은 자기 뷰를
+      // 모른다(실측: view.open 직후 navigate 가 NO_VIEW). 마운트 신호를 기다렸다 답한다 —
+      // 폴링이 아니라 마운트 그 지점이 깨운다.
+      const viewId = typeof out.viewId === "string" ? out.viewId : null;
+      const wait = typeof p.mountTimeoutMs === "number" ? Math.max(0, p.mountTimeoutMs) : 5000;
+      const mounted = viewId && wait > 0 ? await awaitViewMounted(viewId, wait) : false;
+      return { ...out, mounted };
     },
   });
 

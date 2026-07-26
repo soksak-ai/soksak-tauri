@@ -70,7 +70,9 @@ describe("빈 패널 컨텍스트", () => {
 
   it("빈 패널에도 view.open 으로 뷰를 추가할 수 있다", async () => {
     emptyActivePanel();
-    const r = await execute("view.open", { program: "terminal" }, {});
+    // 이 테스트가 보는 것은 상태 변화다 — 렌더러가 없는 환경이라 마운트는 오지 않는다.
+    // 기본값(마운트를 기다려 쓸 수 있는 뷰를 답한다)은 그대로 두고 여기서만 상한을 0 으로 둔다.
+    const r = await execute("view.open", { program: "terminal", mountTimeoutMs: 0 }, {});
     expect(r.ok).toBe(true);
     expect(r.data).toMatchObject({ panelId: expect.any(String), viewId: expect.any(String) });
   });
