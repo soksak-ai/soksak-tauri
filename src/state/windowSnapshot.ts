@@ -49,6 +49,7 @@ type ViewSnapshot =
       // B3 — 관찰된 cwd(복원 spawn 위치)·마지막 활동 시각(hydration 우선순위). 옵션(구 스냅샷 호환).
       cwd?: string;
       lastActivity?: number;
+      legacyPaneId?: string;
       // B3 — 플러그인 관찰 상태(setRestoreState — 예: 브라우저 URL). 복원 마운트의 restore.state.
       state?: unknown;
     };
@@ -121,6 +122,7 @@ function serializeView(v: Tab): ViewSnapshot {
         // B3 — 마지막 cwd·활동 시각·플러그인 상태는 복원의 실질.
         ...(v.cwd ? { cwd: v.cwd } : {}),
         ...(v.lastActivity ? { lastActivity: v.lastActivity } : {}),
+        ...(v.legacyPaneId ? { legacyPaneId: v.legacyPaneId } : {}),
         ...(v.state !== undefined ? { state: v.state } : {}),
       };
   }
@@ -203,6 +205,7 @@ function deserializeView(s: ViewSnapshot, _newSplitId: () => string): Tab {
         view: s.view,
         ...(s.cwd ? { cwd: s.cwd } : {}),
         ...(s.lastActivity ? { lastActivity: s.lastActivity } : {}),
+        ...(s.legacyPaneId ? { legacyPaneId: s.legacyPaneId } : {}),
         ...(s.state !== undefined ? { state: s.state } : {}),
       };
   }

@@ -593,14 +593,27 @@ pub fn pty_read_sealed_screen(
     app: tauri::AppHandle,
     window_label: Option<String>,
     pane_id: String,
+    // 이행 구간의 옛 키(엔티티 id 마이그레이션이 탭 레코드에 심은 legacyPaneId).
+    // 신 키의 블롭이 없을 때만 이 키로 폴백한다 — 손실 0 계약(IDENTITY·P0-5)의 실행부.
+    // 제거 조건: 그 블롭의 재봉인(adopt) 완료.
+    legacy_pane_id: Option<String>,
 ) -> Result<Option<SealedScreen>, String> {
     #[cfg(unix)]
     {
-        daemon::read_sealed_screen(&app, window_label.as_deref().unwrap_or(""), &pane_id)
+        let win = window_label.as_deref().unwrap_or("");
+        match daemon::read_sealed_screen(&app, win, &pane_id)? {
+            Some(s) => Ok(Some(s)),
+            None => match legacy_pane_id {
+                Some(legacy) if !legacy.is_empty() => {
+                    daemon::read_sealed_screen_adopting(&app, win, &legacy, &pane_id)
+                }
+                _ => Ok(None),
+            },
+        }
     }
     #[cfg(not(unix))]
     {
-        let _ = (&app, &window_label, &pane_id);
+        let _ = (&app, &window_label, &pane_id, &legacy_pane_id);
         Ok(None)
     }
 }
@@ -1329,12 +1342,11 @@ mod daemon {
 
     // 디스크의 봉인-블롭 헤더 — cold restore 의 입력(개봉 전 메타). 봉투는 내용 불가지라
     // 터미널 메타(대체 화면 여부 등)를 담지 않는다 — 화면 의미는 개봉된 바이트 안에 있고 소비자가 푼다.
-    struct ColdCheckpoint {
+    pub struct ColdCheckpoint {
         // 봉인 블롭의 디스크 출처 경로 — provenance 로 보존(cold restore 판정은 개봉 바이트만 쓴다).
-        #[allow(dead_code)]
-        path: PathBuf,
-        key_id: String,
-        sealed: soksak_seal::SealedBox,
+        pub path: PathBuf,
+        pub key_id: String,
+        pub sealed: soksak_seal::SealedBox,
     }
 
     fn read_checkpoint(home: &Path, window: &str, pane: &str) -> Option<ColdCheckpoint> {
@@ -1495,6 +1507,71 @@ mod daemon {
             paint_b64: base64::engine::general_purpose::STANDARD.encode(&paint),
         }))
     }
+
+    /// 옛 블롭의 승계 — 규칙은 세 갈래고 어느 갈래도 반쯤 상태를 남기지 않는다:
+    ///   신 키 파일이 이미 있다 → 최신이 이긴다. 옛 파일만 걷는다.
+    ///   재봉인 성공(새 AAD·tmp→rename 원자) → 신 키 파일 생성 후 옛 파일 제거.
+    ///   재봉인 실패 → 옛 파일 보존. 다음 부팅이 다시 폴백으로 연다(손실 0 유지).
+    /// rename 만으로는 안 된다 — 봉인 AAD 가 옛 키에 묶여 있어 신 키 개봉이 복호 실패한다.
+    pub fn adopt_checkpoint(
+        ck: &ColdCheckpoint,
+        paint: &[u8],
+        window: &str,
+        pane: &str,
+        new_path: &Path,
+        pk_b64: Option<&str>,
+    ) {
+        if new_path.exists() {
+            let _ = std::fs::remove_file(&ck.path);
+            return;
+        }
+        use base64::Engine as _;
+        let resealed = pk_b64
+            .and_then(|b| base64::engine::general_purpose::STANDARD.decode(b).ok())
+            .and_then(|pk| pk.try_into().ok())
+            .and_then(|pk: [u8; 32]| {
+                let aad = proto::checkpoint_aad(window, pane, &ck.key_id);
+                soksak_seal::seal_to(&pk, paint, &aad).ok()
+            })
+            .and_then(|sealed| {
+                let doc = serde_json::json!({
+                    "v": 1,
+                    "keyId": ck.key_id,
+                    "window": window,
+                    "pane": pane,
+                    "sealed": sealed,
+                });
+                let tmp = new_path.with_extension("json.tmp");
+                std::fs::write(&tmp, doc.to_string()).ok()?;
+                std::fs::rename(&tmp, new_path).ok()
+            });
+        if resealed.is_some() {
+            let _ = std::fs::remove_file(&ck.path);
+        }
+    }
+
+    /// 옛 키(legacy)의 블롭을 열어 신 키(pane)로 승계한다 — 엔티티 id 이행의 손실 0 실행부.
+    pub fn read_sealed_screen_adopting(
+        app: &tauri::AppHandle,
+        window: &str,
+        legacy: &str,
+        pane: &str,
+    ) -> Result<Option<super::SealedScreen>, String> {
+        let home = crate::home::soksak_home();
+        let ck = match read_checkpoint(&home, window, legacy) {
+            Some(c) => c,
+            None => return Ok(None),
+        };
+        let paint = open_cold_checkpoint(app, &ck, window, legacy)?;
+        let pk = std::fs::read_to_string(home.join("pty").join("seal.pub"))
+            .ok()
+            .map(|s| s.trim().to_string());
+        adopt_checkpoint(&ck, &paint, window, pane, &proto::checkpoint_path(&home, window, pane), pk.as_deref());
+        use base64::Engine as _;
+        Ok(Some(super::SealedScreen {
+            paint_b64: base64::engine::general_purpose::STANDARD.encode(&paint),
+        }))
+    }
 }
 
 #[cfg(test)]
@@ -1580,5 +1657,72 @@ mod tests {
             Some(ReplayControl::FromSeq { from_seq }) => assert_eq!(from_seq, 4096),
             other => panic!("expected FromSeq, got {other:?}"),
         }
+    }
+}
+
+#[cfg(test)]
+#[cfg(unix)]
+mod adopt_tests {
+    // 옛 블롭 승계 규칙(엔티티 id 이행의 손실 0 실행부) — 세 갈래 어느 쪽도 반쯤 상태를
+    // 남기지 않는다. RED 근거(실측 2026-07-26): 마이그레이션 직후 첫 부팅에서 옛 키(v4)
+    // 블롭이 신 키로 열리지 않아 cold restore 화면이 비었다 — 폴백·승계가 그 구멍을 닫는다.
+    use super::daemon::{adopt_checkpoint, ColdCheckpoint};
+    use base64::Engine as _;
+
+    fn scratch(tag: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("soksak-adopt-{}-{}", tag, std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn fixture(dir: &std::path::Path) -> (ColdCheckpoint, Vec<u8>, String) {
+        let (sk, pk) = soksak_seal::gen_asym_keypair();
+        let _ = sk;
+        let paint = b"screen-bytes".to_vec();
+        let old_aad = soksak_spec_pty::checkpoint_aad("w-t", "v4", "k1");
+        let sealed = soksak_seal::seal_to(&pk, &paint, &old_aad).unwrap();
+        let old_path = dir.join("ckpt-old.json");
+        std::fs::write(&old_path, "{}").unwrap();
+        let pk_b64 = base64::engine::general_purpose::STANDARD.encode(pk);
+        (
+            ColdCheckpoint { path: old_path, key_id: "k1".into(), sealed },
+            paint,
+            pk_b64,
+        )
+    }
+
+    #[test]
+    fn reseal_creates_the_new_file_and_removes_the_old() {
+        let dir = scratch("reseal");
+        let (ck, paint, pk) = fixture(&dir);
+        let new_path = dir.join("ckpt-new.json");
+        adopt_checkpoint(&ck, &paint, "w-t", "tab-aaaaaa", &new_path, Some(&pk));
+        assert!(new_path.exists(), "재봉인 성공 = 신 키 파일 생성");
+        assert!(!ck.path.exists(), "제거 조건 = 재봉인 완료");
+        let doc: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&new_path).unwrap()).unwrap();
+        assert_eq!(doc["pane"], "tab-aaaaaa", "새 문서는 신 키를 말한다");
+    }
+
+    #[test]
+    fn a_newer_checkpoint_wins_and_the_relic_is_swept() {
+        let dir = scratch("newer");
+        let (ck, paint, pk) = fixture(&dir);
+        let new_path = dir.join("ckpt-new.json");
+        std::fs::write(&new_path, "newer").unwrap();
+        adopt_checkpoint(&ck, &paint, "w-t", "tab-aaaaaa", &new_path, Some(&pk));
+        assert_eq!(std::fs::read_to_string(&new_path).unwrap(), "newer", "최신이 이긴다");
+        assert!(!ck.path.exists(), "잔존물은 걷는다");
+    }
+
+    #[test]
+    fn a_failed_reseal_preserves_the_old_blob() {
+        let dir = scratch("fail");
+        let (ck, paint, _) = fixture(&dir);
+        let new_path = dir.join("ckpt-new.json");
+        adopt_checkpoint(&ck, &paint, "w-t", "tab-aaaaaa", &new_path, Some("not-base64!"));
+        assert!(!new_path.exists(), "실패 시 신 키 파일을 만들지 않는다");
+        assert!(ck.path.exists(), "옛 파일 보존 — 다음 부팅이 다시 폴백으로 연다(손실 0)");
     }
 }

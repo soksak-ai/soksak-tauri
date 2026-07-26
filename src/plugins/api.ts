@@ -74,7 +74,7 @@ import {
 import { localize } from "../i18n";
 import { useSettings } from "../state/settings";
 import { usePluginSettings, type SettingValue } from "../state/pluginSettings";
-import { useSessions } from "../state/sessions";
+import { findViewById, useSessions } from "../state/sessions";
 
 export type { Disposable } from "./hooks";
 
@@ -1052,6 +1052,13 @@ function createPtyApi(deps: PluginApiDeps, tracker: DisposableTracker) {
       deps.invoke("pty_read_sealed_screen", {
         windowLabel: currentWindowLabel() || null,
         paneId,
+        // 옛 키 폴백(엔티티 id 이행) — 탭 레코드에 마이그레이션이 심은 옛 id 를 코어가
+        // 찾아 싣는다. 플러그인은 이 좌표를 모른다(좌표는 코어의 것).
+        legacyPaneId:
+          (() => {
+            const t = findViewById(useSessions.getState().projects, paneId);
+            return t && "legacyPaneId" in t ? (t.legacyPaneId ?? null) : null;
+          })(),
       }) as Promise<{ paintB64: string } | null>,
     paneAlive: (paneId: string): Promise<boolean> =>
       deps.invoke("pty_pane_alive", { paneId }) as Promise<boolean>,

@@ -34,12 +34,17 @@ const notExposed = (addr: string) => ({
   message: `노출되지 않은 주소(접근 불가): ${addr}`,
 });
 
+// 뷰 컨테이너의 단일 셀렉터 — 아래 두 순회(수집·제외)가 같은 집합을 보지 않으면 노드가 두 번
+// 세어지거나 조용히 빠지고, 주소 유일성(A1) 판정이 그 위에 선다. 파일 뷰어 컨테이너도 같은
+// 클래스를 쓰므로 baseAddress 어트리뷰트로 가른다.
+const VIEW_CONTAINER = ".tab-container[data-view-addr]";
+
 // 현재 창의 노출 노드 전부를 절대 주소로 수집한다(뷰 컨테이너 + 호스트 크롬). DOM 직접 순회.
 export function collectExposed(): ScannedNode[] {
   const out: ScannedNode[] = [];
   const win = currentWindowLabel();
   // 뷰 컨테이너 — data-view-addr(<region>/view/<viewKey>) 를 baseAddress 로. win 접두는 현재 창.
-  for (const c of document.querySelectorAll<HTMLElement>(".plugin-view-container[data-view-addr]")) {
+  for (const c of document.querySelectorAll<HTMLElement>(VIEW_CONTAINER)) {
     const base = c.dataset.viewAddr ?? "";
     if (!base) continue;
     out.push(...scanNodes(c, `win/${win}/${base}`));
@@ -50,7 +55,7 @@ export function collectExposed(): ScannedNode[] {
   // 프로젝트마다 한 벌씩 살고, 프로젝트 축이 없으면 rail/left 가 둘로 풀린다(실측).
   // 정본 주소는 프로젝트를 싣고, 활성 평면만 생략형 별칭을 함께 가진다(문법의 "생략=활성").
   for (const el of document.querySelectorAll<HTMLElement>("[data-node]")) {
-    if (el.closest(".plugin-view-container")) continue; // 뷰 노드는 위에서 처리
+    if (el.closest(VIEW_CONTAINER)) continue; // 뷰 노드는 위에서 처리
     const nodePath = el.dataset.node ?? "";
     if (!nodePath) continue;
     const plane = el.closest<HTMLElement>("[data-project-plane]");
@@ -100,7 +105,7 @@ export function resolveExposed(addressStr: string): Resolved {
     return {
       ok: false as const,
       code: "AMBIGUOUS" as const,
-      message: `한 주소가 ${matches.length}개로 풀립니다(주소 공리 A1 위반): ${addressStr} — inst 축으로 좁히세요`,
+      message: `한 주소가 ${matches.length}개로 풀립니다(주소 공리 A1 위반): ${addressStr} — tab 축으로 좁히세요`,
     };
   }
   return { el: matches[0].el };
@@ -143,13 +148,23 @@ export function deepActiveElement(root: DocumentOrShadowRoot = document): Elemen
   return ae;
 }
 
-// 요소가 속한 플러그인 뷰 컨테이너(.plugin-view-container[data-pane-id]). shadow 안 요소의
-// closest 는 shadow 경계를 못 넘으므로, 경계에서 막히면 shadow host 로 올라가 다시 시도한다
-// (shadow 관통 조상 탐색).
+// 요소가 속한 뷰 컨테이너(탭 인스턴스 앵커를 가진 것). shadow 안 요소의 closest 는 shadow
+// 경계를 못 넘으므로, 경계에서 막히면 shadow host 로 올라가 다시 시도한다(shadow 관통 조상 탐색).
+//
+// 앵커는 두 이름을 함께 읽는다 — 호스트가 data-tab-id 와 data-pane-id 를 같은 값으로 싣는
+// 이행 구간이고(viewHostAnchors), 한쪽만 읽으면 옛 이름만 선언한 컨테이너가 뷰 밖으로 떨어진다.
+// 제거 조건: viewHostAnchors 가 data-pane-id 발행을 멈추는 날 앞의 선택자만 남긴다.
+const TAB_ANCHORED = ".tab-container[data-tab-id], .tab-container[data-pane-id]";
+
+/** 그 컨테이너가 지목하는 탭 id — 새 이름 우선, 없으면 이행 구간의 옛 이름. */
+export function tabIdOfContainer(host: HTMLElement | null): string | null {
+  return host?.dataset.tabId ?? host?.dataset.paneId ?? null;
+}
+
 export function viewContainerOf(el: Element | null): HTMLElement | null {
   let cur: Node | null = el;
   while (cur instanceof Element) {
-    const host = cur.closest<HTMLElement>(".plugin-view-container[data-pane-id]");
+    const host = cur.closest<HTMLElement>(TAB_ANCHORED);
     if (host) return host;
     const root = cur.getRootNode();
     cur = root instanceof ShadowRoot ? root.host : null;
@@ -327,9 +342,7 @@ export function registerDomCatalog(): void {
       const win = currentWindowLabel();
       const wantWithWin = want.startsWith("win/") ? want : `win/${win}/${want}`;
       // 뷰 컨테이너를 base 주소(collectExposed 와 동일 생성 규칙)로 매칭 — node 없는 view 주소.
-      for (const c of document.querySelectorAll<HTMLElement>(
-        ".plugin-view-container[data-view-addr]",
-      )) {
+      for (const c of document.querySelectorAll<HTMLElement>(VIEW_CONTAINER)) {
         const base = c.dataset.viewAddr ?? "";
         if (!base) continue;
         const full = `win/${win}/${base}`;
@@ -367,9 +380,7 @@ export function registerDomCatalog(): void {
       const request = viewFocusSnapshot();
       const active = deepActiveElement();
       const host = viewContainerOf(active);
-      // 컨테이너 어트리뷰트는 data-pane-id 다(NAMING 이행 조건: data-tab-id 이중 발행 →
-      // 전 세션 교체 후 제거). 답이 지목하는 축 이름은 그와 무관하게 탭 축 이름으로 싣는다.
-      const activeTabId = host?.dataset.paneId ?? null;
+      const activeTabId = tabIdOfContainer(host);
       // 조상 클래스 체인(뷰 컨테이너까지) — 위젯은 focus 이벤트를 받아야 자기 포커스
       // 표식(클래스·커서 페인트)을 켠다. activeElement 만으론 그 축이 안 보인다.
       const ancestors: { tag: string; className: string }[] = [];
@@ -610,7 +621,7 @@ export function registerDomCatalog(): void {
       const found = resolveExposed(addr);
       if (!("el" in found)) return found;
       const el = found.el;
-      const key = el instanceof HTMLElement ? (el.dataset.dividerKey ?? null) : null;
+      const key = el instanceof HTMLElement ? (el.dataset.gutterKey ?? null) : null;
       if (key != null) useDividerHover.getState().set(key);
       el.dispatchEvent(new PointerEvent("pointerenter", { bubbles: false, composed: true }));
       el.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, composed: true }));
@@ -634,10 +645,10 @@ export function registerDomCatalog(): void {
   // 이 명령을 부르기만 한다.
   register("ui.verify", {
     description:
-      "Check this window's structural invariants and report each by name. Answers whether the window is coherent right now: every exposed address resolves to exactly one node, no rail layer is left behind after a travel, no visible slot has collapsed to nothing, and the motion clocks agree. Use after any layout change, and as the assertion in end-to-end gates — a failing check names the invariant and shows the offending addresses.",
+      "Check this window's structural invariants and report each by name. Answers whether the window is coherent right now: every exposed address resolves to exactly one node, no rail layer is left behind after a travel, no visible tab body has collapsed to nothing, and the motion clocks agree. Use after any layout change, and as the assertion in end-to-end gates — read passed (the verdict) and checks[].detail, which names the invariant and shows the offending addresses; the envelope only says the query ran.",
     triggers: { ko: "창 점검 불변식 검증 무결성 주소중복 레일잔존 빈슬롯 자가진단" },
     params: {},
-    returns: "{ ok, failed, checks: [{ name, ok, detail }] }",
+    returns: "{ passed, failed, checks: [{ name, ok, detail }] }",
     message: (d) =>
       tmsg("msg.ui.verify", {
         failed: String(d.failed ?? 0),
@@ -662,7 +673,7 @@ export function registerDomCatalog(): void {
       });
 
       // 여정이 끝났으면 빠지는 레일은 남아 있지 않다 — 남으면 사이드바가 두 벌로 보인다.
-      const traveling = document.querySelector(".content-body.rail-traveling") != null;
+      const traveling = document.querySelector(".space-body.rail-traveling") != null;
       const leaving = scanned.filter((n) => n.nodePath === "rail/left/leaving");
       checks.push({
         name: "rail.settled",
@@ -674,20 +685,20 @@ export function registerDomCatalog(): void {
             : leaving.map((n) => n.address).join(", "),
       });
 
-      // 보이는 슬롯은 크기를 가진다 — 0 이면 그 패널은 빈 화면이다.
+      // 보이는 탭 본문은 크기를 가진다 — 0 이면 그 칸은 빈 화면이다.
       const collapsed = scanned.filter((n) => {
-        if (!n.nodePath.startsWith("layout/slot/")) return false;
+        if (!n.nodePath.startsWith("layout/tab/")) return false;
         const r = n.el.getBoundingClientRect();
         const onScreen =
           r.right > 0 && r.bottom > 0 && r.left < window.innerWidth && r.top < window.innerHeight;
         return onScreen && (r.width <= 0 || r.height <= 0);
       });
       checks.push({
-        name: "slot.sized",
+        name: "tab.sized",
         ok: collapsed.length === 0,
         detail:
           collapsed.length === 0
-            ? "보이는 슬롯 모두 크기 있음"
+            ? `보이는 탭 본문 ${scanned.filter((n) => n.nodePath.startsWith("layout/tab/")).length}개 모두 크기 있음`
             : collapsed.map((n) => n.address).join(", "),
       });
 
@@ -701,7 +712,9 @@ export function registerDomCatalog(): void {
       });
 
       const failed = checks.filter((c) => !c.ok);
-      return { ok: failed.length === 0, failed: failed.length, checks };
+      // 판정은 payload 의 passed 다 — ok 는 봉투 예약키라 여기 실으면 삼켜지고, 호출자는
+      // "명령이 돌았다" 를 "검사가 통과했다" 로 읽는다(검사 자체가 가짜 GREEN 이 된다).
+      return { passed: failed.length === 0, failed: failed.length, checks };
     },
   });
 

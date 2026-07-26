@@ -81,7 +81,6 @@ const VERDICTS: Record<Scope, Record<string, Verdict>> = {
     panes: "pane",
     panel: "pane", // 위 ①② 두 갈래만 남았다
     panelId: "pane", // 명령 응답 필드 — 가리키는 것은 칸
-    panels: "pane",
     activePaneId: "pane",
     activePanelId: "pane",
     focusedPaneId: "pane",
@@ -112,6 +111,7 @@ const VERDICTS: Record<Scope, Record<string, Verdict>> = {
     paneInvariant: "pane", // 그 불변식 게이트의 파일 이름(주석 인용)
     // ── 옛 뜻(탭 인스턴스) — 계약면이라 이행 기간 동안 이름이 남는다 ──────────
     paneId: "tab", // 플러그인 계약면의 타깃/호출자 파라미터 — 이행표가 tabId·callerTab 으로 옮긴다
+    legacyPaneId: "tab", // 엔티티 id 마이그레이션이 탭 레코드·스냅샷에 남긴 이행 키
     paneAlive: "tab", // app.pty.paneAlive — 플러그인 API 표면
     pty_pane_alive: "tab", // invoke 이름(와이어)
     pty_pane_pid: "tab",
@@ -126,6 +126,10 @@ const VERDICTS: Record<Scope, Record<string, Verdict>> = {
     pane_id: "tab", // 그 요청의 필드
     pane: "tab", // ipc 요청의 호출자 위치 필드(=$SOKSAK_CALLER_TAB 의 옛 이름)
     panel: "pane", // "panel.split" 명령명 픽스처 — 가리키는 것은 칸
+    // 엔티티 id 마이그레이션이 탭 레코드에 남긴 이행 키(pty.rs) — 옛 뜻이고, 이름 자체가
+    // "옛 것" 을 가리킨다. 마이그레이션이 지난 레코드를 다 훑으면 함께 사라진다.
+    legacyPaneId: "tab",
+    legacy_pane_id: "tab"
   },
 };
 

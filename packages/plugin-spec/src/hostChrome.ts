@@ -15,8 +15,10 @@ export const HOST_CHROME_TOKENS: readonly string[] = [
   ".space-tabs",
   ".view-tabs",
   ".view-tab",
-  ".tabs",
-  ".tab",
+  // `.tab`·`.tabs` 는 여기 넣지 않는다 — 이 스캐너는 휴리스틱이라 JS 프로퍼티 접근
+  // (`this.tab()`, xterm.js 실물)과 CSS 셀렉터를 구분하지 못해 정상 번들을 오탐한다
+  // (실사고 2026-07-26: 터미널 플러그인 활성화가 통째로 거부됨). 그 두 이름의 크롬
+  // 소유권은 스캐너가 아니라 코어 CSS 캐스케이드와 cssVocabulary 게이트가 지킨다.
   ".pane-tabs",
   ".project-tabs",
   ".project-tab",

@@ -60,11 +60,11 @@ describe("deepElementFromPoint — shadow 관통 히트테스트", () => {
   });
 });
 
-// ui.measure 는 resolveElement(collectExposed) 를 거친다 — .plugin-view-container[data-view-addr]
+// ui.measure 는 resolveElement(collectExposed) 를 거친다 — .tab-container[data-view-addr]
 // 안의 [data-node] 를 절대 주소로 수집. 테스트는 그 구조를 세팅하고 주소로 호출한다.
 function mountNode(html: string): void {
   document.body.innerHTML =
-    `<div class="plugin-view-container" data-view-addr="content/view/test.v">${html}</div>`;
+    `<div class="tab-container" data-view-addr="content/view/test.v">${html}</div>`;
 }
 const ADDR = "win/main/content/view/test.v/node/btn";
 
@@ -200,8 +200,8 @@ describe("deepActiveElement — shadow 관통 포커스", () => {
 describe("viewContainerOf — shadow 관통 뷰 판정", () => {
   it("shadow 안 요소의 뷰 컨테이너를 shadow 경계 너머로 찾는다", () => {
     const container = document.createElement("div");
-    container.className = "plugin-view-container";
-    container.dataset.paneId = "v9";
+    container.className = "tab-container";
+    container.dataset.tabId = "tab-v9";
     document.body.appendChild(container);
     const sr = container.attachShadow({ mode: "open" });
     const input = document.createElement("input");
@@ -222,9 +222,9 @@ describe("ui.input.click — 합성 이벤트가 Shadow DOM 경계를 넘는다(
     // 실구조 등가: 뷰 컨테이너(스캔 스코프) > shadow host > shadow 안 data-node.
     // 바깥 캡처 리스너 = GroupArea 본문 슬롯의 클릭 활성화 경로와 같은 위치 관계다.
     const container = document.createElement("div");
-    container.className = "plugin-view-container";
+    container.className = "tab-container";
     container.dataset.viewAddr = "content/view/tplug.v";
-    container.dataset.paneId = "p1";
+    container.dataset.tabId = "tab-p1";
     document.body.appendChild(container);
     const host = document.createElement("div");
     container.appendChild(host);
@@ -411,5 +411,87 @@ describe("ui.input.key — 키보드로만 닿는 경로의 구동면", () => {
     const empty = await execute("ui.input.key", { address: ADDR, key: "" }, {});
     expect(empty.ok).toBe(false);
     expect(empty.code).toBe("INVALID_PARAMS");
+  });
+});
+
+// ui.verify 의 tab.sized — 진단이 "무엇을 훑었는지" 를 스스로 말해야 한다.
+//
+// (실측 결함) 탭 본문의 DOM 주소가 layout/slot/ → layout/tab/ 로 옮겨진 뒤에도 이 검사는 옛
+// 접두를 훑고 있었다. 대상 0건이면 위반 0건이라 검사는 언제나 통과한다 — 통과가 아니라 눈이
+// 감긴 것이다. 그래서 여기서 두 가지를 함께 못박는다: ① 무너진 본문을 실제로 잡는다,
+// ② 통과할 때도 훑은 개수를 답에 싣는다(0 을 훑고 통과하면 그 수가 0 으로 드러난다).
+type VerifyRes = { passed: boolean; failed: number; checks: { name: string; ok: boolean; detail: string }[] };
+
+function mountTabBody(id: string, rect: { width: number; height: number }): HTMLElement {
+  const el = document.createElement("div");
+  el.setAttribute("data-node", `layout/tab/${id}`);
+  document.body.appendChild(el);
+  Object.defineProperty(el, "getBoundingClientRect", {
+    value: () => ({
+      x: 0, y: 0, top: 0, left: 0,
+      width: rect.width,
+      height: rect.height,
+      right: Math.max(rect.width, 1), // 화면 안(onScreen) 판정을 통과시킨다
+      bottom: Math.max(rect.height, 1),
+      toJSON: () => ({}),
+    }),
+    configurable: true,
+  });
+  return el;
+}
+
+describe("ui.verify — tab.sized 는 실제로 탭 본문을 훑는다", () => {
+  const sized = (r: VerifyRes) => r.checks.find((c) => c.name === "tab.sized")!;
+
+  it("크기 있는 본문은 통과하고, 훑은 개수를 답에 싣는다", async () => {
+    mountTabBody("tab-a", { width: 800, height: 600 });
+    const r = (await execute("ui.verify", {}, {})).data as unknown as VerifyRes;
+    const check = sized(r);
+    expect(check.ok).toBe(true);
+    expect(check.detail).toContain("1개"); // 0 을 훑고 통과하면 여기가 0개다
+  });
+
+  it("보이는데 크기가 0 인 본문을 잡는다 — 그 칸은 빈 화면이다", async () => {
+    mountTabBody("tab-a", { width: 800, height: 600 });
+    mountTabBody("tab-collapsed", { width: 0, height: 600 });
+    const r = (await execute("ui.verify", {}, {})).data as unknown as VerifyRes;
+    const check = sized(r);
+    expect(check.ok).toBe(false);
+    expect(check.detail).toContain("layout/tab/tab-collapsed");
+    // 판정은 payload 의 passed 다(ok 는 봉투 예약키 — 여기 실리면 삼켜진다).
+    expect(r.passed).toBe(false);
+    expect(r.failed).toBe(1);
+  });
+});
+
+// ui.input.pointer 의 골 강조 — 무장과 해제가 같은 표면에서 관측돼야 한다.
+//
+// (실측 결함) 골 요소의 앵커가 data-divider-key → data-gutter-key 로 옮겨진 뒤에도 이 명령은
+// 옛 이름을 읽고 있었다. 그러면 강조가 한 번도 켜지지 않는데 답은 그저 gutterHover: null 이라
+// "그 자리는 골이 아니다" 와 구별되지 않는다 — 실패가 정상 응답으로 위장한다.
+describe("ui.input.pointer — 골 강조는 상태로 무장되고 해제된다", () => {
+  const GUTTER = "gutter/pan-a/right";
+
+  function mountGutter(): void {
+    document.body.innerHTML = "";
+    const el = document.createElement("div");
+    el.setAttribute("data-node", GUTTER);
+    el.dataset.gutterKey = GUTTER; // GroupArea 가 심는 그 앵커
+    document.body.appendChild(el);
+  }
+
+  it("골 위로 들어가면 그 골 주소로 무장하고, 답이 무장된 키를 말한다", async () => {
+    mountGutter();
+    const r = await execute("ui.input.pointer", { address: `win/main/chrome/${GUTTER}` }, {});
+    expect(r.ok).toBe(true);
+    expect((r.data as { gutterHover: string | null }).gutterHover).toBe(GUTTER);
+  });
+
+  it("주소 없이 부르면(이탈) 해제되고, 답이 해제를 말한다", async () => {
+    mountGutter();
+    await execute("ui.input.pointer", { address: `win/main/chrome/${GUTTER}` }, {});
+    const r = await execute("ui.input.pointer", {}, {});
+    expect(r.ok).toBe(true);
+    expect((r.data as { gutterHover: string | null }).gutterHover).toBeNull();
   });
 });

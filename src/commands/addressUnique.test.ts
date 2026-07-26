@@ -12,7 +12,7 @@ import { resolveExposed, collectExposed } from "./catalogDom";
 
 function mountView(addr: string, nodes: string[]): void {
   const c = document.createElement("div");
-  c.className = "plugin-view-container";
+  c.className = "tab-container";
   c.dataset.viewAddr = addr;
   for (const n of nodes) {
     const el = document.createElement("div");
@@ -28,8 +28,8 @@ beforeEach(() => {
 
 describe("A1 유일성 — 같은 주소를 두 노드가 가질 수 없다", () => {
   it("같은 뷰키를 두 번 마운트해도 inst 축이 주소를 가른다", () => {
-    mountView("content/view/p.browser/inst/v6", ["urlbar"]);
-    mountView("content/view/p.browser/inst/v36", ["urlbar"]);
+    mountView("content/view/p.browser/tab/tab-aaaaaa", ["urlbar"]);
+    mountView("content/view/p.browser/tab/tab-bbbbbb", ["urlbar"]);
     const addrs = collectExposed().map((n) => n.address);
     expect(new Set(addrs).size).toBe(addrs.length);
   });
@@ -37,13 +37,13 @@ describe("A1 유일성 — 같은 주소를 두 노드가 가질 수 없다", ()
 
 describe("A2 무추측 — 0개면 없음, 2개 이상이면 모호", () => {
   it("유일하면 그것을 준다", () => {
-    mountView("content/view/p.browser/inst/v6", ["urlbar"]);
-    const r = resolveExposed("content/view/p.browser/inst/v6/node/urlbar");
+    mountView("content/view/p.browser/tab/tab-aaaaaa", ["urlbar"]);
+    const r = resolveExposed("content/view/p.browser/tab/tab-aaaaaa/node/urlbar");
     expect("el" in r).toBe(true);
   });
 
   it("없으면 NOT_EXPOSED — selector 로 추측하지 않는다", () => {
-    const r = resolveExposed("content/view/p.browser/inst/v6/node/urlbar");
+    const r = resolveExposed("content/view/p.browser/tab/tab-aaaaaa/node/urlbar");
     expect(r).toMatchObject({ code: "NOT_EXPOSED" });
   });
 

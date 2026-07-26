@@ -8,6 +8,8 @@ import {
   resolveFileViewer,
   useFileViewerRegistry,
 } from "../plugins/fileViewerRegistry";
+import { formatAddress } from "../commands/address";
+import { viewHostAnchors } from "../plugins/viewHostAnchors";
 import { useSessions } from "../state/sessions";
 import { useT } from "../i18n";
 
@@ -27,6 +29,17 @@ export const FileViewerHost = memo(function FileViewerHost({
   // version 구독 → 파일 뷰어 등록/해제(플러그인 활성/비활성) 시 재평가·재마운트.
   useFileViewerRegistry((s) => s.version);
   const reg = resolveFileViewer(path);
+  // 주소 앵커 — 이것이 없으면 뷰어가 노출한 노드가 뷰 스캔에 못 잡히고 크롬 폴백으로 새서,
+  // 파일 뷰 수만큼 같은 주소가 생긴다(라이브 실측: chrome/mode-code ×3 — address.unique 위반).
+  // PluginViewHost 와 같은 계약(viewHostAnchors)이고, 뷰어 미등록이면 종류 축이 없으므로
+  // 앵커도 없다(그때는 노출 노드 자체가 없다).
+  const viewAddr = reg
+    ? formatAddress({
+        region: "content",
+        view: `${reg.pluginId}.${reg.decl.id}`,
+        tab: viewId,
+      })
+    : null;
   const setFileDirty = useSessions((s) => s.setFileDirty);
   const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -73,6 +86,7 @@ export const FileViewerHost = memo(function FileViewerHost({
     <div className="plugin-host">
       <div
         className="tab-container"
+        {...(viewAddr ? viewHostAnchors(viewAddr, viewId) : {})}
         ref={containerRef}
         style={overlay ? { display: "none" } : undefined}
       />

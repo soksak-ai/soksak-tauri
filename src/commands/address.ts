@@ -6,15 +6,15 @@
 // 구조가 곧 규칙(이 모듈이 유일 출처 — inline 파싱 금지).
 //
 // 문법:
-//   호스트 뷰:   win/<label>/proj/<root|alias>/<region>/pane/<idx|active>/view/<pluginId.viewId>/inst/<viewId>/node/<nodePath>
+//   호스트 뷰:   win/<label>/proj/<root|alias>/<region>/pane/<idx|active>/view/<pluginId.viewId>/tab/<tab-id>/node/<nodePath>
 //   호스트 크롬:  win/<label>/proj/<root|alias>/chrome/<chromePath>
 //   region ∈ { left | content | right }
 // 생략 = 활성: win 생략 = 현재 창, proj 생략 = 활성 프로젝트, pane 생략 = 활성 pane,
-//              inst 생략 = 그 뷰키의 유일 인스턴스. 멱등(활성 기준 일관).
+//              tab 생략 = 그 뷰키의 유일 인스턴스. 멱등(활성 기준 일관).
 //
 // [공리] 유일성 — 한 창에서 노출된 두 노드는 같은 주소를 가질 수 없다.
 //   같은 뷰키가 두 번 마운트될 수 있으므로(브라우저 탭 여러 개, 패널마다 반복되는 탭바)
-//   뷰키만으로는 유일하지 않다. inst 축이 그 자리를 메운다 — 이것이 없으면 resolve 가
+//   뷰키만으로는 유일하지 않다. tab 축이 그 자리를 메운다 — 이것이 없으면 resolve 가
 //   "보이는 쪽"을 고르는 추측으로 떨어지고, 둘 다 보이면 그 추측조차 무너진다(실측: 패널 6개가
 //   모두 tab/view/0 을 썼다). 추측하지 않는다: 0개면 NOT_EXPOSED, 2개 이상이면 AMBIGUOUS.
 // node/<nodePath> 와 chrome/<chromePath> 는 슬래시 포함 다중 세그먼트 허용(끝까지). 그 외는 단일 토큰.
@@ -36,8 +36,8 @@ export interface AddressParts {
   region?: Region; // left|content|right
   pane?: string; // 위치 인덱스 or "active"(생략=활성)
   view?: string; // qualifiedViewId(pluginId.viewId)
-  // 뷰 인스턴스 id — 같은 뷰키가 여러 번 마운트될 때 유일성을 세우는 축. 생략=유일 인스턴스.
-  inst?: string;
+  // 탭 id — 같은 뷰키가 여러 번 마운트될 때 유일성을 세우는 축. 생략=유일 인스턴스.
+  tab?: string;
   node?: string; // 플러그인 노출 노드 path(슬래시 계층)
 }
 
@@ -102,12 +102,12 @@ export function parseAddress(input: string): AddressParts | { error: string } {
     i += 2;
   }
 
-  // inst/<viewId> (선택) — view 뒤에만 온다
-  if (segs[i] === "inst") {
+  // tab/<tab-id> (선택) — view 뒤에만 온다
+  if (segs[i] === "tab") {
     const v = segs[i + 1];
-    if (!v || !SEG.test(v)) return fail(`inst id 불량: ${v ?? "(없음)"}`);
-    if (!out.view) return fail("inst 는 view 뒤에만 온다");
-    out.inst = v;
+    if (!v || !SEG.test(v)) return fail(`tab id 불량: ${v ?? "(없음)"}`);
+    if (!out.view) return fail("tab 은 view 뒤에만 온다");
+    out.tab = v;
     i += 2;
   }
 
@@ -137,7 +137,7 @@ export function formatAddress(p: AddressParts): string {
   if (p.region) segs.push(p.region);
   if (p.pane) segs.push("pane", p.pane);
   if (p.view) segs.push("view", p.view);
-  if (p.inst) segs.push("inst", p.inst);
+  if (p.tab) segs.push("tab", p.tab);
   if (p.node) segs.push("node", p.node);
   return segs.join("/");
 }

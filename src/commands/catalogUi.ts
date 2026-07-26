@@ -35,7 +35,7 @@ export function registerUiCatalog(): void {
     },
     returns: "{ matchedElements, rules: [{id, active, kind, edges?, seam?, note}] }",
     message: (d) => tmsg("msg.ui.expect", { n: ((d.rules as unknown[]) ?? []).length }),
-    examples: ['ui.expect \'{"selector":".egroup-status"}\''],
+    examples: ['ui.expect \'{"selector":".pane-status"}\''],
     handler: (p) => ({ ...expectForSelector(p.selector as string) }),
   });
 }

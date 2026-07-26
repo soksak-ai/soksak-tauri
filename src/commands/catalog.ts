@@ -167,8 +167,12 @@ function sidebarSplitIdOf(layout: SidebarLayout, viewKey: string): string | null
   return walk(layout, null);
 }
 
-// 해소된 골이 사는 분할의 현재 비율 — resizeSplit 이 sizes 전량을 요구하므로 그 자리에서 읽는다.
-// (골 규칙이 아니라 평범한 트리 읽기다. 두 번째 소비처가 생기면 splitTree.ts 로 올린다.)
+// 해소된 골이 사는 분할의 현재 비율 — 이 읽기가 필요한 이유는 resizeSplit 이 sizes 전량을
+// 요구하기 때문이다(골 하나를 옮기려고 나머지 비율까지 되읽어 다시 넣는다). 그 인터페이스가
+// 골 하나의 비율만 받는 형태로 바뀌면 이 함수는 통째로 사라진다 — 제거 조건은 그것이고,
+// 그때까지는 여기 지역 읽기로 둔다(승격하면 사라져야 할 것에 자리를 준다). 승격이 필요해지면
+// splitTree.ts 의 resizeSplitTree·findSplitTree 옆에 leaf 제네릭으로 둔다 — 그 파일은 칸 트리와
+// 사이드바 트리 양쪽의 단일 추상이라 한쪽에만 맞는 읽기를 두면 대칭이 깨진다.
 function splitSizesOf(node: PaneNode, splitId: string): number[] | null {
   if (node.type === "leaf") return null;
   if (node.id === splitId) return node.sizes;
@@ -879,7 +883,7 @@ export function registerCatalog(): void {
     message: () => tmsg("msg.project.update"),
     errors: ["TARGET_NOT_FOUND"],
     examples: [
-      'project.update \'{"project":"pjt-a2b3c4","title":"백엔드","program":"claude"}\'',
+      'project.update \'{"project":"pjt-a2b3c4","title":"백엔드","shell":"/bin/zsh"}\'',
     ],
     handler: (p) =>
       withTargets(

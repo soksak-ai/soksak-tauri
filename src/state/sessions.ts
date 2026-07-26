@@ -136,6 +136,9 @@ export type Tab =
       // 마지막 활동 시각(epoch ms) — 근거는 이벤트만(명령 시작/종료·turn·활성화·PTY 출력).
       // 복원 hydration 우선순위(B4)와 "마지막 사용" 표시의 데이터.
       lastActivity?: number;
+      // 엔티티 id 마이그레이션이 심은 옛 탭 id — PTY 재부착·체크포인트의 옛 키를 보존한다
+      // (손실 0). 제거 조건: 그 체크포인트의 재봉인(adopt) 완료 후 스냅샷 정리.
+      legacyPaneId?: string;
     };
 
 // 칸: 탭 묶음 + 활성 탭. 배치 트리의 leaf.

@@ -4,9 +4,9 @@
 // 확인할 때도 같은 기준이다 — 게이트마다 기준을 새로 적으면 기준이 게이트 수만큼 갈라진다.
 //
 // 여기서 지키는 것(전부 사용자 실측 결함에서 나왔다):
-//   address.unique  한 주소가 둘로 풀리면 클릭·측정이 어느 패널로 갈지 알 수 없다.
+//   address.unique  한 주소가 둘로 풀리면 클릭·측정이 어느 칸으로 갈지 알 수 없다.
 //   rail.settled    여정이 끝났는데 빠지는 레일이 남으면 사이드바가 두 벌로 보인다.
-//   slot.sized      보이는 슬롯의 크기가 0 이면 그 패널은 빈 화면이다.
+//   tab.sized       보이는 탭 본문의 크기가 0 이면 그 칸은 빈 화면이다.
 //   motion.paired   화면과 위상의 시계가 갈라지면 이동 도중에 착지가 선언된다.
 import process from "node:process";
 import { openClient, must, workspaceWindows } from "./lib/client.mjs";

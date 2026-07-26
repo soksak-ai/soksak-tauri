@@ -1458,7 +1458,7 @@ const en: Record<MsgKey, string> = {
   "hint.flow.layout.apply.snapshot": "You can capture the screen to check the layout",
   "hint.flow.snapshot.maximize": "You can maximize a view and capture again for a zoomed shot",
   "hint.flow.snapshot.switch": "You can switch to another space and capture again to compare",
-  // layout.apply skipped-panel reasons (response skipped) — panels not built due to a missing program.
+  // layout.apply skipped-pane reasons (response skipped) — panes not built due to a missing program.
   "layout.skip.noBrowser": "Skipped this pane — no browser program is installed",
   "layout.skip.unregistered": "Skipped this pane — the {program} program is not registered",
 
