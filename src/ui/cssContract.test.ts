@@ -250,6 +250,8 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
     ".notify-banner", // 인앱 알림 배너 카드 + 액션 버튼(-action) — 폐곡선 윤곽
     ".webview-health-badge", // webview 복구 소진 배지 카드 + 버튼 — 폐곡선 윤곽(notify-banner 동형)
     ".root-missing-banner", // root 부재 격하 배너(B1) — 배너 카드 윤곽(notify-banner 동형)
+    ".motion-debug", // 모션 관측 패널 카드(개발 전용) — 폐곡선 윤곽(경계면 아님)
+    ".motion-debug button", // 그 패널의 배속·정지 버튼 — 폐곡선 윤곽
     ".orch-win", // 오케스트레이터 창맵 항목 카드(A3) — 폐곡선 윤곽
     ".orch-console input", // 오케스트레이터 콘솔 입력 — 폐곡선 윤곽
     ".orch-console button", // 오케스트레이터 실행 버튼 — 폐곡선 윤곽

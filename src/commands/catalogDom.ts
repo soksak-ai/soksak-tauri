@@ -14,6 +14,7 @@ import { register } from "./registry";
 import { tmsg } from "../i18n";
 import { viewFocusSnapshot } from "../plugins/viewFocus";
 import { useDividerHover } from "../state/dividerHover";
+import { setMotionDebug } from "../lib/motionDebug";
 
 type FocusTraceEntry = {
   t: number;
@@ -604,20 +605,14 @@ export function registerDomCatalog(): void {
       "ui.motion            # 현재 설정 조회",
     ],
     handler: (p) => {
-      const root = document.documentElement;
-      if (typeof p.scale === "number") {
-        if (!(p.scale > 0) || p.scale > 200) {
-          return { ok: false as const, code: "INVALID_PARAMS" as const, message: "scale must be in (0, 200]" };
-        }
-        root.style.setProperty("--motion-scale", String(p.scale));
+      if (typeof p.scale === "number" && (!(p.scale > 0) || p.scale > 200)) {
+        return { ok: false as const, code: "INVALID_PARAMS" as const, message: "scale must be in (0, 200]" };
       }
-      if (typeof p.hold === "boolean") {
-        root.toggleAttribute("data-motion-hold", p.hold);
-      }
-      return {
-        scale: Number(root.style.getPropertyValue("--motion-scale") || 1),
-        hold: root.hasAttribute("data-motion-hold"),
-      };
+      // 설정의 소유자는 motionDebug 하나다 — 개발 UI 가 멈춰 둔 그 순간을 이 명령이 그대로 읽는다.
+      return setMotionDebug({
+        scale: typeof p.scale === "number" ? p.scale : undefined,
+        hold: typeof p.hold === "boolean" ? p.hold : undefined,
+      });
     },
   });
 

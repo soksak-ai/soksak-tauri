@@ -198,6 +198,63 @@ body,
   border-radius: 4px;
   user-select: none;
 }
+/* 배지는 버튼이다 — 모션 관측 패널의 손잡이(개발 정체성 전용). 시각은 칩 그대로. */
+.dev-badge {
+  border: 0;
+  cursor: pointer;
+  font-family: inherit;
+}
+.dev-badge.on {
+  outline: 2px solid var(--acc);
+  outline-offset: 1px;
+}
+.dev-badge-wrap {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+/* ── 모션 관측 패널 ── 개발 빌드에서만 존재한다. 사람이 여기서 느리게 돌리고 멈추면,
+   같은 순간을 ui.snapshot.dom 이 읽는다(설정 소유자는 lib/motionDebug 하나). */
+.motion-debug {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--bd);
+  background: var(--card);
+  box-shadow: var(--shadow);
+  white-space: nowrap;
+}
+.motion-debug-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.motion-debug-label,
+.motion-debug-hint {
+  font-size: 11px;
+  color: var(--fg3);
+}
+.motion-debug button {
+  font: inherit;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  border: 1px solid var(--bd);
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+}
+.motion-debug button.on {
+  border-color: var(--acc);
+  background: var(--accbg);
+}
+
 /* 디버그 번들(soksak-debug) 배지 — 주황(디버그 아이콘 톤과 일치). */
 .dev-badge.debug {
   color: #3d220a;

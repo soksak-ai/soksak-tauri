@@ -54,6 +54,7 @@ import { wireRemoteConfirm } from "./state/remoteConfirmWire";
 import { installRemoteConfirmDevTrigger } from "./state/remoteConfirmDev";
 import { ConsentPreviewHost } from "./components/ConsentPreviewHost";
 import { NotifyHost } from "./ui/NotifyHost";
+import { MotionDebugPanel } from "./components/MotionDebugPanel";
 import { PluginHeaderActions } from "./ui/PluginHeaderActions";
 import { useUi } from "./state/ui";
 import { useDividerHover } from "./state/dividerHover";
@@ -603,10 +604,22 @@ function BuildBadge() {
       alive = false;
     };
   }, []);
+  // 배지는 모션 관측 패널의 손잡이다 — 개발 정체성에서만 존재하므로 릴리스에는 그 표면이
+  // 아예 없다. 사람이 여기서 느리게 돌리고 멈춘 뒤, 같은 순간을 ui.snapshot.dom 이 읽는다.
+  const [panelOpen, setPanelOpen] = useState(false);
   if (!label) return null;
   return (
-    <span className={`dev-badge${label === "DEBUG" ? " debug" : ""}`}>
-      {label}
+    <span className="dev-badge-wrap">
+      <button
+        type="button"
+        data-node="dev-badge"
+        className={`dev-badge${label === "DEBUG" ? " debug" : ""}${panelOpen ? " on" : ""}`}
+        title="모션 관측(배속·정지)"
+        onClick={() => setPanelOpen((v) => !v)}
+      >
+        {label}
+      </button>
+      {panelOpen && <MotionDebugPanel onClose={() => setPanelOpen(false)} />}
     </span>
   );
 }
