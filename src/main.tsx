@@ -39,6 +39,7 @@ import {
 } from "./state/windowBoot";
 import { initWindowTitle } from "./state/windowTitle";
 import { installSwapObserver, installInputObserver } from "./lib/motionDebug";
+import { installSurfaceAudit } from "./lib/surfaceAudit";
 import { beginBootPluginEventBuffer, flushBootPluginEvents } from "./plugins/hooks";
 import { useBootPhase } from "./state/bootPhase";
 import { initViewLabelsPersistence } from "./state/viewLabels";
@@ -177,6 +178,7 @@ async function boot(): Promise<void> {
   );
   bootStamp("render");
   installSwapObserver(); // 교체(파킹↔등장) 관측 — 렌더 이후 문서 전체 1회
+  installSurfaceAudit(); // 표면 정합 상시 감사(사건 구동 — 위반은 surface.misplaced 로 자동 발행)
   installInputObserver(); // 입력 발화 관측(제스처→활성화 인과 사슬)
   // 프로그래매틱 오픈(window.new{root}) — 창 생성자가 부트 지시를 URL 쿼리로 전달한다
   // (창별 JS 컨텍스트 분리의 유일한 통로). 지시가 있으면 복원보다 우선: 사용자 의도가
