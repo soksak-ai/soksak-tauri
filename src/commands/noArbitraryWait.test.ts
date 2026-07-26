@@ -60,6 +60,7 @@ const ALLOWED: { file: string; mark: string; event: string; why: string }[] = [
   { file: "src/commands/catalogDebug.ts", mark: "await sleep(ms);", event: "caller-specified", why: "debug.sleep 본체" },
   { file: "src/commands/catalogDom.ts", mark: "window.setTimeout(() => focusTraceStop?.(), ms)", event: "caller-specified", why: "focus trace 자동 종료 ms — 호출자 지정" },
   { file: "src/commands/catalogDom.ts", mark: "window.setTimeout(resolve, durationMs / steps)", event: "caller-specified", why: "드래그 durationMs/steps — 호출자 지정" },
+  { file: "src/commands/catalogDom.ts", mark: "else setTimeout(tick, 16);", event: "caller-specified", why: "ui.trace 표본 캐던스 — 호출자 지정 창(ms) 안의 계측 수집. rAF 는 가려진 창에서 멈춰 명령이 영영 안 끝난다(실측 TIMEOUT)" },
   { file: "src/commands/catalogRemote.ts", mark: "setTimeout(() => {", event: "caller-specified", why: "remote.confirm TTL(ttlSecs 파라미터) — 만료=Deny 가 계약(fail-closed)" },
   // ── ② 프로토콜·OS 경계 유예(TS) ──
   { file: "src/commands/catalogDom.ts", mark: "new Promise((r) => setTimeout(r, 50))", event: "dnd-frame-pacing", why: "합성 DragEvent 시퀀스의 프레임 간격 — 브라우저 DnD 상태기계가 같은 틱의 연속 이벤트를 접는다" },

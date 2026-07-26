@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { rafThrottle } from "../lib/rafThrottle";
 import {
   commitViewVisibility,
@@ -16,6 +16,7 @@ import {
 } from "../plugins/viewFocus";
 import { armSlotActivation } from "../lib/slotGesture";
 import { beginLayoutMotion, endLayoutMotion } from "../lib/layoutMotion";
+import { createRectMotionTracker } from "../lib/layoutRectMotion";
 import { useDividerHover } from "../state/dividerHover";
 import { ViewTabs } from "./ViewTabs";
 import { computeSplitLayout, hitTestCells } from "../lib/splitLayout";
@@ -169,6 +170,11 @@ export const GroupArea = memo(function GroupArea({
   travel?: { from: number; to: number };
 }) {
   const t = useT();
+  // 명령발 rect 변화의 JS 보간(FLIP) — 커밋마다 flush 가 이전 rect 와 비교한다(layoutRectMotion).
+  const rectMotion = useRef(createRectMotionTracker()).current;
+  useLayoutEffect(() => {
+    rectMotion.flush();
+  });
   const displayLayout = solvedLayout ?? content.layout;
   const focusProjectionApplied = displayLayout !== content.layout;
   const traveling = (moves?.length ?? 0) > 0;
@@ -609,6 +615,7 @@ export const GroupArea = memo(function GroupArea({
             }${flipMoves(group.id) ? " flip-move" : ""}`}
             data-node={`layout/pane/${group.id}`}
             style={cellVars(rect, group.id)}
+            ref={rectMotion.ref}
           >
             {maxCell ? (
               /* 최대화 헤더: 탭·+ 대신 타이틀 — 더블클릭/버튼으로 원래 분할 복원 */
@@ -704,6 +711,7 @@ export const GroupArea = memo(function GroupArea({
             group.id === content.activePaneId ? " focus" : ""
           }${flipMoves(group.id) ? " flip-move" : ""}`}
           style={cellVars(rect, group.id)}
+          ref={rectMotion.ref}
         />
       ))}
 
@@ -737,6 +745,7 @@ export const GroupArea = memo(function GroupArea({
               data-pane={group.id}
               data-project-id={projectId}
               data-node={`layout/tab/${view.id}`}
+              ref={shown ? rectMotion.ref : undefined}
               // 평상시 비활성 슬롯은 화면 밖으로 파킹하고, 최대화의 제외 슬롯은 합성 트리에서도
               // 제거한다(viewSurfaceStyle 단일 진실). 둘 다 DOM/플러그인 인스턴스는 유지한다.
               style={{

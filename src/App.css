@@ -1928,6 +1928,10 @@ body,
   flex-direction: column;
   z-index: 0;
 }
+/* 명령발 레이아웃 변화의 모션은 JS 소유 보간(lib/layoutRectMotion — FLIP)이다.
+   CSS 전이·@property 는 실측상 WKWebView 에서 무동작이라 선언하지 않는다(변수 변경이
+   calc 소비 속성 전이를 발동하지 않고, 등록 변수도 보간되지 않음 — ui.trace 표본으로
+   확정). 위상 중 억제·홀 제외도 같은 모듈이 소유한다. */
 :root[data-pane-style="card"] .pane,
 :root[data-pane-style="floating"] .pane {
   background: var(--card);

@@ -30,6 +30,19 @@ let wired = false;
 const scheduled = new Set<Retimable>();
 /** 진단: 갓 태어난 애니메이션을 몇 번 붙잡았는지. */
 let births = 0;
+/** 최근 태어난 전이들의 정체 — "births 43" 이 무엇이었는지 사실로 남긴다(관찰면).
+ *  잡은 순간의 rate 까지 기록해 "붙잡았는데 감속이 안 걸렸다"를 구분할 수 있게 한다. */
+export interface BirthRecord {
+  at: string; // 전이가 태어난 요소(간이 식별 — 태그.클래스)
+  what: string; // transitionProperty | animationName
+  declaredMs: number;
+  rate: number; // applyMotionTo 직후의 playbackRate — 감속 적용의 직접 증거
+}
+const RECENT_BIRTHS_CAP = 64;
+const recentBirths: BirthRecord[] = [];
+export function motionRecentBirths(): BirthRecord[] {
+  return [...recentBirths];
+}
 /** 위상 예약이 세기 시작한 시각과, 화면이 실제로 움직이기 시작한 시각의 차(ms).
  *  이 시차만큼 활강이 앞에서 잘린다 — 예약은 이미 세는데 화면은 아직 안 움직인다. */
 let armedAt: number | null = null; // null = 재는 중이 아님(0 은 유효한 시각이다)
@@ -87,6 +100,16 @@ export interface Retimable {
   play(): void;
 }
 
+/** JS 소유 레이아웃 보간(코어가 element.animate 로 판 것)의 등록 지점 — WAAPI 애니메이션은
+ *  animationstart 를 쏘지 않아 onStart 배선에 안 잡힌다(실측: births 0). 만든 쪽이 직접
+ *  입양시켜야 같은 컨트롤러(배수·정지·원장)를 예외 없이 따른다. */
+export function adoptLayoutAnimation(a: Animation, at: string, declaredMs: number): void {
+  births++;
+  recentBirths.push({ at, what: "layout-rect", declaredMs, rate: motionPlaybackRate() });
+  if (recentBirths.length > RECENT_BIRTHS_CAP) recentBirths.shift();
+  applyMotionTo(a as unknown as Retimable);
+}
+
 /** 이 애니메이션 하나에 현재 설정을 적용한다. 멱등 — 같은 값이면 브라우저가 무시한다. */
 export function applyMotionTo(a: Retimable): void {
   try {
@@ -120,6 +143,20 @@ function ensureWired(): void {
     for (const a of t.getAnimations()) {
       births++;
       applyMotionTo(a as unknown as Retimable);
+      const el = t as HTMLElement;
+      const eff = (a as Animation).effect as KeyframeEffect | null;
+      const timing = eff?.getTiming?.();
+      recentBirths.push({
+        at: `${el.tagName?.toLowerCase() ?? "?"}${el.className ? "." + String(el.className).split(" ").slice(0, 2).join(".") : ""}`,
+        what:
+          (a as unknown as { transitionProperty?: string }).transitionProperty ??
+          (a as unknown as { animationName?: string }).animationName ??
+          (a as Animation).id ??
+          "?",
+        declaredMs: typeof timing?.duration === "number" ? timing.duration : -1,
+        rate: (a as Animation).playbackRate ?? 1,
+      });
+      if (recentBirths.length > RECENT_BIRTHS_CAP) recentBirths.shift();
     }
   };
   document.addEventListener("transitionrun", onStart, true);

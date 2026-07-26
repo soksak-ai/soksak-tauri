@@ -187,54 +187,112 @@ async function main() {
   await sleep(1200); // 초기 마운트 정착
 
   try {
-    // ── A. 감속: 1/50 에서 maximize 활강이 실제로 느리게 "진행"해야 한다 ────────────
-    console.log("\nb. slow (1/50) — the glide itself must stretch");
-    await rpc("ui.motion", { scale: SCALE }, win);
-    // record 를 먼저 걸고(비동기 수집) 활강을 유발 — 원속(수백 ms)이면 프레임 diff 가
-    // 앞 1~2 프레임에만 몰리고, 1/50 이면 수 초에 걸쳐 여러 프레임에 번진다.
-    const recDir = fs.mkdtempSync(path.join(os.tmpdir(), "motion-slow-"));
-    const recP = rpc("window.record", { dir: recDir, frames: 8, intervalMs: 350 }, win);
-    await sleep(120);
-    await rpc("tab.maximize", { tab: t1 }, win);
-    await sleep(300);
-    const live = data(await rpc("ui.motion", {}, win));
-    const walls = (live.animations || []).map((a) => a.wallMs ?? 0);
-    ok(
-      (live.running ?? 0) > 0 && walls.some((w) => w >= 3000),
-      "glide animation is captured and stretched (wallMs ≥ 3s)",
-      `running=${live.running} walls=${JSON.stringify(walls)}`,
-    );
-    await recP;
-    const frames = fs
-      .readdirSync(recDir)
-      .filter((f) => f.endsWith(".png"))
-      .sort()
-      .map((f) => decodePng(fs.readFileSync(path.join(recDir, f))));
-    const diffs = [];
-    for (let i = 1; i < frames.length; i++) diffs.push(diffPixels(frames[i - 1], frames[i]));
-    const moving = diffs.filter((d) => d > 50).length;
-    ok(
-      moving >= 3,
-      "pixels keep progressing across frames (slowed, not instant)",
-      `diffs=${JSON.stringify(diffs)}`,
-    );
-    fs.rmSync(recDir, { recursive: true, force: true });
-
-    // 활강 완주 대기(감속이 걸려 있으면 길다) 후 원복.
+    // ── A. 감속: 같은 레이아웃 변화가 1× 대비 1/50 에서 실제로 늘어져야 한다 ─────────
+    // 판정 축은 rect 시계열(ui.trace)이다 — 이벤트(transitionrun)는 엔진 구현에 따라
+    // 빠질 수 있지만 rect 는 화면의 결과 그 자체다. 같은 pane 주소를 두 배속에서 관찰해
+    // 도달 시간을 비교한다.
+    console.log("\nb. slow (1/50) — the same change must stretch vs 1×");
+    const paneAddr = async () => {
+      const nodes = data(await rpc("ui.tree", {}, win)).nodes || [];
+      const a = nodes.map((n) => n.address).find((x) => x.includes("/layout/pane/pan-"));
+      if (!a) throw new Error("pane 주소 없음");
+      return a;
+    };
+    // 첫 골의 정본 (pane, edge) — 내부 split 은 실체가 아니다(IDENTITY §4): 첫 split 의
+    // 첫 child 를 잎까지 내려간 pane + 방향. 활성 pane 짐작(오른끝이면 right 골이 없다)을
+    // 하지 않는다 — 실측: 그 짐작이 TARGET_NOT_FOUND 로 하니스를 죽였다.
+    const firstGutter = async () => {
+      const lay = data(await rpc("pane.list", {}, win)).layout;
+      const leaf = (n) => (n.pane ? n.pane : leaf(n.children[0]));
+      const find = (n) => {
+        if (n?.split && Array.isArray(n.children) && n.children.length >= 2) {
+          return { pane: leaf(n.children[0]), edge: n.split.dir === "row" ? "right" : "bottom" };
+        }
+        for (const c of n?.children ?? []) {
+          const r = find(c);
+          if (r) return r;
+        }
+        return null;
+      };
+      const g = find(lay);
+      if (!g) throw new Error("골 없음(분할 없는 레이아웃)");
+      return g;
+    };
+    const traceResize = async (ratio, ms) => {
+      const g = await firstGutter();
+      const addr = `win/${win}/proj/t1/chrome/layout/pane/${g.pane}`;
+      // 트레이스가 먼저다 — resize 를 먼저 쏘면 전이(160ms)가 첫 표본 전에 끝나 "불변"으로
+      // 오판된다(실측: from=to 로 두 배속 다 실패). 표본이 돌기 시작한 뒤 변화를 유발한다.
+      const once = async (r) => {
+        const trP = rpc("ui.trace", { address: addr, ms }, win);
+        await sleep(60);
+        const rz = await rpc("pane.resize", { pane: g.pane, edge: g.edge, ratio: r }, win);
+        if (!rz.ok) throw new Error(`pane.resize 실패: ${rz.code}`);
+        return data(await trP);
+      };
+      let tr = await once(ratio);
+      // no-op 방어 — 창 재사용 누적으로 현재 비율이 이미 목표와 같을 수 있다(실측: 907ms
+      // 완전 불변). 변화가 없으면 반대쪽으로 한 번 더 — 오라클은 "변화가 있는 실행"을 본다.
+      if (Math.abs(tr.to.w - tr.from.w) < 0.5) tr = await once(ratio > 0.5 ? 0.3 : 0.7);
+      return tr;
+    };
+    // no-op 방지 — 현재 비율을 읽어 반대쪽으로 민다(같은 값 재적용 = 변화 0 = 오라클 무효).
+    const sizesNow = async () => {
+      const g = await firstGutter();
+      const lay = data(await rpc("pane.list", {}, win)).layout;
+      const find = (n) =>
+        n?.split && n.children?.length >= 2 ? n.split.sizes[0] : (n.children ?? []).map(find).find((x) => x != null);
+      return find(lay) ?? 0.5;
+    };
+    const flip = async () => ((await sizesNow()) > 0.5 ? 0.3 : 0.7);
+    // 기준(1×): 폭 변화가 표본창 안에서 시작·완결된다.
     await rpc("ui.motion", { scale: 1 }, win);
-    await rpc("tab.restore", {}, win);
-    await sleep(800);
+    const base = await traceResize(await flip(), 900);
+    const baseMoved = Math.abs(base.to.w - base.from.w);
+    const lastTwoEqual =
+      Math.abs(base.samples[base.samples.length - 1].w - base.samples[base.samples.length - 2].w) < 0.5;
+    ok(base.resized && baseMoved > 5 && lastTwoEqual, "1×: resize lands within the window", `w ${base.from.w}→${base.to.w}`);
+    if (!(base.resized && baseMoved > 5 && lastTwoEqual))
+      console.log("    base samples:", JSON.stringify(base.samples));
+    // 1/50: 같은 900ms 창에서 아직 진행 중이어야 한다(완결되면 감속이 안 걸린 것).
+    await rpc("ui.motion", { scale: SCALE }, win);
+    const slow = await traceResize(await flip(), 900);
+    const w0 = slow.samples[0].w;
+    const wEnd = slow.samples[slow.samples.length - 1].w;
+    const progressed = Math.abs(wEnd - w0) > 0.5;
+    const stillMoving =
+      Math.abs(slow.samples[slow.samples.length - 1].w - slow.samples[slow.samples.length - 2].w) > 0.05 ||
+      Math.abs(wEnd - w0) < baseMoved * 0.7;
+    ok(
+      progressed && stillMoving,
+      "1/50: still gliding after the same window (stretched)",
+      `w ${w0} → ${wEnd} (base moved ${baseMoved.toFixed(1)})`,
+    );
+    // 원복 — 감속 해제 후 활강 완주 대기.
+    await rpc("ui.motion", { scale: 1 }, win);
+    await sleep(600);
+    await rpc("tab.restore", {}, win).catch(() => {});
+    await sleep(400);
 
     // ── B. 정지: hold 는 화면을 실제로 얼려야 한다 ────────────────────────────────
+    // 유발은 resize(요소 지속 — FLIP 보간이 성립)로 한다. maximize 는 셀 재마운트 축이라
+    // 보간 대상이 아니다(후속 과제로 기록 — 재마운트 모션).
     console.log("\nc. hold — the frozen frame must not advance");
     await rpc("ui.motion", { hold: true }, win);
-    await rpc("tab.maximize", { tab: t1 }, win);
-    await sleep(250);
-    const f1 = await snapshotPng(win);
-    await sleep(500);
-    const f2 = await snapshotPng(win);
-    const held = diffPixels(f1, f2);
-    ok(held >= 0 && held < 50, "held frames are identical", `diff=${held}`);
+    // 오라클은 레이아웃 rect 동결이다 — 전체 픽셀 diff 는 hold 계약 밖 픽셀(플러그인 자체
+    // rAF 캔버스 — 실측: 벚꽃 파티클이 diff 40만을 만들었다, 증거 PNG)에 오염된다.
+    const gh = await firstGutter();
+    const holdAddr = `win/${win}/proj/t1/chrome/layout/pane/${gh.pane}`;
+    const trHold = rpc("ui.trace", { address: holdAddr, ms: 700 }, win);
+    await sleep(60);
+    const rzHold = await rpc("pane.resize", { pane: gh.pane, edge: gh.edge, ratio: await flip() }, win);
+    if (!rzHold.ok) throw new Error(`hold resize 실패: ${rzHold.code}`);
+    const heldTr = data(await trHold);
+    ok(
+      heldTr.moved === false,
+      "held layout rect does not advance",
+      `from=${JSON.stringify(heldTr.from)} to=${JSON.stringify(heldTr.to)}`,
+    );
     await rpc("ui.motion", { hold: false, scale: 1 }, win);
     await sleep(800);
     const done = data(await rpc("ui.motion", {}, win));

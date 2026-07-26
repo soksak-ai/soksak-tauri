@@ -14,7 +14,7 @@ import { register } from "./registry";
 import { tmsg } from "../i18n";
 import { viewFocusSnapshot } from "../plugins/viewFocus";
 import { useDividerHover } from "../state/dividerHover";
-import { motionLiveList, motionLiveRates, setMotionDebug } from "../lib/motionDebug";
+import { motionLiveList, motionLiveRates, setMotionDebug, motionRecentBirths } from "../lib/motionDebug";
 import { railTravelMs, railTravelWallMs } from "../lib/railMotion";
 
 type FocusTraceEntry = {
@@ -746,7 +746,71 @@ export function registerDomCatalog(): void {
       });
       // running·rates 는 결과다 — 설정이 세워졌다는 말이 느려졌다는 말을 대신하지 못한다(실사고:
       // 커스텀 프로퍼티만 두고 소비처가 없어 상태는 20 인데 화면은 그대로였다).
-      return { ...st, ...motionLiveRates(), animations: motionLiveList() };
+      return { ...st, ...motionLiveRates(), animations: motionLiveList(), recentBirths: motionRecentBirths() };
+    },
+  });
+
+  // 이동하는 노드의 변화를 사실로 잡는다 — 기간 한정 rect 시계열(관측 명령, 사용자 요구
+  // 2026-07-26 "돔 이동시에 해당 돔의 변화도 추적할 수 있어야 한다"). transitionrun 같은
+  // 이벤트는 엔진 구현에 따라 빠질 수 있지만(실측: 등록 변수 전이에서 births 0) rect 는
+  // 화면의 결과 그 자체라 빠질 수 없다. rAF 표본이므로 폴링이 아니라 캡처다(상한 5s).
+  register("ui.trace", {
+    description:
+      "Sample an exposed node's rect over a bounded window (ms ≤ 5000) at animation-frame cadence and return the series. This is how you verify that a layout change actually moves — and how slow/hold (ui.motion) visibly stretch or freeze that movement. Trigger the mutation right after starting the trace (it samples from the next frame).",
+    triggers: { ko: "노드 추적 이동 기록 rect 시계열 트레이스" },
+    params: {
+      address: { type: "string", description: "Exposed node address (ui.tree)", required: true },
+      ms: { type: "number", description: "Sampling window in ms (default 1000, max 5000)" },
+    },
+    returns:
+      "{ address, from, to, samples: [{ t, x, y, w, h }], moved, translatedOnly(true = x/y changed while w/h stayed — the move-contract), resized }",
+    message: (d) => tmsg("msg.ui.trace", { n: String((d.samples as unknown[])?.length ?? 0) }),
+    errors: ["NOT_EXPOSED", "AMBIGUOUS", "INVALID_PARAMS"],
+    handler: async (p) => {
+      const ms = Math.min(Math.max(typeof p.ms === "number" ? p.ms : 1000, 50), 5000);
+      const found = resolveExposed(String(p.address ?? ""));
+      if ("ok" in found) return found;
+      const el = found.el;
+      const t0 = performance.now();
+      const samples: { t: number; x: number; y: number; w: number; h: number }[] = [];
+      // 표본 캐던스는 타이머다 — rAF 는 가려진 창에서 멈춰 이 명령이 영영 안 끝난다
+      // (실측: 배경 창 trace 가 TIMEOUT — reference_live-drag-verify-traps 의 그 함정).
+      // 캡처 명령은 시간이 축이므로 타이머가 정확하고, 가림과 무관하게 완결된다.
+      await new Promise<void>((done) => {
+        const tick = () => {
+          const r = el.getBoundingClientRect();
+          samples.push({
+            t: Math.round(performance.now() - t0),
+            x: Math.round(r.x * 10) / 10,
+            y: Math.round(r.y * 10) / 10,
+            w: Math.round(r.width * 10) / 10,
+            h: Math.round(r.height * 10) / 10,
+          });
+          if (performance.now() - t0 >= ms) done();
+          else setTimeout(tick, 16);
+        };
+        tick();
+      });
+      const first = samples[0];
+      const last = samples[samples.length - 1];
+      // 이동 계약 판정 — "콘텐츠는 줄어들지 않고 이동만"(사용자 불변식). 출발·도착 rect 와
+      // 함께, 표본 어느 지점에서든 크기가 변했는지(resized)와 순수 평행이동이었는지
+      // (translatedOnly)를 사실로 답한다 — 하니스가 이 판정으로 위반을 잡는다.
+      const translated = samples.some(
+        (s2) => Math.abs(s2.x - first.x) > 0.5 || Math.abs(s2.y - first.y) > 0.5,
+      );
+      const resized = samples.some(
+        (s2) => Math.abs(s2.w - first.w) > 0.5 || Math.abs(s2.h - first.h) > 0.5,
+      );
+      return {
+        address: String(p.address ?? ""),
+        from: { x: first.x, y: first.y, w: first.w, h: first.h },
+        to: { x: last.x, y: last.y, w: last.w, h: last.h },
+        samples,
+        moved: translated || resized,
+        translatedOnly: translated && !resized,
+        resized,
+      };
     },
   });
 

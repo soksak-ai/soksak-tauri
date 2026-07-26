@@ -59,6 +59,11 @@ function activeKinds(): LayoutMotionKind[] {
 
 // 에지·종별변화 발화 — 로컬 리스너는 active 에지에서만 부르고(기존 계약 유지), 플러그인
 // 채널은 종별 구성 변화도 받는다(active:true 재발화 — freeze 재평가의 근거).
+/** 명령발 레이아웃 변화(분할·최대화·닫기·비율)의 보간 길이 — JS 소유 보간
+ *  (layoutRectMotion)의 단일 원천. 위상(드래그·활강) 중에는 기존 시스템이 이동을
+ *  소유하므로 보간하지 않는다(isLayoutMotionActive 로 같은 모듈이 판단). */
+export const LAYOUT_MOTION_MS = 160;
+
 function syncEmit(): void {
   const active = depth() > 0;
   const kinds = activeKinds();
@@ -69,6 +74,7 @@ function syncEmit(): void {
   const key = `${active}:${kinds.join(",")}:${scopeViews ? [...scopeViews].sort().join("+") : "*"}`;
   if (key === lastEmittedKey) return;
   lastEmittedKey = key;
+
   // 플러그인 채널은 사실만 싣는다(active·kinds). 어느 표면이 이 위상의 대상인지는 브로드캐스트
   // 로 추측할 일이 아니다 — 코어가 동결한 슬롯에 view.veiled 로 정확히 통지한다(§4.6).
   emitPluginEvent("layout.resize-gesture", { active, kinds });
