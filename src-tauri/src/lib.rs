@@ -20,6 +20,7 @@ mod os_key;
 mod path_security;
 mod plugins;
 mod process;
+mod id_registry;
 mod project_registry;
 mod pty;
 mod pty_delivery;
@@ -112,7 +113,8 @@ pub fn run() {
         .manage(secrets::SecretsState::default())
         .manage(ai_session::SessionTracker::default())
         .manage(schedule::ScheduleState::default())
-        .manage(project_registry::ProjectRegistry::default());
+        .manage(project_registry::ProjectRegistry::default())
+        .manage(id_registry::IdRegistry::default());
     // 렌더러 프로세스 종료(process-gone)를 명시 감지한다(macOS per-webview) — 이 핸들러를
     // 등록하지 않으면 핀 rev 의 tauri-runtime-wry 가 무조건·무한·무고지 자동 reload 기본
     // 핸들러를 설치한다(R1 위반). webview_health 서킷 브레이커가 그 자리를 대체한다.
@@ -429,6 +431,7 @@ pub fn run() {
                     // 프로젝트 전역 단일 오픈(P6): 죽은 창의 점유를 해제해 다른 창이 그 프로젝트를
                     // 열 수 있게 한다(해제 없으면 앱 재시작까지 유령 점유).
                     crate::project_registry::on_window_destroyed(&app, window.label());
+                    crate::id_registry::on_window_destroyed(&app, window.label());
                     let _ = app.emit("window-changed", ()); // 오케스트레이터 창맵 자동 갱신
                                                             // 사용자 개별 닫기였다면 그 창의 세션 흔적(스냅샷 kv + manifest slot)을 폐기.
                     if window::take_user_closed(window.label()) {
@@ -627,6 +630,8 @@ pub fn run() {
             window_set_background,
             activity::activity_publish,
             activity::activity_recent,
+            id_registry::id_registry_declare,
+            id_registry::id_registry_resolve,
             project_registry::project_claim,
             project_registry::project_release,
             project_registry::project_owners,
