@@ -388,6 +388,10 @@ const ProjectPane = memo(function ProjectPane({
   return (
     <div
       className="terminal-pane"
+      // 주소 공리 A1 의 앵커 — 이 평면 안의 크롬 노드는 프로젝트마다 한 벌씩 산다.
+      // 주소가 프로젝트를 실어야 rail/left 가 하나로 풀린다(collectExposed 가 읽는다).
+      data-project-plane={project.id}
+      data-project-active={isActiveProject ? "1" : undefined}
       // 비활성 프로젝트도 화면 밖으로 파킹한다(R12 단일 진실) — visibility:hidden 은 DOM 만 감추고
       // GPU 레이어(터미널 WebGL)와 네이티브 child(브라우저 webview)는 그대로 합성된다. 콘텐츠·뷰 슬롯과
       // 같은 헬퍼를 쓰는 이유가 그것이다(층 간 일치). 프로젝트를 전환해도 이전 브라우저가 화면에

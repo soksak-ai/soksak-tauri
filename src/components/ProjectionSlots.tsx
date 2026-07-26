@@ -167,6 +167,8 @@ export const ProjectionSlots = memo(function ProjectionSlots({
                 region={side}
                 paneId={paneId}
                 boundViewId={instanceKey.split("|")[2] ?? proj?.binding.viewId ?? null}
+                // 주소 유일성(공리 A1) — 같은 refKey 가 결부 뷰마다 한 벌씩 산다.
+                instanceId={instanceKey.split("|")[2] ?? proj?.binding.viewId ?? null}
               />
             </div>
           </div>

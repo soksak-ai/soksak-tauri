@@ -8,9 +8,11 @@ import { NODE_PATH_RE } from "../commands/address";
 import { nodeConformance } from "./conformance";
 
 export interface ScannedNode {
-  address: string; // 절대 주소(baseAddress + "/node/" + nodePath)
+  address: string; // 정본 절대 주소 — 유일하다(주소 공리 A1)
   nodePath: string; // data-node 값
   el: HTMLElement; // 실제 요소(resolve 시 직접 사용)
+  // 생략형 별칭(문법의 "생략=활성"). 활성 프로젝트의 크롬만 가진다 — 정본은 언제나 address 다.
+  alias?: string;
 }
 
 // root 하위(Shadow DOM 포함)의 [data-node] 요소를 전부 모은다. light DOM querySelectorAll + 각 shadowRoot 재귀.

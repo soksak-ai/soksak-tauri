@@ -172,6 +172,7 @@ test-e2e: ## 실행 중 앱 소켓 대상 E2E 스위트(멱등·자기정리). I
 	done; \
 	echo "── e2e: multiwindow ──"; SOKSAK_SOCKET="$$HOME/.soksak-$$IDENTITY/com.soksak.$$IDENTITY.sock" node scripts/e2e/multiwindow.mjs || fail=1; \
 	echo "── e2e: slot-freeze ──"; SOKSAK_SOCKET="$$HOME/.soksak-$$IDENTITY/com.soksak.$$IDENTITY.sock" node scripts/e2e/slot-freeze.mjs || fail=1; \
+	echo "── e2e: ui-verify ──"; SOKSAK_SOCKET="$$HOME/.soksak-$$IDENTITY/com.soksak.$$IDENTITY.sock" node scripts/e2e/ui-verify.mjs || fail=1; \
 	echo "── e2e: browser-pixels ──"; SOKSAK_SOCKET="$$HOME/.soksak-$$IDENTITY/com.soksak.$$IDENTITY.sock" node scripts/e2e/browser-pixels.mjs || fail=1; \
 	echo "── e2e: divider-hover ──"; SOKSAK_SOCKET="$$HOME/.soksak-$$IDENTITY/com.soksak.$$IDENTITY.sock" node scripts/e2e/divider-hover.mjs || fail=1; \
 	echo "── e2e: resize ──"; bash scripts/e2e/resize.sh --identity $$IDENTITY || fail=1; \

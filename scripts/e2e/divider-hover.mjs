@@ -81,7 +81,8 @@ async function main() {
     if (!window) throw new Error("워크스페이스 창 없음");
     const tree = must(await c.rpc("ui.tree", {}, window), "ui.tree");
     const addr = JSON.stringify(tree).match(
-      new RegExp(`"win/${window}/chrome/divider/[^"]+"`),
+      // 정본 주소는 프로젝트 축을 싣는다(주소 공리 A1) — 생략형만 찾으면 조용히 건너뛴다.
+      new RegExp(`"win/${window}/(?:proj/[^/"]+/)?chrome/divider/[^"]+"`),
     )?.[0];
     if (!addr) {
       console.log("✓ divider-hover 건너뜀 — 이 창에 분할 divider 가 없다");

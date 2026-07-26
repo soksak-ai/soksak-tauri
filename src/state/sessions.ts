@@ -63,7 +63,10 @@ export type CmdErrCode =
   // 플러그인 삭제가 의존자 cascade 를 유발 — 동의(cascade:true) 없이는 차단(고아 방지).
   | "CASCADE_REQUIRED"
   // DOM 주소가 노출 노드(data-node)에 없음 — 임의 selector 추측 금지, 노출된 것만 접근(ui.tree).
-  | "NOT_EXPOSED";
+  | "NOT_EXPOSED"
+  // 한 주소가 둘 이상으로 풀림(주소 공리 A1 위반) — 어느 하나를 고르지 않는다. 주소를 만드는
+  // 쪽의 결함이므로 호출자가 인스턴스 축(inst)으로 좁히거나, 마운트가 인스턴스를 실어야 한다.
+  | "AMBIGUOUS";
 
 // data = 코드별 부가 정보(선택). 예: CONSENT_REQUIRED 의 미동의 체인(연속 동의 팝업용).
 export type CmdErr = { ok: false; code: CmdErrCode; message: string; data?: unknown };

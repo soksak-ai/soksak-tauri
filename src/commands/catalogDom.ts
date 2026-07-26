@@ -15,6 +15,7 @@ import { tmsg } from "../i18n";
 import { viewFocusSnapshot } from "../plugins/viewFocus";
 import { useDividerHover } from "../state/dividerHover";
 import { motionLiveList, motionLiveRates, setMotionDebug } from "../lib/motionDebug";
+import { railTravelMs, railTravelWallMs } from "../lib/railMotion";
 
 type FocusTraceEntry = {
   t: number;
@@ -43,42 +44,66 @@ export function collectExposed(): ScannedNode[] {
     if (!base) continue;
     out.push(...scanNodes(c, `win/${win}/${base}`));
   }
-  // 호스트 크롬 — 뷰 컨테이너 밖의 [data-node]. 주소 = win/<label>/chrome/<nodePath>.
+  // 호스트 크롬 — 뷰 컨테이너 밖의 [data-node].
+  //
+  // 프로젝트 평면은 전부 마운트된다(비활성은 화면 밖 파킹). 그래서 평면 안의 크롬 노드는
+  // 프로젝트마다 한 벌씩 살고, 프로젝트 축이 없으면 rail/left 가 둘로 풀린다(실측).
+  // 정본 주소는 프로젝트를 싣고, 활성 평면만 생략형 별칭을 함께 가진다(문법의 "생략=활성").
   for (const el of document.querySelectorAll<HTMLElement>("[data-node]")) {
     if (el.closest(".plugin-view-container")) continue; // 뷰 노드는 위에서 처리
     const nodePath = el.dataset.node ?? "";
     if (!nodePath) continue;
-    out.push({ address: `win/${win}/chrome/${nodePath}`, nodePath, el });
+    const plane = el.closest<HTMLElement>("[data-project-plane]");
+    const proj = plane?.dataset.projectPlane;
+    if (!proj) {
+      out.push({ address: `win/${win}/chrome/${nodePath}`, nodePath, el });
+      continue;
+    }
+    out.push({
+      address: `win/${win}/proj/${proj}/chrome/${nodePath}`,
+      nodePath,
+      el,
+      ...(plane?.dataset.projectActive === "1"
+        ? { alias: `win/${win}/chrome/${nodePath}` }
+        : {}),
+    });
   }
   return out;
 }
 
-// 주소 → 단일 요소 resolve. 정규화(parse∘format) 한 주소로 매칭(생략형/정규형 일치). 없으면 null.
-function resolveElement(addressStr: string): HTMLElement | null {
+/**
+ * 주소 → 요소. 정확히 하나가 아니면 고르지 않는다(주소 공리 A2).
+ *
+ * 예전에는 같은 주소가 여러 요소에 붙는 것을 전제하고 "보이는 것"을 골랐다. 그 추측은 둘 다
+ * 보이면 무너진다 — 실측: 패널 6개가 전부 tab/view/0 을 써서 클릭이 어느 패널로 갈지 알 수
+ * 없었다. 주소가 유일하지 않다는 것은 주소를 만드는 쪽의 결함이지 고르기로 덮을 일이 아니다.
+ * 여기서 거절하면 결함이 그 자리에서 드러난다.
+ */
+export type Resolved =
+  | { el: HTMLElement }
+  | { ok: false; code: "NOT_EXPOSED" | "AMBIGUOUS"; message: string };
+
+export function resolveExposed(addressStr: string): Resolved {
   const parsed = parseAddress(addressStr);
-  if (isParseError(parsed)) return null;
-  const exposed = collectExposed();
-  // 정확 일치 우선. 입력 주소에 win 생략 시 현재 창으로 보정해 비교.
+  if (isParseError(parsed)) return notExposed(addressStr);
   const want = addressStr.replace(/^\/+|\/+$/g, "");
   const wantWithWin = want.startsWith("win/") ? want : `win/${currentWindowLabel()}/${want}`;
-  const matches = exposed.filter((n) => n.address === want || n.address === wantWithWin);
-  if (matches.length === 0) return null;
-  // 같은 주소가 여러 요소에 붙을 수 있다(시트마다 반복되는 크롬 노드 — 뷰 탭바 등). 파킹된
-  // (화면 밖 translateX) 복제를 잡으면 클릭/측정이 보이지 않는 요소로 가서 "동작 없음"이 된다
-  // (실측: 탭 클릭 E2E 가 비활성 시트의 탭을 눌렀다). 사용자가 보는 요소 — 뷰포트와 교차하고
-  // 크기가 있는 것 — 를 우선하고, 보이는 게 없으면 첫 매치(기존 동작)로 폴백한다.
-  const visible = matches.find((n) => {
-    const r = n.el.getBoundingClientRect();
-    return (
-      r.width > 0 &&
-      r.height > 0 &&
-      r.right > 0 &&
-      r.bottom > 0 &&
-      r.left < window.innerWidth &&
-      r.top < window.innerHeight
-    );
-  });
-  return (visible ?? matches[0]).el;
+  const matches = collectExposed().filter(
+    (n) =>
+      n.address === want ||
+      n.address === wantWithWin ||
+      n.alias === want ||
+      n.alias === wantWithWin,
+  );
+  if (matches.length === 0) return notExposed(addressStr);
+  if (matches.length > 1) {
+    return {
+      ok: false as const,
+      code: "AMBIGUOUS" as const,
+      message: `한 주소가 ${matches.length}개로 풀립니다(주소 공리 A1 위반): ${addressStr} — inst 축으로 좁히세요`,
+    };
+  }
+  return { el: matches[0].el };
 }
 
 // 좌표 위 최상단 요소를 shadow DOM 을 관통해 찾는다. document.elementFromPoint 는 shadow host
@@ -144,12 +169,19 @@ export function registerDomCatalog(): void {
         default: false,
       },
     },
-    returns: "{ window, count, nodes: [{ address, nodePath, rect? }] }",
+    returns: "{ window, count, duplicates, nodes: [{ address, nodePath, rect? }] }",
     message: (d) => tmsg("msg.ui.tree", { n: Number(d.count ?? 0) }),
     examples: ["ui.tree", 'ui.tree \'{"rects":true}\''],
     handler: (p) => {
       const withRects = p.rects === true;
-      const nodes = collectExposed().map((n) => {
+      const scanned = collectExposed();
+      // 주소 공리 A1 의 관측면 — 위반이 있으면 여기서 보인다. 침묵하면 고칠 수 없다.
+      const seen = new Map<string, number>();
+      for (const n of scanned) seen.set(n.address, (seen.get(n.address) ?? 0) + 1);
+      const duplicates = [...seen.entries()]
+        .filter(([, c]) => c > 1)
+        .map(([address, count]) => ({ address, count }));
+      const nodes = scanned.map((n) => {
         if (!withRects) return { address: n.address, nodePath: n.nodePath };
         const r = n.el.getBoundingClientRect();
         return {
@@ -158,7 +190,7 @@ export function registerDomCatalog(): void {
           rect: { x: +r.x.toFixed(2), y: +r.y.toFixed(2), w: +r.width.toFixed(2), h: +r.height.toFixed(2) },
         };
       });
-      return { window: currentWindowLabel(), count: nodes.length, nodes };
+      return { window: currentWindowLabel(), count: nodes.length, duplicates, nodes };
     },
   });
 
@@ -194,12 +226,13 @@ export function registerDomCatalog(): void {
         w: Number((d.rect as { w?: number })?.w ?? 0),
         h: Number((d.rect as { h?: number })?.h ?? 0),
       }),
-    errors: ["NOT_EXPOSED", "INVALID_PARAMS"],
+    errors: ["NOT_EXPOSED", "AMBIGUOUS", "INVALID_PARAMS"],
     examples: ['ui.measure \'{"address":"content/view/soksak-plugin-<id>.<view>/node/send"}\''],
     handler: async (p) => {
       const addr = p.address as string;
-      const el = resolveElement(addr);
-      if (!el) return notExposed(addr);
+      const found = resolveExposed(addr);
+      if (!("el" in found)) return found;
+      const el = found.el;
       const r = el.getBoundingClientRect();
       const cs = getComputedStyle(el);
       const style: Record<string, string> = {
@@ -286,7 +319,7 @@ export function registerDomCatalog(): void {
         h: Number((d.rect as { h?: number })?.h ?? 0),
         dpr: Number(d.dpr ?? 1),
       }),
-    errors: ["NOT_EXPOSED", "INVALID_PARAMS"],
+    errors: ["NOT_EXPOSED", "AMBIGUOUS", "INVALID_PARAMS"],
     examples: ['ui.slot \'{"address":"win/main/content/view/soksak-plugin-<id>.<view>"}\''],
     handler: (p) => {
       const addr = (p.address as string) ?? "";
@@ -449,13 +482,14 @@ export function registerDomCatalog(): void {
     },
     returns: "{ clicked, address, phase? }",
     message: () => tmsg("msg.ui.input.click"),
-    errors: ["NOT_EXPOSED", "INVALID_PARAMS"],
+    errors: ["NOT_EXPOSED", "AMBIGUOUS", "INVALID_PARAMS"],
     danger: "inject",
     examples: ['ui.input.click \'{"address":"win/main/chrome/modal/consent/agree"}\''],
     handler: (p) => {
       const addr = p.address as string;
-      const el = resolveElement(addr);
-      if (!el) return notExposed(addr);
+      const found = resolveExposed(addr);
+      if (!("el" in found)) return found;
+      const el = found.el;
       // 실제 클릭과 등가 시퀀스 — el.click()(click 단발)은 mousedown 기반 요소(사이드바 탭
       // 드래그-선택 등)를 못 누른다. dblclick 커맨드와 동일 패턴의 1라운드.
       // phase 분해: down/up 사이가 계약인 기능(히트 가능성·활성화 이연)은 중간 관찰이
@@ -504,7 +538,7 @@ export function registerDomCatalog(): void {
     },
     returns: "{ key, address, defaultPrevented }",
     message: (d) => tmsg("msg.ui.input.key", { key: String(d.key ?? "") }),
-    errors: ["NOT_EXPOSED", "INVALID_PARAMS"],
+    errors: ["NOT_EXPOSED", "AMBIGUOUS", "INVALID_PARAMS"],
     danger: "inject",
     examples: [
       'ui.input.key \'{"address":"win/main/content/view/x/node/composer-input","key":"r","ctrl":true}\'',
@@ -516,8 +550,9 @@ export function registerDomCatalog(): void {
       if (typeof key !== "string" || key.length === 0) {
         return { ok: false as const, code: "INVALID_PARAMS" as const, message: "key is required" };
       }
-      const el = resolveElement(addr);
-      if (!el) return notExposed(addr);
+      const found = resolveExposed(addr);
+      if (!("el" in found)) return found;
+      const el = found.el;
       const init: KeyboardEventInit = {
         key,
         ctrlKey: p.ctrl === true,
@@ -556,7 +591,7 @@ export function registerDomCatalog(): void {
     },
     returns: "{ address, dividerHover }",
     message: () => tmsg("msg.ui.input.pointer"),
-    errors: ["NOT_EXPOSED"],
+    errors: ["NOT_EXPOSED", "AMBIGUOUS"],
     danger: "inject",
     examples: [
       'ui.input.pointer \'{"address":"win/main/chrome/divider/s1/0"}\'',
@@ -568,8 +603,9 @@ export function registerDomCatalog(): void {
         useDividerHover.getState().set(null);
         return { address: null, dividerHover: useDividerHover.getState().key };
       }
-      const el = resolveElement(addr);
-      if (!el) return notExposed(addr);
+      const found = resolveExposed(addr);
+      if (!("el" in found)) return found;
+      const el = found.el;
       const key = el instanceof HTMLElement ? (el.dataset.dividerKey ?? null) : null;
       if (key != null) useDividerHover.getState().set(key);
       el.dispatchEvent(new PointerEvent("pointerenter", { bubbles: false, composed: true }));
@@ -587,6 +623,84 @@ export function registerDomCatalog(): void {
   //
   // scale: 모든 transition/animation 을 이 배수로 늘린다(:root --motion-scale).
   // hold:  진행 중인 위상을 그 자리에 세운다(animation-play-state: paused + 전이 정지).
+  // 창이 지금 구조적으로 성립하는가 — 사람이 신고한 결함들을 불변식으로 세워 앱이 스스로 답한다.
+  //
+  // 이 결함들은 매번 같은 방식으로 확인해야 하는데, 확인할 때마다 일회성 프로브를 새로 짜면
+  // 다음번에 또 처음부터다. 관측은 명령이어야 한다 — 여기 있는 것이 기준이고, e2e 게이트는
+  // 이 명령을 부르기만 한다.
+  register("ui.verify", {
+    description:
+      "Check this window's structural invariants and report each by name. Answers whether the window is coherent right now: every exposed address resolves to exactly one node, no rail layer is left behind after a travel, no visible slot has collapsed to nothing, and the motion clocks agree. Use after any layout change, and as the assertion in end-to-end gates — a failing check names the invariant and shows the offending addresses.",
+    triggers: { ko: "창 점검 불변식 검증 무결성 주소중복 레일잔존 빈슬롯 자가진단" },
+    params: {},
+    returns: "{ ok, failed, checks: [{ name, ok, detail }] }",
+    message: (d) =>
+      tmsg("msg.ui.verify", {
+        failed: String(d.failed ?? 0),
+        total: String((d.checks as unknown[] | undefined)?.length ?? 0),
+      }),
+    examples: ["ui.verify"],
+    handler: () => {
+      const scanned = collectExposed();
+      const checks: { name: string; ok: boolean; detail: string }[] = [];
+
+      // A1 유일성 — 한 주소가 둘로 풀리면 측정도 클릭도 어디로 갈지 알 수 없다.
+      const seen = new Map<string, number>();
+      for (const n of scanned) seen.set(n.address, (seen.get(n.address) ?? 0) + 1);
+      const dup = [...seen.entries()].filter(([, c]) => c > 1);
+      checks.push({
+        name: "address.unique",
+        ok: dup.length === 0,
+        detail:
+          dup.length === 0
+            ? `${scanned.length}개 주소 모두 유일`
+            : dup.map(([a, c]) => `${a} ×${c}`).join(", "),
+      });
+
+      // 여정이 끝났으면 빠지는 레일은 남아 있지 않다 — 남으면 사이드바가 두 벌로 보인다.
+      const traveling = document.querySelector(".content-body.rail-traveling") != null;
+      const leaving = scanned.filter((n) => n.nodePath === "rail/left/leaving");
+      checks.push({
+        name: "rail.settled",
+        ok: traveling || leaving.length === 0,
+        detail: traveling
+          ? "여정 중 — 판정 보류"
+          : leaving.length === 0
+            ? "잔존 레일 없음"
+            : leaving.map((n) => n.address).join(", "),
+      });
+
+      // 보이는 슬롯은 크기를 가진다 — 0 이면 그 패널은 빈 화면이다.
+      const collapsed = scanned.filter((n) => {
+        if (!n.nodePath.startsWith("layout/slot/")) return false;
+        const r = n.el.getBoundingClientRect();
+        const onScreen =
+          r.right > 0 && r.bottom > 0 && r.left < window.innerWidth && r.top < window.innerHeight;
+        return onScreen && (r.width <= 0 || r.height <= 0);
+      });
+      checks.push({
+        name: "slot.sized",
+        ok: collapsed.length === 0,
+        detail:
+          collapsed.length === 0
+            ? "보이는 슬롯 모두 크기 있음"
+            : collapsed.map((n) => n.address).join(", "),
+      });
+
+      // 화면이 쓰는 시간과 위상이 닫히는 시간은 같다 — 갈라지면 이동 도중에 착지가 선언된다.
+      const wall = railTravelWallMs();
+      const timer = railTravelMs();
+      checks.push({
+        name: "motion.paired",
+        ok: wall === timer,
+        detail: `화면 ${wall}ms / 위상 ${timer}ms`,
+      });
+
+      const failed = checks.filter((c) => !c.ok);
+      return { ok: failed.length === 0, failed: failed.length, checks };
+    },
+  });
+
   register("ui.motion", {
     description:
       "Slow down or freeze layout motion so a transient state can be inspected. scale multiplies every transition/animation duration; hold pauses them in place. Without params it reports the current setting. Transient defects — a surface stranded at its old rect, a pane briefly narrow, a flash on tab return — are invisible to a still capture; this is how you stop time and then read the DOM with ui.tree / ui.measure.",
@@ -667,13 +781,14 @@ export function registerDomCatalog(): void {
     },
     returns: "{ dblclicked, address }",
     message: () => tmsg("msg.ui.input.dblclick"),
-    errors: ["NOT_EXPOSED", "INVALID_PARAMS"],
+    errors: ["NOT_EXPOSED", "AMBIGUOUS", "INVALID_PARAMS"],
     danger: "inject",
     examples: ['ui.input.dblclick \'{"address":"win/main/chrome/tab/left/a.x"}\''],
     handler: (p) => {
       const addr = p.address as string;
-      const el = resolveElement(addr);
-      if (!el) return notExposed(addr);
+      const found = resolveExposed(addr);
+      if (!("el" in found)) return found;
+      const el = found.el;
       const r = el.getBoundingClientRect();
       const x = r.left + r.width / 2;
       const y = r.top + r.height / 2;
@@ -699,15 +814,16 @@ export function registerDomCatalog(): void {
     },
     returns: "{ filled, address }",
     message: () => tmsg("msg.ui.input.fill"),
-    errors: ["NOT_EXPOSED", "INVALID_PARAMS"],
+    errors: ["NOT_EXPOSED", "AMBIGUOUS", "INVALID_PARAMS"],
     danger: "inject",
     examples: [
       'ui.input.fill \'{"address":"win/main/content/view/x/node/url-input","value":"/path/clip.mp4"}\'',
     ],
     handler: (p) => {
       const addr = p.address as string;
-      const el = resolveElement(addr);
-      if (!el) return notExposed(addr);
+      const found = resolveExposed(addr);
+      if (!("el" in found)) return found;
+      const el = found.el;
       // contenteditable 노드 — 인라인 편집면(blur 확정 계약)도 같은 명령으로 채운다.
       // textContent 교체 후 input + focusout(React onBlur 는 focusout 을 듣는다)으로 확정을 유발.
       if (el.isContentEditable) {
@@ -761,7 +877,7 @@ export function registerDomCatalog(): void {
     },
     returns: "{ dragged, from, to?, zone?, dx?, dy?, steps, durationMs }",
     message: (d) => (d.dragged ? tmsg("msg.ui.input.drag.dragged") : tmsg("msg.ui.input.drag.tap")),
-    errors: ["NOT_EXPOSED", "INVALID_PARAMS"],
+    errors: ["NOT_EXPOSED", "AMBIGUOUS", "INVALID_PARAMS"],
     danger: "inject",
     examples: [
       'ui.input.drag \'{"from":"win/main/chrome/tab/left/a.x","to":"win/main/chrome/tab/left/b.y","zone":"center"}\'',
@@ -776,9 +892,9 @@ export function registerDomCatalog(): void {
       if (!Number.isFinite(durationMs) || durationMs < 0 || durationMs > 10_000) {
         return { ok: false as const, code: "INVALID_PARAMS", message: "durationMs는 0..10000이어야 함" };
       }
-      const fromEl = resolveElement(p.from as string);
-      if (!fromEl) return notExposed(p.from as string);
-      const fr = fromEl.getBoundingClientRect();
+      const fromR = resolveExposed(p.from as string);
+      if (!("el" in fromR)) return fromR;
+      const fr = fromR.el.getBoundingClientRect();
       const fromPt = { x: fr.left + fr.width / 2, y: fr.top + fr.height / 2 };
       const byDelta = p.dx != null || p.dy != null;
       let toPt: { x: number; y: number };
@@ -787,9 +903,9 @@ export function registerDomCatalog(): void {
         toPt = { x: fromPt.x + (Number(p.dx) || 0), y: fromPt.y + (Number(p.dy) || 0) };
       } else {
         // 모드 1 — 타겟에 드롭(탭 병합/분할).
-        const toEl = resolveElement(p.to as string);
-        if (!toEl) return notExposed(p.to as string);
-        const tr = toEl.getBoundingClientRect();
+        const toR = resolveExposed(p.to as string);
+        if (!("el" in toR)) return toR;
+        const tr = toR.el.getBoundingClientRect();
         const zone = (p.zone as string) ?? "center";
         const zx = zone === "left" ? 0.08 : zone === "right" ? 0.92 : 0.5;
         const zy = zone === "top" ? 0.12 : zone === "bottom" ? 0.88 : 0.5;
@@ -802,7 +918,7 @@ export function registerDomCatalog(): void {
       const dist = Math.hypot(toPt.x - fromPt.x, toPt.y - fromPt.y);
       // mousedown 은 잡는 요소(divider/탭)에, move/up 은 window 에 — divider 리사이즈는 window 레벨
       // mousemove/mouseup 리스너를 onDividerDown 이 등록하므로 window 로 보내야 받는다.
-      fire("mousedown", fromPt.x, fromPt.y, fromEl);
+      fire("mousedown", fromPt.x, fromPt.y, fromR.el);
       if (dist >= 5) {
         for (let step = 1; step <= steps; step += 1) {
           const progress = step / steps;
@@ -846,19 +962,21 @@ export function registerDomCatalog(): void {
     },
     returns: "{ dropped, from?, to, position }",
     message: () => tmsg("msg.ui.input.dnd"),
-    errors: ["NOT_EXPOSED", "INVALID_PARAMS"],
+    errors: ["NOT_EXPOSED", "AMBIGUOUS", "INVALID_PARAMS"],
     danger: "inject",
     examples: [
       'ui.input.dnd \'{"from":".../node/section/s2","to":".../node/section/s5","position":"after"}\'',
       'ui.input.dnd \'{"to":".../node/img/s2/hero","files":[{"name":"a.png","type":"image/png","base64":"…"}]}\'',
     ],
     handler: async (p) => {
-      const toEl = resolveElement(p.to as string);
-      if (!toEl) return notExposed(p.to as string);
+      const toR = resolveExposed(p.to as string);
+      if (!("el" in toR)) return toR;
+      const toEl = toR.el;
       let fromEl: HTMLElement | null = null;
       if (p.from != null) {
-        fromEl = resolveElement(p.from as string);
-        if (!fromEl) return notExposed(p.from as string);
+        const fromR = resolveExposed(p.from as string);
+        if (!("el" in fromR)) return fromR;
+        fromEl = fromR.el;
       }
       const dt = new DataTransfer();
       if (Array.isArray(p.files)) {

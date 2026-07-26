@@ -80,8 +80,8 @@ DOM 요소는 임의 CSS selector(취약·불명확)가 아니라 **구조적 pa
 진실은 `src/commands/address.ts`:
 
 ```
-호스트 뷰:   win/<label>/proj/<root|alias>/<region>/pane/<idx|active>/view/<pluginId.viewId>/node/<nodePath>
-호스트 크롬:  win/<label>/chrome/<chromePath>
+호스트 뷰:   win/<label>/proj/<root|alias>/<region>/pane/<idx|active>/view/<pluginId.viewId>/inst/<viewId>/node/<nodePath>
+호스트 크롬:  win/<label>/proj/<root|alias>/chrome/<chromePath>
 region ∈ { left | content | right }
 ```
 
@@ -89,15 +89,56 @@ region ∈ { left | content | right }
 워크스페이스 탭(스페이스) 개념이 아니다 — 두 층이 같은 단어를 쓰던 시절의 잔재를
 R1a 의 "스페이스 탭" 표기로 이미 분리했다(주소 트리의 `tab/space/N` 도 동일 구분).
 
-세그먼트는 **안정 식별자**(카운터 id 금지) — root/alias·region·위치인덱스/active·qualifiedViewId·노드path.
-생략 = 활성(win=현재 창, proj=활성, pane=활성). 멱등(재실행 일관)·중복0(계층 유일)·규칙(구조=규칙).
+### 공리 A1 — 유일성
+
+한 창에서 노출된 두 노드는 같은 주소를 가질 수 없다. 주소가 유일하지 않으면 측정도 클릭도
+어디로 가는지 알 수 없고, 그 상태에서 통과한 검증은 아무것도 증명하지 못한다.
+
+유일성을 깨는 축이 둘 있고, 문법이 각각에 자리를 준다.
+
+- **같은 뷰키의 여러 인스턴스** — 브라우저 탭 여러 개처럼 같은 `pluginId.viewId` 가 한 영역에
+  여러 번 마운트된다. `inst/<viewId>` 가 가른다.
+- **프로젝트 평면 전부 마운트** — 세션 유지를 위해 비활성 프로젝트도 화면 밖에 파킹된 채 살아
+  있으므로 그 안의 크롬 노드가 프로젝트마다 한 벌씩 산다. 크롬 경로 앞의 `proj/<id>` 가 가른다.
+
+생략 = 활성(win=현재 창, proj=활성 프로젝트, pane=활성 pane, inst=유일 인스턴스). `ui.tree` 는
+언제나 정본(생략 없는) 주소를 답하고, 생략형은 활성 대상의 별칭으로만 풀린다.
+
+### 공리 A2 — 무추측
+
+주소는 정확히 하나로 풀린다. 0개면 `NOT_EXPOSED`, 둘 이상이면 `AMBIGUOUS`. **어느 하나를 고르지
+않는다.** 예전에는 같은 주소가 여러 요소에 붙는 것을 전제하고 "보이는 것"을 골랐는데, 그 추측은
+둘 다 보이는 순간 무너진다 — 실측(2026-07-26): 패널 6개가 전부 `tab/view/0` 을 써서 클릭이 어느
+패널로 갈지 알 수 없었고, 노출 노드 779개 중 85개가 주소를 공유하고 있었다. 주소가 유일하지
+않다는 것은 주소를 만드는 쪽의 결함이지 고르기로 덮을 일이 아니다.
+
+### 정정 — "카운터 id 금지"의 범위
+
+이 문서는 세그먼트에 카운터 id 를 금지했다. 그 조항의 근거는 재실행 간 값이 달라진다는 것이었고,
+그래서 인스턴스 식별에 **위치 인덱스**를 썼다. 그것이 틀렸다: 위치는 탭을 재배열하는 것만으로
+바뀌므로 카운터 id 보다 **덜** 안정적이고, 같은 pane 안의 두 인스턴스를 구별하지도 못한다.
+
+조항을 좁힌다 — 금지 대상은 **위치를 식별에 쓰는 것**이고, 인스턴스 식별에는 인스턴스 id 를 쓴다
+(`layout/slot/<viewId>` 가 이미 그렇게 하고 있었다). 세션 간 값이 달라지는 성질은 남지만, 주소는
+`ui.tree` 로 발견해 쓰는 것이지 소스에 적어 두는 것이 아니다. 세션을 넘어 안정적이어야 하는 축은
+root/alias·region·qualifiedViewId·노드path 이고, 그것들은 그대로다.
+
+멱등(같은 구조면 같은 주소)·중복0(계층 유일)·규칙(구조=규칙).
 
 요소 노출은 **명시**다: `data-node="<nodePath>"` 속성을 부여한 요소만 주소 트리에 나타난다. 플러그인은
 `contributes.nodes` 로 노드 종류를 선언(동의 화면 표기) 후 `data-node` 로 인스턴스 부여(동적 목록은
 `<id>/<안정키>`). 호스트 크롬은 선언 없이 `data-node`(chrome 경로). 노출 안 된 요소 접근은 `NOT_EXPOSED`.
 
-명령(registry 단일진실): `ui.tree`(노출 주소 트리)·`ui.measure(address)`(rect/style)·`ui.input.click(address)`
-(클릭, danger:inject). `data-pane-id`/`data-group-id`(네이티브 마우스 판정)는 직교한 코어 계약 — 혼동 금지.
+명령(registry 단일진실): `ui.tree`(노출 주소 트리 + `duplicates`)·`ui.measure(address)`(rect/style)·
+`ui.snapshot.dom`(한 순간에 전부 측정)·`ui.input.click(address)`(클릭, danger:inject).
+`data-pane-id`/`data-group-id`(네이티브 마우스 판정)는 직교한 코어 계약 — 혼동 금지.
+
+**`ui.verify` — 창이 지금 성립하는가.** 위 공리를 포함한 구조 불변식을 앱이 스스로 점검해 이름별로
+답한다: `address.unique`(A1)·`rail.settled`(여정 뒤 빠지는 레일이 남지 않는다 — 남으면 사이드바가 두
+벌로 보인다)·`slot.sized`(보이는 슬롯의 크기가 0 이 아니다 — 0 이면 그 패널은 빈 화면이다)·
+`motion.paired`(화면이 쓰는 시간과 위상이 닫히는 시간이 같다). 판정 기준은 스크립트가 아니라 앱
+안에 있고, e2e 게이트(`scripts/e2e/ui-verify.mjs`)는 이 명령을 부르기만 한다 — 기준이 게이트마다
+갈라지지 않는다.
 
 **paneId 역참조 앵커 (대칭성 계약).** 코어가 플러그인에 발급하는 paneId(= 콘텐츠 뷰 인스턴스 id —
 `command.started` 이벤트·`app.ui.statusBarItem({paneId})` 가 발급)는 DOM 에서 역참조 가능해야 한다. 콘텐츠

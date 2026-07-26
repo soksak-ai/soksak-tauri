@@ -20,13 +20,13 @@ function pluginIconOf(pluginId: string, view: string): string | null {
 
 // 탭 파비콘 — 보고된 콘텐츠 아이콘(v.icon)을 그리되, 로드 실패면 매니페스트 아이콘으로 폴백한다.
 // 실패를 숨김(빈칸)으로 두면 진단 불가 + 탭 정렬이 흔들린다. src 가 바뀌면 실패 상태를 리셋.
-function TabFavicon({ idx, src, fallback }: { idx: number; src: string; fallback: React.ReactNode }) {
+function TabFavicon({ viewId, src, fallback }: { viewId: string; src: string; fallback: React.ReactNode }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [src]);
   if (failed) return <>{fallback}</>;
   return (
     <img
-      data-node={`tab/view/${idx}/icon`}
+      data-node={`tab/view/${viewId}/icon`}
       src={src}
       style={{ width: 14, height: 14, borderRadius: 3, objectFit: "contain" }}
       onError={() => setFailed(true)}
@@ -134,11 +134,11 @@ export const ViewTabs = memo(function ViewTabs({
   return (
     <div className="view-tabs-wrap">
       <div className="view-tabs" ref={scrollRef}>
-        {group.views.map((v, idx) => (
+        {group.views.map((v) => (
           <div
             key={v.id}
             className={`view-tab${v.id === group.activeViewId ? " active" : ""}`}
-            data-node={`tab/view/${idx}`}
+            data-node={`tab/view/${v.id}`}
             onMouseDown={(e) => onTabPointerDown(v.id, e)}
             // 더블클릭 = 최대화(컨텐츠 영역 전체) — 헤더가 타이틀로 바뀌고
             // 거기서 더블클릭/버튼으로 복원.
@@ -153,7 +153,7 @@ export const ViewTabs = memo(function ViewTabs({
               ) : v.icon ? (
                 // 콘텐츠 사실 아이콘(파비콘) — setIcon 보고가 있으면 매니페스트 아이콘보다 우선.
                 <TabFavicon
-                  idx={idx}
+                  viewId={v.id}
                   src={v.icon}
                   fallback={pluginIconOf(v.pluginId, v.view) ?? <Icon name="plugin" size="sm" />}
                 />
@@ -173,7 +173,7 @@ export const ViewTabs = memo(function ViewTabs({
             <button
               type="button"
               className="icon-btn icon-btn--mini view-tab-close"
-              data-node={`tab/view/${idx}/close`}
+              data-node={`tab/view/${v.id}/close`}
               title={t("view.close")}
               onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => {

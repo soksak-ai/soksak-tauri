@@ -2662,7 +2662,7 @@ Dispatch a real-click sequence (mousedown → mouseup → click) to an exposed n
 | `phase` | string |  | 'down' = mousedown only; 'up' = mouseup+click only; omit for the full sequence |
 
 **Returns**: { clicked, address, phase? }
-**Errors**: NOT_EXPOSED, INVALID_PARAMS
+**Errors**: NOT_EXPOSED, AMBIGUOUS, INVALID_PARAMS
 
 ```bash
 sok-dev ui.input.click '{"address":"win/main/chrome/modal/consent/agree"}'
@@ -2677,7 +2677,7 @@ Dispatch a double-click (two clicks + a dblclick event) to an exposed node (E2E 
 | `address` | string | ✓ | Exposed node address from ui.tree |
 
 **Returns**: { dblclicked, address }
-**Errors**: NOT_EXPOSED, INVALID_PARAMS
+**Errors**: NOT_EXPOSED, AMBIGUOUS, INVALID_PARAMS
 
 ```bash
 sok-dev ui.input.dblclick '{"address":"win/main/chrome/tab/left/a.x"}'
@@ -2695,7 +2695,7 @@ Synthesize an HTML5 drag-and-drop sequence (dragstart on `from` -> dragenter/dra
 | `to` | string | ✓ | Drop-target node address |
 
 **Returns**: { dropped, from?, to, position }
-**Errors**: NOT_EXPOSED, INVALID_PARAMS
+**Errors**: NOT_EXPOSED, AMBIGUOUS, INVALID_PARAMS
 
 ```bash
 sok-dev ui.input.dnd '{"from":".../node/section/s2","to":".../node/section/s5","position":"after"}'
@@ -2717,7 +2717,7 @@ Drive a pointer drag (mousedown on `from` -> mousemove -> mouseup). Two modes: (
 | `zone` | string |  | center | left | right | top | bottom — point within the target rect (mode 1) (center|left|right|top|bottom) |
 
 **Returns**: { dragged, from, to?, zone?, dx?, dy?, steps, durationMs }
-**Errors**: NOT_EXPOSED, INVALID_PARAMS
+**Errors**: NOT_EXPOSED, AMBIGUOUS, INVALID_PARAMS
 
 ```bash
 sok-dev ui.input.drag '{"from":"win/main/chrome/tab/left/a.x","to":"win/main/chrome/tab/left/b.y","zone":"center"}'
@@ -2734,7 +2734,7 @@ Set the value of an exposed input/textarea node and dispatch input+change events
 | `value` | string | ✓ | Value to set into the field |
 
 **Returns**: { filled, address }
-**Errors**: NOT_EXPOSED, INVALID_PARAMS
+**Errors**: NOT_EXPOSED, AMBIGUOUS, INVALID_PARAMS
 
 ```bash
 sok-dev ui.input.fill '{"address":"win/main/content/view/x/node/url-input","value":"/path/clip.mp4"}'
@@ -2754,11 +2754,27 @@ Dispatch a keydown (and keyup) to an exposed node — the only way to drive keyb
 | `shift` | boolean |  | Shift held |
 
 **Returns**: { key, address, defaultPrevented }
-**Errors**: NOT_EXPOSED, INVALID_PARAMS
+**Errors**: NOT_EXPOSED, AMBIGUOUS, INVALID_PARAMS
 
 ```bash
 sok-dev ui.input.key '{"address":"win/main/content/view/x/node/composer-input","key":"r","ctrl":true}'
 sok-dev ui.input.key '{"address":"…/node/composer-input","key":"ArrowDown"}'
+```
+
+## `ui.input.pointer` (danger: inject)
+
+Drive the pointer the way the OS does: enter/move onto an exposed node, or leave (no address = the pointer is not over us). Hover state that a native child surface can steal — divider highlight — is owned by app state, not CSS :hover, precisely so it can be driven and read back here. Returns the divider-hover key now held, so a test can assert both the arming and the release. | 포인터 이동 hover 강조 진입 이탈 마우스 주입 E2E
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `address` | string |  | Exposed node to move onto. Omit to signal the pointer left us. |
+
+**Returns**: { address, dividerHover }
+**Errors**: NOT_EXPOSED, AMBIGUOUS
+
+```bash
+sok-dev ui.input.pointer '{"address":"win/main/chrome/divider/s1/0"}'
+sok-dev ui.input.pointer   # 이탈(강조 해제)
 ```
 
 ## `ui.intent.open`
@@ -2788,10 +2804,28 @@ Measure an exposed node — its viewport rect (px) and computed style. style alw
 | `screen` | boolean |  | Also return global logical screen coordinates (window inner origin + viewport rect). cx/cy is the node center — pass it directly to an OS-level pointer tool for a real hit-tested click [default false] |
 
 **Returns**: { address, dataset, rect:{x,y,w,h}, style, occlusion?:{ reachable, topTag, topNode }, screen?:{ x, y, cx, cy } } — dataset contains every declared data-* field on the exposed node
-**Errors**: NOT_EXPOSED, INVALID_PARAMS
+**Errors**: NOT_EXPOSED, AMBIGUOUS, INVALID_PARAMS
 
 ```bash
 sok-dev ui.measure '{"address":"content/view/soksak-plugin-<id>.<view>/node/send"}'
+```
+
+## `ui.motion` (danger: inject)
+
+Slow down or freeze layout motion so a transient state can be inspected. scale multiplies every transition/animation duration; hold pauses them in place. Without params it reports the current setting. Transient defects — a surface stranded at its old rect, a pane briefly narrow, a flash on tab return — are invisible to a still capture; this is how you stop time and then read the DOM with ui.tree / ui.measure. | 모션 느리게 정지 일시정지 애니메이션 배속 관측 디버그
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `hold` | boolean |  | Freeze motion in place (true) or resume (false) |
+| `scale` | number |  | Duration multiplier (1 = normal, 20 = twenty times slower) |
+
+**Returns**: { scale, hold, applied, running, rates, wallMs, animations }
+**Errors**: INVALID_PARAMS
+
+```bash
+sok-dev ui.motion '{"scale":20}'   # 20배 느리게
+sok-dev ui.motion '{"hold":true}'  # 그 자리에 정지
+sok-dev ui.motion            # 현재 설정 조회
 ```
 
 ## `ui.projection.pin`
@@ -2850,11 +2884,23 @@ Measure a content view's slot rectangle — the bare host container a view rende
 | `address` | string | ✓ | View container address (win/<label>/<region>/view/<pluginId.viewId>, no node) |
 
 **Returns**: { address, rect:{x,y,w,h}, dpr }
-**Errors**: NOT_EXPOSED, INVALID_PARAMS
+**Errors**: NOT_EXPOSED, AMBIGUOUS, INVALID_PARAMS
 
 ```bash
 sok-dev ui.slot '{"address":"win/main/content/view/soksak-plugin-<id>.<view>"}'
 ```
+
+## `ui.snapshot.dom`
+
+Measure every exposed node in one pass — one consistent instant, not several round trips that drift apart. Returns address, rect, and the requested computed properties for each, so you can read where a line sits, how wide a panel is, and how big its children are, all from the same moment. Pair with ui.motion hold to stop time first. filter narrows by address substring. | 돔 일괄 측정 스냅샷 좌표 폭 한번에 관측 선 위치
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `filter` | string |  | Only addresses containing this substring |
+| `props` | json |  | Extra computed-style property names, e.g. ["backgroundColor","zIndex"] |
+
+**Returns**: { count, nodes: [{ address, nodePath, rect, style? }] }
+**Errors**: INVALID_PARAMS
 
 ## `ui.tree`
 
@@ -2864,7 +2910,7 @@ Return the exposed DOM address tree — absolute addresses of nodes declared via
 |---|---|---|---|
 | `rects` | boolean |  | Include each node's viewport rect {x,y,w,h} (px) [default false] |
 
-**Returns**: { window, count, nodes: [{ address, nodePath, rect? }] }
+**Returns**: { window, count, duplicates, nodes: [{ address, nodePath, rect? }] }
 
 ```bash
 sok-dev ui.tree
@@ -2884,6 +2930,16 @@ Validate the border ownership contract (docs/UI.md §B) against the live DOM. Co
 ```bash
 sok-dev ui.validate
 sok-dev ui.validate '{"rule":"status"}'
+```
+
+## `ui.verify`
+
+Check this window's structural invariants and report each by name. Answers whether the window is coherent right now: every exposed address resolves to exactly one node, no rail layer is left behind after a travel, no visible slot has collapsed to nothing, and the motion clocks agree. Use after any layout change, and as the assertion in end-to-end gates — a failing check names the invariant and shows the offending addresses. | 창 점검 불변식 검증 무결성 주소중복 레일잔존 빈슬롯 자가진단
+
+**Returns**: { ok, failed, checks: [{ name, ok, detail }] }
+
+```bash
+sok-dev ui.verify
 ```
 
 ## `unit.dev.list`
