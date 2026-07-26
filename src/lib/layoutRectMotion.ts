@@ -47,7 +47,7 @@ export function createRectMotionTracker(): RectMotionTracker {
   // 타이밍에 진다(실측: 고정에도 1프레임 진행 동결, 3/10). 정지 중엔 애니메이션을 만들지
   // 않고 옛 rect 를 인라인으로 박아 화면을 세운다. 해제 전이에서 인라인을 걷고 그 자리에서
   // FLIP 을 시작한다(정지 해제 = 활강 시작 — 의미도 정확하다).
-  const frozen = new Map<HTMLElement, { was: Snap }>();
+  const frozen = new Map<HTMLElement, { was: Snap; pin: Animation }>();
   const startFlip = (el: HTMLElement, was: Snap, now: Snap): void => {
     const dx = was.x - now.x;
     const dy = was.y - now.y;
@@ -94,10 +94,11 @@ export function createRectMotionTracker(): RectMotionTracker {
     if (motionDebugState().hold || frozen.size === 0) return;
     for (const [el, f] of [...frozen]) {
       frozen.delete(el);
-      el.style.removeProperty("left");
-      el.style.removeProperty("top");
-      el.style.removeProperty("width");
-      el.style.removeProperty("height");
+      try {
+        f.pin.cancel();
+      } catch {
+        /* 이미 소멸 */
+      }
       if (!el.isConnected) continue;
       const r = el.getBoundingClientRect();
       startFlip(el, f.was, { x: r.x, y: r.y, w: r.width, h: r.height });
@@ -183,16 +184,32 @@ export function createRectMotionTracker(): RectMotionTracker {
           Math.abs(dhq) < 0.5
         )
           continue;
-        // 정지(hold) 중의 변화 — 애니메이션 대신 옛 rect 인라인 동결(위 frozen 머리말).
+        // 정지(hold) 중의 변화 — 옛 rect 를 WAAPI fill:"forwards" 로 고정한다(frozen 머리말).
+        // 인라인 style 고정은 React 가 소유한 style 객체의 후속 재작성에 지워진다(실측:
+        // held-frozen 스킵이 정확히 찍혔는데도 rect 가 최종값으로 점프 — 후속 커밋 유무가
+        // 간헐성의 실체). finished-fill 애니메이션은 인라인 위 계층이라 커밋이 못 지운다.
         if (motionDebugState().hold) {
-          const cs0 = getComputedStyle(el);
-          const L0 = parseFloat(cs0.left) || 0;
-          const T0 = parseFloat(cs0.top) || 0;
-          el.style.left = `${L0 + dxq}px`;
-          el.style.top = `${T0 + dyq}px`;
-          el.style.width = `${now.w + dwq}px`;
-          el.style.height = `${now.h + dhq}px`;
-          if (!frozen.has(el)) frozen.set(el, { was });
+          if (!frozen.has(el)) {
+            const cs0 = getComputedStyle(el);
+            const L0 = parseFloat(cs0.left) || 0;
+            const T0 = parseFloat(cs0.top) || 0;
+            try {
+              const pin = el.animate(
+                [
+                  {
+                    left: `${L0 + dxq}px`,
+                    top: `${T0 + dyq}px`,
+                    width: `${now.w + dwq}px`,
+                    height: `${now.h + dhq}px`,
+                  },
+                ],
+                { duration: 1, fill: "forwards" },
+              );
+              frozen.set(el, { was, pin });
+            } catch {
+              /* 애니메이션 불가 환경 — 동결 없이 즉시 반영 */
+            }
+          }
           noteRectMotionSkip(el.dataset.node ?? el.className, "held-frozen");
           continue;
         }

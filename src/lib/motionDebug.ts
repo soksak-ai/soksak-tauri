@@ -39,6 +39,8 @@ export interface BirthRecord {
   what: string; // transitionProperty | animationName
   declaredMs: number;
   rate: number; // applyMotionTo 직후의 playbackRate — 감속 적용의 직접 증거
+  t: number; // performance.now() — 어느 커밋의 탄생인지 시각으로 가른다(#22 실패 2형 판별)
+  held: boolean; // 탄생 시점의 hold 판독값 — 정지 중 탄생(동결 분기 미탑승)의 직접 증거
 }
 const RECENT_BIRTHS_CAP = 64;
 const recentBirths: BirthRecord[] = [];
@@ -375,7 +377,14 @@ export function installInputObserver(): void {
 
 /** 위상 스킵 사실 — 원장에 남겨 "감속이 안 걸렸다"의 원인을 실측 가능하게 한다(#15 규명). */
 export function noteRectMotionSkip(at: string, why: string): void {
-  recentBirths.push({ at, what: `layout-rect-skipped(${why})`, declaredMs: 0, rate: 1 });
+  recentBirths.push({
+    at,
+    what: `layout-rect-skipped(${why})`,
+    declaredMs: 0,
+    rate: 1,
+    t: typeof performance === "undefined" ? 0 : performance.now(),
+    held: hold,
+  });
   if (recentBirths.length > RECENT_BIRTHS_CAP) recentBirths.shift();
 }
 
@@ -384,7 +393,14 @@ export function noteRectMotionSkip(at: string, why: string): void {
  *  입양시켜야 같은 컨트롤러(배수·정지·원장)를 예외 없이 따른다. */
 export function adoptLayoutAnimation(a: Animation, at: string, declaredMs: number): void {
   births++;
-  recentBirths.push({ at, what: "layout-rect", declaredMs, rate: motionPlaybackRate() });
+  recentBirths.push({
+    at,
+    what: "layout-rect",
+    declaredMs,
+    rate: motionPlaybackRate(),
+    t: typeof performance === "undefined" ? 0 : performance.now(),
+    held: hold,
+  });
   if (recentBirths.length > RECENT_BIRTHS_CAP) recentBirths.shift();
   applyMotionTo(a as unknown as Retimable);
   // 정지 중의 탄생은 0 에서 얼린다 — pause() 는 pending 커밋이라 브라우저가 첫 프레임에서
@@ -459,6 +475,8 @@ function ensureWired(): void {
           "?",
         declaredMs: typeof timing?.duration === "number" ? timing.duration : -1,
         rate: (a as Animation).playbackRate ?? 1,
+        t: typeof performance === "undefined" ? 0 : performance.now(),
+        held: hold,
       });
       if (recentBirths.length > RECENT_BIRTHS_CAP) recentBirths.shift();
     }
