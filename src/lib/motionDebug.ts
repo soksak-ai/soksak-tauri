@@ -12,6 +12,8 @@
 //
 // 이미 도는 것과 앞으로 시작할 것 둘 다 잡아야 한다 — transitionrun/animationstart 가 새로 태어난
 // 애니메이션의 유일한 신호다. 기본값(1배속, 정지 없음)에서는 리스너가 아무것도 만지지 않는다.
+import { invoke } from "@tauri-apps/api/core";
+
 const listeners = new Set<() => void>();
 
 export interface MotionDebugState {
@@ -98,6 +100,74 @@ export interface Retimable {
   currentTime?: number | null;
   pause(): void;
   play(): void;
+}
+
+// ── 모션 여정 원장(journeys) — "어디서 어디로, 끝까지 갔는가"를 시스템이 스스로 기록한다.
+// 사용자 요구(2026-07-27): 이벤트로 모션이 시작되면 from→to 와 완전 종료까지 추적 가능해야
+// 한다. 외부 샘플링(ui.trace)은 창 밖 관측이고, 이 원장은 보간 자신의 자기보고다 —
+// 겹침(두 여정의 경로 교차)·잔상(finish 후 실측이 to 와 다름)을 사건으로 판독한다.
+export interface MotionJourney {
+  at: string; // 노드(data-node)
+  from: { x: number; y: number; w: number; h: number };
+  to: { x: number; y: number; w: number; h: number };
+  startedAt: number; // performance.now()
+  endedAt: number | null; // null = 진행 중
+  end: "finish" | "cancel" | null;
+  landed: { x: number; y: number; w: number; h: number } | null; // 종료 직후 실측 rect
+}
+const JOURNEYS_CAP = 64;
+const journeys: MotionJourney[] = [];
+// 여정을 활동 허브로도 발행 — 캡처(픽셀)보다 로그가 판별력이 높다(사용자 확정 2026-07-27).
+// `sok events --kinds motion.journey` 로 시작·종료가 실시간으로 흐른다. 실패는 삼킨다(관측이
+// 본체를 못 막는다 — boot.step 과 같은 계약).
+function publishJourney(phase: "start" | "end", j: MotionJourney): void {
+  void invoke("activity_publish", {
+        kind: "motion.journey",
+        source: "motion",
+        payload: {
+          phase,
+          at: j.at,
+          from: j.from,
+          to: j.to,
+          end: j.end,
+          landed: j.landed,
+          ms: j.endedAt !== null ? Math.round(j.endedAt - j.startedAt) : null,
+          message: `· motion ${phase} ${j.at}`,
+          origin: "internal",
+        },
+      }).catch(() => {});
+}
+export function motionJourneys(): MotionJourney[] {
+  return [...journeys];
+}
+export function beginJourney(
+  at: string,
+  from: MotionJourney["from"],
+  to: MotionJourney["to"],
+): MotionJourney {
+  const j: MotionJourney = {
+    at,
+    from,
+    to,
+    startedAt: typeof performance === "undefined" ? 0 : performance.now(),
+    endedAt: null,
+    end: null,
+    landed: null,
+  };
+  journeys.push(j);
+  if (journeys.length > JOURNEYS_CAP) journeys.shift();
+  publishJourney("start", j);
+  return j;
+}
+export function endJourney(
+  j: MotionJourney,
+  end: "finish" | "cancel",
+  landed: MotionJourney["landed"],
+): void {
+  j.endedAt = typeof performance === "undefined" ? 0 : performance.now();
+  j.end = end;
+  j.landed = landed;
+  publishJourney("end", j);
 }
 
 /** 위상 스킵 사실 — 원장에 남겨 "감속이 안 걸렸다"의 원인을 실측 가능하게 한다(#15 규명). */

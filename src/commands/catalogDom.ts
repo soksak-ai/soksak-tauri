@@ -14,7 +14,7 @@ import { register } from "./registry";
 import { tmsg } from "../i18n";
 import { viewFocusSnapshot } from "../plugins/viewFocus";
 import { useGutterHover } from "../state/gutterHover";
-import { motionLiveList, motionLiveRates, setMotionDebug, motionRecentBirths } from "../lib/motionDebug";
+import { motionLiveList, motionLiveRates, setMotionDebug, motionRecentBirths, motionJourneys } from "../lib/motionDebug";
 import { railTravelMs, railTravelWallMs } from "../lib/railMotion";
 
 type FocusTraceEntry = {
@@ -745,7 +745,7 @@ export function registerDomCatalog(): void {
       });
       // running·rates 는 결과다 — 설정이 세워졌다는 말이 느려졌다는 말을 대신하지 못한다(실사고:
       // 커스텀 프로퍼티만 두고 소비처가 없어 상태는 20 인데 화면은 그대로였다).
-      return { ...st, ...motionLiveRates(), animations: motionLiveList(), recentBirths: motionRecentBirths() };
+      return { ...st, ...motionLiveRates(), animations: motionLiveList(), recentBirths: motionRecentBirths(), journeys: motionJourneys() };
     },
   });
 
