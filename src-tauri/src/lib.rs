@@ -145,6 +145,7 @@ pub fn run() {
                         hidden.push(wl);
                     }
                 }
+                crate::webview::set_engine_host_hidden(&app, label.clone(), true);
                 if !hidden.is_empty() {
                     crate::activity::publish(
                         &app,
@@ -650,6 +651,8 @@ pub fn run() {
             webview::webview_zoom,
             webview::webview_zoom_view,
             webview::webview_list,
+            webview::engine_host_visible,
+            webview::engine_surface_stats,
             webview::webview_open_window,
             webview::webview_eval,
             webview::webview_inject_script,

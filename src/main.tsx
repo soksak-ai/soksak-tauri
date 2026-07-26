@@ -269,6 +269,9 @@ async function boot(): Promise<void> {
   // 부트 이벤트 버퍼 재생 — 코어 구독자·플러그인 훅이 전부 선 뒤 한 번(FIFO). 이 지점의
   // 전달 시점은 예전 "호스트 → 복원" 순서와 같다 — 유실도, 이른 발화도 없다.
   flushBootPluginEvents();
+  // 엔진 호스트 복귀 — load-start 숨김(재부팅 유령 차단)의 대칭. 플러그인 활성·이벤트
+  // 재생이 끝난 지금이 서피스 상태가 정렬된 첫 시점이다.
+  void bootInvoke("engine_host_visible", { visible: true }).catch(() => {});
   useBootPhase.getState().setPhase("ready");
   bootStamp("boot:done");
   bootDone();

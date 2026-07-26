@@ -26,7 +26,7 @@ export function registerWebviewCatalog(): void {
       "Reconcile this window's state (which views exist) against the browser child webviews actually alive for this window. ghosts = child webviews whose view no longer exists in state — a stale native surface floating over the window (the 'browser over an empty window' mismatch); a non-empty ghosts list is always a defect fact. Judged from the same sources the app itself uses (state store + webview_list), no pixels involved.",
     triggers: { ko: "표면 정합 유령 웹뷰 잔존 브라우저 대조 확인" },
     params: {},
-    returns: "{ window, actual: [label], ghosts: [label], orphans: [label], stateViews }",
+    returns: "{ window, actual: [label], ghosts: [label], orphans: [label], engine: {registered, hostPresent}, stateViews }",
     message: (d) => {
       const bad =
         Number((d.ghosts as string[] | undefined)?.length ?? 0) +
@@ -65,7 +65,12 @@ export function registerWebviewCatalog(): void {
           },
         }).catch(() => {});
       }
-      return { actual: mine, ghosts, orphans, stateViews: viewIds.size };
+      // 엔진(CEF) 축 — WKWebView 목록이 못 보는 표면(실사고: reload 후 이전 브라우저
+      // 프레임 잔존을 "유령 없음"으로 오판). registered = 코어 layer 에 등록된 서피스 수.
+      const engine = await invoke<{ registered: number; hostPresent: boolean }>(
+        "engine_surface_stats",
+      ).catch(() => ({ registered: -1, hostPresent: false }));
+      return { actual: mine, ghosts, orphans, engine, stateViews: viewIds.size };
     },
   });
 

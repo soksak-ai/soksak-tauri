@@ -240,6 +240,20 @@ mod layer {
         }
     }
 
+    // 등록된 엔진 서피스 수 — 관측면(webview.surfaces 의 engine 축)이 읽는다.
+    pub fn surface_count() -> usize {
+        SURFACES.lock().map(|s| s.len()).unwrap_or(0)
+    }
+
+    // 창의 엔진 호스트 컨테이너 포인터(0=미생성) — 재부팅 구간 숨김의 손잡이.
+    pub fn engine_host_ptr(label: &str) -> usize {
+        LAYERS
+            .lock()
+            .ok()
+            .and_then(|m| m.get(label).map(|w| w.host_ptr))
+            .unwrap_or(0)
+    }
+
     type HitTestFn = unsafe extern "C-unwind" fn(*mut AnyObject, Sel, NSPoint) -> *mut AnyObject;
 
     // hitTest: 교체 구현. 클래스(WryWebView) 단위 스위즐이므로 모든 webview 가
@@ -519,6 +533,59 @@ pub(crate) fn unregister_engine_surface(ptr: usize) {
 #[cfg(target_os = "macos")]
 pub(crate) fn layer_ensure_engine_host(label: &str) -> Option<usize> {
     layer::ensure_engine_host(label)
+}
+
+// 엔진 호스트 컨테이너 표시/숨김 — 렌더러 재부팅 구간의 엔진 서피스 유령 차단.
+// WKWebView 는 hide() 로 숨지만 엔진(CEF) 서피스는 코어 layer 의 NSView 라 webview 목록
+// 어디에도 없다(실사고: reload 후 이전 브라우저 프레임이 부트 완료까지 그대로 떠 있음 —
+// 관측 기준이 WKWebView 만 봐서 "없다"고 오판했다). 숨김은 load-start(lib.rs 단일 지점),
+// 복귀는 부트 말미(engine_host_visible — 플러그인 활성·이벤트 재생 후)다.
+#[cfg(target_os = "macos")]
+pub fn set_engine_host_hidden(app: &AppHandle, label: String, hidden: bool) {
+    let app2 = app.clone();
+    let _ = app.clone().run_on_main_thread(move || {
+        let ptr = layer::engine_host_ptr(&label);
+        if ptr == 0 {
+            return;
+        }
+        let view: &objc2_app_kit::NSView = unsafe { &*(ptr as *const objc2_app_kit::NSView) };
+        view.setHidden(hidden);
+        crate::activity::publish(
+            &app2,
+            "webview.lifecycle",
+            "webview",
+            serde_json::json!({
+                "event": if hidden { "engine-host-hidden" } else { "engine-host-shown" },
+                "label": label,
+                "origin": "internal",
+                "message": format!("· engine host {}", if hidden { "hidden" } else { "shown" }),
+            }),
+        );
+    });
+}
+
+// 부트 말미의 엔진 호스트 복귀(재부팅 숨김의 대칭 해제). 창 자동 주입(MW2).
+#[tauri::command]
+pub fn engine_host_visible(app: AppHandle, window: tauri::Window, visible: bool) {
+    #[cfg(target_os = "macos")]
+    set_engine_host_hidden(&app, window.label().to_string(), !visible);
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app, window, visible);
+}
+
+// 엔진 서피스 관측 — webview.surfaces 의 engine 축(WKWebView 목록이 못 보는 표면).
+#[tauri::command]
+pub fn engine_surface_stats(window: tauri::Window) -> serde_json::Value {
+    #[cfg(target_os = "macos")]
+    return serde_json::json!({
+        "registered": layer::surface_count(),
+        "hostPresent": layer::engine_host_ptr(window.label()) != 0,
+    });
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = window;
+        serde_json::json!({ "registered": 0, "hostPresent": false })
+    }
 }
 
 // 오버레이(모달/메뉴/드롭다운) 상태 동기화 — 프론트 ui 스토어 카운터가 0↔1 을
