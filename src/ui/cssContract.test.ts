@@ -249,6 +249,7 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
     ".pane-status-item", // 상태바 플러그인 항목 칩(claude-GUI 의 "gui" 등) — 폐곡선 윤곽
     ".notify-banner", // 인앱 알림 배너 카드 + 액션 버튼(-action) — 폐곡선 윤곽
     ".webview-health-badge", // webview 복구 소진 배지 카드 + 버튼 — 폐곡선 윤곽(notify-banner 동형)
+    ".boot-phase", // 부트 위상 배지(복원·플러그인 준비 진행 표시) — 폐곡선 pill 윤곽(webview-health-badge 동형)
     ".root-missing-banner", // root 부재 격하 배너(B1) — 배너 카드 윤곽(notify-banner 동형)
     ".motion-debug", // 모션 관측 패널 카드(개발 전용) — 폐곡선 윤곽(경계면 아님)
     ".motion-debug button", // 그 패널의 배속·정지 버튼 — 폐곡선 윤곽

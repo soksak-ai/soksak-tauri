@@ -11,6 +11,7 @@ import {
 import { formatAddress } from "../commands/address";
 import { viewHostAnchors } from "../plugins/viewHostAnchors";
 import { useSessions } from "../state/sessions";
+import { useBootPhase } from "../state/bootPhase";
 import { useT } from "../i18n";
 
 // memo 경계(원칙 2).
@@ -72,9 +73,16 @@ export const FileViewerHost = memo(function FileViewerHost({
     };
   }, [reg, path, projectId, root, viewId, setFileDirty]);
 
+  // 부트 위상 — ready 전의 미등록은 "부재"가 아니라 "아직"이다(PluginViewHost 와 같은 계약).
+  // "뷰 없음" 류 표시는 오류로 읽힌다 — 정말 문제일 때(활성화가 끝났는데도 미등록)만 보인다.
+  const bootPhase = useBootPhase((s) => s.phase);
   // 매칭 뷰어 없음(파일 뷰어 플러그인 미설치/비활성) → 빈 상태 안내. 에러는 겹쳐 표시.
   const overlay = !reg ? (
-    <div className="plugin-empty">{t("plugin.view.missing")}</div>
+    bootPhase !== "ready" ? (
+      <div className="plugin-loading">{t("plugin.view.loading")}</div>
+    ) : (
+      <div className="plugin-empty">{t("plugin.view.missing")}</div>
+    )
   ) : error ? (
     <div className="plugin-error">
       <div className="plugin-error-title">{t("plugin.view.error")}</div>

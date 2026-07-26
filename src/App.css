@@ -4302,6 +4302,49 @@ select.dctl {
 
 /* webview 복구 소진 배지(App WebviewHealthBadges) — 비차단 오버레이(하단 우측).
    notifications 와 동형의 fixed 스택 — 다이얼로그 금지 계약(webview_health)의 사람 표면. */
+/* 부트 위상 배지 — 우하단 은은한 진행 표시(ready 가 되면 사라진다). 눈에 띄지 않게:
+   작은 글씨·반투명·그림자 없음. 뷰 자리 플레이스홀더(.plugin-loading)와 같은 사실을 말한다. */
+.boot-phase {
+  position: fixed;
+  bottom: 34px;
+  right: 12px;
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: color-mix(in srgb, var(--card) 82%, transparent);
+  color: var(--fg-dim, var(--fg));
+  border: 1px solid var(--bd);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 11px;
+  opacity: 0.75;
+  pointer-events: none;
+}
+.boot-phase-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--acc);
+  animation: boot-phase-pulse 1.2s ease-in-out infinite;
+}
+@keyframes boot-phase-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+/* 뷰 자리 로딩 — 미등록이지만 부트가 아직이다(빈칸이 아니라 "곧 온다"). plugin-empty 와
+   같은 자리·다른 사실. */
+.plugin-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--fg-dim, var(--fg));
+  font-size: 12px;
+  opacity: 0.55;
+  animation: boot-phase-pulse 1.6s ease-in-out infinite;
+}
+
 .webview-health-badges {
   position: fixed;
   bottom: 34px;

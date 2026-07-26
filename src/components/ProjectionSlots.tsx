@@ -12,6 +12,7 @@ import { findViewById, useSessions, viewDisplayTitle } from "../state/sessions";
 import { useSettings } from "../state/settings";
 import { useViewRegistry, getRegisteredView } from "../plugins/viewRegistry";
 import { usePlugins } from "../state/plugins";
+import { useBootPhase } from "../state/bootPhase";
 import { useContractSelection } from "../state/contractSelection";
 import { localize, useT } from "../i18n";
 
@@ -30,6 +31,7 @@ export const ProjectionSlots = memo(function ProjectionSlots({
   commitProjection?: boolean;
 }) {
   const t = useT();
+  const bootPhase = useBootPhase((st) => st.phase);
   // 해소 입력 전부를 구독 — 활성 체인(sessions)·등록(viewRegistry)·핀(projection)·활성 플러그인.
   const tab = useSessions((s) => s.projects.find((x) => x.id === projectId));
   const regVersion = useViewRegistry((s) => s.version);
@@ -176,9 +178,15 @@ export const ProjectionSlots = memo(function ProjectionSlots({
       })}
       {degraded.map((s, i) => (
         <div key={`deg-${i}`} className="projection projection-degraded" data-node={`projection/${side}/degraded`}>
-          {s.source === "undeclared"
-            ? t("projection.degraded.undeclared")
-            : t("projection.degraded.unresolved")}
+          {
+            // 부트 미완의 미해소는 "아직"이지 결함이 아니다 — 오류로 읽히는 문구는 정말
+            // 문제일 때(활성화 완료 후에도 미해소)만 보인다(PluginViewHost 3상과 같은 계약).
+            bootPhase !== "ready"
+              ? t("plugin.view.loading")
+              : s.source === "undeclared"
+                ? t("projection.degraded.undeclared")
+                : t("projection.degraded.unresolved")
+          }
         </div>
       ))}
     </div>

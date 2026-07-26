@@ -59,6 +59,7 @@ import { PluginHeaderActions } from "./ui/PluginHeaderActions";
 import { useUi } from "./state/ui";
 import { useGutterHover } from "./state/gutterHover";
 import { useT } from "./i18n";
+import { useBootPhase } from "./state/bootPhase";
 import {
   allGroups,
   cwdTabOf as resolveCwdTab,
@@ -638,6 +639,20 @@ function BuildBadge() {
 // 한 child 의 크래시가 전체를 모달로 막지 못하게 한다. "다시 불러오기" = webview.recover
 // 와 동일 코어 경로(브레이커 reset + 제자리 reload). recovering/closed 전이가 오면 그
 // label 의 배지를 걷는다(정상 복귀·복구 재개 모두 배지 사유 소멸).
+// 부트 위상 배지 — 복원·플러그인 준비가 진행 중임을 창 구석에 은은히 알린다(빈칸 착각 방지).
+// ready 가 되면 사라진다. 클릭 불가·비차단(pointer-events 없음).
+function BootPhaseBadge() {
+  const phase = useBootPhase((s) => s.phase);
+  const t = useT();
+  if (phase === "ready") return null;
+  return (
+    <div className="boot-phase" data-node="boot-phase">
+      <span className="boot-phase-dot" />
+      {phase === "restoring" ? t("boot.restoring") : t("boot.activating")}
+    </div>
+  );
+}
+
 function WebviewHealthBadges() {
   const t = useT();
   // 배지는 사용자 표면 — raw label(b-<창>-<viewId>) 대신 탭 표시명으로 해소한다
@@ -1339,6 +1354,8 @@ function App() {
       <NotifyHost />
       {/* webview 복구 소진 배지(비차단) — 코어 webview_health 전이 구독. */}
       <WebviewHealthBadges />
+      {/* 부트 위상(복원·플러그인 준비) — ready 전 은은한 진행 표시. */}
+      <BootPhaseBadge />
     </div>
   );
 }
