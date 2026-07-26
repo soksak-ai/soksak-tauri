@@ -111,7 +111,9 @@ async function main() {
     term = ids.find((id) => id.startsWith("terminal-")) ?? term;
     // 전 엔진 순회 — 한 엔진만 보고 통과 판정하지 않는다(사용자 규칙: 전 축 GREEN 이어야
     // OK). native(WKWebView)·chromium(CEF)·offscreen 각각이 자기 실패 모드를 가진다.
-    browsers = ids.filter((id) => id.startsWith("browser-"));
+    // 프로그램 id 는 접두사 규약이 아니다 — native 는 "browser"(정확일치)다. 접두사만
+    // 걸러 native 를 조용히 빼먹은 것이 관측 실패였다(빈공간 결함이 스위트 밖에 있었다).
+    browsers = ids.filter((id) => id === "browser" || id.startsWith("browser-"));
     if (!term || browsers.length === 0) await sleep(500);
   }
   ok(!!term && browsers.length > 0, `programs (${term}; ${browsers.join(", ")})`);
