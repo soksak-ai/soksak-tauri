@@ -251,6 +251,33 @@ mod layer {
         SURFACES.lock().map(|s| s.iter().copied().collect()).unwrap_or_default()
     }
 
+    // 창의 살아있는 등록 서피스 실측 — SURFACES(포인터 집합)를 직접 순회하면 파괴와
+    // 해제 relay 사이의 틈에 죽은 포인터로 msg_send 가 나간다(실사고: engine_surface_stats
+    // 의 NSView::window() 에서 SIGTRAP — use-after-free 앱 즉사). 순회의 원천은 창의
+    // live subview 트리다: 존재하는 뷰만 만지고, SURFACES 는 멤버십 판정에만 쓴다
+    // (hit_test 의 "형제 순회가 live subview 만 본다" 원리와 동일). 메인 스레드 전용.
+    pub fn live_registered_views(ns_window_ptr: usize) -> Vec<usize> {
+        let mut out = Vec::new();
+        let Ok(set) = SURFACES.lock() else { return out };
+        if ns_window_ptr == 0 {
+            return out;
+        }
+        let ns_window: &objc2_app_kit::NSWindow =
+            unsafe { &*(ns_window_ptr as *const objc2_app_kit::NSWindow) };
+        let Some(content) = ns_window.contentView() else { return out };
+        fn walk(v: &objc2_app_kit::NSView, set: &std::collections::HashSet<usize>, out: &mut Vec<usize>) {
+            for sub in v.subviews().iter() {
+                let ptr = &*sub as *const objc2_app_kit::NSView as usize;
+                if set.contains(&ptr) {
+                    out.push(ptr);
+                }
+                walk(&sub, set, out);
+            }
+        }
+        walk(&content, &set, &mut out);
+        out
+    }
+
     // 창의 엔진 호스트 컨테이너 포인터(0=미생성) — 재부팅 구간 숨김의 손잡이.
     pub fn engine_host_ptr(label: &str) -> usize {
         LAYERS
@@ -609,17 +636,11 @@ pub async fn engine_surface_stats(app: AppHandle, window: tauri::Window) -> serd
             // 자기 화면 기준으로 판정하던 오염(실사고: 브라우저 없는 창에서 misplaced ×2,
             // holes 0)을 스코프로 막는다. 남의 창 것은 숫자만 남긴다(숨기지 않는다).
             let mut surfaces = Vec::new();
-            let mut other_windows = 0usize;
-            for ptr in layer::surface_ptrs() {
+            let live = layer::live_registered_views(ns_win);
+            let other_windows = layer::surface_count().saturating_sub(live.len());
+            for ptr in live {
                 let v: &objc2_app_kit::NSView = unsafe { &*(ptr as *const objc2_app_kit::NSView) };
-                let owner = v
-                    .window()
-                    .map(|w| objc2::rc::Retained::as_ptr(&w) as usize)
-                    .unwrap_or(0);
-                if ns_win != 0 && owner != ns_win {
-                    other_windows += 1;
-                    continue;
-                }
+                let _ = ns_win; // 소속은 live 순회(이 창 트리)가 이미 보장한다
                 let f = v.frame();
                 surfaces.push(serde_json::json!({
                     "ptr": ptr,
