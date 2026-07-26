@@ -151,15 +151,15 @@ async function main() {
   try {
   // 픽스처 루트의 영속 상태는 지난 실행이 남긴 것이다 — 패널이 없는 스페이스로 복원될 수
   // 있으므로(중단된 실행의 잔재) 쓸 수 있는 평면을 보장한다. 멱등: 이미 패널이 있으면 무동작.
-  const panels = await rpc("panel.list", {}, win);
-  if (!panels.ok || !(panels.data?.panels ?? []).length) {
+  const panels = await rpc("pane.list", {}, win);
+  if (!panels.ok || !(panels.data?.panes ?? []).length) {
     const made = await rpc("space.create", {}, win);
     if (!made.ok) throw new Error(`스페이스 생성 실패: ${made.message}`);
     await sleep(400);
   }
-  const bv = await rpc("view.open", { program: ENGINE }, win);
-  if (!bv.ok) throw new Error(`browser view.open 실패: ${bv.message}`);
-  const browserView = bv.data?.viewId;
+  const bv = await rpc("tab.open", { program: ENGINE }, win);
+  if (!bv.ok) throw new Error(`browser tab.open 실패: ${bv.message}`);
+  const browserView = bv.data?.tabId;
   // 명시 URL 항행 + 로드 신원 검증 — 기본 홈페이지에 기대지 않는다. 픽셀 판정은 "알려진
   // 페이지가 실제로 로드됐다"가 전제될 때만 의미가 있다(빈 페이지를 빈 페이지 하한으로
   // 통과시키는 검사는 검사가 아니다).
@@ -189,9 +189,9 @@ async function main() {
     const ids = (progs.data?.programs ?? []).map((p) => p.id);
     return ids.find((id) => id.startsWith("terminal-")) ?? null;
   });
-  const tv = await rpc("panel.split", { side: "right", program: termProgram }, win);
-  if (!tv.ok) throw new Error(`panel.split 실패: ${tv.message}`);
-  const termView = tv.data?.viewId;
+  const tv = await rpc("pane.split", { side: "right", program: termProgram }, win);
+  if (!tv.ok) throw new Error(`pane.split 실패: ${tv.message}`);
+  const termView = tv.data?.tabId;
   if (!termView) throw new Error(`분할이 뷰를 만들지 못함: ${JSON.stringify(tv.data)}`);
   // 분할 응답은 착지한 배치를 싣는다 — 변경 직후 퍼즐이 이미 풀려 있다는 계약.
   assert(
@@ -216,7 +216,7 @@ async function main() {
 
   // 1) 정착 선캡처 — 청정(스팟) 슬롯만 구워진다(dim 슬롯 skip 정책). 분할 직후엔 터미널이
   // 활성이라 브라우저 슬롯이 dim — 실사용처럼 브라우저를 먼저 활성해 스팟 상태에서 기다린다.
-  await rpc("view.activate", { view: browserView }, win);
+  await rpc("tab.activate", { tab: browserView }, win);
   // 존재만 보면 아무것도 증명하지 못한다 — 분할 전에 구운 스냅(454px)이 분할 후(221px) 슬롯에
   // 남아 있어도 이 게이트는 통과했고, 그 낡은 크기가 모든 여정의 활강 전제를 거부해 그리드가
   // 통째로 순간이동했다(실측 freezeGlide=no:size:221x449!=454x449). 엔진의 판정을 직접 읽는다.
@@ -235,9 +235,9 @@ async function main() {
   );
 
   // 2) 동결 사이클 — 교차 활성이 move 위상을 태우고, 착지에서 해동돼 있어야 한다.
-  await rpc("view.activate", { view: termView }, win);
+  await rpc("tab.activate", { tab: termView }, win);
   await sleep(700);
-  await rpc("view.activate", { view: browserView }, win);
+  await rpc("tab.activate", { tab: browserView }, win);
   const cycled = await pollUntil("동결 사이클(freeze=0)", 10000, async () => {
     const d = await measure();
     return d?.dataset?.freeze === "0" ? d : null;
@@ -249,7 +249,7 @@ async function main() {
   //      옛 자리의 픽셀이 보인다(핸드오프 §8 경고). 위상 한복판에 슬롯 중심을 히트해 최상단이
   //      동결 프레임인지 직접 확인한다.
   {
-    await rpc("view.activate", { view: browserView }, win);
+    await rpc("tab.activate", { tab: browserView }, win);
     await sleep(900);
     const r0 = (await measure())?.rect;
     const standinRect = async () => {
@@ -260,7 +260,7 @@ async function main() {
       );
       return m.ok ? m.data.rect : null;
     };
-    await rpc("view.activate", { view: termView }, win);
+    await rpc("tab.activate", { tab: termView }, win);
     let covered = null;
     for (let i = 0; i < 10 && covered === null; i++) {
       const st = await standinRect();
@@ -318,13 +318,13 @@ async function main() {
   // 단일 사이클이 아니라 반복 사이클 뒤에 판정한다 — hide→show 를 여러 번 겪은 WKWebView 가
   // 뷰어빌리티를 잃고 빈 레이어로 잠드는 회귀(실사고)는 반복 후에만 드러난다.
   for (let i = 0; i < 3; i++) {
-    await rpc("view.activate", { view: termView }, win);
+    await rpc("tab.activate", { tab: termView }, win);
     await sleep(500);
-    await rpc("view.activate", { view: browserView }, win);
+    await rpc("tab.activate", { tab: browserView }, win);
     await sleep(700);
   }
   const focusedLen = await slotShot();
-  await rpc("view.activate", { view: termView }, win);
+  await rpc("tab.activate", { tab: termView }, win);
   await sleep(600);
   const unfocusedLen = await slotShot();
   const alive = await rpc(`plugin.${ENGINE_PLUGIN}.dom.text`, { selector: "h1" }, win);
@@ -349,7 +349,7 @@ async function main() {
     if (r0) {
       const cx = Math.round(r0.x + r0.w / 2);
       const cy = Math.round(r0.y + r0.h / 2);
-      await rpc("view.activate", { view: browserView }, win);
+      await rpc("tab.activate", { tab: browserView }, win);
       await sleep(400);
       // pane 스타일은 테마 소유(설정 축 아님) — 현재 활성 스타일 하에서 단언한다.
       // 계약은 스타일 무관("홀은 표면 종류의 사실")이므로 어떤 테마에서 돌아도 유효하다.
@@ -366,7 +366,7 @@ async function main() {
   // 6) 해 == 관측 — layout.arrangement 가 답한 셀 rect 가 실측 슬롯 rect 와 같은가.
   //    소수점까지 본다(정수로 자르면 소수 변화가 숨는다).
   {
-    await rpc("view.activate", { view: browserView }, win);
+    await rpc("tab.activate", { tab: browserView }, win);
     await sleep(600);
     const solved = await rpc("layout.arrangement", {}, win);
     const cells = solved.data?.cells ?? [];
@@ -387,7 +387,7 @@ async function main() {
     };
     const b0 = await rectOf(browserView);
     const t0r = await rectOf(termView);
-    await rpc("view.activate", { view: termView }, win);
+    await rpc("tab.activate", { tab: termView }, win);
     await sleep(900); // 340ms 주행 + 착지 스냅 여유
     const b1 = await rectOf(browserView);
     const t1r = await rectOf(termView);
@@ -421,10 +421,10 @@ async function main() {
         const row = (r.data?.views ?? []).find((v) => v.viewId === browserView);
         return row ? Number(row.sends) : -1;
       };
-      await rpc("view.activate", { view: browserView }, win);
+      await rpc("tab.activate", { tab: browserView }, win);
       await sleep(900);
       const s0 = await sendsOf();
-      await rpc("view.activate", { view: termView }, win);
+      await rpc("tab.activate", { tab: termView }, win);
       await sleep(120); // 위상 한복판(340ms 주행 중)
       const sMid = await sendsOf();
       await sleep(1200); // 착지 + 정착
@@ -463,7 +463,7 @@ async function main() {
         return best?.x ?? null;
       };
       const c1 = await childX(b1.w);
-      await rpc("view.activate", { view: browserView }, win);
+      await rpc("tab.activate", { tab: browserView }, win);
       await sleep(900);
       const b2 = await rectOf(browserView);
       const c2 = await childX(b2.w);
@@ -485,7 +485,7 @@ async function main() {
   //      좌·우 경계가 슬롯의 그것과 같은 자리인지 절대값으로 잰다(가로는 오프셋이 없어야
   //      한다 — 세로만 플러그인 크롬 높이만큼 다르다).
   if (ENGINE_SURFACE === "native") {
-    await rpc("view.activate", { view: browserView }, win);
+    await rpc("tab.activate", { tab: browserView }, win);
     await sleep(1100);
     const slot = (await measure())?.rect;
     const h = await rpc("window.layers", {}, win);
@@ -516,7 +516,7 @@ async function main() {
   //      표면이므로 두 자리가 각자 투영 표면을 들고 있어야 한다 — 도착 자리가 빈 채로 열리면
   //      그것이 "새것으로 교체"로 보인다. 주행 한복판에 투영 프레임 수와 x 를 직접 센다.
   {
-    await rpc("view.activate", { view: browserView }, win);
+    await rpc("tab.activate", { tab: browserView }, win);
     await sleep(900);
     const places = async () => {
       const t = await rpc("ui.tree", {}, win);
@@ -537,7 +537,7 @@ async function main() {
       };
     };
     const resting = await places();
-    await rpc("view.activate", { view: termView }, win);
+    await rpc("tab.activate", { tab: termView }, win);
     let during = { standing: 0, leaving: 0, surfaces: 0 };
     for (let i = 0; i < 8; i++) {
       const now = await places();
@@ -563,16 +563,16 @@ async function main() {
   //     [위 1 / 아래 2] 를 만들고 아래 뒷쪽을 포커스하면, 그 패널이 앞으로 스위칭되고
   //     해가 만들어진 인접(switched)을 보고해야 한다(점선 봉합의 근거).
   {
-    await rpc("view.activate", { view: termView }, win);
-    const below = await rpc("panel.split", { side: "bottom", program: termProgram }, win);
+    await rpc("tab.activate", { tab: termView }, win);
+    const below = await rpc("pane.split", { side: "bottom", program: termProgram }, win);
     if (below.ok) {
-      const rear = await rpc("panel.split", { side: "right", program: termProgram }, win);
-      if (rear.ok && rear.data?.viewId) {
-        await rpc("view.activate", { view: rear.data.viewId }, win);
+      const rear = await rpc("pane.split", { side: "right", program: termProgram }, win);
+      if (rear.ok && rear.data?.tabId) {
+        await rpc("tab.activate", { tab: rear.data.tabId }, win);
         await sleep(700);
         const solved = await rpc("layout.arrangement", {}, win);
         const cells = solved.data?.cells ?? [];
-        const focusedLeft = cells.find((c) => c.id === rear.data.panelId)?.rect?.left;
+        const focusedLeft = cells.find((c) => c.id === rear.data.paneId)?.rect?.left;
         assert(
           "행 불일치 스위칭 — 뒷쪽 포커스가 앞으로 서고 해가 그것을 보고한다",
           solved.data?.switched === true &&
@@ -596,7 +596,7 @@ async function main() {
       process.env.SLOT_FREEZE_MOTION_DIR || path.join(os.tmpdir(), "slot-freeze-motion");
     await rpc("window.focus", {}, win);
     await sleep(500);
-    await rpc("view.activate", { view: browserView }, win);
+    await rpc("tab.activate", { tab: browserView }, win);
     await sleep(900);
     // 카메라를 먼저 돌리고 위상을 태운다 — 한 연결로는 불가능하다(녹화가 프레임 수만큼 응답을
     // 붙잡는다). 위상을 먼저 태우고 녹화하면 카메라 준비 지연만큼 앞이 잘려 이미 정착한 화면만
@@ -607,7 +607,7 @@ async function main() {
     // (실측 프레임 간격 ~108ms, 첫 프레임 지연 ~500ms). 짧게 기다리면 위상이 카메라보다
     // 앞서 끝나 꼬리만 남는다.
     await sleep(800);
-    await rpc("view.activate", { view: termView }, win);
+    await rpc("tab.activate", { tab: termView }, win);
     const done = await rec;
     cam.close();
     console.log(`  모션 프레임: ${done.data?.frames ?? "?"}장 → ${done.data?.dir ?? dir}`);
@@ -619,8 +619,8 @@ async function main() {
   //    표면이 온전히 렌더되는지는 사람이 픽셀로 확인해야 하는 사실이다(R3).
   if (process.env.SLOT_FREEZE_SHOTS) {
     const dir = process.env.SLOT_FREEZE_SHOTS_DIR || path.join(os.tmpdir(), "slot-freeze-shots");
-    for (const [name, view] of [["browser-focus", browserView], ["terminal-focus", termView]]) {
-      await rpc("view.activate", { view }, win);
+    for (const [name, tab] of [["browser-focus", browserView], ["terminal-focus", termView]]) {
+      await rpc("tab.activate", { tab }, win);
       await sleep(900);
       const shot = await rpc("window.snapshot", { path: path.join(dir, `${name}.png`) }, win);
       console.log(`  캡처 ${name}: ${shot.ok ? shot.media?.path ?? shot.data?.media?.path : shot.message}`);

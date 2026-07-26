@@ -165,7 +165,7 @@ assert enabled, f"픽스처 활성화 실패: {e}"
 time.sleep(2)
 
 before = webcontent_pids()
-v = rpc("view.open", {"program": "e2esurface"}, window=WIN)
+v = rpc("tab.open", {"program": "e2esurface"}, window=WIN)
 assert v.get("ok"), f"표면 뷰 열기 실패: {v}"
 time.sleep(5)
 after = webcontent_pids()

@@ -101,9 +101,10 @@ async function main() {
   await connect();
   console.log("캡처 E2E\n마커:", MARKER);
 
-  // 콘텐츠 영역에 마커색 브라우저 뷰(네이티브 child webview)
-  const opened = await rpc("browser.open", { url: MARKER, where: "panel" });
-  ok(opened.ok, `browser.open(마커) → view ${opened.viewId}`);
+  // 콘텐츠 영역에 마커색 브라우저 탭(네이티브 child webview) — 답은 봉투다(사실은 data 안).
+  const opened = await rpc("plugin.soksak-plugin-browser-native.open", { url: MARKER });
+  const openedTab = opened.data?.viewId ?? null;
+  ok(opened.ok, `browser open(마커) → tab ${openedTab}`);
   await sleep(1500); // 페이지 로드 + 컴포지트
 
   const shot = "/tmp/soksak-capture-test.png";
@@ -116,8 +117,8 @@ async function main() {
   console.log(`  중앙 픽셀 rgb(${px.r},${px.g},${px.b}) @ ${px.w}x${px.h}`);
   ok(isRed, "콘텐츠(브라우저 child webview)가 캡처에 포함됨 = 마커색");
 
-  // 정리: 마커 브라우저 뷰 닫기
-  if (opened.viewId) await rpc("view.close", { view: opened.viewId }).catch(() => {});
+  // 정리: 마커 브라우저 탭 닫기
+  if (openedTab) await rpc("tab.close", { tab: openedTab }).catch(() => {});
 
   console.log(`\n결과: ${pass} pass / ${fail} fail`);
   sock.end();

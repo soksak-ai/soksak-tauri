@@ -178,13 +178,13 @@ async function surfaceBoundsOf(c, window, plugin, viewId) {
   return null;
 }
 
-/** 이 뷰를 소유한 플러그인 — 상태에 적혀 있는 사실이다. 짐작하지 않는다. */
-async function ownerPluginOf(c, window, viewId) {
+/** 이 탭을 소유한 플러그인 — 상태에 적혀 있는 사실이다. 짐작하지 않는다. */
+async function ownerPluginOf(c, window, tabId) {
   const tree = (await c.rpc("state.tree", {}, window)).data;
   for (const p of tree?.projects ?? []) {
     for (const sp of p.spaces ?? []) {
-      for (const pan of sp.panels ?? []) {
-        for (const v of pan.views ?? []) if (v.id === viewId) return v.plugin ?? null;
+      for (const pan of sp.panes ?? []) {
+        for (const v of pan.tabs ?? []) if (v.id === tabId) return v.plugin ?? null;
       }
     }
   }
@@ -210,30 +210,30 @@ async function main() {
       const tree = (await c.rpc("state.tree", {}, window)).data;
       for (const p of tree?.projects ?? []) {
         for (const sp of p.spaces ?? []) {
-          for (const pan of sp.panels ?? []) panel ??= pan.id;
+          for (const pan of sp.panes ?? []) panel ??= pan.id;
         }
       }
       if (!panel) await sleep(500);
     }
-    if (!panel) throw new Error("패널 준비 타임아웃");
+    if (!panel) throw new Error("칸 준비 타임아웃");
 
     for (const engine of ENGINES) {
       const out = { engine, viewId: null, rect: null, unique: 0, rendered: false, note: "" };
       try {
-        const o = must(await c.rpc("view.open", { panel, program: engine }, window), `view.open ${engine}`);
-        out.viewId = o.viewId;
+        const o = must(await c.rpc("tab.open", { pane: panel, program: engine }, window), `tab.open ${engine}`);
+        out.viewId = o.tabId;
         out.mounted = o.mounted === true;
-        openedViews.push(o.viewId);
-        // view.open 은 쓸 수 있는 뷰를 답한다 — 아니라고 답했으면 그 사실을 그대로 들고 간다.
-        if (!out.mounted) throw new Error("view.open 이 mounted:false 로 답함(뷰가 제때 안 떴다)");
-        await c.rpc("view.activate", { view: o.viewId }, window);
-        // 이 뷰를 누가 소유하는지는 물어보면 답이 있다 — 엔진 셋에 다 쏘고 실패를 버리면
+        openedViews.push(o.tabId);
+        // tab.open 은 쓸 수 있는 탭을 답한다 — 아니라고 답했으면 그 사실을 그대로 들고 간다.
+        if (!out.mounted) throw new Error("tab.open 이 mounted:false 로 답함(탭이 제때 안 떴다)");
+        await c.rpc("tab.activate", { tab: o.tabId }, window);
+        // 이 탭을 누가 소유하는지는 물어보면 답이 있다 — 엔진 셋에 다 쏘고 실패를 버리면
         // 안 된다(실측: 활동 로그에 NO_VIEW 가 남았다. 뷰가 없는 플러그인에 지시가 간 것이다).
-        // navigate 는 viewId 를 받으므로 "활성 뷰가 맞겠지"라는 짐작도 필요 없다.
-        const owner = await ownerPluginOf(c, window, o.viewId);
-        if (!owner) throw new Error(`뷰 ${o.viewId} 의 소유 플러그인을 못 찾음`);
+        // navigate 는 viewId 를 받으므로 "활성 탭이 맞겠지"라는 짐작도 필요 없다.
+        const owner = await ownerPluginOf(c, window, o.tabId);
+        if (!owner) throw new Error(`탭 ${o.tabId} 의 소유 플러그인을 못 찾음`);
         must(
-          await c.rpc(`plugin.${owner}.navigate`, { url: URL, viewId: o.viewId }, window),
+          await c.rpc(`plugin.${owner}.navigate`, { url: URL, viewId: o.tabId }, window),
           `navigate ${owner}`,
         );
         await sleep(SETTLE_MS);
@@ -284,8 +284,8 @@ async function main() {
     // 때마다 같은 창에 브라우저 뷰가 3개씩 쌓여 18개가 됐다).
     if (window) {
       for (const v of openedViews) {
-        const r = await c.rpc("view.close", { view: v }, window).catch((e) => ({ ok: false, message: String(e) }));
-        if (r?.ok !== true) reclaimErrors.push(`view.close ${v}: ${JSON.stringify(r)?.slice(0, 120)}`);
+        const r = await c.rpc("tab.close", { tab: v }, window).catch((e) => ({ ok: false, message: String(e) }));
+        if (r?.ok !== true) reclaimErrors.push(`tab.close ${v}: ${JSON.stringify(r)?.slice(0, 120)}`);
       }
       // 회수 경로는 둘이고, 어느 쪽인지는 그 창이 무엇을 담고 있는가로 갈린다.
       //  - 픽스처 프로젝트만 담긴 창 → 창을 닫는다. 그 창은 우리 잔재다.

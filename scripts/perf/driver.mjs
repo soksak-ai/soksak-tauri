@@ -102,17 +102,6 @@ function findPerfProject(tree) {
   return (tree.projects ?? []).find((p) => p.alias === ALIAS || p.title === ALIAS);
 }
 
-// content.layout 트리에서 split 노드들을 수집한다.
-// 노드 형식: { split: { id, dir, sizes }, children: [...] } | { panel: "gN" }
-function collectSplits(node, out = []) {
-  if (!node || typeof node !== "object") return out;
-  if (node.split) {
-    out.push(node);
-    for (const c of node.children ?? []) collectSplits(c, out);
-  }
-  return out;
-}
-
 // ── setup: 멱등 레이아웃 ────────────────────────────────────────────────────
 // 좌(터미널) | 우상(파일 에디터) / 우하(브라우저 about:blank) + 보조 터미널 뷰.
 async function setup(sock, repoRoot) {
@@ -137,57 +126,57 @@ async function setup(sock, repoRoot) {
     "project.open",
   );
   const project = created.projectId;
-  const gLeft = created.panelId;
+  const gLeft = created.paneId;
 
   // 우측 컬럼: 파일 에디터.
   const right = must(
-    await rpc(sock, "panel.split", {
+    await rpc(sock, "pane.split", {
       project,
-      group: gLeft,
+      pane: gLeft,
       side: "right",
       program: "terminal-xterm",
     }),
-    "panel.split right",
+    "pane.split right",
   );
-  const gRight = right.panelId;
+  const gRight = right.paneId;
 
-  // 우상단 패널에 파일 에디터 열기(스크롤 시나리오 대상 — 충분히 긴 파일).
-  // editor.open 은 활성 그룹에 열리므로 먼저 gRight 를 활성화한다.
-  must(await rpc(sock, "panel.focus", { group: gRight }), "panel.focus gRight");
+  // 우상단 칸에 파일 뷰 열기(스크롤 시나리오 대상 — 충분히 긴 파일).
+  // ui.intent.open 은 활성 칸에 열리므로 먼저 gRight 를 활성화한다.
+  must(await rpc(sock, "pane.activate", { pane: gRight }), "pane.activate gRight");
   must(
-    await rpc(sock, "editor.open", {
+    await rpc(sock, "ui.intent.open", {
       project,
       path: `${repoRoot}/src/App.css`,
     }),
-    "editor.open",
+    "ui.intent.open",
   );
 
   // 우하단: 브라우저(about:blank — 네트워크 노이즈 제거).
   const bottom = must(
-    await rpc(sock, "panel.split", {
+    await rpc(sock, "pane.split", {
       project,
-      group: gRight,
+      pane: gRight,
       side: "bottom",
       program: "terminal-xterm",
     }),
-    "panel.split bottom",
+    "pane.split bottom",
   );
-  const gBrowser = bottom.panelId;
+  const gBrowser = bottom.paneId;
   const browserView = must(
-    await rpc(sock, "view.open", {
-      group: gBrowser,
+    await rpc(sock, "tab.open", {
+      pane: gBrowser,
       program: "browser",
     }),
-    "view.open browser",
+    "tab.open browser",
   );
-  // 네비게이션은 브라우저 플러그인 커맨드로 분리되어 있다(view.open 은 program 만 받음).
-  // view.open 반환 시점에 브라우저 뷰 마운트·등록이 끝나지 않을 수 있어 유한 재시도.
+  // 네비게이션은 브라우저 플러그인 커맨드로 분리되어 있다(tab.open 은 program 만 받음).
+  // tab.open 은 마운트까지 기다려 답하지만 플러그인 내부 등록은 늦을 수 있어 유한 재시도.
   {
     let nav;
     for (let i = 0; i < 20; i++) {
       nav = await rpc(sock, "plugin.soksak-plugin-browser-native.navigate", {
         url: "about:blank",
-        viewId: browserView.viewId,
+        viewId: browserView.tabId,
       });
       if (nav?.ok === true) break;
       await new Promise((r) => setTimeout(r, 100));
@@ -198,29 +187,24 @@ async function setup(sock, repoRoot) {
   // s2 용: 이동해도 그룹이 해체되지 않도록 우상단에 보조 터미널 뷰 1개 추가,
   // 그 뷰를 왕복 이동 대상으로 쓴다.
   const mover = must(
-    await rpc(sock, "view.open", { group: gRight, program: "terminal-xterm" }),
-    "view.open mover",
+    await rpc(sock, "tab.open", { pane: gRight, program: "terminal-xterm" }),
+    "tab.open mover",
   );
 
-  // 분할 id 수집(루트 row 분할 = s1 대상).
+  // s1 대상 골 = 좌|우 경계(gLeft 의 right 모서리). 내부 split 은 실체가 아니라
+  // id 가 없다(IDENTITY §4) — 골은 pane 모서리로 부른다.
   const tree1 = await getTree(sock);
   const proj = findPerfProject(tree1);
   if (!proj) throw new Error("setup 후 perf-harness 프로젝트를 찾지 못함");
   const space = proj.spaces.find((c) => c.active) ?? proj.spaces[0];
-  const splits = collectSplits(space.layout);
-  if (splits.length === 0) throw new Error("분할 노드 없음");
-  // 루트 분할(트리 최상단) = 좌|우 경계.
-  const rootSplit = splits[0];
 
   const ids = {
     project,
     spaceId: space.id,
-    rootSplitId: rootSplit.split.id,
-    rootSizes: rootSplit.split.sizes ?? [0.5, 0.5],
     gLeft,
     gRight,
     gBrowser,
-    moverViewId: mover.viewId,
+    moverTabId: mover.tabId,
   };
   console.log(JSON.stringify(ids));
 }
@@ -263,9 +247,9 @@ async function storm(sock, seconds, hz, makeCall, label) {
   );
 }
 
-// ── s1: 디바이더 리사이즈 스톰 ──────────────────────────────────────────────
+// ── s1: 골 리사이즈 스톰 ────────────────────────────────────────────────────
 // 실제 드래그와 동일 경로: resizeSplit 스토어 쓰기 → 렌더 → 슬롯 크기 변경 →
-// 터미널 ResizeObserver → fit + PTY IPC. sizes 를 사인파로 진동.
+// 터미널 ResizeObserver → fit + PTY IPC. 좌|우 골(gLeft/right)의 ratio 를 사인파로 진동.
 async function s1(sock, ids, seconds, hz) {
   await storm(
     sock,
@@ -273,19 +257,21 @@ async function s1(sock, ids, seconds, hz) {
     hz,
     (t) => {
       const a = 0.5 + 0.2 * Math.sin(t * Math.PI * 2 * 0.5); // 0.3~0.7, 0.5Hz 왕복
-      return rpc(sock, "panel.resize", {
+      return rpc(sock, "pane.resize", {
         project: ids.project,
-        split: ids.rootSplitId,
-        sizes: [a, 1 - a],
+        pane: ids.gLeft,
+        edge: "right",
+        ratio: a,
       });
     },
     "s1",
   );
   // 원위치.
-  await rpc(sock, "panel.resize", {
+  await rpc(sock, "pane.resize", {
     project: ids.project,
-    split: ids.rootSplitId,
-    sizes: [0.5, 0.5],
+    pane: ids.gLeft,
+    edge: "right",
+    ratio: 0.5,
   });
 }
 
@@ -298,12 +284,12 @@ async function s2(sock, ids, seconds, hz) {
   let at = ids.gRight;
   while (Date.now() - t0 < seconds * 1000) {
     const dst = at === ids.gRight ? ids.gBrowser : ids.gRight;
-    const r = await rpc(sock, "view.move", {
-      view: ids.moverViewId,
+    const r = await rpc(sock, "tab.move", {
+      tab: ids.moverTabId,
       dst,
       zone: "center",
     });
-    if (r.ok !== true) throw new Error(`view.move 실패: ${JSON.stringify(r)}`);
+    if (r.ok !== true) throw new Error(`tab.move 실패: ${JSON.stringify(r)}`);
     at = dst;
     n++;
     const next = t0 + n * period - Date.now();
@@ -476,24 +462,24 @@ async function setupT(sock) {
     "project.open",
   );
   const created = openedRaw.data ?? openedRaw;
-  // 라우팅은 root 만 넘기므로(빈 스페이스 부트) 터미널 뷰는 아래서 view.open 으로 연다.
+  // 라우팅은 root 만 넘기므로(빈 스페이스 부트) 터미널 탭은 아래서 tab.open 으로 연다.
   const window = created.routedWindow ?? created.existingWindow ?? null;
   if (!window) throw new Error(`제어판 라우팅 실패(routedWindow 없음): ${JSON.stringify(created)}`);
 
   // 새 창 부팅(웹뷰 로드+플러그인 활성화) 대기 — 부팅 준비 확인 한정 유한 재시도
   // (측정 경로 아님. 준비 신호가 하니스에 push 로 노출되면 대체한다).
-  let termViewId = created.viewId ?? null;
+  let termViewId = created.tabId ?? null;
   let project = created.projectId ?? null;
-  let panelId = created.panelId ?? null;
+  let panelId = created.paneId ?? null;
   for (let i = 0; i < 120 && !termViewId; i++) {
     const tree = await getTree(sock, window ?? undefined).catch(() => null);
     if (tree) {
       for (const proj of tree.projects ?? []) {
         for (const space of proj.spaces ?? [])
-          for (const p of space.panels ?? []) {
+          for (const p of space.panes ?? []) {
             project ??= proj.id;
             panelId ??= p.id;
-            for (const v of p.views ?? [])
+            for (const v of p.tabs ?? [])
               if (v.plugin === "soksak-plugin-terminal-xterm" || v.kind === "terminal") {
                 termViewId = v.id;
                 project = proj.id;
@@ -505,12 +491,12 @@ async function setupT(sock) {
         // 실패할 수 있어 부팅 재시도 루프 안에서 시도한다.
         const opened = await rpc(
           sock,
-          "view.open",
-          { panel: panelId, program: "terminal-xterm" },
+          "tab.open",
+          { pane: panelId, program: "terminal-xterm" },
           window ?? undefined,
         );
         const od = opened.data ?? opened;
-        if (opened.ok === true && od.viewId) termViewId = od.viewId;
+        if (opened.ok === true && od.tabId) termViewId = od.tabId;
       }
     }
     if (!termViewId) await sleep(500);
@@ -520,7 +506,7 @@ async function setupT(sock) {
   // 셸 프롬프트 준비 대기(위와 같은 부팅 한정 재시도).
   let ready = false;
   for (let i = 0; i < 60; i++) {
-    const r = await rpc(sock, "term.read", { pane: termViewId }, window ?? undefined);
+    const r = await rpc(sock, "term.read", { tab: termViewId }, window ?? undefined);
     if (r.ok === true && /\S/.test((r.data ?? r).text ?? "")) {
       ready = true;
       break;
@@ -543,7 +529,7 @@ async function t1(sock, ids, kind, mb) {
   try {
     const before = await perfStats(sock, ids);
     must(
-      await rpc(sock, "term.exec", { pane: ids.termViewId, cmd: `cat ${file}` }, ids.window),
+      await rpc(sock, "term.exec", { tab: ids.termViewId, cmd: `cat ${file}` }, ids.window),
       "term.exec",
     );
     const started = await ev.next(
@@ -666,7 +652,7 @@ try {
   } else if (cmd === "teardown-t") {
     await teardownT(sock);
   } else if (cmd === "ping") {
-    // RTT 진단: state.tree(읽기) vs panel.resize(쓰기+렌더) 라운드트립 분리 측정.
+    // RTT 진단: state.tree(읽기) vs pane.resize(쓰기+렌더) 라운드트립 분리 측정.
     const n = Number(rest[0] ?? 10);
     const t = [];
     for (let i = 0; i < n; i++) {

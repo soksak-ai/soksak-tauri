@@ -182,21 +182,21 @@ wa = r_wa.get("label"); wb = r_wb.get("label")
 assert wa and wb, f"창 생성 실패 — wa={r_wa} wb={r_wb}"
 ok(f"창 2개 생성({wa},{wb} — 임시 root, 사용자 워크스페이스 무접촉)")
 
-va_n = rpc("view.open", {"program": "browser"}, wa).get("viewId"); time.sleep(2)
+va_n = rpc("tab.open", {"program": "browser"}, wa).get("tabId"); time.sleep(2)
 assert nav(wa, "soksak-plugin-browser-native", "https://example.com"), "WA native nav 실패"
-va_c = rpc("view.open", {"program": "browser-chromium"}, wa).get("viewId"); time.sleep(3)
+va_c = rpc("tab.open", {"program": "browser-chromium"}, wa).get("tabId"); time.sleep(3)
 assert nav(wa, "soksak-plugin-browser-chromium", "https://example.org"), "WA chromium nav 실패"
-vb_n = rpc("view.open", {"program": "browser"}, wb).get("viewId"); time.sleep(2)
+vb_n = rpc("tab.open", {"program": "browser"}, wb).get("tabId"); time.sleep(2)
 assert nav(wb, "soksak-plugin-browser-native", "https://example.net"), "WB native nav 실패"
 ok(f"브라우저 3개(native×2+chromium×1) 탐색 완료")
 time.sleep(3)
 
 # ── 2. 종료 전: 창을 오가며 각 브라우저 렌더 확인 ────────────────────────────
-rpc("window.focus", {"label": wa}); rpc("view.activate", {"view": va_c}, wa); time.sleep(2)
+rpc("window.focus", {"label": wa}); rpc("tab.activate", {"tab": va_c}, wa); time.sleep(2)
 render_check(wa, "종료전 WA chromium(example.org)", save="pre-wa-chromium")
-rpc("view.activate", {"view": va_n}, wa); time.sleep(2)
+rpc("tab.activate", {"tab": va_n}, wa); time.sleep(2)
 render_check(wa, "종료전 WA native(example.com)", save="pre-wa-native")
-rpc("window.focus", {"label": wb}); rpc("view.activate", {"view": vb_n}, wb); time.sleep(2)
+rpc("window.focus", {"label": wb}); rpc("tab.activate", {"tab": vb_n}, wb); time.sleep(2)
 render_check(wb, "종료전 WB native(example.net)", save="pre-wb-native")
 # 종료 시 활성: WA=native(→ chromium 은 복원 시 cold 승격 경로 검증), WB=native.
 rpc("window.focus", {"label": wa}); time.sleep(1.5)  # 자동저장 디바운스 정착
@@ -210,11 +210,11 @@ else: ng(f"복원: 창 리스폰 실패(현재 {labs})"); sys.exit_code = 1
 time.sleep(4)  # 각 창 부트·hydration 정착
 
 # ── 4. 복원 후: 창을 오가며 각 브라우저 렌더 확인 ────────────────────────────
-rpc("window.focus", {"label": wa}); rpc("view.activate", {"view": va_n}, wa); time.sleep(5)
+rpc("window.focus", {"label": wa}); rpc("tab.activate", {"tab": va_n}, wa); time.sleep(5)
 render_check(wa, "복원후 WA native(example.com)", save="post-wa-native")
-rpc("view.activate", {"view": va_c}, wa); time.sleep(9)  # cold 승격+CEF 첫 페인트
+rpc("tab.activate", {"tab": va_c}, wa); time.sleep(9)  # cold 승격+CEF 첫 페인트
 render_check(wa, "복원후 WA chromium(example.org) — cold 승격", save="post-wa-chromium")
-rpc("window.focus", {"label": wb}); rpc("view.activate", {"view": vb_n}, wb); time.sleep(5)
+rpc("window.focus", {"label": wb}); rpc("tab.activate", {"tab": vb_n}, wb); time.sleep(5)
 render_check(wb, "복원후 WB native(example.net)", save="post-wb-native")
 rpc("window.focus", {"label": wa}); time.sleep(1)
 render_check(wa, "복원후 재왕래 WA(chromium 유지)", save="post-wa-back")

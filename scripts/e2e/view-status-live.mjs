@@ -158,7 +158,7 @@ async function main() {
   // ── b. mount the configured content views ──────────────────────────────────
   console.log("\nb. mount content views");
   const state = data(await rpc("state.tree", {}, w));
-  const firstPanel = state.projects?.[0]?.spaces?.[0]?.panels?.[0]?.id;
+  const firstPanel = state.projects?.[0]?.spaces?.[0]?.panes?.[0]?.id;
   const mountedPlugins = new Set();
   let split = false;
   for (const { program, plugin } of MOUNTS) {
@@ -166,15 +166,15 @@ async function main() {
       console.log(`  – ${program} not in program.list — skipped (plugin not active)`);
       continue;
     }
-    // First view fills the empty panel; the rest split beside it so every view is visible
-    // in one capture. Both paths land the view in the sessions content layout.
+    // First tab fills the empty pane; the rest split beside it so every view is visible
+    // in one capture. Both paths land the tab in the sessions layout.
     const res = data(
       split
-        ? await rpc("panel.split", { panel: firstPanel, side: "right", program }, w)
-        : await rpc("view.open", { panel: firstPanel, program }, w),
+        ? await rpc("pane.split", { pane: firstPanel, side: "right", program }, w)
+        : await rpc("tab.open", { pane: firstPanel, program }, w),
     );
     split = true;
-    ok(!!res.viewId, `mounted ${program} (view ${res.viewId})`);
+    ok(!!res.tabId, `mounted ${program} (tab ${res.tabId})`);
     mountedPlugins.add(plugin);
   }
   ok(mountedPlugins.size >= 2, `at least two content views mounted (${mountedPlugins.size})`);

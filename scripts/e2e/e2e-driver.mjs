@@ -110,26 +110,19 @@ function findProj(tree) {
 function activeProj(tree) {
   return (tree.projects ?? []).find((p) => p.active) ?? null;
 }
-function collectSplits(node, out = []) {
-  if (!node || typeof node !== "object") return out;
-  if (node.split) {
-    out.push(node);
-    for (const c of node.children ?? []) collectSplits(c, out);
-  }
-  return out;
-}
 function panesOf(proj) {
-  const content = proj.spaces.find((c) => c.active) ?? proj.spaces[0];
-  return (content.panels ?? []).map((g) => {
-    const v = (g.views ?? []).find((x) => x.kind === "terminal") ?? g.views?.[0];
-    return { panel: g.id, view: v?.id, pane: v?.focusedPaneId ?? v?.id };
+  const space = proj.spaces.find((c) => c.active) ?? proj.spaces[0];
+  return (space.panes ?? []).map((g) => {
+    const v = (g.tabs ?? []).find((x) => x.kind === "terminal") ?? g.tabs?.[0];
+    return { pane: g.id, tab: v?.id, term: v?.focusedPaneId ?? v?.id };
   });
 }
-function splitId(proj) {
-  const content = proj.spaces.find((c) => c.active) ?? proj.spaces[0];
-  const s = collectSplits(content.layout);
-  if (!s.length) throw new Error("분할 노드 없음");
-  return s[0].split.id;
+// s1 스톰의 골 = 첫 pane 의 right 모서리. 내부 split 은 실체가 아니라 id 가 없다(IDENTITY §4).
+function firstPaneId(proj) {
+  const space = proj.spaces.find((c) => c.active) ?? proj.spaces[0];
+  const id = space.panes?.[0]?.id;
+  if (!id) throw new Error("pane 없음");
+  return id;
 }
 
 // 전용 워크스페이스 창을 확보한다 — 잔재(이전 실행) 정리 후 RESIZE_ROOT 로 새 창을 열고
@@ -178,13 +171,13 @@ async function setup(sock, _repoRoot) {
   );
   const project = created.projectId;
   must(
-    await rpc(sock, "panel.split", {
+    await rpc(sock, "pane.split", {
       project,
-      panel: created.panelId,
+      pane: created.paneId,
       side: "right",
       program: "terminal",
     }),
-    "panel.split right",
+    "pane.split right",
   );
 
   const tree1 = await getTree(sock);
@@ -202,49 +195,49 @@ async function setup(sock, _repoRoot) {
       window: WIN,
       project,
       spaceId: content.id,
-      rootSplitId: splitId(proj),
-      paneLeft: panes[0]?.pane,
-      paneRight: panes[1]?.pane,
+      gutterPane: firstPaneId(proj),
+      paneLeft: panes[0]?.term,
+      paneRight: panes[1]?.term,
     }),
   );
 }
 
-async function prep(sock, pane, marker) {
+async function prep(sock, tab, marker) {
   const cmd =
     `precmd_functions=() 2>/dev/null; precmd(){ : ;} 2>/dev/null; ` +
     `PROMPT_COMMAND=''; PS1='${marker}'; PROMPT='${marker}'; ` +
     `clear; for i in $(seq 1 80); do echo "E2E row $i ABCDEFGH IJKLMNOP QRSTUVWX 0123456789 pad"; done`;
-  must(await rpc(sock, "term.exec", { pane, cmd }), "prep term.exec");
+  must(await rpc(sock, "term.exec", { tab, cmd }), "prep term.exec");
 }
 
-async function prepTui(sock, pane) {
+async function prepTui(sock, tab) {
   const script = path.join(HERE, "tui-probe.sh");
-  must(await rpc(sock, "term.exec", { pane, cmd: `clear; bash ${script}` }), "prep-tui");
+  must(await rpc(sock, "term.exec", { tab, cmd: `clear; bash ${script}` }), "prep-tui");
 }
 
-async function read(sock, pane, lines) {
-  const r = must(await rpc(sock, "term.read", { pane, lines }), "term.read");
+async function read(sock, tab, lines) {
+  const r = must(await rpc(sock, "term.read", { tab, lines }), "term.read");
   process.stdout.write(r.text ?? "");
 }
 
 // 현재 $COLUMNS — 자기검증(리사이즈가 실제로 fit/PTY 를 구동했는가)용. 마커는
 // 호출별 고유(pid)여야 한다 — 버퍼에 남은 옛 마커를 잘못 잡는 것을 막는다.
-async function cols(sock, pane) {
+async function cols(sock, tab) {
   const marker = `COLS_${process.pid}_`;
-  must(await rpc(sock, "term.exec", { pane, cmd: `echo ${marker}$COLUMNS` }), "cols exec");
+  must(await rpc(sock, "term.exec", { tab, cmd: `echo ${marker}$COLUMNS` }), "cols exec");
   await sleep(350);
-  const r = must(await rpc(sock, "term.read", { pane, lines: 4 }), "cols read");
+  const r = must(await rpc(sock, "term.read", { tab, lines: 4 }), "cols read");
   const m = (r.text ?? "").match(new RegExp(`${marker}(\\d+)`));
   console.log(m ? m[1] : "-1");
 }
 
-// panel.resize 스톰: lo~hi 사이를 삼각파로 진동(실제 빠른 드래그와 동일 경로).
+// pane.resize 스톰: lo~hi 사이를 삼각파로 진동(실제 빠른 드래그와 동일 경로).
 // 응답을 기다리지 않고 정확한 주기로 발사 — mousemove 폭주와 동형.
 async function storm(sock, lo, hi, seconds, hz) {
   const tree = await getTree(sock);
   const proj = findProj(tree);
   if (!proj) throw new Error("프로젝트 없음");
-  const sid = splitId(proj);
+  const gpane = firstPaneId(proj);
   const t0 = Date.now();
   let sent = 0,
     inFlight = 0,
@@ -258,7 +251,7 @@ async function storm(sock, lo, hi, seconds, hz) {
       const ph = (t * 4) % 2; // 0.5Hz 왕복
       const a = lo + span * (ph < 1 ? ph : 2 - ph);
       inFlight++;
-      rpc(sock, "panel.resize", { project: proj.id, split: sid, sizes: [a, 1 - a] })
+      rpc(sock, "pane.resize", { project: proj.id, pane: gpane, edge: "right", ratio: a })
         .then((r) => {
           if (r.ok !== true && !firstErr) firstErr = r;
         })
@@ -273,7 +266,7 @@ async function storm(sock, lo, hi, seconds, hz) {
   }
   while (inFlight > 0) await sleep(20);
   // 시작=끝(net-zero): 0.5 로 복귀.
-  await rpc(sock, "panel.resize", { project: proj.id, split: sid, sizes: [0.5, 0.5] });
+  await rpc(sock, "pane.resize", { project: proj.id, pane: gpane, edge: "right", ratio: 0.5 });
   if (firstErr) throw new Error(`storm 실패: ${JSON.stringify(firstErr)}`);
   console.error(`storm: ${sent} calls, ${(sent / seconds).toFixed(0)}Hz`);
 }
@@ -283,12 +276,13 @@ async function resize(sock, fracLeft) {
   const proj = findProj(tree);
   if (!proj) throw new Error("프로젝트 없음");
   must(
-    await rpc(sock, "panel.resize", {
+    await rpc(sock, "pane.resize", {
       project: proj.id,
-      split: splitId(proj),
-      sizes: [fracLeft, 1 - fracLeft],
+      pane: firstPaneId(proj),
+      edge: "right",
+      ratio: fracLeft,
     }),
-    "panel.resize",
+    "pane.resize",
   );
   await sleep(450);
 }

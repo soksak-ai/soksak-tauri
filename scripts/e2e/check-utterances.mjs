@@ -6,7 +6,9 @@
 //
 // 이건 lexical 게이트(싸고 결정적). 실제 모델 라우팅(특히 ja·negative)은 Tier2(실모델) 몫.
 //
-// 사용: E2E_IDENTITY=dev node scripts/e2e/check-utterances.mjs [--sok <path>]
+// 사용: E2E_IDENTITY=dev node scripts/e2e/check-utterances.mjs [--sok <path>] [--window <label>]
+// 플러그인 명령은 창-로컬이다 — 창 미지정이면 제어판(main)으로 라우팅돼 plugin.* 이 안 보인다
+// (실측: main 26 vs 워크스페이스 창 508). 미지정 시 window.list 에서 w-* 창을 찾아 쓴다.
 
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -20,15 +22,27 @@ const SOK =
     ? process.argv[sokArg + 1]
     : join(here, "../../src-tauri/target/release/sok");
 const ENV = process.env.E2E_IDENTITY || "dev";
+const winArg = process.argv.indexOf("--window");
+
+function firstWorkspaceWindow() {
+  const out = execFileSync(SOK, ["window.list"], { env: process.env, encoding: "utf8" });
+  const d = JSON.parse(out);
+  const labels = d.data?.labels ?? [];
+  const w = labels.find((l) => String(l).startsWith("w-"));
+  if (!w) throw new Error("워크스페이스 창(w-*) 없음 — 플러그인 명령을 검사할 수 없다");
+  return w;
+}
 
 function sokCommands() {
-  const out = execFileSync(SOK, ["commands"], {
+  const win = winArg !== -1 ? process.argv[winArg + 1] : firstWorkspaceWindow();
+  const out = execFileSync(SOK, ["--window", win, "commands"], {
     env: process.env,
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
   });
   const d = JSON.parse(out);
-  const list = Array.isArray(d) ? d : d.commands || [];
+  // 답은 봉투다 — 사실은 data 안(MESSAGE-PROTOCOL).
+  const list = Array.isArray(d) ? d : d.data?.commands || d.commands || [];
   const byName = new Map();
   for (const c of list) byName.set(c.name, c);
   return byName;
