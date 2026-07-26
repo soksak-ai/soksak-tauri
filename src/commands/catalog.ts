@@ -36,6 +36,7 @@ import {
 } from "../plugins/viewFocus";
 import { useSettings } from "../state/settings";
 import { applyWindowZoom } from "../lib/zoomIntent";
+import { currentWindowLabel } from "../lib/webviewLabels";
 import { useViewLabels } from "../state/viewLabels";
 import { useBookmarks } from "../state/bookmarks";
 import { useTheme } from "../state/theme";
@@ -469,7 +470,31 @@ function serializeTree() {
 
 // ── 파라미터 조각(재사용) ────────────────────────────────────────────────────
 
+/**
+ * 창 축의 해소 — 네 명령이 같은 모양을 쓴다.
+ *
+ * 모양이 명령마다 다르면 "생략 = 지금 대상"이 어디선가 빠진다(실측: window.close 만 빠져
+ * 인자 누락으로 죽었다). 해소를 한 함수로 두면 그 규칙이 코드에서 성립한다 — 테스트가
+ * 사후에 잡아내는 것과 다르다.
+ */
+function windowTarget(p: Record<string, unknown>): string {
+  return typeof p.label === "string" && p.label ? p.label : currentWindowLabel();
+}
+
 const P = {
+  /**
+   * 창 축 — 봉투(--window)가 이미 대상을 지목하므로 생략이 기본이다.
+   *
+   * 정의를 한 곳에 두는 이유: 명령마다 따로 적으면 뜻과 기본값이 갈라진다. 실측 결함 —
+   * window.close 만 label 을 사실상 필수로 요구해, 자기 창에 대고 부른 close 가 인자 누락으로
+   * 죽었고 e2e 는 실행할 때마다 뷰를 쌓았다. 창 축은 필수가 될 수 없다(windowAxis.test).
+   *
+   * 웹뷰 축(webview.recover 의 label = b-<win>-<view>)은 다른 식별자 공간이라 이 규칙 밖이다.
+   */
+  windowLabel: {
+    type: "string",
+    description: "Window label (omit = the addressed window; see window.list)",
+  },
   project: {
     type: "string",
     description: "Target project id (omit = caller's context project)",
@@ -2312,15 +2337,17 @@ export function registerCatalog(): void {
     description:
       "Bring a window to the front and focus it. Without label, focuses the window this command runs in (clears inactive state for automation); with label, focuses that window (see window.list).",
     triggers: { ko: "창 포커스 창 활성화 창 앞으로" },
-    params: {
-      label: { type: "string", description: "Window label (omit = this window)" },
-    },
+    params: { label: P.windowLabel },
     returns: "{ focused: true }",
     message: () => tmsg("msg.window.focus"),
     examples: ["window.focus", 'window.focus \'{"label":"w-<uuid>"}\''],
+    errors: ["TARGET_NOT_FOUND"],
     handler: async (p) => {
-      if (p.label) {
-        await invoke("window_focus", { label: p.label as string });
+      const label = windowTarget(p);
+      const labels = await invoke<string[]>("window_list");
+      if (!labels.includes(label)) return notFound(`창 없음: ${label}`);
+      if (label !== currentWindowLabel()) {
+        await invoke("window_focus", { label });
         return { focused: true };
       }
       const { getCurrentWindow } = await import("@tauri-apps/api/window");
@@ -2336,7 +2363,7 @@ export function registerCatalog(): void {
       "Maximize a window to fill the screen (native window maximize — distinct from view.maximize, which only enlarges one view within a space). Without label, targets the window this command runs in; with label, targets that window (see window.list). Pass off:true to restore (unmaximize).",
     triggers: { ko: "창 최대화 전체화면 창 키우기 최대화 해제" },
     params: {
-      label: { type: "string", description: "Window label (omit = this window)" },
+      label: P.windowLabel,
       off: { type: "boolean", description: "Restore (unmaximize) instead of maximizing" },
     },
     returns: "{ maximized: boolean }",
@@ -2350,11 +2377,10 @@ export function registerCatalog(): void {
     ],
     handler: async (p) => {
       const off = p.off === true;
-      const { getCurrentWindow, Window } = await import("@tauri-apps/api/window");
-      const win = p.label
-        ? await Window.getByLabel(p.label as string)
-        : getCurrentWindow();
-      if (!win) return notFound(`창 없음: ${p.label}`);
+      const label = windowTarget(p);
+      const { Window } = await import("@tauri-apps/api/window");
+      const win = await Window.getByLabel(label);
+      if (!win) return notFound(`창 없음: ${label}`);
       if (off) await win.unmaximize();
       else await win.maximize();
       return { maximized: !off };
@@ -2507,15 +2533,30 @@ export function registerCatalog(): void {
   });
 
   register("window.close", {
-    description: "Close a specific window.",
+    description:
+      "Close a window. Omit label to close the window this command is addressed to — the envelope already names it, so the common case needs no argument. An unknown label is TARGET_NOT_FOUND, not an internal failure.",
     triggers: { ko: "창 닫기 윈도우 닫기" },
-    params: { label: { type: "string", description: "Window label" } },
-    returns: "{ ok }",
+    params: { label: P.windowLabel },
+    returns: "{ ok, label }",
     message: () => tmsg("msg.window.close"),
-    examples: ['window.close \'{"label":"w-<uuid>"}\''],
+    errors: ["TARGET_NOT_FOUND"],
+    examples: ["window.close", 'window.close \'{"label":"w-<uuid>"}\''],
     handler: async (p) => {
-      await invoke("window_close", { label: p.label as string });
-      return { ok: true };
+      // 봉투가 이미 대상 창을 지목했는데 label 을 또 요구하면, 그 창에 대고 부른 close 가
+      // 인자 누락으로 죽는다(실측: e2e 가 자기 창을 못 닫아 실행할 때마다 뷰가 쌓였다).
+      // 나머지 표면과 같은 규칙을 따른다 — 생략 = 지금 대상.
+      const label = windowTarget(p);
+      const labels = await invoke<string[]>("window_list");
+      if (!labels.includes(label)) return notFound(`창 없음: ${label}`);
+      if (label === currentWindowLabel()) {
+        // 자기를 파괴하는 명령은 답을 먼저 흘린다 — 답할 통로가 그 파괴로 함께 죽기 때문이다
+        // (실측: 자기 창 close 가 WINDOW_DESTROYED 로 돌아와, 닫혔는데도 호출자는 실패로 읽었다).
+        // window.reload 가 같은 이유로 같은 모양을 쓴다.
+        setTimeout(() => void invoke("window_close", { label }), 30);
+        return { ok: true, label };
+      }
+      await invoke("window_close", { label });
+      return { ok: true, label };
     },
   });
 
@@ -2702,7 +2743,7 @@ export function registerCatalog(): void {
       ko: "창 배치 이동 모니터로 옮기기 위치 지정",
     },
     params: {
-      label: { type: "string", description: "Window label (window.list)", required: true },
+      label: P.windowLabel,
       x: { type: "number", description: "Left edge (physical px)", required: true },
       y: { type: "number", description: "Top edge (physical px)", required: true },
       w: { type: "number", description: "Width (physical px)", required: true },
@@ -2710,15 +2751,16 @@ export function registerCatalog(): void {
     },
     returns: "{ ok }",
     message: () => tmsg("msg.window.place"),
-    examples: ['window.place \'{"label":"main","x":2560,"y":0,"w":2560,"h":1440}\''],
+    errors: ["TARGET_NOT_FOUND"],
+    examples: [
+      'window.place \'{"x":0,"y":0,"w":2560,"h":1440}\'',
+      'window.place \'{"label":"main","x":2560,"y":0,"w":2560,"h":1440}\'',
+    ],
     handler: async (p) => {
-      await invoke("window_place", {
-        label: p.label,
-        x: p.x,
-        y: p.y,
-        w: p.w,
-        h: p.h,
-      });
+      const label = windowTarget(p);
+      const labels = await invoke<string[]>("window_list");
+      if (!labels.includes(label)) return notFound(`창 없음: ${label}`);
+      await invoke("window_place", { label, x: p.x, y: p.y, w: p.w, h: p.h });
       return {};
     },
   });

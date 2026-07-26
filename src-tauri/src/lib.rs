@@ -371,31 +371,40 @@ pub fn run() {
                 // 실제 영속 정리는 Destroyed 에서(B1 의미론, window.rs 머리말): 웹뷰 unload 의 마지막
                 // 저장(pagehide)이 정리 뒤에 도착해 스냅샷을 부활시키지 않도록 순서를 보장한다.
                 // 앱 종료(Cmd+Q/app.exit)의 창 파괴는 이 이벤트를 지나지 않아 세션이 보존된다.
-                tauri::WindowEvent::CloseRequested { .. } => {
-                    // 파괴 순서 계약(SIDECARS) — dealloc 전에 엔진 child 부터 닫게 통지.
-                    #[cfg(target_os = "macos")]
-                    crate::sidecar::notify_surface_closing(window);
-                    // 파괴 예고(webview_health) — 창 닫기 중의 렌더러 프로세스 종료를
-                    // 크래시로 오분류해 죽어가는 webview 를 reload 하지 않는다.
-                    {
-                        let app = window.app_handle();
-                        webview_health::mark_expected_teardown(app, window.label());
-                        let prefix = format!("b-{}-", window.label());
-                        let children: Vec<String> = app
-                            .webviews()
-                            .keys()
-                            .filter(|l| l.starts_with(&prefix))
-                            .cloned()
-                            .collect();
-                        for label in children {
-                            webview_health::mark_expected_teardown(app, &label);
-                        }
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    // 회수는 이 콜백 밖에서 한다 — 여기서 하면 회수가 창 메시지를 다시 태워
+                    // 이미 빌린 창 맵을 또 빌리고 프로세스가 패닉한다(window.rs 머리말).
+                    // 첫 진입만 보류하고, 회수가 끝난 뒤 스스로 다시 닫는다.
+                    if window::begin_teardown(window.label()) {
+                        api.prevent_close();
+                        let w = window.clone();
+                        let _ = window.app_handle().run_on_main_thread(move || {
+                            // 파괴 순서 계약(SIDECARS) — dealloc 전에 엔진 child 부터 닫게 통지.
+                            #[cfg(target_os = "macos")]
+                            crate::sidecar::notify_surface_closing(&w);
+                            // 파괴 예고(webview_health) — 창 닫기 중의 렌더러 프로세스 종료를
+                            // 크래시로 오분류해 죽어가는 webview 를 reload 하지 않는다.
+                            let app = w.app_handle();
+                            webview_health::mark_expected_teardown(app, w.label());
+                            let prefix = format!("b-{}-", w.label());
+                            let children: Vec<String> = app
+                                .webviews()
+                                .keys()
+                                .filter(|l| l.starts_with(&prefix))
+                                .cloned()
+                                .collect();
+                            for label in children {
+                                webview_health::mark_expected_teardown(app, &label);
+                            }
+                            window::mark_user_closed(w.label());
+                            let _ = w.close();
+                        });
                     }
-                    window::mark_user_closed(window.label());
                 }
                 tauri::WindowEvent::Destroyed => {
                     ipc::note_closed(window.label()); // 포커스 기록이 죽은 창을 놓는다(다음 명령의 오배송 차단)
                     crate::sidecar::forget_window(window.label()); // 사이드카 surface 캐시 무효화(stale NSView 방지)
+                    window::forget_teardown(window.label()); // 회수 마크 폐기(맵 무한 증가 차단)
                                                                    // 브레이커 엔트리 폐기 — 창 label 은 재사용 안 되므로 남기면 맵이 무한 증가(느린 누수).
                     webview_health::forget_window(window.app_handle(), window.label());
                     let app = window.app_handle();

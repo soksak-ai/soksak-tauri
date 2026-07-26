@@ -164,7 +164,9 @@ function looksRendered(png) {
 async function main() {
   const c = await openClient();
   let window = null;
+  const openedViews = [];
   const results = [];
+  const reclaimErrors = [];
   try {
     const opened = must(
       await c.rpc("project.open", { root: FIXTURE_ROOT, alias: "browser-pixels" }, "main"),
@@ -190,6 +192,7 @@ async function main() {
       try {
         const o = must(await c.rpc("view.open", { panel, program: engine }, window), `view.open ${engine}`);
         out.viewId = o.viewId;
+        openedViews.push(o.viewId);
         await c.rpc("view.activate", { view: o.viewId }, window);
         // 항행 후 정착 — 로딩 완료 신호가 없는 엔진이 있어 유한 대기로 수렴시킨다.
         for (const plug of [
@@ -230,7 +233,32 @@ async function main() {
       );
     }
   } finally {
-    if (window) await c.rpc("window.close", {}, window).catch(() => {});
+    // 회수는 멱등의 값이다 — 다음 실행이 앞 실행의 잔재 위에서 시작하면 그건 게이트가 아니다.
+    // 실패를 삼키지 않는다(실측: window.close 가 인자 누락으로 죽는데 catch 가 먹어, 실행할
+    // 때마다 같은 창에 브라우저 뷰가 3개씩 쌓여 18개가 됐다).
+    if (window) {
+      for (const v of openedViews) {
+        const r = await c.rpc("view.close", { view: v }, window).catch((e) => ({ ok: false, message: String(e) }));
+        if (r?.ok !== true) reclaimErrors.push(`view.close ${v}: ${JSON.stringify(r)?.slice(0, 120)}`);
+      }
+      // 회수 경로는 둘이고, 어느 쪽인지는 그 창이 무엇을 담고 있는가로 갈린다.
+      //  - 픽스처 프로젝트만 담긴 창 → 창을 닫는다. 그 창은 우리 잔재다.
+      //  - 사람의 프로젝트도 함께 있는 창 → 픽스처 프로젝트만 뺀다. 그 창은 사람의 것이다.
+      // 응답 필드의 뜻을 짐작하지 않는다(실측: routedWindow 를 "새 창"으로 읽어 사용자 창을
+      // 닫았다). 마지막 프로젝트는 닫을 수 없으므로(LAST_ITEM) 경로를 섞으면 회수가 실패한다.
+      const state = (await c.rpc("state.tree", {}, window)).data;
+      const projects = state?.projects ?? [];
+      const ours = projects.filter((x) => x.root === FIXTURE_ROOT);
+      if (ours.length > 0 && ours.length === projects.length) {
+        const r = await c.rpc("window.close", {}, window).catch((e) => ({ ok: false, message: String(e) }));
+        if (r?.ok !== true) reclaimErrors.push(`window.close ${window}: ${JSON.stringify(r)?.slice(0, 120)}`);
+      } else {
+        for (const pr of ours) {
+          const r = await c.rpc("project.close", { project: pr.id }, window).catch((e) => ({ ok: false, message: String(e) }));
+          if (r?.ok !== true) reclaimErrors.push(`project.close ${pr.id}: ${JSON.stringify(r)?.slice(0, 120)}`);
+        }
+      }
+    }
   }
 
   // 새로 연 뷰만 보는 것은 절반이다 — 새 뷰는 방금 bounds 를 받았으니 언제나 맞다. 이미 떠
@@ -295,6 +323,11 @@ async function main() {
   const bad = results.filter((r) => !r.rendered);
   if (bad.length > 0) {
     console.log(`✗ browser-pixels 실패 — 그리지 않는 엔진 ${bad.length}개: ${bad.map((b) => b.engine).join(", ")}`);
+    process.exit(1);
+  }
+  if (reclaimErrors.length > 0) {
+    console.log(`✗ browser-pixels 실패 — 회수 실패 ${reclaimErrors.length}건(다음 실행이 잔재 위에서 시작한다)`);
+    for (const e of reclaimErrors) console.log(`    ${e}`);
     process.exit(1);
   }
   console.log(`✓ browser-pixels GREEN — 엔진 ${results.length}개 전부 픽셀 확인`);

@@ -195,6 +195,34 @@ fn create_window_core(
 static USER_CLOSED: std::sync::Mutex<Option<std::collections::HashSet<String>>> =
     std::sync::Mutex::new(None);
 
+// ── 파괴 순서 계약의 재진입 금지 ─────────────────────────────────────────────
+// 엔진 child 회수(sidecar surface-closing)는 창 dealloc 전에 끝나야 한다. 그런데 그것을
+// CloseRequested 콜백 안에서 그대로 하면 회수가 다시 창 메시지를 태우고, 이벤트 루프가 이미
+// 창 맵을 빌린 상태라 프로세스가 패닉한다(실측: `RefCell already mutably borrowed`,
+// tauri-runtime-wry lib.rs:3273 — 크로미움 뷰가 있는 창을 닫으면 앱이 죽었다).
+//
+// 그래서 닫기를 한 번 보류한다: 첫 CloseRequested 는 prevent_close 하고 회수를 메인 스레드의
+// 다음 차례로 미룬 뒤 다시 close 를 건다. 두 번째 진입은 회수가 끝난 상태이므로 그대로
+// 통과한다. 계약(회수가 dealloc 보다 먼저)은 지키면서 재진입만 없앤다.
+static TEARDOWN_STARTED: std::sync::Mutex<Option<std::collections::HashSet<String>>> =
+    std::sync::Mutex::new(None);
+
+/// 이 창의 회수를 지금 시작하는가 — 처음 한 번만 true(그때만 보류한다).
+pub fn begin_teardown(label: &str) -> bool {
+    let mut g = TEARDOWN_STARTED.lock().unwrap();
+    g.get_or_insert_with(Default::default)
+        .insert(label.to_string())
+}
+
+/// Destroyed — 회수 마크 폐기(창 label 은 재사용되지 않지만 맵을 키우지 않는다).
+pub fn forget_teardown(label: &str) {
+    if let Ok(mut g) = TEARDOWN_STARTED.lock() {
+        if let Some(s) = g.as_mut() {
+            s.remove(label);
+        }
+    }
+}
+
 /// CloseRequested — 사용자가 이 창을 닫는 중임을 기록.
 pub fn mark_user_closed(label: &str) {
     let mut g = USER_CLOSED.lock().unwrap();
@@ -414,5 +442,46 @@ mod mw_rules {
         assert_eq!(slots[0]["label"], "main");
         // 멱등 — 없는 창 정리는 무해.
         super::prune_window_persistence(&c, "w-1").unwrap();
+    }
+}
+
+#[cfg(test)]
+mod teardown_tests {
+    // 파괴 순서 계약의 재진입 금지 — 보류는 창당 정확히 한 번이다.
+    //
+    // RED 근거(실측, 2026-07-26): 크로미움 뷰가 있는 창을 닫자 엔진 회수가 CloseRequested
+    // 콜백 안에서 창 메시지를 다시 태워 프로세스가 패닉했다(`RefCell already mutably
+    // borrowed`). 보류가 두 번 걸리면 창은 영영 닫히지 않고, 한 번도 안 걸리면 패닉이
+    // 그대로 돌아온다 — 그래서 "처음 한 번만 true" 가 계약이다.
+    use super::{begin_teardown, forget_teardown};
+
+    #[test]
+    fn first_close_defers_second_proceeds() {
+        let label = "w-teardown-once";
+        forget_teardown(label);
+        assert!(begin_teardown(label), "첫 진입은 보류한다");
+        assert!(!begin_teardown(label), "두 번째 진입은 그대로 닫힌다");
+        forget_teardown(label);
+    }
+
+    #[test]
+    fn each_window_defers_on_its_own() {
+        let (a, b) = ("w-teardown-a", "w-teardown-b");
+        forget_teardown(a);
+        forget_teardown(b);
+        assert!(begin_teardown(a));
+        assert!(begin_teardown(b), "다른 창의 보류가 이 창을 삼키지 않는다");
+        forget_teardown(a);
+        forget_teardown(b);
+    }
+
+    #[test]
+    fn forgetting_lets_a_reused_label_defer_again() {
+        let label = "w-teardown-reuse";
+        forget_teardown(label);
+        assert!(begin_teardown(label));
+        forget_teardown(label);
+        assert!(begin_teardown(label), "폐기 뒤에는 다시 보류할 수 있다");
+        forget_teardown(label);
     }
 }

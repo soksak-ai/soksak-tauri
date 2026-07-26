@@ -3212,15 +3212,17 @@ sok-dev webview.recover '{"label":"b-w-1234-v7"}'
 
 ## `window.close`
 
-Close a specific window. | 창 닫기 윈도우
+Close a window. Omit label to close the window this command is addressed to — the envelope already names it, so the common case needs no argument. An unknown label is TARGET_NOT_FOUND, not an internal failure. | 창 닫기 윈도우
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `label` | string |  | Window label |
+| `label` | string |  | Window label (omit = the addressed window; see window.list) |
 
-**Returns**: { ok }
+**Returns**: { ok, label }
+**Errors**: TARGET_NOT_FOUND
 
 ```bash
+sok-dev window.close
 sok-dev window.close '{"label":"w-<uuid>"}'
 ```
 
@@ -3230,9 +3232,10 @@ Bring a window to the front and focus it. Without label, focuses the window this
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `label` | string |  | Window label (omit = this window) |
+| `label` | string |  | Window label (omit = the addressed window; see window.list) |
 
 **Returns**: { focused: true }
+**Errors**: TARGET_NOT_FOUND
 
 ```bash
 sok-dev window.focus
@@ -3275,7 +3278,7 @@ Maximize a window to fill the screen (native window maximize — distinct from v
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `label` | string |  | Window label (omit = this window) |
+| `label` | string |  | Window label (omit = the addressed window; see window.list) |
 | `off` | boolean |  | Restore (unmaximize) instead of maximizing |
 
 **Returns**: { maximized: boolean }
@@ -3352,14 +3355,16 @@ Place a window at an exact frame (physical px — the window.monitors coordinate
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `h` | number | ✓ | Height (physical px) |
-| `label` | string | ✓ | Window label (window.list) |
+| `label` | string |  | Window label (omit = the addressed window; see window.list) |
 | `w` | number | ✓ | Width (physical px) |
 | `x` | number | ✓ | Left edge (physical px) |
 | `y` | number | ✓ | Top edge (physical px) |
 
 **Returns**: { ok }
+**Errors**: TARGET_NOT_FOUND
 
 ```bash
+sok-dev window.place '{"x":0,"y":0,"w":2560,"h":1440}'
 sok-dev window.place '{"label":"main","x":2560,"y":0,"w":2560,"h":1440}'
 ```
 
