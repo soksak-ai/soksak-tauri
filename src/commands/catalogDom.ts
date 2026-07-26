@@ -13,6 +13,7 @@ import { scanNodes, type ScannedNode } from "../plugins/nodeScan";
 import { register } from "./registry";
 import { tmsg } from "../i18n";
 import { viewFocusSnapshot } from "../plugins/viewFocus";
+import { useDividerHover } from "../state/dividerHover";
 
 type FocusTraceEntry = {
   t: number;
@@ -532,6 +533,130 @@ export function registerDomCatalog(): void {
       el.dispatchEvent(down);
       el.dispatchEvent(new KeyboardEvent("keyup", init));
       return { key, address: addr, defaultPrevented: down.defaultPrevented };
+    },
+  });
+
+  // 포인터의 "있음"과 "없음" 을 같은 표면에서 구동한다.
+  //
+  // 왜 필요한가: divider 강조 같은 hover 상태는 지금까지 CSS :hover 가 소유했고, :hover 는
+  // 스크립트로 켜지도 끄지도 못한다 — 구동 불가 = 검증 불가였다. 게다가 포인터가 네이티브
+  // 자식(브라우저 표면)으로 빠져나가면 webview 가 leave 를 못 받아 그대로 붙들리고, accent
+  // 세로선이 창 본문 전체 높이로 브라우저를 가로지른 채 남았다(실측 2026-07-26: ui.hit 이
+  // divider s1:0 을 반환, 그 rect 가 네이티브 강조바 프레임과 동일).
+  //
+  // 소유권을 상태로 옮긴 뒤에는 그 상태를 OS 와 같은 경로로 구동할 수 있어야 한다. leave 는
+  // 별개 동사가 아니라 같은 동사의 부재다 — 하나의 명령이 둘 다 낸다(짝이 갈라지지 않는다).
+  register("ui.input.pointer", {
+    description:
+      "Drive the pointer the way the OS does: enter/move onto an exposed node, or leave (no address = the pointer is not over us). Hover state that a native child surface can steal — divider highlight — is owned by app state, not CSS :hover, precisely so it can be driven and read back here. Returns the divider-hover key now held, so a test can assert both the arming and the release.",
+    triggers: { ko: "포인터 이동 hover 강조 진입 이탈 마우스 주입 E2E" },
+    params: {
+      address: { type: "string", description: "Exposed node to move onto. Omit to signal the pointer left us." },
+    },
+    returns: "{ address, dividerHover }",
+    message: () => tmsg("msg.ui.input.pointer"),
+    errors: ["NOT_EXPOSED"],
+    danger: "inject",
+    examples: [
+      'ui.input.pointer \'{"address":"win/main/chrome/divider/s1/0"}\'',
+      "ui.input.pointer   # 이탈(강조 해제)",
+    ],
+    handler: (p) => {
+      const addr = typeof p.address === "string" ? p.address : null;
+      if (addr == null) {
+        useDividerHover.getState().set(null);
+        return { address: null, dividerHover: useDividerHover.getState().key };
+      }
+      const el = resolveElement(addr);
+      if (!el) return notExposed(addr);
+      const key = el instanceof HTMLElement ? (el.dataset.dividerKey ?? null) : null;
+      if (key != null) useDividerHover.getState().set(key);
+      el.dispatchEvent(new PointerEvent("pointerenter", { bubbles: false, composed: true }));
+      el.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, composed: true }));
+      el.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, composed: true }));
+      return { address: addr, dividerHover: useDividerHover.getState().key };
+    },
+  });
+
+  // 위상을 느리게 돌리고, 멈춘 자리에서 DOM 을 훑는다.
+  //
+  // 왜: 이 결함들은 전부 "움직이는 도중"에만 보인다 — 표면이 옛 자리에 좌초해 사이드바가
+  // 두 벌로 보이고, 탭 복귀에 깜빡이고, 패널이 좁아진 채 세로선이 남는다. 정지 상태를
+  // 아무리 캡처해도 찰나는 안 잡힌다. 느리게 만들고 멈출 수 있어야 관측이다.
+  //
+  // scale: 모든 transition/animation 을 이 배수로 늘린다(:root --motion-scale).
+  // hold:  진행 중인 위상을 그 자리에 세운다(animation-play-state: paused + 전이 정지).
+  register("ui.motion", {
+    description:
+      "Slow down or freeze layout motion so a transient state can be inspected. scale multiplies every transition/animation duration; hold pauses them in place. Without params it reports the current setting. Transient defects — a surface stranded at its old rect, a pane briefly narrow, a flash on tab return — are invisible to a still capture; this is how you stop time and then read the DOM with ui.tree / ui.measure.",
+    triggers: { ko: "모션 느리게 정지 일시정지 애니메이션 배속 관측 디버그" },
+    params: {
+      scale: { type: "number", description: "Duration multiplier (1 = normal, 20 = twenty times slower)" },
+      hold: { type: "boolean", description: "Freeze motion in place (true) or resume (false)" },
+    },
+    returns: "{ scale, hold }",
+    message: () => tmsg("msg.ui.motion"),
+    errors: ["INVALID_PARAMS"],
+    danger: "inject",
+    examples: [
+      'ui.motion \'{"scale":20}\'   # 20배 느리게',
+      'ui.motion \'{"hold":true}\'  # 그 자리에 정지',
+      "ui.motion            # 현재 설정 조회",
+    ],
+    handler: (p) => {
+      const root = document.documentElement;
+      if (typeof p.scale === "number") {
+        if (!(p.scale > 0) || p.scale > 200) {
+          return { ok: false as const, code: "INVALID_PARAMS" as const, message: "scale must be in (0, 200]" };
+        }
+        root.style.setProperty("--motion-scale", String(p.scale));
+      }
+      if (typeof p.hold === "boolean") {
+        root.toggleAttribute("data-motion-hold", p.hold);
+      }
+      return {
+        scale: Number(root.style.getPropertyValue("--motion-scale") || 1),
+        hold: root.hasAttribute("data-motion-hold"),
+      };
+    },
+  });
+
+  // 멈춘 자리에서 무엇이 어디에 얼마만큼 있는지 — 한 번에 훑는다.
+  //
+  // ui.measure 는 노드 하나를 잰다. 찰나를 판독하려면 그 순간의 여러 노드를 한꺼번에 봐야
+  // 한다: 어떤 세로선이 어디 있는지, 패널 폭이 얼마인지, 그 안의 슬롯·표면이 얼마인지.
+  // 왕복을 여러 번 하면 그 사이에 상태가 움직여 서로 다른 순간을 비교하게 된다.
+  register("ui.snapshot.dom", {
+    description:
+      "Measure every exposed node in one pass — one consistent instant, not several round trips that drift apart. Returns address, rect, and the requested computed properties for each, so you can read where a line sits, how wide a panel is, and how big its children are, all from the same moment. Pair with ui.motion hold to stop time first. filter narrows by address substring.",
+    triggers: { ko: "돔 일괄 측정 스냅샷 좌표 폭 한번에 관측 선 위치" },
+    params: {
+      filter: { type: "string", description: "Only addresses containing this substring" },
+      props: { type: "json", description: "Extra computed-style property names, e.g. [\"backgroundColor\",\"zIndex\"]" },
+    },
+    returns: "{ count, nodes: [{ address, nodePath, rect, style? }] }",
+    message: (d) => tmsg("msg.ui.snapshot.dom", { count: String(d.count ?? 0) }),
+    errors: ["INVALID_PARAMS"],
+    handler: (p) => {
+      const filter = typeof p.filter === "string" ? p.filter : null;
+      const props = Array.isArray(p.props) ? (p.props as string[]).filter((x) => typeof x === "string") : [];
+      const nodes: unknown[] = [];
+      for (const n of collectExposed()) {
+        const address = n.address;
+        if (filter && !address.includes(filter)) continue;
+        const el = n.el;
+        const r = el.getBoundingClientRect();
+        const cs = getComputedStyle(el);
+        const style: Record<string, string> = {};
+        for (const k of props) style[k] = cs.getPropertyValue(k) || (cs as unknown as Record<string, string>)[k] || "";
+        nodes.push({
+          address,
+          nodePath: n.nodePath,
+          rect: { x: +r.x.toFixed(2), y: +r.y.toFixed(2), w: +r.width.toFixed(2), h: +r.height.toFixed(2) },
+          ...(props.length > 0 ? { style } : {}),
+        });
+      }
+      return { count: nodes.length, nodes };
     },
   });
 

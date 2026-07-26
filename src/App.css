@@ -2152,7 +2152,11 @@ body,
 .bv-url:focus {
   border-color: var(--acc);
 }
-.egroup-divider:hover {
+/* 강조 소유자는 상태 하나다(GroupArea 가 data-hover 로 새긴다). :hover 를 쓰면 포인터가
+   네이티브 자식(브라우저 표면)으로 빠질 때 leave 가 안 와 붙들리고, accent 세로선이 창 본문
+   전체 높이로 브라우저를 가로지른 채 남는다(실측). :hover 는 스크립트로 구동·해제할 수 없어
+   검증도 불가능하다 — 상태로 옮기면 둘 다 풀린다. */
+.egroup-divider[data-hover] {
   background: var(--accbg);
 }
 .drop-ind {
@@ -4355,4 +4359,20 @@ select.dctl {
 .webview-health-badge button:hover {
   border-color: var(--acc);
   color: var(--acc);
+}
+
+/* ── 모션 관측(ui.motion) ────────────────────────────────────────────────────
+   이 결함들은 전부 "움직이는 도중"에만 보인다 — 표면이 옛 자리에 좌초해 사이드바가 두 벌로
+   보이고, 탭 복귀에 깜빡이고, 패널이 좁아진 채 세로선이 남는다. 정지 화면을 아무리 캡처해도
+   찰나는 안 잡힌다. 느리게 돌리고 멈출 수 있어야 관측이다.
+   기본값 1 = 무영향(프로덕션 경로 불변). 배수는 :root 한 곳에서만 곱해진다. */
+:root {
+  --motion-scale: 1;
+}
+:root[data-motion-hold] *,
+:root[data-motion-hold] *::before,
+:root[data-motion-hold] *::after {
+  animation-play-state: paused !important;
+  transition-delay: 0s !important;
+  transition-duration: 0s !important;
 }

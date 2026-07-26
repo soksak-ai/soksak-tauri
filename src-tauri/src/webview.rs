@@ -1730,6 +1730,67 @@ pub fn install_click_monitor(app: &AppHandle) {
     let monitor = unsafe { NSEvent::addLocalMonitorForEventsMatchingMask_handler(mask, &block) };
     // 모니터는 앱 수명 동안 유지 — drop 되면 해제되므로 의도적으로 leak.
     std::mem::forget(monitor);
+
+    install_pointer_absence(app);
+}
+
+// 포인터가 더 이상 우리 위에 없다는 사실 — native-mouseleave.
+//
+// 위의 로컬 모니터는 "있음"만 말한다. 그 사실로 켜지는 상태(divider hover 강조)는 꺼질 방법이
+// 없었다: 포인터가 창 밖으로 나가면 MouseMoved 가 끊기고, 끊긴 것과 "그 자리에 멈춰 있다"가
+// 구별되지 않아 강조가 영원히 남는다(실측: accent 세로선이 창 본문 전체 높이로 브라우저를
+// 가로지른 채 굳음 — ui.hit 이 divider s1:0 을 반환, 그 rect 가 네이티브 강조바 프레임과 동일).
+// 스크린샷 단축키처럼 앱이 비활성화되는 순간이 전형적인 경로다.
+//
+// 있음만 말하는 소스에는 없음을 말하는 짝이 필요하다. 창이 key 를 잃거나 앱이 활성을 잃는
+// 것은 포인터가 우리 것이 아니게 됐다는 뜻이고, 둘 다 저빈도 통지라 비용이 없다.
+#[cfg(target_os = "macos")]
+fn install_pointer_absence(app: &AppHandle) {
+    use objc2::rc::Retained;
+    use objc2_app_kit::{
+        NSApplicationDidResignActiveNotification, NSWindow, NSWindowDidResignKeyNotification,
+    };
+    use objc2_foundation::{NSNotification, NSNotificationCenter};
+
+    let center = NSNotificationCenter::defaultCenter();
+
+    // 창 단위 — key 를 잃은 그 창에만.
+    let handle = app.clone();
+    let block = block2::RcBlock::new(move |note: std::ptr::NonNull<NSNotification>| {
+        let note = unsafe { note.as_ref() };
+        let Some(obj) = note.object() else { return };
+        let Ok(ns) = obj.downcast::<NSWindow>() else {
+            return;
+        };
+        let ns_ptr = Retained::as_ptr(&ns) as usize;
+        if let Some(label) = label_for_nswindow(&handle, ns_ptr) {
+            let _ = handle.emit_to(&label, "native-mouseleave", ());
+        }
+    });
+    let token = unsafe {
+        center.addObserverForName_object_queue_usingBlock(
+            Some(NSWindowDidResignKeyNotification),
+            None,
+            None,
+            &block,
+        )
+    };
+    std::mem::forget(token);
+
+    // 앱 단위 — 어느 창이 key 였든 앱을 떠났으면 전부 꺼진다(창 통지가 안 오는 경로 대비).
+    let handle = app.clone();
+    let block = block2::RcBlock::new(move |_note: std::ptr::NonNull<NSNotification>| {
+        let _ = handle.emit("native-mouseleave", ());
+    });
+    let token = unsafe {
+        center.addObserverForName_object_queue_usingBlock(
+            Some(NSApplicationDidResignActiveNotification),
+            None,
+            None,
+            &block,
+        )
+    };
+    std::mem::forget(token);
 }
 
 // divider 강조바 = 순수 시각. hitTest 를 nil 반환해 마우스를 통과시킨다 — 그래야 강조바가 divider 위를

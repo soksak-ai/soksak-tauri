@@ -231,7 +231,66 @@ async function main() {
     }
   } finally {
     if (window) await c.rpc("window.close", {}, window).catch(() => {});
+  }
+
+  // 새로 연 뷰만 보는 것은 절반이다 — 새 뷰는 방금 bounds 를 받았으니 언제나 맞다. 이미 떠
+  // 있던 뷰가 어긋나는 것이 실제 증상이었다(실측: 슬롯 x=756.5 인데 표면 x=556 → 그 패널은
+  // 백지, 옆 자리에 낡은 사이드바 한 벌). 그래서 살아 있는 창의 모든 브라우저 뷰를 검사한다:
+  // 표면이 자기 슬롯에 있는가.
+  const drift = [];
+  try {
+    const wins = (await c.rpc("window.list")).data?.labels ?? [];
+    for (const win of wins.filter((l) => l !== "main")) {
+      const tree = (await c.rpc("state.tree", {}, win)).data;
+      const views = [];
+      for (const p of tree?.projects ?? []) {
+        for (const sp of p.spaces ?? []) {
+          for (const pan of sp.panels ?? []) {
+            for (const v of pan.views ?? []) {
+              if (typeof v.plugin === "string" && v.plugin.includes("browser")) views.push(v);
+            }
+          }
+        }
+      }
+      if (views.length === 0) continue;
+      const maps = {};
+      for (const plug of ["soksak-plugin-browser-chromium", "soksak-plugin-browser-chromium-offscreen"]) {
+        const d = (await c.rpc(`plugin.${plug}.stats`, {}, win)).data ?? {};
+        const surfaces = (d.engine ?? d).surfaces ?? [];
+        const byId = Object.fromEntries(surfaces.map((s) => [s.id, s.bounds ?? null]));
+        const pairs = plug.endsWith("offscreen")
+          ? (d.ids ?? []).map((x) => [x.viewId, x.surfaceId])
+          : Object.entries(d.idMap ?? {}).map(([k, v]) => [k.replace("chromium-", ""), v]);
+        for (const [viewId, sid] of pairs) maps[viewId] = byId[sid] ?? null;
+      }
+      for (const v of views) {
+        const b = maps[v.id];
+        if (b == null) continue; // 표면 기하를 보고하지 않는 엔진(native) — 이 축의 대상 아님
+        const m = (await c.rpc("ui.measure", { address: `win/${win}/chrome/layout/slot/${v.id}` }, win)).data;
+        const r = m?.rect;
+        if (!r) continue;
+        // 표면은 슬롯과 같지 않다 — 브라우저 자체 툴바(URL 바) 아래에 놓이므로 위가 잘린다
+        // (실측: 슬롯 h=449 vs 표면 h=421, 차이 28 = 툴바). 그래서 동일성이 아니라 포함을
+        // 단언한다. 실제 결함은 언제나 "슬롯 밖"이었다(실측: x 가 200px 어긋나 패널은 백지,
+        // 옛 자리에 사이드바가 한 벌 더 남음). 슬롯을 벗어나면 그건 항상 틀린 것이다.
+        const tol = 2;
+        const outside =
+          b.x < Math.ceil(r.x) - tol ||
+          b.y < Math.ceil(r.y) - tol ||
+          b.x + b.w > Math.ceil(r.x) + Math.ceil(r.w) + tol ||
+          b.y + b.h > Math.ceil(r.y) + Math.ceil(r.h) + tol;
+        console.log(
+          `  ${String(v.plugin).padEnd(42)} ${String(v.id).padEnd(5)} 슬롯(${Math.round(r.x)},${Math.round(r.y)} ${Math.round(r.w)}x${Math.round(r.h)}) 표면(${b.x},${b.y} ${b.w}x${b.h}) ${outside ? "슬롯 밖" : "포함"}`,
+        );
+        if (outside) drift.push({ view: v.id, plugin: v.plugin, slot: r, surface: b });
+      }
+    }
+  } finally {
     c.close();
+  }
+  if (drift.length > 0) {
+    console.log(`✗ browser-pixels 실패 — 표면이 슬롯을 벗어난 뷰 ${drift.length}개`);
+    process.exit(1);
   }
   const bad = results.filter((r) => !r.rendered);
   if (bad.length > 0) {

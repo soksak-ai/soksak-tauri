@@ -16,6 +16,7 @@ import {
 } from "../plugins/viewFocus";
 import { armSlotActivation } from "../lib/slotGesture";
 import { beginLayoutMotion, endLayoutMotion } from "../lib/layoutMotion";
+import { useDividerHover } from "../state/dividerHover";
 import { ViewTabs } from "./ViewTabs";
 import { computeSplitLayout, hitTestCells } from "../lib/splitLayout";
 import { useT } from "../i18n";
@@ -231,6 +232,8 @@ export const GroupArea = memo(function GroupArea({
   // 최대화(maximizedViewId): 한 뷰가 컨텐츠 영역 전체를 차지. 분할 트리는
   // 불변 — 셀/프레임만 그 그룹 하나(전체 rect)로 바꿔 그리고, 나머지 그룹의
   // 슬롯은 숨김 유지(세션 보존: 터미널/webview 마운트는 절대 깨지 않는다).
+  // 강조 소유자는 이 상태 하나다(divider :hover 대체) — 셀렉터 구독(원칙 1).
+  const dividerHoverKey = useDividerHover((s) => s.key);
   const maximizedId = content.maximizedViewId ?? null;
   const maxCell = maximizedId
     ? (cells.find((c) => c.group.views.some((v) => v.id === maximizedId)) ??
@@ -781,7 +784,15 @@ export const GroupArea = memo(function GroupArea({
           key={`div-${d.splitId}-${d.index}`}
           data-divider-key={dividerKey(d)}
           data-node={`divider/${d.splitId}/${d.index}`}
+          // 강조는 CSS :hover 가 아니라 우리가 소유한 상태에서 온다. :hover 는 포인터가
+          // 네이티브 자식(브라우저 표면)으로 빠져나갈 때 leave 이벤트를 못 받아 그대로
+          // 붙들리고, 그러면 accent 세로선이 창 본문 전체 높이로 브라우저를 가로지른 채
+          // 남는다(실측 2026-07-26). 게다가 :hover 는 스크립트로 켜거나 끌 수 없어 구동도
+          // 검증도 불가능하다 — 소유권을 상태로 옮겨야 두 문제가 함께 풀린다.
+          data-hover={dividerHoverKey === dividerKey(d) ? "1" : undefined}
           className={`egroup-divider ${d.dir}${spanMovesPx(d.rect) ? " flip-move" : ""}`}
+          onPointerEnter={() => useDividerHover.getState().set(dividerKey(d))}
+          onPointerLeave={() => useDividerHover.getState().set(null)}
           style={
             d.dir === "row"
               ? {

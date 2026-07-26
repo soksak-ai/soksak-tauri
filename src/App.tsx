@@ -829,10 +829,19 @@ function App() {
       dragging = false;
       fire(window, "mouseup", e.payload.x, e.payload.y);
     });
+    // 포인터 부재 — 코어가 창 resignKey·앱 resignActive 에서 낸다. hover 는 "있음"만 말하는
+    // 소스에서 오므로 이 짝이 없으면 꺼질 방법이 없다: 포인터가 창 밖으로 나가면 mousemove 가
+    // 끊기고, 끊긴 것과 그 자리에 멈춘 것이 구별되지 않아 강조가 영원히 남는다(실측: accent
+    // 세로선이 브라우저를 가로지른 채 굳음 — ui.hit 이 divider s1:0, rect 가 네이티브 강조바와 동일).
+    const offLeave = listenThisWindow("native-mouseleave", () => {
+      dragging = false;
+      useDividerHover.getState().set(null);
+    });
     return () => {
       offDown();
       offMove();
       offUp();
+      offLeave();
     };
   }, []);
 
