@@ -97,13 +97,18 @@ function darkViewRects(): AuditRect[] {
     if (r.width < 40 || r.height < 40) continue;
     if (r.x + r.width <= 0 || r.x >= window.innerWidth) continue; // 파킹
     const body = el.parentElement; // .plugin-body — 오버레이(로딩/에러/부재)는 형제로 선다
-    const hasOverlay = !!body?.querySelector(
-      ".plugin-loading, .plugin-empty, .plugin-error",
-    );
+    // 오버레이가 있어도 본문이 비면 발행한다 — "플러그인 뷰 없음" 류가 ready 후 지속되는
+    // 것 자체가 위반이다(빈칸/로딩 3상의 시행). 종류를 실어 원장이 상태를 분류한다.
+    const overlay =
+      body?.querySelector(".plugin-error") ? "error"
+      : body?.querySelector(".plugin-empty") ? "empty"
+      : body?.querySelector(".plugin-loading") ? "loading"
+      : "none";
+    if (overlay === "loading") continue; // 로딩 표시는 정직한 과도 상태 — dark 아님
     const lightEmpty = el.childElementCount === 0;
     const shadowEmpty = !el.shadowRoot || el.shadowRoot.childElementCount === 0;
-    if (lightEmpty && shadowEmpty && !hasOverlay)
-      out.push({ x: r.x, y: r.y, w: r.width, h: r.height });
+    if (lightEmpty && shadowEmpty)
+      out.push({ x: r.x, y: r.y, w: r.width, h: r.height, overlay } as AuditRect & { overlay: string });
   }
   return out;
 }
@@ -139,7 +144,8 @@ async function runAudit(): Promise<void> {
   const missingPersists = verdict.missing.length > 0 && missingSig === lastMissingSig;
   lastMissingSig = missingSig;
   // dark(빈 본문 뷰)도 지속 2회일 때만 — 마운트 직후 한 프레임은 정상적으로 비어 있다.
-  const dark = darkViewRects();
+  // 부트 중에는 판정하지 않는다(활성화 진행 = 로딩 계약의 시간).
+  const dark = useBootPhase.getState().phase === "ready" ? darkViewRects() : [];
   const darkSig = JSON.stringify(dark);
   const darkPersists = dark.length > 0 && darkSig === lastDarkSig;
   lastDarkSig = darkSig;
