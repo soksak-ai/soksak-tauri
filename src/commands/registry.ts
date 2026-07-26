@@ -162,14 +162,15 @@ export interface CommandSpec {
   trace?: false;
   // [RULE] 핸들러 반환 객체에 top-level "id" 를 쓰지 말 것 — 소켓 응답이 JSON-RPC 봉투의
   // 요청 id(숫자)와 한 객체로 합쳐져 덮어쓴다(식별자 유실). 식별자는 네임스페이스 필드로
-  // (groupId/viewId/messageId/label …). 같은 이유로 "ok"/"code"/"message" 도 결과 의미로만 사용.
+  // (paneId/tabId/messageId/label …). 같은 이유로 "ok"/"code"/"message" 도 결과 의미로만 사용.
   handler: (
     params: Record<string, unknown>,
     ctx: CommandContext,
   ) => Promise<object> | object;
 }
 
-// 호출자 컨텍스트: 터미널에서 호출하면 그 pane(PTY env SOKSAK_PANE → 소켓 요청 메타).
+// 호출자 컨텍스트: 터미널에서 호출하면 그 탭(PTY env SOKSAK_CALLER_TAB → 소켓 요청 메타).
+// 필드 이름 pane 은 소켓 와이어 필드 이름이다(개명은 프로토콜 축과 함께 간다).
 // remote=소켓 경유(AI/CLI) — 권한 게이트는 remote 호출에만 적용(UI 는 사람).
 export interface CommandContext {
   pane?: string;

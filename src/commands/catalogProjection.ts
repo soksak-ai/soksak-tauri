@@ -3,7 +3,6 @@
 
 import { tmsg } from "../i18n";
 import { register } from "./registry";
-import { asSurface } from "./catalog";
 import { err, ok, projectIdOfView, useSessions } from "../state/sessions";
 import { useProjection } from "../state/projection";
 import { projectionFor } from "../state/projectionWiring";
@@ -13,7 +12,7 @@ type Side = (typeof SIDES)[number];
 
 import type { CommandContext } from "./registry";
 
-// 대상 프로젝트: 명시 param > 호출자 pane 의 프로젝트(ctx) > 활성 프로젝트.
+// 대상 프로젝트: 명시 param > 호출자 탭의 프로젝트(ctx) > 활성 프로젝트.
 function targetProject(p: Record<string, unknown>, ctx?: CommandContext): string {
   return (
     (p.project as string | undefined) ??
@@ -40,10 +39,10 @@ export function registerProjectionCatalog(): void {
       },
     },
     returns:
-      "{ projectId, binding: {viewId|null}, left: {slots:[{source,resolvedRef,instance,instanceKey,status}], template}, right|null, pins: {left,right} }",
+      "{ projectId, binding: {tabId|null}, left: {slots:[{source,resolvedRef,instance,instanceKey,status}], template}, right|null, pins: {left,right} }",
     message: (d) =>
       tmsg("msg.ui.projection.state", {
-        view: String((d.binding as { viewId?: string | null })?.viewId ?? "-"),
+        view: String((d.binding as { tabId?: string | null })?.tabId ?? "-"),
       }),
     examples: ["ui.projection.state", 'ui.projection.state \'{"project":"t1"}\''],
     handler: (p, ctx) => {
@@ -72,7 +71,7 @@ export function registerProjectionCatalog(): void {
         description: "Project id (omit for the active project)",
       },
     },
-    returns: "{ pins: {left, right} }",
+    returns: "{ projectId, pins: {left, right} }",
     message: () => tmsg("msg.ui.projection.pin"),
     examples: ['ui.projection.pin \'{"ref":"<pluginId>.<viewId>"}\''],
     handler: (p, ctx) => {
@@ -110,7 +109,7 @@ export function registerProjectionCatalog(): void {
         description: "Project id (omit for the active project)",
       },
     },
-    returns: "{ pins: {left, right} }",
+    returns: "{ projectId, pins: {left, right} }",
     message: () => tmsg("msg.ui.projection.unpin"),
     examples: ['ui.projection.unpin \'{"ref":"<pluginId>.<viewId>"}\''],
     handler: (p, ctx) => {
@@ -123,13 +122,13 @@ export function registerProjectionCatalog(): void {
         return err("INVALID_PARAMS", "side 는 left|right");
       }
       useProjection.getState().unpin(pid, side, p.ref as string);
-      return ok({ pins: pinsOf(pid) });
+      return ok({ projectId: pid, pins: pinsOf(pid) });
     },
   });
 
   register("ui.intent.open", {
     description:
-      "Open a resource through the binding context (R2): places the view as a tab in the bound group without replacing existing panels, reusing the existing view for the same resource (idempotent). The same path the rail's open affordance uses. With no binding (empty project) it places into the active group.",
+      "Open a resource through the binding context (R2): places the view as a tab in the bound pane without replacing existing panes, reusing the existing tab for the same resource (idempotent). The same path the rail's open affordance uses. With no binding (empty project) it places into the active pane.",
     triggers: { ko: "인텐트열기 결부열기 intent open" },
     params: {
       path: {
@@ -142,15 +141,15 @@ export function registerProjectionCatalog(): void {
         description: "Project id (omit for the active project)",
       },
     },
-    returns: "{ viewId, panelId, existing }",
+    returns: "{ projectId, paneId, tabId, existing }",
     message: (d) =>
       tmsg(d.existing ? "msg.ui.intent.open.existing" : "msg.ui.intent.open"),
     examples: ['ui.intent.open \'{"path":"/work/notes/plan.md"}\''],
     handler: (p, ctx) => {
       const pid = targetProject(p, ctx);
-      // 공개 어휘 사상(groupId → panelId)은 asSurface 한 곳이 소유한다 — 이 명령만 세션 내부
-      // 이름을 그대로 흘려 명령 표면의 어휘가 갈려 있었다(docs 감사 게이트가 잡음).
-      return asSurface(useSessions.getState().openFileView(pid, p.path as string));
+      const r = useSessions.getState().openFileView(pid, p.path as string);
+      if (!r.ok) return r;
+      return { projectId: pid, paneId: r.groupId, tabId: r.viewId, existing: r.existing };
     },
   });
 }

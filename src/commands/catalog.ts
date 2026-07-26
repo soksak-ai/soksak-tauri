@@ -1,7 +1,7 @@
 // 명령 카탈로그 — soksak 전 기능을 command 로 등록한다(단일 진실).
 // 타기팅 규칙(모든 명령 공통):
 //   - 대상 id 를 명시하면 그 위치(프로젝트 전체에서 검색), 생략하면 호출자 컨텍스트
-//     (SOKSAK_PANE → 그 pane 이 속한 뷰/패널/스페이스/프로젝트) 또는 활성 체인.
+//     (SOKSAK_CALLER_TAB → 그 탭이 속한 pane/스페이스/프로젝트) 또는 활성 체인.
 //   - 모든 변이는 결과(새 id/변경 후 상태)를 반환 — 호출자가 응답만으로 검증 가능.
 
 import { invoke } from "@tauri-apps/api/core";
@@ -27,6 +27,14 @@ import {
   type Tab,
   type Pane,
 } from "../state/sessions";
+import {
+  canonicalGutter,
+  isCanonicalSide,
+  resolveGutter,
+  type GutterSide,
+} from "../lib/gutterAddress";
+import type { SidebarLayout } from "../state/sidebarLayout";
+import type { SplitTree } from "../state/splitTree";
 import { addProjectClaimed, closeProjectReleased } from "../state/projectRegistry";
 import { getRegisteredProgram, listPrograms } from "../plugins/programRegistry";
 import { resolveTerminalProgram, TERMINAL_CONTRACT } from "../plugins/terminalEngine";
@@ -43,7 +51,7 @@ import { useBookmarks } from "../state/bookmarks";
 import { useTheme } from "../state/theme";
 import { useIconRegistry } from "../ui/icons/registry";
 import { hasPtyObservation } from "../terminal/ptyObservationStore";
-import { resolveTermPane } from "./termResolve";
+import { resolveTermTab } from "./termResolve";
 import { computeLayout } from "../components/GroupArea";
 import type { Arrangement } from "../lib/railArrangement";
 import { catalogJson, register, type CommandContext, type CommandHint } from "./registry";
@@ -83,20 +91,13 @@ const notFound = (what: string) => ({
   message: what,
 });
 
-// 표면 반환 경계 변환(단일 진실) — store(sessions.ts 등) 내부 필드는 표면이 아니므로 이름을
-// 바꾸지 않는다(§ 계약). 핸들러가 store 결과를 그대로 반환하는 지점에서만 이 경계를 지나
-// 공개 명칭으로 옮긴다: groupId→panelId, contentId→spaceId, activePaneId→activePanelId,
-// activeTabId→activeViewId. 그 외 키는 그대로 통과(에러 응답도 무해) — 메모리 어휘와 표면
-// 명칭이 이미 같은 activeSpaceId·spaces 는 번역할 것이 없다.
-export function asSurface(r: object): object {
-  const rec = r as Record<string, unknown>;
-  const { groupId, contentId, activePaneId, activeTabId, ...rest } = rec;
-  const out: Record<string, unknown> = rest;
-  if ("groupId" in rec) out.panelId = groupId;
-  if ("contentId" in rec) out.spaceId = contentId;
-  if ("activePaneId" in rec) out.activePanelId = activePaneId;
-  if ("activeTabId" in rec) out.activeViewId = activeTabId;
-  return out;
+// 해소된 대상 축을 답에 싣는다 — 생략된 축은 호출자 컨텍스트로 조용히 채워지므로, 답이 그
+// 결과를 말하지 않으면 호출자는 어디에 실행됐는지 알 방법이 없다(targetEcho 게이트). 실패
+// 봉투에는 얹지 않는다 — 실패한 호출에는 해소된 대상이 없다.
+function withTargets(result: object, targets: Record<string, string | undefined>): object {
+  const rec = result as Record<string, unknown>;
+  if (rec.ok === false || rec.code) return result;
+  return { ...rec, ...targets };
 }
 
 // 구조를 바꾼 명령의 응답에 착지한 배치를 실어 준다 — 호출자가 "어디로 정렬됐는지"를 알기 위해
@@ -120,116 +121,119 @@ function withArrangement(projectId: string, result: object): object {
 
 interface Location {
   project: Project;
-  content: Space;
-  group: Pane;
-  /** 빈 패널(뷰 0개)은 위치로 유효하되 view 만 없다 — view 를 전제하는 소비처는 부재를 처리한다. */
-  view?: Tab;
+  space: Space;
+  pane: Pane;
+  /** 빈 pane(탭 0개)은 위치로 유효하되 tab 만 없다 — tab 을 전제하는 소비처는 부재를 처리한다. */
+  tab?: Tab;
 }
 
-// layout.apply 저작 형태 — 1차 스페이스, 2차 각 스페이스의 패널(분할). 표면 계약(space/panel)과 같은 결.
-interface LayoutPanelSpec {
+// layout.apply 저작 형태 — 1차 스페이스, 2차 각 스페이스의 pane(분할). 표면 계약(space/pane)과 같은 결.
+interface LayoutPaneSpec {
   program: string;
   side?: Side;
 }
 interface LayoutSpaceSpec {
   title?: string;
-  panels?: LayoutPanelSpec[];
+  panes?: LayoutPaneSpec[];
 }
 
-// paneId 가 속한 위치를 전 프로젝트에서 검색.
-// splitId 로 분할 노드를 프로젝트 전체에서 검색(panel.equalize 의 현재 비율 조회용).
-function findSplitNode(
-  t: Project,
-  splitId: string,
-): Extract<PaneNode, { type: "split" }> | null {
-  const walk = (n: PaneNode): Extract<PaneNode, { type: "split" }> | null => {
-    if (n.type === "leaf") return null;
-    if (n.id === splitId) return n;
-    for (const c of n.children) {
-      const r = walk(c);
-      if (r) return r;
+// 골 축의 해소·정본화는 lib/gutterAddress 하나가 소유한다(렌더러의 data-node 주소와 명령
+// 파라미터가 같은 함수를 받는다 — 기준 두 벌 금지). 여기서는 그 결과에 sizes 를 얹을 뿐이다.
+const EDGES = ["right", "bottom", "left", "top"] as const satisfies readonly GutterSide[];
+const paneIdOf = (pane: Pane) => pane.id;
+
+// 답이 지목하는 정본 골 — 명령 표면의 방향 축 이름은 edge 다(side 는 pane.split 의 분할 방향을
+// 뜻하는 다른 축이라, 한 표면에서 같은 낱말이 두 뜻을 가지지 않게 여기서 이름을 맞춘다).
+function gutterEcho(
+  layout: PaneNode,
+  paneId: string,
+  edge: GutterSide,
+): { pane: string; edge: GutterSide } | null {
+  const canonical = canonicalGutter(layout, paneId, edge, paneIdOf);
+  return canonical ? { pane: canonical.pane, edge: canonical.side } : null;
+}
+
+// 그 viewKey 를 담은 leaf 를 직접 감싼 분할 — 사이드바 트리의 내부 노드는 이름이 없으므로,
+// 조절 대상 분할을 그 안의 뷰로 지목한다(sidebar.left.resize). 뿌리가 leaf 면 분할이 없다(null).
+function sidebarSplitIdOf(layout: SidebarLayout, viewKey: string): string | null {
+  const walk = (node: SidebarLayout, parentId: string | null): string | null => {
+    if (node.type === "leaf") return node.value.viewKeys.includes(viewKey) ? parentId : null;
+    for (const c of node.children) {
+      const hit = walk(c, node.id);
+      if (hit !== null) return hit;
     }
     return null;
   };
-  for (const c of t.spaces) {
-    const r = walk(c.layout);
-    if (r) return r;
+  return walk(layout, null);
+}
+
+// 해소된 골이 사는 분할의 현재 비율 — resizeSplit 이 sizes 전량을 요구하므로 그 자리에서 읽는다.
+// (골 규칙이 아니라 평범한 트리 읽기다. 두 번째 소비처가 생기면 splitTree.ts 로 올린다.)
+function splitSizesOf(node: PaneNode, splitId: string): number[] | null {
+  if (node.type === "leaf") return null;
+  if (node.id === splitId) return node.sizes;
+  for (const c of node.children) {
+    const hit = splitSizesOf(c, splitId);
+    if (hit) return hit;
   }
   return null;
 }
 
-// paneId = 플러그인 터미널의 view.id(코어 터미널 제거 — 터미널도 플러그인 뷰). 그 뷰의 위치.
+// 탭 id 가 속한 위치를 전 프로젝트에서 검색. 터미널 대상도 이 함수로 해소한다 — 터미널은
+// 플러그인 뷰이고 그 인스턴스가 탭이다(코어 터미널 없음).
+function locateTab(tabId: string): Location | null {
+  const s = useSessions.getState();
+  for (const project of s.projects) {
+    for (const space of project.spaces) {
+      for (const pane of allGroups(space.layout)) {
+        const tab = pane.tabs.find((v) => v.id === tabId);
+        if (tab) return { project, space, pane, tab };
+      }
+    }
+  }
+  return null;
+}
+
+// pane id 가 속한 위치(tab = 그 pane 의 활성 탭).
 function locatePane(paneId: string): Location | null {
   const s = useSessions.getState();
   for (const project of s.projects) {
-    for (const content of project.spaces) {
-      for (const group of allGroups(content.layout)) {
-        for (const view of group.tabs) {
-          if (view.id === paneId) {
-            return { project, content, group, view };
-          }
-        }
+    for (const space of project.spaces) {
+      const pane = allGroups(space.layout).find((g) => g.id === paneId);
+      if (pane) {
+        const tab =
+          pane.tabs.find((v) => v.id === pane.activeTabId) ?? pane.tabs[0];
+        return { project, space, pane, tab };
       }
     }
   }
   return null;
 }
 
-// viewId 가 속한 위치를 전 프로젝트에서 검색.
-function locateView(viewId: string): Location | null {
-  const s = useSessions.getState();
-  for (const project of s.projects) {
-    for (const content of project.spaces) {
-      for (const group of allGroups(content.layout)) {
-        const view = group.tabs.find((v) => v.id === viewId);
-        if (view) return { project, content, group, view };
-      }
-    }
-  }
-  return null;
-}
-
-// groupId 가 속한 위치(view = 그 그룹의 활성 뷰).
-function locateGroup(groupId: string): Location | null {
-  const s = useSessions.getState();
-  for (const project of s.projects) {
-    for (const content of project.spaces) {
-      const group = allGroups(content.layout).find((g) => g.id === groupId);
-      if (group) {
-        const view =
-          group.tabs.find((v) => v.id === group.activeTabId) ??
-          group.tabs[0];
-        return { project, content, group, view };
-      }
-    }
-  }
-  return null;
-}
-
-// 활성 체인(활성 프로젝트 → 활성 컨텐츠 → 활성 그룹 → 활성 뷰).
+// 활성 체인(활성 프로젝트 → 활성 스페이스 → 활성 pane → 활성 탭).
 function activeChain(): Location | null {
   const s = useSessions.getState();
   const project = s.projects.find((t) => t.id === s.activeId);
   if (!project) return null;
-  const content =
+  const space =
     project.spaces.find((c) => c.id === project.activeSpaceId) ??
     project.spaces[0];
-  if (!content) return null;
-  const group =
-    allGroups(content.layout).find((g) => g.id === content.activePaneId) ??
-    allGroups(content.layout)[0];
-  if (!group) return null;
-  const view =
-    group.tabs.find((v) => v.id === group.activeTabId) ?? group.tabs[0];
-  // 빈 패널(전부 이동·닫힘)도 유효한 위치다 — 패널 대상 명령(view.open 등)은 계속 동작해야
-  // 하므로 여기서 끊지 않고, view 를 전제하는 소비처가 부재를 처리한다(INTERNAL 사망 금지, 실측).
-  return { project, content, group, view };
+  if (!space) return null;
+  const pane =
+    allGroups(space.layout).find((g) => g.id === space.activePaneId) ??
+    allGroups(space.layout)[0];
+  if (!pane) return null;
+  const tab =
+    pane.tabs.find((v) => v.id === pane.activeTabId) ?? pane.tabs[0];
+  // 빈 pane(전부 이동·닫힘)도 유효한 위치다 — pane 대상 명령(tab.open 등)은 계속 동작해야
+  // 하므로 여기서 끊지 않고, tab 을 전제하는 소비처가 부재를 처리한다(INTERNAL 사망 금지, 실측).
+  return { project, space, pane, tab };
 }
 
-// 호출 컨텍스트 해석: SOKSAK_PANE 우선, 없으면 활성 체인.
+// 호출 컨텍스트 해석: 호출자 탭($SOKSAK_CALLER_TAB) 우선, 없으면 활성 체인.
 function resolveCtx(ctx: CommandContext): Location | null {
   if (ctx.pane) {
-    const loc = locatePane(ctx.pane);
+    const loc = locateTab(ctx.pane);
     if (loc) return loc;
   }
   return activeChain();
@@ -247,32 +251,33 @@ function resolveProject(
   return resolveCtx(ctx)?.project ?? null;
 }
 
-// 대상 패널: 명시 id(전 프로젝트 검색) > 컨텍스트 패널.
-function resolveGroup(
+// 대상 pane: 명시 id(전 프로젝트 검색) > 컨텍스트 pane.
+function resolvePane(
   params: Record<string, unknown>,
   ctx: CommandContext,
 ): Location | null {
-  const id = params.panel as string | undefined;
-  if (id) return locateGroup(id);
+  const id = params.pane as string | undefined;
+  if (id) return locatePane(id);
   return resolveCtx(ctx);
 }
 
-// term.* 의 컨텍스트 기반 터미널 pane 해석(명시 pane 이 없을 때) — resolveTermPane 에 주입.
-// 터미널 = PTY 관찰을 가진 뷰(플러그인 터미널, view.id = paneId). 컨텍스트 pane > 활성 뷰 >
-// 같은 컨텐츠의 첫 터미널 뷰 순. substrate 술어(hasPtyObservation)로 generic 판정(코어 락인 0).
-function terminalContextPane(
+// term.* 의 컨텍스트 기반 터미널 탭 해석(명시 tab 이 없을 때) — resolveTermTab 에 주입.
+// 터미널 = PTY 관찰을 가진 뷰의 인스턴스(플러그인 터미널, 그 인스턴스가 탭이다). 호출자 탭 >
+// 활성 탭 > 같은 스페이스의 첫 터미널 탭 순. substrate 술어(hasPtyObservation)로 generic
+// 판정(코어 락인 0).
+function terminalContextTab(
   _params: Record<string, unknown>,
   ctx: CommandContext,
-): { paneId: string } | null {
-  if (ctx.pane && hasPtyObservation(ctx.pane)) return { paneId: ctx.pane };
+): { tabId: string } | null {
+  if (ctx.pane && hasPtyObservation(ctx.pane)) return { tabId: ctx.pane };
   const loc = activeChain();
   if (!loc) return null;
-  if (loc.view && hasPtyObservation(loc.view.id)) {
-    return { paneId: loc.view.id };
+  if (loc.tab && hasPtyObservation(loc.tab.id)) {
+    return { tabId: loc.tab.id };
   }
-  for (const g of allGroups(loc.content.layout)) {
+  for (const g of allGroups(loc.space.layout)) {
     for (const v of g.tabs) {
-      if (hasPtyObservation(v.id)) return { paneId: v.id };
+      if (hasPtyObservation(v.id)) return { tabId: v.id };
     }
   }
   return null;
@@ -288,17 +293,17 @@ function exampleProgramId(): string {
   return listPrograms()[0]?.decl.id ?? "<program>";
 }
 
-// dev 프리셋의 브라우저 패널 해석 — 관례 프로그램 id "browser"(terminal 과 동일 메커니즘)만 본다.
+// dev 프리셋의 브라우저 pane 해석 — 관례 프로그램 id "browser"(terminal 과 동일 메커니즘)만 본다.
 // substring 매칭 폴백은 두지 않는다: "browser" 를 포함한 임의 id 를 기본 브라우저로 오인할 수 있고
 // (엔진 변형·도구 프로그램), terminal 은 그런 폴백 없이 관례 id 하나로 동작한다 — 대칭 유지.
-// 미등록이면 undefined — 호출부가 패널을 건너뛰고 사유를 남긴다(은폐 금지).
+// 미등록이면 undefined — 호출부가 그 pane 을 건너뛰고 사유를 남긴다(은폐 금지).
 function findBrowserProgram(): string | undefined {
   return listPrograms().find((p) => p.decl.id === "browser")?.decl.id;
 }
 
 // ── 직렬화(state.tree) ──────────────────────────────────────────────────────
 
-function serializeView(v: Tab) {
+function serializeTab(v: Tab) {
   if (v.kind === "file") {
     return {
       id: v.id,
@@ -321,16 +326,33 @@ function serializeView(v: Tab) {
   };
 }
 
-// 그룹 트리(분할 구조 — splitId/dir/sizes 는 panel.resize 의 대상).
-function serializeLayout(node: PaneNode): object {
-  if (node.type === "leaf") return { panel: node.value.id };
+// 분할 구조의 직렬화(배치 트리·사이드바 트리 공용). 내부 노드는 실체가 아니므로 이름이 없다 —
+// dir/sizes 와 children 중첩만 싣고 id 는 싣지 않는다. 골을 조작하는 명령(pane.resize·
+// pane.equalize·sidebar.left.resize)은 leaf 로 골을 지목하므로 내부 노드를 부를 일이 없다
+// (IDENTITY §4).
+function serializeSplitStructure<L>(
+  node: SplitTree<L>,
+  leafOf: (value: L) => object,
+): object {
+  if (node.type === "leaf") return leafOf(node.value);
   return {
-    split: { id: node.id, dir: node.dir, sizes: node.sizes },
-    children: node.children.map(serializeLayout),
+    split: { dir: node.dir, sizes: node.sizes },
+    children: node.children.map((c) => serializeSplitStructure(c, leafOf)),
   };
 }
 
-function serializeContent(
+function serializeLayout(node: PaneNode): object {
+  return serializeSplitStructure(node, (pane) => ({ pane: pane.id }));
+}
+
+function serializeSidebarLayout(node: SidebarLayout): object {
+  return serializeSplitStructure(node, (g) => ({
+    viewKeys: g.viewKeys,
+    active: g.activeViewKey,
+  }));
+}
+
+function serializeSpace(
   c: Space,
   activeSpaceId: string,
   /** 이 스페이스의 해(배치 해결기). 레일이 없는 비활성 스페이스는 null — 정본 배열 그대로. */
@@ -342,71 +364,71 @@ function serializeContent(
   const canonicalLayout = serializeLayout(c.layout);
   const canonicalCells = computeLayout(c.layout).cells;
   const projectedCells = computeLayout(displayLayout).cells;
-  const maximizedGroup = c.maximizedTabId
+  const maximizedPane = c.maximizedTabId
     ? (projectedCells.find(({ group }) => group.id === c.activePaneId) ??
       projectedCells.find(({ group }) =>
-        group.tabs.some((view) => view.id === c.maximizedTabId),
+        group.tabs.some((tab) => tab.id === c.maximizedTabId),
       ) ?? null)
     : null;
-  const cells = maximizedGroup
-    ? [{ group: maximizedGroup.group, rect: { left: 0, top: 0, width: 100, height: 100 } }]
+  const cells = maximizedPane
+    ? [{ group: maximizedPane.group, rect: { left: 0, top: 0, width: 100, height: 100 } }]
     : projectedCells;
   const canonicalOrder = canonicalCells.map(({ group }) => group.id);
   const projectedOrder = projectedCells.map(({ group }) => group.id);
-  const swappedPanels = canonicalOrder.filter(
+  const swappedPanes = canonicalOrder.filter(
     (id, index) => projectedOrder[index] !== id,
   );
   const projection = c.maximizedTabId
     ? {
         kind: "maximized" as const,
         applied: true,
-        focusedPanelId: c.activePaneId,
-        swappedPanels: [] as string[],
+        focusedPaneId: c.activePaneId,
+        swappedPanes: [] as string[],
       }
     : displayLayout !== c.layout
       ? {
           kind: "switched" as const,
           applied: true,
-          focusedPanelId: c.activePaneId,
-          swappedPanels,
+          focusedPaneId: c.activePaneId,
+          swappedPanes,
         }
       : {
           kind: "canonical" as const,
           applied: false,
-          focusedPanelId: c.activePaneId,
-          swappedPanels: [] as string[],
+          focusedPaneId: c.activePaneId,
+          swappedPanes: [] as string[],
         };
-  const boundPanel = c.railBindingTabId
+  const boundPane = c.railBindingTabId
     ? cells.find(({ group }) =>
-        group.tabs.some((view) => view.id === c.railBindingTabId),
+        group.tabs.some((tab) => tab.id === c.railBindingTabId),
       )
     : undefined;
   const railRelation = c.railBindingTabId
     ? {
-        boundViewId: c.railBindingTabId,
-        boundPanelId: boundPanel?.group.id ?? null,
+        boundTabId: c.railBindingTabId,
+        boundPaneId: boundPane?.group.id ?? null,
         connected:
           railOpen &&
-          !!boundPanel &&
+          !!boundPane &&
           railStation !== undefined &&
-          Math.abs(boundPanel.rect.left - railStation) <= 0.01,
+          Math.abs(boundPane.rect.left - railStation) <= 0.01,
       }
     : null;
   return {
     id: c.id,
     title: c.title,
     active: c.id === activeSpaceId,
-    activePanelId: c.activePaneId,
-    maximizedViewId: c.maximizedTabId ?? null,
-    // layout/panels = 지금 화면. canonicalLayout = 저장된 SplitTree의 읽기 전용 직렬화.
+    activePaneId: c.activePaneId,
+    maximizedTabId: c.maximizedTabId ?? null,
+    // layout/panes = 지금 화면. canonicalLayout = 저장된 SplitTree의 읽기 전용 직렬화.
     // 소비자는 투영 결과를 정본으로 오인하거나 private store를 읽을 필요가 없다.
-    layout: maximizedGroup
-      ? { panel: maximizedGroup.group.id }
+    layout: maximizedPane
+      ? { pane: maximizedPane.group.id }
       : serializeLayout(displayLayout),
     canonicalLayout,
     projection,
     railRelation,
-    panels: cells.map(({ group, rect }) => ({
+    panes: cells.map(({ group, rect }) => ({
       id: group.id,
       rect: {
         left: Math.round(rect.left * 10) / 10,
@@ -415,8 +437,8 @@ function serializeContent(
         height: Math.round(rect.height * 10) / 10,
       },
       active: group.id === c.activePaneId,
-      activeViewId: group.activeTabId,
-      views: group.tabs.map(serializeView),
+      activeTabId: group.activeTabId,
+      tabs: group.tabs.map(serializeTab),
     })),
   };
 }
@@ -456,7 +478,7 @@ function serializeTree() {
         active: t.id === s.activeId,
         activeSpaceId: t.activeSpaceId,
         spaces: t.spaces.map((c) =>
-          serializeContent(
+          serializeSpace(
             c,
             t.activeSpaceId,
             c.id === t.activeSpaceId ? arrangement : null,
@@ -501,24 +523,33 @@ const P = {
     description: "Target project id (omit = caller's context project)",
   },
   space: { type: "string", description: "Target space tab id" },
-  panel: {
-    type: "string",
-    description: "Target panel id (omit = caller's context panel)",
-  },
-  view: { type: "string", description: "Target view id (omit = caller's context view)" },
   pane: {
     type: "string",
-    description: "Target pane id (omit = caller's context pane, $SOKSAK_PANE)",
+    description: "Target pane id (omit = caller's context pane)",
+  },
+  /**
+   * 탭 축 — 한 축에 이름은 하나다. 같은 id 공간을 두 이름으로 부르면 호출자는 어느 쪽을 쓸지
+   * 짐작하고, 고칠 때는 한쪽만 고친다. 터미널 대상도 이 축이다(터미널 = 플러그인 뷰의 인스턴스).
+   */
+  tab: {
+    type: "string",
+    description: "Target tab id (omit = caller's context tab, $SOKSAK_CALLER_TAB)",
   },
   program: {
     type: "string",
     description:
-      "Program id — plugin-registered only (see program.list; no built-in default). Omitted or unregistered id opens a blank panel",
+      "Program id — plugin-registered only (see program.list; no built-in default). Omitted or unregistered id opens a blank pane",
   },
   side: {
     type: "string",
     description: "Split direction",
     enum: ["left", "right", "top", "bottom"],
+  },
+  edge: {
+    type: "string",
+    description:
+      "Which of the pane's edges the gutter sits on — right|bottom are canonical, left|top name the same gutter from the neighbour's side",
+    enum: [...EDGES],
   },
   zone: {
     type: "string",
@@ -537,10 +568,10 @@ export function registerCatalog(): void {
 
   register("state.tree", {
     description:
-      "Full layout snapshot (address book): all ids and active state across project → space → panel (display rect %) → view → pane. Each space exposes displayed and canonical stored layouts plus projection provenance; each project exposes its effective left-rail position and clean grid lines.",
+      "Full layout snapshot (address book): all ids and active state across project → space → pane (display rect %) → tab. Each space exposes displayed and canonical stored layouts plus projection provenance; each project exposes its effective left-rail position and clean grid lines.",
     params: {},
     returns:
-      "{ activeProjectId, projects[].{ leftRailPosition, spaces[].{ layout, canonicalLayout, projection, railRelation:{boundViewId,boundPanelId,connected}?, panels[] } } } — layout/panels are displayed state; canonicalLayout is the stored SplitTree",
+      "{ activeProjectId, projects[].{ leftRailPosition, spaces[].{ layout, canonicalLayout, projection, railRelation:{boundTabId,boundPaneId,connected}?, panes[] } } } — layout/panes are displayed state; canonicalLayout is the stored SplitTree",
     message: (d) => tmsg("msg.state.tree", { n: ((d.projects as unknown[]) ?? []).length }),
     examples: ["state.tree"],
     handler: () => serializeTree(),
@@ -549,10 +580,10 @@ export function registerCatalog(): void {
   // 배치의 해 — station·스위칭·이동량은 (그리드, 포커스)의 순수 함수이고, 이 명령은 그 해를
   // 그대로 노출한다. 관측(ui.measure 실측)과 이 답을 대조하면 화면이 계약대로인지 판정된다.
   // 배치를 직접 설정하는 명령은 두지 않는다 — 해는 트리와 포커스에서 나오므로 그것을 직접
-  // 쓰는 표면은 두 번째 진실이 된다(위치는 sidebar.left.position, 구조는 panel.* 이 소유).
+  // 쓰는 표면은 두 번째 진실이 된다(위치는 sidebar.left.position, 구조는 pane.* 이 소유).
   register("layout.arrangement", {
     description:
-      "The solved arrangement of the active space: the rail station, whether the focused panel was switched to the front (row-mismatch rule), the displayed cell rects, and the move list a focus change would produce. Read-only — the arrangement is a function of the split tree and the focus, so panel.*/sidebar.left.position are the ways to change it.",
+      "The solved arrangement of the active space: the rail station, whether the focused pane was switched to the front (row-mismatch rule), the displayed cell rects, and the move list a focus change would produce. Read-only — the arrangement is a function of the split tree and the focus, so pane.*/sidebar.left.position are the ways to change it.",
     triggers: {
       ko: "배치 해 레일 스테이션 이동량 스위칭 정렬 계산 확인",
     },
@@ -600,32 +631,32 @@ export function registerCatalog(): void {
 
   register("state.context", {
     description:
-      "Resolve the caller's position: project/space/panel/view that $SOKSAK_PANE belongs to (falls back to active chain when called outside a terminal).",
-    params: { pane: P.pane },
-    returns: "{ projectId, spaceId, panelId, viewId?, paneId? } — viewId is absent when the panel is empty",
+      "Resolve the caller's position: project/space/pane/tab that $SOKSAK_CALLER_TAB belongs to (falls back to active chain when called outside a terminal).",
+    params: { tab: P.tab },
+    returns:
+      "{ projectId, spaceId, paneId, tabId?, callerTab? } — tabId is absent when the pane is empty; callerTab is the terminal tab this call came from",
     message: (d) =>
-      d.viewId
-        ? tmsg("msg.state.context", { view: String(d.viewId) })
-        : tmsg("msg.state.context.emptyPanel", { panel: String(d.panelId) }),
+      d.tabId
+        ? tmsg("msg.state.context", { view: String(d.tabId) })
+        : tmsg("msg.state.context.emptyPane", { pane: String(d.paneId) }),
     errors: ["TARGET_NOT_FOUND"],
     examples: ["state.context"],
     handler: (p, ctx) => {
-      const loc = p.pane
-        ? locatePane(p.pane as string)
-        : resolveCtx(ctx);
+      const loc = p.tab ? locateTab(p.tab as string) : resolveCtx(ctx);
       if (!loc) return notFound("컨텍스트를 해석할 수 없음");
-      return asSurface({
+      return {
         projectId: loc.project.id,
-        contentId: loc.content.id,
-        groupId: loc.group.id,
-        // 빈 패널이면 viewId 없이 패널까지의 위치를 답한다 — 빈 패널 위치도 위치다.
-        viewId: loc.view?.id,
-        // 터미널 pane = 플러그인 터미널의 view.id(PTY 관찰을 가진 뷰). 명시 > 컨텍스트 > 활성 뷰.
-        paneId:
-          (p.pane as string) ??
+        spaceId: loc.space.id,
+        paneId: loc.pane.id,
+        // 빈 pane 이면 tabId 없이 pane 까지의 위치를 답한다 — 빈 pane 위치도 위치다.
+        tabId: loc.tab?.id,
+        // 호출자 문맥 축("터미널 안 내 위치") — 대상 축(tabId)과 다른 축이라 이름도 다르다.
+        // 명시 > 컨텍스트 > 활성 탭(PTY 관찰을 가진 탭일 때만).
+        callerTab:
+          (p.tab as string) ??
           ctx.pane ??
-          (loc.view && hasPtyObservation(loc.view.id) ? loc.view.id : undefined),
-      });
+          (loc.tab && hasPtyObservation(loc.tab.id) ? loc.tab.id : undefined),
+      };
     },
   });
 
@@ -690,7 +721,7 @@ export function registerCatalog(): void {
       shell: { type: "string", description: "Terminal shell path (omit = global setting → $SHELL)" },
     },
     returns:
-      "{ projectId, spaceId, panelId, viewId, paneId?, existing? } | { existingWindow } (already open in another window — focused instead) | { routedWindow } (called on the control-plane window — opened in a new project window instead)",
+      "{ projectId, spaceId, paneId, tabId, existing? } | { existingWindow } (already open in another window — focused instead) | { routedWindow } (called on the control-plane window — opened in a new project window instead)",
     message: (d) =>
       d.routedWindow
         ? tmsg("msg.project.open.routed", { window: String(d.routedWindow) })
@@ -756,14 +787,20 @@ export function registerCatalog(): void {
       }
       // 루트 초기화 정책(git init 등)은 project.created 이벤트 구독 플러그인 소유.
       // P6(전역 단일 오픈) 게이트 경유 — 다른 창 소유면 그 창 포커스 + existingWindow 반환.
-      return asSurface(
-        await addProjectClaimed({
-          alias,
-          root,
-          shell: p.shell as string | undefined,
-          program: p.program as Program | undefined,
-        }),
-      );
+      const r = await addProjectClaimed({
+        alias,
+        root,
+        shell: p.shell as string | undefined,
+        program: p.program as Program | undefined,
+      });
+      if (!r.ok || "existingWindow" in r || "routedWindow" in r) return r;
+      return {
+        projectId: r.projectId,
+        spaceId: r.contentId,
+        paneId: r.groupId,
+        tabId: r.viewId,
+        ...(r.existing ? { existing: r.existing } : {}),
+      };
     },
   });
 
@@ -798,11 +835,14 @@ export function registerCatalog(): void {
       project: { ...P.project, required: true },
       title: { type: "string", description: "New project name", required: true },
     },
-    returns: "{}",
+    returns: "{ projectId }",
     message: () => tmsg("msg.project.rename"),
     errors: ["TARGET_NOT_FOUND"],
-    examples: ['project.rename \'{"project":"t1","title":"백엔드"}\''],
-    handler: (p) => S().renameProject(p.project as string, p.title as string),
+    examples: ['project.rename \'{"project":"pjt-a1b2c3","title":"백엔드"}\''],
+    handler: (p) =>
+      withTargets(S().renameProject(p.project as string, p.title as string), {
+        projectId: p.project as string,
+      }),
   });
 
   register("project.color", {
@@ -815,12 +855,15 @@ export function registerCatalog(): void {
         description: "CSS color (e.g. #4a8fe8). Omit to revert to default.",
       },
     },
-    returns: "{}",
+    returns: "{ projectId }",
     message: () => tmsg("msg.project.color"),
     errors: ["TARGET_NOT_FOUND"],
-    examples: ['project.color \'{"project":"t1","color":"#4a8fe8"}\''],
+    examples: ['project.color \'{"project":"pjt-a2b3c4","color":"#4a8fe8"}\''],
     handler: (p) =>
-      S().setProjectColor(p.project as string, (p.color as string) ?? null),
+      withTargets(
+        S().setProjectColor(p.project as string, (p.color as string) ?? null),
+        { projectId: p.project as string },
+      ),
   });
 
   register("project.update", {
@@ -832,25 +875,28 @@ export function registerCatalog(): void {
       shell: { type: "string", description: 'Terminal shell path ("" = default)' },
       color: { type: "string", description: 'Accent color ("" = remove)' },
     },
-    returns: "{}",
+    returns: "{ projectId }",
     message: () => tmsg("msg.project.update"),
     errors: ["TARGET_NOT_FOUND"],
     examples: [
-      'project.update \'{"project":"t1","title":"백엔드","program":"claude"}\'',
+      'project.update \'{"project":"pjt-a2b3c4","title":"백엔드","program":"claude"}\'',
     ],
     handler: (p) =>
-      S().updateProject(p.project as string, {
-        title: p.title as string | undefined,
-        shell: p.shell === undefined ? undefined : (p.shell as string) || null,
-        color: p.color === undefined ? undefined : (p.color as string) || null,
-      }),
+      withTargets(
+        S().updateProject(p.project as string, {
+          title: p.title as string | undefined,
+          shell: p.shell === undefined ? undefined : (p.shell as string) || null,
+          color: p.color === undefined ? undefined : (p.color as string) || null,
+        }),
+        { projectId: p.project as string },
+      ),
   });
 
   register("project.sidebar.toggle", {
     description: "Toggle the file-tree sidebar for a project.",
     triggers: { ko: "사이드바 파일트리 열기 닫기 토글" },
     params: { project: P.project },
-    returns: "{ sidebarOpen }",
+    returns: "{ projectId, sidebarOpen }",
     message: (d) =>
       d.sidebarOpen
         ? tmsg("msg.project.sidebar.toggle.opened")
@@ -860,7 +906,7 @@ export function registerCatalog(): void {
     handler: (p, ctx) => {
       const t = resolveProject(p, ctx);
       if (!t) return notFound("프로젝트 없음");
-      return S().toggleSidebar(t.id);
+      return withTargets(S().toggleSidebar(t.id), { projectId: t.id });
     },
   });
 
@@ -895,7 +941,7 @@ export function registerCatalog(): void {
       project: P.project,
       open: { type: "boolean", description: "When provided, force open or closed" },
     },
-    returns: "{ rightOpen }",
+    returns: "{ projectId, rightOpen }",
     message: (d) =>
       d.rightOpen
         ? tmsg("msg.project.rightbar.toggle.opened")
@@ -905,53 +951,57 @@ export function registerCatalog(): void {
     handler: (p, ctx) => {
       const t = resolveProject(p, ctx);
       if (!t) return notFound("프로젝트 없음");
-      return S().toggleRightSidebar(t.id, p.open as boolean | undefined);
+      return withTargets(S().toggleRightSidebar(t.id, p.open as boolean | undefined), {
+        projectId: t.id,
+      });
     },
   });
 
-  register("view.label.set", {
+  // 레일 탭의 라벨은 뷰 종류(viewKey)에 붙는다 — 콘텐츠 탭 하나가 아니라 그 종류의 탭 자리다.
+  // 그래서 이 두 명령의 축은 tab id 가 아니라 viewKey 이고, 이름도 그렇게 부른다.
+  register("tab.label.set", {
     description:
       "Set a custom tab label for a sidebar view (overrides the manifest title). Empty label clears the override (manifest fallback). viewKey = '<pluginId>.<viewId>' from ui.tree (tab/left/<key>).",
     triggers: { ko: "사이드바 탭 이름변경 라벨 뷰 제목 변경" },
     params: {
-      view: { type: "string", description: "viewKey '<pluginId>.<viewId>'", required: true },
+      viewKey: { type: "string", description: "viewKey '<pluginId>.<viewId>'", required: true },
       label: { type: "string", description: "Custom label; empty to clear", required: true },
     },
-    returns: "{ view, label }",
+    returns: "{ viewKey, label }",
     message: (d) =>
       d.label
-        ? tmsg("msg.view.label.set.set", { label: String(d.label) })
-        : tmsg("msg.view.label.set.cleared"),
+        ? tmsg("msg.tab.label.set.set", { label: String(d.label) })
+        : tmsg("msg.tab.label.set.cleared"),
     errors: ["INVALID_PARAMS"],
     examples: [
-      'view.label.set \'{"view":"soksak-plugin-<id>.<view>","label":"내 라벨"}\'',
+      'tab.label.set \'{"viewKey":"soksak-plugin-<id>.<view>","label":"내 라벨"}\'',
     ],
     handler: (p) => {
-      const key = p.view as string;
+      const key = p.viewKey as string;
       useViewLabels.getState().setLabel(key, p.label as string);
-      return { view: key, label: useViewLabels.getState().labels[key] ?? "" };
+      return { viewKey: key, label: useViewLabels.getState().labels[key] ?? "" };
     },
   });
 
-  register("view.label.get", {
+  register("tab.label.get", {
     description:
-      "Get the custom tab label override for a sidebar view (empty = none, caller falls back to manifest title). Omit view to list all overrides.",
+      "Get the custom tab label override for a sidebar view (empty = none, caller falls back to manifest title). Omit viewKey to list all overrides.",
     triggers: { ko: "사이드바 탭 라벨 조회 뷰 제목" },
     params: {
-      view: { type: "string", description: "viewKey; omit to list all overrides" },
+      viewKey: { type: "string", description: "viewKey; omit to list all overrides" },
     },
-    returns: "{ labels } or { view, label }",
+    returns: "{ labels } or { viewKey, label }",
     message: (d) =>
       d.labels
-        ? tmsg("msg.view.label.get.all", {
+        ? tmsg("msg.tab.label.get.all", {
             n: Object.keys((d.labels as Record<string, unknown>) ?? {}).length,
           })
-        : tmsg("msg.view.label.get.one", { label: String(d.label ?? "") }),
-    examples: ["view.label.get", 'view.label.get \'{"view":"x.y"}\''],
+        : tmsg("msg.tab.label.get.one", { label: String(d.label ?? "") }),
+    examples: ["tab.label.get", 'tab.label.get \'{"viewKey":"x.y"}\''],
     handler: (p) => {
       const labels = useViewLabels.getState().labels;
-      if (p.view !== undefined)
-        return { view: p.view, label: labels[p.view as string] ?? "" };
+      if (p.viewKey !== undefined)
+        return { viewKey: p.viewKey, label: labels[p.viewKey as string] ?? "" };
       return { labels };
     },
   });
@@ -981,7 +1031,7 @@ export function registerCatalog(): void {
 
   register("sidebar.left.tree", {
     description:
-      "Return the left sidebar layout tree (SplitTree of tab groups) — split ids, sizes, each leaf's viewKeys + active. Source for sidebar.left.move/resize targets.",
+      "Return the left sidebar layout tree (SplitTree of tab groups) — direction, sizes, each leaf's viewKeys + active. Source for sidebar.left.move/resize targets, which name a viewKey (the tree's interior nodes have no name).",
     triggers: { ko: "좌측 사이드바 레이아웃 트리 탭 분할 구조" },
     params: { project: P.project },
     returns: "{ projectId, layout }",
@@ -991,13 +1041,13 @@ export function registerCatalog(): void {
     handler: (p, ctx) => {
       const t = resolveProject(p, ctx);
       if (!t) return notFound("프로젝트 없음");
-      return { projectId: t.id, layout: t.leftLayout };
+      return { projectId: t.id, layout: serializeSidebarLayout(t.leftLayout) };
     },
   });
 
   register("sidebar.left.position", {
     description:
-      "Read or set the project left rail position mode. Omit mode to query. flow (default) stands the rail at the focused panel's clean left line and travels with focus; pin without station freezes the current effective line; pin with station snaps to the nearest clean full-height grid line. The solved arrangement is what state.tree reports.",
+      "Read or set the project left rail position mode. Omit mode to query. flow (default) stands the rail at the focused pane's clean left line and travels with focus; pin without station freezes the current effective line; pin with station snaps to the nearest clean full-height grid line. The solved arrangement is what state.tree reports.",
     triggers: {
       ko: "좌측 사이드바 레일 위치 플로우 포커스 추종 핀 고정 그립 스냅",
     },
@@ -1092,7 +1142,7 @@ export function registerCatalog(): void {
     triggers: { ko: "좌측 사이드바 탭 이동 합치기 분할 드래그 머지" },
     params: {
       project: P.project,
-      view: { type: "string", description: "viewKey to move", required: true },
+      viewKey: { type: "string", description: "viewKey to move", required: true },
       target: { type: "string", description: "target viewKey (a view in the target group)", required: true },
       zone: {
         type: "string",
@@ -1101,11 +1151,11 @@ export function registerCatalog(): void {
         required: true,
       },
     },
-    returns: "{}",
+    returns: "{ projectId }",
     message: () => tmsg("msg.sidebar.left.move"),
     errors: ["TARGET_NOT_FOUND", "INVALID_PARAMS"],
     examples: [
-      'sidebar.left.move \'{"view":"soksak-plugin-<id>.<view>","target":"soksak-plugin-<other-id>.<view>","zone":"right"}\'',
+      'sidebar.left.move \'{"viewKey":"soksak-plugin-<id>.<view>","target":"soksak-plugin-<other-id>.<view>","zone":"right"}\'',
     ],
     handler: (p, ctx) => {
       const t = resolveProject(p, ctx);
@@ -1120,27 +1170,42 @@ export function registerCatalog(): void {
         drop = { type: "split" as const, targetKey: target, dir: "col" as const, before: zone === "top" };
       else
         return { ok: false as const, code: "INVALID_PARAMS", message: "zone: into | left | right | top | bottom" };
-      return S().moveSidebarView(t.id, p.view as string, drop);
+      return withTargets(S().moveSidebarView(t.id, p.viewKey as string, drop), {
+        projectId: t.id,
+      });
     },
   });
 
   register("sidebar.left.resize", {
     description:
-      "Resize a left sidebar split by ratio — sizes parallel to the split's children (sum 1). Split ids from sidebar.left.tree.",
+      "Resize the left sidebar split that holds a view — sizes are parallel to that split's children (sum 1). The tree's interior nodes have no name, so the split is named by one of the views inside it (viewKeys from sidebar.left.tree).",
     triggers: { ko: "좌측 사이드바 분할 비율 크기 조절" },
     params: {
       project: P.project,
-      split: { type: "string", description: "Sidebar split id", required: true },
+      viewKey: {
+        type: "string",
+        description: "A viewKey inside the split to resize (its own tab group's split)",
+        required: true,
+      },
       sizes: { type: "number[]", description: "Ratio per child, sum 1", required: true },
     },
-    returns: "{}",
+    returns: "{ projectId, sizes }",
     message: () => tmsg("msg.sidebar.left.resize"),
-    errors: ["TARGET_NOT_FOUND"],
-    examples: ['sidebar.left.resize \'{"split":"s7","sizes":[0.6,0.4]}\''],
+    errors: ["TARGET_NOT_FOUND", "INVALID_PARAMS"],
+    examples: [
+      'sidebar.left.resize \'{"viewKey":"soksak-plugin-<id>.<view>","sizes":[0.6,0.4]}\'',
+    ],
     handler: (p, ctx) => {
       const t = resolveProject(p, ctx);
       if (!t) return notFound("프로젝트 없음");
-      return S().resizeSidebar(t.id, p.split as string, p.sizes as number[]);
+      const key = p.viewKey as string;
+      const splitId = sidebarSplitIdOf(t.leftLayout, key);
+      if (!splitId) {
+        return notFound(`분할 안의 사이드바 뷰가 아님: ${key}`);
+      }
+      const sizes = p.sizes as number[];
+      const r = S().resizeSidebar(t.id, splitId, sizes);
+      return r.ok ? { projectId: t.id, sizes } : r;
     },
   });
 
@@ -1148,20 +1213,21 @@ export function registerCatalog(): void {
   register("space.list", {
     description: "List space tabs in a project.",
     params: { project: P.project },
-    returns: "{ spaces: [{id,title,program,active}] }",
+    returns: "{ projectId, spaces: [{id,title,active}] }",
     message: (d) => tmsg("msg.space.list", { n: ((d.spaces as unknown[]) ?? []).length }),
     errors: ["TARGET_NOT_FOUND"],
     examples: ["space.list"],
     handler: (p, ctx) => {
       const t = resolveProject(p, ctx);
       if (!t) return notFound("프로젝트 없음");
-      return asSurface({
+      return {
+        projectId: t.id,
         spaces: t.spaces.map((c) => ({
           id: c.id,
           title: c.title,
           active: c.id === t.activeSpaceId,
         })),
-      });
+      };
     },
   });
 
@@ -1169,15 +1235,15 @@ export function registerCatalog(): void {
     description: "Create a new space tab. Program priority: explicit > project setting > global setting.",
     triggers: { ko: "새 탭 스페이스 탭 추가 새로 열기" },
     params: { project: P.project, program: P.program },
-    returns: "{ spaceId, panelId, viewId, paneId? }",
+    returns: "{ projectId, spaceId, paneId, tabId? }",
     message: () => tmsg("msg.space.create"),
     errors: ["TARGET_NOT_FOUND"],
     hint: (d) => {
       // 새 스페이스는 활성 스페이스가 되므로 후속 수는 컨텍스트를 그대로 겨냥한다(대상 id 불요).
       if (d.code) return [];
       return [
-        { cmd: "panel.split right", why: tmsg("hint.flow.space.create.split") },
-        { cmd: `view.open ${exampleProgramId()}`, why: tmsg("hint.flow.space.create.view") },
+        { cmd: "pane.split right", why: tmsg("hint.flow.space.create.split") },
+        { cmd: `tab.open ${exampleProgramId()}`, why: tmsg("hint.flow.space.create.view") },
         { cmd: "window.snapshot", why: tmsg("hint.flow.space.create.snapshot") },
       ];
     },
@@ -1185,7 +1251,14 @@ export function registerCatalog(): void {
     handler: (p, ctx) => {
       const t = resolveProject(p, ctx);
       if (!t) return notFound("프로젝트 없음");
-      return asSurface(S().addContent(t.id, p.program as Program | undefined));
+      const r = S().addContent(t.id, p.program as Program | undefined);
+      if (!r.ok) return r;
+      return {
+        projectId: t.id,
+        spaceId: r.contentId,
+        paneId: r.groupId,
+        tabId: r.viewId,
+      };
     },
   });
 
@@ -1197,14 +1270,17 @@ export function registerCatalog(): void {
       project: P.project,
       space: { ...P.space, required: true },
     },
-    returns: "{ activeSpaceId }",
+    returns: "{ projectId, spaceId(closed), activeSpaceId }",
     message: () => tmsg("msg.space.close"),
     errors: ["TARGET_NOT_FOUND", "LAST_ITEM"],
-    examples: ['space.close \'{"space":"c2"}\''],
+    examples: ['space.close \'{"space":"spc-d5e6f7"}\''],
     handler: (p, ctx) => {
       const t = resolveProject(p, ctx);
       if (!t) return notFound("프로젝트 없음");
-      return asSurface(S().closeContent(t.id, p.space as string));
+      return withTargets(S().closeContent(t.id, p.space as string), {
+        projectId: t.id,
+        spaceId: p.space as string,
+      });
     },
   });
 
@@ -1215,14 +1291,17 @@ export function registerCatalog(): void {
       project: P.project,
       space: { ...P.space, required: true },
     },
-    returns: "{}",
+    returns: "{ projectId, spaceId }",
     message: () => tmsg("msg.space.activate"),
     errors: ["TARGET_NOT_FOUND"],
-    examples: ['space.activate \'{"space":"c2"}\''],
+    examples: ['space.activate \'{"space":"spc-d5e6f7"}\''],
     handler: (p, ctx) => {
       const t = resolveProject(p, ctx);
       if (!t) return notFound("프로젝트 없음");
-      return S().setActiveContent(t.id, p.space as string);
+      return withTargets(S().setActiveContent(t.id, p.space as string), {
+        projectId: t.id,
+        spaceId: p.space as string,
+      });
     },
   });
 
@@ -1250,7 +1329,7 @@ export function registerCatalog(): void {
       region: {
         type: "json",
         description:
-          "Content area fractional rect {x0,y0,x1,y1} (0..1). Default covers the main content pane.",
+          "Content area fractional rect {x0,y0,x1,y1} (0..1). Default covers the space's content area.",
       },
       threshold: {
         type: "number",
@@ -1259,14 +1338,14 @@ export function registerCatalog(): void {
       },
     },
     returns:
-      "{ frames, frameMs, switchFrame, switchFrames (consecutive changed = jank spread), clean, diffsPct }",
+      "{ projectId, spaceId(measured), frames, frameMs, switchFrame, switchFrames (consecutive changed = jank spread), clean, diffsPct }",
     message: (d) =>
       d.clean
         ? tmsg("msg.space.switchScan.clean")
         : tmsg("msg.space.switchScan.jank", { n: Number(d.switchFrames) }),
     examples: [
-      'space.switchScan \'{"from":"c1","to":"c3"}\'',
-      'space.switchScan \'{"to":"c3","frames":40}\'',
+      'space.switchScan \'{"from":"spc-d5e6f7","to":"spc-h2j3k4"}\'',
+      'space.switchScan \'{"to":"spc-h2j3k4","frames":40}\'',
     ],
     handler: async (p, ctx) => {
       const t = resolveProject(p, ctx);
@@ -1331,6 +1410,8 @@ export function registerCatalog(): void {
         }
       }
       return {
+        projectId: t.id,
+        spaceId: to,
         frames: n,
         frameMs: Math.round(realFrameMs),
         switchFrame,
@@ -1348,38 +1429,41 @@ export function registerCatalog(): void {
       space: { ...P.space, required: true },
       title: { type: "string", description: "New name", required: true },
     },
-    returns: "{}",
+    returns: "{ projectId, spaceId }",
     message: () => tmsg("msg.space.rename"),
     errors: ["TARGET_NOT_FOUND"],
-    examples: ['space.rename \'{"space":"c1","title":"빌드"}\''],
+    examples: ['space.rename \'{"space":"spc-d5e6f7","title":"빌드"}\''],
     handler: (p, ctx) => {
       const t = resolveProject(p, ctx);
       if (!t) return notFound("프로젝트 없음");
-      return S().renameContent(t.id, p.space as string, p.title as string);
+      return withTargets(
+        S().renameContent(t.id, p.space as string, p.title as string),
+        { projectId: t.id, spaceId: p.space as string },
+      );
     },
   });
 
-  // ----- panel -----
-  register("panel.list", {
+  // ----- pane -----
+  register("pane.list", {
     description:
-      "List displayed panels in a space, including rect (%), displayed layout, immutable canonical layout, and projection provenance.",
+      "List displayed panes in a space, including rect (%), displayed layout, immutable canonical layout, and projection provenance.",
     params: { project: P.project, space: P.space },
     returns:
-      "{ activePanelId, layout, canonicalLayout, projection, railRelation:{boundViewId,boundPanelId,connected}?, panels[] }",
-    message: (d) => tmsg("msg.panel.list", { n: ((d.panels as unknown[]) ?? []).length }),
+      "{ projectId, spaceId, activePaneId, layout, canonicalLayout, projection, railRelation:{boundTabId,boundPaneId,connected}?, panes[] }",
+    message: (d) => tmsg("msg.pane.list", { n: ((d.panes as unknown[]) ?? []).length }),
     errors: ["TARGET_NOT_FOUND"],
-    examples: ["panel.list"],
+    examples: ["pane.list"],
     handler: (p, ctx) => {
       const t = resolveProject(p, ctx);
       if (!t) return notFound("프로젝트 없음");
       const c = p.space
         ? t.spaces.find((x) => x.id === p.space)
-        : (resolveCtx(ctx)?.content ??
+        : (resolveCtx(ctx)?.space ??
           t.spaces.find((x) => x.id === t.activeSpaceId));
       if (!c) return notFound(`스페이스 없음: ${p.space}`);
       const arrangement =
         c.id === t.activeSpaceId ? projectArrangement(t) : null;
-      const out = serializeContent(
+      const out = serializeSpace(
         c,
         t.activeSpaceId,
         arrangement,
@@ -1387,231 +1471,288 @@ export function registerCatalog(): void {
         t.sidebarOpen,
       );
       return {
-        activePanelId: out.activePanelId,
+        projectId: t.id,
+        spaceId: c.id,
+        activePaneId: out.activePaneId,
         layout: out.layout,
         canonicalLayout: out.canonicalLayout,
         projection: out.projection,
         railRelation: out.railRelation,
-        panels: out.panels,
+        panes: out.panes,
       };
     },
   });
 
-  register("panel.split", {
+  register("pane.split", {
     description:
-      "Split a panel — add a new panel beside the target on a given side (optionally running a program). Use when arranging the layout or opening something side by side.",
-    triggers: { ko: "패널 나누기 분할 화면 분할 옆에 열기 나란히" },
+      "Split a pane — add a new pane beside the target on a given side (optionally running a program). Use when arranging the layout or opening something side by side.",
+    triggers: { ko: "칸 나누기 분할 화면 분할 옆에 열기 나란히" },
     params: {
       project: P.project,
-      panel: P.panel,
+      pane: P.pane,
       side: { ...P.side, required: true },
       program: P.program,
     },
-    returns: "{ panelId(new panel), viewId, paneId?, arrangement:{station,switched,cleanLines[],cells[]} }",
-    message: () => tmsg("msg.panel.split"),
+    returns:
+      "{ projectId, paneId(new pane), tabId?, arrangement:{station,switched,cleanLines[],cells[]} }",
+    message: () => tmsg("msg.pane.split"),
     errors: ["TARGET_NOT_FOUND"],
     hint: (d) => {
       if (d.code) return [];
       const out: CommandHint[] = [];
-      const panel = d.panelId as string | undefined;
-      // 새로 생긴 패널에 다른 프로그램을 탭으로 더 열 수 있다 — 그 패널을 명시 겨냥한다.
-      if (panel)
+      const pane = d.paneId as string | undefined;
+      // 새로 생긴 pane 에 다른 프로그램을 탭으로 더 열 수 있다 — 그 pane 을 명시 겨냥한다.
+      if (pane)
         out.push({
-          cmd: `view.open '{"panel":"${panel}","program":"${exampleProgramId()}"}'`,
-          why: tmsg("hint.flow.panel.split.view"),
+          cmd: `tab.open '{"pane":"${pane}","program":"${exampleProgramId()}"}'`,
+          why: tmsg("hint.flow.pane.split.view"),
         });
-      out.push({ cmd: "window.snapshot", why: tmsg("hint.flow.panel.split.snapshot") });
+      out.push({ cmd: "window.snapshot", why: tmsg("hint.flow.pane.split.snapshot") });
       return out;
     },
-    examples: ['panel.split \'{"side":"right"}\'', 'panel.split \'{"side":"bottom","program":"browser"}\''],
+    examples: ['pane.split \'{"side":"right"}\'', 'pane.split \'{"side":"bottom","program":"browser"}\''],
     handler: (p, ctx) => {
-      const loc = resolveGroup(p, ctx);
-      if (!loc) return notFound("대상 패널 없음");
-      return withArrangement(
+      const loc = resolvePane(p, ctx);
+      if (!loc) return notFound("대상 pane 없음");
+      const r = S().splitWithNewView(
         loc.project.id,
-        asSurface(
-          S().splitWithNewView(
-            loc.project.id,
-            loc.group.id,
-            p.side as Side,
-            p.program as Program,
-          ),
-        ),
+        loc.pane.id,
+        p.side as Side,
+        p.program as Program,
       );
+      if (!r.ok) return r;
+      return withArrangement(loc.project.id, {
+        projectId: loc.project.id,
+        paneId: r.groupId,
+        tabId: r.viewId,
+      });
     },
   });
 
-  register("panel.merge", {
-    description: "Merge panels — move all tabs from src into dst; empty src panel is removed automatically.",
-    triggers: { ko: "패널 합치기 병합 탭 이동 합병" },
+  register("pane.merge", {
+    description: "Merge panes — move all tabs from src into dst; empty src pane is removed automatically.",
+    triggers: { ko: "칸 합치기 병합 탭 이동 합병" },
     params: {
       project: P.project,
-      src: { type: "string", description: "Source panel id", required: true },
-      dst: { type: "string", description: "Destination panel id", required: true },
+      src: { type: "string", description: "Source pane id", required: true },
+      dst: { type: "string", description: "Destination pane id", required: true },
     },
-    returns: "{ panelId(merged panel) }",
-    message: () => tmsg("msg.panel.merge"),
+    returns: "{ projectId, paneId(merged pane) }",
+    message: () => tmsg("msg.pane.merge"),
     errors: ["TARGET_NOT_FOUND", "LAST_ITEM"],
-    examples: ['panel.merge \'{"src":"g2","dst":"g1"}\''],
+    examples: ['pane.merge \'{"src":"pan-p2q3r4","dst":"pan-g2h3j4"}\''],
     handler: (p, ctx) => {
-      const loc = locateGroup(p.src as string) ?? resolveGroup(p, ctx);
-      if (!loc) return notFound(`패널 없음: ${p.src}`);
-      return withArrangement(
+      const loc = locatePane(p.src as string) ?? resolvePane(p, ctx);
+      if (!loc) return notFound(`pane 없음: ${p.src}`);
+      const r = S().moveGroupToGroup(
         loc.project.id,
-        asSurface(
-          S().moveGroupToGroup(
-            loc.project.id,
-            p.src as string,
-            p.dst as string,
-            "center",
-          ),
-        ),
+        p.src as string,
+        p.dst as string,
+        "center",
       );
+      if (!r.ok) return r;
+      return withArrangement(loc.project.id, {
+        projectId: loc.project.id,
+        paneId: r.groupId,
+      });
     },
   });
 
-  register("panel.move", {
-    description: "Reposition a panel — move the entire src panel to the zone position relative to dst.",
-    triggers: { ko: "패널 이동 재배치 위치 옮기기" },
+  register("pane.move", {
+    description: "Reposition a pane — move the entire src pane to the zone position relative to dst.",
+    triggers: { ko: "칸 이동 재배치 위치 옮기기" },
     params: {
       project: P.project,
-      src: { type: "string", description: "Source panel id", required: true },
-      dst: { type: "string", description: "Destination panel id", required: true },
+      src: { type: "string", description: "Source pane id", required: true },
+      dst: { type: "string", description: "Destination pane id", required: true },
       zone: { ...P.zone, required: true },
     },
-    returns: "{ panelId }",
-    message: () => tmsg("msg.panel.move"),
+    returns: "{ projectId, paneId }",
+    message: () => tmsg("msg.pane.move"),
     errors: ["TARGET_NOT_FOUND", "LAST_ITEM"],
-    examples: ['panel.move \'{"src":"g2","dst":"g1","zone":"left"}\''],
+    examples: ['pane.move \'{"src":"pan-p2q3r4","dst":"pan-g2h3j4","zone":"left"}\''],
     handler: (p) => {
-      const loc = locateGroup(p.src as string);
-      if (!loc) return notFound(`패널 없음: ${p.src}`);
-      return withArrangement(
+      const loc = locatePane(p.src as string);
+      if (!loc) return notFound(`pane 없음: ${p.src}`);
+      const r = S().moveGroupToGroup(
         loc.project.id,
-        asSurface(
-          S().moveGroupToGroup(
-            loc.project.id,
-            p.src as string,
-            p.dst as string,
-            p.zone as DropZone,
-          ),
-        ),
+        p.src as string,
+        p.dst as string,
+        p.zone as DropZone,
       );
+      if (!r.ok) return r;
+      return withArrangement(loc.project.id, {
+        projectId: loc.project.id,
+        paneId: r.groupId,
+      });
     },
   });
 
-  register("panel.close", {
+  register("pane.close", {
     danger: "destructive",
-    description: "Close a panel and all its tabs. Refuses to close the last panel.",
-    triggers: { ko: "패널 닫기 패널 제거" },
-    params: { panel: { ...P.panel, required: true } },
-    returns: "{ activePanelId }",
-    message: () => tmsg("msg.panel.close"),
+    description: "Close a pane and all its tabs. Refuses to close the last pane.",
+    triggers: { ko: "칸 닫기 칸 제거" },
+    params: { pane: { ...P.pane, required: true } },
+    returns: "{ paneId(closed), activePaneId }",
+    message: () => tmsg("msg.pane.close"),
     errors: ["TARGET_NOT_FOUND", "LAST_ITEM"],
-    examples: ['panel.close \'{"panel":"g2"}\''],
+    examples: ['pane.close \'{"pane":"pan-p2q3r4"}\''],
     handler: (p) => {
-      const loc = locateGroup(p.panel as string);
-      if (!loc) return notFound(`패널 없음: ${p.panel}`);
+      const loc = locatePane(p.pane as string);
+      if (!loc) return notFound(`pane 없음: ${p.pane}`);
       return withArrangement(
         loc.project.id,
-        asSurface(S().closeGroup(loc.project.id, p.panel as string)),
+        withTargets(S().closeGroup(loc.project.id, p.pane as string), {
+          paneId: p.pane as string,
+        }),
       );
     },
   });
 
-  register("panel.focus", {
-    description: "Focus (activate) a panel, making it the active group.",
-    triggers: { ko: "패널 포커스 패널 활성화 선택" },
-    params: { panel: { ...P.panel, required: true } },
-    returns: "{}",
-    message: () => tmsg("msg.panel.focus"),
+  register("pane.activate", {
+    description: "Activate a pane, making it the focused one.",
+    triggers: { ko: "칸 포커스 칸 활성화 선택" },
+    params: { pane: { ...P.pane, required: true } },
+    returns: "{ paneId }",
+    message: () => tmsg("msg.pane.activate"),
     errors: ["TARGET_NOT_FOUND"],
-    examples: ['panel.focus \'{"panel":"g2"}\''],
+    examples: ['pane.activate \'{"pane":"pan-p2q3r4"}\''],
     handler: (p) => {
-      const loc = locateGroup(p.panel as string);
-      if (!loc) return notFound(`패널 없음: ${p.panel}`);
-      if (!loc.group.activeTabId)
-        return S().setActiveGroup(loc.project.id, p.panel as string);
-      return transferViewFocus(
-        activeSessionViewId(),
-        loc.group.activeTabId,
-        () => S().setActiveGroup(loc.project.id, p.panel as string),
+      const loc = locatePane(p.pane as string);
+      if (!loc) return notFound(`pane 없음: ${p.pane}`);
+      const echo = { paneId: p.pane as string };
+      if (!loc.pane.activeTabId)
+        return withTargets(S().setActiveGroup(loc.project.id, p.pane as string), echo);
+      return withTargets(
+        transferViewFocus(activeSessionViewId(), loc.pane.activeTabId, () =>
+          S().setActiveGroup(loc.project.id, p.pane as string),
+        ),
+        echo,
       );
     },
   });
 
-  register("panel.resize", {
+  register("pane.resize", {
     description:
-      "Adjust split ratios — provide the splitId (layout.split.id from state.tree) and an array of sizes that sum to 1.",
-    triggers: { ko: "패널 크기 조절 비율 분할 조정 크기 바꾸기" },
+      "Move one gutter — the seam on the given edge of a pane. ratio is the new share of the area on that pane's side of the seam; the neighbour on the other side takes the rest, and the panes further along keep their sizes. Every seam is some pane's right or bottom edge (left/top name the same seam from the neighbour's side), so no interior layout id is ever needed.",
+    triggers: { ko: "칸 크기 조절 비율 골 조정 크기 바꾸기 경계 끌기" },
     params: {
-      project: P.project,
-      split: { type: "string", description: "Split node id (e.g. s1)", required: true },
-      sizes: {
-        type: "number[]",
-        description: "Child ratios array summing to 1 (e.g. [0.7,0.3])",
+      pane: P.pane,
+      edge: { ...P.edge, required: true },
+      ratio: {
+        type: "number",
+        description:
+          "New share (0..1, exclusive) of the two adjacent areas for the side the pane sits on",
         required: true,
       },
     },
-    returns: "{}",
-    message: () => tmsg("msg.panel.resize"),
+    returns: "{ paneId, gutter:{pane,edge}(canonical), sizes }",
+    message: () => tmsg("msg.pane.resize"),
     errors: ["TARGET_NOT_FOUND", "INVALID_PARAMS"],
-    examples: ['panel.resize \'{"split":"s1","sizes":[0.7,0.3]}\''],
+    examples: [
+      'pane.resize \'{"edge":"right","ratio":0.7}\'',
+      'pane.resize \'{"pane":"pan-g2h3j4","edge":"bottom","ratio":0.35}\'',
+    ],
     handler: (p, ctx) => {
-      const t = resolveProject(p, ctx);
-      if (!t) return notFound("프로젝트 없음");
-      return S().resizeSplit(t.id, p.split as string, p.sizes as number[]);
+      const loc = resolvePane(p, ctx);
+      if (!loc) return notFound("대상 pane 없음");
+      const edge = p.edge as GutterSide;
+      if (!EDGES.includes(edge)) {
+        return {
+          ok: false as const,
+          code: "INVALID_PARAMS" as const,
+          message: `edge: ${EDGES.join(" | ")}`,
+        };
+      }
+      const ratio = p.ratio as number;
+      if (!Number.isFinite(ratio) || ratio <= 0 || ratio >= 1) {
+        return {
+          ok: false as const,
+          code: "INVALID_PARAMS" as const,
+          message: "ratio 범위: 0 < ratio < 1",
+        };
+      }
+      const layout = loc.space.layout;
+      const gutter = resolveGutter(layout, loc.pane.id, edge, paneIdOf);
+      const current = gutter ? splitSizesOf(layout, gutter.splitId) : null;
+      if (!gutter || !current) {
+        return notFound(`그 모서리에 골이 없음: ${loc.pane.id}/${edge}`);
+      }
+      const sizes = [...current];
+      const pair = sizes[gutter.index] + sizes[gutter.index + 1];
+      // 골 하나는 이웃한 두 자리만 움직인다(그것이 골을 끄는 일이다) — 나머지 자리는 불변.
+      // left/top 으로 부른 골은 앞 형제의 진행방향 골이라, 요청한 pane 이 뒤쪽 자리에 있다.
+      sizes[gutter.index] = isCanonicalSide(edge) ? pair * ratio : pair * (1 - ratio);
+      sizes[gutter.index + 1] = pair - sizes[gutter.index];
+      const r = S().resizeSplit(loc.project.id, gutter.splitId, sizes);
+      return r.ok
+        ? {
+            paneId: loc.pane.id,
+            gutter: gutterEcho(layout, loc.pane.id, edge),
+            sizes,
+          }
+        : r;
     },
   });
 
-  register("panel.equalize", {
+  register("pane.equalize", {
     description:
-      "Equalize split ratios — with index, halves the two areas at that divider (same as double-clicking the divider); without index, distributes all children equally.",
-    triggers: { ko: "패널 균등 같은 크기 반반 균등화" },
+      "Even out a gutter — halves the two areas the seam divides (what double-clicking it does). Pass all:true to give every area along that seam's axis the same share instead of just the two neighbours.",
+    triggers: { ko: "칸 균등 같은 크기 반반 균등화" },
     params: {
-      project: P.project,
-      split: { type: "string", description: "Split node id (e.g. s1)", required: true },
-      index: {
-        type: "number",
-        description: "Divider index (0 = first boundary). Omit to equalize all children.",
+      pane: P.pane,
+      edge: { ...P.edge, required: true },
+      all: {
+        type: "boolean",
+        description: "Equalize every area along that seam's axis, not just the two neighbours",
       },
     },
-    returns: "{ sizes }",
-    message: () => tmsg("msg.panel.equalize"),
+    returns: "{ paneId, gutter:{pane,edge}(canonical), sizes }",
+    message: () => tmsg("msg.pane.equalize"),
     errors: ["TARGET_NOT_FOUND", "INVALID_PARAMS"],
     examples: [
-      'panel.equalize \'{"split":"s1"}\'',
-      'panel.equalize \'{"split":"s1","index":0}\'',
+      'pane.equalize \'{"edge":"right"}\'',
+      'pane.equalize \'{"pane":"pan-g2h3j4","edge":"bottom","all":true}\'',
     ],
     handler: (p, ctx) => {
-      const t = resolveProject(p, ctx);
-      if (!t) return notFound("프로젝트 없음");
-      const node = findSplitNode(t, p.split as string);
-      if (!node) return notFound(`분할 없음: ${p.split}`);
-      const sizes = [...node.sizes];
-      const idx = p.index as number | undefined;
-      if (idx === undefined) {
+      const loc = resolvePane(p, ctx);
+      if (!loc) return notFound("대상 pane 없음");
+      const edge = p.edge as GutterSide;
+      if (!EDGES.includes(edge)) {
+        return {
+          ok: false as const,
+          code: "INVALID_PARAMS" as const,
+          message: `edge: ${EDGES.join(" | ")}`,
+        };
+      }
+      const layout = loc.space.layout;
+      const gutter = resolveGutter(layout, loc.pane.id, edge, paneIdOf);
+      const current = gutter ? splitSizesOf(layout, gutter.splitId) : null;
+      if (!gutter || !current) {
+        return notFound(`그 모서리에 골이 없음: ${loc.pane.id}/${edge}`);
+      }
+      const sizes = [...current];
+      if (p.all === true) {
         sizes.fill(1 / sizes.length);
       } else {
-        if (idx < 0 || idx >= sizes.length - 1) {
-          return {
-            ok: false as const,
-            code: "INVALID_PARAMS" as const,
-            message: `index 범위: 0..${sizes.length - 2}`,
-          };
-        }
-        const half = (sizes[idx] + sizes[idx + 1]) / 2;
-        sizes[idx] = half;
-        sizes[idx + 1] = half;
+        const half = (sizes[gutter.index] + sizes[gutter.index + 1]) / 2;
+        sizes[gutter.index] = half;
+        sizes[gutter.index + 1] = half;
       }
-      const r = S().resizeSplit(t.id, p.split as string, sizes);
-      return r.ok ? { sizes } : r;
+      const r = S().resizeSplit(loc.project.id, gutter.splitId, sizes);
+      return r.ok
+        ? {
+            paneId: loc.pane.id,
+            gutter: gutterEcho(layout, loc.pane.id, edge),
+            sizes,
+          }
+        : r;
     },
   });
 
   register("layout.apply", {
     description:
-      "Apply a layout by building fresh spaces — never destroys existing spaces. Hierarchy: first-level spaces are independent switchable screens; second-level panels are the splits inside each space. preset dev = a terminal plus a browser side by side (if no browser program is installed, that panel is skipped and reported in skipped). preset facets = build the named spaces you pass in (spaces required). Verify by switching to a space with space.activate, then capturing with window.snapshot.",
+      "Apply a layout by building fresh spaces — never destroys existing spaces. Hierarchy: first-level spaces are independent switchable screens; second-level panes are the splits inside each space. preset dev = a terminal plus a browser side by side (if no browser program is installed, that pane is skipped and reported in skipped). preset facets = build the named spaces you pass in (spaces required). Verify by switching to a space with space.activate, then capturing with window.snapshot.",
     triggers: { ko: "화면 구성 레이아웃 적용 스페이스 배치 개발 화면 나란히 배치 dev facets" },
     params: {
       preset: {
@@ -1624,12 +1765,12 @@ export function registerCatalog(): void {
       spaces: {
         type: "json",
         description:
-          "Named spaces to build (required for facets): [{ title, panels?: [{ program, side? }] }]",
+          "Named spaces to build (required for facets): [{ title, panes?: [{ program, side? }] }]",
       },
       project: P.project,
     },
     returns:
-      "{ spaces: [{ spaceId, title, panels: [{ panelId, program }] }], skipped? } — skipped lists panels dropped because their program is missing",
+      "{ projectId, spaces: [{ spaceId, title, panes: [{ paneId, program }] }], skipped? } — skipped lists panes dropped because their program is missing",
     message: (d) => tmsg("msg.layout.apply", { n: ((d.spaces as unknown[]) ?? []).length }),
     errors: ["INVALID_PARAMS", "TARGET_NOT_FOUND"],
     hint: (d) => {
@@ -1637,7 +1778,7 @@ export function registerCatalog(): void {
       const out: CommandHint[] = [];
       const spaces = (d.spaces as { spaceId?: string }[] | undefined) ?? [];
       const skipped = (d.skipped as unknown[] | undefined) ?? [];
-      // 건너뛴 패널이 있으면(브라우저 미설치 등) 설치 경로를 먼저 제시한다.
+      // 건너뛴 pane 이 있으면(브라우저 미설치 등) 설치 경로를 먼저 제시한다.
       if (skipped.length)
         out.push({ cmd: "plugin.catalog", why: tmsg("hint.flow.layout.apply.install") });
       const first = spaces[0]?.spaceId;
@@ -1648,7 +1789,7 @@ export function registerCatalog(): void {
     },
     examples: [
       "layout.apply dev",
-      'layout.apply \'{"preset":"facets","spaces":[{"title":"docs","panels":[{"program":"browser"}]}]}\'',
+      'layout.apply \'{"preset":"facets","spaces":[{"title":"docs","panes":[{"program":"browser"}]}]}\'',
     ],
     handler: (p, ctx) => {
       const t = resolveProject(p, ctx);
@@ -1662,19 +1803,19 @@ export function registerCatalog(): void {
       let spaceSpecs: LayoutSpaceSpec[];
       if (p.preset === "dev") {
         // dev 축약 — 터미널 + 브라우저(우측). 터미널은 계약(설정 엔진)으로, 브라우저는 관례 id 로
-        // 해소한다 — 코어는 특정 program 을 특권화하지 않는다. 어느 쪽이든 없으면 그 패널만 건너뛰고
+        // 해소한다 — 코어는 특정 program 을 특권화하지 않는다. 어느 쪽이든 없으면 그 pane 만 건너뛰고
         // 사유를 남긴다(은폐 금지 — browser 와 대칭).
         const terminalId = resolveTerminalProgram();
         const browserId = findBrowserProgram();
-        const panels: LayoutPanelSpec[] = [];
-        if (terminalId) panels.push({ program: terminalId });
+        const panes: LayoutPaneSpec[] = [];
+        if (terminalId) panes.push({ program: terminalId });
         else
           skipped.push({
             space: "dev",
             program: TERMINAL_CONTRACT.id,
             reason: tmsg("layout.skip.unregistered", { program: TERMINAL_CONTRACT.id }),
           });
-        if (browserId) panels.push({ program: browserId, side: "right" });
+        if (browserId) panes.push({ program: browserId, side: "right" });
         else
           skipped.push({
             space: "dev",
@@ -1682,7 +1823,7 @@ export function registerCatalog(): void {
             side: "right",
             reason: tmsg("layout.skip.noBrowser"),
           });
-        spaceSpecs = [{ title: "dev", panels }];
+        spaceSpecs = [{ title: "dev", panes }];
       } else {
         // facets — spaces 인자를 그대로 쓰는 별칭. spaces 필수.
         const raw = p.spaces;
@@ -1690,7 +1831,7 @@ export function registerCatalog(): void {
           return {
             ok: false as const,
             code: "INVALID_PARAMS" as const,
-            message: "preset=facets 는 spaces 필요([{title,panels}])",
+            message: "preset=facets 는 spaces 필요([{title,panes}])",
           };
         }
         spaceSpecs = raw as LayoutSpaceSpec[];
@@ -1698,238 +1839,240 @@ export function registerCatalog(): void {
       const builtSpaces: {
         spaceId: string;
         title: string;
-        panels: { panelId: string; program: string }[];
+        panes: { paneId: string; program: string }[];
       }[] = [];
       for (const spec of spaceSpecs) {
         const title = typeof spec.title === "string" ? spec.title : "";
-        // 새 스페이스(빈 스페이스) — 첫 패널을 명시 제어하려 program 없이 만든다. 기존 스페이스는 불변.
+        // 새 스페이스(빈 스페이스) — 첫 pane 을 명시 제어하려 program 없이 만든다. 기존 스페이스는 불변.
         const created = S().addContent(t.id);
         if (!created.ok) continue; // 프로젝트 확인 이후이므로 도달 불가(방어)
         const spaceId = created.contentId;
-        const firstPanelId = created.groupId;
+        const firstPaneId = created.groupId;
         if (title) S().renameContent(t.id, spaceId, title);
-        const builtPanels: { panelId: string; program: string }[] = [];
+        const builtPanes: { paneId: string; program: string }[] = [];
         let firstFilled = false;
-        for (const panel of spec.panels ?? []) {
-          const program = panel.program;
+        for (const pane of spec.panes ?? []) {
+          const program = pane.program;
           if (typeof program !== "string" || !getRegisteredProgram(program)) {
             skipped.push({
               space: title || spaceId,
               program: String(program),
-              side: panel.side,
+              side: pane.side,
               reason: tmsg("layout.skip.unregistered", { program: String(program) }),
             });
             continue;
           }
           if (!firstFilled) {
-            // 첫 패널 = 스페이스의 초기(빈) 그룹에 뷰를 넣는다.
-            S().addViewToGroup(t.id, program, firstPanelId);
-            builtPanels.push({ panelId: firstPanelId, program });
+            // 첫 pane = 스페이스의 초기(빈) pane 에 탭을 넣는다.
+            S().addViewToGroup(t.id, program, firstPaneId);
+            builtPanes.push({ paneId: firstPaneId, program });
             firstFilled = true;
           } else {
-            // 이후 패널 = 첫 그룹 옆에 분할 생성.
-            const r = S().splitWithNewView(t.id, firstPanelId, panel.side ?? "right", program);
-            if (r.ok) builtPanels.push({ panelId: r.groupId, program });
+            // 이후 pane = 첫 pane 옆에 분할 생성.
+            const r = S().splitWithNewView(t.id, firstPaneId, pane.side ?? "right", program);
+            if (r.ok) builtPanes.push({ paneId: r.groupId, program });
           }
         }
-        builtSpaces.push({ spaceId, title, panels: builtPanels });
+        builtSpaces.push({ spaceId, title, panes: builtPanes });
       }
-      return skipped.length ? { spaces: builtSpaces, skipped } : { spaces: builtSpaces };
+      return skipped.length
+        ? { projectId: t.id, spaces: builtSpaces, skipped }
+        : { projectId: t.id, spaces: builtSpaces };
     },
   });
 
-  // ----- view(탭) -----
-  register("view.list", {
-    description: "List the views (tabs) inside a panel.",
-    params: { panel: P.panel },
-    returns: "{ panelId, activeViewId, views[] }",
-    message: (d) => tmsg("msg.view.list", { n: ((d.views as unknown[]) ?? []).length }),
+  // ----- tab -----
+  register("tab.list", {
+    description: "List the tabs inside a pane.",
+    params: { pane: P.pane },
+    returns: "{ paneId, activeTabId, tabs[] }",
+    message: (d) => tmsg("msg.tab.list", { n: ((d.tabs as unknown[]) ?? []).length }),
     errors: ["TARGET_NOT_FOUND"],
-    examples: ["view.list"],
+    examples: ["tab.list"],
     handler: (p, ctx) => {
-      const loc = resolveGroup(p, ctx);
-      if (!loc) return notFound("패널 없음");
-      return asSurface({
-        groupId: loc.group.id,
-        activeViewId: loc.group.activeTabId,
-        views: loc.group.tabs.map(serializeView),
-      });
+      const loc = resolvePane(p, ctx);
+      if (!loc) return notFound("pane 없음");
+      return {
+        paneId: loc.pane.id,
+        activeTabId: loc.pane.activeTabId,
+        tabs: loc.pane.tabs.map(serializeTab),
+      };
     },
   });
 
-  register("view.open", {
+  register("tab.open", {
     description:
-      "Open a new view tab in a panel by program id (terminal / claude / codex / a plugin view program). The answer waits until the view is mounted, so the returned viewId can be acted on immediately; mounted:false means it did not come up in time and commands aimed at it will not find it yet.",
-    triggers: { ko: "뷰 열기 탭 추가 claude 열기 터미널 열기" },
+      "Open a new tab in a pane by program id (terminal / claude / codex / a plugin view program). The answer waits until the view is mounted, so the returned tabId can be acted on immediately; mounted:false means it did not come up in time and commands aimed at it will not find it yet.",
+    triggers: { ko: "탭 열기 탭 추가 claude 열기 터미널 열기" },
     params: {
-      panel: P.panel,
+      pane: P.pane,
       program: { ...P.program, required: true },
       mountTimeoutMs: {
         type: "number",
         description:
-          "How long to wait for the view to become actionable (default 5000). 0 answers as soon as the tab exists — mounted will be false and commands aimed at the view may not find it yet.",
+          "How long to wait for the view to become actionable (default 5000). 0 answers as soon as the tab exists — mounted will be false and commands aimed at the tab may not find it yet.",
       },
     },
-    returns: "{ panelId, viewId, mounted, paneId? }",
-    message: () => tmsg("msg.view.open"),
+    returns: "{ paneId, tabId, mounted }",
+    message: () => tmsg("msg.tab.open"),
     errors: ["TARGET_NOT_FOUND"],
-    examples: ['view.open \'{"program":"claude"}\''],
+    examples: ['tab.open \'{"program":"claude"}\''],
     handler: async (p, ctx) => {
-      const loc = resolveGroup(p, ctx);
-      if (!loc) return notFound("패널 없음");
-      const out = asSurface(
-        S().addViewToGroup(
-          loc.project.id,
-          p.program as Program,
-          loc.group.id,
-        ),
-      ) as Record<string, unknown>;
-      if (out.ok === false) return out; // 실패 봉투에 mounted 를 섞지 않는다
+      const loc = resolvePane(p, ctx);
+      if (!loc) return notFound("pane 없음");
+      const r = S().addViewToGroup(loc.project.id, p.program as Program, loc.pane.id);
+      if (!r.ok) return r; // 실패 봉투에 mounted 를 섞지 않는다
       // 답이 ok 면 그 결과는 쓸 수 있어야 한다. 상태는 즉시 바뀌지만 플러그인 뷰는 다음
-      // 렌더에 마운트되므로, 그 사이에 이 viewId 로 명령을 보내면 플러그인은 자기 뷰를
-      // 모른다(실측: view.open 직후 navigate 가 NO_VIEW). 마운트 신호를 기다렸다 답한다 —
+      // 렌더에 마운트되므로, 그 사이에 이 tabId 로 명령을 보내면 플러그인은 자기 뷰를
+      // 모른다(실측: tab.open 직후 navigate 가 NO_VIEW). 마운트 신호를 기다렸다 답한다 —
       // 폴링이 아니라 마운트 그 지점이 깨운다.
-      const viewId = typeof out.viewId === "string" ? out.viewId : null;
       const wait = typeof p.mountTimeoutMs === "number" ? Math.max(0, p.mountTimeoutMs) : 5000;
-      const mounted = viewId && wait > 0 ? await awaitViewMounted(viewId, wait) : false;
-      return { ...out, mounted };
+      const mounted = wait > 0 ? await awaitViewMounted(r.viewId, wait) : false;
+      return { paneId: r.groupId, tabId: r.viewId, mounted };
     },
   });
 
-  register("view.close", {
+  register("tab.close", {
     danger: "destructive",
-    description: "Close a view tab — if it was the last view in a panel, the panel is also removed. Refuses to close the last view in a space.",
-    triggers: { ko: "탭 닫기 뷰 닫기" },
-    params: { view: { ...P.view, required: true } },
-    returns: "{ activePanelId, activeViewId }",
-    message: () => tmsg("msg.view.close"),
+    description: "Close a tab — if it was the last tab in a pane, the pane is also removed. Refuses to close the last tab in a space.",
+    triggers: { ko: "탭 닫기" },
+    params: { tab: { ...P.tab, required: true } },
+    returns: "{ tabId(closed), activePaneId, activeTabId }",
+    message: () => tmsg("msg.tab.close"),
     errors: ["TARGET_NOT_FOUND", "LAST_ITEM"],
-    examples: ['view.close \'{"view":"v3"}\''],
+    examples: ['tab.close \'{"tab":"tab-k5m6n7"}\''],
     handler: (p) => {
-      const loc = locateView(p.view as string);
-      if (!loc) return notFound(`뷰 없음: ${p.view}`);
-      return asSurface(S().closeView(loc.project.id, p.view as string));
+      const loc = locateTab(p.tab as string);
+      if (!loc) return notFound(`탭 없음: ${p.tab}`);
+      return withTargets(S().closeView(loc.project.id, p.tab as string), {
+        tabId: p.tab as string,
+      });
     },
   });
 
-  register("view.activate", {
-    description: "Activate (switch to) a specific view tab.",
-    triggers: { ko: "탭 전환 탭 선택 뷰 활성화" },
-    params: { view: { ...P.view, required: true } },
-    returns: "{}",
-    message: () => tmsg("msg.view.activate"),
+  register("tab.activate", {
+    description: "Activate (switch to) a specific tab.",
+    triggers: { ko: "탭 전환 탭 선택 탭 활성화" },
+    params: { tab: { ...P.tab, required: true } },
+    returns: "{ tabId }",
+    message: () => tmsg("msg.tab.activate"),
     errors: ["TARGET_NOT_FOUND"],
-    examples: ['view.activate \'{"view":"v3"}\''],
+    examples: ['tab.activate \'{"tab":"tab-k5m6n7"}\''],
     handler: (p) => {
-      const loc = locateView(p.view as string);
-      if (!loc) return notFound(`뷰 없음: ${p.view}`);
-      return transferViewFocus(
-        activeSessionViewId(),
-        p.view as string,
-        () => S().setActiveView(loc.project.id, p.view as string),
+      const loc = locateTab(p.tab as string);
+      if (!loc) return notFound(`탭 없음: ${p.tab}`);
+      return withTargets(
+        transferViewFocus(activeSessionViewId(), p.tab as string, () =>
+          S().setActiveView(loc.project.id, p.tab as string),
+        ),
+        { tabId: p.tab as string },
       );
     },
   });
 
-  register("view.rename", {
+  register("tab.rename", {
     description:
-      "Set a custom label for a view tab (grid tab). Overrides the dynamic content title (e.g. a browser page <title> keeps updating underneath; the override wins on display). Empty title clears the override and the dynamic title returns. Sidebar views use view.label.set instead.",
-    triggers: { ko: "탭 이름변경 탭명 변경 뷰 이름 바꾸기 라벨" },
+      "Set a custom label for a content tab. Overrides the dynamic content title (e.g. a browser page <title> keeps updating underneath; the override wins on display). Empty title clears the override and the dynamic title returns. Sidebar views use tab.label.set instead.",
+    triggers: { ko: "탭 이름변경 탭명 변경 라벨" },
     params: {
-      view: { ...P.view, required: true },
+      tab: { ...P.tab, required: true },
       title: { type: "string", description: "Custom label; empty to clear the override", required: true },
     },
-    returns: "{ label }",
+    returns: "{ tabId, label }",
     message: (d) =>
-      d.label ? tmsg("msg.view.rename.set", { label: String(d.label) }) : tmsg("msg.view.rename.cleared"),
+      d.label ? tmsg("msg.tab.rename.set", { label: String(d.label) }) : tmsg("msg.tab.rename.cleared"),
     errors: ["TARGET_NOT_FOUND"],
     examples: [
-      'view.rename \'{"view":"v3","title":"작업 브라우저"}\'',
-      'view.rename \'{"view":"v3","title":""}\'',
+      'tab.rename \'{"tab":"tab-k5m6n7","title":"작업 브라우저"}\'',
+      'tab.rename \'{"tab":"tab-k5m6n7","title":""}\'',
     ],
     handler: (p) => {
-      const loc = locateView(p.view as string);
-      if (!loc) return notFound(`뷰 없음: ${p.view}`);
-      return S().renameView(loc.project.id, p.view as string, p.title as string);
+      const loc = locateTab(p.tab as string);
+      if (!loc) return notFound(`탭 없음: ${p.tab}`);
+      return withTargets(
+        S().renameView(loc.project.id, p.tab as string, p.title as string),
+        { tabId: p.tab as string },
+      );
     },
   });
 
-  register("view.maximize", {
+  register("tab.maximize", {
     description:
-      "Maximize a view to fill the entire space. The split tree is preserved; only the display is toggled. Same as double-clicking a tab. Omit view to maximize the active view.",
+      "Maximize a tab to fill the entire space. The split tree is preserved; only the display is toggled. Same as double-clicking a tab. Omit tab to maximize the active one.",
     triggers: { ko: "최대화 전체화면 탭 최대화 크게 보기" },
-    params: { view: P.view },
-    returns: "{ viewId }",
-    message: () => tmsg("msg.view.maximize"),
+    params: { tab: P.tab },
+    returns: "{ tabId }",
+    message: () => tmsg("msg.tab.maximize"),
     errors: ["TARGET_NOT_FOUND"],
-    examples: ['view.maximize \'{"view":"v3"}\'', "view.maximize"],
+    examples: ['tab.maximize \'{"tab":"tab-k5m6n7"}\'', "tab.maximize"],
     handler: (p, ctx) => {
-      const loc = p.view ? locateView(p.view as string) : resolveCtx(ctx);
-      if (!loc?.view) return notFound(`뷰 없음: ${p.view ?? "(활성)"}`);
-      return S().maximizeView(loc.project.id, loc.view.id);
+      const loc = p.tab ? locateTab(p.tab as string) : resolveCtx(ctx);
+      if (!loc?.tab) return notFound(`탭 없음: ${p.tab ?? "(활성)"}`);
+      const r = S().maximizeView(loc.project.id, loc.tab.id);
+      return r.ok ? { tabId: r.viewId } : r;
     },
   });
 
-  register("view.restore", {
-    description: "Exit view maximize mode and restore the original split layout for the active space.",
+  register("tab.restore", {
+    description: "Exit tab maximize mode and restore the original split layout for the active space.",
     triggers: { ko: "최대화 해제 원래대로 레이아웃 복원" },
     params: { project: P.project },
-    returns: "{ viewId(restored view | null = was not maximized) }",
+    returns: "{ projectId, tabId(restored tab | null = was not maximized) }",
     message: (d) =>
-      d.viewId ? tmsg("msg.view.restore.restored") : tmsg("msg.view.restore.none"),
-    examples: ["view.restore"],
+      d.tabId ? tmsg("msg.tab.restore.restored") : tmsg("msg.tab.restore.none"),
+    examples: ["tab.restore"],
     handler: (p, ctx) => {
       const t = resolveProject(p, ctx);
       if (!t) return notFound("프로젝트 없음");
-      return S().restoreView(t.id);
+      const r = S().restoreView(t.id);
+      return r.ok ? { projectId: t.id, tabId: r.viewId } : r;
     },
   });
 
-  register("view.move", {
-    description: "Move a view tab to the zone position of dst panel (center = move into panel; other = split and create new panel).",
-    triggers: { ko: "탭 이동 뷰 이동 다른 패널로" },
+  register("tab.move", {
+    description: "Move a tab to the zone position of the dst pane (center = move into that pane; other = split and create a new pane).",
+    triggers: { ko: "탭 이동 다른 칸으로" },
     params: {
-      view: { ...P.view, required: true },
-      dst: { type: "string", description: "Destination panel id", required: true },
+      tab: { ...P.tab, required: true },
+      dst: { type: "string", description: "Destination pane id", required: true },
       zone: { ...P.zone, required: true },
     },
-    returns: "{ panelId(moved or created panel) }",
-    message: () => tmsg("msg.view.move"),
+    returns: "{ tabId, paneId(moved or created pane) }",
+    message: () => tmsg("msg.tab.move"),
     errors: ["TARGET_NOT_FOUND", "LAST_ITEM"],
-    examples: ['view.move \'{"view":"v3","dst":"g1","zone":"right"}\''],
+    examples: ['tab.move \'{"tab":"tab-k5m6n7","dst":"pan-g2h3j4","zone":"right"}\''],
     handler: (p) => {
-      const loc = locateView(p.view as string);
-      if (!loc) return notFound(`뷰 없음: ${p.view}`);
-      return asSurface(
-        S().moveViewToGroup(
-          loc.project.id,
-          p.view as string,
-          p.dst as string,
-          p.zone as DropZone,
-        ),
+      const loc = locateTab(p.tab as string);
+      if (!loc) return notFound(`탭 없음: ${p.tab}`);
+      const r = S().moveViewToGroup(
+        loc.project.id,
+        p.tab as string,
+        p.dst as string,
+        p.zone as DropZone,
       );
+      return r.ok ? { tabId: p.tab as string, paneId: r.groupId } : r;
     },
   });
 
   // ----- status(뷰 보고 회신, R8) -----
   register("status.query", {
     description:
-      "Query the status each view reports (R8 회신) — what setStatus / file dirty / terminal running pushed. Omit view to list all reporting views.",
+      "Query the status each view reports (R8 회신) — what setStatus / file dirty / terminal running pushed. Omit tab to list every reporting tab.",
     triggers: { ko: "상태 조회 뷰 상태 status 조회 무엇이 도는지" },
-    params: { view: P.view },
-    returns: "{ statuses: Array<{ viewId, code, message? }> }",
+    params: { tab: P.tab },
+    returns: "{ statuses: Array<{ tabId, code, message? }> }",
     message: (d) => tmsg("msg.status.query", { n: ((d.statuses as unknown[]) ?? []).length }),
-    examples: ["status.query", 'status.query \'{"view":"v3"}\''],
+    examples: ["status.query", 'status.query \'{"tab":"tab-k5m6n7"}\''],
     handler: (p) => {
-      const only = p.view as string | undefined;
-      const statuses: { viewId: string; code: string; message?: string }[] = [];
+      const only = p.tab as string | undefined;
+      const statuses: { tabId: string; code: string; message?: string }[] = [];
       for (const t of S().projects)
         for (const c of t.spaces)
           for (const g of allGroups(c.layout))
             for (const v of g.tabs)
               if (v.status && (!only || v.id === only))
                 statuses.push({
-                  viewId: v.id,
+                  tabId: v.id,
                   code: v.status.code,
                   message: v.status.message,
                 });
@@ -1943,19 +2086,19 @@ export function registerCatalog(): void {
       "Read terminal screen and scrollback text (TUI shows current screen only). Use to check command output.",
     triggers: { ko: "터미널 읽기 출력 확인 결과 보기" },
     params: {
-      pane: P.pane,
+      tab: { ...P.tab, description: "Target terminal tab id (omit = caller's context tab)" },
       lines: { type: "number", description: "Last N lines only (omit = all)" },
     },
-    returns: "{ paneId, text }",
+    returns: "{ tabId, text }",
     message: (d) => tmsg("msg.term.read", { n: String(d.text ?? "").length }),
     errors: ["TARGET_NOT_FOUND"],
     examples: ["term.read", 'term.read \'{"lines":50}\''],
     handler: (p, ctx) => {
-      const r = resolveTermPane(p, ctx, terminalContextPane);
-      if (!r) return notFound("pane 없음");
+      const r = resolveTermTab(p, ctx, terminalContextTab);
+      if (!r) return notFound("터미널 탭 없음");
       const text = r.readBuffer(p.lines as number | undefined);
-      if (text === undefined) return notFound(`터미널 준비 안 됨: ${r.paneId}`);
-      return { paneId: r.paneId, text };
+      if (text === undefined) return notFound(`터미널 준비 안 됨: ${r.tabId}`);
+      return { tabId: r.tabId, text };
     },
   });
 
@@ -1965,19 +2108,19 @@ export function registerCatalog(): void {
       "Inject raw key input into a terminal (for TUI control). Pass control characters via JSON escapes: \\r=Enter, \\u0003=^C, \\u001b[A=↑.",
     triggers: { ko: "터미널 입력 키 주입 TUI 조작 키 보내기" },
     params: {
-      pane: P.pane,
+      tab: { ...P.tab, description: "Target terminal tab id (omit = caller's context tab)" },
       text: { type: "string", description: "Bytes to inject (escapes allowed)", required: true },
     },
-    returns: "{ paneId }",
+    returns: "{ tabId }",
     message: () => tmsg("msg.term.send"),
     errors: ["TARGET_NOT_FOUND"],
     examples: ['term.send \'{"text":"ls\\r"}\'', 'term.send \'{"text":"\\u0003"}\''],
     handler: (p, ctx) => {
-      const r = resolveTermPane(p, ctx, terminalContextPane);
-      if (!r) return notFound("pane 없음");
+      const r = resolveTermTab(p, ctx, terminalContextTab);
+      if (!r) return notFound("터미널 탭 없음");
       if (!r.sendInput(p.text as string))
-        return notFound(`터미널 준비 안 됨: ${r.paneId}`);
-      return { paneId: r.paneId };
+        return notFound(`터미널 준비 안 됨: ${r.tabId}`);
+      return { tabId: r.tabId };
     },
   });
 
@@ -1987,46 +2130,48 @@ export function registerCatalog(): void {
       "Execute a shell command in a terminal (sends the text plus Enter). Returns immediately — it does not wait for the command to finish, so read the output a moment later with term.read.",
     triggers: { ko: "명령 실행 터미널 실행 셸 실행 커맨드 실행" },
     params: {
-      pane: P.pane,
+      tab: { ...P.tab, description: "Target terminal tab id (omit = caller's context tab)" },
       cmd: { type: "string", description: "Shell command to run", required: true },
     },
-    returns: "{ paneId }",
+    returns: "{ tabId }",
     message: () => tmsg("msg.term.exec"),
     errors: ["TARGET_NOT_FOUND"],
     hint: (d) => {
       if (d.code) return [];
-      // 실행은 즉시 돌아온다 — 출력은 잠시 후 그 pane 을 읽어 확인한다.
-      const pane = d.paneId as string | undefined;
+      // 실행은 즉시 돌아온다 — 출력은 잠시 후 그 탭을 읽어 확인한다.
+      const tab = d.tabId as string | undefined;
       return [
         {
-          cmd: pane ? `term.read '{"pane":"${pane}"}'` : "term.read",
+          cmd: tab ? `term.read '{"tab":"${tab}"}'` : "term.read",
           why: tmsg("hint.flow.term.exec.read"),
         },
       ];
     },
     examples: ['term.exec \'{"cmd":"git status"}\''],
     handler: (p, ctx) => {
-      const r = resolveTermPane(p, ctx, terminalContextPane);
-      if (!r) return notFound("pane 없음");
+      const r = resolveTermTab(p, ctx, terminalContextTab);
+      if (!r) return notFound("터미널 탭 없음");
       if (!r.sendInput(`${p.cmd as string}\r`))
-        return notFound(`터미널 준비 안 됨: ${r.paneId}`);
-      return { paneId: r.paneId };
+        return notFound(`터미널 준비 안 됨: ${r.tabId}`);
+      return { tabId: r.tabId };
     },
   });
 
   register("term.cwd", {
-    description: "Get the current working directory of a terminal pane (requires shell integration).",
+    description: "Get the current working directory of a terminal tab (requires shell integration).",
     triggers: { ko: "현재 디렉토리 cwd 작업 폴더 터미널 경로" },
-    params: { pane: P.pane },
-    returns: "{ paneId, cwd|null }",
+    params: {
+      tab: { ...P.tab, description: "Target terminal tab id (omit = caller's context tab)" },
+    },
+    returns: "{ tabId, cwd|null }",
     message: (d) =>
       d.cwd ? tmsg("msg.term.cwd.path", { path: String(d.cwd) }) : tmsg("msg.term.cwd.none"),
     errors: ["TARGET_NOT_FOUND"],
     examples: ["term.cwd"],
     handler: (p, ctx) => {
-      const r = resolveTermPane(p, ctx, terminalContextPane);
-      if (!r) return notFound("pane 없음");
-      return { paneId: r.paneId, cwd: r.getCwd() ?? null };
+      const r = resolveTermTab(p, ctx, terminalContextTab);
+      if (!r) return notFound("터미널 탭 없음");
+      return { tabId: r.tabId, cwd: r.getCwd() ?? null };
     },
   });
 
@@ -2083,39 +2228,8 @@ export function registerCatalog(): void {
     },
   });
 
-  // ----- editor(파일 뷰) -----
-  register("editor.open", {
-    description: "Open a file in an editor view. If already open, activates that tab instead.",
-    triggers: { ko: "파일 열기 에디터 열기 파일 편집 코드 열기" },
-    params: {
-      project: P.project,
-      path: { type: "string", description: "Absolute file path", required: true },
-    },
-    returns: "{ viewId, panelId, existing }",
-    message: (d) =>
-      d.existing ? tmsg("msg.editor.open.existing") : tmsg("msg.editor.open.opened"),
-    errors: ["TARGET_NOT_FOUND"],
-    examples: ['editor.open \'{"path":"/Users/me/work/src/main.rs"}\''],
-    handler: (p, ctx) => {
-      const t = resolveProject(p, ctx);
-      if (!t) return notFound("프로젝트 없음");
-      return asSurface(S().openFileView(t.id, p.path as string));
-    },
-  });
-
-  register("editor.close", {
-    description: "Close an editor view (same as view.close).",
-    params: { view: { ...P.view, required: true } },
-    returns: "{ activePanelId, activeViewId }",
-    message: () => tmsg("msg.editor.close"),
-    errors: ["TARGET_NOT_FOUND", "LAST_ITEM"],
-    examples: ['editor.close \'{"view":"v4"}\''],
-    handler: (p) => {
-      const loc = locateView(p.view as string);
-      if (!loc) return notFound(`뷰 없음: ${p.view}`);
-      return asSurface(S().closeView(loc.project.id, p.view as string));
-    },
-  });
+  // 파일을 여는 명령은 ui.intent.open 하나다(결부 문맥으로 배치까지 해소한다). 닫기는 tab.close —
+  // 파일 탭도 탭이다.
 
   // ----- explorer(파일 탐색기) -----
   register("explorer.list", {
@@ -2126,17 +2240,19 @@ export function registerCatalog(): void {
       project: P.project,
       path: { type: "string", description: "Absolute directory path" },
     },
-    returns: "{ root, children: [{name,dir}] }",
+    returns: "{ projectId|null, root, children: [{name,dir}] }",
     message: (d) => tmsg("msg.explorer.list", { n: ((d.children as unknown[]) ?? []).length }),
     errors: ["TARGET_NOT_FOUND", "INTERNAL"],
     examples: ["explorer.list", 'explorer.list \'{"path":"/tmp"}\''],
     handler: async (p, ctx) => {
       const t = resolveProject(p, ctx);
       const path = (p.path as string) ?? t?.root ?? null;
-      return await invoke<{ root: string; children: object[] }>(
+      const r = await invoke<{ root: string; children: object[] }>(
         "list_children",
         { path },
       );
+      // 경로를 명시하면 프로젝트 없이도 답한다(HOME 폴백) — 그래서 이 축은 null 이 될 수 있다.
+      return { projectId: t?.id ?? null, ...r };
     },
   });
 
@@ -2207,7 +2323,7 @@ export function registerCatalog(): void {
       value: {
         type: "json",
         description:
-          "Value — language:ko|en, projectTabPosition:top|left, iconSet:string (registered set id — unregistered falls back to lucide), iconBox:boolean, focusIndicator:outline|corners, railRelation:tint|moment|stroke (rail-panel relation surface — tint fill only, moment flash on rebind, stroke outline+label), railFill:none|faint (bound-panel background in stroke mode — none is the default, faint is a 1% accent tint), focusDim:boolean (spotlight — every panel dims except the active one), railSeamStyle:seam|edge (how a manufactured adjacency is marked: seam dashes the inner shared edge, edge dashes the outer right edge), appFontFamily:string (CSS font-family stack), windowZoom:number (0.5-2.0 — whole-window zoom factor applied to the main webview and every child webview), orchestratorAgent:string (agent CLI command or path the natural-language console spawns), orchestratorModel:string (--model alias for the agent; empty = CLI default)",
+          "Value — language:ko|en, projectTabPosition:top|left, iconSet:string (registered set id — unregistered falls back to lucide), iconBox:boolean, focusIndicator:outline|corners, railRelation:tint|moment|stroke (rail-pane relation surface — tint fill only, moment flash on rebind, stroke outline+label), railFill:none|faint (bound-pane background in stroke mode — none is the default, faint is a 1% accent tint), focusDim:boolean (spotlight — every pane dims except the active one), railSeamStyle:seam|edge (how a manufactured adjacency is marked: seam dashes the inner shared edge, edge dashes the outer right edge), appFontFamily:string (CSS font-family stack), windowZoom:number (0.5-2.0 — whole-window zoom factor applied to the main webview and every child webview), orchestratorAgent:string (agent CLI command or path the natural-language console spawns), orchestratorModel:string (--model alias for the agent; empty = CLI default)",
         required: true,
       },
     },
@@ -2330,7 +2446,7 @@ export function registerCatalog(): void {
   });
 
   register("window.resize", {
-    description: "Resize the window to a physical pixel size (for automation and resize-path E2E — drives the native window resize, the same path as edge-drag, which panel.resize does not exercise).",
+    description: "Resize the window to a physical pixel size (for automation and resize-path E2E — drives the native window resize, the same path as edge-drag, which pane.resize does not exercise).",
     params: {
       w: { type: "number", description: "Physical width", required: true },
       h: { type: "number", description: "Physical height", required: true },
@@ -2376,7 +2492,7 @@ export function registerCatalog(): void {
 
   register("window.maximize", {
     description:
-      "Maximize a window to fill the screen (native window maximize — distinct from view.maximize, which only enlarges one view within a space). Without label, targets the window this command runs in; with label, targets that window (see window.list). Pass off:true to restore (unmaximize).",
+      "Maximize a window to fill the screen (native window maximize — distinct from tab.maximize, which only enlarges one tab within a space). Without label, targets the window this command runs in; with label, targets that window (see window.list). Pass off:true to restore (unmaximize).",
     triggers: { ko: "창 최대화 전체화면 창 키우기 최대화 해제" },
     params: {
       label: P.windowLabel,
@@ -2607,7 +2723,7 @@ export function registerCatalog(): void {
       if (d.code) return [];
       // 재캡처의 두 갈래 — 뷰 최대화로 확대해 담거나, 다른 스페이스로 전환해 화면을 비교한다.
       return [
-        { cmd: "view.maximize", why: tmsg("hint.flow.snapshot.maximize") },
+        { cmd: "tab.maximize", why: tmsg("hint.flow.snapshot.maximize") },
         { cmd: "space.list", why: tmsg("hint.flow.snapshot.switch") },
       ];
     },

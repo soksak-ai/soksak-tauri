@@ -1,5 +1,5 @@
 // ai.session.* commands — AI 세션 계보(단계⑤) 식별 표면. 우리는 AI agent 특화 터미널이라, 터미널에서
-// 돌던 claude/codex 세션을 식별해 복원 후 '이어가기' 의 토대를 만든다. 실시간 watch·viewId 매칭·resume
+// 돌던 claude/codex 세션을 식별해 복원 후 '이어가기' 의 토대를 만든다. 실시간 watch·탭 id 매칭·resume
 // 은 후속 — 지금은 순수 식별(commandLine 이 에이전트인가 / 세션 파일의 sessionId·cwd)만 노출한다.
 
 import { invoke } from "@tauri-apps/api/core";
@@ -27,11 +27,11 @@ export function registerAiSessionCatalog(): void {
 
   register("ai.session.lineage", {
     description:
-      "Read the session-transition history for a working directory (and optionally one viewId), oldest first. Each row is {viewId, fromSession, toSession, kind, time} — the time-ordered from→to chain is the flow, and one fromSession branching to several toSession is a fork. This is what we observe via watch since claude doesn't record /clear·/resume branches itself.",
+      "Read the session-transition history for a working directory (and optionally one tab), oldest first. Each row is the stored transition record {viewId (stored key for the tab), fromSession, toSession, kind, time} — the time-ordered from→to chain is the flow, and one fromSession branching to several toSession is a fork. This is what we observe via watch since claude doesn't record /clear·/resume branches itself.",
     triggers: { ko: "세션계보 세션흐름 세션분기 lineage" },
     params: {
       cwd: { type: "string", description: "Working directory (scope) to read lineage for", required: true },
-      viewId: { type: "string", description: "Limit to one terminal view; omit for all in this cwd" },
+      tabId: { type: "string", description: "Limit to one terminal tab; omit for all in this cwd" },
     },
     returns: "{ rows }",
     message: (d) => tmsg("msg.ai.session.lineage", { n: ((d.rows as unknown[]) ?? []).length }),
@@ -43,7 +43,7 @@ export function registerAiSessionCatalog(): void {
       }
       const rows = await invoke<unknown[]>("ai_session_lineage", {
         cwd: p.cwd,
-        viewId: typeof p.viewId === "string" ? p.viewId : null,
+        viewId: typeof p.tabId === "string" ? p.tabId : null, // Rust 경계의 인자 이름
       });
       return { rows };
     },

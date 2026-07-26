@@ -57,7 +57,7 @@ describe("시각 효과 소유권 — 위상 하위 전체 선택 금지", () =>
 
   it("홀 슬롯은 filter 축에서 제외된다(스탠드인과 네이티브의 dim 강도 일치)", () => {
     expect(css).toMatch(
-      /\.space\[data-focus-dim\] \.tab-body\.tab-body-hole \{[^}]*filter: none/,
+      /\.space\[data-focus-dim\] \.tab-body\.hole \{[^}]*filter: none/,
     );
   });
 

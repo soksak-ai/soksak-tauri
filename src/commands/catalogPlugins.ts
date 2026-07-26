@@ -875,11 +875,16 @@ export function registerPluginCatalog(): void {
     },
   });
 
-  // 프로젝트 id → root(영속 정체성). 생략 시 활성 프로젝트.
-  const projectRoot = (projectId?: string): string | undefined => {
+  // 프로젝트 축 해소 — 설정 저장 키는 root(영속 정체성)이고 답이 지목하는 축은 id 다.
+  // 둘은 다른 사실이므로 함께 돌려주고, 응답도 projectId·projectRoot 로 나눠 싣는다.
+  // 생략 시 활성 프로젝트.
+  const projectScope = (
+    projectId?: string,
+  ): { id: string; root: string } | null => {
     const s = useSessions.getState();
     const id = projectId ?? s.activeId;
-    return s.projects.find((t) => t.id === id)?.root ?? undefined;
+    const found = s.projects.find((t) => t.id === id);
+    return found?.root ? { id: found.id, root: found.root } : null;
   };
 
   register("plugin.settings.schema", {
@@ -908,7 +913,7 @@ export function registerPluginCatalog(): void {
       scope: { type: "string", description: "effective (default, merges global+project) | global | project", enum: ["effective", "global", "project"] },
       project: { type: "string", description: "Project id. Defaults to active project. Applies to project and effective scopes." },
     },
-    returns: "{ id, scope, values } or { id, scope, key, value }",
+    returns: "{ id, scope, projectId, values } or { id, scope, projectId, key, value }",
     message: (d) =>
       d.key !== undefined
         ? tmsg("msg.plugin.settings.get.one", { key: String(d.key), value: String(d.value) })
@@ -922,7 +927,8 @@ export function registerPluginCatalog(): void {
       const plug = usePlugins.getState().plugins[p.id as string];
       if (!plug) return notFound(`플러그인 없음: ${p.id}`);
       const scope = (p.scope as string | undefined) ?? "effective";
-      const root = projectRoot(p.project as string | undefined);
+      const target = projectScope(p.project as string | undefined);
+      const root = target?.root;
       const ps = usePluginSettings.getState();
       const defs = configDefaults(plug.manifest);
       const one = (key: string) => {
@@ -931,13 +937,14 @@ export function registerPluginCatalog(): void {
         return ps.effective(p.id as string, key, defs[key], root);
       };
       const key = p.key as string | undefined;
+      const projectId = target?.id ?? null;
       if (key !== undefined) {
         if (!(key in defs)) return invalid(`설정 키 없음: ${key}`);
-        return { id: p.id, scope, key, value: one(key) ?? null };
+        return { id: p.id, scope, projectId, key, value: one(key) ?? null };
       }
       const values: Record<string, unknown> = {};
       for (const k of Object.keys(defs)) values[k] = one(k) ?? null;
-      return { id: p.id, scope, values };
+      return { id: p.id, scope, projectId, values };
     },
   });
 
@@ -952,7 +959,7 @@ export function registerPluginCatalog(): void {
       scope: { type: "string", description: "global (default) | project", enum: ["global", "project"] },
       project: { type: "string", description: "Project id. Defaults to active project. Applies when scope=project." },
     },
-    returns: "{ id, scope, key, value, project? }",
+    returns: "{ id, scope, key, value, projectId?, projectRoot? }",
     message: (d) => tmsg("msg.plugin.settings.set", { key: String(d.key), value: String(d.value) }),
     errors: ["TARGET_NOT_FOUND", "INVALID_PARAMS"],
     examples: [
@@ -969,10 +976,17 @@ export function registerPluginCatalog(): void {
       const scope = (p.scope as string | undefined) ?? "global";
       const ps = usePluginSettings.getState();
       if (scope === "project") {
-        const root = projectRoot(p.project as string | undefined);
-        if (!root) return invalid("프로젝트 root 해소 실패(프로젝트 없음)");
-        ps.setProject(root, p.id as string, p.key as string, v.value);
-        return { id: p.id, scope, key: p.key, value: v.value, project: root };
+        const target = projectScope(p.project as string | undefined);
+        if (!target) return invalid("프로젝트 root 해소 실패(프로젝트 없음)");
+        ps.setProject(target.root, p.id as string, p.key as string, v.value);
+        return {
+          id: p.id,
+          scope,
+          key: p.key,
+          value: v.value,
+          projectId: target.id,
+          projectRoot: target.root,
+        };
       }
       ps.setGlobal(p.id as string, p.key as string, v.value);
       return { id: p.id, scope, key: p.key, value: v.value };
@@ -989,7 +1003,7 @@ export function registerPluginCatalog(): void {
       scope: { type: "string", description: "global (default) | project", enum: ["global", "project"] },
       project: { type: "string", description: "Project id. Defaults to active project. Applies when scope=project." },
     },
-    returns: "{ id, scope, key, project? }",
+    returns: "{ id, scope, key, projectId?, projectRoot? }",
     message: (d) =>
       d.key
         ? tmsg("msg.plugin.settings.reset.one", { key: String(d.key) })
@@ -1003,10 +1017,16 @@ export function registerPluginCatalog(): void {
       const ps = usePluginSettings.getState();
       const key = p.key as string | undefined;
       if (scope === "project") {
-        const root = projectRoot(p.project as string | undefined);
-        if (!root) return invalid("프로젝트 root 해소 실패(프로젝트 없음)");
-        ps.resetProject(root, p.id as string, key);
-        return { id: p.id, scope, key: key ?? null, project: root };
+        const target = projectScope(p.project as string | undefined);
+        if (!target) return invalid("프로젝트 root 해소 실패(프로젝트 없음)");
+        ps.resetProject(target.root, p.id as string, key);
+        return {
+          id: p.id,
+          scope,
+          key: key ?? null,
+          projectId: target.id,
+          projectRoot: target.root,
+        };
       }
       ps.resetGlobal(p.id as string, key);
       return { id: p.id, scope, key: key ?? null };
@@ -1015,7 +1035,7 @@ export function registerPluginCatalog(): void {
 
   register("plugin.settings.open", {
     description:
-      "Open the unified settings modal. With a plugin id, navigates directly to that plugin's settings panel. Omit id for the general preferences section. Pass an empty string to close the modal. Idempotent.",
+      "Open the unified settings modal. With a plugin id, navigates directly to that plugin's settings section. Omit id for the general preferences section. Pass an empty string to close the modal. Idempotent.",
     triggers: { ko: "설정 열기 환경설정 모달 플러그인 설정 패널" },
     params: {
       id: { type: "string", description: "Plugin id (omit for general preferences, empty string to close)" },
@@ -1078,9 +1098,9 @@ export function registerPluginCatalog(): void {
   register("plugin.view.open", {
     description:
       "Open a plugin view in the specified placement. Defaults to the view's declared defaultPlacement when placement is omitted. View implementation and placement are orthogonal (spec §0-6).",
-    triggers: { ko: "플러그인 뷰 열기 사이드바 패널 탭 보기" },
+    triggers: { ko: "플러그인 뷰 열기 사이드바 칸 탭 보기" },
     params: {
-      view: {
+      viewKey: {
         type: "string",
         description: 'Global view key in the form "<pluginId>.<viewId>"',
         required: true,
@@ -1093,19 +1113,19 @@ export function registerPluginCatalog(): void {
       project: { type: "string", description: "Project id. Defaults to the active project." },
     },
     returns:
-      "{ view, placement, projectId } (sidebar placements) | { view, placement, projectId, viewId, panelId, existing } (content placement)",
-    message: (d) => tmsg("msg.plugin.view.open", { view: String(d.view), placement: String(d.placement) }),
+      "{ viewKey, placement, projectId } (sidebar placements) | { viewKey, placement, projectId, paneId, tabId, existing } (content placement)",
+    message: (d) => tmsg("msg.plugin.view.open", { view: String(d.viewKey), placement: String(d.placement) }),
     errors: ["TARGET_NOT_FOUND", "INVALID_PARAMS"],
     examples: [
-      'plugin.view.open \'{"view":"soksak-plugin-<id>.<view>"}\'',
-      'plugin.view.open \'{"view":"soksak-plugin-<id>.<view>","placement":"content"}\'',
+      'plugin.view.open \'{"viewKey":"soksak-plugin-<id>.<view>"}\'',
+      'plugin.view.open \'{"viewKey":"soksak-plugin-<id>.<view>","placement":"content"}\'',
     ],
     handler: (p) => {
       const s = useSessions.getState();
       const projectId = (p.project as string | undefined) ?? s.activeId;
       const project = s.projects.find((t) => t.id === projectId);
       if (!project) return notFound(`프로젝트 없음: ${projectId}`);
-      const key = p.view as string;
+      const key = p.viewKey as string;
       const reg = getRegisteredView(key);
       if (!reg) {
         return notFound(`등록된 뷰 없음(플러그인 활성화 필요): ${key}`);
@@ -1129,7 +1149,7 @@ export function registerPluginCatalog(): void {
           `rail-footer 뷰는 상주 슬롯 — 열기 대상이 아님: ${key}`,
         );
       }
-      // content: 에디터 그룹 탭으로 — 드래그/분할/닫기는 일반 뷰와 동일.
+      // content: pane 의 탭으로 — 드래그/분할/닫기는 다른 탭과 동일.
       const r = s.openPluginView(
         projectId,
         reg.pluginId,
@@ -1138,11 +1158,11 @@ export function registerPluginCatalog(): void {
       );
       if (!r.ok) return r;
       return {
-        view: key,
+        viewKey: key,
         placement,
         projectId,
-        viewId: r.viewId,
-        panelId: r.groupId,
+        paneId: r.groupId,
+        tabId: r.viewId,
         existing: r.existing,
       };
     },
@@ -1150,27 +1170,28 @@ export function registerPluginCatalog(): void {
 
   register("plugin.view.close", {
     description:
-      "Close a plugin view. Sidebar placements are deselected and revert to the file tree. Content placements close the tab in every editor group where the view is open.",
+      "Close a plugin view. Sidebar placements are deselected and revert to the file tree. Content placements close the tab in every pane where the view is open.",
     triggers: { ko: "플러그인 뷰 닫기 사이드바 탭 제거" },
     params: {
-      view: {
+      viewKey: {
         type: "string",
         description: 'Global view key in the form "<pluginId>.<viewId>"',
         required: true,
       },
       project: { type: "string", description: "Project id. Defaults to the active project." },
     },
-    returns: "{ view, closed: [placement list] }",
-    message: (d) => tmsg("msg.plugin.view.close", { view: String(d.view), n: ((d.closed as unknown[]) ?? []).length }),
+    returns: "{ viewKey, projectId, closed: [placement list], tabIds: [closed content tab ids] }",
+    message: (d) => tmsg("msg.plugin.view.close", { view: String(d.viewKey), n: ((d.closed as unknown[]) ?? []).length }),
     errors: ["TARGET_NOT_FOUND"],
-    examples: ['plugin.view.close \'{"view":"soksak-plugin-<id>.<view>"}\''],
+    examples: ['plugin.view.close \'{"viewKey":"soksak-plugin-<id>.<view>"}\''],
     handler: (p) => {
       const s = useSessions.getState();
       const projectId = (p.project as string | undefined) ?? s.activeId;
       const project = s.projects.find((t) => t.id === projectId);
       if (!project) return notFound(`프로젝트 없음: ${projectId}`);
-      const key = p.view as string;
+      const key = p.viewKey as string;
       const closed: string[] = [];
+      const tabIds: string[] = [];
       if (project.rightView === key) {
         s.setRightView(projectId, null);
         closed.push("sidebar-right");
@@ -1180,21 +1201,24 @@ export function registerPluginCatalog(): void {
       if (hasSidebarViewKey(project.leftLayout, key)) {
         closed.push("sidebar-left");
       }
-      // content 배치: 전 컨텐츠에서 이 플러그인 뷰 탭을 전부 닫는다.
-      for (const content of project.spaces) {
-        for (const g of allGroups(content.layout)) {
+      // content 배치: 전 스페이스에서 이 플러그인 뷰의 탭을 전부 닫는다.
+      for (const space of project.spaces) {
+        for (const g of allGroups(space.layout)) {
           for (const v of g.tabs) {
             if (
               v.kind === "plugin" &&
               `${v.pluginId}.${v.view}` === key
             ) {
               const r = s.closeView(projectId, v.id);
-              if (r.ok) closed.push("content");
+              if (r.ok) {
+                closed.push("content");
+                tabIds.push(v.id);
+              }
             }
           }
         }
       }
-      return { view: key, closed };
+      return { viewKey: key, projectId, closed, tabIds };
     },
   });
 

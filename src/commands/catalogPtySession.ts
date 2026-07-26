@@ -35,24 +35,24 @@ interface SessionState {
 }
 
 // window-scoped: each workspace window registers its own catalog, and daemon sessions are
-// keyed by (window label, pane id) — the module map mirrors that scope naturally.
+// keyed by (window label, session id) — the module map mirrors that scope naturally.
 const sessions = new Map<string, SessionState>();
 
 function invalid(message: string) {
   return { ok: false as const, code: "INVALID_PARAMS" as const, message };
 }
 
-function paneOf(p: Record<string, unknown>): string | null {
-  return typeof p.pane === "string" && p.pane ? p.pane : null;
+function sessionOf(p: Record<string, unknown>): string | null {
+  return typeof p.session === "string" && p.session ? p.session : null;
 }
 
 export function registerPtySessionCatalog(): void {
   register("pty.session.spawn", {
     description:
-      "Spawn (or warm-reattach) a headless daemon-backed PTY session under a caller-chosen pane id. No view is created; the core drains and acks output into a bounded raw tail readable via pty.session.read. Respawning the same pane id reattaches to the still-running shell; pass replayFromSeq to skip ring replay up to a sequence already consumed.",
+      "Spawn (or warm-reattach) a headless daemon-backed PTY session under a caller-chosen session id. No tab is created; the core drains and acks output into a bounded raw tail readable via pty.session.read. Respawning the same session id reattaches to the still-running shell; pass replayFromSeq to skip ring replay up to a sequence already consumed.",
     triggers: { ko: "헤드리스 터미널 세션 생성 재부착" },
     params: {
-      pane: { type: "string", required: true, description: "Caller-owned session pane id" },
+      session: { type: "string", required: true, description: "Caller-owned session id" },
       cwd: { type: "string", required: false, description: "Working directory" },
       shell: { type: "string", required: false, description: "Shell binary (default: user shell)" },
       cols: { type: "number", required: false, description: "Columns (default 200)" },
@@ -66,19 +66,19 @@ export function registerPtySessionCatalog(): void {
     danger: "inject",
     broker: brokerOf(["commands", "commands:inject"], {
       type: "object",
-      properties: { pane: { type: "string" }, attached: { type: "boolean" } },
-      required: ["pane", "attached"],
+      properties: { session: { type: "string" }, attached: { type: "boolean" } },
+      required: ["session", "attached"],
       additionalProperties: false,
     }),
-    returns: "{ pane, attached }",
-    message: (d) => `headless session ${d.pane} ${d.attached ? "attached" : "spawned"}`,
+    returns: "{ session, attached }",
+    message: (d) => `headless session ${d.session} ${d.attached ? "attached" : "spawned"}`,
     errors: ["INVALID_PARAMS", "INTERNAL"],
-    examples: ['pty.session.spawn \'{"pane":"agent-k3f9a2-1","cwd":"/tmp"}\''],
+    examples: ['pty.session.spawn \'{"session":"agent-k3f9a2-1","cwd":"/tmp"}\''],
     handler: async (p) => {
-      const pane = paneOf(p);
-      if (!pane) return invalid("pane 필요");
-      if (sessions.has(pane)) {
-        return { ok: false as const, code: "INVALID_PARAMS" as const, message: `already attached: ${pane}` };
+      const session = sessionOf(p);
+      if (!session) return invalid("session 필요");
+      if (sessions.has(session)) {
+        return { ok: false as const, code: "INVALID_PARAMS" as const, message: `already attached: ${session}` };
       }
       const st: SessionState = {
         id: 0,
@@ -110,14 +110,14 @@ export function registerPtySessionCatalog(): void {
         rows: typeof p.rows === "number" ? p.rows : DEFAULT_ROWS,
         cwd: typeof p.cwd === "string" ? p.cwd : null,
         shell: typeof p.shell === "string" ? p.shell : null,
-        paneId: pane,
+        paneId: session, // Rust 경계의 인자 이름(pty.rs) — 값은 세션 id 다
         windowLabel: currentWindowLabel() || null,
         replay: replayFromSeq == null ? "none" : { fromSeq: replayFromSeq },
         onOutput,
       })) as { id: number };
       st.id = res.id;
-      sessions.set(pane, st);
-      return { pane, attached: replayFromSeq != null };
+      sessions.set(session, st);
+      return { session, attached: replayFromSeq != null };
     },
   });
 
@@ -126,30 +126,30 @@ export function registerPtySessionCatalog(): void {
       "Write raw bytes (text) to a headless PTY session created by pty.session.spawn.",
     triggers: { ko: "헤드리스 세션 입력 쓰기" },
     params: {
-      pane: { type: "string", required: true, description: "Session pane id" },
+      session: { type: "string", required: true, description: "Session id" },
       data: { type: "string", required: true, description: "Raw text to write" },
     },
     danger: "inject",
     broker: brokerOf(["commands", "commands:inject"], {
       type: "object",
-      properties: { pane: { type: "string" }, bytes: { type: "number" } },
-      required: ["pane", "bytes"],
+      properties: { session: { type: "string" }, bytes: { type: "number" } },
+      required: ["session", "bytes"],
       additionalProperties: false,
     }),
-    returns: "{ pane, bytes }",
-    message: (d) => `wrote ${d.bytes} byte(s) to ${d.pane}`,
+    returns: "{ session, bytes }",
+    message: (d) => `wrote ${d.bytes} byte(s) to ${d.session}`,
     errors: ["INVALID_PARAMS", "TARGET_NOT_FOUND"],
-    examples: ['pty.session.write \'{"pane":"agent-k3f9a2-1","data":"ls\\r"}\''],
+    examples: ['pty.session.write \'{"session":"agent-k3f9a2-1","data":"ls\\r"}\''],
     handler: async (p) => {
-      const pane = paneOf(p);
+      const session = sessionOf(p);
       const data = typeof p.data === "string" ? p.data : null;
-      if (!pane || data == null) return invalid("pane, data 필요");
-      const st = sessions.get(pane);
+      if (!session || data == null) return invalid("session, data 필요");
+      const st = sessions.get(session);
       if (!st) {
-        return { ok: false as const, code: "TARGET_NOT_FOUND" as const, message: `no session: ${pane}` };
+        return { ok: false as const, code: "TARGET_NOT_FOUND" as const, message: `no session: ${session}` };
       }
       await invoke("write_terminal", { id: st.id, data });
-      return { pane, bytes: data.length };
+      return { session, bytes: data.length };
     },
   });
 
@@ -158,90 +158,90 @@ export function registerPtySessionCatalog(): void {
       "Read the raw output tail of a headless PTY session (bounded ring, ANSI included — the reader interprets). Returns the tail joined and the total bytes seen as a resume cursor.",
     triggers: { ko: "헤드리스 세션 출력 읽기" },
     params: {
-      pane: { type: "string", required: true, description: "Session pane id" },
+      session: { type: "string", required: true, description: "Session id" },
       lines: { type: "number", required: false, description: "Trailing lines to keep (default all buffered)" },
     },
     broker: brokerOf(["commands"], {
       type: "object",
       properties: {
-        pane: { type: "string" },
+        session: { type: "string" },
         tail: { type: "string" },
         bytesSeen: { type: "number" },
       },
-      required: ["pane", "tail", "bytesSeen"],
+      required: ["session", "tail", "bytesSeen"],
       additionalProperties: false,
     }),
-    returns: "{ pane, tail, bytesSeen }",
-    message: (d) => `read tail of ${d.pane}`,
+    returns: "{ session, tail, bytesSeen }",
+    message: (d) => `read tail of ${d.session}`,
     errors: ["INVALID_PARAMS", "TARGET_NOT_FOUND"],
-    examples: ['pty.session.read \'{"pane":"agent-k3f9a2-1","lines":200}\''],
+    examples: ['pty.session.read \'{"session":"agent-k3f9a2-1","lines":200}\''],
     handler: async (p) => {
-      const pane = paneOf(p);
-      if (!pane) return invalid("pane 필요");
-      const st = sessions.get(pane);
+      const session = sessionOf(p);
+      if (!session) return invalid("session 필요");
+      const st = sessions.get(session);
       if (!st) {
-        return { ok: false as const, code: "TARGET_NOT_FOUND" as const, message: `no session: ${pane}` };
+        return { ok: false as const, code: "TARGET_NOT_FOUND" as const, message: `no session: ${session}` };
       }
       let tail = st.ring.join("");
       if (typeof p.lines === "number" && p.lines > 0) {
         tail = tail.split("\n").slice(-p.lines).join("\n");
       }
-      return { pane, tail, bytesSeen: st.bytesSeen };
+      return { session, tail, bytesSeen: st.bytesSeen };
     },
   });
 
   register("pty.session.alive", {
     description:
-      "Report whether the PTY daemon still holds a live shell for this pane id — true even across an app restart before anything reattaches. Distinct from being attached in this window (see pty.session.list).",
+      "Report whether the PTY daemon still holds a live shell for this session id — true even across an app restart before anything reattaches. Distinct from being attached in this window (see pty.session.list).",
     triggers: { ko: "헤드리스 세션 생존 확인" },
-    params: { pane: { type: "string", required: true, description: "Session pane id" } },
+    params: { session: { type: "string", required: true, description: "Session id" } },
     broker: brokerOf(["commands"], {
       type: "object",
       properties: {
-        pane: { type: "string" },
+        session: { type: "string" },
         alive: { type: "boolean" },
         attached: { type: "boolean" },
       },
-      required: ["pane", "alive", "attached"],
+      required: ["session", "alive", "attached"],
       additionalProperties: false,
     }),
-    returns: "{ pane, alive, attached }",
-    message: (d) => `${d.pane}: ${d.alive ? "alive" : "gone"}`,
+    returns: "{ session, alive, attached }",
+    message: (d) => `${d.session}: ${d.alive ? "alive" : "gone"}`,
     errors: ["INVALID_PARAMS"],
-    examples: ['pty.session.alive \'{"pane":"agent-k3f9a2-1"}\''],
+    examples: ['pty.session.alive \'{"session":"agent-k3f9a2-1"}\''],
     handler: async (p) => {
-      const pane = paneOf(p);
-      if (!pane) return invalid("pane 필요");
-      const alive = (await invoke("pty_pane_alive", { paneId: pane })) as boolean;
-      return { pane, alive, attached: sessions.has(pane) };
+      const session = sessionOf(p);
+      if (!session) return invalid("session 필요");
+      const alive = (await invoke("pty_pane_alive", { paneId: session })) as boolean;
+      return { session, alive, attached: sessions.has(session) };
     },
   });
 
   register("pty.session.kill", {
     description: "Close a headless PTY session and its daemon shell.",
     triggers: { ko: "헤드리스 세션 종료" },
-    params: { pane: { type: "string", required: true, description: "Session pane id" } },
+    params: { session: { type: "string", required: true, description: "Session id" } },
     danger: "destructive",
     broker: brokerOf(["commands", "commands:destructive"], {
       type: "object",
-      properties: { pane: { type: "string" } },
-      required: ["pane"],
+      properties: { session: { type: "string" } },
+      required: ["session"],
       additionalProperties: false,
     }),
-    returns: "{ pane }",
-    message: (d) => `session ${d.pane} closed`,
+    returns: "{ session }",
+    message: (d) => `session ${d.session} closed`,
     errors: ["INVALID_PARAMS", "TARGET_NOT_FOUND"],
-    examples: ['pty.session.kill \'{"pane":"agent-k3f9a2-1"}\''],
+    examples: ['pty.session.kill \'{"session":"agent-k3f9a2-1"}\''],
     handler: async (p) => {
-      const pane = paneOf(p);
-      if (!pane) return invalid("pane 필요");
-      const st = sessions.get(pane);
+      const session = sessionOf(p);
+      if (!session) return invalid("session 필요");
+      const st = sessions.get(session);
       if (!st) {
-        return { ok: false as const, code: "TARGET_NOT_FOUND" as const, message: `no session: ${pane}` };
+        return { ok: false as const, code: "TARGET_NOT_FOUND" as const, message: `no session: ${session}` };
       }
-      sessions.delete(pane);
+      sessions.delete(session);
       await invoke("close_terminal", { id: st.id });
-      return { pane };
+      return { session };
     },
   });
 
@@ -257,11 +257,11 @@ export function registerPtySessionCatalog(): void {
           items: {
             type: "object",
             properties: {
-              pane: { type: "string" },
+              session: { type: "string" },
               bytesSeen: { type: "number" },
               spawnedAt: { type: "number" },
             },
-            required: ["pane", "bytesSeen", "spawnedAt"],
+            required: ["session", "bytesSeen", "spawnedAt"],
             additionalProperties: false,
           },
         },
@@ -269,13 +269,13 @@ export function registerPtySessionCatalog(): void {
       required: ["sessions"],
       additionalProperties: false,
     }),
-    returns: "{ sessions: [{pane, bytesSeen, spawnedAt}] }",
+    returns: "{ sessions: [{session, bytesSeen, spawnedAt}] }",
     message: (d) => `${(d.sessions as unknown[]).length} headless session(s)`,
     errors: [],
     examples: ["pty.session.list"],
     handler: async () => ({
-      sessions: [...sessions.entries()].map(([pane, st]) => ({
-        pane,
+      sessions: [...sessions.entries()].map(([session, st]) => ({
+        session,
         bytesSeen: st.bytesSeen,
         spawnedAt: st.spawnedAt,
       })),

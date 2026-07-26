@@ -21,31 +21,32 @@ export function registerTurnCatalog(): void {
         type: "string",
         description: "Signal origin (shell / idle / acp — defaults to acp)",
       },
-      paneId: { type: "string", description: "Related pane id (optional)" },
+      tabId: { type: "string", description: "Related tab id (optional)" },
       project: { type: "string", description: "Project id (optional)" },
       root: { type: "string", description: "Project root path — scope key used by subscribers to filter events" },
       command: { type: "string", description: "Description of the completed task or command (optional, enriches event body)" },
     },
-    returns: "{ emitted }",
+    returns: "{ emitted, projectId }",
     message: () => tmsg("msg.turn.signal"),
     errors: ["INTERNAL"],
     examples: ['turn.signal \'{"source":"acp","root":"/Users/me/proj","command":"claude 응답 완료"}\''],
     handler: (p) => {
+      const projectId = typeof p.project === "string" ? p.project : null;
       emitPluginEvent("turn.ended", {
-        projectId: typeof p.project === "string" ? p.project : null,
+        projectId,
         root: typeof p.root === "string" ? p.root : null,
-        paneId: typeof p.paneId === "string" ? p.paneId : null,
+        paneId: typeof p.tabId === "string" ? p.tabId : null,
         source:
           p.source === "shell" || p.source === "idle" ? p.source : "acp",
         command: typeof p.command === "string" ? p.command : null,
       });
-      return { emitted: true };
+      return { emitted: true, projectId };
     },
   });
 
   register("turn.idleDetection", {
     description:
-      "Toggle the idle-output heuristic turn.ended provider (off by default). When enabled, a pane with no output for N ms is treated as a completed turn; false positives are possible.",
+      "Toggle the idle-output heuristic turn.ended provider (off by default). When enabled, a terminal with no output for N ms is treated as a completed turn; false positives are possible.",
     triggers: { ko: "유휴감지 턴감지 아이들 idle 자동턴종료" },
     params: {
       enabled: { type: "boolean", description: "Enable or disable idle detection", required: true },

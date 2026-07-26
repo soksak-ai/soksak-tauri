@@ -242,7 +242,7 @@ describe("state.tree — 해가 공개 사실이다", () => {
     });
   });
 
-  it("행 불일치 스위칭을 표시 layout·panels 에 노출하고 정본은 함께 보고한다", async () => {
+  it("행 불일치 스위칭을 표시 layout·panes 에 노출하고 정본은 함께 보고한다", async () => {
     const original = switchProject();
     useSessions.setState({ projects: [original], activeId: original.id });
 
@@ -256,10 +256,10 @@ describe("state.tree — 해가 공개 사실이다", () => {
           projection: {
             kind: string;
             applied: boolean;
-            focusedPanelId: string;
-            swappedPanels: string[];
+            focusedPaneId: string;
+            swappedPanes: string[];
           };
-          panels: Array<{ id: string; rect: { left: number } }>;
+          panes: Array<{ id: string; rect: { left: number } }>;
         }>;
       }>;
     }).projects[0];
@@ -269,19 +269,19 @@ describe("state.tree — 해가 공개 사실이다", () => {
     expect(first.projection).toEqual({
       kind: "switched",
       applied: true,
-      focusedPanelId: "ghostty",
-      swappedPanels: ["design", "ghostty"],
+      focusedPaneId: "ghostty",
+      swappedPanes: ["design", "ghostty"],
     });
     expect(first.canonicalLayout).not.toEqual(first.layout);
-    expect(first.panels.find((panel) => panel.id === "ghostty")?.rect.left).toBe(33.3);
-    expect(first.panels.find((panel) => panel.id === "design")?.rect.left).toBe(50);
+    expect(first.panes.find((pane) => pane.id === "ghostty")?.rect.left).toBe(33.3);
+    expect(first.panes.find((pane) => pane.id === "design")?.rect.left).toBe(50);
     // 세션 정본은 절대 바뀌지 않는다 — 표시만 스위칭된다.
     expect(useSessions.getState().projects[0].spaces[0].layout).toBe(
       original.spaces[0].layout,
     );
   });
 
-  it("최대화는 공개 layout/panels 도 실제 [sidebar|feature] 평면으로 노출한다", async () => {
+  it("최대화는 공개 layout/panes 도 실제 [sidebar|feature] 평면으로 노출한다", async () => {
     const original = switchProject();
     useSessions.setState({ projects: [original], activeId: original.id });
     // fixture 그룹은 뷰가 없으므로 공개 상태를 직접 세팅해 직렬화만 검증한다.
@@ -299,21 +299,21 @@ describe("state.tree — 해가 공개 사실이다", () => {
     const result = await execute("state.tree", {}, {});
     const space = (result.data as {
       projects: Array<{ spaces: Array<{
-        layout: { panel: string };
+        layout: { pane: string };
         canonicalLayout: { children: unknown[] };
-        projection: { kind: string; applied: boolean; focusedPanelId: string; swappedPanels: string[] };
-        panels: Array<{ id: string; rect: { left: number; top: number; width: number; height: number } }>;
+        projection: { kind: string; applied: boolean; focusedPaneId: string; swappedPanes: string[] };
+        panes: Array<{ id: string; rect: { left: number; top: number; width: number; height: number } }>;
       }> }>;
     }).projects[0].spaces[0];
-    expect(space.layout).toEqual({ panel: "ghostty" });
-    expect(space.panels).toEqual([
-      { id: "ghostty", rect: { left: 0, top: 0, width: 100, height: 100 }, active: true, activeViewId: "", views: [] },
+    expect(space.layout).toEqual({ pane: "ghostty" });
+    expect(space.panes).toEqual([
+      { id: "ghostty", rect: { left: 0, top: 0, width: 100, height: 100 }, active: true, activeTabId: "", tabs: [] },
     ]);
     expect(space.projection).toEqual({
       kind: "maximized",
       applied: true,
-      focusedPanelId: "ghostty",
-      swappedPanels: [],
+      focusedPaneId: "ghostty",
+      swappedPanes: [],
     });
     expect(space.canonicalLayout.children).toHaveLength(3);
   });

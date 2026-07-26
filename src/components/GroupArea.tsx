@@ -91,8 +91,9 @@ export const PANE_INSET: Record<string, number> = { flat: 0, card: 5, floating: 
 // 최대화 시 셀/슬롯이 차지하는 전체 rect(컨텐츠 영역 기준 %).
 const FULL_RECT = { left: 0, top: 0, width: 100, height: 100 };
 
-// 홀 판정의 단일 진실 — 뷰의 transparent 선언(레지스트리 decl) 하나. 셀(pane-hole 밴드)과
-// 슬롯(tab-body-hole 배경·베일·레일 클립)이 같은 함수를 소비한다. 제2 기준(콘텐츠 클래스 등)
+// 홀 판정의 단일 진실 — 뷰의 transparent 선언(레지스트리 decl) 하나. 칸(.pane.hole 밴드)과
+// 본문(.tab-body.hole 배경·베일·레일 클립)이 같은 함수를 소비한다. 클래스도 하나(.hole 수정자)인
+// 이유가 그것이다 — 판정 축이 하나인데 이름이 둘이면 절반이 갈라진다. 제2 기준(콘텐츠 클래스 등)
 // 도입 금지 — 기준이 갈라지면 절반의 소비자가 못 보는 홀이 생긴다(PLUGIN-CONTRACT §Transparent).
 function isHoleView(view: Tab | undefined | null): boolean {
   return (
@@ -603,7 +604,7 @@ export const GroupArea = memo(function GroupArea({
         return (
           <div
             key={`cell-${group.id}`}
-            className={`pane${holeCell ? " pane-hole" : ""}${
+            className={`pane${holeCell ? " hole" : ""}${
               group.id === content.activePaneId ? " spot-clear" : ""
             }${flipMoves(group.id) ? " flip-move" : ""}`}
             data-node={`layout/pane/${group.id}`}
@@ -723,11 +724,11 @@ export const GroupArea = memo(function GroupArea({
           return (
             <div
               key={view.id}
-              // tab-body-hole: 슬롯은 셀의 자식이 아니라 영속 레이어의 형제라서, 홀 표시는
-              // 셀렉터 조합(.pane-hole 하위)이 아니라 슬롯 자신의 클래스여야 한다.
+              // .hole: 본문은 칸의 자식이 아니라 영속 레이어의 형제라서, 홀 표시는
+              // 셀렉터 조합(.pane.hole 하위)이 아니라 본문 자신의 클래스여야 한다.
               // 기준은 셀과 동일한 단일 선언 축(isHoleView) — 홀 배경·베일·레일 클립이
               // 전부 이 클래스 하나를 본다.
-              className={`tab-body${isHoleView(view) ? " tab-body-hole" : ""}${
+              className={`tab-body${isHoleView(view) ? " hole" : ""}${
                 group.id === content.activePaneId ? " spot-clear" : ""
               }${shown && flipMoves(group.id) ? " flip-move" : ""}`}
               // 네이티브 클릭 판정용(App.tsx native-mousedown → elementFromPoint).

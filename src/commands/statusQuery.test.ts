@@ -20,14 +20,14 @@ const pristineTabs = JSON.parse(JSON.stringify(useSessions.getState().projects))
 const pristineActive = useSessions.getState().activeId;
 
 let seq = 0;
-function mkView(status?: { code: string; message?: string }): string {
+function mkTab(status?: { code: string; message?: string }): string {
   const r = useSessions.getState().openPluginView("t1", "p", `v${seq++}`, "T");
   if (!r.ok) throw new Error("openPluginView 실패");
   if (status) useSessions.getState().setViewStatus("t1", r.viewId, status);
   return r.viewId;
 }
 
-type StatusRes = { statuses: { viewId: string; code: string; message?: string }[] };
+type StatusRes = { statuses: { tabId: string; code: string; message?: string }[] };
 
 beforeEach(() => {
   useSessions.setState({
@@ -38,30 +38,30 @@ beforeEach(() => {
 
 describe("status.query — 보고 == 회신(R8)", () => {
   it("보고한 status 가 회신에 그대로 온다", async () => {
-    const vid = mkView({ code: "busy", message: "작업 중" });
+    const tid = mkTab({ code: "busy", message: "작업 중" });
     const res = (await execute("status.query", {}, {})) as unknown as { data: StatusRes };
     expect(res.data.statuses).toContainEqual({
-      viewId: vid,
+      tabId: tid,
       code: "busy",
       message: "작업 중",
     });
   });
 
-  it("status 미보고 뷰만이면 빈 배열", async () => {
-    mkView();
+  it("status 미보고 탭만이면 빈 배열", async () => {
+    mkTab();
     const res = (await execute("status.query", {}, {})) as unknown as { data: StatusRes };
     expect(res.data.statuses).toEqual([]);
   });
 
-  it("view 파라미터로 특정 뷰만 회신", async () => {
-    const a = mkView({ code: "busy", message: "A" });
-    mkView({ code: "dirty" });
+  it("tab 파라미터로 특정 탭만 회신", async () => {
+    const a = mkTab({ code: "busy", message: "A" });
+    mkTab({ code: "dirty" });
     const res = (await execute(
       "status.query",
-      { view: a },
+      { tab: a },
       {},
     )) as unknown as { data: StatusRes };
     expect(res.data.statuses).toHaveLength(1);
-    expect(res.data.statuses[0].viewId).toBe(a);
+    expect(res.data.statuses[0].tabId).toBe(a);
   });
 });

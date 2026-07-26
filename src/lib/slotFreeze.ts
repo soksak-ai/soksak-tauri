@@ -13,7 +13,7 @@
 //  - 페인트 먼저, 숨김 나중 — 스탠드인 페인트가 커밋된 뒤(이중 rAF) veil(true).
 //  - 스냅 부재·낡음·크기 드리프트는 폴백 = 라이브 추종(동결 없음).
 //  - bounds 커밋은 이 계층과 무관하게 계속 흐른다(동결은 표현이지 정책이 아니다).
-import { HOLE_SLOT_SELECTOR } from "./railHoleClip";
+import { HOLE_SELECTOR } from "./railHoleClip";
 import { surfaceRectOf } from "./surfaceRect";
 
 interface SlotSnap {
@@ -102,7 +102,7 @@ function parkedSlot(r: {
 const cssPx = (n: number): string => `${Math.round(n * 100) / 100}px`;
 
 function holeSlots(root: ParentNode): HTMLElement[] {
-  return Array.from(root.querySelectorAll<HTMLElement>(HOLE_SLOT_SELECTOR));
+  return Array.from(root.querySelectorAll<HTMLElement>(HOLE_SELECTOR));
 }
 
 export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {

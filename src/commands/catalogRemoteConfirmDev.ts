@@ -25,7 +25,7 @@ export function registerRemoteConfirmDevCatalog(): void {
       },
       command: {
         type: "string",
-        description: "Command summary to show (default panel.close).",
+        description: "Command summary to show (default pane.close).",
       },
       params: {
         type: "string",
@@ -48,7 +48,7 @@ export function registerRemoteConfirmDevCatalog(): void {
       useRemoteConfirm.getState().enqueue({
         request_id: requestId,
         device_id: (p.device_id as string) ?? "iPhone-mock-7F3A",
-        command: (p.command as string) ?? "panel.close",
+        command: (p.command as string) ?? "pane.close",
         params: (p.params as string) ?? '{ "side": "left" }',
         danger: true,
         ttl_secs: (p.ttl_secs as number) ?? 120,

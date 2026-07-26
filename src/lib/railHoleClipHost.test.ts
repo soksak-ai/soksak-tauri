@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { HOLE_SLOT_SELECTOR } from "./railHoleClip";
+import { HOLE_SELECTOR } from "./railHoleClip";
 import {
   __resetRailHoleClipHostForTest,
   registerRailPlane,
@@ -25,7 +25,7 @@ function plane(): HTMLElement {
 
 function hole(): HTMLElement {
   const h = document.createElement("div");
-  h.className = "tab-body tab-body-hole";
+  h.className = "tab-body hole";
   document.body.appendChild(h);
   return h;
 }
@@ -40,7 +40,7 @@ beforeEach(() => {
   scans = 0;
   realQSA = document.querySelectorAll.bind(document);
   vi.spyOn(document, "querySelectorAll").mockImplementation(((sel: string) => {
-    if (sel === HOLE_SLOT_SELECTOR) scans += 1;
+    if (sel === HOLE_SELECTOR) scans += 1;
     return realQSA(sel);
   }) as typeof document.querySelectorAll);
 });

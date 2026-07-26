@@ -46,12 +46,12 @@ export function visibleHoles(
   return out;
 }
 
-// 홀 기준은 뷰의 transparent 선언 하나다 — GroupArea 가 슬롯 자신에 tab-body-hole 으로 새긴다
-// (슬롯은 셀의 자식이 아니라 영속 레이어의 형제 — 셀렉터 조합으로는 절대 못 잡는다. 실측:
-// .pane-hole 하위 셀렉터가 공집합이라 네이티브 클립까지 통째로 퇴행했던 사고). App.css 홀
+// 홀 기준은 뷰의 transparent 선언 하나다 — GroupArea 가 본문 자신에 .hole 로 새긴다
+// (본문은 칸의 자식이 아니라 영속 레이어의 형제 — 셀렉터 조합으로는 절대 못 잡는다. 실측:
+// 칸 하위 셀렉터가 공집합이라 네이티브 클립까지 통째로 퇴행했던 사고). App.css 홀
 // 배경 규칙과 같은 기준. 콘텐츠 클래스 등 제2 기준 도입 금지.
-/** 홀-슬롯 단일 기준 셀렉터(transparent 선언의 DOM 표식) — 레일 클립·슬롯 동결이 공유한다. */
-export const HOLE_SLOT_SELECTOR = ".tab-body.tab-body-hole";
+/** 홀 본문 단일 기준 셀렉터(transparent 선언의 DOM 표식) — 레일 클립·본문 동결이 공유한다. */
+export const HOLE_SELECTOR = ".tab-body.hole";
 
 /**
  * 모션 위상 동안 레일 평면의 clip-path 를 홀 rect 에 프레임 동기로 맞춘다.
@@ -95,7 +95,7 @@ export function applyRailHoleClip(
  * 한 패스에 한 번만 부른다(railHoleClipHost 가 그 소유자다).
  */
 export function collectHoleRects(): DOMRect[] {
-  return Array.from(document.querySelectorAll<HTMLElement>(HOLE_SLOT_SELECTOR), (el) =>
+  return Array.from(document.querySelectorAll<HTMLElement>(HOLE_SELECTOR), (el) =>
     el.getBoundingClientRect(),
   );
 }

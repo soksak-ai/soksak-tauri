@@ -91,6 +91,7 @@ const VERDICTS: Record<Scope, Record<string, Verdict>> = {
     builtPanes: "pane",
     maximizedPane: "pane", // 최대화된 탭을 담은 칸
     locatePane: "pane", // pane id → 위치
+    paneIdOf: "pane", // 골 해소기에 넘기는 leaf→id 사상
     resolvePane: "pane",
     swappedPanes: "pane",
     LayoutPaneSpec: "pane", // layout.apply 의 panes[] 항목

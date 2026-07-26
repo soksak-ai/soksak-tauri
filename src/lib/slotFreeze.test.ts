@@ -10,7 +10,7 @@ const PNG = "data:image/png;base64,x";
 
 function makeSlot(viewId: string): HTMLElement {
   const el = document.createElement("div");
-  el.className = "tab-body tab-body-hole";
+  el.className = "tab-body hole";
   el.setAttribute("data-node", `layout/tab/${viewId}`);
   document.body.appendChild(el);
   // jsdom 은 레이아웃이 없다 — 가시 슬롯 rect 를 명시 주입한다.

@@ -83,11 +83,11 @@ describe("layout.apply", () => {
     unregBrowser = registerBrowser();
     const r = await execute("layout.apply", { preset: "dev" }, {});
     expect(r.ok).toBe(true);
-    const spaces = (r.data as { spaces: { title: string; panels: { program: string }[] }[] }).spaces;
+    const spaces = (r.data as { spaces: { title: string; panes: { program: string }[] }[] }).spaces;
     expect(spaces).toHaveLength(1);
     expect(spaces[0].title).toBe("dev");
     // 터미널 패널은 설정 엔진(계약 해소)의 program 으로 채워진다 — 특정 program id 가정 없음.
-    expect(spaces[0].panels.map((p) => p.program)).toEqual([XTERM_PROGRAM, "browser"]);
+    expect(spaces[0].panes.map((p) => p.program)).toEqual([XTERM_PROGRAM, "browser"]);
     expect((r.data as Record<string, unknown>).skipped).toBeUndefined();
   });
 
@@ -95,10 +95,10 @@ describe("layout.apply", () => {
     const r = await execute("layout.apply", { preset: "dev" }, {});
     expect(r.ok).toBe(true);
     const data = r.data as {
-      spaces: { panels: { program: string }[] }[];
+      spaces: { panes: { program: string }[] }[];
       skipped?: { program: string; reason: string }[];
     };
-    expect(data.spaces[0].panels.map((p) => p.program)).toEqual([XTERM_PROGRAM]);
+    expect(data.spaces[0].panes.map((p) => p.program)).toEqual([XTERM_PROGRAM]);
     expect(data.skipped).toBeDefined();
     expect(data.skipped![0].program).toBe("browser");
     expect(typeof data.skipped![0].reason).toBe("string");
@@ -112,11 +112,11 @@ describe("layout.apply", () => {
     const r = await execute("layout.apply", { preset: "dev" }, {});
     expect(r.ok).toBe(true);
     const data = r.data as {
-      spaces: { panels: { program: string }[] }[];
+      spaces: { panes: { program: string }[] }[];
       skipped?: { program: string; reason: string }[];
     };
     // 브라우저는 있으므로 그 패널만 남고, 터미널은 skipped.
-    expect(data.spaces[0].panels.map((p) => p.program)).toEqual(["browser"]);
+    expect(data.spaces[0].panes.map((p) => p.program)).toEqual(["browser"]);
     expect(data.skipped).toBeDefined();
     const terminalSkip = data.skipped!.find((s) => s.program === "soksak-spec-plugin-terminal");
     expect(terminalSkip).toBeDefined();
@@ -136,20 +136,20 @@ describe("layout.apply", () => {
       {
         preset: "facets",
         spaces: [
-          { title: "a", panels: [{ program: XTERM_PROGRAM }] },
-          { title: "b", panels: [{ program: XTERM_PROGRAM }, { program: XTERM_PROGRAM, side: "bottom" }] },
+          { title: "a", panes: [{ program: XTERM_PROGRAM }] },
+          { title: "b", panes: [{ program: XTERM_PROGRAM }, { program: XTERM_PROGRAM, side: "bottom" }] },
         ],
       },
       {},
     );
     expect(r.ok).toBe(true);
-    const spaces = (r.data as { spaces: { title: string; panels: unknown[] }[] }).spaces;
+    const spaces = (r.data as { spaces: { title: string; panes: unknown[] }[] }).spaces;
     expect(spaces.map((s) => s.title)).toEqual(["a", "b"]);
-    expect(spaces[0].panels).toHaveLength(1);
-    expect(spaces[1].panels).toHaveLength(2);
+    expect(spaces[0].panes).toHaveLength(1);
+    expect(spaces[1].panes).toHaveLength(2);
     // 2차 패널은 서로 다른 패널 id 다(분할 생성).
-    const b = spaces[1].panels as { panelId: string }[];
-    expect(b[0].panelId).not.toBe(b[1].panelId);
+    const b = spaces[1].panes as { paneId: string }[];
+    expect(b[0].paneId).not.toBe(b[1].paneId);
   });
 
   it("preset facets — spaces 를 빠뜨리면 INVALID_PARAMS 로 답한다", async () => {

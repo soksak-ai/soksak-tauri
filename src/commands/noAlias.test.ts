@@ -220,15 +220,19 @@ function collisions(): Command[][] {
 describe("게이트 자신이 무엇을 세는지 먼저 못 박는다", () => {
   it("명령을 실제로 읽어냈다 — 빈 집합이 통과로 위장하지 않는다", () => {
     expect(ALL.length).toBeGreaterThan(200);
-    expect(NAMES.has("view.close")).toBe(true);
+    expect(NAMES.has("tab.close")).toBe(true);
     expect(NAMES.has("ui.intent.open")).toBe(true);
   });
 
   it("서명을 실제로 읽어냈다 — 파싱이 조용히 비면 중복이 0 으로 보인다", () => {
-    const view = ALL.find((c) => c.name === "view.close");
-    expect(signature(view!)).toBe("(view:string!) -> { activePanelId, activeViewId }");
-    const resize = ALL.find((c) => c.name === "panel.resize");
-    expect(signature(resize!)).toBe("(project:string,sizes:number[]!,split:string!) -> {}");
+    const tab = ALL.find((c) => c.name === "tab.close");
+    expect(signature(tab!)).toBe(
+      "(tab:string!) -> { tabId(closed), activePaneId, activeTabId }",
+    );
+    const resize = ALL.find((c) => c.name === "pane.resize");
+    expect(signature(resize!)).toBe(
+      "(edge:string!,pane:string,ratio:number!) -> { paneId, gutter:{pane,edge}(canonical), sizes }",
+    );
   });
 });
 
@@ -273,7 +277,7 @@ describe("경계 — 동사 대조가 게이트를 눈멀게 하지 않는다", 
 
   it("동사가 같은 쌍은 그 반의어 목록에 숨지 못한다", () => {
     expect(verb("plugin.enable")).not.toBe(verb("plugin.disable"));
-    expect(verb("panel.resize")).toBe(verb("sidebar.left.resize"));
-    expect(verb("editor.open")).toBe(verb("ui.intent.open"));
+    expect(verb("pane.resize")).toBe(verb("sidebar.left.resize"));
+    expect(verb("tab.open")).toBe(verb("ui.intent.open"));
   });
 });

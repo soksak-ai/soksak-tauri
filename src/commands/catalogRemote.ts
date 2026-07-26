@@ -36,7 +36,7 @@ export function registerRemoteCatalog(): void {
       command: {
         type: "string",
         required: true,
-        description: "Human-readable command summary to show (e.g. panel.close).",
+        description: "Human-readable command summary to show (e.g. pane.close).",
       },
       danger: {
         type: "boolean",
@@ -55,7 +55,7 @@ export function registerRemoteCatalog(): void {
     message: (d) =>
       d.approve ? tmsg("msg.remote.confirm.approved") : tmsg("msg.remote.confirm.denied"),
     examples: [
-      'remote.confirm \'{"request_id":42,"device_id":"iphone-15","command":"panel.close","danger":true,"ttl_secs":30}\'',
+      'remote.confirm \'{"request_id":42,"device_id":"iphone-15","command":"pane.close","danger":true,"ttl_secs":30}\'',
     ],
     danger: "destructive",
     handler: async (p) => {

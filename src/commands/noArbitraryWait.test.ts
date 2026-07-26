@@ -188,7 +188,7 @@ describe("기다림은 사건으로 끝난다 — 숫자 리터럴 타이머 금
 
 describe("예외는 사건 이름과 함께만 산다", () => {
   it("등록된 예외는 전부 종결 사건을 밝힌다 — 이름 없는 예외는 예외가 아니다", () => {
-    const nameless = ALLOWED.filter((a) => !a.event.trim() || !a.why.trim()).map((a) => a.site);
+    const nameless = ALLOWED.filter((a) => !a.event.trim() || !a.why.trim()).map((a) => `${a.file} :: ${a.mark}`);
     expect(nameless).toEqual([]);
   });
 

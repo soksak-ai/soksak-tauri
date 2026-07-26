@@ -28,13 +28,16 @@ interface RustDaemonStatus {
 const NS = "core";
 const policyKey = (root: string) => `daemon/${root}`;
 
-/** 이 창의 대상 프로젝트 루트 — 명시 project id 우선, 없으면 활성 프로젝트. */
-function resolveRoot(params: Record<string, unknown>): string | null {
+/** 이 창의 대상 프로젝트 — 명시 project id 우선, 없으면 활성 프로젝트. 데몬 정책·Procfile 은
+ *  root 를 키로 쓰고 답은 해소된 id 를 지목하므로 둘을 함께 돌려준다. */
+function resolveTarget(
+  params: Record<string, unknown>,
+): { id: string; root: string } | null {
   const s = useSessions.getState();
   const t = params.project
     ? s.projects.find((x) => x.id === params.project)
     : (s.projects.find((x) => x.id === s.activeId) ?? s.projects[0]);
-  return t?.root ?? null;
+  return t?.root ? { id: t.id, root: t.root } : null;
 }
 
 async function readProcfile(root: string): Promise<{ text: string; entries: ProcfileEntry[] }> {
@@ -94,7 +97,7 @@ export function registerDaemonCatalog(): void {
     triggers: { ko: "데몬 목록 상시 프로세스 서버 목록" },
     params: { project: P.project },
     returns:
-      "{ daemons: [{ name, cmd, running, pid?, uptimeMs?, autostart, managed, exitCode? }] }",
+      "{ projectId, daemons: [{ name, cmd, running, pid?, uptimeMs?, autostart, managed, exitCode? }] }",
     message: (d) => tmsg("msg.daemon.list", { n: ((d.daemons as unknown[]) ?? []).length }),
     errors: ["TARGET_NOT_FOUND"],
     examples: ["daemon.list"],
@@ -110,8 +113,9 @@ export function registerDaemonCatalog(): void {
       return out;
     },
     handler: async (p) => {
-      const root = resolveRoot(p);
-      if (!root) return noProject();
+      const target = resolveTarget(p);
+      if (!target) return noProject();
+      const { id: projectId, root } = target;
       const [{ entries }, policy, status] = await Promise.all([
         readProcfile(root),
         readPolicy(root),
@@ -130,7 +134,7 @@ export function registerDaemonCatalog(): void {
           managed: Boolean(policy.stop?.[e.name]),
         };
       });
-      return { daemons };
+      return { projectId, daemons };
     },
   });
 
@@ -143,7 +147,7 @@ export function registerDaemonCatalog(): void {
       cmd: { type: "string", description: "Shell command to run from the project root", required: true },
       project: P.project,
     },
-    returns: "{ name, cmd }",
+    returns: "{ projectId, name, cmd }",
     message: (d) => tmsg("msg.daemon.add", { name: String(d.name) }),
     errors: ["TARGET_NOT_FOUND", "INVALID_PARAMS"],
     examples: ["daemon.add '{\"name\":\"dev\",\"cmd\":\"npm run dev\"}'"],
@@ -155,12 +159,13 @@ export function registerDaemonCatalog(): void {
             { cmd: `daemon.autostart '{"name":"${String(d.name)}","on":true}'`, why: tmsg("hint.daemon.autostart") },
           ],
     handler: async (p) => {
-      const root = resolveRoot(p);
-      if (!root) return noProject();
+      const target = resolveTarget(p);
+      if (!target) return noProject();
+      const { id: projectId, root } = target;
       const { text } = await readProcfile(root);
       const next = upsertEntry(text, p.name as string, p.cmd as string);
       await writeProcfile(root, next);
-      return { name: p.name, cmd: p.cmd };
+      return { projectId, name: p.name, cmd: p.cmd };
     },
   });
 
@@ -170,13 +175,14 @@ export function registerDaemonCatalog(): void {
       "Remove a daemon declaration from the project's Procfile. A running instance is stopped first.",
     triggers: { ko: "데몬 제거 삭제" },
     params: { name: P.name, project: P.project },
-    returns: "{ name, removed }",
+    returns: "{ projectId, name, removed }",
     message: (d) => tmsg("msg.daemon.remove", { name: String(d.name) }),
     errors: ["TARGET_NOT_FOUND"],
     examples: ["daemon.remove dev"],
     handler: async (p) => {
-      const root = resolveRoot(p);
-      if (!root) return noProject();
+      const target = resolveTarget(p);
+      if (!target) return noProject();
+      const { id: projectId, root } = target;
       const name = p.name as string;
       await invoke("daemon_stop", { root, name });
       const { text } = await readProcfile(root);
@@ -189,7 +195,7 @@ export function registerDaemonCatalog(): void {
       if (policy.stop) delete policy.stop[name];
       if (policy.pids) delete policy.pids[name];
       await writePolicy(root, policy);
-      return { name, removed: true };
+      return { projectId, name, removed: true };
     },
   });
 
@@ -198,7 +204,7 @@ export function registerDaemonCatalog(): void {
       "Start a declared daemon (omit name = every declared daemon that is not running). Output goes to an in-memory ring buffer — read it with daemon.logs.",
     triggers: { ko: "데몬 시작 서버 시작 기동" },
     params: { name: { ...P.name, required: false }, project: P.project },
-    returns: "{ started: [{ name, pid }] }",
+    returns: "{ projectId, started: [{ name, pid }] }",
     primary: "name",
     message: (d) => tmsg("msg.daemon.start", { n: ((d.started as unknown[]) ?? []).length }),
     errors: ["TARGET_NOT_FOUND", "INTERNAL"],
@@ -210,8 +216,9 @@ export function registerDaemonCatalog(): void {
         : [];
     },
     handler: async (p) => {
-      const root = resolveRoot(p);
-      if (!root) return noProject();
+      const target = resolveTarget(p);
+      if (!target) return noProject();
+      const { id: projectId, root } = target;
       const { entries } = await readProcfile(root);
       const policy = await readPolicy(root);
       const status = await rustStatus(root);
@@ -224,7 +231,7 @@ export function registerDaemonCatalog(): void {
       for (const e of targets) {
         started.push({ name: e.name, pid: await startOne(root, e, policy) });
       }
-      return { started };
+      return { projectId, started };
     },
   });
 
@@ -233,14 +240,15 @@ export function registerDaemonCatalog(): void {
       "Stop a running daemon (omit name = all). The whole process tree is terminated — SIGTERM first, SIGKILL after a grace period. A managed daemon (one with a stop command set via daemon.set) runs its stop command instead.",
     triggers: { ko: "데몬 정지 서버 정지 중지" },
     params: { name: { ...P.name, required: false }, project: P.project },
-    returns: "{ stopped: [name] }",
+    returns: "{ projectId, stopped: [name] }",
     primary: "name",
     message: (d) => tmsg("msg.daemon.stop", { n: ((d.stopped as unknown[]) ?? []).length }),
     errors: ["TARGET_NOT_FOUND", "INTERNAL"],
     examples: ["daemon.stop dev", "daemon.stop"],
     handler: async (p) => {
-      const root = resolveRoot(p);
-      if (!root) return noProject();
+      const target = resolveTarget(p);
+      if (!target) return noProject();
+      const { id: projectId, root } = target;
       const policy = await readPolicy(root);
       const name = p.name as string | undefined;
       const stopped: string[] = [];
@@ -252,7 +260,7 @@ export function registerDaemonCatalog(): void {
       }
       const rest = (await invoke("daemon_stop", { root, name: name ?? null })) as string[];
       stopped.push(...rest.filter((n) => !stopped.includes(n)));
-      return { stopped };
+      return { projectId, stopped };
     },
   });
 
@@ -260,14 +268,15 @@ export function registerDaemonCatalog(): void {
     description: "Restart a daemon — stop (tree kill or managed stop command) and start again.",
     triggers: { ko: "데몬 재시작" },
     params: { name: P.name, project: P.project },
-    returns: "{ name, pid }",
+    returns: "{ projectId, name, pid }",
     message: (d) => tmsg("msg.daemon.restart", { name: String(d.name) }),
     errors: ["TARGET_NOT_FOUND", "INTERNAL"],
     examples: ["daemon.restart dev"],
     handler: async (p, ctx: CommandContext) => {
       void ctx;
-      const root = resolveRoot(p);
-      if (!root) return noProject();
+      const target = resolveTarget(p);
+      if (!target) return noProject();
+      const { id: projectId, root } = target;
       const name = p.name as string;
       const { entries } = await readProcfile(root);
       const e = entries.find((x) => x.name === name);
@@ -278,7 +287,7 @@ export function registerDaemonCatalog(): void {
       if (stopCmd) await invoke("daemon_run_once", { root, cmd: stopCmd, timeoutSecs: 60 });
       else await invoke("daemon_stop", { root, name });
       const pid = await startOne(root, e, policy);
-      return { name, pid };
+      return { projectId, name, pid };
     },
   });
 
@@ -291,20 +300,21 @@ export function registerDaemonCatalog(): void {
       lines: { type: "number", description: "How many recent lines (default 100)" },
       project: P.project,
     },
-    returns: "{ name, lines: [string] }",
+    returns: "{ projectId, name, lines: [string] }",
     message: (d) => tmsg("msg.daemon.logs", { n: ((d.lines as unknown[]) ?? []).length }),
     errors: ["TARGET_NOT_FOUND"],
     examples: ["daemon.logs dev", "daemon.logs '{\"name\":\"dev\",\"lines\":300}'"],
     handler: async (p) => {
-      const root = resolveRoot(p);
-      if (!root) return noProject();
+      const target = resolveTarget(p);
+      if (!target) return noProject();
+      const { id: projectId, root } = target;
       try {
         const lines = (await invoke("daemon_logs", {
           root,
           name: p.name,
           lines: p.lines ?? null,
         })) as string[];
-        return { name: p.name, lines };
+        return { projectId, name: p.name, lines };
       } catch (e) {
         return { ok: false as const, code: "TARGET_NOT_FOUND", message: String(e) };
       }
@@ -320,7 +330,7 @@ export function registerDaemonCatalog(): void {
       on: { type: "boolean", description: "true = start when the project opens", required: true },
       project: P.project,
     },
-    returns: "{ autostart: Record<name, boolean> }",
+    returns: "{ projectId, autostart: Record<name, boolean> }",
     message: (d) =>
       tmsg("msg.daemon.autostart", {
         state: tmsg((d.on as boolean) ? "msg.daemon.autostart.on" : "msg.daemon.autostart.off"),
@@ -328,8 +338,9 @@ export function registerDaemonCatalog(): void {
     errors: ["TARGET_NOT_FOUND"],
     examples: ["daemon.autostart '{\"name\":\"dev\",\"on\":true}'", "daemon.autostart '{\"on\":true}'"],
     handler: async (p) => {
-      const root = resolveRoot(p);
-      if (!root) return noProject();
+      const target = resolveTarget(p);
+      if (!target) return noProject();
+      const { id: projectId, root } = target;
       const { entries } = await readProcfile(root);
       const policy = await readPolicy(root);
       const targets = p.name ? entries.filter((e) => e.name === p.name) : entries;
@@ -338,7 +349,7 @@ export function registerDaemonCatalog(): void {
       policy.autostart = { ...(policy.autostart ?? {}) };
       for (const e of targets) policy.autostart[e.name] = p.on as boolean;
       await writePolicy(root, policy);
-      return { on: p.on, autostart: policy.autostart };
+      return { projectId, on: p.on, autostart: policy.autostart };
     },
   });
 
@@ -351,13 +362,14 @@ export function registerDaemonCatalog(): void {
       stop: { type: "string", description: "Command that shuts the daemon down (empty string clears it)" },
       project: P.project,
     },
-    returns: "{ name, stop? }",
+    returns: "{ projectId, name, stop? }",
     message: (d) => tmsg("msg.daemon.set", { name: String(d.name) }),
     errors: ["TARGET_NOT_FOUND"],
     examples: ["daemon.set '{\"name\":\"db\",\"stop\":\"docker compose down\"}'"],
     handler: async (p) => {
-      const root = resolveRoot(p);
-      if (!root) return noProject();
+      const target = resolveTarget(p);
+      if (!target) return noProject();
+      const { id: projectId, root } = target;
       const name = p.name as string;
       const { entries } = await readProcfile(root);
       if (!entries.some((e) => e.name === name))
@@ -367,7 +379,7 @@ export function registerDaemonCatalog(): void {
       if (p.stop) policy.stop[name] = p.stop as string;
       else delete policy.stop[name];
       await writePolicy(root, policy);
-      return { name, stop: policy.stop[name] };
+      return { projectId, name, stop: policy.stop[name] };
     },
   });
 

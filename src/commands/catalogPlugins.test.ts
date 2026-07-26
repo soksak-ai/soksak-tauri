@@ -272,7 +272,7 @@ describe("plugin.view.open — rail 배치는 열기 대상이 아니다(좌 레
       { mount: () => {} },
     );
     useSessions.setState({ projects: [tabWith([])], activeId: "t1" } as never);
-    const r = (await execute("plugin.view.open", { view: "railplug.tree" }, {})) as {
+    const r = (await execute("plugin.view.open", { viewKey: "railplug.tree" }, {})) as {
       ok: boolean;
       code: string;
       message: string;

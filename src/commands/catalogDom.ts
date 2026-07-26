@@ -75,7 +75,7 @@ export function collectExposed(): ScannedNode[] {
  * 주소 → 요소. 정확히 하나가 아니면 고르지 않는다(주소 공리 A2).
  *
  * 예전에는 같은 주소가 여러 요소에 붙는 것을 전제하고 "보이는 것"을 골랐다. 그 추측은 둘 다
- * 보이면 무너진다 — 실측: 패널 6개가 전부 tab/view/0 을 써서 클릭이 어느 패널로 갈지 알 수
+ * 보이면 무너진다 — 실측: pane 6개가 전부 tab/view/0 을 써서 클릭이 어느 pane 으로 갈지 알 수
  * 없었다. 주소가 유일하지 않다는 것은 주소를 만드는 쪽의 결함이지 고르기로 덮을 일이 아니다.
  * 여기서 거절하면 결함이 그 자리에서 드러난다.
  */
@@ -357,7 +357,7 @@ export function registerDomCatalog(): void {
     triggers: { ko: "키보드 포커스 소유자 활성 뷰 포커스 상태 창키 커서" },
     params: {},
     returns:
-      "{ requestedViewId, mounted, delivered, activeViewId, settled, windowFocused, activeElement:{ tag, dataNode, className, ancestors } }",
+      "{ requestedTabId, mounted, delivered, activeTabId, settled, windowFocused, activeElement:{ tag, dataNode, className, ancestors } }",
     message: (d) =>
       tmsg("msg.ui.focus.state", {
         view: String(d.activeTabId ?? "none"),
@@ -367,7 +367,9 @@ export function registerDomCatalog(): void {
       const request = viewFocusSnapshot();
       const active = deepActiveElement();
       const host = viewContainerOf(active);
-      const activeViewId = host?.dataset.paneId ?? null;
+      // 컨테이너 어트리뷰트는 data-pane-id 다(NAMING 이행 조건: data-tab-id 이중 발행 →
+      // 전 세션 교체 후 제거). 답이 지목하는 축 이름은 그와 무관하게 탭 축 이름으로 싣는다.
+      const activeTabId = host?.dataset.paneId ?? null;
       // 조상 클래스 체인(뷰 컨테이너까지) — 위젯은 focus 이벤트를 받아야 자기 포커스
       // 표식(클래스·커서 페인트)을 켠다. activeElement 만으론 그 축이 안 보인다.
       const ancestors: { tag: string; className: string }[] = [];
@@ -380,10 +382,12 @@ export function registerDomCatalog(): void {
         if (el === host) break;
       }
       return {
-        ...request,
-        activeViewId,
+        requestedTabId: request.requestedViewId,
+        mounted: request.mounted,
+        delivered: request.delivered,
+        activeTabId,
         settled:
-          request.delivered && request.requestedViewId === activeViewId,
+          request.delivered && request.requestedViewId === activeTabId,
         // 창이 key 가 아니면 위젯은 포커스 표식을 안 그린다 — settled 와 독립 축.
         windowFocused: document.hasFocus(),
         activeElement:
@@ -574,34 +578,34 @@ export function registerDomCatalog(): void {
 
   // 포인터의 "있음"과 "없음" 을 같은 표면에서 구동한다.
   //
-  // 왜 필요한가: divider 강조 같은 hover 상태는 지금까지 CSS :hover 가 소유했고, :hover 는
+  // 왜 필요한가: 골 강조 같은 hover 상태는 지금까지 CSS :hover 가 소유했고, :hover 는
   // 스크립트로 켜지도 끄지도 못한다 — 구동 불가 = 검증 불가였다. 게다가 포인터가 네이티브
   // 자식(브라우저 표면)으로 빠져나가면 webview 가 leave 를 못 받아 그대로 붙들리고, accent
   // 세로선이 창 본문 전체 높이로 브라우저를 가로지른 채 남았다(실측 2026-07-26: ui.hit 이
-  // divider s1:0 을 반환, 그 rect 가 네이티브 강조바 프레임과 동일).
+  // 그 골을 반환, 그 rect 가 네이티브 강조바 프레임과 동일).
   //
   // 소유권을 상태로 옮긴 뒤에는 그 상태를 OS 와 같은 경로로 구동할 수 있어야 한다. leave 는
   // 별개 동사가 아니라 같은 동사의 부재다 — 하나의 명령이 둘 다 낸다(짝이 갈라지지 않는다).
   register("ui.input.pointer", {
     description:
-      "Drive the pointer the way the OS does: enter/move onto an exposed node, or leave (no address = the pointer is not over us). Hover state that a native child surface can steal — divider highlight — is owned by app state, not CSS :hover, precisely so it can be driven and read back here. Returns the divider-hover key now held, so a test can assert both the arming and the release.",
+      "Drive the pointer the way the OS does: enter/move onto an exposed node, or leave (no address = the pointer is not over us). Hover state that a native child surface can steal — gutter highlight — is owned by app state, not CSS :hover, precisely so it can be driven and read back here. Returns the gutter-hover key now held, so a test can assert both the arming and the release.",
     triggers: { ko: "포인터 이동 hover 강조 진입 이탈 마우스 주입 E2E" },
     params: {
       address: { type: "string", description: "Exposed node to move onto. Omit to signal the pointer left us." },
     },
-    returns: "{ address, dividerHover }",
+    returns: "{ address, gutterHover }",
     message: () => tmsg("msg.ui.input.pointer"),
     errors: ["NOT_EXPOSED", "AMBIGUOUS"],
     danger: "inject",
     examples: [
-      'ui.input.pointer \'{"address":"win/main/chrome/divider/s1/0"}\'',
+      'ui.input.pointer \'{"address":"win/main/chrome/gutter/pan-g2h3j4/right"}\'',
       "ui.input.pointer   # 이탈(강조 해제)",
     ],
     handler: (p) => {
       const addr = typeof p.address === "string" ? p.address : null;
       if (addr == null) {
         useDividerHover.getState().set(null);
-        return { address: null, dividerHover: useDividerHover.getState().key };
+        return { address: null, gutterHover: useDividerHover.getState().key };
       }
       const found = resolveExposed(addr);
       if (!("el" in found)) return found;
@@ -611,7 +615,7 @@ export function registerDomCatalog(): void {
       el.dispatchEvent(new PointerEvent("pointerenter", { bubbles: false, composed: true }));
       el.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, composed: true }));
       el.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, composed: true }));
-      return { address: addr, dividerHover: useDividerHover.getState().key };
+      return { address: addr, gutterHover: useDividerHover.getState().key };
     },
   });
 
@@ -740,7 +744,7 @@ export function registerDomCatalog(): void {
   // 왕복을 여러 번 하면 그 사이에 상태가 움직여 서로 다른 순간을 비교하게 된다.
   register("ui.snapshot.dom", {
     description:
-      "Measure every exposed node in one pass — one consistent instant, not several round trips that drift apart. Returns address, rect, and the requested computed properties for each, so you can read where a line sits, how wide a panel is, and how big its children are, all from the same moment. Pair with ui.motion hold to stop time first. filter narrows by address substring.",
+      "Measure every exposed node in one pass — one consistent instant, not several round trips that drift apart. Returns address, rect, and the requested computed properties for each, so you can read where a line sits, how wide a pane is, and how big its children are, all from the same moment. Pair with ui.motion hold to stop time first. filter narrows by address substring.",
     triggers: { ko: "돔 일괄 측정 스냅샷 좌표 폭 한번에 관측 선 위치" },
     params: {
       filter: { type: "string", description: "Only addresses containing this substring" },
@@ -855,14 +859,14 @@ export function registerDomCatalog(): void {
       "Drive a pointer drag (mousedown on `from` -> mousemove -> mouseup). Two modes: (1) drop onto a target — give `to` (+ optional zone); (2) drag by dx/dy for resize handles. steps and durationMs expose a finite real-time sequence for animation/layout verification; defaults preserve the immediate two-move behavior. mousemove+mouseup dispatch on window so window-level drag listeners receive them.",
     triggers: { ko: "드래그 주입 드롭 탭이동 분할 합치기 리사이즈 디바이더 E2E 포인터드래그" },
     params: {
-      from: { type: "string", description: "Source node address (the tab / divider / element to grab)", required: true },
+      from: { type: "string", description: "Source node address (the tab / gutter / element to grab)", required: true },
       to: { type: "string", description: "Target node address to drop onto (mode 1). Omit when using dx/dy.", required: false },
       zone: {
         type: "string",
         description: "center | left | right | top | bottom — point within the target rect (mode 1)",
         enum: ["center", "left", "right", "top", "bottom"],
       },
-      dx: { type: "number", description: "Horizontal drag distance in CSS px from `from` center (mode 2 — resize/divider). Alternative to `to`.", required: false },
+      dx: { type: "number", description: "Horizontal drag distance in CSS px from `from` center (mode 2 — resize/gutter). Alternative to `to`.", required: false },
       dy: { type: "number", description: "Vertical drag distance in CSS px from `from` center (mode 2).", required: false },
       steps: {
         type: "number",
@@ -881,7 +885,7 @@ export function registerDomCatalog(): void {
     danger: "inject",
     examples: [
       'ui.input.drag \'{"from":"win/main/chrome/tab/left/a.x","to":"win/main/chrome/tab/left/b.y","zone":"center"}\'',
-      'ui.input.drag \'{"from":"win/main/chrome/divider/s0/0","dx":120}\'',
+      'ui.input.drag \'{"from":"win/main/chrome/gutter/pan-g2h3j4/right","dx":120}\'',
     ],
     handler: async (p) => {
       const steps = p.steps === undefined ? 2 : Number(p.steps);
@@ -916,8 +920,8 @@ export function registerDomCatalog(): void {
           new MouseEvent(type, { clientX: x, clientY: y, bubbles: true, composed: true, button: 0 }),
         );
       const dist = Math.hypot(toPt.x - fromPt.x, toPt.y - fromPt.y);
-      // mousedown 은 잡는 요소(divider/탭)에, move/up 은 window 에 — divider 리사이즈는 window 레벨
-      // mousemove/mouseup 리스너를 onDividerDown 이 등록하므로 window 로 보내야 받는다.
+      // mousedown 은 잡는 요소(골/탭)에, move/up 은 window 에 — 골 리사이즈는 window 레벨
+      // mousemove/mouseup 리스너를 그 핸들이 등록하므로 window 로 보내야 받는다.
       fire("mousedown", fromPt.x, fromPt.y, fromR.el);
       if (dist >= 5) {
         for (let step = 1; step <= steps; step += 1) {
@@ -1070,7 +1074,7 @@ export function registerDomCatalog(): void {
   });
 
   // native 마우스 브릿지(App 의 native-mousedown/move/up)를 소켓으로 구동 — 브라우저(네이티브 child)
-  // 위 divider 드래그를 실제 마우스 없이 E2E 자가검증. kind = native-mousedown|native-mousemove|native-mouseup.
+  // 위 골 드래그를 실제 마우스 없이 E2E 자가검증. kind = native-mousedown|native-mousemove|native-mouseup.
   register("webview.emitNative", {
     description: "Emit a native mouse-bridge event (native-mousedown/move/up) at viewport x,y — drives divider drag/resize over a native child (browser) without a real mouse, for E2E. Pair with ui.input.drag (DOM path); this is the native path. Occluded/unfocused windows pause rAF and may not respond — call window.focus to bring the window forward first.",
     params: {
