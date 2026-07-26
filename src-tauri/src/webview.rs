@@ -550,25 +550,28 @@ pub(crate) fn layer_ensure_engine_host(label: &str) -> Option<usize> {
 pub fn set_engine_host_hidden(app: &AppHandle, label: String, hidden: bool) {
     let app2 = app.clone();
     let _ = app.clone().run_on_main_thread(move || {
-        // 숨김은 개별 서피스 전부에 건다 — 컨테이너만 숨기면 격리 계약을 벗어나
-        // contentView 에 폴백-부착된 서피스가 그대로 보인다(실측: hostHidden=True 인데
-        // visible=1 — 부트 내내 이전 프레임이 떠 있던 유령의 정체). 복귀(hidden=false)도
-        // 대칭으로 개별 해제한다 — 겹침·좌표는 이후 재스냅이 정렬한다.
-        let ns_win = app2
-            .get_window(&label)
-            .and_then(|w| w.ns_window().ok())
-            .map(|p| p as usize)
-            .unwrap_or(0);
-        for sp in layer::surface_ptrs() {
-            let v: &objc2_app_kit::NSView = unsafe { &*(sp as *const objc2_app_kit::NSView) };
-            let owner = v
-                .window()
-                .map(|w| objc2::rc::Retained::as_ptr(&w) as usize)
+        // 숨김(hidden=true)은 개별 서피스 전부에 건다 — 컨테이너만 숨기면 격리 계약을
+        // 벗어나 contentView 에 폴백-부착된 서피스가 그대로 보인다(실측: hostHidden=True
+        // 인데 visible=1). 복귀(hidden=false)는 **컨테이너만** — 개별 표면의 복귀는 소유자
+        // (플러그인 장부)가 결정한다. 코어가 개별 전부를 켜면 파킹 표면까지 드러난다
+        // (실사고: 수리 후에도 surface.misplaced ×1 — 부트 말미의 일괄 켬이 원인이었다).
+        if hidden {
+            let ns_win = app2
+                .get_window(&label)
+                .and_then(|w| w.ns_window().ok())
+                .map(|p| p as usize)
                 .unwrap_or(0);
-            if ns_win != 0 && owner != ns_win {
-                continue; // 남의 창 서피스는 건드리지 않는다(창 독립)
+            for sp in layer::surface_ptrs() {
+                let v: &objc2_app_kit::NSView = unsafe { &*(sp as *const objc2_app_kit::NSView) };
+                let owner = v
+                    .window()
+                    .map(|w| objc2::rc::Retained::as_ptr(&w) as usize)
+                    .unwrap_or(0);
+                if ns_win != 0 && owner != ns_win {
+                    continue; // 남의 창 서피스는 건드리지 않는다(창 독립)
+                }
+                v.setHidden(true);
             }
-            v.setHidden(hidden);
         }
         let ptr = layer::engine_host_ptr(&label);
         if ptr == 0 {
