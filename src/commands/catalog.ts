@@ -1784,6 +1784,7 @@ export function registerCatalog(): void {
           loc.group.id,
         ),
       ) as Record<string, unknown>;
+      if (out.ok === false) return out; // 실패 봉투에 mounted 를 섞지 않는다
       // 답이 ok 면 그 결과는 쓸 수 있어야 한다. 상태는 즉시 바뀌지만 플러그인 뷰는 다음
       // 렌더에 마운트되므로, 그 사이에 이 viewId 로 명령을 보내면 플러그인은 자기 뷰를
       // 모른다(실측: view.open 직후 navigate 가 NO_VIEW). 마운트 신호를 기다렸다 답한다 —

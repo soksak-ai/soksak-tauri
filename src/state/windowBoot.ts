@@ -24,7 +24,6 @@ import { useProjection, type Pins } from "./projection";
 import { listRecentProjects } from "./recentProjects";
 import {
   useSessions,
-  reseedIdCounters,
   nextSplitIdGen,
   migrateSpaceTitle,
   type ProjectTab,
@@ -142,7 +141,6 @@ export async function initWorkspacePersistence(
       const active = owned.some((t) => t.id === activeId)
         ? activeId
         : (owned[0]?.id ?? "");
-      reseedIdCounters(owned);
       if (owned.length > 0) {
         // 레일 핀 복원(§4.5·R9) — 추적 sweep 이전 씨딩(main 부트 순서 보장).
         for (const t of owned) {

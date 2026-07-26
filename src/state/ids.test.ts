@@ -43,8 +43,11 @@ const ENTITY_AXIS: { axis: "project" | "content" | "group" | "view"; name: strin
   ];
 
 const SRC = readFileSync(join(__dirname, "sessions.ts"), "utf8");
-/** `x${nextXId...}` — 카운터를 문자열로 굳히는 자리(발급기와 그 미리보기). */
-const COUNTER_LITERAL = /`[a-z]\$\{next[A-Za-z]*Id/g;
+/** `x${nextXId...}` — 카운터를 문자열로 굳히는 자리(발급기와 그 미리보기).
+ *  split(`s`)은 예외다 — 내부 노드는 실체가 아니므로(§1-2) 카운터 존치가 표준이고,
+ *  아래 "split id 는 실체 접두를 받지 않는다" 잠금과 한 쌍이다. 초판이 s 까지 세어
+ *  자기 잠금과 모순됐다(정정 2026-07-26). */
+const COUNTER_LITERAL = /`[a-rt-z]\$\{next[A-Za-z]*Id/g;
 
 describe("실체 id 는 자기 종류를 말한다", () => {
   it("세는 대상이 실재한다 — 빈 집합이 통과로 위장하지 않는다", () => {
@@ -74,7 +77,7 @@ describe("실체 id 는 자기 종류를 말한다", () => {
 });
 
 describe("발급기 자체가 카운터를 굳히지 않는다", () => {
-  it("소스에 `x${nextXId}` 꼴이 0건이다 — 미리보기만 고치면 발급은 그대로다", () => {
+  it("소스에 실체 축의 `x${nextXId}` 꼴이 0건이다 — 미리보기만 고치면 발급은 그대로다", () => {
     expect(SRC.match(COUNTER_LITERAL) ?? []).toEqual([]);
   });
 });

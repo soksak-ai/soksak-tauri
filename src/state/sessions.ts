@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { issueId } from "./ids";
 import {
   DEFAULT_RAIL_PLACEMENT,
   isCleanRailStation,
@@ -387,59 +388,20 @@ interface SessionsStore {
   ) => CmdResult<{ groupId: string } & Partial<NewViewIds>>;
 }
 
-let nextProjectId = 2; // 첫 프로젝트는 t1
-let nextViewId = 2; // 첫 뷰는 v1
-let nextGroupId = 2; // 첫 그룹은 g1
+// 발급은 ids.ts(단일 진실)가 한다 — 카운터·reseed 는 폐기됐다. 랜덤 id 는 재실행·창 간
+// 재등장이 없으므로 "보존 id 위로 카운터를 올리는" 조율 자체가 필요 없어진다.
+// 내부 노드(split)만 지역 카운터를 유지한다 — 실체가 아니라 주소·명령·응답 어디에도
+// 나오지 않으므로(§1-2) 전역 유일성이 필요 없고, 접두 id 를 주면 idScope 게이트가 잡는다.
 let nextSplitId = 1;
-let nextContentId = 2; // 첫 컨텐츠는 c1
 
-const newViewId = () => `v${nextViewId++}`;
-const newGroupId = () => `g${nextGroupId++}`;
+const newViewId = () => issueId("tab");
+const newGroupId = () => issueId("pane");
 const newSplitId = () => `s${nextSplitId++}`;
-const newContentId = () => `c${nextContentId++}`;
+const newContentId = () => issueId("space");
 // split id 생성기(복원 시 windowSnapshot.deserialize 에 주입 — A2 는 split id 를 재생성한다).
 export const nextSplitIdGen = (): string => newSplitId();
 
-// 복원된 트리의 보존 id 위로 카운터를 올린다(신규 생성이 보존 id 와 충돌하지 않게). prefix 별로
-// "<prefix><n>" 의 n 최대치를 찾아 next* 를 max+1 로. 모든 tabs 를 스캔한다. A5 복원 후 1회 호출.
-export function reseedIdCounters(tabs: ProjectTab[]): void {
-  let maxT = 1,
-    maxV = 1,
-    maxG = 1,
-    maxS = 0,
-    maxC = 1;
-  const num = (id: string, prefix: string): number => {
-    if (!id.startsWith(prefix)) return 0;
-    const n = Number(id.slice(prefix.length));
-    return Number.isFinite(n) ? n : 0;
-  };
-  const scanSplit = (node: GroupNode): void => {
-    if (node.type === "split") {
-      maxS = Math.max(maxS, num(node.id, "s"));
-      node.children.forEach(scanSplit);
-    }
-  };
-  for (const t of tabs) {
-    maxT = Math.max(maxT, num(t.id, "t"));
-    for (const c of t.contents) {
-      maxC = Math.max(maxC, num(c.id, "c"));
-      scanSplit(c.layout);
-      for (const g of allGroups(c.layout)) {
-        maxG = Math.max(maxG, num(g.id, "g"));
-        for (const v of g.views) {
-          maxV = Math.max(maxV, num(v.id, "v"));
-        }
-      }
-    }
-  }
-  nextProjectId = maxT + 1;
-  nextViewId = maxV + 1;
-  nextGroupId = maxG + 1;
-  nextSplitId = maxS + 1;
-  nextContentId = maxC + 1;
-}
-
-// 다음 생성될 id 미리보기(비파괴) — reseed 검증·진단용. 카운터를 증가시키지 않는다.
+// 발급 형식 미리보기(비파괴) — 진단·게이트용. 랜덤 발급이므로 값이 아니라 형식이 계약이다.
 export function newIds(): {
   project: string;
   view: string;
@@ -448,11 +410,11 @@ export function newIds(): {
   content: string;
 } {
   return {
-    project: `t${nextProjectId}`,
-    view: `v${nextViewId}`,
-    group: `g${nextGroupId}`,
+    project: issueId("project"),
+    view: issueId("tab"),
+    group: issueId("pane"),
     split: `s${nextSplitId}`,
-    content: `c${nextContentId}`,
+    content: issueId("space"),
   };
 }
 
@@ -933,7 +895,7 @@ export const useSessions = create<SessionsStore>((set, get) => ({
         existing: true,
       });
     }
-    const id = `t${nextProjectId++}`;
+    const id = issueId("project");
     const t = makeProject(id, opts);
     set((s) => ({ tabs: [...s.tabs, t], activeId: id }));
     const c = t.contents[0];
