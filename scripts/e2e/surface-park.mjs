@@ -150,6 +150,34 @@ async function main() {
     );
   }
 
+  console.log("\nc. the dual: the ACTIVE browser must actually show (no dark pane)");
+  // 쌍대 오라클 — "보이면 안 되는 게 안 보임"만 보는 게이트는 반쪽이다(실사고: 파킹 수리가
+  // 활성 표면의 기상을 우회해 검은 페인을 만들었는데 게이트는 GREEN 이었다). 브라우저를
+  // 활성으로 되돌리고, 감사 missing 무발행 + 표면 정합(webview.surfaces)이 가시 서피스를
+  // 실제로 세는지 둘 다 단언한다.
+  {
+    const since2 = (data(await rpc("activity.recent", { limit: 1 }, ctrl)).entries ?? []).at(-1)?.seq ?? 0;
+    await rpc("tab.activate", { tab: tBrowser }, win);
+    await sleep(3000); // 표면 복귀·재페인트·감사 2회(지속 판정) 여유
+    const sf = data(await rpc("webview.surfaces", {}, win));
+    const engineVisible = ((sf.engine ?? {}).surfaces ?? []).filter((x) => !x.effectivelyHidden).length;
+    const nativeAlive = (sf.actual ?? []).length;
+    ok(
+      engineVisible + nativeAlive >= 1,
+      `active browser has a live surface (engine ${engineVisible}, native ${nativeAlive})`,
+      JSON.stringify(sf.engine).slice(0, 200),
+    );
+    const es2 = data(await rpc("activity.recent", { since: since2, limit: 500 }, ctrl)).entries ?? [];
+    const missing = es2.filter(
+      (e) => e.kind === "surface.misplaced" && ((e.payload?.missing ?? []).length > 0),
+    );
+    ok(
+      missing.length === 0,
+      "no persistent surface.missing while browser is active",
+      JSON.stringify(missing.map((e) => e.payload?.message)).slice(0, 220),
+    );
+  }
+
   await rpc("window.close", { label: win }, await resolveControlWindow(rpc, win).catch(() => win)).catch(() => {});
   console.log(`\nresult: ${pass} pass / ${fail} fail`);
   process.exit(fail > 0 ? 1 : 0);

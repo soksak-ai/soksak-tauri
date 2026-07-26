@@ -28,6 +28,15 @@ describe("judgeSurfaces — 서피스↔홀 정합", () => {
     const v = judgeSurfaces([R(906, 100)], []);
     expect(v.misplaced).toHaveLength(1);
   });
+
+  it("보이는 홀에 맞는 가시 서피스가 없으면 missing 이다 — '안뜸'의 판정 축", () => {
+    // 실사고(2026-07-27): 활성 구글 페인이 검게 비어 있었는데 misplaced 축만 보던
+    // 감사는 침묵했다 — "보여야 하는데 안 보임"도 위반이다.
+    const v = judgeSurfaces([], [R(906, 100)]);
+    expect(v.missing).toHaveLength(1);
+    const ok = judgeSurfaces([R(906, 100)], [R(906, 100)]);
+    expect(ok.missing).toEqual([]);
+  });
 });
 
 describe("visibleAnchorRects — 측정 앵커의 정본은 bv-area 다", () => {

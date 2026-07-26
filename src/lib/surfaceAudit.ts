@@ -26,6 +26,7 @@ export interface AuditRect {
 export interface SurfaceVerdict {
   misplaced: AuditRect[]; // 어느 홀과도 안 맞는 가시 서피스
   stacked: AuditRect[][]; // 같은 홀을 차지한 서피스 묶음(겹침)
+  missing: AuditRect[]; // 가시 서피스가 하나도 안 맞는 보이는 홀 — "보여야 하는데 안 보임"
   surfaces: number;
   holes: number;
 }
@@ -53,7 +54,8 @@ export function judgeSurfaces(
     else byHole.set(hi, [s]);
   }
   const stacked = [...byHole.values()].filter((l) => l.length > 1);
-  return { misplaced, stacked, surfaces: surfaces.length, holes: holes.length };
+  const missing = holes.filter((_, i) => !byHole.has(i));
+  return { misplaced, stacked, missing, surfaces: surfaces.length, holes: holes.length };
 }
 
 /** 보이는 네이티브 앵커 rect 수집 — 정본 앵커는 .bv-area("bounds 구동원 — 네이티브
@@ -89,6 +91,7 @@ interface EngineStats {
 }
 
 let lastSignature = "";
+let lastMissingSig = "[]";
 let settle: ReturnType<typeof setTimeout> | null = null;
 
 async function runAudit(): Promise<void> {
@@ -106,9 +109,16 @@ async function runAudit(): Promise<void> {
     }));
   const anchors = visibleAnchorRects();
   const verdict = judgeSurfaces(visible, anchors.rects);
-  const bad = verdict.misplaced.length > 0 || verdict.stacked.length > 0;
+  // missing("보여야 하는데 안 보임" — 실사고: 활성 구글 페인이 검게 안뜸)은 로딩 과도기
+  // (open 전·재페인트 전)가 정상적으로 스치는 상태라, 두 번 연속 같은 판정일 때만 위반으로
+  // 발행한다(지속 = 결함, 스침 = 과도기).
+  const missingSig = JSON.stringify(verdict.missing);
+  const missingPersists = verdict.missing.length > 0 && missingSig === lastMissingSig;
+  lastMissingSig = missingSig;
+  const bad =
+    verdict.misplaced.length > 0 || verdict.stacked.length > 0 || missingPersists;
   const signature = bad
-    ? JSON.stringify([verdict.misplaced, verdict.stacked.map((l) => l.length)])
+    ? JSON.stringify([verdict.misplaced, verdict.stacked.map((l) => l.length), missingPersists ? verdict.missing : []])
     : "clean";
   if (signature === lastSignature) return; // 같은 사실의 반복 발행 금지(원장 소음 절제)
   const wasBad = lastSignature !== "" && lastSignature !== "clean";
@@ -120,12 +130,13 @@ async function runAudit(): Promise<void> {
     payload: {
       misplaced: verdict.misplaced,
       stacked: verdict.stacked,
+      missing: missingPersists ? verdict.missing : [],
       surfaces: verdict.surfaces,
       holes: verdict.holes,
       anchorSource: anchors.source,
       origin: "internal",
       message: bad
-        ? `· surface misplaced ×${verdict.misplaced.length} stacked ×${verdict.stacked.length} (surfaces ${verdict.surfaces}/holes ${verdict.holes})`
+        ? `· surface misplaced ×${verdict.misplaced.length} stacked ×${verdict.stacked.length} missing ×${missingPersists ? verdict.missing.length : 0} (surfaces ${verdict.surfaces}/holes ${verdict.holes})`
         : "· surfaces realigned — audit clean",
     },
   }).catch(() => {});
@@ -165,6 +176,7 @@ export function installSurfaceAudit(): void {
 export function __resetSurfaceAuditForTest(): void {
   installed = false;
   lastSignature = "";
+  lastMissingSig = "[]";
   if (settle !== null) clearTimeout(settle);
   settle = null;
 }

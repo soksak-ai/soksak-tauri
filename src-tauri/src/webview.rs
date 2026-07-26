@@ -550,29 +550,12 @@ pub(crate) fn layer_ensure_engine_host(label: &str) -> Option<usize> {
 pub fn set_engine_host_hidden(app: &AppHandle, label: String, hidden: bool) {
     let app2 = app.clone();
     let _ = app.clone().run_on_main_thread(move || {
-        // 숨김(hidden=true)은 개별 서피스 전부에 건다 — 컨테이너만 숨기면 격리 계약을
-        // 벗어나 contentView 에 폴백-부착된 서피스가 그대로 보인다(실측: hostHidden=True
-        // 인데 visible=1). 복귀(hidden=false)는 **컨테이너만** — 개별 표면의 복귀는 소유자
-        // (플러그인 장부)가 결정한다. 코어가 개별 전부를 켜면 파킹 표면까지 드러난다
-        // (실사고: 수리 후에도 surface.misplaced ×1 — 부트 말미의 일괄 켬이 원인이었다).
-        if hidden {
-            let ns_win = app2
-                .get_window(&label)
-                .and_then(|w| w.ns_window().ok())
-                .map(|p| p as usize)
-                .unwrap_or(0);
-            for sp in layer::surface_ptrs() {
-                let v: &objc2_app_kit::NSView = unsafe { &*(sp as *const objc2_app_kit::NSView) };
-                let owner = v
-                    .window()
-                    .map(|w| objc2::rc::Retained::as_ptr(&w) as usize)
-                    .unwrap_or(0);
-                if ns_win != 0 && owner != ns_win {
-                    continue; // 남의 창 서피스는 건드리지 않는다(창 독립)
-                }
-                v.setHidden(true);
-            }
-        }
+        // 개별 서피스의 setHidden 직접 조작은 금지다 — WKWebView 는 hide→show 기상 로직
+        // (wake_child_if_was_hidden — "레이어를 비운 채 잠듦" 방지)이 코어 hide 경로의 추적에
+        // 걸려야 깨어난다. 직접 setHidden 은 그 추적을 우회해, 복귀 show 가 와도 픽셀이
+        // 돌아오지 않는다(실사고: 활성 구글 페인이 검게 "안뜸"). 재부팅 숨김의 정본은
+        // ① b-* child 는 wv.hide()(load-start 훅의 hidden-at-reload — 기상 추적에 실린다),
+        // ② 엔진(CEF) 표면은 이 컨테이너(조상) 숨김 + 소유자(플러그인 장부)의 개별 지시다.
         let ptr = layer::engine_host_ptr(&label);
         if ptr == 0 {
             return;
