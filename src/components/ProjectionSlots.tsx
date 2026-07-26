@@ -110,9 +110,17 @@ export const ProjectionSlots = memo(function ProjectionSlots({
     setShownFingerprint(fingerprint);
   }, [commitProjection, fingerprint, shownFingerprint]);
 
+  // 부트 미완의 미해소 결부 — 결부 뷰는 서 있는데 그 플러그인이 아직 활성화 전이라 투영
+  // 계약(rails)이 해소되지 않은 자리. 접어버리면 "곧 채워질 자리"가 빈칸으로 거짓말한다
+  // (사용자 실측 2026-07-27: 즐겨찾기 투영만 로딩 없이 사라짐). 로딩은 자리가 말한다.
+  const bootLoading =
+    bootPhase !== "ready" &&
+    shownKeys.size === 0 &&
+    degraded.length === 0 &&
+    !!proj?.binding.viewId;
   // 보이는 것이 없으면 영역을 접는다 — keep-alive 마운트는 유지하되 레이아웃을 차지하지
   // 않게(display:none). 완전 무마운트면 렌더 자체 생략.
-  const visible = shownKeys.size > 0 || degraded.length > 0;
+  const visible = shownKeys.size > 0 || degraded.length > 0 || bootLoading;
   if (!visible && mountedRef.current.size === 0) {
     return null;
   }
@@ -176,6 +184,11 @@ export const ProjectionSlots = memo(function ProjectionSlots({
           </div>
         );
       })}
+      {bootLoading && (
+        <div className="projection projection-degraded" data-node={`projection/${side}/loading`}>
+          {t("plugin.view.loading")}
+        </div>
+      )}
       {degraded.map((s, i) => (
         <div key={`deg-${i}`} className="projection projection-degraded" data-node={`projection/${side}/degraded`}>
           {
