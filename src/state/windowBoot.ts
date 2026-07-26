@@ -105,10 +105,24 @@ export async function initWorkspacePersistence(
     ...coreStoreDeps,
   });
 
+  // 복원 경로 관찰면 — 백지/빈 복원은 스냅샷·DOM 으로 원인을 볼 수 없다(boot.error 와
+  // 같은 이유). 단계 사실(hydrate 수·드롭 수·결과)을 활동 허브로 발행해 소켓만으로 읽는다.
+  const bootFact = (step: string) =>
+    void invoke("activity_publish", {
+      kind: "boot.step",
+      source: "boot",
+      payload: { step, window: label, message: `· boot ${step}` },
+    }).catch(() => {});
+
   // 1) 복원
   let restored = false;
   try {
     const snap = await winStore.hydrate();
+    bootFact(
+      `restore:hydrated:${snap.projects.length}:keys=${Object.keys(snap as Record<string, unknown>)
+        .slice(0, 6)
+        .join("+")}`,
+    );
     if (snap.projects.length > 0) {
       const { projects, activeId, projections } = restoreWindow(snap, nextSplitIdGen);
       // root 존재 검증 — 부재/무효 root 는 탭을 지우지 않고 rootMissing 으로 격하한다
@@ -126,6 +140,7 @@ export async function initWorkspacePersistence(
       // P6(전역 단일 오픈): 이 창 스냅샷의 root 들을 일괄 점유. 다른 창이 이미 점유한
       // root 의 탭은 이 창에서 드롭한다(같은 프로젝트 중복 창 금지 — 우아한 열화).
       const denied = await claimRoots(projects.map((t) => t.root));
+      bootFact(`restore:denied:${denied.size}`);
       const owned = projects
         .filter((t) => !denied.has(t.root))
         // 로드-타임 마이그레이션 — 구 순수 숫자 스페이스 타이틀("3")을 "스페이스 3"(i18n)으로 승격(멱등,
@@ -157,7 +172,9 @@ export async function initWorkspacePersistence(
       }
       restored = useSessions.getState().projects.length > 0;
     }
+    bootFact(`restore:done:${restored}`);
   } catch (e) {
+    bootFact(`restore:error:${String(e).slice(0, 120)}`);
     console.error("워크스페이스 복원 실패 — 기본 부트로 폴백:", e);
   }
   // 복원 시도 완료(성공·스냅샷 없음·실패 모두) — 이제 스토어가 이 창의 진실이므로

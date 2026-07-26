@@ -155,6 +155,16 @@ async function boot(): Promise<void> {
   const bootParams = new URLSearchParams(window.location.search);
   const initRoot = bootParams.get("root");
   if (initRoot) {
+    // 부트 지시는 1회 소비다 — URL 에 남기면 window.reload(렌더러 재부팅=복원 경로)가
+    // 이 분기를 다시 타서 저장된 세션을 버린다(실측: reload 후 탭 0 — restore-load 하니스).
+    // 소거는 즉시(분기 진입 시점): 열기 도중 reload 돼도 지시가 재적용되지 않는다.
+    {
+      const clean = new URL(window.location.href);
+      clean.searchParams.delete("root");
+      clean.searchParams.delete("alias");
+      clean.searchParams.delete("shell");
+      window.history.replaceState(null, "", clean.toString());
+    }
     try {
       const denied = await claimRoots([initRoot]);
       if (!denied.has(initRoot)) {
