@@ -176,13 +176,16 @@ fn last_workspace_window() -> Option<String> {
     LAST_WORKSPACE.lock().ok().and_then(|w| w.clone())
 }
 
-// 폴백이 갈 곳이 없을 때의 거부 — 코드가 둘인 이유는 사다리가 둘이기 때문이다.
+// 폴백이 갈 곳이 없거나 하나로 정해지지 않을 때의 거부.
 #[derive(Debug, PartialEq, Eq)]
 enum NoTarget {
     // 플러그인 명령인데 워크스페이스 창이 하나도 없다(컨트롤 플레인은 플러그인을 싣지 않는다).
     NoWorkspace,
     // 어떤 명령도 받을 창이 하나도 없다(창 0).
     NoWindow,
+    // 창이 여럿이라 하나로 정해지지 않는다 — 후보를 실어 되묻는다(R-B2: 배달층이 짐작하면
+    // 명령층의 금지는 무의미하다. "정렬 첫 창"은 결정적일 뿐 여전히 짐작이었다).
+    Ambiguous(Vec<String>),
 }
 
 // 창 폴백 해석(순수) — 명령이 window 를 생략했을 때의 타겟 결정.
@@ -205,6 +208,13 @@ fn resolve_fallback_target(
     workspaces.sort();
     let first_workspace = workspaces.first().map(|w| (*w).clone());
 
+    // 유일할 때만 창을 짚는다. 둘 이상이면 짐작하지 않고 후보를 실어 거절한다 —
+    // 활성(포커스·마지막 워크스페이스)은 "생략=활성"의 결정적 해소라 유지한다.
+    let sole_workspace = if workspaces.len() == 1 { first_workspace } else { None };
+    let ambiguous = || {
+        NoTarget::Ambiguous(workspaces.iter().map(|w| (*w).clone()).collect())
+    };
+
     if !method.starts_with("plugin.") {
         if live.iter().any(|l| l == &focused) {
             return Ok(focused);
@@ -212,14 +222,22 @@ fn resolve_fallback_target(
         if live.iter().any(|l| l == "main") {
             return Ok("main".to_string());
         }
-        return first_workspace.ok_or(NoTarget::NoWindow);
+        return match sole_workspace {
+            Some(w) => Ok(w),
+            None if workspaces.is_empty() => Err(NoTarget::NoWindow),
+            None => Err(ambiguous()),
+        };
     }
     if let Some(w) = last_workspace {
         if workspaces.iter().any(|l| *l == &w) {
             return Ok(w);
         }
     }
-    first_workspace.ok_or(NoTarget::NoWorkspace)
+    match sole_workspace {
+        Some(w) => Ok(w),
+        None if workspaces.is_empty() => Err(NoTarget::NoWorkspace),
+        None => Err(ambiguous()),
+    }
 }
 
 fn parse_request(line: &str) -> Result<Request, String> {
@@ -761,12 +779,18 @@ fn route(app: &AppHandle, req: Request) -> Value {
             ) {
                 Ok(t) => t,
                 Err(no) => {
-                    let (code, message) = match no {
+                    let (code, message, candidates) = match no {
                         NoTarget::NoWorkspace => (
                             "NO_WORKSPACE_WINDOW",
                             "플러그인 명령을 받을 워크스페이스 창이 없음(컨트롤 플레인은 플러그인을 싣지 않음)",
+                            Vec::new(),
                         ),
-                        NoTarget::NoWindow => ("NO_WINDOW", "명령을 받을 창이 없음"),
+                        NoTarget::NoWindow => ("NO_WINDOW", "명령을 받을 창이 없음", Vec::new()),
+                        NoTarget::Ambiguous(c) => (
+                            "AMBIGUOUS_WINDOW",
+                            "창이 여럿이라 하나로 정해지지 않음 — --window 로 지목",
+                            c,
+                        ),
                     };
                     record_route_outcome(
                         app,
@@ -780,7 +804,12 @@ fn route(app: &AppHandle, req: Request) -> Value {
                         message,
                         started_ms,
                     );
-                    return error_reply(code, message);
+                    let mut reply = error_reply(code, message);
+                    if !candidates.is_empty() {
+                        // 후보 전체를 실어 되묻는다(§S2) — 사람이 고를 수 있게, 짐작 없이.
+                        reply["data"] = json!({ "candidates": candidates });
+                    }
+                    return reply;
                 }
             }
         }
@@ -1301,7 +1330,9 @@ mod tests {
     }
 
     #[test]
-    fn plugin_fallback_uses_sorted_live_workspace_when_last_is_dead() {
+    fn plugin_fallback_refuses_to_guess_between_live_workspaces() {
+        // 옛 기준은 "라벨 정렬 첫 항목" — 결정적일 뿐 여전히 짐작이었다(R-B2 재정정,
+        // 2026-07-26). 둘 이상이면 후보를 실어 거절하고, 사람이 --window 로 지목한다.
         let got = resolve_fallback_target(
             "plugin.demo.run",
             "main".into(),
@@ -1310,9 +1341,21 @@ mod tests {
         );
         assert_eq!(
             got,
-            Ok("w-a".to_string()),
-            "결정적 선택 — 라벨 정렬 첫 항목(포커스 무관)"
+            Err(NoTarget::Ambiguous(vec!["w-a".to_string(), "w-b".to_string()])),
+            "둘 이상 = 짐작하지 않고 후보를 실어 거절"
         );
+    }
+
+    #[test]
+    fn plugin_fallback_takes_the_sole_live_workspace() {
+        // 하나뿐이면 짐작이 아니라 유일 해소다 — 스케줄 발화가 계속 동작해야 한다.
+        let got = resolve_fallback_target(
+            "plugin.demo.run",
+            "main".into(),
+            Some("w-dead".into()),
+            &s(&["w-only"]),
+        );
+        assert_eq!(got, Ok("w-only".to_string()));
     }
 
     #[test]
@@ -1361,13 +1404,13 @@ mod tests {
     }
 
     #[test]
-    fn non_plugin_fallback_without_main_uses_a_live_workspace() {
+    fn non_plugin_fallback_without_main_refuses_to_guess() {
         let got =
             resolve_fallback_target("window.open", "w-dead".into(), None, &s(&["w-b", "w-a"]));
         assert_eq!(
             got,
-            Ok("w-a".to_string()),
-            "main 도 없으면 결정적으로 정렬 첫 창"
+            Err(NoTarget::Ambiguous(vec!["w-a".to_string(), "w-b".to_string()])),
+            "main 도 없고 창이 여럿 — 짐작하지 않고 후보를 실어 거절"
         );
     }
 
