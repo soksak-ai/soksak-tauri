@@ -1633,22 +1633,75 @@ pub fn webview_inject_script(
 // (별도 저장소, 멀티플랫폼). 앱은 .plugin(tauri_plugin_webview_capture::init()) 로
 // 등록하고 sok 명령(window.snapshot/record/occlusion)이 plugin:webview-capture|* 를 호출.
 
-// NSWindow 포인터 → Tauri 창 label 역검색(MW1: 모든 네이티브 이벤트는 어느 창인지 label 로 식별).
-// 창 수는 적고(보통 1~3) 매 이벤트마다 호출되지만 순회 비용은 무시할 수준.
-// windows()(Window 레지스트리)를 쓴다 — 브라우저 child 를 add_child 한 창은 멀티-webview 가 되어
-// webview_windows()(단일-webview 전용, is_webview_window 필터)에서 빠지므로, 그걸 쓰면 브라우저 연
-// 창의 클릭이 label 매칭 실패로 사라진다.
+// NSWindow 포인터 ↔ 창 label 캐시(MW1: 모든 네이티브 이벤트는 어느 창인지 label 로 식별).
+//
+// AppKit 통지 블록(클릭 모니터·포인터 부재·라이브 리사이즈)은 wry 가 창 맵(RefCell)을
+// mutably 빌린 채에도 불린다 — 창 파괴 중 resign-key 가 동기 발화한다. 그 안에서
+// Window::ns_window()(메인 스레드 인라인 wry 메시지 → 같은 RefCell 재차용)를 부르면
+// 프로세스가 죽는다(실측 백트레이스: install_pointer_absence → ns_window →
+// handle_user_message, "RefCell already mutably borrowed" wry lib.rs:3273 —
+// 브라우저 하니스의 window.close 가 앱 전체를 죽였다). 그래서 역해소는 창 생성 직후
+// (install_window_natives, 이벤트 루프 디스패치 밖 안전 문맥)에 채운 캐시 조회만으로
+// 한다 — 통지 블록 안 wry 질의 0 이 이 캐시의 존재 이유다.
 #[cfg(target_os = "macos")]
-fn label_for_nswindow(app: &AppHandle, ns_ptr: usize) -> Option<String> {
-    use tauri::Manager;
-    for (label, w) in app.windows() {
-        if let Ok(ns) = w.ns_window() {
-            if ns as usize == ns_ptr {
-                return Some(label);
-            }
-        }
+static NSWINDOW_LABELS: std::sync::Mutex<Vec<(usize, String)>> = std::sync::Mutex::new(Vec::new());
+
+/// 창 생성 직후(안전 문맥)에서 한 번 — NSWindow 포인터를 label 에 묶는다. 같은 label 재등록은
+/// 갱신(멱등). window.reload 로 포인터가 바뀌어도 다음 등록이 걷는다.
+#[cfg(target_os = "macos")]
+pub fn note_nswindow_label(window: &tauri::Window) {
+    if let Ok(ns) = window.ns_window() {
+        nswindow_cache_put(ns as usize, window.label());
     }
-    None
+}
+
+#[cfg(target_os = "macos")]
+fn nswindow_cache_put(ns_ptr: usize, label: &str) {
+    if let Ok(mut g) = NSWINDOW_LABELS.lock() {
+        g.retain(|(p, l)| *p != ns_ptr && l != label);
+        g.push((ns_ptr, label.to_string()));
+    }
+}
+
+/// Destroyed — 그 창의 매핑 회수(포인터 재사용 시 죽은 label 로 오해소하지 않게).
+#[cfg(target_os = "macos")]
+pub fn forget_nswindow_label(label: &str) {
+    if let Ok(mut g) = NSWINDOW_LABELS.lock() {
+        g.retain(|(_, l)| l != label);
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn label_for_nswindow(ns_ptr: usize) -> Option<String> {
+    NSWINDOW_LABELS
+        .lock()
+        .ok()?
+        .iter()
+        .find(|(p, _)| *p == ns_ptr)
+        .map(|(_, l)| l.clone())
+}
+
+// AppKit 통지 블록에서의 이벤트 발행 — 블록 안에서는 wry 로 가는 어떤 호출도 금지다.
+// emit_to 조차 eval_script(인라인 wry 메시지 → RefCell 재차용)라, 창 파괴 중 동기 발화된
+// 블록에서 부르면 프로세스가 죽는다(실측 백트레이스 2호: install_pointer_absence →
+// emit_to → eval_script → handle_user_message, wry lib.rs:3644). 별도 스레드에서 부르면
+// proxy 경로로 큐잉되어 다음 이벤트 루프 차례에 실행된다(CloseRequested 지연과 동일 패턴).
+// 저빈도 통지 전용 — 순서 민감 경로에 쓰지 않는다.
+#[cfg(target_os = "macos")]
+fn emit_from_appkit_block<P: serde::Serialize + Clone + Send + 'static>(
+    handle: &AppHandle,
+    label: Option<String>,
+    event: &'static str,
+    payload: P,
+) {
+    let h = handle.clone();
+    std::thread::spawn(move || {
+        use tauri::Emitter;
+        let _ = match label {
+            Some(l) => h.emit_to(&l, event, payload),
+            None => h.emit(event, payload),
+        };
+    });
 }
 
 // 네이티브 child webview 위 클릭은 메인 webview DOM 에 도달하지 않아 포커스 추적(activeGroup)이
@@ -1702,13 +1755,14 @@ pub fn install_click_monitor(app: &AppHandle) {
             };
             if let Some(win) = ev.window(mtm) {
                 let ns_ptr = Retained::as_ptr(&win) as usize;
-                if let Some(label) = label_for_nswindow(&handle, ns_ptr) {
+                if let Some(label) = label_for_nswindow(ns_ptr) {
                     if let Some(view) = win.contentView() {
                         let h = view.frame().size.height;
                         let loc = ev.locationInWindow();
-                        // 그 창에만 emit_to — 프론트는 자기 창 이벤트만 받아 필터가 불필요.
-                        let _ = handle.emit_to(
-                            &label,
+                        // 그 창에만 — 블록 밖(별도 스레드 큐잉)으로 발행한다(블록 안 wry 금지).
+                        emit_from_appkit_block(
+                            &handle,
+                            Some(label),
                             name,
                             ClickPayload {
                                 x: loc.x,
@@ -1763,8 +1817,8 @@ fn install_pointer_absence(app: &AppHandle) {
             return;
         };
         let ns_ptr = Retained::as_ptr(&ns) as usize;
-        if let Some(label) = label_for_nswindow(&handle, ns_ptr) {
-            let _ = handle.emit_to(&label, "native-mouseleave", ());
+        if let Some(label) = label_for_nswindow(ns_ptr) {
+            emit_from_appkit_block(&handle, Some(label), "native-mouseleave", ());
         }
     });
     let token = unsafe {
@@ -1780,7 +1834,7 @@ fn install_pointer_absence(app: &AppHandle) {
     // 앱 단위 — 어느 창이 key 였든 앱을 떠났으면 전부 꺼진다(창 통지가 안 오는 경로 대비).
     let handle = app.clone();
     let block = block2::RcBlock::new(move |_note: std::ptr::NonNull<NSNotification>| {
-        let _ = handle.emit("native-mouseleave", ());
+        emit_from_appkit_block(&handle, None, "native-mouseleave", ());
     });
     let token = unsafe {
         center.addObserverForName_object_queue_usingBlock(
@@ -1913,8 +1967,8 @@ pub fn install_live_resize_monitor(app: &AppHandle) {
         // 실패로 자연 제외(webview_windows 에 없음).
         let block = block2::RcBlock::new(move |note: std::ptr::NonNull<NSNotification>| unsafe {
             let obj: *mut objc2::runtime::AnyObject = objc2::msg_send![note.as_ref(), object];
-            if let Some(label) = label_for_nswindow(&handle, obj as usize) {
-                let _ = handle.emit_to(&label, "window-live-resize", active);
+            if let Some(label) = label_for_nswindow(obj as usize) {
+                emit_from_appkit_block(&handle, Some(label), "window-live-resize", active);
             }
         });
         let token = unsafe {
@@ -1928,6 +1982,8 @@ pub fn install_live_resize_monitor(app: &AppHandle) {
 #[cfg(test)]
 mod zoom_bounds_tests {
     use super::{bounds_delta, scale_bounds};
+    #[cfg(target_os = "macos")]
+    use super::{forget_nswindow_label, label_for_nswindow, nswindow_cache_put};
 
     // 드래그바 표준 — 변한 축만 적용한다. 순수 이동에 set_size 를 얹지 않는 것이
     // 강조바(NSBox)가 매끄러운 실체적 이유였고, child 도 같은 규율을 따른다.
@@ -1948,5 +2004,25 @@ mod zoom_bounds_tests {
             (120.0, 60.0, 360.0, 240.0)
         );
         assert_eq!(scale_bounds((10.0, 20.0, 30.0, 40.0), 1.0), (10.0, 20.0, 30.0, 40.0));
+    }
+
+    // NSWindow↔label 캐시 — AppKit 통지 블록의 역해소는 이 캐시 조회뿐이다(블록 안 wry 질의 0).
+    // 실측 RED: 캐시 없던 시절 블록이 Window::ns_window() 를 물어 창 파괴 중 재차용 패닉
+    // ("RefCell already mutably borrowed") — 브라우저 하니스의 window.close 가 앱을 죽였다.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn nswindow_cache_resolves_registered_and_forgets_destroyed() {
+        nswindow_cache_put(0xA110, "w-cache-a");
+        nswindow_cache_put(0xB220, "w-cache-b");
+        assert_eq!(label_for_nswindow(0xA110).as_deref(), Some("w-cache-a"));
+        // 같은 label 재등록(window.reload — 포인터 교체)은 갱신이다: 옛 포인터는 걷힌다.
+        nswindow_cache_put(0xA111, "w-cache-a");
+        assert_eq!(label_for_nswindow(0xA111).as_deref(), Some("w-cache-a"));
+        assert_eq!(label_for_nswindow(0xA110), None);
+        // Destroyed — 그 창의 매핑만 회수, 남의 창은 불변.
+        forget_nswindow_label("w-cache-a");
+        assert_eq!(label_for_nswindow(0xA111), None);
+        assert_eq!(label_for_nswindow(0xB220).as_deref(), Some("w-cache-b"));
+        forget_nswindow_label("w-cache-b");
     }
 }

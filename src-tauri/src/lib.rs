@@ -413,6 +413,8 @@ pub fn run() {
                 }
                 tauri::WindowEvent::Destroyed => {
                     ipc::note_closed(window.label()); // 포커스 기록이 죽은 창을 놓는다(다음 명령의 오배송 차단)
+                    #[cfg(target_os = "macos")]
+                    webview::forget_nswindow_label(window.label()); // NSWindow↔label 캐시 회수(포인터 재사용 오해소 방지)
                     crate::sidecar::forget_window(window.label()); // 사이드카 surface 캐시 무효화(stale NSView 방지)
                     window::forget_teardown(window.label()); // 회수 마크 폐기(맵 무한 증가 차단)
                                                                    // 브레이커 엔트리 폐기 — 창 label 은 재사용 안 되므로 남기면 맵이 무한 증가(느린 누수).
