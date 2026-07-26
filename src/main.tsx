@@ -40,6 +40,7 @@ import {
 import { initWindowTitle } from "./state/windowTitle";
 import { installSwapObserver, installInputObserver } from "./lib/motionDebug";
 import { installSurfaceAudit } from "./lib/surfaceAudit";
+import { installErrorLedger } from "./lib/errorLedger";
 import { beginBootPluginEventBuffer, flushBootPluginEvents } from "./plugins/hooks";
 import { useBootPhase } from "./state/bootPhase";
 import { initViewLabelsPersistence } from "./state/viewLabels";
@@ -100,6 +101,7 @@ function bootDone(): void {
 }
 
 async function boot(): Promise<void> {
+  installErrorLedger(); // 오류 원장 — 부트 최서두(어떤 이후 예외도 침묵하지 못한다)
   bootStamp("enter");
   // 이 앱의 CLI 이름(sok/sok-dev/sok-debug)을 창 종류 분기 전에 캐시한다 — 앱-전역 정체성이라
   // 오케스트레이터(main)와 워크스페이스(w-*) 둘 다 필요하다(hint 프리픽스·에이전트 스폰 단일 출처).

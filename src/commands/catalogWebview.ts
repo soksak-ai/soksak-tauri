@@ -70,7 +70,31 @@ export function registerWebviewCatalog(): void {
       const engine = await invoke<{ registered: number; hostPresent: boolean }>(
         "engine_surface_stats",
       ).catch(() => ({ registered: -1, hostPresent: false }));
-      return { actual: mine, ghosts, orphans, engine, stateViews: viewIds.size };
+      // 뷰 본문 사실 — "빈 공간"의 분기(정상 렌더/사유 카드/plugin-empty/진짜 빈 마운트)를
+      // 기계가 구분한다(실사고: 검은 구글의 분기를 픽셀로만 추측했다). 렌더러 명령이라 DOM 직독.
+      const bodies: Record<string, unknown>[] = [];
+      for (const el of document.querySelectorAll<HTMLElement>(".tab-viewer.plugin-view-container")) {
+        const r = el.getBoundingClientRect();
+        if (r.width < 40 || r.x + r.width <= 0 || r.x >= window.innerWidth) continue;
+        const body = el.parentElement;
+        bodies.push({
+          node: el.getAttribute("data-node") ?? el.getAttribute("data-view-addr") ?? "?",
+          w: Math.round(r.width),
+          h: Math.round(r.height),
+          children: el.childElementCount,
+          shadowChildren: el.shadowRoot ? el.shadowRoot.childElementCount : null,
+          firstClass: (el.firstElementChild?.className ?? "").toString().slice(0, 60),
+          firstHtml: (el.firstElementChild?.outerHTML ?? "").slice(0, 160),
+          overlay: body?.querySelector(".plugin-error")
+            ? "error"
+            : body?.querySelector(".plugin-empty")
+              ? "empty"
+              : body?.querySelector(".plugin-loading")
+                ? "loading"
+                : "none",
+        });
+      }
+      return { actual: mine, ghosts, orphans, engine, bodies, stateViews: viewIds.size };
     },
   });
 
