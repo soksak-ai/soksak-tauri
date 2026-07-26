@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
-import { RAIL_TRAVEL_MS } from "../lib/railMotion";
+import { railTravelDeclaredMs } from "../lib/railMotion";
 
 /**
  * 콘텐츠 탭이 선택하는 패널 그리드의 좌표계.
@@ -20,7 +20,11 @@ export function RailGridSurface({
   return (
     <div
       className={`content-body${traveling ? " rail-traveling" : ""}`}
-      style={{ "--rail-travel-ms": `${RAIL_TRAVEL_MS}ms` } as CSSProperties}
+      // 선언은 맨 길이다 — 배수를 여기서 곱하면 안 된다. 느리게 보는 축은 Web Animations 의
+      // playbackRate 하나이고, 그것이 이 전이를 이미 늘린다. 선언까지 곱하면 화면은 배수의
+      // 제곱만큼 느려지는데 위상을 닫는 JS 타이머는 한 번만 곱하므로, 이동이 몇 %만 진행된
+      // 자리에서 위상이 끝나 레이어가 갈리며 튄다(실사고: 20배에서 느려지다 끊기고 되돌아감).
+      style={{ "--rail-travel-ms": `${railTravelDeclaredMs()}ms` } as CSSProperties}
     >
       {children}
       {railPlane}

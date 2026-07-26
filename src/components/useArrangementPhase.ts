@@ -15,7 +15,8 @@ import {
   type Arrangement,
   type ArrangementMove,
 } from "../lib/railArrangement";
-import { RAIL_TRAVEL_MS } from "../lib/railMotion";
+import { scheduleMotion } from "../lib/motionDebug";
+import { railTravelDeclaredMs } from "../lib/railMotion";
 import { redeliverViewFocusIfLost } from "../plugins/viewFocus";
 
 export interface ArrangementPhase<L> {
@@ -178,7 +179,7 @@ export function useArrangementPhase<L extends { id: string }>(
   // 여정 종료 — 대기 중인 목표가 있으면 그 자리에서 다음 여정을 시작한다.
   useEffect(() => {
     if (!traveling) return;
-    const timer = window.setTimeout(() => {
+    const cancel = scheduleMotion(railTravelDeclaredMs(), () => {
       setPhase((p) => {
         const next = queued.current;
         queued.current = null;
@@ -196,8 +197,8 @@ export function useArrangementPhase<L extends { id: string }>(
       // 재배열이 떨군 입력 포커스를 착지 시점에 재배달한다 — "바깥(그룹 활성)만 되고 내부
       // (위젯) 포커스는 안 오는" 결함의 봉합점.
       redeliverViewFocusIfLost();
-    }, RAIL_TRAVEL_MS);
-    return () => window.clearTimeout(timer);
+    });
+    return cancel;
   }, [traveling, phase.generation]);
 
   return {

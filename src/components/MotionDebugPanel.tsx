@@ -14,7 +14,15 @@ import {
   setMotionDebug,
 } from "../lib/motionDebug";
 
-const SCALES = [1, 5, 20, 50];
+// 사람이 읽는 축은 속도이고, 내부 축은 지속 배수다. 둘을 같은 숫자로 쓰면 정반대로 읽힌다 —
+// 지속 50배는 50배 느린 것인데 "50배속"은 빠르다는 뜻이 된다. 화면에는 속도를 분수로 적고,
+// 상태에는 지속 배수를 넣는다(--motion-scale 은 전이 길이를 곱하는 값이므로 그 축이 정본).
+const SPEEDS: { label: string; scale: number }[] = [
+  { label: "1×", scale: 1 },
+  { label: "1/5", scale: 5 },
+  { label: "1/20", scale: 20 },
+  { label: "1/50", scale: 50 },
+];
 
 export function MotionDebugPanel({ onClose }: { onClose: () => void }) {
   const [state, setState] = useState(motionDebugState);
@@ -30,16 +38,17 @@ export function MotionDebugPanel({ onClose }: { onClose: () => void }) {
   return (
     <div className="motion-debug" data-node="motion-debug" role="group" aria-label="motion">
       <div className="motion-debug-row">
-        <span className="motion-debug-label">배속</span>
-        {SCALES.map((s) => (
+        <span className="motion-debug-label">속도</span>
+        {SPEEDS.map((s) => (
           <button
-            key={s}
+            key={s.scale}
             type="button"
-            data-node={`motion-debug/scale/${s}`}
-            className={state.scale === s ? "on" : undefined}
-            onClick={() => setMotionDebug({ scale: s })}
+            data-node={`motion-debug/scale/${s.scale}`}
+            title={s.scale === 1 ? "보통 속도" : `${s.scale}배 느리게`}
+            className={state.scale === s.scale ? "on" : undefined}
+            onClick={() => setMotionDebug({ scale: s.scale })}
           >
-            {s}×
+            {s.label}
           </button>
         ))}
       </div>

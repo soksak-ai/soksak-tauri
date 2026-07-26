@@ -4418,18 +4418,13 @@ select.dctl {
   color: var(--acc);
 }
 
-/* ── 모션 관측(ui.motion) ────────────────────────────────────────────────────
-   이 결함들은 전부 "움직이는 도중"에만 보인다 — 표면이 옛 자리에 좌초해 사이드바가 두 벌로
-   보이고, 탭 복귀에 깜빡이고, 패널이 좁아진 채 세로선이 남는다. 정지 화면을 아무리 캡처해도
-   찰나는 안 잡힌다. 느리게 돌리고 멈출 수 있어야 관측이다.
-   기본값 1 = 무영향(프로덕션 경로 불변). 배수는 :root 한 곳에서만 곱해진다. */
+/* ── 모션 관측(lib/motionDebug) ──────────────────────────────────────────────
+   실제로 느리게 만들고 멈추는 축은 Web Animations 의 playbackRate 다 — CSS 로는 이미 선언된
+   duration 을 곱할 수 없어서, 커스텀 프로퍼티만 두었을 때는 정지만 듣고 배수는 아무 효과가
+   없었다(실사고). 여기 남는 것은 상태면뿐이다: 지금 어떤 설정인지가 화면에서도 읽히도록
+   :root 에 새긴다. 기본값(1, 정지 없음)에서는 아무 규칙도 걸리지 않는다.
+   transition-duration:0 으로 세우려 하지 않는다 — 그건 전이를 멈추는 게 아니라 즉시
+   끝내버려서, 보려던 중간 상태를 없앤다. */
 :root {
   --motion-scale: 1;
-}
-:root[data-motion-hold] *,
-:root[data-motion-hold] *::before,
-:root[data-motion-hold] *::after {
-  animation-play-state: paused !important;
-  transition-delay: 0s !important;
-  transition-duration: 0s !important;
 }

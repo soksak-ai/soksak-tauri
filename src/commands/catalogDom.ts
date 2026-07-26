@@ -14,7 +14,7 @@ import { register } from "./registry";
 import { tmsg } from "../i18n";
 import { viewFocusSnapshot } from "../plugins/viewFocus";
 import { useDividerHover } from "../state/dividerHover";
-import { setMotionDebug } from "../lib/motionDebug";
+import { motionLiveList, motionLiveRates, setMotionDebug } from "../lib/motionDebug";
 
 type FocusTraceEntry = {
   t: number;
@@ -595,7 +595,7 @@ export function registerDomCatalog(): void {
       scale: { type: "number", description: "Duration multiplier (1 = normal, 20 = twenty times slower)" },
       hold: { type: "boolean", description: "Freeze motion in place (true) or resume (false)" },
     },
-    returns: "{ scale, hold }",
+    returns: "{ scale, hold, applied, running, rates, wallMs, animations }",
     message: () => tmsg("msg.ui.motion"),
     errors: ["INVALID_PARAMS"],
     danger: "inject",
@@ -609,10 +609,13 @@ export function registerDomCatalog(): void {
         return { ok: false as const, code: "INVALID_PARAMS" as const, message: "scale must be in (0, 200]" };
       }
       // 설정의 소유자는 motionDebug 하나다 — 개발 UI 가 멈춰 둔 그 순간을 이 명령이 그대로 읽는다.
-      return setMotionDebug({
+      const st = setMotionDebug({
         scale: typeof p.scale === "number" ? p.scale : undefined,
         hold: typeof p.hold === "boolean" ? p.hold : undefined,
       });
+      // running·rates 는 결과다 — 설정이 세워졌다는 말이 느려졌다는 말을 대신하지 못한다(실사고:
+      // 커스텀 프로퍼티만 두고 소비처가 없어 상태는 20 인데 화면은 그대로였다).
+      return { ...st, ...motionLiveRates(), animations: motionLiveList() };
     },
   });
 
