@@ -201,6 +201,12 @@ async function main() {
     // 첫 골의 정본 (pane, edge) — 내부 split 은 실체가 아니다(IDENTITY §4): 첫 split 의
     // 첫 child 를 잎까지 내려간 pane + 방향. 활성 pane 짐작(오른끝이면 right 골이 없다)을
     // 하지 않는다 — 실측: 그 짐작이 TARGET_NOT_FOUND 로 하니스를 죽였다.
+    const projId = async () => {
+      const tr = data(await rpc("state.tree", {}, win));
+      const id = (tr.projects ?? [])[0]?.id;
+      if (!id) throw new Error("프로젝트 없음");
+      return id;
+    };
     const firstGutter = async () => {
       const lay = data(await rpc("pane.list", {}, win)).layout;
       const leaf = (n) => (n.pane ? n.pane : leaf(n.children[0]));
@@ -220,7 +226,7 @@ async function main() {
     };
     const traceResize = async (ratio, ms) => {
       const g = await firstGutter();
-      const addr = `win/${win}/proj/t1/chrome/layout/pane/${g.pane}`;
+      const addr = `win/${win}/proj/${await projId()}/chrome/layout/pane/${g.pane}`;
       // 트레이스가 먼저다 — resize 를 먼저 쏘면 전이(160ms)가 첫 표본 전에 끝나 "불변"으로
       // 오판된다(실측: from=to 로 두 배속 다 실패). 표본이 돌기 시작한 뒤 변화를 유발한다.
       const once = async (r) => {
@@ -228,7 +234,10 @@ async function main() {
         await sleep(60);
         const rz = await rpc("pane.resize", { pane: g.pane, edge: g.edge, ratio: r }, win);
         if (!rz.ok) throw new Error(`pane.resize 실패: ${rz.code}`);
-        return data(await trP);
+        const trR = await trP;
+        if (trR.ok === false || !(trR.data ?? trR).to)
+          throw new Error(`ui.trace 실패: ${JSON.stringify(trR).slice(0, 140)}`);
+        return data(trR);
       };
       let tr = await once(ratio);
       // no-op 방어 — 창 재사용 누적으로 현재 비율이 이미 목표와 같을 수 있다(실측: 907ms
@@ -259,13 +268,14 @@ async function main() {
     const slow = await traceResize(await flip(), 900);
     const w0 = slow.samples[0].w;
     const wEnd = slow.samples[slow.samples.length - 1].w;
-    const progressed = Math.abs(wEnd - w0) > 0.5;
-    const stillMoving =
-      Math.abs(slow.samples[slow.samples.length - 1].w - slow.samples[slow.samples.length - 2].w) > 0.05 ||
-      Math.abs(wEnd - w0) < baseMoved * 0.7;
+    // 1/50 의 본질은 "같은 창 안에서 완결되지 않음"이다. 진행 관찰(w 변화)을 요구하면
+    // ease 초반 × 0.02 배속에서 900ms 진행분이 픽셀 반올림 아래로 내려가 가짜 RED 가 된다
+    // (실측: w 불변인데 8초 애니메이션은 정상 진행 중). base(1×)가 같은 창에서 완결한 것과
+    // 대비해 이동해야 할 거리의 70% 미만이면 감속이 실린 것이다.
+    const unfinished = Math.abs(wEnd - w0) < baseMoved * 0.7;
     ok(
-      progressed && stillMoving,
-      "1/50: still gliding after the same window (stretched)",
+      unfinished,
+      "1/50: not landed within the same window (stretched)",
       `w ${w0} → ${wEnd} (base moved ${baseMoved.toFixed(1)})`,
     );
     // 원복 — 감속 해제 후 활강 완주 대기.

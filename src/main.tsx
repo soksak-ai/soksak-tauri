@@ -135,11 +135,22 @@ async function boot(): Promise<void> {
     bootDone();
     return;
   }
+  // 화면이 먼저다 — 첫 페인트가 플러그인 활성화(실측 2.46s/부트 2.5s — 46개 순차) 뒤에
+  // 줄 서면 사람은 그 시간 동안 빈 창을 본다. 레이아웃 스켈레톤은 플러그인 없이 그려지고
+  // (미등록 뷰 = 플레이스홀더 계약, PluginViewHost), 슬롯은 활성화가 도착하는 대로 채워진다.
+  // 순서 계약은 그대로다: 복원(project.created 발화)은 여전히 플러그인 호스트 "뒤" —
+  // 리스너 등록 전 발화로 이벤트가 유실되던 사고(git init 미실행)의 재발 없음.
+  ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+    <App />,
+  );
+  bootStamp("render");
+  bootStamp("plugin-host:begin");
   try {
     await initPluginHost();
   } catch (e) {
     console.error("플러그인 호스트 초기화 실패:", e);
   }
+  bootStamp("plugin-host:end");
   // 부팅 준비 게이트 해제 — 이 전에 도착해 대기 중이던 미등록(플러그인) 명령 요청이 실행된다.
   // 실패로 빠져나와도 반드시 해제한다(게이트가 영영 잠기면 원격 요청이 타임아웃으로만 죽는다).
   markCommandHostReady();
@@ -209,10 +220,16 @@ async function boot(): Promise<void> {
   // (스냅샷 또는 initRoot)만 책임지고, 그 둘 다 없으면 빈 상태(예외)로 시작한다.
   // StrictMode 비활성: dev 에서 effect 이중 실행이 플러그인 마운트/PTY spawn 을 두 번 돌려
   // 잠깐 중복 세션을 만드는 것을 피한다(dev 동작 단순화).
-  ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-    <App />,
-  );
-  bootDone();
+  // 렌더는 부트 서두(플러그인 호스트 전)에서 이미 했다 — 여기는 복원까지 끝난 시점.
+  bootStamp("restore-visible");
+  // 첫 페인트 근사 — 렌더 커밋 뒤 다음 프레임. 사람이 "화면이 떴다"고 느끼는 시점의 하한.
+  // (가려진 창은 rAF 가 멈춰 이 스탬프가 안 올 수 있다 — 타이밍 실측은 전면 창에서.)
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      bootStamp("painted");
+      bootDone();
+    });
+  });
 }
 
 void boot();

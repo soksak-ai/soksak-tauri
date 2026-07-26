@@ -118,11 +118,7 @@ export async function initWorkspacePersistence(
   let restored = false;
   try {
     const snap = await winStore.hydrate();
-    bootFact(
-      `restore:hydrated:${snap.projects.length}:keys=${Object.keys(snap as Record<string, unknown>)
-        .slice(0, 6)
-        .join("+")}`,
-    );
+    bootFact(`restore:hydrated:${snap.projects.length}`);
     if (snap.projects.length > 0) {
       const { projects, activeId, projections } = restoreWindow(snap, nextSplitIdGen);
       // root 존재 검증 — 부재/무효 root 는 탭을 지우지 않고 rootMissing 으로 격하한다

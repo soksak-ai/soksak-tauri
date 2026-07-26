@@ -257,17 +257,28 @@ async function main() {
         worstBack = dd;
         worstPng = backA;
       }
-      // 파킹 계약 — 비활성 탭 슬롯은 뷰포트 밖(잔상의 구조 원인 차단).
-      const rB = await measureTab(win, tB);
-      const winInfo = data(await rpc("window.info", {}, win));
-      const vw = winInfo.width ?? winInfo.w ?? 4000;
-      const parkedB = !rB || rB.x >= vw || rB.x + rB.w <= 0 || rB.w < 4;
-      ok(parkedB, `round ${i + 1}: inactive tab is parked off-viewport`, JSON.stringify(rB));
+      // 파킹 계약 — 판정 축은 계약 그 자체(computed)다: visibility:hidden + transform
+      // 오프스크린(layerPark 단일 진실). rect 는 판정 축이 아니다 — WebKit 은
+      // content-visibility:hidden 서브트리의 gBCR 에 transform 을 반영하지 않는다(실측:
+      // matrix(-1600) 이 서 있는데 rect.x=340 — rect 오라클이 가짜 RED 를 냈다).
+      const parkedOf = async (tabId) => {
+        const snap = data(
+          await rpc(
+            "ui.snapshot.dom",
+            { filter: `layout/tab/${tabId}`, props: ["visibility", "transform", "display"] },
+            win,
+          ),
+        );
+        const st = (snap.nodes ?? [])[0]?.style ?? {};
+        return (
+          st.display === "none" ||
+          (st.visibility === "hidden" && st.transform && st.transform !== "none")
+        );
+      };
+      ok(await parkedOf(tB), `round ${i + 1}: inactive tab is parked (computed contract)`);
       await rpc("tab.activate", { tab: tB }, win);
       await sleep(600);
-      const rA = await measureTab(win, tA);
-      const parkedA = !rA || rA.x >= vw || rA.x + rA.w <= 0 || rA.w < 4;
-      ok(parkedA, `round ${i + 1}: previous tab is parked off-viewport`, JSON.stringify(rA));
+      ok(await parkedOf(tA), `round ${i + 1}: previous tab is parked (computed contract)`);
     }
     // 왕복 재현성(상대 판정) — 절대 diff 는 파티클(벚꽃 등 장식 오버레이)이 오염시킨다
     // (실측: 내용 동일한데 33% 상이 — 증거 PGM 판독으로 꽃잎 궤적 확인). 잔상의 정의는
