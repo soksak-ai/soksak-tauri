@@ -378,7 +378,14 @@ pub fn run() {
                     if window::begin_teardown(window.label()) {
                         api.prevent_close();
                         let w = window.clone();
-                        let _ = window.app_handle().run_on_main_thread(move || {
+                        // run_on_main_thread 를 메인 스레드에서 부르면 send_user_message 가
+                        // 큐잉 없이 **즉시 동기 실행**한다(tauri-runtime-wry lib.rs:234 —
+                        // current_thread == main 이면 handle_user_message 인라인). 그러면 이
+                        // 지연은 무효가 되어 콜백 안 재진입이 그대로 남는다(실측: 첫 수정 뒤에도
+                        // 같은 패닉 재발). 별도 스레드에서 넣어야 proxy 경로로 큐잉되어
+                        // 진짜 다음 이벤트 루프 차례에 실행된다.
+                        std::thread::spawn(move || {
+                            let _ = w.app_handle().clone().run_on_main_thread(move || {
                             // 파괴 순서 계약(SIDECARS) — dealloc 전에 엔진 child 부터 닫게 통지.
                             #[cfg(target_os = "macos")]
                             crate::sidecar::notify_surface_closing(&w);
@@ -398,6 +405,7 @@ pub fn run() {
                             }
                             window::mark_user_closed(w.label());
                             let _ = w.close();
+                            });
                         });
                     }
                 }
