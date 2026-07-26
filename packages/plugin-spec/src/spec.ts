@@ -70,6 +70,7 @@ import { UNIT_ID_RE, UNIT_SPEC_BY_KIND, isUnitDependencyRange } from "./unit.js"
 export * from "./unit.js";
 export * from "./release.js";
 export * from "./conformanceWire.js";
+export * from "./identityVocabulary.js";
 export * from "./pluginRuntime.js";
 import {
   DEFAULT_PLUGIN_RUNTIME_POLICY,

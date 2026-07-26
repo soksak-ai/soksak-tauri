@@ -240,7 +240,7 @@ export const LeftSidebarHost = memo(function LeftSidebarHost({
   const hoverCell = hover && cells.find((c) => cellId(c.value) === hover.cellId);
 
   return (
-    <div className="left-host">
+    <div className="sidebar-left">
       {/* 투영 슬롯(R1) — 결부 뷰의 좌 사이드바 선언이 여기 렌더된다. 핀 스택과 병존(R4). */}
       <ProjectionSlots
         projectId={project.id}
@@ -310,7 +310,7 @@ export const LeftSidebarHost = memo(function LeftSidebarHost({
       </div>
 
       {footerViews.length > 0 && (
-        <div className="left-host-footer">
+        <div className="sidebar-left-footer">
           <PluginViewHost
             viewKey={footerViews[0].key}
             projectId={project.id}
@@ -349,19 +349,19 @@ function SidebarLeaf({
   const hosted = opened.filter((k) => group.viewKeys.includes(k));
 
   return (
-    <div className="left-host-leaf">
-      <div className="left-host-tabs">
+    <div className="sidebar-left-section">
+      <div className="sidebar-left-tabs">
         {group.viewKeys.map((key) => {
           const reg = getRegisteredView(key);
           const fallback = reg ? localize(reg.decl.title) : key;
           const label = resolveViewLabel(key, fallback);
           const editing = editingKey === key;
           // 콘텐츠 탭(.space-tab, 상단 탭 줄)과 *동일 구조/디자인* 재사용 — 편집 박스는 .space-tab.editing 이,
-          // 입력은 .space-tab-rename(투명·font:inherit)이 소유한다(라벨과 폰트/모양 동일). left-host-tab 은 드래그 마커만.
+          // 입력은 .space-tab-rename(투명·font:inherit)이 소유한다(라벨과 폰트/모양 동일). sidebar-left-tab 은 드래그 마커만.
           return (
             <div
               key={key}
-              className={`space-tab left-host-tab${active === key ? " active" : ""}${editing ? " editing" : ""}${dragging === key ? " dragging" : ""}`}
+              className={`space-tab sidebar-left-tab${active === key ? " active" : ""}${editing ? " editing" : ""}${dragging === key ? " dragging" : ""}`}
               data-node={`tab/left/${key}`}
               title={label}
               onMouseDown={editing ? undefined : startDrag(key)}
@@ -399,11 +399,11 @@ function SidebarLeaf({
           );
         })}
       </div>
-      <div className="left-host-body-wrap" data-node="body/left">
+      <div className="sidebar-left-stack" data-node="body/left">
         {hosted.map((k) => (
           <div
             key={k}
-            className="left-host-body"
+            className="sidebar-left-body"
             style={{ display: active === k ? "flex" : "none" }}
           >
             <PluginViewHost

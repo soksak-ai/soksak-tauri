@@ -17,7 +17,7 @@ import {
 import { armSlotActivation } from "../lib/slotGesture";
 import { beginLayoutMotion, endLayoutMotion } from "../lib/layoutMotion";
 import { createRectMotionTracker } from "../lib/layoutRectMotion";
-import { useDividerHover } from "../state/dividerHover";
+import { useGutterHover } from "../state/gutterHover";
 import { ViewTabs } from "./ViewTabs";
 import { computeSplitLayout, hitTestCells } from "../lib/splitLayout";
 import { gutterAddress, gutterOwnerOf } from "../lib/gutterAddress";
@@ -242,7 +242,7 @@ export const GroupArea = memo(function GroupArea({
   // 불변 — 셀/프레임만 그 그룹 하나(전체 rect)로 바꿔 그리고, 나머지 그룹의
   // 슬롯은 숨김 유지(세션 보존: 터미널/webview 마운트는 절대 깨지 않는다).
   // 강조 소유자는 이 상태 하나다(divider :hover 대체) — 셀렉터 구독(원칙 1).
-  const gutterHoverKey = useDividerHover((s) => s.key);
+  const gutterHoverKey = useGutterHover((s) => s.key);
   const maximizedId = content.maximizedTabId ?? null;
   const maxCell = maximizedId
     ? (cells.find((c) => c.group.tabs.some((v) => v.id === maximizedId)) ??
@@ -740,8 +740,7 @@ export const GroupArea = memo(function GroupArea({
                 group.id === content.activePaneId ? " spot-clear" : ""
               }${shown && flipMoves(group.id) ? " flip-move" : ""}`}
               // 네이티브 클릭 판정용(App.tsx native-mousedown → elementFromPoint).
-              // 이름에 -id 를 안 붙인다: data-pane-id 는 탭 인스턴스 id 의 옛 이름으로 아직 살아
-              // 있어(viewHostAnchors) 한 이름이 두 뜻을 갖게 된다. 그 별칭이 사라지면 합친다.
+              // 값은 이 슬롯이 사는 칸(pane)의 id — 이름과 값이 같은 실체를 가리킨다(IDENTITY).
               data-pane={group.id}
               data-project-id={projectId}
               data-node={`layout/tab/${view.id}`}
@@ -813,8 +812,8 @@ export const GroupArea = memo(function GroupArea({
           // 검증도 불가능하다 — 소유권을 상태로 옮겨야 두 문제가 함께 풀린다.
           data-hover={gutterHoverKey === gutterKey(d) ? "1" : undefined}
           className={`pane-gutter ${d.dir}${spanMovesPx(d.rect) ? " flip-move" : ""}`}
-          onPointerEnter={() => useDividerHover.getState().set(gutterKey(d) ?? null)}
-          onPointerLeave={() => useDividerHover.getState().set(null)}
+          onPointerEnter={() => useGutterHover.getState().set(gutterKey(d) ?? null)}
+          onPointerLeave={() => useGutterHover.getState().set(null)}
           style={
             d.dir === "row"
               ? {

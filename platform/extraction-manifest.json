@@ -41,6 +41,8 @@
             "src/conformanceWire.ts",
             "src/contracts.ts",
             "src/hostChrome.ts",
+            "src/identityVocabulary.test.ts",
+            "src/identityVocabulary.ts",
             "src/localizedText.ts",
             "src/permissions.ts",
             "src/pluginRuntime.ts",

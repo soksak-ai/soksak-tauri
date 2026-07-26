@@ -67,7 +67,7 @@ export const NotifyHost = memo(function NotifyHost() {
   const banners = useNotify((s) => s.banners);
   if (banners.length === 0) return null;
   return (
-    <div className="notify-host">
+    <div className="notifications">
       {banners.map((b) => (
         <BannerCard key={b.id} b={b} />
       ))}

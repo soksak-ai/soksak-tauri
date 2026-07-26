@@ -162,7 +162,7 @@ export function evaluateRules(
 
 const DATASET_ATTR: Record<keyof RuleWhen, string> = {
   paneStyle: "paneStyle",
-  divider: "divider",
+  gutter: "gutter",
 };
 
 function probeElement(el: Element): ElementProbe {

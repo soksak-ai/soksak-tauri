@@ -125,7 +125,7 @@ export const PluginSidebar = memo(function PluginSidebar({
           {opened.map((k) => (
             <div
               key={k}
-              className="plugin-slot"
+              className="sidebar-right-body"
               style={{ display: rightView === k ? "flex" : "none" }}
             >
               <PluginViewHost

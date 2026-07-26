@@ -121,7 +121,7 @@ export const ProjectionSlots = memo(function ProjectionSlots({
 
   return (
     <div
-      className="proj-slots"
+      className="projections"
       style={visible ? undefined : { display: "none" }}
       data-node={`projection/${side}`}
     >
@@ -137,15 +137,15 @@ export const ProjectionSlots = memo(function ProjectionSlots({
         return (
           <div
             key={instanceKey}
-            className="proj-slot"
+            className="projection"
             style={{ display: live ? "flex" : "none" }}
           >
             {/* 공통 양식(§12-①②) — 헤더는 호스트의 것(기능 정체 표시 + 레일 조작), 본문만 기능이 교체한다. */}
-            <div className="proj-frame-header" data-node={`projection/${side}/frame/${refKey}`}>
-              <span className="proj-frame-icon">{decl?.icon ?? ""}</span>
-              <span className="proj-frame-title">{decl ? localize(decl.title) : refKey}</span>
+            <div className="projection-header" data-node={`projection/${side}/frame/${refKey}`}>
+              <span className="projection-icon">{decl?.icon ?? ""}</span>
+              <span className="projection-title">{decl ? localize(decl.title) : refKey}</span>
               {boundView && (
-                <span className="proj-frame-bound">{viewDisplayTitle(boundView)}</span>
+                <span className="projection-bound">{viewDisplayTitle(boundView)}</span>
               )}
               {showToggle && (
                 <button
@@ -159,7 +159,7 @@ export const ProjectionSlots = memo(function ProjectionSlots({
                 </button>
               )}
             </div>
-            <div className="proj-frame-body">
+            <div className="projection-card">
               <PluginViewHost
                 viewKey={refKey}
                 projectId={projectId}
@@ -175,7 +175,7 @@ export const ProjectionSlots = memo(function ProjectionSlots({
         );
       })}
       {degraded.map((s, i) => (
-        <div key={`deg-${i}`} className="proj-slot proj-slot-degraded" data-node={`projection/${side}/degraded`}>
+        <div key={`deg-${i}`} className="projection projection-degraded" data-node={`projection/${side}/degraded`}>
           {s.source === "undeclared"
             ? t("projection.degraded.undeclared")
             : t("projection.degraded.unresolved")}

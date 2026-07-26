@@ -57,7 +57,7 @@ import { NotifyHost } from "./ui/NotifyHost";
 import { MotionDebug } from "./components/MotionDebug";
 import { PluginHeaderActions } from "./ui/PluginHeaderActions";
 import { useUi } from "./state/ui";
-import { useDividerHover } from "./state/dividerHover";
+import { useGutterHover } from "./state/gutterHover";
 import { useT } from "./i18n";
 import {
   allGroups,
@@ -456,7 +456,7 @@ const ProjectPlane = memo(function ProjectPlane({
                           // 헤더 위 상호작용 컨트롤(버튼)은 제외.
                           const t = e.target as HTMLElement;
                           if (
-                            t.closest(".proj-frame-header") &&
+                            t.closest(".projection-header") &&
                             !t.closest("button")
                           ) {
                             startRailStationDrag(e);
@@ -846,7 +846,7 @@ function App() {
       const div = el?.closest<HTMLElement>(".pane-gutter");
       // 발행(GroupArea data-gutter-key)과 같은 이름을 읽는다 — 개명에서 이 판독부만 남아
       // dataset.dividerKey 가 항상 undefined 였다(네이티브 child 위 gutter 강조 무음 사망, 감사 적발).
-      useDividerHover.getState().set(div?.dataset.gutterKey ?? null);
+      useGutterHover.getState().set(div?.dataset.gutterKey ?? null);
     });
     const offUp = listenThisWindow<{ x: number; y: number }>("native-mouseup", (e) => {
       if (!dragging) return;
@@ -859,7 +859,7 @@ function App() {
     // 세로선이 브라우저를 가로지른 채 굳음 — ui.hit 이 divider s1:0, rect 가 네이티브 강조바와 동일).
     const offLeave = listenThisWindow("native-mouseleave", () => {
       dragging = false;
-      useDividerHover.getState().set(null);
+      useGutterHover.getState().set(null);
     });
     return () => {
       offDown();
@@ -873,7 +873,7 @@ function App() {
   // 네이티브 child 위에선 DOM 강조가 안 보이므로 유일한 길. rAF 추적 루프: 드래그(리사이즈)로 DOM
   // divider 가 움직이면 매 프레임 rect 를 재측정해 네이티브 바가 정확히 따라간다 — 1회성 배치는 드래그
   // 중 바가 제자리에 남는다(회귀). rect 가 안 변한 프레임은 IPC 를 보내지 않는다(변화시에만 invoke).
-  const gutterHoverKey = useDividerHover((s) => s.key);
+  const gutterHoverKey = useGutterHover((s) => s.key);
   useEffect(() => {
     const send = (rect: { x: number; y: number; w: number; h: number } | null) => {
       void invoke("webview_divider_highlight", { rect }).catch(() => {});

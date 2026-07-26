@@ -5,7 +5,7 @@ import { scanNodes } from "./nodeScan";
 
 function container(html: string): HTMLElement {
   const div = document.createElement("div");
-  div.className = "tab-container";
+  div.className = "tab-viewer";
   div.innerHTML = html;
   return div;
 }

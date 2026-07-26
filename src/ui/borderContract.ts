@@ -18,7 +18,7 @@ export type EdgeExpect = "bd" | "bd-soft" | "none";
 // 선의 소유/표시와 무관함이 라이브 검증으로 확인돼 when 축에서 제거.)
 export interface RuleWhen {
   paneStyle?: readonly string[]; // data-pane-style
-  divider?: readonly string[]; // data-divider
+  gutter?: readonly string[]; // data-gutter(테마 seam 토큰 — theme.chrome.gutter 스탬프)
 }
 
 export interface BorderRule {
@@ -78,7 +78,7 @@ export const BORDER_RULES: readonly BorderRule[] = [
   },
   {
     id: "proj-frame-header-bottom",
-    selector: ".proj-frame-header",
+    selector: ".projection-header",
     kind: "edges",
     edges: { bottom: "bd" },
     note: "§B3 — 레일 슬롯 공통 양식 헤더가 하단 경계 소유(§12)",
@@ -99,7 +99,7 @@ export const BORDER_RULES: readonly BorderRule[] = [
   },
   {
     id: "left-host-tabs-bottom",
-    selector: ".left-host-tabs",
+    selector: ".sidebar-left-tabs",
     kind: "edges",
     edges: { bottom: "bd" },
     note: "§B3 — 좌측 호스트 탭 스트립이 하단 경계 소유",
@@ -176,13 +176,13 @@ export const BORDER_RULES: readonly BorderRule[] = [
     note: "§B6 — 리사이저는 선을 소유하지 않는다",
   },
 
-  // ── B6 예외: 불투명 콘텐츠 사이 seam(divider 토큰 소비) ───────────────────
+  // ── B6 예외: 불투명 콘텐츠 사이 seam(gutter 토큰 소비) ────────────────────
   {
     id: "pane-gutter-seam-solid",
     selector: ".pane-gutter",
     kind: "seam",
     seam: "bd-soft",
-    when: { divider: ["solid"] },
+    when: { gutter: ["solid"] },
     note: "§B6 예외 — pane 사이 골도 동일",
   },
   {
@@ -190,7 +190,7 @@ export const BORDER_RULES: readonly BorderRule[] = [
     selector: ".pane-gutter",
     kind: "seam",
     seam: "rest-transparent",
-    when: { divider: ["overlay"] },
+    when: { gutter: ["overlay"] },
     note: "§B6",
   },
 

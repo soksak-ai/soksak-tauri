@@ -4,7 +4,7 @@
 //     panel · group · egroup · content-(클래스 접두) · pane(옛 뜻 = 탭 인스턴스) ·
 //     cell · grid · bodywrap · divider · view(인스턴스 뜻).
 //     존치는 목록에 아예 넣지 않는다(§1-5 "예외 문단은 두지 않는다") —
-//     content(공개 enum 값) · slot(레일 자연 키) · container(`.tab-container` 같은 자격형).
+//     content(공개 enum 값) · slot(레일 자연 키) · container(`.tab-viewer` 같은 자격형).
 //     같은 이름 안의 위반이 둘이면 둘 다 적는다(`.pane-panel` = pane + panel).
 //
 // (b) RED 근거(실측, 2026-07-26) — 클래스 430종·프로퍼티 52종 중 클래스 48종이 위반이다.
@@ -41,6 +41,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { BANNED_DOM_MORPHEMES } from "@soksak-ai/plugin-spec";
 
 /** 주석은 이름이 아니다 — 걷고 센다. */
 const CSS = readFileSync(join(process.cwd(), "src", "App.css"), "utf8").replace(
@@ -52,13 +53,11 @@ const uniq = (xs: string[]) => [...new Set(xs)].sort();
 const classNames = () => uniq([...CSS.matchAll(/\.[a-zA-Z][a-zA-Z0-9_-]*/g)].map((m) => m[0]));
 const propNames = () => uniq([...CSS.matchAll(/--[a-zA-Z][a-zA-Z0-9_-]*/g)].map((m) => m[0]));
 
-/** §1-5 목록 중 세그먼트 정확 일치만으로 판정되는 것들. */
-const DEAD = ["panel", "group", "egroup", "cell", "grid", "bodywrap", "divider"];
-/** pane 세그먼트와 결합이 금지되는 감싸개 역할 명사 — 실체를 별명으로 가리는 단어들.
- *  부품명(-body·-border·-title·-status)과 실체 파생(-gutter·-tabs·-hole 수정자)은 허용이다. */
-const WRAPPER_ROLE_NOUNS = new Set([
-  "slot", "cell", "grid", "frame", "container", "leaf", "host", "handle", "group", "panel",
-]);
+// 금지 형태소의 단일진실은 스펙(@soksak-ai/plugin-spec identityVocabulary)이다 — 이 파일은
+// 사본을 두지 않고 그 목록을 소비한다(사본은 곧 어긋난다 — 실사고: 코어 두 게이트의 목록이
+// 서로 달라 host·frame 계열이 한쪽에서만 잡혔다).
+const DEAD = BANNED_DOM_MORPHEMES.map((b) => b.morpheme);
+const WRAPPER_ROLE_NOUNS = new Set(DEAD);
 const paneNameViolates = (name: string): boolean => {
   const segs = name.slice(1).split("-");
   if (!segs.includes("pane")) return false;
@@ -110,8 +109,11 @@ describe("App.css 이름공간은 살아 있는 어휘만 쓴다", () => {
 });
 
 describe("판정 기준 자체를 못박는다 — 게이트가 표준을 앞지르거나 놓치지 않는다", () => {
-  it("존치 단어는 위반이 아니다 — content(enum) · slot(자연 키) · container(자격형)", () => {
-    const kept = [".content", ".hole-slot", ".tab-container", ".tab-body", ".pane-gutter"];
+  it("존치 단어는 위반이 아니다 — content(enum) 와 실체·부품 파생", () => {
+    // 재입법(2026-07-27, 스펙 단일진실 통일): 옛 판은 slot(자연 키)·container(자격형)를
+    // 존치로 허용했지만, §5-1 래퍼 명사는 전량 금지가 문서의 기준이다 — slot 은 파생 키
+    // "개념"으로만 살고 DOM 이름으로는 죽는다(.hole-slot 은 .tab-body.hole 로 이미 이행).
+    const kept = [".content", ".tab-viewer", ".tab-body", ".pane-gutter"];
     expect(kept.filter((n) => deadWordsIn(n, "class").length > 0)).toEqual([]);
   });
 
@@ -129,12 +131,14 @@ describe("판정 기준 자체를 못박는다 — 게이트가 표준을 앞지
     expect(deadWordsIn(".pane", "class")).toEqual([]);
     expect(deadWordsIn(".pane-body", "class")).toEqual([]);
     expect(deadWordsIn("--pane-inset", "prop")).toEqual([]);
-    expect(deadWordsIn(".pane-leaf", "class")).toEqual(["pane"]);
-    expect(deadWordsIn(".pane-resize-handle", "class")).toEqual(["pane"]);
+    // 재입법(2026-07-27): leaf·handle 도 §5-1 전량 금지에 편입 — 위반이 둘로 세지는 것이 맞다.
+    expect(deadWordsIn(".pane-leaf", "class").sort()).toEqual(["leaf", "pane"]);
+    expect(deadWordsIn(".pane-resize-handle", "class").sort()).toEqual(["handle", "pane"]);
   });
 
   it("CSS 의 view 는 전부 인스턴스 뜻이다 — 종류는 화면에 칠해지지 않는다", () => {
     expect(deadWordsIn(".view-tab", "class")).toEqual(["view"]);
-    expect(deadWordsIn(".plugin-view-container", "class")).toEqual(["view"]);
+    // 재입법(2026-07-27): container 도 §5-1 전량 금지 — 두 위반이 다 세진다.
+    expect(deadWordsIn(".plugin-view-container", "class").sort()).toEqual(["container", "view"]);
   });
 });

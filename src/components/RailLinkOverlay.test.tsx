@@ -62,7 +62,7 @@ describe("RailLinkOverlay — 실시간 그리드 추종", () => {
     const first = host.querySelector<SVGPathElement>(".rail-link-shape")!.getAttribute("d");
     expect(overlay.dataset).toMatchObject({
       node: "relation/rail/c1",
-      boundView: "v2",
+      boundTab: "v2",
       boundPane: "g2",
       connected: "true",
     });

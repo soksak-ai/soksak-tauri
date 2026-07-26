@@ -14,9 +14,9 @@ function mountView(viewId: string): HTMLElement {
   const c = document.createElement("div");
   // 실물과 같은 두 이름 — commands 층 판정(viewContainerOf)이 아직 옛 이름으로 뷰를 가른다.
   // 픽스처가 실물보다 앞서가면 통과하는 테스트가 실물의 결함을 못 본다.
-  c.className = "tab-container plugin-view-container";
+  c.className = "tab-viewer plugin-view-container";
   c.dataset.viewAddr = "content/view/test.v";
-  c.dataset.paneId = viewId;
+  c.dataset.tabId = viewId;
   const input = document.createElement("textarea");
   c.appendChild(input);
   document.body.appendChild(c);

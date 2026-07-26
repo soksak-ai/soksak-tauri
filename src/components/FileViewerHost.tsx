@@ -83,9 +83,9 @@ export const FileViewerHost = memo(function FileViewerHost({
   ) : null;
 
   return (
-    <div className="plugin-host">
+    <div className="plugin-body">
       <div
-        className="tab-container"
+        className="tab-viewer"
         {...(viewAddr ? viewHostAnchors(viewAddr, viewId) : {})}
         ref={containerRef}
         style={overlay ? { display: "none" } : undefined}

@@ -271,11 +271,11 @@ describe("railRelation 모드 CSS 갈래 (App.css)", () => {
     expect(rest).toMatch(/stroke:\s*var\(--relation-stroke\)/);
   });
 
-  it("떠다니는 관계 라벨 금지 — 결부 이름은 호스트 헤더(.proj-frame-bound) 한 곳", () => {
+  it("떠다니는 관계 라벨 금지 — 결부 이름은 호스트 헤더(.projection-bound) 한 곳", () => {
     // 관계 표시 단순화(사용자 결정): "연결됨 · 이름" 배지 폐지. 이름은 사이드바 헤더가
     // 소유한다(ProjectionSlots.frame.test 가 표시를 검증). 라벨 CSS 를 되살리지 마라.
     expect(css).not.toMatch(/rail-link-label/);
-    expect(css).toMatch(/\.proj-frame-bound\s*\{/);
+    expect(css).toMatch(/\.projection-bound\s*\{/);
   });
 
   it("moment: 평시 tint 동일 + 플래시 때만 relation 토큰, 해제 시 페이드아웃", () => {

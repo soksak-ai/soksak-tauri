@@ -6,8 +6,8 @@
 
 // 호스트가 단독 소유하는 크롬 셀렉터·변수. 플러그인 CSS 에 등장하면 위반(자기 본문 슬롯만 스타일링해야 함).
 export const HOST_CHROME_TOKENS: readonly string[] = [
-  ".left-host-tabs",
-  ".left-host-tab",
+  ".sidebar-left-tabs",
+  ".sidebar-left-tab",
   // 크롬 어휘 이행 구간(IDENTITY 2026-07-26) — 옛·새 이름을 둘 다 지킨다. 한쪽만 지키면
   // 다른 세대의 코어와 만난 플러그인이 무방비가 된다. 제거 조건: 옛 이름을 그리는 코어가
   // 지원 범위에서 사라지는 날(옛 토큰 행만 걷는다).
@@ -36,7 +36,7 @@ export function scanHostChromeViolations(entrySource: string): string[] {
   const hits: string[] = [];
   for (const tok of HOST_CHROME_TOKENS) {
     const esc = tok.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    // 셀렉터: `.left-host-tabs {` / `.left-host-tabs.foo,` 처럼 규칙 머리에 등장 + 선언블록.
+    // 셀렉터: `.sidebar-left-tabs {` / `.sidebar-left-tabs.foo,` 처럼 규칙 머리에 등장 + 선언블록.
     // 변수: `--chrome-row-h:` 처럼 정의/대입.
     const re = tok.startsWith("--")
       ? new RegExp(`${esc}\\s*:`)

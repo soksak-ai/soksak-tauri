@@ -33,7 +33,7 @@ const EXEMPT = /\.project-rail|\.space-tabs\.vertical/;
 
 // 크롬 행 band(타이틀바 아래 가로줄의 탭/헤더 스트립). 높이는 테마 표준 변수만 소유(--chrome-row-h=탭행,
 // --header-h=타이틀바/뷰 탭행). 하드코딩 px 금지. \.project-tabs 는 .space-tabs/.tabs 를 매치하지 않는다.
-const CHROME_ROW = /\.(ft-header|plugin-side-head|left-host-tabs|space-tabs|project-tabs)(?![\w-])/;
+const CHROME_ROW = /\.(ft-header|plugin-side-head|sidebar-left-tabs|space-tabs|project-tabs)(?![\w-])/;
 // 허용 표준 변수(둘 다 테마 소유) — 크롬 행 높이는 이 중 하나의 var() 만.
 // 공인 행 높이 토큰 — chrome-row(밴드 1행)·header(패널/레일 헤더)·toolbar(2행 공동 그리드,
 // 테마 소유). 이 셋 밖의 행 높이 발명 금지.
@@ -58,9 +58,9 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
     // 레일은 pane 그리드 안의 가구다 — 이웃은 크롬 행(37px)이 아니라 pane 그룹 헤더다.
     // 높이·상단 오프셋이 테마 변수(--header-h/--pane-inset)를 따라야 어떤 테마에서도
     // 상하 그리드가 정확히 맞는다(하드코딩·크롬행 변수 금지).
-    const header = rules().find((r) => r.selector === ".proj-frame-header");
+    const header = rules().find((r) => r.selector === ".projection-header");
     expect(header?.decls).toMatch(/height\s*:\s*var\(--header-h/);
-    const host = rules().find((r) => r.selector === ".left-host");
+    const host = rules().find((r) => r.selector === ".sidebar-left");
     expect(host?.decls).toMatch(/padding-top\s*:\s*var\(--pane-inset/);
   });
 
@@ -112,7 +112,7 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
 
   it("§12-④ 영역 인계는 페이드나 레일 오버레이 없이 pane의 수축·확장이 드러낸다", () => {
     expect(css).not.toMatch(/@keyframes proj-slot-(in|out)/);
-    expect(css).not.toMatch(/\.proj-slot\.(entering|leaving)/);
+    expect(css).not.toMatch(/\.projection\.(entering|leaving)/);
     const rail = rules().find((r) => r.selector === ".sidebar");
     expect(rail?.decls).not.toMatch(/opacity\s*:/);
     const restingPlane = rules().find((r) => r.selector === ".left-rail-plane");
@@ -310,12 +310,12 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
   it("B8 전수성: 조건부 표면은 상태 공간을 빈틈·모순 없이 커버한다", async () => {
     // "존재해야 하는 상태"만 단언하고 반대 상태를 비워두면, 존재하면 안 되는
     // 선이 있어도 RED 가 없다 — 조건부(when) 규칙이 있는 (selector, edge/seam)
-    // 단위는 paneStyle×divider 전 조합이 정확히 1개 규칙에 커버돼야 한다.
+    // 단위는 paneStyle×gutter 전 조합이 정확히 1개 규칙에 커버돼야 한다.
     const { BORDER_RULES } = await import("./borderContract");
     const PANE = ["flat", "card", "floating"];
     const DIV = ["overlay", "solid"];
     type Key = string; // `${selector}|${edge}`
-    const targets = new Map<Key, { rule: string; when?: { paneStyle?: readonly string[]; divider?: readonly string[] } }[]>();
+    const targets = new Map<Key, { rule: string; when?: { paneStyle?: readonly string[]; gutter?: readonly string[] } }[]>();
     for (const r of BORDER_RULES) {
       const edges = r.kind === "seam" ? ["seam"] : Object.keys(r.edges ?? {});
       for (const sel of r.selector.split(",").map((s) => s.trim())) {
@@ -338,13 +338,13 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
           const hits = rs.filter(
             (r) =>
               (!r.when?.paneStyle || r.when.paneStyle.includes(p)) &&
-              (!r.when?.divider || r.when.divider.includes(d)),
+              (!r.when?.gutter || r.when.gutter.includes(d)),
           );
           if (hits.length === 0) {
-            problems.push(`${key}: 상태 공백 paneStyle=${p},divider=${d}`);
+            problems.push(`${key}: 상태 공백 paneStyle=${p},gutter=${d}`);
           } else if (hits.length > 1) {
             problems.push(
-              `${key}: 상태 모순 paneStyle=${p},divider=${d} → ${hits.map((h) => h.rule).join(",")}`,
+              `${key}: 상태 모순 paneStyle=${p},gutter=${d} → ${hits.map((h) => h.rule).join(",")}`,
             );
           }
         }

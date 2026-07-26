@@ -47,9 +47,8 @@ describe("FileViewerHost 주소 앵커", () => {
     const host = mount(
       <FileViewerHost path="/x/a.md" projectId="pjt-aaaaaa" root="/x" viewId="tab-cccccc" />,
     );
-    const el = host.querySelector(".tab-container");
+    const el = host.querySelector(".tab-viewer");
     expect(el?.getAttribute("data-view-addr")).toMatch(/\/tab\/tab-cccccc$/);
-    expect(el?.getAttribute("data-pane-id")).toBe("tab-cccccc");
   });
 
   it("파일 뷰 둘은 서로 다른 baseAddress 를 갖는다 — 노드가 크롬으로 새지 않는 조건", () => {
@@ -59,8 +58,8 @@ describe("FileViewerHost 주소 앵커", () => {
     const b = mount(
       <FileViewerHost path="/x/b.md" projectId="pjt-aaaaaa" root="/x" viewId="tab-bbbbbb" />,
     );
-    const addrA = a.querySelector(".tab-container")?.getAttribute("data-view-addr");
-    const addrB = b.querySelector(".tab-container")?.getAttribute("data-view-addr");
+    const addrA = a.querySelector(".tab-viewer")?.getAttribute("data-view-addr");
+    const addrB = b.querySelector(".tab-viewer")?.getAttribute("data-view-addr");
     expect(addrA).toBeTruthy();
     expect(addrA).not.toBe(addrB);
   });

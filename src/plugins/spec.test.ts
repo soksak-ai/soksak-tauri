@@ -960,7 +960,7 @@ describe("scanHostChromeViolations — 호스트 크롬 표준 정적 게이트"
     expect(scanHostChromeViolations(ok)).toEqual([]);
   });
   it("호스트 탭 셀렉터 height 오버라이드는 위반", () => {
-    expect(scanHostChromeViolations(`.left-host-tab{height:50px}`)).toContain(".left-host-tab");
+    expect(scanHostChromeViolations(`.sidebar-left-tab{height:50px}`)).toContain(".sidebar-left-tab");
     expect(scanHostChromeViolations(`.content-tabs{height:60px}`)).toContain(".content-tabs");
     expect(scanHostChromeViolations(`.view-tabs{padding:0}`)).toContain(".view-tabs");
   });
@@ -969,13 +969,13 @@ describe("scanHostChromeViolations — 호스트 크롬 표준 정적 게이트"
     expect(scanHostChromeViolations(`.x{--header-h:10px}`)).toContain("--header-h");
   });
   it("주석·산문 언급은 오탐 아님(위반 0)", () => {
-    expect(scanHostChromeViolations(`// .left-host-tabs 는 호스트가 소유한다`)).toEqual([]);
+    expect(scanHostChromeViolations(`// .sidebar-left-tabs 는 호스트가 소유한다`)).toEqual([]);
     expect(scanHostChromeViolations(`const note = "do not touch --chrome-row-h here"`)).toEqual([]);
   });
   it("여러 위반을 모두 보고", () => {
-    const bad = `.left-host-tabs{height:40px} .ft-header{height:40px} :root{--header-h:5px}`;
+    const bad = `.sidebar-left-tabs{height:40px} .ft-header{height:40px} :root{--header-h:5px}`;
     const v = scanHostChromeViolations(bad);
-    expect(v).toEqual(expect.arrayContaining([".left-host-tabs", ".ft-header", "--header-h"]));
+    expect(v).toEqual(expect.arrayContaining([".sidebar-left-tabs", ".ft-header", "--header-h"]));
   });
 });
 

@@ -141,7 +141,7 @@ describe("evaluateRules — seam(§B6 예외)", () => {
     selector: ".handle",
     kind: "seam",
     seam: "bd-soft",
-    when: { divider: ["solid"] },
+    when: { gutter: ["solid"] },
     note: "test",
   };
   const overlay: BorderRule = {
@@ -149,7 +149,7 @@ describe("evaluateRules — seam(§B6 예외)", () => {
     selector: ".handle",
     kind: "seam",
     seam: "rest-transparent",
-    when: { divider: ["overlay"] },
+    when: { gutter: ["overlay"] },
     note: "test",
   };
 
@@ -158,10 +158,10 @@ describe("evaluateRules — seam(§B6 예외)", () => {
       backgroundImage: `linear-gradient(${BD_SOFT}, ${BD_SOFT})`,
     });
     expect(
-      evaluateRules([solid], env({ ".handle": [lined] }, { divider: "solid" })).pass,
+      evaluateRules([solid], env({ ".handle": [lined] }, { gutter: "solid" })).pass,
     ).toBe(true);
     const bare = el();
-    const r = evaluateRules([solid], env({ ".handle": [bare] }, { divider: "solid" }));
+    const r = evaluateRules([solid], env({ ".handle": [bare] }, { gutter: "solid" }));
     expect(r.pass).toBe(false);
     expect(r.violations[0].edge).toBe("seam");
   });
@@ -170,11 +170,11 @@ describe("evaluateRules — seam(§B6 예외)", () => {
     const tinted = el({ backgroundColor: "rgba(127, 127, 127, 0.18)" });
     const r = evaluateRules(
       [overlay],
-      env({ ".handle": [tinted] }, { divider: "overlay" }),
+      env({ ".handle": [tinted] }, { gutter: "overlay" }),
     );
     expect(r.pass).toBe(false);
     expect(
-      evaluateRules([overlay], env({ ".handle": [el()] }, { divider: "overlay" })).pass,
+      evaluateRules([overlay], env({ ".handle": [el()] }, { gutter: "overlay" })).pass,
     ).toBe(true);
   });
 });

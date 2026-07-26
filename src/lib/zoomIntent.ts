@@ -87,7 +87,7 @@ export function stepContainerFontVar(host: HTMLElement, action: ZoomAction): voi
 export function routeZoom(action: ZoomAction, deps: ZoomDeps = defaultDeps): void {
   const active = deepActiveElement();
   const host = viewContainerOf(active);
-  const viewId = host?.dataset.paneId ?? null;
+  const viewId = host?.dataset.tabId ?? null;
   if (viewId && host) {
     if (!deps.zoomView(viewId, action)) stepContainerFontVar(host, action);
     return;

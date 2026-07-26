@@ -12,7 +12,7 @@ import { resolveExposed, collectExposed } from "./catalogDom";
 
 function mountView(addr: string, nodes: string[]): void {
   const c = document.createElement("div");
-  c.className = "tab-container";
+  c.className = "tab-viewer";
   c.dataset.viewAddr = addr;
   for (const n of nodes) {
     const el = document.createElement("div");

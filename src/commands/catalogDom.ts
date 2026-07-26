@@ -13,7 +13,7 @@ import { scanNodes, type ScannedNode } from "../plugins/nodeScan";
 import { register } from "./registry";
 import { tmsg } from "../i18n";
 import { viewFocusSnapshot } from "../plugins/viewFocus";
-import { useDividerHover } from "../state/dividerHover";
+import { useGutterHover } from "../state/gutterHover";
 import { motionLiveList, motionLiveRates, setMotionDebug, motionRecentBirths } from "../lib/motionDebug";
 import { railTravelMs, railTravelWallMs } from "../lib/railMotion";
 
@@ -37,7 +37,7 @@ const notExposed = (addr: string) => ({
 // 뷰 컨테이너의 단일 셀렉터 — 아래 두 순회(수집·제외)가 같은 집합을 보지 않으면 노드가 두 번
 // 세어지거나 조용히 빠지고, 주소 유일성(A1) 판정이 그 위에 선다. 파일 뷰어 컨테이너도 같은
 // 클래스를 쓰므로 baseAddress 어트리뷰트로 가른다.
-const VIEW_CONTAINER = ".tab-container[data-view-addr]";
+const VIEW_CONTAINER = ".tab-viewer[data-view-addr]";
 
 // 현재 창의 노출 노드 전부를 절대 주소로 수집한다(뷰 컨테이너 + 호스트 크롬). DOM 직접 순회.
 export function collectExposed(): ScannedNode[] {
@@ -151,14 +151,13 @@ export function deepActiveElement(root: DocumentOrShadowRoot = document): Elemen
 // 요소가 속한 뷰 컨테이너(탭 인스턴스 앵커를 가진 것). shadow 안 요소의 closest 는 shadow
 // 경계를 못 넘으므로, 경계에서 막히면 shadow host 로 올라가 다시 시도한다(shadow 관통 조상 탐색).
 //
-// 앵커는 두 이름을 함께 읽는다 — 호스트가 data-tab-id 와 data-pane-id 를 같은 값으로 싣는
-// 이행 구간이고(viewHostAnchors), 한쪽만 읽으면 옛 이름만 선언한 컨테이너가 뷰 밖으로 떨어진다.
-// 제거 조건: viewHostAnchors 가 data-pane-id 발행을 멈추는 날 앞의 선택자만 남긴다.
-const TAB_ANCHORED = ".tab-container[data-tab-id], .tab-container[data-pane-id]";
+// 탭 host 앵커의 정본 이름은 data-tab-id 하나다(viewHostAnchors — 옛 data-pane-id 는
+// 소비자 전원 이행 후 제거됨, 2026-07-27).
+const TAB_ANCHORED = ".tab-viewer[data-tab-id]";
 
-/** 그 컨테이너가 지목하는 탭 id — 새 이름 우선, 없으면 이행 구간의 옛 이름. */
+/** 그 컨테이너가 지목하는 탭 id — 정본 앵커 하나(data-tab-id)만 읽는다. */
 export function tabIdOfContainer(host: HTMLElement | null): string | null {
-  return host?.dataset.tabId ?? host?.dataset.paneId ?? null;
+  return host?.dataset.tabId ?? null;
 }
 
 export function viewContainerOf(el: Element | null): HTMLElement | null {
@@ -615,18 +614,18 @@ export function registerDomCatalog(): void {
     handler: (p) => {
       const addr = typeof p.address === "string" ? p.address : null;
       if (addr == null) {
-        useDividerHover.getState().set(null);
-        return { address: null, gutterHover: useDividerHover.getState().key };
+        useGutterHover.getState().set(null);
+        return { address: null, gutterHover: useGutterHover.getState().key };
       }
       const found = resolveExposed(addr);
       if (!("el" in found)) return found;
       const el = found.el;
       const key = el instanceof HTMLElement ? (el.dataset.gutterKey ?? null) : null;
-      if (key != null) useDividerHover.getState().set(key);
+      if (key != null) useGutterHover.getState().set(key);
       el.dispatchEvent(new PointerEvent("pointerenter", { bubbles: false, composed: true }));
       el.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, composed: true }));
       el.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, composed: true }));
-      return { address: addr, gutterHover: useDividerHover.getState().key };
+      return { address: addr, gutterHover: useGutterHover.getState().key };
     },
   });
 

@@ -60,11 +60,11 @@ describe("deepElementFromPoint — shadow 관통 히트테스트", () => {
   });
 });
 
-// ui.measure 는 resolveElement(collectExposed) 를 거친다 — .tab-container[data-view-addr]
+// ui.measure 는 resolveElement(collectExposed) 를 거친다 — .tab-viewer[data-view-addr]
 // 안의 [data-node] 를 절대 주소로 수집. 테스트는 그 구조를 세팅하고 주소로 호출한다.
 function mountNode(html: string): void {
   document.body.innerHTML =
-    `<div class="tab-container" data-view-addr="content/view/test.v">${html}</div>`;
+    `<div class="tab-viewer" data-view-addr="content/view/test.v">${html}</div>`;
 }
 const ADDR = "win/main/content/view/test.v/node/btn";
 
@@ -200,7 +200,7 @@ describe("deepActiveElement — shadow 관통 포커스", () => {
 describe("viewContainerOf — shadow 관통 뷰 판정", () => {
   it("shadow 안 요소의 뷰 컨테이너를 shadow 경계 너머로 찾는다", () => {
     const container = document.createElement("div");
-    container.className = "tab-container";
+    container.className = "tab-viewer";
     container.dataset.tabId = "tab-v9";
     document.body.appendChild(container);
     const sr = container.attachShadow({ mode: "open" });
@@ -222,7 +222,7 @@ describe("ui.input.click — 합성 이벤트가 Shadow DOM 경계를 넘는다(
     // 실구조 등가: 뷰 컨테이너(스캔 스코프) > shadow host > shadow 안 data-node.
     // 바깥 캡처 리스너 = GroupArea 본문 슬롯의 클릭 활성화 경로와 같은 위치 관계다.
     const container = document.createElement("div");
-    container.className = "tab-container";
+    container.className = "tab-viewer";
     container.dataset.viewAddr = "content/view/tplug.v";
     container.dataset.tabId = "tab-p1";
     document.body.appendChild(container);

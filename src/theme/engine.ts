@@ -46,7 +46,7 @@ export interface ThemeChrome {
   tabShape: "chip" | "pill" | "underline" | "inverse" | "round";
   paneStyle: "flat" | "card" | "floating";
   panePad: string;
-  divider: "overlay" | "solid";
+  gutter: "overlay" | "solid";
   statusBg: "side" | "transparent" | "inset";
   font: "system" | "mono";
 }
@@ -57,7 +57,7 @@ const CHROME_ENUM: Record<keyof ThemeChrome, readonly string[] | null> = {
   tabShape: ["chip", "pill", "underline", "inverse", "round"],
   paneStyle: ["flat", "card", "floating"],
   panePad: null, // CSS 길이 문자열
-  divider: ["overlay", "solid"],
+  gutter: ["overlay", "solid"],
   statusBg: ["side", "transparent", "inset"],
   font: ["system", "mono"],
 };
@@ -258,6 +258,12 @@ export function parseTheme(
     errors.push("테마가 JSON 객체가 아님");
     return reject();
   }
+  // 저장 테마 1회 이행(정체성 표준 2026-07-27): chrome.divider(삭제어) → chrome.gutter.
+  // 로드 경계에서만 수용하고 이후 표면(스탬프·검증·저장)은 새 이름만 흐른다 — 두 이름 병존 금지.
+  if (isRecord(raw.chrome) && raw.chrome.gutter === undefined && raw.chrome.divider !== undefined) {
+    (raw.chrome as Record<string, unknown>).gutter = raw.chrome.divider;
+    delete (raw.chrome as Record<string, unknown>).divider;
+  }
   if (typeof raw.name !== "string" || !raw.name.trim()) {
     errors.push("name: 필수");
   }
@@ -298,11 +304,11 @@ export function parseTheme(
   const toolbar = parseToolbar(raw.toolbar, errors);
 
   // 경계 보장 불변식(UI 헌법 §B1: 패널 경계는 무조건 존재) — 토큰 조합이 경계를
-  // 소멸시키면 거부: flat(프레임 무)에는 divider "solid"(상시 seam 선)가 필수.
+  // 소멸시키면 거부: flat(프레임 무)에는 gutter "solid"(상시 seam 선)가 필수.
   if (isRecord(raw.chrome)) {
-    if (raw.chrome.paneStyle === "flat" && raw.chrome.divider !== "solid") {
+    if (raw.chrome.paneStyle === "flat" && raw.chrome.gutter !== "solid") {
       errors.push(
-        '경계 보장(§B1): paneStyle "flat" 은 divider "solid" 필수 — 프레임이 없는 테마에서 overlay 디바이더는 패널 경계를 소멸시킨다',
+        '경계 보장(§B1): paneStyle "flat" 은 gutter "solid" 필수 — 프레임이 없는 테마에서 overlay 골은 칸 경계를 소멸시킨다',
       );
     }
   }
@@ -369,7 +375,7 @@ export function applyThemeToDom(theme: ThemeSpec, mode: ThemeMode): ThemeMode {
   root.dataset.titlebar = theme.chrome.titlebar;
   root.dataset.tabBar = theme.chrome.tabBar;
   root.dataset.statusBg = theme.chrome.statusBg;
-  root.dataset.divider = theme.chrome.divider;
+  root.dataset.gutter = theme.chrome.gutter;
   root.dataset.chromeFont = theme.chrome.font;
   root.dataset.relationLabel = theme.relation.label;
   // [성능 RULE] 테마 변경 단일 신호 — 플러그인(터미널)이 색 토큰 재적용 시점을 이 한 속성으로만 안다.

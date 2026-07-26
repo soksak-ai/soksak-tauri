@@ -144,13 +144,13 @@ async function boot(): Promise<void> {
     <App />,
   );
   bootStamp("render");
-  bootStamp("plugin-host:begin");
+  bootStamp("plugin-body:begin");
   try {
     await initPluginHost();
   } catch (e) {
     console.error("플러그인 호스트 초기화 실패:", e);
   }
-  bootStamp("plugin-host:end");
+  bootStamp("plugin-body:end");
   // 부팅 준비 게이트 해제 — 이 전에 도착해 대기 중이던 미등록(플러그인) 명령 요청이 실행된다.
   // 실패로 빠져나와도 반드시 해제한다(게이트가 영영 잠기면 원격 요청이 타임아웃으로만 죽는다).
   markCommandHostReady();

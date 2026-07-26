@@ -125,11 +125,11 @@ describe("레일 슬롯 공통 양식(§12)", () => {
     registerFn("termplug", "term", "tree");
     useSessions.setState({ projects: [tab([pluginView("v1", "termplug", "term")], "v1")], activeId: "p1" });
     render();
-    const header = host.querySelector<HTMLElement>(".proj-frame-header");
+    const header = host.querySelector<HTMLElement>(".projection-header");
     expect(header).not.toBeNull();
     expect(header!.textContent).toContain("tree-제목");
     expect(header!.textContent).toContain("🌲");
-    const body = host.querySelector<HTMLElement>(".proj-frame-body");
+    const body = host.querySelector<HTMLElement>(".projection-card");
     expect(body).not.toBeNull();
     expect(body!.querySelector("[data-testid=body-host]")).not.toBeNull();
   });
@@ -172,8 +172,8 @@ describe("레일 슬롯 공통 양식(§12)", () => {
         })),
       }) as never);
     });
-    const slots = host.querySelector<HTMLElement>(".proj-slots")!;
-    expect(slots.className).toBe("proj-slots"); // 셸은 불투명 유지 — 내용 슬롯만 인계한다.
+    const slots = host.querySelector<HTMLElement>(".projections")!;
+    expect(slots.className).toBe("projections"); // 셸은 불투명 유지 — 내용 슬롯만 인계한다.
   });
 });
 
@@ -187,7 +187,7 @@ describe("호스트 헤더 결부 이름(§12-①)", () => {
       activeId: "p1",
     });
     render();
-    const bound = host.querySelector<HTMLElement>(".proj-frame-bound");
+    const bound = host.querySelector<HTMLElement>(".projection-bound");
     expect(bound?.textContent).toBe("v1"); // viewDisplayTitle(결부 뷰)
   });
 });
@@ -219,8 +219,8 @@ describe("영역 인계(§12-④)", () => {
       }) as never);
     });
     const slotOf = (title: string) =>
-      [...host.querySelectorAll<HTMLElement>(".proj-slot")].find((el) =>
-        el.querySelector(".proj-frame-title")!.textContent === title,
+      [...host.querySelectorAll<HTMLElement>(".projection")].find((el) =>
+        el.querySelector(".projection-title")!.textContent === title,
       )!;
     // 출발 표상은 pane에 완전히 가려질 때까지 A를 유지한다.
     expect(slotOf("nav-제목").style.display).toBe("none");
@@ -229,7 +229,7 @@ describe("영역 인계(§12-④)", () => {
     render(true);
     expect(slotOf("tree-제목").style.display).toBe("none");
     expect(slotOf("nav-제목").style.display).not.toBe("none");
-    expect(slotOf("tree-제목").className).toBe("proj-slot");
-    expect(slotOf("nav-제목").className).toBe("proj-slot");
+    expect(slotOf("tree-제목").className).toBe("projection");
+    expect(slotOf("nav-제목").className).toBe("projection");
   });
 });
