@@ -128,6 +128,38 @@ pub fn run() {
         if payload.event() == tauri::webview::PageLoadEvent::Finished {
             webview_health::on_page_load_finished(webview);
         }
+        // 창 메인 webview 의 로드 시작 = 렌더러 재부팅(reload·복구·HMR full-reload 전부).
+        // 이 시점부터 새 JS 가 부트 서두 숨김을 돌리기까지 ~150ms 의 공백 동안, Rust 소유라
+        // 살아남은 child(브라우저)가 이전 화면 그대로 떠 있다 — 여기서 즉시 숨긴다(경로 무관
+        // 단일 지점). 복원이 표면 소유 뷰만 다시 표시한다. child 자신의 네비게이션(서핑)은
+        // b- 접두사라 제외된다.
+        if payload.event() == tauri::webview::PageLoadEvent::Started {
+            let label = webview.label().to_string();
+            if !label.starts_with("b-") {
+                let app = webview.app_handle().clone();
+                let prefix = format!("b-{label}-");
+                let mut hidden: Vec<String> = Vec::new();
+                for (wl, wv) in app.webviews() {
+                    if wl.starts_with(&prefix) {
+                        let _ = wv.hide();
+                        hidden.push(wl);
+                    }
+                }
+                if !hidden.is_empty() {
+                    crate::activity::publish(
+                        &app,
+                        "webview.lifecycle",
+                        "webview",
+                        serde_json::json!({
+                            "event": "hidden-at-reload",
+                            "labels": hidden,
+                            "origin": "internal",
+                            "message": format!("· webview hidden at renderer load start"),
+                        }),
+                    );
+                }
+            }
+        }
     });
     builder
         .setup(|app| {

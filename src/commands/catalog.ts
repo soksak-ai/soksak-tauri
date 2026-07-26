@@ -44,7 +44,7 @@ import {
 } from "../plugins/viewFocus";
 import { useSettings } from "../state/settings";
 import { applyWindowZoom } from "../lib/zoomIntent";
-import { currentWindowLabel } from "../lib/webviewLabels";
+import { browserLabelPrefix, currentWindowLabel } from "../lib/webviewLabels";
 import { awaitViewMounted } from "../plugins/viewFocus";
 import { useViewLabels } from "../state/viewLabels";
 import { useBookmarks } from "../state/bookmarks";
@@ -2532,6 +2532,32 @@ export function registerCatalog(): void {
     message: () => tmsg("msg.window.reload"),
     examples: ["window.reload"],
     handler: async () => {
+      // 리로드 전에 이 창의 child 표면(브라우저)을 먼저 숨긴다 — 렌더러 재부팅 구간
+      // (JS 공백 ~150ms)에 이전 브라우저가 그대로 떠 있던 유령 창은 부트 서두 숨김만으로는
+      // 닫히지 않는다(그 숨김은 새 렌더러 진입 후에야 돈다). 숨김 완료가 리로드보다 먼저다.
+      try {
+        const stale = await invoke<string[]>("webview_list");
+        const prefix = browserLabelPrefix();
+        const mine = stale.filter((l) => l.startsWith(prefix));
+        await Promise.all(
+          mine.map((l) =>
+            invoke("webview_visible", { label: l, visible: false }).catch(() => {}),
+          ),
+        );
+        if (mine.length > 0)
+          await invoke("activity_publish", {
+            kind: "webview.lifecycle",
+            source: "webview",
+            payload: {
+              event: "hidden-at-reload",
+              labels: mine,
+              origin: "internal",
+              message: `· webview hidden before reload ×${mine.length}`,
+            },
+          }).catch(() => {});
+      } catch {
+        /* 표면 없음/조회 실패 — 리로드를 막지 않는다 */
+      }
       // 소켓 응답을 먼저 흘려보낸 뒤 다음 틱에 리로드(응답 유실 방지).
       setTimeout(() => window.location.reload(), 30);
       return { reloaded: true };
