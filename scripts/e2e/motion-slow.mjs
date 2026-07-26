@@ -278,11 +278,36 @@ async function main() {
       "1/50: not landed within the same window (stretched)",
       `w ${w0} → ${wEnd} (base moved ${baseMoved.toFixed(1)})`,
     );
+    if (!unfinished) {
+      // 원인 원장 — 감속이 안 걸린 이유(스킵/미채택)를 사실로 남긴다(#15).
+      const led = data(await rpc("ui.motion", {}, win));
+      console.log(
+        "    recentBirths:",
+        JSON.stringify((led.recentBirths ?? []).slice(-8)),
+      );
+    }
     // 원복 — 감속 해제 후 활강 완주 대기.
     await rpc("ui.motion", { scale: 1 }, win);
     await sleep(600);
     await rpc("tab.restore", {}, win).catch(() => {});
     await sleep(400);
+
+    // ── A2. 보간 품질(1×): 단조 진행 + 착지 후 정지(사용자 실측 결함의 오라클) ─────
+    // ① 방향 반전 없음(겹침·이중 애니메이션이면 w 가 갔다가 되돌아온다)
+    // ② 종료 후 정지(끝 keyframe px 오차의 "1회 더 움직임"이면 착지 뒤 값이 또 변한다)
+    console.log("\nb2. glide quality — monotonic, and still after landing");
+    const q = await traceResize(await flip(), 1200);
+    const ws = q.samples.map((s) => s.w);
+    const dir = Math.sign(ws[ws.length - 1] - ws[0]);
+    let reversals = 0;
+    for (let i = 1; i < ws.length; i++) {
+      const d = ws[i] - ws[i - 1];
+      if (d !== 0 && Math.sign(d) !== dir && Math.abs(d) > 0.5) reversals++;
+    }
+    ok(reversals === 0, "monotonic glide (no overlap/second animation)", `reversals=${reversals} ws=${JSON.stringify(ws.slice(0, 12))}`);
+    const tail = q.samples.filter((s) => s.t > 400).map((s) => s.w);
+    const tailStill = tail.length >= 3 && Math.abs(tail[tail.length - 1] - tail[0]) < 0.5;
+    ok(tailStill, "still after landing (no post-finish jump)", `tail=${JSON.stringify(tail.slice(-5))}`);
 
     // ── B. 정지: hold 는 화면을 실제로 얼려야 한다 ────────────────────────────────
     // 유발은 resize(요소 지속 — FLIP 보간이 성립)로 한다. maximize 는 셀 재마운트 축이라

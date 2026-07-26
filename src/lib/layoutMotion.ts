@@ -91,6 +91,12 @@ export function isLayoutMotionActive(): boolean {
   return depth() > 0;
 }
 
+/** 현재 위상의 사실 — JS 보간(layoutRectMotion)의 스킵 판정용.
+ *  kinds 는 활성 종류, scope 는 이 위상이 움직이는 viewId 집합(null=전역). */
+export function layoutMotionFacts(): { active: boolean; kinds: LayoutMotionKind[]; scope: Set<string> | null } {
+  return { active: depth() > 0, kinds: activeKinds(), scope: activeScope() };
+}
+
 /** scope: 이 위상이 움직이는 뷰들의 viewId. 생략(undefined)=전역(모든 슬롯 이동).
  *  sender: 발신자 식별(진단) — 전역 위상이 잘못 열릴 때 어느 begin 인지 즉답한다. */
 export function beginLayoutMotion(

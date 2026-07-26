@@ -10,8 +10,8 @@
 // 제외 규칙(각각 소유자가 있다):
 //  - 위상 중(isLayoutMotionActive): 드래그·활강은 기존 시스템이 이동을 소유한다.
 //  - 홀 요소(.hole): 네이티브 표면은 보간 프레임을 따라가지 못한다(visualEffectOwnership).
-import { isLayoutMotionActive, LAYOUT_MOTION_MS } from "./layoutMotion";
-import { adoptLayoutAnimation } from "./motionDebug";
+import { LAYOUT_MOTION_MS, layoutMotionFacts } from "./layoutMotion";
+import { adoptLayoutAnimation, noteRectMotionSkip } from "./motionDebug";
 
 interface Snap {
   x: number;
@@ -30,22 +30,54 @@ export interface RectMotionTracker {
 export function createRectMotionTracker(): RectMotionTracker {
   const els = new Set<HTMLElement>();
   const prev = new WeakMap<HTMLElement, Snap>();
+  // 요소당 활성 보간 1개 — 새 변화가 오면 이전 것을 취소하고 이어서 시작한다. 취소 없이
+  // 겹치면 두 애니메이션이 동시에 살아 겹침·잔상이 되고(실측: 사용자 화면), 진행 중 gBCR
+  // (보간값)을 prev 로 삼아 다음 FLIP 의 출발점까지 오염된다.
+  const running = new WeakMap<HTMLElement, Animation>();
   return {
     ref: (el) => {
       if (el) els.add(el);
     },
     flush: () => {
-      const live = isLayoutMotionActive();
+      const facts = layoutMotionFacts();
+      // 위상 스킵의 정밀 조건 — 전면 스킵은 1/50 간헐 원속의 원인이었다(실측: resize 순간
+      // 다른 활강 위상이 열려 있으면 무관한 pane 의 FLIP 까지 통째로 죽어 즉시 점프).
+      //  · resize 위상(드래그): 전면 스킵 — 즉각 추종이 계약.
+      //  · move 위상: scope 안의 탭 슬롯만 스킵(그 이동은 스탠드인 시스템 소유 — 이중 구동
+      //    금지). scope 밖 요소·pane 계열은 보간한다. 전역(scope null) move 는 보수적으로
+      //    전면 스킵.
+      const skipAll =
+        facts.active && (facts.kinds.includes("resize") || facts.scope === null);
       for (const el of els) {
         if (!el.isConnected) {
           els.delete(el);
           continue;
         }
+        // 측정 전 이전 보간 취소 — cancel 은 스타일을 최종값으로 되돌리므로, 지금 재는
+        // rect 는 항상 "레이아웃의 진짜 현재"다(보간 중간값 오염 차단).
+        const prevAnim = running.get(el);
+        if (prevAnim) {
+          try {
+            prevAnim.cancel();
+          } catch {
+            /* 이미 끝남 */
+          }
+          running.delete(el);
+        }
         const r = el.getBoundingClientRect();
         const now: Snap = { x: r.x, y: r.y, w: r.width, h: r.height };
         const was = prev.get(el);
         prev.set(el, now);
-        if (!was || live || el.classList.contains("hole")) continue;
+        if (!was || el.classList.contains("hole")) continue;
+        const tabId = el.dataset.node?.startsWith("layout/tab/")
+          ? el.dataset.node.slice("layout/tab/".length)
+          : null;
+        const skip =
+          skipAll || (facts.active && tabId !== null && (facts.scope?.has(tabId) ?? false));
+        if (skip) {
+          noteRectMotionSkip(el.dataset.node ?? el.className, facts.kinds.join("+") || "live");
+          continue;
+        }
         const dx = was.x - now.x;
         const dy = was.y - now.y;
         const dw = was.w - now.w;
@@ -56,6 +88,11 @@ export function createRectMotionTracker(): RectMotionTracker {
         const L = parseFloat(cs.left) || 0;
         const T = parseFloat(cs.top) || 0;
         try {
+          // keyframe 은 시작·끝 두 개다 — 단일 keyframe 은 WAAPI 에서 to 로 해석돼 종료 시
+          // 시작값으로 스냅한다(실측: 정상 활강 뒤 원점 점프 — 품질 오라클이 잡음). 끝 px 는
+          // 취소-후-측정한 진짜 현재값이라 CSS 계산값과의 오차가 없다. "종료 후 1회 더"의
+          // 실제 원인은 끝 px 가 아니라 요소당 애니메이션 중복이었고, 그것은 cancel 단일화가
+          // 막는다.
           const a = el.animate(
             [
               {
@@ -68,6 +105,10 @@ export function createRectMotionTracker(): RectMotionTracker {
             ],
             { duration: LAYOUT_MOTION_MS, easing: "ease" },
           );
+          running.set(el, a);
+          a.onfinish = () => {
+            if (running.get(el) === a) running.delete(el);
+          };
           adoptLayoutAnimation(a, el.dataset.node ?? el.className, LAYOUT_MOTION_MS);
         } catch {
           /* 애니메이션 불가 환경(테스트 jsdom 등) — 즉시 반영 그대로 */

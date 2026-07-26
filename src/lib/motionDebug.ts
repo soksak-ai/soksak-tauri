@@ -100,6 +100,12 @@ export interface Retimable {
   play(): void;
 }
 
+/** 위상 스킵 사실 — 원장에 남겨 "감속이 안 걸렸다"의 원인을 실측 가능하게 한다(#15 규명). */
+export function noteRectMotionSkip(at: string, why: string): void {
+  recentBirths.push({ at, what: `layout-rect-skipped(${why})`, declaredMs: 0, rate: 1 });
+  if (recentBirths.length > RECENT_BIRTHS_CAP) recentBirths.shift();
+}
+
 /** JS 소유 레이아웃 보간(코어가 element.animate 로 판 것)의 등록 지점 — WAAPI 애니메이션은
  *  animationstart 를 쏘지 않아 onStart 배선에 안 잡힌다(실측: births 0). 만든 쪽이 직접
  *  입양시켜야 같은 컨트롤러(배수·정지·원장)를 예외 없이 따른다. */
