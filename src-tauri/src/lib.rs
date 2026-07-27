@@ -24,6 +24,7 @@ mod id_registry;
 mod project_registry;
 mod pty;
 mod pty_delivery;
+mod stream_sink;
 mod runtime_dep;
 mod schedule;
 mod secrets;
@@ -659,6 +660,7 @@ pub fn run() {
             webview::engine_host_visible,
             webview::engine_surface_stats,
             webview::webview_holes,
+            webview::engine_surface_hide,
             webview::webview_open_window,
             webview::webview_eval,
             webview::webview_inject_script,

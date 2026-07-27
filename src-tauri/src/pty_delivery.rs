@@ -1,13 +1,13 @@
 // PTY 출력의 전달 단위를 소유한다 — 계약은 soksak_spec_pty(DELIVERY_BATCH_BYTES,
 // OutputBatcher), 이 파일은 그 계약을 webview 크로싱에 적용하는 한 지점이다.
 // 인프로세스 백엔드와 데몬 릴레이가 같은 함수를 쓴다(사본 금지).
+use crate::stream_sink::{Delivered, StreamSink};
 use soksak_spec_pty::{self as proto, OutputBatcher};
-use tauri::ipc::{Channel, InvokeResponseBody};
 
 /// Turns reads into delivery units on their way to the webview.
 ///
-/// Both PTY backends end at the same crossing — `Channel<InvokeResponseBody>` —
-/// and that crossing is what costs: a payload at or above tauri's 1024-byte
+/// Both PTY backends end at the same crossing — a `StreamSink` — and that
+/// crossing is what costs: a payload at or above tauri's 1024-byte
 /// direct-execute guard takes a script eval plus an ipc:// round trip. A pty
 /// master read returns ~1 KB, so delivering per read pinned the crossing count
 /// at bytes/1KB. The delivery unit belongs to the crossing, not to the source.
@@ -29,8 +29,8 @@ use tauri::ipc::{Channel, InvokeResponseBody};
 /// Returns the sender a reader thread feeds, and the handle to join before
 /// declaring the stream over — the final partial batch is delivered on drop of
 /// the sender, and a caller that signals end-of-stream first would truncate it.
-pub(crate) fn spawn_delivery(
-    on_output: Channel<InvokeResponseBody>,
+pub(crate) fn spawn_delivery<S: StreamSink>(
+    on_output: S,
 ) -> (
     std::sync::mpsc::Sender<Vec<u8>>,
     std::thread::JoinHandle<()>,
@@ -38,7 +38,7 @@ pub(crate) fn spawn_delivery(
     let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
     let handle = std::thread::spawn(move || {
         let mut batcher = OutputBatcher::new();
-        let emit = |batch: Vec<u8>| on_output.send(InvokeResponseBody::Raw(batch)).is_ok();
+        let emit = |batch: Vec<u8>| on_output.deliver(batch) == Delivered::Ok;
         'stream: loop {
             // 조용한 pty 에서는 여기서 블록한다 — 유휴 비용 0.
             let Ok(first) = rx.recv() else { break };
