@@ -24,6 +24,7 @@ mod id_registry;
 mod project_registry;
 mod pty;
 mod pty_delivery;
+mod activity_sink;
 mod stream_sink;
 mod window_oracle;
 mod runtime_dep;
