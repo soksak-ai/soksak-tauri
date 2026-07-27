@@ -4779,6 +4779,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "soksak-portable",
  "soksak-seal",
  "soksak-spec-contract",
  "soksak-spec-pty",
@@ -4802,6 +4803,15 @@ dependencies = [
  "wreq-util",
  "wry",
  "zeroize",
+]
+
+[[package]]
+name = "soksak-portable"
+version = "0.0.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]
