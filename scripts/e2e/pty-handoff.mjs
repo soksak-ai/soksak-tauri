@@ -109,6 +109,15 @@ async function main() {
   fs.mkdirSync(FIXTURE, { recursive: true });
 
   const ctrl = await resolveControlWindow(rpc);
+  // 멱등 — 앞선 실행이 정리 전에 죽었으면 그 픽스처 창을 먼저 회수한다(사람 손 필요 없음).
+  for (const l of data(await rpc("window.list", {}, ctrl)).labels || []) {
+    if (!String(l).startsWith("w-")) continue;
+    const tr = data(await rpc("state.tree", {}, l).catch(() => null));
+    if ((tr.projects ?? []).some((p) => String(p.root ?? "").includes("pty-handoff"))) {
+      await rpc("window.close", { label: l }, ctrl).catch(() => {});
+      await sleep(800);
+    }
+  }
   const before = data(await rpc("window.list", {}, ctrl)).labels || [];
   const opened = data(await rpc("window.open", { root: FIXTURE }, ctrl));
   const win = opened.label || opened.existingWindow;
@@ -134,20 +143,24 @@ async function main() {
     }
     await sleep(4000);
 
-    const tabs = [];
     const engineOf = {};
-    for (const p of data(await rpc("state.tree", {}, win)).projects ?? []) {
-      for (const sp of p.spaces ?? []) {
-        for (const pane of sp.panes ?? []) {
-          for (const t of pane.tabs ?? []) {
-            const plug = String(t.plugin ?? "");
-            if (!plug.includes("terminal")) continue;
-            tabs.push(t.id);
-            engineOf[t.id] = plug.replace("soksak-plugin-", "");
+    const collectTabs = async () => {
+      const out = [];
+      for (const p of data(await rpc("state.tree", {}, win)).projects ?? []) {
+        for (const sp of p.spaces ?? []) {
+          for (const pane of sp.panes ?? []) {
+            for (const t of pane.tabs ?? []) {
+              const plug = String(t.plugin ?? "");
+              if (!plug.includes("terminal")) continue;
+              out.push(t.id);
+              engineOf[t.id] = plug.replace("soksak-plugin-", "");
+            }
           }
         }
       }
-    }
+      return out;
+    };
+    let tabs = await collectTabs();
     ok(tabs.length >= 2, `terminal tabs (${tabs.length})`, tabs.map((t) => `${t}=${engineOf[t]}`).join(" "));
 
     // 기준선 — 각 탭의 셸 pid. 이 값이 판올림을 넘어 유지돼야 한다.
@@ -158,7 +171,34 @@ async function main() {
     }
     if (Object.values(basePid).some((v) => !v)) throw new Error("기준선을 못 잡았다 — 판정 불가");
 
-    let daemonPid = data(await rpc("pty.daemon.status", {}, win)).pid;
+    // 인계 계획은 나가는 데몬이 세운다 — 그 판이 계약을 구현하는지 밖에서 읽고, 못 하면
+    // 판올림이 조치를 담아 거절해야 한다. 두 갈래를 다 시험한다(거절도 계약이다).
+    let st0 = data(await rpc("pty.daemon.status", {}, win));
+    if ((st0.handoffContract ?? 0) < (st0.handoffContractRequired ?? 0)) {
+      const refused = await rpc("pty.daemon.upgrade", {}, win);
+      // 거절 문구는 봉투 어디에 실리든 사람이 읽을 수 있어야 한다 — 전체를 본다.
+      const envelope = JSON.stringify(refused);
+      ok(refused.ok === false, `계약 이전 데몬의 판올림은 거절된다`, envelope.slice(0, 160));
+      ok(envelope.includes("pty.daemon.restart"), `거절이 조치를 담는다`, envelope.slice(0, 200));
+      await rpc("pty.daemon.restart", {}, win);
+      await sleep(2000);
+      // 재시작은 셸을 죽인다 — 뷰가 새 세션을 잡도록 창을 다시 적재하고 기준선을 다시 잡는다.
+      await rpc("window.reload", {}, win);
+      await sleep(9000);
+      st0 = data(await rpc("pty.daemon.status", {}, win));
+      ok(
+        (st0.handoffContract ?? 0) >= (st0.handoffContractRequired ?? 0),
+        `재시작한 데몬이 계약 ${st0.handoffContract} 선언`,
+        JSON.stringify(st0),
+      );
+      tabs = await collectTabs();
+      for (const t of tabs) {
+        basePid[t] = await probe(win, t, "BASE2");
+        ok(!!basePid[t], `${engineOf[t]} 기준선 재설정 ${basePid[t]}`);
+      }
+      if (Object.values(basePid).some((v) => !v)) throw new Error("재시작 후 기준선 실패 — 판정 불가");
+    }
+    let daemonPid = st0.pid;
     ok(!!daemonPid, `daemon pid ${daemonPid}`);
 
     for (let round = 1; round <= ROUNDS; round++) {

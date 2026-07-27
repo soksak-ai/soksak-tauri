@@ -774,7 +774,12 @@ mod unix {
             }
             R::Ping => {
                 let n = reg.sessions.lock().unwrap().len();
-                proto::ok_reply(json!({ "pid": std::process::id(), "sessions": n }))
+                // 능력 선언 — 앱이 판올림 전에 이 값으로 안전 인계 가능 여부를 판정한다.
+                proto::ok_reply(json!({
+                    "pid": std::process::id(),
+                    "sessions": n,
+                    "handoffContract": proto::PTYD_HANDOFF_CONTRACT,
+                }))
             }
             R::Shutdown => {
                 let victims: Vec<Arc<Session>> =

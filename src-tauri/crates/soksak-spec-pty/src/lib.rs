@@ -24,6 +24,18 @@ pub use soksak_spec_socket::{skew_sentence, Compat, Lang};
 /// serveable — no multi-generation adapters.
 pub const PTYD_PROTOCOL_VERSION: u32 = 1;
 
+/// 무중단 인계(handoff)에서 데몬이 지키는 계약 수준. 프로토콜 버전과 다른 축이다 —
+/// 프로토콜은 소켓 경로·바이너리 이름에 박혀 있어 올리면 이주가 필요하지만, 이 값은
+/// Ping 응답에 실리는 능력 선언이라 더해도 아무것도 깨지 않는다.
+///
+///   없음/0 — 안전 인계 이전. 이 판에서 인계를 시키면 셸이 죽거나(대상 fd 충돌)
+///            출력이 조용히 멎는다(링 좌표 유실).
+///   2      — H-FD(모든 대상 fd > 모든 원본·ack fd) + H-SEQ(링이 이전 좌표를 승계).
+///
+/// 소비자: 앱이 판올림 **전에** 나가는 데몬에게 물어, 못 지키는 판에는 인계를 시키지
+/// 않는다(docs/RESTORE.md — Live daemon upgrade).
+pub const PTYD_HANDOFF_CONTRACT: u32 = 2;
+
 /// Oldest client protocol the daemon still serves. The hello is mandatory from
 /// the first release, so the floor starts at 1: a hello without a version is
 /// judged as protocol 0 (`soksak_spec_socket::effective_protocol`) and rejected.

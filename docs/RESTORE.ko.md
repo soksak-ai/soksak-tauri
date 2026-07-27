@@ -21,7 +21,9 @@
 - **H-SEQ — 인계받은 링은 이전 좌표에서 이어 센다.** 스냅샷이 `ring_seq` 를 나르고 후임이 거기서 이어받는다(`RawRing::resumed`). 0 부터 다시 세면 재부착하는 클라이언트를 영원히 "이미 최신"으로 판정한다: 셸은 살아 입력도 받는데 출력만 조용히 사라진다.
 - **H-REATTACH — 부착 스트림의 끝은 셸의 끝이 아니다.** 물러나는 데몬은 모든 부착을 놓으므로 스트림마다 EOF 가 온다. 생사는 권위에게 묻는다 — 앱은 세션이 아직 목록에 있는지 묻고, 있으면 자기가 세어 온 커서에서 다시 붙는다(`attach` 응답이 `seq` 를 싣는다: 그 응답을 다 소비하면 클라이언트가 서 있는 좌표). ping 만으로는 "셸이 끝났다"와 "데몬이 물러났다"를 가를 수 없다 — 둘 다 응답한다.
 
-모든 경계는 활동 피드에 남는다: `pty.stream.ended`·`pty.stream.reattached`·`pty.session.gone`·`pty.stream.reattach.failed`. 멎은 pane 은 언제나 원장으로 읽혀야 하며 소스 추론으로 좁히는 일이 없어야 한다. 게이트는 `scripts/e2e/pty-handoff.mjs` 다 — 모든 터미널 엔진을 반복 판올림으로 순회하며 같은 셸이 재적재 없이 계속 대답하는지 단언한다.
+- **H-ASK — 못 하는 상대에게 시키지 않는다.** 인계 계획은 **물러나는** 데몬이 그린다. 그래서 새 바이너리를 스테이징해도 지금 도는 판이 안전해지지 않는다. 앱이 먼저 묻는다 — 데몬이 `Ping` 에 `handoffContract` 를 선언하고(없음 = 계약 이전), `pty.daemon.upgrade` 는 조치 하나를 문구에 담아 거절한다(한 번만 재시작). 수준은 `pty.daemon.status` 의 `handoffContract`/`handoffContractRequired` 로 읽히므로, 판올림 가능 여부를 셸을 잃어 가며 알아내지 않는다. 뒤도 확인한다: 같은 pid 가 여전히 대답하면 아무것도 넘어가지 않은 것이라 성공이라 말하지 않는다.
+
+모든 경계는 활동 피드에 남는다: `pty.stream.ended`·`pty.stream.reattached`·`pty.session.gone`·`pty.stream.reattach.failed`·`pty.daemon.upgrade.refused`. 멎은 pane 은 언제나 원장으로 읽혀야 하며 소스 추론으로 좁히는 일이 없어야 한다. 게이트는 `scripts/e2e/pty-handoff.mjs` 다 — 모든 터미널 엔진을 반복 판올림으로 순회하며 같은 셸이 재적재 없이 계속 대답하는지 단언한다.
 
 데몬을 스테이징/연결하지 못하면 터미널은 in-process PTY 로 폴백한다 — 데몬 이전의 동작 그대로 — 그리고 앱이 activity 피드로 격하를 고지한다(`pty.daemon.fallback`). 데몬 사망도 같은 방식으로 고지된다(`pty.daemon.lost`). 무음 격하는 금지다.
 

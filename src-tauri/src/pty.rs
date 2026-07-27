@@ -743,16 +743,25 @@ pub fn pty_daemon_status(app: tauri::AppHandle) -> Result<serde_json::Value, Str
         let manager = tauri::Manager::state::<PtyManager>(&app);
         let home = crate::home::soksak_home();
         let staged = soksak_spec_pty::staged_bin_path(&home);
-        let (running, pid, sessions) =
+        let (running, pid, sessions, contract) =
             match manager.link.request(&soksak_spec_pty::Request::Ping, false) {
-                Ok(v) => (true, v["pid"].as_u64(), v["sessions"].as_u64()),
-                Err(_) => (false, None, None),
+                Ok(v) => (
+                    true,
+                    v["pid"].as_u64(),
+                    v["sessions"].as_u64(),
+                    v["handoffContract"].as_u64(),
+                ),
+                Err(_) => (false, None, None, None),
             };
         Ok(json!({
             "running": running,
             "pid": pid,
             "sessions": sessions,
             "protocol": soksak_spec_pty::PTYD_PROTOCOL_VERSION,
+            // 도는 데몬이 선언한 안전 인계 계약 수준(없음 = 계약 이전 판). 판올림 가능
+            // 여부가 이 값 하나로 밖에서 읽힌다 — 시도해 보고 아는 것이 아니라.
+            "handoffContract": contract,
+            "handoffContractRequired": soksak_spec_pty::PTYD_HANDOFF_CONTRACT,
             "staged": staged.exists(),
             "stagedPath": staged.to_string_lossy(),
         }))
@@ -807,12 +816,27 @@ pub fn pty_daemon_upgrade(app: tauri::AppHandle) -> Result<serde_json::Value, St
         use serde_json::json;
         let manager = tauri::Manager::state::<PtyManager>(&app);
         let home = crate::home::soksak_home();
+        // 인계 계획은 **나가는** 데몬이 세운다. 그 판이 안전 인계 계약을 구현하지 않으면
+        // 셸이 죽거나(대상 fd 충돌) 출력이 조용히 멎는다(링 좌표 유실). 못 지키는 상대에게
+        // 시켜 놓고 결과를 사람이 감당하게 두지 않는다 — 시도 전에 묻고, 못 하면 거절한다.
+        let before = manager
+            .link
+            .request(&soksak_spec_pty::Request::Ping, true)?;
+        let before_pid = before["pid"].as_u64();
+        if let Err(why) = daemon::handoff_precheck(&before) {
+            crate::activity::publish(
+                &app,
+                "pty.daemon.upgrade.refused",
+                "core",
+                json!({ "reason": why, "pid": before_pid }),
+            );
+            return Err(why);
+        }
         // 새 판을 홈 bin/ 에 원자 교체 — 새 데몬이 이 경로에서 실행된다(해시 동일이면 no-op).
         let staged = daemon::stage_binary(&home)?;
         let staged_str = staged.to_string_lossy().to_string();
         // PrepareUpgrade — 데몬이 새 데몬을 fd 상속으로 스폰하고 exit(응답 없이 소켓 EOF).
-        // 라이브 세션은 SIGHUP 없이 넘어간다. err 은 무시(구 데몬은 op 미지원 → 재시작 폴백은
-        // 호출자 몫; 여기선 새 데몬 서빙 확인이 성공 판정이다).
+        // 라이브 세션은 SIGHUP 없이 넘어간다.
         let _ = manager.link.request(
             &soksak_spec_pty::Request::PrepareUpgrade {
                 new_bin: staged_str,
@@ -825,6 +849,15 @@ pub fn pty_daemon_upgrade(app: tauri::AppHandle) -> Result<serde_json::Value, St
         let v = manager
             .link
             .request(&soksak_spec_pty::Request::Ping, true)?;
+        // 같은 데몬이 대답하면 아무것도 넘어가지 않은 것이다 — "upgraded: true" 라고 말하지
+        // 않는다(옛 판은 pid 를 대조하지 않아, 아무 일도 일어나지 않은 경우에도 성공이라 했다).
+        let after_pid = v["pid"].as_u64();
+        if after_pid.is_some() && after_pid == before_pid {
+            return Err(format!(
+                "the daemon did not change (still pid {}) — the live upgrade did not happen",
+                after_pid.unwrap_or(0)
+            ));
+        }
         Ok(json!({ "upgraded": true, "pid": v["pid"], "sessions": v["sessions"] }))
     }
     #[cfg(not(unix))]
@@ -1392,6 +1425,54 @@ mod daemon {
     // 이름으로 놓인다 — 번들은 업데이터의 원자 교체 단위라 번들 내 장수 프로세스는
     // 세션 수명을 번들 수명에 강결합시킨다(R7). 배치는 staging → rename 원자
     // (실행 중 mach-o in-place 덮어쓰기는 서명 무효화로 SIGKILL — stage.sh 선례).
+    /// 판올림 전 판정 — 나가는 데몬이 안전 인계 계약을 구현하는가.
+    ///
+    /// 인계 계획(대상 fd 배치·링 좌표 승계)은 물러나는 쪽이 세운다. 그래서 새 바이너리를
+    /// 스테이징해도, 그 인계를 실행하는 것은 **지금 도는 옛 데몬**이다. 계약 이전 판에
+    /// 인계를 시키면 셸이 죽거나 화면이 조용히 멎는다 — 못 하는 일을 시도하지 않는다.
+    /// 조치는 하나뿐이라 문구에 박아 둔다(선택지를 주지 않는다).
+    pub(crate) fn handoff_precheck(ping: &serde_json::Value) -> Result<(), String> {
+        let need = soksak_spec_pty::PTYD_HANDOFF_CONTRACT;
+        match ping["handoffContract"].as_u64() {
+            Some(v) if v >= need as u64 => Ok(()),
+            Some(v) => Err(format!(
+                "the running daemon implements handoff contract {v}, this build needs {need} — \
+                 run pty.daemon.restart once to adopt the new generation"
+            )),
+            None => Err(format!(
+                "the running daemon predates the safe-handoff contract (needs {need}); a live \
+                 upgrade from it can lose a shell or silently freeze output — run \
+                 pty.daemon.restart once to adopt the new generation"
+            )),
+        }
+    }
+
+    #[cfg(test)]
+    mod handoff_precheck_tests {
+        use super::handoff_precheck;
+        use serde_json::json;
+
+        #[test]
+        fn current_contract_passes() {
+            let need = soksak_spec_pty::PTYD_HANDOFF_CONTRACT;
+            assert!(handoff_precheck(&json!({ "handoffContract": need })).is_ok());
+            assert!(handoff_precheck(&json!({ "handoffContract": need + 1 })).is_ok());
+        }
+
+        #[test]
+        fn a_daemon_without_the_field_is_refused_with_the_remedy() {
+            let e = handoff_precheck(&json!({ "pid": 1, "sessions": 2 })).unwrap_err();
+            assert!(e.contains("pty.daemon.restart"), "조치가 없는 거절은 거절이 아니다: {e}");
+            assert!(e.contains("predates"), "{e}");
+        }
+
+        #[test]
+        fn an_older_contract_is_refused() {
+            let e = handoff_precheck(&json!({ "handoffContract": 1 })).unwrap_err();
+            assert!(e.contains("pty.daemon.restart"), "{e}");
+        }
+    }
+
     pub(crate) fn stage_binary(home: &Path) -> Result<PathBuf, String> {
         let staged = proto::staged_bin_path(home);
         let source = resolve_source_binary();
