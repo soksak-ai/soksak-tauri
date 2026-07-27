@@ -17,17 +17,26 @@ import type {
   Unlisten,
 } from "./host";
 
+/** 창구가 돌려주는 봉투 — 실패는 값이 아니라 코드로 온다. */
+interface OpResult {
+  ok: boolean;
+  value?: unknown;
+  code?: string;
+  message?: string;
+}
+
 interface ShellBridge {
   name: string;
   label: string;
   invoke(
     cmd: string,
     args?: Record<string, unknown>,
-  ): Promise<{ ok: boolean; value?: unknown; code?: string; message?: string; command?: string }>;
-  windowOp(
-    op: string,
-    args?: Record<string, unknown>,
-  ): Promise<{ ok: boolean; value?: unknown; code?: string; message?: string }>;
+  ): Promise<OpResult & { command?: string }>;
+  /** 셸·Node 가 직접 답하는 능력(app/path/dialog) — 백엔드를 거치지 않는다. */
+  host(op: string, args?: Record<string, unknown>): Promise<OpResult>;
+  windowOp(op: string, args?: Record<string, unknown>): Promise<OpResult>;
+  /** 라벨로 지목한 창의 조작 — 그 창이 없으면 실패한다(발신 창으로 폴백하지 않는다). */
+  windowOpAt(label: string, op: string, args?: Record<string, unknown>): Promise<OpResult>;
   onEvent(event: string, cb: (payload: unknown) => void): Unlisten;
   onWindowEvent(name: string, cb: (msg: unknown) => void): Unlisten;
   createStream(onMessage: (msg: unknown) => void): { __shellStream: string };
@@ -47,29 +56,53 @@ function unimplemented(what: string): never {
   throw new Error(`Electron 어댑터 미구현: ${what}`);
 }
 
-async function windowOp<T>(op: string, args?: Record<string, unknown>): Promise<T> {
-  const r = await bridge().windowOp(op, args);
-  if (!r.ok) throw new Error(`${r.code ?? "ERROR"}: ${r.message ?? op}`);
+function unwrap<T>(r: OpResult, what: string): T {
+  if (!r.ok) throw new Error(`${r.code ?? "ERROR"}: ${r.message ?? what}`);
   return r.value as T;
+}
+
+async function hostOp<T>(op: string, args?: Record<string, unknown>): Promise<T> {
+  return unwrap<T>(await bridge().host(op, args), op);
+}
+
+/** target 이 null 이면 현재 창, 아니면 라벨로 지목한 창. */
+async function windowOp<T>(
+  target: string | null,
+  op: string,
+  args?: Record<string, unknown>,
+): Promise<T> {
+  const b = bridge();
+  const r = target === null ? await b.windowOp(op, args) : await b.windowOpAt(target, op, args);
+  return unwrap<T>(r, op);
+}
+
+/** 창 조작면에서 셸이 창을 직접 만져 답하는 부분 — 현재 창이든 지목한 창이든 같다. */
+function windowOps(
+  label: string,
+  target: string | null,
+): Omit<ShellWindowHandle, "onResized" | "onMoved" | "onDragDrop" | "listen"> {
+  return {
+    label,
+    setTitle: (title) => windowOp(target, "setTitle", { title }),
+    setSize: (width, height) => windowOp(target, "setSize", { width, height }),
+    setPosition: (x, y) => windowOp(target, "setPosition", { x, y }),
+    setFocus: () => windowOp(target, "setFocus"),
+    setTheme: (mode) => windowOp(target, "setTheme", { mode }),
+    setAlwaysOnTop: (on) => windowOp(target, "setAlwaysOnTop", { on }),
+    maximize: () => windowOp(target, "maximize"),
+    unmaximize: () => windowOp(target, "unmaximize"),
+    outerPosition: () => windowOp(target, "outerPosition"),
+    innerPosition: () => windowOp(target, "innerPosition"),
+    outerSize: () => windowOp(target, "outerSize"),
+    scaleFactor: () => windowOp(target, "scaleFactor"),
+    setPhysicalPosition: (x, y) => windowOp(target, "setPhysicalPosition", { x, y }),
+    setPhysicalSize: (width, height) => windowOp(target, "setPhysicalSize", { width, height }),
+  };
 }
 
 function currentWindowHandle(): ShellWindowHandle {
   return {
-    label: bridge().label,
-    setTitle: (title) => windowOp("setTitle", { title }),
-    setSize: (width, height) => windowOp("setSize", { width, height }),
-    setPosition: (x, y) => windowOp("setPosition", { x, y }),
-    setFocus: () => windowOp("setFocus"),
-    setTheme: (mode) => windowOp("setTheme", { mode }),
-    setAlwaysOnTop: (on) => windowOp("setAlwaysOnTop", { on }),
-    maximize: () => windowOp("maximize"),
-    unmaximize: () => windowOp("unmaximize"),
-    outerPosition: () => windowOp("outerPosition"),
-    innerPosition: () => windowOp("innerPosition"),
-    outerSize: () => windowOp("outerSize"),
-    scaleFactor: () => windowOp("scaleFactor"),
-    setPhysicalPosition: (x, y) => windowOp("setPhysicalPosition", { x, y }),
-    setPhysicalSize: (width, height) => windowOp("setPhysicalSize", { width, height }),
+    ...windowOps(bridge().label, null),
     onResized: async (cb) =>
       bridge().onWindowEvent("resized", (m) => {
         const b = (m as { bounds: { width: number; height: number } }).bounds;
@@ -84,6 +117,19 @@ function currentWindowHandle(): ShellWindowHandle {
     onDragDrop: async () => unimplemented("창 드래그드롭(onDragDrop)"),
     listen: async <T,>(event: string, cb: (e: ShellEvent<T>) => void) =>
       bridge().onEvent(event, (payload) => cb({ payload: payload as T })),
+  };
+}
+
+/** 다른 창의 핸들 — 조작은 셸이 대신 하고, 구독은 이 렌더러에 오지 않는다. */
+function labeledWindowHandle(label: string): ShellWindowHandle {
+  return {
+    ...windowOps(label, label),
+    // 셸은 창 기하 변화·타겟 이벤트를 각 창의 웹콘텐츠로만 민다. 다른 창 몫은 이 렌더러에
+    // 도착하지 않으므로, 구독을 받아 두고 영영 안 부르는 것은 조용한 no-op 이다.
+    onResized: async () => unimplemented("다른 창의 크기 변화 구독(onResized)"),
+    onMoved: async () => unimplemented("다른 창의 이동 구독(onMoved)"),
+    onDragDrop: async () => unimplemented("다른 창의 드래그드롭 구독(onDragDrop)"),
+    listen: async () => unimplemented("다른 창의 타겟 이벤트 구독(listen)"),
   };
 }
 
@@ -119,19 +165,25 @@ export const electronHost: ShellHost = {
 
   currentWindow: () => currentWindowHandle(),
 
-  // 다른 창을 라벨로 잡는 것은 셸 층 작업이 남아 있다(창 레지스트리 노출).
-  windowByLabel: async () => unimplemented("라벨로 창 찾기(windowByLabel)"),
+  windowByLabel: async (label) => {
+    // 자기 자신이면 현재 창 핸들 그대로 — 구독까지 온전한 쪽을 준다.
+    if (label === bridge().label) return currentWindowHandle();
+    // 창 레지스트리는 셸이 갖는다. 없는 라벨은 null 이며, 그 뒤 조작이 다른 창으로
+    // 새지 않도록 지목 경로는 셸에서 폴백을 끈다.
+    return (await windowOp<boolean>(label, "exists")) ? labeledWindowHandle(label) : null;
+  },
 
   app: {
-    name: async () => unimplemented("app.name"),
-    version: async () => unimplemented("app.version"),
+    name: () => hostOp("appName"),
+    version: () => hostOp("appVersion"),
   },
   path: {
-    tempDir: async () => unimplemented("path.tempDir"),
-    join: async () => unimplemented("path.join"),
+    // 경로 계산은 Node 의 것이다 — 렌더러는 Node 를 못 보므로 셸이 대신 답한다.
+    tempDir: () => hostOp("tempDir"),
+    join: (...parts) => hostOp("join", { parts }),
   },
   dialog: {
-    openDirectory: async () => unimplemented("dialog.openDirectory"),
+    openDirectory: (options) => hostOp("openDirectory", { ...options }),
   },
   notification: {
     isPermissionGranted: async () => unimplemented("notification.isPermissionGranted"),

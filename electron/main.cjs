@@ -7,7 +7,7 @@
 // 규칙: 백엔드가 아직 없는 명령은 **조용히 성공한 척하지 않는다**. 이름을 달아 실패하고
 // 요구 원장에 남긴다 — 가짜 성공은 "돌아간다"는 착시를 만들고, 그 착시가 이식 판단을 망친다.
 
-const { app, BrowserWindow, ipcMain, screen } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, screen } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const os = require("node:os");
@@ -79,8 +79,45 @@ ipcMain.handle("shell:invoke", async (_e, { cmd, args }) => {
   }
 });
 
-ipcMain.handle("shell:window", async (e, { label, op, args }) => {
-  const win = windowFor(label) || BrowserWindow.fromWebContents(e.sender);
+// ── 호스트 능력 ──────────────────────────────────────────────────────────────
+// 계약의 app/path/dialog. 백엔드 없이 Electron·Node 가 그대로 답하는 것들이라 원장에
+// 남기지 않는다 — 원장은 "러스트 헬퍼가 무엇을 져야 하는가"의 목록이다.
+ipcMain.handle("shell:host", async (e, { op, args }) => {
+  try {
+    switch (op) {
+      case "appName":
+        return { ok: true, value: app.getName() };
+      case "appVersion":
+        return { ok: true, value: app.getVersion() };
+      case "tempDir":
+        return { ok: true, value: os.tmpdir() };
+      case "join":
+        return { ok: true, value: path.join(...(args?.parts ?? []).map(String)) };
+      case "openDirectory": {
+        const options = { properties: ["openDirectory"] };
+        if (typeof args?.title === "string") options.title = args.title;
+        if (typeof args?.defaultPath === "string") options.defaultPath = args.defaultPath;
+        // 소유 창을 주면 그 창에 붙은 시트로 뜬다. 못 찾으면 앱 모달로 떨어진다.
+        const owner = BrowserWindow.fromWebContents(e.sender);
+        const r = owner
+          ? await dialog.showOpenDialog(owner, options)
+          : await dialog.showOpenDialog(options);
+        return { ok: true, value: r.canceled ? null : (r.filePaths[0] ?? null) };
+      }
+      default:
+        return { ok: false, code: "UNKNOWN_OP", message: `호스트 능력 미구현: ${op}` };
+    }
+  } catch (err) {
+    return { ok: false, code: "ERROR", message: String(err.message || err) };
+  }
+});
+
+ipcMain.handle("shell:window", async (e, { label, op, args, exact }) => {
+  // exact 는 렌더러가 라벨로 지목한 경우다. 그 라벨의 창이 없으면 발신 창으로 폴백하지
+  // 않는다 — 폴백하면 다른 창을 조작하고도 성공을 돌려주게 된다.
+  const win = windowFor(label) || (exact ? null : BrowserWindow.fromWebContents(e.sender));
+  // 존재 질의는 창이 없어도 답이 있다(계약의 windowByLabel → null).
+  if (op === "exists") return { ok: true, value: !!win };
   if (!win) return { ok: false, code: "NO_WINDOW", message: `창 없음: ${label}` };
   const scale = screen.getDisplayMatching(win.getBounds()).scaleFactor || 1;
   try {
