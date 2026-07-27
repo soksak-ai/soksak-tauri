@@ -14,6 +14,19 @@ The shell is the thing that owns the window, the webview, and the bridge to nati
 
 Adding a shell is one adapter file plus one row in the resolution table. No app file changes.
 
+## The stream exit
+
+The seam above covers the app side. The exit that high-volume output takes on its way out of the process is a second one, and it is what pinned native handlers in place.
+
+A classification of all 160 native commands (2026-07-27) found that state ownership was not the bottleneck — most state is window-agnostic, or a label string is the key. The bottleneck is that webview IPC monopolises the streaming exit: `tauri::ipc::Channel` is a handle produced by deserialization inside the calling webview's IPC context, so it is not `Serialize`, cannot be reconstructed from a label, and does not cross a process boundary. While that type sits in a signature, its handler cannot leave the app process — 3 of the 7 handlers that a label alone would have moved were held by that and nothing else.
+
+- **The contract is two lines.** `src-tauri/src/stream_sink.rs` declares `StreamSink::deliver(&self, bytes: Vec<u8>) -> Delivered`: hand over one batch, and if the consumer is gone report it as a value (`Delivered::Gone`). An exit that drops silently leaves the producing side reading forever. `impl StreamSink for tauri::ipc::Channel<tauri::ipc::InvokeResponseBody>` in the same file is the current canonical implementation — one implementation per crossing.
+- **The delivery-unit owner no longer names the vendor.** `spawn_delivery` in `src-tauri/src/pty_delivery.rs` is generic over `S: StreamSink`, and both PTY backends end at that one crossing — the in-process reader thread in `src-tauri/src/pty.rs` and the daemon relay `spawn_via_daemon`. The vendor type survives only at the `#[tauri::command]` entry (`spawn_terminal`), where the channel arrives from the caller and is handed in as the sink.
+- **Backpressure is not in the contract.** The watermarks (`soksak_spec_pty::HIGH_WATERMARK` / `LOW_WATERMARK`) and the ack belong to the session: the reader thread counts unacked bytes and pauses at the high mark, `ack_terminal` subtracts and resumes at the low mark. That accounting is on bytes read, so it is the same whenever a batch actually leaves. An exit that also held backpressure would fork the policy per implementation, and a forked policy is an unbounded buffer.
+- **The test is the proof.** `stream_sink.rs` implements a sink containing no Tauri type (`a_sink_needs_no_shell_type`, `a_departed_consumer_is_reported_not_swallowed`). That those compile is the statement that the exit is no longer a vendor type.
+
+The PTY output crossing is the one converted so far. The other channel holders — process stdout/stderr and exit (`src-tauri/src/process.rs`), websocket message and close (`src-tauri/src/ws.rs`), sidecar events (`src-tauri/src/sidecar.rs`) — still name the vendor in their signatures, and the rule above applies to them unchanged.
+
 ## What a second shell actually costs
 
 Measured on this repo (2026-07-27):

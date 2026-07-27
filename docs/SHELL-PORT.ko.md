@@ -14,6 +14,19 @@
 
 셸을 하나 붙이는 일은 어댑터 파일 하나 + 해소표 한 줄이며, 앱 파일은 한 줄도 바뀌지 않는다.
 
+## 스트림 출구
+
+위의 경계는 앱 쪽을 덮는다. 고volume 출력이 프로세스 밖으로 나가는 출구는 또 하나의 경계이고, 네이티브 핸들러를 그 자리에 묶어 둔 것이 그것이다.
+
+네이티브 명령 160개 전수 분류(2026-07-27)의 결론은 병목이 상태 소유권이 아니라는 것이었다 — 상태는 대부분 창 무관이거나 라벨 문자열이 키다. 병목은 웹뷰 IPC 가 스트리밍 출구를 독점한다는 점이다. `tauri::ipc::Channel` 은 호출 웹뷰의 IPC 문맥에서 역직렬화로 만들어지는 핸들이라 `Serialize` 가 아니고, 라벨로 재구성할 수 없고, 프로세스 경계를 못 넘는다. 그 타입이 시그니처에 박혀 있는 한 그 핸들러는 앱 프로세스를 떠날 수 없다 — 라벨만 있으면 옮길 수 있는 7건 중 3건이 오직 이것 때문에 묶여 있었다.
+
+- **계약은 두 줄이다.** `src-tauri/src/stream_sink.rs` 가 `StreamSink::deliver(&self, bytes: Vec<u8>) -> Delivered` 를 선언한다: 배치 하나를 건네고, 소비자가 사라졌으면 그 사실을 값으로 알린다(`Delivered::Gone`). 조용히 버리는 출구는 생산 측을 영원히 읽게 만든다. 같은 파일의 `impl StreamSink for tauri::ipc::Channel<tauri::ipc::InvokeResponseBody>` 가 현 정본 구현이며, 구현은 크로싱마다 하나다.
+- **전달 단위 소유자는 더 이상 벤더를 부르지 않는다.** `src-tauri/src/pty_delivery.rs` 의 `spawn_delivery` 는 `S: StreamSink` 로 일반화돼 있고, 두 PTY 백엔드가 그 한 크로싱에서 끝난다 — `src-tauri/src/pty.rs` 의 인프로세스 리더 스레드와 데몬 릴레이 `spawn_via_daemon`. 벤더 타입은 `#[tauri::command]` 진입점(`spawn_terminal`)에만 남는다. 호출자에게서 채널이 도착해 출구로 건네지는 자리다.
+- **배압은 계약에 없다.** 워터마크(`soksak_spec_pty::HIGH_WATERMARK` / `LOW_WATERMARK`)와 ack 는 세션의 것이다: 리더 스레드가 미ack 바이트를 세어 상한에서 멈추고, `ack_terminal` 이 빼면서 하한에서 재개한다. 그 회계는 읽은 바이트 기준이라 배치가 언제 나가든 같다. 출구가 배압까지 쥐면 구현마다 정책이 갈라지고, 갈라진 정책은 곧 무한 버퍼다.
+- **테스트가 증명이다.** `stream_sink.rs` 는 Tauri 타입이 하나도 없는 출구를 구현한다(`a_sink_needs_no_shell_type`, `a_departed_consumer_is_reported_not_swallowed`). 그것이 컴파일된다는 사실 자체가 "출구는 더 이상 벤더 타입이 아니다"의 진술이다.
+
+지금까지 옮긴 것은 PTY 출력 크로싱이다. 나머지 채널 보유자 — 프로세스 stdout/stderr·종료(`src-tauri/src/process.rs`), 웹소켓 메시지·닫힘(`src-tauri/src/ws.rs`), 사이드카 이벤트(`src-tauri/src/sidecar.rs`) — 는 아직 시그니처에서 벤더를 부르며, 위 규칙이 그대로 적용된다.
+
 ## 두 번째 셸의 실제 비용
 
 이 저장소 실측(2026-07-27):

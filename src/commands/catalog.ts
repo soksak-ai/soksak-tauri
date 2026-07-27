@@ -73,6 +73,7 @@ import { registerClipboardCatalog } from "./catalogClipboard";
 import { registerNotifyCatalog } from "./catalogNotify";
 import { registerScheduleCatalog } from "./catalogSchedule";
 import { registerServiceCatalog } from "./catalogService";
+import { registerShellCatalog } from "./catalogShell";
 import { registerSystemCatalog } from "./catalogSystem";
 import { registerUnitDevCatalog } from "./catalogUnitDev";
 import { registerReleaseCatalog } from "./catalogRelease";
@@ -3275,6 +3276,7 @@ export function registerCatalog(): void {
   registerNotifyCatalog();
   registerScheduleCatalog();
   registerServiceCatalog();
+  registerShellCatalog();
   registerSystemCatalog();
   registerUnitDevCatalog();
   registerReleaseCatalog();
