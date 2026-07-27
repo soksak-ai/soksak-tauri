@@ -577,6 +577,49 @@ pub(crate) fn layer_ensure_engine_host(label: &str) -> Option<usize> {
     layer::ensure_engine_host(label)
 }
 
+// 개별 엔진 서피스 격리 — 슬롯을 벗어난 표면을 코어가 직접 숨긴다(마지막 방어선).
+// 플러그인이 bounds 를 잊거나(주인 없는 잔존 표면) 늦게 따라오면 표면이 이웃 칸을 덮는다
+// (실측 2026-07-27: 슬롯 362×233 자리에 492×477 표면이 좌 129px 침범). 포함은 미관이 아니라
+// 경계이므로, 판정(감사)이 위반을 보면 소유자를 기다리지 않고 코어가 가린다. 되살리기는
+// 소유자의 정상 경로(bounds→가시성)가 하고, 코어는 "넘은 것을 가린다"만 한다.
+// ptr 는 layer::live_registered_views 로 얻은 살아있는 뷰만 온다(죽은 포인터 금지).
+#[tauri::command]
+pub fn engine_surface_hide(app: AppHandle, window: tauri::Window, ptr: usize, hidden: bool) {
+    #[cfg(target_os = "macos")]
+    {
+        let label = window.label().to_string();
+        let app2 = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            let ns_win = app2
+                .get_window(&label)
+                .and_then(|w| w.ns_window().ok())
+                .map(|p| p as usize)
+                .unwrap_or(0);
+            if !layer::live_registered_views(ns_win).contains(&ptr) {
+                return; // 이 창의 살아있는 등록 표면이 아니다 — 만지지 않는다
+            }
+            let v: &objc2_app_kit::NSView = unsafe { &*(ptr as *const objc2_app_kit::NSView) };
+            if v.isHidden() == hidden {
+                return;
+            }
+            v.setHidden(hidden);
+            crate::activity::publish(
+                &app2,
+                "surface.enforced",
+                "webview",
+                serde_json::json!({
+                    "ptr": ptr,
+                    "hidden": hidden,
+                    "origin": "internal",
+                    "message": format!("· surface {} by core (containment)", if hidden { "hidden" } else { "shown" }),
+                }),
+            );
+        });
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app, window, ptr, hidden);
+}
+
 // 엔진 호스트 컨테이너 표시/숨김 — 렌더러 재부팅 구간의 엔진 서피스 유령 차단.
 // WKWebView 는 hide() 로 숨지만 엔진(CEF) 서피스는 코어 layer 의 NSView 라 webview 목록
 // 어디에도 없다(실사고: reload 후 이전 브라우저 프레임이 부트 완료까지 그대로 떠 있음 —
