@@ -101,8 +101,11 @@ mod tests {
     use sha2::{Digest, Sha256};
     use std::os::unix::fs::symlink;
 
-    fn tmp() -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("rtdep-{}", std::process::id()));
+    /// 테스트마다 자기 디렉터리를 쓴다 — 프로세스 단위로 공유하면 병렬 실행 중 한 테스트의
+    /// remove_dir_all 이 다른 테스트가 방금 만든 트리를 지운다(실측: 모듈 단독은 통과하는데
+    /// 전체 스위트에서만 NotFound 로 깨졌다). 이름은 호출자가 준다.
+    fn tmp_named(name: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("rtdep-{}-{name}", std::process::id()));
         let _ = fs::create_dir_all(&d);
         d
     }
@@ -113,7 +116,7 @@ mod tests {
     // 저자 값으로 경로를 조립하므로(state/plugins.ts) 이건 이론이 아니다.
     #[test]
     fn parent_escape_is_refused_and_nothing_is_removed() {
-        let d = tmp().join("escape");
+        let d = tmp_named("parent_escape_is").join("escape");
         let root = d.join("root");
         let victim = d.join("victim.txt");
         let _ = fs::create_dir_all(&root);
@@ -132,7 +135,7 @@ mod tests {
     // (leaf 의 심링크는 허용해야 한다 — 이 핸들러의 목적이 dangling 심링크 제거다.)
     #[test]
     fn a_symlinked_parent_is_refused_but_a_symlinked_leaf_is_not() {
-        let d = tmp().join("linkparent");
+        let d = tmp_named("a_symlinked_pare").join("linkparent");
         let real = d.join("real");
         let root = d.join("root");
         let _ = fs::create_dir_all(&real);
@@ -167,7 +170,7 @@ mod tests {
     // 고정해 두면 원자 쓰기를 되돌리는 변경이 여기서 걸린다.
     #[test]
     fn the_destination_never_holds_a_partial_file() {
-        let d = tmp().join("atomic");
+        let d = tmp_named("the_destination_").join("atomic");
         let _ = fs::create_dir_all(&d);
         let src = d.join("src.bin");
         let dest = d.join("dest.bin");
@@ -193,7 +196,7 @@ mod tests {
 
     #[test]
     fn integrity_absent_partial_broken_present() {
-        let d = tmp();
+        let d = tmp_named("integrity_absent");
         let bin = d.join("bin-x");
         let lib = d.join("lib-x");
         // ABSENT: 둘 다 없음
