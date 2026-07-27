@@ -20,6 +20,24 @@ pub fn expand_tilde(path: &str, home: &Path) -> PathBuf {
     }
 }
 
+
+/// 프로젝트 루트로 쓸 수 있는 경로인가 — **정규화된** 경로와 홈을 받아 판정한다.
+///
+/// 규칙: 홈(~) 자신과 파일시스템 루트(/)는 될 수 없다. 루트 초기화 정책이 그 트리 전체를
+/// 대상으로 동작하므로, 홈이나 루트를 프로젝트로 잡으면 그 정책이 사용자 전체 파일에 걸린다.
+///
+/// 디스크를 만지지 않는다 — 존재 확인·정규화는 호출자가 하고 여기는 **판정만** 한다.
+/// 그래야 같은 규칙을 어느 프로세스에서도 같은 답으로 물을 수 있다.
+pub fn project_root_verdict(canonical: &Path, home: &Path) -> Result<(), String> {
+    if canonical == home {
+        return Err("홈 디렉토리(~)는 프로젝트 루트가 될 수 없음".to_string());
+    }
+    if canonical.parent().is_none() {
+        return Err("파일시스템 루트(/)는 프로젝트 루트가 될 수 없음".to_string());
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -56,5 +74,25 @@ mod tests {
         let a = expand_tilde("~/x", Path::new("/home/a"));
         let b = expand_tilde("~/x", Path::new("/home/b"));
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn the_home_itself_is_not_a_project_root() {
+        let home = Path::new("/u/max");
+        assert!(project_root_verdict(home, home).is_err());
+        assert!(project_root_verdict(Path::new("/u/max/work"), home).is_ok());
+    }
+
+    #[test]
+    fn the_filesystem_root_is_not_a_project_root() {
+        assert!(project_root_verdict(Path::new("/"), Path::new("/u/max")).is_err());
+    }
+
+    #[test]
+    fn the_verdict_follows_the_home_it_is_given() {
+        // 홈이 인자라는 것의 요점 — 같은 경로가 홈에 따라 다르게 판정된다.
+        let p = Path::new("/u/a");
+        assert!(project_root_verdict(p, Path::new("/u/a")).is_err());
+        assert!(project_root_verdict(p, Path::new("/u/b")).is_ok());
     }
 }

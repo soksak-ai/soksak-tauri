@@ -22,7 +22,6 @@ pub fn verify_and_link(src: String, dest: String, sha256: String) -> Result<(), 
     soksak_portable::integrity::verify_and_link(src, dest, sha256)
 }
 
-use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -99,6 +98,7 @@ pub fn npm_global_dirs() -> Result<NpmDirs, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sha2::{Digest, Sha256};
     use std::os::unix::fs::symlink;
 
     fn tmp() -> std::path::PathBuf {
@@ -493,6 +493,7 @@ pub(crate) fn unpack_verify_install_entries(
 #[cfg(test)]
 mod unpack_tests {
     use super::*;
+    use sha2::{Digest, Sha256};
     use std::io::Cursor;
 
     fn tmp_root(name: &str) -> std::path::PathBuf {

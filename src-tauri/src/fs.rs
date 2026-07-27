@@ -339,12 +339,8 @@ pub fn validate_project_root(path: String) -> Result<String, String> {
     let canon = dir
         .canonicalize()
         .map_err(|e| format!("경로 정규화 실패: {e}"))?;
+    // 판정 규칙은 soksak-portable 이 소유한다 — 여기서는 홈 해소와 정규화만 한다.
     let home = home_dir().canonicalize().unwrap_or_else(|_| home_dir());
-    if canon == home {
-        return Err("홈 디렉토리(~)는 프로젝트 루트가 될 수 없음".to_string());
-    }
-    if canon.parent().is_none() {
-        return Err("파일시스템 루트(/)는 프로젝트 루트가 될 수 없음".to_string());
-    }
+    soksak_portable::pathx::project_root_verdict(&canon, &home)?;
     Ok(canon.to_string_lossy().to_string())
 }
