@@ -53,6 +53,26 @@ export const BORDER_RULES: readonly BorderRule[] = [
     when: { paneStyle: ["flat"] },
     note: "§B1 보수 — flat 은 프레임 무선(존재하면 안 되는 상태의 단언)",
   },
+  // 레일 투영 카드도 떠 있는 표면이다 — 콘텐츠 칸과 같은 4변 전속.
+  // 이 표에 없던 동안 이 카드만 선을 소유한 주체가 없었고, 그래서 양옆 리사이저와
+  // 관계선이 테두리처럼 보이는 배치에서만 "닫혀" 보였다. 표에 없으면 검증기가
+  // 묻지 않으므로 결함이 결함으로 드러나지 않는다 — 소유권을 여기 명시한다.
+  {
+    id: "rail-card-perimeter",
+    selector: ".sidebar-left .projection",
+    kind: "edges",
+    edges: { top: "bd", right: "bd", bottom: "bd", left: "bd" },
+    when: { paneStyle: ["card", "floating"] },
+    note: "§B1 — 레일 투영 카드 4변은 카드 자신이 소유(§B4 떠 있는 표면)",
+  },
+  {
+    id: "rail-card-perimeter-flat",
+    selector: ".sidebar-left .projection",
+    kind: "edges",
+    edges: { top: "none", right: "none", bottom: "none", left: "none" },
+    when: { paneStyle: ["flat"] },
+    note: "§B1 보수 — flat 은 카드 무선(콘텐츠 칸과 같은 규칙)",
+  },
 
   // ── B3 앱 크롬(카드 영역 바깥) — 본문에서 먼 쪽이 소유, 톤 bd ─────────────
   {

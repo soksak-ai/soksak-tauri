@@ -17,6 +17,7 @@ import fs from "node:fs";
 import zlib from "node:zlib";
 import { resolveControlWindow } from "./lib/client.mjs";
 
+import { decodePng } from "./lib/png.mjs";
 const SOCKET =
   process.env.SOKSAK_SOCKET ||
   path.join(os.homedir(), ".soksak-dev", "com.soksak.dev.sock");
@@ -82,54 +83,6 @@ function ok(cond, label, detail = "") {
   }
 }
 
-function decodePng(buf) {
-  let off = 8;
-  let w = 0;
-  let h = 0;
-  let ch = 4;
-  const idat = [];
-  while (off < buf.length) {
-    const len = buf.readUInt32BE(off);
-    const type = buf.toString("ascii", off + 4, off + 8);
-    const body = buf.subarray(off + 8, off + 8 + len);
-    off += 12 + len;
-    if (type === "IHDR") {
-      w = body.readUInt32BE(0);
-      h = body.readUInt32BE(4);
-      ch = { 0: 1, 2: 3, 4: 2, 6: 4 }[body[9]] ?? 4;
-    } else if (type === "IDAT") idat.push(body);
-    else if (type === "IEND") break;
-  }
-  const raw = zlib.inflateSync(Buffer.concat(idat));
-  const stride = w * ch;
-  const out = Buffer.alloc(h * stride);
-  let prev = Buffer.alloc(stride);
-  let p = 0;
-  for (let y = 0; y < h; y++) {
-    const f = raw[p++];
-    const line = Buffer.from(raw.subarray(p, p + stride));
-    p += stride;
-    for (let x = 0; x < stride; x++) {
-      const a = x >= ch ? line[x - ch] : 0;
-      const b = prev[x];
-      const c = x >= ch ? prev[x - ch] : 0;
-      if (f === 1) line[x] = (line[x] + a) & 0xff;
-      else if (f === 2) line[x] = (line[x] + b) & 0xff;
-      else if (f === 3) line[x] = (line[x] + ((a + b) >> 1)) & 0xff;
-      else if (f === 4) {
-        const pp = a + b - c;
-        const pa = Math.abs(pp - a);
-        const pb = Math.abs(pp - b);
-        const pc = Math.abs(pp - c);
-        line[x] = (line[x] + (pa <= pb && pa <= pc ? a : pb <= pc ? b : c)) & 0xff;
-      }
-      prev[x] = line[x];
-    }
-    line.copy(out, y * stride);
-    prev = line;
-  }
-  return { w, h, ch, px: out };
-}
 
 function diffPixels(a, b) {
   if (!a || !b || a.px.length !== b.px.length) return -1;

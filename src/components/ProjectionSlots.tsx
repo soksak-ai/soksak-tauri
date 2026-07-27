@@ -148,6 +148,10 @@ export const ProjectionSlots = memo(function ProjectionSlots({
           <div
             key={instanceKey}
             className="projection"
+            // 카드 자신이 주소를 가진다 — 컨테이너(projection/{side})의 기하는 카드의 기하가
+            // 아니다. 주소가 없어 컨테이너를 대신 재던 동안 판정기는 카드가 없는 자리를 보고
+            // "테두리 없음"을 냈다(실측 2026-07-27). 재려면 노출한다.
+            data-node={`projection/${side}/card/${refKey}`}
             style={{ display: live ? "flex" : "none" }}
           >
             {/* 공통 양식(§12-①②) — 헤더는 호스트의 것(기능 정체 표시 + 레일 조작), 본문만 기능이 교체한다. */}

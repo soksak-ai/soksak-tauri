@@ -3508,6 +3508,32 @@ select.dctl {
   flex-direction: column;
   overflow: hidden;
 }
+/* 좌측 레일의 투영 카드 — 콘텐츠 칸과 같은 "카드"다(§B4 떠 있는 표면). 여태 이 카드에는
+   테두리도 채움도 없었다(세로선 둘은 양옆 리사이저 .project-rail-resizer·.sidebar-resizer
+   였다 — 실측). 그래서 카드의 안과 밖이 정확히 같은 색이었고, 경계를 말하는 신호가 1px 선
+   하나뿐이었다.
+   그것이 "여기만 다른" 이유다: 콘텐츠 칸은 채움(--bg 본문/--card 백킹)이 지면과 달라 선이
+   흐려져도 계단이 경계를 말한다. 레일 카드는 선이 기기 픽셀 격자에서 흐려지는 창 높이마다
+   경계 신호가 0 으로 떨어져 카드가 통째로 사라졌다(실측: 안 57 밖 57 신호 0 — h=602·603·
+   606·607, scripts/e2e/rail-border.mjs 크기 스윕).
+   따라서 채움을 카드가 소유한다 — .pane 과 같은 계약(백킹 --card, 본문 --bg, 1px --bd,
+   radius 11). 경계는 두 겹(계단+선)이 되어 특정 크기에만 보이는 조건이 사라진다.
+   테두리 유무는 pane 스타일 설정을 따른다(flat 은 선 없음) — 콘텐츠 칸과 같은 규칙. */
+:root[data-pane-style="card"] .sidebar-left .projection,
+:root[data-pane-style="floating"] .sidebar-left .projection {
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: 11px;
+  overflow: hidden;
+}
+:root[data-pane-style="floating"] .sidebar-left .projection {
+  border-radius: 14px;
+}
+/* 본문 슬롯은 콘텐츠 칸의 .tab-body 와 같은 --bg — 카드 안팎의 계단을 만드는 축이다. */
+:root[data-pane-style="card"] .sidebar-left .projection-card,
+:root[data-pane-style="floating"] .sidebar-left .projection-card {
+  background: var(--bg);
+}
 /* 슬롯 공통 양식(§12-①②) — 헤더는 호스트 소유(기능 정체 + 레일 조작), 본문만 기능이 교체. */
 .projection-header {
   flex: 0 0 auto;
@@ -3588,8 +3614,13 @@ select.dctl {
   width: 100%;
   min-width: 0;
   /* pane 셀이 그리드 상단에서 --pane-inset 만큼 내려앉듯, 레일 내용도 같은 만큼 내려앉아야
-     프레임 헤더가 pane 그룹 헤더와 같은 행에 앉는다(R1c — 테마 paneStyle 별로 자동 추종). */
+     프레임 헤더가 pane 그룹 헤더와 같은 행에 앉는다(R1c — 테마 paneStyle 별로 자동 추종).
+     하단도 같은 인셋이다(비대칭 금지): 콘텐츠 칸은 네 방향 모두 --pane-inset 을 먹지만
+     (height: calc(--h - --pane-inset*2 …)) 레일만 상단만 먹어, 카드가 창 아래끝에 붙어
+     하단 테두리를 그릴 자리가 없었다(실측 2026-07-27: 카드 하단 1035 = 창 하단 —
+     같은 화면의 다른 배치에선 사방 테두리가 정상이라 "여기에서만" 으로 보였다). */
   padding-top: var(--pane-inset, 0px);
+  padding-bottom: var(--pane-inset, 0px);
 }
 /* 셀이 % 절대위치로 깔리는 그리드 — 콘텐츠 space 와 동일 모델. footer 는 그 아래 흐름. */
 .left-panes {
