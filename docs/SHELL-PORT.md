@@ -55,6 +55,16 @@ Modules so far: `udp` (datagram send and request/response), `integrity` (hash ve
 
 Two further gates sit in core. `src-tauri/src/ambient_gate.rs` requires every `env::var` site to be registered with two answers — why it must be this process's environment, and what arrives instead once processes split; an empty answer fails, so the table cannot be used as a way through. It found three sites a manual sweep had missed. The registration gate in `src-tauri/src/lib.rs` checks that every registered handler has a body on every platform it compiles on, which the compiler only checks on the platform being built.
 
+## State that no longer assumes the app process
+
+Three subsystems moved to injection. In each the meaning is unchanged — only where the value comes from.
+
+- **The vault (`secrets.rs`)** had a silent wrong-answer generator. `vault_file()` fell back to `home::soksak_home()` when no path was injected, and that function answers `~/.soksak` even before `init` — so the fallback never fails. A `SecretsState` that forgot its path did not error; it pointed at the release user's vault. Moved into a helper it would create a vault in someone else's home. The fallback is gone; an unconfigured path fails by name, because unconfigured means there is no value, not that there is a default. The keychain service name had the same shape: a wrong service name is not a refusal but an attempt to open a different machine's KEK. Both now derive from `Identity`. Crypto primitives and the seal format were not touched.
+- **The installer (`unit_installer.rs`)** takes an `Identity` instead of a bare home, and its five transaction entries are callable with `&UnitInstallManager` — no `State` required. The ledger's single-writer meaning is unchanged.
+- **The ledger (`activity.rs`)** split into three: `admit` (append and stamp a sequence — pure), `fan_out` (windows and socket subscribers, via `WindowOracle`), `persist` (a `Connection`, nothing more). `publish` keeps its signature and return value and stacks the three, so all 22 call sites behave as before. A helper would admit and leave the fan-out to the shell.
+
+`WindowOracle` gained `broadcast` for events with no addressee. The default walks every live window; Tauri overrides it with a single `emit`, because that one delivery also reaches child webviews and a label walk would silently reach fewer of them. A partial delivery is not reported as success.
+
 ## What a second shell actually costs
 
 Measured on this repo (2026-07-27):
