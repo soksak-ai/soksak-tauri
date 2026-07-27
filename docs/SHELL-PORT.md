@@ -65,6 +65,17 @@ Three subsystems moved to injection. In each the meaning is unchanged — only w
 
 `WindowOracle` gained `broadcast` for events with no addressee. The default walks every live window; Tauri overrides it with a single `emit`, because that one delivery also reaches child webviews and a label walk would silently reach fewer of them. A partial delivery is not reported as success.
 
+## The child-process fleet
+
+Terminals, processes, daemons, websockets, and services were the largest movable group — 32 handlers whose only window dependency was a label string. What had pinned them was `tauri::ipc::Channel`, and the stream-exit contract had already removed that.
+
+- **Identity is a field, not an argument.** `Link` caches its control connection, and that connection was already made against one home's socket and token. Taking the home as a call argument makes "the cached connection is home A, this argument is home B" representable, and the reconnect path would then attach to B. The manager owns its identity because identity is a condition of its existence, not a parameter of a call.
+- **Construction moved from the builder chain into `setup`.** `home::init` runs at the top of `setup`; the builder chain runs before it, so reading identity there picks up the `home.rs` fallback of `~/.soksak` — a dev build would aim at the release home's daemon.
+- **An exit is not bytes.** `on_exit` carries one number, and `Channel<i32>` serializes it as a JSON number. Forcing it through the byte contract would change the payload the consumer receives, and that is a behaviour change wearing the clothes of a structural move. `ExitSink` sits beside `StreamSink` with the same shape — a departed consumer comes back as a value — and a different type.
+- **The mediation origin left the shell adapter.** It is a stamp the core applies, not something a service reports about itself; inside an adapter a second shell would stamp it differently, and a differently stamped origin defeats the read-aloud exclusion.
+
+One coupling was deliberately left. Seven of the eight `activity::publish` sites in `pty.rs` sit in functions that also use the handle for `state::<PtyManager>` / `state::<SecretsState>`. The remaining `AppHandle` there is held by those lookups, not by publishing; unpicking it means changing managed-state ownership, which is a behaviour change and belongs to its own pass.
+
 ## What a second shell actually costs
 
 Measured on this repo (2026-07-27):
