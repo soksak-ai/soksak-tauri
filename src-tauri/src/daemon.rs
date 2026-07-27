@@ -128,21 +128,32 @@ fn kill_group(child: &Arc<Mutex<Child>>, force: bool) {
     }
 }
 
-/// 플랫폼 셸로 스폰 — GUI PATH 함정 대응(로그인 셸 래핑, npm_global_dirs 와 동일 기법).
-fn spawn_shell(root: &str, cmd: &str, env: Option<&HashMap<String, String>>) -> Result<Child, String> {
+/// 이 프로세스가 상속한 로그인 셸 — 환경을 읽는 **유일한 자리**(ambient_gate 등재: daemon.rs/SHELL).
+/// 아래(spawn_shell)로는 값이 인자로 흐른다. 커맨드 입구가 여기서 한 번 읽어 넘기고, 프로세스가
+/// 갈리면 그 자리에 호출자가 준 셸 경로가 온다. 윈도우는 셸 개념이 달라 cmd 가 그 자리다.
+fn login_shell() -> String {
     #[cfg(unix)]
-    let mut c = {
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
-        let mut c = Command::new(shell);
-        c.args(["-lc", cmd]);
-        c
-    };
+    {
+        std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into())
+    }
     #[cfg(not(unix))]
-    let mut c = {
-        let mut c = Command::new("cmd");
-        c.args(["/C", cmd]);
-        c
-    };
+    {
+        "cmd".to_string()
+    }
+}
+
+/// 주어진 셸로 스폰 — GUI PATH 함정 대응(로그인 셸 래핑, npm_global_dirs 와 동일 기법).
+fn spawn_shell(
+    shell: &str,
+    root: &str,
+    cmd: &str,
+    env: Option<&HashMap<String, String>>,
+) -> Result<Child, String> {
+    let mut c = Command::new(shell);
+    #[cfg(unix)]
+    c.args(["-lc", cmd]);
+    #[cfg(not(unix))]
+    c.args(["/C", cmd]);
     c.current_dir(root)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -180,9 +191,13 @@ fn pump_lines<R: std::io::Read + Send + 'static>(src: R, ring: Arc<Mutex<VecDequ
 }
 
 /// 데몬 하나를 실제로 띄우고 관찰 스레드를 붙인다 — start 와 on-crash 재시작이 공유하는 단일 경로.
+/// 셸 경로는 입구가 준 값을 그대로 나른다 — 재시작도 같은 셸이어야 한다(환경을 다시 읽으면
+/// 재시작이 조용히 다른 셸로 갈아탄다).
+#[allow(clippy::too_many_arguments)]
 fn launch(
     app: AppHandle,
     mgr: Arc<Mutex<HashMap<String, DaemonEntry>>>,
+    shell: String,
     root: String,
     name: String,
     cmd: String,
@@ -190,7 +205,7 @@ fn launch(
     restart_on_crash: bool,
     restarts: u32,
 ) -> Result<u32, String> {
-    let mut child = spawn_shell(&root, &cmd, None)?;
+    let mut child = spawn_shell(&shell, &root, &cmd, None)?;
     let pid = child.id();
     let ring: Arc<Mutex<VecDeque<String>>> = Arc::new(Mutex::new(VecDeque::new()));
     if let Some(out) = child.stdout.take() {
@@ -246,7 +261,7 @@ fn launch(
             if *stopping.lock().unwrap() {
                 return;
             }
-            let _ = launch(app, mgr, root, name, cmd, window, true, restarts + 1);
+            let _ = launch(app, mgr, shell, root, name, cmd, window, true, restarts + 1);
         }
     });
     Ok(pid)
@@ -274,6 +289,8 @@ pub fn daemon_start(
     launch(
         app,
         state.inner.clone(),
+        // 셸 경로는 입구에서 한 번 읽어 아래로 흘린다(login_shell 이 그 경계다).
+        login_shell(),
         root,
         name,
         cmd,
@@ -400,7 +417,7 @@ pub fn daemon_run_once(
     timeout_secs: Option<u64>,
     env: Option<HashMap<String, String>>,
 ) -> Result<serde_json::Value, String> {
-    let mut child = spawn_shell(&root, &cmd, env.as_ref())?;
+    let mut child = spawn_shell(&login_shell(), &root, &cmd, env.as_ref())?;
     let ring: Arc<Mutex<VecDeque<String>>> = Arc::new(Mutex::new(VecDeque::new()));
     if let Some(out) = child.stdout.take() {
         pump_lines(out, ring.clone());
@@ -514,11 +531,49 @@ mod tests {
         assert!(std::env::var("SOKSAK_TEST_ENV").is_err(), "must not leak into the parent env");
     }
 
+    // 셸은 인자로 받은 경로다 — 프로세스 환경(SHELL)을 다시 읽지 않는다. 가짜 셸을 만들어
+    // 넘기고, 그 표식이 자식 출력에 찍히는지로 확인한다(환경에는 이 경로가 없다).
+    #[cfg(unix)]
+    #[test]
+    fn 셸은_인자로_받은_경로다() {
+        use std::io::Read;
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = std::env::temp_dir().join(format!("soksak-daemon-shell-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let fake = dir.join("fake-shell");
+        std::fs::write(&fake, "#!/bin/sh\nprintf FAKE-SHELL\nexec /bin/sh \"$@\"\n").unwrap();
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let mut child = spawn_shell(
+            &fake.to_string_lossy(),
+            "/tmp",
+            "printf ' and the command'",
+            None,
+        )
+        .expect("spawn");
+        let mut out = String::new();
+        child
+            .stdout
+            .take()
+            .unwrap()
+            .read_to_string(&mut out)
+            .unwrap();
+        let _ = child.wait();
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert_eq!(
+            out, "FAKE-SHELL and the command",
+            "주어진 셸이 명령을 돌려야 한다"
+        );
+    }
+
     #[cfg(unix)]
     #[test]
     fn 스폰_그룹킬_수명() {
         // 손자를 낳는 셸 명령 — 그룹 킬이 트리 전체를 회수하는지.
-        let child = spawn_shell("/tmp", "sleep 30 & sleep 30", None).expect("spawn");
+        let child = spawn_shell(&login_shell(), "/tmp", "sleep 30 & sleep 30", None).expect("spawn");
         let pid = child.id();
         let child = Arc::new(Mutex::new(child));
         std::thread::sleep(std::time::Duration::from_millis(200));

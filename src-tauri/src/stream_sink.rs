@@ -37,6 +37,26 @@ impl StreamSink for tauri::ipc::Channel<tauri::ipc::InvokeResponseBody> {
     }
 }
 
+/// 종료 사건의 도착지 — 스트림이 끝났다는 사실 하나(정수).
+///
+/// 바이트 계약(`StreamSink`)에 끼우지 않는다. 종료 코드는 스트림의 일부가 아니고, 소비자가
+/// 받는 것도 raw 바이트가 아니라 수 하나다(`Channel<i32>` 는 JSON 수로 직렬화한다). 바이트로
+/// 바꾸면 받는 쪽 페이로드 형태가 달라진다 — 그건 구조 이전이 아니라 동작 변경이다.
+/// 그래서 모양은 같게(사라짐을 값으로) 두고 타입만 따로 세운다.
+pub(crate) trait ExitSink: Send + 'static {
+    fn deliver(&self, code: i32) -> Delivered;
+}
+
+/// Tauri 웹뷰 크로싱 — 현 정본 구현.
+impl ExitSink for tauri::ipc::Channel<i32> {
+    fn deliver(&self, code: i32) -> Delivered {
+        match self.send(code) {
+            Ok(()) => Delivered::Ok,
+            Err(_) => Delivered::Gone,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -71,6 +91,36 @@ mod tests {
         assert_eq!(sink.deliver(b"c".to_vec()), Delivered::Ok);
         assert_eq!(calls.load(Ordering::SeqCst), 2);
         assert_eq!(&*bytes.lock().unwrap(), b"abc");
+    }
+
+    /// 종료 출구도 벤더 타입을 요구하지 않는다 — 그리고 그것이 나르는 것은 수 하나다.
+    struct ExitRecorder {
+        code: Arc<Mutex<Option<i32>>>,
+        alive: bool,
+    }
+
+    impl ExitSink for ExitRecorder {
+        fn deliver(&self, code: i32) -> Delivered {
+            if !self.alive {
+                return Delivered::Gone;
+            }
+            *self.code.lock().unwrap() = Some(code);
+            Delivered::Ok
+        }
+    }
+
+    #[test]
+    fn an_exit_crosses_as_a_number_not_as_bytes() {
+        let code = Arc::new(Mutex::new(None));
+        let sink = ExitRecorder { code: code.clone(), alive: true };
+        assert_eq!(sink.deliver(7), Delivered::Ok);
+        assert_eq!(*code.lock().unwrap(), Some(7));
+    }
+
+    #[test]
+    fn a_departed_exit_consumer_is_reported_too() {
+        let sink = ExitRecorder { code: Arc::new(Mutex::new(None)), alive: false };
+        assert_eq!(sink.deliver(0), Delivered::Gone);
     }
 
     #[test]

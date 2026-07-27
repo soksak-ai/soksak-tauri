@@ -1000,7 +1000,12 @@ impl ServiceSpawner for ProcessServiceSpawner {
         env: &[(String, String)],
     ) -> Result<SpawnedIo, String> {
         use std::process::{Command, Stdio};
-        let bin = crate::process::resolve_sidecar_cmd(&format!("sidecar:{}", binding.sidecar))?;
+        // 사이드카 해석은 정체성의 홈에서 나온다 — 이 스포너는 아직 홈만 들고 있어
+        // 전역을 여기서 한 번 값으로 꺼낸다. 스포너가 Identity 를 통째로 받게 되면 self 로 바뀐다.
+        let bin = crate::process::resolve_sidecar_cmd(
+            &crate::identity::ambient(),
+            &format!("sidecar:{}", binding.sidecar),
+        )?;
         let log = soksak_spec_service::log_path(&self.home, &binding.plugin);
         if let Some(dir) = log.parent() {
             let _ = std::fs::create_dir_all(dir);

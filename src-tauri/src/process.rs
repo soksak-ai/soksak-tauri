@@ -2,10 +2,14 @@
 // PTY(pty.rs)와 달리 line discipline·echo·signal 가공이 없는 순수 파이프 → JSON-RPC(LSP/MCP/ACP)·
 // 임의 CLI 통합 플러그인이 쓰는 범용 인터페이스다(특정 도구 락인 0). 플러그인 권한 "process" 게이트.
 //
-// 출력은 stdout/stderr 를 각각 별도 reader 스레드로 읽어 Tauri Channel(raw 바이트)로 스트리밍한다.
-// 종료 코드는 stdout EOF 시점에 child.wait() 로 reaping 해 on_exit Channel 로 보낸다(폴링 없음 —
+// 출력은 stdout/stderr 를 각각 별도 reader 스레드로 읽어 출구(StreamSink)로 스트리밍한다.
+// 종료 코드는 stdout EOF 시점에 child.wait() 로 reaping 해 종료 출구(ExitSink)로 보낸다(폴링 없음 —
 // pty.rs 와 동형으로 reader EOF 가 종료 신호). kill 은 공유 child 핸들을 잠가 보낸다(평시 reader 는
 // out.read() 에서 블록 중이라 child 잠금이 비어 있어 즉시 가능).
+//
+// 스폰 본체(spawn_child)는 셸 타입을 하나도 받지 않는다: 홈은 정체성(Identity)으로, 출구는
+// 계약(StreamSink·ExitSink)으로, 창은 라벨 문자열로 온다. `#[tauri::command]` 는 State·Window·
+// Channel 을 벗겨 그 값들로 옮기는 번역층이다.
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -15,7 +19,9 @@ use std::sync::{Arc, Mutex};
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::State;
 
+use crate::identity::Identity;
 use crate::secrets::{self, SecretsState};
+use crate::stream_sink::{Delivered, ExitSink, StreamSink};
 
 // AI 세션 컨텍스트 env 정본 — 이걸 상속한 자식(claude 등)은 자기를 "에이전트 안의 에이전트"로
 // 인식해 세션 식별이 비정상이 된다(트랜스크립트·중첩 가드). PTY(pty.rs)와 서브프로세스
@@ -133,7 +139,9 @@ fn kill_session(sess: &ProcessSession) {
 // dist/soksak-sidecar-{name}. engine 모델(sidecar.rs module_path)과 대칭: 해석 경로는 identity 홈
 // 하나뿐(A17 — env 바이너리 주입 없음), 이름은 traversal-safe 검증. 미존재는 spawn 전 명시 에러.
 // "sidecar:" 아닌 cmd 는 그대로(일반 프로세스).
-pub(crate) fn resolve_sidecar_cmd(cmd: &str) -> Result<String, String> {
+//
+// 홈은 인자로 받은 정체성에서 나온다 — 전역을 읽으면 이 함수가 "나는 앱 프로세스다"를 전제한다.
+pub(crate) fn resolve_sidecar_cmd(identity: &Identity, cmd: &str) -> Result<String, String> {
     let Some(name) = cmd.strip_prefix("sidecar:") else {
         return Ok(cmd.to_string());
     };
@@ -150,11 +158,9 @@ pub(crate) fn resolve_sidecar_cmd(cmd: &str) -> Result<String, String> {
             "sidecar 이름 불법({name:?}) — ^[a-z0-9][a-z0-9-]*$"
         ));
     }
-    let path = crate::home::soksak_home()
-        .join("sidecars")
-        .join(format!("soksak-sidecar-{name}"))
-        .join("dist")
-        .join(format!("soksak-sidecar-{name}"));
+    let path = identity.path(format!(
+        "sidecars/soksak-sidecar-{name}/dist/soksak-sidecar-{name}"
+    ));
     if !path.is_file() {
         return Err(format!(
             "sidecar 미설치: {} — identity 홈에 dist 스테이징 필요(stage.sh)",
@@ -201,25 +207,28 @@ fn resolve_secret_env(
     }
 }
 
-// pump 종료 사유 — EOF(자식이 stdout 닫음=종료 진행)와 Channel 죽음(뷰 unmount 등, 자식은 살아있을
+// pump 종료 사유 — EOF(자식이 stdout 닫음=종료 진행)와 출구 사라짐(뷰 unmount 등, 자식은 살아있을
 // 수 있음)을 구분한다. 이 구분이 데드락 회피의 핵심(아래 reader 참조).
 enum PumpEnd {
     Eof,
     Closed,
 }
 
-// stdout/stderr 한쪽을 raw 바이트로 Channel 스트리밍하는 reader 루프. 종료 사유를 반환한다.
-fn pump<R: Read>(src: &mut R, ch: &Channel<InvokeResponseBody>) -> PumpEnd {
+// stdout/stderr 한쪽을 raw 바이트로 출구에 흘리는 reader 루프. 종료 사유를 반환한다.
+fn pump<R: Read, S: StreamSink>(src: &mut R, sink: &S) -> PumpEnd {
     // 64KB — macOS 파이프 용량과 동급이라 한 번 read 로 파이프를 통째 비운다. 8KB 였을 때 대용량
-    // 스트림(OSR 프레임 4MB)이 프레임당 ~512개 Channel 메시지로 쪼개져 프론트 콜백이 폭주했다.
+    // 스트림(OSR 프레임 4MB)이 프레임당 ~512개 메시지로 쪼개져 프론트 콜백이 폭주했다.
     // 64KB 면 프레임당 read 횟수·메시지 수가 8× 줄어 프론트 IPC 오버헤드가 크게 준다.
+    //
+    // 전달 단위를 여기서 정하는 것은 의도다 — pty 의 배치(pty_delivery)와 달리 이쪽 소비자는
+    // 프레임 경계를 기대하는 사이드카라, 배치가 경계를 바꾸면 안 된다.
     let mut buf = vec![0u8; 65536];
     loop {
         match src.read(&mut buf) {
             Ok(0) => return PumpEnd::Eof, // 자식이 stdout 닫음 → 종료 진행
             Ok(n) => {
-                if ch.send(InvokeResponseBody::Raw(buf[..n].to_vec())).is_err() {
-                    return PumpEnd::Closed; // Channel 죽음(뷰 unmount) — 자식은 아직 살아있을 수 있다
+                if sink.deliver(buf[..n].to_vec()) == Delivered::Gone {
+                    return PumpEnd::Closed; // 출구 사라짐(뷰 unmount) — 자식은 아직 살아있을 수 있다
                 }
             }
             Err(_) => return PumpEnd::Eof, // read 에러 = 파이프 끊김 → EOF 취급
@@ -242,48 +251,71 @@ fn drain<R: Read>(src: &mut R) {
     }
 }
 
-#[tauri::command]
-pub fn process_spawn(
-    cmd: String,
-    args: Vec<String>,
-    cwd: Option<String>,
-    env: Option<HashMap<String, String>>,
-    // 부모 env 에서 제거할 키(설정 아닌 제거). 예: ACP 자식 에이전트에서 호스트 중첩 가드(CLAUDECODE)
-    // 를 떼어내 "에디터가 띄운 독립 에이전트"로 동작시킨다. 병합(env)으론 못 하는 unset 전용 경로.
-    env_remove: Option<Vec<String>>,
-    // true = AI 세션 컨텍스트 env 8종(AI_SESSION_ENV 정본, PTY 와 동일) 일괄 제거. 호출자가
-    // 목록을 복제하지 않게 하는 스위치 — env_remove 와 합산 적용.
-    scrub_ai_env: Option<bool>,
-    // true = 신규 프로세스 그룹으로 스폰(Unix) — kill 이 자식 트리 전체를 회수한다. 손자를
-    // 낳는 자식(에이전트 CLI 등)에 선언; 기존 소비자는 무영향(기본 false).
-    group: Option<bool>,
-    // true = detach(setsid — 새 세션 리더)로 스폰. 부모(앱) 사망·터미널 시그널에서 분리돼
-    // 앱 종료를 넘어 산다. 생존 서비스 사이드카를 플러그인이 합법으로 detach 스폰하는 열쇠.
-    // danger 게이트: "sidecar:" 대상에만 허용(detached_gate). kill_all 에서 제외된다.
-    detached: Option<bool>,
-    // 시크릿 주입 — ns(보통 플러그인 id) + secret_env(envVar→secretKey). 평문은 여기 Rust 경계에서만
-    // 해소돼 자식 env 로 들어간다(JS·셸 args·ps 미노출 R2). secret_env 가 있으면 ns 필수. 잠김/미존재면
-    // spawn 하지 않고 Err — 미해소 시크릿이 자식으로 새지 않는다.
-    ns: Option<String>,
-    secret_env: Option<HashMap<String, String>>,
-    on_stdout: Channel<InvokeResponseBody>,
-    on_stderr: Channel<InvokeResponseBody>,
-    on_exit: Channel<i32>,
-    // 호출 창 — 세션에 스폰 창 label 을 기록해 창 파괴 회수(kill_by_window)의 키로 쓴다.
-    window: tauri::Window,
-    manager: State<'_, ProcessManager>,
-    secrets_state: State<'_, SecretsState>,
-) -> Result<u32, String> {
+/// 스폰 요청 — 입구가 받은 값을 그대로 나른다. 셸 타입(State·Window·Channel)은 여기 없다.
+pub(crate) struct SpawnRequest {
+    pub cmd: String,
+    pub args: Vec<String>,
+    pub cwd: Option<String>,
+    pub env: Option<HashMap<String, String>>,
+    /// 부모 env 에서 제거할 키(설정 아닌 제거). 예: ACP 자식 에이전트에서 호스트 중첩 가드
+    /// (CLAUDECODE)를 떼어내 "에디터가 띄운 독립 에이전트"로 동작시킨다. 병합(env)으론 못 하는
+    /// unset 전용 경로.
+    pub env_remove: Option<Vec<String>>,
+    /// AI 세션 컨텍스트 env 8종(AI_SESSION_ENV 정본, PTY 와 동일) 일괄 제거. 호출자가 목록을
+    /// 복제하지 않게 하는 스위치 — env_remove 와 합산 적용.
+    pub scrub_ai_env: bool,
+    /// 신규 프로세스 그룹으로 스폰(Unix) — kill 이 자식 트리 전체를 회수한다.
+    pub group: bool,
+    /// detach(setsid — 새 세션 리더)로 스폰. 부모(앱) 사망·터미널 시그널에서 분리돼 앱 종료를
+    /// 넘어 산다. danger 게이트: "sidecar:" 대상에만 허용(detached_gate).
+    pub detached: bool,
+    /// 시크릿 주입 — ns(보통 플러그인 id) + secret_env(envVar→secretKey). 평문은 Rust 경계에서만
+    /// 해소돼 자식 env 로 들어간다(JS·셸 args·ps 미노출 R2). secret_env 가 있으면 ns 필수.
+    pub ns: Option<String>,
+    pub secret_env: Option<HashMap<String, String>>,
+    /// 스폰 창 label — 세션에 기록해 창 파괴 회수(kill_by_window)의 키로 쓴다.
+    pub window: String,
+}
+
+/// 스폰 본체 — 정체성·출구·창 라벨만 받는다. 앱 프로세스를 전제하지 않는 유일한 이유는
+/// 이 세 값이 전부 인자로 오기 때문이다(홈은 Identity, 출구는 StreamSink·ExitSink, 창은 문자열).
+pub(crate) fn spawn_child<O, E, X>(
+    identity: &Identity,
+    req: SpawnRequest,
+    manager: &ProcessManager,
+    secrets_state: &SecretsState,
+    on_stdout: O,
+    on_stderr: E,
+    on_exit: X,
+) -> Result<u32, String>
+where
+    O: StreamSink,
+    E: StreamSink,
+    X: ExitSink,
+{
+    let SpawnRequest {
+        cmd,
+        args,
+        cwd,
+        env,
+        env_remove,
+        scrub_ai_env,
+        group,
+        detached,
+        ns,
+        secret_env,
+        window,
+    } = req;
+
     // 시크릿 평문 해소 — spawn 전에 전부 해소(하나라도 잠김/미존재면 spawn 0). Rust 경계에서만 평문 보유.
-    let resolved_secrets = resolve_secret_env(&secrets_state, ns.as_deref(), &secret_env)?;
+    let resolved_secrets = resolve_secret_env(secrets_state, ns.as_deref(), &secret_env)?;
 
     // detached danger 게이트 — 원본 cmd(스킴 해석 전)로 판정. "sidecar:" 대상만 detach 허용.
-    let detached = detached.unwrap_or(false);
     detached_gate(&cmd, detached)?;
 
     // service 사이드카 해석 — cmd "sidecar:{name}" 을 identity 홈의 dist 진입점으로 치환(engine 의
     // sidecar.rs 와 대칭: 경로 해석은 코어 단일진실 소유, 플러그인은 이름만 안다 — A17/SIDECARS.md).
-    let cmd = resolve_sidecar_cmd(&cmd)?;
+    let cmd = resolve_sidecar_cmd(identity, &cmd)?;
 
     let mut c = Command::new(&cmd);
     c.args(&args)
@@ -298,7 +330,9 @@ pub fn process_spawn(
     }
     // 앱 주입 컨텍스트(A17) — 플러그인 자식이 identity 홈을 파생할 유일한 상시 경로. PTY 의
     // SOKSAK_SOCKET 주입과 같은 계열(소스주입 env 아님 — 앱이 자기 단일진실을 자식에 전파).
-    c.env("SOKSAK_HOME", crate::home::soksak_home());
+    // 자식이 홈을 아는 것은 정당하다. 다만 그 값은 인자로 받은 정체성에서 나온다 — 여기서
+    // 전역을 읽으면 스폰하는 프로세스가 갈릴 때 같은 코드가 조용히 다른 홈을 물려준다.
+    c.env("SOKSAK_HOME", identity.home());
     if let Some(cwd) = cwd {
         c.current_dir(cwd);
     }
@@ -312,12 +346,11 @@ pub fn process_spawn(
             c.env_remove(k);
         }
     }
-    if scrub_ai_env.unwrap_or(false) {
+    if scrub_ai_env {
         for k in AI_SESSION_ENV {
             c.env_remove(k);
         }
     }
-    let group = group.unwrap_or(false);
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -346,7 +379,7 @@ pub fn process_spawn(
     let child_pid = child.id();
     let child = Arc::new(Mutex::new(child));
 
-    // stderr reader — 스트리밍. Channel 죽으면 drain 으로 계속 비운다(자식 stderr 파이프가 차서
+    // stderr reader — 스트리밍. 출구가 사라지면 drain 으로 계속 비운다(자식 stderr 파이프가 차서
     // 자식이 write 에서 막히는 것 방지). child mutex 미접근.
     if let Some(mut err) = stderr {
         std::thread::spawn(move || {
@@ -359,9 +392,9 @@ pub fn process_spawn(
     if let Some(mut out) = stdout {
         let child = child.clone();
         std::thread::spawn(move || {
-            // Channel 이 죽어도(뷰 unmount) 자식은 살아있을 수 있다. 그때 child mutex 를 잡은 채 wait()
+            // 출구가 사라져도(뷰 unmount) 자식은 살아있을 수 있다. 그때 child mutex 를 잡은 채 wait()
             // 로 블록하면 process_kill 이 같은 mutex 에서 영구 대기(데드락) → 좀비 자식(과거 32GB swap
-            // 폭주의 원인). 그래서 Channel 죽음이면 mutex 없이 drain 으로 EOF(자식 종료)를 기다린 뒤에만
+            // 폭주의 원인). 그래서 출구 사라짐이면 mutex 없이 drain 으로 EOF(자식 종료)를 기다린 뒤에만
             // wait() 한다 — drain 중엔 lock 이 비어 process_kill 이 즉시 kill 하고, kill 되면 EOF 가 와서
             // drain 이 반환한다.
             if let PumpEnd::Closed = pump(&mut out, &on_stdout) {
@@ -374,7 +407,9 @@ pub fn process_spawn(
                 .and_then(|mut c| c.wait().ok())
                 .and_then(|s| s.code())
                 .unwrap_or(-1);
-            let _ = on_exit.send(code);
+            // 종료는 스트림의 마지막 사건이다 — 소비자가 이미 사라졌어도 멈출 생산이 남아 있지
+            // 않다. 그래서 사라짐을 값으로 받되 여기서 끝낸다.
+            let _ = on_exit.deliver(code);
         });
     }
 
@@ -390,7 +425,7 @@ pub fn process_spawn(
             stdin,
             group,
             detached,
-            window: window.label().to_string(),
+            window,
             cmd: if args.is_empty() {
                 cmd.clone()
             } else {
@@ -400,6 +435,52 @@ pub fn process_spawn(
         },
     );
     Ok(id)
+}
+
+/// 웹뷰 입구 — State·Window·Channel 을 벗겨 값으로 옮기는 번역층. 인자 이름은 JS 계약이라
+/// 그대로 둔다(여기가 바뀌면 호출자가 보는 답이 달라진다).
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub fn process_spawn(
+    cmd: String,
+    args: Vec<String>,
+    cwd: Option<String>,
+    env: Option<HashMap<String, String>>,
+    env_remove: Option<Vec<String>>,
+    scrub_ai_env: Option<bool>,
+    group: Option<bool>,
+    detached: Option<bool>,
+    ns: Option<String>,
+    secret_env: Option<HashMap<String, String>>,
+    on_stdout: Channel<InvokeResponseBody>,
+    on_stderr: Channel<InvokeResponseBody>,
+    on_exit: Channel<i32>,
+    window: tauri::Window,
+    manager: State<'_, ProcessManager>,
+    secrets_state: State<'_, SecretsState>,
+) -> Result<u32, String> {
+    spawn_child(
+        // 앰비언트 전역은 여기서 한 번 값으로 꺼낸다 — 경계의 이쪽 끝(identity.rs).
+        &crate::identity::ambient(),
+        SpawnRequest {
+            cmd,
+            args,
+            cwd,
+            env,
+            env_remove,
+            scrub_ai_env: scrub_ai_env.unwrap_or(false),
+            group: group.unwrap_or(false),
+            detached: detached.unwrap_or(false),
+            ns,
+            secret_env,
+            window: window.label().to_string(),
+        },
+        manager.inner(),
+        secrets_state.inner(),
+        on_stdout,
+        on_stderr,
+        on_exit,
+    )
 }
 
 #[tauri::command]
@@ -434,12 +515,17 @@ pub fn process_stdin_close(id: u32, manager: State<'_, ProcessManager>) -> Resul
 /// 스폰하지 않았으므로 이 시점에 이 창 앞으로 남은 것은 전부 앞선 런타임의 고아다.
 #[tauri::command]
 pub fn process_reclaim_window(window: tauri::Window, manager: State<'_, ProcessManager>) -> u32 {
+    reclaim_window(manager.inner(), window.label())
+}
+
+/// 회수 본체 — 창은 라벨 문자열로 온다(창 객체를 쥘 필요가 없다).
+pub(crate) fn reclaim_window(manager: &ProcessManager, label: &str) -> u32 {
     let before = manager
         .sessions
         .lock()
-        .map(|s| s.values().filter(|x| x.window == window.label()).count())
+        .map(|s| s.values().filter(|x| x.window == label).count())
         .unwrap_or(0) as u32;
-    manager.kill_by_window(window.label());
+    manager.kill_by_window(label);
     before
 }
 
@@ -503,7 +589,108 @@ pub fn process_kill(id: u32, manager: State<'_, ProcessManager>) -> Result<(), S
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::identity::Identity;
     use crate::secrets::{test_state_with_secret, SecretsState};
+    use crate::stream_sink::Delivered;
+
+    // 계약만 구현한 테스트 출구 — Tauri 없이 스폰 코어를 끝까지 돌린다. 이 세 구현이
+    // 컴파일되고 실제로 바이트·종료코드를 받는다는 사실이 "출구는 벤더 타입이 아니다"의 증명이다.
+    struct Collect(Arc<Mutex<Vec<u8>>>);
+    impl StreamSink for Collect {
+        fn deliver(&self, bytes: Vec<u8>) -> Delivered {
+            self.0.lock().unwrap().extend_from_slice(&bytes);
+            Delivered::Ok
+        }
+    }
+
+    struct Departed;
+    impl StreamSink for Departed {
+        fn deliver(&self, _bytes: Vec<u8>) -> Delivered {
+            Delivered::Gone
+        }
+    }
+
+    struct ExitTo(std::sync::mpsc::Sender<i32>);
+    impl ExitSink for ExitTo {
+        fn deliver(&self, code: i32) -> Delivered {
+            match self.0.send(code) {
+                Ok(()) => Delivered::Ok,
+                Err(_) => Delivered::Gone,
+            }
+        }
+    }
+
+    /// 스폰 코어를 실제로 돌린다 — 셸 타입(State·Window·Channel) 없이. 자식의 stdout
+    /// 바이트와 종료 코드를 돌려준다.
+    #[cfg(unix)]
+    fn run_probe(identity: &Identity, script: &str) -> (Vec<u8>, i32) {
+        let out = Arc::new(Mutex::new(Vec::new()));
+        let (tx, rx) = std::sync::mpsc::channel();
+        let manager = ProcessManager::default();
+        let secrets_state = SecretsState::default();
+        let id = spawn_child(
+            identity,
+            SpawnRequest {
+                cmd: "/bin/sh".into(),
+                args: vec!["-c".into(), script.into()],
+                cwd: None,
+                env: None,
+                env_remove: None,
+                scrub_ai_env: false,
+                group: false,
+                detached: false,
+                ns: None,
+                secret_env: None,
+                window: "w-test".into(),
+            },
+            &manager,
+            &secrets_state,
+            Collect(out.clone()),
+            Collect(Arc::new(Mutex::new(Vec::new()))),
+            ExitTo(tx),
+        )
+        .expect("spawn");
+        assert_eq!(id, 1, "핸들 id 는 1부터");
+        let code = rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("종료 코드가 출구로 건너와야 한다");
+        let bytes = out.lock().unwrap().clone();
+        (bytes, code)
+    }
+
+    // 자식이 받는 홈은 **주어진 정체성**의 홈이다 — 앰비언트 전역이 아니다. 이 프로세스의
+    // 홈과 다른 값을 넘겨 그 차이를 자식의 stdout 으로 확인한다(전역을 읽으면 여기서 갈린다).
+    #[cfg(unix)]
+    #[test]
+    fn the_child_home_comes_from_the_given_identity() {
+        let home = std::env::temp_dir().join(format!("soksak-proc-identity-{}", std::process::id()));
+        let identity = Identity::new(&home, "com.soksak.dev");
+        let (bytes, code) = run_probe(&identity, "printf %s \"$SOKSAK_HOME\"");
+        assert_eq!(String::from_utf8_lossy(&bytes), home.to_string_lossy());
+        assert_ne!(
+            home.as_path(),
+            crate::home::soksak_home(),
+            "이 프로세스의 홈과 달라야 시험이 성립한다"
+        );
+        assert_eq!(code, 0);
+    }
+
+    // 종료 코드는 바이트가 아니라 정수 하나로 건너간다 — 출구 타입이 그 사실을 지킨다.
+    #[cfg(unix)]
+    #[test]
+    fn the_exit_code_crosses_as_one_integer() {
+        let identity = Identity::new(std::env::temp_dir().join("soksak-proc-exit"), "com.soksak.dev");
+        let (bytes, code) = run_probe(&identity, "printf out; exit 7");
+        assert_eq!(&bytes, b"out");
+        assert_eq!(code, 7);
+    }
+
+    // 소비자가 사라진 사실은 값으로 돌아온다 — 조용히 버리면 리더가 영원히 읽는다.
+    #[test]
+    fn a_departed_consumer_ends_the_pump() {
+        let mut src = std::io::Cursor::new(b"hello".to_vec());
+        assert!(matches!(pump(&mut src, &Departed), PumpEnd::Closed));
+    }
 
     fn tmp_vault_path(tag: &str) -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!(
@@ -579,31 +766,21 @@ mod tests {
     }
 
     // service 사이드카 스킴 — 비스킴 통과 / 불법 이름 거부 / 미설치 명시 에러(경로 형태 포함).
+    // 해석 기준은 인자로 받은 정체성의 홈이다 — 그 홈이 에러 메시지에 그대로 나온다.
     #[test]
     fn sidecar_scheme_resolution() {
-        assert_eq!(resolve_sidecar_cmd("/bin/sh").unwrap(), "/bin/sh");
-        assert_eq!(resolve_sidecar_cmd("claude").unwrap(), "claude");
-        assert!(resolve_sidecar_cmd("sidecar:").is_err());
-        assert!(resolve_sidecar_cmd("sidecar:../evil").is_err());
-        assert!(resolve_sidecar_cmd("sidecar:UPPER").is_err());
-        let e = resolve_sidecar_cmd("sidecar:definitely-not-installed-xyz").unwrap_err();
+        let id = Identity::new("/tmp/soksak-sidecar-home", "com.soksak.dev");
+        assert_eq!(resolve_sidecar_cmd(&id, "/bin/sh").unwrap(), "/bin/sh");
+        assert_eq!(resolve_sidecar_cmd(&id, "claude").unwrap(), "claude");
+        assert!(resolve_sidecar_cmd(&id, "sidecar:").is_err());
+        assert!(resolve_sidecar_cmd(&id, "sidecar:../evil").is_err());
+        assert!(resolve_sidecar_cmd(&id, "sidecar:UPPER").is_err());
+        let e = resolve_sidecar_cmd(&id, "sidecar:definitely-not-installed-xyz").unwrap_err();
         assert!(
-            e.contains("sidecars/soksak-sidecar-definitely-not-installed-xyz/dist/"),
+            e.contains(
+                "/tmp/soksak-sidecar-home/sidecars/soksak-sidecar-definitely-not-installed-xyz/dist/"
+            ),
             "{e}"
-        );
-    }
-
-    // 앱 주입 컨텍스트(A17) — process_spawn 과 동일 구성으로 자식이 SOKSAK_HOME 을 실제 수신하는지.
-    // 플러그인 자식(사이드카 spawn 랩)이 identity 홈을 파생할 유일한 상시 경로의 실증.
-    #[test]
-    fn soksak_home_injected_into_child() {
-        let mut c = Command::new("/bin/sh");
-        c.args(["-c", "printf %s \"$SOKSAK_HOME\""]);
-        c.env("SOKSAK_HOME", crate::home::soksak_home());
-        let out = c.output().expect("spawn sh");
-        assert_eq!(
-            String::from_utf8_lossy(&out.stdout),
-            crate::home::soksak_home().to_string_lossy()
         );
     }
 
