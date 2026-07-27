@@ -178,7 +178,7 @@ fn module_path(name: &str, soksak_home: &std::path::Path) -> std::path::PathBuf 
 }
 
 fn resolve_module_path(name: &str) -> Result<std::path::PathBuf, String> {
-    let path = module_path(name, &crate::home::soksak_home());
+    let path = module_path(name, crate::identity::ambient().home());
     if !path.is_file() {
         return Err(format!(
             "사이드카 모듈 없음: {} (설치: 플러그인 reach 또는 dev 스테이징 `make sidecar-{name}`)",
@@ -518,8 +518,8 @@ pub fn sidecar_ensure(name: String, url: String, sha256: String) -> Result<Strin
     }
     // dest = dist 디렉토리 자체(아카이브 = dist 내용물). 사이드카 루트는 이미 존재할 수 있다
     // (백업·데이터) — 원자 rename 의 대상은 항상 새로 생기는 dist 다.
-    let dest = crate::home::soksak_home()
-        .join("sidecars")
+    let dest = crate::identity::ambient()
+        .path("sidecars")
         .join(format!("soksak-sidecar-{name}"))
         .join("dist");
     let entry = format!("soksak-sidecar-{name}.dylib");
