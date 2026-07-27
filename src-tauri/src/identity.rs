@@ -52,8 +52,22 @@ impl Identity {
     }
 
     /// 홈 아래 경로 — 홈을 직접 조립하는 호출자를 없앤다.
+    ///
+    /// **항상 홈 아래**다. `Path::join` 은 절대경로를 받으면 베이스를 통째로 버리는데,
+    /// 이 계약의 값은 "홈 아래"를 보장하는 데 있다. 조용히 탈출을 허용하면 계약이
+    /// 거짓말이 되고, 그 거짓말은 호출자가 검사를 생략하는 근거가 된다. 절대경로·`..`
+    /// 는 루트와 부모 컴포넌트를 떼어 상대 경로로 읽는다.
     pub(crate) fn path(&self, rel: impl AsRef<Path>) -> PathBuf {
-        self.home.join(rel)
+        use std::path::Component;
+        let mut out = self.home.clone();
+        for c in rel.as_ref().components() {
+            match c {
+                Component::Normal(part) => out.push(part),
+                // 루트·프리픽스·"."·".." 는 홈을 벗어나거나 되돌리는 컴포넌트다 — 버린다.
+                _ => continue,
+            }
+        }
+        out
     }
 }
 
@@ -98,6 +112,26 @@ mod tests {
     fn paths_are_derived_from_the_identity_not_assembled_by_callers() {
         let id = Identity::new("/tmp/x-dev", "com.soksak.dev");
         assert_eq!(id.path("plugins"), Path::new("/tmp/x-dev/plugins"));
+        // 여러 세그먼트를 한 번에 받는다 — 호출자가 join 을 이어붙이면 그 자리마다
+        // 홈 조립 규칙이 흩어진다(plugins.rs 가 workspaces/plugins 를 그렇게 만들었다).
+        assert_eq!(
+            id.path("workspaces/plugins"),
+            Path::new("/tmp/x-dev/workspaces/plugins")
+        );
         assert_eq!(id.path("run/ptyd.sock"), Path::new("/tmp/x-dev/run/ptyd.sock"));
+    }
+
+    #[test]
+    fn an_absolute_argument_cannot_escape_the_home() {
+        // Path::join 은 절대경로를 받으면 **베이스를 통째로 버린다**. 이 계약의 값은
+        // "홈 아래"를 보장하는 데 있으므로, 탈출을 조용히 허용하면 계약이 거짓말이 된다.
+        let id = Identity::new("/tmp/x-dev", "com.soksak.dev");
+        let escaped = id.path("/etc/passwd");
+        assert_eq!(escaped, Path::new("/tmp/x-dev/etc/passwd"));
+        // ".." 도 홈을 되돌리지 못한다.
+        assert_eq!(
+            id.path("../../etc/passwd"),
+            Path::new("/tmp/x-dev/etc/passwd")
+        );
     }
 }

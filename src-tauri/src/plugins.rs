@@ -9,13 +9,13 @@ use serde::Serialize;
 // ── 디렉토리/식별자 ──────────────────────────────────────────────────────────
 
 fn plugins_dir() -> Result<PathBuf, String> {
-    let dir = crate::home::soksak_home().join("plugins");
+    let dir = crate::identity::ambient().path("plugins");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir)
 }
 
 fn plugins_data_dir() -> Result<PathBuf, String> {
-    let dir = crate::home::soksak_home().join("plugins-data");
+    let dir = crate::identity::ambient().path("plugins-data");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir)
 }
@@ -413,9 +413,7 @@ fn plugin_dev_new_in(base: &Path, id: &str) -> Result<PluginInstallResult, Strin
 
 #[tauri::command]
 pub fn plugin_dev_new(id: String) -> Result<PluginInstallResult, String> {
-    let base = crate::home::soksak_home()
-        .join("workspaces")
-        .join("plugins");
+    let base = crate::identity::ambient().path("workspaces/plugins");
     let result = plugin_dev_new_in(&base, &id)?;
     let dir = PathBuf::from(&result.dir);
     if let Err(e) = crate::unit_dev::set_source("plugin", &id, &dir) {
@@ -835,7 +833,7 @@ fn sidecar_dev_new_in(
 
 #[tauri::command]
 pub fn sidecar_dev_new(name: String, interface: Option<String>) -> Result<PluginInstallResult, String> {
-    let base = crate::home::soksak_home().join("workspaces").join("sidecars");
+    let base = crate::identity::ambient().path("workspaces/sidecars");
     let result = sidecar_dev_new_in(&base, &name, interface.as_deref())?;
     let dir = PathBuf::from(&result.dir);
     if let Err(e) = crate::unit_dev::set_source("sidecar", &result.dir_name, &dir) {
@@ -1154,9 +1152,7 @@ fn plugin_dev_new2_in(base: &Path, name: &str) -> Result<PluginInstallResult, St
 
 #[tauri::command]
 pub fn plugin_dev_new2(name: String) -> Result<PluginInstallResult, String> {
-    let base = crate::home::soksak_home()
-        .join("workspaces")
-        .join("plugins");
+    let base = crate::identity::ambient().path("workspaces/plugins");
     let result = plugin_dev_new2_in(&base, &name)?;
     let dir = PathBuf::from(&result.dir);
     if let Err(e) = crate::unit_dev::set_source("plugin", &result.dir_name, &dir) {
