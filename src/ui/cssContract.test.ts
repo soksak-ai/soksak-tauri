@@ -362,7 +362,9 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
       const tokens = Object.values(r.edges).filter((v) => v !== "none");
       if (tokens.length === 0) continue; // none 단언은 선언 부재가 정답
       for (const sel of r.selector.split(",").map((s) => s.trim())) {
-        const head = sel.split(":")[0].replace(/^\./, "\\.");
+        // 셀렉터는 정규식이 아니다 — 통째로 이스케이프한다. 앞의 점만 이스케이프하던 판은
+        // 속성 셀렉터([data-station="0"])를 문자 클래스로 읽어 대응 선언을 못 찾았다.
+        const head = sel.split(":")[0].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         const re = new RegExp(`${head}[^{]*\\{[^}]*border[^:;]*:[^;]*var\\(--bd`);
         if (!re.test(css)) empty.push(`${r.id} (${sel})`);
       }

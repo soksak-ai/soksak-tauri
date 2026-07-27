@@ -1,15 +1,32 @@
 #!/usr/bin/env node
-// 레일 카드 테두리 E2E — 레일(사이드바 투영) 카드의 네 변이 화면에 실제로 그려지는지 픽셀로
-// 판정한다. DOM 의 computed border 는 "그렸다"를 말할 뿐 "보인다"를 말하지 못한다 —
-// 부모 클립·뷰포트 경계에 잘리면 계산값은 1px 인데 화면엔 없다(실측 2026-07-27: 하단만 없음).
+// 레일 카드 테두리 E2E — 레일(사이드바 투영) 카드의 네 변이 화면에 실제로 "보이는지"를
+// 픽셀로 판정한다. DOM 의 computed border 는 "그렸다"를 말할 뿐 "보인다"를 말하지 못한다.
 //
-// RED 근거(사용자 실측): 특정 배치에서만 카드 하단 테두리가 사라진다("여기에서만 이렇고 다른
-// 위치로 가면 잘 나온다"). 위치 의존이므로 판정도 배치별로 돌려야 한다.
+// 두 겹으로 본다:
+//  ① 보더 소유권 계약(borderContract) 전수 시행 — 누가 어느 변을 소유하는가.
+//     기준은 내가 정하지 않고 계약에 묻는다(ui.expect): paneStyle 이 무선을 규정하면
+//     선을 요구하지 않는다. 기준을 지어내면 그 GREEN 도 RED 도 무의미하다.
+//  ② 픽셀 — 각 변의 안/변/밖 세 띠를 접어 바깥 지면 대비 최대 편차(경계 신호)를 낸다.
+//     바깥은 "카드 밖 지면"이지 창 밖 데스크톱이 아니다(창 가장자리는 200 가까이 밝아
+//     테두리가 없어도 통과시킨다 — 통과의 이유가 바뀌면 그 GREEN 은 거짓이다).
 //
-// 판정: 각 변의 안/변/밖 세 띠를 접어 바깥 지면 대비 최대 편차(경계 신호)를 낸다. 신호는
-// 테두리 선이든 채움 계단이든 무엇이든 좋다 — 사람이 "카드가 닫혔다"고 읽는 것이 기준이다.
-// 색을 특정하지 않는다(테마마다 다르다). 크기를 1px 씩 옮기며 전 구간을 순회한다:
-// 어떤 크기에서 보이느냐가 아니라 모든 크기에서 보이느냐가 계약이다.
+// 크기 스윕: 창 높이를 1px 씩 옮긴다. 어떤 크기에서 보이느냐가 아니라 모든 크기에서
+// 보이느냐가 계약이다. rect 와 픽셀이 **둘 다 정착**한 뒤에만 판정하고, 판정한 그 프레임을
+// 증거로 남긴다(재촬영한 증거는 판정과 다른 이야기를 한다 — 실측으로 몇 시간을 태웠다).
+//
+// ── 알려진 미해결(2026-07-27) ────────────────────────────────────────────────
+// 배율 1 창에서 `window.resize` 로 창을 **최초 높이보다 크게** 만들면, 레일 열의 픽셀이
+// 최초 높이 아래로 갱신되지 않는다. 그래서 그 아래로 내려간 카드 하단 테두리가 사라진다.
+// 확정된 서명:
+//   · 레이아웃은 정상 — 레일·카드 rect 가 정확히 갱신되고 computed border-bottom-width=1px.
+//   · 같은 행에서 콘텐츠 칸의 테두리는 정상 도색된다(죽은 자리는 레일 열뿐).
+//   · 하단 테두리를 2px 로 두면 사라지는 높이가 정확히 1px 밀린다(607→608)
+//     = 미도색이 아니라 **고정된 선 아래가 잘리는 것**이고, 그 선은 창의 최초 높이다.
+//   · 2.5초를 더 기다려도 복구되지 않는다(지연이 아니라 정지).
+//   · 배제됨: 카드 라운드 클립 마스크(라운드 제거해도 동일), 레일 레이어 승격/강등 보정
+//     (will-change 토글 무효), window.resize 경로(표준 Tauri set_size — 사용자 드래그와 동일).
+// 다음 레버: 창 리사이즈 시 네이티브 층의 redisplay/백킹 재할당(src-tauri). 검증은 이 스윕.
+// 이 실패는 지우지 않는다 — 지우면 아무도 다시 찾지 않는다.
 //
 // 멱등: 픽스처 루트 ~/.soksak-e2e/rail-border 전용 창. 끝나면 회수.
 // 실행: SOKSAK_SOCKET=~/.soksak-dev/com.soksak.dev.sock node scripts/e2e/rail-border.mjs
@@ -251,6 +268,14 @@ async function main() {
     };
     // 이 창에서 카드가 테두리를 소유해야 하는가는 내가 정하지 않는다 — 보더 소유권 계약이
     // 정한다(borderContract.ts, 테마 paneStyle 축). 계약에 묻고 그 답을 기준으로 판정한다.
+    // 보더 소유권 계약을 살아있는 창에 시행한다 — 픽셀 판정 이전에 "누가 어느 변을 소유하는가"가
+    // 지켜지는지부터 본다. 계약 위반은 픽셀이 우연히 그럴듯해도 결함이다.
+    {
+      const v = data(await rpc("ui.validate", {}, win));
+      const bad = v.violations ?? [];
+      for (const b of bad) console.log(`    계약 위반: ${JSON.stringify(b)}`);
+      ok(bad.length === 0, `보더 계약 전수 통과(규칙 ${v.rulesActive} · 요소 ${v.elementsChecked})`);
+    }
     const expect = data(await rpc("ui.expect", { selector: ".sidebar-left .projection" }, win));
     const activeRule = (expect.rules ?? []).find((x) => x.active);
     const wantsBorder = activeRule?.edges?.bottom === "bd";
@@ -295,10 +320,27 @@ async function main() {
       const s = await snapshotScale(win, p);
       const v = edgeSignal(p, s, r, "bottom");
       if (v.signal < worst.signal) worst = { signal: v.signal, h, reason: v.reason };
-      const good = v.signal >= MIN_SIGNAL;
+      let v2 = null;
+      if (v.signal < MIN_SIGNAL) {
+        // 리사이즈 후 재도색 계약: 첫 판정에서 안 보이면 한 번 더 기다렸다 다시 본다.
+        // 늦게라도 그려지면 "지연"이고, 끝내 안 그려지면 "정지"다 — 둘은 다른 결함이므로
+        // 판정을 하나로 뭉개지 않는다.
+        await sleep(2500);
+        const again = await shot();
+        const r2 = await card();
+        if (r2) v2 = edgeSignal(again.png, await snapshotScale(win, again.png), r2, "bottom");
+      }
+      const good = v.signal >= MIN_SIGNAL || (v2?.signal ?? 0) >= MIN_SIGNAL;
+      if (v2) console.log(`    2.5초 후 재판정: 신호 ${v2.signal.toFixed(0)} (${v2.reason})`);
       ok(good, `h=${h} 하단 경계 보임(신호 ${v.signal.toFixed(0)})`, `${v.reason} card=${JSON.stringify(r)} png=${p.w}x${p.h} scale=${s.toFixed(2)}`);
       // 실패는 증거를 남긴다 — 숫자만 남는 실패는 다음 사람이 다시 재현해야 한다.
       if (!good) {
+        // 계산된 선이 있는데 픽셀이 없는가, 계산부터 없는가 — 둘은 전혀 다른 결함이다.
+        const nodes = (data(await rpc("ui.snapshot.dom", { filter: "projection/left/card/", props: ["borderBottomWidth", "borderBottomColor", "overflow"] }, win)).nodes ?? [])
+          .filter((n) => (n.rect?.h ?? 0) > 40);
+        for (const n of nodes) console.log(`    계산값: ${n.address} ${JSON.stringify(n.style ?? {})} rect=${JSON.stringify(n.rect)}`);
+        const rail = (data(await rpc("ui.snapshot.dom", { filter: "rail/left", props: ["overflow"] }, win)).nodes ?? [])[0];
+        console.log(`    레일: ${JSON.stringify(rail?.rect)} ${JSON.stringify(rail?.style ?? {})}`);
         // 하니스가 실제로 본 줄 값 — 증거 이미지와 판정이 다른 이야기를 하면 여기가 갈림길이다.
         const prof = rowProfile(p, s, r.x + r.w * 0.25, r.x + r.w * 0.75, r.y + r.h - 10, r.y + r.h + 6);
         console.log(`    줄 값: ${prof.map((q) => `${q.cssY.toFixed(0)}:${q.mean.toFixed(0)}`).join(" ")}`);

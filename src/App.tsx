@@ -450,6 +450,10 @@ const ProjectPlane = memo(function ProjectPlane({
                   // 잴 방법이 없다. 상주·도착은 rail/left, 출발은 rail/left/leaving.
                   data-node={layer.role === "source" ? "rail/left/leaving" : "rail/left"}
                   data-rail-role={layer.role}
+                  // 세로 경계의 소유자는 station 에 달렸다(가장자리는 바깥쪽 변 생략 — §B2).
+                  // 판정 축이 인라인 스타일 안에만 있으면 계약이 그 법을 말할 수 없다 —
+                  // 축을 밖에서 읽을 수 있게 발행한다(borderContract rail-pane-* 가 소비).
+                  data-station={layer.station}
                   aria-hidden={!layer.interactive || undefined}
                   onMouseDown={
                     layer.interactive

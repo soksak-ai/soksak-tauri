@@ -646,8 +646,6 @@ body,
   /* 레일 시각 언어 — 분할 pane 과 즉시 구분되게: 카드 틴트 배경 + 양측 elevation.
      FLOW 로 그리드 중간에 설 때도 "패널 사이에 떠 있는 가구"로 읽힌다. 팔레트는
      테마 변수 조합만(S6 — 리컬러 시 자동 추종). */
-  border-left: 1px solid var(--bd);
-  border-right: 1px solid var(--bd); /* §B2 */
   background: color-mix(in srgb, var(--card) 55%, var(--bg));
   box-shadow:
     10px 0 24px -14px rgba(0, 0, 0, 0.35),
@@ -655,6 +653,26 @@ body,
   pointer-events: auto;
   /* 출발·도착 스테이션에 놓인 레일 표상은 pane이 닫고 여는 복도로 가린다.
      레일 자체에는 보간·페이드·z축 승격을 적용하지 않는다. */
+}
+/* 레일 세로 경계의 소유 — 어느 변을 소유하는지는 railLook 과 station 이 정한다(§B2).
+   여태 .sidebar 가 양변을 무조건 선언하고 JS 가 폭만 0 으로 덮었다: 선언과 법이 두 쪽으로
+   쪼개져 계약이 어느 쪽도 검증하지 못했다(실측 — 검증기가 상시 위반을 냈고 그 위반은 진짜였다).
+   소유를 여기서 상태별로 선언한다(borderContract rail-ground-*/rail-pane-* 와 1:1).
+   폭의 최종값은 railEdges.railEdgeWidths 가 인라인으로 싣는다 — 스테이션 드래그 중 매 프레임
+   바뀌는 값이라 선언만으로는 못 따라간다. 둘은 같은 법을 말하며 railEdgeContract.test 가 대조한다. */
+.sidebar.rail-ground {
+  border-left: 1px solid var(--bd);
+  border-right: 1px solid var(--bd);
+}
+.sidebar.rail-pane[data-station="0"] {
+  border-right: 1px solid var(--bd);
+}
+.sidebar.rail-pane[data-station="100"] {
+  border-left: 1px solid var(--bd);
+}
+.sidebar.rail-pane:not([data-station="0"]):not([data-station="100"]) {
+  border-left: 1px solid var(--bd);
+  border-right: 1px solid var(--bd);
 }
 /* 레일 시각 모드(§12-⑤) — ground: 분할창이 아니라 바닥에 눕는 평면. 틴트·그림자를 걷고
    경계선만 남긴다. pane 은 위 기본값(카드 틴트+elevation) 그대로. */

@@ -126,12 +126,49 @@ export const BORDER_RULES: readonly BorderRule[] = [
   },
 
   // ── B2 세로 크롬 — 본문 쪽 변 소유, 톤 bd ─────────────────────────────────
+  // 좌측 레일의 세로 경계 — 소유자는 하나다(레일 자신이거나 이웃 카드이거나).
+  // 옛 규칙(`.sidebar` right 무조건 bd)은 이 법을 몰라 상시 위반을 냈고, 상시 위반은
+  // 아무도 읽지 않는 경보가 된다. 그런데 그 위반은 진짜였다: 위임 대상인 레일 카드가
+  // 선을 소유하지 않아(rail-card-perimeter 신설 전) 경계가 아무에게도 없었다.
+  // 이제 위임과 소유가 짝을 이루므로, 상태 공간을 빈틈 없이 덮어 선언한다(§B8).
+  // 축: railLook(클래스 rail-ground/rail-pane) × paneStyle × station(data-station).
   {
-    id: "sidebar-right-edge",
-    selector: ".sidebar",
+    id: "rail-ground-delegates",
+    selector: ".sidebar.rail-ground",
     kind: "edges",
-    edges: { right: "bd" },
-    note: "§B2 — 좌측 사이드바는 right 소유",
+    edges: { left: "none", right: "none" },
+    when: { paneStyle: ["card", "floating"] },
+    note: "§B2 — ground 레일은 세로 경계를 이웃 카드 윤곽에 위임(이중선 금지)",
+  },
+  {
+    id: "rail-ground-owns-flat",
+    selector: ".sidebar.rail-ground",
+    kind: "edges",
+    edges: { left: "bd", right: "bd" },
+    when: { paneStyle: ["flat"] },
+    note: "§B2 — flat 은 윤곽을 그리는 이웃이 없어 위임이 성립하지 않는다, 레일이 소유",
+  },
+  {
+    id: "rail-pane-station-start",
+    selector: '.sidebar.rail-pane[data-station="0"]',
+    kind: "edges",
+    edges: { left: "none", right: "bd" },
+    note: "§B2 — 가장자리 스테이션은 바깥쪽 변을 생략하고 본문 쪽만 소유",
+  },
+  {
+    id: "rail-pane-station-end",
+    selector: '.sidebar.rail-pane[data-station="100"]',
+    kind: "edges",
+    edges: { left: "bd", right: "none" },
+    note: "§B2 — 반대쪽 가장자리 스테이션의 대칭",
+  },
+  {
+    id: "rail-pane-station-inner",
+    selector:
+      '.sidebar.rail-pane:not([data-station="0"]):not([data-station="100"])',
+    kind: "edges",
+    edges: { left: "bd", right: "bd" },
+    note: "§B2 — 내부 스테이션은 분할창처럼 서므로 양측 소유",
   },
   {
     id: "sidebar-right-left-edge",
