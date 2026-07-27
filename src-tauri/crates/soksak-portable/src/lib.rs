@@ -14,5 +14,6 @@
 //! `src/portable_gate.rs`). 새 코드를 여기 넣기 전에 그 게이트를 먼저 읽어라.
 
 pub mod integrity;
+pub mod pathx;
 pub mod session;
 pub mod udp;

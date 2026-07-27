@@ -87,14 +87,6 @@ fn window_set_background(window: tauri::Window, color: String) -> Result<(), Str
         .map_err(|e| e.to_string())
 }
 
-// IME 진단: dev(debug) 빌드에서만 로깅. 릴리즈 빌드에서는 no-op.
-#[tauri::command]
-fn ime_debug(message: String) {
-    #[cfg(debug_assertions)]
-    eprintln!("[IME] {message}");
-    #[cfg(not(debug_assertions))]
-    let _ = message;
-}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -697,7 +689,6 @@ pub fn run() {
             ipc::ipc_hello_info,
             #[cfg(target_os = "macos")]
             titlebar::titlebar_backing,
-            ime_debug,
             window_activate,
             sidecar::sidecar_open,
             sidecar::sidecar_send,

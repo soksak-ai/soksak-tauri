@@ -42,14 +42,10 @@ fn home_dir() -> PathBuf {
 // 선행 "~" 를 홈으로 확장(범용 — 플러그인이 ~/.claude 등 홈 하위를 절대경로 없이 가리키게).
 // "~" 단독 / "~/..." 만 처리(다른 사용자 "~user" 는 미지원 — 셸이 아니다).
 fn expand_path(path: &str) -> PathBuf {
-    if path == "~" {
-        home_dir()
-    } else if let Some(rest) = path.strip_prefix("~/") {
-        home_dir().join(rest)
-    } else {
-        PathBuf::from(path)
-    }
+    // 확장 규칙은 soksak-portable 이 소유한다 — 홈만 여기서 해소해 넘긴다.
+    soksak_portable::pathx::expand_tilde(path, &home_dir())
 }
+
 
 // 텍스트 로드 상한. editor 의 LARGE_FILE_HEAP_OPERATION_THRESHOLD(256MiB, ~512MB 메모리)와
 // 같은 숫자. editor 처럼 크기로 "열기"를 막지 않고 전체를 보되, 이 안전 상한을 넘으면
