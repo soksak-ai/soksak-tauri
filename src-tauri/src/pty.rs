@@ -1094,7 +1094,7 @@ mod daemon {
             .ok_or("daemon reply missing session id")?;
 
         // 부착: from_seq 있으면 raw 링을 그 seq 부터 재생(warm 핸드오프), 없으면 재생 없이 라이브.
-        let (mut stream, gap) = attach_stream(&home, session, from_seq)?;
+        let (mut stream, gap, attach_seq) = attach_stream(&home, session, from_seq)?;
         if let Some((from, to)) = gap {
             // warm 핸드오프에서 evict 로 seq 구간 [from,to) 가 사라졌다 — 무음 유실 금지(loud 고지).
             crate::activity::publish(
@@ -1127,18 +1127,45 @@ mod daemon {
         // 데몬 사망. control ping 한 번으로 갈라 후자만 고지+재확보한다.
         {
             let app = app.clone();
+            let home_for_stream = home.clone();
+            let mut cursor = attach_seq;
             std::thread::spawn(move || {
                 // 데몬 레그도 같은 크로싱으로 끝난다 — 전달 단위 소유자는 하나다.
                 let (deliver, delivery) = spawn_delivery(on_output);
                 let mut buf = vec![0u8; 8192];
-                loop {
-                    match stream.read(&mut buf) {
-                        Ok(0) | Err(_) => break,
-                        Ok(n) => {
-                            if deliver.send(buf[..n].to_vec()).is_err() {
-                                break; // 프론트 사라짐(창 리로드 등) — 데몬은 계속 산다
+                'attached: loop {
+                    loop {
+                        match stream.read(&mut buf) {
+                            Ok(0) | Err(_) => break,
+                            Ok(n) => {
+                                if let Some(c) = cursor.as_mut() {
+                                    *c += n as u64;
+                                }
+                                if deliver.send(buf[..n].to_vec()).is_err() {
+                                    break 'attached; // 프론트 사라짐(창 리로드 등) — 데몬은 계속 산다
+                                }
                             }
                         }
+                    }
+                    // 부착 스트림의 끝은 생명주기 사건이다 — 원장에 올린다. 관측면이 없으면
+                    // "왜 화면이 멈췄는가"를 밖에서 알 길이 없다(실측: 판올림 뒤 화면이 얼었는데
+                    // 어떤 채널에도 흔적이 없어 원인을 소스 추론으로만 좁혀야 했다).
+                    crate::activity::publish(
+                        &app,
+                        "pty.stream.ended",
+                        "core",
+                        json!({ "session": session, "cursor": cursor }),
+                    );
+                    // 스트림의 끝은 "이 스트림이 끝났다"일 뿐 셸의 끝이 아니다. 무중단 판올림은
+                    // 정확히 이 모양이다: 물러나는 데몬이 모든 부착을 EOF 로 놓는다. 셸의 생사는
+                    // 데몬에게 묻고, 살아 있으면 마지막 좌표에서 이어 붙는다.
+                    match reattach_live_session(&app, &home_for_stream, session, cursor) {
+                        Some((s, c)) => {
+                            stream = s;
+                            cursor = c;
+                            continue 'attached;
+                        }
+                        None => break 'attached,
                     }
                 }
                 // 스트림 종료를 고지하기 전에 마지막 배치를 내보낸다 — 순서가 뒤집히면 꼬리가 잘린다.
@@ -1151,6 +1178,86 @@ mod daemon {
         // 데몬 경로 성공 — 이후 폴백이 다시 일어나면 새 사건으로 고지한다.
         link.fallback_notified.store(false, Ordering::SeqCst);
         Ok(session)
+    }
+
+    /// 스트림이 끝났는데 세션은 살아 있는가 — 살아 있으면 마지막 좌표에서 다시 붙는다.
+    ///
+    /// ping 만으로는 "셸이 끝났다"와 "데몬이 물러났다"를 가를 수 없다(둘 다 데몬은 응답한다).
+    /// 가르는 것은 세션의 존재다 — 권위에게 묻는다. 옛 판은 ping 성공을 곧 셸 종료로 읽어
+    /// 아무것도 하지 않았고, 그래서 판올림 뒤 셸은 살아 입력도 받는데 화면만 영영 멈췄다
+    /// (실측 2026-07-27, scripts/e2e/pty-handoff.mjs).
+    ///
+    /// 재시도는 폴링이 아니라 **경계 하나를 넘는 대기**다: 물러난 데몬이 소켓을 놓고 새 데몬이
+    /// 그 자리를 잡는 그 전이 구간만 기다린다. 상한 20회·150ms(총 3초)이며, 그 안에 세션이
+    /// 확인되지 않으면 포기하고 기존 경로(on_stream_end)로 넘긴다.
+    fn reattach_live_session(
+        app: &tauri::AppHandle,
+        home: &Path,
+        session: u64,
+        cursor: Option<u64>,
+    ) -> Option<(UnixStream, Option<u64>)> {
+        let manager = tauri::Manager::state::<crate::pty::PtyManager>(app);
+        for attempt in 0..20 {
+            match manager.link.request(&proto::Request::ListSessions, true) {
+                Ok(v) => {
+                    // SessionInfo 의 식별자 필드는 `session` 이다(`id` 가 아니다) — 이름을
+                    // 잘못 짚으면 언제나 "없음"으로 읽혀 재부착이 조용히 사라진다(실측).
+                    let alive = v["sessions"]
+                        .as_array()
+                        .map(|a| a.iter().any(|s| s["session"].as_u64() == Some(session)))
+                        .unwrap_or(false);
+                    if !alive {
+                        // 셸이 정말 끝났다 — 기존 경로가 처리한다. 조용히 지나가지 않는다:
+                        // "재부착 안 함"도 판정이고, 판정은 원장에 남아야 뒤에서 읽을 수 있다.
+                        crate::activity::publish(
+                            app,
+                            "pty.session.gone",
+                            "core",
+                            json!({
+                                "session": session,
+                                "note": "the attach stream ended and the daemon no longer lists this session — the shell exited",
+                            }),
+                        );
+                        return None;
+                    }
+                    match attach_stream(home, session, cursor) {
+                        Ok((s, gap, seq)) => {
+                            crate::activity::publish(
+                                app,
+                                "pty.stream.reattached",
+                                "core",
+                                json!({
+                                    "session": session,
+                                    "fromSeq": cursor,
+                                    "cursorKnown": cursor.is_some(),
+                                    "gap": gap.map(|(f, t)| json!({ "fromSeq": f, "toSeq": t })),
+                                    "attempts": attempt + 1,
+                                    "note": "the attach stream ended while the session lived (daemon handoff) — reattached at the last coordinate",
+                                }),
+                            );
+                            return Some((s, seq));
+                        }
+                        Err(e) => {
+                            // 새 데몬이 아직 스트림 소켓을 잡기 전일 수 있다 — 같은 전이 구간.
+                            if attempt == 19 {
+                                crate::activity::publish(
+                                    app,
+                                    "pty.stream.reattach.failed",
+                                    "core",
+                                    json!({ "session": session, "error": e }),
+                                );
+                                return None;
+                            }
+                        }
+                    }
+                }
+                Err(_) => {
+                    // 링크 자체가 전이 중 — 아래에서 잠깐 기다렸다 다시 묻는다.
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(150));
+        }
+        None
     }
 
     // stream 종료의 원인 판별: control ping 이 살아 있으면 셸의 정상 종료다(프론트는
@@ -1384,11 +1491,14 @@ mod daemon {
     // 뒤따르는 재생/라이브 바이트를 잃지 않는다. from_seq 있으면 raw 링을 그 seq 부터
     // 재생하라고 데몬에 요청한다(warm 핸드오프), 없으면 재생 없이 라이브(미러 방출됨). 반환 =
     // (소켓, evict gap [from,to) — from_seq 재생에서 링이 잘렸을 때만).
+    /// 부착 스트림 + evict gap + **부착 좌표**. 좌표는 "이 응답을 다 소비하면 당신이 서 있는
+    /// 자리"다 — 스트림이 끊겼을 때 재부착에 쓸 절대 커서의 출발점이다. 구 데몬은 이 필드를
+    /// 싣지 않으므로 None 이 올 수 있고, 그때는 재부착이 재생 없이 붙는다(유실은 고지한다).
     fn attach_stream(
         home: &Path,
         session: u64,
         from_seq: Option<u64>,
-    ) -> Result<(UnixStream, Option<(u64, u64)>), String> {
+    ) -> Result<(UnixStream, Option<(u64, u64)>, Option<u64>), String> {
         let token = std::fs::read_to_string(proto::token_path(home))
             .map_err(|e| format!("token: {e}"))?
             .trim()
@@ -1436,7 +1546,8 @@ mod daemon {
             (Some(f), Some(t)) => Some((f, t)),
             _ => None,
         };
-        Ok((conn, gap))
+        let seq = v["data"]["seq"].as_u64();
+        Ok((conn, gap, seq))
     }
 
     // ── 서비스 사이드카 릴레이(생존 미러 사이드카 — SIDECARS.md) ──────────────────

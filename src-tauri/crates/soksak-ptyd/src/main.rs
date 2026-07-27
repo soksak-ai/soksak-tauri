@@ -801,13 +801,79 @@ mod unix {
     // seq(from_seq)부터 이어 읽어 흡수하므로 reader pause 가 불필요하다. ack 전 실패면 handoff 를
     // 해제하고 새 데몬을 종료한 뒤 계속 서빙한다(rollback, master fd 는 여전히 이 데몬 소유).
     // supervisor 는 이 데몬의 소켓 EOF(exit)로 handoff 완료를 알고 재연결한다.
+    /// 인계 fd 배치 계획 — (대상, 원본) 쌍.
+    ///
+    /// dup2 는 대상 fd 를 먼저 닫는다. 대상이 아직 복사되지 않은 원본과 겹치면 그 원본이
+    /// 파괴되고, master 를 잃은 셸은 SIGHUP 으로 죽는다. 옛 판은 대상을 4..N 으로 못박았는데
+    /// 데몬이 들고 있던 master 원본도 4,5,6,7 이었다 — 세션 순회가 HashMap 이라 순서가
+    /// 비결정적이어서 이 충돌은 간헐적으로만 드러났다(실측 2026-07-27: 같은 경로를 세 번
+    /// 밟아 세 번째에 셸 하나가 사라졌고, 데몬은 세션 수를 그대로 보고했다).
+    ///
+    /// 불변식: 모든 대상 fd > 모든 원본 fd 이고 > IPC fd. 그러면 어떤 dup2 도 아직 필요한
+    /// 값을 파괴할 수 없다. IPC 를 3 으로 옮기는 것은 master 복사가 끝난 뒤다.
+    fn plan_handoff_fds(sources: &[RawFd], ipc: RawFd) -> Vec<(RawFd, RawFd)> {
+        let mut base = 3.max(ipc);
+        for s in sources {
+            base = base.max(*s);
+        }
+        base += 1;
+        sources
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (base + i as RawFd, *s))
+            .collect()
+    }
+
+    #[cfg(test)]
+    mod handoff_fd_tests {
+        use super::plan_handoff_fds;
+
+        #[test]
+        fn no_target_destroys_a_source_or_the_ipc() {
+            // 옛 판이 깨진 정확한 배치 — 원본이 대상 범위(4..)와 겹친다.
+            let sources = [5, 4, 7, 6];
+            let ipc = 8;
+            let plan = plan_handoff_fds(&sources, ipc);
+            assert_eq!(plan.len(), sources.len());
+            for (target, _) in &plan {
+                assert!(!sources.contains(target), "대상 {target} 이 원본을 덮어쓴다");
+                assert_ne!(*target, ipc, "대상이 IPC fd 를 덮어쓴다");
+                assert!(*target > 3, "대상이 IPC 자리(3)를 침범한다");
+            }
+            let mut targets: Vec<_> = plan.iter().map(|(t, _)| *t).collect();
+            targets.sort_unstable();
+            targets.dedup();
+            assert_eq!(targets.len(), sources.len(), "대상이 서로 겹친다");
+        }
+
+        #[test]
+        fn every_source_is_carried_in_order() {
+            let sources = [11, 4, 9];
+            let plan = plan_handoff_fds(&sources, 5);
+            assert_eq!(plan.iter().map(|(_, s)| *s).collect::<Vec<_>>(), sources);
+        }
+
+        #[test]
+        fn no_sessions_plans_nothing() {
+            assert!(plan_handoff_fds(&[], 3).is_empty());
+        }
+
+        #[test]
+        fn ipc_above_every_source_still_yields_higher_targets() {
+            let plan = plan_handoff_fds(&[4, 5], 99);
+            for (target, _) in &plan {
+                assert!(*target > 99, "IPC 보다 낮은 대상은 IPC 를 덮어쓸 수 있다");
+            }
+        }
+    }
+
     fn do_handoff(reg: &Arc<Registry>, new_bin: &str) -> Value {
         use std::os::unix::process::CommandExt;
         reg.handoff.store(true, Ordering::SeqCst);
-        // 세션 메타 스냅샷 + 새 데몬 상속 fd 맵(fd 4..N).
-        let mut snap = Vec::new();
-        let mut fd_map: Vec<(RawFd, RawFd)> = Vec::new(); // (target, source)
-        let mut fd_index = 4u32;
+        // 세션 메타 + master 원본 fd 수집. 대상 fd 는 아직 정하지 않는다 — IPC fd 까지
+        // 알아야 충돌 없는 대상 범위를 고를 수 있다(plan_handoff_fds 의 불변식).
+        let mut snap: Vec<proto::HandoffSession> = Vec::new();
+        let mut sources: Vec<RawFd> = Vec::new();
         {
             let sessions = reg.sessions.lock().unwrap();
             for s in sessions.values() {
@@ -825,17 +891,26 @@ mod unix {
                     window_label: s.window_label.clone(),
                     generation: s.generation,
                     shell_pid: s.shell_pid,
-                    fd_index,
+                    fd_index: 0, // 계획 후 채운다
                     ring_seq,
                 });
-                fd_map.push((fd_index as RawFd, raw));
-                fd_index += 1;
+                sources.push(raw);
             }
         }
         let fail = |reg: &Arc<Registry>, msg: &str| -> Value {
             reg.handoff.store(false, Ordering::SeqCst);
             proto::err_reply("HANDOFF_FAILED", msg)
         };
+        // IPC socketpair 를 먼저 만든다 — 대상 fd 범위가 이 fd 보다도 위여야 한다.
+        let (parent_ipc, child_ipc) = match UnixStream::pair() {
+            Ok(p) => p,
+            Err(e) => return fail(reg, &format!("socketpair: {e}")),
+        };
+        let child_ipc_raw = child_ipc.as_raw_fd();
+        let fd_map = plan_handoff_fds(&sources, child_ipc_raw); // (target, source)
+        for (i, (target, _)) in fd_map.iter().enumerate() {
+            snap[i].fd_index = *target as u32;
+        }
         // 스냅샷 원자 기록(tmp+rename).
         let snap_path = proto::run_dir(&reg.home).join("ptyd-handoff.json");
         let tmp = snap_path.with_extension("tmp");
@@ -849,25 +924,22 @@ mod unix {
         {
             return fail(reg, "snapshot write failed");
         }
-        // IPC socketpair — 새 데몬 adopt-ack 채널(fd 3).
-        let (parent_ipc, child_ipc) = match UnixStream::pair() {
-            Ok(p) => p,
-            Err(e) => return fail(reg, &format!("socketpair: {e}")),
-        };
-        // 새 데몬 스폰 — pre_exec 로 IPC 를 fd 3, 각 master fd 를 4..N 에 dup2(exec 를 넘는 상속).
-        let child_ipc_raw = child_ipc.as_raw_fd();
+        // 새 데몬 스폰 — pre_exec 로 각 master fd 를 계획된 대상에, IPC 를 fd 3 에 dup2.
         let fd_map_c = fd_map.clone();
         let mut cmd = std::process::Command::new(new_bin);
         cmd.arg("--handoff").arg(&snap_path);
         unsafe {
             cmd.pre_exec(move || {
-                if libc::dup2(child_ipc_raw, 3) < 0 {
-                    return Err(std::io::Error::last_os_error());
-                }
+                // master 를 먼저 옮긴다. 모든 대상이 모든 원본과 IPC fd 보다 위라
+                // (plan_handoff_fds 불변식) 어떤 복사도 아직 필요한 값을 파괴하지 않는다.
                 for (target, source) in &fd_map_c {
                     if libc::dup2(*source, *target) < 0 {
                         return Err(std::io::Error::last_os_error());
                     }
+                }
+                // IPC 는 마지막에 3 으로 — 이 시점엔 원본을 더 읽을 일이 없다.
+                if libc::dup2(child_ipc_raw, 3) < 0 {
+                    return Err(std::io::Error::last_os_error());
                 }
                 Ok(())
             });
@@ -1128,7 +1200,14 @@ mod unix {
             //     evict 로 그 seq 가 사라졌으면 gap 을 응답에 실어 유실을 고지한다.
             match hello.from_seq {
                 None => {
-                    let ok = proto::ok_reply(json!({ "session": sid, "replayBytes": 0 }));
+                    // seq = "이 응답을 소비하고 나면 당신이 서 있는 좌표". 라이브 부착에도
+                    // 실어야 클라이언트가 절대 커서를 유지할 수 있다 — 스트림이 끊겼을 때
+                    // 그 커서가 재부착의 좌표다(무중단 판올림은 그 위에서만 성립한다).
+                    let ok = proto::ok_reply(json!({
+                        "session": sid,
+                        "replayBytes": 0,
+                        "seq": st.ring.seq(),
+                    }));
                     if writeln!(writer, "{ok}").is_err() {
                         return;
                     }
@@ -1140,6 +1219,7 @@ mod unix {
                         "session": sid,
                         "servedFromSeq": served,
                         "replayBytes": tail.len(),
+                        "seq": st.ring.seq(),
                     });
                     if let Some((f, t)) = gap {
                         d["gap"] = json!({ "fromSeq": f, "toSeq": t });
