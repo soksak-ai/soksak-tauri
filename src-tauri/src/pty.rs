@@ -28,6 +28,7 @@ use tauri::State;
 
 use soksak_spec_pty::{HIGH_WATERMARK, LOW_WATERMARK};
 
+use crate::identity::Identity;
 use crate::pty_delivery::spawn_delivery;
 
 
@@ -62,8 +63,15 @@ pub struct PtySession {
     window_label: Option<String>,
 }
 
-#[derive(Default)]
 pub struct PtyManager {
+    // 이 매니저가 겨누는 정체성. 데몬 control/stream 소켓·토큰·스테이징 바이너리·봉인
+    // 체크포인트가 전부 이 홈에서 파생되므로, 정체성은 매니저의 **존재 조건**이지 호출
+    // 인자가 아니다. 인자로 받으면 두 홈의 세션이 한 세션 맵에 섞일 수 있고, 그 조합은
+    // 어느 identity 에도 없다(identity.rs 가 홈과 identifier 를 함께 나르는 것과 같은 이유).
+    // 이 홈에서 파생되는 경로는 전부 데몬 레그의 것이고 그 레그는 unix 전용이라, 다른
+    // 플랫폼에는 아직 읽는 자리가 없다.
+    #[cfg_attr(not(unix), allow(dead_code))]
+    identity: Identity,
     sessions: Mutex<HashMap<u32, PtySession>>,
     next_id: Mutex<u32>,
     #[cfg(unix)]
@@ -104,6 +112,23 @@ pub struct SealedScreen {
 }
 
 impl PtyManager {
+    /// 정체성 하나로 매니저를 세운다 — 링크도 같은 정체성으로 태어난다(한 생성자에서만
+    /// 정해지므로 두 값이 어긋날 자리가 없다).
+    pub(crate) fn new(identity: Identity) -> Self {
+        PtyManager {
+            #[cfg(unix)]
+            link: daemon::Link::new(identity.clone()),
+            identity,
+            sessions: Mutex::new(HashMap::new()),
+            next_id: Mutex::new(0),
+        }
+    }
+
+    #[cfg_attr(not(unix), allow(dead_code))]
+    pub(crate) fn identity(&self) -> &Identity {
+        &self.identity
+    }
+
     // 앱 종료 시 호출(B1: 종료=보존): Daemon 세션은 detach 만 한다 — 셸과 자식은
     // soksak-ptyd 에서 계속 살고, 다음 부팅의 같은 pane 스폰이 재부착한다. Local
     // 세션(폴백)은 앱 프로세스가 소유하므로 kill 해 좀비를 막는다. Procfile 데몬·
@@ -570,17 +595,17 @@ pub fn pty_pane_alive(pane_id: String, manager: State<'_, PtyManager>) -> bool {
 // 코어가 대신 연결). request 에 실린 window 는 소비자가 스탬프한 라우팅 좌표다(spawn 동형).
 #[tauri::command]
 pub fn pty_sidecar_request(
-    app: tauri::AppHandle,
     request: serde_json::Value,
+    manager: State<'_, PtyManager>,
 ) -> Result<serde_json::Value, String> {
-    let _ = &app; // identity 홈은 SOKSAK_HOME 파생 — app 핸들은 시그니처 일관성용.
     #[cfg(unix)]
     {
-        daemon::sidecar_service_relay(&request)
+        // 사이드카 소켓은 데몬과 같은 run 디렉토리에 있다 — 홈은 매니저의 정체성에서 온다.
+        daemon::sidecar_service_relay(manager.identity(), &request)
     }
     #[cfg(not(unix))]
     {
-        let _ = &request;
+        let _ = (&request, &manager);
         Err("service sidecar relay is unix-only".into())
     }
 }
@@ -597,15 +622,17 @@ pub fn pty_read_sealed_screen(
     // 신 키의 블롭이 없을 때만 이 키로 폴백한다 — 손실 0 계약(IDENTITY·P0-5)의 실행부.
     // 제거 조건: 그 블롭의 재봉인(adopt) 완료.
     legacy_pane_id: Option<String>,
+    manager: State<'_, PtyManager>,
 ) -> Result<Option<SealedScreen>, String> {
     #[cfg(unix)]
     {
         let win = window_label.as_deref().unwrap_or("");
-        match daemon::read_sealed_screen(&app, win, &pane_id)? {
+        let identity = manager.identity();
+        match daemon::read_sealed_screen(&app, identity, win, &pane_id)? {
             Some(s) => Ok(Some(s)),
             None => match legacy_pane_id {
                 Some(legacy) if !legacy.is_empty() => {
-                    daemon::read_sealed_screen_adopting(&app, win, &legacy, &pane_id)
+                    daemon::read_sealed_screen_adopting(&app, identity, win, &legacy, &pane_id)
                 }
                 _ => Ok(None),
             },
@@ -613,7 +640,7 @@ pub fn pty_read_sealed_screen(
     }
     #[cfg(not(unix))]
     {
-        let _ = (&app, &window_label, &pane_id, &legacy_pane_id);
+        let _ = (&app, &window_label, &pane_id, &legacy_pane_id, &manager);
         Ok(None)
     }
 }
@@ -736,13 +763,11 @@ pub fn close_terminal(id: u32, manager: State<'_, PtyManager>) -> Result<(), Str
 // 죽는다 — 카탈로그의 danger 게이트 뒤에만 노출된다.
 
 #[tauri::command]
-pub fn pty_daemon_status(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+pub fn pty_daemon_status(manager: State<'_, PtyManager>) -> Result<serde_json::Value, String> {
     #[cfg(unix)]
     {
         use serde_json::json;
-        let manager = tauri::Manager::state::<PtyManager>(&app);
-        let home = crate::home::soksak_home();
-        let staged = soksak_spec_pty::staged_bin_path(&home);
+        let staged = soksak_spec_pty::staged_bin_path(manager.identity().home());
         let (running, pid, sessions, contract) =
             match manager.link.request(&soksak_spec_pty::Request::Ping, false) {
                 Ok(v) => (
@@ -768,7 +793,7 @@ pub fn pty_daemon_status(app: tauri::AppHandle) -> Result<serde_json::Value, Str
     }
     #[cfg(not(unix))]
     {
-        let _ = app;
+        let _ = manager;
         Ok(serde_json::json!({
             "running": false,
             "supported": false,
@@ -778,11 +803,10 @@ pub fn pty_daemon_status(app: tauri::AppHandle) -> Result<serde_json::Value, Str
 }
 
 #[tauri::command]
-pub fn pty_daemon_restart(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+pub fn pty_daemon_restart(manager: State<'_, PtyManager>) -> Result<serde_json::Value, String> {
     #[cfg(unix)]
     {
         use serde_json::json;
-        let manager = tauri::Manager::state::<PtyManager>(&app);
         // 살아 있으면 종료(전 세션 kill — 파괴적임을 카탈로그가 게이트한다).
         let killed = manager
             .link
@@ -800,7 +824,7 @@ pub fn pty_daemon_restart(app: tauri::AppHandle) -> Result<serde_json::Value, St
     }
     #[cfg(not(unix))]
     {
-        let _ = app;
+        let _ = manager;
         Err("the PTY daemon is unix-only in this generation".to_string())
     }
 }
@@ -810,12 +834,13 @@ pub fn pty_daemon_restart(app: tauri::AppHandle) -> Result<serde_json::Value, St
 // 상속으로 스폰하게 한다. 셸은 SIGHUP 없이 새 데몬으로 넘어간다(ptyd do_handoff, HS2). updater
 // 오케스트레이터가 앱 relaunch 전에 호출하거나, ptyd 판올림만 반영할 때 단독 호출한다.
 #[tauri::command]
-pub fn pty_daemon_upgrade(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+pub fn pty_daemon_upgrade(
+    app: tauri::AppHandle,
+    manager: State<'_, PtyManager>,
+) -> Result<serde_json::Value, String> {
     #[cfg(unix)]
     {
         use serde_json::json;
-        let manager = tauri::Manager::state::<PtyManager>(&app);
-        let home = crate::home::soksak_home();
         // 인계 계획은 **나가는** 데몬이 세운다. 그 판이 안전 인계 계약을 구현하지 않으면
         // 셸이 죽거나(대상 fd 충돌) 출력이 조용히 멎는다(링 좌표 유실). 못 지키는 상대에게
         // 시켜 놓고 결과를 사람이 감당하게 두지 않는다 — 시도 전에 묻고, 못 하면 거절한다.
@@ -833,7 +858,7 @@ pub fn pty_daemon_upgrade(app: tauri::AppHandle) -> Result<serde_json::Value, St
             return Err(why);
         }
         // 새 판을 홈 bin/ 에 원자 교체 — 새 데몬이 이 경로에서 실행된다(해시 동일이면 no-op).
-        let staged = daemon::stage_binary(&home)?;
+        let staged = daemon::stage_binary(manager.identity().home())?;
         let staged_str = staged.to_string_lossy().to_string();
         // PrepareUpgrade — 데몬이 새 데몬을 fd 상속으로 스폰하고 exit(응답 없이 소켓 EOF).
         // 라이브 세션은 SIGHUP 없이 넘어간다.
@@ -862,7 +887,7 @@ pub fn pty_daemon_upgrade(app: tauri::AppHandle) -> Result<serde_json::Value, St
     }
     #[cfg(not(unix))]
     {
-        let _ = app;
+        let _ = (app, manager);
         Err("the PTY daemon is unix-only in this generation".to_string())
     }
 }
@@ -909,10 +934,10 @@ mod daemon {
 
     use serde_json::{json, Value};
     use soksak_spec_pty as proto;
-    use tauri::ipc::{Channel, InvokeResponseBody};
 
     // 전달 단위 소유자는 하나 — 인프로세스 백엔드와 같은 모듈을 쓴다(사본 금지).
     use crate::pty_delivery::spawn_delivery;
+    use crate::stream_sink::StreamSink;
 
     // control 연결 1본(요청-응답 직렬) — 명령 빈도가 낮아(입력·리사이즈·ack) 충분하다.
     struct Control {
@@ -960,8 +985,10 @@ mod daemon {
         }
     }
 
-    #[derive(Default)]
     pub struct Link {
+        // 링크가 붙는 데몬은 홈 하나에 묶인다(control/stream 소켓·토큰이 거기서 나온다).
+        // 캐시된 연결이 이미 그 홈의 것이므로 요청마다 홈을 받으면 캐시와 인자가 어긋난다.
+        identity: crate::identity::Identity,
         control: Mutex<Option<Control>>,
         // 폴백 고지 1회 게이트(스폰 폭주 시 도배 방지) — 데몬 스폰 성공이 리셋한다.
         fallback_notified: AtomicBool,
@@ -970,6 +997,19 @@ mod daemon {
     }
 
     impl Link {
+        pub(crate) fn new(identity: crate::identity::Identity) -> Self {
+            Link {
+                identity,
+                control: Mutex::new(None),
+                fallback_notified: AtomicBool::new(false),
+                lost_notified: AtomicBool::new(false),
+            }
+        }
+
+        pub(crate) fn identity(&self) -> &crate::identity::Identity {
+            &self.identity
+        }
+
         // 요청 실행. spawn_if_needed=true 면 미연결 시 스테이징+데몬 스폰까지 시도한다
         // (false 면 살아있는 데몬에 연결만 — pane pid 조회 같은 관찰 경로가 데몬을
         // 부풀리지 않게). Io 에러는 링크를 버리고 1회 재확보 후 재시도한다 — 이
@@ -979,13 +1019,13 @@ mod daemon {
             req: &proto::Request,
             spawn_if_needed: bool,
         ) -> Result<Value, String> {
-            let home = crate::home::soksak_home();
+            let home = self.identity.home();
             let mut guard = self.control.lock().unwrap_or_else(|e| e.into_inner());
             if guard.is_none() {
                 *guard = Some(if spawn_if_needed {
-                    ensure_daemon(&home).map_err(|e| e.to_string())?
+                    ensure_daemon(home).map_err(|e| e.to_string())?
                 } else {
-                    connect(&home).map_err(|e| e.to_string())?
+                    connect(home).map_err(|e| e.to_string())?
                 });
             }
             let conn = match guard.as_mut() {
@@ -1000,9 +1040,9 @@ mod daemon {
                     // 링크 사망 — 재확보 1회 후 재시도. 실패는 호출자에게(폴백 판단).
                     *guard = None;
                     let mut fresh = if spawn_if_needed {
-                        ensure_daemon(&home).map_err(|e| e.to_string())?
+                        ensure_daemon(home).map_err(|e| e.to_string())?
                     } else {
-                        connect(&home).map_err(|e| e.to_string())?
+                        connect(home).map_err(|e| e.to_string())?
                     };
                     let out = fresh.request(req).map_err(|e| e.to_string());
                     *guard = Some(fresh);
@@ -1033,9 +1073,11 @@ mod daemon {
     // 승자의 파일을 재독해 채택 — S/P 짝이 항상 파일이 가리키는 쌍으로 정렬된다.
     static CKPT_KEY_GATE: Mutex<()> = Mutex::new(());
 
-    pub fn checkpoint_recipient(app: &tauri::AppHandle) -> (Option<String>, Option<String>) {
-        let home = crate::home::soksak_home();
-        let path = proto::checkpoint_pubkey_path(&home);
+    pub(crate) fn checkpoint_recipient(
+        app: &tauri::AppHandle,
+        identity: &crate::identity::Identity,
+    ) -> (Option<String>, Option<String>) {
+        let path = proto::checkpoint_pubkey_path(identity.home());
         let read = |p: &Path| -> Option<(String, String)> {
             let v: Value = serde_json::from_str(&std::fs::read_to_string(p).ok()?).ok()?;
             Some((
@@ -1084,15 +1126,17 @@ mod daemon {
     //     (legacy 코어-소유 재생은 방출됨 — 소비자가 항상 명시한다).
     //   from_seq({fromSeq}): warm 핸드오프 — raw 링을 그 seq 부터 부착한다(소비자가 uptoSeq
     //     까지 이미 그렸고, 그 뒤 꼬리가 라이브 연속분이다).
-    pub fn spawn_via_daemon(
+    pub(crate) fn spawn_via_daemon<S: StreamSink>(
         app: &tauri::AppHandle,
         link: &Link,
         p: SpawnParams,
-        on_output: Channel<InvokeResponseBody>,
+        on_output: S,
     ) -> Result<u64, String> {
         // pane 없는 세션은 재부착 키가 없다 — 데몬에 실을 이유가 없어 로컬로 보낸다.
         let pane_id = p.pane_id.clone().ok_or("no pane id: local session")?;
-        let home = crate::home::soksak_home();
+        // 정체성은 링크가 쥔 것을 그대로 쓴다 — 스폰이 붙는 데몬과 경로가 갈리면 안 된다.
+        let identity = link.identity();
+        let home = identity.home().to_path_buf();
         let window = p.window_label.clone().unwrap_or_default();
         let replay = p.replay.clone();
         // 소비자 소유("none" | 부재): 코어는 화면을 복원하지 않는다. from_seq: warm 핸드오프 좌표.
@@ -1106,7 +1150,7 @@ mod daemon {
             _ => None,
         };
         // 봉인-블롭 수신 키를 세션에 실어 StoreBlob 이 봉인할 수 있게 한다(사이드카 체크포인트).
-        let (checkpoint_pk, checkpoint_key_id) = checkpoint_recipient(app);
+        let (checkpoint_pk, checkpoint_key_id) = checkpoint_recipient(app, identity);
         let data = link.request(
             &proto::Request::CreateOrAttach {
                 pane_id: pane_id.clone(),
@@ -1303,8 +1347,8 @@ mod daemon {
         if link.request(&proto::Request::Ping, false).is_ok() {
             return; // 셸 정상 종료
         }
-        let home = crate::home::soksak_home();
-        let respawned = ensure_daemon(&home).is_ok();
+        // 재확보 대상은 이 링크가 겨누던 그 데몬이다 — 홈은 링크가 쥔 정체성에서 온다.
+        let respawned = ensure_daemon(link.identity().home()).is_ok();
         if respawned {
             link.lost_notified.store(false, Ordering::SeqCst);
         }
@@ -1322,13 +1366,17 @@ mod daemon {
     }
 
     // 폴백 고지(무음 금지) — 스폰 폭주 도배 방지로 1회 게이트.
-    pub fn notify_fallback(app: &tauri::AppHandle, link: &Link, error: &str) {
+    // 이 함수가 app 을 쓰던 곳은 발행 한 줄뿐이었다 — 계약만 받는다(ipc.rs record_route_outcome 선례).
+    pub(crate) fn notify_fallback(
+        ledger: &dyn crate::activity_sink::ActivitySink,
+        link: &Link,
+        error: &str,
+    ) {
         if link.fallback_notified.swap(true, Ordering::SeqCst) {
             return;
         }
         eprintln!("[pty] daemon unavailable, in-process fallback: {error}");
-        crate::activity::publish(
-            app,
+        ledger.publish(
             "pty.daemon.fallback",
             "core",
             json!({
@@ -1636,13 +1684,16 @@ mod daemon {
     // 대신 연결해 준다(데몬 바이트 다리 pty.rs 와 같은 층위). 코어는 요청/응답 JSON 을
     // 해석하지 않는다(내용 불가지 다리). 소켓은 데몬과 같은 run 디렉토리에 있고 identity-home
     // 토큰을 공유한다(사이드카가 데몬과 피어링하는 계약). 연결 실패는 명시 에러(사이드카 사망 loud).
-    pub fn sidecar_service_relay(request: &Value) -> Result<Value, String> {
-        let home = crate::home::soksak_home();
-        let path = proto::run_dir(&home).join(format!(
+    pub(crate) fn sidecar_service_relay(
+        identity: &crate::identity::Identity,
+        request: &Value,
+    ) -> Result<Value, String> {
+        let home = identity.home();
+        let path = proto::run_dir(home).join(format!(
             "soksak-sidecar-terminal-p{}.sock",
             proto::PTYD_PROTOCOL_VERSION
         ));
-        let token = std::fs::read_to_string(proto::token_path(&home))
+        let token = std::fs::read_to_string(proto::token_path(home))
             .map_err(|e| format!("token: {e}"))?
             .trim()
             .to_string();
@@ -1683,13 +1734,13 @@ mod daemon {
     // 이 pane 의 봉인-블롭을 앱 볼트로 개봉해 평문 페인트(base64)를 돌려준다. 잠금이면 명시
     // 에러(fail-closed — 평문 우회 없음), 블롭 없으면 None. 소비자가 바이트를 그려 죽은 세션
     // 화면을 다시 그린다(사이드카 불요 경로). 코어는 바이트를 해석하지 않는다(봉인만 열고 넘긴다).
-    pub fn read_sealed_screen(
+    pub(crate) fn read_sealed_screen(
         app: &tauri::AppHandle,
+        identity: &crate::identity::Identity,
         window: &str,
         pane: &str,
     ) -> Result<Option<super::SealedScreen>, String> {
-        let home = crate::home::soksak_home();
-        let ck = match read_checkpoint(&home, window, pane) {
+        let ck = match read_checkpoint(identity.home(), window, pane) {
             Some(c) => c,
             None => return Ok(None),
         };
@@ -1743,26 +1794,132 @@ mod daemon {
     }
 
     /// 옛 키(legacy)의 블롭을 열어 신 키(pane)로 승계한다 — 엔티티 id 이행의 손실 0 실행부.
-    pub fn read_sealed_screen_adopting(
+    pub(crate) fn read_sealed_screen_adopting(
         app: &tauri::AppHandle,
+        identity: &crate::identity::Identity,
         window: &str,
         legacy: &str,
         pane: &str,
     ) -> Result<Option<super::SealedScreen>, String> {
-        let home = crate::home::soksak_home();
-        let ck = match read_checkpoint(&home, window, legacy) {
+        let home = identity.home();
+        let ck = match read_checkpoint(home, window, legacy) {
             Some(c) => c,
             None => return Ok(None),
         };
         let paint = open_cold_checkpoint(app, &ck, window, legacy)?;
-        let pk = std::fs::read_to_string(home.join("pty").join("seal.pub"))
+        let pk = std::fs::read_to_string(identity.path("pty/seal.pub"))
             .ok()
             .map(|s| s.trim().to_string());
-        adopt_checkpoint(&ck, &paint, window, pane, &proto::checkpoint_path(&home, window, pane), pk.as_deref());
+        adopt_checkpoint(&ck, &paint, window, pane, &proto::checkpoint_path(home, window, pane), pk.as_deref());
         use base64::Engine as _;
         Ok(Some(super::SealedScreen {
             paint_b64: base64::engine::general_purpose::STANDARD.encode(&paint),
         }))
+    }
+}
+
+// ── 셸 결속 계약 ───────────────────────────────────────────────────────────
+// 이 파일이 앱 프로세스에 묶여 있던 세 고리를 못박는다:
+//   ① 홈이 앰비언트 전역에서 왔다 → 이제 Identity 값으로 온다.
+//   ② 원장에 한 줄 남기는 함수가 AppHandle 을 받았다 → ActivitySink 하나만 받는다.
+//   ③ 벤더 스트림 타입이 커맨드 아래까지 내려갔다 → 진입점에서 멈춘다.
+#[cfg(test)]
+mod seam_tests {
+    use crate::activity_sink::ActivitySink;
+    use crate::identity::Identity;
+    use crate::stream_sink::{Delivered, StreamSink};
+    use serde_json::{json, Value};
+
+    #[derive(Default)]
+    struct Recorder {
+        entries: std::sync::Mutex<Vec<(String, Value)>>,
+    }
+
+    impl ActivitySink for Recorder {
+        fn publish(&self, kind: &str, source: &str, payload: Value) -> Value {
+            let mut e = self.entries.lock().unwrap();
+            e.push((kind.to_string(), payload.clone()));
+            json!({ "seq": e.len(), "kind": kind, "source": source })
+        }
+    }
+
+    struct NullSink;
+
+    impl StreamSink for NullSink {
+        fn deliver(&self, _bytes: Vec<u8>) -> Delivered {
+            Delivered::Ok
+        }
+    }
+
+    /// 매니저는 자기 정체성을 들고 다닌다 — 데몬 소켓·토큰·스테이징 바이너리·체크포인트가
+    /// 전부 그 홈에서 파생되므로, 호출마다 홈을 받으면 한 세션 맵에 두 데몬의 세션이 섞인다.
+    #[test]
+    fn a_manager_carries_its_identity_instead_of_reading_the_ambient_home() {
+        let id = Identity::new("/tmp/soksak-pty-seam-dev", "com.soksak.dev");
+        let manager = super::PtyManager::new(id.clone());
+        assert_eq!(manager.identity(), &id);
+        // 전역을 읽었다면 이 구분이 사라진다 — 두 홈이 하나로 접힌다.
+        let ambient = crate::identity::ambient();
+        assert_ne!(
+            manager.identity().home(),
+            ambient.home(),
+            "매니저가 앰비언트 홈을 읽고 있다"
+        );
+        // 링크는 홈 하나에 붙는다(소켓·토큰이 거기서 나온다) — 매니저와 같은 정체성이어야 한다.
+        #[cfg(unix)]
+        assert_eq!(manager.link.identity(), &id);
+    }
+
+    /// 앰비언트 홈 읽기 0. 타입으로는 못 막는다 — 함수 하나가 다시 전역을 부르면 시그니처는
+    /// 그대로인 채 그 함수만 조용히 앱 프로세스에 묶인다. 그래서 소스로 못박는다
+    /// (ambient_gate.rs 와 같은 이유).
+    #[test]
+    fn this_module_never_reads_the_ambient_home() {
+        let src = include_str!("pty.rs");
+        // 바늘은 런타임에 조립한다 — 리터럴로 두면 이 테스트 줄 자신이 걸린다.
+        let needle = ["crate::home::", "soksak_home"].concat();
+        let hits: Vec<String> = src
+            .lines()
+            .enumerate()
+            .filter(|(_, l)| l.contains(needle.as_str()))
+            .map(|(i, l)| format!("  {}: {}", i + 1, l.trim()))
+            .collect();
+        assert!(
+            hits.is_empty(),
+            "앰비언트 홈 읽기가 남아 있다 — 홈은 Identity 로 흐른다:\n{}",
+            hits.join("\n")
+        );
+    }
+
+    /// 데몬 레그의 출구는 계약이다 — 벤더 채널 타입은 커맨드 진입점에서 멈춘다.
+    /// 함수 포인터로 시그니처를 못박는다: 벤더 타입이 돌아오면 여기서 컴파일이 깨진다.
+    #[cfg(unix)]
+    #[test]
+    fn the_daemon_leg_takes_a_sink_not_a_vendor_channel() {
+        let _typed: fn(
+            &tauri::AppHandle,
+            &super::daemon::Link,
+            super::daemon::SpawnParams,
+            NullSink,
+        ) -> Result<u64, String> = super::daemon::spawn_via_daemon::<NullSink>;
+    }
+
+    /// 폴백 고지는 원장 한 줄이다 — 앱 핸들 없이 발행되고, 도배 방지 1회 게이트가 산다.
+    #[cfg(unix)]
+    #[test]
+    fn the_fallback_notice_needs_only_a_ledger() {
+        let link = super::daemon::Link::new(Identity::new(
+            "/tmp/soksak-pty-seam-dev",
+            "com.soksak.dev",
+        ));
+        let ledger = Recorder::default();
+        super::daemon::notify_fallback(&ledger, &link, "no daemon");
+        // 1회 게이트 — 스폰 폭주가 원장을 도배하지 않는다.
+        super::daemon::notify_fallback(&ledger, &link, "no daemon");
+        let entries = ledger.entries.lock().unwrap();
+        assert_eq!(entries.len(), 1, "폴백 고지가 도배됐다");
+        assert_eq!(entries[0].0, "pty.daemon.fallback");
+        assert_eq!(entries[0].1["error"], "no daemon");
     }
 }
 

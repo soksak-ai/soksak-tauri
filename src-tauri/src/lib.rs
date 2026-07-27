@@ -100,7 +100,6 @@ pub fn run() {
         .manage(webview_health::WebviewHealth::default())
         .manage(activity::ActivityHub::default())
         .manage(daemon::DaemonManager::default())
-        .manage(PtyManager::default())
         .manage(ProcessManager::default())
         .manage(ws::WsManager::default())
         .manage(FsWatcher::default())
@@ -183,6 +182,10 @@ pub fn run() {
                 unit_installer::UnitInstallManager::new(identity::ambient())
                     .map_err(std::io::Error::other)?,
             );
+            // PTY 매니저도 정체성을 생성자로 받는다 — 데몬 소켓·토큰·스테이징 바이너리가
+            // 그 홈에서 파생되므로 home::init 뒤에 세운다. 빌더 체인(setup 이전)에서 읽으면
+            // home.rs 폴백인 ~/.soksak 이 잡혀 dev 빌드가 릴리즈 홈의 데몬을 겨눈다.
+            app.manage(PtyManager::new(identity::ambient()));
             // plugin service 매니저(PS9·PS11) — bind 원장을 읽어 상주 서비스를 올린다. 창-무관이라
             // 워크스페이스 창 유무와 상관없이 부팅 시 1회. 스폰은 스레드로(부팅 비차단).
             app.manage(service::ServiceManager::new(
