@@ -982,7 +982,7 @@ mod unix {
         let pty_system = native_pty_system();
         let pair = pty_system
             .openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| crate::pty_open_failure(&e.to_string(), crate::pty_open_count(), crate::pty_limit()))?;
 
         let mut cmd = CommandBuilder::new(&shell);
         apply_session_env(&mut cmd, &env, &env_remove);
@@ -1262,5 +1262,124 @@ mod unix {
 
         // 등록 해제 — reader 가 사라진 구독자에 더는 사본을 밀지 않는다.
         session.st.lock().unwrap().subscribers.retain(|s| s.id != sub.id);
+    }
+}
+
+// ── pty 풀 진단 ──────────────────────────────────────────────────────────────
+// openpty 실패는 원인을 말하지 않는다("Device not configured"). 그 문구만 보면 앱 결함인지
+// 시스템 고갈인지 구분이 안 돼 사용자가 아무 조치도 취할 수 없다(실측 2026-07-27: 한도 511 에
+// 527 개가 열려 터미널이 열리지 않았고, 소유자는 오래 남은 터미널·에이전트 세션이었다 —
+// soksak 이 잡은 pty 는 0 개였다. 사용자는 메시지만으로는 그 사실에 도달할 수 없었다).
+// 실패한 순간에만 센다 — 정상 경로 비용 0.
+
+#[cfg(target_os = "macos")]
+const PTY_LIMIT_KEY: &str = "sysctl kern.tty.ptmx_max";
+#[cfg(not(target_os = "macos"))]
+const PTY_LIMIT_KEY: &str = "sysctl kernel.pty.max";
+
+/// 지금 열려 있는 pty 장치 수. 셀 수 없으면 0(모르면 0 이라고 말하지, 지어내지 않는다).
+fn pty_open_count() -> usize {
+    #[cfg(target_os = "macos")]
+    {
+        std::fs::read_dir("/dev")
+            .map(|it| {
+                it.filter_map(|e| e.ok())
+                    .filter(|e| e.file_name().to_string_lossy().starts_with("ttys"))
+                    .count()
+            })
+            .unwrap_or(0)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        std::fs::read_dir("/dev/pts")
+            .map(|it| {
+                it.filter_map(|e| e.ok())
+                    .filter(|e| e.file_name().to_string_lossy().chars().all(|c| c.is_ascii_digit()))
+                    .count()
+            })
+            .unwrap_or(0)
+    }
+}
+
+/// 시스템이 허용하는 pty 상한. 읽을 수 없으면 None — 모르는 값을 추측해 붙이지 않는다.
+#[cfg(target_os = "macos")]
+fn pty_limit() -> Option<u32> {
+    let name = std::ffi::CString::new("kern.tty.ptmx_max").ok()?;
+    let mut val: i32 = 0;
+    let mut len = std::mem::size_of::<i32>();
+    let rc = unsafe {
+        libc::sysctlbyname(
+            name.as_ptr(),
+            &mut val as *mut i32 as *mut libc::c_void,
+            &mut len,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if rc == 0 && val > 0 {
+        Some(val as u32)
+    } else {
+        None
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn pty_limit() -> Option<u32> {
+    std::fs::read_to_string("/proc/sys/kernel/pty/max")
+        .ok()?
+        .trim()
+        .parse()
+        .ok()
+}
+
+/// 조치 가능한 실패 문장. 순수 함수라 전수 검증한다(측정과 문장을 분리한다).
+fn pty_open_failure(err: &str, open: usize, limit: Option<u32>) -> String {
+    let exhausted = matches!(limit, Some(l) if open as u32 >= l);
+    let counted = match limit {
+        Some(l) => format!("open ptys {open}/{l}"),
+        None => format!("open ptys {open}"),
+    };
+    let head = if exhausted {
+        "the system pty pool is exhausted"
+    } else {
+        "could not open a pty"
+    };
+    format!(
+        "{head}: {err} ({counted}). Long-lived terminal and agent sessions hold ptys \u{2014} \
+         close idle ones, or raise the limit ({PTY_LIMIT_KEY})."
+    )
+}
+
+#[cfg(test)]
+mod pty_pool_tests {
+    use super::*;
+
+    #[test]
+    fn exhausted_says_so_and_names_the_limit() {
+        let m = pty_open_failure("forkpty: Device not configured", 527, Some(511));
+        assert!(m.contains("exhausted"), "{m}");
+        assert!(m.contains("527/511"), "{m}");
+        assert!(m.contains("ptmx_max") || m.contains("pty/max") || m.contains("pty.max"), "{m}");
+        assert!(m.contains("forkpty"), "원인 원문을 삼키지 않는다: {m}");
+    }
+
+    #[test]
+    fn under_limit_does_not_claim_exhaustion() {
+        let m = pty_open_failure("some other error", 65, Some(511));
+        assert!(!m.contains("exhausted"), "{m}");
+        assert!(m.contains("65/511"), "{m}");
+    }
+
+    #[test]
+    fn unknown_limit_reports_count_only() {
+        let m = pty_open_failure("boom", 65, None);
+        assert!(m.contains("open ptys 65"), "{m}");
+        assert!(!m.contains("/"), "모르는 상한을 지어내지 않는다: {m}");
+    }
+
+    #[test]
+    fn counting_the_live_system_is_plausible() {
+        // 오라클이 죽어 있으면(항상 0) 진단문은 늘 거짓말을 한다 — 살아있음을 단언한다.
+        assert!(pty_open_count() > 0, "pty 장치를 하나도 못 셌다");
     }
 }
