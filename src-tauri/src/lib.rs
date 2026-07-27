@@ -762,3 +762,106 @@ mod updater_gate_tests {
         assert!(updater_configured(Some(&cfg)));
     }
 }
+
+#[cfg(test)]
+mod handler_registration_tests {
+    //! 등록이 컴파일되는 **모든 플랫폼**에 본체가 있어야 한다.
+    //!
+    //! 컴파일러는 이 짝을 빌드하는 OS 에서만 검사한다. macOS 전용 정의를 조건 없이
+    //! 등록하면 macOS 빌드는 멀쩡하고 리눅스·윈도우 빌드만 깨진다 — 멀티플랫폼 이식
+    //! 중에는 CI 에 가서야 드러난다. 이 검사는 소스 텍스트를 읽으므로 어느 OS 에서
+    //! 돌려도 같은 답을 낸다.
+    //!
+    //! 규칙(실측으로 교정 2026-07-27): 조건 없는 등록은 **플랫폼 전부**를 덮는 정의를
+    //! 요구한다 — 조건 없는 정의 하나이거나, macos/not-macos 짝이거나. macos 로 가려진
+    //! 등록은 macos 정의(또는 조건 없는 정의)면 충분하다. 처음 판은 "정의와 등록의 cfg 가
+    //! 같아야 한다"로 썼다가 짝 정의 4건을 오탐했다 — 규칙이 현실보다 좁았다.
+
+    fn lib_src() -> String {
+        std::fs::read_to_string(format!("{}/src/lib.rs", env!("CARGO_MANIFEST_DIR"))).unwrap()
+    }
+
+    fn module_src(module: &str) -> String {
+        let base = env!("CARGO_MANIFEST_DIR");
+        std::fs::read_to_string(format!("{base}/src/{module}.rs"))
+            .or_else(|_| std::fs::read_to_string(format!("{base}/src/{module}/mod.rs")))
+            .unwrap_or_default()
+    }
+
+    /// generate_handler! 목록: (module, fn, 등록이 macos 로 가려졌는가)
+    fn registered() -> Vec<(String, String, bool)> {
+        let s = lib_src();
+        let start = s.find("generate_handler!").expect("generate_handler! 없음");
+        let end = s[start..].find("]).").map(|i| start + i).unwrap_or(s.len());
+        let mut out = Vec::new();
+        let mut gated_next = false;
+        for line in s[start..end].lines() {
+            let t = line.trim().trim_end_matches(',');
+            if t.contains("#[cfg(") {
+                gated_next = t.contains("macos") && !t.contains("not(");
+                continue;
+            }
+            if let Some((m, f)) = t.split_once("::") {
+                if !f.is_empty() && f.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                    out.push((m.to_string(), f.to_string(), gated_next));
+                    gated_next = false;
+                }
+            }
+        }
+        out
+    }
+
+    /// 이 fn 의 정의들이 덮는 플랫폼: (macos 덮음, 비-macos 덮음).
+    fn coverage(module: &str, func: &str) -> Option<(bool, bool)> {
+        let src = module_src(module);
+        let needle = format!("fn {func}(");
+        let mut mac = false;
+        let mut other = false;
+        let mut found = false;
+        let mut from = 0usize;
+        while let Some(rel) = src[from..].find(&needle) {
+            let at = from + rel;
+            found = true;
+            let head: Vec<&str> = src[..at].lines().rev().take(4).collect();
+            let is_mac = head.iter().any(|l| l.contains("cfg(target_os = \"macos\")"));
+            let is_not_mac = head.iter().any(|l| l.contains("cfg(not(target_os = \"macos\"))"));
+            if is_mac {
+                mac = true;
+            } else if is_not_mac {
+                other = true;
+            } else {
+                mac = true;
+                other = true; // 조건 없는 정의 = 전 플랫폼
+            }
+            from = at + needle.len();
+        }
+        found.then_some((mac, other))
+    }
+
+    #[test]
+    fn every_registration_has_a_body_on_every_platform_it_compiles_on() {
+        let regs = registered();
+        assert!(regs.len() > 50, "등록 목록을 못 읽었다 — 빈 스캔이 통과로 위장한다: {}", regs.len());
+        let mut paired_seen = 0;
+        let mut broken = Vec::new();
+        for (module, func, reg_macos_only) in regs {
+            let Some((mac, other)) = coverage(&module, &func) else {
+                continue; // 본체 부재는 컴파일러가 즉시 잡는다
+            };
+            if mac && other {
+                paired_seen += 1;
+            }
+            let need_other = !reg_macos_only;
+            if !mac || (need_other && !other) {
+                broken.push(format!(
+                    "{module}::{func} — 등록 macos전용={reg_macos_only}, 정의 macos={mac} 비macos={other}"
+                ));
+            }
+        }
+        // 오라클 생존 단언 — 커버리지 파싱이 죽으면 이 테스트는 아무것도 지키지 않는다.
+        assert!(paired_seen > 0, "전 플랫폼 정의를 하나도 못 찾았다 — 파싱이 죽었다");
+        broken.sort();
+        assert_eq!(broken, Vec::<String>::new(), "등록이 도는 플랫폼에 본체가 없다");
+    }
+}
+
