@@ -16,7 +16,9 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
+
+use crate::window_oracle::WindowOracle;
 
 const RING_CAP: usize = 2000;
 // 구독자 큐 상한 — 느린 소켓 소비자가 발행을 막지 못한다(bounded). 초과 시 오래된 것부터
@@ -126,7 +128,7 @@ impl ActivityHub {
         self.subs.lock().unwrap().retain(|s| !Arc::ptr_eq(s, sub));
     }
 
-    fn fan_out(&self, entry: &Value) {
+    fn fan_out_subs(&self, entry: &Value) {
         for s in self.subs.lock().unwrap().iter() {
             s.push(entry.clone());
         }
@@ -159,16 +161,29 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-/// 발행 본체 — 링 + 전 창 브로드캐스트 + 영속. 프론트(activityFeed·registry 계측)와
-/// 코어 내부가 공용하는 단일 진입점.
-pub fn publish(app: &AppHandle, kind: &str, source: &str, payload: Value) -> Value {
-    let hub = app.state::<ActivityHub>();
-    let entry = hub.push(kind, source, payload);
-    hub.fan_out(&entry); // 소켓 스트리밍 구독자(A2)
-    let _ = app.emit("activity", entry.clone());
-    // 영속(retention trim) — 실패는 스트림을 막지 않는다(라이브 우선, 콘솔 보고).
-    // 저신호(payload.origin 보유)는 별도 scope 로 — 신호의 보관 캡을 다투지 않는다(§5 R4).
-    let scope = if entry
+// ── 발행 3단: 적재 · 부채질 · 영속 ────────────────────────────────────────────
+// 셋은 한 함수였고 그 함수는 AppHandle 로 시작했다. 그래서 원장에 한 줄 남기고 싶을 뿐인
+// 함수까지 AppHandle 을 받았다(호출 지점 22). 실제로 셸 타입이 필요한 것은 창 브로드캐스트
+// 하나뿐이다 — 적재는 허브만, 영속은 커넥션만 있으면 선다. 앱 밖 헬퍼는 적재까지 하고
+// 부채질·영속은 셸에 넘긴다.
+
+/// 적재 — 허브에 항목을 넣고 seq·ts 를 매겨 돌려준다. 셸 타입 없이 선다.
+/// 부채질하지 않는다: 적재가 창까지 밀면 둘은 다시 한 몸이 되고, 헬퍼가 쓸 수 없다.
+pub fn admit(hub: &ActivityHub, kind: &str, source: &str, payload: Value) -> Value {
+    hub.push(kind, source, payload)
+}
+
+/// 부채질 — 소켓 스트리밍 구독자(A2) + 전 창 브로드캐스트.
+/// 반환 = 창에 닿았는가. 삼키지 않는다 — 무시할지는 호출자가 정한다.
+pub fn fan_out(hub: &ActivityHub, windows: &dyn WindowOracle, entry: &Value) -> bool {
+    hub.fan_out_subs(entry);
+    windows.broadcast("activity", entry.clone())
+}
+
+/// 보관 scope 판정 — 저신호(payload.origin 보유: 스케줄·internal)는 신호의 보관 캡을
+/// 다투지 않는다(§5 R4). 빈 문자열은 origin 이 아니다.
+fn retention_scope(entry: &Value) -> &'static str {
+    if entry
         .get("payload")
         .and_then(|p| p.get("origin"))
         .and_then(Value::as_str)
@@ -177,41 +192,59 @@ pub fn publish(app: &AppHandle, kind: &str, source: &str, payload: Value) -> Val
         SCOPE_LOW
     } else {
         SCOPE
-    };
+    }
+}
+
+/// 영속(retention trim) — 커넥션 하나면 선다. 반환 = 이번 항목이 기록됐는가.
+/// 실패는 회복 큐로 가고 false 로 돌아온다 — 라이브 스트림은 막지 않는다.
+pub fn persist(conn: &rusqlite::Connection, entry: &Value) -> bool {
+    let scope = retention_scope(entry);
+    let id = entry
+        .get("seq")
+        .and_then(Value::as_u64)
+        .map(|s| format!("a{s:016}"));
+    // 영속본은 관찰 요약(§5) — 대형 내용물은 라이브(링·이벤트)의 것이다.
+    // media.base64 는 kind 만 남기고 스트립, 그래도 상한 초과면 payload 를 강등한다.
+    // 불변식: 영속 행은 PERSIST_DOC_CAP 을 넘지 않는다(초대형 행 하나가 json 파스에서
+    // 수백 MB malloc 을 유발해 앱을 즉사시켰던 실측의 재발 방지 — 방어가 아니라 계약).
+    let persisted = summarize_for_persist(entry);
+    // 회복 드레인 — 큐가 비었거나 첫 건이 성공하는 동안만(실패 지속 중 헛시도 방지).
+    if let Ok(mut q) = PENDING.lock() {
+        while let Some(row) = q.front() {
+            match crate::data::store::put(conn, NS, COLL, row.scope, row.id.clone(), &row.doc) {
+                Ok(_) => {
+                    q.pop_front();
+                }
+                Err(_) => break,
+            }
+        }
+    }
+    if let Err(e) = crate::data::store::put(conn, NS, COLL, scope, id.clone(), &persisted) {
+        note_persist_failure(&e.to_string());
+        if let Ok(mut q) = PENDING.lock() {
+            let dropped = pending_push(&mut q, PendingRow { scope, id, doc: persisted });
+            if dropped > 0 {
+                PERSIST_DROPS.fetch_add(dropped, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+        return false;
+    }
+    let _ = crate::data::store::retention_trim(conn, NS, COLL, scope, PERSIST_CAP);
+    true
+}
+
+/// 발행 본체 — 3단을 앱 프로세스에서 잇는다. 프론트(activityFeed·registry 계측)와
+/// 코어 내부가 공용하는 단일 진입점.
+pub fn publish(app: &AppHandle, kind: &str, source: &str, payload: Value) -> Value {
+    let hub = app.state::<ActivityHub>();
+    let entry = admit(&hub, kind, source, payload);
+    // 창 배달 실패는 발행을 멈추지 않는다 — 원장의 진실은 링·영속이고, 창은 구독자 하나다.
+    let _ = fan_out(&hub, app, &entry);
+    // 영속 실패도 스트림을 막지 않는다(라이브 우선, 회복 큐 + 콘솔 보고).
     let st = app.state::<crate::data::DbState>();
     if let Ok(guard) = st.conn.lock() {
         if let Some(conn) = guard.as_ref() {
-            let id = entry
-                .get("seq")
-                .and_then(Value::as_u64)
-                .map(|s| format!("a{s:016}"));
-            // 영속본은 관찰 요약(§5) — 대형 내용물은 라이브(링·이벤트)의 것이다.
-            // media.base64 는 kind 만 남기고 스트립, 그래도 상한 초과면 payload 를 강등한다.
-            // 불변식: 영속 행은 PERSIST_DOC_CAP 을 넘지 않는다(초대형 행 하나가 json 파스에서
-            // 수백 MB malloc 을 유발해 앱을 즉사시켰던 실측의 재발 방지 — 방어가 아니라 계약).
-            let persisted = summarize_for_persist(&entry);
-            // 회복 드레인 — 큐가 비었거나 첫 건이 성공하는 동안만(실패 지속 중 헛시도 방지).
-            if let Ok(mut q) = PENDING.lock() {
-                while let Some(row) = q.front() {
-                    match crate::data::store::put(conn, NS, COLL, row.scope, row.id.clone(), &row.doc) {
-                        Ok(_) => {
-                            q.pop_front();
-                        }
-                        Err(_) => break,
-                    }
-                }
-            }
-            if let Err(e) = crate::data::store::put(conn, NS, COLL, scope, id.clone(), &persisted) {
-                note_persist_failure(&e.to_string());
-                if let Ok(mut q) = PENDING.lock() {
-                    let dropped = pending_push(&mut q, PendingRow { scope, id, doc: persisted });
-                    if dropped > 0 {
-                        PERSIST_DROPS.fetch_add(dropped, std::sync::atomic::Ordering::Relaxed);
-                    }
-                }
-            } else {
-                let _ = crate::data::store::retention_trim(conn, NS, COLL, scope, PERSIST_CAP);
-            }
+            let _ = persist(conn, &entry);
         }
     }
     entry
@@ -406,6 +439,141 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![9, 10]
         );
+    }
+}
+
+#[cfg(test)]
+mod split_tests {
+    use super::*;
+    use crate::window_oracle::WindowOracle;
+    use serde_json::json;
+
+    /// 계약만 구현한 창 — Tauri 없이 부채질을 검증한다.
+    #[derive(Default)]
+    struct FakeWindows {
+        sent: Mutex<Vec<(String, Value)>>,
+    }
+
+    impl WindowOracle for FakeWindows {
+        fn live_labels(&self) -> Vec<String> {
+            vec!["main".to_string()]
+        }
+        fn emit_to(&self, _label: &str, _event: &str, _payload: Value) -> bool {
+            true
+        }
+        fn broadcast(&self, event: &str, payload: Value) -> bool {
+            self.sent.lock().unwrap().push((event.to_string(), payload));
+            true
+        }
+    }
+
+    #[test]
+    fn admitting_needs_no_shell_and_does_not_fan_out() {
+        // 헬퍼 프로세스가 적재만 하고 부채질을 셸로 넘길 수 있으려면, 적재가 단독으로
+        // 서야 한다 — 적재가 부채질까지 하면 둘은 다시 한 몸이다.
+        let hub = ActivityHub::default();
+        let sub = hub.subscribe();
+        let entry = admit(&hub, "boot.step", "core", json!({ "step": "ready" }));
+        assert_eq!(entry["seq"], 1);
+        assert_eq!(entry["kind"], "boot.step");
+        assert!(entry["ts"].as_u64().is_some(), "ts 는 적재가 매긴다");
+        assert_eq!(hub.recent(None, 10).len(), 1, "링에는 남는다");
+        assert_eq!(
+            sub.queue.lock().unwrap().len(),
+            0,
+            "적재 단독은 구독자에게 흐르지 않는다"
+        );
+    }
+
+    #[test]
+    fn fanning_out_reaches_subscribers_and_windows() {
+        let hub = ActivityHub::default();
+        let sub = hub.subscribe();
+        let windows = FakeWindows::default();
+        let entry = admit(&hub, "command.executed", "remote", json!({ "command": "c" }));
+        assert!(fan_out(&hub, &windows, &entry));
+        assert_eq!(sub.queue.lock().unwrap().len(), 1, "소켓 구독자(A2)");
+        let sent = windows.sent.lock().unwrap();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0].0, "activity", "창 이벤트 이름은 그대로다");
+        assert_eq!(sent[0].1["seq"], 1);
+    }
+
+    #[test]
+    fn retention_scope_follows_payload_origin() {
+        // 저신호(origin 보유) 판정은 발행 경로 안에 파묻혀 있어 단독 검증이 불가능했다.
+        assert_eq!(retention_scope(&json!({"payload":{"origin":"schedule"}})), SCOPE_LOW);
+        assert_eq!(
+            retention_scope(&json!({"payload":{"origin":""}})),
+            SCOPE,
+            "빈 문자열은 origin 이 아니다"
+        );
+        assert_eq!(retention_scope(&json!({"payload":{"command":"c"}})), SCOPE);
+        assert_eq!(retention_scope(&json!({})), SCOPE);
+    }
+
+    // 회복 큐(PENDING)는 프로세스 전역이라 영속 테스트를 병렬로 돌리면 한 테스트의 실패분이
+    // 다른 테스트의 커넥션으로 드레인된다 — 영속을 만지는 테스트끼리 직렬화하고 큐를 비운다.
+    static PERSIST_SERIAL: Mutex<()> = Mutex::new(());
+
+    fn persist_fixture() -> std::sync::MutexGuard<'static, ()> {
+        let g = PERSIST_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        PENDING.lock().unwrap().clear();
+        g
+    }
+
+    #[test]
+    fn persisting_needs_only_a_connection() {
+        let _serial = persist_fixture();
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::data::init_base(&conn).unwrap();
+        init_collection(&conn);
+
+        let hub = ActivityHub::default();
+        let signal = admit(&hub, "command.executed", "ui", json!({ "command": "x" }));
+        let low = admit(
+            &hub,
+            "command.executed",
+            "remote",
+            json!({ "command": "y", "origin": "schedule" }),
+        );
+        assert!(persist(&conn, &signal));
+        assert!(persist(&conn, &low));
+
+        let rows = |scope: &str| {
+            crate::data::store::query(
+                &conn,
+                NS,
+                COLL,
+                Some(scope),
+                None,
+                Some("seq"),
+                false,
+                Some(10),
+                None,
+                None,
+            )
+            .unwrap()
+        };
+        let hi = rows(SCOPE);
+        assert_eq!(hi.len(), 1);
+        assert_eq!(hi[0]["seq"], 1);
+        let lo = rows(SCOPE_LOW);
+        assert_eq!(lo.len(), 1, "저신호는 별도 scope — 신호의 캡을 다투지 않는다");
+        assert_eq!(lo[0]["seq"], 2);
+    }
+
+    #[test]
+    fn a_failed_persist_is_reported_and_queued_not_swallowed() {
+        // 조용한 성공을 만들지 않는다 — 스키마 없는 커넥션은 쓰기가 실패하고,
+        // 실패분은 회복 큐에 남아 나중에 늦게라도 영속된다.
+        let _serial = persist_fixture();
+        let conn = rusqlite::Connection::open_in_memory().unwrap(); // init_base 없음
+        let hub = ActivityHub::default();
+        let entry = admit(&hub, "k", "core", json!({}));
+        assert!(!persist(&conn, &entry), "실패는 값으로 돌아온다");
+        assert_eq!(PENDING.lock().unwrap().len(), 1, "실패분은 큐에 남는다");
+        PENDING.lock().unwrap().clear();
     }
 }
 

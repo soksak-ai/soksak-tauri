@@ -1,3 +1,21 @@
+// 유닛 설치자 — 한 홈 트리에 대한 **단일 쓰기자**.
+//
+// 다섯 커맨드(begin·stage·read_utf8·commit·rollback)가 한 트랜잭션 원장을 공유한다.
+// 원장은 프로세스 메모리에 있고(Mutex<HashMap>), 스테이징 디렉토리는 그 원장의 키로만
+// 찾을 수 있다. 그래서 다섯은 **함께** 움직인다 — 하나만 떼면 남은 넷이 없는 원장을 본다.
+//
+// 헬퍼 프로세스로 나가려면 두 가지가 걸려 있었다:
+//   ① 홈: lib.rs 가 앰비언트 전역(`home::soksak_home()`)을 읽어 생성자에 넣었고, 매니저는
+//      그 값을 `join` 으로 네 곳에서 각각 조립했다. 정체성 계약(identity.rs)을 값으로 받으면
+//      헬퍼는 인자 하나로 같은 홈을 쥐고, 조립 규칙은 `Identity::path` 한 곳에 모인다.
+//   ② 입구: 다섯 입구가 `tauri::State` 를 받았다. State 를 요구하는 순간 원장째 앱
+//      프로세스에 묶인다. 로직은 `&UnitInstallManager` 를 받는 함수로 내리고,
+//      `#[tauri::command]` 는 State 를 벗겨 넘기는 번역층만 남긴다.
+//
+// 단일 쓰기자 계약은 그대로다. 같은 홈 트리를 두 프로세스가 쓰면 안 된다 — 원장의 의미도,
+// commit 의 rename 원자성도 "이 트리를 쓰는 것은 나 하나"에 서 있다.
+
+use crate::identity::Identity;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, OpenOptions};
@@ -115,8 +133,9 @@ struct InstallTransaction {
     staged: HashMap<String, StagedArtifact>,
 }
 
+#[derive(Debug)]
 pub struct UnitInstallManager {
-    home: PathBuf,
+    identity: Identity,
     transactions: Mutex<HashMap<String, InstallTransaction>>,
 }
 
@@ -419,13 +438,14 @@ fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> Result<(), String>
 }
 
 impl UnitInstallManager {
-    pub fn new(home: PathBuf) -> Result<Self, String> {
+    pub(crate) fn new(identity: Identity) -> Result<Self, String> {
+        let home = identity.home();
         if !home.is_absolute() {
             return Err("unit installer home must be absolute".into());
         }
-        fs::create_dir_all(&home).map_err(|error| error.to_string())?;
-        crate::path_security::reject_symlink_components(&home)?;
-        let staging = home.join("install-staging");
+        fs::create_dir_all(home).map_err(|error| error.to_string())?;
+        crate::path_security::reject_symlink_components(home)?;
+        let staging = identity.path("install-staging");
         fs::create_dir_all(&staging).map_err(|error| error.to_string())?;
         crate::path_security::reject_symlink_components(&staging)?;
         for item in fs::read_dir(&staging).map_err(|error| error.to_string())? {
@@ -437,23 +457,31 @@ impl UnitInstallManager {
                 fs::remove_dir_all(item.path()).map_err(|error| error.to_string())?;
             }
         }
-        Ok(Self { home, transactions: Mutex::new(HashMap::new()) })
+        Ok(Self { identity, transactions: Mutex::new(HashMap::new()) })
+    }
+
+    /// 이 쓰기자가 쥔 정체성 — 어느 홈 트리를 쓰는지 읽을 수 있어야 단일 쓰기자를 확인한다.
+    /// 앱 프로세스에는 아직 소비자가 없다(홈이 하나뿐이라 물을 일이 없었다). 헬퍼가
+    /// 붙는 순간 "네가 쓰는 홈이 어디냐"가 첫 질문이 되므로 상태면을 지금 연다.
+    #[allow(dead_code)]
+    pub(crate) fn identity(&self) -> &Identity {
+        &self.identity
     }
 
     fn staging_root(&self) -> PathBuf {
-        self.home.join("install-staging")
+        self.identity.path("install-staging")
     }
 
     fn generations_root(&self) -> PathBuf {
-        self.home.join("unit-generations")
+        self.identity.path("unit-generations")
     }
 
     fn active_state_path(&self) -> PathBuf {
-        self.home.join("installed-units.json")
+        self.identity.path("installed-units.json")
     }
 
     fn plugins_root(&self) -> PathBuf {
-        self.home.join("plugins")
+        self.identity.path("plugins")
     }
 
     // The plugin loader scans one directory: home/plugins/<id>. A dev working copy
@@ -830,13 +858,75 @@ impl UnitInstallManager {
     }
 }
 
+// ── 다섯 입구 ─────────────────────────────────────────────────────────────────
+// 한 원장을 공유하는 다섯이다. 여기서는 `&UnitInstallManager` 만 받는다 — 호스트 타입이
+// 시그니처에 없어야 헬퍼 프로세스의 디스패처가 같은 다섯을 그대로 부를 수 있다.
+// 아래 `#[tauri::command]` 는 State 를 벗겨 넘기는 번역층이다(로직을 두지 않는다).
+
+pub(crate) fn install_begin(
+    manager: &UnitInstallManager,
+    registry_id: String,
+    root: UnitIdentity,
+) -> Result<InstallTransactionReply, String> {
+    manager.begin(registry_id, root)
+}
+
+/// 자산을 받아 스테이징까지. 내려받기가 이 입구 안에 있어야 헬퍼가 커맨드 층 없이도
+/// 같은 일을 한다 — 예전엔 이 한 줄이 `#[tauri::command]` 함수 몸통에만 있었다.
+pub(crate) fn install_stage(
+    manager: &UnitInstallManager,
+    transaction_id: &str,
+    registry_id: &str,
+    unit: UnitIdentity,
+    artifact: StageArtifact,
+) -> Result<StagedArtifactReply, String> {
+    let body = crate::runtime_dep::download_verified_bytes(&artifact.url, &artifact.sha256)?;
+    install_stage_bytes(manager, transaction_id, registry_id, unit, artifact, &body)
+}
+
+/// 이미 손에 든 아티팩트 본문을 스테이징한다 — 내려받기 없이 스테이징만 검증할 때의 입구.
+pub(crate) fn install_stage_bytes(
+    manager: &UnitInstallManager,
+    transaction_id: &str,
+    registry_id: &str,
+    unit: UnitIdentity,
+    artifact: StageArtifact,
+    body: &[u8],
+) -> Result<StagedArtifactReply, String> {
+    manager.stage_bytes(transaction_id, registry_id, unit, artifact, body)
+}
+
+pub(crate) fn install_read_utf8(
+    manager: &UnitInstallManager,
+    transaction_id: &str,
+    handle: &str,
+    path: &str,
+) -> Result<String, String> {
+    manager.read_utf8(transaction_id, handle, path)
+}
+
+pub(crate) fn install_commit(
+    manager: &UnitInstallManager,
+    transaction_id: &str,
+    units: Vec<VerifiedInstallUnit>,
+) -> Result<CommitReply, String> {
+    manager.commit(transaction_id, units)
+}
+
+pub(crate) fn install_rollback(
+    manager: &UnitInstallManager,
+    transaction_id: &str,
+) -> Result<(), String> {
+    manager.rollback(transaction_id)
+}
+
 #[tauri::command]
 pub fn unit_install_begin(
     manager: tauri::State<'_, UnitInstallManager>,
     registry_id: String,
     root: UnitIdentity,
 ) -> Result<InstallTransactionReply, String> {
-    manager.begin(registry_id, root)
+    install_begin(manager.inner(), registry_id, root)
 }
 
 #[tauri::command]
@@ -847,8 +937,13 @@ pub fn unit_install_stage(
     unit: UnitIdentity,
     artifact: StageArtifact,
 ) -> Result<StagedArtifactReply, String> {
-    let body = crate::runtime_dep::download_verified_bytes(&artifact.url, &artifact.sha256)?;
-    manager.stage_bytes(&transaction_id, &registry_id, unit, artifact, &body)
+    install_stage(
+        manager.inner(),
+        &transaction_id,
+        &registry_id,
+        unit,
+        artifact,
+    )
 }
 
 #[tauri::command]
@@ -858,7 +953,7 @@ pub fn unit_install_read_utf8(
     handle: String,
     path: String,
 ) -> Result<String, String> {
-    manager.read_utf8(&transaction_id, &handle, &path)
+    install_read_utf8(manager.inner(), &transaction_id, &handle, &path)
 }
 
 #[tauri::command]
@@ -867,7 +962,7 @@ pub fn unit_install_commit(
     transaction_id: String,
     units: Vec<VerifiedInstallUnit>,
 ) -> Result<CommitReply, String> {
-    manager.commit(&transaction_id, units)
+    install_commit(manager.inner(), &transaction_id, units)
 }
 
 #[tauri::command]
@@ -875,7 +970,7 @@ pub fn unit_install_rollback(
     manager: tauri::State<'_, UnitInstallManager>,
     transaction_id: String,
 ) -> Result<(), String> {
-    manager.rollback(&transaction_id)
+    install_rollback(manager.inner(), &transaction_id)
 }
 
 #[cfg(test)]
@@ -891,6 +986,11 @@ mod tests {
         let path = base.join(format!("soksak-unit-installer-{name}-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&path).unwrap();
         path
+    }
+
+    // 테스트 홈은 dev identity 로 쥔다 — 홈과 identifier 는 함께 다닌다(identity.rs).
+    fn installer(home: &Path) -> UnitInstallManager {
+        UnitInstallManager::new(Identity::new(home, "com.soksak.dev")).unwrap()
     }
 
     fn archive(entries: &[(&str, &[u8])]) -> Vec<u8> {
@@ -970,9 +1070,78 @@ mod tests {
     }
 
     #[test]
+    fn the_installer_takes_an_identity_not_a_bare_home() {
+        // 홈은 씨앗을 lib.rs 의 앰비언트 전역에서 받았고, 매니저 안에서는 join 으로 흩어졌다.
+        // 정체성을 값으로 받으면 헬퍼 프로세스가 인자 하나로 같은 홈을 쥔다.
+        let root = home("identity");
+        let id = crate::identity::Identity::new(root.clone(), "com.soksak.dev");
+        let manager = UnitInstallManager::new(id.clone()).unwrap();
+        assert_eq!(manager.identity(), &id);
+        // 원장·세대·스테이징·발행 경로는 전부 이 정체성 아래다 — 단일 쓰기자 계약의 범위.
+        assert_eq!(manager.active_state_path(), root.join("installed-units.json"));
+        assert_eq!(manager.staging_root(), root.join("install-staging"));
+        assert_eq!(manager.generations_root(), root.join("unit-generations"));
+        assert_eq!(manager.plugins_root(), root.join("plugins"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_relative_home_is_refused_before_any_directory_is_made() {
+        // 상대 홈은 cwd 상대로 트리를 만든다 — 그 트리는 어느 identity 홈도 아니다.
+        let error = UnitInstallManager::new(crate::identity::Identity::new(
+            "relative-home",
+            "com.soksak.dev",
+        ))
+        .unwrap_err();
+        assert!(error.contains("absolute"), "unexpected error: {error}");
+        assert!(!Path::new("relative-home").exists());
+    }
+
+    #[test]
+    fn the_five_transaction_entries_run_without_tauri_state() {
+        // 커맨드 다섯이 한 원장을 공유한다. 그 아래 로직이 State 를 요구하면 원장째
+        // 앱 프로세스에 묶인다 — &UnitInstallManager 만으로 다섯을 다 걷는다.
+        let root = home("stateless");
+        let manager =
+            UnitInstallManager::new(crate::identity::Identity::new(root.clone(), "com.soksak.dev"))
+                .unwrap();
+        let transaction = install_begin(&manager, "fixture".into(), identity()).unwrap();
+        let body = archive(&[("plugin.json", br#"{"id":"weather-plugin"}"#)]);
+        let sha256 = digest(&body);
+        let staged = install_stage_bytes(
+            &manager,
+            &transaction.transaction_id,
+            "fixture",
+            identity(),
+            artifact(sha256.clone()),
+            &body,
+        )
+        .unwrap();
+        assert_eq!(
+            install_read_utf8(&manager, &transaction.transaction_id, &staged.handle, "plugin.json")
+                .unwrap(),
+            r#"{"id":"weather-plugin"}"#
+        );
+        let committed = install_commit(
+            &manager,
+            &transaction.transaction_id,
+            vec![verified(staged.handle, sha256)],
+        )
+        .unwrap();
+        // 소비된 트랜잭션은 롤백할 것이 없다 — 원장이 하나임을 다섯 번째 입구로 확인한다.
+        let error = install_rollback(&manager, &transaction.transaction_id).unwrap_err();
+        assert!(error.contains("transaction not found"), "unexpected error: {error}");
+        assert_eq!(
+            read_active_state(&manager.active_state_path()).unwrap().unwrap().current,
+            committed.generation
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn commits_one_verified_generation_and_declares_the_active_absolute_root() {
         let home = home("commit");
-        let manager = UnitInstallManager::new(home.clone()).unwrap();
+        let manager = installer(&home);
         let transaction = manager.begin("fixture".into(), identity()).unwrap();
         let body = archive(&[("plugin.json", br#"{"id":"weather-plugin"}"#), ("main.js", b"export {}")]);
         let sha256 = digest(&body);
@@ -996,7 +1165,7 @@ mod tests {
     #[test]
     fn publishes_the_committed_plugin_to_the_single_active_location() {
         let home = home("publish");
-        let manager = UnitInstallManager::new(home.clone()).unwrap();
+        let manager = installer(&home);
         let transaction = manager.begin("fixture".into(), identity()).unwrap();
         let body = archive(&[("plugin.json", br#"{"id":"weather-plugin"}"#), ("main.js", b"export {}")]);
         let sha256 = digest(&body);
@@ -1022,7 +1191,7 @@ mod tests {
     #[test]
     fn refuses_to_publish_over_a_dev_working_copy() {
         let home = home("dev-guard");
-        let manager = UnitInstallManager::new(home.clone()).unwrap();
+        let manager = installer(&home);
         // A dev author owns home/plugins/<id>; a release install must not clobber it.
         let dev = home.join("plugins").join("weather-plugin");
         fs::create_dir_all(&dev).unwrap();
@@ -1052,7 +1221,7 @@ mod tests {
     #[test]
     fn digest_failure_leaves_no_staged_unit_and_transaction_can_roll_back() {
         let home = home("digest");
-        let manager = UnitInstallManager::new(home.clone()).unwrap();
+        let manager = installer(&home);
         let transaction = manager.begin("fixture".into(), identity()).unwrap();
         let body = archive(&[("plugin.json", b"{}")]);
         let error = manager
@@ -1073,7 +1242,7 @@ mod tests {
     #[test]
     fn commit_rejects_partial_evidence_without_consuming_the_transaction() {
         let home = home("partial");
-        let manager = UnitInstallManager::new(home.clone()).unwrap();
+        let manager = installer(&home);
         let transaction = manager.begin("fixture".into(), identity()).unwrap();
         let body = archive(&[("plugin.json", b"{}")]);
         let sha256 = digest(&body);
@@ -1089,7 +1258,7 @@ mod tests {
     #[test]
     fn independent_root_commits_preserve_both_verified_closures() {
         let home = home("multiple-roots");
-        let manager = UnitInstallManager::new(home.clone()).unwrap();
+        let manager = installer(&home);
 
         let first = manager.begin("fixture".into(), identity()).unwrap();
         let first_body = archive(&[("plugin.json", br#"{"id":"weather-plugin"}"#)]);

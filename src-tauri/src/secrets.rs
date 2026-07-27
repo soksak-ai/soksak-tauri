@@ -45,6 +45,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 use zeroize::{Zeroize, Zeroizing};
 
+use crate::identity::Identity;
 use crate::os_key::{self, OsKeyError, OsKeyStore, SecretStore};
 
 // OWASP Argon2id 권장(2024): m=19456 KiB, t=2, p=1. 헤더에 기록 — 미래 파라미터 변경 대비.
@@ -325,17 +326,25 @@ fn os_backend_label() -> &'static str {
     }
 }
 
-// 프로덕션 — os_key OS 키체인. app 신원 ACL 결속(OsKeyStore::app). keyring 은 이 구조 안에서만
+// 프로덕션 — os_key OS 키체인. 신원 ACL 결속. keyring 은 이 구조 안에서만
 // 인스턴스화 → SecretsState::default()(store 미주입)는 키체인·CoreFoundation 을 절대 안 건드린다.
 pub struct OsKekSource {
     store: OsKeyStore,
 }
 
 impl OsKekSource {
-    pub fn app() -> Self {
+    // 키체인 서비스명은 정체성의 identifier 다 — dev/debug/release 가 KEK 를 공유하지 않는 근거가
+    // 전역이 아니라 인자로 온다(헬퍼는 자기 정체성을 모르고 태어나므로 받아야 한다).
+    pub(crate) fn for_identity(identity: &Identity) -> Self {
         Self {
-            store: OsKeyStore::app(),
+            store: OsKeyStore::for_identity(identity),
         }
+    }
+
+    // 서비스명 확인용 — 값이 정체성에서 왔는지를 테스트가 본다(키체인 미접촉).
+    #[cfg(test)]
+    pub(crate) fn service(&self) -> &str {
+        self.store.service()
     }
 }
 
@@ -477,18 +486,23 @@ pub struct SecretsState {
     expect_vault: Mutex<bool>,
 }
 
-// 프로덕션 볼트 경로: HOME → ~/.soksak/secrets.vault. data/mod.rs db_path 패턴.
-// '주어진 경로로 동작' 과 분리(이 함수는 경로 계산만, 디렉토리 생성 포함).
-// 순수 경로 계산 — mkdir 부수효과 없음(디렉토리 생성은 쓰기 시점의 것). 유닛테스트가 이 함수를
-// 호출해도 사용자 홈에 흔적을 남기지 않는다(A17 — 실측: cargo test 가 ~/.soksak 을 재생성했었다).
-pub fn default_vault_path() -> Result<PathBuf, String> {
-    Ok(crate::home::soksak_home().join("secrets.vault"))
+// 볼트 파일명 — 홈 아래 한 자리. 경로 조립은 Identity::path 가 소유한다.
+const VAULT_FILE: &str = "secrets.vault";
+
+// 볼트는 정체성의 것이다 — "이 홈의 볼트"이지 "이 프로세스의 볼트"가 아니다.
+// 순수 경로 계산(mkdir 부수효과 0 — 디렉토리 생성은 쓰기 시점의 것).
+pub(crate) fn vault_path(identity: &Identity) -> PathBuf {
+    identity.path(VAULT_FILE)
 }
 
 // 볼트 경로 해소 — SOKSAK_VAULT_PATH 가 있으면 그 경로(헤드리스/E2E 격리용 오픈 메커니즘:
-// 사용자 실볼트 비오염·실 passphrase 비종속), 없으면 default_vault_path().
+// 사용자 실볼트 비오염·실 passphrase 비종속), 없으면 정체성에서 파생.
 // env 조회를 주입받아 테스트가 전역 env 변형 없이 검증한다(병렬 테스트 안전).
-pub fn resolve_vault_path(env: impl Fn(&str) -> Option<String>) -> Result<PathBuf, String> {
+// identity 도 인자다 — 전역 홈을 읽으면 헬퍼 프로세스가 자기 홈이 아닌 곳을 가리킨다.
+pub(crate) fn resolve_vault_path(
+    env: impl Fn(&str) -> Option<String>,
+    identity: &Identity,
+) -> Result<PathBuf, String> {
     match env("SOKSAK_VAULT_PATH") {
         Some(p) if !p.is_empty() => {
             let path = PathBuf::from(p);
@@ -497,7 +511,7 @@ pub fn resolve_vault_path(env: impl Fn(&str) -> Option<String>) -> Result<PathBu
             }
             Ok(path)
         }
-        _ => default_vault_path(),
+        _ => Ok(vault_path(identity)),
     }
 }
 
@@ -534,7 +548,9 @@ fn validate_key(key: &str) -> Result<(), String> {
 }
 
 impl SecretsState {
-    // init: 볼트 경로를 주입(lib.rs setup 1회). 프로덕션은 default_vault_path() 를 넘긴다.
+    // 볼트 경로 주입(부트 1회) — 값은 vault_path(&Identity) 에서 온다.
+    // kek_source 와 같은 모양이다: 정체성에서 파생한 값을 seam 으로 넣는다
+    // (경로 = vault_path(&id), KEK = OsKekSource::for_identity(&id)).
     pub fn set_path(&self, path: PathBuf) {
         *self.path.lock().expect("secrets path mutex") = Some(path);
     }
@@ -544,12 +560,16 @@ impl SecretsState {
         *self.kek_source.lock().expect("kek_source mutex") = Some(source);
     }
 
-    // 이 State 가 쓸 볼트 경로 — 주입됐으면 그 path, 아니면 프로덕션 계산으로 폴백.
+    // 이 State 가 쓸 볼트 경로 — 주입된 path 뿐이다.
+    // 전역 홈 폴백은 두지 않는다: 폴백은 언제나 '성공'하므로(home::soksak_home 은 init 전에도
+    // ~/.soksak 을 돌려준다) 미구성 상태가 남의 홈에 볼트를 만드는 것으로 조용히 끝난다.
+    // 미구성은 값이 없는 것이지 기본값이 있는 것이 아니다 — 이름을 달고 실패시킨다.
     fn vault_file(&self) -> Result<PathBuf, String> {
-        if let Some(p) = self.path.lock().map_err(|e| e.to_string())?.as_ref() {
-            return Ok(p.clone());
-        }
-        default_vault_path()
+        self.path
+            .lock()
+            .map_err(|e| e.to_string())?
+            .clone()
+            .ok_or_else(|| "볼트 경로 미구성 — set_path(vault_path(&identity)) 주입 필요".to_string())
     }
 
     // 새 볼트 헤더 생성 — verifier 를 device KEK 로 봉인. KEK 는 호출자(ensure_open)가 os_key 에서
@@ -712,7 +732,11 @@ impl SecretsState {
         f(kek)
     }
 
-    fn set(&self, ns: &str, key: &str, value: &str) -> Result<(), String> {
+    // set/has/delete/keys/resolve 는 `State` 를 받지 않는다 — `&self` 만 받는다.
+    // `#[tauri::command]` 는 이것들을 부르는 한 줄 위임 래퍼일 뿐이고, 그래서 같은 로직이
+    // 창도 앱도 없는 프로세스에서 그대로 돈다. crate 안에서만 보인다(IPC/CLI 노출은
+    // 커맨드 등록이 정하지 가시성이 정하지 않는다 — 평문 readback 차단 불변).
+    pub(crate) fn set(&self, ns: &str, key: &str, value: &str) -> Result<(), String> {
         validate_ns(ns)?;
         validate_key(key)?;
         let item = self.with_kek(|kek| seal(kek, value.as_bytes()))?;
@@ -727,7 +751,7 @@ impl SecretsState {
         Self::flush(&path, vault)
     }
 
-    fn has(&self, ns: &str, key: &str) -> Result<bool, String> {
+    pub(crate) fn has(&self, ns: &str, key: &str) -> Result<bool, String> {
         validate_ns(ns)?;
         if !self.is_unlocked() {
             return Err("vault locked".to_string());
@@ -737,7 +761,7 @@ impl SecretsState {
         Ok(vault.entries.get(ns).is_some_and(|m| m.contains_key(key)))
     }
 
-    fn delete(&self, ns: &str, key: &str) -> Result<bool, String> {
+    pub(crate) fn delete(&self, ns: &str, key: &str) -> Result<bool, String> {
         validate_ns(ns)?;
         if !self.is_unlocked() {
             return Err("vault locked".to_string());
@@ -757,7 +781,7 @@ impl SecretsState {
 
     // ns·key 의 평문을 복호해 반환 — Rust 전용(get 커맨드/CLI 미노출, 평문 readback 차단 유지).
     // 유일 호출자 = process_spawn 의 secret_env 주입(자식 env 로만 흐름). 잠김=Err, 미존재=Err.
-    fn resolve(&self, ns: &str, key: &str) -> Result<String, String> {
+    pub(crate) fn resolve(&self, ns: &str, key: &str) -> Result<String, String> {
         validate_ns(ns)?;
         validate_key(key)?;
         let item = {
@@ -775,7 +799,7 @@ impl SecretsState {
     }
 
     // ns 의 key 목록만(값 아님 — 평문 readback 차단 원칙).
-    fn keys(&self, ns: &str) -> Result<Vec<String>, String> {
+    pub(crate) fn keys(&self, ns: &str) -> Result<Vec<String>, String> {
         validate_ns(ns)?;
         if !self.is_unlocked() {
             return Err("vault locked".to_string());
@@ -931,6 +955,16 @@ pub struct BackendInfo {
     pub unlocked: bool,
 }
 
+// 투영은 값 위에 산다 — 커맨드 안에 두면 창 없는 프로세스가 같은 답을 못 만든다.
+impl From<SecretStatus> for BackendInfo {
+    fn from(st: SecretStatus) -> Self {
+        BackendInfo {
+            backend: st.backend,
+            unlocked: st.seal_available,
+        }
+    }
+}
+
 #[tauri::command]
 pub fn secret_set(
     ns: String,
@@ -969,11 +1003,7 @@ pub fn secret_status(state: State<'_, SecretsState>) -> SecretStatus {
 // 구 backend 조회(compat) — status 를 BackendInfo 로 축약. backend=os_key 라벨, unlocked=seal_available.
 #[tauri::command]
 pub fn secret_backend(state: State<'_, SecretsState>) -> Result<BackendInfo, String> {
-    let st = state.status();
-    Ok(BackendInfo {
-        backend: st.backend,
-        unlocked: st.seal_available,
-    })
+    Ok(state.status().into())
 }
 
 // ── 테스트(순수 crypto) ──────────────────────────────────────────────────────
@@ -1031,35 +1061,111 @@ mod tests {
         assert_ne!(a, [0u8; KEY_LEN], "0 KEK 아님");
     }
 
-    // (a0) resolve_vault_path — SOKSAK_VAULT_PATH 주입 시 그 경로(격리), 없으면 default.
+    // (a0) resolve_vault_path — SOKSAK_VAULT_PATH 주입 시 그 경로(격리), 없으면 정체성 파생.
     // 오픈 메커니즘: 헤드리스/E2E 가 사용자 실볼트를 오염하지 않게 경로를 격리한다(passphrase 비종속).
     #[test]
     fn vault_path_env_override() {
+        let id = Identity::new("/tmp/x-dev", "com.soksak.dev");
         let iso = std::env::temp_dir()
             .join("soksak-vault-override-test")
             .join("secrets.vault");
-        let chosen = resolve_vault_path(|k| {
-            if k == "SOKSAK_VAULT_PATH" {
-                Some(iso.to_string_lossy().into_owned())
-            } else {
-                None
-            }
-        })
+        let chosen = resolve_vault_path(
+            |k| {
+                if k == "SOKSAK_VAULT_PATH" {
+                    Some(iso.to_string_lossy().into_owned())
+                } else {
+                    None
+                }
+            },
+            &id,
+        )
         .unwrap();
         assert_eq!(chosen, iso, "SOKSAK_VAULT_PATH 주입 → 그 경로");
-        // 미주입 → default_vault_path 와 동일(프로덕션 경로 유지).
-        let fallback = resolve_vault_path(|_| None).unwrap();
-        assert_eq!(fallback, default_vault_path().unwrap(), "미주입 → default");
-        // 빈 문자열 → default(빈 env 를 '설정 안 함' 으로 취급).
-        let empty = resolve_vault_path(|k| {
-            if k == "SOKSAK_VAULT_PATH" {
-                Some(String::new())
-            } else {
-                None
-            }
-        })
+        // 미주입 → 이 정체성의 볼트(프로덕션 경로 규칙 유지).
+        let fallback = resolve_vault_path(|_| None, &id).unwrap();
+        assert_eq!(fallback, vault_path(&id), "미주입 → 정체성 파생");
+        // 빈 문자열 → 정체성 파생(빈 env 를 '설정 안 함' 으로 취급).
+        let empty = resolve_vault_path(
+            |k| {
+                if k == "SOKSAK_VAULT_PATH" {
+                    Some(String::new())
+                } else {
+                    None
+                }
+            },
+            &id,
+        )
         .unwrap();
-        assert_eq!(empty, default_vault_path().unwrap(), "빈 env → default");
+        assert_eq!(empty, vault_path(&id), "빈 env → 정체성 파생");
+    }
+
+    // ── 정체성 계약(헬퍼 이행) ──────────────────────────────────────────────
+    // 볼트 경로가 안 주어졌을 때 전역 홈으로 슬쩍 폴백하면, 그 코드는 "이 프로세스가 앱이다"를
+    // 전제한다. 헬퍼로 옮기는 순간 같은 코드가 남의 홈(~/.soksak)에 볼트를 만든다 — 조용히.
+    // home::soksak_home() 은 init 전에도 ~/.soksak 을 돌려주므로 폴백은 언제나 '성공'한다.
+    #[test]
+    fn an_unconfigured_vault_never_falls_back_to_the_ambient_home() {
+        let s = SecretsState::default();
+        let err = s
+            .vault_file()
+            .expect_err("경로 미구성은 이름을 달고 실패해야 한다");
+        assert!(
+            err.contains("볼트 경로 미구성"),
+            "미구성이 폴백으로 삼켜졌다: {err:?}"
+        );
+    }
+
+    // 볼트는 정체성의 것이다 — 홈이 다르면 볼트가 다르고, 그 사실이 값으로 증명된다.
+    // (전역을 한 번도 안 읽고 임의 정체성의 볼트 경로를 얻는 것이 이 계약의 요점이다.)
+    #[test]
+    fn a_vault_belongs_to_an_identity_not_to_a_process() {
+        let dev = Identity::new("/tmp/x-dev", "com.soksak.dev");
+        let debug = Identity::new("/tmp/x-debug", "com.soksak.debug");
+        assert_eq!(vault_path(&dev), Path::new("/tmp/x-dev/secrets.vault"));
+        assert_ne!(vault_path(&dev), vault_path(&debug), "홈이 다르면 볼트도 다르다");
+    }
+
+    // 정체성만 주면 쓸 수 있는 볼트가 된다 — 앱도 창도 전역도 없이 봉인·개봉이 왕복한다.
+    // 주입 형태는 lib.rs 부트와 같다(경로·KEK 를 정체성에서 파생해 seam 으로 넣는다) — 이 테스트가
+    // Tauri 타입을 한 개도 안 쓰고 컴파일·통과한다는 사실이 이행 가능성의 증명이다.
+    #[test]
+    fn a_state_built_from_an_identity_needs_no_shell() {
+        let (dir, _path) = tmp_vault_dir("identity-home");
+        let id = Identity::new(&dir, "com.soksak.dev");
+        let s = SecretsState::default();
+        s.set_path(vault_path(&id));
+        s.set_kek_source(Box::new(InMemoryKekSource::empty()));
+        s.set("plugin-a", "apiKey", "sk-token").expect("봉인");
+        assert_eq!(s.resolve("plugin-a", "apiKey").unwrap(), "sk-token");
+        // 볼트가 정확히 그 정체성의 홈 아래에 생겼다 — 전역 홈이 아니다.
+        assert!(vault_path(&id).exists(), "정체성 홈 아래 볼트 파일");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // 구 backend 투영은 커맨드 안이 아니라 값 위에 있어야 한다 — 커맨드 안에 있으면 창 없는
+    // 프로세스는 같은 답을 만들 수 없다(핸들러는 위임만 한다).
+    #[test]
+    fn the_backend_projection_lives_on_the_value_not_in_the_handler() {
+        let (s, dir) = state_with_tmp_vault("backend-proj");
+        let info = BackendInfo::from(s.status());
+        assert_eq!(info.backend, "memory");
+        assert!(info.unlocked, "unlocked = seal_available");
+        let f = SecretsState::default();
+        f.set_kek_source(Box::new(FailingKekSource));
+        let down = BackendInfo::from(f.status());
+        assert_eq!(down.backend, "unavailable");
+        assert!(!down.unlocked);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // KEK 서비스명도 정체성에서 온다 — 전역 identifier 를 읽으면 헬퍼가 남의 KEK 를 연다.
+    // 생성만으로는 키체인에 닿지 않는다(keyring::Entry 는 read/write 에서만 만들어진다).
+    #[test]
+    fn the_kek_service_name_comes_from_the_identity() {
+        let dev = OsKekSource::for_identity(&Identity::new("/tmp/x-dev", "com.soksak.dev"));
+        let debug = OsKekSource::for_identity(&Identity::new("/tmp/x-debug", "com.soksak.debug"));
+        assert_eq!(dev.service(), "com.soksak.dev");
+        assert_ne!(dev.service(), debug.service(), "정체성이 KEK 를 가른다");
     }
 
     // (a) seal → open roundtrip — 같은 KEK 로 봉인·개봉 시 평문 복원.

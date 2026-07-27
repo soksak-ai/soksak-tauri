@@ -27,6 +27,18 @@ pub(crate) trait WindowOracle: Send + Sync {
     }
     /// 라벨로 사건 배달. 실패(창 없음·직렬화 실패)는 false 로 돌린다 — 삼키지 않는다.
     fn emit_to(&self, label: &str, event: &str, payload: Value) -> bool;
+    /// 라벨을 고르지 않는 배달 — 활동 원장처럼 "누구에게"가 없는 사건. 기본은 살아 있는
+    /// 창 전부로의 배달이고, 호스트가 한 번에 닿는 경로를 알면 그것으로 대체한다.
+    /// 반환 = 전부에게 닿았는가. 일부만 닿은 것을 true 로 올리면 유실이 성공으로 위장된다.
+    fn broadcast(&self, event: &str, payload: Value) -> bool {
+        let mut all = true;
+        for label in self.live_labels() {
+            if !self.emit_to(&label, event, payload.clone()) {
+                all = false;
+            }
+        }
+        all
+    }
 }
 
 /// Tauri 호스트 — 현 정본 구현.
@@ -41,6 +53,12 @@ impl WindowOracle for tauri::AppHandle {
 
     fn emit_to(&self, label: &str, event: &str, payload: Value) -> bool {
         tauri::Emitter::emit_to(self, label, event, payload).is_ok()
+    }
+
+    fn broadcast(&self, event: &str, payload: Value) -> bool {
+        // 창 목록을 걷지 않는다 — Tauri 의 emit 은 자식 웹뷰까지 닿는 한 번의 배달이라
+        // 라벨 순회로 바꾸면 받는 쪽이 줄어든다.
+        tauri::Emitter::emit(self, event, payload).is_ok()
     }
 }
 
@@ -93,6 +111,31 @@ mod tests {
         // 삼키면 호출자가 응답을 영원히 기다린다.
         assert!(!o.emit_to("w-gone", "cmd-request", Value::Null));
         assert_eq!(o.sent.lock().unwrap().len(), 1);
+    }
+
+    /// 배달이 전부 실패하는 창 — 부분 실패가 성공으로 위장되지 않는지 본다.
+    struct Deaf;
+    impl WindowOracle for Deaf {
+        fn live_labels(&self) -> Vec<String> {
+            vec!["main".to_string()]
+        }
+        fn emit_to(&self, _label: &str, _event: &str, _payload: Value) -> bool {
+            false
+        }
+    }
+
+    #[test]
+    fn a_broadcast_defaults_to_every_live_window() {
+        let o = fake(&["main", "w-a"]);
+        assert!(o.broadcast("activity", Value::Null));
+        let sent = o.sent.lock().unwrap();
+        assert_eq!(sent.len(), 2);
+        assert!(sent.iter().all(|(_, e)| e == "activity"));
+    }
+
+    #[test]
+    fn a_broadcast_that_missed_a_window_reports_failure() {
+        assert!(!Deaf.broadcast("activity", Value::Null));
     }
 
     #[test]

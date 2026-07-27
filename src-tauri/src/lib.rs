@@ -178,7 +178,9 @@ pub fn run() {
                     .plugin(tauri_plugin_updater::Builder::new().build())?;
             }
             app.manage(
-                unit_installer::UnitInstallManager::new(home::soksak_home())
+                // 설치자는 홈 하나를 통째로 쓰는 단일 쓰기자다 — 앰비언트 전역을 여기서
+                // 한 번 값으로 꺼내 넘긴다(identity.rs). 그 아래로는 정체성이 흐른다.
+                unit_installer::UnitInstallManager::new(identity::ambient())
                     .map_err(std::io::Error::other)?,
             );
             // plugin service 매니저(PS9·PS11) — bind 원장을 읽어 상주 서비스를 올린다. 창-무관이라
@@ -277,9 +279,14 @@ pub fn run() {
             {
                 use tauri::Emitter;
                 let st = app.state::<secrets::SecretsState>();
-                // SOKSAK_VAULT_PATH 있으면 격리 경로(헤드리스/E2E), 없으면 프로덕션 default.
-                match secrets::resolve_vault_path(|k| std::env::var(k).ok()) {
+                // 앰비언트 가장자리 — 볼트 경로·키체인 서비스명의 출처가 여기서 값이 된다.
+                // 아래로는 정체성이 인자로 흐른다(secrets.rs 는 전역을 읽지 않는다).
+                let identity = identity::ambient();
+                // SOKSAK_VAULT_PATH 있으면 격리 경로(헤드리스/E2E), 없으면 이 정체성의 홈 아래.
+                match secrets::resolve_vault_path(|k| std::env::var(k).ok(), &identity) {
                     Ok(p) => st.set_path(p),
+                    // 경로 미해소면 볼트는 미구성으로 남는다 — 이후 시크릿 연산이 이름을 달고
+                    // 실패한다(전역 홈 폴백 없음 = 남의 홈에 볼트를 만들지 않는다).
                     Err(e) => eprintln!("[secrets] 볼트 경로 계산 실패: {e}"),
                 }
                 // [R23] app.data 에 봉투 키가 등록돼 있으면 vault 가 있어야 한다 — 부재 시 자동생성 거부
@@ -298,10 +305,12 @@ pub fn run() {
                 #[cfg(debug_assertions)]
                 match secrets::E2eKekSource::from_env() {
                     Some(src) => st.set_kek_source(Box::new(src)),
-                    None => st.set_kek_source(Box::new(secrets::OsKekSource::app())),
+                    None => st.set_kek_source(Box::new(secrets::OsKekSource::for_identity(
+                        &identity,
+                    ))),
                 }
                 #[cfg(not(debug_assertions))]
-                st.set_kek_source(Box::new(secrets::OsKekSource::app()));
+                st.set_kek_source(Box::new(secrets::OsKekSource::for_identity(&identity)));
                 // 부팅 즉시 1회 투명 개방 시도(best-effort) 후 secrets-ready 방출 — 위 리스너가 서비스를
                 // 드레인 재시작해 토큰을 회복시킨다. StoreUnavailable(헤드리스)면 열리지 않고 조용히
                 // 넘어간다(무음 평문 0, 봉인만 불가).

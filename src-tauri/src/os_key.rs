@@ -105,11 +105,19 @@ pub struct OsKeyStore {
 }
 
 impl OsKeyStore {
-    pub fn app() -> Self {
+    // 서비스명은 정체성에서 온다 — 전역 identifier 읽기를 호출자(부트)에게 올린다.
+    // 헬퍼 프로세스는 자기 identifier 를 전역으로 알 수 없고, 틀리면 조용히 남의 KEK 를 연다.
+    pub(crate) fn for_identity(identity: &crate::identity::Identity) -> Self {
         Self {
-            service: crate::home::identifier(),
+            service: identity.identifier().to_string(),
             account: "device-kek-v1".to_string(),
         }
+    }
+
+    // 진단·검증용 — 어느 서비스로 결속됐는지(키체인 미접촉).
+    #[cfg(test)]
+    pub(crate) fn service(&self) -> &str {
+        &self.service
     }
 }
 
