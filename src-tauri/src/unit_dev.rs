@@ -282,7 +282,7 @@ pub(crate) fn ensure_dev_identity_build(core_build: &str) -> Result<(), String> 
 
 fn ensure_dev_identity() -> Result<(), String> {
     ensure_dev_identity_build(&crate::home::core_build_for_identifier(
-        &crate::home::identifier(),
+        crate::identity::ambient().identifier(),
     ))
 }
 
@@ -306,11 +306,14 @@ pub fn unit_dev_remove(kind: String, id: String) -> Result<bool, String> {
 
 #[tauri::command]
 pub fn app_environment() -> Result<AppEnvironment, String> {
-    let identity = crate::home::identifier();
+    // 앰비언트 전역은 여기서 **한 번** 읽어 값으로 만든다. 옛 판은 identifier·홈을 각각
+    // 따로 읽어, 두 값이 어긋난 조합("A 홈인데 B identifier")이 원리적으로 가능했다.
+    let id = crate::identity::ambient();
+    let identity = id.identifier().to_string();
     let core_build = crate::home::core_build_for_identifier(&identity);
-    let cli = crate::home::cli_for_core_build(&core_build);
+    let cli = id.cli_name();
     let units = unit_dev_list()?;
-    let rejected = rejected_in(&crate::home::soksak_home(), &core_build)?;
+    let rejected = rejected_in(id.home(), &core_build)?;
     Ok(AppEnvironment {
         rejected_development_units: rejected,
         updater_enabled: core_build == "release",
@@ -322,7 +325,7 @@ pub fn app_environment() -> Result<AppEnvironment, String> {
         core_build,
         identity,
         cli,
-        home: crate::home::soksak_home().to_string_lossy().into_owned(),
+        home: id.home().to_string_lossy().into_owned(),
         build_profile: if cfg!(debug_assertions) {
             "debug"
         } else {
