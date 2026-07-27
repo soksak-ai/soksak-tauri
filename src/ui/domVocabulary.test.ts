@@ -45,6 +45,7 @@ const ALLOWED = new Set([
   "data-flash", // 하이라이트 위상
   "data-station", // 레일 station 값
   "data-rail-role", // 레일 역할 축
+  "data-rail-clip", // 레일 홀-클립 상태 축(cut|none — 그리기 속성 대신 이 채널이 관측을 진다)
   "data-bv-open", // 브라우저 뷰 open 상태 스탬프(browser-view)
   "data-bound-tab", // 레일 결부 대상 탭 id(RailLinkOverlay 진단 — 값=탭)
   "data-bound-pane", // 레일 결부 대상 칸 id(진단)

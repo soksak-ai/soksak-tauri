@@ -88,9 +88,12 @@ test("클립은 그 패스에서 등록된 모든 plane 에 걸린다 — 스캔
   requestRailHoleClipSync();
   await Promise.resolve();
 
+  // "그 패스가 이 레이어를 훑었는가"의 증거는 클립 상태 채널이다. 그리기 속성은 기하에
+  // 달려 있고(자를 홀이 없으면 none 이 정답), jsdom 의 rect 는 전부 0 이라 교차가 없다 —
+  // 그리기 속성으로 훑기를 판정하면 기하가 바뀔 때마다 테스트가 거짓말을 한다.
   for (const p of planes) {
     for (const layer of Array.from(p.querySelectorAll<HTMLElement>(".sidebar"))) {
-      expect(layer.style.clipPath).toMatch(/^path\("M0 0H/);
+      expect(layer.dataset.railClip).toBeDefined();
     }
   }
 });

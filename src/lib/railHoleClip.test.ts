@@ -3,10 +3,11 @@ import { describe, expect, it } from "vitest";
 import { holeClipPath, visibleHoles } from "./railHoleClip";
 
 describe("holeClipPath", () => {
-  it("홀이 없어도 외곽 전체-박스 클립 — 모션 중 추적기 생존 신호(시각 무영향)", () => {
-    expect(holeClipPath({ w: 800, h: 600 }, [])).toBe(
-      'path("M0 0H800V600H0Z")',
-    );
+  it("자를 것이 없으면 클립을 걸지 않는다 — 아무것도 안 자르는 클립도 클립 노드다", () => {
+    // 기준 정정(2026-07-27): 옛 판은 홀이 없어도 외곽 전체-박스 클립을 걸고 "시각 무영향"
+    // 이라 불렀다. 아니었다 — 클립 노드는 커질 때 새로 드러난 영역을 무효화하지 않아,
+    // 창을 키우면 레일에 옛 픽셀이 남았다(rail-border 스윕). 생존 신호는 data-rail-clip 이 진다.
+    expect(holeClipPath({ w: 800, h: 600 }, [])).toBe("none");
   });
 
   it("fill-rule 인자 없이(WebKit 미지원) 외곽=시계·홀=반시계 권선으로 뚫는다", () => {

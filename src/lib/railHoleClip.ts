@@ -7,9 +7,16 @@ export type ClipRect = { x: number; y: number; w: number; h: number };
 const px = (n: number) => `${Math.round(n * 100) / 100}`;
 
 /**
- * 호스트 좌표계 기준 홀 목록을 path() 클립으로 합성한다. 홀이 없어도 외곽 전체-박스
- * 클립을 반환한다(시각 무영향) — "모션 중엔 항상 클립이 걸려 있다"가 명령면(ui.measure)
- * 에서 추적기 생존 신호로 실측되게 하는 계약이다. 해제("")는 모션 종료 시 추적기만 한다.
+ * 호스트 좌표계 기준 홀 목록을 path() 클립으로 합성한다.
+ *
+ * **자를 것이 없으면 클립을 걸지 않는다("none").** 옛 기준은 홀이 없어도 외곽 전체-박스
+ * 클립을 걸고 그것을 "추적기 생존 신호(시각 무영향)"라 불렀다. 시각 무영향이 아니었다:
+ * clip-path 는 요소를 클립 노드로 만들고, 클립이 커질 때 새로 드러난 영역을 엔진이
+ * 무효화하지 않는다 — 창을 키우면 레일에서 옛 높이 아래가 옛 픽셀 그대로 남아 카드
+ * 하단 테두리가 사라졌다(실측 2026-07-27, scripts/e2e/rail-border.mjs). 같은 행에서
+ * 클립이 없는 콘텐츠 칸은 멀쩡히 다시 칠해졌다. 아무것도 자르지 않는 클립이 도색 정확성을
+ * 무너뜨린 것이다. 생존 신호는 그리기 속성이 아니라 자기 채널(data-rail-clip)이 진다.
+ *
  * path() 의 fill-rule 인자는 WebKit 이 파싱하지 못해 값 전체가 무시되므로 쓰지 않는다 —
  * 기본 nonzero 권선에서 홀이 뚫리도록 외곽(시계)과 홀(반시계)을 반대 방향으로 그린다.
  */
@@ -17,8 +24,8 @@ export function holeClipPath(
   host: { w: number; h: number },
   holes: ClipRect[],
 ): string {
+  if (holes.length === 0) return "none";
   const outer = `M0 0H${px(host.w)}V${px(host.h)}H0Z`;
-  if (holes.length === 0) return `path("${outer}")`;
   const cuts = holes
     .map(
       (r) =>
@@ -77,13 +84,16 @@ export function applyRailHoleClip(
   const layers = Array.from(plane.querySelectorAll<HTMLElement>(".sidebar"));
   const clips = layers.map((layer) => {
     const box = layer.getBoundingClientRect();
-    return holeClipPath({ w: box.width, h: box.height }, visibleHoles(box, holeRects));
+    const holes = visibleHoles(box, holeRects);
+    return { clip: holeClipPath({ w: box.width, h: box.height }, holes), cut: holes.length > 0 };
   });
   layers.forEach((layer, i) => {
-    const clip = clips[i];
+    const { clip, cut } = clips[i];
+    // 추적기 생존·클립 상태는 자기 채널로 관측한다 — 그리기 속성을 신호로 겸업시키지 않는다.
+    layer.dataset.railClip = cut ? "cut" : "none";
     layer.style.clipPath = clip;
     // 수용 검증 — 엔진이 값을 거부하면 조용한 무클립이 된다. 침묵 금지.
-    if (clip !== "" && layer.style.clipPath === "" && !warnedRejected) {
+    if (clip !== "none" && layer.style.clipPath === "" && !warnedRejected) {
       warnedRejected = true;
       console.warn("[railHoleClip] clip-path 값이 거부됨:", clip);
     }
