@@ -21,6 +21,16 @@ impl RawRing {
         RawRing { buf: VecDeque::new(), cap, seq: 0 }
     }
 
+    /// Resume at a predecessor's end coordinate — an empty ring that continues
+    /// someone else's sequence. A live handoff moves the shell's master fd to a
+    /// new daemon; the client reattaches with the sequence it already accounted
+    /// for. A ring that restarted at 0 would report that client as "already
+    /// current" forever (`since` replays nothing at or beyond `seq`), so the
+    /// shell stays alive and accepts input while its output silently vanishes.
+    pub fn resumed(cap: usize, seq: u64) -> Self {
+        RawRing { buf: VecDeque::new(), cap, seq }
+    }
+
     /// End sequence — one past the last byte pushed.
     pub fn seq(&self) -> u64 {
         self.seq
@@ -122,5 +132,30 @@ mod tests {
         let (gap, tail) = r.since(1);
         assert_eq!(gap, Some((1, 4)), "the evicted prefix is a loud gap");
         assert_eq!(tail, b"efgh", "the retained tail, correctly from start_seq");
+    }
+
+    #[test]
+    fn resumed_ring_keeps_the_handed_off_coordinate() {
+        let mut r = RawRing::resumed(16, 4390);
+        assert_eq!(r.seq(), 4390);
+        let (gap, tail) = r.since(4390);
+        assert!(gap.is_none());
+        assert!(tail.is_empty(), "인계 직후엔 재생할 것이 없다");
+        r.push(b"hello");
+        let (gap, tail) = r.since(4390);
+        assert!(gap.is_none(), "인계 좌표부터는 손실이 없다");
+        assert_eq!(tail, b"hello");
+        assert_eq!(r.seq(), 4395);
+    }
+
+    #[test]
+    fn a_ring_restarted_at_zero_strands_a_client_resuming_beyond_it() {
+        // 대조군 — 결함의 정확한 형태를 고정한다. 0 에서 다시 시작한 링은 인계 좌표의
+        // 클라이언트에게 아무것도 주지 못한다(셸은 살아 입력도 받는데 출력만 사라진다).
+        let mut r = RawRing::new(16);
+        r.push(b"hello");
+        let (gap, tail) = r.since(4390);
+        assert!(gap.is_none());
+        assert!(tail.is_empty());
     }
 }

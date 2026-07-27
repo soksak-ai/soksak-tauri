@@ -483,7 +483,12 @@ mod unix {
                     paused: false,
                     closed: false,
                     ckpt: None,
-                    ring: RawRing::new(RING_CAP),
+                    // 인계 좌표에서 이어 센다 — 스냅샷이 ring_seq 를 넘기는 이유가 이것이다.
+                    // 0 부터 새로 세면 재부착 클라이언트의 from_seq 가 seq 를 앞질러
+                    // since() 가 "이미 최신"으로 판정하고 영원히 빈 값을 준다: 셸은 살아
+                    // 입력도 받는데 출력만 사라진다(실측 2026-07-27 — 판올림 후 term.exec 는
+                    // ok 를 돌려주고 파일도 써지는데 화면엔 아무것도 안 나왔다).
+                    ring: RawRing::resumed(RING_CAP, hs.ring_seq),
                     subscribers: Vec::new(),
                 }),
                 cv: Condvar::new(),
