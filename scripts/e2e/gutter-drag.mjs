@@ -131,11 +131,36 @@ async function main() {
   }
 
   console.log("a. window split so a gutter runs beside an engine surface");
+  const before = data(await rpc("window.list", {}, await resolveControlWindow(rpc))).labels || [];
   const opened = data(await rpc("window.open", { root: FIXTURE }, await resolveControlWindow(rpc)));
   const win = opened.label || opened.existingWindow;
-  ok(typeof win === "string" && win.startsWith("w-"), `window opened (${win})`);
+  // 봉투가 비면 이후 모든 명령이 **활성 창**(사용자 창)으로 라우팅된다 — 하니스가 남의 창에
+  // 탭을 만들고 분할하고 드래그한다(실사고 2026-07-27: 사용자 창에 about:blank 탭이 생기고
+  // 복원 상태가 날아갔다). 창 확보 실패는 즉시 중단이다. 관용 금지.
+  if (typeof win !== "string" || !win.startsWith("w-")) {
+    throw new Error(`픽스처 창 확보 실패 — 중단(사용자 창 오염 방지): ${JSON.stringify(opened).slice(0, 160)}`);
+  }
+  if (before.includes(win)) {
+    throw new Error(`기존 창을 재사용하려 함 — 중단(전용 픽스처 창만 쓴다): ${win}`);
+  }
+  ok(true, `window opened (${win})`);
   // 네이티브 경로는 전면 창에서만 반응한다(가려진 창은 rAF 정지 — emitNative 계약).
   await rpc("window.focus", { label: win }, win).catch(() => {});
+  await sleep(600);
+  // 네이티브 마우스 브리지는 **전면 창**이 받는다 — 포커스가 이 창이 아니면 남의 창을 끈다.
+  // 확인 없이 쏘지 않는다(위 사고의 두 번째 경로).
+  {
+    // 창 목록의 첫 항목이 아니라, 이 창이 자기 문서에 포커스를 갖는지로 판정한다
+    // (ui.focus.state 는 창-로컬 사실이라 남의 창과 혼동될 수 없다).
+    let fs = data(await rpc("ui.focus.state", {}, win).catch(() => ({})));
+    for (let i = 0; i < 10 && fs.windowFocused !== true; i++) {
+      await sleep(300);
+      fs = data(await rpc("ui.focus.state", {}, win).catch(() => ({})));
+    }
+    if (fs.windowFocused !== true) {
+      throw new Error("픽스처 창이 전면이 아님 — 네이티브 드래그 중단(남의 창 오염 방지)");
+    }
+  }
   let term = null;
   let browser = null;
   for (let i = 0; i < 40 && (!term || !browser); i++) {
