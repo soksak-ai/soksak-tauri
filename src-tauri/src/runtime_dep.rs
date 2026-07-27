@@ -104,9 +104,37 @@ pub fn probe_binary(bin: String, args: Vec<String>) -> ProbeResult {
 #[tauri::command]
 pub fn cleanup_stale(path: String, allowed_roots: Vec<String>) -> Result<bool, String> {
     let p = Path::new(&path);
-    let ok = allowed_roots.iter().any(|r| p.starts_with(r));
-    if !ok {
-        return Err(format!("화이트리스트 밖 경로 거부: {path}"));
+    // 화이트리스트 판정(starts_with)은 컴포넌트 축자 비교다 — ".." 도 그냥 한 컴포넌트로
+    // 보므로 "<root>/../victim" 이 "<root>" 로 시작한다고 답한다. 앵커 없는 화이트리스트는
+    // 화이트리스트가 아니다. 호출부가 플러그인 매니페스트 저자 값으로 경로를 조립하므로
+    // (state/plugins.ts) 이건 이론이 아니다.
+    if p.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+        return Err(format!("경로에 '..'를 사용할 수 없습니다: {path}"));
+    }
+    let root = allowed_roots
+        .iter()
+        .find(|r| p.starts_with(r))
+        .ok_or_else(|| format!("화이트리스트 밖 경로 거부: {path}"))?;
+    // 심링크 검사는 **화이트리스트 루트 아래 구간만** 본다. 루트 위쪽의 링크는 탈출과
+    // 무관하다 — 그 경로는 호출자가 지정한 트리 자체이고, macOS 의 /var 처럼 시스템이
+    // 링크로 두는 경우도 있다(전 구간을 검사하던 첫 판은 임시 트리 전체를 거부했다).
+    // leaf 도 예외다: dangling 심링크 제거가 이 핸들러의 목적이므로 마지막 컴포넌트는
+    // 링크여도 된다. 즉 검사 대상은 "루트 다음부터 leaf 직전까지"다.
+    if let Some(parent) = p.parent() {
+        if let Ok(rel) = parent.strip_prefix(root) {
+            let mut walk = std::path::PathBuf::from(root);
+            for part in rel.components() {
+                walk.push(part);
+                if let Ok(m) = fs::symlink_metadata(&walk) {
+                    if m.file_type().is_symlink() {
+                        return Err(format!(
+                            "경로 부모에 심링크를 사용할 수 없습니다: {}",
+                            walk.display()
+                        ));
+                    }
+                }
+            }
+        }
     }
     match fs::symlink_metadata(p) {
         Ok(m) if m.file_type().is_symlink() || m.is_file() => {
@@ -164,12 +192,24 @@ pub fn npm_global_dirs() -> Result<NpmDirs, String> {
 pub fn verify_and_link(src: String, dest: String, sha256: String) -> Result<(), String> {
     let body = fs::read(&src).map_err(|e| e.to_string())?;
     verify_sha256(&body, &sha256).map_err(|e| format!("vendor {e}"))?;
-    let _ = fs::remove_file(&dest);
-    fs::copy(&src, &dest).map_err(|e| e.to_string())?;
+    // 최종 경로에는 완성된 파일만 나타난다 — 임시로 쓰고 실행 비트까지 세운 뒤 rename.
+    // 옛 판은 copy 뒤에 chmod 였다: 그 사이의 dest 는 실행 비트 없는(혹은 부분 내용의)
+    // 파일이다. 지금은 쓰는 쪽과 exec 하는 쪽이 한 프로세스라 직렬화되지만, 프로세스가
+    // 갈리면 그 창이 관측 가능해진다.
+    let staging = format!("{dest}.staging");
+    let _ = fs::remove_file(&staging);
+    fs::write(&staging, &body).map_err(|e| e.to_string())?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&dest, fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
+        if let Err(e) = fs::set_permissions(&staging, fs::Permissions::from_mode(0o755)) {
+            let _ = fs::remove_file(&staging);
+            return Err(e.to_string());
+        }
+    }
+    if let Err(e) = fs::rename(&staging, &dest) {
+        let _ = fs::remove_file(&staging); // 실패한 스테이징을 남기지 않는다
+        return Err(e.to_string());
     }
     Ok(())
 }
@@ -183,6 +223,90 @@ mod tests {
         let d = std::env::temp_dir().join(format!("rtdep-{}", std::process::id()));
         let _ = fs::create_dir_all(&d);
         d
+    }
+
+    // 화이트리스트가 경로를 앵커하지 못하면 삭제 프리미티브가 트리 밖으로 나간다.
+    // Path::starts_with 는 컴포넌트 축자 비교라 ".." 를 그냥 한 컴포넌트로 본다 —
+    // "<root>/../victim" 이 "<root>" 로 시작한다고 판정된다. 호출부가 플러그인 매니페스트
+    // 저자 값으로 경로를 조립하므로(state/plugins.ts) 이건 이론이 아니다.
+    #[test]
+    fn parent_escape_is_refused_and_nothing_is_removed() {
+        let d = tmp().join("escape");
+        let root = d.join("root");
+        let victim = d.join("victim.txt");
+        let _ = fs::create_dir_all(&root);
+        fs::write(&victim, b"keep").unwrap();
+        let escape = root.join("..").join("victim.txt");
+        let r = cleanup_stale(
+            escape.to_string_lossy().into(),
+            vec![root.to_string_lossy().into()],
+        );
+        assert!(r.is_err(), "'..' 로 트리를 벗어난 경로가 통과했다: {r:?}");
+        assert!(victim.exists(), "거부됐다면서 지워졌다");
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    // 부모가 심링크면 화이트리스트 판정은 링크 **밖**의 실체를 보지 못한다.
+    // (leaf 의 심링크는 허용해야 한다 — 이 핸들러의 목적이 dangling 심링크 제거다.)
+    #[test]
+    fn a_symlinked_parent_is_refused_but_a_symlinked_leaf_is_not() {
+        let d = tmp().join("linkparent");
+        let real = d.join("real");
+        let root = d.join("root");
+        let _ = fs::create_dir_all(&real);
+        let _ = fs::create_dir_all(&root);
+        let victim = real.join("victim.txt");
+        fs::write(&victim, b"keep").unwrap();
+        let link = root.join("via");
+        let _ = fs::remove_file(&link);
+        symlink(&real, &link).unwrap();
+        let through = link.join("victim.txt");
+        let r = cleanup_stale(
+            through.to_string_lossy().into(),
+            vec![root.to_string_lossy().into()],
+        );
+        assert!(r.is_err(), "심링크 부모를 통과했다: {r:?}");
+        assert!(victim.exists(), "거부됐다면서 지워졌다");
+
+        // leaf 심링크(dangling)는 이 핸들러가 지워야 하는 바로 그것이다.
+        let dangling = root.join("dangling");
+        let _ = fs::remove_file(&dangling);
+        symlink(root.join("nope"), &dangling).unwrap();
+        let r = cleanup_stale(
+            dangling.to_string_lossy().into(),
+            vec![root.to_string_lossy().into()],
+        );
+        assert_eq!(r, Ok(true), "leaf 심링크 제거는 이 핸들러의 목적이다");
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    // 가드(재현 아님) — 단일 프로세스에서는 옛 비원자 판도 이 단언을 통과한다. 창이
+    // 프로세스 경계에서만 관측되기 때문이다. 그래도 남긴다: 스테이징 잔여물과 내용·권한을
+    // 고정해 두면 원자 쓰기를 되돌리는 변경이 여기서 걸린다.
+    #[test]
+    fn the_destination_never_holds_a_partial_file() {
+        let d = tmp().join("atomic");
+        let _ = fs::create_dir_all(&d);
+        let src = d.join("src.bin");
+        let dest = d.join("dest.bin");
+        fs::write(&src, b"payload").unwrap();
+        let sum = sha256_hex(b"payload");
+        verify_and_link(
+            src.to_string_lossy().into(),
+            dest.to_string_lossy().into(),
+            sum,
+        )
+        .unwrap();
+        assert_eq!(fs::read(&dest).unwrap(), b"payload");
+        // 임시 잔여물이 남으면 다음 사람이 그것을 실행물로 착각한다.
+        let leftovers: Vec<_> = fs::read_dir(&d)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|n| n != "src.bin" && n != "dest.bin")
+            .collect();
+        assert_eq!(leftovers, Vec::<String>::new(), "임시 파일이 남았다");
+        let _ = fs::remove_dir_all(&d);
     }
 
     #[test]
