@@ -47,13 +47,17 @@ fn data_dir_from(data_dir_env: Option<&str>, home: &Path) -> PathBuf {
     home.join("data")
 }
 
-pub fn db_path() -> Result<PathBuf, String> {
-    let dir = data_dir_from(
-        std::env::var("SOKSAK_DATA_DIR").ok().as_deref(),
-        &crate::home::soksak_home(),
-    );
+/// 주어진 홈 아래의 DB 경로. 홈은 **인자로 온다** — 헬퍼 프로세스는 자기 홈을 전역으로
+/// 알 수 없고, 잘못 파생된 홈은 거부가 아니라 **다른 identity 의 DB 를 여는 것**으로 끝난다.
+pub fn db_path_in(home: &Path) -> Result<PathBuf, String> {
+    let dir = data_dir_from(std::env::var("SOKSAK_DATA_DIR").ok().as_deref(), home);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir.join("soksak.db"))
+}
+
+/// 이 프로세스의 홈 기준 DB 경로 — 앰비언트를 읽는 것은 여기 한 곳이다.
+pub fn db_path() -> Result<PathBuf, String> {
+    db_path_in(crate::identity::ambient().home())
 }
 
 // 연결 + PRAGMA + 기본 스키마. 테스트는 임시 경로를 주입(plugins.rs 패턴).
@@ -280,6 +284,22 @@ pub fn validate_field(field: &str) -> Result<(), String> {
 
 #[cfg(all(test, unix))]
 mod tests {
+
+    // 홈이 인자라는 것의 요점 — 답이 프로세스가 아니라 입력으로 결정된다.
+    // 이 단언이 없으면 db_path_in 이 앰비언트로 되돌아가도 아무도 모른다(그 오답은
+    // 조용하다: 거부가 아니라 다른 identity 의 DB 를 여는 것으로 끝난다).
+    #[test]
+    fn the_db_path_follows_the_home_it_is_given() {
+        let base = std::env::temp_dir().join(format!("dbpath-{}", std::process::id()));
+        let a = base.join("home-a");
+        let b = base.join("home-b");
+        let pa = super::db_path_in(&a).unwrap();
+        let pb = super::db_path_in(&b).unwrap();
+        assert_ne!(pa, pb, "두 홈이 같은 DB 를 가리킨다");
+        assert!(pa.starts_with(&a), "{pa:?} 가 홈 밖이다");
+        assert!(pb.starts_with(&b), "{pb:?} 가 홈 밖이다");
+        let _ = std::fs::remove_dir_all(&base);
+    }
     use super::{now_millis, open};
     use std::os::unix::fs::PermissionsExt;
 

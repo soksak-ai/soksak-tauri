@@ -563,8 +563,8 @@ pub fn data_encrypt_status(
 pub fn data_backup(path: Option<String>, state: State<'_, DbState>) -> Result<String, String> {
     let dest = match path {
         Some(p) => std::path::PathBuf::from(p),
-        None => crate::home::soksak_home()
-            .join("backups")
+        None => crate::identity::ambient()
+            .path("backups")
             .join(format!("soksak-{}.db", super::now_millis())),
     };
     with_conn(&state, |c| backup::backup(c, &dest))?;
