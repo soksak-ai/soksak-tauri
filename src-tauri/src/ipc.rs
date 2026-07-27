@@ -678,7 +678,9 @@ fn native_reload(app: &AppHandle, label: &str) -> bool {
 // 발행한다. 낭독 규칙도 registry 와 동일: 사람 유래(무 origin)만 message 를 낭독 후보로 싣는다.
 #[allow(clippy::too_many_arguments)]
 fn record_route_outcome(
-    app: &AppHandle,
+    // 이 함수가 app 을 쓰는 곳은 마지막 발행 한 줄뿐이다 — 계약만 받는다.
+    // AppHandle 을 받으면 원장에 한 줄 남기는 함수까지 앱 프로세스에 묶인다.
+    sink: &dyn crate::activity_sink::ActivitySink,
     method: &str,
     params: &Value,
     target: &str,
@@ -715,7 +717,7 @@ fn record_route_outcome(
         Some(o) => payload["origin"] = serde_json::json!(o),
         None => payload["tts"] = serde_json::json!(message),
     }
-    crate::activity::publish(app, "command.executed", "remote", payload);
+    sink.publish("command.executed", "remote", payload);
 }
 
 fn route(app: &AppHandle, req: Request) -> Value {
