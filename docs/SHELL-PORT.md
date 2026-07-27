@@ -27,6 +27,34 @@ A classification of all 160 native commands (2026-07-27) found that state owners
 
 The PTY output crossing is the one converted so far. The other channel holders — process stdout/stderr and exit (`src-tauri/src/process.rs`), websocket message and close (`src-tauri/src/ws.rs`), sidecar events (`src-tauri/src/sidecar.rs`) — still name the vendor in their signatures, and the rule above applies to them unchanged.
 
+## The other three seams
+
+The same shape recurs. Each one takes a fact the shell owned and turns it into a value or a contract; each is enforced by a test that implements it without any vendor type — that those tests compile is the proof.
+
+| Contract | File | What left the vendor |
+| --- | --- | --- |
+| `WindowOracle` | `src-tauri/src/window_oracle.rs` | Which windows are alive, and delivery to one by label |
+| `ActivitySink` | `src-tauri/src/activity_sink.rs` | Publishing to the activity ledger |
+| `Identity` | `src-tauri/src/identity.rs` | Which build this is and which home it uses |
+
+- **`WindowOracle` states facts, not choices.** Which window to pick — the fallback ladder — stays with the caller. An oracle that also chose would fork the ladder per implementation, and a forked ladder is per-window routing. Delivery returns success as a value: swallowing a failed emit leaves the caller believing it sent and waiting forever for a reply.
+- **`ActivitySink` exists because a function that only wants to write a ledger line was taking an `AppHandle`.** `activity::publish` pulls the hub out of managed state, emits to windows, and persists — three jobs behind one signature, at 22 call sites. Note what this did *not* unlock: an adversarial audit of all 160 native commands found that publish alone frees zero handlers, because every site that touches it also holds an `AppHandle` signature or a native object. It is a real coupling and a poor lever; both facts are worth keeping.
+- **`Identity` carries home and identifier together.** They were read separately — `app_environment` read ambient state five times — which makes a mismatched pair ("A's home with B's identifier") representable, and no identity has that shape. `ambient()` is the near end of the seam: it reads the global once, and below it the value flows. `Identity::path` always lands under the home, because `Path::join` discards its base on an absolute argument and a contract that lies about containment becomes the reason a caller skips its own check.
+
+The audit named the ambient home the single largest lever: 28 handlers touch it and breaking it frees 15. No other pattern frees any on its own.
+
+## The portable crate
+
+`src-tauri/crates/soksak-portable` holds command logic with no shell in it. Anything there gives the same answer in the app process or in a helper, which requires three things: it touches no window, app handle, or managed state; it reads no process environment, working directory, or executable path; and it does not treat its own compile target or build profile as evidence.
+
+The third is the quiet one. A function whose answer changes with `cfg!(target_os)` is describing the binary it was compiled into, not answering what the caller asked. Platform branching belongs in an argument.
+
+Modules so far: `udp` (datagram send and request/response), `integrity` (hash verification, install observation, whitelisted stale removal), `session` (agent session parsing and lookup), `pathx` (tilde expansion, project-root verdict). Core keeps `#[tauri::command]` wrappers that delegate and decide nothing — a decision in the wrapper is a decision the helper process would lose.
+
+`tests/no_shell.rs` enforces this in two layers: a symbol scan for direct references, and `cargo tree` for anything a dependency dragged in. Each forbidden symbol carries the reason it blocks a move; a prohibition without a reason becomes something to route around.
+
+Two further gates sit in core. `src-tauri/src/ambient_gate.rs` requires every `env::var` site to be registered with two answers — why it must be this process's environment, and what arrives instead once processes split; an empty answer fails, so the table cannot be used as a way through. It found three sites a manual sweep had missed. The registration gate in `src-tauri/src/lib.rs` checks that every registered handler has a body on every platform it compiles on, which the compiler only checks on the platform being built.
+
 ## What a second shell actually costs
 
 Measured on this repo (2026-07-27):
