@@ -57,6 +57,9 @@ build: spec-gate cli ## 릴리스 번들 빌드 → "soksak.app"(기본 아이�
 build-debug: spec-gate cli-debug ## 디버그 번들 빌드 → "soksak-debug.app"(주황 아이콘) + sok-debug
 	$(PNPM) tauri build --debug --config $(DEBUG_CONFIG)
 
+electron: ## Electron 셸 스파이크(Tauri 셸과 형제 — 교체 아님). vite dev(1420) 가 떠 있어야 한다.
+	$(PNPM) exec electron electron/main.cjs
+
 run: ## 릴리스 soksak.app 실행(새 인스턴스)
 	@test -d "$(RELEASE_APP)" || { echo "먼저 'make build' 를 실행하세요."; exit 1; }
 	open -n "$(RELEASE_APP)"

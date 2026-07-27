@@ -7,6 +7,7 @@
 // 일은 어댑터 파일 하나 + 이 표에 한 줄이며, 앱 코드는 한 줄도 바뀌지 않는다.
 
 import type { ShellHost } from "./host";
+import { electronHost } from "./electron";
 import { tauriHost } from "./tauri";
 
 export type {
@@ -20,12 +21,15 @@ export type {
 
 const ADAPTERS: Record<string, ShellHost> = {
   tauri: tauriHost,
+  electron: electronHost,
 };
 
 function resolveHost(): ShellHost {
   // 빌드 주입(vite define) 또는 런타임 표식. 없으면 정본.
+  // 셸은 자기가 붙인 창구로 자신을 밝힌다 — 빌드 주입보다 런타임 사실이 앞선다.
+  const bridged = (globalThis as { __soksakShell?: { name?: string } }).__soksakShell?.name;
   const declared =
-    (globalThis as { __SOKSAK_SHELL__?: string }).__SOKSAK_SHELL__ ?? "tauri";
+    bridged ?? (globalThis as { __SOKSAK_SHELL__?: string }).__SOKSAK_SHELL__ ?? "tauri";
   const host = ADAPTERS[declared];
   if (!host) {
     // 침묵 폴백 금지 — 모르는 셸을 조용히 tauri 로 취급하면 잘못된 셸에서 도는 것을
