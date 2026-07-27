@@ -84,7 +84,7 @@ fn validate_source(home: &Path, kind: &str, id: &str, source: &Path) -> Result<(
 }
 
 fn validate_source_path(source: &Path) -> Result<(), String> {
-    validate_source_path_in(source, &crate::home::soksak_home())
+    validate_source_path_in(source, crate::identity::ambient().home())
 }
 
 fn validate_source_path_in(source: &Path, home: &Path) -> Result<(), String> {
@@ -261,12 +261,12 @@ fn remove_in(home: &Path, kind: &str, id: &str) -> Result<bool, String> {
 
 pub(crate) fn set_source(kind: &str, id: &str, source: &Path) -> Result<UnitDevSource, String> {
     let _guard = WRITE_LOCK.lock().map_err(|e| e.to_string())?;
-    set_in(&crate::home::soksak_home(), kind, id, source)
+    set_in(crate::identity::ambient().home(), kind, id, source)
 }
 
 #[tauri::command]
 pub fn unit_dev_list() -> Result<Vec<UnitDevSource>, String> {
-    list_in(&crate::home::soksak_home())
+    list_in(crate::identity::ambient().home())
 }
 
 /// dev 소스 작업은 dev identity 전용(홈 레인 원칙): debug·release 홈은 발행본 설치로 검증한다.
@@ -301,7 +301,7 @@ pub fn unit_dev_validate_path(source: String) -> Result<String, String> {
 #[tauri::command]
 pub fn unit_dev_remove(kind: String, id: String) -> Result<bool, String> {
     let _guard = WRITE_LOCK.lock().map_err(|e| e.to_string())?;
-    remove_in(&crate::home::soksak_home(), &kind, &id)
+    remove_in(crate::identity::ambient().home(), &kind, &id)
 }
 
 #[tauri::command]

@@ -3,7 +3,7 @@
 // 게이트는 최신 슬롯(.bak.0) mtime 1시간(now 주입 → 결정적 유닛 테스트). 스냅샷은 별도
 // read-only 커넥션의 VACUUM INTO(쓰기 커넥션 비블로킹) → .bak.tmp → 성공 시에만 회전
 // (.bak.3→4 … .bak.0→1) → rename 원자 편입. 슬롯 5개 고정(soksak.db.bak.0=최신 … .bak.4).
-// 경로는 전부 db_path()(home::soksak_home() 파생)에서 나와 identity 홈 3종이 자동 분리된다.
+// 경로는 전부 db_path()(Identity 홈 파생)에서 나와 identity 홈 3종이 자동 분리된다.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};

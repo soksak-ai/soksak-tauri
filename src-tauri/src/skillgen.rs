@@ -5,7 +5,7 @@ use std::process::{Command, Stdio};
 
 #[tauri::command]
 pub fn skill_refresh_spawn() -> Result<bool, String> {
-    let home = crate::home::soksak_home();
+    let home = crate::identity::ambient().home().to_path_buf();
     let manifest = home.join("skill-refresh.json");
     let Ok(txt) = std::fs::read_to_string(&manifest) else {
         return Ok(false); // 설치 전 — 재생성할 스킬이 없다(오류 아님).

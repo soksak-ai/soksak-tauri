@@ -475,7 +475,7 @@ fn bind_transport(path: &str) -> Result<Box<dyn IpcListenerSeam>, String> {
 
 // 소켓 서버 기동 — 전송은 bind_transport 시임 뒤에서 온다.
 pub fn start(app: AppHandle) -> Result<String, String> {
-    let dir = crate::home::soksak_home();
+    let dir = crate::identity::ambient().home().to_path_buf();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let identifier = app.config().identifier.clone();
     let path = dir
