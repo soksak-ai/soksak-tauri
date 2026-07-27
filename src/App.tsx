@@ -60,6 +60,7 @@ import { useUi } from "./state/ui";
 import { useGutterHover } from "./state/gutterHover";
 import { useT } from "./i18n";
 import { useBootPhase } from "./state/bootPhase";
+import { reportDomHoles } from "./lib/domHoles";
 import {
   allGroups,
   cwdTabOf as resolveCwdTab,
@@ -970,22 +971,14 @@ function App() {
   useLayoutEffect(() => {
     // 닫힘(rightOpen false 또는 폭 0)이면 홀 비움.
     if (!activeProject?.rightOpen || rightW <= 0) {
-      invoke("webview_dom_holes", { holes: [] }).catch(() => {});
+      requestAnimationFrame(() => reportDomHoles()); // 사이드바가 빠져도 골 홀은 남는다
       return;
     }
     // 폭 변경 등 레이아웃이 커밋된 *다음* 프레임에 측정한다 — rAF 전엔 사이드바 폭이
     // 아직 반영 전이라 rect 가 어긋난다.
-    const report = () => {
-      const sb = document.querySelector(".sidebar-right.open");
-      if (!sb) {
-        invoke("webview_dom_holes", { holes: [] }).catch(() => {});
-        return;
-      }
-      const r = sb.getBoundingClientRect();
-      invoke("webview_dom_holes", {
-        holes: [{ x: r.left, y: r.top, w: r.width, h: r.height }],
-      }).catch(() => {});
-    };
+    // 홀 목록의 소유자는 lib/domHoles(사이드바 + 모든 골) — 여기서는 사이드바 변화 에지에
+    // 재수집만 요청한다(사각형 조립을 두 곳에서 하지 않는다).
+    const report = () => reportDomHoles();
     const raf = requestAnimationFrame(report);
     // 창 리사이즈도 사이드바 rect(우변 고정·높이)를 옮긴다 — 다시 측정.
     const onWinResize = () => requestAnimationFrame(report);

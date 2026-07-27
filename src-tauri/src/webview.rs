@@ -218,6 +218,15 @@ mod layer {
         }
     }
 
+    // 창의 현재 홀 목록 — 관측면(ui.holes)이 읽는다. 계약을 눈이 아니라 값으로 확인한다.
+    pub fn holes_of(label: &str) -> Vec<super::Hole> {
+        LAYERS
+            .lock()
+            .ok()
+            .and_then(|m| m.get(label).map(|w| w.holes.clone()))
+            .unwrap_or_default()
+    }
+
     // 창의 DOM 오버레이 홀 갱신(사이드바 열림/닫힘·폭 변화 시 webview_dom_holes 가 호출).
     pub fn set_holes(label: &str, holes: Vec<super::Hole>) {
         if let Ok(mut layers) = LAYERS.lock() {
@@ -610,6 +619,24 @@ pub fn engine_host_visible(app: AppHandle, window: tauri::Window, visible: bool)
     set_engine_host_hidden(&app, window.label().to_string(), !visible);
     #[cfg(not(target_os = "macos"))]
     let _ = (app, window, visible);
+}
+
+// DOM 오버레이 홀 관측 — 네이티브 층 아래에서도 DOM 이 마우스를 갖는 사각형들.
+// 골·사이드바처럼 "DOM 이 받아야 하는 자리"의 계약을 값으로 읽는다(ui.holes).
+#[tauri::command]
+pub fn webview_holes(window: tauri::Window) -> Vec<serde_json::Value> {
+    #[cfg(target_os = "macos")]
+    {
+        return layer::holes_of(window.label())
+            .into_iter()
+            .map(|h| serde_json::json!({ "x": h.x, "y": h.y, "w": h.w, "h": h.h }))
+            .collect();
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = window;
+        Vec::new()
+    }
 }
 
 // 엔진 서피스 관측 — webview.surfaces 의 engine 축(WKWebView 목록이 못 보는 표면).

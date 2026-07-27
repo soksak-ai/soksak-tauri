@@ -658,6 +658,7 @@ pub fn run() {
             webview::webview_list,
             webview::engine_host_visible,
             webview::engine_surface_stats,
+            webview::webview_holes,
             webview::webview_open_window,
             webview::webview_eval,
             webview::webview_inject_script,
