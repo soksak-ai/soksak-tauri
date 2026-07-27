@@ -3,7 +3,7 @@
 // 같은 경로를 watch 해도 OS watch 는 1개, 해제는 마지막 소비자에서만. 변경은 fs-change 이벤트.
 // registerCatalog() 말미에서 등록(catalog 분할 — catalog.ts 비대화 방지, catalogGit 선례).
 
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../platform";
 import { tmsg } from "../i18n";
 import { register } from "./registry";
 

@@ -1,6 +1,5 @@
+import { invoke, currentWindow } from "../platform";
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { createCoreSync } from "./coreSync";
 import type { CoreStoreDeps } from "./coreStore";
 import {
@@ -70,7 +69,7 @@ function loadBuiltins(): {
 //      webview 레이어를 샘플링하지 못해 유령이 되므로 테마색 백킹을 깐다.
 function syncTitlebarBacking(theme: ThemeSpec, mode: ThemeMode): void {
   try {
-    void getCurrentWindow()
+    void currentWindow()
       .setTheme(mode)
       .catch(() => {
         // 비지원 플랫폼/권한 부재 — 무시(테마 토큰 렌더에는 영향 없음).
@@ -88,7 +87,7 @@ function syncTitlebarBacking(theme: ThemeSpec, mode: ThemeMode): void {
       // 비 macOS/명령 부재 — 무시(백킹은 macOS 전용 보정).
     });
   } catch {
-    // 비 Tauri 환경(jsdom 테스트 등) — getCurrentWindow 가 동기 throw 한다.
+    // 셸 런타임 없음(jsdom 테스트 등) — 어댑터가 동기 throw 한다.
     // 네이티브 크롬이 없는 환경이므로 동기화 자체가 무의미: 조용히 통과.
   }
 }

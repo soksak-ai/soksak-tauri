@@ -1,7 +1,7 @@
 // 명령 실행기: Rust 소켓 서버가 emit 한 cmd-request 를 registry 로 실행하고
 // invoke(cmd_result) 로 회신한다(요청 id 매칭). 앱 시작 시 1회 startExecutor().
 
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../platform";
 import { currentWindowLabel } from "../lib/webviewLabels";
 import { listenThisWindow } from "../lib/windowEvents";
 import { useSettings } from "../state/settings";

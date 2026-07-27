@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
+import { dialog } from "../platform";
 import { addProjectClaimed } from "../state/projectRegistry";
 import { useOverlayActive } from "../state/ui";
 import { Icon } from "../ui/icons/Icon";
@@ -63,7 +63,7 @@ export function NewProjectModal({
   }, [onClose]);
 
   const pickFolder = async () => {
-    const sel = await open({ directory: true, multiple: false });
+    const sel = await dialog.openDirectory();
     if (typeof sel !== "string") return;
     setMode("manual");
     try {

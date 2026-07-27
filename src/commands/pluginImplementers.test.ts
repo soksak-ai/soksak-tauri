@@ -8,7 +8,7 @@ vi.stubGlobal("localStorage", {
   removeItem: (key: string) => void mem.delete(key),
   clear: () => mem.clear(),
 });
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => undefined) }));
+vi.mock("../platform", () => ({ invoke: vi.fn(async () => undefined) }));
 
 import { registerPluginCatalog } from "./catalogPlugins";
 import { execute, getSpec } from "./registry";

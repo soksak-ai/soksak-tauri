@@ -6,13 +6,8 @@
 //
 // coreStore 가 localStorage 동기캐시 + app.data 권위·broadcast 를 흡수하므로 여기선 직렬화/배선만.
 
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, currentWindow } from "../platform";
 import { safeListen } from "../lib/safeListen";
-import {
-  getCurrentWindow,
-  LogicalPosition,
-  LogicalSize,
-} from "@tauri-apps/api/window";
 import { currentWindowLabel } from "../lib/webviewLabels";
 import { makeCoreStore } from "./coreStore";
 import { validateProjectRoot, ensureDefaultProjectRoot } from "../lib/projectRoot";
@@ -43,7 +38,7 @@ async function currentFrame(): Promise<
   { x: number; y: number; w: number; h: number } | undefined
 > {
   try {
-    const win = getCurrentWindow();
+    const win = currentWindow();
     const [pos, size, scale] = await Promise.all([
       win.outerPosition(),
       win.outerSize(),
@@ -195,8 +190,8 @@ export async function initWorkspacePersistence(
   window.addEventListener("pagehide", doPersist);
   // 창 이동/리사이즈도 저장 트리거(B2 rect) — sessions 변화가 아니라 위 구독이 못 잡는다.
   // 네이티브 이벤트 기반(폴링 0), 같은 디바운스로 coalesce.
-  void getCurrentWindow().onMoved(persist);
-  void getCurrentWindow().onResized(persist);
+  void currentWindow().onMoved(persist);
+  void currentWindow().onResized(persist);
 
   return restored;
 }
@@ -304,9 +299,9 @@ export async function initControlPlaneFrame(): Promise<void> {
   try {
     const rect = await store.hydrate();
     if (rect) {
-      const win = getCurrentWindow();
-      await win.setPosition(new LogicalPosition(rect.x, rect.y)).catch(() => {});
-      await win.setSize(new LogicalSize(rect.w, rect.h)).catch(() => {});
+      const win = currentWindow();
+      await win.setPosition(rect.x, rect.y).catch(() => {});
+      await win.setSize(rect.w, rect.h).catch(() => {});
     }
   } catch (e) {
     console.error("컨트롤 플레인 프레임 복원 실패:", e);
@@ -314,6 +309,6 @@ export async function initControlPlaneFrame(): Promise<void> {
   const persist = debounce(() => {
     void currentFrame().then((f) => f && store.save(f));
   }, 400);
-  void getCurrentWindow().onMoved(persist);
-  void getCurrentWindow().onResized(persist);
+  void currentWindow().onMoved(persist);
+  void currentWindow().onResized(persist);
 }

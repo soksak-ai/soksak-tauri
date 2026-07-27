@@ -1,7 +1,7 @@
 // 스킬 자동 재생성 방아쇠 — 플러그인 활성 집합(=명령 표면)이 변하면, identity 홈의 매니페스트대로
 // CLI 를 스폰해 SKILL.md 를 다시 쓴다(P8 쓰기-스루: 파일 가로채기 없이 파일을 소유한다).
 // 폴링 없음: zustand 구독이 신호원이고, 디바운스로 리로드 폭풍을 한 번으로 접는다.
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../platform";
 import { usePlugins } from "./plugins";
 
 /** 활성 집합 지문 — 활성 플러그인 id 의 정렬 결합. 표면이 같으면 지문이 같다(순수). */

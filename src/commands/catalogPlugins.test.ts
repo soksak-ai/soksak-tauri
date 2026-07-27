@@ -7,7 +7,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 const { invoke } = vi.hoisted(() => ({
   invoke: vi.fn(async (..._a: unknown[]): Promise<unknown> => null),
 }));
-vi.mock("@tauri-apps/api/core", () => ({
+vi.mock("../platform", () => ({
   invoke: (...a: unknown[]) => invoke(...a),
 }));
 

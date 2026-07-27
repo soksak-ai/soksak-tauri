@@ -19,7 +19,7 @@ vi.mock("../plugins/hooks", () => ({
     payloads.push(p);
   },
 }));
-vi.mock("@tauri-apps/api/core", () => ({ invoke: async () => {} }));
+vi.mock("../platform", () => ({ invoke: async () => {} }));
 
 afterEach(() => {
   emits.length = 0;

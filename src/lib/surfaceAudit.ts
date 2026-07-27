@@ -12,7 +12,7 @@
 // 폴링 아님: 트리거는 전부 사건(layout.reflow·view.parked·webview.* 활동·리사이즈 종료·
 // 부트 ready)이고, 타이머는 사건 후 레이아웃 정착 대기 1개뿐(400ms 디바운스 — 사건 이름
 // surface-audit-settle, 연속 사건은 마지막 것만 판정).
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../platform";
 import { onPluginEvent } from "../plugins/hooks";
 import { useBootPhase } from "../state/bootPhase";
 
@@ -114,7 +114,19 @@ function darkViewRects(): AuditRect[] {
 }
 
 interface EngineStats {
-  surfaces?: { hidden: boolean; effectivelyHidden: boolean; frame: AuditRect }[];
+  surfaces?: { ptr: number; hidden: boolean; effectivelyHidden: boolean; frame: AuditRect }[];
+}
+
+/** 표면이 어느 슬롯에도 담기지 않는가 — 포함 판정(집행의 조건). 슬롯보다 밖으로 1px 이라도
+ *  나가면 침범이다: 그 픽셀이 이웃 칸을 덮는다. tol 은 반올림 오차만 흡수한다. */
+export function containedIn(surface: AuditRect, anchors: AuditRect[], tol = 2): boolean {
+  return anchors.some(
+    (a) =>
+      surface.x >= a.x - tol &&
+      surface.y >= a.y - tol &&
+      surface.x + surface.w <= a.x + a.w + tol &&
+      surface.y + surface.h <= a.y + a.h + tol,
+  );
 }
 
 let lastSignature = "";
@@ -137,6 +149,21 @@ async function runAudit(): Promise<void> {
     }));
   const anchors = visibleAnchorRects();
   const verdict = judgeSurfaces(visible, anchors.rects);
+  // 집행 — 어느 앵커에도 담기지 않는 가시 표면은 코어가 즉시 가린다(마지막 방어선).
+  // 판정만 하고 두면 이웃 칸이 계속 덮인다(실측: 좌 129px 침범이 사용자 화면에 남았다).
+  // 되살리기는 소유자의 정상 경로(bounds→가시성)가 한다 — 코어는 넘은 것을 가릴 뿐이다.
+  for (const s of stats.surfaces ?? []) {
+    if (s.effectivelyHidden) continue;
+    const dom = {
+      x: s.frame.x,
+      y: innerH - (s.frame.y + s.frame.h),
+      w: s.frame.w,
+      h: s.frame.h,
+    };
+    if (!containedIn(dom, anchors.rects)) {
+      void invoke("engine_surface_hide", { ptr: s.ptr, hidden: true }).catch(() => {});
+    }
+  }
   // missing("보여야 하는데 안 보임" — 실사고: 활성 구글 페인이 검게 안뜸)은 로딩 과도기
   // (open 전·재페인트 전)가 정상적으로 스치는 상태라, 두 번 연속 같은 판정일 때만 위반으로
   // 발행한다(지속 = 결함, 스침 = 과도기).

@@ -5,7 +5,7 @@
 // unacked high watermark otherwise), and keeps a bounded raw tail ring. The core never
 // interprets the bytes — readers strip/parse on their side.
 
-import { Channel, invoke } from "@tauri-apps/api/core";
+import { createStream, invoke } from "../platform";
 import { register, type CommandBrokerSpec, type CommandMachineObjectSchema } from "./registry";
 import { currentWindowLabel } from "../lib/webviewLabels";
 
@@ -88,7 +88,7 @@ export function registerPtySessionCatalog(): void {
         decoder: new TextDecoder(),
         spawnedAt: Date.now(),
       };
-      const onOutput = new Channel<ArrayBuffer>();
+      const onOutput = createStream<ArrayBuffer>();
       onOutput.onmessage = (m) => {
         const bytes = new Uint8Array(m);
         const text = st.decoder.decode(bytes, { stream: true });

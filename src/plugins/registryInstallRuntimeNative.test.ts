@@ -6,7 +6,7 @@ const { invoke, closure, loadBytes } = vi.hoisted(() => ({
   loadBytes: vi.fn(async () => new Uint8Array([1, 2, 3])),
 }));
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: (...args: unknown[]) => invoke(...args) }));
+vi.mock("../platform", () => ({ invoke: (...args: unknown[]) => invoke(...args) }));
 vi.mock("../state/registry", () => ({ loadRegistryResourceBytes: loadBytes }));
 vi.mock("./registryInstaller", async (orig) => {
   const actual = await orig<typeof import("./registryInstaller")>();

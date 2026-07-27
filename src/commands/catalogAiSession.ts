@@ -2,7 +2,7 @@
 // 돌던 claude/codex 세션을 식별해 복원 후 '이어가기' 의 토대를 만든다. 실시간 watch·탭 id 매칭·resume
 // 은 후속 — 지금은 순수 식별(commandLine 이 에이전트인가 / 세션 파일의 sessionId·cwd)만 노출한다.
 
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../platform";
 import { tmsg } from "../i18n";
 import { register } from "./registry";
 

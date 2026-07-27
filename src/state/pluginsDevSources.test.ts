@@ -31,7 +31,7 @@ function manifest(version: string): string {
 const { invoke } = vi.hoisted(() => ({
   invoke: vi.fn(async (..._a: unknown[]): Promise<unknown> => undefined),
 }));
-vi.mock("@tauri-apps/api/core", () => ({ invoke: (...a: unknown[]) => invoke(...a) }));
+vi.mock("../platform", () => ({ invoke: (...a: unknown[]) => invoke(...a) }));
 
 import { usePlugins } from "./plugins";
 

@@ -1,7 +1,7 @@
 // unit.dev.* — core build identity와 독립된 개발 source 선택 표면.
 // Rust identity-home config가 정본이고, plugin kind는 매니페스트 검증 후 loader에 즉시 반영한다.
 
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../platform";
 import { tmsg } from "../i18n";
 import { usePlugins, type UnitDevSource } from "../state/plugins";
 import { register } from "./registry";

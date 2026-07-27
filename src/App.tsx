@@ -1,3 +1,4 @@
+import { currentWindow, appInfo, invoke } from "./platform";
 import { execute } from "./commands/registry";
 import {
   memo,
@@ -8,8 +9,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { invoke } from "@tauri-apps/api/core";
 import { listenThisWindow } from "./lib/windowEvents";
 import { addProjectClaimed, closeProjectReleased, useOtherWindowProjects } from "./state/projectRegistry";
 import { removeRecentProject, useRecentProjects } from "./state/recentProjects";
@@ -607,8 +606,8 @@ function BuildBadge() {
   useEffect(() => {
     if (import.meta.env.DEV) return;
     let alive = true;
-    import("@tauri-apps/api/app")
-      .then((m) => m.getName())
+    appInfo
+      .name()
       .then((name) => {
         if (!alive) return;
         if (name.includes("debug")) setLabel("DEBUG");
@@ -1061,7 +1060,8 @@ function App() {
   // 파일 드래그&드롭: 활성 프로젝트의 터미널 pane(플러그인 터미널, PTY substrate)에 이스케이프
   // 경로를 주입한다. 코어가 터미널 host-div 를 소유하지 않으므로 substrate IO(getPtyIo)로 보낸다.
   useEffect(() => {
-    const unlisten = getCurrentWebview().onDragDropEvent((event) => {
+    const unlisten = currentWindow().onDragDrop((e) => {
+      const event = e as { payload: { type: string; paths?: string[] } };
       if (event.payload.type !== "drop") return;
       const { paths } = event.payload;
       if (!paths || paths.length === 0) return;

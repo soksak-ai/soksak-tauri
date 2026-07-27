@@ -3,7 +3,7 @@
 // One-shot by design: callers re-arm after firing for recurrence; combine with notify.show for reminders.
 // Core holds no persistence — plugins store their own schedules and re-arm on activate.
 
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../platform";
 import { tmsg } from "../i18n";
 import { register } from "./registry";
 

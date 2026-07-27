@@ -3,7 +3,7 @@
 // 담당한다 — 데스크톱 알림은 per-notification 클릭 액션을 플랫폼이 지원하지 않으므로 딥링크가 그
 // 자리를 메운다(코어 deeplink.rs on_open_url).
 
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../platform";
 import { tmsg } from "../i18n";
 import { register } from "./registry";
 

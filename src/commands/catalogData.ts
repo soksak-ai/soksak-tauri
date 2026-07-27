@@ -5,7 +5,7 @@
 // the registry only (commands.execute); without a kv surface a runtime plugin has no
 // durable state at all. ns is explicit — callers own their partition, nothing is implied.
 
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../platform";
 import { register, type CommandBrokerSpec, type CommandMachineObjectSchema } from "./registry";
 import { tmsg } from "../i18n";
 

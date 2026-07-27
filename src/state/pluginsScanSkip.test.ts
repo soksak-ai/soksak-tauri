@@ -27,7 +27,7 @@ const invoke = vi.fn(async (cmd: string) => {
   if (cmd === "plugin_scan") return scan;
   return undefined;
 });
-vi.mock("@tauri-apps/api/core", () => ({
+vi.mock("../platform", () => ({
   invoke: (...a: unknown[]) => invoke(...(a as [string])),
 }));
 

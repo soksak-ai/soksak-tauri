@@ -3,7 +3,7 @@
 // 계열 ②: 커맨드 레지스트리 execute 계측(CommandTrace) — 오케스트레이터가 내리는 모든 명령.
 // 허브가 seq/ts 를 부여하고 전 창 브로드캐스트+영속하므로 여기선 발행만 한다.
 
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../platform";
 import { currentWindowLabel } from "../lib/webviewLabels";
 import { onPluginEvent } from "../plugins/hooks";
 import { setCommandTraceSink } from "../commands/registry";

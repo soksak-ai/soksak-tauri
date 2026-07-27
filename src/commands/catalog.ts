@@ -4,7 +4,7 @@
 //     (SOKSAK_CALLER_TAB → 그 탭이 속한 pane/스페이스/프로젝트) 또는 활성 체인.
 //   - 모든 변이는 결과(새 id/변경 후 상태)를 반환 — 호출자가 응답만으로 검증 가능.
 
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, currentWindow, windowByLabel, shellPath } from "../platform";
 import { tmsg } from "../i18n";
 import { settleAnimationsForCapture } from "./captureSettle";
 import { suggestLayout, type MonitorFact, type WindowFact } from "../lib/layoutSuggest";
@@ -1371,7 +1371,7 @@ export function registerCatalog(): void {
           y1: 0.96,
         };
 
-      const { tempDir, join } = await import("@tauri-apps/api/path");
+      const { tempDir, join } = shellPath;
       const dir = await join(await tempDir(), "soksak", `switchscan-${Date.now()}`);
 
       // 1) 시작 스페이스로 + settle.
@@ -2418,8 +2418,7 @@ export function registerCatalog(): void {
     message: (d) => tmsg("msg.window.info", { w: Number(d.w), h: Number(d.h) }),
     examples: ["window.info"],
     handler: async () => {
-      const { getCurrentWindow } = await import("@tauri-apps/api/window");
-      const win = getCurrentWindow();
+      const win = currentWindow();
       const [pos, size, scale] = await Promise.all([
         win.outerPosition(),
         win.outerSize(),
@@ -2439,12 +2438,7 @@ export function registerCatalog(): void {
     message: (d) => tmsg("msg.window.move", { x: Number(d.x), y: Number(d.y) }),
     examples: ['window.move \'{"x":0,"y":0}\''],
     handler: async (p) => {
-      const { getCurrentWindow, PhysicalPosition } = await import(
-        "@tauri-apps/api/window"
-      );
-      await getCurrentWindow().setPosition(
-        new PhysicalPosition(p.x as number, p.y as number),
-      );
+      await currentWindow().setPhysicalPosition(p.x as number, p.y as number);
       return { x: p.x, y: p.y };
     },
   });
@@ -2459,12 +2453,7 @@ export function registerCatalog(): void {
     message: (d) => tmsg("msg.window.resize", { w: Number(d.w), h: Number(d.h) }),
     examples: ['window.resize \'{"w":1200,"h":800}\''],
     handler: async (p) => {
-      const { getCurrentWindow, PhysicalSize } = await import(
-        "@tauri-apps/api/window"
-      );
-      await getCurrentWindow().setSize(
-        new PhysicalSize(p.w as number, p.h as number),
-      );
+      await currentWindow().setPhysicalSize(p.w as number, p.h as number);
       return { w: p.w, h: p.h };
     },
   });
@@ -2486,10 +2475,9 @@ export function registerCatalog(): void {
         await invoke("window_focus", { label });
         return { focused: true };
       }
-      const { getCurrentWindow } = await import("@tauri-apps/api/window");
       // setFocus 는 창을 key 로 만들 뿐 — 앱 전면 전환은 네이티브 자기 활성화로.
       await invoke("window_activate");
-      await getCurrentWindow().setFocus();
+      await currentWindow().setFocus();
       return { focused: true };
     },
   });
@@ -2514,8 +2502,7 @@ export function registerCatalog(): void {
     handler: async (p) => {
       const off = p.off === true;
       const label = windowTarget(p);
-      const { Window } = await import("@tauri-apps/api/window");
-      const win = await Window.getByLabel(label);
+      const win = await windowByLabel(label);
       if (!win) return notFound(`창 없음: ${label}`);
       if (off) await win.unmaximize();
       else await win.maximize();
@@ -2794,7 +2781,7 @@ export function registerCatalog(): void {
       }
       let path = p.path as string | undefined;
       if (!path) {
-        const { tempDir, join } = await import("@tauri-apps/api/path");
+        const { tempDir, join } = shellPath;
         path = await join(
           await tempDir(),
           "soksak",
@@ -3089,7 +3076,7 @@ export function registerCatalog(): void {
       let stage = "start";
       try {
         stage = "path";
-        const { tempDir, join } = await import("@tauri-apps/api/path");
+        const { tempDir, join } = shellPath;
         const dir = await join(
           await tempDir(),
           "soksak",

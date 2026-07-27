@@ -1,4 +1,4 @@
-import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { currentWindow } from "../platform";
 
 // 멀티 윈도우 식별자의 단일 진실. 브라우저 child webview label 처럼 *Tauri 전역에서 유일해야 하는*
 // 이름은 반드시 여기서 파생한다 — 각 창의 sessions 스토어 id(viewId 등)는 창별 카운터라 창마다 겹친다
@@ -15,7 +15,7 @@ let cached: string | null = null;
 export function currentWindowLabel(): string {
   if (cached !== null) return cached;
   try {
-    cached = getCurrentWebviewWindow().label;
+    cached = currentWindow().label;
   } catch {
     cached = "";
   }

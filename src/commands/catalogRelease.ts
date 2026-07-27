@@ -9,7 +9,7 @@
 // thin commands); each unit repo owns IDENTITY (unit.json/targets.json). specRoot is a checkout of
 // soksak-ai/soksak-spec — for release.validate it MUST be the pinned checkout (drift guard), which
 // validate-with-spec.mjs self-enforces against spec-validator.json.
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../platform";
 import { register } from "./registry";
 import { tmsg } from "../i18n";
 import {

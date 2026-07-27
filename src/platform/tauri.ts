@@ -1,0 +1,146 @@
+// Tauri 셸 어댑터 — ShellHost 계약의 Tauri 구현.
+//
+// **벤더 SDK(@tauri-apps/*)를 import 하는 것은 이 파일뿐이다.** 다른 어떤 앱 코드도 셸을
+// 알아서는 안 되며, 그 규칙은 shellSeam.test.ts 가 정적으로 시행한다. 새 셸(Electron 등)은
+// 이 파일과 형제로 어댑터를 하나 더 두는 것으로 끝나야 한다 — 앱 코드는 한 줄도 바뀌지 않는다.
+//
+// 어댑터는 계약을 "번역"만 한다. 정책·재시도·상태를 여기 두지 않는다(그건 앱의 것이고,
+// 셸마다 달라지면 그 자체가 셸 종속이다). 유일한 예외는 셸 SDK 의 결함 흡수이며, 흡수할
+// 때는 그 결함을 주석으로 남긴다.
+
+import { invoke as tauriInvoke, Channel } from "@tauri-apps/api/core";
+import { listen as tauriListen } from "@tauri-apps/api/event";
+import {
+  getCurrentWindow,
+  LogicalPosition,
+  LogicalSize,
+  PhysicalPosition,
+  PhysicalSize,
+  Window,
+} from "@tauri-apps/api/window";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { getName, getVersion } from "@tauri-apps/api/app";
+import type {
+  ShellEvent,
+  ShellHost,
+  ShellWindowHandle,
+  Stream,
+  Unlisten,
+} from "./host";
+
+/** Tauri 의 UnlistenFn 은 내부적으로 async — 이미 해제된 리스너의 재해지가 동기 throw 가
+ *  아니라 반환 promise 의 reject 로 온다. 계약은 "해지는 멱등"이므로 여기서 흡수한다. */
+function safeOff(off: unknown): Unlisten {
+  let done = false;
+  return () => {
+    if (done) return;
+    done = true;
+    try {
+      const r = (off as () => unknown)?.();
+      if (r && typeof (r as Promise<unknown>).catch === "function") {
+        void (r as Promise<unknown>).catch(() => {});
+      }
+    } catch {
+      /* 이미 해제됨 — 재해지는 no-op */
+    }
+  };
+}
+
+function wrapWindow(win: Window, label: string): ShellWindowHandle {
+  return {
+    label,
+    setTitle: (t) => win.setTitle(t),
+    setSize: (w, h) => win.setSize(new LogicalSize(w, h)),
+    setPosition: (x, y) => win.setPosition(new LogicalPosition(x, y)),
+    setFocus: () => win.setFocus(),
+    setTheme: (mode) => win.setTheme(mode),
+    outerPosition: async () => {
+      const p = await win.outerPosition();
+      return { x: p.x, y: p.y };
+    },
+    innerPosition: async () => {
+      const p = await win.innerPosition();
+      return { x: p.x, y: p.y };
+    },
+    outerSize: async () => {
+      const s = await win.outerSize();
+      return { width: s.width, height: s.height };
+    },
+    scaleFactor: () => win.scaleFactor(),
+    setPhysicalPosition: (x, y) => win.setPosition(new PhysicalPosition(x, y)),
+    setPhysicalSize: (w, h) => win.setSize(new PhysicalSize(w, h)),
+    setAlwaysOnTop: (on) => win.setAlwaysOnTop(on),
+    maximize: () => win.maximize(),
+    unmaximize: () => win.unmaximize(),
+    onResized: async (cb) =>
+      safeOff(await win.onResized(({ payload }) => cb({ width: payload.width, height: payload.height }))),
+    onMoved: async (cb) => safeOff(await win.onMoved(({ payload }) => cb({ x: payload.x, y: payload.y }))),
+    onDragDrop: async (cb) => safeOff(await win.onDragDropEvent((e) => cb(e))),
+    listen: async <T,>(event: string, cb: (e: ShellEvent<T>) => void) => {
+      // 창 타겟 신호는 webviewWindow.listen 만이 격리한다 — 전역 listen 은 emit_to(다른 창)
+      // 까지 받아 명령이 두 창에서 중복 실행된다(창별 독립 붕괴).
+      const target = label === getCurrentWindow().label ? getCurrentWebviewWindow() : win;
+      return safeOff(await target.listen<T>(event, (e) => cb({ payload: e.payload })));
+    },
+  };
+}
+
+export const tauriHost: ShellHost = {
+  name: "tauri",
+
+  invoke: <T,>(cmd: string, args?: Record<string, unknown>) => tauriInvoke<T>(cmd, args),
+
+  createStream: <T,>(): Stream<T> => new Channel<T>() as unknown as Stream<T>,
+
+  listen: async <T,>(event: string, cb: (e: ShellEvent<T>) => void) =>
+    safeOff(await tauriListen<T>(event, (e) => cb({ payload: e.payload }))),
+
+  currentWindow: () => {
+    const win = getCurrentWindow();
+    return wrapWindow(win, win.label);
+  },
+
+  windowByLabel: async (label) => {
+    const win = await Window.getByLabel(label);
+    return win ? wrapWindow(win, label) : null;
+  },
+
+  app: { name: () => getName(), version: () => getVersion() },
+
+  path: {
+    tempDir: async () => (await import("@tauri-apps/api/path")).tempDir(),
+    join: async (...parts) => (await import("@tauri-apps/api/path")).join(...parts),
+  },
+
+  dialog: {
+    openDirectory: async (options) => {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const picked = await open({ directory: true, multiple: false, ...options });
+      return typeof picked === "string" ? picked : null;
+    },
+  },
+
+  notification: {
+    isPermissionGranted: async () =>
+      (await import("@tauri-apps/plugin-notification")).isPermissionGranted(),
+    requestPermission: async () =>
+      (await import("@tauri-apps/plugin-notification")).requestPermission(),
+    send: (options) => {
+      void import("@tauri-apps/plugin-notification").then((m) => m.sendNotification(options));
+    },
+    onAction: async (cb) => {
+      const m = await import("@tauri-apps/plugin-notification");
+      return safeOff(
+        await m.onAction((a) => cb({ extra: (a as { extra?: Record<string, unknown> }).extra })),
+      );
+    },
+  },
+
+  deepLink: {
+    onOpenUrl: async (cb) => {
+      const m = await import("@tauri-apps/plugin-deep-link");
+      return safeOff(await m.onOpenUrl(cb));
+    },
+    current: async () => (await import("@tauri-apps/plugin-deep-link")).getCurrent(),
+  },
+};

@@ -4,7 +4,7 @@
 // 알림으로 권한 상승 불가(파괴적 command 는 설정 게이트를 동일하게 받음).
 
 import { execute, type CommandContext, type CommandOutcome } from "../commands/registry";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../platform";
 
 export interface DeepLink {
   command: string;

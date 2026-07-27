@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const invoke = vi.fn();
-vi.mock("@tauri-apps/api/core", () => ({
+vi.mock("../platform", () => ({
   invoke: (...a: unknown[]) => invoke(...a),
 }));
 

@@ -1,8 +1,7 @@
 // 플러그인 호스트 초기화 — 앱 시작 시 1회(main.tsx).
 // 순서: 이벤트 훅 구독 → 앱 버전 확정(minAppVersion 검사 기준) → 스캔+재활성화.
 
-import { getVersion } from "@tauri-apps/api/app";
-import { invoke } from "@tauri-apps/api/core";
+import { appInfo, invoke } from "../platform";
 import { startPluginHooks } from "./hooks";
 import { wireNativeRegistryInstall } from "./registryInstallRuntimeNative";
 import { usePlugins } from "../state/plugins";
@@ -29,7 +28,7 @@ export async function initPluginHost(): Promise<void> {
     console.warn("release 판정 조회 실패(false 유지):", e);
   }
   try {
-    usePlugins.setState({ appVersion: await getVersion() });
+    usePlugins.setState({ appVersion: await appInfo.version() });
   } catch (e) {
     // 버전 미확인이면 minAppVersion 검사를 생략(경고) — reload 쪽에서 로그.
     console.warn("앱 버전 조회 실패:", e);

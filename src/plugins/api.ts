@@ -12,7 +12,7 @@ import type {
   CommandSpec,
   ParamSpec,
 } from "../commands/registry";
-import { Channel } from "@tauri-apps/api/core";
+import { createStream } from "../platform";
 import {
   browserLabel,
   browserViewIdFromLabel,
@@ -757,7 +757,7 @@ const denied = (message: string): CommandOutcome => ({
   message,
 });
 
-// app.process 구현 — handle(id)별 리스너 + 등록 전 도착분 버퍼(유실 0). spawn 시 Channel 3개
+// app.process 구현 — handle(id)별 리스너 + 등록 전 도착분 버퍼(유실 0). spawn 시 스트림 3개
 // (stdout/stderr/exit)를 만들어 process_spawn 에 넘기고, onData/onStderr/onExit 가 그 스트림을 구독.
 function createProcessApi(
   deps: PluginApiDeps,
@@ -834,11 +834,11 @@ function createProcessApi(
         stderrBuf: [],
         exitCode: null,
       };
-      const onStdout = new Channel<ArrayBuffer>();
+      const onStdout = createStream<ArrayBuffer>();
       onStdout.onmessage = (m) => dispatch(st.stdout, st.stdoutBuf, new Uint8Array(m));
-      const onStderr = new Channel<ArrayBuffer>();
+      const onStderr = createStream<ArrayBuffer>();
       onStderr.onmessage = (m) => dispatch(st.stderr, st.stderrBuf, new Uint8Array(m));
-      const onExit = new Channel<number>();
+      const onExit = createStream<number>();
       onExit.onmessage = (code) => {
         if (st.exit.size) st.exit.forEach((f) => f(code));
         else st.exitCode = code;
@@ -904,7 +904,7 @@ export interface SidecarHandle {
 }
 
 // app.sidecar 구현 — 매니페스트 sidecars[] 에 선언된 engine 모듈만 연다(선언≡실물: 미선언 open =
-// throw). 이벤트는 Tauri Channel 로 이 호출자에만 배달(전역 emit 아님 — 미개봉 코드 무배달·누수 0).
+// throw). 이벤트는 스트림으로 이 호출자에만 배달(전역 emit 아님 — 미개봉 코드 무배달·누수 0).
 function createSidecarApi(
   deps: PluginApiDeps,
   tracker: DisposableTracker,
@@ -917,7 +917,7 @@ function createSidecarApi(
         throw new Error(`매니페스트 sidecars 에 선언되지 않은 사이드카: ${name}`);
       }
       const listeners = new Map<string, Set<(p: Record<string, unknown>) => void>>();
-      const onEvent = new Channel<Record<string, unknown>>();
+      const onEvent = createStream<Record<string, unknown>>();
       onEvent.onmessage = (m) => {
         const ev = typeof m?.event === "string" ? (m.event as string) : "";
         listeners.get(ev)?.forEach((f) => f(m));
@@ -957,7 +957,7 @@ function createSidecarApi(
 }
 
 // app.pty 구현 — PTY 세션 spawn + raw 바이트 IO(터미널 플러그인이 xterm 구동). 네이티브 명령은 기존
-// spawn/write/resize/ack/close_terminal(명령명 유지). 출력은 Channel 스트림(createProcessApi 와 동형 —
+// spawn/write/resize/ack/close_terminal(명령명 유지). 출력은 스트림(createProcessApi 와 동형 —
 // onData 등록 전 도착분 버퍼로 유실 0). SOKSAK_* env 주입·flow control 커널 측은 pty.rs 가 소유.
 function createPtyApi(deps: PluginApiDeps, tracker: DisposableTracker) {
   type Bytes = (d: Uint8Array) => void;
@@ -984,7 +984,7 @@ function createPtyApi(deps: PluginApiDeps, tracker: DisposableTracker) {
       // producer 만 채우므로 이중 발화가 없다(ptyObservationStore 단일 producer 불변식).
       if (paneId) registerPtyObservation(paneId);
       const st: PtyState = { out: new Set(), outBuf: [], paneId };
-      const onOutput = new Channel<ArrayBuffer>();
+      const onOutput = createStream<ArrayBuffer>();
       onOutput.onmessage = (m) => {
         const b = new Uint8Array(m);
         if (paneId) feedPtyOutput(paneId, b); // 관찰: onData 구독과 독립(누가 구독하든 자동).
@@ -1078,12 +1078,12 @@ function createWsApi(deps: PluginApiDeps, tracker: DisposableTracker) {
   return {
     async connect(url: string): Promise<number> {
       const st: WsState = { msg: new Set(), close: new Set(), msgBuf: [], closed: false };
-      const onMessage = new Channel<string>();
+      const onMessage = createStream<string>();
       onMessage.onmessage = (t) => {
         if (st.msg.size) st.msg.forEach((f) => f(t));
         else st.msgBuf.push(t);
       };
-      const onClose = new Channel<null>();
+      const onClose = createStream<null>();
       onClose.onmessage = () => {
         st.closed = true;
         st.close.forEach((f) => f());

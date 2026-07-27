@@ -14,7 +14,7 @@ vi.stubGlobal("localStorage", storage);
 const { invoke } = vi.hoisted(() => ({
   invoke: vi.fn<(command: string, args?: unknown) => Promise<unknown>>(async () => undefined),
 }));
-vi.mock("@tauri-apps/api/core", () => ({
+vi.mock("../platform", () => ({
   invoke: (command: string, args?: unknown) => invoke(command, args),
 }));
 

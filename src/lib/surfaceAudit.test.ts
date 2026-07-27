@@ -87,3 +87,24 @@ describe("visibleAnchorRects — 측정 앵커의 정본은 bv-area 다", () => 
     expect(anchors.rects).toHaveLength(1);
   });
 });
+
+// 포함 판정 — 집행(코어가 가림)의 조건. 슬롯 밖으로 나간 픽셀은 이웃 칸을 덮는다.
+import { containedIn } from "./surfaceAudit";
+import { describe as dC, it as iC, expect as eC } from "vitest";
+
+dC("containedIn — 표면은 자기 슬롯 안에 있어야 한다", () => {
+  const slot = { x: 100, y: 100, w: 400, h: 300 };
+  iC("정확히 겹치면 담긴다", () => {
+    eC(containedIn({ x: 100, y: 100, w: 400, h: 300 }, [slot])).toBe(true);
+  });
+  iC("반올림 오차(±2px)는 흡수한다", () => {
+    eC(containedIn({ x: 99, y: 101, w: 401, h: 299 }, [slot])).toBe(true);
+  });
+  iC("한 변이라도 넘으면 침범이다 — 실사고의 좌 129px", () => {
+    eC(containedIn({ x: -29, y: 100, w: 529, h: 300 }, [slot])).toBe(false);
+    eC(containedIn({ x: 100, y: 100, w: 400, h: 480 }, [slot])).toBe(false);
+  });
+  iC("앵커가 없으면 어떤 표면도 담기지 않는다(빈 창 위 표면)", () => {
+    eC(containedIn({ x: 0, y: 0, w: 10, h: 10 }, [])).toBe(false);
+  });
+});

@@ -6,7 +6,7 @@
 //  - ui.input.click: 주소 → 요소 click 디스패치(danger:inject). 불일치 = NOT_EXPOSED.
 // 노출(data-node)되지 않은 요소는 주소 트리에 없어 접근 불가 → 명확한 에러(추측 0).
 
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, currentWindow } from "../platform";
 import { currentWindowLabel } from "../lib/webviewLabels";
 import { parseAddress, isParseError } from "./address";
 import { scanNodes, type ScannedNode } from "../plugins/nodeScan";
@@ -296,8 +296,7 @@ export function registerDomCatalog(): void {
       // screen — 전역 논리 좌표. 합성 dispatch 는 히트테스팅·기본동작을 재현하지 못하므로,
       // 실포인터 검증(OS 클릭 도구)이 소비할 좌표 환산을 코어가 한 경로로 제공한다.
       if (p.screen === true) {
-        const { getCurrentWindow } = await import("@tauri-apps/api/window");
-        const win = getCurrentWindow();
+        const win = currentWindow();
         const [pos, scale] = await Promise.all([
           win.innerPosition(),
           win.scaleFactor(),

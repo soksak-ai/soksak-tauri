@@ -3,10 +3,9 @@
 // / 하: 명령 콘솔(레지스트리 실행). 셸은 커맨드·이벤트 표면만 소비한다 — 코어 내부 상태
 // (sessions 등) 직접 참조 금지: 외부 클라이언트(폰·CLI)와 같은 자격이어야 P13 이 지켜진다.
 
+import { invoke, currentWindow } from "../platform";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { safeListen } from "../lib/safeListen";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { currentWindowLabel } from "../lib/webviewLabels";
 import { execute, getSpec } from "../commands/registry";
 import { Icon } from "../ui/icons/Icon";
@@ -277,7 +276,7 @@ export function OrchestratorApp() {
   const togglePin = useCallback(() => {
     setPinned((prev) => {
       const next = !prev;
-      void getCurrentWindow().setAlwaysOnTop(next).catch(() => {});
+      void currentWindow().setAlwaysOnTop(next).catch(() => {});
       return next;
     });
   }, []);
@@ -355,7 +354,7 @@ export function OrchestratorApp() {
 
   useEffect(() => {
     // 네이티브 타이틀(Dock 창 목록 구분) — 프로젝트 창과 같은 규칙: 이름만, 앱 이름 무접미.
-    void getCurrentWindow().setTitle(t("orch.title")).catch(() => {});
+    void currentWindow().setTitle(t("orch.title")).catch(() => {});
     // 백필(커서) 후 라이브 구독 — 폴링 0. 구독/해지는 safeListen 단일 유틸(중복 해지 가드).
     void invoke<ActivityEntry[]>("activity_recent", { since: null, limit: 200 }).then(
       (entries) => setFeed(entries),

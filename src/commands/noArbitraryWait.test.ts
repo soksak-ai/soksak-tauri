@@ -88,6 +88,7 @@ const ALLOWED: { file: string; mark: string; event: string; why: string }[] = [
   { file: "src-tauri/src/sidecar.rs", mark: "recv_timeout(std::time::Duration::from_secs(2))", event: "sidecar-reply-cap", why: "동일(2s)" },
   { file: "src-tauri/src/webview.rs", mark: "recv_timeout(Duration::from_secs(3))", event: "main-thread-dispatch-cap", why: "메인스레드 디스패치 응답 상한(3s)" },
   { file: "src-tauri/src/webview.rs", mark: "recv_timeout(Duration::from_secs(15))", event: "main-thread-dispatch-cap", why: "동일(15s — 콜드 부트 포함)" },
+  { file: "src-tauri/src/pty.rs", mark: "from_millis(150)", event: "pty.stream.reattached", why: "데몬 인계 전이(구 데몬 exit → 신 데몬 소켓 bind) 대기 — 세션 확인·재부착 성공이 종결, 상한 20회" },
   { file: "src-tauri/src/pty.rs", mark: "from_secs(2)", event: "ptyd-bootstrap-handshake", why: "스폰 직후 소켓 준비 유한 재시도(2s 상한) — 감시는 소켓 에러 사건이 담당" },
   { file: "src-tauri/src/pty.rs", mark: "from_millis(50)", event: "ptyd-bootstrap-handshake", why: "동일 루프의 재시도 간격" },
   { file: "src-tauri/src/webview.rs", mark: "tokio::time::sleep(Duration::from_millis(400))", event: "extraction-page-settle", why: "추출용 임시 webview 의 페이지 정착 유한 재시도(timeout 상한)" },

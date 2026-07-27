@@ -7,7 +7,7 @@
 // document loader. No git clone — the native stager downloads the owner release
 // archive by its pinned sha256 and extracts it under regular-files-only policy.
 
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../platform";
 import { loadRegistryResourceBytes } from "../state/registry";
 import {
   declaredEntrypoints,

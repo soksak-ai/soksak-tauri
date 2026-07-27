@@ -4,7 +4,7 @@
 // FileViewer 저장 성공 지점의 emitFileSaved 하나).
 // 리스너 실패는 호스트를 죽이지 못한다(§0-4) — 콜백마다 try/catch.
 
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../platform";
 import { safeListen } from "../lib/safeListen";
 import { listenThisWindow } from "../lib/windowEvents";
 import { currentWindowLabel } from "../lib/webviewLabels";

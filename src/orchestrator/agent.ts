@@ -11,7 +11,7 @@
 // 역할을 정하고, 허용 도구는 이 identity 의 CLI 바이너리(Bash(<bin>:*),
 // <bin>=sok/sok-dev/sok-debug)뿐이다.
 
-import { Channel, invoke } from "@tauri-apps/api/core";
+import { createStream, invoke } from "../platform";
 import { safeListen } from "../lib/safeListen";
 import { useSettings } from "../state/settings";
 import { publishActivity } from "../state/activityFeed";
@@ -85,7 +85,7 @@ async function runCapture(shellCmd: string, env?: Record<string, string>): Promi
   let out = "";
   let err = "";
   const dec = new TextDecoder();
-  const onStderr = new Channel<ArrayBuffer>();
+  const onStderr = createStream<ArrayBuffer>();
   onStderr.onmessage = (m) => {
     err += dec.decode(new Uint8Array(m), { stream: true });
   };
@@ -97,7 +97,7 @@ async function runCapture(shellCmd: string, env?: Record<string, string>): Promi
         resolve(code);
       }
     };
-    const onStdout = new Channel<ArrayBuffer>();
+    const onStdout = createStream<ArrayBuffer>();
     onStdout.onmessage = (m) => {
       out += dec.decode(new Uint8Array(m), { stream: true });
       const at = out.lastIndexOf(SENTINEL);
@@ -107,7 +107,7 @@ async function runCapture(shellCmd: string, env?: Record<string, string>): Promi
         settle(Number.isFinite(code) ? code : -1);
       }
     };
-    const onExit = new Channel<number>();
+    const onExit = createStream<number>();
     // exit 는 폴백(스폰 실패·sentinel 이전 사망)만 — 성공 판정 권위는 sentinel 단독.
     // exit 가 마지막 stdout 배달보다 먼저 올 수 있으므로(채널 간 순서 미보장 — 이 함수가
     // 고치는 바로 그 레이스) 폴백의 "실패 선언"만 짧게 유예해 전송 중 배달을 소화한다.
@@ -360,7 +360,7 @@ async function askInner(text: string, explicitWindow?: string): Promise<CommandO
     else if (!flushTimer) flushTimer = setTimeout(flushDelta, DELTA_FLUSH_MS);
   };
 
-  const onStdout = new Channel<ArrayBuffer>();
+  const onStdout = createStream<ArrayBuffer>();
   onStdout.onmessage = (m) => {
     for (const ev of parser.feed(dec.decode(new Uint8Array(m), { stream: true }))) {
       if (ev.kind === "session") turn.session = ev.sessionId;
@@ -382,7 +382,7 @@ async function askInner(text: string, explicitWindow?: string): Promise<CommandO
     }
   };
   const stderr = { tail: "" };
-  const onStderr = new Channel<ArrayBuffer>();
+  const onStderr = createStream<ArrayBuffer>();
   onStderr.onmessage = (m) => {
     stderr.tail = (stderr.tail + dec.decode(new Uint8Array(m), { stream: true })).slice(-500);
   };
@@ -390,7 +390,7 @@ async function askInner(text: string, explicitWindow?: string): Promise<CommandO
   // 있다 — 종료 후 .then 이 active 를 되살리면 영구 BUSY. finished 게이트로 차단한다.
   let finished = false;
   const exited = new Promise<number>((resolve) => {
-    const onExit = new Channel<number>();
+    const onExit = createStream<number>();
     onExit.onmessage = resolve;
     void invoke<number>("process_spawn", {
       cmd: "/bin/sh",

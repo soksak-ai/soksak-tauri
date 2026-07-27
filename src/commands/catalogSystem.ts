@@ -4,7 +4,7 @@
 // webview is wedged); the registry handler returns the same facts via the ipc_hello_info core command,
 // so the command is discoverable and actually runs on every path.
 
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../platform";
 import { tmsg } from "../i18n";
 import { register } from "./registry";
 

@@ -2,7 +2,7 @@
 // soksak 종속 정책은 로컬 DB(app.data core ns), 실행·로그·정리는 Rust 싱글톤(daemon.rs).
 // 보안 계약: 저장소에 커밋된 파일이 "열면 실행"을 일으키지 않는다 — 자동 기동은 daemon.autostart 로
 // 사용자가 직접 허용한 것만, 프로젝트 열림 때 기동된다(공급망 공격 경로 차단).
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../platform";
 import { register, type CommandContext, type CommandHint } from "./registry";
 import { tmsg } from "../i18n";
 import { useSessions } from "../state/sessions";

@@ -11,6 +11,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../lib/webviewLabels", () => ({ currentWindowLabel: () => "main" }));
+// 셸은 경계 하나로 mock 한다. 창 기하는 테스트가 갈아끼울 수 있게 홀더로 둔다 —
+// 정적 import 는 모듈 적재 시점에 묶이므로 doMock(뒤늦은 대체)으로는 닿지 않는다.
+const shellWin = vi.hoisted(() => ({
+  innerPosition: async () => ({ x: 0, y: 0 }),
+  scaleFactor: async () => 1,
+}));
+vi.mock("../platform", () => ({
+  invoke: vi.fn(async () => ({})),
+  currentWindow: () => shellWin,
+}));
 
 import { registerDomCatalog, deepElementFromPoint, deepActiveElement, viewContainerOf } from "./catalogDom";
 import { catalogJson, execute, getSpec, unregister } from "./registry";
@@ -105,12 +115,8 @@ describe("ui.measure — 상호작용/가시성 축", () => {
     // 합성 dispatch 는 히트테스팅·기본동작(포커스)을 재현하지 못한다 — 실포인터 검증은
     // OS 좌표가 필요하다. 그 환산(물리 innerPosition/scale + viewport rect)을 소비자가
     // 재발명하지 않도록 코어가 한 경로로 노출한다.
-    vi.doMock("@tauri-apps/api/window", () => ({
-      getCurrentWindow: () => ({
-        innerPosition: async () => ({ x: 100, y: 200 }),
-        scaleFactor: async () => 2,
-      }),
-    }));
+    shellWin.innerPosition = async () => ({ x: 100, y: 200 });
+    shellWin.scaleFactor = async () => 2;
     mountNode(`<button data-node="btn">x</button>`);
     const el = document.querySelector('[data-node="btn"]') as HTMLElement;
     el.getBoundingClientRect = () =>

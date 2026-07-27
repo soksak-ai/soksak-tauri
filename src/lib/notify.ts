@@ -2,14 +2,7 @@
 // 포커스 시 인앱 배너(NotifyHost), 비포커스 시 OS 알림(모바일식 푸시) — 둘 다 동일 페이로드.
 // 활성화(클릭/액션/외부 soksak://) 는 deepLink 해석기로 라우팅(권한·danger 게이트 유지).
 
-import {
-  isPermissionGranted,
-  requestPermission,
-  sendNotification,
-  onAction,
-} from "@tauri-apps/plugin-notification";
-import { onOpenUrl, getCurrent } from "@tauri-apps/plugin-deep-link";
-import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { currentWindow, deepLink, notification } from "../platform";
 import { useNotify, type NotifyAction } from "../state/notify";
 import { playSound } from "../ui/sound";
 import { resolveDeepLink } from "./deepLink";
@@ -52,16 +45,16 @@ export async function pushNotification(n: NotificationInput): Promise<void> {
 
 async function osNotify(n: NotificationInput): Promise<void> {
   try {
-    const label = getCurrentWebviewWindow().label;
-    let granted = await isPermissionGranted();
-    if (!granted) granted = (await requestPermission()) === "granted";
+    const label = currentWindow().label;
+    let granted = await notification.isPermissionGranted();
+    if (!granted) granted = (await notification.requestPermission()) === "granted";
     if (!granted) return;
     // extra 로 deepLink+발신 창 라벨 전달 → onAction(클릭)이 정확히 라우팅(멀티윈도우 중복 방지).
-    sendNotification({
+    notification.send({
       title: n.title,
       body: n.body,
       extra: { deepLink: n.deepLink ?? null, win: label },
-    } as Parameters<typeof sendNotification>[0]);
+    } as Parameters<typeof notification.send>[0]);
   } catch (e) {
     console.warn("OS 알림 발송 실패:", e);
   }
@@ -70,9 +63,9 @@ async function osNotify(n: NotificationInput): Promise<void> {
 // 앱 시작 1회 — OS 알림 클릭(onAction)·외부 딥링크(onOpenUrl)·콜드스타트 진입을 deepLink 로 라우팅.
 // 플러그인 호스트(command 레지스트리) 준비 후 호출해야 한다(initPluginHost 다음).
 export async function initNotify(): Promise<void> {
-  const label = getCurrentWebviewWindow().label;
+  const label = currentWindow().label;
   try {
-    await onAction((notif) => {
+    await notification.onAction((notif) => {
       const extra = (notif as { extra?: Record<string, unknown> }).extra;
       // 멀티윈도우 중복 처리 방지 — 발신 창만 처리. 그 창이 닫혔으면 클릭 유실(메시지는 보관됨).
       if (extra?.win && extra.win !== label) return;
@@ -83,14 +76,14 @@ export async function initNotify(): Promise<void> {
     console.warn("알림 onAction 등록 실패:", e);
   }
   try {
-    await onOpenUrl((urls) => {
+    await deepLink.onOpenUrl((urls) => {
       for (const u of urls) void resolveDeepLink(u);
     });
   } catch (e) {
     console.warn("딥링크 onOpenUrl 등록 실패:", e);
   }
   try {
-    const initial = await getCurrent();
+    const initial = await deepLink.current();
     if (initial) for (const u of initial) void resolveDeepLink(u);
   } catch {
     // 콜드스타트 진입 없음 — 정상.

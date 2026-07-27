@@ -46,7 +46,7 @@ const invoke = vi.fn(async (cmd: string, args?: { path?: string }) => {
   }
   return undefined;
 });
-vi.mock("@tauri-apps/api/core", () => ({
+vi.mock("../platform", () => ({
   invoke: (...a: unknown[]) => invoke(...(a as [string, { path?: string }])),
 }));
 

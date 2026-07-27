@@ -1,19 +1,20 @@
-// 알림 라우팅 — 포커스면 인앱 배너, 비포커스면 OS 알림(extra 에 deepLink+발신 창). Tauri 플러그인은 mock.
+// 알림 라우팅 — 포커스면 인앱 배너, 비포커스면 OS 알림(extra 에 deepLink+발신 창).
+// 셸은 경계(../platform) 하나로 mock 한다 — 테스트가 벤더를 알면 셸 교체가 테스트까지 뜯는다.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const sendNotification = vi.fn();
-vi.mock("@tauri-apps/plugin-notification", () => ({
-  isPermissionGranted: vi.fn(async () => true),
-  requestPermission: vi.fn(async () => "granted"),
-  sendNotification: (...a: unknown[]) => sendNotification(...a),
-  onAction: vi.fn(async () => {}),
-}));
-vi.mock("@tauri-apps/plugin-deep-link", () => ({
-  onOpenUrl: vi.fn(async () => {}),
-  getCurrent: vi.fn(async () => null),
-}));
-vi.mock("@tauri-apps/api/webviewWindow", () => ({
-  getCurrentWebviewWindow: () => ({ label: "main" }),
+vi.mock("../platform", () => ({
+  notification: {
+    isPermissionGranted: vi.fn(async () => true),
+    requestPermission: vi.fn(async () => "granted"),
+    send: (...a: unknown[]) => sendNotification(...a),
+    onAction: vi.fn(async () => () => {}),
+  },
+  deepLink: {
+    onOpenUrl: vi.fn(async () => () => {}),
+    current: vi.fn(async () => null),
+  },
+  currentWindow: () => ({ label: "main" }),
 }));
 
 import { pushNotification } from "./notify";

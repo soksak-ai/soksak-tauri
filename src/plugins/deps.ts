@@ -1,7 +1,7 @@
 // 플러그인 API 의 프로덕션 의존성 배선 — api.ts 의 PluginApiDeps 구현.
 // (테스트는 가짜 deps 를 주입 — 이 파일은 실제 registry/store/bridge 연결만 담당.)
 
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../platform";
 import { safeListen } from "../lib/safeListen";
 import {
   execute,
@@ -46,7 +46,7 @@ export function defaultPluginDeps(appVersion: string): PluginApiDeps {
     // fs-change(코어 watcher, 폴링 없음) 구독 → 변경된 부모 디렉토리 문자열을 콜백. 반환 = 해지.
     onFsChange: (cb) => subscribe<string>("fs-change", cb),
     // data-change(Rust DbState 변경) 전 창 구독 — app.data.watch 의 크로스윈도우 채널. 전역
-    // listen(@tauri-apps/api/event)이라 어느 창의 변경이든 모든 창이 받는다(같은 프로젝트 일관).
+    // 전역 listen(셸 경계의 브로드캐스트)이라 어느 창의 변경이든 모든 창이 받는다(같은 프로젝트 일관).
     onDataChange: (cb) => subscribe<DataChangeEvent>("data-change", cb),
     // clipboard-change(코어 네이티브 watcher — Win/X11/Wayland 이벤트, macOS changeCount 폴링)
     // 전 창 구독 → 바뀐 텍스트를 콜백.
