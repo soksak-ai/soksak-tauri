@@ -1166,3 +1166,131 @@ fn vault_env_injects_env_secrets_and_recovers_on_unlock() {
     }
     let _ = &host;
 }
+
+// ── 원장 파일 · 스케줄 파생 · 신원 스탬프(셸 타입 0) ─────────────────────────
+
+// 테스트 홈은 dev identity 로 쥔다 — 홈과 identifier 는 함께 다닌다(identity.rs).
+fn ledger_identity(name: &str) -> crate::identity::Identity {
+    let base = std::env::temp_dir()
+        .canonicalize()
+        .unwrap_or_else(|_| std::env::temp_dir());
+    let home = base.join(format!("soksak-service-{name}-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&home).unwrap();
+    crate::identity::Identity::new(home, "com.soksak.dev")
+}
+
+fn one_service_ledger() -> soksak_spec_service::BindLedger {
+    soksak_spec_service::BindLedger {
+        version: 1,
+        services: vec![binding(&["run"])],
+    }
+}
+
+#[test]
+fn a_missing_ledger_is_absence_not_an_error() {
+    // 원장 없음 = 서비스 선언 플러그인 없음(정상). 에러로 올리면 부팅이 시끄러워진다.
+    let id = ledger_identity("absent");
+    assert_eq!(read_ledger(&id), Ok(None));
+}
+
+#[test]
+fn a_broken_ledger_is_named_not_silently_empty() {
+    // 있는데 못 읽는 것은 없는 것과 다르다 — 조용히 빈 원장으로 강등하면 서비스가 통째로 사라진다.
+    let id = ledger_identity("broken");
+    let path = ledger_file(&id);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, "{ not json").unwrap();
+    assert!(read_ledger(&id).is_err());
+}
+
+#[test]
+fn the_ledger_lives_under_the_identity_home_not_an_ambient_global() {
+    // 홈은 정체성이 답한다 — 두 정체성이 같은 원장을 보지 않는다.
+    let a = ledger_identity("home-a");
+    let b = ledger_identity("home-b");
+    assert_ne!(ledger_file(&a), ledger_file(&b));
+    assert!(ledger_file(&a).starts_with(a.home()));
+
+    assert_eq!(write_ledger(&a, &one_service_ledger()), Ok(true));
+    assert_eq!(read_ledger(&a), Ok(Some(one_service_ledger())));
+    assert_eq!(read_ledger(&b), Ok(None)); // 옆 정체성은 건드리지 않는다
+}
+
+#[test]
+fn writing_the_same_ledger_twice_is_a_no_op() {
+    // 창 여러 개가 같은 원장을 내려도 무해해야 한다(멱등) — 두 번째는 쓰지 않는다.
+    let id = ledger_identity("idempotent");
+    assert_eq!(write_ledger(&id, &one_service_ledger()), Ok(true));
+    assert_eq!(write_ledger(&id, &one_service_ledger()), Ok(false));
+}
+
+#[test]
+fn the_ledger_is_replaced_atomically() {
+    // 부팅이 반쪽 원장을 읽으면 서비스가 절반만 뜬다 — 스테이징 잔재가 남지 않아야 한다.
+    let id = ledger_identity("atomic");
+    write_ledger(&id, &one_service_ledger()).unwrap();
+    let staging = ledger_file(&id).with_extension("json.staging");
+    assert!(!staging.exists(), "스테이징 잔재: {staging:?}");
+    assert_eq!(read_ledger(&id), Ok(Some(one_service_ledger())));
+}
+
+#[test]
+fn the_origin_stamp_names_the_service_not_its_self_report() {
+    // 중개 호출의 신원은 코어가 찍는다(자기신고 불신) — 이 규칙이 셸 어댑터 안에 숨으면
+    // 두 번째 셸이 다르게 찍고, 다르게 찍힌 origin 은 낭독 후보 제외를 뚫는다.
+    assert_eq!(mediation_origin("demo"), "service:demo");
+}
+
+#[test]
+fn a_ledger_schedule_becomes_an_owned_job_with_a_stable_id() {
+    let s = soksak_spec_service::LedgerSchedule {
+        name: "sweep".into(),
+        command: "reconcile".into(),
+        params: None,
+        trigger: soksak_spec_service::LedgerTrigger::Reconcile { reconcile: true },
+        timeout_ms: Some(5_000),
+        zombie_backstop_ms: None,
+    };
+    let spec = job_spec_for("demo", &s);
+    // id 가 안정이라 재-bind 가 같은 잡을 덮어쓴다(중복 등록 0).
+    assert_eq!(spec.id.as_deref(), Some("svc:demo:sweep"));
+    // owner 스탬프가 있어야 unbind 의 cancel_by_owner 가 회수한다(PS14).
+    assert_eq!(spec.owner.as_deref(), Some("demo"));
+    assert_eq!(spec.command, "plugin.demo.reconcile");
+    assert_eq!(spec.trigger, crate::schedule::Trigger::Reconcile);
+    assert_eq!(spec.params, json!({}));
+    assert_eq!(spec.timeout_ms, Some(5_000));
+    // 서비스 op 의 장기 실행은 진행 ev 연장이 담당한다(PS12) — 웹뷰 lease 를 쥐면 안 된다.
+    assert!(!spec.process_lease);
+}
+
+#[test]
+fn every_ledger_trigger_maps_to_its_core_trigger() {
+    let mut s = soksak_spec_service::LedgerSchedule {
+        name: "tick".into(),
+        command: "run".into(),
+        params: Some(json!({ "a": 1 })),
+        trigger: soksak_spec_service::LedgerTrigger::Every { every_ms: 60_000 },
+        timeout_ms: None,
+        zombie_backstop_ms: Some(9_000),
+    };
+    assert_eq!(
+        job_spec_for("demo", &s).trigger,
+        crate::schedule::Trigger::Every {
+            every_ms: 60_000,
+            anchor: None
+        }
+    );
+    assert_eq!(job_spec_for("demo", &s).params, json!({ "a": 1 }));
+    assert_eq!(job_spec_for("demo", &s).zombie_backstop_ms, Some(9_000));
+
+    s.trigger = soksak_spec_service::LedgerTrigger::Cron {
+        cron: "0 * * * *".into(),
+    };
+    assert_eq!(
+        job_spec_for("demo", &s).trigger,
+        crate::schedule::Trigger::Cron {
+            expr: "0 * * * *".into()
+        }
+    );
+}

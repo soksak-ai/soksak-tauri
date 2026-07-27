@@ -14,9 +14,11 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 use soksak_spec_service::{
-    judge_hello, ops_match, Compat, ErrCode, ServiceBinding, ServiceIn, ServiceOut, MAX_LINE_BYTES,
-    RESTART_BACKOFF_SECS, SHUTDOWN_GRACE_MS,
+    judge_hello, ops_match, BindLedger, Compat, ErrCode, LedgerSchedule, LedgerTrigger,
+    ServiceBinding, ServiceIn, ServiceOut, MAX_LINE_BYTES, RESTART_BACKOFF_SECS, SHUTDOWN_GRACE_MS,
 };
+
+use crate::identity::Identity;
 
 // ── 호스트 seam — 활동 발행·스케줄 poke·시크릿 해소(테스트 mock 대상) ────────────
 
@@ -53,6 +55,75 @@ fn mediation_reason(caller: &str, deps: &[String], method: &str) -> Option<Strin
         Some(target) => Some(format!(
             "미선언 의존 플러그인 호출: {target} — 매니페스트 dependencies 에 \"{target}\" 선언 필요(C3)"
         )),
+    }
+}
+
+// 중개 호출의 발원 신원(순수, PS13) — 코어가 찍는 스탬프이지 서비스의 자기신고가 아니다.
+// 셸 어댑터 안에 두면 두 번째 셸이 다르게 찍고, 다르게 찍힌 origin 은 낭독 후보 제외를 뚫는다.
+fn mediation_origin(caller: &str) -> String {
+    format!("service:{caller}")
+}
+
+// ── 원장 파일(홈은 정체성이 답한다) ──────────────────────────────────────────
+
+// 원장 경로 — 홈 조립은 한 곳에서만. 부팅과 동기화가 같은 파일을 본다.
+fn ledger_file(identity: &Identity) -> std::path::PathBuf {
+    soksak_spec_service::ledger_path(identity.home())
+}
+
+// 원장 읽기. Ok(None)=파일 없음(서비스 선언 플러그인 부재 — 정상), Err=있는데 못 읽는다.
+// 둘을 섞지 않는다: 깨진 원장을 빈 원장으로 강등하면 서비스가 통째로 조용히 사라진다.
+fn read_ledger(identity: &Identity) -> Result<Option<BindLedger>, String> {
+    let Ok(text) = std::fs::read_to_string(ledger_file(identity)) else {
+        return Ok(None);
+    };
+    serde_json::from_str(&text)
+        .map(Some)
+        .map_err(|e| e.to_string())
+}
+
+// 원장 쓰기 — 원자 교체(심링크 금지·실물 스테이징 규율)라 부팅이 반쪽 원장을 읽지 않는다.
+// 반환 = 실제로 썼는가. 내용 동일이면 false(멱등 — 창 여러 개가 불러도 무해).
+fn write_ledger(identity: &Identity, ledger: &BindLedger) -> Result<bool, String> {
+    let path = ledger_file(identity);
+    let next = serde_json::to_string_pretty(ledger).map_err(|e| e.to_string())?;
+    if std::fs::read_to_string(&path)
+        .map(|cur| cur == next)
+        .unwrap_or(false)
+    {
+        return Ok(false);
+    }
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    let tmp = path.with_extension("json.staging");
+    std::fs::write(&tmp, &next).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+// 원장 스케줄 한 항목 → 코어 JobSpec(순수, PS14). id 는 안정("svc:<plugin>:<name>")이라 재-bind 가
+// 같은 잡을 덮어쓰고, owner=플러그인 id 라 unbind 의 cancel_by_owner 가 회수한다.
+fn job_spec_for(plugin: &str, s: &LedgerSchedule) -> crate::schedule::JobSpec {
+    let trigger = match &s.trigger {
+        LedgerTrigger::Reconcile { .. } => crate::schedule::Trigger::Reconcile,
+        LedgerTrigger::Every { every_ms } => crate::schedule::Trigger::Every {
+            every_ms: *every_ms,
+            anchor: None,
+        },
+        LedgerTrigger::Cron { cron } => crate::schedule::Trigger::Cron { expr: cron.clone() },
+    };
+    crate::schedule::JobSpec {
+        id: Some(format!("svc:{}:{}", plugin, s.name)),
+        trigger,
+        command: format!("plugin.{}.{}", plugin, s.command),
+        params: s.params.clone().unwrap_or_else(|| json!({})),
+        retry: None,
+        concurrency: 1,
+        timeout_ms: s.timeout_ms,
+        process_lease: false, // 서비스 op 의 장기 실행은 진행 ev 연장이 담당(PS12) — 웹뷰 lease 불요.
+        zombie_backstop_ms: s.zombie_backstop_ms,
+        owner: Some(plugin.to_string()),
     }
 }
 
@@ -933,13 +1004,24 @@ fn on_stream_end(mgr: &Arc<MgrInner>, svc: &Arc<Service>, cause: &str, my_gen: u
 
 // ── 앱 배선(실 구현) — 호스트·스포너·부트 ────────────────────────────────────────
 
+// 앱 호스트 어댑터. 네 능력이 서로 다른 통로를 쓴다:
+//   publish     → ActivitySink 계약(activity_sink.rs). 발행 구현을 여기서 알지 않는다.
+//   poke_owner  · resolve_secret · secret_env → `app.state::<T>()`. 앱이 소유한 상태 레지스트리
+//     조회이지 창 의존이 아니다 — 주입형으로 돌리려면 그 상태들이 Arc 공유여야 하고, 그것은
+//     lib.rs 의 manage 와 모든 state::<T>() 호출자를 함께 바꾸는 일이라 여기 범위 밖이다.
+//   mediate     → ipc::request_command. 창 레지스트리 라우팅 전체가 필요해 WindowOracle
+//     (라벨 사실 + 배달) 로는 못 돈다. 여기서 떼어낼 수 있는 것은 신원 스탬프 규칙뿐이다.
 pub struct AppServiceHost {
     app: tauri::AppHandle,
+    activity: Arc<dyn crate::activity_sink::ActivitySink>,
 }
 
 impl AppServiceHost {
     pub fn new(app: tauri::AppHandle) -> Self {
-        Self { app }
+        Self {
+            activity: Arc::new(app.clone()),
+            app,
+        }
     }
 }
 
@@ -951,7 +1033,7 @@ impl ProcessServiceSpawner {
 
 impl ServiceHost for AppServiceHost {
     fn publish(&self, kind: &str, source: &str, payload: Value) {
-        crate::activity::publish(&self.app, kind, source, payload);
+        let _ = crate::activity_sink::ActivitySink::publish(&*self.activity, kind, source, payload);
     }
     fn poke_owner(&self, owner: &str) {
         use tauri::Manager;
@@ -974,7 +1056,7 @@ impl ServiceHost for AppServiceHost {
         // request_command 가 bind:"service" 대상이면 route()에서 직행, 그 외엔 창 registry 로.
         // origin 은 코어가 스탬핑한 "service:<caller>"(자기신고 불신) — 낭독 후보 제외·피드 흐림.
         // parent 는 under(상관 문맥) — request_command 시그니처엔 없어 origin 에 상관만 싣는다.
-        let origin = format!("service:{caller}");
+        let origin = mediation_origin(caller);
         let _ = under; // under 는 서비스측 상관 라벨(로컬) — 코어 신원 스탬핑엔 불사용.
         crate::ipc::request_command(
             &self.app,
@@ -1000,8 +1082,8 @@ impl ServiceSpawner for ProcessServiceSpawner {
         env: &[(String, String)],
     ) -> Result<SpawnedIo, String> {
         use std::process::{Command, Stdio};
-        // 사이드카 해석은 정체성의 홈에서 나온다 — 이 스포너는 아직 홈만 들고 있어
-        // 전역을 여기서 한 번 값으로 꺼낸다. 스포너가 Identity 를 통째로 받게 되면 self 로 바뀐다.
+        // 사이드카 해석은 정체성의 홈에서 나온다 — 스포너가 Identity 를 통째로 받게 되면
+        // 이 줄은 self 로 바뀐다.
         let bin = crate::process::resolve_sidecar_cmd(
             &crate::identity::ambient(),
             &format!("sidecar:{}", binding.sidecar),
@@ -1047,22 +1129,20 @@ impl ServiceSpawner for ProcessServiceSpawner {
 // 원장이 없으면 서비스 0 — 정상(선언 플러그인 부재). 워크스페이스 창 불요(창-무관).
 pub fn boot(app: &tauri::AppHandle) {
     use tauri::Manager;
-    let home = crate::home::soksak_home();
-    let ledger_file = soksak_spec_service::ledger_path(&home);
-    let ledger: soksak_spec_service::BindLedger = match std::fs::read_to_string(&ledger_file) {
-        Ok(text) => match serde_json::from_str(&text) {
-            Ok(l) => l,
-            Err(e) => {
-                crate::activity::publish(
-                    app,
-                    "service.ledger.invalid",
-                    "core",
-                    json!({ "path": ledger_file.to_string_lossy(), "error": e.to_string() }),
-                );
-                return;
-            }
-        },
-        Err(_) => return, // 원장 없음 = 서비스 선언 플러그인 없음.
+    // 홈은 정체성이 답한다 — 앰비언트 전역을 읽는 자리는 경계의 이쪽 끝 하나뿐이다(identity.rs).
+    let identity = crate::identity::ambient();
+    let ledger = match read_ledger(&identity) {
+        Ok(Some(l)) => l,
+        Ok(None) => return, // 원장 없음 = 서비스 선언 플러그인 없음.
+        Err(e) => {
+            crate::activity::publish(
+                app,
+                "service.ledger.invalid",
+                "core",
+                json!({ "path": ledger_file(&identity).to_string_lossy(), "error": e }),
+            );
+            return;
+        }
     };
     let mgr = app.state::<ServiceManager>();
     for binding in ledger.services {
@@ -1075,33 +1155,7 @@ pub fn boot(app: &tauri::AppHandle) {
 // bind 후 poke 는 reader 의 ready 전이가 쏜다(poke_owner) — 부팅 스캔은 서비스가 준비된 뒤에만.
 fn register_binding_schedules(app: &tauri::AppHandle, binding: &ServiceBinding) {
     for s in &binding.schedules {
-        let trigger = match &s.trigger {
-            soksak_spec_service::LedgerTrigger::Reconcile { .. } => {
-                crate::schedule::Trigger::Reconcile
-            }
-            soksak_spec_service::LedgerTrigger::Every { every_ms } => {
-                crate::schedule::Trigger::Every {
-                    every_ms: *every_ms,
-                    anchor: None,
-                }
-            }
-            soksak_spec_service::LedgerTrigger::Cron { cron } => {
-                crate::schedule::Trigger::Cron { expr: cron.clone() }
-            }
-        };
-        let spec = crate::schedule::JobSpec {
-            id: Some(format!("svc:{}:{}", binding.plugin, s.name)),
-            trigger,
-            command: format!("plugin.{}.{}", binding.plugin, s.command),
-            params: s.params.clone().unwrap_or_else(|| json!({})),
-            retry: None,
-            concurrency: 1,
-            timeout_ms: s.timeout_ms,
-            process_lease: false, // 서비스 op 의 장기 실행은 진행 ev 연장이 담당(PS12) — 웹뷰 lease 불요.
-            zombie_backstop_ms: s.zombie_backstop_ms,
-            owner: Some(binding.plugin.clone()),
-        };
-        crate::schedule::register_owned(app, spec);
+        crate::schedule::register_owned(app, job_spec_for(&binding.plugin, s));
     }
 }
 
@@ -1168,25 +1222,13 @@ pub fn service_status(mgr: tauri::State<ServiceManager>, plugin: Option<String>)
 pub fn service_ledger_sync(
     app: tauri::AppHandle,
     mgr: tauri::State<ServiceManager>,
-    ledger: soksak_spec_service::BindLedger,
+    ledger: BindLedger,
 ) -> Result<(), String> {
     use tauri::Manager;
-    let home = crate::home::soksak_home();
-    let path = soksak_spec_service::ledger_path(&home);
-    let next = serde_json::to_string_pretty(&ledger).map_err(|e| e.to_string())?;
-    if std::fs::read_to_string(&path)
-        .map(|cur| cur == next)
-        .unwrap_or(false)
-    {
+    // 홈은 정체성이 답한다 — 원장 파일 규칙(경로·비교·원자 교체)은 read/write_ledger 가 쥔다.
+    if !write_ledger(&crate::identity::ambient(), &ledger)? {
         return Ok(()); // 내용 동일 — 멱등.
     }
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
-    // 원자 교체(심링크 금지·실물 스테이징 규율) — 부팅이 절대 반쪽 원장을 읽지 않는다.
-    let tmp = path.with_extension("json.staging");
-    std::fs::write(&tmp, &next).map_err(|e| e.to_string())?;
-    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
 
     let wanted: std::collections::HashSet<String> =
         ledger.services.iter().map(|s| s.plugin.clone()).collect();
