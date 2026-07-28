@@ -336,12 +336,6 @@ pub const UNSERVED: &[Unserved] = &[
                      tokio 를 이름으로 막는다(net_http_request 와 같은 벽). 검증·쓰기 부분은 이미 코어의 \
                      verify_and_link 와 같은 규칙이라, 막는 것은 다운로드 한 걸음뿐이다.",
     },
-    Unserved {
-        name: "process_reclaim_window",
-        blocked_by: "회수 대상은 이 프로세스가 스폰한 자식의 Child 핸들이다. 창 라벨은 키일 뿐 회수할 \
-                     것을 만들어 주지 않는다 — cored 에는 그 맵이 없어 언제나 0 을 돌려주는데, 그 0 은 \
-                     '거둘 것이 없었다'와 구분되지 않는다.",
-    },
 ];
 
 pub fn unserved(name: &str) -> Option<&'static Unserved> {
@@ -825,13 +819,22 @@ mod tests {
         assert_eq!(listed.len(), UNSERVED.len());
     }
 
+    /// 이름은 두 표 **각각** 안에서도 유일하다.
+    ///
+    /// 서빙 표만 보던 검사라 거절 표의 중복이 통과했다(실측: 머지 재조립이 한 이름을 두 번
+    /// 넣었다). 같은 이름에 사유가 둘이면 셸 저자가 어느 것을 읽었는지에 따라 다른 이유를
+    /// 믿게 되고, 그 둘이 갈리는 순간까지 조용하다.
     #[test]
     fn every_name_is_unique() {
-        let mut names: Vec<&str> = COMMANDS.iter().map(|c| c.name).collect();
-        let before = names.len();
-        names.sort_unstable();
-        names.dedup();
-        assert_eq!(names.len(), before, "표에 같은 이름이 둘 있다: {names:?}");
+        for (label, mut names) in [
+            ("서빙", COMMANDS.iter().map(|c| c.name).collect::<Vec<_>>()),
+            ("거절", UNSERVED.iter().map(|u| u.name).collect::<Vec<_>>()),
+        ] {
+            let before = names.len();
+            names.sort_unstable();
+            names.dedup();
+            assert_eq!(names.len(), before, "{label} 표에 같은 이름이 둘 있다: {names:?}");
+        }
     }
 
     // 선언이 비어 있으면 cored.commands 는 "아무것도 못 한다"를 성공으로 답한다.
