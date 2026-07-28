@@ -8,17 +8,17 @@
 //
 // 표는 두 줄만 구분한다.
 //   answer — 이 셸이 아는 사실. Electron API 나 셸 자신의 레지스트리가 답한다.
-//   absent — 이 셸에 대응 개념이 없다. 이름(SHELL_CONCEPT_ABSENT)을 달고 거절한다.
+//   absent — 이 셸에 대응 개념이 없다. 이름(FRAMEWORK_CONCEPT_ABSENT)을 달고 거절한다.
 //
 // 없는 것을 조용히 성공시키지 않는 이유: UI 는 성공을 받으면 그 기능이 있다고 믿고 그 믿음대로
 // 그린다(홀 위에 그리는 강조 바, 오버레이 게이트에 기대는 모달). 없다고 답해야 UI 가 그에 맞게
-// 그릴 수 있고, 그 사유는 shell_capabilities 로 읽힌다.
+// 그릴 수 있고, 그 사유는 framework_capabilities 로 읽힌다.
 //
 // "부재"를 답으로 쓰는 기준: 셸이 **증명할 수 있는 부재**만 값으로 답한다(자기가 만든 것의
 // 목록이 비었다 = 실측). 관측할 수단조차 없는 것(사이드카가 창에 붙이는 엔진 서피스)은 0 을
 // 돌려주지 않는다 — 재지 않은 것을 쟀다고 말하는 것이 곧 가짜 성공이다.
 
-const { ABSENT_CODE, shellError } = require("./error.cjs");
+const { ABSENT_CODE, frameworkError } = require("./error.cjs");
 
 /** 셸의 영역을 가르는 이름 갈래. 등재 여부와 무관하게 이 접두사는 소켓으로 가지 않는다.
  *  목록은 장부(src-tauri/src/cored_ledger.rs SHELL_FAMILIES)와 한 벌이어야 한다 —
@@ -26,7 +26,7 @@ const { ABSENT_CODE, shellError } = require("./error.cjs");
 const BRANCHES = ["window_", "webview_", "engine_", "titlebar_"];
 
 /** 갈래 밖에 서는 유일한 이름. 표 자신을 읽는 자리라 어느 갈래에도 속하지 않는다. */
-const CAPABILITIES = "shell_capabilities";
+const CAPABILITIES = "framework_capabilities";
 
 const isShellBranch = (cmd) => BRANCHES.some((p) => String(cmd).startsWith(p));
 
@@ -103,4 +103,4 @@ function serve(cmd, args, ctx, record) {
   }
 }
 
-module.exports = { ABSENT_CODE, BRANCHES, CAPABILITIES, claims, isShellBranch, serve, shellError };
+module.exports = { ABSENT_CODE, BRANCHES, CAPABILITIES, claims, isShellBranch, serve, frameworkError };

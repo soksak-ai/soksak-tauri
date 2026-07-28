@@ -33,15 +33,15 @@ let started = false;
 // 봉합(재시도·폴링 없음). "미등록 명령만 대기"는 부족하다 — 등록된 명령의 핸들러가 다른
 // 플러그인 명령을 부르는 경우(workflow reconcile → kanban)를 놓친다. 전부 대기가 올바른 의미론.
 let hostReady = false;
-let resolveHostReady: (() => void) | undefined;
+let resolveFrameworkReady: (() => void) | undefined;
 const hostReadyGate = new Promise<void>((resolve) => {
-  resolveHostReady = resolve;
+  resolveFrameworkReady = resolve;
 });
 
 /** 플러그인 호스트 활성화 완료 신호 — main.tsx 가 initPluginHost() 직후 1회 호출한다. */
 export function markCommandHostReady(): void {
   hostReady = true;
-  resolveHostReady?.();
+  resolveFrameworkReady?.();
 }
 
 export function startExecutor(): void {

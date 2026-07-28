@@ -2,12 +2,12 @@
 // 말해 주지 못하고, 그 순간 실패는 전부 같은 실패로 뭉개진다.
 
 /** 이 셸에 대응 개념이 없다. 창·웹뷰·네이티브 표면의 거절은 전부 이 이름이다. */
-const ABSENT_CODE = "SHELL_CONCEPT_ABSENT";
+const ABSENT_CODE = "FRAMEWORK_CONCEPT_ABSENT";
 
-function shellError(code, message) {
+function frameworkError(code, message) {
   const e = new Error(message);
   e.code = code;
   return e;
 }
 
-module.exports = { ABSENT_CODE, shellError };
+module.exports = { ABSENT_CODE, frameworkError };

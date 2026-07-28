@@ -112,7 +112,7 @@ beforeEach(async () => {
   created = [];
   const handlers = loadShell(created);
   await new Promise((r) => setImmediate(r)); // 부팅 창이 서기를 기다린다
-  const invoke = handlers.get("shell:invoke");
+  const invoke = handlers.get("framework:invoke");
   const boot = created[0];
   call = (cmd, args = {}) =>
     invoke({ sender: boot.webContents }, { cmd, args });
@@ -193,5 +193,20 @@ describe("window_* — 프레임워크가 답한다", () => {
     expect(main).toMatchObject({ x: 2000, y: 100, w: 400, h: 300, focused: false });
     // 중심(2200,250)이 두 번째 모니터(1920..3200) 안이다 — 판단이 아니라 기하다.
     expect(main.monitor).toBe(1);
+  });
+
+  // 프론트는 라벨 없이 부른다(사용자가 "새 창"을 열 때 그 창의 이름을 알 리 없다). 그때
+  // 프레임워크가 짓는다 — 라이브 실측에서 이 자리가 INVALID_LABEL 로 막혀 있었다.
+  it("라벨 없이 부르면 프레임워크가 짓는다", async () => {
+    const r = await call("window_create", {});
+    expect(r.ok).toBe(true);
+    // w-<uuid4> — 불투명하고 재사용되지 않는다. 코어와 같은 규칙이라야 복원 manifest 가
+    // 두 프레임워크에서 같은 모양을 갖는다.
+    expect(r.value).toMatch(/^w-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect((await call("window_list")).value).toContain(r.value);
+
+    // 두 번 부르면 두 창이다 — 라벨이 없으면 멱등할 대상이 없다.
+    const second = await call("window_create", {});
+    expect(second.value).not.toBe(r.value);
   });
 });

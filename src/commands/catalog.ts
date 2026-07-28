@@ -4,7 +4,7 @@
 //     (SOKSAK_CALLER_TAB → 그 탭이 속한 pane/스페이스/프로젝트) 또는 활성 체인.
 //   - 모든 변이는 결과(새 id/변경 후 상태)를 반환 — 호출자가 응답만으로 검증 가능.
 
-import { invoke, currentWindow, windowByLabel, shellPath } from "../framework";
+import { invoke, currentWindow, windowByLabel, frameworkPath } from "../framework";
 import { tmsg } from "../i18n";
 import { settleAnimationsForCapture } from "./captureSettle";
 import { suggestLayout, type MonitorFact, type WindowFact } from "../lib/layoutSuggest";
@@ -73,7 +73,7 @@ import { registerClipboardCatalog } from "./catalogClipboard";
 import { registerNotifyCatalog } from "./catalogNotify";
 import { registerScheduleCatalog } from "./catalogSchedule";
 import { registerServiceCatalog } from "./catalogService";
-import { registerShellCatalog } from "./catalogShell";
+import { registerFrameworkCatalog } from "./catalogFramework";
 import { registerSystemCatalog } from "./catalogSystem";
 import { registerUnitDevCatalog } from "./catalogUnitDev";
 import { registerReleaseCatalog } from "./catalogRelease";
@@ -1372,7 +1372,7 @@ export function registerCatalog(): void {
           y1: 0.96,
         };
 
-      const { tempDir, join } = shellPath;
+      const { tempDir, join } = frameworkPath;
       const dir = await join(await tempDir(), "soksak", `switchscan-${Date.now()}`);
 
       // 1) 시작 스페이스로 + settle.
@@ -2782,7 +2782,7 @@ export function registerCatalog(): void {
       }
       let path = p.path as string | undefined;
       if (!path) {
-        const { tempDir, join } = shellPath;
+        const { tempDir, join } = frameworkPath;
         path = await join(
           await tempDir(),
           "soksak",
@@ -3077,7 +3077,7 @@ export function registerCatalog(): void {
       let stage = "start";
       try {
         stage = "path";
-        const { tempDir, join } = shellPath;
+        const { tempDir, join } = frameworkPath;
         const dir = await join(
           await tempDir(),
           "soksak",
@@ -3276,7 +3276,7 @@ export function registerCatalog(): void {
   registerNotifyCatalog();
   registerScheduleCatalog();
   registerServiceCatalog();
-  registerShellCatalog();
+  registerFrameworkCatalog();
   registerSystemCatalog();
   registerUnitDevCatalog();
   registerReleaseCatalog();

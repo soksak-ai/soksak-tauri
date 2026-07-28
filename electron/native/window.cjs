@@ -6,7 +6,8 @@
 // 이름·인자·반환 모양은 앱의 것과 같다. 번역하면 프론트가 프레임워크마다 다른 것을 보고,
 // 그 차이는 오류가 아니라 "이 프레임워크에서는 창 배치가 안 됨"으로 나타난다.
 
-const { shellError } = require("./error.cjs");
+const { randomUUID } = require("node:crypto");
+const { frameworkError } = require("./error.cjs");
 
 /** 라벨로 창을 짚는다. 못 짚으면 이름을 달고 실패한다 — 아무 창이나 건드리면 남의 창을
  *  바꿔 놓고 성공을 돌려주게 된다. */
@@ -14,7 +15,7 @@ function need(ctx, args) {
   const label = String(args.label ?? "");
   const win = ctx.windowFor(label);
   if (!win || win.isDestroyed()) {
-    throw shellError("NO_WINDOW", `창 없음: ${label}`);
+    throw frameworkError("NO_WINDOW", `창 없음: ${label}`);
   }
   return win;
 }
@@ -30,10 +31,10 @@ module.exports = {
       const raw = String(args.color ?? "").trim();
       const hex = raw.replace(/^#/, "");
       if (!/^[0-9a-fA-F]{6}$/.test(hex)) {
-        throw shellError("INVALID_COLOR", `hex 색상(#rrggbb)이 아님: ${raw}`);
+        throw frameworkError("INVALID_COLOR", `hex 색상(#rrggbb)이 아님: ${raw}`);
       }
       // 부른 창을 못 짚으면 아무 창도 칠하지 않는다(코어는 호출 창을 자동 주입한다).
-      if (!ctx.window) throw shellError("NO_WINDOW", "부른 창을 짚지 못했다");
+      if (!ctx.window) throw frameworkError("NO_WINDOW", "부른 창을 짚지 못했다");
       ctx.window.setBackgroundColor(`#${hex.toLowerCase()}`);
       return null;
     },
@@ -51,8 +52,11 @@ module.exports = {
     concept: "창 생성",
     source: "BrowserWindow + 셸의 라벨 레지스트리",
     answer: (ctx, args) => {
-      const label = String(args.label ?? "").trim();
-      if (!label) throw shellError("INVALID_LABEL", "라벨 없는 창 생성은 아직 없다");
+      // 프론트는 라벨 없이 부른다 — 사용자가 "새 창"을 열 때 그 창의 이름을 알 리 없다.
+      // 그때는 프레임워크가 짓는다. 규칙은 코어와 같은 w-<uuid4> 다: 불투명하고 재사용되지
+      // 않아야 닫힌 창의 라벨이 새 창에 붙는 유령 복원이 없고, 두 프레임워크의 복원 manifest
+      // 가 같은 모양을 갖는다. 의도적 재사용은 respawn 뿐이고 그때는 라벨이 주어진다.
+      const label = String(args.label ?? "").trim() || `w-${randomUUID()}`;
       const live = ctx.windowFor(label);
       if (live && !live.isDestroyed()) return label;
       const r = args.rect;
@@ -95,7 +99,7 @@ module.exports = {
       const win = need(ctx, args);
       for (const k of ["x", "y", "w", "h"]) {
         if (typeof args[k] !== "number") {
-          throw shellError("INVALID_RECT", `${k} 가 수가 아님: ${JSON.stringify(args[k])}`);
+          throw frameworkError("INVALID_RECT", `${k} 가 수가 아님: ${JSON.stringify(args[k])}`);
         }
       }
       win.setBounds({ x: args.x, y: args.y, width: args.w, height: args.h });

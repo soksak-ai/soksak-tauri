@@ -4,7 +4,7 @@
 // 검증의 축은 둘이다.
 //   ① 대응이 있는 것은 Electron 이 실제로 답하는가 — 소켓을 거치지 않고, 부른 창에.
 //   ② 대응이 없는 것은 **없다고 말하는가** — 조용한 성공은 UI 에게 없는 기능을 있다고 믿게 하고,
-//      UI 는 그 믿음대로 그린다. 거절은 이름(SHELL_CONCEPT_ABSENT)을 달고, 사유는 읽힌다.
+//      UI 는 그 믿음대로 그린다. 거절은 이름(FRAMEWORK_CONCEPT_ABSENT)을 달고, 사유는 읽힌다.
 //
 // Electron 은 띄우지 않는다. electron 모듈을 스텁으로 갈아끼우고 main.cjs 를 적재하면 배선
 // 그대로가 손에 잡힌다(shell-invoke.test.mjs 와 같은 방식).
@@ -25,7 +25,7 @@ const PRELOAD = join(HERE, "../../electron/preload.cjs");
 const ELECTRON = requireCjs.resolve("electron");
 const osModule = requireCjs("node:os");
 
-const ABSENT = "SHELL_CONCEPT_ABSENT";
+const ABSENT = "FRAMEWORK_CONCEPT_ABSENT";
 const LABEL_FLAG = "--soksak-window-label=";
 /** 컨트롤 플레인 예약어. 부트스트랩 창은 이 라벨이어야 프론트의 컨트롤 플레인 분기가 돈다. */
 const CONTROL_PLANE = "main";
@@ -162,7 +162,7 @@ function labelOf(win) {
 
 /** 렌더러의 호출 — 발신 창까지 실어 보낸다(셸은 부른 창을 알아야 한다). */
 const invoke = (handlers, cmd, args, win) =>
-  handlers.get("shell:invoke")({ sender: win ? { __win: win } : {} }, { cmd, args });
+  handlers.get("framework:invoke")({ sender: win ? { __win: win } : {} }, { cmd, args });
 
 function ledger() {
   const p = join(root, ".soksak-electron-spike", "invoke-demand.jsonl");
@@ -296,18 +296,18 @@ describe("표 — UI 가 읽을 수 있는 능력면", () => {
     "engine_host_visible",
     "engine_surface_stats",
     "titlebar_backing",
-    "shell_capabilities",
+    "framework_capabilities",
   ];
 
   it("갈래 파일로 갈라도 키 집합은 그대로다", async () => {
     const handlers = loadShell(null);
-    const r = await invoke(handlers, "shell_capabilities", {}, fakeWindow());
+    const r = await invoke(handlers, "framework_capabilities", {}, fakeWindow());
     expect(Object.keys(r.value.commands).sort()).toEqual([...DECLARED].sort());
   });
 
-  it("shell_capabilities 가 명령별 지원 여부와 사유를 값으로 준다", async () => {
+  it("framework_capabilities 가 명령별 지원 여부와 사유를 값으로 준다", async () => {
     const handlers = loadShell(null);
-    const r = await invoke(handlers, "shell_capabilities", {}, fakeWindow());
+    const r = await invoke(handlers, "framework_capabilities", {}, fakeWindow());
     expect(r.ok).toBe(true);
     expect(r.value.shell).toBe("electron");
     const c = r.value.commands;
@@ -323,7 +323,7 @@ describe("표 — UI 가 읽을 수 있는 능력면", () => {
 
   it("표와 실제 답이 어긋나지 않는다 — 선언이 곧 행동이다", async () => {
     const handlers = loadShell(null);
-    const table = (await invoke(handlers, "shell_capabilities", {}, fakeWindow())).value.commands;
+    const table = (await invoke(handlers, "framework_capabilities", {}, fakeWindow())).value.commands;
     const args = Object.fromEntries(ABSENT_CALLS);
     for (const [cmd, cap] of Object.entries(table)) {
       const r = await invoke(handlers, cmd, args[cmd] ?? {}, fakeWindow());
@@ -373,7 +373,7 @@ describe("프리로드 — 라벨 주입 부재는 실패다", () => {
       process.argv = realArgv;
       delete requireCjs.cache[PRELOAD];
     }
-    return exposed.__soksakShell;
+    return exposed.__soksakFramework;
   }
 
   it("주입된 라벨을 그대로 쓴다", () => {

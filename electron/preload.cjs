@@ -26,7 +26,7 @@ ipcRenderer.on("shell:event", (_e, { event, payload }) => {
 
 /** 창 기하 변화 — 계약의 onResized/onMoved 가 소비한다. */
 const windowEventListeners = new Map();
-ipcRenderer.on("shell:window-event", (_e, msg) => {
+ipcRenderer.on("framework:window-event", (_e, msg) => {
   windowEventListeners.get(msg.name)?.forEach((f) => f(msg));
 });
 
@@ -37,17 +37,17 @@ ipcRenderer.on("shell:stream", (_e, { id, msg }) => {
   streams.get(id)?.(msg);
 });
 
-contextBridge.exposeInMainWorld("__soksakShell", {
+contextBridge.exposeInMainWorld("__soksakFramework", {
   name: "electron",
   label,
-  invoke: (cmd, args) => ipcRenderer.invoke("shell:invoke", { cmd, args }),
+  invoke: (cmd, args) => ipcRenderer.invoke("framework:invoke", { cmd, args }),
   // 셸·Node 가 직접 답하는 능력(앱 이름/버전·임시 경로·경로 결합·디렉터리 선택).
-  host: (op, args) => ipcRenderer.invoke("shell:host", { op, args }),
-  windowOp: (op, args) => ipcRenderer.invoke("shell:window", { label, op, args }),
+  host: (op, args) => ipcRenderer.invoke("framework:host", { op, args }),
+  windowOp: (op, args) => ipcRenderer.invoke("framework:window", { label, op, args }),
   // 라벨로 지목한 창. exact 는 "없으면 실패하라"는 뜻이다 — 발신 창으로 폴백하면
   // 엉뚱한 창을 조작하고도 성공을 돌려주게 된다.
   windowOpAt: (target, op, args) =>
-    ipcRenderer.invoke("shell:window", { label: target, op, args, exact: true }),
+    ipcRenderer.invoke("framework:window", { label: target, op, args, exact: true }),
   onEvent: (event, cb) => {
     if (!listeners.has(event)) listeners.set(event, new Set());
     listeners.get(event).add(cb);

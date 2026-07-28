@@ -8,7 +8,7 @@
 
 import type { AppFramework } from "./contract";
 import type { EngineProvision } from "@soksak-ai/plugin-spec";
-import { electronHost } from "./electron";
+import { electronFramework } from "./electron";
 import { tauriHost } from "./tauri";
 
 export type {
@@ -22,13 +22,13 @@ export type {
 
 const ADAPTERS: Record<string, AppFramework> = {
   tauri: tauriHost,
-  electron: electronHost,
+  electron: electronFramework,
 };
 
-function resolveHost(): AppFramework {
+function resolveFramework(): AppFramework {
   // 빌드 주입(vite define) 또는 런타임 표식. 없으면 정본.
   // 셸은 자기가 붙인 창구로 자신을 밝힌다 — 빌드 주입보다 런타임 사실이 앞선다.
-  const bridged = (globalThis as { __soksakShell?: { name?: string } }).__soksakShell?.name;
+  const bridged = (globalThis as { __soksakFramework?: { name?: string } }).__soksakFramework?.name;
   const declared =
     bridged ?? (globalThis as { __SOKSAK_SHELL__?: string }).__SOKSAK_SHELL__ ?? "tauri";
   const host = ADAPTERS[declared];
@@ -42,19 +42,19 @@ function resolveHost(): AppFramework {
 }
 
 /** 활성 셸. 진단·원장에 이름을 실을 때 쓴다. */
-export const shell: AppFramework = resolveHost();
+export const framework: AppFramework = resolveFramework();
 
 // ── 이름 있는 재수출 — 호출부는 셸을 모른 채 이것만 쓴다 ─────────────────────
-export const invoke: AppFramework["invoke"] = (cmd, args) => shell.invoke(cmd, args);
-export const createStream: AppFramework["createStream"] = () => shell.createStream();
-export const listen: AppFramework["listen"] = (event, cb) => shell.listen(event, cb);
-export const currentWindow: AppFramework["currentWindow"] = () => shell.currentWindow();
-export const windowByLabel: AppFramework["windowByLabel"] = (label) => shell.windowByLabel(label);
-export const appInfo = shell.app;
-export const shellPath = shell.path;
-export const dialog = shell.dialog;
-export const notification = shell.notification;
-export const deepLink = shell.deepLink;
+export const invoke: AppFramework["invoke"] = (cmd, args) => framework.invoke(cmd, args);
+export const createStream: AppFramework["createStream"] = () => framework.createStream();
+export const listen: AppFramework["listen"] = (event, cb) => framework.listen(event, cb);
+export const currentWindow: AppFramework["currentWindow"] = () => framework.currentWindow();
+export const windowByLabel: AppFramework["windowByLabel"] = (label) => framework.windowByLabel(label);
+export const appInfo = framework.app;
+export const frameworkPath = framework.path;
+export const dialog = framework.dialog;
+export const notification = framework.notification;
+export const deepLink = framework.deepLink;
 
 /**
  * 활성 프레임워크가 제공하는 것 — 앱이 "무엇을 할 수 있는가"를 벤더 이름 없이 묻는 자리.
@@ -63,4 +63,4 @@ export const deepLink = shell.deepLink;
  * 능력을 묻는다: 네이티브 자식 층이 있는가, 엔진이 chromium 등급인가. 같은 축을 플러그인은
  * 매니페스트에 요구로 적는다(engineNeeds.ts) — 여기는 그 요구를 채우는 쪽의 사실이다.
  */
-export const engineProvision: EngineProvision = shell.engineProvision;
+export const engineProvision: EngineProvision = framework.engineProvision;

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const invoke = vi.fn(async () => ({}));
 vi.mock("../framework", () => ({
-  shell: { name: "tauri", invoke: (...a: unknown[]) => invoke(...(a as [])) },
+  framework: { name: "tauri", invoke: (...a: unknown[]) => invoke(...(a as [])) },
 }));
 
 import { __resetImeLedgerForTest, noteImeDecision } from "./imeLedger";
@@ -45,9 +45,9 @@ describe("IME 판정 원장", () => {
     expect(all[1]).toMatchObject({ signal: "none", previousRepeats: 5 });
   });
 
-  it("활성 셸 이름을 싣는다 — 어느 셸에서 난 일인가", () => {
+  it("활성 프레임워크 이름을 싣는다 — 어느 프레임워크에서 난 일인가", () => {
     noteImeDecision({ isComposing: true, legacy: false, composing: true });
-    expect(published()[0]).toMatchObject({ shell: "tauri" });
+    expect(published()[0]).toMatchObject({ framework: "tauri" });
   });
 
   it("Enter 가 아니면 판정도 발행도 없다", () => {

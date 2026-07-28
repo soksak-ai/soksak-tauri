@@ -11,7 +11,7 @@
 // 도배 방지: 같은 판정 조합이 이어지면 세기만 하고, 조합이 **바뀔 때**만 발행한다.
 // IME 결함은 "어느 신호가 갑자기 사라졌는가"로 드러나므로 전이가 곧 신호다.
 
-import { shell } from "../framework";
+import { framework } from "../framework";
 
 export interface ImeDecision {
   /** 이벤트가 실은 조합 상태(엔진이 안 실으면 false). */
@@ -27,7 +27,7 @@ let repeats = 0;
 
 function publish(kind: string, payload: Record<string, unknown>): void {
   // 원장 발행은 진단이다 — 실패해도 입력 처리를 막지 않는다.
-  void shell
+  void framework
     .invoke("activity_publish", { kind, source: "core", payload })
     .catch(() => {});
 }
@@ -44,7 +44,7 @@ export function noteImeDecision(d: ImeDecision): void {
   repeats = 1;
   publish("ime.decision", {
     ...d,
-    shell: shell.name,
+    framework: framework.name,
     // 엔진이 조합 신호를 안 싣고 레거시로만 잡히면 그 자체가 진단이다.
     signal: d.isComposing ? "isComposing" : d.legacy ? "legacy-229" : "none",
     previous: previous || null,

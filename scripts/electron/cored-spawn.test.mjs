@@ -466,7 +466,7 @@ function loadShell({ socket, binary }) {
   return { handlers, appEvents };
 }
 
-const invoke = (shell, cmd, args) => shell.handlers.get("shell:invoke")(null, { cmd, args });
+const invoke = (shell, cmd, args) => shell.handlers.get("framework:invoke")(null, { cmd, args });
 
 function ledger(home) {
   const p = join(home, "invoke-demand.jsonl");
@@ -478,7 +478,7 @@ function ledger(home) {
 }
 
 describe("셸 배선 — 소켓을 안 주면 스스로 띄운다", () => {
-  it("shell:invoke 가 셸이 띄운 cored까지 가고 원장에 served:true 로 남는다", async () => {
+  it("framework:invoke 가 셸이 띄운 cored까지 가고 원장에 served:true 로 남는다", async () => {
     osModule.homedir = () => root;
     const shell = loadShell({ socket: null, binary: fakeHelper("wired", SERVING) });
     const home = join(root, ".soksak-electron-spike");

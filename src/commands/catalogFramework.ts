@@ -1,4 +1,7 @@
-// shell.* — 앱이 지금 어느 셸 위에서 도는가를 밖에서 읽는 표면.
+// framework.* — 앱이 지금 어느 프레임워크(Tauri·Electron) 위에서 도는가를 밖에서 읽는 표면.
+//
+// 셸이 아니다 — 그 말은 로그인 셸(zsh·bash)의 것이고 이 저장소는 PTY·터미널을 핵심으로
+// 다룬다(login_shell.rs·--login-shell·shell_which). platform 도 아니다 — 그것은 OS 다.
 //
 // 셸은 어댑터 뒤에 있고(src/platform), 그 경계가 있어 앱 코드는 셸을 모른다. 그러나 진단·
 // 하니스·원장은 알아야 한다 — "어느 셸에서 난 일인가"에 답하지 못하면 두 셸의 증거가 한
@@ -7,7 +10,7 @@
 // 능력은 **존재 여부만** 읽는다. 미구현 능력은 부르는 순간 이름을 달고 throw 하도록 설계돼
 // 있으므로(어댑터의 unimplemented), 조회가 능력을 부르면 조회 자체가 앱을 흔든다.
 
-import { shell } from "../framework";
+import { framework } from "../framework";
 import { tmsg } from "../i18n";
 import { register } from "./registry";
 
@@ -27,23 +30,23 @@ function capabilityNames(host: Record<string, unknown>): string[] {
   return out.sort();
 }
 
-export function registerShellCatalog(): void {
-  register("shell.info", {
+export function registerFrameworkCatalog(): void {
+  register("framework.info", {
     description:
-      "Read which app shell this window actually runs on (the resolved platform adapter, e.g. tauri or electron) and which contract capabilities that adapter exposes. Capability names are reported by presence only — nothing is invoked, because an unimplemented capability throws when called. Use when diagnosing an incident, driving a harness, or stamping a ledger entry with the shell it came from.",
+      "Read which app framework this window actually runs on (the resolved adapter, e.g. tauri or electron) and which contract capabilities that adapter exposes. Capability names are reported by presence only — nothing is invoked, because an unimplemented capability throws when called. Use when diagnosing an incident, driving a harness, or stamping a ledger entry with the framework it came from.",
     triggers: { ko: "셸 어댑터 플랫폼 활성 런타임 진단 능력 어느셸" },
     params: {},
     returns:
-      "{ shell, capabilities[] } — the active adapter name and the contract capability names it exposes (nested groups flattened as group.member).",
+      "{ framework, capabilities[] } — the active adapter name and the contract capability names it exposes (nested groups flattened as group.member).",
     message: (d) =>
-      tmsg("msg.shell.info", {
-        shell: String(d.shell ?? ""),
+      tmsg("msg.framework.info", {
+        framework: String(d.framework ?? ""),
         n: Array.isArray(d.capabilities) ? d.capabilities.length : 0,
       }),
-    examples: ["shell.info"],
+    examples: ["framework.info"],
     handler: () => ({
-      shell: shell.name,
-      capabilities: capabilityNames(shell as unknown as Record<string, unknown>),
+      framework: framework.name,
+      capabilities: capabilityNames(framework as unknown as Record<string, unknown>),
     }),
   });
 }

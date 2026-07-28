@@ -26,7 +26,7 @@ interface OpResult {
   message?: string;
 }
 
-interface ShellBridge {
+interface FrameworkBridge {
   name: string;
   label: string;
   invoke(
@@ -43,14 +43,45 @@ interface ShellBridge {
   createStream(onMessage: (msg: unknown) => void): { __shellStream: string };
 }
 
-function bridge(): ShellBridge {
-  const b = (globalThis as { __soksakShell?: ShellBridge }).__soksakShell;
+function bridge(): FrameworkBridge {
+  const b = (globalThis as { __soksakFramework?: FrameworkBridge }).__soksakFramework;
   if (!b) {
     throw new Error(
       "Electron 셸 창구가 없다 — preload 가 붙지 않았다(electron/preload.cjs)",
     );
   }
   return b;
+}
+
+/**
+ * 창으로 떨어진 파일 — Tauri 는 네이티브 창 이벤트로 받지만 이 프레임워크는 그럴 필요가 없다.
+ * 파일 드롭이 DOM 으로 그대로 오고, 항목이 경로를 갖는다.
+ *
+ * 페이로드 모양은 앱의 것 그대로다({ payload: { type, paths } }) — 번역하면 소비자가
+ * 프레임워크마다 다른 것을 보고, 그 차이는 오류가 아니라 "이쪽에서는 드롭이 안 됨"이 된다.
+ *
+ * 기본 동작을 막는 것이 필수다. 안 막으면 브라우저가 그 파일을 창에 **열어 버려** 앱이
+ * 사라진다. dragover 를 막아야 drop 이 아예 발생한다는 것도 같은 이유로 함께 건다.
+ */
+function attachDragDrop(cb: (event: unknown) => void): () => void {
+  const allow = (e: Event) => e.preventDefault();
+  const onDrop = (e: Event) => {
+    e.preventDefault();
+    const dt = (e as DragEvent).dataTransfer;
+    const paths = [...(dt?.files ?? [])]
+      .map((f) => (f as File & { path?: string }).path)
+      .filter((p): p is string => typeof p === "string" && p.length > 0);
+    // 경로 없는 드롭(텍스트·이미지 등)은 보내지 않는다 — 빈 배열은 소비자에게 뜻이 없고,
+    // 보내면 "드롭했는데 아무 일도 안 일어남"이 정상 경로처럼 흐른다.
+    if (paths.length === 0) return;
+    cb({ payload: { type: "drop", paths } });
+  };
+  document.addEventListener("dragover", allow);
+  document.addEventListener("drop", onDrop);
+  return () => {
+    document.removeEventListener("dragover", allow);
+    document.removeEventListener("drop", onDrop);
+  };
 }
 
 function unimplemented(what: string): never {
@@ -115,7 +146,7 @@ function currentWindowHandle(): ShellWindowHandle {
         cb({ x: b.x, y: b.y });
       }),
     // 네이티브 파일 드래그드롭은 셸 층 작업이 남아 있다 — 조용히 no-op 하지 않는다.
-    onDragDrop: async () => unimplemented("창 드래그드롭(onDragDrop)"),
+    onDragDrop: async (cb) => attachDragDrop(cb),
     listen: async <T,>(event: string, cb: (e: ShellEvent<T>) => void) =>
       bridge().onEvent(event, (payload) => cb({ payload: payload as T })),
   };
@@ -147,7 +178,7 @@ export const engineProvision: EngineProvision = {
   nativeChildWebview: false,
 };
 
-export const electronHost: AppFramework = {
+export const electronFramework: AppFramework = {
   engineProvision,
   name: "electron",
 

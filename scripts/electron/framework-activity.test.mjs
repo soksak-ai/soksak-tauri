@@ -150,12 +150,12 @@ function loadPreload() {
   } finally {
     process.argv = realArgv;
   }
-  return { bridge: exposed.__soksakShell, channels };
+  return { bridge: exposed.__soksakFramework, channels };
 }
 
 /** 렌더러의 호출 — 발신 창까지 실어 보낸다. */
 const invoke = (handlers, cmd, args, win) =>
-  handlers.get("shell:invoke")({ sender: win ? { __win: win } : {} }, { cmd, args });
+  handlers.get("framework:invoke")({ sender: win ? { __win: win } : {} }, { cmd, args });
 
 /** 이 창이 받은 활동 사건들. */
 const activityEventsOf = (win) =>

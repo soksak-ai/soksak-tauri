@@ -19,7 +19,7 @@ const { createBackendClient, resolveSocketPath } = require("./backend.cjs");
 const { shellIdentity, coredBinary, ensureCored } = require("./cored.cjs");
 const activity = require("./activity.cjs");
 const native = require("./native/index.cjs");
-const { shellError } = native;
+const { frameworkError } = native;
 
 const DEV_URL = process.env.SOKSAK_ELECTRON_URL || "http://localhost:1420";
 
@@ -179,7 +179,7 @@ function fanOutActivity(entry) {
   if (!activity.isActivityEntry(entry)) {
     // 적재분이 아니면 부채질할 것이 없다. 아닌 것을 밀면 구독자가 조용히 어긋나고,
     // 성공을 돌려주면 뿌린 적 없는 것을 뿌렸다고 답하게 된다.
-    throw shellError(
+    throw frameworkError(
       activity.NOT_AN_ENTRY,
       `적재분이 아닌 답은 창에 뿌리지 않는다: ${JSON.stringify(entry ?? null).slice(0, 200)}`,
     );
@@ -191,7 +191,7 @@ function fanOutActivity(entry) {
   }
 }
 
-ipcMain.handle("shell:invoke", async (e, { cmd, args }) => {
+ipcMain.handle("framework:invoke", async (e, { cmd, args }) => {
   // 셸의 것이 먼저다 — 창·웹뷰·네이티브 표면은 소켓 너머로 물어볼 수 없다(거기엔 창이 없다).
   // 판별은 이름으로 한다: 셸 갈래는 표에 없더라도 소켓으로 새지 않는다.
   if (native.claims(cmd)) {
@@ -216,7 +216,7 @@ ipcMain.handle("shell:invoke", async (e, { cmd, args }) => {
 // ── 호스트 능력 ──────────────────────────────────────────────────────────────
 // 계약의 app/path/dialog. 백엔드 없이 Electron·Node 가 그대로 답하는 것들이라 원장에
 // 남기지 않는다 — 원장은 "러스트 cored 가 무엇을 져야 하는가"의 목록이다.
-ipcMain.handle("shell:host", async (e, { op, args }) => {
+ipcMain.handle("framework:host", async (e, { op, args }) => {
   try {
     switch (op) {
       case "appName":
@@ -246,7 +246,7 @@ ipcMain.handle("shell:host", async (e, { op, args }) => {
   }
 });
 
-ipcMain.handle("shell:window", async (e, { label, op, args, exact }) => {
+ipcMain.handle("framework:window", async (e, { label, op, args, exact }) => {
   // exact 는 렌더러가 라벨로 지목한 경우다. 그 라벨의 창이 없으면 발신 창으로 폴백하지
   // 않는다 — 폴백하면 다른 창을 조작하고도 성공을 돌려주게 된다.
   const win = windowFor(label) || (exact ? null : BrowserWindow.fromWebContents(e.sender));
@@ -317,7 +317,7 @@ function wireWindowEvents(label, win) {
   const send = (name) => () => {
     if (win.isDestroyed()) return;
     const b = win.getBounds();
-    win.webContents.send("shell:window-event", { label, name, bounds: b });
+    win.webContents.send("framework:window-event", { label, name, bounds: b });
   };
   win.on("resize", send("resized"));
   win.on("move", send("moved"));

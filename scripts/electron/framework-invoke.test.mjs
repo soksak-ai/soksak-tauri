@@ -1,5 +1,5 @@
 // @vitest-environment node
-// 셸의 실제 경로 — 렌더러가 부르는 `shell:invoke` 가 소켓까지 가고, 요구 원장이 파일로 남는가.
+// 셸의 실제 경로 — 렌더러가 부르는 `framework:invoke` 가 소켓까지 가고, 요구 원장이 파일로 남는가.
 //
 // Electron 은 띄우지 않는다. electron 모듈을 스텁으로 갈아끼우고 main.cjs 를 적재하면 배선
 // 그대로가 손에 잡힌다(창은 만들지 않는다 — whenReady 를 풀지 않는다). 다리 단위 검증
@@ -88,7 +88,7 @@ function loadShell(socketPath) {
   return handlers;
 }
 
-const invoke = (handlers, cmd, args) => handlers.get("shell:invoke")(null, { cmd, args });
+const invoke = (handlers, cmd, args) => handlers.get("framework:invoke")(null, { cmd, args });
 
 /** 원장 실물 — 셸이 홈에 떨구는 jsonl 을 그대로 읽는다. */
 function ledger() {
@@ -122,7 +122,7 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-describe("shell:invoke — 렌더러가 보는 답", () => {
+describe("framework:invoke — 렌더러가 보는 답", () => {
   it("백엔드가 있으면 값이 돌아오고 원장에 served:true 로 남는다", async () => {
     const mock = await startMock("live.sock", (req, sock) =>
       sock.write(`${JSON.stringify({ id: req.id, ok: true, data: { theme: "dark" } })}\n`),
@@ -184,7 +184,7 @@ describe("shell:invoke — 렌더러가 보는 답", () => {
 
   it("셸 갈래가 아닌 이름은 여전히 다리를 탄다 — 갈래 규칙이 백엔드의 것을 삼키지 않는다", async () => {
     // 셸 갈래(window_·webview_·engine_·titlebar_·panel_)는 소켓 앞에서 걸린다. 그 규칙이
-    // 넓으면 백엔드의 명령까지 SHELL_CONCEPT_ABSENT 로 죽고, 증상은 "백엔드가 답을 안 한다"로
+    // 넓으면 백엔드의 명령까지 FRAMEWORK_CONCEPT_ABSENT 로 죽고, 증상은 "백엔드가 답을 안 한다"로
     // 보인다. 근처 이름까지 실제로 다리를 타는지 본다.
     const mock = await startMock("through.sock", (req, sock) =>
       sock.write(`${JSON.stringify({ id: req.id, ok: true, data: req.method })}\n`),
