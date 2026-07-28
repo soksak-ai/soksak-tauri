@@ -339,3 +339,26 @@ The shell is owned by `soksak-ptyd` and survives app restarts. The client that a
 Moving that client to core took three couplings apart, each replaced by a contract: the vault (`SealKeys`), the session registry (`Link` carried as an `Arc`), and the ledger (`ActivitySink`). Shell env rules moved with it — an allow-list in two copies means a secret leaks differently per process, which is a silent hole, not an error.
 
 cored serves the terminal with no local fallback. The app falls back to an in-process PTY when the daemon is unavailable; a helper doing that would kill, on its own exit, the very shell the app restart was meant to preserve. Unable to attach, it refuses by name.
+
+## What the content view seam cost
+
+Content lives in the page on this framework — a `<webview>` element, not a native sibling. The spike section above says the control surface is all there. Standing it up against the real harnesses found four defects, each silent in a different way (measured 2026-07-28):
+
+| Defect | Symptom | Why it stayed hidden |
+| --- | --- | --- |
+| Tag events read as `CustomEvent.detail` | address bar frozen at `about:blank` while the page rendered | the unit test dispatched a `CustomEvent`, so reading `detail` passed |
+| Global `listen` skipped the local bus | every `emitLocal` event missed subscribers that use the global subscription | the window-scoped `listen` already joined both sources; only the global one diverged |
+| Guest script passed as a script, not a function body | `dom.text` and `eval` failed on `1+1` | the error text says "Script failed to execute", which reads like the page's fault |
+| Closed windows kept their persistence traces | reloading the control plane resurrected 15 closed windows | the Tauri path prunes on `Destroyed`; this framework had no such place |
+
+The contract each one restores is the same shape: the rule belongs to neither framework, so it moves to a place both call. Trace pruning is now `soksak_core::window_traces`, called by the app with its own connection and by this framework through cored's `window_traces_prune`. Guest scripting keeps the WKWebView contract (`callAsyncJavaScript` takes an async function body), and the adapter wraps rather than redefining.
+
+What the harnesses judge today, against this framework: `p0-contracts` 24/0, `multiwindow` 16/0, `tab-switch-ghost` 13/0, `rail-border` 5/0, `window-traces` 4/0, `ui-verify` and `gutter-hover` green.
+
+One gap is coherent rather than scattered. `surface-park`, `slot-freeze`, and `gutter-drag` read **native child surfaces** — `webview_list`, engine surface stats, the rect of a composited child. On this framework those are empty by construction, and cored answers `FRAMEWORK_CONCEPT_ABSENT` rather than inventing a number. The harnesses are class C in the binding ledger, which already says a class C answer may differ per framework; what they do not yet have is a way to say *how* it differs. That is a harness contract to write, not a hole to fill with a fake surface.
+
+## One writer per connection
+
+The socket carries three kinds of line out of cored: replies, stream frames, and control-plane deliveries. Each had its own duplicated file descriptor. Two file descriptors are still one socket, so two writes interleave, and the receiving side sees neither line — it sees one broken line and drops it with a log entry that names nothing.
+
+A boot produced 22 such lines. The sender succeeded every time; what was lost is not recorded anywhere. Every write now goes through `Conn::write_line`, the stream table holds the connection weakly instead of a copied descriptor, and `dup()` is gone so the door cannot be reopened. Same load after: zero.
