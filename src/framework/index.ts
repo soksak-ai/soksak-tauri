@@ -73,3 +73,7 @@ export const engineProvision: EngineProvision = framework.engineProvision;
  * 무엇이 붙는지는 앱이 몰라도 된다. Tauri 는 속성, Electron 은 CSS 다.
  */
 export const dragRegion = framework.dragRegion;
+
+/** 이 창의 구독자에게 사건을 직접 배달한다 — 이름·페이로드는 프레임워크가 뿌리는 것과 같다. */
+export const emitLocal: AppFramework["emitLocal"] = (event, payload) =>
+  framework.emitLocal(event, payload);

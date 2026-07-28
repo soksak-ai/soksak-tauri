@@ -5,6 +5,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const invoke = vi.fn(async (_cmd: string, _args?: unknown) => undefined as unknown);
+/** emitLocal 이 실제로 불렸는지 — 다리가 걸렸는가의 유일한 관측면. */
+const emitted: [string, unknown][] = [];
 let provision = { chromium: false, nativeChildWebview: true };
 
 vi.mock("../framework", () => ({
@@ -12,6 +14,7 @@ vi.mock("../framework", () => ({
   get engineProvision() {
     return provision;
   },
+  emitLocal: (event: string, payload: unknown) => emitted.push([event, payload]),
 }));
 
 async function load() {
@@ -35,6 +38,7 @@ function stubTag(el: Element) {
 describe("콘텐츠 뷰 호스트", () => {
   beforeEach(() => {
     invoke.mockClear();
+    emitted.length = 0;
     document.body.innerHTML = "";
   });
 
@@ -148,5 +152,25 @@ describe("콘텐츠 뷰 호스트", () => {
       label: "b-1", code: "1", phase: "document-start",
     });
     expect(() => off()).not.toThrow();
+  });
+
+  // open 이 사건 다리를 걸지 않으면 app.webview.on 구독자가 영영 안 불린다. 다리 자체가
+  // 검사돼 있어도 **거는 자리**가 빠지면 그 침묵은 어디에도 안 남는다(실측: 배선을 지웠는데
+  // 아무 검사도 실패하지 않았다).
+  it("open 이 사건 다리를 걸고 close 가 끊는다", async () => {
+    const m = await load();
+    await m.domHost.open("b-1", {});
+    const el = document.querySelector('[data-content-view="b-1"]')!;
+
+    const before = emitted.length;
+    el.dispatchEvent(new CustomEvent("did-navigate", { detail: { url: "https://x" } }));
+    expect(emitted.length, "다리가 안 걸렸다").toBeGreaterThan(before);
+    expect(emitted[emitted.length - 1]).toEqual(["browser-nav", { label: "b-1", url: "https://x" }]);
+
+    await m.domHost.close("b-1");
+    // 닫힌 뒤에도 뿌리면 구독자가 그 label 을 살아 있는 것으로 읽는다.
+    const after = emitted.length;
+    el.dispatchEvent(new CustomEvent("did-navigate", { detail: { url: "https://y" } }));
+    expect(emitted.length, "닫은 뒤에도 뿌린다").toBe(after);
   });
 });

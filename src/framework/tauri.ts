@@ -106,6 +106,10 @@ export const engineProvision: EngineProvision = {
 };
 
 export const tauriFramework: AppFramework = {
+  // Tauri 는 자기 통로가 있다 — 현재 창으로 보내면 그 창의 listen 이 받는다.
+  emitLocal: (event, payload) => {
+    void getCurrentWebviewWindow().emit(event, payload);
+  },
   dragRegion,
   engineProvision,
   name: "tauri",

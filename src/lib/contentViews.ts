@@ -11,6 +11,7 @@
 //
 // 두 구현이 같은 계약을 만족한다는 것이 요점이다. 호출자(plugins/api.ts)는 어느 쪽인지 모른다.
 import { engineProvision, invoke } from "../framework";
+import { bridgeContentViewEvents } from "./contentViewEvents";
 
 /** 콘텐츠 뷰 하나에 할 수 있는 일 — 앱의 webview_* 표면과 이름·인자가 같다. */
 export interface ContentViewHost {
@@ -73,6 +74,9 @@ export function contentViewHost(): ContentViewHost {
 
 const HOST_ID = "content-view-host";
 
+/** label → 사건 해지. 뷰를 닫을 때 함께 끊는다 — 안 끊으면 죽은 label 로 뿌린다. */
+const bridges = new Map<string, () => void>();
+
 /** 요소가 붙는 자리. 없으면 만든다 — 배치는 호출자가 bounds 로 정한다. */
 function root(doc: Document): HTMLElement {
   let el = doc.getElementById(HOST_ID);
@@ -113,8 +117,13 @@ export const domHost: ContentViewHost = {
     if (typeof opts.url === "string") el.setAttribute("src", opts.url);
     el.style.cssText = "position:absolute;display:none";
     root(doc).appendChild(el);
+    // 사건을 앱이 아는 이름으로 잇는다. 이것이 없으면 app.webview.on(label, "nav") 구독자가
+    // 영영 안 불리고, 그 침묵은 오류로 보이지 않는다.
+    bridges.set(label, bridgeContentViewEvents(el, label));
   },
   async close(label) {
+    bridges.get(label)?.();
+    bridges.delete(label);
     find(label, document)?.remove();
   },
   async list() {

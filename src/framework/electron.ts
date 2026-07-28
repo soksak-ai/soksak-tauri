@@ -86,6 +86,24 @@ function attachDragDrop(cb: (event: unknown) => void): () => void {
   };
 }
 
+/**
+ * 지역 사건 버스 — 이 창 안에서 난 일을 이 창의 구독자에게 배달한다.
+ *
+ * 프레임워크가 미는 사건(preload 창구)과 **같은 이름 공간**을 쓴다. 구독자는 어느 쪽에서
+ * 왔는지 모르고, 알 필요도 없다 — 그것이 계약이다.
+ */
+const localBus = new Map<string, Set<(payload: unknown) => void>>();
+
+function onLocal(event: string, cb: (payload: unknown) => void): () => void {
+  let set = localBus.get(event);
+  if (!set) localBus.set(event, (set = new Set()));
+  set.add(cb);
+  return () => {
+    set!.delete(cb);
+    if (set!.size === 0) localBus.delete(event);
+  };
+}
+
 function unimplemented(what: string): never {
   throw new Error(`Electron 어댑터 미구현: ${what}`);
 }
@@ -149,8 +167,16 @@ function currentWindowHandle(): FrameworkWindowHandle {
       }),
     // 네이티브 파일 드래그드롭은 프레임워크 층 작업이 남아 있다 — 조용히 no-op 하지 않는다.
     onDragDrop: async (cb) => attachDragDrop(cb),
-    listen: async <T,>(event: string, cb: (e: FrameworkEvent<T>) => void) =>
-      bridge().onEvent(event, (payload) => cb({ payload: payload as T })),
+    listen: async <T,>(event: string, cb: (e: FrameworkEvent<T>) => void) => {
+      // 두 출처를 한 구독으로 받는다 — 프레임워크가 미는 것과 이 창이 뿌리는 것. 나뉘면
+      // 호출자가 어느 쪽인지 알아야 하고, 아는 순간 경계가 샌다.
+      const offBridge = bridge().onEvent(event, (payload) => cb({ payload: payload as T }));
+      const offLocal = onLocal(event, (payload) => cb({ payload: payload as T }));
+      return () => {
+        offBridge();
+        offLocal();
+      };
+    },
   };
 }
 
@@ -191,6 +217,9 @@ export const engineProvision: EngineProvision = {
 };
 
 export const electronFramework: AppFramework = {
+  emitLocal: (event, payload) => {
+    for (const cb of localBus.get(event) ?? []) cb(payload);
+  },
   dragRegion,
   engineProvision,
   name: "electron",
