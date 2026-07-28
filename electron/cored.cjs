@@ -165,6 +165,10 @@ async function ensureCored({
   // 로그인 셸도 부팅 인자다. `$SHELL` 은 프로세스 속성이 아니라 **사용자 계정 속성**이라,
   // cored 가 자기 환경에서 읽으면 자기를 띄운 쪽의 환경을 사용자의 것인 양 답하게 된다.
   // 넘기지 않으면 cored 는 추측하지 않고 셸이 필요한 명령을 사유와 함께 거절한다.
+  // OS 사용자 홈(`~`)도 부팅 인자다 — 정체성 홈(`~/.soksak-<x>`)과 **다른 값**이고,
+  // 정체성 홈의 부모로 파생하면 격리 배치에서 다른 곳을 훑는다. 파일 트리의 뿌리와
+  // `~` 확장이 보는 것이 이 값이다.
+  const userHome = os.homedir();
   const loginShell = process.env.SHELL;
   const child = spawn(
     binary,
@@ -172,6 +176,7 @@ async function ensureCored({
       "--socket", socketPath,
       "--home", identity.home,
       "--identifier", identity.identifier,
+      ...(userHome ? ["--user-home", userHome] : []),
       ...(loginShell ? ["--login-shell", loginShell] : []),
     ],
     { stdio: ["ignore", "pipe", "pipe"] },
