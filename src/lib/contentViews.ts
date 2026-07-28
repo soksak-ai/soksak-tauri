@@ -171,7 +171,12 @@ export const domHost: ContentViewHost = {
   },
   async evalJs(label, js) {
     const run = must<(s: string) => Promise<unknown>>(find(label, document), label, "executeJavaScript");
-    return String(await run(js));
+    // `js` 는 **비동기 함수 본문**이다 — 계약의 정본은 WKWebView 의 callAsyncJavaScript(body)
+    // 이고, 부르는 쪽은 그렇게 쓴다("return document.title"). 태그의 executeJavaScript 는
+    // 그것을 **스크립트**로 평가하므로 최상위 return 이 문법 오류다. 감싸지 않으면 게스트
+    // 스크립트가 전부 "Script failed to execute" 로 죽고, 그 한 줄이 브라우저 자동화 전체를
+    // 막는다(실측 2026-07-28: dom.text·eval 이 1+1 조차 실패했다).
+    return String(await run(`(async () => { ${js} })()`));
   },
   injectScript(label, code, phase) {
     // 태그는 dom-ready 전에 붙인 preload 만 document-start 를 보장한다. 그 통로가 없으므로

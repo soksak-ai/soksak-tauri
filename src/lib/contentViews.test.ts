@@ -176,3 +176,38 @@ describe("콘텐츠 뷰 호스트", () => {
     expect(emitted.length, "닫은 뒤에도 뿌린다").toBe(after);
   });
 });
+
+/**
+ * `js` 는 **비동기 함수 본문**이다 — 계약의 정본은 WKWebView 의 callAsyncJavaScript(body) 이고,
+ * 플러그인도 그렇게 부른다("return document.title").
+ *
+ * RED 근거(실측 2026-07-28): Electron 은 executeJavaScript 로 그것을 **스크립트**로 평가해
+ * `return` 이 최상위에 오면 문법 오류다. 살아있는 앱에서 dom.text·eval 이 전부
+ * "Script failed to execute" 로 죽었고, 그 사유는 브라우저 자동화 전체를 막았다.
+ * 흉내로 문자열을 대조하지 않는다 — 만들어진 코드를 **실제로 평가**해 값을 본다.
+ */
+describe("게스트 스크립트 — js 는 함수 본문이다", () => {
+  it("본문에 return 이 있어도 값이 나온다", async () => {
+    const m = await load();
+    await m.domHost.open("b-eval", {});
+    const el = document.querySelector('[data-content-view="b-eval"]')! as unknown as Record<
+      string,
+      unknown
+    >;
+    el.executeJavaScript = async (code: string) => (0, eval)(code);
+    expect(await m.domHost.evalJs("b-eval", "return 1 + 1")).toBe("2");
+  });
+
+  it("await 을 쓰는 본문도 그대로 선다", async () => {
+    const m = await load();
+    await m.domHost.open("b-eval2", {});
+    const el = document.querySelector('[data-content-view="b-eval2"]')! as unknown as Record<
+      string,
+      unknown
+    >;
+    el.executeJavaScript = async (code: string) => (0, eval)(code);
+    expect(await m.domHost.evalJs("b-eval2", "const v = await Promise.resolve(7); return v")).toBe(
+      "7",
+    );
+  });
+});
