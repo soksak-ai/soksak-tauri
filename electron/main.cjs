@@ -67,6 +67,13 @@ function createWindow(label) {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
+      // 콘텐츠 뷰는 <webview> 로 DOM 안에 산다(src/lib/contentViews.ts). 이 프레임워크에는
+      // 메인 웹뷰 아래 네이티브 형제가 없으므로 콘텐츠도 페이지 트리 안에 있어야 하고,
+      // 겹침은 z-index 로 해결된다(scripts/electron/overlay-stacking.test.mjs).
+      //
+      // 태그를 켜는 것이 격리를 여는 것은 아니다 — 위 둘은 그대로다. 태그가 만드는
+      // 게스트는 자기 프로세스에서 돌고 preload 없이는 노드를 보지 못한다.
+      webviewTag: true,
       additionalArguments: [`--soksak-window-label=${label}`],
     },
   });

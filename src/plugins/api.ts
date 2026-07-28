@@ -13,6 +13,7 @@ import type {
   ParamSpec,
 } from "../commands/registry";
 import { createStream } from "../framework";
+import { contentViewHost } from "../lib/contentViews";
 import {
   browserLabel,
   browserViewIdFromLabel,
@@ -1852,24 +1853,11 @@ export function buildPluginApi(
     webview: has("webview")
       ? {
           label: (viewId: string) => browserLabel(viewId),
-          open: (label, o) =>
-            deps.invoke("webview_open", { label, ...o }) as Promise<void>,
-          bounds: (label, x, y, w, h) => {
-            const applied = deps.invoke("webview_bounds", {
-              label,
-              x,
-              y,
-              w,
-              h,
-            }) as Promise<void>;
-            return applied;
-          },
+          open: (label, o) => contentViewHost().open(label, o as Record<string, unknown>),
+          bounds: (label, x, y, w, h) =>
+            contentViewHost().bounds(label, x, y, w, h) as unknown as Promise<void>,
           visible: (label, visible, focus) => {
-            const done = deps.invoke("webview_visible", {
-              label,
-              visible,
-              focus,
-            }) as Promise<void>;
+            const done = contentViewHost().visible(label, visible, focus);
             // 착지 관측 — 스탠드인은 표면이 **제자리에 놓이고 다시 보이게 된 뒤**에 물러난다.
             // bounds 쓰기만 보고 걷으면 표면이 아직 감춰진 채라 홀이 먼저 열려 배경이 한두
             // 프레임 드러난다(소유자는 bounds → visible 순서로 부른다). 시간 추측은 하지 않는다.
@@ -1877,29 +1865,19 @@ export function buildPluginApi(
             if (viewId) void done.then(() => noteSurfaceWrite(viewId), () => {});
             return done;
           },
-          alive: (label) => deps.invoke("webview_alive", { label }) as Promise<boolean>,
-          navigate: (label, url) =>
-            deps.invoke("webview_navigate", { label, url }) as Promise<void>,
-          zoom: (label, factor) =>
-            deps.invoke("webview_zoom_view", { label, factor }) as Promise<number>,
+          alive: (label) => contentViewHost().alive(label),
+          navigate: (label, url) => contentViewHost().navigate(label, url),
+          zoom: (label, factor) => contentViewHost().zoom(label, factor),
           openWindow: (url) =>
-            deps.invoke("webview_open_window", { url }) as Promise<void>,
-          history: (label, delta) =>
-            deps.invoke("webview_history", { label, delta }) as Promise<void>,
-          stop: (label) =>
-            deps.invoke("webview_stop", { label }) as Promise<void>,
-          devtools: (label) =>
-            deps.invoke("webview_devtools", { label }) as Promise<boolean>,
-          eval: (label, js) =>
-            deps.invoke("webview_eval", { label, js }) as Promise<string>,
-          injectScript: (label, code, phase) => {
-            void deps.invoke("webview_inject_script", {
-              label,
-              code,
-              phase: phase ?? "document-start",
-            });
-            return tracker.wrap(() => {}); // WKUserScript 개별 제거 미지원(webview 수명까지)
-          },
+            contentViewHost().openWindow(url),
+          history: (label, delta) => contentViewHost().history(label, delta),
+          stop: (label) => contentViewHost().stop(label),
+          devtools: (label) => contentViewHost().devtools(label),
+          eval: (label, js) => contentViewHost().evalJs(label, js),
+          injectScript: (label, code, phase) =>
+            tracker.wrap(
+              contentViewHost().injectScript(label, code, phase ?? "document-start"),
+            ),
           on: (label, event, cb) =>
             tracker.wrap(
               deps.subscribeWebview(label, event, (payload) => {
@@ -1913,11 +1891,11 @@ export function buildPluginApi(
               }),
             ),
           list: async (prefix) => {
-            const all = (await deps.invoke("webview_list", {})) as string[];
+            const all = await contentViewHost().list();
             return prefix ? all.filter((l) => l.startsWith(prefix)) : all;
           },
           close: (label) =>
-            deps.invoke("webview_close", { label }) as Promise<void>,
+            contentViewHost().close(label),
           // 창 합성 캡처를 rect(CSS px, 창 좌표 — getBoundingClientRect 공간)로 crop 한
           // PNG data URL. 가림 상태에서도 캡처. 용도: 드래그 중 네이티브 표면의 시각 연속
           // 스탠드인(freeze-frame — layout.resize-gesture 와 짝).
