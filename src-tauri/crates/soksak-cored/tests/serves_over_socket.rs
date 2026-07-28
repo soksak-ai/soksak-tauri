@@ -2216,3 +2216,44 @@ fn a_token_never_breaks_the_command_it_rode_on() {
     // 인자를 하나도 받지 않는 명령이다. 토큰이 인자로 새면 INVALID_PARAMS 로 죽는다.
     assert_eq!(r["ok"], true, "{r}");
 }
+
+/// 느린 명령 하나가 **같은 연결의 뒤를** 막지 않는다.
+///
+/// 프로토콜에 id 가 있는 것은 한 연결에 요청을 겹쳐도 짝이 정해진다는 뜻이다 — 다리(bridge)가
+/// 그 약속 위에 유지 연결 하나로 전부를 보낸다. 직렬로 답하면 그 약속이 깨진다.
+///
+/// 실측(2026-07-29): Electron 부팅에서 process_spawn 이 30초 상한까지 답을 못 받았다. 직접
+/// 부르면 3ms 다 — 앞선 느린 명령 뒤에 줄 서 있었다. 그 증상은 "사이드카 스폰 실패"로 나와
+/// 원인과 한참 떨어져 보인다.
+#[test]
+fn a_slow_command_does_not_block_the_rest_of_its_connection() {
+    let h = spawn_helper("serial-block");
+    // 붙어 있지만 회신하지 않는 창 — 배달은 상한까지 기다린다.
+    let _host = FakeHost::attach(&h, &["main"], "main");
+
+    let conn = UnixStream::connect(&h.socket).expect("연결");
+    conn.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+    let mut w = conn.try_clone().unwrap();
+    let mut reader = BufReader::new(conn);
+
+    // 느린 것 먼저(회신 없는 배달), 곧바로 빠른 것.
+    writeln!(w, "{}", json!({"id":1,"method":"project.open","timeoutMs":3000})).unwrap();
+    writeln!(w, "{}", json!({"id":2,"method":"cored.commands"})).unwrap();
+
+    let started = std::time::Instant::now();
+    let mut line = String::new();
+    reader.read_line(&mut line).expect("첫 답");
+    let first: Value = serde_json::from_str(line.trim()).unwrap();
+
+    // 먼저 오는 것은 **빠른 쪽**이라야 한다 — 직렬이면 3초짜리가 먼저 오고 그 뒤에 온다.
+    assert_eq!(
+        first["id"], 2,
+        "느린 명령이 뒤를 막았다({}ms): {first}",
+        started.elapsed().as_millis()
+    );
+    assert!(
+        started.elapsed() < Duration::from_millis(1500),
+        "빠른 명령이 {}ms 걸렸다 — 앞의 상한을 기다렸다",
+        started.elapsed().as_millis()
+    );
+}

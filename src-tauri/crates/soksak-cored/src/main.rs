@@ -182,25 +182,39 @@ mod unix {
         }
     }
 
-    // 연결 하나 = NDJSON 요청/응답 루프. 연결이 끊기면 그 연결만 끝난다(상태가 없어 회수할
-    // 것도 없다 — 세션을 소유하는 ptyd 와 다른 점).
-    fn handle_conn(ctx: &Ctx, conn: UnixStream) {
+    // 연결 하나 = NDJSON 루프. **읽기만 직렬이고 답은 겹친다.**
+    //
+    // 프로토콜에 id 가 있는 것은 한 연결에 요청을 겹쳐도 짝이 정해진다는 약속이다 — 다리는 그
+    // 약속 위에 유지 연결 하나로 전부를 보낸다. 한 요청을 끝내고 다음 줄을 읽으면 느린 명령
+    // 하나가 뒤를 전부 막고, 그 증상은 원인에서 한참 떨어져 보인다(실측: 부팅에서
+    // process_spawn 이 30초 상한까지 답을 못 받았는데 직접 부르면 3ms 였다).
+    //
+    // 그래서 요청마다 스레드를 띄운다. 연결이 지고 가는 것(쓰기 자리·다리 여부·스트림 토큰)은
+    // 값으로 공유한다 — 스레드 지역이면 답하는 스레드가 그것을 못 본다.
+    fn handle_conn(ctx: &std::sync::Arc<Ctx>, conn: UnixStream) {
         let Ok(read_half) = conn.try_clone() else { return };
         let reader = BufReader::new(read_half);
-        let mut writer = conn;
+        let state = std::sync::Arc::new(soksak_cored::wire::Conn::new(conn));
+        let mut workers = Vec::new();
         for line in reader.lines() {
             let Ok(line) = line else { break };
-            if line.trim().is_empty() {
+            let line = line.trim().to_string();
+            if line.is_empty() {
                 continue;
             }
-            // 연결을 함께 넘긴다 — 배달 통로를 등록하는 명령은 자기 연결을 지고 가야 한다.
-            let reply = soksak_cored::wire::answer_on_conn(ctx, line.trim(), &writer);
-            if writeln!(writer, "{reply}").is_err() {
-                break;
-            }
+            let (ctx, state) = (ctx.clone(), state.clone());
+            workers.push(std::thread::spawn(move || {
+                let reply = soksak_cored::wire::answer_on_conn(&ctx, &line, &state);
+                state.reply(&reply)
+            }));
+            // 끝난 일꾼은 거둔다 — 오래 사는 연결(다리)이 스레드 핸들을 무한정 쌓지 않게.
+            workers.retain(|w| !w.is_finished());
         }
-        // 스레드는 재사용될 수 있다 — 이 연결의 선언이 다음 연결에 붙지 않게 놓는다.
-        soksak_cored::wire::forget_conn();
+        // 답이 나가는 중에 연결을 놓으면 그 답이 사라진다 — 전부 기다린 뒤에 놓는다.
+        for w in workers {
+            let _ = w.join();
+        }
+        state.release();
     }
 }
 

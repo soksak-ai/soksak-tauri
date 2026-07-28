@@ -28,16 +28,21 @@ export function openClient(socket = requireSocket()) {
         rpc(method, params = {}, window) {
           return new Promise((res, rej) => {
             const id = ++st.seq;
-            st.pending.set(id, res);
-            const req = { id, method, params };
-            if (window) req.window = window;
-            st.sock.write(`${JSON.stringify(req)}\n`);
-            setTimeout(() => {
+            // 상한 타이머는 답이 오면 **끈다**. 안 끄면 답을 받은 뒤에도 이 프로세스가 30초를
+            // 더 산다 — 하니스가 끝나지 않는 것처럼 보이고, 그 지연이 앱 탓으로 읽힌다.
+            const timer = setTimeout(() => {
               if (st.pending.has(id)) {
                 st.pending.delete(id);
                 rej(new Error(`TIMEOUT ${method}`));
               }
             }, 30000);
+            st.pending.set(id, (v) => {
+              clearTimeout(timer);
+              res(v);
+            });
+            const req = { id, method, params };
+            if (window) req.window = window;
+            st.sock.write(`${JSON.stringify(req)}\n`);
           });
         },
         close: () => st.sock.destroy(),

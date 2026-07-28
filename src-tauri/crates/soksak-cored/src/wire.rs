@@ -14,6 +14,9 @@ use soksak_spec_socket::{
     SOCKET_PROTOCOL_VERSION,
 };
 
+use std::io::Write;
+use std::sync::Mutex;
+
 use crate::ctx::Ctx;
 use crate::registry::{self, Outcome};
 
@@ -109,16 +112,22 @@ fn refusal(method: &str) -> (&'static str, String) {
 ///
 /// 이 갈래가 소켓을 하나로 만든다: 부르는 쪽은 어느 명령을 누가 답하는지 몰라도 된다.
 /// cored 가 서빙하면 cored 가 답하고, 아니면 창이 답한다 — 봉투는 같다.
-fn route(ctx: &Ctx, req: &Request, line: &str) -> Value {
+#[cfg(unix)]
+type ConnRef<'a> = Option<&'a Conn>;
+#[cfg(not(unix))]
+type ConnRef<'a> = Option<&'a ()>;
+
+fn route(ctx: &Ctx, req: &Request, line: &str, conn: ConnRef<'_>) -> Value {
     if req.method == "cored.commands" {
         return ok_reply(registry::declaration());
     }
     let Some(cmd) = registry::find(&req.method) else {
         // 창의 다리로 온 것은 창으로 되돌리지 않는다 — 물어본 그 창에 배달되어 상한까지 침묵한다.
-        if crate::control::has_host() && !is_bridge() {
+        let bridge = is_bridge_conn(conn);
+        if crate::control::has_host() && !bridge {
             return crate::control::answer(line);
         }
-        if is_bridge() {
+        if bridge {
             return err_reply(
                 "NOT_SERVED_HERE",
                 &format!(
@@ -130,7 +139,10 @@ fn route(ctx: &Ctx, req: &Request, line: &str) -> Value {
         let (code, message) = refusal(&req.method);
         return err_reply(code, &message);
     };
-    match (cmd.run)(ctx, &req.params) {
+    CURRENT.with(|c| c.set(conn.map(|c| c as *const _)));
+    let out = (cmd.run)(ctx, &req.params);
+    CURRENT.with(|c| c.set(None));
+    match out {
         Outcome::Ok(data) => ok_reply(data),
         // 어느 명령의 인자가 틀렸는지 이름을 달고 말한다 — serde 의 사유만으로는 모른다.
         Outcome::InvalidParams(why) => {
@@ -140,95 +152,134 @@ fn route(ctx: &Ctx, req: &Request, line: &str) -> Value {
     }
 }
 
-// 이 연결. **연결 하나 = 스레드 하나**라서 스레드 지역이 곧 연결이다.
-//
-// Ctx 로 나르지 않는다 — Ctx 는 프로세스 하나에 하나이고(정체성·홈·잠금), 연결은 여럿이다.
-// 프로세스 상태에 연결을 얹으면 나중에 붙은 연결이 앞의 것을 조용히 덮는다.
+/// 연결 하나가 지고 가는 것 — **값이다.**
+///
+/// 한때 스레드 지역이었다("연결 하나 = 스레드 하나"). 그 전제가 요청을 직렬로 만들었다:
+/// 느린 명령 하나가 같은 연결의 뒤를 전부 막고, 그 증상은 원인에서 한참 떨어져 보인다
+/// (실측: 부팅에서 process_spawn 이 30초 상한까지 답을 못 받았는데 직접 부르면 3ms 였다).
+///
+/// 프로토콜에 id 가 있는 것은 한 연결에 요청을 겹쳐도 짝이 정해진다는 약속이다. 값으로 지고
+/// 가면 요청마다 다른 스레드가 답해도 그 약속이 선다.
 #[cfg(unix)]
-thread_local! {
-    static CONN: std::cell::RefCell<Option<std::os::unix::net::UnixStream>> =
-        const { std::cell::RefCell::new(None) };
+pub struct Conn {
+    /// 답을 쓰는 자리. 한 줄이 통째로 나가야 한다 — 여럿이 동시에 쓰면 줄이 섞여 받는 쪽이
+    /// 파싱에서 처음 깨진다.
+    writer: Mutex<std::os::unix::net::UnixStream>,
+    /// 이 연결은 창의 자기 다리인가. 다리로 온 것은 창으로 되돌리지 않는다 — 물어본 그 창에
+    /// 배달되어 회신할 자리가 없다.
+    bridge: std::sync::atomic::AtomicBool,
+    /// 이 연결이 만든 스트림 토큰. 연결이 끝나면 함께 끝난다(죽은 소켓에 계속 쓰지 않는다).
+    owned: Mutex<Vec<String>>,
 }
 
-// 이 연결이 **창의 자기 다리**인가.
-//
-// 창은 자기 명령을 이 소켓으로 묻는다(Electron 에서는 다리도 이 소켓이다). 그 요청을 서빙하지
-// 않는다고 창으로 되돌리면, 물어본 바로 그 창에 배달되고 창의 실행기에는 그 이름이 없어 회신이
-// 오지 않는다 — 부른 쪽은 이름 대신 상한을 본다(실측: pty_pane_alive 10초).
-//
-// 이름의 철자로 가르지 않는다. 사실은 "누가 물었는가"이고, 그것은 연결이 안다.
-thread_local! {
-    static BRIDGE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
-/// 이 연결은 창의 다리다 — 여기로 온 것은 창으로 되돌리지 않는다.
-pub fn mark_bridge() {
-    BRIDGE.with(|b| b.set(true));
-}
-
-/// 다시 밖의 연결로 — 검사가 같은 스레드를 재사용해도 앞의 선언이 남지 않게.
-pub fn clear_bridge() {
-    BRIDGE.with(|b| b.set(false));
-}
-
-pub fn is_bridge() -> bool {
-    BRIDGE.with(|b| b.get())
-}
-
-/// 이 연결을 스레드에 매어 두고 한 줄을 답한다 — 소켓 루프가 부르는 자리.
 #[cfg(unix)]
-pub fn answer_on_conn(ctx: &Ctx, line: &str, conn: &std::os::unix::net::UnixStream) -> Value {
-    if let Ok(c) = conn.try_clone() {
-        CONN.with(|slot| *slot.borrow_mut() = Some(c));
-    }
-    // 스트림 토큰은 **부른 연결**에 맨다. 명령을 실행하기 전에 매어야 한다 — 실행이 첫 프레임을
-    // 곧바로 밀 수 있고, 그때 자리가 없으면 그 프레임은 조용히 사라진다.
-    if let Ok(req) = serde_json::from_str::<Request>(line) {
-        let bound = crate::streams::bind(&req.params, conn);
-        if !bound.is_empty() {
-            OWNED.with(|o| o.borrow_mut().extend(bound));
+impl Conn {
+    pub fn new(stream: std::os::unix::net::UnixStream) -> Self {
+        Conn {
+            writer: Mutex::new(stream),
+            bridge: std::sync::atomic::AtomicBool::new(false),
+            owned: Mutex::new(Vec::new()),
         }
     }
-    answer(ctx, line)
-}
 
-// 이 연결이 만든 스트림 토큰들. 연결이 끝나면 함께 끝난다 — 남기면 죽은 소켓에 계속 쓴다.
-#[cfg(unix)]
-thread_local! {
-    static OWNED: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
-}
+    /// 답 한 줄. 줄 단위로 잠근다 — 섞이면 받는 쪽이 파싱에서 처음 깨진다.
+    pub fn reply(&self, v: &Value) -> bool {
+        let mut w = self.writer.lock().unwrap_or_else(|e| e.into_inner());
+        writeln!(w, "{v}").is_ok()
+    }
 
-/// 연결 하나가 끝났다 — 그 스레드에 남은 선언을 지운다. 스레드가 재사용되면 앞 연결의
-/// "나는 창의 다리다"가 다음 연결에 그대로 붙는다.
-#[cfg(unix)]
-pub fn forget_conn() {
-    CONN.with(|slot| *slot.borrow_mut() = None);
-    clear_bridge();
-    OWNED.with(|o| {
-        let mut v = o.borrow_mut();
+    /// 이 연결의 사본 — 배달 통로 등록·스트림 매기가 쓴다.
+    pub fn dup(&self) -> Option<std::os::unix::net::UnixStream> {
+        self.writer
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .try_clone()
+            .ok()
+    }
+
+    pub fn mark_bridge(&self) {
+        self.bridge.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub fn is_bridge(&self) -> bool {
+        self.bridge.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// 연결이 끝났다 — 이 연결이 만든 스트림도 끝난다.
+    pub fn release(&self) {
+        let mut v = self.owned.lock().unwrap_or_else(|e| e.into_inner());
         crate::streams::release_all(&v);
         v.clear();
-    });
+    }
 }
 
-/// 지금 답하고 있는 연결의 사본. 연결을 지고 가야 하는 명령만 부른다(배달 통로 등록).
+/// 이 연결에서 한 줄을 답한다. 스트림 토큰은 **실행 전에** 매인다 — 명령이 첫 프레임을 곧바로
+/// 밀 수 있고, 그때 자리가 없으면 그 프레임은 조용히 사라진다.
 #[cfg(unix)]
-pub fn current_conn() -> Option<std::os::unix::net::UnixStream> {
-    CONN.with(|slot| slot.borrow().as_ref().and_then(|c| c.try_clone().ok()))
+pub fn answer_on_conn(ctx: &Ctx, line: &str, conn: &Conn) -> Value {
+    if let (Ok(req), Some(sink)) = (serde_json::from_str::<Request>(line), conn.dup()) {
+        let bound = crate::streams::bind(&req.params, &sink);
+        if !bound.is_empty() {
+            conn.owned
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .extend(bound);
+        }
+    }
+    answer_with(ctx, line, Some(conn))
 }
 
-/// 한 줄 → 한 줄. 소켓 루프가 부르는 유일한 진입점이라 연결 없이도 전부 검증된다.
-/// 부팅 상태는 인자다 — 이 함수가 전역을 읽으면 테스트가 프로세스 하나에 갇힌다.
+/// 한 줄 → 한 줄. 연결 없이도 전부 검증된다 — 부팅 상태는 인자이고, 이 함수가 전역을 읽으면
+/// 테스트가 프로세스 하나에 갇힌다.
 pub fn answer(ctx: &Ctx, line: &str) -> Value {
+    answer_with(ctx, line, None)
+}
+
+fn answer_with(ctx: &Ctx, line: &str, conn: ConnRef<'_>) -> Value {
     let req: Request = match serde_json::from_str(line) {
         Ok(r) => r,
         Err(e) => return err_reply("INVALID_PARAMS", &format!("JSON 파싱 실패: {e}")),
     };
-    let mut reply = transport_route(&req).unwrap_or_else(|| route(ctx, &req, line));
+    let mut reply = transport_route(&req).unwrap_or_else(|| route(ctx, &req, line, conn));
     if let (Some(id), Some(obj)) = (req.id.clone(), reply.as_object_mut()) {
         obj.insert("id".into(), id);
     }
     reply
+}
+
+// 지금 답하고 있는 **요청**의 연결. 요청 하나 = 스레드 하나라서 스레드 지역이 곧 요청이다.
+// (연결 하나 = 스레드 하나였을 때 이 자리가 요청을 직렬로 만들었다 — 그때의 전제와 다르다.)
+#[cfg(unix)]
+thread_local! {
+    static CURRENT: std::cell::Cell<Option<*const Conn>> = const { std::cell::Cell::new(None) };
+}
+
+#[cfg(unix)]
+fn is_bridge_conn(conn: ConnRef<'_>) -> bool {
+    conn.is_some_and(|c| c.is_bridge())
+}
+
+#[cfg(not(unix))]
+fn is_bridge_conn(_conn: ConnRef<'_>) -> bool {
+    false
+}
+
+/// 지금 답하고 있는 요청의 연결 사본. 연결을 지고 가야 하는 명령만 부른다(배달 통로 등록).
+#[cfg(unix)]
+pub fn current_conn() -> Option<std::os::unix::net::UnixStream> {
+    CURRENT.with(|c| c.get()).and_then(|p| unsafe { &*p }.dup())
+}
+
+/// 이 연결은 창의 다리다 — 여기로 온 것은 창으로 되돌리지 않는다.
+#[cfg(unix)]
+pub fn mark_bridge() -> bool {
+    match CURRENT.with(|c| c.get()) {
+        Some(p) => {
+            unsafe { &*p }.mark_bridge();
+            true
+        }
+        None => false,
+    }
 }
 
 #[cfg(test)]
@@ -354,8 +405,14 @@ fn a_request_from_the_windows_own_bridge_is_not_delivered_back() {
     let _serial = crate::control::testing::lock();
     let _h = crate::control::testing::fake_host(&["main"], "main");
     // 창의 다리가 자기를 밝힌다 — 이 연결로 온 것은 창이 물은 것이다.
-    mark_bridge();
-    let r = answer(&ctx(), r#"{"id":9,"method":"process_reclaim_window","timeoutMs":80}"#);
+    let (a, _b) = std::os::unix::net::UnixStream::pair().expect("소켓 쌍");
+    let conn = Conn::new(a);
+    conn.mark_bridge();
+    let r = answer_with(
+        &ctx(),
+        r#"{"id":9,"method":"process_reclaim_window","timeoutMs":80}"#,
+        Some(&conn),
+    );
     assert_eq!(r["ok"], false);
     assert_eq!(r["code"], "NOT_SERVED_HERE", "{r}");
     assert!(r["message"].as_str().unwrap().contains("process_reclaim_window"));
@@ -367,7 +424,7 @@ fn a_request_from_the_windows_own_bridge_is_not_delivered_back() {
 fn an_outside_connection_still_reaches_the_window() {
     let _serial = crate::control::testing::lock();
     let mut h = crate::control::testing::fake_host(&["main"], "main");
-    clear_bridge();
+    // 밝히지 않은 연결 — 연결이 없는 것과 같다(밖에서 온 것으로 친다).
     std::thread::spawn(|| {
         let _ = answer(&ctx(), r#"{"id":10,"method":"project.open","timeoutMs":300}"#);
     });
