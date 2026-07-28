@@ -4789,6 +4789,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "soksak-core",
+ "soksak-helper",
  "soksak-seal",
  "soksak-spec-contract",
  "soksak-spec-pty",
