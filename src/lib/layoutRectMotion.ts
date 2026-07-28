@@ -44,10 +44,15 @@ export function createRectMotionTracker(): RectMotionTracker {
   // 직전 flush 에서 flip-move(CSS 레일 활강 소유)였는지 — 제거 커밋의 정산 스킵에 쓴다.
   const wasFlipMove = new WeakMap<HTMLElement, boolean>();
   // 정지(hold) 중 태어난 변화의 동결 — pause/currentTime 고정은 브라우저의 pending 커밋
-  // 타이밍에 진다(실측: 고정에도 1프레임 진행 동결, 3/10). 정지 중엔 애니메이션을 만들지
-  // 않고 옛 rect 를 인라인으로 박아 화면을 세운다. 해제 전이에서 인라인을 걷고 그 자리에서
-  // FLIP 을 시작한다(정지 해제 = 활강 시작 — 의미도 정확하다).
-  const frozen = new Map<HTMLElement, { was: Snap; pin: Animation }>();
+  // 타이밍에 진다(실측: 고정에도 1프레임 진행 동결, 3/10).
+  //
+  // 고정은 **두 겹**이다. 인라인이 그 프레임을 세우고(animate() 의 효과는 다음 프레임
+  // 타임라인 갱신에야 붙는다 — 한 겹이면 한 프레임이 샌다), fill:"forwards" 애니메이션이
+  // 그 뒤를 지킨다(인라인만 두면 React 의 후속 커밋이 style 객체를 다시 써서 지운다).
+  // 둘 다 실측에서 나왔다 — 어느 쪽도 지우지 마라.
+  //
+  // 해제 전이에서 인라인을 걷고 그 자리에서 FLIP 을 시작한다(정지 해제 = 활강 시작).
+  const frozen = new Map<HTMLElement, { was: Snap; pin: Animation | null }>();
   const startFlip = (el: HTMLElement, was: Snap, now: Snap): void => {
     const dx = was.x - now.x;
     const dy = was.y - now.y;
@@ -95,10 +100,16 @@ export function createRectMotionTracker(): RectMotionTracker {
     for (const [el, f] of [...frozen]) {
       frozen.delete(el);
       try {
-        f.pin.cancel();
+        f.pin?.cancel();
       } catch {
         /* 이미 소멸 */
       }
+      // 인라인을 **먼저** 걷는다. 남겨 두면 요소의 실제 rect 가 옛 값 그대로라, 아래 측정이
+      // "안 움직였다"로 나와 활강이 서지 않는다 — 정지가 영구가 된다.
+      el.style.left = "";
+      el.style.top = "";
+      el.style.width = "";
+      el.style.height = "";
       if (!el.isConnected) continue;
       const r = el.getBoundingClientRect();
       startFlip(el, f.was, { x: r.x, y: r.y, w: r.width, h: r.height });
@@ -193,8 +204,17 @@ export function createRectMotionTracker(): RectMotionTracker {
             const cs0 = getComputedStyle(el);
             const L0 = parseFloat(cs0.left) || 0;
             const T0 = parseFloat(cs0.top) || 0;
+            // 인라인이 **이 프레임**을 세운다. animate() 의 효과는 다음 프레임 타임라인
+            // 갱신에야 붙어서, 페인트 전(useLayoutEffect)에 만들어도 그 프레임은 이미 새
+            // 레이아웃이다 — 정지 중에 한 프레임 번쩍임이 남는다(실측: rect 시계열
+            // [678.3 …] 중 한 표본만 290.7). 아래 애니메이션이 **그 뒤**를 지킨다.
+            el.style.left = `${L0 + dxq}px`;
+            el.style.top = `${T0 + dyq}px`;
+            el.style.width = `${now.w + dwq}px`;
+            el.style.height = `${now.h + dhq}px`;
+            let pin: Animation | null = null;
             try {
-              const pin = el.animate(
+              pin = el.animate(
                 [
                   {
                     left: `${L0 + dxq}px`,
@@ -205,10 +225,12 @@ export function createRectMotionTracker(): RectMotionTracker {
                 ],
                 { duration: 1, fill: "forwards" },
               );
-              frozen.set(el, { was, pin });
             } catch {
-              /* 애니메이션 불가 환경 — 동결 없이 즉시 반영 */
+              /* 애니메이션 불가 환경 — 인라인 한 겹만으로 선다 */
             }
+            // 등록은 애니메이션 유무와 무관하다. 인라인을 박아 놓고 등록을 건너뛰면 해제가
+            // 그 요소를 못 찾아 옛 rect 에 **영구히** 박힌다 — 동결이 아니라 고장이다.
+            frozen.set(el, { was, pin });
           }
           noteRectMotionSkip(el.dataset.node ?? el.className, "held-frozen");
           continue;
