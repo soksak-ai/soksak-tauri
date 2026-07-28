@@ -29,7 +29,7 @@ const { ABSENT_CODE, frameworkError } = require("./error.cjs");
  *  project_ 를 갈래로 만드는 것도 답이 아니다 — ensure_project_dir 은 파일시스템이라 cored 의
  *  것이고, 갈래로 만들면 그것까지 프레임워크가 삼킨다.
  *
- *  목록은 장부(src-tauri/src/cored_ledger.rs SHELL_FAMILIES)와 한 벌이어야 한다 —
+ *  목록은 장부(src-tauri/src/cored_ledger.rs FRAMEWORK_FAMILIES)와 한 벌이어야 한다 —
  *  갈라지면 "장부는 프레임워크의 것이라 하는데 프레임워크는 안 받는" 이름이 생기고 어느 쪽에도 안 잡힌다. */
 const BRANCHES = ["window_", "webview_", "engine_", "titlebar_"];
 

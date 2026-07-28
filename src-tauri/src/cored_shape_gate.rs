@@ -2,7 +2,7 @@
 //
 // UI 는 자기가 누구와 말하는지 모른다. `invoke("app_environment")` 는 앱이 답하든 cored 가
 // 답하든 같은 호출이고, 그래서 cored 의 인자 모양은 앱 명령의 인자 모양과 **같아야 한다**.
-// 다르면 셸이 번역을 해야 하는데, 그 번역은 곧 두 번째 진실이 된다.
+// 다르면 프레임워크가 번역을 해야 하는데, 그 번역은 곧 두 번째 진실이 된다.
 //
 // 이 게이트가 생긴 이유(2026-07-28 실측): cored 가 서빙한다고 믿었던 5개(app_environment·
 // data_kv_get·themes_scan·plugin_scan·app_is_release)가 라이브 부팅에서 전부
@@ -12,18 +12,18 @@
 //
 // 그 오판의 뿌리는 "cored 는 정체성을 추측하지 않는다"를 "매 호출마다 정체성을 요구한다"로
 // 읽은 것이다. 받는 것과 추측하는 것은 다르다: 앱도 자기 정체성을 추측하지 않고 부팅 때
-// 셸에서 받는다(home::init). cored 도 띄운 쪽에서 부팅 때 받으면 된다(--home/--identifier).
+// 프레임워크에서 받는다(home::init). cored 도 띄운 쪽에서 부팅 때 받으면 된다(--home/--identifier).
 //
-// 그래서 이 게이트는 이름이 겹치는 명령마다 인자 이름 **집합**을 대조한다. 셸이 주입하는
+// 그래서 이 게이트는 이름이 겹치는 명령마다 인자 이름 **집합**을 대조한다. 프레임워크가 주입하는
 // 인자(State·AppHandle·Window·Channel)는 호출자가 보내는 값이 아니므로 앱 쪽에서 뺀다.
 // cored 에만 있는 이름(`cored.commands` 같은 자기 서술)은 앱 명령이 아니므로 대조 대상이
 // 아니다 — 다만 **이름이 겹치는데 모양이 다른 것**은 전부 결함이다.
 
 use std::collections::BTreeSet;
 
-/// 셸이 주입하는 인자 타입 — 호출자가 보내는 값이 아니다. Tauri 는 이것들을 시그니처에서
+/// 프레임워크가 주입하는 인자 타입 — 호출자가 보내는 값이 아니다. Tauri 는 이것들을 시그니처에서
 /// 보고 스스로 채우므로 JS 쪽 인자 목록에 나타나지 않는다.
-const SHELL_INJECTED: &[&str] = &[
+const FRAMEWORK_INJECTED: &[&str] = &[
     "State",
     "AppHandle",
     "Window",
@@ -39,7 +39,7 @@ const SHELL_INJECTED: &[&str] = &[
 pub(crate) struct AppCommand {
     pub name: String,
     pub args: BTreeSet<String>,
-    /// 이 명령이 셸에서 주입받는 타입들(State·AppHandle·Window·Channel …).
+    /// 이 명령이 프레임워크에서 주입받는 타입들(State·AppHandle·Window·Channel …).
     /// 호출자 인자가 아니라 **이 명령이 앱 프로세스에 묶인 이유**라, 분류가 이것을 본다.
     pub injected: BTreeSet<String>,
     /// 선언된 파일 — 어느 영역의 명령인지 읽는 축.
@@ -131,7 +131,7 @@ fn caller_args(params: &str) -> BTreeSet<String> {
     split_params(params).0
 }
 
-/// 파라미터를 둘로 가른다: (호출자 인자 이름, 셸 주입 타입 이름).
+/// 파라미터를 둘로 가른다: (호출자 인자 이름, 프레임워크 주입 타입 이름).
 ///
 /// 주입 타입은 버리지 않고 돌려준다 — 그것이 이 명령을 앱 프로세스에 묶는 이유이고,
 /// 이식 분류가 보는 축이다(cored_ledger).
@@ -167,9 +167,9 @@ fn split_params(params: &str) -> (BTreeSet<String>, BTreeSet<String>) {
             continue;
         };
         let ty = ty.trim();
-        // 셸 주입 타입은 호출자의 인자가 아니다. 타입 경로 어디에 있든 잡는다
+        // 프레임워크 주입 타입은 호출자의 인자가 아니다. 타입 경로 어디에 있든 잡는다
         // (`State<'_, DbState>` · `tauri::AppHandle` · `ipc::Channel<..>`).
-        let hit: Vec<&str> = SHELL_INJECTED
+        let hit: Vec<&str> = FRAMEWORK_INJECTED
             .iter()
             .copied()
             .filter(|s| ty.split(['<', ' ', ':']).any(|seg| seg == *s))
@@ -228,7 +228,7 @@ mod tests {
 
     /// cored 가 서빙하는 이름이 앱에도 있으면 **인자 모양이 같아야 한다.**
     /// 다르면 UI 가 앱에 보내던 호출이 cored 에서 INVALID_PARAMS 로 거절된다 — 그리고
-    /// 그 거절은 셸 로그 한 줄이라 조용하다.
+    /// 그 거절은 프레임워크 로그 한 줄이라 조용하다.
     /// 실제 서빙 표 — 이름과 인자 이름만 뽑는다.
     fn served_table() -> Vec<(&'static str, Vec<&'static str>)> {
         soksak_cored::registry::COMMANDS
@@ -259,7 +259,7 @@ mod tests {
         // ② 앱이 받는 인자를 cored 가 흘린다 — 호출자가 보낸 값이 조용히 버려진다.
         let dropped = mismatches(&app, [("data_kv_get", vec!["ns"])]);
         assert_eq!(dropped.len(), 1, "빠뜨린 인자를 못 잡았다: {dropped:?}");
-        // ③ 이름만 다르다 — 셸이 번역해야 하고, 그 번역이 두 번째 진실이 된다.
+        // ③ 이름만 다르다 — 프레임워크가 번역해야 하고, 그 번역이 두 번째 진실이 된다.
         let renamed = mismatches(&app, [("data_kv_get", vec!["namespace", "key"])]);
         assert_eq!(renamed.len(), 1, "이름 어긋남을 못 잡았다: {renamed:?}");
         // 표기만 다른 것은 결함이 아니다(Tauri 가 넘길 때 바꾸는 표기다).

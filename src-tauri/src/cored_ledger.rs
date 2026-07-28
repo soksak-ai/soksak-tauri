@@ -18,8 +18,8 @@ use crate::cored_shape_gate::{app_commands, AppCommand};
 pub(crate) enum Lane {
     /// 이미 cored 가 서빙한다.
     Served,
-    /// 셸의 것 — 창·웹뷰·네이티브 표면. 다른 프로세스로 영영 안 간다.
-    Shell,
+    /// 프레임워크의 것 — 창·웹뷰·네이티브 표면. 다른 프로세스로 영영 안 간다.
+    Framework,
     /// 관리 상태·앱 핸들에 묶였다. 계약(WindowOracle·ActivitySink·CommandDispatch)이 푼다.
     StateBound,
     /// 시그니처가 막지 않는다. 본문을 읽어야 실제 이식 가능 여부가 갈린다.
@@ -30,7 +30,7 @@ impl Lane {
     pub(crate) fn as_str(self) -> &'static str {
         match self {
             Lane::Served => "served",
-            Lane::Shell => "shell",
+            Lane::Framework => "framework",
             Lane::StateBound => "state-bound",
             Lane::Open => "open",
         }
@@ -40,13 +40,14 @@ impl Lane {
 /// 창을 소유하는 명령 가족 — 이름 접두로 판정한다.
 ///
 /// 접두만으로 창 소유를 다 잡지는 못한다(그래서 아래에서 주입 타입도 본다). 다만 이 가족들은
-/// **이름 자체가 셸 표면**이라 본문을 안 봐도 확정이고, Electron 어댑터가 이미 그렇게 다룬다.
-// 셸 갈래 — 이 접두사를 가진 명령은 창을 쥐므로 다른 프로세스로 가지 않는다.
+/// **이름 자체가 프레임워크 표면**이라 본문을 안 봐도 확정이고, Electron 어댑터가 이미 그렇게 다룬다.
+// 프레임워크 갈래 — 이 접두사를 가진 명령은 창을 쥐므로 다른 프로세스로 가지 않는다.
 //
 // **멤버 없는 갈래를 미리 선언하지 않는다.** 앞을 내다본 선언은 그 자체가 결정이고, 그 이름의
-// 명령이 생기는 순간 아무도 결정한 적 없이 "셸의 것"이 되어 이식 대상에서 빠진다. 셸 쪽에서는
-// 같은 이름이 소켓에 닿지 못한 채 부재로 거절된다 — 양쪽 다 조용하다. 대상이 생겼을 때 넣는다.
-const SHELL_FAMILIES: &[&str] = &["webview_", "engine_", "titlebar_", "window_"];
+// 명령이 생기는 순간 아무도 결정한 적 없이 "프레임워크의 것"이 되어 이식 대상에서 빠진다.
+// 프레임워크 쪽에서는 같은 이름이 소켓에 닿지 못한 채 부재로 거절된다 — 양쪽 다 조용하다.
+// 대상이 생겼을 때 넣는다.
+const FRAMEWORK_FAMILIES: &[&str] = &["webview_", "engine_", "titlebar_", "window_"];
 
 /// 창을 직접 쥐는 주입 타입. 이것이 있으면 그 명령은 창의 것이다.
 const WINDOW_TYPES: &[&str] = &["Window", "WebviewWindow", "Webview"];
@@ -56,10 +57,10 @@ pub(crate) fn lane_of(cmd: &AppCommand, served: &[&str]) -> Lane {
     if served.contains(&cmd.name.as_str()) {
         return Lane::Served;
     }
-    if SHELL_FAMILIES.iter().any(|p| cmd.name.starts_with(p))
+    if FRAMEWORK_FAMILIES.iter().any(|p| cmd.name.starts_with(p))
         || cmd.injected.iter().any(|t| WINDOW_TYPES.contains(&t.as_str()))
     {
-        return Lane::Shell;
+        return Lane::Framework;
     }
     if !cmd.injected.is_empty() {
         return Lane::StateBound;
@@ -104,7 +105,7 @@ mod tests {
         let total: usize = l.values().map(Vec::len).sum();
         assert!(total > 150, "명령을 못 읽었다: {total}");
         // 네 갈래가 전부 비어 있지 않다 — 하나라도 비면 판정 규칙이 무너진 것이다.
-        for lane in [Lane::Served, Lane::Shell, Lane::StateBound, Lane::Open] {
+        for lane in [Lane::Served, Lane::Framework, Lane::StateBound, Lane::Open] {
             assert!(
                 l.get(&lane).is_some_and(|v| !v.is_empty()),
                 "{} 갈래가 비었다: {:?}",
@@ -146,10 +147,13 @@ mod tests {
         }
         let served = ["themes_scan"];
         assert_eq!(lane_of(&cmd("themes_scan", &[]), &served), Lane::Served);
-        // 이름이 곧 셸 표면인 가족.
-        assert_eq!(lane_of(&cmd("webview_list", &[]), &served), Lane::Shell);
-        // 창을 직접 쥐면 이름과 무관하게 셸의 것이다.
-        assert_eq!(lane_of(&cmd("term_exec", &["Window"]), &served), Lane::Shell);
+        // 이름이 곧 프레임워크 표면인 가족.
+        assert_eq!(lane_of(&cmd("webview_list", &[]), &served), Lane::Framework);
+        // 창을 직접 쥐면 이름과 무관하게 프레임워크의 것이다.
+        assert_eq!(
+            lane_of(&cmd("term_exec", &["Window"]), &served),
+            Lane::Framework
+        );
         // 앱 핸들·관리 상태는 계약이 푸는 축.
         assert_eq!(
             lane_of(&cmd("daemon_start", &["AppHandle"]), &served),
@@ -192,7 +196,7 @@ mod report {
 
 // 테스트는 별도 파일에 산다 — 같은 파일에 두면 코드를 읽는 사람이 검사까지 스크롤로 지나야
 // 하고, 검사를 고치는 편집이 코드 파일의 diff 로 섞인다. `#[path]` 로 붙이면 분리하면서도
-// 비공개 항목(SHELL_FAMILIES)에 그대로 닿는다.
+// 비공개 항목(FRAMEWORK_FAMILIES)에 그대로 닿는다.
 #[cfg(test)]
 #[path = "cored_ledger_family_tests.rs"]
 mod family_tests;
