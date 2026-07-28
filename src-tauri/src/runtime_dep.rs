@@ -33,26 +33,11 @@ const SHA256_HEX_LEN: usize = 64;
 
 
 
-#[derive(serde::Serialize)]
-pub struct ProbeResult {
-    pub ok: bool,       // probe argv 가 exit 0 (실제 작동)
-    pub stdout: String, // 버전 추출용 — TS 가 observe.versionRe 로 파싱
-}
+pub use soksak_core::probe::ProbeResult;
 
-// observe.probe — bin 을 실제 실행해 작동을 관찰한다. "PATH 존재"가 아니라 "exit 0 = 작동".
-// bin 이 절대경로면 그대로, 이름이면 Command 가 PATH 탐색. 실행 자체 실패(부재)도 ok=false.
 #[tauri::command]
 pub fn probe_binary(bin: String, args: Vec<String>) -> ProbeResult {
-    match std::process::Command::new(&bin).args(&args).output() {
-        Ok(o) => ProbeResult {
-            ok: o.status.success(),
-            stdout: String::from_utf8_lossy(&o.stdout).to_string(),
-        },
-        Err(_) => ProbeResult {
-            ok: false,
-            stdout: String::new(),
-        },
-    }
+    soksak_core::probe::probe_binary(bin, args)
 }
 
 

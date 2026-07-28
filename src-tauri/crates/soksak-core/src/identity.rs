@@ -100,6 +100,20 @@ impl Identity {
     pub fn db_path(&self) -> PathBuf {
         self.data_dir().join(DB_FILE)
     }
+
+    /// 이 identity 의 제어 소켓 자리.
+    ///
+    /// 규칙이지 관측이 아니다 — 누가 거기 붙어 있는지는 말하지 않는다. 붙는 것은 셸의
+    /// 일이고, **어디에** 붙어야 하는지는 이 한 규칙이 정한다(앱·sok CLI·cored 가 각자
+    /// 문자열을 적으면 한쪽만 고쳐질 수 있고, 그 어긋남은 "연결 실패"로만 나타난다).
+    pub fn control_socket(&self) -> PathBuf {
+        control_socket(&self.home, &self.identifier)
+    }
+
+    // 사용자 홈(`~`)은 여기서 파생하지 않는다. `<사용자 홈>/.soksak<접미>` 라는 관계는
+    // **배포 배치에서만** 참이고, 격리·픽스처·테스트 배치에서는 부모가 사용자 홈이 아니다 —
+    // 그리고 그 오답은 오류가 아니라 "세션 없음"·"빈 트리"로 나타나 오류로 보이지 않는다.
+    // 사용자 홈이 필요한 프로세스는 부팅 인자로 받는다(cored 의 --user-home).
 }
 
 // ── 홈 기준 레이아웃 ─────────────────────────────────────────────────────────
@@ -124,6 +138,11 @@ pub fn plugins_dir(home: &Path) -> PathBuf {
 /// app.data 저장소 디렉터리.
 pub fn data_dir(home: &Path) -> PathBuf {
     home.join("data")
+}
+
+/// 제어 소켓 자리 — `<홈>/<identifier>.sock`.
+pub fn control_socket(home: &Path, identifier: &str) -> PathBuf {
+    home.join(format!("{identifier}.sock"))
 }
 
 /// release core 판정 — identifier 마지막 세그먼트가 `app`.
@@ -305,6 +324,22 @@ mod tests {
             home_for(Some("com.soksak.app"), false, None, Some("C:\\Users\\max"))
         );
     }
+
+    /// 소켓 자리는 홈과 identifier 둘 다에서 나온다 — 한쪽만 갈려도 다른 파일이 된다.
+    #[test]
+    fn the_control_socket_sits_in_the_home_named_by_the_identifier() {
+        let id = Identity::new("/home/max/.soksak-dev", "com.soksak.dev");
+        assert_eq!(
+            id.control_socket(),
+            PathBuf::from("/home/max/.soksak-dev/com.soksak.dev.sock")
+        );
+        // 두 identity 는 두 소켓이다(같은 자리를 쓰면 나중 것이 앞 것을 거절한다).
+        assert_ne!(
+            Identity::new("/home/max/.soksak", "com.soksak.app").control_socket(),
+            id.control_socket()
+        );
+    }
+
 
     #[test]
     fn a_sibling_identity_home_is_foreign() {

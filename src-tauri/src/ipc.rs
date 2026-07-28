@@ -483,8 +483,9 @@ pub fn start(app: AppHandle) -> Result<String, String> {
     let dir = crate::home::soksak_home();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let identifier = app.config().identifier.clone();
-    let path = dir
-        .join(format!("{identifier}.sock"))
+    // 자리 규칙은 코어가 소유한다 — 앱·sok CLI·cored 가 각자 문자열을 적으면 한쪽만
+    // 고쳐질 수 있고, 그 어긋남은 "연결 실패" 한 줄로만 나타난다.
+    let path = soksak_core::identity::control_socket(&dir, &identifier)
         .to_string_lossy()
         .to_string();
 
@@ -960,6 +961,11 @@ pub fn cmd_result(bridge: State<CmdBridge>, id: u64, result: Value) {
 
 // 제어 소켓 경로(읽기 전용) — PTY 주입(pty.rs)과 같은 정본. 오케스트레이터가 스폰하는
 // 에이전트 서브프로세스(PTY 아님 — 자동주입 없음)의 SOKSAK_SOCKET env 로 쓴다.
+//
+// **이 프로세스가 바인드한 소켓**을 답한다(자리 규칙이 아니라). 그 값은 start() 가 코어의
+// 자리 규칙으로 지어 넣은 것이고, 바인드에 실패하면 앱은 그 자리에서 종료하므로 프론트가
+// 물을 수 있는 모든 상태에서 이 답은 규칙과 같다. 다른 프로세스(cored)는 규칙으로 같은
+// 자리를 답한다 — 거기 누가 붙어 있는지는 그 프로세스가 알 수 없는 사실이다.
 #[tauri::command]
 pub fn ipc_socket_path() -> Option<String> {
     socket_path().map(str::to_string)
@@ -969,18 +975,18 @@ pub fn ipc_socket_path() -> Option<String> {
 // 형태에서든 해소되게 한다(사용자 PATH 설치 미전제). 탐색: 실행 파일 디렉토리부터 조상 6단계
 // 안에서 `sok` 실물이 있는 첫 디렉토리 — dev(target/debug 직하), debug 번들(bundle/macos/….app/
 // Contents/MacOS → target/debug 5단계), 미래 번들 동봉(exe 옆) 모두 이 한 규칙으로 잡힌다.
+//
+// 걷는 규칙은 코어가 소유하고, **시작점만** 이 프로세스가 준다(실행 파일 경로는 프로세스의 것).
 #[tauri::command]
 pub fn ipc_cli_dir() -> Option<String> {
     let exe = std::env::current_exe().ok()?;
-    let mut dir = exe.parent()?.to_path_buf();
-    for _ in 0..=6 {
-        if dir.join("sok").is_file() {
-            return Some(dir.to_string_lossy().into_owned());
-        }
-        dir = dir.parent()?.to_path_buf();
-    }
-    None
+    soksak_core::pathx::find_dir_holding(exe.parent()?, CLI_FILE, CLI_SEARCH_UP)
+        .map(|d| d.to_string_lossy().into_owned())
 }
+
+/// 찾는 파일 이름과 올라갈 걸음 수 — cored 의 같은 명령이 같은 값을 쓴다(registry.rs).
+const CLI_FILE: &str = "sok";
+const CLI_SEARCH_UP: usize = 6;
 
 // Rust 내부에서 프론트 registry 명령을 실행한다(딥링크 라우팅·스케줄러 발화 공용 — 소켓 서버와 같은
 // CmdBridge 경로 재사용, 새 채널 발명 0). 활성 창으로 라우팅하고 결과를 동기 대기한다(route 가 [1s,3600s]

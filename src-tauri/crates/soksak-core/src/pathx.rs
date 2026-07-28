@@ -38,6 +38,25 @@ pub fn project_root_verdict(canonical: &Path, home: &Path) -> Result<(), String>
     Ok(())
 }
 
+/// `start` 부터 조상으로 올라가며 `name` 이라는 **실물 파일**을 가진 첫 디렉터리.
+///
+/// 배치를 열거하는 대신 규칙 하나로 잡는다: 개발 트리(빌드 산출물 직하), 번들
+/// (`….app/Contents/MacOS` → 빌드 트리), 실행물 동봉(exe 옆) 이 전부 같은 걸음이다.
+/// 배치를 목록으로 적으면 새 배치가 생길 때마다 조용히 못 찾는다.
+///
+/// 시작점은 **인자**다 — 여기서 실행 파일 경로를 읽으면 프로세스마다 다른 곳부터 걷는다.
+/// 디렉터리(심링크 대상 포함)는 답이 아니다: 찾는 것은 실행할 파일이다.
+pub fn find_dir_holding(start: &Path, name: &str, max_up: usize) -> Option<PathBuf> {
+    let mut dir = start.to_path_buf();
+    for _ in 0..=max_up {
+        if dir.join(name).is_file() {
+            return Some(dir);
+        }
+        dir = dir.parent()?.to_path_buf();
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -86,6 +105,31 @@ mod tests {
     #[test]
     fn the_filesystem_root_is_not_a_project_root() {
         assert!(project_root_verdict(Path::new("/"), Path::new("/u/max")).is_err());
+    }
+
+    /// 걸음 규칙 — 같은 디렉터리부터, 조상으로, 상한까지. 상한 밖은 못 찾는다.
+    #[test]
+    fn the_walk_finds_the_holder_within_the_limit_and_not_beyond() {
+        let root = std::env::temp_dir().join(format!("pathx-walk-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let deep = root.join("a").join("b").join("c");
+        std::fs::create_dir_all(&deep).unwrap();
+        std::fs::write(root.join("sok"), b"#!/bin/sh\n").unwrap();
+
+        // exe 옆(0 걸음)과 조상(3 걸음) 둘 다 같은 규칙이다.
+        assert_eq!(find_dir_holding(&root, "sok", 6), Some(root.clone()));
+        assert_eq!(find_dir_holding(&deep, "sok", 6), Some(root.clone()));
+        // 상한이 모자라면 못 찾는다 — 무한히 올라가 남의 트리를 집지 않는다.
+        assert_eq!(find_dir_holding(&deep, "sok", 2), None);
+        // 이름이 다르면 못 찾는다.
+        assert_eq!(find_dir_holding(&deep, "sok-dev", 6), None);
+
+        // 디렉터리는 답이 아니다 — 실행할 파일을 찾는 것이다.
+        let dir_named_like_the_binary = root.join("a").join("b").join("tool");
+        std::fs::create_dir_all(&dir_named_like_the_binary).unwrap();
+        assert_eq!(find_dir_holding(&deep, "tool", 6), None);
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

@@ -143,6 +143,19 @@ impl Ctx {
     pub fn db_path(&self) -> PathBuf {
         self.data_dir.join(soksak_core::identity::DB_FILE)
     }
+
+    /// 사용자 홈이 **꼭 필요한** 호출을 위한 자리 — 없으면 이름을 달고 실패한다.
+    ///
+    /// 정체성 홈의 부모로 파생하지 않는다. `<사용자 홈>/.soksak<접미>` 라는 관계는 배포
+    /// 배치에서만 참이고, 격리·픽스처에서는 엉뚱한 곳을 가리킨다 — 그리고 그 오답은 오류가
+    /// 아니라 "세션 없음"·"빈 트리"로 나타나 오류로 보이지 않는다. 받지 못했으면 없는 것이다.
+    pub fn require_user_home(&self) -> Result<&Path, String> {
+        self.user_home().ok_or_else(|| {
+            "사용자 홈을 받지 못했다 — 띄운 쪽이 --user-home 으로 넘겨야 한다(정체성 홈의 \
+             부모로 때우면 격리 배치에서 다른 곳을 훑는다)"
+                .to_string()
+        })
+    }
 }
 
 #[cfg(test)]
