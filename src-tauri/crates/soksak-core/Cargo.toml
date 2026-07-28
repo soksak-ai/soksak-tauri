@@ -11,3 +11,5 @@ description = "Command logic with no shell in it: no window, no app handle, no a
 serde = { version = "1", features = ["derive"] }
 sha2 = "0.10"
 serde_json = "1"
+# 미리보기 인코딩 — 순수 변환이라 셸을 끌고 오지 않는다(앱과 같은 판).
+base64 = "0.22"

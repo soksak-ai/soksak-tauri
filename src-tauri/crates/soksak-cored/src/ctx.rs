@@ -31,6 +31,16 @@ pub struct Ctx {
     /// (`SOKSAK_DATA_DIR`) **옮긴 쪽이 같은 경로를 넘겨야** 두 프로세스가 같은 DB 를 본다.
     /// cored 가 규칙만 보고 파생하면 앱과 다른 파일을 열고, 그 오답은 오류가 아니라 빈 결과다.
     data_dir: PathBuf,
+    /// OS 사용자 홈(`~`) — 정체성 홈(`~/.soksak-dev`)과 **다른 값**이다. 파일 트리의 기본
+    /// 뿌리이자 `~` 확장의 기준이라, 이것을 정체성 홈으로 대신하면 트리가 앱 관리 폴더
+    /// 아래에서 시작한다.
+    ///
+    /// 정체성 홈의 부모로 파생하지 않는다. 그 관계는 배포 배치에서만 참이고(`~/.soksak*`),
+    /// 격리·픽스처 배치에서는 조용히 엉뚱한 디렉터리를 가리킨다. 띄운 쪽이 아는 값이다.
+    ///
+    /// `Option` 인 이유: 못 받은 프로세스도 절대경로 호출은 그대로 답해야 한다. 홈이 필요한
+    /// 호출만 이름을 달고 거절한다 — 못 하는 것 하나가 나머지를 막지 않는다.
+    user_home: Option<PathBuf>,
     /// 이 저장소의 쓰기 소유권. 잡았으면 `Some` 이고, 그때만 쓰기 명령이 선다.
     ///
     /// 부팅 때 한 번 시도하고 결과를 지고 간다 — 호출마다 다시 잡으면 같은 프로세스가
@@ -48,6 +58,7 @@ impl Ctx {
         Ctx {
             identity,
             data_dir,
+            user_home: None,
             write_lock: None,
             login_shell: None,
         }
@@ -105,6 +116,17 @@ impl Ctx {
         self.login_shell.as_deref()
     }
 
+    /// OS 사용자 홈을 띄운 쪽이 알려준 경우.
+    pub fn with_user_home(mut self, dir: impl Into<PathBuf>) -> Self {
+        self.user_home = Some(dir.into());
+        self
+    }
+
+    /// 파일 트리의 기본 뿌리. 못 받았으면 `None` — 추측하지 않는다.
+    pub fn user_home(&self) -> Option<&Path> {
+        self.user_home.as_deref()
+    }
+
     pub fn identity(&self) -> &Identity {
         &self.identity
     }
@@ -147,6 +169,18 @@ mod tests {
         assert_eq!(ctx.db_path(), Path::new("/tmp/e2e-iso/soksak.db"));
         // 홈은 그대로다 — 데이터만 옮긴 것이지 정체성이 바뀐 게 아니다.
         assert_eq!(ctx.home(), Path::new("/tmp/x-dev"));
+    }
+
+    /// 사용자 홈은 정체성 홈과 다른 축이다 — 못 받았으면 없는 것이지 부모로 때우지 않는다.
+    #[test]
+    fn the_user_home_is_told_never_derived_from_the_identity_home() {
+        let ctx = Ctx::new(dev());
+        assert_eq!(ctx.user_home(), None, "안 받았으면 없는 것이다");
+        let told = Ctx::new(dev()).with_user_home("/u/max");
+        assert_eq!(told.user_home(), Some(Path::new("/u/max")));
+        // 정체성 홈은 그대로다 — 두 홈은 서로를 대신하지 않는다.
+        assert_eq!(told.home(), Path::new("/tmp/x-dev"));
+        assert_ne!(told.user_home(), Some(told.home()));
     }
 
     /// cored 의 홈 레이아웃은 앱의 것과 **같은 함수**에서 나온다.

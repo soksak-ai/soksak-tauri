@@ -17,13 +17,20 @@ const USAGE: &str = "\
 soksak-cored — serves shell-free commands over a socket
 
 USAGE:
-    soksak-cored --socket <path> --home <path> --identifier <id> [--data-dir <path>] [--login-shell <path>]
+    soksak-cored --socket <path> --home <path> --identifier <id>
+                 [--data-dir <path>] [--user-home <path>] [--login-shell <path>]
 
 OPTIONS:
     --socket <path>      Unix socket to bind and serve (required)
     --home <path>        identity home this helper serves (required)
     --identifier <id>    identity of that home, e.g. com.soksak.dev (required)
     --data-dir <path>    app.data directory, when the spawner moved it (default: <home>/data)
+    --user-home <path>   the OS user home — the file tree's root and what `~` expands to.
+                         This is NOT the identity home: `~/.soksak-dev` is the identity home
+                         and `~` is this. Without it, calls that need a home fail by name;
+                         everything else still serves. It is never derived from --home,
+                         because the parent-directory relation holds only in the shipped
+                         layout and points somewhere else under isolation.
     --login-shell <path> user login shell. $SHELL belongs to the user account, not to this
                          process — the spawner reads it once and passes it as a value. Without
                          it, shell-backed commands refuse by name instead of guessing.
@@ -94,6 +101,11 @@ fn boot(args: &[String]) -> Result<(String, Ctx), String> {
     }
     if let Ok(dir) = take_value(args, "--data-dir") {
         ctx = ctx.with_data_dir(dir);
+    }
+    // 사용자 홈도 띄운 쪽만 안다. 안 주면 파생하지 않는다 — 홈이 필요한 명령만 이름을 달고
+    // 거절하고 나머지는 계속 서빙한다.
+    if let Ok(dir) = take_value(args, "--user-home") {
+        ctx = ctx.with_user_home(dir);
     }
     // 쓰기 소유권을 부팅에서 한 번 시도한다. 못 잡는 것은 실패가 아니라 **읽기 서버로
     // 산다**는 뜻이다(그 홈의 앱이 도는 정상 상태). 잠금 자체를 못 만드는 것만 오류다.
