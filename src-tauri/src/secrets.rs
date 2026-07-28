@@ -32,7 +32,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 use argon2::{Algorithm, Argon2, Params, Version};
 use base64::engine::general_purpose::STANDARD;
@@ -449,58 +449,6 @@ impl KekSource for InMemoryKekSource {
     }
 }
 
-// 키체인 접촉 계수기 — acquire/reachable 이 몇 번 불렸는지 센다. 실 키체인에서 acquire 는 모달을
-// 띄울 수 있는 호출이라, "부팅이 그것을 부르는가"가 관측 대상이다(수치가 곧 증거).
-#[cfg(test)]
-#[derive(Default)]
-pub struct KekTouchLog {
-    acquires: std::sync::atomic::AtomicUsize,
-    probes: std::sync::atomic::AtomicUsize,
-}
-
-#[cfg(test)]
-impl KekTouchLog {
-    pub fn acquires(&self) -> usize {
-        self.acquires.load(std::sync::atomic::Ordering::SeqCst)
-    }
-    pub fn probes(&self) -> usize {
-        self.probes.load(std::sync::atomic::Ordering::SeqCst)
-    }
-}
-
-// 고정 KEK + 접촉 계수 — InMemory 와 같은 동작에 관측만 얹는다.
-#[cfg(test)]
-pub struct CountingKekSource {
-    kek: [u8; KEY_LEN],
-    log: Arc<KekTouchLog>,
-}
-
-#[cfg(test)]
-impl CountingKekSource {
-    pub fn new(kek: [u8; KEY_LEN], log: Arc<KekTouchLog>) -> Self {
-        Self { kek, log }
-    }
-}
-
-#[cfg(test)]
-impl KekSource for CountingKekSource {
-    fn acquire(&self) -> Result<Zeroizing<[u8; KEY_LEN]>, OsKeyError> {
-        self.log
-            .acquires
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        Ok(Zeroizing::new(self.kek))
-    }
-    fn reachable(&self) -> bool {
-        self.log
-            .probes
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        true
-    }
-    fn backend(&self) -> &'static str {
-        "counting"
-    }
-}
-
 // no-secret-service(헤드리스 Linux/무 D-Bus/잠긴 컬렉션) 재현 — 모든 취득 Err(무음 폴백 0).
 #[cfg(test)]
 pub struct FailingKekSource;
@@ -536,9 +484,6 @@ pub struct SecretsState {
     // [R23] true 면 vault 가 있어야 한다(app.data 에 봉투 키 등록됨). 부팅 시 setup 이 설정 — vault 파일이
     // 없는데 이게 true 면 ensure_open 의 새 vault 자동생성을 거부한다(전손 차단).
     expect_vault: Mutex<bool>,
-    // 볼트가 잠김→열림으로 넘어간 순간 1회 호출되는 관측자. 이 모듈은 Tauri 를 모른다 — 부트가
-    // "secrets-ready 발행"을 값으로 넣는다(R7). Arc 라 자물쇠 밖에서 복제해 부른다(재진입 데드락 0).
-    opened_observer: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
 }
 
 // 볼트 파일명 — 홈 아래 한 자리. 경로 조립은 Identity::path 가 소유한다.
@@ -568,31 +513,6 @@ pub(crate) fn resolve_vault_path(
         }
         _ => Ok(vault_path(identity)),
     }
-}
-
-// ── 부트 배선 ────────────────────────────────────────────────────────────────
-// 부팅이 볼트에 하는 일 전부 — 배선만이다. 경로·expect·KEK 출처·개방 고지를 심고 끝낸다.
-//
-// 여기서 KEK 를 취득하지 않는다. 부팅은 열 것이 없다: 봉인된 값을 실제로 필요로 하는 첫 호출자가
-// ensure_open 으로 취득을 부른다(취득 지연이 아니라, 부팅에 그 요구가 없다). OS 키체인 취득은
-// 동기 모달을 띄울 수 있는 호출이라, 부팅이 그것을 부르면 창 하나 뜨기 전에 사람 손을 기다린다.
-//
-// 한 함수로 모은 이유: "부팅이 KEK 를 취득하는가"는 테스트가 관측해야 할 사실이고, 관측하려면
-// 그 순서에 이름이 있어야 한다.
-pub(crate) fn boot_wire(
-    state: &SecretsState,
-    vault_path: Option<PathBuf>,
-    expect_vault: bool,
-    source: Box<dyn KekSource>,
-    on_open: Arc<dyn Fn() + Send + Sync>,
-) {
-    // 경로 미해소면 볼트는 미구성으로 남는다 — 전역 홈 폴백을 여기서 만들지 않는다.
-    if let Some(path) = vault_path {
-        state.set_path(path);
-    }
-    state.set_expect_vault(expect_vault);
-    state.set_kek_source(source);
-    state.set_opened_observer(on_open);
 }
 
 // ns 검증 — 일반 namespace는 plugin id와 동형(lower/digit/hyphen). `core_registry-*`는
@@ -638,12 +558,6 @@ impl SecretsState {
     // KEK 출처 주입 — lib.rs setup 1회(프로덕션 OsKekSource), 테스트 InMemory/Failing. set_path 와 동형.
     pub fn set_kek_source(&self, source: Box<dyn KekSource>) {
         *self.kek_source.lock().expect("kek_source mutex") = Some(source);
-    }
-
-    // 개방 관측자 주입(부트 1회). 이 슬롯이 비어 있으면 개방은 조용하다 — 관측자는 고지 채널이지
-    // 개방 조건이 아니다.
-    pub fn set_opened_observer(&self, observer: Arc<dyn Fn() + Send + Sync>) {
-        *self.opened_observer.lock().expect("opened_observer mutex") = Some(observer);
     }
 
     // 이 State 가 쓸 볼트 경로 — 주입된 path 뿐이다.
@@ -763,25 +677,8 @@ impl SecretsState {
             }
         };
         // 캐시 채우기(취득 KEK 는 함수 끝에서 Zeroizing 자동 스크럽).
-        self.install_open(*kek, vault)
-    }
-
-    // 잠김→열림 전이의 유일한 기록자 — 캐시를 채우고 관측자에게 고지한다. 볼트를 여는 경로가
-    // 둘(ensure_open·recover_into_vault)이라 고지를 여기 한 곳에 둔다. 관측자는 자물쇠를 모두 놓은
-    // 뒤 부른다: 관측자가 볼트를 다시 만져도 ensure_open 의 fast-path 로 즉시 돌아온다(재진입 안전).
-    fn install_open(&self, kek: [u8; KEY_LEN], vault: VaultData) -> Result<(), String> {
-        {
-            *self.kek.lock().map_err(|e| e.to_string())? = Some(kek);
-            *self.vault.lock().map_err(|e| e.to_string())? = Some(vault);
-        }
-        let observer = self
-            .opened_observer
-            .lock()
-            .ok()
-            .and_then(|g| g.as_ref().cloned());
-        if let Some(f) = observer {
-            f();
-        }
+        *self.kek.lock().map_err(|e| e.to_string())? = Some(*kek);
+        *self.vault.lock().map_err(|e| e.to_string())? = Some(vault);
         Ok(())
     }
 
@@ -1001,7 +898,8 @@ impl SecretsState {
             // 현재 KEK 로 새 vault 강제 생성·캐시(R23 가드 우회). ensure_open 실패가 곧 기존 vault 개봉불가
             // 증거라, 대체해도 이 기계서 복구가능한 것을 잃지 않는다(옛 KEK 봉인분은 옆으로 보존됨).
             let vault = Self::new_vault(&kek)?;
-            self.install_open(*kek, vault)?;
+            *self.kek.lock().map_err(|e| e.to_string())? = Some(*kek);
+            *self.vault.lock().map_err(|e| e.to_string())? = Some(vault);
         }
         // vault open — 복구된 S 저장(put_data_key 가 캐시된 open vault 를 fast-path 로 봉인·flush).
         self.put_data_key(key_id, secret)
@@ -1146,57 +1044,6 @@ mod tests {
         s.set_path(path);
         s.set_kek_source(Box::new(InMemoryKekSource::empty()));
         (s, dir)
-    }
-
-    // 부팅은 비밀을 요구하지 않는다 — boot_wire 는 배선만 하고 KEK 를 만지지 않는다. 실 키체인에서
-    // acquire 는 동기 모달을 띄울 수 있는 호출이므로, 계수 0 이 곧 "부팅이 프롬프트를 부르지 않는다"다.
-    // 취득은 첫 시크릿 사용이 부르고, 그때 잠김→열림 전이가 딱 1회 고지된다.
-    #[test]
-    fn boot_wiring_never_touches_the_keychain() {
-        let (dir, path) = tmp_vault_dir("boot-no-acquire");
-        let log = Arc::new(KekTouchLog::default());
-        let fired = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let s = SecretsState::default();
-        boot_wire(
-            &s,
-            Some(path.clone()),
-            false,
-            Box::new(CountingKekSource::new([4u8; KEY_LEN], log.clone())),
-            {
-                let f = fired.clone();
-                Arc::new(move || {
-                    f.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                })
-            },
-        );
-        assert_eq!(log.acquires(), 0, "부팅은 KEK 를 취득하지 않는다(모달 0)");
-        assert_eq!(log.probes(), 0, "도달성 프로브도 부팅에선 부르지 않는다");
-        assert!(!path.exists(), "부팅은 볼트 파일을 만들지 않는다");
-        assert_eq!(
-            fired.load(std::sync::atomic::Ordering::SeqCst),
-            0,
-            "열리지 않았는데 개방을 고지하지 않는다"
-        );
-
-        // 첫 시크릿 사용 — 여기서 취득하고, 여기서 개방을 고지한다.
-        s.set("plugin-a", "k", "v").expect("첫 사용에서 투명 개방");
-        assert_eq!(log.acquires(), 1, "첫 시크릿 사용이 취득을 부른다");
-        assert_eq!(
-            fired.load(std::sync::atomic::Ordering::SeqCst),
-            1,
-            "잠김→열림 전이 1회 고지"
-        );
-
-        // 이미 열린 볼트는 재취득도 재고지도 없다(전이는 한 번뿐).
-        s.set("plugin-a", "k2", "v2").expect("둘째 시크릿");
-        assert_eq!(log.acquires(), 1, "열린 볼트는 KEK 를 다시 만지지 않는다");
-        assert_eq!(
-            fired.load(std::sync::atomic::Ordering::SeqCst),
-            1,
-            "고지는 전이 때만"
-        );
-
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     // (e2e) E2eKekSource 결정성 — 같은 값 → 같은 KEK(격리 볼트 런 간 재오픈 가능), 다른 값 → 다른 KEK.

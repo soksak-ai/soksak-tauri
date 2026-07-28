@@ -42,9 +42,9 @@ fn hello_facts() -> Value {
     json!({
         "protocol": SOCKET_PROTOCOL_VERSION,
         "minClientProtocol": MIN_COMPATIBLE_CLIENT_PROTOCOL,
-        "role": "helper",
-        "helper": env!("CARGO_PKG_NAME"),
-        "helperVersion": env!("CARGO_PKG_VERSION"),
+        "role": "cored",
+        "backend": env!("CARGO_PKG_NAME"),
+        "backendVersion": env!("CARGO_PKG_VERSION"),
         "pid": std::process::id(),
     })
 }
@@ -163,7 +163,7 @@ mod tests {
         let reply = answer(&ctx(), r#"{"id":"h","method":"system.hello"}"#);
         assert_eq!(reply["ok"], true);
         assert_eq!(reply["protocol"], SOCKET_PROTOCOL_VERSION);
-        assert_eq!(reply["role"], "helper");
+        assert_eq!(reply["role"], "cored");
         assert_eq!(reply["id"], "h");
     }
 

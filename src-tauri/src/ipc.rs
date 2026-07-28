@@ -284,6 +284,11 @@ fn hello_facts(ctx: &TransportCtx) -> Value {
         "identity": ctx.identity,
         "pid": ctx.pid,
         "startedAt": ctx.started_at_ms,
+        // 누가 답하는가 — 부르는 쪽이 규약이 아니라 **답**으로 위상을 알아야 한다.
+        // app = 셸과 백엔드가 한 프로세스(오늘의 Tauri). cored = 백엔드만이고 셸은 딴 데 있다.
+        "role": "app",
+        // 이 프로세스가 쓰는 셸. 백엔드만 도는 프로세스는 이 값을 모르므로 말하지 않는다.
+        "shell": "tauri",
         "capabilities": ["hello.v1"],
     })
 }

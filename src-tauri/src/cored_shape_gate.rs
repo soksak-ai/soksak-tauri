@@ -39,6 +39,11 @@ const SHELL_INJECTED: &[&str] = &[
 pub(crate) struct AppCommand {
     pub name: String,
     pub args: BTreeSet<String>,
+    /// 이 명령이 셸에서 주입받는 타입들(State·AppHandle·Window·Channel …).
+    /// 호출자 인자가 아니라 **이 명령이 앱 프로세스에 묶인 이유**라, 분류가 이것을 본다.
+    pub injected: BTreeSet<String>,
+    /// 선언된 파일 — 어느 영역의 명령인지 읽는 축.
+    pub file: String,
 }
 
 /// 이름 대조용 정규형 — Tauri 는 rust 의 snake_case 를 JS 의 camelCase 로 바꿔 넘긴다.
@@ -61,13 +66,17 @@ pub(crate) fn app_commands() -> Vec<AppCommand> {
         let Ok(src) = std::fs::read_to_string(&path) else {
             continue;
         };
-        out.extend(parse_commands(&src));
+        let name = path
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+        out.extend(parse_commands(&src, &name));
     }
     out
 }
 
 /// 한 파일에서 `#[tauri::command]` 다음에 오는 fn 시그니처를 읽는다.
-fn parse_commands(src: &str) -> Vec<AppCommand> {
+fn parse_commands(src: &str, file: &str) -> Vec<AppCommand> {
     let mut out = Vec::new();
     let lines: Vec<&str> = src.lines().collect();
     for (i, line) in lines.iter().enumerate() {
@@ -106,9 +115,12 @@ fn parse_commands(src: &str) -> Vec<AppCommand> {
             continue;
         };
         let params = params.rsplit_once(')').map(|(l, _)| l).unwrap_or(params);
+        let (args, injected) = split_params(params);
         out.push(AppCommand {
             name: name.trim().to_string(),
-            args: caller_args(params),
+            args,
+            injected,
+            file: file.to_string(),
         });
     }
     out
@@ -116,7 +128,16 @@ fn parse_commands(src: &str) -> Vec<AppCommand> {
 
 /// 파라미터 목록에서 **호출자가 보내는** 인자 이름만 남긴다.
 fn caller_args(params: &str) -> BTreeSet<String> {
+    split_params(params).0
+}
+
+/// 파라미터를 둘로 가른다: (호출자 인자 이름, 셸 주입 타입 이름).
+///
+/// 주입 타입은 버리지 않고 돌려준다 — 그것이 이 명령을 앱 프로세스에 묶는 이유이고,
+/// 이식 분류가 보는 축이다(cored_ledger).
+fn split_params(params: &str) -> (BTreeSet<String>, BTreeSet<String>) {
     let mut out = BTreeSet::new();
+    let mut injected = BTreeSet::new();
     let mut depth: i32 = 0;
     let mut cur = String::new();
     let mut parts = Vec::new();
@@ -148,15 +169,18 @@ fn caller_args(params: &str) -> BTreeSet<String> {
         let ty = ty.trim();
         // 셸 주입 타입은 호출자의 인자가 아니다. 타입 경로 어디에 있든 잡는다
         // (`State<'_, DbState>` · `tauri::AppHandle` · `ipc::Channel<..>`).
-        if SHELL_INJECTED
+        let hit: Vec<&str> = SHELL_INJECTED
             .iter()
-            .any(|s| ty.split(['<', ' ', ':']).any(|seg| seg == *s))
-        {
+            .copied()
+            .filter(|s| ty.split(['<', ' ', ':']).any(|seg| seg == *s))
+            .collect();
+        if !hit.is_empty() {
+            injected.extend(hit.into_iter().map(str::to_string));
             continue;
         }
         out.insert(name.trim().trim_start_matches("mut ").trim().to_string());
     }
-    out
+    (out, injected)
 }
 
 /// 이름이 겹치는 명령마다 인자 이름 집합을 대조한다. 앱에 없는 이름은 cored 자기 서술이라

@@ -242,7 +242,7 @@ fn hello_declares_the_socket_protocol() {
         soksak_spec_socket::SOCKET_PROTOCOL_VERSION,
         "응답: {reply}"
     );
-    assert_eq!(reply["role"], "helper", "무엇이 답했는지 말한다: {reply}");
+    assert_eq!(reply["role"], "cored", "무엇이 답했는지 말한다: {reply}");
 }
 
 // 미래 판을 선언한 클라이언트는 명령에 도달하지 못한다(앱의 게이트와 같은 판정).
