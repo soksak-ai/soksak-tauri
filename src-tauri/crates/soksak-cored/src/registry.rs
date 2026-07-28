@@ -10,6 +10,12 @@
 //! 여기 없는 이름은 이름을 달고 실패한다. 프레임워크가 아직 소유한 것(창·웹뷰·엔진)을 cored 가
 //! 아는 척하지 않는다 — 모르는 것을 모른다고 답하는 것이 이 표의 절반이다.
 
+use std::collections::{HashMap, VecDeque};
+use std::io::{BufRead, BufReader};
+use std::process::{Child, Stdio};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
 use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
 
@@ -332,6 +338,26 @@ pub const COMMANDS: &[Command] = &[
         args: &[],
         returns: "string | null (짝 CLI 가 든 디렉터리)",
         run: run_ipc_cli_dir,
+    },
+    // 로그인 셸을 통한 일회 실행과 잔존 회수. 둘 다 **장부를 안 건드린다** — 거둘 것·돌릴 것은
+    // 호출자 인자와 부팅 상태(로그인 셸)가 만들어 주므로 DaemonManager 의 Child 맵도 창도
+    // 필요 없다. 도는 데몬을 세우고 세는 daemon_start/stop/status/logs 와 갈리는 자리가 여기다.
+    Command {
+        name: "daemon_run_once",
+        args: &[
+            Arg { name: "root", ty: "string", required: REQ },
+            Arg { name: "cmd", ty: "string", required: REQ },
+            Arg { name: "timeoutSecs", ty: "u64?", required: OPT },
+            Arg { name: "env", ty: "{ [k]: string }?", required: OPT },
+        ],
+        returns: "{ code, lines } — code 는 신호 종료면 null, lines 는 stdout+stderr 를 섞은 한 링",
+        run: run_daemon_run_once,
+    },
+    Command {
+        name: "daemon_reap",
+        args: &[Arg { name: "entries", ty: "[pid, cmd][]", required: REQ }],
+        returns: "u32[] (명령줄이 대조되어 실제로 종료한 pid)",
+        run: run_daemon_reap,
     },
 ];
 
@@ -1240,3 +1266,167 @@ fn run_ipc_cli_dir(_ctx: &Ctx, params: &Value) -> Outcome {
 /// 찾는 파일 이름과 올라갈 걸음 수 — 앱의 `ipc_cli_dir` 과 같은 값이라야 같은 곳에 닿는다.
 const CLI_FILE: &str = "sok";
 const CLI_SEARCH_UP: usize = 6;
+
+// ── 로그인 셸을 통한 일회 실행 · 잔존 회수 ──────────────────────────────────────
+//
+// 조립과 판정은 코어(shellq)가 소유하고, 이 프로세스가 주는 것은 **스폰과 신호**다.
+// 자르는 규칙(RING_CAP)·플래그 분기·대조 판정을 여기서 다시 적으면 같은 실행이 프로세스마다
+// 다른 답을 낸다 — 그리고 그 차이는 오류가 아니라 다른 줄 수, 다른 회수 목록으로 나타난다.
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RunOnce {
+    root: String,
+    cmd: String,
+    #[serde(default)]
+    timeout_secs: Option<u64>,
+    #[serde(default)]
+    env: Option<HashMap<String, String>>,
+}
+
+/// 로그인 셸 하나를 띄운다 — 자기 프로세스 그룹의 리더로. 그래야 상한을 넘겼을 때 그룹 신호가
+/// 손자까지 겨눈다(본체만 죽이면 트리를 낳은 명령이 뒤에 프로세스를 남긴다).
+fn spawn_once(
+    login_shell: &str,
+    root: &str,
+    cmd: &str,
+    env: Option<&HashMap<String, String>>,
+) -> Result<Child, String> {
+    // 플랫폼은 인자다 — 코어가 자기 서술을 하지 않으므로 이 프로세스가 자기 타깃을 말해 준다.
+    let (prog, argv) = soksak_core::shellq::run_once_argv(login_shell, cmd, !cfg!(unix));
+    let mut c = std::process::Command::new(prog);
+    c.args(argv)
+        .current_dir(root)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    // 호출자가 준 env 는 **자식 환경에만** 들어간다 — 이 프로세스에도, 그 트레이스에도 남지
+    // 않는다(release.publish 의 GH_TOKEN 이 이 자리를 탄다).
+    if let Some(vars) = env {
+        c.envs(vars);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        c.process_group(0); // pgid = 자식 pid — 그룹 신호가 트리 전체를 겨눈다.
+    }
+    c.spawn().map_err(|e| format!("데몬 스폰 실패: {e}"))
+}
+
+/// stdout·stderr 를 **한 링**으로 모은다. 가르면 그것은 다른 명령이다 — 실패한 실행의 사유는
+/// 대개 stderr 에 있고, 성공한 실행의 결과는 stdout 에 있다.
+fn pump_lines<R: std::io::Read + Send + 'static>(src: R, ring: Arc<Mutex<VecDeque<String>>>) {
+    std::thread::spawn(move || {
+        let reader = BufReader::new(src);
+        for line in reader.lines() {
+            match line {
+                Ok(l) => soksak_core::shellq::ring_push(
+                    &mut ring.lock().unwrap(),
+                    l,
+                    soksak_core::shellq::RING_CAP,
+                ),
+                Err(_) => break,
+            }
+        }
+    });
+}
+
+/// 프로세스 그룹을 즉시 종료한다 — 직계 kill 폴백까지 앱과 같은 순서다.
+#[cfg(unix)]
+fn kill_group(child: &mut Child) {
+    unsafe {
+        libc::killpg(child.id() as i32, libc::SIGKILL);
+    }
+    let _ = child.kill();
+}
+
+#[cfg(not(unix))]
+fn kill_group(child: &mut Child) {
+    // 윈도우: 트리 종료는 taskkill /T — Job Object 도입 전의 표준 경로.
+    let _ = std::process::Command::new("taskkill")
+        .args(["/PID", &child.id().to_string(), "/T", "/F"])
+        .output();
+}
+
+fn run_daemon_run_once(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: RunOnce| {
+        let Some(login_shell) = ctx.login_shell() else {
+            return Err(
+                "로그인 셸을 받지 못했다 — 띄운 쪽이 --login-shell 로 넘겨야 한다(자기 환경을 \
+                 읽으면 띄운 쪽과 다른 로그인 셸로 돌면서 성공을 답한다)"
+                    .to_string(),
+            );
+        };
+        let mut child = spawn_once(login_shell, &a.root, &a.cmd, a.env.as_ref())?;
+        let ring: Arc<Mutex<VecDeque<String>>> = Arc::new(Mutex::new(VecDeque::new()));
+        if let Some(out) = child.stdout.take() {
+            pump_lines(out, ring.clone());
+        }
+        if let Some(err) = child.stderr.take() {
+            pump_lines(err, ring.clone());
+        }
+        let limit = Duration::from_secs(a.timeout_secs.unwrap_or(60));
+        let started = Instant::now();
+        // 200ms 폴 — 원본의 걸음 그대로다. try_wait 은 SIGCHLD 를 기다리지 않으므로 이
+        // 간격이 곧 종료 감지 지연이자, 파이프가 다 빨려 나올 여유이기도 하다.
+        let code = loop {
+            match child.try_wait() {
+                Ok(Some(st)) => break st.code(),
+                Ok(None) => {}
+                Err(e) => return Err(format!("대기 실패: {e}")),
+            }
+            if started.elapsed() > limit {
+                kill_group(&mut child);
+                return Err(format!("시간 초과({}초): {}", limit.as_secs(), a.cmd));
+            }
+            std::thread::sleep(Duration::from_millis(200));
+        };
+        // 신호로 죽은 실행의 code 는 null 이다 — 0 이나 -1 로 바꾸면 "성공" 또는 있지도 않은
+        // 종료 코드가 되어, 죽임을 당한 것과 스스로 끝난 것이 같은 값이 된다.
+        let lines: Vec<String> = ring.lock().unwrap().iter().cloned().collect();
+        Ok(json!({ "code": code, "lines": lines }))
+    })
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReapEntries {
+    entries: Vec<(u32, String)>,
+}
+
+fn run_daemon_reap(_ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: ReapEntries| {
+        let mut reaped: Vec<u32> = Vec::new();
+        for (pid, cmd) in a.entries {
+            #[cfg(unix)]
+            {
+                let (prog, argv) = soksak_core::shellq::ps_command_argv(pid);
+                let out = std::process::Command::new(prog).args(argv).output();
+                let alive_cmd = out
+                    .ok()
+                    .filter(|o| o.status.success())
+                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                    .unwrap_or_default();
+                // 대조되지 않은 pid 는 건드리지 않는다 — 빈 목록은 "대조된 것이 없다"는
+                // 계산된 답이지, 재 본 적 없는 0 이 아니다.
+                if !alive_cmd.is_empty() && soksak_core::shellq::reap_matches(&alive_cmd, &cmd) {
+                    unsafe {
+                        libc::killpg(pid as i32, libc::SIGKILL);
+                        libc::kill(pid as i32, libc::SIGKILL);
+                    }
+                    reaped.push(pid);
+                }
+            }
+            #[cfg(not(unix))]
+            {
+                // 비-unix 는 대조 없이 트리를 종료하고 무조건 거뒀다고 답한다 — 앱의 결정 그대로다.
+                let _ = cmd;
+                let _ = std::process::Command::new("taskkill")
+                    .args(["/PID", &pid.to_string(), "/T", "/F"])
+                    .output();
+                reaped.push(pid);
+            }
+        }
+        Ok(reaped)
+    })
+}

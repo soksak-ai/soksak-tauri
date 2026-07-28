@@ -13,8 +13,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager, State};
 
-/// 데몬당 링버퍼 상한(줄) — 넘치면 앞에서 버린다. 영속이 필요하면 사용자가 cmd 에서 리다이렉트한다.
-const RING_CAP: usize = 500;
+// 자르는 규칙·argv 조립·회수 대조는 코어가 소유한다. 두 벌이면 같은 실행이 프로세스마다
+// 다른 줄 수를 답하고, 그 차이는 오류가 아니라 사라진 로그로 나타난다.
+use soksak_core::shellq::{ps_command_argv, reap_matches, ring_push, run_once_argv, RING_CAP};
+
 /// on-crash 재시작 상한 — 이 횟수를 넘으면 crashed 로 멈춘다(무한 재시작 금지).
 const RESTART_CAP: u32 = 5;
 /// 종료 유예(초) — SIGTERM 후 이 시간 안에 종료되지 않으면 그룹 SIGKILL.
@@ -24,26 +26,9 @@ fn key(root: &str, name: &str) -> String {
     format!("{root}\u{0}{name}")
 }
 
-/// 링버퍼에 한 줄 넣기 — 상한 유지(순수 로직, 테스트 대상).
-fn ring_push(ring: &mut VecDeque<String>, line: String, cap: usize) {
-    if ring.len() >= cap {
-        ring.pop_front();
-    }
-    ring.push_back(line);
-}
-
 /// on-crash 백오프(초) — 지수(1,2,4,8,16), 상한 도달 여부는 호출자가 RESTART_CAP 으로 판정.
 fn backoff_secs(restarts: u32) -> u64 {
     1u64 << restarts.min(4)
-}
-
-/// reap 안전 판정 — ps 명령줄이 선언 cmd 의 부분열을 담을 때만 종료한다(pid 재사용으로 다른 프로세스를 잘못 종료하는 일 방지).
-fn reap_matches(ps_command: &str, declared_cmd: &str) -> bool {
-    let needle = declared_cmd
-        .split_whitespace()
-        .next()
-        .unwrap_or(declared_cmd);
-    !needle.is_empty() && ps_command.contains(needle)
 }
 
 #[derive(Clone, Serialize)]
@@ -140,11 +125,11 @@ fn spawn_shell(
     cmd: &str,
     env: Option<&HashMap<String, String>>,
 ) -> Result<Child, String> {
-    let mut c = Command::new(shell);
-    #[cfg(unix)]
-    c.args(["-lc", cmd]);
-    #[cfg(not(unix))]
-    c.args(["/C", cmd]);
+    // 플래그 분기(`-lc` / `/C`)는 코어가 소유한다 — 조립이 두 벌이면 앱과 cored 가 같은
+    // 명령을 다른 셸 호출로 돌린다. 플랫폼은 인자로 넘긴다(코어는 자기 서술을 하지 않는다).
+    let (prog, argv) = run_once_argv(shell, cmd, !cfg!(unix));
+    let mut c = Command::new(prog);
+    c.args(argv);
     c.current_dir(root)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -371,9 +356,8 @@ pub fn daemon_reap(entries: Vec<(u32, String)>) -> Vec<u32> {
     for (pid, cmd) in entries {
         #[cfg(unix)]
         {
-            let out = Command::new("ps")
-                .args(["-o", "command=", "-p", &pid.to_string()])
-                .output();
+            let (prog, argv) = ps_command_argv(pid);
+            let out = Command::new(prog).args(argv).output();
             let alive_cmd = out
                 .ok()
                 .filter(|o| o.status.success())

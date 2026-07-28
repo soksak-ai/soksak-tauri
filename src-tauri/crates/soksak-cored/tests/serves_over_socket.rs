@@ -1571,6 +1571,214 @@ fn plugin_remove_unlocks_the_tree_and_keeps_the_data() {
     );
 }
 
+// ── 로그인 셸을 통한 일회 실행과 잔존 회수 ──────────────────────────────────────
+//
+// 이 둘은 거둘 것·돌릴 것을 **인자와 부팅 상태**가 만들어 준다 — 앱 프로세스의 Child 맵도
+// 창도 필요 없다. 그래서 프로세스를 건너도 같은 답이 나온다. 다만 로그인 셸은 값으로 받아야 한다:
+// 자기 `$SHELL` 을 읽으면 띄운 쪽과 다른 셸로 돌면서 성공을 답한다.
+
+/// 진짜 셸을 로그인 셸로 준 cored — daemon_run_once 는 그 셸에게 명령을 시킨다.
+fn spawn_with_login_shell(name: &str, shell: &str) -> Helper {
+    let dir = fixture_dir(name);
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home).expect("픽스처 홈 생성");
+    let socket = dir.join("h.sock");
+    let child = Command::new(env!("CARGO_BIN_EXE_soksak-cored"))
+        .arg("--socket").arg(&socket)
+        .arg("--home").arg(&home)
+        .arg("--identifier").arg("com.soksak.dev")
+        .arg("--login-shell").arg(shell)
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("cored 스폰");
+    Helper::adopt(child, socket)
+}
+
+/// 두 스트림이 **한 링**으로 섞여 온다 — 한쪽만 펌프하면 답은 성공인데 절반이 사라진다.
+/// (원본은 stdout·stderr 를 같은 링버퍼에 넣는다. 가르면 그것은 다른 명령이다.)
+#[test]
+fn daemon_run_once_answers_the_code_and_both_streams() {
+    let helper = spawn_with_login_shell("daemon-run-once", "/bin/sh");
+    let reply = helper.ask(json!({
+        "id": 60,
+        "method": "daemon_run_once",
+        "params": {
+            "root": helper.dir().to_string_lossy(),
+            "cmd": "printf 'to-stdout\\n'; printf 'to-stderr\\n' >&2",
+            "timeoutSecs": 20,
+        },
+    }));
+    assert_eq!(reply["ok"], true, "{reply}");
+    assert_eq!(reply["data"]["code"], 0, "정상 종료 코드가 그대로 와야 한다: {reply}");
+    let lines: Vec<&str> = reply["data"]["lines"]
+        .as_array()
+        .unwrap_or_else(|| panic!("lines 가 없다: {reply}"))
+        .iter()
+        .filter_map(|l| l.as_str())
+        .collect();
+    assert!(lines.contains(&"to-stdout"), "stdout 줄이 없다: {lines:?}");
+    assert!(lines.contains(&"to-stderr"), "stderr 줄이 없다: {lines:?}");
+}
+
+/// env 는 **자식 환경에만** 간다 — 이 프로세스(cored)에는 남지 않는다.
+/// 남으면 다음 호출이 앞 호출의 토큰을 물려받고, 그 물림은 오류가 아니라 성공으로 나타난다.
+#[test]
+fn daemon_run_once_injects_env_into_the_child_only() {
+    let helper = spawn_with_login_shell("daemon-run-once-env", "/bin/sh");
+    let root = helper.dir().to_string_lossy().to_string();
+    let with_env = helper.ask(json!({
+        "id": 61,
+        "method": "daemon_run_once",
+        "params": {
+            "root": root,
+            "cmd": "printf '%s\\n' \"[$SOKSAK_SOCKET_TEST_ENV]\"",
+            "timeoutSecs": 20,
+            "env": { "SOKSAK_SOCKET_TEST_ENV": "injected-marker-xyz" },
+        },
+    }));
+    assert_eq!(with_env["ok"], true, "{with_env}");
+    assert_eq!(
+        with_env["data"]["lines"],
+        json!(["[injected-marker-xyz]"]),
+        "주입한 값이 자식에 닿지 않았다: {with_env}"
+    );
+
+    let without = helper.ask(json!({
+        "id": 62,
+        "method": "daemon_run_once",
+        "params": {
+            "root": root,
+            "cmd": "printf '%s\\n' \"[$SOKSAK_SOCKET_TEST_ENV]\"",
+            "timeoutSecs": 20,
+        },
+    }));
+    assert_eq!(
+        without["data"]["lines"],
+        json!(["[]"]),
+        "앞 호출의 env 가 cored 프로세스에 남았다: {without}"
+    );
+}
+
+/// 상한을 넘기면 사유를 달고 실패하고, **자식 트리가 살아남지 않는다**.
+/// 손자가 t+2 에 남길 표식이 끝내 없어야 한다 — 본체만 죽이면 손자는 계속 돈다.
+#[test]
+fn daemon_run_once_kills_the_tree_when_the_timeout_passes() {
+    let helper = spawn_with_login_shell("daemon-run-once-timeout", "/bin/sh");
+    let marker = helper.dir().join("grandchild-lived");
+    // 스스로 끝나는 트리다 — 그룹 킬이 실패해도 4초 뒤엔 아무것도 남지 않는다.
+    let cmd = format!("(sleep 2; : > {}) & sleep 4", marker.display());
+
+    let reply = helper.ask(json!({
+        "id": 63,
+        "method": "daemon_run_once",
+        "params": { "root": helper.dir().to_string_lossy(), "cmd": cmd, "timeoutSecs": 1 },
+    }));
+    assert_eq!(reply["ok"], false, "{reply}");
+    // UNKNOWN_COMMAND 도 ok:false 다 — 코드를 함께 보지 않으면 미서빙이 통과로 위장한다.
+    assert_eq!(reply["code"], "COMMAND_FAILED", "{reply}");
+    assert_eq!(
+        reply["message"].as_str().unwrap_or_default(),
+        format!("시간 초과(1초): {cmd}"),
+        "{reply}"
+    );
+
+    std::thread::sleep(Duration::from_secs(3));
+    assert!(
+        !marker.exists(),
+        "손자가 살아남아 표식을 남겼다 — 그룹이 아니라 본체만 죽였다: {}",
+        marker.display()
+    );
+}
+
+/// 로그인 셸을 못 받았으면 **이름을 달고 거절한다**. 자기 $SHELL 을 읽으면 여기서 통과해
+/// 버리는데, 그 통과가 곧 결함이다 — 띄운 쪽과 다른 로그인 셸로 돌면서 성공을 답한다.
+#[test]
+fn daemon_run_once_refuses_without_a_login_shell() {
+    let helper = spawn_helper("daemon-run-once-no-shell");
+    let marker = helper.dir().join("ran-anyway");
+    let reply = helper.ask(json!({
+        "id": 64,
+        "method": "daemon_run_once",
+        "params": {
+            "root": helper.dir().to_string_lossy(),
+            "cmd": format!(": > {}", marker.display()),
+            "timeoutSecs": 20,
+        },
+    }));
+    assert_eq!(reply["ok"], false, "{reply}");
+    assert_eq!(reply["code"], "COMMAND_FAILED", "{reply}");
+    assert!(
+        reply["message"].as_str().unwrap_or_default().contains("로그인 셸"),
+        "거절이 무엇이 없어서인지 말해야 한다: {reply}"
+    );
+    assert!(
+        !marker.exists(),
+        "로그인 셸을 추측해서 돌려 버렸다: {}",
+        marker.display()
+    );
+}
+
+/// 회수는 **명령줄이 대조될 때만** 한다 — pid 재사용으로 남을 죽이지 않기 위해서다.
+#[test]
+fn daemon_reap_kills_the_matching_pid() {
+    use std::os::unix::process::{CommandExt, ExitStatusExt};
+
+    let helper = spawn_helper("daemon-reap");
+    // 데몬과 같은 모양으로 띄운다(자기 그룹의 리더) — 스스로 3초 뒤 끝난다.
+    let mut child = Command::new("/bin/sleep")
+        .arg("3")
+        .process_group(0)
+        .spawn()
+        .expect("픽스처 자식 스폰");
+    let pid = child.id();
+
+    let reply = helper.ask(json!({
+        "id": 65,
+        "method": "daemon_reap",
+        "params": { "entries": [[pid, "/bin/sleep 3"]] },
+    }));
+    assert_eq!(reply["ok"], true, "{reply}");
+    assert_eq!(reply["data"], json!([pid]), "거둔 pid 만 와야 한다: {reply}");
+
+    let status = child.wait().expect("자식 종료 대기");
+    assert_eq!(
+        status.signal(),
+        Some(9),
+        "SIGKILL 로 끝나지 않았다 — 답만 하고 거두지 않았다: {status:?}"
+    );
+}
+
+/// 대조에 걸리지 않으면 **빈 배열**이고 그 프로세스는 살아 있다. 그 빈 배열은 "대조된 것이
+/// 없다"는 계산된 답이지, 재 본 적 없는 0 이 아니다.
+#[test]
+fn daemon_reap_answers_an_empty_list_and_spares_the_mismatch() {
+    use std::os::unix::process::CommandExt;
+
+    let helper = spawn_helper("daemon-reap-mismatch");
+    let mut child = Command::new("/bin/sleep")
+        .arg("5")
+        .process_group(0)
+        .spawn()
+        .expect("픽스처 자식 스폰");
+    let pid = child.id();
+
+    let reply = helper.ask(json!({
+        "id": 66,
+        "method": "daemon_reap",
+        "params": { "entries": [[pid, "some-other-binary --flag"]] },
+    }));
+    assert_eq!(reply["ok"], true, "{reply}");
+    assert_eq!(reply["data"], json!([]), "대조 안 된 pid 를 거뒀다: {reply}");
+    assert!(
+        child.try_wait().expect("상태 확인").is_none(),
+        "명령줄이 다른데 죽였다 — pid 재사용이면 남의 프로세스다"
+    );
+
+    // 테스트가 띄운 것은 테스트가 거둔다.
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
 /// 없는 것을 지우는 것은 성공이 아니다. 부재를 성공으로 접으면 호출자는 없앤 적 없는 것을
 /// 없앴다고 믿고, 오탈자 하나가 "제거됨"으로 조용히 지나간다.
 #[test]
