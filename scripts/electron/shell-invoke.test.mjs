@@ -142,12 +142,14 @@ describe("shell:invoke — 렌더러가 보는 답", () => {
       ),
     );
     const handlers = loadShell(mock.socketPath);
-    const r = await invoke(handlers, "webview_dom_holes", {});
+    // 표본은 백엔드가 져야 할 명령이어야 한다 — 셸이 스스로 답하는 것(webview_*·engine_* 등)은
+    // 애초에 소켓으로 가지 않으므로 백엔드의 답을 증언하지 못한다(shell-native.test.mjs 가 그쪽).
+    const r = await invoke(handlers, "project_owners", {});
     expect(r.ok).toBe(false);
     expect(r.code).toBe("UNKNOWN_COMMAND");
-    expect(r.command).toBe("webview_dom_holes");
+    expect(r.command).toBe("project_owners");
     expect(ledger()).toEqual([
-      { t: expect.any(Number), cmd: "webview_dom_holes", served: false, code: "UNKNOWN_COMMAND" },
+      { t: expect.any(Number), cmd: "project_owners", served: false, code: "UNKNOWN_COMMAND" },
     ]);
   });
 
