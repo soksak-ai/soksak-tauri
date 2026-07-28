@@ -175,6 +175,21 @@ pub const COMMANDS: &[Command] = &[
         returns: "Value[] (도장 찍힌 항목, 오래된 것부터)",
         run: run_activity_recent,
     },
+    // ── 파일 감시 ──────────────────────────────────────────────────────────
+    // 변경 사건은 창으로 간다. 이 프로세스에는 창이 없으므로 **방송**으로 넘긴다 —
+    // 감시만 하고 못 뿌리면 트리가 조용히 낡는다(오류 없이 "안 바뀐다").
+    Command {
+        name: "watch_dir",
+        args: &[Arg { name: "path", ty: "string", required: true }],
+        returns: "usize — 등록 후 refcount",
+        run: run_watch_dir,
+    },
+    Command {
+        name: "unwatch_dir",
+        args: &[Arg { name: "path", ty: "string", required: true }],
+        returns: "usize — 해제 후 refcount",
+        run: run_unwatch_dir,
+    },
     // ── 터미널 ────────────────────────────────────────────────────────────
     // 셸은 데몬이 소유한다(soksak-ptyd). 이 프로세스는 앱이 쓰는 그 클라이언트로 같은 데몬에
     // 붙는다 — 인자 모양도 앱 명령과 같다(UI 는 누가 답하는지 모른다).
@@ -930,6 +945,40 @@ fn run_activity_recent(ctx: &Ctx, params: &Value) -> Outcome {
         }
         // 앱의 기본 상한과 같다(200) — 다르면 같은 호출이 프로세스마다 다른 길이를 답한다.
         Ok(act::pick_recent(entries, a.since, a.limit.unwrap_or(200)))
+    })
+}
+
+/// 이 프로세스의 워처. 규칙은 크레이트가 소유하고(soksak-watch), 뿌리는 자리만 여기서 준다.
+///
+/// 첫 감시에서 세운다 — 부팅에서 세우면 감시를 한 번도 안 쓰는 프로세스까지 OS 핸들을 연다.
+static WATCHER: std::sync::OnceLock<soksak_watch::FsWatcher> = std::sync::OnceLock::new();
+
+fn watcher() -> &'static soksak_watch::FsWatcher {
+    WATCHER.get_or_init(|| {
+        let w = soksak_watch::FsWatcher::default();
+        // 변경된 디렉터리를 창 전부에 뿌린다 — 앱의 emit("fs-change") 과 **같은 이름**이다.
+        // 이름이 다르면 프론트가 프레임워크를 가려야 한다.
+        w.init_with(|dir| {
+            crate::control::broadcast("fs-change", Value::String(dir));
+        });
+        w
+    })
+}
+
+#[derive(serde::Deserialize)]
+struct WatchPath {
+    path: String,
+}
+
+fn run_watch_dir(_ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: WatchPath| {
+        watcher().watch(&a.path).map(|n| Value::from(n as u64))
+    })
+}
+
+fn run_unwatch_dir(_ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: WatchPath| {
+        watcher().unwatch(&a.path).map(|n| Value::from(n as u64))
     })
 }
 

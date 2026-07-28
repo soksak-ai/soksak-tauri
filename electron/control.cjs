@@ -35,8 +35,9 @@ const ATTACH_ID = "attach";
  * facts() = 지금의 창 사실{live, focused, lastWorkspace}. 값이 아니라 **함수**로 받는다:
  * 창은 계속 바뀌고, 등록 시점의 사본을 쥐면 다시 붙을 때 낡은 목록으로 등록한다.
  * deliver(label, payload) = 그 창에 사건 하나. 닿았는지 돌려준다.
+ * broadcast(event, payload) = 살아 있는 창 **전부**에 같은 사건. 전부에 닿았는지 돌려준다.
  */
-function createControlHost({ socketPath, facts, deliver, onLog = () => {} }) {
+function createControlHost({ socketPath, facts, deliver, broadcast = () => true, onLog = () => {} }) {
   let sock = null;
   let buf = "";
   let closed = false;
@@ -61,6 +62,14 @@ function createControlHost({ socketPath, facts, deliver, onLog = () => {} }) {
       // cored 가 보낸 줄은 전부 JSON 이다. 아니면 우리가 붙은 곳이 cored 가 아니다 —
       // 조용히 넘기면 "명령이 사라진다"로만 나타난다.
       onLog(`제어면: JSON 이 아닌 줄을 받았다 — ${line.slice(0, 200)}`);
+      return;
+    }
+    // 방송 — 짝 없는 사건이다(파일 변경 등). 창을 가리지 않고 전부에 같은 것을 준다.
+    const b = msg && msg.broadcast;
+    if (b && typeof b.event === "string") {
+      if (!broadcast(b.event, b.payload)) {
+        onLog(`제어면: 방송이 일부 창에 닿지 못했다 — ${b.event}`);
+      }
       return;
     }
     const d = msg && msg.deliver;

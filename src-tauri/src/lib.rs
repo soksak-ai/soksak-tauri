@@ -329,7 +329,7 @@ pub fn run() {
             }
             // 파일 워처 1회 초기화(이벤트 콜백에 앱 핸들 주입).
             let handle = app.handle().clone();
-            app.state::<FsWatcher>().init(handle);
+            crate::watcher::init(&app.state::<FsWatcher>(), handle);
             // 클립보드 watcher 1회 초기화(이벤트 emit 용 앱 핸들 주입). 실제 감시는 플러그인이
             // clipboard_watch_start 를 호출할 때 시작 — 쓰지 않으면 스레드/폴링 0.
             app.state::<clipboard::ClipboardState>()

@@ -14,7 +14,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import net from "node:net";
-import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
@@ -238,6 +238,45 @@ describe("제어면 중계", () => {
     void outside.call("project.open", { root: "/p" }).catch(() => {});
     const got = await win.next();
     expect(got.method).toBe("project.open");
+  });
+
+  // 방송은 짝 없는 사건이다 — 답을 기다리지 않고, 창을 가리지 않는다. 감시만 하고 못 뿌리면
+  // 트리가 조용히 낡는다(오류 없이 "안 바뀐다").
+  it("파일 변경이 방송으로 창 전부에 닿는다", async () => {
+    const seen = [];
+    const host = createControlHost({
+      socketPath: cored.socketPath,
+      facts: () => ({ live: ["main"], focused: "main" }),
+      deliver: () => true,
+      broadcast: (event, payload) => {
+        seen.push({ event, payload });
+        return true;
+      },
+    }).start();
+    hosts.push(host);
+    await whenAttached(host);
+
+    const dir = join(root, "watched");
+    mkdirSync(dir, { recursive: true });
+    const bridge = createBackendClient({ socketPath: cored.socketPath, timeoutMs: 8000 });
+    clients.push(bridge);
+    expect(await bridge.call("watch_dir", { path: dir })).toBe(1);
+
+    // 실제 파일시스템 사건 — 폴링이 아니라 OS 가 알려 준다.
+    writeFileSync(join(dir, "made.txt"), "x");
+    const deadline = Date.now() + PATIENCE_MS;
+    while (!seen.some((e) => e.event === "fs-change") && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    const hit = seen.find((e) => e.event === "fs-change");
+    expect(hit, `방송이 오지 않았다: ${JSON.stringify(seen)}`).toBeTruthy();
+    // 앱의 emit("fs-change", 디렉터리) 와 **같은 이름·같은 값**이다 — 다르면 프론트가
+    // 프레임워크를 가려야 한다.
+    expect(String(hit.payload)).toContain("watched");
+
+    // 해제는 refcount 를 0 으로 돌린다(멱등).
+    expect(await bridge.call("unwatch_dir", { path: dir })).toBe(0);
+    expect(await bridge.call("unwatch_dir", { path: dir })).toBe(0);
   });
 
   it("창 사실이 바뀌면 새 창이 타겟이 된다", async () => {

@@ -35,8 +35,13 @@ fn the_dependency_tree_carries_no_framework_crate() {
     // 계약이 소유하고 cored 는 그 구현 하나를 준다 — 질의문과 연결은 구현자의 것이다).
     // 코어 크레이트에는 rusqlite 가 여전히 금지다: 로직이 저장소를 알면 그 로직은 파일이
     // 있는 곳에서만 돌게 되고, 그게 이 분리가 없애려던 전제다.
+    //
+    // notify 도 같은 판정으로 진다(2026-07-29). 파일시스템 사건은 창이 아니라 **자원**이다:
+    // 창을 열지도 앱 핸들을 쥐지도 않고, 어느 프로세스가 같은 경로를 감시하든 같은 사건을
+    // 받는다. cored 가 watch_dir 을 서빙하려면 그 핸들을 져야 한다 — 규칙은 soksak-watch 가
+    // 소유하고 뿌리는 자리만 프로세스가 준다(앱=창 emit, 헬퍼=방송). 코어에는 여전히 금지다.
     for banned in [
-        "tauri", "wry", "tao", "objc2", "block2", "libloading", "notify",
+        "tauri", "wry", "tao", "objc2", "block2", "libloading",
         "clipboard-rs", "x11rb", "windows-sys", "tokio", "interprocess", "portable-pty",
     ] {
         assert!(

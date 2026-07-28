@@ -4777,6 +4777,7 @@ dependencies = [
  "soksak-core",
  "soksak-spec-pty",
  "soksak-spec-socket",
+ "soksak-watch",
 ]
 
 [[package]]
@@ -4814,6 +4815,7 @@ dependencies = [
  "soksak-spec-pty",
  "soksak-spec-service",
  "soksak-spec-socket",
+ "soksak-watch",
  "tao",
  "tar",
  "tauri",
@@ -4892,6 +4894,13 @@ dependencies = [
 [[package]]
 name = "soksak-spec-socket"
 version = "0.0.1"
+
+[[package]]
+name = "soksak-watch"
+version = "0.0.1"
+dependencies = [
+ "notify-debouncer-mini",
+]
 
 [[package]]
 name = "soup3"

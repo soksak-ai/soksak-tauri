@@ -139,6 +139,14 @@ function standUpControl(socketPath) {
     socketPath,
     facts: windowFacts,
     deliver: (label, payload) => deliverEvent(windowFor(label), CMD_REQUEST, payload),
+    // 방송은 창을 가리지 않는다 — 활동 부채질과 같은 집합(창 레지스트리 전부).
+    broadcast: (event, payload) => {
+      let all = true;
+      for (const win of windows.values()) {
+        if (!deliverEvent(win, event, payload)) all = false;
+      }
+      return all;
+    },
     onLog: (line) => console.error(`[electron-spike] ${line}`),
   }).start();
   void controlHost.ready.then((ok) => {

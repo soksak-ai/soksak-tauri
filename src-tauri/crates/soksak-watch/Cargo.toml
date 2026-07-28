@@ -1,0 +1,9 @@
+[package]
+name = "soksak-watch"
+version = "0.0.1"
+edition = "2021"
+
+[dependencies]
+# OS 네이티브 파일시스템 사건(macOS=FSEvents, Linux=inotify, Win=ReadDirectoryChangesW).
+# 폴링이 아니다. 이 의존성 때문에 이 규칙은 soksak-core 에 못 산다 — 코어는 무의존을 지킨다.
+notify-debouncer-mini = "0.6"

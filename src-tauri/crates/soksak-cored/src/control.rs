@@ -96,6 +96,17 @@ pub fn deliver_result(id: u64, result: Value) -> bool {
     }
 }
 
+/// 사건 하나를 창 전부에 뿌린다 — 짝 없는 밀어내기다(요청의 답이 아니다).
+///
+/// 이 프로세스에는 창이 없다. 그래서 파일 변경·데몬 사망처럼 **누구에게랄 것 없는 사실**은
+/// 창을 가진 쪽에 넘겨 뿌리게 한다. 반환 = 넘겼는가.
+///
+/// 배달(`deliver`)과 다른 키를 쓴다: 배달은 답을 기다리는 요청이고 이것은 답이 없다. 같은
+/// 키로 보내면 받는 쪽이 회신할 자리를 찾다가 없는 id 로 cmd_result 를 부른다.
+pub fn broadcast(event: &str, payload: Value) -> bool {
+    push_to_host(&json!({ "broadcast": { "event": event, "payload": payload } }))
+}
+
 /// 밖에서 온 한 줄을 처리해 답 한 줄을 만든다.
 pub fn answer(line: &str) -> Value {
     let req = match control::parse(line) {
