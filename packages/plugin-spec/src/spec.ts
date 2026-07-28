@@ -105,6 +105,9 @@ export * from "./permissions.js";
 export * from "./registry.js";
 // 크롬 표준 게이트(호스트 크롬 토큰·entry 정적 스캔) — 단일진실은 hostChrome.ts.
 export * from "./hostChrome.js";
+// 표면 × 엔진 등급 — framework·platform 을 이름으로 적지 않는 축.
+export * from "./engineNeeds.js";
+import type { EngineGrade } from "./engineNeeds.js";
 import {
   type LocalizedText,
   normalizeText,
@@ -492,6 +495,10 @@ export interface PluginManifest {
   libraries?: LibraryDep[];
   // 사이드카(engine 모듈) 의존 — 선언된 것만 app.sidecar.open 가능. "sidecar" 권한 필수.
   sidecars?: SidecarDep[];
+  // 이 표면이 렌더링 엔진에 요구하는 것(engineNeeds.ts). framework(Tauri·Electron)도
+  // platform(OS)도 이름으로 적지 않는다 — 요구는 등급이고, 충족은 그 조합이 정한다.
+  requiresEngine?: EngineGrade;
+  requiresNativeChildWebview?: boolean;
   // plugin service 선언(제3 실행 형태 — 규범 docs/PLUGIN-SERVICE.md). sidecar 는 sidecars[]
   // 의 상주 바이너리 참조, interface 는 와이어 계약 id(PS5·PS6). "service" 권한 필수.
   service?: ServiceDecl;
@@ -752,6 +759,8 @@ export function parseManifest(
       "dependencies",
       "libraries",
       "sidecars",
+      "requiresEngine",
+      "requiresNativeChildWebview",
       "service",
       "implements",
       "consumes",
@@ -922,6 +931,20 @@ export function parseManifest(
 
   // sidecars: 사이드카(engine 모듈) 의존 선언(선택). 선언된 것만 app.sidecar.open 가능(코어가
   // 로드 시 interface 를 바이너리 자기보고와 대조). "sidecar" 권한 필수. 정본 docs/SIDECARS.md.
+  // 표면 × 엔진 등급 — 아는 값만 받는다(engineNeeds.ts). 오타가 통과하면 "요구 없음"과
+  // 같은 값이 되어, 승격이 필요한 표면이 미달 엔진에서 그냥 뜬다 — 거부가 아니라 깨진 렌더다.
+  if (raw.requiresEngine !== undefined && raw.requiresEngine !== "chromium") {
+    errors.push(
+      `requiresEngine: 알 수 없는 엔진 등급 ${JSON.stringify(raw.requiresEngine)} (chromium)`,
+    );
+  }
+  if (
+    raw.requiresNativeChildWebview !== undefined &&
+    typeof raw.requiresNativeChildWebview !== "boolean"
+  ) {
+    errors.push("requiresNativeChildWebview: boolean 이어야 합니다");
+  }
+
   const sidecars: SidecarDep[] = [];
   if (raw.sidecars !== undefined) {
     if (!Array.isArray(raw.sidecars)) {
@@ -1737,6 +1760,8 @@ export function parseManifest(
       ...(Object.keys(dependencies).length > 0 ? { dependencies } : {}),
       ...(libraries.length > 0 ? { libraries } : {}),
       ...(sidecars.length > 0 ? { sidecars } : {}),
+      ...(raw.requiresEngine === "chromium" ? { requiresEngine: "chromium" as const } : {}),
+      ...(raw.requiresNativeChildWebview === true ? { requiresNativeChildWebview: true } : {}),
       ...(service !== undefined ? { service } : {}),
       ...(implementsIds.length > 0 ? { implements: implementsIds } : {}),
       ...(consumesIds.length > 0 ? { consumes: consumesIds } : {}),

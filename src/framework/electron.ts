@@ -1,3 +1,4 @@
+import type { EngineProvision } from "@soksak-ai/plugin-spec";
 // Electron 셸 어댑터 — AppFramework 계약의 Electron 구현(스파이크).
 //
 // Tauri 어댑터와 형제다. 앱 코드는 어느 쪽이 밑에 있는지 모르며, 이 파일이 늘어나도
@@ -195,4 +196,17 @@ export const electronHost: AppFramework = {
     onOpenUrl: async () => unimplemented("deepLink.onOpenUrl"),
     current: async () => unimplemented("deepLink.current"),
   },
+};
+
+/**
+ * 이 프레임워크가 제공하는 것.
+ *
+ * Electron 은 통째로 Chromium 이라 등급 요구가 전부 no-op 이다 — 승격할 것이 없다.
+ * 자식 웹뷰 합성 장치는 **없다**. 못 하는 것이 아니라 필요가 없다: 단일 Chromium 세계에서
+ * UI 뷰와 콘텐츠 뷰를 같은 컴포지터가 합성한다(WebContentsView). 그래서 그 장치를 전제한
+ * 표면만 여기서 빠지고, 등급만 필요한 표면은 오히려 사이드카 없이 그냥 선다.
+ */
+export const engineProvision: EngineProvision = {
+  chromium: true,
+  nativeChildWebview: false,
 };

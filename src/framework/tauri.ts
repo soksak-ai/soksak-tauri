@@ -1,3 +1,4 @@
+import type { EngineProvision } from "@soksak-ai/plugin-spec";
 // Tauri 셸 어댑터 — AppFramework 계약의 Tauri 구현.
 //
 // **벤더 SDK(@tauri-apps/*)를 import 하는 것은 이 파일뿐이다.** 다른 어떤 앱 코드도 셸을
@@ -143,4 +144,20 @@ export const tauriHost: AppFramework = {
     },
     current: async () => (await import("@tauri-apps/plugin-deep-link")).getCurrent(),
   },
+};
+
+/**
+ * 이 프레임워크가 제공하는 것 — 플러그인의 요구(requiresEngine 등)를 채우는 쪽의 사실.
+ *
+ * WKWebView 는 chromium 등급이 아니다. 대신 자식 웹뷰를 창에 합성해 얹는 장치가 있어
+ * (hole-punch·hitTest 스위즐, webview.rs) 등급이 필요한 표면은 그 장치 위에서 Chromium
+ * 사이드카로 승격된다.
+ *
+ * macOS 기준이다. 같은 Tauri 라도 Windows 는 WebView2 가 곧 Chromium 이라 chromium: true 이며
+ * 승격이 no-op 이다(R4). 그 갈래는 OS 를 알게 되는 자리라 이 값을 실행 중에 정하도록 바꿀 때
+ * 함께 들어온다 — 지금은 이 저장소가 실제로 검증하는 조합만 적는다.
+ */
+export const engineProvision: EngineProvision = {
+  chromium: false,
+  nativeChildWebview: true,
 };
