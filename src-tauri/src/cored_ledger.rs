@@ -41,7 +41,12 @@ impl Lane {
 ///
 /// 접두만으로 창 소유를 다 잡지는 못한다(그래서 아래에서 주입 타입도 본다). 다만 이 가족들은
 /// **이름 자체가 셸 표면**이라 본문을 안 봐도 확정이고, Electron 어댑터가 이미 그렇게 다룬다.
-const SHELL_FAMILIES: &[&str] = &["webview_", "engine_", "titlebar_", "window_", "panel_"];
+// 셸 갈래 — 이 접두사를 가진 명령은 창을 쥐므로 다른 프로세스로 가지 않는다.
+//
+// **멤버 없는 갈래를 미리 선언하지 않는다.** 앞을 내다본 선언은 그 자체가 결정이고, 그 이름의
+// 명령이 생기는 순간 아무도 결정한 적 없이 "셸의 것"이 되어 이식 대상에서 빠진다. 셸 쪽에서는
+// 같은 이름이 소켓에 닿지 못한 채 부재로 거절된다 — 양쪽 다 조용하다. 대상이 생겼을 때 넣는다.
+const SHELL_FAMILIES: &[&str] = &["webview_", "engine_", "titlebar_", "window_"];
 
 /// 창을 직접 쥐는 주입 타입. 이것이 있으면 그 명령은 창의 것이다.
 const WINDOW_TYPES: &[&str] = &["Window", "WebviewWindow", "Webview"];
@@ -184,3 +189,10 @@ mod report {
         }
     }
 }
+
+// 테스트는 별도 파일에 산다 — 같은 파일에 두면 코드를 읽는 사람이 검사까지 스크롤로 지나야
+// 하고, 검사를 고치는 편집이 코드 파일의 diff 로 섞인다. `#[path]` 로 붙이면 분리하면서도
+// 비공개 항목(SHELL_FAMILIES)에 그대로 닿는다.
+#[cfg(test)]
+#[path = "cored_ledger_family_tests.rs"]
+mod family_tests;

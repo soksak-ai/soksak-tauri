@@ -21,8 +21,9 @@
 const { ABSENT_CODE, shellError } = require("./error.cjs");
 
 /** 셸의 영역을 가르는 이름 갈래. 등재 여부와 무관하게 이 접두사는 소켓으로 가지 않는다.
- *  panel_ 은 아직 항목이 없다 — 그래도 갈래는 셸의 것이므로 새지 않고 부재로 거절된다. */
-const BRANCHES = ["window_", "webview_", "engine_", "titlebar_", "panel_"];
+ *  목록은 장부(src-tauri/src/cored_ledger.rs SHELL_FAMILIES)와 한 벌이어야 한다 —
+ *  갈라지면 "장부는 셸의 것이라 하는데 셸은 안 받는" 이름이 생기고 어느 쪽에도 안 잡힌다. */
+const BRANCHES = ["window_", "webview_", "engine_", "titlebar_"];
 
 /** 갈래 밖에 서는 유일한 이름. 표 자신을 읽는 자리라 어느 갈래에도 속하지 않는다. */
 const CAPABILITIES = "shell_capabilities";

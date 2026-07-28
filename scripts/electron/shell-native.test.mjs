@@ -386,7 +386,7 @@ describe("프리로드 — 라벨 주입 부재는 실패다", () => {
 });
 
 describe("셸-갈래 미등재 — 소켓으로 새지 않는다", () => {
-  // 창·웹뷰·엔진·타이틀바·패널은 셸의 영역이다. 표에 없다고 소켓으로 흘려보내면 cored 가
+  // 창·웹뷰·엔진·타이틀바는 셸의 영역이다. 표에 없다고 소켓으로 흘려보내면 cored 가
   // UNKNOWN_COMMAND 로 답하고, 그 이름은 "cored 가 더 져야 할 것"으로 요구 원장에 실린다 —
   // 영영 옮길 수 없는 것(다른 프로세스엔 창이 없다)을 할 일 목록에 세우게 된다.
   const UNLISTED = [
@@ -394,7 +394,7 @@ describe("셸-갈래 미등재 — 소켓으로 새지 않는다", () => {
     ["webview_bounds", { label: "b-1" }],
     ["window_create", { label: "w-1" }],
     ["engine_surface_hide", {}],
-    ["panel_focus", {}],
+    ["titlebar_backing", {}],
   ];
 
   it("이름을 달고 거절한다 — 소켓에 닿지 않는다", async () => {
