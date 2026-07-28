@@ -199,10 +199,12 @@ pub fn run() {
                 let handle = app.handle().clone();
                 std::thread::spawn(move || service::boot(&handle));
             }
-            // 투명 언락 준비 완료(secrets-ready) → secrets 의존 서비스 드레인 재시작(PS10). os_key device
-            // KEK 로 부팅 즉시 vault 가 열리므로, 부팅 중 토큰 없이 스폰된 서비스를 1회 회복시킨다
-            // (secrets↔service 무결합 — R7). 드레인은 in-flight 완료를 최대 5s 대기하므로 별 스레드로
-            // 던진다(이벤트 구동 — 폴링 0). 리스너는 emit 보다 먼저 등록한다.
+            // secrets-ready = "볼트가 방금 열렸다" → secrets 의존 서비스 드레인 재시작(PS10). 볼트는
+            // 첫 시크릿 사용에서 열리므로, 그 전에 토큰 없이 스폰된 서비스를 그 순간 회복시킨다
+            // (secrets↔service 무결합 — R7). 볼트가 끝내 안 열리면 이 이벤트도 없다: 잠긴 볼트를
+            // 준비됐다고 말하면 드레인이 빈손으로 돌아 서비스만 재시작된다.
+            // 드레인은 in-flight 완료를 최대 5s 대기하므로 별 스레드로 던진다(이벤트 구동 — 폴링 0).
+            // 리스너는 볼트가 열릴 수 있는 어떤 시점보다 먼저 등록한다.
             {
                 use tauri::Listener;
                 let h = app.handle().clone();
@@ -289,12 +291,18 @@ pub fn run() {
                 // 아래로는 정체성이 인자로 흐른다(secrets.rs 는 전역을 읽지 않는다).
                 let identity = identity::ambient();
                 // SOKSAK_VAULT_PATH 있으면 격리 경로(헤드리스/E2E), 없으면 이 정체성의 홈 아래.
-                match secrets::resolve_vault_path(|k| std::env::var(k).ok(), &identity) {
-                    Ok(p) => st.set_path(p),
+                let vault_path = match secrets::resolve_vault_path(
+                    |k| std::env::var(k).ok(),
+                    &identity,
+                ) {
+                    Ok(p) => Some(p),
                     // 경로 미해소면 볼트는 미구성으로 남는다 — 이후 시크릿 연산이 이름을 달고
                     // 실패한다(전역 홈 폴백 없음 = 남의 홈에 볼트를 만들지 않는다).
-                    Err(e) => eprintln!("[secrets] 볼트 경로 계산 실패: {e}"),
-                }
+                    Err(e) => {
+                        eprintln!("[secrets] 볼트 경로 계산 실패: {e}");
+                        None
+                    }
+                };
                 // [R23] app.data 에 봉투 키가 등록돼 있으면 vault 가 있어야 한다 — 부재 시 자동생성 거부
                 // 플래그(전손 차단). data DB 가 열린 뒤라 조회 가능.
                 let expect = match app.state::<data::DbState>().conn.lock() {
@@ -304,24 +312,29 @@ pub fn run() {
                         .unwrap_or(false),
                     Err(_) => false,
                 };
-                st.set_expect_vault(expect);
-                // KEK 출처 주입(경로·expect 확정 후). 프로덕션 OsKekSource — 앱 신원 ACL 결속. debug 빌드에
-                // 한해 SOKSAK_E2E_KEK 가 있으면 e2e 결정적 KEK 를 먼저 쓴다(격리·CI). release 엔 이 분기 자체가
-                // 컴파일되지 않아 env-KEK 백도어가 없다.
+                // KEK 출처(경로·expect 와 함께 값으로 넘긴다). 프로덕션 OsKekSource — 앱 신원 ACL 결속.
+                // debug 빌드에 한해 SOKSAK_E2E_KEK 가 있으면 e2e 결정적 KEK 를 먼저 쓴다(격리·CI).
+                // release 엔 이 분기 자체가 컴파일되지 않아 env-KEK 백도어가 없다.
                 #[cfg(debug_assertions)]
-                match secrets::E2eKekSource::from_env() {
-                    Some(src) => st.set_kek_source(Box::new(src)),
-                    None => st.set_kek_source(Box::new(secrets::OsKekSource::for_identity(
-                        &identity,
-                    ))),
-                }
+                let source: Box<dyn secrets::KekSource> = match secrets::E2eKekSource::from_env() {
+                    Some(src) => Box::new(src),
+                    None => Box::new(secrets::OsKekSource::for_identity(&identity)),
+                };
                 #[cfg(not(debug_assertions))]
-                st.set_kek_source(Box::new(secrets::OsKekSource::for_identity(&identity)));
-                // 부팅 즉시 1회 투명 개방 시도(best-effort) 후 secrets-ready 방출 — 위 리스너가 서비스를
-                // 드레인 재시작해 토큰을 회복시킨다. StoreUnavailable(헤드리스)면 열리지 않고 조용히
-                // 넘어간다(무음 평문 0, 봉인만 불가).
-                let _ = st.is_unlocked();
-                let _ = app.emit("secrets-ready", ());
+                let source: Box<dyn secrets::KekSource> =
+                    Box::new(secrets::OsKekSource::for_identity(&identity));
+                // 개방 고지 채널 — 볼트가 열리는 순간 secrets-ready 가 나간다. 발행 방법은 코어의 것,
+                // 개방 시점은 볼트의 것(secrets.rs 는 Tauri 를 모른다).
+                let announce = app.handle().clone();
+                secrets::boot_wire(
+                    &st,
+                    vault_path,
+                    expect,
+                    source,
+                    std::sync::Arc::new(move || {
+                        let _ = announce.emit("secrets-ready", ());
+                    }),
+                );
             }
             // 파일 워처 1회 초기화(이벤트 콜백에 앱 핸들 주입).
             let handle = app.handle().clone();
