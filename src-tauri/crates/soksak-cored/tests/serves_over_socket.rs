@@ -113,7 +113,7 @@ fn spawn_helper(name: &str) -> Helper {
     let user_home = dir.join("user");
     std::fs::create_dir_all(&home).expect("픽스처 홈 생성");
     std::fs::create_dir_all(&user_home).expect("픽스처 사용자 홈 생성");
-    let mut child = Command::new(env!("CARGO_BIN_EXE_soksak-cored"))
+    let child = Command::new(env!("CARGO_BIN_EXE_soksak-cored"))
         .arg("--socket")
         .arg(&socket)
         .arg("--home")
@@ -428,7 +428,7 @@ fn a_relocated_store_is_followed_not_re_derived() {
     std::fs::create_dir_all(&moved).unwrap();
 
     let socket = dir.join("h.sock");
-    let mut child = Command::new(env!("CARGO_BIN_EXE_soksak-cored"))
+    let child = Command::new(env!("CARGO_BIN_EXE_soksak-cored"))
         .arg("--socket")
         .arg(&socket)
         .arg("--home")
@@ -617,7 +617,7 @@ fn admission_without_a_readable_ledger_fails_by_name() {
     held.try_lock().expect("테스트가 먼저 잡는다");
 
     let socket = dir.join("h.sock");
-    let mut child = Command::new(env!("CARGO_BIN_EXE_soksak-cored"))
+    let child = Command::new(env!("CARGO_BIN_EXE_soksak-cored"))
         .arg("--socket").arg(&socket)
         .arg("--home").arg(&home)
         .arg("--identifier").arg("com.soksak.dev")
@@ -734,7 +734,7 @@ fn without_the_write_lock_a_write_is_refused_and_a_read_still_works() {
     held.try_lock().expect("테스트가 먼저 잡는다");
 
     let socket = dir.join("h.sock");
-    let mut child = Command::new(env!("CARGO_BIN_EXE_soksak-cored"))
+    let child = Command::new(env!("CARGO_BIN_EXE_soksak-cored"))
         .arg("--socket").arg(&socket)
         .arg("--home").arg(&home)
         .arg("--identifier").arg("com.soksak.dev")
@@ -801,7 +801,7 @@ fn spawn_with_shell(name: &str) -> (Helper, std::path::PathBuf) {
     std::fs::create_dir_all(&home).unwrap();
     let shell = fixture_shell(&dir);
     let socket = dir.join("h.sock");
-    let mut child = Command::new(env!("CARGO_BIN_EXE_soksak-cored"))
+    let child = Command::new(env!("CARGO_BIN_EXE_soksak-cored"))
         .arg("--socket").arg(&socket)
         .arg("--home").arg(&home)
         .arg("--identifier").arg("com.soksak.dev")
@@ -1036,7 +1036,7 @@ fn without_a_user_home_a_home_relative_call_fails_by_name() {
     let home = dir.join("home");
     std::fs::create_dir_all(&home).unwrap();
     let socket = dir.join("h.sock");
-    let mut child = Command::new(env!("CARGO_BIN_EXE_soksak-cored"))
+    let child = Command::new(env!("CARGO_BIN_EXE_soksak-cored"))
         .arg("--socket").arg(&socket)
         .arg("--home").arg(&home)
         .arg("--identifier").arg("com.soksak.dev")
@@ -2077,6 +2077,8 @@ fn recent_reads_back_what_was_admitted() {
 /// 창을 가진 쪽을 흉내낸다 — 붙어서 배달을 기다리는 연결 하나.
 struct FakeHost {
     reader: BufReader<UnixStream>,
+    /// 등록·회신을 쓰는 끝. 살아 있어야 연결이 유지된다 — 놓으면 cored 가 호스트를 잃는다.
+    #[allow(dead_code)]
     writer: UnixStream,
     socket: PathBuf,
 }

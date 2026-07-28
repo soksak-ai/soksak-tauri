@@ -1,7 +1,6 @@
 // 제어면 배선 — 규칙은 코어가 검증한다. 여기는 **배달과 회신**이 실제로 오가는지만 본다.
 use super::*;
-use std::io::{BufRead, BufReader};
-use std::os::unix::net::UnixStream;
+use std::io::BufRead;
 
 use super::testing::{detach, fake_host, lock as lock_serial};
 

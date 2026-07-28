@@ -30,6 +30,7 @@ use soksak_spec_pty::{HIGH_WATERMARK, LOW_WATERMARK};
 
 use crate::identity::Identity;
 use crate::pty_delivery::spawn_delivery;
+use crate::stream_sink::ChannelSink;
 
 
 struct FlowState {
@@ -408,7 +409,7 @@ pub fn spawn_terminal(
                 env_remove: env_remove.clone(),
                 replay: replay.clone(),
             },
-            on_output.clone(),
+            ChannelSink(on_output.clone()),
         ) {
             Ok(session) => {
                 let id = register_session(
@@ -421,7 +422,7 @@ pub fn spawn_terminal(
                 );
                 return Ok(SpawnOutcome { id });
             }
-            Err(e) => daemon::notify_fallback(&app, &manager.link, &e),
+            Err(e) => daemon::notify_fallback(&crate::activity_sink::AppSink(app.clone()), &manager.link, &e),
         }
     }
     #[cfg(not(unix))]
@@ -474,7 +475,7 @@ pub fn spawn_terminal(
         let on_output = on_output.clone();
         std::thread::spawn(move || {
             // 전달 단위는 read 단위가 아니다 — 크로싱은 배치가 소유한다(spawn_delivery).
-            let (deliver, delivery) = spawn_delivery(on_output);
+            let (deliver, delivery) = spawn_delivery(ChannelSink(on_output));
             let mut buf = vec![0u8; 8192];
             loop {
                 // 일시정지 상태면 ack 로 깨어날 때까지 대기.

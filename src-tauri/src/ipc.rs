@@ -160,6 +160,8 @@ fn last_workspace_window() -> Option<String> {
 // (R-B2: 배달층이 짐작하면 명령층의 금지는 무의미하다. "정렬 첫 창"은 결정적일 뿐 여전히 짐작.)
 use soksak_core::control::{FocusLedger, NoTarget};
 
+use crate::activity_sink::AppSink;
+
 // 창 폴백 해석(순수) — 명령이 window 를 생략했을 때의 타겟 결정.
 // 사다리는 전부 **살아있는 창 집합** 위에서만 걷는다. 포커스 기록은 창의 소멸을 모를 수 있는
 // 값이고(기록은 창을 소유하지 않는다), 죽은 라벨을 타겟으로 내주면 그 명령은 WINDOW_NOT_FOUND
@@ -492,7 +494,7 @@ fn handle_conn(app: AppHandle, conn: Box<dyn IpcConnection>) {
                     .map(|d| d.as_millis() as u64)
                     .unwrap_or(0);
                 record_route_outcome(
-                    &app,
+                    &AppSink(app.clone()),
                     &req.method,
                     &req.params,
                     &target,
@@ -721,7 +723,7 @@ fn route(app: &AppHandle, req: Request) -> Value {
                 .unwrap_or("")
                 .to_string();
             record_route_outcome(
-                app,
+                &AppSink(app.clone()),
                 &req.method,
                 &req.params,
                 "service",
@@ -762,7 +764,7 @@ fn route(app: &AppHandle, req: Request) -> Value {
                         ),
                     };
                     record_route_outcome(
-                        app,
+                        &AppSink(app.clone()),
                         &req.method,
                         &req.params,
                         "",
@@ -789,7 +791,7 @@ fn route(app: &AppHandle, req: Request) -> Value {
     if !crate::window_oracle::WindowOracle::is_live(app, &target) {
         let message = format!("창을 찾을 수 없음: {target}");
         record_route_outcome(
-            app,
+            &AppSink(app.clone()),
             &req.method,
             &req.params,
             &target,
@@ -809,7 +811,7 @@ fn route(app: &AppHandle, req: Request) -> Value {
     if req.method == "window.reload" {
         return if native_reload(app, &target) {
             record_route_outcome(
-                app,
+                &AppSink(app.clone()),
                 &req.method,
                 &req.params,
                 &target,
@@ -824,7 +826,7 @@ fn route(app: &AppHandle, req: Request) -> Value {
         } else {
             let message = format!("네이티브 webview 리로드 실패: {target}");
             record_route_outcome(
-                app,
+                &AppSink(app.clone()),
                 &req.method,
                 &req.params,
                 &target,
@@ -851,7 +853,7 @@ fn route(app: &AppHandle, req: Request) -> Value {
         })
     }) else {
         record_route_outcome(
-            app,
+            &AppSink(app.clone()),
             &req.method,
             &req.params,
             &target,
@@ -875,7 +877,7 @@ fn route(app: &AppHandle, req: Request) -> Value {
             // 호출자 관점의 사실(응답을 못 받았다) — executor 가 늦게 완주하면 그 실행 기록이
             // 별도로 남는다(둘 다 사실 — code=TIMEOUT 이 구분자).
             record_route_outcome(
-                app,
+                &AppSink(app.clone()),
                 &req.method,
                 &req.params,
                 &target,

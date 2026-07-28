@@ -1019,7 +1019,7 @@ pub struct AppServiceHost {
 impl AppServiceHost {
     pub fn new(app: tauri::AppHandle) -> Self {
         Self {
-            activity: Arc::new(app.clone()),
+            activity: Arc::new(crate::activity_sink::AppSink(app.clone())),
             app,
         }
     }

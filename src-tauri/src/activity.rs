@@ -269,7 +269,10 @@ pub fn init_collection(conn: &rusqlite::Connection) {
 /// 영속 행 크기 불변식(바이트) — 초과 payload 는 요약형으로 강등된다.
 // 요약·상한·행 자리 규칙은 코어가 소유한다 — 앱과 cored 가 같은 원장에 쓰므로
 // 두 벌이면 한쪽이 쓴 것을 다른 쪽이 못 읽거나, 같은 seq 에 다른 모양이 남는다.
-use soksak_core::activity::{summarize_for_persist, PERSIST_DOC_CAP};
+use soksak_core::activity::summarize_for_persist;
+// 상한 상수는 코어가 강제한다(summarize_for_persist 안에서) — 여기서는 검사가 그 값을 대조한다.
+#[cfg(test)]
+use soksak_core::activity::PERSIST_DOC_CAP;
 
 /// 영속본 요약(§5) — media.base64 스트립(kind·path 유지), 직렬화 크기 상한 강제.
 /// 링·이벤트(라이브)는 원본 그대로 — 이 함수는 영속 경로 전용이다.

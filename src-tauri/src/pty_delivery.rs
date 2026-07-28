@@ -114,7 +114,7 @@ mod tests {
     #[test]
     fn the_crossing_count_is_not_the_read_count() {
         let (channel, crossings, got) = counting_channel();
-        let (deliver, delivery) = spawn_delivery(channel);
+        let (deliver, delivery) = spawn_delivery(crate::stream_sink::ChannelSink(channel));
 
         let chunk = vec![b'x'; 1030]; // 실측된 pty master read 크기
         let total = 4 * 1024 * 1024;
@@ -144,7 +144,7 @@ mod tests {
     #[test]
     fn a_lone_echo_crosses_without_waiting_for_a_batch() {
         let (channel, crossings, got) = counting_channel();
-        let (deliver, delivery) = spawn_delivery(channel);
+        let (deliver, delivery) = spawn_delivery(crate::stream_sink::ChannelSink(channel));
 
         deliver.send(b"x".to_vec()).unwrap();
         // sender 는 살려 둔다 — 종료가 아니라 "쌓인 게 없다"가 방출 이유여야 한다.
@@ -176,7 +176,7 @@ mod tests {
     #[test]
     fn a_paced_bulk_stream_still_batches_even_though_the_queue_is_always_empty() {
         let (channel, crossings, got) = counting_channel();
-        let (deliver, delivery) = spawn_delivery(channel);
+        let (deliver, delivery) = spawn_delivery(crate::stream_sink::ChannelSink(channel));
 
         let chunk = vec![b'x'; 1086]; // 리그에서 실측된 도착 단위
         let reads = 400;
@@ -202,7 +202,7 @@ mod tests {
     #[test]
     fn a_stream_of_tiny_echoes_never_waits() {
         let (channel, crossings, got) = counting_channel();
-        let (deliver, delivery) = spawn_delivery(channel);
+        let (deliver, delivery) = spawn_delivery(crate::stream_sink::ChannelSink(channel));
 
         let started = std::time::Instant::now();
         for i in 0..50u8 {
@@ -231,7 +231,7 @@ mod tests {
     #[test]
     fn the_final_partial_batch_is_delivered_before_the_stream_ends() {
         let (channel, crossings, got) = counting_channel();
-        let (deliver, delivery) = spawn_delivery(channel);
+        let (deliver, delivery) = spawn_delivery(crate::stream_sink::ChannelSink(channel));
         deliver.send(b"prompt$ ".to_vec()).unwrap();
         drop(deliver);
         delivery.join().unwrap();
@@ -243,7 +243,7 @@ mod tests {
     #[test]
     fn batching_preserves_byte_order_across_boundaries() {
         let (channel, _, got) = counting_channel();
-        let (deliver, delivery) = spawn_delivery(channel);
+        let (deliver, delivery) = spawn_delivery(crate::stream_sink::ChannelSink(channel));
         let mut expected = Vec::new();
         for i in 0..40_000u32 {
             let b = i.to_le_bytes();

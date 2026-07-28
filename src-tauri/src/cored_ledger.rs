@@ -272,6 +272,8 @@ mod tests {
         );
     }
 
+    /// 게이트 자격 — 합성한 표에 위반을 심어 **실제로 잡는지** 본다.
+    #[test]
     fn the_gate_catches_a_name_with_no_answer_at_all() {
         let open = vec!["theme_install".to_string(), "clipboard_read".to_string()];
         // 둘 다 답이 있으면 미답은 없다.

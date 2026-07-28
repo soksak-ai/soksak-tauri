@@ -11,6 +11,7 @@
 // 계약(StreamSink·ExitSink)으로, 창은 라벨 문자열로 온다. `#[tauri::command]` 는 State·Window·
 // Channel 을 벗겨 그 값들로 옮기는 번역층이다.
 
+use crate::stream_sink::{ChannelSink, ExitChannelSink};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -477,9 +478,9 @@ pub fn process_spawn(
         },
         manager.inner(),
         secrets_state.inner(),
-        on_stdout,
-        on_stderr,
-        on_exit,
+        ChannelSink(on_stdout),
+        ChannelSink(on_stderr),
+        ExitChannelSink(on_exit),
     )
 }
 

@@ -18,6 +18,7 @@
 //! 아무 명령도 답하지 못한다.
 
 pub mod activity;
+pub mod activity_sink;
 pub mod control;
 pub mod fsx;
 pub mod identity;
@@ -32,6 +33,7 @@ pub mod session;
 pub mod skillgen;
 pub mod store_lock;
 pub mod stream;
+pub mod stream_sink;
 pub mod themes;
 pub mod udp;
 pub mod unit_dev;
