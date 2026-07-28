@@ -139,7 +139,7 @@ fn refusal(method: &str) -> (&'static str, String) {
 /// 이 갈래가 소켓을 하나로 만든다: 부르는 쪽은 어느 명령을 누가 답하는지 몰라도 된다.
 /// cored 가 서빙하면 cored 가 답하고, 아니면 창이 답한다 — 봉투는 같다.
 #[cfg(unix)]
-type ConnRef<'a> = Option<&'a Conn>;
+type ConnRef<'a> = Option<&'a std::sync::Arc<Conn>>;
 #[cfg(not(unix))]
 type ConnRef<'a> = Option<&'a ()>;
 
@@ -208,19 +208,20 @@ impl Conn {
         }
     }
 
-    /// 답 한 줄. 줄 단위로 잠근다 — 섞이면 받는 쪽이 파싱에서 처음 깨진다.
-    pub fn reply(&self, v: &Value) -> bool {
+    /// 이 연결로 나가는 **유일한 쓰기**. 줄 단위로 잠근다.
+    ///
+    /// 답이든 스트림 프레임이든 방송이든 여기를 지난다. 사본 fd 로 따로 쓰면 fd 는 둘이어도
+    /// 소켓은 하나라, 두 쓰기가 서로의 중간에 끼어들어 받는 쪽에는 **깨진 줄** 하나가 된다
+    /// (실측: 살아있는 앱이 "파싱 못 한 응답 줄"을 쏟았고, 그 안에는 응답 본문이 스트림
+    /// 프레임 구조 안쪽에 박혀 있었다). 그 유실은 어디에도 사유를 남기지 않는다.
+    pub fn write_line(&self, line: &str) -> bool {
         let mut w = self.writer.lock().unwrap_or_else(|e| e.into_inner());
-        writeln!(w, "{v}").is_ok()
+        writeln!(w, "{line}").is_ok()
     }
 
-    /// 이 연결의 사본 — 배달 통로 등록·스트림 매기가 쓴다.
-    pub fn dup(&self) -> Option<std::os::unix::net::UnixStream> {
-        self.writer
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .try_clone()
-            .ok()
+    /// 답 한 줄.
+    pub fn reply(&self, v: &Value) -> bool {
+        self.write_line(&v.to_string())
     }
 
     pub fn mark_bridge(&self) {
@@ -242,9 +243,9 @@ impl Conn {
 /// 이 연결에서 한 줄을 답한다. 스트림 토큰은 **실행 전에** 매인다 — 명령이 첫 프레임을 곧바로
 /// 밀 수 있고, 그때 자리가 없으면 그 프레임은 조용히 사라진다.
 #[cfg(unix)]
-pub fn answer_on_conn(ctx: &Ctx, line: &str, conn: &Conn) -> Value {
-    if let (Ok(req), Some(sink)) = (serde_json::from_str::<Request>(line), conn.dup()) {
-        let bound = crate::streams::bind(&req.params, &sink);
+pub fn answer_on_conn(ctx: &Ctx, line: &str, conn: &std::sync::Arc<Conn>) -> Value {
+    if let Ok(req) = serde_json::from_str::<Request>(line) {
+        let bound = crate::streams::bind(&req.params, conn);
         if !bound.is_empty() {
             conn.owned
                 .lock()
@@ -277,7 +278,8 @@ fn answer_with(ctx: &Ctx, line: &str, conn: ConnRef<'_>) -> Value {
 // (연결 하나 = 스레드 하나였을 때 이 자리가 요청을 직렬로 만들었다 — 그때의 전제와 다르다.)
 #[cfg(unix)]
 thread_local! {
-    static CURRENT: std::cell::Cell<Option<*const Conn>> = const { std::cell::Cell::new(None) };
+    static CURRENT: std::cell::Cell<Option<*const std::sync::Arc<Conn>>> =
+        const { std::cell::Cell::new(None) };
 }
 
 #[cfg(unix)]
@@ -290,10 +292,12 @@ fn is_bridge_conn(_conn: ConnRef<'_>) -> bool {
     false
 }
 
-/// 지금 답하고 있는 요청의 연결 사본. 연결을 지고 가야 하는 명령만 부른다(배달 통로 등록).
+/// 지금 답하고 있는 요청의 **연결**. 연결을 지고 가야 하는 명령만 부른다(배달 통로 등록).
+///
+/// 사본 fd 가 아니라 연결 자신이다 — 사본으로 쥐면 그쪽 쓰기가 답과 섞인다(write_line 머리말).
 #[cfg(unix)]
-pub fn current_conn() -> Option<std::os::unix::net::UnixStream> {
-    CURRENT.with(|c| c.get()).and_then(|p| unsafe { &*p }.dup())
+pub fn current_conn() -> Option<std::sync::Arc<Conn>> {
+    CURRENT.with(|c| c.get()).map(|p| unsafe { &*p }.clone())
 }
 
 /// 이 연결은 창의 다리다 — 여기로 온 것은 창으로 되돌리지 않는다.
@@ -432,7 +436,7 @@ fn a_request_from_the_windows_own_bridge_is_not_delivered_back() {
     let _h = crate::control::testing::fake_host(&["main"], "main");
     // 창의 다리가 자기를 밝힌다 — 이 연결로 온 것은 창이 물은 것이다.
     let (a, _b) = std::os::unix::net::UnixStream::pair().expect("소켓 쌍");
-    let conn = Conn::new(a);
+    let conn = std::sync::Arc::new(Conn::new(a));
     conn.mark_bridge();
     let r = answer_with(
         &ctx(),

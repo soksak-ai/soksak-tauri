@@ -1,6 +1,9 @@
 use super::*;
 use serde_json::json;
 use std::io::{BufRead, BufReader};
+use std::os::unix::net::UnixStream;
+
+use crate::wire::Conn;
 
 /// 토큰 표는 프로세스 전역이다 — 검사들이 서로를 덮지 않게 직렬로 돈다.
 static SERIAL: Mutex<()> = Mutex::new(());
@@ -9,9 +12,10 @@ fn lock() -> std::sync::MutexGuard<'static, ()> {
     SERIAL.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-fn pair() -> (UnixStream, BufReader<UnixStream>) {
+/// 연결 하나와 그 반대편. 매는 대상은 **연결**이다 — 사본 fd 로 매면 프레임이 답과 섞인다.
+fn pair() -> (Arc<Conn>, BufReader<UnixStream>) {
     let (a, b) = UnixStream::pair().expect("소켓 쌍");
-    (a, BufReader::new(b))
+    (Arc::new(Conn::new(a)), BufReader::new(b))
 }
 
 #[test]

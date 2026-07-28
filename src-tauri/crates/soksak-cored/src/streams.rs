@@ -10,22 +10,28 @@
 //! 다른 자리에서 다르게 나타난다.
 
 use std::collections::HashMap;
-use std::io::Write;
-use std::os::unix::net::UnixStream;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 use serde_json::Value;
 use soksak_core::stream;
 
-/// 토큰 → 그 토큰을 만든 연결.
-static SINKS: OnceLock<Mutex<HashMap<String, UnixStream>>> = OnceLock::new();
+use crate::wire::Conn;
 
-fn sinks() -> &'static Mutex<HashMap<String, UnixStream>> {
+/// 토큰 → 그 토큰을 만든 **연결**.
+///
+/// 연결의 사본 fd 가 아니라 연결 자신이다. 사본으로 쥐면 프레임이 그 연결의 쓰기 자리를
+/// 지나지 않아, 같은 소켓에 답과 프레임이 동시에 나가 줄이 섞인다(wire::Conn::write_line).
+///
+/// 약한 참조다 — 여기서 연결을 붙들면 소켓이 끊겨도 살아 남고, 그 좀비는 프로세스가 죽을
+/// 때까지 목록에 남는다.
+static SINKS: OnceLock<Mutex<HashMap<String, Weak<Conn>>>> = OnceLock::new();
+
+fn sinks() -> &'static Mutex<HashMap<String, Weak<Conn>>> {
     SINKS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 /// 이 요청이 실어 보낸 토큰들을 이 연결에 매어 둔다. 매어 둔 토큰 이름들을 돌려준다.
-pub fn bind(params: &Value, conn: &UnixStream) -> Vec<String> {
+pub fn bind(params: &Value, conn: &Arc<Conn>) -> Vec<String> {
     let found = stream::tokens(params);
     if found.is_empty() {
         return Vec::new();
@@ -33,14 +39,8 @@ pub fn bind(params: &Value, conn: &UnixStream) -> Vec<String> {
     let mut g = sinks().lock().unwrap_or_else(|e| e.into_inner());
     let mut bound = Vec::new();
     for (_arg, token) in found {
-        // 연결 사본을 못 뜨면 매어 두지 않는다 — 매어 두고 못 미는 것이 가장 조용한 실패다.
-        match conn.try_clone() {
-            Ok(c) => {
-                g.insert(token.clone(), c);
-                bound.push(token);
-            }
-            Err(_) => continue,
-        }
+        g.insert(token.clone(), Arc::downgrade(conn));
+        bound.push(token);
     }
     bound
 }
@@ -51,11 +51,18 @@ pub fn bind(params: &Value, conn: &UnixStream) -> Vec<String> {
 /// 부른 쪽이 "보냈다"고 믿는다.
 pub fn push(token: &str, msg: Value) -> bool {
     let mut g = sinks().lock().unwrap_or_else(|e| e.into_inner());
-    let Some(sink) = g.get_mut(token) else {
+    let Some(weak) = g.get(token) else {
+        return false;
+    };
+    // 연결이 이미 사라졌으면 끝난 스트림이다 — 짝이 없어진 토큰을 남기면 매 프레임마다 같은
+    // 조회를 반복한다.
+    let Some(conn) = weak.upgrade() else {
+        g.remove(token);
         return false;
     };
     let line = stream::frame(token, msg);
-    if writeln!(sink, "{line}").is_err() {
+    // 답과 **같은 자리**로 쓴다 — 그래야 한 줄이 통째로 나간다.
+    if !conn.write_line(&line.to_string()) {
         // 못 쓰는 연결은 끝난 연결이다. 남겨 두면 매 프레임마다 같은 실패를 반복한다.
         g.remove(token);
         return false;

@@ -11,8 +11,6 @@
 //! 하지 않고 이름을 달고 거절한다. 조용히 기다리면 하니스가 "명령이 없다"로 읽는다.
 
 use std::collections::HashMap;
-use std::io::Write;
-use std::os::unix::net::UnixStream;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
@@ -25,7 +23,9 @@ pub const DEFAULT_TIMEOUT_MS: u64 = 10_000;
 
 /// 붙어 있는 창 호스트. 없으면 배달할 곳이 없다.
 struct Host {
-    writer: UnixStream,
+    /// 창으로 나가는 자리 — **연결 자신**이다. 사본 fd 로 쥐면 방송·배달이 그 연결의 답과
+    /// 섞여 받는 쪽에 깨진 줄이 된다(wire::Conn::write_line 머리말).
+    writer: std::sync::Arc<crate::wire::Conn>,
     /// 살아 있는 창 라벨 — 호스트가 붙을 때와 창이 바뀔 때 알려 준다.
     live: Vec<String>,
     /// 포커스 사실. **장부는 코어의 것이다**(FocusLedger) — "마지막 워크스페이스"를 무엇으로
@@ -61,7 +61,7 @@ pub fn has_host() -> bool {
 }
 
 /// 프레임워크가 자기를 창 호스트로 등록한다. 이 연결이 배달 통로가 된다.
-pub fn attach_host(writer: UnixStream, live: Vec<String>, focused: String) {
+pub fn attach_host(writer: std::sync::Arc<crate::wire::Conn>, live: Vec<String>, focused: String) {
     let mut focus = FocusLedger::new();
     focus.note_focus(&focused);
     focus.reconcile(&live);
@@ -209,7 +209,7 @@ fn route(req: control::Request) -> Value {
 fn push_to_host(v: &Value) -> bool {
     let mut g = host().lock().unwrap_or_else(|e| e.into_inner());
     match g.as_mut() {
-        Some(h) => writeln!(h.writer, "{v}").is_ok(),
+        Some(h) => h.writer.write_line(&v.to_string()),
         None => false,
     }
 }
@@ -220,6 +220,7 @@ fn push_to_host(v: &Value) -> bool {
 #[cfg(test)]
 pub(crate) mod testing {
     use super::*;
+    use std::os::unix::net::UnixStream;
 
     pub static SERIAL: Mutex<()> = Mutex::new(());
 
@@ -230,7 +231,8 @@ pub(crate) mod testing {
     /// 창 호스트를 흉내낸다 — 한쪽 끝을 cored 에 주고, 다른 끝에서 배달을 읽는다.
     pub fn fake_host(live: &[&str], focused: &str) -> std::io::BufReader<UnixStream> {
         let (a, b) = UnixStream::pair().expect("소켓 쌍");
-        attach_host(a, live.iter().map(|s| s.to_string()).collect(), focused.to_string());
+        let conn = std::sync::Arc::new(crate::wire::Conn::new(a));
+        attach_host(conn, live.iter().map(|s| s.to_string()).collect(), focused.to_string());
         std::io::BufReader::new(b)
     }
 
