@@ -80,7 +80,7 @@ const ALLOWED: { file: string; mark: string; event: string; why: string }[] = [
   { file: "src-tauri/src/daemon.rs", mark: "from_millis(200)", event: "child-exit-poll", why: "child try_wait 유한 폴링(limit 상한·초과 시 kill) — waitpid 블로킹은 ring 수집과 양립 불가" },
   { file: "src-tauri/src/daemon.rs", mark: "from_millis(300)", event: "child-exit-poll", why: "상주 데몬 종료 감시 — 동일 사유" },
   { file: "src-tauri/src/schedule.rs", mark: "Duration::from_secs(3_600)", event: "scheduler-idle-cap", why: "다음 예약 없음 상태의 유휴 상한(스케줄 등록이 즉시 깨운다)" },
-  { file: "src-tauri/src/watcher.rs", mark: "from_millis(250)", event: "fs-debounce", why: "파일와처 디바운스 — 이벤트 병합 창" },
+  { file: "src-tauri/crates/soksak-watch/src/lib.rs", mark: "from_millis(250)", event: "fs-debounce", why: "파일와처 디바운스 — 이벤트 병합 창" },
   // ── ③ 유한 안전망 ──
   { file: "src-tauri/src/activity.rs", mark: "wait_timeout(q, Duration::from_secs(1))", event: "condvar-safety-net", why: "cv 사건이 주 경로 — 1s 는 closed 플래그 재확인 안전망" },
   { file: "src-tauri/src/service.rs", mark: "wait_timeout(inner, Duration::from_millis(20))", event: "condvar-safety-net", why: "크래시 전이가 cv 를 울린다 — 20ms 는 유실 안전망" },
@@ -149,7 +149,11 @@ function rsSites(): string[] {
   // 코어 크레이트도 센다. 규칙은 **코드를 따라간다** — 파일이 옮겨 갔다고 규칙에서 빠지면
   // 그 순간부터 그 자리의 기다림은 아무도 안 본다(실측: ptyd 클라이언트가 코어로 가면서
   // 등록돼 있던 세 자리가 통째로 스캔 밖으로 나갔다).
-  const roots = ["src-tauri/src", "src-tauri/crates/soksak-core/src"];
+  const roots = [
+    "src-tauri/src",
+    "src-tauri/crates/soksak-core/src",
+    "src-tauri/crates/soksak-watch/src",
+  ];
   for (const file of roots
     .flatMap((r) => walk(join(ROOT, r)))
     .filter((f) => f.endsWith(".rs") && !f.endsWith("_tests.rs"))) {
