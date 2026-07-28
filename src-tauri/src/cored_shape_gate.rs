@@ -98,6 +98,10 @@ fn parse_commands(src: &str, file: &str) -> Vec<AppCommand> {
         let mut depth: i32 = 0;
         let mut started = false;
         for l in &lines[start..] {
+            // 주석은 시그니처가 아니다 — **줄 단위로** 걷어낸다. 합친 뒤에 걷어내면 첫 `//`
+            // 뒤가 통째로 사라져 그 아래 인자들이 없는 것이 된다. 주석 안의 괄호도 균형을
+            // 어지럽혀 시그니처 수집이 엉뚱한 자리에서 끝난다(실측: legacy_pane_id 소실).
+            let l = l.split_once("//").map_or(*l, |(code, _)| code);
             sig.push_str(l);
             sig.push(' ');
             depth += l.matches('(').count() as i32 - l.matches(')').count() as i32;

@@ -228,6 +228,16 @@ pub const COMMANDS: &[Command] = &[
         run: run_close_terminal,
     },
     Command {
+        name: "pty_read_sealed_screen",
+        args: &[
+            Arg { name: "windowLabel", ty: "string?", required: false },
+            Arg { name: "paneId", ty: "string", required: true },
+            Arg { name: "legacyPaneId", ty: "string?", required: false },
+        ],
+        returns: "{ paintB64 } | null",
+        run: run_pty_read_sealed_screen,
+    },
+    Command {
         name: "pty_pane_alive",
         args: &[Arg { name: "paneId", ty: "string", required: true }],
         returns: "bool",
@@ -994,6 +1004,28 @@ fn run_close_terminal(ctx: &Ctx, params: &Value) -> Outcome {
 #[serde(rename_all = "camelCase")]
 struct PaneId {
     pane_id: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SealedScreenArgs {
+    #[serde(default)]
+    window_label: Option<String>,
+    pane_id: String,
+    #[serde(default)]
+    legacy_pane_id: Option<String>,
+}
+
+#[cfg(unix)]
+fn run_pty_read_sealed_screen(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: SealedScreenArgs| {
+        crate::pty::read_sealed_screen(
+            ctx,
+            a.window_label.as_deref(),
+            &a.pane_id,
+            a.legacy_pane_id.as_deref(),
+        )
+    })
 }
 
 #[cfg(unix)]

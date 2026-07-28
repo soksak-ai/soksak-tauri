@@ -259,6 +259,34 @@ pub fn pane_alive(ctx: &Ctx, pane_id: &str) -> Result<bool, String> {
     Ok(alive)
 }
 
+/// 이 pane 의 봉인된 화면. **없으면 없다고, 있는데 못 열면 이름을 달고** 답한다.
+///
+/// 이 프로세스에는 볼트가 없다(NoSealKeys). 그래서 체크포인트가 아예 없으면 정직하게 null 이고,
+/// 있는데 열 수 없으면 그 사실이 답이다 — null 로 뭉개면 "복원할 것이 없었다"가 되어 사용자가
+/// 화면을 잃은 것을 아무도 모른다.
+pub fn read_sealed_screen(
+    ctx: &Ctx,
+    window_label: Option<&str>,
+    pane_id: &str,
+    legacy_pane_id: Option<&str>,
+) -> Result<Value, String> {
+    let window = window_label.unwrap_or_default();
+    let sealed = match legacy_pane_id {
+        Some(legacy) => ptyd::read_sealed_screen_adopting(
+            &NoSealKeys,
+            ctx.identity(),
+            window,
+            legacy,
+            pane_id,
+        )?,
+        None => ptyd::read_sealed_screen(&NoSealKeys, ctx.identity(), window, pane_id)?,
+    };
+    Ok(match sealed {
+        Some(s) => json!({ "paintB64": s.paint_b64 }),
+        None => Value::Null,
+    })
+}
+
 #[cfg(test)]
 #[path = "pty_tests.rs"]
 mod tests;
