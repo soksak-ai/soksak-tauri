@@ -16,7 +16,7 @@ import type {
   ShellWindowHandle,
   Stream,
   Unlisten,
-} from "./host";
+} from "./contract";
 
 /** 창구가 돌려주는 봉투 — 실패는 값이 아니라 코드로 온다. */
 interface OpResult {
@@ -134,7 +134,21 @@ function labeledWindowHandle(label: string): ShellWindowHandle {
   };
 }
 
+/**
+ * 이 프레임워크가 제공하는 것.
+ *
+ * Electron 은 통째로 Chromium 이라 등급 요구가 전부 no-op 이다 — 승격할 것이 없다.
+ * 자식 웹뷰 합성 장치는 **없다**. 못 하는 것이 아니라 필요가 없다: 단일 Chromium 세계에서
+ * UI 뷰와 콘텐츠 뷰를 같은 컴포지터가 합성한다(WebContentsView). 그래서 그 장치를 전제한
+ * 표면만 여기서 빠지고, 등급만 필요한 표면은 오히려 사이드카 없이 그냥 선다.
+ */
+export const engineProvision: EngineProvision = {
+  chromium: true,
+  nativeChildWebview: false,
+};
+
 export const electronHost: AppFramework = {
+  engineProvision,
   name: "electron",
 
   invoke: async <T,>(cmd: string, args?: Record<string, unknown>): Promise<T> => {
@@ -198,15 +212,3 @@ export const electronHost: AppFramework = {
   },
 };
 
-/**
- * 이 프레임워크가 제공하는 것.
- *
- * Electron 은 통째로 Chromium 이라 등급 요구가 전부 no-op 이다 — 승격할 것이 없다.
- * 자식 웹뷰 합성 장치는 **없다**. 못 하는 것이 아니라 필요가 없다: 단일 Chromium 세계에서
- * UI 뷰와 콘텐츠 뷰를 같은 컴포지터가 합성한다(WebContentsView). 그래서 그 장치를 전제한
- * 표면만 여기서 빠지고, 등급만 필요한 표면은 오히려 사이드카 없이 그냥 선다.
- */
-export const engineProvision: EngineProvision = {
-  chromium: true,
-  nativeChildWebview: false,
-};

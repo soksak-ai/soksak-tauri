@@ -6,7 +6,8 @@
 // 해소 규칙: 빌드 시 주입된 프레임워크 이름이 있으면 그것, 없으면 tauri(현 정본). 새 프레임워크를 붙이는
 // 일은 어댑터 파일 하나 + 이 표에 한 줄이며, 앱 코드는 한 줄도 바뀌지 않는다.
 
-import type { AppFramework } from "./host";
+import type { AppFramework } from "./contract";
+import type { EngineProvision } from "@soksak-ai/plugin-spec";
 import { electronHost } from "./electron";
 import { tauriHost } from "./tauri";
 
@@ -17,7 +18,7 @@ export type {
   ShellWindowHandle,
   Stream,
   Unlisten,
-} from "./host";
+} from "./contract";
 
 const ADAPTERS: Record<string, AppFramework> = {
   tauri: tauriHost,
@@ -54,3 +55,12 @@ export const shellPath = shell.path;
 export const dialog = shell.dialog;
 export const notification = shell.notification;
 export const deepLink = shell.deepLink;
+
+/**
+ * 활성 프레임워크가 제공하는 것 — 앱이 "무엇을 할 수 있는가"를 벤더 이름 없이 묻는 자리.
+ *
+ * 앱 코드가 `if (framework === "electron")` 을 쓰기 시작하면 경계가 그 줄에서 샌다. 대신
+ * 능력을 묻는다: 네이티브 자식 층이 있는가, 엔진이 chromium 등급인가. 같은 축을 플러그인은
+ * 매니페스트에 요구로 적는다(engineNeeds.ts) — 여기는 그 요구를 채우는 쪽의 사실이다.
+ */
+export const engineProvision: EngineProvision = shell.engineProvision;

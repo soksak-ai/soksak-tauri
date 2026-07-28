@@ -1,3 +1,4 @@
+import type { EngineProvision } from "@soksak-ai/plugin-spec";
 // 앱 프레임워크 계약 — 앱이 "어떤 프레임워크 위에서 도는가"를 모르게 하는 경계.
 //
 // 여기서 프레임워크는 Tauri·Electron 이다. 창·웹뷰 생성, IPC, 네이티브 API, 패키징을
@@ -72,6 +73,14 @@ export interface ShellNotification {
 }
 
 export interface AppFramework {
+  /**
+   * 이 프레임워크가 제공하는 것 — 플러그인의 요구(requiresEngine 등)를 채우는 쪽의 사실.
+   *
+   * 계약에 두는 이유: 어댑터가 빠뜨리면 컴파일이 막는다. 선택으로 두면 새 프레임워크가
+   * 조용히 미신고 상태로 붙고, 그때 앱은 "요구가 없다"와 "모른다"를 구분하지 못한다.
+   */
+  readonly engineProvision: EngineProvision;
+
   /** 어댑터 이름 — 진단·원장에 싣는다("어느 셸에서 난 일인가"). */
   readonly name: string;
 

@@ -11,7 +11,7 @@
 //
 // 계약: 홀 목록 = 열린 우측 사이드바 + 보이는 모든 골. 갱신은 사건 구동(레이아웃 커밋·창
 // 리사이즈·사이드바 변화)이고, 같은 값의 재발행은 침묵한다(멱등).
-import { invoke } from "../framework";
+import { engineProvision, invoke } from "../framework";
 import { onPluginEvent } from "../plugins/hooks";
 
 export interface Hole {
@@ -42,6 +42,11 @@ let lastSig = "";
 /** 수집→발행(같은 값이면 침묵). 레이아웃 커밋 다음 프레임에 부르는 것이 정확하다. */
 export function reportDomHoles(): void {
   if (typeof document === "undefined") return;
+  // 홀은 **네이티브 층이 있을 때만** 뜻이 있다. 콘텐츠가 DOM 안에 사는 프레임워크에는 그
+  // 층이 없어 OS 히트테스트가 끼어들 자리도 없다 — 그때 보내는 것은 없는 개념에 대한
+  // 호출이고, 프레임워크는 그것을 거절한다. 거절을 삼키면 조용해지고 안 삼키면 부팅 원장이
+  // 실패로 물든다. 둘 다 답이 아니라 **묻지 않는 것**이 답이다.
+  if (!engineProvision.nativeChildWebview) return;
   const holes = collectHoles();
   const sig = JSON.stringify(holes.map((h) => [Math.round(h.x), Math.round(h.y), Math.round(h.w), Math.round(h.h)]));
   if (sig === lastSig) return;

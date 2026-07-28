@@ -27,7 +27,7 @@ import type {
   ShellWindowHandle,
   Stream,
   Unlisten,
-} from "./host";
+} from "./contract";
 
 /** Tauri 의 UnlistenFn 은 내부적으로 async — 이미 해제된 리스너의 재해지가 동기 throw 가
  *  아니라 반환 promise 의 reject 로 온다. 계약은 "해지는 멱등"이므로 여기서 흡수한다. */
@@ -86,7 +86,24 @@ function wrapWindow(win: Window, label: string): ShellWindowHandle {
   };
 }
 
+/**
+ * 이 프레임워크가 제공하는 것 — 플러그인의 요구(requiresEngine 등)를 채우는 쪽의 사실.
+ *
+ * WKWebView 는 chromium 등급이 아니다. 대신 자식 웹뷰를 창에 합성해 얹는 장치가 있어
+ * (hole-punch·hitTest 스위즐, webview.rs) 등급이 필요한 표면은 그 장치 위에서 Chromium
+ * 사이드카로 승격된다.
+ *
+ * macOS 기준이다. 같은 Tauri 라도 Windows 는 WebView2 가 곧 Chromium 이라 chromium: true 이며
+ * 승격이 no-op 이다(R4). 그 갈래는 OS 를 알게 되는 자리라 이 값을 실행 중에 정하도록 바꿀 때
+ * 함께 들어온다 — 지금은 이 저장소가 실제로 검증하는 조합만 적는다.
+ */
+export const engineProvision: EngineProvision = {
+  chromium: false,
+  nativeChildWebview: true,
+};
+
 export const tauriHost: AppFramework = {
+  engineProvision,
   name: "tauri",
 
   invoke: <T,>(cmd: string, args?: Record<string, unknown>) => tauriInvoke<T>(cmd, args),
@@ -146,18 +163,3 @@ export const tauriHost: AppFramework = {
   },
 };
 
-/**
- * 이 프레임워크가 제공하는 것 — 플러그인의 요구(requiresEngine 등)를 채우는 쪽의 사실.
- *
- * WKWebView 는 chromium 등급이 아니다. 대신 자식 웹뷰를 창에 합성해 얹는 장치가 있어
- * (hole-punch·hitTest 스위즐, webview.rs) 등급이 필요한 표면은 그 장치 위에서 Chromium
- * 사이드카로 승격된다.
- *
- * macOS 기준이다. 같은 Tauri 라도 Windows 는 WebView2 가 곧 Chromium 이라 chromium: true 이며
- * 승격이 no-op 이다(R4). 그 갈래는 OS 를 알게 되는 자리라 이 값을 실행 중에 정하도록 바꿀 때
- * 함께 들어온다 — 지금은 이 저장소가 실제로 검증하는 조합만 적는다.
- */
-export const engineProvision: EngineProvision = {
-  chromium: false,
-  nativeChildWebview: true,
-};
