@@ -39,6 +39,9 @@ export const REAL_SHELL_PATHS = [
   ["src-tauri/crates/soksak-ptyd/", "PTY 세션 데몬 — 셸과 그 자식을 앱 밖에서 소유한다"],
   ["src-tauri/crates/soksak-spec-pty/", "PTY 계약 — shellPid·인계가 계약 필드다"],
   ["src-tauri/crates/soksak-core/src/shellq.rs", "로그인 셸에게 묻는 질의(-lc)의 임자"],
+  ["src-tauri/crates/soksak-core/src/shell_env.rs", "자식 셸에 물려줄 env 화이트리스트·zsh 통합의 임자"],
+  ["src-tauri/crates/soksak-core/src/ptyd.rs", "PTY 데몬 클라이언트 — 셸을 데몬에 띄우고 그 출력을 나른다"],
+  ["src-tauri/crates/soksak-cored/src/pty.rs", "헬퍼의 터미널 서빙 — 같은 데몬에 붙어 셸을 띄운다"],
   ["src/terminal/", "터미널 셸 통합(OSC 7/133/633) 파서·브리지·status"],
   ["scripts/e2e/pty-survival.sh", "셸과 자식이 앱 재시작을 넘어 사는지 재는 하니스"],
   ["scripts/e2e/pty-degraded.sh", "degraded 복원에서 셸이 살아 도는지 재는 하니스"],
@@ -75,6 +78,10 @@ export const REAL_SHELL_TOKENS = new Map([
   ["$shell", "사용자 계정 속성 — 로그인 셸 경로"],
   ["process.env.shell", "사용자 계정 속성 읽기"],
   ["default_shell", "로그인 셸 부재 시 기본 경로"],
+  ["shell_env", "자식 셸에 물려줄 env 규칙 모듈(진짜 셸의 환경)"],
+  ["soksak_core::shell_env::session_env", "그 모듈의 세션 env 조립"],
+  ["soksak_core::shell_env::AI_SESSION_ENV", "자식 셸에서 끊을 AI 세션 키 목록"],
+  ["an_unknown_shell_is_refused_instead_of_guessed", "로그인 셸을 모르면 추측하지 않는다는 검사"],
   ["shell_which", "로그인 셸 PATH 로 바이너리를 찾는 질의"],
   ["shell-which", "같은 질의의 명령명 표기"],
   ["run_shell_which", "그 질의의 실행 헬퍼"],
@@ -192,6 +199,9 @@ export const REAL_SHELL_MARKERS = [
 // 판정 넷: [프레임워크] 개명 대상 · [UI] 앱 UI 컨테이너 뜻(제3의 용법, 어휘 미결) ·
 //          [인용] 옛말을 기록으로 남긴 자리 · [진짜셸] 표지가 없는 진짜 셸 줄.
 export const PROSE_LEDGER = new Map([
+  ["src-tauri/crates/soksak-cored/src/pty_tests.rs", [2, "[진짜 셸] 로그인 셸 추측 금지 검사"]],
+  ["src-tauri/crates/soksak-cored/src/registry.rs", [1, "[진짜 셸] spawn_terminal 의 shell 인자"]],
+  ["src-tauri/crates/soksak-cored/src/main.rs", [1, "[진짜 셸] 부팅 인자 --login-shell"]],
   ["src-tauri/src/ws.rs", [1, "[프레임워크] \"셸 타입\" — ws 읽기 루프가 프레임워크 타입을 모른다는 서술"]],
   ["src-tauri/src/activity.rs", [1, "[프레임워크] \"셸 타입\"·\"셸에 넘긴다\""]],
   ["src-tauri/src/navigation_policy.rs", [2, "[UI] \"app shell\" — 앱 웹뷰의 항행 정책"]],
