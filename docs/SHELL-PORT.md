@@ -88,6 +88,21 @@ The last movable group: schedules, the command bridge, clipboard, watcher, and t
 
 Two things were deliberately left. `native_reload` keeps its webview handle: a reload is neither a window fact nor a delivery, and folding it into the two-line oracle would put webview lifetime under it. `state::<T>()` lookups stay as they are — converting them means changing `manage` in `lib.rs` and every caller at once, and `service.rs` had already recorded the same judgement; a second convention for passing state would be worse than the coupling.
 
+## The helper process
+
+`src-tauri/crates/soksak-helper` is a process with no window, no webview, and no app handle. It listens on a unix socket and answers commands using `soksak-portable` logic. It follows `soksak-ptyd`, the standing precedent for an independent helper, with two deliberate differences.
+
+- **It does not know its home.** `ptyd` reads `SOKSAK_HOME` and derives paths; the helper takes `--socket <path>` as an argument and, given none, fails by name rather than choosing a default. A helper that guesses its identity attaches somewhere else the moment homes diverge, and does it quietly.
+- **Names and arguments are the app's.** The envelope follows the socket contract, and `data` carries exactly what the app's `invoke` returns. A shell that has to translate names introduces a new drift surface; the point is to ask the same question and get the same answer.
+
+Each handler is one call into `soksak-portable`. Judgement does not live in the helper — if it did, the app path and the helper path could answer differently, and that difference is silent. Logic has a single owner, so the two processes agree structurally rather than by copy.
+
+**A store is not a shell.** `rusqlite` is banned in `soksak-portable` and allowed in the helper. The ban list exists to keep out windows, webviews, and native runtimes; a database opens no window and holds no app handle, and reads the same file to the same answer from any process. But logic that knows the store only runs where the file is, and that premise is what the split removes — so the `KvRows` contract stays in portable and its SQLite implementation lives in the helper. The helper opens read-only: two processes writing the same file would break the single-writer contract.
+
+**What the demand ledger taught.** The Electron shell records every backend call in order. Read by frequency, `activity_publish` (28) and `data_kv_get` (10) dominate; read *in order*, the boot stalls at call 5 (`app_environment`) and calls 7–14 (`data_kv_get`). Three commands wired first by frequency turned out to be calls 42, 48, and 50 — served, and irrelevant to whether the window paints. Frequency picks the wrong work; order picks the blocking work.
+
+Still unserved: `activity_publish` (the shell owns fan-out, so where admission happens is a design question, not a port), `project_owners`, `net_http_request`, `process_reclaim_window`. And `webview_*`, `engine_*`, `titlebar_*`, `window_*` never move — those are the shell's, and an Electron adapter must implement them itself.
+
 ## What a second shell actually costs
 
 Measured on this repo (2026-07-27):
