@@ -11,6 +11,7 @@ const { app, BrowserWindow, dialog, ipcMain, screen } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const os = require("node:os");
+const { createBackendClient, resolveSocketPath, SOCKET_ENV, SOCKET_ARG } = require("./backend.cjs");
 
 const DEV_URL = process.env.SOKSAK_ELECTRON_URL || "http://localhost:1420";
 const SPIKE_HOME = path.join(os.homedir(), ".soksak-electron-spike");
@@ -22,13 +23,14 @@ fs.mkdirSync(SPIKE_HOME, { recursive: true });
 const windows = new Map();
 let seq = 0;
 
-/** UI 가 백엔드에 요구한 명령을 순서대로 남긴다 — 2단계 우선순위의 실측 근거. */
-function recordDemand(cmd, served) {
+/** UI 가 백엔드에 요구한 명령을 순서대로 남긴다 — 2단계 우선순위의 실측 근거.
+ *  서빙된 것(served:true)과 못 한 것을 가르고, 못 한 것은 사유(code)까지 남긴다 — "헬퍼가
+ *  무엇을 더 져야 하는가"는 요구 목록만으로는 안 나오고 실패 사유가 있어야 갈린다. */
+function recordDemand(cmd, served, code) {
   try {
-    fs.appendFileSync(
-      DEMAND_LOG,
-      JSON.stringify({ t: Date.now(), cmd, served }) + "\n",
-    );
+    const entry = { t: Date.now(), cmd, served };
+    if (!served && code) entry.code = code;
+    fs.appendFileSync(DEMAND_LOG, JSON.stringify(entry) + "\n");
   } catch {
     /* 원장 실패가 앱을 막지 않는다 */
   }
@@ -59,16 +61,16 @@ function windowFor(label) {
 }
 
 // ── 백엔드 다리 ──────────────────────────────────────────────────────────────
-// 오늘은 백엔드가 없다. 2단계(러스트 헬퍼)가 서면 이 함수가 그 소켓으로 간다.
-// 그 전까지는 요구를 원장에 남기고 이름을 단 실패를 돌려준다.
+// 요청은 소켓 너머로 간다(electron/backend.cjs — 한 줄 JSON, id 상관, 유지 연결).
+// 경로는 환경변수나 인자로만 온다: 기본 경로를 지어내면 남의 소켓에 붙어 놓고 "붙었다"고
+// 답할 수 있다. 경로가 없으면 오늘과 같은 이름으로 실패한다(BACKEND_NOT_CONNECTED).
+const backend = createBackendClient({
+  socketPath: resolveSocketPath(),
+  onDemand: recordDemand,
+});
+
 async function callBackend(cmd, args) {
-  recordDemand(cmd, false);
-  const err = new Error(
-    `백엔드 미연결: "${cmd}" — 러스트 헬퍼(2단계)가 서면 이 호출이 그리로 간다`,
-  );
-  err.code = "BACKEND_NOT_CONNECTED";
-  err.command = cmd;
-  throw err;
+  return backend.call(cmd, args);
 }
 
 ipcMain.handle("shell:invoke", async (_e, { cmd, args }) => {
@@ -195,6 +197,15 @@ app.whenReady().then(() => {
   wireWindowEvents(label, win);
   console.log(`[electron-spike] 창 ${label} → ${DEV_URL}`);
   console.log(`[electron-spike] 요구 원장: ${DEMAND_LOG}`);
+  // 어느 백엔드에 말을 거는지는 기동 시 한 줄로 드러낸다 — 붙지 않은 채 도는 것과
+  // 엉뚱한 소켓에 붙은 것은 로그 없이는 구분되지 않는다.
+  console.log(
+    backend.socketPath
+      ? `[electron-spike] 백엔드 소켓: ${backend.socketPath}`
+      : `[electron-spike] 백엔드 소켓 없음 — ${SOCKET_ENV}=<경로> 또는 ${SOCKET_ARG}<경로>`,
+  );
 });
 
 app.on("window-all-closed", () => app.quit());
+// 셸이 내려가면 연결도 놓는다 — 대기 중이던 호출은 이름을 달고 깨어난다.
+app.on("will-quit", () => backend.close());

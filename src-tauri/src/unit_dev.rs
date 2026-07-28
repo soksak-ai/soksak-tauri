@@ -114,22 +114,9 @@ fn validate_source_path_in(source: &Path, home: &Path) -> Result<(), String> {
 
 /// source 가 이 홈이 아닌 다른 identity 홈 안에 있으면 그 홈 경로를 돌려준다.
 ///
-/// identity 홈은 `$HOME/.soksak`(release) 와 `$HOME/.soksak-<식별자>` 로 파생된다(home.rs).
-/// 새 identity 는 자동으로 자기 홈을 갖기 때문에 목록을 하드코딩하지 않고, 이 홈의 형제 중
-/// 같은 이름 규칙을 만족하는 디렉터리를 홈으로 본다. 홈 밖(작업 checkout)은 대상이 아니다.
+/// 이름 규칙 판정은 soksak-portable 이 소유한다 — 홈 레인 규칙은 앱과 헬퍼가 같아야 한다.
 fn foreign_identity_home(source: &Path, home: &Path) -> Option<PathBuf> {
-    let parent = home.parent()?;
-    source
-        .ancestors()
-        .find(|anc| {
-            anc.parent() == Some(parent)
-                && *anc != home
-                && anc
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .is_some_and(|n| n == ".soksak" || n.starts_with(".soksak-"))
-        })
-        .map(Path::to_path_buf)
+    soksak_portable::identity::foreign_identity_home(source, home)
 }
 
 fn read_config_in(home: &Path) -> Result<UnitDevConfig, String> {
@@ -194,11 +181,8 @@ fn partition_for_identity(
     home: &Path,
     core_build: &str,
 ) -> (Vec<UnitDevSource>, Vec<UnitDevSource>) {
-    if core_build != "dev" {
-        return (Vec::new(), units);
-    }
     units.into_iter().partition(|u| {
-        foreign_identity_home(Path::new(&u.source), home).is_none()
+        soksak_portable::identity::dev_source_accepted(Path::new(&u.source), home, core_build)
     })
 }
 

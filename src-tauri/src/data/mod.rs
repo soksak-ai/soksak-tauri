@@ -241,17 +241,9 @@ pub fn gen_id() -> String {
 }
 
 // ns = 호출 pluginId(또는 "core"). 경로/식별자 안전 문자만(plugins.rs sanitize_id 와 동형).
+// 규칙은 soksak-portable 이 소유한다 — 헬퍼도 같은 규칙으로 거른다.
 pub fn validate_ns(ns: &str) -> Result<(), String> {
-    let mut chars = ns.chars();
-    let head = chars
-        .next()
-        .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit());
-    let rest = chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
-    if head && rest {
-        Ok(())
-    } else {
-        Err(format!("잘못된 ns: {ns:?}"))
-    }
+    soksak_portable::kv::validate_ns(ns)
 }
 
 // 컬렉션명 — [a-z0-9_]. (ns 와 분리된 문자셋이라 메타 키 충돌 없음.)

@@ -1,0 +1,238 @@
+//! 정체성 파생 — "이 identifier 는 어느 홈·어느 빌드·어느 CLI 인가".
+//!
+//! 규칙은 identifier 문자열 하나에서 전부 나온다: 마지막 세그먼트가 `app` 이면 release,
+//! 그 외는 그 세그먼트가 그대로 빌드 이름이자 홈 접미가 된다. 하드코딩 목록이 없어 새
+//! identity 는 자동으로 자기 홈을 갖는다.
+//!
+//! 값의 출처는 전부 인자다. 환경(`HOME`/`USERPROFILE`)도, 플랫폼도 받아 쓴다 — 여기서
+//! 읽으면 헬퍼가 앱과 다른 홈을 답하고, 그 오답은 조용하다(없는 파일을 "없음"으로 답할
+//! 뿐 오류가 아니다).
+
+use std::path::{Path, PathBuf};
+
+/// release core 판정 — identifier 마지막 세그먼트가 `app`.
+pub fn is_release_identifier(identifier: &str) -> bool {
+    identifier.rsplit('.').next() == Some("app")
+}
+
+/// identifier → core build 이름(release/dev/debug/…).
+pub fn core_build_for_identifier(identifier: &str) -> String {
+    match identifier.rsplit('.').next().unwrap_or("app") {
+        "app" => "release".to_string(),
+        "dev" => "dev".to_string(),
+        "debug" => "debug".to_string(),
+        other => other.to_string(),
+    }
+}
+
+/// core build → CLI 이름(sok / sok-dev / sok-debug / …).
+pub fn cli_for_core_build(core_build: &str) -> String {
+    match core_build {
+        "release" => "sok".to_string(),
+        other => format!("sok-{other}"),
+    }
+}
+
+/// 홈 디렉터리명 접미 — `app` 은 무접미, 그 외는 `-<세그먼트>`.
+pub fn home_suffix_for_identifier(identifier: &str) -> String {
+    let seg = identifier.rsplit('.').next().unwrap_or("app");
+    if seg == "app" {
+        String::new()
+    } else {
+        format!("-{seg}")
+    }
+}
+
+/// 홈 베이스 경로 — 플랫폼과 환경 값을 받아 결정한다.
+///
+/// Windows 는 `HOME` 미설정이 흔하다. 빈 값이 되면 볼트·DB 경로가 cwd 상대 `.soksak` 로
+/// 깨지므로 `USERPROFILE` 로 폴백한다. macOS/Linux 는 `HOME` 그대로다(`USERPROFILE` 없음).
+pub fn home_base(is_windows: bool, home: Option<&str>, userprofile: Option<&str>) -> PathBuf {
+    fn non_empty(v: Option<&str>) -> Option<&str> {
+        v.filter(|s| !s.is_empty())
+    }
+    let base = if is_windows {
+        non_empty(home).or(non_empty(userprofile))
+    } else {
+        non_empty(home)
+    };
+    PathBuf::from(base.unwrap_or(""))
+}
+
+/// identity 홈(절대경로) — 베이스 + `.soksak<접미>`.
+///
+/// identifier 가 없으면 무접미(`~/.soksak`). runtime override 는 없다 — 홈은 identifier
+/// 에서만 파생된다(distribution 불변식).
+pub fn home_for(
+    identifier: Option<&str>,
+    is_windows: bool,
+    home: Option<&str>,
+    userprofile: Option<&str>,
+) -> PathBuf {
+    let base = home_base(is_windows, home, userprofile);
+    let suffix = identifier
+        .map(home_suffix_for_identifier)
+        .unwrap_or_default();
+    base.join(format!(".soksak{suffix}"))
+}
+
+/// `source` 가 이 홈이 아닌 **다른 identity 홈** 안에 있으면 그 홈 경로를 돌려준다.
+///
+/// identity 홈은 형제로 나란히 산다(`~/.soksak`, `~/.soksak-dev`, …). 새 identity 가
+/// 자동으로 자기 홈을 갖기 때문에 목록을 하드코딩하지 않고, 이 홈의 형제 중 같은 이름
+/// 규칙을 만족하는 디렉터리를 홈으로 본다. 홈 밖(작업 checkout)은 대상이 아니다.
+///
+/// 디스크를 만지지 않는다 — 이름 규칙만 본다.
+pub fn foreign_identity_home(source: &Path, home: &Path) -> Option<PathBuf> {
+    let parent = home.parent()?;
+    source
+        .ancestors()
+        .find(|anc| {
+            anc.parent() == Some(parent)
+                && *anc != home
+                && anc
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n == ".soksak" || n.starts_with(".soksak-"))
+        })
+        .map(Path::to_path_buf)
+}
+
+/// 이 홈이 이 dev 소스를 받아들이는가 — 홈 레인 원칙의 판정.
+///
+/// non-dev identity(debug·release)는 dev 소스를 **전부** 거부한다: 발행본 설치로만
+/// 검증한다. dev identity 는 다른 identity 홈 안의 소스만 거부한다.
+pub fn dev_source_accepted(source: &Path, home: &Path, core_build: &str) -> bool {
+    core_build == "dev" && foreign_identity_home(source, home).is_none()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn release_is_the_app_segment_and_nothing_else() {
+        assert!(is_release_identifier("com.soksak.app"));
+        assert!(!is_release_identifier("com.soksak.dev"));
+        assert!(!is_release_identifier("com.soksak.debug"));
+    }
+
+    #[test]
+    fn the_last_segment_names_the_build_and_the_cli() {
+        assert_eq!(core_build_for_identifier("com.soksak.app"), "release");
+        assert_eq!(core_build_for_identifier("com.soksak.dev"), "dev");
+        assert_eq!(core_build_for_identifier("com.soksak.debug"), "debug");
+        assert_eq!(cli_for_core_build("release"), "sok");
+        assert_eq!(cli_for_core_build("dev"), "sok-dev");
+        assert_eq!(cli_for_core_build("debug"), "sok-debug");
+    }
+
+    #[test]
+    fn a_new_identity_gets_its_own_home_without_a_list() {
+        assert_eq!(home_suffix_for_identifier("com.soksak.app"), "");
+        assert_eq!(home_suffix_for_identifier("com.soksak.dev"), "-dev");
+        assert_eq!(home_suffix_for_identifier("com.soksak.debug"), "-debug");
+        assert_eq!(home_suffix_for_identifier("com.soksak.beta"), "-beta");
+        assert_eq!(core_build_for_identifier("com.soksak.beta"), "beta");
+        assert_eq!(cli_for_core_build("beta"), "sok-beta");
+    }
+
+    #[test]
+    fn windows_falls_back_to_userprofile_and_others_do_not() {
+        assert_eq!(
+            home_base(false, Some("/home/max"), Some("C:\\Users\\max")),
+            PathBuf::from("/home/max")
+        );
+        assert_eq!(
+            home_base(true, Some("H:\\home"), Some("C:\\Users\\max")),
+            PathBuf::from("H:\\home")
+        );
+        assert_eq!(
+            home_base(true, None, Some("C:\\Users\\max")),
+            PathBuf::from("C:\\Users\\max")
+        );
+        assert_eq!(
+            home_base(true, Some(""), Some("C:\\Users\\max")),
+            PathBuf::from("C:\\Users\\max")
+        );
+        assert_eq!(
+            home_base(false, None, Some("C:\\Users\\max")),
+            PathBuf::from("")
+        );
+    }
+
+    #[test]
+    fn the_home_derives_from_the_identifier_only() {
+        assert_eq!(
+            home_for(Some("com.soksak.debug"), false, Some("/home/max"), None),
+            PathBuf::from("/home/max/.soksak-debug")
+        );
+        assert_eq!(
+            home_for(Some("com.soksak.app"), false, Some("/home/max"), None),
+            PathBuf::from("/home/max/.soksak")
+        );
+        assert_eq!(
+            home_for(Some("com.soksak.beta"), false, Some("/home/max"), None),
+            PathBuf::from("/home/max/.soksak-beta")
+        );
+        assert_eq!(
+            home_for(None, false, Some("/home/max"), None),
+            PathBuf::from("/home/max/.soksak")
+        );
+    }
+
+    #[test]
+    fn the_platform_is_an_argument_not_a_compile_target() {
+        // 같은 입력이 플랫폼 인자로만 갈린다 — 바이너리가 무엇인지로 갈리지 않는다.
+        assert_ne!(
+            home_for(Some("com.soksak.app"), true, None, Some("C:\\Users\\max")),
+            home_for(Some("com.soksak.app"), false, None, Some("C:\\Users\\max"))
+        );
+    }
+
+    #[test]
+    fn a_sibling_identity_home_is_foreign() {
+        let home = Path::new("/u/max/.soksak-dev");
+        assert_eq!(
+            foreign_identity_home(Path::new("/u/max/.soksak-debug/plugins/x"), home),
+            Some(PathBuf::from("/u/max/.soksak-debug"))
+        );
+        assert_eq!(
+            foreign_identity_home(Path::new("/u/max/.soksak/plugins/x"), home),
+            Some(PathBuf::from("/u/max/.soksak"))
+        );
+    }
+
+    #[test]
+    fn this_home_and_plain_checkouts_are_not_foreign() {
+        let home = Path::new("/u/max/.soksak-dev");
+        assert_eq!(
+            foreign_identity_home(Path::new("/u/max/.soksak-dev/plugins/x"), home),
+            None
+        );
+        assert_eq!(
+            foreign_identity_home(Path::new("/u/max/work/plugin"), home),
+            None
+        );
+        // 이름이 비슷해도 형제가 아니면 홈이 아니다.
+        assert_eq!(
+            foreign_identity_home(Path::new("/other/.soksak-debug/x"), home),
+            None
+        );
+    }
+
+    #[test]
+    fn only_the_dev_lane_accepts_a_dev_source() {
+        let home = Path::new("/u/max/.soksak-dev");
+        let own = Path::new("/u/max/work/plugin");
+        assert!(dev_source_accepted(own, home, "dev"));
+        assert!(!dev_source_accepted(own, home, "debug"));
+        assert!(!dev_source_accepted(own, home, "release"));
+        // dev 레인이라도 남의 홈 안은 거부한다.
+        assert!(!dev_source_accepted(
+            Path::new("/u/max/.soksak-debug/plugins/x"),
+            home,
+            "dev"
+        ));
+    }
+}

@@ -4806,6 +4806,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "soksak-helper"
+version = "0.0.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "soksak-portable",
+ "soksak-spec-socket",
+]
+
+[[package]]
 name = "soksak-portable"
 version = "0.0.1"
 dependencies = [

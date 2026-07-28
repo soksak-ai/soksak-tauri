@@ -21,26 +21,21 @@ use std::sync::OnceLock;
 static HOME: OnceLock<PathBuf> = OnceLock::new();
 static IDENTIFIER: OnceLock<String> = OnceLock::new();
 
+// 파생 규칙(identifier → release·core build·CLI·홈 접미)은 soksak-portable 이 소유한다.
+// 여기 남는 것은 그 규칙에 넣을 값을 앰비언트에서 읽어 오는 일뿐이다.
+
 // release core 판정 — identifier 마지막 세그먼트가 "app". 이 값은 updater 채널만 결정한다.
 // core build identity와 확장 unit의 development/official source 선택은 독립 축이다.
 fn is_release_identifier(identifier: &str) -> bool {
-    identifier.rsplit('.').next() == Some("app")
+    soksak_portable::identity::is_release_identifier(identifier)
 }
 
 pub fn core_build_for_identifier(identifier: &str) -> String {
-    match identifier.rsplit('.').next().unwrap_or("app") {
-        "app" => "release".to_string(),
-        "dev" => "dev".to_string(),
-        "debug" => "debug".to_string(),
-        other => other.to_string(),
-    }
+    soksak_portable::identity::core_build_for_identifier(identifier)
 }
 
 pub fn cli_for_core_build(core_build: &str) -> String {
-    match core_build {
-        "release" => "sok".to_string(),
-        other => format!("sok-{other}"),
-    }
+    soksak_portable::identity::cli_for_core_build(core_build)
 }
 
 /// release core identity 여부. init 전(유닛테스트 등)은 false.
@@ -57,41 +52,16 @@ pub fn app_is_release() -> bool {
     is_release()
 }
 
-fn suffix_for_identifier(identifier: &str) -> String {
-    let seg = identifier.rsplit('.').next().unwrap_or("app");
-    if seg == "app" {
-        String::new()
-    } else {
-        format!("-{seg}")
-    }
-}
-
-// 홈 베이스 경로 결정(순수 함수 — env 없이 인자로 검증). Windows 는 HOME 미설정이 흔해
-// 빈 값이 되면 볼트·DB 경로가 cwd 상대 ".soksak" 로 깨지므로 USERPROFILE 로 폴백한다(fs.rs
-// home_dir 선례와 동형). macOS/Linux 는 HOME 그대로(USERPROFILE 없음).
-fn home_base(is_windows: bool, home: Option<&str>, userprofile: Option<&str>) -> PathBuf {
-    fn non_empty(v: Option<&str>) -> Option<&str> {
-        v.filter(|s| !s.is_empty())
-    }
-    let base = if is_windows {
-        non_empty(home).or(non_empty(userprofile))
-    } else {
-        non_empty(home)
-    };
-    PathBuf::from(base.unwrap_or(""))
-}
-
 // 순수 — env 값을 인자로 받아 홈을 결정(테스트 격리, 병렬 안전). identity 홈은 identifier 에서만 파생되며
-// runtime override 가 없다 — home_base(HOME/USERPROFILE 폴백)에 identity 접미를 붙일 뿐이다.
+// runtime override 가 없다 — 홈 베이스(Windows 는 HOME 미설정 시 USERPROFILE 폴백)에 identity
+// 접미를 붙일 뿐이다.
 fn resolve_from(
     identifier: Option<&str>,
     is_windows: bool,
     home: Option<&str>,
     userprofile: Option<&str>,
 ) -> PathBuf {
-    let base = home_base(is_windows, home, userprofile);
-    let suffix = identifier.map(suffix_for_identifier).unwrap_or_default();
-    base.join(format!(".soksak{suffix}"))
+    soksak_portable::identity::home_for(identifier, is_windows, home, userprofile)
 }
 
 fn resolve(identifier: Option<&str>) -> PathBuf {
@@ -123,7 +93,7 @@ pub fn identifier() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{cli_for_core_build, core_build_for_identifier, suffix_for_identifier};
+    use super::{cli_for_core_build, core_build_for_identifier};
 
     #[test]
     fn release_identifier_contract() {
@@ -136,40 +106,58 @@ mod tests {
     #[test]
     fn identity_suffix_contract() {
         // 계약: app=무접미, 그 외 identity=마지막 세그먼트 접미. 새 identity 자동 수용.
-        assert_eq!(suffix_for_identifier("com.soksak.app"), "");
-        assert_eq!(suffix_for_identifier("com.soksak.dev"), "-dev");
-        assert_eq!(suffix_for_identifier("com.soksak.debug"), "-debug");
-        assert_eq!(suffix_for_identifier("com.soksak.beta"), "-beta");
+        use super::resolve_from;
+        use std::path::PathBuf;
+        let home_of = |id: &str| resolve_from(Some(id), false, Some("/home/max"), None);
+        assert_eq!(
+            home_of("com.soksak.app"),
+            PathBuf::from("/home/max/.soksak")
+        );
+        assert_eq!(
+            home_of("com.soksak.dev"),
+            PathBuf::from("/home/max/.soksak-dev")
+        );
+        assert_eq!(
+            home_of("com.soksak.debug"),
+            PathBuf::from("/home/max/.soksak-debug")
+        );
+        assert_eq!(
+            home_of("com.soksak.beta"),
+            PathBuf::from("/home/max/.soksak-beta")
+        );
     }
 
     #[test]
     fn home_base_falls_back_to_userprofile_on_windows() {
-        use super::home_base;
+        use super::resolve_from;
         use std::path::PathBuf;
+        let base = |is_windows, home, userprofile| {
+            resolve_from(Some("com.soksak.app"), is_windows, home, userprofile)
+        };
         // 비Windows: HOME 사용, USERPROFILE 무시.
         assert_eq!(
-            home_base(false, Some("/home/max"), Some("C:\\Users\\max")),
-            PathBuf::from("/home/max")
+            base(false, Some("/home/max"), Some("C:\\Users\\max")),
+            PathBuf::from("/home/max/.soksak")
         );
         // Windows: HOME 있으면 그대로.
         assert_eq!(
-            home_base(true, Some("H:\\home"), Some("C:\\Users\\max")),
-            PathBuf::from("H:\\home")
+            base(true, Some("H:\\home"), Some("C:\\Users\\max")),
+            PathBuf::from("H:\\home").join(".soksak")
         );
         // Windows: HOME 미설정 → USERPROFILE 폴백(빈 HOME 의 cwd 상대 ".soksak" 붕괴 방지).
         assert_eq!(
-            home_base(true, None, Some("C:\\Users\\max")),
-            PathBuf::from("C:\\Users\\max")
+            base(true, None, Some("C:\\Users\\max")),
+            PathBuf::from("C:\\Users\\max").join(".soksak")
         );
         // Windows: HOME 빈 문자열도 USERPROFILE 폴백.
         assert_eq!(
-            home_base(true, Some(""), Some("C:\\Users\\max")),
-            PathBuf::from("C:\\Users\\max")
+            base(true, Some(""), Some("C:\\Users\\max")),
+            PathBuf::from("C:\\Users\\max").join(".soksak")
         );
         // 비Windows: HOME 미설정 → 빈 베이스(기존 동작 유지 — USERPROFILE 로 새지 않는다).
         assert_eq!(
-            home_base(false, None, Some("C:\\Users\\max")),
-            PathBuf::from("")
+            base(false, None, Some("C:\\Users\\max")),
+            PathBuf::from(".soksak")
         );
     }
 

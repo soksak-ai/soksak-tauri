@@ -263,31 +263,13 @@ fn themes_dir() -> Result<PathBuf, String> {
     Ok(dir)
 }
 
-#[derive(Serialize)]
-pub struct ThemeFile {
-    file: String,
-    content: String,
-}
+pub use soksak_portable::themes::ThemeFile;
 
-// 외부 테마 디렉토리의 *.json 전부(내용 포함).
+// 외부 테마 디렉토리의 *.json 전부(내용 포함). 훑기는 soksak-portable 이 소유한다 —
+// 여기서는 홈에서 디렉토리를 해소하는 일만 한다.
 #[tauri::command]
 pub fn themes_scan() -> Result<Vec<ThemeFile>, String> {
-    let dir = themes_dir()?;
-    let mut out = Vec::new();
-    for entry in std::fs::read_dir(&dir).map_err(|e| e.to_string())? {
-        let Ok(entry) = entry else { continue };
-        let path = entry.path();
-        if path.extension().is_some_and(|e| e == "json") {
-            if let Ok(content) = std::fs::read_to_string(&path) {
-                out.push(ThemeFile {
-                    file: path.to_string_lossy().to_string(),
-                    content,
-                });
-            }
-        }
-    }
-    out.sort_by(|a, b| a.file.cmp(&b.file));
-    Ok(out)
+    soksak_portable::themes::scan(&themes_dir()?)
 }
 
 // 테마 파일 설치(외부 경로 → ~/.soksak/themes/). 동명 파일은 덮어쓴다(갱신).

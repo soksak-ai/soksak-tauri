@@ -75,46 +75,15 @@ fn set_tree_writable(dir: &Path, writable: bool) {
 
 // ── 스캔 ────────────────────────────────────────────────────────────────────
 
-#[derive(Serialize)]
-pub struct PluginScanEntry {
-    dir: String,
-    dir_name: String,
-    manifest: Option<String>,
-    // .soksak.json 원문(있으면) — 공식 설치 상태(version=<semver>, repo, branch).
-    // legacy version=dev|local은 프론트 loader가 거부하고 development-units.json으로 안내한다.
-    state: Option<String>,
-    error: Option<String>,
-}
+// state = .soksak.json 원문(있으면) — 공식 설치 상태(version=<semver>, repo, branch).
+// legacy version=dev|local은 프론트 loader가 거부하고 development-units.json으로 안내한다.
+pub use soksak_portable::plugin_dir::PluginScanEntry;
 
-// 설치 디렉토리의 직속 하위 디렉토리 전부(파일/"." 시작 제외 — 설치 중 .tmp-* 도 자연
-// 제외). plugin.json·.soksak.json 원문만 나르고 내용 검증은 프론트 스펙(단일진실)이 담당.
-// 읽기 실패는 침묵 누락 대신 error 로 노출(§0-3 거부 사유 표시).
+// 설치 디렉토리의 직속 하위 디렉토리 전부. 훑기는 soksak-portable 이 소유한다 —
+// 여기서는 홈에서 베이스 디렉토리를 해소하는 일만 한다.
 #[tauri::command]
 pub fn plugin_scan() -> Result<Vec<PluginScanEntry>, String> {
-    let base = plugins_dir()?;
-    let mut out = Vec::new();
-    for entry in std::fs::read_dir(&base).map_err(|e| e.to_string())? {
-        let Ok(entry) = entry else { continue };
-        let path = entry.path();
-        let name = entry.file_name().to_string_lossy().to_string();
-        if !path.is_dir() || name.starts_with('.') {
-            continue;
-        }
-        let (manifest, error) = match std::fs::read_to_string(path.join("plugin.json")) {
-            Ok(m) => (Some(m), None),
-            Err(e) => (None, Some(format!("plugin.json 읽기 실패: {e}"))),
-        };
-        let state = std::fs::read_to_string(path.join(".soksak.json")).ok();
-        out.push(PluginScanEntry {
-            dir: path.to_string_lossy().to_string(),
-            dir_name: name,
-            manifest,
-            state,
-            error,
-        });
-    }
-    out.sort_by(|a, b| a.dir_name.cmp(&b.dir_name));
-    Ok(out)
+    soksak_portable::plugin_dir::scan(&plugins_dir()?)
 }
 
 // 공식 설치 상태 파일(.soksak.json) 기록 헬퍼 — version=<semver>, repo(원격 URL), branch.

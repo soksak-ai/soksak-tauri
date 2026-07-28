@@ -13,7 +13,11 @@
 //! 이 규칙은 문서가 아니라 게이트가 시행한다(`scripts/portable-gate.sh`,
 //! `src/portable_gate.rs`). 새 코드를 여기 넣기 전에 그 게이트를 먼저 읽어라.
 
+pub mod identity;
 pub mod integrity;
+pub mod kv;
 pub mod pathx;
+pub mod plugin_dir;
 pub mod session;
+pub mod themes;
 pub mod udp;
