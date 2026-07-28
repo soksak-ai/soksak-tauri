@@ -12,6 +12,7 @@ description = "Helper process that serves framework-free commands over a socket:
 base64 = "0.22"
 soksak-spec-pty = { path = "../soksak-spec-pty" }
 soksak-core = { path = "../soksak-core" }
+soksak-store = { path = "../soksak-store" }
 soksak-watch = { path = "../soksak-watch" }
 soksak-spec-socket = { path = "../soksak-spec-socket" }
 serde = { version = "1", features = ["derive"] }

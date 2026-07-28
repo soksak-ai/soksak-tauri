@@ -1,0 +1,16 @@
+[package]
+name = "soksak-store"
+version = "0.0.1"
+edition = "2021"
+
+[dependencies]
+# 인프로세스 SQLite(FTS5 trigram = CJK 부분일치). 이 의존성 때문에 이 규칙은 soksak-core 에
+# 못 산다 — 코어는 무의존을 지킨다. 저장소는 프레임워크가 아니라 **자원**이다.
+# 저장소와 같은 판을 쓴다 — 판이 갈리면 같은 파일을 두 라이브러리가 열고 잠금 규약이 어긋난다.
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rand = "0.8"
+base64 = "0.22"
+soksak-core = { path = "../soksak-core" }
+soksak-seal = { path = "../soksak-seal" }

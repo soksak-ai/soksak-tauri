@@ -4777,6 +4777,7 @@ dependencies = [
  "soksak-core",
  "soksak-spec-pty",
  "soksak-spec-socket",
+ "soksak-store",
  "soksak-watch",
 ]
 
@@ -4815,6 +4816,7 @@ dependencies = [
  "soksak-spec-pty",
  "soksak-spec-service",
  "soksak-spec-socket",
+ "soksak-store",
  "soksak-watch",
  "tao",
  "tar",
@@ -4894,6 +4896,19 @@ dependencies = [
 [[package]]
 name = "soksak-spec-socket"
 version = "0.0.1"
+
+[[package]]
+name = "soksak-store"
+version = "0.0.1"
+dependencies = [
+ "base64 0.22.1",
+ "rand 0.8.6",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "soksak-core",
+ "soksak-seal",
+]
 
 [[package]]
 name = "soksak-watch"

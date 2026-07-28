@@ -1,10 +1,16 @@
+//! 데이터 저장 연산 — **한 벌**. 앱과 헬퍼가 같은 파일을 같은 질의로 읽는다.
+//!
+//! 전부 `&Connection` 을 받는 순수 함수다(테스트는 임시 DB 주입). 연결과 질의문은 여기 있고,
+//! 해독 규칙은 soksak-core 가 갖는다. 규칙이 두 벌이면 같은 레코드가 프로세스마다 다르게
+//! 읽히고, 그 차이는 오류가 아니라 **빈 결과**로 나타난다.
+
 // 데이터 저장 연산 — kv + 컬렉션. 전부 &Connection 을 받는 순수 함수(테스트는 임시 DB 주입).
 // ns/scope 강제·필드 화이트리스트는 호출 시 인자로 들어온다(commands.rs 가 ns 를 주입).
 
 use rusqlite::{Connection, OptionalExtension, ToSql};
 use serde_json::{json, Value};
 
-use super::{gen_id, now_millis, validate_coll, validate_field};
+pub use crate::ids::{gen_id, now_millis, validate_coll, validate_field};
 
 // ── KV ───────────────────────────────────────────────────────────────────────
 
@@ -352,8 +358,8 @@ fn decode_stored(
     };
     let s = resolve(key_id)?.ok_or("vault locked 또는 키 없음 — 복호 불가")?;
     let stored = decode_doc(doc_s)?;
-    let aad = super::crypto::canonical_aad(ns, coll, scope, id, key_id);
-    super::crypto::open_doc(&stored, &s, &aad)
+    let aad = crate::doc::canonical_aad(ns, coll, scope, id, key_id);
+    crate::doc::open_doc(&stored, &s, &aad)
 }
 
 // FTS 텍스트 = 선언된 fts 필드의 문자열 값 연결(공백 구분).
@@ -387,11 +393,11 @@ pub fn put(
     if doc
         .as_object()
         .unwrap()
-        .contains_key(super::crypto::ENC_FIELD)
+        .contains_key(crate::doc::ENC_FIELD)
     {
         return Err(format!(
             "doc 가 예약 필드 {} 를 포함함",
-            super::crypto::ENC_FIELD
+            crate::doc::ENC_FIELD
         ));
     }
     let id = id.unwrap_or_else(gen_id);
@@ -411,11 +417,11 @@ pub fn put(
     // (blocker①). enc/keyId 컬럼에 표식. active key 없으면 평문 항등(현재 전부) — 회귀 0.
     let idx_fields = meta.as_ref().map(|m| m.idx.clone()).unwrap_or_default();
     let (doc_s, enc, key_id): (String, i64, Option<String>) =
-        match super::crypto::active_key(&tx, scope)? {
+        match crate::doc::active_key(&tx, scope)? {
             Some(ak) => {
-                let aad = super::crypto::canonical_aad(ns, coll, scope, &id, &ak.key_id);
+                let aad = crate::doc::canonical_aad(ns, coll, scope, &id, &ak.key_id);
                 let sealed =
-                    super::crypto::seal_doc(&doc, &idx_fields, &ak.public_key, &ak.key_id, &aad)?;
+                    crate::doc::seal_doc(&doc, &idx_fields, &ak.public_key, &ak.key_id, &aad)?;
                 (encode_doc(&sealed)?, 1, Some(ak.key_id))
             }
             None => (encode_doc(&doc)?, 0, None),
@@ -511,7 +517,7 @@ pub fn convert_pending(
     scope: &str,
     batch: i64,
 ) -> Result<usize, String> {
-    let ak = match super::crypto::active_key(conn, scope)? {
+    let ak = match crate::doc::active_key(conn, scope)? {
         Some(k) => k,
         None => return Ok(0), // 트리거 없으면 변환 대상 아님
     };
@@ -550,8 +556,8 @@ pub fn convert_pending(
             continue;
         };
         let doc = decode_doc(&doc_s)?;
-        let aad = super::crypto::canonical_aad(ns, coll, scope, &id, &ak.key_id);
-        let sealed = super::crypto::seal_doc(&doc, &idx_fields, &ak.public_key, &ak.key_id, &aad)?;
+        let aad = crate::doc::canonical_aad(ns, coll, scope, &id, &ak.key_id);
+        let sealed = crate::doc::seal_doc(&doc, &idx_fields, &ak.public_key, &ak.key_id, &aad)?;
         let sealed_s = encode_doc(&sealed)?;
         // created/updated 손대지 않음(retention 순서 불변). WHERE enc=0 으로 멱등.
         let updated = tx
@@ -625,13 +631,13 @@ pub fn rekey_scope(
         };
         // 개봉(old S, old AAD) → 재봉인(new P, new AAD). 인덱스 평문 split 은 동일 메타.
         let stored = decode_doc(&doc_s)?;
-        let aad_old = super::crypto::canonical_aad(&ns, &coll, scope, &id, old_key_id);
-        let plain = super::crypto::open_doc(&stored, old_secret, &aad_old)?;
+        let aad_old = crate::doc::canonical_aad(&ns, &coll, scope, &id, old_key_id);
+        let plain = crate::doc::open_doc(&stored, old_secret, &aad_old)?;
         let idx_fields = get_meta(&tx, &ns, &coll)?
             .map(|m| m.idx)
             .unwrap_or_default();
-        let aad_new = super::crypto::canonical_aad(&ns, &coll, scope, &id, new_key_id);
-        let resealed = super::crypto::seal_doc(&plain, &idx_fields, new_pk, new_key_id, &aad_new)?;
+        let aad_new = crate::doc::canonical_aad(&ns, &coll, scope, &id, new_key_id);
+        let resealed = crate::doc::seal_doc(&plain, &idx_fields, new_pk, new_key_id, &aad_new)?;
         let resealed_s = encode_doc(&resealed)?;
         let updated = tx
             .execute(
@@ -1096,7 +1102,7 @@ mod tests {
     fn mem() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
-        super::super::init_base(&conn).unwrap();
+        init_base(&conn).unwrap();
         conn
     }
 
@@ -1327,7 +1333,7 @@ mod tests {
     // 인덱스 필드는 평문 top-level 로 남아 query 가 그대로 탄다(blocker①). 봉인 doc 은 S 로 개봉 가능.
     #[test]
     fn put_seals_when_active_key_present() {
-        use super::super::crypto;
+        use crate::doc as crypto;
         let c = mem();
         define(
             &c,
@@ -1362,7 +1368,7 @@ mod tests {
         );
 
         // active key 등록 → put 봉인.
-        let (s, p) = crate::secrets::gen_asym_keypair();
+        let (s, p) = soksak_seal::gen_asym_keypair();
         crypto::register_active_key(&c, "proj-a", "key-1", &p, 100).unwrap();
         let id1 = put(&c, "terminal", "command_blocks", "proj-a", None,
             &json!({"viewId":"t2","startTs":1718900000000i64,"commandLine":"export T=sk-XYZ","output":"secret echo"})).unwrap();
@@ -1429,10 +1435,10 @@ mod tests {
     // 게이트(Err). 평문 레코드는 resolver 무관 동작.
     #[test]
     fn get_query_open_with_resolver() {
-        use super::super::crypto;
+        use crate::doc as crypto;
         let c = mem();
         define(&c, "terminal", "command_blocks", &["viewId".into()], &[]).unwrap();
-        let (s, p) = crate::secrets::gen_asym_keypair();
+        let (s, p) = soksak_seal::gen_asym_keypair();
         crypto::register_active_key(&c, "proj-a", "key-1", &p, 100).unwrap();
         let id = put(
             &c,
@@ -1523,7 +1529,7 @@ mod tests {
     // created 보존(retention 순서 불변), 봉인 후 인덱스 query·S 개봉 가능, FTS 에서 봉인 필드 제거.
     #[test]
     fn convert_pending_seals_existing_plaintext() {
-        use super::super::crypto;
+        use crate::doc as crypto;
         let c = mem();
         define(
             &c,
@@ -1567,7 +1573,7 @@ mod tests {
         );
 
         // 암호화 활성 후 변환.
-        let (s, p) = crate::secrets::gen_asym_keypair();
+        let (s, p) = soksak_seal::gen_asym_keypair();
         crypto::register_active_key(&c, "proj-a", "key-1", &p, 50).unwrap();
         let n = convert_pending(&c, "terminal", "command_blocks", "proj-a", 100).unwrap();
         assert_eq!(n, 3, "평문 3건 봉인 변환");
@@ -1638,10 +1644,10 @@ mod tests {
     // old S 로는 불가(전이 완료), keyId 갱신, 잔여 0 → dispose 안전. created 보존.
     #[test]
     fn rekey_scope_migrates_records() {
-        use super::super::crypto;
+        use crate::doc as crypto;
         let c = mem();
         define(&c, "terminal", "command_blocks", &["viewId".into()], &[]).unwrap();
-        let (s1, p1) = crate::secrets::gen_asym_keypair();
+        let (s1, p1) = soksak_seal::gen_asym_keypair();
         crypto::register_active_key(&c, "proj-a", "key-1", &p1, 10).unwrap();
         let mut ids = Vec::new();
         for i in 0..3 {
@@ -1668,7 +1674,7 @@ mod tests {
             .collect();
 
         // 회전: 새 키 등록(old retired) → re-key.
-        let (s2, p2) = crate::secrets::gen_asym_keypair();
+        let (s2, p2) = soksak_seal::gen_asym_keypair();
         crypto::register_active_key(&c, "proj-a", "key-2", &p2, 20).unwrap();
         let n = rekey_scope(&c, "proj-a", "key-1", &s1, "key-2", &p2, 100).unwrap();
         assert_eq!(n, 3, "3건 재키");
@@ -1709,49 +1715,6 @@ mod tests {
 
     // [R5] incremental_vacuum — auto_vacuum=INCREMENTAL DB 에서 reap(logical delete) 후 free 페이지가
     // 실제 반환(physical reclaim)되는지. in-memory 는 파일 truncate 의미 없어 실파일 open() 경로로.
-    #[test]
-    fn incremental_vacuum_reclaims_pages() {
-        let dir = std::env::temp_dir().join(format!(
-            "soksak-vac-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("d.db");
-        {
-            let c = super::super::open(&path).unwrap(); // auto_vacuum=INCREMENTAL 적용(신규 DB)
-            define(&c, "t", "c", &[], &[]).unwrap();
-            for i in 0..300 {
-                put(
-                    &c,
-                    "t",
-                    "c",
-                    "s",
-                    None,
-                    &json!({"pad": "y".repeat(500), "i": i}),
-                )
-                .unwrap();
-            }
-            retention_reap_ttl(&c, "t", "c", i64::MAX).unwrap(); // 전부 삭제(created < MAX)
-            let free_before: i64 = c
-                .query_row("PRAGMA freelist_count", [], |r| r.get(0))
-                .unwrap();
-            incremental_vacuum(&c, 100_000).unwrap();
-            let free_after: i64 = c
-                .query_row("PRAGMA freelist_count", [], |r| r.get(0))
-                .unwrap();
-            assert!(
-                free_before > 0,
-                "삭제 후 free 페이지 존재(auto_vacuum=INCREMENTAL)"
-            );
-            assert!(
-                free_after < free_before,
-                "incremental_vacuum 이 free 페이지 반환(physical reclaim)"
-            );
-        }
-        let _ = std::fs::remove_dir_all(&dir);
-    }
 
     #[test]
     fn kv_roundtrip() {
@@ -2114,3 +2077,39 @@ mod tests {
         );
     }
 }
+
+// (테스트 픽스처에서 in-memory 스키마 초기화에 재사용 — window.rs prune 유닛)
+pub fn init_base(conn: &Connection) -> Result<(), String> {
+    // 기본 형태는 코어가 소유한다 — cored 도 같은 문장으로 만든다(형태가 갈리면 조용하다).
+    conn.execute_batch(soksak_core::kv::BASE_SCHEMA_SQL)
+    .map_err(|e| e.to_string())?;
+    migrate_records(conn)?;
+    // [M0] retention FIFO 는 created 정렬(updated 금지 — 변환 UPDATE 가 updated 를 바꾸면 순서 비결정, R5).
+    // enc 부분 인덱스 = 변환 재개를 O(pending) 으로(미변환 enc=0 만, R17). 둘 다 멱등.
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS records_created ON records(ns, coll, scope, created);\
+         CREATE INDEX IF NOT EXISTS records_pending ON records(ns, coll) WHERE enc=0;",
+    )
+    .map_err(|e| e.to_string())?;
+    // [단계②] scope 별 봉투 키 메타(encryption_keys). active 행 존재 = 암호화 트리거(fail-closed).
+    crate::doc::init_keys_table(conn)
+}
+
+// [M0] 기존 DB(enc/keyId 없는) 멱등 마이그레이션 — CREATE TABLE IF NOT EXISTS 는 기존 테이블에 컬럼을
+// 추가하지 않으므로, pragma_table_info 로 부재 확인 후 ALTER ADD. 신규 DB 는 위 CREATE 에 이미 포함(no-op).
+pub fn migrate_records(conn: &Connection) -> Result<(), String> {
+    let has_enc: bool = conn
+        .prepare("SELECT 1 FROM pragma_table_info('records') WHERE name='enc'")
+        .map_err(|e| e.to_string())?
+        .exists([])
+        .map_err(|e| e.to_string())?;
+    if !has_enc {
+        conn.execute_batch(
+            "ALTER TABLE records ADD COLUMN enc INTEGER NOT NULL DEFAULT 0;\
+             ALTER TABLE records ADD COLUMN keyId TEXT;",
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+

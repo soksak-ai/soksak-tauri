@@ -175,6 +175,35 @@ pub const COMMANDS: &[Command] = &[
         returns: "Value[] (도장 찍힌 항목, 오래된 것부터)",
         run: run_activity_recent,
     },
+    // ── 데이터 컬렉션 ────────────────────────────────────────────────────
+    // 질의 규칙과 질의문은 soksak-store 한 벌이 소유한다 — 두 벌이면 같은 레코드가 프로세스마다
+    // 다르게 읽히고, 그 차이는 오류가 아니라 **빈 결과**다.
+    Command {
+        name: "data_define",
+        args: &[
+            Arg { name: "ns", ty: "string", required: true },
+            Arg { name: "coll", ty: "string", required: true },
+            Arg { name: "indexes", ty: "string[]", required: true },
+            Arg { name: "fts", ty: "string[]", required: true },
+        ],
+        returns: "null",
+        run: run_data_define,
+    },
+    Command {
+        name: "data_query",
+        args: &[
+            Arg { name: "ns", ty: "string", required: true },
+            Arg { name: "coll", ty: "string", required: true },
+            Arg { name: "scope", ty: "string?", required: false },
+            Arg { name: "filter", ty: "object?", required: false },
+            Arg { name: "order", ty: "string?", required: false },
+            Arg { name: "desc", ty: "bool?", required: false },
+            Arg { name: "limit", ty: "i64?", required: false },
+            Arg { name: "offset", ty: "i64?", required: false },
+        ],
+        returns: "object[]",
+        run: run_data_query,
+    },
     // ── 파일 감시 ──────────────────────────────────────────────────────────
     // 변경 사건은 창으로 간다. 이 프로세스에는 창이 없으므로 **방송**으로 넘긴다 —
     // 감시만 하고 못 뿌리면 트리가 조용히 낡는다(오류 없이 "안 바뀐다").
@@ -953,6 +982,64 @@ fn run_activity_recent(ctx: &Ctx, params: &Value) -> Outcome {
         }
         // 앱의 기본 상한과 같다(200) — 다르면 같은 호출이 프로세스마다 다른 길이를 답한다.
         Ok(act::pick_recent(entries, a.since, a.limit.unwrap_or(200)))
+    })
+}
+
+#[derive(serde::Deserialize)]
+struct DataDefine {
+    ns: String,
+    coll: String,
+    indexes: Vec<String>,
+    fts: Vec<String>,
+}
+
+fn run_data_define(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: DataDefine| {
+        soksak_core::kv::validate_ns(&a.ns)?;
+        let conn = rusqlite::Connection::open(ctx.db_path()).map_err(|e| e.to_string())?;
+        soksak_store::store::define(&conn, &a.ns, &a.coll, &a.indexes, &a.fts).map(|_| Value::Null)
+    })
+}
+
+#[derive(serde::Deserialize)]
+struct DataQuery {
+    ns: String,
+    coll: String,
+    #[serde(default)]
+    scope: Option<String>,
+    #[serde(default)]
+    filter: Option<Value>,
+    #[serde(default)]
+    order: Option<String>,
+    #[serde(default)]
+    desc: Option<bool>,
+    #[serde(default)]
+    limit: Option<i64>,
+    #[serde(default)]
+    offset: Option<i64>,
+}
+
+fn run_data_query(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: DataQuery| {
+        soksak_core::kv::validate_ns(&a.ns)?;
+        let conn = rusqlite::Connection::open(ctx.db_path()).map_err(|e| e.to_string())?;
+        // 봉인된 필드는 이 프로세스가 못 연다(볼트 없음) — 열쇠 해소자는 **없음**을 답한다.
+        // 지어낸 열쇠로 열려 들면 쓰레기를 평문으로 답하게 된다.
+        let rows = soksak_store::store::query(
+            &conn,
+            &a.ns,
+            &a.coll,
+            a.scope.as_deref(),
+            a.filter.as_ref(),
+            a.order.as_deref(),
+            a.desc.unwrap_or(true),
+            a.limit,
+            a.offset,
+            // 봉인 필드를 열 열쇠가 없다는 것을 **선언한다**. 지어낸 해소자를 주면 쓰레기를
+            // 평문으로 답하고, 그 오답은 오류로 보이지 않는다.
+            None,
+        )?;
+        Ok(Value::Array(rows))
     })
 }
 
