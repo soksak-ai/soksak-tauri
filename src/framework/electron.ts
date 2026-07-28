@@ -254,8 +254,18 @@ export const electronFramework: AppFramework = {
     return token as unknown as Stream<T>;
   },
 
-  listen: async <T,>(event: string, cb: (e: FrameworkEvent<T>) => void) =>
-    bridge().onEvent(event, (payload) => cb({ payload: payload as T })),
+  // 창-스코프 구독과 **같은 법**이다: 두 출처를 한 구독으로 받는다. 프레임워크가 미는 것과
+  // 이 창이 뿌리는 것(emitLocal). 전역만 로컬 버스를 빼면, 이 창 안에서 나는 사실을 전역으로
+  // 구독하는 쪽이 영영 안 불린다 — 그 침묵은 오류가 아니라 "페이지는 렌더됐는데 주소창이
+  // about:blank 에 멈춘다"로 나타난다(실측 2026-07-28: 플러그인이 browser-nav 를 못 받았다).
+  listen: async <T,>(event: string, cb: (e: FrameworkEvent<T>) => void) => {
+    const offBridge = bridge().onEvent(event, (payload) => cb({ payload: payload as T }));
+    const offLocal = onLocal(event, (payload) => cb({ payload: payload as T }));
+    return () => {
+      offBridge();
+      offLocal();
+    };
+  },
 
   currentWindow: () => currentWindowHandle(),
 
