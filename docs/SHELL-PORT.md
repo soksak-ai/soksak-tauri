@@ -92,7 +92,7 @@ Two things were deliberately left. `native_reload` keeps its webview handle: a r
 
 `src-tauri/crates/soksak-helper` is a process with no window, no webview, and no app handle. It listens on a unix socket and answers commands using `soksak-core` logic. It follows `soksak-ptyd`, the standing precedent for an independent helper, with two deliberate differences.
 
-- **It does not know its home.** `ptyd` reads `SOKSAK_HOME` and derives paths; the helper takes `--socket <path>` as an argument and, given none, fails by name rather than choosing a default. A helper that guesses its identity attaches somewhere else the moment homes diverge, and does it quietly.
+- **It derives no identity of its own.** `ptyd` reads `SOKSAK_HOME` and derives paths; the helper takes `--socket`, `--home`, and `--identifier` as arguments and, given none, fails by name rather than choosing a default. A helper that guesses its identity attaches somewhere else the moment homes diverge, and does it quietly.
 - **Names and arguments are the app's.** The envelope follows the socket contract, and `data` carries exactly what the app's `invoke` returns. A shell that has to translate names introduces a new drift surface; the point is to ask the same question and get the same answer.
 
 Each handler is one call into `soksak-core`. Judgement does not live in the helper — if it did, the app path and the helper path could answer differently, and that difference is silent. Logic has a single owner, so the two processes agree structurally rather than by copy.
@@ -100,6 +100,19 @@ Each handler is one call into `soksak-core`. Judgement does not live in the help
 **A store is not a shell.** `rusqlite` is banned in `soksak-core` and allowed in the helper. The ban list exists to keep out windows, webviews, and native runtimes; a database opens no window and holds no app handle, and reads the same file to the same answer from any process. But logic that knows the store only runs where the file is, and that premise is what the split removes — so the `KvRows` contract stays in the core crate and its SQLite implementation lives in the helper. The helper opens read-only: two processes writing the same file would break the single-writer contract.
 
 **What the demand ledger taught.** The Electron shell records every backend call in order. Read by frequency, `activity_publish` (28) and `data_kv_get` (10) dominate; read *in order*, the boot stalls at call 5 (`app_environment`) and calls 7–14 (`data_kv_get`). Three commands wired first by frequency turned out to be calls 42, 48, and 50 — served, and irrelevant to whether the window paints. Frequency picks the wrong work; order picks the blocking work.
+
+**Arguments are the caller's; state is the process's.** A command served by the helper must have the *same argument shape* as the app command of the same name. The UI does not know which process answers it: `invoke("app_environment")` is one call whether the app or the helper replies.
+
+The first version of the helper broke this. Reasoning that "the helper must not guess its identity", it demanded `identifier`, `home`, `dbPath`, `dir`, and `base` as per-call arguments — but the app commands of those names take **no arguments at all**, because those values are process state, not something a caller carries. Live measurement (Electron boot, 168 recorded calls) showed all five supposedly-served commands rejected with `INVALID_PARAMS`, and the rejection was one line in a shell log, so it was silent.
+
+The premise was right and the conclusion was wrong: **receiving is not guessing.** The app does not guess its identity either — it receives it at boot from its shell config. The helper receives it at boot from whoever spawned it. So the rule is two lines:
+
+- values a caller sends are arguments (`ns`, `key`, `host`, `port`)
+- values a process holds are boot state (identity, home, store path)
+
+`src-tauri/src/helper_shape_gate.rs` enforces this: it parses every `#[tauri::command]` signature in the app, drops shell-injected parameters (`State`, `AppHandle`, `Window`, `Channel`), and compares the argument-name set against the helper's serving table for every name they share. Three planted violations — an extra argument, a dropped one, a renamed one — prove the gate catches drift rather than merely passing.
+
+The socket test carries the same lesson: it now spawns the helper against a fixture home, so argument-less commands are exercised *from outside the process*. The in-process tests could only ever prove "arguments are read as declared"; they could not see that the declaration itself disagreed with the app.
 
 Still unserved: `activity_publish` (the shell owns fan-out, so where admission happens is a design question, not a port), `project_owners`, `net_http_request`, `process_reclaim_window`. And `webview_*`, `engine_*`, `titlebar_*`, `window_*` never move — those are the shell's, and an Electron adapter must implement them itself.
 
