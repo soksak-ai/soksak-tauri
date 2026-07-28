@@ -146,6 +146,43 @@ pub const COMMANDS: &[Command] = &[
     },
 ];
 
+/// 감사했으나 서빙하지 않는 이름과 **무엇이 막는가**.
+///
+/// 표에 없다는 사실만으로는 "아직 안 옮겼다"와 "여기서는 못 한다"가 구분되지 않는다.
+/// 셸 저자가 받는 것은 UNKNOWN_COMMAND 한 줄뿐이라, 사유가 없으면 막힌 것을 다시 조사하거나
+/// 더 나쁘게는 조사 없이 흉내를 낸다. 이유 없는 금지는 우회 대상이 된다.
+pub struct Unserved {
+    pub name: &'static str,
+    pub blocked_by: &'static str,
+}
+
+/// 옮기려다 막힌 것들. 여기 있는 이름이 표로 올라가려면 사유가 먼저 사라져야 한다.
+pub const UNSERVED: &[Unserved] = &[
+    Unserved {
+        name: "project_owners",
+        blocked_by: "점유 원장이 앱 프로세스 안의 가변 상태다. 살아 있는 창 라벨은 인자로 받을 수 \
+                     있지만(부팅 상태가 홈을 받는 것처럼) 원장은 못 받는다 — 그것을 바꾸는 \
+                     claim/release 가 같은 프로세스에 있다. 헬퍼가 원장을 쥐면 원장의 수명이 헬퍼의 \
+                     수명이 되어, 셸이 재기동한 뒤에도 죽은 창의 점유가 남아 그 프로젝트를 다시 못 연다.",
+    },
+    Unserved {
+        name: "net_http_request",
+        blocked_by: "전송기가 wreq 하나인데 wreq 는 tokio 를 끌고 온다(http2·wreq-proto·wreq-rt 경유). \
+                     이 프로세스의 no_shell 게이트가 tokio 를 이름으로 막는다. 시크릿 치환은 앱이 연 \
+                     볼트(SecretsState)를 읽으므로, 옮기려면 키체인 신원과 잠금 수명까지 함께 옮겨야 한다.",
+    },
+    Unserved {
+        name: "process_reclaim_window",
+        blocked_by: "회수 대상은 이 프로세스가 스폰한 자식의 Child 핸들이다. 창 라벨은 키일 뿐 회수할 \
+                     것을 만들어 주지 않는다 — 헬퍼에는 그 맵이 없어 언제나 0 을 돌려주는데, 그 0 은 \
+                     '거둘 것이 없었다'와 구분되지 않는다.",
+    },
+];
+
+pub fn unserved(name: &str) -> Option<&'static Unserved> {
+    UNSERVED.iter().find(|u| u.name == name)
+}
+
 pub fn find(name: &str) -> Option<&'static Command> {
     COMMANDS.iter().find(|c| c.name == name)
 }
@@ -166,7 +203,12 @@ pub fn declaration() -> Value {
             })
         })
         .collect();
-    json!({ "commands": commands })
+    // 못 하는 것도 같은 자리에서 답한다 — 모르는 것을 모른다고 말하는 것이 이 표의 절반이다.
+    let unserved: Vec<Value> = UNSERVED
+        .iter()
+        .map(|u| json!({ "name": u.name, "blockedBy": u.blocked_by }))
+        .collect();
+    json!({ "commands": commands, "unserved": unserved })
 }
 
 // ── 인자 해석 ────────────────────────────────────────────────────────────────
@@ -388,6 +430,28 @@ mod tests {
     /// 검증용 부팅 상태. 이 표의 검사들은 **인자 해석**을 보는 것이라 어느 홈이든 같다.
     fn ctx() -> Ctx {
         Ctx::new(Identity::new("/tmp/soksak-registry-test", "com.soksak.dev"))
+    }
+
+
+    /// 한 이름이 서빙과 미서빙 양쪽에 있으면 답이 둘이 된다.
+    #[test]
+    fn no_name_is_both_served_and_refused() {
+        for u in UNSERVED {
+            assert!(find(u.name).is_none(), "{} 이 양쪽에 있다", u.name);
+        }
+    }
+
+    /// 이유 없는 금지는 우회 대상이 된다 — 표를 통과 도구로 쓰는 것을 막는다.
+    #[test]
+    fn the_audited_refusals_are_declared() {
+        assert!(!UNSERVED.is_empty(), "감사 결과가 비었다");
+        for u in UNSERVED {
+            assert!(!u.name.is_empty(), "이름 없는 미서빙");
+            assert!(u.blocked_by.len() > 40, "{} 의 사유가 너무 짧다", u.name);
+        }
+        let decl = declaration();
+        let listed = decl["unserved"].as_array().expect("unserved 선언");
+        assert_eq!(listed.len(), UNSERVED.len());
     }
 
     #[test]

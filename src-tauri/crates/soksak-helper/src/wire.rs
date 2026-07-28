@@ -84,19 +84,26 @@ fn transport_route(req: &Request) -> Option<Value> {
     Some(reply)
 }
 
+/// 서빙하지 않는 이름의 사유 문장. 감사해서 "여기서는 못 한다"고 판정한 이름은 그 이유를
+/// 함께 말한다 — 이유 없는 금지는 우회 대상이 되고, 셸 저자는 막힌 것을 다시 조사하거나
+/// 더 나쁘게는 조사 없이 흉내를 낸다.
+/// 코드는 어느 쪽이든 UNKNOWN_COMMAND 로 둔다: 부르는 쪽의 분기를 바꾸지 않는다.
+fn unknown_sentence(method: &str) -> String {
+    match registry::unserved(method) {
+        Some(u) => format!("{method} 은(는) 이 헬퍼가 서빙하지 않습니다 — {}", u.blocked_by),
+        None => format!(
+            "{method} 은(는) 이 헬퍼가 서빙하지 않습니다 — helper.commands 로 목록을 확인하세요"
+        ),
+    }
+}
+
 /// 명령 하나를 실행한다. 표에 없으면 이름을 달고 실패한다 — 조용한 no-op 도, 가짜 성공도 없다.
 fn route(ctx: &Ctx, req: &Request) -> Value {
     if req.method == "helper.commands" {
         return ok_reply(registry::declaration());
     }
     let Some(cmd) = registry::find(&req.method) else {
-        return err_reply(
-            "UNKNOWN_COMMAND",
-            &format!(
-                "{} 은(는) 이 헬퍼가 서빙하지 않습니다 — helper.commands 로 목록을 확인하세요",
-                req.method
-            ),
-        );
+        return err_reply("UNKNOWN_COMMAND", &unknown_sentence(&req.method));
     };
     match (cmd.run)(ctx, &req.params) {
         Outcome::Ok(data) => ok_reply(data),

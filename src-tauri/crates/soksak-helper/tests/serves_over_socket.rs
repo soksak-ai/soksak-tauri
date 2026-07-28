@@ -435,3 +435,48 @@ fn a_relocated_store_is_followed_not_re_derived() {
         "지목된 경로를 말해야 한다: {reply}"
     );
 }
+
+// 감사해서 서빙하지 않기로 한 이름은 목록에 사유와 함께 있어야 한다. 셸 저자는 이 프로세스에
+// 물어서 "이건 네가 해야 한다, 이유는 이것"을 알아야 하고, 그렇지 않으면 막힌 이유를 다시
+// 조사하거나 — 더 나쁘게는 조사 없이 흉내를 낸다.
+#[test]
+fn what_it_refuses_is_discoverable_with_the_reason() {
+    let helper = spawn_helper("unserved");
+    let reply = helper.ask(json!({ "id": 8, "method": "helper.commands" }));
+    assert_eq!(reply["ok"], true, "응답: {reply}");
+    let unserved = reply["data"]["unserved"]
+        .as_array()
+        .unwrap_or_else(|| panic!("unserved 선언이 없다: {reply}"));
+    let named: Vec<&str> = unserved.iter().filter_map(|u| u["name"].as_str()).collect();
+    for expected in ["project_owners", "net_http_request", "process_reclaim_window"] {
+        assert!(named.contains(&expected), "{expected} 이 없다: {named:?}");
+    }
+    // 이름만 있고 이유가 없으면 다음 사람이 "왜 안 되지"부터 다시 한다.
+    for u in unserved {
+        assert!(
+            !u["blockedBy"].as_str().unwrap_or_default().is_empty(),
+            "이유 없는 금지: {u}"
+        );
+    }
+}
+
+// 그 사유는 실제로 부를 때도 온다 — 목록을 먼저 읽지 않은 호출자가 침묵을 받지 않도록.
+// 선언한 문자열과 같은지까지 본다: 두 벌이면 한쪽만 고쳐지고 목록과 응답이 갈린다.
+#[test]
+fn calling_an_audited_name_carries_the_reason_across_the_socket() {
+    let helper = spawn_helper("unserved-call");
+    let table = helper.ask(json!({ "id": 9, "method": "helper.commands" }));
+    let declared = table["data"]["unserved"]
+        .as_array()
+        .and_then(|u| u.iter().find(|e| e["name"] == "process_reclaim_window"))
+        .and_then(|e| e["blockedBy"].as_str())
+        .unwrap_or_else(|| panic!("사유 선언이 없다: {table}"))
+        .to_string();
+
+    let reply = helper.ask(json!({ "id": 10, "method": "process_reclaim_window", "params": {} }));
+    assert_eq!(reply["ok"], false, "응답: {reply}");
+    assert_eq!(reply["code"], "UNKNOWN_COMMAND", "응답: {reply}");
+    let msg = reply["message"].as_str().unwrap_or_default();
+    assert!(msg.contains("process_reclaim_window"), "응답: {reply}");
+    assert!(msg.contains(&declared), "선언한 사유가 응답에 없다: {reply}");
+}
