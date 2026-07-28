@@ -17,14 +17,14 @@ import type { EngineProvision } from "@soksak-ai/plugin-spec";
 /** 구독 해지 — 멱등해야 한다(중복 호출이 던지지 않는다). */
 export type Unlisten = () => void;
 
-/** 이벤트 봉투 — 셸마다 필드가 다르므로 payload 하나로 좁힌다. */
-export interface ShellEvent<T> {
+/** 이벤트 봉투 — 프레임워크마다 필드가 다르므로 payload 하나로 좁힌다. */
+export interface FrameworkEvent<T> {
   payload: T;
 }
 
 /**
  * 스트림 수신구. 코어가 만들어 명령 인자로 넘기면 백엔드가 프레임을 밀어 넣는다
- * (터미널 출력·프로세스 stdout/stderr·소켓 메시지). 인자로 직렬화되는 형태는 셸마다
+ * (터미널 출력·프로세스 stdout/stderr·소켓 메시지). 인자로 직렬화되는 형태는 프레임워크마다
  * 다르므로 **불투명**하다 — 앱은 onmessage 만 안다.
  */
 export interface Stream<T> {
@@ -32,10 +32,10 @@ export interface Stream<T> {
 }
 
 /** 창 하나에 대한 조작면 — 현재 창이거나 라벨로 찾은 창. */
-export interface ShellWindowHandle {
+export interface FrameworkWindowHandle {
   readonly label: string;
   setTitle(title: string): Promise<void>;
-  /** 논리 픽셀(스케일 나눈 값) — 물리 픽셀은 셸이 환산한다. */
+  /** 논리 픽셀(스케일 나눈 값) — 물리 픽셀은 프레임워크가 환산한다. */
   setSize(width: number, height: number): Promise<void>;
   setPosition(x: number, y: number): Promise<void>;
   setFocus(): Promise<void>;
@@ -56,10 +56,10 @@ export interface ShellWindowHandle {
   onMoved(cb: (pos: { x: number; y: number }) => void): Promise<Unlisten>;
   onDragDrop(cb: (event: unknown) => void): Promise<Unlisten>;
   /** 이 창으로 **타겟된** 이벤트만 받는다(전역 브로드캐스트 아님). */
-  listen<T>(event: string, cb: (e: ShellEvent<T>) => void): Promise<Unlisten>;
+  listen<T>(event: string, cb: (e: FrameworkEvent<T>) => void): Promise<Unlisten>;
 }
 
-export interface ShellNotification {
+export interface FrameworkNotification {
   isPermissionGranted(): Promise<boolean>;
   requestPermission(): Promise<string>;
   send(options: {
@@ -93,20 +93,20 @@ export interface AppFramework {
    */
   readonly engineProvision: EngineProvision;
 
-  /** 어댑터 이름 — 진단·원장에 싣는다("어느 셸에서 난 일인가"). */
+  /** 어댑터 이름 — 진단·원장에 싣는다("어느 프레임워크에서 난 일인가"). */
   readonly name: string;
 
-  /** 백엔드 명령 호출. 셸이 프로세스 내부 호출이든 소켓이든 앱은 모른다. */
+  /** 백엔드 명령 호출. 프레임워크가 프로세스 내부 호출이든 소켓이든 앱은 모른다. */
   invoke<T = unknown>(cmd: string, args?: Record<string, unknown>): Promise<T>;
 
   /** 스트림 수신구 생성 — invoke 인자로 그대로 넘긴다. */
   createStream<T>(): Stream<T>;
 
   /** 전역(브로드캐스트) 이벤트 구독. 창 타겟 신호는 currentWindow().listen 을 쓴다. */
-  listen<T>(event: string, cb: (e: ShellEvent<T>) => void): Promise<Unlisten>;
+  listen<T>(event: string, cb: (e: FrameworkEvent<T>) => void): Promise<Unlisten>;
 
-  currentWindow(): ShellWindowHandle;
-  windowByLabel(label: string): Promise<ShellWindowHandle | null>;
+  currentWindow(): FrameworkWindowHandle;
+  windowByLabel(label: string): Promise<FrameworkWindowHandle | null>;
 
   app: {
     name(): Promise<string>;
@@ -123,7 +123,7 @@ export interface AppFramework {
     openDirectory(options?: { title?: string; defaultPath?: string }): Promise<string | null>;
   };
 
-  notification: ShellNotification;
+  notification: FrameworkNotification;
 
   deepLink: {
     onOpenUrl(cb: (urls: string[]) => void): Promise<Unlisten>;

@@ -55,7 +55,7 @@ describe("프레임워크 경계 — 벤더 SDK 는 어댑터만 안다", () => 
   });
 
   it("어댑터는 계약을 전부 구현한다 — 빈칸은 결국 벤더 우회로 메워진다", async () => {
-    const { tauriHost } = await import("./tauri");
+    const { tauriFramework } = await import("./tauri");
     for (const key of [
       "name",
       "invoke",
@@ -69,7 +69,7 @@ describe("프레임워크 경계 — 벤더 SDK 는 어댑터만 안다", () => 
       "notification",
       "deepLink",
     ]) {
-      expect(tauriHost[key as keyof typeof tauriHost]).toBeDefined();
+      expect(tauriFramework[key as keyof typeof tauriFramework]).toBeDefined();
     }
   });
   /**

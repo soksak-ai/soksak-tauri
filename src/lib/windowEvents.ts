@@ -1,4 +1,4 @@
-import { currentWindow, type ShellEvent, type Unlisten } from "../framework";
+import { currentWindow, type FrameworkEvent, type Unlisten } from "../framework";
 
 // 이 창(webview)으로 *타겟된* 이벤트만 구독한다. Rust 는 멀티 윈도우 신호를 emit_to(label) 로 보내므로
 // 각 창은 자기 신호만 받아야 한다. 전역 listen(셸 경계)은 타겟과 무관하게 모든 창의
@@ -10,7 +10,7 @@ import { currentWindow, type ShellEvent, type Unlisten } from "../framework";
 // (전역 listen 은 promise reject 였지만 이건 동기 throw). 반환 = 해지 함수(언마운트 정리용).
 export function listenThisWindow<T>(
   event: string,
-  handler: (e: ShellEvent<T>) => void,
+  handler: (e: FrameworkEvent<T>) => void,
 ): () => void {
   let off: Unlisten | null = null;
   let cancelled = false;

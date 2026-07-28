@@ -6,12 +6,12 @@
 // boot.error 로 수확). 파일마다 손구현하던 disposed 가드+try/catch 를 여기 한 곳으로 모은다.
 // 창-스코프 수신이 필요하면 lib/windowEvents.listenThisWindow(별도 유틸)를 쓴다.
 
-import { listen, type ShellEvent } from "../framework";
+import { listen, type FrameworkEvent } from "../framework";
 
 /** 전역 이벤트 구독(브로드캐스트 수신용). 반환 = 멱등·안전 해지. */
 export function safeListen<T>(
   event: string,
-  handler: (e: ShellEvent<T>) => void,
+  handler: (e: FrameworkEvent<T>) => void,
 ): () => void {
   let un = () => {};
   let disposed = false;

@@ -1,5 +1,5 @@
 // framework.info 계약 테스트 — 활성 프레임워크의 이름과 계약 능력의 존재 여부를 밖에서 읽는다.
-// 셸은 mock 한다: 이 명령의 답이 상수가 아니라 **그때의 활성 어댑터**를 읽는다는 것이 요점이므로,
+// 프레임워크는 mock 한다: 이 명령의 답이 상수가 아니라 **그때의 활성 어댑터**를 읽는다는 것이 요점이므로,
 // 어댑터 이름을 바꿔가며 답이 따라오는지 본다. 능력은 부르지 않는다 — 미구현은 부를 때 던진다.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -36,6 +36,7 @@ vi.mock("../framework", () => ({
 
 import { registerFrameworkCatalog } from "./catalogFramework";
 import { execute, getSpec, unregister } from "./registry";
+import { useSettings } from "../state/settings";
 
 beforeEach(() => {
   framework.name = "tauri";
@@ -80,6 +81,21 @@ describe("framework.info 실행(활성 어댑터 보고)", () => {
     expect(caps).not.toContain("name");
     // 결정적 순서 — 밖에서 대조하는 원장이 순서 흔들림에 흔들리지 않는다.
     expect(caps).toEqual([...caps].sort());
+  });
+
+  // 핸들러가 넘기는 이름과 문장의 자리표시자가 갈리면 치환이 일어나지 않고 리터럴이 그대로
+  // 사용자에게 나간다 — ok:true 라 아무도 못 본다. 두 언어 모두 실제 문장으로 확인한다.
+  it.each(["ko", "en"] as const)("%s 문장이 프레임워크 이름을 채운다 — 자리표시자가 새지 않는다", async (language) => {
+    const before = useSettings.getState().language;
+    useSettings.setState({ language });
+    try {
+      const r = await execute("framework.info", {}, {});
+      expect(r.ok).toBe(true);
+      expect(r.message).toContain("tauri");
+      expect(r.message).not.toMatch(/\{[a-zA-Z]+\}/);
+    } finally {
+      useSettings.setState({ language: before });
+    }
   });
 
   it("능력을 부르지 않는다 — 미구현 어댑터에서도 답이 나온다", async () => {

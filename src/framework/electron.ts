@@ -13,9 +13,9 @@ import type { EngineProvision } from "@soksak-ai/plugin-spec";
 // 그 착시가 이식 판단을 망친다(스파이크의 목적은 정확히 그 판단이다).
 
 import type {
-  ShellEvent,
+  FrameworkEvent,
   AppFramework,
-  ShellWindowHandle,
+  FrameworkWindowHandle,
   Stream,
   Unlisten,
 } from "./contract";
@@ -114,7 +114,7 @@ async function windowOp<T>(
 function windowOps(
   label: string,
   target: string | null,
-): Omit<ShellWindowHandle, "onResized" | "onMoved" | "onDragDrop" | "listen"> {
+): Omit<FrameworkWindowHandle, "onResized" | "onMoved" | "onDragDrop" | "listen"> {
   return {
     label,
     setTitle: (title) => windowOp(target, "setTitle", { title }),
@@ -134,7 +134,7 @@ function windowOps(
   };
 }
 
-function currentWindowHandle(): ShellWindowHandle {
+function currentWindowHandle(): FrameworkWindowHandle {
   return {
     ...windowOps(bridge().label, null),
     onResized: async (cb) =>
@@ -149,13 +149,13 @@ function currentWindowHandle(): ShellWindowHandle {
       }),
     // 네이티브 파일 드래그드롭은 셸 층 작업이 남아 있다 — 조용히 no-op 하지 않는다.
     onDragDrop: async (cb) => attachDragDrop(cb),
-    listen: async <T,>(event: string, cb: (e: ShellEvent<T>) => void) =>
+    listen: async <T,>(event: string, cb: (e: FrameworkEvent<T>) => void) =>
       bridge().onEvent(event, (payload) => cb({ payload: payload as T })),
   };
 }
 
 /** 다른 창의 핸들 — 조작은 셸이 대신 하고, 구독은 이 렌더러에 오지 않는다. */
-function labeledWindowHandle(label: string): ShellWindowHandle {
+function labeledWindowHandle(label: string): FrameworkWindowHandle {
   return {
     ...windowOps(label, label),
     // 셸은 창 기하 변화·타겟 이벤트를 각 창의 웹콘텐츠로만 민다. 다른 창 몫은 이 렌더러에
@@ -219,7 +219,7 @@ export const electronFramework: AppFramework = {
     }) as unknown as Stream<T>;
   },
 
-  listen: async <T,>(event: string, cb: (e: ShellEvent<T>) => void) =>
+  listen: async <T,>(event: string, cb: (e: FrameworkEvent<T>) => void) =>
     bridge().onEvent(event, (payload) => cb({ payload: payload as T })),
 
   currentWindow: () => currentWindowHandle(),

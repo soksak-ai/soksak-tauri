@@ -1,13 +1,13 @@
 import type { EngineProvision } from "@soksak-ai/plugin-spec";
-// Tauri 셸 어댑터 — AppFramework 계약의 Tauri 구현.
+// Tauri 프레임워크 어댑터 — AppFramework 계약의 Tauri 구현.
 //
-// **벤더 SDK(@tauri-apps/*)를 import 하는 것은 이 파일뿐이다.** 다른 어떤 앱 코드도 셸을
-// 알아서는 안 되며, 그 규칙은 shellSeam.test.ts 가 정적으로 시행한다. 새 셸(Electron 등)은
+// **벤더 SDK(@tauri-apps/*)를 import 하는 것은 이 파일뿐이다.** 다른 어떤 앱 코드도 프레임워크를
+// 알아서는 안 되며, 그 규칙은 frameworkSeam.test.ts 가 정적으로 시행한다. 새 프레임워크(Electron 등)는
 // 이 파일과 형제로 어댑터를 하나 더 두는 것으로 끝나야 한다 — 앱 코드는 한 줄도 바뀌지 않는다.
 //
 // 어댑터는 계약을 "번역"만 한다. 정책·재시도·상태를 여기 두지 않는다(그건 앱의 것이고,
-// 셸마다 달라지면 그 자체가 셸 종속이다). 유일한 예외는 셸 SDK 의 결함 흡수이며, 흡수할
-// 때는 그 결함을 주석으로 남긴다.
+// 프레임워크마다 달라지면 그 자체가 프레임워크 종속이다). 유일한 예외는 프레임워크 SDK 의 결함 흡수이며,
+// 흡수할 때는 그 결함을 주석으로 남긴다.
 
 import { invoke as tauriInvoke, Channel } from "@tauri-apps/api/core";
 import { listen as tauriListen } from "@tauri-apps/api/event";
@@ -22,9 +22,9 @@ import {
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { getName, getVersion } from "@tauri-apps/api/app";
 import type {
-  ShellEvent,
+  FrameworkEvent,
   AppFramework,
-  ShellWindowHandle,
+  FrameworkWindowHandle,
   Stream,
   Unlisten,
 } from "./contract";
@@ -47,7 +47,7 @@ function safeOff(off: unknown): Unlisten {
   };
 }
 
-function wrapWindow(win: Window, label: string): ShellWindowHandle {
+function wrapWindow(win: Window, label: string): FrameworkWindowHandle {
   return {
     label,
     setTitle: (t) => win.setTitle(t),
@@ -77,7 +77,7 @@ function wrapWindow(win: Window, label: string): ShellWindowHandle {
       safeOff(await win.onResized(({ payload }) => cb({ width: payload.width, height: payload.height }))),
     onMoved: async (cb) => safeOff(await win.onMoved(({ payload }) => cb({ x: payload.x, y: payload.y }))),
     onDragDrop: async (cb) => safeOff(await win.onDragDropEvent((e) => cb(e))),
-    listen: async <T,>(event: string, cb: (e: ShellEvent<T>) => void) => {
+    listen: async <T,>(event: string, cb: (e: FrameworkEvent<T>) => void) => {
       // 창 타겟 신호는 webviewWindow.listen 만이 격리한다 — 전역 listen 은 emit_to(다른 창)
       // 까지 받아 명령이 두 창에서 중복 실행된다(창별 독립 붕괴).
       const target = label === getCurrentWindow().label ? getCurrentWebviewWindow() : win;
@@ -105,7 +105,7 @@ export const engineProvision: EngineProvision = {
   nativeChildWebview: true,
 };
 
-export const tauriHost: AppFramework = {
+export const tauriFramework: AppFramework = {
   dragRegion,
   engineProvision,
   name: "tauri",
@@ -114,7 +114,7 @@ export const tauriHost: AppFramework = {
 
   createStream: <T,>(): Stream<T> => new Channel<T>() as unknown as Stream<T>,
 
-  listen: async <T,>(event: string, cb: (e: ShellEvent<T>) => void) =>
+  listen: async <T,>(event: string, cb: (e: FrameworkEvent<T>) => void) =>
     safeOff(await tauriListen<T>(event, (e) => cb({ payload: e.payload }))),
 
   currentWindow: () => {
