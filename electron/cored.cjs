@@ -1,10 +1,10 @@
-// Electron 셸의 cored 프로세스 — 셸이 자기 백엔드를 스스로 세운다.
+// Electron 프레임워크의 cored 프로세스 — 프레임워크가 자기 백엔드를 스스로 세운다.
 //
-// 셸은 자기 정체성(홈·identifier)을 알고, 그것을 **부팅 인자로 넘겨** cored를 띄운다.
+// 프레임워크는 자기 정체성(홈·identifier)을 알고, 그것을 **부팅 인자로 넘겨** cored를 띄운다.
 // cored 는 홈을 파생하지 않는다(src-tauri/crates/soksak-cored): 파생하는 순간 홈이 갈릴 때
 // 조용히 다른 홈에 답하고, 그 오답은 오류가 아니라 빈 결과로 나타난다.
 //
-// electron 을 require 하지 않는다. 셸을 띄워야만 검증되는 코드는 사실상 검증되지 않으므로,
+// electron 을 require 하지 않는다. 프레임워크를 띄워야만 검증되는 코드는 사실상 검증되지 않으므로,
 // 이 파일은 실제 프로세스를 상대로 그대로 몰 수 있어야 한다(scripts/electron/cored-spawn.test.mjs).
 //
 // 못 하는 것은 이름을 달고 실패한다. 바이너리를 못 찾으면 찾아본 자리를 전부 말하고,
@@ -16,7 +16,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 
-/** 이 셸의 정체성이 오는 두 통로. 없으면 이 셸 자신의 identity 를 쓴다(남의 홈을 넘보지 않는다). */
+/** 이 프레임워크의 정체성이 오는 두 통로. 없으면 이 프레임워크 자신의 identity 를 쓴다(남의 홈을 넘보지 않는다). */
 const IDENTIFIER_ENV = "SOKSAK_IDENTIFIER";
 const IDENTIFIER_ARG = "--soksak-identifier=";
 const DEFAULT_IDENTIFIER = "com.soksak.electron-spike";
@@ -63,14 +63,14 @@ function argValue(argv, prefix) {
 }
 
 /**
- * 이 셸의 정체성 — identifier 와 그 홈, 그리고 cored 소켓 자리.
+ * 이 프레임워크의 정체성 — identifier 와 그 홈, 그리고 cored 소켓 자리.
  *
  * 홈은 identifier 에서만 파생된다(app=무접미, 그 외=`-<마지막 세그먼트>`). 계약 정본은
  * docs/ARCHITECTURE.md 의 identity 홈 절이고, 독립 실행물은 각자 같은 계약을 구현한다
  * (코어 home.rs, sok CLI 의 home_for_env). runtime 으로 홈을 갈아끼우는 통로는 없다 —
  * 지목하는 것은 identifier 이고, 홈은 그 결과다.
  */
-function shellIdentity({ env = process.env, argv = process.argv, homedir = os.homedir() } = {}) {
+function frameworkIdentity({ env = process.env, argv = process.argv, homedir = os.homedir() } = {}) {
   const identifier =
     argValue(argv, IDENTIFIER_ARG) || env[IDENTIFIER_ENV] || DEFAULT_IDENTIFIER;
   const segment = identifier.split(".").pop() || "app";
@@ -279,7 +279,7 @@ async function ensureCored({
 }
 
 module.exports = {
-  shellIdentity,
+  frameworkIdentity,
   coredBinary,
   ensureCored,
   probeSocket,

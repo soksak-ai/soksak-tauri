@@ -1,7 +1,7 @@
 // @vitest-environment node
-// Electron 셸의 백엔드 다리 — 소켓 왕복을 목 서버(node net)에 대고 검증한다.
+// Electron 프레임워크의 백엔드 다리 — 소켓 왕복을 목 서버(node net)에 대고 검증한다.
 //
-// 셸은 띄우지 않는다. 다리(electron/backend.cjs)는 electron 을 require 하지 않으므로 여기서
+// 프레임워크는 띄우지 않는다. 다리(electron/backend.cjs)는 electron 을 require 하지 않으므로 여기서
 // 그대로 몰 수 있고, Electron 을 띄워야만 검증되는 코드는 사실상 검증되지 않는다.
 //
 // 세 축을 고정한다: ① 백엔드가 없거나 모르면 **이름을 달고** 실패한다(조용한 no-op·가짜 성공
@@ -25,7 +25,7 @@ let servers;
 let clients;
 let demands;
 
-/** 원장 싱크 — 셸에서는 jsonl 로 떨어지는 자리. 테스트는 그 자리에 배열을 꽂는다. */
+/** 원장 싱크 — 프레임워크에서는 jsonl 로 떨어지는 자리. 테스트는 그 자리에 배열을 꽂는다. */
 const onDemand = (cmd, served, code) => demands.push({ cmd, served, code });
 
 /** 목 백엔드: 한 줄 JSON 요청을 받아 handler 가 답한다. 연결 수를 센다(수명 검증용). */
@@ -136,7 +136,7 @@ describe("백엔드가 있을 때 — 답이 온다", () => {
     expect(demands).toEqual([{ cmd: "data_kv_get", served: true, code: undefined }]);
   });
 
-  it("data 가 없는 봉투는 상관 id 를 벗겨서 준다 — 셸의 번호는 앱 값이 아니다", async () => {
+  it("data 가 없는 봉투는 상관 id 를 벗겨서 준다 — 프레임워크의 번호는 앱 값이 아니다", async () => {
     const mock = await startMock("bare.sock", (req, sock) =>
       reply(sock, { id: req.id, ok: true, reloaded: true }),
     );

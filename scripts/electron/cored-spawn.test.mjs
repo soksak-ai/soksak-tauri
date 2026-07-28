@@ -1,15 +1,15 @@
 // @vitest-environment node
-// 셸이 자기 백엔드를 스스로 띄운다 — 정체성·바이너리·준비 완료·수명.
+// 프레임워크가 자기 백엔드를 스스로 띄운다 — 정체성·바이너리·준비 완료·수명.
 //
-// 오늘까지 이 셸은 SOKSAK_SOCKET 을 받아야만 백엔드에 닿았고, 없으면 모든 호출이
+// 오늘까지 이 프레임워크는 SOKSAK_SOCKET 을 받아야만 백엔드에 닿았고, 없으면 모든 호출이
 // BACKEND_NOT_CONNECTED 였다. 여기서 고정하는 것은 넷이다.
-//   ① 홈은 셸의 것이다 — 셸이 자기 정체성을 알고 그것을 cored에게 **넘긴다**(cored는 파생하지 않는다).
+//   ① 홈은 프레임워크의 것이다 — 프레임워크가 자기 정체성을 알고 그것을 cored에게 **넘긴다**(cored는 파생하지 않는다).
 //   ② 바이너리 경로는 추측하지 않는다 — 선언이 이기고, 못 찾으면 찾아본 자리를 전부 말한다.
 //   ③ 준비 완료는 stdout 첫 줄이다 — 폴링 없이 블로킹 read, 먼저 죽으면 EOF 로 즉시 드러난다.
 //   ④ 거두는 것은 내 것뿐이다 — 이미 서빙 중인 소켓과 외부에서 준 소켓은 남의 것이다.
 //
 // Electron 은 띄우지 않는다. 스폰 로직은 electron 을 require 하지 않는 모듈(electron/cored.cjs)이라
-// 그대로 몰 수 있고, 셸 배선은 electron 스텁으로 적재해 본다(shell-invoke.test.mjs 와 같은 방식).
+// 그대로 몰 수 있고, 프레임워크 배선은 electron 스텁으로 적재해 본다(framework-invoke.test.mjs 와 같은 방식).
 // 가짜 cored도 진짜 프로세스다 — spawn·파이프·EOF·종료 코드를 실물로 겪어야 검증이다.
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -29,7 +29,7 @@ const ELECTRON = requireCjs.resolve("electron");
 const osModule = requireCjs("node:os");
 
 const {
-  shellIdentity,
+  frameworkIdentity,
   coredBinary,
   ensureCored,
   CORED_BIN_ENV,
@@ -171,16 +171,16 @@ afterEach(async () => {
   rmSync(root, { recursive: true, force: true });
 });
 
-describe("셸의 정체성 — 홈은 셸의 것이다", () => {
-  it("기본은 이 셸 자신의 identity 이고 홈이 거기서 나온다", () => {
-    const id = shellIdentity({ env: {}, argv: [], homedir: "/u/max" });
+describe("프레임워크의 정체성 — 홈은 프레임워크의 것이다", () => {
+  it("기본은 이 프레임워크 자신의 identity 이고 홈이 거기서 나온다", () => {
+    const id = frameworkIdentity({ env: {}, argv: [], homedir: "/u/max" });
     expect(id.identifier).toBe("com.soksak.electron-spike");
     expect(id.home).toBe("/u/max/.soksak-electron-spike");
   });
 
   it("identity 를 지목하면 그 홈으로 간다 — 규칙은 코어와 같다", () => {
     const of = (identifier) =>
-      shellIdentity({ env: { [IDENTIFIER_ENV]: identifier }, argv: [], homedir: "/u/max" }).home;
+      frameworkIdentity({ env: { [IDENTIFIER_ENV]: identifier }, argv: [], homedir: "/u/max" }).home;
     expect(of("com.soksak.dev")).toBe("/u/max/.soksak-dev");
     expect(of("com.soksak.debug")).toBe("/u/max/.soksak-debug");
     // app 은 무접미 — 새 identity 는 목록 없이 자기 홈을 갖는다.
@@ -189,7 +189,7 @@ describe("셸의 정체성 — 홈은 셸의 것이다", () => {
   });
 
   it("인자가 환경변수를 이긴다 — 더 구체적인 지목이 이긴다", () => {
-    const id = shellIdentity({
+    const id = frameworkIdentity({
       env: { [IDENTIFIER_ENV]: "com.soksak.dev" },
       argv: ["electron", ".", `${IDENTIFIER_ARG}com.soksak.debug`],
       homedir: "/u/max",
@@ -199,7 +199,7 @@ describe("셸의 정체성 — 홈은 셸의 것이다", () => {
   });
 
   it("cored 소켓은 그 홈 안에 산다 — 홈이 곧 정체성 경계다", () => {
-    const id = shellIdentity({ env: {}, argv: [], homedir: "/u/max" });
+    const id = frameworkIdentity({ env: {}, argv: [], homedir: "/u/max" });
     expect(id.socketPath.startsWith("/u/max/.soksak-electron-spike/")).toBe(true);
     // 앱 소켓(<home>/<identifier>.sock)과 같은 이름을 쓰지 않는다 — 같은 홈의 앱을 밀어낸다.
     expect(id.socketPath.endsWith(`${id.identifier}.sock`)).toBe(false);
@@ -433,10 +433,10 @@ describe("거두기 — 내 것만", () => {
   });
 });
 
-// ── 셸 배선 — 렌더러가 보는 답까지 ────────────────────────────────────────────
+// ── 프레임워크 배선 — 렌더러가 보는 답까지 ────────────────────────────────────
 
-/** 셸을 적재하고 ipcMain 핸들러와 app 이벤트를 돌려준다. */
-function loadShell({ socket, binary }) {
+/** 프레임워크를 적재하고 ipcMain 핸들러와 app 이벤트를 돌려준다. */
+function loadFramework({ socket, binary }) {
   const handlers = new Map();
   const appEvents = new Map();
   const stub = {
@@ -470,7 +470,7 @@ function loadShell({ socket, binary }) {
   return { handlers, appEvents };
 }
 
-const invoke = (shell, cmd, args) => shell.handlers.get("framework:invoke")(null, { cmd, args });
+const invoke = (framework, cmd, args) => framework.handlers.get("framework:invoke")(null, { cmd, args });
 
 function ledger(home) {
   const p = join(home, "invoke-demand.jsonl");
@@ -481,30 +481,30 @@ function ledger(home) {
     .map((l) => JSON.parse(l));
 }
 
-describe("셸 배선 — 소켓을 안 주면 스스로 띄운다", () => {
-  it("framework:invoke 가 셸이 띄운 cored까지 가고 원장에 served:true 로 남는다", async () => {
+describe("프레임워크 배선 — 소켓을 안 주면 스스로 띄운다", () => {
+  it("framework:invoke 가 프레임워크가 띄운 cored까지 가고 원장에 served:true 로 남는다", async () => {
     osModule.homedir = () => root;
-    const shell = loadShell({ socket: null, binary: fakeHelper("wired", SERVING) });
+    const framework = loadFramework({ socket: null, binary: fakeHelper("wired", SERVING) });
     const home = join(root, ".soksak-electron-spike");
 
-    const r = await invoke(shell, "app_environment", {});
-    expect(r.ok, `셸이 백엔드에 닿지 못했다: ${JSON.stringify(r)}`).toBe(true);
-    // cored는 셸이 준 정체성으로 답한다 — 스스로 파생한 홈이 아니다.
+    const r = await invoke(framework, "app_environment", {});
+    expect(r.ok, `프레임워크가 백엔드에 닿지 못했다: ${JSON.stringify(r)}`).toBe(true);
+    // cored는 프레임워크가 준 정체성으로 답한다 — 스스로 파생한 홈이 아니다.
     expect(r.value).toMatchObject({ home, identifier: "com.soksak.electron-spike" });
     expect(ledger(home)).toEqual([{ t: expect.any(Number), cmd: "app_environment", served: true }]);
 
-    await shell.appEvents.get("will-quit")();
+    await framework.appEvents.get("will-quit")();
   });
 
   it("will-quit 이 자기가 띄운 cored를 거둔다", async () => {
     osModule.homedir = () => root;
-    const shell = loadShell({ socket: null, binary: fakeHelper("reaped", SERVING) });
-    await invoke(shell, "app_environment", {});
-    const { socketPath } = shellIdentity({ env: {}, argv: [], homedir: root });
+    const framework = loadFramework({ socket: null, binary: fakeHelper("reaped", SERVING) });
+    await invoke(framework, "app_environment", {});
+    const { socketPath } = frameworkIdentity({ env: {}, argv: [], homedir: root });
     const pid = Number(readFileSync(`${socketPath}.pid`, "utf8"));
     expect(alive(pid)).toBe(true);
-    await shell.appEvents.get("will-quit")();
-    expect(alive(pid), "셸이 내려가며 자기 cored를 남겼다").toBe(false);
+    await framework.appEvents.get("will-quit")();
+    expect(alive(pid), "프레임워크가 내려가며 자기 cored를 남겼다").toBe(false);
   });
 
   it("외부에서 SOKSAK_SOCKET 을 주면 그대로 존중한다 — 띄우지 않는다", async () => {
@@ -512,16 +512,16 @@ describe("셸 배선 — 소켓을 안 주면 스스로 띄운다", () => {
     const external = join(root, "external.sock");
     await startServer(external);
     process.env.SOKSAK_TEST_MARKER = join(root, "external-ran.json");
-    const shell = loadShell({
+    const framework = loadFramework({
       socket: external,
       binary: fakeHelper("must-not-run", marker("process.exit(0);")),
     });
-    const r = await invoke(shell, "plugin_scan", {});
+    const r = await invoke(framework, "plugin_scan", {});
     expect(r).toEqual({ ok: true, value: "이미 살아 있던 쪽" });
     expect(existsSync(process.env.SOKSAK_TEST_MARKER), "남의 소켓을 주었는데 또 띄웠다").toBe(false);
 
     // 남의 소켓은 거두지 않는다.
-    await shell.appEvents.get("will-quit")();
+    await framework.appEvents.get("will-quit")();
     const client = createBackendClient({ socketPath: external });
     await expect(client.call("themes_scan", {})).resolves.toBe("이미 살아 있던 쪽");
     client.close();
@@ -529,10 +529,10 @@ describe("셸 배선 — 소켓을 안 주면 스스로 띄운다", () => {
 
   it("cored를 못 세우면 모든 호출이 이름을 달고 실패하고 원장에 사유가 남는다", async () => {
     osModule.homedir = () => root;
-    const shell = loadShell({ socket: null, binary: join(root, "no-such-helper") });
+    const framework = loadFramework({ socket: null, binary: join(root, "no-such-helper") });
     const home = join(root, ".soksak-electron-spike");
 
-    const r = await invoke(shell, "app_environment", {});
+    const r = await invoke(framework, "app_environment", {});
     expect(r.ok, "cored가 없는데 성공을 돌려줬다").toBe(false);
     expect(r.code).toBe(BIN_NOT_FOUND);
     expect(r.message).toContain("no-such-helper");

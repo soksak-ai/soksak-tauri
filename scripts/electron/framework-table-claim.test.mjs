@@ -8,7 +8,7 @@
 // 근거 없는 제약은 준수 대상이 아니라 제거 대상이다. 그리고 이 제약은 실제로 막고 있었다:
 // project_claim 은 창을 소유한 쪽이 져야 하는데(root → 창 라벨 지도의 수명이 창의 수명이다)
 // project_ 는 갈래가 아니라 표에 실을 수 없었다. project_ 를 갈래로 만드는 것도 답이 아니다 —
-// ensure_project_dir 은 파일시스템이라 cored 의 것이고, 갈래로 만들면 그것까지 셸이 삼킨다.
+// ensure_project_dir 은 파일시스템이라 cored 의 것이고, 갈래로 만들면 그것까지 프레임워크가 삼킨다.
 //
 // 갈래는 **표에 없는 이름**을 위한 그물이다. 표에 있는 이름에는 갈래가 필요 없다.
 import { describe, expect, it } from "vitest";
@@ -20,10 +20,10 @@ const requireCjs = createRequire(import.meta.url);
 const HERE = dirname(fileURLToPath(import.meta.url));
 const INDEX = join(HERE, "../../electron/native/index.cjs");
 
-describe("표에 실린 이름은 갈래 밖이어도 셸의 것이다", () => {
+describe("표에 실린 이름은 갈래 밖이어도 프레임워크의 것이다", () => {
   it("갈래 밖 이름도 주장한다", () => {
     const native = requireCjs(INDEX);
-    // project_ 는 갈래가 아니다 — 그런데 표에 있으므로 셸이 답해야 한다.
+    // project_ 는 갈래가 아니다 — 그런데 표에 있으므로 프레임워크가 답해야 한다.
     expect(native.claims("project_claim")).toBe(true);
     expect(native.claims("project_release")).toBe(true);
     expect(native.claims("project_owners")).toBe(true);

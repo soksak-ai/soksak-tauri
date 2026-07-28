@@ -1,9 +1,9 @@
 // @vitest-environment node
-// 셸의 실제 경로 — 렌더러가 부르는 `framework:invoke` 가 소켓까지 가고, 요구 원장이 파일로 남는가.
+// 프레임워크의 실제 경로 — 렌더러가 부르는 `framework:invoke` 가 소켓까지 가고, 요구 원장이 파일로 남는가.
 //
 // Electron 은 띄우지 않는다. electron 모듈을 스텁으로 갈아끼우고 main.cjs 를 적재하면 배선
 // 그대로가 손에 잡힌다(창은 만들지 않는다 — whenReady 를 풀지 않는다). 다리 단위 검증
-// (backend-socket.test.mjs)은 다리가 옳음을 말하고, 이 파일은 셸이 그 다리를 실제로 쓰는지와
+// (backend-socket.test.mjs)은 다리가 옳음을 말하고, 이 파일은 프레임워크가 그 다리를 실제로 쓰는지와
 // 원장의 실물 형식을 말한다.
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -51,8 +51,8 @@ function startMock(name, handler) {
   return new Promise((resolve) => server.listen(socketPath, () => resolve({ socketPath, seen })));
 }
 
-/** 셸을 적재하고 ipcMain 에 걸린 핸들러를 돌려준다 — 렌더러가 잡는 그 손잡이다. */
-function loadShell(socketPath) {
+/** 프레임워크를 적재하고 ipcMain 에 걸린 핸들러를 돌려준다 — 렌더러가 잡는 그 손잡이다. */
+function loadFramework(socketPath) {
   const handlers = new Map();
   const stub = {
     app: {
@@ -82,7 +82,7 @@ function loadShell(socketPath) {
   };
   if (socketPath) process.env.SOKSAK_SOCKET = socketPath;
   else delete process.env.SOKSAK_SOCKET;
-  // 소켓을 안 주면 셸은 자기 cored를 띄운다(helper-spawn.test.mjs 가 그쪽). 이 파일이 재는 것은
+  // 소켓을 안 주면 프레임워크는 자기 cored를 띄운다(cored-spawn.test.mjs 가 그쪽). 이 파일이 재는 것은
   // 다리와 원장이므로 cored 자리를 없는 경로로 고정한다 — 안 그러면 빌드 산출물이 있는 체크아웃
   // 에서만 진짜 프로세스가 뜨고, 검증 결과가 빌드 상태에 따라 갈린다.
   process.env.SOKSAK_CORED_BIN = join(root, "no-such-helper");
@@ -94,7 +94,7 @@ function loadShell(socketPath) {
 
 const invoke = (handlers, cmd, args) => handlers.get("framework:invoke")(null, { cmd, args });
 
-/** 원장 실물 — 셸이 홈에 떨구는 jsonl 을 그대로 읽는다. */
+/** 원장 실물 — 프레임워크가 홈에 떨구는 jsonl 을 그대로 읽는다. */
 function ledger() {
   const p = join(root, ".soksak-electron-spike", "invoke-demand.jsonl");
   return readFileSync(p, "utf8")
@@ -104,12 +104,12 @@ function ledger() {
 }
 
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), "soksak-shell-"));
+  root = mkdtempSync(join(tmpdir(), "soksak-framework-"));
   servers = [];
   realHomedir = osModule.homedir;
   realSocketEnv = process.env.SOKSAK_SOCKET;
   realHelperEnv = process.env.SOKSAK_CORED_BIN;
-  // 셸은 원장을 홈에 떨군다 — 검증이 사용자 홈을 건드리지 않게 홈을 픽스처로 돌린다.
+  // 프레임워크는 원장을 홈에 떨군다 — 검증이 사용자 홈을 건드리지 않게 홈을 픽스처로 돌린다.
   osModule.homedir = () => root;
 });
 
@@ -131,7 +131,7 @@ describe("framework:invoke — 렌더러가 보는 답", () => {
     const mock = await startMock("live.sock", (req, sock) =>
       sock.write(`${JSON.stringify({ id: req.id, ok: true, data: { theme: "dark" } })}\n`),
     );
-    const handlers = loadShell(mock.socketPath);
+    const handlers = loadFramework(mock.socketPath);
     await expect(invoke(handlers, "themes_scan", { dir: "x" })).resolves.toEqual({
       ok: true,
       value: { theme: "dark" },
@@ -153,9 +153,9 @@ describe("framework:invoke — 렌더러가 보는 답", () => {
         })}\n`,
       ),
     );
-    const handlers = loadShell(mock.socketPath);
-    // 표본은 백엔드가 져야 할 명령이어야 한다 — 셸이 스스로 답하는 것(webview_*·engine_* 등)은
-    // 애초에 소켓으로 가지 않으므로 백엔드의 답을 증언하지 못한다(shell-native.test.mjs 가 그쪽).
+    const handlers = loadFramework(mock.socketPath);
+    // 표본은 백엔드가 져야 할 명령이어야 한다 — 프레임워크가 스스로 답하는 것(webview_*·engine_* 등)은
+    // 애초에 소켓으로 가지 않으므로 백엔드의 답을 증언하지 못한다(framework-native.test.mjs 가 그쪽).
     const r = await invoke(handlers, "themes_scan", {});
     expect(r.ok).toBe(false);
     expect(r.code).toBe("UNKNOWN_COMMAND");
@@ -166,9 +166,9 @@ describe("framework:invoke — 렌더러가 보는 답", () => {
   });
 
   it("cored를 세우지 못하면 무엇이 없어서인지까지 이름을 달고 실패한다", async () => {
-    // 소켓 지목이 없으면 셸이 cored를 띄운다. 그것마저 못 하면 실패는 남되, 사유는 더
+    // 소켓 지목이 없으면 프레임워크가 cored를 띄운다. 그것마저 못 하면 실패는 남되, 사유는 더
     // 구체적이어야 한다 — "백엔드가 없다"는 무엇을 고쳐야 하는지 말해 주지 않는다.
-    const handlers = loadShell(null);
+    const handlers = loadFramework(null);
     const r = await invoke(handlers, "activity_publish", {});
     expect(r).toMatchObject({
       ok: false,
@@ -186,14 +186,14 @@ describe("framework:invoke — 렌더러가 보는 답", () => {
     ]);
   });
 
-  it("셸 갈래가 아닌 이름은 여전히 다리를 탄다 — 갈래 규칙이 백엔드의 것을 삼키지 않는다", async () => {
-    // 셸 갈래(window_·webview_·engine_·titlebar_·panel_)는 소켓 앞에서 걸린다. 그 규칙이
+  it("프레임워크 갈래가 아닌 이름은 여전히 다리를 탄다 — 갈래 규칙이 백엔드의 것을 삼키지 않는다", async () => {
+    // 프레임워크 갈래(window_·webview_·engine_·titlebar_·panel_)는 소켓 앞에서 걸린다. 그 규칙이
     // 넓으면 백엔드의 명령까지 FRAMEWORK_CONCEPT_ABSENT 로 죽고, 증상은 "백엔드가 답을 안 한다"로
     // 보인다. 근처 이름까지 실제로 다리를 타는지 본다.
     const mock = await startMock("through.sock", (req, sock) =>
       sock.write(`${JSON.stringify({ id: req.id, ok: true, data: req.method })}\n`),
     );
-    const handlers = loadShell(mock.socketPath);
+    const handlers = loadFramework(mock.socketPath);
     // 갈래 접두사와 **닮았지만 아닌** 이름들 — 그물이 이름 앞부분만 보고 삼키면 안 된다.
     const through = ["themes_scan", "windows_list", "webviews_scan", "enginex_stats", "panels"];
     for (const cmd of through) {
@@ -214,7 +214,7 @@ describe("framework:invoke — 렌더러가 보는 답", () => {
         )}\n`,
       );
     });
-    const handlers = loadShell(mock.socketPath);
+    const handlers = loadFramework(mock.socketPath);
     await invoke(handlers, "data_kv_get", { key: "a" });
     await invoke(handlers, "plugin_scan", {});
     await invoke(handlers, "data_kv_get", { key: "b" });

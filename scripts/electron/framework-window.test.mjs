@@ -21,7 +21,7 @@ const BACKEND = join(root, "electron/backend.cjs");
 const ELECTRON = requireCjs.resolve("electron");
 const LABEL_FLAG = "--soksak-window-label=";
 
-/** 창 하나 — 셸이 실제로 부르는 메서드만 갖는다. 없는 것을 부르면 여기서 터진다. */
+/** 창 하나 — 프레임워크가 실제로 부르는 메서드만 갖는다. 없는 것을 부르면 여기서 터진다. */
 function fakeWindow(opts) {
   const wc = { send: () => {}, on: () => {}, setWindowOpenHandler: () => {} };
   const win = {
@@ -57,7 +57,7 @@ function fakeWindow(opts) {
   return win;
 }
 
-function loadShell(created) {
+function loadFramework(created) {
   const handlers = new Map();
   class W {
     constructor(opts) {
@@ -114,7 +114,7 @@ let call;
 
 beforeEach(async () => {
   created = [];
-  const handlers = loadShell(created);
+  const handlers = loadFramework(created);
   await new Promise((r) => setImmediate(r)); // 부팅 창이 서기를 기다린다
   const invoke = handlers.get("framework:invoke");
   const boot = created[0];

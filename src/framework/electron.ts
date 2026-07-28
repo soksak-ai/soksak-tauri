@@ -1,13 +1,13 @@
 // 드래그 영역을 주는 쪽이 그 되돌림(no-drag)도 진다 — 앱 CSS 에 두면 종속이 샌다.
 import "./electron.css";
 import type { EngineProvision } from "@soksak-ai/plugin-spec";
-// Electron 셸 어댑터 — AppFramework 계약의 Electron 구현(스파이크).
+// Electron 프레임워크 어댑터 — AppFramework 계약의 Electron 구현(스파이크).
 //
 // Tauri 어댑터와 형제다. 앱 코드는 어느 쪽이 밑에 있는지 모르며, 이 파일이 늘어나도
 // 앱 코드는 한 줄도 바뀌지 않는다 — 그것이 경계가 있는 이유다.
 //
 // 벤더 SDK 를 직접 import 하지 않는다: contextIsolation 아래서 렌더러는 Node 를 못 보고,
-// 셸 능력은 프리로드(electron/preload.cjs)가 좁게 노출한 창구 하나로만 온다.
+// 프레임워크 능력은 프리로드(electron/preload.cjs)가 좁게 노출한 창구 하나로만 온다.
 //
 // 미구현은 **이름을 달고 실패한다**. 조용히 no-op 을 돌려주면 "돌아간다"는 착시가 생기고
 // 그 착시가 이식 판단을 망친다(스파이크의 목적은 정확히 그 판단이다).
@@ -35,21 +35,21 @@ interface FrameworkBridge {
     cmd: string,
     args?: Record<string, unknown>,
   ): Promise<OpResult & { command?: string }>;
-  /** 셸·Node 가 직접 답하는 능력(app/path/dialog) — 백엔드를 거치지 않는다. */
+  /** 프레임워크·Node 가 직접 답하는 능력(app/path/dialog) — 백엔드를 거치지 않는다. */
   host(op: string, args?: Record<string, unknown>): Promise<OpResult>;
   windowOp(op: string, args?: Record<string, unknown>): Promise<OpResult>;
   /** 라벨로 지목한 창의 조작 — 그 창이 없으면 실패한다(발신 창으로 폴백하지 않는다). */
   windowOpAt(label: string, op: string, args?: Record<string, unknown>): Promise<OpResult>;
   onEvent(event: string, cb: (payload: unknown) => void): Unlisten;
   onWindowEvent(name: string, cb: (msg: unknown) => void): Unlisten;
-  createStream(onMessage: (msg: unknown) => void): { __shellStream: string };
+  createStream(onMessage: (msg: unknown) => void): { __frameworkStream: string };
 }
 
 function bridge(): FrameworkBridge {
   const b = (globalThis as { __soksakFramework?: FrameworkBridge }).__soksakFramework;
   if (!b) {
     throw new Error(
-      "Electron 셸 창구가 없다 — preload 가 붙지 않았다(electron/preload.cjs)",
+      "Electron 프레임워크 창구가 없다 — preload 가 붙지 않았다(electron/preload.cjs)",
     );
   }
   return b;
@@ -110,7 +110,7 @@ async function windowOp<T>(
   return unwrap<T>(r, op);
 }
 
-/** 창 조작면에서 셸이 창을 직접 만져 답하는 부분 — 현재 창이든 지목한 창이든 같다. */
+/** 창 조작면에서 프레임워크가 창을 직접 만져 답하는 부분 — 현재 창이든 지목한 창이든 같다. */
 function windowOps(
   label: string,
   target: string | null,
@@ -147,18 +147,18 @@ function currentWindowHandle(): FrameworkWindowHandle {
         const b = (m as { bounds: { x: number; y: number } }).bounds;
         cb({ x: b.x, y: b.y });
       }),
-    // 네이티브 파일 드래그드롭은 셸 층 작업이 남아 있다 — 조용히 no-op 하지 않는다.
+    // 네이티브 파일 드래그드롭은 프레임워크 층 작업이 남아 있다 — 조용히 no-op 하지 않는다.
     onDragDrop: async (cb) => attachDragDrop(cb),
     listen: async <T,>(event: string, cb: (e: FrameworkEvent<T>) => void) =>
       bridge().onEvent(event, (payload) => cb({ payload: payload as T })),
   };
 }
 
-/** 다른 창의 핸들 — 조작은 셸이 대신 하고, 구독은 이 렌더러에 오지 않는다. */
+/** 다른 창의 핸들 — 조작은 프레임워크가 대신 하고, 구독은 이 렌더러에 오지 않는다. */
 function labeledWindowHandle(label: string): FrameworkWindowHandle {
   return {
     ...windowOps(label, label),
-    // 셸은 창 기하 변화·타겟 이벤트를 각 창의 웹콘텐츠로만 민다. 다른 창 몫은 이 렌더러에
+    // 프레임워크는 창 기하 변화·타겟 이벤트를 각 창의 웹콘텐츠로만 민다. 다른 창 몫은 이 렌더러에
     // 도착하지 않으므로, 구독을 받아 두고 영영 안 부르는 것은 조용한 no-op 이다.
     onResized: async () => unimplemented("다른 창의 크기 변화 구독(onResized)"),
     onMoved: async () => unimplemented("다른 창의 이동 구독(onMoved)"),
@@ -227,8 +227,8 @@ export const electronFramework: AppFramework = {
   windowByLabel: async (label) => {
     // 자기 자신이면 현재 창 핸들 그대로 — 구독까지 온전한 쪽을 준다.
     if (label === bridge().label) return currentWindowHandle();
-    // 창 레지스트리는 셸이 갖는다. 없는 라벨은 null 이며, 그 뒤 조작이 다른 창으로
-    // 새지 않도록 지목 경로는 셸에서 폴백을 끈다.
+    // 창 레지스트리는 프레임워크가 갖는다. 없는 라벨은 null 이며, 그 뒤 조작이 다른 창으로
+    // 새지 않도록 지목 경로는 프레임워크에서 폴백을 끈다.
     return (await windowOp<boolean>(label, "exists")) ? labeledWindowHandle(label) : null;
   },
 
@@ -237,7 +237,7 @@ export const electronFramework: AppFramework = {
     version: () => hostOp("appVersion"),
   },
   path: {
-    // 경로 계산은 Node 의 것이다 — 렌더러는 Node 를 못 보므로 셸이 대신 답한다.
+    // 경로 계산은 Node 의 것이다 — 렌더러는 Node 를 못 보므로 프레임워크가 대신 답한다.
     tempDir: () => hostOp("tempDir"),
     join: (...parts) => hostOp("join", { parts }),
   },

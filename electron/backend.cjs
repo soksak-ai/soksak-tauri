@@ -1,11 +1,11 @@
-// Electron 셸의 백엔드 다리 — 소켓 NDJSON 클라이언트.
+// Electron 프레임워크의 백엔드 다리 — 소켓 NDJSON 클라이언트.
 //
-// 셸은 명령을 실행하지 않는다. 요청을 소켓 너머로 넘기고 답을 그대로 돌려준다. 전선은 앱
+// 프레임워크는 명령을 실행하지 않는다. 요청을 소켓 너머로 넘기고 답을 그대로 돌려준다. 전선은 앱
 // 소켓(src-tauri/src/ipc.rs)과 같은 모양이다 — 한 줄 JSON 요청 → 한 줄 JSON 응답, `id` 로 상관:
 //   요청 {"id":1,"method":"data_kv_get","params":{...}}
 //   응답 {"id":1,"ok":true,"data":{...}} | {"id":1,"ok":false,"code":"...","message":"..."}
 //
-// electron 을 require 하지 않는다. 셸을 띄워야만 검증되는 코드는 사실상 검증되지 않으므로,
+// electron 을 require 하지 않는다. 프레임워크를 띄워야만 검증되는 코드는 사실상 검증되지 않으므로,
 // 이 파일은 목 서버에 대고 그대로 몰 수 있어야 한다(scripts/electron/backend-socket.test.mjs).
 //
 // 못 하는 것은 이름을 달고 실패한다. 조용한 no-op 이나 가짜 성공은 "돌아간다"는 착시를 만들고,
@@ -20,7 +20,7 @@ const SOCKET_ARG = "--soksak-socket=";
 /** 응답을 못 받았을 때의 대기 상한. e2e 클라이언트(scripts/e2e/lib/client.mjs)와 같은 값. */
 const DEFAULT_TIMEOUT_MS = 30_000;
 
-/** 셸이 다는 이름들 — 백엔드가 준 코드는 그대로 통과시키고, 여기 코드는 다리의 사실이다. */
+/** 프레임워크가 다는 이름들 — 백엔드가 준 코드는 그대로 통과시키고, 여기 코드는 다리의 사실이다. */
 const NOT_CONNECTED = "BACKEND_NOT_CONNECTED"; // 소켓 경로 자체가 없다(오늘의 기본 상태)
 const UNREACHABLE = "BACKEND_UNREACHABLE"; // 경로는 있는데 붙지 못했다
 const DISCONNECTED = "BACKEND_DISCONNECTED"; // 답을 기다리는 중 연결이 끊겼다
@@ -57,9 +57,9 @@ function resolveSocketPath({ env = process.env, argv = process.argv } = {}) {
  *    (한 연결, ++seq, pending 맵, 줄 단위 버퍼링).
  * ② 호출마다 새 연결은 비싸다 — 서버는 연결마다 스레드를 하나 띄우고(ipc.rs handle_conn),
  *    스파이크 실측 부팅 1회가 50건이 넘는다(activity_publish 28 · data_kv_get 10 · 그 외).
- * 첫 호출까지 붙지 않는다(게으른 연결) — 셸 기동이 백엔드 기동을 기다리지 않는다.
+ * 첫 호출까지 붙지 않는다(게으른 연결) — 프레임워크 기동이 백엔드 기동을 기다리지 않는다.
  *
- * onDemand(cmd, served, code) = 요구 원장 싱크. 셸은 jsonl 을 꽂고 테스트는 배열을 꽂는다.
+ * onDemand(cmd, served, code) = 요구 원장 싱크. 프레임워크는 jsonl 을 꽂고 테스트는 배열을 꽂는다.
  */
 function createBackendClient(options = {}) {
   const socketPath = options.socketPath ?? null;
@@ -94,12 +94,12 @@ function createBackendClient(options = {}) {
       } catch {
         // 한 줄이 깨졌다고 연결을 버리지 않는다. 다만 삼키지도 않는다 — 짝을 못 찾은
         // 요청은 자기 상한에서 이름을 달고 끝난다.
-        console.error(`[electron-shell] 파싱 못 한 응답 줄: ${line.slice(0, 200)}`);
+        console.error(`[electron-framework] 파싱 못 한 응답 줄: ${line.slice(0, 200)}`);
         continue;
       }
       const entry = pending.get(msg.id);
       if (!entry) {
-        console.error(`[electron-shell] 짝 없는 응답 무시(id=${JSON.stringify(msg.id)})`);
+        console.error(`[electron-framework] 짝 없는 응답 무시(id=${JSON.stringify(msg.id)})`);
         continue;
       }
       pending.delete(msg.id);
@@ -177,7 +177,7 @@ function createBackendClient(options = {}) {
     }
 
     const id = ++seq;
-    // 창 봉투(window)를 싣지 않는다: 셸의 창 라벨은 셸의 것이고 백엔드의 창 축이 아니다.
+    // 창 봉투(window)를 싣지 않는다: 프레임워크의 창 라벨은 프레임워크의 것이고 백엔드의 창 축이 아니다.
     // 판(protocol)도 선언하지 않는다: 판 상수의 단일진실은 계약 크레이트(soksak-spec-socket)이고
     // JS 로 베끼면 두 번째 진실이 된다. 부재=0(레거시) 규칙이 호환창 안이다.
     const request = { id, method: cmd, params: args ?? {} };
@@ -216,7 +216,7 @@ function createBackendClient(options = {}) {
       // ok 없는 답을 성공으로 치면 그것이 곧 가짜 성공이다.
       fail(MALFORMED, `봉투가 아닌 답: "${cmd}" — ${JSON.stringify(replyValue).slice(0, 200)}`, cmd);
     }
-    // 백엔드가 준 코드를 그대로 올린다(UNKNOWN_COMMAND 등) — 셸이 덧칠하면 원인이 흐려진다.
+    // 백엔드가 준 코드를 그대로 올린다(UNKNOWN_COMMAND 등) — 프레임워크가 덧칠하면 원인이 흐려진다.
     fail(
       typeof replyValue.code === "string" ? replyValue.code : "BACKEND_ERROR",
       typeof replyValue.message === "string" ? replyValue.message : `백엔드가 거절했다: "${cmd}"`,
@@ -224,12 +224,12 @@ function createBackendClient(options = {}) {
     );
   }
 
-  /** 셸 종료 시 연결을 놓는다. 대기 중이던 호출은 이름을 달고 깨어난다. */
+  /** 프레임워크 종료 시 연결을 놓는다. 대기 중이던 호출은 이름을 달고 깨어난다. */
   function close() {
     const s = sock;
     sock = null;
     if (s) s.destroy();
-    rejectAll(DISCONNECTED, "셸이 백엔드 연결을 닫았다");
+    rejectAll(DISCONNECTED, "프레임워크가 백엔드 연결을 닫았다");
   }
 
   return { call, close, socketPath };

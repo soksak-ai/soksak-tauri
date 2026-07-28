@@ -1,13 +1,13 @@
-// Electron 셸 — 스파이크. Tauri 셸과 **형제**이며 교체가 아니다.
+// Electron 프레임워크 — 스파이크. Tauri 프레임워크와 **형제**이며 교체가 아니다.
 //
-// 목적은 셸 층의 질문에만 답하는 것이다: 같은 UI 가 이 셸 위에서 뜨는가, 창 조작·전역
+// 목적은 프레임워크 층의 질문에만 답하는 것이다: 같은 UI 가 이 프레임워크 위에서 뜨는가, 창 조작·전역
 // 이벤트·스트림이 계약대로 도는가, 그리고 UI 가 백엔드에 **무엇을 어떤 순서로** 요구하는가.
 // 마지막 것이 러스트 cored 분리(2단계)의 우선순위 입력이다.
 //
 // 규칙: 백엔드가 아직 없는 명령은 **조용히 성공한 척하지 않는다**. 이름을 달아 실패하고
 // 요구 원장에 남긴다 — 가짜 성공은 "돌아간다"는 착시를 만들고, 그 착시가 이식 판단을 망친다.
 //
-// 다만 전부가 백엔드의 것은 아니다. 창·웹뷰·네이티브 표면은 셸이 스스로 답한다 — cored
+// 다만 전부가 백엔드의 것은 아니다. 창·웹뷰·네이티브 표면은 프레임워크가 스스로 답한다 — cored
 // 프로세스엔 창이 없어 영영 그리로 못 간다. 그 표는 electron/native/ 가 갈래별로 소유하고,
 // 소켓 앞에 선다. 이 파일은 표를 쥐지 않는다 — 배선(창 레지스트리·다리·원장)만 쥔다.
 
@@ -16,22 +16,22 @@ const path = require("node:path");
 const fs = require("node:fs");
 const os = require("node:os");
 const { createBackendClient, resolveSocketPath } = require("./backend.cjs");
-const { shellIdentity, coredBinary, ensureCored } = require("./cored.cjs");
+const { frameworkIdentity, coredBinary, ensureCored } = require("./cored.cjs");
 const activity = require("./activity.cjs");
 const native = require("./native/index.cjs");
 const { frameworkError } = native;
 
 const DEV_URL = process.env.SOKSAK_ELECTRON_URL || "http://localhost:1420";
 
-// 이 셸의 정체성 — 홈은 identifier 에서 나오고, 원장도 cored 소켓도 그 홈 안에 산다.
-// 홈은 셸의 것이다: cored는 이 값을 부팅 인자로 **받는다**(파생하지 않는다).
-const IDENTITY = shellIdentity();
+// 이 프레임워크의 정체성 — 홈은 identifier 에서 나오고, 원장도 cored 소켓도 그 홈 안에 산다.
+// 홈은 프레임워크의 것이다: cored는 이 값을 부팅 인자로 **받는다**(파생하지 않는다).
+const IDENTITY = frameworkIdentity();
 const SPIKE_HOME = IDENTITY.home;
 const DEMAND_LOG = path.join(SPIKE_HOME, "invoke-demand.jsonl");
 
 fs.mkdirSync(SPIKE_HOME, { recursive: true });
 
-/** 창 라벨 ↔ BrowserWindow. 라벨은 앱의 정체성 축이므로 셸이 부여하고 지킨다. */
+/** 창 라벨 ↔ BrowserWindow. 라벨은 앱의 정체성 축이므로 프레임워크가 부여하고 지킨다. */
 const windows = new Map();
 
 /** 부팅 창의 라벨 — 컨트롤 플레인의 예약어다(NAMING 4b). 프론트는 이 이름 하나로 컨트롤 플레인
@@ -43,7 +43,7 @@ const CONTROL_PLANE_LABEL = "main";
 /** UI 가 백엔드에 요구한 명령을 순서대로 남긴다 — 2단계 우선순위의 실측 근거.
  *  서빙된 것(served:true)과 못 한 것을 가르고, 못 한 것은 사유(code)까지 남긴다 — "cored 가
  *  무엇을 더 져야 하는가"는 요구 목록만으로는 안 나오고 실패 사유가 있어야 갈린다.
- *  by="shell" 은 셸이 스스로 답한 줄이다. 순서는 남기되 cored 요구 목록에는 섞이지 않는다 —
+ *  by="framework" 는 프레임워크가 스스로 답한 줄이다. 순서는 남기되 cored 요구 목록에는 섞이지 않는다 —
  *  창·웹뷰·네이티브 표면은 cored 로 갈 수 없으므로(다른 프로세스엔 창이 없다) 그 목록에 실리면
  *  영영 못 옮길 일을 할 일로 세게 된다. */
 function recordDemand(cmd, served, code, by) {
@@ -91,11 +91,11 @@ function windowFor(label) {
   return (label && windows.get(label)) || null;
 }
 
-// ── 셸의 것 — 네이티브 명령 ──────────────────────────────────────────────────
+// ── 프레임워크의 것 — 네이티브 명령 ──────────────────────────────────────────
 // 표는 electron/native/ 가 갈래별로 소유한다(window·webview·engine·titlebar). 이 파일이 주는
-// 것은 셸만 아는 문맥뿐이다: 부른 창, 그리고 셸이 라벨을 부여한 표면들의 목록.
+// 것은 프레임워크만 아는 문맥뿐이다: 부른 창, 그리고 프레임워크가 라벨을 부여한 표면들의 목록.
 
-/** 네이티브 명령이 셸에게 물을 수 있는 것. 표 항목은 이 문맥으로만 셸을 본다. */
+/** 네이티브 명령이 프레임워크에게 물을 수 있는 것. 표 항목은 이 문맥으로만 프레임워크를 본다. */
 function nativeContext(sender) {
   return {
     window: BrowserWindow.fromWebContents(sender),
@@ -117,8 +117,8 @@ function nativeContext(sender) {
 // 소켓이 오는 길은 둘이다.
 //   ① 외부 지목(SOKSAK_SOCKET / --soksak-socket=) — 그 소켓은 남의 것이다. 그대로 붙고,
 //      띄우지도 거두지도 않는다.
-//   ② 지목이 없으면 셸이 자기 정체성으로 cored를 띄운다(electron/cored.cjs). 기본 경로를
-//      지어내 남의 소켓에 붙는 일은 여전히 없다 — 이 소켓은 이 셸의 홈 안에 있다.
+//   ② 지목이 없으면 프레임워크가 자기 정체성으로 cored를 띄운다(electron/cored.cjs). 기본 경로를
+//      지어내 남의 소켓에 붙는 일은 여전히 없다 — 이 소켓은 이 프레임워크의 홈 안에 있다.
 const externalSocket = resolveSocketPath();
 
 /** 살아 있는 다리. 준비되기 전 호출은 backendReady 에서 기다린다(폴링 없음). */
@@ -172,11 +172,11 @@ async function callBackend(cmd, args) {
 
 // ── 활동 부채질 ──────────────────────────────────────────────────────────────
 // cored는 발행 3단 중 **적재만** 하고 도장 찍힌 항목을 답에 실어 준다(그 프로세스엔 창이 없다).
-// 창은 셸의 것이므로 그 항목을 창에 뿌리는 것은 여기서 한다 — 안 하면 프론트가 반환값을
+// 창은 프레임워크의 것이므로 그 항목을 창에 뿌리는 것은 여기서 한다 — 안 하면 프론트가 반환값을
 // 버리므로(void invoke) listen("activity") 구독자가 오류 한 줄 없이 굶는다.
 //
-// 대상은 이 셸의 창 레지스트리 전부다(코어의 broadcast 와 같다 — 발신 창을 빼지도 더하지도
-// 않는다). 규칙과 배달은 activity.cjs 가 진다: 셸을 띄우지 않고도 검증되어야 한다.
+// 대상은 이 프레임워크의 창 레지스트리 전부다(코어의 broadcast 와 같다 — 발신 창을 빼지도 더하지도
+// 않는다). 규칙과 배달은 activity.cjs 가 진다: 프레임워크를 띄우지 않고도 검증되어야 한다.
 function fanOutActivity(entry) {
   if (!activity.isActivityEntry(entry)) {
     // 적재분이 아니면 부채질할 것이 없다. 아닌 것을 밀면 구독자가 조용히 어긋나고,
@@ -194,15 +194,15 @@ function fanOutActivity(entry) {
 }
 
 ipcMain.handle("framework:invoke", async (e, { cmd, args }) => {
-  // 셸의 것이 먼저다 — 창·웹뷰·네이티브 표면은 소켓 너머로 물어볼 수 없다(거기엔 창이 없다).
-  // 판별은 이름으로 한다: 셸 갈래는 표에 없더라도 소켓으로 새지 않는다.
+  // 프레임워크의 것이 먼저다 — 창·웹뷰·네이티브 표면은 소켓 너머로 물어볼 수 없다(거기엔 창이 없다).
+  // 판별은 이름으로 한다: 프레임워크 갈래는 표에 없더라도 소켓으로 새지 않는다.
   if (native.claims(cmd)) {
     return native.serve(cmd, args, nativeContext(e && e.sender), recordDemand);
   }
   try {
     const value = await callBackend(cmd, args);
     // 답을 돌려주기 전에 뿌린다 — 코어도 발행 안에서 창에 먼저 닿고 반환은 그다음이라,
-    // 순서를 뒤집으면 같은 창에서 구독자와 호출자가 보는 시점이 셸마다 갈린다.
+    // 순서를 뒤집으면 같은 창에서 구독자와 호출자가 보는 시점이 프레임워크마다 갈린다.
     if (cmd === activity.ACTIVITY_PUBLISH) fanOutActivity(value);
     return { ok: true, value };
   } catch (err) {
@@ -314,7 +314,7 @@ ipcMain.handle("framework:window", async (e, { label, op, args, exact }) => {
   }
 });
 
-/** 창 기하 변화는 셸이 렌더러로 밀어 준다(계약의 onResized/onMoved). */
+/** 창 기하 변화는 프레임워크가 렌더러로 밀어 준다(계약의 onResized/onMoved). */
 function wireWindowEvents(label, win) {
   const send = (name) => () => {
     if (win.isDestroyed()) return;
@@ -369,7 +369,7 @@ function boot() {
 }
 
 app.on("window-all-closed", () => app.quit());
-// 셸이 내려가면 연결도 놓고, 자기가 띄운 cored도 거둔다. 외부에서 지목한 소켓의 프로세스는
+// 프레임워크가 내려가면 연결도 놓고, 자기가 띄운 cored도 거둔다. 외부에서 지목한 소켓의 프로세스는
 // 남의 것이라 건드리지 않는다. 회수는 값으로 돌려준다 — 거뒀는지 확인할 수 있어야 한다.
 app.on("will-quit", () => {
   if (backend) backend.close();

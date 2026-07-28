@@ -1,6 +1,6 @@
 // project_* — 어느 창이 어느 프로젝트 root 를 점유하는가.
 //
-// 갈래(window_·webview_…)가 아니지만 셸의 것이다. 등재 자체가 주장이다.
+// 갈래(window_·webview_…)가 아니지만 프레임워크의 것이다. 등재 자체가 주장이다.
 //
 // **왜 프레임워크가 지는가.** 점유 지도는 `root → 창 라벨`이고, 그 수명이 곧 창의 수명이다.
 // cored 가 쥐면 프레임워크가 재기동한 뒤에도 죽은 창의 점유가 남아 그 프로젝트를 다시 못 연다
@@ -36,7 +36,7 @@ module.exports = {
   // 그 창을 포커스한다). 예외로 만들면 그 분기가 오류 처리로 바뀐다.
   project_claim: {
     concept: "프로젝트 root 점유",
-    source: "셸의 root→창 지도(수명이 창의 수명과 같다)",
+    source: "프레임워크의 root→창 지도(수명이 창의 수명과 같다)",
     answer: (ctx, args) => {
       const root = needRoot(args);
       live(ctx);
