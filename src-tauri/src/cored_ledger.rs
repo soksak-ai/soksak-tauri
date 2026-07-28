@@ -86,6 +86,38 @@ pub(crate) fn ledger() -> BTreeMap<Lane, Vec<String>> {
     out
 }
 
+/// open 갈래에서 **아직 아무 답도 없는** 이름들 — 표를 받아서 판정한다.
+///
+/// open 은 "시그니처가 막지 않는다"는 뜻일 뿐이다. 거기 남은 이름에 대해 소스가 말할 수 있는
+/// 답은 둘이다: 서빙한다(COMMANDS), 또는 사유를 달고 거절한다(UNSERVED). 둘 다 아닌 이름은
+/// **아직 아무도 조사하지 않은 것**인데, 그 상태는 어디에도 안 남는다 — 프레임워크 저자는
+/// UNKNOWN_COMMAND 한 줄을 받고 "여기서는 못 하는 것"으로 읽는다. 그 오독이 조사 없는 흉내를
+/// 부른다. 그래서 미답을 사람 기억이 아니라 여기서 센다.
+///
+/// 표를 인자로 받는다: 실제 표로도, 합성한 표로도 같은 판정을 내려야 이 게이트가 산 것이다.
+fn unanswered_in(open: &[String], served: &[&str], refused: &[&str]) -> Vec<String> {
+    open.iter()
+        .filter(|n| !served.contains(&n.as_str()) && !refused.contains(&n.as_str()))
+        .cloned()
+        .collect()
+}
+
+/// cored 가 서빙하는 이름들.
+fn served_names() -> Vec<&'static str> {
+    soksak_cored::registry::COMMANDS.iter().map(|c| c.name).collect()
+}
+
+/// 사유를 달고 거절한 이름들.
+fn refused_names() -> Vec<&'static str> {
+    soksak_cored::registry::UNSERVED.iter().map(|u| u.name).collect()
+}
+
+/// 지금 이 소스 트리의 미답 — open 갈래에서 서빙도 거절도 아닌 이름들.
+pub(crate) fn unanswered() -> Vec<String> {
+    let open = ledger().remove(&Lane::Open).unwrap_or_default();
+    unanswered_in(&open, &served_names(), &refused_names())
+}
+
 /// 사람·기계가 함께 읽는 한 줄들.
 pub(crate) fn summary() -> Vec<String> {
     ledger()
@@ -162,6 +194,88 @@ mod tests {
         assert_eq!(lane_of(&cmd("fs_read", &[]), &served), Lane::Open);
     }
 
+    /// open 에 남은 이름은 **서빙되거나, 사유를 달고 거절되거나** 둘 중 하나다.
+    ///
+    /// 셋째 상태(아무 답도 없음)는 소스 어디에도 안 남아서 사람 기억에만 산다. 기억은 하루면
+    /// 틀린다 — 그리고 틀린 자리는 "여기서는 못 한다"로 읽혀 다시 조사되지 않는다.
+    #[test]
+    fn every_open_name_is_either_served_or_refused_with_a_reason() {
+        let l = ledger();
+        let open = l.get(&Lane::Open).cloned().unwrap_or_default();
+        // 오라클 생존 — 파서가 죽어 open 이 비면 미답도 0 이 되어 통과로 위장한다.
+        assert!(!open.is_empty(), "open 갈래가 비었다 — 이 검사는 판정할 수 없다");
+        assert_eq!(
+            unanswered_in(&open, &served_names(), &refused_names()),
+            Vec::<String>::new(),
+            "아직 아무 답도 없는 이름이 있다 — 서빙하거나, 무엇이 막는지 UNSERVED 에 적어라",
+        );
+    }
+
+    /// 거절 목록의 이름은 **실재하는 앱 명령**이다.
+    ///
+    /// 없어진 명령의 사유가 남으면 그 선언은 아무것도 막지 않으면서 막는 것처럼 보인다.
+    /// 읽는 사람은 조사된 벽으로 믿고, 그 벽은 이미 없다.
+    #[test]
+    fn every_refused_name_is_a_real_app_command() {
+        let app: Vec<String> = app_commands().into_iter().map(|c| c.name).collect();
+        // 오라클 생존 — 표 둘 중 하나라도 못 읽으면 이 검사는 판정한 것이 없다.
+        assert!(app.len() > 100, "앱 명령을 못 읽었다: {}", app.len());
+        let refused = refused_names();
+        assert!(!refused.is_empty(), "거절 목록이 비었다 — 이 검사는 판정할 수 없다");
+        let dead: Vec<&str> = refused
+            .iter()
+            .copied()
+            .filter(|n| !app.contains(&n.to_string()))
+            .collect();
+        assert_eq!(
+            dead,
+            Vec::<&str>::new(),
+            "앱에 없는 이름의 거절 사유가 남아 있다 — 없어진 결함을 계속 막는 것처럼 보인다",
+        );
+    }
+
+    /// 한 이름에 답이 둘일 수는 없다 — 서빙하면서 거절 사유를 다는 것은 결함이다.
+    ///
+    /// 겹치면 `cored.commands` 는 서빙한다고 말하고 거절 표는 못 한다고 말한다. 어느 쪽을
+    /// 읽었는지에 따라 답이 갈리고, 갈린 답은 오류가 아니라 **다른 사실**로 퍼진다.
+    #[test]
+    fn no_name_is_both_served_and_refused() {
+        let served = served_names();
+        let refused = refused_names();
+        assert!(!served.is_empty() && !refused.is_empty(), "표를 못 읽었다");
+        let both: Vec<&str> = refused
+            .iter()
+            .copied()
+            .filter(|n| served.contains(n))
+            .collect();
+        assert_eq!(
+            both,
+            Vec::<&str>::new(),
+            "같은 이름이 서빙 표와 거절 표에 함께 있다 — 표로 올라갔으면 사유를 지워라",
+        );
+    }
+
+    /// 게이트 자격 — 합성한 표에 위반을 심어 **실제로 잡는지** 본다.
+    #[test]
+    fn the_gate_catches_a_name_with_no_answer_at_all() {
+        let open = vec!["theme_install".to_string(), "clipboard_read".to_string()];
+        // 둘 다 답이 있으면 미답은 없다.
+        assert_eq!(
+            unanswered_in(&open, &["theme_install"], &["clipboard_read"]),
+            Vec::<String>::new(),
+        );
+        // 서빙 표에서 빠지면 그 이름이 미답으로 잡힌다.
+        assert_eq!(
+            unanswered_in(&open, &[], &["clipboard_read"]),
+            vec!["theme_install".to_string()],
+        );
+        // 거절 표에서 빠져도 마찬가지다.
+        assert_eq!(
+            unanswered_in(&open, &["theme_install"], &[]),
+            vec!["clipboard_read".to_string()],
+        );
+    }
+
     /// 장부는 물어서 알 수 있어야 한다(R7) — 요약이 갈래마다 숫자를 말한다.
     #[test]
     fn the_summary_names_every_lane_with_a_count() {
@@ -187,9 +301,20 @@ mod report {
         let l = ledger();
         if let Some(open) = l.get(&Lane::Open) {
             println!("\nopen({}) — 시그니처가 막지 않는 것들:", open.len());
+            let refused = refused_names();
             for n in open {
-                println!("  {n}");
+                let mark = if refused.contains(&n.as_str()) {
+                    "거절(사유 있음)"
+                } else {
+                    "미답"
+                };
+                println!("  {n} — {mark}");
             }
+        }
+        let u = unanswered();
+        println!("\nopen 미답: {}", u.len());
+        for n in &u {
+            println!("  {n}");
         }
     }
 }
