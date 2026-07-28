@@ -37,6 +37,10 @@ const FORBIDDEN: &[(&str, &str)] = &[
     ("env::temp_dir", "임시 경로도 환경 파생 — 인자로 받는다"),
     ("home_dir", "홈은 인자로 온다"),
     ("cfg!(target_os", "자기 서술 — 타깃이 필요하면 인자로 받는다"),
+    // target_os 만 막으면 같은 자기 서술이 다른 철자로 그대로 들어온다. cfg!(windows) 는
+    // cfg!(target_os = "windows") 와 같은 말이고, unix 는 그보다 넓다.
+    ("cfg!(windows", "동일 — 철자만 다른 자기 서술"),
+    ("cfg!(unix", "동일 — 더 넓은 자기 서술"),
     ("OnceLock", "앰비언트 전역 — 첫 호출자가 값을 정한다"),
     ("lazy_static", "동일"),
     ("static mut", "동일"),
