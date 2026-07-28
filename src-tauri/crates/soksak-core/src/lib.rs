@@ -30,6 +30,7 @@ pub mod shellq;
 pub mod plugin_data;
 pub mod plugin_dir;
 pub mod probe;
+pub mod proc;
 pub mod pty_delivery;
 #[cfg(unix)]
 pub mod ptyd;

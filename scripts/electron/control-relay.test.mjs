@@ -14,7 +14,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import net from "node:net";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
@@ -263,16 +263,25 @@ describe("제어면 중계", () => {
     expect(await bridge.call("watch_dir", { path: dir })).toBe(1);
 
     // 실제 파일시스템 사건 — 폴링이 아니라 OS 가 알려 준다.
-    writeFileSync(join(dir, "made.txt"), "x");
+    //
+    // 쓰기를 되풀이하는 이유: OS 감시가 실제로 무장되는 시점은 watch_dir 의 반환보다 늦을 수
+    // 있다(FSEvents 는 등록과 첫 사건 사이에 시동 지연이 있다). 첫 쓰기가 그 틈에 떨어지면
+    // 사건이 없고, 그것은 배선이 아니라 타이밍이다 — 재는 것은 "방송이 닿는가"이지
+    // "첫 쓰기가 잡히는가"가 아니다. 하나라도 닿으면 그 자리에서 끝난다.
     const deadline = Date.now() + PATIENCE_MS;
-    while (!seen.some((e) => e.event === "fs-change") && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 50));
+    for (let n = 0; !seen.some((e) => e.event === "fs-change") && Date.now() < deadline; n++) {
+      writeFileSync(join(dir, `made-${n}.txt`), "x");
+      await new Promise((r) => setTimeout(r, 100));
     }
     const hit = seen.find((e) => e.event === "fs-change");
     expect(hit, `방송이 오지 않았다: ${JSON.stringify(seen)}`).toBeTruthy();
-    // 앱의 emit("fs-change", 디렉터리) 와 **같은 이름·같은 값**이다 — 다르면 프론트가
-    // 프레임워크를 가려야 한다.
-    expect(String(hit.payload)).toContain("watched");
+    // 앱의 emit("fs-change", 디렉터리) 와 **같은 이름·같은 모양**이다(변경된 항목의 부모
+    // 디렉터리) — 다르면 프론트가 프레임워크를 가려야 한다.
+    //
+    // 어느 디렉터리인지까지 못박지 않는다: 파일이 생기면 부모는 watched 지만 그 디렉터리
+    // 자체의 mtime 이 바뀌면 부모는 그 위다. 둘 다 OS 가 정하는 사실이고 우리 계약이 아니다.
+    // 심링크도 해소해 비교한다 — macOS 는 /var 를 /private/var 로 돌려준다.
+    expect(realpathSync(String(hit.payload)).startsWith(realpathSync(root))).toBe(true);
 
     // 해제는 refcount 를 0 으로 돌린다(멱등).
     expect(await bridge.call("unwatch_dir", { path: dir })).toBe(0);

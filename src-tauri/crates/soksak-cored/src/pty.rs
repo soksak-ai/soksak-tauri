@@ -82,8 +82,36 @@ impl ActivitySink for CoredLedger {
 /// 출구 — 바이트 배치를 소켓 프레임으로 민다.
 ///
 /// 받는 쪽이 사라졌다는 사실을 **값으로** 돌려준다. 조용히 버리면 생산 측이 영원히 읽는다.
-struct TokenSink {
+pub struct TokenSink {
     token: String,
+}
+
+impl TokenSink {
+    pub fn new(token: String) -> Self {
+        TokenSink { token }
+    }
+}
+
+/// 종료 출구 — 스트림이 끝났다는 사실 하나(정수). 바이트 계약에 끼우지 않는다:
+/// 받는 쪽이 보는 것이 raw 바이트가 아니라 수 하나다.
+pub struct ExitTokenSink {
+    token: String,
+}
+
+impl ExitTokenSink {
+    pub fn new(token: String) -> Self {
+        ExitTokenSink { token }
+    }
+}
+
+impl soksak_core::stream_sink::ExitSink for ExitTokenSink {
+    fn deliver(&self, code: i32) -> Delivered {
+        if crate::streams::push(&self.token, json!({ "code": code })) {
+            Delivered::Ok
+        } else {
+            Delivered::Gone
+        }
+    }
 }
 
 impl StreamSink for TokenSink {
@@ -171,7 +199,7 @@ pub fn spawn(ctx: &Ctx, params: &Value, args: SpawnArgs) -> Result<Value, String
             env_remove,
             replay: args.replay,
         },
-        TokenSink { token },
+        TokenSink::new(token),
     )?;
 
     let mut n = NEXT_ID.get_or_init(|| Mutex::new(0)).lock().unwrap_or_else(|e| e.into_inner());

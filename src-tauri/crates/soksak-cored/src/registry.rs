@@ -175,6 +175,56 @@ pub const COMMANDS: &[Command] = &[
         returns: "Value[] (도장 찍힌 항목, 오래된 것부터)",
         run: run_activity_recent,
     },
+    // ── 자식 프로세스 ────────────────────────────────────────────────────
+    // 스폰 규칙은 코어 한 벌이다(soksak-core proc) — 두 벌이면 같은 명령이 프로세스마다 다른
+    // env 로 뜨고, 그 차이는 "이쪽에서만 안 된다"로 나타난다.
+    Command {
+        name: "process_spawn",
+        args: &[
+            Arg { name: "cmd", ty: "string", required: true },
+            Arg { name: "args", ty: "string[]", required: true },
+            Arg { name: "cwd", ty: "string?", required: false },
+            Arg { name: "env", ty: "object?", required: false },
+            Arg { name: "envRemove", ty: "string[]?", required: false },
+            Arg { name: "scrubAiEnv", ty: "bool?", required: false },
+            Arg { name: "group", ty: "bool?", required: false },
+            Arg { name: "detached", ty: "bool?", required: false },
+            Arg { name: "ns", ty: "string?", required: false },
+            Arg { name: "secretEnv", ty: "object?", required: false },
+            Arg { name: "onStdout", ty: "stream", required: true },
+            Arg { name: "onStderr", ty: "stream", required: true },
+            Arg { name: "onExit", ty: "stream", required: true },
+        ],
+        returns: "u32 — 프로세스 id",
+        run: run_process_spawn,
+    },
+    Command {
+        name: "process_write",
+        args: &[
+            Arg { name: "id", ty: "u32", required: true },
+            Arg { name: "data", ty: "string", required: true },
+        ],
+        returns: "null",
+        run: run_process_write,
+    },
+    Command {
+        name: "process_stdin_close",
+        args: &[Arg { name: "id", ty: "u32", required: true }],
+        returns: "null",
+        run: run_process_stdin_close,
+    },
+    Command {
+        name: "process_list",
+        args: &[],
+        returns: "object[]",
+        run: run_process_list,
+    },
+    Command {
+        name: "process_kill",
+        args: &[Arg { name: "id", ty: "u32", required: true }],
+        returns: "null",
+        run: run_process_kill,
+    },
     // ── 데이터 컬렉션 ────────────────────────────────────────────────────
     // 질의 규칙과 질의문은 soksak-store 한 벌이 소유한다 — 두 벌이면 같은 레코드가 프로세스마다
     // 다르게 읽히고, 그 차이는 오류가 아니라 **빈 결과**다.
@@ -982,6 +1032,130 @@ fn run_activity_recent(ctx: &Ctx, params: &Value) -> Outcome {
         }
         // 앱의 기본 상한과 같다(200) — 다르면 같은 호출이 프로세스마다 다른 길이를 답한다.
         Ok(act::pick_recent(entries, a.since, a.limit.unwrap_or(200)))
+    })
+}
+
+/// 이 프로세스가 낳은 자식들. 앱의 ProcessManager 와 같은 자리다.
+static PROCS: std::sync::OnceLock<soksak_core::proc::ProcessManager> = std::sync::OnceLock::new();
+
+fn procs() -> &'static soksak_core::proc::ProcessManager {
+    PROCS.get_or_init(soksak_core::proc::ProcessManager::default)
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SpawnProc {
+    cmd: String,
+    #[serde(default)]
+    args: Vec<String>,
+    #[serde(default)]
+    cwd: Option<String>,
+    #[serde(default)]
+    env: Option<std::collections::HashMap<String, String>>,
+    #[serde(default)]
+    env_remove: Option<Vec<String>>,
+    #[serde(default)]
+    scrub_ai_env: Option<bool>,
+    #[serde(default)]
+    group: Option<bool>,
+    #[serde(default)]
+    detached: Option<bool>,
+    #[serde(default)]
+    ns: Option<String>,
+    #[serde(default)]
+    secret_env: Option<std::collections::HashMap<String, String>>,
+    #[serde(default)]
+    window: Option<String>,
+}
+
+#[cfg(unix)]
+fn run_process_spawn(ctx: &Ctx, params: &Value) -> Outcome {
+    let stripped = soksak_core::stream::without_tokens(params);
+    let a: SpawnProc = match serde_json::from_value(stripped) {
+        Ok(v) => v,
+        Err(e) => return Outcome::InvalidParams(e.to_string()),
+    };
+    // 세 출구는 각각 자기 토큰으로 간다 — 하나로 묶으면 소비자가 stdout·stderr·종료를 못 가른다.
+    let mut by_arg: std::collections::HashMap<String, String> =
+        soksak_core::stream::tokens(params).into_iter().collect();
+    let mut want = |arg: &str| {
+        by_arg
+            .remove(arg)
+            .ok_or_else(|| format!("{arg} 스트림 토큰이 없습니다"))
+    };
+    let (out, err, exit) = match (want("onStdout"), want("onStderr"), want("onExit")) {
+        (Ok(o), Ok(e), Ok(x)) => (o, e, x),
+        (a, b, c) => {
+            let why = [a.err(), b.err(), c.err()]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+                .join("; ");
+            return Outcome::Failed(why);
+        }
+    };
+    let r = soksak_core::proc::spawn_child(
+        ctx.identity(),
+        &std::env::vars().map(|(k, _)| k).collect::<Vec<_>>(),
+        soksak_core::proc::SpawnRequest {
+            cmd: a.cmd,
+            args: a.args,
+            cwd: a.cwd,
+            env: a.env,
+            env_remove: a.env_remove,
+            scrub_ai_env: a.scrub_ai_env.unwrap_or(false),
+            group: a.group.unwrap_or(false),
+            detached: a.detached.unwrap_or(false),
+            ns: a.ns,
+            secret_env: a.secret_env,
+            // 창은 부른 쪽이 스탬프한 회수 좌표다 — 이 프로세스에는 창이 없다.
+            window: a.window.unwrap_or_default(),
+        },
+        procs(),
+        // 이 프로세스에는 볼트가 없다 — **선언한다**. 빈 값을 주면 자식이 빈 토큰으로 붙고
+        // 그 인증 실패가 "설정이 틀렸다"로 보고된다.
+        &soksak_core::secret_env::NoSecrets,
+        crate::pty::TokenSink::new(out),
+        crate::pty::TokenSink::new(err),
+        crate::pty::ExitTokenSink::new(exit),
+    );
+    match r {
+        Ok(id) => Outcome::Ok(Value::from(id)),
+        Err(e) => Outcome::Failed(e),
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct ProcWrite {
+    id: u32,
+    data: String,
+}
+
+fn run_process_write(_ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: ProcWrite| {
+        procs()
+            .write_stdin(a.id, a.data.as_bytes())
+            .map(|_| Value::Null)
+    })
+}
+
+fn run_process_stdin_close(_ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: TermId| {
+        procs().close_stdin(a.id).map(|_| Value::Null)
+    })
+}
+
+fn run_process_list(_ctx: &Ctx, _params: &Value) -> Outcome {
+    match serde_json::to_value(procs().list()) {
+        Ok(v) => Outcome::Ok(v),
+        Err(e) => Outcome::Failed(e.to_string()),
+    }
+}
+
+fn run_process_kill(_ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: TermId| {
+        procs().kill(a.id);
+        Ok(Value::Null)
     })
 }
 
