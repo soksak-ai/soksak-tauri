@@ -1298,16 +1298,13 @@ mod tests {
 
 // 이 코어 빌드가 실행 중인 호스트의 유닛 타깃 트리플. 설치 클로저가 sidecar 아티팩트를
 // per-(os,arch) 자산에서 고르는 단일 기준이다 — 프론트가 플랫폼을 추측하지 않는다.
+//
+// 판정표는 코어가 소유하고 **타깃은 인자로** 넘긴다. 이 자리가 넘기는 값이 곧 이 실행물의
+// 빌드 상수라, 답은 옛 cfg 분기와 같다. 표를 모르는 호스트는 그럴듯한 트리플을 지어내는
+// 대신 이름을 달고 실패한다 — 지어내면 그 유닛은 받아서 못 돈다.
 #[tauri::command]
-pub fn host_unit_target() -> &'static str {
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    return "aarch64-apple-darwin";
-    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
-    return "x86_64-apple-darwin";
-    #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
-    return "aarch64-unknown-linux-gnu";
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-    return "x86_64-unknown-linux-gnu";
-    #[cfg(target_os = "windows")]
-    return "x86_64-pc-windows-msvc";
+pub fn host_unit_target() -> Result<&'static str, String> {
+    let (os, arch) = (std::env::consts::OS, std::env::consts::ARCH);
+    soksak_core::unit_target::host_target(os, arch)
+        .ok_or_else(|| format!("유닛 타깃이 정의되지 않은 호스트다: {os}-{arch}"))
 }

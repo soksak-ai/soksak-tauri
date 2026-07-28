@@ -93,6 +93,21 @@ impl Ctx {
     pub fn db_path(&self) -> PathBuf {
         self.data_dir.join(soksak_core::identity::DB_FILE)
     }
+
+    /// identity 밖의 사용자 자산이 사는 홈(`~/.claude`·`~/.codex`).
+    ///
+    /// 앱은 이 값을 자기 환경에서 읽는다(`HOME`). cored 는 읽지 않는다 — 부팅 때 받은
+    /// identity 홈이 `<사용자 홈>/.soksak<접미>` 라는 규칙에서 나온다. 못 구하는 홈
+    /// (부모 없는 경로)은 이름을 달고 실패한다: 조용히 다른 곳을 훑으면 "세션 없음"이
+    /// 답으로 나가고, 그 오답은 오류로 보이지 않는다.
+    pub fn user_home(&self) -> Result<&Path, String> {
+        self.identity.user_home().ok_or_else(|| {
+            format!(
+                "사용자 홈을 구할 수 없다 — 부팅 인자 --home 이 부모 없는 경로다({})",
+                self.identity.home().display()
+            )
+        })
+    }
 }
 
 #[cfg(test)]
@@ -119,6 +134,15 @@ mod tests {
         assert_eq!(ctx.db_path(), Path::new("/tmp/e2e-iso/soksak.db"));
         // 홈은 그대로다 — 데이터만 옮긴 것이지 정체성이 바뀐 게 아니다.
         assert_eq!(ctx.home(), Path::new("/tmp/x-dev"));
+    }
+
+    /// 사용자 홈은 부팅 때 받은 identity 홈에서 나온다 — 환경을 다시 읽지 않는다.
+    #[test]
+    fn the_user_home_comes_from_the_boot_home() {
+        assert_eq!(Ctx::new(dev()).user_home().unwrap(), Path::new("/tmp"));
+        // 부모가 없으면 지어내지 않는다.
+        let rootish = Ctx::new(Identity::new("/", "com.soksak.dev"));
+        assert!(rootish.user_home().is_err(), "부모 없는 홈을 통과시켰다");
     }
 
     /// cored 의 홈 레이아웃은 앱의 것과 **같은 함수**에서 나온다.

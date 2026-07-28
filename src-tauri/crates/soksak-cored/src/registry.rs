@@ -13,7 +13,9 @@
 use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
 
-use soksak_core::{identity, integrity, plugin_dir, session, themes, udp, unit_dev};
+use soksak_core::{
+    identity, integrity, pathx, plugin_dir, probe, session, themes, udp, unit_dev, unit_target,
+};
 
 use crate::ctx::Ctx;
 
@@ -169,6 +171,55 @@ pub const COMMANDS: &[Command] = &[
         returns: "bool (release core 여부)",
         run: run_app_is_release,
     },
+    // ── 조회·프로브 ─────────────────────────────────────────────────────────
+    // AI 세션은 identity 홈이 아니라 **사용자 홈** 아래 산다(~/.claude·~/.codex). 그 홈도
+    // 부팅 상태다 — 앱의 같은 명령이 cwd 하나만 받기 때문에 인자로 요구할 수 없다.
+    Command {
+        name: "ai_session_dir",
+        args: &[Arg { name: "cwd", ty: "string", required: REQ }],
+        returns: "string (그 cwd 의 claude 세션 디렉터리)",
+        run: run_ai_session_dir,
+    },
+    Command {
+        name: "ai_session_find",
+        args: &[Arg { name: "cwd", ty: "string", required: REQ }],
+        returns: "SessionInfo | null (그 cwd 의 최신 claude 세션)",
+        run: run_ai_session_find,
+    },
+    Command {
+        name: "ai_session_inspect",
+        args: &[Arg { name: "path", ty: "string", required: REQ }],
+        returns: "SessionInfo | null (세션 파일 헤더)",
+        run: run_ai_session_inspect,
+    },
+    Command {
+        name: "probe_binary",
+        args: &[
+            Arg { name: "bin", ty: "string", required: REQ },
+            Arg { name: "args", ty: "string[]", required: REQ },
+        ],
+        returns: "{ ok, stdout } (돌려 본 결과)",
+        run: run_probe_binary,
+    },
+    Command {
+        name: "host_unit_target",
+        args: &[],
+        returns: "string (이 호스트의 유닛 타깃 트리플)",
+        run: run_host_unit_target,
+    },
+    // 아래 둘은 이 identity 의 **자리**를 답한다(누가 거기 있는지가 아니라).
+    Command {
+        name: "ipc_socket_path",
+        args: &[],
+        returns: "string | null (제어 소켓 자리)",
+        run: run_ipc_socket_path,
+    },
+    Command {
+        name: "ipc_cli_dir",
+        args: &[],
+        returns: "string | null (짝 CLI 가 든 디렉터리)",
+        run: run_ipc_cli_dir,
+    },
 ];
 
 /// 감사했으나 서빙하지 않는 이름과 **무엇이 막는가**.
@@ -197,10 +248,32 @@ pub const UNSERVED: &[Unserved] = &[
                      볼트(SecretsState)를 읽으므로, 옮기려면 키체인 신원과 잠금 수명까지 함께 옮겨야 한다.",
     },
     Unserved {
+        name: "download_verify",
+        blocked_by: "전송기가 wreq 하나이고 wreq 는 tokio 를 끌고 온다 — 이 프로세스의 no_shell 게이트가 \
+                     tokio 를 이름으로 막는다(net_http_request 와 같은 벽). 검증·쓰기 부분은 이미 코어의 \
+                     verify_and_link 와 같은 규칙이라, 막는 것은 다운로드 한 걸음뿐이다.",
+    },
+    Unserved {
         name: "process_reclaim_window",
         blocked_by: "회수 대상은 이 프로세스가 스폰한 자식의 Child 핸들이다. 창 라벨은 키일 뿐 회수할 \
                      것을 만들어 주지 않는다 — cored 에는 그 맵이 없어 언제나 0 을 돌려주는데, 그 0 은 \
                      '거둘 것이 없었다'와 구분되지 않는다.",
+    },
+    Unserved {
+        name: "shell_which",
+        blocked_by: "묻는 상대가 **사용자의 로그인 셸**이다(GUI 앱의 좁은 PATH 로는 사용자가 쓰는 CLI 를 \
+                     못 찾는다 — 그래서 이 명령이 있다). 앱은 그 셸을 자기 env 의 SHELL 에서 얻는데, \
+                     cored 의 env 는 cored 를 띄운 쪽의 것이지 사용자의 것이 아니다. 인자로도 못 받는다: \
+                     앱 명령은 bin 하나만 받고, 셸을 인자로 추가하면 같은 이름의 명령이 프로세스마다 다른 \
+                     모양이 된다. 푸는 조건은 정체성과 같다 — 사용자 env 를 가진 쪽(cored 를 띄우는 셸)이 \
+                     홈을 넘기듯 셸도 부팅 인자로 넘기는 것. 지금 그 인자는 없고, 없는 채로 서빙하면 \
+                     cored 는 앱과 다른 PATH 를 보고도 같은 답인 척한다.",
+    },
+    Unserved {
+        name: "npm_global_dirs",
+        blocked_by: "shell_which 와 같은 벽이다 — `npm prefix -g` 를 사용자 로그인 셸로 물어야 사용자 \
+                     PATH 가 보존되고, 그 셸은 앱 env 의 SHELL 이다. 이 답이 틀리면 조용하다: 돌아온 \
+                     prefix 로 binary_integrity 가 남의 경로를 관찰해 '설치 안 됨'을 답한다.",
     },
 ];
 
@@ -501,6 +574,102 @@ fn run_app_environment(ctx: &Ctx, params: &Value) -> Outcome {
         }))
     })
 }
+
+// ── 조회·프로브 ────────────────────────────────────────────────────────────
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Cwd {
+    cwd: String,
+}
+
+fn run_ai_session_dir(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: Cwd| {
+        // 빈 cwd 는 홈을 해소하기 전에 거절한다 — 그 답은 어느 홈에서도 같다(앱과 같은 순서).
+        if a.cwd.is_empty() {
+            return Err("cwd 필요".to_string());
+        }
+        let dir = session::claude_session_dir(&ctx.user_home()?.to_string_lossy(), &a.cwd);
+        Ok(dir.to_string_lossy().into_owned())
+    })
+}
+
+fn run_ai_session_find(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: Cwd| {
+        session::find_newest_session(&ctx.user_home()?.to_string_lossy(), &a.cwd)
+    })
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PathArg {
+    path: String,
+}
+
+fn run_ai_session_inspect(_ctx: &Ctx, params: &Value) -> Outcome {
+    // 경로 가드도 코어가 소유한다 — 두 벌이면 한쪽만 고쳐지고, 느슨한 쪽이 임의 파일
+    // 읽기 프리미티브가 된다.
+    dispatch(params, |a: PathArg| {
+        session::inspect(std::path::Path::new(&a.path))
+    })
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProbeArg {
+    bin: String,
+    args: Vec<String>,
+}
+
+fn run_probe_binary(_ctx: &Ctx, params: &Value) -> Outcome {
+    // 못 돈 것도 답이다(ok=false) — 이 관찰 자체는 실패하지 않는다.
+    //
+    // 절대경로를 주면 두 프로세스가 같은 답을 낸다. **이름**을 주면 argv[0] 해소를 OS 가
+    // 답하는 프로세스의 PATH 로 하므로 답이 갈릴 수 있다 — 호출자(state/plugins.ts)가 이름을
+    // 쓰는 것은 npm prefix 를 못 구한 경우뿐이고, 그 경우는 shell_which·npm_global_dirs 가
+    // 여기서 서빙되지 않는 것과 같은 사유(사용자 PATH)에 걸려 있다.
+    dispatch(params, |a: ProbeArg| {
+        Ok(probe::probe_binary(a.bin, a.args))
+    })
+}
+
+fn run_host_unit_target(_ctx: &Ctx, params: &Value) -> Outcome {
+    // 타깃은 인자다. 이 프로세스가 넣는 값은 **자기 빌드의 상수**이고, 그것이 앱과 같은
+    // 답인 이유는 둘이 같은 호스트용으로 함께 빌드되기 때문이다.
+    dispatch(params, |_: NoArgs| {
+        let (os, arch) = (std::env::consts::OS, std::env::consts::ARCH);
+        unit_target::host_target(os, arch)
+            .ok_or_else(|| format!("유닛 타깃이 정의되지 않은 호스트다: {os}-{arch}"))
+    })
+}
+
+fn run_ipc_socket_path(ctx: &Ctx, params: &Value) -> Outcome {
+    // **자리**를 답한다. 거기 붙는 것은 셸의 일이고, 자리는 identity 가 정한다.
+    dispatch(params, |_: NoArgs| {
+        Ok(Some(
+            ctx.identity().control_socket().to_string_lossy().into_owned(),
+        ))
+    })
+}
+
+fn run_ipc_cli_dir(_ctx: &Ctx, params: &Value) -> Outcome {
+    // 짝 CLI 는 실행물 곁에 산다 — 걷는 규칙은 코어가, 시작점은 이 프로세스가 준다.
+    // cored 는 앱 실행물과 같은 디렉터리에서 배급되므로 같은 걸음이 같은 곳에 닿는다.
+    dispatch(params, |_: NoArgs| {
+        let Ok(exe) = std::env::current_exe() else {
+            return Ok(None);
+        };
+        let Some(dir) = exe.parent() else {
+            return Ok(None);
+        };
+        Ok(pathx::find_dir_holding(dir, CLI_FILE, CLI_SEARCH_UP)
+            .map(|d| d.to_string_lossy().into_owned()))
+    })
+}
+
+/// 찾는 파일 이름과 올라갈 걸음 수 — 앱의 `ipc_cli_dir` 과 같은 값이라야 같은 곳에 닿는다.
+const CLI_FILE: &str = "sok";
+const CLI_SEARCH_UP: usize = 6;
 
 #[cfg(test)]
 mod tests {

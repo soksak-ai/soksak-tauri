@@ -100,6 +100,24 @@ impl Identity {
     pub fn db_path(&self) -> PathBuf {
         self.data_dir().join(DB_FILE)
     }
+
+    /// 이 identity 의 제어 소켓 자리.
+    ///
+    /// 규칙이지 관측이 아니다 — 누가 거기 붙어 있는지는 말하지 않는다. 붙는 것은 셸의
+    /// 일이고, **어디에** 붙어야 하는지는 이 한 규칙이 정한다(앱·sok CLI·cored 가 각자
+    /// 문자열을 적으면 한쪽만 고쳐질 수 있고, 그 어긋남은 "연결 실패"로만 나타난다).
+    pub fn control_socket(&self) -> PathBuf {
+        control_socket(&self.home, &self.identifier)
+    }
+
+    /// 이 identity 홈을 담은 사용자 홈.
+    ///
+    /// identity 홈은 `<사용자 홈>/.soksak<접미>` 로만 파생되고 runtime override 통로가
+    /// 없다(`home_for`) — 그래서 부모가 곧 사용자 홈이다. identity 밖의 사용자 자산을
+    /// 보는 자리가 쓴다(AI 에이전트 세션은 `~/.claude`·`~/.codex` 에 산다).
+    pub fn user_home(&self) -> Option<&Path> {
+        self.home.parent()
+    }
 }
 
 // ── 홈 기준 레이아웃 ─────────────────────────────────────────────────────────
@@ -124,6 +142,11 @@ pub fn plugins_dir(home: &Path) -> PathBuf {
 /// app.data 저장소 디렉터리.
 pub fn data_dir(home: &Path) -> PathBuf {
     home.join("data")
+}
+
+/// 제어 소켓 자리 — `<홈>/<identifier>.sock`.
+pub fn control_socket(home: &Path, identifier: &str) -> PathBuf {
+    home.join(format!("{identifier}.sock"))
 }
 
 /// release core 판정 — identifier 마지막 세그먼트가 `app`.
@@ -303,6 +326,42 @@ mod tests {
         assert_ne!(
             home_for(Some("com.soksak.app"), true, None, Some("C:\\Users\\max")),
             home_for(Some("com.soksak.app"), false, None, Some("C:\\Users\\max"))
+        );
+    }
+
+    /// 소켓 자리는 홈과 identifier 둘 다에서 나온다 — 한쪽만 갈려도 다른 파일이 된다.
+    #[test]
+    fn the_control_socket_sits_in_the_home_named_by_the_identifier() {
+        let id = Identity::new("/home/max/.soksak-dev", "com.soksak.dev");
+        assert_eq!(
+            id.control_socket(),
+            PathBuf::from("/home/max/.soksak-dev/com.soksak.dev.sock")
+        );
+        // 두 identity 는 두 소켓이다(같은 자리를 쓰면 나중 것이 앞 것을 거절한다).
+        assert_ne!(
+            Identity::new("/home/max/.soksak", "com.soksak.app").control_socket(),
+            id.control_socket()
+        );
+    }
+
+    /// 사용자 홈은 identity 홈의 부모다 — `home_for` 가 그렇게만 짓기 때문이다.
+    /// 이 단언이 깨지면 `user_home` 은 조용히 남의 디렉터리를 가리킨다.
+    #[test]
+    fn the_user_home_is_exactly_what_the_home_was_built_from() {
+        for id in ["com.soksak.app", "com.soksak.dev", "com.soksak.beta"] {
+            let home = home_for(Some(id), false, Some("/home/max"), None);
+            assert_eq!(home.parent(), Some(Path::new("/home/max")), "{id}");
+            assert_eq!(
+                Identity::new(home, id).user_home(),
+                Some(Path::new("/home/max")),
+                "{id}"
+            );
+        }
+        // 윈도우의 USERPROFILE 폴백도 같은 축이다.
+        let home = home_for(Some("com.soksak.app"), true, None, Some("C:\\Users\\max"));
+        assert_eq!(
+            Identity::new(home, "com.soksak.app").user_home(),
+            Some(Path::new("C:\\Users\\max"))
         );
     }
 

@@ -244,9 +244,46 @@ pub fn find_newest_session(home: &str, cwd: &str) -> Result<Option<SessionInfo>,
         return Ok(None);
     };
     let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    // 헤더만 — sessionId·cwd 는 파일 앞에 있다(전체 재파싱 금지).
-    let head: String = content.chars().take(65536).collect();
+    let head: String = content.chars().take(HEAD_CHARS).collect();
     Ok(parse(AgentKind::Claude, &head))
+}
+
+/// 헤더로 읽을 만큼 — sessionId·cwd 는 파일 앞에 있다(전체 재파싱 금지).
+const HEAD_CHARS: usize = 65536;
+
+/// 세션 파일 하나를 식별한다 — 경로가 세션 디렉터리 안일 때만 읽는다.
+///
+/// 판정은 부분문자열이 아니라 **경로 컴포넌트**로 한다. 문자열 포함은 그 문자열을 어디에
+/// 넣어도 통과하고("x .claude_projects_ y"), 세션 디렉터리를 지난 뒤 ".." 로 빠져나가는
+/// 것도 막지 못한다. 이 판정이 없으면 이 함수는 임의 파일 읽기 프리미티브다.
+pub fn inspect(path: &Path) -> Result<Option<SessionInfo>, String> {
+    if path
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err("경로에 '..'를 사용할 수 없습니다 — 세션 경로 밖 읽기 거부".to_string());
+    }
+    let parts: Vec<String> = path
+        .components()
+        .filter_map(|c| match c {
+            std::path::Component::Normal(x) => Some(x.to_string_lossy().to_string()),
+            _ => None,
+        })
+        .collect();
+    let has_pair = |a: &str, b: &str| parts.windows(2).any(|w| w[0] == a && w[1] == b);
+    let is_codex = has_pair(".codex", "sessions");
+    let is_claude = has_pair(".claude", "projects");
+    if !is_codex && !is_claude {
+        return Err("claude/codex 세션 경로가 아님 — 임의 파일 읽기 거부".to_string());
+    }
+    let content = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let head: String = content.chars().take(HEAD_CHARS).collect();
+    let kind = if is_codex {
+        AgentKind::Codex
+    } else {
+        AgentKind::Claude
+    };
+    Ok(parse(kind, &head))
 }
 
 #[cfg(test)]

@@ -219,6 +219,14 @@ fn the_served_commands_are_discoverable() {
         "cleanup_stale",
         "verify_and_link",
         "ai_session_detect",
+        // 조회·프로브 계열 — 표에서 빠지면 셸이 UNKNOWN_COMMAND 한 줄만 받는다.
+        "ai_session_dir",
+        "ai_session_find",
+        "ai_session_inspect",
+        "probe_binary",
+        "host_unit_target",
+        "ipc_socket_path",
+        "ipc_cli_dir",
     ] {
         assert!(names.contains(&expected), "{expected} 이 목록에 없다: {names:?}");
     }
@@ -436,6 +444,189 @@ fn a_relocated_store_is_followed_not_re_derived() {
     );
 }
 
+// ── 조회·프로브 ──────────────────────────────────────────────────────────────
+
+/// AI 세션은 identity 홈이 아니라 **사용자 홈** 아래 산다. 그 홈은 부팅 때 받은 홈에서
+/// 나온다 — cored 가 자기 환경의 HOME 을 읽으면 이 테스트 프로세스의 홈을 답하게 되고,
+/// 그 오답은 "세션 없음"으로 조용히 나타난다.
+#[test]
+fn a_session_path_comes_from_the_boot_home_not_this_environment() {
+    let helper = spawn_helper("ai-session-dir");
+    let reply = helper.ask(json!({
+        "id": 30, "method": "ai_session_dir", "params": { "cwd": "/workspace/proj" }
+    }));
+    assert_eq!(reply["ok"], true, "{reply}");
+    assert_eq!(
+        reply["data"],
+        helper
+            .dir()
+            .join(".claude/projects/-workspace-proj")
+            .to_string_lossy()
+            .to_string(),
+        "부팅 홈의 부모 아래를 가리켜야 한다: {reply}"
+    );
+    // 환경의 HOME 을 읽었다면 이 테스트 프로세스의 홈이 나온다 — 그것과 다름을 못박는다.
+    let ambient = std::env::var("HOME").expect("HOME");
+    assert!(
+        !reply["data"].as_str().unwrap_or_default().starts_with(&format!("{ambient}/.claude")),
+        "환경의 HOME 을 읽었다: {reply}"
+    );
+}
+
+/// 빈 cwd 는 "어느 프로젝트인가"가 없는 질문이다 — 홈을 해소하기 전에 거절한다.
+#[test]
+fn an_empty_cwd_is_refused_before_any_home_is_resolved() {
+    let helper = spawn_helper("ai-session-empty");
+    let reply = helper.ask(json!({ "method": "ai_session_dir", "params": { "cwd": "" } }));
+    assert_eq!(reply["ok"], false, "{reply}");
+    assert!(reply["message"].as_str().unwrap_or_default().contains("cwd"), "{reply}");
+}
+
+/// 탐색도 같은 축이다 — 그 홈에 실제로 있는 세션을 프로세스를 건너 찾아낸다.
+#[test]
+fn a_session_is_found_under_the_boot_home() {
+    let helper = spawn_helper("ai-session-find");
+    let dir = helper.dir().join(".claude/projects/-w");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("accd937f-5c22-48c6-b83d-70a2e0f2e4aa.jsonl"),
+        "{\"sessionId\":\"accd937f-5c22-48c6-b83d-70a2e0f2e4aa\",\"cwd\":\"/w\"}\n",
+    )
+    .unwrap();
+
+    let reply = helper.ask(json!({
+        "id": 31, "method": "ai_session_find", "params": { "cwd": "/w" }
+    }));
+    assert_eq!(reply["ok"], true, "{reply}");
+    // 필드 표기는 앱의 invoke 가 주는 것 그대로다(SessionInfo 의 serde) — 셸이 다시
+    // 조립하지 않도록 여기서 이름을 바꾸지 않는다.
+    assert_eq!(reply["data"]["session_id"], "accd937f-5c22-48c6-b83d-70a2e0f2e4aa", "{reply}");
+    assert_eq!(reply["data"]["cwd"], "/w", "{reply}");
+    assert_eq!(reply["data"]["kind"], "claude", "{reply}");
+
+    // 없는 cwd 는 "없음"이지 오류가 아니다.
+    let none = helper.ask(json!({
+        "method": "ai_session_find", "params": { "cwd": "/nowhere-xyz" }
+    }));
+    assert_eq!(none["ok"], true, "{none}");
+    assert!(none["data"].is_null(), "{none}");
+}
+
+/// 경로 가드는 프로세스를 건너서도 살아 있어야 한다. 이 핸들러가 셸 밖으로 나온 지금
+/// 이것이 유일한 게이트다 — 새면 임의 파일 읽기 프리미티브가 소켓에 열린다.
+#[test]
+fn inspect_refuses_anything_outside_a_session_directory() {
+    let helper = spawn_helper("ai-session-inspect");
+    let secret = helper.dir().join("secret.txt");
+    std::fs::write(&secret, b"TOP-SECRET").unwrap();
+
+    // ① 세션 디렉터리가 아닌 경로.
+    let plain = helper.ask(json!({
+        "method": "ai_session_inspect", "params": { "path": secret.to_string_lossy() }
+    }));
+    assert_eq!(plain["ok"], false, "임의 파일을 읽었다: {plain}");
+
+    // ② 세션 디렉터리 이름을 파일명에 심은 미끼 — 부분문자열 판정이면 통과한다.
+    let decoy = helper.dir().join("x .claude_projects_ y.jsonl");
+    std::fs::write(&decoy, b"TOP-SECRET").unwrap();
+    let baited = helper.ask(json!({
+        "method": "ai_session_inspect", "params": { "path": decoy.to_string_lossy() }
+    }));
+    assert_eq!(baited["ok"], false, "미끼 파일명이 통과했다: {baited}");
+
+    // ③ 세션 디렉터리를 지난 뒤 '..' 로 빠져나간다.
+    let deep = helper.dir().join(".claude").join("projects");
+    std::fs::create_dir_all(&deep).unwrap();
+    let escape = deep.join("..").join("..").join("secret.txt");
+    let escaped = helper.ask(json!({
+        "method": "ai_session_inspect", "params": { "path": escape.to_string_lossy() }
+    }));
+    assert_eq!(escaped["ok"], false, "'..' 탈출이 통과했다: {escaped}");
+
+    // 진짜 세션 파일은 계속 읽힌다 — 가드가 기능을 죽이면 그것도 결함이다.
+    let real = deep.join("s.jsonl");
+    std::fs::write(
+        &real,
+        "{\"sessionId\":\"019d09a1-6bc4-7691-9458-088bde7fca3d\",\"cwd\":\"/tmp\"}\n",
+    )
+    .unwrap();
+    let ok = helper.ask(json!({
+        "method": "ai_session_inspect", "params": { "path": real.to_string_lossy() }
+    }));
+    assert_eq!(ok["ok"], true, "{ok}");
+    assert_eq!(ok["data"]["session_id"], "019d09a1-6bc4-7691-9458-088bde7fca3d", "{ok}");
+}
+
+/// 부재도 답이다 — 실행조차 못 한 것을 명령 실패로 올리면 호출자는 "의존성이 없다"와
+/// "물어보지 못했다"를 구분할 수 없다. 그 둘의 처리는 다르다.
+#[test]
+fn an_absent_binary_is_an_answer_not_a_failure() {
+    let helper = spawn_helper("probe-absent");
+    let reply = helper.ask(json!({
+        "id": 32, "method": "probe_binary",
+        "params": { "bin": "definitely-no-such-bin-xyz", "args": [] }
+    }));
+    assert_eq!(reply["ok"], true, "관찰 자체는 실패하지 않는다: {reply}");
+    assert_eq!(reply["data"]["ok"], false, "{reply}");
+    assert_eq!(reply["data"]["stdout"], "", "{reply}");
+}
+
+/// 호스트 타깃은 이름을 지어내지 않는다 — 표에 있는 트리플만 답한다.
+#[test]
+fn the_host_target_is_one_of_the_declared_triples() {
+    let helper = spawn_helper("host-target");
+    let reply = helper.ask(json!({ "id": 33, "method": "host_unit_target" }));
+    assert_eq!(reply["ok"], true, "{reply}");
+    let triple = reply["data"].as_str().unwrap_or_default();
+    assert!(
+        [
+            "aarch64-apple-darwin",
+            "x86_64-apple-darwin",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-unknown-linux-gnu",
+            "x86_64-pc-windows-msvc",
+        ]
+        .contains(&triple),
+        "지어낸 트리플: {reply}"
+    );
+}
+
+/// 제어 소켓 **자리**는 identity 가 정한다 — 부팅 때 받은 홈과 identifier 둘 다에서 나온다.
+#[test]
+fn the_control_socket_seat_comes_from_the_boot_identity() {
+    let helper = spawn_helper("socket-seat");
+    let reply = helper.ask(json!({ "id": 34, "method": "ipc_socket_path" }));
+    assert_eq!(reply["ok"], true, "{reply}");
+    assert_eq!(
+        reply["data"],
+        helper.home().join("com.soksak.dev.sock").to_string_lossy().to_string(),
+        "{reply}"
+    );
+    // cored 자신의 소켓이 아니다 — 자기가 서빙하는 자리를 답하면 오케스트레이터가 cored 를
+    // 제어 평면으로 착각한다.
+    assert_ne!(
+        reply["data"].as_str().unwrap_or_default(),
+        helper.socket.to_string_lossy().to_string(),
+        "자기 소켓을 답했다: {reply}"
+    );
+}
+
+/// 짝 CLI 자리는 "찾았거나 못 찾았거나"다 — 못 찾은 것을 빈 문자열이나 그럴듯한 경로로
+/// 채우면 그 경로가 PATH 앞에 붙어 엉뚱한 바이너리를 실행한다.
+#[test]
+fn the_cli_dir_is_either_a_directory_holding_sok_or_nothing() {
+    let helper = spawn_helper("cli-dir");
+    let reply = helper.ask(json!({ "id": 35, "method": "ipc_cli_dir" }));
+    assert_eq!(reply["ok"], true, "{reply}");
+    match reply["data"].as_str() {
+        None => assert!(reply["data"].is_null(), "찾지 못한 것은 null 이다: {reply}"),
+        Some(dir) => assert!(
+            std::path::Path::new(dir).join("sok").is_file(),
+            "sok 이 없는 디렉터리를 답했다: {reply}"
+        ),
+    }
+}
+
 // 감사해서 서빙하지 않기로 한 이름은 목록에 사유와 함께 있어야 한다. 셸 저자는 이 프로세스에
 // 물어서 "이건 네가 해야 한다, 이유는 이것"을 알아야 하고, 그렇지 않으면 막힌 이유를 다시
 // 조사하거나 — 더 나쁘게는 조사 없이 흉내를 낸다.
@@ -448,7 +639,16 @@ fn what_it_refuses_is_discoverable_with_the_reason() {
         .as_array()
         .unwrap_or_else(|| panic!("unserved 선언이 없다: {reply}"));
     let named: Vec<&str> = unserved.iter().filter_map(|u| u["name"].as_str()).collect();
-    for expected in ["project_owners", "net_http_request", "process_reclaim_window"] {
+    for expected in [
+        "project_owners",
+        "net_http_request",
+        "process_reclaim_window",
+        // 감사에서 막힌 조회·프로브 계열 — 무엇이 막는지가 목록에 함께 있어야 한다.
+        // 셋 다 같은 이름의 앱 명령이 있어서, 사유가 없으면 "아직 안 옮겼다"로 읽힌다.
+        "download_verify",
+        "shell_which",
+        "npm_global_dirs",
+    ] {
         assert!(named.contains(&expected), "{expected} 이 없다: {named:?}");
     }
     // 이름만 있고 이유가 없으면 다음 사람이 "왜 안 되지"부터 다시 한다.
@@ -688,4 +888,32 @@ fn without_the_write_lock_a_write_is_refused_and_a_read_still_works() {
         "method": "data_kv_get", "params": { "ns": "core", "key": "seeded" }
     }));
     assert_eq!(after["data"], "before", "거절해 놓고 썼다: {after}");
+}
+
+/// probe_binary 는 셸을 거치지 않는다(bin 을 직접 실행한다) — 부팅 상태도 필요 없다.
+/// 그래서 이것은 인자만으로 서는 명령이고, 두 프로세스에서 같은 답이 나온다.
+///
+/// 같은 계열의 shell_which·npm_global_dirs 가 여기 없는 이유가 바로 그 차이다: 그 둘은
+/// **사용자의 로그인 셸**을 거쳐야 답이 나오고, 그 값은 인자로도 부팅 상태로도 이 프로세스에
+/// 없다(registry 의 UNSERVED 에 사유가 있다).
+#[test]
+fn serves_probe_binary_over_the_socket() {
+    let helper = spawn_helper("probe-binary");
+
+    let works = helper.ask(json!({
+        "method": "probe_binary", "params": { "bin": "echo", "args": ["hello"] }
+    }));
+    assert_eq!(works["ok"], true, "응답: {works}");
+    assert_eq!(works["data"]["ok"], true, "{works}");
+    assert!(
+        works["data"]["stdout"].as_str().unwrap_or_default().contains("hello"),
+        "stdout 을 그대로 실어야 한다(TS 가 버전을 뽑는다): {works}"
+    );
+
+    // 존재하나 실패: present != working. 이 구분이 이 명령의 존재 이유다.
+    let fails = helper.ask(json!({
+        "method": "probe_binary", "params": { "bin": "false", "args": [] }
+    }));
+    assert_eq!(fails["ok"], true, "관찰 자체는 성공한다: {fails}");
+    assert_eq!(fails["data"]["ok"], false, "{fails}");
 }
