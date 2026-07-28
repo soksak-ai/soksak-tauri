@@ -257,6 +257,23 @@ mod tests {
 
     /// 게이트 자격 — 합성한 표에 위반을 심어 **실제로 잡는지** 본다.
     #[test]
+    /// **이 소스 트리에** 미답이 없다.
+    ///
+    /// 아래 규칙 검사는 합성 입력으로 돈다 — 규칙이 옳음을 보이지만 실제 표가 어떤지는 말하지
+    /// 않는다. 실측: 거절 표에서 clipboard_read 를 빼도 전 스위트가 통과했다. 규칙만 검사하면
+    /// "아직 안 함"이 조용히 남고, 그 침묵이 곧 이 게이트가 막으려던 것이다.
+    #[test]
+    fn this_tree_has_no_unanswered_name() {
+        // 오라클 생존 — open 이 비면 미답도 0 이 되어 통과로 위장한다("0 의 두 얼굴").
+        let open = ledger().remove(&Lane::Open).unwrap_or_default();
+        assert!(!open.is_empty(), "open 갈래를 읽지 못했다 — 이 검사는 판정할 수 없다");
+        assert_eq!(
+            unanswered(),
+            Vec::<String>::new(),
+            "open 갈래에 서빙도 거절도 아닌 이름이 있다 — 옮기거나 사유를 달아 UNSERVED 에 올려라",
+        );
+    }
+
     fn the_gate_catches_a_name_with_no_answer_at_all() {
         let open = vec!["theme_install".to_string(), "clipboard_read".to_string()];
         // 둘 다 답이 있으면 미답은 없다.
