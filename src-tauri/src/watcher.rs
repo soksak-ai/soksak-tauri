@@ -216,7 +216,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    // 주입 seam 이 셸 타입 없이 성립하는지 — 워처를 세우고 refcount 사다리를 끝까지 걷는 동안
+    // 주입 seam 이 프레임워크 타입 없이 성립하는지 — 워처를 세우고 refcount 사다리를 끝까지 걷는 동안
     // AppHandle 이 한 번도 등장하지 않는다. (이 테스트가 컴파일된다는 사실 자체가 증명이다.)
     // 파일시스템 이벤트 대기는 shared_path_unwatch_keeps_other_consumer 가 이미 본다 —
     // 여기서는 소유·계수만 보므로 sleep 이 없다.

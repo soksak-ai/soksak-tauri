@@ -87,7 +87,7 @@ function syncTitlebarBacking(theme: ThemeSpec, mode: ThemeMode): void {
       // 비 macOS/명령 부재 — 무시(백킹은 macOS 전용 보정).
     });
   } catch {
-    // 셸 런타임 없음(jsdom 테스트 등) — 어댑터가 동기 throw 한다.
+    // 프레임워크 런타임 없음(jsdom 테스트 등) — 어댑터가 동기 throw 한다.
     // 네이티브 크롬이 없는 환경이므로 동기화 자체가 무의미: 조용히 통과.
   }
 }

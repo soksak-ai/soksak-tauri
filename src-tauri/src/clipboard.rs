@@ -26,7 +26,7 @@ const SELF_WRITE_TTL: Duration = Duration::from_secs(2);
 
 pub struct ClipboardState {
     // 변경 사건의 도착지. 이 상태가 앱 핸들에서 쓰던 것은 emit 하나뿐이었으므로 창 계약만 쥔다
-    // — 계약만 쥐면 배달 경로를 셸 없이 세울 수 있다.
+    // — 계약만 쥐면 배달 경로를 프레임워크 없이 세울 수 있다.
     windows: Mutex<Option<Arc<dyn WindowOracle>>>,
     shutdown: Mutex<Option<WatcherShutdown>>,
     // 핸들러와 공유 — clipboard_write 가 (값, 시각) 마커를 심고, 핸들러가 echo 1회를 소비한다.
@@ -44,7 +44,7 @@ impl Default for ClipboardState {
 }
 
 impl ClipboardState {
-    // 앱 setup 에서 1회 — 셸 타입이 계약으로 들어오는 경계는 이 한 줄뿐이다.
+    // 앱 setup 에서 1회 — 프레임워크 타입이 계약으로 들어오는 경계는 이 한 줄뿐이다.
     // 감시 스레드는 watch_start 에서 시작.
     pub fn init(&self, app: AppHandle) {
         self.init_with(Arc::new(app));
@@ -96,7 +96,7 @@ fn should_emit(
 
 // 변경 텍스트 하나의 배달 — echo 억제 판정 후 전 창 브로드캐스트.
 // 반환 = 창에 닿았는가(억제·배달실패는 false). 벤더 클립보드 컨텍스트를 인자로 받지 않아
-// 셸 없이 검증된다 — 여기가 배달 규칙이 사는 자리다.
+// 프레임워크 없이 검증된다 — 여기가 배달 규칙이 사는 자리다.
 fn deliver_change(
     windows: &dyn WindowOracle,
     last_written: &Mutex<Option<(String, Instant)>>,

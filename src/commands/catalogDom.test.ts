@@ -11,7 +11,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../lib/webviewLabels", () => ({ currentWindowLabel: () => "main" }));
-// 셸은 경계 하나로 mock 한다. 창 기하는 테스트가 갈아끼울 수 있게 홀더로 둔다 —
+// 프레임워크는 경계 하나로 mock 한다. 창 기하는 테스트가 갈아끼울 수 있게 홀더로 둔다 —
 // 정적 import 는 모듈 적재 시점에 묶이므로 doMock(뒤늦은 대체)으로는 닿지 않는다.
 const shellWin = vi.hoisted(() => ({
   innerPosition: async () => ({ x: 0, y: 0 }),

@@ -28,7 +28,7 @@ describe("IME 판정 원장", () => {
     expect(published()[0]).toMatchObject({ signal: "isComposing", composing: true });
 
     noteImeDecision({ isComposing: false, legacy: true, composing: true });
-    // 엔진이 isComposing 을 안 싣고 레거시로만 잡힌다 = 셸 교체 후 가장 먼저 보이는 신호.
+    // 엔진이 isComposing 을 안 싣고 레거시로만 잡힌다 = 프레임워크 교체 후 가장 먼저 보이는 신호.
     expect(published()[1]).toMatchObject({ signal: "legacy-229", composing: true });
   });
 

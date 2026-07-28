@@ -59,7 +59,7 @@ fn mediation_reason(caller: &str, deps: &[String], method: &str) -> Option<Strin
 }
 
 // 중개 호출의 발원 신원(순수, PS13) — 코어가 찍는 스탬프이지 서비스의 자기신고가 아니다.
-// 셸 어댑터 안에 두면 두 번째 셸이 다르게 찍고, 다르게 찍힌 origin 은 낭독 후보 제외를 뚫는다.
+// 프레임워크 어댑터 안에 두면 두 번째 프레임워크이 다르게 찍고, 다르게 찍힌 origin 은 낭독 후보 제외를 뚫는다.
 fn mediation_origin(caller: &str) -> String {
     format!("service:{caller}")
 }

@@ -7,7 +7,7 @@
 // 스트리밍하고, write 는 mpsc 로 받아 sink 에 보낸다. close 시 session 제거(tx drop →
 // write task 종료) + read task 끊기.
 //
-// 출구는 `StreamSink` 계약이다(stream_sink.rs). 그래서 읽기 루프는 셸 타입을 이름으로 모르고,
+// 출구는 `StreamSink` 계약이다(stream_sink.rs). 그래서 읽기 루프는 프레임워크 타입을 이름으로 모르고,
 // 서버 없이 프레임 스트림만으로 검증된다. 벤더 크로싱(Channel)은 이 파일의 커맨드 가장자리에만
 // 있다.
 
@@ -75,7 +75,7 @@ impl WsManager {
 }
 
 // 읽기 루프 — 텍스트 프레임을 메시지 출구로, 스트림이 끝나면 닫힘 출구로 한 번.
-// 셸 타입 0: 입력은 ws 프레임 스트림이고 출구는 계약이다.
+// 프레임워크 타입 0: 입력은 ws 프레임 스트림이고 출구는 계약이다.
 async fn pump_reads<S, M, C>(mut read: S, on_message: M, on_close: C)
 where
     S: futures_util::stream::Stream<Item = Result<Message, tungstenite::Error>> + Unpin,
@@ -180,7 +180,7 @@ pub fn ws_close(id: u32, manager: State<'_, WsManager>) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     // 연결(connect_async)만 실 서버를 요구한다. 그 밖의 두 축 — 세션 원장과 읽기 루프 — 은
-    // 셸 타입 없이 여기서 전부 돈다: 원장은 끊기 행위를 값으로 쥐고, 루프는 프레임 스트림과
+    // 프레임워크 타입 없이 여기서 전부 돈다: 원장은 끊기 행위를 값으로 쥐고, 루프는 프레임 스트림과
     // 출구 계약만 안다.
     use super::*;
     use crate::stream_sink::Delivered;

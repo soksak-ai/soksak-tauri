@@ -1,7 +1,7 @@
-// 전역 이벤트의 안전 구독(셸 경계 뒤) — 단일 진실 유틸(교차 파생 한 곳 규칙).
+// 전역 이벤트의 안전 구독(프레임워크 경계 뒤) — 단일 진실 유틸(교차 파생 한 곳 규칙).
 //
 // listen 은 async 라 해지가 등록 완료 전에 도착할 수 있고(중간 해지), 이미 해제된 리스너를
-// 다시 해지하면 셸 내부 맵 접근이 TypeError 로 reject 된다(HMR 모듈 폐기·StrictMode
+// 다시 해지하면 프레임워크 내부 맵 접근이 TypeError 로 reject 된다(HMR 모듈 폐기·StrictMode
 // 이중 마운트·중복 dispose — 실측: 창 부트마다 "reject: TypeError … listeners[eventId]" 가
 // boot.error 로 수확). 파일마다 손구현하던 disposed 가드+try/catch 를 여기 한 곳으로 모은다.
 // 창-스코프 수신이 필요하면 lib/windowEvents.listenThisWindow(별도 유틸)를 쓴다.

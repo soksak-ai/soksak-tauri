@@ -2,7 +2,7 @@
 //   binary_integrity: present/partial/broken 정밀 관찰(심링크 dangling·부분 설치 = 어제 EEXIST).
 //   cleanup_stale:    화이트리스트 경로 안의 stale 만 안전 제거(PARTIAL/BROKEN reconcile 의 cleanup).
 //   download_verify:  fetch reach — url 다운로드 후 sha256 무결성 검증 + 실행권한.
-// 아래 여섯은 soksak-core 로 옮겼다 — 이 파일에는 셸 진입점(무논리 위임)만 남는다.
+// 아래 여섯은 soksak-core 로 옮겼다 — 이 파일에는 프레임워크 진입점(무논리 위임)만 남는다.
 // `#[tauri::command]` 속성 자체가 tauri 의존이라 코어 크레이트가 가질 수 없다.
 pub(crate) use soksak_core::integrity::{sha256_hex, verify_sha256};
 pub use soksak_core::integrity::BinaryIntegrity;

@@ -1,6 +1,6 @@
 // 활동 발행 계약 — "무슨 일이 있었다"를 원장에 남기는 한 점.
 //
-// 셸(ShellHost)·스트림 출구(StreamSink)·창 사실(WindowOracle)에 한 것과 같은 이유로
+// 프레임워크(AppFramework)·스트림 출구(StreamSink)·창 사실(WindowOracle)에 한 것과 같은 이유로
 // 이것도 계약 뒤에 둔다. 지금 `activity::publish` 는 `&AppHandle` 을 받아 그 안에서
 // `state::<ActivityHub>()` 로 허브를 꺼내고, `app.emit("activity", …)` 로 창에 밀고,
 // `state::<DbState>()` 로 영속한다. 그래서 **원장에 한 줄 남기고 싶을 뿐인 함수까지

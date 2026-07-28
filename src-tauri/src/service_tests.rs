@@ -1167,7 +1167,7 @@ fn vault_env_injects_env_secrets_and_recovers_on_unlock() {
     let _ = &host;
 }
 
-// ── 원장 파일 · 스케줄 파생 · 신원 스탬프(셸 타입 0) ─────────────────────────
+// ── 원장 파일 · 스케줄 파생 · 신원 스탬프(프레임워크 타입 0) ─────────────────────────
 
 // 테스트 홈은 dev identity 로 쥔다 — 홈과 identifier 는 함께 다닌다(identity.rs).
 fn ledger_identity(name: &str) -> crate::identity::Identity {
@@ -1236,8 +1236,8 @@ fn the_ledger_is_replaced_atomically() {
 
 #[test]
 fn the_origin_stamp_names_the_service_not_its_self_report() {
-    // 중개 호출의 신원은 코어가 찍는다(자기신고 불신) — 이 규칙이 셸 어댑터 안에 숨으면
-    // 두 번째 셸이 다르게 찍고, 다르게 찍힌 origin 은 낭독 후보 제외를 뚫는다.
+    // 중개 호출의 신원은 코어가 찍는다(자기신고 불신) — 이 규칙이 프레임워크 어댑터 안에 숨으면
+    // 두 번째 프레임워크이 다르게 찍고, 다르게 찍힌 origin 은 낭독 후보 제외를 뚫는다.
     assert_eq!(mediation_origin("demo"), "service:demo");
 }
 

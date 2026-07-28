@@ -1,5 +1,5 @@
 // 알림 라우팅 — 포커스면 인앱 배너, 비포커스면 OS 알림(extra 에 deepLink+발신 창).
-// 셸은 경계(../platform) 하나로 mock 한다 — 테스트가 벤더를 알면 셸 교체가 테스트까지 뜯는다.
+// 셸은 경계(../framework) 하나로 mock 한다 — 테스트가 벤더를 알면 프레임워크 교체가 테스트까지 뜯는다.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const sendNotification = vi.fn();

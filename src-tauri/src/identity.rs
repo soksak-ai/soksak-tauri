@@ -1,9 +1,9 @@
 // 정체성 계약 — "이 실행물은 누구이고 어느 홈을 쓰는가".
 //
-// 셸(ShellHost)·스트림 출구(StreamSink)·창 사실(WindowOracle)·활동 원장(ActivitySink)에
+// 프레임워크(AppFramework)·스트림 출구(StreamSink)·창 사실(WindowOracle)·활동 원장(ActivitySink)에
 // 이어 다섯 번째 같은 모양의 경계다. 여기서 떼어내는 것은 **앰비언트 전역**이다:
 // `home.rs` 의 `static HOME`/`IDENTIFIER` 는 `OnceLock` 이고 씨앗은 `lib.rs` 의
-// `home::init(app.config().identifier)` 단 한 곳 — 즉 값의 출처가 셸이다.
+// `home::init(app.config().identifier)` 단 한 곳 — 즉 값의 출처가 프레임워크이다.
 //
 // 그래서 홈 경로 하나만 알면 되는 함수도 `soksak_home()` 를 부르고, 그 순간 그 함수는
 // "이 프로세스가 앱이다"를 전제하게 된다. 인자로 받으면 전제가 사라진다.

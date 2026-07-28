@@ -7,7 +7,7 @@
 // pty.rs 와 동형으로 reader EOF 가 종료 신호). kill 은 공유 child 핸들을 잠가 보낸다(평시 reader 는
 // out.read() 에서 블록 중이라 child 잠금이 비어 있어 즉시 가능).
 //
-// 스폰 본체(spawn_child)는 셸 타입을 하나도 받지 않는다: 홈은 정체성(Identity)으로, 출구는
+// 스폰 본체(spawn_child)는 프레임워크 타입을 하나도 받지 않는다: 홈은 정체성(Identity)으로, 출구는
 // 계약(StreamSink·ExitSink)으로, 창은 라벨 문자열로 온다. `#[tauri::command]` 는 State·Window·
 // Channel 을 벗겨 그 값들로 옮기는 번역층이다.
 
@@ -251,7 +251,7 @@ fn drain<R: Read>(src: &mut R) {
     }
 }
 
-/// 스폰 요청 — 입구가 받은 값을 그대로 나른다. 셸 타입(State·Window·Channel)은 여기 없다.
+/// 스폰 요청 — 입구가 받은 값을 그대로 나른다. 프레임워크 타입(State·Window·Channel)은 여기 없다.
 pub(crate) struct SpawnRequest {
     pub cmd: String,
     pub args: Vec<String>,
@@ -620,7 +620,7 @@ mod tests {
         }
     }
 
-    /// 스폰 코어를 실제로 돌린다 — 셸 타입(State·Window·Channel) 없이. 자식의 stdout
+    /// 스폰 코어를 실제로 돌린다 — 프레임워크 타입(State·Window·Channel) 없이. 자식의 stdout
     /// 바이트와 종료 코드를 돌려준다.
     #[cfg(unix)]
     fn run_probe(identity: &Identity, script: &str) -> (Vec<u8>, i32) {
