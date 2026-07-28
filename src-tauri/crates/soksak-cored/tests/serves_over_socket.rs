@@ -43,6 +43,12 @@ impl Helper {
         self.dir().join("home")
     }
 
+    /// OS 사용자 홈 — 정체성 홈과 **다른 값**이다(`~/.soksak-dev` 의 `~`).
+    /// 파일 트리의 기본 뿌리이자 `~` 확장의 기준이라, 픽스처도 둘을 갈라 둔다.
+    fn user_home(&self) -> PathBuf {
+        self.dir().join("user")
+    }
+
     /// 한 줄 요청 → 한 줄 응답. 연결은 요청마다 새로 연다(NDJSON 요청/응답의 최소 단위).
     fn ask(&self, req: Value) -> Value {
         let conn = UnixStream::connect(&self.socket).expect("cored 소켓 연결");
@@ -79,7 +85,9 @@ fn spawn_helper(name: &str) -> Helper {
     let dir = fixture_dir(name);
     let socket = dir.join("h.sock");
     let home = dir.join("home");
+    let user_home = dir.join("user");
     std::fs::create_dir_all(&home).expect("픽스처 홈 생성");
+    std::fs::create_dir_all(&user_home).expect("픽스처 사용자 홈 생성");
     let mut child = Command::new(env!("CARGO_BIN_EXE_soksak-cored"))
         .arg("--socket")
         .arg(&socket)
@@ -87,6 +95,8 @@ fn spawn_helper(name: &str) -> Helper {
         .arg(&home)
         .arg("--identifier")
         .arg("com.soksak.dev")
+        .arg("--user-home")
+        .arg(&user_home)
         .stdout(Stdio::piped())
         .spawn()
         .expect("cored 스폰");
@@ -688,4 +698,279 @@ fn without_the_write_lock_a_write_is_refused_and_a_read_still_works() {
         "method": "data_kv_get", "params": { "ns": "core", "key": "seeded" }
     }));
     assert_eq!(after["data"], "before", "거절해 놓고 썼다: {after}");
+}
+
+// ── 파일 읽기·쓰기 — 디스크는 셸이 아니다 ────────────────────────────────────
+//
+// 이 갈래의 홈은 **둘**이다. 정체성 홈(`~/.soksak-dev`)과 OS 사용자 홈(`~`)은 다른 값이고,
+// 파일 트리·`~` 확장이 보는 것은 후자다. cored 는 둘 다 부팅 인자로 받는다 — 사용자 홈을
+// 정체성 홈에서 파생하면(부모 디렉터리) 픽스처·격리 배치에서 조용히 다른 곳을 훑는다.
+
+/// 읽기가 프로세스를 건넌다 — 인자 모양은 앱의 read_text_file 과 같다(path·offset).
+#[test]
+fn a_text_file_reads_back_across_the_socket() {
+    let helper = spawn_helper("fs-read-text");
+    let f = helper.dir().join("note.txt");
+    std::fs::write(&f, "first\nsecond\n").unwrap();
+
+    let reply = helper.ask(json!({
+        "id": 30, "method": "read_text_file", "params": { "path": f.to_string_lossy() }
+    }));
+    assert_eq!(reply["ok"], true, "{reply}");
+    assert_eq!(reply["data"]["content"], "first\nsecond\n", "{reply}");
+    assert_eq!(reply["data"]["truncated"], false, "{reply}");
+    assert_eq!(reply["data"]["total_bytes"], 13, "{reply}");
+    assert_eq!(reply["data"]["line_count"], 2, "{reply}");
+}
+
+/// offset 은 증가하는 로그의 증분 tail 축이다 — 델타만 읽고 total 은 실제 크기를 말한다.
+#[test]
+fn an_offset_read_carries_only_the_delta() {
+    let helper = spawn_helper("fs-read-offset");
+    let f = helper.dir().join("log.jsonl");
+    std::fs::write(&f, "aaaa\nbbbb\n").unwrap();
+
+    let reply = helper.ask(json!({
+        "id": 31, "method": "read_text_file",
+        "params": { "path": f.to_string_lossy(), "offset": 5 }
+    }));
+    assert_eq!(reply["ok"], true, "{reply}");
+    assert_eq!(reply["data"]["content"], "bbbb\n", "{reply}");
+    assert_eq!(reply["data"]["read_bytes"], 5, "{reply}");
+    assert_eq!(reply["data"]["total_bytes"], 10, "{reply}");
+}
+
+/// 바이너리는 이름을 달고 거절한다 — 프론트가 그 사유로 미리보기 경로로 갈린다.
+#[test]
+fn a_binary_file_is_refused_by_name() {
+    let helper = spawn_helper("fs-read-binary");
+    let f = helper.dir().join("blob.bin");
+    std::fs::write(&f, [0u8, 1, 2, 3]).unwrap();
+
+    let reply = helper.ask(json!({
+        "id": 32, "method": "read_text_file", "params": { "path": f.to_string_lossy() }
+    }));
+    assert_eq!(reply["ok"], false, "{reply}");
+    assert!(
+        reply["message"].as_str().unwrap_or_default().contains("바이너리"),
+        "사유가 바이너리를 말한다: {reply}"
+    );
+}
+
+/// 쓰고 같은 소켓으로 되읽는다 — 두 명령이 같은 디스크를 본다는 증거.
+#[test]
+fn a_written_file_reads_back_through_the_same_socket() {
+    let helper = spawn_helper("fs-write");
+    let f = helper.dir().join("edit.txt");
+
+    let set = helper.ask(json!({
+        "id": 33, "method": "write_text_file",
+        "params": { "path": f.to_string_lossy(), "content": "first\nedit" }
+    }));
+    assert_eq!(set["ok"], true, "{set}");
+
+    let got = helper.ask(json!({
+        "id": 34, "method": "read_text_file", "params": { "path": f.to_string_lossy() }
+    }));
+    assert_eq!(got["data"]["content"], "first\nedit", "{got}");
+}
+
+/// 재저장은 이전 내용을 통째로 대체한다(앱의 ⌘S 재호출과 같은 규칙).
+#[test]
+fn writing_twice_replaces_the_whole_file() {
+    let helper = spawn_helper("fs-write-twice");
+    let f = helper.dir().join("edit.txt");
+    for content in ["a longer first version", "short"] {
+        let r = helper.ask(json!({
+            "method": "write_text_file",
+            "params": { "path": f.to_string_lossy(), "content": content }
+        }));
+        assert_eq!(r["ok"], true, "{r}");
+    }
+    assert_eq!(
+        std::fs::read_to_string(&f).unwrap(),
+        "short",
+        "덮어쓰기가 앞부분만 갈아치웠다"
+    );
+}
+
+/// 미리보기는 base64 + MIME 로 온다.
+#[test]
+fn a_preview_crosses_as_base64_with_its_mime() {
+    let helper = spawn_helper("fs-base64");
+    let f = helper.dir().join("dot.png");
+    std::fs::write(&f, [0u8, 1, 2]).unwrap();
+
+    let reply = helper.ask(json!({
+        "id": 35, "method": "read_file_base64", "params": { "path": f.to_string_lossy() }
+    }));
+    assert_eq!(reply["ok"], true, "{reply}");
+    assert_eq!(reply["data"]["mime"], "image/png", "{reply}");
+    assert_eq!(reply["data"]["base64"], "AAEC", "{reply}");
+}
+
+/// 나열은 폴더 먼저, 그다음 이름순(대소문자 무시) — 앱의 트리와 같은 순서.
+#[test]
+fn children_are_listed_folders_first_then_by_name() {
+    let helper = spawn_helper("fs-list");
+    let root = helper.dir().join("tree");
+    std::fs::create_dir_all(root.join("Zebra")).unwrap();
+    std::fs::write(root.join("apple.txt"), "a").unwrap();
+    std::fs::write(root.join("Banana.txt"), "b").unwrap();
+
+    let reply = helper.ask(json!({
+        "id": 36, "method": "list_children", "params": { "path": root.to_string_lossy() }
+    }));
+    assert_eq!(reply["ok"], true, "{reply}");
+    let names: Vec<&str> = reply["data"]["children"]
+        .as_array()
+        .expect("children 배열")
+        .iter()
+        .filter_map(|c| c["name"].as_str())
+        .collect();
+    assert_eq!(names, vec!["Zebra", "apple.txt", "Banana.txt"], "{reply}");
+    // meta 를 안 물으면 수정시각은 실리지 않는다(stat 회피 — 앱과 같은 기본값).
+    assert!(reply["data"]["children"][0]["modified"].is_null(), "{reply}");
+}
+
+/// meta 를 물으면 수정시각이 함께 온다.
+#[test]
+fn asking_for_meta_carries_the_modified_time() {
+    let helper = spawn_helper("fs-list-meta");
+    let root = helper.dir().join("tree");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("a.txt"), "a").unwrap();
+
+    let reply = helper.ask(json!({
+        "id": 37, "method": "list_children",
+        "params": { "path": root.to_string_lossy(), "meta": true }
+    }));
+    assert!(
+        reply["data"]["children"][0]["modified"].as_u64().is_some_and(|t| t > 0),
+        "{reply}"
+    );
+}
+
+/// 경로를 안 주면 **사용자 홈**이다 — 정체성 홈이 아니다. UI 의 파일 트리가 이 기본값으로 뜬다.
+#[test]
+fn an_omitted_path_lists_the_boot_user_home() {
+    let helper = spawn_helper("fs-list-default");
+    std::fs::write(helper.user_home().join("marker.txt"), "x").unwrap();
+    // 정체성 홈에도 다른 이름을 둔다 — 둘을 헷갈리면 이 검사가 잡는다.
+    std::fs::write(helper.home().join("wrong.txt"), "x").unwrap();
+
+    let reply = helper.ask(json!({ "id": 38, "method": "list_children" }));
+    assert_eq!(reply["ok"], true, "{reply}");
+    let names: Vec<&str> = reply["data"]["children"]
+        .as_array()
+        .expect("children 배열")
+        .iter()
+        .filter_map(|c| c["name"].as_str())
+        .collect();
+    assert_eq!(names, vec!["marker.txt"], "사용자 홈을 훑어야 한다: {reply}");
+}
+
+/// 선행 `~` 는 부팅 때 받은 사용자 홈으로 푼다.
+#[test]
+fn a_tilde_path_expands_to_the_boot_user_home() {
+    let helper = spawn_helper("fs-tilde");
+    std::fs::write(helper.user_home().join("rc.txt"), "hello").unwrap();
+
+    let reply = helper.ask(json!({
+        "id": 39, "method": "read_text_file", "params": { "path": "~/rc.txt" }
+    }));
+    assert_eq!(reply["ok"], true, "{reply}");
+    assert_eq!(reply["data"]["content"], "hello", "{reply}");
+}
+
+/// 사용자 홈을 못 받았으면 **추측하지 않는다**. 자기 환경의 HOME 을 읽거나 정체성 홈의 부모를
+/// 짚으면 앱과 다른 트리를 훑고, 그 오답은 오류가 아니라 "다른 파일 목록"으로 나타난다.
+#[test]
+fn without_a_user_home_a_home_relative_call_fails_by_name() {
+    let dir = fixture_dir("fs-no-user-home");
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let socket = dir.join("h.sock");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_soksak-cored"))
+        .arg("--socket").arg(&socket)
+        .arg("--home").arg(&home)
+        .arg("--identifier").arg("com.soksak.dev")
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("cored 스폰");
+    let mut ready = String::new();
+    let stdout = child.stdout.take().unwrap();
+    assert!(
+        matches!(BufReader::new(stdout).read_line(&mut ready), Ok(n) if n > 0),
+        "사용자 홈이 없어도 서빙은 시작한다 — 홈에 안 걸린 명령은 여전히 답한다"
+    );
+    let helper = Helper { child, socket };
+
+    let reply = helper.ask(json!({ "method": "list_children" }));
+    assert_eq!(reply["ok"], false, "홈을 추측했다: {reply}");
+    assert!(
+        reply["message"].as_str().unwrap_or_default().contains("--user-home"),
+        "무엇을 주면 되는지 말해야 한다: {reply}"
+    );
+
+    // 절대경로는 홈이 필요 없다 — 못 하는 것 하나가 나머지를 막지 않는다.
+    let f = dir.join("plain.txt");
+    std::fs::write(&f, "ok").unwrap();
+    let read = helper.ask(json!({
+        "method": "read_text_file", "params": { "path": f.to_string_lossy() }
+    }));
+    assert_eq!(read["ok"], true, "절대경로까지 막았다: {read}");
+}
+
+/// 프로젝트 폴더는 **정체성 홈** 아래 만들어진다 — 앱이 만든 폴더는 앱 관리 영역에 산다.
+#[test]
+fn a_project_dir_is_made_under_the_identity_home() {
+    let helper = spawn_helper("fs-project-dir");
+    let reply = helper.ask(json!({
+        "id": 40, "method": "ensure_project_dir", "params": { "folder": "my-app" }
+    }));
+    assert_eq!(reply["ok"], true, "{reply}");
+    let made = helper.home().join("projects").join("my-app");
+    assert_eq!(reply["data"], made.to_string_lossy().to_string(), "{reply}");
+    assert!(made.is_dir(), "실제로 만들어져야 한다: {made:?}");
+}
+
+/// 폴더명 계약은 앱의 계약이다 — cored 에서만 통과하는 이름이 있으면 안 된다.
+#[test]
+fn the_project_folder_rule_is_the_apps_rule() {
+    let helper = spawn_helper("fs-project-slug");
+    for bad in ["../etc", "My App", "-lead", ""] {
+        let reply = helper.ask(json!({
+            "method": "ensure_project_dir", "params": { "folder": bad }
+        }));
+        assert_eq!(reply["ok"], false, "{bad:?} 를 통과시켰다: {reply}");
+        // 이름을 몰라서 실패한 것과 규칙이 거부한 것은 다른 사실이다 — 안 서빙해도
+        // ok:false 라, 코드를 안 보면 이 검사가 통과로 위장한다.
+        assert_eq!(reply["code"], "COMMAND_FAILED", "규칙이 아니라 부재가 막았다: {reply}");
+    }
+}
+
+/// 프로젝트 루트 판정 — 사용자 홈 자신은 안 된다. 그 판정의 기준이 부팅 때 받은 홈이다.
+#[test]
+fn the_boot_user_home_is_not_a_project_root() {
+    let helper = spawn_helper("fs-project-root");
+    let refused = helper.ask(json!({
+        "id": 41, "method": "validate_project_root",
+        "params": { "path": helper.user_home().to_string_lossy() }
+    }));
+    assert_eq!(refused["ok"], false, "{refused}");
+
+    let work = helper.user_home().join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    let ok = helper.ask(json!({
+        "id": 42, "method": "validate_project_root",
+        "params": { "path": work.to_string_lossy() }
+    }));
+    assert_eq!(ok["ok"], true, "{ok}");
+    // 정규화된 경로를 돌려준다 — 중복 비교의 기준이다.
+    assert_eq!(
+        ok["data"],
+        work.canonicalize().unwrap().to_string_lossy().to_string(),
+        "{ok}"
+    );
 }

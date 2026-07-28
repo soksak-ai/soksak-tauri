@@ -13,7 +13,7 @@
 use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
 
-use soksak_core::{identity, integrity, plugin_dir, session, themes, udp, unit_dev};
+use soksak_core::{fsx, identity, integrity, plugin_dir, session, themes, udp, unit_dev};
 
 use crate::ctx::Ctx;
 
@@ -168,6 +168,54 @@ pub const COMMANDS: &[Command] = &[
         args: &[],
         returns: "bool (release core 여부)",
         run: run_app_is_release,
+    },
+    // 파일 읽기·쓰기 — 디스크는 셸이 아니다. 창도 앱 핸들도 없이 같은 답이 나온다.
+    // 홈이 필요한 것들(`~` 확장·트리 기본 뿌리·루트 판정)은 **사용자 홈**을 부팅 상태에서
+    // 본다. 정체성 홈이 아니다 — 둘을 바꿔 쓰면 트리가 앱 관리 폴더에서 시작한다.
+    Command {
+        name: "read_text_file",
+        args: &[
+            Arg { name: "path", ty: "string", required: REQ },
+            Arg { name: "offset", ty: "u64?", required: OPT },
+        ],
+        returns: "{ content, truncated, read_bytes, total_bytes, line_count }",
+        run: run_read_text_file,
+    },
+    Command {
+        name: "read_file_base64",
+        args: &[Arg { name: "path", ty: "string", required: REQ }],
+        returns: "{ mime, base64 }",
+        run: run_read_file_base64,
+    },
+    Command {
+        name: "write_text_file",
+        args: &[
+            Arg { name: "path", ty: "string", required: REQ },
+            Arg { name: "content", ty: "string", required: REQ },
+        ],
+        returns: "null",
+        run: run_write_text_file,
+    },
+    Command {
+        name: "list_children",
+        args: &[
+            Arg { name: "path", ty: "string?", required: OPT },
+            Arg { name: "meta", ty: "bool?", required: OPT },
+        ],
+        returns: "{ root, children: { name, dir, modified? }[] }",
+        run: run_list_children,
+    },
+    Command {
+        name: "ensure_project_dir",
+        args: &[Arg { name: "folder", ty: "string", required: REQ }],
+        returns: "string (만들어진 절대경로)",
+        run: run_ensure_project_dir,
+    },
+    Command {
+        name: "validate_project_root",
+        args: &[Arg { name: "path", ty: "string", required: REQ }],
+        returns: "string (정규화된 절대경로)",
+        run: run_validate_project_root,
     },
 ];
 
@@ -499,6 +547,81 @@ fn run_app_environment(ctx: &Ctx, params: &Value) -> Outcome {
             "developmentUnits": accepted,
             "rejectedDevelopmentUnits": rejected,
         }))
+    })
+}
+
+// ── 파일 읽기·쓰기 ──────────────────────────────────────────────────────────
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReadText {
+    path: String,
+    #[serde(default)]
+    offset: Option<u64>,
+}
+
+fn run_read_text_file(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: ReadText| {
+        fsx::read_text_file(&a.path, a.offset, ctx.user_home())
+    })
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PathOnly {
+    path: String,
+}
+
+fn run_read_file_base64(_ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: PathOnly| fsx::read_file_base64(&a.path))
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WriteText {
+    path: String,
+    content: String,
+}
+
+fn run_write_text_file(_ctx: &Ctx, params: &Value) -> Outcome {
+    // 저장소 쓰기와 달리 잠금을 요구하지 않는다 — 사유는 코어(fsx::write_text_file)가 적는다.
+    // 앱의 write_text_file 도 () 를 돌려준다.
+    dispatch(params, |a: WriteText| {
+        fsx::write_text_file(&a.path, &a.content).map(|_| Value::Null)
+    })
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ListChildren {
+    #[serde(default)]
+    path: Option<String>,
+    #[serde(default)]
+    meta: Option<bool>,
+}
+
+fn run_list_children(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: ListChildren| {
+        fsx::list_children(a.path.as_deref(), a.meta, ctx.user_home())
+    })
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EnsureProjectDir {
+    folder: String,
+}
+
+fn run_ensure_project_dir(ctx: &Ctx, params: &Value) -> Outcome {
+    // 앱이 만든 폴더는 앱 관리 영역에 산다 — 여기만 정체성 홈을 본다.
+    dispatch(params, |a: EnsureProjectDir| {
+        fsx::ensure_project_dir(&a.folder, ctx.identity())
+    })
+}
+
+fn run_validate_project_root(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: PathOnly| {
+        fsx::validate_project_root(&a.path, ctx.user_home())
     })
 }
 
