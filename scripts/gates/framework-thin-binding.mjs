@@ -48,7 +48,7 @@ export const LOGIC_LEDGER = new Map([
   ],
   [
     "window_monitors",
-    [5, "모니터 소속을 창 중심 좌표로 정하는 기하. **규칙이다 — 코어에 있어야 한다**(TODO: 원본 Rust 의 같은 기하가 이미 있다)"],
+    [2, "화면 읽기의 갈래만 남았다. 소속 판정(중심점·경계·버림 방향)은 코어가 소유하고(soksak-core geometry), 이 사본이 갈리지 않는다는 것은 같은 픽스처가 묶는다(fixtures/monitor-of.json — 양쪽 검사가 그 파일 하나를 읽는다). 왕복으로 바꾸는 것도 재 봤다: 창마다 프로세스를 건너고, 백엔드가 없으면 프레임워크 사실이 죽는다"],
   ],
   [
     "webview_open_window",

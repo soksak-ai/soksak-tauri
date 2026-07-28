@@ -20,7 +20,22 @@ function need(ctx, args) {
   return win;
 }
 
+/// 이 창은 어느 모니터의 것인가 — **중심점 기준 단일 판정**(soksak-core geometry 와 같은 규칙).
+///
+/// 오른쪽·아래 경계는 밖이다: 맞닿은 자리에서 한 점이 양쪽에 속하면 소속이 목록 순서에 따라
+/// 흔들린다. 어느 화면에도 없으면 null 이다 — 0 으로 떨어뜨리면 "첫 모니터"와 구분되지 않는다.
+function monitorOf(win, monitors) {
+  const cx = win.x + Math.trunc(win.w / 2);
+  const cy = win.y + Math.trunc(win.h / 2);
+  const at = monitors.findIndex(
+    (m) => cx >= m.x && cx < m.x + m.w && cy >= m.y && cy < m.y + m.h,
+  );
+  return at < 0 ? null : at;
+}
+
 module.exports = {
+  // 검사가 픽스처로 코어와 대조한다 — 사본이 갈리지 않는다는 것을 파일이 묶는다.
+  monitorOf,
   // 창 배경 — Tauri window.set_background_color 의 대응. 루트 DOM 이 투명이라 미도장 영역의
   // 색을 창이 책임진다. 기준(#rrggbb 6자리)은 코어와 같게 둔다: 같은 색 문자열에 두
   // 프레임워크가 다르게 답하면 테마가 프레임워크마다 달라진다.
@@ -112,6 +127,10 @@ module.exports = {
   window_monitors: {
     concept: "모니터·창 배치 팩트",
     source: "screen.getAllDisplays + 각 창의 bounds",
+    // 소속 판정(중심점 기준·경계 규칙·버림 방향)은 코어가 소유한다. 여기 있는 사본은 매 창마다
+    // 프로세스를 건너지 않기 위한 것이고, 갈리지 않는다는 것은 **같은 픽스처**가 묶는다
+    // (soksak-core/fixtures/monitor-of.json — 양쪽 검사가 그 파일 하나를 읽는다).
+    // 물어보는 방식도 재 봤다: 창마다 왕복이 붙고, 백엔드가 없으면 프레임워크 사실이 죽는다.
     answer: (ctx) => {
       const displays = ctx.screen.getAllDisplays();
       const monitors = displays.map((d, index) => ({
@@ -123,15 +142,12 @@ module.exports = {
         h: d.bounds.height,
         scale: d.scaleFactor,
       }));
-      const windows = ctx.labels().map((label) => {
+      const windows = [];
+      for (const label of ctx.labels()) {
         const win = ctx.windowFor(label);
         const b = win.getBounds();
-        const cx = b.x + Math.floor(b.width / 2);
-        const cy = b.y + Math.floor(b.height / 2);
-        const at = monitors.findIndex(
-          (m) => cx >= m.x && cx < m.x + m.w && cy >= m.y && cy < m.y + m.h,
-        );
-        return {
+        const at = monitorOf({ x: b.x, y: b.y, w: b.width, h: b.height }, monitors);
+        windows.push({
           label,
           title: win.getTitle(),
           alwaysOnTop: win.isAlwaysOnTop(),
@@ -140,9 +156,9 @@ module.exports = {
           w: b.width,
           h: b.height,
           focused: win.isFocused(),
-          monitor: at < 0 ? null : at,
-        };
-      });
+          monitor: at,
+        });
+      }
       return { monitors, windows };
     },
   },

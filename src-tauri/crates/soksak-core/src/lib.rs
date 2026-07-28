@@ -21,6 +21,7 @@ pub mod activity;
 pub mod activity_sink;
 pub mod control;
 pub mod fsx;
+pub mod geometry;
 pub mod identity;
 pub mod integrity;
 pub mod kv;

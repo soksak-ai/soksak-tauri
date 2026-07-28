@@ -288,16 +288,21 @@ pub fn window_monitors(app: AppHandle) -> Result<serde_json::Value, String> {
     for (label, w) in app.windows() {
         let pos = w.outer_position().map_err(|e| e.to_string())?;
         let size = w.outer_size().map_err(|e| e.to_string())?;
-        // 소속 모니터 = 창 중심점이 들어가는 모니터(경계 걸친 창은 중심 기준 단일 판정).
-        let (cx, cy) = (
-            pos.x + size.width as i32 / 2,
-            pos.y + size.height as i32 / 2,
+        // 소속 판정은 코어가 소유한다 — 두 벌이면 같은 창을 프레임워크마다 다른 모니터로 답한다.
+        use soksak_core::geometry::{monitor_of, Rect};
+        let rects: Vec<Rect> = monitors
+            .iter()
+            .map(|m| Rect {
+                x: m.position().x,
+                y: m.position().y,
+                w: m.size().width as i32,
+                h: m.size().height as i32,
+            })
+            .collect();
+        let monitor = monitor_of(
+            Rect { x: pos.x, y: pos.y, w: size.width as i32, h: size.height as i32 },
+            &rects,
         );
-        let monitor = monitors.iter().position(|m| {
-            let (mx, my) = (m.position().x, m.position().y);
-            let (mw, mh) = (m.size().width as i32, m.size().height as i32);
-            cx >= mx && cx < mx + mw && cy >= my && cy < my + mh
-        });
         wins.push(serde_json::json!({
             "label": label,
             "title": w.title().unwrap_or_default(),
