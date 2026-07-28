@@ -13,3 +13,5 @@ soksak-portable = { path = "../soksak-portable" }
 soksak-spec-socket = { path = "../soksak-spec-socket" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# 저장소는 셸이 아니라 자원이다 — 로직(KvRows)은 포터블이 소유하고 여기는 그 구현 하나를 준다.
+rusqlite = { version = "0.32", features = ["bundled"] }

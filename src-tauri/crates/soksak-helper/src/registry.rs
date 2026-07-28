@@ -121,6 +121,16 @@ pub const COMMANDS: &[Command] = &[
         run: run_plugin_scan,
     },
     Command {
+        name: "data_kv_get",
+        args: &[
+            Arg { name: "dbPath", ty: "string", required: REQ },
+            Arg { name: "ns", ty: "string", required: REQ },
+            Arg { name: "key", ty: "string", required: REQ },
+        ],
+        returns: "any | null (저장된 값)",
+        run: run_data_kv_get,
+    },
+    Command {
         name: "app_environment",
         args: &[
             Arg { name: "identifier", ty: "string", required: REQ },
@@ -311,6 +321,48 @@ fn run_app_is_release(params: &Value) -> Outcome {
     // 판정 규칙은 포터블이 소유한다 — 여기서 문자열을 다시 가르지 않는다.
     dispatch(params, |a: IdentifierArg| {
         Ok(identity::is_release_identifier(&a.identifier))
+    })
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KvGetArg {
+    db_path: String,
+    ns: String,
+    key: String,
+}
+
+/// KvRows 의 SQLite 구현 — 질의문과 연결은 구현자의 것이라는 계약대로.
+struct SqliteRows {
+    conn: rusqlite::Connection,
+}
+
+impl soksak_portable::kv::KvRows for SqliteRows {
+    fn value(&self, ns: &str, key: &str) -> Result<Option<String>, String> {
+        // 앱과 같은 질의문이다 — 다르면 두 경로가 다른 답을 낼 수 있고 그 차이는 조용하다.
+        match self
+            .conn
+            .query_row("SELECT v FROM kv WHERE ns=?1 AND k=?2", (ns, key), |r| {
+                r.get::<_, String>(0)
+            }) {
+            Ok(v) => Ok(Some(v)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+}
+
+fn run_data_kv_get(params: &Value) -> Outcome {
+    dispatch(params, |a: KvGetArg| {
+        // 읽기 전용으로 연다 — 헬퍼가 저장소를 고치지 않는다. 쓰기는 소유자가 하고,
+        // 두 프로세스가 같은 파일에 쓰면 그 순간 단일 쓰기자 계약이 깨진다.
+        let conn = rusqlite::Connection::open_with_flags(
+            &a.db_path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .map_err(|e| format!("저장소 열기 실패: {e}"))?;
+        let rows = SqliteRows { conn };
+        soksak_portable::kv::get(&rows, &a.ns, &a.key)
     })
 }
 

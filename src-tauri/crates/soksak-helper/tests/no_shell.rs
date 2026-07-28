@@ -29,8 +29,14 @@ fn the_dependency_tree_carries_no_shell_crate() {
         .lines()
         .filter_map(|l| l.split_whitespace().next())
         .collect();
+    // 금지 목록은 **셸**을 막는다 — 창·웹뷰·네이티브 런타임. 저장소(rusqlite)는 셸이 아니라
+    // 자원이다: 창을 열지도, 앱 핸들을 쥐지도 않고, 어느 프로세스에서 열든 같은 파일을 같은
+    // 답으로 읽는다. 헬퍼가 명령을 서빙하려면 그 자원을 져야 한다(로직은 포터블의 KvRows
+    // 계약이 소유하고 헬퍼는 그 구현 하나를 준다 — 질의문과 연결은 구현자의 것이다).
+    // 포터블 크레이트에는 rusqlite 가 여전히 금지다: 로직이 저장소를 알면 그 로직은 파일이
+    // 있는 곳에서만 돌게 되고, 그게 이 분리가 없애려던 전제다.
     for banned in [
-        "tauri", "wry", "tao", "objc2", "block2", "libloading", "notify", "rusqlite",
+        "tauri", "wry", "tao", "objc2", "block2", "libloading", "notify",
         "clipboard-rs", "x11rb", "windows-sys", "tokio", "interprocess", "portable-pty",
     ] {
         assert!(

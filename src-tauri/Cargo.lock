@@ -4809,6 +4809,7 @@ dependencies = [
 name = "soksak-helper"
 version = "0.0.1"
 dependencies = [
+ "rusqlite",
  "serde",
  "serde_json",
  "soksak-portable",
