@@ -2182,3 +2182,35 @@ fn a_served_name_is_still_answered_here() {
     assert!(names.contains(&"control_host_attach"), "제어면 명령이 목록에 없다");
     assert!(names.contains(&"cmd_result"));
 }
+
+// ── 스트림 ────────────────────────────────────────────────────────────────────
+//
+// 답이 여럿인 명령(터미널 출력·프로세스 stdout)의 되돌아오는 길. 요청이 토큰을 싣고, 그 뒤로
+// 프레임이 **그 연결로** 밀려온다. 여기서 고정하는 것은 그 **자리**다 — 미는 쪽(명령의 몸)은
+// 아직 없다.
+
+#[test]
+fn a_reply_is_never_shaped_like_a_frame() {
+    let h = spawn_helper("stream-bind");
+    let r = h.ask(json!({
+        "id": 1,
+        "method": "cored.commands",
+        "params": { "onOutput": { "__frameworkStream": "t-live" } }
+    }));
+    assert_eq!(r["ok"], true, "{r}");
+    // 겹치면 받는 쪽이 프레임을 답으로 읽고 짝을 지운다.
+    assert!(r.get("stream").is_none(), "{r}");
+}
+
+/// 토큰을 실은 인자가 명령의 몸까지 흘러가면 안 된다 — 명령마다 무시 규칙을 따로 알아야 한다.
+#[test]
+fn a_token_never_breaks_the_command_it_rode_on() {
+    let h = spawn_helper("stream-passthrough");
+    let r = h.ask(json!({
+        "id": 2,
+        "method": "app_environment",
+        "params": { "onOutput": { "__frameworkStream": "t-x" } }
+    }));
+    // 인자를 하나도 받지 않는 명령이다. 토큰이 인자로 새면 INVALID_PARAMS 로 죽는다.
+    assert_eq!(r["ok"], true, "{r}");
+}

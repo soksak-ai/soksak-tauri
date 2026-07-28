@@ -31,6 +31,7 @@ pub mod probe;
 pub mod session;
 pub mod skillgen;
 pub mod store_lock;
+pub mod stream;
 pub mod themes;
 pub mod udp;
 pub mod unit_dev;

@@ -265,6 +265,38 @@ function fanOutActivity(entry) {
   }
 }
 
+// ── 스트림 ────────────────────────────────────────────────────────────────────
+// 답이 여럿인 명령(터미널 출력·프로세스 stdout)의 되돌아오는 길. 렌더러가 토큰을 만들고
+// (preload createStream) 인자에 실어 보내면, 백엔드가 그 토큰으로 프레임을 민다. 이 자리는
+// 프레임을 **토큰을 만든 창**으로 넘긴다 — 다른 창으로 보내면 받는 쪽이 자기 토큰이 아니라 버린다.
+//
+// 토큰의 창은 요청이 온 창이다. 인자를 열어 토큰을 찾는 규칙은 코어의 것과 같은 한 모양이라
+// 여기서도 그 모양만 본다(soksak-core stream::TOKEN_KEY).
+const STREAM_TOKEN_KEY = "__frameworkStream";
+const STREAM_CHANNEL = "framework:stream";
+
+/** 이 인자가 싣고 있는 스트림 토큰들. */
+function streamTokens(args) {
+  if (!args || typeof args !== "object") return [];
+  return Object.values(args)
+    .map((v) => (v && typeof v === "object" ? v[STREAM_TOKEN_KEY] : null))
+    .filter((t) => typeof t === "string" && t);
+}
+
+/** 이 토큰의 프레임을 그 창으로 흘린다. 창이 죽으면 그만 받는다(죽은 창에 계속 쓰지 않는다). */
+function pipeStreams(client, args, sender) {
+  for (const token of streamTokens(args)) {
+    const off = client.onStream(token, (msg) => {
+      try {
+        if (sender.isDestroyed()) return off();
+        sender.send(STREAM_CHANNEL, { id: token, msg });
+      } catch {
+        off();
+      }
+    });
+  }
+}
+
 ipcMain.handle("framework:invoke", async (e, { cmd, args }) => {
   // 프레임워크의 것이 먼저다 — 창·웹뷰·네이티브 표면은 소켓 너머로 물어볼 수 없다(거기엔 창이 없다).
   // 판별은 이름으로 한다: 프레임워크 갈래는 표에 없더라도 소켓으로 새지 않는다.
@@ -272,6 +304,12 @@ ipcMain.handle("framework:invoke", async (e, { cmd, args }) => {
     return native.serve(cmd, args, nativeContext(e && e.sender), recordDemand);
   }
   try {
+    // 프레임을 받을 자리를 **부르기 전에** 만든다 — 명령이 첫 프레임을 곧바로 밀 수 있고,
+    // 그때 자리가 없으면 그 프레임은 조용히 사라진다.
+    if (e && e.sender) {
+      const client = await backendReady.catch(() => null);
+      if (client) pipeStreams(client, args, e.sender);
+    }
     const value = await callBackend(cmd, args);
     // 답을 돌려주기 전에 뿌린다 — 코어도 발행 안에서 창에 먼저 닿고 반환은 그다음이라,
     // 순서를 뒤집으면 같은 창에서 구독자와 호출자가 보는 시점이 프레임워크마다 갈린다.

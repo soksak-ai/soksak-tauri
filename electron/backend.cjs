@@ -76,6 +76,9 @@ function createBackendClient(options = {}) {
   let seq = 0;
   let buf = "";
   const pending = new Map();
+  // 토큰 → 프레임을 받을 자리. 토큰은 렌더러가 만들고(preload createStream) 인자에 실려
+  // 백엔드로 건너간다 — 함수는 프로세스 경계를 못 넘으므로 소켓 위에서는 토큰이 전부다.
+  const streams = new Map();
 
   /** 대기 중인 자리를 전부 깨운다 — 남겨 두면 그 호출은 오지 않을 답을 영원히 기다린다. */
   function rejectAll(code, message) {
@@ -100,6 +103,16 @@ function createBackendClient(options = {}) {
         // 한 줄이 깨졌다고 연결을 버리지 않는다. 다만 삼키지도 않는다 — 짝을 못 찾은
         // 요청은 자기 상한에서 이름을 달고 끝난다.
         console.error(`[electron-framework] 파싱 못 한 응답 줄: ${line.slice(0, 200)}`);
+        continue;
+      }
+      // 스트림 프레임 — 답이 아니라 **밀려온 것**이다. 짝을 찾지 않는다(짝이 없다).
+      // 답 봉투와 겹치지 않는 키라 여기서 갈린다(soksak-core stream::FRAME_KEY).
+      const f = msg && msg.stream;
+      if (f && typeof f.token === "string") {
+        const sink = streams.get(f.token);
+        // 모르는 토큰은 이미 끝난 스트림이다 — 오류가 아니지만 삼키지도 않는다.
+        if (sink) sink(f.msg);
+        else console.error(`[electron-framework] 짝 없는 스트림 프레임(token=${f.token})`);
         continue;
       }
       const entry = pending.get(msg.id);
@@ -179,6 +192,12 @@ function createBackendClient(options = {}) {
     return rest;
   }
 
+  /** 이 토큰으로 오는 프레임을 여기로 흘린다. 반환 = 그만 받기. */
+  function onStream(token, sink) {
+    streams.set(token, sink);
+    return () => streams.delete(token);
+  }
+
   /** 실패는 원장에 사유까지 남기고 던진다 — 원장이 "무엇을 못 했는가"의 근거다. */
   function fail(code, message, cmd) {
     onDemand(cmd, false, code);
@@ -256,7 +275,7 @@ function createBackendClient(options = {}) {
     rejectAll(DISCONNECTED, "프레임워크가 백엔드 연결을 닫았다");
   }
 
-  return { call, close, socketPath };
+  return { call, close, onStream, socketPath };
 }
 
 module.exports = {

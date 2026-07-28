@@ -181,7 +181,21 @@ pub fn answer_on_conn(ctx: &Ctx, line: &str, conn: &std::os::unix::net::UnixStre
     if let Ok(c) = conn.try_clone() {
         CONN.with(|slot| *slot.borrow_mut() = Some(c));
     }
+    // 스트림 토큰은 **부른 연결**에 맨다. 명령을 실행하기 전에 매어야 한다 — 실행이 첫 프레임을
+    // 곧바로 밀 수 있고, 그때 자리가 없으면 그 프레임은 조용히 사라진다.
+    if let Ok(req) = serde_json::from_str::<Request>(line) {
+        let bound = crate::streams::bind(&req.params, conn);
+        if !bound.is_empty() {
+            OWNED.with(|o| o.borrow_mut().extend(bound));
+        }
+    }
     answer(ctx, line)
+}
+
+// 이 연결이 만든 스트림 토큰들. 연결이 끝나면 함께 끝난다 — 남기면 죽은 소켓에 계속 쓴다.
+#[cfg(unix)]
+thread_local! {
+    static OWNED: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 /// 연결 하나가 끝났다 — 그 스레드에 남은 선언을 지운다. 스레드가 재사용되면 앞 연결의
@@ -190,6 +204,11 @@ pub fn answer_on_conn(ctx: &Ctx, line: &str, conn: &std::os::unix::net::UnixStre
 pub fn forget_conn() {
     CONN.with(|slot| *slot.borrow_mut() = None);
     clear_bridge();
+    OWNED.with(|o| {
+        let mut v = o.borrow_mut();
+        crate::streams::release_all(&v);
+        v.clear();
+    });
 }
 
 /// 지금 답하고 있는 연결의 사본. 연결을 지고 가야 하는 명령만 부른다(배달 통로 등록).
