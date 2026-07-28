@@ -237,15 +237,21 @@ export const electronFramework: AppFramework = {
   createStream: <T,>(): Stream<T> => {
     let sink: (msg: T) => void = () => {};
     const token = bridge().createStream((m) => sink(m as T));
-    // 계약상 앱은 onmessage 만 안다. 백엔드로는 토큰이 직렬화돼 건너간다.
-    return Object.assign(token, {
-      set onmessage(fn: (msg: T) => void) {
+    // 계약상 앱은 onmessage 만 안다. 백엔드로는 이 객체가 **그대로 직렬화돼** 건너간다.
+    //
+    // 그래서 onmessage 는 **열거되지 않아야 한다.** 구조화 복제는 열거 가능한 자기 속성만
+    // 읽는데, 접근자를 열거 가능하게 두면 그 getter 가 함수를 돌려주고 함수는 복제되지 않는다
+    // — invoke 가 경계에서 "An object could not be cloned" 로 죽는다(실측: 그래서
+    // spawn_terminal 이 한 번도 서버에 닿지 못했고, 증상은 "터미널이 안 뜬다"였다).
+    Object.defineProperty(token, "onmessage", {
+      enumerable: false,
+      configurable: true,
+      get: () => sink,
+      set: (fn: (msg: T) => void) => {
         sink = fn;
       },
-      get onmessage() {
-        return sink;
-      },
-    }) as unknown as Stream<T>;
+    });
+    return token as unknown as Stream<T>;
   },
 
   listen: async <T,>(event: string, cb: (e: FrameworkEvent<T>) => void) =>

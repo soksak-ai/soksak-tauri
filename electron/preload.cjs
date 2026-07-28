@@ -34,7 +34,15 @@ ipcRenderer.on("framework:window-event", (_e, msg) => {
 let streamSeq = 0;
 const streams = new Map();
 ipcRenderer.on("framework:stream", (_e, { id, msg }) => {
-  streams.get(id)?.(msg);
+  const sink = streams.get(id);
+  if (!sink) return;
+  // 바이트는 base64 로 건너온다 — JSON 한 줄에 raw 바이트를 실을 수 없다. 소비자가 받는 것은
+  // 앱과 **같은 모양**(ArrayBuffer)이라야 한다: 다르면 프론트에 프레임워크 분기가 생긴다.
+  if (msg && typeof msg === "object" && typeof msg.b64 === "string") {
+    sink(Buffer.from(msg.b64, "base64").buffer);
+    return;
+  }
+  sink(msg);
 });
 
 contextBridge.exposeInMainWorld("__soksakFramework", {
