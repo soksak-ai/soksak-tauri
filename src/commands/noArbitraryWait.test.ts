@@ -88,9 +88,9 @@ const ALLOWED: { file: string; mark: string; event: string; why: string }[] = [
   { file: "src-tauri/src/sidecar.rs", mark: "recv_timeout(std::time::Duration::from_secs(2))", event: "sidecar-reply-cap", why: "동일(2s)" },
   { file: "src-tauri/src/webview.rs", mark: "recv_timeout(Duration::from_secs(3))", event: "main-thread-dispatch-cap", why: "메인스레드 디스패치 응답 상한(3s)" },
   { file: "src-tauri/src/webview.rs", mark: "recv_timeout(Duration::from_secs(15))", event: "main-thread-dispatch-cap", why: "동일(15s — 콜드 부트 포함)" },
-  { file: "src-tauri/src/pty.rs", mark: "from_millis(150)", event: "pty.stream.reattached", why: "데몬 인계 전이(구 데몬 exit → 신 데몬 소켓 bind) 대기 — 세션 확인·재부착 성공이 종결, 상한 20회" },
-  { file: "src-tauri/src/pty.rs", mark: "from_secs(2)", event: "ptyd-bootstrap-handshake", why: "스폰 직후 소켓 준비 유한 재시도(2s 상한) — 감시는 소켓 에러 사건이 담당" },
-  { file: "src-tauri/src/pty.rs", mark: "from_millis(50)", event: "ptyd-bootstrap-handshake", why: "동일 루프의 재시도 간격" },
+  { file: "src-tauri/crates/soksak-core/src/ptyd.rs", mark: "from_millis(150)", event: "pty.stream.reattached", why: "데몬 인계 전이(구 데몬 exit → 신 데몬 소켓 bind) 대기 — 세션 확인·재부착 성공이 종결, 상한 20회" },
+  { file: "src-tauri/crates/soksak-core/src/ptyd.rs", mark: "from_secs(2)", event: "ptyd-bootstrap-handshake", why: "스폰 직후 소켓 준비 유한 재시도(2s 상한) — 감시는 소켓 에러 사건이 담당" },
+  { file: "src-tauri/crates/soksak-core/src/ptyd.rs", mark: "from_millis(50)", event: "ptyd-bootstrap-handshake", why: "동일 루프의 재시도 간격" },
   { file: "src-tauri/src/webview.rs", mark: "tokio::time::sleep(Duration::from_millis(400))", event: "extraction-page-settle", why: "추출용 임시 webview 의 페이지 정착 유한 재시도(timeout 상한)" },
 ];
 
@@ -146,9 +146,13 @@ function rsSites(): string[] {
   const out: string[] = [];
   // 두 필터를 겹친다 — 파일 단위 테스트(`*_tests.rs`)와 인라인 `#[cfg(test)] mod`. 한쪽만
   // 쓰면 각각 13곳(service_tests.rs)·32곳(schedule.rs 류)이 프로덕션으로 오염된다(실측).
-  for (const file of walk(join(ROOT, "src-tauri/src")).filter(
-    (f) => f.endsWith(".rs") && !f.endsWith("_tests.rs"),
-  )) {
+  // 코어 크레이트도 센다. 규칙은 **코드를 따라간다** — 파일이 옮겨 갔다고 규칙에서 빠지면
+  // 그 순간부터 그 자리의 기다림은 아무도 안 본다(실측: ptyd 클라이언트가 코어로 가면서
+  // 등록돼 있던 세 자리가 통째로 스캔 밖으로 나갔다).
+  const roots = ["src-tauri/src", "src-tauri/crates/soksak-core/src"];
+  for (const file of roots
+    .flatMap((r) => walk(join(ROOT, r)))
+    .filter((f) => f.endsWith(".rs") && !f.endsWith("_tests.rs"))) {
     const rel = relative(ROOT, file);
     const lines = readFileSync(file, "utf8").split("\n");
     let inTest = false;

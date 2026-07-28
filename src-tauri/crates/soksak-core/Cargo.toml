@@ -13,3 +13,11 @@ sha2 = "0.10"
 serde_json = "1"
 # 미리보기 인코딩 — 순수 변환이라 프레임워크를 끌고 오지 않는다(앱과 같은 판).
 base64 = "0.22"
+# ptyd 계약(프로토콜 상수·경로·워터마크)과 봉인 — 둘 다 별개 크레이트가 단일진실이다.
+soksak-spec-pty = { path = "../soksak-spec-pty" }
+soksak-seal = { path = "../soksak-seal" }
+uuid = { version = "1", features = ["v4"] }
+
+[target.'cfg(unix)'.dependencies]
+# 데몬은 세션 리더로 떨어져 나간다(setsid) — 앱이 죽어도 셸이 산다.
+libc = "0.2"
