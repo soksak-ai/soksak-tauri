@@ -132,6 +132,19 @@ pub const COMMANDS: &[Command] = &[
         returns: "any | null (저장된 값)",
         run: run_data_kv_get,
     },
+    // 활동 발행 — 헬퍼는 **적재만** 한다. 부채질(창 emit)은 셸의 것이고, 영속(records 쓰기)은
+    // 저장소 소유자의 것이다. 적재분을 답에 실어 보내면 창을 가진 셸이 그것을 뿌린다.
+    // 저장소 경로는 인자가 아니라 부팅 상태다 — 앱의 activity_publish 도 받지 않는다.
+    Command {
+        name: "activity_publish",
+        args: &[
+            Arg { name: "kind", ty: "string", required: REQ },
+            Arg { name: "source", ty: "string", required: REQ },
+            Arg { name: "payload", ty: "any", required: REQ },
+        ],
+        returns: "ActivityEntry { seq, ts, kind, source, payload } — 적재분. 창 부채질은 셸, 영속은 저장소 소유자",
+        run: run_activity_publish,
+    },
     Command {
         name: "app_environment",
         args: &[],
@@ -391,6 +404,26 @@ fn run_data_kv_get(ctx: &Ctx, params: &Value) -> Outcome {
         .map_err(|e| format!("저장소 열기 실패: {e}"))?;
         let rows = SqliteRows { conn };
         soksak_core::kv::get(&rows, &a.ns, &a.key)
+    })
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ActivityPublish {
+    kind: String,
+    source: String,
+    payload: Value,
+}
+
+fn run_activity_publish(ctx: &Ctx, params: &Value) -> Outcome {
+    // 적재만 한다 — 단조·도장 규칙은 코어가, 원장 자원은 ledger 가 소유한다.
+    dispatch(params, |a: ActivityPublish| {
+        crate::ledger::admit(
+            &ctx.db_path().to_string_lossy(),
+            &a.kind,
+            &a.source,
+            a.payload,
+        )
     })
 }
 

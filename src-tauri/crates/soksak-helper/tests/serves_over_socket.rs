@@ -480,3 +480,78 @@ fn calling_an_audited_name_carries_the_reason_across_the_socket() {
     assert!(msg.contains("process_reclaim_window"), "응답: {reply}");
     assert!(msg.contains(&declared), "선언한 사유가 응답에 없다: {reply}");
 }
+
+// ── 활동 원장 — 적재는 프로세스를 건너서도 같은 규칙이다 ──────────────────────
+
+/// 앱이 만드는 records 스키마 그대로의 저장소 하나(활동 행 seq 포함).
+/// 헬퍼가 보는 곳에 만든다 — 저장소 경로는 인자가 아니라 부팅 상태다.
+fn ledger_store(helper: &Helper, seq: u64) -> PathBuf {
+    let dir = helper.home().join("data");
+    std::fs::create_dir_all(&dir).expect("데이터 디렉터리");
+    let path = dir.join("soksak.db");
+    let conn = rusqlite::Connection::open(&path).expect("저장소 생성");
+    conn.execute_batch(
+        "CREATE TABLE records (ns TEXT NOT NULL, coll TEXT NOT NULL, scope TEXT NOT NULL, \
+         id TEXT NOT NULL, doc TEXT NOT NULL, created INTEGER NOT NULL, \
+         updated INTEGER NOT NULL, enc INTEGER NOT NULL DEFAULT 0, keyId TEXT, \
+         PRIMARY KEY(ns, coll, id));",
+    )
+    .expect("스키마");
+    conn.execute(
+        "INSERT INTO records(ns,coll,scope,id,doc,created,updated) \
+         VALUES('core','activity','app',?1,?2,0,0)",
+        (format!("a{seq:016}"), format!(r#"{{"seq":{seq},"kind":"k"}}"#)),
+    )
+    .expect("행");
+    path
+}
+
+// 헬퍼는 적재분을 답에 실어 준다 — 창은 셸의 것이므로 부채질은 그 항목을 받은 셸이 한다.
+// 그리고 번호는 저장소가 이미 가진 역사 **위에서** 이어야 한다: 0 부터 다시 매기면
+// 소비자의 영속 읽음 커서가 미래를 가리켜 그 소비자가 전면 침묵한다.
+#[test]
+fn admission_crosses_the_socket_and_resumes_above_the_stored_history() {
+    let helper = spawn_helper("activity-admit");
+    ledger_store(&helper, 40_000);
+
+    // UI 가 보내는 모양 그대로 — 앱의 activity_publish 도 kind·source·payload 뿐이다.
+    let reply = helper.ask(json!({
+        "id": 11,
+        "method": "activity_publish",
+        "params": { "kind": "boot.step", "source": "core", "payload": { "step": "ready" } },
+    }));
+
+    assert_eq!(reply["ok"], true, "응답: {reply}");
+    assert_eq!(reply["id"], 11, "응답: {reply}");
+    // data 는 앱의 invoke 가 돌려주는 값 그대로다 — 셸이 값을 다시 조립하지 않는다.
+    let entry = &reply["data"];
+    assert_eq!(entry["seq"], 40_001, "영속 역사 위에서 재개: {reply}");
+    assert_eq!(entry["kind"], "boot.step", "{reply}");
+    assert_eq!(entry["source"], "core", "{reply}");
+    assert_eq!(entry["payload"]["step"], "ready", "{reply}");
+    assert!(entry["ts"].as_u64().is_some_and(|t| t > 0), "{reply}");
+
+    // 같은 프로세스의 두 번째 적재는 그다음 번호다(연결이 달라도 원장은 하나).
+    let again = helper.ask(json!({
+        "id": 12,
+        "method": "activity_publish",
+        "params": { "kind": "boot.step", "source": "core", "payload": {} },
+    }));
+    assert_eq!(again["data"]["seq"], 40_002, "단조: {again}");
+}
+
+// 재개 지점을 모르는 채로는 적재하지 않는다 — 조용히 새 원장을 시작하는 것이 위 결함이다.
+#[test]
+fn admission_without_a_readable_ledger_fails_by_name() {
+    let helper = spawn_helper("activity-no-store");
+    let reply = helper.ask(json!({
+        "method": "activity_publish",
+        "params": { "kind": "k", "source": "core", "payload": {} },
+    }));
+    assert_eq!(reply["ok"], false, "응답: {reply}");
+    assert_eq!(reply["code"], "COMMAND_FAILED", "응답: {reply}");
+    assert!(
+        reply["message"].as_str().unwrap_or_default().contains("원장"),
+        "사유가 원장을 말한다: {reply}"
+    );
+}

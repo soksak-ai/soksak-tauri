@@ -17,6 +17,7 @@
 //! 불려야 한다. 앱도 헬퍼도 여기 있는 로직을 자기 것으로 부르고, 둘 다 이것 없이는
 //! 아무 명령도 답하지 못한다.
 
+pub mod activity;
 pub mod identity;
 pub mod integrity;
 pub mod kv;

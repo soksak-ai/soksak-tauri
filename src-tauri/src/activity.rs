@@ -15,7 +15,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
-use serde_json::{json, Value};
+use serde_json::Value;
+// 적재 규칙(도장·단조)과 보관 축 판정은 코어가 소유한다 — 창 없는 프로세스도 같은 규칙으로
+// 적재해야 하고, 규칙이 둘이면 그 차이는 조용하다.
+use soksak_core::activity::{retention_scope, Ledger};
 use tauri::{AppHandle, Manager};
 
 use crate::window_oracle::WindowOracle;
@@ -28,10 +31,8 @@ const SUB_CAP: usize = 256;
 const PERSIST_CAP: i64 = 5000;
 const NS: &str = "core";
 const COLL: &str = "activity";
-// 영속 보관 2계층(§5 R4) — 저신호(origin 보유: 스케줄·internal)가 신호(사람 유래·환경 사실)의
-// 보관 캡을 다투지 않는다. 링(라이브 뷰)은 시간창이 본질이라 혼합 유지 — 역사 보증은 영속의 몫.
-const SCOPE: &str = "app";
-const SCOPE_LOW: &str = "app-low";
+// 영속 보관 2계층(§5 R4)의 축 이름과 판정은 코어가 소유한다(retention_scope). 링(라이브
+// 뷰)은 시간창이 본질이라 혼합 유지 — 역사 보증은 영속의 몫.
 
 pub struct ActivityHub {
     inner: Mutex<HubInner>,
@@ -40,7 +41,8 @@ pub struct ActivityHub {
 
 struct HubInner {
     ring: VecDeque<Value>,
-    seq: u64,
+    /// seq 할당자 — 이 앱 프로세스가 이 원장에 대해 갖는 유일한 것.
+    ledger: Ledger,
 }
 
 /// 소켓 스트리밍 구독자(A2) — bounded 큐 + 알림. 소비는 pop_wait(블로킹, 소켓 쓰기 스레드).
@@ -86,7 +88,7 @@ impl Default for ActivityHub {
         Self {
             inner: Mutex::new(HubInner {
                 ring: VecDeque::new(),
-                seq: 0,
+                ledger: Ledger::default(),
             }),
             subs: Mutex::new(Vec::new()),
         }
@@ -97,14 +99,7 @@ impl ActivityHub {
     /// 항목 발행 — seq/ts 를 부여해 링에 넣고 부여된 entry 를 돌려준다(emit/영속은 호출측).
     pub fn push(&self, kind: &str, source: &str, payload: Value) -> Value {
         let mut g = self.inner.lock().unwrap();
-        g.seq += 1;
-        let entry = json!({
-            "seq": g.seq,
-            "ts": now_ms(),
-            "kind": kind,
-            "source": source,
-            "payload": payload,
-        });
+        let entry = g.ledger.admit(now_ms(), kind, source, payload);
         g.ring.push_back(entry.clone());
         while g.ring.len() > RING_CAP {
             g.ring.pop_front();
@@ -136,10 +131,7 @@ impl ActivityHub {
 
     /// seq 재개(부트 1회) — 영속 최댓값 위에서 이어간다(단조 보존, 뒤로는 절대 안 감).
     pub fn resume_from(&self, last: u64) {
-        let mut g = self.inner.lock().unwrap();
-        if last > g.seq {
-            g.seq = last;
-        }
+        self.inner.lock().unwrap().ledger.resume_from(last);
     }
 
     /// since(exclusive) 이후 항목 — 재접속 백필 커서. None = 최신 limit 개.
@@ -178,21 +170,6 @@ pub fn admit(hub: &ActivityHub, kind: &str, source: &str, payload: Value) -> Val
 pub fn fan_out(hub: &ActivityHub, windows: &dyn WindowOracle, entry: &Value) -> bool {
     hub.fan_out_subs(entry);
     windows.broadcast("activity", entry.clone())
-}
-
-/// 보관 scope 판정 — 저신호(payload.origin 보유: 스케줄·internal)는 신호의 보관 캡을
-/// 다투지 않는다(§5 R4). 빈 문자열은 origin 이 아니다.
-fn retention_scope(entry: &Value) -> &'static str {
-    if entry
-        .get("payload")
-        .and_then(|p| p.get("origin"))
-        .and_then(Value::as_str)
-        .is_some_and(|s| !s.is_empty())
-    {
-        SCOPE_LOW
-    } else {
-        SCOPE
-    }
 }
 
 /// 영속(retention trim) — 커넥션 하나면 선다. 반환 = 이번 항목이 기록됐는가.
@@ -367,6 +344,7 @@ pub fn activity_recent(app: AppHandle, since: Option<u64>, limit: Option<usize>)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn persist_summary_strips_base64_and_caps_doc() {
@@ -447,6 +425,7 @@ mod split_tests {
     use super::*;
     use crate::window_oracle::WindowOracle;
     use serde_json::json;
+    use soksak_core::activity::{SCOPE, SCOPE_LOW};
 
     /// 계약만 구현한 창 — Tauri 없이 부채질을 검증한다.
     #[derive(Default)]
@@ -482,6 +461,21 @@ mod split_tests {
             sub.queue.lock().unwrap().len(),
             0,
             "적재 단독은 구독자에게 흐르지 않는다"
+        );
+    }
+
+    // 항목의 모양과 번호는 코어 규칙이 소유한다. 코어가 자기 도장을 따로 찍으면 헬퍼가
+    // 적재한 항목과 앱이 적재한 항목이 미묘하게 달라지고, 그 차이는 소비자에게만 보인다.
+    #[test]
+    fn the_entry_shape_comes_from_the_portable_rule() {
+        let hub = ActivityHub::default();
+        hub.resume_from(41);
+        let entry = admit(&hub, "command.executed", "remote", json!({ "command": "c" }));
+        let ts = entry["ts"].as_u64().expect("ts");
+        assert_eq!(
+            entry,
+            soksak_core::activity::stamp(42, ts, "command.executed", "remote", json!({ "command": "c" })),
+            "코어가 규칙 밖에서 항목을 짓고 있다"
         );
     }
 
@@ -581,6 +575,7 @@ mod split_tests {
 mod pending_tests {
     use super::*;
     use serde_json::json;
+    use soksak_core::activity::SCOPE;
 
     // 회복 큐 계약 — 실측 RED: 스왑 고갈(55.8/57.3GB)에서 영속 연쇄 실패 시 관찰 사실이
     // 통째로 사라졌고(boot.step 부재로 복원 결함 규명이 막혔다) 로그가 3,391줄 폭주했다.

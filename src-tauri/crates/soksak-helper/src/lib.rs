@@ -7,5 +7,6 @@
 //! 이 상태였다). 라이브러리로 세우면 그 대조가 컴파일 대상이 된다.
 
 pub mod ctx;
+pub mod ledger;
 pub mod registry;
 pub mod wire;
