@@ -312,6 +312,15 @@ pub struct Unserved {
 /// 옮기려다 막힌 것들. 여기 있는 이름이 표로 올라가려면 사유가 먼저 사라져야 한다.
 pub const UNSERVED: &[Unserved] = &[
     Unserved {
+        name: "service_ledger_sync",
+        blocked_by: "원장 파일 쓰기만이면 옮길 수 있다 — 그러나 이 명령의 몸은 그 다음이다. 쓰기가 \
+                     내용을 바꿨을 때만 결속을 맞추는데(같으면 멱등 반환), 그 맞춤이 앱 프로세스 안의 \
+                     ServiceManager 를 풀고 묶고 ScheduleState 의 예약을 소유자별로 취소한다. 파일만 \
+                     쓰고 그 절반을 빼면 원장은 새 내용인데 도는 서비스는 옛 결속이라, 다음 부팅까지 \
+                     둘이 어긋난 채로 성공을 답한다. 그 어긋남은 오류가 아니라 '없앤 서비스가 계속 \
+                     도는 것'으로 나타난다.",
+    },
+    Unserved {
         name: "secret_status",
         blocked_by: "볼트를 연 프로세스의 상태(SecretsState)를 읽는다. 이 프로세스는 볼트를 열지 \
                      않는다 — 부팅이 키체인을 건드리지 않는 것이 규칙이고(2d06843f), 여는 순간 \
