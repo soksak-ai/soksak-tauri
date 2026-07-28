@@ -47,36 +47,10 @@ fn config_path(home: &Path) -> PathBuf {
     home.join("config").join(CONFIG_FILE)
 }
 
-fn valid_kind(kind: &str) -> bool {
-    matches!(kind, "plugin" | "sidecar" | "kit")
-}
-
-fn valid_id(id: &str) -> bool {
-    let mut chars = id.chars();
-    chars
-        .next()
-        .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
-        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
-}
-
-fn validate_declared_source(kind: &str, id: &str, source: &Path) -> Result<(), String> {
-    if !valid_kind(kind) {
-        return Err(format!(
-            "지원하지 않는 unit kind: {kind:?} (plugin|sidecar|kit)"
-        ));
-    }
-    if !valid_id(id) {
-        return Err(format!("잘못된 unit id: {id:?} (^[a-z0-9][a-z0-9-]*$)"));
-    }
-    if !source.is_absolute() {
-        return Err(format!(
-            "개발 source는 절대경로여야 합니다: {}",
-            source.display()
-        ));
-    }
-    crate::path_security::reject_symlink_components(source)?;
-    Ok(())
-}
+// 선언 유효성 규칙은 코어가 소유한다 — 앱과 cored 가 같은 config 를 읽으므로 규칙이 두
+// 벌이면 통과 기준이 프로세스마다 달라지고, 그 차이는 거부가 아니라 한쪽에서만 보이는
+// 유닛으로 나타난다(2026-07-28 실측).
+use soksak_core::unit_dev::{valid_id, valid_kind, validate_declared as validate_declared_source};
 
 fn validate_source(home: &Path, kind: &str, id: &str, source: &Path) -> Result<(), String> {
     validate_declared_source(kind, id, source)?;

@@ -38,6 +38,10 @@ pub fn config_path(home: &Path) -> PathBuf {
 /// 모르는 형식을 빈 목록으로 삼키면 사용자의 선언이 조용히 사라진다.
 pub fn read_declared(home: &Path) -> Result<Vec<UnitDevSource>, String> {
     let path = config_path(home);
+    // config 파일에 이르는 경로가 링크면 읽는 곳이 검사한 곳과 달라진다.
+    if path.exists() {
+        crate::pathx::reject_symlink_components(&path)?;
+    }
     let raw = match std::fs::read_to_string(&path) {
         Ok(s) => s,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -51,8 +55,57 @@ pub fn read_declared(home: &Path) -> Result<Vec<UnitDevSource>, String> {
             config.version
         ));
     }
+    // 선언 하나하나를 검사한다. 이 검사가 없으면 같은 config 를 앱은 거부하고 이 함수는
+    // 통과시킨다 — 그 차이는 오류가 아니라 **한쪽에서만 보이는 유닛**으로 나타난다.
+    let mut seen = std::collections::HashSet::new();
+    for unit in &config.units {
+        validate_declared(&unit.kind, &unit.id, Path::new(&unit.source))?;
+        if !seen.insert((unit.kind.as_str(), unit.id.as_str())) {
+            return Err(format!(
+                "development unit config에 중복 key가 있습니다: {}/{}",
+                unit.kind, unit.id
+            ));
+        }
+    }
     config.units.sort_by(|a, b| (&a.kind, &a.id).cmp(&(&b.kind, &b.id)));
     Ok(config.units)
+}
+
+/// 지원하는 유닛 종류.
+pub fn valid_kind(kind: &str) -> bool {
+    matches!(kind, "plugin" | "sidecar" | "kit")
+}
+
+/// 유닛 id 규칙 — `^[a-z0-9][a-z0-9-]*$`.
+pub fn valid_id(id: &str) -> bool {
+    let mut chars = id.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// 선언 하나의 유효성 — 종류·id·절대경로·심링크.
+///
+/// checkout 은 선언 뒤에 옮겨지거나 지워질 수 있으므로 **존재는 묻지 않는다.** 선언 자체는
+/// 계속 노출해 적재기가 유닛별로 명시적 오류를 내게 하고, 공식 설치본으로 조용히 폴백하지
+/// 않는다. 여기서 보는 것은 "이 선언이 말이 되는가"뿐이다.
+pub fn validate_declared(kind: &str, id: &str, source: &Path) -> Result<(), String> {
+    if !valid_kind(kind) {
+        return Err(format!(
+            "지원하지 않는 unit kind: {kind:?} (plugin|sidecar|kit)"
+        ));
+    }
+    if !valid_id(id) {
+        return Err(format!("잘못된 unit id: {id:?} (^[a-z0-9][a-z0-9-]*$)"));
+    }
+    if !source.is_absolute() {
+        return Err(format!(
+            "개발 source는 절대경로여야 합니다: {}",
+            source.display()
+        ));
+    }
+    crate::pathx::reject_symlink_components(source)
 }
 
 #[cfg(test)]
@@ -60,7 +113,12 @@ mod tests {
     use super::*;
 
     fn tmp(name: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("udev-{}-{name}", std::process::id()));
+        // macOS 의 temp_dir 은 /var(심링크) 아래라 canonicalize 가 필요하다 — 심링크 거부가
+        // 정당하게 걸린다(픽스처의 문제이지 기준의 문제가 아니다).
+        let d = std::env::temp_dir()
+            .canonicalize()
+            .expect("실측 temp")
+            .join(format!("udev-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(d.join("config")).unwrap();
         d
@@ -112,5 +170,82 @@ mod tests {
         assert_eq!(read_declared(&b).unwrap().len(), 0);
         let _ = std::fs::remove_dir_all(&a);
         let _ = std::fs::remove_dir_all(&b);
+    }
+}
+
+#[cfg(test)]
+mod drift_tests {
+    use super::*;
+
+    fn home(name: &str) -> PathBuf {
+        let d = std::env::temp_dir()
+            .canonicalize()
+            .expect("실측 temp")
+            .join(format!("udev-drift-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("config")).expect("픽스처");
+        d
+    }
+
+    fn write_config(h: &Path, units: &str) {
+        std::fs::write(
+            config_path(h),
+            format!(r#"{{"version":1,"units":[{units}]}}"#),
+        )
+        .expect("config");
+    }
+
+    /// 상대경로 소스는 거부돼야 한다. 앱 경로는 거부하는데 코어가 통과시키면, 같은 config 를
+    /// 두 프로세스가 다르게 읽는다 — 그리고 그 차이는 오류가 아니라 **유닛 하나가 더 있는 것**
+    /// 으로 나타난다(2026-07-28 감사).
+    #[test]
+    fn a_relative_source_is_refused() {
+        let h = home("relative");
+        write_config(&h, r#"{"kind":"plugin","id":"a","source":"relative/path"}"#);
+        let why = read_declared(&h).expect_err("상대경로는 거부한다");
+        assert!(why.contains("절대경로"), "{why}");
+    }
+
+    /// kind·id 도 검사한다 — 규칙 밖 이름이 통과하면 적재기가 없는 것을 찾는다.
+    #[test]
+    fn a_bad_kind_or_id_is_refused() {
+        let h = home("kind");
+        write_config(&h, r#"{"kind":"widget","id":"a","source":"/usr/local/x"}"#);
+        assert!(read_declared(&h).is_err(), "모르는 kind 를 통과시켰다");
+
+        let h2 = home("id");
+        write_config(&h2, r#"{"kind":"plugin","id":"../etc","source":"/usr/local/x"}"#);
+        assert!(read_declared(&h2).is_err(), "규칙 밖 id 를 통과시켰다");
+    }
+
+    /// 같은 (kind,id)가 두 번 있으면 어느 것이 이기는지 규칙이 없다 — 거부한다.
+    #[test]
+    fn a_duplicate_key_is_refused() {
+        let h = home("dup");
+        write_config(
+            &h,
+            r#"{"kind":"plugin","id":"a","source":"/usr/local/x"},{"kind":"plugin","id":"a","source":"/usr/local/y"}"#,
+        );
+        let why = read_declared(&h).expect_err("중복 key 는 거부한다");
+        assert!(why.contains("중복"), "{why}");
+    }
+
+    /// 정상 config 는 그대로 읽힌다 — 검사를 얹었다고 되던 것이 깨지면 안 된다.
+    #[test]
+    fn a_valid_config_still_reads() {
+        let h = home("ok");
+        write_config(
+            &h,
+            r#"{"kind":"sidecar","id":"b","source":"/usr/local/b"},{"kind":"plugin","id":"a","source":"/usr/local/a"}"#,
+        );
+        let units = read_declared(&h).expect("정상 config");
+        assert_eq!(units.len(), 2);
+        // 정렬 규칙(kind,id)도 그대로다.
+        assert_eq!(units[0].id, "a");
+    }
+
+    #[test]
+    fn a_missing_config_is_still_an_empty_list() {
+        assert!(read_declared(&home("absent")).unwrap().is_empty());
     }
 }
