@@ -303,4 +303,71 @@ mod tests {
         assert_eq!(r.owner("/a"), None);
         assert_eq!(r.owner("/c").as_deref(), Some("main"));
     }
+
+    /// 픽스처가 오라클이다 — 이 파일 하나를 프레임워크 쪽 검사도 읽는다.
+    ///
+    /// 지도는 창을 소유한 쪽이 진다(수명이 창의 수명)라서 구현이 둘이다. 규칙까지 둘이면
+    /// 같은 조작에 두 프레임워크가 다르게 답하고, 그 차이는 "이쪽에서만 프로젝트가 안 열린다"다.
+    #[test]
+    fn the_fixture_binds_both_implementations() {
+        let raw = include_str!("../crates/soksak-core/fixtures/project-claims.json");
+        let doc: serde_json::Value = serde_json::from_str(raw).expect("픽스처 JSON");
+        let cases = doc["cases"].as_array().expect("cases");
+        // 오라클 생존 — 비면 아무것도 안 지키면서 통과한다.
+        assert!(!cases.is_empty(), "픽스처가 비었다");
+        for c in cases {
+            let why = c["why"].as_str().unwrap_or("");
+            let reg = ProjectRegistry::default();
+            for step in c["steps"].as_array().unwrap() {
+                let root = step["root"].as_str().unwrap_or("");
+                let label = step["label"].as_str().unwrap_or("");
+                match step["op"].as_str().unwrap() {
+                    "claim" => {
+                        let got = reg.claim(root, label);
+                        let want = &step["want"];
+                        if want["ok"] == true {
+                            assert!(got.is_ok(), "{why}: claim 이 실패했다 {got:?}");
+                        } else {
+                            let owner = got.expect_err(why);
+                            assert_eq!(owner, want["ownedBy"].as_str().unwrap(), "{why}");
+                        }
+                    }
+                    "release" => {
+                        assert_eq!(
+                            reg.release(root, label),
+                            step["want"]["released"].as_bool().unwrap(),
+                            "{why}"
+                        );
+                    }
+                    // 살아 있는 창이 바뀌었다 — 죽은 창의 점유는 그 순간 점유가 아니다.
+                    "alive" => {
+                        let alive: Vec<&str> = step["labels"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .map(|v| v.as_str().unwrap())
+                            .collect();
+                        for (root, owner) in reg.snapshot() {
+                            if !alive.contains(&owner.as_str()) {
+                                reg.release(&root, &owner);
+                            }
+                        }
+                    }
+                    op => panic!("{why}: 모르는 단계 {op}"),
+                }
+            }
+            let want: Vec<(String, String)> = c["owners"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|o| {
+                    (
+                        o["root"].as_str().unwrap().to_string(),
+                        o["window"].as_str().unwrap().to_string(),
+                    )
+                })
+                .collect();
+            assert_eq!(reg.snapshot(), want, "{why}");
+        }
+    }
 }

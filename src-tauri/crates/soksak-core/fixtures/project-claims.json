@@ -1,0 +1,57 @@
+{
+  "note": "프로젝트 root 점유 규칙의 오라클. 지도는 창을 소유한 쪽이 진다(수명이 창의 수명) — 그래서 구현이 둘이다(Rust ProjectRegistry, electron/native/project.cjs). 규칙이 갈리지 않는다는 것은 이 파일이 묶는다.",
+  "cases": [
+    {
+      "why": "빈 지도에서 첫 점유는 성공",
+      "steps": [{ "op": "claim", "root": "/p", "label": "w-1", "want": { "ok": true } }],
+      "owners": [{ "root": "/p", "window": "w-1" }]
+    },
+    {
+      "why": "같은 창의 재청구는 멱등 — 복원·재시도 경로가 안전해야 한다",
+      "steps": [
+        { "op": "claim", "root": "/p", "label": "w-1", "want": { "ok": true } },
+        { "op": "claim", "root": "/p", "label": "w-1", "want": { "ok": true } }
+      ],
+      "owners": [{ "root": "/p", "window": "w-1" }]
+    },
+    {
+      "why": "다른 창이 쥐고 있으면 실패는 값이다 — 누가 쥐었는지 함께 답해야 호출자가 그 창을 포커스한다",
+      "steps": [
+        { "op": "claim", "root": "/p", "label": "w-1", "want": { "ok": true } },
+        { "op": "claim", "root": "/p", "label": "w-2", "want": { "ok": false, "ownedBy": "w-1" } }
+      ],
+      "owners": [{ "root": "/p", "window": "w-1" }]
+    },
+    {
+      "why": "해제는 소유 창만 — 아무 창이나 풀 수 있으면 점유가 점유가 아니다",
+      "steps": [
+        { "op": "claim", "root": "/p", "label": "w-1", "want": { "ok": true } },
+        { "op": "release", "root": "/p", "label": "w-2", "want": { "released": false } },
+        { "op": "release", "root": "/p", "label": "w-1", "want": { "released": true } }
+      ],
+      "owners": []
+    },
+    {
+      "why": "죽은 창의 점유는 점유가 아니다 — 살아 있는 라벨만 소유자로 친다",
+      "steps": [
+        { "op": "claim", "root": "/p", "label": "w-1", "want": { "ok": true } },
+        { "op": "alive", "labels": ["w-2"] },
+        { "op": "claim", "root": "/p", "label": "w-2", "want": { "ok": true } }
+      ],
+      "owners": [{ "root": "/p", "window": "w-2" }]
+    },
+    {
+      "why": "없는 root 해제는 no-op(멱등)",
+      "steps": [{ "op": "release", "root": "/nope", "label": "w-1", "want": { "released": false } }],
+      "owners": []
+    },
+    {
+      "why": "한 창이 여러 root 를 쥘 수 있다 — 목록은 root 순서로 결정적이다",
+      "steps": [
+        { "op": "claim", "root": "/b", "label": "w-1", "want": { "ok": true } },
+        { "op": "claim", "root": "/a", "label": "w-1", "want": { "ok": true } }
+      ],
+      "owners": [{ "root": "/a", "window": "w-1" }, { "root": "/b", "window": "w-1" }]
+    }
+  ]
+}

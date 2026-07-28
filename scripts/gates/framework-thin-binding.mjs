@@ -56,11 +56,11 @@ export const LOGIC_LEDGER = new Map([
   ],
   [
     "project_claim",
-    [4, "점유 지도 판정. **규칙이다 — ProjectRegistry 가 Rust 에 이미 있다**(TODO: cored 가 지도를 지고 프레임워크는 창 죽음만 알린다)"],
+    [4, "점유 지도 판정. **옮기지 않는다** — 지도의 수명이 곧 창의 수명이라 창을 소유한 쪽이 져야 한다(cored 가 쥐면 재기동 뒤에도 죽은 창의 점유가 남아 그 프로젝트를 다시 못 연다. cored 의 UNSERVED 가 같은 사유를 적었다). 그래서 구현은 둘이고, 규칙이 갈리지 않는다는 것은 같은 픽스처가 묶는다(fixtures/project-claims.json — Rust ProjectRegistry 검사와 JS 검사가 그 파일 하나를 읽는다)"],
   ],
   [
     "project_release",
-    [2, "같은 지도의 소유자 판정(TODO: 위와 함께)"],
+    [2, "같은 지도의 소유자 판정 — 같은 픽스처가 함께 묶는다(해제는 소유 창만)"],
   ],
 ]);
 
