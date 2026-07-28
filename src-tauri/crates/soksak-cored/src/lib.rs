@@ -6,6 +6,7 @@
 //! INVALID_PARAMS 라는 한 줄로만 드러났다(2026-07-28 실측: 서빙한다고 믿은 5개가 전부
 //! 이 상태였다). 라이브러리로 세우면 그 대조가 컴파일 대상이 된다.
 
+pub mod control;
 pub mod ctx;
 pub mod ledger;
 pub mod registry;

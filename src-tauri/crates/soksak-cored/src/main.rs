@@ -192,7 +192,8 @@ mod unix {
             if line.trim().is_empty() {
                 continue;
             }
-            let reply = soksak_cored::wire::answer(ctx, line.trim());
+            // 연결을 함께 넘긴다 — 배달 통로를 등록하는 명령은 자기 연결을 지고 가야 한다.
+            let reply = soksak_cored::wire::answer_on_conn(ctx, line.trim(), &writer);
             if writeln!(writer, "{reply}").is_err() {
                 break;
             }

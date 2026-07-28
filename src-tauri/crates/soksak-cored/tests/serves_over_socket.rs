@@ -2065,3 +2065,119 @@ fn recent_reads_back_what_was_admitted() {
     let capped = helper.ask(json!({ "method": "activity_recent", "params": { "limit": 1 } }));
     assert_eq!(capped["data"][0]["payload"]["step"], "done", "{capped}");
 }
+
+// ── 제어면 ────────────────────────────────────────────────────────────────────
+//
+// 이 소켓은 **하나의 표면**이다: cored 가 서빙하는 이름은 cored 가 답하고, 창이 답하는
+// 이름은 창으로 배달된다. 부르는 쪽은 누가 답하는지 몰라도 되고 봉투는 같다.
+//
+// 인프로세스 검사는 규칙까지만 증명한다. 여기서 증명하는 것은 **프로세스를 건너서도**
+// 그 왕복이 선다는 것 — 밖에서 부르고, 다른 연결의 창이 받아, 답이 부른 쪽으로 돌아온다.
+
+/// 창을 가진 쪽을 흉내낸다 — 붙어서 배달을 기다리는 연결 하나.
+struct FakeHost {
+    reader: BufReader<UnixStream>,
+    writer: UnixStream,
+    socket: PathBuf,
+}
+
+impl FakeHost {
+    fn attach(h: &Helper, live: &[&str], focused: &str) -> FakeHost {
+        let conn = UnixStream::connect(&h.socket).expect("호스트 연결");
+        conn.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+        let mut writer = conn.try_clone().unwrap();
+        let mut reader = BufReader::new(conn);
+        writeln!(
+            writer,
+            "{}",
+            json!({"id":"attach","method":"control_host_attach",
+                   "params":{"live":live,"focused":focused}})
+        )
+        .unwrap();
+        let mut line = String::new();
+        reader.read_line(&mut line).expect("등록 응답");
+        let v: Value = serde_json::from_str(line.trim()).unwrap();
+        assert_eq!(v["ok"], true, "등록이 서지 않았다: {v}");
+        FakeHost { reader, writer, socket: h.socket.clone() }
+    }
+
+    /// 배달 하나를 받아 그대로 답한다 — 창이 하는 일의 최소형.
+    fn serve_one(&mut self, answer: Value) -> Value {
+        let mut line = String::new();
+        self.reader.read_line(&mut line).expect("배달 읽기");
+        let push: Value = serde_json::from_str(line.trim()).expect("배달은 한 줄 JSON");
+        let id = push["deliver"]["id"].as_str().expect("배달에는 상관 id 가 있다");
+        // 회신은 **다른 연결**로 보낸다 — 창이 자기 요청 흐름과 무관하게 답하는 실제 모양이다.
+        let conn = UnixStream::connect(&self.socket).expect("회신 연결");
+        let mut w = conn.try_clone().unwrap();
+        writeln!(w, "{}", json!({"method":"cmd_result","params":{"id":id,"result":answer}})).unwrap();
+        let mut ack = String::new();
+        BufReader::new(conn).read_line(&mut ack).expect("회신 응답");
+        let a: Value = serde_json::from_str(ack.trim()).unwrap();
+        assert_eq!(a["data"], true, "짝을 못 찾았다: {a}");
+        push
+    }
+}
+
+/// 창이 붙지 않았으면 모르는 이름은 지금까지처럼 이름을 달고 거절된다.
+#[test]
+fn without_a_window_host_an_app_command_is_refused_by_name() {
+    let h = spawn_helper("control-no-host");
+    let r = h.ask(json!({"id":1,"method":"project.open","params":{"root":"/x"}}));
+    assert_eq!(r["ok"], false);
+    assert_eq!(r["code"], "UNKNOWN_COMMAND", "{r}");
+    assert_eq!(r["id"], 1);
+}
+
+/// 붙은 뒤에는 같은 이름이 **창으로 배달되고** 창의 답이 부른 쪽으로 돌아온다.
+#[test]
+fn an_app_command_travels_to_the_window_and_back() {
+    let h = spawn_helper("control-roundtrip");
+    let mut host = FakeHost::attach(&h, &["main"], "main");
+
+    let caller = std::thread::spawn({
+        let socket = h.socket.clone();
+        move || {
+            let conn = UnixStream::connect(&socket).unwrap();
+            conn.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+            let mut w = conn.try_clone().unwrap();
+            writeln!(
+                w,
+                "{}",
+                json!({"id":7,"method":"project.open","params":{"root":"/p"},"timeoutMs":8000})
+            )
+            .unwrap();
+            let mut line = String::new();
+            BufReader::new(conn).read_line(&mut line).unwrap();
+            serde_json::from_str::<Value>(line.trim()).unwrap()
+        }
+    });
+
+    let push = host.serve_one(json!({"ok":true,"data":{"opened":"/p"}}));
+    // 인자가 **그대로** 간다 — cored 를 거쳤다고 모양이 달라지지 않는다.
+    assert_eq!(push["deliver"]["method"], "project.open");
+    assert_eq!(push["deliver"]["params"]["root"], "/p");
+    assert_eq!(push["deliver"]["window"], "main");
+
+    let reply = caller.join().expect("부른 쪽");
+    assert_eq!(reply["ok"], true, "{reply}");
+    assert_eq!(reply["data"]["opened"], "/p");
+    assert_eq!(reply["id"], 7, "하니스가 준 id 로 돌아온다");
+}
+
+/// cored 가 서빙하는 이름은 호스트가 붙어 있어도 **cored 가 답한다** — 배달로 새지 않는다.
+#[test]
+fn a_served_name_is_still_answered_here() {
+    let h = spawn_helper("control-served-wins");
+    let _host = FakeHost::attach(&h, &["main"], "main");
+    let r = h.ask(json!({"method":"cored.commands"}));
+    assert_eq!(r["ok"], true, "{r}");
+    let names: Vec<&str> = r["data"]["commands"]
+        .as_array()
+        .expect("명령 목록")
+        .iter()
+        .map(|c| c["name"].as_str().unwrap())
+        .collect();
+    assert!(names.contains(&"control_host_attach"), "제어면 명령이 목록에 없다");
+    assert!(names.contains(&"cmd_result"));
+}

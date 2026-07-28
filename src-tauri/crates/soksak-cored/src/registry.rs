@@ -175,6 +175,38 @@ pub const COMMANDS: &[Command] = &[
         returns: "Value[] (도장 찍힌 항목, 오래된 것부터)",
         run: run_activity_recent,
     },
+    // 창 호스트 등록 — **이 연결이 배달 통로가 된다.** 창을 가진 쪽만 부른다.
+    Command {
+        name: "control_host_attach",
+        args: &[
+            Arg { name: "live", ty: "string[]", required: true },
+            Arg { name: "focused", ty: "string", required: true },
+            Arg { name: "lastWorkspace", ty: "string?", required: false },
+        ],
+        returns: "null",
+        run: run_control_host_attach,
+    },
+    // 창 사실 갱신. 낡은 목록으로 타겟을 고르면 죽은 창에 배달한다 — 그 오답은 조용하다.
+    Command {
+        name: "control_windows",
+        args: &[
+            Arg { name: "live", ty: "string[]", required: true },
+            Arg { name: "focused", ty: "string", required: true },
+            Arg { name: "lastWorkspace", ty: "string?", required: false },
+        ],
+        returns: "bool — 호스트가 붙어 있었는가",
+        run: run_control_windows,
+    },
+    // 창의 회신. 기다리던 그 요청과 짝지어진다.
+    Command {
+        name: "cmd_result",
+        args: &[
+            Arg { name: "id", ty: "string", required: true },
+            Arg { name: "result", ty: "object", required: true },
+        ],
+        returns: "bool — 짝을 찾았는가",
+        run: run_cmd_result,
+    },
     Command {
         name: "plugin_scan",
         args: &[],
@@ -825,6 +857,61 @@ fn run_activity_recent(ctx: &Ctx, params: &Value) -> Outcome {
         // 앱의 기본 상한과 같다(200) — 다르면 같은 호출이 프로세스마다 다른 길이를 답한다.
         Ok(act::pick_recent(entries, a.since, a.limit.unwrap_or(200)))
     })
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WindowFacts {
+    live: Vec<String>,
+    focused: String,
+    #[serde(default)]
+    last_workspace: Option<String>,
+}
+
+#[cfg(unix)]
+fn run_control_host_attach(_ctx: &Ctx, params: &Value) -> Outcome {
+    let a: WindowFacts = match serde_json::from_value(params.clone()) {
+        Ok(v) => v,
+        Err(e) => return Outcome::InvalidParams(e.to_string()),
+    };
+    // 연결 없이 온 등록은 성공시키지 않는다 — 성공을 답하고 배달하지 않으면 하니스는
+    // "명령이 사라진다"만 보게 된다.
+    let Some(w) = crate::wire::current_conn() else {
+        return Outcome::Failed("이 연결로는 배달할 수 없습니다(연결 사본 실패)".into());
+    };
+    crate::control::attach_host(w, a.live, a.focused, a.last_workspace);
+    Outcome::Ok(Value::Null)
+}
+
+#[cfg(not(unix))]
+fn run_control_host_attach(_ctx: &Ctx, _params: &Value) -> Outcome {
+    Outcome::Failed("배달 통로는 유닉스 소켓 위에서만 섭니다".into())
+}
+
+fn run_control_windows(_ctx: &Ctx, params: &Value) -> Outcome {
+    let a: WindowFacts = match serde_json::from_value(params.clone()) {
+        Ok(v) => v,
+        Err(e) => return Outcome::InvalidParams(e.to_string()),
+    };
+    Outcome::Ok(Value::Bool(crate::control::update_windows(
+        a.live,
+        a.focused,
+        a.last_workspace,
+    )))
+}
+
+#[derive(serde::Deserialize)]
+struct CmdResult {
+    id: String,
+    result: Value,
+}
+
+fn run_cmd_result(_ctx: &Ctx, params: &Value) -> Outcome {
+    let a: CmdResult = match serde_json::from_value(params.clone()) {
+        Ok(v) => v,
+        Err(e) => return Outcome::InvalidParams(e.to_string()),
+    };
+    Outcome::Ok(Value::Bool(crate::control::deliver_result(&a.id, a.result)))
 }
 
 fn run_plugin_scan(ctx: &Ctx, params: &Value) -> Outcome {

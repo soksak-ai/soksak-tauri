@@ -104,12 +104,19 @@ fn refusal(method: &str) -> (&'static str, String) {
     }
 }
 
-/// 명령 하나를 실행한다. 표에 없으면 이름을 달고 실패한다 — 조용한 no-op 도, 가짜 성공도 없다.
-fn route(ctx: &Ctx, req: &Request) -> Value {
+/// 명령 하나를 실행한다. 표에 없으면 **창을 가진 쪽에 배달한다** — 붙은 호스트가 없을 때만
+/// 이름을 달고 실패한다. 조용한 no-op 도, 가짜 성공도 없다.
+///
+/// 이 갈래가 소켓을 하나로 만든다: 부르는 쪽은 어느 명령을 누가 답하는지 몰라도 된다.
+/// cored 가 서빙하면 cored 가 답하고, 아니면 창이 답한다 — 봉투는 같다.
+fn route(ctx: &Ctx, req: &Request, line: &str) -> Value {
     if req.method == "cored.commands" {
         return ok_reply(registry::declaration());
     }
     let Some(cmd) = registry::find(&req.method) else {
+        if crate::control::has_host() {
+            return crate::control::answer(line);
+        }
         let (code, message) = refusal(&req.method);
         return err_reply(code, &message);
     };
@@ -123,6 +130,31 @@ fn route(ctx: &Ctx, req: &Request) -> Value {
     }
 }
 
+/// 이 연결. **연결 하나 = 스레드 하나**라서 스레드 지역이 곧 연결이다.
+///
+/// Ctx 로 나르지 않는다 — Ctx 는 프로세스 하나에 하나이고(정체성·홈·잠금), 연결은 여럿이다.
+/// 프로세스 상태에 연결을 얹으면 나중에 붙은 연결이 앞의 것을 조용히 덮는다.
+#[cfg(unix)]
+thread_local! {
+    static CONN: std::cell::RefCell<Option<std::os::unix::net::UnixStream>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// 이 연결을 스레드에 매어 두고 한 줄을 답한다 — 소켓 루프가 부르는 자리.
+#[cfg(unix)]
+pub fn answer_on_conn(ctx: &Ctx, line: &str, conn: &std::os::unix::net::UnixStream) -> Value {
+    if let Ok(c) = conn.try_clone() {
+        CONN.with(|slot| *slot.borrow_mut() = Some(c));
+    }
+    answer(ctx, line)
+}
+
+/// 지금 답하고 있는 연결의 사본. 연결을 지고 가야 하는 명령만 부른다(배달 통로 등록).
+#[cfg(unix)]
+pub fn current_conn() -> Option<std::os::unix::net::UnixStream> {
+    CONN.with(|slot| slot.borrow().as_ref().and_then(|c| c.try_clone().ok()))
+}
+
 /// 한 줄 → 한 줄. 소켓 루프가 부르는 유일한 진입점이라 연결 없이도 전부 검증된다.
 /// 부팅 상태는 인자다 — 이 함수가 전역을 읽으면 테스트가 프로세스 하나에 갇힌다.
 pub fn answer(ctx: &Ctx, line: &str) -> Value {
@@ -130,7 +162,7 @@ pub fn answer(ctx: &Ctx, line: &str) -> Value {
         Ok(r) => r,
         Err(e) => return err_reply("INVALID_PARAMS", &format!("JSON 파싱 실패: {e}")),
     };
-    let mut reply = transport_route(&req).unwrap_or_else(|| route(ctx, &req));
+    let mut reply = transport_route(&req).unwrap_or_else(|| route(ctx, &req, line));
     if let (Some(id), Some(obj)) = (req.id.clone(), reply.as_object_mut()) {
         obj.insert("id".into(), id);
     }
@@ -156,6 +188,10 @@ mod tests {
 
     #[test]
     fn an_unknown_method_names_itself() {
+        // 붙은 호스트가 있으면 모르는 이름은 배달된다 — 그것이 이 표면의 설계다.
+        // 여기서 재는 것은 **배달할 곳이 없을 때**의 답이다.
+        let _serial = crate::control::testing::lock();
+        crate::control::testing::detach();
         let reply = answer(&ctx(), r#"{"id":1,"method":"webview_dom_holes"}"#);
         assert_eq!(reply["ok"], false);
         assert_eq!(reply["code"], "UNKNOWN_COMMAND");
