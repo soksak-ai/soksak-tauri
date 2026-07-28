@@ -1,18 +1,95 @@
-# Shell port
+# Framework port
 
-How the app is decoupled from the desktop shell it runs on, and what a second shell costs. Facet of [ARCHITECTURE.md](ARCHITECTURE.md); Korean copy: [SHELL-PORT.ko.md](SHELL-PORT.ko.md). The English text is canonical.
+How the app is decoupled from the desktop framework it runs on, and what a second framework costs. Facet of [ARCHITECTURE.md](ARCHITECTURE.md); Korean copy: [FRAMEWORK-PORT.ko.md](FRAMEWORK-PORT.ko.md). The English text is canonical.
 
-The shell is the thing that owns the window, the webview, and the bridge to native code — Tauri today. It is an adapter, not a premise.
+The framework is what gives the app its process model, window and webview creation, IPC, native API surface, and packaging — Tauri today. It is an adapter, not a premise.
+
+This was once called the "shell." That word already belongs to the login shell (zsh, bash), and this repository handles PTY and terminals as core work, so the collision is real (`login_shell.rs`, `--login-shell`, `shell_which`). It is not `platform` either — that is the OS (macOS, Linux, Windows).
+
+## Why two of them
+
+The point is not to leave Tauri. It is to keep **both**, because what one cannot do the other can.
+
+Tauri uses the OS webview — WKWebView on macOS, WebKitGTK on Linux. Thin, light, and the only candidate that reaches mobile ([multiplatform-engine-strategy.md](multiplatform-engine-strategy.md) §3). In exchange the content surface is **bound to that engine**: a site WKWebView cannot render, the app cannot render either. That is why the Chromium sidecar exists, and the sidecar dragged in a macOS-only subsystem — hole punching, hitTest swizzling, composited capture.
+
+Electron is Chromium all the way down. The content problem does not exist **by definition** — what a browser does, the app does. In exchange it is heavy, has no mobile story, and cannot link Rust.
+
+So the two are not competitors. They are two axes with different answers.
+
+| | Tauri | Electron |
+| --- | --- | --- |
+| Engine | OS webview (macOS WKWebView · Win WebView2 · Linux WebKitGTK) | Chromium, fixed |
+| Content grade | Varies per OS — macOS and Linux fall short | Always met |
+| Rust backend | Linked directly | Impossible — talks over a socket (cored) |
+| Bundle | Small | Large |
+| Mobile | iOS/Android, first class | None |
+| Child content | Native child webview | `<webview>` inside the DOM |
+| Overlap (modals, indicators) | Z-order inversion + transparent holes + hitTest swizzle | **z-index** — no problem to solve |
+| Window capture | OS compositor composites children in | Page capture suffices |
+
+### What each characteristic solves for the other
+
+The hard part of each axis disappears on the other. That is the practical reason to keep both.
+
+| Problem | Tauri's answer | On Electron |
+| --- | --- | --- |
+| Sites WKWebView cannot render | Promote the surface to a Chromium sidecar | **Dissolves** — the framework is Chromium |
+| Drawing modals above the browser | Holes + hitTest swizzle (macOS only) | **Dissolves** — `<webview>` is an HTMLElement, so z-index |
+| Pixel verification | Capture plugin that composites children | `capturePage` |
+| Reusing Rust logic | Linked into the same process | cored socket — same names, args, envelope |
+| Mobile | The same code travels | Attaches as a remote web client |
+
+What Electron pays instead: bundle weight, process count, and a socket round trip whenever it wants to **call** Rust.
+
+Two things confirmed by measurement, not by claim:
+
+- `<webview>` extends `HTMLElement` (`electron.d.ts`), and DOM placed over it **draws on top** — sampled from an offscreen capture (`scripts/electron/overlay-stacking.test.mjs`). The situation that needs holes and swizzles never arises.
+- Conversely, imitating the Tauri model with `WebContentsView` gets stuck: `View` exposes no per-view hit delegation, and `setIgnoreMouseEvents` lives on the window (`scripts/electron/layer-model.test.mjs`). That reads as **do not imitate it**, not as *Electron cannot*.
+
+### Plugins do not know the framework
+
+What a surface requires is not a framework but an **engine grade**. So the manifest declares the need, not the vendor (`packages/plugin-spec/src/engineNeeds.ts`).
+
+```
+requiresEngine: "chromium"
+  Tauri × macOS    → WKWebView falls short → promote to a sidecar
+  Tauri × Windows  → WebView2 is Chromium → promotion is a no-op
+  Electron × any   → the framework is Chromium → promotion is a no-op
+```
+
+Naming the vendor produces the wrong answer. astryx was the first surface promoted to Chromium because it does not work under macOS WKWebView; writing that as "exclude Electron" would **hide the thing that runs better on Electron.** Electron does not meet fewer requirements — it meets more. The axis runs the other way.
+
+Provision is what each adapter states as its own fact.
+
+| | `chromium` | `nativeChildWebview` |
+| --- | --- | --- |
+| Tauri | `false` | `true` |
+| Electron | `true` | `false` |
+
+Electron's `false` does not mean it cannot. In a single Chromium world one compositor composites UI and content, so the mechanism is **unnecessary**. Only surfaces that assume that mechanism drop out; surfaces that need the grade alone simply stand, with no sidecar.
+
+## Three axes, three words
+
+When one axis carries three words, every reader has to ask which meaning is in play. Here they name different things.
+
+| Word | What it names | Values |
+| --- | --- | --- |
+| **framework** | What hosts the app — windows, IPC, native API, packaging | Tauri · Electron |
+| **platform** | The operating system | macOS · Linux · Windows |
+| **engine** | What draws the web | WKWebView · Chromium · WebKitGTK |
+| **shell** | The command interpreter | zsh · bash |
+
+`src/platform/` once held the framework adapter. Everything inside it said "shell" while only the folder said `platform` — not a settled convention but a single name out of step, and every argument built on it was legacy followed as if it were principle. It is `src/framework/` now.
 
 ## The seam
 
-`src/platform/host.ts` declares `ShellHost`. `src/platform/tauri.ts` implements it. `src/platform/index.ts` resolves the active adapter and re-exports named functions. Every other file imports from `../platform` and never learns which shell is underneath.
+`src/framework/contract.ts` declares `AppFramework`. `src/framework/tauri.ts` implements it. `src/framework/index.ts` resolves the active adapter and re-exports named functions. Every other file imports from `../platform` and never learns which framework is underneath.
 
 - **Only what is used.** The contract carries `invoke`, streams, global listen, the current/labelled window (logical and physical axes, theme, drag-drop), app, path, dialog, notification, deep link — because those are the capabilities the app actually calls. Declaring a capability nobody uses leaves a blank every adapter must fake, and fakes get filled by reaching around the seam.
-- **Vendor defects are absorbed by the adapter.** Tauri's unlisten rejects a promise when a listener was already released; the contract says "release is idempotent", so the adapter swallows it and records why. Absorption belongs to the adapter — policy and state do not, because a policy that differs per shell is itself shell coupling.
-- **The gate enforces it.** `src/platform/shellSeam.test.ts` fails if any file outside `src/platform/` imports a shell vendor. Tests obey the same rule: they mock `../platform`, never the vendor. A test that knows the vendor makes swapping the shell a test rewrite too.
+- **Vendor defects are absorbed by the adapter.** Tauri's unlisten rejects a promise when a listener was already released; the contract says "release is idempotent", so the adapter swallows it and records why. Absorption belongs to the adapter — policy and state do not, because a policy that differs per framework is itself framework coupling.
+- **The gate enforces it.** `src/framework/frameworkSeam.test.ts` fails if any file outside `src/framework/` imports a framework vendor. Tests obey the same rule: they mock `../platform`, never the vendor. A test that knows the vendor makes swapping the framework a test rewrite too.
 
-Adding a shell is one adapter file plus one row in the resolution table. No app file changes.
+Adding a framework is one adapter file plus one row in the resolution table. No app file changes.
 
 ## The stream exit
 
@@ -29,7 +106,7 @@ The PTY output crossing is the one converted so far. The other channel holders �
 
 ## The other three seams
 
-The same shape recurs. Each one takes a fact the shell owned and turns it into a value or a contract; each is enforced by a test that implements it without any vendor type — that those tests compile is the proof.
+The same shape recurs. Each one takes a fact the framework owned and turns it into a value or a contract; each is enforced by a test that implements it without any vendor type — that those tests compile is the proof.
 
 | Contract | File | What left the vendor |
 | --- | --- | --- |
@@ -45,11 +122,11 @@ The audit named the ambient home the single largest lever: 28 handlers touch it 
 
 ## The core crate
 
-`src-tauri/crates/soksak-core` holds command logic with no shell in it. Anything there gives the same answer in the app process or in cored, which requires three things: it touches no window, app handle, or managed state; it reads no process environment, working directory, or executable path; and it does not treat its own compile target or build profile as evidence.
+`src-tauri/crates/soksak-core` holds command logic with no framework in it. Anything there gives the same answer in the app process or in cored, which requires three things: it touches no window, app handle, or managed state; it reads no process environment, working directory, or executable path; and it does not treat its own compile target or build profile as evidence.
 
 The third is the quiet one. A function whose answer changes with `cfg!(target_os)` is describing the binary it was compiled into, not answering what the caller asked. Platform branching belongs in an argument.
 
-**The name states what it is, not what it is not.** The crate is called core because both processes call this logic their own and neither answers a single command without it. A name built on the negative ("not tied to a shell") describes the boundary instead of the thing, and a boundary name goes stale the moment the boundary moves.
+**The name states what it is, not what it is not.** The crate is called core because both processes call this logic their own and neither answers a single command without it. A name built on the negative ("not tied to a framework") describes the boundary instead of the thing, and a boundary name goes stale the moment the boundary moves.
 
 Modules: `activity`, `identity`, `integrity`, `kv`, `pathx`, `plugin_dir`, `session`, `themes`, `udp`, `unit_dev` — the list is declared in `src-tauri/crates/soksak-core/src/lib.rs`. Core keeps `#[tauri::command]` wrappers that delegate and decide nothing — a decision in the wrapper is a decision cored would lose.
 
@@ -73,7 +150,7 @@ Boot has nothing to open. Whoever actually needs a sealed value acquires the key
 
 That also sharpened what `secrets-ready` means: not "boot went by" but "the vault just opened". Calling a locked vault ready sends the drain around empty and restarts services for nothing; if it never opens, the event never fires. `boot_wiring_never_touches_the_keychain` counts the touches — zero after boot, one at first use, none on reuse.
 - **The installer (`unit_installer.rs`)** takes an `Identity` instead of a bare home, and its five transaction entries are callable with `&UnitInstallManager` — no `State` required. The ledger's single-writer meaning is unchanged.
-- **The ledger (`activity.rs`)** split into three: `admit` (append and stamp a sequence — pure), `fan_out` (windows and socket subscribers, via `WindowOracle`), `persist` (a `Connection`, nothing more). `publish` keeps its signature and return value and stacks the three, so all 22 call sites behave as before. cored admits and leaves the fan-out to the shell.
+- **The ledger (`activity.rs`)** split into three: `admit` (append and stamp a sequence — pure), `fan_out` (windows and socket subscribers, via `WindowOracle`), `persist` (a `Connection`, nothing more). `publish` keeps its signature and return value and stacks the three, so all 22 call sites behave as before. cored admits and leaves the fan-out to the framework.
 
 `WindowOracle` gained `broadcast` for events with no addressee. The default walks every live window; Tauri overrides it with a single `emit`, because that one delivery also reaches child webviews and a label walk would silently reach fewer of them. A partial delivery is not reported as success.
 
@@ -84,7 +161,7 @@ Terminals, processes, daemons, websockets, and services were the largest movable
 - **Identity is a field, not an argument.** `Link` caches its control connection, and that connection was already made against one home's socket and token. Taking the home as a call argument makes "the cached connection is home A, this argument is home B" representable, and the reconnect path would then attach to B. The manager owns its identity because identity is a condition of its existence, not a parameter of a call.
 - **Construction moved from the builder chain into `setup`.** `home::init` runs at the top of `setup`; the builder chain runs before it, so reading identity there picks up the `home.rs` fallback of `~/.soksak` — a dev build would aim at the release home's daemon.
 - **An exit is not bytes.** `on_exit` carries one number, and `Channel<i32>` serializes it as a JSON number. Forcing it through the byte contract would change the payload the consumer receives, and that is a behaviour change wearing the clothes of a structural move. `ExitSink` sits beside `StreamSink` with the same shape — a departed consumer comes back as a value — and a different type.
-- **The mediation origin left the shell adapter.** It is a stamp the core applies, not something a service reports about itself; inside an adapter a second shell would stamp it differently, and a differently stamped origin defeats the read-aloud exclusion.
+- **The mediation origin left the framework adapter.** It is a stamp the core applies, not something a service reports about itself; inside an adapter a second framework would stamp it differently, and a differently stamped origin defeats the read-aloud exclusion.
 
 One coupling was deliberately left. Seven of the eight `activity::publish` sites in `pty.rs` sit in functions that also use the handle for `state::<PtyManager>` / `state::<SecretsState>`. The remaining `AppHandle` there is held by those lookups, not by publishing; unpicking it means changing managed-state ownership, which is a behaviour change and belongs to its own pass.
 
@@ -104,23 +181,23 @@ Two things were deliberately left. `native_reload` keeps its webview handle: a r
 
 `src-tauri/crates/soksak-cored` is a process with no window, no webview, and no app handle. It listens on a unix socket and answers commands using `soksak-core` logic. It follows `soksak-ptyd`, the standing precedent for an independent daemon, with two deliberate differences.
 
-**The name says what it is: core, running as a daemon.** Not a bridge — the Tauri shell never talks to it. That shell links `soksak-core` directly and calls functions in its own process; a socket between them would be a round trip to itself. cored exists for a shell that *cannot* link Rust. Today that means Electron, whose shell is Node.
+**The name says what it is: core, running as a daemon.** Not a bridge — the Tauri framework never talks to it. That framework links `soksak-core` directly and calls functions in its own process; a socket between them would be a round trip to itself. cored exists for a framework that *cannot* link Rust. Today that means Electron, whose framework is Node.
 
 ```
-Tauri shell   ──links──>  soksak-core
-Electron shell ──socket──> soksak-cored  (= soksak-core with a socket on it)
+Tauri framework   ──links──>  soksak-core
+Electron framework ──socket──> soksak-cored  (= soksak-core with a socket on it)
 ```
 
 The dependency direction says the same thing: `src-tauri/Cargo.toml` lists `soksak-core` as a dependency and `soksak-cored` only as a dev-dependency. The app binary does not link cored at all; the single tie is the shape gate, which reads cored's serving table as a value at test time rather than parsing it out of a string — a parser goes quietly wrong when the table changes, and a gate that went wrong still reports a pass.
 
 - **It derives no identity of its own.** `ptyd` reads `SOKSAK_HOME` and derives paths; cored takes `--socket`, `--home`, and `--identifier` as arguments and, given none, fails by name rather than choosing a default. A daemon that guesses its identity attaches somewhere else the moment homes diverge, and does it quietly.
 - **`--data-dir` is optional because relocation is the spawner's secret.** The store is normally derived from the home, but the app moves it in debug builds. Only whoever moved it knows, so whoever spawns cored passes it. cored deriving by rule alone would open a different file than the app, and that wrong answer arrives as an empty result rather than an error.
-- **Names and arguments are the app's.** The envelope follows the socket contract, and `data` carries exactly what the app's `invoke` returns. A shell that has to translate names introduces a new drift surface; the point is to ask the same question and get the same answer.
-- **The table answers for itself.** `cored.commands` returns `{ commands, unserved }` — what it serves with each argument's name, type and whether it is required, and what it does not serve with a `blockedBy` reason. A shell author who only gets `UNKNOWN_COMMAND` cannot tell "not moved yet" from "cannot be done here", and re-investigates the blocked thing or, worse, imitates it without investigating.
+- **Names and arguments are the app's.** The envelope follows the socket contract, and `data` carries exactly what the app's `invoke` returns. A framework that has to translate names introduces a new drift surface; the point is to ask the same question and get the same answer.
+- **The table answers for itself.** `cored.commands` returns `{ commands, unserved }` — what it serves with each argument's name, type and whether it is required, and what it does not serve with a `blockedBy` reason. A framework author who only gets `UNKNOWN_COMMAND` cannot tell "not moved yet" from "cannot be done here", and re-investigates the blocked thing or, worse, imitates it without investigating.
 
 Each handler is one call into `soksak-core`. Judgement does not live in cored — if it did, the app path and the cored path could answer differently, and that difference is silent. Logic has a single owner, so the two processes agree structurally rather than by copy.
 
-**A store is not a shell.** `rusqlite` is banned in `soksak-core` and allowed in cored. The ban list exists to keep out windows, webviews, and native runtimes; a database opens no window and holds no app handle, and reads the same file to the same answer from any process. But logic that knows the store only runs where the file is, and that premise is what the split removes — so the `KvRows` and `KvWrite` contracts stay in the core crate, along with the SQL itself (`SELECT_SQL`, `UPSERT_SQL`), and only the connection lives in cored. Two processes each writing their own statement would drift, and a drifted query is not an error — it is a different answer.
+**A store is not a framework.** `rusqlite` is banned in `soksak-core` and allowed in cored. The ban list exists to keep out windows, webviews, and native runtimes; a database opens no window and holds no app handle, and reads the same file to the same answer from any process. But logic that knows the store only runs where the file is, and that premise is what the split removes — so the `KvRows` and `KvWrite` contracts stay in the core crate, along with the SQL itself (`SELECT_SQL`, `UPSERT_SQL`), and only the connection lives in cored. Two processes each writing their own statement would drift, and a drifted query is not an error — it is a different answer.
 
 **Writing requires proving you are alone.** Single-writer was, until now, an argument about code layout: the app process holds one connection and a `Mutex` serialises it, so `unchecked_transaction` is safe. That argument holds only while there is one process. A second one opening the same file is not stopped by SQLite — it is merely serialised, and the premise quietly disappears.
 
@@ -128,53 +205,53 @@ So the premise becomes a value. `soksak_core::store_lock` takes an advisory lock
 
 cored claims the lock once at boot. Holding it, it serves `data_kv_set`; without it, it serves reads and refuses writes by name — the refusal names the store, because a silent write is exactly what the lock exists to prevent.
 
-**What the demand ledger taught.** The Electron shell records every backend call in order. Read by frequency, `activity_publish` (28) and `data_kv_get` (10) dominate; read *in order*, the boot stalls at call 5 (`app_environment`) and calls 7–14 (`data_kv_get`). Three commands wired first by frequency turned out to be calls 42, 48, and 50 — served, and irrelevant to whether the window paints. Frequency picks the wrong work; order picks the blocking work.
+**What the demand ledger taught.** The Electron framework records every backend call in order. Read by frequency, `activity_publish` (28) and `data_kv_get` (10) dominate; read *in order*, the boot stalls at call 5 (`app_environment`) and calls 7–14 (`data_kv_get`). Three commands wired first by frequency turned out to be calls 42, 48, and 50 — served, and irrelevant to whether the window paints. Frequency picks the wrong work; order picks the blocking work.
 
 **Arguments are the caller's; state is the process's.** A command served by cored must have the *same argument shape* as the app command of the same name. The UI does not know which process answers it: `invoke("app_environment")` is one call whether the app or cored replies.
 
-The first version of cored broke this. Reasoning that "cored must not guess its identity", it demanded `identifier`, `home`, `dbPath`, `dir`, and `base` as per-call arguments — but the app commands of those names take **no arguments at all**, because those values are process state, not something a caller carries. Live measurement (Electron boot, 168 recorded calls) showed all five supposedly-served commands rejected with `INVALID_PARAMS`, and the rejection was one line in a shell log, so it was silent.
+The first version of cored broke this. Reasoning that "cored must not guess its identity", it demanded `identifier`, `home`, `dbPath`, `dir`, and `base` as per-call arguments — but the app commands of those names take **no arguments at all**, because those values are process state, not something a caller carries. Live measurement (Electron boot, 168 recorded calls) showed all five supposedly-served commands rejected with `INVALID_PARAMS`, and the rejection was one line in a framework log, so it was silent.
 
-The premise was right and the conclusion was wrong: **receiving is not guessing.** The app does not guess its identity either — it receives it at boot from its shell config. cored receives it at boot from whoever spawned it. So the rule is two lines:
+The premise was right and the conclusion was wrong: **receiving is not guessing.** The app does not guess its identity either — it receives it at boot from its framework config. cored receives it at boot from whoever spawned it. So the rule is two lines:
 
 - values a caller sends are arguments (`ns`, `key`, `host`, `port`)
 - values a process holds are boot state (identity, home, store path)
 
-`src-tauri/src/cored_shape_gate.rs` enforces this: it parses every `#[tauri::command]` signature in the app, drops shell-injected parameters (`State`, `AppHandle`, `Window`, `Channel`), and compares the argument-name set against cored's serving table for every name they share. Three planted violations — an extra argument, a dropped one, a renamed one — prove the gate catches drift rather than merely passing.
+`src-tauri/src/cored_shape_gate.rs` enforces this: it parses every `#[tauri::command]` signature in the app, drops framework-injected parameters (`State`, `AppHandle`, `Window`, `Channel`), and compares the argument-name set against cored's serving table for every name they share. Three planted violations — an extra argument, a dropped one, a renamed one — prove the gate catches drift rather than merely passing.
 
 The socket test carries the same lesson: it now spawns cored against a fixture home, so argument-less commands are exercised *from outside the process*. The in-process tests could only ever prove "arguments are read as declared"; they could not see that the declaration itself disagreed with the app.
 
-`activity_publish` is served, and serves only its first stage: cored admits the entry and returns it stamped. Fan-out needs windows and this process has none, so the shell does that half — the split is in the answer, not in a second copy of the rule.
+`activity_publish` is served, and serves only its first stage: cored admits the entry and returns it stamped. Fan-out needs windows and this process has none, so the framework does that half — the split is in the answer, not in a second copy of the rule.
 
-Still unserved, each with what blocks it recorded beside its name in `src-tauri/crates/soksak-cored/src/registry.rs`: `project_owners` (the claim ledger is mutable state in the app process, and a ledger whose lifetime became cored's would keep dead windows' claims across a shell restart), `net_http_request` (the one transport drags in `tokio`, which this process's own gate blocks by name, and secret substitution reads the vault the app opened), `process_reclaim_window` (the handles to reclaim belong to whoever spawned the children; cored would always answer zero, and that zero is indistinguishable from "nothing to reclaim"). And `webview_*`, `engine_*`, `titlebar_*`, `window_*` never move — those are the shell's, and an Electron adapter must implement them itself.
+Still unserved, each with what blocks it recorded beside its name in `src-tauri/crates/soksak-cored/src/registry.rs`: `project_owners` (the claim ledger is mutable state in the app process, and a ledger whose lifetime became cored's would keep dead windows' claims across a framework restart), `net_http_request` (the one transport drags in `tokio`, which this process's own gate blocks by name, and secret substitution reads the vault the app opened), `process_reclaim_window` (the handles to reclaim belong to whoever spawned the children; cored would always answer zero, and that zero is indistinguishable from "nothing to reclaim"). And `webview_*`, `engine_*`, `titlebar_*`, `window_*` never move — those are the framework's, and an Electron adapter must implement them itself.
 
-## The shell stands up cored
+## The framework stands up cored
 
-The Electron shell no longer waits for a socket someone else prepared. It spawns its own backend (`electron/cored.cjs`) and hands it the identity at boot.
+The Electron framework no longer waits for a socket someone else prepared. It spawns its own backend (`electron/cored.cjs`) and hands it the identity at boot.
 
-- **The home is the shell's; cored is told.** The shell derives its home from its identifier alone — `app` gets `~/.soksak`, anything else gets the `-<last segment>` suffix — and passes it down as `--home` and `--identifier`. There is no runtime switch that swaps the home out: what gets pointed at is the identifier, and the home is the consequence.
+- **The home is the framework's; cored is told.** The framework derives its home from its identifier alone — `app` gets `~/.soksak`, anything else gets the `-<last segment>` suffix — and passes it down as `--home` and `--identifier`. There is no runtime switch that swaps the home out: what gets pointed at is the identifier, and the home is the consequence.
 - **The socket is `<home>/cored.sock`, not the app's name.** The app of that home binds `<home>/<identifier>.sock`. Taking that name would leave cored sitting where the app must bind, and the app would be turned away as "another instance already running" — a backend that works by making its own app unlaunchable. Keeping the name short also matters: unix socket paths have an OS length limit, and a deep tree crosses it silently.
-- **An external socket is attached to, never reaped.** When `SOKSAK_SOCKET` (or `--soksak-socket=`) names one, that socket is someone else's: the shell connects and neither spawns nor stops anything. Only a cored the shell spawned itself is stopped on the way out. The same rule covers a cored that was already alive — it is adopted, and adopted is not owned.
+- **An external socket is attached to, never reaped.** When `SOKSAK_SOCKET` (or `--soksak-socket=`) names one, that socket is someone else's: the framework connects and neither spawns nor stops anything. Only a cored the framework spawned itself is stopped on the way out. The same rule covers a cored that was already alive — it is adopted, and adopted is not owned.
 - **The binary is never guessed.** A declared path (`SOKSAK_CORED_BIN` or `--soksak-cored=`) wins and, if it is not there, fails instead of falling through to discovery — falling through runs something other than what was named. With nothing declared, the repo's `debug` then `release` build locations are tried, and if neither holds it the failure names every place it looked. Spawning a made-up path leaves `ENOENT` as the only trace and loses what was searched for.
-- **Readiness is cored's first stdout line, and that line must name the socket.** The shell blocks on that read rather than watching for the socket file to appear: a file existing is not a completed bind, and a blocking read surfaces a cored that died first as an immediate EOF. A readiness line naming a different socket fails too — it means what was launched is not this cored, or attached elsewhere, and both would otherwise pass as connected.
-- **Nothing is left holding the socket.** Past the timeout the shell reaps the process it started before reporting, so the reason is the real one and no orphan keeps the path. cored has the matching half: if something already serves that path it withdraws rather than unlinking a live socket, and the shell confirms the path really is served before adopting it.
+- **Readiness is cored's first stdout line, and that line must name the socket.** The framework blocks on that read rather than watching for the socket file to appear: a file existing is not a completed bind, and a blocking read surfaces a cored that died first as an immediate EOF. A readiness line naming a different socket fails too — it means what was launched is not this cored, or attached elsewhere, and both would otherwise pass as connected.
+- **Nothing is left holding the socket.** Past the timeout the framework reaps the process it started before reporting, so the reason is the real one and no orphan keeps the path. cored has the matching half: if something already serves that path it withdraws rather than unlinking a live socket, and the framework confirms the path really is served before adopting it.
 
-Fan-out is the shell's half of publishing (`electron/activity.cjs`). cored admits and returns the stamped entry; the shell pushes it to every live window. Skipping that would starve `listen("activity")` subscribers without a single error line, because the front end discards the return value. An answer that is not a stamped entry is refused by name rather than pushed — pushing the wrong shape desynchronises subscribers silently, and reporting success would claim a delivery that never happened.
+Fan-out is the framework's half of publishing (`electron/activity.cjs`). cored admits and returns the stamped entry; the framework pushes it to every live window. Skipping that would starve `listen("activity")` subscribers without a single error line, because the front end discards the return value. An answer that is not a stamped entry is refused by name rather than pushed — pushing the wrong shape desynchronises subscribers silently, and reporting success would claim a delivery that never happened.
 
-Neither file requires `electron`. Code that can only be exercised by launching a shell is in practice not exercised, so both are driven directly by `scripts/electron/cored-spawn.test.mjs` and `scripts/electron/shell-activity.test.mjs`.
+Neither file requires `electron`. Code that can only be exercised by launching a framework is in practice not exercised, so both are driven directly by `scripts/electron/cored-spawn.test.mjs` and `scripts/electron/framework-activity.test.mjs`.
 
 ## How the command surface divides
 
-The port question for any one app command is not "what does it do" but **what is it holding a shell object for**. That axis splits the surface three ways:
+The port question for any one app command is not "what does it do" but **what is it holding a framework object for**. That axis splits the surface three ways:
 
-- **A — held by an attribute only.** The handler touches the shell for one fact: an ambient home read, a window label used as a key. Turning that attribute into a value frees the handler; nothing about its logic has to change.
-- **B — genuinely the window's.** Child webviews, engines, titlebars, windows. These never move. A second shell implements them itself, and that is the whole of what a second shell owes.
+- **A — held by an attribute only.** The handler touches the framework for one fact: an ambient home read, a window label used as a key. Turning that attribute into a value frees the handler; nothing about its logic has to change.
+- **B — genuinely the window's.** Child webviews, engines, titlebars, windows. These never move. A second framework implements them itself, and that is the whole of what a second framework owes.
 - **C — the `AppHandle` is there for managed state and for publishing.** `state::<T>()` lookups and `activity::publish` sit in the same functions. Unpicking these means changing who owns managed state, which is a behaviour change and belongs to its own pass rather than to a port.
 
 The counts are deliberately not written here. They move with every commit, and a number frozen into prose goes stale without anything failing, while the reader that produced it stays right. Read the surface from `#[tauri::command]` signatures under `src-tauri/src`, from the registration list in `src-tauri/src/lib.rs` (`generate_handler!`), and from `cored_shape_gate::app_commands()`, which already parses those signatures into caller-argument sets for the shape gate.
 
 Bucket B is why the cost below concentrates where it does, and bucket C is why `ActivitySink` was a real coupling and a poor lever at the same time.
 
-## What a second shell actually costs
+## What a second framework actually costs
 
 Measured on this repo (2026-07-27):
 
@@ -184,15 +261,23 @@ Measured on this repo (2026-07-27):
 | Sidecars (browser, terminal engines, db-studio) | separate processes | none — socket protocol unchanged |
 | Installed plugins | all | none — zero vendor imports |
 | TS command registry | 10,909 lines | none — sits behind the seam |
-| App code touching the shell | 1 adapter | the whole surface |
+| App code touching the framework | 1 adapter | the whole surface |
 | `src-tauri/src` | the whole native surface | bucket B is the hard part |
 
 The line counts are that date's measurement. The command surface is not frozen into a number here for the reason given above — read it from the source.
 
-The deep coupling is not spread out; it is concentrated in the native surface layer — child webviews, the hit-test swizzle that lets a transparent DOM region pass the mouse to the native view beneath, and window capture that composites those native children. A shell without region-level hit-test passthrough cannot reproduce the hole contract as written, and a capture that only sees the page cannot drive the pixel oracles. That is the part to prototype first, not the part to assume.
+The deep coupling is not spread out; it is concentrated in the native surface layer — child webviews, the hit-test swizzle that lets a transparent DOM region pass the mouse to the native view beneath, and window capture that composites those native children. A framework without region-level hit-test passthrough cannot reproduce the hole contract as written, and a capture that only sees the page cannot drive the pixel oracles. That is the part to prototype first, not the part to assume.
 
 ## Spike shape
 
-Run the browser through the offscreen CEF sidecar (frames streamed into an `<img>`) and leave native child webviews out of the first pass. That removes holes, swizzling, and composited capture from the critical path, and leaves the questions a spike should answer: command latency over the new bridge, terminal stream throughput, multi-window and focus parity, and what replaces pixel verification.
+The first version read: "run the browser only as an offscreen CEF sidecar (frame stream → `<img>`) and leave native child webviews out of the first pass."
 
-Because every capability is already exposed as a socket command, a second shell that speaks the same control plane inherits the existing e2e harnesses as its judge — pixel oracles excepted.
+**On Electron none of that is needed.** The CEF sidecar exists to draw what WKWebView cannot, and Electron is Chromium all the way down, so the problem does not exist. Content lives inside the page as `<webview>` — the process is still separate (crash isolation intact), the control surface is all there (`loadURL`, `goBack`, `goForward`, `canGoBack`, `reload`, `stop`, `setZoomLevel`, `executeJavaScript`, `openDevTools`, `getURL`, `getTitle`, `insertCSS`, `capturePage`, `printToPDF`), and overlap is z-index.
+
+So what leaves the critical path is not just holes, swizzles, and composited capture, but **the sidecar itself**. With no frame encode, transfer, and decode, that performance question disappears with it.
+
+Three questions remain: command latency across the new bridge, terminal stream throughput, and multi-window and focus equivalence.
+
+Every feature is already exposed as a socket command, so a second framework speaking the same control plane **inherits the existing e2e harness as its judge.**
+
+The pixel oracle is not an exception either. It was an adapter item all along — capture already lives in its own plugin (`tauri-plugin-webview-capture`) with per-OS files, and the only thing missing is that the capability is not in the `AppFramework` contract. Put it there and it behaves like every other capability. On Electron the implementation is `capturePage`.
