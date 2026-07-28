@@ -126,6 +126,14 @@ pub const COMMANDS: &[Command] = &[
         returns: "ThemeFile[] (파일명·이름)",
         run: run_themes_scan,
     },
+    // 훑기의 짝. 외부 경로에서 홈 아래 themes/ 로 복사한다 — 목적지 홈은 부팅 상태에서 오고
+    // 원본 경로만 호출자가 준다(앱의 같은 명령도 path 하나만 받는다).
+    Command {
+        name: "theme_install",
+        args: &[Arg { name: "path", ty: "string", required: REQ }],
+        returns: "string (설치된 경로)",
+        run: run_theme_install,
+    },
     // 로그인 셸을 **값으로** 받아 서는 둘. 셸을 못 받았으면 추측하지 않고 사유를 달고 거절한다 —
     // 자기 환경(`$SHELL`)을 읽는 것이 곧 그 추측이고, 그 답은 띄운 쪽의 답과 다를 수 있다.
     Command {
@@ -694,6 +702,20 @@ fn run_themes_scan(ctx: &Ctx, params: &Value) -> Outcome {
     // 홈은 부팅 상태에서 온다. 앱은 `identity::ambient().themes_dir()` 로 같은 곳을 본다.
     dispatch(params, |_: NoArgs| {
         themes::scan(&ctx.identity().themes_dir())
+    })
+}
+
+#[derive(serde::Deserialize)]
+struct ThemeInstallArgs {
+    path: String,
+}
+
+fn run_theme_install(ctx: &Ctx, params: &Value) -> Outcome {
+    // 쓰기 잠금(store_lock)을 걸지 않는다 — 그것은 app.data 의 쓰기 소유권이고, 테마는
+    // 저장소가 아니라 홈 아래 파일이다(plugin_data_write 와 같은 자리). 목적지 디렉터리는
+    // 코어가 만든다: 읽기는 만들지 않고 쓰기는 만든다는 규칙을 두 프로세스가 함께 진다.
+    dispatch(params, |a: ThemeInstallArgs| {
+        themes::install(&ctx.identity().themes_dir(), &a.path)
     })
 }
 

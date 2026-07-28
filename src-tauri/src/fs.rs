@@ -93,34 +93,22 @@ mod write_tests {
 // 테마는 외부에서 만들어져 <정체성 홈>/themes/*.json 으로 들어온다. 검증은 프론트
 // 테마 엔진(단일 진실)이 담당 — 여기는 파일 입출력만.
 
-fn themes_dir() -> Result<PathBuf, String> {
-    let dir = crate::identity::ambient().themes_dir();
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    Ok(dir)
+fn themes_dir() -> PathBuf {
+    crate::identity::ambient().themes_dir()
 }
 
 pub use soksak_core::themes::ThemeFile;
 
 // 외부 테마 디렉토리의 *.json 전부(내용 포함). 훑기는 soksak-core 이 소유한다 —
-// 여기서는 홈에서 디렉토리를 해소하는 일만 한다.
+// 여기서는 홈에서 디렉토리를 해소하는 일만 한다. 읽기는 디스크를 만들지 않는다.
 #[tauri::command]
 pub fn themes_scan() -> Result<Vec<ThemeFile>, String> {
-    soksak_core::themes::scan(&themes_dir()?)
+    soksak_core::themes::scan(&themes_dir())
 }
 
 // 테마 파일 설치(외부 경로 → <정체성 홈>/themes/). 동명 파일은 덮어쓴다(갱신).
+// 검증·복사·목적지 생성은 soksak-core 이 소유한다 — cored 도 같은 규칙으로 설치한다.
 #[tauri::command]
 pub fn theme_install(path: String) -> Result<String, String> {
-    let src = PathBuf::from(&path);
-    if src.extension().is_none_or(|e| e != "json") {
-        return Err("테마 파일은 .json 이어야 함".into());
-    }
-    let name = src
-        .file_name()
-        .ok_or("파일명 없음")?
-        .to_string_lossy()
-        .to_string();
-    let dst = themes_dir()?.join(&name);
-    std::fs::copy(&src, &dst).map_err(|e| e.to_string())?;
-    Ok(dst.to_string_lossy().to_string())
+    soksak_core::themes::install(&themes_dir(), &path)
 }

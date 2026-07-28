@@ -1897,3 +1897,110 @@ fn skill_refresh_spawn_fails_by_name_when_the_manifest_has_no_cli() {
         "{reply}"
     );
 }
+
+// ── 외부 테마 설치 ─────────────────────────────────────────────────────────────
+//
+// 훑기(themes_scan)와 짝이다. 둘의 부작용은 **다르다**: 읽기는 디스크를 만들지 않고,
+// 쓰기는 자기 목적지를 만든다. 앱이 훑기 앞에서 홈 배치를 만들어 두면 같은 이름의 명령이
+// 프로세스마다 다른 부작용을 지고, 그 차이는 답에 안 실려 아무 데도 안 남는다.
+
+/// 설치는 부팅 홈 아래 themes/ 로 복사하고 **그 목적지를 스스로 만든다**.
+#[test]
+fn theme_install_copies_into_the_boot_home_and_makes_its_destination() {
+    let helper = spawn_helper("theme-install");
+    let src = helper.dir().join("midnight.json");
+    std::fs::write(&src, br#"{"name":"Midnight"}"#).expect("픽스처 테마");
+    let themes = helper.home().join("themes");
+    assert!(!themes.exists(), "픽스처가 이미 목적지를 만들어 두었다");
+
+    let reply = helper.ask(json!({
+        "id": 80, "method": "theme_install",
+        "params": { "path": src.to_string_lossy() }
+    }));
+    assert_eq!(reply["ok"], true, "{reply}");
+    let dst = themes.join("midnight.json");
+    assert_eq!(
+        reply["data"].as_str().unwrap_or_default(),
+        dst.to_string_lossy(),
+        "답이 설치된 경로다: {reply}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&dst).expect("설치된 파일"),
+        r#"{"name":"Midnight"}"#,
+        "내용을 그대로 옮긴다"
+    );
+
+    // 설치한 것을 같은 프로세스의 훑기가 본다 — 두 명령이 같은 디렉터리를 가리킨다.
+    let scanned = helper.ask(json!({ "id": 81, "method": "themes_scan" }));
+    assert_eq!(scanned["data"][0]["file"], dst.to_string_lossy().to_string(), "{scanned}");
+
+    // 동명 파일은 덮어쓴다(갱신) — 원본의 결정이다.
+    std::fs::write(&src, br#"{"name":"Midnight2"}"#).expect("갱신본");
+    let again = helper.ask(json!({
+        "id": 82, "method": "theme_install",
+        "params": { "path": src.to_string_lossy() }
+    }));
+    assert_eq!(again["ok"], true, "{again}");
+    assert_eq!(
+        std::fs::read_to_string(&dst).expect("갱신된 파일"),
+        r#"{"name":"Midnight2"}"#,
+        "동명 파일은 갱신된다"
+    );
+}
+
+/// .json 이 아니면 이름을 달고 거절한다 — 복사하기 전에 거절해야 홈에 남지 않는다.
+#[test]
+fn theme_install_refuses_a_non_json_file_by_name() {
+    let helper = spawn_helper("theme-install-ext");
+    let src = helper.dir().join("theme.txt");
+    std::fs::write(&src, b"not a theme").expect("픽스처");
+
+    let reply = helper.ask(json!({
+        "id": 83, "method": "theme_install",
+        "params": { "path": src.to_string_lossy() }
+    }));
+    assert_eq!(reply["ok"], false, "{reply}");
+    // UNKNOWN_COMMAND 도 ok:false 다 — 코드를 함께 보지 않으면 미서빙이 통과로 위장한다.
+    assert_eq!(reply["code"], "COMMAND_FAILED", "{reply}");
+    assert_eq!(
+        reply["message"].as_str().unwrap_or_default(),
+        "테마 파일은 .json 이어야 함",
+        "{reply}"
+    );
+    assert!(
+        !helper.home().join("themes").exists(),
+        "거절해 놓고 목적지를 만들었다"
+    );
+}
+
+/// 없는 원본은 복사 실패다 — 성공을 답하면 설치되지 않은 테마가 설치된 것으로 읽힌다.
+#[test]
+fn theme_install_fails_when_the_source_is_absent() {
+    let helper = spawn_helper("theme-install-absent");
+    let src = helper.dir().join("ghost.json");
+
+    let reply = helper.ask(json!({
+        "id": 84, "method": "theme_install",
+        "params": { "path": src.to_string_lossy() }
+    }));
+    assert_eq!(reply["ok"], false, "{reply}");
+    assert_eq!(reply["code"], "COMMAND_FAILED", "{reply}");
+    assert!(
+        reply["message"].as_str().unwrap_or_default().contains("os error 2"),
+        "무엇이 막았는지 말해야 한다: {reply}"
+    );
+}
+
+/// 훑기는 디스크를 만들지 않는다 — 부재는 '설치된 테마 없음'이지 만들 이유가 아니다.
+#[test]
+fn a_home_scan_does_not_make_the_directory_it_reads() {
+    let helper = spawn_helper("theme-scan-absent");
+    let reply = helper.ask(json!({ "id": 85, "method": "themes_scan" }));
+    assert_eq!(reply["ok"], true, "부재는 실패가 아니다: {reply}");
+    assert_eq!(reply["data"], json!([]), "{reply}");
+    assert!(
+        !helper.home().join("themes").exists(),
+        "읽기가 테마 디렉터리를 만들었다: {}",
+        helper.home().join("themes").display()
+    );
+}
