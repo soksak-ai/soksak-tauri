@@ -19,8 +19,8 @@ const ACTIVITY_PUBLISH = "activity_publish";
 /** 창이 받는 사건 이름. 코어의 broadcast 와 같아야 프론트가 프레임워크를 가리지 않는다. */
 const ACTIVITY_EVENT = "activity";
 
-/** 전역 사건이 렌더러로 건너가는 채널 — preload 가 이 봉투를 이름별로 나눈다. */
-const EVENT_CHANNEL = "framework:event";
+/** 창으로 미는 일은 한 자리에서만 한다 — 갈래마다 자기 send 를 쓰면 죽은 창 판정이 갈린다. */
+const { EVENT_CHANNEL, deliverEvent } = require("./windowEvents.cjs");
 
 /** 적재분이 아닌 답 — 부채질할 것이 없다. */
 const NOT_AN_ENTRY = "FRAMEWORK_ACTIVITY_NOT_AN_ENTRY";
@@ -46,22 +46,6 @@ function isActivityEntry(v) {
 }
 
 /**
- * 창 하나에 사건 하나. 반환 = 닿았는가.
- * 죽은 창·던진 창은 false 다 — 삼키면 유실이 성공으로 위장된다.
- */
-function deliver(win, event, payload) {
-  try {
-    if (!win || (typeof win.isDestroyed === "function" && win.isDestroyed())) return false;
-    const wc = win.webContents;
-    if (!wc || typeof wc.send !== "function") return false;
-    wc.send(EVENT_CHANNEL, { event, payload });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
  * 부채질 — 살아 있는 창 **전부**에 같은 사건 이름·같은 페이로드로 배달한다.
  *
  * 라벨을 고르지 않는다: 활동 원장은 "누구에게"가 없는 사건이고, 코어의 broadcast 도 창을
@@ -77,7 +61,7 @@ function deliver(win, event, payload) {
 function fanOut(entry, windows) {
   let all = true;
   for (const win of windows) {
-    if (!deliver(win, ACTIVITY_EVENT, entry)) all = false;
+    if (!deliverEvent(win, ACTIVITY_EVENT, entry)) all = false;
   }
   return all;
 }

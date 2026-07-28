@@ -3,8 +3,6 @@
 //! Paths are never made safe by canonicalizing through a link. Every existing component is
 //! inspected with `symlink_metadata`; links (and Windows reparse points) are rejected in place.
 
-use std::path::{Component, Path, PathBuf};
-
 // 심링크·junction 거부 규칙은 코어(pathx)가 소유한다. 여기 사본이 있었고, 사본은 두 답이
 // 갈리는 순간까지 조용하다 — 같은 경로에 앱은 거부, 다른 프로세스는 통과가 되고 그 차이는
 // 오류가 아니라 "열렸다"로 나타난다. 이름은 그대로 두어 호출자 12곳이 안 바뀐다.
@@ -14,6 +12,7 @@ pub(crate) use soksak_core::pathx::reject_symlink_components;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     fn physical_temp(name: &str) -> PathBuf {
         let temp = std::env::temp_dir()

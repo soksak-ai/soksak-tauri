@@ -8,12 +8,7 @@ use super::testing::{detach, lock as lock_serial};
 /// 창 호스트를 흉내낸다 — 한쪽 끝을 cored 에 주고, 다른 끝에서 push 를 읽는다.
 fn fake_host(live: &[&str], focused: &str) -> BufReader<UnixStream> {
     let (a, b) = UnixStream::pair().expect("소켓 쌍");
-    attach_host(
-        a,
-        live.iter().map(|s| s.to_string()).collect(),
-        focused.to_string(),
-        None,
-    );
+    attach_host(a, live.iter().map(|s| s.to_string()).collect(), focused.to_string());
     BufReader::new(b)
 }
 
@@ -74,9 +69,9 @@ fn the_reply_travels_back_to_the_caller() {
     let mut line = String::new();
     h.read_line(&mut line).unwrap();
     let v: Value = serde_json::from_str(&line).unwrap();
-    let id = v["deliver"]["id"].as_str().unwrap().to_string();
+    let id = v["deliver"]["id"].as_u64().expect("배달 id 는 앱과 같은 u64 축이다");
 
-    assert!(deliver_result(&id, json!({ "ok": true, "data": { "seen": true } })));
+    assert!(deliver_result(id, json!({ "ok": true, "data": { "seen": true } })));
     let out = t.join().unwrap();
     assert_eq!(out["ok"], true);
     assert_eq!(out["data"]["seen"], true);
@@ -103,7 +98,7 @@ fn no_reply_ends_with_a_named_timeout() {
 fn a_late_reply_is_dropped_not_an_error() {
     let _serial = lock_serial();
     detach();
-    assert!(!deliver_result("ctl-nope", json!({ "ok": true })));
+    assert!(!deliver_result(9_999_999, json!({ "ok": true })));
 }
 
 /// 창 사실이 바뀌면 호스트가 알려 준다 — 낡은 목록으로 고르면 죽은 창에 배달한다.
@@ -111,7 +106,7 @@ fn a_late_reply_is_dropped_not_an_error() {
 fn the_host_can_update_the_window_facts() {
     let _serial = lock_serial();
     let _h = fake_host(&["main"], "main");
-    assert!(update_windows(vec!["main".into(), "w-9".into()], "w-9".into(), None));
+    assert!(update_windows(vec!["main".into(), "w-9".into()], "w-9".into()));
     let r = answer(r#"{"id":6,"method":"x","window":"w-9","timeoutMs":50}"#);
     // 배달까지 갔다는 뜻 — 없는 창이었다면 WINDOW_NOT_FOUND 였다.
     assert_eq!(r["code"], "TIMEOUT");
@@ -122,5 +117,5 @@ fn the_host_can_update_the_window_facts() {
 fn updating_without_a_host_says_so() {
     let _serial = lock_serial();
     detach();
-    assert!(!update_windows(vec!["main".into()], "main".into(), None));
+    assert!(!update_windows(vec!["main".into()], "main".into()));
 }

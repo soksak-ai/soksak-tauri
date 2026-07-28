@@ -18,6 +18,8 @@ const os = require("node:os");
 const { createBackendClient, resolveSocketPath } = require("./backend.cjs");
 const { frameworkIdentity, coredBinary, ensureCored } = require("./cored.cjs");
 const activity = require("./activity.cjs");
+const { createControlHost, CMD_REQUEST } = require("./control.cjs");
+const { deliverEvent } = require("./windowEvents.cjs");
 const native = require("./native/index.cjs");
 const { frameworkError } = native;
 
@@ -34,11 +36,16 @@ fs.mkdirSync(SPIKE_HOME, { recursive: true });
 /** 창 라벨 ↔ BrowserWindow. 라벨은 앱의 정체성 축이므로 프레임워크가 부여하고 지킨다. */
 const windows = new Map();
 
+
 /** 부팅 창의 라벨 — 컨트롤 플레인의 예약어다(NAMING 4b). 프론트는 이 이름 하나로 컨트롤 플레인
  *  분기를 타고(src/main.tsx), 거기서만 첫 실행 부트스트랩과 워크스페이스 리스폰이 돈다
  *  (src/state/windowBoot.ts). 다른 이름을 주면 그 분기가 영영 거짓이라 앱이 부팅만 하고 만다.
  *  워크스페이스 창은 이 이름을 쓰지 않는다 — 그쪽은 w-<uuid> 다. */
 const CONTROL_PLANE_LABEL = "main";
+
+/** 지금 포커스된 창의 라벨. **사실 하나**다 — "마지막 워크스페이스가 무엇인가"는 규칙이고
+ *  코어의 장부가 그것을 안다(soksak-core control::FocusLedger). 여기서 계산하면 두 벌이 된다. */
+let focusedLabel = CONTROL_PLANE_LABEL;
 
 /** UI 가 백엔드에 요구한 명령을 순서대로 남긴다 — 2단계 우선순위의 실측 근거.
  *  서빙된 것(served:true)과 못 한 것을 가르고, 못 한 것은 사유(code)까지 남긴다 — "cored 가
@@ -82,13 +89,63 @@ function createWindow(label, rect) {
   });
   windows.set(label, win);
   win.once("ready-to-show", () => win.show());
-  win.on("closed", () => windows.delete(label));
+  // 포커스는 사실이고, 그 사실이 바뀌면 cored 가 알아야 한다 — 낡은 사실로 타겟을 고르면
+  // 밖에서 온 명령이 사용자가 보고 있지 않은 창에서 돈다.
+  win.on("focus", () => {
+    focusedLabel = label;
+    announceWindows();
+  });
+  win.on("closed", () => {
+    windows.delete(label);
+    // 사라진 창을 여기서 지우지 않는다 — 살아 있는 목록을 보내면 장부가 스스로 맞춘다(멱등).
+    announceWindows();
+  });
+  announceWindows();
   void win.loadURL(DEV_URL);
   return win;
 }
 
 function windowFor(label) {
   return (label && windows.get(label)) || null;
+}
+
+// ── 제어면 ────────────────────────────────────────────────────────────────────
+// 밖에서 온 명령(하니스·sok·에이전트)이 창에 닿는 길. cored 가 어느 창인지 정하고, 이 프레임워크는
+// **배달만** 한다 — 규칙은 코어의 것이다(soksak-core control). 회신은 여기로 오지 않는다:
+// 창의 실행기가 invoke("cmd_result") 를 부르고 그 호출은 여느 명령과 같은 다리로 간다.
+
+/** 살아 있는 창 사실 — 목록과 포커스. 값이 아니라 이 함수가 매번 읽는다(사본은 낡는다). */
+function windowFacts() {
+  const live = [...windows.entries()].filter(([, w]) => !w.isDestroyed()).map(([l]) => l);
+  return { live, focused: focusedLabel };
+}
+
+/** 살아 있는 제어면 호스트. cored 소켓이 정해지기 전에는 없다. */
+let controlHost = null;
+
+/** 창 사실이 바뀌었다고 알린다. 아직 안 붙었으면 할 일이 없다 — 붙을 때 지금 사실로 등록한다. */
+function announceWindows() {
+  controlHost?.windowsChanged();
+}
+
+/** 제어면을 세운다 — 이 소켓의 cored 에게 "창은 내가 갖고 있다"고 등록한다. */
+function standUpControl(socketPath) {
+  controlHost = createControlHost({
+    socketPath,
+    facts: windowFacts,
+    deliver: (label, payload) => deliverEvent(windowFor(label), CMD_REQUEST, payload),
+    onLog: (line) => console.error(`[electron-spike] ${line}`),
+  }).start();
+  void controlHost.ready.then((ok) => {
+    // 붙었는지는 로그로 드러낸다. 안 붙으면 밖에서 부른 명령이 상한으로만 끝나고, 왜 그런지는
+    // 이 줄이 유일한 자국이다.
+    console.log(
+      ok
+        ? `[electron-spike] 제어면: 밖에서 오는 명령이 창으로 온다 — ${socketPath}`
+        : `[electron-spike] 제어면: 등록이 서지 않았다 — 밖에서 오는 명령이 닿지 않는다`,
+    );
+  });
+  return controlHost;
 }
 
 // ── 프레임워크의 것 — 네이티브 명령 ──────────────────────────────────────────
@@ -140,6 +197,7 @@ async function standUpCored() {
     onLog: (line) => console.error(`[soksak-cored] ${line}`),
   });
   if (cored.origin === "spawned") ownedCored = cored;
+  standUpControl(cored.socketPath);
   console.log(
     `[electron-spike] cored ${cored.origin === "spawned" ? `띄움(pid ${cored.pid})` : "이미 살아 있음"}` +
       `: ${binary} → ${cored.socketPath}`,
@@ -150,6 +208,9 @@ async function standUpCored() {
 const backendReady = externalSocket
   ? Promise.resolve(connectBackend(externalSocket))
   : standUpCored();
+
+// 외부에서 지목한 소켓에도 창은 우리 것이다 — 그 cored 에도 등록해야 밖에서 온 명령이 닿는다.
+if (externalSocket) standUpControl(externalSocket);
 
 // 실패 사유는 기동 때 한 번 드러낸다. 호출은 저마다 이름을 달고 실패하지만, 왜 그렇게 됐는지는
 // 첫 호출을 기다리지 않고 알 수 있어야 한다.
@@ -372,6 +433,7 @@ app.on("window-all-closed", () => app.quit());
 // 프레임워크가 내려가면 연결도 놓고, 자기가 띄운 cored도 거둔다. 외부에서 지목한 소켓의 프로세스는
 // 남의 것이라 건드리지 않는다. 회수는 값으로 돌려준다 — 거뒀는지 확인할 수 있어야 한다.
 app.on("will-quit", () => {
+  if (controlHost) controlHost.stop();
   if (backend) backend.close();
   return ownedCored ? ownedCored.stop() : Promise.resolve();
 });

@@ -13,7 +13,6 @@ const SHA256_HEX_LEN: usize = 64;
 // 심링크 거부는 pathx 가 소유한다. 여기 사본이 있었고 그 사본이 더 약했다 —
 // `symlink_metadata` 의 오류를 전부 "링크 아님"으로 삼켜서, 링크를 **못 본 것**과 링크가
 // **없는 것**을 같은 값으로 답했다. 그 차이는 거부가 아니라 통과로 나타난다.
-use crate::pathx::reject_symlink_components;
 
 pub fn sha256_hex(body: &[u8]) -> String {
     let mut hasher = Sha256::new();
@@ -158,6 +157,7 @@ pub fn verify_and_link(src: String, dest: String, sha256: String) -> Result<(), 
 
 #[cfg(test)]
 mod one_symlink_rule_tests {
+    use crate::pathx::reject_symlink_components;
     use super::*;
 
     /// 심링크 거부는 **한 벌**이다.

@@ -18,7 +18,7 @@ use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use serde_json::{json, Value};
-use soksak_core::control::{self, NoTarget};
+use soksak_core::control::{self, FocusLedger, NoTarget};
 
 /// 회신 대기 상한 기본값. 원본과 같다 — 느린 명령은 요청이 timeoutMs 로 늘린다.
 pub const DEFAULT_TIMEOUT_MS: u64 = 10_000;
@@ -26,30 +26,33 @@ pub const DEFAULT_TIMEOUT_MS: u64 = 10_000;
 /// 붙어 있는 창 호스트. 없으면 배달할 곳이 없다.
 struct Host {
     writer: UnixStream,
-    /// 살아 있는 창 라벨과 포커스 — 호스트가 붙을 때와 창이 바뀔 때 알려 준다.
+    /// 살아 있는 창 라벨 — 호스트가 붙을 때와 창이 바뀔 때 알려 준다.
     live: Vec<String>,
-    focused: String,
-    last_workspace: Option<String>,
+    /// 포커스 사실. **장부는 코어의 것이다**(FocusLedger) — "마지막 워크스페이스"를 무엇으로
+    /// 볼지는 규칙이고, 창을 가진 쪽이 그것을 계산해 보내면 그 규칙이 두 벌이 된다.
+    /// 호스트는 라벨 하나만 말한다: "지금 이 창이 포커스다."
+    focus: FocusLedger,
 }
 
 static HOST: OnceLock<Mutex<Option<Host>>> = OnceLock::new();
 /// 배달한 요청의 회신을 기다리는 자리 — id → 보내는 쪽.
-static PENDING: OnceLock<Mutex<HashMap<String, Sender<Value>>>> = OnceLock::new();
-/// 요청 상관 id. 하니스가 안 주면 우리가 붙인다(회신을 짝지으려면 반드시 있어야 한다).
+static PENDING: OnceLock<Mutex<HashMap<u64, Sender<Value>>>> = OnceLock::new();
+/// 배달 상관 id. **앱과 같은 축(u64 seq)이다** — 창 쪽 실행기는 받은 id 를 그대로 되울리므로,
+/// 여기서 다른 모양(문자열 등)을 쓰면 cmd_result 의 인자 타입이 프로세스마다 갈린다.
 static SEQ: OnceLock<Mutex<u64>> = OnceLock::new();
 
 fn host() -> &'static Mutex<Option<Host>> {
     HOST.get_or_init(|| Mutex::new(None))
 }
-fn pending() -> &'static Mutex<HashMap<String, Sender<Value>>> {
+fn pending() -> &'static Mutex<HashMap<u64, Sender<Value>>> {
     PENDING.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn next_id() -> String {
+fn next_id() -> u64 {
     let m = SEQ.get_or_init(|| Mutex::new(0));
     let mut n = m.lock().unwrap_or_else(|e| e.into_inner());
     *n += 1;
-    format!("ctl-{n}")
+    *n
 }
 
 /// 배달할 곳이 있는가. 없으면 소켓 표면은 지금까지처럼 이름을 달고 거절한다.
@@ -58,24 +61,25 @@ pub fn has_host() -> bool {
 }
 
 /// 프레임워크가 자기를 창 호스트로 등록한다. 이 연결이 배달 통로가 된다.
-pub fn attach_host(
-    writer: UnixStream,
-    live: Vec<String>,
-    focused: String,
-    last_workspace: Option<String>,
-) {
+pub fn attach_host(writer: UnixStream, live: Vec<String>, focused: String) {
+    let mut focus = FocusLedger::new();
+    focus.note_focus(&focused);
+    focus.reconcile(&live);
     let mut g = host().lock().unwrap_or_else(|e| e.into_inner());
-    *g = Some(Host { writer, live, focused, last_workspace });
+    *g = Some(Host { writer, live, focus });
 }
 
 /// 창 사실이 바뀌었다 — 호스트가 알려 준다. 낡은 목록으로 타겟을 고르면 죽은 창에 배달한다.
-pub fn update_windows(live: Vec<String>, focused: String, last_workspace: Option<String>) -> bool {
+///
+/// 사라진 창은 목록으로 낫는다(reconcile). 창 하나가 닫혔다는 사건을 놓쳐도 다음 보고에서
+/// 회복되도록 **멱등**이다 — 사건을 세는 방식이면 놓친 하나가 영영 남는다.
+pub fn update_windows(live: Vec<String>, focused: String) -> bool {
     let mut g = host().lock().unwrap_or_else(|e| e.into_inner());
     match g.as_mut() {
         Some(h) => {
+            h.focus.note_focus(&focused);
+            h.focus.reconcile(&live);
             h.live = live;
-            h.focused = focused;
-            h.last_workspace = last_workspace;
             true
         }
         None => false,
@@ -84,9 +88,9 @@ pub fn update_windows(live: Vec<String>, focused: String, last_workspace: Option
 
 /// 렌더러의 회신이 도착했다. 짝이 없으면 조용히 버린다 — 이미 상한에서 끝난 늦은 회신이고,
 /// 그것은 오류가 아니다. 오류로 만들면 정상 경로가 로그를 물들인다.
-pub fn deliver_result(id: &str, result: Value) -> bool {
+pub fn deliver_result(id: u64, result: Value) -> bool {
     let mut p = pending().lock().unwrap_or_else(|e| e.into_inner());
-    match p.remove(id) {
+    match p.remove(&id) {
         Some(tx) => tx.send(result).is_ok(),
         None => false,
     }
@@ -118,7 +122,11 @@ fn route(req: control::Request) -> Value {
     let (live, focused, last_ws) = {
         let g = host().lock().unwrap_or_else(|e| e.into_inner());
         match g.as_ref() {
-            Some(h) => (h.live.clone(), h.focused.clone(), h.last_workspace.clone()),
+            Some(h) => (
+                h.live.clone(),
+                h.focus.focused().to_string(),
+                h.focus.last_workspace().map(|s| s.to_string()),
+            ),
             None => {
                 return json!({
                     "ok": false,
@@ -157,7 +165,7 @@ fn route(req: control::Request) -> Value {
 
     let id = next_id();
     let (tx, rx): (Sender<Value>, Receiver<Value>) = channel();
-    pending().lock().unwrap_or_else(|e| e.into_inner()).insert(id.clone(), tx);
+    pending().lock().unwrap_or_else(|e| e.into_inner()).insert(id, tx);
 
     let push = json!({
         "deliver": {

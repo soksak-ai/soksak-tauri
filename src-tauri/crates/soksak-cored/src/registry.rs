@@ -181,7 +181,6 @@ pub const COMMANDS: &[Command] = &[
         args: &[
             Arg { name: "live", ty: "string[]", required: true },
             Arg { name: "focused", ty: "string", required: true },
-            Arg { name: "lastWorkspace", ty: "string?", required: false },
         ],
         returns: "null",
         run: run_control_host_attach,
@@ -192,7 +191,6 @@ pub const COMMANDS: &[Command] = &[
         args: &[
             Arg { name: "live", ty: "string[]", required: true },
             Arg { name: "focused", ty: "string", required: true },
-            Arg { name: "lastWorkspace", ty: "string?", required: false },
         ],
         returns: "bool — 호스트가 붙어 있었는가",
         run: run_control_windows,
@@ -201,7 +199,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "cmd_result",
         args: &[
-            Arg { name: "id", ty: "string", required: true },
+            Arg { name: "id", ty: "u64", required: true },
             Arg { name: "result", ty: "object", required: true },
         ],
         returns: "bool — 짝을 찾았는가",
@@ -864,8 +862,6 @@ fn run_activity_recent(ctx: &Ctx, params: &Value) -> Outcome {
 struct WindowFacts {
     live: Vec<String>,
     focused: String,
-    #[serde(default)]
-    last_workspace: Option<String>,
 }
 
 #[cfg(unix)]
@@ -879,7 +875,7 @@ fn run_control_host_attach(_ctx: &Ctx, params: &Value) -> Outcome {
     let Some(w) = crate::wire::current_conn() else {
         return Outcome::Failed("이 연결로는 배달할 수 없습니다(연결 사본 실패)".into());
     };
-    crate::control::attach_host(w, a.live, a.focused, a.last_workspace);
+    crate::control::attach_host(w, a.live, a.focused);
     Outcome::Ok(Value::Null)
 }
 
@@ -893,16 +889,12 @@ fn run_control_windows(_ctx: &Ctx, params: &Value) -> Outcome {
         Ok(v) => v,
         Err(e) => return Outcome::InvalidParams(e.to_string()),
     };
-    Outcome::Ok(Value::Bool(crate::control::update_windows(
-        a.live,
-        a.focused,
-        a.last_workspace,
-    )))
+    Outcome::Ok(Value::Bool(crate::control::update_windows(a.live, a.focused)))
 }
 
 #[derive(serde::Deserialize)]
 struct CmdResult {
-    id: String,
+    id: u64,
     result: Value,
 }
 
@@ -911,7 +903,7 @@ fn run_cmd_result(_ctx: &Ctx, params: &Value) -> Outcome {
         Ok(v) => v,
         Err(e) => return Outcome::InvalidParams(e.to_string()),
     };
-    Outcome::Ok(Value::Bool(crate::control::deliver_result(&a.id, a.result)))
+    Outcome::Ok(Value::Bool(crate::control::deliver_result(a.id, a.result)))
 }
 
 fn run_plugin_scan(ctx: &Ctx, params: &Value) -> Outcome {

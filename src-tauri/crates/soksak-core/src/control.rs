@@ -49,6 +49,74 @@ impl NoTarget {
 /// 워크스페이스 창의 접두사 — 컨트롤 플레인("main")과 가르는 유일한 표식이다.
 pub const WORKSPACE_PREFIX: &str = "w-";
 
+/// 컨트롤 플레인 창의 라벨 — 플랫폼 예약어다(NAMING §1-4b). 라벨에서 역할을 파싱하는 것이
+/// 아니라 **예약어와 비교**한다.
+pub const CONTROL_PLANE_LABEL: &str = "main";
+
+/// 포커스 장부 — "지금 포커스된 창"과 "마지막으로 포커스된 워크스페이스 창".
+///
+/// 이 둘은 `resolve_target` 의 입력이고, **어떻게 갱신되는가**도 규칙이다: 컨트롤 플레인
+/// 포커스는 워크스페이스 기억을 지우지 않는다(자연어 콘솔에서 명령을 칠 때 활성 창은 main
+/// 이지만 사용자가 일하던 무대는 그 워크스페이스다). 이 갱신 규칙이 프로세스마다 따로 쓰이면
+/// 같은 조작에 대해 앱과 헬퍼가 다른 창을 고르고, 그 어긋남은 오류가 아니라 **오답**이다.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FocusLedger {
+    focused: String,
+    last_workspace: Option<String>,
+}
+
+impl Default for FocusLedger {
+    fn default() -> Self {
+        FocusLedger { focused: CONTROL_PLANE_LABEL.to_string(), last_workspace: None }
+    }
+}
+
+impl FocusLedger {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn focused(&self) -> &str {
+        &self.focused
+    }
+
+    pub fn last_workspace(&self) -> Option<&str> {
+        self.last_workspace.as_deref()
+    }
+
+    /// 이 창이 포커스를 받았다.
+    pub fn note_focus(&mut self, label: &str) {
+        self.focused = label.to_string();
+        if label != CONTROL_PLANE_LABEL {
+            self.last_workspace = Some(label.to_string());
+        }
+    }
+
+    /// 이 창이 사라졌다. 기록은 창을 소유하지 않는다 — 죽은 라벨을 계속 쥐면 창을 생략한
+    /// 다음 명령이 그리로 가고 WINDOW_NOT_FOUND 로 끝난다.
+    pub fn note_closed(&mut self, label: &str) {
+        if self.focused == label {
+            self.focused = CONTROL_PLANE_LABEL.to_string();
+        }
+        if self.last_workspace.as_deref() == Some(label) {
+            self.last_workspace = None;
+        }
+    }
+
+    /// 살아 있는 창 목록과 맞춘다 — 사건을 못 본 프로세스(창을 남이 소유한 쪽)를 위한 자리.
+    /// 사건을 하나 놓쳐도 다음 보고에서 낫는다: 지우는 일이 **멱등**이라야 그렇다.
+    pub fn reconcile(&mut self, live: &[String]) {
+        if !live.iter().any(|l| l == &self.focused) {
+            self.focused = CONTROL_PLANE_LABEL.to_string();
+        }
+        if let Some(w) = self.last_workspace.clone() {
+            if !live.iter().any(|l| l == &w) {
+                self.last_workspace = None;
+            }
+        }
+    }
+}
+
 /// 어느 창이 이 명령을 실행하는가.
 ///
 /// `plugin.` 접두는 워크스페이스 창의 것이다 — 컨트롤 플레인에는 플러그인 호스트가 없어
@@ -106,3 +174,70 @@ pub fn parse(line: &str) -> Result<Request, String> {
 #[cfg(test)]
 #[path = "control_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod focus_ledger_tests {
+    use super::*;
+
+    /// 컨트롤 플레인 포커스가 워크스페이스 기억을 지우면, 자연어 콘솔에서 친 plugin 명령이
+    /// 갈 곳을 잃는다 — 사용자는 그 워크스페이스를 보고 있는데.
+    #[test]
+    fn focusing_the_control_plane_keeps_the_workspace_memory() {
+        let mut l = FocusLedger::new();
+        l.note_focus("w-1");
+        l.note_focus(CONTROL_PLANE_LABEL);
+        assert_eq!(l.focused(), "main");
+        assert_eq!(l.last_workspace(), Some("w-1"));
+    }
+
+    #[test]
+    fn a_closed_window_is_released_by_both_records() {
+        let mut l = FocusLedger::new();
+        l.note_focus("w-1");
+        l.note_closed("w-1");
+        assert_eq!(l.focused(), "main");
+        assert_eq!(l.last_workspace(), None);
+    }
+
+    #[test]
+    fn closing_someone_else_changes_nothing() {
+        let mut l = FocusLedger::new();
+        l.note_focus("w-1");
+        l.note_closed("w-2");
+        assert_eq!(l.focused(), "w-1");
+        assert_eq!(l.last_workspace(), Some("w-1"));
+    }
+
+    /// 사건을 못 본 프로세스도 목록 하나로 낫는다 — 그리고 두 번 맞춰도 같다(멱등).
+    #[test]
+    fn reconciling_with_the_live_list_releases_dead_labels() {
+        let mut l = FocusLedger::new();
+        l.note_focus("w-1");
+        l.reconcile(&["main".to_string()]);
+        assert_eq!(l.focused(), "main");
+        assert_eq!(l.last_workspace(), None);
+        let once = l.clone();
+        l.reconcile(&["main".to_string()]);
+        assert_eq!(l, once, "맞추는 일은 멱등이다");
+    }
+
+    #[test]
+    fn a_live_label_survives_reconciling() {
+        let mut l = FocusLedger::new();
+        l.note_focus("w-1");
+        l.reconcile(&["main".to_string(), "w-1".to_string()]);
+        assert_eq!(l.focused(), "w-1");
+        assert_eq!(l.last_workspace(), Some("w-1"));
+    }
+
+    /// 장부가 그대로 규칙의 입력이다 — 두 조각을 따로 쥐면 짝이 어긋난 채로 고른다.
+    #[test]
+    fn the_ledger_feeds_the_rule() {
+        let mut l = FocusLedger::new();
+        l.note_focus("w-1");
+        l.note_focus(CONTROL_PLANE_LABEL);
+        let live = vec!["main".to_string(), "w-1".to_string()];
+        assert_eq!(resolve_target("plugin.x", l.focused(), l.last_workspace(), &live).unwrap(), "w-1");
+        assert_eq!(resolve_target("state.tree", l.focused(), l.last_workspace(), &live).unwrap(), "main");
+    }
+}

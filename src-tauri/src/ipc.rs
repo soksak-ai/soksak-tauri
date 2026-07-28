@@ -13,7 +13,7 @@ use std::os::unix::fs::PermissionsExt;
 #[cfg(unix)]
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{mpsc, LazyLock, Mutex, OnceLock};
+use std::sync::{mpsc, Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Deserialize;
@@ -122,63 +122,43 @@ struct Request {
     key: Option<String>,
 }
 
-// 마지막으로 포커스된 창 label(활성 창 추적). lib.rs on_window_event 의 Focused(true) 가 갱신.
-// 소켓 명령이 window 를 생략하면 이 창으로 라우팅된다.
-static LAST_FOCUSED: LazyLock<Mutex<String>> = LazyLock::new(|| Mutex::new("main".to_string()));
+// 포커스 사실은 **코어의 장부**가 진다(soksak_core::control::FocusLedger). 갱신 규칙(컨트롤
+// 플레인 포커스는 워크스페이스 기억을 지우지 않는다·닫힌 창은 두 기록에서 놓는다)이 여기와
+// cored 에 따로 쓰이면 같은 조작에 두 프로세스가 다른 창을 고른다 — 오류가 아니라 오답으로.
+// lib.rs 의 on_window_event 가 Focused(true)/Destroyed 로 이 장부를 민다.
+static FOCUS: Mutex<Option<FocusLedger>> = Mutex::new(None);
+
+fn with_focus<T>(f: impl FnOnce(&mut FocusLedger) -> T) -> T {
+    let mut g = FOCUS.lock().unwrap_or_else(|e| e.into_inner());
+    f(g.get_or_insert_with(FocusLedger::new))
+}
 
 pub fn note_focus(label: &str) {
-    if let Ok(mut f) = LAST_FOCUSED.lock() {
-        *f = label.to_string();
-    }
-    // 마지막 워크스페이스(비-main) 포커스 — 자연어 턴의 기본 무대. 오케스트레이터에서 명령을
-    // 칠 때 활성 창은 main(컨트롤 플레인)이므로, "사용자가 실제로 일하던 창"은 이 값이다.
-    // main 은 플랫폼 예약어(NAMING §1-4b) — 예약어 비교이지 라벨에서 역할 파싱이 아니다.
-    if label != "main" {
-        if let Ok(mut w) = LAST_WORKSPACE.lock() {
-            *w = Some(label.to_string());
-        }
-    }
+    with_focus(|l| l.note_focus(label));
 }
 
-// 창이 파괴되면 포커스 기록은 그 라벨을 놓는다 — 기록은 창을 소유하지 않는다. 죽은 라벨을
-// 계속 쥐고 있으면 window 를 생략한 다음 명령이 그 창으로 라우팅되어 WINDOW_NOT_FOUND 로 끝난다.
-// 라벨은 재사용되지 않으므로(NAMING §1-4b) 되살아날 일도 없다. lib.rs 의 Destroyed 가 부른다.
 pub fn note_closed(label: &str) {
-    if let Ok(mut f) = LAST_FOCUSED.lock() {
-        if *f == label {
-            *f = "main".to_string(); // 플랫폼 예약 부트스트랩 창 — 살아있는지는 해석기가 다시 확인한다.
-        }
-    }
-    if let Ok(mut w) = LAST_WORKSPACE.lock() {
-        if w.as_deref() == Some(label) {
-            *w = None;
-        }
-    }
+    with_focus(|l| l.note_closed(label));
 }
-
-static LAST_WORKSPACE: Mutex<Option<String>> = Mutex::new(None);
 
 // 마지막 포커스 워크스페이스 창(읽기 전용) — orchestrator.ask 의 기본 무대(SOKSAK_WINDOW).
 #[tauri::command]
 pub fn ipc_last_project_window() -> Option<String> {
-    LAST_WORKSPACE.lock().ok().and_then(|w| w.clone())
+    last_workspace_window()
 }
 
 fn active_window() -> String {
-    LAST_FOCUSED
-        .lock()
-        .ok()
-        .map(|f| f.clone())
-        .unwrap_or_else(|| "main".to_string())
+    with_focus(|l| l.focused().to_string())
 }
 
 fn last_workspace_window() -> Option<String> {
-    LAST_WORKSPACE.lock().ok().and_then(|w| w.clone())
+    with_focus(|l| l.last_workspace().map(|s| s.to_string()))
 }
+
 
 // 거부의 종류도 코어가 소유한다 — 규칙과 그 결과가 갈리면 같은 상황에 다른 코드가 나간다.
 // (R-B2: 배달층이 짐작하면 명령층의 금지는 무의미하다. "정렬 첫 창"은 결정적일 뿐 여전히 짐작.)
-use soksak_core::control::NoTarget;
+use soksak_core::control::{FocusLedger, NoTarget};
 
 // 창 폴백 해석(순수) — 명령이 window 를 생략했을 때의 타겟 결정.
 // 사다리는 전부 **살아있는 창 집합** 위에서만 걷는다. 포커스 기록은 창의 소멸을 모를 수 있는

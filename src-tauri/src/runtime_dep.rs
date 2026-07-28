@@ -4,7 +4,9 @@
 //   download_verify:  fetch reach — url 다운로드 후 sha256 무결성 검증 + 실행권한.
 // 아래 여섯은 soksak-core 로 옮겼다 — 이 파일에는 프레임워크 진입점(무논리 위임)만 남는다.
 // `#[tauri::command]` 속성 자체가 tauri 의존이라 코어 크레이트가 가질 수 없다.
-pub(crate) use soksak_core::integrity::{sha256_hex, verify_sha256};
+pub(crate) use soksak_core::integrity::verify_sha256;
+#[cfg(test)]
+use soksak_core::integrity::sha256_hex;
 pub use soksak_core::integrity::BinaryIntegrity;
 
 #[tauri::command]
