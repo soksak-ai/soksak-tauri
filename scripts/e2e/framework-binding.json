@@ -513,9 +513,10 @@
       "role": "harness",
       "class": "C",
       "surfaces": [
-        "window.snapshot"
+        "window.snapshot",
+        "pixel-oracle"
       ],
-      "note": "뷰 status 축과 닫기 가드를 소켓으로 보고, 마지막에 캡처 크기로 백지가 아님을 확인한다."
+      "note": "뷰 status 축과 닫기 가드를 소켓으로 보고, 마지막에 캡처가 백지가 아님을 픽셀로 확인한다(판정은 lib/png frameColors 한 곳)."
     },
     {
       "file": "webview-crash.sh",

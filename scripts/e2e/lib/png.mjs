@@ -134,3 +134,25 @@ export function encodePng({ w, h, ch, px }) {
     chunk("IEND", Buffer.alloc(0)),
   ]);
 }
+
+/**
+ * 이 프레임이 백지인가 — **픽셀로** 판정한다.
+ *
+ * 파일 크기는 프록시일 뿐이라 실제로 그려졌지만 성긴 화면(프롬프트만 있는 터미널)을 백지로
+ * 오판한다(실측 2026-07-29: 전 화면이 그려진 프레임이 57KB). 그 오판은 "렌더가 안 됐다"로
+ * 읽혀 원인을 엉뚱한 데서 찾게 만든다.
+ *
+ * 한 색으로 덮인 프레임이 백지다. 셈은 표본으로 충분하다 — 전수는 느리고, 백지는 표본에서도
+ * 한 색이다. 반환 = { colors, w, h } (부르는 쪽이 사유에 실을 수 있게 수를 함께 준다).
+ */
+export function frameColors(buf, cap = 64) {
+  const { w, h, ch, px } = decodePng(buf);
+  const seen = new Set();
+  const step = Math.max(1, Math.floor((w * h) / 20_000));
+  for (let i = 0; i < w * h; i += step) {
+    const o = i * ch;
+    seen.add((px[o] << 16) | (px[o + 1] << 8) | px[o + 2]);
+    if (seen.size > cap) break;
+  }
+  return { colors: seen.size, w, h };
+}

@@ -24,7 +24,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import fs from "node:fs";
-import { decodePng } from "./lib/png.mjs";
+import { frameColors } from "./lib/png.mjs";
 import { requireSocket } from "./lib/client.mjs";
 
 const SOCKET = requireSocket();
@@ -171,20 +171,9 @@ async function main() {
     // (프롬프트만 있는 터미널)을 백지로 오판한다 — 실측(2026-07-29): 전 화면이 그려진 프레임이
     // 57KB 였다. 그 오판은 "렌더가 안 됐다"로 읽혀 원인을 엉뚱한 데서 찾게 만든다.
     const bytes = fs.statSync(SNAPSHOT_PATH).size;
-    const { w, h, ch, px } = decodePng(fs.readFileSync(SNAPSHOT_PATH));
-    // 서로 다른 색이 몇 가지인가 — 한 색으로 덮인 프레임이 백지다. 셈은 표본으로 충분하다
-    // (전수는 느리고, 백지는 표본에서도 한 색이다).
-    const seen = new Set();
-    const step = Math.max(1, Math.floor((w * h) / 20_000));
-    for (let i = 0; i < w * h; i += step) {
-      const o = i * ch;
-      seen.add((px[o] << 16) | (px[o + 1] << 8) | px[o + 2]);
-      if (seen.size > 64) break;
-    }
-    console.log(
-      `    snapshot ${w}x${h}, ${bytes} bytes — 표본 색 ${seen.size}가지 (1가지=백지)`,
-    );
-    ok(seen.size > 8, `snapshot is not a blank frame (표본 색 ${seen.size}가지)`);
+    const { colors, w, h } = frameColors(fs.readFileSync(SNAPSHOT_PATH));
+    console.log(`    snapshot ${w}x${h}, ${bytes} bytes — 표본 색 ${colors}가지 (1가지=백지)`);
+    ok(colors > 8, `snapshot is not a blank frame (표본 색 ${colors}가지)`);
   }
 
   console.log(`\nresult: ${pass} pass / ${fail} fail`);

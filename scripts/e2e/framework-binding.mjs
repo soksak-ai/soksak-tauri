@@ -47,7 +47,7 @@ export const SURFACE_PATTERNS = [
   {
     name: "pixel-oracle",
     kind: "native",
-    re: /\bdecodePng\b|\bjudgeFrame\b|\bcompareFrames\b|\bPIL\b|\bImage\.open\b/,
+    re: /\bdecodePng\b|\bframeColors\b|\bjudgeFrame\b|\bcompareFrames\b|\bPIL\b|\bImage\.open\b/,
   },
   // ── 네이티브: 네이티브 자식 표면(홀·스위즐·레이어) ────────────────────────
   { name: "window.layers", kind: "native", re: /\bwindow\.layers\b/ },

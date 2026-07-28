@@ -33,6 +33,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import fs from "node:fs";
+import { frameColors } from "./lib/png.mjs";
 import { execFileSync } from "node:child_process";
 import { requireSocket, resolveControlWindow } from "./lib/client.mjs";
 
@@ -220,9 +221,11 @@ async function main() {
   const snap = await rpc("window.snapshot", { path: SNAPSHOT_PATH }, w);
   ok(snap.ok === true, `snapshot ok:true (code ${snap.code})`);
   if (fs.existsSync(SNAPSHOT_PATH)) {
+    // 백지 판정은 픽셀로 한다 — 파일 크기는 성긴 화면을 백지로 오판한다(lib/png frameColors).
     const bytes = fs.statSync(SNAPSHOT_PATH).size;
-    console.log(`   snapshot: ${SNAPSHOT_PATH} (${(bytes / 1024).toFixed(1)} KB)`);
-    ok(bytes > 60_000, "snapshot is not a blank frame (>60KB)");
+    const { colors } = frameColors(fs.readFileSync(SNAPSHOT_PATH));
+    console.log(`   snapshot: ${SNAPSHOT_PATH} (${(bytes / 1024).toFixed(1)} KB, 표본 색 ${colors}가지)`);
+    ok(colors > 8, `snapshot is not a blank frame (표본 색 ${colors}가지)`);
   }
 
   // ── e. tear the window down (leave no residue) ──────────────────────────────
