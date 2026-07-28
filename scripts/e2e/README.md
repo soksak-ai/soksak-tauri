@@ -66,47 +66,47 @@ T1 maxRun 이 수십으로, T2 마커가 잘려 RED 가 떠야 한다.
 
 ---
 
-# 셸 결속 장부 — 하니스는 셸을 전제하지 않는다
+# 프레임워크 결속 장부 — 하니스는 프레임워크를 전제하지 않는다
 
-하니스는 소켓 명령으로 앱을 몬다. 앱을 어느 셸이 이고 있는지는 하니스가 알 일이 아니다.
-어디가 셸에 묶여 있는지는 **하니스를 하나도 돌리지 않고** 읽는다:
+하니스는 소켓 명령으로 앱을 몬다. 앱을 어느 프레임워크가 이고 있는지는 하니스가 알 일이 아니다.
+어디가 프레임워크에 묶여 있는지는 **하니스를 하나도 돌리지 않고** 읽는다:
 
 ```bash
-make e2e-shell-binding                          # A/B/C 표 + 개수
-node scripts/e2e/shell-binding.mjs --json       # 기계 판독
-node scripts/e2e/shell-binding.mjs --class C    # 셸마다 갈리는 하니스만
-node scripts/e2e/shell-binding.mjs --surfaces   # 갈리는 자리(표면)와 그 이유
+make e2e-framework-binding                          # A/B/C 표 + 개수
+node scripts/e2e/framework-binding.mjs --json       # 기계 판독
+node scripts/e2e/framework-binding.mjs --class C    # 프레임워크마다 갈리는 하니스만
+node scripts/e2e/framework-binding.mjs --surfaces   # 갈리는 자리(표면)와 그 이유
 ```
 
 | 무리 | 뜻 |
 |---|---|
-| A | 셸 무관 — 소켓 명령만 쓴다. 다른 셸 위에서도 같은 답을 요구한다. |
+| A | 프레임워크 무관 — 소켓 명령만 쓴다. 다른 프레임워크 위에서도 같은 답을 요구한다. |
 | B | 경로 결속 — 프로세스·빌드 산출물·앱 홈을 직접 안다. 값이 밖에서 오면 A 가 된다. |
-| C | 네이티브 — 창 캡처·네이티브 자식 표면·합성 입력에 선다. 셸마다 답이 다른 것이 정상이다. |
+| C | 네이티브 — 창 캡처·네이티브 자식 표면·합성 입력에 선다. 프레임워크마다 답이 다른 것이 정상이다. |
 
-- **선언과 실측을 양방향으로 맞춘다.** 무리와 이유는 `shell-binding.json` 이 적고, 표면은
-  `shell-binding.mjs` 가 소스에서 찾는다. 한쪽에만 있으면 실패다 — 새 하니스는 장부에
+- **선언과 실측을 양방향으로 맞춘다.** 무리와 이유는 `framework-binding.json` 이 적고, 표면은
+  `framework-binding.mjs` 가 소스에서 찾는다. 한쪽에만 있으면 실패다 — 새 하니스는 장부에
   들어와야 하고, 사라진 표면 선언은 지워야 한다. `make gates` 가 시행한다.
 - **소켓 경로는 `SOKSAK_SOCKET` 하나로만 온다.** 기본값은 없다. 값이 없으면 이름을 달고
   실패한다(`scripts/e2e/lib/client.mjs` 의 `requireSocket`) — 기본 경로를 지어내면 값을 안 준
   실행이 실패 대신 **다른 홈의 앱**에 붙어 판정을 낸다.
-- **창 라벨은 앱의 사실이지 셸의 사실이 아니다.** `main`(컨트롤 플레인)·`w-*`(워크스페이스)는
-  NAMING 이 정한 예약어라 어느 셸 위에서든 같다. 라벨은 지어내지 말고 앱에 묻는다
+- **창 라벨은 앱의 사실이지 프레임워크의 사실이 아니다.** `main`(컨트롤 플레인)·`w-*`(워크스페이스)는
+  NAMING 이 정한 예약어라 어느 프레임워크 위에서든 같다. 라벨은 지어내지 말고 앱에 묻는다
   (`resolveControlWindow`·`workspaceWindows`), 무대를 직접 세운 하니스는 자기가 연 창을
   `SOKSAK_E2E_WINDOW` 로 잇는다.
-- **C 는 스킵이 아니라 선언이다.** 픽셀 오라클·홀·네이티브 자식 표면은 셸마다 답이 다른
+- **C 는 스킵이 아니라 선언이다.** 픽셀 오라클·홀·네이티브 자식 표면은 프레임워크마다 답이 다른
   것이 정상이므로, 그 자리를 표면 이름과 이유로 남긴다.
 
 ---
 
 # 픽셀 오라클 (판정은 한 벌)
 
-"이 프레임이 그려졌는가"를 **PNG 바이트만 보고** 답한다. 캡처는 셸마다 다르지만(Tauri 는 창
+"이 프레임이 그려졌는가"를 **PNG 바이트만 보고** 답한다. 캡처는 프레임워크마다 다르지만(Tauri 는 창
 합성물, Electron `capturePage` 는 네이티브 자식이 빠진 그림) 판정은 하나여야 한다 — 아니면
-"그려졌다"가 셸마다 다른 뜻이 된다.
+"그려졌다"가 프레임워크마다 다른 뜻이 된다.
 
 - `lib/frame-oracle.mjs` — 순수 함수 `judgeFrame(bytes, opts)` / `compareFrames(정상, 대상, opts)`.
-- `frame-verdict.mjs` — 같은 판정을 커맨드로. 어떤 셸이 찍은 파일이든 그대로 넣는다.
+- `frame-verdict.mjs` — 같은 판정을 커맨드로. 어떤 프레임워크가 찍은 파일이든 그대로 넣는다.
 - `fixtures/frames/` — 픽스처와 출처(`frames.json`: 합성인지 실물 캡처 파생인지, 원본 sha256 까지).
 - `lib/frame-oracle.test.mjs` — 기준. `npx vitest run scripts/e2e/lib/frame-oracle.test.mjs`.
 
@@ -125,7 +125,7 @@ node scripts/e2e/frame-verdict.mjs --baseline 정상.png 창.png      # 정상 �
 없다(실렌더 창도 16 구역 중 3 이 평평하다). 구멍을 지목하려면 밖에서 사실을 줘야 한다 —
 콘텐츠가 있어야 할 `--region`, 또는 같은 창의 정상 프레임 `--baseline`.
 
-자는 한 벌이지만 재는 대상은 셸의 것이라, 오라클 위에 선 파일은 셸 결속 장부에서 C 다
+자는 한 벌이지만 재는 대상은 프레임워크의 것이라, 오라클 위에 선 파일은 프레임워크 결속 장부에서 C 다
 (표면 `pixel-oracle`).
 
 ---

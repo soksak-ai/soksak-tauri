@@ -1,4 +1,4 @@
-// 셸 결속 장부 게이트의 자가검사 — 게이트가 위반을 실제로 잡는지부터 확인한다.
+// 프레임워크 결속 장부 게이트의 자가검사 — 게이트가 위반을 실제로 잡는지부터 확인한다.
 //
 // 장부가 소스와 갈라져도 조용히 통과하면 분류는 값이 아니라 소문이 된다. 그래서 임시 트리에
 // 위반을 심어 게이트가 죽는지 보고(잡는 능력 확인), 그다음 실제 scripts/e2e 를 대조한다.
@@ -14,11 +14,11 @@ import {
   scanFiles,
   readLedger,
   verify,
-} from "./shell-binding.mjs";
+} from "./framework-binding.mjs";
 
 let root;
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), "shell-binding-"));
+  root = mkdtempSync(join(tmpdir(), "framework-binding-"));
 });
 afterEach(() => {
   rmSync(root, { recursive: true, force: true });
@@ -109,7 +109,7 @@ describe("금지 패턴", () => {
 
 describe("장부 대조", () => {
   const surfaces = {
-    "window.snapshot": { kind: "native", why: "셸이 자기 창을 합성한다" },
+    "window.snapshot": { kind: "native", why: "프레임워크가 자기 창을 합성한다" },
   };
 
   it("선언과 실측이 같으면 문제 없음", () => {

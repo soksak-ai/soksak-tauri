@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// e2e 하니스의 셸 결속 장부 — 하니스를 하나도 돌리지 않고 "무엇이 셸에 묶였는가"를 값으로 읽는다.
+// e2e 하니스의 프레임워크 결속 장부 — 하니스를 하나도 돌리지 않고 "무엇이 프레임워크에 묶였는가"를 값으로 읽는다.
 //
 // 세 무리로 가른다:
-//   A 셸 무관   — 소켓 명령만 쓴다. 셸이 바뀌어도 같은 답을 요구한다.
-//   B 경로 결속 — 프로세스·빌드 산출물·앱 홈을 직접 안다. 환경에서 받으면 A 가 된다.
-//   C 네이티브  — 창 캡처·네이티브 자식 표면·합성 입력. 셸마다 답이 다른 것이 정상이다.
+//   A 프레임워크 무관 — 소켓 명령만 쓴다. 프레임워크가 바뀌어도 같은 답을 요구한다.
+//   B 경로 결속       — 프로세스·빌드 산출물·앱 홈을 직접 안다. 환경에서 받으면 A 가 된다.
+//   C 네이티브        — 창 캡처·네이티브 자식 표면·합성 입력. 프레임워크마다 답이 다른 것이 정상이다.
 //
-// 무리는 선언이 아니라 대조다. 소스에서 표면을 실측하고 장부(shell-binding.json)와 양방향으로
+// 무리는 선언이 아니라 대조다. 소스에서 표면을 실측하고 장부(framework-binding.json)와 양방향으로
 // 맞춘다: 소스에 있는데 선언에 없으면 드리프트, 선언에 있는데 소스에 없으면 죽은 선언 — 둘 다
 // 실패다. 한쪽만 보면 장부가 사실과 갈라진 채로 통과한다.
 //
@@ -14,11 +14,11 @@
 // 사람의 판단). 이유 없는 표면 선언은 통과시키지 않는다 — 빈 이유는 우회로가 된다.
 //
 // 사용:
-//   node scripts/e2e/shell-binding.mjs             표 + 개수
-//   node scripts/e2e/shell-binding.mjs --json      기계 판독(분류 전체)
-//   node scripts/e2e/shell-binding.mjs --class C   그 무리만
-//   node scripts/e2e/shell-binding.mjs --surfaces  셸마다 갈리는 자리(9단계 입력)
-//   node scripts/e2e/shell-binding.mjs --check     조용히 대조만(게이트)
+//   node scripts/e2e/framework-binding.mjs             표 + 개수
+//   node scripts/e2e/framework-binding.mjs --json      기계 판독(분류 전체)
+//   node scripts/e2e/framework-binding.mjs --class C   그 무리만
+//   node scripts/e2e/framework-binding.mjs --surfaces  프레임워크마다 갈리는 자리(9단계 입력)
+//   node scripts/e2e/framework-binding.mjs --check     조용히 대조만(게이트)
 // 종료코드: 0=장부와 소스 일치, 1=드리프트·금지 패턴, 2=사용법 오류.
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -26,15 +26,15 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const E2E_DIR = resolve(dirname(fileURLToPath(import.meta.url)));
-export const LEDGER_PATH = join(E2E_DIR, "shell-binding.json");
+export const LEDGER_PATH = join(E2E_DIR, "framework-binding.json");
 const SCANNED_EXT = /\.(mjs|sh|py)$/;
 // 탐지기와 그 짝 테스트는 자기 자신의 대상이 아니다 — 패턴을 문자열로 들고 있어 전부 자기에게 맞는다.
-const SELF = new Set(["shell-binding.mjs", "shell-binding.test.mjs"]);
+const SELF = new Set(["framework-binding.mjs", "framework-binding.test.mjs"]);
 
 /** 탐지기 — 표면 이름과 그 표면을 소스에서 알아보는 모양.
  *
  *  kind:
- *    native    셸이 스스로 답해야 하는 자리. 답이 셸마다 다른 것이 정상이다.
+ *    native    프레임워크가 스스로 답해야 하는 자리. 답이 프레임워크마다 다른 것이 정상이다.
  *    reducible 지금은 프로세스·경로를 직접 알지만, 값이 밖에서 오면 사라진다.
  *
  *  이름은 장부의 키다 — 여기 없는 이름은 장부에 적을 수 없고, 장부에만 있는 이름은 죽은 선언이다. */
@@ -83,9 +83,9 @@ export const BANNED_PATTERNS = [
 
 const CLASS_ORDER = ["A", "B", "C"];
 const CLASS_TITLE = {
-  A: "셸 무관 — 소켓 명령만 쓴다",
+  A: "프레임워크 무관 — 소켓 명령만 쓴다",
   B: "경로 결속 — 프로세스·산출물·홈을 직접 안다",
-  C: "네이티브 — 셸마다 답이 다른 것이 정상이다",
+  C: "네이티브 — 프레임워크마다 답이 다른 것이 정상이다",
 };
 
 /** 표면 목록에서 무리를 정한다. 네이티브가 하나라도 있으면 C, 아니면 줄일 결속이 있으면 B. */
@@ -241,7 +241,7 @@ function main(argv) {
         byName.get(s.name).files.push(e.file);
       }
     for (const kind of ["native", "reducible"]) {
-      console.log(`\n── ${kind === "native" ? "네이티브(셸이 답한다)" : "줄일 수 있는 결속"} ──`);
+      console.log(`\n── ${kind === "native" ? "네이티브(프레임워크가 답한다)" : "줄일 수 있는 결속"} ──`);
       for (const [name, v] of [...byName].sort()) {
         if (v.kind !== kind) continue;
         const meta = surfaces[name] ?? {};
@@ -267,13 +267,13 @@ function main(argv) {
   }
 
   if (problems.length) {
-    console.error(`\n✗ e2e 셸 결속 장부 불일치 ${problems.length}건`);
+    console.error(`\n✗ e2e 프레임워크 결속 장부 불일치 ${problems.length}건`);
     for (const p of problems) console.error(`  - ${p}`);
     return 1;
   }
   if (quiet) {
     const c = counts(entries);
-    console.log(`✓ e2e 셸 결속 장부 일치 — A=${c.A} B=${c.B} C=${c.C}`);
+    console.log(`✓ e2e 프레임워크 결속 장부 일치 — A=${c.A} B=${c.B} C=${c.C}`);
   } else {
     console.log("✓ 장부와 소스가 일치한다");
   }

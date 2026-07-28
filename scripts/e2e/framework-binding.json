@@ -1,9 +1,9 @@
 {
-  "about": "e2e 하니스의 셸 결속 장부. 무리(class)와 이유는 사람이 적고, 표면(surfaces)은 shell-binding.mjs 가 소스에서 실측해 대조한다. 읽기: node scripts/e2e/shell-binding.mjs [--json|--surfaces|--class C]",
+  "about": "e2e 하니스의 프레임워크 결속 장부. 무리(class)와 이유는 사람이 적고, 표면(surfaces)은 framework-binding.mjs 가 소스에서 실측해 대조한다. 읽기: node scripts/e2e/framework-binding.mjs [--json|--surfaces|--class C]",
   "classes": {
-    "A": "셸 무관 — 소켓 명령만 쓴다. 다른 셸 위에서도 같은 답을 요구한다.",
+    "A": "프레임워크 무관 — 소켓 명령만 쓴다. 다른 프레임워크 위에서도 같은 답을 요구한다.",
     "B": "경로 결속 — 프로세스·빌드 산출물·앱 홈을 직접 안다. 값이 밖에서 오면 A 가 된다.",
-    "C": "네이티브 — 창 캡처·네이티브 자식 표면·합성 입력에 선다. 셸마다 답이 다른 것이 정상이다."
+    "C": "네이티브 — 창 캡처·네이티브 자식 표면·합성 입력에 선다. 프레임워크마다 답이 다른 것이 정상이다."
   },
   "banned": {
     "socket-default": {
@@ -14,62 +14,62 @@
     "window.snapshot": {
       "kind": "native",
       "why": "창 내용을 네이티브로 합성해 PNG 로 굽는다. 네이티브 자식 웹뷰까지 한 장에 담기는 것이 판정 근거라, 페이지만 찍는 캡처로는 같은 답이 나오지 않는다.",
-      "shellAnswers": "셸이 자기 창 캡처를 제공한다"
+      "frameworkAnswers": "프레임워크가 자기 창 캡처를 제공한다"
     },
     "window.record": {
       "kind": "native",
-      "why": "창을 연속 프레임으로 받는다. 프레임 소스가 셸의 창 합성기다.",
-      "shellAnswers": "셸이 자기 창 녹화를 제공한다"
+      "why": "창을 연속 프레임으로 받는다. 프레임 소스가 프레임워크의 창 합성기다.",
+      "frameworkAnswers": "프레임워크가 자기 창 녹화를 제공한다"
     },
     "window.layers": {
       "kind": "native",
-      "why": "네이티브 뷰 계층(클래스·frame·hidden)을 그대로 덤프한다. 계층의 모양 자체가 셸마다 다르다.",
-      "shellAnswers": "셸이 자기 뷰 계층을 덤프한다"
+      "why": "네이티브 뷰 계층(클래스·frame·hidden)을 그대로 덤프한다. 계층의 모양 자체가 프레임워크마다 다르다.",
+      "frameworkAnswers": "프레임워크가 자기 뷰 계층을 덤프한다"
     },
     "webview.surfaces": {
       "kind": "native",
-      "why": "상태가 아는 뷰와 실제로 살아 있는 자식 웹뷰를 대조한다. 자식 웹뷰라는 실체가 셸의 것이다.",
-      "shellAnswers": "셸이 자기 자식 웹뷰 목록을 낸다"
+      "why": "상태가 아는 뷰와 실제로 살아 있는 자식 웹뷰를 대조한다. 자식 웹뷰라는 실체가 프레임워크의 것이다.",
+      "frameworkAnswers": "프레임워크가 자기 자식 웹뷰 목록을 낸다"
     },
     "webview.emitNative": {
       "kind": "native",
       "why": "네이티브 브리지로 사건을 밀어 넣는다 — 홀 위를 지나는 입력이 도착하는 그 경로다.",
-      "shellAnswers": "셸이 자기 네이티브 브리지를 연다"
+      "frameworkAnswers": "프레임워크가 자기 네이티브 브리지를 연다"
     },
     "webview.health.query": {
       "kind": "native",
-      "why": "렌더러 프로세스의 생사를 셸에게 묻는다. 렌더러가 몇 개이고 어떻게 죽는지가 셸마다 다르다.",
-      "shellAnswers": "셸이 자기 렌더러 건강을 보고한다"
+      "why": "렌더러 프로세스의 생사를 프레임워크에게 묻는다. 렌더러가 몇 개이고 어떻게 죽는지가 프레임워크마다 다르다.",
+      "frameworkAnswers": "프레임워크가 자기 렌더러 건강을 보고한다"
     },
     "webview.recover": {
       "kind": "native",
-      "why": "죽은 렌더러를 다시 세운다. 소생 정책이 셸의 프로세스 모델 위에 있다.",
-      "shellAnswers": "셸이 자기 렌더러를 되살린다"
+      "why": "죽은 렌더러를 다시 세운다. 소생 정책이 프레임워크의 프로세스 모델 위에 있다.",
+      "frameworkAnswers": "프레임워크가 자기 렌더러를 되살린다"
     },
     "webview-runtime": {
       "kind": "native",
-      "why": "렌더러 프로세스를 이름으로 지목한다(WebKit.WebContent). 이름도 개수도 셸의 사실이다.",
-      "shellAnswers": "셸이 자기 렌더러 프로세스를 지목한다"
+      "why": "렌더러 프로세스를 이름으로 지목한다(WebKit.WebContent). 이름도 개수도 프레임워크의 사실이다.",
+      "frameworkAnswers": "프레임워크가 자기 렌더러 프로세스를 지목한다"
     },
     "pixel-oracle": {
       "kind": "native",
-      "why": "찍힌 픽셀로 판정한다. 판정하는 자는 바이트만 보는 순수 함수라 한 벌이지만(scripts/e2e/lib/frame-oracle.mjs), 같은 화면도 셸마다 다른 바이트로 찍힌다 — 네이티브 자식이 캡처에서 빠지면 그 자리가 구멍으로 남는다. 갈리는 것은 자가 아니라 재는 대상이다.",
-      "shellAnswers": "셸은 캡처를 답하고, 판정은 한 벌을 함께 쓴다"
+      "why": "찍힌 픽셀로 판정한다. 판정하는 자는 바이트만 보는 순수 함수라 한 벌이지만(scripts/e2e/lib/frame-oracle.mjs), 같은 화면도 프레임워크마다 다른 바이트로 찍힌다 — 네이티브 자식이 캡처에서 빠지면 그 자리가 구멍으로 남는다. 갈리는 것은 자가 아니라 재는 대상이다.",
+      "frameworkAnswers": "프레임워크는 캡처를 답하고, 판정은 한 벌을 함께 쓴다"
     },
     "synthetic-input": {
       "kind": "native",
       "why": "OS 합성 입력으로 실제 커서를 움직인다. 앱 밖에서 앱을 치는 손이라 소켓 명령으로 대체되지 않는다.",
-      "shellAnswers": "OS 백엔드마다 따로 세운다"
+      "frameworkAnswers": "OS 백엔드마다 따로 세운다"
     },
     "screen-record": {
       "kind": "native",
-      "why": "OS 화면 녹화로 창 영역을 담는다. 창 좌표와 합성 결과가 셸의 사실이다.",
-      "shellAnswers": "OS 백엔드마다 따로 세운다"
+      "why": "OS 화면 녹화로 창 영역을 담는다. 창 좌표와 합성 결과가 프레임워크의 사실이다.",
+      "frameworkAnswers": "OS 백엔드마다 따로 세운다"
     },
     "frame-decode": {
       "kind": "native",
       "why": "녹화 영상을 프레임으로 푼다 — 픽셀 오라클의 뒷단이다.",
-      "shellAnswers": "픽셀 오라클과 함께 간다"
+      "frameworkAnswers": "픽셀 오라클과 함께 간다"
     },
     "socket-name": {
       "kind": "reducible",
@@ -88,7 +88,7 @@
     },
     "app-bundle-launch": {
       "kind": "reducible",
-      "why": "앱 번들을 직접 띄운다. 무엇을 어떻게 띄우는지는 셸마다 다르지만, 기동 명령을 받으면 하니스는 몰라도 된다.",
+      "why": "앱 번들을 직접 띄운다. 무엇을 어떻게 띄우는지는 프레임워크마다 다르지만, 기동 명령을 받으면 하니스는 몰라도 된다.",
       "env": "SOKSAK_APP_LAUNCH"
     },
     "app-process-scan": {
@@ -112,7 +112,7 @@
         "screen-record",
         "frame-decode"
       ],
-      "note": "녹화 영상에서 본문 blank 프레임을 센다. 입력이 OS 녹화라 셸을 바꾸면 프레임 소스부터 다르다."
+      "note": "녹화 영상에서 본문 blank 프레임을 센다. 입력이 OS 녹화라 프레임워크를 바꾸면 프레임 소스부터 다르다."
     },
     {
       "file": "browser-pixels.mjs",
@@ -154,7 +154,7 @@
       "surfaces": [
         "build-artifact-path"
       ],
-      "note": "합성 카탈로그를 실모델에 물어 라우팅을 본다. 카탈로그는 CLI 로 읽으므로 sok 실행물 경로만 밖에서 오면 셸 무관이다."
+      "note": "합성 카탈로그를 실모델에 물어 라우팅을 본다. 카탈로그는 CLI 로 읽으므로 sok 실행물 경로만 밖에서 오면 프레임워크 무관이다."
     },
     {
       "file": "check-utterances.mjs",
@@ -175,7 +175,7 @@
         "app-bundle-launch",
         "app-activate"
       ],
-      "note": "저장소가 찢어진 뒤 백업 링에서 살아나는지 본다. 판정은 저장소 사실이고, 셸은 앱을 껐다 켜는 손일 뿐이다."
+      "note": "저장소가 찢어진 뒤 백업 링에서 살아나는지 본다. 판정은 저장소 사실이고, 프레임워크는 앱을 껐다 켜는 손일 뿐이다."
     },
     {
       "file": "divider-freeze.sh",
@@ -194,7 +194,7 @@
       "role": "harness",
       "class": "A",
       "surfaces": [],
-      "note": "디바이더 히트 영역을 DOM 좌표로 재고 포인터 사건을 보낸다. 전부 소켓 명령이라 셸이 바뀌어도 같다."
+      "note": "디바이더 히트 영역을 DOM 좌표로 재고 포인터 사건을 보낸다. 전부 소켓 명령이라 프레임워크가 바뀌어도 같다."
     },
     {
       "file": "e2e-driver.mjs",
@@ -250,7 +250,7 @@
       "surfaces": [
         "pixel-oracle"
       ],
-      "note": "\"이 프레임이 그려졌는가\"를 PNG 바이트만 보고 답한다. 판정을 캡처에서 떼어 놓아 셸이 바뀌어도 자는 하나다 — 대신 셸마다 다른 바이트가 그대로 판정 차이로 드러난다."
+      "note": "\"이 프레임이 그려졌는가\"를 PNG 바이트만 보고 답한다. 판정을 캡처에서 떼어 놓아 프레임워크가 바뀌어도 자는 하나다 — 대신 프레임워크마다 다른 바이트가 그대로 판정 차이로 드러난다."
     },
     {
       "file": "lib/frame-oracle.test.mjs",
@@ -305,7 +305,7 @@
       "role": "harness",
       "class": "A",
       "surfaces": [],
-      "note": "창을 열고 닫고 포커스를 옮기며 라벨·라우팅 계약을 본다. 창 명령은 어느 셸이든 자기가 구현해야 하는 것이라 하니스는 셸을 모른다."
+      "note": "창을 열고 닫고 포커스를 옮기며 라벨·라우팅 계약을 본다. 창 명령은 어느 프레임워크든 자기가 구현해야 하는 것이라 하니스는 프레임워크를 모른다."
     },
     {
       "file": "nl-console.sh",
@@ -315,7 +315,7 @@
         "socket-name",
         "app-home-path"
       ],
-      "note": "자연어 콘솔의 질문·응답 사슬을 본다. identity 로 소켓 경로를 짓는 것 말고는 셸을 모른다."
+      "note": "자연어 콘솔의 질문·응답 사슬을 본다. identity 로 소켓 경로를 짓는 것 말고는 프레임워크를 모른다."
     },
     {
       "file": "orchestrator.sh",
@@ -325,7 +325,7 @@
         "socket-name",
         "app-home-path"
       ],
-      "note": "컨트롤 플레인(main)의 프로젝트 진입 경로를 본다. main 은 앱의 예약어지 셸의 사실이 아니다."
+      "note": "컨트롤 플레인(main)의 프로젝트 진입 경로를 본다. main 은 앱의 예약어지 프레임워크의 사실이 아니다."
     },
     {
       "file": "p0-contracts.mjs",
@@ -491,7 +491,7 @@
       "surfaces": [
         "app-home-path"
       ],
-      "note": "한 identity 홈의 터미널 엔진 유닛을 정합시킨다. 파일 배치 작업이고, 홈 경로만 밖에서 오면 셸을 모른다."
+      "note": "한 identity 홈의 터미널 엔진 유닛을 정합시킨다. 파일 배치 작업이고, 홈 경로만 밖에서 오면 프레임워크를 모른다."
     },
     {
       "file": "tui-probe.sh",
@@ -530,7 +530,7 @@
         "app-bundle-launch",
         "app-process-scan"
       ],
-      "note": "렌더러를 죽이고 되살아나는지 본다. 죽일 대상을 이름으로 지목하는 것부터 셸의 프로세스 모델이다."
+      "note": "렌더러를 죽이고 되살아나는지 본다. 죽일 대상을 이름으로 지목하는 것부터 프레임워크의 프로세스 모델이다."
     }
   ]
 }
