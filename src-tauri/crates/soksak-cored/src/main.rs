@@ -198,6 +198,8 @@ mod unix {
                 break;
             }
         }
+        // 스레드는 재사용될 수 있다 — 이 연결의 선언이 다음 연결에 붙지 않게 놓는다.
+        soksak_cored::wire::forget_conn();
     }
 }
 

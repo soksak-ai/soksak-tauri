@@ -114,8 +114,18 @@ fn route(ctx: &Ctx, req: &Request, line: &str) -> Value {
         return ok_reply(registry::declaration());
     }
     let Some(cmd) = registry::find(&req.method) else {
-        if crate::control::has_host() {
+        // 창의 다리로 온 것은 창으로 되돌리지 않는다 — 물어본 그 창에 배달되어 상한까지 침묵한다.
+        if crate::control::has_host() && !is_bridge() {
             return crate::control::answer(line);
+        }
+        if is_bridge() {
+            return err_reply(
+                "NOT_SERVED_HERE",
+                &format!(
+                    "{} 은(는) 이 프로세스가 서빙하지 않습니다 — 창의 다리로 온 요청이라 창으로 되돌리지 않습니다",
+                    req.method
+                ),
+            );
         }
         let (code, message) = refusal(&req.method);
         return err_reply(code, &message);
@@ -140,6 +150,31 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
+// 이 연결이 **창의 자기 다리**인가.
+//
+// 창은 자기 명령을 이 소켓으로 묻는다(Electron 에서는 다리도 이 소켓이다). 그 요청을 서빙하지
+// 않는다고 창으로 되돌리면, 물어본 바로 그 창에 배달되고 창의 실행기에는 그 이름이 없어 회신이
+// 오지 않는다 — 부른 쪽은 이름 대신 상한을 본다(실측: pty_pane_alive 10초).
+//
+// 이름의 철자로 가르지 않는다. 사실은 "누가 물었는가"이고, 그것은 연결이 안다.
+thread_local! {
+    static BRIDGE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// 이 연결은 창의 다리다 — 여기로 온 것은 창으로 되돌리지 않는다.
+pub fn mark_bridge() {
+    BRIDGE.with(|b| b.set(true));
+}
+
+/// 다시 밖의 연결로 — 검사가 같은 스레드를 재사용해도 앞의 선언이 남지 않게.
+pub fn clear_bridge() {
+    BRIDGE.with(|b| b.set(false));
+}
+
+pub fn is_bridge() -> bool {
+    BRIDGE.with(|b| b.get())
+}
+
 /// 이 연결을 스레드에 매어 두고 한 줄을 답한다 — 소켓 루프가 부르는 자리.
 #[cfg(unix)]
 pub fn answer_on_conn(ctx: &Ctx, line: &str, conn: &std::os::unix::net::UnixStream) -> Value {
@@ -147,6 +182,14 @@ pub fn answer_on_conn(ctx: &Ctx, line: &str, conn: &std::os::unix::net::UnixStre
         CONN.with(|slot| *slot.borrow_mut() = Some(c));
     }
     answer(ctx, line)
+}
+
+/// 연결 하나가 끝났다 — 그 스레드에 남은 선언을 지운다. 스레드가 재사용되면 앞 연결의
+/// "나는 창의 다리다"가 다음 연결에 그대로 붙는다.
+#[cfg(unix)]
+pub fn forget_conn() {
+    CONN.with(|slot| *slot.borrow_mut() = None);
+    clear_bridge();
 }
 
 /// 지금 답하고 있는 연결의 사본. 연결을 지고 가야 하는 명령만 부른다(배달 통로 등록).
@@ -278,4 +321,40 @@ mod tests {
         let reply = answer(&ctx(), r#"{"method":"cored.commands"}"#);
         assert!(reply.get("id").is_none(), "{reply}");
     }
+
+/// 창의 **자기 다리**로 온 요청은 창으로 되돌리지 않는다.
+///
+/// 실측(2026-07-29): 렌더러가 `pty_pane_alive` 를 다리로 물었는데 cored 가 그 이름을 서빙하지
+/// 않아 창으로 배달했고, 창의 실행기에는 그 이름이 없어 회신이 오지 않았다 — 부른 쪽은
+/// UNKNOWN_COMMAND 대신 10초를 기다렸다. 되돌린 곳이 물어본 바로 그 창이었다.
+///
+/// 이름의 철자로 가르지 않는다(점 있음/없음). 사실은 **누가 물었는가**이고, 그것은 연결이 안다.
+#[test]
+fn a_request_from_the_windows_own_bridge_is_not_delivered_back() {
+    let _serial = crate::control::testing::lock();
+    let _h = crate::control::testing::fake_host(&["main"], "main");
+    // 창의 다리가 자기를 밝힌다 — 이 연결로 온 것은 창이 물은 것이다.
+    mark_bridge();
+    let r = answer(&ctx(), r#"{"id":9,"method":"pty_pane_alive","timeoutMs":80}"#);
+    assert_eq!(r["ok"], false);
+    assert_eq!(r["code"], "NOT_SERVED_HERE", "{r}");
+    assert!(r["message"].as_str().unwrap().contains("pty_pane_alive"));
+    crate::control::testing::detach();
+}
+
+/// 밝히지 않은 연결은 밖이다 — 그쪽 요청은 그대로 창으로 간다.
+#[test]
+fn an_outside_connection_still_reaches_the_window() {
+    let _serial = crate::control::testing::lock();
+    let mut h = crate::control::testing::fake_host(&["main"], "main");
+    clear_bridge();
+    std::thread::spawn(|| {
+        let _ = answer(&ctx(), r#"{"id":10,"method":"project.open","timeoutMs":300}"#);
+    });
+    let mut line = String::new();
+    std::io::BufRead::read_line(&mut h, &mut line).expect("배달이 온다");
+    assert!(line.contains("project.open"));
+    crate::control::testing::detach();
+}
+
 }

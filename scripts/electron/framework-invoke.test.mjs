@@ -29,8 +29,12 @@ let realHelperEnv;
 
 /** 제어면 배선(등록·창 사실 갱신)을 뺀 것 — 다리가 나른 명령만. 그 둘은 같은 소켓을 쓰지만
  *  다른 일이다: 등록은 "창은 내가 갖고 있다"이고, 다리는 UI 가 부른 명령이다. */
-const commands = (mock) =>
-  mock.seen.filter((r) => r.method !== "control_host_attach" && r.method !== "control_windows");
+const CONTROL_WIRING = new Set([
+  "control_host_attach", // 창은 내가 갖고 있다
+  "control_windows", // 창 사실이 바뀌었다
+  "control_bridge_attach", // 이 연결은 창의 다리다
+]);
+const commands = (mock) => mock.seen.filter((r) => !CONTROL_WIRING.has(r.method));
 
 /** 목 백엔드 — 한 줄 JSON 요청에 handler 가 답한다. */
 function startMock(name, handler) {
@@ -141,8 +145,8 @@ describe("framework:invoke — 렌더러가 보는 답", () => {
       ok: true,
       value: { theme: "dark" },
     });
-    // 제어면 등록(control_host_attach)도 같은 소켓으로 간다 — 창은 이 프레임워크의 것이므로
-    // 외부 지목 소켓의 cored 에도 등록한다. 다리가 나른 명령만 골라 본다.
+    // 제어면 배선도 같은 소켓으로 간다 — 창은 이 프레임워크의 것이므로 외부 지목 소켓의
+    // cored 에도 등록하고, 다리는 자기가 창의 것임을 밝힌다. 다리가 나른 명령만 골라 본다.
     expect(commands(mock)[0]).toMatchObject({ method: "themes_scan", params: { dir: "x" } });
     expect(ledger()).toEqual([
       { t: expect.any(Number), cmd: "themes_scan", served: true },

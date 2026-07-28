@@ -65,6 +65,11 @@ function createBackendClient(options = {}) {
   const socketPath = options.socketPath ?? null;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const onDemand = options.onDemand ?? (() => {});
+  // 붙자마자 보내는 선언들 — "이 연결이 무엇인가"를 백엔드가 알아야 하는 경우가 있다.
+  // 프레임워크는 여기에 control_bridge_attach 를 꽂는다: 창의 다리로 온 요청을 서빙하지 않는다고
+  // 창으로 되돌리면 물어본 그 창에 배달되고, 회신할 자리가 없어 상한까지 침묵한다(실측 10초).
+  // 응답은 기다리지 않는다 — 선언은 이 연결의 사실이고, 첫 명령보다 먼저 줄에 오른다.
+  const announce = options.announce ?? [];
 
   let sock = null;
   let connecting = null;
@@ -130,6 +135,25 @@ function createBackendClient(options = {}) {
         connecting = null;
         buf = "";
         s.on("data", onData);
+        // 선언이 먼저다. 같은 연결·같은 순서라 첫 명령이 이 줄보다 앞설 수 없다.
+        // 선언에도 상관 id 를 단다 — 짝이 없으면 답이 "짝 없는 응답"으로 버려지고, 선언이
+        // **거절당한 것**과 그냥 조용한 것이 구분되지 않는다.
+        for (const method of announce) {
+          const id = ++seq;
+          pending.set(id, {
+            command: method,
+            timer: setTimeout(() => pending.delete(id), timeoutMs),
+            resolve: (v) => {
+              if (v && v.ok === false) {
+                console.error(
+                  `[electron-framework] 연결 선언이 거절됐다: ${method} — ${v.code}: ${v.message}`,
+                );
+              }
+            },
+            reject: () => {},
+          });
+          s.write(`${JSON.stringify({ id, method })}\n`);
+        }
         // 붙은 뒤의 오류·종료는 같은 사실이다: 이 연결로는 더 못 간다. 다음 호출이 다시 붙는다.
         s.on("error", () => s.destroy());
         s.on("close", () => {

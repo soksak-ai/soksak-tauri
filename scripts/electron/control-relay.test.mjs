@@ -196,6 +196,49 @@ describe("제어면 중계", () => {
     expect(r.code).toBe("WINDOW_NOT_FOUND");
   });
 
+  // 실측 회귀(2026-07-29): 렌더러가 다리로 물은 pty_pane_alive 를 cored 가 창으로 되돌렸고,
+  // 그 창이 바로 물어본 쪽이라 회신이 오지 않아 10초를 기다렸다. 이름 대신 상한이 나오면
+  // 부른 쪽은 "느리다"로 읽고, 진짜 사실("이 프로세스가 안 서빙한다")은 사라진다.
+  it("창의 다리로 물은 것은 창으로 되돌리지 않는다 — 상한이 아니라 이름으로 답한다", async () => {
+    const win = windowStub();
+    const host = createControlHost({
+      socketPath: cored.socketPath,
+      facts: () => ({ live: ["main"], focused: "main" }),
+      deliver: (label, payload) => win.take(payload),
+    }).start();
+    hosts.push(host);
+    await whenAttached(host);
+
+    const bridge = createBackendClient({
+      socketPath: cored.socketPath,
+      announce: ["control_bridge_attach"],
+      timeoutMs: 4000,
+    });
+    clients.push(bridge);
+    await expect(bridge.call("pty_pane_alive", { paneId: "p1" })).rejects.toMatchObject({
+      code: "NOT_SERVED_HERE",
+    });
+    // 되돌리지 않았다는 것을 창이 증언한다 — 배달이 하나도 없어야 한다.
+    expect(win.got).toEqual([]);
+  });
+
+  it("밝히지 않은 다리는 밖이다 — 그쪽 요청은 그대로 창으로 간다", async () => {
+    const win = windowStub();
+    const host = createControlHost({
+      socketPath: cored.socketPath,
+      facts: () => ({ live: ["main"], focused: "main" }),
+      deliver: (label, payload) => win.take(payload),
+    }).start();
+    hosts.push(host);
+    await whenAttached(host);
+
+    const outside = createBackendClient({ socketPath: cored.socketPath, timeoutMs: 4000 });
+    clients.push(outside);
+    void outside.call("project.open", { root: "/p" }).catch(() => {});
+    const got = await win.next();
+    expect(got.method).toBe("project.open");
+  });
+
   it("창 사실이 바뀌면 새 창이 타겟이 된다", async () => {
     let live = ["main"];
     let focused = "main";

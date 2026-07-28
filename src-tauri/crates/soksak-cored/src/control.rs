@@ -216,6 +216,13 @@ pub(crate) mod testing {
         SERIAL.lock().unwrap_or_else(|e| e.into_inner())
     }
 
+    /// 창 호스트를 흉내낸다 — 한쪽 끝을 cored 에 주고, 다른 끝에서 배달을 읽는다.
+    pub fn fake_host(live: &[&str], focused: &str) -> std::io::BufReader<UnixStream> {
+        let (a, b) = UnixStream::pair().expect("소켓 쌍");
+        attach_host(a, live.iter().map(|s| s.to_string()).collect(), focused.to_string());
+        std::io::BufReader::new(b)
+    }
+
     /// 호스트 없는 상태로 되돌린다 — 검사 하나가 남긴 호스트가 다음 검사의 전제를 바꾼다.
     pub fn detach() {
         *host().lock().unwrap_or_else(|e| e.into_inner()) = None;

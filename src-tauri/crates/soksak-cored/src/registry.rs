@@ -185,6 +185,14 @@ pub const COMMANDS: &[Command] = &[
         returns: "null",
         run: run_control_host_attach,
     },
+    // 이 연결은 창의 다리다 — 서빙하지 않는 이름이 와도 창으로 되돌리지 않는다.
+    // 창이 자기가 물은 것을 자기가 받으면 회신할 자리가 없어 상한까지 침묵한다.
+    Command {
+        name: "control_bridge_attach",
+        args: &[],
+        returns: "null",
+        run: run_control_bridge_attach,
+    },
     // 창 사실 갱신. 낡은 목록으로 타겟을 고르면 죽은 창에 배달한다 — 그 오답은 조용하다.
     Command {
         name: "control_windows",
@@ -882,6 +890,17 @@ fn run_control_host_attach(_ctx: &Ctx, params: &Value) -> Outcome {
 #[cfg(not(unix))]
 fn run_control_host_attach(_ctx: &Ctx, _params: &Value) -> Outcome {
     Outcome::Failed("배달 통로는 유닉스 소켓 위에서만 섭니다".into())
+}
+
+#[cfg(unix)]
+fn run_control_bridge_attach(_ctx: &Ctx, _params: &Value) -> Outcome {
+    crate::wire::mark_bridge();
+    Outcome::Ok(Value::Null)
+}
+
+#[cfg(not(unix))]
+fn run_control_bridge_attach(_ctx: &Ctx, _params: &Value) -> Outcome {
+    Outcome::Failed("연결 역할 선언은 유닉스 소켓 위에서만 섭니다".into())
 }
 
 fn run_control_windows(_ctx: &Ctx, params: &Value) -> Outcome {

@@ -3,14 +3,8 @@ use super::*;
 use std::io::{BufRead, BufReader};
 use std::os::unix::net::UnixStream;
 
-use super::testing::{detach, lock as lock_serial};
+use super::testing::{detach, fake_host, lock as lock_serial};
 
-/// 창 호스트를 흉내낸다 — 한쪽 끝을 cored 에 주고, 다른 끝에서 push 를 읽는다.
-fn fake_host(live: &[&str], focused: &str) -> BufReader<UnixStream> {
-    let (a, b) = UnixStream::pair().expect("소켓 쌍");
-    attach_host(a, live.iter().map(|s| s.to_string()).collect(), focused.to_string());
-    BufReader::new(b)
-}
 
 
 #[test]
@@ -119,3 +113,4 @@ fn updating_without_a_host_says_so() {
     detach();
     assert!(!update_windows(vec!["main".into()], "main".into()));
 }
+

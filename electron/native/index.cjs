@@ -61,6 +61,7 @@ const TABLE = assemble([
   ["engine.cjs", require("./engine.cjs")],
   ["titlebar.cjs", require("./titlebar.cjs")],
   ["project.cjs", require("./project.cjs")],
+  ["capture.cjs", require("./capture.cjs")],
 ]);
 
 // 능력면 — UI 가 그리기 전에 물어볼 수 있는 자리. 표 자체가 답이라 선언과 행동이 갈릴 수 없다.
@@ -109,14 +110,25 @@ function serve(cmd, args, ctx, record) {
     record(cmd, false, ABSENT_CODE, "framework");
     return { ok: false, code: ABSENT_CODE, message: `${entry.concept}: ${entry.absent}`, command: cmd };
   }
-  try {
-    const value = entry.answer(ctx, args ?? {});
-    record(cmd, true, undefined, "framework");
-    return { ok: true, value };
-  } catch (e) {
+  const failed = (e) => {
     const code = e.code || "ERROR";
     record(cmd, false, code, "framework");
     return { ok: false, code, message: String(e.message || e), command: cmd };
+  };
+  try {
+    const value = entry.answer(ctx, args ?? {});
+    // 프레임워크 API 가 비동기인 갈래가 있다(캡처는 프레임 하나를 기다린다). 값이 약속이면
+    // 그것이 풀린 뒤에 답한다 — 약속을 값으로 실어 보내면 호출자가 `{}` 를 받고 성공으로 읽는다.
+    if (value && typeof value.then === "function") {
+      return value.then((v) => {
+        record(cmd, true, undefined, "framework");
+        return { ok: true, value: v };
+      }, failed);
+    }
+    record(cmd, true, undefined, "framework");
+    return { ok: true, value };
+  } catch (e) {
+    return failed(e);
   }
 }
 

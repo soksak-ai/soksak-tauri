@@ -72,6 +72,8 @@ function createWindow(label, rect) {
       ? { x: rect.x, y: rect.y, width: rect.w, height: rect.h }
       : { width: 1200, height: 800 }),
     show: false,
+    // 보이기 전에도 그린다 — 그러지 않으면 첫 캡처가 빈 이미지다.
+    paintWhenInitiallyHidden: true,
     titleBarStyle: "hiddenInset",
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -84,6 +86,9 @@ function createWindow(label, rect) {
       // 태그를 켜는 것이 격리를 여는 것은 아니다 — 위 둘은 그대로다. 태그가 만드는
       // 게스트는 자기 프로세스에서 돌고 preload 없이는 노드를 보지 못한다.
       webviewTag: true,
+      // 가려진 창도 계속 그린다. 스로틀이 켜지면 캡처가 **옛 프레임**을 담고, 그 오답은
+      // 오류가 아니라 "화면이 안 바뀐다"로 나타난다(window.snapshot 이 이 창을 담는다).
+      backgroundThrottling: false,
       additionalArguments: [`--soksak-window-label=${label}`],
     },
   });
@@ -184,7 +189,13 @@ let backend = null;
 let ownedCored = null;
 
 function connectBackend(socketPath) {
-  backend = createBackendClient({ socketPath, onDemand: recordDemand });
+  backend = createBackendClient({
+    socketPath,
+    onDemand: recordDemand,
+    // 이 연결은 창의 다리다. 밝히지 않으면 cored 가 서빙하지 않는 이름을 창으로 되돌리고,
+    // 그 창이 바로 물어본 쪽이라 회신이 오지 않는다 — 이름 대신 상한이 나온다.
+    announce: ["control_bridge_attach"],
+  });
   return backend;
 }
 
