@@ -18,6 +18,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { requireSocket } from "./lib/client.mjs";
+import { acquireFixtureWindow, releaseFixtureWindow } from "./lib/fixtureWindow.mjs";
 
 const SOCKET = requireSocket();
 // 픽스처 루트 — 고정 경로 재사용(멱등, /tmp 금지 규율). 창 폐쇄가 회수를 담당한다.
@@ -39,7 +40,11 @@ if (!ENGINE_PLUGIN) throw new Error(`알 수 없는 엔진: ${ENGINE}`);
 // 표면 모델 — native: 창 자식 표면(자식 웹뷰·CEF 호스트 뷰)이라 동결·veil·착지 계약의 대상.
 // dom: 오프스크린 렌더를 DOM 으로 합성하므로 네이티브 표면이 없다(§4.6 면제) — 그 엔진에서
 // 표면 계수·프레임 판독 게이트는 적용 대상이 아니다. 조용히 건너뛰지 않고 그 사실을 출력한다.
-const ENGINE_SURFACE = ENGINE === "browser-chromium-offscreen" ? "dom" : "native";
+// 표면이 사는 자리는 엔진만 정하지 않는다 — **프레임워크도 정한다.** 콘텐츠 뷰가 페이지 안에
+// 사는 프레임워크에는 어떤 엔진을 써도 네이티브 자식 표면이 없다. 엔진만 보면 그 프레임워크에서
+// 이 게이트가 "없는 것"을 찾다가 실패하고, 그 실패는 결함처럼 보이지만 결함이 아니다.
+// 축은 프레임워크가 선언한다(framework.provision) — 이름으로 가르지 않는다.
+let ENGINE_SURFACE = ENGINE === "browser-chromium-offscreen" ? "dom" : "native";
 
 // 소켓 클라이언트 — 연결마다 독립 봉투 큐. 둘 이상 열 수 있어야 한다: 녹화(window.record)는
 // 프레임 수만큼 응답을 붙잡으므로, 같은 연결로는 녹화 도중 위상을 태울 수 없다(실측: 활강이
@@ -134,11 +139,17 @@ async function main() {
   console.log(`소켓 연결: ${SOCKET} — 엔진 ${ENGINE}`);
 
   // ── 픽스처: 전용 임시 root 창 + 브라우저(홀 뷰) + 터미널(교차 활성 상대) ──
-  console.log(`픽스처 창 열기: ${FIXTURE_ROOT}`);
-  const opened = await rpc("window.open", { root: FIXTURE_ROOT });
-  if (!opened.ok) throw new Error(`window.open 실패: ${opened.message}`);
-  const win = opened.data?.label ?? opened.data?.existingWindow;
-  if (!win) throw new Error("창 label 없음");
+  // 창 확보는 lib/fixtureWindow 가 진다 — 루트가 주인이고, 있으면 물려받는다(멱등).
+  console.log(`픽스처 창 확보: ${FIXTURE_ROOT}`);
+  const acquired = await acquireFixtureWindow(rpc, FIXTURE_ROOT);
+  const win = acquired.label;
+
+  // 표면이 사는 자리의 나머지 절반 — 프레임워크가 선언한다.
+  const provision = (await rpc("framework.provision", {}, win)).data ?? {};
+  if (provision.nativeChildWebview === false) ENGINE_SURFACE = "dom";
+  console.log(
+    `프레임워크: ${provision.name} · 콘텐츠 뷰 ${provision.nativeChildWebview === false ? "in-page" : "native"} → 표면 모델 ${ENGINE_SURFACE}`,
+  );
 
   // 새 창의 플러그인 적재는 비동기 — 프로그램 목록에 브라우저가 설 때까지 대기한다.
   await pollUntil("browser 프로그램 적재", 20000, async () => {
@@ -629,7 +640,7 @@ async function main() {
   } finally {
   // ── 자기정리 — 실패 경로 포함 픽스처 창 폐쇄(멱등: 다음 실행은 새로 연다).
     // KEEP=1 이면 검안을 위해 보존한다(brestore 와 동일 관례).
-    if (process.env.KEEP !== "1") await rpc("window.close", { label: win }).catch(() => {});
+    if (process.env.KEEP !== "1") await releaseFixtureWindow(rpc, FIXTURE_ROOT).catch(() => {});
     else console.log(`KEEP=1 — 픽스처 창 보존: ${win}`);
   }
 

@@ -26,7 +26,7 @@ export function registerWebviewCatalog(): void {
       "Reconcile this window's state (which views exist) against the browser child webviews actually alive for this window. ghosts = child webviews whose view no longer exists in state — a stale native surface floating over the window (the 'browser over an empty window' mismatch); a non-empty ghosts list is always a defect fact. Judged from the same sources the app itself uses (state store + webview_list), no pixels involved.",
     triggers: { ko: "표면 정합 유령 웹뷰 잔존 브라우저 대조 확인" },
     params: {},
-    returns: "{ window, actual: [label], ghosts: [label], orphans: [label], engine: {registered, hostPresent}, stateViews }",
+    returns: "{ window, actual: [label], ghosts: [label], orphans: [label], engine: {registered, hostPresent}, bodies: [{node,x,y,w,h,children,overlay,…}], stateViews }",
     message: (d) => {
       const bad =
         Number((d.ghosts as string[] | undefined)?.length ?? 0) +
@@ -79,6 +79,11 @@ export function registerWebviewCatalog(): void {
         const body = el.parentElement;
         bodies.push({
           node: el.getAttribute("data-node") ?? el.getAttribute("data-view-addr") ?? "?",
+          // 자리도 사실이다 — 크기만 실은 rect 는 반쪽이고, "표면이 접힌 자리에 정확히
+          // 섰는가"를 물을 수 없다. 콘텐츠가 페이지 안에 사는 프레임워크에서는 이 넷이
+          // 네이티브 자식 프레임과 같은 축의 답이다.
+          x: Math.round(r.x),
+          y: Math.round(r.y),
           w: Math.round(r.width),
           h: Math.round(r.height),
           children: el.childElementCount,

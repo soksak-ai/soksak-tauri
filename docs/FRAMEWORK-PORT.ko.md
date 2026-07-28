@@ -353,9 +353,19 @@ cored 는 터미널을 로컬 폴백 없이 서빙한다. 앱은 데몬을 못 �
 
 넷이 되돌린 계약은 모양이 같다: 그 규칙은 어느 프레임워크의 것도 아니므로, 둘 다 부르는 자리로 옮긴다. 흔적 폐기는 이제 `soksak_core::window_traces` 이고, 앱은 자기 연결로 이 프레임워크는 cored 의 `window_traces_prune` 으로 부른다. 게스트 스크립트는 WKWebView 계약(`callAsyncJavaScript` 는 비동기 함수 본문을 받는다)을 그대로 두고 어댑터가 감싼다 — 계약을 다시 정의하지 않는다.
 
-오늘 이 프레임워크를 상대로 하니스가 내는 판정: `p0-contracts` 24/0, `multiwindow` 16/0, `tab-switch-ghost` 13/0, `rail-border` 5/0, `window-traces` 4/0, `ui-verify`·`gutter-hover` GREEN.
+오늘 이 프레임워크를 상대로 하니스가 내는 판정: `p0-contracts` 24/0, `multiwindow` 16/0, `tab-switch-ghost` 13/0, `rail-border` 5/0, `window-traces` 4/0, `motion-slow` 11/0, `surface-park` 8/0, `slot-freeze` 전체 GREEN, `ui-verify`·`gutter-hover` GREEN.
 
-남은 공백은 흩어진 것이 아니라 하나로 모인다. `surface-park`·`slot-freeze`·`gutter-drag` 는 **네이티브 자식 표면**을 읽는다 — `webview_list`, 엔진 서피스 통계, 합성된 자식의 rect. 이 프레임워크에서 그것들은 구조상 비어 있고, cored 는 숫자를 지어내는 대신 `FRAMEWORK_CONCEPT_ABSENT` 로 답한다. 세 하니스는 결속 장부에서 class C 이고, 장부는 class C 의 답이 프레임워크마다 다를 수 있다고 이미 말한다. 아직 없는 것은 **어떻게 다른지**를 말할 자리다. 그것은 가짜 표면으로 메울 구멍이 아니라 하니스가 쓸 계약이다.
+## 어떻게 다른지 말할 자리
+
+`surface-park`·`slot-freeze`·`gutter-drag` 는 **네이티브 자식 표면**을 읽었다 — `webview_list`, 엔진 서피스 통계, 합성된 자식의 rect. 이 프레임워크에서 그것들은 구조상 비어 있고, cored 는 숫자를 지어내는 대신 `FRAMEWORK_CONCEPT_ABSENT` 로 답한다. 판정하는 쪽에는 그 사실을 **물을 자리**가 없었다.
+
+`framework.provision` 이 그 자리다: `chromium`·`nativeChildWebview`. 능력 선언이지 이름 분기가 아니다 — `name` 은 원장·진단에만 쓰고, 판정은 축으로 가른다. 기준은 그대로 두고 재는 자리만 바꾼다: 활성 브라우저가 실제로 서는지는 네이티브 표면 목록이거나 페이지 안 본문의 rect 이고(`webview.surfaces` 의 `bodies` 가 이제 위치도 싣는다 — 크기만 실은 rect 로는 "접힌 자리에 정확히 섰는가"를 물을 수 없다), 슬롯 착지 게이트는 표면 모델이 `dom` 이면 사유를 밝히고 비적용이 된다(엔진만 보던 축에 프레임워크를 더했다).
+
+그 과정에서 거짓 GREEN 이 나왔다. `gutter-drag` 의 축 격리 검사는 두 겹으로 공허했다 — 구동을 네이티브 입력으로만 해서 그 명령이 없는 프레임워크에서는 아무것도 안 끌었고, 높이 오라클이 rect 없는 트리를 읽어 `-1` 끼리 비교했다. 재는 자리를 고치자 곧바로 진짜 실패가 드러났다.
+
+## 아직 못 고친 것
+
+주입한 DOM 드래그가 골에서 커밋되지 않는다. 제스처는 정확히 서고 풀린다(body 커서가 arm/clear 된다 — `onGutterDown` 이 끝까지 돈다), `window` 로 넣은 mousemove 뒤에도 pane rect 는 69 표본 내내 불변이고, 같은 창에서 `pane.resize` 명령은 정상 동작한다. 상태 경로는 멀쩡하고 포인터 경로만 안 선다. 실마우스 드래그가 이 프레임워크에서 되는지는 아직 재지 못했다 — 재는 방법부터 필요하다.
 
 ## 한 연결에 쓰는 자리는 하나
 

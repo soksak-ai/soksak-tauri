@@ -353,9 +353,19 @@ Content lives in the page on this framework — a `<webview>` element, not a nat
 
 The contract each one restores is the same shape: the rule belongs to neither framework, so it moves to a place both call. Trace pruning is now `soksak_core::window_traces`, called by the app with its own connection and by this framework through cored's `window_traces_prune`. Guest scripting keeps the WKWebView contract (`callAsyncJavaScript` takes an async function body), and the adapter wraps rather than redefining.
 
-What the harnesses judge today, against this framework: `p0-contracts` 24/0, `multiwindow` 16/0, `tab-switch-ghost` 13/0, `rail-border` 5/0, `window-traces` 4/0, `ui-verify` and `gutter-hover` green.
+What the harnesses judge today, against this framework: `p0-contracts` 24/0, `multiwindow` 16/0, `tab-switch-ghost` 13/0, `rail-border` 5/0, `window-traces` 4/0, `motion-slow` 11/0, `surface-park` 8/0, `slot-freeze` fully green, plus `ui-verify` and `gutter-hover`.
 
-One gap is coherent rather than scattered. `surface-park`, `slot-freeze`, and `gutter-drag` read **native child surfaces** — `webview_list`, engine surface stats, the rect of a composited child. On this framework those are empty by construction, and cored answers `FRAMEWORK_CONCEPT_ABSENT` rather than inventing a number. The harnesses are class C in the binding ledger, which already says a class C answer may differ per framework; what they do not yet have is a way to say *how* it differs. That is a harness contract to write, not a hole to fill with a fake surface.
+## Saying how it differs
+
+`surface-park`, `slot-freeze`, and `gutter-drag` read **native child surfaces** — `webview_list`, engine surface stats, the rect of a composited child. On this framework those are empty by construction, and cored answers `FRAMEWORK_CONCEPT_ABSENT` rather than inventing a number. What the judging side lacked was a place to *ask*.
+
+`framework.provision` is that place: `chromium`, `nativeChildWebview`. It is a capability declaration, not a name switch — `name` goes to ledgers and diagnostics, while verification branches on the axes. The standard stays; only the place it is measured moves. Whether the active browser actually stands is either a native surface list or the rect of an in-page body (`webview.surfaces` now reports position as well — a rect carrying only size cannot answer "did it land exactly on the folded slot"). The slot-landing gate becomes non-applicable, with its reason printed, when the surface model is `dom` — an axis that previously read the engine alone and now reads the framework too.
+
+That work surfaced a false green. `gutter-drag`'s axis-isolation check was vacuous twice over: it drove only through native input, so on a framework without that command it dragged nothing, and its height oracle read a tree that carries no rect, comparing `-1` to `-1`. Fixing where it measures made a real failure appear immediately.
+
+## Still open
+
+An injected DOM drag on a gutter does not commit. The gesture arms and releases exactly as it should (the body cursor is set and cleared, so `onGutterDown` runs to the end), the pane rect stays fixed across 69 samples after mousemoves dispatched on `window`, and the `pane.resize` command works in the same window. The state path is sound and only the pointer path fails to land. Whether a real mouse drag works on this framework is not yet measured — that needs a way to measure it first.
 
 ## One writer per connection
 
