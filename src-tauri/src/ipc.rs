@@ -18,7 +18,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Deserialize;
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Manager, State};
 
 // PTY 가 SOKSAK_SOCKET 으로 주입할 소켓 경로(서버 기동 시 1회 설정).
 static SOCKET_PATH: OnceLock<String> = OnceLock::new();
@@ -475,7 +475,7 @@ fn bind_transport(path: &str) -> Result<Box<dyn IpcListenerSeam>, String> {
 
 // 소켓 서버 기동 — 전송은 bind_transport 시임 뒤에서 온다.
 pub fn start(app: AppHandle) -> Result<String, String> {
-    let dir = crate::identity::ambient().home().to_path_buf();
+    let dir = crate::home::soksak_home();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let identifier = app.config().identifier.clone();
     let path = dir
@@ -671,7 +671,7 @@ fn native_reload(app: &AppHandle, label: &str) -> bool {
 }
 
 // 요청을 *타겟 창의* 프론트 registry 로 전달하고 응답을 기다린다. 타겟 = req.window ?? 활성 창 ??
-// "main". broadcast(app.emit) 가 아니라 emit_to(타겟)이라 멀티 윈도우에서 그 창만 응답 → seq 충돌 0.
+// "main". broadcast 가 아니라 라벨 배달(WindowOracle::emit_to)이라 멀티 윈도우에서 그 창만 응답 → seq 충돌 0.
 // 라우팅 계층의 실행 기록(§5 R2) — 창 라우팅에서 끝난 명령(WINDOW_NOT_FOUND·전달 실패·TIMEOUT·
 // 네이티브 reload)은 executor(창 JS)의 registry 계측에 도달하지 못해 활동 기록이 없는 사각지대였다
 // (실측: 닫힌 창으로 보낸 명령들이 무기록 — 관찰 공백). 여기서 동일 계약(command.executed)으로
@@ -718,6 +718,27 @@ fn record_route_outcome(
         None => payload["tts"] = serde_json::json!(message),
     }
     sink.publish("command.executed", "remote", payload);
+}
+
+// 요청 한 건을 타겟 창에 건다 — seq 발급·대기 자리 등록·배달까지 한 곳에서. 창 사실은
+// WindowOracle 계약으로만 만진다(벤더 emit 을 직접 부르면 배달하는 코드가 앱 프로세스에 묶인다).
+// 배달에 실패하면 방금 등록한 자리를 되돌리고 None — 남기면 그 seq 는 오지 않을 답을 영원히
+// 기다리고, cmd_result 는 그 자리를 다시 찾지 못한다.
+// payload 는 seq 를 받아 만든다: id 는 발급된 seq 여야 하고, 그 번호는 여기서만 난다.
+fn post_request(
+    oracle: &dyn crate::window_oracle::WindowOracle,
+    bridge: &CmdBridge,
+    target: &str,
+    payload: impl FnOnce(u64) -> Value,
+) -> Option<(u64, mpsc::Receiver<Value>)> {
+    let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+    let (tx, rx) = mpsc::sync_channel::<Value>(1);
+    bridge.insert(seq, target, tx);
+    if !oracle.emit_to(target, "cmd-request", payload(seq)) {
+        bridge.remove(seq);
+        return None;
+    }
+    Some((seq, rx))
 }
 
 fn route(app: &AppHandle, req: Request) -> Value {
@@ -816,10 +837,10 @@ fn route(app: &AppHandle, req: Request) -> Value {
             }
         }
     };
-    // get_window(Window 레지스트리) — 브라우저 child 를 연 창은 멀티-webview 라 get_webview_window
-    // (단일-webview 전용)에서 빠진다. 그걸 쓰면 브라우저 연 창의 모든 소켓 명령이 WINDOW_NOT_FOUND.
-    // emit_to(label)은 멀티-webview 여도 그 창 메인 webview 로 도달하므로 라우팅은 정상.
-    if app.get_window(&target).is_none() {
+    // 창 생존은 오라클이 말한다(Window 레지스트리 기준) — 브라우저 child 를 연 창은 멀티-webview 라
+    // get_webview_window(단일-webview 전용)에서 빠진다. 그걸 쓰면 브라우저 연 창의 모든 소켓 명령이
+    // WINDOW_NOT_FOUND. emit_to(label)은 멀티-webview 여도 그 창 메인 webview 로 도달한다.
+    if !crate::window_oracle::WindowOracle::is_live(app, &target) {
         let message = format!("창을 찾을 수 없음: {target}");
         record_route_outcome(
             app,
@@ -871,22 +892,18 @@ fn route(app: &AppHandle, req: Request) -> Value {
             error_reply("INTERNAL", &message)
         };
     }
-    let seq = SEQ.fetch_add(1, Ordering::Relaxed);
-    let (tx, rx) = mpsc::sync_channel::<Value>(1);
     let bridge = app.state::<CmdBridge>();
-    bridge.insert(seq, &target, tx);
-
-    let payload = json!({
-        "id": seq,
-        "method": req.method,
-        "params": req.params,
-        "pane": req.pane,
-        "window": target,
-        "parent": req.parent,
-        "origin": req.origin,
-    });
-    if app.emit_to(&target, "cmd-request", payload).is_err() {
-        bridge.remove(seq);
+    let Some((seq, rx)) = post_request(app, &bridge, &target, |seq| {
+        json!({
+            "id": seq,
+            "method": req.method,
+            "params": req.params,
+            "pane": req.pane,
+            "window": target,
+            "parent": req.parent,
+            "origin": req.origin,
+        })
+    }) else {
         record_route_outcome(
             app,
             &req.method,
@@ -900,7 +917,7 @@ fn route(app: &AppHandle, req: Request) -> Value {
             started_ms,
         );
         return error_reply("INTERNAL", "프론트로 요청 전달 실패");
-    }
+    };
 
     // 기본 10s(빠른 행 감지). 요청이 timeoutMs 를 주면 그 값으로 — [1s, 3600s] 클램프(무한대기 금지).
     let timeout = Duration::from_millis(clamp_timeout_ms(req.timeout_ms));
@@ -1012,23 +1029,17 @@ pub fn open_request(
     if !crate::window_oracle::WindowOracle::is_live(app, &target) {
         return None;
     }
-    let seq = SEQ.fetch_add(1, Ordering::Relaxed);
-    let (tx, rx) = mpsc::sync_channel::<Value>(1);
     let bridge = app.state::<CmdBridge>();
-    bridge.insert(seq, &target, tx);
-    let payload = json!({
-        "id": seq,
-        "method": method,
-        "params": params,
-        "pane": Value::Null,
-        "window": target,
-        "origin": origin,
-    });
-    if app.emit_to(&target, "cmd-request", payload).is_err() {
-        bridge.remove(seq);
-        return None;
-    }
-    Some((seq, rx))
+    post_request(app, &bridge, &target, |seq| {
+        json!({
+            "id": seq,
+            "method": method,
+            "params": params,
+            "pane": Value::Null,
+            "window": target,
+            "origin": origin,
+        })
+    })
 }
 
 // pending 회수(멱등) — 정상 완료·좀비 포기·cancel 공용. 남은 tx 를 drop 해 호출자 rx 를 깨운다.
@@ -1467,5 +1478,93 @@ mod tests {
         assert_eq!(clamp_timeout_ms(Some(1_800_000)), 1_800_000); // 30분 LLM 턴 통과.
         assert_eq!(clamp_timeout_ms(Some(3_600_000)), 3_600_000); // 천장 정확히.
         assert_eq!(clamp_timeout_ms(Some(7_200_000)), 3_600_000); // 천장 초과 → 하드캡(무한 X).
+    }
+
+    // ── 창 배달(post_request) ────────────────────────────────────────────────
+    // 요청을 창에 거는 한 점. 창 사실을 오라클 계약으로만 만지므로 아래 테스트는 Tauri 없이
+    // 돈다 — 이 테스트가 컴파일된다는 사실 자체가 "배달은 벤더 타입이 아니다"의 증명이다.
+
+    struct FakeWindows {
+        live: Vec<String>,
+        deaf: bool,
+        sent: Mutex<Vec<(String, String, Value)>>,
+    }
+
+    impl FakeWindows {
+        fn live(labels: &[&str]) -> Self {
+            FakeWindows {
+                live: labels.iter().map(|s| s.to_string()).collect(),
+                deaf: false,
+                sent: Mutex::new(Vec::new()),
+            }
+        }
+        fn deaf(labels: &[&str]) -> Self {
+            FakeWindows {
+                deaf: true,
+                ..FakeWindows::live(labels)
+            }
+        }
+    }
+
+    impl crate::window_oracle::WindowOracle for FakeWindows {
+        fn live_labels(&self) -> Vec<String> {
+            self.live.clone()
+        }
+        fn emit_to(&self, label: &str, event: &str, payload: Value) -> bool {
+            if self.deaf || !self.is_live(label) {
+                return false;
+            }
+            self.sent
+                .lock()
+                .unwrap()
+                .push((label.to_string(), event.to_string(), payload));
+            true
+        }
+    }
+
+    #[test]
+    fn a_posted_request_reaches_the_target_window() {
+        let o = FakeWindows::live(&["w-a"]);
+        let bridge = CmdBridge::default();
+        let (seq, rx) = post_request(&o, &bridge, "w-a", |seq| {
+            json!({ "id": seq, "method": "state.tree" })
+        })
+        .expect("살아있는 창으로의 배달은 성공한다");
+        {
+            let sent = o.sent.lock().unwrap();
+            assert_eq!(sent.len(), 1);
+            assert_eq!(sent[0].0, "w-a");
+            assert_eq!(sent[0].1, "cmd-request");
+            assert_eq!(sent[0].2["id"], seq, "페이로드의 id 는 발급된 seq");
+        }
+        // 등록된 pending 은 그 창의 것이다 — 창이 죽으면 이 대기자가 깨어난다.
+        assert_eq!(bridge.cancel_window("w-a"), 1);
+        assert_eq!(
+            rx.try_recv().expect("대기자는 즉시 깨어난다")["code"],
+            "WINDOW_DESTROYED"
+        );
+    }
+
+    #[test]
+    fn an_undelivered_request_leaves_no_pending() {
+        let o = FakeWindows::deaf(&["w-a"]);
+        let bridge = CmdBridge::default();
+        assert!(
+            post_request(&o, &bridge, "w-a", |seq| json!({ "id": seq })).is_none(),
+            "배달 실패는 값으로 돌린다 — 삼키면 호출자가 영원히 기다린다"
+        );
+        assert_eq!(
+            bridge.cancel_window("w-a"),
+            0,
+            "배달 못 한 요청의 대기 자리는 남지 않는다"
+        );
+    }
+
+    #[test]
+    fn a_request_to_a_dead_window_is_not_delivered() {
+        let o = FakeWindows::live(&["w-a"]);
+        let bridge = CmdBridge::default();
+        assert!(post_request(&o, &bridge, "w-gone", |seq| json!({ "id": seq })).is_none());
+        assert_eq!(bridge.cancel_window("w-gone"), 0);
     }
 }

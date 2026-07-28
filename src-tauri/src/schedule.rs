@@ -17,8 +17,9 @@
 //   backoff — 발화 명령이 {"ok":false} 면 지수 backoff 로 재시도(retry.max 까지). 소진 후 정상 일정 복귀.
 //
 // 발화 스레드는 다음 due 까지 정확히 잔다(고정 간격 폴링 아님). 새 일정/취소/poke 는 Condvar 로 깨워
-// 재계산한다. 발화는 락 밖 단명 스레드에서 CmdBridge(ipc::request_command)로 프론트 registry 에 위임해
-// 긴 명령이 타이밍 루프를 막지 않게 한다.
+// 재계산한다. 발화는 락 밖 단명 스레드에서 중개 계약(CommandDispatch)으로 registry 에 위임해 긴 명령이
+// 타이밍 루프를 막지 않게 한다. 발화 자체는 계약 둘(중개·ScheduleState)만 만진다 — 창도 벤더 타입도
+// 모른다. 앱에 남는 것은 조립(상태 조회·영속)뿐이다.
 //
 // 폴링 비선호 — 정공법(sleep-until-due·완료 트리거·이벤트 poke)이 메인이다. 주기 틱/안전망 폴링은 두지
 // 않는다(Reconcile 은 watch 유실해도 완료 트리거·부팅 스캔이 복구한다).
@@ -29,7 +30,7 @@ use std::sync::{Condvar, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager, State};
 
-use crate::ipc;
+use crate::command_dispatch::CommandDispatch;
 
 fn now_ms() -> u64 {
     SystemTime::now()
@@ -717,13 +718,21 @@ pub fn ensure_started(app: &AppHandle) {
             st.claim_due(now)
         };
         // 락 밖에서 발화 — 각 작업을 단명 스레드로 분리(긴 명령이 루프·서로를 막지 않게). 완료 시 lease 해제.
+        // 앱이 쥐는 것은 조립뿐이다: 중개자(AppHandle)와 상태를 건네고, 제거된 잡의 영속을 지운다.
         for f in fires {
             let app2 = app.clone();
             std::thread::spawn(move || {
-                if f.process_lease {
-                    fire_process(&app2, f);
-                } else {
-                    fire_simple(&app2, f);
+                let id = f.id.clone();
+                let done = {
+                    let st = app2.state::<ScheduleState>();
+                    if f.process_lease {
+                        fire_process(&app2, &st, f)
+                    } else {
+                        fire_simple(&app2, &st, f)
+                    }
+                };
+                if done.removed {
+                    persist_delete(&app2, &id);
                 }
             });
         }
@@ -732,12 +741,12 @@ pub fn ensure_started(app: &AppHandle) {
     });
 }
 
-// 비-프로세스 발화 — f.timeout_ms 까지 단일 recv(route 가 [1s,3600s] 클램프). notify.show 등 즉시 완료.
-fn fire_simple(app: &AppHandle, f: Fire) {
+// 비-프로세스 발화 — f.timeout_ms 까지 단일 요청-응답(중개자가 [1s,3600s] 클램프). notify.show 등 즉시 완료.
+// 영속 제거는 호출자가 한다 — 발화가 DB 까지 쥐면 발화 하나를 검증하는 데 앱과 저장소가 함께 필요해진다.
+fn fire_simple(dispatch: &dyn CommandDispatch, st: &ScheduleState, f: Fire) -> Completion {
     // idempotency 키(PS12) — 같은 due 의 재시도는 같은 키를 나른다(서비스가 res 캐시로 dedup).
     let key = format!("sch:{}:{}:{}", f.id, f.epoch, f.due);
-    let reply = ipc::request_command(
-        app,
+    let reply = dispatch.request(
         f.command,
         f.params,
         f.timeout_ms,
@@ -745,26 +754,16 @@ fn fire_simple(app: &AppHandle, f: Fire) {
         Some(key),
     );
     let ok = reply.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
-    let c = app
-        .state::<ScheduleState>()
-        .complete(&f.id, ok, now_ms(), f.epoch);
-    if c.removed {
-        persist_delete(app, &f.id);
-    }
+    st.complete(&f.id, ok, now_ms(), f.epoch)
 }
 
-// 프로세스-생존 발화 — emit 후 reply(프로세스 exit)까지 대기(ipc 클램프 안 거침 — 도는 중 안 자름).
+// 프로세스-생존 발화 — 배달 후 reply(프로세스 exit)까지 대기(클램프 안 거침 — 도는 중 안 자름).
 // reply 가 ground truth: 정상=ok:true(done), crash/무결과=ok:false(backoff). 좀비(reply 영영 없음)는
-// zombie_backstop 에 거둔다. cancel 은 ipc::close_request 가 채널 끊어 즉시 깨움(누수 0).
-fn fire_process(app: &AppHandle, f: Fire) {
-    let st = app.state::<ScheduleState>();
-    let Some((seq, rx)) = ipc::open_request(app, f.command, f.params, Some("schedule")) else {
-        // emit 실패 — 프론트 도달 불가. 실패로 완료(backoff 여지).
-        let c = st.complete(&f.id, false, now_ms(), f.epoch);
-        if c.removed {
-            persist_delete(app, &f.id);
-        }
-        return;
+// zombie_backstop 에 거둔다. cancel 은 close 가 채널 끊어 즉시 깨움(누수 0).
+fn fire_process(dispatch: &dyn CommandDispatch, st: &ScheduleState, f: Fire) -> Completion {
+    let Some((seq, rx)) = dispatch.open(f.command, f.params, Some("schedule")) else {
+        // 배달 실패 — 프론트 도달 불가. 실패로 완료(backoff 여지).
+        return st.complete(&f.id, false, now_ms(), f.epoch);
     };
     st.set_seq(&f.id, seq, f.epoch);
     // reply=Some(프로세스 exit) / None(좀비 backstop·취소). 무한은 recv(차단), 유한은 recv_timeout.
@@ -773,18 +772,15 @@ fn fire_process(app: &AppHandle, f: Fire) {
         ProcWait::Wait(d) => rx.recv_timeout(Duration::from_millis(d.max(1))).ok(), // Timeout/Disconnect→None.
         ProcWait::Backstop => None, // 이미 좀비 backstop 초과(드묾).
     };
-    ipc::close_request(app, seq); // pending 회수(멱등).
-                                  // reply 의 ok 로 완료(None=좀비/취소→ok:false). complete 가 epoch·존재를 검사 — 취소(제거)·재등록
-                                  // (전체교체)된 job 은 no-op(removed:false) 라 이중 처리·재생성 job 오염·seq steal 이 없다.
+    dispatch.close(seq); // 대기 자리 회수(멱등).
+                         // reply 의 ok 로 완료(None=좀비/취소→ok:false). complete 가 epoch·존재를 검사 — 취소(제거)·재등록
+                         // (전체교체)된 job 은 no-op(removed:false) 라 이중 처리·재생성 job 오염·seq steal 이 없다.
     let ok = reply
         .as_ref()
         .and_then(|v| v.get("ok"))
         .and_then(|b| b.as_bool())
         .unwrap_or(false);
-    let c = st.complete(&f.id, ok, now_ms(), f.epoch);
-    if c.removed {
-        persist_delete(app, &f.id);
-    }
+    st.complete(&f.id, ok, now_ms(), f.epoch)
 }
 
 // ── 영속(app.data, ns="core") ────────────────────────────────────────────────
@@ -914,10 +910,10 @@ pub fn schedule_cancel(
     state: State<ScheduleState>,
     id: String,
 ) -> Result<bool, String> {
-    // 발화 중 프로세스 작업이면 seq 로 pending 을 끊어 fire_process 의 recv 를 즉시 깨운다(좀비 대기
-    // 누수 0). seq 회수는 작업 제거 전. close_request 는 멱등이라 발화 중이 아니어도 무해.
+    // 발화 중 프로세스 작업이면 seq 로 대기 자리를 끊어 fire_process 의 recv 를 즉시 깨운다(좀비 대기
+    // 누수 0). seq 회수는 작업 제거 전. close 는 멱등이라 발화 중이 아니어도 무해.
     if let Some(seq) = state.take_seq(&id) {
-        ipc::close_request(&app, seq);
+        CommandDispatch::close(&app, seq);
     }
     let removed = state.cancel(&id);
     persist_delete(&app, &id);
@@ -1426,6 +1422,193 @@ mod tests {
         let c = st.complete(&id, true, 700, f[0].epoch);
         assert!(!c.removed);
         assert_eq!(st.list()[0].next_at, Some(700)); // pending coalesce → 즉시 재발화.
+    }
+
+    // ── 발화(fire_simple·fire_process) ──────────────────────────────────────
+    // 발화가 만지는 것은 계약 둘(명령 중개·스케줄 상태)뿐이다. 아래 테스트가 Tauri 없이
+    // 돈다는 사실 자체가 "발화는 벤더 타입이 아니다"의 증명이다. 시간은 기다리지 않는다 —
+    // 답은 미리 채널에 실려 있거나(정상) 송신측이 사라져 있다(취소).
+
+    #[derive(Debug, PartialEq)]
+    enum Call {
+        Request {
+            method: String,
+            timeout_ms: u64,
+            origin: Option<String>,
+            key: Option<String>,
+        },
+        Open {
+            method: String,
+            origin: Option<String>,
+        },
+        Close(u64),
+    }
+
+    struct FakeDispatch {
+        reply: Value,             // request 가 돌려줄 봉투.
+        open_reply: Option<Value>, // open 채널에 미리 실어 둘 답(None=송신측 소멸 → 취소·좀비와 같은 모양).
+        refuse_open: bool,        // 배달 실패.
+        calls: Mutex<Vec<Call>>,
+    }
+
+    const FAKE_SEQ: u64 = 77;
+
+    impl FakeDispatch {
+        fn answering(reply: Value) -> Self {
+            FakeDispatch {
+                reply,
+                open_reply: None,
+                refuse_open: false,
+                calls: Mutex::new(Vec::new()),
+            }
+        }
+        fn opening(open_reply: Option<Value>) -> Self {
+            FakeDispatch {
+                open_reply,
+                ..FakeDispatch::answering(Value::Null)
+            }
+        }
+        fn refusing() -> Self {
+            FakeDispatch {
+                refuse_open: true,
+                ..FakeDispatch::answering(Value::Null)
+            }
+        }
+    }
+
+    impl crate::command_dispatch::CommandDispatch for FakeDispatch {
+        fn request(
+            &self,
+            method: String,
+            _params: Value,
+            timeout_ms: u64,
+            origin: Option<&str>,
+            key: Option<String>,
+        ) -> Value {
+            self.calls.lock().unwrap().push(Call::Request {
+                method,
+                timeout_ms,
+                origin: origin.map(str::to_string),
+                key,
+            });
+            self.reply.clone()
+        }
+        fn open(
+            &self,
+            method: String,
+            _params: Value,
+            origin: Option<&str>,
+        ) -> Option<(u64, std::sync::mpsc::Receiver<Value>)> {
+            self.calls.lock().unwrap().push(Call::Open {
+                method,
+                origin: origin.map(str::to_string),
+            });
+            if self.refuse_open {
+                return None;
+            }
+            let (tx, rx) = std::sync::mpsc::sync_channel::<Value>(1);
+            if let Some(v) = self.open_reply.clone() {
+                let _ = tx.try_send(v);
+            }
+            Some((FAKE_SEQ, rx)) // tx 는 여기서 소멸 — 답이 없으면 대기가 즉시 끊긴다.
+        }
+        fn close(&self, seq: u64) {
+            self.calls.lock().unwrap().push(Call::Close(seq));
+        }
+    }
+
+    // 비-프로세스 발화 — 중개 계약으로 명령을 부르고, 답의 ok 로 완료한다.
+    #[test]
+    fn a_fire_needs_no_shell_type() {
+        let st = ScheduleState::default();
+        let id = st.register(spec(Trigger::At { at: 100 }), 0);
+        let f = st.claim_due(150);
+        let epoch = f[0].epoch;
+        let d = FakeDispatch::answering(json!({ "ok": true }));
+        let c = fire_simple(&d, &st, f[0].clone());
+        assert!(c.removed, "At 1회 발화는 성공 후 제거");
+        assert_eq!(
+            d.calls.lock().unwrap()[0],
+            Call::Request {
+                method: "x".into(),
+                timeout_ms: DEFAULT_TIMEOUT_MS,
+                origin: Some("schedule".into()),
+                // 같은 due 의 재시도가 공유하는 idempotency 키(PS12).
+                key: Some(format!("sch:{id}:{epoch}:100")),
+            }
+        );
+    }
+
+    // 실패 답은 backoff 로 간다 — 발화가 답의 ok 를 그대로 읽는지 고정한다.
+    #[test]
+    fn a_failed_reply_keeps_the_job_for_backoff() {
+        let st = ScheduleState::default();
+        let mut s = spec(Trigger::At { at: 100 });
+        s.retry = Some(Retry {
+            max: 1,
+            base_ms: 1000,
+            max_ms: 60_000,
+        });
+        st.register(s, 0);
+        let f = st.claim_due(150);
+        let d = FakeDispatch::answering(json!({ "ok": false, "code": "INTERNAL" }));
+        let c = fire_simple(&d, &st, f[0].clone());
+        assert!(!c.removed);
+        assert!(
+            st.list()[0].next_at.is_some(),
+            "재시도 여력이 있으면 다시 무장한다"
+        );
+    }
+
+    // 프로세스 발화 — 답을 받으면 대기 자리를 회수하고 완료한다(누수 0).
+    #[test]
+    fn a_process_fire_reclaims_its_pending_slot() {
+        let st = ScheduleState::default();
+        let id = st.register(spec(Trigger::At { at: 100 }), 0);
+        let mut f = st.claim_due(150);
+        f[0].process_lease = true;
+        f[0].zombie_backstop_ms = Some(10_800_000);
+        let d = FakeDispatch::opening(Some(json!({ "ok": true })));
+        let c = fire_process(&d, &st, f[0].clone());
+        assert!(c.removed);
+        let calls = d.calls.lock().unwrap();
+        assert_eq!(
+            calls[0],
+            Call::Open {
+                method: "x".into(),
+                origin: Some("schedule".into())
+            }
+        );
+        assert_eq!(calls[1], Call::Close(FAKE_SEQ), "대기 자리는 반드시 회수");
+        // 보고(removed)와 사실(장부)이 어긋나면 호출자가 지운 잡의 영속을 남긴다.
+        assert!(!st.exists(&id), "성공한 At 은 발화와 함께 사라진다");
+    }
+
+    // 답이 영영 없는 발화(취소·좀비)는 실패로 완료한다 — 조용히 사라지지 않는다.
+    #[test]
+    fn a_process_fire_without_a_reply_completes_as_failure() {
+        let st = ScheduleState::default();
+        st.register(spec(Trigger::At { at: 100 }), 0);
+        let mut f = st.claim_due(150);
+        f[0].process_lease = true;
+        let d = FakeDispatch::opening(None); // 무한 대기지만 송신측이 사라져 즉시 끊긴다.
+        let c = fire_process(&d, &st, f[0].clone());
+        assert!(c.removed, "재시도 없는 At 은 실패로도 종료");
+        assert_eq!(d.calls.lock().unwrap()[1], Call::Close(FAKE_SEQ));
+    }
+
+    // 배달 실패(창 없음·emit 실패)는 실패 완료로 끝난다. 회수할 자리도 없다.
+    #[test]
+    fn an_undelivered_process_fire_completes_as_failure() {
+        let st = ScheduleState::default();
+        st.register(spec(Trigger::At { at: 100 }), 0);
+        let mut f = st.claim_due(150);
+        f[0].process_lease = true;
+        let d = FakeDispatch::refusing();
+        let c = fire_process(&d, &st, f[0].clone());
+        assert!(c.removed);
+        let calls = d.calls.lock().unwrap();
+        assert_eq!(calls.len(), 1, "배달 못 했으면 회수할 자리도 없다");
     }
 
     // next_wake — running 작업 제외(완료 notify 가 깨움). 대기 작업의 최소 next_at.

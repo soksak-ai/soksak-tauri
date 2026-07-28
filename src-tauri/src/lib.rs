@@ -26,6 +26,7 @@ mod pty;
 mod pty_delivery;
 mod activity_sink;
 mod ambient_gate;
+mod command_dispatch;
 mod identity;
 mod stream_sink;
 mod window_oracle;
