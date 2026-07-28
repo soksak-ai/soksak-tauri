@@ -242,6 +242,14 @@ pub const COMMANDS: &[Command] = &[
         returns: "null",
         run: run_close_terminal,
     },
+    // 생존 미러 사이드카에 NDJSON 한 왕복을 릴레이한다. 내용은 해석하지 않는다 —
+    // 웹뷰 JS 가 유닉스 소켓을 못 여니 이 프로세스가 대신 연결해 준다.
+    Command {
+        name: "pty_sidecar_request",
+        args: &[Arg { name: "request", ty: "object", required: true }],
+        returns: "object — 사이드카의 답 그대로",
+        run: run_pty_sidecar_request,
+    },
     Command {
         name: "pty_read_sealed_screen",
         args: &[
@@ -1053,6 +1061,18 @@ fn run_close_terminal(ctx: &Ctx, params: &Value) -> Outcome {
 #[serde(rename_all = "camelCase")]
 struct PaneId {
     pane_id: String,
+}
+
+#[derive(serde::Deserialize)]
+struct SidecarRequest {
+    request: Value,
+}
+
+#[cfg(unix)]
+fn run_pty_sidecar_request(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: SidecarRequest| {
+        soksak_core::ptyd::sidecar_service_relay(ctx.identity(), &a.request)
+    })
 }
 
 #[derive(serde::Deserialize)]
