@@ -170,6 +170,7 @@ spec-gate: ## 패키지 빌드(plugin-spec·plugin-api dist — 코어가 소비
 gates: ## 코어 규율 게이트(blocking) — 결합·투명성·배포·경로·어휘 불변식
 	@node scripts/gates/core-decoupling-scan.mjs
 	@node scripts/gates/vocabulary-framework-scan.mjs
+	@node scripts/gates/framework-thin-binding.mjs
 	@node scripts/gates/baseline-gate.mjs
 	@node scripts/gates/c2-transparency-scan.mjs --plugins $${SOKSAK_PLUGINS:-$$HOME/.soksak-dev/plugins}
 	@node scripts/gates/core-git-scan.mjs

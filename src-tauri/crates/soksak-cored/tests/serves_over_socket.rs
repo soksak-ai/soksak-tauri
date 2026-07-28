@@ -2106,7 +2106,8 @@ impl FakeHost {
         let mut line = String::new();
         self.reader.read_line(&mut line).expect("배달 읽기");
         let push: Value = serde_json::from_str(line.trim()).expect("배달은 한 줄 JSON");
-        let id = push["deliver"]["id"].as_str().expect("배달에는 상관 id 가 있다");
+        // 앱의 cmd_result 와 **같은 축**(u64 seq) — 렌더러는 받은 id 를 그대로 되울린다.
+        let id = push["deliver"]["id"].as_u64().expect("배달에는 상관 id 가 있다");
         // 회신은 **다른 연결**로 보낸다 — 창이 자기 요청 흐름과 무관하게 답하는 실제 모양이다.
         let conn = UnixStream::connect(&self.socket).expect("회신 연결");
         let mut w = conn.try_clone().unwrap();
