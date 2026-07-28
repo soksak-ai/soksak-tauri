@@ -9,6 +9,7 @@ mod dockmenu;
 mod fs;
 mod headless;
 mod home;
+mod login_shell;
 mod http;
 mod i18n;
 pub mod ipc;

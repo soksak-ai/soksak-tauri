@@ -37,6 +37,8 @@ pub struct Ctx {
     /// 자기 잠금과 경쟁하고, 그 사이에 남이 끼어들 틈도 생긴다. 못 잡았으면 읽기만 서빙한다:
     /// 쓰기를 조용히 성공시키는 것이 이 잠금이 막으려는 바로 그 일이다.
     write_lock: Option<WriteLock>,
+    /// 띄운 쪽이 준 로그인 셸(없을 수 있다).
+    login_shell: Option<String>,
 }
 
 impl Ctx {
@@ -47,6 +49,7 @@ impl Ctx {
             identity,
             data_dir,
             write_lock: None,
+            login_shell: None,
         }
     }
 
@@ -87,6 +90,19 @@ impl Ctx {
     pub fn with_data_dir(mut self, dir: impl Into<PathBuf>) -> Self {
         self.data_dir = dir.into();
         self
+    }
+
+    /// 사용자 로그인 셸. 띄운 쪽이 값으로 준다 — `$SHELL` 은 프로세스 속성이 아니라 사용자
+    /// 계정 속성이라, 이 프로세스가 자기 환경에서 읽으면 띄운 쪽의 답을 흉내내는 것이 된다.
+    pub fn with_login_shell(mut self, shell: impl Into<String>) -> Self {
+        self.login_shell = Some(shell.into());
+        self
+    }
+
+    /// 로그인 셸 — 받지 못했으면 없다. 없는 것을 있는 척 추측하지 않는다(자기 환경을 읽는
+    /// 것이 곧 그 추측이다). 셸이 필요한 명령은 사유를 달고 거절한다.
+    pub fn login_shell(&self) -> Option<&str> {
+        self.login_shell.as_deref()
     }
 
     pub fn identity(&self) -> &Identity {

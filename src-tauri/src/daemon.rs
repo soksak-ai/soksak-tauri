@@ -128,18 +128,9 @@ fn kill_group(child: &Arc<Mutex<Child>>, force: bool) {
     }
 }
 
-/// 이 프로세스가 상속한 로그인 셸 — 환경을 읽는 **유일한 자리**(ambient_gate 등재: daemon.rs/SHELL).
-/// 아래(spawn_shell)로는 값이 인자로 흐른다. 커맨드 입구가 여기서 한 번 읽어 넘기고, 프로세스가
-/// 갈리면 그 자리에 호출자가 준 셸 경로가 온다. 윈도우는 셸 개념이 달라 cmd 가 그 자리다.
+/// 로그인 셸 — 읽는 자리는 crate::login_shell 하나다. 여기는 그 값을 받아 쓴다.
 fn login_shell() -> String {
-    #[cfg(unix)]
-    {
-        std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into())
-    }
-    #[cfg(not(unix))]
-    {
-        "cmd".to_string()
-    }
+    crate::login_shell::ambient()
 }
 
 /// 주어진 셸로 스폰 — GUI PATH 함정 대응(로그인 셸 래핑, npm_global_dirs 와 동일 기법).

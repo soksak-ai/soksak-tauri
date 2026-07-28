@@ -79,19 +79,15 @@ pub struct NpmDirs {
 // npm 글로벌 prefix → bin/lib 디렉터리(binary_integrity 의 경로 계산용). 로그인 셸로 PATH 보존.
 #[tauri::command]
 pub fn npm_global_dirs() -> Result<NpmDirs, String> {
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
-    let out = std::process::Command::new(&shell)
-        .args(["-lc", "npm prefix -g"])
+    let shell = crate::login_shell::ambient();
+    let (prog, args) = soksak_core::shellq::npm_prefix_argv(&shell);
+    let out = std::process::Command::new(prog)
+        .args(args)
         .output()
         .map_err(|e| e.to_string())?;
-    let prefix = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    if prefix.is_empty() {
-        return Err("npm prefix 미해소".into());
-    }
-    Ok(NpmDirs {
-        bin_dir: format!("{prefix}/bin"),
-        lib_dir: format!("{prefix}/lib"),
-    })
+    let (bin_dir, lib_dir) =
+        soksak_core::shellq::npm_dirs_from_prefix(&String::from_utf8_lossy(&out.stdout))?;
+    Ok(NpmDirs { bin_dir, lib_dir })
 }
 
 

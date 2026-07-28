@@ -724,3 +724,88 @@ fn without_the_write_lock_a_write_is_refused_and_a_read_still_works() {
     }));
     assert_eq!(after["data"], "before", "거절해 놓고 썼다: {after}");
 }
+
+// ── 로그인 셸을 인자로 받는다 ────────────────────────────────────────────────
+//
+// 이식을 막던 사유("부팅 인자로 셸을 받으면 GUI 의 좁은 PATH 에 다시 묶인다")는 성립하지
+// 않는다 — 넘기는 값은 PATH 가 아니라 셸 실행 파일 경로이고 `-l` 이 rc/profile 로 PATH 를
+// 새로 만든다. 사유가 사라졌으므로 두 명령은 서빙 가능하다.
+//
+// 판별자: **픽스처 셸만 낼 수 있는 답**을 요구한다. 프로세스 env 를 읽고 있으면 진짜 셸이
+// 답하므로 통과할 수 없다.
+
+/// 답을 아는 가짜 셸 — `-lc <cmd>` 를 받아 정해진 답만 낸다.
+fn fixture_shell(dir: &std::path::Path) -> std::path::PathBuf {
+    let path = dir.join("fixture-shell");
+    std::fs::write(
+        &path,
+        "#!/bin/sh\n\
+         # 이 셸만이 이렇게 답한다: sh 는 없다고, npm prefix 는 /fixture/prefix 라고.\n\
+         case \"$2\" in\n\
+         *'command -v sh'*) exit 1 ;;\n\
+         *'command -v node'*) echo /fixture/bin/node; exit 0 ;;\n\
+         *'npm prefix -g'*) echo /fixture/prefix; exit 0 ;;\n\
+         *) exit 1 ;;\n\
+         esac\n",
+    )
+    .expect("픽스처 셸");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    path
+}
+
+fn spawn_with_shell(name: &str) -> (Helper, std::path::PathBuf) {
+    let dir = fixture_dir(name);
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let shell = fixture_shell(&dir);
+    let socket = dir.join("h.sock");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_soksak-cored"))
+        .arg("--socket").arg(&socket)
+        .arg("--home").arg(&home)
+        .arg("--identifier").arg("com.soksak.dev")
+        .arg("--login-shell").arg(&shell)
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("cored 스폰");
+    let mut ready = String::new();
+    let stdout = child.stdout.take().unwrap();
+    assert!(matches!(BufReader::new(stdout).read_line(&mut ready), Ok(n) if n > 0));
+    (Helper { child, socket }, shell)
+}
+
+#[test]
+fn serves_shell_which_by_asking_the_shell_it_was_given() {
+    let (helper, _shell) = spawn_with_shell("shell-which");
+
+    // 픽스처 셸은 sh 가 **없다**고 답한다. 진짜 셸에 물었다면 sh 는 반드시 있으므로 true 다 —
+    // 그래서 이 false 하나가 "인자로 받은 셸에 물었는가"의 판별자다.
+    let reply = helper.ask(json!({
+        "method": "shell_which", "params": { "bin": "sh" }
+    }));
+    assert_eq!(reply["ok"], true, "{reply}");
+    assert_eq!(reply["data"], false, "프로세스 env 의 셸에 물었다: {reply}");
+
+    let found = helper.ask(json!({
+        "method": "shell_which", "params": { "bin": "node" }
+    }));
+    assert_eq!(found["data"], true, "{found}");
+
+    // 주입은 셸에 닿기 전에 막힌다.
+    let bad = helper.ask(json!({
+        "method": "shell_which", "params": { "bin": "a;id" }
+    }));
+    assert_eq!(bad["data"], false, "셸 메타문자를 넘겼다: {bad}");
+}
+
+#[test]
+fn serves_npm_global_dirs_from_the_shell_it_was_given() {
+    let (helper, _shell) = spawn_with_shell("npm-dirs");
+    let reply = helper.ask(json!({ "method": "npm_global_dirs", "params": {} }));
+    assert_eq!(reply["ok"], true, "{reply}");
+    assert_eq!(reply["data"]["bin_dir"], "/fixture/prefix/bin", "{reply}");
+    assert_eq!(reply["data"]["lib_dir"], "/fixture/prefix/lib", "{reply}");
+}

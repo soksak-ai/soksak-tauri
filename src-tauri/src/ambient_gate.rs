@@ -52,18 +52,6 @@ const ALLOWED: &[AmbientRead] = &[
         after_split: "동일",
     },
     AmbientRead {
-        file: "daemon.rs",
-        key: "SHELL",
-        why: "사용자 로그인 셸로 데몬 명령을 띄운다 — 사용자의 PATH 가 필요하다",
-        after_split: "셸 경로를 인자로 받는다(자식 env 상속은 프로세스가 갈리면 달라진다)",
-    },
-    AmbientRead {
-        file: "pty.rs",
-        key: "SHELL",
-        why: "PTY 세션의 기본 셸",
-        after_split: "이미 spawn 인자로 셸을 받는다 — 이 읽기는 폴백 기본값",
-    },
-    AmbientRead {
         file: "pty.rs",
         key: "COMSPEC",
         why: "윈도우의 SHELL 대응",
@@ -80,6 +68,12 @@ const ALLOWED: &[AmbientRead] = &[
         key: "HOME",
         why: "ZDOTDIR 부재 시의 zsh 기본 위치",
         after_split: "동일",
+    },
+    AmbientRead {
+        file: "login_shell.rs",
+        key: "SHELL",
+        why: "사용자 로그인 셸 — PTY 기본 셸·데몬 spawn·npm prefix 가 모두 이 값을 쓴다. 읽는 자리는 여기 하나이고 아래로는 인자로 흐른다",
+        after_split: "부팅 인자로 온다 — $SHELL 은 프로세스 속성이 아니라 사용자 계정 속성이라 --home·--identifier 와 같은 자리다",
     },
     AmbientRead {
         file: "headless.rs",
@@ -104,12 +98,6 @@ const ALLOWED: &[AmbientRead] = &[
         key: "SOKSAK_E2E_KEK",
         why: "e2e 가 키체인 프롬프트 없이 볼트를 열기 위한 주입 KEK",
         after_split: "KekSource 주입 seam 이 이미 있다 — env 는 그 구현 하나일 뿐",
-    },
-    AmbientRead {
-        file: "runtime_dep.rs",
-        key: "SHELL",
-        why: "npm prefix 를 로그인 셸로 물어 사용자 PATH 를 보존한다",
-        after_split: "감사가 이식 차단으로 지목 — 셸 경로를 인자로 받아야 한다",
     },
 ];
 
@@ -165,6 +153,49 @@ fn unregistered() -> Vec<String> {
     out
 }
 
+
+/// 로그인 셸(`SHELL`)을 읽는 자리를 파일:줄로 모은다.
+///
+/// 등재표는 "왜 읽는가"를 묻지 "몇 곳이 읽는가"를 묻지 않는다. 그래서 셋이 각자 읽고 폴백이
+/// 갈려도 표는 통과한다 — 그 상태가 실제로 있었다(pty.rs `/bin/bash`, daemon.rs·runtime_dep.rs
+/// `/bin/sh`). 같은 프로세스가 같은 질문에 두 답을 갖는 것은 그 자체로 결함이다.
+fn login_shell_readers() -> Vec<String> {
+    let base = format!("{}/src", env!("CARGO_MANIFEST_DIR"));
+    let mut files: Vec<std::path::PathBuf> = Vec::new();
+    collect_rs(std::path::Path::new(&base), &mut files);
+    files.sort();
+    let mut out = Vec::new();
+    for path in files {
+        let name = path
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+        if name == "ambient_gate.rs" {
+            continue; // 등재표 자신
+        }
+        let src = std::fs::read_to_string(&path).unwrap_or_default();
+        let mut in_test = false;
+        let mut depth: i32 = 0;
+        for (i, line) in src.lines().enumerate() {
+            if line.contains("#[cfg(test)]") {
+                in_test = true;
+                depth = 0;
+            }
+            if in_test {
+                depth += line.matches('{').count() as i32 - line.matches('}').count() as i32;
+                if depth <= 0 && line.contains('}') {
+                    in_test = false;
+                }
+                continue;
+            }
+            if line.contains("env::var(\"SHELL\")") {
+                out.push(format!("{name}:{}", i + 1));
+            }
+        }
+    }
+    out
+}
+
 fn collect_rs(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
@@ -182,6 +213,33 @@ fn collect_rs(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+
+    /// 로그인 셸을 읽는 자리는 하나다.
+    ///
+    /// 여럿이면 폴백이 갈린다 — 실제로 갈려 있었다(pty.rs `/bin/bash` vs 나머지 `/bin/sh`).
+    /// 같은 프로세스가 같은 질문에 두 답을 갖는다. 더 비싼 것은 그 다음이다: 읽은 값이 읽은
+    /// 함수 밖으로 흐르지 않아 명령의 몸이 프로세스 env 에 묶이고, 그래서 cored 로 이식할 수
+    /// 없다. 한 자리가 읽어 인자로 흘리면 폴백 분기와 이식 차단이 함께 풀린다.
+    #[test]
+    fn the_login_shell_has_one_reader() {
+        let readers = login_shell_readers();
+        assert_eq!(
+            readers.len(),
+            1,
+            "로그인 셸을 {}곳에서 읽는다 {readers:?} — 한 자리가 읽고 나머지는 인자로 받아라",
+            readers.len()
+        );
+    }
+
+    /// 오라클 생존 — 스캔이 죽으면 위 검사는 아무것도 지키지 않는다("0"의 두 얼굴).
+    #[test]
+    fn the_login_shell_scan_actually_finds_a_reader() {
+        assert!(
+            !login_shell_readers().is_empty(),
+            "스캐너가 아무것도 못 찾았다 — 검사가 통과한 것이 아니라 죽은 것이다"
+        );
+    }
 
     #[test]
     fn every_ambient_read_is_registered() {

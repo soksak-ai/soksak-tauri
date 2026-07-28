@@ -117,6 +117,20 @@ pub const COMMANDS: &[Command] = &[
         returns: "ThemeFile[] (파일명·이름)",
         run: run_themes_scan,
     },
+    // 로그인 셸을 **값으로** 받아 서는 둘. 셸을 못 받았으면 추측하지 않고 사유를 달고 거절한다 —
+    // 자기 환경(`$SHELL`)을 읽는 것이 곧 그 추측이고, 그 답은 띄운 쪽의 답과 다를 수 있다.
+    Command {
+        name: "shell_which",
+        args: &[Arg { name: "bin", ty: "string", required: REQ }],
+        returns: "bool (사용자 PATH 에 있는가)",
+        run: run_shell_which,
+    },
+    Command {
+        name: "npm_global_dirs",
+        args: &[],
+        returns: "{ bin_dir, lib_dir }",
+        run: run_npm_global_dirs,
+    },
     Command {
         name: "plugin_scan",
         args: &[],
@@ -364,6 +378,55 @@ fn run_themes_scan(ctx: &Ctx, params: &Value) -> Outcome {
     // 홈은 부팅 상태에서 온다. 앱은 `identity::ambient().themes_dir()` 로 같은 곳을 본다.
     dispatch(params, |_: NoArgs| {
         themes::scan(&ctx.identity().themes_dir())
+    })
+}
+
+#[derive(serde::Deserialize)]
+struct WhichArgs {
+    bin: String,
+}
+
+fn run_shell_which(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: WhichArgs| {
+        let Some(shell) = ctx.login_shell() else {
+            return Err(
+                "로그인 셸을 받지 못했다 — 띄운 쪽이 --login-shell 로 넘겨야 한다(자기 환경을 \
+                 읽으면 띄운 쪽과 다른 답이 나온다)"
+                    .to_string(),
+            );
+        };
+        // 이름 검증에 걸리면 셸에 닿기 전에 false 다. 물어보지 못한 것과 없는 것을 같은 값으로
+        // 답하는 셈이지만, 앱의 같은 명령이 그렇게 답해 왔고 호출자는 bool 하나만 본다.
+        let Some((prog, args)) = soksak_core::shellq::which_argv(shell, &a.bin) else {
+            return Ok(false);
+        };
+        Ok(std::process::Command::new(prog)
+            .args(args)
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false))
+    })
+}
+
+#[derive(serde::Serialize)]
+struct NpmDirs {
+    bin_dir: String,
+    lib_dir: String,
+}
+
+fn run_npm_global_dirs(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |_: NoArgs| {
+        let Some(shell) = ctx.login_shell() else {
+            return Err("로그인 셸을 받지 못했다 — 띄운 쪽이 --login-shell 로 넘겨야 한다".to_string());
+        };
+        let (prog, args) = soksak_core::shellq::npm_prefix_argv(shell);
+        let out = std::process::Command::new(prog)
+            .args(args)
+            .output()
+            .map_err(|e| e.to_string())?;
+        let (bin_dir, lib_dir) =
+            soksak_core::shellq::npm_dirs_from_prefix(&String::from_utf8_lossy(&out.stdout))?;
+        Ok(NpmDirs { bin_dir, lib_dir })
     })
 }
 

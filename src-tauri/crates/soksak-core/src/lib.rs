@@ -22,6 +22,7 @@ pub mod identity;
 pub mod integrity;
 pub mod kv;
 pub mod pathx;
+pub mod shellq;
 pub mod plugin_dir;
 pub mod session;
 pub mod store_lock;

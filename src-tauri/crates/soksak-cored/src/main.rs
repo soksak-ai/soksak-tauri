@@ -17,13 +17,16 @@ const USAGE: &str = "\
 soksak-cored — serves shell-free commands over a socket
 
 USAGE:
-    soksak-cored --socket <path> --home <path> --identifier <id> [--data-dir <path>]
+    soksak-cored --socket <path> --home <path> --identifier <id> [--data-dir <path>] [--login-shell <path>]
 
 OPTIONS:
     --socket <path>      Unix socket to bind and serve (required)
     --home <path>        identity home this helper serves (required)
     --identifier <id>    identity of that home, e.g. com.soksak.dev (required)
     --data-dir <path>    app.data directory, when the spawner moved it (default: <home>/data)
+    --login-shell <path> user login shell. $SHELL belongs to the user account, not to this
+                         process — the spawner reads it once and passes it as a value. Without
+                         it, shell-backed commands refuse by name instead of guessing.
     --help               print this and exit
     --version            print the version and the socket protocol it speaks
 
@@ -86,6 +89,9 @@ fn boot(args: &[String]) -> Result<(String, Ctx), String> {
     let identifier = take_value(args, "--identifier")?;
     let mut ctx = Ctx::new(Identity::new(home, identifier));
     // 데이터 경로 이동은 띄운 쪽만 안다(앱의 debug 전용 격리). 안 주면 홈에서 파생한다.
+    if let Ok(shell) = take_value(args, "--login-shell") {
+        ctx = ctx.with_login_shell(shell);
+    }
     if let Ok(dir) = take_value(args, "--data-dir") {
         ctx = ctx.with_data_dir(dir);
     }

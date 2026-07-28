@@ -202,7 +202,7 @@ fn default_shell() -> String {
     if cfg!(windows) {
         std::env::var("COMSPEC").unwrap_or_else(|_| "powershell.exe".to_string())
     } else {
-        std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string())
+        crate::login_shell::ambient()
     }
 }
 
@@ -897,29 +897,27 @@ pub fn pty_daemon_upgrade(
 // 플러그인 프로그램 ensure(§2.6)가 활성화 시점에 호출한다.
 #[tauri::command]
 pub fn shell_which(bin: String) -> bool {
-    // 셸 한 줄에 끼워 넣으므로 바이너리 이름 문자만 허용(주입 차단).
-    if bin.is_empty()
-        || !bin
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
-    {
-        return false;
-    }
+    // 이름 검증·argv 조립은 코어가 소유한다(soksak_core::shellq) — cored 도 같은 로직으로
+    // 답해야 두 프로세스가 같은 질문에 같은 답을 낸다.
     let shell = default_shell();
     if cfg!(windows) {
-        std::process::Command::new(&shell)
+        if !soksak_core::shellq::is_safe_binary_name(&bin) {
+            return false;
+        }
+        return std::process::Command::new(&shell)
             .args(["-Command", &format!("Get-Command {bin}")])
             .output()
             .map(|o| o.status.success())
-            .unwrap_or(false)
-    } else {
-        // -l: 로그인 셸 — 사용자의 rc/profile 이 구성한 PATH 그대로.
-        std::process::Command::new(&shell)
-            .args(["-lc", &format!("command -v {bin}")])
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
+            .unwrap_or(false);
     }
+    let Some((prog, args)) = soksak_core::shellq::which_argv(&shell, &bin) else {
+        return false;
+    };
+    std::process::Command::new(prog)
+        .args(args)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
 }
 
 // ── soksak-ptyd 클라이언트(전송) — 계약은 soksak-spec-pty 가 정본 ────────────

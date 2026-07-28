@@ -162,9 +162,18 @@ async function ensureCored({
   // 조용히 물러난다(cored 자신의 싱글턴 프로브).
   if (await probe(socketPath)) return adopted;
 
+  // 로그인 셸도 부팅 인자다. `$SHELL` 은 프로세스 속성이 아니라 **사용자 계정 속성**이라,
+  // cored 가 자기 환경에서 읽으면 자기를 띄운 쪽의 환경을 사용자의 것인 양 답하게 된다.
+  // 넘기지 않으면 cored 는 추측하지 않고 셸이 필요한 명령을 사유와 함께 거절한다.
+  const loginShell = process.env.SHELL;
   const child = spawn(
     binary,
-    ["--socket", socketPath, "--home", identity.home, "--identifier", identity.identifier],
+    [
+      "--socket", socketPath,
+      "--home", identity.home,
+      "--identifier", identity.identifier,
+      ...(loginShell ? ["--login-shell", loginShell] : []),
+    ],
     { stdio: ["ignore", "pipe", "pipe"] },
   );
 
