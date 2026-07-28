@@ -481,6 +481,14 @@ pub const COMMANDS: &[Command] = &[
         returns: "null",
         run: run_data_kv_set,
     },
+    // 닫힌 창의 흔적 폐기 — 남기면 다음 부트의 리스폰이 그 창을 되살린다(닫을수록 늘어난다).
+    // 무엇을 지우는가는 코어의 규칙이다(window_traces); 여기는 저장소를 여는 자리다.
+    Command {
+        name: "window_traces_prune",
+        args: &[Arg { name: "label", ty: "string", required: REQ }],
+        returns: "{ snapshot: bool, slot: bool } — 실제로 지운 것",
+        run: run_window_traces_prune,
+    },
     Command {
         name: "app_environment",
         args: &[],
@@ -1599,6 +1607,56 @@ impl soksak_core::kv::KvWrite for SqliteRows {
             .map(|_| ())
             .map_err(|e| e.to_string())
     }
+}
+
+impl soksak_core::kv::KvDelete for SqliteRows {
+    fn remove(&self, ns: &str, key: &str) -> Result<bool, String> {
+        self.conn
+            .execute(soksak_core::kv::DELETE_SQL, (ns, key))
+            .map(|n| n > 0)
+            .map_err(|e| e.to_string())
+    }
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WindowTracesArg {
+    label: String,
+}
+
+// 닫힌 창의 흔적 폐기 — **무엇을 지우는가는 코어가 정한다**(window_traces).
+//
+// 이 자리는 저장소를 여는 일만 한다. Tauri 는 자기 연결로 같은 규칙을 부르고(window.rs),
+// Electron 은 이 명령으로 부른다 — 창을 부수는 쪽이 어디든 남는 것은 같아야 한다.
+fn run_window_traces_prune(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: WindowTracesArg| {
+        if !ctx.owns_writes() {
+            return Err(format!(
+                "이 저장소의 쓰기는 다른 프로세스가 소유한다({}) — 흔적 폐기는 그쪽이 한다",
+                ctx.db_path().display()
+            ));
+        }
+        let conn = rusqlite::Connection::open(ctx.db_path())
+            .map_err(|e| format!("저장소 열기 실패: {e}"))?;
+        let store = SqliteRows { conn };
+        let ns = soksak_core::window_traces::NS;
+
+        // ① 스냅샷. 없던 것을 지우는 것은 성공이다(멱등).
+        let snapshot_removed =
+            soksak_core::kv::delete(&store, ns, &soksak_core::window_traces::snapshot_key(&a.label))?;
+
+        // ② manifest slot. 바뀐 게 없으면 저장하지 않는다 — 안 바뀐 값을 다시 쓰면 그 쓰기가
+        // 다른 창의 동시 갱신을 되돌린다.
+        let key = soksak_core::window_traces::MANIFEST_KEY;
+        let mut slot_removed = false;
+        if let Some(mut manifest) = soksak_core::kv::get(&store, ns, key)? {
+            if soksak_core::window_traces::prune_slot(&mut manifest, &a.label) {
+                soksak_core::kv::set(&store, ns, key, &manifest, crate::ledger::now_ms())?;
+                slot_removed = true;
+            }
+        }
+        Ok(serde_json::json!({ "snapshot": snapshot_removed, "slot": slot_removed }))
+    })
 }
 
 #[derive(serde::Deserialize)]

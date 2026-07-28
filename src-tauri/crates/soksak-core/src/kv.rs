@@ -27,8 +27,18 @@ pub trait KvWrite {
     fn put(&self, ns: &str, key: &str, raw: &str, updated_ms: u64) -> Result<(), String>;
 }
 
+/// KV 한 칸을 지우는 자리. 없던 칸을 지우는 것은 **성공**이다(멱등) — 없음을 오류로 만들면
+/// 두 번 부르는 회수 경로가 두 번째에 실패한다.
+pub trait KvDelete {
+    /// 지웠으면 true, 원래 없었으면 false. 어느 쪽도 오류가 아니다.
+    fn remove(&self, ns: &str, key: &str) -> Result<bool, String>;
+}
+
 /// 조회 질의문 — 구현자는 이것을 그대로 쓴다.
 pub const SELECT_SQL: &str = "SELECT v FROM kv WHERE ns=?1 AND k=?2";
+
+/// 삭제 질의문. 읽기·쓰기와 같은 이유로 질의문은 상수가 소유한다.
+pub const DELETE_SQL: &str = "DELETE FROM kv WHERE ns=?1 AND k=?2";
 
 /// 기록 질의문(upsert). 같은 (ns,key) 는 마지막 값이 남는다.
 pub const UPSERT_SQL: &str = "INSERT INTO kv(ns,k,v,updated) VALUES(?1,?2,?3,?4)\
@@ -80,6 +90,12 @@ pub fn set(
     validate_ns(ns)?;
     let raw = serde_json::to_string(value).map_err(|e| e.to_string())?;
     store.put(ns, key, &raw, updated_ms)
+}
+
+/// KV 삭제 한 번 — ns 검사, 삭제. 조회·기록과 같은 순서다(검사가 먼저).
+pub fn delete(store: &dyn KvDelete, ns: &str, key: &str) -> Result<bool, String> {
+    validate_ns(ns)?;
+    store.remove(ns, key)
 }
 
 #[cfg(test)]

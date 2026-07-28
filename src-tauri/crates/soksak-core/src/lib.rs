@@ -47,4 +47,5 @@ pub mod udp;
 pub mod unit_dev;
 pub mod unit_target;
 pub mod window_spec;
+pub mod window_traces;
 pub mod surface_spec;

@@ -561,6 +561,13 @@
         "app-process-scan"
       ],
       "note": "렌더러를 죽이고 되살아나는지 본다. 죽일 대상을 이름으로 지목하는 것부터 프레임워크의 프로세스 모델이다."
+    },
+    {
+      "file": "window-traces.mjs",
+      "role": "harness",
+      "class": "A",
+      "surfaces": [],
+      "note": "창을 닫으면 그 창의 영속 흔적(스냅샷 kv·manifest slot)이 함께 사라지는지 잰다. 소켓 명령만 쓰므로 두 프레임워크에 같은 답을 요구한다 — 규칙은 코어의 것이고(window_traces), 프레임워크는 부르는 자리만 다르다."
     }
   ]
 }

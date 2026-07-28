@@ -35,6 +35,8 @@ fs.mkdirSync(SPIKE_HOME, { recursive: true });
 
 /** 창 라벨 ↔ BrowserWindow. 라벨은 앱의 정체성 축이므로 프레임워크가 부여하고 지킨다. */
 const windows = new Map();
+// 종료 중 표식 — before-quit 이 세운다(개별 닫기와 종료를 가른다).
+let quitting = false;
 
 
 /** 부팅 창의 라벨 — 컨트롤 플레인의 예약어다(NAMING 4b). 프론트는 이 이름 하나로 컨트롤 플레인
@@ -107,6 +109,15 @@ function createWindow(label, rect, bootQuery) {
     void callBackend("process_reclaim_by_window", { window: label }).catch((e) => {
       console.error(`[electron-spike] 창 자식 회수 실패(${label}): ${e.code || e.message}`);
     });
+    // 개별 닫기는 그 창의 영속 흔적도 함께 폐기한다. 남기면 다음 부트의 리스폰이 그 slot 을
+    // 되살려 닫은 창이 재시작마다 돌아온다 — 닫을수록 늘어난다(실측: 창 15 개 부활).
+    // 앱 종료의 창 파괴는 지나가지 않는다: 그때는 세션이 보존되어야 다음 기동에 되살아난다.
+    // 무엇이 흔적인지는 코어가 정한다(window_traces) — 여기서 규칙을 다시 적지 않는다.
+    if (!quitting) {
+      void callBackend("window_traces_prune", { label }).catch((e) => {
+        console.error(`[electron-spike] 창 흔적 폐기 실패(${label}): ${e.code || e.message}`);
+      });
+    }
     // 사라진 창을 여기서 지우지 않는다 — 살아 있는 목록을 보내면 장부가 스스로 맞춘다(멱등).
     announceWindows();
   });
@@ -493,6 +504,11 @@ function boot() {
 });
 }
 
+// 종료 중인가 — 종료의 창 파괴는 개별 닫기가 아니다. 세션은 보존되어야 다음 기동에 되살아난다.
+// 이 표식이 없으면 앱을 끄는 것만으로 열려 있던 창 전부의 흔적이 지워진다(복원이 죽는다).
+app.on("before-quit", () => {
+  quitting = true;
+});
 app.on("window-all-closed", () => app.quit());
 // 프레임워크가 내려가면 연결도 놓고, 자기가 띄운 cored도 거둔다. 외부에서 지목한 소켓의 프로세스는
 // 남의 것이라 건드리지 않는다. 회수는 값으로 돌려준다 — 거뒀는지 확인할 수 있어야 한다.

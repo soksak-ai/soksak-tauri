@@ -238,15 +238,15 @@ pub fn take_user_closed(label: &str) -> bool {
 // 지우는 것: ① 그 창의 워크스페이스 스냅샷(core kv "window/<label>") ② manifest("windows")의
 // 그 창 slot. 식별자가 uuid 라 유령 복원은 없지만, 닫힌 창의 흔적을 남기면 죽은 슬롯이
 // manifest 에 쌓여 respawn 대상을 오염시킨다 — 사용자 닫기 = 흔적 폐기가 위생이다.
+// 무엇이 흔적인지는 코어가 정한다(soksak_core::window_traces) — 이 자리는 연결을 쥔 쪽이다.
+// 여기서 규칙을 한 벌 더 적으면 다른 프레임워크의 폐기와 갈라지고, 그 어긋남은 오류가 아니라
+// "한쪽에서만 창이 되살아난다"로 나타난다.
 pub fn prune_window_persistence(conn: &rusqlite::Connection, label: &str) -> Result<(), String> {
-    crate::data::store::kv_delete(conn, "core", &format!("window/{label}"))?;
-    if let Some(mut m) = crate::data::store::kv_get(conn, "core", "windows")? {
-        if let Some(slots) = m.get_mut("slots").and_then(|s| s.as_array_mut()) {
-            let before = slots.len();
-            slots.retain(|s| s.get("label").and_then(|l| l.as_str()) != Some(label));
-            if slots.len() != before {
-                crate::data::store::kv_set(conn, "core", "windows", &m)?;
-            }
+    use soksak_core::window_traces as traces;
+    crate::data::store::kv_delete(conn, traces::NS, &traces::snapshot_key(label))?;
+    if let Some(mut m) = crate::data::store::kv_get(conn, traces::NS, traces::MANIFEST_KEY)? {
+        if traces::prune_slot(&mut m, label) {
+            crate::data::store::kv_set(conn, traces::NS, traces::MANIFEST_KEY, &m)?;
         }
     }
     Ok(())
