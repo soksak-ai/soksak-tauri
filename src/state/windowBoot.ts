@@ -6,7 +6,7 @@
 //
 // coreStore 가 localStorage 동기캐시 + app.data 권위·broadcast 를 흡수하므로 여기선 직렬화/배선만.
 
-import { invoke, currentWindow } from "../platform";
+import { invoke, currentWindow } from "../framework";
 import { safeListen } from "../lib/safeListen";
 import { currentWindowLabel } from "../lib/webviewLabels";
 import { makeCoreStore } from "./coreStore";

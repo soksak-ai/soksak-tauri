@@ -10,7 +10,7 @@
 // contributes.views[].nativeSurface=true 로 "선언"하고(spec 데이터 주도), 여기는 그 선언에서 파생한
 // ownsSurface 술어로만 판정한다. 코어에 플러그인 id 하드코딩 = 강결합(플러그인/코어 분리 원칙 위반).
 
-import { invoke } from "../platform";
+import { invoke } from "../framework";
 import { rafThrottle } from "./rafThrottle";
 import { allGroups, useSessions, type Project } from "../state/sessions";
 import { usePlugins } from "../state/plugins";

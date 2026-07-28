@@ -3,7 +3,7 @@
 // clipboard.write: 시스템 클립보드 텍스트 쓰기(코어 clipboard_write 위임, self-write echo 억제는 코어 소관).
 // 변경 감시(clipboard-change emit)는 플러그인이 app.clipboard.onChange 로 구독 — 명령 표면이 아니다(스트림).
 
-import { invoke } from "../platform";
+import { invoke } from "../framework";
 import { tmsg } from "../i18n";
 import { register } from "./registry";
 

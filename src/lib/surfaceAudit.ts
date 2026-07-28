@@ -12,7 +12,7 @@
 // 폴링 아님: 트리거는 전부 사건(layout.reflow·view.parked·webview.* 활동·리사이즈 종료·
 // 부트 ready)이고, 타이머는 사건 후 레이아웃 정착 대기 1개뿐(400ms 디바운스 — 사건 이름
 // surface-audit-settle, 연속 사건은 마지막 것만 판정).
-import { invoke } from "../platform";
+import { invoke } from "../framework";
 import { onPluginEvent } from "../plugins/hooks";
 import { useBootPhase } from "../state/bootPhase";
 

@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const sendNotification = vi.fn();
-vi.mock("../platform", () => ({
+vi.mock("../framework", () => ({
   notification: {
     isPermissionGranted: vi.fn(async () => true),
     requestPermission: vi.fn(async () => "granted"),

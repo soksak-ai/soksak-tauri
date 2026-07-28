@@ -1,4 +1,4 @@
-// Tauri 셸 어댑터 — ShellHost 계약의 Tauri 구현.
+// Tauri 셸 어댑터 — AppFramework 계약의 Tauri 구현.
 //
 // **벤더 SDK(@tauri-apps/*)를 import 하는 것은 이 파일뿐이다.** 다른 어떤 앱 코드도 셸을
 // 알아서는 안 되며, 그 규칙은 shellSeam.test.ts 가 정적으로 시행한다. 새 셸(Electron 등)은
@@ -22,7 +22,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { getName, getVersion } from "@tauri-apps/api/app";
 import type {
   ShellEvent,
-  ShellHost,
+  AppFramework,
   ShellWindowHandle,
   Stream,
   Unlisten,
@@ -85,7 +85,7 @@ function wrapWindow(win: Window, label: string): ShellWindowHandle {
   };
 }
 
-export const tauriHost: ShellHost = {
+export const tauriHost: AppFramework = {
   name: "tauri",
 
   invoke: <T,>(cmd: string, args?: Record<string, unknown>) => tauriInvoke<T>(cmd, args),

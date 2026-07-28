@@ -3,7 +3,7 @@
 // 동의 부여 명령 자체가 존재하지 않는다(UI 동의 모달 전용).
 // plugin.view.* 배치 명령은 M_P5(우측 사이드바)에서 등록된다.
 
-import { invoke } from "../platform";
+import { invoke } from "../framework";
 import { pendingConsentChain, usePlugins, type PluginRuntime } from "../state/plugins";
 import { allGroups, useSessions } from "../state/sessions";
 import { hasSidebarView as hasSidebarViewKey } from "../state/sidebarLayout";

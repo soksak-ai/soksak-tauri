@@ -28,7 +28,7 @@ const { shell } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("../platform", () => ({
+vi.mock("../framework", () => ({
   shell,
   invoke: async () => undefined,
   currentWindow: () => shell.currentWindow(),

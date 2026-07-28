@@ -346,7 +346,7 @@ export function colorsForMode(
 // 배경은 투명(App.css)이라 미도장 영역의 색을 창 배경이 책임진다 — 테마와 항상
 // 일치해야 한다. Tauri 런타임 밖(테스트 jsdom)에서는 조용히 무시.
 function syncWindowBackground(bg: string): void {
-  void import("../platform")
+  void import("../framework")
     .then(({ invoke }) => invoke("window_set_background", { color: bg }))
     .catch(() => {});
 }

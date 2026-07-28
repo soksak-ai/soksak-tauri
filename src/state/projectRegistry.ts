@@ -6,7 +6,7 @@
 // 포커스한다. 같은 창의 재청구는 멱등(복원·재시도 안전). 창 파괴 해제는 코어가 담당.
 
 import { useEffect, useState } from "react";
-import { invoke } from "../platform";
+import { invoke } from "../framework";
 import { safeListen } from "../lib/safeListen";
 import { currentWindowLabel } from "../lib/webviewLabels";
 import { recordRecentProject } from "./recentProjects";

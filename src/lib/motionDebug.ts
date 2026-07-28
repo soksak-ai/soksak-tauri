@@ -12,7 +12,7 @@
 //
 // 이미 도는 것과 앞으로 시작할 것 둘 다 잡아야 한다 — transitionrun/animationstart 가 새로 태어난
 // 애니메이션의 유일한 신호다. 기본값(1배속, 정지 없음)에서는 리스너가 아무것도 만지지 않는다.
-import { invoke } from "../platform";
+import { invoke } from "../framework";
 
 const listeners = new Set<() => void>();
 

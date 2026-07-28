@@ -1,7 +1,7 @@
 // 자동 업데이트 오케스트레이터(update.*)는 중단 범위가 작은 축부터 적용한다.
 // 플러그인 축은 인증된 owner release와 전체 plugin/sidecar/kit closure를 원자 교체한다.
 // PTY daemon은 fd-handoff로 세션을 보존하고, 앱 본체는 release identity에서만 재시작한다.
-import { invoke } from "../platform";
+import { invoke } from "../framework";
 import { register } from "./registry";
 import { tmsg } from "../i18n";
 import { usePlugins } from "../state/plugins";

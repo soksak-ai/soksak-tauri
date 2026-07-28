@@ -4,7 +4,7 @@
 //     (SOKSAK_CALLER_TAB → 그 탭이 속한 pane/스페이스/프로젝트) 또는 활성 체인.
 //   - 모든 변이는 결과(새 id/변경 후 상태)를 반환 — 호출자가 응답만으로 검증 가능.
 
-import { invoke, currentWindow, windowByLabel, shellPath } from "../platform";
+import { invoke, currentWindow, windowByLabel, shellPath } from "../framework";
 import { tmsg } from "../i18n";
 import { settleAnimationsForCapture } from "./captureSettle";
 import { suggestLayout, type MonitorFact, type WindowFact } from "../lib/layoutSuggest";

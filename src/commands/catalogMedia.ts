@@ -5,7 +5,7 @@
 // and rewrites m3u8 segment/key URLs back through itself with permissive CORS. Zero site knowledge (generic):
 // the caller (plugin) decides which URL + Referer to proxy. Backed by the media_proxy_info core executor.
 
-import { invoke } from "../platform";
+import { invoke } from "../framework";
 import { tmsg } from "../i18n";
 import { register } from "./registry";
 

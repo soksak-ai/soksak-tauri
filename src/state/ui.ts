@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { create } from "zustand";
-import { invoke } from "../platform";
+import { invoke } from "../framework";
 
 // 일시적 UI 상태. overlayCount: DOM 오버레이(모달/메뉴/드롭다운/드래그)가 떠 있는
 // 동안의 카운터(중첩 안전). 레이어 원칙(src-tauri/browser.rs 머리말): DOM(메인

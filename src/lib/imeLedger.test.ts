@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const invoke = vi.fn(async () => ({}));
-vi.mock("../platform", () => ({
+vi.mock("../framework", () => ({
   shell: { name: "tauri", invoke: (...a: unknown[]) => invoke(...(a as [])) },
 }));
 

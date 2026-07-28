@@ -3,7 +3,7 @@
 // 이벤트가 구동한다 — OS 가 파일 변경 시에만 깨운다(주기 조회 0, 폴링 아님). 전이 판정(직전 스냅샷 대비
 // 방금 쓰인 세션)은 코어 ai_session_active(SessionTracker)가 단일진실로 수행하고, 여기선 배선만 한다.
 
-import { invoke } from "../platform";
+import { invoke } from "../framework";
 import { safeListen } from "../lib/safeListen";
 
 const LINEAGE_NS = "core";

@@ -2,12 +2,12 @@
 //
 // 셸은 어댑터 뒤에 있고(src/platform), 그 경계가 있어 앱 코드는 셸을 모른다. 그러나 진단·
 // 하니스·원장은 알아야 한다 — "어느 셸에서 난 일인가"에 답하지 못하면 두 셸의 증거가 한
-// 더미로 섞인다. 그래서 이름은 계약(ShellHost.name)이 이미 들고 있고, 여기서 명령으로 낸다.
+// 더미로 섞인다. 그래서 이름은 계약(AppFramework.name)이 이미 들고 있고, 여기서 명령으로 낸다.
 //
 // 능력은 **존재 여부만** 읽는다. 미구현 능력은 부르는 순간 이름을 달고 throw 하도록 설계돼
 // 있으므로(어댑터의 unimplemented), 조회가 능력을 부르면 조회 자체가 앱을 흔든다.
 
-import { shell } from "../platform";
+import { shell } from "../framework";
 import { tmsg } from "../i18n";
 import { register } from "./registry";
 

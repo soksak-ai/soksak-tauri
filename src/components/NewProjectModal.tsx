@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { dialog } from "../platform";
+import { dialog } from "../framework";
 import { addProjectClaimed } from "../state/projectRegistry";
 import { useOverlayActive } from "../state/ui";
 import { Icon } from "../ui/icons/Icon";

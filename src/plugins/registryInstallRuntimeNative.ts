@@ -7,7 +7,7 @@
 // document loader. No git clone — the native stager downloads the owner release
 // archive by its pinned sha256 and extracts it under regular-files-only policy.
 
-import { invoke } from "../platform";
+import { invoke } from "../framework";
 import { loadRegistryResourceBytes } from "../state/registry";
 import {
   declaredEntrypoints,

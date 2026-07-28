@@ -6,7 +6,7 @@
 //  - ui.input.click: 주소 → 요소 click 디스패치(danger:inject). 불일치 = NOT_EXPOSED.
 // 노출(data-node)되지 않은 요소는 주소 트리에 없어 접근 불가 → 명확한 에러(추측 0).
 
-import { invoke, currentWindow } from "../platform";
+import { invoke, currentWindow } from "../framework";
 import { currentWindowLabel } from "../lib/webviewLabels";
 import { parseAddress, isParseError } from "./address";
 import { scanNodes, type ScannedNode } from "../plugins/nodeScan";

@@ -2,7 +2,7 @@
 // 포커스 시 인앱 배너(NotifyHost), 비포커스 시 OS 알림(모바일식 푸시) — 둘 다 동일 페이로드.
 // 활성화(클릭/액션/외부 soksak://) 는 deepLink 해석기로 라우팅(권한·danger 게이트 유지).
 
-import { currentWindow, deepLink, notification } from "../platform";
+import { currentWindow, deepLink, notification } from "../framework";
 import { useNotify, type NotifyAction } from "../state/notify";
 import { playSound } from "../ui/sound";
 import { resolveDeepLink } from "./deepLink";

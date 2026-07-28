@@ -4,7 +4,7 @@
 // net.http.request: arbitrary-origin HTTP request (delegates to net_http_request — runbook api type).
 // Webview JS cannot do raw UDP or cross-origin HTTP; the core is the only path. Zero domain lock-in (generic).
 
-import { invoke } from "../platform";
+import { invoke } from "../framework";
 import { tmsg } from "../i18n";
 import { register } from "./registry";
 

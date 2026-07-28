@@ -19,7 +19,7 @@ vi.mock("../plugins/hooks", () => ({
     payloads.push(p);
   },
 }));
-vi.mock("../platform", () => ({ invoke: async () => {} }));
+vi.mock("../framework", () => ({ invoke: async () => {} }));
 
 afterEach(() => {
   emits.length = 0;

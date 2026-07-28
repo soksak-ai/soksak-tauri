@@ -11,7 +11,7 @@
 // 역할을 정하고, 허용 도구는 이 identity 의 CLI 바이너리(Bash(<bin>:*),
 // <bin>=sok/sok-dev/sok-debug)뿐이다.
 
-import { createStream, invoke } from "../platform";
+import { createStream, invoke } from "../framework";
 import { safeListen } from "../lib/safeListen";
 import { useSettings } from "../state/settings";
 import { publishActivity } from "../state/activityFeed";

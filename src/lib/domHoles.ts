@@ -11,7 +11,7 @@
 //
 // 계약: 홀 목록 = 열린 우측 사이드바 + 보이는 모든 골. 갱신은 사건 구동(레이아웃 커밋·창
 // 리사이즈·사이드바 변화)이고, 같은 값의 재발행은 침묵한다(멱등).
-import { invoke } from "../platform";
+import { invoke } from "../framework";
 import { onPluginEvent } from "../plugins/hooks";
 
 export interface Hole {

@@ -11,7 +11,7 @@
 // 도배 방지: 같은 판정 조합이 이어지면 세기만 하고, 조합이 **바뀔 때**만 발행한다.
 // IME 결함은 "어느 신호가 갑자기 사라졌는가"로 드러나므로 전이가 곧 신호다.
 
-import { shell } from "../platform";
+import { shell } from "../framework";
 
 export interface ImeDecision {
   /** 이벤트가 실은 조합 상태(엔진이 안 실으면 false). */

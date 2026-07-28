@@ -17,7 +17,7 @@ const shellWin = vi.hoisted(() => ({
   innerPosition: async () => ({ x: 0, y: 0 }),
   scaleFactor: async () => 1,
 }));
-vi.mock("../platform", () => ({
+vi.mock("../framework", () => ({
   invoke: vi.fn(async () => ({})),
   currentWindow: () => shellWin,
 }));

@@ -12,7 +12,7 @@ import type {
   CommandSpec,
   ParamSpec,
 } from "../commands/registry";
-import { createStream } from "../platform";
+import { createStream } from "../framework";
 import {
   browserLabel,
   browserViewIdFromLabel,

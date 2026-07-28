@@ -5,7 +5,7 @@
 //     직렬화 가능한 런타임 상태만 담는다(plugin.list 가 그대로 나르는 형태).
 
 import { create } from "zustand";
-import { invoke } from "../platform";
+import { invoke } from "../framework";
 import { createCoreSync } from "./coreSync";
 import type { CoreStoreDeps } from "./coreStore";
 import {

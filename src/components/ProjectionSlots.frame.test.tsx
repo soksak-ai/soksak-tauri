@@ -12,7 +12,7 @@ vi.stubGlobal("localStorage", {
   removeItem: (k: string) => void mem.delete(k),
   clear: () => mem.clear(),
 });
-vi.mock("../platform", () => ({ invoke: vi.fn(async () => undefined) }));
+vi.mock("../framework", () => ({ invoke: vi.fn(async () => undefined) }));
 // 프레임이 시험 대상 — 본문 호스트는 스텁으로 치환(플러그인 마운트 무관).
 vi.mock("./PluginViewHost", () => ({
   PluginViewHost: ({ viewKey }: { viewKey: string }) => (

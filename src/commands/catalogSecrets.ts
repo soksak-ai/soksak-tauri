@@ -9,7 +9,7 @@
 // No get command — the core blocks plaintext readback (secretRef injection via 2b is the only plaintext path).
 // All management commands delegate to invoke (vault/crypto are Rust single source of truth).
 
-import { invoke } from "../platform";
+import { invoke } from "../framework";
 import { register } from "./registry";
 import { tmsg } from "../i18n";
 

@@ -7,7 +7,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 const { invoke } = vi.hoisted(() => ({
   invoke: vi.fn(async (..._a: unknown[]): Promise<unknown> => null),
 }));
-vi.mock("../platform", () => ({
+vi.mock("../framework", () => ({
   invoke: (...a: unknown[]) => invoke(...a),
 }));
 

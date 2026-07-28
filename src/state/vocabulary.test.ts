@@ -129,6 +129,7 @@ const VERDICTS: Record<Scope, Record<string, Verdict>> = {
     pane_id: "tab", // 그 요청의 필드
     pane: "tab", // ipc 요청의 호출자 위치 필드(=$SOKSAK_CALLER_TAB 의 옛 이름)
     panel: "pane", // "panel.split" 명령명 픽스처 — 가리키는 것은 칸
+    panel_: "pane", // cored_ledger 의 셸 갈래 접두사 — panel_* 명령은 칸을 가리킨다
     // 엔티티 id 마이그레이션이 탭 레코드에 남긴 이행 키(pty.rs) — 옛 뜻이고, 이름 자체가
     // "옛 것" 을 가리킨다. 마이그레이션이 지난 레코드를 다 훑으면 함께 사라진다.
     legacyPaneId: "tab",

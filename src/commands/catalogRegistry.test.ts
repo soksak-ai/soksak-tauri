@@ -14,7 +14,7 @@ const { invoke, publishActivity } = vi.hoisted(() => ({
   invoke: vi.fn<(command: string, args?: unknown) => Promise<unknown>>(async () => undefined),
   publishActivity: vi.fn(),
 }));
-vi.mock("../platform", () => ({
+vi.mock("../framework", () => ({
   invoke: (command: string, args?: unknown) => invoke(command, args),
 }));
 vi.mock("../state/activityFeed", () => ({

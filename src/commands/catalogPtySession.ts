@@ -5,7 +5,7 @@
 // unacked high watermark otherwise), and keeps a bounded raw tail ring. The core never
 // interprets the bytes — readers strip/parse on their side.
 
-import { createStream, invoke } from "../platform";
+import { createStream, invoke } from "../framework";
 import { register, type CommandBrokerSpec, type CommandMachineObjectSchema } from "./registry";
 import { currentWindowLabel } from "../lib/webviewLabels";
 

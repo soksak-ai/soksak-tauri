@@ -5,7 +5,7 @@
 // 문서명만). 프로젝트 없는 창(빈 예외 상태)만 앱 이름(getName — identity 별 실명)으로 폴백한다.
 // 활성 프로젝트 전환·이름 변경·탭 증감마다 따라간다(sessions 구독).
 
-import { appInfo, currentWindow } from "../platform";
+import { appInfo, currentWindow } from "../framework";
 import { useSessions } from "./sessions";
 
 export async function initWindowTitle(): Promise<void> {

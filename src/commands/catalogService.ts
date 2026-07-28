@@ -5,7 +5,7 @@
 // Bind/dispatch/bus-push are core-internal invokes (the loader owns them); status is the
 // one surface AI/E2E read directly.
 
-import { invoke } from "../platform";
+import { invoke } from "../framework";
 import { tmsg } from "../i18n";
 import { register } from "./registry";
 

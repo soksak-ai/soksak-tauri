@@ -1,4 +1,4 @@
-import { invoke } from "../platform";
+import { invoke } from "../framework";
 import { create } from "zustand";
 import {
   certifyRegistryIndex,

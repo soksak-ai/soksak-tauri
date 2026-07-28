@@ -291,7 +291,8 @@ describe("띄우기 — 준비 완료는 stdout 첫 줄", () => {
     const identity = identityAt(root);
     await ensure({ identity, binary: fakeHelper("serving", SERVING) });
     const argv = JSON.parse(readFileSync(`${identity.socketPath}.argv`, "utf8"));
-    expect(argv).toEqual([
+    // 정체성 셋은 프레임워크가 지목한 값 그대로다.
+    expect(argv.slice(0, 6)).toEqual([
       "--socket",
       identity.socketPath,
       "--home",
@@ -299,6 +300,15 @@ describe("띄우기 — 준비 완료는 stdout 첫 줄", () => {
       "--identifier",
       identity.identifier,
     ]);
+    // 앰비언트 사실도 전부 인자로 간다 — cored 는 자기 환경에서 읽지 않는다. 값은 이
+    // 프로세스가 읽은 것과 같아야 한다: 다르면 cored 가 다른 사용자의 답을 낸다.
+    const pair = (flag) => argv[argv.indexOf(flag) + 1];
+    expect(argv).toContain("--user-home");
+    expect(pair("--user-home")).toBe(homedir());
+    if (process.env.SHELL) {
+      expect(argv).toContain("--login-shell");
+      expect(pair("--login-shell")).toBe(process.env.SHELL);
+    }
   });
 
   it("준비 완료 전에 죽으면 EOF 로 즉시 이름을 달고 실패한다", async () => {

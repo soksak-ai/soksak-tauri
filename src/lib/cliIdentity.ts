@@ -9,7 +9,7 @@
 // 바이너리로 실행돼야 한다 — dev 앱의 힌트는 sok-dev 로 실행돼야 dev 소켓에 닿는다. 프리픽스는
 // 데이터가 아니라 제시자(이 앱)의 정체성이므로, hint 생산자는 명령 형태만 짓고 이 값이 붙는다.
 
-import { invoke } from "../platform";
+import { invoke } from "../framework";
 
 let cached = "sok";
 

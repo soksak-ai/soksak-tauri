@@ -5,7 +5,7 @@
 // 예외든 `sok events --kinds renderer.error` 로 기계 판독되게 한다. 발행 실패는 삼킨다
 // (관측이 본체를 못 막는다). 같은 메시지의 반복은 창당 8회로 상한(폭주 억제 — 원인
 // 1건이면 충분하고, 상한 도달 사실도 남긴다).
-import { invoke } from "../platform";
+import { invoke } from "../framework";
 
 const seen = new Map<string, number>();
 const CAP = 8;

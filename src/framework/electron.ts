@@ -1,4 +1,4 @@
-// Electron 셸 어댑터 — ShellHost 계약의 Electron 구현(스파이크).
+// Electron 셸 어댑터 — AppFramework 계약의 Electron 구현(스파이크).
 //
 // Tauri 어댑터와 형제다. 앱 코드는 어느 쪽이 밑에 있는지 모르며, 이 파일이 늘어나도
 // 앱 코드는 한 줄도 바뀌지 않는다 — 그것이 경계가 있는 이유다.
@@ -11,7 +11,7 @@
 
 import type {
   ShellEvent,
-  ShellHost,
+  AppFramework,
   ShellWindowHandle,
   Stream,
   Unlisten,
@@ -133,7 +133,7 @@ function labeledWindowHandle(label: string): ShellWindowHandle {
   };
 }
 
-export const electronHost: ShellHost = {
+export const electronHost: AppFramework = {
   name: "electron",
 
   invoke: async <T,>(cmd: string, args?: Record<string, unknown>): Promise<T> => {

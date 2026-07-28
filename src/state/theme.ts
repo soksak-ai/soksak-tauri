@@ -1,4 +1,4 @@
-import { invoke, currentWindow } from "../platform";
+import { invoke, currentWindow } from "../framework";
 import { create } from "zustand";
 import { createCoreSync } from "./coreSync";
 import type { CoreStoreDeps } from "./coreStore";

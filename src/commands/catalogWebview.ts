@@ -4,7 +4,7 @@
 // 상한 소진(open)은 activity(webview.crash.exhausted)+창 배지로 드러난다 — 이 명령들이
 // 에이전트/사람의 나머지 반쪽(읽기·수동 복구)이다.
 
-import { invoke } from "../platform";
+import { invoke } from "../framework";
 import { register, type CommandHint } from "./registry";
 import { tmsg } from "../i18n";
 import { allViews, useSessions } from "../state/sessions";

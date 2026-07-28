@@ -12,7 +12,7 @@
 //            하며 freeze 는 금지다(과거 freeze-frame 이 제거된 이유 — 콘텐츠 박제·잔상).
 // 페이로드 { active, kinds }: kinds = 그 순간 활성인 종별들. active 인 채 종별 구성이
 // 바뀌면 active:true 를 재발화한다 — 소비자는 재평가한다(예: 주행 중 디바이더 개입 → 해동).
-import { invoke } from "../platform";
+import { invoke } from "../framework";
 import { emitPluginEvent } from "../plugins/hooks";
 
 export type LayoutMotionKind = "move" | "resize";

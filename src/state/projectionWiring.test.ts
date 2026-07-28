@@ -8,7 +8,7 @@ vi.stubGlobal("localStorage", {
   removeItem: (key: string) => void mem.delete(key),
   clear: () => mem.clear(),
 });
-vi.mock("../platform", () => ({ invoke: vi.fn(async () => undefined) }));
+vi.mock("../framework", () => ({ invoke: vi.fn(async () => undefined) }));
 
 import {
   boundViewOf,

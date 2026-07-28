@@ -2,7 +2,7 @@
 // 뷰에 DOM 포커스가 있으면 그 뷰의 zoom 훅으로(뷰가 자기 관례로 응답: 터미널=폰트,
 // 브라우저=페이지 줌), 없으면(프레임 선택 = 크롬 클릭으로 포커스가 body) 창 전체 줌.
 // 프레임 선택은 새 상태가 아니라 DOM 포커스의 자연 상태다 — 크롬 클릭이 곧 진입.
-import { invoke } from "../platform";
+import { invoke } from "../framework";
 import { deepActiveElement, viewContainerOf } from "../commands/catalogDom";
 import { emitPluginEvent } from "../plugins/hooks";
 import { zoomFocusedView } from "../plugins/viewFocus";

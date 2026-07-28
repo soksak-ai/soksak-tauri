@@ -1,7 +1,7 @@
 // 플러그인 호스트 초기화 — 앱 시작 시 1회(main.tsx).
 // 순서: 이벤트 훅 구독 → 앱 버전 확정(minAppVersion 검사 기준) → 스캔+재활성화.
 
-import { appInfo, invoke } from "../platform";
+import { appInfo, invoke } from "../framework";
 import { startPluginHooks } from "./hooks";
 import { wireNativeRegistryInstall } from "./registryInstallRuntimeNative";
 import { usePlugins } from "../state/plugins";

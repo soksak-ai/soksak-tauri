@@ -1,4 +1,4 @@
-import { currentWindow, appInfo, invoke } from "./platform";
+import { currentWindow, appInfo, invoke } from "./framework";
 import { execute } from "./commands/registry";
 import {
   memo,

@@ -18,7 +18,7 @@
 //      경로는 projectRegistry.ts 유틸을 지난다. 충돌 시 새로 열지 않고
 //      소유 창을 포커스한다. 창 파괴 시 점유는 코어가 해제한다.
 
-import { invoke } from "../platform";
+import { invoke } from "../framework";
 
 export const FOLDER_NAME_RE = /^[a-z0-9][a-z0-9-]*$/;
 

@@ -1,9 +1,14 @@
-// 셸 호스트 계약 — 앱이 "어떤 셸 위에서 도는가"를 모르게 하는 경계.
+// 앱 프레임워크 계약 — 앱이 "어떤 프레임워크 위에서 도는가"를 모르게 하는 경계.
 //
-// 원칙: 앱 코드는 셸 벤더 SDK 를 직접 부르지 않는다. 부르면 그 순간 셸이 교체 불가능한
+// 여기서 프레임워크는 Tauri·Electron 이다. 창·웹뷰 생성, IPC, 네이티브 API, 패키징을
+// 함께 주는 것이라 그 전부를 담는 말이 프레임워크다. 한때 이것을 "셸"이라 불렀는데
+// 그 말은 이미 로그인 셸(zsh·bash)의 것이고, 이 저장소는 PTY·터미널을 핵심으로 다뤄
+// 그 충돌이 실재한다(login_shell.rs·--login-shell·shell_which).
+//
+// 원칙: 앱 코드는 프레임워크 벤더 SDK 를 직접 부르지 않는다. 부르면 그 순간 그것이 교체 불가능한
 // 전제가 되고, 교체 시도는 57개 파일을 동시에 뜯는 일이 된다(실측 2026-07-27: @tauri-apps
 // 를 직접 import 하던 파일 57개, invoke 호출 193곳). 벤더를 아는 파일은 어댑터 하나뿐이며
-// 그 규칙은 정적 게이트(shellSeam.test.ts)가 시행한다.
+// 그 규칙은 정적 게이트(frameworkSeam.test.ts)가 시행한다.
 //
 // 이 파일에는 **실제로 쓰이는 것만** 있다. 쓰지 않는 능력을 미리 선언하면 어댑터마다
 // 구현할 수 없는 빈칸이 생기고, 빈칸은 결국 벤더 우회로 메워진다.
@@ -66,7 +71,7 @@ export interface ShellNotification {
   onAction(cb: (action: { extra?: Record<string, unknown> }) => void): Promise<Unlisten>;
 }
 
-export interface ShellHost {
+export interface AppFramework {
   /** 어댑터 이름 — 진단·원장에 싣는다("어느 셸에서 난 일인가"). */
   readonly name: string;
 

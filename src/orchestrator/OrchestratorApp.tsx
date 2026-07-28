@@ -3,7 +3,7 @@
 // / 하: 명령 콘솔(레지스트리 실행). 셸은 커맨드·이벤트 표면만 소비한다 — 코어 내부 상태
 // (sessions 등) 직접 참조 금지: 외부 클라이언트(폰·CLI)와 같은 자격이어야 P13 이 지켜진다.
 
-import { invoke, currentWindow } from "../platform";
+import { invoke, currentWindow } from "../framework";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { safeListen } from "../lib/safeListen";
 import { currentWindowLabel } from "../lib/webviewLabels";

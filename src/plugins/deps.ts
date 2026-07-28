@@ -1,7 +1,7 @@
 // 플러그인 API 의 프로덕션 의존성 배선 — api.ts 의 PluginApiDeps 구현.
 // (테스트는 가짜 deps 를 주입 — 이 파일은 실제 registry/store/bridge 연결만 담당.)
 
-import { invoke } from "../platform";
+import { invoke } from "../framework";
 import { safeListen } from "../lib/safeListen";
 import {
   execute,
