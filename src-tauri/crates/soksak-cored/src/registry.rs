@@ -162,6 +162,19 @@ pub const COMMANDS: &[Command] = &[
         returns: "string (검증한 source)",
         run: run_unit_dev_validate_path,
     },
+    // 원장을 읽는다. 규칙(커서·상한)은 코어가, 질의문도 코어가 소유한다.
+    //
+    // 한때 "링버퍼는 앱 프로세스의 것이라 못 옮긴다"고 거절했는데, 그 사유는 cored 가 적재만
+    // 하던 때의 것이다. 지금은 적재와 **같은 자리에서** 저장하므로 저장소가 곧 적재된 집합이다.
+    Command {
+        name: "activity_recent",
+        args: &[
+            Arg { name: "since", ty: "u64?", required: OPT },
+            Arg { name: "limit", ty: "usize?", required: OPT },
+        ],
+        returns: "Value[] (도장 찍힌 항목, 오래된 것부터)",
+        run: run_activity_recent,
+    },
     Command {
         name: "plugin_scan",
         args: &[],
@@ -406,15 +419,6 @@ pub const UNSERVED: &[Unserved] = &[
                      KEK 의 수명이 cored 의 수명이 된다. 저장소의 봉인 메타로 답하면 '봉인 가능' \
                      여부를 알 수 없다: 그것은 파일이 아니라 열린 키가 있는가의 문제라서, 같은 \
                      모양의 답이 잠긴 볼트를 열려 있다고 말하게 된다.",
-    },
-    Unserved {
-        name: "activity_recent",
-        blocked_by: "읽는 출처가 앱 프로세스 안의 링버퍼(ActivityHub)다. 저장소에도 항목이 있지만 \
-                     둘은 같은 것이 아니다 — 링은 적재 순간부터 담고 지속에 실패한 항목도 회수 큐로 \
-                     들고 있는 반면, 저장소에는 지속에 성공한 것만 있다. 저장소로 답하면 모양은 같고 \
-                     내용이 다른 답이 나가고, 그 차이는 오류가 아니라 '없는 활동'으로 보인다. 링을 \
-                     cored 가 쥐면 그 수명이 cored 의 수명이 되어, 프레임워크가 재기동해도 옛 창의 \
-                     항목이 남는다.",
     },
     Unserved {
         name: "project_owners",
@@ -792,6 +796,34 @@ fn run_unit_dev_validate_path(_ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: SourceOnly| {
         unit_dev::validate_source_exists(std::path::Path::new(&a.source))?;
         Ok(a.source)
+    })
+}
+
+#[derive(serde::Deserialize)]
+struct RecentArgs {
+    #[serde(default)]
+    since: Option<u64>,
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+fn run_activity_recent(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: RecentArgs| {
+        use soksak_core::activity as act;
+        let conn = rusqlite::Connection::open(ctx.db_path())
+            .map_err(|e| format!("원장 저장소 열기 실패: {e}"))?;
+        let mut q = conn.prepare(act::RECENT_SQL).map_err(|e| e.to_string())?;
+        let rows = q
+            .query_map(rusqlite::params![act::NS, act::COLL], |r| r.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        let mut entries = Vec::new();
+        for row in rows {
+            let doc = row.map_err(|e| e.to_string())?;
+            // 못 읽는 줄은 건너뛰지 않는다 — 조용히 빠지면 커서가 어긋난 것을 아무도 모른다.
+            entries.push(serde_json::from_str(&doc).map_err(|e| format!("원장 행 파싱 실패: {e}"))?);
+        }
+        // 앱의 기본 상한과 같다(200) — 다르면 같은 호출이 프로세스마다 다른 길이를 답한다.
+        Ok(act::pick_recent(entries, a.since, a.limit.unwrap_or(200)))
     })
 }
 

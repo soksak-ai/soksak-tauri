@@ -196,3 +196,31 @@ pub const PERSIST_SQL: &str = "\
     ON CONFLICT(ns,coll,id) DO UPDATE SET \
       scope=excluded.scope, doc=excluded.doc, updated=excluded.updated, \
       enc=excluded.enc, keyId=excluded.keyId";
+
+/// 최근 항목 고르기 — `since` 보다 뒤인 것 중 마지막 `limit` 개.
+///
+/// 규칙이 순수하다: 어디서 읽어 왔든(프로세스 안 링이든 저장소든) 같은 입력에 같은 답이다.
+/// 그래서 코어가 갖는다 — 두 프로세스가 각자 고르면 커서가 같은데 답이 달라지고, 그 차이는
+/// 오류가 아니라 "안 온 활동"으로 나타난다.
+///
+/// `since` 는 **배타**다(그 seq 는 이미 봤다). 포함으로 바꾸면 소비자가 마지막 항목을 두 번
+/// 받고, 그 중복은 화면에서 같은 줄이 두 번으로 보인다.
+pub fn pick_recent(entries: Vec<Value>, since: Option<u64>, limit: usize) -> Vec<Value> {
+    let kept: Vec<Value> = entries
+        .into_iter()
+        .filter(|e| since.is_none_or(|s| e.get("seq").and_then(Value::as_u64).unwrap_or(0) > s))
+        .collect();
+    let skip = kept.len().saturating_sub(limit);
+    kept.into_iter().skip(skip).collect()
+}
+
+/// 원장에서 읽는 질의 — 앱과 cored 가 같은 문장을 쓴다.
+///
+/// id 가 `a{seq:016}` 이라 사전순이 곧 시간순이다(row_id). 그래서 정렬을 질의가 다시 하지
+/// 않고 id 순으로 읽으면 된다.
+pub const RECENT_SQL: &str = "\
+    SELECT doc FROM records WHERE ns=?1 AND coll=?2 ORDER BY id";
+
+#[cfg(test)]
+#[path = "activity_recent_tests.rs"]
+mod recent_tests;

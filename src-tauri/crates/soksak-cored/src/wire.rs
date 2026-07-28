@@ -87,12 +87,19 @@ fn transport_route(req: &Request) -> Option<Value> {
 /// 서빙하지 않는 이름의 사유 문장. 감사해서 "여기서는 못 한다"고 판정한 이름은 그 이유를
 /// 함께 말한다 — 이유 없는 금지는 우회 대상이 되고, 프레임워크 저자는 막힌 것을 다시 조사하거나
 /// 더 나쁘게는 조사 없이 흉내를 낸다.
-/// 코드는 어느 쪽이든 UNKNOWN_COMMAND 로 둔다: 부르는 쪽의 분기를 바꾸지 않는다.
-fn unknown_sentence(method: &str) -> String {
+/// **코드가 둘을 가른다.** 한때 둘 다 UNKNOWN_COMMAND 였는데, 사유는 message 에만 실리고
+/// 기계는 코드만 본다 — 요구 원장이 코드를 기록하므로(invoke-demand.jsonl) 감사해서 거절한
+/// 것과 이름이 없는 것이 한 통에 섞였다. "아직 안 옮겼다"와 "여기서는 못 한다"를 세는 사람이
+/// 그 차이를 잃는다(실측 2026-07-29: 사유가 등재된 넷이 미등재와 같은 코드로 나왔다).
+fn refusal(method: &str) -> (&'static str, String) {
     match registry::unserved(method) {
-        Some(u) => format!("{method} 은(는) 이 프로세스가 서빙하지 않습니다 — {}", u.blocked_by),
-        None => format!(
-            "{method} 은(는) 이 프로세스가 서빙하지 않습니다 — cored.commands 로 목록을 확인하세요"
+        Some(u) => (
+            "REFUSED_BY_AUDIT",
+            format!("{method} 은(는) 이 프로세스가 서빙하지 않습니다 — {}", u.blocked_by),
+        ),
+        None => (
+            "UNKNOWN_COMMAND",
+            format!("{method} 은(는) 이 프로세스가 서빙하지 않습니다 — cored.commands 로 목록을 확인하세요"),
         ),
     }
 }
@@ -103,7 +110,8 @@ fn route(ctx: &Ctx, req: &Request) -> Value {
         return ok_reply(registry::declaration());
     }
     let Some(cmd) = registry::find(&req.method) else {
-        return err_reply("UNKNOWN_COMMAND", &unknown_sentence(&req.method));
+        let (code, message) = refusal(&req.method);
+        return err_reply(code, &message);
     };
     match (cmd.run)(ctx, &req.params) {
         Outcome::Ok(data) => ok_reply(data),

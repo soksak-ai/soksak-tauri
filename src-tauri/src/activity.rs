@@ -136,13 +136,10 @@ impl ActivityHub {
 
     /// since(exclusive) 이후 항목 — 재접속 백필 커서. None = 최신 limit 개.
     pub fn recent(&self, since: Option<u64>, limit: usize) -> Vec<Value> {
+        // 고르는 규칙은 코어가 소유한다 — cored 도 같은 이름을 서빙하므로 두 벌이면 같은
+        // 커서에 다른 답이 나가고, 그 차이는 오류가 아니라 "안 온 활동"으로 나타난다.
         let g = self.inner.lock().unwrap();
-        let it = g.ring.iter().filter(|e| {
-            since.is_none_or(|s| e.get("seq").and_then(Value::as_u64).unwrap_or(0) > s)
-        });
-        let v: Vec<Value> = it.cloned().collect();
-        let skip = v.len().saturating_sub(limit);
-        v.into_iter().skip(skip).collect()
+        soksak_core::activity::pick_recent(g.ring.iter().cloned().collect(), since, limit)
     }
 }
 

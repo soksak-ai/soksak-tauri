@@ -477,12 +477,11 @@ fn what_it_refuses_is_discoverable_with_the_reason() {
         .as_array()
         .unwrap_or_else(|| panic!("unserved 선언이 없다: {reply}"));
     let named: Vec<&str> = unserved.iter().filter_map(|u| u["name"].as_str()).collect();
-    // 감사한 open 이름 전부. 하나라도 빠지면 그 이름은 표에 없는 침묵이 되어, 부른 쪽이 받는
-    // UNKNOWN_COMMAND 가 "아직 안 옮겼다"인지 "여기서는 못 한다"인지 구분되지 않는다.
+    // 감사한 open 이름 전부. 하나라도 빠지면 그 이름은 표에 없는 침묵이 되어, 부른 쪽이
+    // UNKNOWN_COMMAND 를 받는다 — "아직 안 옮겼다"와 "여기서는 못 한다"가 구분되지 않는다.
     for expected in [
         "service_ledger_sync",
         "secret_status",
-        "activity_recent",
         "project_owners",
         "net_http_request",
         "process_reclaim_window",
@@ -531,8 +530,9 @@ fn calling_an_audited_name_carries_the_reason_across_the_socket() {
 
         let reply = helper.ask(json!({ "id": id, "method": name, "params": {} }));
         // ok:false 만 보면 "표에 없어서 모른다"가 "감사해서 거절했다"로 위장한다 — code 까지 본다.
+        // 그리고 그 둘은 **다른 코드**여야 한다: 원장이 코드를 기록하므로 같으면 한 통에 섞인다.
         assert_eq!(reply["ok"], false, "응답: {reply}");
-        assert_eq!(reply["code"], "UNKNOWN_COMMAND", "응답: {reply}");
+        assert_eq!(reply["code"], "REFUSED_BY_AUDIT", "응답: {reply}");
         let msg = reply["message"].as_str().unwrap_or_default();
         assert!(msg.contains(name), "거절이 이름을 말하지 않는다: {reply}");
         assert!(msg.contains(&declared), "선언한 사유가 응답에 없다: {reply}");
@@ -2003,4 +2003,65 @@ fn a_home_scan_does_not_make_the_directory_it_reads() {
         "읽기가 테마 디렉터리를 만들었다: {}",
         helper.home().join("themes").display()
     );
+}
+
+/// 감사해서 거절한 이름과 **모르는 이름**은 다른 답이다.
+///
+/// 지금은 코드가 둘 다 UNKNOWN_COMMAND 다. 사유는 message 에 실리지만 **기계는 코드만 본다** —
+/// 요구 원장이 코드를 기록하므로(invoke-demand.jsonl) 둘이 한 통에 섞이고, "아직 안 옮겼다"와
+/// "여기서는 못 한다"를 세는 사람이 그 차이를 잃는다(실측 2026-07-29: 라이브 원장에서 사유가
+/// 등재된 넷이 미등재와 같은 코드로 나왔다).
+///
+/// 프레임워크 표는 이미 이 구분을 갖는다(FRAMEWORK_CONCEPT_ABSENT vs FRAMEWORK_DELEGATED).
+/// 같은 이유로 여기도 가른다.
+#[test]
+fn an_audited_refusal_is_not_an_unknown_name() {
+    let helper = spawn_helper("refusal-code");
+
+    let audited = helper.ask(json!({ "method": "net_http_request", "params": {} }));
+    assert_eq!(audited["ok"], false, "{audited}");
+    assert_eq!(audited["code"], "REFUSED_BY_AUDIT", "{audited}");
+    // 사유는 그대로 실린다 — 코드를 가른다고 문장을 잃지 않는다.
+    assert!(
+        audited["message"].as_str().unwrap_or_default().contains("tokio"),
+        "{audited}"
+    );
+
+    let unknown = helper.ask(json!({ "method": "no_such_name_xyz", "params": {} }));
+    assert_eq!(unknown["code"], "UNKNOWN_COMMAND", "{unknown}");
+    assert!(
+        unknown["message"].as_str().unwrap_or_default().contains("cored.commands"),
+        "모르는 이름은 어디서 목록을 보는지 말한다: {unknown}"
+    );
+}
+
+
+/// 원장 읽기는 저장소에서 온다 — 적재한 것이 그대로 돌아온다.
+#[test]
+fn recent_reads_back_what_was_admitted() {
+    let helper = spawn_helper("activity-recent");
+    for step in ["enter", "render", "done"] {
+        let r = helper.ask(json!({
+            "method": "activity_publish",
+            "params": { "kind": "boot.step", "source": "boot", "payload": { "step": step } }
+        }));
+        assert_eq!(r["ok"], true, "{r}");
+    }
+
+    let all = helper.ask(json!({ "method": "activity_recent", "params": {} }));
+    assert_eq!(all["ok"], true, "{all}");
+    let rows = all["data"].as_array().expect("배열");
+    assert_eq!(rows.len(), 3, "{all}");
+    // 오래된 것부터 — 소비자가 그 순서로 붙인다.
+    assert_eq!(rows[0]["payload"]["step"], "enter");
+    assert_eq!(rows[2]["payload"]["step"], "done");
+
+    // 커서는 배타다 — 이미 본 seq 는 다시 오지 않는다.
+    let seq1 = rows[0]["seq"].as_u64().unwrap();
+    let after = helper.ask(json!({ "method": "activity_recent", "params": { "since": seq1 } }));
+    assert_eq!(after["data"].as_array().unwrap().len(), 2, "{after}");
+
+    // 상한은 **새 것**을 남긴다 — 오래된 것을 남기면 피드가 과거에 멈춘다.
+    let capped = helper.ask(json!({ "method": "activity_recent", "params": { "limit": 1 } }));
+    assert_eq!(capped["data"][0]["payload"]["step"], "done", "{capped}");
 }
