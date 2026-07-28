@@ -309,6 +309,7 @@ const ko = {
   // 언어 추가 = 언어 테이블 1장 추가(명령 정의는 불변). 플러그인 라벨은 각 매니페스트 title 소유.
   "cmd.activity.recent": "활동 기록을 조회합니다",
   "cmd.app.environment": "앱 환경을 조회합니다",
+  "cmd.framework.provision": "프레임워크가 제공하는 축을 조회합니다",
   "cmd.ai.session.detect": "AI 에이전트 실행 여부를 판별합니다",
   "cmd.ai.session.find": "최근 AI 세션을 찾습니다",
   "cmd.ai.session.inspect": "AI 세션 파일을 확인합니다",
@@ -669,6 +670,7 @@ const ko = {
   "msg.media.proxy.playlist": "프록시 HLS 플레이리스트 URL 을 만들었습니다",
   "msg.media.proxy.stream": "프록시 미디어 스트림 URL 을 만들었습니다",
   "msg.app.environment": "{core} 코어 · {mode} 유닛",
+  "msg.framework.provision": "{name} · 콘텐츠 뷰 {views}",
   "msg.net.http.request": "상태 {status} 로 응답했습니다",
   "msg.net.udp.request": "패킷 {n}개를 수집했습니다",
   "msg.net.udp.send": "{n} 바이트를 전송했습니다",
@@ -1182,6 +1184,7 @@ const en: Record<MsgKey, string> = {
   // Command labels (announcer tone) — every core command; coverage enforced by commandTitles.test.ts.
   "cmd.activity.recent": "Reads recent activity",
   "cmd.app.environment": "Reads the app environment",
+  "cmd.framework.provision": "Reads what this framework provides",
   "cmd.ai.session.detect": "Detects an AI agent launch",
   "cmd.ai.session.find": "Finds the latest AI session",
   "cmd.ai.session.inspect": "Inspects an AI session file",
@@ -1534,6 +1537,7 @@ const en: Record<MsgKey, string> = {
   "msg.debug.sleep": "Held the reply for {ms}ms",
   "msg.dev.remoteConfirmMock": "Queued a mock remote confirm request (#{id})",
   "msg.app.environment": "{core} core · {mode} units",
+  "msg.framework.provision": "{name} · content views: {views}",
   "msg.explorer.list": "{n} entries",
   "msg.fs.unwatch": "Stopped watching — {n} subscriptions left",
   "msg.fs.watch": "Watching — {n} subscriptions",

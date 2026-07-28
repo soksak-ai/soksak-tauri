@@ -148,6 +148,20 @@ module.exports = {
 
   // 물리 rect 를 그대로 놓는다. 전략(어디에 둘지)은 프론트의 순수함수가 정하고, 여기는 시행만
   // 한다 — 팩트/전략 분리.
+  // 앱 자기활성화 — 이 창을 key 로 만드는 것과 **앱을 전면으로 내는 것**은 다른 일이다.
+  // 뒤에 가려진 창은 rAF 가 멈춰서, 밖에서 넣은 입력이 도착하고도 반응이 없다(실측: 골
+  // 드래그가 개시는 되는데 커밋이 영영 안 선다 — rafThrottle 이 프레임을 못 받았다).
+  // 이 표에 없으면 "창을 앞으로" 라는 요구가 프레임워크에 닿지 못하고, 그 실패는 오류가
+  // 아니라 "구동은 됐는데 아무 일도 안 일어남"으로 나타난다.
+  window_activate: {
+    concept: "앱 전면 활성화",
+    source: "app.focus({ steal: true })",
+    answer: (ctx) => {
+      ctx.activateApp();
+      return null;
+    },
+  },
+
   window_place: {
     concept: "창 배치",
     source: "BrowserWindow.setBounds",

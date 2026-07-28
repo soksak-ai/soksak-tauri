@@ -195,6 +195,9 @@ function nativeContext(sender) {
     labelOf: (win) => [...windows.entries()].find(([, w]) => w === win)?.[0] ?? null,
     windowFor,
     createWindow,
+    // 앱을 전면으로 — 창 하나를 key 로 만드는 것과 다른 일이다. steal 은 다른 앱에서
+    // 포커스를 가져온다는 뜻이고, "창을 앞으로"는 그것을 요구한다.
+    activateApp: () => app.focus({ steal: true }),
     screen,
   };
 }

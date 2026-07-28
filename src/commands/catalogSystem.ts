@@ -4,7 +4,7 @@
 // webview is wedged); the registry handler returns the same facts via the ipc_hello_info core command,
 // so the command is discoverable and actually runs on every path.
 
-import { invoke } from "../framework";
+import { engineProvision, framework, invoke } from "../framework";
 import { tmsg } from "../i18n";
 import { register } from "./registry";
 
@@ -40,5 +40,33 @@ export function registerSystemCatalog(): void {
       }),
     examples: ["app.environment"],
     handler: () => invoke("app_environment"),
+  });
+
+  // 프레임워크가 무엇을 제공하는가 — 판정하는 쪽이 **물을 수 있어야** 한다.
+  //
+  // 같은 보증을 두 프레임워크가 다른 자리에서 지킨다. 브라우저 뷰가 살아 있다는 사실은 한쪽
+  // 에서는 네이티브 자식 표면의 목록이고, 다른 쪽에서는 페이지 안 요소의 rect 다. 물을 자리가
+  // 없으면 판정하는 쪽은 한쪽 모양을 정답으로 박아 두고, 다른 프레임워크에서는 그 검사가
+  // 존재하지 않는 것을 찾다가 실패한다 — 기준이 틀린 게 아니라 재는 자리가 틀린 것이다.
+  //
+  // 능력 선언이지 이름 분기가 아니다. name 은 원장·진단에만 쓰고, 판정은 축(chromium·
+  // nativeChildWebview)으로 가른다 — 프레임워크가 하나 더 늘어도 판정 코드는 그대로다.
+  register("framework.provision", {
+    description:
+      "Read what this window's framework provides: adapter name, whether the engine is Chromium, and whether content views are native child webviews (as opposed to elements inside the page). Branch verification on these axes, never on the adapter name.",
+    triggers: { ko: "프레임워크 능력 제공 축 네이티브 자식 웹뷰 엔진" },
+    params: {},
+    returns: "{ name, chromium, nativeChildWebview }",
+    message: (d) =>
+      tmsg("msg.framework.provision", {
+        name: String(d.name ?? ""),
+        views: String(d.nativeChildWebview ? "native" : "in-page"),
+      }),
+    examples: ["framework.provision"],
+    handler: () => ({
+      name: framework.name,
+      chromium: engineProvision.chromium,
+      nativeChildWebview: engineProvision.nativeChildWebview,
+    }),
   });
 }

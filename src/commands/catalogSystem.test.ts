@@ -16,6 +16,7 @@ beforeEach(() => {
 afterEach(() => {
   unregister("system.hello");
   unregister("app.environment");
+  unregister("framework.provision");
 });
 
 describe("app.environment — core identity와 unit source mode를 분리해 노출", () => {
