@@ -10,6 +10,70 @@
 
 use std::path::{Path, PathBuf};
 
+/// 한 실행물의 정체성 — 홈과 identifier 는 **함께** 다닌다. 따로 넘기면 어긋난 조합
+/// ("A 홈인데 B identifier")이 만들어지고, 그 조합은 어느 identity 에도 없다.
+///
+/// 이 값이 포터블에 사는 이유: 앱과 헬퍼가 **같은 정체성을 같은 규칙으로** 읽어야 한다.
+/// 각자 자기 struct 를 들면 파생 규칙이 두 벌이 되고, 두 벌은 언젠가 갈라진다.
+/// 앰비언트 읽기는 여기 없다 — 이 값은 프로세스마다 **부팅 때 받는다**(앱은 셸 설정에서,
+/// 헬퍼는 띄운 쪽의 인자에서). 받는 것과 추측하는 것은 다르다.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Identity {
+    home: PathBuf,
+    identifier: String,
+}
+
+impl Identity {
+    pub fn new(home: impl Into<PathBuf>, identifier: impl Into<String>) -> Self {
+        Identity {
+            home: home.into(),
+            identifier: identifier.into(),
+        }
+    }
+
+    pub fn home(&self) -> &Path {
+        &self.home
+    }
+
+    pub fn identifier(&self) -> &str {
+        &self.identifier
+    }
+
+    /// release core 판정 — updater 채널만 결정한다.
+    pub fn is_release(&self) -> bool {
+        core_build_for_identifier(&self.identifier) == "release"
+    }
+
+    /// 이 정체성의 core build 이름(release/dev/debug/…).
+    pub fn core_build(&self) -> String {
+        core_build_for_identifier(&self.identifier)
+    }
+
+    /// 이 정체성의 CLI 이름(sok / sok-dev / sok-debug).
+    pub fn cli_name(&self) -> String {
+        cli_for_core_build(&self.core_build())
+    }
+
+    /// 홈 아래 경로 — 홈을 직접 조립하는 호출자를 없앤다.
+    ///
+    /// **항상 홈 아래**다. `Path::join` 은 절대경로를 받으면 베이스를 통째로 버리는데,
+    /// 이 계약의 값은 "홈 아래"를 보장하는 데 있다. 조용히 탈출을 허용하면 계약이
+    /// 거짓말이 되고, 그 거짓말은 호출자가 검사를 생략하는 근거가 된다. 절대경로·`..`
+    /// 는 루트와 부모 컴포넌트를 떼어 상대 경로로 읽는다.
+    pub fn path(&self, rel: impl AsRef<Path>) -> PathBuf {
+        use std::path::Component;
+        let mut out = self.home.clone();
+        for c in rel.as_ref().components() {
+            match c {
+                Component::Normal(part) => out.push(part),
+                // 루트·프리픽스·"."·".." 는 홈을 벗어나거나 되돌리는 컴포넌트다 — 버린다.
+                _ => continue,
+            }
+        }
+        out
+    }
+}
+
 /// release core 판정 — identifier 마지막 세그먼트가 `app`.
 pub fn is_release_identifier(identifier: &str) -> bool {
     identifier.rsplit('.').next() == Some("app")

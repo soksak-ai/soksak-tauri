@@ -12,69 +12,16 @@
 // 28개가 닿아 있고, 이것 하나를 끊으면 15개가 즉시 풀린다. 다른 어떤 패턴도 단독으로는
 // 0개를 푼다(AppHandle 시그니처·activity::publish 포함 — 그것들은 증상이지 원인이 아니다).
 //
-// 파생 규칙은 이미 순수 함수로 있었다(`core_build_for_identifier`·`cli_for_core_build`·
-// `is_release_identifier`). 없던 것은 그 값을 **넘겨받는 통로**뿐이다.
+// **값 자체는 soksak-portable 이 소유한다.** 앱과 헬퍼가 같은 정체성을 같은 규칙으로 읽어야
+// 하기 때문이다(각자 struct 를 들면 파생 규칙이 두 벌이 되고, 두 벌은 언젠가 갈라진다).
+// 이 파일에 남는 것은 **앰비언트에서 값으로 건너오는 한 지점**뿐이다.
 
-use std::path::{Path, PathBuf};
-
-/// 이 실행물의 정체성. 홈과 identifier 는 함께 다닌다 — 따로 넘기면 두 값이 어긋난
-/// 조합("A 홈인데 B identifier")이 만들어지고, 그 조합은 어느 identity 에도 없다.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Identity {
-    home: PathBuf,
-    identifier: String,
-}
-
-impl Identity {
-    pub(crate) fn new(home: impl Into<PathBuf>, identifier: impl Into<String>) -> Self {
-        Identity {
-            home: home.into(),
-            identifier: identifier.into(),
-        }
-    }
-
-    pub(crate) fn home(&self) -> &Path {
-        &self.home
-    }
-
-    pub(crate) fn identifier(&self) -> &str {
-        &self.identifier
-    }
-
-    /// release core 판정 — identifier 마지막 세그먼트가 "app". updater 채널만 결정한다.
-    pub(crate) fn is_release(&self) -> bool {
-        crate::home::core_build_for_identifier(&self.identifier) == "release"
-    }
-
-    /// 이 정체성의 CLI 이름(sok / sok-dev / sok-debug).
-    pub(crate) fn cli_name(&self) -> String {
-        crate::home::cli_for_core_build(&crate::home::core_build_for_identifier(&self.identifier))
-    }
-
-    /// 홈 아래 경로 — 홈을 직접 조립하는 호출자를 없앤다.
-    ///
-    /// **항상 홈 아래**다. `Path::join` 은 절대경로를 받으면 베이스를 통째로 버리는데,
-    /// 이 계약의 값은 "홈 아래"를 보장하는 데 있다. 조용히 탈출을 허용하면 계약이
-    /// 거짓말이 되고, 그 거짓말은 호출자가 검사를 생략하는 근거가 된다. 절대경로·`..`
-    /// 는 루트와 부모 컴포넌트를 떼어 상대 경로로 읽는다.
-    pub(crate) fn path(&self, rel: impl AsRef<Path>) -> PathBuf {
-        use std::path::Component;
-        let mut out = self.home.clone();
-        for c in rel.as_ref().components() {
-            match c {
-                Component::Normal(part) => out.push(part),
-                // 루트·프리픽스·"."·".." 는 홈을 벗어나거나 되돌리는 컴포넌트다 — 버린다.
-                _ => continue,
-            }
-        }
-        out
-    }
-}
+pub(crate) use soksak_portable::identity::Identity;
 
 /// 현재 프로세스의 정체성 — 앰비언트 전역에서 한 번 읽어 값으로 만든다.
 ///
 /// 이 함수는 **경계의 이쪽 끝**이다. 여기서만 전역을 읽고, 그 아래로는 값이 흐른다.
-/// 헬퍼 프로세스에서는 이 함수 대신 인자로 받은 정체성을 쓰게 된다.
+/// 헬퍼 프로세스에는 이 함수가 없다 — 거기서는 띄운 쪽이 준 값이 그대로 정체성이다.
 pub(crate) fn ambient() -> Identity {
     Identity::new(crate::home::soksak_home(), crate::home::identifier())
 }
@@ -82,6 +29,7 @@ pub(crate) fn ambient() -> Identity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     #[test]
     fn identity_is_a_value_not_an_ambient_read() {
@@ -132,6 +80,19 @@ mod tests {
         assert_eq!(
             id.path("../../etc/passwd"),
             Path::new("/tmp/x-dev/etc/passwd")
+        );
+    }
+
+    /// 앱과 헬퍼가 **같은 규칙**을 본다는 사실 자체를 단언한다. 앱이 자기 struct 를 다시
+    /// 들면 이 단언은 컴파일은 되지만 뜻을 잃는다 — 그래서 포터블 경로로 못박는다.
+    #[test]
+    fn the_app_and_the_helper_share_one_identity_type() {
+        fn takes_portable(id: soksak_portable::identity::Identity) -> String {
+            id.cli_name()
+        }
+        assert_eq!(
+            takes_portable(Identity::new("/tmp/x-debug", "com.soksak.debug")),
+            "sok-debug"
         );
     }
 }
