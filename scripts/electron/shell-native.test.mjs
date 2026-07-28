@@ -282,6 +282,12 @@ describe("표 — UI 가 읽을 수 있는 능력면", () => {
   // 하나여야 한다 — 한 파일이 조립에서 빠지면 그 갈래가 통째로 사라지고, UI 는 없는 줄도 모른다.
   const DECLARED = [
     "window_set_background",
+    "window_list",
+    "window_create",
+    "window_close",
+    "window_focus",
+    "window_place",
+    "window_monitors",
     "webview_list",
     "webview_recovery_consume",
     "webview_overlay_active",
@@ -392,7 +398,6 @@ describe("셸-갈래 미등재 — 소켓으로 새지 않는다", () => {
   const UNLISTED = [
     ["webview_visible", { visible: true }],
     ["webview_bounds", { label: "b-1" }],
-    ["window_create", { label: "w-1" }],
     ["engine_surface_hide", {}],
     ["titlebar_backing", {}],
   ];

@@ -11,7 +11,7 @@
 // 프로세스엔 창이 없어 영영 그리로 못 간다. 그 표는 electron/native/ 가 갈래별로 소유하고,
 // 소켓 앞에 선다. 이 파일은 표를 쥐지 않는다 — 배선(창 레지스트리·다리·원장)만 쥔다.
 
-const { app, BrowserWindow, dialog, ipcMain, screen } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, screen  } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const os = require("node:os");
@@ -57,10 +57,13 @@ function recordDemand(cmd, served, code, by) {
   }
 }
 
-function createWindow(label) {
+function createWindow(label, rect) {
   const win = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    // rect 를 받으면 그대로 놓는다. 만든 뒤 옮기면 첫 프레임이 기본 자리에 한 번 그려져
+    // 복원이 화면에서 튄다 — 생성 인자로 주면 그 프레임이 없다.
+    ...(rect
+      ? { x: rect.x, y: rect.y, width: rect.w, height: rect.h }
+      : { width: 1200, height: 800 }),
     show: false,
     titleBarStyle: "hiddenInset",
     webPreferences: {
@@ -97,6 +100,12 @@ function nativeContext(sender) {
   return {
     window: BrowserWindow.fromWebContents(sender),
     surfaces: () => [...windows.keys()],
+    // 창 갈래가 필요로 하는 것 — 라벨로 짚기, 만들기, 그리고 화면 사실. 표가 electron 을
+    // 직접 require 하지 않게 여기서 넘긴다: 그래야 표를 테스트가 스텁 하나로 몰 수 있다.
+    labels: () => [...windows.keys()].filter((l) => !windows.get(l).isDestroyed()),
+    windowFor,
+    createWindow,
+    screen,
   };
 }
 

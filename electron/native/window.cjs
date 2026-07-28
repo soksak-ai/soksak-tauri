@@ -1,11 +1,28 @@
 // window_* — 창 자체를 다루는 것들. 이 갈래는 cored 로 갈 수 없다: 그 프로세스엔 창이 없다.
+//
+// 콘텐츠 뷰와 다른 점이 여기 있다. 콘텐츠는 <webview> 로 DOM 안에 살 수 있어 프레임워크를
+// 건널 필요가 없지만(src/lib/contentViews.ts), **창은 DOM 이 만들 수 없다.**
+//
+// 이름·인자·반환 모양은 앱의 것과 같다. 번역하면 프론트가 프레임워크마다 다른 것을 보고,
+// 그 차이는 오류가 아니라 "이 프레임워크에서는 창 배치가 안 됨"으로 나타난다.
 
 const { shellError } = require("./error.cjs");
 
+/** 라벨로 창을 짚는다. 못 짚으면 이름을 달고 실패한다 — 아무 창이나 건드리면 남의 창을
+ *  바꿔 놓고 성공을 돌려주게 된다. */
+function need(ctx, args) {
+  const label = String(args.label ?? "");
+  const win = ctx.windowFor(label);
+  if (!win || win.isDestroyed()) {
+    throw shellError("NO_WINDOW", `창 없음: ${label}`);
+  }
+  return win;
+}
+
 module.exports = {
   // 창 배경 — Tauri window.set_background_color 의 대응. 루트 DOM 이 투명이라 미도장 영역의
-  // 색을 창이 책임진다. 기준(#rrggbb 6자리)은 코어와 같게 둔다: 같은 색 문자열에 두 셸이
-  // 다르게 답하면 테마가 셸마다 달라진다.
+  // 색을 창이 책임진다. 기준(#rrggbb 6자리)은 코어와 같게 둔다: 같은 색 문자열에 두
+  // 프레임워크가 다르게 답하면 테마가 프레임워크마다 달라진다.
   window_set_background: {
     concept: "창 배경색",
     source: "BrowserWindow.setBackgroundColor",
@@ -15,11 +32,114 @@ module.exports = {
       if (!/^[0-9a-fA-F]{6}$/.test(hex)) {
         throw shellError("INVALID_COLOR", `hex 색상(#rrggbb)이 아님: ${raw}`);
       }
-      // 부른 창을 못 짚으면 아무 창도 칠하지 않는다 — 아무 창이나 칠하면 남의 창을 바꿔 놓고
-      // 성공을 돌려주게 된다(코어는 호출 창을 자동 주입한다).
+      // 부른 창을 못 짚으면 아무 창도 칠하지 않는다(코어는 호출 창을 자동 주입한다).
       if (!ctx.window) throw shellError("NO_WINDOW", "부른 창을 짚지 못했다");
       ctx.window.setBackgroundColor(`#${hex.toLowerCase()}`);
       return null;
+    },
+  },
+
+  window_list: {
+    concept: "살아 있는 창 라벨",
+    source: "셸이 라벨을 부여하고 닫힘에서 지운다",
+    answer: (ctx) => ctx.labels(),
+  },
+
+  // 라벨을 주면 그 라벨로, 없으면 셸이 짓는다. 같은 라벨엔 **멱등** — 리스폰 재호출이 창을
+  // 늘리면 재시작 복원이 창을 뿌린다.
+  window_create: {
+    concept: "창 생성",
+    source: "BrowserWindow + 셸의 라벨 레지스트리",
+    answer: (ctx, args) => {
+      const label = String(args.label ?? "").trim();
+      if (!label) throw shellError("INVALID_LABEL", "라벨 없는 창 생성은 아직 없다");
+      const live = ctx.windowFor(label);
+      if (live && !live.isDestroyed()) return label;
+      const r = args.rect;
+      const rect =
+        r && [r.x, r.y, r.w, r.h].every((v) => typeof v === "number")
+          ? { x: r.x, y: r.y, w: r.w, h: r.h }
+          : null;
+      const win = ctx.createWindow(label, rect);
+      // focus 기본은 true — 사용자가 새 창을 열면 그 창이 포커스된다. 복원(리스폰)은 false 로
+      // 불러 백그라운드에 되살리고 현재 포커스를 뺏지 않는다.
+      if (args.focus !== false) win.focus();
+      return label;
+    },
+  },
+
+  window_close: {
+    concept: "창 닫기",
+    source: "BrowserWindow.close",
+    answer: (ctx, args) => {
+      need(ctx, args).close();
+      return null;
+    },
+  },
+
+  window_focus: {
+    concept: "창 포커스",
+    source: "BrowserWindow.focus",
+    answer: (ctx, args) => {
+      need(ctx, args).focus();
+      return null;
+    },
+  },
+
+  // 물리 rect 를 그대로 놓는다. 전략(어디에 둘지)은 프론트의 순수함수가 정하고, 여기는 시행만
+  // 한다 — 팩트/전략 분리.
+  window_place: {
+    concept: "창 배치",
+    source: "BrowserWindow.setBounds",
+    answer: (ctx, args) => {
+      const win = need(ctx, args);
+      for (const k of ["x", "y", "w", "h"]) {
+        if (typeof args[k] !== "number") {
+          throw shellError("INVALID_RECT", `${k} 가 수가 아님: ${JSON.stringify(args[k])}`);
+        }
+      }
+      win.setBounds({ x: args.x, y: args.y, width: args.w, height: args.h });
+      return null;
+    },
+  },
+
+  // 모니터·창 배치 팩트 — 판단 없이 사실만. 소속 모니터는 창 중심이 어느 모니터 rect 안에
+  // 있는가로 정한다(기하이지 판단이 아니다). 어디에도 안 들면 null 이다.
+  window_monitors: {
+    concept: "모니터·창 배치 팩트",
+    source: "screen.getAllDisplays + 각 창의 bounds",
+    answer: (ctx) => {
+      const displays = ctx.screen.getAllDisplays();
+      const monitors = displays.map((d, index) => ({
+        index,
+        name: d.label ?? "",
+        x: d.bounds.x,
+        y: d.bounds.y,
+        w: d.bounds.width,
+        h: d.bounds.height,
+        scale: d.scaleFactor,
+      }));
+      const windows = ctx.labels().map((label) => {
+        const win = ctx.windowFor(label);
+        const b = win.getBounds();
+        const cx = b.x + Math.floor(b.width / 2);
+        const cy = b.y + Math.floor(b.height / 2);
+        const at = monitors.findIndex(
+          (m) => cx >= m.x && cx < m.x + m.w && cy >= m.y && cy < m.y + m.h,
+        );
+        return {
+          label,
+          title: win.getTitle(),
+          alwaysOnTop: win.isAlwaysOnTop(),
+          x: b.x,
+          y: b.y,
+          w: b.width,
+          h: b.height,
+          focused: win.isFocused(),
+          monitor: at < 0 ? null : at,
+        };
+      });
+      return { monitors, windows };
     },
   },
 };
