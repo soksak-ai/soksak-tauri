@@ -20,8 +20,8 @@ use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
 
 use soksak_core::{
-    fsx, identity, integrity, pathx, plugin_data, plugin_dir, probe, session, themes, udp,
-    unit_dev, unit_target,
+    fsx, identity, integrity, pathx, plugin_data, plugin_dir, probe, session, skillgen, themes,
+    udp, unit_dev, unit_target,
 };
 
 use crate::ctx::Ctx;
@@ -358,6 +358,15 @@ pub const COMMANDS: &[Command] = &[
         args: &[Arg { name: "entries", ty: "[pid, cmd][]", required: REQ }],
         returns: "u32[] (명령줄이 대조되어 실제로 종료한 pid)",
         run: run_daemon_reap,
+    },
+    // 스킬 재생성 방아쇠 — 몸이 둘뿐이다: 정체성 홈의 매니페스트 읽기와 argv 하나 분리 스폰.
+    // 홈은 부팅 상태에서 오고 매니페스트가 CLI 실물을 지목하므로, 창도 앱 핸들도 필요 없다.
+    // 렌더 로직의 단일 진실은 그 CLI 다(P8 쓰기-스루) — 여기는 방아쇠만 소유한다.
+    Command {
+        name: "skill_refresh_spawn",
+        args: &[],
+        returns: "bool (true=스폰했다, false=재생성할 스킬이 없다)",
+        run: run_skill_refresh_spawn,
     },
 ];
 
@@ -1428,5 +1437,27 @@ fn run_daemon_reap(_ctx: &Ctx, params: &Value) -> Outcome {
             }
         }
         Ok(reaped)
+    })
+}
+
+fn run_skill_refresh_spawn(ctx: &Ctx, params: &Value) -> Outcome {
+    // 저장소 쓰기(data_kv_set)와 달리 잠금을 요구하지 않는다: 이 방아쇠가 당기는 CLI 는 홈에
+    // 쓰지만 그 쓰기는 app.data 밖이라 store_lock 이 지키는 파일이 아니다. 앱의 같은 명령도
+    // 잠그지 않는다 — 여기서만 요구하면 앱이 도는 홈에서 이 명령만 영영 거절되는데, 그
+    // 거절은 그 파일들을 아무도 지키지 않는다는 사실을 바꾸지 않는다(plugin_data_write 와 같은 자리).
+    dispatch(params, |_: NoArgs| {
+        let Some((cli, argv)) = skillgen::skill_refresh_argv(ctx.home())? else {
+            return Ok(false); // 설치 전 — 재생성할 스킬이 없다(오류 아님).
+        };
+        // 분리 스폰이고 `Child` 는 즉시 버린다 — 원본의 계약이다. 기다리면 이 명령이 스킬
+        // 재생성이 끝날 때까지 호출자를 붙잡는다(프론트는 디바운스 뒤 던져 놓고 잊는다).
+        std::process::Command::new(cli)
+            .args(argv)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| format!("스킬 재생성 스폰 실패: {e}"))?;
+        Ok(true)
     })
 }

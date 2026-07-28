@@ -28,6 +28,7 @@ pub mod plugin_data;
 pub mod plugin_dir;
 pub mod probe;
 pub mod session;
+pub mod skillgen;
 pub mod store_lock;
 pub mod themes;
 pub mod udp;

@@ -1794,3 +1794,106 @@ fn plugin_remove_refuses_an_uninstalled_id_by_name() {
         "{reply}"
     );
 }
+
+// ── 스킬 재생성 방아쇠 ──────────────────────────────────────────────────────────
+//
+// 몸이 둘이다: 정체성 홈의 매니페스트 읽기와 argv 하나 분리 스폰. 홈은 부팅 상태에서 오고
+// 매니페스트가 CLI 실물을 지목하므로, 이 프로세스가 앱이 아니어도 같은 답이 나온다.
+//
+// 이 명령의 요점은 **부재와 고장을 가르는 것**이다. 둘을 합치면 '설치 전'이 고장으로 보이거나
+// (설치 안 한 홈에서 매번 오류) 고장이 조용한 false 가 된다(매니페스트가 깨져도 아무도 모른다).
+
+/// 스폰된 CLI 가 남길 표식을 기다린다 — 상한 5초, 25ms 간격, 보이면 즉시 끝난다.
+///
+/// 이 명령의 계약이 `Child` 를 즉시 버리는 것이라(원본 그대로) 종료 사건을 받을 길이 없다.
+/// 그래서 여기서만 짧게 다시 본다. 상한을 넘기면 실패다 — 무한 감시가 아니다.
+fn wait_for_trace(path: &std::path::Path) -> String {
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while std::time::Instant::now() < deadline {
+        if let Ok(s) = std::fs::read_to_string(path) {
+            if !s.trim().is_empty() {
+                return s;
+            }
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    panic!(
+        "표식이 끝내 생기지 않았다 — 스폰하지 않고 답만 했다: {}",
+        path.display()
+    );
+}
+
+/// 매니페스트가 없으면 **성공에 false** 다. 설치 전은 고장이 아니다 — 오류로 답하면
+/// 스킬 CLI 를 안 깐 홈에서 플러그인을 켤 때마다 실패가 뜬다.
+#[test]
+fn skill_refresh_spawn_answers_false_when_the_manifest_is_absent() {
+    let helper = spawn_helper("skill-refresh-absent");
+    let reply = helper.ask(json!({
+        "id": 70, "method": "skill_refresh_spawn", "params": {}
+    }));
+    assert_eq!(reply["ok"], true, "부재를 고장으로 답했다: {reply}");
+    assert_eq!(reply["data"], false, "{reply}");
+}
+
+/// 매니페스트가 지목한 CLI 를 **실제로 돌린다**. true 만 보는 단언은 스폰을 안 해도 통과하므로
+/// 판별자는 그 CLI 만 남길 수 있는 표식이고, 표식의 내용이 argv(`skill refresh`)를 못박는다.
+#[test]
+fn skill_refresh_spawn_runs_the_cli_the_manifest_names() {
+    let helper = spawn_helper("skill-refresh-spawn");
+    let trace = helper.dir().join("cli-ran");
+    let cli = helper.dir().join("fixture-cli");
+    std::fs::write(
+        &cli,
+        format!(
+            "#!/bin/sh\n\
+             # 받은 인자를 그대로 남기고 스스로 끝난다(뒤에 남는 프로세스가 없다).\n\
+             printf '%s\\n' \"$*\" > {}\n",
+            trace.display()
+        ),
+    )
+    .expect("픽스처 CLI");
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    std::fs::write(
+        helper.home().join("skill-refresh.json"),
+        json!({ "cli": cli.to_string_lossy() }).to_string(),
+    )
+    .expect("픽스처 매니페스트");
+
+    let reply = helper.ask(json!({
+        "id": 71, "method": "skill_refresh_spawn", "params": {}
+    }));
+    assert_eq!(reply["ok"], true, "{reply}");
+    assert_eq!(reply["data"], true, "스폰했다고 답하지 않았다: {reply}");
+    assert_eq!(
+        wait_for_trace(&trace).trim(),
+        "skill refresh",
+        "다른 argv 로 돌렸다"
+    );
+}
+
+/// 매니페스트는 있는데 `cli` 가 없으면 **사유를 달고 실패한다**. 부재의 false 와 같은 답이
+/// 되면 잘못 쓴 매니페스트가 '설치 전'으로 보이고, 스킬은 영영 재생성되지 않는다.
+#[test]
+fn skill_refresh_spawn_fails_by_name_when_the_manifest_has_no_cli() {
+    let helper = spawn_helper("skill-refresh-broken");
+    std::fs::write(
+        helper.home().join("skill-refresh.json"),
+        json!({ "note": "cli 가 없다" }).to_string(),
+    )
+    .expect("픽스처 매니페스트");
+
+    let reply = helper.ask(json!({
+        "id": 72, "method": "skill_refresh_spawn", "params": {}
+    }));
+    assert_eq!(reply["ok"], false, "{reply}");
+    // UNKNOWN_COMMAND 도 ok:false 다 — 코드를 함께 보지 않으면 미서빙이 통과로 위장한다.
+    assert_eq!(reply["code"], "COMMAND_FAILED", "{reply}");
+    assert_eq!(
+        reply["message"].as_str().unwrap_or_default(),
+        "매니페스트에 cli 없음",
+        "{reply}"
+    );
+}
