@@ -25,6 +25,17 @@ async function load() {
   return import("./contentViewEvents");
 }
 
+/**
+ * `<webview>` 가 실제로 내는 사건 — **필드는 이벤트 객체 위에 바로 붙는다.**
+ *
+ * CustomEvent 의 detail 이 아니다. 흉내를 detail 로 내면 다리가 detail 을 읽어도 통과하고,
+ * 그 통과는 살아있는 앱에서 "주소창이 about:blank 에 멈춘다"로 나타난다(실측 2026-07-28:
+ * 페이지는 렌더됐는데 URL 바가 안 따라왔다). 흉내가 실물과 다르면 검증한 것은 내 해석뿐이다.
+ */
+function tagEvent(name: string, fields: Record<string, unknown>): Event {
+  return Object.assign(new Event(name), fields);
+}
+
 /** <webview> 태그가 내는 사건을 흉내내는 요소 — jsdom 에는 그 요소가 없다. */
 function fakeTag() {
   const el = document.createElement("div");
@@ -48,7 +59,7 @@ describe("콘텐츠 뷰 사건 다리", () => {
     const m = await load();
     const el = fakeTag();
     m.bridgeContentViewEvents(el, "b-1");
-    el.dispatchEvent(new CustomEvent("did-navigate", { detail: { url: "https://x/page" } }));
+    el.dispatchEvent(tagEvent("did-navigate", { url: "https://x/page" }));
     expect(emit).toHaveBeenCalledWith("browser-nav", { label: "b-1", url: "https://x/page" });
   });
 
@@ -56,7 +67,7 @@ describe("콘텐츠 뷰 사건 다리", () => {
     const m = await load();
     const el = fakeTag();
     m.bridgeContentViewEvents(el, "b-1");
-    el.dispatchEvent(new CustomEvent("page-title-updated", { detail: { title: "T" } }));
+    el.dispatchEvent(tagEvent("page-title-updated", { title: "T" }));
     expect(emit).toHaveBeenCalledWith("browser-title", { label: "b-1", title: "T" });
   });
 
@@ -79,9 +90,9 @@ describe("콘텐츠 뷰 사건 다리", () => {
     const m = await load();
     const el = fakeTag();
     m.bridgeContentViewEvents(el, "b-1");
-    el.dispatchEvent(new CustomEvent("update-target-url", { detail: { url: "https://y" } }));
+    el.dispatchEvent(tagEvent("update-target-url", { url: "https://y" }));
     expect(emit).toHaveBeenCalledWith("browser-status", { label: "b-1", url: "https://y" });
-    el.dispatchEvent(new CustomEvent("update-target-url", { detail: { url: "" } }));
+    el.dispatchEvent(tagEvent("update-target-url", { url: "" }));
     expect(emit).toHaveBeenCalledWith("browser-status", { label: "b-1", url: "" });
   });
 
@@ -89,7 +100,7 @@ describe("콘텐츠 뷰 사건 다리", () => {
     const m = await load();
     const el = fakeTag();
     m.bridgeContentViewEvents(el, "b-1");
-    el.dispatchEvent(new CustomEvent("new-window", { detail: { url: "https://z" } }));
+    el.dispatchEvent(tagEvent("new-window", { url: "https://z" }));
     expect(emit).toHaveBeenCalledWith("browser-open-external", { label: "b-1", url: "https://z" });
   });
 
@@ -98,7 +109,7 @@ describe("콘텐츠 뷰 사건 다리", () => {
     const el = fakeTag();
     const off = m.bridgeContentViewEvents(el, "b-1");
     off();
-    el.dispatchEvent(new CustomEvent("did-navigate", { detail: { url: "https://x" } }));
+    el.dispatchEvent(tagEvent("did-navigate", { url: "https://x" }));
     expect(emit).not.toHaveBeenCalled();
   });
 });

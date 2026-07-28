@@ -9,6 +9,17 @@
 // 바꾸면 소비자가 undefined 를 본다.
 import { emitLocal } from "../framework";
 
+/**
+ * 태그가 내는 사건의 필드 — **이벤트 객체 위에 바로 붙는다.**
+ *
+ * CustomEvent 의 detail 이 아니다. detail 로 읽으면 값이 늘 undefined 라 아무 사건도 안 나가고,
+ * 그 침묵은 오류가 아니라 "주소창이 about:blank 에 멈춘다"로 나타난다(실측 2026-07-28:
+ * 페이지는 렌더됐는데 URL 바가 안 따라왔다).
+ */
+function field<T>(e: Event, key: string): T | undefined {
+  return (e as unknown as Record<string, T>)[key];
+}
+
 /** 태그가 내는 사건 → 앱이 아는 사건. 원본은 src-tauri/src/webview.rs 다. */
 type Tag = HTMLElement & {
   canGoBack?: () => boolean;
@@ -17,7 +28,7 @@ type Tag = HTMLElement & {
 
 function nav(label: string) {
   return (e: Event) => {
-    const url = (e as CustomEvent<{ url?: string }>).detail?.url;
+    const url = field<string>(e, "url");
     if (typeof url === "string") emitLocal("browser-nav", { label, url });
   };
 }
@@ -46,7 +57,7 @@ export function bridgeContentViewEvents(el: Tag, label: string): () => void {
     [
       "page-title-updated",
       (e) => {
-        const title = (e as CustomEvent<{ title?: string }>).detail?.title;
+        const title = field<string>(e, "title");
         if (typeof title === "string") emitLocal("browser-title", { label, title });
       },
     ],
@@ -56,14 +67,14 @@ export function bridgeContentViewEvents(el: Tag, label: string): () => void {
       "update-target-url",
       (e) => {
         // 링크를 벗어나면 빈 문자열이다 — 그것도 사건이라 걸러내지 않는다(상태표시줄이 비어야 한다).
-        const url = (e as CustomEvent<{ url?: string }>).detail?.url;
+        const url = field<string>(e, "url");
         emitLocal("browser-status", { label, url: typeof url === "string" ? url : "" });
       },
     ],
     [
       "new-window",
       (e) => {
-        const url = (e as CustomEvent<{ url?: string }>).detail?.url;
+        const url = field<string>(e, "url");
         if (typeof url === "string") emitLocal("browser-open-external", { label, url });
       },
     ],
