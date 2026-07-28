@@ -8,6 +8,7 @@
 // 허용 구역은 어댑터뿐이다. 새 프레임워크를 붙이는 일은 `src/framework/<name>.ts` 를 하나 더
 // 두는 것으로 끝나야 하며, 앱 코드는 한 줄도 바뀌지 않아야 한다.
 import { describe, expect, it } from "vitest";
+import { leaksIn } from "./seamSweep";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -70,5 +71,35 @@ describe("프레임워크 경계 — 벤더 SDK 는 어댑터만 안다", () => 
     ]) {
       expect(tauriHost[key as keyof typeof tauriHost]).toBeDefined();
     }
+  });
+  /**
+   * 벤더는 import 로만 새지 않는다 — **선언**으로도 샌다.
+   *
+   * 실측(2026-07-28): 헤더가 안 끌렸다. 앱이 `data-tauri-drag-region` 을 네 곳에 쓰고 있었는데
+   * 그것은 Tauri 웹뷰가 가로채는 속성이라 다른 프레임워크에서는 그냥 뜻 없는 속성이다.
+   * 던지지도 로그를 남기지도 않는다 — 창이 안 움직일 뿐이다. import 게이트는 통과시켰다.
+   *
+   * 종류는 seamSweep.ts 가 소유한다(새 프레임워크를 붙이면 그쪽 것도 거기 적는다).
+   * CSS·HTML 까지 훑는다 — 선언적 누출은 거기로도 샌다.
+   */
+  it("어댑터 밖의 앱 코드는 벤더 전용 선언을 쓰지 않는다", () => {
+    const SWEPT = /\.(ts|tsx|css|html)$/;
+    const files: string[] = [];
+    const walkAll = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const p = join(dir, name);
+        if (statSync(p).isDirectory()) walkAll(p);
+        else if (SWEPT.test(name)) files.push(p);
+      }
+    };
+    walkAll(SRC);
+    // 오라클 생존 — 훑은 파일이 없으면 아래 단언이 공짜로 통과한다.
+    expect(files.length).toBeGreaterThan(50);
+
+    const hits = files
+      .map((f) => relative(SRC, f))
+      .filter((rel) => !rel.startsWith(ADAPTER_DIR))
+      .flatMap((rel) => leaksIn(rel, readFileSync(join(SRC, rel), "utf8")));
+    expect(hits).toEqual([]);
   });
 });

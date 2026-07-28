@@ -1,3 +1,5 @@
+// 드래그 영역을 주는 쪽이 그 되돌림(no-drag)도 진다 — 앱 CSS 에 두면 종속이 샌다.
+import "./electron.css";
 import type { EngineProvision } from "@soksak-ai/plugin-spec";
 // Electron 셸 어댑터 — AppFramework 계약의 Electron 구현(스파이크).
 //
@@ -173,12 +175,23 @@ function labeledWindowHandle(label: string): ShellWindowHandle {
  * UI 뷰와 콘텐츠 뷰를 같은 컴포지터가 합성한다(WebContentsView). 그래서 그 장치를 전제한
  * 표면만 여기서 빠지고, 등급만 필요한 표면은 오히려 사이드카 없이 그냥 선다.
  */
+/**
+ * Electron 은 CSS 로 본다 — `-webkit-app-region: drag` 인 영역을 끌면 창이 움직인다.
+ *
+ * 자식에 버튼이 있으면 그 버튼도 드래그 영역이 되어 클릭이 안 먹는다. 그래서 클릭 가능한
+ * 자식은 `no-drag` 로 되돌려야 하고, 그 규칙은 CSS 가 소유한다(App.css).
+ */
+export const dragRegion: Record<string, unknown> = {
+  style: { WebkitAppRegion: "drag" } as React.CSSProperties,
+};
+
 export const engineProvision: EngineProvision = {
   chromium: true,
   nativeChildWebview: false,
 };
 
 export const electronFramework: AppFramework = {
+  dragRegion,
   engineProvision,
   name: "electron",
 

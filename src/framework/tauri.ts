@@ -97,12 +97,16 @@ function wrapWindow(win: Window, label: string): ShellWindowHandle {
  * 승격이 no-op 이다(R4). 그 갈래는 OS 를 알게 되는 자리라 이 값을 실행 중에 정하도록 바꿀 때
  * 함께 들어온다 — 지금은 이 저장소가 실제로 검증하는 조합만 적는다.
  */
+/** Tauri 는 웹뷰가 이 속성을 가로채 창 드래그를 시작한다. */
+export const dragRegion: Record<string, unknown> = { "data-tauri-drag-region": true };
+
 export const engineProvision: EngineProvision = {
   chromium: false,
   nativeChildWebview: true,
 };
 
 export const tauriHost: AppFramework = {
+  dragRegion,
   engineProvision,
   name: "tauri",
 

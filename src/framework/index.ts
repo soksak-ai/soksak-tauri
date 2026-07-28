@@ -64,3 +64,12 @@ export const deepLink = framework.deepLink;
  * 매니페스트에 요구로 적는다(engineNeeds.ts) — 여기는 그 요구를 채우는 쪽의 사실이다.
  */
 export const engineProvision: EngineProvision = framework.engineProvision;
+
+/**
+ * 창을 끄는 영역임을 표시하는 props — 요소에 그대로 펼친다.
+ *
+ *   <div className="titlebar" {...dragRegion}>
+ *
+ * 무엇이 붙는지는 앱이 몰라도 된다. Tauri 는 속성, Electron 은 CSS 다.
+ */
+export const dragRegion = framework.dragRegion;

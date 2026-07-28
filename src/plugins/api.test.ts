@@ -1,6 +1,24 @@
 // 플러그인 API 계약 — 권한 표면 게이트(§0-2)·관리 명령 차단(§0-5)·선언 외 바인딩 거부.
 // deps 는 전부 가짜 주입 — Tauri/registry 실물 없이 표면 규칙만 고정한다.
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// 프레임워크는 **경계로** 모킹한다 — 벤더가 아니라. 벤더 전역(__TAURI_INTERNALS__)을 스텁하면
+// 그 테스트는 Tauri 어댑터를 실물로 태우는 것이고, 프레임워크를 갈면 같이 뜯긴다.
+// 계약이 그렇게 적혀 있다(framework/contract.ts 머리말).
+vi.mock("../framework", async (orig) => {
+  const real = (await orig()) as Record<string, unknown>;
+  return {
+    ...real,
+    // 스트림은 계약면이라 모양만 있으면 된다 — 이 파일이 재는 것은 권한 게이트다.
+    createStream: <T,>() => {
+      const subs: ((v: T) => void)[] = [];
+      return {
+        onmessage: (cb: (v: T) => void) => subs.push(cb),
+        toJSON: () => ({ __channel__: 0 }),
+      };
+    },
+  };
+});
 import {
   buildPluginApi,
   isBlockedForPlugins,
@@ -980,10 +998,6 @@ describe("cross-plugin 의존 게이트 (executeGated + scheduler.register, §de
 
 describe("app.sidecar — 권한 게이트 + 선언≡실물", () => {
   beforeEach(() => {
-    // Tauri Channel 생성이 요구하는 내부 스텁(jsdom 에 실물 없음) — 콜백 id 발급만 흉내.
-    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ ??= {
-      transformCallback: () => 0,
-    };
   });
   it("sidecar 권한 없으면 API 부재", () => {
     const { api } = buildPluginApi(manifestOf({}), "/d", fakeDeps());

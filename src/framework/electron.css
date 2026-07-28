@@ -1,0 +1,22 @@
+/* Electron 전용 스타일 — 이 어댑터가 적재될 때만 붙는다.
+ *
+ * 앱 CSS 에 두면 프레임워크 종속이 앱으로 샌다. 여기 있으면 electron.ts 가 import 할 때만
+ * 들어가고, Tauri 로 도는 빌드에는 애초에 존재하지 않는다.
+ *
+ * `-webkit-app-region: drag` 는 **상속된다.** 타이틀바를 드래그 영역으로 표시하면 그 안의
+ * 버튼·탭·입력까지 드래그가 되어 클릭이 아예 안 먹는다. 그 실패는 예외가 아니라 "눌러도
+ * 반응 없음"이라 오류로 보이지 않는다 — 드래그 영역을 주는 쪽이 이 되돌림도 함께 진다. */
+.titlebar button,
+.titlebar a,
+.titlebar input,
+.titlebar select,
+.titlebar [role="button"],
+.titlebar [data-node],
+.orch-header button,
+.orch-header a,
+.orch-header input,
+.orch-header [role="button"],
+.orch-header [data-node],
+.project-tabs .project-tab {
+  -webkit-app-region: no-drag;
+}

@@ -74,6 +74,18 @@ export interface ShellNotification {
 
 export interface AppFramework {
   /**
+   * "이 요소를 끌면 창이 움직인다"를 프레임워크에 말하는 속성.
+   *
+   * 방식이 프레임워크마다 다르다. Tauri 는 웹뷰가 `data-tauri-drag-region` 속성을 가로채고,
+   * Electron 은 CSS `-webkit-app-region: drag` 를 본다. 어느 쪽도 상대를 알지 못한다.
+   *
+   * 계약에 두는 이유: 이 실패는 **아무것도 남기지 않는다.** 틀린 표식은 던지지도 로그를 남기지도
+   * 않고 그냥 창이 안 움직인다 — 오류로 보이지 않아 오래 안 보인다(실측 2026-07-28).
+   * 요소에 그대로 펼치는 props 로 돌려주므로 앱은 무엇이 붙는지 몰라도 된다.
+   */
+  readonly dragRegion: Record<string, unknown>;
+
+  /**
    * 이 프레임워크가 제공하는 것 — 플러그인의 요구(requiresEngine 등)를 채우는 쪽의 사실.
    *
    * 계약에 두는 이유: 어댑터가 빠뜨리면 컴파일이 막는다. 선택으로 두면 새 프레임워크가

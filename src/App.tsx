@@ -1,4 +1,4 @@
-import { currentWindow, appInfo, invoke } from "./framework";
+import { currentWindow, appInfo, invoke , dragRegion } from "./framework";
 import { execute } from "./commands/registry";
 import {
   memo,
@@ -1214,7 +1214,7 @@ function App() {
   return (
     <div className="app-root">
       {/* 오버레이 타이틀바: 로고(최앞단 고정) + 프로젝트 탭. 빈 영역 드래그로 창 이동. */}
-      <div className="titlebar" data-tauri-drag-region>
+      <div className="titlebar" {...dragRegion}>
         {/* 로고는 신호등(82px) 바로 뒤 고정 — 탭은 항상 로고 뒤부터 쌓인다.
             pointer-events:none 으로 창 드래그를 가로채지 않는다. */}
         <span
@@ -1226,12 +1226,12 @@ function App() {
             탭(상단 모드)은 이 뒤부터 쌓인다. 릴리스(soksak)는 배지 없음. */}
         <BuildBadge />
         {projectTabPosition === "top" ? (
-          <div className="project-tabs" data-tauri-drag-region>
+          <div className="project-tabs" {...dragRegion}>
             {projectTabsList}
           </div>
         ) : (
           /* 좌측 모드: 타이틀바엔 탭 없이 드래그 영역만(탭은 좌측 레일로). */
-          <div className="project-tabs" data-tauri-drag-region />
+          <div className="project-tabs" {...dragRegion} />
         )}
         <div className="titlebar-right">
           <PluginHeaderActions />

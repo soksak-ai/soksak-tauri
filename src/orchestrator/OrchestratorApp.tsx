@@ -4,7 +4,7 @@
 // (sessions 등) 직접 참조 금지: 외부 클라이언트(폰·CLI)와 같은 자격이어야 P13 이 지켜진다.
 
 import { backfillFeed } from "./activityBackfill";
-import { invoke, currentWindow } from "../framework";
+import { invoke, currentWindow , dragRegion } from "../framework";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { safeListen } from "../lib/safeListen";
 import { currentWindowLabel } from "../lib/webviewLabels";
@@ -424,7 +424,7 @@ export function OrchestratorApp() {
 
   return (
     <div className="orch-root" data-node="orch">
-      <header className="orch-header" data-tauri-drag-region>
+      <header className="orch-header" {...dragRegion}>
         <span className="orch-title">{t("orch.title")}</span>
         <button
           type="button"
