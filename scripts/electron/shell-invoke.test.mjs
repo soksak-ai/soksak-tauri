@@ -25,6 +25,7 @@ let root;
 let servers;
 let realHomedir;
 let realSocketEnv;
+let realHelperEnv;
 
 /** 목 백엔드 — 한 줄 JSON 요청에 handler 가 답한다. */
 function startMock(name, handler) {
@@ -77,6 +78,10 @@ function loadShell(socketPath) {
   };
   if (socketPath) process.env.SOKSAK_SOCKET = socketPath;
   else delete process.env.SOKSAK_SOCKET;
+  // 소켓을 안 주면 셸은 자기 cored를 띄운다(helper-spawn.test.mjs 가 그쪽). 이 파일이 재는 것은
+  // 다리와 원장이므로 cored 자리를 없는 경로로 고정한다 — 안 그러면 빌드 산출물이 있는 체크아웃
+  // 에서만 진짜 프로세스가 뜨고, 검증 결과가 빌드 상태에 따라 갈린다.
+  process.env.SOKSAK_CORED_BIN = join(root, "no-such-helper");
   delete requireCjs.cache[MAIN];
   delete requireCjs.cache[BACKEND];
   requireCjs(MAIN);
@@ -99,6 +104,7 @@ beforeEach(() => {
   servers = [];
   realHomedir = osModule.homedir;
   realSocketEnv = process.env.SOKSAK_SOCKET;
+  realHelperEnv = process.env.SOKSAK_CORED_BIN;
   // 셸은 원장을 홈에 떨군다 — 검증이 사용자 홈을 건드리지 않게 홈을 픽스처로 돌린다.
   osModule.homedir = () => root;
 });
@@ -107,6 +113,8 @@ afterEach(() => {
   osModule.homedir = realHomedir;
   if (realSocketEnv === undefined) delete process.env.SOKSAK_SOCKET;
   else process.env.SOKSAK_SOCKET = realSocketEnv;
+  if (realHelperEnv === undefined) delete process.env.SOKSAK_CORED_BIN;
+  else process.env.SOKSAK_CORED_BIN = realHelperEnv;
   delete requireCjs.cache[MAIN];
   delete requireCjs.cache[BACKEND];
   delete requireCjs.cache[ELECTRON];
@@ -153,22 +161,29 @@ describe("shell:invoke — 렌더러가 보는 답", () => {
     ]);
   });
 
-  it("소켓 경로가 없으면 오늘과 같은 이름으로 실패한다 — 답이 달라지지 않는다", async () => {
+  it("cored를 세우지 못하면 무엇이 없어서인지까지 이름을 달고 실패한다", async () => {
+    // 소켓 지목이 없으면 셸이 cored를 띄운다. 그것마저 못 하면 실패는 남되, 사유는 더
+    // 구체적이어야 한다 — "백엔드가 없다"는 무엇을 고쳐야 하는지 말해 주지 않는다.
     const handlers = loadShell(null);
     const r = await invoke(handlers, "activity_publish", {});
-    expect(r).toMatchObject({ ok: false, code: "BACKEND_NOT_CONNECTED", command: "activity_publish" });
+    expect(r).toMatchObject({
+      ok: false,
+      code: "CORED_BIN_NOT_FOUND",
+      command: "activity_publish",
+    });
+    expect(r.message).toContain("no-such-helper");
     expect(ledger()).toEqual([
       {
         t: expect.any(Number),
         cmd: "activity_publish",
         served: false,
-        code: "BACKEND_NOT_CONNECTED",
+        code: "CORED_BIN_NOT_FOUND",
       },
     ]);
   });
 
   it("원장은 서빙된 것과 못 한 것을 한 파일에서 가른다", async () => {
-    // cored 가 무엇을 더 져야 하는가 = 못 한 것들의 목록이다. 둘이 섞이면 그 목록이 안 나온다.
+    // cored가 무엇을 더 져야 하는가 = 못 한 것들의 목록이다. 둘이 섞이면 그 목록이 안 나온다.
     const mock = await startMock("mixed.sock", (req, sock) => {
       const known = req.method === "data_kv_get";
       sock.write(

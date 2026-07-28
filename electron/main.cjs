@@ -14,10 +14,16 @@ const { app, BrowserWindow, dialog, ipcMain, screen } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const os = require("node:os");
-const { createBackendClient, resolveSocketPath, SOCKET_ENV, SOCKET_ARG } = require("./backend.cjs");
+const { createBackendClient, resolveSocketPath } = require("./backend.cjs");
+const { shellIdentity, coredBinary, ensureCored } = require("./cored.cjs");
+const activity = require("./activity.cjs");
 
 const DEV_URL = process.env.SOKSAK_ELECTRON_URL || "http://localhost:1420";
-const SPIKE_HOME = path.join(os.homedir(), ".soksak-electron-spike");
+
+// 이 셸의 정체성 — 홈은 identifier 에서 나오고, 원장도 cored 소켓도 그 홈 안에 산다.
+// 홈은 셸의 것이다: cored는 이 값을 부팅 인자로 **받는다**(파생하지 않는다).
+const IDENTITY = shellIdentity();
+const SPIKE_HOME = IDENTITY.home;
 const DEMAND_LOG = path.join(SPIKE_HOME, "invoke-demand.jsonl");
 
 fs.mkdirSync(SPIKE_HOME, { recursive: true });
@@ -216,15 +222,84 @@ function serveNative(cmd, entry, args, sender) {
 
 // ── 백엔드 다리 ──────────────────────────────────────────────────────────────
 // 요청은 소켓 너머로 간다(electron/backend.cjs — 한 줄 JSON, id 상관, 유지 연결).
-// 경로는 환경변수나 인자로만 온다: 기본 경로를 지어내면 남의 소켓에 붙어 놓고 "붙었다"고
-// 답할 수 있다. 경로가 없으면 오늘과 같은 이름으로 실패한다(BACKEND_NOT_CONNECTED).
-const backend = createBackendClient({
-  socketPath: resolveSocketPath(),
-  onDemand: recordDemand,
-});
+//
+// 소켓이 오는 길은 둘이다.
+//   ① 외부 지목(SOKSAK_SOCKET / --soksak-socket=) — 그 소켓은 남의 것이다. 그대로 붙고,
+//      띄우지도 거두지도 않는다.
+//   ② 지목이 없으면 셸이 자기 정체성으로 cored를 띄운다(electron/cored.cjs). 기본 경로를
+//      지어내 남의 소켓에 붙는 일은 여전히 없다 — 이 소켓은 이 셸의 홈 안에 있다.
+const externalSocket = resolveSocketPath();
+
+/** 살아 있는 다리. 준비되기 전 호출은 backendReady 에서 기다린다(폴링 없음). */
+let backend = null;
+/** 우리가 띄운 cored. 외부 지목이거나 이미 살아 있던 것이면 null — 남의 것은 거두지 않는다. */
+let ownedCored = null;
+
+function connectBackend(socketPath) {
+  backend = createBackendClient({ socketPath, onDemand: recordDemand });
+  return backend;
+}
+
+/** cored를 세우고 그 소켓에 다리를 놓는다. 못 세우면 이름을 달고 실패한다(조용한 no-op 아님). */
+async function standUpCored() {
+  const binary = coredBinary({ root: path.join(__dirname, "..") });
+  const cored = await ensureCored({
+    identity: IDENTITY,
+    binary,
+    onLog: (line) => console.error(`[soksak-cored] ${line}`),
+  });
+  if (cored.origin === "spawned") ownedCored = cored;
+  console.log(
+    `[electron-spike] cored ${cored.origin === "spawned" ? `띄움(pid ${cored.pid})` : "이미 살아 있음"}` +
+      `: ${binary} → ${cored.socketPath}`,
+  );
+  return connectBackend(cored.socketPath);
+}
+
+const backendReady = externalSocket
+  ? Promise.resolve(connectBackend(externalSocket))
+  : standUpCored();
+
+// 실패 사유는 기동 때 한 번 드러낸다. 호출은 저마다 이름을 달고 실패하지만, 왜 그렇게 됐는지는
+// 첫 호출을 기다리지 않고 알 수 있어야 한다.
+backendReady.catch((e) =>
+  console.error(`[electron-spike] 백엔드를 세우지 못했다: ${e.code || "ERROR"} — ${e.message}`),
+);
 
 async function callBackend(cmd, args) {
-  return backend.call(cmd, args);
+  let client;
+  try {
+    client = await backendReady;
+  } catch (e) {
+    // 다리를 세우지 못한 실패는 다리를 타지 않으므로 원장도 여기서 남긴다 — 사유가 없으면
+    // "무엇 때문에 못 했는가"가 원장에서 사라진다.
+    recordDemand(cmd, false, e.code || "ERROR");
+    throw e;
+  }
+  return client.call(cmd, args);
+}
+
+// ── 활동 부채질 ──────────────────────────────────────────────────────────────
+// cored는 발행 3단 중 **적재만** 하고 도장 찍힌 항목을 답에 실어 준다(그 프로세스엔 창이 없다).
+// 창은 셸의 것이므로 그 항목을 창에 뿌리는 것은 여기서 한다 — 안 하면 프론트가 반환값을
+// 버리므로(void invoke) listen("activity") 구독자가 오류 한 줄 없이 굶는다.
+//
+// 대상은 이 셸의 창 레지스트리 전부다(코어의 broadcast 와 같다 — 발신 창을 빼지도 더하지도
+// 않는다). 규칙과 배달은 activity.cjs 가 진다: 셸을 띄우지 않고도 검증되어야 한다.
+function fanOutActivity(entry) {
+  if (!activity.isActivityEntry(entry)) {
+    // 적재분이 아니면 부채질할 것이 없다. 아닌 것을 밀면 구독자가 조용히 어긋나고,
+    // 성공을 돌려주면 뿌린 적 없는 것을 뿌렸다고 답하게 된다.
+    throw shellError(
+      activity.NOT_AN_ENTRY,
+      `적재분이 아닌 답은 창에 뿌리지 않는다: ${JSON.stringify(entry ?? null).slice(0, 200)}`,
+    );
+  }
+  // 배달 실패는 발행을 멈추지 않는다(적재분이 원장의 진실이고 창은 구독자 하나다) — 다만
+  // 삼키지 않는다: 굶는 구독자는 증상이 없어 이 줄이 유일한 자국이다.
+  if (!activity.fanOut(entry, windows.values())) {
+    console.error(`[electron-spike] 활동 배달이 일부 창에 닿지 못했다 — seq=${entry.seq}`);
+  }
 }
 
 ipcMain.handle("shell:invoke", async (e, { cmd, args }) => {
@@ -232,7 +307,11 @@ ipcMain.handle("shell:invoke", async (e, { cmd, args }) => {
   const native = NATIVE[cmd];
   if (native) return serveNative(cmd, native, args, e && e.sender);
   try {
-    return { ok: true, value: await callBackend(cmd, args) };
+    const value = await callBackend(cmd, args);
+    // 답을 돌려주기 전에 뿌린다 — 코어도 발행 안에서 창에 먼저 닿고 반환은 그다음이라,
+    // 순서를 뒤집으면 같은 창에서 구독자와 호출자가 보는 시점이 셸마다 갈린다.
+    if (cmd === activity.ACTIVITY_PUBLISH) fanOutActivity(value);
+    return { ok: true, value };
   } catch (err) {
     return {
       ok: false,
@@ -359,15 +438,20 @@ app.whenReady().then(() => {
   wireWindowEvents(label, win);
   console.log(`[electron-spike] 창 ${label} → ${DEV_URL}`);
   console.log(`[electron-spike] 요구 원장: ${DEMAND_LOG}`);
-  // 어느 백엔드에 말을 거는지는 기동 시 한 줄로 드러낸다 — 붙지 않은 채 도는 것과
+  // 어느 정체성으로 어느 백엔드에 말을 거는지는 기동 시 드러낸다 — 붙지 않은 채 도는 것과
   // 엉뚱한 소켓에 붙은 것은 로그 없이는 구분되지 않는다.
+  console.log(`[electron-spike] 정체성: ${IDENTITY.identifier} @ ${IDENTITY.home}`);
   console.log(
-    backend.socketPath
-      ? `[electron-spike] 백엔드 소켓: ${backend.socketPath}`
-      : `[electron-spike] 백엔드 소켓 없음 — ${SOCKET_ENV}=<경로> 또는 ${SOCKET_ARG}<경로>`,
+    externalSocket
+      ? `[electron-spike] 백엔드 소켓(외부 지목): ${externalSocket}`
+      : `[electron-spike] 백엔드 소켓: ${IDENTITY.socketPath}`,
   );
 });
 
 app.on("window-all-closed", () => app.quit());
-// 셸이 내려가면 연결도 놓는다 — 대기 중이던 호출은 이름을 달고 깨어난다.
-app.on("will-quit", () => backend.close());
+// 셸이 내려가면 연결도 놓고, 자기가 띄운 cored도 거둔다. 외부에서 지목한 소켓의 프로세스는
+// 남의 것이라 건드리지 않는다. 회수는 값으로 돌려준다 — 거뒀는지 확인할 수 있어야 한다.
+app.on("will-quit", () => {
+  if (backend) backend.close();
+  return ownedCored ? ownedCored.stop() : Promise.resolve();
+});
