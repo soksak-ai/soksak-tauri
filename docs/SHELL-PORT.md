@@ -45,11 +45,11 @@ The audit named the ambient home the single largest lever: 28 handlers touch it 
 
 ## The core crate
 
-`src-tauri/crates/soksak-core` holds command logic with no shell in it. Anything there gives the same answer in the app process or in a helper, which requires three things: it touches no window, app handle, or managed state; it reads no process environment, working directory, or executable path; and it does not treat its own compile target or build profile as evidence.
+`src-tauri/crates/soksak-core` holds command logic with no shell in it. Anything there gives the same answer in the app process or in cored, which requires three things: it touches no window, app handle, or managed state; it reads no process environment, working directory, or executable path; and it does not treat its own compile target or build profile as evidence.
 
 The third is the quiet one. A function whose answer changes with `cfg!(target_os)` is describing the binary it was compiled into, not answering what the caller asked. Platform branching belongs in an argument.
 
-Modules so far: `udp` (datagram send and request/response), `integrity` (hash verification, install observation, whitelisted stale removal), `session` (agent session parsing and lookup), `pathx` (tilde expansion, project-root verdict). Core keeps `#[tauri::command]` wrappers that delegate and decide nothing — a decision in the wrapper is a decision the helper process would lose.
+Modules so far: `udp` (datagram send and request/response), `integrity` (hash verification, install observation, whitelisted stale removal), `session` (agent session parsing and lookup), `pathx` (tilde expansion, project-root verdict). Core keeps `#[tauri::command]` wrappers that delegate and decide nothing — a decision in the wrapper is a decision cored would lose.
 
 `tests/no_shell.rs` enforces this in two layers: a symbol scan for direct references, and `cargo tree` for anything a dependency dragged in. Each forbidden symbol carries the reason it blocks a move; a prohibition without a reason becomes something to route around.
 
@@ -59,9 +59,9 @@ Two further gates sit in core. `src-tauri/src/ambient_gate.rs` requires every `e
 
 Three subsystems moved to injection. In each the meaning is unchanged — only where the value comes from.
 
-- **The vault (`secrets.rs`)** had a silent wrong-answer generator. `vault_file()` fell back to `home::soksak_home()` when no path was injected, and that function answers `~/.soksak` even before `init` — so the fallback never fails. A `SecretsState` that forgot its path did not error; it pointed at the release user's vault. Moved into a helper it would create a vault in someone else's home. The fallback is gone; an unconfigured path fails by name, because unconfigured means there is no value, not that there is a default. The keychain service name had the same shape: a wrong service name is not a refusal but an attempt to open a different machine's KEK. Both now derive from `Identity`. Crypto primitives and the seal format were not touched.
+- **The vault (`secrets.rs`)** had a silent wrong-answer generator. `vault_file()` fell back to `home::soksak_home()` when no path was injected, and that function answers `~/.soksak` even before `init` — so the fallback never fails. A `SecretsState` that forgot its path did not error; it pointed at the release user's vault. Moved into cored it would create a vault in someone else's home. The fallback is gone; an unconfigured path fails by name, because unconfigured means there is no value, not that there is a default. The keychain service name had the same shape: a wrong service name is not a refusal but an attempt to open a different machine's KEK. Both now derive from `Identity`. Crypto primitives and the seal format were not touched.
 - **The installer (`unit_installer.rs`)** takes an `Identity` instead of a bare home, and its five transaction entries are callable with `&UnitInstallManager` — no `State` required. The ledger's single-writer meaning is unchanged.
-- **The ledger (`activity.rs`)** split into three: `admit` (append and stamp a sequence — pure), `fan_out` (windows and socket subscribers, via `WindowOracle`), `persist` (a `Connection`, nothing more). `publish` keeps its signature and return value and stacks the three, so all 22 call sites behave as before. A helper would admit and leave the fan-out to the shell.
+- **The ledger (`activity.rs`)** split into three: `admit` (append and stamp a sequence — pure), `fan_out` (windows and socket subscribers, via `WindowOracle`), `persist` (a `Connection`, nothing more). `publish` keeps its signature and return value and stacks the three, so all 22 call sites behave as before. cored admits and leaves the fan-out to the shell.
 
 `WindowOracle` gained `broadcast` for events with no addressee. The default walks every live window; Tauri overrides it with a single `emit`, because that one delivery also reaches child webviews and a label walk would silently reach fewer of them. A partial delivery is not reported as success.
 
@@ -88,31 +88,38 @@ The last movable group: schedules, the command bridge, clipboard, watcher, and t
 
 Two things were deliberately left. `native_reload` keeps its webview handle: a reload is neither a window fact nor a delivery, and folding it into the two-line oracle would put webview lifetime under it. `state::<T>()` lookups stay as they are — converting them means changing `manage` in `lib.rs` and every caller at once, and `service.rs` had already recorded the same judgement; a second convention for passing state would be worse than the coupling.
 
-## The helper process
+## The cored process
 
-`src-tauri/crates/soksak-helper` is a process with no window, no webview, and no app handle. It listens on a unix socket and answers commands using `soksak-core` logic. It follows `soksak-ptyd`, the standing precedent for an independent helper, with two deliberate differences.
+`src-tauri/crates/soksak-cored` is a process with no window, no webview, and no app handle. It listens on a unix socket and answers commands using `soksak-core` logic. It follows `soksak-ptyd`, the standing precedent for an independent daemon, with two deliberate differences.
 
-- **It derives no identity of its own.** `ptyd` reads `SOKSAK_HOME` and derives paths; the helper takes `--socket`, `--home`, and `--identifier` as arguments and, given none, fails by name rather than choosing a default. A helper that guesses its identity attaches somewhere else the moment homes diverge, and does it quietly.
+**The name says what it is: core, running as a daemon.** Not a bridge — the Tauri shell never talks to it. That shell links `soksak-core` directly and calls functions in its own process; a socket between them would be a round trip to itself. cored exists for a shell that *cannot* link Rust. Today that means Electron, whose shell is Node.
+
+```
+Tauri shell   ──links──>  soksak-core
+Electron shell ──socket──> soksak-cored  (= soksak-core with a socket on it)
+```
+
+- **It derives no identity of its own.** `ptyd` reads `SOKSAK_HOME` and derives paths; cored takes `--socket`, `--home`, and `--identifier` as arguments and, given none, fails by name rather than choosing a default. A daemon that guesses its identity attaches somewhere else the moment homes diverge, and does it quietly.
 - **Names and arguments are the app's.** The envelope follows the socket contract, and `data` carries exactly what the app's `invoke` returns. A shell that has to translate names introduces a new drift surface; the point is to ask the same question and get the same answer.
 
-Each handler is one call into `soksak-core`. Judgement does not live in the helper — if it did, the app path and the helper path could answer differently, and that difference is silent. Logic has a single owner, so the two processes agree structurally rather than by copy.
+Each handler is one call into `soksak-core`. Judgement does not live in cored — if it did, the app path and the cored path could answer differently, and that difference is silent. Logic has a single owner, so the two processes agree structurally rather than by copy.
 
-**A store is not a shell.** `rusqlite` is banned in `soksak-core` and allowed in the helper. The ban list exists to keep out windows, webviews, and native runtimes; a database opens no window and holds no app handle, and reads the same file to the same answer from any process. But logic that knows the store only runs where the file is, and that premise is what the split removes — so the `KvRows` contract stays in the core crate and its SQLite implementation lives in the helper. The helper opens read-only: two processes writing the same file would break the single-writer contract.
+**A store is not a shell.** `rusqlite` is banned in `soksak-core` and allowed in cored. The ban list exists to keep out windows, webviews, and native runtimes; a database opens no window and holds no app handle, and reads the same file to the same answer from any process. But logic that knows the store only runs where the file is, and that premise is what the split removes — so the `KvRows` contract stays in the core crate and its SQLite implementation lives in cored. cored opens read-only: two processes writing the same file would break the single-writer contract.
 
 **What the demand ledger taught.** The Electron shell records every backend call in order. Read by frequency, `activity_publish` (28) and `data_kv_get` (10) dominate; read *in order*, the boot stalls at call 5 (`app_environment`) and calls 7–14 (`data_kv_get`). Three commands wired first by frequency turned out to be calls 42, 48, and 50 — served, and irrelevant to whether the window paints. Frequency picks the wrong work; order picks the blocking work.
 
-**Arguments are the caller's; state is the process's.** A command served by the helper must have the *same argument shape* as the app command of the same name. The UI does not know which process answers it: `invoke("app_environment")` is one call whether the app or the helper replies.
+**Arguments are the caller's; state is the process's.** A command served by cored must have the *same argument shape* as the app command of the same name. The UI does not know which process answers it: `invoke("app_environment")` is one call whether the app or cored replies.
 
-The first version of the helper broke this. Reasoning that "the helper must not guess its identity", it demanded `identifier`, `home`, `dbPath`, `dir`, and `base` as per-call arguments — but the app commands of those names take **no arguments at all**, because those values are process state, not something a caller carries. Live measurement (Electron boot, 168 recorded calls) showed all five supposedly-served commands rejected with `INVALID_PARAMS`, and the rejection was one line in a shell log, so it was silent.
+The first version of cored broke this. Reasoning that "cored must not guess its identity", it demanded `identifier`, `home`, `dbPath`, `dir`, and `base` as per-call arguments — but the app commands of those names take **no arguments at all**, because those values are process state, not something a caller carries. Live measurement (Electron boot, 168 recorded calls) showed all five supposedly-served commands rejected with `INVALID_PARAMS`, and the rejection was one line in a shell log, so it was silent.
 
-The premise was right and the conclusion was wrong: **receiving is not guessing.** The app does not guess its identity either — it receives it at boot from its shell config. The helper receives it at boot from whoever spawned it. So the rule is two lines:
+The premise was right and the conclusion was wrong: **receiving is not guessing.** The app does not guess its identity either — it receives it at boot from its shell config. cored receives it at boot from whoever spawned it. So the rule is two lines:
 
 - values a caller sends are arguments (`ns`, `key`, `host`, `port`)
 - values a process holds are boot state (identity, home, store path)
 
-`src-tauri/src/helper_shape_gate.rs` enforces this: it parses every `#[tauri::command]` signature in the app, drops shell-injected parameters (`State`, `AppHandle`, `Window`, `Channel`), and compares the argument-name set against the helper's serving table for every name they share. Three planted violations — an extra argument, a dropped one, a renamed one — prove the gate catches drift rather than merely passing.
+`src-tauri/src/cored_shape_gate.rs` enforces this: it parses every `#[tauri::command]` signature in the app, drops shell-injected parameters (`State`, `AppHandle`, `Window`, `Channel`), and compares the argument-name set against cored's serving table for every name they share. Three planted violations — an extra argument, a dropped one, a renamed one — prove the gate catches drift rather than merely passing.
 
-The socket test carries the same lesson: it now spawns the helper against a fixture home, so argument-less commands are exercised *from outside the process*. The in-process tests could only ever prove "arguments are read as declared"; they could not see that the declaration itself disagreed with the app.
+The socket test carries the same lesson: it now spawns cored against a fixture home, so argument-less commands are exercised *from outside the process*. The in-process tests could only ever prove "arguments are read as declared"; they could not see that the declaration itself disagreed with the app.
 
 Still unserved: `activity_publish` (the shell owns fan-out, so where admission happens is a design question, not a port), `project_owners`, `net_http_request`, `process_reclaim_window`. And `webview_*`, `engine_*`, `titlebar_*`, `window_*` never move — those are the shell's, and an Electron adapter must implement them itself.
 

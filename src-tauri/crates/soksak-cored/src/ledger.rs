@@ -4,13 +4,13 @@
 //! 둘뿐이다: 저장소에서 재개 지점을 읽는 질의문 하나와, 원장별 할당자 하나.
 //!
 //! **적재까지만 한다.** 발행 3단 중 나머지 둘은 이 프로세스의 것이 아니다:
-//!   - 부채질: 창은 셸의 것이다. 헬퍼는 적재된 항목을 답에 실어 보내고, 셸이 그것을 받아
+//!   - 부채질: 창은 셸의 것이다. cored 는 적재된 항목을 답에 실어 보내고, 셸이 그것을 받아
 //!     자기 창에 뿌린다. 항목의 모양은 앱의 invoke 가 돌려주는 것과 같다.
 //!   - 영속: records 쓰기 경로는 저장소 소유자의 것이다. 여기서 행을 쓰면 레코드 쓰기가
 //!     둘이 되고(봉인 seam·FTS 동기화·단일 쓰기 커넥션 전제) 두 경로의 차이는 조용하다.
 //!     저장소 쓰기 축이 옮겨올 때 영속과 재개가 함께 온다 — 지금은 읽기만 한다.
 //!
-//! 할당자는 **원장(저장소 파일)마다 하나**다. 한 헬퍼가 두 홈을 서빙해도 번호가 섞이지
+//! 할당자는 **원장(저장소 파일)마다 하나**다. 한 cored 가 두 홈을 서빙해도 번호가 섞이지
 //! 않는다 — 섞이면 한 홈의 소비자 커서가 다른 홈의 번호를 가리킨다.
 
 use std::sync::Mutex;
@@ -86,7 +86,7 @@ mod tests {
     /// 앱이 만드는 records 스키마 그대로의 저장소 하나.
     fn db(name: &str, seqs: &[(&str, u64)]) -> String {
         let dir = std::path::PathBuf::from(std::env::var("HOME").expect("HOME"))
-            .join(".soksak-helper-test")
+            .join(".soksak-cored-test")
             .join("ledger");
         std::fs::create_dir_all(&dir).expect("픽스처 루트");
         let path = dir.join(format!("{name}.db"));
@@ -151,7 +151,7 @@ mod tests {
     fn a_store_without_the_records_table_is_reported() {
         // 열리기는 하는데 원장이 아닌 파일 — 0 으로 답하면 새 원장을 조용히 시작한다.
         let dir = std::path::PathBuf::from(std::env::var("HOME").expect("HOME"))
-            .join(".soksak-helper-test")
+            .join(".soksak-cored-test")
             .join("ledger");
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("no-records.db");

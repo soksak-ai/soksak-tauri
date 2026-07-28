@@ -1,23 +1,23 @@
-// soksak-helper — 셸 없이 명령을 서빙하는 프로세스.
+// soksak-cored — 셸 없이 명령을 서빙하는 프로세스.
 //
 // 창도, 웹뷰도, 앱 핸들도 없다. 소켓으로 명령을 받아 soksak-core 의 로직으로 답한다.
 // 어떤 셸(Electron 이든 무엇이든)이 붙어도 같은 답이 나오는 것이 존재 이유다.
 //
-// 선례는 soksak-ptyd 다(독립 헬퍼 프로세스: 소켓 bind·요청 루프·수명). 다만 두 가지가 다르다:
+// 선례는 soksak-ptyd 다(독립 cored 프로세스: 소켓 bind·요청 루프·수명). 다만 두 가지가 다르다:
 //   ① 홈을 전역으로 알지 않는다. ptyd 는 SOKSAK_HOME 을 읽어 경로를 파생하지만, 이 프로세스는
-//      **소켓 경로를 인자로 받는다**. 헬퍼가 identity 를 추측하는 순간 홈이 갈릴 때 조용히 다른
+//      **소켓 경로를 인자로 받는다**. cored 가 identity 를 추측하는 순간 홈이 갈릴 때 조용히 다른
 //      곳에 붙는다 — 어느 홈에 서빙하는지는 띄우는 쪽이 안다(Identity 원칙).
 //   ② 데이터 평면이 없다. 요청/응답 소켓 한 본뿐이다(스트림 소켓·토큰은 셸을 소유할 때의 비용).
 //
 // 여기 있는 것은 배선뿐이다. 로직은 soksak-core 이, 표는 registry 가, 봉투는 wire 가 소유한다.
 // 서빙 대상은 **셸 없이도 같은 답이 나오는 명령**으로 한정한다 — 네이티브(창·웹뷰·엔진)는
-// 셸에 남고, 헬퍼는 그것을 아는 척하지 않는다(모르는 이름은 이름을 달고 실패한다).
+// 셸에 남고, cored 는 그것을 아는 척하지 않는다(모르는 이름은 이름을 달고 실패한다).
 
 const USAGE: &str = "\
-soksak-helper — serves shell-free commands over a socket
+soksak-cored — serves shell-free commands over a socket
 
 USAGE:
-    soksak-helper --socket <path> --home <path> --identifier <id> [--data-dir <path>]
+    soksak-cored --socket <path> --home <path> --identifier <id> [--data-dir <path>]
 
 OPTIONS:
     --socket <path>      Unix socket to bind and serve (required)
@@ -37,10 +37,10 @@ state (identity, home, store path) is boot state here, never a per-call argument
 the UI does not know which process answers it.
 
 Once bound it prints one readiness line to stdout, then serves NDJSON
-request/response lines. Ask it `helper.commands` for what it serves.";
+request/response lines. Ask it `cored.commands` for what it serves.";
 
 use soksak_core::identity::Identity;
-use soksak_helper::ctx::Ctx;
+use soksak_cored::ctx::Ctx;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -51,7 +51,7 @@ fn main() {
     }
     if args.iter().any(|a| a == "--version" || a == "-V") {
         println!(
-            "soksak-helper {} (socket protocol {})",
+            "soksak-cored {} (socket protocol {})",
             env!("CARGO_PKG_VERSION"),
             soksak_spec_socket::SOCKET_PROTOCOL_VERSION,
         );
@@ -59,11 +59,11 @@ fn main() {
     }
 
     // 소켓 경로가 없으면 기본값을 고르지 않고 이름을 달고 실패한다. 조용히 어딘가에
-    // 붙는 헬퍼는 붙은 곳이 틀려도 성공처럼 보인다.
+    // 붙는 cored 는 붙은 곳이 틀려도 성공처럼 보인다.
     let (socket, ctx) = match boot(&args) {
         Ok(v) => v,
         Err(why) => {
-            eprintln!("soksak-helper: {why}\n\n{USAGE}");
+            eprintln!("soksak-cored: {why}\n\n{USAGE}");
             std::process::exit(2);
         }
     };
@@ -71,7 +71,7 @@ fn main() {
     #[cfg(not(unix))]
     {
         let _ = (socket, ctx);
-        eprintln!("soksak-helper: unix only in this generation (named pipes land with the Windows shell)");
+        eprintln!("soksak-cored: unix only in this generation (named pipes land with the Windows shell)");
         std::process::exit(1);
     }
     #[cfg(unix)]
@@ -79,7 +79,7 @@ fn main() {
 }
 
 /// 부팅 인자 → 소켓 경로 + 서빙 상태. 빠진 것은 기본값을 고르지 않고 이름을 달고 실패한다:
-/// 홈을 추측하는 헬퍼는 **다른 identity 의 답을 성공처럼** 돌려준다.
+/// 홈을 추측하는 cored 는 **다른 identity 의 답을 성공처럼** 돌려준다.
 fn boot(args: &[String]) -> Result<(String, Ctx), String> {
     let socket = take_value(args, "--socket")?;
     let home = take_value(args, "--home")?;
@@ -110,21 +110,21 @@ mod unix {
     use std::os::unix::net::{UnixListener, UnixStream};
     use std::path::Path;
 
-    use soksak_helper::ctx::Ctx;
+    use soksak_cored::ctx::Ctx;
 
     pub fn serve(socket: &Path, ctx: Ctx) {
         // 싱글턴 프로브 — 살아 있는 응답자가 그 경로를 서빙하면 물러난다(ptyd 와 같은 판정).
         // 죽은 소켓 파일만 치운다: 연결이 되는 소켓을 지우면 남의 서빙을 끊는다.
         if socket.exists() {
             if UnixStream::connect(socket).is_ok() {
-                eprintln!("soksak-helper: another helper serves {socket:?}; exiting");
+                eprintln!("soksak-cored: another helper serves {socket:?}; exiting");
                 std::process::exit(0);
             }
             let _ = std::fs::remove_file(socket);
         }
         if let Some(parent) = socket.parent() {
             if let Err(e) = std::fs::create_dir_all(parent) {
-                eprintln!("soksak-helper: cannot create {parent:?}: {e}");
+                eprintln!("soksak-cored: cannot create {parent:?}: {e}");
                 std::process::exit(2);
             }
         }
@@ -136,7 +136,7 @@ mod unix {
                 // OS 가 소유하므로 여기서 못박지 않고, 대신 실제 길이를 함께 말해 준다 —
                 // "path must be shorter than SUN_LEN" 만으로는 얼마나 긴지 알 수 없다.
                 eprintln!(
-                    "soksak-helper: bind {socket:?} failed: {e} (socket path is {} bytes; \
+                    "soksak-cored: bind {socket:?} failed: {e} (socket path is {} bytes; \
                      unix socket paths have an OS length limit — pass a shorter --socket)",
                     socket.as_os_str().len(),
                 );
@@ -148,11 +148,11 @@ mod unix {
 
         // 준비 완료 신호 = stdout 한 줄. 띄운 쪽은 이 줄에서 블로킹 read 로 기다린다 —
         // 소켓 파일이 생겼는지 반복해 보는 폴링이 필요 없고(파일 존재 != bind 완료),
-        // 헬퍼가 먼저 죽으면 EOF 로 즉시 드러난다.
-        println!("soksak-helper: listening {}", socket.display());
+        // cored 가 먼저 죽으면 EOF 로 즉시 드러난다.
+        println!("soksak-cored: listening {}", socket.display());
         let _ = std::io::stdout().flush();
 
-        // 서빙 상태는 연결마다 공유된다 — 한 헬퍼는 한 정체성을 서빙한다.
+        // 서빙 상태는 연결마다 공유된다 — 한 cored 는 한 정체성을 서빙한다.
         let ctx = std::sync::Arc::new(ctx);
         for conn in listener.incoming().flatten() {
             let ctx = ctx.clone();
@@ -171,7 +171,7 @@ mod unix {
             if line.trim().is_empty() {
                 continue;
             }
-            let reply = soksak_helper::wire::answer(ctx, line.trim());
+            let reply = soksak_cored::wire::answer(ctx, line.trim());
             if writeln!(writer, "{reply}").is_err() {
                 break;
             }
@@ -209,7 +209,7 @@ mod tests {
     // 도움말은 부르는 법(필수 인자)을 말해야 한다.
     #[test]
     fn the_usage_names_the_required_argument() {
-        assert!(super::USAGE.contains("soksak-helper"));
+        assert!(super::USAGE.contains("soksak-cored"));
         assert!(super::USAGE.contains("--socket"));
     }
 }

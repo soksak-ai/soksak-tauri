@@ -1,5 +1,5 @@
 // @vitest-environment node
-// 셸의 것 — 창·웹뷰·네이티브 표면 명령. 이것들은 헬퍼로 가지 않는다(다른 프로세스엔 창이 없다).
+// 셸의 것 — 창·웹뷰·네이티브 표면 명령. 이것들은 cored 로 가지 않는다(다른 프로세스엔 창이 없다).
 //
 // 검증의 축은 둘이다.
 //   ① 대응이 있는 것은 Electron 이 실제로 답하는가 — 소켓을 거치지 않고, 부른 창에.
@@ -147,7 +147,7 @@ describe("대응이 있는 것 — Electron 이 실제로 답한다", () => {
       value: null,
     });
     expect(win.calls).toEqual([["setBackgroundColor", "#1e2430"]]);
-    expect(mock.seen).toEqual([]); // 셸의 것은 헬퍼로 가지 않는다
+    expect(mock.seen).toEqual([]); // 셸의 것은 cored 로 가지 않는다
   });
 
   it("window_set_background 는 hex 가 아니면 Tauri 와 같은 기준으로 거절한다", async () => {
@@ -197,7 +197,7 @@ describe("대응이 없는 것 — 없다고 값으로 말한다", () => {
       expect(r.command, cmd).toBe(cmd);
       expect(String(r.message).length, `${cmd} 사유 없음`).toBeGreaterThan(10);
     }
-    expect(mock.seen).toEqual([]); // 못 하는 것을 헬퍼에게 떠넘기지 않는다
+    expect(mock.seen).toEqual([]); // 못 하는 것을 cored 에게 떠넘기지 않는다
   });
 
   it("engine_surface_stats 는 0 을 지어내지 않는다 — 재지 않은 것을 쟀다고 말하지 않는다", async () => {
@@ -237,20 +237,20 @@ describe("표 — UI 가 읽을 수 있는 능력면", () => {
   });
 });
 
-describe("요구 원장 — 헬퍼가 져야 할 목록을 오염시키지 않는다", () => {
+describe("요구 원장 — cored 가 져야 할 목록을 오염시키지 않는다", () => {
   it("네이티브 명령은 셸의 것으로 표시된다", async () => {
     const mock = await startMock("ledger.sock");
     const handlers = loadShell(mock.socketPath);
     await invoke(handlers, "webview_list", {}, fakeWindow());
     await invoke(handlers, "engine_surface_stats", {}, fakeWindow());
-    await invoke(handlers, "project_owners", {}, fakeWindow()); // 헬퍼의 것
+    await invoke(handlers, "project_owners", {}, fakeWindow()); // cored 의 것
     const lines = ledger();
     expect(lines.map((l) => [l.cmd, l.served, l.by])).toEqual([
       ["webview_list", true, "shell"],
       ["engine_surface_stats", false, "shell"],
       ["project_owners", true, undefined],
     ]);
-    // 헬퍼 요구 목록 = 셸의 것이 아닌 줄들. 셸의 것은 절대 여기 섞이지 않는다.
+    // cored 요구 목록 = 셸의 것이 아닌 줄들. 셸의 것은 절대 여기 섞이지 않는다.
     expect(lines.filter((l) => l.by !== "shell").map((l) => l.cmd)).toEqual(["project_owners"]);
     expect(lines.find((l) => l.cmd === "engine_surface_stats").code).toBe(ABSENT);
   });

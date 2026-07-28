@@ -44,11 +44,11 @@ fn data_dir_from(data_dir_env: Option<&str>, home: &Path) -> PathBuf {
     }
     #[cfg(not(debug_assertions))]
     let _ = data_dir_env;
-    // 규약 경로는 코어가 소유한다 — 여기서 이름을 다시 적으면 헬퍼와 갈릴 수 있다.
+    // 규약 경로는 코어가 소유한다 — 여기서 이름을 다시 적으면 cored 와 갈릴 수 있다.
     soksak_core::identity::data_dir(home)
 }
 
-/// 주어진 홈 아래의 DB 경로. 홈은 **인자로 온다** — 헬퍼 프로세스는 자기 홈을 전역으로
+/// 주어진 홈 아래의 DB 경로. 홈은 **인자로 온다** — cored 프로세스는 자기 홈을 전역으로
 /// 알 수 없고, 잘못 파생된 홈은 거부가 아니라 **다른 identity 의 DB 를 여는 것**으로 끝난다.
 pub fn db_path_in(home: &Path) -> Result<PathBuf, String> {
     let dir = data_dir_from(std::env::var("SOKSAK_DATA_DIR").ok().as_deref(), home);
@@ -242,7 +242,7 @@ pub fn gen_id() -> String {
 }
 
 // ns = 호출 pluginId(또는 "core"). 경로/식별자 안전 문자만(plugins.rs sanitize_id 와 동형).
-// 규칙은 soksak-core 이 소유한다 — 헬퍼도 같은 규칙으로 거른다.
+// 규칙은 soksak-core 이 소유한다 — cored 도 같은 규칙으로 거른다.
 pub fn validate_ns(ns: &str) -> Result<(), String> {
     soksak_core::kv::validate_ns(ns)
 }

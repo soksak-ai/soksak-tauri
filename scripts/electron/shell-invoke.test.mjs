@@ -168,7 +168,7 @@ describe("shell:invoke — 렌더러가 보는 답", () => {
   });
 
   it("원장은 서빙된 것과 못 한 것을 한 파일에서 가른다", async () => {
-    // 헬퍼가 무엇을 더 져야 하는가 = 못 한 것들의 목록이다. 둘이 섞이면 그 목록이 안 나온다.
+    // cored 가 무엇을 더 져야 하는가 = 못 한 것들의 목록이다. 둘이 섞이면 그 목록이 안 나온다.
     const mock = await startMock("mixed.sock", (req, sock) => {
       const known = req.method === "data_kv_get";
       sock.write(

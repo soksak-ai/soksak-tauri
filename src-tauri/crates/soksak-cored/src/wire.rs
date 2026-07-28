@@ -5,7 +5,7 @@
 //!
 //! 봉투는 `{ok, code, message, data}` 이고, `data` 에는 앱의 `invoke` 가 돌려주는 값이
 //! **그대로** 실린다. 셸 어댑터는 `data` 를 벗겨 invoke 의 약속에 그대로 얹으면 된다 —
-//! 헬퍼를 거쳤다고 값의 모양이 달라지지 않는다.
+//! cored 를 거쳤다고 값의 모양이 달라지지 않는다.
 
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -17,7 +17,7 @@ use soksak_spec_socket::{
 use crate::ctx::Ctx;
 use crate::registry::{self, Outcome};
 
-/// 요청. 앱 소켓의 요청에서 **창 관련 필드를 뺀 것**이다 — 헬퍼에는 창이 없다.
+/// 요청. 앱 소켓의 요청에서 **창 관련 필드를 뺀 것**이다 — cored 에는 창이 없다.
 /// 모르는 필드는 무시한다(계약의 추가-필드 규칙): 창을 실어 보내는 셸도 거절당하지 않는다.
 #[derive(Deserialize)]
 pub struct Request {
@@ -37,7 +37,7 @@ pub fn err_reply(code: &str, message: &str) -> Value {
 }
 
 /// 이 프로세스가 무엇인지 — 판 숫자는 계약 크레이트에서, 신원은 자기 자신에서.
-/// `role` 이 있어야 셸이 앱 소켓과 헬퍼 소켓을 답만 보고 구분한다.
+/// `role` 이 있어야 셸이 앱 소켓과 cored 소켓을 답만 보고 구분한다.
 fn hello_facts() -> Value {
     json!({
         "protocol": SOCKET_PROTOCOL_VERSION,
@@ -66,7 +66,7 @@ fn transport_route(req: &Request) -> Option<Value> {
         MIN_COMPATIBLE_CLIENT_PROTOCOL,
         declared,
     );
-    // 이 시선은 헬퍼가 클라이언트를 판정한다 — self=헬퍼, peer=클라이언트. 문장은 기계가
+    // 이 시선은 cored 가 클라이언트를 판정한다 — self=cored, peer=클라이언트. 문장은 기계가
     // 읽는 자리라 영어로 둔다(사람 언어 해소는 이 문장을 사람에게 보이는 쪽의 몫이다).
     let sentence = skew_sentence(
         verdict,
@@ -90,16 +90,16 @@ fn transport_route(req: &Request) -> Option<Value> {
 /// 코드는 어느 쪽이든 UNKNOWN_COMMAND 로 둔다: 부르는 쪽의 분기를 바꾸지 않는다.
 fn unknown_sentence(method: &str) -> String {
     match registry::unserved(method) {
-        Some(u) => format!("{method} 은(는) 이 헬퍼가 서빙하지 않습니다 — {}", u.blocked_by),
+        Some(u) => format!("{method} 은(는) 이 프로세스가 서빙하지 않습니다 — {}", u.blocked_by),
         None => format!(
-            "{method} 은(는) 이 헬퍼가 서빙하지 않습니다 — helper.commands 로 목록을 확인하세요"
+            "{method} 은(는) 이 프로세스가 서빙하지 않습니다 — cored.commands 로 목록을 확인하세요"
         ),
     }
 }
 
 /// 명령 하나를 실행한다. 표에 없으면 이름을 달고 실패한다 — 조용한 no-op 도, 가짜 성공도 없다.
 fn route(ctx: &Ctx, req: &Request) -> Value {
-    if req.method == "helper.commands" {
+    if req.method == "cored.commands" {
         return ok_reply(registry::declaration());
     }
     let Some(cmd) = registry::find(&req.method) else {
@@ -206,7 +206,7 @@ mod tests {
         );
     }
 
-    // 봉투만 헬퍼의 것이고 `data` 는 앱 invoke 의 값 그대로다. 이게 깨지면 셸 어댑터가
+    // 봉투만 cored 의 것이고 `data` 는 앱 invoke 의 값 그대로다. 이게 깨지면 셸 어댑터가
     // 값을 다시 조립해야 하고, 그 조립이 두 경로의 답을 가른다.
     #[test]
     fn data_carries_the_raw_invoke_value() {
@@ -223,7 +223,7 @@ mod tests {
 
     #[test]
     fn the_command_table_is_askable() {
-        let reply = answer(&ctx(), r#"{"method":"helper.commands"}"#);
+        let reply = answer(&ctx(), r#"{"method":"cored.commands"}"#);
         assert_eq!(reply["ok"], true);
         assert!(!reply["data"]["commands"].as_array().unwrap().is_empty());
     }
@@ -231,7 +231,7 @@ mod tests {
     // id 가 없는 요청에 id 를 지어내지 않는다.
     #[test]
     fn an_absent_id_is_not_invented() {
-        let reply = answer(&ctx(), r#"{"method":"helper.commands"}"#);
+        let reply = answer(&ctx(), r#"{"method":"cored.commands"}"#);
         assert!(reply.get("id").is_none(), "{reply}");
     }
 }

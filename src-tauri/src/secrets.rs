@@ -334,7 +334,7 @@ pub struct OsKekSource {
 
 impl OsKekSource {
     // 키체인 서비스명은 정체성의 identifier 다 — dev/debug/release 가 KEK 를 공유하지 않는 근거가
-    // 전역이 아니라 인자로 온다(헬퍼는 자기 정체성을 모르고 태어나므로 받아야 한다).
+    // 전역이 아니라 인자로 온다(cored 는 자기 정체성을 모르고 태어나므로 받아야 한다).
     pub(crate) fn for_identity(identity: &Identity) -> Self {
         Self {
             store: OsKeyStore::for_identity(identity),
@@ -498,7 +498,7 @@ pub(crate) fn vault_path(identity: &Identity) -> PathBuf {
 // 볼트 경로 해소 — SOKSAK_VAULT_PATH 가 있으면 그 경로(헤드리스/E2E 격리용 오픈 메커니즘:
 // 사용자 실볼트 비오염·실 passphrase 비종속), 없으면 정체성에서 파생.
 // env 조회를 주입받아 테스트가 전역 env 변형 없이 검증한다(병렬 테스트 안전).
-// identity 도 인자다 — 전역 홈을 읽으면 헬퍼 프로세스가 자기 홈이 아닌 곳을 가리킨다.
+// identity 도 인자다 — 전역 홈을 읽으면 cored 프로세스가 자기 홈이 아닌 곳을 가리킨다.
 pub(crate) fn resolve_vault_path(
     env: impl Fn(&str) -> Option<String>,
     identity: &Identity,
@@ -1099,9 +1099,9 @@ mod tests {
         assert_eq!(empty, vault_path(&id), "빈 env → 정체성 파생");
     }
 
-    // ── 정체성 계약(헬퍼 이행) ──────────────────────────────────────────────
+    // ── 정체성 계약(cored 이행 준비) ──────────────────────────────────────────────
     // 볼트 경로가 안 주어졌을 때 전역 홈으로 슬쩍 폴백하면, 그 코드는 "이 프로세스가 앱이다"를
-    // 전제한다. 헬퍼로 옮기는 순간 같은 코드가 남의 홈(~/.soksak)에 볼트를 만든다 — 조용히.
+    // 전제한다. cored 로 옮기는 순간 같은 코드가 남의 홈(~/.soksak)에 볼트를 만든다 — 조용히.
     // home::soksak_home() 은 init 전에도 ~/.soksak 을 돌려주므로 폴백은 언제나 '성공'한다.
     #[test]
     fn an_unconfigured_vault_never_falls_back_to_the_ambient_home() {
@@ -1158,7 +1158,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    // KEK 서비스명도 정체성에서 온다 — 전역 identifier 를 읽으면 헬퍼가 남의 KEK 를 연다.
+    // KEK 서비스명도 정체성에서 온다 — 전역 identifier 를 읽으면 cored 가 남의 KEK 를 연다.
     // 생성만으로는 키체인에 닿지 않는다(keyring::Entry 는 read/write 에서만 만들어진다).
     #[test]
     fn the_kek_service_name_comes_from_the_identity() {

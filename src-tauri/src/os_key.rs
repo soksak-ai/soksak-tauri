@@ -106,7 +106,7 @@ pub struct OsKeyStore {
 
 impl OsKeyStore {
     // 서비스명은 정체성에서 온다 — 전역 identifier 읽기를 호출자(부트)에게 올린다.
-    // 헬퍼 프로세스는 자기 identifier 를 전역으로 알 수 없고, 틀리면 조용히 남의 KEK 를 연다.
+    // cored 프로세스는 자기 identifier 를 전역으로 알 수 없고, 틀리면 조용히 남의 KEK 를 연다.
     pub(crate) fn for_identity(identity: &crate::identity::Identity) -> Self {
         Self {
             service: identity.identifier().to_string(),

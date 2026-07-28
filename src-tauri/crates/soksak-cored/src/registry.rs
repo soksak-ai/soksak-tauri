@@ -5,9 +5,9 @@
 //! 그 번역이 새 드리프트 면이 된다 — 같은 이름으로 물어 같은 답을 받는 것이 요점이다.
 //!
 //! 각 핸들러는 **코어 함수 호출 한 줄**이다. 판단을 여기 넣지 마라: 판단이 여기 있으면
-//! 앱 경로와 헬퍼 경로가 서로 다른 답을 낼 수 있고, 그 차이는 조용하다.
+//! 앱 경로와 cored 경로가 서로 다른 답을 낼 수 있고, 그 차이는 조용하다.
 //!
-//! 여기 없는 이름은 이름을 달고 실패한다. 셸이 아직 소유한 것(창·웹뷰·엔진)을 헬퍼가
+//! 여기 없는 이름은 이름을 달고 실패한다. 셸이 아직 소유한 것(창·웹뷰·엔진)을 cored 가
 //! 아는 척하지 않는다 — 모르는 것을 모른다고 답하는 것이 이 표의 절반이다.
 
 use serde::de::DeserializeOwned;
@@ -28,7 +28,7 @@ pub enum Outcome {
     Failed(String),
 }
 
-/// 인자 선언 — 물어서 알 수 있어야 한다(helper.commands).
+/// 인자 선언 — 물어서 알 수 있어야 한다(cored.commands).
 pub struct Arg {
     pub name: &'static str,
     pub ty: &'static str,
@@ -109,8 +109,8 @@ pub const COMMANDS: &[Command] = &[
         run: run_ai_session_detect,
     },
     // 아래 다섯은 홈·정체성이 필요한 것들이다. 그 값은 **부팅 상태**(Ctx)에서 오지 인자로
-    // 오지 않는다 — 앱의 같은 명령이 인자를 받지 않기 때문이다. 헬퍼가 인자로 요구하면
-    // UI 의 같은 호출이 앱에서는 되고 헬퍼에서는 INVALID_PARAMS 로 거절된다(실측 결함).
+    // 오지 않는다 — 앱의 같은 명령이 인자를 받지 않기 때문이다. cored 가 인자로 요구하면
+    // UI 의 같은 호출이 앱에서는 되고 cored 에서는 INVALID_PARAMS 로 거절된다(실측 결함).
     Command {
         name: "themes_scan",
         args: &[],
@@ -132,7 +132,7 @@ pub const COMMANDS: &[Command] = &[
         returns: "any | null (저장된 값)",
         run: run_data_kv_get,
     },
-    // 활동 발행 — 헬퍼는 **적재만** 한다. 부채질(창 emit)은 셸의 것이고, 영속(records 쓰기)은
+    // 활동 발행 — cored 는 **적재만** 한다. 부채질(창 emit)은 셸의 것이고, 영속(records 쓰기)은
     // 저장소 소유자의 것이다. 적재분을 답에 실어 보내면 창을 가진 셸이 그것을 뿌린다.
     // 저장소 경로는 인자가 아니라 부팅 상태다 — 앱의 activity_publish 도 받지 않는다.
     Command {
@@ -175,7 +175,7 @@ pub const UNSERVED: &[Unserved] = &[
         name: "project_owners",
         blocked_by: "점유 원장이 앱 프로세스 안의 가변 상태다. 살아 있는 창 라벨은 인자로 받을 수 \
                      있지만(부팅 상태가 홈을 받는 것처럼) 원장은 못 받는다 — 그것을 바꾸는 \
-                     claim/release 가 같은 프로세스에 있다. 헬퍼가 원장을 쥐면 원장의 수명이 헬퍼의 \
+                     claim/release 가 같은 프로세스에 있다. cored 가 원장을 쥐면 원장의 수명이 cored 의 \
                      수명이 되어, 셸이 재기동한 뒤에도 죽은 창의 점유가 남아 그 프로젝트를 다시 못 연다.",
     },
     Unserved {
@@ -187,7 +187,7 @@ pub const UNSERVED: &[Unserved] = &[
     Unserved {
         name: "process_reclaim_window",
         blocked_by: "회수 대상은 이 프로세스가 스폰한 자식의 Child 핸들이다. 창 라벨은 키일 뿐 회수할 \
-                     것을 만들어 주지 않는다 — 헬퍼에는 그 맵이 없어 언제나 0 을 돌려주는데, 그 0 은 \
+                     것을 만들어 주지 않는다 — cored 에는 그 맵이 없어 언제나 0 을 돌려주는데, 그 0 은 \
                      '거둘 것이 없었다'와 구분되지 않는다.",
     },
 ];
@@ -395,7 +395,7 @@ impl soksak_core::kv::KvRows for SqliteRows {
 
 fn run_data_kv_get(ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: KvGetArg| {
-        // 읽기 전용으로 연다 — 헬퍼가 저장소를 고치지 않는다. 쓰기는 소유자가 하고,
+        // 읽기 전용으로 연다 — cored 가 저장소를 고치지 않는다. 쓰기는 소유자가 하고,
         // 두 프로세스가 같은 파일에 쓰면 그 순간 단일 쓰기자 계약이 깨진다.
         let conn = rusqlite::Connection::open_with_flags(
             ctx.db_path(),
@@ -445,7 +445,7 @@ fn run_app_environment(ctx: &Ctx, params: &Value) -> Outcome {
             "identity": id.identifier(),
             "cli": id.cli_name(),
             "home": home,
-            // 헬퍼는 릴리즈 프로파일로 배급된다 — 자기 빌드를 말하는 것이 정직하다.
+            // cored 는 릴리즈 프로파일로 배급된다 — 자기 빌드를 말하는 것이 정직하다.
             "buildProfile": if cfg!(debug_assertions) { "debug" } else { "release" },
             "updaterEnabled": id.is_release(),
             "unitMode": if accepted.is_empty() { "official" } else { "mixed" },
@@ -496,7 +496,7 @@ mod tests {
         assert_eq!(names.len(), before, "표에 같은 이름이 둘 있다: {names:?}");
     }
 
-    // 선언이 비어 있으면 helper.commands 는 "아무것도 못 한다"를 성공으로 답한다.
+    // 선언이 비어 있으면 cored.commands 는 "아무것도 못 한다"를 성공으로 답한다.
     // 표가 살아 있음을 먼저 단언한다(0 의 두 얼굴).
     #[test]
     fn the_table_declares_name_args_and_returns() {

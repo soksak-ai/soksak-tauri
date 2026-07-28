@@ -1,22 +1,22 @@
-// 헬퍼 서빙 모양 게이트(정적) — "헬퍼가 서빙하는 명령은 앱 명령과 **같은 모양**인가".
+// cored 서빙 모양 게이트(정적) — "cored 가 서빙하는 명령은 앱 명령과 **같은 모양**인가".
 //
-// UI 는 자기가 누구와 말하는지 모른다. `invoke("app_environment")` 는 앱이 답하든 헬퍼가
-// 답하든 같은 호출이고, 그래서 헬퍼의 인자 모양은 앱 명령의 인자 모양과 **같아야 한다**.
+// UI 는 자기가 누구와 말하는지 모른다. `invoke("app_environment")` 는 앱이 답하든 cored 가
+// 답하든 같은 호출이고, 그래서 cored 의 인자 모양은 앱 명령의 인자 모양과 **같아야 한다**.
 // 다르면 셸이 번역을 해야 하는데, 그 번역은 곧 두 번째 진실이 된다.
 //
-// 이 게이트가 생긴 이유(2026-07-28 실측): 헬퍼가 서빙한다고 믿었던 5개(app_environment·
+// 이 게이트가 생긴 이유(2026-07-28 실측): cored 가 서빙한다고 믿었던 5개(app_environment·
 // data_kv_get·themes_scan·plugin_scan·app_is_release)가 라이브 부팅에서 전부
-// INVALID_PARAMS 로 거절됐다. 헬퍼는 `identifier`·`home`·`dbPath`·`dir`·`base` 를 요구했는데
+// INVALID_PARAMS 로 거절됐다. cored 는 `identifier`·`home`·`dbPath`·`dir`·`base` 를 요구했는데
 // 앱의 같은 명령들은 **인자를 하나도 받지 않는다** — 그 값들은 프로세스가 부팅 때 갖는
 // 상태이지 호출자가 매번 실어 보내는 것이 아니기 때문이다.
 //
-// 그 오판의 뿌리는 "헬퍼는 정체성을 추측하지 않는다"를 "매 호출마다 정체성을 요구한다"로
+// 그 오판의 뿌리는 "cored 는 정체성을 추측하지 않는다"를 "매 호출마다 정체성을 요구한다"로
 // 읽은 것이다. 받는 것과 추측하는 것은 다르다: 앱도 자기 정체성을 추측하지 않고 부팅 때
-// 셸에서 받는다(home::init). 헬퍼도 띄운 쪽에서 부팅 때 받으면 된다(--home/--identifier).
+// 셸에서 받는다(home::init). cored 도 띄운 쪽에서 부팅 때 받으면 된다(--home/--identifier).
 //
 // 그래서 이 게이트는 이름이 겹치는 명령마다 인자 이름 **집합**을 대조한다. 셸이 주입하는
 // 인자(State·AppHandle·Window·Channel)는 호출자가 보내는 값이 아니므로 앱 쪽에서 뺀다.
-// 헬퍼에만 있는 이름(`helper.commands` 같은 자기 서술)은 앱 명령이 아니므로 대조 대상이
+// cored 에만 있는 이름(`cored.commands` 같은 자기 서술)은 앱 명령이 아니므로 대조 대상이
 // 아니다 — 다만 **이름이 겹치는데 모양이 다른 것**은 전부 결함이다.
 
 use std::collections::BTreeSet;
@@ -159,7 +159,7 @@ fn caller_args(params: &str) -> BTreeSet<String> {
     out
 }
 
-/// 이름이 겹치는 명령마다 인자 이름 집합을 대조한다. 앱에 없는 이름은 헬퍼 자기 서술이라
+/// 이름이 겹치는 명령마다 인자 이름 집합을 대조한다. 앱에 없는 이름은 cored 자기 서술이라
 /// 대조 대상이 아니다 — 있는 이름이 다른 모양인 것만 결함이다.
 ///
 /// 표를 인자로 받는다: 실제 표로도, 합성한 표로도 같은 판정을 내려야 게이트가 산 것이다.
@@ -176,7 +176,7 @@ fn mismatches<'a>(
         let expected: BTreeSet<String> = mine.args.iter().map(|a| canon(a)).collect();
         if declared != expected {
             out.push(format!(
-                "{name}: 헬퍼 {args:?} != 앱 {:?}",
+                "{name}: cored {args:?} != 앱 {:?}",
                 mine.args.iter().collect::<Vec<_>>()
             ));
         }
@@ -202,12 +202,12 @@ fn collect_rs(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
 mod tests {
     use super::*;
 
-    /// 헬퍼가 서빙하는 이름이 앱에도 있으면 **인자 모양이 같아야 한다.**
-    /// 다르면 UI 가 앱에 보내던 호출이 헬퍼에서 INVALID_PARAMS 로 거절된다 — 그리고
+    /// cored 가 서빙하는 이름이 앱에도 있으면 **인자 모양이 같아야 한다.**
+    /// 다르면 UI 가 앱에 보내던 호출이 cored 에서 INVALID_PARAMS 로 거절된다 — 그리고
     /// 그 거절은 셸 로그 한 줄이라 조용하다.
     /// 실제 서빙 표 — 이름과 인자 이름만 뽑는다.
     fn served_table() -> Vec<(&'static str, Vec<&'static str>)> {
-        soksak_helper::registry::COMMANDS
+        soksak_cored::registry::COMMANDS
             .iter()
             .map(|c| (c.name, c.args.iter().map(|a| a.name).collect()))
             .collect()
@@ -218,8 +218,8 @@ mod tests {
         assert_eq!(
             mismatches(&app_commands(), served_table()),
             Vec::<String>::new(),
-            "헬퍼 서빙 모양이 앱 명령과 다르다 — UI 는 자기가 누구와 말하는지 모른다. \
-             프로세스 상태(정체성·홈·DB 경로)는 매 호출 인자가 아니라 헬퍼 부팅 인자다"
+            "cored 서빙 모양이 앱 명령과 다르다 — UI 는 자기가 누구와 말하는지 모른다. \
+             프로세스 상태(정체성·홈·DB 경로)는 매 호출 인자가 아니라 cored 부팅 인자다"
         );
     }
 
@@ -228,11 +228,11 @@ mod tests {
     #[test]
     fn the_gate_catches_every_way_the_shape_can_drift() {
         let app = app_commands();
-        // ① 앱이 안 받는 인자를 헬퍼가 요구한다 — 실제로 났던 결함(2026-07-28).
+        // ① 앱이 안 받는 인자를 cored 가 요구한다 — 실제로 났던 결함(2026-07-28).
         let extra = mismatches(&app, [("app_environment", vec!["identifier", "home"])]);
         assert_eq!(extra.len(), 1, "인자를 더 요구하는 것을 못 잡았다: {extra:?}");
         assert!(extra[0].contains("app_environment"), "{extra:?}");
-        // ② 앱이 받는 인자를 헬퍼가 흘린다 — 호출자가 보낸 값이 조용히 버려진다.
+        // ② 앱이 받는 인자를 cored 가 흘린다 — 호출자가 보낸 값이 조용히 버려진다.
         let dropped = mismatches(&app, [("data_kv_get", vec!["ns"])]);
         assert_eq!(dropped.len(), 1, "빠뜨린 인자를 못 잡았다: {dropped:?}");
         // ③ 이름만 다르다 — 셸이 번역해야 하고, 그 번역이 두 번째 진실이 된다.
@@ -241,8 +241,8 @@ mod tests {
         // 표기만 다른 것은 결함이 아니다(Tauri 가 넘길 때 바꾸는 표기다).
         let cased = mismatches(&app, [("binary_integrity", vec!["binPath", "libPath"])]);
         assert_eq!(cased, Vec::<String>::new(), "표기 차이를 결함으로 봤다: {cased:?}");
-        // 앱에 없는 이름은 대조하지 않는다 — 헬퍼 자기 서술(helper.commands).
-        let own = mismatches(&app, [("helper.commands", vec![])]);
+        // 앱에 없는 이름은 대조하지 않는다 — cored 자기 서술(cored.commands).
+        let own = mismatches(&app, [("cored.commands", vec![])]);
         assert_eq!(own, Vec::<String>::new(), "{own:?}");
     }
 

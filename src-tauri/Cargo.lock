@@ -4761,6 +4761,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "soksak-cored"
+version = "0.0.1"
+dependencies = [
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "soksak-core",
+ "soksak-spec-socket",
+]
+
+[[package]]
 name = "soksak-dev"
 version = "0.0.1"
 dependencies = [
@@ -4789,7 +4800,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "soksak-core",
- "soksak-helper",
+ "soksak-cored",
  "soksak-seal",
  "soksak-spec-contract",
  "soksak-spec-pty",
@@ -4813,17 +4824,6 @@ dependencies = [
  "wreq-util",
  "wry",
  "zeroize",
-]
-
-[[package]]
-name = "soksak-helper"
-version = "0.0.1"
-dependencies = [
- "rusqlite",
- "serde",
- "serde_json",
- "soksak-core",
- "soksak-spec-socket",
 ]
 
 [[package]]

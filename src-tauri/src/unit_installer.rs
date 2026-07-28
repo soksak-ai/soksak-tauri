@@ -4,10 +4,10 @@
 // 원장은 프로세스 메모리에 있고(Mutex<HashMap>), 스테이징 디렉토리는 그 원장의 키로만
 // 찾을 수 있다. 그래서 다섯은 **함께** 움직인다 — 하나만 떼면 남은 넷이 없는 원장을 본다.
 //
-// 헬퍼 프로세스로 나가려면 두 가지가 걸려 있었다:
+// cored 프로세스로 나가려면 두 가지가 걸려 있었다:
 //   ① 홈: lib.rs 가 앰비언트 전역(`home::soksak_home()`)을 읽어 생성자에 넣었고, 매니저는
 //      그 값을 `join` 으로 네 곳에서 각각 조립했다. 정체성 계약(identity.rs)을 값으로 받으면
-//      헬퍼는 인자 하나로 같은 홈을 쥐고, 조립 규칙은 `Identity::path` 한 곳에 모인다.
+//      cored 는 인자 하나로 같은 홈을 쥐고, 조립 규칙은 `Identity::path` 한 곳에 모인다.
 //   ② 입구: 다섯 입구가 `tauri::State` 를 받았다. State 를 요구하는 순간 원장째 앱
 //      프로세스에 묶인다. 로직은 `&UnitInstallManager` 를 받는 함수로 내리고,
 //      `#[tauri::command]` 는 State 를 벗겨 넘기는 번역층만 남긴다.
@@ -461,7 +461,7 @@ impl UnitInstallManager {
     }
 
     /// 이 쓰기자가 쥔 정체성 — 어느 홈 트리를 쓰는지 읽을 수 있어야 단일 쓰기자를 확인한다.
-    /// 앱 프로세스에는 아직 소비자가 없다(홈이 하나뿐이라 물을 일이 없었다). 헬퍼가
+    /// 앱 프로세스에는 아직 소비자가 없다(홈이 하나뿐이라 물을 일이 없었다). cored 가
     /// 붙는 순간 "네가 쓰는 홈이 어디냐"가 첫 질문이 되므로 상태면을 지금 연다.
     #[allow(dead_code)]
     pub(crate) fn identity(&self) -> &Identity {
@@ -860,7 +860,7 @@ impl UnitInstallManager {
 
 // ── 다섯 입구 ─────────────────────────────────────────────────────────────────
 // 한 원장을 공유하는 다섯이다. 여기서는 `&UnitInstallManager` 만 받는다 — 호스트 타입이
-// 시그니처에 없어야 헬퍼 프로세스의 디스패처가 같은 다섯을 그대로 부를 수 있다.
+// 시그니처에 없어야 cored 프로세스의 디스패처가 같은 다섯을 그대로 부를 수 있다.
 // 아래 `#[tauri::command]` 는 State 를 벗겨 넘기는 번역층이다(로직을 두지 않는다).
 
 pub(crate) fn install_begin(
@@ -871,7 +871,7 @@ pub(crate) fn install_begin(
     manager.begin(registry_id, root)
 }
 
-/// 자산을 받아 스테이징까지. 내려받기가 이 입구 안에 있어야 헬퍼가 커맨드 층 없이도
+/// 자산을 받아 스테이징까지. 내려받기가 이 입구 안에 있어야 cored 가 커맨드 층 없이도
 /// 같은 일을 한다 — 예전엔 이 한 줄이 `#[tauri::command]` 함수 몸통에만 있었다.
 pub(crate) fn install_stage(
     manager: &UnitInstallManager,
@@ -1072,7 +1072,7 @@ mod tests {
     #[test]
     fn the_installer_takes_an_identity_not_a_bare_home() {
         // 홈은 씨앗을 lib.rs 의 앰비언트 전역에서 받았고, 매니저 안에서는 join 으로 흩어졌다.
-        // 정체성을 값으로 받으면 헬퍼 프로세스가 인자 하나로 같은 홈을 쥔다.
+        // 정체성을 값으로 받으면 cored 프로세스가 인자 하나로 같은 홈을 쥔다.
         let root = home("identity");
         let id = crate::identity::Identity::new(root.clone(), "com.soksak.dev");
         let manager = UnitInstallManager::new(id.clone()).unwrap();

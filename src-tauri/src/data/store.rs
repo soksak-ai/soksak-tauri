@@ -17,7 +17,7 @@ pub fn kv_raw(conn: &Connection, ns: &str, k: &str) -> Result<Option<String>, St
     .map_err(|e| e.to_string())
 }
 
-// 연결을 KvRows 로 내보내는 어댑터 — 헬퍼는 자기 연결로 같은 트레이트를 채운다.
+// 연결을 KvRows 로 내보내는 어댑터 — cored 는 자기 연결로 같은 트레이트를 채운다.
 pub struct ConnKvRows<'a>(pub &'a Connection);
 
 impl soksak_core::kv::KvRows for ConnKvRows<'_> {

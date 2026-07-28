@@ -1,4 +1,4 @@
-//! 헬퍼를 실제로 띄워 소켓으로 묻고 답을 받는다 — 이 갈래의 GREEN.
+//! cored 를 실제로 띄워 소켓으로 묻고 답을 받는다 — 이 갈래의 GREEN.
 //!
 //! 인프로세스 단위 테스트는 "표가 옳다"까지만 증명한다. 이 프로세스가 존재하는 이유는
 //! **다른 프로세스에서 같은 답이 나온다**는 것이므로, 증명도 프로세스를 건너야 한다:
@@ -18,7 +18,7 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 
-/// 살아 있는 헬퍼 — 드롭될 때 프로세스를 거둔다(테스트가 실패해도 고아를 남기지 않는다).
+/// 살아 있는 cored — 드롭될 때 프로세스를 거둔다(테스트가 실패해도 고아를 남기지 않는다).
 struct Helper {
     child: Child,
     socket: PathBuf,
@@ -33,26 +33,26 @@ impl Drop for Helper {
 }
 
 impl Helper {
-    /// 이 헬퍼의 픽스처 루트(소켓이 사는 디렉터리).
+    /// 이 cored 의 픽스처 루트(소켓이 사는 디렉터리).
     fn dir(&self) -> &std::path::Path {
         self.socket.parent().expect("소켓의 부모")
     }
 
-    /// 이 헬퍼가 서빙하는 정체성 홈. 부팅 인자로 준 것과 같은 값이라야 한다.
+    /// 이 프로세스가 서빙하는 정체성 홈. 부팅 인자로 준 것과 같은 값이라야 한다.
     fn home(&self) -> PathBuf {
         self.dir().join("home")
     }
 
     /// 한 줄 요청 → 한 줄 응답. 연결은 요청마다 새로 연다(NDJSON 요청/응답의 최소 단위).
     fn ask(&self, req: Value) -> Value {
-        let conn = UnixStream::connect(&self.socket).expect("헬퍼 소켓 연결");
+        let conn = UnixStream::connect(&self.socket).expect("cored 소켓 연결");
         conn.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
         let mut writer = conn.try_clone().unwrap();
         writeln!(writer, "{req}").expect("요청 쓰기");
         writer.flush().unwrap();
         let mut line = String::new();
         BufReader::new(conn).read_line(&mut line).expect("응답 읽기");
-        assert!(!line.trim().is_empty(), "빈 응답 — 헬퍼가 답하지 않았다");
+        assert!(!line.trim().is_empty(), "빈 응답 — cored 가 답하지 않았다");
         serde_json::from_str(line.trim()).expect("응답은 한 줄 JSON")
     }
 }
@@ -64,23 +64,23 @@ impl Helper {
 /// 짧고 고정된 루트라야 어디서 체크아웃해도 이 테스트가 돈다.
 fn fixture_dir(name: &str) -> PathBuf {
     let home = std::env::var("HOME").expect("HOME");
-    let dir = PathBuf::from(home).join(".soksak-helper-test").join(name);
+    let dir = PathBuf::from(home).join(".soksak-cored-test").join(name);
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("픽스처 루트 생성");
     dir
 }
 
-/// 헬퍼를 띄우고 준비 완료 줄을 기다린다.
+/// cored 를 띄우고 준비 완료 줄을 기다린다.
 ///
-/// 정체성을 **인자로 준다** — 헬퍼는 자기 홈을 파생하지 않는다. 테스트가 홈을 지목하므로
+/// 정체성을 **인자로 준다** — cored 는 자기 홈을 파생하지 않는다. 테스트가 홈을 지목하므로
 /// 홈 아래를 보는 명령(themes_scan·plugin_scan·app_environment)까지 이 프로세스 밖에서
-/// 검증된다. 인자를 빼면 헬퍼는 뜨지 않는다(그 자체도 아래에서 단언한다).
+/// 검증된다. 인자를 빼면 cored 는 뜨지 않는다(그 자체도 아래에서 단언한다).
 fn spawn_helper(name: &str) -> Helper {
     let dir = fixture_dir(name);
     let socket = dir.join("h.sock");
     let home = dir.join("home");
     std::fs::create_dir_all(&home).expect("픽스처 홈 생성");
-    let mut child = Command::new(env!("CARGO_BIN_EXE_soksak-helper"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_soksak-cored"))
         .arg("--socket")
         .arg(&socket)
         .arg("--home")
@@ -89,14 +89,14 @@ fn spawn_helper(name: &str) -> Helper {
         .arg("com.soksak.dev")
         .stdout(Stdio::piped())
         .spawn()
-        .expect("헬퍼 스폰");
-    // 준비 완료 = stdout 한 줄. 블로킹 read 라 폴링이 없고, 헬퍼가 죽으면 EOF 로 즉시 드러난다.
+        .expect("cored 스폰");
+    // 준비 완료 = stdout 한 줄. 블로킹 read 라 폴링이 없고, cored 가 죽으면 EOF 로 즉시 드러난다.
     let mut ready = String::new();
     let stdout = child.stdout.take().expect("stdout 파이프");
     let read = BufReader::new(stdout).read_line(&mut ready);
     assert!(
         matches!(read, Ok(n) if n > 0),
-        "헬퍼가 준비 완료를 알리지 않고 죽었다: {read:?}"
+        "cored 가 준비 완료를 알리지 않고 죽었다: {read:?}"
     );
     assert!(
         ready.contains(&socket.to_string_lossy().to_string()),
@@ -108,7 +108,7 @@ fn spawn_helper(name: &str) -> Helper {
 // ── 살아 있는 프로세스가 실제로 명령을 서빙한다 ──────────────────────────────────
 
 // binary_integrity 는 디스크만 만지는 순수 관찰이다. 실재하는 파일을 두고 물으면
-// present 가 나와야 한다 — 헬퍼가 soksak-core 을 실제로 부르고 있다는 증거.
+// present 가 나와야 한다 — cored 가 soksak-core 을 실제로 부르고 있다는 증거.
 #[test]
 fn serves_a_portable_command_over_the_socket() {
     let helper = spawn_helper("serves-portable");
@@ -132,7 +132,7 @@ fn serves_a_portable_command_over_the_socket() {
     assert_eq!(reply["data"]["broken"], false, "응답: {reply}");
 }
 
-// UDP 는 디스크가 아니라 실제 소켓을 쓴다 — 헬퍼 프로세스가 진짜로 패킷을 보내는지.
+// UDP 는 디스크가 아니라 실제 소켓을 쓴다 — cored 프로세스가 진짜로 패킷을 보내는지.
 // 답만 그럴듯한 것과 실제로 일한 것을 가른다.
 #[test]
 fn a_served_command_really_does_the_work() {
@@ -151,8 +151,8 @@ fn a_served_command_really_does_the_work() {
     assert_eq!(reply["data"], 3, "보낸 바이트 수를 그대로 돌려준다: {reply}");
 
     let mut buf = [0u8; 16];
-    let (n, _) = recv.recv_from(&mut buf).expect("헬퍼가 보낸 패킷 수신");
-    assert_eq!(&buf[..n], &[9u8, 8, 7], "헬퍼 프로세스가 실제로 보냈다");
+    let (n, _) = recv.recv_from(&mut buf).expect("cored 가 보낸 패킷 수신");
+    assert_eq!(&buf[..n], &[9u8, 8, 7], "cored 프로세스가 실제로 보냈다");
 }
 
 // 실패도 프로세스를 건너야 한다 — 코어 로직의 거부 사유가 message 로 그대로 온다.
@@ -208,7 +208,7 @@ fn bad_arguments_fail_by_name() {
 #[test]
 fn the_served_commands_are_discoverable() {
     let helper = spawn_helper("discoverable");
-    let reply = helper.ask(json!({ "id": 4, "method": "helper.commands" }));
+    let reply = helper.ask(json!({ "id": 4, "method": "cored.commands" }));
     assert_eq!(reply["ok"], true, "응답: {reply}");
     let cmds = reply["data"]["commands"].as_array().expect("commands 배열");
     let names: Vec<&str> = cmds.iter().filter_map(|c| c["name"].as_str()).collect();
@@ -264,13 +264,13 @@ fn a_future_client_is_gated_before_the_command_runs() {
 #[test]
 fn help_and_version_answer_without_a_socket() {
     for flag in ["--help", "--version"] {
-        let out = Command::new(env!("CARGO_BIN_EXE_soksak-helper"))
+        let out = Command::new(env!("CARGO_BIN_EXE_soksak-cored"))
             .arg(flag)
             .output()
-            .expect("헬퍼 실행");
+            .expect("cored 실행");
         assert!(out.status.success(), "{flag} 는 성공해야 한다: {out:?}");
         let text = String::from_utf8_lossy(&out.stdout);
-        assert!(text.contains("soksak-helper"), "{flag} 출력: {text}");
+        assert!(text.contains("soksak-cored"), "{flag} 출력: {text}");
     }
 }
 
@@ -281,7 +281,7 @@ fn help_and_version_answer_without_a_socket() {
 fn an_overlong_socket_path_says_how_long_it_was() {
     let dir = fixture_dir("overlong");
     let socket = dir.join("x".repeat(200)).with_extension("sock");
-    let out = Command::new(env!("CARGO_BIN_EXE_soksak-helper"))
+    let out = Command::new(env!("CARGO_BIN_EXE_soksak-cored"))
         .arg("--socket")
         .arg(&socket)
         .arg("--home")
@@ -289,7 +289,7 @@ fn an_overlong_socket_path_says_how_long_it_was() {
         .arg("--identifier")
         .arg("com.soksak.dev")
         .output()
-        .expect("헬퍼 실행");
+        .expect("cored 실행");
     assert!(!out.status.success(), "상한 밖 경로로 성공하면 안 된다");
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(
@@ -303,9 +303,9 @@ fn an_overlong_socket_path_says_how_long_it_was() {
 // 기본값을 고르는 대신 이름을 달고 실패한다.
 #[test]
 fn a_missing_socket_path_fails_by_name() {
-    let out = Command::new(env!("CARGO_BIN_EXE_soksak-helper"))
+    let out = Command::new(env!("CARGO_BIN_EXE_soksak-cored"))
         .output()
-        .expect("헬퍼 실행");
+        .expect("cored 실행");
     assert!(!out.status.success(), "소켓 경로 없이 성공하면 안 된다: {out:?}");
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(err.contains("--socket"), "무엇이 없는지 말해야 한다: {err}");
@@ -314,7 +314,7 @@ fn a_missing_socket_path_fails_by_name() {
 // ── 부팅 상태를 쓰는 명령 ────────────────────────────────────────────────────
 //
 // 이 갈래가 없어서 결함이 살아남았다(2026-07-28): 인프로세스 검사는 "인자를 선언대로 읽는가"
-// 만 봤고, 소켓 검사는 인자 없는 명령을 하나도 부르지 않았다. 그래서 헬퍼가 **앱과 다른
+// 만 봤고, 소켓 검사는 인자 없는 명령을 하나도 부르지 않았다. 그래서 cored 가 **앱과 다른
 // 모양**을 요구한다는 사실이 라이브 부팅에서야 INVALID_PARAMS 한 줄로 드러났다.
 //
 // 아래 검사들은 전부 UI 가 실제로 보내는 모양 — 즉 **인자 없이** 부른다.
@@ -358,7 +358,7 @@ fn the_environment_answers_from_boot_state() {
     assert_eq!(is_release["data"], false, "{is_release}");
 }
 
-/// 인자 없는 명령이 인자를 요구하면 UI 의 같은 호출이 앱에서는 되고 헬퍼에서는 거절된다.
+/// 인자 없는 명령이 인자를 요구하면 UI 의 같은 호출이 앱에서는 되고 cored 에서는 거절된다.
 /// 그 비대칭 자체를 막는다: `{}` 도 `null` 도 생략도 전부 같은 답이라야 한다.
 #[test]
 fn an_argumentless_command_accepts_every_empty_shape() {
@@ -372,13 +372,13 @@ fn an_argumentless_command_accepts_every_empty_shape() {
     assert_eq!(omitted["ok"], true, "{omitted}");
 }
 
-/// 정체성 없이는 서빙하지 않는다. 홈을 추측하는 헬퍼는 **다른 identity 의 답을 성공처럼**
+/// 정체성 없이는 서빙하지 않는다. 홈을 추측하는 cored 는 **다른 identity 의 답을 성공처럼**
 /// 돌려주고, 그 오답은 오류가 아니라 빈 결과로 나타난다.
 #[test]
 fn a_missing_identity_fails_by_name() {
     let dir = fixture_dir("no-identity");
     for missing in ["--home", "--identifier"] {
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_soksak-helper"));
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_soksak-cored"));
         cmd.arg("--socket").arg(dir.join("h.sock"));
         if missing != "--home" {
             cmd.arg("--home").arg(&dir);
@@ -386,14 +386,14 @@ fn a_missing_identity_fails_by_name() {
         if missing != "--identifier" {
             cmd.arg("--identifier").arg("com.soksak.dev");
         }
-        let out = cmd.output().expect("헬퍼 실행");
+        let out = cmd.output().expect("cored 실행");
         assert!(!out.status.success(), "{missing} 없이 성공하면 안 된다");
         let err = String::from_utf8_lossy(&out.stderr);
         assert!(err.contains(missing), "무엇이 빠졌는지 말해야 한다: {err}");
     }
 }
 
-/// 저장소를 옮긴 앱과 같은 파일을 봐야 한다 — 헬퍼가 규칙만 보고 파생하면 다른 DB 를 열고
+/// 저장소를 옮긴 앱과 같은 파일을 봐야 한다 — cored 가 규칙만 보고 파생하면 다른 DB 를 열고
 /// 그 차이는 "없음"으로 조용히 나타난다.
 #[test]
 fn a_relocated_store_is_followed_not_re_derived() {
@@ -404,7 +404,7 @@ fn a_relocated_store_is_followed_not_re_derived() {
     std::fs::create_dir_all(&moved).unwrap();
 
     let socket = dir.join("h.sock");
-    let mut child = Command::new(env!("CARGO_BIN_EXE_soksak-helper"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_soksak-cored"))
         .arg("--socket")
         .arg(&socket)
         .arg("--home")
@@ -415,12 +415,12 @@ fn a_relocated_store_is_followed_not_re_derived() {
         .arg(&moved)
         .stdout(Stdio::piped())
         .spawn()
-        .expect("헬퍼 스폰");
+        .expect("cored 스폰");
     let mut ready = String::new();
     let stdout = child.stdout.take().expect("stdout 파이프");
     assert!(
         matches!(BufReader::new(stdout).read_line(&mut ready), Ok(n) if n > 0),
-        "헬퍼가 준비 완료를 알리지 않고 죽었다"
+        "cored 가 준비 완료를 알리지 않고 죽었다"
     );
     let helper = Helper { child, socket };
 
@@ -442,7 +442,7 @@ fn a_relocated_store_is_followed_not_re_derived() {
 #[test]
 fn what_it_refuses_is_discoverable_with_the_reason() {
     let helper = spawn_helper("unserved");
-    let reply = helper.ask(json!({ "id": 8, "method": "helper.commands" }));
+    let reply = helper.ask(json!({ "id": 8, "method": "cored.commands" }));
     assert_eq!(reply["ok"], true, "응답: {reply}");
     let unserved = reply["data"]["unserved"]
         .as_array()
@@ -465,7 +465,7 @@ fn what_it_refuses_is_discoverable_with_the_reason() {
 #[test]
 fn calling_an_audited_name_carries_the_reason_across_the_socket() {
     let helper = spawn_helper("unserved-call");
-    let table = helper.ask(json!({ "id": 9, "method": "helper.commands" }));
+    let table = helper.ask(json!({ "id": 9, "method": "cored.commands" }));
     let declared = table["data"]["unserved"]
         .as_array()
         .and_then(|u| u.iter().find(|e| e["name"] == "process_reclaim_window"))
@@ -484,7 +484,7 @@ fn calling_an_audited_name_carries_the_reason_across_the_socket() {
 // ── 활동 원장 — 적재는 프로세스를 건너서도 같은 규칙이다 ──────────────────────
 
 /// 앱이 만드는 records 스키마 그대로의 저장소 하나(활동 행 seq 포함).
-/// 헬퍼가 보는 곳에 만든다 — 저장소 경로는 인자가 아니라 부팅 상태다.
+/// cored 가 보는 곳에 만든다 — 저장소 경로는 인자가 아니라 부팅 상태다.
 fn ledger_store(helper: &Helper, seq: u64) -> PathBuf {
     let dir = helper.home().join("data");
     std::fs::create_dir_all(&dir).expect("데이터 디렉터리");
@@ -506,7 +506,7 @@ fn ledger_store(helper: &Helper, seq: u64) -> PathBuf {
     path
 }
 
-// 헬퍼는 적재분을 답에 실어 준다 — 창은 셸의 것이므로 부채질은 그 항목을 받은 셸이 한다.
+// cored 는 적재분을 답에 실어 준다 — 창은 셸의 것이므로 부채질은 그 항목을 받은 셸이 한다.
 // 그리고 번호는 저장소가 이미 가진 역사 **위에서** 이어야 한다: 0 부터 다시 매기면
 // 소비자의 영속 읽음 커서가 미래를 가리켜 그 소비자가 전면 침묵한다.
 #[test]
