@@ -159,12 +159,22 @@ async function main() {
       throw new Error("픽스처 창이 전면이 아님 — 네이티브 드래그 중단(남의 창 오염 방지)");
     }
   }
+  // 판정 축은 프레임워크가 선언한다 — 이름 분기는 프레임워크가 늘 때마다 갈라진다.
+  const provision = data(await rpc("framework.provision", {}, win));
+  const nativeChildWebview = provision.nativeChildWebview !== false;
+  console.log(`framework: ${provision.name} · content views ${nativeChildWebview ? "native" : "in-page"}`);
+
   let term = null;
   let browser = null;
   for (let i = 0; i < 40 && (!term || !browser); i++) {
     const ids = (data(await rpc("program.list", {}, win)).programs || []).map((p) => p.id);
     term = ids.find((id) => id.startsWith("terminal-")) ?? term;
-    browser = ids.find((id) => id.includes("chromium") && !id.includes("offscreen")) ?? browser;
+    // 네이티브 자식 표면이 있는 프레임워크에서만 엔진(CEF)이 이 하니스의 무대다 — 그 표면이
+    // 페이지 위에 떠서 골의 포인터를 삼키는 것이 이 결함의 실체다. 콘텐츠가 페이지 안에 사는
+    // 프레임워크에는 그 무대가 없고, 대신 아무 브라우저나 같은 자리에 선다.
+    browser = nativeChildWebview
+      ? (ids.find((id) => id.includes("chromium") && !id.includes("offscreen")) ?? browser)
+      : (ids.find((id) => id === "browser" || id.startsWith("browser-")) ?? browser);
     if (!term || !browser) await sleep(500);
   }
   ok(!!term && !!browser, `programs (${term}, ${browser})`);
@@ -174,51 +184,89 @@ async function main() {
   await sleep(1500);
 
   try {
-    const surfaces = await liveSurfaces(win);
     const gs = await gutters(win);
-    ok(surfaces.length > 0, `live engine surface (${surfaces.length})`);
     ok(gs.length > 0, `gutters found (${gs.length})`);
-    const target = gs.find((g) => surfaces.some((s) => overlaps(g, s)));
-    ok(
-      !!target,
-      "a gutter overlaps a native surface (the defect's stage)",
-      JSON.stringify({ gutters: gs.map((g) => g.address.split("/chrome/")[1]), surfaces }).slice(0, 200),
-    );
+    // 표적 고르기만 갈린다 — 드래그가 seam 을 옮겨야 한다는 기준은 아래에서 하나다.
+    let target;
+    if (nativeChildWebview) {
+      const surfaces = await liveSurfaces(win);
+      ok(surfaces.length > 0, `live engine surface (${surfaces.length})`);
+      target = gs.find((g) => surfaces.some((s) => overlaps(g, s)));
+      ok(
+        !!target,
+        "a gutter overlaps a native surface (the defect's stage)",
+        JSON.stringify({ gutters: gs.map((g) => g.address.split("/chrome/")[1]), surfaces }).slice(0, 200),
+      );
+    } else {
+      // 페이지 안 표면은 겹침으로 고를 rect 가 없다 — 표면이 pane **안**에 산다. 대신
+      // 브라우저를 든 pane 의 골을 고른다: 골 주소가 그 pane 을 싣는다(gutter/<pane>/<edge>).
+      // 아무 골이나 고르면 "브라우저 위에서 끌었다"가 아니게 되고, 그 통과는 다른 것을 지킨다.
+      const pl = data(await rpc("pane.list", {}, win));
+      const host = (pl.panes ?? []).find((p2) =>
+        (p2.tabs ?? []).some((t) => String(t.plugin ?? "").includes("browser")),
+      );
+      ok(!!host, `pane hosting the browser (${host?.id})`);
+      target = host ? gs.find((g) => g.address.includes(`/gutter/${host.id}/`)) : undefined;
+      ok(
+        !!target,
+        "a gutter borders the browser pane (the same stage, in-page)",
+        JSON.stringify({ host: host?.id, gutters: gs.map((g) => g.address.split("/chrome/")[1]) }).slice(0, 200),
+      );
+    }
     if (!target) throw new Error("표적 골 없음 — 분할 배치를 확인하라");
 
-    console.log("\nb. native-path drag must move the seam");
+    console.log("\nb. the drag must move the seam");
     const horizontal = target.h <= target.w; // 가로 골 = 위아래 분할
     const cx = Math.round(target.x + target.w / 2);
     const cy = Math.round(target.y + target.h / 2);
     const before = data(await rpc("pane.list", {}, win));
     const sig = (l) => JSON.stringify(l).replace(/"id":"[^"]+"/g, "");
-    await rpc("webview.emitNative", { kind: "native-mousedown", x: cx, y: cy }, win);
-    for (let i = 1; i <= 6; i++) {
+    // 구동 경로도 프레임워크의 것이다. 네이티브 자식 표면이 있는 쪽에서는 **네이티브 입력**이
+    // 홀을 지나 DOM 에 닿는지가 판정의 절반이다(그 통로가 이 결함의 무대다). 페이지 안에 사는
+    // 쪽에는 홀도 네이티브 입력면도 없고, 같은 보증은 DOM 포인터로 선다.
+    // 판정은 하나다: 끌면 seam 이 움직인다.
+    if (nativeChildWebview) {
+      await rpc("webview.emitNative", { kind: "native-mousedown", x: cx, y: cy }, win);
+      for (let i = 1; i <= 6; i++) {
+        await rpc(
+          "webview.emitNative",
+          {
+            kind: "native-mousemove",
+            x: horizontal ? cx : cx + i * 8,
+            y: horizontal ? cy + i * 8 : cy,
+          },
+          win,
+        );
+        await sleep(40);
+      }
       await rpc(
         "webview.emitNative",
         {
-          kind: "native-mousemove",
-          x: horizontal ? cx : cx + i * 8,
-          y: horizontal ? cy + i * 8 : cy,
+          kind: "native-mouseup",
+          x: horizontal ? cx : cx + 48,
+          y: horizontal ? cy + 48 : cy,
         },
         win,
       );
-      await sleep(40);
+    } else {
+      const dr = await rpc(
+        "ui.input.drag",
+        {
+          from: target.address,
+          dx: horizontal ? 0 : 48,
+          dy: horizontal ? 48 : 0,
+          steps: 6,
+          durationMs: 240,
+        },
+        win,
+      );
+      if (!dr.ok) throw new Error(`ui.input.drag 실패: ${dr.code} ${dr.message ?? ""}`);
     }
-    await rpc(
-      "webview.emitNative",
-      {
-        kind: "native-mouseup",
-        x: horizontal ? cx : cx + 48,
-        y: horizontal ? cy + 48 : cy,
-      },
-      win,
-    );
     await sleep(800);
     const after = data(await rpc("pane.list", {}, win));
     ok(
       sig(before.layout) !== sig(after.layout),
-      "drag over a native surface changed the split (DOM hole works)",
+      "the drag changed the split",
       `gutter=${target.address.split("/chrome/")[1]} at (${cx},${cy})`,
     );
     console.log("\nc. axis isolation — a width drag must not move heights");
@@ -232,28 +280,47 @@ async function main() {
       const vertical = gs2.find((g) => g.w < g.h); // 세로 골 = 좌우 분할(폭 조절)
       ok(!!vertical, `vertical gutter found (${gs2.length} gutters)`);
       if (vertical) {
-        const heights = async () => {
+        // rect 는 layout 트리가 아니라 panes[] 가 든다(pane.list 계약). 트리에서 읽으면
+        // 전부 -1 이 나오고, -1 끼리 비교한 "안 변했다"는 아무것도 지키지 않는다(실측).
+        const axis = (key) => async () => {
           const l = data(await rpc("pane.list", {}, win));
-          const out = [];
-          const walk = (n) => {
-            if (!n) return;
-            if (n.pane) out.push(Math.round(n.rect?.h ?? -1));
-            for (const c of n.children ?? []) walk(c);
-          };
-          walk(l.layout);
-          return out.sort((a, b) => a - b);
+          return (l.panes ?? [])
+            .map((p2) => Math.round(p2.rect?.[key] ?? -1))
+            .sort((a, b) => a - b);
         };
+        const heights = axis("height");
+        const widths = axis("width");
         const h0 = await heights();
+        const w0 = await widths();
         const cx2 = Math.round(vertical.x + vertical.w / 2);
         const cy2 = Math.round(vertical.y + vertical.h / 2);
-        await rpc("webview.emitNative", { kind: "native-mousedown", x: cx2, y: cy2 }, win);
-        for (let i = 1; i <= 6; i++) {
-          await rpc("webview.emitNative", { kind: "native-mousemove", x: cx2 - i * 10, y: cy2 }, win);
-          await sleep(40);
+        // 구동 경로는 위와 같은 축으로 가른다 — 여기만 네이티브로 두면, 그 명령이 없는
+        // 프레임워크에서는 아무것도 안 끌고 "높이 안 변함"이 **공허하게** 통과한다.
+        if (nativeChildWebview) {
+          await rpc("webview.emitNative", { kind: "native-mousedown", x: cx2, y: cy2 }, win);
+          for (let i = 1; i <= 6; i++) {
+            await rpc("webview.emitNative", { kind: "native-mousemove", x: cx2 - i * 10, y: cy2 }, win);
+            await sleep(40);
+          }
+          await rpc("webview.emitNative", { kind: "native-mouseup", x: cx2 - 60, y: cy2 }, win);
+        } else {
+          const dr2 = await rpc(
+            "ui.input.drag",
+            { from: vertical.address, dx: -60, dy: 0, steps: 6, durationMs: 240 },
+            win,
+          );
+          if (!dr2.ok) throw new Error(`ui.input.drag 실패: ${dr2.code} ${dr2.message ?? ""}`);
         }
-        await rpc("webview.emitNative", { kind: "native-mouseup", x: cx2 - 60, y: cy2 }, win);
         await sleep(900);
         const h1 = await heights();
+        const w1 = await widths();
+        // 전제: 폭은 실제로 변해야 한다. 안 변했으면 이 판정은 "높이가 안 변했다"를 말할
+        // 자격이 없다 — 아무것도 안 끈 판에서 축 격리는 언제나 참이다(0 의 두 얼굴).
+        ok(
+          JSON.stringify(w0) !== JSON.stringify(w1),
+          "the width drag actually moved the seam (the premise)",
+          `before=${JSON.stringify(w0)} after=${JSON.stringify(w1)}`,
+        );
         ok(
           JSON.stringify(h0) === JSON.stringify(h1),
           "width drag left every pane height untouched",

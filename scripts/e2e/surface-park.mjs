@@ -90,6 +90,10 @@ async function main() {
   const acquired = await acquireFixtureWindow(rpc, FIXTURE);
   const win = acquired.label;
   ok(true, `window ${acquired.adopted ? "adopted" : "opened"} (${win})`);
+  // 판정 축은 프레임워크가 선언한다 — 이름 분기는 프레임워크가 늘 때마다 갈라진다.
+  const provision = data(await rpc("framework.provision", {}, win));
+  const nativeChildWebview = provision.nativeChildWebview !== false;
+  console.log(`framework: ${provision.name} · content views ${nativeChildWebview ? "native" : "in-page"}`);
   let term = null;
   let browsers = [];
   for (let i = 0; i < 40 && (!term || browsers.length === 0); i++) {
@@ -153,13 +157,31 @@ async function main() {
     await rpc("tab.activate", { tab }, win);
     await sleep(3000); // 표면 복귀·재페인트·감사 2회(지속 판정) 여유
     const sf = data(await rpc("webview.surfaces", {}, win));
-    const engineVisible = ((sf.engine ?? {}).surfaces ?? []).filter((x) => !x.effectivelyHidden).length;
-    const nativeAlive = (sf.actual ?? []).length;
-    ok(
-      engineVisible + nativeAlive >= 1,
-      `${engine}: active browser has a live surface (engine ${engineVisible}, native ${nativeAlive})`,
-      JSON.stringify(sf.engine).slice(0, 160),
-    );
+    // 같은 보증을 프레임워크마다 **다른 자리**에서 잰다. "활성 브라우저가 실제로 선다"는
+    // 기준은 하나지만, 그 표면이 사는 곳이 갈린다 — 네이티브 자식 웹뷰이거나, 페이지 안의
+    // 요소이거나. 이름으로 가르지 않고 선언된 축으로 가른다(framework.provision).
+    //
+    // 한쪽 모양을 정답으로 박아 두면 다른 프레임워크에서는 **존재하지 않는 것**을 찾다가
+    // 실패한다 — 기준이 틀린 게 아니라 재는 자리가 틀린 것이다. 어느 쪽도 건너뛰지 않는다:
+    // 재는 자리만 바뀌고 통과 조건은 같다(살아 있고, 칠할 픽셀이 있다).
+    if (nativeChildWebview) {
+      const engineVisible = ((sf.engine ?? {}).surfaces ?? []).filter((x) => !x.effectivelyHidden).length;
+      const nativeAlive = (sf.actual ?? []).length;
+      ok(
+        engineVisible + nativeAlive >= 1,
+        `${engine}: active browser has a live surface (engine ${engineVisible}, native ${nativeAlive})`,
+        JSON.stringify(sf.engine).slice(0, 160),
+      );
+    } else {
+      // 페이지 안 표면 — 뷰 본문이 서 있고 크기가 0 이 아니어야 한다. 크기 0 은 "있다"와
+      // 구분되지 않는 검은 페인이다(이 검사가 막으려는 바로 그것).
+      const bodies = (sf.bodies ?? []).filter((b) => (b.w ?? 0) > 0 && (b.h ?? 0) > 0);
+      ok(
+        bodies.length >= 1,
+        `${engine}: active browser has a live in-page surface (bodies ${bodies.length})`,
+        JSON.stringify((sf.bodies ?? []).map((b) => [b.node, b.w, b.h])).slice(0, 200),
+      );
+    }
     const es2 = data(await rpc("activity.recent", { since: since2, limit: 500 }, ctrl)).entries ?? [];
     const badVis = es2.filter(
       (e) =>
