@@ -9,6 +9,8 @@ description = "Helper process that serves framework-free commands over a socket:
 # 여기 들어오는 순간 이 크레이트는 두 번째 프레임워크가 된다. 로직은 전부 soksak-core 이
 # 소유하고 여기는 배선만 한다.
 [dependencies]
+base64 = "0.22"
+soksak-spec-pty = { path = "../soksak-spec-pty" }
 soksak-core = { path = "../soksak-core" }
 soksak-spec-socket = { path = "../soksak-spec-socket" }
 serde = { version = "1", features = ["derive"] }

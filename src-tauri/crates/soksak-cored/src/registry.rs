@@ -175,6 +175,64 @@ pub const COMMANDS: &[Command] = &[
         returns: "Value[] (도장 찍힌 항목, 오래된 것부터)",
         run: run_activity_recent,
     },
+    // ── 터미널 ────────────────────────────────────────────────────────────
+    // 셸은 데몬이 소유한다(soksak-ptyd). 이 프로세스는 앱이 쓰는 그 클라이언트로 같은 데몬에
+    // 붙는다 — 인자 모양도 앱 명령과 같다(UI 는 누가 답하는지 모른다).
+    Command {
+        name: "spawn_terminal",
+        args: &[
+            Arg { name: "cols", ty: "u16", required: true },
+            Arg { name: "rows", ty: "u16", required: true },
+            Arg { name: "cwd", ty: "string?", required: false },
+            Arg { name: "shell", ty: "string?", required: false },
+            Arg { name: "paneId", ty: "string?", required: false },
+            Arg { name: "windowLabel", ty: "string?", required: false },
+            Arg { name: "replay", ty: "\"none\" | {fromSeq}?", required: false },
+            Arg { name: "onOutput", ty: "stream", required: true },
+        ],
+        returns: "{ id }",
+        run: run_spawn_terminal,
+    },
+    Command {
+        name: "write_terminal",
+        args: &[
+            Arg { name: "id", ty: "u32", required: true },
+            Arg { name: "data", ty: "string", required: true },
+        ],
+        returns: "null",
+        run: run_write_terminal,
+    },
+    Command {
+        name: "resize_terminal",
+        args: &[
+            Arg { name: "id", ty: "u32", required: true },
+            Arg { name: "cols", ty: "u16", required: true },
+            Arg { name: "rows", ty: "u16", required: true },
+        ],
+        returns: "null",
+        run: run_resize_terminal,
+    },
+    Command {
+        name: "ack_terminal",
+        args: &[
+            Arg { name: "id", ty: "u32", required: true },
+            Arg { name: "bytes", ty: "u64", required: true },
+        ],
+        returns: "null",
+        run: run_ack_terminal,
+    },
+    Command {
+        name: "close_terminal",
+        args: &[Arg { name: "id", ty: "u32", required: true }],
+        returns: "null",
+        run: run_close_terminal,
+    },
+    Command {
+        name: "pty_pane_alive",
+        args: &[Arg { name: "paneId", ty: "string", required: true }],
+        returns: "bool",
+        run: run_pty_pane_alive,
+    },
     // 창 호스트 등록 — **이 연결이 배달 통로가 된다.** 창을 가진 쪽만 부른다.
     Command {
         name: "control_host_attach",
@@ -862,6 +920,86 @@ fn run_activity_recent(ctx: &Ctx, params: &Value) -> Outcome {
         }
         // 앱의 기본 상한과 같다(200) — 다르면 같은 호출이 프로세스마다 다른 길이를 답한다.
         Ok(act::pick_recent(entries, a.since, a.limit.unwrap_or(200)))
+    })
+}
+
+#[cfg(unix)]
+fn run_spawn_terminal(ctx: &Ctx, params: &Value) -> Outcome {
+    // 토큰은 인자에서 읽고 명령의 몸에는 넘기지 않는다 — 몸이 토큰을 알면 명령마다
+    // "이 인자는 무시하라"를 따로 알아야 한다.
+    let stripped = soksak_core::stream::without_tokens(params);
+    let a: crate::pty::SpawnArgs = match serde_json::from_value(stripped) {
+        Ok(v) => v,
+        Err(e) => return Outcome::InvalidParams(e.to_string()),
+    };
+    match crate::pty::spawn(ctx, params, a) {
+        Ok(v) => Outcome::Ok(v),
+        Err(e) => Outcome::Failed(e),
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct TermWrite {
+    id: u32,
+    data: String,
+}
+
+#[cfg(unix)]
+fn run_write_terminal(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: TermWrite| {
+        crate::pty::write(ctx, a.id, &a.data).map(|_| Value::Null)
+    })
+}
+
+#[derive(serde::Deserialize)]
+struct TermResize {
+    id: u32,
+    cols: u16,
+    rows: u16,
+}
+
+#[cfg(unix)]
+fn run_resize_terminal(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: TermResize| {
+        crate::pty::resize(ctx, a.id, a.cols, a.rows).map(|_| Value::Null)
+    })
+}
+
+#[derive(serde::Deserialize)]
+struct TermAck {
+    id: u32,
+    bytes: u64,
+}
+
+#[cfg(unix)]
+fn run_ack_terminal(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: TermAck| {
+        crate::pty::ack(ctx, a.id, a.bytes).map(|_| Value::Null)
+    })
+}
+
+#[derive(serde::Deserialize)]
+struct TermId {
+    id: u32,
+}
+
+#[cfg(unix)]
+fn run_close_terminal(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: TermId| {
+        crate::pty::close(ctx, a.id).map(|_| Value::Null)
+    })
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PaneId {
+    pane_id: String,
+}
+
+#[cfg(unix)]
+fn run_pty_pane_alive(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: PaneId| {
+        crate::pty::pane_alive(ctx, &a.pane_id).map(Value::Bool)
     })
 }
 

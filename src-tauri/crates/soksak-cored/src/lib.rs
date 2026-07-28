@@ -8,6 +8,7 @@
 
 pub mod control;
 pub mod ctx;
+pub mod pty;
 pub mod streams;
 pub mod ledger;
 pub mod registry;

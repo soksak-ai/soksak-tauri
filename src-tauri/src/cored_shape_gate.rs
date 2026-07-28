@@ -23,13 +23,17 @@ use std::collections::BTreeSet;
 
 /// 프레임워크가 주입하는 인자 타입 — 호출자가 보내는 값이 아니다. Tauri 는 이것들을 시그니처에서
 /// 보고 스스로 채우므로 JS 쪽 인자 목록에 나타나지 않는다.
+///
+/// `Channel` 은 여기 없다. 한때 있었지만 **호출자가 만들어 보내는 값**이다 — 프론트가
+/// `createStream()` 으로 만들어 invoke 인자에 실어 보내고, 프레임워크는 그것을 역직렬화할
+/// 뿐이다. 주입으로 분류하면 스트림을 받는 명령의 인자 하나가 대조에서 통째로 사라져,
+/// 그 자리를 헬퍼가 다르게 만들어도 게이트가 통과시킨다(실측: spawn_terminal 의 onOutput).
 const FRAMEWORK_INJECTED: &[&str] = &[
     "State",
     "AppHandle",
     "Window",
     "WebviewWindow",
     "Webview",
-    "Channel",
     "Request",
     "Response",
 ];

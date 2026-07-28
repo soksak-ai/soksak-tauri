@@ -49,6 +49,9 @@ pub struct Ctx {
     write_lock: Option<WriteLock>,
     /// 띄운 쪽이 준 로그인 셸(없을 수 있다).
     login_shell: Option<String>,
+    /// 이 프로세스가 서빙하는 소켓 — 띄운 쪽이 준다(`--socket`). 자기 경로를 파생하지 않는다:
+    /// 파생하면 지목과 다른 자리를 자식에게 알려 준다.
+    socket_path: Option<String>,
 }
 
 impl Ctx {
@@ -61,6 +64,7 @@ impl Ctx {
             user_home: None,
             write_lock: None,
             login_shell: None,
+            socket_path: None,
         }
     }
 
@@ -125,6 +129,18 @@ impl Ctx {
     /// 파일 트리의 기본 뿌리. 못 받았으면 `None` — 추측하지 않는다.
     pub fn user_home(&self) -> Option<&Path> {
         self.user_home.as_deref()
+    }
+
+    /// 이 프로세스가 서빙하는 소켓 경로. 자식 셸의 `SOKSAK_SOCKET` 이 이 값이다 —
+    /// 터미널 안에서 부른 `sok` 이 이 프로세스에 붙는다. 모르면 주입하지 않는다:
+    /// 빈 값을 심으면 자식이 없는 소켓에 붙으려 하고, 그 실패는 터미널 안에서만 보인다.
+    pub fn socket_path(&self) -> Option<&str> {
+        self.socket_path.as_deref()
+    }
+
+    pub fn with_socket_path(mut self, path: impl Into<String>) -> Self {
+        self.socket_path = Some(path.into());
+        self
     }
 
     pub fn identity(&self) -> &Identity {

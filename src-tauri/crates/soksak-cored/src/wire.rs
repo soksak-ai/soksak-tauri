@@ -346,6 +346,7 @@ mod tests {
 /// 실측(2026-07-29): 렌더러가 `pty_pane_alive` 를 다리로 물었는데 cored 가 그 이름을 서빙하지
 /// 않아 창으로 배달했고, 창의 실행기에는 그 이름이 없어 회신이 오지 않았다 — 부른 쪽은
 /// UNKNOWN_COMMAND 대신 10초를 기다렸다. 되돌린 곳이 물어본 바로 그 창이었다.
+/// (그 이름은 이제 서빙된다 — 여기서는 아직 서빙하지 않는 이름으로 같은 갈래를 잰다.)
 ///
 /// 이름의 철자로 가르지 않는다(점 있음/없음). 사실은 **누가 물었는가**이고, 그것은 연결이 안다.
 #[test]
@@ -354,10 +355,10 @@ fn a_request_from_the_windows_own_bridge_is_not_delivered_back() {
     let _h = crate::control::testing::fake_host(&["main"], "main");
     // 창의 다리가 자기를 밝힌다 — 이 연결로 온 것은 창이 물은 것이다.
     mark_bridge();
-    let r = answer(&ctx(), r#"{"id":9,"method":"pty_pane_alive","timeoutMs":80}"#);
+    let r = answer(&ctx(), r#"{"id":9,"method":"process_reclaim_window","timeoutMs":80}"#);
     assert_eq!(r["ok"], false);
     assert_eq!(r["code"], "NOT_SERVED_HERE", "{r}");
-    assert!(r["message"].as_str().unwrap().contains("pty_pane_alive"));
+    assert!(r["message"].as_str().unwrap().contains("process_reclaim_window"));
     crate::control::testing::detach();
 }
 

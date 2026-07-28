@@ -94,7 +94,8 @@ fn boot(args: &[String]) -> Result<(String, Ctx), String> {
     let socket = take_value(args, "--socket")?;
     let home = take_value(args, "--home")?;
     let identifier = take_value(args, "--identifier")?;
-    let mut ctx = Ctx::new(Identity::new(home, identifier));
+    // 자기가 서빙하는 소켓을 지고 간다 — 이 프로세스가 띄우는 셸의 `SOKSAK_SOCKET` 이 이 값이다.
+    let mut ctx = Ctx::new(Identity::new(home, identifier)).with_socket_path(socket.clone());
     // 데이터 경로 이동은 띄운 쪽만 안다(앱의 debug 전용 격리). 안 주면 홈에서 파생한다.
     if let Ok(shell) = take_value(args, "--login-shell") {
         ctx = ctx.with_login_shell(shell);

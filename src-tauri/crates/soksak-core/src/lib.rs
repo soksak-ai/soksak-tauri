@@ -25,6 +25,7 @@ pub mod identity;
 pub mod integrity;
 pub mod kv;
 pub mod pathx;
+pub mod shell_env;
 pub mod shellq;
 pub mod plugin_data;
 pub mod plugin_dir;

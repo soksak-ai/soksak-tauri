@@ -4769,11 +4769,13 @@ dependencies = [
 name = "soksak-cored"
 version = "0.0.1"
 dependencies = [
+ "base64 0.22.1",
  "libc",
  "rusqlite",
  "serde",
  "serde_json",
  "soksak-core",
+ "soksak-spec-pty",
  "soksak-spec-socket",
 ]
 
