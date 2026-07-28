@@ -15,7 +15,8 @@ import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
 import zlib from "node:zlib";
-import { requireSocket, resolveControlWindow } from "./lib/client.mjs";
+import { requireSocket } from "./lib/client.mjs";
+import { acquireFixtureWindow, releaseFixtureWindow } from "./lib/fixtureWindow.mjs";
 
 import { decodePng } from "./lib/png.mjs";
 const SOCKET = requireSocket();
@@ -147,24 +148,11 @@ async function main() {
       "\n",
   );
 
-  // 잔재 창 회수(멱등).
-  {
-    const ctrl = await resolveControlWindow(rpc);
-    const wl = data(await rpc("window.list", {}, ctrl)).labels || [];
-    for (const l of wl) {
-      if (!String(l).startsWith("w-")) continue;
-      const tr = data(await rpc("state.tree", {}, l).catch(() => null));
-      if ((tr.projects ?? []).some((p) => String(p.root ?? "").includes("tab-ghost"))) {
-        await rpc("window.close", { label: l }, await resolveControlWindow(rpc, l).catch(() => l)).catch(() => {});
-        await sleep(500);
-      }
-    }
-  }
-
   console.log("a. one pane, two very different tabs (terminal + file)");
-  const opened = data(await rpc("window.open", { root: FIXTURE }, await resolveControlWindow(rpc)));
-  const win = opened.label || opened.existingWindow;
-  ok(typeof win === "string" && win.startsWith("w-"), `window opened (${win})`);
+  // 창 확보는 lib/fixtureWindow 가 진다 — 루트가 주인이고, 있으면 물려받는다(멱등).
+  const acquired = await acquireFixtureWindow(rpc, FIXTURE);
+  const win = acquired.label;
+  ok(true, `window ${acquired.adopted ? "adopted" : "opened"} (${win})`);
   let term = null;
   for (let i = 0; i < 40 && !term; i++) {
     const ids = (data(await rpc("program.list", {}, win)).programs || []).map((p) => p.id);
@@ -273,7 +261,7 @@ async function main() {
       console.log(`    evidence: ${dir}/baseA.pgm vs backA.pgm`);
     }
   } finally {
-    await rpc("window.close", { label: win }, await resolveControlWindow(rpc, win).catch(() => win)).catch(() => {});
+    await releaseFixtureWindow(rpc, FIXTURE).catch(() => {});
   }
 
   console.log(`\nresult: ${pass} pass / ${fail} fail`);

@@ -16,6 +16,7 @@ import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
 import { requireSocket, resolveControlWindow } from "./lib/client.mjs";
+import { acquireFixtureWindow, releaseFixtureWindow } from "./lib/fixtureWindow.mjs";
 
 const SOCKET = requireSocket();
 const FIXTURE = path.join(os.homedir(), ".soksak-e2e", "surface-park");
@@ -84,24 +85,11 @@ async function main() {
   console.log(`surface-park E2E\nsocket: ${SOCKET}\n`);
   fs.mkdirSync(FIXTURE, { recursive: true });
 
-  // 잔재 회수(멱등)
-  {
-    const ctrl = await resolveControlWindow(rpc);
-    const wl = data(await rpc("window.list", {}, ctrl)).labels || [];
-    for (const l of wl) {
-      if (!String(l).startsWith("w-")) continue;
-      const tr = data(await rpc("state.tree", {}, l).catch(() => null));
-      if ((tr.projects ?? []).some((p) => String(p.root ?? "").includes("surface-park"))) {
-        await rpc("window.close", { label: l }, await resolveControlWindow(rpc, l).catch(() => l)).catch(() => {});
-        await sleep(500);
-      }
-    }
-  }
-
   console.log("a. window with engine browsers parked behind a terminal");
-  const opened = data(await rpc("window.open", { root: FIXTURE }, await resolveControlWindow(rpc)));
-  const win = opened.label || opened.existingWindow;
-  ok(typeof win === "string" && win.startsWith("w-"), `window opened (${win})`);
+  // 창 확보는 lib/fixtureWindow 가 진다 — 루트가 주인이고, 있으면 물려받는다(멱등).
+  const acquired = await acquireFixtureWindow(rpc, FIXTURE);
+  const win = acquired.label;
+  ok(true, `window ${acquired.adopted ? "adopted" : "opened"} (${win})`);
   let term = null;
   let browsers = [];
   for (let i = 0; i < 40 && (!term || browsers.length === 0); i++) {
@@ -185,7 +173,7 @@ async function main() {
     );
   }
 
-  await rpc("window.close", { label: win }, await resolveControlWindow(rpc, win).catch(() => win)).catch(() => {});
+  await releaseFixtureWindow(rpc, FIXTURE).catch(() => {});
   console.log(`\nresult: ${pass} pass / ${fail} fail`);
   process.exit(fail > 0 ? 1 : 0);
 }
