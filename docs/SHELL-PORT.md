@@ -76,6 +76,18 @@ Terminals, processes, daemons, websockets, and services were the largest movable
 
 One coupling was deliberately left. Seven of the eight `activity::publish` sites in `pty.rs` sit in functions that also use the handle for `state::<PtyManager>` / `state::<SecretsState>`. The remaining `AppHandle` there is held by those lookups, not by publishing; unpicking it means changing managed-state ownership, which is a behaviour change and belongs to its own pass.
 
+## The remaining state
+
+The last movable group: schedules, the command bridge, clipboard, watcher, and three registries.
+
+- **A fifth contract.** `CommandDispatch` (`src-tauri/src/command_dispatch.rs`) covers calling one registry command and getting an answer. The scheduler only wants that, but the three functions providing it all take an `&AppHandle`, so the firing code held one too. None of the four existing contracts fit — forcing it into one would have made that contract moonlight, the same reason `ExitSink` sits beside `StreamSink` rather than inside it.
+- **The dispatch contract knows nothing about windows.** Which window a command goes to stays with the fallback ladder in `ipc.rs`; the caller knows only the command and the answer. Putting routing here would fork the ladder per implementation.
+- **Delivery collapsed to one point.** Two `emit_to` sites each duplicated sequence allocation, pending registration, and delivery. They are now one function — not to remove duplication, but so that "roll back the pending slot if delivery failed" is enforced in one place. A slot left behind waits for an answer that will never come.
+- **The clipboard gave up the last handle-in-a-field.** `ClipboardState` was the only managed state holding an `AppHandle` directly; it used it to emit, and the watcher's existing `init`/`init_with` injection was already the shape for that. `lib.rs` did not change — `init` keeps its signature and only its body moved.
+- **A ghost filter asks the oracle.** `project_owners` used `get_window(label).is_some()` to skip dead claims. What it needs is not a handle but whether a label is alive, which the contract already answers.
+
+Two things were deliberately left. `native_reload` keeps its webview handle: a reload is neither a window fact nor a delivery, and folding it into the two-line oracle would put webview lifetime under it. `state::<T>()` lookups stay as they are — converting them means changing `manage` in `lib.rs` and every caller at once, and `service.rs` had already recorded the same judgement; a second convention for passing state would be worse than the coupling.
+
 ## What a second shell actually costs
 
 Measured on this repo (2026-07-27):
