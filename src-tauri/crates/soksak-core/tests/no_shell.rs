@@ -75,7 +75,7 @@ fn no_forbidden_symbol_in_sources() {
             }
         }
     }
-    assert_eq!(hits, Vec::<String>::new(), "포터블 크레이트에 셸이 섞였다");
+    assert_eq!(hits, Vec::<String>::new(), "코어 크레이트에 셸이 섞였다");
 }
 
 #[test]
@@ -86,7 +86,7 @@ fn the_dependency_tree_carries_no_shell_crate() {
         .and_then(|p| p.parent());
     let Some(root) = root else { return };
     let out = std::process::Command::new(env!("CARGO"))
-        .args(["tree", "-p", "soksak-portable", "-e", "normal", "--prefix", "none"])
+        .args(["tree", "-p", "soksak-core", "-e", "normal", "--prefix", "none"])
         .current_dir(root)
         .output();
     let Ok(out) = out else { return };

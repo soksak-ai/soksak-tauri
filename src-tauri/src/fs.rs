@@ -42,8 +42,8 @@ fn home_dir() -> PathBuf {
 // 선행 "~" 를 홈으로 확장(범용 — 플러그인이 ~/.claude 등 홈 하위를 절대경로 없이 가리키게).
 // "~" 단독 / "~/..." 만 처리(다른 사용자 "~user" 는 미지원 — 셸이 아니다).
 fn expand_path(path: &str) -> PathBuf {
-    // 확장 규칙은 soksak-portable 이 소유한다 — 홈만 여기서 해소해 넘긴다.
-    soksak_portable::pathx::expand_tilde(path, &home_dir())
+    // 확장 규칙은 soksak-core 이 소유한다 — 홈만 여기서 해소해 넘긴다.
+    soksak_core::pathx::expand_tilde(path, &home_dir())
 }
 
 
@@ -263,13 +263,13 @@ fn themes_dir() -> Result<PathBuf, String> {
     Ok(dir)
 }
 
-pub use soksak_portable::themes::ThemeFile;
+pub use soksak_core::themes::ThemeFile;
 
-// 외부 테마 디렉토리의 *.json 전부(내용 포함). 훑기는 soksak-portable 이 소유한다 —
+// 외부 테마 디렉토리의 *.json 전부(내용 포함). 훑기는 soksak-core 이 소유한다 —
 // 여기서는 홈에서 디렉토리를 해소하는 일만 한다.
 #[tauri::command]
 pub fn themes_scan() -> Result<Vec<ThemeFile>, String> {
-    soksak_portable::themes::scan(&themes_dir()?)
+    soksak_core::themes::scan(&themes_dir()?)
 }
 
 // 테마 파일 설치(외부 경로 → ~/.soksak/themes/). 동명 파일은 덮어쓴다(갱신).
@@ -321,8 +321,8 @@ pub fn validate_project_root(path: String) -> Result<String, String> {
     let canon = dir
         .canonicalize()
         .map_err(|e| format!("경로 정규화 실패: {e}"))?;
-    // 판정 규칙은 soksak-portable 이 소유한다 — 여기서는 홈 해소와 정규화만 한다.
+    // 판정 규칙은 soksak-core 이 소유한다 — 여기서는 홈 해소와 정규화만 한다.
     let home = home_dir().canonicalize().unwrap_or_else(|_| home_dir());
-    soksak_portable::pathx::project_root_verdict(&canon, &home)?;
+    soksak_core::pathx::project_root_verdict(&canon, &home)?;
     Ok(canon.to_string_lossy().to_string())
 }

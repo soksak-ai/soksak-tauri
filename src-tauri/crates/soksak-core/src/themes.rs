@@ -44,7 +44,7 @@ mod tests {
 
     fn test_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
-            "soksak-portable-themes-{name}-{}",
+            "soksak-core-themes-{name}-{}",
             std::process::id()
         ));
         let _ = std::fs::remove_dir_all(&dir);
@@ -70,7 +70,7 @@ mod tests {
     #[test]
     fn a_missing_directory_is_an_error_not_an_empty_list() {
         // 빈 목록으로 답하면 "테마가 없다"와 "디렉터리를 못 읽었다"가 같아진다.
-        let missing = std::env::temp_dir().join("soksak-portable-themes-absent-xyz");
+        let missing = std::env::temp_dir().join("soksak-core-themes-absent-xyz");
         let _ = std::fs::remove_dir_all(&missing);
         assert!(scan(&missing).is_err());
     }

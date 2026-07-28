@@ -21,21 +21,21 @@ use std::sync::OnceLock;
 static HOME: OnceLock<PathBuf> = OnceLock::new();
 static IDENTIFIER: OnceLock<String> = OnceLock::new();
 
-// 파생 규칙(identifier → release·core build·CLI·홈 접미)은 soksak-portable 이 소유한다.
+// 파생 규칙(identifier → release·core build·CLI·홈 접미)은 soksak-core 이 소유한다.
 // 여기 남는 것은 그 규칙에 넣을 값을 앰비언트에서 읽어 오는 일뿐이다.
 
 // release core 판정 — identifier 마지막 세그먼트가 "app". 이 값은 updater 채널만 결정한다.
 // core build identity와 확장 unit의 development/official source 선택은 독립 축이다.
 fn is_release_identifier(identifier: &str) -> bool {
-    soksak_portable::identity::is_release_identifier(identifier)
+    soksak_core::identity::is_release_identifier(identifier)
 }
 
 pub fn core_build_for_identifier(identifier: &str) -> String {
-    soksak_portable::identity::core_build_for_identifier(identifier)
+    soksak_core::identity::core_build_for_identifier(identifier)
 }
 
 pub fn cli_for_core_build(core_build: &str) -> String {
-    soksak_portable::identity::cli_for_core_build(core_build)
+    soksak_core::identity::cli_for_core_build(core_build)
 }
 
 /// release core identity 여부. init 전(유닛테스트 등)은 false.
@@ -61,7 +61,7 @@ fn resolve_from(
     home: Option<&str>,
     userprofile: Option<&str>,
 ) -> PathBuf {
-    soksak_portable::identity::home_for(identifier, is_windows, home, userprofile)
+    soksak_core::identity::home_for(identifier, is_windows, home, userprofile)
 }
 
 fn resolve(identifier: Option<&str>) -> PathBuf {

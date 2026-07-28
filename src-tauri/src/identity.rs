@@ -12,11 +12,11 @@
 // 28개가 닿아 있고, 이것 하나를 끊으면 15개가 즉시 풀린다. 다른 어떤 패턴도 단독으로는
 // 0개를 푼다(AppHandle 시그니처·activity::publish 포함 — 그것들은 증상이지 원인이 아니다).
 //
-// **값 자체는 soksak-portable 이 소유한다.** 앱과 헬퍼가 같은 정체성을 같은 규칙으로 읽어야
+// **값 자체는 soksak-core 이 소유한다.** 앱과 헬퍼가 같은 정체성을 같은 규칙으로 읽어야
 // 하기 때문이다(각자 struct 를 들면 파생 규칙이 두 벌이 되고, 두 벌은 언젠가 갈라진다).
 // 이 파일에 남는 것은 **앰비언트에서 값으로 건너오는 한 지점**뿐이다.
 
-pub(crate) use soksak_portable::identity::Identity;
+pub(crate) use soksak_core::identity::Identity;
 
 /// 현재 프로세스의 정체성 — 앰비언트 전역에서 한 번 읽어 값으로 만든다.
 ///
@@ -84,10 +84,10 @@ mod tests {
     }
 
     /// 앱과 헬퍼가 **같은 규칙**을 본다는 사실 자체를 단언한다. 앱이 자기 struct 를 다시
-    /// 들면 이 단언은 컴파일은 되지만 뜻을 잃는다 — 그래서 포터블 경로로 못박는다.
+    /// 들면 이 단언은 컴파일은 되지만 뜻을 잃는다 — 그래서 코어 크레이트 경로로 못박는다.
     #[test]
     fn the_app_and_the_helper_share_one_identity_type() {
-        fn takes_portable(id: soksak_portable::identity::Identity) -> String {
+        fn takes_portable(id: soksak_core::identity::Identity) -> String {
             id.cli_name()
         }
         assert_eq!(

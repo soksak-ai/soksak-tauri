@@ -1,10 +1,10 @@
-// UDP capability 의 셸 진입점 — 로직은 soksak-portable 에 있다.
+// UDP capability 의 셸 진입점 — 로직은 soksak-core 에 있다.
 //
 // 여기 남은 것은 `#[tauri::command]` 속성뿐이다. 그 속성 자체가 tauri 의존이라
-// 포터블 크레이트가 가질 수 없다 — 그래서 셸 쪽에 무논리 위임 래퍼만 둔다.
+// 코어 크레이트가 가질 수 없다 — 그래서 셸 쪽에 무논리 위임 래퍼만 둔다.
 // 래퍼에 판단을 넣지 마라: 판단이 여기 있으면 헬퍼 프로세스에서는 그 판단이 사라진다.
 
-pub use soksak_portable::udp::UdpPacket;
+pub use soksak_core::udp::UdpPacket;
 
 #[tauri::command]
 pub fn net_udp_send(
@@ -13,7 +13,7 @@ pub fn net_udp_send(
     data: Vec<u8>,
     broadcast: Option<bool>,
 ) -> Result<usize, String> {
-    soksak_portable::udp::net_udp_send(host, port, data, broadcast)
+    soksak_core::udp::net_udp_send(host, port, data, broadcast)
 }
 
 #[tauri::command]
@@ -24,5 +24,5 @@ pub fn net_udp_request(
     timeout_ms: Option<u64>,
     max_packets: Option<usize>,
 ) -> Result<Vec<UdpPacket>, String> {
-    soksak_portable::udp::net_udp_request(host, port, data, timeout_ms, max_packets)
+    soksak_core::udp::net_udp_request(host, port, data, timeout_ms, max_packets)
 }

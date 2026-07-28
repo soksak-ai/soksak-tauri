@@ -93,7 +93,7 @@ fn spawn_helper(name: &str) -> Helper {
 // ── 살아 있는 프로세스가 실제로 명령을 서빙한다 ──────────────────────────────────
 
 // binary_integrity 는 디스크만 만지는 순수 관찰이다. 실재하는 파일을 두고 물으면
-// present 가 나와야 한다 — 헬퍼가 soksak-portable 을 실제로 부르고 있다는 증거.
+// present 가 나와야 한다 — 헬퍼가 soksak-core 을 실제로 부르고 있다는 증거.
 #[test]
 fn serves_a_portable_command_over_the_socket() {
     let helper = spawn_helper("serves-portable");
@@ -140,7 +140,7 @@ fn a_served_command_really_does_the_work() {
     assert_eq!(&buf[..n], &[9u8, 8, 7], "헬퍼 프로세스가 실제로 보냈다");
 }
 
-// 실패도 프로세스를 건너야 한다 — 포터블 로직의 거부 사유가 message 로 그대로 온다.
+// 실패도 프로세스를 건너야 한다 — 코어 로직의 거부 사유가 message 로 그대로 온다.
 #[test]
 fn a_refusal_crosses_the_socket_with_its_reason() {
     let helper = spawn_helper("refusal");

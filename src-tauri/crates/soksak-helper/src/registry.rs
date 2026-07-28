@@ -1,10 +1,10 @@
-//! 서빙 표 — 이름·인자·반환을 선언하고, 실행은 soksak-portable 로 위임한다.
+//! 서빙 표 — 이름·인자·반환을 선언하고, 실행은 soksak-core 로 위임한다.
 //!
 //! 표에 있는 이름은 앱이 `#[tauri::command]` 로 노출하는 이름 그대로다. 인자 표기도
 //! 그대로다(Tauri 가 JS 로 넘길 때 쓰는 camelCase). 셸이 이름이나 인자를 번역해야 한다면
 //! 그 번역이 새 드리프트 면이 된다 — 같은 이름으로 물어 같은 답을 받는 것이 요점이다.
 //!
-//! 각 핸들러는 **포터블 함수 호출 한 줄**이다. 판단을 여기 넣지 마라: 판단이 여기 있으면
+//! 각 핸들러는 **코어 함수 호출 한 줄**이다. 판단을 여기 넣지 마라: 판단이 여기 있으면
 //! 앱 경로와 헬퍼 경로가 서로 다른 답을 낼 수 있고, 그 차이는 조용하다.
 //!
 //! 여기 없는 이름은 이름을 달고 실패한다. 셸이 아직 소유한 것(창·웹뷰·엔진)을 헬퍼가
@@ -13,7 +13,7 @@
 use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
 
-use soksak_portable::{identity, integrity, plugin_dir, session, themes, udp, unit_dev};
+use soksak_core::{identity, integrity, plugin_dir, session, themes, udp, unit_dev};
 
 /// 명령 하나의 결과. 인자 해석 실패와 로직 실패를 가른다 — 부르는 쪽이 "내가 잘못 물었나,
 /// 물음은 맞는데 안 되나"를 코드로 구분할 수 있어야 한다.
@@ -22,7 +22,7 @@ pub enum Outcome {
     Ok(Value),
     /// 인자를 이 명령의 모양으로 읽을 수 없다.
     InvalidParams(String),
-    /// 인자는 맞고 로직이 거부했다. message 는 포터블 로직의 사유 그대로다.
+    /// 인자는 맞고 로직이 거부했다. message 는 코어 로직의 사유 그대로다.
     Failed(String),
 }
 
@@ -46,7 +46,7 @@ const REQ: bool = true;
 const OPT: bool = false;
 
 /// 서빙 표. 지금 여기 있는 것은 **셸 없이도 같은 답이 나오는 것**뿐이다 —
-/// soksak-portable 이 이미 소유한 로직.
+/// soksak-core 이 이미 소유한 로직.
 pub const COMMANDS: &[Command] = &[
     Command {
         name: "net_udp_send",
@@ -199,7 +199,7 @@ where
     }
 }
 
-// ── 핸들러 — 전부 포터블 호출 한 줄 ──────────────────────────────────────────
+// ── 핸들러 — 전부 코어 호출 한 줄 ──────────────────────────────────────────
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -318,7 +318,7 @@ struct IdentifierArg {
 }
 
 fn run_app_is_release(params: &Value) -> Outcome {
-    // 판정 규칙은 포터블이 소유한다 — 여기서 문자열을 다시 가르지 않는다.
+    // 판정 규칙은 코어가 소유한다 — 여기서 문자열을 다시 가르지 않는다.
     dispatch(params, |a: IdentifierArg| {
         Ok(identity::is_release_identifier(&a.identifier))
     })
@@ -337,7 +337,7 @@ struct SqliteRows {
     conn: rusqlite::Connection,
 }
 
-impl soksak_portable::kv::KvRows for SqliteRows {
+impl soksak_core::kv::KvRows for SqliteRows {
     fn value(&self, ns: &str, key: &str) -> Result<Option<String>, String> {
         // 앱과 같은 질의문이다 — 다르면 두 경로가 다른 답을 낼 수 있고 그 차이는 조용하다.
         match self
@@ -362,7 +362,7 @@ fn run_data_kv_get(params: &Value) -> Outcome {
         )
         .map_err(|e| format!("저장소 열기 실패: {e}"))?;
         let rows = SqliteRows { conn };
-        soksak_portable::kv::get(&rows, &a.ns, &a.key)
+        soksak_core::kv::get(&rows, &a.ns, &a.key)
     })
 }
 
@@ -374,7 +374,7 @@ struct EnvArg {
 }
 
 fn run_app_environment(params: &Value) -> Outcome {
-    // 파생 규칙은 포터블이 소유한다. 헬퍼는 정체성·홈을 인자로 받을 뿐 추측하지 않는다 —
+    // 파생 규칙은 코어가 소유한다. 헬퍼는 정체성·홈을 인자로 받을 뿐 추측하지 않는다 —
     // 추측하면 홈이 갈릴 때 조용히 다른 identity 의 환경을 답한다.
     dispatch(params, |a: EnvArg| {
         let core_build = identity::core_build_for_identifier(&a.identifier);

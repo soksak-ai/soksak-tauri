@@ -60,9 +60,9 @@ pub fn data_kv_get(
     state: State<'_, DbState>,
 ) -> Result<Option<Value>, String> {
     validate_ns(&ns)?;
-    // 조회 자체는 soksak-portable 이 한다 — 연결은 KvRows 어댑터로 넘긴다.
+    // 조회 자체는 soksak-core 이 한다 — 연결은 KvRows 어댑터로 넘긴다.
     with_conn(&state, |c| {
-        soksak_portable::kv::get(&store::ConnKvRows(c), &ns, &key)
+        soksak_core::kv::get(&store::ConnKvRows(c), &ns, &key)
     })
 }
 

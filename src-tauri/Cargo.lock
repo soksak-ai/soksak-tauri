@@ -4752,6 +4752,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "soksak-core"
+version = "0.0.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "soksak-dev"
 version = "0.0.1"
 dependencies = [
@@ -4779,7 +4788,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "soksak-portable",
+ "soksak-core",
  "soksak-seal",
  "soksak-spec-contract",
  "soksak-spec-pty",
@@ -4812,17 +4821,8 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
- "soksak-portable",
+ "soksak-core",
  "soksak-spec-socket",
-]
-
-[[package]]
-name = "soksak-portable"
-version = "0.0.1"
-dependencies = [
- "serde",
- "serde_json",
- "sha2",
 ]
 
 [[package]]

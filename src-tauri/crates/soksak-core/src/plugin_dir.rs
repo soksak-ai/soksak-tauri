@@ -53,7 +53,7 @@ mod tests {
 
     fn test_base(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
-            "soksak-portable-plugins-{name}-{}",
+            "soksak-core-plugins-{name}-{}",
             std::process::id()
         ));
         let _ = std::fs::remove_dir_all(&dir);
@@ -129,7 +129,7 @@ mod tests {
 
     #[test]
     fn a_missing_base_is_an_error_not_an_empty_list() {
-        let missing = std::env::temp_dir().join("soksak-portable-plugins-absent-xyz");
+        let missing = std::env::temp_dir().join("soksak-core-plugins-absent-xyz");
         let _ = std::fs::remove_dir_all(&missing);
         assert!(scan(&missing).is_err());
     }

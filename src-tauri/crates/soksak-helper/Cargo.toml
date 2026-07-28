@@ -3,15 +3,15 @@ name = "soksak-helper"
 version = "0.0.1"
 publish = false
 edition = "2021"
-description = "Helper process that serves shell-free commands over a socket: the app's portable command logic, answered by a process that owns no window and no shell."
+description = "Helper process that serves shell-free commands over a socket: the app's shell-free command logic, answered by a process that owns no window and no shell."
 
 # 의존성은 좁게 유지한다 — 이 프로세스의 존재 이유가 "셸이 없다"는 것이다. tauri/wry 가
-# 여기 들어오는 순간 이 크레이트는 두 번째 셸이 된다. 로직은 전부 soksak-portable 이
+# 여기 들어오는 순간 이 크레이트는 두 번째 셸이 된다. 로직은 전부 soksak-core 이
 # 소유하고 여기는 배선만 한다.
 [dependencies]
-soksak-portable = { path = "../soksak-portable" }
+soksak-core = { path = "../soksak-core" }
 soksak-spec-socket = { path = "../soksak-spec-socket" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# 저장소는 셸이 아니라 자원이다 — 로직(KvRows)은 포터블이 소유하고 여기는 그 구현 하나를 준다.
+# 저장소는 셸이 아니라 자원이다 — 로직(KvRows)은 코어가 소유하고 여기는 그 구현 하나를 준다.
 rusqlite = { version = "0.32", features = ["bundled"] }

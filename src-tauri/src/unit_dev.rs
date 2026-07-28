@@ -114,9 +114,9 @@ fn validate_source_path_in(source: &Path, home: &Path) -> Result<(), String> {
 
 /// source 가 이 홈이 아닌 다른 identity 홈 안에 있으면 그 홈 경로를 돌려준다.
 ///
-/// 이름 규칙 판정은 soksak-portable 이 소유한다 — 홈 레인 규칙은 앱과 헬퍼가 같아야 한다.
+/// 이름 규칙 판정은 soksak-core 이 소유한다 — 홈 레인 규칙은 앱과 헬퍼가 같아야 한다.
 fn foreign_identity_home(source: &Path, home: &Path) -> Option<PathBuf> {
-    soksak_portable::identity::foreign_identity_home(source, home)
+    soksak_core::identity::foreign_identity_home(source, home)
 }
 
 fn read_config_in(home: &Path) -> Result<UnitDevConfig, String> {
@@ -182,7 +182,7 @@ fn partition_for_identity(
     core_build: &str,
 ) -> (Vec<UnitDevSource>, Vec<UnitDevSource>) {
     units.into_iter().partition(|u| {
-        soksak_portable::identity::dev_source_accepted(Path::new(&u.source), home, core_build)
+        soksak_core::identity::dev_source_accepted(Path::new(&u.source), home, core_build)
     })
 }
 

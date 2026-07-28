@@ -1,12 +1,12 @@
 [package]
-name = "soksak-portable"
+name = "soksak-core"
 version = "0.0.1"
 publish = false
 edition = "2021"
 description = "Command logic with no shell in it: no window, no app handle, no ambient process environment. Anything here can run in the app process or in a helper process and give the same answer."
 
 # 의존성은 좁게 유지한다 — 여기 추가하는 크레이트 하나하나가 이 크레이트의 이동성을
-# 줄인다. 셸·런타임·플랫폼 크레이트는 게이트(scripts/portable-gate.sh)가 거부한다.
+# 줄인다. 셸·런타임·플랫폼 크레이트는 게이트(tests/no_shell.rs)가 거부한다.
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 sha2 = "0.10"

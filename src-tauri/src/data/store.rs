@@ -8,7 +8,7 @@ use super::{gen_id, now_millis, validate_coll, validate_field};
 
 // ── KV ───────────────────────────────────────────────────────────────────────
 
-// 저장된 원문 한 칸. 질의문과 연결은 여기 남고, 해독 규칙은 soksak-portable 이 갖는다.
+// 저장된 원문 한 칸. 질의문과 연결은 여기 남고, 해독 규칙은 soksak-core 이 갖는다.
 pub fn kv_raw(conn: &Connection, ns: &str, k: &str) -> Result<Option<String>, String> {
     conn.query_row("SELECT v FROM kv WHERE ns=?1 AND k=?2", (ns, k), |r| {
         r.get(0)
@@ -20,14 +20,14 @@ pub fn kv_raw(conn: &Connection, ns: &str, k: &str) -> Result<Option<String>, St
 // 연결을 KvRows 로 내보내는 어댑터 — 헬퍼는 자기 연결로 같은 트레이트를 채운다.
 pub struct ConnKvRows<'a>(pub &'a Connection);
 
-impl soksak_portable::kv::KvRows for ConnKvRows<'_> {
+impl soksak_core::kv::KvRows for ConnKvRows<'_> {
     fn value(&self, ns: &str, key: &str) -> Result<Option<String>, String> {
         kv_raw(self.0, ns, key)
     }
 }
 
 pub fn kv_get(conn: &Connection, ns: &str, k: &str) -> Result<Option<Value>, String> {
-    soksak_portable::kv::decode(kv_raw(conn, ns, k)?)
+    soksak_core::kv::decode(kv_raw(conn, ns, k)?)
 }
 
 pub fn kv_set(conn: &Connection, ns: &str, k: &str, v: &Value) -> Result<(), String> {

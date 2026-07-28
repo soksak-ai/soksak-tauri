@@ -77,13 +77,13 @@ fn set_tree_writable(dir: &Path, writable: bool) {
 
 // state = .soksak.json 원문(있으면) — 공식 설치 상태(version=<semver>, repo, branch).
 // legacy version=dev|local은 프론트 loader가 거부하고 development-units.json으로 안내한다.
-pub use soksak_portable::plugin_dir::PluginScanEntry;
+pub use soksak_core::plugin_dir::PluginScanEntry;
 
-// 설치 디렉토리의 직속 하위 디렉토리 전부. 훑기는 soksak-portable 이 소유한다 —
+// 설치 디렉토리의 직속 하위 디렉토리 전부. 훑기는 soksak-core 이 소유한다 —
 // 여기서는 홈에서 베이스 디렉토리를 해소하는 일만 한다.
 #[tauri::command]
 pub fn plugin_scan() -> Result<Vec<PluginScanEntry>, String> {
-    soksak_portable::plugin_dir::scan(&plugins_dir()?)
+    soksak_core::plugin_dir::scan(&plugins_dir()?)
 }
 
 // 공식 설치 상태 파일(.soksak.json) 기록 헬퍼 — version=<semver>, repo(원격 URL), branch.
