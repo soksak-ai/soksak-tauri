@@ -44,7 +44,25 @@ icons: ## 앱 아이콘 전체 재생성(SVG→마스터1024 + base/dev/debug �
 	@rm -f /tmp/soksak-icon-master.png /tmp/soksak-icon-dev.png /tmp/soksak-icon-debug.png
 	@echo "아이콘 재생성 완료: 마스터(1024 SVG벡터)+base+dev(녹색)+debug(주황)"
 
-dev: cli-dev ## 개발 서버(HMR) + sok-dev. 독 "soksak-dev"+DEV 배지. 플러그인은 ~/.soksak-dev/plugins 단일 폴더(.soksak.json 자기기술) — 외부 폴더 일회 테스트는 plugin.dev.load
+# 개발 볼트 — 키체인 프롬프트 없이 뜬다.
+#
+# tauri dev 는 매 변경마다 바이너리를 새로 만들고, macOS 키체인은 그때마다 다른 앱으로 보아
+# 접근 승인을 다시 묻는다. 그 대화상자는 부팅 중간(setup 의 볼트 개방)에서 사람을 기다리므로
+# 앱이 IPC 도 못 세운 채 멈춘다 — 개발이 사람 손을 기다리게 된다.
+#
+# 그래서 dev 는 주입 KEK(SOKSAK_E2E_KEK)를 쓴다. 이 경로는 #[cfg(debug_assertions)] 안에만
+# 있어 릴리즈 바이너리엔 컴파일조차 되지 않는다(env-KEK 백도어 아님).
+#
+# 볼트 경로도 함께 옮긴다. KEK 불일치는 loud Err 로 끝나므로(다른 기기 키체인·리셋 신호를
+# 삼키지 않는 설계) 키체인 볼트를 주입 KEK 로 열 수 없다 — 짝을 지어야 성립한다.
+# 실볼트(~/.soksak-dev/secrets.vault)는 건드리지 않고 그대로 남는다.
+DEV_KEK ?= soksak-dev-local
+DEV_VAULT ?= $(HOME)/.soksak-dev/secrets.dev.vault
+
+dev: cli-dev ## 개발 서버(HMR) + sok-dev. 키체인 프롬프트 없음(주입 KEK+전용 볼트). 플러그인은 ~/.soksak-dev/plugins 단일 폴더
+	SOKSAK_E2E_KEK=$(DEV_KEK) SOKSAK_VAULT_PATH=$(DEV_VAULT) $(PNPM) tauri dev
+
+dev-keychain: cli-dev ## 개발 서버 + 실볼트(키체인 프롬프트 있음). 실 시크릿이 필요한 검증용.
 	$(PNPM) tauri dev
 
 # 번들 빌드는 spec-gate 를 선행한다 — 코어 프론트는 @soksak-ai/plugin-spec·plugin-api 의 **dist** 를
