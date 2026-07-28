@@ -50,21 +50,17 @@ pub fn window_create(
     // 재시작 복원(리스폰)은 false — 백그라운드로 되살리고 현재 포커스(오케스트레이터 등)를 뺏지 않는다.
     focus: Option<bool>,
 ) -> Result<String, String> {
-    let focus = focus.unwrap_or(true);
+    // 포커스 기본·rect 판정은 코어가 소유한다 — 갈리면 같은 복원이 한쪽에서만 자리를 지킨다.
+    let focus = soksak_core::window_spec::should_focus(focus);
     match label {
         None => create_window_init(&app, init.as_deref(), focus),
         Some(label) => {
             if app.get_window(&label).is_some() {
                 return Ok(label); // 멱등 — 리스폰 재호출 무해
             }
-            let r = rect.as_ref().and_then(|v| {
-                Some((
-                    v.get("x")?.as_f64()?,
-                    v.get("y")?.as_f64()?,
-                    v.get("w")?.as_f64()?,
-                    v.get("h")?.as_f64()?,
-                ))
-            });
+            let num = |k: &str| rect.as_ref().and_then(|v| v.get(k)).and_then(|n| n.as_f64());
+            let r = soksak_core::window_spec::rect_of(num("x"), num("y"), num("w"), num("h"))
+                .map(|r| (r.x, r.y, r.w, r.h));
             create_window_labeled(&app, &label, r, init.as_deref(), focus)
         }
     }

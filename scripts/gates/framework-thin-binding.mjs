@@ -40,11 +40,11 @@ export const LOGIC_LEDGER = new Map([
   ],
   [
     "window_create",
-    [7, "라벨 생성·멱등·rect 유효성·focus 기본값. **규칙이다 — 코어에 있어야 한다**(TODO: soksak-core 가 라벨·rect 판정을 소유하고 여기는 BrowserWindow 생성만)"],
+    [5, "남은 갈래는 창 사실(살아 있는가)과 라벨 생성뿐이다. rect 유효성·focus 기본·워크스페이스 라벨 판정은 코어가 소유하고(soksak-core window_spec), 이 사본이 갈리지 않는다는 것은 같은 픽스처가 묶는다(fixtures/window-rect.json)"],
   ],
   [
     "window_place",
-    [2, "rect 네 값의 타입 검사. 코어의 rect 계약을 부르면 사라진다(TODO)"],
+    [2, "rect 네 값의 타입 검사 — 같은 규칙을 코어가 소유하고 픽스처가 묶는다(window-rect.json). 여기 남는 것은 그 판정을 부르는 자리다"],
   ],
   [
     "window_monitors",

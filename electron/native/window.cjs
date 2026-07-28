@@ -24,6 +24,30 @@ function need(ctx, args) {
 ///
 /// 오른쪽·아래 경계는 밖이다: 맞닿은 자리에서 한 점이 양쪽에 속하면 소속이 목록 순서에 따라
 /// 흔들린다. 어느 화면에도 없으면 null 이다 — 0 으로 떨어뜨리면 "첫 모니터"와 구분되지 않는다.
+/// 주어진 rect 가 쓸 수 있는 자리인가 — 코어와 같은 규칙(soksak-core window_spec).
+///
+/// 넷이 다 있고 다 수라야 한다. 하나라도 빠지면 자리 없음이다: 반쪽을 채워 만들면 창이 엉뚱한
+/// 곳에 뜨고, 그 어긋남은 "복원했더니 자리가 틀렸다"로 나타난다. 크기 0 이하도 자리가 아니다 —
+/// 만들어지긴 하는데 보이지 않아 "창이 안 뜬다"로만 보인다.
+function rectOf(r) {
+  if (!r) return null;
+  const { x, y, w, h } = r;
+  if (![x, y, w, h].every((v) => typeof v === "number" && Number.isFinite(v))) return null;
+  if (w <= 0 || h <= 0) return null;
+  return { x, y, w, h };
+}
+
+/// 새 창을 앞으로 낼 것인가. 기본은 참 — 리스폰만 거짓으로 부른다(백그라운드 복원).
+/// 기본을 거짓으로 두면 "새 창을 열었는데 아무 일도 안 일어난 것처럼" 보인다.
+function shouldFocus(requested) {
+  return requested !== false;
+}
+
+/// 이 라벨이 워크스페이스 창의 것인가 — 컨트롤 플레인("main")과 가르는 표식.
+function isWorkspace(label) {
+  return String(label ?? "").startsWith("w-");
+}
+
 function monitorOf(win, monitors) {
   const cx = win.x + Math.trunc(win.w / 2);
   const cy = win.y + Math.trunc(win.h / 2);
@@ -36,6 +60,9 @@ function monitorOf(win, monitors) {
 module.exports = {
   // 검사가 픽스처로 코어와 대조한다 — 사본이 갈리지 않는다는 것을 파일이 묶는다.
   monitorOf,
+  rectOf,
+  shouldFocus,
+  isWorkspace,
   // 창 배경 — Tauri window.set_background_color 의 대응. 루트 DOM 이 투명이라 미도장 영역의
   // 색을 창이 책임진다. 기준(#rrggbb 6자리)은 코어와 같게 둔다: 같은 색 문자열에 두
   // 프레임워크가 다르게 답하면 테마가 프레임워크마다 달라진다.
@@ -74,15 +101,8 @@ module.exports = {
       const label = String(args.label ?? "").trim() || `w-${randomUUID()}`;
       const live = ctx.windowFor(label);
       if (live && !live.isDestroyed()) return label;
-      const r = args.rect;
-      const rect =
-        r && [r.x, r.y, r.w, r.h].every((v) => typeof v === "number")
-          ? { x: r.x, y: r.y, w: r.w, h: r.h }
-          : null;
-      const win = ctx.createWindow(label, rect);
-      // focus 기본은 true — 사용자가 새 창을 열면 그 창이 포커스된다. 복원(리스폰)은 false 로
-      // 불러 백그라운드에 되살리고 현재 포커스를 뺏지 않는다.
-      if (args.focus !== false) win.focus();
+      const win = ctx.createWindow(label, rectOf(args.rect));
+      if (shouldFocus(args.focus)) win.focus();
       return label;
     },
   },
