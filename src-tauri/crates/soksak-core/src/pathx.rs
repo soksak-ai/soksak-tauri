@@ -150,6 +150,23 @@ mod tests {
 /// 코어에 사는 이유: 앱과 cored 가 같은 config·같은 소스 경로를 읽는데, 검사가 한쪽에만
 /// 있으면 통과 기준이 프로세스마다 달라진다. 그 차이는 거부가 아니라 **한쪽에서만 보이는
 /// 유닛**으로 나타난다(2026-07-28 실측).
+/// 링크로 볼 것 — 유닉스의 심링크와 윈도우의 junction(reparse point) 둘 다.
+///
+/// `is_symlink()` 만 보면 junction 이 그대로 통과한다. 윈도우에서 junction 은 심링크가
+/// 아닌 별개 종류라, 검사가 있는데도 링크를 지나 다른 곳을 열게 된다.
+#[cfg(windows)]
+fn is_link_like(metadata: &std::fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
+    metadata.file_type().is_symlink()
+        || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+}
+
+#[cfg(not(windows))]
+fn is_link_like(metadata: &std::fs::Metadata) -> bool {
+    metadata.file_type().is_symlink()
+}
+
 pub fn reject_symlink_components(path: &Path) -> Result<(), String> {
     use std::path::Component;
     let mut current = PathBuf::new();
@@ -170,7 +187,7 @@ pub fn reject_symlink_components(path: &Path) -> Result<(), String> {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
             Err(e) => return Err(e.to_string()),
         };
-        if metadata.file_type().is_symlink() {
+        if is_link_like(&metadata) {
             return Err(format!("심링크 경로는 허용하지 않습니다: {}", current.display()));
         }
     }

@@ -5,51 +5,11 @@
 
 use std::path::{Component, Path, PathBuf};
 
-#[cfg(windows)]
-fn is_link_like(metadata: &std::fs::Metadata) -> bool {
-    use std::os::windows::fs::MetadataExt;
-    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
-    metadata.file_type().is_symlink()
-        || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
-}
+// 심링크·junction 거부 규칙은 코어(pathx)가 소유한다. 여기 사본이 있었고, 사본은 두 답이
+// 갈리는 순간까지 조용하다 — 같은 경로에 앱은 거부, 다른 프로세스는 통과가 되고 그 차이는
+// 오류가 아니라 "열렸다"로 나타난다. 이름은 그대로 두어 호출자 12곳이 안 바뀐다.
+pub(crate) use soksak_core::pathx::reject_symlink_components;
 
-#[cfg(not(windows))]
-fn is_link_like(metadata: &std::fs::Metadata) -> bool {
-    metadata.file_type().is_symlink()
-}
-
-/// Reject `..` and every existing symlink/junction component without resolving through it.
-pub(crate) fn reject_symlink_components(path: &Path) -> Result<(), String> {
-    let mut current = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::Prefix(_) | Component::RootDir => current.push(component.as_os_str()),
-            Component::CurDir => continue,
-            Component::ParentDir => {
-                return Err(format!(
-                    "경로에 '..'를 사용할 수 없습니다: {}",
-                    path.display()
-                ))
-            }
-            Component::Normal(part) => current.push(part),
-        }
-        if current.as_os_str().is_empty() {
-            continue;
-        }
-        let metadata = match std::fs::symlink_metadata(&current) {
-            Ok(metadata) => metadata,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(error) => return Err(error.to_string()),
-        };
-        if is_link_like(&metadata) {
-            return Err(format!(
-                "경로에 symlink/junction을 사용할 수 없습니다: {}",
-                current.display()
-            ));
-        }
-    }
-    Ok(())
-}
 
 #[cfg(test)]
 mod tests {

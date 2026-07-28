@@ -10,36 +10,10 @@ use std::path::Path;
 
 const SHA256_HEX_LEN: usize = 64;
 
-/// `..` 와 기존 심링크 컴포넌트를 해소하지 않고 제자리 거부한다 — 경로는 링크를 통과해
-/// canonicalize 하는 순간 안전하지 않다. (셸 쪽 path_security 와 같은 계약의 사본이 아니라,
-/// 이 크레이트가 셸에 의존하지 않기 위한 자립 구현이다.)
-fn reject_symlink_components(path: &Path) -> Result<(), String> {
-    let mut current = std::path::PathBuf::new();
-    for component in path.components() {
-        match component {
-            std::path::Component::Prefix(_) | std::path::Component::RootDir => {
-                current.push(component.as_os_str())
-            }
-            std::path::Component::CurDir => continue,
-            std::path::Component::ParentDir => {
-                return Err(format!("경로에 '..'를 사용할 수 없습니다: {}", path.display()))
-            }
-            std::path::Component::Normal(part) => current.push(part),
-        }
-        if current.as_os_str().is_empty() {
-            continue;
-        }
-        if let Ok(m) = fs::symlink_metadata(&current) {
-            if m.file_type().is_symlink() {
-                return Err(format!(
-                    "경로에 symlink/junction을 사용할 수 없습니다: {}",
-                    current.display()
-                ));
-            }
-        }
-    }
-    Ok(())
-}
+// 심링크 거부는 pathx 가 소유한다. 여기 사본이 있었고 그 사본이 더 약했다 —
+// `symlink_metadata` 의 오류를 전부 "링크 아님"으로 삼켜서, 링크를 **못 본 것**과 링크가
+// **없는 것**을 같은 값으로 답했다. 그 차이는 거부가 아니라 통과로 나타난다.
+use crate::pathx::reject_symlink_components;
 
 pub fn sha256_hex(body: &[u8]) -> String {
     let mut hasher = Sha256::new();
@@ -180,4 +154,41 @@ pub fn verify_and_link(src: String, dest: String, sha256: String) -> Result<(), 
         return Err(e.to_string());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod one_symlink_rule_tests {
+    use super::*;
+
+    /// 심링크 거부는 **한 벌**이다.
+    ///
+    /// 이 파일에 사본이 있었고 그 사본이 더 약했다: `symlink_metadata` 의 오류를 전부
+    /// "링크 아님"으로 삼켜서, 링크를 못 본 것과 링크가 없는 것을 같은 값으로 답했다.
+    /// 그 차이는 거부가 아니라 **통과**로 나타난다 — 검사가 있는데 안 서는 상태다.
+    ///
+    /// 판별자: 디렉터리가 아닌 것을 지나는 경로. `symlink_metadata` 가 NotFound 가 아닌
+    /// 오류를 내므로, 삼키는 구현만 Ok 를 답한다.
+    #[test]
+    fn the_two_entry_points_agree() {
+        let file = std::env::temp_dir()
+            .canonicalize()
+            .expect("실측 temp")
+            .join(format!("integ-{}", std::process::id()));
+        std::fs::write(&file, b"x").unwrap();
+        let through_a_file = file.join("child");
+
+        for p in [
+            through_a_file.as_path(),
+            Path::new("/definitely-not-here-xyz/a"),
+            file.as_path(),
+        ] {
+            assert_eq!(
+                reject_symlink_components(p).is_err(),
+                crate::pathx::reject_symlink_components(p).is_err(),
+                "같은 경로에 두 답이 나온다: {}",
+                p.display()
+            );
+        }
+        let _ = std::fs::remove_file(&file);
+    }
 }
