@@ -199,6 +199,11 @@ impl PtyManager {
     }
 }
 
+/// 이 앱의 봉인 열쇠 보관소. 상태를 꺼내는 문법이 흩어지면 한 곳만 고쳐도 다른 곳이 남는다.
+fn vault_keys(app: &tauri::AppHandle) -> crate::seal_keys::VaultKeys<'_> {
+    crate::seal_keys::VaultKeys(tauri::Manager::state::<crate::secrets::SecretsState>(app).inner())
+}
+
 fn default_shell() -> String {
     if cfg!(windows) {
         std::env::var("COMSPEC").unwrap_or_else(|_| "powershell.exe".to_string())
@@ -397,6 +402,7 @@ pub fn spawn_terminal(
     if pane_id.is_some() {
         match daemon::spawn_via_daemon(
             &app,
+            &vault_keys(&app),
             &manager.link,
             daemon::SpawnParams {
                 pane_id: pane_id.clone(),
@@ -629,11 +635,11 @@ pub fn pty_read_sealed_screen(
     {
         let win = window_label.as_deref().unwrap_or("");
         let identity = manager.identity();
-        match daemon::read_sealed_screen(&app, identity, win, &pane_id)? {
+        match daemon::read_sealed_screen(&vault_keys(&app), identity, win, &pane_id)? {
             Some(s) => Ok(Some(s)),
             None => match legacy_pane_id {
                 Some(legacy) if !legacy.is_empty() => {
-                    daemon::read_sealed_screen_adopting(&app, identity, win, &legacy, &pane_id)
+                    daemon::read_sealed_screen_adopting(&vault_keys(&app), identity, win, &legacy, &pane_id)
                 }
                 _ => Ok(None),
             },
@@ -1073,7 +1079,7 @@ mod daemon {
     static CKPT_KEY_GATE: Mutex<()> = Mutex::new(());
 
     pub(crate) fn checkpoint_recipient(
-        app: &tauri::AppHandle,
+        keys: &dyn soksak_core::seal_keys::SealKeys,
         identity: &crate::identity::Identity,
     ) -> (Option<String>, Option<String>) {
         let path = proto::checkpoint_pubkey_path(identity.home());
@@ -1088,16 +1094,12 @@ mod daemon {
         if let Some((pk, key_id)) = read(&path) {
             return (Some(pk), Some(key_id));
         }
-        let secrets = tauri::Manager::state::<crate::secrets::SecretsState>(app);
-        if !secrets.is_unlocked() {
+        if !keys.unlocked() {
             return (None, None); // 잠김 + 캐시 없음 — 이번 세션은 체크포인트 없이
         }
-        let (s, p) = crate::secrets::gen_asym_keypair();
-        let key_id = format!("ptyk-{}", uuid::Uuid::new_v4());
-        if let Err(e) = secrets.put_data_key(&key_id, &s) {
-            eprintln!("[pty] seal key store failed: {e}");
-            return (None, None);
-        }
+        let Some((key_id, p)) = keys.new_key() else {
+            return (None, None); // 사유는 보관소가 남긴다
+        };
         let pk_b64 = {
             use base64::Engine as _;
             base64::engine::general_purpose::STANDARD.encode(p)
@@ -1127,6 +1129,7 @@ mod daemon {
     //     까지 이미 그렸고, 그 뒤 꼬리가 라이브 연속분이다).
     pub(crate) fn spawn_via_daemon<S: StreamSink>(
         app: &tauri::AppHandle,
+        keys: &dyn soksak_core::seal_keys::SealKeys,
         link: &Link,
         p: SpawnParams,
         on_output: S,
@@ -1149,7 +1152,7 @@ mod daemon {
             _ => None,
         };
         // 봉인-블롭 수신 키를 세션에 실어 StoreBlob 이 봉인할 수 있게 한다(사이드카 체크포인트).
-        let (checkpoint_pk, checkpoint_key_id) = checkpoint_recipient(app, identity);
+        let (checkpoint_pk, checkpoint_key_id) = checkpoint_recipient(keys, identity);
         let data = link.request(
             &proto::Request::CreateOrAttach {
                 pane_id: pane_id.clone(),
@@ -1599,18 +1602,21 @@ mod daemon {
 
     // 개봉 — unlock 된 vault 의 개인키 + 정합 AAD 만 연다. 실패 사유는 고지에 실린다.
     fn open_cold_checkpoint(
-        app: &tauri::AppHandle,
+        keys: &dyn soksak_core::seal_keys::SealKeys,
         ck: &ColdCheckpoint,
         window: &str,
         pane: &str,
     ) -> Result<Vec<u8>, String> {
-        let secrets = tauri::Manager::state::<crate::secrets::SecretsState>(app);
-        if !secrets.is_unlocked() {
+        if !keys.unlocked() {
             return Err("vault locked".into());
         }
-        let sk = secrets
-            .get_data_key(&ck.key_id)?
+        let sk = keys
+            .secret(&ck.key_id)?
             .ok_or_else(|| format!("seal key {} not in vault", ck.key_id))?;
+        let sk: [u8; 32] = sk
+            .as_slice()
+            .try_into()
+            .map_err(|_| format!("seal key {} 의 길이가 32바이트가 아닙니다", ck.key_id))?;
         let aad = proto::checkpoint_aad(window, pane, &ck.key_id);
         crate::secrets::open_sealed(&sk, &ck.sealed, &aad)
     }
@@ -1734,7 +1740,7 @@ mod daemon {
     // 에러(fail-closed — 평문 우회 없음), 블롭 없으면 None. 소비자가 바이트를 그려 죽은 세션
     // 화면을 다시 그린다(사이드카 불요 경로). 코어는 바이트를 해석하지 않는다(봉인만 열고 넘긴다).
     pub(crate) fn read_sealed_screen(
-        app: &tauri::AppHandle,
+        keys: &dyn soksak_core::seal_keys::SealKeys,
         identity: &crate::identity::Identity,
         window: &str,
         pane: &str,
@@ -1743,7 +1749,7 @@ mod daemon {
             Some(c) => c,
             None => return Ok(None),
         };
-        let paint = open_cold_checkpoint(app, &ck, window, pane)?;
+        let paint = open_cold_checkpoint(keys, &ck, window, pane)?;
         use base64::Engine as _;
         Ok(Some(super::SealedScreen {
             paint_b64: base64::engine::general_purpose::STANDARD.encode(&paint),
@@ -1794,7 +1800,7 @@ mod daemon {
 
     /// 옛 키(legacy)의 블롭을 열어 신 키(pane)로 승계한다 — 엔티티 id 이행의 손실 0 실행부.
     pub(crate) fn read_sealed_screen_adopting(
-        app: &tauri::AppHandle,
+        keys: &dyn soksak_core::seal_keys::SealKeys,
         identity: &crate::identity::Identity,
         window: &str,
         legacy: &str,
@@ -1805,7 +1811,7 @@ mod daemon {
             Some(c) => c,
             None => return Ok(None),
         };
-        let paint = open_cold_checkpoint(app, &ck, window, legacy)?;
+        let paint = open_cold_checkpoint(keys, &ck, window, legacy)?;
         let pk = std::fs::read_to_string(identity.path("pty/seal.pub"))
             .ok()
             .map(|s| s.trim().to_string());
@@ -1890,17 +1896,30 @@ mod seam_tests {
         );
     }
 
-    /// 데몬 레그의 출구는 계약이다 — 벤더 채널 타입은 커맨드 진입점에서 멈춘다.
+    /// 데몬 레그의 출구·열쇠는 계약이다 — 벤더 타입은 커맨드 진입점에서 멈춘다.
     /// 함수 포인터로 시그니처를 못박는다: 벤더 타입이 돌아오면 여기서 컴파일이 깨진다.
+    ///
+    /// 봉인 열쇠도 계약으로 받는다(SealKeys). 볼트 상태를 프레임워크에서 꺼내던 한 줄 때문에
+    /// "봉인된 화면을 읽는다"는 일 전체가 앱 프로세스에 묶여 있었다 — 열쇠가 필요한 것이지
+    /// 프레임워크가 필요한 것이 아니다.
     #[cfg(unix)]
     #[test]
-    fn the_daemon_leg_takes_a_sink_not_a_vendor_channel() {
+    fn the_daemon_leg_takes_contracts_not_vendor_types() {
         let _typed: fn(
             &tauri::AppHandle,
+            &dyn soksak_core::seal_keys::SealKeys,
             &super::daemon::Link,
             super::daemon::SpawnParams,
             NullSink,
         ) -> Result<u64, String> = super::daemon::spawn_via_daemon::<NullSink>;
+
+        // 봉인 화면 읽기는 앱 핸들을 더 이상 요구하지 않는다.
+        let _sealed: fn(
+            &dyn soksak_core::seal_keys::SealKeys,
+            &Identity,
+            &str,
+            &str,
+        ) -> Result<Option<super::SealedScreen>, String> = super::daemon::read_sealed_screen;
     }
 
     /// 폴백 고지는 원장 한 줄이다 — 앱 핸들 없이 발행되고, 도배 방지 1회 게이트가 산다.

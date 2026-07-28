@@ -29,6 +29,7 @@ pub mod shellq;
 pub mod plugin_data;
 pub mod plugin_dir;
 pub mod probe;
+pub mod seal_keys;
 pub mod session;
 pub mod skillgen;
 pub mod store_lock;

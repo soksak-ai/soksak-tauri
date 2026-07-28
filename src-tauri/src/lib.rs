@@ -37,6 +37,7 @@ mod stream_sink;
 mod window_oracle;
 mod runtime_dep;
 mod schedule;
+mod seal_keys;
 mod secrets;
 mod service;
 mod sidecar;
