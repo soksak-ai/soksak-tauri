@@ -133,3 +133,66 @@ mod tests {
         assert_eq!(retention_scope(&json!({})), SCOPE);
     }
 }
+
+/// 영속 행 하나의 상한. 초대형 행 하나가 json 파스에서 전체 목록을 죽이지 않게 한다.
+pub const PERSIST_DOC_CAP: usize = 262_144;
+
+/// 원장에 **남길 모양** — 관찰 요약이지 사본이 아니다.
+///
+/// 미디어 base64 를 떼어낸다(kind·mime 은 남는다 — 무엇이 오갔는지는 관찰이고 그 바이트는
+/// 사본이다). 그러고도 상한을 넘으면 페이로드를 잘라내고 잘렸다는 사실을 남긴다: 조용히
+/// 버리면 그 항목은 "작았던 것"으로 읽힌다.
+pub fn summarize_for_persist(entry: &Value) -> Value {
+    let mut doc = entry.clone();
+    if let Some(media) = doc
+        .get_mut("payload")
+        .and_then(|p| p.get_mut("media"))
+        .and_then(Value::as_object_mut)
+    {
+        media.remove("base64");
+    }
+    if serde_json::to_string(&doc).map(|s| s.len()).unwrap_or(0) > PERSIST_DOC_CAP {
+        let seq = doc.get("seq").cloned().unwrap_or(Value::Null);
+        let ts = doc.get("ts").cloned().unwrap_or(Value::Null);
+        let kind = doc.get("kind").cloned().unwrap_or(Value::Null);
+        let source = doc.get("source").cloned().unwrap_or(Value::Null);
+        let payload = doc.get("payload").and_then(Value::as_object);
+        let mut slim = serde_json::Map::new();
+        // 강등해도 **상관·노출 축은 살린다.** parentId 는 어느 실행의 자식인지, origin 은
+        // 낭독 후보에서 빼는 근거, window 는 어느 창의 일인지다. 이것들이 사라지면 그 항목은
+        // 목록에는 남고 어디에도 안 걸리는 고아가 된다 — 잘렸다는 사실보다 나쁘다.
+        for k in [
+            "command", "title", "ok", "code", "message", "parentId", "origin", "window",
+        ] {
+            if let Some(v) = payload.and_then(|p| p.get(k)) {
+                slim.insert(k.to_string(), v.clone());
+            }
+        }
+        slim.insert("truncated".into(), Value::Bool(true));
+        return serde_json::json!({ "seq": seq, "ts": ts, "kind": kind, "source": source, "payload": slim });
+    }
+    doc
+}
+
+/// 원장 행의 자리 — 앱과 cored 가 같은 곳에 쓴다. 갈리면 한쪽이 쓴 것을 다른 쪽이 못 읽는다.
+pub const NS: &str = "core";
+pub const COLL: &str = "activity";
+
+/// 행 id — seq 를 0 채움해 사전순이 곧 시간순이다. 정렬을 질의가 다시 하지 않는다.
+pub fn row_id(seq: u64) -> String {
+    format!("a{seq:016}")
+}
+
+/// 원장 한 행을 쓰는 문장 — 앱과 cored 가 같은 문장을 쓴다.
+///
+/// 두 프로세스가 각자 SQL 을 적으면 컬럼 하나가 어긋나도 오류가 아니라 **다른 답**이 된다.
+/// 같은 (ns,coll,id) 는 갱신이다: 도장 찍힌 seq 가 id 라 재적재는 없고, 회복 큐가 같은 행을
+/// 다시 밀 때 중복이 아니라 같은 자리에 앉는다.
+///
+/// 순서: ns · coll · scope · id · doc · now · enc · keyId
+pub const PERSIST_SQL: &str = "\
+    INSERT INTO records(ns,coll,scope,id,doc,created,updated,enc,keyId) \
+    VALUES(?1,?2,?3,?4,?5,?6,?6,?7,?8) \
+    ON CONFLICT(ns,coll,id) DO UPDATE SET \
+      scope=excluded.scope, doc=excluded.doc, updated=excluded.updated, \
+      enc=excluded.enc, keyId=excluded.keyId";

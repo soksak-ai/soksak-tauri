@@ -77,7 +77,42 @@ pub fn admit(db_path: &str, kind: &str, source: &str, payload: Value) -> Result<
         .find(|(p, _)| p == db_path)
         .map(|(_, l)| l)
         .expect("직전에 넣었거나 이미 있던 원장");
-    Ok(led.admit(now_ms(), kind, source, payload))
+    let entry = led.admit(now_ms(), kind, source, payload);
+    drop(all); // 쓰기 동안 원장 잠금을 쥐고 있지 않는다 — 디스크가 느리면 적재가 통째로 막힌다.
+    persist(db_path, &entry)?;
+    Ok(entry)
+}
+
+/// 적재한 항목을 원장에 **남긴다.**
+///
+/// 적재만 하면 답은 성공으로 나가고 원장은 남지 않는다. 그 부재는 오류가 아니라 다음 부팅에서
+/// **아무 일도 없었던 것**으로 나타난다: 피드가 비고, 재개 지점이 0 이 되어 새 원장이 조용히
+/// 시작된다(실측 2026-07-28, Electron 라이브 — publish 24회 성공에 records 0행).
+///
+/// 규칙·문장은 코어가 소유하고 여기는 연결만 갖는다.
+fn persist(db_path: &str, entry: &Value) -> Result<(), String> {
+    use soksak_core::activity as act;
+    let conn = rusqlite::Connection::open(db_path)
+        .map_err(|e| format!("원장 저장소 열기 실패({db_path}): {e}"))?;
+    let doc = act::summarize_for_persist(entry);
+    let seq = entry.get("seq").and_then(Value::as_u64).ok_or("seq 없는 항목")?;
+    let doc_s = serde_json::to_string(&doc).map_err(|e| e.to_string())?;
+    let now = entry.get("ts").and_then(Value::as_u64).unwrap_or(0) as i64;
+    conn.execute(
+        act::PERSIST_SQL,
+        rusqlite::params![
+            act::NS,
+            act::COLL,
+            act::retention_scope(entry),
+            act::row_id(seq),
+            doc_s,
+            now,
+            0i64,
+            Option::<String>::None
+        ],
+    )
+    .map_err(|e| format!("원장 쓰기 실패: {e}"))?;
+    Ok(())
 }
 
 #[cfg(test)]

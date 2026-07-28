@@ -29,8 +29,8 @@ const RING_CAP: usize = 2000;
 const SUB_CAP: usize = 256;
 // records 영속 상한 — 링보다 넉넉히(재시작 후 recent 백필의 원천).
 const PERSIST_CAP: i64 = 5000;
-const NS: &str = "core";
-const COLL: &str = "activity";
+use soksak_core::activity::{COLL, NS};
+
 // 영속 보관 2계층(§5 R4)의 축 이름과 판정은 코어가 소유한다(retention_scope). 링(라이브
 // 뷰)은 시간창이 본질이라 혼합 유지 — 역사 보증은 영속의 몫.
 
@@ -179,7 +179,7 @@ pub fn persist(conn: &rusqlite::Connection, entry: &Value) -> bool {
     let id = entry
         .get("seq")
         .and_then(Value::as_u64)
-        .map(|s| format!("a{s:016}"));
+        .map(soksak_core::activity::row_id);
     // 영속본은 관찰 요약(§5) — 대형 내용물은 라이브(링·이벤트)의 것이다.
     // media.base64 는 kind 만 남기고 스트립, 그래도 상한 초과면 payload 를 강등한다.
     // 불변식: 영속 행은 PERSIST_DOC_CAP 을 넘지 않는다(초대형 행 하나가 json 파스에서
@@ -270,39 +270,12 @@ pub fn init_collection(conn: &rusqlite::Connection) {
 }
 
 /// 영속 행 크기 불변식(바이트) — 초과 payload 는 요약형으로 강등된다.
-const PERSIST_DOC_CAP: usize = 262_144;
+// 요약·상한·행 자리 규칙은 코어가 소유한다 — 앱과 cored 가 같은 원장에 쓰므로
+// 두 벌이면 한쪽이 쓴 것을 다른 쪽이 못 읽거나, 같은 seq 에 다른 모양이 남는다.
+use soksak_core::activity::{summarize_for_persist, PERSIST_DOC_CAP};
 
 /// 영속본 요약(§5) — media.base64 스트립(kind·path 유지), 직렬화 크기 상한 강제.
 /// 링·이벤트(라이브)는 원본 그대로 — 이 함수는 영속 경로 전용이다.
-fn summarize_for_persist(entry: &Value) -> Value {
-    let mut doc = entry.clone();
-    if let Some(media) = doc
-        .get_mut("payload")
-        .and_then(|p| p.get_mut("media"))
-        .and_then(Value::as_object_mut)
-    {
-        media.remove("base64");
-    }
-    if serde_json::to_string(&doc).map(|s| s.len()).unwrap_or(0) > PERSIST_DOC_CAP {
-        let seq = doc.get("seq").cloned().unwrap_or(Value::Null);
-        let ts = doc.get("ts").cloned().unwrap_or(Value::Null);
-        let kind = doc.get("kind").cloned().unwrap_or(Value::Null);
-        let source = doc.get("source").cloned().unwrap_or(Value::Null);
-        let payload = doc.get("payload").and_then(Value::as_object);
-        let mut slim = serde_json::Map::new();
-        // 상관·노출 축(§4·§5)은 요약에도 살아남는다 — 세트 접합과 발화자 표기가 깨지지 않게.
-        for k in [
-            "command", "title", "ok", "code", "message", "parentId", "origin", "window",
-        ] {
-            if let Some(v) = payload.and_then(|p| p.get(k)) {
-                slim.insert(k.to_string(), v.clone());
-            }
-        }
-        slim.insert("truncated".into(), Value::Bool(true));
-        return serde_json::json!({ "seq": seq, "ts": ts, "kind": kind, "source": source, "payload": slim });
-    }
-    doc
-}
 
 /// 부트 1회 — 영속 최댓값에서 seq 재개(재시작을 넘는 단조). 레코드 없음(신선 설치) = 0 유지.
 /// 전 scope(신호+저신호) 최댓값 — 어느 쪽이 마지막이었든 뒤로 가지 않는다.

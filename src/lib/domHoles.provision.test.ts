@@ -7,11 +7,11 @@
 // 부팅 원장이 실패로 물든다. 둘 다 답이 아니다 — **묻지 않는 것**이 답이다.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const invoke = vi.fn(async () => undefined);
+const invoke = vi.fn(async (_cmd: string, _args?: unknown) => undefined);
 let provision = { chromium: false, nativeChildWebview: true };
 
 vi.mock("../framework", () => ({
-  invoke: (...a: unknown[]) => invoke(...a),
+  invoke: (cmd: string, args?: unknown) => invoke(cmd, args),
   get engineProvision() {
     return provision;
   },

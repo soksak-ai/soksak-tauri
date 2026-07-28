@@ -3,6 +3,7 @@
 // / 하: 명령 콘솔(레지스트리 실행). 셸은 커맨드·이벤트 표면만 소비한다 — 코어 내부 상태
 // (sessions 등) 직접 참조 금지: 외부 클라이언트(폰·CLI)와 같은 자격이어야 P13 이 지켜진다.
 
+import { backfillFeed } from "./activityBackfill";
 import { invoke, currentWindow } from "../framework";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { safeListen } from "../lib/safeListen";
@@ -356,9 +357,11 @@ export function OrchestratorApp() {
     // 네이티브 타이틀(Dock 창 목록 구분) — 프로젝트 창과 같은 규칙: 이름만, 앱 이름 무접미.
     void currentWindow().setTitle(t("orch.title")).catch(() => {});
     // 백필(커서) 후 라이브 구독 — 폴링 0. 구독/해지는 safeListen 단일 유틸(중복 해지 가드).
-    void invoke<ActivityEntry[]>("activity_recent", { since: null, limit: 200 }).then(
-      (entries) => setFeed(entries),
-    );
+    // 백필은 편의이고 구독이 본체다 — 없으면 없는 대로 시작하되 사유는 남긴다.
+    void backfillFeed<ActivityEntry>(
+      () => invoke<ActivityEntry[]>("activity_recent", { since: null, limit: 200 }),
+      (reason) => console.warn(`[orchestrator] ${reason}`),
+    ).then(setFeed);
     const un = safeListen<ActivityEntry>("activity", (ev) => {
       const e = ev.payload;
       setFeed((cur) => {

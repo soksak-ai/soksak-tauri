@@ -1364,3 +1364,72 @@ fn serves_unit_dev_validate_path() {
     }));
     assert_eq!(relative["ok"], false, "{relative}");
 }
+
+// ── 활동은 적재만이 아니라 남는다 ────────────────────────────────────────────
+//
+// 실측(2026-07-28, Electron 라이브): activity_publish 가 24회 성공했는데 저장소의 records 가
+// 비어 있었다. cored 는 seq 만 매기고 쓰지 않았다 — 앱은 admit 다음에 persist 까지 한다.
+//
+// 그 절반이 없으면 답은 성공으로 나가고 원장은 남지 않는다. 그리고 그 부재는 오류가 아니라
+// **다음 부팅에서 아무 일도 없었던 것**으로 나타난다: 활동 피드가 비고, 재개 지점이 0 이 되어
+// 새 원장이 조용히 시작된다.
+#[test]
+fn an_admitted_entry_is_actually_stored() {
+    let helper = spawn_helper("activity-persist");
+
+    let first = helper.ask(json!({
+        "method": "activity_publish",
+        "params": { "kind": "boot.step", "source": "boot", "payload": { "step": "enter" } }
+    }));
+    assert_eq!(first["ok"], true, "{first}");
+    let seq = first["data"]["seq"].as_u64().expect("seq");
+
+    // 같은 프로세스에서 다시 물어 확인하는 것으로는 부족하다(링만 보고 답할 수 있다).
+    // 저장소를 직접 연다 — 남았는가는 파일의 사실이다.
+    let db = helper.dir().join("home").join("data").join("soksak.db");
+    let conn = rusqlite::Connection::open(&db).expect("저장소");
+    let n: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM records WHERE ns='core' AND coll='activity'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("세기");
+    assert_eq!(n, 1, "적재는 됐는데 남지 않았다");
+
+    let doc: String = conn
+        .query_row(
+            "SELECT doc FROM records WHERE ns='core' AND coll='activity'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("읽기");
+    let v: serde_json::Value = serde_json::from_str(&doc).expect("json");
+    assert_eq!(v["seq"].as_u64(), Some(seq), "도장 찍힌 항목 그대로여야 한다");
+    assert_eq!(v["kind"], "boot.step");
+
+    // 재개 지점이 저장소에서 온다 — 남지 않으면 다음 프로세스가 0 부터 매긴다.
+    let second = helper.ask(json!({
+        "method": "activity_publish",
+        "params": { "kind": "boot.step", "source": "boot", "payload": { "step": "done" } }
+    }));
+    assert_eq!(second["data"]["seq"].as_u64(), Some(seq + 1), "{second}");
+}
+
+/// 미디어 base64 는 남기지 않는다 — 원장은 관찰 요약이지 사본이 아니다.
+#[test]
+fn a_stored_entry_is_a_summary_not_a_copy() {
+    let helper = spawn_helper("activity-summary");
+    helper.ask(json!({
+        "method": "activity_publish",
+        "params": { "kind": "k", "source": "core",
+                    "payload": { "media": { "base64": "AAAA", "mime": "image/png" } } }
+    }));
+    let db = helper.dir().join("home").join("data").join("soksak.db");
+    let conn = rusqlite::Connection::open(&db).expect("저장소");
+    let doc: String = conn
+        .query_row("SELECT doc FROM records WHERE coll='activity'", [], |r| r.get(0))
+        .expect("읽기");
+    assert!(!doc.contains("AAAA"), "base64 가 그대로 남았다: {doc}");
+    assert!(doc.contains("image/png"), "kind 는 남아야 한다: {doc}");
+}

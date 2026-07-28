@@ -312,6 +312,14 @@ pub struct Unserved {
 /// 옮기려다 막힌 것들. 여기 있는 이름이 표로 올라가려면 사유가 먼저 사라져야 한다.
 pub const UNSERVED: &[Unserved] = &[
     Unserved {
+        name: "secret_status",
+        blocked_by: "볼트를 연 프로세스의 상태(SecretsState)를 읽는다. 이 프로세스는 볼트를 열지 \
+                     않는다 — 부팅이 키체인을 건드리지 않는 것이 규칙이고(2d06843f), 여는 순간 \
+                     KEK 의 수명이 cored 의 수명이 된다. 저장소의 봉인 메타로 답하면 '봉인 가능' \
+                     여부를 알 수 없다: 그것은 파일이 아니라 열린 키가 있는가의 문제라서, 같은 \
+                     모양의 답이 잠긴 볼트를 열려 있다고 말하게 된다.",
+    },
+    Unserved {
         name: "activity_recent",
         blocked_by: "읽는 출처가 앱 프로세스 안의 링버퍼(ActivityHub)다. 저장소에도 항목이 있지만 \
                      둘은 같은 것이 아니다 — 링은 적재 순간부터 담고 지속에 실패한 항목도 회수 큐로 \
