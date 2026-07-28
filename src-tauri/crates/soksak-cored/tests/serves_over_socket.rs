@@ -2257,3 +2257,41 @@ fn a_slow_command_does_not_block_the_rest_of_its_connection() {
         started.elapsed().as_millis()
     );
 }
+
+/// `system.hello` 가 **앱과 같은 축**을 답한다.
+///
+/// 부르는 쪽은 규약이 아니라 답으로 위상을 안다. 축이 빠지면 그 클라이언트는 두 소켓에 서로
+/// 다른 코드를 써야 하고, 그것이 두 번째 진실이다 — 실측(2026-07-29): 기존 P0 계약 하니스가
+/// 이 소켓에서 appVersion·identity·startedAt·capabilities 없음으로 5건 실패했다.
+///
+/// `framework` 는 예외다. 이 프로세스에는 프레임워크가 없고, 모르는 것을 말하지 않는 것이
+/// 이 축의 규칙이다(`role: "cored"` 가 그 사실을 이미 말한다).
+#[test]
+fn hello_answers_the_same_axes_as_the_app() {
+    let h = spawn_helper("hello-axes");
+    let r = h.ask(json!({ "id": 1, "method": "system.hello" }));
+    assert_eq!(r["ok"], true, "{r}");
+    for key in [
+        "protocol",
+        "minClientProtocol",
+        "appVersion",
+        "identity",
+        "pid",
+        "startedAt",
+        "role",
+        "capabilities",
+    ] {
+        assert!(!r[key].is_null(), "{key} 가 없다: {r}");
+    }
+    assert_eq!(r["role"], "cored");
+    // 정체성은 부팅 인자로 받은 그것이라야 한다 — 지어내면 두 프로세스가 다른 홈을 말한다.
+    assert_eq!(r["identity"], "com.soksak.dev");
+    assert!(
+        r["capabilities"].as_array().is_some_and(|c| c.iter().any(|v| v == "hello.v1")),
+        "능력 목록에 hello.v1 이 없다: {r}"
+    );
+    // 기동 시각은 과거의 한 순간이다 — 0 이면 "모른다"를 값으로 답한 것이다.
+    assert!(r["startedAt"].as_u64().is_some_and(|t| t > 0), "{r}");
+    // 이 프로세스에는 프레임워크가 없다 — 모르는 것을 말하지 않는다.
+    assert!(r["framework"].is_null(), "프레임워크를 지어냈다: {r}");
+}

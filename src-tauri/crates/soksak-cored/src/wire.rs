@@ -39,25 +39,48 @@ pub fn err_reply(code: &str, message: &str) -> Value {
     json!({ "ok": false, "code": code, "message": message })
 }
 
-/// 이 프로세스가 무엇인지 — 판 숫자는 계약 크레이트에서, 신원은 자기 자신에서.
-/// `role` 이 있어야 프레임워크가 앱 소켓과 cored 소켓을 답만 보고 구분한다.
-fn hello_facts() -> Value {
+/// 이 프로세스 기동 시각(ms) — 부팅에서 한 번 정해진다. hello 의 startedAt.
+static STARTED_AT: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+
+fn started_at_ms() -> u64 {
+    *STARTED_AT.get_or_init(|| {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0)
+    })
+}
+
+/// 이 프로세스가 무엇인지 — 판 숫자는 계약 크레이트에서, 신원은 부팅 인자에서.
+///
+/// **앱과 같은 축을 답한다.** 부르는 쪽은 규약이 아니라 답으로 위상을 안다 — 축이 빠지면 그
+/// 클라이언트는 두 소켓에 서로 다른 코드를 써야 하고, 그것이 두 번째 진실이다.
+///
+/// `framework` 만 없다. 이 프로세스에는 프레임워크가 없고, 모르는 것을 말하지 않는 것이 이
+/// 축의 규칙이다 — `role: "cored"` 가 그 사실을 이미 말한다.
+fn hello_facts(ctx: &Ctx) -> Value {
     json!({
         "protocol": SOCKET_PROTOCOL_VERSION,
         "minClientProtocol": MIN_COMPATIBLE_CLIENT_PROTOCOL,
+        // 버전은 이 실행물의 것이다 — 앱의 appVersion 과 같은 자리에, 이 프로세스의 사실로.
+        "appVersion": env!("CARGO_PKG_VERSION"),
+        "identity": ctx.identity().identifier(),
+        "pid": std::process::id(),
+        "startedAt": started_at_ms(),
         "role": "cored",
         "backend": env!("CARGO_PKG_NAME"),
         "backendVersion": env!("CARGO_PKG_VERSION"),
-        "pid": std::process::id(),
+        // 전송층 행위만 싣는다 — 기능 발견은 cored.commands 가 정본이다.
+        "capabilities": ["hello.v1"],
     })
 }
 
 /// transport 즉답 — 명령 표에 닿기 전에 답이 정해지는 것들.
 /// ① system.hello: 스큐 게이트 면제. 스큐된 클라이언트가 두 판 숫자를 배울 유일한 통로다.
 /// ② VERSION_SKEW: 호환창 밖 요청은 명령을 실행하지 않는다.
-fn transport_route(req: &Request) -> Option<Value> {
+fn transport_route(ctx: &Ctx, req: &Request) -> Option<Value> {
     if req.method == "system.hello" {
-        let mut reply = hello_facts();
+        let mut reply = hello_facts(ctx);
         if let Some(obj) = reply.as_object_mut() {
             obj.insert("ok".into(), json!(true));
         }
@@ -80,7 +103,10 @@ fn transport_route(req: &Request) -> Option<Value> {
     )?;
     let mut reply = err_reply("VERSION_SKEW", &sentence);
     reply["data"] = json!({
-        "helperProtocol": SOCKET_PROTOCOL_VERSION,
+        // 이름은 앱과 같다. 뜻은 "지금 말하고 있는 서버의 판"이고, 어느 서버인지는 hello 의
+        // role 이 말한다 — 같은 사실에 이름이 둘이면 클라이언트가 두 소켓에 두 코드를 쓴다.
+        // 사람이 읽는 문장은 갈려도 된다("this helper" vs "this app"); 기계가 읽는 자리는 아니다.
+        "appProtocol": SOCKET_PROTOCOL_VERSION,
         "minClientProtocol": MIN_COMPATIBLE_CLIENT_PROTOCOL,
         "clientProtocol": declared,
     });
@@ -240,7 +266,7 @@ fn answer_with(ctx: &Ctx, line: &str, conn: ConnRef<'_>) -> Value {
         Ok(r) => r,
         Err(e) => return err_reply("INVALID_PARAMS", &format!("JSON 파싱 실패: {e}")),
     };
-    let mut reply = transport_route(&req).unwrap_or_else(|| route(ctx, &req, line, conn));
+    let mut reply = transport_route(ctx, &req).unwrap_or_else(|| route(ctx, &req, line, conn));
     if let (Some(id), Some(obj)) = (req.id.clone(), reply.as_object_mut()) {
         obj.insert("id".into(), id);
     }
