@@ -7,8 +7,9 @@
 // 규칙: 백엔드가 아직 없는 명령은 **조용히 성공한 척하지 않는다**. 이름을 달아 실패하고
 // 요구 원장에 남긴다 — 가짜 성공은 "돌아간다"는 착시를 만들고, 그 착시가 이식 판단을 망친다.
 //
-// 다만 전부가 백엔드의 것은 아니다. 창·웹뷰·네이티브 표면(NATIVE 표)은 셸이 스스로 답한다 —
-// cored 프로세스엔 창이 없어 영영 그리로 못 간다. 그 표는 소켓 앞에 선다.
+// 다만 전부가 백엔드의 것은 아니다. 창·웹뷰·네이티브 표면은 셸이 스스로 답한다 — cored
+// 프로세스엔 창이 없어 영영 그리로 못 간다. 그 표는 electron/native/ 가 갈래별로 소유하고,
+// 소켓 앞에 선다. 이 파일은 표를 쥐지 않는다 — 배선(창 레지스트리·다리·원장)만 쥔다.
 
 const { app, BrowserWindow, dialog, ipcMain, screen } = require("electron");
 const path = require("node:path");
@@ -17,6 +18,8 @@ const os = require("node:os");
 const { createBackendClient, resolveSocketPath } = require("./backend.cjs");
 const { shellIdentity, coredBinary, ensureCored } = require("./cored.cjs");
 const activity = require("./activity.cjs");
+const native = require("./native/index.cjs");
+const { shellError } = native;
 
 const DEV_URL = process.env.SOKSAK_ELECTRON_URL || "http://localhost:1420";
 
@@ -30,7 +33,12 @@ fs.mkdirSync(SPIKE_HOME, { recursive: true });
 
 /** 창 라벨 ↔ BrowserWindow. 라벨은 앱의 정체성 축이므로 셸이 부여하고 지킨다. */
 const windows = new Map();
-let seq = 0;
+
+/** 부팅 창의 라벨 — 컨트롤 플레인의 예약어다(NAMING 4b). 프론트는 이 이름 하나로 컨트롤 플레인
+ *  분기를 타고(src/main.tsx), 거기서만 첫 실행 부트스트랩과 워크스페이스 리스폰이 돈다
+ *  (src/state/windowBoot.ts). 다른 이름을 주면 그 분기가 영영 거짓이라 앱이 부팅만 하고 만다.
+ *  워크스페이스 창은 이 이름을 쓰지 않는다 — 그쪽은 w-<uuid> 다. */
+const CONTROL_PLANE_LABEL = "main";
 
 /** UI 가 백엔드에 요구한 명령을 순서대로 남긴다 — 2단계 우선순위의 실측 근거.
  *  서빙된 것(served:true)과 못 한 것을 가르고, 못 한 것은 사유(code)까지 남긴다 — "cored 가
@@ -74,150 +82,15 @@ function windowFor(label) {
 }
 
 // ── 셸의 것 — 네이티브 명령 ──────────────────────────────────────────────────
-// 창·웹뷰·네이티브 표면 명령은 cored 로 갈 수 없다: 다른 프로세스엔 창이 없다. 그래서 이 표가
-// 소켓 앞에 선다. 표는 두 줄만 구분한다.
-//
-//   answer — 이 셸이 아는 사실. Electron API 나 셸 자신의 레지스트리가 답한다.
-//   absent — 이 셸에 대응 개념이 없다. 이름(SHELL_CONCEPT_ABSENT)을 달고 거절한다.
-//
-// 없는 것을 조용히 성공시키지 않는 이유: UI 는 성공을 받으면 그 기능이 있다고 믿고 그 믿음대로
-// 그린다(홀 위에 그리는 강조 바, 오버레이 게이트에 기대는 모달). 없다고 답해야 UI 가 그에 맞게
-// 그릴 수 있고, 그 사유는 shell_capabilities 로 읽힌다.
-//
-// "부재"를 답으로 쓰는 기준: 셸이 **증명할 수 있는 부재**만 값으로 답한다(자기가 만든 것의
-// 목록이 비었다 = 실측). 관측할 수단조차 없는 것(사이드카가 창에 붙이는 엔진 서피스)은 0 을
-// 돌려주지 않는다 — 재지 않은 것을 쟀다고 말하는 것이 곧 가짜 성공이다.
-const ABSENT_CODE = "SHELL_CONCEPT_ABSENT";
+// 표는 electron/native/ 가 갈래별로 소유한다(window·webview·engine·titlebar). 이 파일이 주는
+// 것은 셸만 아는 문맥뿐이다: 부른 창, 그리고 셸이 라벨을 부여한 표면들의 목록.
 
-function shellError(code, message) {
-  const e = new Error(message);
-  e.code = code;
-  return e;
-}
-
-const NATIVE = {
-  // 창 배경 — Tauri window.set_background_color 의 대응. 루트 DOM 이 투명이라 미도장 영역의
-  // 색을 창이 책임진다. 기준(#rrggbb 6자리)은 코어와 같게 둔다: 같은 색 문자열에 두 셸이
-  // 다르게 답하면 테마가 셸마다 달라진다.
-  window_set_background: {
-    concept: "창 배경색",
-    source: "BrowserWindow.setBackgroundColor",
-    answer: (ctx, args) => {
-      const raw = String(args.color ?? "").trim();
-      const hex = raw.replace(/^#/, "");
-      if (!/^[0-9a-fA-F]{6}$/.test(hex)) {
-        throw shellError("INVALID_COLOR", `hex 색상(#rrggbb)이 아님: ${raw}`);
-      }
-      // 부른 창을 못 짚으면 아무 창도 칠하지 않는다 — 아무 창이나 칠하면 남의 창을 바꿔 놓고
-      // 성공을 돌려주게 된다(코어는 호출 창을 자동 주입한다).
-      if (!ctx.window) throw shellError("NO_WINDOW", "부른 창을 짚지 못했다");
-      ctx.window.setBackgroundColor(`#${hex.toLowerCase()}`);
-      return null;
-    },
-  },
-
-  // 브라우저 자식 웹뷰 목록(b-*). 프론트 GC 가 "살아있는 웹뷰 ⊆ 스토어의 뷰"를 대조한다.
-  // 셸은 자기가 라벨을 준 표면만 안다 — 그 레지스트리를 접두사로 거른 결과가 답이다. 이 셸은
-  // 아직 자식 뷰를 만들지 않아 오늘 답은 빈 목록이고, 그 빈 목록은 가정이 아니라 실측이다.
-  webview_list: {
-    concept: "브라우저 자식 웹뷰 목록",
-    source: "셸 표면 레지스트리(셸이 라벨을 부여한 창·뷰)",
-    answer: () => [...windows.keys()].filter((l) => l.startsWith("b-")),
-  },
-
-  // 복구 리로드 in-flight 1회 소모 — 프론트 GC 가 부팅 시 읽어 스윕을 보류한다.
-  // 이 셸은 크래시 복구 리로드를 시작하지 않는다 → in-flight 집합이 비어 있음을 셸이 증명한다.
-  // 관측 수단이 없어서가 아니라 만든 적이 없어서 비었다 — 그래서 false 가 지어낸 답이 아니다.
-  webview_recovery_consume: {
-    concept: "복구 리로드 in-flight 플래그",
-    source: "셸이 웹뷰 수명을 소유한다 — 이 셸은 복구 리로드를 시작하지 않는다",
-    answer: () => false,
-  },
-
-  // 능력면 — UI 가 그리기 전에 물어볼 수 있는 자리. 표 자체가 답이라 선언과 행동이 갈릴 수 없다.
-  shell_capabilities: {
-    concept: "셸 네이티브 명령 능력표",
-    source: "이 표",
-    answer: () => ({
-      shell: "electron",
-      commands: Object.fromEntries(
-        Object.entries(NATIVE).map(([cmd, e]) => [
-          cmd,
-          e.absent
-            ? { supported: false, concept: e.concept, reason: e.absent }
-            : { supported: true, concept: e.concept, source: e.source },
-        ]),
-      ),
-    }),
-  },
-
-  // ── 대응 개념이 없는 것들 ──────────────────────────────────────────────────
-
-  // 신호등 뒤 백킹(macOS): 비활성 점의 backdrop 합성이 웹뷰 레이어를 못 샘플링해 생기는 유령을
-  // 테마색 원형 뷰로 메우는 보정. Electron 의 신호등 API 는 위치·가시성뿐(trafficLightPosition·
-  // setWindowButtonPosition·setWindowButtonVisibility) — 뒤에 무엇을 깔 자리가 없다.
-  // setBackgroundColor 는 이것의 대응이 아니다: 그쪽은 창 배경(window_set_background)이고 색도
-  // 다르다(bg vs side). 한 표면에 둘을 쓰면 나중 호출이 창 전체를 타이틀바 색으로 칠한다.
-  titlebar_backing: {
-    concept: "신호등 뒤 백킹 색",
-    absent:
-      "Electron 의 신호등 API 는 위치·가시성뿐이라 버튼 뒤에 뷰를 깔 자리가 없다. setBackgroundColor 는 창 배경(window_set_background)의 대응이며 색이 다르다(bg vs side) — 겸용하면 창 전체가 타이틀바 색이 된다. setTitleBarOverlay 는 win32/linux 전용이고 Window Controls Overlay 창을 요구한다.",
-  },
-
-  // 오버레이(모달·메뉴) 동안 홀 통과 차단 + 사이드카 표면 가림 통지. 이 셸엔 게이트가 덮을
-  // 홀 자체가 없고(webview_dom_holes 부재), 사이드카 중계도 셸의 것이 아니다.
-  webview_overlay_active: {
-    concept: "오버레이 히트테스트 게이트",
-    absent:
-      "이 셸엔 게이트가 덮을 홀이 없다(영역 히트테스트 부재) — 메인 웹뷰 아래 네이티브 자식이 없고, 사이드카 표면 통지도 셸의 것이 아니다.",
-  },
-
-  // 영역 단위 히트테스트 통과. Electron 의 마우스 통과는 창 단위(setIgnoreMouseEvents — 창의
-  // *모든* 이벤트를 아래 **창**으로)뿐이라 "이 사각형만 DOM 이 받는다"를 표현할 수 없다.
-  webview_dom_holes: {
-    concept: "영역 단위 히트테스트 홀",
-    absent:
-      "Electron 의 마우스 통과는 창 단위(setIgnoreMouseEvents)뿐이고 대상도 아래 창이다 — 사각형 단위 통과가 없어 홀 계약을 재현할 수 없다.",
-  },
-
-  // 네이티브 자식 위에 그리는 강조 바. Electron 엔 페이지 위에 네이티브를 그리는 자리가 없다.
-  webview_divider_highlight: {
-    concept: "네이티브 디바이더 강조 바",
-    absent:
-      "Electron 엔 페이지 위에 네이티브 바를 그리는 API 가 없다 — 강조는 DOM 이 그려야 하고, 그 판단은 UI 의 것이다.",
-  },
-
-  // CEF 엔진 호스트 뷰의 숨김/복귀. 이 셸엔 사이드카 표면을 창에 붙이는 배선이 없어 호스트가 없다.
-  engine_host_visible: {
-    concept: "엔진 호스트 뷰 가시성",
-    absent: "이 셸엔 엔진 호스트 뷰가 없다 — 사이드카 표면을 창에 붙이는 배선이 없다.",
-  },
-
-  // 엔진 서피스 실측(가시성·frame). 이 셸은 엔진 서피스를 등록받지 않으므로 셀 대상이 없는 게
-  // 아니라 **볼 눈이 없다**. registered:0 을 돌려주면 재지 않은 것을 쟀다고 말하게 되고, 표면
-  // 감사는 그 0 으로 "보여야 할 것이 안 보인다"는 없는 결함을 발행한다.
-  engine_surface_stats: {
-    concept: "엔진 서피스 실측",
-    absent:
-      "이 셸은 엔진 서피스를 등록받지 않는다 — 0 을 돌려주면 재지 않은 것을 쟀다고 말하게 되고, 표면 감사가 없는 결함을 발행한다.",
-  },
-};
-
-/** 네이티브 명령 한 건. 답도 거절도 원장에 셸의 것으로 남는다. */
-function serveNative(cmd, entry, args, sender) {
-  if (entry.absent) {
-    recordDemand(cmd, false, ABSENT_CODE, "shell");
-    return { ok: false, code: ABSENT_CODE, message: `${entry.concept}: ${entry.absent}`, command: cmd };
-  }
-  try {
-    const value = entry.answer({ window: BrowserWindow.fromWebContents(sender) }, args ?? {});
-    recordDemand(cmd, true, undefined, "shell");
-    return { ok: true, value };
-  } catch (e) {
-    const code = e.code || "ERROR";
-    recordDemand(cmd, false, code, "shell");
-    return { ok: false, code, message: String(e.message || e), command: cmd };
-  }
+/** 네이티브 명령이 셸에게 물을 수 있는 것. 표 항목은 이 문맥으로만 셸을 본다. */
+function nativeContext(sender) {
+  return {
+    window: BrowserWindow.fromWebContents(sender),
+    surfaces: () => [...windows.keys()],
+  };
 }
 
 // ── 백엔드 다리 ──────────────────────────────────────────────────────────────
@@ -304,8 +177,10 @@ function fanOutActivity(entry) {
 
 ipcMain.handle("shell:invoke", async (e, { cmd, args }) => {
   // 셸의 것이 먼저다 — 창·웹뷰·네이티브 표면은 소켓 너머로 물어볼 수 없다(거기엔 창이 없다).
-  const native = NATIVE[cmd];
-  if (native) return serveNative(cmd, native, args, e && e.sender);
+  // 판별은 이름으로 한다: 셸 갈래는 표에 없더라도 소켓으로 새지 않는다.
+  if (native.claims(cmd)) {
+    return native.serve(cmd, args, nativeContext(e && e.sender), recordDemand);
+  }
   try {
     const value = await callBackend(cmd, args);
     // 답을 돌려주기 전에 뿌린다 — 코어도 발행 안에서 창에 먼저 닿고 반환은 그다음이라,
@@ -433,7 +308,7 @@ function wireWindowEvents(label, win) {
 }
 
 app.whenReady().then(() => {
-  const label = `w-electron-${++seq}`;
+  const label = CONTROL_PLANE_LABEL;
   const win = createWindow(label);
   wireWindowEvents(label, win);
   console.log(`[electron-spike] 창 ${label} → ${DEV_URL}`);

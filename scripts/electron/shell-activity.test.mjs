@@ -141,8 +141,15 @@ function loadPreload() {
       ipcRenderer: { on: (ch, fn) => channels.set(ch, fn), invoke: () => Promise.resolve() },
     },
   };
-  delete requireCjs.cache[PRELOAD];
-  requireCjs(PRELOAD);
+  // 셸은 창을 만들 때 라벨을 주입한다 — 프리로드는 그것 없이는 적재되지 않는다(폴백 없음).
+  const realArgv = process.argv;
+  process.argv = [...realArgv, "--soksak-window-label=main"];
+  try {
+    delete requireCjs.cache[PRELOAD];
+    requireCjs(PRELOAD);
+  } finally {
+    process.argv = realArgv;
+  }
   return { bridge: exposed.__soksakShell, channels };
 }
 

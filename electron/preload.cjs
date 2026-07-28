@@ -6,8 +6,17 @@
 
 const { contextBridge, ipcRenderer } = require("electron");
 
-const labelArg = process.argv.find((a) => a.startsWith("--soksak-window-label="));
-const label = labelArg ? labelArg.split("=")[1] : "main";
+// 이 창의 라벨. 셸이 창을 만들 때 주입한다(additionalArguments) — 여기서 짓지 않는다.
+//
+// 폴백하지 않는 이유: "main" 은 컨트롤 플레인의 예약어다. 주입이 빠진 창이 그 이름으로 살면
+// 두 창이 같은 이름을 갖고, 라벨로 지목하는 창 명령이 엉뚱한 창에 닿는다. 주입 부재는 셸의
+// 결함이므로 여기서 즉시 드러낸다 — 조용히 이어 가면 그 결함이 창 하나만큼 늦게 보인다.
+const LABEL_FLAG = "--soksak-window-label=";
+const labelArg = process.argv.find((a) => a.startsWith(LABEL_FLAG));
+const label = labelArg ? labelArg.slice(LABEL_FLAG.length) : "";
+if (!label) {
+  throw new Error(`셸이 창 라벨을 주입하지 않았다 (${LABEL_FLAG}<label>) — 폴백하지 않는다`);
+}
 
 /** 전역 이벤트 구독자 — 셸이 밀어 주는 브로드캐스트를 이름별로 나눈다. */
 const listeners = new Map();

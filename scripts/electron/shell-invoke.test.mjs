@@ -182,6 +182,21 @@ describe("shell:invoke — 렌더러가 보는 답", () => {
     ]);
   });
 
+  it("셸 갈래가 아닌 이름은 여전히 다리를 탄다 — 갈래 규칙이 백엔드의 것을 삼키지 않는다", async () => {
+    // 셸 갈래(window_·webview_·engine_·titlebar_·panel_)는 소켓 앞에서 걸린다. 그 규칙이
+    // 넓으면 백엔드의 명령까지 SHELL_CONCEPT_ABSENT 로 죽고, 증상은 "백엔드가 답을 안 한다"로
+    // 보인다. 근처 이름까지 실제로 다리를 타는지 본다.
+    const mock = await startMock("through.sock", (req, sock) =>
+      sock.write(`${JSON.stringify({ id: req.id, ok: true, data: req.method })}\n`),
+    );
+    const handlers = loadShell(mock.socketPath);
+    const through = ["project_owners", "windows_list", "webviews_scan", "enginex_stats", "panels"];
+    for (const cmd of through) {
+      await expect(invoke(handlers, cmd, {})).resolves.toEqual({ ok: true, value: cmd });
+    }
+    expect(mock.seen.map((r) => r.method)).toEqual(through);
+  });
+
   it("원장은 서빙된 것과 못 한 것을 한 파일에서 가른다", async () => {
     // cored가 무엇을 더 져야 하는가 = 못 한 것들의 목록이다. 둘이 섞이면 그 목록이 안 나온다.
     const mock = await startMock("mixed.sock", (req, sock) => {

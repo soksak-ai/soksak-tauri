@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import net from "node:net";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
@@ -21,10 +21,14 @@ const requireCjs = createRequire(import.meta.url);
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MAIN = join(HERE, "../../electron/main.cjs");
 const BACKEND = join(HERE, "../../electron/backend.cjs");
+const PRELOAD = join(HERE, "../../electron/preload.cjs");
 const ELECTRON = requireCjs.resolve("electron");
 const osModule = requireCjs("node:os");
 
 const ABSENT = "SHELL_CONCEPT_ABSENT";
+const LABEL_FLAG = "--soksak-window-label=";
+/** 컨트롤 플레인 예약어. 부트스트랩 창은 이 라벨이어야 프론트의 컨트롤 플레인 분기가 돈다. */
+const CONTROL_PLANE = "main";
 
 let root;
 let servers;
@@ -32,8 +36,10 @@ let realHomedir;
 let realSocketEnv;
 let realHelperEnv;
 
-/** 목 백엔드 — 이 파일에서는 "여기로 오면 안 된다"를 증명하는 용도다(seen 이 비어야 한다). */
-function startMock(name) {
+/** 목 백엔드 — 이 파일에서는 "여기로 오면 안 된다"를 증명하는 용도다(seen 이 비어야 한다).
+ *  reply 를 주면 그 답을 돌려준다: 새는 명령이 무엇을 받는지까지 고정해야 ok:false 만 보는
+ *  단언이 통과로 위장하는 것을 가른다(cored 는 모르는 이름에 UNKNOWN_COMMAND 로 답한다). */
+function startMock(name, reply) {
   const socketPath = join(root, name);
   const seen = [];
   const server = net.createServer((sock) => {
@@ -47,7 +53,10 @@ function startMock(name) {
         if (!line.trim()) continue;
         const req = JSON.parse(line);
         seen.push(req);
-        sock.write(`${JSON.stringify({ id: req.id, ok: true, data: "백엔드가 답했다" })}\n`);
+        const body = reply
+          ? reply(req)
+          : { id: req.id, ok: true, data: "백엔드가 답했다" };
+        sock.write(`${JSON.stringify({ id: req.id, ...body })}\n`);
       }
     });
     sock.on("error", () => {});
@@ -55,6 +64,13 @@ function startMock(name) {
   servers.push(server);
   return new Promise((resolve) => server.listen(socketPath, () => resolve({ socketPath, seen })));
 }
+
+/** cored 가 모르는 이름에 답하는 그대로. 새면 이 코드가 돌아온다 — ABSENT 와 갈린다. */
+const unknownCommand = (req) => ({
+  ok: false,
+  code: "UNKNOWN_COMMAND",
+  message: `모르는 명령: ${req.method}`,
+});
 
 /** 창 대역 — 셸이 만지는 자리를 그대로 기록한다. */
 function fakeWindow() {
@@ -67,22 +83,53 @@ function fakeWindow() {
   };
 }
 
-/** 셸을 적재하고 ipcMain 핸들러를 돌려준다 — 렌더러가 잡는 그 손잡이다. */
-function loadShell(socketPath) {
+/** 부팅 창 대역 — 셸이 창을 만들 때 넘긴 것을 그대로 붙잡는다(라벨은 생성 인자에 실린다). */
+function bootWindowClass(created) {
+  return class {
+    constructor(opts) {
+      this.opts = opts;
+      this.webContents = { send: () => {} };
+      created.push(this);
+    }
+    once() {}
+    on() {}
+    show() {}
+    isDestroyed() {
+      return false;
+    }
+    getBounds() {
+      return { x: 0, y: 0, width: 1200, height: 800 };
+    }
+    loadURL() {
+      return Promise.resolve();
+    }
+    setBackgroundColor() {}
+    static fromWebContents(wc) {
+      return (wc && wc.__win) || null;
+    }
+  };
+}
+
+/** 셸을 적재하고 ipcMain 핸들러를 돌려준다 — 렌더러가 잡는 그 손잡이다.
+ *  boot 를 주면 whenReady 를 풀어 부팅 창까지 만들게 하고, 만들어진 창을 boot.created 에 담는다. */
+function loadShell(socketPath, boot) {
   const handlers = new Map();
   const stub = {
     app: {
-      whenReady: () => new Promise(() => {}), // 창을 만들지 않는다
+      // boot 가 없으면 창을 만들지 않는다(풀리지 않는 약속).
+      whenReady: () => (boot ? Promise.resolve() : new Promise(() => {})),
       on: () => {},
       getName: () => "soksak-electron-spike",
       getVersion: () => "0.0.0",
     },
-    BrowserWindow: class {
-      // 발신 웹콘텐츠 → 창. 렌더러가 부른 창을 셸이 어떻게 짚는지가 그대로 드러난다.
-      static fromWebContents(wc) {
-        return (wc && wc.__win) || null;
-      }
-    },
+    BrowserWindow: boot
+      ? bootWindowClass(boot.created)
+      : class {
+          // 발신 웹콘텐츠 → 창. 렌더러가 부른 창을 셸이 어떻게 짚는지가 그대로 드러난다.
+          static fromWebContents(wc) {
+            return (wc && wc.__win) || null;
+          }
+        },
     dialog: {},
     ipcMain: { handle: (channel, fn) => handlers.set(channel, fn) },
     screen: { getDisplayMatching: () => ({ scaleFactor: 1 }) },
@@ -96,8 +143,21 @@ function loadShell(socketPath) {
   process.env.SOKSAK_CORED_BIN = join(root, "no-such-helper");
   delete requireCjs.cache[MAIN];
   delete requireCjs.cache[BACKEND];
+  for (const m of nativeModules()) delete requireCjs.cache[m];
   requireCjs(MAIN);
   return handlers;
+}
+
+/** 이미 적재된 native/*.cjs — 표는 여러 파일에서 합쳐지므로 캐시도 전부 비워야 재적재된다. */
+function nativeModules() {
+  return Object.keys(requireCjs.cache).filter((p) => p.includes(`${sep}electron${sep}native${sep}`));
+}
+
+/** 창 라벨은 생성 인자로 프리로드에 실린다 — 셸이 부여한 라벨의 실물이다. */
+function labelOf(win) {
+  const args = win.opts?.webPreferences?.additionalArguments ?? [];
+  const arg = args.find((a) => String(a).startsWith(LABEL_FLAG));
+  return arg ? String(arg).slice(LABEL_FLAG.length) : null;
 }
 
 /** 렌더러의 호출 — 발신 창까지 실어 보낸다(셸은 부른 창을 알아야 한다). */
@@ -141,6 +201,7 @@ afterEach(() => {
   delete requireCjs.cache[MAIN];
   delete requireCjs.cache[BACKEND];
   delete requireCjs.cache[ELECTRON];
+  for (const m of nativeModules()) delete requireCjs.cache[m];
   for (const s of servers) s.close();
   rmSync(root, { recursive: true, force: true });
 });
@@ -217,6 +278,27 @@ describe("대응이 없는 것 — 없다고 값으로 말한다", () => {
 });
 
 describe("표 — UI 가 읽을 수 있는 능력면", () => {
+  // 표는 갈래마다 한 파일이다(electron/native/*.cjs). 파일이 갈려도 UI 가 보는 키 집합은
+  // 하나여야 한다 — 한 파일이 조립에서 빠지면 그 갈래가 통째로 사라지고, UI 는 없는 줄도 모른다.
+  const DECLARED = [
+    "window_set_background",
+    "webview_list",
+    "webview_recovery_consume",
+    "webview_overlay_active",
+    "webview_dom_holes",
+    "webview_divider_highlight",
+    "engine_host_visible",
+    "engine_surface_stats",
+    "titlebar_backing",
+    "shell_capabilities",
+  ];
+
+  it("갈래 파일로 갈라도 키 집합은 그대로다", async () => {
+    const handlers = loadShell(null);
+    const r = await invoke(handlers, "shell_capabilities", {}, fakeWindow());
+    expect(Object.keys(r.value.commands).sort()).toEqual([...DECLARED].sort());
+  });
+
   it("shell_capabilities 가 명령별 지원 여부와 사유를 값으로 준다", async () => {
     const handlers = loadShell(null);
     const r = await invoke(handlers, "shell_capabilities", {}, fakeWindow());
@@ -242,6 +324,100 @@ describe("표 — UI 가 읽을 수 있는 능력면", () => {
       if (cap.supported) expect(r.code, `${cmd} 는 지원한다고 선언했다`).not.toBe(ABSENT);
       else expect(r.code, `${cmd} 는 미지원이라 선언했다`).toBe(ABSENT);
     }
+  });
+});
+
+describe("부팅 창 — 라벨은 컨트롤 플레인 예약어다", () => {
+  it("첫 창의 라벨이 main 이다 — 프론트의 컨트롤 플레인 분기가 이 이름 하나에 걸려 있다", async () => {
+    const created = [];
+    loadShell(null, { created });
+    await new Promise((r) => setTimeout(r, 0)); // whenReady 뒤 마이크로태스크
+    expect(created.length, "부팅 창이 만들어지지 않았다").toBe(1);
+    expect(labelOf(created[0])).toBe(CONTROL_PLANE);
+  });
+
+  it("부팅 창은 프리로드에 라벨을 주입한다 — 주입 없이는 렌더러가 자기 이름을 모른다", async () => {
+    const created = [];
+    loadShell(null, { created });
+    await new Promise((r) => setTimeout(r, 0));
+    const args = created[0].opts.webPreferences.additionalArguments;
+    expect(args.filter((a) => String(a).startsWith(LABEL_FLAG))).toHaveLength(1);
+  });
+});
+
+describe("프리로드 — 라벨 주입 부재는 실패다", () => {
+  /** 프리로드를 적재하고 렌더러에 노출된 것을 돌려준다. argv 는 셸이 넘기는 그 모양이다. */
+  function loadPreload(argv) {
+    const exposed = {};
+    requireCjs.cache[ELECTRON] = {
+      id: ELECTRON,
+      filename: ELECTRON,
+      loaded: true,
+      exports: {
+        contextBridge: { exposeInMainWorld: (k, v) => (exposed[k] = v) },
+        ipcRenderer: { on: () => {}, invoke: () => Promise.resolve() },
+      },
+    };
+    const realArgv = process.argv;
+    process.argv = argv;
+    try {
+      delete requireCjs.cache[PRELOAD];
+      requireCjs(PRELOAD);
+    } finally {
+      process.argv = realArgv;
+      delete requireCjs.cache[PRELOAD];
+    }
+    return exposed.__soksakShell;
+  }
+
+  it("주입된 라벨을 그대로 쓴다", () => {
+    const shell = loadPreload(["electron", ".", `${LABEL_FLAG}w-abc`]);
+    expect(shell.label).toBe("w-abc");
+  });
+
+  it("라벨 주입이 없으면 적재가 실패한다 — 조용한 main 폴백은 없다", () => {
+    // 폴백하면 라벨을 못 받은 창이 컨트롤 플레인 행세를 하고, 두 창이 같은 이름으로 산다.
+    expect(() => loadPreload(["electron", "."])).toThrow(/soksak-window-label/);
+  });
+
+  it("빈 라벨도 실패다 — 이름 없는 창은 창 명령의 대상이 될 수 없다", () => {
+    expect(() => loadPreload(["electron", ".", LABEL_FLAG])).toThrow(/soksak-window-label/);
+  });
+});
+
+describe("셸-갈래 미등재 — 소켓으로 새지 않는다", () => {
+  // 창·웹뷰·엔진·타이틀바·패널은 셸의 영역이다. 표에 없다고 소켓으로 흘려보내면 cored 가
+  // UNKNOWN_COMMAND 로 답하고, 그 이름은 "cored 가 더 져야 할 것"으로 요구 원장에 실린다 —
+  // 영영 옮길 수 없는 것(다른 프로세스엔 창이 없다)을 할 일 목록에 세우게 된다.
+  const UNLISTED = [
+    ["webview_visible", { visible: true }],
+    ["webview_bounds", { label: "b-1" }],
+    ["window_create", { label: "w-1" }],
+    ["engine_surface_hide", {}],
+    ["panel_focus", {}],
+  ];
+
+  it("이름을 달고 거절한다 — 소켓에 닿지 않는다", async () => {
+    // 백엔드는 모르는 이름에 UNKNOWN_COMMAND 로 답한다. ok:false 만 보면 새는 것도 통과한다 —
+    // 그래서 code 까지 본다.
+    const mock = await startMock("unlisted.sock", unknownCommand);
+    const handlers = loadShell(mock.socketPath);
+    for (const [cmd, args] of UNLISTED) {
+      const r = await invoke(handlers, cmd, args, fakeWindow());
+      expect(r.ok, `${cmd} 가 성공으로 위장했다`).toBe(false);
+      expect(r.code, cmd).toBe(ABSENT);
+      expect(r.command, cmd).toBe(cmd);
+    }
+    expect(mock.seen).toEqual([]);
+  });
+
+  it("요구 원장에 셸의 것으로 남는다 — cored 목록을 오염시키지 않는다", async () => {
+    const mock = await startMock("unlisted-ledger.sock", unknownCommand);
+    const handlers = loadShell(mock.socketPath);
+    await invoke(handlers, "webview_visible", { visible: true }, fakeWindow());
+    expect(ledger().map((l) => [l.cmd, l.served, l.by, l.code])).toEqual([
+      ["webview_visible", false, "shell", ABSENT],
+    ]);
   });
 });
 
