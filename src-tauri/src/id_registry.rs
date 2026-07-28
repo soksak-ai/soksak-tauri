@@ -69,6 +69,28 @@ impl IdRegistry {
     }
 }
 
+// ── 두 입구 ───────────────────────────────────────────────────────────────────
+// 레지스트리만 있으면 선다 — 봉투 조립까지 입구가 갖는다. 봉투가 커맨드 몸통에 있으면
+// 앱 밖 디스패처가 같은 답을 다시 조립하게 되고, 두 조립은 언젠가 갈린다.
+// 아래 `#[tauri::command]` 는 State 를 벗겨 넘기는 번역층이다(로직을 두지 않는다).
+
+pub(crate) fn declare_ids(
+    registry: &IdRegistry,
+    label: &str,
+    generation: u64,
+    ids: Vec<String>,
+) -> bool {
+    registry.declare(label, generation, ids)
+}
+
+pub(crate) fn resolve_id(registry: &IdRegistry, id: &str) -> serde_json::Value {
+    match registry.resolve(id) {
+        Resolution::One(label) => serde_json::json!({ "kind": "one", "window": label }),
+        Resolution::Many(labels) => serde_json::json!({ "kind": "many", "windows": labels }),
+        Resolution::None => serde_json::json!({ "kind": "none" }),
+    }
+}
+
 #[tauri::command]
 pub fn id_registry_declare(
     registry: tauri::State<IdRegistry>,
@@ -76,7 +98,7 @@ pub fn id_registry_declare(
     generation: u64,
     ids: Vec<String>,
 ) -> bool {
-    registry.declare(&label, generation, ids)
+    declare_ids(registry.inner(), &label, generation, ids)
 }
 
 #[tauri::command]
@@ -84,11 +106,7 @@ pub fn id_registry_resolve(
     registry: tauri::State<IdRegistry>,
     id: String,
 ) -> serde_json::Value {
-    match registry.resolve(&id) {
-        Resolution::One(label) => serde_json::json!({ "kind": "one", "window": label }),
-        Resolution::Many(labels) => serde_json::json!({ "kind": "many", "windows": labels }),
-        Resolution::None => serde_json::json!({ "kind": "none" }),
-    }
+    resolve_id(registry.inner(), &id)
 }
 
 pub fn on_window_destroyed(app: &tauri::AppHandle, label: &str) {
@@ -102,6 +120,31 @@ mod tests {
 
     fn ids(v: &[&str]) -> Vec<String> {
         v.iter().map(|s| s.to_string()).collect()
+    }
+
+    // 해소 결과의 봉투 모양은 커맨드 몸통이 아니라 입구가 갖는다 — 몸통에 두면 앱 밖
+    // 디스패처가 같은 답을 다시 조립하게 되고, 두 조립은 언젠가 갈린다.
+    #[test]
+    fn 해소_봉투는_state_없이_선다() {
+        let r = IdRegistry::default();
+        assert!(declare_ids(&r, "w-a", 1, ids(&["pan-aaaaaa"])));
+        assert_eq!(
+            resolve_id(&r, "pan-aaaaaa"),
+            serde_json::json!({ "kind": "one", "window": "w-a" })
+        );
+        assert!(declare_ids(&r, "w-b", 1, ids(&["pan-aaaaaa"])));
+        assert_eq!(
+            resolve_id(&r, "pan-aaaaaa"),
+            serde_json::json!({ "kind": "many", "windows": ["w-a", "w-b"] })
+        );
+        assert_eq!(
+            resolve_id(&r, "pan-zzzzzz"),
+            serde_json::json!({ "kind": "none" })
+        );
+        assert!(
+            !declare_ids(&r, "w-a", 0, ids(&["pan-old111"])),
+            "낮은 세대 거절도 입구가 그대로 돌려준다"
+        );
     }
 
     #[test]
