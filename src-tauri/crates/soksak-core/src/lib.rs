@@ -18,6 +18,7 @@
 //! 아무 명령도 답하지 못한다.
 
 pub mod activity;
+pub mod control;
 pub mod fsx;
 pub mod identity;
 pub mod integrity;

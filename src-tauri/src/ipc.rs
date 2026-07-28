@@ -176,17 +176,9 @@ fn last_workspace_window() -> Option<String> {
     LAST_WORKSPACE.lock().ok().and_then(|w| w.clone())
 }
 
-// 폴백이 갈 곳이 없거나 하나로 정해지지 않을 때의 거부.
-#[derive(Debug, PartialEq, Eq)]
-enum NoTarget {
-    // 플러그인 명령인데 워크스페이스 창이 하나도 없다(컨트롤 플레인은 플러그인을 싣지 않는다).
-    NoWorkspace,
-    // 어떤 명령도 받을 창이 하나도 없다(창 0).
-    NoWindow,
-    // 창이 여럿이라 하나로 정해지지 않는다 — 후보를 실어 되묻는다(R-B2: 배달층이 짐작하면
-    // 명령층의 금지는 무의미하다. "정렬 첫 창"은 결정적일 뿐 여전히 짐작이었다).
-    Ambiguous(Vec<String>),
-}
+// 거부의 종류도 코어가 소유한다 — 규칙과 그 결과가 갈리면 같은 상황에 다른 코드가 나간다.
+// (R-B2: 배달층이 짐작하면 명령층의 금지는 무의미하다. "정렬 첫 창"은 결정적일 뿐 여전히 짐작.)
+use soksak_core::control::NoTarget;
 
 // 창 폴백 해석(순수) — 명령이 window 를 생략했을 때의 타겟 결정.
 // 사다리는 전부 **살아있는 창 집합** 위에서만 걷는다. 포커스 기록은 창의 소멸을 모를 수 있는
@@ -197,47 +189,15 @@ enum NoTarget {
 // (main 포커스 중 스케줄 발화가 통째로 죽던 결함 — PLUGIN-SERVICE 입법 조사에서 확정).
 //   플러그인:   마지막 워크스페이스 창(살아있으면) → 워크스페이스 라벨 정렬 첫 항목 → NoWorkspace
 //   그 외:      포커스 창(살아있으면) → main(살아있으면) → 워크스페이스 정렬 첫 항목 → NoWindow
+// 타겟 해소 규칙은 코어가 소유한다 — cored 도 같은 소켓을 서빙하므로 두 벌이면 같은 하니스가
+// 프레임워크마다 다른 창에서 명령을 돌린다. 그 차이는 오류가 아니라 "엉뚱한 창이 반응함"이다.
 fn resolve_fallback_target(
     method: &str,
     focused: String,
     last_workspace: Option<String>,
     live: &[String],
 ) -> Result<String, NoTarget> {
-    // 워크스페이스 창 = w-* (NAMING §1-4b). main 은 예약어이지 워크스페이스가 아니다.
-    let mut workspaces: Vec<&String> = live.iter().filter(|l| l.starts_with("w-")).collect();
-    workspaces.sort();
-    let first_workspace = workspaces.first().map(|w| (*w).clone());
-
-    // 유일할 때만 창을 짚는다. 둘 이상이면 짐작하지 않고 후보를 실어 거절한다 —
-    // 활성(포커스·마지막 워크스페이스)은 "생략=활성"의 결정적 해소라 유지한다.
-    let sole_workspace = if workspaces.len() == 1 { first_workspace } else { None };
-    let ambiguous = || {
-        NoTarget::Ambiguous(workspaces.iter().map(|w| (*w).clone()).collect())
-    };
-
-    if !method.starts_with("plugin.") {
-        if live.iter().any(|l| l == &focused) {
-            return Ok(focused);
-        }
-        if live.iter().any(|l| l == "main") {
-            return Ok("main".to_string());
-        }
-        return match sole_workspace {
-            Some(w) => Ok(w),
-            None if workspaces.is_empty() => Err(NoTarget::NoWindow),
-            None => Err(ambiguous()),
-        };
-    }
-    if let Some(w) = last_workspace {
-        if workspaces.iter().any(|l| *l == &w) {
-            return Ok(w);
-        }
-    }
-    match sole_workspace {
-        Some(w) => Ok(w),
-        None if workspaces.is_empty() => Err(NoTarget::NoWorkspace),
-        None => Err(ambiguous()),
-    }
+    soksak_core::control::resolve_target(method, &focused, last_workspace.as_deref(), live)
 }
 
 fn parse_request(line: &str) -> Result<Request, String> {
