@@ -332,9 +332,10 @@
       "role": "harness",
       "class": "C",
       "surfaces": [
-        "window.snapshot"
+        "window.snapshot",
+        "pixel-oracle"
       ],
-      "note": "부팅·버전·발견 계약 여섯 가지. 다섯은 소켓만 쓰고, 마지막 하나가 캡처 바이트 크기로 백지를 가른다."
+      "note": "부팅·버전·발견 계약 여섯 가지. 다섯은 소켓만 쓰고, 마지막 하나가 캡처를 픽셀로 판정한다 — 바이트 크기는 성긴 화면을 백지로 오판했다(실측 57KB 실렌더)."
     },
     {
       "file": "project-rail.sh",
