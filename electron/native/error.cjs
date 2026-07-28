@@ -11,3 +11,8 @@ function frameworkError(code, message) {
 }
 
 module.exports = { ABSENT_CODE, frameworkError };
+
+/** 위임 — 그 개념은 있고 답하는 자리가 렌더러다. 부재와 반드시 다른 코드여야 한다:
+ *  같으면 "없는 기능"으로 읽혀 우회가 만들어진다. */
+const DELEGATED_CODE = "FRAMEWORK_DELEGATED";
+module.exports.DELEGATED_CODE = DELEGATED_CODE;

@@ -284,25 +284,13 @@ describe("대응이 없는 것 — 없다고 값으로 말한다", () => {
 describe("표 — UI 가 읽을 수 있는 능력면", () => {
   // 표는 갈래마다 한 파일이다(electron/native/*.cjs). 파일이 갈려도 UI 가 보는 키 집합은
   // 하나여야 한다 — 한 파일이 조립에서 빠지면 그 갈래가 통째로 사라지고, UI 는 없는 줄도 모른다.
+  // 표에서 직접 읽는다 — 손으로 적은 목록은 표가 늘 때마다 낡고, 그 낡음이 곧 거짓 GREEN 이다.
   const DECLARED = [
-    "window_set_background",
-    "window_list",
-    "window_create",
-    "window_close",
-    "window_focus",
-    "window_place",
-    "window_monitors",
-    "project_claim",
-    "project_release",
-    "project_owners",
-    "webview_list",
-    "webview_recovery_consume",
-    "webview_overlay_active",
-    "webview_dom_holes",
-    "webview_divider_highlight",
-    "engine_host_visible",
-    "engine_surface_stats",
-    "titlebar_backing",
+    ...Object.keys(requireCjs(join(HERE, "../../electron/native/window.cjs"))),
+    ...Object.keys(requireCjs(join(HERE, "../../electron/native/webview.cjs"))),
+    ...Object.keys(requireCjs(join(HERE, "../../electron/native/engine.cjs"))),
+    ...Object.keys(requireCjs(join(HERE, "../../electron/native/titlebar.cjs"))),
+    ...Object.keys(requireCjs(join(HERE, "../../electron/native/project.cjs"))),
     "framework_capabilities",
   ];
 
@@ -403,8 +391,8 @@ describe("프레임워크-갈래 미등재 — 소켓으로 새지 않는다", (
   // UNKNOWN_COMMAND 로 답하고, 그 이름은 "cored 가 더 져야 할 것"으로 요구 원장에 실린다 —
   // 영영 옮길 수 없는 것(다른 프로세스엔 창이 없다)을 할 일 목록에 세우게 된다.
   const UNLISTED = [
-    ["webview_visible", { visible: true }],
-    ["webview_bounds", { label: "b-1" }],
+    ["webview_holes", {}],
+    ["webview_resize_gesture", { active: true }],
     ["engine_surface_hide", {}],
     ["titlebar_backing", {}],
   ];
@@ -426,9 +414,10 @@ describe("프레임워크-갈래 미등재 — 소켓으로 새지 않는다", (
   it("요구 원장에 프레임워크의 것으로 남는다 — cored 목록을 오염시키지 않는다", async () => {
     const mock = await startMock("unlisted-ledger.sock", unknownCommand);
     const handlers = loadFramework(mock.socketPath);
-    await invoke(handlers, "webview_visible", { visible: true }, fakeWindow());
+    // 진짜 부재로 잰다 — webview_visible 은 렌더러가 소유해 위임 코드로 답한다.
+    await invoke(handlers, "webview_holes", {}, fakeWindow());
     expect(ledger().map((l) => [l.cmd, l.served, l.by, l.code])).toEqual([
-      ["webview_visible", false, "framework", ABSENT],
+      ["webview_holes", false, "framework", ABSENT],
     ]);
   });
 });

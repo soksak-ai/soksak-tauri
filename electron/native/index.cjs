@@ -18,7 +18,7 @@
 // 목록이 비었다 = 실측). 관측할 수단조차 없는 것(사이드카가 창에 붙이는 엔진 서피스)은 0 을
 // 돌려주지 않는다 — 재지 않은 것을 쟀다고 말하는 것이 곧 가짜 성공이다.
 
-const { ABSENT_CODE, frameworkError } = require("./error.cjs");
+const { ABSENT_CODE, DELEGATED_CODE, frameworkError } = require("./error.cjs");
 
 /** 표에 **없는** 이름을 위한 그물. 이 접두사면 등재 여부와 무관하게 소켓으로 가지 않는다.
  *
@@ -74,7 +74,9 @@ TABLE[CAPABILITIES] = {
         cmd,
         e.absent
           ? { supported: false, concept: e.concept, reason: e.absent }
-          : { supported: true, concept: e.concept, source: e.source },
+          : e.delegated
+            ? { supported: true, concept: e.concept, delegatedTo: e.delegated }
+            : { supported: true, concept: e.concept, source: e.source },
       ]),
     ),
   }),
@@ -92,6 +94,17 @@ const unlisted = (cmd) => ({
 /** 네이티브 명령 한 건. 답도 거절도 원장에 프레임워크의 것으로 남는다(record 가 그 자리다). */
 function serve(cmd, args, ctx, record) {
   const entry = TABLE[cmd] || unlisted(cmd);
+  // 위임은 부재가 아니다. 그 개념은 있고 답하는 자리가 렌더러다 — 같은 코드로 답하면
+  // "없는 기능"으로 읽혀 우회가 만들어진다.
+  if (entry.delegated) {
+    record(cmd, false, DELEGATED_CODE, "framework");
+    return {
+      ok: false,
+      code: DELEGATED_CODE,
+      message: `${entry.concept}: ${entry.delegated}`,
+      command: cmd,
+    };
+  }
   if (entry.absent) {
     record(cmd, false, ABSENT_CODE, "framework");
     return { ok: false, code: ABSENT_CODE, message: `${entry.concept}: ${entry.absent}`, command: cmd };
@@ -107,4 +120,4 @@ function serve(cmd, args, ctx, record) {
   }
 }
 
-module.exports = { ABSENT_CODE, BRANCHES, CAPABILITIES, claims, isFrameworkBranch, serve, frameworkError };
+module.exports = { ABSENT_CODE, DELEGATED_CODE, BRANCHES, CAPABILITIES, claims, isFrameworkBranch, serve, frameworkError };
