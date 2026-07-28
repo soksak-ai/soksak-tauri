@@ -76,7 +76,7 @@ pub struct PtyManager {
     sessions: Mutex<HashMap<u32, PtySession>>,
     next_id: Mutex<u32>,
     #[cfg(unix)]
-    link: daemon::Link,
+    link: std::sync::Arc<daemon::Link>,
 }
 
 // spawn_terminal 결과. 화면 복원 판정은 코어를 떠났다(방출) — 소비자(플러그인)가 사이드카
@@ -118,7 +118,7 @@ impl PtyManager {
     pub(crate) fn new(identity: Identity) -> Self {
         PtyManager {
             #[cfg(unix)]
-            link: daemon::Link::new(identity.clone()),
+            link: std::sync::Arc::new(daemon::Link::new(identity.clone())),
             identity,
             sessions: Mutex::new(HashMap::new()),
             next_id: Mutex::new(0),
@@ -401,7 +401,7 @@ pub fn spawn_terminal(
     #[cfg(unix)]
     if pane_id.is_some() {
         match daemon::spawn_via_daemon(
-            &app,
+            std::sync::Arc::new(crate::activity_sink::AppSink(app.clone())),
             &vault_keys(&app),
             &manager.link,
             daemon::SpawnParams {
@@ -1127,10 +1127,14 @@ mod daemon {
     //     (legacy 코어-소유 재생은 방출됨 — 소비자가 항상 명시한다).
     //   from_seq({fromSeq}): warm 핸드오프 — raw 링을 그 seq 부터 부착한다(소비자가 uptoSeq
     //     까지 이미 그렸고, 그 뒤 꼬리가 라이브 연속분이다).
+    /// 데몬 레그의 진입점 — **프레임워크 핸들을 받지 않는다.**
+    ///
+    /// 받던 것은 셋이었다: 볼트 상태·세션 등록부·원장. 셋 다 계약이 되어(SealKeys·Link·
+    /// ActivitySink) 이 함수와 그것이 띄우는 스트림 스레드가 앱 프로세스를 떠날 수 있다.
     pub(crate) fn spawn_via_daemon<S: StreamSink>(
-        app: &tauri::AppHandle,
+        ledger: std::sync::Arc<dyn crate::activity_sink::ActivitySink>,
         keys: &dyn soksak_core::seal_keys::SealKeys,
-        link: &Link,
+        link: &std::sync::Arc<Link>,
         p: SpawnParams,
         on_output: S,
     ) -> Result<u64, String> {
@@ -1176,8 +1180,7 @@ mod daemon {
         let (mut stream, gap, attach_seq) = attach_stream(&home, session, from_seq)?;
         if let Some((from, to)) = gap {
             // warm 핸드오프에서 evict 로 seq 구간 [from,to) 가 사라졌다 — 무음 유실 금지(loud 고지).
-            crate::activity::publish(
-                app,
+            ledger.publish(
                 "pty.warm.gap",
                 "core",
                 json!({
@@ -1205,7 +1208,10 @@ mod daemon {
         // 세션 stream reader — 소켓 EOF/에러가 곧 이벤트다: 셸 종료(데몬이 닫음)거나
         // 데몬 사망. control ping 한 번으로 갈라 후자만 고지+재확보한다.
         {
-            let app = app.clone();
+            // 스레드가 지고 갈 것은 **링크와 원장**뿐이다. 프레임워크 핸들을 지고 가면 이
+            // 스레드가 앱 프로세스에 묶이고, 같은 코드가 헬퍼에서 돌 수 없다.
+            let link_for_stream = link.clone();
+            let ledger_for_stream = ledger.clone();
             let home_for_stream = home.clone();
             let mut cursor = attach_seq;
             std::thread::spawn(move || {
@@ -1229,8 +1235,7 @@ mod daemon {
                     // 부착 스트림의 끝은 생명주기 사건이다 — 원장에 올린다. 관측면이 없으면
                     // "왜 화면이 멈췄는가"를 밖에서 알 길이 없다(실측: 판올림 뒤 화면이 얼었는데
                     // 어떤 채널에도 흔적이 없어 원인을 소스 추론으로만 좁혀야 했다).
-                    crate::activity::publish(
-                        &app,
+                    ledger_for_stream.publish(
                         "pty.stream.ended",
                         "core",
                         json!({ "session": session, "cursor": cursor }),
@@ -1238,7 +1243,13 @@ mod daemon {
                     // 스트림의 끝은 "이 스트림이 끝났다"일 뿐 셸의 끝이 아니다. 무중단 판올림은
                     // 정확히 이 모양이다: 물러나는 데몬이 모든 부착을 EOF 로 놓는다. 셸의 생사는
                     // 데몬에게 묻고, 살아 있으면 마지막 좌표에서 이어 붙는다.
-                    match reattach_live_session(&app, &home_for_stream, session, cursor) {
+                    match reattach_live_session(
+                            ledger_for_stream.as_ref(),
+                            &link_for_stream,
+                            &home_for_stream,
+                            session,
+                            cursor,
+                        ) {
                         Some((s, c)) => {
                             stream = s;
                             cursor = c;
@@ -1250,7 +1261,7 @@ mod daemon {
                 // 스트림 종료를 고지하기 전에 마지막 배치를 내보낸다 — 순서가 뒤집히면 꼬리가 잘린다.
                 drop(deliver);
                 let _ = delivery.join();
-                on_stream_end(&app);
+                on_stream_end(ledger_for_stream.as_ref(), &link_for_stream);
             });
         }
 
@@ -1270,14 +1281,14 @@ mod daemon {
     /// 그 자리를 잡는 그 전이 구간만 기다린다. 상한 20회·150ms(총 3초)이며, 그 안에 세션이
     /// 확인되지 않으면 포기하고 기존 경로(on_stream_end)로 넘긴다.
     fn reattach_live_session(
-        app: &tauri::AppHandle,
+        ledger: &dyn crate::activity_sink::ActivitySink,
+        link: &Link,
         home: &Path,
         session: u64,
         cursor: Option<u64>,
     ) -> Option<(UnixStream, Option<u64>)> {
-        let manager = tauri::Manager::state::<crate::pty::PtyManager>(app);
         for attempt in 0..20 {
-            match manager.link.request(&proto::Request::ListSessions, true) {
+            match link.request(&proto::Request::ListSessions, true) {
                 Ok(v) => {
                     // SessionInfo 의 식별자 필드는 `session` 이다(`id` 가 아니다) — 이름을
                     // 잘못 짚으면 언제나 "없음"으로 읽혀 재부착이 조용히 사라진다(실측).
@@ -1288,8 +1299,7 @@ mod daemon {
                     if !alive {
                         // 셸이 정말 끝났다 — 기존 경로가 처리한다. 조용히 지나가지 않는다:
                         // "재부착 안 함"도 판정이고, 판정은 원장에 남아야 뒤에서 읽을 수 있다.
-                        crate::activity::publish(
-                            app,
+                        ledger.publish(
                             "pty.session.gone",
                             "core",
                             json!({
@@ -1301,8 +1311,7 @@ mod daemon {
                     }
                     match attach_stream(home, session, cursor) {
                         Ok((s, gap, seq)) => {
-                            crate::activity::publish(
-                                app,
+                            ledger.publish(
                                 "pty.stream.reattached",
                                 "core",
                                 json!({
@@ -1319,8 +1328,7 @@ mod daemon {
                         Err(e) => {
                             // 새 데몬이 아직 스트림 소켓을 잡기 전일 수 있다 — 같은 전이 구간.
                             if attempt == 19 {
-                                crate::activity::publish(
-                                    app,
+                                ledger.publish(
                                     "pty.stream.reattach.failed",
                                     "core",
                                     json!({ "session": session, "error": e }),
@@ -1343,9 +1351,7 @@ mod daemon {
     // Channel 종료로 이미 안다). ping 까지 죽었으면 데몬 사망 — 고지하고 재확보를
     // 시도한다(성공 시 다음 스폰부터 데몬 경로 복귀. 죽은 데몬의 세션은 소실 —
     // 골격의 한계로 고지에 싣는다).
-    fn on_stream_end(app: &tauri::AppHandle) {
-        let manager = tauri::Manager::state::<crate::pty::PtyManager>(app);
-        let link = &manager.link;
+    fn on_stream_end(ledger: &dyn crate::activity_sink::ActivitySink, link: &Link) {
         if link.request(&proto::Request::Ping, false).is_ok() {
             return; // 셸 정상 종료
         }
@@ -1355,8 +1361,7 @@ mod daemon {
             link.lost_notified.store(false, Ordering::SeqCst);
         }
         if !link.lost_notified.swap(true, Ordering::SeqCst) || respawned {
-            crate::activity::publish(
-                app,
+            ledger.publish(
                 "pty.daemon.lost",
                 "core",
                 json!({
@@ -1905,10 +1910,11 @@ mod seam_tests {
     #[cfg(unix)]
     #[test]
     fn the_daemon_leg_takes_contracts_not_vendor_types() {
+        // 프레임워크 핸들이 **없다**. 하나라도 되돌아오면 이 자리에서 컴파일이 깨진다.
         let _typed: fn(
-            &tauri::AppHandle,
+            std::sync::Arc<dyn crate::activity_sink::ActivitySink>,
             &dyn soksak_core::seal_keys::SealKeys,
-            &super::daemon::Link,
+            &std::sync::Arc<super::daemon::Link>,
             super::daemon::SpawnParams,
             NullSink,
         ) -> Result<u64, String> = super::daemon::spawn_via_daemon::<NullSink>;
