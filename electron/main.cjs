@@ -64,7 +64,7 @@ function recordDemand(cmd, served, code, by) {
   }
 }
 
-function createWindow(label, rect) {
+function createWindow(label, rect, bootQuery) {
   const win = new BrowserWindow({
     // rect 를 받으면 그대로 놓는다. 만든 뒤 옮기면 첫 프레임이 기본 자리에 한 번 그려져
     // 복원이 화면에서 튄다 — 생성 인자로 주면 그 프레임이 없다.
@@ -111,7 +111,9 @@ function createWindow(label, rect) {
     announceWindows();
   });
   announceWindows();
-  void win.loadURL(DEV_URL);
+  // 부트 지시는 쿼리로 간다 — 앱이 conf url 에 얹는 그 자리와 같다. 새 창의 프론트가 그것을
+  // 읽어 무엇을 열지 정한다(창만 나고 안이 비는 것을 막는 유일한 통로다).
+  void win.loadURL(bootQuery ? `${DEV_URL}?${bootQuery}` : DEV_URL);
   return win;
 }
 

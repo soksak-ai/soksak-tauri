@@ -43,6 +43,14 @@ function shouldFocus(requested) {
   return requested !== false;
 }
 
+/// 새 창에 실을 부트 지시 쿼리. 없으면 없음 — 빈 문자열을 얹으면 `?` 하나가 남아 URL 이 달라진다.
+function bootQuery(init) {
+  // 물음표는 벗기고 **그 뒤에** 빈지 본다 — `?` 하나만 오면 벗긴 결과가 빈 문자열이고,
+  // 그것을 실으면 URL 끝에 물음표가 남아 앱이 얹는 것과 달라진다.
+  const q = String(init ?? "").trim().replace(/^\?/, "").trim();
+  return q ? q : null;
+}
+
 /// `#rrggbb` 또는 `rrggbb` 를 색으로 — 코어와 같은 규칙(soksak-core surface_spec).
 ///
 /// 세 자리 축약은 받지 않는다: 한쪽이 펼치고 다른 쪽이 거부하면 같은 테마가 프레임워크마다
@@ -70,6 +78,7 @@ function monitorOf(win, monitors) {
 module.exports = {
   // 검사가 픽스처로 코어와 대조한다 — 사본이 갈리지 않는다는 것을 파일이 묶는다.
   monitorOf,
+  bootQuery,
   parseHexColor,
   rectOf,
   shouldFocus,
@@ -110,7 +119,10 @@ module.exports = {
       const label = String(args.label ?? "").trim() || `w-${randomUUID()}`;
       const live = ctx.windowFor(label);
       if (live && !live.isDestroyed()) return label;
-      const win = ctx.createWindow(label, rectOf(args.rect));
+      // init 은 **부트 지시 쿼리**다 — 새 창이 무엇을 열지는 그 문자열이 말한다. 버리면 창은
+      // 뜨는데 안이 비어 있고, 그 증상은 오류가 아니라 "창은 났는데 프로젝트가 없다"로 보인다
+      // (실측: window.open{root} 이 빈 창을 냈다). 앱은 같은 값을 conf url 의 쿼리로 얹는다.
+      const win = ctx.createWindow(label, rectOf(args.rect), bootQuery(args.init));
       if (shouldFocus(args.focus)) win.focus();
       return label;
     },
