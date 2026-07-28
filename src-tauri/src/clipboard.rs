@@ -15,14 +15,19 @@ use clipboard_rs::{
     Clipboard, ClipboardContext, ClipboardHandler, ClipboardWatcher, ClipboardWatcherContext,
     WatcherShutdown,
 };
-use tauri::{AppHandle, Emitter, State};
+use serde_json::Value;
+use tauri::{AppHandle, State};
+
+use crate::window_oracle::WindowOracle;
 
 // self-write 마커 TTL — macOS changeCount 폴링 윈도우(500ms)+여유. echo 는 이 안에 도착한다.
 // 이보다 길면 동일 값 사용자 복사를 잘못 억제(false-suppression)하므로 짧게 유지한다.
 const SELF_WRITE_TTL: Duration = Duration::from_secs(2);
 
 pub struct ClipboardState {
-    app: Mutex<Option<AppHandle>>,
+    // 변경 사건의 도착지. 이 상태가 앱 핸들에서 쓰던 것은 emit 하나뿐이었으므로 창 계약만 쥔다
+    // — 계약만 쥐면 배달 경로를 셸 없이 세울 수 있다.
+    windows: Mutex<Option<Arc<dyn WindowOracle>>>,
     shutdown: Mutex<Option<WatcherShutdown>>,
     // 핸들러와 공유 — clipboard_write 가 (값, 시각) 마커를 심고, 핸들러가 echo 1회를 소비한다.
     last_written: Arc<Mutex<Option<(String, Instant)>>>,
@@ -31,7 +36,7 @@ pub struct ClipboardState {
 impl Default for ClipboardState {
     fn default() -> Self {
         Self {
-            app: Mutex::new(None),
+            windows: Mutex::new(None),
             shutdown: Mutex::new(None),
             last_written: Arc::new(Mutex::new(None)),
         }
@@ -39,9 +44,25 @@ impl Default for ClipboardState {
 }
 
 impl ClipboardState {
-    // 앱 setup 에서 1회 — 이벤트 emit 에 쓸 앱 핸들 주입. 감시 스레드는 watch_start 에서 시작.
+    // 앱 setup 에서 1회 — 셸 타입이 계약으로 들어오는 경계는 이 한 줄뿐이다.
+    // 감시 스레드는 watch_start 에서 시작.
     pub fn init(&self, app: AppHandle) {
-        *self.app.lock().unwrap() = Some(app);
+        self.init_with(Arc::new(app));
+    }
+
+    // 도착지 주입판 — 코어는 AppHandle 로, 테스트는 가짜 오라클로 관찰한다.
+    pub(crate) fn init_with(&self, windows: Arc<dyn WindowOracle>) {
+        *self.windows.lock().unwrap() = Some(windows);
+    }
+
+    // 주입된 도착지를 꺼낸다. 미초기화는 이름 달린 실패 — 감시를 조용히 시작해 두고
+    // 아무 데도 배달하지 않으면 호출자는 영원히 변경을 기다린다.
+    pub(crate) fn windows(&self) -> Result<Arc<dyn WindowOracle>, String> {
+        self.windows
+            .lock()
+            .map_err(|e| e.to_string())?
+            .clone()
+            .ok_or_else(|| "clipboard 미초기화(setup init 누락)".to_string())
     }
 }
 
@@ -73,9 +94,26 @@ fn should_emit(
     }
 }
 
+// 변경 텍스트 하나의 배달 — echo 억제 판정 후 전 창 브로드캐스트.
+// 반환 = 창에 닿았는가(억제·배달실패는 false). 벤더 클립보드 컨텍스트를 인자로 받지 않아
+// 셸 없이 검증된다 — 여기가 배달 규칙이 사는 자리다.
+fn deliver_change(
+    windows: &dyn WindowOracle,
+    last_written: &Mutex<Option<(String, Instant)>>,
+    text: &str,
+    now: Instant,
+) -> bool {
+    if let Ok(mut lw) = last_written.lock() {
+        if !should_emit(&mut lw, text, now, SELF_WRITE_TTL) {
+            return false;
+        }
+    }
+    windows.broadcast("clipboard-change", Value::String(text.to_string()))
+}
+
 struct Handler {
     ctx: ClipboardContext,
-    app: AppHandle,
+    windows: Arc<dyn WindowOracle>,
     last_written: Arc<Mutex<Option<(String, Instant)>>>,
 }
 
@@ -85,12 +123,8 @@ impl ClipboardHandler for Handler {
         let Ok(text) = self.ctx.get_text() else {
             return;
         };
-        if let Ok(mut lw) = self.last_written.lock() {
-            if !should_emit(&mut lw, &text, Instant::now(), SELF_WRITE_TTL) {
-                return;
-            }
-        }
-        let _ = self.app.emit("clipboard-change", text);
+        // OS 워처 콜백이라 되돌려줄 호출자가 없다 — 배달 결과는 여기서 끝난다.
+        let _ = deliver_change(&*self.windows, &self.last_written, &text, Instant::now());
     }
 }
 
@@ -118,16 +152,11 @@ pub fn clipboard_watch_start(state: State<ClipboardState>) -> Result<(), String>
     if guard.is_some() {
         return Ok(());
     }
-    let app = state
-        .app
-        .lock()
-        .map_err(|e| e.to_string())?
-        .clone()
-        .ok_or("clipboard 미초기화(setup init 누락)")?;
+    let windows = state.windows()?;
     let ctx = ClipboardContext::new().map_err(|e| e.to_string())?;
     let handler = Handler {
         ctx,
-        app,
+        windows,
         last_written: state.last_written.clone(),
     };
     let mut watcher: ClipboardWatcherContext<Handler> =
@@ -159,8 +188,94 @@ pub fn clipboard_watch_stop(state: State<ClipboardState>) -> Result<(), String> 
 
 #[cfg(test)]
 mod tests {
-    use super::{should_emit, SELF_WRITE_TTL};
+    use super::{deliver_change, should_emit, ClipboardState, SELF_WRITE_TTL};
+    use crate::window_oracle::WindowOracle;
+    use serde_json::Value;
+    use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
+
+    /// 계약만 구현한 가짜 창 — Tauri 없이 클립보드 배달을 검증할 수 있어야 한다.
+    /// (이 테스트가 컴파일된다는 사실 자체가 "배달은 벤더 타입이 아니다"의 증명이다.)
+    #[derive(Default)]
+    struct Fake {
+        sent: Mutex<Vec<(String, Value)>>,
+    }
+
+    impl WindowOracle for Fake {
+        fn live_labels(&self) -> Vec<String> {
+            vec!["main".to_string()]
+        }
+        fn emit_to(&self, _label: &str, _event: &str, _payload: Value) -> bool {
+            true
+        }
+        fn broadcast(&self, event: &str, payload: Value) -> bool {
+            self.sent.lock().unwrap().push((event.to_string(), payload));
+            true
+        }
+    }
+
+    // 변경 배달이 창 계약 위에서만 일어난다 — AppHandle 없이 이벤트 이름과 페이로드를 본다.
+    #[test]
+    fn a_clipboard_change_is_delivered_through_the_window_contract() {
+        let fake = Fake::default();
+        let lw = Mutex::new(None);
+        assert!(
+            deliver_change(&fake, &lw, "hello", Instant::now()),
+            "배달 성공은 값으로 돌아온다"
+        );
+        let sent = fake.sent.lock().unwrap();
+        assert_eq!(sent.len(), 1, "브로드캐스트 1회");
+        assert_eq!(sent[0].0, "clipboard-change");
+        assert_eq!(sent[0].1, Value::String("hello".to_string()));
+    }
+
+    // self-write echo 는 창에 닿지 않는다(억제). 마커 소비 후 같은 값 재복사는 정상 배달.
+    #[test]
+    fn a_self_write_echo_never_reaches_a_window() {
+        let fake = Fake::default();
+        let t0 = Instant::now();
+        let lw = Mutex::new(Some(("mine".to_string(), t0)));
+        assert!(
+            !deliver_change(&fake, &lw, "mine", t0),
+            "방금 쓴 값의 echo 는 배달되지 않는다"
+        );
+        assert!(fake.sent.lock().unwrap().is_empty(), "억제면 발화 0");
+        assert!(
+            deliver_change(&fake, &lw, "mine", t0),
+            "마커 소비 후 재복사는 배달"
+        );
+        assert_eq!(fake.sent.lock().unwrap().len(), 1);
+    }
+
+    // 배달 실패를 삼키지 않는다 — 아무에게도 닿지 못한 브로드캐스트는 false 로 돌아온다.
+    #[test]
+    fn a_delivery_that_missed_every_window_reports_failure() {
+        struct Deaf;
+        impl WindowOracle for Deaf {
+            fn live_labels(&self) -> Vec<String> {
+                vec!["main".to_string()]
+            }
+            fn emit_to(&self, _label: &str, _event: &str, _payload: Value) -> bool {
+                false
+            }
+        }
+        let lw = Mutex::new(None);
+        assert!(!deliver_change(&Deaf, &lw, "hello", Instant::now()));
+    }
+
+    // 상태가 쥐는 것은 창 계약이다 — 미초기화는 이름 달린 실패, 주입 후엔 성립.
+    #[test]
+    fn the_state_holds_a_window_contract_not_an_app_handle() {
+        let st = ClipboardState::default();
+        // Arc<dyn WindowOracle> 은 Debug 가 아니라 expect_err 를 못 쓴다 — 직접 가른다.
+        let err = match st.windows() {
+            Ok(_) => panic!("미초기화가 조용히 통과했다"),
+            Err(e) => e,
+        };
+        assert!(err.contains("미초기화"), "실패에 이름이 붙는다: {err}");
+        st.init_with(Arc::new(Fake::default()));
+        assert!(st.windows().is_ok(), "주입 후에는 계약을 꺼낼 수 있다");
+    }
 
     // (a) 신선·동일값: echo 1회만 억제(마커 소비), 이후엔 마커 없어 정상 emit.
     #[test]

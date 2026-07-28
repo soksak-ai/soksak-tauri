@@ -117,7 +117,7 @@ pub fn unwatch_dir(state: State<FsWatcher>, path: String) -> Result<usize, Strin
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::mpsc;
+    use std::sync::{mpsc, Arc};
     use std::time::Instant;
 
     // 비재귀 감시가 "새 파일 생성"을 잡아 부모 디렉토리를 보고하는지(= fs-change 가
@@ -214,6 +214,53 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // 주입 seam 이 셸 타입 없이 성립하는지 — 워처를 세우고 refcount 사다리를 끝까지 걷는 동안
+    // AppHandle 이 한 번도 등장하지 않는다. (이 테스트가 컴파일된다는 사실 자체가 증명이다.)
+    // 파일시스템 이벤트 대기는 shared_path_unwatch_keeps_other_consumer 가 이미 본다 —
+    // 여기서는 소유·계수만 보므로 sleep 이 없다.
+    #[test]
+    fn the_sink_seam_needs_no_shell_type() {
+        let dir = std::env::temp_dir().join(format!(
+            "soksak-watch-seam-{}-{}",
+            std::process::id(),
+            Instant::now().elapsed().as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("픽스처 디렉토리 생성");
+        let dir = dir.canonicalize().expect("픽스처 경로 정규화");
+        let path = dir.to_string_lossy().to_string();
+
+        let seen = Arc::new(Mutex::new(Vec::<String>::new()));
+        let sink_seen = seen.clone();
+        let w = FsWatcher::default();
+        w.init_with(move |d| sink_seen.lock().unwrap().push(d));
+
+        assert_eq!(w.watch(&path).expect("첫 소비자"), 1);
+        assert_eq!(w.watch(&path).expect("둘째 소비자"), 2);
+        assert_eq!(w.unwatch(&path).expect("부분 해제"), 1);
+        assert_eq!(w.unwatch(&path).expect("최종 해제"), 0);
+        // 싱크는 우리가 쥔 값이다 — 창도, 앱 핸들도 관여하지 않는다. 아무것도 쓰지 않았으니
+        // 발화도 0이어야 한다(등록만으로 유령 이벤트를 만들지 않는다).
+        assert!(
+            seen.lock().unwrap().is_empty(),
+            "건드리지 않은 디렉토리에서 이벤트가 발화됨"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // 무장하지 않은 워처는 조용한 성공을 돌리지 않는다 — 등록됐다고 믿은 소비자가
+    // 오지 않는 이벤트를 영원히 기다리는 것이 가장 나쁜 실패다.
+    #[test]
+    fn an_unarmed_watcher_refuses_rather_than_pretending() {
+        let w = FsWatcher::default(); // init 하지 않음
+        let err = match w.watch("/tmp") {
+            Ok(n) => panic!("미초기화 워처가 등록 성공(refcount {n})을 위장했다"),
+            Err(e) => e,
+        };
+        assert!(!err.is_empty(), "거절에 이름이 붙는다");
     }
 
     // 기존 파일 내용 갱신(쓰기)도 감지하는지 검증(사용자 시나리오: scriptgen 의 result.json 갱신).
