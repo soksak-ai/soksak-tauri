@@ -19,17 +19,24 @@
 use std::path::{Path, PathBuf};
 
 use soksak_core::identity::Identity;
+use soksak_core::store_lock::{self, Acquire, WriteLock};
 
 /// 이 프로세스가 서빙하는 대상. 하나의 cored 는 하나의 정체성을 서빙한다 — 여러 홈을 한
 /// 프로세스가 서빙하면 "어느 홈에 물었나"가 매 호출의 인자가 되고, 그건 다시 ①/② 를
 /// 섞는 일이다.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Ctx {
     identity: Identity,
     /// app.data 디렉터리. 보통은 홈에서 파생되지만, 앱이 debug 빌드에서 이 자리를 옮겼다면
     /// (`SOKSAK_DATA_DIR`) **옮긴 쪽이 같은 경로를 넘겨야** 두 프로세스가 같은 DB 를 본다.
     /// cored 가 규칙만 보고 파생하면 앱과 다른 파일을 열고, 그 오답은 오류가 아니라 빈 결과다.
     data_dir: PathBuf,
+    /// 이 저장소의 쓰기 소유권. 잡았으면 `Some` 이고, 그때만 쓰기 명령이 선다.
+    ///
+    /// 부팅 때 한 번 시도하고 결과를 지고 간다 — 호출마다 다시 잡으면 같은 프로세스가
+    /// 자기 잠금과 경쟁하고, 그 사이에 남이 끼어들 틈도 생긴다. 못 잡았으면 읽기만 서빙한다:
+    /// 쓰기를 조용히 성공시키는 것이 이 잠금이 막으려는 바로 그 일이다.
+    write_lock: Option<WriteLock>,
 }
 
 impl Ctx {
@@ -39,7 +46,29 @@ impl Ctx {
         Ctx {
             identity,
             data_dir,
+            write_lock: None,
         }
+    }
+
+    /// 저장소 쓰기 소유권을 시도한다. 부팅에서 **한 번** 부른다.
+    ///
+    /// 못 잡은 것은 실패가 아니다 — 그 홈의 앱이 도는 정상 상태이고, 그때 cored 는 읽기
+    /// 서버로 산다. 잠금 자체를 못 만드는 것(디렉터리 부재·권한)만 오류다.
+    pub fn claim_writes(&mut self) -> Result<bool, String> {
+        std::fs::create_dir_all(&self.data_dir)
+            .map_err(|e| format!("데이터 디렉터리를 만들지 못했다({}): {e}", self.data_dir.display()))?;
+        match store_lock::try_acquire(&self.data_dir)? {
+            Acquire::Owned(lock) => {
+                self.write_lock = Some(lock);
+                Ok(true)
+            }
+            Acquire::Taken => Ok(false),
+        }
+    }
+
+    /// 이 프로세스가 이 저장소에 써도 되는가.
+    pub fn owns_writes(&self) -> bool {
+        self.write_lock.is_some()
     }
 
     /// 데이터 디렉터리를 띄운 쪽이 지목한 경우.

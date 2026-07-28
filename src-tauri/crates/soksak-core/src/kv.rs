@@ -12,10 +12,27 @@ use serde_json::Value;
 
 /// KV 한 칸의 **원문**(저장된 TEXT) 공급자. 행이 없으면 `None`.
 ///
-/// 질의문과 연결은 구현자의 것이다 — 여기서 아는 것은 "ns·key 로 원문 하나"뿐이다.
+/// 연결은 구현자의 것이다 — 여기서 아는 것은 "ns·key 로 원문 하나"뿐이다.
+/// 다만 **질의문은 아래 상수가 소유한다**: 두 프로세스가 각자 SQL 을 적으면 언젠가 갈라지고,
+/// 갈라진 질의는 오류가 아니라 다른 답으로 나타난다.
 pub trait KvRows {
     fn value(&self, ns: &str, key: &str) -> Result<Option<String>, String>;
 }
+
+/// KV 한 칸에 원문을 쓰는 자리. 읽기와 대칭이고, 같은 이유로 질의문은 상수가 소유한다.
+///
+/// 시각을 인자로 받는다 — 시계를 여기서 읽으면 이 로직이 "지금"을 자기가 정하게 되고,
+/// 그러면 같은 입력으로 두 번 부른 결과가 달라져 테스트가 시간에 묶인다.
+pub trait KvWrite {
+    fn put(&self, ns: &str, key: &str, raw: &str, updated_ms: u64) -> Result<(), String>;
+}
+
+/// 조회 질의문 — 구현자는 이것을 그대로 쓴다.
+pub const SELECT_SQL: &str = "SELECT v FROM kv WHERE ns=?1 AND k=?2";
+
+/// 기록 질의문(upsert). 같은 (ns,key) 는 마지막 값이 남는다.
+pub const UPSERT_SQL: &str = "INSERT INTO kv(ns,k,v,updated) VALUES(?1,?2,?3,?4)\
+     ON CONFLICT(ns,k) DO UPDATE SET v=excluded.v, updated=excluded.updated";
 
 /// ns 이름 규칙 — `^[a-z0-9][a-z0-9-]*$`.
 ///
@@ -50,6 +67,19 @@ pub fn decode(raw: Option<String>) -> Result<Option<Value>, String> {
 pub fn get(rows: &dyn KvRows, ns: &str, key: &str) -> Result<Option<Value>, String> {
     validate_ns(ns)?;
     decode(rows.value(ns, key)?)
+}
+
+/// KV 기록 한 번 — ns 검사, 직렬화, 기록. 조회와 같은 순서다(검사가 먼저).
+pub fn set(
+    store: &dyn KvWrite,
+    ns: &str,
+    key: &str,
+    value: &Value,
+    updated_ms: u64,
+) -> Result<(), String> {
+    validate_ns(ns)?;
+    let raw = serde_json::to_string(value).map_err(|e| e.to_string())?;
+    store.put(ns, key, &raw, updated_ms)
 }
 
 #[cfg(test)]
@@ -142,5 +172,57 @@ mod tests {
             }
         }
         assert_eq!(get(&Broken, "core", "k"), Err("DB 미초기화".to_string()));
+    }
+}
+
+#[cfg(test)]
+mod write_tests {
+    use super::*;
+    use serde_json::json;
+    use std::cell::RefCell;
+
+    /// 계약만 구현한 기록자 — SQLite 없이 규칙을 검증할 수 있어야 한다.
+    #[derive(Default)]
+    struct Recorder {
+        rows: RefCell<Vec<(String, String, String, u64)>>,
+    }
+
+    impl KvWrite for Recorder {
+        fn put(&self, ns: &str, key: &str, raw: &str, updated_ms: u64) -> Result<(), String> {
+            self.rows
+                .borrow_mut()
+                .push((ns.into(), key.into(), raw.into(), updated_ms));
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_write_serializes_the_value_and_carries_the_given_time() {
+        let r = Recorder::default();
+        set(&r, "core", "layout", &json!({ "rail": 240 }), 1_700).unwrap();
+        let rows = r.rows.borrow();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "core");
+        assert_eq!(rows[0].1, "layout");
+        assert_eq!(rows[0].2, r#"{"rail":240}"#);
+        assert_eq!(rows[0].3, 1_700, "시각은 인자로 온다");
+    }
+
+    /// 검사가 먼저다 — 규칙 밖 ns 는 자원을 건드리기 전에 거부한다.
+    #[test]
+    fn a_bad_namespace_never_reaches_the_store() {
+        let r = Recorder::default();
+        assert!(set(&r, "../etc", "k", &json!(1), 0).is_err());
+        assert!(r.rows.borrow().is_empty(), "거부해 놓고 썼다");
+    }
+
+    /// 쓴 원문은 같은 규칙으로 되읽힌다 — 두 함수가 같은 표현을 쓴다는 단언.
+    #[test]
+    fn what_set_writes_is_what_get_decodes() {
+        let r = Recorder::default();
+        let v = json!({ "a": [1, 2], "b": null });
+        set(&r, "core", "k", &v, 0).unwrap();
+        let raw = r.rows.borrow()[0].2.clone();
+        assert_eq!(decode(Some(raw)).unwrap(), Some(v));
     }
 }

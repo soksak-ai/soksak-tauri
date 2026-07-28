@@ -145,6 +145,18 @@ pub const COMMANDS: &[Command] = &[
         returns: "ActivityEntry { seq, ts, kind, source, payload } — 적재분. 창 부채질은 셸, 영속은 저장소 소유자",
         run: run_activity_publish,
     },
+    // 쓰기 — 쓰기 소유권을 잡은 프로세스만 선다. 잠금이 없으면 이름을 달고 거절한다:
+    // 조용히 쓰면 두 프로세스가 같은 파일을 고치고, 그 손상은 오류로 안 나타난다.
+    Command {
+        name: "data_kv_set",
+        args: &[
+            Arg { name: "ns", ty: "string", required: REQ },
+            Arg { name: "key", ty: "string", required: REQ },
+            Arg { name: "value", ty: "any", required: REQ },
+        ],
+        returns: "null",
+        run: run_data_kv_set,
+    },
     Command {
         name: "app_environment",
         args: &[],
@@ -380,10 +392,10 @@ struct SqliteRows {
 
 impl soksak_core::kv::KvRows for SqliteRows {
     fn value(&self, ns: &str, key: &str) -> Result<Option<String>, String> {
-        // 앱과 같은 질의문이다 — 다르면 두 경로가 다른 답을 낼 수 있고 그 차이는 조용하다.
+        // 질의문은 코어가 소유한다 — 두 프로세스가 각자 SQL 을 적으면 언젠가 갈라진다.
         match self
             .conn
-            .query_row("SELECT v FROM kv WHERE ns=?1 AND k=?2", (ns, key), |r| {
+            .query_row(soksak_core::kv::SELECT_SQL, (ns, key), |r| {
                 r.get::<_, String>(0)
             }) {
             Ok(v) => Ok(Some(v)),
@@ -395,8 +407,8 @@ impl soksak_core::kv::KvRows for SqliteRows {
 
 fn run_data_kv_get(ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: KvGetArg| {
-        // 읽기 전용으로 연다 — cored 가 저장소를 고치지 않는다. 쓰기는 소유자가 하고,
-        // 두 프로세스가 같은 파일에 쓰면 그 순간 단일 쓰기자 계약이 깨진다.
+        // 읽기는 잠그지 않는다 — WAL 은 읽기 동시·쓰기 단일이고, 쓰기 소유권이 없어도
+        // 관측은 되어야 한다(못 쓰는 것과 못 보는 것은 다른 사실이다).
         let conn = rusqlite::Connection::open_with_flags(
             ctx.db_path(),
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
@@ -404,6 +416,41 @@ fn run_data_kv_get(ctx: &Ctx, params: &Value) -> Outcome {
         .map_err(|e| format!("저장소 열기 실패: {e}"))?;
         let rows = SqliteRows { conn };
         soksak_core::kv::get(&rows, &a.ns, &a.key)
+    })
+}
+
+impl soksak_core::kv::KvWrite for SqliteRows {
+    fn put(&self, ns: &str, key: &str, raw: &str, updated_ms: u64) -> Result<(), String> {
+        self.conn
+            .execute(soksak_core::kv::UPSERT_SQL, (ns, key, raw, updated_ms as i64))
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KvSetArg {
+    ns: String,
+    key: String,
+    value: Value,
+}
+
+fn run_data_kv_set(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: KvSetArg| {
+        // 소유권 먼저 — 열기 전에 거절한다. 열고 나서 판단하면 그 사이가 곧 이중 쓰기 창이다.
+        if !ctx.owns_writes() {
+            return Err(format!(
+                "이 저장소의 쓰기는 다른 프로세스가 소유한다({}) — 같은 홈에 앱이나 다른                  cored 가 살아 있다. 읽기는 계속 서빙한다",
+                ctx.db_path().display()
+            ));
+        }
+        let conn = rusqlite::Connection::open(ctx.db_path())
+            .map_err(|e| format!("저장소 열기 실패: {e}"))?;
+        let store = SqliteRows { conn };
+        soksak_core::kv::set(&store, &a.ns, &a.key, &a.value, crate::ledger::now_ms())?;
+        // 앱의 data_kv_set 은 () 를 돌려준다 — 같은 모양이라야 셸이 값을 다시 조립하지 않는다.
+        Ok(Value::Null)
     })
 }
 

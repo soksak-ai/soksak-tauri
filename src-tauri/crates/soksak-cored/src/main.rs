@@ -89,6 +89,9 @@ fn boot(args: &[String]) -> Result<(String, Ctx), String> {
     if let Ok(dir) = take_value(args, "--data-dir") {
         ctx = ctx.with_data_dir(dir);
     }
+    // 쓰기 소유권을 부팅에서 한 번 시도한다. 못 잡는 것은 실패가 아니라 **읽기 서버로
+    // 산다**는 뜻이다(그 홈의 앱이 도는 정상 상태). 잠금 자체를 못 만드는 것만 오류다.
+    ctx.claim_writes()?;
     Ok((socket, ctx))
 }
 

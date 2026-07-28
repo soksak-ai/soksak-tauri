@@ -50,7 +50,8 @@ fn stored_last_seq(db_path: &str) -> Result<u64, String> {
     .map_err(|e| format!("원장 재개 지점 조회 실패: {e}"))
 }
 
-fn now_ms() -> u64 {
+/// 벽시계 밀리초. 원장 도장과 kv 갱신 시각이 같은 시계를 본다.
+pub fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)

@@ -24,6 +24,7 @@ pub mod kv;
 pub mod pathx;
 pub mod plugin_dir;
 pub mod session;
+pub mod store_lock;
 pub mod themes;
 pub mod udp;
 pub mod unit_dev;

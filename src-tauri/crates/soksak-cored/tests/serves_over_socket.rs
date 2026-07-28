@@ -555,3 +555,137 @@ fn admission_without_a_readable_ledger_fails_by_name() {
         "사유가 원장을 말한다: {reply}"
     );
 }
+
+// ── 저장소 쓰기 — 소유권을 증명한 프로세스만 ────────────────────────────────
+//
+// 부팅 요구 원장에서 마지막 구멍이 data_kv_set 이었다(쓰기라 읽기 전용 연결로는 못 답한다).
+// 쓰기를 서빙하되 "두 프로세스가 같은 파일에 쓰지 않는다"는 전제를 코드 배치가 아니라
+// **잠금으로** 증명한다.
+
+/// 앱이 만드는 kv 스키마 그대로의 저장소.
+fn kv_store(helper: &Helper) -> PathBuf {
+    let dir = helper.home().join("data");
+    std::fs::create_dir_all(&dir).expect("데이터 디렉터리");
+    let path = dir.join("soksak.db");
+    let conn = rusqlite::Connection::open(&path).expect("저장소 생성");
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS kv (ns TEXT NOT NULL, k TEXT NOT NULL, v TEXT NOT NULL, \
+         updated INTEGER NOT NULL, PRIMARY KEY(ns, k)) WITHOUT ROWID;",
+    )
+    .expect("스키마");
+    path
+}
+
+/// 쓴 값을 같은 소켓으로 되읽을 수 있어야 한다 — 두 명령이 같은 저장소를 본다는 증거.
+#[test]
+fn a_written_value_reads_back_through_the_same_socket() {
+    let helper = spawn_helper("kv-write");
+    kv_store(&helper);
+
+    let set = helper.ask(json!({
+        "id": 20, "method": "data_kv_set",
+        "params": { "ns": "core", "key": "layout", "value": { "rail": 240 } }
+    }));
+    assert_eq!(set["ok"], true, "{set}");
+
+    let got = helper.ask(json!({
+        "id": 21, "method": "data_kv_get", "params": { "ns": "core", "key": "layout" }
+    }));
+    assert_eq!(got["ok"], true, "{got}");
+    assert_eq!(got["data"]["rail"], 240, "{got}");
+}
+
+/// 덮어쓰기는 마지막 값이 남는다(앱의 upsert 와 같은 규칙).
+#[test]
+fn writing_twice_keeps_the_last_value() {
+    let helper = spawn_helper("kv-overwrite");
+    kv_store(&helper);
+    for v in [1, 2] {
+        let r = helper.ask(json!({
+            "method": "data_kv_set", "params": { "ns": "core", "key": "n", "value": v }
+        }));
+        assert_eq!(r["ok"], true, "{r}");
+    }
+    let got = helper.ask(json!({
+        "method": "data_kv_get", "params": { "ns": "core", "key": "n" }
+    }));
+    assert_eq!(got["data"], 2, "{got}");
+}
+
+/// 네임스페이스 규칙은 앱과 같은 것을 쓴다 — cored 에서만 통과하는 ns 가 있으면 안 된다.
+#[test]
+fn the_namespace_rule_is_the_apps_rule() {
+    let helper = spawn_helper("kv-ns");
+    kv_store(&helper);
+    let r = helper.ask(json!({
+        "method": "data_kv_set", "params": { "ns": "../etc", "key": "k", "value": 1 }
+    }));
+    assert_eq!(r["ok"], false, "{r}");
+}
+
+/// **쓰기 소유권이 없으면 쓰지 않는다.** 다른 프로세스가 잠금을 쥔 채로 cored 를 띄우면
+/// 읽기는 서빙하되 쓰기는 이름을 달고 거절해야 한다 — 조용히 쓰면 이 잠금이 막으려던
+/// 이중 쓰기가 그대로 일어난다.
+#[test]
+fn without_the_write_lock_a_write_is_refused_and_a_read_still_works() {
+    let dir = fixture_dir("kv-not-owner");
+    let home = dir.join("home");
+    let data = home.join("data");
+    std::fs::create_dir_all(&data).unwrap();
+
+    // 저장소와 값 하나를 미리 만들어 둔다(읽기가 여전히 되는지 보기 위해).
+    let db = data.join("soksak.db");
+    let conn = rusqlite::Connection::open(&db).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE kv (ns TEXT NOT NULL, k TEXT NOT NULL, v TEXT NOT NULL, \
+         updated INTEGER NOT NULL, PRIMARY KEY(ns, k)) WITHOUT ROWID;\
+         INSERT INTO kv VALUES('core','seeded','\"before\"',0);",
+    )
+    .unwrap();
+    drop(conn);
+
+    // 남이 쓰기 잠금을 쥔 상태를 만든다 — 이 서술자가 살아 있는 동안 cored 는 못 잡는다.
+    let held = std::fs::File::options()
+        .create(true)
+        .read(true)
+        .write(true)
+        .truncate(false)
+        .open(data.join("soksak.db.writelock"))
+        .unwrap();
+    held.try_lock().expect("테스트가 먼저 잡는다");
+
+    let socket = dir.join("h.sock");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_soksak-cored"))
+        .arg("--socket").arg(&socket)
+        .arg("--home").arg(&home)
+        .arg("--identifier").arg("com.soksak.dev")
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("cored 스폰");
+    let mut ready = String::new();
+    let stdout = child.stdout.take().unwrap();
+    assert!(
+        matches!(BufReader::new(stdout).read_line(&mut ready), Ok(n) if n > 0),
+        "쓰기 소유권이 없어도 서빙은 시작한다 — 읽기 서버로 산다"
+    );
+    let helper = Helper { child, socket };
+
+    let read = helper.ask(json!({
+        "method": "data_kv_get", "params": { "ns": "core", "key": "seeded" }
+    }));
+    assert_eq!(read["ok"], true, "읽기는 여전히 된다: {read}");
+    assert_eq!(read["data"], "before", "{read}");
+
+    let write = helper.ask(json!({
+        "method": "data_kv_set", "params": { "ns": "core", "key": "seeded", "value": "after" }
+    }));
+    assert_eq!(write["ok"], false, "소유권 없이 썼다: {write}");
+    let msg = write["message"].as_str().unwrap_or_default();
+    assert!(msg.contains("쓰기"), "무엇이 막았는지 말해야 한다: {write}");
+
+    // 값이 실제로 안 바뀌었는지 — 거절이 말뿐이 아니어야 한다.
+    let after = helper.ask(json!({
+        "method": "data_kv_get", "params": { "ns": "core", "key": "seeded" }
+    }));
+    assert_eq!(after["data"], "before", "거절해 놓고 썼다: {after}");
+}
