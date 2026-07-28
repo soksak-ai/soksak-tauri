@@ -13,7 +13,7 @@
 use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
 
-use soksak_portable::{identity, integrity, plugin_dir, session, themes, udp};
+use soksak_portable::{identity, integrity, plugin_dir, session, themes, udp, unit_dev};
 
 /// 명령 하나의 결과. 인자 해석 실패와 로직 실패를 가른다 — 부르는 쪽이 "내가 잘못 물었나,
 /// 물음은 맞는데 안 되나"를 코드로 구분할 수 있어야 한다.
@@ -119,6 +119,15 @@ pub const COMMANDS: &[Command] = &[
         args: &[Arg { name: "base", ty: "string", required: REQ }],
         returns: "PluginScanEntry[] (디렉터리 스캔 결과)",
         run: run_plugin_scan,
+    },
+    Command {
+        name: "app_environment",
+        args: &[
+            Arg { name: "identifier", ty: "string", required: REQ },
+            Arg { name: "home", ty: "string", required: REQ },
+        ],
+        returns: "AppEnvironment (정체성·홈·CLI·빌드 프로파일·유닛 모드)",
+        run: run_app_environment,
     },
     Command {
         name: "app_is_release",
@@ -302,6 +311,44 @@ fn run_app_is_release(params: &Value) -> Outcome {
     // 판정 규칙은 포터블이 소유한다 — 여기서 문자열을 다시 가르지 않는다.
     dispatch(params, |a: IdentifierArg| {
         Ok(identity::is_release_identifier(&a.identifier))
+    })
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EnvArg {
+    identifier: String,
+    home: String,
+}
+
+fn run_app_environment(params: &Value) -> Outcome {
+    // 파생 규칙은 포터블이 소유한다. 헬퍼는 정체성·홈을 인자로 받을 뿐 추측하지 않는다 —
+    // 추측하면 홈이 갈릴 때 조용히 다른 identity 의 환경을 답한다.
+    dispatch(params, |a: EnvArg| {
+        let core_build = identity::core_build_for_identifier(&a.identifier);
+        let cli = identity::cli_for_core_build(&core_build);
+        // 개발 유닛 선언은 홈 아래 config 파일이다. 없으면 빈 목록이 정답(공식 설치본만
+        // 쓰는 상태) — 파일 부재를 오류로 올리면 정상 상태가 실패로 보인다.
+        let units = unit_dev::read_declared(std::path::Path::new(&a.home))?;
+        let (accepted, rejected): (Vec<_>, Vec<_>) = units.into_iter().partition(|u| {
+            identity::dev_source_accepted(
+                std::path::Path::new(&u.source),
+                std::path::Path::new(&a.home),
+                &core_build,
+            )
+        });
+        Ok(json!({
+            "coreBuild": core_build,
+            "identity": a.identifier,
+            "cli": cli,
+            "home": a.home,
+            // 헬퍼는 릴리즈 프로파일로 배급된다 — 자기 빌드를 말하는 것이 정직하다.
+            "buildProfile": if cfg!(debug_assertions) { "debug" } else { "release" },
+            "updaterEnabled": core_build == "release",
+            "unitMode": if accepted.is_empty() { "official" } else { "mixed" },
+            "developmentUnits": accepted,
+            "rejectedDevelopmentUnits": rejected,
+        }))
     })
 }
 
