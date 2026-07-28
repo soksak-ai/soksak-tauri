@@ -194,17 +194,15 @@ fn resolve_secret_env(
     ns: Option<&str>,
     secret_env: &Option<HashMap<String, String>>,
 ) -> Result<Vec<(String, String)>, String> {
-    match secret_env {
-        Some(map) if !map.is_empty() => {
-            let ns = ns.ok_or("secret_env 주입에는 ns 필수")?;
-            let mut out = Vec::with_capacity(map.len());
-            for (env_var, secret_key) in map {
-                let plain = secrets::resolve(secrets_state, ns, secret_key)?;
-                out.push((env_var.clone(), plain));
-            }
-            Ok(out)
-        }
-        _ => Ok(Vec::new()),
+    soksak_core::secret_env::resolve_secret_env(&VaultSecrets(secrets_state), ns, secret_env)
+}
+
+/// 이 앱의 볼트 — 계약을 채우는 얇은 껍질. 평문은 이 경계를 지나 자식 env 로만 간다.
+struct VaultSecrets<'a>(&'a SecretsState);
+
+impl soksak_core::secret_env::SecretSource for VaultSecrets<'_> {
+    fn resolve(&self, ns: &str, key: &str) -> Result<String, String> {
+        secrets::resolve(self.0, ns, key)
     }
 }
 

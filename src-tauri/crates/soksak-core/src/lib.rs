@@ -34,6 +34,7 @@ pub mod pty_delivery;
 #[cfg(unix)]
 pub mod ptyd;
 pub mod seal_keys;
+pub mod secret_env;
 pub mod session;
 pub mod skillgen;
 pub mod store_lock;
