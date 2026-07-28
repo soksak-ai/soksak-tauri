@@ -1,7 +1,7 @@
 // 슬롯 동결(§4.6) E2E — 코어 이동-동결 엔진이 실행 중 앱에서 완주하는지 소켓으로 자가 검증한다.
 // 멱등: 전용 임시 root 창 안에서만 동작(사용자 워크스페이스 무접촉), 끝에 창을 닫는다.
 //
-// 실행: SOKSAK_SOCKET=~/.soksak-dev/com.soksak.dev.sock node scripts/e2e/slot-freeze.mjs
+// 실행: SOKSAK_SOCKET=<앱 소켓> node scripts/e2e/slot-freeze.mjs
 //
 // 검증:
 //   1) 정착 선캡처 — 브라우저(홀) 뷰 정착 후 슬롯 dataset.freezeSnapAt 이 선다
@@ -17,10 +17,9 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { requireSocket } from "./lib/client.mjs";
 
-const SOCKET =
-  process.env.SOKSAK_SOCKET ||
-  path.join(os.homedir(), ".soksak-debug", "com.soksak.debug.sock");
+const SOCKET = requireSocket();
 // 픽스처 루트 — 고정 경로 재사용(멱등, /tmp 금지 규율). 창 폐쇄가 회수를 담당한다.
 const FIXTURE_ROOT = path.join(os.homedir(), ".soksak-e2e", "slot-freeze");
 // 검증 대상 엔진 — 홀(네이티브 표면) 뷰는 엔진마다 표면 소유자가 다르다(자식 웹뷰 vs 사이드카

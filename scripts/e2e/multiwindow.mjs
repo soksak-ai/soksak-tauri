@@ -2,7 +2,7 @@
 // 멱등: 만든 창은 끝에 닫는다. 시각(브라우저 hole-punch)은 별도(snapshot label 후속).
 //
 // 실행:
-//   SOKSAK_SOCKET=~/.soksak/com.soksak.dev.sock node scripts/e2e/multiwindow.mjs
+//   SOKSAK_SOCKET=<앱 소켓> node scripts/e2e/multiwindow.mjs
 //
 // 검증:
 //   1) window.open → 새 창 label, window.list 가 +1
@@ -16,11 +16,9 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
-import { resolveControlWindow } from "./lib/client.mjs";
+import { requireSocket, resolveControlWindow } from "./lib/client.mjs";
 
-const SOCKET =
-  process.env.SOKSAK_SOCKET ||
-  path.join(os.homedir(), ".soksak", "com.soksak.dev.sock");
+const SOCKET = requireSocket();
 
 let sock;
 let seq = 0;

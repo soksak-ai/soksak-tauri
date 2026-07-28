@@ -1,4 +1,4 @@
-// PNG 디코더 — e2e 픽셀 오라클의 단일 진실.
+// PNG 코덱 — e2e 픽셀 오라클의 단일 진실.
 //
 // 네 벌로 복사돼 있던 것을 한 벌로 모은다. 복사본마다 같은 결함을 안고 있었고, 그 결함은
 // 조용했다: 화면엔 선이 있는데 판정기만 못 보고 "테두리 없음"을 냈다(실측 2026-07-27,
@@ -57,4 +57,80 @@ export function decodePng(buf) {
     prev = line;
   }
   return { w, h, ch, px: out };
+}
+
+// --- 인코더 -----------------------------------------------------------------
+// 픽셀 오라클의 픽스처를 코드로 만들기 위해 있다. 판정기가 "무엇을 백지로 보는가"는
+// 실물 바이트로만 증명되고, 그 바이트는 재생성 가능해야 한다(픽스처는 손으로 줍지 않는다).
+
+const CRC_TABLE = (() => {
+  const t = new Int32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    t[n] = c;
+  }
+  return t;
+})();
+
+function crc32(buf) {
+  let c = -1;
+  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ -1) >>> 0;
+}
+
+function chunk(type, body) {
+  const head = Buffer.alloc(8);
+  head.writeUInt32BE(body.length, 0);
+  head.write(type, 4, "ascii");
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(Buffer.concat([head.subarray(4), body])), 0);
+  return Buffer.concat([head, body, crc]);
+}
+
+/**
+ * {w,h,ch,px} → PNG 바이트(8-bit, non-interlaced). ch 1=gray, 3=RGB, 4=RGBA.
+ * 줄마다 None/Sub/Up 중 절대차 합이 가장 작은 필터를 고른다 — 단색·그라디언트 픽스처가
+ * 파일 크기 휴리스틱을 반증할 만큼 실제로 작게 눌리도록.
+ */
+export function encodePng({ w, h, ch, px }) {
+  const colorType = { 1: 0, 3: 2, 4: 6 }[ch];
+  if (colorType === undefined) throw new Error(`encodePng: 지원 안 하는 채널 수 ${ch}`);
+  if (px.length !== w * h * ch) throw new Error(`encodePng: 픽셀 길이 불일치(${px.length} ≠ ${w * h * ch})`);
+  const stride = w * ch;
+  const raw = Buffer.alloc(h * (stride + 1));
+  const prev = Buffer.alloc(stride);
+  const cand = [Buffer.alloc(stride), Buffer.alloc(stride), Buffer.alloc(stride)];
+  for (let y = 0; y < h; y++) {
+    const line = px.subarray(y * stride, y * stride + stride);
+    const score = [0, 0, 0];
+    for (let x = 0; x < stride; x++) {
+      const a = x >= ch ? line[x - ch] : 0;
+      const b = prev[x];
+      cand[0][x] = line[x];
+      cand[1][x] = (line[x] - a) & 0xff;
+      cand[2][x] = (line[x] - b) & 0xff;
+      for (let f = 0; f < 3; f++) {
+        const v = cand[f][x];
+        score[f] += v < 128 ? v : 256 - v;
+      }
+    }
+    let best = 0;
+    if (score[1] < score[best]) best = 1;
+    if (score[2] < score[best]) best = 2;
+    raw[y * (stride + 1)] = best;
+    cand[best].copy(raw, y * (stride + 1) + 1);
+    line.copy(prev);
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0);
+  ihdr.writeUInt32BE(h, 4);
+  ihdr[8] = 8;
+  ihdr[9] = colorType;
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", zlib.deflateSync(raw, { level: 9 })),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
 }

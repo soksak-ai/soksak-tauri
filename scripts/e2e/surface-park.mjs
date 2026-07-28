@@ -9,17 +9,15 @@
 // 재적용은 코어가 알린 마지막 사실(장부)만.
 //
 // 멱등: 픽스처 루트 ~/.soksak-e2e/surface-park 전용 창. 끝나면 회수.
-// 실행: SOKSAK_SOCKET=~/.soksak-dev/com.soksak.dev.sock node scripts/e2e/surface-park.mjs
+// 실행: SOKSAK_SOCKET=<앱 소켓> node scripts/e2e/surface-park.mjs
 
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
-import { resolveControlWindow } from "./lib/client.mjs";
+import { requireSocket, resolveControlWindow } from "./lib/client.mjs";
 
-const SOCKET =
-  process.env.SOKSAK_SOCKET ||
-  path.join(os.homedir(), ".soksak-dev", "com.soksak.dev.sock");
+const SOCKET = requireSocket();
 const FIXTURE = path.join(os.homedir(), ".soksak-e2e", "surface-park");
 
 let sock;

@@ -11,14 +11,10 @@
 // 소유권을 앱 상태로 옮기고 ui.input.pointer 로 그 상태를 OS 와 같은 경로로 구동한다. 여기서
 // 고정하는 것은 대칭이다: 무장되면 강조가 서고, 이탈이 오면 반드시 풀린다.
 import net from "node:net";
-import os from "node:os";
-import path from "node:path";
 import process from "node:process";
-import { resolveControlWindow } from "./lib/client.mjs";
+import { requireSocket, resolveControlWindow } from "./lib/client.mjs";
 
-const SOCKET =
-  process.env.SOKSAK_SOCKET ||
-  path.join(os.homedir(), ".soksak-debug", "com.soksak.debug.sock");
+const SOCKET = requireSocket();
 
 function openClient() {
   const st = { sock: null, seq: 0, pending: new Map(), buf: "" };

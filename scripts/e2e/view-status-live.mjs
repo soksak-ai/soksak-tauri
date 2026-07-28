@@ -22,7 +22,7 @@
 // their status declaration present, or they will not activate under content-view-status
 // blocking. Programs that are absent from program.list are skipped (never mocked).
 //
-// Run: SOKSAK_SOCKET=~/.soksak-debug/com.soksak.debug.sock node scripts/e2e/view-status-live.mjs
+// Run: SOKSAK_SOCKET=<앱 소켓> node scripts/e2e/view-status-live.mjs
 // Optional: VS_MOUNTS='terminal:soksak-plugin-terminal-xterm,erd:soksak-plugin-erd' overrides the
 //           program:plugin pairs to mount. VS_SNAPSHOT_PATH overrides the capture location.
 // Exit: 0 = GREEN (>=2 content views mounted, undeclared=0 — unreported is informational:
@@ -34,11 +34,9 @@ import path from "node:path";
 import process from "node:process";
 import fs from "node:fs";
 import { execFileSync } from "node:child_process";
-import { resolveControlWindow } from "./lib/client.mjs";
+import { requireSocket, resolveControlWindow } from "./lib/client.mjs";
 
-const SOCKET =
-  process.env.SOKSAK_SOCKET ||
-  path.join(os.homedir(), ".soksak-debug", "com.soksak.debug.sock");
+const SOCKET = requireSocket();
 const FIXTURE = path.join(os.homedir(), ".soksak-e2e", "viewstatus-fixture");
 const SNAPSHOT_PATH =
   process.env.VS_SNAPSHOT_PATH ||

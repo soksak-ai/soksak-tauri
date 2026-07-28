@@ -1,0 +1,59 @@
+{
+  "generator": "scripts/e2e/make-frame-fixtures.mjs",
+  "frames": {
+    "blank-window.png": {
+      "bytes": 8043,
+      "sha256": "d017791856448189",
+      "origin": "합성",
+      "note": "창 전체가 앱 배경색 단색 — 아무것도 안 그려진 프레임"
+    },
+    "blank-gradient.png": {
+      "bytes": 2486,
+      "sha256": "a97092bcaf3ba29c",
+      "origin": "합성",
+      "note": "세로 그라디언트 — 고유색 수십, 국소 대비 0"
+    },
+    "rendered-window.png": {
+      "bytes": 113622,
+      "sha256": "09f21934cc589f86",
+      "origin": "실물 캡처 파생",
+      "source": "/tmp/soksak-startup-analysis-final.png",
+      "sourceSize": "2560x2152",
+      "sourceMtime": "2026-07-27T13:08:31.442Z",
+      "sourceSha256": "db4002d0d0b86831",
+      "note": "창 전체를 1/4 로 축소 — 정상 렌더"
+    },
+    "rendered-slot.png": {
+      "bytes": 18840,
+      "sha256": "41282036d409f1bb",
+      "origin": "실물 캡처 파생",
+      "source": "/tmp/soksak-startup-analysis-final.png",
+      "sourceSize": "2560x2152",
+      "sourceMtime": "2026-07-27T13:08:31.442Z",
+      "sourceSha256": "db4002d0d0b86831",
+      "note": "원본 해상도 크롭 (768,538 320x200) — 뷰 슬롯 하나 크기의 정상 렌더"
+    },
+    "hole-window.png": {
+      "bytes": 46629,
+      "sha256": "e642fc8ab92f57e3",
+      "origin": "실물 캡처 파생",
+      "source": "/tmp/soksak-startup-analysis-final.png",
+      "sourceSize": "2560x2152",
+      "sourceMtime": "2026-07-27T13:08:31.442Z",
+      "sourceSha256": "db4002d0d0b86831",
+      "note": "rendered-window 위에 콘텐츠 구멍 합성 rect=(166,43 448x333)",
+      "hole": {
+        "x": 166,
+        "y": 43,
+        "w": 448,
+        "h": 333
+      }
+    },
+    "blank-retina.png": {
+      "bytes": 27697,
+      "sha256": "6ea2ea5aadb5a7df",
+      "origin": "합성",
+      "note": "레티나 창 전체 단색 — 크기는 실렌더 슬롯보다 크다"
+    }
+  }
+}

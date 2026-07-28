@@ -1,0 +1,536 @@
+{
+  "about": "e2e 하니스의 셸 결속 장부. 무리(class)와 이유는 사람이 적고, 표면(surfaces)은 shell-binding.mjs 가 소스에서 실측해 대조한다. 읽기: node scripts/e2e/shell-binding.mjs [--json|--surfaces|--class C]",
+  "classes": {
+    "A": "셸 무관 — 소켓 명령만 쓴다. 다른 셸 위에서도 같은 답을 요구한다.",
+    "B": "경로 결속 — 프로세스·빌드 산출물·앱 홈을 직접 안다. 값이 밖에서 오면 A 가 된다.",
+    "C": "네이티브 — 창 캡처·네이티브 자식 표면·합성 입력에 선다. 셸마다 답이 다른 것이 정상이다."
+  },
+  "banned": {
+    "socket-default": {
+      "why": "환경변수 뒤에 소켓 경로 기본값을 세우는 모양. 값을 안 주고 돌린 실행이 실패 대신 다른 홈의 앱에 붙어 판정을 낸다 — 무리와 무관하게 금지다. 경로는 SOKSAK_SOCKET 하나로만 들어오고, 없으면 이름을 달고 실패한다(scripts/e2e/lib/client.mjs requireSocket)."
+    }
+  },
+  "surfaces": {
+    "window.snapshot": {
+      "kind": "native",
+      "why": "창 내용을 네이티브로 합성해 PNG 로 굽는다. 네이티브 자식 웹뷰까지 한 장에 담기는 것이 판정 근거라, 페이지만 찍는 캡처로는 같은 답이 나오지 않는다.",
+      "shellAnswers": "셸이 자기 창 캡처를 제공한다"
+    },
+    "window.record": {
+      "kind": "native",
+      "why": "창을 연속 프레임으로 받는다. 프레임 소스가 셸의 창 합성기다.",
+      "shellAnswers": "셸이 자기 창 녹화를 제공한다"
+    },
+    "window.layers": {
+      "kind": "native",
+      "why": "네이티브 뷰 계층(클래스·frame·hidden)을 그대로 덤프한다. 계층의 모양 자체가 셸마다 다르다.",
+      "shellAnswers": "셸이 자기 뷰 계층을 덤프한다"
+    },
+    "webview.surfaces": {
+      "kind": "native",
+      "why": "상태가 아는 뷰와 실제로 살아 있는 자식 웹뷰를 대조한다. 자식 웹뷰라는 실체가 셸의 것이다.",
+      "shellAnswers": "셸이 자기 자식 웹뷰 목록을 낸다"
+    },
+    "webview.emitNative": {
+      "kind": "native",
+      "why": "네이티브 브리지로 사건을 밀어 넣는다 — 홀 위를 지나는 입력이 도착하는 그 경로다.",
+      "shellAnswers": "셸이 자기 네이티브 브리지를 연다"
+    },
+    "webview.health.query": {
+      "kind": "native",
+      "why": "렌더러 프로세스의 생사를 셸에게 묻는다. 렌더러가 몇 개이고 어떻게 죽는지가 셸마다 다르다.",
+      "shellAnswers": "셸이 자기 렌더러 건강을 보고한다"
+    },
+    "webview.recover": {
+      "kind": "native",
+      "why": "죽은 렌더러를 다시 세운다. 소생 정책이 셸의 프로세스 모델 위에 있다.",
+      "shellAnswers": "셸이 자기 렌더러를 되살린다"
+    },
+    "webview-runtime": {
+      "kind": "native",
+      "why": "렌더러 프로세스를 이름으로 지목한다(WebKit.WebContent). 이름도 개수도 셸의 사실이다.",
+      "shellAnswers": "셸이 자기 렌더러 프로세스를 지목한다"
+    },
+    "pixel-oracle": {
+      "kind": "native",
+      "why": "찍힌 픽셀로 판정한다. 판정하는 자는 바이트만 보는 순수 함수라 한 벌이지만(scripts/e2e/lib/frame-oracle.mjs), 같은 화면도 셸마다 다른 바이트로 찍힌다 — 네이티브 자식이 캡처에서 빠지면 그 자리가 구멍으로 남는다. 갈리는 것은 자가 아니라 재는 대상이다.",
+      "shellAnswers": "셸은 캡처를 답하고, 판정은 한 벌을 함께 쓴다"
+    },
+    "synthetic-input": {
+      "kind": "native",
+      "why": "OS 합성 입력으로 실제 커서를 움직인다. 앱 밖에서 앱을 치는 손이라 소켓 명령으로 대체되지 않는다.",
+      "shellAnswers": "OS 백엔드마다 따로 세운다"
+    },
+    "screen-record": {
+      "kind": "native",
+      "why": "OS 화면 녹화로 창 영역을 담는다. 창 좌표와 합성 결과가 셸의 사실이다.",
+      "shellAnswers": "OS 백엔드마다 따로 세운다"
+    },
+    "frame-decode": {
+      "kind": "native",
+      "why": "녹화 영상을 프레임으로 푼다 — 픽셀 오라클의 뒷단이다.",
+      "shellAnswers": "픽셀 오라클과 함께 간다"
+    },
+    "socket-name": {
+      "kind": "reducible",
+      "why": "identity 이름에서 소켓 파일 이름을 짓는다. 소켓 경로를 통째로 받으면 없어진다.",
+      "env": "SOKSAK_SOCKET"
+    },
+    "app-home-path": {
+      "kind": "reducible",
+      "why": "앱 홈 경로를 직접 짓는다(~/.soksak-<identity>). 홈은 실행 중인 앱의 사실이지 하니스의 사실이 아니다.",
+      "env": "SOKSAK_HOME"
+    },
+    "build-artifact-path": {
+      "kind": "reducible",
+      "why": "빌드 산출물 경로를 직접 안다(src-tauri/target/... 의 sok·번들). 실행물 경로를 받으면 없어진다.",
+      "env": "SOK"
+    },
+    "app-bundle-launch": {
+      "kind": "reducible",
+      "why": "앱 번들을 직접 띄운다. 무엇을 어떻게 띄우는지는 셸마다 다르지만, 기동 명령을 받으면 하니스는 몰라도 된다.",
+      "env": "SOKSAK_APP_LAUNCH"
+    },
+    "app-process-scan": {
+      "kind": "reducible",
+      "why": "앱이 살아 있는지 프로세스 목록으로 본다. 소켓 응답이 같은 사실을 더 정확히 답한다.",
+      "env": "SOKSAK_SOCKET"
+    },
+    "app-activate": {
+      "kind": "reducible",
+      "why": "OS 자동화로 앱을 전면화·종료한다. window.focus 와 종료 명령이 같은 일을 한다.",
+      "env": "SOKSAK_APP_LAUNCH"
+    }
+  },
+  "files": [
+    {
+      "file": "analyze-blank.py",
+      "role": "tool",
+      "class": "C",
+      "surfaces": [
+        "pixel-oracle",
+        "screen-record",
+        "frame-decode"
+      ],
+      "note": "녹화 영상에서 본문 blank 프레임을 센다. 입력이 OS 녹화라 셸을 바꾸면 프레임 소스부터 다르다."
+    },
+    {
+      "file": "browser-pixels.mjs",
+      "role": "harness",
+      "class": "C",
+      "surfaces": [
+        "window.snapshot",
+        "pixel-oracle"
+      ],
+      "note": "브라우저 뷰가 실제로 그려졌는지를 캡처 픽셀로 판정한다 — 자식 웹뷰가 캡처에 합성되는 것이 전제다."
+    },
+    {
+      "file": "browser-restore.sh",
+      "role": "harness",
+      "class": "C",
+      "surfaces": [
+        "window.snapshot",
+        "socket-name",
+        "app-home-path",
+        "build-artifact-path",
+        "app-bundle-launch",
+        "app-process-scan"
+      ],
+      "note": "앱을 껐다 켜 복원된 브라우저의 렌더를 픽셀 밝기로 판정한다. 캡처가 네이티브 축, 기동·홈 경로는 줄일 수 있는 축이다."
+    },
+    {
+      "file": "capture.mjs",
+      "role": "harness",
+      "class": "C",
+      "surfaces": [
+        "window.snapshot"
+      ],
+      "note": "네이티브 자식 웹뷰가 있는 창을 캡처가 담아내는지 본다 — 캡처 자체가 검증 대상이다."
+    },
+    {
+      "file": "check-utterances-tier2.mjs",
+      "role": "harness",
+      "class": "B",
+      "surfaces": [
+        "build-artifact-path"
+      ],
+      "note": "합성 카탈로그를 실모델에 물어 라우팅을 본다. 카탈로그는 CLI 로 읽으므로 sok 실행물 경로만 밖에서 오면 셸 무관이다."
+    },
+    {
+      "file": "check-utterances.mjs",
+      "role": "harness",
+      "class": "B",
+      "surfaces": [
+        "build-artifact-path"
+      ],
+      "note": "명령 description 의 트리거어를 CLI 카탈로그에서 읽어 대조한다. --sok 로 경로를 받으면 결속이 사라진다."
+    },
+    {
+      "file": "db-recovery.sh",
+      "role": "harness",
+      "class": "B",
+      "surfaces": [
+        "app-home-path",
+        "build-artifact-path",
+        "app-bundle-launch",
+        "app-activate"
+      ],
+      "note": "저장소가 찢어진 뒤 백업 링에서 살아나는지 본다. 판정은 저장소 사실이고, 셸은 앱을 껐다 켜는 손일 뿐이다."
+    },
+    {
+      "file": "divider-freeze.sh",
+      "role": "harness",
+      "class": "C",
+      "surfaces": [
+        "window.snapshot",
+        "window.layers",
+        "webview.emitNative",
+        "build-artifact-path"
+      ],
+      "note": "디바이더 드래그 중 네이티브 자식의 bounds 가 얼어 있는지를 뷰 계층과 크롭 픽셀로 본다 — 홀·레이어 계약 그 자체다."
+    },
+    {
+      "file": "divider-hover.mjs",
+      "role": "harness",
+      "class": "A",
+      "surfaces": [],
+      "note": "디바이더 히트 영역을 DOM 좌표로 재고 포인터 사건을 보낸다. 전부 소켓 명령이라 셸이 바뀌어도 같다."
+    },
+    {
+      "file": "e2e-driver.mjs",
+      "role": "driver",
+      "class": "A",
+      "surfaces": [],
+      "note": "리사이즈 무대를 세우고 몰기만 한다(판정 없음). 소켓 경로를 인자로만 받는 선례."
+    },
+    {
+      "file": "fixtures/nl-agent-stub-slow.sh",
+      "role": "fixture",
+      "class": "A",
+      "surfaces": [],
+      "note": "느린 에이전트를 흉내내는 스텁. 앱을 모른다."
+    },
+    {
+      "file": "fixtures/nl-agent-stub.sh",
+      "role": "fixture",
+      "class": "A",
+      "surfaces": [],
+      "note": "에이전트 응답을 흉내내는 스텁. 앱을 모른다."
+    },
+    {
+      "file": "frame-verdict.mjs",
+      "role": "tool",
+      "class": "C",
+      "surfaces": [
+        "pixel-oracle"
+      ],
+      "note": "건네받은 PNG 를 오라클에 물어 판정을 낸다. 누가 어떻게 찍었는지는 묻지 않지만, 재는 대상이 캡처 바이트라 픽셀 축에 선다."
+    },
+    {
+      "file": "gutter-drag.mjs",
+      "role": "harness",
+      "class": "C",
+      "surfaces": [
+        "webview.surfaces",
+        "webview.emitNative"
+      ],
+      "note": "거터가 DOM 구멍이라 마우스가 네이티브 표면 위 이음매에 닿는지 본다 — 홀 계약이 없으면 물음 자체가 성립하지 않는다."
+    },
+    {
+      "file": "lib/client.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "소켓 클라이언트 한 벌. 경로는 환경에서 받고 없으면 이름을 달고 실패한다 — 지어낸 기본값이 여기 하나면 하니스 전부가 물려 들어간다."
+    },
+    {
+      "file": "lib/frame-oracle.mjs",
+      "role": "lib",
+      "class": "C",
+      "surfaces": [
+        "pixel-oracle"
+      ],
+      "note": "\"이 프레임이 그려졌는가\"를 PNG 바이트만 보고 답한다. 판정을 캡처에서 떼어 놓아 셸이 바뀌어도 자는 하나다 — 대신 셸마다 다른 바이트가 그대로 판정 차이로 드러난다."
+    },
+    {
+      "file": "lib/frame-oracle.test.mjs",
+      "role": "test",
+      "class": "C",
+      "surfaces": [
+        "pixel-oracle"
+      ],
+      "note": "오라클의 기준. 어디까지가 백지고 어디부터가 렌더인지를 실물 바이트(fixtures/frames)로 고정한다."
+    },
+    {
+      "file": "lib/png.mjs",
+      "role": "lib",
+      "class": "C",
+      "surfaces": [
+        "pixel-oracle"
+      ],
+      "note": "PNG 코덱 — 픽셀 오라클의 단일 진실. 오라클이 서는 곳에서만 쓰인다."
+    },
+    {
+      "file": "make-frame-fixtures.mjs",
+      "role": "tool",
+      "class": "C",
+      "surfaces": [
+        "pixel-oracle"
+      ],
+      "note": "오라클 픽스처를 코드로 굽는다(멱등, 난수 없음). 판정 기준이 무엇을 백지로 보는지는 실물 바이트로만 증명된다."
+    },
+    {
+      "file": "memo-journey.sh",
+      "role": "harness",
+      "class": "C",
+      "surfaces": [
+        "window.snapshot",
+        "build-artifact-path",
+        "app-process-scan"
+      ],
+      "note": "응답의 hint 만으로 여정을 완주할 수 있는지 본다. 마지막 확인이 창 캡처라 그만큼 네이티브에 걸린다."
+    },
+    {
+      "file": "motion-slow.mjs",
+      "role": "harness",
+      "class": "C",
+      "surfaces": [
+        "window.snapshot",
+        "pixel-oracle"
+      ],
+      "note": "느린 모션의 프레임을 캡처해 이동이 실제로 그려지는지 픽셀로 본다."
+    },
+    {
+      "file": "multiwindow.mjs",
+      "role": "harness",
+      "class": "A",
+      "surfaces": [],
+      "note": "창을 열고 닫고 포커스를 옮기며 라벨·라우팅 계약을 본다. 창 명령은 어느 셸이든 자기가 구현해야 하는 것이라 하니스는 셸을 모른다."
+    },
+    {
+      "file": "nl-console.sh",
+      "role": "harness",
+      "class": "B",
+      "surfaces": [
+        "socket-name",
+        "app-home-path"
+      ],
+      "note": "자연어 콘솔의 질문·응답 사슬을 본다. identity 로 소켓 경로를 짓는 것 말고는 셸을 모른다."
+    },
+    {
+      "file": "orchestrator.sh",
+      "role": "harness",
+      "class": "B",
+      "surfaces": [
+        "socket-name",
+        "app-home-path"
+      ],
+      "note": "컨트롤 플레인(main)의 프로젝트 진입 경로를 본다. main 은 앱의 예약어지 셸의 사실이 아니다."
+    },
+    {
+      "file": "p0-contracts.mjs",
+      "role": "harness",
+      "class": "C",
+      "surfaces": [
+        "window.snapshot"
+      ],
+      "note": "부팅·버전·발견 계약 여섯 가지. 다섯은 소켓만 쓰고, 마지막 하나가 캡처 바이트 크기로 백지를 가른다."
+    },
+    {
+      "file": "project-rail.sh",
+      "role": "harness",
+      "class": "B",
+      "surfaces": [
+        "socket-name",
+        "app-home-path"
+      ],
+      "note": "레일 노드를 ui.tree 로 찾아 클릭하고 창이 나는지 본다. 전부 소켓 명령이고 소켓 경로만 직접 짓는다."
+    },
+    {
+      "file": "pty-cold-realistic.sh",
+      "role": "harness",
+      "class": "C",
+      "surfaces": [
+        "window.snapshot",
+        "socket-name",
+        "app-home-path",
+        "app-bundle-launch",
+        "app-process-scan"
+      ],
+      "note": "현실적인 콜드 부팅에서 터미널 화면이 복원되는지 본다 — 판정 축 하나가 캡처다."
+    },
+    {
+      "file": "pty-cold-restore.sh",
+      "role": "harness",
+      "class": "C",
+      "surfaces": [
+        "window.snapshot",
+        "socket-name",
+        "app-home-path",
+        "app-bundle-launch",
+        "app-process-scan"
+      ],
+      "note": "콜드 복원에서 뷰포트 소유권을 본다. 버퍼는 term.read 로, 화면은 캡처로 가른다."
+    },
+    {
+      "file": "pty-degraded.sh",
+      "role": "harness",
+      "class": "C",
+      "surfaces": [
+        "window.snapshot",
+        "socket-name",
+        "app-home-path",
+        "app-bundle-launch",
+        "app-process-scan"
+      ],
+      "note": "데몬이 없거나 상한 상태의 복원을 본다. 여기서도 화면 확인이 캡처다."
+    },
+    {
+      "file": "pty-handoff.mjs",
+      "role": "harness",
+      "class": "A",
+      "surfaces": [],
+      "note": "PTY 데몬 무중단 판올림 — FD·링 좌표·재부착을 소켓 명령과 터미널 버퍼로만 판정한다."
+    },
+    {
+      "file": "pty-survival.sh",
+      "role": "harness",
+      "class": "C",
+      "surfaces": [
+        "window.snapshot",
+        "socket-name",
+        "app-home-path",
+        "app-bundle-launch",
+        "app-process-scan"
+      ],
+      "note": "앱이 죽어도 셸 세션이 사는지 본다. 살아남았음의 마지막 확인이 화면이다."
+    },
+    {
+      "file": "rail-border.mjs",
+      "role": "harness",
+      "class": "C",
+      "surfaces": [
+        "window.snapshot",
+        "pixel-oracle"
+      ],
+      "note": "레일 테두리가 실제로 그려졌는지 픽셀로 본다 — DOM 단언으로는 안 잡히는 자리라 오라클이 있다."
+    },
+    {
+      "file": "resize.sh",
+      "role": "harness",
+      "class": "C",
+      "surfaces": [
+        "pixel-oracle",
+        "synthetic-input",
+        "screen-record",
+        "frame-decode",
+        "app-activate"
+      ],
+      "note": "실제 커서로 디바이더를 흔들며 본문 blank·프롬프트·TUI 를 본다. 손과 눈이 전부 OS 것이다."
+    },
+    {
+      "file": "restore-load.mjs",
+      "role": "harness",
+      "class": "C",
+      "surfaces": [
+        "window.snapshot",
+        "pixel-oracle"
+      ],
+      "note": "복원 직후 화면이 채워졌는지 본다 — 상태가 복원돼도 그려지지 않는 결함을 픽셀이 가른다."
+    },
+    {
+      "file": "restore-timing.mjs",
+      "role": "harness",
+      "class": "A",
+      "surfaces": [],
+      "note": "부팅 단계(boot.step) 원장으로 복원 시간을 잰다. 시각 판정이 없어 소켓만으로 완결된다."
+    },
+    {
+      "file": "scheduler-fire.mjs",
+      "role": "harness",
+      "class": "B",
+      "surfaces": [
+        "app-home-path"
+      ],
+      "note": "스케줄이 실제로 발화해 명령이 도는지 본다. 판정은 소켓 명령뿐인데, 더미 플러그인 하나를 릴리즈 홈 경로에서 적재해 그만큼 홈에 묶여 있다."
+    },
+    {
+      "file": "slot-freeze.mjs",
+      "role": "harness",
+      "class": "C",
+      "surfaces": [
+        "window.snapshot",
+        "window.record",
+        "window.layers"
+      ],
+      "note": "슬롯이 얼어붙는 결함을 네이티브 뷰 계층과 프레임으로 본다 — 자식 표면 위치가 판정 축이다."
+    },
+    {
+      "file": "surface-park.mjs",
+      "role": "harness",
+      "class": "C",
+      "surfaces": [
+        "webview.surfaces"
+      ],
+      "note": "재시작 뒤 유령 자식 웹뷰가 남는지 본다. 유령이라는 개념 자체가 네이티브 자식 표면의 것이다."
+    },
+    {
+      "file": "tab-switch-ghost.mjs",
+      "role": "harness",
+      "class": "C",
+      "surfaces": [
+        "window.snapshot",
+        "pixel-oracle"
+      ],
+      "note": "탭을 옮긴 뒤 옛 픽셀이 남는지 본다 — 유령은 픽셀로만 보인다."
+    },
+    {
+      "file": "terminal-unit-swap.sh",
+      "role": "tool",
+      "class": "B",
+      "surfaces": [
+        "app-home-path"
+      ],
+      "note": "한 identity 홈의 터미널 엔진 유닛을 정합시킨다. 파일 배치 작업이고, 홈 경로만 밖에서 오면 셸을 모른다."
+    },
+    {
+      "file": "tui-probe.sh",
+      "role": "fixture",
+      "class": "A",
+      "surfaces": [],
+      "note": "WINCH 마다 다시 그리는 결정적 TUI. 터미널 안에서만 돌고 앱을 모른다."
+    },
+    {
+      "file": "ui-verify.mjs",
+      "role": "harness",
+      "class": "A",
+      "surfaces": [],
+      "note": "창 구조 불변식을 앱 자신(ui.verify)에게 묻고 그 답을 그대로 판정한다."
+    },
+    {
+      "file": "view-status-live.mjs",
+      "role": "harness",
+      "class": "C",
+      "surfaces": [
+        "window.snapshot"
+      ],
+      "note": "뷰 status 축과 닫기 가드를 소켓으로 보고, 마지막에 캡처 크기로 백지가 아님을 확인한다."
+    },
+    {
+      "file": "webview-crash.sh",
+      "role": "harness",
+      "class": "C",
+      "surfaces": [
+        "window.snapshot",
+        "webview.health.query",
+        "webview.recover",
+        "webview-runtime",
+        "socket-name",
+        "app-home-path",
+        "app-bundle-launch",
+        "app-process-scan"
+      ],
+      "note": "렌더러를 죽이고 되살아나는지 본다. 죽일 대상을 이름으로 지목하는 것부터 셸의 프로세스 모델이다."
+    }
+  ]
+}

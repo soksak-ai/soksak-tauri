@@ -10,19 +10,17 @@
 // 멱등: 픽스처 루트 ~/.soksak-e2e/motion-slow 전용 창을 열고, 끝나면 모션 설정을 원복하고
 // 창을 닫는다. 사용자 창은 손대지 않는다(feedback_no-touching-user-window).
 //
-// 실행: SOKSAK_SOCKET=~/.soksak-dev/com.soksak.dev.sock node scripts/e2e/motion-slow.mjs
+// 실행: SOKSAK_SOCKET=<앱 소켓> node scripts/e2e/motion-slow.mjs
 
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
 import zlib from "node:zlib";
-import { resolveControlWindow } from "./lib/client.mjs";
+import { requireSocket, resolveControlWindow } from "./lib/client.mjs";
 
 import { decodePng } from "./lib/png.mjs";
-const SOCKET =
-  process.env.SOKSAK_SOCKET ||
-  path.join(os.homedir(), ".soksak-dev", "com.soksak.dev.sock");
+const SOCKET = requireSocket();
 const FIXTURE = path.join(os.homedir(), ".soksak-e2e", "motion-slow");
 const SCALE = 50;
 

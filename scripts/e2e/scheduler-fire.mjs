@@ -14,16 +14,16 @@
 // 발화 타깃: notify.show(실명령, ok:true). 빈 params 면 ok:false(INVALID_PARAMS) → backoff 유발(새 명령 0).
 //
 // 실행(앱 구동 + draft.js 통합 후):
-//   SOKSAK_SOCKET=~/.soksak/com.soksak.dev.sock node scripts/e2e/scheduler-fire.mjs
-//   (소켓 미지정 시 dev 소켓 기본. --keep 로 정리 생략, --only=c 로 한 시나리오만.)
+//   SOKSAK_SOCKET=<앱 소켓> node scripts/e2e/scheduler-fire.mjs
+//   (--keep 로 정리 생략, --only=c 로 한 시나리오만.)
 //
 // 전제: remoteInject=allow(dev 기본 — schedule.register/poke 는 danger:inject). 권한 deny 면 PERMISSION_DENIED.
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { requireSocket } from "./lib/client.mjs";
 
-const SOCKET =
-  process.env.SOKSAK_SOCKET || path.join(os.homedir(), ".soksak", "com.soksak.dev.sock");
+const SOCKET = requireSocket();
 const KEEP = process.argv.includes("--keep");
 const ONLY = (process.argv.find((a) => a.startsWith("--only=")) || "").slice("--only=".length);
 

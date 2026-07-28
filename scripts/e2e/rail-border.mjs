@@ -25,19 +25,17 @@
 // 아니라 자기 채널(data-rail-clip)이 진다 — 관측을 위해 정확성을 저당잡지 않는다.
 //
 // 멱등: 픽스처 루트 ~/.soksak-e2e/rail-border 전용 창. 끝나면 회수.
-// 실행: SOKSAK_SOCKET=~/.soksak-dev/com.soksak.dev.sock node scripts/e2e/rail-border.mjs
+// 실행: SOKSAK_SOCKET=<앱 소켓> node scripts/e2e/rail-border.mjs
 
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
 import zlib from "node:zlib";
-import { resolveControlWindow } from "./lib/client.mjs";
+import { requireSocket, resolveControlWindow } from "./lib/client.mjs";
 
 import { decodePng } from "./lib/png.mjs";
-const SOCKET =
-  process.env.SOKSAK_SOCKET ||
-  path.join(os.homedir(), ".soksak-dev", "com.soksak.dev.sock");
+const SOCKET = requireSocket();
 const FIXTURE = path.join(os.homedir(), ".soksak-e2e", "rail-border");
 
 let sock;

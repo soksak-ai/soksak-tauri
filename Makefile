@@ -22,7 +22,7 @@ DEBUG_APP   := src-tauri/target/debug/bundle/macos/soksak-debug.app
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install icons dev build build-debug run run-debug typecheck check test test-front verify gates clean stop cli cli-dev cli-debug install-cli install-cli-dev install-cli-debug docs registry
+.PHONY: help install icons dev build build-debug run run-debug typecheck check test test-front verify gates e2e-shell-binding clean stop cli cli-dev cli-debug install-cli install-cli-dev install-cli-debug docs registry
 
 help: ## 사용 가능한 명령 목록
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -175,6 +175,10 @@ gates: ## 코어 규율 게이트(blocking) — 결합·투명성·배포·경�
 	@node scripts/gates/core-terminal-scan.mjs
 	@node scripts/gates/distribution-invariants-scan.mjs
 	@node scripts/gates/platform-boundary-scan.mjs --artifacts
+	@node scripts/e2e/shell-binding.mjs --check
+
+e2e-shell-binding: ## e2e 하니스의 셸 결속 분류(A 셸무관·B 경로결속·C 네이티브)를 읽는다. 하니스를 돌리지 않는다
+	@node scripts/e2e/shell-binding.mjs $(ARGS)
 
 gates-registry: ## 배포 카탈로그 권위 게이트(네트워크) — 라이브 registry.json 의 GitHub 매니페스트 실측. C2 승격 소용돌이(시행 모집단=측정 모집단) + 의존 그래프 충족(의존 대상이 카탈로그에 함께 배포되는가) + 계약 동기(doctor 발행본 ≡ 코어 contract). 발행 전 GREEN 필수. 로컬(make gates)은 개발 사전점검일 뿐.
 	@node scripts/gates/c2-transparency-scan.mjs --registry

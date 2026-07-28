@@ -4,17 +4,16 @@
 // 현상: 메인 webview 만 캡처하면 콘텐츠 영역(브라우저 child webview)이 hole 로 빠진다.
 //   → 콘텐츠에 마커색(red) 페이지를 띄우고 캡처 중앙 픽셀을 검사한다. red 면 GREEN, 아니면 RED.
 //
-// 실행: SOKSAK_SOCKET=~/.soksak/com.soksak.dev.sock node scripts/e2e/capture.mjs
+// 실행: SOKSAK_SOCKET=<앱 소켓> node scripts/e2e/capture.mjs
 // 종료코드: 0=GREEN, 1=RED(현상 재현 또는 실패).
 
 import net from "node:net";
-import os from "node:os";
-import path from "node:path";
 import process from "node:process";
 import zlib from "node:zlib";
 import fs from "node:fs";
+import { requireSocket } from "./lib/client.mjs";
 
-const SOCKET = process.env.SOKSAK_SOCKET || path.join(os.homedir(), ".soksak", "com.soksak.dev.sock");
+const SOCKET = requireSocket();
 const MARKER = "file://" + (process.env.MARKER || "/tmp/marker.html");
 
 let sock, seq = 0;

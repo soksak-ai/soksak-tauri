@@ -13,7 +13,7 @@
 // The corrupt-DB backup-ring recovery contract is a separate lifecycle scenario
 // (db-recovery.sh) because it restarts the app.
 //
-// Run: SOKSAK_SOCKET=~/.soksak-debug/com.soksak.debug.sock node scripts/e2e/p0-contracts.mjs
+// Run: SOKSAK_SOCKET=<앱 소켓> node scripts/e2e/p0-contracts.mjs
 // Optional: P0_EXPECT_LANG=ko|en requires the skew sentence to render in that language;
 //           unset accepts either shipped skeleton (but still fails on a raw/untranslated one).
 //           P0_SNAPSHOT_PATH overrides where the render capture is written.
@@ -24,10 +24,9 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import fs from "node:fs";
+import { requireSocket } from "./lib/client.mjs";
 
-const SOCKET =
-  process.env.SOKSAK_SOCKET ||
-  path.join(os.homedir(), ".soksak-debug", "com.soksak.debug.sock");
+const SOCKET = requireSocket();
 const SNAPSHOT_PATH =
   process.env.P0_SNAPSHOT_PATH || path.join(os.tmpdir(), "soksak-p0-contracts-snapshot.png");
 const EXPECT_LANG = process.env.P0_EXPECT_LANG || ""; // "", "ko", or "en"

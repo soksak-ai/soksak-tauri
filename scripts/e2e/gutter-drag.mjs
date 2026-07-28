@@ -12,17 +12,15 @@
 // 우측 사이드바만 등록돼 있었고 골은 빠져 있었다 — 이 하니스가 그 공백을 시행한다.
 //
 // 멱등: 픽스처 루트 ~/.soksak-e2e/gutter-drag 전용 창. 끝나면 회수.
-// 실행: SOKSAK_SOCKET=~/.soksak-dev/com.soksak.dev.sock node scripts/e2e/gutter-drag.mjs
+// 실행: SOKSAK_SOCKET=<앱 소켓> node scripts/e2e/gutter-drag.mjs
 
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
-import { resolveControlWindow } from "./lib/client.mjs";
+import { requireSocket, resolveControlWindow } from "./lib/client.mjs";
 
-const SOCKET =
-  process.env.SOKSAK_SOCKET ||
-  path.join(os.homedir(), ".soksak-dev", "com.soksak.dev.sock");
+const SOCKET = requireSocket();
 const FIXTURE = path.join(os.homedir(), ".soksak-e2e", "gutter-drag");
 
 let sock;

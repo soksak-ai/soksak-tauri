@@ -2,15 +2,22 @@
 //
 // 게이트마다 같은 클라이언트를 다시 쓰면 고칠 곳이 게이트 수만큼 늘어난다. 한 벌만 둔다.
 import net from "node:net";
-import os from "node:os";
-import path from "node:path";
 import process from "node:process";
 
-export const SOCKET =
-  process.env.SOKSAK_SOCKET ||
-  path.join(os.homedir(), ".soksak-debug", "com.soksak.debug.sock");
+/** 소켓 경로가 오는 통로. 하나뿐이고, 기본값은 없다. */
+export const SOCKET_ENV = "SOKSAK_SOCKET";
 
-export function openClient(socket = SOCKET) {
+/** 붙을 곳을 환경에서 받는다 — 없으면 이름을 달고 실패한다.
+ *
+ *  기본 경로를 지어내면, 값을 안 준 실행이 실패 대신 **다른 홈의 앱**에 붙어 놓고 판정을 낸다.
+ *  하니스는 자기가 어느 셸 위에서 도는지 몰라야 하고, 홈 이름은 셸과 identity 의 사실이다. */
+export function requireSocket(env = process.env) {
+  const v = env[SOCKET_ENV];
+  if (!v) throw new Error(`${SOCKET_ENV} 이 없다 — e2e 하니스는 소켓 경로를 지어내지 않는다`);
+  return v;
+}
+
+export function openClient(socket = requireSocket()) {
   const st = { sock: null, seq: 0, pending: new Map(), buf: "" };
   return new Promise((resolve, reject) => {
     st.sock = net.createConnection(socket);

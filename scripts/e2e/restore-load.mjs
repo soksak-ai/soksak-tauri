@@ -9,19 +9,17 @@
 // 판정 철학, 창 재시작 없이 창 단위로).
 //
 // 멱등: 픽스처 루트 ~/.soksak-e2e/restore-load 전용 창. 끝나면 창을 닫는다.
-// 실행: SOKSAK_SOCKET=~/.soksak-dev/com.soksak.dev.sock node scripts/e2e/restore-load.mjs
+// 실행: SOKSAK_SOCKET=<앱 소켓> node scripts/e2e/restore-load.mjs
 
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
 import zlib from "node:zlib";
-import { resolveControlWindow } from "./lib/client.mjs";
+import { requireSocket, resolveControlWindow } from "./lib/client.mjs";
 
 import { decodePng } from "./lib/png.mjs";
-const SOCKET =
-  process.env.SOKSAK_SOCKET ||
-  path.join(os.homedir(), ".soksak-dev", "com.soksak.dev.sock");
+const SOCKET = requireSocket();
 const FIXTURE = path.join(os.homedir(), ".soksak-e2e", "restore-load");
 
 let sock;

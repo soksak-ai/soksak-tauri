@@ -10,7 +10,7 @@
 // 증명하지 못한다(사이드카 repo 가 자기 게이트에 적어 둔 문장: query success must not stand
 // in for pixels). 뷰 슬롯 영역을 잘라 캡처해 실제 색 분포를 본다.
 //
-// 실행: SOKSAK_SOCKET=~/.soksak-dev/com.soksak.dev.sock node scripts/e2e/browser-pixels.mjs
+// 실행: SOKSAK_SOCKET=<앱 소켓> node scripts/e2e/browser-pixels.mjs
 // 멱등: 전용 root 의 임시 창 하나에서만 동작하고(사용자 워크스페이스 무접촉) 끝에 닫는다.
 import fs from "node:fs";
 import net from "node:net";
@@ -18,11 +18,9 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import zlib from "node:zlib";
-import { resolveControlWindow } from "./lib/client.mjs";
+import { requireSocket, resolveControlWindow } from "./lib/client.mjs";
 
-const SOCKET =
-  process.env.SOKSAK_SOCKET ||
-  path.join(os.homedir(), ".soksak-debug", "com.soksak.debug.sock");
+const SOCKET = requireSocket();
 const FIXTURE_ROOT = path.join(os.homedir(), ".soksak-e2e", "browser-pixels");
 // 픽스처 루트는 고정 경로 재사용(멱등 — /tmp 금지 규율). 없으면 만든다: 게이트가
 // 환경 준비를 사람에게 떠넘기지 않는다.
