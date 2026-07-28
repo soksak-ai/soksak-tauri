@@ -87,7 +87,16 @@ impl Helper {
 fn fixture_dir(name: &str) -> PathBuf {
     let home = std::env::var("HOME").expect("HOME");
     let dir = PathBuf::from(home).join(".soksak-cored-test").join(name);
-    let _ = std::fs::remove_dir_all(&dir);
+    // 설치본 픽스처는 앱과 같은 잠금(`chmod -R a-w`)을 걸고, 잠긴 트리는 remove_dir_all 이
+    // 막는다 — 앞선 실패가 남긴 트리를 못 지우면 다음 실행은 옛 상태 위에서 답한다.
+    if dir.exists() {
+        let _ = std::process::Command::new("chmod")
+            .arg("-R")
+            .arg("u+w")
+            .arg(&dir)
+            .output();
+        std::fs::remove_dir_all(&dir).expect("앞선 실행이 남긴 픽스처 제거");
+    }
     std::fs::create_dir_all(&dir).expect("픽스처 루트 생성");
     dir
 }
@@ -468,7 +477,30 @@ fn what_it_refuses_is_discoverable_with_the_reason() {
         .as_array()
         .unwrap_or_else(|| panic!("unserved 선언이 없다: {reply}"));
     let named: Vec<&str> = unserved.iter().filter_map(|u| u["name"].as_str()).collect();
-    for expected in ["project_owners", "net_http_request", "process_reclaim_window"] {
+    // 감사한 open 이름 전부. 하나라도 빠지면 그 이름은 표에 없는 침묵이 되어, 부른 쪽이 받는
+    // UNKNOWN_COMMAND 가 "아직 안 옮겼다"인지 "여기서는 못 한다"인지 구분되지 않는다.
+    for expected in [
+        "service_ledger_sync",
+        "secret_status",
+        "activity_recent",
+        "project_owners",
+        "net_http_request",
+        "process_reclaim_window",
+        "download_verify",
+        "app_relaunch",
+        "sidecar_close",
+        "sidecar_ensure",
+        "clipboard_read",
+        "media_proxy_info",
+        "ipc_last_project_window",
+        "unit_dev_set",
+        "unit_dev_remove",
+        "plugin_install_git",
+        "plugin_update",
+        "plugin_dev_new",
+        "plugin_dev_new2",
+        "sidecar_dev_new",
+    ] {
         assert!(named.contains(&expected), "{expected} 이 없다: {named:?}");
     }
     // 이름만 있고 이유가 없으면 다음 사람이 "왜 안 되지"부터 다시 한다.
@@ -486,19 +518,25 @@ fn what_it_refuses_is_discoverable_with_the_reason() {
 fn calling_an_audited_name_carries_the_reason_across_the_socket() {
     let helper = spawn_helper("unserved-call");
     let table = helper.ask(json!({ "id": 9, "method": "cored.commands" }));
-    let declared = table["data"]["unserved"]
-        .as_array()
-        .and_then(|u| u.iter().find(|e| e["name"] == "process_reclaim_window"))
-        .and_then(|e| e["blockedBy"].as_str())
-        .unwrap_or_else(|| panic!("사유 선언이 없다: {table}"))
-        .to_string();
 
-    let reply = helper.ask(json!({ "id": 10, "method": "process_reclaim_window", "params": {} }));
-    assert_eq!(reply["ok"], false, "응답: {reply}");
-    assert_eq!(reply["code"], "UNKNOWN_COMMAND", "응답: {reply}");
-    let msg = reply["message"].as_str().unwrap_or_default();
-    assert!(msg.contains("process_reclaim_window"), "응답: {reply}");
-    assert!(msg.contains(&declared), "선언한 사유가 응답에 없다: {reply}");
+    // 두 벌을 본다 — 한 이름만 보면 그 항목만 배선되고 나머지는 목록에만 있는 채로 통과한다.
+    for (id, name) in [(10, "process_reclaim_window"), (11, "clipboard_read")] {
+        let declared = table["data"]["unserved"]
+            .as_array()
+            .and_then(|u| u.iter().find(|e| e["name"] == name))
+            .and_then(|e| e["blockedBy"].as_str())
+            .unwrap_or_else(|| panic!("{name} 의 사유 선언이 없다: {table}"))
+            .to_string();
+        assert!(!declared.is_empty(), "{name} 의 사유가 비었다: {table}");
+
+        let reply = helper.ask(json!({ "id": id, "method": name, "params": {} }));
+        // ok:false 만 보면 "표에 없어서 모른다"가 "감사해서 거절했다"로 위장한다 — code 까지 본다.
+        assert_eq!(reply["ok"], false, "응답: {reply}");
+        assert_eq!(reply["code"], "UNKNOWN_COMMAND", "응답: {reply}");
+        let msg = reply["message"].as_str().unwrap_or_default();
+        assert!(msg.contains(name), "거절이 이름을 말하지 않는다: {reply}");
+        assert!(msg.contains(&declared), "선언한 사유가 응답에 없다: {reply}");
+    }
 }
 
 // ── 활동 원장 — 적재는 프로세스를 건너서도 같은 규칙이다 ──────────────────────
@@ -1432,4 +1470,119 @@ fn a_stored_entry_is_a_summary_not_a_copy() {
         .expect("읽기");
     assert!(!doc.contains("AAAA"), "base64 가 그대로 남았다: {doc}");
     assert!(doc.contains("image/png"), "kind 는 남아야 한다: {doc}");
+}
+
+// ── 플러그인 전용 저장소 · 제거 ──────────────────────────────────────────────
+//
+// 자리는 <홈>/plugins-data/<id>/<key>.json 이다. 앱이 그 문자열을 직접 적고 cored 가 또 적으면
+// 한쪽만 고쳐질 수 있고, 그 어긋남은 오류가 아니라 **빈 목록**으로 나타난다(없는 곳을 훑고
+// "저장된 게 없다"고 답한다). 그래서 자리도 검증 문자셋도 코어 한 벌이라야 한다.
+
+/// 쓴 원문이 파싱 없이 그대로 돌아오고, 목록은 확장자를 뗀 이름을 사전순으로 답한다.
+/// 값은 JSON 문자열이지만 이 명령은 그것을 해석하지 않는다 — 해석하면 저장한 것과 돌려받는
+/// 것이 달라지고(키 순서·수 표기), 그 차이는 저장소를 쓰는 플러그인에게만 보인다.
+#[test]
+fn plugin_data_round_trips_the_stored_text_verbatim() {
+    let helper = spawn_helper("plugin-data-roundtrip");
+    let raw = r#"{"b":1,"a":[2,3],"note":"한글 그대로"}"#;
+
+    let wrote = helper.ask(json!({
+        "method": "plugin_data_write",
+        "params": { "id": "memo", "key": "notes", "value": raw }
+    }));
+    assert_eq!(wrote["ok"], true, "{wrote}");
+
+    let read = helper.ask(json!({
+        "method": "plugin_data_read", "params": { "id": "memo", "key": "notes" }
+    }));
+    assert_eq!(read["ok"], true, "{read}");
+    assert_eq!(read["data"], raw, "원문이 그대로 돌아와야 한다: {read}");
+
+    // 쓰기가 상위 디렉터리까지 만든다 — 부팅이 만들어 두는 것에 기대지 않는다.
+    assert!(
+        helper.home().join("plugins-data").join("memo").join("notes.json").is_file(),
+        "쓰기가 <홈>/plugins-data/<id>/<key>.json 에 남지 않았다"
+    );
+
+    helper.ask(json!({
+        "method": "plugin_data_write",
+        "params": { "id": "memo", "key": "config", "value": "{}" }
+    }));
+    let listed = helper.ask(json!({ "method": "plugin_data_list", "params": { "id": "memo" } }));
+    assert_eq!(listed["ok"], true, "{listed}");
+    assert_eq!(
+        listed["data"],
+        json!(["config", "notes"]),
+        "확장자를 뗀 이름이 사전순으로 와야 한다: {listed}"
+    );
+}
+
+/// 부재는 값이지 실패가 아니다 — 그리고 **읽기 명령이 디스크를 만들지 않는다**.
+/// 앱은 스캔 전에 자기 홈 배치를 만들어 두지만 cored 는 남의 홈을 읽을 뿐이라 그 부작용을
+/// 지지 않는다. 만들어 버리면 "한 번도 저장한 적 없는 홈"이 저장한 적 있는 홈과 같아진다.
+#[test]
+fn plugin_data_answers_absence_without_touching_the_disk() {
+    let helper = spawn_helper("plugin-data-absent");
+
+    let read = helper.ask(json!({
+        "method": "plugin_data_read", "params": { "id": "memo", "key": "nothing" }
+    }));
+    assert_eq!(read["ok"], true, "부재는 실패가 아니다: {read}");
+    assert_eq!(read["data"], Value::Null, "없는 key 는 null: {read}");
+
+    let listed = helper.ask(json!({ "method": "plugin_data_list", "params": { "id": "memo" } }));
+    assert_eq!(listed["ok"], true, "{listed}");
+    assert_eq!(listed["data"], json!([]), "없는 id 는 빈 목록: {listed}");
+
+    assert!(
+        !helper.home().join("plugins-data").exists(),
+        "읽기 두 번이 저장소 디렉터리를 만들었다: {}",
+        helper.home().join("plugins-data").display()
+    );
+}
+
+/// 설치본은 읽기전용으로 잠겨 있다 — 잠금을 풀지 않으면 remove_dir_all 이 막힌다.
+/// 그리고 전용 저장소는 **남긴다**: 재설치 시 데이터 보존이 이 명령의 결정이다.
+#[test]
+fn plugin_remove_unlocks_the_tree_and_keeps_the_data() {
+    let helper = spawn_helper("plugin-remove");
+    let installed = helper.home().join("plugins").join("memo");
+    std::fs::create_dir_all(installed.join("src")).unwrap();
+    std::fs::write(installed.join("plugin.json"), br#"{"id":"memo"}"#).unwrap();
+    std::fs::write(installed.join("src").join("main.js"), b"export default {}").unwrap();
+    let data = helper.home().join("plugins-data").join("memo");
+    std::fs::create_dir_all(&data).unwrap();
+    std::fs::write(data.join("notes.json"), b"{}").unwrap();
+    // 앱이 설치 직후 거는 것과 같은 잠금.
+    let locked = std::process::Command::new("chmod")
+        .arg("-R")
+        .arg("a-w")
+        .arg(&installed)
+        .output()
+        .expect("chmod 실행");
+    assert!(locked.status.success(), "픽스처를 잠그지 못했다");
+
+    let reply = helper.ask(json!({ "method": "plugin_remove", "params": { "id": "memo" } }));
+    assert_eq!(reply["ok"], true, "{reply}");
+    assert!(!installed.exists(), "잠긴 트리가 남았다: {}", installed.display());
+    assert!(
+        data.join("notes.json").is_file(),
+        "전용 저장소까지 지웠다 — 재설치 시 데이터 보존 결정을 어겼다"
+    );
+}
+
+/// 없는 것을 지우는 것은 성공이 아니다. 부재를 성공으로 접으면 호출자는 없앤 적 없는 것을
+/// 없앴다고 믿고, 오탈자 하나가 "제거됨"으로 조용히 지나간다.
+#[test]
+fn plugin_remove_refuses_an_uninstalled_id_by_name() {
+    let helper = spawn_helper("plugin-remove-absent");
+    let reply = helper.ask(json!({ "method": "plugin_remove", "params": { "id": "ghost" } }));
+    assert_eq!(reply["ok"], false, "{reply}");
+    // UNKNOWN_COMMAND 도 ok:false 다 — 코드를 함께 보지 않으면 미서빙이 통과로 위장한다.
+    assert_eq!(reply["code"], "COMMAND_FAILED", "{reply}");
+    assert_eq!(
+        reply["message"].as_str().unwrap_or_default(),
+        "설치되지 않은 플러그인: ghost",
+        "{reply}"
+    );
 }

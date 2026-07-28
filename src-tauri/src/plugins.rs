@@ -14,41 +14,17 @@ fn plugins_dir() -> Result<PathBuf, String> {
     Ok(dir)
 }
 
-fn plugins_data_dir() -> Result<PathBuf, String> {
-    let dir = crate::identity::ambient().path("plugins-data");
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    Ok(dir)
+fn plugins_data_dir() -> PathBuf {
+    // 만들지 않는다 — 세 명령(plugin_data_read/write/list)의 답을 하나도 바꾸지 않는다.
+    // 읽기는 NotFound 를 "값 없음"으로 가르고, 목록은 <base>/<id> 를 보고, 쓰기는 자기가
+    // 상위까지 만든다. 만들어 두면 부작용만 프로세스마다 갈린다.
+    crate::identity::ambient().plugin_data_dir()
 }
 
-// 플러그인 id = ^[a-z0-9][a-z0-9-]*$ (스펙 §3 과 동일). 문자셋에 "."/"/" 자체가 없어
-// 경로 탈출이 원천 차단된다. 디렉토리명으로 그대로 쓰이므로 여기서도 재검증.
-fn sanitize_id(id: &str) -> Result<(), String> {
-    let mut chars = id.chars();
-    let head_ok = chars
-        .next()
-        .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit());
-    let rest_ok = chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
-    if head_ok && rest_ok {
-        Ok(())
-    } else {
-        Err(format!("잘못된 플러그인 id: {id:?}"))
-    }
-}
-
-// 저장소 key = ^[A-Za-z0-9._-]+$. "." 은 허용 문자지만 "."/".." 단독은 경로 의미라 거부.
-fn sanitize_key(key: &str) -> Result<(), String> {
-    if key.is_empty() || key == "." || key == ".." {
-        return Err(format!("잘못된 저장소 key: {key:?}"));
-    }
-    if key
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
-    {
-        Ok(())
-    } else {
-        Err(format!("잘못된 저장소 key: {key:?}"))
-    }
-}
+// 경로 탈출 차단은 문자셋 자체에 있다 — 그 문자셋이 두 벌이면 한쪽에서만 홈 밖이 열린다.
+// 정본은 코어가 소유하고 여기는 재수출해 쓴다. 저장소 key 규칙(plugin_data::sanitize_key)은
+// 이 파일이 직접 부르지 않는다 — plugin_data 의 세 함수가 안에서 건다.
+pub use soksak_core::plugin_dir::sanitize_id;
 
 // git 서브프로세스 1회 실행. 비정상 종료 시 stderr 를 그대로 에러 메시지로(원인 노출).
 fn git_run(cmd: &mut std::process::Command) -> Result<(), String> {
@@ -1132,74 +1108,30 @@ pub fn plugin_dev_new2(name: String) -> Result<PluginInstallResult, String> {
     Ok(result)
 }
 
-// 플러그인 제거(디렉토리째). 전용 저장소(plugins-data)는 남긴다 — 재설치 시 데이터 보존.
+// 플러그인 제거(디렉토리째). 순서(id 검증 → 부재 판정 → 잠금 해제 → 제거)와 전용 저장소를
+// 남기는 결정은 코어가 소유한다 — 여기서는 홈에서 베이스를 해소하고 잠금 해제 스폰만 준다.
 #[tauri::command]
 pub fn plugin_remove(id: String) -> Result<(), String> {
-    sanitize_id(&id)?;
-    let dir = plugins_dir()?.join(&id);
-    if !dir.exists() {
-        return Err(format!("설치되지 않은 플러그인: {id}"));
-    }
-    set_tree_writable(&dir, true); // 읽기전용 잠금 해제 후 제거(잠긴 트리는 remove 가 막힌다)
-    std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())
+    soksak_core::plugin_dir::remove(&plugins_dir()?, &id, |dir| set_tree_writable(dir, true))
 }
 
 // ── 전용 저장소(plugin_data_*) ──────────────────────────────────────────────
-// storage 권한용 — 플러그인당 <base>/<id>/<key>.json 평면 구조. id/key 검증으로
-// 자기 디렉토리 밖 접근 차단. base 주입형 내부 함수 + 커맨드 위임(테스트 가능).
-
-fn data_read_in(base: &Path, id: &str, key: &str) -> Result<Option<String>, String> {
-    sanitize_id(id)?;
-    sanitize_key(key)?;
-    match std::fs::read_to_string(base.join(id).join(format!("{key}.json"))) {
-        Ok(s) => Ok(Some(s)),
-        // 미존재는 에러가 아니라 "값 없음"(프론트가 기본값 분기).
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(e.to_string()),
-    }
-}
-
-fn data_write_in(base: &Path, id: &str, key: &str, value: &str) -> Result<(), String> {
-    sanitize_id(id)?;
-    sanitize_key(key)?;
-    let dir = base.join(id);
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    std::fs::write(dir.join(format!("{key}.json")), value).map_err(|e| e.to_string())
-}
-
-fn data_list_in(base: &Path, id: &str) -> Result<Vec<String>, String> {
-    sanitize_id(id)?;
-    let dir = base.join(id);
-    if !dir.exists() {
-        return Ok(Vec::new());
-    }
-    let mut out = Vec::new();
-    for entry in std::fs::read_dir(&dir).map_err(|e| e.to_string())? {
-        let Ok(entry) = entry else { continue };
-        let path = entry.path();
-        if path.extension().is_some_and(|e| e == "json") {
-            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                out.push(stem.to_string());
-            }
-        }
-    }
-    out.sort();
-    Ok(out)
-}
+// storage 권한용 — 플러그인당 <base>/<id>/<key>.json 평면 구조. 배치도 id/key 검증도
+// 코어(soksak_core::plugin_data)가 소유한다. 여기서는 홈에서 베이스를 해소한다.
 
 #[tauri::command]
 pub fn plugin_data_read(id: String, key: String) -> Result<Option<String>, String> {
-    data_read_in(&plugins_data_dir()?, &id, &key)
+    soksak_core::plugin_data::read(&plugins_data_dir(), &id, &key)
 }
 
 #[tauri::command]
 pub fn plugin_data_write(id: String, key: String, value: String) -> Result<(), String> {
-    data_write_in(&plugins_data_dir()?, &id, &key, &value)
+    soksak_core::plugin_data::write(&plugins_data_dir(), &id, &key, &value)
 }
 
 #[tauri::command]
 pub fn plugin_data_list(id: String) -> Result<Vec<String>, String> {
-    data_list_in(&plugins_data_dir()?, &id)
+    soksak_core::plugin_data::list(&plugins_data_dir(), &id)
 }
 
 #[cfg(test)]
@@ -1272,8 +1204,10 @@ mod tests {
         assert!(sanitize_id("한글").is_err());
     }
 
+    // 앱이 답하는 저장소 key 규칙 — 코어에 옮긴 뒤에도 같은 것을 거절해야 한다.
     #[test]
     fn sanitize_key_rules() {
+        use soksak_core::plugin_data::sanitize_key;
         assert!(sanitize_key("notes").is_ok());
         assert!(sanitize_key("a.b-c_d").is_ok());
         assert!(sanitize_key("").is_err());
@@ -1300,30 +1234,40 @@ mod tests {
         assert_eq!(normalize_source("a/b/c"), "a/b/c");
     }
 
-    // 전용 저장소 왕복: 쓰기 → 읽기 → 목록 → 미존재 읽기 None.
+    // 전용 저장소 왕복: 쓰기 → 읽기 → 목록 → 미존재 읽기 None. 코어 위임 후에도 앱이
+    // 보던 답 그대로여야 한다 — 이 명령들의 계약은 프론트가 이미 쓰고 있다.
     #[test]
     fn data_roundtrip() {
+        use soksak_core::plugin_data::{list, read, write};
         let base = std::env::temp_dir().join(format!("soksak-plugdata-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
 
         // 빈 상태: 읽기 None, 목록 빈 배열(디렉토리 미생성 상태도 에러 아님).
-        assert_eq!(data_read_in(&base, "memo", "notes").unwrap(), None);
-        assert!(data_list_in(&base, "memo").unwrap().is_empty());
+        assert_eq!(read(&base, "memo", "notes").unwrap(), None);
+        assert!(list(&base, "memo").unwrap().is_empty());
 
-        data_write_in(&base, "memo", "notes", r#"{"a":1}"#).unwrap();
-        data_write_in(&base, "memo", "config", "{}").unwrap();
+        write(&base, "memo", "notes", r#"{"a":1}"#).unwrap();
+        write(&base, "memo", "config", "{}").unwrap();
         assert_eq!(
-            data_read_in(&base, "memo", "notes").unwrap().as_deref(),
+            read(&base, "memo", "notes").unwrap().as_deref(),
             Some(r#"{"a":1}"#)
         );
-        assert_eq!(data_list_in(&base, "memo").unwrap(), ["config", "notes"]);
-        assert_eq!(data_read_in(&base, "memo", "missing").unwrap(), None);
+        assert_eq!(list(&base, "memo").unwrap(), ["config", "notes"]);
+        assert_eq!(read(&base, "memo", "missing").unwrap(), None);
 
         // 검증 실패 경로 — 자기 디렉토리 밖 접근 시도.
-        assert!(data_read_in(&base, "memo", "../escape").is_err());
-        assert!(data_write_in(&base, "../memo", "k", "v").is_err());
+        assert!(read(&base, "memo", "../escape").is_err());
+        assert!(write(&base, "../memo", "k", "v").is_err());
 
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    // 전용 저장소는 설치 트리와 다른 자리다 — plugin_remove 가 지우는 곳 밖이라야 재설치
+    // 시 데이터가 남는다. 두 자리를 홈에서 해소하는 것이 이 파일의 몫이라 여기서 못박는다.
+    #[test]
+    fn the_plugin_store_is_not_under_the_install_tree() {
+        let id = soksak_core::identity::Identity::new("/u/max/.soksak-dev", "com.soksak.dev");
+        assert!(!id.plugin_data_dir().starts_with(id.plugins_dir()));
     }
 
     // 테스트용 git 실행(전역 설정 비의존 — user/gpgsign 을 -c 로 고정).

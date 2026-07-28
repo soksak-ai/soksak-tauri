@@ -7,6 +7,47 @@
 use serde::Serialize;
 use std::path::Path;
 
+/// 플러그인 id = `^[a-z0-9][a-z0-9-]*$` (스펙 §3 과 동일).
+///
+/// 경로 탈출 차단이 **문자셋 자체**에 있다 — 허용 문자에 `.` 도 `/` 도 없어서 `..` 류가
+/// 규칙에 걸리기 전에 이미 없다. 그래서 이 검사가 두 벌이 되면 안 된다: 한쪽만 느슨해지면
+/// 그쪽에서만 홈 밖이 열리고, 그 차이는 검사를 통과한 쪽에서는 보이지 않는다.
+pub fn sanitize_id(id: &str) -> Result<(), String> {
+    let mut chars = id.chars();
+    let head_ok = chars
+        .next()
+        .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit());
+    let rest_ok = chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+    if head_ok && rest_ok {
+        Ok(())
+    } else {
+        Err(format!("잘못된 플러그인 id: {id:?}"))
+    }
+}
+
+/// 설치본 디렉터리를 통째로 지운다 — 전용 저장소(`plugins-data/<id>`)는 **남긴다**.
+///
+/// 그 자리는 이 함수가 만지는 베이스 밖이다. 함께 지우면 재설치가 빈 상태로 시작하고,
+/// 사용자가 잃은 것은 오류로 나타나지 않는다(플러그인이 기본값으로 뜰 뿐이다).
+///
+/// 순서가 이 함수에 있는 이유: 설치본은 읽기전용으로 잠겨 있어서(`chmod -R a-w`) 잠금을
+/// 풀기 전에 `remove_dir_all` 을 부르면 막힌다. 순서가 두 벌이면 한쪽만 잠긴 트리를 못 지우고,
+/// 그 실패는 "권한 없음" 한 줄이라 원인이 순서라는 것이 안 보인다.
+///
+/// `unlock` 이 콜백인 이유: 잠금을 푸는 것은 프로세스 스폰(`chmod`)이고, 스폰은 프레임워크
+/// 없는 로직의 것이 아니다. **무엇을 언제 하는가**는 여기가 소유하고, 그 한 걸음만 부르는
+/// 쪽이 준다. 실패해도 멈추지 않는다 — 잠기지 않은 트리에서도 제거는 서야 한다(best-effort).
+pub fn remove(base: &Path, id: &str, unlock: impl FnOnce(&Path)) -> Result<(), String> {
+    sanitize_id(id)?;
+    let dir = base.join(id);
+    // 부재를 성공으로 접으면 없앤 적 없는 것을 없앴다가 된다 — 오탈자 하나가 조용히 지나간다.
+    if !dir.exists() {
+        return Err(format!("설치되지 않은 플러그인: {id}"));
+    }
+    unlock(&dir);
+    std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PluginScanEntry {
     pub dir: String,
@@ -159,6 +200,57 @@ mod tests {
         let not_a_dir = std::env::temp_dir().join("soksak-core-plugins-file-xyz");
         std::fs::write(&not_a_dir, b"x").unwrap();
         assert!(scan(&not_a_dir).is_err(), "못 읽음은 여전히 오류다");
+    }
+
+    /// 문자셋 자체가 경로 탈출을 막는다 — 거부 문장은 앱이 쓰던 것 그대로다.
+    #[test]
+    fn sanitize_id_keeps_the_charset_that_forbids_escape() {
+        assert!(sanitize_id("memo").is_ok());
+        assert!(sanitize_id("git-2").is_ok());
+        assert!(sanitize_id("").is_err());
+        assert!(sanitize_id("-a").is_err());
+        assert!(sanitize_id("A").is_err());
+        assert!(sanitize_id("a/b").is_err());
+        assert!(sanitize_id("a..b").is_err());
+        assert!(sanitize_id("한글").is_err());
+        assert_eq!(
+            sanitize_id("../x").unwrap_err(),
+            "잘못된 플러그인 id: \"../x\""
+        );
+    }
+
+    /// 잠긴 트리도 지워진다 — 잠금 해제가 제거보다 **먼저** 불린다.
+    #[test]
+    fn remove_unlocks_before_it_deletes() {
+        let base = test_base("remove-locked");
+        make(&base, "memo", Some("{\"id\":\"memo\"}"), None);
+        let dir = base.join("memo");
+        let mut order = Vec::new();
+        remove(&base, "memo", |d| {
+            assert!(d.exists(), "해제는 제거 전에 온다");
+            order.push(d.to_path_buf());
+        })
+        .expect("제거");
+        assert_eq!(order, vec![dir.clone()], "잠금 해제가 대상 디렉터리에 걸린다");
+        assert!(!dir.exists());
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// 부재와 잘못된 id 는 서로 다른 사유로 거절된다 — 둘 다 성공이 아니다.
+    #[test]
+    fn remove_refuses_absence_and_a_bad_id() {
+        let base = test_base("remove-refusals");
+        let mut unlocked = false;
+        assert_eq!(
+            remove(&base, "ghost", |_| unlocked = true).unwrap_err(),
+            "설치되지 않은 플러그인: ghost"
+        );
+        assert!(!unlocked, "없는 것을 풀려 들면 안 된다");
+        assert_eq!(
+            remove(&base, "../etc", |_| {}).unwrap_err(),
+            "잘못된 플러그인 id: \"../etc\""
+        );
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]

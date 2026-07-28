@@ -14,8 +14,8 @@ use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
 
 use soksak_core::{
-    fsx, identity, integrity, pathx, plugin_dir, probe, session, themes, udp, unit_dev,
-    unit_target,
+    fsx, identity, integrity, pathx, plugin_data, plugin_dir, probe, session, themes, udp,
+    unit_dev, unit_target,
 };
 
 use crate::ctx::Ctx;
@@ -153,6 +153,42 @@ pub const COMMANDS: &[Command] = &[
         args: &[],
         returns: "PluginScanEntry[] (디렉터리 스캔 결과)",
         run: run_plugin_scan,
+    },
+    // 플러그인 전용 저장소 — 자리(<홈>/plugins-data)는 부팅 상태에서 나오고 id·key·value 만
+    // 인자다. 읽기 둘은 디렉터리를 만들지 않는다: 세 명령의 답을 하나도 바꾸지 않으면서
+    // 부작용만 프로세스마다 갈리기 때문이다(읽기는 부재를 값으로 가르고, 쓰기는 자기가 만든다).
+    Command {
+        name: "plugin_data_list",
+        args: &[Arg { name: "id", ty: "string", required: REQ }],
+        returns: "string[] (저장된 key 이름, 사전순)",
+        run: run_plugin_data_list,
+    },
+    Command {
+        name: "plugin_data_read",
+        args: &[
+            Arg { name: "id", ty: "string", required: REQ },
+            Arg { name: "key", ty: "string", required: REQ },
+        ],
+        returns: "string | null (저장된 원문 그대로 — 파싱하지 않는다)",
+        run: run_plugin_data_read,
+    },
+    Command {
+        name: "plugin_data_write",
+        args: &[
+            Arg { name: "id", ty: "string", required: REQ },
+            Arg { name: "key", ty: "string", required: REQ },
+            Arg { name: "value", ty: "string", required: REQ },
+        ],
+        returns: "null",
+        run: run_plugin_data_write,
+    },
+    // 설치본 제거 — 순서와 "전용 저장소는 남긴다"는 결정은 코어가 소유한다. 이 프로세스가
+    // 주는 것은 잠금 해제 스폰 한 걸음뿐이다.
+    Command {
+        name: "plugin_remove",
+        args: &[Arg { name: "id", ty: "string", required: REQ }],
+        returns: "null",
+        run: run_plugin_remove,
     },
     Command {
         name: "data_kv_get",
@@ -361,6 +397,105 @@ pub const UNSERVED: &[Unserved] = &[
         blocked_by: "전송기가 wreq 하나이고 wreq 는 tokio 를 끌고 온다 — 이 프로세스의 no_framework 게이트가 \
                      tokio 를 이름으로 막는다(net_http_request 와 같은 벽). 검증·쓰기 부분은 이미 코어의 \
                      verify_and_link 와 같은 규칙이라, 막는 것은 다운로드 한 걸음뿐이다.",
+    },
+    Unserved {
+        name: "app_relaunch",
+        blocked_by: "교체 대상이 곧 호출을 받은 프로세스다. 몸이 app.restart() 한 줄인데 그것은 `!` 라 \
+                     Ok 경로가 없다 — cored 가 같은 이름을 서빙하면 되살아나는 것은 cored 고, 앱은 \
+                     그대로 옛 판으로 돈다. 그 답은 성공이라 호출자는 새 판이 떴다고 믿는다. 재기동이 \
+                     지나야 하는 종료 사다리 여덟(PtyManager·daemon·ProcessManager·ServiceManager· \
+                     WsManager·ipc·mediaproxy·sidecar) 도 전부 앱 프로세스의 상태 위에 있다.",
+    },
+    Unserved {
+        name: "sidecar_close",
+        blocked_by: "닫는 대상이 이 프로세스가 dlopen 한 모듈의 클라이언트 맵(static MODULES)이고, 그 \
+                     값은 tauri::ipc::Channel 이다 — 프레임워크 타입이라 여기서는 만들 수도 담을 수도 \
+                     없다. 맵을 채우는 sidecar_open 은 창의 엔진 호스트 NSView 를 모듈에 주입하므로, \
+                     핸들 번호만 받아서는 닫을 것이 생기지 않는다. 없는 맵에서 remove 하면 Ok 인데 \
+                     채널은 앱 쪽에 열린 채로 남는다.",
+    },
+    Unserved {
+        name: "sidecar_ensure",
+        blocked_by: "\"present\" 는 파일 하나 보면 답할 수 있지만 \"fetched\" 를 만드는 것은 다운로드다 — \
+                     runtime_dep::download_unpack_verify 가 wreq 를 타고 wreq 는 tokio 를 끌고 온다. \
+                     이 프로세스의 no_framework 게이트가 tokio 를 이름으로 막는다(download_verify 와 \
+                     같은 벽). 받는 걸음을 빼고 present 만 답하면 미설치가 \"설치됨\"과 같은 모양이 되고, \
+                     그 다음 app.sidecar.open 이 dlopen 에서 처음 깨진다.",
+    },
+    Unserved {
+        name: "clipboard_read",
+        blocked_by: "OS 클립보드를 읽는 것이 명령의 전부인데 그 클라이언트가 전부 네이티브다 — \
+                     clipboard-rs·objc2·x11rb 가 이 프로세스의 no_framework 금지 목록에 이름으로 있고, \
+                     X11 경로는 선택 전송을 받을 창까지 필요하다(cored 에는 창이 없다). 게다가 이 명령의 \
+                     계약은 실패를 빈 문자열로 답하는 것이라(비텍스트 클립 = \"\"), 못 읽어서 낸 \"\" 가 \
+                     '텍스트가 아닌 클립'과 글자 하나 다르지 않다.",
+    },
+    Unserved {
+        name: "media_proxy_info",
+        blocked_by: "답할 포트와 세션 토큰이 프록시를 기동한 프로세스의 OnceLock(PROXY_PORT·PROXY_TOKEN)에 \
+                     있다. 포트는 OS 가 할당하고 토큰은 기동 때 뽑는 난수라 규칙으로 되짚을 수 없다 — \
+                     짐작해서 base 를 조립하면 아무도 안 듣는 주소가 나가고, 플러그인은 그 URL 로 \
+                     조립한 재생만 조용히 실패한다.",
+    },
+    Unserved {
+        name: "ipc_last_project_window",
+        blocked_by: "읽는 것이 창 포커스 사건의 이력(LAST_WORKSPACE)이고 그것을 적는 것도 지우는 것도 \
+                     프레임워크의 창 사건이다. cored 는 그 사건을 받지 않아 언제나 null 을 답하는데, \
+                     이 명령의 null 은 '워크스페이스 창을 포커스한 적 없다'는 뜻이라 부재와 구분되지 \
+                     않는다. 그 null 을 받은 orchestrator.ask 는 무대를 잃는다.",
+    },
+    Unserved {
+        name: "unit_dev_set",
+        blocked_by: "공유 config(development-units.json)의 read-modify-write 인데, 그 직렬화가 앱 프로세스 \
+                     안의 static WRITE_LOCK 하나다. 두 프로세스가 각자 그 Mutex 를 잡으면 서로를 못 보고, \
+                     겹친 쓰기가 남의 선언을 지운 채로 성공을 답한다. store_lock 은 이 자리를 대신하지 \
+                     못한다 — 그것은 app.data 의 쓰기 소유권이고 앱은 그것을 잡지도 않는다. 앞머리의 \
+                     dev identity 게이트까지 옮겨도 잠금은 여전히 갈라진다.",
+    },
+    Unserved {
+        name: "unit_dev_remove",
+        blocked_by: "지우는 것도 같은 공유 config 의 read-modify-write 이고 같은 static WRITE_LOCK 하나에 \
+                     직렬화된다(unit_dev_set 과 같은 벽). 프로세스가 둘이면 그 잠금은 서로를 모른다 — \
+                     겹치면 removed:true 를 답하면서 남의 항목까지 되살리거나 지운다. store_lock 은 \
+                     app.data 잠금이라 이 파일을 지키지 않는다.",
+    },
+    Unserved {
+        name: "plugin_install_git",
+        blocked_by: "명령의 몸이 원격 트리를 가져오는 것 자체다 — git clone 스폰을 빼면 남는 일이 없다. \
+                     그 스폰은 core-git-scan 게이트가 plugins.rs 한 파일로 봉인해 두었고(ALLOWLIST 단 \
+                     한 줄), 여기에 같은 스폰을 두는 것은 봉인을 넓히는 재입법이다. 그리고 <홈>/plugins \
+                     트리에는 쓰기 소유권 표가 없다 — store_lock 은 app.data 만 지켜서, 앱과 cored 가 \
+                     같은 디렉터리에 동시에 설치해도 누구도 막지 않는다.",
+    },
+    Unserved {
+        name: "plugin_update",
+        blocked_by: "fetch 후 원격 상태로 강제 동기화하는 것이 명령의 몸이라, git 스폰을 빼면 설치본은 \
+                     그대로인데 성공이 나간다. 그 스폰은 core-git-scan 이 plugins.rs 한 파일로 봉인했다 \
+                     (plugin_install_git 과 같은 벽). <홈>/plugins 트리 쓰기 소유권 표도 없어, 읽기전용 \
+                     잠금을 풀고 reset --hard 하는 동안 앱이 같은 트리를 만지는 것을 아무도 막지 못한다.",
+    },
+    Unserved {
+        name: "plugin_dev_new",
+        blocked_by: "앞절반(스캐폴드 파일 방출)은 옮길 수 있지만 뒷절반이 git init 스폰과 \
+                     unit_dev::set_source — 곧 development-units.json 쓰기다. 그 스폰은 core-git-scan 이 \
+                     plugins.rs 로 봉인했고 그 쓰기는 앱 프로세스의 static WRITE_LOCK 에 직렬화된다 \
+                     (unit_dev_set 과 같은 벽). 원본은 둘을 한 트랜잭션으로 묶어 실패하면 디렉터리를 \
+                     지운다 — 뒷절반을 빼면 답은 성공인데 유닛은 아무도 적재하지 않는 workspace 반쪽만 \
+                     남는다.",
+    },
+    Unserved {
+        name: "plugin_dev_new2",
+        blocked_by: "이름에 soksak-plugin- 접두를 붙이는 것만 다르고 몸은 plugin_dev_new 과 같다 — 뒷절반이 \
+                     git init 스폰(core-git-scan 봉인)과 unit_dev::set_source 의 development-units.json \
+                     쓰기(앱 프로세스 static WRITE_LOCK)다. 뒷절반을 빼면 선언되지 않은 workspace 반쪽을 \
+                     남기고 성공을 답한다.",
+    },
+    Unserved {
+        name: "sidecar_dev_new",
+        blocked_by: "사이드카 스캐폴드도 같은 트랜잭션이다 — 방출 뒤에 git init 스폰(core-git-scan 이 \
+                     plugins.rs 로 봉인)과 unit_dev::set_source 의 development-units.json 쓰기(앱 프로세스 \
+                     static WRITE_LOCK)가 따라붙고, 실패하면 디렉터리를 지운다. 뒷절반을 빼면 유닛은 \
+                     선언되지 않아 어느 홈에서도 적재되지 않는데 답은 성공이다.",
     },
 ];
 
@@ -606,6 +741,66 @@ fn run_unit_dev_validate_path(_ctx: &Ctx, params: &Value) -> Outcome {
 fn run_plugin_scan(ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |_: NoArgs| {
         plugin_dir::scan(&ctx.identity().plugins_dir())
+    })
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginId {
+    id: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginKey {
+    id: String,
+    key: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginValue {
+    id: String,
+    key: String,
+    value: String,
+}
+
+fn run_plugin_data_list(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: PluginId| {
+        plugin_data::list(&ctx.identity().plugin_data_dir(), &a.id)
+    })
+}
+
+fn run_plugin_data_read(ctx: &Ctx, params: &Value) -> Outcome {
+    // 없는 key 는 null 이고 그것은 실패가 아니다 — 사유는 코어가 적는다.
+    dispatch(params, |a: PluginKey| {
+        plugin_data::read(&ctx.identity().plugin_data_dir(), &a.id, &a.key)
+    })
+}
+
+fn run_plugin_data_write(ctx: &Ctx, params: &Value) -> Outcome {
+    // 저장소 쓰기(data_kv_set)와 달리 잠금을 요구하지 않는다: store_lock 은 app.data 의
+    // 쓰기 소유권이고 이것은 그 파일이 아니다. 없는 잠금을 요구하면 앱이 도는 홈에서
+    // 이 명령만 영영 거절되는데, 그 거절은 이 파일을 아무도 지키지 않는다는 사실을 바꾸지
+    // 않는다(write_text_file 과 같은 자리다). 앱의 plugin_data_write 도 () 를 돌려준다.
+    dispatch(params, |a: PluginValue| {
+        plugin_data::write(&ctx.identity().plugin_data_dir(), &a.id, &a.key, &a.value)
+            .map(|_| Value::Null)
+    })
+}
+
+fn run_plugin_remove(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: PluginId| {
+        // 설치본은 읽기전용으로 잠겨 있다 — 풀지 않으면 제거가 막힌다. 언제 푸는지는 코어가
+        // 정하고, 여기서는 그 한 걸음(스폰)만 준다. best-effort 인 것도 앱과 같다.
+        plugin_dir::remove(&ctx.identity().plugins_dir(), &a.id, |dir| {
+            let _ = std::process::Command::new("chmod")
+                .arg("-R")
+                .arg("u+w")
+                .arg(dir)
+                .output();
+        })
+        .map(|_| Value::Null)
     })
 }
 

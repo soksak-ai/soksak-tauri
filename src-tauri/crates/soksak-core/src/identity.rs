@@ -89,6 +89,12 @@ impl Identity {
         plugins_dir(&self.home)
     }
 
+    /// 플러그인 전용 저장소가 사는 곳 — 설치 트리와 **다른 자리**다. 플러그인을 지워도
+    /// 여기는 남는다(재설치 시 데이터 보존).
+    pub fn plugin_data_dir(&self) -> PathBuf {
+        plugin_data_dir(&self.home)
+    }
+
     /// app.data 저장소 디렉터리. 앱은 debug 빌드에서 이 자리를 env 로 옮길 수 있고
     /// (테스트 격리), 그때는 **옮긴 쪽이 cored 에도 같은 경로를 준다** — cored 가 규칙만 보고
     /// 파생하면 앱과 다른 DB 를 열고, 그 오답은 조용하다.
@@ -133,6 +139,15 @@ pub fn themes_dir(home: &Path) -> PathBuf {
 /// 설치·개발 플러그인이 함께 사는 단일 폴더.
 pub fn plugins_dir(home: &Path) -> PathBuf {
     home.join("plugins")
+}
+
+/// 플러그인 전용 저장소가 사는 곳.
+///
+/// 이름이 여기 있는 이유는 나머지와 같다: 앱은 이 문자열을 plugins.rs 에서 직접 적었고
+/// cored 도 적으면 두 벌이 된다. 한쪽만 고쳐지면 어긋남은 오류가 아니라 **빈 목록**으로
+/// 나타난다 — 없는 곳을 훑고 "저장된 게 없다"고 답한다.
+pub fn plugin_data_dir(home: &Path) -> PathBuf {
+    home.join("plugins-data")
 }
 
 /// app.data 저장소 디렉터리.
@@ -340,6 +355,24 @@ mod tests {
         );
     }
 
+
+    /// 전용 저장소는 설치 트리와 **다른 자리**다 — 같은 자리로 파생하면 플러그인 제거가
+    /// 데이터까지 지운다(재설치 시 보존 결정이 조용히 깨진다).
+    #[test]
+    fn the_plugin_store_sits_beside_the_install_tree_not_inside_it() {
+        let id = Identity::new("/u/max/.soksak-dev", "com.soksak.dev");
+        assert_eq!(
+            id.plugin_data_dir(),
+            PathBuf::from("/u/max/.soksak-dev/plugins-data")
+        );
+        assert_ne!(id.plugin_data_dir(), id.plugins_dir());
+        assert!(!id.plugin_data_dir().starts_with(id.plugins_dir()));
+        // 자유 함수와 메서드가 같은 규칙이다 — 정체성을 아직 못 모은 자리도 같은 곳을 본다.
+        assert_eq!(
+            id.plugin_data_dir(),
+            plugin_data_dir(Path::new("/u/max/.soksak-dev"))
+        );
+    }
 
     #[test]
     fn a_sibling_identity_home_is_foreign() {

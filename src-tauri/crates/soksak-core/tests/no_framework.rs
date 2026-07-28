@@ -46,6 +46,32 @@ const FORBIDDEN: &[(&str, &str)] = &[
     ("static mut", "동일"),
 ];
 
+/// 이 파일이 **검사 밖 테스트 모듈**인가 — `<모듈>_tests.rs` 는 다른 파일에서
+/// `#[cfg(test)] #[path = "..."] mod` 로만 들어온다(비공개 항목에 닿기 위한 분리).
+///
+/// 인라인 `#[cfg(test)] mod tests` 를 세지 않는 것과 같은 규칙이다: 테스트 모듈은 자기 환경을
+/// 스스로 만든다. 다만 이름만 보고 넘기면 이름이 곧 우회로가 되므로, 그 파일이 실제로
+/// `#[cfg(test)]` 아래 선언됐는지 확인하고서만 넘긴다 — 선언이 없으면 그것은 실행 경로다.
+fn declared_under_cfg_test(name: &str, files: &[PathBuf]) -> bool {
+    if !name.ends_with("_tests.rs") {
+        return false;
+    }
+    let needle = format!("#[path = \"{name}\"]");
+    files.iter().any(|f| {
+        let Ok(src) = std::fs::read_to_string(f) else {
+            return false;
+        };
+        let lines: Vec<&str> = src.lines().collect();
+        lines.iter().enumerate().any(|(i, l)| {
+            l.trim() == needle
+                // 바로 위 두 줄 안에 cfg(test) 가 있어야 한다(어트리뷰트 순서는 자유롭다).
+                && lines[i.saturating_sub(2)..i]
+                    .iter()
+                    .any(|p| p.trim() == "#[cfg(test)]")
+        })
+    })
+}
+
 #[test]
 fn no_forbidden_symbol_in_sources() {
     let files = sources();
@@ -56,6 +82,9 @@ fn no_forbidden_symbol_in_sources() {
     for f in &files {
         let src = std::fs::read_to_string(f).unwrap_or_default();
         let name = f.file_name().unwrap().to_string_lossy().to_string();
+        if declared_under_cfg_test(&name, &files) {
+            continue;
+        }
         let mut in_test = false;
         let mut depth: i32 = 0;
         for (i, line) in src.lines().enumerate() {
@@ -67,6 +96,10 @@ fn no_forbidden_symbol_in_sources() {
             if in_test {
                 depth += line.matches('{').count() as i32 - line.matches('}').count() as i32;
                 if depth <= 0 && line.contains('}') {
+                    in_test = false;
+                } else if depth == 0 && line.trim_end().ends_with(';') {
+                    // 중괄호 없는 항목(`mod x;`)은 그 줄에서 끝난다. 닫는 중괄호만 기다리면
+                    // 파일 나머지가 통째로 검사 밖이 되고, 그 구멍은 통과로 위장한다.
                     in_test = false;
                 }
                 continue;
@@ -80,6 +113,20 @@ fn no_forbidden_symbol_in_sources() {
         }
     }
     assert_eq!(hits, Vec::<String>::new(), "코어 크레이트에 프레임워크가 섞였다");
+}
+
+/// 면제 판정 자체의 자격 — 이름만으로 넘기면 이름이 곧 우회로가 된다.
+#[test]
+fn only_a_declared_test_module_is_exempt() {
+    let files = sources();
+    assert!(
+        declared_under_cfg_test("plugin_data_tests.rs", &files),
+        "선언된 테스트 모듈을 못 알아봤다 — 게이트가 거짓 RED 를 낸다"
+    );
+    // 선언이 없으면 이름이 같아도 실행 경로다.
+    assert!(!declared_under_cfg_test("smuggled_tests.rs", &files));
+    // 접미가 아니면 대상 자체가 아니다.
+    assert!(!declared_under_cfg_test("plugin_data.rs", &files));
 }
 
 #[test]
