@@ -56,6 +56,10 @@ function loadShell(socketPath) {
   const handlers = new Map();
   const stub = {
     app: {
+      // 실물이 갖는 것 — 스텁이 더 좁으면 그 차이가 곧 거짓 GREEN 이다.
+      setPath: () => {},
+      requestSingleInstanceLock: () => true,
+      quit: () => {},
       whenReady: () => new Promise(() => {}), // 창을 만들지 않는다
       on: () => {},
       getName: () => "soksak-electron-spike",
@@ -152,12 +156,12 @@ describe("framework:invoke — 렌더러가 보는 답", () => {
     const handlers = loadShell(mock.socketPath);
     // 표본은 백엔드가 져야 할 명령이어야 한다 — 셸이 스스로 답하는 것(webview_*·engine_* 등)은
     // 애초에 소켓으로 가지 않으므로 백엔드의 답을 증언하지 못한다(shell-native.test.mjs 가 그쪽).
-    const r = await invoke(handlers, "project_owners", {});
+    const r = await invoke(handlers, "themes_scan", {});
     expect(r.ok).toBe(false);
     expect(r.code).toBe("UNKNOWN_COMMAND");
-    expect(r.command).toBe("project_owners");
+    expect(r.command).toBe("themes_scan");
     expect(ledger()).toEqual([
-      { t: expect.any(Number), cmd: "project_owners", served: false, code: "UNKNOWN_COMMAND" },
+      { t: expect.any(Number), cmd: "themes_scan", served: false, code: "UNKNOWN_COMMAND" },
     ]);
   });
 
@@ -190,7 +194,8 @@ describe("framework:invoke — 렌더러가 보는 답", () => {
       sock.write(`${JSON.stringify({ id: req.id, ok: true, data: req.method })}\n`),
     );
     const handlers = loadShell(mock.socketPath);
-    const through = ["project_owners", "windows_list", "webviews_scan", "enginex_stats", "panels"];
+    // 갈래 접두사와 **닮았지만 아닌** 이름들 — 그물이 이름 앞부분만 보고 삼키면 안 된다.
+    const through = ["themes_scan", "windows_list", "webviews_scan", "enginex_stats", "panels"];
     for (const cmd of through) {
       await expect(invoke(handlers, cmd, {})).resolves.toEqual({ ok: true, value: cmd });
     }

@@ -4443,3 +4443,19 @@ select.dctl {
   --motion-scale: 1;
 }
 
+
+/* 빈 창 안내 — 스타일이 아예 없어 텍스트가 레이아웃 밖으로 흘러 왼쪽이 잘려 나갔다
+ * (실측 2026-07-28). 문구와 배치 결정은 그대로 두고 **읽히게만** 만든다. */
+.window-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 24px;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--fg3);
+  pointer-events: none;
+}

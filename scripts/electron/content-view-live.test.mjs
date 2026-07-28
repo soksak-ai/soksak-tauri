@@ -65,7 +65,13 @@ app.whenReady().then(async () => {
 `;
 
 let dir;
+/** 스폰한 자식 — 결과와 무관하게 afterEach 가 거둔다. 실패 경로에서 새면 인스턴스가 쌓인다. */
+let spawned;
 afterEach(() => {
+  // 어떤 결과에서도 먼저 거둔다. kill 은 이미 죽은 pid 에 무해하고, 살아 있으면 이것이
+  // 유일한 회수 지점이다 — 테스트가 던지면 아래 정리는 실행되지 않기 때문이다.
+  if (spawned && !spawned.killed) spawned.kill("SIGKILL");
+  spawned = undefined;
   if (dir) rmSync(dir, { recursive: true, force: true });
   dir = undefined;
 });
@@ -76,7 +82,7 @@ function run() {
   writeFileSync(page, PAGE);
   writeFileSync(main, MAIN);
   return new Promise((resolve, reject) => {
-    const child = spawn(ELECTRON, [main, page, out], { stdio: ["ignore", "pipe", "pipe"] });
+    const child = (spawned = spawn(ELECTRON, [main, page, out], { stdio: ["ignore", "pipe", "pipe"] }));
     let err = "";
     child.stderr.on("data", (d) => (err += d));
     const t = setTimeout(() => { child.kill(); reject(new Error("측정이 끝나지 않았다")); }, 45_000);

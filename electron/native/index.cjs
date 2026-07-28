@@ -20,7 +20,15 @@
 
 const { ABSENT_CODE, frameworkError } = require("./error.cjs");
 
-/** 셸의 영역을 가르는 이름 갈래. 등재 여부와 무관하게 이 접두사는 소켓으로 가지 않는다.
+/** 표에 **없는** 이름을 위한 그물. 이 접두사면 등재 여부와 무관하게 소켓으로 가지 않는다.
+ *
+ *  표에 실린 이름에는 갈래가 필요 없다 — 등재 자체가 주장이고 claims() 가 `cmd in TABLE` 을
+ *  본다. 한때 갈래 밖 이름을 적재에서 거부하며 "표에 실려도 발견되지 않는다"고 적었는데 바로
+ *  아래 코드가 그 말을 반증한다. 그 제약은 project_claim 을 막고 있었다: 창을 소유한 쪽이
+ *  져야 하는데(root→창 라벨 지도의 수명이 곧 창의 수명이다) project_ 는 갈래가 아니었다.
+ *  project_ 를 갈래로 만드는 것도 답이 아니다 — ensure_project_dir 은 파일시스템이라 cored 의
+ *  것이고, 갈래로 만들면 그것까지 셸이 삼킨다.
+ *
  *  목록은 장부(src-tauri/src/cored_ledger.rs SHELL_FAMILIES)와 한 벌이어야 한다 —
  *  갈라지면 "장부는 셸의 것이라 하는데 셸은 안 받는" 이름이 생기고 어느 쪽에도 안 잡힌다. */
 const BRANCHES = ["window_", "webview_", "engine_", "titlebar_"];
@@ -37,11 +45,6 @@ function assemble(modules) {
   const owner = new Map();
   for (const [file, entries] of modules) {
     for (const [cmd, entry] of Object.entries(entries)) {
-      if (!isShellBranch(cmd)) {
-        throw new Error(
-          `${file}: ${cmd} 는 셸 갈래(${BRANCHES.join(", ")})가 아니다 — 갈래 밖 이름은 표에 실려도 발견되지 않는다`,
-        );
-      }
       if (owner.has(cmd)) {
         throw new Error(`${cmd} 를 두 파일이 선언했다: ${owner.get(cmd)}, ${file}`);
       }
@@ -57,6 +60,7 @@ const TABLE = assemble([
   ["webview.cjs", require("./webview.cjs")],
   ["engine.cjs", require("./engine.cjs")],
   ["titlebar.cjs", require("./titlebar.cjs")],
+  ["project.cjs", require("./project.cjs")],
 ]);
 
 // 능력면 — UI 가 그리기 전에 물어볼 수 있는 자리. 표 자체가 답이라 선언과 행동이 갈릴 수 없다.

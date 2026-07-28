@@ -441,6 +441,10 @@ function loadShell({ socket, binary }) {
   const appEvents = new Map();
   const stub = {
     app: {
+      // 실물이 갖는 것 — 스텁이 더 좁으면 그 차이가 곧 거짓 GREEN 이다.
+      setPath: () => {},
+      requestSingleInstanceLock: () => true,
+      quit: () => {},
       whenReady: () => new Promise(() => {}), // 창을 만들지 않는다
       on: (name, fn) => appEvents.set(name, fn),
       getName: () => "soksak-electron-spike",

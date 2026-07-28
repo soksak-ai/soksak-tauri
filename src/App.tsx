@@ -1,4 +1,4 @@
-import { currentWindow, appInfo, invoke , dragRegion } from "./framework";
+import { currentWindow, appInfo, invoke, dragRegion } from "./framework";
 import { execute } from "./commands/registry";
 import {
   memo,

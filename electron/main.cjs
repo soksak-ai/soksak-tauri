@@ -103,6 +103,8 @@ function nativeContext(sender) {
     // 창 갈래가 필요로 하는 것 — 라벨로 짚기, 만들기, 그리고 화면 사실. 표가 electron 을
     // 직접 require 하지 않게 여기서 넘긴다: 그래야 표를 테스트가 스텁 하나로 몰 수 있다.
     labels: () => [...windows.keys()].filter((l) => !windows.get(l).isDestroyed()),
+    // 창 → 라벨 역참조. 점유처럼 "부른 창이 누구인가"가 답의 일부인 명령이 쓴다.
+    labelOf: (win) => [...windows.entries()].find(([, w]) => w === win)?.[0] ?? null,
     windowFor,
     createWindow,
     screen,
@@ -323,7 +325,33 @@ function wireWindowEvents(label, win) {
   win.on("move", send("moved"));
 }
 
-app.whenReady().then(() => {
+// 정체성이 다르면 다른 앱이다. Electron 의 단일 인스턴스 잠금은 userData 경로로 갈리므로,
+// 그 경로를 이 정체성의 홈으로 지목하면 dev·debug·release 가 각자 하나씩 선다. 지목하지 않으면
+// 셋이 같은 기본 경로를 공유해 서로를 "이미 도는 자신"으로 오인한다.
+app.setPath("userData", path.join(IDENTITY.home, "framework"));
+
+// 하나만 선다 — 거두는 것이 아니라 애초에 겹치지 않는다.
+//
+// 두 번째 실행이 두 번째 앱이 되면 실행할 때마다 인스턴스가 쌓이고, 쌓인 것을 죽이는 일이
+// 매번 붙는다. 그것은 멱등이 아니다. 잠금을 못 잡으면 이 프로세스는 **아무것도 만들지 않고**
+// 물러난다 — 창도, cored 도, 원장도 건드리지 않는다.
+if (!app.requestSingleInstanceLock()) {
+  console.log("[electron-spike] 이미 도는 인스턴스가 있다 — 그 창을 앞으로 내고 물러난다");
+  app.quit();
+} else {
+  // 먼저 선 쪽이 두 번째 실행을 받는다. 사용자가 아이콘을 다시 눌렀다는 뜻이므로 자기 창을
+  // 앞으로 낸다 — 아무 반응이 없으면 "안 켜진다"로 읽힌다.
+  app.on("second-instance", () => {
+    const first = [...windows.values()].find((w) => !w.isDestroyed());
+    if (!first) return;
+    if (first.isMinimized()) first.restore();
+    first.focus();
+  });
+  boot();
+}
+
+function boot() {
+  app.whenReady().then(() => {
   const label = CONTROL_PLANE_LABEL;
   const win = createWindow(label);
   wireWindowEvents(label, win);
@@ -338,6 +366,7 @@ app.whenReady().then(() => {
       : `[electron-spike] 백엔드 소켓: ${IDENTITY.socketPath}`,
   );
 });
+}
 
 app.on("window-all-closed", () => app.quit());
 // 셸이 내려가면 연결도 놓고, 자기가 띄운 cored도 거둔다. 외부에서 지목한 소켓의 프로세스는

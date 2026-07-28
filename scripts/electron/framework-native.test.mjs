@@ -116,6 +116,10 @@ function loadShell(socketPath, boot) {
   const handlers = new Map();
   const stub = {
     app: {
+      // 실물이 갖는 것 — 스텁이 더 좁으면 그 차이가 곧 거짓 GREEN 이다.
+      setPath: () => {},
+      requestSingleInstanceLock: () => true,
+      quit: () => {},
       // boot 가 없으면 창을 만들지 않는다(풀리지 않는 약속).
       whenReady: () => (boot ? Promise.resolve() : new Promise(() => {})),
       on: () => {},
@@ -288,6 +292,9 @@ describe("표 — UI 가 읽을 수 있는 능력면", () => {
     "window_focus",
     "window_place",
     "window_monitors",
+    "project_claim",
+    "project_release",
+    "project_owners",
     "webview_list",
     "webview_recovery_consume",
     "webview_overlay_active",
@@ -432,15 +439,15 @@ describe("요구 원장 — cored가 져야 할 목록을 오염시키지 않는
     const handlers = loadShell(mock.socketPath);
     await invoke(handlers, "webview_list", {}, fakeWindow());
     await invoke(handlers, "engine_surface_stats", {}, fakeWindow());
-    await invoke(handlers, "project_owners", {}, fakeWindow()); // cored의 것
+    await invoke(handlers, "themes_scan", {}, fakeWindow()); // cored의 것
     const lines = ledger();
     expect(lines.map((l) => [l.cmd, l.served, l.by])).toEqual([
       ["webview_list", true, "shell"],
       ["engine_surface_stats", false, "shell"],
-      ["project_owners", true, undefined],
+      ["themes_scan", true, undefined],
     ]);
     // cored 요구 목록 = 셸의 것이 아닌 줄들. 셸의 것은 절대 여기 섞이지 않는다.
-    expect(lines.filter((l) => l.by !== "shell").map((l) => l.cmd)).toEqual(["project_owners"]);
+    expect(lines.filter((l) => l.by !== "shell").map((l) => l.cmd)).toEqual(["themes_scan"]);
     expect(lines.find((l) => l.cmd === "engine_surface_stats").code).toBe(ABSENT);
   });
 });
