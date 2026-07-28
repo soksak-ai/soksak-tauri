@@ -634,8 +634,6 @@ body,
    이전의 불활성 규칙(전면→이동요소 한정)은 주행 중 도착하는 실클릭을 space-body 로
    떨어뜨려 죽였다(실측 trace) — 입력면 차단 규칙을 다시 들이지 마라. */
 
-/* 예외 — 제스처를 시작한 당사자 슬롯은 위상 중에도 입력을 받는다. mousedown 대상의
-   mouseup(xterm 이 입력 포커스를 잡는 지점)까지 막으면 비결부 뷰 클릭이 UI 활성만 되고
 /* 좌측 파일 트리 사이드바. 폭만 토글(0 ↔ SIDEBAR_W), 닫혀도 언마운트하지 않아
    트리 상태(펼침/스크롤)가 유지된다. overflow hidden 으로 접을 때 깔끔히 잘린다. */
 .sidebar {
@@ -657,7 +655,8 @@ body,
 /* 레일 세로 경계의 소유 — 어느 변을 소유하는지는 railLook 과 station 이 정한다(§B2).
    여태 .sidebar 가 양변을 무조건 선언하고 JS 가 폭만 0 으로 덮었다: 선언과 법이 두 쪽으로
    쪼개져 계약이 어느 쪽도 검증하지 못했다(실측 — 검증기가 상시 위반을 냈고 그 위반은 진짜였다).
-   소유를 여기서 상태별로 선언한다(borderContract rail-ground-*/rail-pane-* 와 1:1).
+   소유를 여기서 상태별로 선언한다(borderContract 의 rail-ground-* 와 rail-pane-* 에 1:1).
+   접두사 뒤에 `*` 와 `/` 를 붙여 쓰지 마라 — 주석이 거기서 닫히고 다음 블록이 통째로 사라진다.
    폭의 최종값은 railEdges.railEdgeWidths 가 인라인으로 싣는다 — 스테이션 드래그 중 매 프레임
    바뀌는 값이라 선언만으로는 못 따라간다. 둘은 같은 법을 말하며 railEdgeContract.test 가 대조한다. */
 .sidebar.rail-ground {
