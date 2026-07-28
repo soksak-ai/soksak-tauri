@@ -33,6 +33,22 @@ impl Drop for Helper {
 }
 
 impl Helper {
+    /// 스폰한 자식을 **즉시** 감싸고 나서 준비를 기다린다.
+    ///
+    /// spawn 과 Helper 생성 사이에 패닉이 나면 `Child` 가 그대로 샌다 — Rust 의 `Child::drop`
+    /// 은 프로세스를 죽이지 않는다(실측: 이 세션의 테스트 반복으로 cored 20개가 남았다).
+    /// 그 창을 없애려면 소유권을 먼저 넘기고 검사는 그 뒤에 해야 한다.
+    fn adopt(mut child: std::process::Child, socket: std::path::PathBuf) -> Helper {
+        let stdout = child.stdout.take().expect("stdout 파이프");
+        let helper = Helper { child, socket };
+        let mut ready = String::new();
+        assert!(
+            matches!(BufReader::new(stdout).read_line(&mut ready), Ok(n) if n > 0),
+            "cored 가 준비 완료를 알리지 않고 죽었다"
+        );
+        helper
+    }
+
     /// 이 cored 의 픽스처 루트(소켓이 사는 디렉터리).
     fn dir(&self) -> &std::path::Path {
         self.socket.parent().expect("소켓의 부모")
@@ -101,18 +117,7 @@ fn spawn_helper(name: &str) -> Helper {
         .spawn()
         .expect("cored 스폰");
     // 준비 완료 = stdout 한 줄. 블로킹 read 라 폴링이 없고, cored 가 죽으면 EOF 로 즉시 드러난다.
-    let mut ready = String::new();
-    let stdout = child.stdout.take().expect("stdout 파이프");
-    let read = BufReader::new(stdout).read_line(&mut ready);
-    assert!(
-        matches!(read, Ok(n) if n > 0),
-        "cored 가 준비 완료를 알리지 않고 죽었다: {read:?}"
-    );
-    assert!(
-        ready.contains(&socket.to_string_lossy().to_string()),
-        "준비 완료 줄이 소켓 경로를 말해야 한다: {ready}"
-    );
-    Helper { child, socket }
+    Helper::adopt(child, socket)
 }
 
 // ── 살아 있는 프로세스가 실제로 명령을 서빙한다 ──────────────────────────────────
@@ -426,13 +431,7 @@ fn a_relocated_store_is_followed_not_re_derived() {
         .stdout(Stdio::piped())
         .spawn()
         .expect("cored 스폰");
-    let mut ready = String::new();
-    let stdout = child.stdout.take().expect("stdout 파이프");
-    assert!(
-        matches!(BufReader::new(stdout).read_line(&mut ready), Ok(n) if n > 0),
-        "cored 가 준비 완료를 알리지 않고 죽었다"
-    );
-    let helper = Helper { child, socket };
+    let helper = Helper::adopt(child, socket);
 
     // 쓴 값이 **지목된 곳**에 있어야 하고 홈 아래에는 없어야 한다. 옛 판은 "열기 실패"를
     // 신호로 썼는데, 이제 쓰기 소유권을 잡은 cored 가 형태를 세우므로 열기가 성공한다 —
@@ -587,10 +586,7 @@ fn admission_without_a_readable_ledger_fails_by_name() {
         .stdout(Stdio::piped())
         .spawn()
         .expect("cored 스폰");
-    let mut ready = String::new();
-    let stdout = child.stdout.take().unwrap();
-    assert!(matches!(BufReader::new(stdout).read_line(&mut ready), Ok(n) if n > 0));
-    let helper = Helper { child, socket };
+    let helper = Helper::adopt(child, socket);
 
     let reply = helper.ask(json!({
         "method": "activity_publish",
@@ -707,13 +703,7 @@ fn without_the_write_lock_a_write_is_refused_and_a_read_still_works() {
         .stdout(Stdio::piped())
         .spawn()
         .expect("cored 스폰");
-    let mut ready = String::new();
-    let stdout = child.stdout.take().unwrap();
-    assert!(
-        matches!(BufReader::new(stdout).read_line(&mut ready), Ok(n) if n > 0),
-        "쓰기 소유권이 없어도 서빙은 시작한다 — 읽기 서버로 산다"
-    );
-    let helper = Helper { child, socket };
+    let helper = Helper::adopt(child, socket);
 
     let read = helper.ask(json!({
         "method": "data_kv_get", "params": { "ns": "core", "key": "seeded" }
@@ -781,10 +771,7 @@ fn spawn_with_shell(name: &str) -> (Helper, std::path::PathBuf) {
         .stdout(Stdio::piped())
         .spawn()
         .expect("cored 스폰");
-    let mut ready = String::new();
-    let stdout = child.stdout.take().unwrap();
-    assert!(matches!(BufReader::new(stdout).read_line(&mut ready), Ok(n) if n > 0));
-    (Helper { child, socket }, shell)
+    (Helper::adopt(child, socket), shell)
 }
 
 #[test]
@@ -1018,13 +1005,7 @@ fn without_a_user_home_a_home_relative_call_fails_by_name() {
         .stdout(Stdio::piped())
         .spawn()
         .expect("cored 스폰");
-    let mut ready = String::new();
-    let stdout = child.stdout.take().unwrap();
-    assert!(
-        matches!(BufReader::new(stdout).read_line(&mut ready), Ok(n) if n > 0),
-        "사용자 홈이 없어도 서빙은 시작한다 — 홈에 안 걸린 명령은 여전히 답한다"
-    );
-    let helper = Helper { child, socket };
+    let helper = Helper::adopt(child, socket);
 
     let reply = helper.ask(json!({ "method": "list_children" }));
     assert_eq!(reply["ok"], false, "홈을 추측했다: {reply}");
