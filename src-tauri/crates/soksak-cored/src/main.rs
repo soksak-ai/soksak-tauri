@@ -1,20 +1,20 @@
-// soksak-cored — 셸 없이 명령을 서빙하는 프로세스.
+// soksak-cored — 프레임워크 없이 명령을 서빙하는 프로세스.
 //
 // 창도, 웹뷰도, 앱 핸들도 없다. 소켓으로 명령을 받아 soksak-core 의 로직으로 답한다.
-// 어떤 셸(Electron 이든 무엇이든)이 붙어도 같은 답이 나오는 것이 존재 이유다.
+// 어떤 프레임워크(Electron 이든 무엇이든)가 붙어도 같은 답이 나오는 것이 존재 이유다.
 //
 // 선례는 soksak-ptyd 다(독립 cored 프로세스: 소켓 bind·요청 루프·수명). 다만 두 가지가 다르다:
 //   ① 홈을 전역으로 알지 않는다. ptyd 는 SOKSAK_HOME 을 읽어 경로를 파생하지만, 이 프로세스는
 //      **소켓 경로를 인자로 받는다**. cored 가 identity 를 추측하는 순간 홈이 갈릴 때 조용히 다른
 //      곳에 붙는다 — 어느 홈에 서빙하는지는 띄우는 쪽이 안다(Identity 원칙).
-//   ② 데이터 평면이 없다. 요청/응답 소켓 한 본뿐이다(스트림 소켓·토큰은 셸을 소유할 때의 비용).
+//   ② 데이터 평면이 없다. 요청/응답 소켓 한 본뿐이다(스트림 소켓·토큰은 프레임워크를 소유할 때의 비용).
 //
 // 여기 있는 것은 배선뿐이다. 로직은 soksak-core 이, 표는 registry 가, 봉투는 wire 가 소유한다.
-// 서빙 대상은 **셸 없이도 같은 답이 나오는 명령**으로 한정한다 — 네이티브(창·웹뷰·엔진)는
-// 셸에 남고, cored 는 그것을 아는 척하지 않는다(모르는 이름은 이름을 달고 실패한다).
+// 서빙 대상은 **프레임워크 없이도 같은 답이 나오는 명령**으로 한정한다 — 네이티브(창·웹뷰·엔진)는
+// 프레임워크에 남고, cored 는 그것을 아는 척하지 않는다(모르는 이름은 이름을 달고 실패한다).
 
 const USAGE: &str = "\
-soksak-cored — serves shell-free commands over a socket
+soksak-cored — serves framework-free commands over a socket
 
 USAGE:
     soksak-cored --socket <path> --home <path> --identifier <id>
@@ -39,7 +39,7 @@ OPTIONS:
 
 Every one of these is an argument on purpose: this process derives no identity of
 its own. Whoever spawns it knows which home it serves, and passes it in — the same
-way the app receives its identity from its shell config at boot. Receiving is not
+way the app receives its identity from its framework config at boot. Receiving is not
 guessing; a helper that guessed would answer for a different home, silently.
 
 Commands take the same arguments as the app commands of the same name. Process
@@ -81,7 +81,7 @@ fn main() {
     #[cfg(not(unix))]
     {
         let _ = (socket, ctx);
-        eprintln!("soksak-cored: unix only in this generation (named pipes land with the Windows shell)");
+        eprintln!("soksak-cored: unix only in this generation (named pipes land with the Windows framework)");
         std::process::exit(1);
     }
     #[cfg(unix)]

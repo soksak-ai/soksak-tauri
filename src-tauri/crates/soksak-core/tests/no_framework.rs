@@ -1,4 +1,4 @@
-//! 이 크레이트에는 셸이 없다 — 소스와 의존성 양쪽으로 시행한다.
+//! 이 크레이트에는 프레임워크가 없다 — 소스와 의존성 양쪽으로 시행한다.
 //!
 //! 계약(lib.rs 머리말)을 문서로만 두면 하루 만에 샌다. 여기 있는 검사가 그 계약이다.
 //! 새 코드를 이 크레이트에 넣기 전에 이 파일을 읽어라.
@@ -27,7 +27,7 @@ fn sources() -> Vec<PathBuf> {
 /// 소스에 있으면 안 되는 심볼. 각 항목은 "왜 이동을 막는가"를 함께 적는다 —
 /// 이유 없는 금지는 우회 대상이 된다.
 const FORBIDDEN: &[(&str, &str)] = &[
-    ("tauri::", "셸 타입은 프로세스를 못 넘는다"),
+    ("tauri::", "프레임워크 타입은 프로세스를 못 넘는다"),
     ("AppHandle", "앱 프로세스 전제"),
     ("State<", "관리 상태 — 프로세스마다 다른 인스턴스"),
     (".emit(", "창으로 미는 사건 — 창 없는 프로세스에서는 무의미"),
@@ -79,12 +79,12 @@ fn no_forbidden_symbol_in_sources() {
             }
         }
     }
-    assert_eq!(hits, Vec::<String>::new(), "코어 크레이트에 셸이 섞였다");
+    assert_eq!(hits, Vec::<String>::new(), "코어 크레이트에 프레임워크가 섞였다");
 }
 
 #[test]
-fn the_dependency_tree_carries_no_shell_crate() {
-    // 심볼 검사는 직접 참조만 잡는다. 의존성을 타고 들어온 셸은 cargo 만 안다.
+fn the_dependency_tree_carries_no_framework_crate() {
+    // 심볼 검사는 직접 참조만 잡는다. 의존성을 타고 들어온 프레임워크는 cargo 만 안다.
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(|p| p.parent());
@@ -108,7 +108,7 @@ fn the_dependency_tree_carries_no_shell_crate() {
     ] {
         assert!(
             !names.iter().any(|n| *n == banned || n.starts_with(&format!("{banned}-"))),
-            "의존성에 셸/런타임 크레이트가 있다: {banned}"
+            "의존성에 프레임워크/런타임 크레이트가 있다: {banned}"
         );
     }
 }

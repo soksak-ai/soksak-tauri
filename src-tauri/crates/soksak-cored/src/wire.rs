@@ -4,7 +4,7 @@
 //! 두 프로세스가 서로 다른 숫자를 말하게 된다 — 크레이트에서 읽는다.
 //!
 //! 봉투는 `{ok, code, message, data}` 이고, `data` 에는 앱의 `invoke` 가 돌려주는 값이
-//! **그대로** 실린다. 셸 어댑터는 `data` 를 벗겨 invoke 의 약속에 그대로 얹으면 된다 —
+//! **그대로** 실린다. 프레임워크 어댑터는 `data` 를 벗겨 invoke 의 약속에 그대로 얹으면 된다 —
 //! cored 를 거쳤다고 값의 모양이 달라지지 않는다.
 
 use serde::Deserialize;
@@ -18,7 +18,7 @@ use crate::ctx::Ctx;
 use crate::registry::{self, Outcome};
 
 /// 요청. 앱 소켓의 요청에서 **창 관련 필드를 뺀 것**이다 — cored 에는 창이 없다.
-/// 모르는 필드는 무시한다(계약의 추가-필드 규칙): 창을 실어 보내는 셸도 거절당하지 않는다.
+/// 모르는 필드는 무시한다(계약의 추가-필드 규칙): 창을 실어 보내는 프레임워크도 거절당하지 않는다.
 #[derive(Deserialize)]
 pub struct Request {
     pub id: Option<Value>,
@@ -37,7 +37,7 @@ pub fn err_reply(code: &str, message: &str) -> Value {
 }
 
 /// 이 프로세스가 무엇인지 — 판 숫자는 계약 크레이트에서, 신원은 자기 자신에서.
-/// `role` 이 있어야 셸이 앱 소켓과 cored 소켓을 답만 보고 구분한다.
+/// `role` 이 있어야 프레임워크가 앱 소켓과 cored 소켓을 답만 보고 구분한다.
 fn hello_facts() -> Value {
     json!({
         "protocol": SOCKET_PROTOCOL_VERSION,
@@ -85,7 +85,7 @@ fn transport_route(req: &Request) -> Option<Value> {
 }
 
 /// 서빙하지 않는 이름의 사유 문장. 감사해서 "여기서는 못 한다"고 판정한 이름은 그 이유를
-/// 함께 말한다 — 이유 없는 금지는 우회 대상이 되고, 셸 저자는 막힌 것을 다시 조사하거나
+/// 함께 말한다 — 이유 없는 금지는 우회 대상이 되고, 프레임워크 저자는 막힌 것을 다시 조사하거나
 /// 더 나쁘게는 조사 없이 흉내를 낸다.
 /// 코드는 어느 쪽이든 UNKNOWN_COMMAND 로 둔다: 부르는 쪽의 분기를 바꾸지 않는다.
 fn unknown_sentence(method: &str) -> String {
@@ -206,7 +206,7 @@ mod tests {
         );
     }
 
-    // 봉투만 cored 의 것이고 `data` 는 앱 invoke 의 값 그대로다. 이게 깨지면 셸 어댑터가
+    // 봉투만 cored 의 것이고 `data` 는 앱 invoke 의 값 그대로다. 이게 깨지면 프레임워크 어댑터가
     // 값을 다시 조립해야 하고, 그 조립이 두 경로의 답을 가른다.
     #[test]
     fn data_carries_the_raw_invoke_value() {

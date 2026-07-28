@@ -456,7 +456,7 @@ fn a_relocated_store_is_followed_not_re_derived() {
     );
 }
 
-// 감사해서 서빙하지 않기로 한 이름은 목록에 사유와 함께 있어야 한다. 셸 저자는 이 프로세스에
+// 감사해서 서빙하지 않기로 한 이름은 목록에 사유와 함께 있어야 한다. 프레임워크 저자는 이 프로세스에
 // 물어서 "이건 네가 해야 한다, 이유는 이것"을 알아야 하고, 그렇지 않으면 막힌 이유를 다시
 // 조사하거나 — 더 나쁘게는 조사 없이 흉내를 낸다.
 #[test]
@@ -522,7 +522,7 @@ fn ledger_store(helper: &Helper, seq: u64) -> PathBuf {
     path
 }
 
-// cored 는 적재분을 답에 실어 준다 — 창은 셸의 것이므로 부채질은 그 항목을 받은 셸이 한다.
+// cored 는 적재분을 답에 실어 준다 — 창은 프레임워크의 것이므로 부채질은 그 항목을 받은 프레임워크가 한다.
 // 그리고 번호는 저장소가 이미 가진 역사 **위에서** 이어야 한다: 0 부터 다시 매기면
 // 소비자의 영속 읽음 커서가 미래를 가리켜 그 소비자가 전면 침묵한다.
 #[test]
@@ -539,7 +539,7 @@ fn admission_crosses_the_socket_and_resumes_above_the_stored_history() {
 
     assert_eq!(reply["ok"], true, "응답: {reply}");
     assert_eq!(reply["id"], 11, "응답: {reply}");
-    // data 는 앱의 invoke 가 돌려주는 값 그대로다 — 셸이 값을 다시 조립하지 않는다.
+    // data 는 앱의 invoke 가 돌려주는 값 그대로다 — 프레임워크가 값을 다시 조립하지 않는다.
     let entry = &reply["data"];
     assert_eq!(entry["seq"], 40_001, "영속 역사 위에서 재개: {reply}");
     assert_eq!(entry["kind"], "boot.step", "{reply}");
@@ -807,7 +807,7 @@ fn serves_npm_global_dirs_from_the_shell_it_was_given() {
     assert_eq!(reply["data"]["lib_dir"], "/fixture/prefix/lib", "{reply}");
 }
 
-// ── 파일 읽기·쓰기 — 디스크는 셸이 아니다 ────────────────────────────────────
+// ── 파일 읽기·쓰기 — 디스크는 프레임워크가 아니다 ────────────────────────────
 //
 // 이 갈래의 홈은 **둘**이다. 정체성 홈(`~/.soksak-dev`)과 OS 사용자 홈(`~`)은 다른 값이고,
 // 파일 트리·`~` 확장이 보는 것은 후자다. cored 는 둘 다 부팅 인자로 받는다 — 사용자 홈을
@@ -1135,7 +1135,7 @@ fn a_session_is_found_under_the_boot_home() {
         "id": 31, "method": "ai_session_find", "params": { "cwd": "/w" }
     }));
     assert_eq!(reply["ok"], true, "{reply}");
-    // 필드 표기는 앱의 invoke 가 주는 것 그대로다(SessionInfo 의 serde) — 셸이 다시
+    // 필드 표기는 앱의 invoke 가 주는 것 그대로다(SessionInfo 의 serde) — 프레임워크가 다시
     // 조립하지 않도록 여기서 이름을 바꾸지 않는다.
     assert_eq!(reply["data"]["session_id"], "accd937f-5c22-48c6-b83d-70a2e0f2e4aa", "{reply}");
     assert_eq!(reply["data"]["cwd"], "/w", "{reply}");
@@ -1149,7 +1149,7 @@ fn a_session_is_found_under_the_boot_home() {
     assert!(none["data"].is_null(), "{none}");
 }
 
-/// 경로 가드는 프로세스를 건너서도 살아 있어야 한다. 이 핸들러가 셸 밖으로 나온 지금
+/// 경로 가드는 프로세스를 건너서도 살아 있어야 한다. 이 핸들러가 프레임워크 밖으로 나온 지금
 /// 이것이 유일한 게이트다 — 새면 임의 파일 읽기 프리미티브가 소켓에 열린다.
 #[test]
 fn inspect_refuses_anything_outside_a_session_directory() {

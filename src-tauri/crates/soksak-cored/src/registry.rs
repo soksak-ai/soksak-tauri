@@ -1,13 +1,13 @@
 //! 서빙 표 — 이름·인자·반환을 선언하고, 실행은 soksak-core 로 위임한다.
 //!
 //! 표에 있는 이름은 앱이 `#[tauri::command]` 로 노출하는 이름 그대로다. 인자 표기도
-//! 그대로다(Tauri 가 JS 로 넘길 때 쓰는 camelCase). 셸이 이름이나 인자를 번역해야 한다면
+//! 그대로다(Tauri 가 JS 로 넘길 때 쓰는 camelCase). 프레임워크가 이름이나 인자를 번역해야 한다면
 //! 그 번역이 새 드리프트 면이 된다 — 같은 이름으로 물어 같은 답을 받는 것이 요점이다.
 //!
 //! 각 핸들러는 **코어 함수 호출 한 줄**이다. 판단을 여기 넣지 마라: 판단이 여기 있으면
 //! 앱 경로와 cored 경로가 서로 다른 답을 낼 수 있고, 그 차이는 조용하다.
 //!
-//! 여기 없는 이름은 이름을 달고 실패한다. 셸이 아직 소유한 것(창·웹뷰·엔진)을 cored 가
+//! 여기 없는 이름은 이름을 달고 실패한다. 프레임워크가 아직 소유한 것(창·웹뷰·엔진)을 cored 가
 //! 아는 척하지 않는다 — 모르는 것을 모른다고 답하는 것이 이 표의 절반이다.
 
 use serde::de::DeserializeOwned;
@@ -51,7 +51,7 @@ pub struct Command {
 const REQ: bool = true;
 const OPT: bool = false;
 
-/// 서빙 표. 지금 여기 있는 것은 **셸 없이도 같은 답이 나오는 것**뿐이다 —
+/// 서빙 표. 지금 여기 있는 것은 **프레임워크 없이도 같은 답이 나오는 것**뿐이다 —
 /// soksak-core 이 이미 소유한 로직.
 pub const COMMANDS: &[Command] = &[
     Command {
@@ -163,8 +163,8 @@ pub const COMMANDS: &[Command] = &[
         returns: "any | null (저장된 값)",
         run: run_data_kv_get,
     },
-    // 활동 발행 — cored 는 **적재만** 한다. 부채질(창 emit)은 셸의 것이고, 영속(records 쓰기)은
-    // 저장소 소유자의 것이다. 적재분을 답에 실어 보내면 창을 가진 셸이 그것을 뿌린다.
+    // 활동 발행 — cored 는 **적재만** 한다. 부채질(창 emit)은 프레임워크의 것이고, 영속(records 쓰기)은
+    // 저장소 소유자의 것이다. 적재분을 답에 실어 보내면 창을 가진 프레임워크가 그것을 뿌린다.
     // 저장소 경로는 인자가 아니라 부팅 상태다 — 앱의 activity_publish 도 받지 않는다.
     Command {
         name: "activity_publish",
@@ -173,7 +173,7 @@ pub const COMMANDS: &[Command] = &[
             Arg { name: "source", ty: "string", required: REQ },
             Arg { name: "payload", ty: "any", required: REQ },
         ],
-        returns: "ActivityEntry { seq, ts, kind, source, payload } — 적재분. 창 부채질은 셸, 영속은 저장소 소유자",
+        returns: "ActivityEntry { seq, ts, kind, source, payload } — 적재분. 창 부채질은 프레임워크, 영속은 저장소 소유자",
         run: run_activity_publish,
     },
     // 쓰기 — 쓰기 소유권을 잡은 프로세스만 선다. 잠금이 없으면 이름을 달고 거절한다:
@@ -200,7 +200,7 @@ pub const COMMANDS: &[Command] = &[
         returns: "bool (release core 여부)",
         run: run_app_is_release,
     },
-    // 파일 읽기·쓰기 — 디스크는 셸이 아니다. 창도 앱 핸들도 없이 같은 답이 나온다.
+    // 파일 읽기·쓰기 — 디스크는 프레임워크가 아니다. 창도 앱 핸들도 없이 같은 답이 나온다.
     // 홈이 필요한 것들(`~` 확장·트리 기본 뿌리·루트 판정)은 **사용자 홈**을 부팅 상태에서
     // 본다. 정체성 홈이 아니다 — 둘을 바꿔 쓰면 트리가 앱 관리 폴더에서 시작한다.
     Command {
@@ -302,7 +302,7 @@ pub const COMMANDS: &[Command] = &[
 /// 감사했으나 서빙하지 않는 이름과 **무엇이 막는가**.
 ///
 /// 표에 없다는 사실만으로는 "아직 안 옮겼다"와 "여기서는 못 한다"가 구분되지 않는다.
-/// 셸 저자가 받는 것은 UNKNOWN_COMMAND 한 줄뿐이라, 사유가 없으면 막힌 것을 다시 조사하거나
+/// 프레임워크 저자가 받는 것은 UNKNOWN_COMMAND 한 줄뿐이라, 사유가 없으면 막힌 것을 다시 조사하거나
 /// 더 나쁘게는 조사 없이 흉내를 낸다. 이유 없는 금지는 우회 대상이 된다.
 pub struct Unserved {
     pub name: &'static str,
@@ -333,12 +333,12 @@ pub const UNSERVED: &[Unserved] = &[
         blocked_by: "점유 원장이 앱 프로세스 안의 가변 상태다. 살아 있는 창 라벨은 인자로 받을 수 \
                      있지만(부팅 상태가 홈을 받는 것처럼) 원장은 못 받는다 — 그것을 바꾸는 \
                      claim/release 가 같은 프로세스에 있다. cored 가 원장을 쥐면 원장의 수명이 cored 의 \
-                     수명이 되어, 셸이 재기동한 뒤에도 죽은 창의 점유가 남아 그 프로젝트를 다시 못 연다.",
+                     수명이 되어, 프레임워크가 재기동한 뒤에도 죽은 창의 점유가 남아 그 프로젝트를 다시 못 연다.",
     },
     Unserved {
         name: "net_http_request",
         blocked_by: "전송기가 wreq 하나인데 wreq 는 tokio 를 끌고 온다(http2·wreq-proto·wreq-rt 경유). \
-                     이 프로세스의 no_shell 게이트가 tokio 를 이름으로 막는다. 시크릿 치환은 앱이 연 \
+                     이 프로세스의 no_framework 게이트가 tokio 를 이름으로 막는다. 시크릿 치환은 앱이 연 \
                      볼트(SecretsState)를 읽으므로, 옮기려면 키체인 신원과 잠금 수명까지 함께 옮겨야 한다.",
     },
     Unserved {
@@ -349,7 +349,7 @@ pub const UNSERVED: &[Unserved] = &[
     },
     Unserved {
         name: "download_verify",
-        blocked_by: "전송기가 wreq 하나이고 wreq 는 tokio 를 끌고 온다 — 이 프로세스의 no_shell 게이트가 \
+        blocked_by: "전송기가 wreq 하나이고 wreq 는 tokio 를 끌고 온다 — 이 프로세스의 no_framework 게이트가 \
                      tokio 를 이름으로 막는다(net_http_request 와 같은 벽). 검증·쓰기 부분은 이미 코어의 \
                      verify_and_link 와 같은 규칙이라, 막는 것은 다운로드 한 걸음뿐이다.",
     },
@@ -507,7 +507,7 @@ fn run_ai_session_detect(_ctx: &Ctx, params: &Value) -> Outcome {
 }
 
 /// 인자를 받지 않는 명령 — 앱의 같은 명령도 받지 않는다. `{}`·`null` 둘 다 허용하고
-/// 낯선 키가 실려 와도 거부하지 않는다(셸이 봉투에 무엇을 더 얹든 이 명령의 답은 같다).
+/// 낯선 키가 실려 와도 거부하지 않는다(프레임워크가 봉투에 무엇을 더 얹든 이 명령의 답은 같다).
 #[derive(serde::Deserialize)]
 struct NoArgs {}
 
@@ -676,7 +676,7 @@ fn run_data_kv_set(ctx: &Ctx, params: &Value) -> Outcome {
             .map_err(|e| format!("저장소 열기 실패: {e}"))?;
         let store = SqliteRows { conn };
         soksak_core::kv::set(&store, &a.ns, &a.key, &a.value, crate::ledger::now_ms())?;
-        // 앱의 data_kv_set 은 () 를 돌려준다 — 같은 모양이라야 셸이 값을 다시 조립하지 않는다.
+        // 앱의 data_kv_set 은 () 를 돌려준다 — 같은 모양이라야 프레임워크가 값을 다시 조립하지 않는다.
         Ok(Value::Null)
     })
 }
@@ -702,7 +702,7 @@ fn run_activity_publish(ctx: &Ctx, params: &Value) -> Outcome {
 }
 
 fn run_app_environment(ctx: &Ctx, params: &Value) -> Outcome {
-    // 파생 규칙은 코어가 소유한다. 정체성·홈은 부팅 상태에서 온다 — 앱이 셸 설정에서
+    // 파생 규칙은 코어가 소유한다. 정체성·홈은 부팅 상태에서 온다 — 앱이 프레임워크 설정에서
     // 받는 것과 같은 자리다(추측이 아니라 받는 것).
     dispatch(params, |_: NoArgs| {
         let id = ctx.identity();
@@ -839,7 +839,7 @@ mod tests {
     /// 이름은 두 표 **각각** 안에서도 유일하다.
     ///
     /// 서빙 표만 보던 검사라 거절 표의 중복이 통과했다(실측: 머지 재조립이 한 이름을 두 번
-    /// 넣었다). 같은 이름에 사유가 둘이면 셸 저자가 어느 것을 읽었는지에 따라 다른 이유를
+    /// 넣었다). 같은 이름에 사유가 둘이면 프레임워크 저자가 어느 것을 읽었는지에 따라 다른 이유를
     /// 믿게 되고, 그 둘이 갈리는 순간까지 조용하다.
     #[test]
     fn every_name_is_unique() {
@@ -1010,7 +1010,7 @@ fn run_host_unit_target(_ctx: &Ctx, params: &Value) -> Outcome {
 }
 
 fn run_ipc_socket_path(ctx: &Ctx, params: &Value) -> Outcome {
-    // **자리**를 답한다. 거기 붙는 것은 셸의 일이고, 자리는 identity 가 정한다.
+    // **자리**를 답한다. 거기 붙는 것은 프레임워크의 일이고, 자리는 identity 가 정한다.
     dispatch(params, |_: NoArgs| {
         Ok(Some(
             ctx.identity().control_socket().to_string_lossy().into_owned(),
