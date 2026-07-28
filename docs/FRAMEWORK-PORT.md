@@ -281,3 +281,61 @@ Three questions remain: command latency across the new bridge, terminal stream t
 Every feature is already exposed as a socket command, so a second framework speaking the same control plane **inherits the existing e2e harness as its judge.**
 
 The pixel oracle is not an exception either. It was an adapter item all along — capture already lives in its own plugin (`tauri-plugin-webview-capture`) with per-OS files, and the only thing missing is that the capability is not in the `AppFramework` contract. Put it there and it behaves like every other capability. On Electron the implementation is `capturePage`.
+
+## One socket is the control plane
+
+A command arriving from outside — a harness, `sok`, an agent — has to reach a window. cored has no window, so it cannot execute those commands; but it is the only thing listening on a socket that a Node framework can reach.
+
+So the socket became one surface with two answers. cored answers what it serves; everything else it **pushes to the window host**, and the framework delivers it. The caller does not need to know which happens, and the envelope is the same either way.
+
+- **The target rule is core's** (`soksak_core::control::resolve_target`). Focused window → `main` → sole workspace → ambiguous. `plugin.` names go to the last focused workspace instead, because the control plane has no plugin host and a request sent there waits out its timeout — a silence indistinguishable from "no such command".
+- **The framework registers as the host** (`control_host_attach`), and that connection becomes the delivery channel. It reports facts only — the live labels and which one is focused. What counts as "the last workspace" is a rule, and core's `FocusLedger` owns it: focusing the control plane must not erase the workspace memory, because the natural-language console types from `main` while the user's stage is elsewhere.
+- **Nothing comes back through the relay.** The window's executor already calls `invoke("cmd_result", {id, result})`, and that call rides the ordinary bridge. Building a return path in the relay would give one command two ways to answer.
+- **Facts that belong to no one are broadcast.** A file change has no addressee, so cored pushes `{"broadcast": {event, payload}}` and the framework fans it to every window. Deliveries and broadcasts use different keys: a delivery waits for a reply and a broadcast has none, and sharing a key would make the receiver hunt for an id that does not exist.
+
+**A window's own bridge is never delivered back to.** The renderer asks cored for `pty_pane_alive` over the same socket. Serving-not-found used to mean "push it to a window", so it went to the very window that asked, whose executor has no such name, and the caller waited out ten seconds instead of reading a name. The axis that splits them is not spelling — it is *who asked*, and the connection knows. The bridge declares itself (`control_bridge_attach`), and unserved names on that connection answer `NOT_SERVED_HERE` at once. Boot demand fell from 1,181 calls to 100 with that one fix; the rest had been retries behind timeouts.
+
+## Answers that do not fit in one reply
+
+Terminal output and process stdout do not fit the request/response pair. The caller sends a place to receive: a token somewhere in the arguments, and frames arrive afterwards carrying that token.
+
+What the token *is* differs per framework — Tauri has `Channel`, Electron has a preload-minted id — and neither crosses a process boundary as a function. Over a socket it is a token either way, so `soksak_core::stream` owns finding the token, framing, and stripping it from the arguments before the command body sees it. A body that knows about tokens forces every command to learn an ignore rule.
+
+Frames go down **the connection that asked**. Any other connection belongs to someone who did not mint that token and will drop the frame — a loss with no error. Binding happens before execution, because a command can push its first frame immediately and a frame with nowhere to go is gone silently. When the connection ends its tokens end with it.
+
+**A token has to survive serialization.** Attaching `onmessage` to the token as an *enumerable* accessor made `invoke` die at the boundary with `An object could not be cloned` — structured clone reads enumerable own properties, the getter returned a function, and functions do not clone. `spawn_terminal` never once reached the server; the only symptom was "the terminal does not come up", with no entry in the demand ledger because nothing was ever sent. The accessor is now non-enumerable. The test performs the clone rather than inspecting the shape: inspecting a shape would miss this again.
+
+## Two implementations, one fixture
+
+Some rules cannot be centralised, because what they operate on is genuinely owned by the framework.
+
+The project claim map is the clearest case: its lifetime *is* the window's lifetime. Held by cored, a dead window's claim would survive a framework restart and that project could never be opened again. So the map stays with whoever owns windows — and that means two implementations.
+
+Two implementations of the *map* is correct. Two implementations of the *rule* is not: the same operation answering differently per framework does not surface as an error, it surfaces as "this project won't open on this one".
+
+So a fixture binds them. `src-tauri/crates/soksak-core/fixtures/*.json` holds the cases; the Rust test and the JS test each read the same file. Change one side only and that side fails. A file does the binding, not anyone's attention.
+
+| Fixture | Binds |
+| --- | --- |
+| `monitor-of.json` | which monitor holds a window (centre point, edges, truncation direction) |
+| `project-claims.json` | claim, idempotent re-claim, refusal as a value, release by owner only, dead-window filtering |
+| `window-rect.json` | rect validity, focus default, workspace-label shape |
+| `surface-spec.json` | `#rrggbb` colour, openable URL schemes |
+
+The round-trip alternative was tried and reverted for `window_monitors`: it costs a process hop per window, and a framework fact dies when the backend is down. The thin-binding gate records that measurement next to the entry rather than leaving a TODO — the price of a wrong call there is "declare it", not "fix it".
+
+## A resource is not a framework
+
+cored's dependency gate blocks frameworks and native runtimes by name. It already said out loud why `rusqlite` is exempt: a store opens no window, holds no app handle, and reads the same file to the same answer from any process.
+
+`notify` meets the same test — filesystem events are a resource, and cored must hold those handles to serve `watch_dir`. Both crates stay banned in `soksak-core`, which keeps its no-dependency rule; the rule lives in a small crate beside it instead (`soksak-watch`, `soksak-store`).
+
+`tokio` does not meet it, and `net_http_request`, `download_verify`, and `sidecar_ensure` stay unserved because of it. The one transport (`wreq`) drags the runtime in, and the gate names runtimes as well as frameworks. The standard is not lowered to close a gap.
+
+## What the terminal needed
+
+The shell is owned by `soksak-ptyd` and survives app restarts. The client that attaches to it used to live in the app crate, so a second framework had no way to reach the same daemon — and two ways of attaching would let one session look alive on one side and dead on the other.
+
+Moving that client to core took three couplings apart, each replaced by a contract: the vault (`SealKeys`), the session registry (`Link` carried as an `Arc`), and the ledger (`ActivitySink`). Shell env rules moved with it — an allow-list in two copies means a secret leaks differently per process, which is a silent hole, not an error.
+
+cored serves the terminal with no local fallback. The app falls back to an in-process PTY when the daemon is unavailable; a helper doing that would kill, on its own exit, the very shell the app restart was meant to preserve. Unable to attach, it refuses by name.

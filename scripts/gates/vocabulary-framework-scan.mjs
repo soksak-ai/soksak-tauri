@@ -219,7 +219,7 @@ export const PROSE_LEDGER = new Map([
   ["scripts/e2e/frame-verdict.mjs", [1, "[프레임워크] \"셸이 어떻게 찍었든\""]],
   ["packages/plugin-api/README.md", [2, "[UI] \"the shell\"·\"main shell renderer\" — 발행된 README"]],
   ["packages/plugin-spec/src/pluginRuntime.ts", [2, "[UI] \"main shell renderer\"·와이어 값 host-shell-plugin-import"]],
-  ["docs/FRAMEWORK-PORT.md", [1, "[인용] 옛말을 기록으로 남긴 자리"]],
+  ["docs/FRAMEWORK-PORT.md", [2, "[인용] 옛말을 기록으로 남긴 자리 + [진짜 셸] ptyd 가 소유하는 셸(터미널 절)"]],
   ["docs/FRAMEWORK-PORT.ko.md", [1, "[인용] 옛말을 기록으로 남긴 자리"]],
   ["docs/NATIVE-SURFACES.md", [4, "[프레임워크/UI] \"DOM shell\"·\"Chromium-shell apps\"·\"webview shell\""]],
   ["docs/NATIVE-SURFACES.ko.md", [4, "[프레임워크/UI] 같은 축(한글)"]],
