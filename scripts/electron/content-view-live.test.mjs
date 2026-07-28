@@ -43,7 +43,22 @@ const MAIN = `
 const { app, BrowserWindow } = require("electron");
 const fs = require("node:fs");
 app.commandLine.appendSwitch("disable-gpu");
+// 이 프로세스는 **스스로** 끝난다 — 밖에서 죽이는 절차에 기대지 않는다.
+//
+// 실측: 측정 중 무엇이든 던지면 app.exit 에 닿지 못하고 Electron 이 그대로 남았다. 갈래가
+// 여럿이면 그것이 배수로 쌓인다. 그래서 셋을 건다.
+//   ① 잠금 — 같은 측정이 겹쳐 돌면 두 번째는 아무것도 만들지 않고 물러난다.
+//   ② finally — 무엇이 나든 반드시 exit 한다.
+//   ③ 감시 타이머 — 위 둘을 지나쳐도 이 프로세스는 정해진 시간에 죽는다.
+// 잠금은 **측정마다** 갈린다. Electron 의 단일 인스턴스 잠금은 userData 경로로 갈리므로,
+// 그 경로를 이 측정의 임시 디렉터리로 지목한다. 지목하지 않으면 두 측정이 같은 기본 경로를
+// 공유해 나중 것이 "이미 도는 자신"으로 오인되고 **아무것도 재지 않고 물러난다**(실측).
+app.setPath("userData", require("node:path").join(require("node:path").dirname(process.argv[3]), "ud"));
+if (!app.requestSingleInstanceLock()) app.exit(0);
+const WATCHDOG = setTimeout(() => app.exit(3), 40_000);
+WATCHDOG.unref?.();
 app.whenReady().then(async () => {
+  try {
   const w = new BrowserWindow({
     width: 400, height: 400, show: false,
     webPreferences: { webviewTag: true, contextIsolation: true, nodeIntegration: false },
@@ -60,7 +75,13 @@ app.whenReady().then(async () => {
     content: at(Math.round(width * 0.12), Math.round(height * 0.12)),
     overlap: at(Math.round(width * 0.5), Math.round(height * 0.5)),
   }));
-  app.exit(0);
+  } catch (e) {
+    // 사유를 남기고 죽는다 — 조용히 남으면 그 프로세스가 무엇을 기다리는지 알 수 없다.
+    try { fs.writeFileSync(process.argv[3], JSON.stringify({ error: String(e && e.stack || e) })); } catch {}
+  } finally {
+    clearTimeout(WATCHDOG);
+    app.exit(0);
+  }
 });
 `;
 
