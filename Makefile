@@ -167,8 +167,9 @@ spec-gate: ## 패키지 빌드(plugin-spec·plugin-api dist — 코어가 소비
 		echo "spec-gate: C2 blocking 위반 매니페스트가 통과됨(게이트 깨짐)"; exit 1; \
 	else echo "✓ spec-gate(빌드+무효 거부+C2 판정 확인)"; fi
 
-gates: ## 코어 규율 게이트(blocking) — 결합·투명성·배포·경로 불변식
+gates: ## 코어 규율 게이트(blocking) — 결합·투명성·배포·경로·어휘 불변식
 	@node scripts/gates/core-decoupling-scan.mjs
+	@node scripts/gates/vocabulary-framework-scan.mjs
 	@node scripts/gates/baseline-gate.mjs
 	@node scripts/gates/c2-transparency-scan.mjs --plugins $${SOKSAK_PLUGINS:-$$HOME/.soksak-dev/plugins}
 	@node scripts/gates/core-git-scan.mjs
