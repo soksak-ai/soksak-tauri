@@ -190,13 +190,6 @@
       "note": "디바이더 드래그 중 네이티브 자식의 bounds 가 얼어 있는지를 뷰 계층과 크롭 픽셀로 본다 — 홀·레이어 계약 그 자체다."
     },
     {
-      "file": "divider-hover.mjs",
-      "role": "harness",
-      "class": "A",
-      "surfaces": [],
-      "note": "디바이더 히트 영역을 DOM 좌표로 재고 포인터 사건을 보낸다. 전부 소켓 명령이라 프레임워크가 바뀌어도 같다."
-    },
-    {
       "file": "e2e-driver.mjs",
       "role": "driver",
       "class": "A",
@@ -235,6 +228,13 @@
         "webview.emitNative"
       ],
       "note": "거터가 DOM 구멍이라 마우스가 네이티브 표면 위 이음매에 닿는지 본다 — 홀 계약이 없으면 물음 자체가 성립하지 않는다."
+    },
+    {
+      "file": "gutter-hover.mjs",
+      "role": "harness",
+      "class": "A",
+      "surfaces": [],
+      "note": "골(gutter) 강조의 대칭을 잰다 — 무장되면 서고 이탈이 오면 반드시 풀린다. 자기 픽스처 창을 세우고 분할까지 스스로 만든다: 포인터를 구동하므로 남의 창을 잡으면 안 되고, gutter 가 없으면 건너뛰어 그 통과가 아무것도 지키지 않는다."
     },
     {
       "file": "lib/client.mjs",

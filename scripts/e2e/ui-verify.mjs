@@ -9,11 +9,23 @@
 //   tab.sized       보이는 탭 본문의 크기가 0 이면 그 칸은 빈 화면이다.
 //   motion.paired   화면과 위상의 시계가 갈라지면 이동 도중에 착지가 선언된다.
 import process from "node:process";
+import os from "node:os";
+import path from "node:path";
+import fs from "node:fs";
 import { openClient, must, workspaceWindows } from "./lib/client.mjs";
+import { acquireFixtureWindow, releaseFixtureWindow } from "./lib/fixtureWindow.mjs";
+
+// 자기 창을 세우고 본다 — 주변에 창이 떠 있느냐에 기대면, 창이 없을 땐 "판정 불가"로 죽고
+// 창이 있을 땐 **남의 창**을 재게 된다. 불변식은 모든 창에서 서야 하므로 재는 범위는 그대로
+// 전부다(ui.verify 는 읽기만 한다).
+const FIXTURE = path.join(os.homedir(), ".soksak-e2e", "ui-verify");
 
 async function main() {
   const c = await openClient();
+  const rpc = (name, params, window) => c.rpc(name, params, window);
+  fs.mkdirSync(FIXTURE, { recursive: true });
   try {
+    await acquireFixtureWindow(rpc, FIXTURE);
     const windows = await workspaceWindows(c);
     if (windows.length === 0) throw new Error("워크스페이스 창 없음");
     let broken = 0;
@@ -27,6 +39,7 @@ async function main() {
     if (broken > 0) throw new Error(`불변식 ${broken}건이 깨졌다`);
     console.log(`✓ ui-verify GREEN — 창 ${windows.length}개 모든 불변식 통과`);
   } finally {
+    await releaseFixtureWindow(rpc, FIXTURE).catch(() => {});
     c.close();
   }
 }
