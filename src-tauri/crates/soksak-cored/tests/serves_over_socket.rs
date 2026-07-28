@@ -424,15 +424,26 @@ fn a_relocated_store_is_followed_not_re_derived() {
     );
     let helper = Helper { child, socket };
 
-    // 지목한 곳에 DB 가 없으면 "열기 실패"다 — 홈 아래를 대신 열어 "없음"이라 답하면 안 된다.
-    let reply = helper.ask(json!({
+    // 쓴 값이 **지목된 곳**에 있어야 하고 홈 아래에는 없어야 한다. 옛 판은 "열기 실패"를
+    // 신호로 썼는데, 이제 쓰기 소유권을 잡은 cored 가 형태를 세우므로 열기가 성공한다 —
+    // 그래서 더 강한 기준으로 옮긴다: 답이 아니라 **파일이 어디 생겼는가**를 본다.
+    let wrote = helper.ask(json!({
+        "method": "data_kv_set", "params": { "ns": "core", "key": "bookmarks", "value": "moved" }
+    }));
+    assert_eq!(wrote["ok"], true, "{wrote}");
+    let read = helper.ask(json!({
         "method": "data_kv_get", "params": { "ns": "core", "key": "bookmarks" }
     }));
-    assert_eq!(reply["ok"], false, "{reply}");
-    let msg = reply["message"].as_str().unwrap_or_default();
+    assert_eq!(read["data"], "moved", "{read}");
     assert!(
-        msg.contains(&moved.to_string_lossy().to_string()),
-        "지목된 경로를 말해야 한다: {reply}"
+        moved.join("soksak.db").exists(),
+        "지목된 곳에 저장소가 없다: {}",
+        moved.display()
+    );
+    assert!(
+        !home.join("data").join("soksak.db").exists(),
+        "규칙으로 파생한 곳에 저장소를 만들었다 — 지목을 무시했다: {}",
+        home.display()
     );
 }
 
@@ -490,13 +501,9 @@ fn ledger_store(helper: &Helper, seq: u64) -> PathBuf {
     std::fs::create_dir_all(&dir).expect("데이터 디렉터리");
     let path = dir.join("soksak.db");
     let conn = rusqlite::Connection::open(&path).expect("저장소 생성");
-    conn.execute_batch(
-        "CREATE TABLE records (ns TEXT NOT NULL, coll TEXT NOT NULL, scope TEXT NOT NULL, \
-         id TEXT NOT NULL, doc TEXT NOT NULL, created INTEGER NOT NULL, \
-         updated INTEGER NOT NULL, enc INTEGER NOT NULL DEFAULT 0, keyId TEXT, \
-         PRIMARY KEY(ns, coll, id));",
-    )
-    .expect("스키마");
+    // 형태는 코어가 소유한다(cored 가 부팅에서 이미 세웠을 수도 있어 멱등이라야 한다).
+    conn.execute_batch(soksak_core::kv::BASE_SCHEMA_SQL)
+        .expect("스키마");
     conn.execute(
         "INSERT INTO records(ns,coll,scope,id,doc,created,updated) \
          VALUES('core','activity','app',?1,?2,0,0)",
@@ -541,9 +548,40 @@ fn admission_crosses_the_socket_and_resumes_above_the_stored_history() {
 }
 
 // 재개 지점을 모르는 채로는 적재하지 않는다 — 조용히 새 원장을 시작하는 것이 위 결함이다.
+//
+// 쓰기 소유권을 잡으면 cored 가 형태를 세우므로 원장은 읽을 수 있게 된다. 그래서 이 검사가
+// 겨누는 것은 **소유권이 없는 경우**다: 만들 자격이 없고 읽을 것도 없을 때, 0 부터 매기는
+// 대신 이름을 달고 실패해야 한다.
 #[test]
 fn admission_without_a_readable_ledger_fails_by_name() {
-    let helper = spawn_helper("activity-no-store");
+    let dir = fixture_dir("activity-no-store");
+    let home = dir.join("home");
+    let data = home.join("data");
+    std::fs::create_dir_all(&data).unwrap();
+
+    // 남이 쓰기 잠금을 쥔다 — cored 는 형태를 세울 자격이 없다.
+    let held = std::fs::File::options()
+        .create(true)
+        .read(true)
+        .write(true)
+        .truncate(false)
+        .open(data.join("soksak.db.writelock"))
+        .unwrap();
+    held.try_lock().expect("테스트가 먼저 잡는다");
+
+    let socket = dir.join("h.sock");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_soksak-cored"))
+        .arg("--socket").arg(&socket)
+        .arg("--home").arg(&home)
+        .arg("--identifier").arg("com.soksak.dev")
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("cored 스폰");
+    let mut ready = String::new();
+    let stdout = child.stdout.take().unwrap();
+    assert!(matches!(BufReader::new(stdout).read_line(&mut ready), Ok(n) if n > 0));
+    let helper = Helper { child, socket };
+
     let reply = helper.ask(json!({
         "method": "activity_publish",
         "params": { "kind": "k", "source": "core", "payload": {} },
@@ -568,11 +606,8 @@ fn kv_store(helper: &Helper) -> PathBuf {
     std::fs::create_dir_all(&dir).expect("데이터 디렉터리");
     let path = dir.join("soksak.db");
     let conn = rusqlite::Connection::open(&path).expect("저장소 생성");
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS kv (ns TEXT NOT NULL, k TEXT NOT NULL, v TEXT NOT NULL, \
-         updated INTEGER NOT NULL, PRIMARY KEY(ns, k)) WITHOUT ROWID;",
-    )
-    .expect("스키마");
+    conn.execute_batch(soksak_core::kv::BASE_SCHEMA_SQL)
+        .expect("스키마");
     path
 }
 

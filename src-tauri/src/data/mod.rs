@@ -168,25 +168,8 @@ fn open_or_recover_with(
 // 기본 테이블(멱등). 컬렉션별 FTS/인덱스는 define() 이 동적 생성.
 // (테스트 픽스처에서 in-memory 스키마 초기화에 재사용 — window.rs prune 유닛)
 pub(crate) fn init_base(conn: &Connection) -> Result<(), String> {
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS kv (\
-            ns TEXT NOT NULL, k TEXT NOT NULL, v TEXT NOT NULL, updated INTEGER NOT NULL,\
-            PRIMARY KEY(ns, k)\
-         ) WITHOUT ROWID;\
-         CREATE TABLE IF NOT EXISTS records (\
-            ns TEXT NOT NULL, coll TEXT NOT NULL, scope TEXT NOT NULL, id TEXT NOT NULL,\
-            doc TEXT NOT NULL, created INTEGER NOT NULL, updated INTEGER NOT NULL,\
-            enc INTEGER NOT NULL DEFAULT 0, keyId TEXT,\
-            PRIMARY KEY(ns, coll, id)\
-         );\
-         CREATE INDEX IF NOT EXISTS records_scope ON records(ns, coll, scope, updated);\
-         CREATE TABLE IF NOT EXISTS meta_collections (\
-            cid INTEGER PRIMARY KEY AUTOINCREMENT,\
-            ns TEXT NOT NULL, coll TEXT NOT NULL,\
-            idx_fields TEXT NOT NULL, fts_fields TEXT NOT NULL,\
-            UNIQUE(ns, coll)\
-         );",
-    )
+    // 기본 형태는 코어가 소유한다 — cored 도 같은 문장으로 만든다(형태가 갈리면 조용하다).
+    conn.execute_batch(soksak_core::kv::BASE_SCHEMA_SQL)
     .map_err(|e| e.to_string())?;
     migrate_records(conn)?;
     // [M0] retention FIFO 는 created 정렬(updated 금지 — 변환 UPDATE 가 updated 를 바꾸면 순서 비결정, R5).

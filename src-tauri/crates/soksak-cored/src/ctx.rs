@@ -60,10 +60,22 @@ impl Ctx {
         match store_lock::try_acquire(&self.data_dir)? {
             Acquire::Owned(lock) => {
                 self.write_lock = Some(lock);
+                // 저장소를 **만드는 것도 쓰기**다. 소유권을 잡은 이 자리에서만 형태를 세운다 —
+                // 앱이 없는 홈(Electron)에서는 아무도 안 만들어 주고, 그 부재는 오류가 아니라
+                // "테이블 없음"으로만 드러난다(실측: activity_publish·data_kv_* 전부 실패).
+                self.ensure_schema()?;
                 Ok(true)
             }
             Acquire::Taken => Ok(false),
         }
+    }
+
+    /// 저장소 기본 형태를 세운다(멱등). 문장은 코어가 소유하고 연결만 여기서 만든다.
+    fn ensure_schema(&self) -> Result<(), String> {
+        let conn = rusqlite::Connection::open(self.db_path())
+            .map_err(|e| format!("저장소 열기 실패({}): {e}", self.db_path().display()))?;
+        conn.execute_batch(soksak_core::kv::BASE_SCHEMA_SQL)
+            .map_err(|e| format!("저장소 형태 세우기 실패: {e}"))
     }
 
     /// 이 프로세스가 이 저장소에 써도 되는가.

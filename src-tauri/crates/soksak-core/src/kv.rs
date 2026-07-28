@@ -226,3 +226,59 @@ mod write_tests {
         assert_eq!(decode(Some(raw)).unwrap(), Some(v));
     }
 }
+
+// ── 저장소 기본 형태 ─────────────────────────────────────────────────────────
+//
+// DDL 은 로직이 아니라 **형태**다. 두 프로세스가 각자 CREATE 를 적으면 컬럼 하나가 어긋나도
+// 오류가 아니라 다른 답이 되므로, 문장을 여기 한 벌만 둔다. 실행은 연결을 가진 쪽이 한다.
+//
+// 저장소를 **만드는 것도 쓰기**다. 그래서 이 문장을 돌릴 자격은 쓰기 소유권(store_lock)을
+// 잡은 프로세스에만 있다 — 앱이 만들든 cored 가 만들든 같은 형태가 나오고, 동시에 둘이
+// 만들지는 않는다.
+//
+// 전부 `IF NOT EXISTS` 라 멱등이다. 이미 있는 저장소를 다시 열어도 형태가 변하지 않고,
+// 한쪽이 먼저 만든 뒤 다른 쪽이 열어도 빠진 것만 채워진다.
+pub const BASE_SCHEMA_SQL: &str = "\
+    CREATE TABLE IF NOT EXISTS kv (\
+        ns TEXT NOT NULL, k TEXT NOT NULL, v TEXT NOT NULL, updated INTEGER NOT NULL,\
+        PRIMARY KEY(ns, k)\
+     ) WITHOUT ROWID;\
+     CREATE TABLE IF NOT EXISTS records (\
+        ns TEXT NOT NULL, coll TEXT NOT NULL, scope TEXT NOT NULL, id TEXT NOT NULL,\
+        doc TEXT NOT NULL, created INTEGER NOT NULL, updated INTEGER NOT NULL,\
+        enc INTEGER NOT NULL DEFAULT 0, keyId TEXT,\
+        PRIMARY KEY(ns, coll, id)\
+     );\
+     CREATE INDEX IF NOT EXISTS records_scope ON records(ns, coll, scope, updated);\
+     CREATE TABLE IF NOT EXISTS meta_collections (\
+        cid INTEGER PRIMARY KEY AUTOINCREMENT,\
+        ns TEXT NOT NULL, coll TEXT NOT NULL,\
+        idx_fields TEXT NOT NULL, fts_fields TEXT NOT NULL,\
+        UNIQUE(ns, coll)\
+     );";
+
+#[cfg(test)]
+mod schema_tests {
+    use super::*;
+
+    /// 이 문장이 두 저장소(kv·records)와 그 인덱스를 만든다 — 문자열이 비면 아무것도 안 만들고,
+    /// 그 빈 저장소는 "테이블 없음"으로만 드러난다(실측 결함).
+    #[test]
+    fn the_base_schema_names_both_stores() {
+        for needle in ["CREATE TABLE IF NOT EXISTS kv", "CREATE TABLE IF NOT EXISTS records"] {
+            assert!(BASE_SCHEMA_SQL.contains(needle), "{needle} 이 빠졌다");
+        }
+        // 멱등이라야 한다 — 두 프로세스가 순서 없이 열어도 형태가 안 변한다.
+        assert!(!BASE_SCHEMA_SQL.contains("CREATE TABLE kv"), "IF NOT EXISTS 가 빠졌다");
+    }
+
+    /// 읽기·쓰기 질의가 이 형태 위에서 돈다 — 컬럼 이름이 어긋나면 여기서 걸린다.
+    #[test]
+    fn the_queries_match_the_shape() {
+        for col in ["ns", "k", "v", "updated"] {
+            assert!(BASE_SCHEMA_SQL.contains(col), "kv 컬럼 {col}");
+        }
+        assert!(SELECT_SQL.contains("FROM kv"));
+        assert!(UPSERT_SQL.contains("INSERT INTO kv"));
+    }
+}
