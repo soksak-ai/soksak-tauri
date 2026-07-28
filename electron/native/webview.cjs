@@ -2,7 +2,24 @@
 
 const { frameworkError } = require("./error.cjs");
 
+/// 새 창으로 열어도 되는 주소인가 — 코어와 같은 규칙(soksak-core surface_spec).
+///
+/// http·https 만이다. file·data·javascript 는 창 하나가 로컬 파일을 읽거나 스크립트를 실행하는
+/// 통로가 되고, 그 창은 이 앱의 창이라 사용자 눈에는 앱이 한 일이다. 스킴은 소문자로 비교한다 —
+/// 한쪽만 대문자를 통과시키면 그 차이가 곧 우회로다.
+function isOpenableUrl(raw) {
+  const s = String(raw ?? "").trim();
+  const at = s.indexOf(":");
+  if (at < 0) return false;
+  const rest = s.slice(at + 1);
+  if (!rest.startsWith("//") || rest.length <= 2) return false;
+  const scheme = s.slice(0, at).toLowerCase();
+  return scheme === "http" || scheme === "https";
+}
+
 module.exports = {
+  // 검사가 픽스처로 코어와 대조한다.
+  isOpenableUrl,
   // 새 창은 DOM 이 만들 수 없다 — 이것만은 프레임워크가 답한다. 원본은 URL 을 파싱해
   // 팝업 창을 연다(파싱 실패는 오류다: 지어낸 URL 로 창을 열면 그 창이 무엇인지 아무도 모른다).
   webview_open_window: {
@@ -10,16 +27,10 @@ module.exports = {
     source: "BrowserWindow — 창은 DOM 이 만들 수 없다",
     answer: (ctx, args) => {
       const raw = String(args.url ?? "");
-      let url;
-      try {
-        url = new URL(raw);
-      } catch (e) {
-        throw frameworkError("INVALID_URL", `URL 이 아님: ${raw}`);
+      if (!isOpenableUrl(raw)) {
+        throw frameworkError("INVALID_URL", `http(s) 가 아님: ${raw}`);
       }
-      if (!/^https?:$/.test(url.protocol)) {
-        throw frameworkError("INVALID_URL", `http(s) 가 아님: ${url.protocol}`);
-      }
-      ctx.createWindow(`w-popup-${Date.now()}`, null).loadURL(url.href);
+      ctx.createWindow(`w-popup-${Date.now()}`, null).loadURL(new URL(raw.trim()).href);
       return null;
     },
   },

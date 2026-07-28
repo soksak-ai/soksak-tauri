@@ -43,6 +43,16 @@ function shouldFocus(requested) {
   return requested !== false;
 }
 
+/// `#rrggbb` 또는 `rrggbb` 를 색으로 — 코어와 같은 규칙(soksak-core surface_spec).
+///
+/// 세 자리 축약은 받지 않는다: 한쪽이 펼치고 다른 쪽이 거부하면 같은 테마가 프레임워크마다
+/// 다르게 보인다. 반환은 소문자 `#rrggbb` — 프레임워크가 그 모양을 받는다.
+function parseHexColor(raw) {
+  const hex = String(raw ?? "").trim().replace(/^#/, "");
+  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return null;
+  return `#${hex.toLowerCase()}`;
+}
+
 /// 이 라벨이 워크스페이스 창의 것인가 — 컨트롤 플레인("main")과 가르는 표식.
 function isWorkspace(label) {
   return String(label ?? "").startsWith("w-");
@@ -60,6 +70,7 @@ function monitorOf(win, monitors) {
 module.exports = {
   // 검사가 픽스처로 코어와 대조한다 — 사본이 갈리지 않는다는 것을 파일이 묶는다.
   monitorOf,
+  parseHexColor,
   rectOf,
   shouldFocus,
   isWorkspace,
@@ -70,14 +81,12 @@ module.exports = {
     concept: "창 배경색",
     source: "BrowserWindow.setBackgroundColor",
     answer: (ctx, args) => {
-      const raw = String(args.color ?? "").trim();
-      const hex = raw.replace(/^#/, "");
-      if (!/^[0-9a-fA-F]{6}$/.test(hex)) {
-        throw frameworkError("INVALID_COLOR", `hex 색상(#rrggbb)이 아님: ${raw}`);
-      }
+      const raw = String(args.color ?? "");
+      const c = parseHexColor(raw);
+      if (!c) throw frameworkError("INVALID_COLOR", `hex 색상(#rrggbb)이 아님: ${raw.trim()}`);
       // 부른 창을 못 짚으면 아무 창도 칠하지 않는다(코어는 호출 창을 자동 주입한다).
       if (!ctx.window) throw frameworkError("NO_WINDOW", "부른 창을 짚지 못했다");
-      ctx.window.setBackgroundColor(`#${hex.toLowerCase()}`);
+      ctx.window.setBackgroundColor(c);
       return null;
     },
   },

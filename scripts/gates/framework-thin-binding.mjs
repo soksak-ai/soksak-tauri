@@ -36,7 +36,7 @@ export const BRANCH_LIMIT = 2;
 export const LOGIC_LEDGER = new Map([
   [
     "window_set_background",
-    [3, "hex 검증 2 + 부른 창 부재 1. 검증 규칙은 코어와 같은 기준(#rrggbb)이고 여기는 그 판정을 부르는 자리다 — 옮길 값이 남아 있다(TODO: soksak-core 의 색 검증 재사용)"],
+    [3, "판정을 부르는 자리와 부른 창 부재. 색 규칙(#rrggbb·축약 불가)은 코어가 소유하고 같은 픽스처가 묶는다(fixtures/surface-spec.json)"],
   ],
   [
     "window_create",
@@ -52,7 +52,7 @@ export const LOGIC_LEDGER = new Map([
   ],
   [
     "webview_open_window",
-    [2, "URL 파싱과 스킴 검사. 코어의 URL 정책을 부르면 사라진다(TODO)"],
+    [2, "여는 주소 판정을 부르는 자리. 스킴 정책(http/https 만·소문자 비교)은 코어가 소유하고 같은 픽스처가 묶는다 — 갈리면 한쪽만 막던 스킴을 다른 쪽이 연다"],
   ],
   [
     "project_claim",

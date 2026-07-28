@@ -83,14 +83,11 @@ fn window_activate(window: tauri::WebviewWindow) {
 // 의 색이 테마와 항상 일치한다. 테마 엔진(theme/engine.ts)이 적용 시점마다 호출.
 #[tauri::command]
 fn window_set_background(window: tauri::Window, color: String) -> Result<(), String> {
-    let hex = color.trim().trim_start_matches('#');
-    if hex.len() != 6 {
-        return Err(format!("hex 색상(#rrggbb)이 아님: {color}"));
-    }
-    let parse = |s: &str| u8::from_str_radix(s, 16).map_err(|e| e.to_string());
-    let (r, g, b) = (parse(&hex[0..2])?, parse(&hex[2..4])?, parse(&hex[4..6])?);
+    // 색 판정은 코어가 소유한다 — 갈리면 같은 테마가 프레임워크마다 다르게 보인다.
+    let c = soksak_core::surface_spec::parse_hex_color(&color)
+        .ok_or_else(|| format!("hex 색상(#rrggbb)이 아님: {color}"))?;
     window
-        .set_background_color(Some(tauri::window::Color(r, g, b, 255)))
+        .set_background_color(Some(tauri::window::Color(c.r, c.g, c.b, 255)))
         .map_err(|e| e.to_string())
 }
 

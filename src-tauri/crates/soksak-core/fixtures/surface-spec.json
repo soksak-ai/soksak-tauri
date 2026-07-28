@@ -1,0 +1,27 @@
+{
+  "note": "창 표면의 작은 규칙(색·URL) 오라클. 값 판정은 프레임워크의 것이 아니다 — 갈리면 색은 '테마가 이쪽에서만 안 먹는다'로, URL 은 '한쪽만 막던 스킴을 다른 쪽이 연다'로 나타난다.",
+  "color": [
+    { "why": "여섯 자리 16진수", "in": "#1a2B3c", "out": { "r": 26, "g": 43, "b": 60 } },
+    { "why": "# 없이도 같다", "in": "1a2b3c", "out": { "r": 26, "g": 43, "b": 60 } },
+    { "why": "앞뒤 공백은 무시", "in": "  #000000 ", "out": { "r": 0, "g": 0, "b": 0 } },
+    { "why": "세 자리 축약은 받지 않는다 — 한쪽만 펼치면 같은 테마가 다르게 보인다", "in": "#fff", "out": null },
+    { "why": "빈 값", "in": "", "out": null },
+    { "why": "이름 색", "in": "red", "out": null },
+    { "why": "다섯 자리", "in": "#12345", "out": null },
+    { "why": "일곱 자리", "in": "#1234567", "out": null },
+    { "why": "16진수가 아닌 글자", "in": "#12345g", "out": null }
+  ],
+  "url": [
+    { "why": "https 는 연다", "in": "https://example.com/x", "out": true },
+    { "why": "http 도 연다", "in": "http://example.com", "out": true },
+    { "why": "대문자 스킴도 같다 — 한쪽만 통과시키면 그 차이가 곧 우회로다", "in": "HTTPS://example.com", "out": true },
+    { "why": "file 은 로컬 파일 통로가 된다", "in": "file:///etc/passwd", "out": false },
+    { "why": "data 는 스크립트 통로가 된다", "in": "data:text/html,<script>1</script>", "out": false },
+    { "why": "javascript 는 실행이다", "in": "javascript:alert(1)", "out": false },
+    { "why": "앱 딥링크는 창으로 열 것이 아니다", "in": "soksak://run?cmd=x", "out": false },
+    { "why": "그 밖의 스킴", "in": "ftp://host/x", "out": false },
+    { "why": "주소 없는 스킴은 열 것이 없다", "in": "https://", "out": false },
+    { "why": "URL 이 아님", "in": "not a url", "out": false },
+    { "why": "빈 값", "in": "", "out": false }
+  ]
+}
