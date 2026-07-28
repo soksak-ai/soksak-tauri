@@ -14,6 +14,7 @@ use soksak_spec_socket::{
     SOCKET_PROTOCOL_VERSION,
 };
 
+use crate::ctx::Ctx;
 use crate::registry::{self, Outcome};
 
 /// 요청. 앱 소켓의 요청에서 **창 관련 필드를 뺀 것**이다 — 헬퍼에는 창이 없다.
@@ -84,7 +85,7 @@ fn transport_route(req: &Request) -> Option<Value> {
 }
 
 /// 명령 하나를 실행한다. 표에 없으면 이름을 달고 실패한다 — 조용한 no-op 도, 가짜 성공도 없다.
-fn route(req: &Request) -> Value {
+fn route(ctx: &Ctx, req: &Request) -> Value {
     if req.method == "helper.commands" {
         return ok_reply(registry::declaration());
     }
@@ -97,7 +98,7 @@ fn route(req: &Request) -> Value {
             ),
         );
     };
-    match (cmd.run)(&req.params) {
+    match (cmd.run)(ctx, &req.params) {
         Outcome::Ok(data) => ok_reply(data),
         // 어느 명령의 인자가 틀렸는지 이름을 달고 말한다 — serde 의 사유만으로는 모른다.
         Outcome::InvalidParams(why) => {
@@ -108,12 +109,13 @@ fn route(req: &Request) -> Value {
 }
 
 /// 한 줄 → 한 줄. 소켓 루프가 부르는 유일한 진입점이라 연결 없이도 전부 검증된다.
-pub fn answer(line: &str) -> Value {
+/// 부팅 상태는 인자다 — 이 함수가 전역을 읽으면 테스트가 프로세스 하나에 갇힌다.
+pub fn answer(ctx: &Ctx, line: &str) -> Value {
     let req: Request = match serde_json::from_str(line) {
         Ok(r) => r,
         Err(e) => return err_reply("INVALID_PARAMS", &format!("JSON 파싱 실패: {e}")),
     };
-    let mut reply = transport_route(&req).unwrap_or_else(|| route(&req));
+    let mut reply = transport_route(&req).unwrap_or_else(|| route(ctx, &req));
     if let (Some(id), Some(obj)) = (req.id.clone(), reply.as_object_mut()) {
         obj.insert("id".into(), id);
     }
@@ -123,17 +125,23 @@ pub fn answer(line: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use soksak_core::identity::Identity;
+
+    /// 검증용 부팅 상태 — 어느 홈을 서빙하든 봉투·판 협상은 같아야 한다.
+    fn ctx() -> Ctx {
+        Ctx::new(Identity::new("/tmp/soksak-wire-test", "com.soksak.dev"))
+    }
 
     #[test]
     fn a_broken_line_is_refused_not_ignored() {
-        let reply = answer("{not json");
+        let reply = answer(&ctx(), "{not json");
         assert_eq!(reply["ok"], false);
         assert_eq!(reply["code"], "INVALID_PARAMS");
     }
 
     #[test]
     fn an_unknown_method_names_itself() {
-        let reply = answer(r#"{"id":1,"method":"webview_dom_holes"}"#);
+        let reply = answer(&ctx(), r#"{"id":1,"method":"webview_dom_holes"}"#);
         assert_eq!(reply["ok"], false);
         assert_eq!(reply["code"], "UNKNOWN_COMMAND");
         assert!(
@@ -145,7 +153,7 @@ mod tests {
 
     #[test]
     fn hello_is_answered_before_the_command_table() {
-        let reply = answer(r#"{"id":"h","method":"system.hello"}"#);
+        let reply = answer(&ctx(), r#"{"id":"h","method":"system.hello"}"#);
         assert_eq!(reply["ok"], true);
         assert_eq!(reply["protocol"], SOCKET_PROTOCOL_VERSION);
         assert_eq!(reply["role"], "helper");
@@ -160,7 +168,7 @@ mod tests {
             r#"{{"method":"system.hello","protocol":{}}}"#,
             SOCKET_PROTOCOL_VERSION + 5
         );
-        assert_eq!(answer(&line)["ok"], true);
+        assert_eq!(answer(&ctx(), &line)["ok"], true);
     }
 
     #[test]
@@ -169,7 +177,7 @@ mod tests {
             r#"{{"id":2,"method":"binary_integrity","protocol":{},"params":{{"binPath":"/x","libPath":"/y"}}}}"#,
             SOCKET_PROTOCOL_VERSION + 1
         );
-        let reply = answer(&line);
+        let reply = answer(&ctx(), &line);
         assert_eq!(reply["code"], "VERSION_SKEW", "{reply}");
         assert_eq!(reply["data"]["clientProtocol"], SOCKET_PROTOCOL_VERSION + 1);
     }
@@ -177,13 +185,13 @@ mod tests {
     // 판을 선언하지 않는 클라이언트는 레거시(부재=0)로 통과한다 — 앱 소켓과 같은 규칙.
     #[test]
     fn a_client_that_declares_nothing_still_passes() {
-        let reply = answer(r#"{"method":"binary_integrity","params":{"binPath":"/x","libPath":"/y"}}"#);
+        let reply = answer(&ctx(), r#"{"method":"binary_integrity","params":{"binPath":"/x","libPath":"/y"}}"#);
         assert_eq!(reply["ok"], true, "{reply}");
     }
 
     #[test]
     fn bad_arguments_name_the_command() {
-        let reply = answer(r#"{"method":"binary_integrity","params":{"binPath":5}}"#);
+        let reply = answer(&ctx(), r#"{"method":"binary_integrity","params":{"binPath":5}}"#);
         assert_eq!(reply["code"], "INVALID_PARAMS", "{reply}");
         assert!(
             reply["message"].as_str().unwrap().contains("binary_integrity"),
@@ -196,6 +204,7 @@ mod tests {
     #[test]
     fn data_carries_the_raw_invoke_value() {
         let reply = answer(
+            &ctx(),
             r#"{"method":"binary_integrity","params":{"binPath":"/nonexistent-xyz","libPath":"/nonexistent-xyz"}}"#,
         );
         assert_eq!(
@@ -207,7 +216,7 @@ mod tests {
 
     #[test]
     fn the_command_table_is_askable() {
-        let reply = answer(r#"{"method":"helper.commands"}"#);
+        let reply = answer(&ctx(), r#"{"method":"helper.commands"}"#);
         assert_eq!(reply["ok"], true);
         assert!(!reply["data"]["commands"].as_array().unwrap().is_empty());
     }
@@ -215,7 +224,7 @@ mod tests {
     // id 가 없는 요청에 id 를 지어내지 않는다.
     #[test]
     fn an_absent_id_is_not_invented() {
-        let reply = answer(r#"{"method":"helper.commands"}"#);
+        let reply = answer(&ctx(), r#"{"method":"helper.commands"}"#);
         assert!(reply.get("id").is_none(), "{reply}");
     }
 }

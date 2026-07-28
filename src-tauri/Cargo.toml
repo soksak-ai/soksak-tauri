@@ -20,6 +20,12 @@ edition = "2021"
 name = "soksak_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+# 헬퍼 서빙 표를 **값으로** 읽는다(helper_shape_gate). 문자열 파싱이면 표가 바뀔 때마다
+# 파서가 조용히 빗나가고, 빗나간 게이트는 통과로 위장한다. 테스트 전용 — 앱 바이너리는
+# 헬퍼를 링크하지 않는다.
+[dev-dependencies]
+soksak-helper = { path = "crates/soksak-helper" }
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

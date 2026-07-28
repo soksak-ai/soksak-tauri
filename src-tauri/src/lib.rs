@@ -26,6 +26,8 @@ mod pty;
 mod pty_delivery;
 mod activity_sink;
 mod ambient_gate;
+#[cfg(test)]
+mod helper_shape_gate;
 mod command_dispatch;
 mod identity;
 mod stream_sink;

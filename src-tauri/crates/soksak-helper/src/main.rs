@@ -13,25 +13,34 @@
 // 서빙 대상은 **셸 없이도 같은 답이 나오는 명령**으로 한정한다 — 네이티브(창·웹뷰·엔진)는
 // 셸에 남고, 헬퍼는 그것을 아는 척하지 않는다(모르는 이름은 이름을 달고 실패한다).
 
-mod registry;
-mod wire;
-
 const USAGE: &str = "\
 soksak-helper — serves shell-free commands over a socket
 
 USAGE:
-    soksak-helper --socket <path>
+    soksak-helper --socket <path> --home <path> --identifier <id> [--data-dir <path>]
 
 OPTIONS:
-    --socket <path>    Unix socket to bind and serve (required; no default is guessed)
-    --help             print this and exit
-    --version          print the version and the socket protocol it speaks
+    --socket <path>      Unix socket to bind and serve (required)
+    --home <path>        identity home this helper serves (required)
+    --identifier <id>    identity of that home, e.g. com.soksak.dev (required)
+    --data-dir <path>    app.data directory, when the spawner moved it (default: <home>/data)
+    --help               print this and exit
+    --version            print the version and the socket protocol it speaks
 
-The socket path is an argument on purpose: this process never derives an identity
-home of its own. Whoever spawns it knows which home it serves.
+Every one of these is an argument on purpose: this process derives no identity of
+its own. Whoever spawns it knows which home it serves, and passes it in — the same
+way the app receives its identity from its shell config at boot. Receiving is not
+guessing; a helper that guessed would answer for a different home, silently.
+
+Commands take the same arguments as the app commands of the same name. Process
+state (identity, home, store path) is boot state here, never a per-call argument:
+the UI does not know which process answers it.
 
 Once bound it prints one readiness line to stdout, then serves NDJSON
 request/response lines. Ask it `helper.commands` for what it serves.";
+
+use soksak_core::identity::Identity;
+use soksak_helper::ctx::Ctx;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -51,8 +60,8 @@ fn main() {
 
     // 소켓 경로가 없으면 기본값을 고르지 않고 이름을 달고 실패한다. 조용히 어딘가에
     // 붙는 헬퍼는 붙은 곳이 틀려도 성공처럼 보인다.
-    let socket = match take_value(&args, "--socket") {
-        Ok(path) => path,
+    let (socket, ctx) = match boot(&args) {
+        Ok(v) => v,
         Err(why) => {
             eprintln!("soksak-helper: {why}\n\n{USAGE}");
             std::process::exit(2);
@@ -61,12 +70,26 @@ fn main() {
 
     #[cfg(not(unix))]
     {
-        let _ = socket;
+        let _ = (socket, ctx);
         eprintln!("soksak-helper: unix only in this generation (named pipes land with the Windows shell)");
         std::process::exit(1);
     }
     #[cfg(unix)]
-    unix::serve(std::path::Path::new(&socket));
+    unix::serve(std::path::Path::new(&socket), ctx);
+}
+
+/// 부팅 인자 → 소켓 경로 + 서빙 상태. 빠진 것은 기본값을 고르지 않고 이름을 달고 실패한다:
+/// 홈을 추측하는 헬퍼는 **다른 identity 의 답을 성공처럼** 돌려준다.
+fn boot(args: &[String]) -> Result<(String, Ctx), String> {
+    let socket = take_value(args, "--socket")?;
+    let home = take_value(args, "--home")?;
+    let identifier = take_value(args, "--identifier")?;
+    let mut ctx = Ctx::new(Identity::new(home, identifier));
+    // 데이터 경로 이동은 띄운 쪽만 안다(앱의 debug 전용 격리). 안 주면 홈에서 파생한다.
+    if let Ok(dir) = take_value(args, "--data-dir") {
+        ctx = ctx.with_data_dir(dir);
+    }
+    Ok((socket, ctx))
 }
 
 /// `--flag value` 한 쌍을 읽는다. 빠진 것과 값 없는 것을 서로 다른 사유로 말한다.
@@ -87,7 +110,9 @@ mod unix {
     use std::os::unix::net::{UnixListener, UnixStream};
     use std::path::Path;
 
-    pub fn serve(socket: &Path) {
+    use soksak_helper::ctx::Ctx;
+
+    pub fn serve(socket: &Path, ctx: Ctx) {
         // 싱글턴 프로브 — 살아 있는 응답자가 그 경로를 서빙하면 물러난다(ptyd 와 같은 판정).
         // 죽은 소켓 파일만 치운다: 연결이 되는 소켓을 지우면 남의 서빙을 끊는다.
         if socket.exists() {
@@ -127,14 +152,17 @@ mod unix {
         println!("soksak-helper: listening {}", socket.display());
         let _ = std::io::stdout().flush();
 
+        // 서빙 상태는 연결마다 공유된다 — 한 헬퍼는 한 정체성을 서빙한다.
+        let ctx = std::sync::Arc::new(ctx);
         for conn in listener.incoming().flatten() {
-            std::thread::spawn(move || handle_conn(conn));
+            let ctx = ctx.clone();
+            std::thread::spawn(move || handle_conn(&ctx, conn));
         }
     }
 
     // 연결 하나 = NDJSON 요청/응답 루프. 연결이 끊기면 그 연결만 끝난다(상태가 없어 회수할
     // 것도 없다 — 세션을 소유하는 ptyd 와 다른 점).
-    fn handle_conn(conn: UnixStream) {
+    fn handle_conn(ctx: &Ctx, conn: UnixStream) {
         let Ok(read_half) = conn.try_clone() else { return };
         let reader = BufReader::new(read_half);
         let mut writer = conn;
@@ -143,7 +171,7 @@ mod unix {
             if line.trim().is_empty() {
                 continue;
             }
-            let reply = crate::wire::answer(line.trim());
+            let reply = soksak_helper::wire::answer(ctx, line.trim());
             if writeln!(writer, "{reply}").is_err() {
                 break;
             }

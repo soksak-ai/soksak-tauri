@@ -258,7 +258,7 @@ pub fn list_children(path: Option<String>, meta: Option<bool>) -> Result<ChildLi
 // 테마 엔진(단일 진실)이 담당 — 여기는 파일 입출력만.
 
 fn themes_dir() -> Result<PathBuf, String> {
-    let dir = crate::identity::ambient().path("themes");
+    let dir = crate::identity::ambient().themes_dir();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir)
 }

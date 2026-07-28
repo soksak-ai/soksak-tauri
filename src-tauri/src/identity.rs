@@ -87,11 +87,11 @@ mod tests {
     /// 들면 이 단언은 컴파일은 되지만 뜻을 잃는다 — 그래서 코어 크레이트 경로로 못박는다.
     #[test]
     fn the_app_and_the_helper_share_one_identity_type() {
-        fn takes_portable(id: soksak_core::identity::Identity) -> String {
+        fn takes_core(id: soksak_core::identity::Identity) -> String {
             id.cli_name()
         }
         assert_eq!(
-            takes_portable(Identity::new("/tmp/x-debug", "com.soksak.debug")),
+            takes_core(Identity::new("/tmp/x-debug", "com.soksak.debug")),
             "sok-debug"
         );
     }

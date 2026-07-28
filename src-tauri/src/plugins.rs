@@ -9,7 +9,7 @@ use serde::Serialize;
 // ── 디렉토리/식별자 ──────────────────────────────────────────────────────────
 
 fn plugins_dir() -> Result<PathBuf, String> {
-    let dir = crate::identity::ambient().path("plugins");
+    let dir = crate::identity::ambient().plugins_dir();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir)
 }

@@ -38,6 +38,11 @@ impl Helper {
         self.socket.parent().expect("소켓의 부모")
     }
 
+    /// 이 헬퍼가 서빙하는 정체성 홈. 부팅 인자로 준 것과 같은 값이라야 한다.
+    fn home(&self) -> PathBuf {
+        self.dir().join("home")
+    }
+
     /// 한 줄 요청 → 한 줄 응답. 연결은 요청마다 새로 연다(NDJSON 요청/응답의 최소 단위).
     fn ask(&self, req: Value) -> Value {
         let conn = UnixStream::connect(&self.socket).expect("헬퍼 소켓 연결");
@@ -66,12 +71,22 @@ fn fixture_dir(name: &str) -> PathBuf {
 }
 
 /// 헬퍼를 띄우고 준비 완료 줄을 기다린다.
+///
+/// 정체성을 **인자로 준다** — 헬퍼는 자기 홈을 파생하지 않는다. 테스트가 홈을 지목하므로
+/// 홈 아래를 보는 명령(themes_scan·plugin_scan·app_environment)까지 이 프로세스 밖에서
+/// 검증된다. 인자를 빼면 헬퍼는 뜨지 않는다(그 자체도 아래에서 단언한다).
 fn spawn_helper(name: &str) -> Helper {
     let dir = fixture_dir(name);
     let socket = dir.join("h.sock");
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home).expect("픽스처 홈 생성");
     let mut child = Command::new(env!("CARGO_BIN_EXE_soksak-helper"))
         .arg("--socket")
         .arg(&socket)
+        .arg("--home")
+        .arg(&home)
+        .arg("--identifier")
+        .arg("com.soksak.dev")
         .stdout(Stdio::piped())
         .spawn()
         .expect("헬퍼 스폰");
@@ -269,6 +284,10 @@ fn an_overlong_socket_path_says_how_long_it_was() {
     let out = Command::new(env!("CARGO_BIN_EXE_soksak-helper"))
         .arg("--socket")
         .arg(&socket)
+        .arg("--home")
+        .arg(&dir)
+        .arg("--identifier")
+        .arg("com.soksak.dev")
         .output()
         .expect("헬퍼 실행");
     assert!(!out.status.success(), "상한 밖 경로로 성공하면 안 된다");
@@ -290,4 +309,129 @@ fn a_missing_socket_path_fails_by_name() {
     assert!(!out.status.success(), "소켓 경로 없이 성공하면 안 된다: {out:?}");
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(err.contains("--socket"), "무엇이 없는지 말해야 한다: {err}");
+}
+
+// ── 부팅 상태를 쓰는 명령 ────────────────────────────────────────────────────
+//
+// 이 갈래가 없어서 결함이 살아남았다(2026-07-28): 인프로세스 검사는 "인자를 선언대로 읽는가"
+// 만 봤고, 소켓 검사는 인자 없는 명령을 하나도 부르지 않았다. 그래서 헬퍼가 **앱과 다른
+// 모양**을 요구한다는 사실이 라이브 부팅에서야 INVALID_PARAMS 한 줄로 드러났다.
+//
+// 아래 검사들은 전부 UI 가 실제로 보내는 모양 — 즉 **인자 없이** 부른다.
+
+/// 홈 아래를 훑는 명령은 부팅 때 받은 홈을 본다. 인자를 요구하지 않는다.
+#[test]
+fn a_home_scan_uses_the_boot_home_not_an_argument() {
+    let helper = spawn_helper("boot-home");
+    let themes = helper.home().join("themes");
+    std::fs::create_dir_all(&themes).unwrap();
+    std::fs::write(themes.join("midnight.json"), br#"{"name":"Midnight"}"#).unwrap();
+
+    // UI 는 `invoke("themes_scan")` 를 인자 없이 부른다 — 앱 명령이 인자를 안 받기 때문이다.
+    let reply = helper.ask(json!({ "id": 1, "method": "themes_scan" }));
+    assert_eq!(reply["ok"], true, "{reply}");
+    let found = reply["data"].as_array().expect("배열");
+    assert_eq!(found.len(), 1, "{reply}");
+    assert_eq!(
+        found[0]["file"],
+        themes.join("midnight.json").to_string_lossy().to_string(),
+        "스캔이 부팅 홈 아래를 봤다: {reply}"
+    );
+}
+
+/// 정체성을 묻는 명령도 마찬가지다 — identifier 는 부팅 때 받았다.
+#[test]
+fn the_environment_answers_from_boot_state() {
+    let helper = spawn_helper("boot-env");
+    let reply = helper.ask(json!({ "id": 2, "method": "app_environment" }));
+    assert_eq!(reply["ok"], true, "{reply}");
+    assert_eq!(reply["data"]["identity"], "com.soksak.dev", "{reply}");
+    assert_eq!(reply["data"]["coreBuild"], "dev", "{reply}");
+    assert_eq!(reply["data"]["cli"], "sok-dev", "{reply}");
+    assert_eq!(
+        reply["data"]["home"],
+        helper.home().to_string_lossy().to_string(),
+        "{reply}"
+    );
+
+    let is_release = helper.ask(json!({ "id": 3, "method": "app_is_release" }));
+    assert_eq!(is_release["data"], false, "{is_release}");
+}
+
+/// 인자 없는 명령이 인자를 요구하면 UI 의 같은 호출이 앱에서는 되고 헬퍼에서는 거절된다.
+/// 그 비대칭 자체를 막는다: `{}` 도 `null` 도 생략도 전부 같은 답이라야 한다.
+#[test]
+fn an_argumentless_command_accepts_every_empty_shape() {
+    let helper = spawn_helper("boot-empty");
+    let shapes = [json!({}), Value::Null];
+    for params in shapes {
+        let reply = helper.ask(json!({ "method": "app_is_release", "params": params.clone() }));
+        assert_eq!(reply["ok"], true, "params={params}: {reply}");
+    }
+    let omitted = helper.ask(json!({ "method": "app_is_release" }));
+    assert_eq!(omitted["ok"], true, "{omitted}");
+}
+
+/// 정체성 없이는 서빙하지 않는다. 홈을 추측하는 헬퍼는 **다른 identity 의 답을 성공처럼**
+/// 돌려주고, 그 오답은 오류가 아니라 빈 결과로 나타난다.
+#[test]
+fn a_missing_identity_fails_by_name() {
+    let dir = fixture_dir("no-identity");
+    for missing in ["--home", "--identifier"] {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_soksak-helper"));
+        cmd.arg("--socket").arg(dir.join("h.sock"));
+        if missing != "--home" {
+            cmd.arg("--home").arg(&dir);
+        }
+        if missing != "--identifier" {
+            cmd.arg("--identifier").arg("com.soksak.dev");
+        }
+        let out = cmd.output().expect("헬퍼 실행");
+        assert!(!out.status.success(), "{missing} 없이 성공하면 안 된다");
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(err.contains(missing), "무엇이 빠졌는지 말해야 한다: {err}");
+    }
+}
+
+/// 저장소를 옮긴 앱과 같은 파일을 봐야 한다 — 헬퍼가 규칙만 보고 파생하면 다른 DB 를 열고
+/// 그 차이는 "없음"으로 조용히 나타난다.
+#[test]
+fn a_relocated_store_is_followed_not_re_derived() {
+    let dir = fixture_dir("relocated-store");
+    let home = dir.join("home");
+    let moved = dir.join("elsewhere");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::create_dir_all(&moved).unwrap();
+
+    let socket = dir.join("h.sock");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_soksak-helper"))
+        .arg("--socket")
+        .arg(&socket)
+        .arg("--home")
+        .arg(&home)
+        .arg("--identifier")
+        .arg("com.soksak.dev")
+        .arg("--data-dir")
+        .arg(&moved)
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("헬퍼 스폰");
+    let mut ready = String::new();
+    let stdout = child.stdout.take().expect("stdout 파이프");
+    assert!(
+        matches!(BufReader::new(stdout).read_line(&mut ready), Ok(n) if n > 0),
+        "헬퍼가 준비 완료를 알리지 않고 죽었다"
+    );
+    let helper = Helper { child, socket };
+
+    // 지목한 곳에 DB 가 없으면 "열기 실패"다 — 홈 아래를 대신 열어 "없음"이라 답하면 안 된다.
+    let reply = helper.ask(json!({
+        "method": "data_kv_get", "params": { "ns": "core", "key": "bookmarks" }
+    }));
+    assert_eq!(reply["ok"], false, "{reply}");
+    let msg = reply["message"].as_str().unwrap_or_default();
+    assert!(
+        msg.contains(&moved.to_string_lossy().to_string()),
+        "지목된 경로를 말해야 한다: {reply}"
+    );
 }

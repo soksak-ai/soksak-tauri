@@ -44,7 +44,8 @@ fn data_dir_from(data_dir_env: Option<&str>, home: &Path) -> PathBuf {
     }
     #[cfg(not(debug_assertions))]
     let _ = data_dir_env;
-    home.join("data")
+    // 규약 경로는 코어가 소유한다 — 여기서 이름을 다시 적으면 헬퍼와 갈릴 수 있다.
+    soksak_core::identity::data_dir(home)
 }
 
 /// 주어진 홈 아래의 DB 경로. 홈은 **인자로 온다** — 헬퍼 프로세스는 자기 홈을 전역으로
@@ -52,7 +53,7 @@ fn data_dir_from(data_dir_env: Option<&str>, home: &Path) -> PathBuf {
 pub fn db_path_in(home: &Path) -> Result<PathBuf, String> {
     let dir = data_dir_from(std::env::var("SOKSAK_DATA_DIR").ok().as_deref(), home);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    Ok(dir.join("soksak.db"))
+    Ok(dir.join(soksak_core::identity::DB_FILE))
 }
 
 /// 이 프로세스의 홈 기준 DB 경로 — 앰비언트를 읽는 것은 여기 한 곳이다.

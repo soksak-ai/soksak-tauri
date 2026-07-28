@@ -15,6 +15,8 @@ use serde_json::{json, Value};
 
 use soksak_core::{identity, integrity, plugin_dir, session, themes, udp, unit_dev};
 
+use crate::ctx::Ctx;
+
 /// 명령 하나의 결과. 인자 해석 실패와 로직 실패를 가른다 — 부르는 쪽이 "내가 잘못 물었나,
 /// 물음은 맞는데 안 되나"를 코드로 구분할 수 있어야 한다.
 pub enum Outcome {
@@ -39,7 +41,8 @@ pub struct Command {
     pub args: &'static [Arg],
     /// 반환 값의 모양. 봉투가 아니라 `data` 에 실리는 값을 말한다.
     pub returns: &'static str,
-    pub run: fn(&Value) -> Outcome,
+    /// 실행 = 부팅 상태 + 호출자 인자. 둘을 섞지 않는 것이 이 표의 규율이다.
+    pub run: fn(&Ctx, &Value) -> Outcome,
 }
 
 const REQ: bool = true;
@@ -105,25 +108,24 @@ pub const COMMANDS: &[Command] = &[
         returns: "string | null (에이전트 종류)",
         run: run_ai_session_detect,
     },
-    // 아래 셋은 홈·경로만 있으면 되는 것들이다. 앱은 그 홈을 자기 정체성에서 파생하지만
-    // 헬퍼는 자기 정체성을 추측하지 않으므로 **인자로 받는다** — 헬퍼가 홈을 추측하면
-    // 홈이 갈릴 때 조용히 다른 곳을 훑는다.
+    // 아래 다섯은 홈·정체성이 필요한 것들이다. 그 값은 **부팅 상태**(Ctx)에서 오지 인자로
+    // 오지 않는다 — 앱의 같은 명령이 인자를 받지 않기 때문이다. 헬퍼가 인자로 요구하면
+    // UI 의 같은 호출이 앱에서는 되고 헬퍼에서는 INVALID_PARAMS 로 거절된다(실측 결함).
     Command {
         name: "themes_scan",
-        args: &[Arg { name: "dir", ty: "string", required: REQ }],
+        args: &[],
         returns: "ThemeFile[] (파일명·이름)",
         run: run_themes_scan,
     },
     Command {
         name: "plugin_scan",
-        args: &[Arg { name: "base", ty: "string", required: REQ }],
+        args: &[],
         returns: "PluginScanEntry[] (디렉터리 스캔 결과)",
         run: run_plugin_scan,
     },
     Command {
         name: "data_kv_get",
         args: &[
-            Arg { name: "dbPath", ty: "string", required: REQ },
             Arg { name: "ns", ty: "string", required: REQ },
             Arg { name: "key", ty: "string", required: REQ },
         ],
@@ -132,16 +134,13 @@ pub const COMMANDS: &[Command] = &[
     },
     Command {
         name: "app_environment",
-        args: &[
-            Arg { name: "identifier", ty: "string", required: REQ },
-            Arg { name: "home", ty: "string", required: REQ },
-        ],
+        args: &[],
         returns: "AppEnvironment (정체성·홈·CLI·빌드 프로파일·유닛 모드)",
         run: run_app_environment,
     },
     Command {
         name: "app_is_release",
-        args: &[Arg { name: "identifier", ty: "string", required: REQ }],
+        args: &[],
         returns: "bool (release core 여부)",
         run: run_app_is_release,
     },
@@ -211,7 +210,7 @@ struct UdpSend {
     broadcast: Option<bool>,
 }
 
-fn run_net_udp_send(params: &Value) -> Outcome {
+fn run_net_udp_send(_ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: UdpSend| {
         udp::net_udp_send(a.host, a.port, a.data, a.broadcast)
     })
@@ -229,7 +228,7 @@ struct UdpRequest {
     max_packets: Option<usize>,
 }
 
-fn run_net_udp_request(params: &Value) -> Outcome {
+fn run_net_udp_request(_ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: UdpRequest| {
         udp::net_udp_request(a.host, a.port, a.data, a.timeout_ms, a.max_packets)
     })
@@ -242,7 +241,7 @@ struct BinaryIntegrity {
     lib_path: String,
 }
 
-fn run_binary_integrity(params: &Value) -> Outcome {
+fn run_binary_integrity(_ctx: &Ctx, params: &Value) -> Outcome {
     // 이 관찰은 실패하지 않는다(부재도 답이다) — Ok 로 감싸 dispatch 의 한 경로를 쓴다.
     dispatch(params, |a: BinaryIntegrity| {
         Ok(integrity::binary_integrity(a.bin_path, a.lib_path))
@@ -256,7 +255,7 @@ struct CleanupStale {
     allowed_roots: Vec<String>,
 }
 
-fn run_cleanup_stale(params: &Value) -> Outcome {
+fn run_cleanup_stale(_ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: CleanupStale| {
         integrity::cleanup_stale(a.path, a.allowed_roots)
     })
@@ -270,7 +269,7 @@ struct VerifyAndLink {
     sha256: String,
 }
 
-fn run_verify_and_link(params: &Value) -> Outcome {
+fn run_verify_and_link(_ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: VerifyAndLink| {
         integrity::verify_and_link(a.src, a.dest, a.sha256)
     })
@@ -282,52 +281,39 @@ struct AiSessionDetect {
     command_line: String,
 }
 
-fn run_ai_session_detect(params: &Value) -> Outcome {
+fn run_ai_session_detect(_ctx: &Ctx, params: &Value) -> Outcome {
     // 종류 이름은 AgentKind::as_str 이 소유한다 — 여기서 문자열을 새로 짓지 않는다.
     dispatch(params, |a: AiSessionDetect| {
         Ok(session::detect_agent(&a.command_line).map(|k| k.as_str().to_string()))
     })
 }
 
+/// 인자를 받지 않는 명령 — 앱의 같은 명령도 받지 않는다. `{}`·`null` 둘 다 허용하고
+/// 낯선 키가 실려 와도 거부하지 않는다(셸이 봉투에 무엇을 더 얹든 이 명령의 답은 같다).
 #[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct DirArg {
-    dir: String,
-}
+struct NoArgs {}
 
-fn run_themes_scan(params: &Value) -> Outcome {
-    dispatch(params, |a: DirArg| themes::scan(std::path::Path::new(&a.dir)))
-}
-
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct BaseArg {
-    base: String,
-}
-
-fn run_plugin_scan(params: &Value) -> Outcome {
-    dispatch(params, |a: BaseArg| {
-        plugin_dir::scan(std::path::Path::new(&a.base))
+fn run_themes_scan(ctx: &Ctx, params: &Value) -> Outcome {
+    // 홈은 부팅 상태에서 온다. 앱은 `identity::ambient().themes_dir()` 로 같은 곳을 본다.
+    dispatch(params, |_: NoArgs| {
+        themes::scan(&ctx.identity().themes_dir())
     })
 }
 
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct IdentifierArg {
-    identifier: String,
+fn run_plugin_scan(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |_: NoArgs| {
+        plugin_dir::scan(&ctx.identity().plugins_dir())
+    })
 }
 
-fn run_app_is_release(params: &Value) -> Outcome {
+fn run_app_is_release(ctx: &Ctx, params: &Value) -> Outcome {
     // 판정 규칙은 코어가 소유한다 — 여기서 문자열을 다시 가르지 않는다.
-    dispatch(params, |a: IdentifierArg| {
-        Ok(identity::is_release_identifier(&a.identifier))
-    })
+    dispatch(params, |_: NoArgs| Ok(ctx.identity().is_release()))
 }
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct KvGetArg {
-    db_path: String,
     ns: String,
     key: String,
 }
@@ -352,12 +338,12 @@ impl soksak_core::kv::KvRows for SqliteRows {
     }
 }
 
-fn run_data_kv_get(params: &Value) -> Outcome {
+fn run_data_kv_get(ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: KvGetArg| {
         // 읽기 전용으로 연다 — 헬퍼가 저장소를 고치지 않는다. 쓰기는 소유자가 하고,
         // 두 프로세스가 같은 파일에 쓰면 그 순간 단일 쓰기자 계약이 깨진다.
         let conn = rusqlite::Connection::open_with_flags(
-            &a.db_path,
+            ctx.db_path(),
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
         )
         .map_err(|e| format!("저장소 열기 실패: {e}"))?;
@@ -366,37 +352,27 @@ fn run_data_kv_get(params: &Value) -> Outcome {
     })
 }
 
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct EnvArg {
-    identifier: String,
-    home: String,
-}
-
-fn run_app_environment(params: &Value) -> Outcome {
-    // 파생 규칙은 코어가 소유한다. 헬퍼는 정체성·홈을 인자로 받을 뿐 추측하지 않는다 —
-    // 추측하면 홈이 갈릴 때 조용히 다른 identity 의 환경을 답한다.
-    dispatch(params, |a: EnvArg| {
-        let core_build = identity::core_build_for_identifier(&a.identifier);
-        let cli = identity::cli_for_core_build(&core_build);
+fn run_app_environment(ctx: &Ctx, params: &Value) -> Outcome {
+    // 파생 규칙은 코어가 소유한다. 정체성·홈은 부팅 상태에서 온다 — 앱이 셸 설정에서
+    // 받는 것과 같은 자리다(추측이 아니라 받는 것).
+    dispatch(params, |_: NoArgs| {
+        let id = ctx.identity();
+        let core_build = id.core_build();
+        let home = id.home().to_string_lossy().to_string();
         // 개발 유닛 선언은 홈 아래 config 파일이다. 없으면 빈 목록이 정답(공식 설치본만
         // 쓰는 상태) — 파일 부재를 오류로 올리면 정상 상태가 실패로 보인다.
-        let units = unit_dev::read_declared(std::path::Path::new(&a.home))?;
+        let units = unit_dev::read_declared(id.home())?;
         let (accepted, rejected): (Vec<_>, Vec<_>) = units.into_iter().partition(|u| {
-            identity::dev_source_accepted(
-                std::path::Path::new(&u.source),
-                std::path::Path::new(&a.home),
-                &core_build,
-            )
+            identity::dev_source_accepted(std::path::Path::new(&u.source), id.home(), &core_build)
         });
         Ok(json!({
             "coreBuild": core_build,
-            "identity": a.identifier,
-            "cli": cli,
-            "home": a.home,
+            "identity": id.identifier(),
+            "cli": id.cli_name(),
+            "home": home,
             // 헬퍼는 릴리즈 프로파일로 배급된다 — 자기 빌드를 말하는 것이 정직하다.
             "buildProfile": if cfg!(debug_assertions) { "debug" } else { "release" },
-            "updaterEnabled": core_build == "release",
+            "updaterEnabled": id.is_release(),
             "unitMode": if accepted.is_empty() { "official" } else { "mixed" },
             "developmentUnits": accepted,
             "rejectedDevelopmentUnits": rejected,
@@ -407,6 +383,12 @@ fn run_app_environment(params: &Value) -> Outcome {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use soksak_core::identity::Identity;
+
+    /// 검증용 부팅 상태. 이 표의 검사들은 **인자 해석**을 보는 것이라 어느 홈이든 같다.
+    fn ctx() -> Ctx {
+        Ctx::new(Identity::new("/tmp/soksak-registry-test", "com.soksak.dev"))
+    }
 
     #[test]
     fn every_name_is_unique() {
@@ -440,7 +422,7 @@ mod tests {
             if c.args.iter().all(|a| !a.required) {
                 continue;
             }
-            let outcome = (c.run)(&json!({}));
+            let outcome = (c.run)(&ctx(), &json!({}));
             assert!(
                 matches!(outcome, Outcome::InvalidParams(_)),
                 "{} 이 빈 인자를 통과시켰다",
@@ -458,7 +440,7 @@ mod tests {
     // 관찰 결과는 앱의 invoke 가 주는 값과 같은 모양이어야 한다 — 봉투는 밖에서 얹는다.
     #[test]
     fn binary_integrity_answers_the_raw_shape() {
-        let outcome = (find("binary_integrity").unwrap().run)(&json!({
+        let outcome = (find("binary_integrity").unwrap().run)(&ctx(), &json!({
             "binPath": "/nonexistent-xyz/bin", "libPath": "/nonexistent-xyz/lib"
         }));
         let Outcome::Ok(v) = outcome else {
@@ -471,7 +453,7 @@ mod tests {
 
     #[test]
     fn a_refusal_carries_the_portable_reason() {
-        let outcome = (find("cleanup_stale").unwrap().run)(&json!({
+        let outcome = (find("cleanup_stale").unwrap().run)(&ctx(), &json!({
             "path": "/etc/passwd", "allowedRoots": ["/nowhere"]
         }));
         let Outcome::Failed(msg) = outcome else {
@@ -485,14 +467,14 @@ mod tests {
     // 대기 없는 인자만 골라 확인한다(타임아웃은 이 검사의 대상이 아니다).
     #[test]
     fn an_explicit_null_optional_reads_as_absent() {
-        let sent = (find("net_udp_send").unwrap().run)(&json!({
+        let sent = (find("net_udp_send").unwrap().run)(&ctx(), &json!({
             "host": "127.0.0.1", "port": 9, "data": [1], "broadcast": null
         }));
         assert!(
             !matches!(sent, Outcome::InvalidParams(_)),
             "명시적 null 을 인자 오류로 보면 안 된다"
         );
-        let asked = (find("net_udp_request").unwrap().run)(&json!({
+        let asked = (find("net_udp_request").unwrap().run)(&ctx(), &json!({
             "host": "127.0.0.1", "port": 9, "data": [1],
             "timeoutMs": 1, "maxPackets": null
         }));
