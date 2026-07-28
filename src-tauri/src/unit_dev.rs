@@ -11,14 +11,9 @@ const CONFIG_VERSION: u32 = 1;
 const CONFIG_FILE: &str = "development-units.json";
 static WRITE_LOCK: Mutex<()> = Mutex::new(());
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-#[serde(deny_unknown_fields)]
-pub struct UnitDevSource {
-    pub kind: String,
-    pub id: String,
-    pub source: String,
-}
+// 선언 타입은 코어가 소유한다 — 앱과 cored 가 같은 config 를 읽고 같은 명령을 서빙하므로,
+// 필드가 한 자리라도 어긋나면 한쪽만 파싱에 성공하고 그 차이는 "유닛이 없다"로 나타난다.
+pub use soksak_core::unit_dev::UnitDevSource;
 
 #[derive(Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -62,19 +57,10 @@ fn validate_source_path(source: &Path) -> Result<(), String> {
 }
 
 fn validate_source_path_in(source: &Path, home: &Path) -> Result<(), String> {
-    if !source.is_absolute() {
-        return Err(format!(
-            "개발 source는 절대경로여야 합니다: {}",
-            source.display()
-        ));
-    }
-    crate::path_security::reject_symlink_components(source)?;
-    if !source.is_dir() {
-        return Err(format!(
-            "개발 source 디렉터리가 없습니다: {}",
-            source.display()
-        ));
-    }
+    // 절대경로·심링크·존재는 코어가 본다(cored 의 unit_dev_validate_path 와 같은 규칙).
+    soksak_core::unit_dev::validate_source_exists(source)?;
+    // 홈 레인 판정은 여기 남는다 — 이 검사는 **어느 홈에서 묻는가**에 따라 답이 달라져서,
+    // 홈을 인자로 받는 코어 함수와 달리 호출자의 홈이 곧 답의 일부다.
     if let Some(foreign) = foreign_identity_home(source, home) {
         return Err(format!(
             "다른 identity 홈({}) 안의 경로는 이 홈의 개발 source 가 될 수 없습니다: {}. \
@@ -170,7 +156,9 @@ fn list_in(home: &Path) -> Result<Vec<UnitDevSource>, String> {
 }
 
 fn list_in_for(home: &Path, core_build: &str) -> Result<Vec<UnitDevSource>, String> {
-    let (valid, rejected) = partition_for_identity(read_config_in(home)?.units, home, core_build);
+    // 읽기 규칙은 코어가 소유한다 — cored 가 같은 명령을 서빙하므로 두 벌이면 답이 갈린다.
+    let p = soksak_core::unit_dev::list_accepted(home, core_build)?;
+    let (valid, rejected) = (p.accepted, p.rejected);
     for r in &rejected {
         eprintln!(
             "[unit-dev] dev 소스 거부(읽기 경계, identity={core_build}): {} {} — {}",

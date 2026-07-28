@@ -134,6 +134,20 @@ pub const COMMANDS: &[Command] = &[
         returns: "{ bin_dir, lib_dir }",
         run: run_npm_global_dirs,
     },
+    // 개발 유닛 **읽기**. 쓰기(unit_dev_set/remove)와 달리 공유 config 를 갈아끼우지 않으므로
+    // 두 번째 쓰기 프로세스 문제가 없다 — 홈·정체성만 있으면 선다.
+    Command {
+        name: "unit_dev_list",
+        args: &[],
+        returns: "UnitDevSource[] (이 정체성이 받아들인 선언)",
+        run: run_unit_dev_list,
+    },
+    Command {
+        name: "unit_dev_validate_path",
+        args: &[Arg { name: "source", ty: "string", required: REQ }],
+        returns: "string (검증한 source)",
+        run: run_unit_dev_validate_path,
+    },
     Command {
         name: "plugin_scan",
         args: &[],
@@ -539,6 +553,33 @@ fn run_npm_global_dirs(ctx: &Ctx, params: &Value) -> Outcome {
         let (bin_dir, lib_dir) =
             soksak_core::shellq::npm_dirs_from_prefix(&String::from_utf8_lossy(&out.stdout))?;
         Ok(NpmDirs { bin_dir, lib_dir })
+    })
+}
+
+fn run_unit_dev_list(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |_: NoArgs| {
+        let core_build = ctx.identity().core_build();
+        let p = unit_dev::list_accepted(ctx.home(), &core_build)?;
+        // 갈라 낸 것은 버리지 않는다 — 왜 안 보이는지가 답의 일부다.
+        for r in &p.rejected {
+            eprintln!(
+                "[unit-dev] dev 소스 거부(읽기 경계, identity={core_build}): {} {} — {}",
+                r.kind, r.id, r.source
+            );
+        }
+        Ok(p.accepted)
+    })
+}
+
+#[derive(serde::Deserialize)]
+struct SourceOnly {
+    source: String,
+}
+
+fn run_unit_dev_validate_path(_ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: SourceOnly| {
+        unit_dev::validate_source_exists(std::path::Path::new(&a.source))?;
+        Ok(a.source)
     })
 }
 

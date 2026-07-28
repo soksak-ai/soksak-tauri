@@ -1309,3 +1309,77 @@ fn serves_probe_binary_over_the_socket() {
     assert_eq!(fails["ok"], true, "관찰 자체는 성공한다: {fails}");
     assert_eq!(fails["data"]["ok"], false, "{fails}");
 }
+
+// ── 개발 유닛 선언 읽기 ──────────────────────────────────────────────────────
+//
+// 읽기 검증은 부팅 상태(홈·정체성)만 있으면 선다 — 쓰기(unit_dev_set/remove)와 달리 공유
+// config 를 갈아끼우지 않으므로 두 번째 쓰기 프로세스 문제가 없다.
+
+#[test]
+fn serves_unit_dev_list_from_the_boot_home() {
+    let helper = spawn_helper("unit-dev-list");
+    let cfg = helper.home().join("config");
+    std::fs::create_dir_all(&cfg).unwrap();
+    let src = helper.dir().join("a-plugin");
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::write(
+        cfg.join("development-units.json"),
+        format!(
+            r#"{{"version":1,"units":[{{"kind":"plugin","id":"a","source":"{}"}}]}}"#,
+            src.to_string_lossy()
+        ),
+    )
+    .unwrap();
+
+    let reply = helper.ask(json!({ "method": "unit_dev_list", "params": {} }));
+    assert_eq!(reply["ok"], true, "{reply}");
+    assert_eq!(reply["data"][0]["id"], "a", "{reply}");
+    assert_eq!(reply["data"][0]["kind"], "plugin", "{reply}");
+}
+
+/// 앱과 같은 엄격함으로 읽는다. 느슨하면 같은 config 를 앱은 거부하고 이 프로세스는
+/// 통과시키고, 그 차이는 오류가 아니라 **한쪽에서만 보이는 유닛**으로 나타난다.
+#[test]
+fn a_malformed_declaration_is_refused_the_same_way() {
+    let helper = spawn_helper("unit-dev-bad");
+    let cfg = helper.home().join("config");
+    std::fs::create_dir_all(&cfg).unwrap();
+    std::fs::write(
+        cfg.join("development-units.json"),
+        r#"{"version":1,"units":[{"kind":"plugin","id":"a","source":"relative/path"}]}"#,
+    )
+    .unwrap();
+
+    let reply = helper.ask(json!({ "method": "unit_dev_list", "params": {} }));
+    assert_eq!(reply["ok"], false, "상대경로 소스를 통과시켰다: {reply}");
+    // UNKNOWN_COMMAND 도 ok:false 다 — 코드를 함께 보지 않으면 미서빙이 통과로 위장한다.
+    assert_eq!(reply["code"], "COMMAND_FAILED", "{reply}");
+    assert!(
+        reply["message"].as_str().unwrap_or_default().contains("절대경로"),
+        "{reply}"
+    );
+}
+
+#[test]
+fn serves_unit_dev_validate_path() {
+    let helper = spawn_helper("unit-dev-validate");
+    let good = helper.dir().join("real-src");
+    std::fs::create_dir_all(&good).unwrap();
+
+    let ok = helper.ask(json!({
+        "method": "unit_dev_validate_path", "params": { "source": good.to_string_lossy() }
+    }));
+    assert_eq!(ok["ok"], true, "{ok}");
+
+    // 없는 디렉터리는 거부다 — 선언은 되지만 검증은 실체를 본다.
+    let missing = helper.ask(json!({
+        "method": "unit_dev_validate_path",
+        "params": { "source": helper.dir().join("nope").to_string_lossy() }
+    }));
+    assert_eq!(missing["ok"], false, "{missing}");
+
+    let relative = helper.ask(json!({
+        "method": "unit_dev_validate_path", "params": { "source": "rel/path" }
+    }));
+    assert_eq!(relative["ok"], false, "{relative}");
+}

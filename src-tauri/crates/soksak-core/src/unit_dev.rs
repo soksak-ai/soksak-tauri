@@ -249,3 +249,89 @@ mod drift_tests {
         assert!(read_declared(&home("absent")).unwrap().is_empty());
     }
 }
+
+/// 이 정체성이 받아들이는 선언만 — 나머지는 사유와 함께 갈라 낸다.
+///
+/// 홈 레인 규칙: dev 소스는 dev 정체성에서만 적재된다. 그 판정은 선언 자체의 유효성과 다른
+/// 축이라 `read_declared` 뒤에 온다 — 잘못 쓴 선언은 어느 정체성에서도 오류이고, 남의 홈을
+/// 가리키는 선언은 **이 정체성에서만** 거부다.
+pub fn list_accepted(home: &Path, core_build: &str) -> Result<Partitioned, String> {
+    let (accepted, rejected) = read_declared(home)?
+        .into_iter()
+        .partition(|u| crate::identity::dev_source_accepted(Path::new(&u.source), home, core_build));
+    Ok(Partitioned { accepted, rejected })
+}
+
+/// 받아들인 것과 갈라 낸 것. 거부를 버리지 않는다 — 왜 안 보이는지가 답의 일부다.
+pub struct Partitioned {
+    pub accepted: Vec<UnitDevSource>,
+    pub rejected: Vec<UnitDevSource>,
+}
+
+/// 선언한 source 가 **지금 실체로 있는가.**
+///
+/// `validate_declared` 는 선언이 말이 되는지만 본다(절대경로·kind·id·심링크). 여기서는 그
+/// 위에 존재까지 확인한다 — 선언 시점에는 검증하지만, 목록은 checkout 이 사라져도 계속
+/// 노출해 적재기가 유닛별로 오류를 내게 한다. 두 질문을 한 함수가 겸하면 그 구분이 사라진다.
+pub fn validate_source_exists(source: &Path) -> Result<(), String> {
+    if !source.is_absolute() {
+        return Err(format!(
+            "개발 source는 절대경로여야 합니다: {}",
+            source.display()
+        ));
+    }
+    crate::pathx::reject_symlink_components(source)?;
+    if !source.is_dir() {
+        return Err(format!(
+            "개발 source 디렉터리가 없습니다: {}",
+            source.display()
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod read_tests {
+    use super::*;
+
+    fn home(name: &str) -> PathBuf {
+        let d = std::env::temp_dir()
+            .canonicalize()
+            .expect("실측 temp")
+            .join(format!("udev-read-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("config")).unwrap();
+        d
+    }
+
+    #[test]
+    fn a_dev_identity_accepts_an_outside_source() {
+        let h = home("accept");
+        let src = h.join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(
+            config_path(&h),
+            format!(
+                r#"{{"version":1,"units":[{{"kind":"plugin","id":"a","source":"{}"}}]}}"#,
+                src.to_string_lossy()
+            ),
+        )
+        .unwrap();
+        let p = list_accepted(&h, "dev").expect("dev");
+        assert_eq!(p.accepted.len(), 1);
+        assert!(p.rejected.is_empty());
+
+        // dev 아닌 정체성은 같은 선언을 갈라 낸다 — 버리지 않고 사유로 남는다.
+        let p2 = list_accepted(&h, "release").expect("release");
+        assert!(p2.accepted.is_empty());
+        assert_eq!(p2.rejected.len(), 1);
+    }
+
+    #[test]
+    fn a_missing_source_directory_is_refused() {
+        assert!(validate_source_exists(Path::new("/nonexistent-xyz-abc")).is_err());
+        assert!(validate_source_exists(Path::new("relative")).is_err());
+        let d = std::env::temp_dir().canonicalize().unwrap();
+        assert!(validate_source_exists(&d).is_ok());
+    }
+}
