@@ -7,6 +7,9 @@ import process from "node:process";
 /** 소켓 경로가 오는 통로. 하나뿐이고, 기본값은 없다. */
 export const SOCKET_ENV = "SOKSAK_SOCKET";
 
+/** 컨트롤 플레인의 예약 라벨 — 워크스페이스 라벨(w-*)이 절대 가질 수 없는 이름. */
+export const CONTROL_LABEL = "main";
+
 /** 붙을 곳을 환경에서 받는다 — 없으면 이름을 달고 실패한다.
  *
  *  기본 경로를 지어내면, 값을 안 준 실행이 실패 대신 **다른 홈의 앱**에 붙어 놓고 판정을 낸다.
@@ -89,6 +92,14 @@ export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  *  "닫으려는 창 자신"을 빼는 용도(자기 경유 close 는 회신이 유실된다) — 남는 창이 없으면
  *  그 라벨을 그대로 쓴다(회신은 잃어도 닫힘은 성사된다). */
 export async function resolveControlWindow(rpc, exclude) {
+  // 먼저 예약 라벨에 **직접** 묻는다. 봉투 없는 질의는 포커스 폴백을 타므로, 굳은 잔재 창이
+  // 그 자리를 점유하면 목록조차 못 얻는다(실측 2026-07-28: UNKNOWN_COMMAND window.list —
+  // 회수 도구가 회수 대상 때문에 못 돌았다). 컨트롤 플레인은 이름이 정해져 있으니 폴백에
+  // 기대지 않는다. 없는 토폴로지면 아래 폴백 경로가 그대로 선다.
+  if (CONTROL_LABEL !== exclude) {
+    const direct = await rpc("window.list", {}, CONTROL_LABEL).catch(() => null);
+    if (direct?.ok === true && Array.isArray(direct.data?.labels)) return CONTROL_LABEL;
+  }
   const r = await rpc("window.list", {});
   const pool =
     r?.ok === true ? r.data?.labels

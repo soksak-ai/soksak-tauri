@@ -32,7 +32,8 @@ import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
 import zlib from "node:zlib";
-import { requireSocket, resolveControlWindow } from "./lib/client.mjs";
+import { requireSocket } from "./lib/client.mjs";
+import { acquireFixtureWindow, releaseFixtureWindow } from "./lib/fixtureWindow.mjs";
 
 import { decodePng } from "./lib/png.mjs";
 const SOCKET = requireSocket();
@@ -177,26 +178,12 @@ async function main() {
   console.log(`rail-border E2E\nsocket: ${SOCKET}\n`);
   fs.mkdirSync(FIXTURE, { recursive: true });
 
-  {
-    const ctrl = await resolveControlWindow(rpc);
-    const wl = data(await rpc("window.list", {}, ctrl)).labels || [];
-    for (const l of wl) {
-      if (!String(l).startsWith("w-")) continue;
-      const tr = data(await rpc("state.tree", {}, l).catch(() => null));
-      if ((tr.projects ?? []).some((p) => String(p.root ?? "").includes("rail-border"))) {
-        await rpc("window.close", { label: l }, await resolveControlWindow(rpc, l).catch(() => l)).catch(() => {});
-        await sleep(500);
-      }
-    }
-  }
-
-  const beforeList = data(await rpc("window.list", {}, await resolveControlWindow(rpc))).labels || [];
-  const opened = data(await rpc("window.open", { root: FIXTURE }, await resolveControlWindow(rpc)));
-  const win = opened.label || opened.existingWindow;
-  if (typeof win !== "string" || !win.startsWith("w-") || beforeList.includes(win)) {
-    throw new Error(`픽스처 창 확보 실패 — 중단(사용자 창 오염 방지): ${JSON.stringify(opened).slice(0, 140)}`);
-  }
-  ok(true, `window opened (${win})`);
+  // 창 확보는 lib/fixtureWindow 가 진다 — 루트가 주인이고, 있으면 물려받는다(멱등).
+  // 여기서 손으로 회수하지 마라: 굳은 창은 state.tree 에 답하지 못해 회수에서 빠지고,
+  // 빠진 창 위에 새 창이 얹혀 같은 자리에 쌓인다(실측 21 개).
+  const acquired = await acquireFixtureWindow(rpc, FIXTURE);
+  const win = acquired.label;
+  ok(true, `window ${acquired.adopted ? "adopted" : "opened"} (${win})`);
   // 레일은 결부(활성 탭이 투영을 선언하는 종류)가 있어야 선다 — 브라우저 탭을 열어 즐겨찾기
   // 레일을, 없으면 터미널로 파일트리 레일을 세운다. 빈 창엔 투영이 없다(설계).
   {
@@ -278,7 +265,7 @@ async function main() {
     if (!wantsBorder) {
       console.log("  이 테마(paneStyle)에서는 카드 무선이 계약이다 — 픽셀 판정 생략(기준을 지어내지 않는다).");
       console.log(`\nresult: ${pass} pass / ${fail} fail`);
-      await rpc("window.close", { label: win }, await resolveControlWindow(rpc, win).catch(() => win)).catch(() => {});
+      await releaseFixtureWindow(rpc, FIXTURE).catch(() => {});
       process.exit(fail > 0 ? 1 : 0);
     }
     const { png } = await shot();
@@ -346,7 +333,7 @@ async function main() {
     console.log(`  최악 크기 h=${worst.h} 신호 ${worst.signal.toFixed(0)} — ${worst.reason}`);
     await rpc("window.resize", { w: baseW, h: baseH }, win).catch(() => {});
   } finally {
-    await rpc("window.close", { label: win }, await resolveControlWindow(rpc, win).catch(() => win)).catch(() => {});
+    await releaseFixtureWindow(rpc, FIXTURE).catch(() => {});
   }
 
   console.log(`\nresult: ${pass} pass / ${fail} fail`);

@@ -244,6 +244,27 @@
       "note": "소켓 클라이언트 한 벌. 경로는 환경에서 받고 없으면 이름을 달고 실패한다 — 지어낸 기본값이 여기 하나면 하니스 전부가 물려 들어간다."
     },
     {
+      "file": "lib/client.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "컨트롤 창 해소의 기준. 굳은 잔재 창이 포커스 폴백을 점유해도 해소가 결정적이어야 한다는 법을 고정한다."
+    },
+    {
+      "file": "lib/fixtureWindow.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "픽스처 창의 소유 — 루트가 주인이고, 있으면 물려받는다(멱등). 소켓 명령(window.projects/open/close)만 쓴다: 어느 프레임워크 위에서도 같은 장부에 같은 답을 요구한다."
+    },
+    {
+      "file": "lib/fixtureWindow.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "소유 규칙의 기준. 지도 한 벌만 주고 판단을 전수로 맞대므로 앱도 소켓도 필요 없다."
+    },
+    {
       "file": "lib/frame-oracle.mjs",
       "role": "lib",
       "class": "C",
@@ -415,6 +436,13 @@
         "pixel-oracle"
       ],
       "note": "레일 테두리가 실제로 그려졌는지 픽셀로 본다 — DOM 단언으로는 안 잡히는 자리라 오라클이 있다."
+    },
+    {
+      "file": "reclaim.mjs",
+      "role": "tool",
+      "class": "A",
+      "surfaces": [],
+      "note": "앞 판들이 두고 간 픽스처 창을 걷는다. 픽스처 밭·이름 규약에 걸리는 창만 닫고, 빈 창은 --empty 로만 — 사용자 창은 어느 규칙에도 걸리지 않는다."
     },
     {
       "file": "resize.sh",
