@@ -102,6 +102,11 @@ function createWindow(label, rect) {
   });
   win.on("closed", () => {
     windows.delete(label);
+    // 이 창 앞으로 남은 자식을 거둔다 — 창은 프레임워크의 사실이라 이 자리가 아는 유일한 곳이다.
+    // 안 거두면 창이 닫혀도 그 자식이 살아 남고, 그 고아는 프로세스 목록에만 보인다.
+    void callBackend("process_reclaim_by_window", { window: label }).catch((e) => {
+      console.error(`[electron-spike] 창 자식 회수 실패(${label}): ${e.code || e.message}`);
+    });
     // 사라진 창을 여기서 지우지 않는다 — 살아 있는 목록을 보내면 장부가 스스로 맞춘다(멱등).
     announceWindows();
   });

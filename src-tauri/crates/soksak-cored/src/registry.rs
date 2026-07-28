@@ -198,6 +198,17 @@ pub const COMMANDS: &[Command] = &[
         returns: "u32 — 프로세스 id",
         run: run_process_spawn,
     },
+    // 이 창 앞으로 남은 앞선 런타임의 고아를 거둔다(웹뷰 리로드·HMR·크래시 복구).
+    //
+    // 이름이 앱과 다르다. 앱에서는 창이 **프레임워크 주입**이라 호출자가 인자를 보내지 않는데,
+    // 이 프로세스에는 창이 없어 라벨을 받아야 한다 — 같은 이름으로 두면 인자 없이 부른 UI 가
+    // INVALID_PARAMS 를 받는다. 부르는 쪽도 다르다: 창을 아는 프레임워크가 부른다.
+    Command {
+        name: "process_reclaim_by_window",
+        args: &[Arg { name: "window", ty: "string", required: true }],
+        returns: "u32 — 거두기 전 그 창의 자식 수",
+        run: run_process_reclaim_by_window,
+    },
     Command {
         name: "process_write",
         args: &[
@@ -238,6 +249,17 @@ pub const COMMANDS: &[Command] = &[
         ],
         returns: "null",
         run: run_data_define,
+    },
+    // ns 이행 — 플러그인 id 개명이 남긴 옛 ns 의 레코드를 새 ns 로 옮긴다. 규칙(같은 ns 는
+    // no-op·이행 결과를 값으로)은 저장 크레이트가 소유한다.
+    Command {
+        name: "data_migrate_ns",
+        args: &[
+            Arg { name: "fromNs", ty: "string", required: true },
+            Arg { name: "toNs", ty: "string", required: true },
+        ],
+        returns: "{ migrated, reason }",
+        run: run_data_migrate_ns,
     },
     Command {
         name: "data_query",
@@ -643,9 +665,10 @@ pub const UNSERVED: &[Unserved] = &[
     },
     Unserved {
         name: "process_reclaim_window",
-        blocked_by: "회수 대상은 이 프로세스가 스폰한 자식의 Child 핸들이다. 창 라벨은 키일 뿐 회수할 \
-                     것을 만들어 주지 않는다 — cored 에는 그 맵이 없어 언제나 0 을 돌려주는데, 그 0 은 \
-                     '거둘 것이 없었다'와 구분되지 않는다.",
+        blocked_by: "창이 프레임워크 주입이라 이 이름의 호출자는 인자를 보내지 않는다. 이 프로세스에는 \
+                     창이 없어 라벨을 받아야 하는데, 같은 이름으로 받으면 인자 없이 부른 UI 가 \
+                     INVALID_PARAMS 를 받는다 — 그 실패는 '회수가 안 된다'가 아니라 '명령이 깨졌다'로 \
+                     보인다. 능력 자체는 있다: 라벨을 받는 process_reclaim_by_window 를 프레임워크가 부른다.",
     },
     Unserved {
         name: "download_verify",
@@ -1126,6 +1149,17 @@ fn run_process_spawn(ctx: &Ctx, params: &Value) -> Outcome {
 }
 
 #[derive(serde::Deserialize)]
+struct WindowLabel {
+    window: String,
+}
+
+fn run_process_reclaim_by_window(_ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: WindowLabel| {
+        Ok(Value::from(procs().reclaim_window(&a.window)))
+    })
+}
+
+#[derive(serde::Deserialize)]
 struct ProcWrite {
     id: u32,
     data: String,
@@ -1172,6 +1206,27 @@ fn run_data_define(ctx: &Ctx, params: &Value) -> Outcome {
         soksak_core::kv::validate_ns(&a.ns)?;
         let conn = rusqlite::Connection::open(ctx.db_path()).map_err(|e| e.to_string())?;
         soksak_store::store::define(&conn, &a.ns, &a.coll, &a.indexes, &a.fts).map(|_| Value::Null)
+    })
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MigrateNs {
+    from_ns: String,
+    to_ns: String,
+}
+
+fn run_data_migrate_ns(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: MigrateNs| {
+        soksak_core::kv::validate_ns(&a.from_ns)?;
+        soksak_core::kv::validate_ns(&a.to_ns)?;
+        if a.from_ns == a.to_ns {
+            // 같은 ns 는 이행이 아니다 — 성공으로 답하되 사유를 값에 실어 부른 쪽이 가른다.
+            return Ok(json!({ "migrated": false, "reason": "same-ns" }));
+        }
+        let conn = rusqlite::Connection::open(ctx.db_path()).map_err(|e| e.to_string())?;
+        let out = soksak_store::store::migrate_ns(&conn, &a.from_ns, &a.to_ns)?;
+        serde_json::to_value(out).map_err(|e| e.to_string())
     })
 }
 

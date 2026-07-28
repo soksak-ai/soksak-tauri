@@ -481,10 +481,10 @@ fn what_it_refuses_is_discoverable_with_the_reason() {
     // UNKNOWN_COMMAND 를 받는다 — "아직 안 옮겼다"와 "여기서는 못 한다"가 구분되지 않는다.
     for expected in [
         "service_ledger_sync",
+        "process_reclaim_window",
         "secret_status",
         "project_owners",
         "net_http_request",
-        "process_reclaim_window",
         "download_verify",
         "app_relaunch",
         "sidecar_close",
