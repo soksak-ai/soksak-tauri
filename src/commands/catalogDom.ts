@@ -884,10 +884,15 @@ export function registerDomCatalog(): void {
   // 왕복을 여러 번 하면 그 사이에 상태가 움직여 서로 다른 순간을 비교하게 된다.
   register("ui.snapshot.dom", {
     description:
-      "Measure every exposed node in one pass — one consistent instant, not several round trips that drift apart. Returns address, rect, and the requested computed properties for each, so you can read where a line sits, how wide a pane is, and how big its children are, all from the same moment. Pair with ui.motion hold to stop time first. filter narrows by address substring.",
+      "Measure every exposed node in one pass — one consistent instant, not several round trips that drift apart. Returns address, rect, and the requested computed properties for each, so you can read where a line sits, how wide a pane is, and how big its children are, all from the same moment. Pair with ui.motion hold to stop time first. filter narrows by address substring; selector measures raw elements that carry no address (a content-view host, a plugin body) — read-only, it drives nothing.",
     triggers: { ko: "돔 일괄 측정 스냅샷 좌표 폭 한번에 관측 선 위치" },
     params: {
       filter: { type: "string", description: "Only addresses containing this substring" },
+      selector: {
+        type: "string",
+        description:
+          "CSS selector for elements that carry no exposed address (e.g. webview[data-content-view]). Observation only — input still requires an address.",
+      },
       props: { type: "json", description: "Extra computed-style property names, e.g. [\"backgroundColor\",\"zIndex\"]" },
     },
     examples: [
@@ -901,7 +906,9 @@ export function registerDomCatalog(): void {
       const filter = typeof p.filter === "string" ? p.filter : null;
       const props = Array.isArray(p.props) ? (p.props as string[]).filter((x) => typeof x === "string") : [];
       const nodes: unknown[] = [];
-      for (const n of collectExposed()) {
+      // selector 를 주면 그것만 잰다 — 주소 스캔 결과에 섞으면 무엇이 답인지 안 보인다.
+      const bySelector = typeof p.selector === "string" && p.selector.trim() !== "";
+      for (const n of bySelector ? [] : collectExposed()) {
         const address = n.address;
         if (filter && !address.includes(filter)) continue;
         const el = n.el;
@@ -915,6 +922,32 @@ export function registerDomCatalog(): void {
           rect: { x: +r.x.toFixed(2), y: +r.y.toFixed(2), w: +r.width.toFixed(2), h: +r.height.toFixed(2) },
           ...(props.length > 0 ? { style } : {}),
         });
+      }
+      // 주소 없는 요소도 잰다 — 관측만이다. 입력은 여전히 주소를 요구한다(그 계약은 "짚지 못한
+      // 것을 두드리지 않는다"이고, 이것은 "짚지 못한 것을 보지 못한다"가 아니다).
+      //
+      // 없으면 진단이 거기서 멈춘다: 콘텐츠 뷰 호스트(<webview>)와 플러그인 본문에는 주소가
+      // 없어서, "표면이 어디에 어떤 크기로 있는가"를 물을 자리가 아예 없었다(실측 2026-07-29:
+      // 탭 최대화 뒤 브라우저가 빈 화면인데 그것이 자리 문제인지 가시성 문제인지 못 갈랐다).
+      if (bySelector) {
+        for (const el of document.querySelectorAll<HTMLElement>(p.selector)) {
+          const r = el.getBoundingClientRect();
+          const cs = getComputedStyle(el);
+          const style: Record<string, string> = {};
+          for (const k of props) {
+            style[k] = cs.getPropertyValue(k) || (cs as unknown as Record<string, string>)[k] || "";
+          }
+          nodes.push({
+            selector: p.selector,
+            // 같은 셀렉터에 여럿이면 무엇이 무엇인지 가려야 한다 — 표식을 함께 싣는다.
+            mark:
+              el.getAttribute("data-content-view") ??
+              el.getAttribute("data-node") ??
+              (el.className || el.tagName.toLowerCase()),
+            rect: { x: +r.x.toFixed(2), y: +r.y.toFixed(2), w: +r.width.toFixed(2), h: +r.height.toFixed(2) },
+            ...(props.length > 0 ? { style } : {}),
+          });
+        }
       }
       return { count: nodes.length, nodes };
     },

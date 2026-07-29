@@ -504,6 +504,16 @@
       "note": "재시작 뒤 유령 자식 웹뷰가 남는지 본다. 유령이라는 개념 자체가 네이티브 자식 표면의 것이다."
     },
     {
+      "file": "tab-maximize.mjs",
+      "role": "harness",
+      "class": "A",
+      "surfaces": [
+        "window.snapshot",
+        "pixel-oracle"
+      ],
+      "note": "탭을 최대화한 뒤 그 탭의 내용이 실제로 그려지는지 픽셀로 보고, 플러그인이 보는 뷰가 화면의 뷰와 같은지 함께 본다. 크롬만 보고 통과시키면 페이지가 빈 것을 놓친다 — 사용자 실측 결함이 정확히 그 모양이었다."
+    },
+    {
       "file": "tab-switch-ghost.mjs",
       "role": "harness",
       "class": "C",
