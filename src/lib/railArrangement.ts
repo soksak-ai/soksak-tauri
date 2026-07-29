@@ -41,6 +41,18 @@ export interface Arrangement<L> {
   swapped: boolean;
   cells: ArrangementCell[];
   focusId: string | null;
+  /**
+   * 이 해가 최대화를 그리고 있는가 — 그 패널 id, 아니면 null.
+   *
+   * 소비자가 "최대화인가"를 **생짜 상태에서 다시 읽으면 안 된다.** station 과 rect 는 이 해가
+   * 함께 정하는데, 최대화 여부만 다른 시점에서 오면 옛 선에 새 rect 를 얹게 되고 그 조합은
+   * 패널이 레일을 가로지르는 모양이라 투영이 던진다(projectRailCssRect). 렌더 중의 throw 는
+   * 화면 하나가 아니라 트리 전체를 지운다(실측 2026-07-29: 반반 분할에서 브라우저를 최대화하자
+   * `rail station 50 crosses panel 0..100` 이 던져 노출 노드가 64 → 0, 창이 백지).
+   *
+   * 그래서 이 사실도 해가 함께 낸다 — 한 해에서 나온 셋(station·cells·maximizedId)만 섞는다.
+   */
+  maximizedId: string | null;
 }
 
 export interface ArrangementMove {
@@ -167,6 +179,7 @@ export function solveArrangement<L extends { id: string }>(input: {
       swapped: false,
       cells,
       focusId,
+      maximizedId: input.maximizedId,
     };
   }
 
@@ -193,6 +206,9 @@ export function solveArrangement<L extends { id: string }>(input: {
     swapped: displayLayout !== input.layout,
     cells,
     focusId,
+    // 이 해는 최대화를 그리지 않는다 — 소비자가 생짜 상태를 보고 최대화라고 판단하면
+    // 이 해의 station 과 어긋난다.
+    maximizedId: null,
   };
 }
 

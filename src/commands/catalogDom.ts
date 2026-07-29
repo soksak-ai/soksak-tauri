@@ -767,7 +767,7 @@ export function registerDomCatalog(): void {
     triggers: { ko: "입력 도착 관측 이벤트 수신 확인 주입 검증" },
     params: {
       events: {
-        type: "array",
+        type: "json",
         description: "Event type names to record (default: mousedown, mousemove, mouseup)",
       },
       ms: { type: "number", description: "Recording window in ms (default 1000, max 5000)" },
@@ -930,7 +930,8 @@ export function registerDomCatalog(): void {
       // 없어서, "표면이 어디에 어떤 크기로 있는가"를 물을 자리가 아예 없었다(실측 2026-07-29:
       // 탭 최대화 뒤 브라우저가 빈 화면인데 그것이 자리 문제인지 가시성 문제인지 못 갈랐다).
       if (bySelector) {
-        for (const el of document.querySelectorAll<HTMLElement>(p.selector)) {
+        const sel = String(p.selector);
+        for (const el of Array.from(document.querySelectorAll<HTMLElement>(sel))) {
           const r = el.getBoundingClientRect();
           const cs = getComputedStyle(el);
           const style: Record<string, string> = {};
@@ -938,7 +939,7 @@ export function registerDomCatalog(): void {
             style[k] = cs.getPropertyValue(k) || (cs as unknown as Record<string, string>)[k] || "";
           }
           nodes.push({
-            selector: p.selector,
+            selector: sel,
             // 같은 셀렉터에 여럿이면 무엇이 무엇인지 가려야 한다 — 표식을 함께 싣는다.
             mark:
               el.getAttribute("data-content-view") ??

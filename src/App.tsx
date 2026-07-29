@@ -555,6 +555,8 @@ const ProjectPlane = memo(function ProjectPlane({
                       : undefined
                   }
                   railStation={isActiveContent ? renderedStation : 0}
+                  // 최대화 사실은 station 과 **같은 해**에서 온다 — 섞으면 렌더가 던진다.
+                  displayMaximizedId={isActiveContent ? (arrangement?.maximizedId ?? null) : undefined}
                   railWidthPx={
                     isActiveContent && project.sidebarOpen ? sidebarW : 0
                   }

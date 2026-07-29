@@ -65,17 +65,16 @@ async function main() {
     ok(!!browser, `browser 프로그램 (${browser})`);
     if (!browser) throw new Error("브라우저 프로그램이 서지 않았다 — 판정할 수 없다");
 
-    // 결함이 난 판의 모양: 터미널 하나 + 브라우저 둘. 뷰가 하나뿐이면 어긋날 짝이 없다.
+    // 사용자 실측의 모양: **반반 분할** — 왼쪽 터미널, 오른쪽 브라우저. 레일이 그 사이(50)에
+    // 서고, 최대화는 패널을 0..100 으로 만든다. 한 펜 안의 탭들로는 이 조합이 안 만들어진다.
     if (term) await rpc("tab.open", { program: term }, win);
-    const tabs = [];
-    for (let i = 0; i < 2; i += 1) {
-      const r = data(await rpc("tab.open", { program: browser }, win));
-      if (typeof r.tabId === "string") tabs.push(r.tabId);
-      await sleep(3500);
-      await rpc(`${PLUGIN}navigate`, { url: PAGE }, win);
-      await sleep(3000);
-    }
-    ok(tabs.length === 2, `브라우저 탭 둘 (${tabs.join(", ")})`);
+    await sleep(2500);
+    const split = data(await rpc("pane.split", { side: "right", program: browser }, win));
+    ok(typeof split.tabId === "string", `반반 분할 — 오른쪽에 브라우저 (${split.tabId})`);
+    await sleep(4000);
+    await rpc(`${PLUGIN}navigate`, { url: PAGE }, win);
+    await sleep(3500);
+    const tabs = typeof split.tabId === "string" ? [split.tabId] : [];
 
     /** 페이지 자리의 밝기 — 크롬 아래 본문만 본다. 빈 화면은 지면색이라 어둡다. */
     const pageBrightness = async () => {
@@ -115,6 +114,10 @@ async function main() {
         // 이것이 어긋나면 다음 조작에서 터진다(이 결함이 실제로 그 모양이었다).
         const seen = data(await rpc(`${PLUGIN}eval`, { js: "return 1" }, win)).viewId ?? null;
         ok(seen === tab, `${tab}: 플러그인이 보는 뷰가 화면의 뷰와 같다`, `플러그인=${seen}`);
+        // 트리 생존 — 렌더가 던지면 노출 노드가 통째로 사라진다. 픽셀만 보면 "어둡다"로만
+        // 보이고 앱이 죽은 것을 못 가른다(실측: 최대화 뒤 ui.tree 가 64 → 0 이었다).
+        const nodes = (data(await rpc("ui.tree", {}, win)).nodes ?? []).length;
+        ok(nodes > 0, `${tab}: 최대화 뒤에도 UI 트리가 산다`, `노드 ${nodes}`);
       }
     }
   } finally {

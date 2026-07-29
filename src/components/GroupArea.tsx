@@ -147,6 +147,7 @@ export const GroupArea = memo(function GroupArea({
   projectId,
   surfaceActive = true,
   railStation = 0,
+  displayMaximizedId = undefined,
   railWidthPx = 0,
   displayLayout: solvedLayout,
   moves,
@@ -159,6 +160,17 @@ export const GroupArea = memo(function GroupArea({
   surfaceActive?: boolean;
   /** 활성 콘텐츠 패널 평면에 삽입되는 좌 rail의 깨끗한 논리선(0..100). */
   railStation?: number;
+  /**
+   * 이 렌더가 **그리는** 해의 최대화 패널 id. 생짜 상태(content.maximizedTabId)를 보지 않는다.
+   *
+   * station 과 rect 는 한 해가 함께 정하는데 최대화 여부만 다른 시점에서 오면 옛 선에 새
+   * rect 를 얹게 되고, 그 조합은 패널이 레일을 가로지르는 모양이라 투영이 던진다. 렌더 중의
+   * throw 는 화면 하나가 아니라 트리 전체를 지운다(실측 2026-07-29: 반반 분할에서 브라우저를
+   * 최대화하자 노출 노드가 64 → 0, 창이 백지).
+   *
+   * undefined 는 "해가 말해 주지 않았다" — 그때만 상태로 물러난다(비활성 콘텐츠엔 해가 없다).
+   */
+  displayMaximizedId?: string | null;
   /** 고정 물리폭. 0이면 기존 연속 평면. */
   railWidthPx?: number;
   /** 해결기가 푼 표시 배열. 생략하면 정본 배열(비활성 콘텐츠). */
@@ -243,7 +255,14 @@ export const GroupArea = memo(function GroupArea({
   // 슬롯은 숨김 유지(세션 보존: 터미널/webview 마운트는 절대 깨지 않는다).
   // 강조 소유자는 이 상태 하나다(divider :hover 대체) — 셀렉터 구독(원칙 1).
   const gutterHoverKey = useGutterHover((s) => s.key);
-  const maximizedId = content.maximizedTabId ?? null;
+  // 해가 말했으면 그것이 진실이다. 해가 최대화를 아직 안 그리는 동안 상태만 보고 접으면
+  // 그 렌더가 옛 선에 새 rect 를 얹는다(위 prop 머리말).
+  const maximizedId =
+    displayMaximizedId === undefined
+      ? (content.maximizedTabId ?? null)
+      : displayMaximizedId === null
+        ? null
+        : (content.maximizedTabId ?? null);
   const maxCell = maximizedId
     ? (cells.find((c) => c.group.tabs.some((v) => v.id === maximizedId)) ??
       null)

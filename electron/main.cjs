@@ -102,6 +102,24 @@ function createWindow(label, rect, bootQuery) {
     focusedLabel = label;
     announceWindows();
   });
+  // 렌더러가 죽거나 던지면 **그 자리에서 남긴다.** 없으면 화면만 비고 사유는 어디에도 없다
+  // (실측 2026-07-29: 최대화 뒤 앱 트리가 통째로 사라졌는데 로그에는 Chromium mojo 잡음뿐
+  // 이었다 — 무엇이 던졌는지 물을 자리가 없었다). 창을 가진 쪽만 이 사건을 받는다.
+  win.webContents.on("console-message", (_e, level, message, line, sourceId) => {
+    // 경고 이상만 — 평상시 로그까지 실으면 진짜 오류가 그 안에 묻힌다.
+    if (level < 2) return;
+    console.error(`[renderer:${label}] ${message}${sourceId ? ` (${sourceId}:${line})` : ""}`);
+  });
+  win.webContents.on("render-process-gone", (_e, details) => {
+    console.error(`[renderer:${label}] 렌더러 프로세스 종료: ${JSON.stringify(details)}`);
+  });
+  win.webContents.on("did-fail-load", (_e, code, desc, url) => {
+    console.error(`[renderer:${label}] 적재 실패: ${code} ${desc} ${url}`);
+  });
+  win.webContents.on("unresponsive", () => {
+    console.error(`[renderer:${label}] 응답 없음`);
+  });
+
   win.on("closed", () => {
     windows.delete(label);
     // 이 창 앞으로 남은 자식을 거둔다 — 창은 프레임워크의 사실이라 이 자리가 아는 유일한 곳이다.
