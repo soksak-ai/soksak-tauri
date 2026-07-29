@@ -4,24 +4,24 @@
 //   download_verify:  fetch reach — url 다운로드 후 sha256 무결성 검증 + 실행권한.
 // 아래 여섯은 soksak-core 로 옮겼다 — 이 파일에는 프레임워크 진입점(무논리 위임)만 남는다.
 // `#[tauri::command]` 속성 자체가 tauri 의존이라 코어 크레이트가 가질 수 없다.
-pub(crate) use soksak_core::integrity::verify_sha256;
+pub(crate) use soksak_core::artifact_integrity::verify_sha256;
 #[cfg(test)]
-use soksak_core::integrity::sha256_hex;
-pub use soksak_core::integrity::BinaryIntegrity;
+use soksak_core::artifact_integrity::sha256_hex;
+pub use soksak_core::artifact_integrity::BinaryIntegrity;
 
 #[tauri::command]
 pub fn binary_integrity(bin_path: String, lib_path: String) -> BinaryIntegrity {
-    soksak_core::integrity::binary_integrity(bin_path, lib_path)
+    soksak_core::artifact_integrity::binary_integrity(bin_path, lib_path)
 }
 
 #[tauri::command]
 pub fn cleanup_stale(path: String, allowed_roots: Vec<String>) -> Result<bool, String> {
-    soksak_core::integrity::cleanup_stale(path, allowed_roots)
+    soksak_core::artifact_integrity::cleanup_stale(path, allowed_roots)
 }
 
 #[tauri::command]
 pub fn verify_and_link(src: String, dest: String, sha256: String) -> Result<(), String> {
-    soksak_core::integrity::verify_and_link(src, dest, sha256)
+    soksak_core::artifact_integrity::verify_and_link(src, dest, sha256)
 }
 
 use std::collections::HashSet;

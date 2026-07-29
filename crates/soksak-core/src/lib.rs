@@ -23,7 +23,7 @@ pub mod control;
 pub mod fsx;
 pub mod geometry;
 pub mod identity;
-pub mod integrity;
+pub mod artifact_integrity;
 pub mod kv;
 pub mod pathx;
 pub mod shell_env;

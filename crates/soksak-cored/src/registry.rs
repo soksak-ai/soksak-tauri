@@ -20,7 +20,7 @@ use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
 
 use soksak_core::{
-    fsx, identity, integrity, pathx, plugin_data, plugin_dir, probe, session, skillgen, themes,
+    artifact_integrity, fsx, identity, pathx, plugin_data, plugin_dir, probe, session, skillgen, themes,
     udp, unit_dev, unit_target,
 };
 
@@ -1060,7 +1060,7 @@ struct BinaryIntegrity {
 fn run_binary_integrity(_ctx: &Ctx, params: &Value) -> Outcome {
     // 이 관찰은 실패하지 않는다(부재도 답이다) — Ok 로 감싸 dispatch 의 한 경로를 쓴다.
     dispatch(params, |a: BinaryIntegrity| {
-        Ok(integrity::binary_integrity(a.bin_path, a.lib_path))
+        Ok(artifact_integrity::binary_integrity(a.bin_path, a.lib_path))
     })
 }
 
@@ -1073,7 +1073,7 @@ struct CleanupStale {
 
 fn run_cleanup_stale(_ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: CleanupStale| {
-        integrity::cleanup_stale(a.path, a.allowed_roots)
+        artifact_integrity::cleanup_stale(a.path, a.allowed_roots)
     })
 }
 
@@ -1087,7 +1087,7 @@ struct VerifyAndLink {
 
 fn run_verify_and_link(_ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: VerifyAndLink| {
-        integrity::verify_and_link(a.src, a.dest, a.sha256)
+        artifact_integrity::verify_and_link(a.src, a.dest, a.sha256)
     })
 }
 
