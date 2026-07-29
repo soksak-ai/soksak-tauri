@@ -88,32 +88,22 @@ impl Ctx {
         }
     }
 
-    /// 저장소를 연다 — **여는 규칙은 코어가 소유한다**(store_open).
+    /// 저장소를 연다 — **여는 절차는 저장소가 소유한다**(soksak_store::open).
     ///
     /// 맨 연결로 열면 auto_vacuum·secure_delete 가 안 걸리고, 그 둘은 파일이 태어날 때 한 번
-    /// 정해져 이후에 못 바꾼다. 앱이 없는 홈에서는 이 자리가 저장소를 **만드는** 자리라,
-    /// 여기서 안 걸면 그 홈의 저장소는 영원히 다른 성질을 갖는다(실측 2026-07-29).
+    /// 정해져 이후에 못 바꾼다. 한때 그 문장들을 여기서 다시 적었고, 다시 적는 자리는 곧
+    /// 갈라진다 — 절차 전체를 부른다.
+    ///
+    /// 부팅 게이트(무결성·형태·FTS 정합·쓰기 카나리아)는 여기 없다. 이 자리는 호출마다 지나는
+    /// 자리라 게이트를 걸면 매 명령이 저장소를 전수로 훑고, 그중 절반은 쓰기다. 게이트는
+    /// 저장소를 소유한 쪽이 부팅에서 한 번 지난다(`claim_writes` → `ensure_schema`).
     pub fn open_db(&self) -> Result<rusqlite::Connection, String> {
         let path = self.db_path();
-        let conn = rusqlite::Connection::open(&path)
-            .map_err(|e| format!("저장소 열기 실패({}): {e}", path.display()))?;
-        conn.execute_batch(soksak_core::store_open::OPEN_PRAGMA_SQL)
-            .map_err(|e| format!("저장소 PRAGMA 실패: {e}"))?;
-        // 봉투 키와 레코드가 사는 파일이다 — 같은 머신의 다른 사용자에게 열어 두지 않는다.
-        // 권한을 지원하지 않는 파일 시스템에서는 조용히 넘어간다(못 거는 것과 안 거는 것은 다르다).
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(
-                &path,
-                std::fs::Permissions::from_mode(soksak_core::store_open::STORE_FILE_MODE),
-            );
-        }
-        Ok(conn)
+        soksak_store::open::connect(&path)
+            .map_err(|e| format!("저장소 열기 실패({}): {e}", path.display()))
     }
 
-    /// 저장소 기본 형태를 세운다(멱등). 문장은 코어가 소유하고 연결만 여기서 만든다.
-    /// 이 프로세스가 세우는 저장소는 앱이 세우는 것과 **같은 모양**이다.
+    /// 저장소를 부팅 개방한다 — **앱이 지나는 것과 같은 문**이다(soksak_store::open::open).
     ///
     /// 한때 여기서 `kv::BASE_SCHEMA_SQL` 만 실행했다. 그러면 `encryption_keys`·`records_created`·
     /// `records_pending` 이 빠지고, 그 결손은 봉인 기능만 못 쓰는 것으로 끝나지 않는다 —
@@ -121,11 +111,15 @@ impl Ctx {
     /// 평문 항등"), 그 조회의 `.optional()` 은 "행 없음"만 삼키지 "테이블 없음"은 오류로 낸다.
     /// 그래서 그 홈에서는 레코드 쓰기가 **전량** 실패한다(실측: `no such table: encryption_keys`).
     ///
-    /// 형태 규칙은 저장소가 소유한다. 여기서 SQL 을 따로 적으면 그 규칙이 두 벌이 되고,
-    /// 두 벌이 갈리는 것은 오류가 아니라 **다른 답**으로 나타난다.
+    /// 그 다음 판은 형태만 저장소에서 가져왔고 게이트는 안 가져왔다. 그래서 페이지가 깨진
+    /// 저장소가 이 프로세스의 부팅을 그대로 통과했다 — 헤더가 멀쩡한 손상은 맨 개방·DDL·부분
+    /// 조회를 전부 통과하기 때문이다. 그 홈에는 앱이 없어서 아무도 대신 안 잡는다.
+    ///
+    /// 절차는 한 벌이다. 여기서 단계를 골라 담으면 그 선택이 곧 두 번째 절차가 된다.
     fn ensure_schema(&self) -> Result<(), String> {
-        let conn = self.open_db()?;
-        soksak_store::store::init_base(&conn).map_err(|e| format!("저장소 형태 세우기 실패: {e}"))
+        soksak_store::open::open(&self.db_path())
+            .map(|_conn| ())
+            .map_err(|e| format!("저장소 부팅 개방 실패: {e}"))
     }
 
     /// 이 프로세스가 이 저장소에 써도 되는가.

@@ -243,10 +243,10 @@ pub fn take_user_closed(label: &str) -> bool {
 // "한쪽에서만 창이 되살아난다"로 나타난다.
 pub fn prune_window_persistence(conn: &rusqlite::Connection, label: &str) -> Result<(), String> {
     use soksak_core::window_traces as traces;
-    crate::data::store::kv_delete(conn, traces::NS, &traces::snapshot_key(label))?;
-    if let Some(mut m) = crate::data::store::kv_get(conn, traces::NS, traces::MANIFEST_KEY)? {
+    soksak_store::store::kv_delete(conn, traces::NS, &traces::snapshot_key(label))?;
+    if let Some(mut m) = soksak_store::store::kv_get(conn, traces::NS, traces::MANIFEST_KEY)? {
         if traces::prune_slot(&mut m, label) {
-            crate::data::store::kv_set(conn, traces::NS, traces::MANIFEST_KEY, &m)?;
+            soksak_store::store::kv_set(conn, traces::NS, traces::MANIFEST_KEY, &m)?;
         }
     }
     Ok(())
@@ -411,9 +411,9 @@ mod mw_rules {
     fn prune_window_persistence_removes_only_that_window() {
         let c = rusqlite::Connection::open_in_memory().unwrap();
         c.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
-        crate::data::init_base(&c).unwrap();
+        soksak_store::store::init_base(&c).unwrap();
         let set =
-            |k: &str, v: serde_json::Value| crate::data::store::kv_set(&c, "core", k, &v).unwrap();
+            |k: &str, v: serde_json::Value| soksak_store::store::kv_set(&c, "core", k, &v).unwrap();
         set(
             "window/w-1",
             serde_json::json!({"activeId":"t1","projects":[{"id":"t1"}]}),
@@ -431,13 +431,13 @@ mod mw_rules {
         );
         super::prune_window_persistence(&c, "w-1").unwrap();
         assert_eq!(
-            crate::data::store::kv_get(&c, "core", "window/w-1").unwrap(),
+            soksak_store::store::kv_get(&c, "core", "window/w-1").unwrap(),
             None
         );
-        assert!(crate::data::store::kv_get(&c, "core", "window/main")
+        assert!(soksak_store::store::kv_get(&c, "core", "window/main")
             .unwrap()
             .is_some());
-        let m = crate::data::store::kv_get(&c, "core", "windows")
+        let m = soksak_store::store::kv_get(&c, "core", "windows")
             .unwrap()
             .unwrap();
         let slots = m["slots"].as_array().unwrap();

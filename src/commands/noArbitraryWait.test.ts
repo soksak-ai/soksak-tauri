@@ -71,8 +71,8 @@ const ALLOWED: { file: string; mark: string; event: string; why: string }[] = [
   { file: "src/commands/catalog.ts", mark: "await sleep(250);", event: "theme-css-cascade", why: "테마 클래스 전환 후 CSS 캐스케이드 반영 유예 — 브라우저가 완료 신호를 주지 않는다" },
   { file: "frameworks/tauri/src/clipboard.rs", mark: "SELF_WRITE_TTL: Duration = Duration::from_secs(2)", event: "self-write-ttl", why: "자기 쓰기 판별 시간창(TTL 상수) — 타이머가 아니라 판별 기준" },
   { file: "frameworks/tauri/src/data/commands.rs", mark: "WRITE_BACKOFF: std::time::Duration = std::time::Duration::from_millis(60)", event: "sqlite-write-backoff", why: "SQLITE_BUSY 재시도 백오프" },
-  { file: "frameworks/tauri/src/data/ring.rs", mark: "MIN_INTERVAL: Duration = Duration::from_secs(3600)", event: "ring-prune-min-interval", why: "링 정리 최소 간격(유휴 하한)" },
-  { file: "frameworks/tauri/src/data/ring.rs", mark: "busy_timeout(Duration::from_secs(5))", event: "sqlite-busy-timeout", why: "SQLite busy_timeout — DB 계약" },
+  { file: "crates/soksak-store/src/ring.rs", mark: "MIN_INTERVAL: Duration = Duration::from_secs(3600)", event: "ring-prune-min-interval", why: "링 정리 최소 간격(유휴 하한)" },
+  { file: "crates/soksak-store/src/ring.rs", mark: "busy_timeout(Duration::from_secs(5))", event: "sqlite-busy-timeout", why: "SQLite busy_timeout — DB 계약" },
   { file: "frameworks/tauri/src/mediaproxy.rs", mark: "timeout(Duration::from_secs(60))", event: "http-client-timeout", why: "원격 HTTP 상한 — 네트워크는 사건을 보장하지 않는다" },
   { file: "frameworks/tauri/src/webview.rs", mark: ".recv_timeout(std::time::Duration::from_secs(2))", event: "engine-surface-stats-reply", why: "메인 스레드 서피스 판독 회신 대기의 유한 안전장치 — 회신 채널이 사건이고 상한은 관측 명령의 무한 대기 방지" },
   { file: "frameworks/tauri/src/pty.rs", mark: "from_millis(400)", event: "ptyd-shutdown-grace", why: "옛 데몬의 종료 유예(응답 후 150ms) 계약을 넘긴다 — 재기동 1회 한정" },
@@ -153,6 +153,7 @@ function rsSites(): string[] {
   const roots = [
     "frameworks/tauri/src",
     "crates/soksak-core/src",
+    "crates/soksak-store/src",
     "crates/soksak-watch/src",
   ];
   for (const file of roots

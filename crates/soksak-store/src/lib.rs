@@ -3,10 +3,13 @@
 //! 코어(soksak-core)에 못 사는 이유는 rusqlite 하나다 — 코어는 무의존을 지킨다. 저장소는
 //! 프레임워크가 아니라 자원이므로, 그 자원을 지는 프로세스들이 이 크레이트를 함께 쓴다.
 
+pub mod backup;
 pub mod data_keys;
 pub mod doc;
-pub mod integrity;
 pub mod ids;
+pub mod integrity;
+pub mod open;
+pub mod ring;
 pub mod store;
 
 pub use ids::{gen_id, now_millis, validate_coll, validate_field};

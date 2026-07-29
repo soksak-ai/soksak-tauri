@@ -7,7 +7,10 @@ use serde::Serialize;
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, State};
 
-use super::{backup, db_path, store, validate_ns, DbState};
+use soksak_core::kv::validate_ns;
+use soksak_store::{backup, now_millis, open as store_open, store};
+
+use super::{db_path, DbState};
 use crate::secrets::SecretsState;
 
 #[derive(Serialize, Clone)]
@@ -38,8 +41,12 @@ fn emit_change(
             id: id.map(String::from),
         },
     );
-    // 쓰기 사실 = 백업 링의 유일한 트리거(폴링 0) — 게이트(1h mtime)와 회전은 ring 이 소유한다.
-    super::ring::on_write();
+    // 쓰기 사실 = 백업 링의 유일한 트리거(폴링 0) — 게이트(1h mtime)와 회전은 저장소 규칙이
+    // 소유하고, 어느 저장소인지는 이 프로세스가 안다. 경로를 못 구하면 백업은 건너뛴다
+    // (쓰기는 이미 끝났고, 다음 쓰기가 다시 신호한다).
+    if let Ok(db) = db_path() {
+        super::ring::on_write(db);
+    }
 }
 
 fn with_conn<T>(
@@ -337,7 +344,7 @@ pub fn data_encrypt_enable(
     // (1) S 를 vault 에 먼저 — 잠김이면 여기서 Err(P 미등록, 전손 0).
     secrets.put_data_key(&key_id, &sk)?;
     // (2) P 를 테이블에 등록(봉인 트리거 ON). 실패해도 vault 의 S 는 orphan(무해 — 트리거 없음).
-    let created = super::now_millis();
+    let created = now_millis();
     with_conn(&state, |c| {
         soksak_store::doc::register_active_key(c, &scope, &key_id, &pk, created)
     })?;
@@ -426,7 +433,7 @@ pub fn data_encrypt_rotate(
     let (new_s, new_p) = crate::secrets::gen_asym_keypair();
     let new_key_id = soksak_store::doc::new_key_id();
     secrets.put_data_key(&new_key_id, &new_s)?;
-    let created = super::now_millis();
+    let created = now_millis();
     with_conn(&state, |c| {
         soksak_store::doc::register_active_key(c, &scope, &new_key_id, &new_p, created)
     })?;
@@ -567,7 +574,7 @@ pub fn data_backup(path: Option<String>, state: State<'_, DbState>) -> Result<St
         Some(p) => std::path::PathBuf::from(p),
         None => crate::identity::ambient()
             .path("backups")
-            .join(format!("soksak-{}.db", super::now_millis())),
+            .join(format!("soksak-{}.db", now_millis())),
     };
     with_conn(&state, |c| backup::backup(c, &dest))?;
     Ok(dest.to_string_lossy().to_string())
@@ -652,7 +659,7 @@ pub fn data_restore(app: AppHandle, path: String, state: State<'_, DbState>) -> 
         let mut guard = state.conn.lock().map_err(|e| e.to_string())?;
         *guard = None; // 기존 커넥션 드롭(파일 잠금 해제) 후 스왑
         backup::restore_into(&dbp, &src)?;
-        *guard = Some(super::open(&dbp)?);
+        *guard = Some(store_open::open(&dbp)?);
     }
     emit_change(&app, "core", None, None, "restore", None);
     Ok(())
@@ -713,9 +720,9 @@ pub fn data_migrate_ns(
 
 #[cfg(test)]
 mod tests {
-        use crate::data::init_base;
     use crate::secrets::{FailingKekSource, SecretsState};
     use rusqlite::Connection;
+    use soksak_store::store::init_base;
 
     // (신규 test7) enable fail-closed — no-secret-service(KEK 취득 불가)면 안전핀 순서(S 를
     // put_data_key 로 먼저 → 성공해야 P 등록)가 자동 성립해 봉인 트리거(active P)가 등록되지 않는다.

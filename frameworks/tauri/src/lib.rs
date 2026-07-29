@@ -225,7 +225,7 @@ pub fn run() {
             // open_or_recover: 본체 손상 시 손상본 격리→백업 슬롯 복원→재개방(무음 미초기화 제거).
             match data::db_path() {
                 Err(e) => eprintln!("[data] DB 경로 계산 실패: {e}"),
-                Ok(db_path) => match data::open_or_recover(&db_path) {
+                Ok(db_path) => match soksak_store::open::open_or_recover(&db_path) {
                     Ok((conn, recovery)) => {
                         // 활동 허브 컬렉션(core/activity) 정의 — 발행 즉시 영속 가능(A1).
                         activity::init_collection(&conn);
