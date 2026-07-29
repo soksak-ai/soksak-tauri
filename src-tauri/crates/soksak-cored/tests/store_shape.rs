@@ -27,11 +27,15 @@ fn pragma_i64(conn: &Connection, name: &str) -> i64 {
 /// cored 가 자기 홈에 저장소를 세운다 — 앱은 이 홈에 없다.
 fn stand_up_store() -> (std::path::PathBuf, std::path::PathBuf) {
     // 검사마다 다른 홈 — 같은 자리를 쓰면 앞 검사가 만든 저장소의 모양을 보게 된다.
+    // 시각만으로는 부족하다: 검사는 병렬로 돌고 같은 나노초를 볼 수 있다(실측 플래키).
+    // 단조 증가 번호를 함께 실어 겹칠 여지를 없앤다.
+    static SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let n = SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let dir = std::env::temp_dir().join(format!("soksak-store-shape-{stamp}"));
+    let dir = std::env::temp_dir().join(format!("soksak-store-shape-{stamp}-{n}"));
     let data = dir.join("data");
     let mut ctx = soksak_cored::ctx::Ctx::new(Identity::new(
         dir.to_string_lossy().to_string(),

@@ -88,7 +88,8 @@ function bootWindowClass(created) {
   return class {
     constructor(opts) {
       this.opts = opts;
-      this.webContents = { send: () => {} };
+      // 실물이 갖는 것 — 창이 나면 프레임워크가 렌더러 사건을 구독한다.
+      this.webContents = { send: () => {}, on: () => {}, setWindowOpenHandler: () => {} };
       created.push(this);
     }
     once() {}
@@ -118,12 +119,13 @@ function loadFramework(socketPath, boot) {
     app: {
       // 실물이 갖는 것 — 스텁이 더 좁으면 그 차이가 곧 거짓 GREEN 이다.
       setPath: () => {},
+      setName: () => {},
       requestSingleInstanceLock: () => true,
       quit: () => {},
       // boot 가 없으면 창을 만들지 않는다(풀리지 않는 약속).
       whenReady: () => (boot ? Promise.resolve() : new Promise(() => {})),
       on: () => {},
-      getName: () => "soksak-electron-spike",
+      getName: () => "soksak-electron-dev",
       getVersion: () => "0.0.0",
     },
     BrowserWindow: boot
@@ -169,7 +171,7 @@ const invoke = (handlers, cmd, args, win) =>
   handlers.get("framework:invoke")({ sender: win ? { __win: win } : {} }, { cmd, args });
 
 function ledger() {
-  const p = join(root, ".soksak-electron-spike", "invoke-demand.jsonl");
+  const p = join(root, ".soksak-electron-dev", "invoke-demand.jsonl");
   if (!existsSync(p)) return [];
   return readFileSync(p, "utf8")
     .split("\n")

@@ -45,6 +45,7 @@ function fakeWindow({ png = PNG_BYTES, empty = false } = {}) {
       focused = true;
     },
     webContents: {
+      on: () => {},
       capturePage: async (rect) => {
         calls.push(rect); // 받은 그대로 — 없음(undefined)과 null 을 뭉개면 단위 검사가 무의미해진다
         return {

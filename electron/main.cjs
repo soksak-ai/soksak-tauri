@@ -484,6 +484,17 @@ function wireWindowEvents(label, win) {
   win.on("move", send("moved"));
 }
 
+// 이 앱의 이름은 **정체성에서 나온다** — 프레임워크 이름이 아니다.
+//
+// 안 정하면 프레임워크의 이름이 그대로 앱 이름이 된다: Dock·메뉴바·알림·창 제목이 전부
+// "Electron" 이고, 사용자에게는 그것이 앱의 정체다. 게다가 Electron 은 기본 userData 경로를
+// 앱 이름에서 파생하므로, 이름을 안 정하면 세상의 모든 미포장 Electron 앱과 같은 폴더를
+// 쓴다(실측: ~/Library/Application Support/Electron 이 실제로 채워져 있었다).
+//
+// 프레임워크는 렌더러일 뿐이고 제품은 하나다 — 그래서 이름도 하나다. "어느 프레임워크인가"는
+// 이름이 아니라 런타임 사실이 답한다(framework.provision).
+app.setName(IDENTITY.productName);
+
 // 정체성이 다르면 다른 앱이다. Electron 의 단일 인스턴스 잠금은 userData 경로로 갈리므로,
 // 그 경로를 이 정체성의 홈으로 지목하면 dev·debug·release 가 각자 하나씩 선다. 지목하지 않으면
 // 셋이 같은 기본 경로를 공유해 서로를 "이미 도는 자신"으로 오인한다.

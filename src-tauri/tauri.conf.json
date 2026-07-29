@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "soksak-dev",
+  "productName": "soksak-tauri-dev",
   "version": "0.0.1",
-  "identifier": "com.soksak.dev",
+  "identifier": "com.soksak.tauri.dev",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -12,13 +12,16 @@
   "app": {
     "windows": [
       {
-        "title": "soksak-dev",
+        "title": "soksak-tauri-dev",
         "width": 800,
         "height": 600,
         "titleBarStyle": "Overlay",
         "acceptFirstMouse": true,
         "hiddenTitle": true,
-        "trafficLightPosition": { "x": 12, "y": 20 }
+        "trafficLightPosition": {
+          "x": 12,
+          "y": 20
+        }
       }
     ],
     "security": {
@@ -33,7 +36,9 @@
   "plugins": {
     "deep-link": {
       "desktop": {
-        "schemes": ["soksak"]
+        "schemes": [
+          "soksak"
+        ]
       }
     }
   },

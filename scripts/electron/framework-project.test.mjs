@@ -51,6 +51,7 @@ function loadFramework(created) {
       app: {
       // 실물이 갖는 것 — 스텁이 더 좁으면 그 차이가 곧 거짓 GREEN 이다.
       setPath: () => {},
+      setName: () => {},
       requestSingleInstanceLock: () => true,
       quit: () => {}, whenReady: () => Promise.resolve(), on: () => {}, getName: () => "s", getVersion: () => "0" },
       BrowserWindow: W, dialog: {},

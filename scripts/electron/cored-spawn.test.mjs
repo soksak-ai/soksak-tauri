@@ -174,8 +174,8 @@ afterEach(async () => {
 describe("프레임워크의 정체성 — 홈은 프레임워크의 것이다", () => {
   it("기본은 이 프레임워크 자신의 identity 이고 홈이 거기서 나온다", () => {
     const id = frameworkIdentity({ env: {}, argv: [], homedir: "/u/max" });
-    expect(id.identifier).toBe("com.soksak.electron-spike");
-    expect(id.home).toBe("/u/max/.soksak-electron-spike");
+    expect(id.identifier).toBe("com.soksak.electron.dev");
+    expect(id.home).toBe("/u/max/.soksak-electron-dev");
   });
 
   it("identity 를 지목하면 그 홈으로 간다 — 규칙은 코어와 같다", () => {
@@ -200,7 +200,7 @@ describe("프레임워크의 정체성 — 홈은 프레임워크의 것이다",
 
   it("cored 소켓은 그 홈 안에 산다 — 홈이 곧 정체성 경계다", () => {
     const id = frameworkIdentity({ env: {}, argv: [], homedir: "/u/max" });
-    expect(id.socketPath.startsWith("/u/max/.soksak-electron-spike/")).toBe(true);
+    expect(id.socketPath.startsWith("/u/max/.soksak-electron-dev/")).toBe(true);
     // 앱 소켓(<home>/<identifier>.sock)과 같은 이름을 쓰지 않는다 — 같은 홈의 앱을 밀어낸다.
     expect(id.socketPath.endsWith(`${id.identifier}.sock`)).toBe(false);
   });
@@ -268,7 +268,7 @@ describe("cored 바이너리 — 추측하지 않는다", () => {
 
 describe("띄우기 — 준비 완료는 stdout 첫 줄", () => {
   const identityAt = (dir) => ({
-    identifier: "com.soksak.electron-spike",
+    identifier: "com.soksak.electron.dev",
     home: join(dir, "home"),
     socketPath: join(dir, "h.sock"),
   });
@@ -349,7 +349,7 @@ describe("띄우기 — 준비 완료는 stdout 첫 줄", () => {
 describe("이미 살아 있으면 띄우지 않는다", () => {
   it("그 소켓을 서빙 중이면 스폰 자체가 없다", async () => {
     const identity = {
-      identifier: "com.soksak.electron-spike",
+      identifier: "com.soksak.electron.dev",
       home: join(root, "home"),
       socketPath: join(root, "taken.sock"),
     };
@@ -372,7 +372,7 @@ describe("이미 살아 있으면 띄우지 않는다", () => {
     // cored 자신도 싱글턴 프로브를 한다 — 우리 프로브 뒤에 남이 먼저 붙으면 cored는 조용히
     // exit 0 한다. 준비 완료 줄이 없다고 실패로 치면 멀쩡히 서빙되는 소켓을 버리게 된다.
     const identity = {
-      identifier: "com.soksak.electron-spike",
+      identifier: "com.soksak.electron.dev",
       home: join(root, "home"),
       socketPath: join(root, "race.sock"),
     };
@@ -391,7 +391,7 @@ describe("이미 살아 있으면 띄우지 않는다", () => {
 
   it("exit 0 인데 아무도 서빙하지 않으면 이름을 달고 실패한다", async () => {
     const identity = {
-      identifier: "com.soksak.electron-spike",
+      identifier: "com.soksak.electron.dev",
       home: join(root, "home"),
       socketPath: join(root, "gone.sock"),
     };
@@ -407,7 +407,7 @@ describe("이미 살아 있으면 띄우지 않는다", () => {
 describe("거두기 — 내 것만", () => {
   it("stop() 은 내가 띄운 cored를 거둔다", async () => {
     const identity = {
-      identifier: "com.soksak.electron-spike",
+      identifier: "com.soksak.electron.dev",
       home: join(root, "home"),
       socketPath: join(root, "mine.sock"),
     };
@@ -420,7 +420,7 @@ describe("거두기 — 내 것만", () => {
 
   it("받아들인 소켓은 stop() 이 건드리지 않는다 — 남의 것이다", async () => {
     const identity = {
-      identifier: "com.soksak.electron-spike",
+      identifier: "com.soksak.electron.dev",
       home: join(root, "home"),
       socketPath: join(root, "theirs.sock"),
     };
@@ -443,14 +443,28 @@ function loadFramework({ socket, binary }) {
     app: {
       // 실물이 갖는 것 — 스텁이 더 좁으면 그 차이가 곧 거짓 GREEN 이다.
       setPath: () => {},
+      setName: () => {},
       requestSingleInstanceLock: () => true,
       quit: () => {},
       whenReady: () => new Promise(() => {}), // 창을 만들지 않는다
       on: (name, fn) => appEvents.set(name, fn),
-      getName: () => "soksak-electron-spike",
+      getName: () => "soksak-electron-dev",
       getVersion: () => "0.0.0",
     },
     BrowserWindow: class {
+      // 실물이 갖는 것 — 스텁이 더 좁으면 그 차이가 곧 거짓 GREEN 이다. 창이 나면
+      // 프레임워크가 렌더러 사건(오류·종료·적재 실패)을 구독한다.
+      constructor() {
+        this.webContents = { send: () => {}, on: () => {}, setWindowOpenHandler: () => {} };
+      }
+      once() {}
+      on() {}
+      loadURL() {}
+      focus() {}
+      show() {}
+      isDestroyed() {
+        return false;
+      }
       static fromWebContents() {
         return null;
       }
@@ -485,12 +499,12 @@ describe("프레임워크 배선 — 소켓을 안 주면 스스로 띄운다", 
   it("framework:invoke 가 프레임워크가 띄운 cored까지 가고 원장에 served:true 로 남는다", async () => {
     osModule.homedir = () => root;
     const framework = loadFramework({ socket: null, binary: fakeHelper("wired", SERVING) });
-    const home = join(root, ".soksak-electron-spike");
+    const home = join(root, ".soksak-electron-dev");
 
     const r = await invoke(framework, "app_environment", {});
     expect(r.ok, `프레임워크가 백엔드에 닿지 못했다: ${JSON.stringify(r)}`).toBe(true);
     // cored는 프레임워크가 준 정체성으로 답한다 — 스스로 파생한 홈이 아니다.
-    expect(r.value).toMatchObject({ home, identifier: "com.soksak.electron-spike" });
+    expect(r.value).toMatchObject({ home, identifier: "com.soksak.electron.dev" });
     expect(ledger(home)).toEqual([{ t: expect.any(Number), cmd: "app_environment", served: true }]);
 
     await framework.appEvents.get("will-quit")();
@@ -530,7 +544,7 @@ describe("프레임워크 배선 — 소켓을 안 주면 스스로 띄운다", 
   it("cored를 못 세우면 모든 호출이 이름을 달고 실패하고 원장에 사유가 남는다", async () => {
     osModule.homedir = () => root;
     const framework = loadFramework({ socket: null, binary: join(root, "no-such-helper") });
-    const home = join(root, ".soksak-electron-spike");
+    const home = join(root, ".soksak-electron-dev");
 
     const r = await invoke(framework, "app_environment", {});
     expect(r.ok, "cored가 없는데 성공을 돌려줬다").toBe(false);

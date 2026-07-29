@@ -1,0 +1,61 @@
+{
+  "about": "정체성 파생의 오라클 — identifier 하나에서 나오는 것 전부. Rust(identity.rs)와 JS(electron/cored.cjs)가 이 파일 하나를 읽어 같은 규칙을 통과한다. 규칙이 두 벌이면 같은 identifier 가 프로세스마다 다른 홈·다른 이름을 답하고, 그 어긋남은 오류가 아니라 '내 데이터가 안 보인다'로 나타난다.",
+  "rule": "identifier 는 `com.soksak.<framework>.<env>` 다. 마지막 두 세그먼트가 축이고, env 가 `app` 이면 release 라 홈 접미는 `-<framework>` 까지다. 그 외는 `-<framework>-<env>`. 목록을 하드코딩하지 않으므로 새 framework·새 env 는 자동으로 자기 홈을 갖는다.",
+  "product": "soksak",
+  "cases": [
+    {
+      "identifier": "com.soksak.tauri.app",
+      "framework": "tauri",
+      "coreBuild": "release",
+      "homeSuffix": "-tauri",
+      "productName": "soksak-tauri",
+      "cli": "sok-tauri",
+      "why": "릴리즈는 env 세그먼트가 `app` 이고 홈 접미는 프레임워크까지다"
+    },
+    {
+      "identifier": "com.soksak.tauri.dev",
+      "framework": "tauri",
+      "coreBuild": "dev",
+      "homeSuffix": "-tauri-dev",
+      "productName": "soksak-tauri-dev",
+      "cli": "sok-tauri-dev",
+      "why": "개발 정본"
+    },
+    {
+      "identifier": "com.soksak.tauri.debug",
+      "framework": "tauri",
+      "coreBuild": "debug",
+      "homeSuffix": "-tauri-debug",
+      "productName": "soksak-tauri-debug",
+      "cli": "sok-tauri-debug",
+      "why": "발행본 설치 검증"
+    },
+    {
+      "identifier": "com.soksak.electron.dev",
+      "framework": "electron",
+      "coreBuild": "dev",
+      "homeSuffix": "-electron-dev",
+      "productName": "soksak-electron-dev",
+      "cli": "sok-electron-dev",
+      "why": "두 프레임워크가 같은 env 에서 동시에 설 수 있다 — 홈이 갈리므로"
+    },
+    {
+      "identifier": "com.soksak.electron.app",
+      "framework": "electron",
+      "coreBuild": "release",
+      "homeSuffix": "-electron",
+      "productName": "soksak-electron",
+      "cli": "sok-electron",
+      "why": "릴리즈는 env 세그먼트가 `app` 이고 홈 접미는 프레임워크까지다"
+    },
+    {
+      "identifier": "com.soksak.electron.verify",
+      "framework": "electron",
+      "coreBuild": "verify",
+      "homeSuffix": "-electron-verify",
+      "productName": "soksak-electron-verify",
+      "cli": "sok-electron-verify",
+      "why": "목록에 없는 env 도 자동으로 자기 홈을 갖는다는 증거 — 격리 인스턴스가 필요하면 이름만 주면 된다"
+    }
+  ]
+}

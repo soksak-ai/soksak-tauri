@@ -160,22 +160,52 @@ pub fn control_socket(home: &Path, identifier: &str) -> PathBuf {
     home.join(format!("{identifier}.sock"))
 }
 
-/// release core 판정 — identifier 마지막 세그먼트가 `app`.
-pub fn is_release_identifier(identifier: &str) -> bool {
-    identifier.rsplit('.').next() == Some("app")
-}
+/// 제품 이름 — 프레임워크 이름이 아니다. 접미가 붙어도 뿌리는 하나다.
+pub const PRODUCT: &str = "soksak";
 
-/// identifier → core build 이름(release/dev/debug/…).
-pub fn core_build_for_identifier(identifier: &str) -> String {
-    match identifier.rsplit('.').next().unwrap_or("app") {
-        "app" => "release".to_string(),
-        "dev" => "dev".to_string(),
-        "debug" => "debug".to_string(),
-        other => other.to_string(),
+/// identifier 의 두 축 — `com.soksak.<framework>.<env>`.
+///
+/// 축이 둘인 이유: 두 프레임워크가 **같은 env 에서 동시에** 설 수 있어야 한다. 저장소는 단일
+/// 쓰기 소유이고 소켓·데몬도 홈당 하나라, 동시에 서려면 홈이 갈려야 하고 홈은 이름에서 나온다.
+///
+/// 목록을 하드코딩하지 않는다 — 새 framework 도 새 env 도 자동으로 자기 홈을 갖는다.
+/// 세그먼트가 모자라면(`com.soksak.dev` 같은 옛 모양) framework 는 없고 env 만 있다.
+pub fn axes_of_identifier(identifier: &str) -> (Option<String>, String) {
+    let segs: Vec<&str> = identifier.split('.').filter(|s| !s.is_empty()).collect();
+    match segs.len() {
+        0 => (None, "release".to_string()),
+        1 => (None, segs[0].to_string()),
+        _ => {
+            let env = segs[segs.len() - 1].to_string();
+            let fw = segs[segs.len() - 2];
+            // `com.soksak.dev` 의 `soksak` 은 프레임워크가 아니라 제품이다.
+            if segs.len() >= 4 && fw != PRODUCT {
+                (Some(fw.to_string()), env)
+            } else {
+                (None, env)
+            }
+        }
     }
 }
 
-/// core build → CLI 이름(sok / sok-dev / sok-debug / …).
+/// release core 판정.
+pub fn is_release_identifier(identifier: &str) -> bool {
+    core_build_for_identifier(identifier) == "release"
+}
+
+/// identifier → core build 이름(release/dev/debug/…). 옛 모양의 `app` 도 release 로 읽는다.
+pub fn core_build_for_identifier(identifier: &str) -> String {
+    let (_, env) = axes_of_identifier(identifier);
+    if env == "app" { "release".to_string() } else { env }
+}
+
+/// identifier → 프레임워크 축(없으면 None). "어느 프레임워크로 도는가"는 런타임 사실이지만,
+/// **어느 홈을 쓰는가**는 이름이 정한다 — 그래야 둘이 동시에 설 수 있다.
+pub fn framework_for_identifier(identifier: &str) -> Option<String> {
+    axes_of_identifier(identifier).0
+}
+
+/// core build → CLI 이름. 접미 규칙은 홈과 같다 — 이름이 갈리면 어느 CLI 가 어느 홈인지 모른다.
 pub fn cli_for_core_build(core_build: &str) -> String {
     match core_build {
         "release" => "sok".to_string(),
@@ -183,13 +213,30 @@ pub fn cli_for_core_build(core_build: &str) -> String {
     }
 }
 
-/// 홈 디렉터리명 접미 — `app` 은 무접미, 그 외는 `-<세그먼트>`.
+/// identifier → CLI 이름. 홈 접미와 같은 문자열을 쓴다(단일 규칙).
+pub fn cli_for_identifier(identifier: &str) -> String {
+    format!("sok{}", home_suffix_for_identifier(identifier))
+}
+
+/// identifier → 제품 표시 이름. 홈 접미와 같은 규칙이다.
+///
+/// 안 정하면 프레임워크의 이름이 그대로 앱 이름이 된다(Dock·메뉴바·알림). 프레임워크는
+/// 렌더러일 뿐이고 제품은 하나다.
+pub fn product_name_for_identifier(identifier: &str) -> String {
+    format!("{PRODUCT}{}", home_suffix_for_identifier(identifier))
+}
+
+/// 홈 디렉터리명 접미 — `-<framework>` 에, release 가 아닐 때만 `-<env>` 를 더한다.
+///
+/// 옛 모양(framework 없음)은 `app` 이 무접미이고 그 외는 `-<env>` 다 — 규칙 하나로 둘 다 답한다.
 pub fn home_suffix_for_identifier(identifier: &str) -> String {
-    let seg = identifier.rsplit('.').next().unwrap_or("app");
-    if seg == "app" {
-        String::new()
-    } else {
-        format!("-{seg}")
+    let (fw, env) = axes_of_identifier(identifier);
+    let release = env == "release" || env == "app";
+    match (fw, release) {
+        (Some(fw), true) => format!("-{fw}"),
+        (Some(fw), false) => format!("-{fw}-{env}"),
+        (None, true) => String::new(),
+        (None, false) => format!("-{env}"),
     }
 }
 
@@ -285,6 +332,31 @@ mod tests {
         assert_eq!(home_suffix_for_identifier("com.soksak.beta"), "-beta");
         assert_eq!(core_build_for_identifier("com.soksak.beta"), "beta");
         assert_eq!(cli_for_core_build("beta"), "sok-beta");
+    }
+
+    /// 픽스처가 오라클이다 — 이 파일 하나를 JS 쪽 검사도 읽는다. 규칙이 두 벌이면 같은
+    /// identifier 가 프로세스마다 다른 홈을 답하고, 그 어긋남은 "내 데이터가 안 보인다"로
+    /// 나타난다(오류가 아니다).
+    #[test]
+    fn the_fixture_binds_both_implementations() {
+        let doc: serde_json::Value =
+            serde_json::from_str(include_str!("../fixtures/identity.json")).expect("픽스처");
+        assert_eq!(doc["product"].as_str(), Some(PRODUCT));
+        let cases = doc["cases"].as_array().expect("cases");
+        assert!(!cases.is_empty(), "픽스처가 비었다 — 판정할 수 없다");
+        for c in cases {
+            let id = c["identifier"].as_str().unwrap();
+            let why = c["why"].as_str().unwrap_or("");
+            assert_eq!(
+                framework_for_identifier(id).as_deref(),
+                c["framework"].as_str(),
+                "{id}: framework — {why}"
+            );
+            assert_eq!(core_build_for_identifier(id), c["coreBuild"].as_str().unwrap(), "{id}: coreBuild");
+            assert_eq!(home_suffix_for_identifier(id), c["homeSuffix"].as_str().unwrap(), "{id}: homeSuffix");
+            assert_eq!(product_name_for_identifier(id), c["productName"].as_str().unwrap(), "{id}: productName");
+            assert_eq!(cli_for_identifier(id), c["cli"].as_str().unwrap(), "{id}: cli");
+        }
     }
 
     #[test]

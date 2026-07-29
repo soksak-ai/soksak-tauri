@@ -74,7 +74,7 @@ function fakeWindow() {
   const sent = [];
   return {
     sent,
-    webContents: { send: (channel, msg) => sent.push([channel, msg]) },
+    webContents: { send: (channel, msg) => sent.push([channel, msg]), on: () => {} },
     isDestroyed: () => false,
     getBounds: () => ({ x: 0, y: 0, width: 1200, height: 800 }),
     once: () => {},
@@ -95,11 +95,12 @@ async function loadFramework(socketPath) {
     app: {
       // 실물이 갖는 것 — 스텁이 더 좁으면 그 차이가 곧 거짓 GREEN 이다.
       setPath: () => {},
+      setName: () => {},
       requestSingleInstanceLock: () => true,
       quit: () => {},
       whenReady: () => Promise.resolve(),
       on: () => {},
-      getName: () => "soksak-electron-spike",
+      getName: () => "soksak-electron-dev",
       getVersion: () => "0.0.0",
     },
     BrowserWindow: class {

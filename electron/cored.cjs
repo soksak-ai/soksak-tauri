@@ -19,7 +19,7 @@ const { spawn } = require("node:child_process");
 /** 이 프레임워크의 정체성이 오는 두 통로. 없으면 이 프레임워크 자신의 identity 를 쓴다(남의 홈을 넘보지 않는다). */
 const IDENTIFIER_ENV = "SOKSAK_IDENTIFIER";
 const IDENTIFIER_ARG = "--soksak-identifier=";
-const DEFAULT_IDENTIFIER = "com.soksak.electron-spike";
+const DEFAULT_IDENTIFIER = "com.soksak.electron.dev";
 
 /** cored 바이너리를 지목하는 두 통로. */
 const CORED_BIN_ENV = "SOKSAK_CORED_BIN";
@@ -70,12 +70,52 @@ function argValue(argv, prefix) {
  * (코어 home.rs, sok CLI 의 home_for_env). runtime 으로 홈을 갈아끼우는 통로는 없다 —
  * 지목하는 것은 identifier 이고, 홈은 그 결과다.
  */
+/** 제품 이름 — 프레임워크 이름이 아니다. 접미가 붙어도 뿌리는 하나다. */
+const PRODUCT = "soksak";
+
+/**
+ * identifier 의 두 축 — `com.soksak.<framework>.<env>`.
+ *
+ * 축이 둘인 이유: 두 프레임워크가 **같은 env 에서 동시에** 설 수 있어야 한다. 저장소는 단일
+ * 쓰기 소유이고 소켓·데몬도 홈당 하나라, 동시에 서려면 홈이 갈려야 하고 홈은 이름에서 나온다.
+ *
+ * 규칙의 정본은 soksak-core/fixtures/identity.json 이고 Rust(identity.rs)와 이 함수가 그
+ * 한 파일로 묶인다 — 두 벌이면 같은 identifier 가 프로세스마다 다른 홈을 답한다.
+ */
+function identityAxes(identifier) {
+  const segs = String(identifier).split(".").filter(Boolean);
+  if (segs.length === 0) return { framework: null, env: "app" };
+  if (segs.length === 1) return { framework: null, env: segs[0] };
+  const env = segs[segs.length - 1];
+  const fw = segs[segs.length - 2];
+  // `com.soksak.dev` 의 `soksak` 은 프레임워크가 아니라 제품이다.
+  return segs.length >= 4 && fw !== PRODUCT ? { framework: fw, env } : { framework: null, env };
+}
+
+/** 홈 접미 — `-<framework>` 에, release(`app`)가 아닐 때만 `-<env>` 를 더한다. */
+function homeSuffix(identifier) {
+  const { framework, env } = identityAxes(identifier);
+  const release = env === "app" || env === "release";
+  if (framework) return release ? `-${framework}` : `-${framework}-${env}`;
+  return release ? "" : `-${env}`;
+}
+
+/** 제품 표시 이름 — 홈 접미와 같은 규칙. 안 정하면 프레임워크 이름이 앱 이름이 된다. */
+function productName(identifier) {
+  return `${PRODUCT}${homeSuffix(identifier)}`;
+}
+
 function frameworkIdentity({ env = process.env, argv = process.argv, homedir = os.homedir() } = {}) {
   const identifier =
     argValue(argv, IDENTIFIER_ARG) || env[IDENTIFIER_ENV] || DEFAULT_IDENTIFIER;
-  const segment = identifier.split(".").pop() || "app";
-  const home = path.join(homedir, `.soksak${segment === "app" ? "" : `-${segment}`}`);
-  return { identifier, home, socketPath: path.join(home, SOCKET_FILE) };
+  const home = path.join(homedir, `.${PRODUCT}${homeSuffix(identifier)}`);
+  return {
+    identifier,
+    home,
+    socketPath: path.join(home, SOCKET_FILE),
+    framework: identityAxes(identifier).framework,
+    productName: productName(identifier),
+  };
 }
 
 const isFile = (p) => {
@@ -280,6 +320,9 @@ async function ensureCored({
 
 module.exports = {
   frameworkIdentity,
+  identityAxes,
+  homeSuffix,
+  productName,
   coredBinary,
   ensureCored,
   probeSocket,

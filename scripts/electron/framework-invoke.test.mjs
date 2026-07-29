@@ -67,11 +67,12 @@ function loadFramework(socketPath) {
     app: {
       // 실물이 갖는 것 — 스텁이 더 좁으면 그 차이가 곧 거짓 GREEN 이다.
       setPath: () => {},
+      setName: () => {},
       requestSingleInstanceLock: () => true,
       quit: () => {},
       whenReady: () => new Promise(() => {}), // 창을 만들지 않는다
       on: () => {},
-      getName: () => "soksak-electron-spike",
+      getName: () => "soksak-electron-dev",
       getVersion: () => "0.0.0",
     },
     BrowserWindow: class {
@@ -105,7 +106,7 @@ const invoke = (handlers, cmd, args) => handlers.get("framework:invoke")(null, {
 
 /** 원장 실물 — 프레임워크가 홈에 떨구는 jsonl 을 그대로 읽는다. */
 function ledger() {
-  const p = join(root, ".soksak-electron-spike", "invoke-demand.jsonl");
+  const p = join(root, ".soksak-electron-dev", "invoke-demand.jsonl");
   return readFileSync(p, "utf8")
     .split("\n")
     .filter(Boolean)
