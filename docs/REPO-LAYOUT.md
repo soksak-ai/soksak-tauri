@@ -57,12 +57,19 @@ to live beneath it.
 
 ## The law of the layout
 
-Three rules.
+Five rules.
 
 1. **Framework-free code does not live under a framework's name.**
 2. **Frameworks are siblings** — neither is the other's parent.
 3. **The workspace root is not a framework** — if shared crates belong to one framework's build unit,
    deleting that framework takes the rest down with it.
+4. **Tests live beside the code, not inside it.** A module and its tests are separate files. Inline
+   `#[cfg(test)] mod tests` puts two audiences in one file: the rule and the proof of the rule grow
+   together until neither can be read alone, and the file's length stops meaning what it appears to
+   mean. Rust does this with a sibling file and `#[cfg(test)] #[path = "x_tests.rs"] mod tests;`.
+5. **A file that has grown carries more than one role — split it by role.** Not by size, not
+   alphabetically: by *what rule it owns*. Size is the symptom that prompts the look; the seam is
+   always a role boundary.
 
 ## Inside soksak-core
 
@@ -71,8 +78,8 @@ processes and PTY, window and surface specs, plugin rules, the control plane.
 
 Five test files (`activity_recent_tests.rs`, `control_tests.rs`, `plugin_data_tests.rs`,
 `pty_delivery_tests.rs`, `skillgen_tests.rs`) are split out as siblings while every other module keeps
-its tests inline as `#[cfg(test)] mod tests`. Two conventions coexist and the files alone do not say
-which one is the rule.
+its tests inline as `#[cfg(test)] mod tests`. Two conventions coexist; **the sibling file is the
+standard** (rule 4), and the inline ones are the backlog.
 
 Group by **what the rule is about** — not by size, not alphabetically.
 
@@ -87,8 +94,8 @@ soksak-core/src/
 └── wire/         control · stream · stream_sink · activity · activity_sink · udp · secret_env
 ```
 
-Settle on one convention for tests. Inline `#[cfg(test)] mod tests` is the majority, so it is the
-standard; the five that were split out either carry a stated reason or move back inline.
+The five split-out files are the shape everything else moves toward — `x.rs` holds the rule, `x_tests.rs`
+holds the proof, and neither hides inside the other.
 
 ## What the move touched
 

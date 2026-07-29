@@ -181,14 +181,32 @@ Two things were deliberately left. `native_reload` keeps its webview handle: a r
 
 `crates/soksak-cored` is a process with no window, no webview, and no app handle. It listens on a unix socket and answers commands using `soksak-core` logic. It follows `soksak-ptyd`, the standing precedent for an independent daemon, with two deliberate differences.
 
-**The name says what it is: core, running as a daemon.** Not a bridge — the Tauri framework never talks to it. That framework links `soksak-core` directly and calls functions in its own process; a socket between them would be a round trip to itself. cored exists for a framework that *cannot* link Rust. Today that means Electron, whose framework is Node.
+**The name says what it is: core, running as a daemon.** It is the backend — the only one.
 
 ```
-Tauri framework   ──links──>  soksak-core
-Electron framework ──socket──> soksak-cored  (= soksak-core with a socket on it)
+sok CLI            ──socket──┐
+Tauri framework    ──socket──┼──> soksak-cored   (= soksak-core with a socket on it)
+Electron framework ──socket──┘
+headless           = cored, with no framework at all
 ```
 
-The dependency direction says the same thing: `frameworks/tauri/Cargo.toml` lists `soksak-core` as a dependency and `soksak-cored` only as a dev-dependency. The app binary does not link cored at all; the single tie is the shape gate, which reads cored's serving table as a value at test time rather than parsing it out of a string — a parser goes quietly wrong when the table changes, and a gate that went wrong still reports a pass.
+This reverses an earlier rule, and the reversal is the point. That rule read: *"Not a bridge — the Tauri framework never talks to it. It links `soksak-core` directly and calls functions in its own process; a socket between them would be a round trip to itself."* Every word of that was true **while only one app ran at a time**. That premise is gone. Two frameworks now run against one home, and the moment they do, "the app is also a backend" stops being free:
+
+- The store is single-writer by construction (`soksak_core::store_lock`). Two backend processes over one home means two writers, and SQLite does not stop them — it serialises them, which is exactly the silent case the lock exists to make loud.
+- The same duplication shows up seven more times: two `seq` allocators writing one ledger row, a `data-change` notification that never leaves its own process, a project-claim ledger held in process memory (breaking P6 across frameworks), and fixed temp names in the install staging, service ledger, and backup ring.
+
+None of those are seven problems. They are one problem seen seven times: **the rules had two implementations.** Measured — cored calls into `soksak_core` 68 times and is thin wiring over it; the Tauri app's `data/` layer spans 3132 lines and calls the shared crates 14 times in total. One is a backend seam; the other is a second copy.
+
+So the line is drawn by **purpose**, and the code already states it — `crates/soksak-cored/tests/no_framework.rs` bans `tauri`, `wry`, `tao`, `objc2`, `block2`, `libloading`, `clipboard-rs`, `x11rb`, `windows-sys`, `tokio`, `interprocess`, `portable-pty`:
+
+| | owns |
+| --- | --- |
+| **core** (cored) | rules, the store, ledgers, files, processes — cored already spawns (`registry.rs`, ptyd's `ensure_daemon`) |
+| **front** (a framework) | windows, webviews, OS surfaces, native crates — and hosting delivery for commands whose *body* is a window |
+
+Two frontends over one core is not a cost to be minimised; it is what keeps the seam a contract rather than a habit. Each is the other's oracle, and much of what this port found was found precisely because Electron could not do what Tauri did silently.
+
+`soksak-cored` is a library as well as a binary, so "the backend" is a **role**: the process that builds a `Ctx`, claims the write lock, and serves `wire::answer`. Linking it without building a `Ctx` gives you nothing to call; building your own `Ctx` makes you a second writer. cored holds the role for determinism, not capability — choosing the host per boot would make the topology depend on start order.
 
 - **It derives no identity of its own.** `ptyd` reads `SOKSAK_HOME` and derives paths; cored takes `--socket`, `--home`, and `--identifier` as arguments and, given none, fails by name rather than choosing a default. A daemon that guesses its identity attaches somewhere else the moment homes diverge, and does it quietly.
 - **`--data-dir` is optional because relocation is the spawner's secret.** The store is normally derived from the home, but the app moves it in debug builds. Only whoever moved it knows, so whoever spawns cored passes it. cored deriving by rule alone would open a different file than the app, and that wrong answer arrives as an empty result rather than an error.
@@ -304,6 +322,19 @@ What the token *is* differs per framework — Tauri has `Channel`, Electron has 
 Frames go down **the connection that asked**. Any other connection belongs to someone who did not mint that token and will drop the frame — a loss with no error. Binding happens before execution, because a command can push its first frame immediately and a frame with nowhere to go is gone silently. When the connection ends its tokens end with it.
 
 **A token has to survive serialization.** Attaching `onmessage` to the token as an *enumerable* accessor made `invoke` die at the boundary with `An object could not be cloned` — structured clone reads enumerable own properties, the getter returned a function, and functions do not clone. `spawn_terminal` never once reached the server; the only symptom was "the terminal does not come up", with no entry in the demand ledger because nothing was ever sent. The accessor is now non-enumerable. The test performs the clone rather than inspecting the shape: inspecting a shape would miss this again.
+
+## The duplication that remains — the dev-dependency points at it
+
+`frameworks/tauri/Cargo.toml` lists `soksak-cored` under `[dev-dependencies]`. That means exactly one
+thing: **the shipped app binary contains no cored code at all.** The app carries a whole separate
+backend, and the dev-dependency exists only so a test can compare the two tables
+(`cored_shape_gate.rs`).
+
+Having two tables to compare *is* the defect. So this is not a principle — it is a marker for work
+left. One backend means one table, and the gate and the dev-dependency end together. Removing it
+first only makes the drift it catches quiet again (measured 2026-07-28: five commands believed served
+by cored were rejected `INVALID_PARAMS` on a live boot, and the rejection was one line in a framework
+log).
 
 ## Two implementations, one fixture
 
