@@ -22,7 +22,7 @@ DEBUG_APP   := frameworks/tauri/target/debug/bundle/macos/soksak-debug.app
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install icons dev build build-debug run run-debug typecheck check test test-front verify gates e2e-framework-binding clean stop cli cli-dev cli-debug install-cli install-cli-dev install-cli-debug docs registry
+.PHONY: doctor doctor-fix help install icons dev build build-debug run run-debug typecheck check test test-front verify gates e2e-framework-binding clean stop cli cli-dev cli-debug install-cli install-cli-dev install-cli-debug docs registry
 
 help: ## 사용 가능한 명령 목록
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -166,6 +166,12 @@ spec-gate: ## 패키지 빌드(plugin-spec·plugin-api dist — 코어가 소비
 	@if node packages/plugin-spec/bin/validate.mjs packages/plugin-spec/test/fixtures/c2-static-violation/plugin.json >/dev/null 2>&1; then \
 		echo "spec-gate: C2 blocking 위반 매니페스트가 통과됨(게이트 깨짐)"; exit 1; \
 	else echo "✓ spec-gate(빌드+무효 거부+C2 판정 확인)"; fi
+
+doctor: ## 작업 공간 진단 — 워크트리가 정본의 target·node_modules 를 공유하는가, 디스크 여유는 충분한가
+	@node scripts/diag/workspace-doctor.mjs
+
+doctor-fix: ## 위 진단을 고친다(멱등 — 몇 번을 돌려도 같은 상태로 수렴한다)
+	@node scripts/diag/workspace-doctor.mjs --fix
 
 gates: ## 코어 규율 게이트(blocking) — 디렉터리에서 **발견해** 전부 돌린다. 판정은 종료코드다
 	@node scripts/gates/run-all.mjs
