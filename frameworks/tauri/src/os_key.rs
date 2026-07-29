@@ -33,90 +33,33 @@
 // 지는 쪽의 KEK 로 wrap 된 볼트가 있으면 그것은 복호 불가가 된다. 실제로 그 창이 열리는 것은 볼트가
 // **아직 없을 때**뿐이므로 오늘의 위험은 낮지만, 무시 가능한 이유가 바뀌었다는 사실은 남긴다.
 
+pub use soksak_vault::{get_or_create_kek, Kek, KekError, SecretStore, KEK_LEN};
+
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use rand::rngs::OsRng;
 use rand::RngCore;
 use zeroize::{Zeroize, Zeroizing};
 
-pub const KEK_LEN: usize = 32;
 
-// 반환 KEK — drop 시 자동 스크럽.
-pub type OsKek = Zeroizing<[u8; KEK_LEN]>;
 
 // 에러 타입 — String 관례를 의도적으로 벗어난 typed enum. 헤드리스 감지가 호출부의 분기(무음 폴백
 // 금지)를 강제하므로 String 으론 부족하다(패턴매치 불가). 상위 경계는 String 으로 축약할 수 있다.
 #[derive(Debug)]
-pub enum OsKeyError {
-    /// 키체인 미도달(헤드리스 Linux/무 D-Bus 세션/잠긴 컬렉션). 무음 폴백 금지 신호.
-    StoreUnavailable(String),
-    /// 키체인 도달했으나 연산 실패(쓰기 거부/모호/plat 실패).
-    StoreFailure(String),
-    /// 저장 blob 이 32B base64 아님. 재생성 금지(전손 차단) — 명시 실패.
-    Corrupt(String),
-}
 
-impl std::fmt::Display for OsKeyError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            OsKeyError::StoreUnavailable(m) => write!(f, "OS 키체인 미도달: {m}"),
-            OsKeyError::StoreFailure(m) => write!(f, "OS 키체인 연산 실패: {m}"),
-            OsKeyError::Corrupt(m) => write!(f, "OS 키체인 KEK 손상: {m}"),
-        }
-    }
-}
 
-impl std::error::Error for OsKeyError {}
 
-// 테스트 seam — 실제 키체인 미접촉을 위한 주입 경계(resolve_vault_path 의 env 클로저 선례와 동형).
-pub trait SecretStore {
-    /// 미존재=Ok(None), 미도달=Err(StoreUnavailable).
-    fn read(&self) -> Result<Option<String>, OsKeyError>;
-    fn write(&self, secret: &str) -> Result<(), OsKeyError>;
-}
 
-// 핵심 — get-or-create. store 를 인자로 받는다(전역·env·set_var 0). 없으면 랜덤 32B 생성·영속·반환.
-// Corrupt/StoreUnavailable 은 그대로 전파(무음 재생성·무음 폴백 절대 금지).
-pub fn get_or_create_kek(store: &impl SecretStore) -> Result<OsKek, OsKeyError> {
-    match store.read()? {
-        Some(encoded) => decode_kek(&encoded),
-        None => {
-            let mut raw: OsKek = Zeroizing::new([0u8; KEK_LEN]);
-            OsRng.fill_bytes(raw.as_mut());
-            // 인코딩 중간 문자열도 비밀이라 Zeroizing 으로 감싸 drop 시 소거.
-            let encoded = Zeroizing::new(STANDARD.encode(raw.as_ref()));
-            store.write(&encoded)?;
-            Ok(raw)
-        }
-    }
-}
 
-// base64 → [u8;32]. 길이 불일치·디코드 실패는 Corrupt(재생성 금지 안전핀). 중간 Vec 즉시 zeroize.
-fn decode_kek(encoded: &str) -> Result<OsKek, OsKeyError> {
-    let mut decoded = STANDARD
-        .decode(encoded.as_bytes())
-        .map_err(|e| OsKeyError::Corrupt(format!("base64 아님: {e}")))?;
-    if decoded.len() != KEK_LEN {
-        let got = decoded.len();
-        decoded.zeroize();
-        return Err(OsKeyError::Corrupt(format!(
-            "KEK 길이 {got}B (기대 {KEK_LEN}B)"
-        )));
-    }
-    let mut kek: OsKek = Zeroizing::new([0u8; KEK_LEN]);
-    kek.copy_from_slice(&decoded);
-    decoded.zeroize();
-    Ok(kek)
-}
 
 // 프로덕션 store — keyring::Entry. 서비스는 정체성의 **env 축**에서 나오고(볼트가 사는 홈과 같은 축),
 // account="device-kek-v1"(버전드). 규칙의 단일진실은 soksak_core::identity 다.
-pub struct OsKeyStore {
+pub struct KekStore {
     service: String,
     account: String,
 }
 
-impl OsKeyStore {
+impl KekStore {
     // 서비스명은 정체성에서 온다 — 전역 identifier 읽기를 호출자(부트)에게 올린다.
     // cored 프로세스는 자기 identifier 를 전역으로 알 수 없고, 틀리면 조용히 남의 KEK 를 연다.
     pub(crate) fn for_identity(identity: &crate::identity::Identity) -> Self {
@@ -135,16 +78,16 @@ impl OsKeyStore {
 
 // keyring::Error 분류 — NoStorageAccess/PlatformFailure 는 StoreUnavailable(헤드리스·잠금·무 D-Bus),
 // 그 외는 StoreFailure. NoEntry 는 read 에서 Ok(None) 로 별도 처리(여기로 오지 않는다).
-fn classify(err: keyring::Error) -> OsKeyError {
+fn classify(err: keyring::Error) -> KekError {
     match err {
-        keyring::Error::NoStorageAccess(inner) => OsKeyError::StoreUnavailable(inner.to_string()),
-        keyring::Error::PlatformFailure(inner) => OsKeyError::StoreUnavailable(inner.to_string()),
-        other => OsKeyError::StoreFailure(other.to_string()),
+        keyring::Error::NoStorageAccess(inner) => KekError::StoreUnavailable(inner.to_string()),
+        keyring::Error::PlatformFailure(inner) => KekError::StoreUnavailable(inner.to_string()),
+        other => KekError::StoreFailure(other.to_string()),
     }
 }
 
-impl SecretStore for OsKeyStore {
-    fn read(&self) -> Result<Option<String>, OsKeyError> {
+impl SecretStore for KekStore {
+    fn read(&self) -> Result<Option<String>, KekError> {
         let entry = keyring::Entry::new(&self.service, &self.account).map_err(classify)?;
         match entry.get_password() {
             Ok(secret) => Ok(Some(secret)),
@@ -153,7 +96,7 @@ impl SecretStore for OsKeyStore {
         }
     }
 
-    fn write(&self, secret: &str) -> Result<(), OsKeyError> {
+    fn write(&self, secret: &str) -> Result<(), KekError> {
         let entry = keyring::Entry::new(&self.service, &self.account).map_err(classify)?;
         entry.set_password(secret).map_err(classify)
     }

@@ -295,7 +295,6 @@ pub fn data_retention_reap(
 
 // ── 암호화(단계② — scope 단위 봉투 키 라이프사이클, R0 command registry) ─────────────
 
-use super::crypto;
 
 #[derive(Serialize)]
 pub struct EncryptionStatus {
@@ -343,7 +342,7 @@ pub fn data_encrypt_enable(
         soksak_store::doc::register_active_key(c, &scope, &key_id, &pk, created)
     })?;
     // (3) [R24] recovery code 발급 + S 를 코드로 2중 wrap → blob 저장(평문 DB 안전, 코드로만 열림).
-    let recovery_code = with_conn(&state, |c| crypto::issue_recovery(c, &scope, &key_id, &sk))?;
+    let recovery_code = with_conn(&state, |c| soksak_store::data_keys::issue_recovery(c, &scope, &key_id, &sk))?;
     Ok(EnableResult {
         key_id,
         recovery_code,
@@ -434,7 +433,7 @@ pub fn data_encrypt_rotate(
     // 새 active 키의 복구 blob 재발급 — 빠뜨리면 회전 후 active_recovery=None 이라 기계 분실 시 봉인 데이터
     // 영구 손실. re-key 루프 전에 발급해 new_s 가 살아있는 동안 처리. 새 코드 1회 반환(앱 미저장).
     let recovery_code =
-        with_conn(&state, |c| crypto::issue_recovery(c, &scope, &new_key_id, &new_s))?;
+        with_conn(&state, |c| soksak_store::data_keys::issue_recovery(c, &scope, &new_key_id, &new_s))?;
     // 전 레코드 re-key(배치 반복).
     let mut rekeyed = 0usize;
     loop {
@@ -493,7 +492,7 @@ pub fn data_encrypt_change_recovery(
     if crate::secrets::public_from_secret(&s) != ak.public_key {
         return Err("active publicKey 가 vault 키와 불일치(스왑 의심) — 복구코드 변경 거부".to_string());
     }
-    with_conn(&state, |c| crypto::issue_recovery(c, &scope, &ak.key_id, &s))
+    with_conn(&state, |c| soksak_store::data_keys::issue_recovery(c, &scope, &ak.key_id, &s))
 }
 
 // 기존 평문 레코드 봉인 변환(R17) — 암호화 활성 후 이미 쌓인 (ns,coll,scope) 평문을 active key 로 봉인.
@@ -546,7 +545,7 @@ pub fn data_encrypt_status(
     let mut key_missing = false;
     if let (Some(k), true) = (&ak, unlocked) {
         match secrets.get_data_key(&k.key_id)? {
-            Some(s) => tampered = !with_conn(&state, |c| crypto::verify_active_key(c, &scope, &s))?,
+            Some(s) => tampered = !with_conn(&state, |c| soksak_store::data_keys::verify_active_key(c, &scope, &s))?,
             None => key_missing = true,
         }
     }
@@ -714,8 +713,7 @@ pub fn data_migrate_ns(
 
 #[cfg(test)]
 mod tests {
-    use super::crypto;
-    use crate::data::init_base;
+        use crate::data::init_base;
     use crate::secrets::{FailingKekSource, SecretsState};
     use rusqlite::Connection;
 

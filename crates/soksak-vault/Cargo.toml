@@ -1,0 +1,25 @@
+[package]
+name = "soksak-vault"
+version = "0.0.1"
+edition = "2021"
+
+[dependencies]
+# 볼트의 몸 — 열쇠 유도(Argon2)·항목 봉인(XChaCha20-Poly1305)·복구 코드·파일 형식.
+# 창도 앱 핸들도 OS 키체인도 모른다. KEK 는 **주입**받는다(KekSource) — 그것을 어디서
+# 얻는지가 플랫폼의 일이고, 볼트는 그 바이트로 무엇을 하는지만 안다.
+argon2 = "0.5"
+chacha20poly1305 = "0.10"
+base64 = "0.22"
+rand = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+zeroize = { version = "1", features = ["zeroize_derive"] }
+# 비대칭 봉인(X25519) — 봉인 형식의 단일진실이 별개 크레이트다.
+soksak-seal = { path = "../soksak-seal" }
+# 복구 코드 검증자 해시.
+sha2 = "0.10"
+soksak-core = { path = "../soksak-core" }
+
+[features]
+# 검사용 생성자 — 소비자의 dev-dependencies 에서만 켠다.
+testing = []

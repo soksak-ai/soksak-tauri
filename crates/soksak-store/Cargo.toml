@@ -14,3 +14,5 @@ rand = "0.8"
 base64 = "0.22"
 soksak-core = { path = "../soksak-core" }
 soksak-seal = { path = "../soksak-seal" }
+# 열쇠 유도·복구 코드는 볼트가 소유한다 — 키 표(여기)와 그 열쇠(볼트)는 다른 자리다.
+soksak-vault = { path = "../soksak-vault" }

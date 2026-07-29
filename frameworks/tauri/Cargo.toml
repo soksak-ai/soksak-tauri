@@ -21,6 +21,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 # 파서가 조용히 빗나가고, 빗나간 게이트는 통과로 위장한다. 테스트 전용 — 앱 바이너리는
 # cored 를 링크하지 않는다.
 [dev-dependencies]
+soksak-vault = { path = "../../crates/soksak-vault", features = ["testing"] }
 soksak-cored = { path = "../../crates/soksak-cored" }
 
 [build-dependencies]
@@ -36,6 +37,7 @@ soksak-spec-pty = { path = "../../crates/soksak-spec-pty" }
 # X25519 sealed box 단일 진실 — 앱 볼트와 soksak-ptyd 체크포인트 공용.
 soksak-seal = { path = "../../crates/soksak-seal" }
 soksak-core = { path = "../../crates/soksak-core" }
+soksak-vault = { path = "../../crates/soksak-vault" }
 soksak-store = { path = "../../crates/soksak-store" }
 soksak-watch = { path = "../../crates/soksak-watch" }
 soksak-spec-service = { path = "../../crates/soksak-spec-service" }

@@ -4761,6 +4761,7 @@ dependencies = [
  "soksak-spec-service",
  "soksak-spec-socket",
  "soksak-store",
+ "soksak-vault",
  "soksak-watch",
  "tao",
  "tar",
@@ -4852,6 +4853,23 @@ dependencies = [
  "serde_json",
  "soksak-core",
  "soksak-seal",
+ "soksak-vault",
+]
+
+[[package]]
+name = "soksak-vault"
+version = "0.0.1"
+dependencies = [
+ "argon2",
+ "base64 0.22.1",
+ "chacha20poly1305",
+ "rand 0.8.7",
+ "serde",
+ "serde_json",
+ "sha2",
+ "soksak-core",
+ "soksak-seal",
+ "zeroize",
 ]
 
 [[package]]

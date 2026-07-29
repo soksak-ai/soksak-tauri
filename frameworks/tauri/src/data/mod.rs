@@ -14,7 +14,6 @@ use rusqlite::Connection;
 mod process_probe;
 pub mod backup;
 pub mod commands;
-pub mod crypto;
 pub mod ring;
 // 저장 연산은 크레이트가 소유한다 — 앱과 헬퍼가 같은 파일을 같은 질의로 읽는다.
 pub use soksak_store::store;

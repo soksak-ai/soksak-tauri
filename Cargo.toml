@@ -16,6 +16,7 @@ members = [
   "crates/soksak-seal",
   "crates/soksak-core",
   "crates/soksak-store",
+  "crates/soksak-vault",
   "crates/soksak-watch",
   "crates/soksak-ptyd",
   "crates/soksak-cored",
