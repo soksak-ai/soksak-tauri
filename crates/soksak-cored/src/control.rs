@@ -240,12 +240,24 @@ fn route(req: control::Request) -> Value {
     });
     // 그 창을 가진 호스트로만 민다. 아무 호스트에나 밀면 남의 프레임워크 창에서 명령이 돌고
     // 성공을 답한다 — 그 오답은 오류로 보이지 않는다.
-    if !push_to_owner(&target, &push) {
-        pending().lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
-        return json!({
-            "ok": false, "code": "DELIVER_FAILED",
-            "message": format!("창 호스트에 배달하지 못했다: {target}")
-        });
+    match push_to_owner(&target, &push) {
+        Delivered::Yes => {}
+        Delivered::NoOwner => {
+            pending().lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
+            return json!({
+                "ok": false, "code": "DELIVER_FAILED",
+                "message": format!("창 호스트에 배달하지 못했다: {target}")
+            });
+        }
+        Delivered::ManyOwners(n) => {
+            pending().lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
+            return json!({
+                "ok": false, "code": "AMBIGUOUS_HOST",
+                "message": format!(
+                    "창 이름 {target} 을(를) 호스트 {n} 곳이 든다 — 고르지 않는다(고르면 남의 창이 답한다)"
+                ),
+            });
+        }
     }
 
     let wait = Duration::from_millis(req.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS));
@@ -262,13 +274,36 @@ fn route(req: control::Request) -> Value {
     }
 }
 
+/// 배달을 시도한 결과. "못 했다"를 한 가지로 뭉치면 부른 쪽이 사유를 못 듣는다.
+enum Delivered {
+    Yes,
+    /// 그 라벨을 든 호스트가 없다(또는 쓰기가 실패했다).
+    NoOwner,
+    /// 그 라벨을 **여럿**이 들었다. 고르지 않는다.
+    ManyOwners(usize),
+}
+
 /// 이 창을 가진 호스트에게만 민다.
-fn push_to_owner(label: &str, v: &Value) -> bool {
+///
+/// 주인이 둘이면 고르지 않는다. 첫 매치를 고르면 남의 프레임워크 창에서 명령이 돌고 성공을
+/// 답한다 — 그 오답은 오류로 보이지 않는다. 그리고 그 라벨은 PTY 재접속 키이기도 해서,
+/// 조용히 고른 결과가 남의 셸에 닿는다.
+///
+/// 겹침은 우연이 아니다: 창 복원은 라벨을 새로 만들지 않고 저장된 `w-<uuid>` 를 의도적으로
+/// 되쓴다(NAMING 4b). 한 홈을 두 프레임워크가 보면 같은 슬롯을 각자 되살린다.
+fn push_to_owner(label: &str, v: &Value) -> Delivered {
     let g = hosts().lock().unwrap_or_else(|e| e.into_inner());
-    let line = v.to_string();
-    match g.iter().find(|h| h.live.iter().any(|l| l == label)) {
-        Some(h) => h.writer.write_line(&line),
-        None => false,
+    let owners: Vec<&Host> = g.iter().filter(|h| h.live.iter().any(|l| l == label)).collect();
+    match owners.len() {
+        0 => Delivered::NoOwner,
+        1 => {
+            if owners[0].writer.write_line(&v.to_string()) {
+                Delivered::Yes
+            } else {
+                Delivered::NoOwner
+            }
+        }
+        n => Delivered::ManyOwners(n),
     }
 }
 

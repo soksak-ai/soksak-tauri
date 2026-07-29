@@ -208,6 +208,33 @@ fn one_host_leaving_does_not_take_the_others_windows() {
     detach();
 }
 
+/// 두 호스트가 같은 라벨을 들면 **이름을 달고 거절한다** — 아무 쪽이나 고르지 않는다.
+///
+/// 우연이 아니라 필연이다: 창 복원은 라벨을 새로 만들지 않고 manifest 의 원래 `w-<uuid>` 를
+/// 의도적으로 되쓴다. 홈을 공유하면 두 프레임워크가 같은 라벨의 창을 각자 되살린다.
+/// 그때 첫 매치를 고르면 남의 프레임워크 창에서 명령이 돌고 성공을 답한다 — 그 오답은
+/// 오류로 보이지 않는다. 그 라벨은 PTY 재접속 키이기도 해서, 조용히 고르면 남의 셸에 닿는다.
+#[test]
+fn a_label_two_hosts_both_claim_is_refused_by_name() {
+    let _serial = lock_serial();
+    detach();
+    let mut first = fake_host(&["w-same"], "w-same");
+    let mut second = fake_host(&["w-same"], "w-same");
+
+    // AMBIGUOUS_WINDOW 가 아니다 — 그것은 "어느 창인지 못 정했다"이고, 부른 쪽은 이미
+    // 창을 지목했다. 여기서 갈리지 않는 것은 그 이름을 든 **호스트**다.
+    let r = answer(r#"{"id":16,"method":"x","window":"w-same","timeoutMs":300}"#);
+    assert_eq!(r["code"], "AMBIGUOUS_HOST");
+    assert!(
+        r["message"].as_str().unwrap().contains("w-same"),
+        "어느 라벨이 겹쳤는지 말한다: {}",
+        r["message"]
+    );
+    nothing_arrives(&mut first, "첫째 호스트");
+    nothing_arrives(&mut second, "둘째 호스트");
+    detach();
+}
+
 /// 방송은 주인 없는 사실이다 — 창을 가진 쪽 **전부**가 받아야 한다. 하나만 받으면
 /// 나머지 프레임워크의 창은 파일이 바뀐 줄 모르고 낡은 화면을 계속 보여 준다.
 #[test]
