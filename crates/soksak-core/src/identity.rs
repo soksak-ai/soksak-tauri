@@ -199,8 +199,10 @@ pub fn core_build_for_identifier(identifier: &str) -> String {
     if env == "app" { "release".to_string() } else { env }
 }
 
-/// identifier → 프레임워크 축(없으면 None). "어느 프레임워크로 도는가"는 런타임 사실이지만,
-/// **어느 홈을 쓰는가**는 이름이 정한다 — 그래야 둘이 동시에 설 수 있다.
+/// identifier → 프레임워크 축(없으면 None).
+///
+/// 이 축은 **이름**을 가른다 — 제어 소켓·제품 표시 이름·프레임워크 전용 디렉터리. 홈은
+/// 가르지 않는다(`home_suffix_for_identifier` 머리말).
 pub fn framework_for_identifier(identifier: &str) -> Option<String> {
     axes_of_identifier(identifier).0
 }
@@ -213,30 +215,49 @@ pub fn cli_for_core_build(core_build: &str) -> String {
     }
 }
 
-/// identifier → CLI 이름. 홈 접미와 같은 문자열을 쓴다(단일 규칙).
+/// identifier → CLI 이름. **홈과 같은 축(env)이다** — CLI 는 홈을 다루는 도구이므로,
+/// 프레임워크를 실으면 같은 홈에 서로 다른 이름의 CLI 가 둘 생긴다.
 pub fn cli_for_identifier(identifier: &str) -> String {
-    format!("sok{}", home_suffix_for_identifier(identifier))
+    cli_for_core_build(&core_build_for_identifier(identifier))
 }
 
-/// identifier → 제품 표시 이름. 홈 접미와 같은 규칙이다.
+/// identifier → 제품 표시 이름. **프레임워크 축을 싣는다**(홈과 다른 규칙이다).
 ///
 /// 안 정하면 프레임워크의 이름이 그대로 앱 이름이 된다(Dock·메뉴바·알림). 프레임워크는
-/// 렌더러일 뿐이고 제품은 하나다.
+/// 렌더러일 뿐이고 제품은 하나다. 그러면서도 둘이 동시에 떠 있을 때 Dock 에서 갈려야 하므로
+/// 여기에는 프레임워크가 실린다 — 홈은 하나여도 창은 둘이다.
 pub fn product_name_for_identifier(identifier: &str) -> String {
-    format!("{PRODUCT}{}", home_suffix_for_identifier(identifier))
+    let (fw, env) = axes_of_identifier(identifier);
+    let mut name = PRODUCT.to_string();
+    if let Some(fw) = fw {
+        name.push('-');
+        name.push_str(&fw);
+    }
+    if !is_release_env(&env) {
+        name.push('-');
+        name.push_str(&env);
+    }
+    name
 }
 
-/// 홈 디렉터리명 접미 — `-<framework>` 에, release 가 아닐 때만 `-<env>` 를 더한다.
+fn is_release_env(env: &str) -> bool {
+    env == "release" || env == "app"
+}
+
+/// 홈 디렉터리명 접미 — **env 만 본다.** release 면 무접미, 그 외는 `-<env>`.
 ///
-/// 옛 모양(framework 없음)은 `app` 이 무접미이고 그 외는 `-<env>` 다 — 규칙 하나로 둘 다 답한다.
+/// 프레임워크는 홈을 가르지 않는다. 홈에 든 것(플러그인·프로젝트·테마·볼트)은 프레임워크의
+/// 것이 아니라 **사용자의 것**이고, 홈을 프레임워크로 가르면 프레임워크를 바꾸는 순간 그것이
+/// 통째로 갈 곳을 잃는다 — 새 홈은 비어 있고, 그 비어 있음은 오류로 나타나지 않는다.
+///
+/// 둘이 동시에 서는 근거는 홈이 갈려서가 아니라 **이름이 갈려서**다: 제어 소켓은
+/// `<home>/<identifier>.sock` 이라 identifier 가 다르면 이미 다른 파일이다.
 pub fn home_suffix_for_identifier(identifier: &str) -> String {
-    let (fw, env) = axes_of_identifier(identifier);
-    let release = env == "release" || env == "app";
-    match (fw, release) {
-        (Some(fw), true) => format!("-{fw}"),
-        (Some(fw), false) => format!("-{fw}-{env}"),
-        (None, true) => String::new(),
-        (None, false) => format!("-{env}"),
+    let (_, env) = axes_of_identifier(identifier);
+    if is_release_env(&env) {
+        String::new()
+    } else {
+        format!("-{env}")
     }
 }
 

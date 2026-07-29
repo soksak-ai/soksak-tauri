@@ -106,7 +106,7 @@ const invoke = (handlers, cmd, args) => handlers.get("framework:invoke")(null, {
 
 /** 원장 실물 — 프레임워크가 홈에 떨구는 jsonl 을 그대로 읽는다. */
 function ledger() {
-  const p = join(root, ".soksak-electron-dev", "invoke-demand.jsonl");
+  const p = join(root, ".soksak-dev", "invoke-demand.jsonl");
   return readFileSync(p, "utf8")
     .split("\n")
     .filter(Boolean)

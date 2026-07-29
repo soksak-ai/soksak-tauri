@@ -1,61 +1,61 @@
 {
   "about": "정체성 파생의 오라클 — identifier 하나에서 나오는 것 전부. Rust(identity.rs)와 JS(electron/cored.cjs)가 이 파일 하나를 읽어 같은 규칙을 통과한다. 규칙이 두 벌이면 같은 identifier 가 프로세스마다 다른 홈·다른 이름을 답하고, 그 어긋남은 오류가 아니라 '내 데이터가 안 보인다'로 나타난다.",
-  "rule": "identifier 는 `com.soksak.<framework>.<env>` 다. 마지막 두 세그먼트가 축이고, env 가 `app` 이면 release 라 홈 접미는 `-<framework>` 까지다. 그 외는 `-<framework>-<env>`. 목록을 하드코딩하지 않으므로 새 framework·새 env 는 자동으로 자기 홈을 갖는다.",
+  "rule": "identifier 는 `com.soksak.<framework>.<env>` 다. 마지막 두 세그먼트가 축이고, 둘은 서로 다른 것을 정한다. **홈은 env 만 본다** — `app`(=release)이면 무접미, 그 외는 `-<env>`. 프레임워크는 홈을 가르지 않는다: 사용자 데이터(플러그인·프로젝트·테마·볼트)는 프레임워크의 것이 아니라 사용자의 것이고, 홈을 프레임워크로 가르면 프레임워크를 바꾸는 순간 그것이 통째로 갈 곳을 잃는다. 프레임워크 축은 **이름**을 가른다 — 제어 소켓(`<home>/<identifier>.sock`)·제품 표시 이름·프레임워크 전용 디렉터리. 그래서 둘은 같은 홈을 보면서 동시에 설 수 있다. 목록을 하드코딩하지 않으므로 새 framework·새 env 는 자동으로 자기 자리를 갖는다.",
   "product": "soksak",
   "cases": [
     {
       "identifier": "com.soksak.tauri.app",
       "framework": "tauri",
       "coreBuild": "release",
-      "homeSuffix": "-tauri",
+      "homeSuffix": "",
       "productName": "soksak-tauri",
-      "cli": "sok-tauri",
-      "why": "릴리즈는 env 세그먼트가 `app` 이고 홈 접미는 프레임워크까지다"
+      "cli": "sok",
+      "why": "릴리즈는 env 세그먼트가 `app` 이고 홈은 무접미다. 제품 이름은 프레임워크를 실어 Dock 에서 갈린다"
     },
     {
       "identifier": "com.soksak.tauri.dev",
       "framework": "tauri",
       "coreBuild": "dev",
-      "homeSuffix": "-tauri-dev",
+      "homeSuffix": "-dev",
       "productName": "soksak-tauri-dev",
-      "cli": "sok-tauri-dev",
-      "why": "개발 정본"
+      "cli": "sok-dev",
+      "why": "개발 정본 — 플러그인이 사는 홈이다"
     },
     {
       "identifier": "com.soksak.tauri.debug",
       "framework": "tauri",
       "coreBuild": "debug",
-      "homeSuffix": "-tauri-debug",
+      "homeSuffix": "-debug",
       "productName": "soksak-tauri-debug",
-      "cli": "sok-tauri-debug",
+      "cli": "sok-debug",
       "why": "발행본 설치 검증"
     },
     {
       "identifier": "com.soksak.electron.dev",
       "framework": "electron",
       "coreBuild": "dev",
-      "homeSuffix": "-electron-dev",
+      "homeSuffix": "-dev",
       "productName": "soksak-electron-dev",
-      "cli": "sok-electron-dev",
-      "why": "두 프레임워크가 같은 env 에서 동시에 설 수 있다 — 홈이 갈리므로"
+      "cli": "sok-dev",
+      "why": "tauri.dev 와 **같은 홈**이다 — 같은 플러그인, 같은 프로젝트를 본다. 동시에 서는 근거는 홈이 갈려서가 아니라 이름이 갈려서다(제어 소켓이 identifier 별)"
     },
     {
       "identifier": "com.soksak.electron.app",
       "framework": "electron",
       "coreBuild": "release",
-      "homeSuffix": "-electron",
+      "homeSuffix": "",
       "productName": "soksak-electron",
-      "cli": "sok-electron",
-      "why": "릴리즈는 env 세그먼트가 `app` 이고 홈 접미는 프레임워크까지다"
+      "cli": "sok",
+      "why": "릴리즈 홈은 tauri.app 과 같다 — 사용자에게 홈은 하나다"
     },
     {
       "identifier": "com.soksak.electron.verify",
       "framework": "electron",
       "coreBuild": "verify",
-      "homeSuffix": "-electron-verify",
+      "homeSuffix": "-verify",
       "productName": "soksak-electron-verify",
-      "cli": "sok-electron-verify",
-      "why": "목록에 없는 env 도 자동으로 자기 홈을 갖는다는 증거 — 격리 인스턴스가 필요하면 이름만 주면 된다"
+      "cli": "sok-verify",
+      "why": "목록에 없는 env 도 자동으로 자기 홈을 갖는다는 증거 — 격리 인스턴스가 필요하면 env 이름을 주면 된다. 격리의 축은 env 이지 framework 가 아니다"
     }
   ]
 }

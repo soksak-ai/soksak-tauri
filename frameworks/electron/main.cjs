@@ -497,9 +497,12 @@ function wireWindowEvents(label, win) {
 app.setName(IDENTITY.productName);
 
 // 정체성이 다르면 다른 앱이다. Electron 의 단일 인스턴스 잠금은 userData 경로로 갈리므로,
-// 그 경로를 이 정체성의 홈으로 지목하면 dev·debug·release 가 각자 하나씩 선다. 지목하지 않으면
+// 그 경로를 이 정체성의 것으로 지목하면 dev·debug·release 가 각자 하나씩 선다. 지목하지 않으면
 // 셋이 같은 기본 경로를 공유해 서로를 "이미 도는 자신"으로 오인한다.
-app.setPath("userData", path.join(IDENTITY.home, "framework"));
+//
+// 홈이 아니라 홈 **안의 프레임워크 자리**다 — 홈은 프레임워크로 갈리지 않으므로(같은
+// 플러그인·프로젝트를 본다) 이 이름이 주인을 말해야 한다.
+app.setPath("userData", IDENTITY.frameworkDir);
 
 // 하나만 선다 — 거두는 것이 아니라 애초에 겹치지 않는다.
 //

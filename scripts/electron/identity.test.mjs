@@ -36,13 +36,43 @@ describe("정체성 파생 — 픽스처가 오라클", () => {
     expect(productName(c.identifier), "productName").toBe(c.productName);
   });
 
-  /** 홈은 접미에서만 나온다 — 두 프레임워크가 같은 env 에서 동시에 서려면 이것이 갈려야 한다. */
-  it("홈이 프레임워크마다 갈린다", () => {
+  /**
+   * 두 프레임워크는 **같은 홈**을 본다 — 홈에 든 것은 사용자의 것이고, 프레임워크로 가르면
+   * 프레임워크를 바꾸는 순간 플러그인·프로젝트가 통째로 갈 곳을 잃는다.
+   */
+  it("홈은 프레임워크로 갈리지 않는다", () => {
     const home = (id) =>
       frameworkIdentity({ env: { SOKSAK_IDENTIFIER: id }, argv: [], homedir: "/H" }).home;
-    expect(home("com.soksak.tauri.dev")).toBe("/H/.soksak-tauri-dev");
-    expect(home("com.soksak.electron.dev")).toBe("/H/.soksak-electron-dev");
-    expect(home("com.soksak.tauri.dev")).not.toBe(home("com.soksak.electron.dev"));
+    expect(home("com.soksak.tauri.dev")).toBe("/H/.soksak-dev");
+    expect(home("com.soksak.electron.dev")).toBe("/H/.soksak-dev");
+    expect(home("com.soksak.tauri.app")).toBe("/H/.soksak");
+    expect(home("com.soksak.electron.app")).toBe("/H/.soksak");
+  });
+
+  /**
+   * 대신 **이름**이 갈린다. 동시에 서는 근거가 그것이다 — 제어 소켓이 identifier 별이라
+   * 같은 홈 안에서도 두 앱이 서로의 소켓을 밟지 않는다.
+   */
+  it("같은 홈 안에서 제어 소켓과 제품 이름은 갈린다", () => {
+    const of = (id) => frameworkIdentity({ env: { SOKSAK_IDENTIFIER: id }, argv: [], homedir: "/H" });
+    const t = of("com.soksak.tauri.dev");
+    const e = of("com.soksak.electron.dev");
+    expect(t.home).toBe(e.home);
+    expect(t.productName).not.toBe(e.productName);
+    expect(t.identifier).not.toBe(e.identifier);
+  });
+
+  /**
+   * 홈 안에서 프레임워크만 쓰는 자리는 이름이 주인을 말한다. 그냥 `framework` 면 홈을
+   * 공유하는 순간 두 웹뷰 프로필이 한 자리에서 섞이고, 그 섞임은 오류가 아니라
+   * "설정이 자꾸 초기화된다"로 나타난다.
+   */
+  it("프레임워크 전용 자리는 이름에 프레임워크를 싣는다", () => {
+    const of = (id) => frameworkIdentity({ env: { SOKSAK_IDENTIFIER: id }, argv: [], homedir: "/H" });
+    expect(of("com.soksak.electron.dev").frameworkDir).toBe("/H/.soksak-dev/framework-electron");
+    expect(of("com.soksak.tauri.dev").frameworkDir).toBe("/H/.soksak-dev/framework-tauri");
+    // 옛 모양(프레임워크 축 없음)은 축을 지어내지 않는다.
+    expect(of("com.soksak.dev").frameworkDir).toBe("/H/.soksak-dev/framework");
   });
 
   /** 옛 모양도 그대로 답한다 — 규칙 하나가 둘 다 읽는다(전환기에 두 이름이 공존한다). */

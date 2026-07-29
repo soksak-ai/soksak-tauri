@@ -3,7 +3,7 @@
 //
 // 오늘까지 이 프레임워크는 SOKSAK_SOCKET 을 받아야만 백엔드에 닿았고, 없으면 모든 호출이
 // BACKEND_NOT_CONNECTED 였다. 여기서 고정하는 것은 넷이다.
-//   ① 홈은 프레임워크의 것이다 — 프레임워크가 자기 정체성을 알고 그것을 cored에게 **넘긴다**(cored는 파생하지 않는다).
+//   ① 홈은 프레임워크가 **지목한다** — 자기 정체성을 알고 그것을 cored에게 **넘긴다**(cored는 파생하지 않는다).
 //   ② 바이너리 경로는 추측하지 않는다 — 선언이 이기고, 못 찾으면 찾아본 자리를 전부 말한다.
 //   ③ 준비 완료는 stdout 첫 줄이다 — 폴링 없이 블로킹 read, 먼저 죽으면 EOF 로 즉시 드러난다.
 //   ④ 거두는 것은 내 것뿐이다 — 이미 서빙 중인 소켓과 외부에서 준 소켓은 남의 것이다.
@@ -171,11 +171,13 @@ afterEach(async () => {
   rmSync(root, { recursive: true, force: true });
 });
 
-describe("프레임워크의 정체성 — 홈은 프레임워크의 것이다", () => {
-  it("기본은 이 프레임워크 자신의 identity 이고 홈이 거기서 나온다", () => {
+describe("프레임워크의 정체성 — 홈은 사용자의 것이다", () => {
+  // 프레임워크는 자기 정체성을 알고 그것을 cored 에게 넘긴다. 다만 홈은 그 정체성의
+  // **env 축**에서 나온다 — 홈에 든 것(플러그인·프로젝트)은 프레임워크의 것이 아니다.
+  it("기본 identity 는 이 프레임워크의 것이고, 홈은 그 env 에서 나온다", () => {
     const id = frameworkIdentity({ env: {}, argv: [], homedir: "/u/max" });
     expect(id.identifier).toBe("com.soksak.electron.dev");
-    expect(id.home).toBe("/u/max/.soksak-electron-dev");
+    expect(id.home).toBe("/u/max/.soksak-dev");
   });
 
   it("identity 를 지목하면 그 홈으로 간다 — 규칙은 코어와 같다", () => {
@@ -200,7 +202,7 @@ describe("프레임워크의 정체성 — 홈은 프레임워크의 것이다",
 
   it("cored 소켓은 그 홈 안에 산다 — 홈이 곧 정체성 경계다", () => {
     const id = frameworkIdentity({ env: {}, argv: [], homedir: "/u/max" });
-    expect(id.socketPath.startsWith("/u/max/.soksak-electron-dev/")).toBe(true);
+    expect(id.socketPath.startsWith("/u/max/.soksak-dev/")).toBe(true);
     // 앱 소켓(<home>/<identifier>.sock)과 같은 이름을 쓰지 않는다 — 같은 홈의 앱을 밀어낸다.
     expect(id.socketPath.endsWith(`${id.identifier}.sock`)).toBe(false);
   });
@@ -499,7 +501,7 @@ describe("프레임워크 배선 — 소켓을 안 주면 스스로 띄운다", 
   it("framework:invoke 가 프레임워크가 띄운 cored까지 가고 원장에 served:true 로 남는다", async () => {
     osModule.homedir = () => root;
     const framework = loadFramework({ socket: null, binary: fakeHelper("wired", SERVING) });
-    const home = join(root, ".soksak-electron-dev");
+    const home = join(root, ".soksak-dev");
 
     const r = await invoke(framework, "app_environment", {});
     expect(r.ok, `프레임워크가 백엔드에 닿지 못했다: ${JSON.stringify(r)}`).toBe(true);
@@ -544,7 +546,7 @@ describe("프레임워크 배선 — 소켓을 안 주면 스스로 띄운다", 
   it("cored를 못 세우면 모든 호출이 이름을 달고 실패하고 원장에 사유가 남는다", async () => {
     osModule.homedir = () => root;
     const framework = loadFramework({ socket: null, binary: join(root, "no-such-helper") });
-    const home = join(root, ".soksak-electron-dev");
+    const home = join(root, ".soksak-dev");
 
     const r = await invoke(framework, "app_environment", {});
     expect(r.ok, "cored가 없는데 성공을 돌려줬다").toBe(false);

@@ -77,8 +77,10 @@ const PRODUCT = "soksak";
 /**
  * identifier 의 두 축 — `com.soksak.<framework>.<env>`.
  *
- * 축이 둘인 이유: 두 프레임워크가 **같은 env 에서 동시에** 설 수 있어야 한다. 저장소는 단일
- * 쓰기 소유이고 소켓·데몬도 홈당 하나라, 동시에 서려면 홈이 갈려야 하고 홈은 이름에서 나온다.
+ * 두 축은 서로 다른 것을 정한다. **env 가 홈을 정하고, framework 는 이름을 정한다** —
+ * 제어 소켓(`<home>/<identifier>.sock`)·제품 표시 이름·프레임워크 전용 디렉터리.
+ * 두 프레임워크가 같은 env 에서 동시에 서는 근거가 그 이름들이다. 홈까지 가르면 같은
+ * 사용자의 플러그인·프로젝트가 프레임워크 수만큼 갈라진다.
  *
  * 규칙의 정본은 soksak-core/fixtures/identity.json 이고 Rust(identity.rs)와 이 함수가 그
  * 한 파일로 묶인다 — 두 벌이면 같은 identifier 가 프로세스마다 다른 홈을 답한다.
@@ -93,17 +95,39 @@ function identityAxes(identifier) {
   return segs.length >= 4 && fw !== PRODUCT ? { framework: fw, env } : { framework: null, env };
 }
 
-/** 홈 접미 — `-<framework>` 에, release(`app`)가 아닐 때만 `-<env>` 를 더한다. */
+const isReleaseEnv = (env) => env === "app" || env === "release";
+
+/**
+ * 홈 접미 — **env 만 본다.** release(`app`)면 무접미, 그 외는 `-<env>`.
+ *
+ * 프레임워크는 홈을 가르지 않는다. 홈에 든 것은 사용자의 것이고, 프레임워크로 가르면
+ * 프레임워크를 바꾸는 순간 그것이 통째로 갈 곳을 잃는다 — 새 홈은 비어 있고, 그 비어 있음은
+ * 오류로 나타나지 않는다.
+ */
 function homeSuffix(identifier) {
-  const { framework, env } = identityAxes(identifier);
-  const release = env === "app" || env === "release";
-  if (framework) return release ? `-${framework}` : `-${framework}-${env}`;
-  return release ? "" : `-${env}`;
+  const { env } = identityAxes(identifier);
+  return isReleaseEnv(env) ? "" : `-${env}`;
 }
 
-/** 제품 표시 이름 — 홈 접미와 같은 규칙. 안 정하면 프레임워크 이름이 앱 이름이 된다. */
+/**
+ * 제품 표시 이름 — **프레임워크 축을 싣는다**(홈과 다른 규칙이다). 안 정하면 프레임워크
+ * 이름이 앱 이름이 되고, 둘이 동시에 떠 있으면 Dock 에서 갈리지 않는다.
+ */
 function productName(identifier) {
-  return `${PRODUCT}${homeSuffix(identifier)}`;
+  const { framework, env } = identityAxes(identifier);
+  return [PRODUCT, framework, isReleaseEnv(env) ? null : env].filter(Boolean).join("-");
+}
+
+/**
+ * 홈 안에서 이 프레임워크만 쓰는 디렉터리 이름 — 웹뷰 프로필·캐시·단일 인스턴스 잠금이 산다.
+ *
+ * 홈은 프레임워크로 갈리지 않으므로(homeSuffix) **이 이름이 주인을 말해야 한다.** 그냥
+ * `framework` 로 두면 한 홈 안에 주인 모를 폴더가 생기고, 다음 프레임워크가 같은 이름을
+ * 쓰는 순간 두 웹뷰 프로필이 한 자리에서 섞인다.
+ */
+function frameworkDir(identifier) {
+  const { framework } = identityAxes(identifier);
+  return framework ? `framework-${framework}` : "framework";
 }
 
 function frameworkIdentity({ env = process.env, argv = process.argv, homedir = os.homedir() } = {}) {
@@ -116,6 +140,7 @@ function frameworkIdentity({ env = process.env, argv = process.argv, homedir = o
     socketPath: path.join(home, SOCKET_FILE),
     framework: identityAxes(identifier).framework,
     productName: productName(identifier),
+    frameworkDir: path.join(home, frameworkDir(identifier)),
   };
 }
 
@@ -321,6 +346,7 @@ async function ensureCored({
 
 module.exports = {
   frameworkIdentity,
+  frameworkDir,
   identityAxes,
   homeSuffix,
   productName,

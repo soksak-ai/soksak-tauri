@@ -171,7 +171,7 @@ const invoke = (handlers, cmd, args, win) =>
   handlers.get("framework:invoke")({ sender: win ? { __win: win } : {} }, { cmd, args });
 
 function ledger() {
-  const p = join(root, ".soksak-electron-dev", "invoke-demand.jsonl");
+  const p = join(root, ".soksak-dev", "invoke-demand.jsonl");
   if (!existsSync(p)) return [];
   return readFileSync(p, "utf8")
     .split("\n")
