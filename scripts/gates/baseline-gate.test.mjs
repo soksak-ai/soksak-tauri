@@ -191,6 +191,22 @@ describe("baseline-gate", () => {
     expect(runGate().status).toBe(0);
   });
 
+  it("--prune 이 재입법 사유를 보존한다", () => {
+    // 이 봉인 파일의 값은 숫자가 아니라 **왜 그 숫자인가**다. 값을 올린 커밋이 남긴 사유를
+    // prune 이 지우면, 다음 사람은 근거 없는 수만 보고 그 수를 다시 올린다.
+    expect(runGate("--init").status).toBe(0);
+    const p = join(root, "scripts/gates/baseline-unwrap.txt");
+    const REASON = "# ── 2026-07-29 명시 재입법: 스캐너가 눈이 멀어 있었다 ──";
+    writeFileSync(p, readFileSync(p, "utf8").replace(/\n(?=frameworks)/, `\n${REASON}\n`));
+
+    write("frameworks/tauri/src/a.rs", rustWithUnwraps(1));
+    expect(runGate("--prune").status).toBe(0);
+
+    const after = readFileSync(p, "utf8");
+    expect(after).toContain(REASON);
+    expect(after).toContain("frameworks/tauri/src/a.rs 1");
+  });
+
   it("--prune 은 신규 위반을 지우지 못한다", () => {
     expect(runGate("--init").status).toBe(0);
     write("frameworks/tauri/src/b.rs", rustWithUnwraps(1));

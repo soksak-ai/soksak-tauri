@@ -183,11 +183,27 @@ function readBaseline(root, metric) {
   return map;
 }
 
+/** 이미 있는 봉인 파일의 서문(첫 항목 앞의 주석·빈 줄) — 없으면 null.
+ *
+ *  값을 올린 커밋은 여기에 사유를 적는다. 그것이 이 파일의 알맹이다 — 근거 없는 수는
+ *  다음 사람에게 아무 말도 하지 않아 그대로 다시 올라간다. 그래서 축소를 반영하는 쓰기가
+ *  서문을 새로 짓지 않는다. */
+function existingPreamble(path) {
+  if (!existsSync(path)) return null;
+  const lines = readFileSync(path, "utf8").split("\n");
+  const firstEntry = lines.findIndex((l) => l.trim() && !l.trim().startsWith("#"));
+  const preamble = firstEntry < 0 ? lines : lines.slice(0, firstEntry);
+  while (preamble.length > 0 && !preamble[preamble.length - 1].trim()) preamble.pop();
+  return preamble.length > 0 ? preamble : null;
+}
+
 function writeBaseline(root, metric, map) {
   const entries = [...map.entries()].sort(([a], [b]) => (a < b ? -1 : 1));
   const body = entries.map(([f, v]) => `${f} ${v}`).join("\n");
+  const path = baselinePath(root, metric);
+  const preamble = existingPreamble(path) ?? metric.headerLines;
   mkdirSync(join(root, "scripts/gates"), { recursive: true });
-  writeFileSync(baselinePath(root, metric), `${metric.headerLines.join("\n")}\n${body}${body ? "\n" : ""}`);
+  writeFileSync(path, `${preamble.join("\n")}\n${body}${body ? "\n" : ""}`);
 }
 
 // ── 대조 ──────────────────────────────────────────────────────────────────
