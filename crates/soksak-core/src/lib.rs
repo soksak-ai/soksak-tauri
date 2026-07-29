@@ -19,6 +19,7 @@
 
 pub mod activity;
 pub mod activity_sink;
+pub mod ambient_gate;
 pub mod control;
 pub mod fsx;
 pub mod geometry;

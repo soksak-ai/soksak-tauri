@@ -69,6 +69,12 @@ const TEST_FILE = /(\.test\.(ts|tsx|mjs)|_tests?\.rs)$/;
 //
 // 검사를 형제 파일로 분리하는 것이 배치의 법이므로(REPO-LAYOUT 법 4) 선언 모양은 늘어난다.
 // `#[path = "…"]` 같은 속성이 사이에 끼는 것도 같은 선언이다.
+//
+// **같은 판정이 두 벌 있다.** Rust 짝은 `crates/soksak-core/src/ambient_gate.rs` 의
+// `production_lines` 다. 한 벌로 못 만드는 이유는 언어다 — 이 게이트는 node 로 돌고 그 게이트는
+// cargo 로 돈다. 한쪽을 고치면 다른 쪽도 같이 고쳐라. 동기 확인 방법: 두 벌 다 같은 세 경우를
+// 픽스처로 갖는다(선언 한 줄 / 속성이 낀 선언 / 블록 통째). 한쪽에만 있는 경우가 생기면 그때부터
+// 두 게이트의 답이 갈리고, 갈린 쪽은 위반 0건으로 보인다.
 export function stripRustTestModule(content) {
   const lines = content.split("\n");
   const out = lines.slice();

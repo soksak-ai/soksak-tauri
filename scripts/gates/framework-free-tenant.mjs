@@ -90,7 +90,6 @@ export const DECLARED = new Map([
   ["frameworks/tauri/src/data/ring.rs", ["tenant", "백업 링 — 저장소 규칙이라 soksak-store 로 간다"]],
 
   // ── tenant: 프레임워크 무관인데 여기 산다. 코어로 간다 ──────────────────────
-  ["frameworks/tauri/src/ambient_gate.rs", ["tenant", "앰비언트 등재 게이트 — 판정이 순수하다"]],
   ["frameworks/tauri/src/data/backup.rs", ["tenant", "저장소 백업 — 백엔드 일원화에서 코어로"]],
   ["frameworks/tauri/src/data/mod.rs", ["tenant", "저장소 개방·스키마 — store_open/store_lock 의 짝을 확인해야 한다"]],
 ]);
