@@ -299,7 +299,7 @@ pub fn run() {
                 let expect = match app.state::<data::DbState>().conn.lock() {
                     Ok(g) => g
                         .as_ref()
-                        .map(|c| data::crypto::has_any_keys(c).unwrap_or(false))
+                        .map(|c| soksak_store::doc::has_any_keys(c).unwrap_or(false))
                         .unwrap_or(false),
                     Err(_) => false,
                 };

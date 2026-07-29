@@ -230,3 +230,20 @@ pub fn register_active_key(
     .map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())
 }
+
+/// retired 키 폐기 — 그 키로 봉인된 enc=1 레코드가 0 일 때만(아니면 Err, 영구손실 차단). vault 의 S 삭제는
+/// 호출자(commands)가 이 성공 직후 동일 흐름에서 수행한다.
+pub fn dispose_retired_key(conn: &Connection, scope: &str, key_id: &str) -> Result<(), String> {
+    let remaining = count_sealed_with_key(conn, scope, key_id)?;
+    if remaining != 0 {
+        return Err(format!(
+            "키 {key_id} 로 봉인된 레코드 {remaining}개 잔존 — 폐기 거부(R18)"
+        ));
+    }
+    conn.execute(
+        "DELETE FROM encryption_keys WHERE scope=?1 AND keyId=?2 AND status='retired'",
+        (scope, key_id),
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}

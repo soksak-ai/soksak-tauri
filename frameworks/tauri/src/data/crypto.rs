@@ -15,21 +15,11 @@ use base64::Engine;
 use rusqlite::Connection;
 use serde_json::{json, Value};
 
-// 문서 봉인 규칙은 저장 크레이트가 소유한다(soksak-store::doc) — 봉인 형식이 두 벌이면
-// 한쪽이 쓴 레코드를 다른 쪽이 못 연다. 여기 남는 것은 볼트를 아는 일뿐이다.
-pub use soksak_store::doc::{canonical_aad, new_key_id, open_doc, seal_doc, ALGO_V1, ENC_FIELD};
-
-// 키 표(SQL)도 저장 크레이트의 것이다 — 질의문이 두 벌이면 같은 표를 두 프로세스가 다르게 읽는다.
-pub use soksak_store::doc::{
-    active_key, active_recovery, count_sealed_with_key, has_any_keys, init_keys_table,
-    register_active_key, set_recovery, ActiveKey,
-};
-
 // 복구 코드 발급은 **볼트의 일**이라 여기 남는다 — 저장 크레이트는 "이 바이트를 이 열쇠로
 // 잠근다"까지이고, 사람에게 줄 코드를 만드는 것은 그 위층이다.
 // enable·rotate·change-recovery 공유 — 지정 키의 S 를 새 복구코드로 감싸 blob 을 저장하고 코드를 돌려준다.
 // 키를 active 로 만든 모든 경로가 호출해야 한다: 회전이 이걸 빠뜨리면 새 active 키에 recovery 가 NULL 이라
-// active_recovery=None → 기계·키체인 분실 시 봉인 데이터가 영구 복호불가(무손실 위반). 코드는 앱 미저장.
+// soksak_store::doc::active_recovery=None → 기계·키체인 분실 시 봉인 데이터가 영구 복호불가(무손실 위반). 코드는 앱 미저장.
 pub fn issue_recovery(
     conn: &Connection,
     scope: &str,
@@ -54,29 +44,12 @@ pub fn verify_active_key(
     scope: &str,
     secret: &[u8; 32],
 ) -> Result<bool, String> {
-    match active_key(conn, scope)? {
+    match soksak_store::doc::active_key(conn, scope)? {
         Some(ak) => Ok(crate::secrets::public_from_secret(secret) == ak.public_key),
         None => Ok(true),
     }
 }
 
-
-// retired 키 폐기 — 그 키로 봉인된 enc=1 레코드가 0 일 때만(아니면 Err, 영구손실 차단). vault 의 S 삭제는
-// 호출자(commands)가 이 성공 직후 동일 흐름에서 수행한다.
-pub fn dispose_retired_key(conn: &Connection, scope: &str, key_id: &str) -> Result<(), String> {
-    let remaining = count_sealed_with_key(conn, scope, key_id)?;
-    if remaining != 0 {
-        return Err(format!(
-            "키 {key_id} 로 봉인된 레코드 {remaining}개 잔존 — 폐기 거부(R18)"
-        ));
-    }
-    conn.execute(
-        "DELETE FROM encryption_keys WHERE scope=?1 AND keyId=?2 AND status='retired'",
-        (scope, key_id),
-    )
-    .map_err(|e| e.to_string())?;
-    Ok(())
-}
 
 #[cfg(test)]
 mod tests {
@@ -104,12 +77,12 @@ mod tests {
         vec!["viewId".to_string(), "startTs".to_string()]
     }
 
-    // (c-a, blocker① 단위) seal_doc 결과: 인덱스 필드 + id 는 평문 top-level, 민감 필드는 부재.
+    // (c-a, blocker① 단위) soksak_store::doc::seal_doc 결과: 인덱스 필드 + id 는 평문 top-level, 민감 필드는 부재.
     #[test]
     fn sealed_keeps_index_plaintext_hides_payload() {
         let (_s, p) = gen_asym_keypair();
-        let aad = canonical_aad("terminal", "command_blocks", "proj-a", "rec-1", "key-1");
-        let sealed = seal_doc(&sample(), &idx(), &p, "key-1", &aad).unwrap();
+        let aad = soksak_store::doc::canonical_aad("terminal", "command_blocks", "proj-a", "rec-1", "key-1");
+        let sealed = soksak_store::doc::seal_doc(&sample(), &idx(), &p, "key-1", &aad).unwrap();
         let o = sealed.as_object().unwrap();
         // 평문 유지(json_extract query 가 타는 필드).
         assert_eq!(o.get("id").unwrap(), "rec-1");
@@ -129,9 +102,9 @@ mod tests {
     #[test]
     fn seal_open_roundtrip_lossless() {
         let (s, p) = gen_asym_keypair();
-        let aad = canonical_aad("terminal", "command_blocks", "proj-a", "rec-1", "key-1");
-        let sealed = seal_doc(&sample(), &idx(), &p, "key-1", &aad).unwrap();
-        let opened = open_doc(&sealed, &s, &aad).unwrap();
+        let aad = soksak_store::doc::canonical_aad("terminal", "command_blocks", "proj-a", "rec-1", "key-1");
+        let sealed = soksak_store::doc::seal_doc(&sample(), &idx(), &p, "key-1", &aad).unwrap();
+        let opened = soksak_store::doc::open_doc(&sealed, &s, &aad).unwrap();
         assert_eq!(
             opened,
             sample(),
@@ -143,47 +116,47 @@ mod tests {
     #[test]
     fn cross_scope_move_rejected() {
         let (s, p) = gen_asym_keypair();
-        let aad_a = canonical_aad("terminal", "command_blocks", "proj-a", "rec-1", "key-1");
-        let aad_b = canonical_aad("terminal", "command_blocks", "proj-b", "rec-1", "key-1");
-        let sealed = seal_doc(&sample(), &idx(), &p, "key-1", &aad_a).unwrap();
+        let aad_a = soksak_store::doc::canonical_aad("terminal", "command_blocks", "proj-a", "rec-1", "key-1");
+        let aad_b = soksak_store::doc::canonical_aad("terminal", "command_blocks", "proj-b", "rec-1", "key-1");
+        let sealed = soksak_store::doc::seal_doc(&sample(), &idx(), &p, "key-1", &aad_a).unwrap();
         assert!(
-            open_doc(&sealed, &s, &aad_b).is_err(),
+            soksak_store::doc::open_doc(&sealed, &s, &aad_b).is_err(),
             "타 scope AAD 로 개봉 거부"
         );
-        assert!(open_doc(&sealed, &s, &aad_a).is_ok(), "정합 AAD 는 성공");
+        assert!(soksak_store::doc::open_doc(&sealed, &s, &aad_a).is_ok(), "정합 AAD 는 성공");
     }
 
     // (c-d) 봉투가 keyId 를 자기기술(__enc.k) + 예약 필드 충돌 거부.
     #[test]
     fn key_id_and_reserved_field() {
         let (_s, p) = gen_asym_keypair();
-        let aad = canonical_aad("terminal", "command_blocks", "proj-a", "rec-1", "key-9");
-        let sealed = seal_doc(&sample(), &idx(), &p, "key-9", &aad).unwrap();
+        let aad = soksak_store::doc::canonical_aad("terminal", "command_blocks", "proj-a", "rec-1", "key-9");
+        let sealed = soksak_store::doc::seal_doc(&sample(), &idx(), &p, "key-9", &aad).unwrap();
         assert_eq!(
-            sealed.get(ENC_FIELD).unwrap().get("k").unwrap(),
+            sealed.get(soksak_store::doc::ENC_FIELD).unwrap().get("k").unwrap(),
             "key-9",
             "봉투가 keyId 자기기술"
         );
         // doc 가 이미 __enc 를 담으면 거부(봉투 자리 충돌).
         let bad = json!({ "id": "x", "__enc": 1 });
-        assert!(seal_doc(&bad, &[], &p, "key-9", &aad).is_err());
+        assert!(soksak_store::doc::seal_doc(&bad, &[], &p, "key-9", &aad).is_err());
     }
 
-    // (k-a, fail-closed) active_key — 키 없으면 None, 등록 후 Some(P 라운드트립).
+    // (k-a, fail-closed) soksak_store::doc::active_key — 키 없으면 None, 등록 후 Some(P 라운드트립).
     #[test]
     fn active_key_trigger() {
         let c = mem();
         assert!(
-            active_key(&c, "proj-a").unwrap().is_none(),
+            soksak_store::doc::active_key(&c, "proj-a").unwrap().is_none(),
             "키 없으면 트리거 0"
         );
         let (_s, p) = gen_asym_keypair();
-        register_active_key(&c, "proj-a", "key-1", &p, 100).unwrap();
-        let ak = active_key(&c, "proj-a").unwrap().unwrap();
+        soksak_store::doc::register_active_key(&c, "proj-a", "key-1", &p, 100).unwrap();
+        let ak = soksak_store::doc::active_key(&c, "proj-a").unwrap().unwrap();
         assert_eq!(ak.key_id, "key-1");
         assert_eq!(ak.public_key, p, "저장 P 가 b64 라운드트립으로 복원");
         // 다른 scope 는 독립(트리거 0).
-        assert!(active_key(&c, "proj-b").unwrap().is_none());
+        assert!(soksak_store::doc::active_key(&c, "proj-b").unwrap().is_none());
     }
 
     // (k-b) 회전 — 새 active 등록 시 옛 active→retired, scope 당 active 1개 불변.
@@ -192,9 +165,9 @@ mod tests {
         let c = mem();
         let (_s1, p1) = gen_asym_keypair();
         let (_s2, p2) = gen_asym_keypair();
-        register_active_key(&c, "proj-a", "key-1", &p1, 100).unwrap();
-        register_active_key(&c, "proj-a", "key-2", &p2, 200).unwrap();
-        let ak = active_key(&c, "proj-a").unwrap().unwrap();
+        soksak_store::doc::register_active_key(&c, "proj-a", "key-1", &p1, 100).unwrap();
+        soksak_store::doc::register_active_key(&c, "proj-a", "key-2", &p2, 200).unwrap();
+        let ak = soksak_store::doc::active_key(&c, "proj-a").unwrap().unwrap();
         assert_eq!(ak.key_id, "key-2", "최신 키가 active");
         assert_eq!(ak.public_key, p2);
         // active 는 정확히 1개.
@@ -216,14 +189,14 @@ mod tests {
         };
         let c = mem();
         let (s, p) = gen_asym_keypair();
-        register_active_key(&c, "proj-a", "key-1", &p, 100).unwrap();
+        soksak_store::doc::register_active_key(&c, "proj-a", "key-1", &p, 100).unwrap();
         // enable 흐름 모의 — recovery code 로 S wrap → blob 저장.
         let code = gen_recovery_code();
         let (salt, sealed) = recovery_wrap(&code, &s).unwrap();
         let blob_json = serde_json::to_string(&RecoveryBlob { salt, sealed }).unwrap();
-        set_recovery(&c, "proj-a", "key-1", &blob_json).unwrap();
-        // active_recovery 로 조회.
-        let got = active_recovery(&c, "proj-a").unwrap().unwrap();
+        soksak_store::doc::set_recovery(&c, "proj-a", "key-1", &blob_json).unwrap();
+        // soksak_store::doc::active_recovery 로 조회.
+        let got = soksak_store::doc::active_recovery(&c, "proj-a").unwrap().unwrap();
         let blob: RecoveryBlob = serde_json::from_str(&got).unwrap();
         // 코드로 S 복구 → 등록 P 와 일치(무결성).
         let recovered = recovery_unwrap(&code, &blob.salt, &blob.sealed).unwrap();
@@ -232,10 +205,10 @@ mod tests {
         rs.copy_from_slice(&recovered);
         assert_eq!(public_from_secret(&rs), p, "복구된 S 가 등록 P 와 일치");
         // recovery 없는 scope → None.
-        assert!(active_recovery(&c, "proj-z").unwrap().is_none());
+        assert!(soksak_store::doc::active_recovery(&c, "proj-z").unwrap().is_none());
     }
 
-    // (k-f, R24) 회전-복구 무손실 — 새 키를 active 로 올린 뒤 issue_recovery 를 부르지 않으면 active_recovery
+    // (k-f, R24) 회전-복구 무손실 — 새 키를 active 로 올린 뒤 issue_recovery 를 부르지 않으면 soksak_store::doc::active_recovery
     // 가 None(옛 키 blob 은 retired 라 안 잡힘) → 기계 분실 시 영구 손실. issue_recovery 후엔 새 코드로 새 S
     // 복구가 가능해야 한다. 회전이 recovery 재발급을 빠뜨리는 회귀를 이 테스트가 잡는다.
     #[test]
@@ -243,20 +216,20 @@ mod tests {
         use crate::secrets::{public_from_secret, recovery_unwrap, RecoveryBlob};
         let c = mem();
         let (s1, p1) = gen_asym_keypair();
-        register_active_key(&c, "proj-a", "key-1", &p1, 100).unwrap();
+        soksak_store::doc::register_active_key(&c, "proj-a", "key-1", &p1, 100).unwrap();
         let code1 = issue_recovery(&c, "proj-a", "key-1", &s1).unwrap();
         // 회전 — 새 키를 active 로(옛 키 retired). 이 시점엔 새 키 recovery 미발급.
         let (s2, p2) = gen_asym_keypair();
-        register_active_key(&c, "proj-a", "key-2", &p2, 200).unwrap();
+        soksak_store::doc::register_active_key(&c, "proj-a", "key-2", &p2, 200).unwrap();
         // RED 조건: recovery 재발급 전엔 active(key-2) 의 blob 이 없어 복구 경로가 죽는다.
         assert!(
-            active_recovery(&c, "proj-a").unwrap().is_none(),
+            soksak_store::doc::active_recovery(&c, "proj-a").unwrap().is_none(),
             "재발급 전엔 새 active 키에 recovery blob 이 없다(손실 위험)"
         );
         // GREEN: 회전 경로가 반드시 부르는 issue_recovery — 새 코드로 새 S 복구.
         let code2 = issue_recovery(&c, "proj-a", "key-2", &s2).unwrap();
         assert_ne!(code1, code2, "회전마다 새 복구코드");
-        let got = active_recovery(&c, "proj-a").unwrap().unwrap();
+        let got = soksak_store::doc::active_recovery(&c, "proj-a").unwrap().unwrap();
         let blob: RecoveryBlob = serde_json::from_str(&got).unwrap();
         let recovered = recovery_unwrap(&code2, &blob.salt, &blob.sealed).unwrap();
         assert_eq!(recovered, s2.to_vec(), "회전 후 새 코드로 새 active S 복구");
@@ -275,7 +248,7 @@ mod tests {
     fn key_swap_detected() {
         let c = mem();
         let (s, p) = gen_asym_keypair();
-        register_active_key(&c, "proj-a", "key-1", &p, 100).unwrap();
+        soksak_store::doc::register_active_key(&c, "proj-a", "key-1", &p, 100).unwrap();
         assert!(
             verify_active_key(&c, "proj-a", &s).unwrap(),
             "정상 키페어는 검증 통과"
@@ -301,7 +274,7 @@ mod tests {
         let c = mem();
         let (_s1, p1) = gen_asym_keypair();
         let (_s2, p2) = gen_asym_keypair();
-        register_active_key(&c, "proj-a", "key-1", &p1, 100).unwrap();
+        soksak_store::doc::register_active_key(&c, "proj-a", "key-1", &p1, 100).unwrap();
         // key-1 로 봉인된 레코드 1개 직접 주입.
         c.execute(
             "INSERT INTO records(ns,coll,scope,id,doc,created,updated,enc,keyId) \
@@ -309,18 +282,18 @@ mod tests {
             [],
         )
         .unwrap();
-        register_active_key(&c, "proj-a", "key-2", &p2, 200).unwrap(); // key-1 retired
-        assert_eq!(count_sealed_with_key(&c, "proj-a", "key-1").unwrap(), 1);
+        soksak_store::doc::register_active_key(&c, "proj-a", "key-2", &p2, 200).unwrap(); // key-1 retired
+        assert_eq!(soksak_store::doc::count_sealed_with_key(&c, "proj-a", "key-1").unwrap(), 1);
         assert!(
-            dispose_retired_key(&c, "proj-a", "key-1").is_err(),
+            soksak_store::doc::dispose_retired_key(&c, "proj-a", "key-1").is_err(),
             "잔존 레코드 → 폐기 거부"
         );
         // 레코드를 key-2 로 재봉인(변환)했다고 가정 → key-1 잔존 0.
         c.execute("UPDATE records SET keyId='key-2' WHERE id='r1'", [])
             .unwrap();
-        assert_eq!(count_sealed_with_key(&c, "proj-a", "key-1").unwrap(), 0);
+        assert_eq!(soksak_store::doc::count_sealed_with_key(&c, "proj-a", "key-1").unwrap(), 0);
         assert!(
-            dispose_retired_key(&c, "proj-a", "key-1").is_ok(),
+            soksak_store::doc::dispose_retired_key(&c, "proj-a", "key-1").is_ok(),
             "잔존 0 → 폐기 성공"
         );
         // 폐기 후 메타에서 사라짐.

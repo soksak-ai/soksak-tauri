@@ -303,7 +303,7 @@ mod tests {
                 .unwrap();
             // 암호화 활성 후 변환 — 레코드 봉인, FTS 엔트리 DELETE(tombstone).
             let (_s, p) = crate::secrets::gen_asym_keypair();
-            super::crypto::register_active_key(&conn, "proj-a", "key-1", &p, 50).unwrap();
+            soksak_store::doc::register_active_key(&conn, "proj-a", "key-1", &p, 50).unwrap();
             assert_eq!(
                 store::convert_pending(&conn, "t", "notes", "proj-a", 100).unwrap(),
                 1,

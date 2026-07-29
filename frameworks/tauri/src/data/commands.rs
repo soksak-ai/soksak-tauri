@@ -328,19 +328,19 @@ pub fn data_encrypt_enable(
         return Err("scope 필요".to_string());
     }
     // 이미 active key 있으면 재활성 거부(중복 트리거·키 혼선 방지 — 회전은 별도 커맨드).
-    if with_conn(&state, |c| crypto::active_key(c, &scope))?.is_some() {
+    if with_conn(&state, |c| soksak_store::doc::active_key(c, &scope))?.is_some() {
         return Err(format!(
             "scope {scope} 는 이미 암호화 활성(회전은 rotate 커맨드)"
         ));
     }
     let (sk, pk) = crate::secrets::gen_asym_keypair();
-    let key_id = crypto::new_key_id();
+    let key_id = soksak_store::doc::new_key_id();
     // (1) S 를 vault 에 먼저 — 잠김이면 여기서 Err(P 미등록, 전손 0).
     secrets.put_data_key(&key_id, &sk)?;
     // (2) P 를 테이블에 등록(봉인 트리거 ON). 실패해도 vault 의 S 는 orphan(무해 — 트리거 없음).
     let created = super::now_millis();
     with_conn(&state, |c| {
-        crypto::register_active_key(c, &scope, &key_id, &pk, created)
+        soksak_store::doc::register_active_key(c, &scope, &key_id, &pk, created)
     })?;
     // (3) [R24] recovery code 발급 + S 를 코드로 2중 wrap → blob 저장(평문 DB 안전, 코드로만 열림).
     let recovery_code = with_conn(&state, |c| crypto::issue_recovery(c, &scope, &key_id, &sk))?;
@@ -366,9 +366,9 @@ pub fn data_encrypt_recover(
     // is_unlocked 게이트를 두지 않는다 — 복구 시나리오(키체인 분실/새 기계/폴더 sync)는 정의상 vault 가
     // 안 열리는 상태다. 여기서 게이트하면 정확한 복구코드로도 영영 못 여는 deadlock(적대검증 확인). 코드
     // 검증은 vault 없이 선행하고, 저장은 recover_into_vault 가 이 기계 KEK 로 vault 를 확보해 처리한다.
-    let ak = with_conn(&state, |c| crypto::active_key(c, &scope))?
+    let ak = with_conn(&state, |c| soksak_store::doc::active_key(c, &scope))?
         .ok_or("암호화 비활성 scope — 복구 대상 아님")?;
-    let blob_json = with_conn(&state, |c| crypto::active_recovery(c, &scope))?
+    let blob_json = with_conn(&state, |c| soksak_store::doc::active_recovery(c, &scope))?
         .ok_or("recovery blob 없음 — 이 키는 복구 코드 미발급")?;
     let blob: crate::secrets::RecoveryBlob =
         serde_json::from_str(&blob_json).map_err(|e| e.to_string())?;
@@ -414,7 +414,7 @@ pub fn data_encrypt_rotate(
             "KEK 취득 불가(no secret service) — 회전은 device 키체인 접근 필요(old 키 개봉)".to_string(),
         );
     }
-    let old = with_conn(&state, |c| crypto::active_key(c, &scope))?
+    let old = with_conn(&state, |c| soksak_store::doc::active_key(c, &scope))?
         .ok_or("암호화 비활성 scope — 회전 대상 아님")?;
     let old_s = secrets
         .get_data_key(&old.key_id)?
@@ -425,11 +425,11 @@ pub fn data_encrypt_rotate(
     }
     // 새 키페어 → vault wrap → 등록(old retired, new active). 이후 새 put 은 new 로 봉인.
     let (new_s, new_p) = crate::secrets::gen_asym_keypair();
-    let new_key_id = crypto::new_key_id();
+    let new_key_id = soksak_store::doc::new_key_id();
     secrets.put_data_key(&new_key_id, &new_s)?;
     let created = super::now_millis();
     with_conn(&state, |c| {
-        crypto::register_active_key(c, &scope, &new_key_id, &new_p, created)
+        soksak_store::doc::register_active_key(c, &scope, &new_key_id, &new_p, created)
     })?;
     // 새 active 키의 복구 blob 재발급 — 빠뜨리면 회전 후 active_recovery=None 이라 기계 분실 시 봉인 데이터
     // 영구 손실. re-key 루프 전에 발급해 new_s 가 살아있는 동안 처리. 새 코드 1회 반환(앱 미저장).
@@ -448,12 +448,12 @@ pub fn data_encrypt_rotate(
     }
     // 잔여 0(전 ns/coll) 확인 후에만 old 폐기(테이블 + vault). 잔여 있으면 다음 호출이 이어받음.
     let remaining = with_conn(&state, |c| {
-        crypto::count_sealed_with_key(c, &scope, &old.key_id)
+        soksak_store::doc::count_sealed_with_key(c, &scope, &old.key_id)
     })?;
     let old_disposed = remaining == 0;
     if old_disposed {
         with_conn(&state, |c| {
-            crypto::dispose_retired_key(c, &scope, &old.key_id)
+            soksak_store::doc::dispose_retired_key(c, &scope, &old.key_id)
         })?;
         secrets.delete_data_key(&old.key_id)?;
     }
@@ -484,7 +484,7 @@ pub fn data_encrypt_change_recovery(
                 .to_string(),
         );
     }
-    let ak = with_conn(&state, |c| crypto::active_key(c, &scope))?
+    let ak = with_conn(&state, |c| soksak_store::doc::active_key(c, &scope))?
         .ok_or("암호화 비활성 scope — 복구코드 변경 대상 아님")?;
     let s = secrets
         .get_data_key(&ak.key_id)?
@@ -538,7 +538,7 @@ pub fn data_encrypt_status(
     state: State<'_, DbState>,
     secrets: State<'_, SecretsState>,
 ) -> Result<EncryptionStatus, String> {
-    let ak = with_conn(&state, |c| crypto::active_key(c, &scope))?;
+    let ak = with_conn(&state, |c| soksak_store::doc::active_key(c, &scope))?;
     let unlocked = secrets.is_unlocked();
     // unlock 상태에서만 S 기반 판정. tampered=키스왑(blocker④), key_missing=S 부재(R23 footgun: vault
     // 리셋/삭제로 P 는 남고 S 가 사라진 상태 — 그 scope 의 봉인 레코드는 영구 복호 불가).
@@ -553,7 +553,7 @@ pub fn data_encrypt_status(
     Ok(EncryptionStatus {
         enabled: ak.is_some(),
         key_id: ak.as_ref().map(|k| k.key_id.clone()),
-        algo: ak.as_ref().map(|_| crypto::ALGO_V1.to_string()),
+        algo: ak.as_ref().map(|_| soksak_store::doc::ALGO_V1.to_string()),
         unlocked,
         tampered,
         key_missing,
@@ -738,7 +738,7 @@ mod tests {
         secrets.set_kek_source(Box::new(FailingKekSource));
 
         let (sk, _pk) = crate::secrets::gen_asym_keypair();
-        let key_id = crypto::new_key_id();
+        let key_id = soksak_store::doc::new_key_id();
         // (1) S 를 vault 에 먼저 — KEK 취득 불가 → Err(여기서 중단, register 미도달).
         assert!(
             secrets.put_data_key(&key_id, &sk).is_err(),
@@ -746,7 +746,7 @@ mod tests {
         );
         // (2) 안전핀 — 위가 Err 라 register_active_key 미도달 → active P 없음(봉인 트리거 0).
         assert!(
-            crypto::active_key(&conn, "proj-a").unwrap().is_none(),
+            soksak_store::doc::active_key(&conn, "proj-a").unwrap().is_none(),
             "P 미등록 — orphan 봉인 트리거 0"
         );
         let _ = std::fs::remove_dir_all(&dir);

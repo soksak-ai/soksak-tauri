@@ -15,6 +15,11 @@
 // 그 파일을 무관으로 오인한다 — 그때는 재수출을 없애라. 이름을 감춘 결합은 이 게이트만 속이는
 // 것이 아니라 읽는 사람도 속인다.
 //
+// ── 접촉 0 만 보면 과소보고한다 ────────────────────────────────────────────────
+// 600줄 중 `tauri::` 가 **한 줄**인 파일은 프레임워크 파일이 아니다. 얇게 묶인 세입자다.
+// 접촉의 유무만 보면 그런 파일이 통째로 시야 밖으로 나간다(실측: mediaproxy 613줄/1접촉,
+// titlebar 307/3, http 170/3, os_key 129/1). 그래서 **밀도**로 본다.
+//
 // ── 무엇을 막는가 ───────────────────────────────────────────────────────────────
 // 금지가 아니라 **등재**다. 지금 세든 것은 장부에 있고, 장부에 없는 것이 새로 생기면 위반이다.
 // 그리고 장부에 있는데 트리에 없으면 그것도 위반이다 — 옮기고 장부를 안 지우면 건수가 거짓말이
@@ -70,6 +75,20 @@ export const DECLARED = new Map([
   ["frameworks/tauri/src/data/process_probe.rs", ["framework", "이 프로세스의 메모리 형편 — 저장소 규칙이 인자로 받는다"]],
   ["frameworks/tauri/src/cored_ledger.rs", ["framework", "이식 장부 — 표가 둘인 동안만 있다(FRAMEWORK-PORT '남은 중복')"]],
 
+  ["frameworks/electron/main.cjs", ["framework", "이 프레임워크의 진입점"]],
+  ["frameworks/electron/preload.cjs", ["framework", "렌더러 경계에 다리를 놓는 자리"]],
+  ["frameworks/tauri/src/activity.rs", ["framework", "원장 규칙은 코어가 소유하고, 여기 남은 것은 창으로의 부채질"]],
+  ["frameworks/tauri/src/command_dispatch.rs", ["framework", "계약의 이 프레임워크 구현(impl … for tauri::AppHandle)"]],
+  ["frameworks/tauri/src/dockmenu.rs", ["framework", "Dock 메뉴 — OS 표면이고 앱 핸들이 몸이다"]],
+  ["frameworks/tauri/src/home.rs", ["framework", "이 프로세스의 앰비언트 홈 결속(규칙은 코어)"]],
+  ["frameworks/tauri/src/i18n.rs", ["framework", "문장은 자원이지만 내보내는 자리가 OS 알림·창이다"]],
+  ["frameworks/tauri/src/titlebar.rs", ["framework", "창 크롬 — 몸이 tauri::Window 다"]],
+
+  // ── tenant: 얇게 묶였을 뿐 몸은 무관하다 ────────────────────────────────────
+  ["frameworks/tauri/src/mediaproxy.rs", ["tenant", "루프백 HTTP 프록시 566줄에 접촉 1 — 자원이지 프레임워크가 아니다"]],
+  ["frameworks/tauri/src/http.rs", ["tenant", "HTTP capability — 접촉은 State 와 명령 래퍼뿐"]],
+  ["frameworks/tauri/src/data/ring.rs", ["tenant", "백업 링 — 저장소 규칙이라 soksak-store 로 간다"]],
+
   // ── tenant: 프레임워크 무관인데 여기 산다. 코어로 간다 ──────────────────────
   ["frameworks/tauri/src/ambient_gate.rs", ["tenant", "앰비언트 등재 게이트 — 판정이 순수하다"]],
   ["frameworks/tauri/src/data/backup.rs", ["tenant", "저장소 백업 — 백엔드 일원화에서 코어로"]],
@@ -95,9 +114,35 @@ function walk(dir, out = []) {
 
 /** 이 파일이 자기 프레임워크를 이름으로 부르는가. */
 export function touchesFramework(src, framework) {
+  return contactCount(src, framework) > 0;
+}
+
+/** 접촉 줄 수 — 모르는 프레임워크는 판정하지 않는다(무관으로 오인하지 않는다). */
+export function contactCount(src, framework) {
   const sigs = CONTACT[framework];
-  if (!sigs) return true; // 모르는 프레임워크는 판정하지 않는다(무관으로 오인하지 않는다)
-  return sigs.some((r) => r.test(src));
+  if (!sigs) return Number.MAX_SAFE_INTEGER;
+  return src.split("\n").filter((l) => sigs.some((r) => r.test(l))).length;
+}
+
+/** 검사를 뺀 실코드 줄 수 — 검사가 큰 파일이 밀도를 왜곡한다. */
+export function codeLines(src) {
+  const lines = src.split("\n");
+  const i = lines.findIndex((l) => /^#\[cfg\(test\)\]/.test(l));
+  return (i === -1 ? lines : lines.slice(0, i)).filter((l) => l.trim() !== "").length;
+}
+
+/**
+ * 얇게 묶였는가 — 실코드가 충분히 큰데 접촉이 손에 꼽는다.
+ *
+ * 임계는 실측에서 왔다. 이 저장소의 진짜 프레임워크 파일은 접촉이 수십 건이고(webview 91,
+ * commands 74, pty 38), 얇게 묶인 것은 한 자리다. 그 사이가 비어 있어 임계를 어디 두든
+ * 같은 편이 갈린다 — 그래서 낮게 잡아 놓치지 않는 쪽을 고른다.
+ */
+export const THIN_MAX_CONTACT = 3;
+export const THIN_MIN_CODE = 60;
+export function isThinlyBound(src, framework) {
+  const n = contactCount(src, framework);
+  return n > 0 && n <= THIN_MAX_CONTACT && codeLines(src) >= THIN_MIN_CODE;
 }
 
 export function verify(root = REPO_ROOT, ledger = DECLARED) {
@@ -123,7 +168,9 @@ export function verify(root = REPO_ROOT, ledger = DECLARED) {
       if (/(^|\/)[^/]*_tests?\.(rs|mjs|ts|tsx)$|\.test\.(mjs|ts|tsx|js)$/.test(rel)) continue;
       scanned++;
       const src = readFileSync(abs, "utf8");
-      if (touchesFramework(src, fw)) continue;
+      // 접촉 0 이거나 **얇게** 묶였으면 갈래를 밝혀야 한다. 접촉의 유무만 보면 600줄 중
+      // 한 줄이 프레임워크인 파일이 통째로 시야 밖으로 나간다.
+      if (touchesFramework(src, fw) && !isThinlyBound(src, fw)) continue;
       found.add(rel);
       if (!ledger.has(rel)) {
         violations.push({

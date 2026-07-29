@@ -9,7 +9,15 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { verify, touchesFramework, DECLARED, REPO_ROOT } from "./framework-free-tenant.mjs";
+import {
+  verify,
+  touchesFramework,
+  isThinlyBound,
+  contactCount,
+  codeLines,
+  DECLARED,
+  REPO_ROOT,
+} from "./framework-free-tenant.mjs";
 
 let root;
 beforeEach(() => {
@@ -78,6 +86,40 @@ describe("등재를 강제한다", () => {
     place("tauri", "src/bound.rs", "#[tauri::command]\nfn f() {}\n");
     place("tauri", "src/bound_tests.rs", "fn t() { assert!(true); }\n");
     expect(verify(root, new Map()).violations).toEqual([]);
+  });
+});
+
+
+describe("얇은 결속도 등재를 요구한다", () => {
+  /** 600줄 중 한 줄이 프레임워크인 파일은 프레임워크 파일이 아니다. */
+  it("실코드가 크고 접촉이 손에 꼽으면 얇은 결속이다", () => {
+    const body = Array.from({ length: 80 }, (_, i) => `fn f${i}() {}`).join("\n");
+    expect(isThinlyBound(`${body}\nfn g() { tauri::x(); }`, "tauri")).toBe(true);
+  });
+
+  it("접촉이 잦으면 얇지 않다", () => {
+    const many = Array.from({ length: 80 }, (_, i) => `fn f${i}() { tauri::x(); }`).join("\n");
+    expect(isThinlyBound(many, "tauri")).toBe(false);
+  });
+
+  it("작은 파일은 얇은 결속으로 세지 않는다 — 한 줄짜리 결속은 그것이 몸이다", () => {
+    expect(isThinlyBound("fn f() { tauri::x(); }", "tauri")).toBe(false);
+  });
+
+  /** 검사가 큰 파일이 밀도를 왜곡한다 — 실코드만 센다. */
+  it("검사 줄은 실코드로 세지 않는다", () => {
+    const src = ["fn f() {}", "#[cfg(test)]", "mod t {", ...Array(200).fill("  let x = 1;"), "}"].join("\n");
+    expect(codeLines(src)).toBeLessThan(5);
+  });
+
+  it("접촉을 줄 수로 센다", () => {
+    expect(contactCount("a\ntauri::x();\nb\ntauri::y();", "tauri")).toBe(2);
+  });
+
+  it("얇게 묶인 파일이 등재 없으면 잡는다", () => {
+    const body = Array.from({ length: 80 }, (_, i) => `fn f${i}() {}`).join("\n");
+    const rel = place("tauri", "src/thin.rs", `${body}\nfn g() { tauri::x(); }\n`);
+    expect(verify(root, new Map()).violations.map((v) => v.file)).toContain(rel);
   });
 });
 
