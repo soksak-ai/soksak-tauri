@@ -179,6 +179,27 @@ fn the_control_socket_sits_in_the_home_named_by_the_identifier() {
 }
 
 
+/// cored 소켓은 제어 소켓과 **다른 자리**이고, 같은 홈이면 identifier 가 달라도 **같은 자리**다.
+///
+/// 앞엣것이 깨지면 cored 가 앱이 bind 할 자리를 차지하고 앱이 "이미 실행 중"으로 물러난다.
+/// 뒤엣것이 깨지면 프레임워크마다 백엔드가 하나씩 서고, 저장소를 쓰는 주인이 하나라는 전제가
+/// 조용히 무너진다(둘째 프로세스는 읽기 서버로 살아 오류를 내지 않는다).
+#[test]
+fn the_cored_seat_is_one_per_home_and_never_the_app_seat() {
+    let dev = Identity::new("/home/max/.soksak-dev", "com.soksak.tauri.dev");
+    assert_eq!(
+        dev.cored_socket(),
+        PathBuf::from("/home/max/.soksak-dev/cored.sock")
+    );
+    assert_ne!(dev.cored_socket(), dev.control_socket());
+    // 같은 홈의 다른 프레임워크는 같은 cored 에 붙는다 — 창을 가진 쪽만 여럿이다.
+    let electron = Identity::new("/home/max/.soksak-dev", "com.soksak.electron.dev");
+    assert_eq!(dev.cored_socket(), electron.cored_socket());
+    assert_ne!(dev.control_socket(), electron.control_socket());
+    // 자유 함수와 메서드가 같은 규칙이다.
+    assert_eq!(dev.cored_socket(), cored_socket(Path::new("/home/max/.soksak-dev")));
+}
+
 /// 전용 저장소는 설치 트리와 **다른 자리**다 — 같은 자리로 파생하면 플러그인 제거가
 /// 데이터까지 지운다(재설치 시 보존 결정이 조용히 깨진다).
 #[test]

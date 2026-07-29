@@ -94,6 +94,18 @@ const ALLOWED: &[AmbientRead] = &[
         after_split: "데이터 경로를 Identity 와 함께 인자로 받는다",
     },
     AmbientRead {
+        file: "cored_host.rs",
+        key: "HOME",
+        why: "cored 를 띄울 때 넘길 **OS 사용자 홈**. cored 는 그것을 파생하지 않는다 — 파생하면 자기를 띄운 쪽의 환경을 사용자의 것인 양 답한다. 읽는 자리는 띄우는 쪽이어야 한다",
+        after_split: "이미 갈린 뒤의 자리다 — 이 값은 `--user-home` 인자로 건너간다(cored 의 부팅 인자)",
+    },
+    AmbientRead {
+        file: "cored_host.rs",
+        key: "SOKSAK_CORED_BIN",
+        why: "cored 바이너리 지목 — 개발·검증이 스테이징본을 겨눈다(SOKSAK_PTYD_BIN 과 같은 규칙)",
+        after_split: "띄우는 쪽만 아는 값이다. 띄워지는 쪽(cored)은 자기 경로를 알 필요가 없다",
+    },
+    AmbientRead {
         file: "secrets.rs",
         key: "SOKSAK_E2E_KEK",
         why: "e2e 가 키체인 프롬프트 없이 볼트를 열기 위한 주입 KEK",

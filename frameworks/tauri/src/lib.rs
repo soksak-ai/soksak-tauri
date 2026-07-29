@@ -1,6 +1,11 @@
 mod activity;
 mod ai_session;
 mod clipboard;
+// 이 프레임워크가 cored 의 창 호스트가 되는 자리. `pub` 인 이유는 검증이다 — 붙는 계약은
+// 소켓 위에서 재야 하고(tests/attaches_to_cored.rs), 통합 검사는 이 크레이트 **밖**에서 돈다.
+// 배달 통로는 유닉스 소켓이라 cored 자신과 같은 축으로 가른다(cored 는 unix 전용이다).
+#[cfg(unix)]
+pub mod cored_host;
 mod daemon;
 mod data;
 #[cfg(target_os = "macos")]
@@ -339,6 +344,22 @@ pub fn run() {
                 eprintln!("[ipc] 소켓 서버 기동 실패: {e} — 이중 인스턴스 금지, 종료합니다");
                 std::process::exit(1);
             }
+            // cored 의 창 호스트로 붙는다 — cored 에는 창이 없으므로, 밖에서 온 명령이 화면에
+            // 닿으려면 창을 가진 쪽이 자기를 배달 통로로 등록해야 한다. 자기 소켓(위)은 그대로
+            // 선다: 이번 걸음은 붙는 것까지고, 소켓을 합치는 것은 `ipc_socket_path` 계약을 함께
+            // 뒤집는 별개의 일이다.
+            //
+            // 못 붙어도 앱은 산다. 이 프레임워크는 아직 자기 소켓으로 자기 창을 서빙하고 있어
+            // 여기서 죽으면 그 서빙까지 죽는다 — 다만 조용히 지나가지 않는다.
+            #[cfg(unix)]
+            match cored_host::stand_up(app.handle()) {
+                // 창 사건이 이 호스트를 다시 찾을 수 있어야 한다 — 값으로 들고 있지 않으면
+                // 붙은 연결이 여기서 끝나고, 그 끊김은 "명령이 안 먹는다"로만 나타난다.
+                Ok(host) => {
+                    app.manage(host);
+                }
+                Err(e) => eprintln!("[cored-host] 붙지 못했다: {e} — 이 창들은 cored 가 모른다"),
+            }
             // 범용 미디어 스트리밍 프록시(루프백 HTTP) — webview 가 못 받는 Referer/CORS 보호 미디어를
             // 헤더 주입해 바이너리 스트리밍한다. media.proxy.* 가 표면. 기동 실패는 재생만 실패(앱은 산다).
             if let Err(e) = mediaproxy::start() {
@@ -402,6 +423,11 @@ pub fn run() {
                     let label = window.label();
                     if *focused {
                         ipc::note_focus(label); // 활성 창 갱신(Rust 가 추적)
+                        // 포커스는 사실이고, 그 사실이 바뀌면 cored 가 알아야 한다 — 낡은
+                        // 사실로 타겟을 고르면 밖에서 온 명령이 사용자가 보고 있지 않은 창에서
+                        // 돈다. 새로 난 창도 이 길로 알려진다(창은 나면서 포커스를 받는다).
+                        #[cfg(unix)]
+                        cored_host::announce_windows(window.app_handle());
                     }
                     // 그 창에만 emit_to — 프론트 필터 불필요(자기 창 신호만 도착). 활성 창 추적은
                     // Rust(note_focus)가 담당하므로 프론트는 단순히 focused 만 받는다.
@@ -462,6 +488,11 @@ pub fn run() {
                 }
                 tauri::WindowEvent::Destroyed => {
                     ipc::note_closed(window.label()); // 포커스 기록이 죽은 창을 놓는다(다음 명령의 오배송 차단)
+                    // cored 도 그 창을 놓아야 한다 — **살아 있는 목록**을 보내면 장부가 스스로
+                    // 맞춘다(멱등). 방금 죽은 라벨은 빼고 보고한다: 이 사건 시점에 프레임워크의
+                    // 창 목록이 그것을 이미 놓았는지는 보장되지 않는다.
+                    #[cfg(unix)]
+                    cored_host::announce_windows_without(window.app_handle(), window.label());
                     #[cfg(target_os = "macos")]
                     webview::forget_nswindow_label(window.label()); // NSWindow↔label 캐시 회수(포인터 재사용 오해소 방지)
                     crate::sidecar::forget_window(window.label()); // 사이드카 surface 캐시 무효화(stale NSView 방지)

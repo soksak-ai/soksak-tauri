@@ -116,6 +116,18 @@ impl Identity {
         control_socket(&self.home, &self.identifier)
     }
 
+    /// 이 identity 의 cored 소켓 자리.
+    ///
+    /// 제어 소켓과 **다른 이름**이다. 같은 자리를 쓰면 그 홈의 앱이 bind 할 자리를 cored 가
+    /// 차지하고, 앱은 "이미 실행 중인 인스턴스"로 스스로 물러난다.
+    ///
+    /// 프레임워크 축을 싣지 않는다(제어 소켓은 싣는다). 한 홈의 cored 는 **하나**이고 창을
+    /// 가진 쪽이 여럿 붙는 것이 이 프로세스의 모양이다 — 프레임워크마다 자리를 가르면
+    /// 프레임워크 수만큼 백엔드가 서고, 저장소를 쓰는 주인이 하나라는 전제가 깨진다.
+    pub fn cored_socket(&self) -> PathBuf {
+        cored_socket(&self.home)
+    }
+
     // 사용자 홈(`~`)은 여기서 파생하지 않는다. `<사용자 홈>/.soksak<접미>` 라는 관계는
     // **배포 배치에서만** 참이고, 격리·픽스처·테스트 배치에서는 부모가 사용자 홈이 아니다 —
     // 그리고 그 오답은 오류가 아니라 "세션 없음"·"빈 트리"로 나타나 오류로 보이지 않는다.
@@ -158,6 +170,16 @@ pub fn data_dir(home: &Path) -> PathBuf {
 /// 제어 소켓 자리 — `<홈>/<identifier>.sock`.
 pub fn control_socket(home: &Path, identifier: &str) -> PathBuf {
     home.join(format!("{identifier}.sock"))
+}
+
+/// cored 소켓 파일명 — 짧게 둔다. 유닉스 소켓 경로에는 OS 상한이 있고(macOS ~104바이트),
+/// 홈이 깊은 배치에서 그 상한은 bind 실패 한 줄로만 나타난다.
+pub const CORED_SOCKET_FILE: &str = "cored.sock";
+
+/// cored 소켓 자리 — `<홈>/cored.sock`. 홈만 보고 정한다: 창을 가진 쪽이 여럿이어도
+/// 백엔드는 하나이므로, identifier 로 가르면 붙을 자리가 프레임워크 수만큼 생긴다.
+pub fn cored_socket(home: &Path) -> PathBuf {
+    home.join(CORED_SOCKET_FILE)
 }
 
 /// 제품 이름 — 프레임워크 이름이 아니다. 접미가 붙어도 뿌리는 하나다.

@@ -74,6 +74,10 @@ export const DECLARED = new Map([
   ["frameworks/tauri/src/pty_delivery.rs", ["framework", "코어 규칙의 얇은 결속"]],
   ["frameworks/tauri/src/data/process_probe.rs", ["framework", "이 프로세스의 메모리 형편 — 저장소 규칙이 인자로 받는다"]],
   ["frameworks/tauri/src/cored_ledger.rs", ["framework", "이식 장부 — 표가 둘인 동안만 있다(FRAMEWORK-PORT '남은 중복')"]],
+  // 이 프레임워크가 cored 의 창 호스트가 되는 것을 재는 검사. 이름을 안 부르는 이유가 곧
+  // 이 갈래의 정의다 — 창·앱 핸들을 계약으로 **주입받아** GUI 없이 그 배선을 몰 수 있다.
+  // (`_tests.rs` 는 이 게이트가 이미 빼지만 카고의 `tests/` 규약은 그 표현 밖이다.)
+  ["frameworks/tauri/tests/attaches_to_cored.rs", ["framework", "이 프레임워크가 cored 에 붙는 계약을 소켓 위에서 잰다"]],
 
   ["frameworks/electron/main.cjs", ["framework", "이 프레임워크의 진입점"]],
   ["frameworks/electron/preload.cjs", ["framework", "렌더러 경계에 다리를 놓는 자리"]],
