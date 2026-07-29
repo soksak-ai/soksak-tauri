@@ -11,10 +11,10 @@ use std::sync::Mutex;
 
 use rusqlite::Connection;
 
+mod process_probe;
 pub mod backup;
 pub mod commands;
 pub mod crypto;
-pub mod store_integrity;
 pub mod ring;
 // 저장 연산은 크레이트가 소유한다 — 앱과 헬퍼가 같은 파일을 같은 질의로 읽는다.
 pub use soksak_store::store;
@@ -65,7 +65,7 @@ pub fn db_path() -> Result<PathBuf, String> {
 pub fn open(path: &Path) -> Result<Connection, String> {
     // SQLite 자기 로그부터 — 내부 실패(할당 크기 포함)를 남기게 한다. sqlite3_initialize 이전이라야
     // 먹으므로 저장소를 열기 직전, 프로세스에서 SQLite 를 처음 쓰는 이 자리에서 설치한다.
-    store_integrity::install_sqlite_log();
+    soksak_store::integrity::install_sqlite_log();
     let conn = Connection::open(path).map_err(|e| e.to_string())?;
     // 로컬 사용자 전용(0600) — DB 는 봉투 키·레코드를 담는 data-at-rest 저장소라 group/other 접근을
     // 차단한다(ipc.rs 소켓 0600 선례와 동형). best-effort: :memory:·권한 미지원 FS 는 조용히 무시.
@@ -107,9 +107,9 @@ pub fn open(path: &Path) -> Result<Connection, String> {
     // 치유가 안 되면 부팅은 계속한다 — 읽기라도 살리는 편이 낫고, 실패는 쓰기마다 증거와 함께 뜬다.
     // 판정만 남기고 고치지는 않는다 — 원인을 모르는 채 부팅마다 저장소를 자동으로 다시 쓰는 것은
     // 증상 위에 얹는 우회다. 치유는 사람·에이전트가 부르는 명시적 표면(data.repair)이 소유한다.
-    match store_integrity::write_canary(&conn) {
-        Ok(()) => store_integrity::record_boot_gate("부팅 쓰기 정상"),
-        Err(why) => store_integrity::record_boot_gate(format!("부팅 쓰기 막힘: {why}")),
+    match soksak_store::integrity::write_canary(&conn) {
+        Ok(()) => soksak_store::integrity::record_boot_gate("부팅 쓰기 정상"),
+        Err(why) => soksak_store::integrity::record_boot_gate(format!("부팅 쓰기 막힘: {why}")),
     }
     Ok(conn)
 }

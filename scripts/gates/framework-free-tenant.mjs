@@ -67,6 +67,7 @@ export const DECLARED = new Map([
   ["frameworks/tauri/src/os_key.rs", ["framework", "OS 키체인 — 플랫폼 표면이라 코어 금지 목록에 걸린다"]],
   ["frameworks/tauri/src/seal_keys.rs", ["framework", "코어 계약의 이 프레임워크 구현(고아 규칙으로 껍질이 필요하다)"]],
   ["frameworks/tauri/src/pty_delivery.rs", ["framework", "코어 규칙의 얇은 결속"]],
+  ["frameworks/tauri/src/data/process_probe.rs", ["framework", "이 프로세스의 메모리 형편 — 저장소 규칙이 인자로 받는다"]],
   ["frameworks/tauri/src/cored_ledger.rs", ["framework", "이식 장부 — 표가 둘인 동안만 있다(FRAMEWORK-PORT '남은 중복')"]],
 
   // ── tenant: 프레임워크 무관인데 여기 산다. 코어로 간다 ──────────────────────
@@ -74,7 +75,6 @@ export const DECLARED = new Map([
   ["frameworks/tauri/src/data/backup.rs", ["tenant", "저장소 백업 — 백엔드 일원화에서 코어로"]],
   ["frameworks/tauri/src/data/crypto.rs", ["tenant", "필드 봉인 — soksak-store/doc.rs 의 짝을 확인해야 한다"]],
   ["frameworks/tauri/src/data/mod.rs", ["tenant", "저장소 개방·스키마 — store_open/store_lock 의 짝을 확인해야 한다"]],
-  ["frameworks/tauri/src/data/store_integrity.rs", ["tenant", "저장소 손상 게이트 — 코어에 짝이 없다. 이관이 아니라 추출이다"]],
 ]);
 
 function walk(dir, out = []) {
