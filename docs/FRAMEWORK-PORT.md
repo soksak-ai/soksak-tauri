@@ -363,7 +363,11 @@ cored's dependency gate blocks frameworks and native runtimes by name. It alread
 
 `notify` meets the same test — filesystem events are a resource, and cored must hold those handles to serve `watch_dir`. Both crates stay banned in `soksak-core`, which keeps its no-dependency rule; the rule lives in a small crate beside it instead (`soksak-watch`, `soksak-store`).
 
-`tokio` does not meet it, and `net_http_request`, `download_verify`, and `sidecar_ensure` stay unserved because of it. The one transport (`wreq`) drags the runtime in, and the gate names runtimes as well as frameworks. The standard is not lowered to close a gap.
+`tokio` does not meet it, and `net_http_request`, `download_verify`, `sidecar_ensure`, and `media_proxy_info` stay unserved because of it. The one transport (`wreq`) drags the runtime in, and the gate names runtimes as well as frameworks. The standard is not lowered to close a gap.
+
+Banned in those two crates is not banned everywhere, though, and the HTTP capability and the media proxy proved it. Their bodies open no window and hold no app handle — 892 lines that never named the framework they were filed under, which is how a second framework ends up rewriting the same transport rules. They live in `crates/soksak-net` now, which carries `tokio` and `wreq` alone and bans frameworks with its own dependency test. Each framework keeps the command wrapper and the handle this process holds.
+
+Two process-wide globals died in that move. The proxy's port and token were a `OnceLock` pair, and that is a different thing from the shared client and runtime beside them: a client is a resource — any instance answers the same request the same way — while a port the OS assigned and a token drawn at startup are the **answer**, unrecoverable by rule. In one global slot the second `start()` was silently ignored and the first one's port went out as the answer, so a test could not stand up its own proxy. `start()` returns a `MediaProxy` handle now, and whoever holds it answers.
 
 ## What the terminal needed
 

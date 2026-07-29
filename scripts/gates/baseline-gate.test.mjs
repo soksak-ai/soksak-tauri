@@ -46,6 +46,7 @@ function standUpDeclaredRoots() {
     "crates/soksak-cored/src",
     "crates/soksak-ptyd/src",
     "crates/soksak-cli/src",
+    "crates/soksak-net/src",
     "packages/plugin-api/src",
     "packages/plugin-spec/src",
     "src",

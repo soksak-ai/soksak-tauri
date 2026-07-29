@@ -46,7 +46,7 @@ pub fn probe_binary(bin: String, args: Vec<String>) -> ProbeResult {
 // fetch reach — url 다운로드 후 sha256 검증. 불일치/실패 시 dest 를 쓰지 않고 Err(무결성 우선).
 #[tauri::command]
 pub fn download_verify(url: String, dest: String, sha256: String) -> Result<(), String> {
-    let body = crate::mediaproxy::honest_get_bytes(&url)?;
+    let body = soksak_net::transport::honest_get_bytes(&url)?;
     verify_sha256(&body, &sha256)?;
     fs::write(&dest, &body).map_err(|e| e.to_string())?;
     #[cfg(unix)]
@@ -237,7 +237,7 @@ pub fn download_unpack_verify(
 }
 
 pub(crate) fn download_verified_bytes(url: &str, sha256: &str) -> Result<Vec<u8>, String> {
-    let body = crate::mediaproxy::honest_get_bytes(url)?;
+    let body = soksak_net::transport::honest_get_bytes(url)?;
     if body.len() > MAX_ARCHIVE_BYTES {
         return Err(format!("archive 압축 크기 한도 초과: {MAX_ARCHIVE_BYTES}"));
     }
