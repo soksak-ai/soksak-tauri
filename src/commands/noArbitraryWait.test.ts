@@ -94,6 +94,7 @@ const ALLOWED: { file: string; mark: string; event: string; why: string }[] = [
   { file: "crates/soksak-core/src/ptyd.rs", mark: "from_millis(50)", event: "ptyd-bootstrap-handshake", why: "동일 루프의 재시도 간격" },
   { file: "frameworks/tauri/src/webview.rs", mark: "tokio::time::sleep(Duration::from_millis(400))", event: "extraction-page-settle", why: "추출용 임시 webview 의 페이지 정착 유한 재시도(timeout 상한)" },
   { file: "frameworks/tauri/src/cored_host.rs", mark: "const READY_LIMIT: Duration = Duration::from_secs(15);", event: "cored-ready-line", why: "cored 의 준비 완료 줄이 종결 사건이고(블로킹 read), 그 프로세스가 먼저 죽으면 EOF 가 끝낸다 — 이 상한은 둘 다 오지 않을 때 부팅이 영영 안 끝나는 것을 막는 안전망" },
+  { file: "frameworks/tauri/src/cored_host.rs", mark: "const OWNER_ASK_LIMIT: Duration = Duration::from_secs(10);", event: "store-owner-answer", why: "주인의 회신이 종결 사건이고 연결이 끊기면 그것이 끝낸다 — 이 상한은 둘 다 오지 않을 때, 답하지 않는 주인 하나가 그 명령을 부른 창을 영영 붙잡는 것을 막는다" },
 ];
 
 /** grep -r 과 같은 순회 — 숨김/빌드 산출물은 grep 도 안 읽는 곳만 건너뛴다. */
