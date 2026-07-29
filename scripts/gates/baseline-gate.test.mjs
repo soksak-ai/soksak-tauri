@@ -33,8 +33,31 @@ function longFile(lines) {
   return "const x = 1;\n".repeat(lines);
 }
 
+/**
+ * 게이트가 선언한 뿌리는 전부 있어야 한다 — 부재를 통과로 삼지 않는 것이 그 법이기 때문이다.
+ * 픽스처가 그 법을 면제받으면 검사가 실물과 다른 규칙을 재게 된다.
+ */
+function standUpDeclaredRoots() {
+  for (const r of [
+    "frameworks/tauri/src",
+    "crates/soksak-core/src",
+    "crates/soksak-store/src",
+    "crates/soksak-vault/src",
+    "crates/soksak-cored/src",
+    "crates/soksak-ptyd/src",
+    "crates/soksak-cli/src",
+    "packages/plugin-api/src",
+    "packages/plugin-spec/src",
+    "src",
+    "scripts",
+  ]) {
+    mkdirSync(join(root, r), { recursive: true });
+  }
+}
+
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "baseline-gate-"));
+  standUpDeclaredRoots();
   write("frameworks/tauri/src/a.rs", rustWithUnwraps(2));
   write("src/big.ts", longFile(LENGTH_LIMIT + 1));
   write("src/ok.ts", "export const ok = true;\n");
@@ -67,6 +90,33 @@ describe("baseline-gate", () => {
     const r = runGate("--init");
     expect(r.status).toBe(1);
     expect(r.out).toContain("--init 거부");
+  });
+
+
+  /**
+   * 선언된 뿌리가 실제로 없으면 **실패해야 한다.**
+   *
+   * 지금은 `walk` 가 `catch { return; }` 로 부재를 삼킨다. 그러면 이관·개명으로 뿌리가
+   * 사라지는 순간 그 아래 전부가 스캔 밖으로 나가고, 게이트는 위반 0건으로 **통과를 위장한다**.
+   * 실측: `frameworks/tauri/protocol/src` 가 두 지표의 뿌리에 있는데 그 디렉터리는 없다.
+   */
+  it("선언된 뿌리가 하나라도 없으면 실패한다", () => {
+    runGate("--init");
+    // 뿌리 하나를 통째로 지운다 — 이관으로 사라진 상황과 같다.
+    rmSync(join(root, "frameworks/tauri/src"), { recursive: true, force: true });
+    const r = runGate();
+    expect(r.status, `부재를 삼켰다: ${r.out}`).not.toBe(0);
+    expect(r.out).toMatch(/뿌리/);
+  });
+
+  /** 봉인이 존재하지 않는 경로를 가리키면 stale 과 다른 사유로 실패해야 한다. */
+  it("없는 파일을 봉인하고 있으면 그렇게 말한다", () => {
+    runGate("--init");
+    const seal = join(root, "scripts/gates/baseline-unwrap.txt");
+    writeFileSync(seal, `${readFileSync(seal, "utf8")}frameworks/tauri/src/ghost.rs 3\n`);
+    const r = runGate();
+    expect(r.status).not.toBe(0);
+    expect(r.out, "stale 과 구분되지 않는다").toMatch(/없는 파일|존재하지 않/);
   });
 
   it("신규 위반 파일이 생기면 실패한다", () => {

@@ -28,7 +28,17 @@
 #   이 게이트는 "FAIL" 이라는 낱말을 쓰지 않는다. scripts/gates/run-all.mjs 가 그 구멍을 막는다.
 #
 # 이것은 허용이 아니라 **기록**이다. 내리는 길은 그대로다 — 고치고 --prune.
+#
+# ── 2026-07-29 뿌리 확장 재입법 ───────────────────────────────────────────────
+# crates/* 가 이 게이트의 스캔 뿌리에 없었다. 그래서 코어·store·cored·ptyd 는 한 번도
+# 세어진 적이 없다(unwrap 49건 · 1500줄 초과 2파일). 이관 목적지가 스캔 밖이면 프레임워크
+# 에서 옮긴 파일의 부채가 옮겨지는 순간 영영 안 세어진다 — 뿌리 확장이 이관보다 먼저인 이유다.
+# 아래 항목은 새로 생긴 부채가 아니라 **처음 보이게 된 부채**다.
 crates/soksak-cli/src/lib.rs 1
+crates/soksak-core/src/proc.rs 2
+crates/soksak-cored/src/registry.rs 2
+crates/soksak-ptyd/src/main.rs 42
+crates/soksak-store/src/store.rs 3
 frameworks/tauri/src/activity.rs 9
 frameworks/tauri/src/clipboard.rs 1
 frameworks/tauri/src/daemon.rs 22

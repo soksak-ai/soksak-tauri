@@ -18,7 +18,7 @@
 // 사용: node scripts/gates/baseline-gate.mjs [--init|--prune] [--root <dir>]
 // 짝 테스트: scripts/gates/baseline-gate.test.mjs (vitest)
 
-import { readdirSync, readFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
+import { statSync, readdirSync, readFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, resolve, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripRustTestModule } from "./core-decoupling-scan.mjs";
@@ -35,7 +35,16 @@ const METRICS = [
   {
     name: "unwrap",
     baselineFile: "baseline-unwrap.txt",
-    roots: ["frameworks/tauri/src", "crates/soksak-cli/src", "frameworks/tauri/protocol/src"],
+    roots: [
+      "frameworks/tauri/src",
+      // 이관 목적지 — 여기가 뿌리에 없으면 프레임워크에서 옮긴 파일의 부채가 영영 안 세어진다.
+      "crates/soksak-core/src",
+      "crates/soksak-store/src",
+      "crates/soksak-vault/src",
+      "crates/soksak-cored/src",
+      "crates/soksak-ptyd/src",
+      "crates/soksak-cli/src",
+    ],
     exts: [".rs"],
     // 배포 코드만 계수 — 인라인 #[cfg(test)] 모듈은 stripRustTestModule 로 제외한다(C1·
     // core-git-scan·core-terminal-scan 과 동일 제외 정책, 게이트 간 일관). 판정: unwrap 결함
@@ -59,8 +68,12 @@ const METRICS = [
     roots: [
       "src",
       "frameworks/tauri/src",
+      "crates/soksak-core/src",
+      "crates/soksak-store/src",
+      "crates/soksak-vault/src",
+      "crates/soksak-cored/src",
+      "crates/soksak-ptyd/src",
       "crates/soksak-cli/src",
-      "frameworks/tauri/protocol/src",
       "packages/plugin-api/src",
       "packages/plugin-spec/src",
       "scripts",
@@ -113,6 +126,24 @@ function walk(absDir, relDir, exts, out) {
 }
 
 // 지표별 현행 위반 지도 {상대경로: 값>0} 를 만든다.
+/**
+ * 선언된 뿌리가 실제로 있는가.
+ *
+ * `walk` 는 부재를 조용히 넘긴다(픽스처의 부분 트리를 허용하려고). 그 관용이 **선언된 뿌리**
+ * 에까지 미치면, 이관·개명으로 뿌리가 사라지는 순간 그 아래 전부가 스캔 밖으로 나가고
+ * 게이트는 위반 0건으로 통과를 위장한다. 실측(2026-07-29): `frameworks/tauri/protocol/src` 가
+ * 두 지표의 뿌리에 있었고 그 디렉터리는 존재하지 않았다.
+ */
+export function missingRoots(root, metric) {
+  return metric.roots.filter((r) => {
+    try {
+      return !statSync(join(root, r)).isDirectory();
+    } catch {
+      return true;
+    }
+  });
+}
+
 function scan(root, metric) {
   const files = [];
   for (const r of metric.roots) {
@@ -159,18 +190,25 @@ function writeBaseline(root, metric, map) {
 
 // ── 대조 ──────────────────────────────────────────────────────────────────
 
-function diff(baseline, current) {
+function diff(baseline, current, root) {
   const added = []; // 신규: 기준선에 없거나 봉인 값 초과.
-  const stale = []; // stale: 기준선에 있는데 실제론 줄었거나 소멸.
+  const stale = []; // stale: 기준선에 있는데 실제론 줄었다.
+  const ghost = []; // 유령: 기준선에 있는데 그 파일이 없다.
   for (const [file, value] of current) {
     const sealed = baseline.get(file) ?? 0;
     if (value > sealed) added.push({ file, value, sealed });
   }
   for (const [file, sealed] of baseline) {
+    // 줄어든 것과 **사라진 것**은 다른 사실이다. 한 사유로 뭉치면 --prune 한 번에 항목이
+    // 흔적 없이 사라지고, 그 값이 어디로 갔는지(고쳤나·옮겼나) 아무도 모른다.
+    if (root !== undefined && !existsSync(join(root, file))) {
+      ghost.push({ file, sealed });
+      continue;
+    }
     const value = current.get(file) ?? 0;
     if (value < sealed) stale.push({ file, value, sealed });
   }
-  return { added, stale };
+  return { added, stale, ghost };
 }
 
 // ── 실행 ──────────────────────────────────────────────────────────────────
@@ -227,8 +265,17 @@ function main(argv) {
       failed = true;
       continue;
     }
+    // 뿌리가 사라졌으면 스캔 결과가 0이어도 그것은 "위반 없음"이 아니다.
+    const gone = missingRoots(root, m);
+    if (gone.length > 0) {
+      console.error(
+        `[baseline-gate] 선언된 뿌리가 없다 ${m.name}: ${gone.join(", ")} — 옮겼으면 뿌리를 고치고, 없어졌으면 목록에서 빼라. 부재를 통과로 삼으면 그 아래가 통째로 스캔 밖이다.`,
+      );
+      failed = true;
+      continue;
+    }
     const current = scan(root, m);
-    let { added, stale } = diff(baseline, current);
+    let { added, stale, ghost } = diff(baseline, current, root);
 
     if (prune && stale.length > 0) {
       // 축소만 반영: 값 내림 또는 항목 삭제. 값 올림·항목 추가는 절대 하지 않는다.
@@ -255,7 +302,13 @@ function main(argv) {
       );
       failed = true;
     }
-    if (added.length === 0 && stale.length === 0) {
+    for (const g of ghost) {
+      console.error(
+        `[baseline-gate] 없는 파일을 봉인 중 ${m.name}: ${g.file} (봉인 ${g.sealed}${m.unit}) — 옮겼으면 같은 커밋에서 항목 경로를 이전하고, 지웠으면 항목을 지워라. --prune 으로 지우면 그 값이 어디로 갔는지 남지 않는다.`,
+      );
+      failed = true;
+    }
+    if (added.length === 0 && stale.length === 0 && ghost.length === 0) {
       console.log(`[baseline-gate] ${m.name} OK — 봉인 ${baseline.size}개 파일, 신규 0, stale 0`);
     }
   }
