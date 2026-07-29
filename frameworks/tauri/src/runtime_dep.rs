@@ -385,7 +385,7 @@ fn extract_regular_archive(body: &[u8], destination: &Path) -> Result<(), String
             .parent()
             .ok_or_else(|| format!("archive entry 상위 경로 없음: {path_text}"))?;
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        crate::path_security::reject_symlink_components(parent)?;
+        soksak_core::pathx::reject_symlink_components(parent)?;
         let mut file = OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -439,9 +439,9 @@ pub(crate) fn unpack_verify_install_entries(
         return Err(format!("목적지 이미 존재: {}", dest_dir.display()));
     }
     let parent = dest_dir.parent().ok_or("목적지 부모 없음")?;
-    crate::path_security::reject_symlink_components(parent)?;
+    soksak_core::pathx::reject_symlink_components(parent)?;
     fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    crate::path_security::reject_symlink_components(parent)?;
+    soksak_core::pathx::reject_symlink_components(parent)?;
     if entries.is_empty() {
         return Err("최소 한 개의 선언 entrypoint가 필요합니다".into());
     }

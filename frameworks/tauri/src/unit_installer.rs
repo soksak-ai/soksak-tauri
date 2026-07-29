@@ -408,7 +408,7 @@ fn write_release_state(dir: &Path, unit: &VerifiedInstallUnit) {
 fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
     let parent = path.parent().ok_or("state path has no parent")?;
     fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    crate::path_security::reject_symlink_components(parent)?;
+    soksak_core::pathx::reject_symlink_components(parent)?;
     let temporary = parent.join(format!(".state-{}.json", uuid::Uuid::new_v4()));
     let result = (|| {
         let bytes = serde_json::to_vec_pretty(value).map_err(|error| error.to_string())?;
@@ -444,10 +444,10 @@ impl UnitInstallManager {
             return Err("unit installer home must be absolute".into());
         }
         fs::create_dir_all(home).map_err(|error| error.to_string())?;
-        crate::path_security::reject_symlink_components(home)?;
+        soksak_core::pathx::reject_symlink_components(home)?;
         let staging = identity.path("install-staging");
         fs::create_dir_all(&staging).map_err(|error| error.to_string())?;
-        crate::path_security::reject_symlink_components(&staging)?;
+        soksak_core::pathx::reject_symlink_components(&staging)?;
         for item in fs::read_dir(&staging).map_err(|error| error.to_string())? {
             let item = item.map_err(|error| error.to_string())?;
             let metadata = fs::symlink_metadata(item.path()).map_err(|error| error.to_string())?;
@@ -519,14 +519,14 @@ impl UnitInstallManager {
     ) -> Result<(), String> {
         let plugins_root = self.plugins_root();
         fs::create_dir_all(&plugins_root).map_err(|error| error.to_string())?;
-        crate::path_security::reject_symlink_components(&plugins_root)?;
+        soksak_core::pathx::reject_symlink_components(&plugins_root)?;
         for unit in &state.units {
             if unit.release.kind != "plugin" || unit.generation != generation {
                 continue;
             }
             let source = generation_dir.join(&unit.release.staged_handle);
             let target = plugins_root.join(&unit.release.id);
-            crate::path_security::reject_symlink_components(&source)?;
+            soksak_core::pathx::reject_symlink_components(&source)?;
             if target.exists() {
                 fs::remove_dir_all(&target).map_err(|error| error.to_string())?;
             }
@@ -825,7 +825,7 @@ impl UnitInstallManager {
         }
         let generations = self.generations_root();
         fs::create_dir_all(&generations).map_err(|error| error.to_string())?;
-        crate::path_security::reject_symlink_components(&generations)?;
+        soksak_core::pathx::reject_symlink_components(&generations)?;
         let destination = generations.join(&generation);
         fs::rename(&transaction.path, &destination).map_err(|error| error.to_string())?;
         let persist = write_json_atomic(&destination.join("generation.json"), &state)

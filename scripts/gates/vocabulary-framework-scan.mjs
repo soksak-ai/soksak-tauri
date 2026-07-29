@@ -208,7 +208,7 @@ export const PROSE_LEDGER = new Map([
   ["frameworks/tauri/src/navigation_policy.rs", [2, "[UI] \"app shell\" — 앱 웹뷰의 항행 정책"]],
   ["crates/soksak-core/src/kv.rs", [1, "[프레임워크] \"자원이지 셸이 아니다\"·\"무-셸 게이트\"·\"셸 타입\""]],
   ["crates/soksak-core/src/identity.rs", [1, "[프레임워크] \"앱은 셸 설정에서\"·\"붙는 것은 셸의 일\""]],
-  ["crates/soksak-core/src/pathx.rs", [2, "[진짜셸] 틸드 확장은 명령 해석기의 일 — \"우리는 셸이 아니다\""]],
+  ["crates/soksak-core/src/pathx.rs", [1, "[진짜셸] 틸드 확장은 명령 해석기의 일 — \"우리는 셸이 아니다\""]],
   ["src/lib/notify.test.ts", [1, "[프레임워크] \"셸은 경계 하나로 mock\" — 죽은 참조 ../platform 동반"]],
   ["src/framework/contract.ts", [1, "[인용] \"한때 이것을 '셸'이라 불렀는데\""]],
   ["docs/REPO-LAYOUT.md", [1, "[진짜셸] 어휘 넷의 표 — shell 은 사용자 셸(zsh·bash)이라고 정의하는 그 줄"]],

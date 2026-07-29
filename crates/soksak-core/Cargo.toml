@@ -16,6 +16,9 @@ base64 = "0.22"
 # ptyd 계약(프로토콜 상수·경로·워터마크)과 봉인 — 둘 다 별개 크레이트가 단일진실이다.
 soksak-spec-pty = { path = "../soksak-spec-pty" }
 soksak-seal = { path = "../soksak-seal" }
+# 딥링크 URI 파싱 — 순수 파서다(네이티브 없음). 퍼센트 디코딩을 손으로 짜는 것이
+# 이 자리에서 가장 흔한 보안 결함이라 라이브러리에 맡긴다.
+url = "2"
 uuid = { version = "1", features = ["v4"] }
 
 [target.'cfg(unix)'.dependencies]

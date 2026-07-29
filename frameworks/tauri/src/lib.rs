@@ -3,7 +3,6 @@ mod ai_session;
 mod clipboard;
 mod daemon;
 mod data;
-mod deeplink;
 #[cfg(target_os = "macos")]
 mod dockmenu;
 mod fs;
@@ -18,7 +17,6 @@ mod navigation_policy;
 mod network;
 mod notify;
 mod os_key;
-mod path_security;
 mod plugins;
 mod process;
 mod id_registry;
@@ -355,7 +353,7 @@ pub fn run() {
                 let _ = app.deep_link().register_all();
                 app.deep_link().on_open_url(move |event| {
                     for u in event.urls() {
-                        if let Some((cmd, params)) = deeplink::parse_command_url(u.as_str()) {
+                        if let Some((cmd, params)) = soksak_core::deeplink::parse_command_url(u.as_str()) {
                             let _ =
                                 ipc::request_command(&dl_handle, cmd, params, 10_000, None, None);
                         }

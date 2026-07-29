@@ -87,7 +87,7 @@ fn read_config_in(home: &Path) -> Result<UnitDevConfig, String> {
             units: Vec::new(),
         });
     }
-    crate::path_security::reject_symlink_components(&path)?;
+    soksak_core::pathx::reject_symlink_components(&path)?;
     let raw =
         std::fs::read_to_string(&path).map_err(|e| format!("{} 읽기 실패: {e}", path.display()))?;
     let mut config: UnitDevConfig =
@@ -122,7 +122,7 @@ fn write_config_in(home: &Path, config: &UnitDevConfig) -> Result<(), String> {
         .parent()
         .ok_or_else(|| "development config 상위 경로 없음".to_string())?;
     std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    crate::path_security::reject_symlink_components(parent)?;
+    soksak_core::pathx::reject_symlink_components(parent)?;
     let tmp = parent.join(format!(".{CONFIG_FILE}.tmp-{}", std::process::id()));
     let bytes = serde_json::to_vec_pretty(config).map_err(|e| e.to_string())?;
     std::fs::write(&tmp, bytes).map_err(|e| e.to_string())?;
