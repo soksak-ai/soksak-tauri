@@ -333,3 +333,61 @@ fn we_reap_only_what_we_spawned() {
     assert!(!cored.spawned_alive());
     cored.stop(); // 멱등 — 두 번 거둬도 남의 pid 를 죽이지 않는다
 }
+
+// ── 값을 받는 요청 ────────────────────────────────────────────────────────────
+//
+// 지금 이 호스트는 보내고 **성패만** 받는다(등록·창 보고가 그것만 필요했다). 그런데 앱이
+// 자기 DB 커넥션을 놓으려면 `data_get` 의 **답**을 받아야 한다 — 성패로는 값을 못 나른다.
+//
+// 답의 `data` 를 버리는 한 앱은 계속 자기가 저장소를 연다. 그러면 저장소를 쓰는 주인이 둘이고,
+// SQLite 는 막지 않고 직렬화만 한다 — 그 잠금이 시끄럽게 만들려던 바로 그 조용한 경우다.
+
+/// 답 봉투에서 값을 꺼낸다. 성패만 보면 `data` 가 사라진다.
+#[test]
+fn an_answer_carries_its_value_not_just_a_verdict() {
+    let line = serde_json::json!({
+        "id": "req-1", "ok": true, "data": { "a": 1 }
+    })
+    .to_string();
+    match classify(&line).expect("분류") {
+        Incoming::Answer { data, .. } => {
+            assert_eq!(data["a"], 1, "답의 값이 사라졌다");
+        }
+        other => panic!("답이 아니다: {other:?}"),
+    }
+}
+
+/// 실패한 답은 값 대신 사유를 지고 온다 — 둘을 같은 자리에 담으면 부른 쪽이 구분을 못 한다.
+#[test]
+fn a_failed_answer_carries_its_reason() {
+    let line = serde_json::json!({
+        "id": "req-2", "ok": false, "code": "NO_HOST", "message": "붙은 곳이 없다"
+    })
+    .to_string();
+    match classify(&line).expect("분류") {
+        Incoming::Answer { ok, code, message, .. } => {
+            assert!(!ok);
+            assert_eq!(code, "NO_HOST");
+            assert!(message.contains("붙은 곳"));
+        }
+        other => panic!("답이 아니다: {other:?}"),
+    }
+}
+
+/// 이 호스트가 cored 에 **묻고 값을 받는** 표면을 갖는다.
+///
+/// 없으면 앱은 저장소 값을 못 받아 자기 커넥션을 계속 든다 — 그것이 쓰기 주인이 둘이라는
+/// 뜻이고, 두 프레임워크를 동시에 못 켜는 유일한 이유다.
+///
+/// 봉투는 밖에서 오는 요청과 같은 모양이다: `{id, method, params}`. 모양이 갈리면 cored 가
+/// 같은 이름을 두 가지로 받게 되고, 그 차이는 인자 거절 한 줄로만 나타난다.
+#[test]
+fn a_request_envelope_carries_the_method_and_its_params() {
+    let v = request_envelope("r-7", "data_get", &serde_json::json!({ "ns": "n", "coll": "c" }));
+    assert_eq!(v["id"], "r-7");
+    assert_eq!(v["method"], "data_get");
+    assert_eq!(v["params"]["ns"], "n");
+    // 창을 지목하지 않는다 — 이 요청은 창이 아니라 저장소로 간다. 지목하면 cored 가 그것을
+    // 창으로 배달하려 하고, 그러면 자기 창에 물어 상한까지 침묵한다.
+    assert!(v.get("window").is_none(), "저장소 요청에 창이 실렸다: {v}");
+}

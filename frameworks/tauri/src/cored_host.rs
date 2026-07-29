@@ -131,10 +131,21 @@ pub fn result_envelope(id: u64, result: Value) -> Value {
 /// 방송은 답이 없다. 같은 것으로 읽으면 방송마다 없는 id 로 회신하게 된다.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Incoming {
-    /// 등록·갱신의 응답 봉투.
-    Answer { id: Value, ok: bool, code: String, message: String },
+    /// 요청의 응답 봉투.
+    ///
+    /// `data` 를 버리면 이 호스트는 성패만 나르고, 그러면 앱이 저장소 값을 못 받아 자기
+    /// 커넥션을 계속 들고 있어야 한다 — 그것이 곧 쓰기 주인이 둘이라는 뜻이다.
+    Answer { id: Value, ok: bool, code: String, message: String, data: Value },
     Deliver(Delivery),
     Broadcast { event: String, payload: Value },
+}
+
+/// 저장소 요청 봉투 — 밖에서 오는 요청과 **같은 모양**이다(`{id, method, params}`).
+///
+/// 창을 지목하지 않는다. 이 요청은 창이 아니라 저장소로 가고, 지목하면 cored 가 그것을 창으로
+/// 배달하려 한다 — 그러면 이 프로세스가 자기 창에 묻고 상한까지 침묵한다.
+pub fn request_envelope(id: &str, method: &str, params: &Value) -> Value {
+    json!({ "id": id, "method": method, "params": params })
 }
 
 /// 한 줄을 읽는다. JSON 이 아니면 붙은 곳이 cored 가 아니다 — 조용히 넘기면 "명령이 사라진다"
@@ -171,6 +182,7 @@ pub fn classify(line: &str) -> Result<Incoming, String> {
         ok: v.get("ok").and_then(Value::as_bool).unwrap_or(false),
         code: v.get("code").and_then(Value::as_str).unwrap_or_default().to_string(),
         message: v.get("message").and_then(Value::as_str).unwrap_or_default().to_string(),
+        data: v.get("data").cloned().unwrap_or(Value::Null),
     })
 }
 
@@ -189,7 +201,7 @@ pub struct CoredHost {
     /// 답을 기다리는 자리들.
     waiters: Arc<Waiters>,
     /// 등록의 답이 도착하는 자리. 한 번만 온다 — 받는 스레드가 넣고, 묻는 쪽이 꺼낸다.
-    answer: Mutex<Option<mpsc::Receiver<Result<(), String>>>>,
+    answer: Mutex<Option<mpsc::Receiver<Answered>>>,
     /// 꺼낸 답. 묻는 쪽이 여럿이어도 같은 답이어야 한다(채널은 한 번만 준다).
     verdict: OnceLock<Result<(), String>>,
     /// 보고의 상관 id 축. 이 연결 안에서만 유일하면 된다.
@@ -202,15 +214,17 @@ pub struct CoredHost {
 /// 다른 연결로 가고, cored 는 줄마다 일꾼을 띄운다 — 둘 사이에 순서 보장이 없다. 그래서
 /// "알렸다"와 "그 알림이 장부에 섰다"는 다른 사실이고, 뒤엣것을 물을 수 없으면 그 사이에서
 /// 나는 실패가 무작위로 나타난다(실측: 붙자마자 부른 명령이 `WINDOW_NOT_FOUND` 로 거절됐다).
-type Waiters = Mutex<std::collections::HashMap<String, mpsc::Sender<Result<(), String>>>>;
+/// 기다리는 자리는 **값**을 나른다. 성패만 나르면 `data_get` 의 답이 여기서 사라진다.
+type Answered = Result<Value, String>;
+type Waiters = Mutex<std::collections::HashMap<String, mpsc::Sender<Answered>>>;
 
 /// 잡아 둔 자리에 온 답을 상한 안에 받고, 받았든 못 받았든 그 자리를 거둔다.
 fn wait_for(
     waiters: &Waiters,
     id: &str,
-    rx: mpsc::Receiver<Result<(), String>>,
+    rx: mpsc::Receiver<Answered>,
     within: Duration,
-) -> Result<(), String> {
+) -> Answered {
     let verdict = match rx.recv_timeout(within) {
         Ok(v) => v,
         // 연결이 먼저 끝났다 — 상한까지 기다릴 이유가 없다. 붙어 있지 않다는 사실이 답이다.
@@ -284,7 +298,8 @@ impl CoredHost {
             // 답을 이미 꺼냈는데 판정이 없다 — 꺼낸 자리가 판정을 넣지 않았다는 뜻이다.
             return Err("등록의 답을 잃었다".into());
         };
-        let verdict = wait_for(&self.waiters, ATTACH_ID, rx, within);
+        // 등록은 값이 아니라 판정만 쓴다 — 붙었는가 아닌가.
+        let verdict = wait_for(&self.waiters, ATTACH_ID, rx, within).map(|_| ());
         // 채널은 한 번만 준다 — 판정을 붙잡아야 두 번째로 묻는 쪽이 같은 답을 듣는다.
         let _ = self.verdict.set(verdict.clone());
         verdict
@@ -320,6 +335,32 @@ impl CoredHost {
             .unwrap_or_else(|e| e.into_inner())
             .insert(id.clone(), tx);
         if let Err(why) = self.send(&windows_envelope_with(f, &id)) {
+            self.waiters
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .remove(&id);
+            return Err(why);
+        }
+        // 창 보고도 판정만 쓴다 — 장부에 섰는가.
+        wait_for(&self.waiters, &id, rx, within).map(|_| ())
+    }
+
+    /// cored 에 묻고 **값**을 받는다.
+    ///
+    /// 앱이 자기 저장소 커넥션을 놓는 길이다. 이 길이 없으면 앱은 값을 못 받아 계속 자기가
+    /// DB 를 열고, 그러면 저장소를 쓰는 주인이 둘이 된다 — SQLite 는 막지 않고 직렬화만 한다.
+    ///
+    /// 상한이 있다. 없으면 답하지 않는 cored 하나가 그 명령을 부른 창을 영원히 붙잡는다.
+    pub fn ask(&self, method: &str, params: &Value, within: Duration) -> Answered {
+        let id = format!("q{}", self.seq.fetch_add(1, Ordering::Relaxed));
+        let (tx, rx) = mpsc::channel();
+        self.waiters
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(id.clone(), tx);
+        if let Err(why) = self.send(&request_envelope(&id, method, params)) {
+            // 못 보냈으면 기다리는 자리를 거둔다 — 안 거두면 그 자리가 영영 남아 다음 답이
+            // 남의 자리를 찾는다.
             self.waiters
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
@@ -375,7 +416,7 @@ fn pump(
         }
         match classify(&line) {
             Err(why) => eprintln!("[cored-host] {why} — {}", line.chars().take(200).collect::<String>()),
-            Ok(Incoming::Answer { id, ok, code, message }) => {
+            Ok(Incoming::Answer { id, ok, code, message, data }) => {
                 // 안 붙으면 밖에서 부른 명령이 상한으로만 끝난다. 왜 그런지는 이 줄이
                 // 유일한 자국이고, 묻는 쪽에는 값으로 간다(attached).
                 if id == json!(ATTACH_ID) && !ok {
@@ -389,7 +430,11 @@ fn pump(
                         .unwrap_or_else(|e| e.into_inner())
                         .remove(key);
                     if let Some(tx) = waiter {
-                        let _ = tx.send(if ok { Ok(()) } else { Err(format!("{code}: {message}")) });
+                        let _ = tx.send(if ok {
+                            Ok(data)
+                        } else {
+                            Err(format!("{code}: {message}"))
+                        });
                     }
                 }
             }
