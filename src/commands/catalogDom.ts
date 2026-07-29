@@ -1059,9 +1059,21 @@ export function registerDomCatalog(): void {
         const zy = zone === "top" ? 0.12 : zone === "bottom" ? 0.88 : 0.5;
         toPt = { x: tr.left + tr.width * zx, y: tr.top + tr.height * zy };
       }
+      // 주입한 시퀀스는 **물리적으로 앞뒤가 맞아야** 한다: 누른 채 움직이는 동안 buttons=1,
+      // 놓은 뒤 0. 안 맞으면 코어의 포인터 순서 복구가 그것을 유령 홀드로 보고 합성 mouseup 을
+      // 쏘아 게스처를 첫 이동에서 닫는다(실측 2026-07-29: 골 드래그가 죽었고, 관측면이 그
+      // mouseup 을 첫 이동과 같은 순간·같은 좌표로 잡았다). 그 보호는 옳다 — 앞뒤가 안 맞는
+      // 것이 주입 쪽이었다. 계약 둘이 서로를 모르면 각자 옳은 채로 기능이 죽는다.
       const fire = (type: string, x: number, y: number, target: EventTarget) =>
         target.dispatchEvent(
-          new MouseEvent(type, { clientX: x, clientY: y, bubbles: true, composed: true, button: 0 }),
+          new MouseEvent(type, {
+            clientX: x,
+            clientY: y,
+            bubbles: true,
+            composed: true,
+            button: 0,
+            buttons: type === "mouseup" ? 0 : 1,
+          }),
         );
       const dist = Math.hypot(toPt.x - fromPt.x, toPt.y - fromPt.y);
       // mousedown 은 잡는 요소(골/탭)에, move/up 은 window 에 — 골 리사이즈는 window 레벨

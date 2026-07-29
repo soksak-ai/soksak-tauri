@@ -9,6 +9,7 @@
 //  2) ui.measure — style 에 상호작용/가시성 축(pointerEvents/opacity/visibility) 상시 포함,
 //     props[] 로 임의 computed prop 요청(하드코딩 필드 한계 제거), occlusion 도달성 판정.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { startPointerOrderRepair } from "../lib/pointerOrderRepair";
 
 vi.mock("../lib/webviewLabels", () => ({ currentWindowLabel: () => "main" }));
 // 프레임워크는 경계 하나로 mock 한다. 창 기하는 테스트가 갈아끼울 수 있게 홀더로 둔다 —
@@ -178,6 +179,63 @@ describe("ui.input.drag — 실시간 재현 표면", () => {
     expect(xs).toHaveLength(5);
     expect(xs[0]).toBe(40);
     expect(xs[4]).toBe(120);
+  });
+
+  /**
+   * 주입한 시퀀스는 **물리적으로 앞뒤가 맞아야** 한다 — 누른 채 움직이는 동안 buttons 는 1 이다.
+   *
+   * RED 근거(실측 2026-07-29, 살아있는 앱): 골 드래그가 첫 이동에서 죽었다. 코어의 포인터
+   * 순서 복구(pointerOrderRepair)가 "눌린 채인데 buttons=0 인 mousemove" 를 유령 홀드로 보고
+   * 합성 mouseup 을 쏘기 때문이다 — 그 보호는 옳고, 앞뒤가 안 맞는 것은 주입 쪽이었다.
+   * 관측면(ui.input.observe)이 그 mouseup 을 첫 이동과 같은 순간·같은 좌표로 잡아냈다.
+   *
+   * 두 계약이 서로를 모르면 각자 옳은 채로 기능이 죽는다 — 그래서 여기서 함께 고정한다.
+   */
+  it("누른 채 움직이는 동안 buttons=1 이다 — 안 그러면 포인터 순서 복구가 게스처를 닫는다", async () => {
+    mountNode(`<div data-node="btn">drag</div>`);
+    const node = document.querySelector<HTMLElement>("[data-node=btn]")!;
+    vi.spyOn(node, "getBoundingClientRect").mockReturnValue({
+      x: 10, y: 10, left: 10, top: 10, right: 30, bottom: 30,
+      width: 20, height: 20, toJSON: () => ({}),
+    });
+    const seen: { type: string; buttons: number }[] = [];
+    const grab = (e: Event) => seen.push({ type: e.type, buttons: (e as MouseEvent).buttons });
+    for (const t of ["mousedown", "mousemove", "mouseup"]) {
+      window.addEventListener(t, grab, true);
+    }
+    await execute("ui.input.drag", { from: ADDR, dx: 100, steps: 3, durationMs: 0 }, {});
+    for (const t of ["mousedown", "mousemove", "mouseup"]) {
+      window.removeEventListener(t, grab, true);
+    }
+    const downs = seen.filter((s) => s.type === "mousedown");
+    const moves = seen.filter((s) => s.type === "mousemove");
+    const ups = seen.filter((s) => s.type === "mouseup");
+    expect(downs.map((d) => d.buttons)).toEqual([1]);
+    expect(moves.map((m) => m.buttons)).toEqual([1, 1, 1]);
+    // 놓은 뒤에는 눌린 버튼이 없다 — up 이 buttons=1 이면 그것도 앞뒤가 안 맞는다.
+    expect(ups.map((u) => u.buttons)).toEqual([0]);
+  });
+
+  /** 실제 보호와 함께 돌려 본다 — 계약 둘이 만나는 자리가 진짜 판정이다. */
+  it("포인터 순서 복구가 살아 있어도 게스처가 끝까지 간다", async () => {
+    const stop = startPointerOrderRepair();
+    try {
+      mountNode(`<div data-node="btn">drag</div>`);
+      const node = document.querySelector<HTMLElement>("[data-node=btn]")!;
+      vi.spyOn(node, "getBoundingClientRect").mockReturnValue({
+        x: 10, y: 10, left: 10, top: 10, right: 30, bottom: 30,
+        width: 20, height: 20, toJSON: () => ({}),
+      });
+      const ups: number[] = [];
+      const onUp = (e: Event) => ups.push((e as MouseEvent).clientX);
+      window.addEventListener("mouseup", onUp, true);
+      await execute("ui.input.drag", { from: ADDR, dx: 100, steps: 3, durationMs: 0 }, {});
+      window.removeEventListener("mouseup", onUp, true);
+      // up 은 마지막 한 번뿐이다. 중간에 하나라도 더 있으면 게스처가 거기서 끊긴 것이다.
+      expect(ups).toEqual([120]);
+    } finally {
+      stop();
+    }
   });
 });
 
