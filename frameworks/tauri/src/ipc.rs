@@ -147,7 +147,9 @@ pub fn ipc_last_project_window() -> Option<String> {
     last_workspace_window()
 }
 
-fn active_window() -> String {
+// 포커스 창 — cored 에 등록할 창 사실의 한 축이다(cored_host). 장부는 이 프로세스 것이고
+// 창 호스트는 라벨 하나만 말한다: "지금 이 창이 포커스다."
+pub fn active_window() -> String {
     with_focus(|l| l.focused().to_string())
 }
 
@@ -957,6 +959,43 @@ pub fn request_command(
             // Rust 내부 발화는 같은 빌드다 — 스큐가 구조적으로 불가능(게이트도 미경유).
             protocol: None,
             key,
+        },
+    )
+}
+
+// 지목된 창에서 명령 하나를 실행하고 답을 기다린다 — **타겟 해소는 이미 끝났다.**
+//
+// cored 가 민 배달이 지나는 길이다(cored_host). 창을 여기서 다시 고르지 않는 것이 요점이다:
+// 어느 창인지는 cored 가 코어의 규칙으로 정했고, 그 판정을 이쪽에서 한 번 더 하면 규칙이 두
+// 벌이 된다 — 그리고 두 벌이 갈리면 밖에서 부른 명령이 엉뚱한 창에서 돌고 성공을 답한다.
+// 없는 창을 지목한 배달은 route 가 WINDOW_NOT_FOUND 로 답한다(폴백으로 흘러내리지 않는다).
+//
+// origin 은 싣지 않는다 — 이 명령의 유래는 사람(하니스·에이전트·sok)이고, 시스템 유래로
+// 표시하면 활동 스트림의 낭독·표시 규칙이 그것을 배경 잡음으로 가린다.
+pub fn request_in_window(
+    app: &AppHandle,
+    window: String,
+    method: String,
+    params: Value,
+    pane: Option<String>,
+) -> Value {
+    route(
+        app,
+        Request {
+            id: None,
+            method,
+            params,
+            pane,
+            window: Some(window),
+            // 상한은 cored 가 자기 요청에 대해 이미 걸고 있다. 여기서 더 긴 값을 쓰면 저쪽이
+            // 먼저 포기하고, 뒤늦은 회신은 짝을 잃는다.
+            timeout_ms: None,
+            parent: None,
+            origin: None,
+            // 같은 빌드의 프로세스 간 발화가 아니다 — 그러나 봉투를 만든 것은 이 프로세스이고
+            // 스큐 게이트는 소켓 클라이언트의 선언을 보는 자리라 여기서는 대상이 아니다.
+            protocol: None,
+            key: None,
         },
     )
 }
