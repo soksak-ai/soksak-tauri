@@ -27,7 +27,7 @@ pub fn language_from_settings(settings: Option<&Value>) -> Lang {
 // 열린 커넥션에서 사람 언어를 조회한다 — kv(core/settings)를 읽어 순수 해소기에 넘긴다.
 // 판독 실패(손상·부재)는 Korean 으로 떨어진다. 부팅 복구가 복원한 DB 든 빈 DB 든 같은 규칙이다.
 pub fn app_language_from_conn(conn: &Connection) -> Lang {
-    let settings = data::store::kv_get(conn, "core", "settings").ok().flatten();
+    let settings = soksak_store::store::kv_get(conn, "core", "settings").ok().flatten();
     language_from_settings(settings.as_ref())
 }
 
@@ -134,11 +134,11 @@ mod tests {
     #[test]
     fn app_language_from_conn_honors_persisted_setting() {
         let conn = Connection::open_in_memory().expect("in-memory db");
-        data::init_base(&conn).expect("base schema");
+        soksak_store::store::init_base(&conn).expect("base schema");
         // 설정 부재 = 프론트 기본(ko).
         assert_eq!(app_language_from_conn(&conn), Lang::Ko);
         // 프론트가 영어로 바꾸면 사람 표면도 영어.
-        data::store::kv_set(&conn, "core", "settings", &json!({"language": "en"}))
+        soksak_store::store::kv_set(&conn, "core", "settings", &json!({"language": "en"}))
             .expect("persist settings");
         assert_eq!(app_language_from_conn(&conn), Lang::En);
     }

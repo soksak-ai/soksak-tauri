@@ -805,7 +805,7 @@ fn persist_save(app: &AppHandle, spec: &JobSpec) {
     let guard = st.conn.lock().unwrap();
     if let Some(conn) = guard.as_ref() {
         if let Ok(v) = serde_json::to_value(spec) {
-            let _ = crate::data::store::kv_set(conn, "core", &persist_key(id), &v);
+            let _ = soksak_store::store::kv_set(conn, "core", &persist_key(id), &v);
         }
     }
 }
@@ -814,7 +814,7 @@ fn persist_delete(app: &AppHandle, id: &str) {
     let st = app.state::<crate::data::DbState>();
     let guard = st.conn.lock().unwrap();
     if let Some(conn) = guard.as_ref() {
-        let _ = crate::data::store::kv_delete(conn, "core", &persist_key(id));
+        let _ = soksak_store::store::kv_delete(conn, "core", &persist_key(id));
     }
 }
 
@@ -825,9 +825,9 @@ pub fn reload_persisted(app: &AppHandle) {
         let st = app.state::<crate::data::DbState>();
         let guard = st.conn.lock().unwrap();
         let Some(conn) = guard.as_ref() else { return };
-        let keys = crate::data::store::kv_keys(conn, "core", Some("schedule:")).unwrap_or_default();
+        let keys = soksak_store::store::kv_keys(conn, "core", Some("schedule:")).unwrap_or_default();
         keys.iter()
-            .filter_map(|k| crate::data::store::kv_get(conn, "core", k).ok().flatten())
+            .filter_map(|k| soksak_store::store::kv_get(conn, "core", k).ok().flatten())
             .filter_map(|v| serde_json::from_value::<JobSpec>(v).ok())
             .collect()
     };

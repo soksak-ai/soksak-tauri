@@ -74,6 +74,8 @@ export const DECLARED = new Map([
   ["frameworks/tauri/src/seal_keys.rs", ["framework", "코어 계약의 이 프레임워크 구현(고아 규칙으로 껍질이 필요하다)"]],
   ["frameworks/tauri/src/pty_delivery.rs", ["framework", "코어 규칙의 얇은 결속"]],
   ["frameworks/tauri/src/data/process_probe.rs", ["framework", "이 프로세스의 메모리 형편 — 저장소 규칙이 인자로 받는다"]],
+  ["frameworks/tauri/src/data/mod.rs", ["framework", "이 프로세스가 쥔 연결 하나와 앰비언트 홈에서 파생한 경로(여는 절차는 soksak-store)"]],
+  ["frameworks/tauri/src/data/ring.rs", ["framework", "백업 실패를 창이 있는 쪽의 방식으로 고지한다(언제·몇 개·어떻게는 soksak-store::ring)"]],
   ["frameworks/tauri/src/cored_ledger.rs", ["framework", "이식 장부 — 표가 둘인 동안만 있다(FRAMEWORK-PORT '남은 중복')"]],
 
   ["frameworks/electron/main.cjs", ["framework", "이 프레임워크의 진입점"]],
@@ -86,11 +88,7 @@ export const DECLARED = new Map([
   ["frameworks/tauri/src/titlebar.rs", ["framework", "창 크롬 — 몸이 tauri::Window 다"]],
 
   // ── tenant: 얇게 묶였을 뿐 몸은 무관하다 ────────────────────────────────────
-  ["frameworks/tauri/src/data/ring.rs", ["tenant", "백업 링 — 저장소 규칙이라 soksak-store 로 간다"]],
-
   // ── tenant: 프레임워크 무관인데 여기 산다. 코어로 간다 ──────────────────────
-  ["frameworks/tauri/src/data/backup.rs", ["tenant", "저장소 백업 — 백엔드 일원화에서 코어로"]],
-  ["frameworks/tauri/src/data/mod.rs", ["tenant", "저장소 개방·스키마 — store_open/store_lock 의 짝을 확인해야 한다"]],
 ]);
 
 function walk(dir, out = []) {

@@ -103,10 +103,9 @@ fn probe_store_copy() {
     // SOKSAK_PROBE_OPEN=app 이면 앱과 같은 개방 절차(PRAGMA·부팅 게이트·스키마·FTS 정합)를 그대로
     // 탄다 — 밖에서 파일만 열어 보는 것과 앱이 여는 것이 다르면 그 차이가 원인이기 때문이다.
     let conn = if std::env::var("SOKSAK_PROBE_OPEN").as_deref() == Ok("app") {
-        // 앱 개방 절차(PRAGMA·부팅 게이트·스키마·FTS 정합)는 아직 프레임워크에 있다.
-        // data/mod.rs 가 이 크레이트로 오면 이 갈래가 그것을 그대로 탄다 — 그때까지는
-        // 조용히 다른 것을 열지 않고 이름을 달고 멈춘다.
-        panic!("앱 개방 절차는 아직 프레임워크에 있다 — data/mod.rs 이관 뒤 이 갈래가 선다")
+        // 앱이 지나는 그 문으로 연다 — 절차가 한 벌이라 "앱 전용 개방"이라는 것이 따로 없다.
+        println!("open: app(부팅 개방 절차)");
+        crate::open::open(std::path::Path::new(&path)).expect("부팅 개방 절차로 사본 열기")
     } else {
         println!("open: plain");
         Connection::open(&path).expect("사본 열기")

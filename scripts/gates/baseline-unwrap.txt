@@ -3,37 +3,6 @@
 # 갱신은 --prune(축소)만. 값을 올리는 것은 명시 재입법 커밋으로만 한다(C5 — 무언 완화 금지).
 # 제거 조건: 해당 파일의 배포 `.unwrap(` 를 에러 전파/명시 처리로 대체 → stale 실패 → --prune. 0이면 항목이 삭제된다.
 # 파일 개명 시 같은 커밋에서 항목 경로를 수기로 이전한다(값 불변).
-#
-# ── 2026-07-29 명시 재입법 ────────────────────────────────────────────────────
-# 아래 항목들의 값을 올린다. 사유를 남긴다 — 올린 근거가 없는 봉인은 곧 아무 뜻이 없다.
-#
-# 원인 ①(다수): 이 게이트가 쓰는 `stripRustTestModule` 이 중괄호 없는 `#[cfg(test)] mod x;`
-#   를 블록으로 착각해 **다음에 나오는 아무 블록이나 삼키고 있었다**(같은 커밋에서 고침).
-#   그래서 실행 경로의 unwrap 이 스캔 밖에 있었고, 봉인은 그 눈먼 수를 적고 있었다.
-#   실측: data/mod.rs 는 실행 경로 21건인데 1로 봉인돼 있었고, process.rs 는 실제 0건인데
-#   (7건 전부 검사 안) 5로 봉인돼 있었다. 새 수가 진실이다.
-# 원인 ②: 그동안 게이트가 RED 인 채 방치됐다. 확인이 출력 문자열 대조라 이 게이트의 실패를
-#   놓쳤다(이 게이트는 "FAIL" 이라는 낱말을 안 쓴다). scripts/gates/run-all.mjs 가 그 구멍을 막는다.
-#
-# 이것은 허용이 아니라 **기록**이다. 값을 내리는 길은 그대로다 — 고치고 --prune.
-#
-# ── 2026-07-29 명시 재입법 ────────────────────────────────────────────────────
-# 이 날 16개 항목의 값이 올랐다. 사유를 남긴다 — 올린 근거가 없는 봉인은 곧 아무 뜻이 없다.
-#
-# 원인 ① 이 게이트가 쓰는 stripRustTestModule 이 중괄호 없는 `#[cfg(test)] mod x;` 를 블록으로
-#   착각해 다음에 나오는 아무 블록이나 삼키고 있었다(같은 날 고침). 실행 경로의 unwrap 이
-#   스캔 밖이었고 봉인은 그 눈먼 수를 적고 있었다. 실측: data/mod.rs 는 실행 경로 21건인데
-#   1로 봉인돼 있었고, process.rs 는 실제 0건(7건 전부 검사 안)인데 5로 봉인돼 있었다.
-# 원인 ② 그동안 이 게이트가 RED 인 채 방치됐다. 확인이 출력 문자열 대조라 실패를 놓쳤다 —
-#   이 게이트는 "FAIL" 이라는 낱말을 쓰지 않는다. scripts/gates/run-all.mjs 가 그 구멍을 막는다.
-#
-# 이것은 허용이 아니라 **기록**이다. 내리는 길은 그대로다 — 고치고 --prune.
-#
-# ── 2026-07-29 뿌리 확장 재입법 ───────────────────────────────────────────────
-# crates/* 가 이 게이트의 스캔 뿌리에 없었다. 그래서 코어·store·cored·ptyd 는 한 번도
-# 세어진 적이 없다(unwrap 49건 · 1500줄 초과 2파일). 이관 목적지가 스캔 밖이면 프레임워크
-# 에서 옮긴 파일의 부채가 옮겨지는 순간 영영 안 세어진다 — 뿌리 확장이 이관보다 먼저인 이유다.
-# 아래 항목은 새로 생긴 부채가 아니라 **처음 보이게 된 부채**다.
 crates/soksak-cli/src/lib.rs 1
 crates/soksak-core/src/proc.rs 2
 crates/soksak-cored/src/registry.rs 2
@@ -43,7 +12,7 @@ crates/soksak-store/src/store.rs 3
 frameworks/tauri/src/activity.rs 9
 frameworks/tauri/src/clipboard.rs 1
 frameworks/tauri/src/daemon.rs 22
-frameworks/tauri/src/data/mod.rs 21
+frameworks/tauri/src/data/mod.rs 1
 frameworks/tauri/src/id_registry.rs 4
 frameworks/tauri/src/plugins.rs 2
 frameworks/tauri/src/project_registry.rs 5

@@ -185,7 +185,7 @@ pub fn persist(conn: &rusqlite::Connection, entry: &Value) -> bool {
     // 회복 드레인 — 큐가 비었거나 첫 건이 성공하는 동안만(실패 지속 중 헛시도 방지).
     if let Ok(mut q) = PENDING.lock() {
         while let Some(row) = q.front() {
-            match crate::data::store::put(conn, NS, COLL, row.scope, row.id.clone(), &row.doc) {
+            match soksak_store::store::put(conn, NS, COLL, row.scope, row.id.clone(), &row.doc) {
                 Ok(_) => {
                     q.pop_front();
                 }
@@ -193,7 +193,7 @@ pub fn persist(conn: &rusqlite::Connection, entry: &Value) -> bool {
             }
         }
     }
-    if let Err(e) = crate::data::store::put(conn, NS, COLL, scope, id.clone(), &persisted) {
+    if let Err(e) = soksak_store::store::put(conn, NS, COLL, scope, id.clone(), &persisted) {
         note_persist_failure(&e.to_string());
         if let Ok(mut q) = PENDING.lock() {
             let dropped = pending_push(&mut q, PendingRow { scope, id, doc: persisted });
@@ -203,7 +203,7 @@ pub fn persist(conn: &rusqlite::Connection, entry: &Value) -> bool {
         }
         return false;
     }
-    let _ = crate::data::store::retention_trim(conn, NS, COLL, scope, PERSIST_CAP);
+    let _ = soksak_store::store::retention_trim(conn, NS, COLL, scope, PERSIST_CAP);
     true
 }
 
@@ -263,7 +263,7 @@ fn note_persist_failure(err: &str) {
 
 /// 활동 컬렉션 정의(부트 1회, 멱등) — kind 인덱스(필터 조회).
 pub fn init_collection(conn: &rusqlite::Connection) {
-    let _ = crate::data::store::define(conn, NS, COLL, &["kind".into(), "seq".into()], &[]);
+    let _ = soksak_store::store::define(conn, NS, COLL, &["kind".into(), "seq".into()], &[]);
 }
 
 /// 영속 행 크기 불변식(바이트) — 초과 payload 는 요약형으로 강등된다.
@@ -280,7 +280,7 @@ use soksak_core::activity::PERSIST_DOC_CAP;
 /// 부트 1회 — 영속 최댓값에서 seq 재개(재시작을 넘는 단조). 레코드 없음(신선 설치) = 0 유지.
 /// 전 scope(신호+저신호) 최댓값 — 어느 쪽이 마지막이었든 뒤로 가지 않는다.
 pub fn resume_seq(app: &AppHandle, conn: &rusqlite::Connection) {
-    let last = crate::data::store::query(
+    let last = soksak_store::store::query(
         conn,
         NS,
         COLL,
@@ -493,7 +493,7 @@ mod split_tests {
     fn persisting_needs_only_a_connection() {
         let _serial = persist_fixture();
         let conn = rusqlite::Connection::open_in_memory().unwrap();
-        crate::data::init_base(&conn).unwrap();
+        soksak_store::store::init_base(&conn).unwrap();
         init_collection(&conn);
 
         let hub = ActivityHub::default();
@@ -508,7 +508,7 @@ mod split_tests {
         assert!(persist(&conn, &low));
 
         let rows = |scope: &str| {
-            crate::data::store::query(
+            soksak_store::store::query(
                 &conn,
                 NS,
                 COLL,
