@@ -35,7 +35,7 @@ The skeleton owns exactly these common interfaces. Each line states the guarante
 | Interface | Source | Guarantee |
 |-----------|--------|-----------|
 | **Window / Pane / Layout** | `src/state/sessions.ts` | Owns the layout tree (`GroupNode`, `ViewGroup`, `View`, `ContentArea`). Splits, moves, closes, maximizes, resizes panes. The tree is opaque to plugins — never exposed, only mutated through commands. A group may hold zero views (empty tab); the skeleton runs no program of its own, so a fresh project / new content tab / fully-closed group opens to an empty pane, and the last view in a single group can be closed (the group stays, emptied). Views are added only through the program (+menu) seam. |
-| **Project identity & single-open** | `src/lib/workspace.ts` (constitution P1–P6), `src-tauri/src/project_registry.rs` | A project's identity is its root path (P4); one root is open in at most one window across the whole app (P6). The Rust singleton registry is the enforcement point — every open/close path goes through `src/state/projectRegistry.ts`; a conflict focuses the owning window instead of opening a duplicate; window destruction releases its claims. |
+| **Project identity & single-open** | `src/lib/workspace.ts` (constitution P1–P6), `frameworks/tauri/src/project_registry.rs` | A project's identity is its root path (P4); one root is open in at most one window across the whole app (P6). The Rust singleton registry is the enforcement point — every open/close path goes through `src/state/projectRegistry.ts`; a conflict focuses the owning window instead of opening a duplicate; window destruction releases its claims. |
 | **Workspace persistence & restore** | `src/state/workspaceBoot.ts`, `src/state/workspacePersistence.ts`, `src/state/hydration.ts` — principles in [RESTORE.md](RESTORE.md) | Restart restores windows (frame, focus), tabs, splits, terminal cwd, and repainted command blocks. History is ownership-delegated (blocks to the terminal plugin, TUI transcripts to the TUI itself, lineage links only); restore and unlock re-hydrate share one path; visible views mount first, the rest fill in idle order. |
 | **Generic content-pane hosting** | `src/components/GroupArea.tsx`, `src/components/PluginViewHost.tsx` | Renders one persistent off-screen-parkable slot per `view.id`. The slot is a bare container. The skeleton attaches no renderer to it beyond the plugin-provider mount contract. |
 | **Command registry (single source of truth)** | `src/commands/registry.ts` | One registry. Every command (core or plugin) registers once with a typed param schema and danger gate. `catalogJson()` auto-exposes the same set to CLI, MCP, and docs. No command exists outside this registry. |
@@ -43,7 +43,7 @@ The skeleton owns exactly these common interfaces. Each line states the guarante
 | **Event bus** | `src/plugins/hooks.ts`, `src/plugins/bus.ts` | System events (`project.*`, `file.*`, `command.*`, `turn.ended`, `theme.changed`, `locale.changed`, `app.focus`, `bookmarks.changed`) are permission-gated. `bus.*` is plugin-to-plugin pub/sub independent of core state. |
 | **Program (+menu) registry** | `src/plugins/programRegistry.ts` | Declarative `contributes.programs[]`. Each program declares a `kind`. The +menu and `tab.open` route by `kind`. Plugins declare programs; the skeleton routes them. |
 | **View placement & focus registry** | `src/plugins/viewRegistry.ts`, `src/plugins/viewFocus.ts` | `registerView(viewId, provider)` with placements (`content`, `sidebar-left`, `sidebar-right`, `footer`). Mount/unmount owns lifetime. Optional `prepareFocusTransfer` / `focus` form the only keyboard-focus boundary: core owns the destination and ordering; a provider may touch only its own container. Mount is never focus intent, and deferred focus must honor the supplied `AbortSignal`. |
-| **Native generic capabilities** | `src-tauri/src/*` | PTY spawn/IO/flow-control (`pty.rs`), child-webview lifecycle + layer inversion + hole-punch (`browser.rs`), media proxy (`mediaproxy.rs`), data store (rusqlite + FTS5), secrets vault, process/WebSocket/HTTP clients, filesystem. All generic — none named after a concrete feature consumer. |
+| **Native generic capabilities** | `frameworks/tauri/src/*` | PTY spawn/IO/flow-control (`pty.rs`), child-webview lifecycle + layer inversion + hole-punch (`browser.rs`), media proxy (`mediaproxy.rs`), data store (rusqlite + FTS5), secrets vault, process/WebSocket/HTTP clients, filesystem. All generic — none named after a concrete feature consumer. |
 
 The native layer stays in the skeleton because PTY kernel objects and platform webviews (WKWebView / WebView2) cannot cross the plugin boundary. The skeleton exposes them as generic capabilities; plugins consume them as thin clients.
 
@@ -211,11 +211,11 @@ The first extraction that is **native code a JS plugin cannot run**, so it leave
 The first engine-model sidecar: the bundled Chromium engine renders into pane surfaces, so
 it cannot be a separate process (process-local NSView parenting) — it is an in-process dylib
 (`soksak-sidecar-browser-chromium`, `crates/`) loaded by the skeleton's generic engine-hosting
-primitive (`src-tauri/src/sidecar.rs`, `app.sidecar`; ABI in docs/SIDECARS.md).
+primitive (`frameworks/tauri/src/sidecar.rs`, `app.sidecar`; ABI in docs/SIDECARS.md).
 
 **MOVES (verbatim, A16):** the whole engine — GCD message pump with re-entrancy guards, the
 gated render tick, `do_close=1` + deferred-reap close sequence, in-memory profile, popup
-routing, child bounds/flip-y. `src-tauri/src/cef_engine.rs` → the standalone repo
+routing, child bounds/flip-y. `frameworks/tauri/src/cef_engine.rs` → the standalone repo
 `soksak-ai/soksak-sidecar-browser-chromium` (`src/engine.rs`; dev checkout lives at the sidecar
 home `~/.soksak/sidecars/soksak-sidecar-browser-chromium`).
 
@@ -264,7 +264,7 @@ This section is law, not description. It gives the identity of Section 1 ("The s
 > Legislated by the user (Korean original in [ARCHITECTURE.ko.md](ARCHITECTURE.ko.md) §7): "The core strongly couples to nothing. Everything is opened and rule-bound so that plugins interact through interfaces and fulfill their own roles. Expose every DOM, expose every command, expose every status, and connect and process data transparently. Plugins do not strongly couple to each other either."
 
 ### C1. The core knows no specific plugin and no specific feature.
-Never write a plugin id into core source. The mechanical gate scans the execution-path code of `src/` and `src-tauri/` (handlers, constants, branches) for the string `soksak-plugin-` and must return zero matches. The scan carries an explicit allowlist — command `examples` strings (a real plugin id in an example is replaced by the placeholder `soksak-plugin-<id>`), spec package names in comments, and the single registry repo URL constant — and the allowlist never grows except through the C5 procedure. Core UI never computes feature data of its own: decorations, badges, and status displays act only as consumers of registry commands and events. Never park a primitive under a feature namespace. This clause adds enforcement to Section 1 and to A3/A4; it adds no new identity.
+Never write a plugin id into core source. The mechanical gate scans the execution-path code of `src/` and `frameworks/tauri/` (handlers, constants, branches) for the string `soksak-plugin-` and must return zero matches. The scan carries an explicit allowlist — command `examples` strings (a real plugin id in an example is replaced by the placeholder `soksak-plugin-<id>`), spec package names in comments, and the single registry repo URL constant — and the allowlist never grows except through the C5 procedure. Core UI never computes feature data of its own: decorations, badges, and status displays act only as consumers of registry commands and events. Never park a primitive under a feature namespace. This clause adds enforcement to Section 1 and to A3/A4; it adds no new identity.
 
 ### C2. Every feature exposes three surfaces — the transparency triple.
 - **command** — a plugin with views and zero commands does not pass (gate: views > 0 ∧ commands = 0 → fail).

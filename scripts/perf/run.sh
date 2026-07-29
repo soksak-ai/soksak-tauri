@@ -65,8 +65,8 @@ fi
 # 측정 전 앱 전면 활성화 — 백그라운드 WKWebView 는 이벤트 루프가 스로틀되어
 # 측정이 무효가 된다(검증: 비활성 시 RPC RTT 300ms+, 활성 시 2.4ms).
 case "$IDENTITY" in
-  debug)   open "$REPO_ROOT/src-tauri/target/debug/bundle/macos/soksak-debug.app" ;;
-  release) open "$REPO_ROOT/src-tauri/target/release/bundle/macos/soksak.app" ;;
+  debug)   open "$REPO_ROOT/frameworks/tauri/target/debug/bundle/macos/soksak-debug.app" ;;
+  release) open "$REPO_ROOT/frameworks/tauri/target/release/bundle/macos/soksak.app" ;;
   dev)     osascript -e 'tell application "System Events" to set frontmost of process "soksak-dev" to true' 2>/dev/null || true ;;
 esac
 sleep 1

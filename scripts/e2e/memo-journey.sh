@@ -8,7 +8,7 @@
 # 사용: scripts/e2e/memo-journey.sh   (debug 앱 실행 중이어야 한다 — sok-debug 이름 바이너리 사용)
 set -euo pipefail
 
-SOK="${SOK:-src-tauri/target/debug/sok-debug}"
+SOK="${SOK:-frameworks/tauri/target/debug/sok-debug}"
 ROOT="$HOME/.soksak-e2e/memo-journey"   # 고정 픽스처 루트(재사용·멱등)
 FAIL=0
 

@@ -15,18 +15,18 @@ function write(rel, body) {
 }
 
 function configs() {
-  write("src-tauri/tauri.conf.json", JSON.stringify({ identifier: "com.soksak.dev", bundle: {} }));
-  write("src-tauri/tauri.debug.conf.json", JSON.stringify({ identifier: "com.soksak.debug", bundle: {} }));
-  write("src-tauri/tauri.release.conf.json", JSON.stringify({ identifier: "com.soksak.app" }));
+  write("frameworks/tauri/tauri.conf.json", JSON.stringify({ identifier: "com.soksak.dev", bundle: {} }));
+  write("frameworks/tauri/tauri.debug.conf.json", JSON.stringify({ identifier: "com.soksak.debug", bundle: {} }));
+  write("frameworks/tauri/tauri.release.conf.json", JSON.stringify({ identifier: "com.soksak.app" }));
   write(".github/workflows/release.yml", "# https://github.com/soksak-ai/soksak-app/releases\n");
   write(
     "scripts/release/prepare-tauri-config.mjs",
     'const key = process.env.TAURI_UPDATER_PUBLIC_KEY; // soksak-ai/soksak-app/releases\n',
   );
-  write("src-tauri/src/home.rs", "fn fixed_identity_home() {}\n");
+  write("frameworks/tauri/src/home.rs", "fn fixed_identity_home() {}\n");
   write("crates/soksak-cli/src/lib.rs", "fn fixed_identity_home() {}\n");
   write(
-    "src-tauri/src/runtime_dep.rs",
+    "frameworks/tauri/src/runtime_dep.rs",
     "entry_type.is_file(); reject_symlink_components(); OpenOptions::new().create_new(true);\n",
   );
 }
@@ -53,7 +53,7 @@ describe("distribution invariants", () => {
 
   it("dev/debug updater와 private core release URL을 거부한다", () => {
     write(
-      "src-tauri/tauri.conf.json",
+      "frameworks/tauri/tauri.conf.json",
       JSON.stringify({ plugins: { updater: { endpoints: ["x"] } }, bundle: { createUpdaterArtifacts: true } }),
     );
     write(".github/workflows/release.yml", "https://github.com/soksak-ai/soksak/releases/download/v1/a\n");
@@ -64,7 +64,7 @@ describe("distribution invariants", () => {
 
   it("debug/test 이름으로도 identity home runtime override를 허용하지 않는다", () => {
     write(
-      "src-tauri/src/home.rs",
+      "frameworks/tauri/src/home.rs",
       'fn bad() { let _ = std::env::var("SOKSAK_TEST_HOME"); }\n',
     );
     expect(scanRoot(root)).toContain("identity home: 앱/CLI runtime 환경변수 override 금지");
@@ -72,7 +72,7 @@ describe("distribution invariants", () => {
 
   it("runtime archive를 system tar나 generic unpack에 위임하지 않는다", () => {
     write(
-      "src-tauri/src/runtime_dep.rs",
+      "frameworks/tauri/src/runtime_dep.rs",
       'std::process::Command::new("/usr/bin/tar"); archive.unpack(dest);\n',
     );
     const violations = scanRoot(root).join("\n");

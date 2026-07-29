@@ -23,9 +23,9 @@ import { fileURLToPath } from "node:url";
 const requireCjs = createRequire(import.meta.url);
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "../..");
-const { createControlHost, CMD_REQUEST } = requireCjs(join(ROOT, "electron/control.cjs"));
-const { createBackendClient } = requireCjs(join(ROOT, "electron/backend.cjs"));
-const { coredBinary, ensureCored } = requireCjs(join(ROOT, "electron/cored.cjs"));
+const { createControlHost, CMD_REQUEST } = requireCjs(join(ROOT, "frameworks/electron/control.cjs"));
+const { createBackendClient } = requireCjs(join(ROOT, "frameworks/electron/backend.cjs"));
+const { coredBinary, ensureCored } = requireCjs(join(ROOT, "frameworks/electron/cored.cjs"));
 
 /** 답이 안 오면 무한정 기다리지 않는다 — 붙지 않은 검사는 실패로 드러나야 한다. */
 const PATIENCE_MS = 10_000;

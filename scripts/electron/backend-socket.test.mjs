@@ -17,7 +17,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 const requireCjs = createRequire(import.meta.url);
-const BACKEND = join(dirname(fileURLToPath(import.meta.url)), "../../electron/backend.cjs");
+const BACKEND = join(dirname(fileURLToPath(import.meta.url)), "../../frameworks/electron/backend.cjs");
 const { createBackendClient, resolveSocketPath, SOCKET_ENV, SOCKET_ARG } = requireCjs(BACKEND);
 
 let root;

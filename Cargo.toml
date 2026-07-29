@@ -20,7 +20,7 @@ members = [
   "crates/soksak-ptyd",
   "crates/soksak-cored",
   "crates/soksak-cli",
-  "src-tauri",
+  "frameworks/tauri",
 ]
 # 워크스페이스 안에 있으나 멤버가 아닌 패키지 — CI 픽스처는 자기 빌드를 따로 돈다.
 exclude = [".github/fixtures"]

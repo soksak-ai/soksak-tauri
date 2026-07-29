@@ -310,7 +310,7 @@ mod tests {
     /// 같은 조작에 두 프레임워크가 다르게 답하고, 그 차이는 "이쪽에서만 프로젝트가 안 열린다"다.
     #[test]
     fn the_fixture_binds_both_implementations() {
-        let raw = include_str!("../../crates/soksak-core/fixtures/project-claims.json");
+        let raw = include_str!("../../../crates/soksak-core/fixtures/project-claims.json");
         let doc: serde_json::Value = serde_json::from_str(raw).expect("픽스처 JSON");
         let cases = doc["cases"].as_array().expect("cases");
         // 오라클 생존 — 비면 아무것도 안 지키면서 통과한다.

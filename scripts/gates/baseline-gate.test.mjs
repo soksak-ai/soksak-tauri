@@ -35,7 +35,7 @@ function longFile(lines) {
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "baseline-gate-"));
-  write("src-tauri/src/a.rs", rustWithUnwraps(2));
+  write("frameworks/tauri/src/a.rs", rustWithUnwraps(2));
   write("src/big.ts", longFile(LENGTH_LIMIT + 1));
   write("src/ok.ts", "export const ok = true;\n");
 });
@@ -55,7 +55,7 @@ describe("baseline-gate", () => {
     expect(runGate("--init").status).toBe(0);
     expect(existsSync(join(root, "scripts/gates/baseline-unwrap.txt"))).toBe(true);
     expect(existsSync(join(root, "scripts/gates/baseline-file-length.txt"))).toBe(true);
-    expect(readFileSync(join(root, "scripts/gates/baseline-unwrap.txt"), "utf8")).toContain("src-tauri/src/a.rs 2");
+    expect(readFileSync(join(root, "scripts/gates/baseline-unwrap.txt"), "utf8")).toContain("frameworks/tauri/src/a.rs 2");
     expect(readFileSync(join(root, "scripts/gates/baseline-file-length.txt"), "utf8")).toContain(
       `src/big.ts ${LENGTH_LIMIT + 1}`,
     );
@@ -71,41 +71,41 @@ describe("baseline-gate", () => {
 
   it("신규 위반 파일이 생기면 실패한다", () => {
     expect(runGate("--init").status).toBe(0);
-    write("src-tauri/src/b.rs", rustWithUnwraps(1));
+    write("frameworks/tauri/src/b.rs", rustWithUnwraps(1));
     const r = runGate();
     expect(r.status).toBe(1);
-    expect(r.out).toContain("신규 위반 unwrap: src-tauri/src/b.rs");
+    expect(r.out).toContain("신규 위반 unwrap: frameworks/tauri/src/b.rs");
   });
 
   it("봉인 값을 초과하면 실패한다", () => {
     expect(runGate("--init").status).toBe(0);
-    write("src-tauri/src/a.rs", rustWithUnwraps(3));
+    write("frameworks/tauri/src/a.rs", rustWithUnwraps(3));
     const r = runGate();
     expect(r.status).toBe(1);
-    expect(r.out).toContain("신규 위반 unwrap: src-tauri/src/a.rs");
+    expect(r.out).toContain("신규 위반 unwrap: frameworks/tauri/src/a.rs");
   });
 
   it("unwrap 은 배포 코드만 계수한다 — 인라인 #[cfg(test)] 모듈 unwrap 은 제외(테스트 idiom)", () => {
     // 배포 2건 + 테스트 모듈 3건 = 전문 5건이지만, unwrap 봉인은 배포 2건만 본다.
     const shipTwoTestThree =
       "fn ship() { x.unwrap(); y.unwrap(); }\n#[cfg(test)]\nmod tests {\n    fn t() { a.unwrap(); b.unwrap(); c.unwrap(); }\n}\n";
-    write("src-tauri/src/a.rs", shipTwoTestThree);
+    write("frameworks/tauri/src/a.rs", shipTwoTestThree);
     expect(runGate("--init").status).toBe(0);
     expect(readFileSync(join(root, "scripts/gates/baseline-unwrap.txt"), "utf8")).toContain(
-      "src-tauri/src/a.rs 2",
+      "frameworks/tauri/src/a.rs 2",
     );
     expect(runGate().status).toBe(0);
     // 테스트 모듈 unwrap 을 더 넣어도 위반이 아니다(계수 밖).
     write(
-      "src-tauri/src/a.rs",
+      "frameworks/tauri/src/a.rs",
       "fn ship() { x.unwrap(); y.unwrap(); }\n#[cfg(test)]\nmod tests {\n    fn t() { a.unwrap(); b.unwrap(); c.unwrap(); d.unwrap(); e.unwrap(); }\n}\n",
     );
     expect(runGate().status).toBe(0);
     // 배포 코드 unwrap 이 늘면 여전히 잡힌다 — 신호는 살아 있다.
-    write("src-tauri/src/a.rs", "fn ship() { x.unwrap(); y.unwrap(); z.unwrap(); }\n");
+    write("frameworks/tauri/src/a.rs", "fn ship() { x.unwrap(); y.unwrap(); z.unwrap(); }\n");
     const r = runGate();
     expect(r.status).toBe(1);
-    expect(r.out).toContain("신규 위반 unwrap: src-tauri/src/a.rs");
+    expect(r.out).toContain("신규 위반 unwrap: frameworks/tauri/src/a.rs");
   });
 
   it("상한 초과 파일이 새로 생기면 실패한다", () => {
@@ -118,36 +118,36 @@ describe("baseline-gate", () => {
 
   it("stale 봉인은 실패하고 --prune 만이 축소를 반영한다", () => {
     expect(runGate("--init").status).toBe(0);
-    write("src-tauri/src/a.rs", rustWithUnwraps(1));
+    write("frameworks/tauri/src/a.rs", rustWithUnwraps(1));
     const r = runGate();
     expect(r.status).toBe(1);
-    expect(r.out).toContain("stale 봉인 unwrap: src-tauri/src/a.rs");
+    expect(r.out).toContain("stale 봉인 unwrap: frameworks/tauri/src/a.rs");
     // stale 실패는 기준선을 바꾸지 않는다 — 자동 축소 금지.
-    expect(readFileSync(join(root, "scripts/gates/baseline-unwrap.txt"), "utf8")).toContain("src-tauri/src/a.rs 2");
+    expect(readFileSync(join(root, "scripts/gates/baseline-unwrap.txt"), "utf8")).toContain("frameworks/tauri/src/a.rs 2");
     expect(runGate("--prune").status).toBe(0);
-    expect(readFileSync(join(root, "scripts/gates/baseline-unwrap.txt"), "utf8")).toContain("src-tauri/src/a.rs 1");
+    expect(readFileSync(join(root, "scripts/gates/baseline-unwrap.txt"), "utf8")).toContain("frameworks/tauri/src/a.rs 1");
     expect(runGate().status).toBe(0);
   });
 
   it("위반이 소멸하면 --prune 이 항목을 삭제한다", () => {
     expect(runGate("--init").status).toBe(0);
-    write("src-tauri/src/a.rs", rustWithUnwraps(0));
+    write("frameworks/tauri/src/a.rs", rustWithUnwraps(0));
     write("src/big.ts", longFile(10));
     expect(runGate().status).toBe(1);
     expect(runGate("--prune").status).toBe(0);
-    expect(readFileSync(join(root, "scripts/gates/baseline-unwrap.txt"), "utf8")).not.toContain("src-tauri/src/a.rs");
+    expect(readFileSync(join(root, "scripts/gates/baseline-unwrap.txt"), "utf8")).not.toContain("frameworks/tauri/src/a.rs");
     expect(readFileSync(join(root, "scripts/gates/baseline-file-length.txt"), "utf8")).not.toContain("src/big.ts");
     expect(runGate().status).toBe(0);
   });
 
   it("--prune 은 신규 위반을 지우지 못한다", () => {
     expect(runGate("--init").status).toBe(0);
-    write("src-tauri/src/b.rs", rustWithUnwraps(1));
+    write("frameworks/tauri/src/b.rs", rustWithUnwraps(1));
     const r = runGate("--prune");
     expect(r.status).toBe(1);
-    expect(r.out).toContain("신규 위반 unwrap: src-tauri/src/b.rs");
+    expect(r.out).toContain("신규 위반 unwrap: frameworks/tauri/src/b.rs");
     // prune 이 신규 위반을 기준선에 추가하지 않는다.
-    expect(readFileSync(join(root, "scripts/gates/baseline-unwrap.txt"), "utf8")).not.toContain("src-tauri/src/b.rs");
+    expect(readFileSync(join(root, "scripts/gates/baseline-unwrap.txt"), "utf8")).not.toContain("frameworks/tauri/src/b.rs");
   });
 
   it("SELF 제외 — scripts/gates 아래는 스캔하지 않는다", () => {
@@ -159,13 +159,13 @@ describe("baseline-gate", () => {
   it("테스트 파일은 스캔하지 않는다", () => {
     expect(runGate("--init").status).toBe(0);
     write("src/huge.test.ts", longFile(LENGTH_LIMIT + 100));
-    write("src-tauri/src/b_test.rs", rustWithUnwraps(5));
+    write("frameworks/tauri/src/b_test.rs", rustWithUnwraps(5));
     expect(runGate().status).toBe(0);
   });
 
   it("복수형 _tests.rs 도 테스트 파일이다 (#[path] mod tests 관례)", () => {
     expect(runGate("--init").status).toBe(0);
-    write("src-tauri/src/service_tests.rs", rustWithUnwraps(5));
+    write("frameworks/tauri/src/service_tests.rs", rustWithUnwraps(5));
     expect(runGate().status).toBe(0);
   });
 

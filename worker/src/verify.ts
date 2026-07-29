@@ -61,7 +61,7 @@ export function canonicalAssertionBytes(a: Assertion): Uint8Array {
 
 // ----- Capability-assertion convergence (phone-link remote::auth, BINDING) -----
 //
-// The SHIPPED Rust src-tauri/src/remote/auth.rs::CapabilityAssertion::canonical_bytes
+// The SHIPPED Rust frameworks/tauri/src/remote/auth.rs::CapabilityAssertion::canonical_bytes
 // is the source of truth — a length-prefixed BINARY layout, NOT the JSON sketch above.
 // When the Worker becomes the capability issuer it MUST sign these EXACT bytes so the
 // verified Rust verify_strict accepts the signature byte-for-byte. We conform to the

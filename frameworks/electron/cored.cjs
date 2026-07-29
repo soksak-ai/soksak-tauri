@@ -27,7 +27,8 @@ const CORED_BIN_ARG = "--soksak-cored=";
 
 /** 이 저장소가 cored를 빌드해 두는 자리(cargo 관례). 개발 중에는 debug 가 방금 만든 것이다. */
 const BUILT_AT = ["debug", "release"].map((profile) =>
-  path.join("src-tauri", "target", profile, "soksak-cored"),
+  // 워크스페이스 루트가 최상위라 산출물도 한 자리다 — 프레임워크마다 target 이 나지 않는다.
+  path.join("target", profile, "soksak-cored"),
 );
 
 /**

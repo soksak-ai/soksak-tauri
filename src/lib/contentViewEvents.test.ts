@@ -4,7 +4,7 @@
 // Tauri 는 webview.rs 가 그것을 emit 한다. 콘텐츠가 DOM 안에 사는 프레임워크에서는 아무도
 // 안 뿌렸다 — app.webview.on(label, "nav") 이 영영 안 불린다. 오류는 어디에도 안 남는다.
 //
-// 다섯과 그 페이로드는 원본 그대로다(src-tauri/src/webview.rs):
+// 다섯과 그 페이로드는 원본 그대로다(frameworks/tauri/src/webview.rs):
 //   browser-nav            { label, url }
 //   browser-title          { label, title }
 //   browser-loading        { label, loading, can_back, can_forward }

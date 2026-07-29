@@ -90,7 +90,7 @@ sok plugin.dev.load '{"path":"/abs/path/my-plugin"}'
 ```
 
 **어느 홈에서 검증하는가** — identity 홈은 완전 독립이고 플러그인은 그 경계를 넘지 않는다
-(`src-tauri/src/home.rs`). 검증 경로는 홈마다 하나뿐이다.
+(`frameworks/tauri/src/home.rs`). 검증 경로는 홈마다 하나뿐이다.
 
 - `~/.soksak-dev` 의 플러그인·사이드카는 **dev 빌드**로 검증한다 — 개발 중 소스를 그대로 적재하거나
   그 홈에 설치해서 돌린다.

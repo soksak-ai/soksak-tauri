@@ -48,7 +48,7 @@ npx tsc --noEmit     # 타입 체크
 KRW 체크아웃. KV의 결과적 일관성 / 키당 1-write-per-sec 한도는 인메모리 목이 모델링
 안 하는 실-클러스터 속성. `wrangler.toml`은 바인딩/시크릿 계약을 문서화하나 의도적으로 미배포.
 
-## Rust 검증기(`src-tauri/src/remote/auth.rs`)와의 수렴
+## Rust 검증기(`frameworks/tauri/src/remote/auth.rs`)와의 수렴
 
 Worker의 `/verify`는 서명된 entitlement assertion을 발급한다. Rust 측(`remote::auth`)은
 오늘 기기 capability assertion을 **peer 모델**로 검증한다: 각 기기가 자기 키로 서명하고,
@@ -57,7 +57,7 @@ Worker의 `/verify`는 서명된 entitlement assertion을 발급한다. Rust 측
 
 **수렴 기초(완료).** Worker는 이제 *capability* assertion도 `auth.rs::canonical_bytes`의
 정확한 길이접두 바이너리 바이트로 직렬화하며(`src/verify.ts`의 `canonicalCapabilityBytes`),
-교차-언어 **golden vector**(`test/capability-golden.json`, `src-tauri/src/remote/auth/capability-golden.json`에
+교차-언어 **golden vector**(`test/capability-golden.json`, `frameworks/tauri/src/remote/auth/capability-golden.json`에
 미러)가 Worker 서명 assertion이 Rust 측에서 `verify_strict`로 byte-perfect 통과 + 전체
 verify floor 통과함을 증명 — additive Rust 테스트, floor 무변경. `docs/license-system-design.md`
 §4.3이 canonical 레이아웃 기록. (Track B의 entitlement assertion은 compact JSON 유지; *capability* assertion만 정합.)

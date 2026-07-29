@@ -4,18 +4,18 @@
 # 제거 조건: 해당 파일의 배포 `.unwrap(` 를 에러 전파/명시 처리로 대체 → stale 실패 → --prune. 0이면 항목이 삭제된다.
 # 파일 개명 시 같은 커밋에서 항목 경로를 수기로 이전한다(값 불변).
 crates/soksak-cli/src/lib.rs 1
-src-tauri/src/activity.rs 9
-src-tauri/src/clipboard.rs 1
-src-tauri/src/daemon.rs 22
-src-tauri/src/data/mod.rs 1
-src-tauri/src/data/store.rs 3
-src-tauri/src/mediaproxy.rs 1
-src-tauri/src/process.rs 5
-src-tauri/src/project_registry.rs 5
-src-tauri/src/pty.rs 9
-src-tauri/src/schedule.rs 16
-src-tauri/src/titlebar.rs 4
-src-tauri/src/watcher.rs 1
-src-tauri/src/webview.rs 2
-src-tauri/src/window.rs 2
-src-tauri/src/ws.rs 4
+frameworks/tauri/src/activity.rs 9
+frameworks/tauri/src/clipboard.rs 1
+frameworks/tauri/src/daemon.rs 22
+frameworks/tauri/src/data/mod.rs 1
+frameworks/tauri/src/data/store.rs 3
+frameworks/tauri/src/mediaproxy.rs 1
+frameworks/tauri/src/process.rs 5
+frameworks/tauri/src/project_registry.rs 5
+frameworks/tauri/src/pty.rs 9
+frameworks/tauri/src/schedule.rs 16
+frameworks/tauri/src/titlebar.rs 4
+frameworks/tauri/src/watcher.rs 1
+frameworks/tauri/src/webview.rs 2
+frameworks/tauri/src/window.rs 2
+frameworks/tauri/src/ws.rs 4

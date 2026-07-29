@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 
 const requireCjs = createRequire(import.meta.url);
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
-const { rectOf, shouldFocus, isWorkspace } = requireCjs(join(ROOT, "electron/native/window.cjs"));
+const { rectOf, shouldFocus, isWorkspace } = requireCjs(join(ROOT, "frameworks/electron/native/window.cjs"));
 const doc = JSON.parse(
   readFileSync(join(ROOT, "crates/soksak-core/fixtures/window-rect.json"), "utf8"),
 );

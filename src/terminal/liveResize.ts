@@ -1,6 +1,6 @@
 import { listenThisWindow } from "../lib/windowEvents";
 
-// 창 라이브 리사이즈(가장자리 드래그) 상태 — 네이티브(src-tauri/browser.rs
+// 창 라이브 리사이즈(가장자리 드래그) 상태 — 네이티브(frameworks/tauri/browser.rs
 // install_live_resize_monitor)가 시작/끝을 정확히 알려준다. ResizeObserver 는
 // "리사이즈 중"만 알 뿐 "끝났다"를 몰라 디바운스 추측으로 반영이 늦는다. 이
 // 신호로 드래그 중엔 fit 을 멈추고(깜빡임 0) 놓는 즉시 0지연 reflow 한다.

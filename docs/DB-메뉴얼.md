@@ -2,8 +2,8 @@
 
 플러그인이 데이터를 영속화하는 **유일한** 정공법은 코어의 `app.data` capability 다.
 이 문서는 그 사용법·계약·금기의 단일 기준이다. 검증 출처:
-`src/plugins/api.ts`(플러그인 표면)·`src-tauri/src/data/store.rs`(실제 의미론)·
-`src-tauri/src/data/commands.rs`(ns 주입·전 창 브로드캐스트).
+`src/plugins/api.ts`(플러그인 표면)·`frameworks/tauri/src/data/store.rs`(실제 의미론)·
+`frameworks/tauri/src/data/commands.rs`(ns 주입·전 창 브로드캐스트).
 
 ---
 
@@ -243,7 +243,7 @@ await app.data.put("notes", {
 
 - **권한 게이트(vitest)**: `"data"` 미선언 → `app.data === undefined`; 선언 → 표면 존재.
   선례: `src/plugins/api.test.ts`(가짜 deps 주입).
-- **의미론(cargo, 코어)**: `src-tauri/src/data/store.rs` 의 테스트(ns 격리·scope 파티션·
+- **의미론(cargo, 코어)**: `frameworks/tauri/src/data/store.rs` 의 테스트(ns 격리·scope 파티션·
   trigram CJK·미선언 필드 거부·주입 안전)가 계약을 못박는다 — 신 컬렉션도 동형으로.
 - **E2E(소켓 하니스)**: 플러그인 기능을 커맨드로 노출하고 `SOKSAK_SOCKET` JSON-RPC 로
   `data.query`/`data.count`/`data.search` 를 직접 단언(합성 scope 로 실데이터 격리).
@@ -252,5 +252,5 @@ await app.data.put("notes", {
 ---
 
 출처: `src/plugins/api.ts:166-225,715-796`(표면·권한 게이트·ns 주입),
-`src-tauri/src/data/store.rs`(define/put/get/delete/query/where 연산자/count/search/FTS 동기화),
-`src-tauri/src/data/commands.rs`(전 창 `data-change` 브로드캐스트).
+`frameworks/tauri/src/data/store.rs`(define/put/get/delete/query/where 연산자/count/search/FTS 동기화),
+`frameworks/tauri/src/data/commands.rs`(전 창 `data-change` 브로드캐스트).

@@ -57,7 +57,7 @@ consistency / 1-write-per-second-per-key limits are real-cluster properties not
 modeled by the in-memory mock. `wrangler.toml` documents the binding/secret contract
 but is intentionally NOT deployed.
 
-## Convergence with the Rust verifier (`src-tauri/src/remote/auth.rs`)
+## Convergence with the Rust verifier (`frameworks/tauri/src/remote/auth.rs`)
 
 The Worker's `/verify` issues a signed entitlement assertion. The Rust side
 (`remote::auth`) verifies device capability assertions today using a **peer model**:
@@ -70,7 +70,7 @@ compatible by construction.
 **Convergence foundation (done).** The Worker now also serializes a *capability* assertion
 to the EXACT length-prefixed binary bytes of `auth.rs::canonical_bytes` (`canonicalCapabilityBytes`
 in `src/verify.ts`), and a cross-language **golden vector** (`test/capability-golden.json`, mirrored
-at `src-tauri/src/remote/auth/capability-golden.json`) proves a Worker-signed assertion verifies
+at `frameworks/tauri/src/remote/auth/capability-golden.json`) proves a Worker-signed assertion verifies
 byte-for-byte on the Rust side via `verify_strict` and grants through the full verify floor — an
 additive Rust test, no floor change. `docs/license-system-design.md` §4.3 records the canonical layout.
 (The entitlement assertion of Track B stays compact JSON; only the *capability* assertion was aligned.)

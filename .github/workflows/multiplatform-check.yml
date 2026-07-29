@@ -25,9 +25,9 @@ jobs:
         with:
           path: soksak
 
-      # Same sibling layout as verify.yml: src-tauri/Cargo.toml declares
+      # Same sibling layout as verify.yml: frameworks/tauri/Cargo.toml declares
       # tauri-plugin-webview-capture by relative path, two levels up from
-      # src-tauri. The crate repository is public, so the default checkout
+      # frameworks/tauri. The crate repository is public, so the default checkout
       # (no token) resolves it — CI_REPO_TOKEN is no longer required.
       - name: Check out the sibling path dependency
         uses: actions/checkout@v4
@@ -47,14 +47,14 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: soksak/src-tauri
+          workspaces: soksak/frameworks/tauri
 
       # cargo build (NOT check) — the binary must LINK on every OS. Invoked directly (not via make)
       # because GNU make is absent on the Windows runner.
       - name: cargo build
         id: check
         shell: bash
-        working-directory: soksak/src-tauri
+        working-directory: soksak/frameworks/tauri
         run: |
           set -o pipefail
           cargo build 2>&1 | tee cargo-check.log
@@ -62,7 +62,7 @@ jobs:
       - name: Write the result to the job summary
         if: always()
         shell: bash
-        working-directory: soksak/src-tauri
+        working-directory: soksak/frameworks/tauri
         run: |
           {
             echo "## cargo check — ${{ matrix.os }}"
@@ -79,5 +79,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: cargo-check-${{ matrix.os }}
-          path: soksak/src-tauri/cargo-check.log
+          path: soksak/frameworks/tauri/cargo-check.log
           if-no-files-found: warn

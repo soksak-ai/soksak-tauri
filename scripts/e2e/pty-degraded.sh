@@ -18,7 +18,7 @@ set -uo pipefail
 IDENTITY=debug
 [ "${1:-}" = "--identity" ] && IDENTITY="$2"
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-TARGET_DIR="$(cd "$ROOT_DIR/src-tauri" && cargo metadata --format-version 1 --no-deps 2>/dev/null \
+TARGET_DIR="$(cd "$ROOT_DIR/frameworks/tauri" && cargo metadata --format-version 1 --no-deps 2>/dev/null \
   | python3 -c "import json,sys;print(json.load(sys.stdin)['target_directory'])")"
 APP_BUNDLE="$TARGET_DIR/debug/bundle/macos/soksak-$IDENTITY.app"
 APP_BIN="$APP_BUNDLE/Contents/MacOS/soksak-$IDENTITY"

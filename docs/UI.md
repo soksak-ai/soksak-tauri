@@ -222,7 +222,7 @@ DOM 크롬 밴드는 패딩으로(card/floating). 네이티브 child webview 의
 z-순서를 다툰다. Tauri 의 기본(add_child = 최상위)을 따르면 모든 DOM 오버레이
 (모달/메뉴/드롭 인디케이터/포커스 표시)가 webview 아래 깔린다 — 과거에는 이를
 "오버레이 동안 브라우저 숨김(suppress)"으로 우회했다. 현재 구조는 역전이다
-(`src-tauri/src/browser.rs` 머리말, mod layer):
+(`frameworks/tauri/src/browser.rs` 머리말, mod layer):
 
 1. **z-순서 역전**: child webview 는 생성 직후 메인 webview "아래"로 내린다.
 2. **투명 홀**: 메인 webview 는 자체 배경을 칠하지 않고(drawsBackground=false),

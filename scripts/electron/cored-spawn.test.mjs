@@ -22,9 +22,9 @@ import { fileURLToPath } from "node:url";
 
 const requireCjs = createRequire(import.meta.url);
 const HERE = dirname(fileURLToPath(import.meta.url));
-const MAIN = join(HERE, "../../electron/main.cjs");
-const BACKEND = join(HERE, "../../electron/backend.cjs");
-const HELPER = join(HERE, "../../electron/cored.cjs");
+const MAIN = join(HERE, "../../frameworks/electron/main.cjs");
+const BACKEND = join(HERE, "../../frameworks/electron/backend.cjs");
+const HELPER = join(HERE, "../../frameworks/electron/cored.cjs");
 const ELECTRON = requireCjs.resolve("electron");
 const osModule = requireCjs("node:os");
 
@@ -222,7 +222,7 @@ describe("cored 바이너리 — 추측하지 않는다", () => {
 
   it("선언한 경로에 없으면 그 경로를 달고 실패한다 — 조용히 다른 것을 고르지 않는다", () => {
     const missing = join(root, "no-such-helper");
-    const built = join(root, "src-tauri/target/debug/soksak-cored");
+    const built = join(root, "target/debug/soksak-cored");
     mkdirSync(dirname(built), { recursive: true });
     writeFileSync(built, "#!/bin/sh\n");
     chmodSync(built, 0o755);
@@ -242,7 +242,7 @@ describe("cored 바이너리 — 추측하지 않는다", () => {
   });
 
   it("선언이 없으면 이 저장소의 빌드 자리를 본다", () => {
-    const built = join(root, "src-tauri/target/debug/soksak-cored");
+    const built = join(root, "target/debug/soksak-cored");
     mkdirSync(dirname(built), { recursive: true });
     writeFileSync(built, "#!/bin/sh\n");
     chmodSync(built, 0o755);
@@ -260,8 +260,8 @@ describe("cored 바이너리 — 추측하지 않는다", () => {
     })();
     expect(err, "없는데 무엇인가를 골랐다").not.toBe(null);
     expect(err.code).toBe(BIN_NOT_FOUND);
-    expect(err.message).toContain("src-tauri/target/debug/soksak-cored");
-    expect(err.message).toContain("src-tauri/target/release/soksak-cored");
+    expect(err.message).toContain("target/debug/soksak-cored");
+    expect(err.message).toContain("target/release/soksak-cored");
     expect(err.message).toContain(CORED_BIN_ENV);
   });
 });

@@ -31,8 +31,8 @@ done
 SOCK="$(identity_socket "$IDENTITY")" || exit 2
 [ -S "$SOCK" ] || { echo "RED: 소켓 없음(앱 실행 중?): $SOCK" >&2; exit 1; }
 export SOKSAK_SOCKET="$SOCK"
-SOK="$REPO/src-tauri/target/debug/sok"
-[ "$IDENTITY" = "debug" ] && SOK="$REPO/src-tauri/target/debug/sok-debug"
+SOK="$REPO/frameworks/tauri/target/debug/sok"
+[ "$IDENTITY" = "debug" ] && SOK="$REPO/frameworks/tauri/target/debug/sok-debug"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 PASS=0; FAIL=0
 ok()   { PASS=$((PASS+1)); echo "  ✓ $1"; }

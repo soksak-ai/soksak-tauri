@@ -24,7 +24,7 @@ webview·manager·ns_window 를 각각 `Retained::into_raw(...)` 로 raw 포인�
 
 ## Approach A — 앱측 상쇄 (보전됨)
 
-- 위치: `src-tauri/src/browser.rs` `with_webview_balanced`
+- 위치: `frameworks/tauri/src/browser.rs` `with_webview_balanced`
 - 동작: 클로저 실행 후 **webview 포인터(`pw.inner()`)만** `from_raw`+`drop` 으로 상쇄.
   manager/ns_window 는 건드리지 않는다 — 브라우저 child 의 ns_window = 부모 창이라 상쇄하면
   부모 창이 과해제돼 렌더가 깨진다(실측·되돌림).

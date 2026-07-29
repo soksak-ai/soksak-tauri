@@ -62,8 +62,8 @@ trap 'rm -rf "$TMP"' EXIT
 activate_identity() {
   local bundle=""
   case "$IDENTITY" in
-    debug)   bundle="$REPO_ROOT/src-tauri/target/debug/bundle/macos/soksak-debug.app" ;;
-    release) bundle="$REPO_ROOT/src-tauri/target/release/bundle/macos/soksak.app" ;;
+    debug)   bundle="$REPO_ROOT/frameworks/tauri/target/debug/bundle/macos/soksak-debug.app" ;;
+    release) bundle="$REPO_ROOT/frameworks/tauri/target/release/bundle/macos/soksak.app" ;;
   esac
   if [ -n "$bundle" ] && [ -d "$bundle" ]; then
     open "$bundle"

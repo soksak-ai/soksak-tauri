@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 
 const requireCjs = createRequire(import.meta.url);
 const HERE = dirname(fileURLToPath(import.meta.url));
-const native = requireCjs(join(HERE, "../../electron/native/index.cjs"));
+const native = requireCjs(join(HERE, "../../frameworks/electron/native/index.cjs"));
 
 const SNAPSHOT = "plugin:webview-capture|snapshot";
 const REGION = "plugin:webview-capture|snapshot_region";

@@ -3,7 +3,7 @@ import { create } from "zustand";
 import { invoke } from "../framework";
 
 // 일시적 UI 상태. overlayCount: DOM 오버레이(모달/메뉴/드롭다운/드래그)가 떠 있는
-// 동안의 카운터(중첩 안전). 레이어 원칙(src-tauri/browser.rs 머리말): DOM(메인
+// 동안의 카운터(중첩 안전). 레이어 원칙(frameworks/tauri/browser.rs 머리말): DOM(메인
 // webview)은 항상 브라우저 child webview "위"에 그려지므로 브라우저를 숨길 필요가
 // 없다 — 오버레이 동안은 홀(브라우저 영역)의 마우스 통과만 차단해(네이티브 hitTest
 // 게이트) "바깥 클릭=닫기"가 성립한다. 브라우저는 보이되 비활성(모달의 본래 의미).

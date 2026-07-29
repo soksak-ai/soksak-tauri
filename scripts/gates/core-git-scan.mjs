@@ -1,4 +1,4 @@
-// W8 git 방출 스캔 게이트 — 코어(src/·src-tauri/)의 git 기능 표면 잔존을 봉인하고 축소만 허용한다.
+// W8 git 방출 스캔 게이트 — 코어(src/·frameworks/tauri/)의 git 기능 표면 잔존을 봉인하고 축소만 허용한다.
 // 법(플랜 v2 §5.8 W8, 사용자 판결): git 은 코어 완전 방출 — 코어에 남는 것은 generic 뿐이다.
 // 기존 코어 git 표면(git.rs·catalogGit.ts git.init/log/show/diff·explorer.git·fs.rs git_status·
 // api.ts git capability)은 레거시다(선례 아님, R6). 이 게이트는 두 가지를 기계화한다:
@@ -41,7 +41,7 @@ export const SEALED = new Map([]);
 // 명시 allowlist — 기능이 아니라 플랫폼 메커니즘인 git 사용. 스캔에서 계수하지 않는다.
 export const ALLOWLIST = [
   {
-    file: "src-tauri/src/plugins.rs",
+    file: "frameworks/tauri/src/plugins.rs",
     pattern: /Command::new\("git"\)/,
     reason:
       "플러그인 설치·갱신·스캐폴드의 git clone/fetch — 플러그인 플랫폼의 단일 배포 메커니즘이다" +
@@ -50,7 +50,7 @@ export const ALLOWLIST = [
 ];
 
 // crates 는 프레임워크 밖으로 나온 Rust 다 — 뿌리에서 빠지면 그 코드가 스캔 밖이 된다.
-const SCAN_ROOTS = ["src", "src-tauri", "crates"];
+const SCAN_ROOTS = ["src", "frameworks/tauri", "crates"];
 const SKIP_DIRS = new Set(["target", "gen", "node_modules", ".git", "dist"]);
 const SCAN_EXTS = new Set([".ts", ".tsx", ".rs", ".mjs"]);
 const TEST_FILE = /\.test\.(ts|tsx|mjs)$/;

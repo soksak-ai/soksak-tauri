@@ -1,7 +1,7 @@
 // Cloudflare Worker — /pair + /device/deactivate (phone-link device registration).
 //
 // This is the phone-link convergence: pairing = device registration under a license.
-// It models src-tauri/src/remote/auth.rs `DeviceRegistry` semantics on KV:
+// It models frameworks/tauri/src/remote/auth.rs `DeviceRegistry` semantics on KV:
 //   - TOFU key pinning: the same device_id re-pairing with a DIFFERENT public key
 //     is rejected (key_mismatch) — no silent key swap.
 //   - max_devices: a NEW device beyond the cap is rejected (N+1 reject). Re-pairing

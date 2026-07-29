@@ -87,7 +87,7 @@ export function coredUnserved(root = ROOT) {
 
 /** Tauri 가 등록한 이름 — invoke_handler 목록. */
 export function tauriRegisters(root = ROOT) {
-  const src = read(join(root, "src-tauri", "src", "lib.rs"));
+  const src = read(join(root, "frameworks/tauri", "src", "lib.rs"));
   // 대괄호를 세어 닫는다 — 첫 `]` 로 끊으면 목록 안의 `#[cfg(...)]` 에서 멈춰 그 뒤 이름을
   // 통째로 놓친다(실측: sidecar_* 넷과 titlebar_backing·window_activate 가 "Tauri 에 없음"으로 나왔다).
   const at = src.indexOf("generate_handler![");
@@ -114,7 +114,7 @@ export function tauriRegisters(root = ROOT) {
 }
 
 /** 프레임워크 표의 이름 → 답하는 방식(answer|delegated). */
-export function frameworkTable(root = ROOT, dir = join("electron", "native")) {
+export function frameworkTable(root = ROOT, dir = join("frameworks", "electron", "native")) {
   const out = new Map();
   for (const f of walk(join(root, dir))) {
     if (!f.endsWith(".cjs") || f.endsWith(".test.cjs")) continue;

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 앱 아이콘 마스터(src-tauri/icons/icon.png) 재생성 — 멱등.
+# 앱 아이콘 마스터(frameworks/tauri/icons/icon.png) 재생성 — 멱등.
 # 사유: 과거 마스터가 512px 수동 potrace 결과라 tauri icon 이 1024(.icns 512@2x)로
 # 업스케일→레티나 독에서 뭉개졌다. SVG 원본에서 SOK 마크를 벡터로 다시 떠 1024 로
 # 크리스프하게 합성한다. 단일 원본 = soksak_logo_ordered.svg(좌→우 정렬: 앞 3 path=S,O,K).
@@ -14,7 +14,7 @@ command -v magick       >/dev/null || { echo "ImageMagick(magick) 필요"; exit 
 command -v python3      >/dev/null || { echo "python3 필요"; exit 1; }
 
 SVG=src/assets/logo-animated/soksak_logo_ordered.svg
-OUT=src-tauri/icons/icon.png
+OUT=frameworks/tauri/icons/icon.png
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 

@@ -56,7 +56,7 @@ describe("scanFile — 위반 판정", () => {
   });
 
   it("계약 id(soksak-spec-*)는 soksak-plugin- 토큰이 아니므로 위반이 아니다(allowlist 불요)", () => {
-    expect(scanFile("src-tauri/src/x.rs", '"spec": "soksak-spec-plugin@0.0.1"')).toEqual([]);
+    expect(scanFile("frameworks/tauri/src/x.rs", '"spec": "soksak-spec-plugin@0.0.1"')).toEqual([]);
     expect(scanFile("src/plugins/y.ts", '// soksak-spec-plugin-terminal@0.0.1 계약을 소비')).toEqual([]);
   });
 
@@ -87,12 +87,12 @@ describe("scanFile — 위반 판정", () => {
 describe("stripRustTestModule — 러스트 테스트 모듈 절단", () => {
   it("말미 최상위 #[cfg(test)] mod 이후는 스캔 대상이 아니다", () => {
     const rs = 'fn run() {}\n\n#[cfg(test)]\nmod tests {\n    const T: &str = "soksak-plugin-clip";\n}\n';
-    expect(scanFile("src-tauri/src/a.rs", rs)).toEqual([]);
+    expect(scanFile("frameworks/tauri/src/a.rs", rs)).toEqual([]);
   });
 
   it("테스트 모듈 이전의 실행 경로 위반은 잡는다", () => {
     const rs = 'const OWNER: &str = "soksak-plugin-workflow";\n\n#[cfg(test)]\nmod tests {}\n';
-    expect(scanFile("src-tauri/src/a.rs", rs)).toHaveLength(1);
+    expect(scanFile("frameworks/tauri/src/a.rs", rs)).toHaveLength(1);
   });
 
   it("들여쓴 #[cfg(test)] 아이템은 절단 지점이 아니다", () => {
@@ -113,7 +113,7 @@ describe("stripRustTestModule — 러스트 테스트 모듈 절단", () => {
       'const OWNER: &str = "soksak-plugin-workflow";', // 모듈 뒤 실행 경로 — 위반.
       "",
     ].join("\n");
-    const v = scanFile("src-tauri/src/mid.rs", rs);
+    const v = scanFile("frameworks/tauri/src/mid.rs", rs);
     expect(v).toHaveLength(1);
     expect(v[0].token).toBe("soksak-plugin-workflow");
   });
@@ -130,7 +130,7 @@ describe("stripRustTestModule — 러스트 테스트 모듈 절단", () => {
       '    let _ = "soksak-plugin-b";',
       "}",
     ].join("\n");
-    const v = scanFile("src-tauri/src/multi.rs", rs);
+    const v = scanFile("frameworks/tauri/src/multi.rs", rs);
     expect(v).toHaveLength(1);
     expect(v[0].token).toBe("soksak-plugin-between");
   });
@@ -147,7 +147,7 @@ describe("게이트 실행 — blocking 형식", () => {
 
   it("깨끗한 픽스처에서 exit 0 으로 통과한다", () => {
     write("src/ok.ts", 'const cands = raw.startsWith("soksak-plugin-") ? [raw] : [`soksak-plugin-${raw}`];');
-    write("src-tauri/src/ok.rs", "fn main() {}");
+    write("frameworks/tauri/src/ok.rs", "fn main() {}");
     const r = runGate();
     expect(r.status).toBe(0);
     expect(r.out).toContain("PASS");
@@ -162,7 +162,7 @@ describe("게이트 실행 — blocking 형식", () => {
 });
 
 describe("이 repo 의 결합 상태", () => {
-  it("코어(src·src-tauri)에 플러그인 id 위반이 0건이다", () => {
+  it("코어(src·frameworks/tauri)에 플러그인 id 위반이 0건이다", () => {
     const { violations, staleAllowlist } = scanRoot(REPO_ROOT);
     expect(violations).toEqual([]);
     expect(staleAllowlist).toEqual([]);

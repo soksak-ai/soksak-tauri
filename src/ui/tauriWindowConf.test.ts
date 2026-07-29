@@ -11,7 +11,7 @@ import { resolve } from "node:path";
 describe("tauri.conf.json 창 계약", () => {
   it("모든 창 설정은 acceptFirstMouse:true — 비활성 창 첫 클릭도 위젯에 배달", () => {
     const conf = JSON.parse(
-      readFileSync(resolve(__dirname, "../../src-tauri/tauri.conf.json"), "utf8"),
+      readFileSync(resolve(__dirname, "../../frameworks/tauri/tauri.conf.json"), "utf8"),
     ) as { app: { windows: { acceptFirstMouse?: boolean }[] } };
     expect(conf.app.windows.length).toBeGreaterThan(0);
     for (const w of conf.app.windows) {

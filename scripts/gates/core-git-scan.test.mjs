@@ -36,13 +36,13 @@ afterEach(() => {
 
 describe("scanFile — git 기능 표면 판정", () => {
   it("Rust git 서브프로세스 스폰은 잡는다", () => {
-    const v = scanFile("src-tauri/src/x.rs", 'let o = std::process::Command::new("git").output();');
+    const v = scanFile("frameworks/tauri/src/x.rs", 'let o = std::process::Command::new("git").output();');
     expect(v).toHaveLength(1);
     expect(v[0]).toMatchObject({ pattern: "git-spawn", line: 1 });
   });
 
   it("git 기능 커맨드 식별자(정의·배선·invoke)는 잡는다", () => {
-    expect(scanFile("src-tauri/src/x.rs", "pub fn git_log(path: String) {}")).toHaveLength(1);
+    expect(scanFile("frameworks/tauri/src/x.rs", "pub fn git_log(path: String) {}")).toHaveLength(1);
     expect(scanFile("src/a.ts", 'await invoke("git_status", { path })')).toHaveLength(1);
   });
 
@@ -59,15 +59,15 @@ describe("scanFile — git 기능 표면 판정", () => {
   it("generic 문구(경로·주석의 평어 git)는 잡지 않는다", () => {
     expect(scanFile("src/a.ts", "// git init 은 정책 플러그인이 수행")).toEqual([]);
     expect(scanFile("src/a.ts", 'const dir = ".git";')).toEqual([]);
-    expect(scanFile("src-tauri/src/x.rs", 'let p = dir.join(".git");')).toEqual([]);
+    expect(scanFile("frameworks/tauri/src/x.rs", 'let p = dir.join(".git");')).toEqual([]);
   });
 
   it("플러그인 설치 메커니즘(plugins.rs 의 git 스폰)은 allowlist 다", () => {
     expect(
-      scanFile("src-tauri/src/plugins.rs", 'std::process::Command::new("git").args(["clone"])'),
+      scanFile("frameworks/tauri/src/plugins.rs", 'std::process::Command::new("git").args(["clone"])'),
     ).toEqual([]);
     // 같은 파일이라도 다른 패턴(기능 축)은 사면되지 않는다.
-    expect(scanFile("src-tauri/src/plugins.rs", "let s = git_status(p);")).toHaveLength(1);
+    expect(scanFile("frameworks/tauri/src/plugins.rs", "let s = git_status(p);")).toHaveLength(1);
   });
 
   it("테스트 파일과 Rust 테스트 모듈은 스캔하지 않는다", () => {
@@ -79,7 +79,7 @@ describe("scanFile — git 기능 표면 판정", () => {
       '    fn t() { std::process::Command::new("git"); }',
       "}",
     ].join("\n");
-    expect(scanFile("src-tauri/src/x.rs", rs)).toEqual([]);
+    expect(scanFile("frameworks/tauri/src/x.rs", rs)).toEqual([]);
   });
 });
 
@@ -114,9 +114,9 @@ describe("게이트 실행 — 신규 유입·봉인 대조", () => {
   it("빈 트리는 봉인 전부가 stale 다 — 봉인은 실측과 일치해야만 산다", () => {
     // **뿌리는 있고 안이 빈** 트리다. 뿌리가 아예 없는 것과 다르다 — 그쪽은 배치가 바뀐
     // 것이고 스캔이 0건을 답하면 안 된다(scanRoot 의 오라클 생존 가드).
-    mkdirSync(join(root, "src-tauri", "src"), { recursive: true });
-    const { stale } = scanRoot(root, new Map([["src-tauri/src/git.rs", 6]]));
-    expect(stale).toEqual([{ file: "src-tauri/src/git.rs", count: 0, sealed: 6 }]);
+    mkdirSync(join(root, "frameworks/tauri", "src"), { recursive: true });
+    const { stale } = scanRoot(root, new Map([["frameworks/tauri/src/git.rs", 6]]));
+    expect(stale).toEqual([{ file: "frameworks/tauri/src/git.rs", count: 0, sealed: 6 }]);
   });
 });
 

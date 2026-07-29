@@ -14,8 +14,8 @@ import { fileURLToPath } from "node:url";
 
 const requireCjs = createRequire(import.meta.url);
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
-const { parseHexColor } = requireCjs(join(ROOT, "electron/native/window.cjs"));
-const { isOpenableUrl } = requireCjs(join(ROOT, "electron/native/webview.cjs"));
+const { parseHexColor } = requireCjs(join(ROOT, "frameworks/electron/native/window.cjs"));
+const { isOpenableUrl } = requireCjs(join(ROOT, "frameworks/electron/native/webview.cjs"));
 const doc = JSON.parse(
   readFileSync(join(ROOT, "crates/soksak-core/fixtures/surface-spec.json"), "utf8"),
 );

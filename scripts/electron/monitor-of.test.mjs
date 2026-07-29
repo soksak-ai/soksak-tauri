@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 const requireCjs = createRequire(import.meta.url);
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "../..");
-const { monitorOf } = requireCjs(join(ROOT, "electron/native/window.cjs"));
+const { monitorOf } = requireCjs(join(ROOT, "frameworks/electron/native/window.cjs"));
 const FIXTURE = join(ROOT, "crates/soksak-core/fixtures/monitor-of.json");
 
 describe("소속 모니터 — 코어와 같은 답", () => {

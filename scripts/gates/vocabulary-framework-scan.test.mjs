@@ -36,7 +36,7 @@ describe("어휘 게이트 — shell 은 명령 해석기의 말이다", () => {
   });
 
   it("프레임워크 뜻의 와이어 문자열을 잡는다", () => {
-    write("electron/preload.cjs", 'ipcRenderer.on("shell:event", (_e, p) => p);\n');
+    write("frameworks/electron/preload.cjs", 'ipcRenderer.on("shell:event", (_e, p) => p);\n');
     expect(planted().join("\n")).toContain("식별자 `shell:event`");
   });
 
@@ -57,7 +57,7 @@ describe("어휘 게이트 — shell 은 명령 해석기의 말이다", () => {
   });
 
   it("진짜 셸을 말하는 줄은 세지 않는다", () => {
-    write("src-tauri/src/new_spawn.rs", "// 로그인 셸을 인자로 받는다. `$SHELL` 은 계정 속성이다.\nfn f(login_shell: &str) {}\n");
+    write("frameworks/tauri/src/new_spawn.rs", "// 로그인 셸을 인자로 받는다. `$SHELL` 은 계정 속성이다.\nfn f(login_shell: &str) {}\n");
     expect(planted()).toEqual([]);
   });
 
@@ -69,7 +69,7 @@ describe("어휘 게이트 — shell 은 명령 해석기의 말이다", () => {
   });
 
   it("허용 목록의 진짜 셸 경로는 통째로 뺀다", () => {
-    write("src-tauri/src/pty.rs", "// 셸을 소유한다\nfn spawn_shell_thing() {}\n");
+    write("frameworks/tauri/src/pty.rs", "// 셸을 소유한다\nfn spawn_shell_thing() {}\n");
     expect(planted()).toEqual([]);
   });
 

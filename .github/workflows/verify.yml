@@ -23,8 +23,8 @@ jobs:
         with:
           path: soksak
 
-      # src-tauri/Cargo.toml declares a sibling crate by relative path
-      # (tauri-plugin-webview-capture, two levels up from src-tauri).
+      # frameworks/tauri/Cargo.toml declares a sibling crate by relative path
+      # (tauri-plugin-webview-capture, two levels up from frameworks/tauri).
       # Reproduce the same sibling layout the local checkout uses.
       # The crate repository is private: CI_REPO_TOKEN must be a fine-grained
       # token with read access to soksak-ai/tauri-plugin-webview-capture.
@@ -55,7 +55,7 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: soksak/src-tauri
+          workspaces: soksak/frameworks/tauri
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -68,4 +68,4 @@ jobs:
         run: make build-debug
 
       - name: Run the built CLI
-        run: ./src-tauri/target/debug/sok-debug --help
+        run: ./frameworks/tauri/target/debug/sok-debug --help

@@ -10,8 +10,8 @@ function arg(name, fallback) {
   return i >= 0 ? process.argv[i + 1] : fallback;
 }
 
-const basePath = resolve(arg("--base", "src-tauri/tauri.release.conf.json"));
-const outPath = resolve(arg("--out", "src-tauri/target/release-config/tauri.conf.json"));
+const basePath = resolve(arg("--base", "frameworks/tauri/tauri.release.conf.json"));
+const outPath = resolve(arg("--out", "frameworks/tauri/target/release-config/tauri.conf.json"));
 const publicKey = (process.env.TAURI_UPDATER_PUBLIC_KEY ?? "").trim();
 
 if (!publicKey || /placeholder/i.test(publicKey)) {

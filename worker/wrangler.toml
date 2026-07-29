@@ -30,5 +30,5 @@ MAX_DEVICES = "3"
 #   PADDLE_WEBHOOK_SECRET             -> pdl_ntfset_... per-destination HMAC key (raw UTF-8)
 #   ED25519_PRIVATE_KEY_PKCS8_B64     -> base64 PKCS#8 Ed25519 private key (/verify signing)
 #
-# The matching 32-byte raw public key is embedded in the Tauri app (src-tauri),
+# The matching 32-byte raw public key is embedded in the Tauri app (frameworks/tauri),
 # never here. Generate the pair with gen-keypair (see design doc) before deploy.

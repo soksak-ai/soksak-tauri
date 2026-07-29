@@ -56,7 +56,7 @@ chromium-offscreen `8f999e3`. 원칙은 `docs/NATIVE-SURFACES.md` §2(기하 소
   픽셀 판정은 DOM 계기(`ui.measure`)로 교차검증해야 한다.
 - **창 ID 갱신**: `screencapture -l<id>` 의 id 는 앱 재기동마다 바뀐다. 갱신 없이 캡처하면
   **조용히 0바이트**다. `scratchpad/winid.swift`(CGWindowList 덤프)로 매번 다시 얻는다.
-- **정본 CLI**: `<machine-path>/soksak/core/src-tauri/target/debug/sok-dev`. 다른 워크트리의
+- **정본 CLI**: `<machine-path>/soksak/core/frameworks/tauri/target/debug/sok-dev`. 다른 워크트리의
   sok-dev 를 쓰면 구 빌드로 판정한다.
 - **파킹 슬롯**: 비활성 탭 슬롯은 `transform: matrix(...,-3600,0)` 로 화면 밖에 있다. 그
   상태의 측정은 무의미하니 대상 뷰를 먼저 활성화한다.

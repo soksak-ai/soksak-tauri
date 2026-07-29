@@ -20,7 +20,7 @@ const sokArg = process.argv.indexOf("--sok");
 const SOK =
   sokArg !== -1
     ? process.argv[sokArg + 1]
-    : join(here, "../../src-tauri/target/release/sok");
+    : join(here, "../../frameworks/tauri/target/release/sok");
 const ENV = process.env.E2E_IDENTITY || "dev";
 const winArg = process.argv.indexOf("--window");
 

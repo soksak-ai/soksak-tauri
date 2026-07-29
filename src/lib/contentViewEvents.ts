@@ -20,7 +20,7 @@ function field<T>(e: Event, key: string): T | undefined {
   return (e as unknown as Record<string, T>)[key];
 }
 
-/** 태그가 내는 사건 → 앱이 아는 사건. 원본은 src-tauri/src/webview.rs 다. */
+/** 태그가 내는 사건 → 앱이 아는 사건. 원본은 frameworks/tauri/src/webview.rs 다. */
 type Tag = HTMLElement & {
   canGoBack?: () => boolean;
   canGoForward?: () => boolean;

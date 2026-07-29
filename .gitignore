@@ -18,7 +18,7 @@ dist-ssr
 examples/.repos/
 
 # apphost Swift 사이드카 컴파일 산출물(빌드 파이프라인 생성, Tauri externalBin) — 플랫폼별 재생성
-src-tauri/binaries/
+frameworks/tauri/binaries/
 
 # Editor directories and files
 .editor/*
@@ -33,7 +33,11 @@ src-tauri/binaries/
 
 # perf 측정 하니스의 컴파일 산출물(synth-input.swift 에서 재생성)
 scripts/perf/.build/
-crates/*/target/
+# 워크스페이스 루트가 최상위라 빌드 산출물도 최상위에 한 자리다.
+# (옛 규칙 crates/*/target/ 은 크레이트마다 target 이 난다는 전제였다.)
+/target/
+# 이주 전 산출물의 잔재 — 여기엔 더는 새 빌드가 나지 않는다.
+frameworks/*/target/
 .do/
 
 secret/

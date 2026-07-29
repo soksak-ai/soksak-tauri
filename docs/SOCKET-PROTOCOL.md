@@ -5,7 +5,7 @@ negotiation, and the compatibility window. Every socket consumer (`sok`, MCP, re
 forwarders, E2E harnesses) speaks this contract; the command payloads riding on it are
 specified in [MESSAGE-PROTOCOL.md](MESSAGE-PROTOCOL.md).
 
-**Single source of truth**: the `soksak-spec-socket` crate (`src-tauri/protocol`). It holds the
+**Single source of truth**: the `soksak-spec-socket` crate (`frameworks/tauri/protocol`). It holds the
 version constants, the compatibility window, and the pure verdict functions. The app and every
 client depend on the crate — nobody copies a constant, so the two sides of the wire cannot
 drift apart silently.
@@ -19,7 +19,7 @@ drift apart silently.
 - `events.subscribe` converts the connection into a push stream after one acknowledgement —
   connection lifetime becomes subscription lifetime.
 - The JSON-RPC server reaches the OS through a transport seam (`IpcListenerSeam` /
-  `IpcConnection` in `src-tauri/src/ipc.rs`). On Unix the transport is the Unix domain
+  `IpcConnection` in `frameworks/tauri/src/ipc.rs`). On Unix the transport is the Unix domain
   socket above; on Windows the same seam is implemented with named pipes (through
   `interprocess`'s local sockets — the crate the terminal sidecars validated across
   their five-platform CI matrix). No protocol code changes with the transport, and the

@@ -83,7 +83,7 @@
     },
     "build-artifact-path": {
       "kind": "reducible",
-      "why": "빌드 산출물 경로를 직접 안다(src-tauri/target/... 의 sok·번들). 실행물 경로를 받으면 없어진다.",
+      "why": "빌드 산출물 경로를 직접 안다(frameworks/tauri/target/... 의 sok·번들). 실행물 경로를 받으면 없어진다.",
       "env": "SOK"
     },
     "app-bundle-launch": {

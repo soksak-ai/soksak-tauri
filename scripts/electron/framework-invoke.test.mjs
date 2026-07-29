@@ -16,8 +16,8 @@ import { fileURLToPath } from "node:url";
 
 const requireCjs = createRequire(import.meta.url);
 const HERE = dirname(fileURLToPath(import.meta.url));
-const MAIN = join(HERE, "../../electron/main.cjs");
-const BACKEND = join(HERE, "../../electron/backend.cjs");
+const MAIN = join(HERE, "../../frameworks/electron/main.cjs");
+const BACKEND = join(HERE, "../../frameworks/electron/backend.cjs");
 const ELECTRON = requireCjs.resolve("electron");
 const osModule = requireCjs("node:os");
 

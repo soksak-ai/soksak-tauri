@@ -13,12 +13,12 @@ PNPM  := pnpm
 # 레지스트리 카탈로그 단일 진실(P2) — 코어는 이 URL 만 안다. src/state/registry.ts 와 동일.
 REGISTRY_URL := https://raw.githubusercontent.com/soksak-ai/soksak-plugin-registry/main/registry.json
 
-RELEASE_CONFIG := src-tauri/tauri.release.conf.json
-RELEASE_CONFIG_GENERATED := src-tauri/target/release-config/tauri.conf.json
-DEBUG_CONFIG   := src-tauri/tauri.debug.conf.json
+RELEASE_CONFIG := frameworks/tauri/tauri.release.conf.json
+RELEASE_CONFIG_GENERATED := frameworks/tauri/target/release-config/tauri.conf.json
+DEBUG_CONFIG   := frameworks/tauri/tauri.debug.conf.json
 
-RELEASE_APP := src-tauri/target/release/bundle/macos/soksak.app
-DEBUG_APP   := src-tauri/target/debug/bundle/macos/soksak-debug.app
+RELEASE_APP := frameworks/tauri/target/release/bundle/macos/soksak.app
+DEBUG_APP   := frameworks/tauri/target/debug/bundle/macos/soksak-debug.app
 
 .DEFAULT_GOAL := help
 
@@ -34,13 +34,13 @@ install: ## 의존성 설치(멱등)
 icons: ## 앱 아이콘 전체 재생성(SVG→마스터1024 + base/dev/debug 아이덴티티). 멱등
 	@command -v magick >/dev/null || { echo "ImageMagick(magick) 필요"; exit 1; }
 	bash scripts/logo/appicon.sh
-	cp src-tauri/icons/icon.png /tmp/soksak-icon-master.png   # 1024 스냅샷 — tauri icon 이 icon.png 를 512 로 덮으므로 보존
-	$(PNPM) tauri icon /tmp/soksak-icon-master.png --output src-tauri/icons
+	cp frameworks/tauri/icons/icon.png /tmp/soksak-icon-master.png   # 1024 스냅샷 — tauri icon 이 icon.png 를 512 로 덮으므로 보존
+	$(PNPM) tauri icon /tmp/soksak-icon-master.png --output frameworks/tauri/icons
 	magick /tmp/soksak-icon-master.png -fill '#2ec07a' -colorize 42% /tmp/soksak-icon-dev.png
-	$(PNPM) tauri icon /tmp/soksak-icon-dev.png --output src-tauri/icons-dev
+	$(PNPM) tauri icon /tmp/soksak-icon-dev.png --output frameworks/tauri/icons-dev
 	magick /tmp/soksak-icon-master.png -fill '#ff8c1a' -colorize 45% /tmp/soksak-icon-debug.png
-	$(PNPM) tauri icon /tmp/soksak-icon-debug.png --output src-tauri/icons-debug
-	cp /tmp/soksak-icon-master.png src-tauri/icons/icon.png   # 마스터 1024 복원(커밋되는 단일 원본)
+	$(PNPM) tauri icon /tmp/soksak-icon-debug.png --output frameworks/tauri/icons-debug
+	cp /tmp/soksak-icon-master.png frameworks/tauri/icons/icon.png   # 마스터 1024 복원(커밋되는 단일 원본)
 	@rm -f /tmp/soksak-icon-master.png /tmp/soksak-icon-dev.png /tmp/soksak-icon-debug.png
 	@echo "아이콘 재생성 완료: 마스터(1024 SVG벡터)+base+dev(녹색)+debug(주황)"
 
@@ -76,7 +76,7 @@ build-debug: spec-gate cli-debug ## 디버그 번들 빌드 → "soksak-debug.ap
 	$(PNPM) tauri build --debug --config $(DEBUG_CONFIG)
 
 electron: ## Electron 프레임워크 스파이크(Tauri 프레임워크와 형제 — 교체 아님). vite dev(1420) 가 떠 있어야 한다.
-	$(PNPM) exec electron electron/main.cjs
+	$(PNPM) exec electron frameworks/electron/main.cjs
 
 run: ## 릴리스 soksak.app 실행(새 인스턴스)
 	@test -d "$(RELEASE_APP)" || { echo "먼저 'make build' 를 실행하세요."; exit 1; }
@@ -89,32 +89,32 @@ run-debug: ## 디버그 soksak-debug.app 실행(새 인스턴스)
 # CLI 는 앱과 환경 짝으로 빌드된다(busybox 패턴 — 1 소스 바이너리, 설치명이 곧 환경: argv0 디스패치).
 # release→sok / debug 프로파일→sok-dev·sok-debug. cp 로 환경명 사본 생성(앱과 함께 빌드, 사용자 지시).
 cli: ## sok CLI(release 환경) — 빌드가 환경을 선택한다: 이 빌드는 sok 하나를 떨군다(P9)
-	cd src-tauri && cargo build --release -p sok --bin sok
+	cd frameworks/tauri && cargo build --release -p sok --bin sok
 
 cli-dev: ## sok-dev CLI(dev 환경, debug 프로파일) — 이 빌드는 sok-dev 하나를 떨군다(P9)
-	cd src-tauri && cargo build -p sok --bin sok-dev
+	cd frameworks/tauri && cargo build -p sok --bin sok-dev
 
 cli-debug: ## sok-debug CLI(debug 환경, debug 프로파일) — 이 빌드는 sok-debug 하나를 떨군다(P9)
-	cd src-tauri && cargo build -p sok --bin sok-debug
+	cd frameworks/tauri && cargo build -p sok --bin sok-debug
 
 install-cli: cli ## sok(release) regular binary를 /usr/local/bin에 원자 설치(멱등)
 	@mkdir -p /usr/local/bin 2>/dev/null || true
-	@bash scripts/install/install-regular-file.sh "$(abspath src-tauri/target/release/sok)" /usr/local/bin/sok
+	@bash scripts/install/install-regular-file.sh "$(abspath frameworks/tauri/target/release/sok)" /usr/local/bin/sok
 	@echo "설치 완료: /usr/local/bin/sok (release regular binary)"
 
 install-cli-dev: cli-dev ## sok-dev regular binary를 /usr/local/bin에 원자 설치
 	@mkdir -p /usr/local/bin 2>/dev/null || true
-	@bash scripts/install/install-regular-file.sh "$(abspath src-tauri/target/debug/sok-dev)" /usr/local/bin/sok-dev
+	@bash scripts/install/install-regular-file.sh "$(abspath frameworks/tauri/target/debug/sok-dev)" /usr/local/bin/sok-dev
 	@echo "설치 완료: /usr/local/bin/sok-dev (dev regular binary)"
 
 install-cli-debug: cli-debug ## sok-debug regular binary를 /usr/local/bin에 원자 설치
 	@mkdir -p /usr/local/bin 2>/dev/null || true
-	@bash scripts/install/install-regular-file.sh "$(abspath src-tauri/target/debug/sok-debug)" /usr/local/bin/sok-debug
+	@bash scripts/install/install-regular-file.sh "$(abspath frameworks/tauri/target/debug/sok-debug)" /usr/local/bin/sok-debug
 	@echo "설치 완료: /usr/local/bin/sok-debug (debug regular binary)"
 
 docs: ## 명령 레퍼런스 생성(docs/COMMANDS.md — 앱이 실행 중이어야 함)
 	@mkdir -p docs
-	$(or $(DOCS_SOK),src-tauri/target/release/sok) docs --core > docs/COMMANDS.md
+	$(or $(DOCS_SOK),frameworks/tauri/target/release/sok) docs --core > docs/COMMANDS.md
 	@echo "생성: docs/COMMANDS.md"
 
 # 발행(plugin-publish)은 코어에 두지 않는다(P1·P3) — 각 플러그인은 자기 독립 repo 에서
@@ -129,10 +129,10 @@ typecheck: ## 프론트엔드 타입 체크(tsc)
 	$(PNPM) exec tsc --noEmit
 
 check: ## Rust 컴파일 체크(cargo check)
-	cd src-tauri && cargo check
+	cd frameworks/tauri && cargo check
 
 test: ## Rust 단위 테스트
-	cd src-tauri && cargo test --workspace
+	cd frameworks/tauri && cargo test --workspace
 
 test-front: ## 프론트엔드 단위 테스트(vitest)
 	$(PNPM) test
@@ -216,11 +216,11 @@ perf-gate: ## 터미널 성능 게이트(W4) — 게이트 자체검증 후 t1/t
 	@bash scripts/perf/run-t.sh --identity $${IDENTITY:-debug} --label gate --t1mb $${T1MB:-100}
 
 clean: ## dev 에 불필요한 재생성 산출물 제거(release 프로파일·번들·dist). 증분 빌드 자산(deps/.fingerprint/build/incremental/바이너리)은 보존 — 다음 dev 빌드 영향 0
-	cd src-tauri && cargo clean --release
-	rm -rf dist src-tauri/target/debug/bundle
+	cd frameworks/tauri && cargo clean --release
+	rm -rf dist frameworks/tauri/target/debug/bundle
 
 clean-deep: clean ## clean + 증분 컴파일 캐시(target/debug/incremental) 제거. deps 는 유지하나 다음 빌드 때 앱 크레이트만 전체 재컴파일(deps 재컴파일 X). 디스크 압박 시만
-	rm -rf src-tauri/target/debug/incremental
+	rm -rf frameworks/tauri/target/debug/incremental
 
 stop: ## 실행 중인 개발 스택 전체 종료(tauri 바이너리 + tauri.js dev + Vite)
 	@pkill -f "target/debug/soksak-dev" 2>/dev/null || true

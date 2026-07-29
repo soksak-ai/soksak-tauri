@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 
 const requireCjs = createRequire(import.meta.url);
 const HERE = dirname(fileURLToPath(import.meta.url));
-const INDEX = join(HERE, "../../electron/native/index.cjs");
+const INDEX = join(HERE, "../../frameworks/electron/native/index.cjs");
 
 describe("표에 실린 이름은 갈래 밖이어도 프레임워크의 것이다", () => {
   it("갈래 밖 이름도 주장한다", () => {

@@ -342,7 +342,7 @@ export function colorsForMode(
 
 // ── 적용(슬롯 → CSS 변수/속성) ───────────────────────────────────────────────
 
-// 네이티브 창 배경 = 테마 bg(레이어 원칙, src-tauri/browser.rs 머리말): 루트 DOM
+// 네이티브 창 배경 = 테마 bg(레이어 원칙, frameworks/tauri/browser.rs 머리말): 루트 DOM
 // 배경은 투명(App.css)이라 미도장 영역의 색을 창 배경이 책임진다 — 테마와 항상
 // 일치해야 한다. Tauri 런타임 밖(테스트 jsdom)에서는 조용히 무시.
 function syncWindowBackground(bg: string): void {

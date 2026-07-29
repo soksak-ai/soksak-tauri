@@ -2,10 +2,10 @@
 // capability-assertion convergence. RED before the Worker emits the Rust
 // canonical-bytes layout; GREEN once canonicalCapabilityBytes() reproduces it.
 //
-// The SHIPPED Rust src-tauri/src/remote/auth.rs::canonical_bytes is the source of
+// The SHIPPED Rust frameworks/tauri/src/remote/auth.rs::canonical_bytes is the source of
 // truth (length-prefixed binary, NOT the earlier JSON sketch). This test pins the
 // Worker to those EXACT bytes + signature. The mirrored Rust test
-// (src-tauri/src/remote/auth/golden_tests.rs) reads the SAME vector and proves a
+// (frameworks/tauri/src/remote/auth/golden_tests.rs) reads the SAME vector and proves a
 // Worker-format-signed assertion verify_strict's on the Rust side.
 
 import { describe, expect, it } from "vitest";

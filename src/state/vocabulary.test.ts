@@ -20,14 +20,14 @@
 //
 // (b) RED 근거 (실측, 2026-07-26)
 //
-// 미판정 식별자 **65종** = `src/**/*.ts(x)` **59종** + `src-tauri/src/**/*.rs` **6종**.
+// 미판정 식별자 **65종** = `src/**/*.ts(x)` **59종** + `frameworks/tauri/src/**/*.rs` **6종**.
 // 판정표가 비어 있으므로 65 전부가 미판정이다. 표가 다 차면 0 이 된다.
 //
 // (c) 그 수를 만든 셸 질의
 //
 //   grep -rhoE "([A-Za-z_][A-Za-z0-9_]*)?([Pp]ane|[Pp]anel)[A-Za-z0-9_]*" src \
 //     --include='*.ts' --include='*.tsx' --exclude=vocabulary.test.ts | sort -u | wc -l   # 59
-//   grep -rhoE "([A-Za-z_][A-Za-z0-9_]*)?([Pp]ane|[Pp]anel)[A-Za-z0-9_]*" src-tauri/src \
+//   grep -rhoE "([A-Za-z_][A-Za-z0-9_]*)?([Pp]ane|[Pp]anel)[A-Za-z0-9_]*" frameworks/tauri/src \
 //     --include='*.rs' | sort -u | wc -l                                                  # 6
 //
 // 이 파일 자신은 스캔에서 뺀다 — 판정표의 문자열 키가 스캔에 다시 잡히면 죽은 항목이 스스로를
@@ -46,13 +46,13 @@ import { describe, expect, it } from "vitest";
 /** 옛 뜻 = 탭 인스턴스(개명 대상) / 새 뜻 = 칸(존치). 제3의 값은 판정이 아니다. */
 type Verdict = "tab" | "pane";
 
-const SCOPES = ["src", "src-tauri"] as const;
+const SCOPES = ["src", "frameworks/tauri"] as const;
 type Scope = (typeof SCOPES)[number];
 
 /** 스캔 뿌리 — 스코프 이름은 실패 메시지에 그대로 실린다. */
 const ROOTS: Record<Scope, { dir: string; exts: string[] }> = {
   src: { dir: join(__dirname, ".."), exts: [".ts", ".tsx"] },
-  "src-tauri": { dir: join(__dirname, "..", "..", "src-tauri", "src"), exts: [".rs"] },
+  "frameworks/tauri": { dir: join(__dirname, "..", "..", "frameworks/tauri", "src"), exts: [".rs"] },
 };
 
 /** 이 게이트 자신 — 판정표가 스스로를 증명하지 못하게 뺀다. */
@@ -119,7 +119,7 @@ const VERDICTS: Record<Scope, Record<string, Verdict>> = {
     pty_pane_alive: "tab", // invoke 이름(와이어)
     pty_pane_pid: "tab",
   },
-  "src-tauri": {
+  "frameworks/tauri": {
     // 전부 옛 뜻이고 전부 와이어다 — invoke 이름·요청 필드·사이드카 계약 enum.
     // 와이어 이름은 독립 발행된 양쪽이 같은 문자열로 만나는 지점이므로 한쪽만 못 바꾼다:
     // pty 사이드카 계약(soksak-spec-pty)은 버전 범프와 두 구현 동시 이행이 개명의 전제다.
@@ -160,7 +160,7 @@ function identifiersIn(scope: Scope): string[] {
 
 const SCANNED: Record<Scope, string[]> = {
   src: identifiersIn("src"),
-  "src-tauri": identifiersIn("src-tauri"),
+  "frameworks/tauri": identifiersIn("frameworks/tauri"),
 };
 
 /** 실패 메시지는 `<스코프>:<식별자>` — 그대로 판정표 항목이 된다. */

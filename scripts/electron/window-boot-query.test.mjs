@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 
 const requireCjs = createRequire(import.meta.url);
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
-const table = requireCjs(join(ROOT, "electron/native/window.cjs"));
+const table = requireCjs(join(ROOT, "frameworks/electron/native/window.cjs"));
 const { bootQuery } = table;
 
 /** 창 생성을 흉내내어 무엇이 넘어갔는지 남긴다. */

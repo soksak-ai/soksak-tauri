@@ -101,7 +101,7 @@ git/clipboard/ai.session) and removes the violators.
    main workspace into a `w-*` slot). No other name carries meaning, and no code may parse
    a role out of a label — roles are metadata. Identifiers never surface in human answers
    (MESSAGE-PROTOCOL: `message` speaks in projects and sentences; labels live in `data`).
-   Every window-label pattern MUST be listed in `src-tauri/capabilities/default.json`
+   Every window-label pattern MUST be listed in `frameworks/tauri/capabilities/default.json`
    `windows` — a label family missing from the capability is denied `event.listen` and
    every socket command to such a window dies as TIMEOUT with no error at the source.
    Previous-generation labels (`win-<seq>`) no longer exist: a one-shot migration
@@ -179,7 +179,7 @@ break the symmetry law (file = command prefix: `webview_open`, not `webview_host
 
 | Before | After | Kind |
 |---|---|---|
-| `src-tauri/src/browser.rs` | `src-tauri/src/webview.rs` | core file |
+| `frameworks/tauri/src/browser.rs` | `frameworks/tauri/src/webview.rs` | core file |
 | `browser_open/_bounds/_navigate/_devtools/_history/_visible/_close/_list/_open_window/_eval/_media_extract/_overlay_active/_dom_holes/_debug_hierarchy` | `webview_*` (same verbs) | invoke |
 | `src/lib/browserGc.ts` (+test) | `src/lib/webviewGc.ts` | frontend core file |
 | `startBrowserGc` / `collectBrowserLabels` | `startWebviewGc` / `collectWebviewLabels` | exports |
@@ -333,7 +333,7 @@ belong to the third-party crate and were never rename targets.
 
 ## 7. Enforcement Gate
 
-Mechanical check for the §2 ruling: `grep -riE "\bcef\b" src src-tauri/src packages`
+Mechanical check for the §2 ruling: `grep -riE "\bcef\b" src frameworks/tauri/src packages`
 must return zero hits. Documented exceptions where the string legitimately lives:
 this file (the ruling must name what it bans), the `soksak-ai/soksak-sidecar-browser-chromium` repo
 (the importing crate: dep line, `use cef`, attribution README), and third-party

@@ -21,7 +21,7 @@ IDENTITY=debug
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 # 빌드 산출 디렉토리는 cargo 가 진실이다(.cargo/config.toml 의 target-dir 재지정을 따라간다 —
 # 워크트리 공유 target 에서도 같은 경로가 나온다). 경로 추측 금지.
-TARGET_DIR="$(cd "$ROOT_DIR/src-tauri" && cargo metadata --format-version 1 --no-deps 2>/dev/null \
+TARGET_DIR="$(cd "$ROOT_DIR/frameworks/tauri" && cargo metadata --format-version 1 --no-deps 2>/dev/null \
   | python3 -c "import json,sys;print(json.load(sys.stdin)['target_directory'])")"
 APP_BUNDLE="$TARGET_DIR/debug/bundle/macos/soksak-$IDENTITY.app"
 APP_BIN="$APP_BUNDLE/Contents/MacOS/soksak-$IDENTITY"

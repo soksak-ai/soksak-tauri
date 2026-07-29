@@ -17,74 +17,47 @@ Four words are used here, and their meanings are fixed (a gate enforces them).
 
 So the folder that holds `tauri` and `electron` is `frameworks`. Not `platform`.
 
-## Current state (measured 2026-07-29)
+## Current state (migration complete, 2026-07-29)
 
 ```
 core/
-├── src/            app UI (framework-agnostic) — sees a framework only through the adapter seam
-├── electron/       the Electron adapter
-├── src-tauri/      the Tauri adapter  +  11 framework-free crates  +  the Cargo workspace root
-│   ├── src/            Tauri adapter proper (59 files · 28,293 lines)
-│   ├── cli/            the sok CLI (framework-free)
-│   ├── capabilities/   Tauri capability declarations
-│   ├── icons*/ gen/    Tauri bundle assets
-│   └── crates/         soksak-core · cored · store · watch · ptyd · seal · spec-* (20,262 lines)
-├── platform/       OS-axis assets
-├── packages/       npm packages (plugin-api · plugin-spec)
-├── worker/         Cloudflare Worker
-├── scripts/        gates · e2e · tools
-└── docs/ plans/ public/ examples/ secret/ dist/
-```
-
-## What disagrees
-
-**① Code that became independent of a framework lives inside that framework.**
-
-The ten crates under `crates/` and `crates/soksak-cli/` depend on tauri **not at all** (measured
-across every Cargo.toml). One of them, `soksak-cored`, carries `tests/no_framework.rs`, which bans
-`tauri`, `wry`, `tao`, `objc2`, `libloading`, `windows-sys`, `tokio`, `interprocess`, and
-`portable-pty` **by name**. Code whose job is to refuse a framework by name sits inside a folder named
-after that framework.
-
-**② The workspace root is one framework's app.**
-
-`src-tauri/Cargo.toml` is both the `[workspace]` and the Tauri app package
-(`name = "soksak-tauri-dev"`). All eleven shared crates are members of that workspace — shared code
-belongs to one framework's build unit.
-
-**③ The two frameworks are not siblings.**
-
-`electron/` sits at the top level while the Tauri adapter lives in `src-tauri/src/`, whose parent also
-holds the shared code. The layout says "Tauri is the product, Electron is a guest." The port's premise
-says the opposite: one core, two frameworks, equal standing.
-
-**④ `src-tauri` is itself a framework convention.**
-
-It is the Tauri CLI's default directory name. Following that convention is the Tauri adapter's own
-business; there is no reason for shared code to live beneath it.
-
-## Target layout
-
-```
-core/
-├── src/                app UI — unchanged
+├── Cargo.toml          the workspace root — not a package at all
+├── src/                app UI (framework-agnostic)
 ├── frameworks/         frameworks are siblings
-│   ├── tauri/              today's src-tauri/{src,capabilities,icons*,gen}
-│   └── electron/           today's electron/
-├── crates/             framework-free Rust — the workspace root lives here
-│   ├── soksak-core/        rules (no dependencies)
-│   ├── soksak-cored/       the serving process
-│   ├── soksak-store/       the store resource
-│   ├── soksak-watch/       the filesystem-watch resource
-│   ├── soksak-ptyd/        the PTY daemon
-│   ├── soksak-seal/        sealing
-│   ├── soksak-spec-*/      contracts
-│   └── soksak-cli/         the sok CLI (today's crates/soksak-cli)
+│   ├── tauri/              the Tauri adapter (src · capabilities · icons · gen · conf)
+│   └── electron/           the Electron adapter
+├── crates/             eleven framework-free Rust crates
+│   ├── soksak-core/        rules (no dependencies) + assets/shell-integration.zsh
+│   ├── soksak-cored/ store/ watch/ ptyd/ seal/ spec-*/ cli/
 ├── platform/           the OS axis
-├── packages/ worker/ scripts/ docs/ plans/ …
+├── packages/ worker/ scripts/ docs/ plans/ public/ examples/ secret/
 ```
 
-Three rules cover it.
+## What changed
+
+**① Code that had become framework-free moved out of the framework.** `src-tauri/crates/*` →
+`crates/*`, `src-tauri/cli` → `crates/soksak-cli`. None of the eleven crates depends on tauri. One of
+them, `soksak-cored`, carries a gate banning `tauri`, `wry`, `tao`, `objc2`, `libloading`,
+`windows-sys`, and `tokio` **by name** — code whose job is to refuse a framework by name had been
+living inside that framework's folder.
+
+**② The workspace root shed its framework.** `src-tauri/Cargo.toml` used to be both the `[workspace]`
+and the Tauri app package. The root is now at the top level and is not a package at all.
+
+What only works at the root came with it — `[patch.crates-io]` and `[profile.release]`. In a member
+manifest cargo **warns and ignores them** (measured): the upstream wry leak patch would silently come
+unpatched while the build still succeeds, and the difference shows only at runtime. A virtual manifest
+silently defaults to `resolver = "1"`, so `resolver = "2"` is now explicit.
+
+**③ The two frameworks became siblings.** `frameworks/{tauri,electron}`. The layout no longer says
+"Tauri is the product and Electron is a guest."
+
+**④ The name `src-tauri` is gone.** It was the Tauri CLI's convention, and shared code had no reason
+to live beneath it.
+
+## The law of the layout
+
+Three rules.
 
 1. **Framework-free code does not live under a framework's name.**
 2. **Frameworks are siblings** — neither is the other's parent.
@@ -117,14 +90,24 @@ soksak-core/src/
 Settle on one convention for tests. Inline `#[cfg(test)] mod tests` is the majority, so it is the
 standard; the five that were split out either carry a stated reason or move back inline.
 
-## What the move costs
+## What the move touched
 
-**63 files** outside `src-tauri` reference that path (gates, docs, plans, manifests, CI); ten of them
-point at `crates` directly. Moving the tree changes all of them.
+**136 files** of external references (gates, tests, docs, plans, manifests, CI, config). The places
+that could have broken silently were handled on their own terms.
 
-On the Rust side, `Cargo.toml` `members` and `path` dependencies move with it, as do
-`include_str!("../fixtures/…")` relative paths. The frontend knows `src-tauri` only as a build-output
-path, so its exposure is small.
+- Two `include_str!` paths that crossed a crate boundary. `shell-integration.zsh` moved next to its
+  consumer (`crates/soksak-core/assets/`), removing the cross-tree include entirely.
+- Gate **scan roots**. With `["src","src-tauri"]`, a vanished root drops all Rust out of the scan and
+  the gate reports zero violations — a pass that guards nothing. Those gates now fail when no root
+  exists (fixed in a preceding commit, before the move).
+- **Sealed baselines** keyed by path (`baseline-unwrap.txt`, `baseline-file-length.txt`). A mismatched
+  key breaks the seal, and a file that passed only because it was sealed becomes an instant violation.
+- `.github/fixtures` — with the root at the top level, that fixture package falls inside the workspace
+  directory. It is now excluded.
+- A path inside a regular expression (`framework-binding.mjs`) — the slash escaping has to change with it.
+- The npm package name `electron/…` is not the repository folder. A blanket rewrite that catches it
+  breaks module resolution.
+
 
 ## Gates
 
@@ -137,4 +120,4 @@ A layout that lives only in a document gets violated by the next person. Three c
 
 ---
 
-This document is the **standard**. Moving the tree is separate work, done after this is settled.
+This document is the **standard**, and the tree stands as it describes. The three gates above catch a departure from it.

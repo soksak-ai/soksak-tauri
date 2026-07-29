@@ -1,4 +1,4 @@
-// 터미널 해석기 방출 스캔 게이트 — 코어(src/·src-tauri/)에 VT 해석기·미러·화면 복원
+// 터미널 해석기 방출 스캔 게이트 — 코어(src/·frameworks/tauri/)에 VT 해석기·미러·화면 복원
 // 어휘가 다시 들어오는 것을 봉인한다. 법(플랜 §0 결정 2·8, 사용자 판결): VT 해석(바이트→
 // 화면 상태)은 코어 밖(사이드카 soksak-sidecar-terminal-alacritty) 소유다. PTY 배관(pty 열고
 // 바이트 나름)은 결정 1로 코어 잔류다 — 두 도메인을 이 게이트가 가른다.
@@ -67,7 +67,7 @@ export const ALLOWLIST = [
       " 방출된 건 VT 해석이지 pty 배관이 아니다.",
   },
   {
-    file: "src-tauri/src/pty.rs",
+    file: "frameworks/tauri/src/pty.rs",
     pattern: /openpty|portable_pty|native_pty_system/,
     reason:
       "PTY = OS 프리미티브(결정 1, 사용자 확정): 앱의 in-process 폴백 백엔드가 pty 를" +
@@ -76,7 +76,7 @@ export const ALLOWLIST = [
 ];
 
 // crates 는 프레임워크 밖으로 나온 Rust 다 — 뿌리에서 빠지면 그 코드가 스캔 밖이 된다.
-const SCAN_ROOTS = ["src", "src-tauri", "crates"];
+const SCAN_ROOTS = ["src", "frameworks/tauri", "crates"];
 const SKIP_DIRS = new Set(["target", "gen", "node_modules", ".git", "dist"]);
 const SCAN_EXTS = new Set([".ts", ".tsx", ".rs", ".mjs"]);
 const TEST_FILE = /\.test\.(ts|tsx|mjs)$/;

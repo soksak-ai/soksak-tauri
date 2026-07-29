@@ -10,11 +10,11 @@
 
 | 사실 | 값 | 재현 명령 |
 |---|---|---|
-| `[profile.dev]` 선언 | **없음** (`[profile.release]` 1건뿐) | `grep -n '^\[profile' src-tauri/Cargo.toml` |
-| 저장소 전체 `opt-level` 선언 | **0건** | `grep -rn opt-level src-tauri/Cargo.toml crates/*/Cargo.toml crates/soksak-cli/Cargo.toml` |
+| `[profile.dev]` 선언 | **없음** (`[profile.release]` 1건뿐) | `grep -n '^\[profile' frameworks/tauri/Cargo.toml` |
+| 저장소 전체 `opt-level` 선언 | **0건** | `grep -rn opt-level frameworks/tauri/Cargo.toml crates/*/Cargo.toml crates/soksak-cli/Cargo.toml` |
 | 실행 중 앱 바이너리 | `target/debug/soksak-dev` | `ps -o pid,command -p 82541` |
-| `target/release` 디렉터리 | **존재하지 않음** | `ls src-tauri/target/` |
-| 실행 중 ptyd == cargo debug 산출물 | sha1 동일 `c7bcda9c…` | `shasum ~/.soksak-dev/bin/soksak-ptyd-p1 src-tauri/target/debug/soksak-ptyd` |
+| `target/release` 디렉터리 | **존재하지 않음** | `ls frameworks/tauri/target/` |
+| 실행 중 ptyd == cargo debug 산출물 | sha1 동일 `c7bcda9c…` | `shasum ~/.soksak-dev/bin/soksak-ptyd-p1 frameworks/tauri/target/debug/soksak-ptyd` |
 | debug 아이덴티티 번들도 debug 프로파일 | `Makefile:57` = `tauri build --debug` | `sed -n '57,58p' Makefile` |
 
 결론(추론 아님): 이 저장소에서 **최적화된 Rust 산출물이 만들어진 적이 없다.**
@@ -53,7 +53,7 @@ docs/PERFORMANCE.md 의 모든 수치와 budgets.json 의 모든 예산은 `opt-
 라이브 원인 확정 (소켓 직접 조회):
 ```
 $ SOKSAK_SOCKET=~/.soksak-dev/com.soksak.dev.sock \
-  src-tauri/target/debug/sok-dev plugin.soksak-plugin-mascot.state
+  frameworks/tauri/target/debug/sok-dev plugin.soksak-plugin-mascot.state
   attached      = False
   holder.inDom  = False   (w=0, h=0)
   tickerStarted = True
@@ -151,14 +151,14 @@ $ git log --oneline 14d6d7f7..HEAD -- scripts/perf | wc -l
 이 축이 지금 사용자가 체감하는 느림의 **최상위 배수**다. 코드를 한 줄도 안 고쳐도 배수가 곱해져 있다.
 
 **a-1. cargo dev 프로파일이 제품이다.**
-`src-tauri/Cargo.toml:157` 에 `[profile.release]` 하나만 있고 `[profile.dev]` 도, `[profile.dev.package."*"]` 도, `.cargo/config.toml` 오버라이드도 없다. 워크스페이스 7 멤버 전체(`src-tauri/Cargo.toml:2`)와 lockfile 689 패키지가 cargo 기본값(opt-level=0, debug-assertions, overflow-checks, codegen-units=256)으로 빌드된다. 살아 있는 프로세스가 그 산출물이라는 증거: pid 82541 = `target/debug/soksak-dev`, ppid 82388 = `tauri.js dev`; `~/.soksak-dev/bin/soksak-ptyd-p1` 과 `src-tauri/target/debug/soksak-ptyd` 의 md5 가 동일(`7bdfd45b1b7997e2a1a19638202c2526`). `src-tauri/target/` 에는 `release` 디렉터리가 없다.
-기계적으로 확인된 파급: cc-1.2.67 이 `OPT_LEVEL` 을 읽어(`lib.rs:3921`) `-O{level}` 을 그대로 방출하므로(`lib.rs:2138`), `rusqlite features=["bundled"]`(`src-tauri/Cargo.toml:61`) 의 SQLite amalgamation 도 `-O0` 로 컴파일된다. 즉 모든 app.data 쿼리가 최적화 없는 SQLite 를 탄다.
+`frameworks/tauri/Cargo.toml:157` 에 `[profile.release]` 하나만 있고 `[profile.dev]` 도, `[profile.dev.package."*"]` 도, `.cargo/config.toml` 오버라이드도 없다. 워크스페이스 7 멤버 전체(`frameworks/tauri/Cargo.toml:2`)와 lockfile 689 패키지가 cargo 기본값(opt-level=0, debug-assertions, overflow-checks, codegen-units=256)으로 빌드된다. 살아 있는 프로세스가 그 산출물이라는 증거: pid 82541 = `target/debug/soksak-dev`, ppid 82388 = `tauri.js dev`; `~/.soksak-dev/bin/soksak-ptyd-p1` 과 `frameworks/tauri/target/debug/soksak-ptyd` 의 md5 가 동일(`7bdfd45b1b7997e2a1a19638202c2526`). `frameworks/tauri/target/` 에는 `release` 디렉터리가 없다.
+기계적으로 확인된 파급: cc-1.2.67 이 `OPT_LEVEL` 을 읽어(`lib.rs:3921`) `-O{level}` 을 그대로 방출하므로(`lib.rs:2138`), `rusqlite features=["bundled"]`(`frameworks/tauri/Cargo.toml:61`) 의 SQLite amalgamation 도 `-O0` 로 컴파일된다. 즉 모든 app.data 쿼리가 최적화 없는 SQLite 를 탄다.
 **측정된 배수는 9.5x** — 이 결함의 대표 핫루프인 `RawRing::push` 를 그대로 떼어내 100 MB / 8192 B 청크로 돌리면 `-C opt-level=0 -C debug-assertions=on -C overflow-checks=on` 에서 77.24 MB/s, `-C opt-level=3` 에서 732.43 MB/s. "20-100x" 는 근거 없는 수치이므로 쓰지 않는다.
-**추론 표시**: 앰비언트 1h43m 동안 Rust 앱 프로세스(82541)는 CPU 4:33(≈4.4%), 메인 WebContent(82658)는 10:34(≈10.2%) 를 태웠다. 즉 이 축은 배수이지 현재 지배항이 **아니다**. RustCrypto 봉인 경로는 지금 아예 안 뜨겁다 — `records` 11575 행 중 `enc=1` 이 0 행이고, `src-tauri/src/data/store.rs:405` 는 `crypto::active_key` 가 Some 일 때만 봉인한다.
+**추론 표시**: 앰비언트 1h43m 동안 Rust 앱 프로세스(82541)는 CPU 4:33(≈4.4%), 메인 WebContent(82658)는 10:34(≈10.2%) 를 태웠다. 즉 이 축은 배수이지 현재 지배항이 **아니다**. RustCrypto 봉인 경로는 지금 아예 안 뜨겁다 — `records` 11575 행 중 `enc=1` 이 0 행이고, `frameworks/tauri/src/data/store.rs:405` 는 `crypto::active_key` 가 Some 일 때만 봉인한다.
 소유 지표: `t1_plain.mbps`, `t1_plain.cpu.avg`, `t2.medianMs`, `t5_idle.cpu.avg` — 단, 오늘은 비교 대상 릴리즈 바이너리가 존재하지 않는다.
 
 **a-2. 프런트엔드가 창마다 vite dev 서버에서 다시 조립된다.**
-`src-tauri/tauri.conf.json:8` 이 `devUrl: http://localhost:1420`, `src-tauri/src/window.rs:157-177` 은 windows[0] 을 복제해 쿼리스트링만 바꾸므로 `WebviewUrl::External(devUrl)` 이 그대로 유지된다. 새 창마다 자기 WebKit 프로세스에서 모듈 그래프를 전부 다시 만든다.
+`frameworks/tauri/tauri.conf.json:8` 이 `devUrl: http://localhost:1420`, `frameworks/tauri/src/window.rs:157-177` 은 windows[0] 을 복제해 쿼리스트링만 바꾸므로 `WebviewUrl::External(devUrl)` 이 그대로 유지된다. 새 창마다 자기 WebKit 프로세스에서 모듈 그래프를 전부 다시 만든다.
 바이트로 확인된 것: `react-dom-client.development.js` 1,065,698 B vs production 536,016 B, `.vite/deps/react-dom_client.js` 가 development 번들을 참조, 모든 문서 head 에 `@vite/client` + `@react-refresh` 주입, `main.tsx` 10,398 B → 서빙 25,273 B, `src/` 하위 런타임 모듈 181개 / 1,696,927 B, 그리고 `/src/*` 는 `Cache-Control: no-cache` + weak ETag 라 창마다 181개를 재검증·재변환한다(`/node_modules/.vite/deps/*` 만 immutable).
 **정정해서 기록**: 살아 있는 메인 WebContent(82658)는 지금 RSS 193 MB 이고, `t6_memory.rssMb=752.3` 은 identity=debug(= 프로덕션 vite 번들) 에서 잰 값이라 이 축의 증거가 **아니다**. 이건 코드로 고치는 결함이 아니라 `tauri dev` 의 성질이다 — 고칠 것은 "사용자의 일상 실행물이 개발 하니스"라는 사실과, 그 영역을 재는 측정 체계가 없다는 것.
 소유 지표: 신규 `t7_boot`(프로세스 기동→첫 페인트), `t6_memory.footprintMb`.
@@ -191,13 +191,13 @@ xterm 은 밀린 게 아니라 **굶고 있다**: writeCbLag 92,617 ms / ~102,55
 소유 지표: `t5_idle.cpu.avg`(프로세스별 귀속 추가 후).
 
 **b-5. divider hover rAF 루프에 종료 에지가 없다 — 메인라인 폴링.**
-`src/App.tsx:859-887`: dividerHoverKey 가 non-null 인 동안 tick(:870-881)이 매 프레임 `document.querySelector`(:871) + `getBoundingClientRect`(:873) 를 돌리고 :880 에서 무조건 재무장한다. IPC 만 rect 시그니처로 게이트된다(:875). 유일한 writer 는 `:838-840`, 소스는 Rust NSEvent **local** monitor 의 MouseMoved 분기(`src-tauri/src/webview.rs:1683-1697`, 등록은 :1730 `addLocalMonitorForEventsMatchingMask`). local monitor 는 이 앱에 배달된 이벤트만 보므로, 포인터가 앱 밖으로 나가면 MouseMoved 가 끊기고 키는 null 로 안 돌아온다. src 전역에 mouseleave/blur/deactivate 리셋이 없다(hit 은 텍스트 입력의 onBlur 두 개뿐).
+`src/App.tsx:859-887`: dividerHoverKey 가 non-null 인 동안 tick(:870-881)이 매 프레임 `document.querySelector`(:871) + `getBoundingClientRect`(:873) 를 돌리고 :880 에서 무조건 재무장한다. IPC 만 rect 시그니처로 게이트된다(:875). 유일한 writer 는 `:838-840`, 소스는 Rust NSEvent **local** monitor 의 MouseMoved 분기(`frameworks/tauri/src/webview.rs:1683-1697`, 등록은 :1730 `addLocalMonitorForEventsMatchingMask`). local monitor 는 이 앱에 배달된 이벤트만 보므로, 포인터가 앱 밖으로 나가면 MouseMoved 가 끊기고 키는 null 로 안 돌아온다. src 전역에 mouseleave/blur/deactivate 리셋이 없다(hit 은 텍스트 입력의 onBlur 두 개뿐).
 문서 드리프트도 같이: `src/state/dividerHover.ts:3` 은 "GroupArea 가 구독해" 라고 적혀 있지만 `useDividerHover` 를 import 하는 곳은 `src/App.tsx:63` 뿐이다.
 **크기 정직하게**: 창당 1개(effect 가 memo 밖 App 본문에 있음), 프레임당 수십 마이크로초, 그리고 가려진 창에서는 WebKit 이 rAF 를 정지시킨다(`src/plugins/hooks.ts:342-343`). 구조 판정("종료 에지 없는 폴링이 메인라인에 있다")은 유효, CPU 는 사용자 불만을 설명하지 못한다.
 같은 경로의 미청구 형제가 더 비싸다: `src/App.tsx:838` 의 25 ms throttled 네이티브 mousemove 핸들러가 `document.elementFromPoint` 를 부른다 — wedge 여부와 무관하게 앱 위 모든 포인터 이동에 대해 초당 ~40회 강제 레이아웃.
 
 **b-6. 부팅 시 34개 플러그인 번들을 직렬로 read+compile 한다 — 창마다, 페인트 전에.**
-`src/main.tsx:108` 이 `await initPluginHost()`, `:171` 이 렌더 — 워크스페이스 창은 활성화가 끝날 때까지 아무것도 안 그린다. `src/plugins/host.ts:37` → `src/state/plugins.ts:561` `for (const id of get().enabledIds)` + `:579 await activateRuntime(p)` = 엄격 직렬. 각 회차는 `plugins.ts:433` 에서 `invoke("read_text_file")` — 범용 파일뷰어 커맨드(`src-tauri/src/fs.rs:75-104`: read_to_end → `buf.contains(&0)` NUL 스캔 :91 → 개행 카운트 :96 → `String::from_utf8_lossy(...).into_owned()` :99)가 모듈 전송로로 쓰인다. 스트리밍 컴파일 없음, 모듈 URL 없음, 캐시 없음. 이어서 프런트가 같은 텍스트에 11개 정규식(`hostChrome.js:7-19`, `plugins.ts:438` 에서 `views.length > 0` 인 22개에만 적용)을 돌리고 `loader.ts:60-68` 이 Blob → objectURL → dynamic import.
+`src/main.tsx:108` 이 `await initPluginHost()`, `:171` 이 렌더 — 워크스페이스 창은 활성화가 끝날 때까지 아무것도 안 그린다. `src/plugins/host.ts:37` → `src/state/plugins.ts:561` `for (const id of get().enabledIds)` + `:579 await activateRuntime(p)` = 엄격 직렬. 각 회차는 `plugins.ts:433` 에서 `invoke("read_text_file")` — 범용 파일뷰어 커맨드(`frameworks/tauri/src/fs.rs:75-104`: read_to_end → `buf.contains(&0)` NUL 스캔 :91 → 개행 카운트 :96 → `String::from_utf8_lossy(...).into_owned()` :99)가 모듈 전송로로 쓰인다. 스트리밍 컴파일 없음, 모듈 URL 없음, 캐시 없음. 이어서 프런트가 같은 텍스트에 11개 정규식(`hostChrome.js:7-19`, `plugins.ts:438` 에서 `views.length > 0` 인 22개에만 적용)을 돌리고 `loader.ts:60-68` 이 Blob → objectURL → dynamic import.
 라이브 수치: 46 플러그인 중 34 enabled, 34/34 entry 보유, 합계 24,672,311 B = **23.5 MB 를 창마다 부팅마다** 읽고 컴파일. 실측(node, 웜 캐시, IPC 제외): read 45.7 ms + chrome-scan 101.9 ms + full-parse 225.0 ms ≈ **0.4 s 바닥 + 34회 직렬 IPC 왕복**. 활성화 계약은 존재하지 않는다 — `@soksak-ai/plugin-spec/dist/spec.d.ts` 에 activationEvents/activateOn/lazy 가 0 hit.
 사이드카 축에는 이미 규칙이 있다(`docs/SIDECARS.md §4`: "nothing loads at app start; the first open loads"). 플러그인 축에만 없어서 enabled ≡ 지금-모든-창에서-컴파일 이다.
 **추론 표시**: 워크스페이스 렌더러의 945.1 MB footprint 를 이 항목에 귀속시킬 수 없다. 대조군인 컨트롤플레인 창은 `main.tsx:102-104` 가 `<OrchestratorApp/>`, 워크스페이스는 `:171` 이 `<App/>` — 컴포넌트 트리가 아예 다르므로 통제된 실험이 아니다.
@@ -231,7 +231,7 @@ xterm 은 밀린 게 아니라 **굶고 있다**: writeCbLag 92,617 ms / ~102,55
 - 하니스의 `ps %cpu` 샘플러가 거짓말하는 것 아님 — cputime-delta 대조 2회(25.9 vs 27.1, 18.3 vs 18.8)로 검증. 46.4 는 실재한다.
 - src/ 에 무한 CSS 애니메이션 없음. `src/assets/logo-animated` 는 참조 0.
 - Rust 스케줄러는 Condvar/kevent 파킹이지 폴링 아님.
-- `docs/webview-leak-fix.md` 항목은 **고쳐져 있다** — `src-tauri/Cargo.toml:147-153` 의 `[patch.crates-io]` tauri rev a370f65 가 `Retained::as_ptr` 를 쓴다. `with_webview_balanced` 도 `browser.rs` 도 트리에 없다.
+- `docs/webview-leak-fix.md` 항목은 **고쳐져 있다** — `frameworks/tauri/Cargo.toml:147-153` 의 `[patch.crates-io]` tauri rev a370f65 가 `Retained::as_ptr` 를 쓴다. `with_webview_balanced` 도 `browser.rs` 도 트리에 없다.
 - 부팅 DB 작업은 싸다: 55.8 MB `soksak.db` 에 `PRAGMA quick_check` 123 ms, FTS 14테이블 reconcile 11 ms(사본 측정).
 - `src/main.tsx:169` 가 StrictMode 를 끄므로 dev 이중 렌더는 기여자가 아니다.
 - `::-webkit-scrollbar`(`App.css:23`)는 문서대로 A/B 측정됨(`results/20260612-141720-scroll-B2` ≈ `141503-scroll-B`) — 위반 아님.
@@ -270,7 +270,7 @@ xterm 은 밀린 게 아니라 **굶고 있다**: writeCbLag 92,617 ms / ~102,55
 
 ### W0. 측정 가능한 두 번째 실행물을 만든다 — release 프로파일 baseline (레인 A, 선행 필수)
 
-**근본 원인.** 최적화된 산출물이 이 체크아웃에 존재한 적이 없고(`ls src-tauri/target/` → CACHEDIR.TAG, debug, tmp), 성능 표준 전체가 비최적화 Rust 위에서 잡혔다. 배수를 모르면 나머지 모든 항목의 임팩트를 판정할 수 없다.
+**근본 원인.** 최적화된 산출물이 이 체크아웃에 존재한 적이 없고(`ls frameworks/tauri/target/` → CACHEDIR.TAG, debug, tmp), 성능 표준 전체가 비최적화 Rust 위에서 잡혔다. 배수를 모르면 나머지 모든 항목의 임팩트를 판정할 수 없다.
 
 **바꿀 것.** 소유 파일 `scripts/perf/run-t.sh` + `scripts/perf/budgets.json`. 규칙 신설: **모든 perf 리포트는 cargo 프로파일을 meta 에 기록한다.** `run-t.sh` 가 대상 바이너리에서 프로파일을 판별해(경로 `target/release` vs `target/debug`, 또는 빌드시 주입되는 상수) `meta.conditions.cargoProfile` 을 쓰고, `check-budgets.mjs` 가 이 필드 불일치를 거부한다(§4 의 W-M1 과 같은 변경). 동시에 `docs/PERFORMANCE.md` 에 여덟 번째 원칙을 추가한다: **"성능 수치는 프로파일을 명시하지 않으면 무효다."** 지금 이 문서에는 opt-level/profile/unoptimized 가 0 hit 이다.
 
@@ -295,7 +295,7 @@ RED 조건: 두 리포트의 `meta.conditions.cargoProfile` 이 다른데 `node 
 
 **근본 원인.** 전달 단위가 "pty read 1회" 로 고정돼 있고, 그 단위가 macOS pty master 의 1024 B 상한과 같아 IPC 크로싱 수 = 바이트 수 / 1024 로 못박혀 있다. 비용이 바이트가 아니라 크로싱에 붙는데(ansi 4.49 vs plain 4.58, 2% 차) 아무도 그 단위를 소유하지 않는다.
 
-**바꿀 것.** 소유 파일 `crates/soksak-spec-pty/src/lib.rs` — 지금 여기에 있는 모델 문장이 반증됐다: "The high mark is the throughput ceiling: bulk output moves in pause/drain cycles, so sustained rate ~= window / ack-loop round trip". `git show f104e423`(윈도 100k→1M, 저수위 5k→500k)가 이 모델의 A/B 다 — 창을 10배 넓혀 **+11%**(3.02 → 3.35). 서비스레이트 한계이지 윈도 한계가 아니다. 이 문장을 삭제하고 **전달 계약**으로 대체한다: *"PTY 출력의 전달 단위는 read 단위가 아니다. 프로듀서는 크기 임계(≥64 KiB) 또는 데드라인(≥N ms) 중 먼저 도달한 쪽에서 배치를 방출한다."* 시행 지점 두 곳: `crates/soksak-ptyd/src/main.rs:1036-1058`(데몬), `src-tauri/src/pty.rs:442-456`(인프로세스) + `src-tauri/src/pty.rs:1104-1111`(재전송 레그). 데드라인은 인터랙티브 지연을 지키기 위한 것이지 폴링이 아니다 — 타이머는 데이터가 있을 때만 무장하고 방출과 함께 해제된다.
+**바꿀 것.** 소유 파일 `crates/soksak-spec-pty/src/lib.rs` — 지금 여기에 있는 모델 문장이 반증됐다: "The high mark is the throughput ceiling: bulk output moves in pause/drain cycles, so sustained rate ~= window / ack-loop round trip". `git show f104e423`(윈도 100k→1M, 저수위 5k→500k)가 이 모델의 A/B 다 — 창을 10배 넓혀 **+11%**(3.02 → 3.35). 서비스레이트 한계이지 윈도 한계가 아니다. 이 문장을 삭제하고 **전달 계약**으로 대체한다: *"PTY 출력의 전달 단위는 read 단위가 아니다. 프로듀서는 크기 임계(≥64 KiB) 또는 데드라인(≥N ms) 중 먼저 도달한 쪽에서 배치를 방출한다."* 시행 지점 두 곳: `crates/soksak-ptyd/src/main.rs:1036-1058`(데몬), `frameworks/tauri/src/pty.rs:442-456`(인프로세스) + `frameworks/tauri/src/pty.rs:1104-1111`(재전송 레그). 데드라인은 인터랙티브 지연을 지키기 위한 것이지 폴링이 아니다 — 타이머는 데이터가 있을 때만 무장하고 방출과 함께 해제된다.
 부수: `FLOW_ACK_SIZE=5000`(`terminal.ts:25/409`)은 배치 뒤 재도출해야 한다. 지금은 100 MB 당 20,512회 ack invoke = 전 전달단위의 16.5% 가 데이터 플레인이 이미 포화시킨 같은 직렬 메인스레드를 탄다.
 
 **RED.**
@@ -393,9 +393,9 @@ RED 조건: `attached:false, holder.inDom:false` 인데 `tickerStarted:true`(오
 
 **근본 원인.** 활성화 계약이 존재하지 않는다. `@soksak-ai/plugin-spec/dist/spec.d.ts` 에 activationEvents/activateOn/lazy 가 0 hit 이라 `enabled` 가 곧 "부팅 시, 창마다, 페인트 전에, 직렬로 read+compile" 을 의미한다. 사이드카 축에는 이미 정답 규칙이 있다 — `docs/SIDECARS.md:157` "nothing loads at app start; the first `app.sidecar.open(name)` loads."
 
-**바꿀 것.** 소유 파일 `@soksak-ai/plugin-spec`(계약) + `src/state/plugins.ts:561-581`(시행). 매니페스트에 활성화 조건을 선언하게 하고(뷰 열림 / 커맨드 호출 / 이벤트), 부팅 시에는 매니페스트만 읽는다. 부수로 모듈 전송로를 고친다: 지금은 범용 파일뷰어 커맨드가 모듈을 나른다 — `plugins.ts:433 invoke("read_text_file")` → `src-tauri/src/fs.rs:75-104` 가 read_to_end 후 NUL 스캔(:91), 개행 카운트(:96), `String::from_utf8_lossy(...).into_owned()`(:99). 스트리밍 컴파일도, 모듈 URL 도, 캐시도 없다. 플러그인 모듈은 자기 전송로(모듈 URL 또는 캐시되는 전용 커맨드)를 가져야 한다.
+**바꿀 것.** 소유 파일 `@soksak-ai/plugin-spec`(계약) + `src/state/plugins.ts:561-581`(시행). 매니페스트에 활성화 조건을 선언하게 하고(뷰 열림 / 커맨드 호출 / 이벤트), 부팅 시에는 매니페스트만 읽는다. 부수로 모듈 전송로를 고친다: 지금은 범용 파일뷰어 커맨드가 모듈을 나른다 — `plugins.ts:433 invoke("read_text_file")` → `frameworks/tauri/src/fs.rs:75-104` 가 read_to_end 후 NUL 스캔(:91), 개행 카운트(:96), `String::from_utf8_lossy(...).into_owned()`(:99). 스트리밍 컴파일도, 모듈 URL 도, 캐시도 없다. 플러그인 모듈은 자기 전송로(모듈 URL 또는 캐시되는 전용 커맨드)를 가져야 한다.
 `src/plugins/loader.ts:1` 이 "entry is evaluated in the window realm (v1)" 이라고 적어 놓았으므로 그래프가 창마다 사는 것은 설계다 — 창 수 배수는 구조이지 버그가 아니다. 고칠 것은 **얼마나 많이** 창마다 사느냐다.
-같은 항목에 `soksak-plugin-browser-chromium` 을 넣는다: `plugin-entry.tsx:42` 가 `activate()` 안에서 `scheduleOrphanSweep(app)` 를 무조건 부르고, 그게 `chromium-adapter.ts:219 engineOwnedIds` → `:197 send({type:"stats"})` → `:321 app.sidecar.open("browser-chromium")` → 코어 dlopen + 메인스레드 CEF init(`src-tauri/src/sidecar.rs:236,242,278,295` — `run_on_main_thread` 랑데부, 10 s 캡)로 이어진다. 이건 §4 의 사이드카 규칙 위반이다 — activate() 가 무엇을 해도 되는지에 코어가 계약을 안 걸어서 생긴다. **정정해 둘 것**: activate 는 `scheduleOrphanSweep` 을 await 하지 않고(`plugin-entry.tsx:42` 는 맨 호출, `chromium-adapter.ts:219` 는 프라미스만 보관) 모듈은 `sidecar.rs:426-452` 의 전역 MODULES 맵에 캐시되므로 창 수만큼 곱해지지 않는다. 확정 비용은 항상 켜진 CEF 서비스 3종 **78.8 MB**(gpu 34.0 + 24.9 + 19.9, ppid=82541, 앱보다 8 s 늦게 기동) 와 메인스레드 랑데부 결합이다. "부팅 수백 ms" 는 측정된 바 없다.
+같은 항목에 `soksak-plugin-browser-chromium` 을 넣는다: `plugin-entry.tsx:42` 가 `activate()` 안에서 `scheduleOrphanSweep(app)` 를 무조건 부르고, 그게 `chromium-adapter.ts:219 engineOwnedIds` → `:197 send({type:"stats"})` → `:321 app.sidecar.open("browser-chromium")` → 코어 dlopen + 메인스레드 CEF init(`frameworks/tauri/src/sidecar.rs:236,242,278,295` — `run_on_main_thread` 랑데부, 10 s 캡)로 이어진다. 이건 §4 의 사이드카 규칙 위반이다 — activate() 가 무엇을 해도 되는지에 코어가 계약을 안 걸어서 생긴다. **정정해 둘 것**: activate 는 `scheduleOrphanSweep` 을 await 하지 않고(`plugin-entry.tsx:42` 는 맨 호출, `chromium-adapter.ts:219` 는 프라미스만 보관) 모듈은 `sidecar.rs:426-452` 의 전역 MODULES 맵에 캐시되므로 창 수만큼 곱해지지 않는다. 확정 비용은 항상 켜진 CEF 서비스 3종 **78.8 MB**(gpu 34.0 + 24.9 + 19.9, ppid=82541, 앱보다 8 s 늦게 기동) 와 메인스레드 랑데부 결합이다. "부팅 수백 ms" 는 측정된 바 없다.
 
 **RED.** 신규 시나리오 `t7_boot`(§4): 프로세스 기동 → 워크스페이스 창 첫 페인트 wall time, 그리고 T+30 s 시점 `soksak-sidecar-browser-chromium` 프로세스 수.
 ```
@@ -431,7 +431,7 @@ RED 조건: 오프스크린 후 footprint 가 **안 내려간다**(오늘 구조
 
 ### W8. divider hover 루프에 종료 에지를 준다 + elementFromPoint 를 뺀다 (레인 F, 독립, 저비용)
 
-**근본 원인.** 상태(`dividerHoverKey`)의 writer 는 하나인데(`src/App.tsx:838-840`) 그 소스가 **local** NSEvent monitor(`src-tauri/src/webview.rs:1730`) 라 "포인터가 앱을 떠남" 이라는 사건이 채널에 존재하지 않는다. 그래서 키가 null 로 돌아올 경로가 없고 rAF 가 창 수명 동안 돈다(`:859-887`, :880 무조건 재무장). 소유권/경계 결함이지 루프 자체의 결함이 아니다.
+**근본 원인.** 상태(`dividerHoverKey`)의 writer 는 하나인데(`src/App.tsx:838-840`) 그 소스가 **local** NSEvent monitor(`frameworks/tauri/src/webview.rs:1730`) 라 "포인터가 앱을 떠남" 이라는 사건이 채널에 존재하지 않는다. 그래서 키가 null 로 돌아올 경로가 없고 rAF 가 창 수명 동안 돈다(`:859-887`, :880 무조건 재무장). 소유권/경계 결함이지 루프 자체의 결함이 아니다.
 
 **바꿀 것.** 소유 파일 `src/state/dividerHover.ts` — 여기에 **"이 키는 진입과 이탈이 쌍을 이루는 상태다"** 를 규칙으로 쓰고, 이탈 소스를 만든다(창 deactivate / pointerleave / global monitor 보완 중 하나). 같은 파일의 드리프트도 고친다: `:3` 은 "GroupArea 가 구독해" 라고 적혀 있지만 실제 import 는 `src/App.tsx:63` 하나뿐이다 — 문서가 틀렸거나 소비자가 없어졌다.
 같은 커밋에서 `src/App.tsx:838` 의 25 ms throttled `document.elementFromPoint` 를 없앤다. wedge 여부와 무관하게 앱 위 모든 포인터 이동에 초당 ~40회 강제 레이아웃을 유발하고, 이건 `docs/PERFORMANCE.md:55-56` 직접 위반이다. hit-test 는 이미 존재하는 경로가 있다(`reference_envelope-reserved-keys` 의 `ui.hit`/`ui.measure`).
@@ -590,8 +590,8 @@ GREEN: 새 런이 기록되면 통과.
 **1) 매일 쓰는 실행물이 dev 프로파일이라는 것 — 10초**
 ```
 ps -Ao pid,ppid,command | grep -E 'target/debug/soksak-dev|tauri.js dev' | grep -v grep
-ls src-tauri/target/
-grep -n '^\[profile' src-tauri/Cargo.toml
+ls frameworks/tauri/target/
+grep -n '^\[profile' frameworks/tauri/Cargo.toml
 ```
 `target/debug/soksak-dev` 가 `tauri.js dev` 의 자식으로 뜨고, `target/` 에 `release` 가 없으며, `[profile]` 히트가 `[profile.release]` 하나뿐인 것을 확인한다. `[profile.dev]` 는 어디에도 없다.
 

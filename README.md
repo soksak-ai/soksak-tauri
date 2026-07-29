@@ -97,9 +97,9 @@ state and stay visually distinct in the Dock.
 
 ## Artifacts
 
-- Release app: `src-tauri/target/release/bundle/macos/soksak.app`
-- Debug app: `src-tauri/target/debug/bundle/macos/soksak-debug.app`
-- Installer image: `src-tauri/target/release/bundle/dmg/soksak_<version>_aarch64.dmg`
+- Release app: `frameworks/tauri/target/release/bundle/macos/soksak.app`
+- Debug app: `frameworks/tauri/target/debug/bundle/macos/soksak-debug.app`
+- Installer image: `frameworks/tauri/target/release/bundle/dmg/soksak_<version>_aarch64.dmg`
 
 ---
 

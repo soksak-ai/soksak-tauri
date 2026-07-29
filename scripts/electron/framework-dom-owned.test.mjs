@@ -16,7 +16,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const requireCjs = createRequire(import.meta.url);
-const INDEX = join(dirname(fileURLToPath(import.meta.url)), "../../electron/native/index.cjs");
+const INDEX = join(dirname(fileURLToPath(import.meta.url)), "../../frameworks/electron/native/index.cjs");
 
 describe("DOM 이 소유하는 이름", () => {
   const table = () => requireCjs(INDEX);

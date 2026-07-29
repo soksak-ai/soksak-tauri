@@ -95,9 +95,9 @@ make docs         # 라이브 카탈로그에서 docs/COMMANDS.md 재생성
 
 ## 산출물
 
-- 릴리스 앱: `src-tauri/target/release/bundle/macos/soksak.app`
-- 디버그 앱: `src-tauri/target/debug/bundle/macos/soksak-debug.app`
-- 설치 이미지: `src-tauri/target/release/bundle/dmg/soksak_<version>_aarch64.dmg`
+- 릴리스 앱: `frameworks/tauri/target/release/bundle/macos/soksak.app`
+- 디버그 앱: `frameworks/tauri/target/debug/bundle/macos/soksak-debug.app`
+- 설치 이미지: `frameworks/tauri/target/release/bundle/dmg/soksak_<version>_aarch64.dmg`
 
 ---
 

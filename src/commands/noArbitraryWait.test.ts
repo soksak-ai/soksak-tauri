@@ -1,7 +1,7 @@
 // 기다림은 사건으로 끝난다 — 숫자로 끝나지 않는다.
 //
 // (a) 이 게이트가 지키는 규칙
-//     명령 핸들러(`src/commands/**`)와 코어 Rust(`src-tauri/src/**`)에 **숫자 리터럴 타이머**를
+//     명령 핸들러(`src/commands/**`)와 코어 Rust(`frameworks/tauri/src/**`)에 **숫자 리터럴 타이머**를
 //     두지 않는다. "200 안 되면 300 늘릴 건가" 가 성립하는 순간 그 수는 근거가 아니라 짐작이다.
 //     대기는 종결 사건(mounted·mountFailed·tabClosed·hostGone …)으로 끝나야 하고, 코어가 자기
 //     상한을 갖더라도 그것을 호출자에게 숫자로 떠넘기지 않고 명시 코드(MOUNT_ABANDONED 류)로
@@ -11,7 +11,7 @@
 //     예외를 미리 열어 두면 게이트가 아무것도 세지 않는다.
 //
 // (b) RED 근거 (실측 2026-07-26, 이 저장소)
-//     src/commands 15곳 + src-tauri/src 53곳 = 68곳. 예외표가 비어 있으므로 68곳 전부 미등록이다.
+//     src/commands 15곳 + frameworks/tauri/src 53곳 = 68곳. 예외표가 비어 있으므로 68곳 전부 미등록이다.
 //     src 쪽 대표: catalog.ts 의 `await sleep(250)`(테마 스캔 캡처 전 정착), `setTimeout(…, 30)`
 //     (자기 파괴 명령이 답을 먼저 흘리는 자리) — 둘 다 "이만큼이면 되겠지" 가 판단 근거다.
 //     rust 쪽 대표: webview.rs:1131 의 450ms(인스펙터 연결 대기), pty.rs:767/805 의 400ms
@@ -19,7 +19,7 @@
 //
 // (c) 그 수를 만든 셸 질의 (그대로 재현 가능하다)
 //     grep -rnE "setTimeout\(|sleep\(" src/commands | grep -E "[0-9]{2,}"          # 15
-//     grep -rnE "from_millis\([0-9]|from_secs\([0-9]" src-tauri/src | grep -v _tests  # 53
+//     grep -rnE "from_millis\([0-9]|from_secs\([0-9]" frameworks/tauri/src | grep -v _tests  # 53
 //
 //     아래 스캔은 저 두 파이프라인을 그대로 옮긴다. `[0-9]{2,}` 와 `_tests` 는 grep 출력 한 줄
 //     전체(`경로:행:내용`)에 걸리므로 여기서도 그 문자열에 건다 — 다르게 걸면 수가 달라진다.
@@ -69,30 +69,30 @@ const ALLOWED: { file: string; mark: string; event: string; why: string }[] = [
   { file: "src/commands/catalog.ts", mark: "setTimeout(() => window.location.reload(), 30);", event: "self-destruct-reply-flush", why: "자기 파괴 명령은 답을 먼저 흘린다 — 통로가 파괴로 함께 죽는다(window.reload)" },
   { file: "src/commands/catalog.ts", mark: "setTimeout(() => void invoke(\"window_close\", { label }), 30);", event: "self-destruct-reply-flush", why: "동일 계약(window.close 자기 창)" },
   { file: "src/commands/catalog.ts", mark: "await sleep(250);", event: "theme-css-cascade", why: "테마 클래스 전환 후 CSS 캐스케이드 반영 유예 — 브라우저가 완료 신호를 주지 않는다" },
-  { file: "src-tauri/src/clipboard.rs", mark: "SELF_WRITE_TTL: Duration = Duration::from_secs(2)", event: "self-write-ttl", why: "자기 쓰기 판별 시간창(TTL 상수) — 타이머가 아니라 판별 기준" },
-  { file: "src-tauri/src/data/commands.rs", mark: "WRITE_BACKOFF: std::time::Duration = std::time::Duration::from_millis(60)", event: "sqlite-write-backoff", why: "SQLITE_BUSY 재시도 백오프" },
-  { file: "src-tauri/src/data/ring.rs", mark: "MIN_INTERVAL: Duration = Duration::from_secs(3600)", event: "ring-prune-min-interval", why: "링 정리 최소 간격(유휴 하한)" },
-  { file: "src-tauri/src/data/ring.rs", mark: "busy_timeout(Duration::from_secs(5))", event: "sqlite-busy-timeout", why: "SQLite busy_timeout — DB 계약" },
-  { file: "src-tauri/src/mediaproxy.rs", mark: "timeout(Duration::from_secs(60))", event: "http-client-timeout", why: "원격 HTTP 상한 — 네트워크는 사건을 보장하지 않는다" },
-  { file: "src-tauri/src/webview.rs", mark: ".recv_timeout(std::time::Duration::from_secs(2))", event: "engine-surface-stats-reply", why: "메인 스레드 서피스 판독 회신 대기의 유한 안전장치 — 회신 채널이 사건이고 상한은 관측 명령의 무한 대기 방지" },
-  { file: "src-tauri/src/pty.rs", mark: "from_millis(400)", event: "ptyd-shutdown-grace", why: "옛 데몬의 종료 유예(응답 후 150ms) 계약을 넘긴다 — 재기동 1회 한정" },
-  { file: "src-tauri/src/pty.rs", mark: "from_millis(400)", event: "ptyd-socket-rebind", why: "구 데몬 소켓 해제→신 데몬 bind 사이 — 소켓 계승 신호가 없다" },
-  { file: "src-tauri/src/webview.rs", mark: "from_millis(450)", event: "wk-inspector-async-show", why: "WebKit _inspector show 는 비동기이고 완료 콜백이 없다(SPI)" },
-  { file: "src-tauri/src/daemon.rs", mark: "from_millis(200)", event: "child-exit-poll", why: "child try_wait 유한 폴링(limit 상한·초과 시 kill) — waitpid 블로킹은 ring 수집과 양립 불가" },
-  { file: "src-tauri/src/daemon.rs", mark: "from_millis(300)", event: "child-exit-poll", why: "상주 데몬 종료 감시 — 동일 사유" },
-  { file: "src-tauri/src/schedule.rs", mark: "Duration::from_secs(3_600)", event: "scheduler-idle-cap", why: "다음 예약 없음 상태의 유휴 상한(스케줄 등록이 즉시 깨운다)" },
+  { file: "frameworks/tauri/src/clipboard.rs", mark: "SELF_WRITE_TTL: Duration = Duration::from_secs(2)", event: "self-write-ttl", why: "자기 쓰기 판별 시간창(TTL 상수) — 타이머가 아니라 판별 기준" },
+  { file: "frameworks/tauri/src/data/commands.rs", mark: "WRITE_BACKOFF: std::time::Duration = std::time::Duration::from_millis(60)", event: "sqlite-write-backoff", why: "SQLITE_BUSY 재시도 백오프" },
+  { file: "frameworks/tauri/src/data/ring.rs", mark: "MIN_INTERVAL: Duration = Duration::from_secs(3600)", event: "ring-prune-min-interval", why: "링 정리 최소 간격(유휴 하한)" },
+  { file: "frameworks/tauri/src/data/ring.rs", mark: "busy_timeout(Duration::from_secs(5))", event: "sqlite-busy-timeout", why: "SQLite busy_timeout — DB 계약" },
+  { file: "frameworks/tauri/src/mediaproxy.rs", mark: "timeout(Duration::from_secs(60))", event: "http-client-timeout", why: "원격 HTTP 상한 — 네트워크는 사건을 보장하지 않는다" },
+  { file: "frameworks/tauri/src/webview.rs", mark: ".recv_timeout(std::time::Duration::from_secs(2))", event: "engine-surface-stats-reply", why: "메인 스레드 서피스 판독 회신 대기의 유한 안전장치 — 회신 채널이 사건이고 상한은 관측 명령의 무한 대기 방지" },
+  { file: "frameworks/tauri/src/pty.rs", mark: "from_millis(400)", event: "ptyd-shutdown-grace", why: "옛 데몬의 종료 유예(응답 후 150ms) 계약을 넘긴다 — 재기동 1회 한정" },
+  { file: "frameworks/tauri/src/pty.rs", mark: "from_millis(400)", event: "ptyd-socket-rebind", why: "구 데몬 소켓 해제→신 데몬 bind 사이 — 소켓 계승 신호가 없다" },
+  { file: "frameworks/tauri/src/webview.rs", mark: "from_millis(450)", event: "wk-inspector-async-show", why: "WebKit _inspector show 는 비동기이고 완료 콜백이 없다(SPI)" },
+  { file: "frameworks/tauri/src/daemon.rs", mark: "from_millis(200)", event: "child-exit-poll", why: "child try_wait 유한 폴링(limit 상한·초과 시 kill) — waitpid 블로킹은 ring 수집과 양립 불가" },
+  { file: "frameworks/tauri/src/daemon.rs", mark: "from_millis(300)", event: "child-exit-poll", why: "상주 데몬 종료 감시 — 동일 사유" },
+  { file: "frameworks/tauri/src/schedule.rs", mark: "Duration::from_secs(3_600)", event: "scheduler-idle-cap", why: "다음 예약 없음 상태의 유휴 상한(스케줄 등록이 즉시 깨운다)" },
   { file: "crates/soksak-watch/src/lib.rs", mark: "from_millis(250)", event: "fs-debounce", why: "파일와처 디바운스 — 이벤트 병합 창" },
   // ── ③ 유한 안전망 ──
-  { file: "src-tauri/src/activity.rs", mark: "wait_timeout(q, Duration::from_secs(1))", event: "condvar-safety-net", why: "cv 사건이 주 경로 — 1s 는 closed 플래그 재확인 안전망" },
-  { file: "src-tauri/src/service.rs", mark: "wait_timeout(inner, Duration::from_millis(20))", event: "condvar-safety-net", why: "크래시 전이가 cv 를 울린다 — 20ms 는 유실 안전망" },
-  { file: "src-tauri/src/sidecar.rs", mark: "recv_timeout(std::time::Duration::from_secs(10))", event: "sidecar-reply-cap", why: "죽은 사이드카에 무한 대기 방지(10s)" },
-  { file: "src-tauri/src/sidecar.rs", mark: "recv_timeout(std::time::Duration::from_secs(2))", event: "sidecar-reply-cap", why: "동일(2s)" },
-  { file: "src-tauri/src/webview.rs", mark: "recv_timeout(Duration::from_secs(3))", event: "main-thread-dispatch-cap", why: "메인스레드 디스패치 응답 상한(3s)" },
-  { file: "src-tauri/src/webview.rs", mark: "recv_timeout(Duration::from_secs(15))", event: "main-thread-dispatch-cap", why: "동일(15s — 콜드 부트 포함)" },
+  { file: "frameworks/tauri/src/activity.rs", mark: "wait_timeout(q, Duration::from_secs(1))", event: "condvar-safety-net", why: "cv 사건이 주 경로 — 1s 는 closed 플래그 재확인 안전망" },
+  { file: "frameworks/tauri/src/service.rs", mark: "wait_timeout(inner, Duration::from_millis(20))", event: "condvar-safety-net", why: "크래시 전이가 cv 를 울린다 — 20ms 는 유실 안전망" },
+  { file: "frameworks/tauri/src/sidecar.rs", mark: "recv_timeout(std::time::Duration::from_secs(10))", event: "sidecar-reply-cap", why: "죽은 사이드카에 무한 대기 방지(10s)" },
+  { file: "frameworks/tauri/src/sidecar.rs", mark: "recv_timeout(std::time::Duration::from_secs(2))", event: "sidecar-reply-cap", why: "동일(2s)" },
+  { file: "frameworks/tauri/src/webview.rs", mark: "recv_timeout(Duration::from_secs(3))", event: "main-thread-dispatch-cap", why: "메인스레드 디스패치 응답 상한(3s)" },
+  { file: "frameworks/tauri/src/webview.rs", mark: "recv_timeout(Duration::from_secs(15))", event: "main-thread-dispatch-cap", why: "동일(15s — 콜드 부트 포함)" },
   { file: "crates/soksak-core/src/ptyd.rs", mark: "from_millis(150)", event: "pty.stream.reattached", why: "데몬 인계 전이(구 데몬 exit → 신 데몬 소켓 bind) 대기 — 세션 확인·재부착 성공이 종결, 상한 20회" },
   { file: "crates/soksak-core/src/ptyd.rs", mark: "from_secs(2)", event: "ptyd-bootstrap-handshake", why: "스폰 직후 소켓 준비 유한 재시도(2s 상한) — 감시는 소켓 에러 사건이 담당" },
   { file: "crates/soksak-core/src/ptyd.rs", mark: "from_millis(50)", event: "ptyd-bootstrap-handshake", why: "동일 루프의 재시도 간격" },
-  { file: "src-tauri/src/webview.rs", mark: "tokio::time::sleep(Duration::from_millis(400))", event: "extraction-page-settle", why: "추출용 임시 webview 의 페이지 정착 유한 재시도(timeout 상한)" },
+  { file: "frameworks/tauri/src/webview.rs", mark: "tokio::time::sleep(Duration::from_millis(400))", event: "extraction-page-settle", why: "추출용 임시 webview 의 페이지 정착 유한 재시도(timeout 상한)" },
 ];
 
 /** grep -r 과 같은 순회 — 숨김/빌드 산출물은 grep 도 안 읽는 곳만 건너뛴다. */
@@ -151,7 +151,7 @@ function rsSites(): string[] {
   // 그 순간부터 그 자리의 기다림은 아무도 안 본다(실측: ptyd 클라이언트가 코어로 가면서
   // 등록돼 있던 세 자리가 통째로 스캔 밖으로 나갔다).
   const roots = [
-    "src-tauri/src",
+    "frameworks/tauri/src",
     "crates/soksak-core/src",
     "crates/soksak-watch/src",
   ];
@@ -184,7 +184,7 @@ function rsSites(): string[] {
 describe("기다림은 사건으로 끝난다 — 숫자 리터럴 타이머 금지", () => {
   it("질의가 실제로 소스를 읽는다 — 빈 스캔이 통과로 위장하지 않는다", () => {
     const ts = walk(join(ROOT, "src/commands")).filter((f) => f.endsWith(".ts"));
-    const rs = walk(join(ROOT, "src-tauri/src")).filter((f) => f.endsWith(".rs"));
+    const rs = walk(join(ROOT, "frameworks/tauri/src")).filter((f) => f.endsWith(".rs"));
     expect(ts.length).toBeGreaterThan(0);
     expect(rs.length).toBeGreaterThan(0);
   });
@@ -193,7 +193,7 @@ describe("기다림은 사건으로 끝난다 — 숫자 리터럴 타이머 금
     expect(unregistered(tsSites())).toEqual([]);
   });
 
-  it("코어 Rust 에 미등록 타이머가 없다 (src-tauri/src)", () => {
+  it("코어 Rust 에 미등록 타이머가 없다 (frameworks/tauri/src)", () => {
     expect(unregistered(rsSites())).toEqual([]);
   });
 });

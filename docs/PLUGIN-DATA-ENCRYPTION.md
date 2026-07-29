@@ -74,4 +74,4 @@ await app.data.put("notes", {
 
 ---
 
-출처(코어): `src-tauri/src/data/os_key.rs`(OS 키체인 키), `secrets.rs`(키·복구), `data/crypto.rs`(봉인·keyId·AAD·로테이션), `data/store.rs`(인덱스=평문·나머지 봉인). 플러그인 표면: `src/plugins/api.ts`(app.data), `docs/DB-메뉴얼.md`.
+출처(코어): `frameworks/tauri/src/data/os_key.rs`(OS 키체인 키), `secrets.rs`(키·복구), `data/crypto.rs`(봉인·keyId·AAD·로테이션), `data/store.rs`(인덱스=평문·나머지 봉인). 플러그인 표면: `src/plugins/api.ts`(app.data), `docs/DB-메뉴얼.md`.

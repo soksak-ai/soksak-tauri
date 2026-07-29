@@ -20,10 +20,10 @@ import { fileURLToPath } from "node:url";
 
 const requireCjs = createRequire(import.meta.url);
 const HERE = dirname(fileURLToPath(import.meta.url));
-const MAIN = join(HERE, "../../electron/main.cjs");
-const BACKEND = join(HERE, "../../electron/backend.cjs");
-const ACTIVITY = join(HERE, "../../electron/activity.cjs");
-const PRELOAD = join(HERE, "../../electron/preload.cjs");
+const MAIN = join(HERE, "../../frameworks/electron/main.cjs");
+const BACKEND = join(HERE, "../../frameworks/electron/backend.cjs");
+const ACTIVITY = join(HERE, "../../frameworks/electron/activity.cjs");
+const PRELOAD = join(HERE, "../../frameworks/electron/preload.cjs");
 const ELECTRON = requireCjs.resolve("electron");
 const osModule = requireCjs("node:os");
 

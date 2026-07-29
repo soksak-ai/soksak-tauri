@@ -97,12 +97,12 @@ Electron 의 `false` 는 못 한다는 뜻이 아니다. 단일 Chromium 세계�
 
 네이티브 명령 표면 전수 분류(2026-07-27)의 결론은 병목이 상태 소유권이 아니라는 것이었다 — 상태는 대부분 창 무관이거나 라벨 문자열이 키다. 병목은 웹뷰 IPC 가 스트리밍 출구를 독점한다는 점이다. `tauri::ipc::Channel` 은 호출 웹뷰의 IPC 문맥에서 역직렬화로 만들어지는 핸들이라 `Serialize` 가 아니고, 라벨로 재구성할 수 없고, 프로세스 경계를 못 넘는다. 그 타입이 시그니처에 박혀 있는 한 그 핸들러는 앱 프로세스를 떠날 수 없다 — 라벨만 있으면 옮길 수 있는 7건 중 3건이 오직 이것 때문에 묶여 있었다.
 
-- **계약은 두 줄이다.** `src-tauri/src/stream_sink.rs` 가 `StreamSink::deliver(&self, bytes: Vec<u8>) -> Delivered` 를 선언한다: 배치 하나를 건네고, 소비자가 사라졌으면 그 사실을 값으로 알린다(`Delivered::Gone`). 조용히 버리는 출구는 생산 측을 영원히 읽게 만든다. 같은 파일의 `impl StreamSink for tauri::ipc::Channel<tauri::ipc::InvokeResponseBody>` 가 현 정본 구현이며, 구현은 크로싱마다 하나다.
-- **전달 단위 소유자는 더 이상 벤더를 부르지 않는다.** `src-tauri/src/pty_delivery.rs` 의 `spawn_delivery` 는 `S: StreamSink` 로 일반화돼 있고, 두 PTY 백엔드가 그 한 크로싱에서 끝난다 — `src-tauri/src/pty.rs` 의 인프로세스 리더 스레드와 데몬 릴레이 `spawn_via_daemon`. 벤더 타입은 `#[tauri::command]` 진입점(`spawn_terminal`)에만 남는다. 호출자에게서 채널이 도착해 출구로 건네지는 자리다.
+- **계약은 두 줄이다.** `frameworks/tauri/src/stream_sink.rs` 가 `StreamSink::deliver(&self, bytes: Vec<u8>) -> Delivered` 를 선언한다: 배치 하나를 건네고, 소비자가 사라졌으면 그 사실을 값으로 알린다(`Delivered::Gone`). 조용히 버리는 출구는 생산 측을 영원히 읽게 만든다. 같은 파일의 `impl StreamSink for tauri::ipc::Channel<tauri::ipc::InvokeResponseBody>` 가 현 정본 구현이며, 구현은 크로싱마다 하나다.
+- **전달 단위 소유자는 더 이상 벤더를 부르지 않는다.** `frameworks/tauri/src/pty_delivery.rs` 의 `spawn_delivery` 는 `S: StreamSink` 로 일반화돼 있고, 두 PTY 백엔드가 그 한 크로싱에서 끝난다 — `frameworks/tauri/src/pty.rs` 의 인프로세스 리더 스레드와 데몬 릴레이 `spawn_via_daemon`. 벤더 타입은 `#[tauri::command]` 진입점(`spawn_terminal`)에만 남는다. 호출자에게서 채널이 도착해 출구로 건네지는 자리다.
 - **배압은 계약에 없다.** 워터마크(`soksak_spec_pty::HIGH_WATERMARK` / `LOW_WATERMARK`)와 ack 는 세션의 것이다: 리더 스레드가 미ack 바이트를 세어 상한에서 멈추고, `ack_terminal` 이 빼면서 하한에서 재개한다. 그 회계는 읽은 바이트 기준이라 배치가 언제 나가든 같다. 출구가 배압까지 쥐면 구현마다 정책이 갈라지고, 갈라진 정책은 곧 무한 버퍼다.
 - **테스트가 증명이다.** `stream_sink.rs` 는 Tauri 타입이 하나도 없는 출구를 구현한다(`a_sink_needs_no_shell_type`, `a_departed_consumer_is_reported_not_swallowed`). 그것이 컴파일된다는 사실 자체가 "출구는 더 이상 벤더 타입이 아니다"의 진술이다.
 
-지금까지 옮긴 것은 PTY 출력 크로싱이다. 나머지 채널 보유자 — 프로세스 stdout/stderr·종료(`src-tauri/src/process.rs`), 웹소켓 메시지·닫힘(`src-tauri/src/ws.rs`), 사이드카 이벤트(`src-tauri/src/sidecar.rs`) — 는 아직 시그니처에서 벤더를 부르며, 위 규칙이 그대로 적용된다.
+지금까지 옮긴 것은 PTY 출력 크로싱이다. 나머지 채널 보유자 — 프로세스 stdout/stderr·종료(`frameworks/tauri/src/process.rs`), 웹소켓 메시지·닫힘(`frameworks/tauri/src/ws.rs`), 사이드카 이벤트(`frameworks/tauri/src/sidecar.rs`) — 는 아직 시그니처에서 벤더를 부르며, 위 규칙이 그대로 적용된다.
 
 ## 나머지 세 경계
 
@@ -110,9 +110,9 @@ Electron 의 `false` 는 못 한다는 뜻이 아니다. 단일 Chromium 세계�
 
 | 계약 | 파일 | 벤더에서 뗀 것 |
 | --- | --- | --- |
-| `WindowOracle` | `src-tauri/src/window_oracle.rs` | 어느 창이 살아 있는가, 라벨로 배달 |
-| `ActivitySink` | `src-tauri/src/activity_sink.rs` | 활동 원장 발행 |
-| `Identity` | `src-tauri/src/identity.rs` | 이 실행물이 누구이고 어느 홈을 쓰는가 |
+| `WindowOracle` | `frameworks/tauri/src/window_oracle.rs` | 어느 창이 살아 있는가, 라벨로 배달 |
+| `ActivitySink` | `frameworks/tauri/src/activity_sink.rs` | 활동 원장 발행 |
+| `Identity` | `frameworks/tauri/src/identity.rs` | 이 실행물이 누구이고 어느 홈을 쓰는가 |
 
 - **`WindowOracle` 은 사실만 말하고 선택은 하지 않는다.** 어느 창을 고를지(폴백 사다리)는 호출자의 것이다. 오라클이 선택까지 쥐면 구현마다 사다리가 갈라지고, 갈라진 사다리는 창마다 다른 라우팅이 된다. 배달은 성공 여부를 값으로 돌린다 — 실패를 삼키면 호출자가 보냈다고 믿고 응답을 영원히 기다린다.
 - **`ActivitySink` 는 원장에 한 줄 남기고 싶을 뿐인 함수가 `AppHandle` 을 받고 있었기 때문에 있다.** `activity::publish` 는 관리 상태에서 허브를 꺼내고 창에 emit 하고 영속한다 — 시그니처 하나 뒤에 일이 셋이고, 호출 지점은 22곳이다. 다만 이것이 **풀지 못한 것**을 함께 적는다: 네이티브 표면 전수 적대 감사에서 publish 만 끊으면 풀리는 핸들러는 0개였다. 그것을 만지는 자리는 전부 `AppHandle` 시그니처나 네이티브 객체를 함께 갖는다. 진짜 결속이지만 좋은 지렛대는 아니다 — 두 사실 다 남길 값이 있다.
@@ -136,7 +136,7 @@ Electron 의 `false` 는 못 한다는 뜻이 아니다. 단일 Chromium 세계�
 
 `tests/no_framework.rs` 가 두 겹으로 시행한다: 직접 참조를 잡는 심볼 검사와, 의존성이 끌고 들어온 것을 잡는 `cargo tree` 검사. 금지 심볼마다 그것이 왜 이동을 막는지를 함께 적는다 — 이유 없는 금지는 우회 대상이 된다.
 
-코어에도 게이트가 둘 있다. `src-tauri/src/ambient_gate.rs` 는 모든 `env::var` 자리에 두 답을 요구한다 — 왜 이 프로세스의 환경이어야 하는가, 프로세스가 갈리면 무엇이 대신 오는가. 빈 답은 실패이므로 표를 통과 수단으로 쓸 수 없다. 이 게이트는 수동 조사가 놓친 세 자리를 즉시 찾았다. `src-tauri/src/lib.rs` 의 등록 게이트는 등록된 핸들러가 컴파일되는 모든 플랫폼에 본체를 갖는지 본다 — 컴파일러는 지금 빌드하는 플랫폼만 검사한다.
+코어에도 게이트가 둘 있다. `frameworks/tauri/src/ambient_gate.rs` 는 모든 `env::var` 자리에 두 답을 요구한다 — 왜 이 프로세스의 환경이어야 하는가, 프로세스가 갈리면 무엇이 대신 오는가. 빈 답은 실패이므로 표를 통과 수단으로 쓸 수 없다. 이 게이트는 수동 조사가 놓친 세 자리를 즉시 찾았다. `frameworks/tauri/src/lib.rs` 의 등록 게이트는 등록된 핸들러가 컴파일되는 모든 플랫폼에 본체를 갖는지 본다 — 컴파일러는 지금 빌드하는 플랫폼만 검사한다.
 
 ## 앱 프로세스를 전제하지 않게 된 상태
 
@@ -169,7 +169,7 @@ Electron 의 `false` 는 못 한다는 뜻이 아니다. 단일 Chromium 세계�
 
 마지막 이동 가능 묶음: 스케줄·명령 브리지·클립보드·watcher·레지스트리 셋.
 
-- **다섯 번째 계약.** `CommandDispatch`(`src-tauri/src/command_dispatch.rs`)는 registry 명령 하나를 부르고 답을 받는 능력이다. 스케줄러가 원하는 것은 그것뿐인데 그 능력을 제공하는 세 함수가 전부 `&AppHandle` 을 받아서, 발화 코드도 하나를 쥐고 있었다. 기존 네 계약 어디에도 맞지 않았다 — 억지로 끼우면 그 계약이 겸업하게 되고, 그것이 `ExitSink` 가 `StreamSink` 안이 아니라 옆에 선 이유와 같다.
+- **다섯 번째 계약.** `CommandDispatch`(`frameworks/tauri/src/command_dispatch.rs`)는 registry 명령 하나를 부르고 답을 받는 능력이다. 스케줄러가 원하는 것은 그것뿐인데 그 능력을 제공하는 세 함수가 전부 `&AppHandle` 을 받아서, 발화 코드도 하나를 쥐고 있었다. 기존 네 계약 어디에도 맞지 않았다 — 억지로 끼우면 그 계약이 겸업하게 되고, 그것이 `ExitSink` 가 `StreamSink` 안이 아니라 옆에 선 이유와 같다.
 - **중개 계약은 창을 모른다.** 명령이 어느 창으로 갈지는 `ipc.rs` 의 폴백 사다리가 계속 소유하고, 호출자는 명령과 답만 안다. 여기에 라우팅을 넣으면 구현마다 사다리가 갈라진다.
 - **배달이 한 점으로 모였다.** 두 `emit_to` 자리가 각각 seq 발급·pending 등록·배달을 복제하고 있었다. 이제 한 함수다 — 중복 제거가 아니라 "배달이 실패하면 대기 자리를 되돌린다"가 한 곳에서 강제되기 때문이다. 남은 자리는 오지 않을 답을 기다린다.
 - **클립보드가 마지막 필드 핸들을 내놓았다.** `ClipboardState` 는 `AppHandle` 을 필드로 직접 쥔 유일한 managed 상태였고 용도는 emit 이었다. watcher 의 `init`/`init_with` 주입이 이미 그 모양이었다. `lib.rs` 는 바뀌지 않았다 — `init` 은 시그니처를 유지하고 몸통만 옮겼다.
@@ -188,7 +188,7 @@ Tauri       ──링크──>  soksak-core
 Electron    ──소켓──>  soksak-cored  (= 소켓을 입은 soksak-core)
 ```
 
-의존 방향이 같은 말을 한다. `src-tauri/Cargo.toml` 에서 `soksak-core` 는 의존이고 `soksak-cored` 는 dev-의존뿐이다. 앱 바이너리는 cored 를 링크하지 않으며, 유일한 접점은 모양 게이트다 — 그 게이트는 cored 의 서빙 표를 문자열로 파싱하지 않고 **값으로** 읽는다. 파서는 표가 바뀔 때 조용히 빗나가고, 빗나간 게이트는 그래도 통과를 보고한다.
+의존 방향이 같은 말을 한다. `frameworks/tauri/Cargo.toml` 에서 `soksak-core` 는 의존이고 `soksak-cored` 는 dev-의존뿐이다. 앱 바이너리는 cored 를 링크하지 않으며, 유일한 접점은 모양 게이트다 — 그 게이트는 cored 의 서빙 표를 문자열로 파싱하지 않고 **값으로** 읽는다. 파서는 표가 바뀔 때 조용히 빗나가고, 빗나간 게이트는 그래도 통과를 보고한다.
 
 - **자기 정체성을 파생하지 않는다.** `ptyd` 는 `SOKSAK_HOME` 을 읽어 경로를 파생하지만, cored 는 `--socket`·`--home`·`--identifier` 를 인자로 받고 없으면 기본값을 고르지 않고 이름을 달고 실패한다. 자기 정체성을 추측하는 cored 는 홈이 갈리는 순간 다른 곳에 붙고, 그것도 조용히 한다.
 - **`--data-dir` 이 선택인 이유는 이동을 띄운 쪽만 알기 때문이다.** 저장소는 보통 홈에서 파생되지만 앱이 debug 빌드에서 그 자리를 옮긴다. 옮긴 쪽만 아는 사실이므로 cored 를 띄우는 쪽이 넘긴다. cored 가 규칙만 보고 파생하면 앱과 다른 파일을 열고, 그 오답은 오류가 아니라 빈 결과로 도착한다.
@@ -216,7 +216,7 @@ cored 는 부팅에서 한 번 잠금을 시도한다. 잡았으면 `data_kv_set
 - 호출자가 보내는 값은 인자다(`ns`·`key`·`host`·`port`)
 - 프로세스가 갖는 값은 부팅 상태다(정체성·홈·저장소 경로)
 
-`src-tauri/src/cored_shape_gate.rs` 가 이것을 시행한다. 앱의 모든 `#[tauri::command]` 시그니처를 읽고, 프레임워크가 주입하는 인자(`State`·`AppHandle`·`Window`·`Channel`)를 뺀 뒤, 이름이 겹치는 명령마다 인자 이름 집합을 서빙 표와 대조한다. 심은 위반 세 가지(인자 추가·누락·개명)가 이 게이트가 통과로 위장하지 않고 실제로 드리프트를 잡는다는 증거다.
+`frameworks/tauri/src/cored_shape_gate.rs` 가 이것을 시행한다. 앱의 모든 `#[tauri::command]` 시그니처를 읽고, 프레임워크가 주입하는 인자(`State`·`AppHandle`·`Window`·`Channel`)를 뺀 뒤, 이름이 겹치는 명령마다 인자 이름 집합을 서빙 표와 대조한다. 심은 위반 세 가지(인자 추가·누락·개명)가 이 게이트가 통과로 위장하지 않고 실제로 드리프트를 잡는다는 증거다.
 
 소켓 테스트도 같은 교훈을 진다: 이제 픽스처 홈을 지목해 cored 를 띄우므로 인자 없는 명령이 **프로세스 밖에서** 검증된다. 인프로세스 검사는 "선언한 대로 인자를 읽는가"까지만 증명할 수 있고, 선언 자체가 앱과 어긋났다는 사실은 볼 수 없었다.
 
@@ -226,7 +226,7 @@ cored 는 부팅에서 한 번 잠금을 시도한다. 잡았으면 `data_kv_set
 
 ## 프레임워크가 cored 를 세운다
 
-Electron 은 더 이상 남이 차려 준 소켓을 기다리지 않는다. 자기 백엔드를 스스로 띄우고(`electron/cored.cjs`) 정체성을 부팅 때 넘긴다.
+Electron 은 더 이상 남이 차려 준 소켓을 기다리지 않는다. 자기 백엔드를 스스로 띄우고(`frameworks/electron/cored.cjs`) 정체성을 부팅 때 넘긴다.
 
 - **홈은 프레임워크의 것이고 cored 에는 넘어간다.** 프레임워크는 identifier 만으로 홈을 파생하고(`app` 은 `~/.soksak`, 그 외는 `-<마지막 세그먼트>` 접미) 그것을 `--home`·`--identifier` 로 내려보낸다. 홈을 런타임에 갈아끼우는 통로는 없다 — 지목하는 것은 identifier 이고 홈은 그 결과다.
 - **소켓은 `<home>/cored.sock` 이지 앱의 이름이 아니다.** 그 홈의 앱은 `<home>/<identifier>.sock` 에 bind 한다. 그 이름을 뺏으면 앱이 bind 할 자리에 cored 가 앉아 있고 앱은 "다른 인스턴스가 이미 돈다"로 거절당한다 — 자기 앱을 못 뜨게 만드는 백엔드다. 이름을 짧게 두는 것도 이유가 있다: 유닉스 소켓 경로에는 OS 상한이 있고 깊은 트리는 그것을 조용히 넘긴다.
@@ -235,7 +235,7 @@ Electron 은 더 이상 남이 차려 준 소켓을 기다리지 않는다. 자�
 - **준비 완료는 cored 의 stdout 첫 줄이고, 그 줄은 그 소켓을 말해야 한다.** 프레임워크는 소켓 파일이 생기는지 지켜보는 대신 그 줄을 블로킹 read 로 기다린다: 파일 존재는 bind 완료가 아니고, 블로킹 read 는 cored 가 먼저 죽은 경우를 EOF 로 즉시 드러낸다. 다른 소켓을 말하는 준비 완료 줄도 실패다 — 띄운 것이 이 cored 가 아니거나 다른 곳에 붙었다는 뜻이고, 둘 다 그대로 두면 "붙은 척"으로 통과한다.
 - **소켓을 쥔 채 남는 것은 없다.** 상한을 넘기면 프레임워크는 자기가 띄운 프로세스를 **거둔 뒤에** 알린다. 사유가 진짜 사유로 남고 고아가 경로를 쥐지 않는다. cored 쪽에도 짝이 되는 절반이 있다: 이미 그 경로를 서빙하는 것이 있으면 살아 있는 소켓을 지우지 않고 스스로 물러나며, 프레임워크는 정말 서빙되는지 확인한 뒤에만 입양한다.
 
-부채질은 발행에서 프레임워크가 지는 절반이다(`electron/activity.cjs`). cored 는 적재하고 도장 찍힌 항목을 돌려주며, 프레임워크가 그것을 살아 있는 창 전부에 민다. 이것을 건너뛰면 프론트가 반환값을 버리므로 `listen("activity")` 구독자가 오류 한 줄 없이 굶는다. 적재분이 아닌 답은 밀지 않고 이름을 달고 거절한다 — 아닌 모양을 밀면 구독자가 조용히 어긋나고, 성공을 돌려주면 한 적 없는 배달을 했다고 답하게 된다.
+부채질은 발행에서 프레임워크가 지는 절반이다(`frameworks/electron/activity.cjs`). cored 는 적재하고 도장 찍힌 항목을 돌려주며, 프레임워크가 그것을 살아 있는 창 전부에 민다. 이것을 건너뛰면 프론트가 반환값을 버리므로 `listen("activity")` 구독자가 오류 한 줄 없이 굶는다. 적재분이 아닌 답은 밀지 않고 이름을 달고 거절한다 — 아닌 모양을 밀면 구독자가 조용히 어긋나고, 성공을 돌려주면 한 적 없는 배달을 했다고 답하게 된다.
 
 두 파일 다 `electron` 을 require 하지 않는다. 프레임워크를 띄워야만 돌려볼 수 있는 코드는 사실상 검증되지 않으므로, 둘 다 `scripts/electron/cored-spawn.test.mjs` 와 `scripts/electron/framework-activity.test.mjs` 가 직접 몬다.
 
@@ -247,7 +247,7 @@ Electron 은 더 이상 남이 차려 준 소켓을 기다리지 않는다. 자�
 - **B — 진짜 창의 것이다.** 자식 웹뷰·엔진·타이틀바·창. 이들은 영영 안 옮긴다. 두 번째 프레임워크가 스스로 구현하며, 두 번째 프레임워크가 지는 빚은 그것이 전부다.
 - **C — `AppHandle` 이 상태 조회와 발행 때문에 있다.** `state::<T>()` 조회와 `activity::publish` 가 같은 함수 안에 있다. 이것을 풀려면 managed state 를 누가 소유하는지 바꿔야 하고, 그것은 동작 변경이라 이식이 아니라 별도 회차의 몫이다.
 
-수는 여기 적지 않는다. 커밋마다 움직이고, 산문에 얼어붙은 수는 아무것도 실패시키지 않으면서 낡는 반면 그 수를 만들어 낸 판독기는 계속 옳다. 표면은 `src-tauri/src` 아래의 `#[tauri::command]` 시그니처에서, `src-tauri/src/lib.rs` 의 등록 목록(`generate_handler!`)에서, 그리고 그 시그니처를 이미 호출자-인자 집합으로 파싱해 두는 `cored_shape_gate::app_commands()` 에서 읽는다.
+수는 여기 적지 않는다. 커밋마다 움직이고, 산문에 얼어붙은 수는 아무것도 실패시키지 않으면서 낡는 반면 그 수를 만들어 낸 판독기는 계속 옳다. 표면은 `frameworks/tauri/src` 아래의 `#[tauri::command]` 시그니처에서, `frameworks/tauri/src/lib.rs` 의 등록 목록(`generate_handler!`)에서, 그리고 그 시그니처를 이미 호출자-인자 집합으로 파싱해 두는 `cored_shape_gate::app_commands()` 에서 읽는다.
 
 아래 비용이 한 곳에 뭉치는 이유가 B 이고, `ActivitySink` 가 진짜 결속이면서 동시에 나쁜 지렛대인 이유가 C 다.
 
@@ -262,7 +262,7 @@ Electron 은 더 이상 남이 차려 준 소켓을 기다리지 않는다. 자�
 | 설치 플러그인 전부 | — | 없음 — 벤더 import 0 |
 | TS 명령 레지스트리 | 10,909줄 | 없음 — 경계 뒤 |
 | 프레임워크를 아는 앱 코드 | 어댑터 1개 | 표면 전체 |
-| `src-tauri/src` | 네이티브 표면 전체 | B 갈래가 어려운 부분 |
+| `frameworks/tauri/src` | 네이티브 표면 전체 | B 갈래가 어려운 부분 |
 
 줄 수는 그 날짜의 실측이다. 명령 표면은 위에 적은 이유로 여기에 수로 얼리지 않는다 — 소스에서 읽는다.
 

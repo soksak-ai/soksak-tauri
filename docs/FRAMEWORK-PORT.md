@@ -97,12 +97,12 @@ The seam above covers the app side. The exit that high-volume output takes on it
 
 A classification of the whole native command surface (2026-07-27) found that state ownership was not the bottleneck — most state is window-agnostic, or a label string is the key. The bottleneck is that webview IPC monopolises the streaming exit: `tauri::ipc::Channel` is a handle produced by deserialization inside the calling webview's IPC context, so it is not `Serialize`, cannot be reconstructed from a label, and does not cross a process boundary. While that type sits in a signature, its handler cannot leave the app process — 3 of the 7 handlers that a label alone would have moved were held by that and nothing else.
 
-- **The contract is two lines.** `src-tauri/src/stream_sink.rs` declares `StreamSink::deliver(&self, bytes: Vec<u8>) -> Delivered`: hand over one batch, and if the consumer is gone report it as a value (`Delivered::Gone`). An exit that drops silently leaves the producing side reading forever. `impl StreamSink for tauri::ipc::Channel<tauri::ipc::InvokeResponseBody>` in the same file is the current canonical implementation — one implementation per crossing.
-- **The delivery-unit owner no longer names the vendor.** `spawn_delivery` in `src-tauri/src/pty_delivery.rs` is generic over `S: StreamSink`, and both PTY backends end at that one crossing — the in-process reader thread in `src-tauri/src/pty.rs` and the daemon relay `spawn_via_daemon`. The vendor type survives only at the `#[tauri::command]` entry (`spawn_terminal`), where the channel arrives from the caller and is handed in as the sink.
+- **The contract is two lines.** `frameworks/tauri/src/stream_sink.rs` declares `StreamSink::deliver(&self, bytes: Vec<u8>) -> Delivered`: hand over one batch, and if the consumer is gone report it as a value (`Delivered::Gone`). An exit that drops silently leaves the producing side reading forever. `impl StreamSink for tauri::ipc::Channel<tauri::ipc::InvokeResponseBody>` in the same file is the current canonical implementation — one implementation per crossing.
+- **The delivery-unit owner no longer names the vendor.** `spawn_delivery` in `frameworks/tauri/src/pty_delivery.rs` is generic over `S: StreamSink`, and both PTY backends end at that one crossing — the in-process reader thread in `frameworks/tauri/src/pty.rs` and the daemon relay `spawn_via_daemon`. The vendor type survives only at the `#[tauri::command]` entry (`spawn_terminal`), where the channel arrives from the caller and is handed in as the sink.
 - **Backpressure is not in the contract.** The watermarks (`soksak_spec_pty::HIGH_WATERMARK` / `LOW_WATERMARK`) and the ack belong to the session: the reader thread counts unacked bytes and pauses at the high mark, `ack_terminal` subtracts and resumes at the low mark. That accounting is on bytes read, so it is the same whenever a batch actually leaves. An exit that also held backpressure would fork the policy per implementation, and a forked policy is an unbounded buffer.
 - **The test is the proof.** `stream_sink.rs` implements a sink containing no Tauri type (`a_sink_needs_no_shell_type`, `a_departed_consumer_is_reported_not_swallowed`). That those compile is the statement that the exit is no longer a vendor type.
 
-The PTY output crossing is the one converted so far. The other channel holders — process stdout/stderr and exit (`src-tauri/src/process.rs`), websocket message and close (`src-tauri/src/ws.rs`), sidecar events (`src-tauri/src/sidecar.rs`) — still name the vendor in their signatures, and the rule above applies to them unchanged.
+The PTY output crossing is the one converted so far. The other channel holders — process stdout/stderr and exit (`frameworks/tauri/src/process.rs`), websocket message and close (`frameworks/tauri/src/ws.rs`), sidecar events (`frameworks/tauri/src/sidecar.rs`) — still name the vendor in their signatures, and the rule above applies to them unchanged.
 
 ## The other three seams
 
@@ -110,9 +110,9 @@ The same shape recurs. Each one takes a fact the framework owned and turns it in
 
 | Contract | File | What left the vendor |
 | --- | --- | --- |
-| `WindowOracle` | `src-tauri/src/window_oracle.rs` | Which windows are alive, and delivery to one by label |
-| `ActivitySink` | `src-tauri/src/activity_sink.rs` | Publishing to the activity ledger |
-| `Identity` | `src-tauri/src/identity.rs` | Which build this is and which home it uses |
+| `WindowOracle` | `frameworks/tauri/src/window_oracle.rs` | Which windows are alive, and delivery to one by label |
+| `ActivitySink` | `frameworks/tauri/src/activity_sink.rs` | Publishing to the activity ledger |
+| `Identity` | `frameworks/tauri/src/identity.rs` | Which build this is and which home it uses |
 
 - **`WindowOracle` states facts, not choices.** Which window to pick — the fallback ladder — stays with the caller. An oracle that also chose would fork the ladder per implementation, and a forked ladder is per-window routing. Delivery returns success as a value: swallowing a failed emit leaves the caller believing it sent and waiting forever for a reply.
 - **`ActivitySink` exists because a function that only wants to write a ledger line was taking an `AppHandle`.** `activity::publish` pulls the hub out of managed state, emits to windows, and persists — three jobs behind one signature, at 22 call sites. Note what this did *not* unlock: an adversarial audit of the whole native surface found that publish alone frees zero handlers, because every site that touches it also holds an `AppHandle` signature or a native object. It is a real coupling and a poor lever; both facts are worth keeping.
@@ -136,7 +136,7 @@ The split is needed because the two processes own the home differently. The app 
 
 `tests/no_framework.rs` enforces this in two layers: a symbol scan for direct references, and `cargo tree` for anything a dependency dragged in. Each forbidden symbol carries the reason it blocks a move; a prohibition without a reason becomes something to route around.
 
-Two further gates sit in core. `src-tauri/src/ambient_gate.rs` requires every `env::var` site to be registered with two answers — why it must be this process's environment, and what arrives instead once processes split; an empty answer fails, so the table cannot be used as a way through. It found three sites a manual sweep had missed. The registration gate in `src-tauri/src/lib.rs` checks that every registered handler has a body on every platform it compiles on, which the compiler only checks on the platform being built.
+Two further gates sit in core. `frameworks/tauri/src/ambient_gate.rs` requires every `env::var` site to be registered with two answers — why it must be this process's environment, and what arrives instead once processes split; an empty answer fails, so the table cannot be used as a way through. It found three sites a manual sweep had missed. The registration gate in `frameworks/tauri/src/lib.rs` checks that every registered handler has a body on every platform it compiles on, which the compiler only checks on the platform being built.
 
 ## State that no longer assumes the app process
 
@@ -169,7 +169,7 @@ One coupling was deliberately left. Seven of the eight `activity::publish` sites
 
 The last movable group: schedules, the command bridge, clipboard, watcher, and three registries.
 
-- **A fifth contract.** `CommandDispatch` (`src-tauri/src/command_dispatch.rs`) covers calling one registry command and getting an answer. The scheduler only wants that, but the three functions providing it all take an `&AppHandle`, so the firing code held one too. None of the four existing contracts fit — forcing it into one would have made that contract moonlight, the same reason `ExitSink` sits beside `StreamSink` rather than inside it.
+- **A fifth contract.** `CommandDispatch` (`frameworks/tauri/src/command_dispatch.rs`) covers calling one registry command and getting an answer. The scheduler only wants that, but the three functions providing it all take an `&AppHandle`, so the firing code held one too. None of the four existing contracts fit — forcing it into one would have made that contract moonlight, the same reason `ExitSink` sits beside `StreamSink` rather than inside it.
 - **The dispatch contract knows nothing about windows.** Which window a command goes to stays with the fallback ladder in `ipc.rs`; the caller knows only the command and the answer. Putting routing here would fork the ladder per implementation.
 - **Delivery collapsed to one point.** Two `emit_to` sites each duplicated sequence allocation, pending registration, and delivery. They are now one function — not to remove duplication, but so that "roll back the pending slot if delivery failed" is enforced in one place. A slot left behind waits for an answer that will never come.
 - **The clipboard gave up the last handle-in-a-field.** `ClipboardState` was the only managed state holding an `AppHandle` directly; it used it to emit, and the watcher's existing `init`/`init_with` injection was already the shape for that. `lib.rs` did not change — `init` keeps its signature and only its body moved.
@@ -188,7 +188,7 @@ Tauri framework   ──links──>  soksak-core
 Electron framework ──socket──> soksak-cored  (= soksak-core with a socket on it)
 ```
 
-The dependency direction says the same thing: `src-tauri/Cargo.toml` lists `soksak-core` as a dependency and `soksak-cored` only as a dev-dependency. The app binary does not link cored at all; the single tie is the shape gate, which reads cored's serving table as a value at test time rather than parsing it out of a string — a parser goes quietly wrong when the table changes, and a gate that went wrong still reports a pass.
+The dependency direction says the same thing: `frameworks/tauri/Cargo.toml` lists `soksak-core` as a dependency and `soksak-cored` only as a dev-dependency. The app binary does not link cored at all; the single tie is the shape gate, which reads cored's serving table as a value at test time rather than parsing it out of a string — a parser goes quietly wrong when the table changes, and a gate that went wrong still reports a pass.
 
 - **It derives no identity of its own.** `ptyd` reads `SOKSAK_HOME` and derives paths; cored takes `--socket`, `--home`, and `--identifier` as arguments and, given none, fails by name rather than choosing a default. A daemon that guesses its identity attaches somewhere else the moment homes diverge, and does it quietly.
 - **`--data-dir` is optional because relocation is the spawner's secret.** The store is normally derived from the home, but the app moves it in debug builds. Only whoever moved it knows, so whoever spawns cored passes it. cored deriving by rule alone would open a different file than the app, and that wrong answer arrives as an empty result rather than an error.
@@ -216,7 +216,7 @@ The premise was right and the conclusion was wrong: **receiving is not guessing.
 - values a caller sends are arguments (`ns`, `key`, `host`, `port`)
 - values a process holds are boot state (identity, home, store path)
 
-`src-tauri/src/cored_shape_gate.rs` enforces this: it parses every `#[tauri::command]` signature in the app, drops framework-injected parameters (`State`, `AppHandle`, `Window`, `Channel`), and compares the argument-name set against cored's serving table for every name they share. Three planted violations — an extra argument, a dropped one, a renamed one — prove the gate catches drift rather than merely passing.
+`frameworks/tauri/src/cored_shape_gate.rs` enforces this: it parses every `#[tauri::command]` signature in the app, drops framework-injected parameters (`State`, `AppHandle`, `Window`, `Channel`), and compares the argument-name set against cored's serving table for every name they share. Three planted violations — an extra argument, a dropped one, a renamed one — prove the gate catches drift rather than merely passing.
 
 The socket test carries the same lesson: it now spawns cored against a fixture home, so argument-less commands are exercised *from outside the process*. The in-process tests could only ever prove "arguments are read as declared"; they could not see that the declaration itself disagreed with the app.
 
@@ -226,7 +226,7 @@ Still unserved, each with what blocks it recorded beside its name in `crates/sok
 
 ## The framework stands up cored
 
-The Electron framework no longer waits for a socket someone else prepared. It spawns its own backend (`electron/cored.cjs`) and hands it the identity at boot.
+The Electron framework no longer waits for a socket someone else prepared. It spawns its own backend (`frameworks/electron/cored.cjs`) and hands it the identity at boot.
 
 - **The home is the framework's; cored is told.** The framework derives its home from its identifier alone — `app` gets `~/.soksak`, anything else gets the `-<last segment>` suffix — and passes it down as `--home` and `--identifier`. There is no runtime switch that swaps the home out: what gets pointed at is the identifier, and the home is the consequence.
 - **The socket is `<home>/cored.sock`, not the app's name.** The app of that home binds `<home>/<identifier>.sock`. Taking that name would leave cored sitting where the app must bind, and the app would be turned away as "another instance already running" — a backend that works by making its own app unlaunchable. Keeping the name short also matters: unix socket paths have an OS length limit, and a deep tree crosses it silently.
@@ -235,7 +235,7 @@ The Electron framework no longer waits for a socket someone else prepared. It sp
 - **Readiness is cored's first stdout line, and that line must name the socket.** The framework blocks on that read rather than watching for the socket file to appear: a file existing is not a completed bind, and a blocking read surfaces a cored that died first as an immediate EOF. A readiness line naming a different socket fails too — it means what was launched is not this cored, or attached elsewhere, and both would otherwise pass as connected.
 - **Nothing is left holding the socket.** Past the timeout the framework reaps the process it started before reporting, so the reason is the real one and no orphan keeps the path. cored has the matching half: if something already serves that path it withdraws rather than unlinking a live socket, and the framework confirms the path really is served before adopting it.
 
-Fan-out is the framework's half of publishing (`electron/activity.cjs`). cored admits and returns the stamped entry; the framework pushes it to every live window. Skipping that would starve `listen("activity")` subscribers without a single error line, because the front end discards the return value. An answer that is not a stamped entry is refused by name rather than pushed — pushing the wrong shape desynchronises subscribers silently, and reporting success would claim a delivery that never happened.
+Fan-out is the framework's half of publishing (`frameworks/electron/activity.cjs`). cored admits and returns the stamped entry; the framework pushes it to every live window. Skipping that would starve `listen("activity")` subscribers without a single error line, because the front end discards the return value. An answer that is not a stamped entry is refused by name rather than pushed — pushing the wrong shape desynchronises subscribers silently, and reporting success would claim a delivery that never happened.
 
 Neither file requires `electron`. Code that can only be exercised by launching a framework is in practice not exercised, so both are driven directly by `scripts/electron/cored-spawn.test.mjs` and `scripts/electron/framework-activity.test.mjs`.
 
@@ -247,7 +247,7 @@ The port question for any one app command is not "what does it do" but **what is
 - **B — genuinely the window's.** Child webviews, engines, titlebars, windows. These never move. A second framework implements them itself, and that is the whole of what a second framework owes.
 - **C — the `AppHandle` is there for managed state and for publishing.** `state::<T>()` lookups and `activity::publish` sit in the same functions. Unpicking these means changing who owns managed state, which is a behaviour change and belongs to its own pass rather than to a port.
 
-The counts are deliberately not written here. They move with every commit, and a number frozen into prose goes stale without anything failing, while the reader that produced it stays right. Read the surface from `#[tauri::command]` signatures under `src-tauri/src`, from the registration list in `src-tauri/src/lib.rs` (`generate_handler!`), and from `cored_shape_gate::app_commands()`, which already parses those signatures into caller-argument sets for the shape gate.
+The counts are deliberately not written here. They move with every commit, and a number frozen into prose goes stale without anything failing, while the reader that produced it stays right. Read the surface from `#[tauri::command]` signatures under `frameworks/tauri/src`, from the registration list in `frameworks/tauri/src/lib.rs` (`generate_handler!`), and from `cored_shape_gate::app_commands()`, which already parses those signatures into caller-argument sets for the shape gate.
 
 Bucket B is why the cost below concentrates where it does, and bucket C is why `ActivitySink` was a real coupling and a poor lever at the same time.
 
@@ -262,7 +262,7 @@ Measured on this repo (2026-07-27):
 | Installed plugins | all | none — zero vendor imports |
 | TS command registry | 10,909 lines | none — sits behind the seam |
 | App code touching the framework | 1 adapter | the whole surface |
-| `src-tauri/src` | the whole native surface | bucket B is the hard part |
+| `frameworks/tauri/src` | the whole native surface | bucket B is the hard part |
 
 The line counts are that date's measurement. The command surface is not frozen into a number here for the reason given above — read it from the source.
 

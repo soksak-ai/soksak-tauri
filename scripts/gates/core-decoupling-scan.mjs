@@ -1,4 +1,4 @@
-// C1 결합 스캔 게이트 — 코어(src/·src-tauri/)에서 특정 플러그인 id 문자열을 차단한다.
+// C1 결합 스캔 게이트 — 코어(src/·frameworks/tauri/)에서 특정 플러그인 id 문자열을 차단한다.
 // 법(C-법, docs/ARCHITECTURE.md 결합 법칙): 코어는 특정 플러그인과 강결합하지 않는다.
 // 대상은 실행 경로 코드(핸들러·상수·분기)와 배포 문서(스킬 등 코어와 함께 출하되는 문서)다.
 //
@@ -12,7 +12,7 @@
 //   - *.test.ts / *.test.tsx / *.test.mjs — 테스트 픽스처 영역, 실행 경로가 아니다.
 //   - Rust 최상위 #[cfg(test)] mod 블록 — 같은 이유. 위치 무관(말미·중간·복수) 각 모듈만
 //     brace 깊이로 건너뛰고, 그 앞뒤 최상위 실행 경로 코드는 계속 스캔한다.
-//   - src-tauri/target, src-tauri/gen, node_modules, .git — 산출물·외부물.
+//   - frameworks/tauri/target, frameworks/tauri/gen, node_modules, .git — 산출물·외부물.
 //
 // ALLOWLIST 는 아래 목록이 전부다. 추가는 C5 절차(명시 문제 제기 → 재입법 커밋)로만 한다.
 // 무언 추가 금지. stale 항목(파일은 있는데 매칭 0건)은 실패다 — 죽은 예외를 남기지 마라.
@@ -50,7 +50,7 @@ export const ALLOWLIST = [
 ];
 
 // crates 는 프레임워크 밖으로 나온 Rust 다 — 뿌리에서 빠지면 그 코드가 스캔 밖이 된다.
-const SCAN_ROOTS = ["src", "src-tauri", "crates"];
+const SCAN_ROOTS = ["src", "frameworks/tauri", "crates"];
 const SKIP_DIRS = new Set(["target", "gen", "node_modules", ".git"]);
 const SCAN_EXTS = new Set([
   ".ts", ".tsx", ".js", ".mjs", ".cjs", ".rs", ".toml", ".json", ".md", ".html", ".css",

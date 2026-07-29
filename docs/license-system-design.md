@@ -48,7 +48,7 @@
 - 키-값 구조라 운영이 단순. 강한 정합성이 필요하면 D1(SQLite)로 승급 가능
 
 ### 2.3 Tauri 앱 (클라이언트)
-- **검증 로직은 반드시 Rust core(`src-tauri`)에 둔다.** WebView(JS)에 두면 DevTools로 쉽게 노출됨
+- **검증 로직은 반드시 Rust core(`frameworks/tauri`)에 둔다.** WebView(JS)에 두면 DevTools로 쉽게 노출됨
 - 앱 바이너리에는 **공개키만** 내장
 - 서명 검증 결과를 단일 `if`로 분기하지 말고, 응답 토큰을 실제 기능에 엮는다(§6 참고)
 
@@ -136,7 +136,7 @@
 위 §4.2 의 JSON 스케치는 **라이선스 엔타이틀먼트**(트랙 B) assertion 의 초기 구상이다.
 **원격 제어**(remote::auth, soksak-plugin-remote-iroh)의 capability assertion 은 별도의 토큰이며, 그
 canonical 서명 바이트는 JSON 이 아니라 **출하된 Rust 바이너리 레이아웃**이다 —
-`src-tauri/src/remote/auth.rs::CapabilityAssertion::canonical_bytes`. 41개+ auth 테스트가
+`frameworks/tauri/src/remote/auth.rs::CapabilityAssertion::canonical_bytes`. 41개+ auth 테스트가
 이 형식에 의존하므로 이것이 **단일 진실(source of truth)** 이고, Worker 가 발급자(issuer)로
 수렴할 때 이 바이트를 그대로 서명한다("동일 Ed25519 서명" 수렴). 제3의 형식을 만들지 않는다.
 
@@ -171,9 +171,9 @@ Worker 측 구현: `worker/src/verify.ts::canonicalCapabilityBytes()` 가 이 �
 
 **교차언어 골든 벡터(계약 테스트)**: 고정 Ed25519 시드 키(테스트 전용) + 고정 assertion →
 정확한 canonical 바이트(hex) + 서명(hex) 을 `worker/test/capability-golden.json` 에 두고,
-`src-tauri/src/remote/auth/capability-golden.json` 으로 미러링한다. Worker 테스트
+`frameworks/tauri/src/remote/auth/capability-golden.json` 으로 미러링한다. Worker 테스트
 (`worker/test/capability-golden.test.ts`)는 `canonicalCapabilityBytes` === 골든 hex 와
-`sign` === 골든 서명을 단언한다. Rust 테스트(`src-tauri/src/remote/auth/golden_tests.rs`,
+`sign` === 골든 서명을 단언한다. Rust 테스트(`frameworks/tauri/src/remote/auth/golden_tests.rs`,
 ADDITIVE — auth.rs 로직 무변경)는 `canonical_bytes` === 골든 hex, 그리고 골든 공개키의
 `verify_strict(골든 바이트, 골든 서명) == Ok` 를 단언한다 — **Worker-형식으로 서명된
 assertion 이 Rust 측에서 검증됨**을 증명한다. tamper-negative(서명 1바이트·메시지 1바이트
@@ -243,7 +243,7 @@ assertion 이 Rust 측에서 검증됨**을 증명한다. tamper-negative(서명
 
 ## 7. Tauri 특화 보안
 
-- [필수] 검증·핑거프린트·복호화 로직을 **`src-tauri`(Rust)** 에 둔다. WebView(JS)에 절대 두지 않는다.
+- [필수] 검증·핑거프린트·복호화 로직을 **`frameworks/tauri`(Rust)** 에 둔다. WebView(JS)에 절대 두지 않는다.
 - [필수] 프로덕션 빌드에서 **DevTools 비활성화** (`tauri.conf.json`).
 - [권장] Rust 측 `ed25519-dalek` 또는 `ring`으로 서명 검증.
 - [권장] machine_id는 `machine-uid` 류 + 솔트 해시. 원본 식별자를 그대로 전송하지 않음.
@@ -1395,7 +1395,7 @@ wrangler secret put ED25519_PRIVATE_KEY_PKCS8_B64
 연구에서 crates.io로 검증된 버전(2026-06-23 기준)을 그대로 핀한다.
 
 ```toml
-# src-tauri/Cargo.toml
+# frameworks/tauri/Cargo.toml
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2.5.4"            # open checkout URL in system browser (v2 successor to core shell API)
@@ -1420,7 +1420,7 @@ thiserror = "2"
 ### 임베드된 public 키와 wire DTO
 
 ```rust
-// src-tauri/src/license/types.rs
+// frameworks/tauri/src/license/types.rs
 use serde::{Deserialize, Serialize};
 
 /// Worker's Ed25519 public verifying key, 32 bytes, embedded at build time.
@@ -1519,7 +1519,7 @@ pub struct ApiError {
 ### 에러 타입
 
 ```rust
-// src-tauri/src/license/error.rs
+// frameworks/tauri/src/license/error.rs
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -1574,7 +1574,7 @@ pub enum LicenseError {
 > **[보안 — 정규화 발산 위험, 반드시 확인]** 이 클라이언트는 파싱된 struct를 **재직렬화**해서 Worker가 서명한 바이트를 재현한다. 이 방식은 Worker와 클라이언트가 **바이트 단위로 동일한** compact JSON을 내놓을 때만 안전하다. JSON 인코더마다 (1) 키 순서, (2) 비-ASCII/제어문자의 escape 규칙(예: JS `JSON.stringify` vs Rust `serde_json`), (3) 정수/문자열 표기가 달라질 수 있고, 이 중 하나라도 어긋나면 **정당한 서명이 거부**된다(false reject). 반대로 escape 정규화가 느슨하면 서로 다른 입력이 같은 바이트로 접히는 **canonicalization 충돌** 위험도 있다. 견고한 계약은 **Worker가 정규 assertion 문자열을 그대로 내려주고, 클라이언트는 그 문자열 바이트 위에서 서명을 검증한 뒤 파싱**하는 것이다(파싱된 struct를 재직렬화하지 않는다). 아래 코드는 계약이 "이 순서의 compact JSON"을 **양측에서 동일하게** 고정한다는 가정에 의존하므로, 채택 전 Worker 서명 입력 바이트와 `serde_json::to_vec` 출력 바이트가 비-ASCII `app_user_id`를 포함해 일치하는지 골든 벡터로 검증하라.
 
 ```rust
-// src-tauri/src/license/verify.rs
+// frameworks/tauri/src/license/verify.rs
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use ed25519_dalek::{Signature, VerifyingKey};
 
@@ -1619,7 +1619,7 @@ pub fn verify_signature(assertion: &Assertion, signature_b64url: &str) -> Result
 서명 검증 → nonce 일치 → freshness → user 일치 → state 평가. 5개 모두 통과해야 entitled. RFC3339 비교는 `time` 크레이트로 처리한다(표준 라이브러리만으로는 RFC3339를 파싱하지 못한다).
 
 ```rust
-// src-tauri/src/license/verify.rs (continued)
+// frameworks/tauri/src/license/verify.rs (continued)
 use super::types::VerifyResponse;
 
 /// RFC3339 -> Unix seconds. The contract uses RFC3339 strings; std cannot parse
@@ -1681,7 +1681,7 @@ pub fn accept_assertion(
 `reqwest::Client` 하나를 재사용한다. 비-200 응답은 계약의 uniform error envelope(Section 6.3)로 디코드해 `LicenseError::Worker`로 매핑한다.
 
 ```rust
-// src-tauri/src/license/client.rs
+// frameworks/tauri/src/license/client.rs
 use reqwest::Client;
 
 use super::error::LicenseError;
@@ -1775,7 +1775,7 @@ impl WorkerClient {
 `/verify/challenge`로 nonce를 받고, 그 nonce를 echo해 `/verify`를 호출하고, 받은 nonce를 기준으로 수락 규칙을 적용한 뒤, 통과하면 서명된 assertion을 캐시한다. nonce는 우리가 보낸 값을 그대로 anti-replay 기준으로 쓴다 — Worker가 돌려준 assertion의 nonce가 우리가 보낸 nonce와 같아야 한다.
 
 ```rust
-// src-tauri/src/license/flow.rs
+// frameworks/tauri/src/license/flow.rs
 use super::cache::AssertionCache;
 use super::client::WorkerClient;
 use super::error::LicenseError;
@@ -1818,7 +1818,7 @@ pub async fn verify_online(
 `expires_at`은 분 단위로 짧다(계약 예시 60초). 오프라인 유예를 원한다면 `issued_at` + 정책적 grace 윈도우를 별도로 적용한다. 즉 `expires_at`을 넘겼더라도 `issued_at + GRACE_SECONDS` 이내면 "오프라인 유예"로 접근을 허용하되, 온라인 복구 시 즉시 재검증한다.
 
 ```rust
-// src-tauri/src/license/cache.rs
+// frameworks/tauri/src/license/cache.rs
 use keyring::Entry;
 
 use super::error::LicenseError;
@@ -1937,7 +1937,7 @@ fn rfc3339_to_unix(s: &str) -> Result<i64, LicenseError> {
 체크아웃 URL은 `tauri-plugin-opener`로 시스템 브라우저에서 연다. 계약상 앱은 `order_id`·`custom_data`를 절대 생성하지 않고 Worker가 내려준 값을 verbatim으로 쓴다. Paddle.js 오버레이를 띄우는 호스팅 페이지로 `client_token`·`environment`·`price_id`·`custom_data`를 query/fragment로 전달한다(아래는 Worker가 제공하는 호스팅 체크아웃 페이지 URL을 가정).
 
 ```rust
-// src-tauri/src/commands.rs
+// frameworks/tauri/src/commands.rs
 use tauri::State;
 use tauri_plugin_opener::OpenerExt;
 
@@ -2035,7 +2035,7 @@ fn urlencoding(s: &str) -> String {
 **Deep link fast-path 등록** (Linux/Windows에서 single-instance를 첫 번째 플러그인으로):
 
 ```rust
-// src-tauri/src/lib.rs
+// frameworks/tauri/src/lib.rs
 use tauri::Manager;
 use tauri_plugin_deep_link::DeepLinkExt;
 
@@ -2097,7 +2097,7 @@ deep-link scheme은 `tauri.conf.json`에 정적으로 선언한다:
 **Polling fallback** — `open_checkout`이 돌려준 `order_id` 기준으로 `verify_online`을 backoff로 반복하다 entitled가 되거나 timeout이면 멈춘다. polling 자체가 `/verify` 챌린지-리스폰스를 돌리므로 별도 status 엔드포인트의 미서명 값을 신뢰하지 않는다.
 
 ```rust
-// src-tauri/src/commands.rs (continued)
+// frameworks/tauri/src/commands.rs (continued)
 use std::time::Duration;
 
 /// Poll the verify flow until entitled or timeout. Each poll is a full signed

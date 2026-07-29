@@ -36,35 +36,35 @@ afterEach(() => {
 
 describe("scanFile — 해석기 표면 판정", () => {
   it("VT 엔진·미러 어휘는 잡는다", () => {
-    expect(scanFile("src-tauri/src/x.rs", "use soksak_pty_mirror::Mirror;")).toHaveLength(1);
+    expect(scanFile("frameworks/tauri/src/x.rs", "use soksak_pty_mirror::Mirror;")).toHaveLength(1);
     expect(scanFile("crates/a/Cargo.rs", "// soksak-pty-mirror path")).toHaveLength(1);
-    expect(scanFile("src-tauri/src/x.rs", "let s = alacritty_terminal::Term::new();")).toHaveLength(1);
-    expect(scanFile("src-tauri/src/x.rs", "let p = st.mirror.cold_paint();")).toHaveLength(1);
-    expect(scanFile("src-tauri/src/x.rs", "let b = st.mirror.rehydrate();")).toHaveLength(1);
+    expect(scanFile("frameworks/tauri/src/x.rs", "let s = alacritty_terminal::Term::new();")).toHaveLength(1);
+    expect(scanFile("frameworks/tauri/src/x.rs", "let p = st.mirror.cold_paint();")).toHaveLength(1);
+    expect(scanFile("frameworks/tauri/src/x.rs", "let b = st.mirror.rehydrate();")).toHaveLength(1);
     expect(scanFile("src/a.ts", "if (data.altActive) {}")).toHaveLength(1);
   });
 
   it("코어 화면 복원 신호는 snake·camel·was 접두 모두 잡는다", () => {
-    expect(scanFile("src-tauri/src/pty.rs", "pub screen_restored: bool,")).toHaveLength(1);
+    expect(scanFile("frameworks/tauri/src/pty.rs", "pub screen_restored: bool,")).toHaveLength(1);
     expect(scanFile("src/a.ts", "screenRestored: boolean;")).toHaveLength(1);
     expect(scanFile("src/a.ts", "return pty.wasScreenRestored(id);")).toHaveLength(1);
   });
 
   it("checkpoint 도메인 어휘는 잡되, 무관 배관(wal_checkpoint)은 잡지 않는다", () => {
-    expect(scanFile("src-tauri/src/x.rs", 'let notice = "sealed checkpoint";')).toHaveLength(1);
+    expect(scanFile("frameworks/tauri/src/x.rs", 'let notice = "sealed checkpoint";')).toHaveLength(1);
     // SQLite WAL checkpoint 는 언더스코어 경계라 \bcheckpoint\b 밖 — 방출 대상 아님.
-    expect(scanFile("src-tauri/src/data/backup.rs", 'conn.execute("PRAGMA wal_checkpoint(TRUNCATE);");')).toEqual([]);
+    expect(scanFile("frameworks/tauri/src/data/backup.rs", 'conn.execute("PRAGMA wal_checkpoint(TRUNCATE);");')).toEqual([]);
     // checkpoint_path 같은 식별자도 언더스코어 경계라 bare checkpoint 매칭 밖(개명은 별도 강제 아님).
-    expect(scanFile("src-tauri/src/x.rs", "let p = proto::checkpoint_path(h, w, pane);")).toEqual([]);
+    expect(scanFile("frameworks/tauri/src/x.rs", "let p = proto::checkpoint_path(h, w, pane);")).toEqual([]);
   });
 
   it("PTY 배관은 정본 파일에서 allowlist 다(방출 아님 — 결정 1)", () => {
     expect(
       scanFile("crates/soksak-ptyd/src/main.rs", "let sys = native_pty_system();"),
     ).toEqual([]);
-    expect(scanFile("src-tauri/src/pty.rs", ".openpty(PtySize { rows, cols })")).toEqual([]);
+    expect(scanFile("frameworks/tauri/src/pty.rs", ".openpty(PtySize { rows, cols })")).toEqual([]);
     // 같은 배관 토큰이라도 정본 밖 파일이면 유입으로 잡힌다(사면은 파일 한정).
-    expect(scanFile("src-tauri/src/other.rs", "let sys = native_pty_system();")).toHaveLength(1);
+    expect(scanFile("frameworks/tauri/src/other.rs", "let sys = native_pty_system();")).toHaveLength(1);
   });
 
   it("테스트 코드(.test·Rust tests/·#[cfg(test)])는 스캔하지 않는다", () => {
@@ -80,7 +80,7 @@ describe("scanFile — 해석기 표면 판정", () => {
       "    fn t() { let b = m.rehydrate(); }",
       "}",
     ].join("\n");
-    expect(scanFile("src-tauri/src/x.rs", rs)).toEqual([]);
+    expect(scanFile("frameworks/tauri/src/x.rs", rs)).toEqual([]);
   });
 
   it("generic 문구(무관 식별자)는 잡지 않는다", () => {
@@ -91,7 +91,7 @@ describe("scanFile — 해석기 표면 판정", () => {
 
 describe("게이트 실행 — 신규 유입·봉인 대조", () => {
   it("봉인에 없는 파일의 해석기 유입은 실패한다", () => {
-    write("src-tauri/src/pty.rs", "pub struct SpawnOutcome { pub screen_restored: bool }");
+    write("frameworks/tauri/src/pty.rs", "pub struct SpawnOutcome { pub screen_restored: bool }");
     const { status, out } = runGate();
     expect(status).toBe(1);
     expect(out).toContain("pty.rs");
@@ -99,7 +99,7 @@ describe("게이트 실행 — 신규 유입·봉인 대조", () => {
   });
 
   it("정본 밖 PTY 배관 유입은 실패한다(사면은 파일 한정)", () => {
-    write("src-tauri/src/rogue.rs", "let sys = native_pty_system();");
+    write("frameworks/tauri/src/rogue.rs", "let sys = native_pty_system();");
     const { status, out } = runGate();
     expect(status).toBe(1);
     expect(out).toContain("rogue.rs");
@@ -107,7 +107,7 @@ describe("게이트 실행 — 신규 유입·봉인 대조", () => {
 
   it("깨끗한 코어(배관은 정본 파일에만)는 통과한다", () => {
     write("crates/soksak-ptyd/src/main.rs", "let sys = native_pty_system();");
-    write("src-tauri/src/pty.rs", "let pair = sys.openpty(size);");
+    write("frameworks/tauri/src/pty.rs", "let pair = sys.openpty(size);");
     write("src/plugins/api.ts", "export const spawn = () => invoke('spawn_terminal');");
     const { status, out } = runGate();
     expect(status).toBe(0);
@@ -117,17 +117,17 @@ describe("게이트 실행 — 신규 유입·봉인 대조", () => {
   // 축소(stale) 메커니즘은 방출이 끝나 SEALED 가 공표(空表)여도 살아 있어야 한다(재입법 시
   // 재가동). 실측 SEALED 와 무관하게, 주입 봉인으로 축소 판정 로직을 직접 검증한다.
   it("봉인 미달(방출 진행)은 stale 로 잡힌다 — SEALED 축소 의무", () => {
-    write("src-tauri/src/pty.rs", "pub screen_restored: bool,"); // 실측 1건
-    const { stale } = scanRoot(root, new Map([["src-tauri/src/pty.rs", 4]])); // 봉인 4건 대비
-    expect(stale).toEqual([{ file: "src-tauri/src/pty.rs", count: 1, sealed: 4 }]);
+    write("frameworks/tauri/src/pty.rs", "pub screen_restored: bool,"); // 실측 1건
+    const { stale } = scanRoot(root, new Map([["frameworks/tauri/src/pty.rs", 4]])); // 봉인 4건 대비
+    expect(stale).toEqual([{ file: "frameworks/tauri/src/pty.rs", count: 1, sealed: 4 }]);
   });
 
   it("빈 트리는 봉인 전부가 stale 다 — 봉인은 실측과 일치해야만 산다", () => {
     // **뿌리는 있고 안이 빈** 트리다. 뿌리가 아예 없는 것과 다르다 — 그쪽은 배치가 바뀐
     // 것이고 스캔이 0건을 답하면 안 된다(scanRoot 의 오라클 생존 가드).
-    mkdirSync(join(root, "src-tauri", "src"), { recursive: true });
-    const { stale } = scanRoot(root, new Map([["src-tauri/src/pty.rs", 3]]));
-    expect(stale).toEqual([{ file: "src-tauri/src/pty.rs", count: 0, sealed: 3 }]);
+    mkdirSync(join(root, "frameworks/tauri", "src"), { recursive: true });
+    const { stale } = scanRoot(root, new Map([["frameworks/tauri/src/pty.rs", 3]]));
+    expect(stale).toEqual([{ file: "frameworks/tauri/src/pty.rs", count: 0, sealed: 3 }]);
   });
 });
 

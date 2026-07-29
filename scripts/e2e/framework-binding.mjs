@@ -64,7 +64,7 @@ export const SURFACE_PATTERNS = [
   // ── 줄일 수 있는 결속: 프로세스·빌드 산출물·앱 홈을 직접 안다 ─────────────
   { name: "socket-name", kind: "reducible", re: /com\.soksak\.[A-Za-z$${}_]+\.sock/ },
   { name: "app-home-path", kind: "reducible", re: /homedir\(\),\s*"\.soksak(?!-e2e)|\$HOME\/\.soksak(?!-e2e)/ },
-  { name: "build-artifact-path", kind: "reducible", re: /src-tauri\/target|target\/(debug|release)\/|\$TARGET\// },
+  { name: "build-artifact-path", kind: "reducible", re: /frameworks\/tauri\/target|target\/(debug|release)\/|\$TARGET\// },
   { name: "app-bundle-launch", kind: "reducible", re: /bundle\/macos|\.app\/Contents\/MacOS/ },
   { name: "app-process-scan", kind: "reducible", re: /\bpgrep\b/ },
   { name: "app-activate", kind: "reducible", re: /\bosascript\b/ },

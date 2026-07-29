@@ -15,7 +15,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const MAIN = join(dirname(fileURLToPath(import.meta.url)), "../../electron/main.cjs");
+const MAIN = join(dirname(fileURLToPath(import.meta.url)), "../../frameworks/electron/main.cjs");
 
 describe("단일 인스턴스", () => {
   const src = () => readFileSync(MAIN, "utf8");

@@ -33,8 +33,8 @@ jobs:
         with:
           path: soksak
 
-      # src-tauri/Cargo.toml declares tauri-plugin-webview-capture by relative path, two levels up
-      # from src-tauri (same sibling layout as verify.yml / multiplatform-check.yml). The crate
+      # frameworks/tauri/Cargo.toml declares tauri-plugin-webview-capture by relative path, two levels up
+      # from frameworks/tauri (same sibling layout as verify.yml / multiplatform-check.yml). The crate
       # repository is public, so the default checkout (no token) resolves it.
       - name: Check out the sibling path dependency
         uses: actions/checkout@v4
@@ -70,7 +70,7 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: soksak/src-tauri
+          workspaces: soksak/frameworks/tauri
 
       - name: Install core dependencies
         working-directory: soksak
@@ -92,7 +92,7 @@ jobs:
         run: |
           make spec-gate
           make cli-debug
-          pnpm tauri build --debug --no-bundle --config src-tauri/tauri.debug.conf.json
+          pnpm tauri build --debug --no-bundle --config frameworks/tauri/tauri.debug.conf.json
 
       - name: Boot headless and drive the release.* commands via sok
         working-directory: soksak
@@ -113,11 +113,11 @@ jobs:
           # fallback to another environment: fail loudly if neither name exists.
           BIN=""
           for name in soksak-debug soksak-dev; do
-            cand="$CORE/src-tauri/target/debug/$name"
+            cand="$CORE/frameworks/tauri/target/debug/$name"
             if [ -x "$cand" ]; then BIN="$cand"; break; fi
           done
-          test -n "$BIN" || { echo "debug app binary not found under src-tauri/target/debug"; ls -l "$CORE/src-tauri/target/debug" || true; exit 1; }
-          SOK="$CORE/src-tauri/target/debug/sok-debug"
+          test -n "$BIN" || { echo "debug app binary not found under frameworks/tauri/target/debug"; ls -l "$CORE/frameworks/tauri/target/debug" || true; exit 1; }
+          SOK="$CORE/frameworks/tauri/target/debug/sok-debug"
           test -x "$SOK" || { echo "sok-debug CLI not found: $SOK"; exit 1; }
           echo "app binary: $BIN"
 

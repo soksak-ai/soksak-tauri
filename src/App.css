@@ -50,7 +50,7 @@
   display: none;
 }
 
-/* 레이어 원칙(src-tauri/browser.rs 머리말): 메인 webview 는 자체 배경을 칠하지
+/* 레이어 원칙(frameworks/tauri/browser.rs 머리말): 메인 webview 는 자체 배경을 칠하지
    않고(drawsBackground=false) 브라우저 child webview 가 그 "아래"에 있다. 루트
    체인은 투명 — 표면은 각자 불투명 배경을 소유하고, 미도장 영역은 네이티브 창
    배경(= 테마 bg, 테마 엔진이 window_set_background 로 동기화)이 칠한다.

@@ -82,7 +82,7 @@ DesignSync 도구(`get_file`)로 읽는다. 목업이 곧 기준이다.
 - **z**: pane z는 parkedStyle 인라인이 소유. CSS z-index로 pane 위·아래를 조정하려면 반드시
   인라인 값(active=1, parked=0)을 기준으로 레일 쪽을 움직여라.
 - dev 앱 = canonical `make dev`(HMR). 검증 CLI =
-  `<machine-path>/soksak/worktrees/sidebar-projection/src-tauri/target/debug/sok-dev`,
+  `<machine-path>/soksak/worktrees/sidebar-projection/frameworks/tauri/target/debug/sok-dev`,
   창 라벨 `w-d9683c0c-9d72-4a5b-9030-b729ae372b44`(재기동 시 갱신됨 — window.list로 재확인).
   `make dev`는 plugin-spec dist를 빌드하지 않는다 → 파서 어휘가 갈리면 `pnpm run build:platform`.
 

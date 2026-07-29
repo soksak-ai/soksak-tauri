@@ -22,7 +22,7 @@ import { fileURLToPath } from "node:url";
 
 const HERE = resolve(fileURLToPath(new URL(".", import.meta.url)));
 export const REPO_ROOT = resolve(HERE, "../..");
-const TABLE_DIR = join(REPO_ROOT, "electron/native");
+const TABLE_DIR = join(REPO_ROOT, "frameworks/electron/native");
 
 /** 이 수를 넘는 분기가 있으면 규칙일 가능성이 높다. */
 export const BRANCH_LIMIT = 2;
@@ -34,6 +34,17 @@ export const BRANCH_LIMIT = 2;
  * 그 주장이 틀리면 옮기고 장부에서 뺀다.
  */
 export const LOGIC_LEDGER = new Map([
+  [
+    "webview_emit_native",
+    [
+      5,
+      "남은 갈래는 부른 창 부재와 종류 검사뿐이다. 이 명령은 네이티브 마우스 모니터가 내는 " +
+        "사건을 그대로 발행하는 자리이고, 사건을 창에 미는 일은 프레임워크만 할 수 있다. " +
+        "종류 셋(native-mousedown|move|up)의 단일 진실은 그것을 구독하는 앱이고(App.tsx), " +
+        "여기서 하는 것은 모르는 이름을 발행하지 않는 검사다 — 지어낸 사건을 창에 밀면 " +
+        "구독자가 없어 조용히 사라지고, 그 침묵은 구동 실패와 구분되지 않는다",
+    ],
+  ],
   [
     "window_set_background",
     [3, "판정을 부르는 자리와 부른 창 부재. 색 규칙(#rrggbb·축약 불가)은 코어가 소유하고 같은 픽스처가 묶는다(fixtures/surface-spec.json)"],

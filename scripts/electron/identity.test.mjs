@@ -14,7 +14,7 @@ import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
-const { frameworkIdentity, identityAxes, homeSuffix, productName } = require("../../electron/cored.cjs");
+const { frameworkIdentity, identityAxes, homeSuffix, productName } = require("../../frameworks/electron/cored.cjs");
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const FIXTURE = JSON.parse(

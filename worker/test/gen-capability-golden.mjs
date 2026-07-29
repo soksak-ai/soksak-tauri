@@ -64,7 +64,7 @@ const sig = nodeSign(null, canon, privKey);
 
 const golden = {
   _comment:
-    "TEST-ONLY cross-language golden vector for the phone-link capability-assertion convergence. The canonical bytes are the SHIPPED Rust src-tauri/src/remote/auth.rs::canonical_bytes layout (length-prefixed binary), which is the source of truth. The Worker's canonicalCapabilityBytes() must reproduce canonical_bytes_hex; signing the seed key over those bytes must reproduce signature_hex; and the Rust verifier must verify_strict the signature with public_key_hex. The Ed25519 seed is a fixed, known, test-only value (NOT a production key). Field mapping Worker->Rust: device_id <- phone-link machine_id; scope <- DeviceScope string; nonce_hex <- raw 32-byte challenge nonce; issued_at/exp <- Unix seconds. Regenerate with worker/test/gen-capability-golden.mjs.",
+    "TEST-ONLY cross-language golden vector for the phone-link capability-assertion convergence. The canonical bytes are the SHIPPED Rust frameworks/tauri/src/remote/auth.rs::canonical_bytes layout (length-prefixed binary), which is the source of truth. The Worker's canonicalCapabilityBytes() must reproduce canonical_bytes_hex; signing the seed key over those bytes must reproduce signature_hex; and the Rust verifier must verify_strict the signature with public_key_hex. The Ed25519 seed is a fixed, known, test-only value (NOT a production key). Field mapping Worker->Rust: device_id <- phone-link machine_id; scope <- DeviceScope string; nonce_hex <- raw 32-byte challenge nonce; issued_at/exp <- Unix seconds. Regenerate with worker/test/gen-capability-golden.mjs.",
   seed_hex: Buffer.from(SEED).toString("hex"),
   pkcs8_b64: Buffer.from(pkcs8Der).toString("base64"),
   public_key_hex: Buffer.from(rawPub).toString("hex"),

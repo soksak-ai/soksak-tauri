@@ -14,8 +14,8 @@ import { fileURLToPath } from "node:url";
 const requireCjs = createRequire(import.meta.url);
 const HERE = dirname(fileURLToPath(import.meta.url));
 const root = join(HERE, "../..");
-const MAIN = join(root, "electron/main.cjs");
-const BACKEND = join(root, "electron/backend.cjs");
+const MAIN = join(root, "frameworks/electron/main.cjs");
+const BACKEND = join(root, "frameworks/electron/backend.cjs");
 const ELECTRON = requireCjs.resolve("electron");
 const LABEL_FLAG = "--soksak-window-label=";
 

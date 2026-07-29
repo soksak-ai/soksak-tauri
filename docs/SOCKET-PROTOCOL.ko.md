@@ -4,7 +4,7 @@
 MCP, 원격 포워더, E2E 하니스)가 이 계약을 말한다. 그 위에 실리는 명령 페이로드는
 [MESSAGE-PROTOCOL.ko.md](MESSAGE-PROTOCOL.ko.md)가 규정한다.
 
-**단일 진실**: `soksak-spec-socket` 크레이트(`src-tauri/protocol`). 버전 상수, 호환창, 순수 판정
+**단일 진실**: `soksak-spec-socket` 크레이트(`frameworks/tauri/protocol`). 버전 상수, 호환창, 순수 판정
 함수가 여기 산다. 앱과 모든 클라이언트가 이 크레이트에 의존한다 — 아무도 상수를 베끼지
 않으므로, 와이어 양쪽이 무언으로 어긋날 수 없다.
 
@@ -16,7 +16,7 @@ MCP, 원격 포워더, E2E 하니스)가 이 계약을 말한다. 그 위에 실
   `id`를 그대로 싣는다.
 - `events.subscribe`는 확인 응답 1회 후 연결을 push 스트림으로 전환한다 — 연결 수명이 곧
   구독 수명이다.
-- JSON-RPC 서버는 전송 시임(`src-tauri/src/ipc.rs`의 `IpcListenerSeam` / `IpcConnection`)을
+- JSON-RPC 서버는 전송 시임(`frameworks/tauri/src/ipc.rs`의 `IpcListenerSeam` / `IpcConnection`)을
   통해서만 OS에 닿는다. Unix 계열은 위의 유닉스 도메인 소켓, Windows 는 같은 시임의
   named pipe 구현(`interprocess` 로컬 소켓 — 터미널 사이드카가 5플랫폼 CI 매트릭스로
   검증한 그 크레이트)이다. 전송이 바뀌어도 프로토콜 코드는 변하지 않으며, 시임의 왕복

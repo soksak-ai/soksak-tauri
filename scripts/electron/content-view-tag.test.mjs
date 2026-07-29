@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const MAIN = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "electron", "main.cjs");
+const MAIN = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "frameworks", "electron", "main.cjs");
 
 describe("콘텐츠 뷰의 전제", () => {
   it("창은 <webview> 태그를 켜고 만든다", () => {

@@ -23,7 +23,7 @@ jobs:
         with:
           path: soksak
 
-      # src-tauri/Cargo.toml 이 형제 크레이트를 상대 경로로 선언(verify.yml 과 동일 레이아웃 재현).
+      # frameworks/tauri/Cargo.toml 이 형제 크레이트를 상대 경로로 선언(verify.yml 과 동일 레이아웃 재현).
       - name: Check out the sibling path dependency
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -49,7 +49,7 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
-          workspaces: soksak/src-tauri
+          workspaces: soksak/frameworks/tauri
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -98,7 +98,7 @@ jobs:
           GH_TOKEN: ${{ steps.release-token.outputs.token }}
         run: |
           ver="${GITHUB_REF_NAME#v}"
-          bundle="src-tauri/target/release/bundle"
+          bundle="frameworks/tauri/target/release/bundle"
           app_tar="$(ls "$bundle"/macos/*.app.tar.gz)"
           app_sig="$(ls "$bundle"/macos/*.app.tar.gz.sig)"
           dmg="$(ls "$bundle"/dmg/*.dmg 2>/dev/null || true)"
