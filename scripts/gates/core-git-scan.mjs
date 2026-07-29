@@ -100,6 +100,16 @@ function* walk(dir) {
 // sealed 는 대조할 봉인 표(기본 = 이 repo 의 SEALED). 자가검사가 축소 메커니즘을 실측 봉인과
 // 무관하게 검증할 수 있게 주입 가능 — 방출 완료(SEALED 공표)여도 stale 판정 로직은 살아 있다.
 export function scanRoot(rootDir, sealed = SEALED) {
+  // 오라클 생존 — 뿌리가 하나도 안 보이면 이 게이트는 **아무것도 안 지키면서 통과**한다.
+  // 배치가 바뀌면 이 자리가 조용히 0건이 되고, 그 0 은 "위반 없음"과 구분되지 않는다.
+  // 있는 뿌리를 세고, 하나도 없으면 사유를 달고 실패한다(0 의 두 얼굴).
+  const seenRoots = SCAN_ROOTS.filter((n) => existsSync(join(rootDir, n)));
+  if (seenRoots.length === 0) {
+    throw new Error(
+      `스캔 뿌리가 하나도 없다(${SCAN_ROOTS.join(", ")}) — 배치가 바뀌었으면 SCAN_ROOTS 를 함께 옮겨라. ` +
+        "뿌리 없이 도는 스캔은 위반 0건을 답하지만 그것은 통과가 아니다",
+    );
+  }
   const perFile = new Map();
   const allowUse = {};
   for (const scanRootName of SCAN_ROOTS) {

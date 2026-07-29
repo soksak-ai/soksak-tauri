@@ -210,6 +210,8 @@ export const PROSE_LEDGER = new Map([
   ["src-tauri/crates/soksak-core/src/pathx.rs", [2, "[진짜셸] 틸드 확장은 명령 해석기의 일 — \"우리는 셸이 아니다\""]],
   ["src/lib/notify.test.ts", [1, "[프레임워크] \"셸은 경계 하나로 mock\" — 죽은 참조 ../platform 동반"]],
   ["src/framework/contract.ts", [1, "[인용] \"한때 이것을 '셸'이라 불렀는데\""]],
+  ["docs/REPO-LAYOUT.md", [1, "[진짜셸] 어휘 넷의 표 — shell 은 사용자 셸(zsh·bash)이라고 정의하는 그 줄"]],
+  ["docs/REPO-LAYOUT.ko.md", [1, "[진짜셸] 같은 표의 한글본"]],
   ["src/main.tsx", [1, "[UI] \"셸만 렌더한다\" — 앱 UI 컨테이너"]],
   ["src/orchestrator/OrchestratorApp.tsx", [2, "[UI] \"창 셸(A3)\" — 앱 UI 컨테이너"]],
   ["src/App.css", [1, "[UI] \"독립 셸\" — 앱 UI 컨테이너"]],
