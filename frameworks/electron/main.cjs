@@ -28,6 +28,23 @@ const DEV_URL = process.env.SOKSAK_ELECTRON_URL || "http://localhost:1420";
 // 이 프레임워크의 정체성 — 홈은 identifier 에서 나오고, 원장도 cored 소켓도 그 홈 안에 산다.
 // 홈은 프레임워크의 것이다: cored는 이 값을 부팅 인자로 **받는다**(파생하지 않는다).
 const IDENTITY = frameworkIdentity();
+
+// 로그 한 줄이 앱을 죽이지 않는다.
+//
+// 실사고(2026-07-29): 하니스가 앱을 띄워 두고 빠지자 stdout 파이프가 닫혔고, 다음 console.error
+// 가 EPIPE 로 던져 Electron 이 "A JavaScript error occurred in the main process" 로 죽었다.
+// 관측하려고 넣은 줄이 관측 대상을 죽인 것이다.
+//
+// 쓰지 못하는 것은 사실이지 오류가 아니다 — 부모가 없는 프로세스는 정상적으로 그렇다.
+// 삼키되 **삼킨다는 것을 여기 적어 둔다**: 사유가 안 보이면 다음 사람이 로그를 의심한다.
+function note(line) {
+  try {
+    console.error(line);
+  } catch {
+    // 받을 곳이 없다. 앱은 계속 산다.
+  }
+}
+
 const SPIKE_HOME = IDENTITY.home;
 const DEMAND_LOG = path.join(SPIKE_HOME, "invoke-demand.jsonl");
 
@@ -108,16 +125,16 @@ function createWindow(label, rect, bootQuery) {
   win.webContents.on("console-message", (_e, level, message, line, sourceId) => {
     // 경고 이상만 — 평상시 로그까지 실으면 진짜 오류가 그 안에 묻힌다.
     if (level < 2) return;
-    console.error(`[renderer:${label}] ${message}${sourceId ? ` (${sourceId}:${line})` : ""}`);
+    note(`[renderer:${label}] ${message}${sourceId ? ` (${sourceId}:${line})` : ""}`);
   });
   win.webContents.on("render-process-gone", (_e, details) => {
-    console.error(`[renderer:${label}] 렌더러 프로세스 종료: ${JSON.stringify(details)}`);
+    note(`[renderer:${label}] 렌더러 프로세스 종료: ${JSON.stringify(details)}`);
   });
   win.webContents.on("did-fail-load", (_e, code, desc, url) => {
-    console.error(`[renderer:${label}] 적재 실패: ${code} ${desc} ${url}`);
+    note(`[renderer:${label}] 적재 실패: ${code} ${desc} ${url}`);
   });
   win.webContents.on("unresponsive", () => {
-    console.error(`[renderer:${label}] 응답 없음`);
+    note(`[renderer:${label}] 응답 없음`);
   });
 
   win.on("closed", () => {
@@ -125,7 +142,7 @@ function createWindow(label, rect, bootQuery) {
     // 이 창 앞으로 남은 자식을 거둔다 — 창은 프레임워크의 사실이라 이 자리가 아는 유일한 곳이다.
     // 안 거두면 창이 닫혀도 그 자식이 살아 남고, 그 고아는 프로세스 목록에만 보인다.
     void callBackend("process_reclaim_by_window", { window: label }).catch((e) => {
-      console.error(`[electron-spike] 창 자식 회수 실패(${label}): ${e.code || e.message}`);
+      note(`[electron-spike] 창 자식 회수 실패(${label}): ${e.code || e.message}`);
     });
     // 개별 닫기는 그 창의 영속 흔적도 함께 폐기한다. 남기면 다음 부트의 리스폰이 그 slot 을
     // 되살려 닫은 창이 재시작마다 돌아온다 — 닫을수록 늘어난다(실측: 창 15 개 부활).
@@ -133,7 +150,7 @@ function createWindow(label, rect, bootQuery) {
     // 무엇이 흔적인지는 코어가 정한다(window_traces) — 여기서 규칙을 다시 적지 않는다.
     if (!quitting) {
       void callBackend("window_traces_prune", { label }).catch((e) => {
-        console.error(`[electron-spike] 창 흔적 폐기 실패(${label}): ${e.code || e.message}`);
+        note(`[electron-spike] 창 흔적 폐기 실패(${label}): ${e.code || e.message}`);
       });
     }
     // 사라진 창을 여기서 지우지 않는다 — 살아 있는 목록을 보내면 장부가 스스로 맞춘다(멱등).
@@ -183,12 +200,12 @@ function standUpControl(socketPath) {
       }
       return all;
     },
-    onLog: (line) => console.error(`[electron-spike] ${line}`),
+    onLog: (line) => note(`[electron-spike] ${line}`),
   }).start();
   void controlHost.ready.then((ok) => {
     // 붙었는지는 로그로 드러낸다. 안 붙으면 밖에서 부른 명령이 상한으로만 끝나고, 왜 그런지는
     // 이 줄이 유일한 자국이다.
-    console.log(
+    note(
       ok
         ? `[electron-spike] 제어면: 밖에서 오는 명령이 창으로 온다 — ${socketPath}`
         : `[electron-spike] 제어면: 등록이 서지 않았다 — 밖에서 오는 명령이 닿지 않는다`,
@@ -255,11 +272,11 @@ async function standUpCored() {
   const cored = await ensureCored({
     identity: IDENTITY,
     binary,
-    onLog: (line) => console.error(`[soksak-cored] ${line}`),
+    onLog: (line) => note(`[soksak-cored] ${line}`),
   });
   if (cored.origin === "spawned") ownedCored = cored;
   standUpControl(cored.socketPath);
-  console.log(
+  note(
     `[electron-spike] cored ${cored.origin === "spawned" ? `띄움(pid ${cored.pid})` : "이미 살아 있음"}` +
       `: ${binary} → ${cored.socketPath}`,
   );
@@ -276,7 +293,7 @@ if (externalSocket) standUpControl(externalSocket);
 // 실패 사유는 기동 때 한 번 드러낸다. 호출은 저마다 이름을 달고 실패하지만, 왜 그렇게 됐는지는
 // 첫 호출을 기다리지 않고 알 수 있어야 한다.
 backendReady.catch((e) =>
-  console.error(`[electron-spike] 백엔드를 세우지 못했다: ${e.code || "ERROR"} — ${e.message}`),
+  note(`[electron-spike] 백엔드를 세우지 못했다: ${e.code || "ERROR"} — ${e.message}`),
 );
 
 async function callBackend(cmd, args) {
@@ -311,7 +328,7 @@ function fanOutActivity(entry) {
   // 배달 실패는 발행을 멈추지 않는다(적재분이 원장의 진실이고 창은 구독자 하나다) — 다만
   // 삼키지 않는다: 굶는 구독자는 증상이 없어 이 줄이 유일한 자국이다.
   if (!activity.fanOut(entry, windows.values())) {
-    console.error(`[electron-spike] 활동 배달이 일부 창에 닿지 못했다 — seq=${entry.seq}`);
+    note(`[electron-spike] 활동 배달이 일부 창에 닿지 못했다 — seq=${entry.seq}`);
   }
 }
 
@@ -510,7 +527,7 @@ app.setPath("userData", IDENTITY.frameworkDir);
 // 매번 붙는다. 그것은 멱등이 아니다. 잠금을 못 잡으면 이 프로세스는 **아무것도 만들지 않고**
 // 물러난다 — 창도, cored 도, 원장도 건드리지 않는다.
 if (!app.requestSingleInstanceLock()) {
-  console.log("[electron-spike] 이미 도는 인스턴스가 있다 — 그 창을 앞으로 내고 물러난다");
+  note("[electron-spike] 이미 도는 인스턴스가 있다 — 그 창을 앞으로 내고 물러난다");
   app.quit();
 } else {
   // 먼저 선 쪽이 두 번째 실행을 받는다. 사용자가 아이콘을 다시 눌렀다는 뜻이므로 자기 창을
@@ -529,12 +546,12 @@ function boot() {
   const label = CONTROL_PLANE_LABEL;
   const win = createWindow(label);
   wireWindowEvents(label, win);
-  console.log(`[electron-spike] 창 ${label} → ${DEV_URL}`);
-  console.log(`[electron-spike] 요구 원장: ${DEMAND_LOG}`);
+  note(`[electron-spike] 창 ${label} → ${DEV_URL}`);
+  note(`[electron-spike] 요구 원장: ${DEMAND_LOG}`);
   // 어느 정체성으로 어느 백엔드에 말을 거는지는 기동 시 드러낸다 — 붙지 않은 채 도는 것과
   // 엉뚱한 소켓에 붙은 것은 로그 없이는 구분되지 않는다.
-  console.log(`[electron-spike] 정체성: ${IDENTITY.identifier} @ ${IDENTITY.home}`);
-  console.log(
+  note(`[electron-spike] 정체성: ${IDENTITY.identifier} @ ${IDENTITY.home}`);
+  note(
     externalSocket
       ? `[electron-spike] 백엔드 소켓(외부 지목): ${externalSocket}`
       : `[electron-spike] 백엔드 소켓: ${IDENTITY.socketPath}`,
