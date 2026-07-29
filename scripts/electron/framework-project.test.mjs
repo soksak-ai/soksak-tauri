@@ -6,6 +6,9 @@
 // 거부됨으로 분류되고, 그 프로젝트가 드롭되어 화면은 "프로젝트 없음"이 된다. 오류는 어디에도
 // 안 남는다.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import osModule from "node:os";
 import { join, sep } from "node:path";
 import { dirname } from "node:path";
 import { createRequire } from "node:module";
@@ -75,14 +78,28 @@ const labelOf = (w) =>
     .find((a) => String(a).startsWith(LABEL_FLAG))?.slice(LABEL_FLAG.length) ?? null;
 
 let created, invoke;
+let fixtureHome;
+let realHomedir;
+
 beforeEach(async () => {
   created = [];
+  // 프레임워크는 요구 원장을 **자기 홈에** 떨군다. 홈을 돌려놓지 않으면 이 검사가 사용자의
+  // 실 홈에 쓴다 — 실측(2026-07-29): 홈 규칙이 env 축으로 바뀌자 이 파일이 ~/.soksak-dev 에
+  // invoke-demand.jsonl 을 만들었다. 그 전에는 버려도 되는 홈이라 아무도 못 봤다.
+  fixtureHome = mkdtempSync(join(tmpdir(), "soksak-framework-"));
+  realHomedir = osModule.homedir;
+  osModule.homedir = () => fixtureHome;
+
   const handlers = loadFramework(created);
   await new Promise((r) => setImmediate(r));
   const h = handlers.get("framework:invoke");
   invoke = (win, cmd, args = {}) => h({ sender: win.webContents }, { cmd, args });
 });
-afterEach(() => delete requireCjs.cache[ELECTRON]);
+afterEach(() => {
+  delete requireCjs.cache[ELECTRON];
+  osModule.homedir = realHomedir;
+  rmSync(fixtureHome, { recursive: true, force: true });
+});
 
 describe("프로젝트 점유 — 창을 소유한 쪽이 진다", () => {
   it("빈 상태에서 점유가 선다", async () => {

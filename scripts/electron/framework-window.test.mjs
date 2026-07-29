@@ -8,6 +8,9 @@
 // 이름과 반환 모양은 앱의 것과 같아야 한다 — 번역하면 프론트가 프레임워크마다 다른 것을 보고
 // 그 차이는 오류가 아니라 "이 프레임워크에서는 창 배치가 안 됨"으로 나타난다.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import osModule from "node:os";
 import { join, sep } from "node:path";
 import { dirname } from "node:path";
 import { createRequire } from "node:module";
@@ -113,8 +116,18 @@ function labelOf(win) {
 let created;
 let call;
 
+let fixtureHome;
+let realHomedir;
+
 beforeEach(async () => {
   created = [];
+  // 프레임워크는 요구 원장을 **자기 홈에** 떨군다. 홈을 돌려놓지 않으면 이 검사가 사용자의
+  // 실 홈에 쓴다 — 실측(2026-07-29): 홈 규칙이 env 축으로 바뀌자 이 파일이 ~/.soksak-dev 에
+  // invoke-demand.jsonl 을 만들었다. 그 전에는 버려도 되는 홈이라 아무도 못 봤다.
+  fixtureHome = mkdtempSync(join(tmpdir(), "soksak-framework-"));
+  realHomedir = osModule.homedir;
+  osModule.homedir = () => fixtureHome;
+
   const handlers = loadFramework(created);
   await new Promise((r) => setImmediate(r)); // 부팅 창이 서기를 기다린다
   const invoke = handlers.get("framework:invoke");
@@ -125,6 +138,8 @@ beforeEach(async () => {
 
 afterEach(() => {
   delete requireCjs.cache[ELECTRON];
+  osModule.homedir = realHomedir;
+  rmSync(fixtureHome, { recursive: true, force: true });
 });
 
 describe("window_* — 프레임워크가 답한다", () => {
