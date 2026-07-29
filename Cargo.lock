@@ -4560,6 +4560,7 @@ name = "sok"
 version = "0.0.1"
 dependencies = [
  "serde_json",
+ "soksak-core",
  "soksak-spec-socket",
 ]
 

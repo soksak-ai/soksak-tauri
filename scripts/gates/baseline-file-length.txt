@@ -97,7 +97,7 @@
 # 직렬화 없이는 그 사실이 프로세스 안에 갇힌다.
 #
 # 줄이는 길: registry.rs 의 표를 갈래별 파일로 나눈다(저장소·창·프로세스·플러그인).
-crates/soksak-cli/src/lib.rs 2095
+crates/soksak-cli/src/lib.rs 1706
 crates/soksak-cored/src/registry.rs 2963
 crates/soksak-store/src/store.rs 2117
 frameworks/tauri/src/ipc.rs 1562

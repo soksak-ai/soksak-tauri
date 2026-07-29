@@ -11,4 +11,6 @@ edition = "2021"
 [dependencies]
 # 소켓 프로토콜 계약(버전 상수+호환창+순수 판정) — 앱과 공유하는 단일진실, 상수 사본 금지.
 soksak-spec-socket = { path = "../soksak-spec-socket" }
+# identity 두 축(framework/env) 판정 — 홈을 가르는 축이 무엇인지는 코어가 단일진실이다.
+soksak-core = { path = "../soksak-core" }
 serde_json = "1"
