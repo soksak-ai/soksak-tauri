@@ -280,7 +280,7 @@ mod unix {
 
         // detach(명시·stream 사망 공통): 부착 해제 + 플로우 해제. 링은 계속 쌓인다.
         fn detach(&self) {
-            let mut st = self.st.lock().unwrap();
+            let mut st = self.st.lock().unwrap_or_else(|e| e.into_inner());
             st.attached = None;
             st.unacked = 0;
             st.paused = false;
@@ -305,20 +305,20 @@ mod unix {
         fn by_pane(&self, window: Option<&str>, pane: &str) -> Option<Arc<Session>> {
             self.sessions
                 .lock()
-                .unwrap()
+                .unwrap_or_else(|e| e.into_inner())
                 .values()
                 .find(|s| {
                     s.pane_id == pane
                         && s.window_label.as_deref() == window
-                        && !s.st.lock().unwrap().closed
+                        && !s.st.lock().unwrap_or_else(|e| e.into_inner()).closed
                 })
                 .cloned()
         }
         fn get(&self, id: u64) -> Option<Arc<Session>> {
-            self.sessions.lock().unwrap().get(&id).cloned()
+            self.sessions.lock().unwrap_or_else(|e| e.into_inner()).get(&id).cloned()
         }
         fn remove(&self, id: u64) {
-            self.sessions.lock().unwrap().remove(&id);
+            self.sessions.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
         }
     }
 
@@ -493,7 +493,7 @@ mod unix {
                 }),
                 cv: Condvar::new(),
             });
-            reg.sessions.lock().unwrap().insert(hs.id, session.clone());
+            reg.sessions.lock().unwrap_or_else(|e| e.into_inner()).insert(hs.id, session.clone());
             spawn_reader(&reg, session, reader);
         }
         // adopt-ack — 이전 데몬이 이걸 받고 exit 한다(fd 3 = 이전 데몬이 넘긴 IPC 소켓).
@@ -634,7 +634,7 @@ mod unix {
                     if let Some(cfg) =
                         make_ckpt_cfg(&reg.home, &window_label, &pane_id, &checkpoint_pk, &checkpoint_key_id)
                     {
-                        let mut st = s.st.lock().unwrap();
+                        let mut st = s.st.lock().unwrap_or_else(|e| e.into_inner());
                         if st.ckpt.is_none() {
                             st.ckpt = Some(cfg);
                         }
@@ -659,21 +659,21 @@ mod unix {
                 let bytes = base64::engine::general_purpose::STANDARD
                     .decode(data_b64.as_bytes())
                     .map_err(|e| format!("base64: {e}"))?;
-                let mut w = s.writer.lock().unwrap();
+                let mut w = s.writer.lock().unwrap_or_else(|e| e.into_inner());
                 w.write_all(&bytes).and_then(|_| w.flush()).map_err(|e| e.to_string())?;
                 Ok(json!({}))
             }),
             R::Resize { session, cols, rows } => with_session(reg, session, |s| {
                 s.master
                     .lock()
-                    .unwrap()
+                    .unwrap_or_else(|e| e.into_inner())
                     .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
                     .map_err(|e| e.to_string())?;
                 // 격자 크기는 사이드카 미러가 tee 소비 중 자체 추적한다(데몬은 바이트만).
                 Ok(json!({}))
             }),
             R::Ack { session, bytes } => with_session(reg, session, |s| {
-                let mut st = s.st.lock().unwrap();
+                let mut st = s.st.lock().unwrap_or_else(|e| e.into_inner());
                 st.unacked = st.unacked.saturating_sub(bytes as usize);
                 if st.paused && st.unacked <= proto::LOW_WATERMARK {
                     st.paused = false;
@@ -682,9 +682,9 @@ mod unix {
                 Ok(json!({}))
             }),
             R::Kill { session } => with_session(reg, session, |s| {
-                let _ = s.child.lock().unwrap().kill();
+                let _ = s.child.lock().unwrap_or_else(|e| e.into_inner()).kill();
                 // reader 가 EOF 로 정리를 마감한다. 플로우 정지도 깨워 준다.
-                let mut st = s.st.lock().unwrap();
+                let mut st = s.st.lock().unwrap_or_else(|e| e.into_inner());
                 st.paused = false;
                 s.cv.notify_all();
                 drop(st);
@@ -698,15 +698,15 @@ mod unix {
                 let victims: Vec<Arc<Session>> = reg
                     .sessions
                     .lock()
-                    .unwrap()
+                    .unwrap_or_else(|e| e.into_inner())
                     .values()
                     .filter(|s| s.window_label.as_deref() == Some(window_label.as_str()))
                     .cloned()
                     .collect();
                 let n = victims.len();
                 for s in victims {
-                    let _ = s.child.lock().unwrap().kill();
-                    let mut st = s.st.lock().unwrap();
+                    let _ = s.child.lock().unwrap_or_else(|e| e.into_inner()).kill();
+                    let mut st = s.st.lock().unwrap_or_else(|e| e.into_inner());
                     st.paused = false;
                     s.cv.notify_all();
                 }
@@ -714,7 +714,7 @@ mod unix {
             }
             R::ListSessions => {
                 let infos: Vec<proto::SessionInfo> =
-                    reg.sessions.lock().unwrap().values().map(|s| s.info()).collect();
+                    reg.sessions.lock().unwrap_or_else(|e| e.into_inner()).values().map(|s| s.info()).collect();
                 proto::ok_reply(json!({ "sessions": infos }))
             }
             // 봉인-블롭 저장(내용 불가지) — 라이브 세션의 봉인 키로 임의 바이트를 봉인해
@@ -727,7 +727,7 @@ mod unix {
                 match reg.by_pane(window_label.as_deref(), &pane_id) {
                     None => proto::err_reply("NOT_FOUND", &format!("no live session for pane {pane_id}")),
                     Some(s) => {
-                        let cfg = s.st.lock().unwrap().ckpt.clone();
+                        let cfg = s.st.lock().unwrap_or_else(|e| e.into_inner()).ckpt.clone();
                         match cfg {
                             None => proto::err_reply(
                                 "NO_CHECKPOINT_KEY",
@@ -760,20 +760,20 @@ mod unix {
                 let found = reg
                     .sessions
                     .lock()
-                    .unwrap()
+                    .unwrap_or_else(|e| e.into_inner())
                     .values()
-                    .find(|s| s.pane_id == pane_id && !s.st.lock().unwrap().closed)
+                    .find(|s| s.pane_id == pane_id && !s.st.lock().unwrap_or_else(|e| e.into_inner()).closed)
                     .cloned();
                 match found {
                     None => proto::err_reply("NOT_FOUND", &format!("no session for pane {pane_id}")),
                     Some(s) => {
-                        let pid = s.master.lock().unwrap().process_group_leader();
+                        let pid = s.master.lock().unwrap_or_else(|e| e.into_inner()).process_group_leader();
                         proto::ok_reply(json!({ "pid": pid }))
                     }
                 }
             }
             R::Ping => {
-                let n = reg.sessions.lock().unwrap().len();
+                let n = reg.sessions.lock().unwrap_or_else(|e| e.into_inner()).len();
                 // 능력 선언 — 앱이 판올림 전에 이 값으로 안전 인계 가능 여부를 판정한다.
                 proto::ok_reply(json!({
                     "pid": std::process::id(),
@@ -783,9 +783,9 @@ mod unix {
             }
             R::Shutdown => {
                 let victims: Vec<Arc<Session>> =
-                    reg.sessions.lock().unwrap().values().cloned().collect();
+                    reg.sessions.lock().unwrap_or_else(|e| e.into_inner()).values().cloned().collect();
                 for s in &victims {
-                    let _ = s.child.lock().unwrap().kill();
+                    let _ = s.child.lock().unwrap_or_else(|e| e.into_inner()).kill();
                 }
                 // 응답을 쓸 시간을 주기 위해 별도 스레드에서 잠깐 뒤 종료한다.
                 std::thread::spawn(|| {
@@ -827,6 +827,58 @@ mod unix {
             .enumerate()
             .map(|(i, s)| (base + i as RawFd, *s))
             .collect()
+    }
+
+    /// 오염된 잠금은 **데이터를 잃었다는 뜻이 아니다.** 그 잠금을 들고 있던 스레드가 패닉했다는
+    /// 뜻이고, 안에 든 값은 그대로다. 데몬이 거기서 죽으면 그 한 스레드의 사고가 **모든 세션의
+    /// 셸을 죽인다** — 앱을 다시 띄워도 되살아나지 않는다. 이 데몬이 있는 이유가 그 생존이므로,
+    /// 오염은 죽을 이유가 아니라 이어받을 사실이다.
+    ///
+    /// `Condvar::wait` 도 같은 오염을 낸다. 두 자리를 다르게 다루면 한쪽만 살아남는다.
+    #[cfg(test)]
+    mod poison_tests {
+        use std::sync::{Arc, Condvar, Mutex};
+
+        #[test]
+        fn a_poisoned_lock_still_holds_its_value() {
+            let m = Arc::new(Mutex::new(41u32));
+            let m2 = Arc::clone(&m);
+            // 잠금을 든 채 패닉 — 이것이 오염이다.
+            let _ = std::thread::spawn(move || {
+                let _g = m2.lock().unwrap();
+                panic!("잠금을 든 채 죽는다");
+            })
+            .join();
+            assert!(m.lock().is_err(), "오염되지 않았다면 이 검사가 잴 것이 없다");
+
+            let mut g = m.lock().unwrap_or_else(|e| e.into_inner());
+            assert_eq!(*g, 41, "값이 남아 있어야 이어받는 것이 옳다");
+            *g += 1;
+            assert_eq!(*m.lock().unwrap_or_else(|e| e.into_inner()), 42);
+        }
+
+        #[test]
+        fn a_poisoned_condvar_wait_hands_the_guard_back() {
+            let pair = Arc::new((Mutex::new(false), Condvar::new()));
+            let p2 = Arc::clone(&pair);
+            let _ = std::thread::spawn(move || {
+                let _g = p2.0.lock().unwrap();
+                panic!("잠금을 든 채 죽는다");
+            })
+            .join();
+
+            let g = pair.0.lock().unwrap_or_else(|e| e.into_inner());
+            // 조건이 이미 만족이면 wait 로 안 들어간다 — 오염 뒤에도 guard 를 쓸 수 있다는 것이 요점이다.
+            assert!(!*g);
+            drop(g);
+            let (lock, cv) = &*pair;
+            {
+                let mut b = lock.lock().unwrap_or_else(|e| e.into_inner());
+                *b = true;
+                cv.notify_all();
+                assert!(*b);
+            }
+        }
     }
 
     #[cfg(test)]
@@ -880,16 +932,16 @@ mod unix {
         let mut snap: Vec<proto::HandoffSession> = Vec::new();
         let mut sources: Vec<RawFd> = Vec::new();
         {
-            let sessions = reg.sessions.lock().unwrap();
+            let sessions = reg.sessions.lock().unwrap_or_else(|e| e.into_inner());
             for s in sessions.values() {
-                if s.st.lock().unwrap().closed {
+                if s.st.lock().unwrap_or_else(|e| e.into_inner()).closed {
                     continue;
                 }
-                let raw = match s.master.lock().unwrap().as_raw_fd() {
+                let raw = match s.master.lock().unwrap_or_else(|e| e.into_inner()).as_raw_fd() {
                     Some(fd) => fd,
                     None => continue,
                 };
-                let ring_seq = s.st.lock().unwrap().ring.seq();
+                let ring_seq = s.st.lock().unwrap_or_else(|e| e.into_inner()).ring.seq();
                 snap.push(proto::HandoffSession {
                     id: s.id,
                     pane_id: s.pane_id.clone(),
@@ -1103,7 +1155,7 @@ mod unix {
             }),
             cv: Condvar::new(),
         });
-        reg.sessions.lock().unwrap().insert(id, session.clone());
+        reg.sessions.lock().unwrap_or_else(|e| e.into_inner()).insert(id, session.clone());
 
         spawn_reader(reg, session.clone(), reader);
         Ok(session)
@@ -1119,20 +1171,20 @@ mod unix {
             loop {
                 // 부착 중 플로우 정지면 ack/detach 로 깨어날 때까지 대기.
                 {
-                    let mut st = session.st.lock().unwrap();
+                    let mut st = session.st.lock().unwrap_or_else(|e| e.into_inner());
                     while st.paused && st.attached.is_some() {
-                        st = session.cv.wait(st).unwrap();
+                        st = session.cv.wait(st).unwrap_or_else(|e| e.into_inner());
                     }
                 }
                 match reader.read(&mut buf) {
                     Ok(0) | Err(_) => break, // EOF = 셸 종료(또는 kill)
                     Ok(n) => {
-                        let mut st = session.st.lock().unwrap();
+                        let mut st = session.st.lock().unwrap_or_else(|e| e.into_inner());
                         let seq0 = st.ring.seq();
                         st.ring.push(&buf[..n]);
                         if !st.subscribers.is_empty() {
                             for sub in &st.subscribers {
-                                sub.buf.lock().unwrap().push_data(seq0, &buf[..n]);
+                                sub.buf.lock().unwrap_or_else(|e| e.into_inner()).push_data(seq0, &buf[..n]);
                                 sub.cv.notify_one();
                             }
                         }
@@ -1153,7 +1205,7 @@ mod unix {
             }
             // 세션 마감: 부착 스트림을 닫아 EOF 전달, 봉인-블롭 정리, 등록 제거.
             {
-                let mut st = session.st.lock().unwrap();
+                let mut st = session.st.lock().unwrap_or_else(|e| e.into_inner());
                 st.closed = true;
                 if let Some(s) = st.attached.take() {
                     let _ = s.shutdown(std::net::Shutdown::Both);
@@ -1163,7 +1215,7 @@ mod unix {
                 }
                 session.cv.notify_all();
             }
-            session.child.lock().unwrap().wait();
+            session.child.lock().unwrap_or_else(|e| e.into_inner()).wait();
             reg.remove(session.id);
         });
     }
@@ -1193,7 +1245,7 @@ mod unix {
         // hello 확인 응답 1줄 → 이후 raw 바이트로 전환(재생 → 라이브).
         let my_seq;
         {
-            let mut st = session.st.lock().unwrap();
+            let mut st = session.st.lock().unwrap_or_else(|e| e.into_inner());
             if st.closed {
                 let _ = writeln!(writer, "{}", proto::err_reply("NOT_FOUND", "session closed"));
                 return;
@@ -1259,7 +1311,7 @@ mod unix {
                 Ok(_) => continue, // 규약 밖 바이트는 무시
             }
         }
-        let mut st = session.st.lock().unwrap();
+        let mut st = session.st.lock().unwrap_or_else(|e| e.into_inner());
         if st.attach_seq == my_seq {
             st.attached = None;
             st.unacked = 0;
@@ -1287,7 +1339,7 @@ mod unix {
         // 프레임과 겹치지 않는다. 소비자가 이를 미러에 선주입해 구독 전 화면을 메운다(데몬
         // 미러 직렬화 불필요 — 링이 씨앗 원천). 링은 유계라 부분 씨앗(evict 된 prefix 는 없음).
         let (start_seq, seed) = {
-            let mut st = session.st.lock().unwrap();
+            let mut st = session.st.lock().unwrap_or_else(|e| e.into_inner());
             let s = st.ring.seq();
             let seed = st.ring.snapshot();
             st.subscribers.push(sub.clone());
@@ -1300,7 +1352,7 @@ mod unix {
             "seedB64": base64::engine::general_purpose::STANDARD.encode(&seed),
         }));
         if writeln!(writer, "{ack}").is_err() {
-            session.st.lock().unwrap().subscribers.retain(|s| s.id != sub.id);
+            session.st.lock().unwrap_or_else(|e| e.into_inner()).subscribers.retain(|s| s.id != sub.id);
             return;
         }
 
@@ -1316,7 +1368,7 @@ mod unix {
                         Ok(_) => continue,
                     }
                 }
-                let mut b = sub.buf.lock().unwrap();
+                let mut b = sub.buf.lock().unwrap_or_else(|e| e.into_inner());
                 b.closed = true;
                 sub.cv.notify_all();
             });
@@ -1325,9 +1377,9 @@ mod unix {
         // writer 루프: 프레임 드레인 → 프레이밍 소켓 쓰기. 쓰기 실패로 종료.
         loop {
             let (frames, closed) = {
-                let mut b = sub.buf.lock().unwrap();
+                let mut b = sub.buf.lock().unwrap_or_else(|e| e.into_inner());
                 while !b.closed && b.is_empty() {
-                    b = sub.cv.wait(b).unwrap();
+                    b = sub.cv.wait(b).unwrap_or_else(|e| e.into_inner());
                 }
                 (b.drain(), b.closed)
             };
@@ -1351,7 +1403,7 @@ mod unix {
         }
 
         // 등록 해제 — reader 가 사라진 구독자에 더는 사본을 밀지 않는다.
-        session.st.lock().unwrap().subscribers.retain(|s| s.id != sub.id);
+        session.st.lock().unwrap_or_else(|e| e.into_inner()).subscribers.retain(|s| s.id != sub.id);
     }
 }
 
