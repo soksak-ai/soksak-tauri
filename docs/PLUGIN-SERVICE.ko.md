@@ -17,7 +17,7 @@ data}`(MESSAGE-PROTOCOL)다. 전송은 소켓 프로토콜이 아니라 집중�
 절대 소켓 역호출이 아니다.
 
 와이어 상수·serde 타입과 참조 serve 하니스의 단일 원천은 `soksak-spec-service`
-크레이트(`src-tauri/crates/soksak-spec-service`)다 — 소비자는 크레이트에 의존하며 상수를
+크레이트(`crates/soksak-spec-service`)다 — 소비자는 크레이트에 의존하며 상수를
 절대 복사하지 않는다(`soksak-spec-pty` 규율). 매니페스트 스키마의 단일 심판은
 `@soksak-ai/plugin-spec`의 `parseManifest`다.
 

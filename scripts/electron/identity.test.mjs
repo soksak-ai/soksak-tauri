@@ -3,7 +3,7 @@
 // 규칙이 두 벌이면 같은 identifier 가 프로세스마다 다른 홈을 답한다. 그 어긋남은 오류가
 // 아니다: cored 는 없는 파일을 "없음"으로 답하고, 앱은 자기 데이터가 안 보인다고만 느낀다.
 //
-// 정본은 src-tauri/crates/soksak-core/fixtures/identity.json 이고, Rust 쪽은
+// 정본은 crates/soksak-core/fixtures/identity.json 이고, Rust 쪽은
 // identity.rs 의 the_fixture_binds_both_implementations 가 같은 파일을 읽는다.
 // 한쪽만 고치면 그쪽이 깨진다 — 사람 주의력이 아니라 파일이 둘을 묶는다.
 
@@ -18,7 +18,7 @@ const { frameworkIdentity, identityAxes, homeSuffix, productName } = require("..
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const FIXTURE = JSON.parse(
-  readFileSync(join(ROOT, "src-tauri", "crates", "soksak-core", "fixtures", "identity.json"), "utf8"),
+  readFileSync(join(ROOT, "crates", "soksak-core", "fixtures", "identity.json"), "utf8"),
 );
 
 describe("정체성 파생 — 픽스처가 오라클", () => {

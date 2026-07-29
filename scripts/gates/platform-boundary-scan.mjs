@@ -213,7 +213,7 @@ export function manifestViolations(root, manifest) {
 
   const excluded = Array.isArray(manifest.excludedBoundaries) ? manifest.excludedBoundaries : [];
   const privatePty = excluded.some(
-    (item) => item.kind === "private-core" && item.name === "soksak-spec-pty" && item.source === "src-tauri/crates/soksak-spec-pty",
+    (item) => item.kind === "private-core" && item.name === "soksak-spec-pty" && item.source === "crates/soksak-spec-pty",
   );
   if (!privatePty) errors.push("extraction manifest: soksak-spec-pty must be explicitly retained by private core");
   const domains = new Set(excluded.filter((item) => item.kind === "domain-contract").map((item) => item.name));
@@ -297,14 +297,14 @@ export function scanPlatformBoundaries(root = REPO_ROOT) {
     "soksak-spec-service",
     "soksak-spec-socket",
   ]) {
-    const cargo = readFileSync(resolve(root, `src-tauri/crates/${crate}/Cargo.toml`), "utf8");
+    const cargo = readFileSync(resolve(root, `crates/${crate}/Cargo.toml`), "utf8");
     if (!/^publish\s*=\s*false\s*$/m.test(cargo)) errors.push(`${crate}: publish = false is required`);
     if (!/^repository\s*=\s*"https:\/\/github\.com\/soksak-ai\/soksak-spec"\s*$/m.test(cargo)) {
       errors.push(`${crate}: repository must point to public soksak-spec`);
     }
     if (/soksak-spec-pty/.test(cargo)) errors.push(`${crate}: public Rust boundary may not depend on private PTY`);
   }
-  const ptyCargo = readFileSync(resolve(root, "src-tauri/crates/soksak-spec-pty/Cargo.toml"), "utf8");
+  const ptyCargo = readFileSync(resolve(root, "crates/soksak-spec-pty/Cargo.toml"), "utf8");
   if (!/^publish\s*=\s*false\s*$/m.test(ptyCargo)) errors.push("soksak-spec-pty: private core crate must be non-publishable");
   return errors;
 }

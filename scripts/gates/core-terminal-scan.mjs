@@ -60,7 +60,7 @@ export const SEALED = new Map([]);
 // 명시 allowlist — 해석기가 아니라 OS 프리미티브인 PTY 사용. 스캔에서 계수하지 않는다.
 export const ALLOWLIST = [
   {
-    file: "src-tauri/crates/soksak-ptyd/src/main.rs",
+    file: "crates/soksak-ptyd/src/main.rs",
     pattern: /openpty|portable_pty|native_pty_system/,
     reason:
       "PTY = OS 프리미티브(결정 1, 사용자 확정): 데몬이 pty 를 열어 바이트를 나른다." +
@@ -75,7 +75,8 @@ export const ALLOWLIST = [
   },
 ];
 
-const SCAN_ROOTS = ["src", "src-tauri"];
+// crates 는 프레임워크 밖으로 나온 Rust 다 — 뿌리에서 빠지면 그 코드가 스캔 밖이 된다.
+const SCAN_ROOTS = ["src", "src-tauri", "crates"];
 const SKIP_DIRS = new Set(["target", "gen", "node_modules", ".git", "dist"]);
 const SCAN_EXTS = new Set([".ts", ".tsx", ".rs", ".mjs"]);
 const TEST_FILE = /\.test\.(ts|tsx|mjs)$/;

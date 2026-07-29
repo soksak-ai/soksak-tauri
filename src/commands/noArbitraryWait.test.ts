@@ -81,7 +81,7 @@ const ALLOWED: { file: string; mark: string; event: string; why: string }[] = [
   { file: "src-tauri/src/daemon.rs", mark: "from_millis(200)", event: "child-exit-poll", why: "child try_wait 유한 폴링(limit 상한·초과 시 kill) — waitpid 블로킹은 ring 수집과 양립 불가" },
   { file: "src-tauri/src/daemon.rs", mark: "from_millis(300)", event: "child-exit-poll", why: "상주 데몬 종료 감시 — 동일 사유" },
   { file: "src-tauri/src/schedule.rs", mark: "Duration::from_secs(3_600)", event: "scheduler-idle-cap", why: "다음 예약 없음 상태의 유휴 상한(스케줄 등록이 즉시 깨운다)" },
-  { file: "src-tauri/crates/soksak-watch/src/lib.rs", mark: "from_millis(250)", event: "fs-debounce", why: "파일와처 디바운스 — 이벤트 병합 창" },
+  { file: "crates/soksak-watch/src/lib.rs", mark: "from_millis(250)", event: "fs-debounce", why: "파일와처 디바운스 — 이벤트 병합 창" },
   // ── ③ 유한 안전망 ──
   { file: "src-tauri/src/activity.rs", mark: "wait_timeout(q, Duration::from_secs(1))", event: "condvar-safety-net", why: "cv 사건이 주 경로 — 1s 는 closed 플래그 재확인 안전망" },
   { file: "src-tauri/src/service.rs", mark: "wait_timeout(inner, Duration::from_millis(20))", event: "condvar-safety-net", why: "크래시 전이가 cv 를 울린다 — 20ms 는 유실 안전망" },
@@ -89,9 +89,9 @@ const ALLOWED: { file: string; mark: string; event: string; why: string }[] = [
   { file: "src-tauri/src/sidecar.rs", mark: "recv_timeout(std::time::Duration::from_secs(2))", event: "sidecar-reply-cap", why: "동일(2s)" },
   { file: "src-tauri/src/webview.rs", mark: "recv_timeout(Duration::from_secs(3))", event: "main-thread-dispatch-cap", why: "메인스레드 디스패치 응답 상한(3s)" },
   { file: "src-tauri/src/webview.rs", mark: "recv_timeout(Duration::from_secs(15))", event: "main-thread-dispatch-cap", why: "동일(15s — 콜드 부트 포함)" },
-  { file: "src-tauri/crates/soksak-core/src/ptyd.rs", mark: "from_millis(150)", event: "pty.stream.reattached", why: "데몬 인계 전이(구 데몬 exit → 신 데몬 소켓 bind) 대기 — 세션 확인·재부착 성공이 종결, 상한 20회" },
-  { file: "src-tauri/crates/soksak-core/src/ptyd.rs", mark: "from_secs(2)", event: "ptyd-bootstrap-handshake", why: "스폰 직후 소켓 준비 유한 재시도(2s 상한) — 감시는 소켓 에러 사건이 담당" },
-  { file: "src-tauri/crates/soksak-core/src/ptyd.rs", mark: "from_millis(50)", event: "ptyd-bootstrap-handshake", why: "동일 루프의 재시도 간격" },
+  { file: "crates/soksak-core/src/ptyd.rs", mark: "from_millis(150)", event: "pty.stream.reattached", why: "데몬 인계 전이(구 데몬 exit → 신 데몬 소켓 bind) 대기 — 세션 확인·재부착 성공이 종결, 상한 20회" },
+  { file: "crates/soksak-core/src/ptyd.rs", mark: "from_secs(2)", event: "ptyd-bootstrap-handshake", why: "스폰 직후 소켓 준비 유한 재시도(2s 상한) — 감시는 소켓 에러 사건이 담당" },
+  { file: "crates/soksak-core/src/ptyd.rs", mark: "from_millis(50)", event: "ptyd-bootstrap-handshake", why: "동일 루프의 재시도 간격" },
   { file: "src-tauri/src/webview.rs", mark: "tokio::time::sleep(Duration::from_millis(400))", event: "extraction-page-settle", why: "추출용 임시 webview 의 페이지 정착 유한 재시도(timeout 상한)" },
 ];
 
@@ -152,8 +152,8 @@ function rsSites(): string[] {
   // 등록돼 있던 세 자리가 통째로 스캔 밖으로 나갔다).
   const roots = [
     "src-tauri/src",
-    "src-tauri/crates/soksak-core/src",
-    "src-tauri/crates/soksak-watch/src",
+    "crates/soksak-core/src",
+    "crates/soksak-watch/src",
   ];
   for (const file of roots
     .flatMap((r) => walk(join(ROOT, r)))

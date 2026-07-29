@@ -112,6 +112,9 @@ describe("게이트 실행 — 신규 유입·봉인 대조", () => {
   });
 
   it("빈 트리는 봉인 전부가 stale 다 — 봉인은 실측과 일치해야만 산다", () => {
+    // **뿌리는 있고 안이 빈** 트리다. 뿌리가 아예 없는 것과 다르다 — 그쪽은 배치가 바뀐
+    // 것이고 스캔이 0건을 답하면 안 된다(scanRoot 의 오라클 생존 가드).
+    mkdirSync(join(root, "src-tauri", "src"), { recursive: true });
     const { stale } = scanRoot(root, new Map([["src-tauri/src/git.rs", 6]]));
     expect(stale).toEqual([{ file: "src-tauri/src/git.rs", count: 0, sealed: 6 }]);
   });

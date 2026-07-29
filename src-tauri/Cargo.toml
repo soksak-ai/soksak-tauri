@@ -1,6 +1,3 @@
-[workspace]
-members = ["cli", "crates/soksak-spec-contract", "crates/soksak-spec-socket", "crates/soksak-spec-pty", "crates/soksak-ptyd", "crates/soksak-seal", "crates/soksak-spec-service", "crates/soksak-core", "crates/soksak-cored", "crates/soksak-watch", "crates/soksak-store"]
-
 [package]
 # 기본(개발) 정체성. HMR(번들 안 됨)은 이 바이너리명이 독에 그대로 뜬다 → soksak-dev.
 # 릴리스/디버그 번들은 빌드 시 --config 로 productName 을 soksak / soksak-debug 로 푼다.
@@ -24,24 +21,24 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 # 파서가 조용히 빗나가고, 빗나간 게이트는 통과로 위장한다. 테스트 전용 — 앱 바이너리는
 # cored 를 링크하지 않는다.
 [dev-dependencies]
-soksak-cored = { path = "crates/soksak-cored" }
+soksak-cored = { path = "../crates/soksak-cored" }
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
 # 소켓 프로토콜 계약(버전 상수+호환창+순수 판정) — 앱과 sok 이 공히 의존, 상수 사본 금지.
-soksak-spec-socket = { path = "crates/soksak-spec-socket" }
+soksak-spec-socket = { path = "../crates/soksak-spec-socket" }
 # 공개 계약 provider/consumer refs + SemVer range 판정 — sidecar/service가 공유하는 단일진실.
-soksak-spec-contract = { path = "crates/soksak-spec-contract" }
+soksak-spec-contract = { path = "../crates/soksak-spec-contract" }
 # PTY 데몬 계약(버전·경로·hello·메시지) — pty.rs 라우터가 soksak-ptyd 와 공유, 상수 사본 금지.
-soksak-spec-pty = { path = "crates/soksak-spec-pty" }
+soksak-spec-pty = { path = "../crates/soksak-spec-pty" }
 # X25519 sealed box 단일 진실 — 앱 볼트와 soksak-ptyd 체크포인트 공용.
-soksak-seal = { path = "crates/soksak-seal" }
-soksak-core = { path = "crates/soksak-core" }
-soksak-store = { path = "crates/soksak-store" }
-soksak-watch = { path = "crates/soksak-watch" }
-soksak-spec-service = { path = "crates/soksak-spec-service" }
+soksak-seal = { path = "../crates/soksak-seal" }
+soksak-core = { path = "../crates/soksak-core" }
+soksak-store = { path = "../crates/soksak-store" }
+soksak-watch = { path = "../crates/soksak-watch" }
+soksak-spec-service = { path = "../crates/soksak-spec-service" }
 uuid = { version = "1", features = ["v4"] }
 # 프로세스 그룹 kill(process.rs group 스폰) — 직계 kill 은 손자(에이전트의 Bash 자식 등)를
 # 남겨 stdout EOF·exit 가 지연된다. Unix 전용 사용(killpg).
@@ -151,19 +148,3 @@ block2 = "0.6"
 keyring = { version = "3", features = ["apple-native"] }
 # wry with_webview ObjC retain 누수 수정 — 상류 머지됨(tauri-apps/tauri PR #15224, 2026-07-09 dev).
 # 릴리스 판이 나올 때까지 머지 커밋 rev 를 고정해 상류로 빌드한다(떠다니는 dev 금지 — 재현성).
-# tauri 는 모노레포(형제 크레이트 path 의존)라 한 크레이트만 patch 하면 버전이 갈려 충돌한다 →
-# 우리가 쓰는 tauri 계열 전체를 같은 rev 로 물린다. 수정이 포함된 crates.io 릴리스가 나오면 이 블록 삭제.
-[patch.crates-io]
-tauri = { git = "https://github.com/tauri-apps/tauri", rev = "a370f653330506c2a5f59b643645a15b4cc30c18" }
-tauri-build = { git = "https://github.com/tauri-apps/tauri", rev = "a370f653330506c2a5f59b643645a15b4cc30c18" }
-tauri-codegen = { git = "https://github.com/tauri-apps/tauri", rev = "a370f653330506c2a5f59b643645a15b4cc30c18" }
-tauri-macros = { git = "https://github.com/tauri-apps/tauri", rev = "a370f653330506c2a5f59b643645a15b4cc30c18" }
-tauri-runtime = { git = "https://github.com/tauri-apps/tauri", rev = "a370f653330506c2a5f59b643645a15b4cc30c18" }
-tauri-runtime-wry = { git = "https://github.com/tauri-apps/tauri", rev = "a370f653330506c2a5f59b643645a15b4cc30c18" }
-tauri-utils = { git = "https://github.com/tauri-apps/tauri", rev = "a370f653330506c2a5f59b643645a15b4cc30c18" }
-
-# 분포(release) 빌드 최적화 — 런타임 perf 수준은 유지(opt-level 은 release 기본 3)하면서 용량만 줄인다.
-[profile.release]
-strip = true       # 출하 바이너리에서 심볼 제거(가장 큰 단일 절감)
-lto = "thin"       # 크레이트 간 dead-code 제거(thin = fat 에 근접하면서 빌드 더 빠름)
-codegen-units = 1  # 단일 codegen unit → 최적화/중복제거 향상

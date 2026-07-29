@@ -17,7 +17,7 @@ const requireCjs = createRequire(import.meta.url);
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const { rectOf, shouldFocus, isWorkspace } = requireCjs(join(ROOT, "electron/native/window.cjs"));
 const doc = JSON.parse(
-  readFileSync(join(ROOT, "src-tauri/crates/soksak-core/fixtures/window-rect.json"), "utf8"),
+  readFileSync(join(ROOT, "crates/soksak-core/fixtures/window-rect.json"), "utf8"),
 );
 
 describe("창 생성 규칙 — 코어와 같은 답", () => {

@@ -24,7 +24,7 @@ function configs() {
     'const key = process.env.TAURI_UPDATER_PUBLIC_KEY; // soksak-ai/soksak-app/releases\n',
   );
   write("src-tauri/src/home.rs", "fn fixed_identity_home() {}\n");
-  write("src-tauri/cli/src/lib.rs", "fn fixed_identity_home() {}\n");
+  write("crates/soksak-cli/src/lib.rs", "fn fixed_identity_home() {}\n");
   write(
     "src-tauri/src/runtime_dep.rs",
     "entry_type.is_file(); reject_symlink_components(); OpenOptions::new().create_new(true);\n",

@@ -39,7 +39,7 @@ core/
 
 **① 프레임워크에서 독립한 것이 그 프레임워크 안에 산다.**
 
-`src-tauri/crates/` 의 크레이트 10개와 `src-tauri/cli/` 는 **하나도 tauri 에 의존하지 않는다**(실측:
+`crates/` 의 크레이트 10개와 `crates/soksak-cli/` 는 **하나도 tauri 에 의존하지 않는다**(실측:
 Cargo.toml 전수 확인). 그중 `soksak-cored` 는 `tests/no_framework.rs` 로 `tauri`·`wry`·`tao`·`objc2`·
 `libloading`·`windows-sys`·`tokio`·`interprocess`·`portable-pty` 를 **이름으로 금지**한다. 프레임워크를
 이름으로 막는 코드가 프레임워크 이름의 폴더 안에 있다.
@@ -76,7 +76,7 @@ core/
 │   ├── soksak-ptyd/        PTY 데몬
 │   ├── soksak-seal/        봉인
 │   ├── soksak-spec-*/      계약
-│   └── soksak-cli/         sok CLI(지금의 src-tauri/cli)
+│   └── soksak-cli/         sok CLI(지금의 crates/soksak-cli)
 ├── platform/           OS 축
 ├── packages/ worker/ scripts/ docs/ plans/ …
 ```
@@ -116,7 +116,7 @@ soksak-core/src/
 ## 이주 비용
 
 `src-tauri` 경로를 밖에서 참조하는 파일이 **63개**다(게이트·문서·플랜·매니페스트·CI). 그중
-`src-tauri/crates` 를 직접 가리키는 것이 10개다. 옮기면 이 전부가 함께 바뀐다.
+`crates` 를 직접 가리키는 것이 10개다. 옮기면 이 전부가 함께 바뀐다.
 
 Rust 쪽은 `Cargo.toml` 의 `members`·`path` 의존과 `include_str!("../fixtures/…")` 상대경로가
 따라 움직인다. 프론트는 `src-tauri` 를 빌드 산출물 경로로만 알고 있어 영향이 작다.

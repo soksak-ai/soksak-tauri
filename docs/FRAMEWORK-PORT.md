@@ -122,13 +122,13 @@ The audit named the ambient home the single largest lever: 28 handlers touch it 
 
 ## The core crate
 
-`src-tauri/crates/soksak-core` holds command logic with no framework in it. Anything there gives the same answer in the app process or in cored, which requires three things: it touches no window, app handle, or managed state; it reads no process environment, working directory, or executable path; and it does not treat its own compile target or build profile as evidence.
+`crates/soksak-core` holds command logic with no framework in it. Anything there gives the same answer in the app process or in cored, which requires three things: it touches no window, app handle, or managed state; it reads no process environment, working directory, or executable path; and it does not treat its own compile target or build profile as evidence.
 
 The third is the quiet one. A function whose answer changes with `cfg!(target_os)` is describing the binary it was compiled into, not answering what the caller asked. Platform branching belongs in an argument.
 
 **The name states what it is, not what it is not.** The crate is called core because both processes call this logic their own and neither answers a single command without it. A name built on the negative ("not tied to a framework") describes the boundary instead of the thing, and a boundary name goes stale the moment the boundary moves.
 
-Modules: `activity`, `identity`, `integrity`, `kv`, `pathx`, `plugin_dir`, `session`, `themes`, `udp`, `unit_dev` — the list is declared in `src-tauri/crates/soksak-core/src/lib.rs`. Core keeps `#[tauri::command]` wrappers that delegate and decide nothing — a decision in the wrapper is a decision cored would lose.
+Modules: `activity`, `identity`, `integrity`, `kv`, `pathx`, `plugin_dir`, `session`, `themes`, `udp`, `unit_dev` — the list is declared in `crates/soksak-core/src/lib.rs`. Core keeps `#[tauri::command]` wrappers that delegate and decide nothing — a decision in the wrapper is a decision cored would lose.
 
 **An absent directory is an empty list; an unreadable one is an error.** `plugin_dir::scan` and `themes::scan` used to treat both as failure, on the rule that "nothing installed" and "could not read the directory" must not collapse into one answer. That rule stands — only the line moved: `read_dir_or_empty` in each module splits `ErrorKind::NotFound` off as the empty case and lets permission denied or not-a-directory keep failing with a reason.
 
@@ -179,7 +179,7 @@ Two things were deliberately left. `native_reload` keeps its webview handle: a r
 
 ## The cored process
 
-`src-tauri/crates/soksak-cored` is a process with no window, no webview, and no app handle. It listens on a unix socket and answers commands using `soksak-core` logic. It follows `soksak-ptyd`, the standing precedent for an independent daemon, with two deliberate differences.
+`crates/soksak-cored` is a process with no window, no webview, and no app handle. It listens on a unix socket and answers commands using `soksak-core` logic. It follows `soksak-ptyd`, the standing precedent for an independent daemon, with two deliberate differences.
 
 **The name says what it is: core, running as a daemon.** Not a bridge — the Tauri framework never talks to it. That framework links `soksak-core` directly and calls functions in its own process; a socket between them would be a round trip to itself. cored exists for a framework that *cannot* link Rust. Today that means Electron, whose framework is Node.
 
@@ -222,7 +222,7 @@ The socket test carries the same lesson: it now spawns cored against a fixture h
 
 `activity_publish` is served, and serves only its first stage: cored admits the entry and returns it stamped. Fan-out needs windows and this process has none, so the framework does that half — the split is in the answer, not in a second copy of the rule.
 
-Still unserved, each with what blocks it recorded beside its name in `src-tauri/crates/soksak-cored/src/registry.rs`: `project_owners` (the claim ledger is mutable state in the app process, and a ledger whose lifetime became cored's would keep dead windows' claims across a framework restart), `net_http_request` (the one transport drags in `tokio`, which this process's own gate blocks by name, and secret substitution reads the vault the app opened), `process_reclaim_window` (the handles to reclaim belong to whoever spawned the children; cored would always answer zero, and that zero is indistinguishable from "nothing to reclaim"). And `webview_*`, `engine_*`, `titlebar_*`, `window_*` never move — those are the framework's, and an Electron adapter must implement them itself.
+Still unserved, each with what blocks it recorded beside its name in `crates/soksak-cored/src/registry.rs`: `project_owners` (the claim ledger is mutable state in the app process, and a ledger whose lifetime became cored's would keep dead windows' claims across a framework restart), `net_http_request` (the one transport drags in `tokio`, which this process's own gate blocks by name, and secret substitution reads the vault the app opened), `process_reclaim_window` (the handles to reclaim belong to whoever spawned the children; cored would always answer zero, and that zero is indistinguishable from "nothing to reclaim"). And `webview_*`, `engine_*`, `titlebar_*`, `window_*` never move — those are the framework's, and an Electron adapter must implement them itself.
 
 ## The framework stands up cored
 
@@ -313,7 +313,7 @@ The project claim map is the clearest case: its lifetime *is* the window's lifet
 
 Two implementations of the *map* is correct. Two implementations of the *rule* is not: the same operation answering differently per framework does not surface as an error, it surfaces as "this project won't open on this one".
 
-So a fixture binds them. `src-tauri/crates/soksak-core/fixtures/*.json` holds the cases; the Rust test and the JS test each read the same file. Change one side only and that side fails. A file does the binding, not anyone's attention.
+So a fixture binds them. `crates/soksak-core/fixtures/*.json` holds the cases; the Rust test and the JS test each read the same file. Change one side only and that side fails. A file does the binding, not anyone's attention.
 
 | Fixture | Binds |
 | --- | --- |

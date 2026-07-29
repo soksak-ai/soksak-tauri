@@ -56,7 +56,7 @@ describe("public platform boundary", () => {
     const manifest = {
       schema: "ai.soksak/platform-extraction@0.0.1",
       repositories: [
-        { name: "soksak-spec", units: [{ kind: "cargo", name: "soksak-spec-pty", source: "src-tauri/crates/soksak-spec-pty", destination: "crates/soksak-spec-pty", files: ["Cargo.toml", "src/lib.rs"] }] },
+        { name: "soksak-spec", units: [{ kind: "cargo", name: "soksak-spec-pty", source: "crates/soksak-spec-pty", destination: "crates/soksak-spec-pty", files: ["Cargo.toml", "src/lib.rs"] }] },
         { name: "soksak-plugin-sdk", units: [] },
       ],
       excludedBoundaries: [],

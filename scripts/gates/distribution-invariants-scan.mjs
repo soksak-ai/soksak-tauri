@@ -45,7 +45,7 @@ export function scanRoot(root = REPO_ROOT) {
   const releaseWorkflow = read(root, ".github/workflows/release.yml");
   const releaseTool = read(root, "scripts/release/prepare-tauri-config.mjs");
   const appHome = read(root, "src-tauri/src/home.rs");
-  const cliHome = read(root, "src-tauri/cli/src/lib.rs");
+  const cliHome = read(root, "crates/soksak-cli/src/lib.rs");
   const runtimeDep = read(root, "src-tauri/src/runtime_dep.rs");
   const releaseSurface = `${release}\n${releaseWorkflow}\n${releaseTool}`;
 

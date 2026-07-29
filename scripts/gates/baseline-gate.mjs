@@ -35,7 +35,7 @@ const METRICS = [
   {
     name: "unwrap",
     baselineFile: "baseline-unwrap.txt",
-    roots: ["src-tauri/src", "src-tauri/cli/src", "src-tauri/protocol/src"],
+    roots: ["src-tauri/src", "crates/soksak-cli/src", "src-tauri/protocol/src"],
     exts: [".rs"],
     // 배포 코드만 계수 — 인라인 #[cfg(test)] 모듈은 stripRustTestModule 로 제외한다(C1·
     // core-git-scan·core-terminal-scan 과 동일 제외 정책, 게이트 간 일관). 판정: unwrap 결함
@@ -59,7 +59,7 @@ const METRICS = [
     roots: [
       "src",
       "src-tauri/src",
-      "src-tauri/cli/src",
+      "crates/soksak-cli/src",
       "src-tauri/protocol/src",
       "packages/plugin-api/src",
       "packages/plugin-spec/src",

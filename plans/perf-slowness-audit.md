@@ -11,7 +11,7 @@
 | 사실 | 값 | 재현 명령 |
 |---|---|---|
 | `[profile.dev]` 선언 | **없음** (`[profile.release]` 1건뿐) | `grep -n '^\[profile' src-tauri/Cargo.toml` |
-| 저장소 전체 `opt-level` 선언 | **0건** | `grep -rn opt-level src-tauri/Cargo.toml src-tauri/crates/*/Cargo.toml src-tauri/cli/Cargo.toml` |
+| 저장소 전체 `opt-level` 선언 | **0건** | `grep -rn opt-level src-tauri/Cargo.toml crates/*/Cargo.toml crates/soksak-cli/Cargo.toml` |
 | 실행 중 앱 바이너리 | `target/debug/soksak-dev` | `ps -o pid,command -p 82541` |
 | `target/release` 디렉터리 | **존재하지 않음** | `ls src-tauri/target/` |
 | 실행 중 ptyd == cargo debug 산출물 | sha1 동일 `c7bcda9c…` | `shasum ~/.soksak-dev/bin/soksak-ptyd-p1 src-tauri/target/debug/soksak-ptyd` |
@@ -23,7 +23,7 @@ docs/PERFORMANCE.md 의 모든 수치와 budgets.json 의 모든 예산은 `opt-
 
 ### 0.2 프로파일 배수 — 실측 (저장소 코드 그대로)
 
-`src-tauri/crates/soksak-ptyd/src/ring.rs` 의 `RawRing::push` 를 수정 없이 컴파일해
+`crates/soksak-ptyd/src/ring.rs` 의 `RawRing::push` 를 수정 없이 컴파일해
 운영 조건(RING_CAP 256 KiB, 청크 8192 B, 총 100 MB)으로 각 3회:
 
 | 플래그 | 결과 | 중앙값 |
@@ -295,7 +295,7 @@ RED 조건: 두 리포트의 `meta.conditions.cargoProfile` 이 다른데 `node 
 
 **근본 원인.** 전달 단위가 "pty read 1회" 로 고정돼 있고, 그 단위가 macOS pty master 의 1024 B 상한과 같아 IPC 크로싱 수 = 바이트 수 / 1024 로 못박혀 있다. 비용이 바이트가 아니라 크로싱에 붙는데(ansi 4.49 vs plain 4.58, 2% 차) 아무도 그 단위를 소유하지 않는다.
 
-**바꿀 것.** 소유 파일 `src-tauri/crates/soksak-spec-pty/src/lib.rs` — 지금 여기에 있는 모델 문장이 반증됐다: "The high mark is the throughput ceiling: bulk output moves in pause/drain cycles, so sustained rate ~= window / ack-loop round trip". `git show f104e423`(윈도 100k→1M, 저수위 5k→500k)가 이 모델의 A/B 다 — 창을 10배 넓혀 **+11%**(3.02 → 3.35). 서비스레이트 한계이지 윈도 한계가 아니다. 이 문장을 삭제하고 **전달 계약**으로 대체한다: *"PTY 출력의 전달 단위는 read 단위가 아니다. 프로듀서는 크기 임계(≥64 KiB) 또는 데드라인(≥N ms) 중 먼저 도달한 쪽에서 배치를 방출한다."* 시행 지점 두 곳: `src-tauri/crates/soksak-ptyd/src/main.rs:1036-1058`(데몬), `src-tauri/src/pty.rs:442-456`(인프로세스) + `src-tauri/src/pty.rs:1104-1111`(재전송 레그). 데드라인은 인터랙티브 지연을 지키기 위한 것이지 폴링이 아니다 — 타이머는 데이터가 있을 때만 무장하고 방출과 함께 해제된다.
+**바꿀 것.** 소유 파일 `crates/soksak-spec-pty/src/lib.rs` — 지금 여기에 있는 모델 문장이 반증됐다: "The high mark is the throughput ceiling: bulk output moves in pause/drain cycles, so sustained rate ~= window / ack-loop round trip". `git show f104e423`(윈도 100k→1M, 저수위 5k→500k)가 이 모델의 A/B 다 — 창을 10배 넓혀 **+11%**(3.02 → 3.35). 서비스레이트 한계이지 윈도 한계가 아니다. 이 문장을 삭제하고 **전달 계약**으로 대체한다: *"PTY 출력의 전달 단위는 read 단위가 아니다. 프로듀서는 크기 임계(≥64 KiB) 또는 데드라인(≥N ms) 중 먼저 도달한 쪽에서 배치를 방출한다."* 시행 지점 두 곳: `crates/soksak-ptyd/src/main.rs:1036-1058`(데몬), `src-tauri/src/pty.rs:442-456`(인프로세스) + `src-tauri/src/pty.rs:1104-1111`(재전송 레그). 데드라인은 인터랙티브 지연을 지키기 위한 것이지 폴링이 아니다 — 타이머는 데이터가 있을 때만 무장하고 방출과 함께 해제된다.
 부수: `FLOW_ACK_SIZE=5000`(`terminal.ts:25/409`)은 배치 뒤 재도출해야 한다. 지금은 100 MB 당 20,512회 ack invoke = 전 전달단위의 16.5% 가 데이터 플레인이 이미 포화시킨 같은 직렬 메인스레드를 탄다.
 
 **RED.**
@@ -463,7 +463,7 @@ RED 조건: 오프스크린 후 footprint 가 **안 내려간다**(오늘 구조
 
 **근본 원인.** 링 버퍼가 VecDeque<u8> 위에 얹혀 있어 append 도 축출도 바이트 단위다(`ring.rs:45-53`). 같은 파일의 tee 는 이미 bulk copy(`tee.rs:48-51 bytes.to_vec()`) 라 이 링만 예외다.
 
-**바꿀 것.** 소유 파일 `src-tauri/crates/soksak-ptyd/src/ring.rs`. 고정 용량 원형 바이트 버퍼 + bulk copy/drain. 세션 락(`main.rs:1048`) 보유 시간이 짧아지는 것이 부수 효과이고, 그 락 뒤에는 tee 구독자와 attached-stream writer 가 직렬화돼 있다.
+**바꿀 것.** 소유 파일 `crates/soksak-ptyd/src/ring.rs`. 고정 용량 원형 바이트 버퍼 + bulk copy/drain. 세션 락(`main.rs:1048`) 보유 시간이 짧아지는 것이 부수 효과이고, 그 락 뒤에는 tee 구독자와 attached-stream writer 가 직렬화돼 있다.
 
 **RED.** 크레이트 로컬 bench 또는 `#[test]` 로 100 MB / 8192 B 청크 처리 시간. RED: dev 프로파일 기준 **77.24 MB/s 근방**(내가 재현 측정한 값).
 

@@ -1,0 +1,46 @@
+# Cargo 워크스페이스 루트 — **프레임워크가 아니다.**
+#
+# 한때 이 자리가 src-tauri/Cargo.toml 이었다: [workspace] 이면서 동시에 Tauri 앱 패키지였고,
+# 프레임워크 무관 크레이트 열하나가 그 워크스페이스의 멤버였다. 공용 코드가 한 프레임워크의
+# 빌드 단위에 속하면 그 프레임워크를 지우는 순간 나머지가 함께 무너진다.
+#
+# 이제 루트는 아무 패키지도 아니다. 프레임워크 앱은 members 의 하나일 뿐이고, 그 자리가
+# 비어도 crates/ 는 그대로 빌드된다.
+[workspace]
+resolver = "2"
+members = [
+  "crates/soksak-spec-contract",
+  "crates/soksak-spec-socket",
+  "crates/soksak-spec-pty",
+  "crates/soksak-spec-service",
+  "crates/soksak-seal",
+  "crates/soksak-core",
+  "crates/soksak-store",
+  "crates/soksak-watch",
+  "crates/soksak-ptyd",
+  "crates/soksak-cored",
+  "crates/soksak-cli",
+  "src-tauri",
+]
+# 워크스페이스 안에 있으나 멤버가 아닌 패키지 — CI 픽스처는 자기 빌드를 따로 돈다.
+exclude = [".github/fixtures"]
+
+
+# 아래 둘은 **워크스페이스 루트에서만 먹는다.** 멤버 매니페스트에 두면 cargo 가 조용히
+# 무시한다 — 상류 패치가 풀려도 빌드는 그대로 서고, 그 차이는 런타임에서만 드러난다.
+# 우리가 쓰는 tauri 계열 전체를 같은 rev 로 물린다. 수정이 포함된 crates.io 릴리스가 나오면 이 블록 삭제.
+[patch.crates-io]
+tauri = { git = "https://github.com/tauri-apps/tauri", rev = "a370f653330506c2a5f59b643645a15b4cc30c18" }
+tauri-build = { git = "https://github.com/tauri-apps/tauri", rev = "a370f653330506c2a5f59b643645a15b4cc30c18" }
+tauri-codegen = { git = "https://github.com/tauri-apps/tauri", rev = "a370f653330506c2a5f59b643645a15b4cc30c18" }
+tauri-macros = { git = "https://github.com/tauri-apps/tauri", rev = "a370f653330506c2a5f59b643645a15b4cc30c18" }
+tauri-runtime = { git = "https://github.com/tauri-apps/tauri", rev = "a370f653330506c2a5f59b643645a15b4cc30c18" }
+tauri-runtime-wry = { git = "https://github.com/tauri-apps/tauri", rev = "a370f653330506c2a5f59b643645a15b4cc30c18" }
+tauri-utils = { git = "https://github.com/tauri-apps/tauri", rev = "a370f653330506c2a5f59b643645a15b4cc30c18" }
+
+# 분포(release) 빌드 최적화 — 런타임 perf 수준은 유지(opt-level 은 release 기본 3)하면서 용량만 줄인다.
+# tauri 는 모노레포(형제 크레이트 path 의존)라 한 크레이트만 patch 하면 버전이 갈려 충돌한다 →
+[profile.release]
+strip = true       # 출하 바이너리에서 심볼 제거(가장 큰 단일 절감)
+lto = "thin"       # 크레이트 간 dead-code 제거(thin = fat 에 근접하면서 빌드 더 빠름)
+codegen-units = 1  # 단일 codegen unit → 최적화/중복제거 향상

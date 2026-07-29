@@ -106,7 +106,7 @@
         {
           "kind": "cargo",
           "name": "soksak-spec-contract",
-          "source": "src-tauri/crates/soksak-spec-contract",
+          "source": "crates/soksak-spec-contract",
           "destination": "crates/soksak-spec-contract",
           "artifact": "git-full-commit",
           "files": [
@@ -117,7 +117,7 @@
         {
           "kind": "cargo",
           "name": "soksak-spec-service",
-          "source": "src-tauri/crates/soksak-spec-service",
+          "source": "crates/soksak-spec-service",
           "destination": "crates/soksak-spec-service",
           "artifact": "git-full-commit",
           "files": [
@@ -129,7 +129,7 @@
         {
           "kind": "cargo",
           "name": "soksak-spec-socket",
-          "source": "src-tauri/crates/soksak-spec-socket",
+          "source": "crates/soksak-spec-socket",
           "destination": "crates/soksak-spec-socket",
           "artifact": "git-full-commit",
           "files": [
@@ -202,7 +202,7 @@
     {
       "kind": "private-core",
       "name": "soksak-spec-pty",
-      "source": "src-tauri/crates/soksak-spec-pty"
+      "source": "crates/soksak-spec-pty"
     }
   ]
 }

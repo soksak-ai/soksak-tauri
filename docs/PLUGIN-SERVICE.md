@@ -17,7 +17,7 @@ the socket protocol: keeping it off the socket means a service is never socket-a
 `cmd` frame (identity inherent in the pipe) — never a socket callback.
 
 The wire constants and serde types, and the reference serve harness, have one source: the
-`soksak-spec-service` crate (`src-tauri/crates/soksak-spec-service`) — consumers depend on
+`soksak-spec-service` crate (`crates/soksak-spec-service`) — consumers depend on
 the crate and never copy a constant (the `soksak-spec-pty` discipline). The manifest schema
 has one judge: `@soksak-ai/plugin-spec` `parseManifest`.
 

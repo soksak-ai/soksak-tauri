@@ -49,7 +49,8 @@ export const ALLOWLIST = [
   },
 ];
 
-const SCAN_ROOTS = ["src", "src-tauri"];
+// crates 는 프레임워크 밖으로 나온 Rust 다 — 뿌리에서 빠지면 그 코드가 스캔 밖이 된다.
+const SCAN_ROOTS = ["src", "src-tauri", "crates"];
 const SKIP_DIRS = new Set(["target", "gen", "node_modules", ".git"]);
 const SCAN_EXTS = new Set([
   ".ts", ".tsx", ".js", ".mjs", ".cjs", ".rs", ".toml", ".json", ".md", ".html", ".css",

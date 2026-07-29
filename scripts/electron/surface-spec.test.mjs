@@ -17,7 +17,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const { parseHexColor } = requireCjs(join(ROOT, "electron/native/window.cjs"));
 const { isOpenableUrl } = requireCjs(join(ROOT, "electron/native/webview.cjs"));
 const doc = JSON.parse(
-  readFileSync(join(ROOT, "src-tauri/crates/soksak-core/fixtures/surface-spec.json"), "utf8"),
+  readFileSync(join(ROOT, "crates/soksak-core/fixtures/surface-spec.json"), "utf8"),
 );
 
 /** 코어는 RGB 숫자로, 프레임워크는 그 프레임워크가 받는 문자열로 답한다 — 값은 같아야 한다. */

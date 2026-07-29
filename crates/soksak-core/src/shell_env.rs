@@ -21,7 +21,7 @@ pub const AI_SESSION_ENV: &[&str] = &[
 
 /// 대화형 zsh 에 끼우는 통합 스크립트 — 명령 시작/끝·cwd 를 OSC 로 알린다.
 /// 스크립트가 단일진실이라 파일에서 읽는다(사본을 두면 두 벌이 갈린다).
-const ZSH_INTEGRATION: &str = include_str!("../../../scripts/shell-integration.zsh");
+const ZSH_INTEGRATION: &str = include_str!("../assets/shell-integration.zsh");
 
 // zsh 일 때 OSC 133/7 셸 통합을 주입한다. 임시 ZDOTDIR 에 .zshenv/.zshrc 를 써서
 // 사용자 원본 설정을 먼저 source 한 뒤 통합 스크립트를 로드한다(사용자 설정 보존).

@@ -18,7 +18,7 @@ const requireCjs = createRequire(import.meta.url);
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "../..");
 const TABLE = join(ROOT, "electron/native/project.cjs");
-const FIXTURE = join(ROOT, "src-tauri/crates/soksak-core/fixtures/project-claims.json");
+const FIXTURE = join(ROOT, "crates/soksak-core/fixtures/project-claims.json");
 
 /** 창 문맥 스텁 — 살아 있는 라벨과 "부른 창"만 준다. */
 function ctxFor(labels, caller) {

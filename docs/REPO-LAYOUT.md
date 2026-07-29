@@ -40,7 +40,7 @@ core/
 
 **① Code that became independent of a framework lives inside that framework.**
 
-The ten crates under `src-tauri/crates/` and `src-tauri/cli/` depend on tauri **not at all** (measured
+The ten crates under `crates/` and `crates/soksak-cli/` depend on tauri **not at all** (measured
 across every Cargo.toml). One of them, `soksak-cored`, carries `tests/no_framework.rs`, which bans
 `tauri`, `wry`, `tao`, `objc2`, `libloading`, `windows-sys`, `tokio`, `interprocess`, and
 `portable-pty` **by name**. Code whose job is to refuse a framework by name sits inside a folder named
@@ -79,7 +79,7 @@ core/
 │   ├── soksak-ptyd/        the PTY daemon
 │   ├── soksak-seal/        sealing
 │   ├── soksak-spec-*/      contracts
-│   └── soksak-cli/         the sok CLI (today's src-tauri/cli)
+│   └── soksak-cli/         the sok CLI (today's crates/soksak-cli)
 ├── platform/           the OS axis
 ├── packages/ worker/ scripts/ docs/ plans/ …
 ```
@@ -120,7 +120,7 @@ standard; the five that were split out either carry a stated reason or move back
 ## What the move costs
 
 **63 files** outside `src-tauri` reference that path (gates, docs, plans, manifests, CI); ten of them
-point at `src-tauri/crates` directly. Moving the tree changes all of them.
+point at `crates` directly. Moving the tree changes all of them.
 
 On the Rust side, `Cargo.toml` `members` and `path` dependencies move with it, as do
 `include_str!("../fixtures/…")` relative paths. The frontend knows `src-tauri` only as a build-output

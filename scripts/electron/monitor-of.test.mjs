@@ -17,7 +17,7 @@ const requireCjs = createRequire(import.meta.url);
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "../..");
 const { monitorOf } = requireCjs(join(ROOT, "electron/native/window.cjs"));
-const FIXTURE = join(ROOT, "src-tauri/crates/soksak-core/fixtures/monitor-of.json");
+const FIXTURE = join(ROOT, "crates/soksak-core/fixtures/monitor-of.json");
 
 describe("소속 모니터 — 코어와 같은 답", () => {
   const doc = JSON.parse(readFileSync(FIXTURE, "utf8"));

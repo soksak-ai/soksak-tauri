@@ -41,7 +41,7 @@ describe("어휘 게이트 — shell 은 명령 해석기의 말이다", () => {
   });
 
   it("옛 게이트 이름(no_shell)이 되살아나면 잡는다", () => {
-    write("src-tauri/crates/soksak-core/tests/no_framework.rs", "fn the_tree_carries_no_shell_crate() {}\n");
+    write("crates/soksak-core/tests/no_framework.rs", "fn the_tree_carries_no_shell_crate() {}\n");
     expect(planted().join("\n")).toContain("식별자 `the_tree_carries_no_shell_crate`");
   });
 

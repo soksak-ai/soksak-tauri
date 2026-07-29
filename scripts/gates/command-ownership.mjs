@@ -67,13 +67,13 @@ export function appInvokes(root = ROOT) {
  * 줄어든다** — 사유를 적는 행위가 은폐가 된다. 표 종류를 이름으로 가른다.
  */
 export function coredServes(root = ROOT) {
-  const src = read(join(root, "src-tauri", "crates", "soksak-cored", "src", "registry.rs"));
+  const src = read(join(root, "crates", "soksak-cored", "src", "registry.rs"));
   return new Set([...src.matchAll(/Command\s*\{\s*name:\s*"([a-z_0-9]+)"/g)].map((m) => m[1]));
 }
 
 /** cored 가 **사유를 달고 거절하는** 이름 — 선언된 공백. 미선언 공백과 갈라 센다. */
 export function coredUnserved(root = ROOT) {
-  const src = read(join(root, "src-tauri", "crates", "soksak-cored", "src", "registry.rs"));
+  const src = read(join(root, "crates", "soksak-cored", "src", "registry.rs"));
   const out = new Map();
   // 항목은 여러 줄이고 blocked_by 는 줄바꿈 이어붙임(`\\` + 개행)을 쓴다 — 이름만 잡고
   // 사유가 비지 않았는지만 본다. 사유 원문은 registry.rs 가 단일 진실이다.

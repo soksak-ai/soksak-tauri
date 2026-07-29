@@ -37,7 +37,7 @@ afterEach(() => {
 describe("scanFile — 해석기 표면 판정", () => {
   it("VT 엔진·미러 어휘는 잡는다", () => {
     expect(scanFile("src-tauri/src/x.rs", "use soksak_pty_mirror::Mirror;")).toHaveLength(1);
-    expect(scanFile("src-tauri/crates/a/Cargo.rs", "// soksak-pty-mirror path")).toHaveLength(1);
+    expect(scanFile("crates/a/Cargo.rs", "// soksak-pty-mirror path")).toHaveLength(1);
     expect(scanFile("src-tauri/src/x.rs", "let s = alacritty_terminal::Term::new();")).toHaveLength(1);
     expect(scanFile("src-tauri/src/x.rs", "let p = st.mirror.cold_paint();")).toHaveLength(1);
     expect(scanFile("src-tauri/src/x.rs", "let b = st.mirror.rehydrate();")).toHaveLength(1);
@@ -60,7 +60,7 @@ describe("scanFile — 해석기 표면 판정", () => {
 
   it("PTY 배관은 정본 파일에서 allowlist 다(방출 아님 — 결정 1)", () => {
     expect(
-      scanFile("src-tauri/crates/soksak-ptyd/src/main.rs", "let sys = native_pty_system();"),
+      scanFile("crates/soksak-ptyd/src/main.rs", "let sys = native_pty_system();"),
     ).toEqual([]);
     expect(scanFile("src-tauri/src/pty.rs", ".openpty(PtySize { rows, cols })")).toEqual([]);
     // 같은 배관 토큰이라도 정본 밖 파일이면 유입으로 잡힌다(사면은 파일 한정).
@@ -71,7 +71,7 @@ describe("scanFile — 해석기 표면 판정", () => {
     expect(scanFile("src/a.test.ts", "if (data.altActive) {}")).toEqual([]);
     // Rust 통합 테스트(tests/ 하위) — 봉투에 altActive '없음' 단언 같은 정당한 참조 보호.
     expect(
-      scanFile("src-tauri/crates/soksak-ptyd/tests/daemon.rs", 'assert!(doc.get("altActive").is_none());'),
+      scanFile("crates/soksak-ptyd/tests/daemon.rs", 'assert!(doc.get("altActive").is_none());'),
     ).toEqual([]);
     const rs = [
       "pub fn run() {}",
@@ -106,7 +106,7 @@ describe("게이트 실행 — 신규 유입·봉인 대조", () => {
   });
 
   it("깨끗한 코어(배관은 정본 파일에만)는 통과한다", () => {
-    write("src-tauri/crates/soksak-ptyd/src/main.rs", "let sys = native_pty_system();");
+    write("crates/soksak-ptyd/src/main.rs", "let sys = native_pty_system();");
     write("src-tauri/src/pty.rs", "let pair = sys.openpty(size);");
     write("src/plugins/api.ts", "export const spawn = () => invoke('spawn_terminal');");
     const { status, out } = runGate();
@@ -123,6 +123,9 @@ describe("게이트 실행 — 신규 유입·봉인 대조", () => {
   });
 
   it("빈 트리는 봉인 전부가 stale 다 — 봉인은 실측과 일치해야만 산다", () => {
+    // **뿌리는 있고 안이 빈** 트리다. 뿌리가 아예 없는 것과 다르다 — 그쪽은 배치가 바뀐
+    // 것이고 스캔이 0건을 답하면 안 된다(scanRoot 의 오라클 생존 가드).
+    mkdirSync(join(root, "src-tauri", "src"), { recursive: true });
     const { stale } = scanRoot(root, new Map([["src-tauri/src/pty.rs", 3]]));
     expect(stale).toEqual([{ file: "src-tauri/src/pty.rs", count: 0, sealed: 3 }]);
   });
