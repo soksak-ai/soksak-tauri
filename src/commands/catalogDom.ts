@@ -752,6 +752,71 @@ export function registerDomCatalog(): void {
   // 2026-07-26 "돔 이동시에 해당 돔의 변화도 추적할 수 있어야 한다"). transitionrun 같은
   // 이벤트는 엔진 구현에 따라 빠질 수 있지만(실측: 등록 변수 전이에서 births 0) rect 는
   // 화면의 결과 그 자체라 빠질 수 없다. rAF 표본이므로 폴링이 아니라 캡처다(상한 5s).
+  // 주입한 입력이 **도착하는가** — 구동과 판정 사이의 빈 칸.
+  //
+  // 없으면 실패가 두 갈래로 갈리는데 구분할 수가 없다: 이벤트가 안 갔거나, 갔는데 받는 쪽이
+  // 안 움직였거나. 그 둘은 고칠 자리가 완전히 다르다(주입면 vs 앱 로직). "안에서 무슨 일이
+  // 있었는지 모른다"는 진단이 아니라 관측면이 없다는 뜻이다 — 그래서 만든다.
+  //
+  // window 에 capture 로 붙는다: 앱의 리스너보다 **먼저** 보므로, 앱이 막든 지우든 도착
+  // 자체는 기록된다. 도착했는데 앱이 안 움직였다면 그건 앱 쪽 사실이고, 안 도착했다면
+  // 주입면 쪽 사실이다.
+  register("ui.input.observe", {
+    description:
+      "Record which input events actually reach this window over a bounded span (ms ≤ 5000). Listens on window in the capture phase, so arrivals are recorded even if app handlers stop propagation. Use it to split a failed injection into 'the event never arrived' versus 'it arrived and nothing moved' — the two have different fixes. Drive the input from another connection while this runs.",
+    triggers: { ko: "입력 도착 관측 이벤트 수신 확인 주입 검증" },
+    params: {
+      events: {
+        type: "array",
+        description: "Event type names to record (default: mousedown, mousemove, mouseup)",
+      },
+      ms: { type: "number", description: "Recording window in ms (default 1000, max 5000)" },
+    },
+    returns: "{ ms, counts: { <type>: n }, samples: [{ t, type, x, y, target }] }",
+    message: (d) =>
+      tmsg("msg.ui.input.observe", {
+        n: Object.values((d.counts as Record<string, number>) ?? {}).reduce((a, b) => a + b, 0),
+      }),
+    examples: ['ui.input.observe \'{"events":["mousemove"],"ms":1500}\''],
+    handler: async (p) => {
+      const ms = Math.min(Math.max(typeof p.ms === "number" ? p.ms : 1000, 50), 5000);
+      const types = Array.isArray(p.events) && p.events.length > 0
+        ? p.events.map(String)
+        : ["mousedown", "mousemove", "mouseup"];
+      const counts: Record<string, number> = {};
+      for (const t of types) counts[t] = 0;
+      // 표본은 상한을 둔다 — 드래그 한 번이 수백 프레임이면 답이 원장을 밀어낸다.
+      const samples: { t: number; type: string; x: number; y: number; target: string }[] = [];
+      const t0 = performance.now();
+      const wired: [string, EventListener][] = types.map((type) => [
+        type,
+        (e: Event) => {
+          counts[type] += 1;
+          if (samples.length >= 60) return;
+          const me = e as MouseEvent;
+          const el = e.target as HTMLElement | null;
+          samples.push({
+            t: Math.round(performance.now() - t0),
+            type,
+            x: Math.round(me.clientX ?? -1),
+            y: Math.round(me.clientY ?? -1),
+            // 어디로 갔는지도 사실이다 — 같은 좌표라도 target 이 다르면 다른 이야기다.
+            target:
+              el?.getAttribute?.("data-node") ??
+              (el?.tagName ? el.tagName.toLowerCase() : String(e.target === window ? "window" : "?")),
+          });
+        },
+      ]);
+      for (const [type, fn] of wired) window.addEventListener(type, fn, true);
+      try {
+        await new Promise<void>((done) => setTimeout(done, ms));
+      } finally {
+        for (const [type, fn] of wired) window.removeEventListener(type, fn, true);
+      }
+      return { ms, counts, samples };
+    },
+  });
+
   register("ui.trace", {
     description:
       "Sample an exposed node's rect over a bounded window (ms ≤ 5000) at animation-frame cadence and return the series. This is how you verify that a layout change actually moves — and how slow/hold (ui.motion) visibly stretch or freeze that movement. Trigger the mutation right after starting the trace (it samples from the next frame).",

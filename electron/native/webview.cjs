@@ -63,6 +63,27 @@ module.exports = {
   // 그래도 표에 적는 이유: 이름이 프레임워크 갈래(webview_)라 표에 없으면 **부재로 거절**된다.
   // 그것은 거짓이다 — 개념은 있고 답하는 자리가 다를 뿐이다. 거짓 부재를 받은 사람은 없는
   // 기능이라 믿고 우회를 만든다.
+  // 네이티브 마우스 다리 구동 — 앱은 native-mousedown/move/up 을 **자기 창 사건**으로 듣고
+  // 그것으로 골 드래그 같은 제스처를 돌린다(App.tsx). 원본은 그 사건을 그대로 발행한다:
+  // OS 입력 합성이 아니라 "네이티브 모니터가 낸 것과 같은 사건"이다.
+  //
+  // 사건을 창에 밀어 넣는 일은 프레임워크만 할 수 있다 — 그래서 여기 있다. 이 자리가 비면
+  // 실마우스 없이 그 제스처를 구동할 길이 사라지고, 검증은 "재는 방법이 없다"로 멈춘다.
+  // 그 멈춤은 프레임워크 차이가 아니라 **이식하지 않은 표면**이다.
+  webview_emit_native: {
+    concept: "네이티브 마우스 사건 발행",
+    source: "창 사건 채널(프레임워크가 미는 자리)",
+    answer: (ctx, args) => {
+      if (!ctx.window) throw frameworkError("NO_WINDOW", "부른 창을 짚지 못했다");
+      const kind = String(args.kind ?? "");
+      if (!/^native-mouse(down|move|up)$/.test(kind)) {
+        throw frameworkError("INVALID_KIND", `알 수 없는 종류: ${kind}`);
+      }
+      ctx.emitToWindow(ctx.window, kind, { x: Number(args.x ?? 0), y: Number(args.y ?? 0) });
+      return null;
+    },
+  },
+
   webview_open: {
     concept: "콘텐츠 뷰 열기",
     delegated:

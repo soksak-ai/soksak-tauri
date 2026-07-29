@@ -198,6 +198,8 @@ function nativeContext(sender) {
     // 앱을 전면으로 — 창 하나를 key 로 만드는 것과 다른 일이다. steal 은 다른 앱에서
     // 포커스를 가져온다는 뜻이고, "창을 앞으로"는 그것을 요구한다.
     activateApp: () => app.focus({ steal: true }),
+    // 창에 사건을 민다 — 프레임워크만 할 수 있는 일이고, 구독은 그 창의 listen 이 받는다.
+    emitToWindow: (win, event, payload) => deliverEvent(win, event, payload),
     screen,
   };
 }

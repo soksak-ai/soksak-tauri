@@ -1,0 +1,274 @@
+{
+  "about": "이식 공백 장부 — 앱이 부르는데 이 프레임워크에서 아무도 답하지 않는 이름. 분류는 command-ownership.mjs 가 소스에서 실측하고, 여기에는 사유와 상한만 산다. cap 은 래칫이다: 늘리지 마라. 하나 이식할 때마다 항목을 빼고 cap 을 줄인다.",
+  "cap": 67,
+  "gaps": {
+    "ai_session_active": {
+      "why": "앱 상태 장부 — 저장소 위에 선다",
+      "to": "core"
+    },
+    "ai_session_lineage": {
+      "why": "앱 상태 장부 — 저장소 위에 선다",
+      "to": "core"
+    },
+    "ai_session_untrack": {
+      "why": "앱 상태 장부 — 저장소 위에 선다",
+      "to": "core"
+    },
+    "clipboard_watch_start": {
+      "why": "OS 클립보드 — 플랫폼 자원이고 프레임워크가 창구를 준다(Electron clipboard)",
+      "to": "framework"
+    },
+    "clipboard_watch_stop": {
+      "why": "OS 클립보드 — 플랫폼 자원이고 프레임워크가 창구를 준다(Electron clipboard)",
+      "to": "framework"
+    },
+    "clipboard_write": {
+      "why": "OS 클립보드 — 플랫폼 자원이고 프레임워크가 창구를 준다(Electron clipboard)",
+      "to": "framework"
+    },
+    "daemon_logs": {
+      "why": "자식 프로세스·데몬 — 프로세스는 프레임워크가 아니다. cored 가 이미 process_* 를 진다",
+      "to": "core"
+    },
+    "daemon_start": {
+      "why": "자식 프로세스·데몬 — 프로세스는 프레임워크가 아니다. cored 가 이미 process_* 를 진다",
+      "to": "core"
+    },
+    "daemon_status": {
+      "why": "자식 프로세스·데몬 — 프로세스는 프레임워크가 아니다. cored 가 이미 process_* 를 진다",
+      "to": "core"
+    },
+    "daemon_stop": {
+      "why": "자식 프로세스·데몬 — 프로세스는 프레임워크가 아니다. cored 가 이미 process_* 를 진다",
+      "to": "core"
+    },
+    "data_backup": {
+      "why": "SQLite 저장소 — 창도 앱 핸들도 없이 같은 파일을 같은 답으로 읽는다. cored 가 이미 soksak-store 를 진다",
+      "to": "core"
+    },
+    "data_canary": {
+      "why": "SQLite 저장소 — 창도 앱 핸들도 없이 같은 파일을 같은 답으로 읽는다. cored 가 이미 soksak-store 를 진다",
+      "to": "core"
+    },
+    "data_count": {
+      "why": "SQLite 저장소 — 창도 앱 핸들도 없이 같은 파일을 같은 답으로 읽는다. cored 가 이미 soksak-store 를 진다",
+      "to": "core"
+    },
+    "data_delete": {
+      "why": "SQLite 저장소 — 창도 앱 핸들도 없이 같은 파일을 같은 답으로 읽는다. cored 가 이미 soksak-store 를 진다",
+      "to": "core"
+    },
+    "data_encrypt_change_recovery": {
+      "why": "SQLite 저장소 — 창도 앱 핸들도 없이 같은 파일을 같은 답으로 읽는다. cored 가 이미 soksak-store 를 진다",
+      "to": "core"
+    },
+    "data_encrypt_convert": {
+      "why": "SQLite 저장소 — 창도 앱 핸들도 없이 같은 파일을 같은 답으로 읽는다. cored 가 이미 soksak-store 를 진다",
+      "to": "core"
+    },
+    "data_encrypt_enable": {
+      "why": "SQLite 저장소 — 창도 앱 핸들도 없이 같은 파일을 같은 답으로 읽는다. cored 가 이미 soksak-store 를 진다",
+      "to": "core"
+    },
+    "data_encrypt_recover": {
+      "why": "SQLite 저장소 — 창도 앱 핸들도 없이 같은 파일을 같은 답으로 읽는다. cored 가 이미 soksak-store 를 진다",
+      "to": "core"
+    },
+    "data_encrypt_rotate": {
+      "why": "SQLite 저장소 — 창도 앱 핸들도 없이 같은 파일을 같은 답으로 읽는다. cored 가 이미 soksak-store 를 진다",
+      "to": "core"
+    },
+    "data_encrypt_status": {
+      "why": "SQLite 저장소 — 창도 앱 핸들도 없이 같은 파일을 같은 답으로 읽는다. cored 가 이미 soksak-store 를 진다",
+      "to": "core"
+    },
+    "data_export": {
+      "why": "SQLite 저장소 — 창도 앱 핸들도 없이 같은 파일을 같은 답으로 읽는다. cored 가 이미 soksak-store 를 진다",
+      "to": "core"
+    },
+    "data_get": {
+      "why": "SQLite 저장소 — 창도 앱 핸들도 없이 같은 파일을 같은 답으로 읽는다. cored 가 이미 soksak-store 를 진다",
+      "to": "core"
+    },
+    "data_import": {
+      "why": "SQLite 저장소 — 창도 앱 핸들도 없이 같은 파일을 같은 답으로 읽는다. cored 가 이미 soksak-store 를 진다",
+      "to": "core"
+    },
+    "data_kv_delete": {
+      "why": "SQLite 저장소 — 창도 앱 핸들도 없이 같은 파일을 같은 답으로 읽는다. cored 가 이미 soksak-store 를 진다",
+      "to": "core"
+    },
+    "data_kv_keys": {
+      "why": "SQLite 저장소 — 창도 앱 핸들도 없이 같은 파일을 같은 답으로 읽는다. cored 가 이미 soksak-store 를 진다",
+      "to": "core"
+    },
+    "data_ns_remove": {
+      "why": "SQLite 저장소 — 창도 앱 핸들도 없이 같은 파일을 같은 답으로 읽는다. cored 가 이미 soksak-store 를 진다",
+      "to": "core"
+    },
+    "data_put": {
+      "why": "SQLite 저장소 — 창도 앱 핸들도 없이 같은 파일을 같은 답으로 읽는다. cored 가 이미 soksak-store 를 진다",
+      "to": "core"
+    },
+    "data_repair": {
+      "why": "SQLite 저장소 — 창도 앱 핸들도 없이 같은 파일을 같은 답으로 읽는다. cored 가 이미 soksak-store 를 진다",
+      "to": "core"
+    },
+    "data_restore": {
+      "why": "SQLite 저장소 — 창도 앱 핸들도 없이 같은 파일을 같은 답으로 읽는다. cored 가 이미 soksak-store 를 진다",
+      "to": "core"
+    },
+    "data_retention_reap": {
+      "why": "SQLite 저장소 — 창도 앱 핸들도 없이 같은 파일을 같은 답으로 읽는다. cored 가 이미 soksak-store 를 진다",
+      "to": "core"
+    },
+    "data_retention_trim": {
+      "why": "SQLite 저장소 — 창도 앱 핸들도 없이 같은 파일을 같은 답으로 읽는다. cored 가 이미 soksak-store 를 진다",
+      "to": "core"
+    },
+    "data_search": {
+      "why": "SQLite 저장소 — 창도 앱 핸들도 없이 같은 파일을 같은 답으로 읽는다. cored 가 이미 soksak-store 를 진다",
+      "to": "core"
+    },
+    "data_stats": {
+      "why": "SQLite 저장소 — 창도 앱 핸들도 없이 같은 파일을 같은 답으로 읽는다. cored 가 이미 soksak-store 를 진다",
+      "to": "core"
+    },
+    "data_verify": {
+      "why": "SQLite 저장소 — 창도 앱 핸들도 없이 같은 파일을 같은 답으로 읽는다. cored 가 이미 soksak-store 를 진다",
+      "to": "core"
+    },
+    "ipc_hello_info": {
+      "why": "판 협상 사실 — cored 가 transport 에서 이미 같은 값을 답한다(등록만 남았다)",
+      "to": "core"
+    },
+    "notify_show": {
+      "why": "OS 알림 — 플랫폼 자원(Electron Notification)",
+      "to": "framework"
+    },
+    "pty_daemon_restart": {
+      "why": "자식 프로세스·데몬 — 프로세스는 프레임워크가 아니다. cored 가 이미 process_* 를 진다",
+      "to": "core"
+    },
+    "pty_daemon_status": {
+      "why": "자식 프로세스·데몬 — 프로세스는 프레임워크가 아니다. cored 가 이미 process_* 를 진다",
+      "to": "core"
+    },
+    "pty_daemon_upgrade": {
+      "why": "자식 프로세스·데몬 — 프로세스는 프레임워크가 아니다. cored 가 이미 process_* 를 진다",
+      "to": "core"
+    },
+    "pty_pane_pid": {
+      "why": "자식 프로세스·데몬 — 프로세스는 프레임워크가 아니다. cored 가 이미 process_* 를 진다",
+      "to": "core"
+    },
+    "remote_confirm_resolve": {
+      "why": "승인 대기 해소 — 창의 UI 가 낳는 사건이다",
+      "to": "framework"
+    },
+    "schedule_cancel": {
+      "why": "예약 — 시각과 장부의 일이다. 창이 없어도 서야 한다(앱이 꺼져도 예약은 산다)",
+      "to": "core"
+    },
+    "schedule_list": {
+      "why": "예약 — 시각과 장부의 일이다. 창이 없어도 서야 한다(앱이 꺼져도 예약은 산다)",
+      "to": "core"
+    },
+    "schedule_poke": {
+      "why": "예약 — 시각과 장부의 일이다. 창이 없어도 서야 한다(앱이 꺼져도 예약은 산다)",
+      "to": "core"
+    },
+    "schedule_register": {
+      "why": "예약 — 시각과 장부의 일이다. 창이 없어도 서야 한다(앱이 꺼져도 예약은 산다)",
+      "to": "core"
+    },
+    "schedule_set": {
+      "why": "예약 — 시각과 장부의 일이다. 창이 없어도 서야 한다(앱이 꺼져도 예약은 산다)",
+      "to": "core"
+    },
+    "secret_backend": {
+      "why": "볼트 — 해소는 계약(SecretSource)이고 자원은 키체인이다. 프레임워크의 것이 아니다",
+      "to": "core"
+    },
+    "secret_delete": {
+      "why": "볼트 — 해소는 계약(SecretSource)이고 자원은 키체인이다. 프레임워크의 것이 아니다",
+      "to": "core"
+    },
+    "secret_has": {
+      "why": "볼트 — 해소는 계약(SecretSource)이고 자원은 키체인이다. 프레임워크의 것이 아니다",
+      "to": "core"
+    },
+    "secret_keys": {
+      "why": "볼트 — 해소는 계약(SecretSource)이고 자원은 키체인이다. 프레임워크의 것이 아니다",
+      "to": "core"
+    },
+    "secret_set": {
+      "why": "볼트 — 해소는 계약(SecretSource)이고 자원은 키체인이다. 프레임워크의 것이 아니다",
+      "to": "core"
+    },
+    "service_bus_push": {
+      "why": "앱 상태 장부 — 저장소 위에 선다",
+      "to": "core"
+    },
+    "service_dispatch": {
+      "why": "앱 상태 장부 — 저장소 위에 선다",
+      "to": "core"
+    },
+    "service_status": {
+      "why": "앱 상태 장부 — 저장소 위에 선다",
+      "to": "core"
+    },
+    "sidecar_open": {
+      "why": "사이드카 소켓 — 프로토콜이고 창이 없다",
+      "to": "core"
+    },
+    "sidecar_send": {
+      "why": "사이드카 소켓 — 프로토콜이고 창이 없다",
+      "to": "core"
+    },
+    "unit_install_begin": {
+      "why": "유닛 설치 — 디스크 스테이징이다. 창이 필요 없다",
+      "to": "core"
+    },
+    "unit_install_commit": {
+      "why": "유닛 설치 — 디스크 스테이징이다. 창이 필요 없다",
+      "to": "core"
+    },
+    "unit_install_read_utf8": {
+      "why": "유닛 설치 — 디스크 스테이징이다. 창이 필요 없다",
+      "to": "core"
+    },
+    "unit_install_rollback": {
+      "why": "유닛 설치 — 디스크 스테이징이다. 창이 필요 없다",
+      "to": "core"
+    },
+    "unit_install_stage": {
+      "why": "유닛 설치 — 디스크 스테이징이다. 창이 필요 없다",
+      "to": "core"
+    },
+    "update_apply": {
+      "why": "업데이터 — 프레임워크가 채널·서명·재기동을 준다",
+      "to": "framework"
+    },
+    "update_check": {
+      "why": "업데이터 — 프레임워크가 채널·서명·재기동을 준다",
+      "to": "framework"
+    },
+    "webview_debug_hierarchy": {
+      "why": "표면 계층 덤프 — 계층의 모양이 프레임워크마다 다르다(네이티브 뷰 트리 vs 페이지 트리)",
+      "to": "framework"
+    },
+    "ws_close": {
+      "why": "전송기가 런타임(tokio)을 끌고 온다 — 게이트가 런타임을 이름으로 막는다. 기준을 낮추지 않는다",
+      "to": "unserved"
+    },
+    "ws_connect": {
+      "why": "전송기가 런타임(tokio)을 끌고 온다 — 게이트가 런타임을 이름으로 막는다. 기준을 낮추지 않는다",
+      "to": "unserved"
+    },
+    "ws_send": {
+      "why": "전송기가 런타임(tokio)을 끌고 온다 — 게이트가 런타임을 이름으로 막는다. 기준을 낮추지 않는다",
+      "to": "unserved"
+    }
+  }
+}
