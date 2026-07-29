@@ -697,6 +697,42 @@ impl DeliveryExec for AppExec {
 
 /// 부팅 한 걸음 — cored 를 세우고 이 프레임워크의 창을 그 cored 에 등록한다.
 ///
+// ── 이 프로세스의 호스트 ──────────────────────────────────────────────────────
+//
+// 하나다. 이 프레임워크는 cored 에 **한 번** 붙는다 — 여럿을 두면 같은 창을 든 호스트가
+// 둘이 되고, cored 는 그것을 AMBIGUOUS_HOST 로 거절한다(우리가 만든 겹침이다).
+//
+// 부팅이 세우고, 저장소를 위임한 명령이 이 자리로 묻는다. 세우기 전에는 **없다** — 없는 것을
+// 있는 척하면 부른 쪽이 상한까지 기다린다.
+static HOST: std::sync::OnceLock<Arc<CoredHost>> = std::sync::OnceLock::new();
+
+/// 부팅이 세운 호스트를 이 자리에 둔다. 두 번째는 무시된다 — 첫 등록이 이긴다.
+pub fn install(host: Arc<CoredHost>) {
+    let _ = HOST.set(host);
+}
+
+/// 지금 붙어 있는 호스트. 부팅 전이면 없다.
+pub fn current() -> Option<Arc<CoredHost>> {
+    HOST.get().cloned()
+}
+
+/// 저장소 주인에게 묻는다 — 이 프로세스가 저장소를 위임했을 때 지나는 길.
+///
+/// 물을 곳이 없으면 **이름을 달고** 실패한다. 조용한 실패는 "명령이 사라진다"로만 보이고,
+/// 그때 사람은 저장소가 아니라 명령을 의심한다.
+pub fn ask_owner(method: &str, params: &Value) -> Result<Value, String> {
+    let Some(host) = current() else {
+        return Err(format!(
+            "cored 에 붙지 않았다 — {method} 를 물을 곳이 없다(이 프로세스는 저장소를 위임했다)"
+        ));
+    };
+    host.ask(method, params, OWNER_ASK_LIMIT)
+}
+
+/// 주인의 답을 기다리는 상한. 없으면 답하지 않는 cored 하나가 그 명령을 부른 창을 영원히
+/// 붙잡는다. 저장소 한 번의 왕복이라 짧게 잡는다 — 길면 UI 가 멈춘 것처럼 보인다.
+pub const OWNER_ASK_LIMIT: Duration = Duration::from_secs(10);
+
 /// 실패해도 앱은 선다. 이 프레임워크는 아직 자기 소켓으로 자기 창을 서빙하고 있고, 여기서
 /// 죽으면 그 서빙까지 함께 죽는다. 대신 조용히 지나가지 않는다 — 못 한 것은 이름을 달고 남고,
 /// 부른 쪽이 그 사유를 값으로 받는다.

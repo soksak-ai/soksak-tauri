@@ -371,7 +371,12 @@ pub fn run() {
                 // 창 사건이 이 호스트를 다시 찾을 수 있어야 한다 — 값으로 들고 있지 않으면
                 // 붙은 연결이 여기서 끝나고, 그 끊김은 "명령이 안 먹는다"로만 나타난다.
                 Ok(host) => {
-                    app.manage(host);
+                    // 두 자리에 둔다. `manage` 는 창 사건이 State 로 찾는 길이고, `install` 은
+                    // 저장소를 위임한 명령이 찾는 길이다 — 그쪽은 State 를 안 받는 자리가 많고,
+                    // 받게 고치면 29개 명령의 시그니처가 한꺼번에 바뀐다.
+                    let shared = std::sync::Arc::new(host);
+                    cored_host::install(std::sync::Arc::clone(&shared));
+                    app.manage(shared);
                 }
                 Err(e) => eprintln!("[cored-host] 붙지 못했다: {e} — 이 창들은 cored 가 모른다"),
             }

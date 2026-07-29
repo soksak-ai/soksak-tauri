@@ -67,6 +67,37 @@ fn with_conn<T>(
     f(conn)
 }
 
+/// 위임된 명령이 주인에게 보낼 봉투. 이름과 인자를 그대로 나른다 — 여기서 모양을 바꾸면
+/// 같은 이름이 두 프로세스에서 두 모양이 된다.
+pub fn delegated_call(method: &str, params: Value) -> (String, Value) {
+    (method.to_string(), params)
+}
+
+/// 주인의 답을 **그 명령의 타입**으로 되돌린다.
+///
+/// JSON 그대로 두면 부른 쪽이 다시 조립하고, 그 조립이 앱 경로와 갈리는 순간 같은 이름이
+/// 두 모양을 답한다. 모양이 다르면 삼키지 않고 사유를 낸다 — 삼키면 "빈 결과"로 나타난다.
+pub fn from_owner<T: serde::de::DeserializeOwned>(v: Value) -> Result<T, String> {
+    serde_json::from_value(v).map_err(|e| format!("주인의 답이 이 명령의 모양이 아니다: {e}"))
+}
+
+/// 저장소 한 조작 — 주인이면 자기 커넥션으로, 아니면 주인에게 물어서.
+///
+/// 이 함수가 29개 명령의 갈림을 한 자리에 모은다. 명령마다 갈래를 적으면 그중 하나가
+/// 빠지고, 빠진 하나는 위임 상태에서만 실패해 단독 실행에서는 안 보인다.
+pub fn store_op<T: serde::de::DeserializeOwned>(
+    state: &DbState,
+    method: &str,
+    params: Value,
+    local: impl FnOnce(&Connection) -> Result<T, String>,
+) -> Result<T, String> {
+    if super::route() == super::StoreRoute::AskOwner {
+        let (m, p) = delegated_call(method, params);
+        return from_owner(crate::cored_host::ask_owner(&m, &p)?);
+    }
+    with_conn(state, local)
+}
+
 /// 위임된 프로세스가 저장소를 직접 만지려 할 때의 사유.
 ///
 /// 이 문자열이 UI 까지 가는 것은 **아직 배선이 안 끝났다는 뜻**이다. 배선이 끝나면 이 자리는
@@ -84,9 +115,12 @@ pub fn data_kv_get(
 ) -> Result<Option<Value>, String> {
     validate_ns(&ns)?;
     // 조회 자체는 soksak-core 이 한다 — 연결은 KvRows 어댑터로 넘긴다.
-    with_conn(&state, |c| {
-        soksak_core::kv::get(&store::ConnKvRows(c), &ns, &key)
-    })
+    store_op(
+        &state,
+        "data_kv_get",
+        serde_json::json!({ "ns": ns, "key": key }),
+        |c| soksak_core::kv::get(&store::ConnKvRows(c), &ns, &key),
+    )
 }
 
 #[tauri::command]
@@ -125,7 +159,11 @@ pub fn data_kv_keys(
     state: State<'_, DbState>,
 ) -> Result<Vec<String>, String> {
     validate_ns(&ns)?;
-    with_conn(&state, |c| store::kv_keys(c, &ns, prefix.as_deref()))
+    store_op(
+        &state,
+        "data_kv_keys",
+        serde_json::json!({ "ns": ns, "prefix": prefix }),
+        |c| store::kv_keys(c, &ns, prefix.as_deref()))
 }
 
 // ── 컬렉션 ──────────────────────────────────────────────────────────────────────
@@ -180,7 +218,11 @@ pub fn data_get(
     validate_ns(&ns)?;
     // [단계②] 봉인(enc=1) 레코드는 vault 의 개인키 S 로 개봉(unlock 필요). 평문은 resolver 무관.
     let resolver = |key_id: &str| secrets.get_data_key(key_id);
-    with_conn(&state, |c| {
+    store_op(
+        &state,
+        "data_get",
+        serde_json::json!({ "ns": ns, "coll": coll, "id": id, "scope": scope }),
+        |c| {
         store::get(c, &ns, &coll, &id, scope.as_deref(), Some(&resolver))
     })
 }
@@ -277,7 +319,11 @@ pub fn data_count(
     state: State<'_, DbState>,
 ) -> Result<i64, String> {
     validate_ns(&ns)?;
-    with_conn(&state, |c| {
+    store_op(
+        &state,
+        "data_count",
+        serde_json::json!({ "ns": ns, "coll": coll, "scope": scope, "filter": filter }),
+        |c| {
         store::count(c, &ns, &coll, scope.as_deref(), filter.as_ref())
     })
 }
@@ -650,7 +696,11 @@ pub fn data_canary(state: State<'_, DbState>) -> Result<(), String> {
 // 신호가 "명령 실패"로 읽힌다(integrity.rs findings 머리말).
 #[tauri::command]
 pub fn data_verify(state: State<'_, DbState>) -> Result<Vec<String>, String> {
-    with_conn(&state, |c| Ok(soksak_store::integrity::findings(c)))
+    store_op(
+        &state,
+        "data_verify",
+        serde_json::json!({}),
+        |c| Ok(soksak_store::integrity::findings(c)))
 }
 
 // 저장소 실황 — 앱 안의 SQLite 가 자기 한도·메모리·페이지 상태를 답한다(integrity.rs 머리말).

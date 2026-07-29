@@ -391,3 +391,25 @@ fn a_request_envelope_carries_the_method_and_its_params() {
     // 창으로 배달하려 하고, 그러면 자기 창에 물어 상한까지 침묵한다.
     assert!(v.get("window").is_none(), "저장소 요청에 창이 실렸다: {v}");
 }
+
+// ── 명령이 호스트에 닿는다 ────────────────────────────────────────────────────
+//
+// 부팅이 호스트를 세우고 그것을 아무 데도 안 실으면, 저장소를 위임한 프로세스의 명령은
+// 물을 곳이 없어 그대로 거절된다 — 둘째 앱은 뜨지만 쓰지 못한다.
+//
+// 프로세스에 하나다: 이 프레임워크는 cored 에 **한 번** 붙는다. 여럿을 두면 같은 창을 든
+// 호스트가 둘이 되고, cored 는 그것을 AMBIGUOUS_HOST 로 거절한다(우리가 만든 겹침이다).
+
+/// 세우기 전에는 없다 — 없는 것을 있는 척하면 부른 쪽이 상한까지 기다린다.
+#[test]
+fn there_is_no_host_before_boot_stands_one_up() {
+    // 이 검사는 부팅을 안 지난다. 그 상태에서 물으면 "없다"가 나와야 한다.
+    assert!(current().is_none(), "부팅 전인데 호스트가 있다");
+}
+
+/// 물을 곳이 없으면 **이름을 달고** 실패한다. 조용한 실패는 "명령이 사라진다"로만 보인다.
+#[test]
+fn asking_without_a_host_fails_by_name() {
+    let e = ask_owner("data_get", &serde_json::json!({})).expect_err("호스트가 없다");
+    assert!(e.contains("cored"), "사유가 어디에 못 물었는지 말하지 않는다: {e}");
+}

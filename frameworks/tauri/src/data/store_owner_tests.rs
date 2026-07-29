@@ -49,3 +49,33 @@ fn a_delegated_command_asks_the_owner_instead_of_failing() {
 fn not_initialised_and_owned_elsewhere_are_different_facts() {
     assert_ne!(StoreRoute::AskOwner, StoreRoute::OwnConnection);
 }
+
+// ── 위임된 명령이 실제로 넘어가는가 ──────────────────────────────────────────
+//
+// 갈래를 세우고 명령이 여전히 "이 홈의 저장소는 다른 프로세스가 소유한다"로만 끝나면,
+// 둘째 앱은 뜨지만 쓰지 못한다. 넘어가야 그 앱에서도 쓰기가 UI 로 이어진다.
+
+/// 위임된 자리는 **묻는 봉투를 만든다.** 만들지 않으면 넘어갈 것이 없다.
+#[test]
+fn a_delegated_op_names_the_method_it_would_ask() {
+    let (method, params) = super::commands::delegated_call("data_get", serde_json::json!({ "ns": "n" }));
+    assert_eq!(method, "data_get");
+    assert_eq!(params["ns"], "n");
+}
+
+/// 넘어간 답은 **그 명령의 타입**으로 돌아온다. JSON 그대로 두면 부른 쪽이 다시 조립하고,
+/// 그 조립이 앱 경로와 갈리는 순간 같은 이름이 두 모양을 답하게 된다.
+#[test]
+fn a_delegated_answer_comes_back_typed() {
+    let v = serde_json::json!(["a", "b"]);
+    let out: Vec<String> = super::commands::from_owner(v).expect("타입으로 돌아온다");
+    assert_eq!(out, vec!["a".to_string(), "b".to_string()]);
+}
+
+/// 주인이 답을 못 주면 그 사유가 그대로 온다 — 여기서 삼키면 "빈 결과"로 나타난다.
+#[test]
+fn a_delegated_failure_keeps_its_reason() {
+    let e = super::commands::from_owner::<Vec<String>>(serde_json::json!("문자열은 배열이 아니다"))
+        .expect_err("모양이 다르면 실패한다");
+    assert!(!e.is_empty(), "사유가 비었다");
+}
