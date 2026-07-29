@@ -188,6 +188,8 @@ fn route(ctx: &Ctx, req: &Request, line: &str, conn: ConnRef<'_>) -> Value {
 /// 가면 요청마다 다른 스레드가 답해도 그 약속이 선다.
 #[cfg(unix)]
 pub struct Conn {
+    /// 이 연결의 이름 — 프로세스 안에서 유일하고 재사용되지 않는다.
+    id: u64,
     /// 답을 쓰는 자리. 한 줄이 통째로 나가야 한다 — 여럿이 동시에 쓰면 줄이 섞여 받는 쪽이
     /// 파싱에서 처음 깨진다.
     writer: Mutex<std::os::unix::net::UnixStream>,
@@ -201,11 +203,19 @@ pub struct Conn {
 #[cfg(unix)]
 impl Conn {
     pub fn new(stream: std::os::unix::net::UnixStream) -> Self {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         Conn {
+            id: NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             writer: Mutex::new(stream),
             bridge: std::sync::atomic::AtomicBool::new(false),
             owned: Mutex::new(Vec::new()),
         }
+    }
+
+    /// 이 연결의 이름. 창 호스트 장부가 **어느 연결이 붙었는지**를 이것으로 안다 —
+    /// 주소 비교로 하면 연결이 사라진 뒤 같은 주소에 난 다른 연결을 같은 것으로 본다.
+    pub fn id(&self) -> u64 {
+        self.id
     }
 
     /// 이 연결로 나가는 **유일한 쓰기**. 줄 단위로 잠근다.
@@ -233,7 +243,12 @@ impl Conn {
     }
 
     /// 연결이 끝났다 — 이 연결이 만든 스트림도 끝난다.
+    /// 연결이 끝났다. 이 연결이 지고 있던 것을 전부 놓는다.
+    ///
+    /// 창 호스트도 여기서 놓는다 — 호스트가 여럿이면 죽은 것이 장부에 남고, 그 자리로 간
+    /// 배달은 실패가 아니라 **상한까지 침묵**으로 나타난다(쓰기는 성공하고 답이 없다).
     pub fn release(&self) {
+        crate::control::detach_host(self.id);
         let mut v = self.owned.lock().unwrap_or_else(|e| e.into_inner());
         crate::streams::release_all(&v);
         v.clear();

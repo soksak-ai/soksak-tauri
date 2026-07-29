@@ -1633,12 +1633,27 @@ fn run_control_bridge_attach(_ctx: &Ctx, _params: &Value) -> Outcome {
     Outcome::Failed("연결 역할 선언은 유닉스 소켓 위에서만 섭니다".into())
 }
 
+/// 창 사실 갱신 — **자기 창에 대해서만**이다. 그래서 화자를 연결로 안다: 한 프레임워크의
+/// 보고가 다른 프레임워크의 창까지 갈아치우면 그쪽 창이 보고 한 번에 주소를 잃는다.
+#[cfg(unix)]
 fn run_control_windows(_ctx: &Ctx, params: &Value) -> Outcome {
     let a: WindowFacts = match serde_json::from_value(params.clone()) {
         Ok(v) => v,
         Err(e) => return Outcome::InvalidParams(e.to_string()),
     };
-    Outcome::Ok(Value::Bool(crate::control::update_windows(a.live, a.focused)))
+    let Some(c) = crate::wire::current_conn() else {
+        return Outcome::Failed("연결 없이 온 창 보고는 어느 호스트의 것인지 알 수 없습니다".into());
+    };
+    Outcome::Ok(Value::Bool(crate::control::update_windows(
+        c.id(),
+        a.live,
+        a.focused,
+    )))
+}
+
+#[cfg(not(unix))]
+fn run_control_windows(_ctx: &Ctx, _params: &Value) -> Outcome {
+    Outcome::Failed("배달 통로는 유닉스 소켓 위에서만 섭니다".into())
 }
 
 #[derive(serde::Deserialize)]
