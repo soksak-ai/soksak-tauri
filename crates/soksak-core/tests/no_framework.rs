@@ -46,6 +46,64 @@ const FORBIDDEN: &[(&str, &str)] = &[
     ("static mut", "동일"),
 ];
 
+/// 금지 심볼을 **부르지 않고 이름으로만** 든 자리의 사면 — (파일명, 심볼, 사유).
+///
+/// 규칙 중에는 금지 심볼 자체가 대상인 것이 있다. 앰비언트 등재 게이트(`ambient_gate.rs`)는
+/// 환경을 읽는 자리를 찾는 것이 그 일이라 그 문자열을 **바늘로** 들고 있어야 한다.
+///
+/// 문자열을 쪼개 숨기는 길(`concat!`)도 있지만 그것은 스캐너만 통과시킨다: 소스에서 바늘이
+/// 사라지므로 읽는 사람은 이 코드가 무엇을 찾는지 알 수 없고, `grep` 으로 그 규칙을 찾아오는
+/// 다음 사람도 못 찾는다. 숨긴 결합은 게이트만 속이는 것이 아니라 사람도 속인다.
+///
+/// 그래서 사면은 문장이 아니라 **판정**이다: 사면된 파일에서 그 심볼은 문자열 리터럴 안에만
+/// 있어야 한다(아래 `names_without_calling`). 리터럴 밖에 한 번이라도 나오면 그것은 호출이고
+/// 사면되지 않는다. 그리고 매칭 0건인 사면은 실패다 — 죽은 예외는 다음 위반의 문이 된다.
+const NAMED_NOT_CALLED: &[(&str, &str, &str)] = &[(
+    "ambient_gate.rs",
+    "env::var",
+    "앰비언트 등재 게이트의 바늘 — 환경을 읽는 자리를 찾는 것이 이 파일의 일이다. \
+     이 파일 자신은 읽지 않는다(뿌리도 등재표도 인자로 온다).",
+)];
+
+/// 이 줄의 심볼이 전부 문자열 리터럴 안에 있는가 — 즉 이름으로만 들었는가.
+///
+/// 이스케이프(`\"`)를 따옴표로 세면 `format!("… env::var(\"{key}\") …")` 같은 줄에서 리터럴이
+/// 중간에 끊긴 것으로 보이고, 그러면 이름으로 든 것을 호출로 오판한다. raw 문자열(`r#"…"#`)은
+/// 다루지 않는다 — 지금 사면된 자리에 없고, 생기면 여기가 오판하는 쪽(거짓 위반)으로 틀린다.
+fn names_without_calling(code: &str, sym: &str) -> bool {
+    let bytes = code.as_bytes();
+    let mut inside = vec![false; bytes.len()];
+    let mut in_str = false;
+    let mut escaped = false;
+    for (i, b) in bytes.iter().enumerate() {
+        if escaped {
+            escaped = false;
+            inside[i] = in_str;
+            continue;
+        }
+        match b {
+            b'\\' if in_str => {
+                escaped = true;
+                inside[i] = true;
+            }
+            b'"' => {
+                inside[i] = in_str;
+                in_str = !in_str;
+            }
+            _ => inside[i] = in_str,
+        }
+    }
+    let mut start = 0;
+    while let Some(rel) = code[start..].find(sym) {
+        let at = start + rel;
+        if !inside[at] {
+            return false;
+        }
+        start = at + 1;
+    }
+    true
+}
+
 /// 이 파일이 **검사 밖 테스트 모듈**인가 — `<모듈>_tests.rs` 는 다른 파일에서
 /// `#[cfg(test)] #[path = "..."] mod` 로만 들어온다(비공개 항목에 닿기 위한 분리).
 ///
@@ -79,6 +137,7 @@ fn no_forbidden_symbol_in_sources() {
     assert!(files.len() >= 3, "소스를 못 읽었다: {}", files.len());
 
     let mut hits = Vec::new();
+    let mut amnesty_used = vec![false; NAMED_NOT_CALLED.len()];
     for f in &files {
         let src = std::fs::read_to_string(f).unwrap_or_default();
         let name = f.file_name().unwrap().to_string_lossy().to_string();
@@ -106,13 +165,50 @@ fn no_forbidden_symbol_in_sources() {
             }
             let code = line.split("//").next().unwrap_or("");
             for (sym, why) in FORBIDDEN {
-                if code.contains(sym) {
-                    hits.push(format!("{name}:{}: {sym} — {why}", i + 1));
+                if !code.contains(sym) {
+                    continue;
                 }
+                let amnesty = NAMED_NOT_CALLED
+                    .iter()
+                    .position(|(file, s, _)| *file == name && s == sym);
+                if let Some(idx) = amnesty {
+                    if names_without_calling(code, sym) {
+                        amnesty_used[idx] = true;
+                        continue;
+                    }
+                }
+                hits.push(format!("{name}:{}: {sym} — {why}", i + 1));
             }
         }
     }
     assert_eq!(hits, Vec::<String>::new(), "코어 크레이트에 프레임워크가 섞였다");
+
+    // 죽은 사면 — 사면은 지금 있는 것을 설명하는 문장이지 미래를 위한 예약이 아니다.
+    let dead: Vec<String> = NAMED_NOT_CALLED
+        .iter()
+        .zip(&amnesty_used)
+        .filter(|(_, used)| !**used)
+        .map(|((file, sym, why), _)| format!("{file}/{sym} ({why})"))
+        .collect();
+    assert_eq!(
+        dead,
+        Vec::<String>::new(),
+        "사면이 가리키는 자리가 없다 — 지워라. 남겨두면 그 파일에 새로 생긴 같은 심볼이 답 없이 통과한다"
+    );
+}
+
+/// 사면 판정 자체의 자격 — 이름으로 든 것과 부른 것을 실제로 가르는가.
+///
+/// 못 가르면 사면은 파일 통째 면제가 된다. 그 상태에서도 위반 0건은 나온다.
+#[test]
+fn an_amnesty_covers_naming_but_never_calling() {
+    let sym = "env::var";
+    assert!(names_without_calling("if !code.contains(\"env::var(\") { }", sym));
+    // 이스케이프된 따옴표가 리터럴을 끊는 것으로 보이면 이름으로 든 줄이 호출로 오판된다.
+    assert!(names_without_calling("out.push(format!(\"env::var(\\\"{key}\\\") 미등재\"));", sym));
+    // 호출은 사면되지 않는다 — 리터럴 밖에 한 번이라도 나오면 그것으로 끝이다.
+    assert!(!names_without_calling("let v = std::env::var(\"HOME\");", sym));
+    assert!(!names_without_calling("let v = std::env::var(k); // \"env::var\"", sym));
 }
 
 /// 면제 판정 자체의 자격 — 이름만으로 넘기면 이름이 곧 우회로가 된다.

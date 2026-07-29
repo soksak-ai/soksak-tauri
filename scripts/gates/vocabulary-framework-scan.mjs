@@ -34,7 +34,7 @@ export const REAL_SHELL_PATHS = [
   ["frameworks/tauri/src/pty.rs", "PTY 세션의 임자 — 셸을 스폰하고 env·통합·생존을 소유한다"],
   ["frameworks/tauri/src/daemon.rs", "Procfile 데몬이 로그인 셸을 인자로 받아 스폰한다"],
   ["frameworks/tauri/src/login_shell.rs", "`$SHELL` 을 읽는 저장소의 유일한 자리"],
-  ["frameworks/tauri/src/ambient_gate.rs", "앰비언트 표에 `SHELL`·`ZDOTDIR` 이 항목으로 산다"],
+  ["crates/soksak-core/src/ambient_gate.rs", "앰비언트 표에 `SHELL`·`ZDOTDIR` 이 항목으로 산다"],
   ["crates/soksak-core/assets/shell-integration.zsh", "셸 통합 스크립트 본체(OSC 133/633)"],
   ["crates/soksak-ptyd/", "PTY 세션 데몬 — 셸과 그 자식을 앱 밖에서 소유한다"],
   ["crates/soksak-spec-pty/", "PTY 계약 — shellPid·인계가 계약 필드다"],

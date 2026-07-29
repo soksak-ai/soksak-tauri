@@ -24,7 +24,6 @@ mod project_registry;
 mod pty;
 mod pty_delivery;
 mod activity_sink;
-mod ambient_gate;
 #[cfg(test)]
 mod cored_ledger;
 #[cfg(test)]
