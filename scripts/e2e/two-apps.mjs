@@ -15,7 +15,7 @@
 // 공유한다"는 바로 그 명제를 안 재게 된다.
 
 import { spawn, execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, readdirSync, openSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -37,6 +37,24 @@ const CORED_BIN = join(REPO_ROOT, "target/debug/soksak-cored");
 const BOOT_LIMIT_MS = 40_000;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** 띄운 채로 둘 것인가 — 사람이 화면을 볼 때. */
+const KEEP = process.argv.includes("--keep");
+
+/**
+ * 띄운 채로 둘 때는 **파이프를 주지 않는다.**
+ *
+ * 실사고(2026-07-29): 파이프로 띄워 두고 하니스가 빠지자 그 파이프가 닫혔고, 다음 로그 한
+ * 줄이 두 앱을 모두 죽였다(Electron 은 EPIPE 예외, Tauri 는 stderr 쓰기 실패 패닉).
+ * 관측하려고 연 통로가 관측 대상을 죽인 것이다.
+ *
+ * 그래서 로그는 **파일로** 간다 — 부모가 없어져도 그 fd 는 살아 있다.
+ */
+function logTarget(name) {
+  mkdirSync(ISOLATED, { recursive: true });
+  const path = join(ISOLATED, `${name}.log`);
+  return { path, fd: openSync(path, "w") };
+}
 
 /** 이 정체성의 제어 소켓 — 규칙은 코어가 소유한다(`<home>/<identifier>.sock`). */
 export function controlSocket(identifier) {
@@ -76,22 +94,30 @@ const ISOLATION_ENV = {
 };
 
 function launchTauri() {
-  return spawn(TAURI_BIN, [], {
+  const out = KEEP ? logTarget("tauri") : null;
+  const p = spawn(TAURI_BIN, [], {
     env: { ...process.env, ...ISOLATION_ENV },
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: out ? ["ignore", out.fd, out.fd] : ["ignore", "pipe", "pipe"],
+    detached: KEEP,
   });
+  p.logPath = out?.path ?? null;
+  return p;
 }
 
 function launchElectron() {
-  return spawn("npx", ["electron", ELECTRON_MAIN], {
+  const out = KEEP ? logTarget("electron") : null;
+  const p = spawn("npx", ["electron", ELECTRON_MAIN], {
     cwd: REPO_ROOT,
     env: {
       ...process.env,
       ...ISOLATION_ENV,
       SOKSAK_IDENTIFIER: "com.soksak.electron.dev",
     },
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: out ? ["ignore", out.fd, out.fd] : ["ignore", "pipe", "pipe"],
+    detached: KEEP,
   });
+  p.logPath = out?.path ?? null;
+  return p;
 }
 
 /** 이 홈의 저장소 잠금을 누가 들고 있는가 — 없으면 null. */
@@ -114,7 +140,18 @@ const alive = (p) => p && p.exitCode === null && p.signalCode === null;
  * 시간으로 기다리지 않는다 — 느린 기계에서 지나가고 빠른 기계에서 낭비한다. 프로세스가
  * 죽으면 즉시 그 사실로 끝난다(상한까지 기다리면 "왜 안 뜨지"가 40초 뒤에야 보인다).
  */
-function untilSays(proc, pattern, limitMs, what) {
+async function untilSays(proc, pattern, limitMs, what) {
+  // 파이프가 없으면(띄운 채로 두는 모드) 로그 파일이 그 프로세스가 말하는 자리다.
+  if (proc.logPath) {
+    const deadline = Date.now() + limitMs;
+    while (Date.now() < deadline) {
+      if (!alive(proc)) throw new Error(`${what} 가 뜨기 전에 끝났다 — ${proc.logPath}`);
+      const seen = existsSync(proc.logPath) ? readFileSync(proc.logPath, "utf8") : "";
+      if (pattern.test(seen)) return true;
+      await sleep(200);
+    }
+    throw new Error(`${what} 가 ${limitMs}ms 안에 부팅을 알리지 않았다 — ${proc.logPath}`);
+  }
   return new Promise((resolve, reject) => {
     let seen = "";
     const done = (fn, v) => {
@@ -190,6 +227,17 @@ async function main() {
   } catch (e) {
     check(false, String(e.message || e));
   } finally {
+    // `--keep` — 띄운 채로 둔다. 사람이 화면을 보고 확인하는 자리다(R3: UI 는 눈으로 본다).
+    // 기본은 거둔다: 검사가 프로세스를 남기면 다음 실행이 자기 앞의 것과 경쟁한다.
+    if (KEEP) {
+      console.log(
+        `\n띄운 채로 둔다 — Tauri pid ${tauri?.pid ?? "?"} · Electron pid ${electron?.pid ?? "?"}`,
+      );
+      console.log(`거두려면: kill ${tauri?.pid ?? ""} ${electron?.pid ?? ""}`);
+      for (const p of [electron, tauri]) p?.unref?.();
+      const bad0 = results.filter((r) => !r.ok).length;
+      process.exit(bad0 === 0 ? 0 : 1);
+    }
     for (const p of [electron, tauri]) {
       if (alive(p)) {
         p.kill();
