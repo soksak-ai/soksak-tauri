@@ -84,9 +84,22 @@
 # 사용자가 보고 있지 않은 창에서 돌고 성공을 답한다. 나머지 증가는 `active_window` 를 창
 # 사실의 출처로 노출한 것이다(호스트가 포커스를 보고한다).
 # 축소 조건은 그대로다: 이 파일의 소켓 서버·라우터·창 해소를 가르고 --prune.
+#
+# ── 2026-07-29 명시 재입법: 저장소 표면 배선 ─────────────────────────────────
+# cored 가 앱의 저장소 명령 18건을 서빙한다(registry.rs 2469→2963). 늘어난 494줄은 표 선언과
+# 배선이고, 판정은 한 줄도 없다 — 전부 soksak-store 를 부른다. 여기서 한 줄이라도 판정하면
+# 앱 경로와 이 경로가 다르게 답할 수 있고, 그 차이는 오류가 아니라 **다른 데이터**로 나타난다.
+#
+# 이 표가 채워져야 앱이 자기 DB 커넥션을 놓을 수 있고, 그래야 저장소를 쓰는 주인이 하나가
+# 된다. 지금은 앱과 cored 가 같은 파일을 각자 연다.
+#
+# store.rs 2115→2117 은 NsRemoval 에 직렬화를 단 것이다 — 소켓을 건너야 하는 값이라
+# 직렬화 없이는 그 사실이 프로세스 안에 갇힌다.
+#
+# 줄이는 길: registry.rs 의 표를 갈래별 파일로 나눈다(저장소·창·프로세스·플러그인).
 crates/soksak-cli/src/lib.rs 2095
-crates/soksak-cored/src/registry.rs 2469
-crates/soksak-store/src/store.rs 2115
+crates/soksak-cored/src/registry.rs 2963
+crates/soksak-store/src/store.rs 2117
 frameworks/tauri/src/ipc.rs 1562
 frameworks/tauri/src/plugins.rs 1585
 frameworks/tauri/src/schedule.rs 1624

@@ -184,6 +184,8 @@ fn select_and_delete(
 // 이 표면이 없어서 회수 3축의 데이터 축이 뚫려 있었다: 하니스·플러그인이 ns 를 만들 수는 있는데
 // 걷을 수는 없어, 시험이 끝나도 남의 저장소에 흔적이 남았다(실측). 만드는 길이 있으면 걷는 길도 있어야 한다.
 // 반환 = 지운 레코드·kv 행 수와 컬렉션 수. 없는 ns 는 실패가 아니라 0 이다(멱등).
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NsRemoval {
     pub collections: usize,
     pub records: usize,

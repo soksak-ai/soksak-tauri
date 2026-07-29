@@ -13,12 +13,13 @@ use super::*;
 
 /// 지금 이 트리의 state-bound 미답 수 — **래칫이다.**
 ///
-/// 실측 2026-07-29: state-bound 68건 중 **45건**이 아무 답도 없었다. 그동안 이 갈래를 세는
-/// 자리가 없어 그 45 는 어디에도 안 적혀 있었다.
+/// 실측 2026-07-29: state-bound 갈래를 세는 자리가 없어 45건이 어디에도 안 적혀 있었다.
+/// 그 뒤 cored 가 저장소 표면 18건을 서빙하면서 **27건**으로 내려왔다 — 앱이 자기 커넥션을
+/// 놓을 수 있게 된 만큼이다.
 ///
 /// 이 갈래는 "관리 상태·앱 핸들에 묶였다"는 1차 판정일 뿐이라, 계약(WindowOracle·
 /// ActivitySink·CommandDispatch)이 풀면 open 이나 served 로 내려간다. 그때 이 수를 함께 내린다.
-const STATE_BOUND_UNANSWERED: usize = 45;
+const STATE_BOUND_UNANSWERED: usize = 27;
 
 /// state-bound 갈래에서 아직 아무 답도 없는 이름들.
 fn state_bound_unanswered() -> Vec<String> {
