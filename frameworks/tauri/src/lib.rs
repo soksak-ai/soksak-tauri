@@ -227,8 +227,24 @@ pub fn run() {
             data::ring::set_app(app.handle());
             // 범용 데이터 스토어(app.data) — 소켓 서버 이전에 연다(커맨드가 즉시 쓸 수 있도록).
             // open_or_recover: 본체 손상 시 손상본 격리→백업 슬롯 복원→재개방(무음 미초기화 제거).
+            // 여는 것은 **주인만** 한다. 같은 홈에 이미 주인이 있으면(그 홈의 cored, 또는 다른
+            // 프레임워크가 세운 것) 이 프로세스는 열지 않고 그쪽에 묻는다 — 둘이 각자 열면
+            // 쓰기자가 둘이고, SQLite 는 막지 않고 직렬화만 한다.
+            //
+            // 못 잡은 것은 실패가 아니다. 실패로 다루면 두 번째 프레임워크가 저장소를 통째로
+            // 못 쓰고, 그것이 두 앱을 동시에 못 켜던 자리다.
             match data::db_path() {
                 Err(e) => eprintln!("[data] DB 경로 계산 실패: {e}"),
+                Ok(db_path) if {
+                    let owner = data::claim_store(&db_path);
+                    data::set_route(owner);
+                    owner.delegates()
+                } => {
+                    eprintln!(
+                        "[data] 이 홈의 저장소는 다른 프로세스가 소유한다 — 열지 않고 cored 에 묻는다({})",
+                        db_path.display()
+                    );
+                }
                 Ok(db_path) => match soksak_store::open::open_or_recover(&db_path) {
                     Ok((conn, recovery)) => {
                         // 활동 허브 컬렉션(core/activity) 정의 — 발행 즉시 영속 가능(A1).

@@ -49,14 +49,30 @@ fn emit_change(
     }
 }
 
+/// 저장소 하나를 만지는 유일한 통로.
+///
+/// 이 프로세스가 주인이 아니면 커넥션이 **없는 것이 정상**이다 — 같은 홈에 이미 주인이 있고,
+/// 둘이 각자 열면 쓰기자가 둘이 된다. 그때는 "DB 미초기화"가 아니라 그 사실을 이름으로
+/// 말한다: 둘을 한 오류로 뭉치면 둘째 프레임워크의 정상 상태가 결함처럼 보이고, 사람이
+/// 없는 결함을 쫓는다.
 fn with_conn<T>(
     state: &DbState,
     f: impl FnOnce(&Connection) -> Result<T, String>,
 ) -> Result<T, String> {
+    if super::route() == super::StoreRoute::AskOwner {
+        return Err(STORE_OWNED_ELSEWHERE.to_string());
+    }
     let guard = state.conn.lock().map_err(|e| e.to_string())?;
     let conn = guard.as_ref().ok_or("DB 미초기화")?;
     f(conn)
 }
+
+/// 위임된 프로세스가 저장소를 직접 만지려 할 때의 사유.
+///
+/// 이 문자열이 UI 까지 가는 것은 **아직 배선이 안 끝났다는 뜻**이다. 배선이 끝나면 이 자리는
+/// cored 로 넘어가고 이 사유는 안 보인다. 그때까지는 조용히 실패하지 않는 것이 낫다.
+pub const STORE_OWNED_ELSEWHERE: &str =
+    "이 홈의 저장소는 다른 프로세스가 소유한다 — 이 프로세스는 열지 않는다(cored 로 물어야 한다)";
 
 // ── KV ───────────────────────────────────────────────────────────────────────
 

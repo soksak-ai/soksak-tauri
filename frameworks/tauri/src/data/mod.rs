@@ -64,3 +64,109 @@ pub fn db_path() -> Result<PathBuf, String> {
 #[cfg(test)]
 #[path = "mod_tests.rs"]
 mod tests;
+
+/// 이 홈의 저장소를 **누가 여는가.**
+///
+/// 앱과 cored 가 같은 홈에서 각자 DB 를 열면 쓰기자가 둘이 된다. SQLite 는 막지 않고
+/// 직렬화만 한다 — `soksak_core::store_lock` 이 시끄럽게 만들려던 바로 그 조용한 경우다.
+///
+/// 그래서 부팅에서 소유권을 잡아 보고, 그 결과가 이 값이다. 못 잡은 것은 **실패가 아니다** —
+/// 이미 그 홈의 주인이 있다는 사실이고, 그때는 그쪽에 물어 답한다. 실패로 다루면 두 번째
+/// 프레임워크가 저장소를 통째로 못 쓰고, 그것이 "동시에 켠다"가 막히던 자리다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StoreOwner {
+    /// 이 프로세스가 쓰기 소유권을 잡았다 — 자기 커넥션으로 답한다.
+    Local,
+    /// 남이 주인이다(그 홈의 cored). 그쪽에 물어 답한다.
+    Remote,
+}
+
+impl StoreOwner {
+    /// 부팅의 소유권 시도 결과에서 온다.
+    pub fn from_claim(owned: bool) -> Self {
+        if owned {
+            StoreOwner::Local
+        } else {
+            StoreOwner::Remote
+        }
+    }
+
+    /// 남에게 넘기는가.
+    pub fn delegates(self) -> bool {
+        matches!(self, StoreOwner::Remote)
+    }
+
+    /// 오류인가 — **아니다.** 이 물음을 남겨 두는 이유는, 못 잡은 것을 오류로 읽는 것이
+    /// 이 설계에서 가장 하기 쉬운 실수이기 때문이다.
+    pub fn is_error(self) -> bool {
+        false
+    }
+}
+
+/// 이 홈의 저장소 쓰기 소유권을 잡아 본다.
+///
+/// 잡은 잠금은 **프로세스가 사는 동안** 들고 있어야 한다 — 떨어뜨리면 그 순간 남이 잡고
+/// 둘이 함께 쓰게 된다. 그래서 여기 붙잡아 둔다(커널이 fd 로 들고 있으므로 프로세스가 죽으면
+/// 저절로 풀린다 — 죽은 잠금을 거두는 장치가 따로 필요 없다).
+pub fn claim_store(db_path: &std::path::Path) -> StoreOwner {
+    static HELD: std::sync::Mutex<Option<soksak_core::store_lock::WriteLock>> =
+        std::sync::Mutex::new(None);
+    let Some(dir) = db_path.parent() else {
+        return StoreOwner::Remote;
+    };
+    if std::fs::create_dir_all(dir).is_err() {
+        return StoreOwner::Remote;
+    }
+    match soksak_core::store_lock::try_acquire(dir) {
+        Ok(soksak_core::store_lock::Acquire::Owned(lock)) => {
+            *HELD.lock().unwrap_or_else(|e| e.into_inner()) = Some(lock);
+            StoreOwner::Local
+        }
+        // 남이 들고 있다 — 정상이다. 잠금 자체를 못 만드는 경우도 여기로 온다:
+        // 그때 여는 쪽을 고르면 두 쓰기자가 되므로, 모르면 넘긴다.
+        _ => StoreOwner::Remote,
+    }
+}
+
+/// 저장소 명령 하나가 **어디로 가는가.**
+///
+/// 소유권 갈래만 세우고 명령이 그대로 자기 커넥션을 보면, 위임된 프로세스는 "DB 미초기화"로
+/// 전부 실패한다 — 조용히 안 되는 것보다 낫지만 여전히 못 켜는 것이다.
+///
+/// 그리고 "DB 미초기화"와 "남이 주인"은 **다른 사실**이다. 한 오류로 뭉치면 둘째 프레임워크의
+/// 정상 상태가 결함처럼 보이고, 사람이 없는 결함을 쫓는다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StoreRoute {
+    /// 이 프로세스가 주인이다 — 자기 커넥션으로 답한다.
+    OwnConnection,
+    /// 남이 주인이다 — 그쪽(cored)에 물어 답한다.
+    AskOwner,
+}
+
+impl StoreRoute {
+    pub fn for_owner(owner: StoreOwner) -> Self {
+        match owner {
+            StoreOwner::Local => StoreRoute::OwnConnection,
+            StoreOwner::Remote => StoreRoute::AskOwner,
+        }
+    }
+}
+
+/// 이 프로세스의 저장소 갈래 — 부팅의 소유권 시도가 정한다.
+///
+/// 커넥션이 있는가로 판정하지 않는다: 아직 안 연 것과 남이 주인인 것이 같아 보이고, 그 둘은
+/// 다른 사실이다(하나는 기다리면 되고 하나는 영영 안 온다).
+static ROUTE: std::sync::OnceLock<StoreRoute> = std::sync::OnceLock::new();
+
+pub fn set_route(owner: StoreOwner) {
+    let _ = ROUTE.set(StoreRoute::for_owner(owner));
+}
+
+/// 아직 안 정해졌으면 자기 커넥션이다 — 부팅 전에 부르는 자리(검사 등)의 오늘 동작을 지킨다.
+pub fn route() -> StoreRoute {
+    *ROUTE.get().unwrap_or(&StoreRoute::OwnConnection)
+}
+
+#[cfg(test)]
+#[path = "store_owner_tests.rs"]
+mod store_owner_tests;
