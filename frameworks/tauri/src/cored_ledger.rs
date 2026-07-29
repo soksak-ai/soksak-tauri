@@ -112,10 +112,23 @@ fn refused_names() -> Vec<&'static str> {
     soksak_cored::registry::UNSERVED.iter().map(|u| u.name).collect()
 }
 
+/// 한 갈래의 미답 — **갈래를 인자로 받는다.**
+///
+/// 갈래를 붙박이로 두면 그 하나만 세는 검사가 "완전성 검사"의 얼굴을 쓴다. 실측: 미답 판정이
+/// open 만 보는 동안 state-bound 갈래는 한 번도 세어진 적이 없었고, `unanswered() == []` 가
+/// 통과하는 그 순간에도 그쪽에는 아무 답 없는 이름이 수십 개 있었다. 0 은 "없다"와 "안 봤다"를
+/// 같은 모양으로 답한다.
+pub(crate) fn unanswered_lane(lane: Lane) -> Vec<String> {
+    let names = ledger().remove(&lane).unwrap_or_default();
+    unanswered_in(&names, &served_names(), &refused_names())
+}
+
 /// 지금 이 소스 트리의 미답 — open 갈래에서 서빙도 거절도 아닌 이름들.
+///
+/// **open 갈래만이다.** 다른 갈래의 미답은 `unanswered_lane` 으로 따로 센다 — state-bound
+/// 인구조사는 `cored_ledger_tests.rs` 가 수를 못 박고 지킨다.
 pub(crate) fn unanswered() -> Vec<String> {
-    let open = ledger().remove(&Lane::Open).unwrap_or_default();
-    unanswered_in(&open, &served_names(), &refused_names())
+    unanswered_lane(Lane::Open)
 }
 
 /// 사람·기계가 함께 읽는 한 줄들.
@@ -333,6 +346,12 @@ mod report {
         for n in &u {
             println!("  {n}");
         }
+        // state-bound 도 함께 낸다 — 한 갈래만 보고하면 다른 갈래의 침묵이 0 처럼 읽힌다.
+        let sb = unanswered_lane(Lane::StateBound);
+        println!("\nstate-bound 미답: {}", sb.len());
+        for n in &sb {
+            println!("  {n}");
+        }
     }
 }
 
@@ -342,3 +361,9 @@ mod report {
 #[cfg(test)]
 #[path = "cored_ledger_family_tests.rs"]
 mod family_tests;
+
+// state-bound 갈래의 인구조사. open 갈래 검사와 같은 규칙을 다른 입력에 걸어야 하므로
+// 같은 비공개 항목(unanswered_in·served_names·refused_names)에 닿는 자리에 둔다.
+#[cfg(test)]
+#[path = "cored_ledger_tests.rs"]
+mod state_bound_tests;

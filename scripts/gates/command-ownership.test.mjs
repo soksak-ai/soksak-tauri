@@ -4,11 +4,11 @@
 // 에서 아무도 답하지 않는데, 그 사실을 세는 자리가 없었기 때문이다. 그러니 이 게이트가 스스로
 // 무너지지 않는 것이 곧 그 수의 신뢰다.
 
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { survey, verify } from "./command-ownership.mjs";
+import { duplicateProblems, frameworkTable, survey, verify } from "./command-ownership.mjs";
 
 function ledgerAt(doc) {
   const dir = mkdtempSync(join(tmpdir(), "cmd-own-"));
@@ -16,6 +16,18 @@ function ledgerAt(doc) {
   writeFileSync(p, JSON.stringify(doc));
   return p;
 }
+
+/** 심은 표 하나를 파일로 세운다 — 실제 트리를 건드리지 않고 판정 규칙만 잰다. */
+function tableAt(files) {
+  const root = mkdtempSync(join(tmpdir(), "cmd-own-tbl-"));
+  mkdirSync(join(root, "t"), { recursive: true });
+  for (const [name, src] of Object.entries(files)) writeFileSync(join(root, "t", name), src);
+  return root;
+}
+
+/** 표 항목 한 벌 — 실제 표와 같은 들여쓰기(2칸)여야 파서가 본다. */
+const entry = (name, kind) =>
+  `  ${name}: {\n    concept: "심은 것",\n    ${kind}: "심은 사유",\n  },\n`;
 
 describe("명령 소유 실측", () => {
   const { rows } = survey();
@@ -26,10 +38,48 @@ describe("명령 소유 실측", () => {
     expect(rows.some((r) => r.name === "window_list")).toBe(true);
   });
 
-  it("소유는 다섯 중 하나로만 판정된다", () => {
+  it("소유는 여섯 중 하나로만 판정된다", () => {
     for (const r of rows) {
-      expect(["core", "framework", "renderer", "refused", "gap"]).toContain(r.owner);
+      expect(["core", "framework", "renderer", "absent", "refused", "gap"]).toContain(r.owner);
     }
+  });
+
+  /**
+   * **absent 는 framework 가 아니다.**
+   *
+   * absent 는 "이 프레임워크엔 그 개념이 없다"는 선언이고, 그 이름을 부른 쪽이 받는 것은
+   * FRAMEWORK_CONCEPT_ABSENT 다. framework 로 세면 이 프레임워크가 답하는 표면이 부풀려진다 —
+   * 실측(2026-07-29): framework 로 세던 24 중 10 이 absent 선언이었고, 갈라 센 뒤 그 24 는
+   * framework 15 · absent 9 가 된다(열 중 하나였던 webview_emit_native 는 지운 중복이라
+   * answer 로 돌아갔다).
+   */
+  it("absent 항목의 owner 는 framework 가 아니다", () => {
+    const { owners } = frameworkTable();
+    const absent = [...owners].filter(([, k]) => k === "absent").map(([n]) => n);
+    // 오라클 생존 — absent 를 하나도 못 읽으면 아래 루프는 아무것도 안 지킨다.
+    expect(absent.length).toBeGreaterThan(0);
+    for (const name of absent) {
+      const row = rows.find((r) => r.name === name);
+      if (!row) continue; // 앱이 안 부르는 이름은 이 장부의 대상이 아니다
+      expect(row.owner).toBe("absent");
+    }
+  });
+
+  /** 게이트 자격 — 심은 표로 세 갈래가 실제로 갈리는지 본다. 안 갈리면 위 검사는 헛것이다. */
+  it("answer·delegated·absent 가 갈린다", () => {
+    const root = tableAt({
+      "a.cjs":
+        "module.exports = {\n" +
+        "  x_one: {\n    concept: \"답한다\",\n    answer: () => 1,\n  },\n" +
+        entry("x_two", "delegated") +
+        entry("x_three", "absent") +
+        "};\n",
+    });
+    const { owners, duplicates } = frameworkTable(root, "t");
+    expect(owners.get("x_one")).toBe("framework");
+    expect(owners.get("x_two")).toBe("renderer");
+    expect(owners.get("x_three")).toBe("absent");
+    expect(duplicates).toEqual([]);
   });
 
   /**
@@ -45,6 +95,55 @@ describe("명령 소유 실측", () => {
     for (const bad of ["host", "port", "entries", "root"]) {
       expect(rows.some((r) => r.name === bad && r.owner === "core")).toBe(false);
     }
+  });
+});
+
+describe("표의 중복 선언", () => {
+  /**
+   * **한 파일 안의 중복**은 적재가 원리상 못 본다 — `Object.entries` 는 이미 접힌 객체를
+   * 받는다. 텍스트에서만 둘 다 보인다. 실측: `webview_emit_native` 가 answer 와 absent 로
+   * 두 번 선언되어 그 명령이 항상 거절됐는데 적재도 표도 조용했다.
+   */
+  it("같은 파일 안의 중복 선언을 잡는다", () => {
+    const root = tableAt({
+      "a.cjs":
+        "module.exports = {\n" +
+        "  x_dup: {\n    concept: \"답한다\",\n    answer: () => 1,\n  },\n" +
+        entry("x_dup", "absent") +
+        "};\n",
+    });
+    const { duplicates } = frameworkTable(root, "t");
+    expect(duplicates.map((d) => d.name)).toEqual(["x_dup"]);
+  });
+
+  /** 파일 사이의 중복도 같은 자리에서 잡는다 — 적재는 이쪽만 볼 수 있다. */
+  it("파일 사이의 중복 선언을 잡는다", () => {
+    const root = tableAt({
+      "a.cjs": "module.exports = {\n" + entry("x_dup", "absent") + "};\n",
+      "b.cjs": "module.exports = {\n" + entry("x_dup", "absent") + "};\n",
+    });
+    const { duplicates } = frameworkTable(root, "t");
+    expect(duplicates).toHaveLength(1);
+    expect(duplicates[0].first).not.toBe(duplicates[0].again);
+  });
+
+  /** 이 트리에는 중복이 없다 — 규칙 검사만 하면 "실제로는 있다"가 조용히 남는다. */
+  it("이 저장소의 표에는 중복이 없다", () => {
+    expect(frameworkTable().duplicates).toEqual([]);
+  });
+
+  /** 중복은 게이트를 **실패시킨다** — 잡기만 하고 통과시키면 아무것도 막지 않는다. */
+  it("중복은 문제로 올라간다", () => {
+    const root = tableAt({
+      "a.cjs": "module.exports = {\n" + entry("x_dup", "absent") + "};\n",
+      "b.cjs": "module.exports = {\n" + entry("x_dup", "absent") + "};\n",
+    });
+    const { duplicates } = frameworkTable(root, "t");
+    const problems = duplicateProblems(duplicates);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatch(/x_dup: 표에 두 번 선언됐다/);
+    // 중복이 없으면 문제도 없다 — 상시 실패하는 게이트는 곧 꺼진다.
+    expect(duplicateProblems([])).toEqual([]);
   });
 });
 

@@ -38,8 +38,14 @@ const CAPABILITIES = "framework_capabilities";
 
 const isFrameworkBranch = (cmd) => BRANCHES.some((p) => String(cmd).startsWith(p));
 
-/** 갈래 파일들을 한 표로 합친다. 합치기가 곧 검사다 — 갈래 밖 이름과 중복 선언은 적재에서 죽는다.
- *  나중에 알면 늦는다: 중복은 나중 파일이 앞 파일을 조용히 덮고, 갈래 밖 이름은 소켓으로 샌다. */
+/** 갈래 파일들을 한 표로 합친다. 합치기가 곧 검사다 — 파일 **사이**의 중복 선언은 적재에서 죽는다.
+ *  나중에 알면 늦는다: 중복은 나중 파일이 앞 파일을 조용히 덮는다.
+ *
+ *  **파일 안의 중복은 여기서 원리상 못 본다.** 받는 것이 이미 해석된 객체라(`Object.entries`),
+ *  같은 키를 두 번 쓴 리터럴은 이 자리에 닿기 전에 하나로 접힌다 — 뒤엣것만 남고 앞엣것은
+ *  존재한 적 없는 것이 된다. 실측(2026-07-29): `webview_emit_native` 가 webview.cjs 안에서
+ *  answer 로 한 번, absent 로 한 번 선언되어 그 명령이 **항상 거절**됐는데 적재도 표도 조용했다.
+ *  그 중복은 소스 텍스트를 읽는 자리(scripts/gates/command-ownership.mjs)가 잡는다. */
 function assemble(modules) {
   const table = {};
   const owner = new Map();
