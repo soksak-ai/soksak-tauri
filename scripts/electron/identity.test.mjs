@@ -14,7 +14,8 @@ import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
-const { frameworkIdentity, identityAxes, homeSuffix, productName } = require("../../frameworks/electron/cored.cjs");
+const { frameworkIdentity, identityAxes, homeSuffix, productName,
+  keychainService } = require("../../frameworks/electron/cored.cjs");
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const FIXTURE = JSON.parse(
@@ -34,6 +35,7 @@ describe("정체성 파생 — 픽스처가 오라클", () => {
     );
     expect(homeSuffix(c.identifier), "homeSuffix").toBe(c.homeSuffix);
     expect(productName(c.identifier), "productName").toBe(c.productName);
+    expect(keychainService(c.identifier), "keychainService").toBe(c.keychainService);
   });
 
   /**

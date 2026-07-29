@@ -14,12 +14,24 @@
 // impl 내부 버퍼(get_password 가 만드는 String 등 크레이트 경계 밖)는 우리가 닿지 못한다 — 비보장.
 //
 // ── 서비스 신원 격리 ──────────────────────────────────────────────────────────
-// 키체인 서비스명 = home::identifier() → dev/debug/release 가 KEK 를 공유하지 않는다(home.rs identity
-// 격리 규칙 이식). account = "device-kek-v1"(버전드 — 미래 마이그레이션). 앱 신원 ACL 결속.
+// 키체인 서비스명 = soksak_core::identity::keychain_service_for_identifier() → **홈과 같은 축(env)**
+// 이다. 볼트 파일이 홈에 사는데 그 열쇠가 프레임워크로 갈리면 파일과 열쇠가 서로 다른 축이 되고,
+// 홈을 공유해도 둘째 프레임워크는 그 볼트를 못 연다. dev/debug/release 는 홈이 갈리므로 KEK 도 갈린다.
+// account = "device-kek-v1"(버전드 — 미래 마이그레이션).
 //
-// ── 단일 인스턴스 전제 ────────────────────────────────────────────────────────
-// ipc.rs 소켓 선점으로 단일 인스턴스라 두 프로세스 동시 create TOCTOU 는 실질 무시 가능. read→(없으면)
-// write 순서라 최악의 경우도 마지막 write 승.
+// 바이너리 격리는 **이것과 별개**다. macOS 키체인 항목의 접근 권한은 바이너리 단위(ACL)이고,
+// 다른 실행물이 같은 항목을 읽으면 OS 가 **거절하는 것이 아니라 사용자에게 묻는다**. 그리고 개발
+// 빌드는 ad-hoc 서명이라 빌드마다 신원이 바뀌어 그 물음이 되돌아온다. 그래서 프롬프트를 한 번으로
+// 만들려면 키체인을 만지는 실행물을 하나로 못박아야 하고, 그것은 이 모듈이 정할 일이 아니다.
+//
+// ── 동시 create 경합 ──────────────────────────────────────────────────────────
+// 한때 "ipc.rs 소켓 선점으로 단일 인스턴스"라 무시할 수 있다고 적혀 있었다. 그 전제는 **깨졌다**:
+// 소켓 이름이 `<home>/<identifier>.sock` 이라 정체성이 다른 두 실행물은 서로 다른 파일을 잡고,
+// 서로를 선점하지 않는다. 홈이 같아도 그렇다.
+//
+// 남은 안전판은 순서뿐이다 — read→(없으면) write 라 최악의 경우 마지막 write 가 이긴다. 그리고
+// 지는 쪽의 KEK 로 wrap 된 볼트가 있으면 그것은 복호 불가가 된다. 실제로 그 창이 열리는 것은 볼트가
+// **아직 없을 때**뿐이므로 오늘의 위험은 낮지만, 무시 가능한 이유가 바뀌었다는 사실은 남긴다.
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
@@ -97,8 +109,8 @@ fn decode_kek(encoded: &str) -> Result<OsKek, OsKeyError> {
     Ok(kek)
 }
 
-// 프로덕션 store — keyring::Entry. 서비스=home::identifier()(dev/debug/release 격리, home.rs 단일진실),
-// account="device-kek-v1"(버전드). 앱 신원 ACL 결속 → 타 호출 위치는 OS 가 조회 거부.
+// 프로덕션 store — keyring::Entry. 서비스는 정체성의 **env 축**에서 나오고(볼트가 사는 홈과 같은 축),
+// account="device-kek-v1"(버전드). 규칙의 단일진실은 soksak_core::identity 다.
 pub struct OsKeyStore {
     service: String,
     account: String,
@@ -109,7 +121,7 @@ impl OsKeyStore {
     // cored 프로세스는 자기 identifier 를 전역으로 알 수 없고, 틀리면 조용히 남의 KEK 를 연다.
     pub(crate) fn for_identity(identity: &crate::identity::Identity) -> Self {
         Self {
-            service: identity.identifier().to_string(),
+            service: soksak_core::identity::keychain_service_for_identifier(identity.identifier()),
             account: "device-kek-v1".to_string(),
         }
     }
@@ -148,134 +160,5 @@ impl SecretStore for OsKeyStore {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::sync::Mutex;
-
-    // 인메모리 store — 실 키체인 미접촉(set_var 0, keyring 미호출). write 횟수를 기록해
-    // "무음 재생성 없음"(Corrupt 시 write 미호출)까지 검증한다.
-    struct MemoryKeyStore {
-        slot: Mutex<Option<String>>,
-        writes: Mutex<u32>,
-    }
-
-    impl MemoryKeyStore {
-        fn empty() -> Self {
-            Self {
-                slot: Mutex::new(None),
-                writes: Mutex::new(0),
-            }
-        }
-        fn seeded(value: &str) -> Self {
-            Self {
-                slot: Mutex::new(Some(value.to_string())),
-                writes: Mutex::new(0),
-            }
-        }
-        fn writes(&self) -> u32 {
-            *self.writes.lock().unwrap()
-        }
-        fn peek(&self) -> Option<String> {
-            self.slot.lock().unwrap().clone()
-        }
-    }
-
-    impl SecretStore for MemoryKeyStore {
-        fn read(&self) -> Result<Option<String>, OsKeyError> {
-            Ok(self.slot.lock().unwrap().clone())
-        }
-        fn write(&self, secret: &str) -> Result<(), OsKeyError> {
-            *self.writes.lock().unwrap() += 1;
-            *self.slot.lock().unwrap() = Some(secret.to_string());
-            Ok(())
-        }
-    }
-
-    // 헤드리스/무 D-Bus 시뮬레이션 — read/write 가 항상 StoreUnavailable.
-    struct UnavailableStore;
-    impl SecretStore for UnavailableStore {
-        fn read(&self) -> Result<Option<String>, OsKeyError> {
-            Err(OsKeyError::StoreUnavailable("no secret-service".to_string()))
-        }
-        fn write(&self, _secret: &str) -> Result<(), OsKeyError> {
-            Err(OsKeyError::StoreUnavailable("no secret-service".to_string()))
-        }
-    }
-
-    // 생성 후 재조회 안정 — 같은 store 로 2회 호출 시 동일 KEK, 2회차는 write 안 함.
-    #[test]
-    fn create_then_read_stable() {
-        let store = MemoryKeyStore::empty();
-        let first = get_or_create_kek(&store).expect("create");
-        let second = get_or_create_kek(&store).expect("read back");
-        assert_eq!(first.as_ref(), second.as_ref(), "생성 후 재조회 안정");
-        assert_eq!(store.writes(), 1, "재조회는 write 안 함(기존 값 반환)");
-    }
-
-    // 서로 다른 빈 store 2개 → 서로 다른 KEK(OsRng 랜덤 확인).
-    #[test]
-    fn absent_stores_yield_random() {
-        let a = get_or_create_kek(&MemoryKeyStore::empty()).expect("a");
-        let b = get_or_create_kek(&MemoryKeyStore::empty()).expect("b");
-        assert_ne!(a.as_ref(), b.as_ref(), "빈 store 2개 → 서로 다른 랜덤 KEK");
-    }
-
-    // 손상 blob → Err(Corrupt), 그리고 write 미호출·슬롯 불변(무음 재생성 금지 회귀 가드).
-    #[test]
-    fn corrupt_blob_rejected() {
-        // (1) 비-base64
-        let bad = MemoryKeyStore::seeded("not-base64!!");
-        let before = bad.peek();
-        assert!(
-            matches!(get_or_create_kek(&bad), Err(OsKeyError::Corrupt(_))),
-            "비base64 → Corrupt"
-        );
-        assert_eq!(bad.writes(), 0, "Corrupt 는 재생성(write) 금지");
-        assert_eq!(bad.peek(), before, "슬롯 값 불변(무음 재생성 없음)");
-
-        // (2) 31B — 유효 base64지만 32B 미달
-        let short = STANDARD.encode([7u8; 31]);
-        let bad2 = MemoryKeyStore::seeded(&short);
-        assert!(
-            matches!(get_or_create_kek(&bad2), Err(OsKeyError::Corrupt(_))),
-            "31B → Corrupt"
-        );
-        assert_eq!(bad2.writes(), 0, "길이 미달도 재생성 금지");
-    }
-
-    // 미도달 store → get_or_create_kek 이 Err(StoreUnavailable) 전파(Ok 폴백 아님). 무음 폴백 금지 가드.
-    #[test]
-    fn unavailable_surfaces_error() {
-        let result = get_or_create_kek(&UnavailableStore);
-        assert!(
-            matches!(result, Err(OsKeyError::StoreUnavailable(_))),
-            "무음 폴백 금지 — StoreUnavailable 를 그대로 표면화해야"
-        );
-    }
-
-    // decode_kek 경계 단위 — 정확히 32B 만 통과, 그 외 길이·디코드 실패는 Corrupt.
-    #[test]
-    fn decode_length_gate() {
-        let exact = STANDARD.encode([9u8; KEK_LEN]);
-        assert_eq!(decode_kek(&exact).unwrap().as_ref(), &[9u8; KEK_LEN]);
-
-        let long = STANDARD.encode([1u8; 33]);
-        assert!(
-            matches!(decode_kek(&long), Err(OsKeyError::Corrupt(_))),
-            "33B → Corrupt"
-        );
-        assert!(
-            matches!(decode_kek("@@@@"), Err(OsKeyError::Corrupt(_))),
-            "디코드 실패 → Corrupt"
-        );
-    }
-
-    // zeroize 는 drop 스크럽이라 직접 관측 불가 — 정직하게 타입으로만 증명한다. 반환 타입이
-    // Zeroizing<[u8;32]> 임을 컴파일 타임에 강제(이게 아니면 컴파일 실패). 크레이트 경계 밖 스크럽은 비보장.
-    #[test]
-    fn kek_is_zeroizing_typed() {
-        fn assert_zeroizing(_: &Zeroizing<[u8; KEK_LEN]>) {}
-        let kek = get_or_create_kek(&MemoryKeyStore::empty()).expect("create");
-        assert_zeroizing(&kek);
-    }
-}
+#[path = "os_key_tests.rs"]
+mod tests;

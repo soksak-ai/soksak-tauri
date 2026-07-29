@@ -119,6 +119,19 @@ function productName(identifier) {
 }
 
 /**
+ * 볼트의 OS 키체인 서비스명 — **홈과 같은 축(env)이다.**
+ *
+ * 볼트 파일은 홈에 산다. 그 열쇠가 프레임워크로 갈리면 파일과 열쇠가 서로 다른 축이 되고,
+ * 홈을 공유해도 둘째 프레임워크는 그 볼트를 못 연다. 접두를 하드코딩하지 않고 identifier 에서
+ * 프레임워크 세그먼트만 뺀다 — 하드코딩하면 접두가 바뀔 때 규칙이 두 벌이 된다.
+ */
+function keychainService(identifier) {
+  const segs = String(identifier).split(".").filter(Boolean);
+  if (!identityAxes(identifier).framework) return String(identifier);
+  return segs.filter((_, i) => i !== segs.length - 2).join(".");
+}
+
+/**
  * 홈 안에서 이 프레임워크만 쓰는 디렉터리 이름 — 웹뷰 프로필·캐시·단일 인스턴스 잠금이 산다.
  *
  * 홈은 프레임워크로 갈리지 않으므로(homeSuffix) **이 이름이 주인을 말해야 한다.** 그냥
@@ -347,6 +360,7 @@ async function ensureCored({
 module.exports = {
   frameworkIdentity,
   frameworkDir,
+  keychainService,
   identityAxes,
   homeSuffix,
   productName,
