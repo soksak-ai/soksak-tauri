@@ -57,10 +57,18 @@ const SCAN_EXTS = new Set([
 ]);
 const TEST_FILE = /(\.test\.(ts|tsx|mjs)|_tests?\.rs)$/;
 
-// Rust 테스트 모듈 제거 — 최상위(#열0) #[cfg(test)] 직후 mod 블록만 brace 깊이로 건너뛴다.
+// Rust 테스트 모듈 제거 — 최상위(#열0) #[cfg(test)] 직후 mod 만 도려낸다.
 // 파일 어디에 있든(말미·중간·복수) 각 모듈만 도려내고, 그 앞뒤 최상위 실행 경로 코드는 남긴다.
 // 모듈 줄은 빈 줄로 대체한다(삭제 아님) — 뒤따르는 실행 경로 코드의 줄 번호를 보존해
 // 위반 보고 위치가 원본 파일과 일치하게 한다.
+//
+// **모양이 둘이다.** 블록(`mod tests { … }`)과 선언(`mod tests;` — 몸이 형제 파일에 있다).
+// 선언을 블록으로 착각해 중괄호를 찾아 나서면 **다음에 나오는 아무 블록이나** 삼키고, 그 안의
+// 실행 경로는 스캔 밖으로 나간다. 위반 0건은 그때도 나오므로 통과를 위장한다(실측 2026-07-29:
+// lib.rs:30 의 `#[cfg(test)] mod cored_ledger;` 가 뒤 50줄을 삼켰다).
+//
+// 검사를 형제 파일로 분리하는 것이 배치의 법이므로(REPO-LAYOUT 법 4) 선언 모양은 늘어난다.
+// `#[path = "…"]` 같은 속성이 사이에 끼는 것도 같은 선언이다.
 export function stripRustTestModule(content) {
   const lines = content.split("\n");
   const out = lines.slice();
@@ -68,10 +76,12 @@ export function stripRustTestModule(content) {
   while (i < lines.length) {
     if (/^#\[cfg\(test\)\]\s*$/.test(lines[i])) {
       let j = i + 1;
-      while (j < lines.length && lines[j].trim() === "") j++;
+      // 빈 줄과 속성(#[path = "…"] 등)은 건너뛴다 — 선언과 mod 사이에 낄 수 있다.
+      while (j < lines.length && (lines[j].trim() === "" || /^#\[/.test(lines[j]))) j++;
       if (j < lines.length && /^(pub\s+)?mod\b/.test(lines[j])) {
-        const end = skipBraceBlock(lines, j); // 블록 다음 줄 인덱스.
-        for (let k = i; k < end; k++) out[k] = ""; // #[cfg(test)]·mod 블록을 빈 줄로 폐기.
+        // 선언(`mod x;`)은 그 줄에서 끝난다. 블록을 찾아 나서면 남의 블록을 삼킨다.
+        const end = /;\s*$/.test(lines[j]) ? j + 1 : skipBraceBlock(lines, j);
+        for (let k = i; k < end; k++) out[k] = "";
         i = end;
         continue;
       }

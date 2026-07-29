@@ -90,6 +90,45 @@ describe("stripRustTestModule — 러스트 테스트 모듈 절단", () => {
     expect(scanFile("frameworks/tauri/src/a.rs", rs)).toEqual([]);
   });
 
+  /**
+   * 중괄호 없는 `#[cfg(test)] mod x;` 는 **선언 한 줄**이다. 블록이 아니므로 절단은 그 줄에서
+   * 끝나야 한다. 블록을 찾아 나서면 다음에 나오는 아무 블록이나 삼키고, 그 안의 실행 경로는
+   * 스캔 밖으로 나간다 — 위반 0건으로 **통과를 위장한다**.
+   *
+   * 실측(2026-07-29): frameworks/tauri/src/lib.rs:30 의 `#[cfg(test)] mod cored_ledger;` 가
+   * 그 뒤 50줄을 삼켰다. 검사를 형제 파일로 분리하는 규칙(REPO-LAYOUT 법 4)이 이 모양을
+   * 늘리므로, 고치지 않으면 사각이 함께 늘어난다.
+   */
+  it("중괄호 없는 mod 선언은 그 줄만 지운다 — 다음 블록을 삼키지 않는다", () => {
+    const rs = [
+      "#[cfg(test)]",
+      "mod only_a_declaration;",
+      "",
+      "fn live() {",
+      '    let t = "soksak-plugin-clip";',
+      "}",
+    ].join("\n");
+    const stripped = stripRustTestModule(rs);
+    expect(stripped, "선언 줄은 지운다").not.toContain("only_a_declaration");
+    expect(stripped, "그다음 실행 경로는 남는다").toContain("soksak-plugin-clip");
+  });
+
+  /** `#[path]` 를 낀 형제 파일 선언도 같은 모양이다. */
+  it("path 속성이 낀 선언도 그 줄들만 지운다", () => {
+    const rs = [
+      "#[cfg(test)]",
+      '#[path = "x_tests.rs"]',
+      "mod tests;",
+      "",
+      "fn live() {",
+      '    let t = "soksak-plugin-clip";',
+      "}",
+    ].join("\n");
+    const stripped = stripRustTestModule(rs);
+    expect(stripped).not.toContain("x_tests.rs");
+    expect(stripped, "그다음 실행 경로는 남는다").toContain("soksak-plugin-clip");
+  });
+
   it("테스트 모듈 이전의 실행 경로 위반은 잡는다", () => {
     const rs = 'const OWNER: &str = "soksak-plugin-workflow";\n\n#[cfg(test)]\nmod tests {}\n';
     expect(scanFile("frameworks/tauri/src/a.rs", rs)).toHaveLength(1);
