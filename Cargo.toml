@@ -46,3 +46,22 @@ tauri-utils = { git = "https://github.com/tauri-apps/tauri", rev = "a370f6533305
 strip = true       # 출하 바이너리에서 심볼 제거(가장 큰 단일 절감)
 lto = "thin"       # 크레이트 간 dead-code 제거(thin = fat 에 근접하면서 빌드 더 빠름)
 codegen-units = 1  # 단일 codegen unit → 최적화/중복제거 향상
+
+# 개발 빌드 — 링크가 병목이다. 컴파일 단위 1161개에 통합 검사 12벌이 각각 의존 그래프
+# **전체를 정적 링크**하고, 거기에 완전한 디버그 심볼이 들어간다. 그 심볼의 대부분은 우리가
+# 안 보는 의존성의 것이다.
+#
+# `line-tables-only` 는 패닉 백트레이스의 **파일:줄** 을 남긴다 — 우리가 실제로 읽는 것은
+# 그것이다. 변수 검사가 필요한 순간에만 `--profile dev-full` 로 올린다.
+[profile.dev]
+debug = "line-tables-only"
+
+# 의존성은 디버그 심볼이 아예 필요 없다 — 그 안에서 멈춰 서서 들여다볼 일이 없다.
+# 링크 시간과 target 용량의 대부분이 여기서 나온다.
+[profile.dev.package."*"]
+debug = false
+
+# 심볼을 보고 싶을 때: cargo test --profile dev-full
+[profile.dev-full]
+inherits = "dev"
+debug = true

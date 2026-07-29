@@ -40,6 +40,20 @@ pub struct AmbientRead {
 /// 등재표. 키는 저장소 기준점 상대 경로 + 환경 키.
 pub const ALLOWED: &[AmbientRead] = &[
     AmbientRead {
+        path: "frameworks/tauri/src/cored_host.rs",
+        key: "HOME",
+        why: "cored 를 띄우며 넘길 OS 사용자 홈 — 띄운 쪽이 상속한 값이다",
+        after_split: "cored 가 자기 환경에서 읽으면 자기를 띄운 쪽의 환경을 사용자의 것인 양 \
+                     답한다. 그래서 이 값은 **넘겨주는 쪽**이 읽어 인자로 준다(--user-home).",
+    },
+    AmbientRead {
+        path: "frameworks/tauri/tests/attaches_to_cored.rs",
+        key: "HOME",
+        why: "검사가 격리 홈을 세우는 자리 — 실 홈을 안 건드리려면 그 값을 알아야 한다",
+        after_split: "검사 픽스처의 뿌리다. 프로세스가 갈려도 검사는 자기 홈을 스스로 세우므로 \
+                     이 읽기는 따라가지 않는다.",
+    },
+    AmbientRead {
         path: "frameworks/tauri/src/ai_session.rs",
         key: "HOME",
         why: "AI 에이전트 세션 디렉터리는 사용자 홈 아래에 있다(~/.claude, ~/.codex)",

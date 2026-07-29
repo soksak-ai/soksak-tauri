@@ -39,7 +39,16 @@ const ELECTRON_APP = "node_modules/electron/dist/Electron.app";
 const ELECTRON_FRAMEWORK = `${ELECTRON_APP}/Contents/Frameworks/Electron Framework.framework/Electron Framework`;
 
 /** 이 기계의 공유 target 설정. 절대경로여야 한다 — 상대경로면 워크트리마다 자기 아래로 풀린다. */
-export function cargoConfigBody(root) {
+/** lld 가 있으면 그 경로, 없으면 null — 없는 링커를 지목하면 빌드가 통째로 깨진다. */
+export function lldPath() {
+  try {
+    return execFileSync("which", ["ld64.lld"], { encoding: "utf8" }).trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+export function cargoConfigBody(root, lld = lldPath()) {
   return `# 빌드 산출물은 **한 자리**에 모은다 — scripts/diag/workspace-doctor.mjs 가 만든다.
 #
 # 워크트리는 완전한 체크아웃이라 각자 \`target/\` 을 만든다. 이 저장소의 전 워크스페이스
@@ -55,7 +64,17 @@ export function cargoConfigBody(root) {
 # 서로 재사용하므로 총 작업량은 훨씬 준다.
 [build]
 target-dir = "${join(root, "target")}"
-`;
+${
+  lld
+    ? `
+# 링커가 개발 빌드의 병목이다 — 통합 검사마다 의존 그래프 전체를 정적 링크한다.
+# lld 는 Apple ld 보다 그 자리에서 여러 배 빠르다. **있을 때만** 적는다 — 없는 링커를
+# 지목하면 빌드가 통째로 깨지고, 그 실패는 이 도구가 만든 것이 된다.
+[target.aarch64-apple-darwin]
+rustflags = ["-C", "link-arg=-fuse-ld=${lld}"]
+`
+    : ""
+}`;
 }
 
 const gib = (bytes) => Math.round((bytes / 1024 ** 3) * 10) / 10;

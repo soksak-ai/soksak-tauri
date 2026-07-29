@@ -302,7 +302,9 @@ describe("제어면 중계", () => {
 
     live = ["main", "w-1"];
     focused = "w-1";
-    host.windowsChanged();
+    // 갱신이 **닿은 뒤에** 묻는다. 보내고 바로 물으면 cored 는 아직 옛 목록으로 타겟을 고르고,
+    // 그 경합은 부하가 있을 때만 진다 — 단독으로는 늘 통과해 결함으로 안 보인다.
+    await host.windowsChanged();
 
     const caller = askRaw(cored.socketPath, { method: "x.y", timeoutMs: 3000 });
     const got = await win.next();

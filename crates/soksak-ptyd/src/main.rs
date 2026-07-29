@@ -829,57 +829,9 @@ mod unix {
             .collect()
     }
 
-    /// 오염된 잠금은 **데이터를 잃었다는 뜻이 아니다.** 그 잠금을 들고 있던 스레드가 패닉했다는
-    /// 뜻이고, 안에 든 값은 그대로다. 데몬이 거기서 죽으면 그 한 스레드의 사고가 **모든 세션의
-    /// 셸을 죽인다** — 앱을 다시 띄워도 되살아나지 않는다. 이 데몬이 있는 이유가 그 생존이므로,
-    /// 오염은 죽을 이유가 아니라 이어받을 사실이다.
-    ///
-    /// `Condvar::wait` 도 같은 오염을 낸다. 두 자리를 다르게 다루면 한쪽만 살아남는다.
     #[cfg(test)]
-    mod poison_tests {
-        use std::sync::{Arc, Condvar, Mutex};
-
-        #[test]
-        fn a_poisoned_lock_still_holds_its_value() {
-            let m = Arc::new(Mutex::new(41u32));
-            let m2 = Arc::clone(&m);
-            // 잠금을 든 채 패닉 — 이것이 오염이다.
-            let _ = std::thread::spawn(move || {
-                let _g = m2.lock().unwrap();
-                panic!("잠금을 든 채 죽는다");
-            })
-            .join();
-            assert!(m.lock().is_err(), "오염되지 않았다면 이 검사가 잴 것이 없다");
-
-            let mut g = m.lock().unwrap_or_else(|e| e.into_inner());
-            assert_eq!(*g, 41, "값이 남아 있어야 이어받는 것이 옳다");
-            *g += 1;
-            assert_eq!(*m.lock().unwrap_or_else(|e| e.into_inner()), 42);
-        }
-
-        #[test]
-        fn a_poisoned_condvar_wait_hands_the_guard_back() {
-            let pair = Arc::new((Mutex::new(false), Condvar::new()));
-            let p2 = Arc::clone(&pair);
-            let _ = std::thread::spawn(move || {
-                let _g = p2.0.lock().unwrap();
-                panic!("잠금을 든 채 죽는다");
-            })
-            .join();
-
-            let g = pair.0.lock().unwrap_or_else(|e| e.into_inner());
-            // 조건이 이미 만족이면 wait 로 안 들어간다 — 오염 뒤에도 guard 를 쓸 수 있다는 것이 요점이다.
-            assert!(!*g);
-            drop(g);
-            let (lock, cv) = &*pair;
-            {
-                let mut b = lock.lock().unwrap_or_else(|e| e.into_inner());
-                *b = true;
-                cv.notify_all();
-                assert!(*b);
-            }
-        }
-    }
+    #[path = "poison_tests.rs"]
+    mod poison_tests;
 
     #[cfg(test)]
     mod handoff_fd_tests {

@@ -142,8 +142,9 @@ describe("이 저장소 실측", () => {
     const { scanned, violations, tenants } = verify();
     expect(scanned, "훑은 소스").toBeGreaterThan(0);
     expect(violations).toEqual([]);
-    // 이관이 끝나면 0이 된다. 그때 이 단언이 실패하고, 그것이 신호다.
-    expect(tenants.length, `남은 이관: ${tenants.join(", ")}`).toBeGreaterThan(0);
+    // 이관이 끝났다 — tenant 는 0이다. 다시 늘면 그것이 신호다: 프레임워크 무관 코드가
+    // 또 프레임워크 폴더 안에서 자랐다는 뜻이고, 그때 이 단언이 잡는다.
+    expect(tenants, `세입자가 다시 생겼다: ${tenants.join(", ")}`).toEqual([]);
   });
 
   it("장부의 갈래는 둘뿐이다", () => {
