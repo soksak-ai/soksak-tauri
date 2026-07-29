@@ -63,8 +63,20 @@
 # 세어진 적이 없다(unwrap 49건 · 1500줄 초과 2파일). 이관 목적지가 스캔 밖이면 프레임워크
 # 에서 옮긴 파일의 부채가 옮겨지는 순간 영영 안 세어진다 — 뿌리 확장이 이관보다 먼저인 이유다.
 # 아래 항목은 새로 생긴 부채가 아니라 **처음 보이게 된 부채**다.
+#
+# ── 2026-07-29 UNSERVED 사유 감사 재입법 ──────────────────────────────────────
+# registry.rs 2408→2469. 늘어난 61줄은 전부 `UNSERVED` 의 `blocked_by` 산문이고, 코드는
+# 한 줄도 늘지 않았다. 사유 감사에서 세 무리가 **사실과 반대**였다:
+#   secret_status — "이 프로세스는 볼트를 열지 않는다"였는데 그 명령은 볼트를 **만든다**
+#     (status → keys → is_unlocked → ensure_open → KEK get-or-create + flush).
+#   볼트 11건 — 몸이 soksak-vault 로 나가고 KEK 주입 이음매가 공개가 된 뒤로 "볼트 자체가
+#     벽"이 아니게 됐다. 남은 벽(키체인 신원 ACL·읽기가 쓰기·expect_vault 깃발)을 새로 적었다.
+#   ipc_last_project_window — "cored 는 그 사건을 받지 않는다"가 control_host_attach·
+#     control_windows 로 해소됐다. 남은 벽은 보고하지 않는 프레임워크 쪽이다.
+# 틀린 사유는 없느니만 못하다 — 옮길 수 있는 것을 못 옮긴다고 적으면 그 이름은 다시 조사되지
+# 않는다. 줄이는 길은 그대로다: 이 표를 별도 파일로 갈라내면 --prune 이 항목을 지운다.
 crates/soksak-cli/src/lib.rs 2095
-crates/soksak-cored/src/registry.rs 2408
+crates/soksak-cored/src/registry.rs 2469
 crates/soksak-store/src/store.rs 2115
 frameworks/tauri/src/ipc.rs 1523
 frameworks/tauri/src/plugins.rs 1585

@@ -15,7 +15,15 @@
 //   cored 표에 있으면            core      (창도 앱 핸들도 없이 같은 답)
 //   프레임워크 표에 answer 가 있으면 framework (창·네이티브 표면 — 어댑터마다 구현)
 //   프레임워크 표에 delegated 면    renderer  (프로세스를 건널 이유가 없다)
+//   프레임워크 표에 absent 면      absent    (그 프레임워크에 개념이 없다 — 선언된 부재)
+//   cored 가 사유를 달고 거절하면  refused   (선언된 공백)
 //   어디에도 없으면                gap       (= 이식 공백. 선언 없이는 통과 못 한다)
+//
+// absent 를 framework 로 세면 **이 프레임워크가 답하는 표면이 부풀려진다.** 실측(2026-07-29):
+// framework 로 세던 24 중 10 이 absent 선언이었다 — 앱이 그 이름을 부르면
+// FRAMEWORK_CONCEPT_ABSENT 를 받는데 장부는 "구현되어 있다"고 말했다. 그 차이는 오류가 아니라
+// **다른 사실**로 퍼진다. 갈라 센 뒤 그 24 는 framework 15 · absent 9 가 된다(그 열 중 하나였던
+// webview_emit_native 는 같은 날 지운 중복 선언이라 answer 쪽으로 돌아갔다).
 //
 // gap 은 래칫이다. 늘면 실패한다 — 새 프레임워크 표면을 이식 없이 늘리는 것을 막는다.
 // 줄면 장부를 줄이라고 말한다 — 고친 것을 장부가 계속 부채로 들고 있으면 수가 거짓이 된다.
@@ -113,20 +121,43 @@ export function tauriRegisters(root = ROOT) {
   );
 }
 
-/** 프레임워크 표의 이름 → 답하는 방식(answer|delegated). */
+/**
+ * 프레임워크 표의 이름 → 답하는 방식(framework|renderer|absent), 그리고 **중복 선언**.
+ *
+ * 중복을 소스 텍스트에서 잡는 이유: 표를 합치는 `native/index.cjs` 의 `assemble` 은 이미
+ * 해석된 객체를 `Object.entries` 로 받는다. 그 시점에는 **한 파일 안의 중복이 존재하지
+ * 않는다** — JS 객체 리터럴이 같은 키를 두 번 쓰면 뒤엣것이 앞엣것을 조용히 덮고, 남는 것은
+ * 항목 하나다. 그래서 파일 사이 중복만 잡히고 파일 안 중복은 원리상 못 본다.
+ *
+ * 실측(2026-07-29): `webview_emit_native` 가 webview.cjs 안에 answer 로 한 번, absent 로 한 번
+ * 선언되어 있었다. 뒤엣것이 이겨 그 명령은 **항상 거절**됐는데, 적재도 통과하고 표도
+ * 답하므로 어디에도 오류가 나지 않았다. 텍스트 단계에서만 둘 다 보인다.
+ */
 export function frameworkTable(root = ROOT, dir = join("frameworks", "electron", "native")) {
-  const out = new Map();
+  const owners = new Map();
+  const declaredAt = new Map();
+  const duplicates = [];
   for (const f of walk(join(root, dir))) {
     if (!f.endsWith(".cjs") || f.endsWith(".test.cjs")) continue;
     const src = read(f);
-    // 표 항목은 최상위 들여쓰기 2칸의 `name: {` 이고, 그 블록 안의 answer/delegated 로 갈린다.
+    const rel = relative(root, f);
+    // 표 항목은 최상위 들여쓰기 2칸의 `name: {` 이고, 그 블록 안의 delegated/absent 로 갈린다.
     for (const m of src.matchAll(/^ {2}([a-z_0-9]+):\s*\{([\s\S]*?)^ {2}\},$/gm)) {
       const [, name, body] = m;
       if (!name.includes("_")) continue;
-      out.set(name, /\bdelegated\s*:/.test(body) ? "renderer" : "framework");
+      const kind = /\bdelegated\s*:/.test(body)
+        ? "renderer"
+        : /\babsent\s*:/.test(body)
+          ? "absent"
+          : "framework";
+      if (declaredAt.has(name)) {
+        duplicates.push({ name, first: declaredAt.get(name), again: rel });
+      }
+      declaredAt.set(name, rel);
+      owners.set(name, kind);
     }
   }
-  return out;
+  return { owners, duplicates };
 }
 
 export function survey(root = ROOT) {
@@ -134,7 +165,7 @@ export function survey(root = ROOT) {
   const cored = coredServes(root);
   const refused = coredUnserved(root);
   const tauri = tauriRegisters(root);
-  const electron = frameworkTable(root);
+  const { owners: electron, duplicates } = frameworkTable(root);
 
   const rows = [];
   for (const name of [...app].sort()) {
@@ -146,15 +177,29 @@ export function survey(root = ROOT) {
     else if (refused.has(name)) owner = "refused";
     rows.push({ name, owner, inTauri: tauri.has(name), why: refused.get(name) ?? null });
   }
-  return { rows, app, cored, refused, tauri, electron };
+  return { rows, app, cored, refused, tauri, electron, duplicates };
+}
+
+/**
+ * 중복 선언 → 문제 문장. 순수 함수라 심은 입력으로 그대로 잰다.
+ *
+ * 같은 이름을 두 번 선언하면 뒤엣것이 이긴다 — 조용히. 적재도 통과하고 표도 답하므로
+ * 오류가 어디에도 안 나고, 그 명령의 실제 답만 바뀐다.
+ */
+export function duplicateProblems(duplicates) {
+  return duplicates.map(
+    (d) => `${d.name}: 표에 두 번 선언됐다(${d.first}, ${d.again}) — 뒤엣것이 앞엣것을 조용히 덮는다`,
+  );
 }
 
 export function verify(root = ROOT, ledgerPath = LEDGER) {
-  const { rows } = survey(root);
+  const { rows, duplicates } = survey(root);
   const ledger = JSON.parse(read(ledgerPath));
   const declared = new Map(Object.entries(ledger.gaps ?? {}));
   const gaps = rows.filter((r) => r.owner === "gap");
   const problems = [];
+
+  problems.push(...duplicateProblems(duplicates));
 
   for (const g of gaps) {
     if (!declared.has(g.name)) {
@@ -231,10 +276,11 @@ function main() {
     console.log("명령 소유 — 앱이 부르는 이름의 답하는 자리");
     console.log(
       `  core ${by("core")} · framework ${by("framework")} · renderer ${by("renderer")}` +
-        ` · 선언거절 ${by("refused")} · 미선언공백 ${gaps.length}/${cap}`,
+        ` · 선언부재 ${by("absent")} · 선언거절 ${by("refused")} · 미선언공백 ${gaps.length}/${cap}`,
     );
     // 답하지 않는 총수도 함께 낸다 — 미선언만 보면 사유를 적는 것이 수를 줄인 것처럼 보인다.
-    console.log(`  답하지 않는 이름 합계: ${by("refused") + gaps.length}`);
+    // absent 도 여기 든다: 선언됐을 뿐 그 이름을 부른 쪽은 값을 못 받는다.
+    console.log(`  답하지 않는 이름 합계: ${by("absent") + by("refused") + gaps.length}`);
     // 공백은 어디로 갚히는지까지 보여야 계획이 된다 — 수만 보면 부채인지 설계인지 모른다.
     const ledger = JSON.parse(readFileSync(LEDGER, "utf8"));
     const plan = {};
