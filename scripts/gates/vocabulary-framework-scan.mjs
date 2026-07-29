@@ -75,6 +75,7 @@ export const REAL_SHELL_TOKENS = new Map([
   ["login_shell_readers", "`$SHELL` 을 읽는 자리를 세는 앰비언트 게이트"],
   ["the_login_shell_scan_actually_finds_a_reader", "그 게이트가 실제로 잡는지 보는 테스트"],
   ["the_login_shell_has_one_reader", "`$SHELL` 을 읽는 자리는 하나라는 게이트"],
+  ["powershell", "Windows 명령 해석기 — 어휘 표에서 shell 축의 예시로 적힌 이름"],
   ["$shell", "사용자 계정 속성 — 로그인 셸 경로"],
   ["process.env.shell", "사용자 계정 속성 읽기"],
   ["default_shell", "로그인 셸 부재 시 기본 경로"],
@@ -227,6 +228,11 @@ export const PROSE_LEDGER = new Map([
   ["docs/NATIVE-SURFACES.ko.md", [4, "[프레임워크/UI] 같은 축(한글)"]],
   ["docs/multiplatform-engine-strategy.md", [3, "[프레임워크/UI] \"host shell\"·\"app UI shell\""]],
   ["docs/multiplatform-engine-strategy.ko.md", [3, "[프레임워크/UI] 같은 축(한글)"]],
+  // 배치 게이트 셋 — 어휘 넷을 **정의하는** 쪽이라 shell 축을 이름으로 적을 수밖에 없다.
+  // 개명 대상이 아니다: 여기서 shell 이 사라지면 그 축을 판정할 근거가 사라진다.
+  ["scripts/gates/framework-folder-vocabulary.mjs", [9, "[정의] 어휘 표와 그 사유 — shell 축을 이름으로 든다"]],
+  ["scripts/gates/layout-gates.test.mjs", [1, "[정의] 그 표를 검증하는 단언 — 다른 축의 낱말 목록에 shell 이 든다"]],
+  ["scripts/gates/workspace-root-not-framework.mjs", [1, "[정의] 어휘 넷 머리말"]],
 ]);
 
 
