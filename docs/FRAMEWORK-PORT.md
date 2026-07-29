@@ -363,12 +363,20 @@ What the harnesses judge today, against this framework: `p0-contracts` 24/0, `mu
 
 That work surfaced a false green. `gutter-drag`'s axis-isolation check was vacuous twice over: it drove only through native input, so on a framework without that command it dragged nothing, and its height oracle read a tree that carries no rect, comparing `-1` to `-1`. Fixing where it measures made a real failure appear immediately.
 
-## Still open
+## What "done" was hiding
 
-An injected DOM drag on a gutter does not commit. The gesture arms and releases exactly as it should (the body cursor is set and cleared, so `onGutterDown` runs to the end), the pane rect stays fixed across 69 samples after mousemoves dispatched on `window`, and the `pane.resize` command works in the same window. The state path is sound and only the pointer path fails to land. Whether a real mouse drag works on this framework is not yet measured — that needs a way to measure it first.
+The port could be called done because nothing counted what was missing. The app invokes 177 backend names; 67 of them are answered by nobody on this framework, and 64 of those exist on Tauri. At runtime each came back as `FRAMEWORK_CONCEPT_ABSENT` — a code that carries two very different facts: *this framework has no such concept* (native child surfaces) and *this was never ported* (scheduler, secrets, clipboard, websockets, the whole `data_*` store surface). Merged, the second wears the face of the first and stays forever.
 
-## One writer per connection
+`scripts/gates/command-ownership.mjs` reads the classification from source — cored's table, each framework's table, Tauri's registration — and the ledger beside it holds only the reason and the **destination** (`core` | `framework` | `renderer` | `unserved`) for each gap, so the next person does not re-decide where a command belongs. `cap` is a ratchet: growing the surface without porting fails, and a gap that someone now answers must be removed from the ledger or the count becomes a lie.
 
-The socket carries three kinds of line out of cored: replies, stream frames, and control-plane deliveries. Each had its own duplicated file descriptor. Two file descriptors are still one socket, so two writes interleave, and the receiving side sees neither line — it sees one broken line and drops it with a log entry that names nothing.
+Today: `core` 74 · `framework` 23 · `renderer` 13 · gaps 67, of which 56 belong in core, 8 in the framework, and 3 stay unserved (`ws_*` — the one transport drags a runtime in, and the dependency gate bans runtimes by name).
 
-A boot produced 22 such lines. The sender succeeded every time; what was lost is not recorded anywhere. Every write now goes through `Conn::write_line`, the stream table holds the connection weakly instead of a copied descriptor, and `dup()` is gone so the door cannot be reopened. Same load after: zero.
+## Observation is part of the port
+
+A gutter drag died on the first move. The gesture armed correctly and the pane rect never changed, and the investigation stalled at "no way to see inside" — which is not a diagnosis, it is a missing surface. `ui.input.observe` records which input events actually reach the window, in the capture phase, so a failed injection splits into *the event never arrived* versus *it arrived and nothing moved*.
+
+It answered in one run: a `mouseup` landed on the gutter at the same instant and coordinates as the first move. The core's pointer-order repair synthesises exactly that when a mousemove arrives with `buttons === 0` while a mousedown is held — a correct guard against macOS window-activation clicks losing their up. The injected events carried no `buttons`, so the value defaulted to 0 and **the injected drag killed itself**. Two contracts, each right, and the feature dead between them. Tauri drove gutters through the native bridge, so this path was never walked there.
+
+That bridge is itself a surface that had to be ported: `webview_emit_native` publishes the same `native-mouse*` events the native monitor emits, and without it there is no way to drive that gesture without a real mouse.
+
+All twelve harnesses are green on this framework.
