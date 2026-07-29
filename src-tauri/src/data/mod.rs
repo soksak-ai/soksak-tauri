@@ -72,26 +72,22 @@ pub fn open(path: &Path) -> Result<Connection, String> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+        let _ = std::fs::set_permissions(
+            path,
+            std::fs::Permissions::from_mode(soksak_core::store_open::STORE_FILE_MODE),
+        );
     }
     // WAL: 읽기-쓰기 비차단(사이드바 읽기 중 CLI 쓰기 → 락 스톨 회피). NORMAL: WAL 에서 안전·고성능.
     // execute_batch 는 sqlite3_exec 라 journal_mode 가 돌려주는 행을 버린다(pragma_update 보다 안전).
-    conn.execute_batch(
-        // [R5] auto_vacuum=INCREMENTAL — retention 의 logical delete 후 incremental_vacuum 으로 free 페이지를
-        // bounded 반환(physical reclaim, #8835 의 '삭제해도 파일 안 줄어듦' 방지). 첫 CREATE 전에 설정해야
-        // 효과 — 기존 DB(auto_vacuum=NONE 으로 생성됨)는 변경이 무시되고 다음 풀 VACUUM(backup) 에 정리된다.
-        // secure_delete=ON — 삭제·덮어쓴 셀 내용을 0 으로 채운다. 봉인 전환(convert 의 in-place UPDATE)이
-        // 남기는 옛 평문 셀·FTS 텀이 freelist·WAL 에 잔존해 파일-carve 로 키 없이 복원되는 걸 막는다
-        // (도난-디스크 위협모델). 봉인 데이터의 at-rest 안전 전제.
-        "PRAGMA auto_vacuum=INCREMENTAL;\
-         PRAGMA secure_delete=ON;\
-         PRAGMA journal_mode=WAL;\
-         PRAGMA synchronous=NORMAL;\
-         PRAGMA busy_timeout=5000;\
-         PRAGMA foreign_keys=ON;\
-         PRAGMA temp_store=MEMORY;",
-    )
-    .map_err(|e| e.to_string())?;
+    // 여는 규칙은 코어가 소유한다(soksak_core::store_open) — cored 도 같은 문장을 쓴다.
+    // 두 벌로 두면 앱이 만든 저장소와 cored 가 만든 저장소가 다른 성질을 갖고, 그 차이는
+    // 오류가 아니라 데이터의 성질로 나타난다(실측 2026-07-29: cored 가 만든 홈은 전부
+    // auto_vacuum=NONE·secure_delete=OFF 였다).
+    //
+    // [R5] auto_vacuum=INCREMENTAL 과 secure_delete=ON 은 **첫 CREATE 전에만** 먹는다 —
+    // 그래서 이 배치가 스키마보다 먼저다. 사유 원문은 store_open 머리말이 진다.
+    conn.execute_batch(soksak_core::store_open::OPEN_PRAGMA_SQL)
+        .map_err(|e| e.to_string())?;
     // [P0] 깊은 손상 게이트 — 헤더는 멀쩡하나 내부 페이지가 손상된 DB 는 Connection::open·DDL·부분
     // 조회가 통과해 부분 유실을 성공으로 오인한다(비헤더 손상 무음 통과). quick_check(integrity_check
     // 경량판)로 페이지 무결성을 부팅 개방에서 확인해 손상을 복구 경로(open_or_recover)로 넘긴다. 정상

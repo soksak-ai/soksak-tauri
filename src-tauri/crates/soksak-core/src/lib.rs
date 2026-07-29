@@ -40,6 +40,7 @@ pub mod secret_env;
 pub mod session;
 pub mod skillgen;
 pub mod store_lock;
+pub mod store_open;
 pub mod stream;
 pub mod stream_sink;
 pub mod themes;

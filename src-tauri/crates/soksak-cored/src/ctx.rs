@@ -88,11 +88,34 @@ impl Ctx {
         }
     }
 
+    /// 저장소를 연다 — **여는 규칙은 코어가 소유한다**(store_open).
+    ///
+    /// 맨 연결로 열면 auto_vacuum·secure_delete 가 안 걸리고, 그 둘은 파일이 태어날 때 한 번
+    /// 정해져 이후에 못 바꾼다. 앱이 없는 홈에서는 이 자리가 저장소를 **만드는** 자리라,
+    /// 여기서 안 걸면 그 홈의 저장소는 영원히 다른 성질을 갖는다(실측 2026-07-29).
+    pub fn open_db(&self) -> Result<rusqlite::Connection, String> {
+        let path = self.db_path();
+        let conn = rusqlite::Connection::open(&path)
+            .map_err(|e| format!("저장소 열기 실패({}): {e}", path.display()))?;
+        conn.execute_batch(soksak_core::store_open::OPEN_PRAGMA_SQL)
+            .map_err(|e| format!("저장소 PRAGMA 실패: {e}"))?;
+        // 봉투 키와 레코드가 사는 파일이다 — 같은 머신의 다른 사용자에게 열어 두지 않는다.
+        // 권한을 지원하지 않는 파일 시스템에서는 조용히 넘어간다(못 거는 것과 안 거는 것은 다르다).
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(
+                &path,
+                std::fs::Permissions::from_mode(soksak_core::store_open::STORE_FILE_MODE),
+            );
+        }
+        Ok(conn)
+    }
+
     /// 저장소 기본 형태를 세운다(멱등). 문장은 코어가 소유하고 연결만 여기서 만든다.
     fn ensure_schema(&self) -> Result<(), String> {
-        let conn = rusqlite::Connection::open(self.db_path())
-            .map_err(|e| format!("저장소 열기 실패({}): {e}", self.db_path().display()))?;
-        conn.execute_batch(soksak_core::kv::BASE_SCHEMA_SQL)
+        self.open_db()?
+            .execute_batch(soksak_core::kv::BASE_SCHEMA_SQL)
             .map_err(|e| format!("저장소 형태 세우기 실패: {e}"))
     }
 

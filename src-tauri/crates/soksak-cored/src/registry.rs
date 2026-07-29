@@ -1049,8 +1049,7 @@ struct RecentArgs {
 fn run_activity_recent(ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: RecentArgs| {
         use soksak_core::activity as act;
-        let conn = rusqlite::Connection::open(ctx.db_path())
-            .map_err(|e| format!("원장 저장소 열기 실패: {e}"))?;
+        let conn = ctx.open_db()?;
         let mut q = conn.prepare(act::RECENT_SQL).map_err(|e| e.to_string())?;
         let rows = q
             .query_map(rusqlite::params![act::NS, act::COLL], |r| r.get::<_, String>(0))
@@ -1212,7 +1211,7 @@ struct DataDefine {
 fn run_data_define(ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: DataDefine| {
         soksak_core::kv::validate_ns(&a.ns)?;
-        let conn = rusqlite::Connection::open(ctx.db_path()).map_err(|e| e.to_string())?;
+        let conn = ctx.open_db()?;
         soksak_store::store::define(&conn, &a.ns, &a.coll, &a.indexes, &a.fts).map(|_| Value::Null)
     })
 }
@@ -1232,7 +1231,7 @@ fn run_data_migrate_ns(ctx: &Ctx, params: &Value) -> Outcome {
             // 같은 ns 는 이행이 아니다 — 성공으로 답하되 사유를 값에 실어 부른 쪽이 가른다.
             return Ok(json!({ "migrated": false, "reason": "same-ns" }));
         }
-        let conn = rusqlite::Connection::open(ctx.db_path()).map_err(|e| e.to_string())?;
+        let conn = ctx.open_db()?;
         let out = soksak_store::store::migrate_ns(&conn, &a.from_ns, &a.to_ns)?;
         serde_json::to_value(out).map_err(|e| e.to_string())
     })
@@ -1259,7 +1258,7 @@ struct DataQuery {
 fn run_data_query(ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: DataQuery| {
         soksak_core::kv::validate_ns(&a.ns)?;
-        let conn = rusqlite::Connection::open(ctx.db_path()).map_err(|e| e.to_string())?;
+        let conn = ctx.open_db()?;
         // 봉인된 필드는 이 프로세스가 못 연다(볼트 없음) — 열쇠 해소자는 **없음**을 답한다.
         // 지어낸 열쇠로 열려 들면 쓰레기를 평문으로 답하게 된다.
         let rows = soksak_store::store::query(
@@ -1636,8 +1635,7 @@ fn run_window_traces_prune(ctx: &Ctx, params: &Value) -> Outcome {
                 ctx.db_path().display()
             ));
         }
-        let conn = rusqlite::Connection::open(ctx.db_path())
-            .map_err(|e| format!("저장소 열기 실패: {e}"))?;
+        let conn = ctx.open_db()?;
         let store = SqliteRows { conn };
         let ns = soksak_core::window_traces::NS;
 
@@ -1676,8 +1674,7 @@ fn run_data_kv_set(ctx: &Ctx, params: &Value) -> Outcome {
                 ctx.db_path().display()
             ));
         }
-        let conn = rusqlite::Connection::open(ctx.db_path())
-            .map_err(|e| format!("저장소 열기 실패: {e}"))?;
+        let conn = ctx.open_db()?;
         let store = SqliteRows { conn };
         soksak_core::kv::set(&store, &a.ns, &a.key, &a.value, crate::ledger::now_ms())?;
         // 앱의 data_kv_set 은 () 를 돌려준다 — 같은 모양이라야 프레임워크가 값을 다시 조립하지 않는다.
