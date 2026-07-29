@@ -250,7 +250,8 @@ function connectBackend(socketPath) {
 
 /** cored를 세우고 그 소켓에 다리를 놓는다. 못 세우면 이름을 달고 실패한다(조용한 no-op 아님). */
 async function standUpCored() {
-  const binary = coredBinary({ root: path.join(__dirname, "..") });
+  const binary = // frameworks/electron 은 저장소 루트에서 두 단계다 — 한 단계로 세면 frameworks/ 를 루트로 본다.
+    coredBinary({ root: path.join(__dirname, "..", "..") });
   const cored = await ensureCored({
     identity: IDENTITY,
     binary,
