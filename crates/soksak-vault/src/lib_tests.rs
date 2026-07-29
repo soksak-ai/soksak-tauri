@@ -118,10 +118,11 @@ fn a_vault_belongs_to_an_identity_not_to_a_process() {
 }
 
 // 정체성만 주면 쓸 수 있는 볼트가 된다 — 앱도 창도 전역도 없이 봉인·개봉이 왕복한다.
-// 주입 형태는 lib.rs 부트와 같다(경로·KEK 를 정체성에서 파생해 seam 으로 넣는다) — 이 테스트가
-// Tauri 타입을 한 개도 안 쓰고 컴파일·통과한다는 사실이 이행 가능성의 증명이다.
+// 경로와 KEK 는 정체성에서 파생해 주입 이음매로 들어온다. 이 검사가 프레임워크 타입을 하나도
+// 안 쓰고 통과한다는 사실이 그 독립의 증명이었고, 이제는 크레이트 경계가 그것을 강제한다 —
+// 이 크레이트는 프레임워크를 링크할 수조차 없다.
 #[test]
-fn a_state_built_from_an_identity_needs_no_shell() {
+fn a_state_built_from_an_identity_needs_no_framework() {
     let (dir, _path) = tmp_vault_dir("identity-home");
     let id = Identity::new(&dir, "com.soksak.dev");
     let s = SecretsState::default();

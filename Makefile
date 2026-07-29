@@ -167,16 +167,8 @@ spec-gate: ## 패키지 빌드(plugin-spec·plugin-api dist — 코어가 소비
 		echo "spec-gate: C2 blocking 위반 매니페스트가 통과됨(게이트 깨짐)"; exit 1; \
 	else echo "✓ spec-gate(빌드+무효 거부+C2 판정 확인)"; fi
 
-gates: ## 코어 규율 게이트(blocking) — 결합·투명성·배포·경로·어휘 불변식
-	@node scripts/gates/core-decoupling-scan.mjs
-	@node scripts/gates/vocabulary-framework-scan.mjs
-	@node scripts/gates/framework-thin-binding.mjs
-	@node scripts/gates/baseline-gate.mjs
-	@node scripts/gates/c2-transparency-scan.mjs --plugins $${SOKSAK_PLUGINS:-$$HOME/.soksak-dev/plugins}
-	@node scripts/gates/core-git-scan.mjs
-	@node scripts/gates/core-terminal-scan.mjs
-	@node scripts/gates/distribution-invariants-scan.mjs
-	@node scripts/gates/platform-boundary-scan.mjs --artifacts
+gates: ## 코어 규율 게이트(blocking) — 디렉터리에서 **발견해** 전부 돌린다. 판정은 종료코드다
+	@node scripts/gates/run-all.mjs
 	@node scripts/e2e/framework-binding.mjs --check
 
 e2e-framework-binding: ## e2e 하니스의 프레임워크 결속 분류(A 프레임워크무관·B 경로결속·C 네이티브)를 읽는다. 하니스를 돌리지 않는다
