@@ -113,10 +113,19 @@ impl Ctx {
     }
 
     /// 저장소 기본 형태를 세운다(멱등). 문장은 코어가 소유하고 연결만 여기서 만든다.
+    /// 이 프로세스가 세우는 저장소는 앱이 세우는 것과 **같은 모양**이다.
+    ///
+    /// 한때 여기서 `kv::BASE_SCHEMA_SQL` 만 실행했다. 그러면 `encryption_keys`·`records_created`·
+    /// `records_pending` 이 빠지고, 그 결손은 봉인 기능만 못 쓰는 것으로 끝나지 않는다 —
+    /// 레코드 쓰기가 `doc::active_key` 를 **평문 경로에서도** 지나는데(store.rs "active key 없으면
+    /// 평문 항등"), 그 조회의 `.optional()` 은 "행 없음"만 삼키지 "테이블 없음"은 오류로 낸다.
+    /// 그래서 그 홈에서는 레코드 쓰기가 **전량** 실패한다(실측: `no such table: encryption_keys`).
+    ///
+    /// 형태 규칙은 저장소가 소유한다. 여기서 SQL 을 따로 적으면 그 규칙이 두 벌이 되고,
+    /// 두 벌이 갈리는 것은 오류가 아니라 **다른 답**으로 나타난다.
     fn ensure_schema(&self) -> Result<(), String> {
-        self.open_db()?
-            .execute_batch(soksak_core::kv::BASE_SCHEMA_SQL)
-            .map_err(|e| format!("저장소 형태 세우기 실패: {e}"))
+        let conn = self.open_db()?;
+        soksak_store::store::init_base(&conn).map_err(|e| format!("저장소 형태 세우기 실패: {e}"))
     }
 
     /// 이 프로세스가 이 저장소에 써도 되는가.

@@ -84,3 +84,62 @@ fn a_store_born_here_is_private_to_this_user() {
     let mode = std::fs::metadata(&db).expect("권한").permissions().mode() & 0o777;
     assert_eq!(mode, 0o600, "저장소 파일 권한이 0600 이 아니다: {mode:o}");
 }
+
+// ── 이 프로세스가 만든 저장소는 앱이 만든 것과 **같은 모양**이다 ──────────────────
+//
+// 지금까지 이 파일은 열기 규칙(auto_vacuum·secure_delete·권한)만 봤다. 표와 인덱스는 아무도
+// 안 봤고, 그래서 cored 가 만든 홈에는 `encryption_keys` 가 없었다.
+//
+// 그 결손은 봉인 기능만 못 쓰는 것으로 끝나지 않는다. 레코드 쓰기가 `doc::active_key` 를
+// **평문 경로에서도** 지나고(store.rs:420 — "active key 없으면 평문 항등"), `active_key` 의
+// `.optional()` 은 "행 없음"만 삼키지 **"테이블 없음"은 오류로 낸다**. 그래서 그 홈에서는
+// 레코드 쓰기가 전량 실패한다 — 봉인을 켠 적이 없어도.
+
+fn has_table(conn: &Connection, name: &str) -> bool {
+    conn.query_row(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1",
+        [name],
+        |_| Ok(()),
+    )
+    .is_ok()
+}
+
+fn has_index(conn: &Connection, name: &str) -> bool {
+    conn.query_row(
+        "SELECT 1 FROM sqlite_master WHERE type='index' AND name=?1",
+        [name],
+        |_| Ok(()),
+    )
+    .is_ok()
+}
+
+#[test]
+fn the_store_this_process_creates_has_the_shape_records_need() {
+    let (_home, db) = stand_up_store();
+    let conn = Connection::open(&db).expect("연결");
+    assert!(
+        has_table(&conn, "encryption_keys"),
+        "봉투 키 표가 없다 — 레코드 쓰기가 평문에서도 실패한다"
+    );
+    assert!(has_index(&conn, "records_created"), "retention FIFO 인덱스가 없다");
+    assert!(has_index(&conn, "records_pending"), "변환 재개 부분 인덱스가 없다");
+}
+
+/// 모양만 보면 "왜 그것이 필요한가"가 안 남는다 — 실제로 한 건 써 본다.
+#[test]
+fn a_plain_record_write_succeeds_in_a_store_this_process_created() {
+    let (_home, db) = stand_up_store();
+    let conn = Connection::open(&db).expect("연결");
+    // 컬렉션 선언이 먼저다 — 레코드는 선언된 자리에만 앉는다.
+    soksak_store::store::define(&conn, "t.ns", "things", &[], &[])
+        .expect("컬렉션 선언");
+    let r = soksak_store::store::put(
+        &conn,
+        "t.ns",
+        "things",
+        "scope",
+        Some("id-1".to_string()),
+        &serde_json::json!({ "a": 1 }),
+    );
+    assert!(r.is_ok(), "평문 레코드 쓰기가 실패했다: {r:?}");
+}
