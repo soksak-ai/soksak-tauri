@@ -1,6 +1,6 @@
 {
-  "about": "이식 공백 장부 — 앱이 부르는데 이 프레임워크에서 아무도 답하지 않는 이름. 분류는 command-ownership.mjs 가 소스에서 실측하고, 여기에는 사유와 상한만 산다. cap 은 래칫이다: 늘리지 마라. 하나 이식할 때마다 항목을 빼고 cap 을 줄인다.",
-  "cap": 67,
+  "about": "이식 공백 장부 — 앱이 부르는데 이 프레임워크에서 아무도 답하지 않고, cored 가 사유를 달고 거절하지도 않은 이름. 분류는 command-ownership.mjs 가 소스에서 실측한다. cored 의 UNSERVED 표에 사유가 있으면 그것이 단일 진실이고 여기 적지 않는다 — 정직하게 '못 한다'고 적는 일이 이 수를 줄이는 진전이다. cap 은 래칫: 늘리지 마라.",
+  "cap": 66,
   "gaps": {
     "ai_session_active": {
       "why": "앱 상태 장부 — 저장소 위에 선다",
@@ -161,10 +161,6 @@
     "pty_pane_pid": {
       "why": "자식 프로세스·데몬 — 프로세스는 프레임워크가 아니다. cored 가 이미 process_* 를 진다",
       "to": "core"
-    },
-    "remote_confirm_resolve": {
-      "why": "승인 대기 해소 — 창의 UI 가 낳는 사건이다",
-      "to": "framework"
     },
     "schedule_cancel": {
       "why": "예약 — 시각과 장부의 일이다. 창이 없어도 서야 한다(앱이 꺼져도 예약은 산다)",

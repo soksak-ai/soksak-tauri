@@ -26,9 +26,24 @@ describe("명령 소유 실측", () => {
     expect(rows.some((r) => r.name === "window_list")).toBe(true);
   });
 
-  it("소유는 넷 중 하나로만 판정된다", () => {
+  it("소유는 다섯 중 하나로만 판정된다", () => {
     for (const r of rows) {
-      expect(["core", "framework", "renderer", "gap"]).toContain(r.owner);
+      expect(["core", "framework", "renderer", "refused", "gap"]).toContain(r.owner);
+    }
+  });
+
+  /**
+   * 사유를 달고 거절한 것은 서빙이 아니다 — 갈라 세지 않으면 **정직하게 적을수록 공백이
+   * 줄어든다.** 실측(2026-07-29): `name:` 을 통째로 긁어 Arg 이름 48 개와 UNSERVED 19 개까지
+   * 서빙으로 세고 있었다(130 vs 실제 Command 63).
+   */
+  it("cored 의 거절은 서빙으로 세지 않는다", () => {
+    const refused = rows.filter((r) => r.owner === "refused");
+    expect(refused.length).toBeGreaterThan(0);
+    for (const r of refused) expect(r.why && r.why.length).toBeGreaterThan(10);
+    // Arg 이름은 명령이 아니다 — 하나라도 core 로 세어지면 계측이 다시 거짓이 된다.
+    for (const bad of ["host", "port", "entries", "root"]) {
+      expect(rows.some((r) => r.name === bad && r.owner === "core")).toBe(false);
     }
   });
 });

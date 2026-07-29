@@ -46,23 +46,66 @@ export function appInvokes(root = ROOT) {
   const names = new Set();
   for (const f of walk(join(root, "src"))) {
     if (!/\.tsx?$/.test(f) || /\.test\.tsx?$/.test(f)) continue;
-    for (const m of read(f).matchAll(/\binvoke\s*(?:<[^>]*>)?\s*\(\s*"([a-z_0-9]+)"/g)) {
+    // 주석 속 invoke("...") 는 호출이 아니다 — 세면 이미 없어진 이름이 영원히 공백으로 남는다
+    // (실측: remote_confirm_resolve 는 Rust 핸들러가 0 인데 주석 다섯 줄로 공백이 됐다).
+    const code = read(f)
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/.*$/gm, "$1");
+    for (const m of code.matchAll(/\binvoke\s*(?:<[^>]*>)?\s*\(\s*"([a-z_0-9]+)"/g)) {
       names.add(m[1]);
     }
   }
   return names;
 }
 
-/** cored 가 서빙하는 이름 — registry 표의 name 필드. */
+/**
+ * cored 가 **서빙하는** 이름 — `Command { name: ... }` 만.
+ *
+ * `name:` 을 통째로 긁으면 `Arg { name: ... }`(인자 이름)과 `Unserved { name: ... }`(대놓고
+ * 거절하는 이름)까지 서빙으로 센다. 실측(2026-07-29): 통째 긁기 130 vs 실제 Command 63.
+ * 그러면 거절이 서빙으로 둔갑하고, 더 나쁘게는 **정직하게 "못 한다"고 적을수록 공백 수가
+ * 줄어든다** — 사유를 적는 행위가 은폐가 된다. 표 종류를 이름으로 가른다.
+ */
 export function coredServes(root = ROOT) {
   const src = read(join(root, "src-tauri", "crates", "soksak-cored", "src", "registry.rs"));
-  return new Set([...src.matchAll(/name:\s*"([a-z_0-9]+)"/g)].map((m) => m[1]));
+  return new Set([...src.matchAll(/Command\s*\{\s*name:\s*"([a-z_0-9]+)"/g)].map((m) => m[1]));
+}
+
+/** cored 가 **사유를 달고 거절하는** 이름 — 선언된 공백. 미선언 공백과 갈라 센다. */
+export function coredUnserved(root = ROOT) {
+  const src = read(join(root, "src-tauri", "crates", "soksak-cored", "src", "registry.rs"));
+  const out = new Map();
+  // 항목은 여러 줄이고 blocked_by 는 줄바꿈 이어붙임(`\\` + 개행)을 쓴다 — 이름만 잡고
+  // 사유가 비지 않았는지만 본다. 사유 원문은 registry.rs 가 단일 진실이다.
+  for (const m of src.matchAll(
+    /Unserved\s*\{\s*name:\s*"([a-z_0-9]+)"\s*,\s*blocked_by:\s*"([\s\S]*?)",?\s*\}/g,
+  )) {
+    out.set(m[1], m[2].replace(/\\\s*\n\s*/g, " ").trim());
+  }
+  return out;
 }
 
 /** Tauri 가 등록한 이름 — invoke_handler 목록. */
 export function tauriRegisters(root = ROOT) {
   const src = read(join(root, "src-tauri", "src", "lib.rs"));
-  const block = /generate_handler!\[([\s\S]*?)\]/.exec(src)?.[1] ?? "";
+  // 대괄호를 세어 닫는다 — 첫 `]` 로 끊으면 목록 안의 `#[cfg(...)]` 에서 멈춰 그 뒤 이름을
+  // 통째로 놓친다(실측: sidecar_* 넷과 titlebar_backing·window_activate 가 "Tauri 에 없음"으로 나왔다).
+  const at = src.indexOf("generate_handler![");
+  let block = "";
+  if (at >= 0) {
+    let depth = 0;
+    for (let i = at + "generate_handler!".length; i < src.length; i += 1) {
+      const ch = src[i];
+      if (ch === "[") depth += 1;
+      else if (ch === "]") {
+        depth -= 1;
+        if (depth === 0) {
+          block = src.slice(at + "generate_handler![".length, i);
+          break;
+        }
+      }
+    }
+  }
   return new Set(
     [...block.matchAll(/([a-z_0-9]+)\s*(?:,|\])/g)]
       .map((m) => m[1])
@@ -89,6 +132,7 @@ export function frameworkTable(root = ROOT, dir = join("electron", "native")) {
 export function survey(root = ROOT) {
   const app = appInvokes(root);
   const cored = coredServes(root);
+  const refused = coredUnserved(root);
   const tauri = tauriRegisters(root);
   const electron = frameworkTable(root);
 
@@ -97,9 +141,12 @@ export function survey(root = ROOT) {
     let owner = "gap";
     if (cored.has(name)) owner = "core";
     else if (electron.has(name)) owner = electron.get(name);
-    rows.push({ name, owner, inTauri: tauri.has(name) });
+    // 사유를 달고 거절한 것은 **선언된 공백**이다. 미선언과 갈라야 "정직하게 적는 일"이
+    // 진전으로 보인다 — 한 통에 담으면 사유를 적어도 수가 그대로라 적을 이유가 없다.
+    else if (refused.has(name)) owner = "refused";
+    rows.push({ name, owner, inTauri: tauri.has(name), why: refused.get(name) ?? null });
   }
-  return { rows, app, cored, tauri, electron };
+  return { rows, app, cored, refused, tauri, electron };
 }
 
 export function verify(root = ROOT, ledgerPath = LEDGER) {
@@ -183,8 +230,11 @@ function main() {
   } else {
     console.log("명령 소유 — 앱이 부르는 이름의 답하는 자리");
     console.log(
-      `  core ${by("core")} · framework ${by("framework")} · renderer ${by("renderer")} · 공백 ${gaps.length}/${cap}`,
+      `  core ${by("core")} · framework ${by("framework")} · renderer ${by("renderer")}` +
+        ` · 선언거절 ${by("refused")} · 미선언공백 ${gaps.length}/${cap}`,
     );
+    // 답하지 않는 총수도 함께 낸다 — 미선언만 보면 사유를 적는 것이 수를 줄인 것처럼 보인다.
+    console.log(`  답하지 않는 이름 합계: ${by("refused") + gaps.length}`);
     // 공백은 어디로 갚히는지까지 보여야 계획이 된다 — 수만 보면 부채인지 설계인지 모른다.
     const ledger = JSON.parse(readFileSync(LEDGER, "utf8"));
     const plan = {};
