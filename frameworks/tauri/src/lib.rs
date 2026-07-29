@@ -341,9 +341,17 @@ pub fn run() {
             }
             // 범용 미디어 스트리밍 프록시(루프백 HTTP) — webview 가 못 받는 Referer/CORS 보호 미디어를
             // 헤더 주입해 바이너리 스트리밍한다. media.proxy.* 가 표면. 기동 실패는 재생만 실패(앱은 산다).
-            if let Err(e) = mediaproxy::start() {
-                eprintln!("[mediaproxy] 프록시 서버 기동 실패: {e}");
-            }
+            // 손잡이를 앱 상태로 둔다 — 포트·토큰은 세운 프로세스의 것이고, media_proxy_info 는 그것을
+            // 든 쪽만 답할 수 있다(짐작해 조립한 base 는 아무도 안 듣는 주소가 된다).
+            app.manage(mediaproxy::MediaProxyHandle(
+                match soksak_net::mediaproxy::MediaProxy::start() {
+                    Ok(p) => Some(p),
+                    Err(e) => {
+                        eprintln!("[mediaproxy] 프록시 서버 기동 실패: {e}");
+                        None
+                    }
+                },
+            ));
             // 딥링크 라우팅 — soksak://run?cmd=... 외부 진입/알림 클릭이 한 명령을 실행한다(CmdBridge 경유,
             // 단일 실행 경로). dev 는 스킴이 OS 미등록일 수 있어 register_all 로 런타임 등록(프로덕션은
             // tauri.conf plugins.deep-link). 파싱 실패/미지 URL 은 조용히 무시(명령 누출 0).
@@ -740,7 +748,8 @@ pub fn run() {
                 app_handle.state::<service::ServiceManager>().kill_all();
                 app_handle.state::<ws::WsManager>().close_all();
                 ipc::cleanup();
-                mediaproxy::cleanup();
+                // 미디어 프록시는 이 사다리에 없다 — 루프백 TCP 는 프로세스 종료 시 OS 가 회수하고,
+                // 빈 cleanup() 한 줄이 사다리에 서 있으면 정리할 것이 있는 것처럼 읽힌다.
                 sidecar::shutdown_all();
             }
         });

@@ -43,7 +43,8 @@ The skeleton owns exactly these common interfaces. Each line states the guarante
 | **Event bus** | `src/plugins/hooks.ts`, `src/plugins/bus.ts` | System events (`project.*`, `file.*`, `command.*`, `turn.ended`, `theme.changed`, `locale.changed`, `app.focus`, `bookmarks.changed`) are permission-gated. `bus.*` is plugin-to-plugin pub/sub independent of core state. |
 | **Program (+menu) registry** | `src/plugins/programRegistry.ts` | Declarative `contributes.programs[]`. Each program declares a `kind`. The +menu and `tab.open` route by `kind`. Plugins declare programs; the skeleton routes them. |
 | **View placement & focus registry** | `src/plugins/viewRegistry.ts`, `src/plugins/viewFocus.ts` | `registerView(viewId, provider)` with placements (`content`, `sidebar-left`, `sidebar-right`, `footer`). Mount/unmount owns lifetime. Optional `prepareFocusTransfer` / `focus` form the only keyboard-focus boundary: core owns the destination and ordering; a provider may touch only its own container. Mount is never focus intent, and deferred focus must honor the supplied `AbortSignal`. |
-| **Native generic capabilities** | `frameworks/tauri/src/*` | PTY spawn/IO/flow-control (`pty.rs`), child-webview lifecycle + layer inversion + hole-punch (`browser.rs`), media proxy (`mediaproxy.rs`), data store (rusqlite + FTS5), secrets vault, process/WebSocket/HTTP clients, filesystem. All generic — none named after a concrete feature consumer. |
+| **Native generic capabilities** | `frameworks/tauri/src/*` | PTY spawn/IO/flow-control (`pty.rs`), child-webview lifecycle + layer inversion + hole-punch (`browser.rs`), data store (rusqlite + FTS5), secrets vault, process/WebSocket clients, filesystem. All generic — none named after a concrete feature consumer. |
+| **Outbound bytes** | `crates/soksak-net/*` | The HTTP capability and the loopback media proxy. Neither opens a window, so neither belongs under a framework name; they live in their own crate because the one transport (wreq/BoringSSL) drags tokio, which both `soksak-core` and `soksak-cored` ban. Each framework keeps only the command wrapper and the handle this process holds. |
 
 The native layer stays in the skeleton because PTY kernel objects and platform webviews (WKWebView / WebView2) cannot cross the plugin boundary. The skeleton exposes them as generic capabilities; plugins consume them as thin clients.
 
@@ -157,7 +158,7 @@ the original extraction plan it was carried out under.
 
 ### Browser → plugin
 
-**STAYS (skeleton):** child-webview lifecycle (`webview_open/close/bounds/visible/navigate/eval/list` — renamed from `browser_*` per docs/NAMING.md), macOS layer inversion + hole-punch + native input monitors, media proxy, view routing, GC infrastructure (`webview.rs`, `mediaproxy.rs`).
+**STAYS (skeleton):** child-webview lifecycle (`webview_open/close/bounds/visible/navigate/eval/list` — renamed from `browser_*` per docs/NAMING.md), macOS layer inversion + hole-punch + native input monitors, media proxy, view routing, GC infrastructure (`webview.rs`; the proxy body is `crates/soksak-net/src/mediaproxy.rs`, the framework keeps only `media_proxy_info` and the handle).
 
 **MOVES (plugin):** URL bar, back/forward/reload, bookmarks UI, devtools toggle, the `kind:"browser"` view-type definition and `BrowserView.tsx` chrome.
 

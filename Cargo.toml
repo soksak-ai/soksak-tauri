@@ -18,6 +18,7 @@ members = [
   "crates/soksak-store",
   "crates/soksak-vault",
   "crates/soksak-watch",
+  "crates/soksak-net",
   "crates/soksak-ptyd",
   "crates/soksak-cored",
   "crates/soksak-cli",

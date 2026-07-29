@@ -1,0 +1,35 @@
+[package]
+name = "soksak-net"
+version = "0.0.1"
+edition = "2021"
+
+# 이 크레이트가 **tokio 를 진다.** 그것이 이 크레이트가 따로 있는 이유다.
+#
+# 전송기는 wreq(BoringSSL) 한 벌이고 wreq 는 async 전용이라 tokio 를 끌고 온다. tokio 는
+# soksak-core 의 무의존과 soksak-cored 의 no_framework 금지 목록 양쪽에 걸려 있다 — 그래서
+# 이 몸은 코어에도 cored 에도 못 산다. 그렇다고 프레임워크 폴더에 두면 창을 한 번도 부르지
+# 않는 892줄이 프레임워크 이름 밑에 앉아, 두 번째 프레임워크가 같은 규칙을 다시 쓰게 된다.
+#
+# 금지 목록은 코어·cored 의 것이지 모든 크레이트의 것이 아니다. 여기서 막는 것은 **프레임워크**
+# 뿐이고(tests/no_framework.rs), tokio·wreq 는 자원으로 통과시킨다: 창을 열지도 앱 핸들을
+# 쥐지도 않고, 어느 프로세스가 열든 같은 바이트를 같은 답으로 받는다.
+[dependencies]
+# 임퍼소네이션 전송기 — fingerprint 봇차단 CDN(Cloudflare/Akamai 의 JA3+HTTP/2 핑거프린트)이
+# 비-브라우저를 403 한다. wreq(BoringSSL)가 Chrome 핸드셰이크를 정밀 위조해 통과한다.
+# 두 번째 TLS 스택(reqwest/OpenSSL)은 두지 않는다 — SSL_* 심볼 충돌이 Linux 정적 링크를 깬다.
+# stream feature = Response::bytes_stream(청크 스트리밍 — 큰 바디 버퍼링 0).
+wreq = { version = "=6.0.0-rc.29", features = ["stream"] }
+wreq-util = "=3.0.0-rc.12"
+# wreq 가 async 전용이라 sync 프록시 스레드가 block_on 할 런타임이 필요하다.
+tokio = { version = "1", features = ["rt-multi-thread"] }
+# bytes_stream 을 sync 루프에서 끌어 쓰는 StreamExt.
+futures-util = "0.3"
+# 프록시 쿼리의 인코딩·디코딩(form_urlencoded)과 referer→origin 유도.
+url = "2"
+# 세션 토큰(루프백 2차 방어) 난수.
+rand = "0.8"
+# 응답 shape 를 명령 표면이 그대로 실어 보낸다 — 프레임워크가 같은 구조체를 다시 쓰지 않게.
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1"

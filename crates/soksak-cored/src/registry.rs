@@ -857,8 +857,8 @@ pub const UNSERVED: &[Unserved] = &[
         blocked_by: "교체 대상이 곧 호출을 받은 프로세스다. 몸이 app.restart() 한 줄인데 그것은 `!` 라 \
                      Ok 경로가 없다 — cored 가 같은 이름을 서빙하면 되살아나는 것은 cored 고, 앱은 \
                      그대로 옛 판으로 돈다. 그 답은 성공이라 호출자는 새 판이 떴다고 믿는다. 재기동이 \
-                     지나야 하는 종료 사다리 여덟(PtyManager·daemon·ProcessManager·ServiceManager· \
-                     WsManager·ipc·mediaproxy·sidecar) 도 전부 앱 프로세스의 상태 위에 있다.",
+                     지나야 하는 종료 사다리 일곱(PtyManager·daemon·ProcessManager·ServiceManager· \
+                     WsManager·ipc·sidecar) 도 전부 앱 프로세스의 상태 위에 있다.",
     },
     Unserved {
         name: "sidecar_close",
@@ -886,10 +886,10 @@ pub const UNSERVED: &[Unserved] = &[
     },
     Unserved {
         name: "media_proxy_info",
-        blocked_by: "답할 포트와 세션 토큰이 프록시를 기동한 프로세스의 OnceLock(PROXY_PORT·PROXY_TOKEN)에 \
-                     있다. 포트는 OS 가 할당하고 토큰은 기동 때 뽑는 난수라 규칙으로 되짚을 수 없다 — \
-                     짐작해서 base 를 조립하면 아무도 안 듣는 주소가 나가고, 플러그인은 그 URL 로 \
-                     조립한 재생만 조용히 실패한다.",
+        blocked_by: "프록시의 몸이 soksak-net 이고, 그 전송기는 wreq 하나인데 wreq 는 tokio 를 끌고 온다 — \
+                     이 프로세스의 no_framework 게이트가 tokio 를 이름으로 막는다(net_http_request 와 \
+                     같은 벽). 답할 포트·토큰이 전역이라서 막히던 것은 아니다: start() 가 손잡이를 \
+                     돌려주므로 프록시를 세운 쪽이 자기 것을 답하고, 여기서 세우면 여기 것을 답한다.",
     },
     Unserved {
         name: "ipc_last_project_window",

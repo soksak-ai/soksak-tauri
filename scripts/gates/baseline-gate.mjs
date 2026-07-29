@@ -44,6 +44,7 @@ const METRICS = [
       "crates/soksak-cored/src",
       "crates/soksak-ptyd/src",
       "crates/soksak-cli/src",
+      "crates/soksak-net/src",
     ],
     exts: [".rs"],
     // 배포 코드만 계수 — 인라인 #[cfg(test)] 모듈은 stripRustTestModule 로 제외한다(C1·
@@ -74,6 +75,7 @@ const METRICS = [
       "crates/soksak-cored/src",
       "crates/soksak-ptyd/src",
       "crates/soksak-cli/src",
+      "crates/soksak-net/src",
       "packages/plugin-api/src",
       "packages/plugin-spec/src",
       "scripts",
