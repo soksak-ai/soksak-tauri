@@ -32,6 +32,9 @@ export const REPO_ROOT = resolve(HERE, "../..");
 export const MIN_FREE_GIB = 20;
 
 const WORKTREES = ".claude/worktrees";
+
+/** 격리 실행이 흘리는 자리 — 체크아웃 밖이라 워크트리 훑기로는 안 잡힌다. */
+const STRAY_TARGETS = ["/tmp/wf620-target"];
 const ELECTRON_APP = "node_modules/electron/dist/Electron.app";
 const ELECTRON_FRAMEWORK = `${ELECTRON_APP}/Contents/Frameworks/Electron Framework.framework/Electron Framework`;
 
@@ -129,7 +132,31 @@ export function diagnose(root = REPO_ROOT) {
     });
   }
 
-  // ④ 워크트리가 자기 target 을 갖고 있는가(①이 서기 전에 만들어진 것).
+  // ④ 여유가 모자랄 때만 버리는 캐시 — 증분 컴파일 산출물.
+  //    결과에 영향이 없다(다음 빌드가 느려질 뿐이다). 여유가 넉넉하면 두는 편이 빠르므로
+  //    **부족할 때만** 항목으로 낸다 — 늘 지우면 이 도구가 빌드를 느리게 만드는 도구가 된다.
+  const inc = join(root, "target/debug/incremental");
+  if (existsSync(inc) && (freeGiB(root) ?? 0) < MIN_FREE_GIB) {
+    findings.push({
+      what: "증분 컴파일 캐시(여유 부족)",
+      why: "결과에 영향 없는 캐시다 — 여유가 기준 아래일 때만 버린다(다음 빌드가 느려질 뿐)",
+      fix: () => rmSync(inc, { recursive: true, force: true }),
+    });
+  }
+
+  // ⑤ 워크트리 밖에 흘린 빌드 잔재. 격리 실행이 `CARGO_TARGET_DIR` 을 임시 자리로 돌리면
+  //    그 디렉터리는 아무도 안 거둔다 — 세션이 끝나면 주인이 없어진다.
+  for (const stray of STRAY_TARGETS) {
+    if (existsSync(stray)) {
+      findings.push({
+        what: `주인 없는 빌드 잔재 ${stray}`,
+        why: "격리 실행이 남긴 target 이다. 어느 체크아웃에도 속하지 않아 아무도 안 거둔다",
+        fix: () => rmSync(stray, { recursive: true, force: true }),
+      });
+    }
+  }
+
+  // ⑥ 워크트리가 자기 target 을 갖고 있는가(①이 서기 전에 만들어진 것).
   for (const w of worktreeDirs(root)) {
     const t = join(w, "target");
     if (!existsSync(t)) continue;

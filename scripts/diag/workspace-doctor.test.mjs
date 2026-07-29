@@ -83,6 +83,19 @@ describe("워크트리의 사본", () => {
   });
 });
 
+describe("버려도 되는 캐시", () => {
+  /** 늘 지우면 이 도구가 빌드를 느리게 만드는 도구가 된다 — 부족할 때만 낸다. */
+  it("여유가 넉넉하면 증분 캐시를 건드리지 않는다", () => {
+    place(".cargo/config.toml", cargoConfigBody(root));
+    place("target/debug/incremental/.keep");
+    // 이 임시 루트의 볼륨 여유가 기준보다 크면 항목이 없어야 한다.
+    const free = freeGiB(root);
+    if (free !== null && free >= MIN_FREE_GIB) {
+      expect(found("증분 컴파일 캐시")).toBe(false);
+    }
+  });
+});
+
 describe("정본 Electron", () => {
   /** 껍데기는 자동으로 못 고친다 — 재설치는 네트워크를 타므로 사람이 정한다. */
   it("Framework 가 없으면 잡되 고치지는 않는다", () => {
