@@ -1,5 +1,7 @@
-// service.rs 테스트 — 파일 길이 봉인(1500) 준수 위해 분리. `#[path]` 로 service 모듈에
-// 포함되므로 `super::*` 는 service 모듈을 가리킨다(비공개 항목 접근 가능).
+// 상주 서비스 몸의 검사 — 규칙은 lib.rs 가, 그 증명은 여기가 진다.
+//
+// 프로세스를 안 띄운다: 스폰·전송이 seam 트레이트 뒤에 있어 인메모리 파이프로 전 규칙을 잰다.
+// 그래서 이 검사는 어느 프레임워크도 필요로 하지 않는다.
 use super::*;
 use std::collections::VecDeque;
 use std::io::Read;
@@ -1170,13 +1172,13 @@ fn vault_env_injects_env_secrets_and_recovers_on_unlock() {
 // ── 원장 파일 · 스케줄 파생 · 신원 스탬프(프레임워크 타입 0) ─────────────────────────
 
 // 테스트 홈은 dev identity 로 쥔다 — 홈과 identifier 는 함께 다닌다(identity.rs).
-fn ledger_identity(name: &str) -> crate::identity::Identity {
+fn ledger_identity(name: &str) -> soksak_core::identity::Identity {
     let base = std::env::temp_dir()
         .canonicalize()
         .unwrap_or_else(|_| std::env::temp_dir());
     let home = base.join(format!("soksak-service-{name}-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&home).unwrap();
-    crate::identity::Identity::new(home, "com.soksak.dev")
+    soksak_core::identity::Identity::new(home, "com.soksak.dev")
 }
 
 fn one_service_ledger() -> soksak_spec_service::BindLedger {
@@ -1257,7 +1259,7 @@ fn a_ledger_schedule_becomes_an_owned_job_with_a_stable_id() {
     // owner 스탬프가 있어야 unbind 의 cancel_by_owner 가 회수한다(PS14).
     assert_eq!(spec.owner.as_deref(), Some("demo"));
     assert_eq!(spec.command, "plugin.demo.reconcile");
-    assert_eq!(spec.trigger, crate::schedule::Trigger::Reconcile);
+    assert_eq!(spec.trigger, soksak_core::schedule_spec::Trigger::Reconcile);
     assert_eq!(spec.params, json!({}));
     assert_eq!(spec.timeout_ms, Some(5_000));
     // 서비스 op 의 장기 실행은 진행 ev 연장이 담당한다(PS12) — 웹뷰 lease 를 쥐면 안 된다.
@@ -1276,7 +1278,7 @@ fn every_ledger_trigger_maps_to_its_core_trigger() {
     };
     assert_eq!(
         job_spec_for("demo", &s).trigger,
-        crate::schedule::Trigger::Every {
+        soksak_core::schedule_spec::Trigger::Every {
             every_ms: 60_000,
             anchor: None
         }
@@ -1289,7 +1291,7 @@ fn every_ledger_trigger_maps_to_its_core_trigger() {
     };
     assert_eq!(
         job_spec_for("demo", &s).trigger,
-        crate::schedule::Trigger::Cron {
+        soksak_core::schedule_spec::Trigger::Cron {
             expr: "0 * * * *".into()
         }
     );

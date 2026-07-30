@@ -1,0 +1,20 @@
+[package]
+name = "soksak-service"
+version = "0.0.1"
+publish = false
+edition = "2021"
+description = "Resident plugin services: bind ledger, framing, routing, spawn seam. No window, no framework — the host supplies four capabilities behind a trait."
+
+# 프레임워크를 의존하지 않는다. 이 몸이 프레임워크 폴더에 살던 동안 그 폴더는 창·웹뷰가 아니라
+# **상주 서비스의 라우팅**을 지고 있었다 — 1067줄 중 프레임워크를 부르는 줄은 마지막 60여 줄뿐이다.
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+soksak-core = { path = "../soksak-core" }
+soksak-spec-service = { path = "../soksak-spec-service" }
+
+[dev-dependencies]
+# 검사가 심는 매니페스트에 계약 참조가 든다.
+soksak-spec-contract = { path = "../soksak-spec-contract" }
+# 검사 홈을 겹치지 않게 짓는다.
+uuid = { version = "1", features = ["v4"] }

@@ -20,6 +20,7 @@ members = [
   "crates/soksak-watch",
   "crates/soksak-net",
   "crates/soksak-sidecar-host",
+  "crates/soksak-service",
   "crates/soksak-ptyd",
   "crates/soksak-cored",
   "crates/soksak-cli",
