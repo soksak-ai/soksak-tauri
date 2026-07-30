@@ -21,6 +21,7 @@ members = [
   "crates/soksak-net",
   "crates/soksak-sidecar-host",
   "crates/soksak-service",
+  "crates/soksak-schedule",
   "crates/soksak-ptyd",
   "crates/soksak-cored",
   "crates/soksak-cli",

@@ -102,7 +102,6 @@ crates/soksak-cored/src/registry.rs 1863
 crates/soksak-store/src/store.rs 2116
 frameworks/tauri/src/ipc.rs 1562
 frameworks/tauri/src/plugins.rs 1585
-frameworks/tauri/src/schedule.rs 1557
 frameworks/tauri/src/webview.rs 2259
 packages/plugin-spec/src/pluginRuntime.ts 2081
 packages/plugin-spec/src/spec.ts 1783

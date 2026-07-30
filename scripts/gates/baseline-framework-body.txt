@@ -30,7 +30,7 @@ frameworks/tauri/src/activity.rs 434
 frameworks/tauri/src/activity_sink.rs 9
 frameworks/tauri/src/ai_session.rs 266
 frameworks/tauri/src/clipboard.rs 249
-frameworks/tauri/src/command_dispatch.rs 108
+frameworks/tauri/src/command_dispatch.rs 98
 frameworks/tauri/src/cored_host.rs 506
 frameworks/tauri/src/cored_ledger.rs 248
 frameworks/tauri/src/cored_shape_gate.rs 229
@@ -62,7 +62,7 @@ frameworks/tauri/src/project_registry.rs 299
 frameworks/tauri/src/pty.rs 790
 frameworks/tauri/src/pty_delivery.rs 1
 frameworks/tauri/src/runtime_dep.rs 584
-frameworks/tauri/src/schedule.rs 1294
+frameworks/tauri/src/schedule.rs 156
 frameworks/tauri/src/seal_keys.rs 19
 frameworks/tauri/src/secrets.rs 67
 frameworks/tauri/src/service.rs 208

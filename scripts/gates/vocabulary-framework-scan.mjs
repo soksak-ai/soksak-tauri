@@ -160,7 +160,7 @@ export const IDENTIFIER_RESIDUE = new Map([
   ["the_sink_seam_needs_no_shell_type", "frameworks/tauri/src/watcher.rs — 같은 축"],
   ["an_oracle_needs_no_shell_type", "frameworks/tauri/src/window_oracle.rs — 같은 축"],
   ["a_dispatch_needs_no_shell_type", "frameworks/tauri/src/command_dispatch.rs — 같은 축"],
-  ["a_fire_needs_no_shell_type", "frameworks/tauri/src/schedule.rs — 같은 축"],
+  ["a_fire_needs_no_shell_type", "crates/soksak-schedule/src/lib_tests.rs — 발화가 프레임워크 타입을 모른다는 검사 이름(몸을 따라 옮겼다)"],
   ["admitting_needs_no_shell_and_does_not_fan_out", "frameworks/tauri/src/activity.rs — 같은 축"],
   ["application_shell_denies_external_and_privileged_navigation", "frameworks/tauri/src/navigation_policy.rs — 앱 웹뷰(프레임워크)의 항행 정책"],
   ["application_shell_allows_only_the_declared_dev_origin", "frameworks/tauri/src/navigation_policy.rs — 같은 축"],

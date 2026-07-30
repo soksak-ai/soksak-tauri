@@ -4626,6 +4626,7 @@ dependencies = [
  "soksak-core",
  "soksak-cored",
  "soksak-net",
+ "soksak-schedule",
  "soksak-seal",
  "soksak-service",
  "soksak-sidecar-host",
@@ -4680,6 +4681,15 @@ dependencies = [
  "serde_json",
  "soksak-seal",
  "soksak-spec-pty",
+]
+
+[[package]]
+name = "soksak-schedule"
+version = "0.0.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "soksak-core",
 ]
 
 [[package]]

@@ -85,7 +85,6 @@ export const DECLARED = new Map([
   ["frameworks/electron/main.cjs", ["framework", "이 프레임워크의 진입점"]],
   ["frameworks/electron/preload.cjs", ["framework", "렌더러 경계에 다리를 놓는 자리"]],
   ["frameworks/tauri/src/activity.rs", ["framework", "원장 규칙은 코어가 소유하고, 여기 남은 것은 창으로의 부채질"]],
-  ["frameworks/tauri/src/command_dispatch.rs", ["framework", "계약의 이 프레임워크 구현(impl … for tauri::AppHandle)"]],
   ["frameworks/tauri/src/dockmenu.rs", ["framework", "Dock 메뉴 — OS 표면이고 앱 핸들이 몸이다"]],
   ["frameworks/tauri/src/home.rs", ["framework", "이 프로세스의 앰비언트 홈 결속(규칙은 코어)"]],
   ["frameworks/tauri/src/i18n.rs", ["framework", "문장은 자원이지만 내보내는 자리가 OS 알림·창이다"]],
