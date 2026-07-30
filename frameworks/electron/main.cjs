@@ -16,7 +16,12 @@ const path = require("node:path");
 const fs = require("node:fs");
 const os = require("node:os");
 const { createBackendClient, resolveSocketPath } = require("./backend.cjs");
-const { frameworkIdentity, coredBinary, ensureCored } = require("./cored.cjs");
+const {
+  frameworkIdentity,
+  coredBinary,
+  ensureCored,
+  coreBuildOf,
+} = require("./cored.cjs");
 const activity = require("./activity.cjs");
 const { createControlHost, CMD_REQUEST } = require("./control.cjs");
 const { deliverEvent } = require("./windowEvents.cjs");
@@ -243,6 +248,9 @@ function nativeContext(sender) {
     // 창에 사건을 민다 — 프레임워크만 할 수 있는 일이고, 구독은 그 창의 listen 이 받는다.
     emitToWindow: (win, event, payload) => deliverEvent(win, event, payload),
     screen,
+    // 이 홈의 빌드 축 — 원격 업데이트를 볼 채널인지 가른다. 프로세스 환경을 다시 읽지 않는다:
+    // 부팅이 확정한 정체성에서 나온다.
+    coreBuild: () => coreBuildOf(IDENTITY.identifier),
   };
 }
 

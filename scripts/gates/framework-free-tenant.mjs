@@ -64,6 +64,7 @@ export const DECLARED = new Map([
   ["frameworks/electron/native/index.cjs", ["framework", "창·웹뷰·네이티브 표면 명령표"]],
   ["frameworks/electron/native/project.cjs", ["framework", "어느 창이 어느 root 를 점유하는가"]],
   ["frameworks/electron/native/titlebar.cjs", ["framework", "창 크롬"]],
+  ["frameworks/electron/native/updater.cjs", ["framework", "앱 본체 실행물을 갈아 끼운다 — 그 실행물이 이 프레임워크다"]],
   ["frameworks/electron/native/webview.cjs", ["framework", "창 안에서만 답이 나온다"]],
   ["frameworks/electron/native/window.cjs", ["framework", "창 자체 — cored 에는 창이 없다"]],
   ["frameworks/tauri/build.rs", ["framework", "이 프레임워크의 빌드 스크립트"]],

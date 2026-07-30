@@ -98,6 +98,16 @@ function identityAxes(identifier) {
 const isReleaseEnv = (env) => env === "app" || env === "release";
 
 /**
+ * 이 정체성의 빌드 축 — `dev` | `debug` | `release`. 홈을 가르는 것과 같은 축이다.
+ *
+ * 축을 부르는 쪽마다 따로 세면 같은 정체성이 두 답을 갖는다. 규칙은 여기 하나다.
+ */
+function coreBuildOf(identifier) {
+  const { env } = identityAxes(identifier);
+  return isReleaseEnv(env) ? "release" : env;
+}
+
+/**
  * 홈 접미 — **env 만 본다.** release(`app`)면 무접미, 그 외는 `-<env>`.
  *
  * 프레임워크는 홈을 가르지 않는다. 홈에 든 것은 사용자의 것이고, 프레임워크로 가르면
@@ -362,6 +372,7 @@ module.exports = {
   frameworkDir,
   keychainService,
   identityAxes,
+  coreBuildOf,
   homeSuffix,
   productName,
   coredBinary,

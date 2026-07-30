@@ -70,6 +70,7 @@ const TABLE = assemble([
   ["capture.cjs", require("./capture.cjs")],
   ["notify.cjs", require("./notify.cjs")],
   ["clipboard.cjs", require("./clipboard.cjs")],
+  ["updater.cjs", require("./updater.cjs")],
 ]);
 
 // 능력면 — UI 가 그리기 전에 물어볼 수 있는 자리. 표 자체가 답이라 선언과 행동이 갈릴 수 없다.
