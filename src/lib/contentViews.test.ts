@@ -211,3 +211,48 @@ describe("게스트 스크립트 — js 는 함수 본문이다", () => {
     );
   });
 });
+
+describe("DOM 콘텐츠 뷰의 숨김", () => {
+  // `display:none` 은 상자를 레이아웃에서 빼고, 다시 켤 때 게스트가 0×0 뷰포트로 붙는다 —
+  // URL 은 맞는데 화면만 백지다(실측 2026-07-30: 되돌아온 탭에서 innerWidth/innerHeight = 0,
+  // 컨테이너는 586×428). 크기가 돌아오는 것은 **누군가 bounds 를 다시 불러 줄 때뿐**이라,
+  // 복원이 우연에 달린다.
+  //
+  // 이 저장소에는 이미 그 규칙이 단일 진실로 있다(layerPark.parkedStyle): 화면 밖으로 옮기되
+  // 크기와 세션은 보존한다. 그 헤더가 바로 "display:none 의 재-fit 회피"라고 적어 뒀다.
+  // 여기만 그 규칙을 안 쓰고 있었다.
+  it("숨겨도 상자를 잃지 않는다 — display:none 을 쓰지 않는다", async () => {
+    provision = { chromium: false, nativeChildWebview: false };
+    const { contentViewHost } = await load();
+    const host = contentViewHost();
+
+    await host.open("b-1", { url: "https://example.com" });
+    await host.bounds("b-1", 10, 20, 586, 428);
+    const el = document.querySelector('[data-content-view="b-1"]') as HTMLElement;
+    expect(el).toBeTruthy();
+
+    await host.visible("b-1", false);
+    expect(el.style.display).not.toBe("none");
+    // 상자는 그대로 남는다 — 켤 때 다시 재어 줄 사람이 없어도 크기가 살아 있다.
+    expect(el.style.width).toBe("586px");
+    expect(el.style.height).toBe("428px");
+    // 그리고 화면 밖이다 — 숨긴 것이 보이면 그것은 숨긴 것이 아니다.
+    expect(el.style.visibility).toBe("hidden");
+    expect(el.style.transform).toContain("translateX");
+
+    await host.visible("b-1", true);
+    expect(el.style.visibility).toBe("visible");
+    expect(el.style.transform === "" || el.style.transform === "none").toBe(true);
+    expect(el.style.width).toBe("586px");
+  });
+
+  // 만든 직후도 같은 규칙이다 — 여기만 display:none 이면 첫 표시가 같은 함정을 밟는다.
+  it("만들 때도 파킹으로 숨긴다", async () => {
+    provision = { chromium: false, nativeChildWebview: false };
+    const { contentViewHost } = await load();
+    await contentViewHost().open("b-2", { url: "https://example.com" });
+    const el = document.querySelector('[data-content-view="b-2"]') as HTMLElement;
+    expect(el.style.display).not.toBe("none");
+    expect(el.style.visibility).toBe("hidden");
+  });
+});

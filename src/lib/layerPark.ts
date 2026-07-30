@@ -12,6 +12,18 @@ import type { CSSProperties } from "react";
 
 const OFFSCREEN = "translateX(-200vw)";
 
+/** 같은 규칙을 **DOM 요소에 직접** 바른다 — React 밖(콘텐츠 뷰 호스트)에서 쓴다.
+ *
+ *  규칙이 둘이면 갈린다: 한쪽이 display:none 을 쓰면 그쪽 층만 상자를 잃고, 되살아날 때
+ *  게스트가 0×0 뷰포트로 붙는다(실측 2026-07-30: 되돌아온 브라우저 탭이 URL 은 맞는데 백지,
+ *  innerWidth/innerHeight = 0). 그래서 값이 아니라 **이 함수**를 쓴다. */
+export function applyParked(el: HTMLElement, active: boolean): void {
+  el.style.visibility = active ? "visible" : "hidden";
+  el.style.zIndex = active ? "1" : "0";
+  el.style.transform = active ? "" : OFFSCREEN;
+  el.style.setProperty("content-visibility", active ? "visible" : "hidden");
+}
+
 export function parkedStyle(active: boolean): CSSProperties {
   return {
     visibility: active ? "visible" : "hidden",

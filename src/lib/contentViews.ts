@@ -12,6 +12,7 @@
 // 두 구현이 같은 계약을 만족한다는 것이 요점이다. 호출자(plugins/api.ts)는 어느 쪽인지 모른다.
 import { engineProvision, invoke } from "../framework";
 import { bridgeContentViewEvents } from "./contentViewEvents";
+import { applyParked } from "./layerPark";
 
 /** 콘텐츠 뷰 하나에 할 수 있는 일 — 앱의 webview_* 표면과 이름·인자가 같다. */
 export interface ContentViewHost {
@@ -115,7 +116,10 @@ export const domHost: ContentViewHost = {
     const el = doc.createElement("webview");
     el.setAttribute("data-content-view", label);
     if (typeof opts.url === "string") el.setAttribute("src", opts.url);
-    el.style.cssText = "position:absolute;display:none";
+    // 파킹으로 숨긴다 — display:none 은 상자를 레이아웃에서 빼고, 되살릴 때 게스트가 0×0
+    // 뷰포트로 붙는다(URL 은 맞는데 화면만 백지). 규칙은 layerPark 가 단일 진실이다.
+    el.style.cssText = "position:absolute";
+    applyParked(el, false);
     root(doc).appendChild(el);
     // 사건을 앱이 아는 이름으로 잇는다. 이것이 없으면 app.webview.on(label, "nav") 구독자가
     // 영영 안 불리고, 그 침묵은 오류로 보이지 않는다.
@@ -148,7 +152,9 @@ export const domHost: ContentViewHost = {
   },
   async visible(label, visible) {
     const el = find(label, document);
-    if (el) el.style.display = visible ? "" : "none";
+    // 크기는 건드리지 않는다 — 숨김이 상자를 지우면 복원이 "누가 bounds 를 다시 불러 주는가"에
+    // 달리고, 그 우연이 백지 탭으로 나타난다.
+    if (el) applyParked(el, visible);
   },
   async history(label, delta) {
     const el = find(label, document);
