@@ -1,0 +1,14 @@
+[package]
+name = "soksak-sidecar-host"
+version = "0.0.1"
+publish = false
+edition = "2021"
+description = "Hosting for engine-model sidecars: dlopen, ABI handshake, module and client registries, opaque message relay. The framework owns three things only — the native parent surface, a main-thread runner, and the event sink."
+
+# 프레임워크를 의존하지 않는다. 이 몸이 프레임워크 폴더에 살던 동안 그 폴더는 창·웹뷰가
+# 아니라 **엔진 호스팅**을 지고 있었다 — 671줄 중 프레임워크를 부르는 줄은 22줄뿐이었다.
+[dependencies]
+serde_json = "1"
+soksak-spec-contract = { path = "../soksak-spec-contract" }
+# dlopen — 엔진 모델의 정의 그 자체다(docs/SIDECARS.md §3: 심볼 가족의 존재가 곧 모델 주장).
+libloading = "0.8"

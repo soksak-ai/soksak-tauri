@@ -3,6 +3,12 @@
 # 갱신은 --prune(축소)만. 올리는 것은 명시 재입법 커밋으로만 하고, 그 증가가 배선인지 코어인지 적는다.
 # 제거 조건: 파일의 몸이 통째로 공통으로 가면 파일이 사라지고 --prune 이 항목을 지운다.
 # 파일 개명 시 같은 커밋에서 항목 경로를 수기로 이전한다(값 불변).
+#
+# ── 2026-07-30 명시 재입법: lib.rs 716 → 717 ─────────────────────────────────
+# sidecar.rs 의 몸을 soksak-sidecar-host 로 뺐다(555 → 166). 그 크레이트는 프레임워크가 지는
+# 셋(네이티브 부모 표면·메인스레드 실행·사건 싱크)을 주입받으므로, 부팅에서 그 셋을 건네는
+# 줄이 하나 필요하다: `sidecar::install(app.handle())`. 이 증가는 코어가 아니라 **배선**이고,
+# 배선은 이 폴더의 몫이다. 같은 커밋의 순증감은 -388 이다.
 frameworks/electron/activity.cjs 32
 frameworks/electron/backend.cjs 206
 frameworks/electron/control.cjs 132
@@ -40,7 +46,7 @@ frameworks/tauri/src/i18n.rs 155
 frameworks/tauri/src/id_registry.rs 144
 frameworks/tauri/src/identity.rs 59
 frameworks/tauri/src/ipc.rs 1232
-frameworks/tauri/src/lib.rs 716
+frameworks/tauri/src/lib.rs 717
 frameworks/tauri/src/login_shell.rs 28
 frameworks/tauri/src/main.rs 4
 frameworks/tauri/src/mediaproxy.rs 18
@@ -58,7 +64,7 @@ frameworks/tauri/src/schedule.rs 1344
 frameworks/tauri/src/seal_keys.rs 19
 frameworks/tauri/src/secrets.rs 67
 frameworks/tauri/src/service.rs 1066
-frameworks/tauri/src/sidecar.rs 555
+frameworks/tauri/src/sidecar.rs 166
 frameworks/tauri/src/skillgen.rs 16
 frameworks/tauri/src/stream_sink.rs 21
 frameworks/tauri/src/titlebar.rs 218

@@ -85,8 +85,8 @@ const ALLOWED: { file: string; mark: string; event: string; why: string }[] = [
   // ── ③ 유한 안전망 ──
   { file: "frameworks/tauri/src/activity.rs", mark: "wait_timeout(q, Duration::from_secs(1))", event: "condvar-safety-net", why: "cv 사건이 주 경로 — 1s 는 closed 플래그 재확인 안전망" },
   { file: "frameworks/tauri/src/service.rs", mark: "wait_timeout(inner, Duration::from_millis(20))", event: "condvar-safety-net", why: "크래시 전이가 cv 를 울린다 — 20ms 는 유실 안전망" },
-  { file: "frameworks/tauri/src/sidecar.rs", mark: "recv_timeout(std::time::Duration::from_secs(10))", event: "sidecar-reply-cap", why: "죽은 사이드카에 무한 대기 방지(10s)" },
-  { file: "frameworks/tauri/src/sidecar.rs", mark: "recv_timeout(std::time::Duration::from_secs(2))", event: "sidecar-reply-cap", why: "동일(2s)" },
+  { file: "crates/soksak-sidecar-host/src/lib.rs", mark: "const INIT_LIMIT: std::time::Duration = std::time::Duration::from_secs(10);", event: "engine-init-returned", why: "엔진 init 이 메인스레드에서 끝나는 것이 종결 사건이고, 이 상한은 그 사건이 영영 안 올 때 부팅이 멈춰 서지 않게 하는 안전망이다" },
+  { file: "frameworks/tauri/src/sidecar.rs", mark: "recv_timeout(std::time::Duration::from_secs(2))", event: "native-surface-returned", why: "메인스레드에서 부모 표면을 재는 회신이 종결 사건 — 상한은 창이 답하지 않을 때 무한 대기 방지" },
   { file: "frameworks/tauri/src/webview.rs", mark: "recv_timeout(Duration::from_secs(3))", event: "main-thread-dispatch-cap", why: "메인스레드 디스패치 응답 상한(3s)" },
   { file: "frameworks/tauri/src/webview.rs", mark: "recv_timeout(Duration::from_secs(15))", event: "main-thread-dispatch-cap", why: "동일(15s — 콜드 부트 포함)" },
   { file: "crates/soksak-core/src/ptyd.rs", mark: "from_millis(150)", event: "pty.stream.reattached", why: "데몬 인계 전이(구 데몬 exit → 신 데몬 소켓 bind) 대기 — 세션 확인·재부착 성공이 종결, 상한 20회" },
@@ -158,6 +158,8 @@ function rsSites(): string[] {
     "crates/soksak-store/src",
     "crates/soksak-watch/src",
     "crates/soksak-net/src",
+    // 이관 목적지 — 여기가 뿌리에 없으면 프레임워크에서 옮긴 상한이 영영 안 세어진다.
+    "crates/soksak-sidecar-host/src",
   ];
   for (const file of roots
     .flatMap((r) => walk(join(ROOT, r)))

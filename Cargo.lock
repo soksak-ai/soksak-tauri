@@ -4627,6 +4627,7 @@ dependencies = [
  "soksak-cored",
  "soksak-net",
  "soksak-seal",
+ "soksak-sidecar-host",
  "soksak-spec-contract",
  "soksak-spec-pty",
  "soksak-spec-service",
@@ -4691,6 +4692,15 @@ dependencies = [
  "sha2",
  "x25519-dalek",
  "zeroize",
+]
+
+[[package]]
+name = "soksak-sidecar-host"
+version = "0.0.1"
+dependencies = [
+ "libloading 0.8.9",
+ "serde_json",
+ "soksak-spec-contract",
 ]
 
 [[package]]

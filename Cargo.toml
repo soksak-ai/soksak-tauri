@@ -19,6 +19,7 @@ members = [
   "crates/soksak-vault",
   "crates/soksak-watch",
   "crates/soksak-net",
+  "crates/soksak-sidecar-host",
   "crates/soksak-ptyd",
   "crates/soksak-cored",
   "crates/soksak-cli",

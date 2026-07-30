@@ -32,6 +32,8 @@ tauri-build = { version = "2", features = [] }
 soksak-spec-socket = { path = "../../crates/soksak-spec-socket" }
 # 공개 계약 provider/consumer refs + SemVer range 판정 — sidecar/service가 공유하는 단일진실.
 soksak-spec-contract = { path = "../../crates/soksak-spec-contract" }
+# 사이드카 호스팅의 몸 — 이 폴더에는 표면·메인스레드·사건 싱크 셋만 남는다.
+soksak-sidecar-host = { path = "../../crates/soksak-sidecar-host" }
 # PTY 데몬 계약(버전·경로·hello·메시지) — pty.rs 라우터가 soksak-ptyd 와 공유, 상수 사본 금지.
 soksak-spec-pty = { path = "../../crates/soksak-spec-pty" }
 # X25519 sealed box 단일 진실 — 앱 볼트와 soksak-ptyd 체크포인트 공용.

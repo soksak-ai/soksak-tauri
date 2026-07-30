@@ -174,6 +174,10 @@ pub fn run() {
             // identity 홈 확정 — 모든 경로(데이터·플러그인·사이드카·테마·프로젝트·소켓·시크릿)가
             // 이 값에서 파생되므로 어떤 경로 사용보다 먼저 1회 고정한다(home.rs 원칙).
             home::init(&app.config().identifier);
+            // 사이드카 호스팅에 이 프레임워크의 셋(표면·메인스레드·사건 싱크)을 건넨다.
+            // 이것이 없으면 첫 open 이 적재 직전에 "프레임워크 미설치"로 죽는다 — 그 실패는
+            // 사이드카가 없는 것처럼 보이지만 사실은 이 배선이 빠진 것이다.
+            sidecar::install(app.handle());
             // updater 는 설정(plugins.updater: pubkey·endpoints)이 실린 빌드에서만 등록한다 —
             // 설정 없는 프로필에서 무조건 등록하면 부팅이 PluginInitialization(null)로 죽는다.
             // 설정이 conf 에 실리는 순간 자동 활성. 커맨드(update_check 등)는 플러그인 부재 시
