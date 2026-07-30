@@ -269,20 +269,28 @@ pub fn data_query(
 ) -> Result<Vec<Value>, String> {
     validate_ns(&ns)?;
     let resolver = |key_id: &str| secrets.get_data_key(key_id);
-    with_conn(&state, |c| {
-        store::query(
-            c,
-            &ns,
-            &coll,
-            scope.as_deref(),
-            filter.as_ref(),
-            order.as_deref(),
-            desc.unwrap_or(true),
-            limit,
-            offset,
-            Some(&resolver),
-        )
-    })
+    store_op(
+        &state,
+        "data_query",
+        serde_json::json!({
+            "ns": ns, "coll": coll, "scope": scope, "filter": filter,
+            "order": order, "desc": desc, "limit": limit, "offset": offset,
+        }),
+        |c| {
+            store::query(
+                c,
+                &ns,
+                &coll,
+                scope.as_deref(),
+                filter.as_ref(),
+                order.as_deref(),
+                desc.unwrap_or(true),
+                limit,
+                offset,
+                Some(&resolver),
+            )
+        },
+    )
 }
 
 #[tauri::command]
@@ -297,17 +305,22 @@ pub fn data_search(
 ) -> Result<Vec<Value>, String> {
     validate_ns(&ns)?;
     let resolver = |key_id: &str| secrets.get_data_key(key_id);
-    with_conn(&state, |c| {
-        store::search(
-            c,
-            &ns,
-            &coll,
-            &query,
-            scope.as_deref(),
-            limit,
-            Some(&resolver),
-        )
-    })
+    store_op(
+        &state,
+        "data_search",
+        serde_json::json!({ "ns": ns, "coll": coll, "query": query, "scope": scope, "limit": limit }),
+        |c| {
+            store::search(
+                c,
+                &ns,
+                &coll,
+                &query,
+                scope.as_deref(),
+                limit,
+                Some(&resolver),
+            )
+        },
+    )
 }
 
 #[tauri::command]
