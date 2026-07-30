@@ -648,32 +648,12 @@ pub fn close_terminal(id: u32, manager: State<'_, PtyManager>) -> Result<(), Str
 
 #[tauri::command]
 pub fn pty_daemon_status(manager: State<'_, PtyManager>) -> Result<serde_json::Value, String> {
+    // 판정은 코어의 daemon_status 하나다 — cored 도 같은 함수를 부른다. 여기 사본을 두면 같은
+    // 데몬을 두 모양으로 답하고, 그 차이는 "판올림할 수 있는가"를 밖에서 읽는 값이라 곧
+    // 잘못된 결정이 된다.
     #[cfg(unix)]
     {
-        use serde_json::json;
-        let staged = soksak_spec_pty::staged_bin_path(manager.identity().home());
-        let (running, pid, sessions, contract) =
-            match manager.link.request(&soksak_spec_pty::Request::Ping, false) {
-                Ok(v) => (
-                    true,
-                    v["pid"].as_u64(),
-                    v["sessions"].as_u64(),
-                    v["handoffContract"].as_u64(),
-                ),
-                Err(_) => (false, None, None, None),
-            };
-        Ok(json!({
-            "running": running,
-            "pid": pid,
-            "sessions": sessions,
-            "protocol": soksak_spec_pty::PTYD_PROTOCOL_VERSION,
-            // 도는 데몬이 선언한 안전 인계 계약 수준(없음 = 계약 이전 판). 판올림 가능
-            // 여부가 이 값 하나로 밖에서 읽힌다 — 시도해 보고 아는 것이 아니라.
-            "handoffContract": contract,
-            "handoffContractRequired": soksak_spec_pty::PTYD_HANDOFF_CONTRACT,
-            "staged": staged.exists(),
-            "stagedPath": staged.to_string_lossy(),
-        }))
+        Ok(soksak_core::ptyd::daemon_status(&manager.link))
     }
     #[cfg(not(unix))]
     {

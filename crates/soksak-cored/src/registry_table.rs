@@ -100,6 +100,13 @@ pub const COMMANDS: &[Command] = &[
         run: run_ws_close,
     },
     Command {
+        // 데몬 상태 — 읽기다. 판올림·재기동은 여기서 하지 않는다(파괴적이고 세션을 죽인다).
+        name: "pty_daemon_status",
+        args: &[],
+        returns: "{ running, pid, sessions, protocol, handoffContract, staged, stagedPath }",
+        run: crate::registry_ptyd::run_pty_daemon_status,
+    },
+    Command {
         // dir 의 "방금 쓰인 세션" — 스냅샷 원장은 이 프로세스가 하나만 둔다.
         name: "ai_session_active",
         args: &[Arg { name: "dir", ty: "string", required: REQ }],

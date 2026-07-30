@@ -932,3 +932,35 @@ pub fn read_sealed_screen_adopting(
         paint_b64: base64::engine::general_purpose::STANDARD.encode(&paint),
     }))
 }
+
+/// 데몬의 지금 상태 — 도는가, 몇 세션인가, 어떤 계약을 선언하는가.
+///
+/// 판정은 여기 하나다. 프로세스마다 쓰면 같은 데몬을 두 모양으로 답하고, 그 차이는 "판올림할
+/// 수 있는가"를 밖에서 읽는 값이라 곧 잘못된 결정으로 이어진다.
+///
+/// 도는 데몬이 선언한 인계 계약 수준(없음 = 계약 이전 판)이 함께 실린다 — 판올림 가능 여부가
+/// 이 값 하나로 밖에서 읽힌다. 시도해 보고 아는 것이 아니다.
+pub fn daemon_status(link: &Link) -> serde_json::Value {
+    use serde_json::json;
+    let staged = soksak_spec_pty::staged_bin_path(link.identity().home());
+    let (running, pid, sessions, contract) =
+        match link.request(&soksak_spec_pty::Request::Ping, false) {
+            Ok(v) => (
+                true,
+                v["pid"].as_u64(),
+                v["sessions"].as_u64(),
+                v["handoffContract"].as_u64(),
+            ),
+            Err(_) => (false, None, None, None),
+        };
+    json!({
+        "running": running,
+        "pid": pid,
+        "sessions": sessions,
+        "protocol": soksak_spec_pty::PTYD_PROTOCOL_VERSION,
+        "handoffContract": contract,
+        "handoffContractRequired": soksak_spec_pty::PTYD_HANDOFF_CONTRACT,
+        "staged": staged.exists(),
+        "stagedPath": staged.to_string_lossy(),
+    })
+}

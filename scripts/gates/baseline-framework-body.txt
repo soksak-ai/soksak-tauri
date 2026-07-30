@@ -59,7 +59,7 @@ frameworks/tauri/src/os_key.rs 47
 frameworks/tauri/src/plugins.rs 1286
 frameworks/tauri/src/process.rs 150
 frameworks/tauri/src/project_registry.rs 299
-frameworks/tauri/src/pty.rs 811
+frameworks/tauri/src/pty.rs 790
 frameworks/tauri/src/pty_delivery.rs 1
 frameworks/tauri/src/runtime_dep.rs 584
 frameworks/tauri/src/schedule.rs 1344
