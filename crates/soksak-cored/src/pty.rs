@@ -318,3 +318,30 @@ pub fn read_sealed_screen(
 #[cfg(test)]
 #[path = "pty_tests.rs"]
 mod tests;
+
+/// 이 pane 의 전경 프로세스 pid — 없으면 None.
+///
+/// **모르는 것과 없는 것을 가른다.** 이 이름의 None 은 "전경 프로세스가 없다"는 뜻이라, 남의
+/// 세션이어서 못 본 것을 같은 None 으로 답하면 부른 쪽은 전경이 없다고 읽는다. 이 원장에 없는
+/// pane 은 None 이 아니라 **이름을 달고** 거절한다.
+pub fn pane_pid(ctx: &Ctx, pane_id: &str) -> Result<Option<u32>, String> {
+    let known = sessions()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .values()
+        .any(|s| s.pane_id.as_deref() == Some(pane_id));
+    if !known {
+        return Err(format!(
+            "이 프로세스의 원장에 없는 pane 이다: {pane_id} — None 으로 답하면 전경이 없는 것으로 읽힌다"
+        ));
+    }
+    let v = link(ctx.identity())
+        .request(
+            &soksak_spec_pty::Request::PanePid {
+                pane_id: pane_id.to_string(),
+            },
+            true,
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(v["pid"].as_u64().map(|p| p as u32))
+}

@@ -757,6 +757,12 @@ pub const COMMANDS: &[Command] = &[
         run: run_pty_read_sealed_screen,
     },
     Command {
+        name: "pty_pane_pid",
+        args: &[Arg { name: "paneId", ty: "string", required: REQ }],
+        returns: "u32? — 전경 프로세스 pid(없으면 null)",
+        run: run_pty_pane_pid,
+    },
+    Command {
         name: "pty_pane_alive",
         args: &[Arg { name: "paneId", ty: "string", required: true }],
         returns: "bool",

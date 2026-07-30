@@ -88,15 +88,6 @@ pub const UNSERVED: &[Unserved] = &[
                      프록시를 받았는지 모른다. 쓸 곳 없이 미리 열지 않는다.",
     },
     Unserved {
-        name: "pty_pane_pid",
-        blocked_by: "이 pane 의 백엔드가 둘 중 무엇인지부터 앱 프로세스의 세션 원장이 안다. 데몬 \
-                     백엔드면 여기서도 답할 수 있지만(PanePid 요청), 로컬 백엔드는 그 pty master 가 \
-                     **앱 프로세스 안**에 있어 프로세스 그룹 리더를 여기서 볼 길이 없다. 그런데 이 \
-                     명령의 None 은 '전경 프로세스가 없다'는 뜻이라, 남의 세션이어서 못 본 것과 \
-                     구분되지 않는다 — 그 None 을 받은 쪽은 셸이 비었다고 읽는다. 원장이 한 프로세스로 \
-                     모이기 전에는 이 이름을 나눠 답할 수 없다.",
-    },
-    Unserved {
         name: "plugin_install_git",
         blocked_by: "명령의 몸이 원격 트리를 가져오는 것 자체다 — git clone 스폰을 빼면 남는 일이 없다. \
                      그 스폰은 core-git-scan 게이트가 plugins.rs 한 파일로 봉인해 두었고(ALLOWLIST 단 \

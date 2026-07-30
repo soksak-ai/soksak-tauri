@@ -718,6 +718,14 @@ pub(crate) fn run_pty_pane_alive(ctx: &Ctx, params: &Value) -> Outcome {
     })
 }
 
+/// 전경 프로세스 pid — 원장이 한 프로세스로 모인 뒤에야 답할 수 있는 이름이다. 모르는 pane 은
+/// None 이 아니라 이름을 달고 거절한다 — None 은 "전경 프로세스가 없다"는 뜻이다.
+pub(crate) fn run_pty_pane_pid(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: PaneId| {
+        crate::pty::pane_pid(ctx, &a.pane_id)
+    })
+}
+
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct WindowFacts {
