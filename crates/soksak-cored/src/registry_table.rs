@@ -719,6 +719,14 @@ pub const COMMANDS: &[Command] = &[
     },
     // 창 사실 갱신. 낡은 목록으로 타겟을 고르면 죽은 창에 배달한다 — 그 오답은 조용하다.
     Command {
+        // 관측 — 겹친 라벨을 실패로 배우지 않게 한다. 창 복원이 저장된 w-<uuid> 를 되쓰므로
+        // 한 홈을 두 프레임워크가 보면 같은 슬롯을 각자 되살린다.
+        name: "window_census",
+        args: &[],
+        returns: "{ windows: [{ label, hosts, focused }] } — hosts>1 이면 그 라벨은 모호하다",
+        run: run_window_census,
+    },
+    Command {
         name: "control_windows",
         args: &[
             Arg { name: "live", ty: "string[]", required: true },

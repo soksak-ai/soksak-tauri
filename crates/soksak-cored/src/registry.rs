@@ -931,6 +931,14 @@ struct ActivityPublish {
     payload: Value,
 }
 
+/// 지금 붙어 있는 창들 — 라벨마다 그 라벨을 든 호스트 수와 함께.
+///
+/// 겹침을 **실패로 배우지 않게** 한다. 배달은 이미 겹친 라벨을 이름으로 거절하지만, 그것은
+/// 부른 쪽이 이미 명령을 보낸 뒤다.
+pub(crate) fn run_window_census(_ctx: &Ctx, _params: &Value) -> Outcome {
+    Outcome::Ok(json!({ "windows": crate::control::window_census() }))
+}
+
 pub(crate) fn run_activity_publish(ctx: &Ctx, params: &Value) -> Outcome {
     // 적재만 한다 — 단조·도장 규칙은 코어가, 원장 자원은 ledger 가 소유한다.
     dispatch(params, |a: ActivityPublish| {

@@ -83,6 +83,38 @@ fn union_live(hs: &[Host]) -> Vec<String> {
     }
     out
 }
+/// 지금 붙어 있는 창들 — **라벨마다 그 라벨을 든 호스트 수와 함께.**
+///
+/// 합쳐서 하나로 답하지 않는다. 창 복원은 라벨을 새로 만들지 않고 저장된 `w-<uuid>` 를
+/// 되쓰므로(NAMING 4b), 한 홈을 두 프레임워크가 보면 같은 슬롯을 각자 되살려 라벨이 겹친다.
+/// 그때 목록이 하나로 답하면 부른 쪽은 창이 하나라고 읽고, 그 위에 세운 판단이 전부 틀린다 —
+/// **어느 창인지 못 고르는 것과 창이 하나인 것은 다른 사실이다.**
+///
+/// 배달은 이미 이 겹침을 이름으로 거절한다(AMBIGUOUS_HOST). 이 자리는 그 거절을 **보기 전에**
+/// 알 수 있게 하는 관측면이다: 부른 쪽이 실패로 배우지 않아도 된다.
+pub fn window_census() -> Vec<Value> {
+    let g = hosts().lock().unwrap_or_else(|e| e.into_inner());
+    let f = focus().lock().unwrap_or_else(|e| e.into_inner());
+    let focused = f.focused().to_string();
+    let mut out: Vec<Value> = Vec::new();
+    for h in g.iter() {
+        for l in &h.live {
+            match out.iter_mut().find(|w| w["label"] == l.as_str()) {
+                Some(w) => {
+                    let n = w["hosts"].as_u64().unwrap_or(0) + 1;
+                    w["hosts"] = Value::from(n);
+                }
+                None => out.push(json!({
+                    "label": l,
+                    "hosts": 1,
+                    "focused": *l == focused,
+                })),
+            }
+        }
+    }
+    out
+}
+
 fn pending() -> &'static Mutex<HashMap<u64, Sender<Value>>> {
     PENDING.get_or_init(|| Mutex::new(HashMap::new()))
 }

@@ -254,3 +254,30 @@ fn a_broadcast_reaches_every_host() {
     detach();
 }
 
+
+/// 같은 라벨을 두 호스트가 들면 **둘로 보여야 한다.** 합쳐서 하나로 답하면 부른 쪽은 창이
+/// 하나라고 읽고, 그 위에 세운 판단이 전부 틀린다(어느 창인지 못 고르는 것과, 창이 하나인
+/// 것은 다른 사실이다).
+///
+/// 실측 배경: 창 복원은 라벨을 새로 만들지 않고 저장된 `w-<uuid>` 를 되쓴다. 한 홈을 두
+/// 프레임워크가 보면 같은 슬롯을 각자 되살려 라벨이 겹친다.
+#[test]
+fn a_label_two_hosts_hold_is_reported_as_two() {
+    let _serial = lock_serial();
+    detach();
+    let a = fake_host(&["w-shared", "w-only-a"], "w-shared");
+    let b = fake_host(&["w-shared"], "w-shared");
+
+    let seen = super::window_census();
+    let shared = seen
+        .iter()
+        .find(|w| w["label"] == "w-shared")
+        .expect("겹친 라벨이 목록에 있다");
+    assert_eq!(shared["hosts"], 2, "겹침이 수로 보여야 한다: {shared}");
+
+    let only = seen.iter().find(|w| w["label"] == "w-only-a").expect("단독 라벨");
+    assert_eq!(only["hosts"], 1, "{only}");
+
+    drop((a, b));
+    detach();
+}
