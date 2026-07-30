@@ -24,6 +24,7 @@ members = [
   "crates/soksak-schedule",
   "crates/soksak-daemon",
   "crates/soksak-install",
+  "crates/soksak-scaffold",
   "crates/soksak-ptyd",
   "crates/soksak-cored",
   "crates/soksak-cli",

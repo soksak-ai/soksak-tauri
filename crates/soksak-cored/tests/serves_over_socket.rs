@@ -489,12 +489,9 @@ fn what_it_refuses_is_discoverable_with_the_reason() {
         "sidecar_ensure",
         "clipboard_read",
         "media_proxy_info",
-        "sidecar_dev_new",
         "plugin_install_git",
         "plugin_update",
-        "plugin_dev_new",
-        "plugin_dev_new2",
-        "sidecar_dev_new",
+        "app_relaunch",
     ] {
         assert!(named.contains(&expected), "{expected} 이 없다: {named:?}");
     }

@@ -4592,6 +4592,7 @@ dependencies = [
  "soksak-daemon",
  "soksak-install",
  "soksak-net",
+ "soksak-scaffold",
  "soksak-schedule",
  "soksak-service",
  "soksak-spec-pty",
@@ -4643,6 +4644,7 @@ dependencies = [
  "soksak-daemon",
  "soksak-install",
  "soksak-net",
+ "soksak-scaffold",
  "soksak-schedule",
  "soksak-seal",
  "soksak-service",
@@ -4714,6 +4716,15 @@ dependencies = [
  "serde_json",
  "soksak-seal",
  "soksak-spec-pty",
+]
+
+[[package]]
+name = "soksak-scaffold"
+version = "0.0.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "soksak-core",
 ]
 
 [[package]]

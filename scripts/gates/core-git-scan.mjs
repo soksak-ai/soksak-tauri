@@ -47,6 +47,14 @@ export const ALLOWLIST = [
       "플러그인 설치·갱신·스캐폴드의 git clone/fetch — 플러그인 플랫폼의 단일 배포 메커니즘이다" +
       " (C1 레지스트리 URL allowlist 와 같은 급). git 기능 표면이 아니다.",
   },
+  {
+    file: "crates/soksak-scaffold/src/lib.rs",
+    pattern: /Command::new\("git"\)/,
+    reason:
+      "새 유닛 스캐폴드의 git init — 위 자리와 같은 메커니즘이고, 프레임워크 폴더에서 나오면서" +
+      " 자리 이름만 바뀌었다. 봉인을 푸는 것이 아니라 그 자리를 밝히는 것이다: 몸이 껍데기에" +
+      " 살면 두 껍데기가 서로 다른 뼈대를 낳고, 그 차이는 만드는 순간이 아니라 발행할 때 드러난다.",
+  },
 ];
 
 // crates 는 프레임워크 밖으로 나온 Rust 다 — 뿌리에서 빠지면 그 코드가 스캔 밖이 된다.

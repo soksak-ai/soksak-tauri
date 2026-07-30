@@ -11,7 +11,6 @@ frameworks/tauri/src/activity.rs 9
 frameworks/tauri/src/clipboard.rs 1
 frameworks/tauri/src/data/mod.rs 1
 frameworks/tauri/src/id_registry.rs 4
-frameworks/tauri/src/plugins.rs 2
 frameworks/tauri/src/project_registry.rs 5
 frameworks/tauri/src/pty.rs 9
 frameworks/tauri/src/schedule.rs 3

@@ -10,6 +10,9 @@ use crate::registry_encrypt::{
     run_data_encrypt_change_recovery, run_data_encrypt_enable, run_data_encrypt_recover,
     run_data_encrypt_rotate, run_data_encrypt_status,
 };
+use crate::registry_scaffold::{
+    run_plugin_dev_new, run_plugin_dev_new2, run_sidecar_dev_new,
+};
 use crate::registry_unit_dev::{run_unit_dev_remove, run_unit_dev_set};
 use crate::registry_install::{
     run_unit_install_begin, run_unit_install_commit, run_unit_install_read_utf8,
@@ -96,6 +99,29 @@ pub const COMMANDS: &[Command] = &[
         ],
         returns: "null",
         run: run_download_verify,
+    },
+    Command {
+        // 새 유닛 스캐폴드 — 몸은 soksak-scaffold 가 진다. 스캐폴드와 개발 선언이 한 손이다:
+        // 뒷절반이 빠지면 답은 성공인데 유닛은 아무도 적재하지 않는 반쪽만 남는다.
+        name: "plugin_dev_new",
+        args: &[Arg { name: "id", ty: "string", required: REQ }],
+        returns: "{ dir, dirName, manifest }",
+        run: run_plugin_dev_new,
+    },
+    Command {
+        name: "plugin_dev_new2",
+        args: &[Arg { name: "name", ty: "string", required: REQ }],
+        returns: "{ dir, dirName, manifest }",
+        run: run_plugin_dev_new2,
+    },
+    Command {
+        name: "sidecar_dev_new",
+        args: &[
+            Arg { name: "name", ty: "string", required: REQ },
+            Arg { name: "interface", ty: "string?", required: OPT },
+        ],
+        returns: "{ dir, dirName, manifest }",
+        run: run_sidecar_dev_new,
     },
     Command {
         // 개발 선언 — 규칙은 코어가, 잠금은 커널이 진다. 프로세스 안의 Mutex 는 프로세스 둘을
