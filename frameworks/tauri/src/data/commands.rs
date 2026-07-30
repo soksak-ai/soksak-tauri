@@ -132,7 +132,12 @@ pub fn data_kv_set(
     state: State<'_, DbState>,
 ) -> Result<(), String> {
     validate_ns(&ns)?;
-    with_conn(&state, |c| store::kv_set(c, &ns, &key, &value))?;
+    store_op(
+        &state,
+        "data_kv_set",
+        serde_json::json!({ "ns": ns, "key": key, "value": value }),
+        |c| store::kv_set(c, &ns, &key, &value),
+    )?;
     emit_change(&app, &ns, None, None, "kv_set", Some(key.as_str()));
     Ok(())
 }
@@ -145,7 +150,12 @@ pub fn data_kv_delete(
     state: State<'_, DbState>,
 ) -> Result<bool, String> {
     validate_ns(&ns)?;
-    let removed = with_conn(&state, |c| store::kv_delete(c, &ns, &key))?;
+    let removed = store_op(
+        &state,
+        "data_kv_delete",
+        serde_json::json!({ "ns": ns, "key": key }),
+        |c| store::kv_delete(c, &ns, &key),
+    )?;
     if removed {
         emit_change(&app, &ns, None, None, "kv_delete", Some(key.as_str()));
     }
@@ -177,7 +187,12 @@ pub fn data_define(
     state: State<'_, DbState>,
 ) -> Result<(), String> {
     validate_ns(&ns)?;
-    with_conn(&state, |c| store::define(c, &ns, &coll, &indexes, &fts))
+    store_op(
+        &state,
+        "data_define",
+        serde_json::json!({ "ns": ns, "coll": coll, "indexes": indexes, "fts": fts }),
+        |c| store::define(c, &ns, &coll, &indexes, &fts),
+    )
 }
 
 #[tauri::command]
