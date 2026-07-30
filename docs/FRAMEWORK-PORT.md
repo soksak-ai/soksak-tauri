@@ -548,3 +548,21 @@ Releasing tokio falsified every refusal that named it as the wall at once: `medi
 | Unanswered state-bound | 45 | **13** |
 
 Of the remaining 17: declared refusals 12 · undeclared gaps 5. The largest single item is `sidecar_open` — the browser engine on the second framework — which needs a native addon because JS has no FFI, and that is a decision, not a debt.
+
+### Four more: the walls that fell after that
+
+`update_check` / `update_apply` — replacing the app binary is something only the side that knows that binary can do, so **this framework answers**. The channel gate comes first: on dev and debug homes the body is a local build, so a remote check does not even apply, and that `available:false` means *"this channel does not look remotely"*, not *"there is no new version"*. Both facts in one shape would leave the caller unable to tell them apart, so the channel rides along. The release channel is refused **by name**: the signed-bundle installer is not wired here, and answering `available:false` for a missing device is the lie *"you are up to date"* — the user then waits forever for an update that will never come.
+
+`unit_dev_set` / `unit_dev_remove` — the wall was an in-process `Mutex` and the body's location, and both are gone. Moving it surfaced something else: **four things lived in two places, character for character** (`CONFIG_FILE`, `CONFIG_VERSION`, `UnitDevConfig`, `config_path`). Reads were owned by core, writes by the framework folder, and each held its own copy of the same definitions while touching the same file. Two copies stay silent until they diverge.
+
+**Window labels.** Delivery already refused an overlapping label by name (`AMBIGUOUS_HOST`), but the *listing* merged them into one entry. Window restore does not mint a new label — it deliberately reuses the stored `w-<uuid>` — so one home seen by two frameworks revives the same slot twice. A caller reading one entry believes there is one window and builds on it. `window_census` reports, per label, how many hosts hold it: **being unable to choose which window and there being only one window are different facts**, and the overlap should not have to be learned from a failure that arrives after the command was already sent.
+
+`plugin_dev_*` keeps its wall, and half its reason was deleted. The write half is gone; what remains is the git spawn, and that is a rule standing today — `core-git-scan` seals git matches to zero across core and crates, with exactly one explicit allowlist file. **A wrong reason is worse than none**: leaving a wall that has fallen means that name is never examined again.
+
+| | At start | Now |
+|---|---|---|
+| Unanswered names | 63 | **13** |
+| Framework-folder body | 19,165 | **13,773** |
+| Unanswered state-bound | 45 | **13** |
+
+Of the remaining 13: declared refusals 10 · undeclared gaps 3. The one large item is `sidecar_open` — the browser engine on the second framework. JS has no FFI, so it needs a native addon: a decision, not a debt.
