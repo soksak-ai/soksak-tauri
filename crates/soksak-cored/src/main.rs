@@ -176,9 +176,23 @@ mod unix {
 
         // 서빙 상태는 연결마다 공유된다 — 한 cored 는 한 정체성을 서빙한다.
         let ctx = std::sync::Arc::new(ctx);
-        for conn in listener.incoming().flatten() {
-            let ctx = ctx.clone();
-            std::thread::spawn(move || handle_conn(&ctx, conn));
+
+        // **메인스레드는 accept 에 내주지 않는다.** accept 는 어느 스레드에서나 같은 답을
+        // 내지만 엔진 init 은 그렇지 않다(메인스레드 계약, SIDECARS.md §3). 자리를 잘못 주면
+        // 이 프로세스는 그 계약을 영영 못 지키고, 그 사실은 사이드카를 열려는 순간에야 드러난다.
+        let rx = soksak_cored::main_thread::install();
+        std::thread::spawn(move || {
+            for conn in listener.incoming().flatten() {
+                let ctx = ctx.clone();
+                std::thread::spawn(move || handle_conn(&ctx, conn));
+            }
+        });
+        match rx {
+            // 큐가 닫히면(보낸 쪽이 전부 사라지면) 반환한다 — 그때 프로세스가 끝난다.
+            Some(rx) => soksak_cored::main_thread::pump(rx),
+            // 두 번 세울 수 없다. 그런 부팅은 없지만, 조용히 지나가면 accept 스레드만 살아
+            // 프로세스가 답은 하는데 엔진은 못 여는 반쪽이 된다.
+            None => eprintln!("soksak-cored: 메인스레드 자리를 두 번 세울 수 없다"),
         }
     }
 

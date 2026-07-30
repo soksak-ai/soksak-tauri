@@ -52,8 +52,20 @@ fn the_dependency_tree_carries_no_framework_crate() {
     // UDP(net_udp_request)를 지고 있었다.
     //
     // 쓸 곳 없이 미리 열지 않았다: 이 이름이 풀린 커밋이 곧 download_verify 를 서빙하는 커밋이다.
+    //
+    // libloading 도 같은 판정으로 통과한다(2026-07-31). **동적 적재는 프레임워크가 아니라 OS
+    // 호출이다**: 창을 열지도 앱 핸들을 쥐지도 않고, 어느 프로세스가 같은 dylib 을 열든 같은
+    // 심볼을 같은 답으로 준다. 이 목록의 기준 셋(창을 여는가·앱 핸들을 쥐는가·프로세스마다
+    // 답이 갈리는가) 어디에도 걸리지 않는데 이름으로 막혀 있었다.
+    //
+    // 그 이름 하나가 sidecar_open·send·close 를 이 프로세스 밖에 묶어 두고 있었다. 엔진 모델이
+    // 요구하는 나머지 둘(메인스레드·부모 표면) 중 메인스레드는 창을 요구하지 않고, 부모 표면은
+    // 이 프로세스에 없다 — 없는 것은 0 으로 실어 보내고, 그것을 **쓰는** 엔진이 자기 이름으로
+    // 실패한다(지어낸 포인터는 유효한 주소로 읽혀 남의 메모리에 얹는다).
+    //
+    // 쓸 곳 없이 미리 열지 않았다: 이 이름이 풀린 커밋이 곧 그 셋을 서빙하는 커밋이다.
     for banned in [
-        "tauri", "wry", "tao", "objc2", "block2", "libloading",
+        "tauri", "wry", "tao", "objc2", "block2",
         "clipboard-rs", "x11rb", "windows-sys", "interprocess", "portable-pty",
     ] {
         assert!(

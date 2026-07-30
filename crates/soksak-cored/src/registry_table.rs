@@ -10,6 +10,7 @@ use crate::registry_encrypt::{
     run_data_encrypt_change_recovery, run_data_encrypt_enable, run_data_encrypt_recover,
     run_data_encrypt_rotate, run_data_encrypt_status,
 };
+use crate::registry_sidecar::{run_sidecar_close, run_sidecar_open, run_sidecar_send};
 use crate::registry_ptyd::{run_pty_daemon_restart, run_pty_daemon_upgrade};
 use crate::registry_scaffold::{
     run_plugin_dev_new, run_plugin_dev_new2, run_sidecar_dev_new,
@@ -100,6 +101,38 @@ pub const COMMANDS: &[Command] = &[
         ],
         returns: "null",
         run: run_download_verify,
+    },
+    Command {
+        // 엔진 모델 사이드카 — dlopen 과 메인스레드는 이 프로세스가 준다. 네이티브 부모 표면은
+        // 없고, 그래서 send 의 표면은 0 이다: 지어내면 유효한 주소로 읽혀 그 위에 얹으려 한다.
+        // 표면을 쓰는 엔진은 그 순간 자기 이름으로 실패한다.
+        name: "sidecar_open",
+        args: &[
+            Arg { name: "name", ty: "string", required: REQ },
+            Arg { name: "requirement", ty: "ContractRequirement", required: REQ },
+            Arg { name: "onEvent", ty: "stream", required: REQ },
+        ],
+        returns: "u64 — 이 클라이언트의 핸들",
+        run: run_sidecar_open,
+    },
+    Command {
+        name: "sidecar_send",
+        args: &[
+            Arg { name: "name", ty: "string", required: REQ },
+            Arg { name: "handle", ty: "u64", required: REQ },
+            Arg { name: "payload", ty: "string", required: REQ },
+        ],
+        returns: "object — 엔진이 답한 그대로",
+        run: run_sidecar_send,
+    },
+    Command {
+        name: "sidecar_close",
+        args: &[
+            Arg { name: "name", ty: "string", required: REQ },
+            Arg { name: "handle", ty: "u64", required: REQ },
+        ],
+        returns: "null",
+        run: run_sidecar_close,
     },
     Command {
         // 파괴적 — 살아 있는 세션을 전부 죽인다. 앞을 막는 것은 카탈로그의 danger 게이트다.

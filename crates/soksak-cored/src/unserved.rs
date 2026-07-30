@@ -17,20 +17,6 @@ pub struct Unserved {
 /// 옮기려다 막힌 것들. 여기 있는 이름이 표로 올라가려면 사유가 먼저 사라져야 한다.
 pub const UNSERVED: &[Unserved] = &[
     Unserved {
-        name: "sidecar_open",
-        blocked_by: "사이드카를 띄우는 일은 프로세스지만 이 둘의 몸은 창이다 — 동적 적재로 붙은 표면을 창의 \
-                     콘텐츠 뷰에 얹고, 회신을 창 채널로 흘린다. 그 셋(동적 적재·네이티브 뷰·창 채널)이 전부 \
-                     이 프로세스의 금지 이름이다. 형제인 sidecar_close 가 여기 있으니 셋이 같은 자리다. \
-                     프레임워크가 답해야 하는 이름이지 코어로 옮길 이름이 아니다.",
-    },
-    Unserved {
-        name: "sidecar_send",
-        blocked_by: "사이드카를 띄우는 일은 프로세스지만 이 둘의 몸은 창이다 — 동적 적재로 붙은 표면을 창의 \
-                     콘텐츠 뷰에 얹고, 회신을 창 채널로 흘린다. 그 셋(동적 적재·네이티브 뷰·창 채널)이 전부 \
-                     이 프로세스의 금지 이름이다. 형제인 sidecar_close 가 여기 있으니 셋이 같은 자리다. \
-                     프레임워크가 답해야 하는 이름이지 코어로 옮길 이름이 아니다.",
-    },
-    Unserved {
         name: "project_owners",
         blocked_by: "점유 원장이 앱 프로세스 안의 가변 상태다. 살아 있는 창 라벨은 인자로 받을 수 \
                      있지만(부팅 상태가 홈을 받는 것처럼) 원장은 못 받는다 — 그것을 바꾸는 \
@@ -45,14 +31,6 @@ pub const UNSERVED: &[Unserved] = &[
                      지나야 하는 종료 사다리도 전부 앱 프로세스의 상태 위에 있다(PtyManager·daemon· \
                      ProcessManager·ServiceManager·ipc·sidecar — ws 는 몸이 soksak-net 으로 \
                      나가 그 크레이트가 자기 세션을 거둔다).",
-    },
-    Unserved {
-        name: "sidecar_close",
-        blocked_by: "닫는 대상이 이 프로세스가 dlopen 한 모듈의 클라이언트 맵(static MODULES)이고, 그 \
-                     값은 tauri::ipc::Channel 이다 — 프레임워크 타입이라 여기서는 만들 수도 담을 수도 \
-                     없다. 맵을 채우는 sidecar_open 은 창의 엔진 호스트 NSView 를 모듈에 주입하므로, \
-                     핸들 번호만 받아서는 닫을 것이 생기지 않는다. 없는 맵에서 remove 하면 Ok 인데 \
-                     채널은 앱 쪽에 열린 채로 남는다.",
     },
     Unserved {
         name: "sidecar_ensure",

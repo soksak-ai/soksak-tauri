@@ -480,12 +480,10 @@ fn what_it_refuses_is_discoverable_with_the_reason() {
     // 감사한 open 이름 전부. 하나라도 빠지면 그 이름은 표에 없는 침묵이 되어, 부른 쪽이
     // UNKNOWN_COMMAND 를 받는다 — "아직 안 옮겼다"와 "여기서는 못 한다"가 구분되지 않는다.
     for expected in [
-        "sidecar_close",
         "sidecar_ensure",
         "project_owners",
-        "sidecar_open",
+        "media_proxy_info",
         "app_relaunch",
-        "sidecar_close",
         "sidecar_ensure",
         "clipboard_read",
         "media_proxy_info",
@@ -512,7 +510,7 @@ fn calling_an_audited_name_carries_the_reason_across_the_socket() {
     let table = helper.ask(json!({ "id": 9, "method": "cored.commands" }));
 
     // 두 벌을 본다 — 한 이름만 보면 그 항목만 배선되고 나머지는 목록에만 있는 채로 통과한다.
-    for (id, name) in [(10, "sidecar_open"), (11, "clipboard_read")] {
+    for (id, name) in [(10, "app_relaunch"), (11, "clipboard_read")] {
         let declared = table["data"]["unserved"]
             .as_array()
             .and_then(|u| u.iter().find(|e| e["name"] == name))
@@ -2011,12 +2009,12 @@ fn a_home_scan_does_not_make_the_directory_it_reads() {
 fn an_audited_refusal_is_not_an_unknown_name() {
     let helper = spawn_helper("refusal-code");
 
-    let audited = helper.ask(json!({ "method": "sidecar_open", "params": {} }));
+    let audited = helper.ask(json!({ "method": "app_relaunch", "params": {} }));
     assert_eq!(audited["ok"], false, "{audited}");
     assert_eq!(audited["code"], "REFUSED_BY_AUDIT", "{audited}");
     // 사유는 그대로 실린다 — 코드를 가른다고 문장을 잃지 않는다.
     assert!(
-        audited["message"].as_str().unwrap_or_default().contains("창"),
+        audited["message"].as_str().unwrap_or_default().contains("프로세스"),
         "{audited}"
     );
 

@@ -502,12 +502,12 @@ fn a_request_from_the_windows_own_bridge_is_not_delivered_back() {
     conn.mark_bridge();
     let r = answer_with(
         &ctx(),
-        r#"{"id":9,"method":"sidecar_open","timeoutMs":80}"#,
+        r#"{"id":9,"method":"media_proxy_info","timeoutMs":80}"#,
         Some(&conn),
     );
     assert_eq!(r["ok"], false);
     assert_eq!(r["code"], "NOT_SERVED_HERE", "{r}");
-    assert!(r["message"].as_str().unwrap().contains("sidecar_open"));
+    assert!(r["message"].as_str().unwrap().contains("media_proxy_info"));
     crate::control::testing::detach();
 }
 

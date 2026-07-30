@@ -27,6 +27,10 @@ pub mod registry_schedule;
 
 pub mod registry_service;
 
+pub mod main_thread;
+
+pub mod registry_sidecar;
+
 pub mod schedule;
 
 pub mod vault;
