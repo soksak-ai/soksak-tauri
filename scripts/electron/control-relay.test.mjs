@@ -30,6 +30,11 @@ const { coredBinary, ensureCored } = requireCjs(join(ROOT, "frameworks/electron/
 /** 답이 안 오면 무한정 기다리지 않는다 — 붙지 않은 검사는 실패로 드러나야 한다. */
 const PATIENCE_MS = 10_000;
 
+/** 사건 둘을 경주시키는 검사의 시계. **전송 상한도 이 값을 쓴다** — 전송이 먼저 포기하면
+ *  늦게 온 답이 버려져(pending.delete) 그 사건은 영영 안 온다. 시계는 하나이고, 그 하나는
+ *  검사의 것이다. */
+const RACE_LIMIT_MS = 60_000;
+
 let root;
 let cored;
 let hosts;
@@ -223,8 +228,9 @@ describe("제어면 중계", () => {
     const bridge = createBackendClient({
       socketPath: cored.socketPath,
       announce: ["control_bridge_attach"],
-      // 이 상한은 판정에 안 쓴다 — 아래 경주가 **두 사건 중 먼저 온 것**으로 가른다.
-      timeoutMs: PATIENCE_MS,
+      // 판정에 안 쓴다 — 아래 경주가 두 사건 중 먼저 온 것으로 가른다. 검사의 시계와 같은
+      // 값이라, 전송이 검사보다 먼저 포기해 답을 버리는 일이 없다.
+      timeoutMs: RACE_LIMIT_MS,
     });
     clients.push(bridge);
 
@@ -237,14 +243,18 @@ describe("제어면 중계", () => {
     const first = await Promise.race([
       bridge.call("process_reclaim_window", { window: "w-1" }).then(
         (data) => ({ kind: "answered", data }),
-        (e) => ({ kind: "rejected", code: e.code }),
+        // 상한은 사건이 아니다 — "아직 아무 일도 안 일어났다"는 뜻이라 경주에서 이기면 안 된다.
+        // 결과로 실으면 느린 순간이 '이름 없는 거절'로 읽혀 판정이 기계 속도의 함수가 된다
+        // (실측: 전체 스위트에서 BACKEND_TIMEOUT 이 NOT_SERVED_HERE 자리에 앉았다).
+        // 아무 사건도 안 오는 경우는 검사 자신의 상한이 잡는다.
+        (e) => (e.code === "BACKEND_TIMEOUT" ? new Promise(() => {}) : { kind: "rejected", code: e.code }),
       ),
       win.delivered().then((p) => ({ kind: "delivered", method: p.method })),
     ]);
     expect(first).toMatchObject({ kind: "rejected", code: "NOT_SERVED_HERE" });
     // 답이 온 뒤에도 배달은 없어야 한다 — 답과 배달이 **둘 다** 나가면 창이 유령 명령을 받는다.
     expect(win.got).toEqual([]);
-  }, 60_000);
+  }, RACE_LIMIT_MS);
 
   it("밝히지 않은 다리는 밖이다 — 그쪽 요청은 그대로 창으로 간다", async () => {
     const win = windowStub();
