@@ -294,6 +294,7 @@ describe("표 — UI 가 읽을 수 있는 능력면", () => {
     ...Object.keys(requireCjs(join(HERE, "../../frameworks/electron/native/titlebar.cjs"))),
     ...Object.keys(requireCjs(join(HERE, "../../frameworks/electron/native/project.cjs"))),
     ...Object.keys(requireCjs(join(HERE, "../../frameworks/electron/native/capture.cjs"))),
+    ...Object.keys(requireCjs(join(HERE, "../../frameworks/electron/native/notify.cjs"))),
     "framework_capabilities",
   ];
 

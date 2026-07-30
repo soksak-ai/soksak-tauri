@@ -17,7 +17,8 @@ frameworks/electron/main.cjs 369
 frameworks/electron/native/capture.cjs 70
 frameworks/electron/native/engine.cjs 26
 frameworks/electron/native/error.cjs 9
-frameworks/electron/native/index.cjs 83
+frameworks/electron/native/index.cjs 84
+frameworks/electron/native/notify.cjs 18
 frameworks/electron/native/project.cjs 54
 frameworks/electron/native/titlebar.cjs 7
 frameworks/electron/native/webview.cjs 161
