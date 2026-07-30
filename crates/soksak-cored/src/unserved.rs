@@ -113,25 +113,35 @@ pub const UNSERVED: &[Unserved] = &[
     },
     Unserved {
         name: "plugin_dev_new",
-        blocked_by: "앞절반(스캐폴드 파일 방출)은 옮길 수 있지만 뒷절반이 git init 스폰과 \
-                     unit_dev::set_source — 곧 development-units.json 쓰기다. 그 스폰은 core-git-scan 이 \
-                     plugins.rs 로 봉인했고 그 쓰기는 앱 프로세스의 static WRITE_LOCK 에 직렬화된다 \
-                     (unit_dev_set 과 같은 벽). 원본은 둘을 한 트랜잭션으로 묶어 실패하면 디렉터리를 \
-                     지운다 — 뒷절반을 빼면 답은 성공인데 유닛은 아무도 적재하지 않는 workspace 반쪽만 \
-                     남는다.",
+        blocked_by: "앞절반(스캐폴드 파일 방출)은 옮길 수 있다. 뒷절반은 git init 스폰과 개발 선언 쓰기이고, \
+                     그 둘 중 **쓰기 쪽 벽은 사라졌다** — 잠금은 커널 파일 잠금이 되었고 몸은 코어로 갔다 \
+                     (unit_dev_set 이 이제 서빙된다). 남은 벽은 git 스폰 하나다: core-git-scan 이 코어·크레이트 \
+                     전체에서 git 매칭을 0 으로 봉인하고, 열려 있는 자리는 명시 allowlist 한 파일 \
+                     (frameworks/tauri/src/plugins.rs)뿐이다. 이 프로세스로 옮기면 그것은 신규 유입이라 \
+                     게이트가 막는다 — 그 봉인은 낡은 사실이 아니라 지금 서 있는 규칙이다. \
+                     그리고 원본은 둘을 한 트랜잭션으로 묶어 실패하면 디렉터리를 지운다: 뒷절반을 빼면 \
+                     답은 성공인데 유닛은 아무도 적재하지 않는 workspace 반쪽만 남는다.",
     },
     Unserved {
         name: "plugin_dev_new2",
-        blocked_by: "이름에 soksak-plugin- 접두를 붙이는 것만 다르고 몸은 plugin_dev_new 과 같다 — 뒷절반이 \
-                     git init 스폰(core-git-scan 봉인)과 unit_dev::set_source 의 development-units.json \
-                     쓰기(앱 프로세스 static WRITE_LOCK)다. 뒷절반을 빼면 선언되지 않은 workspace 반쪽을 \
-                     남기고 성공을 답한다.",
+        blocked_by: "앞절반(스캐폴드 파일 방출)은 옮길 수 있다. 뒷절반은 git init 스폰과 개발 선언 쓰기이고, \
+                     그 둘 중 **쓰기 쪽 벽은 사라졌다** — 잠금은 커널 파일 잠금이 되었고 몸은 코어로 갔다 \
+                     (unit_dev_set 이 이제 서빙된다). 남은 벽은 git 스폰 하나다: core-git-scan 이 코어·크레이트 \
+                     전체에서 git 매칭을 0 으로 봉인하고, 열려 있는 자리는 명시 allowlist 한 파일 \
+                     (frameworks/tauri/src/plugins.rs)뿐이다. 이 프로세스로 옮기면 그것은 신규 유입이라 \
+                     게이트가 막는다 — 그 봉인은 낡은 사실이 아니라 지금 서 있는 규칙이다. \
+                     그리고 원본은 둘을 한 트랜잭션으로 묶어 실패하면 디렉터리를 지운다: 뒷절반을 빼면 \
+                     답은 성공인데 유닛은 아무도 적재하지 않는 workspace 반쪽만 남는다.",
     },
     Unserved {
         name: "sidecar_dev_new",
-        blocked_by: "사이드카 스캐폴드도 같은 트랜잭션이다 — 방출 뒤에 git init 스폰(core-git-scan 이 \
-                     plugins.rs 로 봉인)과 unit_dev::set_source 의 development-units.json 쓰기(앱 프로세스 \
-                     static WRITE_LOCK)가 따라붙고, 실패하면 디렉터리를 지운다. 뒷절반을 빼면 유닛은 \
-                     선언되지 않아 어느 홈에서도 적재되지 않는데 답은 성공이다.",
+        blocked_by: "앞절반(스캐폴드 파일 방출)은 옮길 수 있다. 뒷절반은 git init 스폰과 개발 선언 쓰기이고, \
+                     그 둘 중 **쓰기 쪽 벽은 사라졌다** — 잠금은 커널 파일 잠금이 되었고 몸은 코어로 갔다 \
+                     (unit_dev_set 이 이제 서빙된다). 남은 벽은 git 스폰 하나다: core-git-scan 이 코어·크레이트 \
+                     전체에서 git 매칭을 0 으로 봉인하고, 열려 있는 자리는 명시 allowlist 한 파일 \
+                     (frameworks/tauri/src/plugins.rs)뿐이다. 이 프로세스로 옮기면 그것은 신규 유입이라 \
+                     게이트가 막는다 — 그 봉인은 낡은 사실이 아니라 지금 서 있는 규칙이다. \
+                     그리고 원본은 둘을 한 트랜잭션으로 묶어 실패하면 디렉터리를 지운다: 뒷절반을 빼면 \
+                     답은 성공인데 유닛은 아무도 적재하지 않는 workspace 반쪽만 남는다.",
     },
 ];
