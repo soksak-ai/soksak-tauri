@@ -4597,6 +4597,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "soksak-daemon"
+version = "0.0.1"
+dependencies = [
+ "libc",
+ "serde",
+ "serde_json",
+ "soksak-core",
+]
+
+[[package]]
 name = "soksak-dev"
 version = "0.0.1"
 dependencies = [
@@ -4625,6 +4635,7 @@ dependencies = [
  "sha2",
  "soksak-core",
  "soksak-cored",
+ "soksak-daemon",
  "soksak-net",
  "soksak-schedule",
  "soksak-seal",

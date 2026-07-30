@@ -1,0 +1,17 @@
+[package]
+name = "soksak-daemon"
+version = "0.0.1"
+publish = false
+edition = "2021"
+description = "Long-running child daemons: spawn, output ring, crash restart with backoff, and the shutdown ladder. The host supplies one thing — where state-change events go."
+
+# 프레임워크를 의존하지 않는다. 데몬은 OS 프로세스이고, 이 몸이 프레임워크 폴더에 살면서
+# 프레임워크에서 쓰던 것은 사건 발행 한 자리뿐이었다.
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+soksak-core = { path = "../soksak-core" }
+
+[target.'cfg(unix)'.dependencies]
+# 그룹 신호가 트리 전체를 겨눈다 — 안 그러면 데몬이 죽어도 손자가 남는다.
+libc = "0.2"

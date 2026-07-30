@@ -78,8 +78,8 @@ const ALLOWED: { file: string; mark: string; event: string; why: string }[] = [
   { file: "frameworks/tauri/src/pty.rs", mark: "from_millis(400)", event: "ptyd-shutdown-grace", why: "옛 데몬의 종료 유예(응답 후 150ms) 계약을 넘긴다 — 재기동 1회 한정" },
   { file: "frameworks/tauri/src/pty.rs", mark: "from_millis(400)", event: "ptyd-socket-rebind", why: "구 데몬 소켓 해제→신 데몬 bind 사이 — 소켓 계승 신호가 없다" },
   { file: "frameworks/tauri/src/webview.rs", mark: "from_millis(450)", event: "wk-inspector-async-show", why: "WebKit _inspector show 는 비동기이고 완료 콜백이 없다(SPI)" },
-  { file: "frameworks/tauri/src/daemon.rs", mark: "from_millis(200)", event: "child-exit-poll", why: "child try_wait 유한 폴링(limit 상한·초과 시 kill) — waitpid 블로킹은 ring 수집과 양립 불가" },
-  { file: "frameworks/tauri/src/daemon.rs", mark: "from_millis(300)", event: "child-exit-poll", why: "상주 데몬 종료 감시 — 동일 사유" },
+  { file: "crates/soksak-daemon/src/lib.rs", mark: "from_millis(200)", event: "child-exit-poll", why: "일회 실행의 종료 대기 — child try_wait 유한 폴링(상한 초과 시 트리 종료). waitpid 블로킹은 출력 링 수집과 양립 불가" },
+  { file: "crates/soksak-daemon/src/lib.rs", mark: "from_millis(300)", event: "child-exit-poll", why: "크래시 재시작 감시 — 동일 사유(몸)" },
   { file: "crates/soksak-schedule/src/lib.rs", mark: "Duration::from_secs(3_600)", event: "scheduler-idle-cap", why: "다음 예약 없음 상태의 유휴 상한(스케줄 등록이 즉시 깨운다)" },
   { file: "crates/soksak-watch/src/lib.rs", mark: "from_millis(250)", event: "fs-debounce", why: "파일와처 디바운스 — 이벤트 병합 창" },
   // ── ③ 유한 안전망 ──
@@ -162,6 +162,7 @@ function rsSites(): string[] {
     "crates/soksak-sidecar-host/src",
     "crates/soksak-service/src",
     "crates/soksak-schedule/src",
+    "crates/soksak-daemon/src",
   ];
   for (const file of roots
     .flatMap((r) => walk(join(ROOT, r)))

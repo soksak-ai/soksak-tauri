@@ -38,6 +38,8 @@ soksak-sidecar-host = { path = "../../crates/soksak-sidecar-host" }
 soksak-service = { path = "../../crates/soksak-service" }
 # 스케줄러의 몸 — 이 폴더에는 조립만 남는다.
 soksak-schedule = { path = "../../crates/soksak-schedule" }
+# 데몬의 몸 — 이 폴더에는 사건 통로와 진입점만 남는다.
+soksak-daemon = { path = "../../crates/soksak-daemon" }
 # PTY 데몬 계약(버전·경로·hello·메시지) — pty.rs 라우터가 soksak-ptyd 와 공유, 상수 사본 금지.
 soksak-spec-pty = { path = "../../crates/soksak-spec-pty" }
 # X25519 sealed box 단일 진실 — 앱 볼트와 soksak-ptyd 체크포인트 공용.
