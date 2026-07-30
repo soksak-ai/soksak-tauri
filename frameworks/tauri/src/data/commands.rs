@@ -374,9 +374,12 @@ pub fn data_retention_trim(
     state: State<'_, DbState>,
 ) -> Result<usize, String> {
     validate_ns(&ns)?;
-    with_conn(&state, |c| {
-        store::retention_trim(c, &ns, &coll, &scope, cap)
-    })
+    store_op(
+        &state,
+        "data_retention_trim",
+        serde_json::json!({ "ns": ns, "coll": coll, "scope": scope, "cap": cap }),
+        |c| store::retention_trim(c, &ns, &coll, &scope, cap),
+    )
 }
 
 // TTL reaper — created < cutoff_ms 삭제(시간축).
@@ -388,12 +391,17 @@ pub fn data_retention_reap(
     state: State<'_, DbState>,
 ) -> Result<usize, String> {
     validate_ns(&ns)?;
-    with_conn(&state, |c| {
-        let n = store::retention_reap_ttl(c, &ns, &coll, cutoff_ms)?;
-        // [R5] reaper 가 만든 free 페이지를 bounded 반환(physical reclaim). 정리 실패는 reap 결과 비차단.
-        let _ = store::incremental_vacuum(c, 256);
-        Ok(n)
-    })
+    store_op(
+        &state,
+        "data_retention_reap",
+        serde_json::json!({ "ns": ns, "coll": coll, "cutoffMs": cutoff_ms }),
+        |c| {
+            let n = store::retention_reap_ttl(c, &ns, &coll, cutoff_ms)?;
+            // [R5] reaper 가 만든 free 페이지를 bounded 반환(physical reclaim). 정리 실패는 비차단.
+            let _ = store::incremental_vacuum(c, 256);
+            Ok(n)
+        },
+    )
 }
 
 // ── 암호화(단계② — scope 단위 봉투 키 라이프사이클, R0 command registry) ─────────────
@@ -740,7 +748,9 @@ pub fn data_verify(state: State<'_, DbState>) -> Result<Vec<String>, String> {
 // 저장소 실황 — 앱 안의 SQLite 가 자기 한도·메모리·페이지 상태를 답한다(integrity.rs 머리말).
 #[tauri::command]
 pub fn data_stats(state: State<'_, DbState>) -> Result<soksak_store::integrity::Stats, String> {
-    with_conn(&state, |c| soksak_store::integrity::stats(c))
+    store_op(&state, "data_stats", serde_json::json!({}), |c| {
+        soksak_store::integrity::stats(c)
+    })
 }
 
 // 저장소 치유 — 인덱스를 테이블에서 다시 만든다(REINDEX). 행은 만들지도 지우지도 않는다.

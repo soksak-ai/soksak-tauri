@@ -302,7 +302,10 @@ fn reindex_each(conn: &Connection) -> Vec<String> {
 /// 답이 갈리고(표현식 인덱스), 한도·메모리는 프로세스 안에서만 알 수 있다. `out of memory` 가 났을 때
 /// 무엇이 굶겼는지는 이 값들로만 가려진다: 힙 한도(누군가 sqlite3_soft/hard_heap_limit 을 걸었는가),
 /// 지금 쓰는 메모리와 최고치, 페이지 캐시 설정, 그리고 SQLite 판(밖의 CLI 와 다르다).
-#[derive(Debug, serde::Serialize)]
+// Deserialize 도 판다 — 이 값이 소켓을 건너 다른 프로세스의 답으로 돌아온다(저장소 주인이
+// 하나라 통계도 주인이 낸다). 직렬화만 있으면 부르는 쪽이 JSON 을 손으로 다시 조립하게 되고,
+// 그 조립이 이 구조체와 갈리는 순간 같은 이름이 두 모양으로 답한다.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct Stats {
     /// 부팅 쓰기 게이트가 남긴 판정(관측면) — 게이트는 부팅 때 한 번 돌고 사라진다. 그 결과를
     /// 읽을 수 없으면 "돌았는지" 조차 확인할 수 없어, 자가치유가 있었다고 주장만 하게 된다.
