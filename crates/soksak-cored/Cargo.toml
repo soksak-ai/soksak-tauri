@@ -18,6 +18,7 @@ soksak-spec-socket = { path = "../soksak-spec-socket" }
 # HTTP 전송기. 그 몸이 async 라 tokio 를 끌고 오지만, 이 프로세스의 동시성 모형은 안 바뀐다 —
 # soksak-net 이 sync 표면(honest_get_bytes)만 노출하고 런타임을 자기 안에 가둔다. 이 크레이트는
 # 그 전에도 UDP(net_udp_request)를 졌다: 네트워크는 프레임워크가 아니라 자원이다.
+soksak-vault = { path = "../soksak-vault" }
 soksak-daemon = { path = "../soksak-daemon" }
 soksak-net = { path = "../soksak-net" }
 serde = { version = "1", features = ["derive"] }

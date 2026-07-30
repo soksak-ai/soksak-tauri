@@ -6,6 +6,13 @@
 use crate::registry::*;
 use crate::registry_session::{run_ai_session_active, run_ai_session_lineage, run_ai_session_untrack};
 use crate::registry_store::*;
+use crate::registry_encrypt::{
+    run_data_encrypt_change_recovery, run_data_encrypt_enable, run_data_encrypt_recover,
+    run_data_encrypt_rotate, run_data_encrypt_status,
+};
+use crate::registry_secret::{
+    run_secret_delete, run_secret_has, run_secret_keys, run_secret_set, run_secret_status,
+};
 use crate::registry_daemon::{
     run_daemon_logs, run_daemon_reap, run_daemon_run_once, run_daemon_start, run_daemon_status,
     run_daemon_stop,
@@ -77,6 +84,82 @@ pub const COMMANDS: &[Command] = &[
         ],
         returns: "null",
         run: run_download_verify,
+    },
+    Command {
+        // 시크릿 — 몸은 볼트가 진다. 값은 이 프로세스를 떠나지만 그것이 이 표면의 목적이다.
+        name: "secret_set",
+        args: &[
+            Arg { name: "ns", ty: "string", required: REQ },
+            Arg { name: "key", ty: "string", required: REQ },
+            Arg { name: "value", ty: "string", required: REQ },
+        ],
+        returns: "null",
+        run: run_secret_set,
+    },
+    Command {
+        name: "secret_has",
+        args: &[
+            Arg { name: "ns", ty: "string", required: REQ },
+            Arg { name: "key", ty: "string", required: REQ },
+        ],
+        returns: "bool",
+        run: run_secret_has,
+    },
+    Command {
+        name: "secret_delete",
+        args: &[
+            Arg { name: "ns", ty: "string", required: REQ },
+            Arg { name: "key", ty: "string", required: REQ },
+        ],
+        returns: "bool — 있던 것을 지웠는가",
+        run: run_secret_delete,
+    },
+    Command {
+        name: "secret_keys",
+        args: &[Arg { name: "ns", ty: "string", required: REQ }],
+        returns: "string[]",
+        run: run_secret_keys,
+    },
+    Command {
+        name: "secret_status",
+        args: &[],
+        returns: "{ backend, unlocked, expectVault, keyIds }",
+        run: run_secret_status,
+    },
+    Command {
+        // 봉인 — 규칙은 soksak-store 가, 열쇠는 이 프로세스의 볼트가 진다. 열쇠 순서가 곧
+        // 안전핀이라 그 순서를 여기에 다시 적지 않는다.
+        name: "data_encrypt_enable",
+        args: &[Arg { name: "scope", ty: "string", required: REQ }],
+        returns: "{ keyId, recoveryCode } — 복구코드는 1회만 나온다",
+        run: run_data_encrypt_enable,
+    },
+    Command {
+        name: "data_encrypt_recover",
+        args: &[
+            Arg { name: "scope", ty: "string", required: REQ },
+            Arg { name: "recoveryCode", ty: "string", required: REQ },
+        ],
+        returns: "null",
+        run: run_data_encrypt_recover,
+    },
+    Command {
+        name: "data_encrypt_rotate",
+        args: &[Arg { name: "scope", ty: "string", required: REQ }],
+        returns: "{ oldKeyId, newKeyId, rekeyed, oldDisposed, recoveryCode }",
+        run: run_data_encrypt_rotate,
+    },
+    Command {
+        name: "data_encrypt_change_recovery",
+        args: &[Arg { name: "scope", ty: "string", required: REQ }],
+        returns: "string — 새 복구코드(1회)",
+        run: run_data_encrypt_change_recovery,
+    },
+    Command {
+        name: "data_encrypt_status",
+        args: &[Arg { name: "scope", ty: "string", required: REQ }],
+        returns: "{ enabled, keyId, algo, unlocked, tampered, keyMissing }",
+        run: run_data_encrypt_status,
     },
     Command {
         // 데몬 — 몸은 soksak-daemon 이 진다. 창도 웹뷰도 필요 없고, 이 프로세스가 사는 동안

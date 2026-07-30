@@ -975,3 +975,103 @@ impl From<SecretStatus> for BackendInfo {
 #[cfg(test)]
 #[path = "lib_tests.rs"]
 mod tests;
+
+// ── OS 키체인 device KEK ─────────────────────────────────────────────────────
+//
+// 볼트 KEK(32B)를 OS 보안 저장소(macOS Keychain / Windows Credential Manager / Linux Secret
+// Service)에 get-or-create 한다. 키체인은 **플랫폼** 자원이지 프레임워크 자원이 아니다 —
+// 볼트 파일이 홈에 사는데 그 열쇠가 프레임워크로 갈리면 파일과 열쇠가 서로 다른 축이 되고,
+// 홈을 공유해도 둘째 껍데기는 그 볼트를 못 연다.
+//
+// 무음 폴백·무음 재생성 절대 금지. 헤드리스 Linux·무 D-Bus 세션·잠긴 컬렉션은 StoreUnavailable
+// 로 표면화한다(파일 키 무음 생성은 지운 백도어의 재도입이다). 저장 blob 이 32B base64 가
+// 아니면 Corrupt — 새 KEK 를 무음 발급하면 옛 KEK 로 wrap 된 볼트가 영구 복호불가다.
+//
+// 서비스명은 정체성의 **env 축**이다(홈과 같은 축). 바이너리 격리는 이것과 별개다: macOS 키체인
+// 항목의 접근 권한은 바이너리 단위(ACL)이고, 다른 실행물이 같은 항목을 읽으면 OS 가 거절하는
+// 것이 아니라 **사용자에게 묻는다**. 개발 빌드는 ad-hoc 서명이라 빌드마다 신원이 바뀌어 그
+// 물음이 되돌아온다. 그래서 프롬프트를 한 번으로 만들려면 키체인을 만지는 실행물을 하나로
+// 못박아야 하고, 그것은 이 모듈이 정할 일이 아니다.
+
+/// 프로덕션 store — keyring::Entry. account="device-kek-v1"(버전드 — 미래 마이그레이션).
+pub struct KekStore {
+    service: String,
+    account: String,
+}
+
+impl KekStore {
+    /// 서비스명은 정체성에서 온다 — 전역 identifier 읽기를 부팅에게 올린다. 어느 프로세스도
+    /// 자기 identifier 를 전역으로 알 수 없고, 틀리면 조용히 남의 KEK 를 연다.
+    pub fn for_identity(identity: &soksak_core::identity::Identity) -> Self {
+        Self {
+            service: soksak_core::identity::keychain_service_for_identifier(identity.identifier()),
+            account: "device-kek-v1".to_string(),
+        }
+    }
+
+    /// 진단·검증용 — 어느 서비스로 결속됐는지(키체인 미접촉).
+    pub fn service(&self) -> &str {
+        &self.service
+    }
+}
+
+// keyring::Error 분류 — NoStorageAccess/PlatformFailure 는 StoreUnavailable(헤드리스·잠금·무 D-Bus),
+// 그 외는 StoreFailure. NoEntry 는 read 에서 Ok(None) 로 별도 처리(여기로 오지 않는다).
+fn classify(err: keyring::Error) -> KekError {
+    match err {
+        keyring::Error::NoStorageAccess(inner) => KekError::StoreUnavailable(inner.to_string()),
+        keyring::Error::PlatformFailure(inner) => KekError::StoreUnavailable(inner.to_string()),
+        other => KekError::StoreFailure(other.to_string()),
+    }
+}
+
+impl SecretStore for KekStore {
+    fn read(&self) -> Result<Option<String>, KekError> {
+        let entry = keyring::Entry::new(&self.service, &self.account).map_err(classify)?;
+        match entry.get_password() {
+            Ok(secret) => Ok(Some(secret)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(other) => Err(classify(other)),
+        }
+    }
+
+    fn write(&self, secret: &str) -> Result<(), KekError> {
+        let entry = keyring::Entry::new(&self.service, &self.account).map_err(classify)?;
+        entry.set_password(secret).map_err(classify)
+    }
+}
+
+/// 프로덕션 KEK 출처 — OS 키체인. 신원 ACL 결속. keyring 은 이 구조 안에서만 인스턴스화되므로
+/// 미주입 상태는 키체인·CoreFoundation 을 절대 안 건드린다.
+pub struct OsKekSource {
+    store: KekStore,
+}
+
+impl OsKekSource {
+    pub fn for_identity(identity: &soksak_core::identity::Identity) -> Self {
+        Self {
+            store: KekStore::for_identity(identity),
+        }
+    }
+
+    pub fn service(&self) -> &str {
+        self.store.service()
+    }
+}
+
+impl KekSource for OsKekSource {
+    fn acquire(&self) -> Result<zeroize::Zeroizing<[u8; KEK_LEN]>, KekError> {
+        get_or_create_kek(&self.store)
+    }
+    fn reachable(&self) -> bool {
+        // read-only — Some/None(=미도달 아님) 둘 다 도달=true, StoreUnavailable/Corrupt 만 false.
+        self.store.read().is_ok()
+    }
+    fn backend(&self) -> &'static str {
+        os_backend_label()
+    }
+}
+
+#[cfg(test)]
+#[path = "os_key_tests.rs"]
+mod os_key_tests;

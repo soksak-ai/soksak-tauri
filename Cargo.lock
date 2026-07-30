@@ -4594,6 +4594,7 @@ dependencies = [
  "soksak-spec-pty",
  "soksak-spec-socket",
  "soksak-store",
+ "soksak-vault",
  "soksak-watch",
 ]
 
@@ -4619,7 +4620,6 @@ dependencies = [
  "flate2",
  "futures-util",
  "interprocess",
- "keyring",
  "libc",
  "libloading 0.8.9",
  "notify-debouncer-mini",
@@ -4794,6 +4794,7 @@ dependencies = [
  "argon2",
  "base64 0.22.1",
  "chacha20poly1305",
+ "keyring",
  "rand 0.8.7",
  "serde",
  "serde_json",

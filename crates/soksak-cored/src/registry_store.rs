@@ -66,7 +66,7 @@ struct KvSetArg {
 //
 // 쓰기는 소유권을 **열기 전에** 본다. 열고 나서 판단하면 그 사이가 곧 이중 쓰기 창이다.
 
-fn deny_without_write_ownership(ctx: &Ctx) -> Result<(), String> {
+pub(crate) fn deny_without_write_ownership(ctx: &Ctx) -> Result<(), String> {
     if ctx.owns_writes() {
         return Ok(());
     }

@@ -23,3 +23,18 @@ soksak-core = { path = "../soksak-core" }
 [features]
 # 검사용 생성자 — 소비자의 dev-dependencies 에서만 켠다.
 testing = []
+
+# OS 키체인(device KEK 투명 언락) — 볼트 KEK 를 OS 보안 저장소에 get-or-create.
+# 키체인은 **플랫폼** 자원이지 프레임워크 자원이 아니다. 껍데기에 두면 볼트 파일은 홈에 사는데
+# 그 열쇠가 프레임워크로 갈리고, 홈을 공유해도 둘째 껍데기는 그 볼트를 못 연다.
+[target.'cfg(windows)'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+
+# Linux 는 D-Bus Secret Service(GNOME Keyring/KWallet). sync-secret-service = 동기 dbus 백엔드,
+# crypto-rust = D-Bus 세션 암호화를 순수 Rust AES 로(OpenSSL 시스템 의존 회피).
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
+
+# apple-native = macOS Keychain(Security.framework). keyring::Entry 가 앱 신원 ACL 에 KEK 결속.
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }

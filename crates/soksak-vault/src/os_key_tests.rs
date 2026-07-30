@@ -1,4 +1,4 @@
-// OS 키체인 KEK 의 검사 — 규칙은 os_key.rs 가, 그 증명은 여기가 진다.
+// OS 키체인 KEK 의 검사 — 규칙은 이 크레이트가, 그 증명은 여기가 진다.
 //
 // 실 키체인을 건드리지 않는다. 인메모리 store 로 get-or-create 와 안전핀(무음 재생성 금지)을
 // 재고, 서비스명은 값으로 대조한다 — 존재 확인만 하면 이름이 틀려도 통과하고, 틀린 이름은
@@ -23,7 +23,7 @@ use std::sync::Mutex;
 #[test]
 fn the_service_name_comes_from_the_environment_axis_not_the_framework() {
     let of = |id: &str| {
-        KekStore::for_identity(&crate::identity::Identity::new("/tmp/vault-axis", id))
+        KekStore::for_identity(&soksak_core::identity::Identity::new("/tmp/vault-axis", id))
             .service()
             .to_string()
     };

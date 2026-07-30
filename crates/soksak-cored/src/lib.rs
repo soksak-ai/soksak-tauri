@@ -17,6 +17,12 @@ pub mod registry_table;
 // WebSocket 명령의 몸 — 표와 갈라 둔다.
 pub mod backup_ring;
 
+pub mod vault;
+
+pub mod registry_encrypt;
+
+pub mod registry_secret;
+
 pub mod registry_daemon;
 
 pub mod registry_store;
