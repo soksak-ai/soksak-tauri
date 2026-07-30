@@ -481,7 +481,7 @@ Everything else is common. The split is by **what a command touches**, not by na
 | | At start | Now |
 |---|---|---|
 | Unanswered names | 63 | **49** |
-| Framework-folder body | 19,165 | **18,543** |
+| Framework-folder body | 19,165 | **16,510** |
 | Unanswered state-bound | 30 | **27** |
 
 Lane `framework` 42 · `served` 81. Of the remaining 58: core 16 · framework 8 · declared refusals 34.
@@ -498,3 +498,18 @@ Lane `framework` 42 · `served` 81. Of the remaining 58: core 16 · framework 8 
 Releasing tokio falsified every refusal that named it as the wall at once: `media_proxy_info` (what remains is one decision — who starts the proxy), the five `unit_install_*` (four walls became three), and `ipc_hello_info`'s destination (core → framework: pid and role belong to the process that answers).
 
 **A wrong reason is worse than none** — writing that something cannot move, when it can, means that name is never examined again.
+
+### Three more bodies moved out
+
+| File | Before | After | Body moved to |
+|---|---|---|---|
+| `sidecar.rs` | 671 | 166 | `soksak-sidecar-host` |
+| `ws.rs` | 365 | 47 | `soksak-net` |
+| `service.rs` | 1,066 | 208 | `soksak-service` |
+| `schedule.rs` | 1,294 | 156 | `soksak-schedule` |
+
+`service` and `schedule` had already written the answer in their own headers — "what stays in the app is assembly only". That a thousand lines sat in that folder anyway was history, not a decision.
+
+**One shared type can hold two bodies hostage.** The schedule spec (`Trigger`, `Retry`, `JobSpec`) lived in the scheduler's framework file, so the service ledger that also uses that shape depended on that file and was bound to the same process with it. The command-dispatch contract was the same case — the contract moved to core and the implementation stayed behind a thin `AppDispatch` wrapper (, because the orphan rule forbids implementing a core trait on a vendor type).
+
+**Tests follow the body.** 1,296 lines for service and 33 cases for schedule moved with it — neither launches a framework; both measure every rule behind the seam. And each move must widen the **ledgers' scan roots**: a destination outside the roots means the debt you moved is never counted again.
