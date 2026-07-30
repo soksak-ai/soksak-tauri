@@ -181,9 +181,16 @@ function windowFacts() {
 /** 살아 있는 제어면 호스트. cored 소켓이 정해지기 전에는 없다. */
 let controlHost = null;
 
-/** 창 사실이 바뀌었다고 알린다. 아직 안 붙었으면 할 일이 없다 — 붙을 때 지금 사실로 등록한다. */
+/** 창 사실이 바뀌었다고 알린다. 아직 안 붙었으면 할 일이 없다 — 붙을 때 지금 사실로 등록한다.
+ *
+ *  창 사건 위에서 부르므로 기다릴 사람이 없다. 대신 **안 선 갱신은 자국을 남긴다** — 갈린
+ *  장부는 오류로 보이지 않고, 한참 뒤에 "명령이 엉뚱한 창에서 돌았다"로만 나타난다. */
 function announceWindows() {
-  controlHost?.windowsChanged();
+  void Promise.resolve(controlHost?.windowsChanged()).then((settled) => {
+    if (controlHost && settled === false) {
+      note("[electron-spike] 창 사실 갱신이 서지 않았다 — cored 의 장부가 이 프로세스와 갈렸다");
+    }
+  });
 }
 
 /** 제어면을 세운다 — 이 소켓의 cored 에게 "창은 내가 갖고 있다"고 등록한다. */

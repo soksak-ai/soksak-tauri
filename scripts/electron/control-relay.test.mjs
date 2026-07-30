@@ -216,11 +216,14 @@ describe("제어면 중계", () => {
       timeoutMs: 4000,
     });
     clients.push(bridge);
-    await expect(bridge.call("process_reclaim_window", { window: "w-1" })).rejects.toMatchObject({
-      code: "NOT_SERVED_HERE",
-    });
-    // 되돌리지 않았다는 것을 창이 증언한다 — 배달이 하나도 없어야 한다.
+    const outcome = await bridge.call("process_reclaim_window", { window: "w-1" }).then(
+      (data) => ({ kind: "answered", data }),
+      (e) => ({ kind: "rejected", code: e.code }),
+    );
+    // 되돌렸는지 아닌지를 증언하는 것은 창이지 상한이 아니다. 이 단언이 먼저 서야
+    // 실패가 사실을 말한다 — 상한부터 재면 "되돌렸다"와 "느리다"가 한 문장으로 나온다.
     expect(win.got).toEqual([]);
+    expect(outcome).toMatchObject({ kind: "rejected", code: "NOT_SERVED_HERE" });
   });
 
   it("밝히지 않은 다리는 밖이다 — 그쪽 요청은 그대로 창으로 간다", async () => {
@@ -286,6 +289,28 @@ describe("제어면 중계", () => {
     // 해제는 refcount 를 0 으로 돌린다(멱등).
     expect(await bridge.call("unwatch_dir", { path: dir })).toBe(0);
     expect(await bridge.call("unwatch_dir", { path: dir })).toBe(0);
+  });
+
+  // 실측 회귀(2026-07-30): windowsChanged() 가 소켓에 썼다는 boolean 을 돌려줬다. 그래서
+  // `await` 가 아무것도 기다리지 않았고, 바로 뒤에 온 명령은 옛 창으로 갔다 — 부하가 있을
+  // 때만 지는 경합이라 결함이 아니라 검사의 변덕으로 보였다. 앱에서는 창이 막 열린 그 틈에
+  // 온 명령이 사용자가 보고 있지 않은 창에서 돌고 성공을 답한다.
+  it("창 사실 갱신은 cored 가 받았을 때 끝난다 — 쓴 순간이 아니다", async () => {
+    let facts = { live: ["main"], focused: "main" };
+    const host = createControlHost({
+      socketPath: cored.socketPath,
+      facts: () => facts,
+      deliver: () => true,
+    }).start();
+    hosts.push(host);
+    await whenAttached(host);
+
+    expect(await host.windowsChanged()).toBe(true);
+
+    // 거절당한 갱신은 참일 수 없다. 소켓에 썼다는 사실만 보면 이 둘이 같은 값으로 나오고,
+    // 그러면 부르는 쪽은 자기 장부와 cored 의 장부가 갈린 것을 영영 모른다.
+    facts = { live: "창목록이 아니다", focused: 7 };
+    expect(await host.windowsChanged()).toBe(false);
   });
 
   it("창 사실이 바뀌면 새 창이 타겟이 된다", async () => {

@@ -54,6 +54,28 @@ function createControlHost({ socketPath, facts, deliver, broadcast = () => true,
     return true;
   };
 
+  /** 답을 기다리는 갱신들 — id → resolve. 상관 id 가 없으면 답이 짝 없는 줄로 버려진다. */
+  const awaiting = new Map();
+  let updateSeq = 0;
+
+  /** 보내고 **cored 가 답할 때** 끝나는 요청. 답의 ok 가 그대로 결과다.
+   *
+   *  쓴 것은 받아들여진 것이 아니다. 소켓 쓰기만 보고 끝내면 거절당한 갱신과 반영된 갱신이
+   *  같은 값으로 나오고, 부르는 쪽은 자기 장부와 cored 의 장부가 갈린 것을 모른다. */
+  function ask(method, params) {
+    const id = `${method}:${++updateSeq}`;
+    if (!send({ id, method, params })) return Promise.resolve(false);
+    return new Promise((resolve) => {
+      awaiting.set(id, resolve);
+    });
+  }
+
+  /** 연결이 끊기면 기다리던 갱신은 닿지 않은 것이다 — 매달아 두지 않는다. */
+  function dropAwaiting() {
+    for (const resolve of awaiting.values()) resolve(false);
+    awaiting.clear();
+  }
+
   function handle(line) {
     let msg;
     try {
@@ -79,6 +101,13 @@ function createControlHost({ socketPath, facts, deliver, broadcast = () => true,
       if (msg && msg.id === ATTACH_ID) {
         if (msg.ok !== true) onLog(`제어면: 등록이 서지 않았다 — ${msg.code}: ${msg.message}`);
         announceReady(msg.ok === true);
+        return;
+      }
+      const waiting = msg && awaiting.get(msg.id);
+      if (waiting) {
+        awaiting.delete(msg.id);
+        if (msg.ok !== true) onLog(`제어면: 창 사실 갱신이 서지 않았다 — ${msg.code}: ${msg.message}`);
+        waiting(msg.ok === true);
       }
       return;
     }
@@ -126,6 +155,7 @@ function createControlHost({ socketPath, facts, deliver, broadcast = () => true,
       sock.destroy();
       sock = null;
       buf = "";
+      dropAwaiting();
       if (!closed) onLog(`제어면: 연결이 끊겼다(${why}) — 밖에서 오는 명령이 닿지 않는다`);
     };
     sock.on("error", (e) => drop(e.code || e.message));
@@ -141,12 +171,15 @@ function createControlHost({ socketPath, facts, deliver, broadcast = () => true,
     get ready() {
       return ready;
     },
-    /** 창 사실이 바뀌었다. 낡은 목록으로 타겟을 고르면 죽은 창에 배달된다. */
+    /** 창 사실이 바뀌었다. 낡은 목록으로 타겟을 고르면 죽은 창에 배달된다.
+     *
+     *  cored 가 그 갱신에 답했을 때 끝난다 — 그 사이에 온 명령은 옛 창으로 간다. */
     windowsChanged() {
-      return send({ method: WINDOWS, params: facts() });
+      return ask(WINDOWS, facts());
     },
     stop() {
       closed = true;
+      dropAwaiting();
       if (sock) {
         sock.removeAllListeners();
         sock.destroy();
