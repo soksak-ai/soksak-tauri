@@ -8,6 +8,10 @@ pub mod data_keys;
 pub mod doc;
 pub mod ids;
 pub mod integrity;
+
+pub mod encryption;
+
+pub mod write_policy;
 pub mod open;
 pub mod ring;
 pub mod store;

@@ -40,7 +40,10 @@ pub fn check(conn: &Connection) -> Result<Vec<String>, String> {
 /// 치유 결과 — 전후 문제 목록. after 가 비지 않았다면 REINDEX 로는 낫지 않는 손상이다(테이블 자체의
 /// 손상 등) — 나았다고 주장하지 않고 남은 문제를 그대로 실어 보낸다.
 /// reindex_error 가 있으면 치유를 시도했지만 못 했다는 뜻이다(시도조차 안 한 것과 구분된다).
-#[derive(Debug, serde::Serialize)]
+// 이 값은 프로세스를 건넌다(저장소 주인이 답하고 다른 프로세스가 읽는다) — 그래서 쓰는 쪽과
+// 읽는 쪽이 **같은 모양**이어야 한다. Deserialize 가 없으면 받는 쪽이 JSON 을 손으로 다시
+// 조립하고, 그 조립이 갈리는 순간 같은 이름이 두 모양을 답한다.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct Repair {
     pub before: Vec<String>,
     pub after: Vec<String>,

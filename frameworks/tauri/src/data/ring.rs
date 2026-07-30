@@ -5,13 +5,11 @@
 // (앱 핸들·진행 중 플래그).
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
-use std::time::SystemTime;
 
 use tauri::AppHandle;
 
-use soksak_store::ring::{due, run_cycle, slot0_mtime, BackupReporter};
+use soksak_store::ring::BackupReporter;
 
 // 앱 발원 고지 reporter — 실패를 activity(data.backup.failed, 영속·스트림)로 발행하고 OS 알림을
 // 띄운다. 상세(에러)는 activity payload 에, 사람용 요약은 알림에 실린다.
@@ -56,31 +54,11 @@ pub fn set_app(app: &AppHandle) {
     let _ = APP.set(app.clone());
 }
 
-// 스냅샷 동시 수행 방지 — 진행 중이면 신규 쓰기 신호는 그냥 지나간다(다음 쓰기가 다시 신호).
-// 이 플래그는 **이 프로세스** 안에서만 겹침을 막는다. 프로세스가 둘이면 서로를 못 보므로,
-// 겹쳐도 안전한 것은 작업 파일 이름이 호출마다 갈리기 때문이다(soksak_store::ring).
-static IN_FLIGHT: AtomicBool = AtomicBool::new(false);
-
-/// 쓰기 신호 진입 — stat 1회 선판정 후에만 백그라운드 스레드 1개가 스냅샷한다.
-/// 쓰기 커넥션은 블로킹하지 않는다(WAL 읽기 동시 + 별도 read-only 커넥션).
-///
-/// 저장소 경로는 **부르는 쪽이 준다.** 여기서 앰비언트(이 프로세스의 홈)로 캐면 같은 신호가
-/// 프로세스마다 다른 파일을 백업하고, 그 오답은 오류가 아니라 "엉뚱한 홈의 백업"으로 끝난다.
+/// 쓰기 신호 — 판정과 겹침 방지는 저장소가 지고, 이 자리는 **누가 알리는가**만 고른다.
 pub fn on_write(db: PathBuf) {
-    if !due(slot0_mtime(&db), SystemTime::now()) {
-        return;
-    }
-    if IN_FLIGHT
-        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-        .is_err()
-    {
-        return;
-    }
-    std::thread::spawn(move || {
-        match APP.get() {
-            Some(app) => run_cycle(&db, SystemTime::now(), &AppReporter { app: app.clone() }),
-            None => run_cycle(&db, SystemTime::now(), &LogReporter),
-        }
-        IN_FLIGHT.store(false, Ordering::SeqCst);
-    });
+    let reporter: std::sync::Arc<dyn BackupReporter + Send + Sync> = match APP.get() {
+        Some(app) => std::sync::Arc::new(AppReporter { app: app.clone() }),
+        None => std::sync::Arc::new(LogReporter),
+    };
+    soksak_store::ring::on_write(db, reporter);
 }

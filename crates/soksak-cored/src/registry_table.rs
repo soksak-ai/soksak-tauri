@@ -5,6 +5,7 @@
 
 use crate::registry::*;
 use crate::registry_session::{run_ai_session_active, run_ai_session_lineage, run_ai_session_untrack};
+use crate::registry_store::*;
 use crate::registry_daemon::{
     run_daemon_logs, run_daemon_reap, run_daemon_run_once, run_daemon_start, run_daemon_status,
     run_daemon_stop,
@@ -85,7 +86,6 @@ pub const COMMANDS: &[Command] = &[
             Arg { name: "root", ty: "string", required: REQ },
             Arg { name: "name", ty: "string", required: REQ },
             Arg { name: "cmd", ty: "string", required: REQ },
-            Arg { name: "window", ty: "string", required: OPT },
             Arg { name: "restart", ty: "string", required: OPT },
         ],
         returns: "u32 — 자식 pid",

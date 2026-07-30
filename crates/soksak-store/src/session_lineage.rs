@@ -38,3 +38,20 @@ pub fn ai_session_lineage(
         None,
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // 계보 조회는 커넥션 하나면 선다 — 커맨드 층이 State 를 벗기는 것은 그쪽의 일이다.
+    #[test]
+    fn 계보_조회는_커넥션_하나면_선다() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::store::init_base(&conn).unwrap();
+        assert_eq!(
+            ai_session_lineage(&conn, "/w", None).unwrap(),
+            Vec::<serde_json::Value>::new()
+        );
+        assert!(ai_session_lineage(&conn, "", None).is_err(), "빈 cwd 는 거부");
+    }
+}

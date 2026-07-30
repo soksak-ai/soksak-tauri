@@ -114,3 +114,34 @@ pub fn run_cycle(db_path: &Path, now: SystemTime, reporter: &dyn BackupReporter)
 #[cfg(test)]
 #[path = "ring_tests.rs"]
 mod tests;
+
+// 스냅샷 동시 수행 방지 — 진행 중이면 신규 쓰기 신호는 그냥 지나간다(다음 쓰기가 다시 신호).
+// 이 플래그는 **한 프로세스** 안에서만 겹침을 막는다. 프로세스가 둘이면 서로를 못 보므로,
+// 겹쳐도 안전한 것은 작업 파일 이름이 호출마다 갈리기 때문이다.
+static IN_FLIGHT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// 쓰기 신호 진입 — stat 1회 선판정 후에만 백그라운드 스레드 하나가 스냅샷한다.
+/// 쓰기 커넥션은 블로킹하지 않는다(WAL 읽기 동시 + 별도 read-only 커넥션).
+///
+/// 언제 도는가·겹치면 어떻게 하는가는 **저장소 규칙이다.** 껍데기에 두면 저장소를 서빙하는
+/// 프로세스마다 그 판정이 다르거나 아예 없고, 그 차이는 오류가 아니라 **없는 백업**으로
+/// 나타난다(실측: cored 가 쓰기를 서빙하기 시작한 뒤 그 경로의 쓰기는 링을 한 번도 안 돌렸다).
+///
+/// 저장소 경로는 부르는 쪽이 준다 — 여기서 앰비언트로 캐면 같은 신호가 프로세스마다 다른
+/// 파일을 백업한다. 고지도 부르는 쪽이 준다: 창이 있는 쪽과 없는 쪽이 다르게 알린다.
+pub fn on_write(db: std::path::PathBuf, reporter: std::sync::Arc<dyn BackupReporter + Send + Sync>) {
+    use std::sync::atomic::Ordering;
+    if !due(slot0_mtime(&db), SystemTime::now()) {
+        return;
+    }
+    if IN_FLIGHT
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return;
+    }
+    std::thread::spawn(move || {
+        run_cycle(&db, SystemTime::now(), reporter.as_ref());
+        IN_FLIGHT.store(false, Ordering::SeqCst);
+    });
+}

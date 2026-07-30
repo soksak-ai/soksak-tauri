@@ -32,7 +32,14 @@ use super::*;
 /// 있던 "전송기가 런타임을 끌고 온다"는 이제 사실이 아니다 — tokio 는 그 금지 목록 자신의
 /// 기준에 걸리지 않아 풀렸고(download_verify 커밋), 몸은 soksak-net 으로 갔다. 스트림은
 /// cored 가 이미 지고 있던 토큰 통로를 탄다.
-const STATE_BOUND_UNANSWERED: usize = 27;
+///
+/// **2026-07-30 축소 27 → 18.** 데몬 여섯(start·stop·status·logs·reap·run_once)과 저장소
+/// 여덟(backup·restore·export·import·canary·repair·ns_remove·migrate_ns)이 답을 얻었다.
+/// 데몬은 관리 상태에 묶여 보였지만 그 상태는 **장부 하나**였고, 장부는 프로세스의 것이지
+/// 프레임워크의 것이 아니었다 — cored 가 지면 껍데기를 갈아도 자식이 안 죽는다. 저장소 쪽은
+/// 능력이 아니라 배선이 없었다: 갈림을 모으는 자리(store_op)는 이미 있었고 여덟이 그 자리를
+/// 지나지 않고 커넥션을 직접 잡고 있었다.
+const STATE_BOUND_UNANSWERED: usize = 18;
 
 /// state-bound 갈래에서 아직 아무 답도 없는 이름들.
 fn state_bound_unanswered() -> Vec<String> {

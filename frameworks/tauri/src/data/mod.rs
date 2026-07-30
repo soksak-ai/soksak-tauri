@@ -12,7 +12,6 @@ use std::sync::Mutex;
 use rusqlite::Connection;
 
 pub mod commands;
-mod process_probe;
 pub mod ring;
 // 저장 연산의 재수출은 두지 않는다. `crate::data::store` 라는 이름은 저장소 규칙이 이 폴더에
 // 사는 것처럼 읽히게 하고, 이름을 감춘 결합은 게이트만이 아니라 읽는 사람도 속인다.

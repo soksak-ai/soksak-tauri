@@ -29,6 +29,10 @@ pub struct Request {
     #[serde(default)]
     pub params: Value,
     pub protocol: Option<u32>,
+    /// 어느 창에서 불렀는가. 배달 경로가 쓰던 봉투 칸을 서빙 경로도 읽는다 — 프레임워크가
+    /// 창 핸들을 주입하는 자리에 대응한다(이름마다 인자로 싣지 않는다).
+    #[serde(default)]
+    pub window: Option<String>,
 }
 
 pub fn ok_reply(data: Value) -> Value {
@@ -166,7 +170,9 @@ fn route(ctx: &Ctx, req: &Request, line: &str, conn: ConnRef<'_>) -> Value {
         return err_reply(code, &message);
     };
     CURRENT.with(|c| c.set(conn.map(|c| c as *const _)));
+    ENVELOPE_WINDOW.with(|w| *w.borrow_mut() = req.window.clone());
     let out = (cmd.run)(ctx, &req.params);
+    ENVELOPE_WINDOW.with(|w| w.borrow_mut().take());
     CURRENT.with(|c| c.set(None));
     match out {
         Outcome::Ok(data) => ok_reply(data),
@@ -287,6 +293,19 @@ fn answer_with(ctx: &Ctx, line: &str, conn: ConnRef<'_>) -> Value {
         obj.insert("id".into(), id);
     }
     reply
+}
+
+// 지금 답하고 있는 요청의 **봉투 창**. 프레임워크가 창 핸들을 주입하는 자리에 대응한다 —
+// 부른 쪽은 어느 창에서 불렀는지 봉투로 말하지 이름마다 인자로 싣지 않는다. 인자로 받으면
+// 같은 이름이 두 프로세스에서 다른 모양이 되고, UI 는 자기가 누구와 말하는지 알아야 한다.
+thread_local! {
+    static ENVELOPE_WINDOW: std::cell::RefCell<Option<String>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// 이 요청이 어느 창에서 왔는가. 봉투가 비었으면 없다 — 창 없이 부른 것이다.
+pub fn envelope_window() -> Option<String> {
+    ENVELOPE_WINDOW.with(|w| w.borrow().clone())
 }
 
 // 지금 답하고 있는 **요청**의 연결. 요청 하나 = 스레드 하나라서 스레드 지역이 곧 요청이다.

@@ -1045,8 +1045,8 @@ fn search_collect(
 // ── 개명 데이터 ns 이관(파괴적 플러그인 개명 후폭풍 방어) ──────────────────────
 // ns = pluginId 라 id 개명은 옛 id 의 kv/records/meta_collections 를 새 id 에서 불가시하게
 // 만든다. 선언된 from→to 만 옮긴다(코어는 특정 플러그인 이름 불가지). 멱등·충돌 명시 에러.
-
-#[derive(serde::Serialize)]
+// 이 값은 프로세스를 건넌다 — 쓰는 쪽과 읽는 쪽이 같은 모양이어야 한다(Repair 와 같은 자리).
+#[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NsMigrateOutcome {
     pub migrated: bool,

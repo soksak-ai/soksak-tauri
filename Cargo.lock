@@ -4777,6 +4777,7 @@ name = "soksak-store"
 version = "0.0.1"
 dependencies = [
  "base64 0.22.1",
+ "libc",
  "rand 0.8.7",
  "rusqlite",
  "serde",

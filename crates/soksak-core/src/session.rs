@@ -148,6 +148,21 @@ pub fn parse(kind: AgentKind, content: &str) -> Option<SessionInfo> {
 // claude 세션 디렉토리 — cwd 의 각 '/'·'.' 를 '-' 로 치환한다(예: /workspace/project →
 // -workspace-project, /workspace/soksak/.cache → -workspace-soksak--cache, / → -). 이 디렉토리
 // 아래 <sessionId>.jsonl 이 생긴다. 터미널이 이 cwd 에서 claude 를 돌리면 여기 새 파일이 나타난다.
+/// cwd 필수 — 빈 cwd 는 "어느 프로젝트인가"가 없는 질문이다. 규칙이라 여기 산다:
+/// 껍데기에 두면 두 껍데기가 같은 이름에 다른 기준을 갖는다.
+pub fn require_cwd(cwd: &str) -> Result<(), String> {
+    if cwd.is_empty() {
+        return Err("cwd 필요".to_string());
+    }
+    Ok(())
+}
+
+/// cwd → 그 홈의 claude 세션 디렉터리 경로. 인코딩 단일진실은 claude_session_dir 이다.
+pub fn session_dir_for(home: &str, cwd: &str) -> Result<String, String> {
+    require_cwd(cwd)?;
+    Ok(claude_session_dir(home, cwd).to_string_lossy().into_owned())
+}
+
 pub fn claude_session_dir(home: &str, cwd: &str) -> PathBuf {
     let enc: String = cwd
         .chars()
@@ -342,3 +357,7 @@ impl SessionTracker {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "session_tests.rs"]
+mod session_tests;

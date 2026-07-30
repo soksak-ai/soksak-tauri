@@ -44,8 +44,6 @@ struct Start {
     name: String,
     cmd: String,
     #[serde(default)]
-    window: String,
-    #[serde(default)]
     restart: Option<String>,
 }
 
@@ -58,7 +56,10 @@ pub(crate) fn run_daemon_start(ctx: &Ctx, params: &Value) -> Outcome {
             a.root,
             a.name,
             a.cmd,
-            a.window,
+            // 창은 봉투에서 온다 — 프레임워크가 창 핸들을 주입하는 그 자리다. 인자로 받으면
+            // 앱 명령과 모양이 갈리고, 그 차이가 곧 "부른 쪽이 누구와 말하는지 알아야 한다"가
+            // 된다. 창 없이 부른 데몬은 창에 매이지 않는다(그 창이 닫혀도 안 죽는다).
+            crate::wire::envelope_window().unwrap_or_default(),
             a.restart.as_deref() == Some("on-crash"),
         )
     })

@@ -202,6 +202,7 @@ export const REAL_SHELL_MARKERS = [
 //          [인용] 옛말을 기록으로 남긴 자리 · [진짜셸] 표지가 없는 진짜 셸 줄.
 export const PROSE_LEDGER = new Map([
   // 데몬은 로그인 셸로 자식을 띄운다(GUI PATH 함정) — 전부 진짜 셸이다.
+  ["crates/soksak-cored/src/registry_daemon.rs", [4, "[진짜 셸] 부팅이 건넨 로그인 셸을 데몬 몸에 나르는 자리 — 없으면 이름을 달고 거절한다"]],
   ["crates/soksak-daemon/src/lib.rs", [13, "[진짜 셸] 로그인 셸 래핑·재시작 시 같은 셸 유지 — stop·status·logs·reap 의 몸이 프레임워크 폴더에서 따라 들어오며 늘었다(뜻은 그대로 로그인 셸)"]],
   ["crates/soksak-daemon/src/lib_tests.rs", [4, "[진짜 셸] 로그인 셸로 자식을 띄우는 검사 — 부른 쪽이 지목한 셸로 도는지 재는 검사가 늘었다"]],
   ["crates/soksak-cored/src/unserved.rs", [1, "[진짜 셸] pty_pane_pid 사유의 '셸이 비었다' — 로그인 셸의 전경 프로세스를 말한다"]],
