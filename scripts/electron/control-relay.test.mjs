@@ -71,6 +71,16 @@ function windowStub() {
       waiters.shift()?.(payload);
       return true;
     },
+    /** 배달이 오면 풀린다. **상한이 없다** — 이쪽은 경주의 한 축이라, 시계를 달면 그 시계가
+     *  다시 판정에 끼어든다. 아무 사건도 안 오는 경우는 검사 자신의 상한이 잡는다. */
+    delivered() {
+      const hit = got[got.length - 1];
+      if (hit && !hit.__raced) {
+        hit.__raced = true;
+        return Promise.resolve(hit);
+      }
+      return new Promise((resolve) => waiters.push(resolve));
+    },
     next() {
       const hit = got[got.length - 1];
       if (hit && !hit.__taken) {
@@ -213,18 +223,28 @@ describe("제어면 중계", () => {
     const bridge = createBackendClient({
       socketPath: cored.socketPath,
       announce: ["control_bridge_attach"],
-      timeoutMs: 4000,
+      // 이 상한은 판정에 안 쓴다 — 아래 경주가 **두 사건 중 먼저 온 것**으로 가른다.
+      timeoutMs: PATIENCE_MS,
     });
     clients.push(bridge);
-    const outcome = await bridge.call("process_reclaim_window", { window: "w-1" }).then(
-      (data) => ({ kind: "answered", data }),
-      (e) => ({ kind: "rejected", code: e.code }),
-    );
-    // 되돌렸는지 아닌지를 증언하는 것은 창이지 상한이 아니다. 이 단언이 먼저 서야
-    // 실패가 사실을 말한다 — 상한부터 재면 "되돌렸다"와 "느리다"가 한 문장으로 나온다.
+
+    // 갈림길은 둘이고 **둘 다 사건이다**: cored 가 이름을 달고 답하거나(옳음), 그 요청이
+    // 물어본 창으로 되돌아오거나(결함). 어느 쪽이 먼저 오는지로 가른다.
+    //
+    // 시계로 가르면 판정이 기계 속도의 함수가 된다 — 느린 순간에 "되돌렸다"가 아닌데도
+    // "되돌렸다"로 읽힌다(실측: 전체 스위트에서 4034ms 로 상한이 먼저 왔다). 상한을 올리는
+    // 것은 그 확률을 낮출 뿐 같은 판정을 그대로 둔다. 그래서 시계를 판정에서 뺀다.
+    const first = await Promise.race([
+      bridge.call("process_reclaim_window", { window: "w-1" }).then(
+        (data) => ({ kind: "answered", data }),
+        (e) => ({ kind: "rejected", code: e.code }),
+      ),
+      win.delivered().then((p) => ({ kind: "delivered", method: p.method })),
+    ]);
+    expect(first).toMatchObject({ kind: "rejected", code: "NOT_SERVED_HERE" });
+    // 답이 온 뒤에도 배달은 없어야 한다 — 답과 배달이 **둘 다** 나가면 창이 유령 명령을 받는다.
     expect(win.got).toEqual([]);
-    expect(outcome).toMatchObject({ kind: "rejected", code: "NOT_SERVED_HERE" });
-  });
+  }, 60_000);
 
   it("밝히지 않은 다리는 밖이다 — 그쪽 요청은 그대로 창으로 간다", async () => {
     const win = windowStub();
