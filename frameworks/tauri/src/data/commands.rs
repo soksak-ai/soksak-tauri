@@ -207,9 +207,12 @@ pub fn data_put(
 ) -> Result<String, String> {
     validate_ns(&ns)?;
     let scope_s = scope.unwrap_or_default();
-    let new_id = with_conn(&state, |c| {
-        write_with_retry(c, || store::put(c, &ns, &coll, &scope_s, id.clone(), &doc))
-    })?;
+    let new_id = store_op(
+        &state,
+        "data_put",
+        serde_json::json!({ "ns": ns, "coll": coll, "scope": scope_s, "id": id, "doc": doc }),
+        |c| write_with_retry(c, || store::put(c, &ns, &coll, &scope_s, id.clone(), &doc)),
+    )?;
     emit_change(
         &app,
         &ns,
@@ -252,9 +255,12 @@ pub fn data_delete(
     state: State<'_, DbState>,
 ) -> Result<bool, String> {
     validate_ns(&ns)?;
-    let removed = with_conn(&state, |c| {
-        store::delete(c, &ns, &coll, &id, scope.as_deref())
-    })?;
+    let removed = store_op(
+        &state,
+        "data_delete",
+        serde_json::json!({ "ns": ns, "coll": coll, "id": id, "scope": scope }),
+        |c| store::delete(c, &ns, &coll, &id, scope.as_deref()),
+    )?;
     if removed {
         emit_change(
             &app,
