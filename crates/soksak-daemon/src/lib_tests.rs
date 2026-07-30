@@ -41,7 +41,8 @@ fn reap_은_명령줄이_대조될_때만_참이다() {
 fn 대용량_단일_라인은_온전히_캡처된다() {
     // BufRead::lines has no per-line cap; RING_CAP bounds line COUNT (keeps the last 500), so
     // the trailing summary line survives intact — no truncation of a multi-KB release.json.
-    let out = daemon_run_once(
+    let out = run_once(
+        "/bin/sh".into(),
         "/tmp".into(),
         "head -c 50000 /dev/zero | tr '\\0' X".into(),
         Some(10),
@@ -64,7 +65,8 @@ fn env_는_자식에만_주입된다() {
     // release.publish's GH_TOKEN path — injected into the child, never the parent/trace.
     let mut env = HashMap::new();
     env.insert("SOKSAK_TEST_ENV".to_string(), "injected-marker-xyz".to_string());
-    let out = daemon_run_once(
+    let out = run_once(
+        "/bin/sh".into(),
         "/tmp".into(),
         "printf %s \"$SOKSAK_TEST_ENV\"".into(),
         Some(10),
@@ -123,7 +125,7 @@ fn 셸은_인자로_받은_경로다() {
 #[test]
 fn 스폰_그룹킬_수명() {
     // 손자를 낳는 셸 명령 — 그룹 킬이 트리 전체를 회수하는지.
-    let child = spawn_shell(&login_shell(), "/tmp", "sleep 30 & sleep 30", None).expect("spawn");
+    let child = spawn_shell("/bin/sh", "/tmp", "sleep 30 & sleep 30", None).expect("spawn");
     let pid = child.id();
     let child = Arc::new(Mutex::new(child));
     std::thread::sleep(std::time::Duration::from_millis(200));
@@ -138,4 +140,39 @@ fn 스폰_그룹킬_수명() {
     unsafe {
         assert_ne!(libc::killpg(pid as i32, 0), 0, "그룹이 비어야 한다");
     }
+}
+
+// 셸은 입구가 준다 — 전역 기본값이 있으면 배선을 잊어도 조용히 /bin/sh 로 돈다.
+// 이 검사는 "부른 쪽이 정한 셸로 돌았다"를 자식이 스스로 답하게 해서 잰다.
+#[test]
+fn run_once_uses_the_shell_the_caller_named() {
+    let dir = std::env::temp_dir().join(format!("soksak-daemon-namedshell-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let marker = dir.join("marker");
+    let fake = dir.join("fake-shell");
+    std::fs::write(
+        &fake,
+        format!("#!/bin/sh\necho named > {}\nexit 0\n", marker.display()),
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    let out = super::run_once(
+        fake.to_string_lossy().to_string(),
+        dir.to_string_lossy().to_string(),
+        "true".into(),
+        Some(5),
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(out["code"], 0, "{out}");
+    assert!(marker.exists(), "부른 쪽이 지목한 셸이 안 돌았다");
+    let _ = std::fs::remove_dir_all(&dir);
 }

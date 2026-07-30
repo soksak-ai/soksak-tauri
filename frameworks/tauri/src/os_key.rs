@@ -33,13 +33,8 @@
 // 지는 쪽의 KEK 로 wrap 된 볼트가 있으면 그것은 복호 불가가 된다. 실제로 그 창이 열리는 것은 볼트가
 // **아직 없을 때**뿐이므로 오늘의 위험은 낮지만, 무시 가능한 이유가 바뀌었다는 사실은 남긴다.
 
-pub use soksak_vault::{get_or_create_kek, Kek, KekError, SecretStore, KEK_LEN};
+pub use soksak_vault::{get_or_create_kek, KekError, SecretStore};
 
-use base64::engine::general_purpose::STANDARD;
-use base64::Engine;
-use rand::rngs::OsRng;
-use rand::RngCore;
-use zeroize::{Zeroize, Zeroizing};
 
 
 

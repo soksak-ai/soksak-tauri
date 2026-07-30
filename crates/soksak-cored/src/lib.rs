@@ -15,6 +15,8 @@ pub mod registry;
 // 명령 표 — 선언만 산다(몸은 registry.rs).
 pub mod registry_table;
 // WebSocket 명령의 몸 — 표와 갈라 둔다.
+pub mod registry_daemon;
+
 pub mod registry_ws;
 // AI 세션 명령의 몸 — 표와 갈라 둔다.
 pub mod registry_session;

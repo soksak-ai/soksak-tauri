@@ -4589,6 +4589,7 @@ dependencies = [
  "serde",
  "serde_json",
  "soksak-core",
+ "soksak-daemon",
  "soksak-net",
  "soksak-spec-pty",
  "soksak-spec-socket",

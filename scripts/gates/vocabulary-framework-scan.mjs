@@ -60,7 +60,6 @@ export const REAL_SHELL_PATHS = [
 
 // ── 진짜 셸을 가리키는 토큰 — R1 이 통과시킨다. 한 줄씩 사유를 적는다 ──────────
 export const REAL_SHELL_TOKENS = new Map([
-  ["install_login_shell", "데몬 몸이 로그인 셸 경로를 호스트에서 받는 자리 — 몸이 환경을 다시 읽으면 재시작이 조용히 다른 셸로 갈아탄다"],
   ["login-shell", "cored 부팅 인자 `--login-shell` — 로그인 셸 경로를 값으로 받는다"],
   ["login_shell", "로그인 셸 필드·모듈(`$SHELL` 을 읽는 자리)"],
   ["login_shell:", "로그인 셸 필드"],
@@ -119,7 +118,8 @@ export const REAL_SHELL_TOKENS = new Map([
   ["fixture_shell", "픽스처 셸(정해진 답만 내는 가짜 로그인 셸)"],
   ["fixture-shell", "픽스처 셸 파일명"],
   ["fake-shell", "가짜 셸 실행 파일(데몬 스폰 테스트)"],
-  ["soksak-daemon-shell-", "가짜 셸을 두는 임시 디렉터리 접두"],
+  ["soksak-daemon-namedshell", "부른 쪽이 지목한 셸이 돌았는지 재는 검사의 임시 디렉터리 접두"],
+  ["run_once_uses_the_shell_the_caller_named", "셸은 입구가 인자로 나른다 — 전역 기본값이 있으면 배선을 잊어도 조용히 /bin/sh 로 돈다는 것을 재는 검사"],
   ["myshell", "shellq 테스트의 가짜 셸 경로"],
   ["shell_safe_base_env", "자식 셸에 승계할 표준 env 화이트리스트"],
   ["shell_safe_base_env_whitelists_standard_and_drops_secrets", "그 화이트리스트 게이트"],
@@ -202,8 +202,8 @@ export const REAL_SHELL_MARKERS = [
 //          [인용] 옛말을 기록으로 남긴 자리 · [진짜셸] 표지가 없는 진짜 셸 줄.
 export const PROSE_LEDGER = new Map([
   // 데몬은 로그인 셸로 자식을 띄운다(GUI PATH 함정) — 전부 진짜 셸이다.
-  ["crates/soksak-daemon/src/lib.rs", [9, "[진짜 셸] 로그인 셸 래핑·재시작 시 같은 셸 유지"]],
-  ["crates/soksak-daemon/src/lib_tests.rs", [2, "[진짜 셸] 로그인 셸로 자식을 띄우는 검사"]],
+  ["crates/soksak-daemon/src/lib.rs", [13, "[진짜 셸] 로그인 셸 래핑·재시작 시 같은 셸 유지 — stop·status·logs·reap 의 몸이 프레임워크 폴더에서 따라 들어오며 늘었다(뜻은 그대로 로그인 셸)"]],
+  ["crates/soksak-daemon/src/lib_tests.rs", [4, "[진짜 셸] 로그인 셸로 자식을 띄우는 검사 — 부른 쪽이 지목한 셸로 도는지 재는 검사가 늘었다"]],
   ["crates/soksak-cored/src/unserved.rs", [1, "[진짜 셸] pty_pane_pid 사유의 '셸이 비었다' — 로그인 셸의 전경 프로세스를 말한다"]],
   // 표를 몸에서 가르면서 이 줄이 따라왔다(registry.rs → registry_table.rs).
   ["crates/soksak-cored/src/registry_table.rs", [1, "[진짜 셸] spawn_terminal 의 shell 인자"]],

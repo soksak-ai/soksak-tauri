@@ -115,17 +115,6 @@ pub fn kill_group(child: &Arc<Mutex<Child>>, force: bool) {
 
 /// 로그인 셸 — 호스트가 부팅에서 확정한 값을 준다. 여기서 환경을 다시 읽으면 재시작이 조용히
 /// 다른 셸로 갈아탄다(입구가 준 값을 그대로 나르는 것이 이 모듈의 규칙이다).
-static LOGIN_SHELL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-
-/// 부팅 1회. 두 번째 설치는 조용히 무시된다 — 셸은 하나다.
-pub fn install_login_shell(shell: String) {
-    let _ = LOGIN_SHELL.set(shell);
-}
-
-pub fn login_shell() -> String {
-    LOGIN_SHELL.get().cloned().unwrap_or_else(|| "/bin/sh".to_string())
-}
-
 /// 주어진 셸로 스폰 — GUI PATH 함정 대응(로그인 셸 래핑, npm_global_dirs 와 동일 기법).
 pub fn spawn_shell(
     shell: &str,
@@ -260,6 +249,7 @@ pub fn launch(
 pub fn start(
     mgr: &DaemonManager,
     ev: std::sync::Arc<dyn DaemonEvents>,
+    shell: String,
     root: String,
     name: String,
     cmd: String,
@@ -279,7 +269,7 @@ pub fn start(
         ev,
         mgr.inner.clone(),
         // 셸 경로는 입구에서 한 번 읽어 아래로 흘린다 — 재시작도 같은 셸이어야 한다.
-        login_shell(),
+        shell,
         root,
         name,
         cmd,
@@ -290,13 +280,14 @@ pub fn start(
 }
 
 /// 데몬 장부에 올리지 않으며, 상한 시간 안에 끝나지 않으면 트리를 종료하고 오류를 알린다.
-pub fn daemon_run_once(
+pub fn run_once(
+    shell: String,
     root: String,
     cmd: String,
     timeout_secs: Option<u64>,
     env: Option<HashMap<String, String>>,
 ) -> Result<serde_json::Value, String> {
-    let mut child = spawn_shell(&login_shell(), &root, &cmd, env.as_ref())?;
+    let mut child = spawn_shell(&shell, &root, &cmd, env.as_ref())?;
     let ring: Arc<Mutex<VecDeque<String>>> = Arc::new(Mutex::new(VecDeque::new()));
     if let Some(out) = child.stdout.take() {
         pump_lines(out, ring.clone());
@@ -328,3 +319,107 @@ pub fn daemon_run_once(
 #[cfg(test)]
 #[path = "lib_tests.rs"]
 mod tests;
+
+/// 멈춤 — 그룹에 신호를 보내고, 유예 뒤 강제한다.
+///
+/// 에스컬레이션은 관찰 스레드가 종료를 먼저 잡아도 무해하다(멱등). 유예를 안 두면 셸이 자식을
+/// 정리할 틈 없이 죽어 손자 프로세스가 남는다.
+pub fn stop(state: &DaemonManager, root: String, name: Option<String>) -> Result<Vec<String>, String> {
+    let map = state.inner.lock().unwrap();
+    let mut stopped = Vec::new();
+    for e in map.values() {
+        if e.root != root {
+            continue;
+        }
+        if name.as_deref().is_some_and(|n| e.name != n) {
+            continue;
+        }
+        if !e.running.lock().unwrap().0 {
+            continue;
+        }
+        *e.stopping.lock().unwrap() = true;
+        kill_group(&e.child, false);
+        stopped.push(e.name.clone());
+        let child = e.child.clone();
+        let running = e.running.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(STOP_GRACE_SECS));
+            if running.lock().unwrap().0 {
+                kill_group(&child, true);
+            }
+        });
+    }
+    Ok(stopped)
+}
+
+/// 지금 상태 — root 를 주면 그 뿌리만.
+pub fn status(state: &DaemonManager, root: Option<String>) -> Vec<DaemonStatus> {
+    let map = state.inner.lock().unwrap();
+    map.values()
+        .filter(|e| root.as_deref().is_none_or(|r| e.root == r))
+        .map(|e| {
+            let (running, exit_code) = *e.running.lock().unwrap();
+            DaemonStatus {
+                root: e.root.clone(),
+                name: e.name.clone(),
+                pid: e.child.lock().unwrap().id(),
+                running,
+                exit_code,
+                uptime_ms: e.started.elapsed().as_millis(),
+                restarts: e.restarts,
+            }
+        })
+        .collect()
+}
+
+/// 출력 링의 끝에서 n 줄.
+pub fn logs(
+    state: &DaemonManager,
+    root: String,
+    name: String,
+    lines: Option<usize>,
+) -> Result<Vec<String>, String> {
+    let map = state.inner.lock().unwrap();
+    let e = map
+        .get(&key(&root, &name))
+        .ok_or_else(|| format!("데몬 없음: {name}"))?;
+    let ring = e.ring.lock().unwrap();
+    let n = lines.unwrap_or(100).min(RING_CAP);
+    Ok(ring.iter().rev().take(n).rev().cloned().collect())
+}
+
+/// 비정상 종료 뒤 잔존 회수 — 부른 쪽이 기록해 둔 (pid, cmd) 목록을 넘긴다.
+///
+/// pid 는 재사용된다. 명령줄이 선언 cmd 와 대조될 때만 그룹을 종료한다 — 대조 없이 pid 로만
+/// 죽이면 그 자리에 들어온 남의 프로세스를 죽인다.
+pub fn reap(entries: Vec<(u32, String)>) -> Vec<u32> {
+    let mut reaped = Vec::new();
+    for (pid, cmd) in entries {
+        #[cfg(unix)]
+        {
+            let (prog, argv) = ps_command_argv(pid);
+            let out = Command::new(prog).args(argv).output();
+            let alive_cmd = out
+                .ok()
+                .filter(|o| o.status.success())
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                .unwrap_or_default();
+            if !alive_cmd.is_empty() && reap_matches(&alive_cmd, &cmd) {
+                unsafe {
+                    libc::killpg(pid as i32, libc::SIGKILL);
+                    libc::kill(pid as i32, libc::SIGKILL);
+                }
+                reaped.push(pid);
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = cmd;
+            let _ = Command::new("taskkill")
+                .args(["/PID", &pid.to_string(), "/T", "/F"])
+                .output();
+            reaped.push(pid);
+        }
+    }
+    reaped
+}

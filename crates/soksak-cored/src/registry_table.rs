@@ -5,6 +5,10 @@
 
 use crate::registry::*;
 use crate::registry_session::{run_ai_session_active, run_ai_session_lineage, run_ai_session_untrack};
+use crate::registry_daemon::{
+    run_daemon_logs, run_daemon_reap, run_daemon_run_once, run_daemon_start, run_daemon_status,
+    run_daemon_stop,
+};
 use crate::registry_ws::{run_ws_close, run_ws_connect, run_ws_send};
 
 /// 서빙 표. 지금 여기 있는 것은 **프레임워크 없이도 같은 답이 나오는 것**뿐이다 —
@@ -72,6 +76,62 @@ pub const COMMANDS: &[Command] = &[
         ],
         returns: "null",
         run: run_download_verify,
+    },
+    Command {
+        // 데몬 — 몸은 soksak-daemon 이 진다. 창도 웹뷰도 필요 없고, 이 프로세스가 사는 동안
+        // 자식도 산다(껍데기를 갈아도 데몬은 안 죽는다).
+        name: "daemon_start",
+        args: &[
+            Arg { name: "root", ty: "string", required: REQ },
+            Arg { name: "name", ty: "string", required: REQ },
+            Arg { name: "cmd", ty: "string", required: REQ },
+            Arg { name: "window", ty: "string", required: OPT },
+            Arg { name: "restart", ty: "string", required: OPT },
+        ],
+        returns: "u32 — 자식 pid",
+        run: run_daemon_start,
+    },
+    Command {
+        name: "daemon_stop",
+        args: &[
+            Arg { name: "root", ty: "string", required: REQ },
+            Arg { name: "name", ty: "string", required: OPT },
+        ],
+        returns: "string[] — 멈춘 이름들",
+        run: run_daemon_stop,
+    },
+    Command {
+        name: "daemon_status",
+        args: &[Arg { name: "root", ty: "string", required: OPT }],
+        returns: "DaemonStatus[]",
+        run: run_daemon_status,
+    },
+    Command {
+        name: "daemon_logs",
+        args: &[
+            Arg { name: "root", ty: "string", required: REQ },
+            Arg { name: "name", ty: "string", required: REQ },
+            Arg { name: "lines", ty: "usize", required: OPT },
+        ],
+        returns: "string[] — 출력 링의 끝에서 n 줄",
+        run: run_daemon_logs,
+    },
+    Command {
+        name: "daemon_reap",
+        args: &[Arg { name: "entries", ty: "(u32,string)[]", required: REQ }],
+        returns: "u32[] — 실제로 회수한 pid",
+        run: run_daemon_reap,
+    },
+    Command {
+        name: "daemon_run_once",
+        args: &[
+            Arg { name: "root", ty: "string", required: REQ },
+            Arg { name: "cmd", ty: "string", required: REQ },
+            Arg { name: "timeoutSecs", ty: "u64", required: OPT },
+            Arg { name: "env", ty: "map<string,string>", required: OPT },
+        ],
+        returns: "{ code, out } — 끝까지 기다린 결과",
+        run: run_daemon_run_once,
     },
     Command {
         // WebSocket — 몸은 soksak-net 이 진다(런타임 포함). 출구는 이 프로세스의 스트림 토큰.
@@ -791,23 +851,6 @@ pub const COMMANDS: &[Command] = &[
     // 로그인 셸을 통한 일회 실행과 잔존 회수. 둘 다 **장부를 안 건드린다** — 거둘 것·돌릴 것은
     // 호출자 인자와 부팅 상태(로그인 셸)가 만들어 주므로 DaemonManager 의 Child 맵도 창도
     // 필요 없다. 도는 데몬을 세우고 세는 daemon_start/stop/status/logs 와 갈리는 자리가 여기다.
-    Command {
-        name: "daemon_run_once",
-        args: &[
-            Arg { name: "root", ty: "string", required: REQ },
-            Arg { name: "cmd", ty: "string", required: REQ },
-            Arg { name: "timeoutSecs", ty: "u64?", required: OPT },
-            Arg { name: "env", ty: "{ [k]: string }?", required: OPT },
-        ],
-        returns: "{ code, lines } — code 는 신호 종료면 null, lines 는 stdout+stderr 를 섞은 한 링",
-        run: run_daemon_run_once,
-    },
-    Command {
-        name: "daemon_reap",
-        args: &[Arg { name: "entries", ty: "[pid, cmd][]", required: REQ }],
-        returns: "u32[] (명령줄이 대조되어 실제로 종료한 pid)",
-        run: run_daemon_reap,
-    },
     // 스킬 재생성 방아쇠 — 몸이 둘뿐이다: 정체성 홈의 매니페스트 읽기와 argv 하나 분리 스폰.
     // 홈은 부팅 상태에서 오고 매니페스트가 CLI 실물을 지목하므로, 창도 앱 핸들도 필요 없다.
     // 렌더 로직의 단일 진실은 그 CLI 다(P8 쓰기-스루) — 여기는 방아쇠만 소유한다.
