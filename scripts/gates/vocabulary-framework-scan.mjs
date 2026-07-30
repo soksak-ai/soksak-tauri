@@ -200,6 +200,8 @@ export const REAL_SHELL_MARKERS = [
 // 판정 넷: [프레임워크] 개명 대상 · [UI] 앱 UI 컨테이너 뜻(제3의 용법, 어휘 미결) ·
 //          [인용] 옛말을 기록으로 남긴 자리 · [진짜셸] 표지가 없는 진짜 셸 줄.
 export const PROSE_LEDGER = new Map([
+  // 표를 몸에서 가르면서 이 줄이 따라왔다(registry.rs → registry_table.rs).
+  ["crates/soksak-cored/src/registry_table.rs", [1, "[진짜 셸] spawn_terminal 의 shell 인자"]],
   ["crates/soksak-cored/src/pty_tests.rs", [2, "[진짜 셸] 로그인 셸 추측 금지 검사"]],
   ["crates/soksak-cored/src/main.rs", [1, "[진짜 셸] 부팅 인자 --login-shell"]],
   ["frameworks/tauri/src/activity.rs", [1, "[프레임워크] \"셸 타입\"·\"셸에 넘긴다\""]],

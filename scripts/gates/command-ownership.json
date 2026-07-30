@@ -44,8 +44,8 @@
       "to": "core"
     },
     "ipc_hello_info": {
-      "why": "판 협상 사실 — cored 가 transport 에서 이미 같은 값을 답한다(등록만 남았다)",
-      "to": "core"
+      "why": "판 협상 사실 — 프로토콜 숫자는 공통이지만 pid·role·identity 는 **답하는 프로세스의 것**이다(cored 는 role=cored 로 답한다). 그래서 이 이름은 프로세스마다 자기를 말해야 하고, 코어로 옮기면 앱이 cored 의 신원을 자기 것으로 답한다.",
+      "to": "framework"
     },
     "notify_show": {
       "why": "OS 알림 — 플랫폼 자원(Electron Notification)",

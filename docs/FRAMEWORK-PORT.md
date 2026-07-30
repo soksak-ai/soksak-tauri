@@ -449,3 +449,39 @@ It answered in one run: a `mouseup` landed on the gutter at the same instant and
 That bridge is itself a surface that had to be ported: `webview_emit_native` publishes the same `native-mouse*` events the native monitor emits, and without it there is no way to drive that gesture without a real mouse.
 
 All twelve harnesses are green on this framework.
+
+## A framework folder holds no core (proposition, 2026-07-30)
+
+**No operating core stays in a framework folder — whether it touches the framework or not, no exceptions.** Tauri and Electron sit at the same level; the core moves to the common crates.
+
+Contact with the framework (`tauri::`) — its presence or its density — cannot measure this law. A file with 22 framework-calling lines out of 671 is not a framework file; it is **core living in that folder**, and it looks normal to an eye that counts contacts (`framework-free-tenant`). So we count the **body**: the `framework-body` metric in `baseline-gate` seals per-file code lines (comments and blanks excluded), and the seal only goes down. Raising it takes an explicit re-legislation commit that states whether the growth is wiring or core.
+
+Measured at the start: `frameworks/tauri/src` 53 files **17,567 lines** vs `frameworks/electron` 15 files **1,598 lines**. The same job, done at 11× the size — and that difference is the amount to move.
+
+### What legitimately stays
+
+Three things, each because it **cannot cross a process boundary**.
+
+| Stays | Why |
+|---|---|
+| The native parent surface | A parent view is process-local — no other process can hand it over |
+| Main-thread execution | It is that process's run loop |
+| The event sink | Events must reach that window's subscribers |
+
+Everything else is common. The split is by **what a command touches**, not by name family: `sidecar_open/send/close` host an in-process engine and belong to the framework, while their same-prefix siblings `sidecar_ensure` (fetch + hash) and `sidecar_dev_new` (file scaffold) belong to the core.
+
+### The first two extractions
+
+**`sidecar.rs` 671 → 166 lines.** dlopen, symbol resolution, the ABI handshake, the module and client registries, message relay, notification and shutdown all moved to `soksak-sidecar-host`. The framework supplies only the three duties above, through a `Framework` trait. The client registry now holds handles alone — what carries an event is the framework's business, so the body need not know. Verified live: the engine loads, `framesPresented` climbs, the page paints.
+
+**`ws.rs` 365 → 68 lines.** The session registry, the read loop and the connect path moved to `soksak-net` (which already bears the runtime). And **cored serves the same body through its own outlet** — pushing frames over a stream token instead of a webview channel. The wall on record ("the transport drags a runtime in, and the dependency gate bans runtimes by name") became false twice in one day: tokio was released because it never met that list's own criterion, and cored already carried the stream path.
+
+### The dials
+
+| | At start | Now |
+|---|---|---|
+| Unanswered names | 63 | **58** |
+| Framework-folder body | 19,165 | **18,534** |
+| Unanswered state-bound | 30 | **27** |
+
+Lane `framework` 42 · `served` 81. Of the remaining 58: core 16 · framework 8 · declared refusals 34.
