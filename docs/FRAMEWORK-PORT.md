@@ -566,3 +566,28 @@ Of the remaining 17: declared refusals 12 · undeclared gaps 5. The largest sing
 | Unanswered state-bound | 45 | **13** |
 
 Of the remaining 13: declared refusals 10 · undeclared gaps 3. The one large item is `sidecar_open` — the browser engine on the second framework. JS has no FFI, so it needs a native addon: a decision, not a debt.
+
+### The last family: the wall was three, only one was true
+
+`sidecar_open` / `send` / `close` were written as blocked by three things at once — dynamic loading, a native view, a window channel. Re-measured, only one held.
+
+**Dynamic loading is an OS call, not a framework.** `libloading` does not meet a single one of the ban list's *own* criteria (does it open a window; does it hold an app handle; does the answer differ per process) — it was blocked by name, exactly as `tokio` had been. One name was holding three commands outside this process.
+
+**A main thread does not require a window.** What an engine's `init`/`shutdown` demand is "the first thread of this process", nothing more. That seat was being spent on the accept loop — not missing, *given away*. Accept answers the same on any thread; engine init does not. The seat moved, and the loop went beside it.
+
+**A native parent surface genuinely is absent here**, and that one stays true. The surface pointer sent with each message is `0`. It is not invented: a fabricated pointer reads as a valid address and the engine lays its surface on somebody else's memory. An engine that *uses* the surface fails at that moment under its own name. The hosting crate's `surface_alive` has an empty default body precisely for this case — the design had already written down that a host without native child surfaces has nothing to enrol.
+
+Events go to the **caller's stream token**. The absence of a window channel is not a reason to broadcast: a broadcast reaches unopened code too, and that leak is what this surface was guarding against from the start.
+
+Nothing was opened ahead of a consumer: the commit that releases `libloading` is the commit that serves the three.
+
+| | At start | Now |
+|---|---|---|
+| Unanswered names | 63 | **2** |
+| Undeclared gaps | 27 | **0** |
+| Framework-folder body | 19,165 | **12,915** |
+| Unanswered state-bound | 45 | **10** |
+
+Answered: **174** (core 129 · framework 20 · renderer 13 · declared-absent 12).
+
+The two that remain are refusals whose reasons stand today. `app_relaunch` — what comes back to life is cored, while the app keeps running the old build, and the answer is a success the caller reads as "the new build is up". `media_proxy_info` — one decision is left, *who stands the proxy up*, and opening a name with no consumer hides that decision rather than making it.
