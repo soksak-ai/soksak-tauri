@@ -185,11 +185,10 @@ pub fn run() {
                 app.handle()
                     .plugin(tauri_plugin_updater::Builder::new().build())?;
             }
+            // 설치자는 홈 하나를 통째로 쓰는 단일 쓰기자다 — 앰비언트 전역을 여기서 한 번
+            // 값으로 꺼내 넘긴다(identity.rs). 그 아래로는 정체성이 흐른다.
             app.manage(
-                // 설치자는 홈 하나를 통째로 쓰는 단일 쓰기자다 — 앰비언트 전역을 여기서
-                // 한 번 값으로 꺼내 넘긴다(identity.rs). 그 아래로는 정체성이 흐른다.
-                unit_installer::UnitInstallManager::new(identity::ambient())
-                    .map_err(std::io::Error::other)?,
+                unit_installer::boot(identity::ambient()).map_err(std::io::Error::other)?,
             );
             // PTY 매니저도 정체성을 생성자로 받는다 — 데몬 소켓·토큰·스테이징 바이너리가
             // 그 홈에서 파생되므로 home::init 뒤에 세운다. 빌더 체인(setup 이전)에서 읽으면

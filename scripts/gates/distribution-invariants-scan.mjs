@@ -46,7 +46,9 @@ export function scanRoot(root = REPO_ROOT) {
   const releaseTool = read(root, "scripts/release/prepare-tauri-config.mjs");
   const appHome = read(root, "frameworks/tauri/src/home.rs");
   const cliHome = read(root, "crates/soksak-cli/src/lib.rs");
-  const runtimeDep = read(root, "frameworks/tauri/src/runtime_dep.rs");
+  // 아카이브 규칙은 soksak-install 이 진다. 뿌리를 코드 따라 옮기지 않으면 이 게이트는
+  // "규칙이 사라졌다"고 답한다 — 실제로는 크레이트로 걸어간 것이다.
+  const runtimeDep = read(root, "crates/soksak-install/src/lib.rs");
   const releaseSurface = `${release}\n${releaseWorkflow}\n${releaseTool}`;
 
   if (/(^|\s)ln\s+-(?:[^\n]*s|s[^\n]*)/.test(makefile)) {

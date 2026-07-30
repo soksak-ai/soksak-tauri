@@ -47,7 +47,7 @@ frameworks/tauri/src/i18n.rs 155
 frameworks/tauri/src/id_registry.rs 144
 frameworks/tauri/src/identity.rs 59
 frameworks/tauri/src/ipc.rs 1232
-frameworks/tauri/src/lib.rs 716
+frameworks/tauri/src/lib.rs 715
 frameworks/tauri/src/login_shell.rs 28
 frameworks/tauri/src/main.rs 4
 frameworks/tauri/src/mediaproxy.rs 18
@@ -60,7 +60,7 @@ frameworks/tauri/src/process.rs 150
 frameworks/tauri/src/project_registry.rs 299
 frameworks/tauri/src/pty.rs 790
 frameworks/tauri/src/pty_delivery.rs 1
-frameworks/tauri/src/runtime_dep.rs 584
+frameworks/tauri/src/runtime_dep.rs 162
 frameworks/tauri/src/schedule.rs 156
 frameworks/tauri/src/seal_keys.rs 19
 frameworks/tauri/src/secrets.rs 38
@@ -70,7 +70,7 @@ frameworks/tauri/src/skillgen.rs 16
 frameworks/tauri/src/stream_sink.rs 21
 frameworks/tauri/src/titlebar.rs 218
 frameworks/tauri/src/unit_dev.rs 414
-frameworks/tauri/src/unit_installer.rs 1158
+frameworks/tauri/src/unit_installer.rs 55
 frameworks/tauri/src/updater.rs 42
 frameworks/tauri/src/watcher.rs 15
 frameworks/tauri/src/webview.rs 1760

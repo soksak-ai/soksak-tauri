@@ -297,8 +297,10 @@ describe("계측은 파일 배치에 기대지 않는다", () => {
   it("cored 의 표는 크레이트 전체에서 읽는다", () => {
     const { cored, refused } = survey();
     expect(cored.has("download_verify")).toBe(true);
-    // 거절 표가 registry.rs 밖에 살아도 읽힌다.
-    expect(refused.size).toBeGreaterThan(20);
+    // 거절 표가 registry.rs 밖에 살아도 읽힌다. **수로 재지 않는다** — 거절이 줄어드는 것은
+    // 진전이라, 여기에 하한을 두면 갚을수록 이 검사가 깨진다(실측: 18 로 내려와 깨졌다).
+    // 읽히는가만 본다: unserved.rs 에 사는 이름 하나가 답에 있으면 그 표는 읽힌 것이다.
+    expect(refused.size).toBeGreaterThan(0);
     expect(refused.has("sidecar_open")).toBe(true);
   });
 });

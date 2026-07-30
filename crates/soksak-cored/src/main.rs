@@ -202,6 +202,12 @@ mod unix {
             if line.is_empty() {
                 continue;
             }
+            // 연결의 성질을 밝히는 줄은 **읽은 자리에서** 세운다. 동시 처리에 넘기면 그 선언이
+            // 첫 명령보다 늦게 설 수 있고, 그때 이 연결은 자기가 무엇인지 모른 채로 답한다.
+            if let Some(reply) = soksak_cored::wire::answer_declaration(&ctx, &line, &state) {
+                state.reply(&reply);
+                continue;
+            }
             let (ctx, state) = (ctx.clone(), state.clone());
             workers.push(std::thread::spawn(move || {
                 let reply = soksak_cored::wire::answer_on_conn(&ctx, &line, &state);

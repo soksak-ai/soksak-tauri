@@ -137,6 +137,28 @@ fn refusal(method: &str) -> (&'static str, String) {
     }
 }
 
+/// 이 줄이 **연결의 성질을 선언하는가.** 그렇다면 읽은 순서대로, 동시 처리 밖에서 세워야 한다.
+///
+/// 실측: 한 연결의 프레임은 각자 스레드로 간다(요청 하나 = 스레드 하나). 그래서 선언이 첫
+/// 명령보다 먼저 **줄에 오르고도** 나중에 설 수 있다 — 그 창의 다리로 온 요청이 다리인 줄
+/// 모른 채 그 창으로 배달되고, 회신할 자리가 없어 상한까지 침묵한다. 연결 하나 = 스레드
+/// 하나였을 때는 읽기 순서가 곧 처리 순서라 이 틈이 없었다.
+///
+/// 선언은 요청이 아니라 **이 연결이 무엇인가**라서, 읽은 자리에서 즉시 서는 것이 옳다.
+pub fn declares_connection(method: &str) -> bool {
+    matches!(method, "control_bridge_attach" | "control_host_attach")
+}
+
+/// 한 줄을 읽어 선언이면 그 자리에서 세우고 답을 돌려준다. 선언이 아니면 None — 부른 쪽이
+/// 평소대로 동시 처리에 넘긴다.
+pub fn answer_declaration(ctx: &Ctx, line: &str, state: &std::sync::Arc<Conn>) -> Option<Value> {
+    let req: Request = serde_json::from_str(line).ok()?;
+    if !declares_connection(&req.method) {
+        return None;
+    }
+    Some(answer_on_conn(ctx, line, state))
+}
+
 /// 명령 하나를 실행한다. 표에 없으면 **창을 가진 쪽에 배달한다** — 붙은 호스트가 없을 때만
 /// 이름을 달고 실패한다. 조용한 no-op 도, 가짜 성공도 없다.
 ///

@@ -26,7 +26,7 @@ function configs() {
   write("frameworks/tauri/src/home.rs", "fn fixed_identity_home() {}\n");
   write("crates/soksak-cli/src/lib.rs", "fn fixed_identity_home() {}\n");
   write(
-    "frameworks/tauri/src/runtime_dep.rs",
+    "crates/soksak-install/src/lib.rs",
     "entry_type.is_file(); reject_symlink_components(); OpenOptions::new().create_new(true);\n",
   );
 }
@@ -72,7 +72,7 @@ describe("distribution invariants", () => {
 
   it("runtime archive를 system tar나 generic unpack에 위임하지 않는다", () => {
     write(
-      "frameworks/tauri/src/runtime_dep.rs",
+      "crates/soksak-install/src/lib.rs",
       'std::process::Command::new("/usr/bin/tar"); archive.unpack(dest);\n',
     );
     const violations = scanRoot(root).join("\n");

@@ -4590,6 +4590,7 @@ dependencies = [
  "serde_json",
  "soksak-core",
  "soksak-daemon",
+ "soksak-install",
  "soksak-net",
  "soksak-schedule",
  "soksak-service",
@@ -4640,6 +4641,7 @@ dependencies = [
  "soksak-core",
  "soksak-cored",
  "soksak-daemon",
+ "soksak-install",
  "soksak-net",
  "soksak-schedule",
  "soksak-seal",
@@ -4668,6 +4670,22 @@ dependencies = [
  "uuid",
  "wry",
  "zeroize",
+]
+
+[[package]]
+name = "soksak-install"
+version = "0.0.1"
+dependencies = [
+ "flate2",
+ "serde",
+ "serde_json",
+ "sha2",
+ "soksak-core",
+ "soksak-net",
+ "soksak-spec-contract",
+ "tar",
+ "url",
+ "uuid",
 ]
 
 [[package]]

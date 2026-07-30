@@ -185,7 +185,7 @@ pub fn sidecar_ensure(name: String, url: String, sha256: String) -> Result<Strin
         return Ok("present".into());
     }
     eprintln!("[sidecar:{name}] fetch 설치 시작: {url}");
-    crate::runtime_dep::download_unpack_verify(&url, &sha256, &dest, &entry)
+    soksak_install::download_unpack_verify(&url, &sha256, &dest, &entry)
         .inspect_err(|e| eprintln!("[sidecar:{name}] fetch 설치 실패: {e}"))?;
     eprintln!("[sidecar:{name}] fetch 설치 완료: {}", dest.display());
     Ok("fetched".into())

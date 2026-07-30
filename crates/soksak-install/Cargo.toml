@@ -1,0 +1,21 @@
+[package]
+name = "soksak-install"
+version = "0.0.1"
+edition = "2021"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+soksak-core = { path = "../soksak-core" }
+soksak-spec-contract = { path = "../soksak-spec-contract" }
+# 자산 내려받기·해시 검증 — 설치는 네트워크에서 바이트를 받아 스테이징한다. 전송기는
+# 프레임워크가 아니라 자원이다(ws·download_verify 와 같은 판정).
+soksak-net = { path = "../soksak-net" }
+uuid = { version = "1", features = ["v4"] }
+url = "2"
+tar = "0.4"
+flate2 = "1"
+
+[dev-dependencies]
+# 검사가 아카이브를 직접 만들어 해시를 짚는다 — 몸이 쓰는 해시와 같은 것으로 재야 한다.
+sha2 = "0.10"

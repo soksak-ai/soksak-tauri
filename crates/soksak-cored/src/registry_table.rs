@@ -10,6 +10,10 @@ use crate::registry_encrypt::{
     run_data_encrypt_change_recovery, run_data_encrypt_enable, run_data_encrypt_recover,
     run_data_encrypt_rotate, run_data_encrypt_status,
 };
+use crate::registry_install::{
+    run_unit_install_begin, run_unit_install_commit, run_unit_install_read_utf8,
+    run_unit_install_rollback, run_unit_install_stage,
+};
 use crate::registry_schedule::{
     run_schedule_cancel, run_schedule_list, run_schedule_poke, run_schedule_register,
     run_schedule_set,
@@ -91,6 +95,53 @@ pub const COMMANDS: &[Command] = &[
         ],
         returns: "null",
         run: run_download_verify,
+    },
+    Command {
+        // 유닛 설치 — 다섯이 한 원장을 공유한다. **함께** 서빙해야 begin 과 commit 이 같은
+        // 프로세스에 앉는다: 나누면 뒤쪽은 100% 실패 경로만 남는다.
+        name: "unit_install_begin",
+        args: &[
+            Arg { name: "registryId", ty: "string", required: REQ },
+            Arg { name: "root", ty: "UnitIdentity", required: REQ },
+        ],
+        returns: "{ transactionId, ... }",
+        run: run_unit_install_begin,
+    },
+    Command {
+        name: "unit_install_stage",
+        args: &[
+            Arg { name: "transactionId", ty: "string", required: REQ },
+            Arg { name: "registryId", ty: "string", required: REQ },
+            Arg { name: "unit", ty: "UnitIdentity", required: REQ },
+            Arg { name: "artifact", ty: "StageArtifact", required: REQ },
+        ],
+        returns: "{ handle, ... }",
+        run: run_unit_install_stage,
+    },
+    Command {
+        name: "unit_install_read_utf8",
+        args: &[
+            Arg { name: "transactionId", ty: "string", required: REQ },
+            Arg { name: "handle", ty: "string", required: REQ },
+            Arg { name: "path", ty: "string", required: REQ },
+        ],
+        returns: "string — 스테이징 안의 파일 내용",
+        run: run_unit_install_read_utf8,
+    },
+    Command {
+        name: "unit_install_commit",
+        args: &[
+            Arg { name: "transactionId", ty: "string", required: REQ },
+            Arg { name: "units", ty: "VerifiedInstallUnit[]", required: REQ },
+        ],
+        returns: "{ installed, ... }",
+        run: run_unit_install_commit,
+    },
+    Command {
+        name: "unit_install_rollback",
+        args: &[Arg { name: "transactionId", ty: "string", required: REQ }],
+        returns: "null",
+        run: run_unit_install_rollback,
     },
     Command {
         // 예약 — 시계와 장부는 soksak-schedule 이, 영속은 이 프로세스의 저장소가 진다.
