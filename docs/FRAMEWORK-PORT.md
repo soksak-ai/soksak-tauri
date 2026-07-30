@@ -480,8 +480,21 @@ Everything else is common. The split is by **what a command touches**, not by na
 
 | | At start | Now |
 |---|---|---|
-| Unanswered names | 63 | **58** |
-| Framework-folder body | 19,165 | **18,534** |
+| Unanswered names | 63 | **49** |
+| Framework-folder body | 19,165 | **18,543** |
 | Unanswered state-bound | 30 | **27** |
 
 Lane `framework` 42 · `served` 81. Of the remaining 58: core 16 · framework 8 · declared refusals 34.
+
+### Paid down since (same day)
+
+- **`notify_show`** — Electron answers. All this seat knows is one fact about itself (is it supported); it does not judge what makes a valid notification. A first draft rejected empty title/body and `framework-thin-binding` caught it — a rule living in the framework gives two shells different standards under one name.
+- **`clipboard_read` / `clipboard_write`** — answered. **`clipboard_watch_*` is a proven absence**: this framework emits no clipboard-change event, and polling it would be periodic querying, not watching.
+- **`webview_debug_hierarchy`** — absence declared with its reason. There is no native view tree here; the hierarchy is the DOM, and `webview.surfaces`'s bodies already answer it with node paths and rects.
+- **`ai_session_active` / `untrack` / `lineage`** — cored carries them. The snapshot ledger is held by **exactly one process** (per-process ledgers would give the same directory two different "previous" states). The lineage query moved into one place in `soksak-store`.
+
+### Reasons corrected
+
+Releasing tokio falsified every refusal that named it as the wall at once: `media_proxy_info` (what remains is one decision — who starts the proxy), the five `unit_install_*` (four walls became three), and `ipc_hello_info`'s destination (core → framework: pid and role belong to the process that answers).
+
+**A wrong reason is worse than none** — writing that something cannot move, when it can, means that name is never examined again.
