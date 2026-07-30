@@ -591,3 +591,15 @@ Nothing was opened ahead of a consumer: the commit that releases `libloading` is
 Answered: **174** (core 129 · framework 20 · renderer 13 · declared-absent 12).
 
 The two that remain are refusals whose reasons stand today. `app_relaunch` — what comes back to life is cored, while the app keeps running the old build, and the answer is a success the caller reads as "the new build is up". `media_proxy_info` — one decision is left, *who stands the proxy up*, and opening a name with no consumer hides that decision rather than making it.
+
+### The contract nobody read
+
+The framework port was called finished, and the apps were never launched. Standing both of them up produced the last defect — and it was not in what had moved, but in something that had been written and left unread.
+
+Both frameworks fill in `engineProvision` (does this webview meet chromium grade; can it composite a native child view). The spec exports `unmetNeeds` to compare a plugin's needs against it. **Nothing ever called it.** A surface premised on a native child view therefore loaded on a framework that has none, and the screen said only "engine surface creation failed" — a message that reads as a fault rather than as an absence.
+
+Writing a contract and not reading it is the same as not having one. The comparison now happens once, at the activation boundary, and it is announced: what was missing is recorded by name on the plugin's status, so the next person does not investigate it again and the user reads "a surface this framework does not have" instead of "broken".
+
+**The need is derived, not asked for.** `docs/SIDECARS.md §1` already states it: the `engine` model is an in-process dylib whose Surface column reads *renders into pane surfaces (NSView)*. A surface-less engine does not exist by that definition. Making an author restate it as `requiresNativeChildWebview: true` would be a second copy of a fact the manifest already carries — and second copies stay quiet until they diverge, which is exactly what happened.
+
+**A permission is an open door, not a footprint.** The first cut read the `sidecar` permission as evidence of engine use and dropped a headless plugin that merely over-declared it. The evidence of the service model is the `service` declaration — the spec already keeps that field for that meaning.
