@@ -95,6 +95,40 @@ const METRICS = [
       "# 파일 개명 시 같은 커밋에서 항목 경로를 수기로 이전한다(값 불변).",
     ],
   },
+  {
+    // ── 프레임워크 폴더의 몸 ────────────────────────────────────────────────────────────
+    //
+    // 명제: **프레임워크 폴더에는 동작 코어를 남기지 않는다.** 닿든 안 닿든, 예외 없다. 프레임워크는
+    // 창·웹뷰·런루프·네이티브 핸들을 주는 자리이고, 판정·상태·로직은 공통으로 간다.
+    //
+    // 접촉(`tauri::`)의 유무나 밀도로는 이 법을 못 잰다 — 671줄 중 22줄이 프레임워크를 부르는
+    // 파일은 프레임워크 파일이 아니라 프레임워크 폴더 안에 사는 코어인데, 접촉을 세는 눈에는 정상으로
+    // 보인다(framework-free-tenant 가 그 눈이다). 그래서 여기서는 **몸**을 센다.
+    //
+    // 실측 2026-07-30 착수 시점: frameworks/tauri/src 55파일 17,780줄 vs frameworks/electron
+    // 15파일 1,598줄. 같은 일을 11배로 하고 있고, 그 차이가 곧 옮길 양이다.
+    name: "framework-body",
+    baselineFile: "baseline-framework-body.txt",
+    roots: ["frameworks/tauri/src", "frameworks/electron"],
+    exts: [".rs", ".ts", ".tsx", ".mjs", ".cjs"],
+    // 주석과 빈 줄은 몸이 아니다 — 사유를 적는 일에 벌을 주면 사유부터 사라진다.
+    measure: (text) =>
+      text
+        .split("\n")
+        .filter((l) => {
+          const t = l.trim();
+          return t !== "" && !t.startsWith("//") && !t.startsWith("/*") && !t.startsWith("*");
+        }).length,
+    unit: "줄",
+    fixHint: "몸을 공통 크레이트로 빼고 진입점·배선만 남긴 뒤 --prune 으로 축소를 반영한다",
+    headerLines: [
+      "# baseline-framework-body — 프레임워크 폴더 파일별 코드 줄 수(주석·빈 줄 제외). 봉인이지 해소가 아니다.",
+      "# 명제: 프레임워크 폴더에는 동작 코어를 남기지 않는다 — 닿든 안 닿든 예외 없다. 이 수는 0 을 향한다.",
+      "# 갱신은 --prune(축소)만. 올리는 것은 명시 재입법 커밋으로만 하고, 그 증가가 배선인지 코어인지 적는다.",
+      "# 제거 조건: 파일의 몸이 통째로 공통으로 가면 파일이 사라지고 --prune 이 항목을 지운다.",
+      "# 파일 개명 시 같은 커밋에서 항목 경로를 수기로 이전한다(값 불변).",
+    ],
+  },
 ];
 
 // ── 스캔 ──────────────────────────────────────────────────────────────────
@@ -254,18 +288,24 @@ function main(argv) {
     return 1;
   }
 
-  // --init: 최초 1회 부트스트랩. 어느 기준선이라도 이미 있으면 전체를 거부한다(재봉인 우회 금지).
+  // --init: **없는 기준선만** 세운다.
+  //
+  // 거부의 뜻은 "이미 봉인된 지표를 다시 봉인하지 마라"이지 "지표를 늘리지 마라"가 아니다.
+  // 하나가 있다고 전부 거부하면 새 법을 게이트에 들일 길이 사라진다 — 실측(2026-07-30):
+  // framework-body 지표를 더한 뒤 부트스트랩할 방법이 없었고, 그러면 그 법은 게이트 밖에서 산다.
   if (init) {
-    const existing = METRICS.filter((m) => existsSync(baselinePath(root, m)));
-    if (existing.length > 0) {
-      for (const m of existing) {
-        console.error(
-          `[baseline-gate] --init 거부: ${relative(root, baselinePath(root, m))} 이미 존재. 축소는 --prune, 값 올림은 명시 재입법 커밋으로만 한다.`,
-        );
-      }
+    const already = METRICS.filter((m) => existsSync(baselinePath(root, m)));
+    const fresh = METRICS.filter((m) => !existsSync(baselinePath(root, m)));
+    for (const m of already) {
+      console.log(
+        `[baseline-gate] ${m.name}: 이미 존재 — 건너뛴다(재봉인 금지. 축소는 --prune, 올림은 명시 재입법).`,
+      );
+    }
+    if (fresh.length === 0) {
+      console.error("[baseline-gate] --init: 세울 것이 없다 — 모든 지표가 이미 봉인되어 있다.");
       return 1;
     }
-    for (const m of METRICS) {
+    for (const m of fresh) {
       const current = scan(root, m);
       writeBaseline(root, m, current);
       console.log(`[baseline-gate] ${m.name}: ${current.size}개 파일 봉인 → ${relative(root, baselinePath(root, m))}`);

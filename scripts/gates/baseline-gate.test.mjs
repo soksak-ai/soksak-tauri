@@ -40,6 +40,7 @@ function longFile(lines) {
 function standUpDeclaredRoots() {
   for (const r of [
     "frameworks/tauri/src",
+    "frameworks/electron",
     "crates/soksak-core/src",
     "crates/soksak-store/src",
     "crates/soksak-vault/src",
@@ -86,11 +87,21 @@ describe("baseline-gate", () => {
     expect(runGate().status).toBe(0);
   });
 
-  it("--init 은 기준선이 이미 있으면 거부한다", () => {
+  /**
+   * 재봉인 금지 — 이미 봉인된 지표는 `--init` 이 **값을 건드리지 않는다.**
+   *
+   * (한때 이 검사는 "하나라도 있으면 전부 거부"를 재고 있었다. 그 규칙은 새 지표를 세울 길까지
+   * 막았다 — 보장은 "다시 봉인하지 않는다"이지 "지표를 늘리지 않는다"가 아니다. 새 지표
+   * 부트스트랩은 "새 지표의 최초 봉인" 묶음이 잰다.)
+   */
+  it("--init 은 이미 있는 봉인의 값을 바꾸지 않는다", () => {
     expect(runGate("--init").status).toBe(0);
-    const r = runGate("--init");
-    expect(r.status).toBe(1);
-    expect(r.out).toContain("--init 거부");
+    const before = readFileSync(join(root, "scripts/gates/baseline-unwrap.txt"), "utf8");
+    // 위반을 늘려 놓고 다시 --init — 재봉인되면 그 위반이 새 기준이 되어 조용히 사면된다.
+    write("frameworks/tauri/src/a.rs", rustWithUnwraps(9));
+    runGate("--init");
+    expect(readFileSync(join(root, "scripts/gates/baseline-unwrap.txt"), "utf8")).toBe(before);
+    expect(runGate().status).toBe(1);
   });
 
 
@@ -238,5 +249,77 @@ describe("baseline-gate", () => {
 
   it("--init 과 --prune 동시 지정은 거부한다", () => {
     expect(runGate("--init", "--prune").status).toBe(1);
+  });
+});
+
+describe("프레임워크 폴더의 몸", () => {
+  /**
+   * **프레임워크 폴더에는 동작 코어를 남기지 않는다 — 닿든 안 닿든, 예외 없다.**
+   *
+   * 접촉(`tauri::`)의 유무·밀도로는 이 법을 못 잰다. 671줄 중 22줄이 프레임워크를 부르는
+   * 파일은 프레임워크 파일이 아니라 **프레임워크 폴더 안에 사는 코어**이고, 접촉을 세는 눈에는
+   * 정상으로 보인다(실측 2026-07-30: frameworks/tauri/src 55파일 17,780줄, 같은 일을 하는
+   * frameworks/electron 은 15파일 1,598줄 — 11배).
+   *
+   * 그래서 **몸**을 센다. 파일마다 코드 줄 수를 봉인하고, 봉인은 내려가기만 한다.
+   * 프레임워크 폴더가 커지는 것은 명시 재입법으로만 — 그때 그 증가가 배선인지 코어인지 적는다.
+   */
+  it("framework-body 지표가 프레임워크 폴더의 몸을 센다", () => {
+    write("frameworks/tauri/src/thick.rs", "fn a() {\n    let x = 1;\n}\n");
+    expect(runGate("--init").status).toBe(0);
+    const seal = readFileSync(join(root, "scripts/gates/baseline-framework-body.txt"), "utf8");
+    expect(seal).toContain("frameworks/tauri/src/thick.rs");
+    // 주석과 빈 줄은 몸이 아니다 — 사유를 적는 일에 벌을 주면 사유가 사라진다.
+    write("frameworks/tauri/src/thick.rs", "// 사유를 길게\n// 여러 줄로 적는다\n\nfn a() {\n    let x = 1;\n}\n");
+    expect(runGate().status).toBe(0);
+  });
+
+  it("프레임워크 폴더가 굵어지면 실패한다", () => {
+    write("frameworks/tauri/src/thick.rs", "fn a() {}\n");
+    expect(runGate("--init").status).toBe(0);
+    write("frameworks/tauri/src/thick.rs", "fn a() {}\nfn b() {}\nfn c() {}\n");
+    const r = runGate();
+    expect(r.status).toBe(1);
+    expect(r.out).toContain("신규 위반 framework-body");
+  });
+
+  it("몸을 빼면 --prune 이 봉인을 내린다", () => {
+    write("frameworks/tauri/src/thick.rs", "fn a() {}\nfn b() {}\nfn c() {}\n");
+    expect(runGate("--init").status).toBe(0);
+    write("frameworks/tauri/src/thick.rs", "fn a() {}\n");
+    expect(runGate().status).toBe(1);
+    expect(runGate("--prune").status).toBe(0);
+    expect(readFileSync(join(root, "scripts/gates/baseline-framework-body.txt"), "utf8"))
+      .toContain("frameworks/tauri/src/thick.rs 1");
+  });
+});
+
+describe("새 지표의 최초 봉인", () => {
+  /**
+   * `--init` 은 **없는 봉인만** 세운다.
+   *
+   * 거부의 뜻은 "이미 봉인된 지표를 다시 봉인하지 마라"이지 "지표를 늘리지 마라"가 아니다.
+   * 하나가 있다고 전부 거부하면 새 지표를 세울 길이 사라지고, 그러면 새 법은 게이트 밖에서
+   * 산다 — 실측(2026-07-30): framework-body 지표를 더하고 나서 부트스트랩할 방법이 없었다.
+   */
+  it("있는 봉인은 건드리지 않고 없는 것만 세운다", () => {
+    expect(runGate("--init").status).toBe(0);
+    const before = readFileSync(join(root, "scripts/gates/baseline-unwrap.txt"), "utf8");
+    rmSync(join(root, "scripts/gates/baseline-framework-body.txt"), { force: true });
+
+    const r = runGate("--init");
+    expect(r.status).toBe(0);
+    expect(existsSync(join(root, "scripts/gates/baseline-framework-body.txt"))).toBe(true);
+    // 이미 있던 봉인은 그대로다 — 재봉인은 여전히 금지다.
+    expect(readFileSync(join(root, "scripts/gates/baseline-unwrap.txt"), "utf8")).toBe(before);
+    expect(r.out).toMatch(/이미 존재|건너/);
+  });
+
+  /** 세울 것이 하나도 없으면 그렇게 말하고 실패한다 — 조용한 성공은 "했다"로 읽힌다. */
+  it("전부 이미 있으면 실패로 말한다", () => {
+    expect(runGate("--init").status).toBe(0);
+    const r = runGate("--init");
+    expect(r.status).toBe(1);
+    expect(r.out).toContain("세울 것이 없다");
   });
 });
