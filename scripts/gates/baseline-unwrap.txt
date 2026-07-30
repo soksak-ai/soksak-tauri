@@ -20,4 +20,3 @@ frameworks/tauri/src/schedule.rs 16
 frameworks/tauri/src/titlebar.rs 4
 frameworks/tauri/src/webview.rs 3
 frameworks/tauri/src/window.rs 3
-frameworks/tauri/src/ws.rs 4

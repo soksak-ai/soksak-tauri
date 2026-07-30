@@ -201,9 +201,7 @@ export const REAL_SHELL_MARKERS = [
 //          [인용] 옛말을 기록으로 남긴 자리 · [진짜셸] 표지가 없는 진짜 셸 줄.
 export const PROSE_LEDGER = new Map([
   ["crates/soksak-cored/src/pty_tests.rs", [2, "[진짜 셸] 로그인 셸 추측 금지 검사"]],
-  ["crates/soksak-cored/src/registry.rs", [1, "[진짜 셸] spawn_terminal 의 shell 인자"]],
   ["crates/soksak-cored/src/main.rs", [1, "[진짜 셸] 부팅 인자 --login-shell"]],
-  ["frameworks/tauri/src/ws.rs", [1, "[프레임워크] \"셸 타입\" — ws 읽기 루프가 프레임워크 타입을 모른다는 서술"]],
   ["frameworks/tauri/src/activity.rs", [1, "[프레임워크] \"셸 타입\"·\"셸에 넘긴다\""]],
   ["frameworks/tauri/src/navigation_policy.rs", [2, "[UI] \"app shell\" — 앱 웹뷰의 항행 정책"]],
   ["crates/soksak-core/src/kv.rs", [1, "[프레임워크] \"자원이지 셸이 아니다\"·\"무-셸 게이트\"·\"셸 타입\""]],

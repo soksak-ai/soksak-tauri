@@ -27,7 +27,12 @@ use super::*;
 /// `daemon_start`·`project_claim`·`project_release` 다.
 ///
 /// 수가 오른 것은 기준을 낮춘 것이 아니라 숨어 있던 셋을 세기 시작한 것이다.
-const STATE_BOUND_UNANSWERED: usize = 30;
+///
+/// **2026-07-30 축소 30 → 27.** ws_connect·ws_send·ws_close 를 cored 가 진다. 벽으로 적혀
+/// 있던 "전송기가 런타임을 끌고 온다"는 이제 사실이 아니다 — tokio 는 그 금지 목록 자신의
+/// 기준에 걸리지 않아 풀렸고(download_verify 커밋), 몸은 soksak-net 으로 갔다. 스트림은
+/// cored 가 이미 지고 있던 토큰 통로를 탄다.
+const STATE_BOUND_UNANSWERED: usize = 27;
 
 /// state-bound 갈래에서 아직 아무 답도 없는 이름들.
 fn state_bound_unanswered() -> Vec<String> {

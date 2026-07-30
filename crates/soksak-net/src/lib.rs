@@ -12,3 +12,5 @@
 pub mod http;
 pub mod mediaproxy;
 pub mod transport;
+// WebSocket — Origin 을 안 붙이는 클라이언트. 런타임은 이 크레이트가 이미 진다.
+pub mod ws;

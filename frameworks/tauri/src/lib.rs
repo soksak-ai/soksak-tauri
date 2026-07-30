@@ -107,7 +107,6 @@ pub fn run() {
         .manage(activity::ActivityHub::default())
         .manage(daemon::DaemonManager::default())
         .manage(ProcessManager::default())
-        .manage(ws::WsManager::default())
         .manage(FsWatcher::default())
         .manage(clipboard::ClipboardState::default())
         .manage(CmdBridge::default())
@@ -800,7 +799,7 @@ pub fn run() {
                 app_handle.state::<ProcessManager>().kill_all();
                 // 상주 plugin service 잔존 0(PS10) — shutdown 통지 후 강제 종료.
                 app_handle.state::<service::ServiceManager>().kill_all();
-                app_handle.state::<ws::WsManager>().close_all();
+                soksak_net::ws::close_all();
                 ipc::cleanup();
                 // 미디어 프록시는 이 사다리에 없다 — 루프백 TCP 는 프로세스 종료 시 OS 가 회수하고,
                 // 빈 cleanup() 한 줄이 사다리에 서 있으면 정리할 것이 있는 것처럼 읽힌다.

@@ -46,7 +46,7 @@ frameworks/tauri/src/i18n.rs 155
 frameworks/tauri/src/id_registry.rs 144
 frameworks/tauri/src/identity.rs 59
 frameworks/tauri/src/ipc.rs 1232
-frameworks/tauri/src/lib.rs 717
+frameworks/tauri/src/lib.rs 716
 frameworks/tauri/src/login_shell.rs 28
 frameworks/tauri/src/main.rs 4
 frameworks/tauri/src/mediaproxy.rs 18
@@ -76,4 +76,4 @@ frameworks/tauri/src/webview.rs 1760
 frameworks/tauri/src/webview_health.rs 572
 frameworks/tauri/src/window.rs 364
 frameworks/tauri/src/window_oracle.rs 102
-frameworks/tauri/src/ws.rs 289
+frameworks/tauri/src/ws.rs 47

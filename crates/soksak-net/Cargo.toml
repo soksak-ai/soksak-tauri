@@ -21,9 +21,13 @@ edition = "2021"
 wreq = { version = "=6.0.0-rc.29", features = ["stream"] }
 wreq-util = "=3.0.0-rc.12"
 # wreq 가 async 전용이라 sync 프록시 스레드가 block_on 할 런타임이 필요하다.
-tokio = { version = "1", features = ["rt-multi-thread"] }
-# bytes_stream 을 sync 루프에서 끌어 쓰는 StreamExt.
+# macros = #[tokio::test] — 읽기 루프는 async 라 검사도 런타임 위에서 돈다.
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros"] }
+# ws — Origin 을 안 붙이는 클라이언트(웹뷰의 WebSocket 은 Origin 을 강제로 붙인다).
+tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect"] }
 futures-util = "0.3"
+soksak-core = { path = "../soksak-core" }
+# bytes_stream 을 sync 루프에서 끌어 쓰는 StreamExt.
 # 프록시 쿼리의 인코딩·디코딩(form_urlencoded)과 referer→origin 유도.
 url = "2"
 # 세션 토큰(루프백 2차 방어) 난수.

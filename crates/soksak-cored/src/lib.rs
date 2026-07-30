@@ -12,6 +12,10 @@ pub mod pty;
 pub mod streams;
 pub mod ledger;
 pub mod registry;
+// 명령 표 — 선언만 산다(몸은 registry.rs).
+pub mod registry_table;
+// WebSocket 명령의 몸 — 표와 갈라 둔다.
+pub mod registry_ws;
 // 거절 사유 표 — 사유가 코드보다 길어 따로 산다(registry.rs 가 재수출한다).
 pub mod unserved;
 pub mod wire;
