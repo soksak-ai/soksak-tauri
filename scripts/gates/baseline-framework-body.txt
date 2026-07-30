@@ -22,7 +22,7 @@ frameworks/electron/native/clipboard.cjs 24
 frameworks/electron/native/notify.cjs 18
 frameworks/electron/native/project.cjs 54
 frameworks/electron/native/titlebar.cjs 7
-frameworks/electron/native/webview.cjs 161
+frameworks/electron/native/webview.cjs 166
 frameworks/electron/native/window.cjs 149
 frameworks/electron/preload.cjs 50
 frameworks/electron/windowEvents.cjs 13

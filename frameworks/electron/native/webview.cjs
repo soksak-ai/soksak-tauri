@@ -219,6 +219,16 @@ module.exports = {
       "홀이 뜻을 갖는 전제(메인 웹뷰 아래 네이티브 형제)가 없다 — 콘텐츠가 DOM 안에 살아 OS 히트테스트가 끼어들 자리가 없다. 앱은 제공 선언을 보고 묻지 않는다.",
   },
 
+  // 네이티브 뷰 트리 덤프 — 이 프레임워크에는 그 트리가 없다. 콘텐츠가 페이지 안에 살아
+  // 계층이 곧 DOM 이고, 그 사실은 이미 다른 자리가 답한다(webview.surfaces 의 bodies —
+  // 노드 경로와 rect). 여기서 DOM 을 네이티브 트리 모양으로 찍어 주면 부른 쪽은 네이티브
+  // 자식이 있다고 읽고, 그 오독 위에 홀·스위즐을 전제한 진단을 세운다.
+  webview_debug_hierarchy: {
+    concept: "네이티브 뷰 계층 덤프",
+    absent:
+      "이 프레임워크에는 네이티브 뷰 트리가 없다 — 콘텐츠가 페이지 안에 살아 계층이 곧 DOM 이다. 그 계층은 webview.surfaces 의 bodies 가 노드 경로와 rect 로 답한다.",
+  },
+
   webview_divider_highlight: {
     concept: "네이티브 디바이더 강조 바",
     absent:
