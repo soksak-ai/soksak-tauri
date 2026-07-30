@@ -61,6 +61,7 @@ fn ensure_installed() {
 }
 
 #[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct Open {
     name: String,
     requirement: ContractRequirement,
