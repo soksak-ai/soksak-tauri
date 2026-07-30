@@ -225,12 +225,34 @@ export function verify(root = ROOT, ledgerPath = LEDGER) {
   for (const name of declared.keys()) {
     if (!names.has(name)) problems.push(`${name}: 이제 누군가 답한다 — 장부에서 빼라`);
   }
-  // 래칫 — 공백은 늘지 않는다.
+  // 래칫 ① 미선언 공백은 늘지 않는다. 사유를 적는 일이 진전으로 보이려면 이 수가 따로 있어야 한다.
   const cap = Number(ledger.cap ?? 0);
   if (gaps.length > cap) {
     problems.push(`공백 ${gaps.length} 개 > 상한 ${cap} — 이식 없이 표면을 늘리지 마라`);
   }
-  return { rows, gaps, problems, cap };
+
+  // 래칫 ② **답하지 않는 이름** — 부른 쪽이 값을 못 받는 모든 이름.
+  //
+  // 사유를 적는 것은 진전이지 답이 아니다. 부른 쪽에서 "선언거절"과 "미선언공백"은 같은
+  // 사실이다: 값이 안 온다. 미선언만 세면 사유를 적는 순간 그 이름이 세는 자리에서 사라지고,
+  // 영원히 안 답해도 게이트가 통과한다. 실측(2026-07-30): sidecar_open 이 선언거절에 앉아
+  // 통과하는 동안 두 번째 프레임워크의 렌더러는 그 이름을 139번 부르고 139번 거절당했다 —
+  // 브라우저 엔진이 뜨지 못했고 화면에는 "엔진 서피스 생성 실패"만 남았다.
+  //
+  // absent 는 여기 안 든다. 그것은 **증명된 부재**이고, 부른 쪽은 "없다"는 값을 받는다.
+  const unanswered = rows.filter((r) => r.owner === "refused" || r.owner === "gap");
+  const unansweredCap = Number(ledger.unansweredCap ?? 0);
+  if (unanswered.length > unansweredCap) {
+    problems.push(
+      `답하지 않는 이름 ${unanswered.length} 개 > 상한 ${unansweredCap} — 사유를 적는 것은 답하는 것이 아니다`,
+    );
+  } else if (unanswered.length < unansweredCap) {
+    // 줄어든 것을 장부가 안 따라오면 그 자리는 다음 사람이 채워도 되는 빈칸이 된다.
+    problems.push(
+      `답하지 않는 이름 ${unanswered.length} 개 < 상한 ${unansweredCap} — 상한을 줄여라(줄인 만큼이 진전이다)`,
+    );
+  }
+  return { rows, gaps, unanswered, problems, cap, unansweredCap };
 }
 
 function main() {
@@ -250,8 +272,11 @@ function main() {
       about:
         "이식 공백 장부 — 앱이 부르는데 이 프레임워크에서 아무도 답하지 않는 이름. " +
         "분류는 command-ownership.mjs 가 소스에서 실측하고, 여기에는 사유와 상한만 산다. " +
-        "cap 은 래칫이다: 늘리지 마라. 하나 이식할 때마다 항목을 빼고 cap 을 줄인다.",
+        "cap 은 미선언 공백의 래칫이고, unansweredCap 은 **답이 없는 이름 전체**(선언거절+미선언)의 " +
+        "래칫이다. 둘 다 늘리지 마라. 사유를 적는 것은 답하는 것이 아니므로, 사유를 적어도 " +
+        "unansweredCap 은 줄지 않는다 — 그 이름을 누군가 실제로 답할 때만 줄어든다.",
       cap: gaps.length,
+      unansweredCap: rows.filter((r) => r.owner === "refused" || r.owner === "gap").length,
       gaps: Object.fromEntries(
         gaps.map((g) => [
           g.name,
@@ -268,19 +293,23 @@ function main() {
     return;
   }
 
-  const { rows, gaps, problems, cap } = verify();
+  const { rows, gaps, unanswered, problems, cap, unansweredCap } = verify();
   const by = (o) => rows.filter((r) => r.owner === o).length;
   if (args.includes("--json")) {
     console.log(JSON.stringify({ rows, gaps: gaps.map((g) => g.name), problems }, null, 2));
   } else {
     console.log("명령 소유 — 앱이 부르는 이름의 답하는 자리");
+    // 답이 오는 자리와 안 오는 자리를 **두 줄로 가른다.** 한 줄에 섞으면 부재 선언(확정된
+    // 답)이 부채로 읽히거나, 거꾸로 부채가 선언으로 무마된다.
+    const answered = by("core") + by("framework") + by("renderer") + by("absent");
     console.log(
-      `  core ${by("core")} · framework ${by("framework")} · renderer ${by("renderer")}` +
-        ` · 선언부재 ${by("absent")} · 선언거절 ${by("refused")} · 미선언공백 ${gaps.length}/${cap}`,
+      `  답이 온다 ${answered}: core ${by("core")} · framework ${by("framework")}` +
+        ` · renderer ${by("renderer")} · 부재선언 ${by("absent")}`,
     );
-    // 답하지 않는 총수도 함께 낸다 — 미선언만 보면 사유를 적는 것이 수를 줄인 것처럼 보인다.
-    // absent 도 여기 든다: 선언됐을 뿐 그 이름을 부른 쪽은 값을 못 받는다.
-    console.log(`  답하지 않는 이름 합계: ${by("absent") + by("refused") + gaps.length}`);
+    console.log(
+      `  답이 없다 ${unanswered.length}/${unansweredCap}: 선언거절 ${by("refused")}` +
+        ` · 미선언공백 ${gaps.length}/${cap}`,
+    );
     // 공백은 어디로 갚히는지까지 보여야 계획이 된다 — 수만 보면 부채인지 설계인지 모른다.
     const ledger = JSON.parse(readFileSync(LEDGER, "utf8"));
     const plan = {};

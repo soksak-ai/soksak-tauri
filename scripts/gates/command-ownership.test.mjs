@@ -4,11 +4,14 @@
 // 에서 아무도 답하지 않는데, 그 사실을 세는 자리가 없었기 때문이다. 그러니 이 게이트가 스스로
 // 무너지지 않는 것이 곧 그 수의 신뢰다.
 
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { duplicateProblems, frameworkTable, survey, verify } from "./command-ownership.mjs";
+
+/** 실제 장부 — 상한만 바꿔 심을 때 나머지 항목을 그대로 쓴다. */
+const LEDGER_PATH = join(process.cwd(), "scripts/gates/command-ownership.json");
 
 function ledgerAt(doc) {
   const dir = mkdtempSync(join(tmpdir(), "cmd-own-"));
@@ -198,5 +201,61 @@ describe("기계 출력", () => {
     const gate = join(process.cwd(), "scripts/gates/command-ownership.mjs");
     const r = spawnSync(process.execPath, [gate, "--json"], { encoding: "utf8" });
     expect(() => JSON.parse(r.stdout)).not.toThrow();
+  });
+});
+
+describe("답하지 않는 이름의 래칫", () => {
+  // 사유를 적는 것은 진전이지만 **답이 아니다.** 부른 쪽에서 "선언거절"과 "미선언공백"은
+  // 같은 사실이다 — 값을 못 받는다. 래칫이 미선언만 세면 사유를 적는 순간 그 이름은 세는
+  // 자리에서 사라지고, 영원히 안 답해도 게이트는 통과한다.
+  //
+  // 실측(2026-07-30): sidecar_open 이 "선언거절"에 앉아 게이트를 통과하는 동안, 두 번째
+  // 프레임워크의 렌더러는 그 이름을 139번 부르고 139번 NOT_SERVED_HERE 를 받았다. 브라우저
+  // 엔진이 뜨지 못했고 사용자 화면에는 "엔진 서피스 생성 실패"만 남았다.
+  it("선언거절도 답하지 않는 수에 든다", () => {
+    const v = verify();
+    const refused = v.rows.filter((r) => r.owner === "refused").length;
+    expect(refused).toBeGreaterThan(0);
+    expect(v.unanswered.length).toBe(refused + v.gaps.length);
+  });
+
+  it("답하지 않는 수가 상한을 넘으면 실패한다", () => {
+    const doc = JSON.parse(readFileSync(LEDGER_PATH, "utf8"));
+    const tight = ledgerAt({ ...doc, unansweredCap: 0 });
+    const v = verify(undefined, tight);
+    expect(v.problems.some((p) => p.includes("답하지 않는"))).toBe(true);
+  });
+
+  // 상한이 실측보다 크면 그것은 다음 사람이 채워도 되는 빈자리다 — 래칫이 아니다.
+  it("상한이 실측보다 크면 줄이라고 말한다", () => {
+    const doc = JSON.parse(readFileSync(LEDGER_PATH, "utf8"));
+    const loose = ledgerAt({ ...doc, unansweredCap: 9999 });
+    const v = verify(undefined, loose);
+    expect(v.problems.some((p) => p.includes("상한을 줄여라"))).toBe(true);
+  });
+});
+
+describe("두 장부는 한 벌이다", () => {
+  // 프레임워크 갈래를 두 곳이 선언한다: 이식 장부(cored_ledger.rs FRAMEWORK_FAMILIES)가
+  // "이 접두는 영영 안 옮긴다"고 세고, 프레임워크 표(native/index.cjs BRANCHES)가 "이 접두는
+  // 내가 받는다"고 고른다. 갈라지면 그 사이 이름은 **어느 쪽에도 안 잡힌다** — 장부는 옮길
+  // 것에서 빼고, 표는 안 받아 소켓으로 새고, cored 는 안 서빙한다.
+  //
+  // index.cjs 는 이 위험을 주석으로 적어 뒀지만 지키는 자리가 없었다. 여기가 그 자리다.
+  it("프레임워크 갈래 선언이 양쪽에서 같다", () => {
+    const list = (src, re) => [...src.matchAll(re)].map((m) => m[1]).sort();
+    const js = readFileSync(join(process.cwd(), "frameworks/electron/native/index.cjs"), "utf8");
+    const rs = readFileSync(join(process.cwd(), "frameworks/tauri/src/cored_ledger.rs"), "utf8");
+    const branches = list(
+      js.match(/const BRANCHES = \[([^\]]*)\]/)?.[1] ?? "",
+      /"([a-z_]+)"/g,
+    );
+    const families = list(
+      rs.match(/const FRAMEWORK_FAMILIES: &\[&str\] = &\[([^\]]*)\]/)?.[1] ?? "",
+      /"([a-z_]+)"/g,
+    );
+    // 오라클 생존 — 한쪽이라도 못 읽으면 빈 배열끼리 같아져 통과로 위장한다.
+    expect(branches.length).toBeGreaterThan(0);
+    expect(families).toEqual(branches);
   });
 });
