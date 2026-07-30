@@ -287,8 +287,9 @@ pub const UNSERVED: &[Unserved] = &[
         blocked_by: "교체 대상이 곧 호출을 받은 프로세스다. 몸이 app.restart() 한 줄인데 그것은 `!` 라 \
                      Ok 경로가 없다 — cored 가 같은 이름을 서빙하면 되살아나는 것은 cored 고, 앱은 \
                      그대로 옛 판으로 돈다. 그 답은 성공이라 호출자는 새 판이 떴다고 믿는다. 재기동이 \
-                     지나야 하는 종료 사다리 일곱(PtyManager·daemon·ProcessManager·ServiceManager· \
-                     WsManager·ipc·sidecar) 도 전부 앱 프로세스의 상태 위에 있다.",
+                     지나야 하는 종료 사다리도 전부 앱 프로세스의 상태 위에 있다(PtyManager·daemon· \
+                     ProcessManager·ServiceManager·ipc·sidecar — ws 는 몸이 soksak-net 으로 \
+                     나가 그 크레이트가 자기 세션을 거둔다).",
     },
     Unserved {
         name: "sidecar_close",

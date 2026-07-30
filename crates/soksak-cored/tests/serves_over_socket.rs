@@ -489,7 +489,6 @@ fn what_it_refuses_is_discoverable_with_the_reason() {
         "sidecar_ensure",
         "clipboard_read",
         "media_proxy_info",
-        "ipc_last_project_window",
         "unit_dev_set",
         "unit_dev_remove",
         "plugin_install_git",
