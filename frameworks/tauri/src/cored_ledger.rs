@@ -39,8 +39,10 @@ impl Lane {
 
 /// 창을 소유하는 명령 가족 — 이름 접두로 판정한다.
 ///
-/// 접두만으로 창 소유를 다 잡지는 못한다(그래서 아래에서 주입 타입도 본다). 다만 이 가족들은
-/// **이름 자체가 프레임워크 표면**이라 본문을 안 봐도 확정이고, Electron 어댑터가 이미 그렇게 다룬다.
+/// **이 목록이 프레임워크 소유의 유일한 판정 기준이다.** 이름 자체가 프레임워크 표면이라 본문을
+/// 안 봐도 확정이고, 두 번째 프레임워크의 표가 **같은 목록으로** 자기 몫을 고른다
+/// (frameworks/electron/native/index.cjs BRANCHES). 두 목록이 같다는 것은 게이트가 지킨다
+/// (scripts/gates/command-ownership.test.mjs "두 장부는 한 벌이다").
 // 프레임워크 갈래 — 이 접두사를 가진 명령은 창을 쥐므로 다른 프로세스로 가지 않는다.
 //
 // **멤버 없는 갈래를 미리 선언하지 않는다.** 앞을 내다본 선언은 그 자체가 결정이고, 그 이름의
@@ -49,17 +51,27 @@ impl Lane {
 // 대상이 생겼을 때 넣는다.
 const FRAMEWORK_FAMILIES: &[&str] = &["webview_", "engine_", "titlebar_", "window_"];
 
-/// 창을 직접 쥐는 주입 타입. 이것이 있으면 그 명령은 창의 것이다.
-const WINDOW_TYPES: &[&str] = &["Window", "WebviewWindow", "Webview"];
-
 /// 한 명령의 갈 곳을 판정한다.
+///
+/// **framework 는 이름으로만 정해진다.** 한때 시그니처가 창을 주입받으면(`Window`) 그것도
+/// framework 로 셌는데, 그 규칙이 이 장부를 거짓말하게 만들었다.
+///
+/// 두 번째 프레임워크는 **이름 접두**로 자기 몫을 고른다(frameworks/electron/native/index.cjs
+/// BRANCHES). 가족 밖 이름은 그 표에 안 걸려 소켓으로 새는데 cored 도 안 서빙한다. 그런데 이
+/// 장부는 그 이름을 "프레임워크가 답할 몫"으로 세어 이식 대상에서 뺐다 — **아무도 안 가진
+/// 명령이 다 옮긴 것처럼 세어졌다.** 실측(2026-07-30): sidecar_open·sidecar_send·
+/// process_reclaim_window·daemon_start 넷이 그렇게 빠져 있었고, 그동안 두 번째 프레임워크의
+/// 렌더러는 sidecar_open 을 139번 부르고 139번 거절당했다.
+///
+/// 창을 주입받는다는 것이 창의 개념이라는 뜻은 아니다. 사이드카는 OS 프로세스이고 창은 그
+/// 사건을 돌려줄 **주소**로만 쓰인다 — 그 차이를 시그니처는 말하지 못한다. 그래서 주입은
+/// 소유의 증거가 아니라 **결합의 증거**로 읽고, state-bound 로 보낸다(그 갈래의 뜻 그대로:
+/// 프레임워크 객체에 묶였다). 옮길 때 그 결합을 푸는 것이 곧 이식이다.
 pub(crate) fn lane_of(cmd: &AppCommand, served: &[&str]) -> Lane {
     if served.contains(&cmd.name.as_str()) {
         return Lane::Served;
     }
-    if FRAMEWORK_FAMILIES.iter().any(|p| cmd.name.starts_with(p))
-        || cmd.injected.iter().any(|t| WINDOW_TYPES.contains(&t.as_str()))
-    {
+    if FRAMEWORK_FAMILIES.iter().any(|p| cmd.name.starts_with(p)) {
         return Lane::Framework;
     }
     if !cmd.injected.is_empty() {
@@ -194,10 +206,12 @@ mod tests {
         assert_eq!(lane_of(&cmd("themes_scan", &[]), &served), Lane::Served);
         // 이름이 곧 프레임워크 표면인 가족.
         assert_eq!(lane_of(&cmd("webview_list", &[]), &served), Lane::Framework);
-        // 창을 직접 쥐면 이름과 무관하게 프레임워크의 것이다.
+        // 창을 주입받아도 이름이 가족이 아니면 프레임워크의 것이 아니다 — 주입은 결합의
+        // 증거이지 소유의 증거가 아니다. 두 번째 프레임워크는 이름으로 고르므로, 여기서
+        // framework 로 세면 그 이름은 어느 쪽도 안 가진 채 다 옮긴 것으로 세어진다.
         assert_eq!(
             lane_of(&cmd("term_exec", &["Window"]), &served),
-            Lane::Framework
+            Lane::StateBound
         );
         // 앱 핸들·관리 상태는 계약이 푸는 축.
         assert_eq!(

@@ -19,7 +19,15 @@ use super::*;
 ///
 /// 이 갈래는 "관리 상태·앱 핸들에 묶였다"는 1차 판정일 뿐이라, 계약(WindowOracle·
 /// ActivitySink·CommandDispatch)이 풀면 open 이나 served 로 내려간다. 그때 이 수를 함께 내린다.
-const STATE_BOUND_UNANSWERED: usize = 27;
+///
+/// **2026-07-30 재입법 27 → 30.** `lane_of` 가 시그니처의 창 주입만 보고 framework 로 세던
+/// 규칙을 걷어냈다. 그 규칙 아래에서는 가족 밖 이름이 "프레임워크가 답할 몫"으로 세어져
+/// 이식 대상에서 빠졌는데, 두 번째 프레임워크는 **이름**으로 자기 몫을 고르므로 그 이름을
+/// 받지 않는다 — 아무도 안 가진 채로 다 옮긴 것처럼 세어졌다. 돌아온 셋은
+/// `daemon_start`·`project_claim`·`project_release` 다.
+///
+/// 수가 오른 것은 기준을 낮춘 것이 아니라 숨어 있던 셋을 세기 시작한 것이다.
+const STATE_BOUND_UNANSWERED: usize = 30;
 
 /// state-bound 갈래에서 아직 아무 답도 없는 이름들.
 fn state_bound_unanswered() -> Vec<String> {
