@@ -17,14 +17,6 @@ pub struct Unserved {
 /// 옮기려다 막힌 것들. 여기 있는 이름이 표로 올라가려면 사유가 먼저 사라져야 한다.
 pub const UNSERVED: &[Unserved] = &[
     Unserved {
-        name: "data_stats",
-        blocked_by: "저장소의 사실만 답하는 것처럼 보이지만 절반이 **프로세스 전역**이다 — 힙 상한(soft/hard)과 \
-                     SQLite 메모리 사용량·최고치는 sqlite3_memory_used/_highwater 로 이 프로세스의 것이고, 부팅 \
-                     게이트와 SQLite 자기 로그도 이 프로세스가 설치한 것이다. 이 명령의 목적이 '앱이 무엇에 \
-                     굶었는가'라서, cored 가 답하면 cored 의 힙을 답하고 모양이 같아 구분되지 않는다. 옮기려면 \
-                     답에 '어느 프로세스의 것인가'를 실어야 하고, 그것은 같은 이름의 다른 계약이다.",
-    },
-    Unserved {
         name: "sidecar_open",
         blocked_by: "사이드카를 띄우는 일은 프로세스지만 이 둘의 몸은 창이다 — 동적 적재로 붙은 표면을 창의 \
                      콘텐츠 뷰에 얹고, 회신을 창 채널로 흘린다. 그 셋(동적 적재·네이티브 뷰·창 채널)이 전부 \

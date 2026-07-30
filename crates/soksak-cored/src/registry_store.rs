@@ -414,3 +414,20 @@ pub(crate) fn run_data_kv_set(ctx: &Ctx, params: &Value) -> Outcome {
         Ok(Value::Null)
     })
 }
+
+/// 저장소 실황 — **누구의 힙인지 답에 실린다.**
+///
+/// 이 값들의 절반은 저장소가 아니라 답한 프로세스의 것이다(힙 상한·SQLite 메모리 사용량·부팅
+/// 게이트·자기 로그). 그것을 안 실으면 두 프로세스의 답이 같은 모양이라, "앱이 무엇에 굶었는가"를
+/// 물은 쪽이 남의 힙을 자기 것으로 읽는다. 벽으로 적혀 있던 것이 바로 그 사실이었고, 그것은
+/// 못 옮길 이유가 아니라 **답에 빠진 필드**였다.
+pub(crate) fn run_data_stats(ctx: &Ctx, _params: &Value) -> Outcome {
+    match ctx
+        .open_db()
+        .and_then(|c| soksak_store::integrity::stats(&c, "cored"))
+        .and_then(|s| serde_json::to_value(s).map_err(|e| e.to_string()))
+    {
+        Ok(v) => Outcome::Ok(v),
+        Err(e) => Outcome::Failed(e),
+    }
+}

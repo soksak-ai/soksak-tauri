@@ -931,6 +931,14 @@ pub const COMMANDS: &[Command] = &[
         run: run_data_restore,
     },
     Command {
+        // 실황 — 답에 role·pid 가 실린다. 값의 절반이 답한 프로세스의 것이라, 그것 없이는
+        // 두 프로세스의 답이 같은 모양이고 부른 쪽이 남의 힙을 자기 것으로 읽는다.
+        name: "data_stats",
+        args: &[],
+        returns: "{ role, pid, sqliteVersion, memoryUsed, ... }",
+        run: run_data_stats,
+    },
+    Command {
         name: "data_verify",
         args: &[],
         returns: "string[] — 진단 소견",

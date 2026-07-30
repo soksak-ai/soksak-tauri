@@ -203,7 +203,7 @@ pub fn failure_evidence(conn: &Connection, process_facts: &str) -> String {
             .collect();
         format!("{proc} | SQLite 로그(최근 {}줄): {}", tail.len(), tail.join(" ; "))
     };
-    match stats(conn) {
+    match stats(conn, "evidence") {
         Ok(s) => format!(
             "진단 {}건(첫 항목: {head}) | SQLite {} 사용 {}B 최고 {}B 한도 soft {} hard {} | 페이지 {}x{} free {} | records 인덱스 {} | {proc}",
             f.len(),
@@ -310,6 +310,12 @@ fn reindex_each(conn: &Connection) -> Vec<String> {
 // 그 조립이 이 구조체와 갈리는 순간 같은 이름이 두 모양으로 답한다.
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct Stats {
+    /// **누구의 힙인가.** 이 값들의 절반은 저장소가 아니라 답한 프로세스의 것이다(힙 상한·
+    /// SQLite 메모리 사용량·부팅 게이트·자기 로그). 그것을 안 실으면 두 프로세스의 답이 같은
+    /// 모양이라 "앱이 무엇에 굶었는가"를 물은 쪽이 남의 힙을 자기 것으로 읽는다.
+    pub role: String,
+    /// 답한 프로세스의 pid — role 만으로는 같은 역할이 둘일 때 못 가린다.
+    pub pid: u32,
     /// 부팅 쓰기 게이트가 남긴 판정(관측면) — 게이트는 부팅 때 한 번 돌고 사라진다. 그 결과를
     /// 읽을 수 없으면 "돌았는지" 조차 확인할 수 없어, 자가치유가 있었다고 주장만 하게 된다.
     pub boot_gate: String,
@@ -388,7 +394,7 @@ fn boot_gate_verdict() -> String {
         .unwrap_or_else(|_| "?".to_string())
 }
 
-pub fn stats(conn: &Connection) -> Result<Stats, String> {
+pub fn stats(conn: &Connection, role: &str) -> Result<Stats, String> {
     let one = |sql: &str| -> i64 {
         conn.query_row(sql, [], |r| r.get::<_, i64>(0))
             .unwrap_or(-1)
@@ -397,6 +403,8 @@ pub fn stats(conn: &Connection) -> Result<Stats, String> {
         .query_row("SELECT sqlite_version()", [], |r| r.get(0))
         .map_err(|e| e.to_string())?;
     Ok(Stats {
+        role: role.to_string(),
+        pid: std::process::id(),
         boot_gate: boot_gate_verdict(),
         sqlite_log: recent_sqlite_log(),
         sqlite_version: version,

@@ -597,7 +597,8 @@ pub fn data_verify(state: State<'_, DbState>) -> Result<Vec<String>, String> {
 #[tauri::command]
 pub fn data_stats(state: State<'_, DbState>) -> Result<soksak_store::integrity::Stats, String> {
     store_op(&state, "data_stats", serde_json::json!({}), |c| {
-        soksak_store::integrity::stats(c)
+        // 이 프로세스가 무엇인지 답에 실린다 — 힙 값의 절반은 저장소가 아니라 답한 쪽의 것이다.
+        soksak_store::integrity::stats(c, "app")
     })
 }
 
