@@ -78,7 +78,7 @@ frameworks/tauri/src/sidecar.rs 166
 frameworks/tauri/src/skillgen.rs 16
 frameworks/tauri/src/stream_sink.rs 21
 frameworks/tauri/src/titlebar.rs 218
-frameworks/tauri/src/unit_dev.rs 414
+frameworks/tauri/src/unit_dev.rs 59
 frameworks/tauri/src/unit_installer.rs 55
 frameworks/tauri/src/updater.rs 42
 frameworks/tauri/src/watcher.rs 15

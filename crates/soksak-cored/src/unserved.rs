@@ -97,19 +97,6 @@ pub const UNSERVED: &[Unserved] = &[
                      모이기 전에는 이 이름을 나눠 답할 수 없다.",
     },
     Unserved {
-        name: "unit_dev_set",
-        blocked_by: "잠금은 더는 벽이 아니다 — 프로세스 안의 Mutex 를 커널 파일 잠금으로 바꿔서 \
-                     (soksak_core::file_lock) 두 프로세스가 같은 config 를 겹쳐 쓰지 못한다. 남은 것은 \
-                     **몸의 자리**다: read-modify-write 와 dev identity 게이트가 아직 프레임워크 폴더에 \
-                     산다(읽기·검증 규칙만 soksak-core::unit_dev 에 있다). 그 절반을 코어로 마저 옮기면 \
-                     이 이름은 배선만 남는다 — 옮기지 않고 서빙하면 같은 config 를 두 코드가 쓰게 된다.",
-    },
-    Unserved {
-        name: "unit_dev_remove",
-        blocked_by: "형제 unit_dev_set 과 같은 자리다. 잠금은 파일 잠금으로 바뀌어 더는 벽이 아니고, \
-                     남은 것은 read-modify-write 의 몸이 아직 프레임워크 폴더에 있다는 사실뿐이다.",
-    },
-    Unserved {
         name: "plugin_install_git",
         blocked_by: "명령의 몸이 원격 트리를 가져오는 것 자체다 — git clone 스폰을 빼면 남는 일이 없다. \
                      그 스폰은 core-git-scan 게이트가 plugins.rs 한 파일로 봉인해 두었고(ALLOWLIST 단 \

@@ -19,6 +19,8 @@ pub mod backup_ring;
 
 pub mod registry_install;
 
+pub mod registry_unit_dev;
+
 pub mod registry_schedule;
 
 pub mod registry_service;

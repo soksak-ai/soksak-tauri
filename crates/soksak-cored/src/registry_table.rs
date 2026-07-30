@@ -10,6 +10,7 @@ use crate::registry_encrypt::{
     run_data_encrypt_change_recovery, run_data_encrypt_enable, run_data_encrypt_recover,
     run_data_encrypt_rotate, run_data_encrypt_status,
 };
+use crate::registry_unit_dev::{run_unit_dev_remove, run_unit_dev_set};
 use crate::registry_install::{
     run_unit_install_begin, run_unit_install_commit, run_unit_install_read_utf8,
     run_unit_install_rollback, run_unit_install_stage,
@@ -95,6 +96,27 @@ pub const COMMANDS: &[Command] = &[
         ],
         returns: "null",
         run: run_download_verify,
+    },
+    Command {
+        // 개발 선언 — 규칙은 코어가, 잠금은 커널이 진다. 프로세스 안의 Mutex 는 프로세스 둘을
+        // 못 막는다: 겹친 쓰기가 남의 선언을 지운 채로 성공을 답한다.
+        name: "unit_dev_set",
+        args: &[
+            Arg { name: "kind", ty: "string", required: REQ },
+            Arg { name: "id", ty: "string", required: REQ },
+            Arg { name: "source", ty: "string", required: REQ },
+        ],
+        returns: "UnitDevSource",
+        run: run_unit_dev_set,
+    },
+    Command {
+        name: "unit_dev_remove",
+        args: &[
+            Arg { name: "kind", ty: "string", required: REQ },
+            Arg { name: "id", ty: "string", required: REQ },
+        ],
+        returns: "bool — 있던 선언을 지웠는가",
+        run: run_unit_dev_remove,
     },
     Command {
         // 유닛 설치 — 다섯이 한 원장을 공유한다. **함께** 서빙해야 begin 과 commit 이 같은

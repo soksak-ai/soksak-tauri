@@ -361,7 +361,7 @@ pub fn plugin_dev_new(id: String) -> Result<PluginInstallResult, String> {
     let base = crate::identity::ambient().path("workspaces/plugins");
     let result = plugin_dev_new_in(&base, &id)?;
     let dir = PathBuf::from(&result.dir);
-    if let Err(e) = crate::unit_dev::set_source("plugin", &id, &dir) {
+    if let Err(e) = crate::unit_dev::set_source(crate::identity::ambient().home(), "plugin", &id, &dir) {
         // source 선언까지가 한 트랜잭션이다. 선택되지 않은 반쪽 workspace를 남기지 않는다.
         let _ = std::fs::remove_dir_all(&dir);
         return Err(e);
@@ -781,7 +781,7 @@ pub fn sidecar_dev_new(name: String, interface: Option<String>) -> Result<Plugin
     let base = crate::identity::ambient().path("workspaces/sidecars");
     let result = sidecar_dev_new_in(&base, &name, interface.as_deref())?;
     let dir = PathBuf::from(&result.dir);
-    if let Err(e) = crate::unit_dev::set_source("sidecar", &result.dir_name, &dir) {
+    if let Err(e) = crate::unit_dev::set_source(crate::identity::ambient().home(), "sidecar", &result.dir_name, &dir) {
         let _ = std::fs::remove_dir_all(&dir);
         return Err(e);
     }
@@ -1100,7 +1100,7 @@ pub fn plugin_dev_new2(name: String) -> Result<PluginInstallResult, String> {
     let base = crate::identity::ambient().path("workspaces/plugins");
     let result = plugin_dev_new2_in(&base, &name)?;
     let dir = PathBuf::from(&result.dir);
-    if let Err(e) = crate::unit_dev::set_source("plugin", &result.dir_name, &dir) {
+    if let Err(e) = crate::unit_dev::set_source(crate::identity::ambient().home(), "plugin", &result.dir_name, &dir) {
         // source 선언까지가 한 트랜잭션이다. 선택되지 않은 반쪽 workspace를 남기지 않는다.
         let _ = std::fs::remove_dir_all(&dir);
         return Err(e);
