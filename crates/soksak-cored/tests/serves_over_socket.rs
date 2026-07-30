@@ -485,7 +485,6 @@ fn what_it_refuses_is_discoverable_with_the_reason() {
         "secret_status",
         "project_owners",
         "net_http_request",
-        "download_verify",
         "app_relaunch",
         "sidecar_close",
         "sidecar_ensure",

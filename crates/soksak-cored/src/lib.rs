@@ -12,4 +12,6 @@ pub mod pty;
 pub mod streams;
 pub mod ledger;
 pub mod registry;
+// 거절 사유 표 — 사유가 코드보다 길어 따로 산다(registry.rs 가 재수출한다).
+pub mod unserved;
 pub mod wire;

@@ -46,15 +46,10 @@ pub fn probe_binary(bin: String, args: Vec<String>) -> ProbeResult {
 // fetch reach — url 다운로드 후 sha256 검증. 불일치/실패 시 dest 를 쓰지 않고 Err(무결성 우선).
 #[tauri::command]
 pub fn download_verify(url: String, dest: String, sha256: String) -> Result<(), String> {
+    // 판정과 쓰기는 코어가 진다 — cored 도 같은 함수를 부른다. 여기 사본을 두면 두 프로세스가
+    // 같은 이름에 다른 규칙을 갖고, 그 차이는 오류가 아니라 **다른 파일**로 나타난다.
     let body = soksak_net::transport::honest_get_bytes(&url)?;
-    verify_sha256(&body, &sha256)?;
-    fs::write(&dest, &body).map_err(|e| e.to_string())?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&dest, fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
-    }
-    Ok(())
+    soksak_core::artifact_integrity::verify_and_write(&body, &sha256, std::path::Path::new(&dest))
 }
 
 #[derive(serde::Serialize)]

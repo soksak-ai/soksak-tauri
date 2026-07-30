@@ -43,6 +43,28 @@ pub fn verify_sha256(body: &[u8], expected: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// 받은 바이트를 핀과 대조하고, 맞을 때만 실행물로 앉힌다.
+///
+/// 검증과 쓰기가 갈라져 있으면 그 사이에 한 걸음이 끼어들 수 있고, 그때 디스크에 남는 것은
+/// **검증되지 않은 바이트**다. 한 자리에서 붙여 두면 그 틈이 없다.
+///
+/// 어긋나면 아무것도 안 쓴다. 반쪽 파일을 남기면 다음 실행이 그것을 정본으로 읽고, 그 실패는
+/// "내려받기가 실패했다"가 아니라 "실행물이 깨졌다"로 나타난다.
+///
+/// 실행 비트를 여기서 준다 — 내려받는 것이 실행물이기 때문이다. 다음 걸음에 미루면 비트 없는
+/// 파일이 "없는 파일"처럼 실패하고, 그 사유는 경로 오류로 읽힌다.
+pub fn verify_and_write(body: &[u8], expected: &str, dest: &Path) -> Result<(), String> {
+    verify_sha256(body, expected)?;
+    std::fs::write(dest, body).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dest, std::fs::Permissions::from_mode(0o755))
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[derive(serde::Serialize)]
 pub struct BinaryIntegrity {
     pub present: bool, // bin 이 존재 + 유효(dangling 아님)
@@ -194,5 +216,54 @@ mod one_symlink_rule_tests {
             );
         }
         let _ = std::fs::remove_file(&file);
+    }
+}
+
+#[cfg(test)]
+mod verify_and_write_tests {
+    use super::*;
+
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("soksak-vw-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("임시 디렉터리");
+        dir.join("bin")
+    }
+
+    /// 어긋난 핀은 이름을 달고 거절하고 **아무것도 안 남긴다.**
+    ///
+    /// 반쪽 파일을 남기면 다음 실행이 그것을 정본으로 읽는다 — 그 실패는 "내려받기가 실패했다"가
+    /// 아니라 "실행물이 깨졌다"로 나타나고, 고치는 자리가 완전히 달라진다.
+    #[test]
+    fn a_pin_that_does_not_match_writes_nothing() {
+        let dest = scratch("refuse");
+        let err = verify_and_write(b"\x01\x02\x03", &sha256_hex(b"other"), &dest)
+            .expect_err("어긋난 핀은 통과하지 못한다");
+        assert!(err.contains("sha256"), "사유가 핀을 말하지 않는다: {err}");
+        assert!(!dest.exists(), "거절했는데 파일이 남았다");
+    }
+
+    /// 모양이 아닌 핀도 같은 자리에서 걸린다 — 짧은 핀은 앞부분만 맞으면 통과하는 문이 된다.
+    #[test]
+    fn a_pin_of_the_wrong_shape_is_refused_before_hashing() {
+        let dest = scratch("shape");
+        assert!(verify_and_write(b"x", "deadbeef", &dest).is_err());
+        assert!(!dest.exists());
+    }
+
+    #[test]
+    fn a_matching_pin_writes_the_bytes_and_makes_them_runnable() {
+        let dest = scratch("ok");
+        let body = b"soksak";
+        verify_and_write(body, &sha256_hex(body), &dest).expect("맞는 핀은 쓴다");
+        assert_eq!(std::fs::read(&dest).expect("읽기"), body);
+        // 내려받은 것이 실행물이다 — 비트가 없으면 다음 걸음이 "없는 파일"처럼 실패한다.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&dest).expect("메타").permissions().mode();
+            assert_eq!(mode & 0o111, 0o111, "실행 비트가 없다: {mode:o}");
+        }
+        let _ = std::fs::remove_dir_all(dest.parent().unwrap());
     }
 }

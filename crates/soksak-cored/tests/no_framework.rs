@@ -40,9 +40,21 @@ fn the_dependency_tree_carries_no_framework_crate() {
     // 창을 열지도 앱 핸들을 쥐지도 않고, 어느 프로세스가 같은 경로를 감시하든 같은 사건을
     // 받는다. cored 가 watch_dir 을 서빙하려면 그 핸들을 져야 한다 — 규칙은 soksak-watch 가
     // 소유하고 뿌리는 자리만 프로세스가 준다(앱=창 emit, 헬퍼=방송). 코어에는 여전히 금지다.
+    // tokio 도 같은 판정으로 통과한다(2026-07-30). **비동기 실행기는 프레임워크가 아니다**:
+    // 창을 열지도 앱 핸들을 쥐지도 않고, 어느 프로세스가 돌리든 같은 바이트를 같은 답으로
+    // 받는다. 이 목록의 기준을 그대로 적용하면 tokio 는 걸리지 않는데도 이름으로 막혀 있었고,
+    // 그 사이 soksak-net 은 자기 헤더에 "tokio 는 자원"이라고 적었다 — 한 저장소가 같은
+    // 크레이트를 두 규칙으로 판정하고 있었다.
+    //
+    // 실측 결과: HTTP 가 프레임워크 능력으로 남아 두 번째 프레임워크는 런타임 의존을 내려받지
+    // 못했다(download_verify 가 NOT_SERVED_HERE). 이 프로세스의 동시성 모형은 안 바뀐다 —
+    // soksak-net 이 sync 표면만 노출하고 런타임을 자기 안에 가둔다. 이 크레이트는 그 전에도
+    // UDP(net_udp_request)를 지고 있었다.
+    //
+    // 쓸 곳 없이 미리 열지 않았다: 이 이름이 풀린 커밋이 곧 download_verify 를 서빙하는 커밋이다.
     for banned in [
         "tauri", "wry", "tao", "objc2", "block2", "libloading",
-        "clipboard-rs", "x11rb", "windows-sys", "tokio", "interprocess", "portable-pty",
+        "clipboard-rs", "x11rb", "windows-sys", "interprocess", "portable-pty",
     ] {
         assert!(
             !names.iter().any(|n| *n == banned || n.starts_with(&format!("{banned}-"))),
