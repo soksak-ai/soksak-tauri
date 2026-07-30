@@ -25,20 +25,6 @@ pub const UNSERVED: &[Unserved] = &[
                      답에 '어느 프로세스의 것인가'를 실어야 하고, 그것은 같은 이름의 다른 계약이다.",
     },
     Unserved {
-        name: "secret_backend",
-        blocked_by: "볼트의 **몸**은 더는 벽이 아니다 — soksak-vault 는 프레임워크 밖 크레이트고 창도 앱 \
-                     핸들도 키체인도 모른다. KEK 는 KekSource 로 주입받으므로 이음매도 공개다. 막는 것은 그 \
-                     바이트를 **얻는 쪽**이고, 넷이 함께다. ① 유일한 프로덕션 출처가 OS 키체인이고 그 구현이 \
-                     keyring 을 탄다 — Windows 피처가 windows-sys 를 끌고 오는데 이 프로세스의 no_framework \
-                     게이트가 그 이름을 막는다 ② 키체인 항목이 **앱 신원 ACL** 에 결속된다: 이음매가 공개라도 \
-                     바이트를 내주는 상대는 그 신원으로 서명된 실행물뿐이라, 다른 실행물이 물으면 거절이나 \
-                     사용자 승인이 나온다 ③ 읽기가 쓰기다 — has/keys 도 ensure_open 을 지나고, 볼트 파일이 \
-                     없으면 그 자리에서 KEK 를 만들어 새 볼트를 봉인해 flush 한다. 부팅이 키체인을 건드리지 \
-                     않는 규칙(2d06843f)과 정면으로 부딪힌다 ④ 자동생성 거부 깃발(expect_vault, [R23])을 \
-                     세우는 것이 앱의 부팅이다. cored 가 자기 상태를 세우면 그 깃발이 거짓이라, 볼트가 사라진 \
-                     홈에서 손실 의심 거부가 없어지고 **빈 볼트를 새로 만들며 성공을 답한다.**",
-    },
-    Unserved {
         name: "sidecar_open",
         blocked_by: "사이드카를 띄우는 일은 프로세스지만 이 둘의 몸은 창이다 — 동적 적재로 붙은 표면을 창의 \
                      콘텐츠 뷰에 얹고, 회신을 창 채널로 흘린다. 그 셋(동적 적재·네이티브 뷰·창 채널)이 전부 \
@@ -112,18 +98,16 @@ pub const UNSERVED: &[Unserved] = &[
     },
     Unserved {
         name: "unit_dev_set",
-        blocked_by: "공유 config(development-units.json)의 read-modify-write 인데, 그 직렬화가 앱 프로세스 \
-                     안의 static WRITE_LOCK 하나다. 두 프로세스가 각자 그 Mutex 를 잡으면 서로를 못 보고, \
-                     겹친 쓰기가 남의 선언을 지운 채로 성공을 답한다. store_lock 은 이 자리를 대신하지 \
-                     못한다 — 그것은 app.data 의 쓰기 소유권이고 앱은 그것을 잡지도 않는다. 앞머리의 \
-                     dev identity 게이트까지 옮겨도 잠금은 여전히 갈라진다.",
+        blocked_by: "잠금은 더는 벽이 아니다 — 프로세스 안의 Mutex 를 커널 파일 잠금으로 바꿔서 \
+                     (soksak_core::file_lock) 두 프로세스가 같은 config 를 겹쳐 쓰지 못한다. 남은 것은 \
+                     **몸의 자리**다: read-modify-write 와 dev identity 게이트가 아직 프레임워크 폴더에 \
+                     산다(읽기·검증 규칙만 soksak-core::unit_dev 에 있다). 그 절반을 코어로 마저 옮기면 \
+                     이 이름은 배선만 남는다 — 옮기지 않고 서빙하면 같은 config 를 두 코드가 쓰게 된다.",
     },
     Unserved {
         name: "unit_dev_remove",
-        blocked_by: "지우는 것도 같은 공유 config 의 read-modify-write 이고 같은 static WRITE_LOCK 하나에 \
-                     직렬화된다(unit_dev_set 과 같은 벽). 프로세스가 둘이면 그 잠금은 서로를 모른다 — \
-                     겹치면 removed:true 를 답하면서 남의 항목까지 되살리거나 지운다. store_lock 은 \
-                     app.data 잠금이라 이 파일을 지키지 않는다.",
+        blocked_by: "형제 unit_dev_set 과 같은 자리다. 잠금은 파일 잠금으로 바뀌어 더는 벽이 아니고, \
+                     남은 것은 read-modify-write 의 몸이 아직 프레임워크 폴더에 있다는 사실뿐이다.",
     },
     Unserved {
         name: "plugin_install_git",

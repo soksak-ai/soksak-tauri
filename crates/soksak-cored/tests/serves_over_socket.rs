@@ -481,7 +481,7 @@ fn what_it_refuses_is_discoverable_with_the_reason() {
     // UNKNOWN_COMMAND 를 받는다 — "아직 안 옮겼다"와 "여기서는 못 한다"가 구분되지 않는다.
     for expected in [
         "sidecar_close",
-        "secret_backend",
+        "sidecar_ensure",
         "project_owners",
         "sidecar_open",
         "app_relaunch",

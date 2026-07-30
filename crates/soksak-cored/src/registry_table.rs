@@ -22,7 +22,7 @@ use crate::registry_service::{
     run_service_bus_push, run_service_dispatch, run_service_ledger_sync, run_service_status,
 };
 use crate::registry_secret::{
-    run_net_http_request, run_secret_delete, run_secret_has, run_secret_keys, run_secret_set, run_secret_status,
+    run_net_http_request, run_secret_backend, run_secret_delete, run_secret_has, run_secret_keys, run_secret_set, run_secret_status,
 };
 use crate::registry_daemon::{
     run_daemon_logs, run_daemon_reap, run_daemon_run_once, run_daemon_start, run_daemon_status,
@@ -278,6 +278,12 @@ pub const COMMANDS: &[Command] = &[
         args: &[Arg { name: "ns", ty: "string", required: REQ }],
         returns: "string[]",
         run: run_secret_keys,
+    },
+    Command {
+        name: "secret_backend",
+        args: &[],
+        returns: "{ backend, unlocked }",
+        run: run_secret_backend,
     },
     Command {
         name: "secret_status",

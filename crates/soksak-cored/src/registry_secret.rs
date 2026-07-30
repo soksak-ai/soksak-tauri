@@ -56,6 +56,16 @@ pub(crate) fn run_secret_status(ctx: &Ctx, _params: &Value) -> Outcome {
     }
 }
 
+/// 구 backend 조회(호환) — status 를 축약한 같은 사실이다. 형제가 답하는데 이것만 못 답하면
+/// 부른 쪽은 "볼트가 없다"로 읽는다.
+pub(crate) fn run_secret_backend(ctx: &Ctx, _params: &Value) -> Outcome {
+    let info: soksak_vault::BackendInfo = vault(ctx).status().into();
+    match serde_json::to_value(info) {
+        Ok(v) => Outcome::Ok(v),
+        Err(e) => Outcome::Failed(e.to_string()),
+    }
+}
+
 /// HTTP — 몸은 soksak-net 이 진다. 여기 남는 것은 열린 볼트를 **인자로 올리는** 한 걸음뿐이다.
 /// 규칙이 볼트를 앰비언트로 캐면 같은 코드가 프로세스마다 다른 시크릿을 집는다.
 pub(crate) fn run_net_http_request(ctx: &Ctx, params: &Value) -> Outcome {

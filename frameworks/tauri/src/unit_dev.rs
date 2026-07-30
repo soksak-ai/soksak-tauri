@@ -1,15 +1,18 @@
 // 개발 unit source 선언 — core build identity(dev/debug/release)와 독립이다.
+//
+// 공유 config 의 read-modify-write 는 **프로세스 간** 잠금 아래에서 한다. 프로세스 안의 Mutex
+// 는 프로세스 둘을 못 막는다 — 각자 자기 것을 잡고 서로를 못 보므로, 겹친 쓰기가 남의 선언을
+// 지운 채로 성공을 답한다. 그 손실은 오류로 안 보인다: 파일은 멀쩡하고 내용만 뒤로 돌아간다.
 // 각 identity 홈은 자기 config/development-units.json 을 소유하며, plugin/sidecar/kit의
 // 개발 checkout은 설치본과 분리된 절대경로로 선택한다. 경로 추측과 symlink는 허용하지 않는다.
 
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 
 const CONFIG_VERSION: u32 = 1;
 const CONFIG_FILE: &str = "development-units.json";
-static WRITE_LOCK: Mutex<()> = Mutex::new(());
+
 
 // 선언 타입은 코어가 소유한다 — 앱과 cored 가 같은 config 를 읽고 같은 명령을 서빙하므로,
 // 필드가 한 자리라도 어긋나면 한쪽만 파싱에 성공하고 그 차이는 "유닛이 없다"로 나타난다.
@@ -206,8 +209,9 @@ fn remove_in(home: &Path, kind: &str, id: &str) -> Result<bool, String> {
 }
 
 pub(crate) fn set_source(kind: &str, id: &str, source: &Path) -> Result<UnitDevSource, String> {
-    let _guard = WRITE_LOCK.lock().map_err(|e| e.to_string())?;
-    set_in(crate::identity::ambient().home(), kind, id, source)
+    let home = crate::identity::ambient().home().to_path_buf();
+    let _guard = soksak_core::file_lock::acquire(&config_path(&home))?;
+    set_in(&home, kind, id, source)
 }
 
 #[tauri::command]
@@ -246,8 +250,9 @@ pub fn unit_dev_validate_path(source: String) -> Result<String, String> {
 
 #[tauri::command]
 pub fn unit_dev_remove(kind: String, id: String) -> Result<bool, String> {
-    let _guard = WRITE_LOCK.lock().map_err(|e| e.to_string())?;
-    remove_in(crate::identity::ambient().home(), &kind, &id)
+    let home = crate::identity::ambient().home().to_path_buf();
+    let _guard = soksak_core::file_lock::acquire(&config_path(&home))?;
+    remove_in(&home, &kind, &id)
 }
 
 #[tauri::command]

@@ -41,6 +41,8 @@ pub mod seal_keys;
 pub mod secret_env;
 pub mod session;
 pub mod skillgen;
+pub mod file_lock;
+
 pub mod store_lock;
 pub mod store_open;
 pub mod stream;
