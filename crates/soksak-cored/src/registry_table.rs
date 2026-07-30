@@ -10,6 +10,7 @@ use crate::registry_encrypt::{
     run_data_encrypt_change_recovery, run_data_encrypt_enable, run_data_encrypt_recover,
     run_data_encrypt_rotate, run_data_encrypt_status,
 };
+use crate::registry_ptyd::{run_pty_daemon_restart, run_pty_daemon_upgrade};
 use crate::registry_scaffold::{
     run_plugin_dev_new, run_plugin_dev_new2, run_sidecar_dev_new,
 };
@@ -99,6 +100,20 @@ pub const COMMANDS: &[Command] = &[
         ],
         returns: "null",
         run: run_download_verify,
+    },
+    Command {
+        // 파괴적 — 살아 있는 세션을 전부 죽인다. 앞을 막는 것은 카탈로그의 danger 게이트다.
+        name: "pty_daemon_restart",
+        args: &[],
+        returns: "{ killed, pid }",
+        run: run_pty_daemon_restart,
+    },
+    Command {
+        // 무중단 판올림 — 못 지키는 상대면 시도 전에 이름을 달고 거절한다.
+        name: "pty_daemon_upgrade",
+        args: &[],
+        returns: "{ before, after, staged }",
+        run: run_pty_daemon_upgrade,
     },
     Command {
         // 새 유닛 스캐폴드 — 몸은 soksak-scaffold 가 진다. 스캐폴드와 개발 선언이 한 손이다:
@@ -766,6 +781,14 @@ pub const COMMANDS: &[Command] = &[
         run: run_control_bridge_attach,
     },
     // 창 사실 갱신. 낡은 목록으로 타겟을 고르면 죽은 창에 배달한다 — 그 오답은 조용하다.
+    Command {
+        // 이름으로 묻는 hello — 전송층 선점 응답과 같은 사실이다. 두 벌이면 어느 쪽이 참인지
+        // 부른 쪽이 못 가린다.
+        name: "ipc_hello_info",
+        args: &[],
+        returns: "{ protocol, minClientProtocol, identity, pid, startedAt, role }",
+        run: run_ipc_hello_info,
+    },
     Command {
         // 관측 — 겹친 라벨을 실패로 배우지 않게 한다. 창 복원이 저장된 w-<uuid> 를 되쓰므로
         // 한 홈을 두 프레임워크가 보면 같은 슬롯을 각자 되살린다.

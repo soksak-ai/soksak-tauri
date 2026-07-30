@@ -935,6 +935,14 @@ struct ActivityPublish {
 ///
 /// 겹침을 **실패로 배우지 않게** 한다. 배달은 이미 겹친 라벨을 이름으로 거절하지만, 그것은
 /// 부른 쪽이 이미 명령을 보낸 뒤다.
+/// 이름으로 묻는 hello — 전송층 선점 응답과 **같은 사실**이다.
+///
+/// 부르는 쪽이 규약이 아니라 답으로 위상을 알아야 한다: role 이 곧 "프레임워크와 한 프로세스인가"
+/// 이고, 이 프로세스는 백엔드만이라 framework 를 말하지 않는다(모르는 것을 지어내지 않는다).
+pub(crate) fn run_ipc_hello_info(ctx: &Ctx, _params: &Value) -> Outcome {
+    Outcome::Ok(crate::wire::hello_facts_of(ctx))
+}
+
 pub(crate) fn run_window_census(_ctx: &Ctx, _params: &Value) -> Outcome {
     Outcome::Ok(json!({ "windows": crate::control::window_census() }))
 }

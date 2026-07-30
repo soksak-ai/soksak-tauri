@@ -222,15 +222,15 @@ export function duplicateProblems(duplicates) {
   );
 }
 
-export function verify(root = ROOT, ledgerPath = LEDGER) {
-  const { rows, duplicates } = survey(root);
-  const ledger = JSON.parse(read(ledgerPath));
-  const declared = new Map(Object.entries(ledger.gaps ?? {}));
-  const gaps = rows.filter((r) => r.owner === "gap");
+/**
+ * 공백 하나하나의 판정 — **값만 받는다.**
+ *
+ * 이 규칙을 실물 트리로만 잴 수 있으면, 공백이 0 이 되는 날 그 검사가 잴 것을 잃고 깨진다
+ * (실측 2026-07-31: 미선언공백이 0 이 되면서 두 검사가 무너졌다). 갚는 일이 검사를 깨뜨리면
+ * 그 검사는 곧 꺼진다 — 심은 값으로 잰다.
+ */
+export function gapProblems(gaps, declared) {
   const problems = [];
-
-  problems.push(...duplicateProblems(duplicates));
-
   for (const g of gaps) {
     if (!declared.has(g.name)) {
       problems.push(
@@ -250,6 +250,20 @@ export function verify(root = ROOT, ledgerPath = LEDGER) {
       problems.push(`${g.name}: 갈 자리(to)가 없다 — core|framework|renderer|unserved 중 하나`);
     }
   }
+  return problems;
+}
+
+export function verify(root = ROOT, ledgerPath = LEDGER) {
+  const { rows, duplicates } = survey(root);
+  const ledger = JSON.parse(read(ledgerPath));
+  const declared = new Map(Object.entries(ledger.gaps ?? {}));
+  const gaps = rows.filter((r) => r.owner === "gap");
+  const problems = [];
+
+  problems.push(...duplicateProblems(duplicates));
+
+  problems.push(...gapProblems(gaps, declared));
+
   // 고친 것을 장부가 계속 부채로 들면 수가 거짓이 된다.
   const names = new Set(gaps.map((g) => g.name));
   for (const name of declared.keys()) {

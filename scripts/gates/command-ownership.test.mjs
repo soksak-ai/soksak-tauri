@@ -8,7 +8,9 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { duplicateProblems, frameworkTable, survey, verify } from "./command-ownership.mjs";
+import { duplicateProblems, frameworkTable, survey, verify,
+  gapProblems,
+} from "./command-ownership.mjs";
 
 /** 실제 장부 — 상한만 바꿔 심을 때 나머지 항목을 그대로 쓴다. */
 const LEDGER_PATH = join(process.cwd(), "scripts/gates/command-ownership.json");
@@ -156,22 +158,31 @@ describe("장부 대조", () => {
     expect(problems).toEqual([]);
   });
 
-  /** 선언 없는 공백은 통과하지 못한다 — 그것이 이 게이트의 존재 이유다. */
+  /** 선언 없는 공백은 통과하지 못한다 — 그것이 이 게이트의 존재 이유다.
+   *
+   * **심은 값으로 잰다.** 실물 트리로만 재면 공백이 0 이 되는 날 이 검사가 잴 것을 잃고
+   * 깨진다(실측 2026-07-31). 갚는 일이 검사를 깨뜨리면 그 검사는 곧 꺼진다. */
   it("선언되지 않은 공백은 실패한다", () => {
-    const { problems } = verify(undefined, ledgerAt({ cap: 999, gaps: {} }));
-    expect(problems.length).toBeGreaterThan(0);
-    expect(problems.join("\n")).toMatch(/장부에 없다/);
+    const problems = gapProblems([{ name: "x_gap", inTauri: true }], new Map());
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatch(/x_gap: .*장부에 없다/);
+    expect(problems[0]).toMatch(/Tauri 에는 있다/);
   });
 
   /** 사유만 있고 갈 자리가 없으면 부채가 어디로 갚히는지 아무도 모른다. */
   it("갈 자리 없는 선언은 실패한다", () => {
-    const { gaps } = verify();
-    const one = gaps[0].name;
-    const doc = { cap: 999, gaps: {} };
-    for (const g of gaps) doc.gaps[g.name] = { why: "사유가 충분히 길다", to: "core" };
-    delete doc.gaps[one].to;
-    const { problems } = verify(undefined, ledgerAt(doc));
-    expect(problems.join("\n")).toMatch(new RegExp(`${one}: 갈 자리`));
+    const declared = new Map([["x_gap", { why: "사유가 충분히 길다" }]]);
+    const problems = gapProblems([{ name: "x_gap" }], declared);
+    expect(problems.join("\n")).toMatch(/x_gap: 갈 자리/);
+    // 갈 자리가 있으면 통과한다 — 상시 실패하는 게이트는 곧 꺼진다.
+    declared.set("x_gap", { why: "사유가 충분히 길다", to: "core" });
+    expect(gapProblems([{ name: "x_gap" }], declared)).toEqual([]);
+  });
+
+  /** 짧은 사유는 사유가 아니다. */
+  it("사유가 없거나 너무 짧으면 실패한다", () => {
+    const declared = new Map([["x_gap", { why: "짧다", to: "core" }]]);
+    expect(gapProblems([{ name: "x_gap" }], declared).join("\n")).toMatch(/사유가 없다/);
   });
 
   /** 고친 것을 장부가 계속 부채로 들면 그 수가 거짓이 된다. */

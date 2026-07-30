@@ -31,3 +31,50 @@ pub(crate) fn run_ipc_last_project_window(_ctx: &Ctx, _params: &Value) -> Outcom
         None => Value::Null,
     })
 }
+
+/// 데몬 재시작 — 파괴적이다(살아 있는 세션을 전부 죽인다). 앞을 막는 것은 카탈로그의 danger
+/// 게이트이고, 이 자리는 그 결정이 내려진 뒤의 실행이다.
+#[cfg(unix)]
+pub(crate) fn run_pty_daemon_restart(ctx: &Ctx, _params: &Value) -> Outcome {
+    let link = soksak_core::ptyd::Link::new(ctx.identity().clone(), None);
+    match soksak_core::ptyd::daemon_restart(&link) {
+        Ok(v) => Outcome::Ok(v),
+        Err(e) => Outcome::Failed(e),
+    }
+}
+
+#[cfg(not(unix))]
+pub(crate) fn run_pty_daemon_restart(_ctx: &Ctx, _params: &Value) -> Outcome {
+    Outcome::Failed("이 세대에서 PTY 데몬은 유닉스 전용입니다".into())
+}
+
+/// 무중단 판올림 — 라이브 세션을 죽이지 않는다. 못 지키는 상대면 시도 전에 이름을 달고
+/// 거절하고, 그 사실을 원장에 남긴다(원장은 프로세스마다 다르므로 규칙 밖에서 붙인다).
+#[cfg(unix)]
+pub(crate) fn run_pty_daemon_upgrade(ctx: &Ctx, _params: &Value) -> Outcome {
+    let link = soksak_core::ptyd::Link::new(ctx.identity().clone(), None);
+    match soksak_core::ptyd::daemon_upgrade(
+        &link,
+        ctx.identity().home(),
+        None,
+        std::time::Duration::from_millis(400),
+    ) {
+        Ok(v) => Outcome::Ok(v),
+        Err(why) => {
+            crate::control::broadcast(
+                "activity",
+                serde_json::json!({
+                    "kind": "pty.daemon.upgrade.refused",
+                    "ns": "core",
+                    "payload": { "reason": why },
+                }),
+            );
+            Outcome::Failed(why)
+        }
+    }
+}
+
+#[cfg(not(unix))]
+pub(crate) fn run_pty_daemon_upgrade(_ctx: &Ctx, _params: &Value) -> Outcome {
+    Outcome::Failed("이 세대에서 PTY 데몬은 유닉스 전용입니다".into())
+}

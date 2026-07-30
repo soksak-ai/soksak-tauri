@@ -62,6 +62,12 @@ fn started_at_ms() -> u64 {
 ///
 /// `framework` 만 없다. 이 프로세스에는 프레임워크가 없고, 모르는 것을 말하지 않는 것이 이
 /// 축의 규칙이다 — `role: "cored"` 가 그 사실을 이미 말한다.
+/// 이 프로세스가 무엇인가 — 판·정체성·역할. 전송층이 선점 응답으로 쓰고, 이름으로 물어도
+/// **같은 사실**이 나온다(두 벌이면 어느 쪽이 참인지 부른 쪽이 못 가린다).
+pub fn hello_facts_of(ctx: &Ctx) -> Value {
+    hello_facts(ctx)
+}
+
 fn hello_facts(ctx: &Ctx) -> Value {
     json!({
         "protocol": SOCKET_PROTOCOL_VERSION,

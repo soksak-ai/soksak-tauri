@@ -964,3 +964,53 @@ pub fn daemon_status(link: &Link) -> serde_json::Value {
         "stagedPath": staged.to_string_lossy(),
     })
 }
+
+/// 데몬 재시작 — **파괴적이다.** 살아 있는 세션을 전부 죽인다.
+///
+/// 부르는 쪽이 그 사실을 알아야 하므로 카탈로그의 danger 게이트가 앞을 막는다. 여기서는
+/// 죽였는지와 새 pid 를 값으로 답한다: "했다"만 답하면 안 죽었는데 죽었다고 읽힌다.
+pub fn daemon_restart(link: &Link) -> Result<serde_json::Value, String> {
+    let killed = link
+        .request(&soksak_spec_pty::Request::Shutdown, false)
+        .ok()
+        .is_some();
+    let v = link.request(&soksak_spec_pty::Request::Ping, true)?;
+    Ok(serde_json::json!({ "killed": killed, "pid": v["pid"] }))
+}
+
+/// 데몬 무중단 판올림 — restart 와 달리 라이브 세션을 죽이지 않는다.
+///
+/// 인계 계획은 **나가는** 데몬이 세운다. 그 판이 안전 인계 계약을 구현하지 않으면 셸이 죽거나
+/// (대상 fd 충돌) 출력이 조용히 멎는다(링 좌표 유실). 못 지키는 상대에게 시켜 놓고 결과를
+/// 사람이 감당하게 두지 않는다 — 시도 전에 묻고, 못 하면 이름을 달고 거절한다.
+///
+/// 거절 사유는 부르는 쪽이 원장에 남긴다. 이 몸은 원장을 모른다: 어디에 남기는지가 프로세스마다
+/// 다르고, 그 차이가 규칙 안으로 새면 같은 판올림이 두 모양으로 기록된다.
+pub fn daemon_upgrade(
+    link: &Link,
+    home: &Path,
+    source: Option<&Path>,
+    settle: std::time::Duration,
+) -> Result<serde_json::Value, String> {
+    let before = link.request(&soksak_spec_pty::Request::Ping, true)?;
+    let before_pid = before["pid"].as_u64();
+    handoff_precheck(&before)?;
+    // 새 판을 홈 bin/ 에 원자 교체 — 새 데몬이 이 경로에서 실행된다(해시 동일이면 no-op).
+    let staged = stage_binary(home, source)?;
+    let _ = link.request(
+        &soksak_spec_pty::Request::PrepareUpgrade {
+            new_bin: staged.to_string_lossy().to_string(),
+        },
+        false,
+    );
+    // 이전 데몬이 exit 해 소켓을 놓고 새 데몬이 그 소켓을 bind 할 틈. 그 대기는 이 규칙의
+    // 상수가 아니라 **인자**다 — 기계마다 다르고, 여기서 고정하면 느린 기계에서 새 pid 를
+    // 못 보고 실패로 읽는다.
+    std::thread::sleep(settle);
+    let after = link.request(&soksak_spec_pty::Request::Ping, true)?;
+    Ok(serde_json::json!({
+        "before": before_pid,
+        "after": after["pid"],
+        "staged": staged.to_string_lossy(),
+    }))
+}

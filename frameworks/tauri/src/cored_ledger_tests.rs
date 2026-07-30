@@ -44,7 +44,13 @@ use super::*;
 /// 요구하는 호스트 능력에 대응하는 계약이 코어에 없다"는 사실이 아니게 됐다 — 계약
 /// (ServiceHost)은 크레이트에 있었고, 그 다섯 중 넷을 cored 가 이미 진다(활동 발행·예약
 /// 깨우기·시크릿 둘). 다섯째(중개)는 그 프로세스의 단일 갈래 그 자체다.
-const STATE_BOUND_UNANSWERED: usize = 13;
+///
+/// **2026-07-31 축소 13 → 10.** 유닛 스캐폴드 셋과 데몬 파괴 둘, 그리고 이름으로 묻는 hello.
+/// 스캐폴드의 벽은 git 봉인이었는데 그것은 봉인을 푸는 문제가 아니라 **자리를 밝히는** 문제였다
+/// (ALLOWLIST 는 자리 이름으로 등재하는 장치다). 데몬 restart·upgrade 는 "파괴적이라 어느
+/// 프로세스가 할지는 별개 결정"으로 남아 있었는데, 데몬을 지는 쪽이 정해진 뒤로 그 결정은
+/// 이미 내려져 있었다.
+const STATE_BOUND_UNANSWERED: usize = 10;
 
 /// state-bound 갈래에서 아직 아무 답도 없는 이름들.
 fn state_bound_unanswered() -> Vec<String> {
