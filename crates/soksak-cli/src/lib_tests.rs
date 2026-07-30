@@ -195,13 +195,7 @@ fn env_validation_rejects_unknown() {
     assert!(validate_env("").is_err());
 }
 
-// env 토큰 → 소켓 파일명(identifier 와 일치).
-#[test]
-fn socket_name_per_env() {
-    assert_eq!(socket_name_for_env("dev"), "com.soksak.dev.sock");
-    assert_eq!(socket_name_for_env("debug"), "com.soksak.debug.sock");
-    assert_eq!(socket_name_for_env("app"), "com.soksak.app.sock");
-}
+// 소켓 파일명은 env 를 따르지 않는다 — 홈이 이미 env 를 가른다(the_socket_is_one_per_home 참조).
 
 #[test]
 fn socket_peer_must_match_compiled_cli_identity() {
@@ -415,4 +409,25 @@ fn take_flag_extracts_and_removes() {
     let mut d = vec!["state.tree".to_string(), "--env".into()];
     assert_eq!(take_flag_value(&mut d, "--env"), None);
     assert_eq!(d, vec!["state.tree".to_string()]);
+}
+
+/// 붙을 자리는 **홈 하나에 하나**다 — `<홈>/cored.sock`.
+///
+/// identifier 로 이름을 지으면 그 이름에 프레임워크 세그먼트가 들어가고, 한 홈에 tauri 와
+/// electron 이 같이 서면 붙을 자리가 프레임워크 수만큼 생긴다. 그때 이 CLI 는 둘 중 하나만
+/// 잡거나(운이 좋으면), 아무것도 못 잡는다(실측: `com.soksak.dev.sock` 을 손으로 지어서
+/// 찾다가 "미실행"이라 답했다 — 앱은 그때 `com.soksak.tauri.dev.sock` 으로 떠 있었다).
+///
+/// 판정 축은 이미 env 하나로 고쳤다. 발견 축도 같은 자리를 봐야 그 고침이 끝난다.
+#[test]
+fn the_socket_is_one_per_home_not_one_per_identifier() {
+    let name = socket_name_for_env("dev");
+    assert_eq!(
+        name,
+        soksak_core::identity::CORED_SOCKET_FILE,
+        "붙을 자리는 홈 하나에 하나다 — identifier 로 지으면 프레임워크마다 자리가 생긴다"
+    );
+    // env 가 달라도 파일명은 같다. 홈이 이미 env 를 가르기 때문이다(~/.soksak-dev vs -debug).
+    assert_eq!(socket_name_for_env("debug"), name);
+    assert_eq!(socket_name_for_env("app"), name);
 }

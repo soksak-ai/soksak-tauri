@@ -134,8 +134,8 @@ fn spawn_helper(name: &str) -> Helper {
 // binary_integrity 는 디스크만 만지는 순수 관찰이다. 실재하는 파일을 두고 물으면
 // present 가 나와야 한다 — cored 가 soksak-core 을 실제로 부르고 있다는 증거.
 #[test]
-fn serves_a_portable_command_over_the_socket() {
-    let helper = spawn_helper("serves-portable");
+fn serves_a_core_command_over_the_socket() {
+    let helper = spawn_helper("serves-core");
     let bin = helper.dir().join("some-bin");
     std::fs::write(&bin, b"#!/bin/sh\n").unwrap();
 

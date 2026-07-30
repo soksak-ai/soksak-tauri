@@ -440,7 +440,7 @@ mod split_tests {
     // 항목의 모양과 번호는 코어 규칙이 소유한다. 코어가 자기 도장을 따로 찍으면 cored 가
     // 적재한 항목과 앱이 적재한 항목이 미묘하게 달라지고, 그 차이는 소비자에게만 보인다.
     #[test]
-    fn the_entry_shape_comes_from_the_portable_rule() {
+    fn the_entry_shape_comes_from_the_core_rule() {
         let hub = ActivityHub::default();
         hub.resume_from(41);
         let entry = admit(&hub, "command.executed", "remote", json!({ "command": "c" }));

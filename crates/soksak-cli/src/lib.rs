@@ -161,9 +161,9 @@ fn validate_env(env: &str) -> Result<&str, String> {
     }
 }
 
-// env 토큰 → 소켓 파일명.
-fn socket_name_for_env(env: &str) -> String {
-    format!("com.soksak.{env}.sock")
+// 붙을 자리는 홈 하나에 하나다 — env 는 이름을 가르지 않는다(코어 identity.rs 가 규칙을 진다).
+fn socket_name_for_env(_env: &str) -> String {
+    soksak_core::identity::CORED_SOCKET_FILE.to_string()
 }
 
 fn identity_for_env(env: &str) -> Result<String, String> {

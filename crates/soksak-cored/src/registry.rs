@@ -1173,7 +1173,7 @@ mod tests {
     }
 
     #[test]
-    fn a_refusal_carries_the_portable_reason() {
+    fn a_refusal_carries_the_core_reason() {
         let outcome = (find("cleanup_stale").unwrap().run)(&ctx(), &json!({
             "path": "/etc/passwd", "allowedRoots": ["/nowhere"]
         }));
