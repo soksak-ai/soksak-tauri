@@ -24,7 +24,7 @@ import { unmetNeeds, type EngineProvision, type PluginManifest } from "@soksak-a
  * 못 가른다.
  *
  * 권한으로 가르지 않는다. 권한은 **열어 둔 문**이지 지나간 자국이 아니다 — 실측(2026-07-31):
- * soksak-plugin-workflow 는 `sidecar` 권한을 과선언했지만 실제로는 app.process 만 쓰는 서비스
+ * 실측된 한 플러그인은 `sidecar` 권한을 과선언했지만 실제로는 app.process 만 쓰는 서비스
  * 모델이고, 권한으로 가른 첫 판은 그 헤드리스 플러그인을 Electron 에서 통째로 떨궜다.
  *
  * 서비스 모델의 증거는 `service` 선언이다 — spec 이 그 자리를 그 뜻으로 이미 두고 있다

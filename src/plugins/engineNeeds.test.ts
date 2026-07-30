@@ -52,7 +52,7 @@ describe("적재 경계가 그 대조를 실제로 건다", () => {
 // engine = "renders into pane surfaces (NSView)", in-process dylib.
 //
 // 그러면 플러그인이 `requiresNativeChildWebview: true` 를 손으로 또 적게 하는 것은 **두 벌**이다.
-// 두 벌은 갈리는 순간까지 조용하다: 실측(2026-07-31) browser-chromium-offscreen 은 엔진
+// 두 벌은 갈리는 순간까지 조용하다: 실측(2026-07-31) 실측된 한 브라우저 플러그인은 엔진
 // 사이드카를 소비하면서 아무 요구도 안 적었고, 그래서 Electron 에서 그대로 적재되어 화면에
 // "엔진 서피스 생성 실패"만 남았다.
 //
@@ -83,7 +83,7 @@ describe("엔진 모델 소비는 그 자체가 표면 요구다", () => {
     expect(() => enforceEngineNeeds(svc as never, ELECTRON)).not.toThrow();
   });
 
-  // 실측(2026-07-31): 권한을 사용 증거로 읽으면 **과잉이다.** soksak-plugin-workflow 는
+  // 실측(2026-07-31): 권한을 사용 증거로 읽으면 **과잉이다.** 실측된 한 플러그인은
   // `sidecar` 권한을 과선언했지만 실제로는 app.process 만 쓰는 서비스 모델이고, 규칙이 그것을
   // 잡아 헤드리스 플러그인 하나를 Electron 에서 통째로 떨궜다.
   //
