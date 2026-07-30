@@ -130,17 +130,17 @@ fn transport_route(ctx: &Ctx, req: &Request) -> Option<Value> {
 /// 기계는 코드만 본다 — 요구 원장이 코드를 기록하므로(invoke-demand.jsonl) 감사해서 거절한
 /// 것과 이름이 없는 것이 한 통에 섞였다. "아직 안 옮겼다"와 "여기서는 못 한다"를 세는 사람이
 /// 그 차이를 잃는다(실측 2026-07-29: 사유가 등재된 넷이 미등재와 같은 코드로 나왔다).
-fn refusal(method: &str) -> (&'static str, String) {
-    match registry::unserved(method) {
-        Some(u) => (
+/// 감사해서 서빙하지 않기로 한 이름인가 — 그렇다면 그 사유를 그대로 싣는다.
+///
+/// 감사 밖의 이름에는 답하지 않는다. 이 프로세스는 창의 카탈로그를 모르므로 "없는 명령"인지
+/// 판정할 수 없고, 그 판정은 창이 붙었을 때 창이 한다.
+fn audited_refusal(method: &str) -> Option<(&'static str, String)> {
+    registry::unserved(method).map(|u| {
+        (
             "REFUSED_BY_AUDIT",
             format!("{method} 은(는) 이 프로세스가 서빙하지 않습니다 — {}", u.blocked_by),
-        ),
-        None => (
-            "UNKNOWN_COMMAND",
-            format!("{method} 은(는) 이 프로세스가 서빙하지 않습니다 — cored.commands 로 목록을 확인하세요"),
-        ),
-    }
+        )
+    })
 }
 
 /// 이 줄이 **연결의 성질을 선언하는가.** 그렇다면 읽은 순서대로, 동시 처리 밖에서 세워야 한다.
@@ -194,8 +194,20 @@ fn route(ctx: &Ctx, req: &Request, line: &str, conn: ConnRef<'_>) -> Value {
                 ),
             );
         }
-        let (code, message) = refusal(&req.method);
-        return err_reply(code, &message);
+        if let Some((code, message)) = audited_refusal(&req.method) {
+            return err_reply(code, &message);
+        }
+        // 감사 밖의 이름은 **창이 답할 이름**이다. 창이 안 붙었으면 그 사실을 말한다 —
+        // "없는 명령"으로 답하면 부른 쪽은 재시도할 이유를 못 찾는다: 없는 명령은 기다려도
+        // 안 생기고, 부팅 중인 창은 기다리면 생긴다. 그리고 이 프로세스는 창의 카탈로그를
+        // 모르므로 애초에 "없다"를 판정할 자격이 없다.
+        return err_reply(
+            "NO_HOST",
+            &format!(
+                "{} 은(는) 창이 답할 이름인데 붙은 창이 없습니다 — 부팅 중이면 잠시 뒤 다시 부르십시오",
+                req.method
+            ),
+        );
     };
     CURRENT.with(|c| c.set(conn.map(|c| c as *const _)));
     ENVELOPE_WINDOW.with(|w| *w.borrow_mut() = req.window.clone());
@@ -394,12 +406,13 @@ mod tests {
     #[test]
     fn an_unknown_method_names_itself() {
         // 붙은 호스트가 있으면 모르는 이름은 배달된다 — 그것이 이 표면의 설계다.
-        // 여기서 재는 것은 **배달할 곳이 없을 때**의 답이다.
+        // 여기서 재는 것은 **배달할 곳이 없을 때**의 답이고, 그 답은 "없는 명령"이 아니다:
+        // 이 프로세스는 창의 카탈로그를 모르므로 없다고 판정할 자격이 없다.
         let _serial = crate::control::testing::lock();
         crate::control::testing::detach();
         let reply = answer(&ctx(), r#"{"id":1,"method":"webview_dom_holes"}"#);
         assert_eq!(reply["ok"], false);
-        assert_eq!(reply["code"], "UNKNOWN_COMMAND");
+        assert_eq!(reply["code"], "NO_HOST");
         assert!(
             reply["message"].as_str().unwrap().contains("webview_dom_holes"),
             "{reply}"
@@ -524,6 +537,25 @@ fn an_outside_connection_still_reaches_the_window() {
     std::io::BufRead::read_line(&mut h, &mut line).expect("배달이 온다");
     assert!(line.contains("project.open"));
     crate::control::testing::detach();
+}
+
+
+/// 창이 아직 안 붙었을 때의 답은 **"없는 명령"이 아니다.**
+///
+/// 그 둘이 같은 코드로 나오면 부른 쪽은 재시도할 이유를 못 찾는다 — 없는 명령은 기다려도
+/// 안 생기고, 부팅 중인 창은 기다리면 생긴다. 같은 답을 받은 도구는 앞의 뜻으로 읽고 포기한다
+/// (실측: 창이 명령 등록을 끝내기 전에 물으면 UNKNOWN_COMMAND 가 왔다).
+#[test]
+fn a_name_that_needs_a_window_says_no_host_not_unknown() {
+    let _serial = crate::control::testing::lock();
+    crate::control::testing::detach();
+    // 이 프로세스가 서빙하지 않고 감사 거절도 아닌 이름 — 창이 답할 이름이다.
+    let r = answer(&ctx(), r#"{"id":1,"method":"project.open","timeoutMs":80}"#);
+    assert_eq!(r["ok"], false, "{r}");
+    assert_eq!(
+        r["code"], "NO_HOST",
+        "창이 안 붙은 것과 없는 명령은 다른 사실이다: {r}"
+    );
 }
 
 }

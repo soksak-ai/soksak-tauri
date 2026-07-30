@@ -200,13 +200,16 @@ fn an_unknown_command_fails_by_name() {
     let helper = spawn_helper("unknown-command");
     let reply = helper.ask(json!({ "id": 2, "method": "webview_overlay_active", "params": {} }));
     assert_eq!(reply["ok"], false, "응답: {reply}");
-    assert_eq!(reply["code"], "UNKNOWN_COMMAND", "응답: {reply}");
+    // 창이 안 붙었으면 "없는 명령"이 아니라 **붙을 창이 없다**가 사실이다 — 이 프로세스는
+    // 창의 카탈로그를 모르므로 없다고 판정할 자격이 없고, 두 사실을 같은 코드로 답하면 부른
+    // 쪽이 재시도할 이유를 못 찾는다.
+    assert_eq!(reply["code"], "NO_HOST", "응답: {reply}");
     assert!(
         reply["message"]
             .as_str()
             .unwrap_or_default()
             .contains("webview_overlay_active"),
-        "모르는 명령의 이름을 말해야 한다: {reply}"
+        "어느 이름 때문인지 말해야 한다: {reply}"
     );
 }
 
@@ -2019,10 +2022,10 @@ fn an_audited_refusal_is_not_an_unknown_name() {
     );
 
     let unknown = helper.ask(json!({ "method": "no_such_name_xyz", "params": {} }));
-    assert_eq!(unknown["code"], "UNKNOWN_COMMAND", "{unknown}");
+    assert_eq!(unknown["code"], "NO_HOST", "{unknown}");
     assert!(
-        unknown["message"].as_str().unwrap_or_default().contains("cored.commands"),
-        "모르는 이름은 어디서 목록을 보는지 말한다: {unknown}"
+        unknown["message"].as_str().unwrap_or_default().contains("no_such_name_xyz"),
+        "어느 이름 때문인지 말한다: {unknown}"
     );
 }
 
@@ -2113,13 +2116,17 @@ impl FakeHost {
     }
 }
 
-/// 창이 붙지 않았으면 모르는 이름은 지금까지처럼 이름을 달고 거절된다.
+/// 창이 붙지 않았으면 그 사실을 이름과 함께 말한다 — "없는 명령"이 아니다.
+///
+/// 두 사실을 같은 코드로 답하면 부른 쪽은 재시도할 이유를 못 찾는다: 없는 명령은 기다려도
+/// 안 생기고, 부팅 중인 창은 기다리면 생긴다.
 #[test]
-fn without_a_window_host_an_app_command_is_refused_by_name() {
+fn without_a_window_host_an_app_command_says_no_host() {
     let h = spawn_helper("control-no-host");
     let r = h.ask(json!({"id":1,"method":"project.open","params":{"root":"/x"}}));
     assert_eq!(r["ok"], false);
-    assert_eq!(r["code"], "UNKNOWN_COMMAND", "{r}");
+    assert_eq!(r["code"], "NO_HOST", "{r}");
+    assert!(r["message"].as_str().unwrap_or_default().contains("project.open"), "{r}");
     assert_eq!(r["id"], 1);
 }
 

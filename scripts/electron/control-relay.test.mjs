@@ -132,10 +132,14 @@ afterEach(async () => {
 });
 
 describe("제어면 중계", () => {
-  it("붙기 전에는 앱 명령이 이름을 달고 거절된다", async () => {
+  // 붙기 전의 답은 "없는 명령"이 아니다. cored 는 창의 카탈로그를 모르므로 없다고 판정할
+  // 자격이 없고, 두 사실을 같은 코드로 답하면 부른 쪽이 재시도할 이유를 못 찾는다 — 없는
+  // 명령은 기다려도 안 생기고, 부팅 중인 창은 기다리면 생긴다.
+  it("붙기 전에는 붙을 창이 없다고 이름과 함께 답한다", async () => {
     const r = await askRaw(cored.socketPath, { id: 1, method: "project.open" });
     expect(r.ok).toBe(false);
-    expect(r.code).toBe("UNKNOWN_COMMAND");
+    expect(r.code).toBe("NO_HOST");
+    expect(r.message).toContain("project.open");
   });
 
   it("밖에서 부른 명령이 창에 닿고 창의 답이 부른 쪽으로 돌아온다", async () => {
