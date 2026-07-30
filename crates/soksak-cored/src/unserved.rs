@@ -335,6 +335,15 @@ pub const UNSERVED: &[Unserved] = &[
                      orchestrator.ask 는 무대를 잃는다. 표로 올리려면 붙는 쪽이 먼저 둘이어야 한다.",
     },
     Unserved {
+        name: "pty_pane_pid",
+        blocked_by: "이 pane 의 백엔드가 둘 중 무엇인지부터 앱 프로세스의 세션 원장이 안다. 데몬 \
+                     백엔드면 여기서도 답할 수 있지만(PanePid 요청), 로컬 백엔드는 그 pty master 가 \
+                     **앱 프로세스 안**에 있어 프로세스 그룹 리더를 여기서 볼 길이 없다. 그런데 이 \
+                     명령의 None 은 '전경 프로세스가 없다'는 뜻이라, 남의 세션이어서 못 본 것과 \
+                     구분되지 않는다 — 그 None 을 받은 쪽은 셸이 비었다고 읽는다. 원장이 한 프로세스로 \
+                     모이기 전에는 이 이름을 나눠 답할 수 없다.",
+    },
+    Unserved {
         name: "unit_dev_set",
         blocked_by: "공유 config(development-units.json)의 read-modify-write 인데, 그 직렬화가 앱 프로세스 \
                      안의 static WRITE_LOCK 하나다. 두 프로세스가 각자 그 Mutex 를 잡으면 서로를 못 보고, \
