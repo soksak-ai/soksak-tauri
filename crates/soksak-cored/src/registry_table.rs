@@ -100,6 +100,13 @@ pub const COMMANDS: &[Command] = &[
         run: run_ws_close,
     },
     Command {
+        // 마지막 워크스페이스 창 — 장부는 이 프로세스가 하나만 쥔다.
+        name: "ipc_last_project_window",
+        args: &[],
+        returns: "string | null (포커스한 적 없으면 null)",
+        run: crate::registry_ptyd::run_ipc_last_project_window,
+    },
+    Command {
         // 데몬 상태 — 읽기다. 판올림·재기동은 여기서 하지 않는다(파괴적이고 세션을 죽인다).
         name: "pty_daemon_status",
         args: &[],

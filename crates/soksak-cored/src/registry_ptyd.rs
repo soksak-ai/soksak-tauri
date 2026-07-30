@@ -20,3 +20,14 @@ pub(crate) fn run_pty_daemon_status(ctx: &Ctx, _params: &Value) -> Outcome {
 pub(crate) fn run_pty_daemon_status(_ctx: &Ctx, _params: &Value) -> Outcome {
     Outcome::Failed("데몬은 유닉스 소켓 위에서만 선다".into())
 }
+
+/// 마지막으로 포커스했던 워크스페이스 창 — 밖에서 온 명령이 무대를 고를 때 쓴다.
+///
+/// 장부는 이 프로세스가 하나만 쥔다. 붙은 호스트가 `control_host_attach`·`control_windows` 로
+/// 자기 창 사실을 보고하면 그 자리에서 갱신된다 — 두 프레임워크가 다 보고한다.
+pub(crate) fn run_ipc_last_project_window(_ctx: &Ctx, _params: &Value) -> Outcome {
+    Outcome::Ok(match crate::control::last_workspace_window() {
+        Some(w) => Value::String(w),
+        None => Value::Null,
+    })
+}

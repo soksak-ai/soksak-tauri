@@ -324,17 +324,6 @@ pub const UNSERVED: &[Unserved] = &[
                      프록시를 받았는지 모른다. 쓸 곳 없이 미리 열지 않는다.",
     },
     Unserved {
-        name: "ipc_last_project_window",
-        blocked_by: "포커스 **규칙**은 이미 코어의 것이고(control::FocusLedger) cored 도 그 장부를 \
-                     하나 쥔다 — control_host_attach·control_windows 로 붙은 호스트가 자기 창 사실을 \
-                     보고하면 last_workspace 가 그 자리에서 갱신된다. 그러니 옛 사유('cored 는 그 사건을 \
-                     받지 않는다')는 더 이상 사실이 아니다. 남은 벽은 **보고하지 않는 프레임워크**다: \
-                     붙는 쪽은 Electron 하나이고 Tauri 앱은 자기 창 사건을 자기 프로세스 장부에만 적는다. \
-                     그 홈에서 cored 가 같은 이름을 답하면 언제나 null 인데, 이 명령의 null 은 \
-                     '워크스페이스 창을 포커스한 적 없다'는 뜻이라 부재와 구분되지 않는다 — 그 null 을 받은 \
-                     orchestrator.ask 는 무대를 잃는다. 표로 올리려면 붙는 쪽이 먼저 둘이어야 한다.",
-    },
-    Unserved {
         name: "pty_pane_pid",
         blocked_by: "이 pane 의 백엔드가 둘 중 무엇인지부터 앱 프로세스의 세션 원장이 안다. 데몬 \
                      백엔드면 여기서도 답할 수 있지만(PanePid 요청), 로컬 백엔드는 그 pty master 가 \

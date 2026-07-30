@@ -54,6 +54,18 @@ static SEQ: OnceLock<Mutex<u64>> = OnceLock::new();
 fn hosts() -> &'static Mutex<Vec<Host>> {
     HOSTS.get_or_init(|| Mutex::new(Vec::new()))
 }
+/// 마지막으로 포커스했던 워크스페이스 창. 붙은 호스트가 자기 창 사실을 보고할 때 갱신된다.
+///
+/// None 은 "워크스페이스 창을 포커스한 적 없다"는 뜻이다 — 붙은 호스트가 없어서 모르는 것과
+/// 구분되지 않으므로, 부르는 쪽이 그 차이를 알아야 하면 호스트 유무를 따로 물어야 한다.
+pub fn last_workspace_window() -> Option<String> {
+    focus()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .last_workspace()
+        .map(|s| s.to_string())
+}
+
 fn focus() -> &'static Mutex<FocusLedger> {
     FOCUS.get_or_init(|| Mutex::new(FocusLedger::new()))
 }
