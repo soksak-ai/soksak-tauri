@@ -291,11 +291,14 @@ function main() {
     console.log(`  공백이 갈 자리: ${Object.entries(plan).map(([k, v]) => `${k} ${v}`).join(" · ")}`);
     for (const p of problems) console.log(`  ✗ ${p}`);
   }
+  // 판정은 종료코드로 나간다. `--json` 은 기계가 읽는 자리라 사람 줄을 섞지 않는다 — 한 줄만
+  // 붙어도 파싱이 통째로 죽고, 그러면 이 인구조사를 다른 장부와 붙일 수 없다.
+  const machine = args.includes("--json");
   if (problems.length > 0) {
-    console.log("\nFAIL: 소유가 선언되지 않은 이름이 있다");
+    if (!machine) console.log("\nFAIL: 소유가 선언되지 않은 이름이 있다");
     process.exit(1);
   }
-  console.log("✓ 모든 이름의 답하는 자리가 선언되어 있다");
+  if (!machine) console.log("✓ 모든 이름의 답하는 자리가 선언되어 있다");
 }
 
 if (process.argv[1] && process.argv[1].endsWith("command-ownership.mjs")) main();

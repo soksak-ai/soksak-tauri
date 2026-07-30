@@ -189,3 +189,14 @@ describe("장부 대조", () => {
     expect(problems.join("\n")).toMatch(/상한/);
   });
 });
+
+describe("기계 출력", () => {
+  // `--json` 은 기계가 읽는 자리다. 사람 줄이 한 줄이라도 섞이면 파싱이 통째로 죽고,
+  // 그러면 이 인구조사를 다른 도구와 붙일 수 없다(실측: 판정 줄 하나가 JSON 뒤에 붙었다).
+  it("--json 은 JSON 만 낸다", async () => {
+    const { spawnSync } = await import("node:child_process");
+    const gate = join(process.cwd(), "scripts/gates/command-ownership.mjs");
+    const r = spawnSync(process.execPath, [gate, "--json"], { encoding: "utf8" });
+    expect(() => JSON.parse(r.stdout)).not.toThrow();
+  });
+});
