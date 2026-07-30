@@ -416,7 +416,29 @@ The port could be called done because nothing counted what was missing. The app 
 
 `scripts/gates/command-ownership.mjs` reads the classification from source — cored's table, each framework's table, Tauri's registration — and the ledger beside it holds only the reason and the **destination** (`core` | `framework` | `renderer` | `unserved`) for each gap, so the next person does not re-decide where a command belongs. `cap` is a ratchet: growing the surface without porting fails, and a gap that someone now answers must be removed from the ledger or the count becomes a lie.
 
-Today: `core` 74 · `framework` 23 · `renderer` 13 · gaps 67, of which 56 belong in core, 8 in the framework, and 3 stay unserved (`ws_*` — the one transport drags a runtime in, and the dependency gate bans runtimes by name).
+### A reason is not an answer (re-legislated 2026-07-30)
+
+That ratchet had a hole. `cap` counted only the **undeclared** gaps; a name cored refused with a written reason (`refused`) left the count entirely. Writing the reason made the name disappear from the ledger, and it could go unanswered forever while the gate passed.
+
+From the caller's seat, "declared refusal" and "undeclared gap" are the same fact: **no value comes back.** Measured — `sidecar_open` sat in the refused bucket and passed the gate while the second framework's renderer called it 139 times and was refused 139 times. The browser engine never started; the screen said only "engine surface creation failed".
+
+So there are two ratchets. `cap` = undeclared gaps (so that writing a reason still reads as progress), `unansweredCap` = **every name that goes unanswered** (refused + gap). The second does not shrink when you write a reason; it shrinks only when somebody actually answers. Declared absence (`absent`) is not in it — a proven absence is a definite answer.
+
+Today: answered 114 (`core` 77 · `framework` 15 · `renderer` 13 · declared-absent 9) · **unanswered 62** (refused 35 · undeclared gaps 27).
+
+### A signature is not evidence of ownership
+
+The port ledger (`cored_ledger.rs`) carried the same kind of lie. `lane_of` counted a command as `framework` whenever its signature took an injected `Window` — but the second framework picks its share by **name prefix** (`BRANCHES` in `native/index.cjs`). A name outside those families never lands in that table, leaks to the socket, and cored does not serve it either — while the ledger counted it as "the framework's to answer" and dropped it from the port list. **Commands nobody owned were counted as already ported.** Four of them: `sidecar_open`, `sidecar_send`, `process_reclaim_window`, `daemon_start`.
+
+Taking a window does not make something a window concept. A sidecar is an OS process; the window is only the address its events return to. Injection is evidence of coupling, not of ownership, so those names go to `state-bound` — undoing that coupling is what porting them means. `framework` 48 → 42 · `state-bound` 51 → 57. A gate now holds the two family lists to one (`FRAMEWORK_FAMILIES` ≡ `BRANCHES`).
+
+### First repayment: `download_verify`
+
+Once the count was honest, something was visibly payable. `download_verify` is ten lines that touch no window, no app handle, no vault — and the only wall was the **name** `tokio`, which does not meet the ban list's own criterion (does it open a window; does it hold an app handle; does the answer differ per process). `soksak-net` had already written, under that same criterion, that tokio is a resource. One repository was judging one crate by two rules.
+
+So the name is released in the very commit that serves the command — opening it without a consumer would be hiding a decision. Verification and writing are owned by one function in core (`verify_and_write`); the Tauri entry point calls the same one, because a copy would give two processes different rules under one name, and that difference shows up not as an error but as **a different file**. This process's concurrency model is unchanged: `soksak-net` exposes only a sync surface and keeps the runtime inside itself.
+
+`unansweredCap` 62. The three remaining `unserved` are `ws_*`.
 
 ## Observation is part of the port
 
