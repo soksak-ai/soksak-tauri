@@ -513,3 +513,38 @@ Releasing tokio falsified every refusal that named it as the wall at once: `medi
 **One shared type can hold two bodies hostage.** The schedule spec (`Trigger`, `Retry`, `JobSpec`) lived in the scheduler's framework file, so the service ledger that also uses that shape depended on that file and was bound to the same process with it. The command-dispatch contract was the same case — the contract moved to core and the implementation stayed behind a thin `AppDispatch` wrapper (, because the orphan rule forbids implementing a core trait on a vendor type).
 
 **Tests follow the body.** 1,296 lines for service and 33 cases for schedule moved with it — neither launches a framework; both measure every rule behind the seam. And each move must widen the **ledgers' scan roots**: a destination outside the roots means the debt you moved is never counted again.
+
+### Nine more bodies, and the walls that were not walls
+
+| File | Before | After | Body moved to |
+|---|---|---|---|
+| `unit_installer.rs` | 1,310 | 55 | `soksak-install` |
+| `runtime_dep.rs` | 584 | 162 | `soksak-install` (archive rules) |
+| `daemon.rs` | 567 | 72 | `soksak-daemon` |
+| `ai_session.rs` | 375 | 45 | `soksak-core` (tests followed) |
+| `data/commands.rs` | 748 | 610 | `soksak-store` (sealing, write policy) |
+| `os_key.rs` | 42 | 1 | `soksak-vault` (with the `keyring` dep) |
+| `secrets.rs` | 67 | 38 | `soksak-vault` |
+
+**Most walls were not walls.** Each refusal in `unserved.rs` names what blocks it, and re-reading those reasons against the code found them stale far more often than true:
+
+- **The vault** blocked twelve names. Two reasons were written; neither held. "`new_key` does not return the secret, so no recovery code can be issued" — the same contract's `secret(key_id)` already returns the bytes. "This process's only key seam is `NoSealKeys`" — the vault body was already outside the framework; what was actually missing was the **OS-keychain adapter**, which sat in the framework folder. A keychain is a *platform* resource, not a framework one: the vault file lives in the home, so binding its key to the framework puts the file and its key on different axes, and a second framework sharing that home cannot open it. `keyring` moved into the vault crate, and the twelve stood up.
+- **Resident services** blocked four. "The manager needs host capabilities the core has no contract for" — the contract (`ServiceHost`) was in the crate, and four of its five are things cored already carries (activity publish, schedule poke, two secrets). The fifth, mediation, *is* cored's single dispatch path.
+- **`service_ledger_sync`**'s reason ("the file write and the binding fix-up must be one hand") was not a reason it could not move; it was **the list of what had to move with it**.
+- **Unit install** blocked five, with three walls. One was a genuine **defect**, not a wall: the manager's constructor cleared the staging directory, so a second process creating one would erase another's in-flight transaction before the command arrived. Creation and clearing are now separate acts (`clear_staging`, called once at boot). Another — "the ledger is process memory, so `begin` and `commit` on different processes leaves only failure" — was an argument against splitting the five, not against moving them.
+- **`unit_dev_*`**'s wall was an **in-process `Mutex`**, which cannot serialize two processes: each takes its own, neither sees the other, and the overlapping read-modify-write erases the other's declaration *while answering success*. That loss never looks like an error — the file is intact and the contents simply went backwards. It is now a kernel advisory file lock (`soksak_core::file_lock`).
+
+**Divergences found by moving, not by testing.** Two commands answered differently depending on which process took them, and neither difference could surface as an error:
+
+1. Write retry and failure evidence lived only in the framework folder. Once cored served writes, that path handed the user a busy-machine failure that the app path survives four times over.
+2. The backup ring's only trigger hung off that folder's writes. Writes through cored **never once** turned the ring — a debt that is only collected when something goes wrong.
+
+**Ordering is a contract too.** One flaky test had a real cause: a connection's frames each get their own thread (one request = one thread), so a connection *declaration* could be queued before the first command and still take effect after it — and that request, arriving on a window's own bridge, was delivered to that window, which had nowhere to reply. The comment asserting the ordering was written when one connection meant one thread. Declarations now take effect where they are read.
+
+| | At start | Now |
+|---|---|---|
+| Unanswered names | 63 | **17** |
+| Framework-folder body | 19,165 | **14,083** |
+| Unanswered state-bound | 45 | **13** |
+
+Of the remaining 17: declared refusals 12 · undeclared gaps 5. The largest single item is `sidecar_open` — the browser engine on the second framework — which needs a native addon because JS has no FFI, and that is a decision, not a debt.
