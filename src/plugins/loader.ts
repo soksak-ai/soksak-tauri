@@ -35,6 +35,8 @@ import {
   type ServiceProxyDeps,
 } from "./serviceProxy";
 import { busOn } from "./bus";
+import { enforceEngineNeeds } from "./engineNeeds";
+import { engineProvision } from "../framework";
 import { useSettings } from "../state/settings";
 import type { PluginManifest } from "./spec";
 
@@ -328,6 +330,10 @@ export async function activatePlugin(
     throw new Error("entry 모듈에 activate(ctx) 가 없음");
   }
 
+  // 이 프레임워크가 못 채우는 요구가 있으면 여기서 멈춘다 — 계약(engineNeeds)과 제공
+  // (engineProvision)을 대조하는 유일한 자리다. 안 걸면 그 표면은 적재되고 화면에는
+  // "엔진 서피스 생성 실패"만 남는다(실측 2026-07-31, Electron).
+  enforceEngineNeeds(manifest, engineProvision);
   // [C2] 투명성 3종 — 매니페스트 정적 규칙을 등록 전에 시행(blocking 위반이면 아무것도 만들지 않는다).
   enforceTransparency(manifest);
   // [C3] L2 계약-핀 — implements 선언의 generic 검사(형태·문법·중복)를 같은 경계에서 시행.
