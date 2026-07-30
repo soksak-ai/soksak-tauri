@@ -91,11 +91,6 @@ pub fn process_stdin_close(id: u32, manager: State<'_, ProcessManager>) -> Resul
 /// 규칙·같은 예외(detached 사이드카는 살린다)를 쓰되, 트리거가 다르다: 창은 살아 있고 그 안의
 /// 런타임만 새로 선 경우(웹뷰 리로드·HMR·크래시 복구)를 위한 자리다. 새 런타임은 아직 아무것도
 /// 스폰하지 않았으므로 이 시점에 이 창 앞으로 남은 것은 전부 앞선 런타임의 고아다.
-#[tauri::command]
-pub fn process_reclaim_window(window: tauri::Window, manager: State<'_, ProcessManager>) -> u32 {
-    manager.reclaim_window(window.label())
-}
-
 
 /// 앱이 낳은 자식 프로세스 한 줄.
 

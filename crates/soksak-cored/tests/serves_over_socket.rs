@@ -481,7 +481,6 @@ fn what_it_refuses_is_discoverable_with_the_reason() {
     // UNKNOWN_COMMAND 를 받는다 — "아직 안 옮겼다"와 "여기서는 못 한다"가 구분되지 않는다.
     for expected in [
         "service_ledger_sync",
-        "process_reclaim_window",
         "secret_status",
         "project_owners",
         "net_http_request",
@@ -518,7 +517,7 @@ fn calling_an_audited_name_carries_the_reason_across_the_socket() {
     let table = helper.ask(json!({ "id": 9, "method": "cored.commands" }));
 
     // 두 벌을 본다 — 한 이름만 보면 그 항목만 배선되고 나머지는 목록에만 있는 채로 통과한다.
-    for (id, name) in [(10, "process_reclaim_window"), (11, "clipboard_read")] {
+    for (id, name) in [(10, "sidecar_open"), (11, "clipboard_read")] {
         let declared = table["data"]["unserved"]
             .as_array()
             .and_then(|u| u.iter().find(|e| e["name"] == name))

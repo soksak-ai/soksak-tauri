@@ -278,13 +278,6 @@ pub const UNSERVED: &[Unserved] = &[
                      감추는 것이다.",
     },
     Unserved {
-        name: "process_reclaim_window",
-        blocked_by: "창이 프레임워크 주입이라 이 이름의 호출자는 인자를 보내지 않는다. 이 프로세스에는 \
-                     창이 없어 라벨을 받아야 하는데, 같은 이름으로 받으면 인자 없이 부른 UI 가 \
-                     INVALID_PARAMS 를 받는다 — 그 실패는 '회수가 안 된다'가 아니라 '명령이 깨졌다'로 \
-                     보인다. 능력 자체는 있다: 라벨을 받는 process_reclaim_by_window 를 프레임워크가 부른다.",
-    },
-    Unserved {
         name: "app_relaunch",
         blocked_by: "교체 대상이 곧 호출을 받은 프로세스다. 몸이 app.restart() 한 줄인데 그것은 `!` 라 \
                      Ok 경로가 없다 — cored 가 같은 이름을 서빙하면 되살아나는 것은 cored 고, 앱은 \
