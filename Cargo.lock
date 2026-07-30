@@ -4595,6 +4595,8 @@ dependencies = [
  "soksak-scaffold",
  "soksak-schedule",
  "soksak-service",
+ "soksak-sidecar-host",
+ "soksak-spec-contract",
  "soksak-spec-pty",
  "soksak-spec-service",
  "soksak-spec-socket",
