@@ -259,3 +259,46 @@ describe("두 장부는 한 벌이다", () => {
     expect(families).toEqual(branches);
   });
 });
+
+describe("표를 읽는 눈", () => {
+  // 주석 한 줄이 계측을 바꾸면 안 된다. `Command {` 와 `name:` 사이에 사유를 적는 것은
+  // 이 저장소의 평범한 습관인데, 그 습관이 서빙하는 명령을 **공백으로 둔갑**시켰다
+  // (실측 2026-07-30: download_verify 를 서빙하면서 게이트는 "어디서도 답하지 않는다"고 했다).
+  it("선언 사이의 주석이 명령을 숨기지 못한다", async () => {
+    const { coredServesIn } = await import("./command-ownership.mjs");
+    const src = [
+      "pub const COMMANDS: &[Command] = &[",
+      "    Command {",
+      "        name: \"plain_one\",",
+      "    },",
+      "    Command {",
+      "        // 사유를 여기 적는다 — 그래도 이 이름은 서빙된다.",
+      "        name: \"commented_one\",",
+      "    },",
+      "];",
+    ].join("\n");
+    const served = coredServesIn(src);
+    expect([...served].sort()).toEqual(["commented_one", "plain_one"]);
+  });
+
+  // 거절 표(Unserved)를 서빙으로 세면 정직하게 적을수록 공백이 줄어든다 — 이미 한 번 겪은 함정이다.
+  it("거절 표는 서빙으로 세지 않는다", async () => {
+    const { coredServesIn } = await import("./command-ownership.mjs");
+    const src = "Unserved {\n    // 사유\n    name: \"refused_one\",\n    blocked_by: \"x\",\n},";
+    expect([...coredServesIn(src)]).toEqual([]);
+  });
+});
+
+describe("계측은 파일 배치에 기대지 않는다", () => {
+  // 표를 어느 파일에 두는지는 사람의 정리 문제이고, 무엇을 서빙/거절하는지는 사실이다.
+  // 파일 이름을 못 박으면 그 둘이 묶여서, **코드를 옮기는 것만으로 인구조사가 바뀐다.**
+  // 실측(2026-07-30): 거절 표 35건을 registry.rs 에서 unserved.rs 로 옮기자 공백이 27 → 62 로
+  // 뛰었다. 아무것도 안 잃었는데 게이트는 이식이 35건 후퇴했다고 답했다.
+  it("cored 의 표는 크레이트 전체에서 읽는다", () => {
+    const { cored, refused } = survey();
+    expect(cored.has("download_verify")).toBe(true);
+    // 거절 표가 registry.rs 밖에 살아도 읽힌다.
+    expect(refused.size).toBeGreaterThan(20);
+    expect(refused.has("sidecar_open")).toBe(true);
+  });
+});

@@ -74,14 +74,44 @@ export function appInvokes(root = ROOT) {
  * 그러면 거절이 서빙으로 둔갑하고, 더 나쁘게는 **정직하게 "못 한다"고 적을수록 공백 수가
  * 줄어든다** — 사유를 적는 행위가 은폐가 된다. 표 종류를 이름으로 가른다.
  */
+/**
+ * 표 원문에서 서빙 이름을 읽는다 — 인자로 받으므로 심은 원문으로도 잰다.
+ *
+ * `Command {` 와 `name:` 사이의 **주석을 건너뛴다.** 사유를 그 자리에 적는 것은 이 저장소의
+ * 평범한 습관인데, 그것을 못 넘던 파서는 서빙하는 명령을 공백으로 둔갑시켰다(실측 2026-07-30:
+ * download_verify 를 서빙하면서 게이트는 "어디서도 답하지 않는다"고 답했다). 주석 위치 같은
+ * 서식이 계측을 바꾸면 그 수는 사실이 아니라 서식의 함수다.
+ *
+ * `Unserved {` 는 이름이 달라 여기 안 걸린다 — 거절을 서빙으로 세면 정직하게 적을수록 공백이
+ * 줄어드는 함정이 돌아온다.
+ */
+export function coredServesIn(src) {
+  return new Set(
+    [...src.matchAll(/\bCommand\s*\{(?:\s*\/\/[^\n]*\n)*\s*name:\s*"([a-z_0-9]+)"/g)].map(
+      (m) => m[1],
+    ),
+  );
+}
+
+/** cored 크레이트의 러스트 원문 전부 — 표가 어느 파일에 사는지는 계측의 문제가 아니다.
+ *
+ *  한 파일을 못 박으면 코드를 옮기는 것만으로 인구조사가 바뀐다(실측 2026-07-30: 거절 표
+ *  35건을 옆 파일로 옮기자 공백이 27 → 62 로 뛰었다 — 아무것도 안 잃었는데 게이트는 이식이
+ *  35건 후퇴했다고 답했다). 어디에 적었는지는 사람의 정리이고, 무엇을 서빙·거절하는지가 사실이다. */
+function coredSources(root = ROOT) {
+  return walk(join(root, "crates", "soksak-cored", "src"))
+    .filter((f) => f.endsWith(".rs"))
+    .map(read)
+    .join("\n");
+}
+
 export function coredServes(root = ROOT) {
-  const src = read(join(root, "crates", "soksak-cored", "src", "registry.rs"));
-  return new Set([...src.matchAll(/Command\s*\{\s*name:\s*"([a-z_0-9]+)"/g)].map((m) => m[1]));
+  return coredServesIn(coredSources(root));
 }
 
 /** cored 가 **사유를 달고 거절하는** 이름 — 선언된 공백. 미선언 공백과 갈라 센다. */
 export function coredUnserved(root = ROOT) {
-  const src = read(join(root, "crates", "soksak-cored", "src", "registry.rs"));
+  const src = coredSources(root);
   const out = new Map();
   // 항목은 여러 줄이고 blocked_by 는 줄바꿈 이어붙임(`\\` + 개행)을 쓴다 — 이름만 잡고
   // 사유가 비지 않았는지만 본다. 사유 원문은 registry.rs 가 단일 진실이다.
