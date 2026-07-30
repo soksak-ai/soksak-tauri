@@ -311,10 +311,12 @@ pub const UNSERVED: &[Unserved] = &[
     },
     Unserved {
         name: "media_proxy_info",
-        blocked_by: "프록시의 몸이 soksak-net 이고, 그 전송기는 wreq 하나인데 wreq 는 tokio 를 끌고 온다 — \
-                     이 프로세스의 no_framework 게이트가 tokio 를 이름으로 막는다(net_http_request 와 \
-                     같은 벽). 답할 포트·토큰이 전역이라서 막히던 것은 아니다: start() 가 손잡이를 \
-                     돌려주므로 프록시를 세운 쪽이 자기 것을 답하고, 여기서 세우면 여기 것을 답한다.",
+        blocked_by: "tokio 는 더 이상 벽이 아니다 — 이 프로세스는 이미 soksak-net 을 지고 그 위에서 \
+                     ws 를 서빙한다(2026-07-30). 남은 것은 **누가 프록시를 세우는가**라는 결정 하나다: \
+                     이 이름은 답할 포트·토큰이 있어야 답할 수 있고, start() 가 손잡이를 돌려주므로 \
+                     세운 쪽이 자기 것을 답한다. 여기서 세우면 홈마다 루프백 리스너가 하나 더 생기고 \
+                     프레임워크의 것과 둘이 된다 — 그것을 정하지 않은 채 이름만 올리면 부른 쪽은 어느 \
+                     프록시를 받았는지 모른다. 쓸 곳 없이 미리 열지 않는다.",
     },
     Unserved {
         name: "ipc_last_project_window",
