@@ -16,6 +16,8 @@ pub mod registry;
 pub mod registry_table;
 // WebSocket 명령의 몸 — 표와 갈라 둔다.
 pub mod registry_ws;
+// AI 세션 명령의 몸 — 표와 갈라 둔다.
+pub mod registry_session;
 // 거절 사유 표 — 사유가 코드보다 길어 따로 산다(registry.rs 가 재수출한다).
 pub mod unserved;
 pub mod wire;

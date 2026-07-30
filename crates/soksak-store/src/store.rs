@@ -2114,4 +2114,3 @@ pub fn migrate_records(conn: &Connection) -> Result<(), String> {
     }
     Ok(())
 }
-

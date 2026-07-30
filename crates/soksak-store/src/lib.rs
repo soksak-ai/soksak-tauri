@@ -13,3 +13,5 @@ pub mod ring;
 pub mod store;
 
 pub use ids::{gen_id, now_millis, validate_coll, validate_field};
+// AI 세션 계보 — 조회 한 경로.
+pub mod session_lineage;

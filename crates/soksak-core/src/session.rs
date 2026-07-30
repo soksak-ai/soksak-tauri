@@ -312,3 +312,33 @@ mod find_tests {
         );
     }
 }
+
+/// dir 별 세션 스냅샷 원장 — "직전 대비 방금 쓰인 세션"을 답한다.
+///
+/// 주기 조회 0: OS 가 파일 변경을 알릴 때만 깬다(watch). 상태를 프로세스마다 두면 같은 dir 에
+/// 대해 두 프로세스가 서로 다른 "직전"을 갖고, 그러면 같은 물음에 다른 답이 나온다 — 이 원장은
+/// **한 프로세스가 진다**.
+#[derive(Default)]
+pub struct SessionTracker {
+    snaps: std::sync::Mutex<std::collections::HashMap<String, std::collections::BTreeMap<String, i64>>>,
+}
+
+impl SessionTracker {
+    /// dir 의 현재 활성 세션(직전 스냅샷 대비 새/갱신 중 최신) + 내부 스냅샷 갱신.
+    /// 변화 없으면 None — 없는 변화를 지어내지 않는다.
+    pub fn active(&self, dir: &str) -> Option<String> {
+        let cur = snapshot_dir(std::path::Path::new(dir));
+        let mut g = self.snaps.lock().ok()?;
+        let prev = g.get(dir).cloned().unwrap_or_default();
+        let active = active_session(&prev, &cur);
+        g.insert(dir.to_string(), cur);
+        active
+    }
+
+    /// watch 종료 — dir 스냅샷 폐기(멱등).
+    pub fn forget(&self, dir: &str) {
+        if let Ok(mut g) = self.snaps.lock() {
+            g.remove(dir);
+        }
+    }
+}

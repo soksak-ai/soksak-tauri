@@ -15,10 +15,10 @@ frameworks/electron/control.cjs 132
 frameworks/electron/cored.cjs 237
 frameworks/electron/main.cjs 369
 frameworks/electron/native/capture.cjs 70
+frameworks/electron/native/clipboard.cjs 24
 frameworks/electron/native/engine.cjs 26
 frameworks/electron/native/error.cjs 9
 frameworks/electron/native/index.cjs 85
-frameworks/electron/native/clipboard.cjs 24
 frameworks/electron/native/notify.cjs 18
 frameworks/electron/native/project.cjs 54
 frameworks/electron/native/titlebar.cjs 7
@@ -28,7 +28,7 @@ frameworks/electron/preload.cjs 50
 frameworks/electron/windowEvents.cjs 13
 frameworks/tauri/src/activity.rs 434
 frameworks/tauri/src/activity_sink.rs 9
-frameworks/tauri/src/ai_session.rs 306
+frameworks/tauri/src/ai_session.rs 266
 frameworks/tauri/src/clipboard.rs 249
 frameworks/tauri/src/command_dispatch.rs 108
 frameworks/tauri/src/cored_host.rs 506

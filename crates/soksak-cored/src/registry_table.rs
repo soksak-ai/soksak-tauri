@@ -4,6 +4,7 @@
 //! "그것을 어떻게 하는가" 둘을 한꺼번에 따라 자라고, 표를 읽으러 온 사람이 몸을 지나야 한다.
 
 use crate::registry::*;
+use crate::registry_session::{run_ai_session_active, run_ai_session_lineage, run_ai_session_untrack};
 use crate::registry_ws::{run_ws_close, run_ws_connect, run_ws_send};
 
 /// 서빙 표. 지금 여기 있는 것은 **프레임워크 없이도 같은 답이 나오는 것**뿐이다 —
@@ -97,6 +98,28 @@ pub const COMMANDS: &[Command] = &[
         args: &[Arg { name: "id", ty: "u32", required: REQ }],
         returns: "null",
         run: run_ws_close,
+    },
+    Command {
+        // dir 의 "방금 쓰인 세션" — 스냅샷 원장은 이 프로세스가 하나만 둔다.
+        name: "ai_session_active",
+        args: &[Arg { name: "dir", ty: "string", required: REQ }],
+        returns: "string | null (변화 없으면 null)",
+        run: run_ai_session_active,
+    },
+    Command {
+        name: "ai_session_untrack",
+        args: &[Arg { name: "dir", ty: "string", required: REQ }],
+        returns: "null",
+        run: run_ai_session_untrack,
+    },
+    Command {
+        name: "ai_session_lineage",
+        args: &[
+            Arg { name: "cwd", ty: "string", required: REQ },
+            Arg { name: "viewId", ty: "string?", required: OPT },
+        ],
+        returns: "{ viewId, fromSession, toSession, kind, time }[] — created 시간순",
+        run: run_ai_session_lineage,
     },
     Command {
         name: "ai_session_detect",
