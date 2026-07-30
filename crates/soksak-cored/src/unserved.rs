@@ -140,18 +140,6 @@ pub const UNSERVED: &[Unserved] = &[
                      수명이 되어, 프레임워크가 재기동한 뒤에도 죽은 창의 점유가 남아 그 프로젝트를 다시 못 연다.",
     },
     Unserved {
-        name: "net_http_request",
-        blocked_by: "벽은 볼트다. 시크릿 치환이 앱이 연 볼트(SecretsState)를 읽으므로, 옮기려면 키체인 \
-                     신원과 잠금 수명까지 함께 옮겨야 한다 — 이 프로세스는 볼트를 열지 않는다는 결정과 \
-                     정면으로 부딪힌다. soksak-net 의 request 는 이미 resolver 를 인자로 받으므로 \
-                     resolver 없는 요청은 지금도 가능하지만, 그러면 같은 이름이 프로세스마다 다른 \
-                     능력을 갖는다. tokio 는 벽이 아니다: no_framework 목록이 이름으로 막지만 그 \
-                     목록의 기준(창을 여는가·앱 핸들을 쥐는가·프로세스마다 답이 갈리는가)에 tokio 는 \
-                     걸리지 않고, soksak-net 은 같은 기준으로 tokio 를 자원이라 적었다. 그 이름은 \
-                     실제 소비자가 생기는 커밋에서 재입법한다 — 쓸 곳 없이 미리 여는 것은 결정을 \
-                     감추는 것이다.",
-    },
-    Unserved {
         name: "app_relaunch",
         blocked_by: "교체 대상이 곧 호출을 받은 프로세스다. 몸이 app.restart() 한 줄인데 그것은 `!` 라 \
                      Ok 경로가 없다 — cored 가 같은 이름을 서빙하면 되살아나는 것은 cored 고, 앱은 \

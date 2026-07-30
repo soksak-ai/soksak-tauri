@@ -55,3 +55,12 @@ pub(crate) fn run_secret_status(ctx: &Ctx, _params: &Value) -> Outcome {
         Err(e) => Outcome::Failed(e.to_string()),
     }
 }
+
+/// HTTP — 몸은 soksak-net 이 진다. 여기 남는 것은 열린 볼트를 **인자로 올리는** 한 걸음뿐이다.
+/// 규칙이 볼트를 앰비언트로 캐면 같은 코드가 프로세스마다 다른 시크릿을 집는다.
+pub(crate) fn run_net_http_request(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |req: soksak_net::http::HttpRequest| {
+        let v = vault(ctx);
+        soksak_net::http::request(&|ns, key| v.resolve(ns, key), req)
+    })
+}

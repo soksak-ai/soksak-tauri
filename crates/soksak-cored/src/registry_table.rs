@@ -11,7 +11,7 @@ use crate::registry_encrypt::{
     run_data_encrypt_rotate, run_data_encrypt_status,
 };
 use crate::registry_secret::{
-    run_secret_delete, run_secret_has, run_secret_keys, run_secret_set, run_secret_status,
+    run_net_http_request, run_secret_delete, run_secret_has, run_secret_keys, run_secret_set, run_secret_status,
 };
 use crate::registry_daemon::{
     run_daemon_logs, run_daemon_reap, run_daemon_run_once, run_daemon_start, run_daemon_status,
@@ -84,6 +84,23 @@ pub const COMMANDS: &[Command] = &[
         ],
         returns: "null",
         run: run_download_verify,
+    },
+    Command {
+        // HTTP — 몸은 soksak-net 이, 시크릿 해소는 이 프로세스의 볼트가 진다.
+        name: "net_http_request",
+        args: &[
+            Arg { name: "method", ty: "string", required: REQ },
+            Arg { name: "url", ty: "string", required: REQ },
+            Arg { name: "headers", ty: "map<string,string>", required: OPT },
+            Arg { name: "query", ty: "map<string,string>", required: OPT },
+            Arg { name: "body", ty: "string?", required: OPT },
+            Arg { name: "contentType", ty: "string?", required: OPT },
+            Arg { name: "ns", ty: "string?", required: OPT },
+            Arg { name: "secretSubst", ty: "map<string,string>", required: OPT },
+            Arg { name: "impersonate", ty: "string?", required: OPT },
+        ],
+        returns: "{ status, headers, body }",
+        run: run_net_http_request,
     },
     Command {
         // 시크릿 — 몸은 볼트가 진다. 값은 이 프로세스를 떠나지만 그것이 이 표면의 목적이다.

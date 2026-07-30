@@ -483,7 +483,7 @@ fn what_it_refuses_is_discoverable_with_the_reason() {
         "service_ledger_sync",
         "secret_backend",
         "project_owners",
-        "net_http_request",
+        "sidecar_open",
         "app_relaunch",
         "sidecar_close",
         "sidecar_ensure",
@@ -2015,12 +2015,12 @@ fn a_home_scan_does_not_make_the_directory_it_reads() {
 fn an_audited_refusal_is_not_an_unknown_name() {
     let helper = spawn_helper("refusal-code");
 
-    let audited = helper.ask(json!({ "method": "net_http_request", "params": {} }));
+    let audited = helper.ask(json!({ "method": "sidecar_open", "params": {} }));
     assert_eq!(audited["ok"], false, "{audited}");
     assert_eq!(audited["code"], "REFUSED_BY_AUDIT", "{audited}");
     // 사유는 그대로 실린다 — 코드를 가른다고 문장을 잃지 않는다.
     assert!(
-        audited["message"].as_str().unwrap_or_default().contains("tokio"),
+        audited["message"].as_str().unwrap_or_default().contains("창"),
         "{audited}"
     );
 

@@ -26,16 +26,28 @@ pub struct HttpResponse {
 }
 
 // 호출자가 준 요청 그대로 — 치환 전이다.
-#[derive(Debug, Default)]
+//
+// 프로세스를 건넌다(소켓으로 온 요청도 이 모양이다). method·url 은 기본값을 두지 않는다 —
+// 빠뜨린 요청이 빈 문자열로 서면 "어디로 무엇을"이 없는 채로 돌고, 그 답은 오류가 아니라
+// 엉뚱한 실패다.
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HttpRequest {
     pub method: String,
     pub url: String,
+    #[serde(default)]
     pub headers: HashMap<String, String>,
+    #[serde(default)]
     pub query: HashMap<String, String>,
+    #[serde(default)]
     pub body: Option<String>,
+    #[serde(default)]
     pub content_type: Option<String>,
+    #[serde(default)]
     pub ns: Option<String>,
+    #[serde(default)]
     pub secret_subst: Option<HashMap<String, String>>,
+    #[serde(default)]
     pub impersonate: Option<String>,
 }
 
