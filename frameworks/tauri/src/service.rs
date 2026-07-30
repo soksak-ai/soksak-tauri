@@ -35,12 +35,6 @@ impl AppServiceHost {
     }
 }
 
-impl ProcessServiceSpawner {
-    pub fn new(home: std::path::PathBuf) -> Self {
-        Self { home }
-    }
-}
-
 impl ServiceHost for AppServiceHost {
     fn publish(&self, kind: &str, source: &str, payload: Value) {
         let _ = crate::activity_sink::ActivitySink::publish(&*self.activity, kind, source, payload);
@@ -76,62 +70,6 @@ impl ServiceHost for AppServiceHost {
             Some(&origin),
             None,
         )
-    }
-}
-
-// 실 프로세스 스포너 — 바이너리 해석은 사이드카 규약(resolve_sidecar_cmd, PS9: 배급·스테이징은
-// 사이드카 법 상속), env 는 SOKSAK_HOME + 해소된 시크릿만. stderr 는 identity 홈 로그로.
-pub struct ProcessServiceSpawner {
-    home: std::path::PathBuf,
-}
-
-impl ServiceSpawner for ProcessServiceSpawner {
-    fn spawn(
-        &self,
-        binding: &ServiceBinding,
-        env: &[(String, String)],
-    ) -> Result<SpawnedIo, String> {
-        use std::process::{Command, Stdio};
-        // 사이드카 해석은 정체성의 홈에서 나온다 — 스포너가 Identity 를 통째로 받게 되면
-        // 이 줄은 self 로 바뀐다.
-        let bin = crate::process::resolve_sidecar_cmd(
-            &crate::identity::ambient(),
-            &format!("sidecar:{}", binding.sidecar),
-        )?;
-        let log = soksak_spec_service::log_path(&self.home, &binding.plugin);
-        if let Some(dir) = log.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
-        let stderr = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&log)
-            .map(Stdio::from)
-            .unwrap_or_else(|_| Stdio::null());
-        let mut child = Command::new(&bin)
-            .arg(soksak_spec_service::SERVE_ARG)
-            .env("SOKSAK_HOME", &self.home)
-            .envs(env.iter().cloned())
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(stderr)
-            .spawn()
-            .map_err(|e| format!("{bin} 스폰 실패: {e}"))?;
-        let pid = child.id();
-        let stdin = child.stdin.take().ok_or("자식 stdin 없음")?;
-        let stdout = child.stdout.take().ok_or("자식 stdout 없음")?;
-        let child = Arc::new(Mutex::new(child));
-        let kill_child = child.clone();
-        Ok(SpawnedIo {
-            stdin: Box::new(stdin),
-            stdout: Box::new(std::io::BufReader::new(stdout)),
-            pid,
-            kill: Box::new(move || {
-                let mut c = lock_or_poisoned(&kill_child);
-                let _ = c.kill();
-                let _ = c.wait(); // 리핑 — 좀비 0.
-            }),
-        })
     }
 }
 

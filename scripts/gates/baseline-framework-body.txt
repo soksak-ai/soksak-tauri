@@ -64,7 +64,7 @@ frameworks/tauri/src/runtime_dep.rs 584
 frameworks/tauri/src/schedule.rs 156
 frameworks/tauri/src/seal_keys.rs 19
 frameworks/tauri/src/secrets.rs 38
-frameworks/tauri/src/service.rs 208
+frameworks/tauri/src/service.rs 153
 frameworks/tauri/src/sidecar.rs 166
 frameworks/tauri/src/skillgen.rs 16
 frameworks/tauri/src/stream_sink.rs 21

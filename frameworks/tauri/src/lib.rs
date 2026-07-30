@@ -199,7 +199,7 @@ pub fn run() {
             // 워크스페이스 창 유무와 상관없이 부팅 시 1회. 스폰은 스레드로(부팅 비차단).
             app.manage(service::ServiceManager::new(
                 std::sync::Arc::new(service::AppServiceHost::new(app.handle().clone())),
-                std::sync::Arc::new(service::ProcessServiceSpawner::new(home::soksak_home())),
+                std::sync::Arc::new(service::ProcessServiceSpawner::for_identity(identity::ambient())),
             ));
             {
                 let handle = app.handle().clone();

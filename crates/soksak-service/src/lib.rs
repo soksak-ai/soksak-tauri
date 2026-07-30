@@ -1009,3 +1009,67 @@ pub fn on_stream_end(mgr: &Arc<MgrInner>, svc: &Arc<Service>, cause: &str, my_ge
 #[cfg(test)]
 #[path = "lib_tests.rs"]
 mod tests;
+
+// 실 프로세스 스포너 — 바이너리 해석은 사이드카 규약(resolve_sidecar_cmd, PS9: 배급·스테이징은
+// 사이드카 법 상속), env 는 SOKSAK_HOME + 해소된 시크릿만. stderr 는 identity 홈 로그로.
+pub struct ProcessServiceSpawner {
+    identity: Identity,
+}
+
+impl ProcessServiceSpawner {
+    /// 정체성을 통째로 받는다 — 홈도 사이드카 해석도 거기서 나온다. 이 몸이 환경을 캐면
+    /// 같은 코드가 프로세스마다 다른 홈의 사이드카를 띄운다.
+    pub fn for_identity(identity: Identity) -> Self {
+        Self { identity }
+    }
+}
+
+impl ServiceSpawner for ProcessServiceSpawner {
+    fn spawn(
+        &self,
+        binding: &ServiceBinding,
+        env: &[(String, String)],
+    ) -> Result<SpawnedIo, String> {
+        use std::process::{Command, Stdio};
+        // 사이드카 해석은 정체성의 홈에서 나온다.
+        let bin = soksak_core::proc::resolve_sidecar_cmd(
+            &self.identity,
+            &format!("sidecar:{}", binding.sidecar),
+        )?;
+        let log = soksak_spec_service::log_path(self.identity.home(), &binding.plugin);
+        if let Some(dir) = log.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let stderr = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log)
+            .map(Stdio::from)
+            .unwrap_or_else(|_| Stdio::null());
+        let mut child = Command::new(&bin)
+            .arg(soksak_spec_service::SERVE_ARG)
+            .env("SOKSAK_HOME", self.identity.home())
+            .envs(env.iter().cloned())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(stderr)
+            .spawn()
+            .map_err(|e| format!("{bin} 스폰 실패: {e}"))?;
+        let pid = child.id();
+        let stdin = child.stdin.take().ok_or("자식 stdin 없음")?;
+        let stdout = child.stdout.take().ok_or("자식 stdout 없음")?;
+        let child = Arc::new(Mutex::new(child));
+        let kill_child = child.clone();
+        Ok(SpawnedIo {
+            stdin: Box::new(stdin),
+            stdout: Box::new(std::io::BufReader::new(stdout)),
+            pid,
+            kill: Box::new(move || {
+                let mut c = lock_or_poisoned(&kill_child);
+                let _ = c.kill();
+                let _ = c.wait(); // 리핑 — 좀비 0.
+            }),
+        })
+    }
+}
+

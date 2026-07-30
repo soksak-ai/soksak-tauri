@@ -480,7 +480,7 @@ fn what_it_refuses_is_discoverable_with_the_reason() {
     // 감사한 open 이름 전부. 하나라도 빠지면 그 이름은 표에 없는 침묵이 되어, 부른 쪽이
     // UNKNOWN_COMMAND 를 받는다 — "아직 안 옮겼다"와 "여기서는 못 한다"가 구분되지 않는다.
     for expected in [
-        "service_ledger_sync",
+        "sidecar_close",
         "secret_backend",
         "project_owners",
         "sidecar_open",

@@ -10,6 +10,13 @@ use crate::registry_encrypt::{
     run_data_encrypt_change_recovery, run_data_encrypt_enable, run_data_encrypt_recover,
     run_data_encrypt_rotate, run_data_encrypt_status,
 };
+use crate::registry_schedule::{
+    run_schedule_cancel, run_schedule_list, run_schedule_poke, run_schedule_register,
+    run_schedule_set,
+};
+use crate::registry_service::{
+    run_service_bus_push, run_service_dispatch, run_service_ledger_sync, run_service_status,
+};
 use crate::registry_secret::{
     run_net_http_request, run_secret_delete, run_secret_has, run_secret_keys, run_secret_set, run_secret_status,
 };
@@ -84,6 +91,90 @@ pub const COMMANDS: &[Command] = &[
         ],
         returns: "null",
         run: run_download_verify,
+    },
+    Command {
+        // 예약 — 시계와 장부는 soksak-schedule 이, 영속은 이 프로세스의 저장소가 진다.
+        name: "schedule_register",
+        args: &[
+            Arg { name: "trigger", ty: "Trigger", required: REQ },
+            Arg { name: "command", ty: "string", required: REQ },
+            Arg { name: "params", ty: "object", required: OPT },
+            Arg { name: "id", ty: "string?", required: OPT },
+            Arg { name: "retry", ty: "Retry", required: OPT },
+            Arg { name: "concurrency", ty: "u32", required: OPT },
+            Arg { name: "timeoutMs", ty: "u64", required: OPT },
+            Arg { name: "processLease", ty: "bool", required: OPT },
+            Arg { name: "zombieBackstopMs", ty: "u64", required: OPT },
+            Arg { name: "owner", ty: "string?", required: OPT },
+        ],
+        returns: "string — 배정된 id",
+        run: run_schedule_register,
+    },
+    Command {
+        name: "schedule_set",
+        args: &[
+            Arg { name: "at", ty: "u64", required: REQ },
+            Arg { name: "command", ty: "string", required: REQ },
+            Arg { name: "params", ty: "object", required: OPT },
+            Arg { name: "id", ty: "string?", required: OPT },
+        ],
+        returns: "string — 배정된 id",
+        run: run_schedule_set,
+    },
+    Command {
+        name: "schedule_poke",
+        args: &[Arg { name: "id", ty: "string?", required: OPT }],
+        returns: "null",
+        run: run_schedule_poke,
+    },
+    Command {
+        name: "schedule_cancel",
+        args: &[Arg { name: "id", ty: "string", required: REQ }],
+        returns: "bool — 있던 것을 지웠는가",
+        run: run_schedule_cancel,
+    },
+    Command {
+        name: "schedule_list",
+        args: &[],
+        returns: "JobView[]",
+        run: run_schedule_list,
+    },
+    Command {
+        // 상주 서비스 — 매니저는 soksak-service 가, 호스트 능력 다섯은 이 프로세스가 진다.
+        name: "service_dispatch",
+        args: &[
+            Arg { name: "method", ty: "string", required: REQ },
+            Arg { name: "params", ty: "object", required: OPT },
+            Arg { name: "parent", ty: "string?", required: OPT },
+            Arg { name: "origin", ty: "string?", required: OPT },
+            Arg { name: "timeoutMs", ty: "u64", required: OPT },
+        ],
+        returns: "봉투 — 서비스가 답한 그대로",
+        run: run_service_dispatch,
+    },
+    Command {
+        name: "service_bus_push",
+        args: &[
+            Arg { name: "topic", ty: "string", required: REQ },
+            Arg { name: "payload", ty: "object", required: OPT },
+            Arg { name: "dedupKey", ty: "string?", required: OPT },
+        ],
+        returns: "usize — 배달된 구독자 수",
+        run: run_service_bus_push,
+    },
+    Command {
+        name: "service_status",
+        args: &[Arg { name: "plugin", ty: "string?", required: OPT }],
+        returns: "{ services } 또는 { plugin, status }",
+        run: run_service_status,
+    },
+    Command {
+        // 파일 쓰기와 결속 맞춤은 한 손이어야 한다 — 절반만 하면 원장은 새 내용인데 도는
+        // 서비스는 옛 결속이고, 그 어긋남은 "없앤 서비스가 계속 도는 것"으로 나타난다.
+        name: "service_ledger_sync",
+        args: &[Arg { name: "ledger", ty: "BindLedger", required: REQ }],
+        returns: "null",
+        run: run_service_ledger_sync,
     },
     Command {
         // HTTP — 몸은 soksak-net 이, 시크릿 해소는 이 프로세스의 볼트가 진다.
