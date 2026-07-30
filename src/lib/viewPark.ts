@@ -5,7 +5,7 @@
 //   ② 플러그인에 view.parked 사실을 통지 — 엔진 서피스 소유 플러그인이 표시/숨김·재스냅을 이 사실에
 //      맞춘다. 각 플러그인의 뷰포트 추측(IntersectionObserver)·재스냅 경쟁이 규칙 하나로 대체된다.
 // 멱등: 같은 상태 재커밋은 no-op — 렌더마다 불러도 비용은 변화 시에만 발생한다.
-import { invoke } from "../framework";
+import { contentViewHost } from "./contentViews";
 import { emitPluginEvent } from "../plugins/hooks";
 import { browserLabel } from "./webviewLabels";
 import { parkedStyle } from "./layerPark";
@@ -37,7 +37,17 @@ const visibleByView = new Map<string, boolean>();
 export function commitViewVisibility(viewId: string, visible: boolean): void {
   if (visibleByView.get(viewId) === visible) return;
   visibleByView.set(viewId, visible);
-  void invoke("webview_visible", { label: browserLabel(viewId), visible }).catch(() => {});
+  // **호스트를 거친다.** 이름으로 직접 부르면 콘텐츠가 DOM 안에 사는 프레임워크에서 그 이름이
+  // 위임으로 거절되고(FRAMEWORK_DELEGATED), 파킹이 아예 일어나지 않는다 — 탭을 바꿔도 이전
+  // 뷰가 떠 있고 새 뷰는 안 보인다(실측 2026-07-30: 그 거절이 요구 원장에 301건).
+  // 앱이 콘텐츠를 어떻게 보여주는지는 contentViews 가 단일 소유자다.
+  void contentViewHost()
+    .visible(browserLabel(viewId), visible)
+    .catch((e: unknown) => {
+      // 삼키지 않는다 — 못 한 파킹은 "이전 브라우저가 안 사라진다"로만 나타나고, 그 증상에서
+      // 이 자리로 돌아오는 길이 없다.
+      console.warn(`[viewPark] 파킹 커밋 실패: ${viewId} visible=${visible}`, e);
+    });
   emitPluginEvent("view.parked", { viewId, parked: !visible });
 }
 
