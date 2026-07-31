@@ -51,6 +51,14 @@ for (const ws of WORKSPACES) {
     console.error(`rust-tests: cargo 를 실행하지 못했다(${ws.why}): ${r.error.message}`);
     process.exit(1);
   }
+  const out0 = `${r.stdout ?? ""}${r.stderr ?? ""}`;
+  // 잠금 대기·빌드 경합은 **검사 실패가 아니다.** 앱이 도는 동안 cargo 가 target 잠금을 못
+  // 얻으면 여기서 비정상 종료하는데, 그것을 실패로 세면 같은 트리가 환경에 따라 다른 답을
+  // 낸다 — 게이트가 환경을 타면 아무도 그 답을 믿지 않는다(실측 2026-07-31).
+  if (r.status !== 0 && /Blocking waiting for file lock|could not compile.*\(build script/i.test(out0)) {
+    console.error(`rust-tests: 판정 불가 — ${ws.why}: cargo 가 빌드 잠금을 얻지 못했다(앱 실행 중?). 앱을 멈추고 다시 돌려라.`);
+    process.exit(2);
+  }
   if (r.status !== 0) {
     failed += 1;
     console.error(`rust-tests: FAIL — ${ws.why}`);

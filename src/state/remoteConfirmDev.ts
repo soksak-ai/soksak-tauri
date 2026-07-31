@@ -6,6 +6,7 @@
 // PendingConfirms)를 건드리지 않는다. Approve/Deny 를 눌러도 sink 의 deliverDecision 이 mock
 // request_id 에 대기 중인 remote.confirm 핸들러가 없어 무해 no-op 이다. 즉 dev 트리거는 모달
 // **표시**만 흉내내고 실행 권위엔 0 영향(폰 우회 경로가 아니다 — 데스크톱 dev 콘솔에서만 도달).
+import { moduleState } from "../lib/moduleState";
 import { useRemoteConfirm, type RemoteConfirmRequest } from "./remoteConfirm";
 
 // window.__soksakMockRemoteConfirm 의 타입(선택 인자로 표시값 덮어쓰기).
@@ -17,7 +18,11 @@ declare global {
   }
 }
 
-let nextMockId = 900000; // Rust request_id(1부터)와 겹치지 않게 높은 대역 — mock 임이 분명.
+// 갈아끼우기 경계 밖 — 이 값들이 새것이 되면 "이미 했다"는 기억과 지연 초기화·구독
+// 해지 자리가 함께 사라지고, 채우던 쪽은 다시 채우지 않는다.
+const ms = moduleState("state/remoteConfirmDev#state", () => ({
+  nextMockId: 900000, // Rust request_id(1부터)와 겹치지 않게 높은 대역 — mock 임이 분명.
+}));
 
 // 앱 부팅 1회 호출 — DEV 면 window.__soksakMockRemoteConfirm 을 설치, 아니면 no-op. 반환 = 해지 함수.
 export function installRemoteConfirmDevTrigger(): () => void {
@@ -26,7 +31,7 @@ export function installRemoteConfirmDevTrigger(): () => void {
 
   const mock: MockFn = (overrides) => {
     const req: RemoteConfirmRequest = {
-      request_id: nextMockId++,
+      request_id: ms.nextMockId++,
       device_id: "iPhone-mock-7F3A",
       command: "panel.close",
       params: '{ "side": "left" }',

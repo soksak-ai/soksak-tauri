@@ -4,11 +4,16 @@
 //
 // 안전: 표현층 큐에 mock 요청을 **넣기만** 한다 — Rust 권위(remote::confirm)를 건드리지 않는다(폰
 // 우회 경로 아님 — 데스크톱 dev 빌드에서만 도달). danger:"inject" 로 분류해 원격 정책 게이트도 거친다.
+import { moduleState } from "../lib/moduleState";
 import { register } from "./registry";
 import { tmsg } from "../i18n";
 import { useRemoteConfirm } from "../state/remoteConfirm";
 
-let nextMockId = 900000; // Rust request_id(1부터)와 안 겹치는 높은 대역 — mock 임이 분명.
+// 갈아끼우기 경계 밖 — 이 값들이 새것이 되면 "이미 했다"는 기억과 지연 초기화·구독
+// 해지 자리가 함께 사라지고, 채우던 쪽은 다시 채우지 않는다.
+const ms = moduleState("commands/catalogRemoteConfirmDev#state", () => ({
+  nextMockId: 900000, // Rust request_id(1부터)와 안 겹치는 높은 대역 — mock 임이 분명.
+}));
 
 // 개발 빌드에서만 dev.remoteConfirmMock 을 등록. 프로덕션(DEV=false)에선 no-op(등록 0).
 export function registerRemoteConfirmDevCatalog(): void {
@@ -44,7 +49,7 @@ export function registerRemoteConfirmDevCatalog(): void {
     ],
     danger: "inject",
     handler: (p) => {
-      const requestId = nextMockId++;
+      const requestId = ms.nextMockId++;
       useRemoteConfirm.getState().enqueue({
         request_id: requestId,
         device_id: (p.device_id as string) ?? "iPhone-mock-7F3A",

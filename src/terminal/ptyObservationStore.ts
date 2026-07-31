@@ -90,9 +90,13 @@ export function registerPtyObservation(paneId: string): void {
 
 // 전 pane 출력 활동 sink(B3) — hooks 가 주입해 lastActivity 를 기록한다(스로틀은 주입측 소유).
 // pane별 구독(subscribeObservedOutput)과 달리 pane 열거 없이 전 출력을 한 곳에서 본다.
-let anyOutputSink: ((paneId: string) => void) | null = null;
+// 갈아끼우기 경계 밖 — 이 값들이 새것이 되면 "이미 했다"는 기억과 지연 초기화·구독
+// 해지 자리가 함께 사라지고, 채우던 쪽은 다시 채우지 않는다.
+const ms = moduleState("terminal/ptyObservationStore#state", () => ({
+  anyOutputSink: null as ((paneId: string) => void) | null,
+}));
 export function setAnyOutputSink(cb: ((paneId: string) => void) | null): void {
-  anyOutputSink = cb;
+  ms.anyOutputSink = cb;
 }
 
 /** PTY 출력 청크를 그 paneId 의 관찰 파서에 먹인다 + output 구독자 통지. 미등록이면 no-op. */
@@ -101,7 +105,7 @@ export function feedPtyOutput(paneId: string, chunk: string | Uint8Array): void 
   if (!obs) return;
   obs.parser.write(chunk);
   if (obs.outputSubs.size) for (const cb of [...obs.outputSubs]) cb();
-  anyOutputSink?.(paneId);
+  ms.anyOutputSink?.(paneId);
 }
 
 // ── 이미-파싱된 관찰 푸시(코어 터미널 뷰 producer 경로) ──────────────────────────

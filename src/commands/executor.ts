@@ -35,18 +35,22 @@ const boot = moduleState("commands/executor#boot", () => ({ started: false }));
 // 의존 플러그인이 활성화 전인 핸들러)에 부딪혀 가짜 UNKNOWN_COMMAND 를 내던 레이스의 구조적
 // 봉합(재시도·폴링 없음). "미등록 명령만 대기"는 부족하다 — 등록된 명령의 핸들러가 다른
 // 플러그인 명령을 부르는 경우(workflow reconcile → kanban)를 놓친다. 전부 대기가 올바른 의미론.
-let hostReady = false;
-let resolveFrameworkReady: (() => void) | undefined;
+// 갈아끼우기 경계 밖 — 이 값들이 새것이 되면 "이미 했다"는 기억과 지연 초기화·구독
+// 해지 자리가 함께 사라지고, 채우던 쪽은 다시 채우지 않는다.
+const ms = moduleState("commands/executor#state", () => ({
+  hostReady: false,
+  resolveFrameworkReady: undefined as (() => void) | undefined,
+}));
 const hostReadyGate = new Promise<void>((resolve) => {
-  resolveFrameworkReady = resolve;
+  ms.resolveFrameworkReady = resolve;
 });
 
 /** 플러그인 호스트 활성화 완료 신호 — main.tsx 가 initPluginHost() 직후 1회 호출한다. */
 export function markCommandHostReady(): void {
-  hostReady = true;
+  ms.hostReady = true;
   // 배선 완료 선언 — 이 뒤로 빠진 관측 배선은 "아직"이 아니라 결함이고, 응답이 그것을 말한다.
   markRuntimeReady();
-  resolveFrameworkReady?.();
+  ms.resolveFrameworkReady?.();
 }
 
 export function startExecutor(): void {
@@ -82,7 +86,7 @@ export function startExecutor(): void {
     // 등록된 코어 명령(state.tree 등)까지 잡으면 복원은 231ms 에 끝났는데 소켓 응답이
     // 플러그인 활성화(실측 2.5s) 뒤로 밀린다(복원 300ms 기준의 마지막 병목이 이 게이트였다).
     // 미등록 명령은 완료까지 대기 — 그 뒤에도 미등록이면 그때의 UNKNOWN_COMMAND 가 진짜다.
-    if (!hostReady && getSpec(method) === undefined) await hostReadyGate;
+    if (!ms.hostReady && getSpec(method) === undefined) await hostReadyGate;
     // 소켓 경유 = 원격(AI/CLI) 호출 → 권한 게이트 적용 대상. window 는 자기 창 label
     // (라우팅 확인·명령 컨텍스트용).
     const result = await execute(method, params ?? {}, {

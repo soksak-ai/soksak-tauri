@@ -15,9 +15,13 @@ import { onLayoutMotion } from "./layoutMotion";
 
 // 갈아끼우기 경계 밖 — 이 표가 새것이 되면 채운 쪽은 이미 채웠다고 알아 다시 채우지 않는다.
 const planes = moduleState("lib/railHoleClipHost#planes", () => new Set<HTMLElement>());
-let offMotion: (() => void) | null = null;
-let raf = 0;
-let coalescing = false;
+// 갈아끼우기 경계 밖 — 이 값들이 새것이 되면 "이미 했다"는 기억과 지연 초기화·구독
+// 해지 자리가 함께 사라지고, 채우던 쪽은 다시 채우지 않는다.
+const ms = moduleState("lib/railHoleClipHost#state", () => ({
+  offMotion: null as (() => void) | null,
+  raf: 0,
+  coalescing: false,
+}));
 
 /** 등록된 모든 plane 에 클립을 건다 — 문서 스캔은 이 한 지점에서 1회. */
 export function syncRailHoleClips(): void {
@@ -37,33 +41,33 @@ export function syncRailHoleClips(): void {
  *    그때 아직 등록되지 않은 pane 들이 그 프레임에 클립을 못 받는다.
  */
 export function requestRailHoleClipSync(): void {
-  if (coalescing) return;
-  coalescing = true;
+  if (ms.coalescing) return;
+  ms.coalescing = true;
   queueMicrotask(() => {
-    coalescing = false;
+    ms.coalescing = false;
     syncRailHoleClips();
   });
 }
 
 function startTracking(): void {
-  if (raf) return;
+  if (ms.raf) return;
   const tick = () => {
     syncRailHoleClips();
-    raf = requestAnimationFrame(tick);
+    ms.raf = requestAnimationFrame(tick);
   };
-  raf = requestAnimationFrame(tick);
+  ms.raf = requestAnimationFrame(tick);
 }
 
 function stopTracking(): void {
-  if (!raf) return;
-  cancelAnimationFrame(raf);
-  raf = 0;
+  if (!ms.raf) return;
+  cancelAnimationFrame(ms.raf);
+  ms.raf = 0;
   syncRailHoleClips(); // 해제가 아니라 최종 기하로 정착
 }
 
 function ensureMotionSubscription(): void {
-  if (offMotion) return;
-  offMotion = onLayoutMotion((active) => {
+  if (ms.offMotion) return;
+  ms.offMotion = onLayoutMotion((active) => {
     if (active) startTracking();
     else stopTracking();
   });
@@ -77,17 +81,17 @@ export function registerRailPlane(plane: HTMLElement): () => void {
     planes.delete(plane);
     if (planes.size === 0) {
       stopTracking();
-      offMotion?.();
-      offMotion = null;
+      ms.offMotion?.();
+      ms.offMotion = null;
     }
   };
 }
 
 export function __resetRailHoleClipHostForTest(): void {
   planes.clear();
-  if (raf) cancelAnimationFrame(raf);
-  raf = 0;
-  coalescing = false;
-  offMotion?.();
-  offMotion = null;
+  if (ms.raf) cancelAnimationFrame(ms.raf);
+  ms.raf = 0;
+  ms.coalescing = false;
+  ms.offMotion?.();
+  ms.offMotion = null;
 }

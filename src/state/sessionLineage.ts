@@ -20,19 +20,23 @@ const viewToDir = moduleState(
   "state/sessionLineage#viewToDir",
   () => new Map<string, string>(),
 );
-let fsUnlisten: (() => void) | null = null;
-let defined = false;
+// 갈아끼우기 경계 밖 — 이 값들이 새것이 되면 "이미 했다"는 기억과 지연 초기화·구독
+// 해지 자리가 함께 사라지고, 채우던 쪽은 다시 채우지 않는다.
+const ms = moduleState("state/sessionLineage#state", () => ({
+  fsUnlisten: null as (() => void) | null,
+  defined: false,
+}));
 
 async function ensureDefined(): Promise<void> {
-  if (defined) return;
-  defined = true;
+  if (ms.defined) return;
+  ms.defined = true;
   await invoke("data_define", { ns: LINEAGE_NS, coll: LINEAGE_COLL, indexes: ["viewId"], fts: [] }).catch(() => {});
 }
 
 function ensureFsListener(): void {
-  if (fsUnlisten) return;
+  if (ms.fsUnlisten) return;
   // notify fs-change(변경 항목의 부모 디렉토리) — 우리가 watch 중인 세션 디렉토리면 그때만 확정.
-  fsUnlisten = safeListen<string>("fs-change", (e) => {
+  ms.fsUnlisten = safeListen<string>("fs-change", (e) => {
     if (byDir.has(e.payload)) void refresh(e.payload);
   });
 }

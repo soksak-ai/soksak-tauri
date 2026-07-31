@@ -32,13 +32,13 @@ export const useViewLabels = moduleState("state/viewLabels#store", () =>
     if (trimmed) labels[viewKey] = trimmed;
     else delete labels[viewKey]; // 빈/공백 = 오버라이드 제거(manifest 폴백)
     set({ labels });
-    persist?.(labels);
+    ms.persist?.(labels);
   },
   clearLabel: (viewKey) => {
     const labels = { ...get().labels };
     delete labels[viewKey];
     set({ labels });
-    persist?.(labels);
+    ms.persist?.(labels);
   },
   replaceAll: (labels) => set({ labels }),
 })),
@@ -52,7 +52,11 @@ export function resolveViewLabel(viewKey: string, fallback: string): string {
 // ── 영속 배선(boot 에서 1회) ────────────────────────────────────────────────────
 // coreStore 는 async invoke 라 모듈-load 시 주입할 수 없다 — boot 가 deps 와 함께 init 한다.
 
-let persist: ((labels: LabelMap) => void) | null = null;
+// 갈아끼우기 경계 밖 — 이 값들이 새것이 되면 "이미 했다"는 기억과 지연 초기화·구독
+// 해지 자리가 함께 사라지고, 채우던 쪽은 다시 채우지 않는다.
+const ms = moduleState("state/viewLabels#state", () => ({
+  persist: null as ((labels: LabelMap) => void) | null,
+}));
 
 export function initViewLabelsPersistence(deps: CoreStoreDeps): () => void {
   const store = makeCoreStore<LabelMap>({
@@ -67,9 +71,9 @@ export function initViewLabelsPersistence(deps: CoreStoreDeps): () => void {
   // 다른 창의 변경 반영.
   const un = store.subscribe((v) => useViewLabels.getState().replaceAll(v));
   // 사용자 입력(set/clear) → 저장.
-  persist = (labels) => void store.save(labels);
+  ms.persist = (labels) => void store.save(labels);
   return () => {
     un();
-    persist = null;
+    ms.persist = null;
   };
 }
