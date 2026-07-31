@@ -6,7 +6,7 @@
 import { tmsg } from "../i18n";
 import { register } from "./registry";
 import { catalogJson } from "./registry";
-import { commandHealth, noteActivityPersist } from "./commandObservation";
+import { commandHealth, noteActivityPersist, noteLedgerAudit } from "./commandObservation";
 import { invoke } from "../framework";
 
 export function registerHealthCatalog(): void {
@@ -16,7 +16,7 @@ export function registerHealthCatalog(): void {
     triggers: { ko: "상태 진단 건강 관측 배선" },
     params: {},
     returns:
-      "{ ready, commands:{registered,traceSinkInstalled,emitted,lastEmitAt}, activity:{attempts,ok,failed,consecutiveFailures,lastOkAt,lastFailAt,lastError,lastStampAt,healthy}, degradedAxes }",
+      "{ ready, commands{registered,traceSinkInstalled,emitted,lastEmitAt}, activity{...}, persist{...}, degradedAxes, ledger{minSeq,maxSeq,gaps,timeRegressions,singleWriter,persist} — ledger 는 cored 가 답한다(저장소를 쓰는 프로세스가 둘이라 한쪽만으로는 판정할 수 없다) }",
     message: (d) =>
       tmsg("msg.state.health", {
         n: ((d.degradedAxes as unknown[]) ?? []).length,
@@ -34,7 +34,17 @@ export function registerHealthCatalog(): void {
         // 못 물어도 나머지 축은 답한다 — 한 축의 침묵이 진단 전체를 막지 않는다.
       }
       // 등록 수는 등록부가 답한다 — 관측 모듈은 등록부를 모른다(둘은 서로의 안을 안 본다).
-      return commandHealth(catalogJson().length);
+      // 저장소를 쓰는 프로세스가 둘이면 한쪽 상태만으로는 아무것도 못 판정한다 — cored 의
+      // 원장 상태도 함께 답한다(조회라 왕복이 안전하다: 발행 경로가 아니다).
+      let ledger: Record<string, unknown> | null = null;
+      try {
+        ledger = await invoke<Record<string, unknown>>("activity_audit");
+      } catch (e) {
+        ledger = { unreachable: e instanceof Error ? e.message : String(e) };
+      }
+      // 판정보다 먼저 실어야 한다 — 나중에 실으면 그 턴의 degraded 는 원장을 모른다.
+      noteLedgerAudit(ledger);
+      return { ...commandHealth(catalogJson().length), ledger };
     },
   });
 

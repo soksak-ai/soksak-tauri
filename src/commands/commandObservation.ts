@@ -73,6 +73,15 @@ export function emitTrace(t: CommandTrace, at: number): void {
 // 실측(2026-07-31): 활동 발행이 끊긴 채로 앱은 멀쩡히 명령에 답했다. 그 사실을 알려면 원장을
 // 두 번 조회해 최신 시각을 비교해야 했다. 조회하는 쪽이 무엇을 물었든, 코어가 절름거리고
 // 있으면 그 답에 실려 와야 한다.
+/** 원장 주인이 답한 감사 — 저장소를 쓰는 프로세스가 둘이면 이것 없이는 판정이 반쪽이다. */
+const ledgerBox = moduleState("commands/commandObservation#ledgerBox.v", () => ({
+  v: null as Record<string, unknown> | null,
+}));
+
+export function noteLedgerAudit(audit: Record<string, unknown> | null): void {
+  ledgerBox.v = audit;
+}
+
 export function degradedAxes(registeredCount: number): string[] | undefined {
   const bad: string[] = [];
   const a = activityHealth();
@@ -98,6 +107,21 @@ export function degradedAxes(registeredCount: number): string[] | undefined {
     );
   }
   if (registeredCount === 0) bad.push("commands: 등록부가 비어 있음(등록 0개)");
+  // 원장 주인의 사실 — 이쪽 프로세스가 성해도 저쪽이 막혔으면 원장은 안 자란다.
+  if (ledgerBox.v) {
+    const reg = Number(ledgerBox.v.time_regressions ?? 0);
+    if (reg > 0) {
+      bad.push(
+        `activity: 원장에 시간 역행 ${reg}건(첫 seq ${ledgerBox.v.first_regression_seq}) — 그 구간은 덮어써졌고 복구할 수 없다`,
+      );
+    }
+    const lp = (ledgerBox.v.persist ?? {}) as Record<string, number>;
+    if ((lp.failures ?? 0) > 0 || (lp.pending ?? 0) > 0) {
+      bad.push(
+        `activity: 원장 주인의 쓰기가 막힌다(실패 누계 ${lp.failures ?? 0} · 대기 ${lp.pending ?? 0})${lp.lastError ? ` — ${String(lp.lastError).slice(0, 80)}` : ""}`,
+      );
+    }
+  }
   // sink 미설치는 "조용함"이 아니라 결함이다 — 이 창의 모든 실행이 원장에서 사라진다.
   if (!traceSink.fn) bad.push("commands: 실행 계측 sink 미설치(이 창의 실행이 원장에 안 남음)");
   // 영속이 밀리면 도장은 받았는데 원장에는 없다 — 그 차이는 조회로만 드러나고, 조회하는

@@ -53,7 +53,10 @@ frameworks/electron/windowEvents.cjs 13
 #   ② 재개 지점 조회 실패를 0 으로 읽지 않는다. 0 에서 재매기면 id 가 겹쳐 과거를 덮는다
 #      — 실측 2026-08-01: 원장 범위가 74583~ 에서 1~ 로 넓어졌고 시간 역행이 나타났다.
 #   몸(도장 규칙·쓰기)은 여전히 코어와 저장소에 있고, 여기 있는 것은 배달 대기와 계수다.
-frameworks/tauri/src/activity.rs 406
+# 재입법 2026-08-01 406 → 410, lib.rs 717 → 718. activity_audit 위임 배선이다.
+#   원장 주인에게 묻는 한 줄(ask_owner)과 등록 한 줄 — 몸은 cored 에 있다. 이 표면이 없던
+#   동안 cored 의 쓰기가 44회 막혔는데 그 사실이 앱의 어느 상태면에도 오지 않았다.
+frameworks/tauri/src/activity.rs 410
 frameworks/tauri/src/activity_sink.rs 9
 frameworks/tauri/src/ai_session.rs 45
 frameworks/tauri/src/clipboard.rs 249
@@ -74,7 +77,7 @@ frameworks/tauri/src/i18n.rs 155
 frameworks/tauri/src/id_registry.rs 144
 frameworks/tauri/src/identity.rs 59
 frameworks/tauri/src/ipc.rs 1232
-frameworks/tauri/src/lib.rs 717
+frameworks/tauri/src/lib.rs 718
 frameworks/tauri/src/login_shell.rs 28
 frameworks/tauri/src/main.rs 4
 frameworks/tauri/src/mediaproxy.rs 18

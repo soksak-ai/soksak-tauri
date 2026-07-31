@@ -747,6 +747,7 @@ pub fn run() {
             activity::activity_publish,
             activity::activity_recent,
             activity::activity_persist_stats,
+            activity::activity_audit,
             id_registry::id_registry_declare,
             id_registry::id_registry_resolve,
             project_registry::project_claim,

@@ -344,6 +344,16 @@ pub fn activity_publish(app: AppHandle, kind: String, source: String, payload: V
 /// 다음 성공에 흘러가는데, 그 사이 밖에서는 "발행 성공"만 보인다 — 실측 2026-07-31: 앱 도장
 /// 86160, DB 최대 86097 로 63건이 어디에도 안 보인 채 대기 중이었다. 세는 자리가 없으면
 /// 그 63건은 유실인지 대기인지조차 구분되지 않는다.
+/// 원장 주인의 무결성 감사를 그대로 받아 온다 — **저장소를 쓰는 프로세스가 둘이면 한쪽
+/// 상태만으로는 아무것도 판정할 수 없다.**
+///
+/// 실측(2026-08-01): 앱이 저장소 쓰기 소유자(store_lock)라 cored 의 원장 쓰기가 44회
+/// `database is locked` 로 막혔는데, 그 실패가 앱의 어느 상태면에도 오지 않았다.
+#[tauri::command]
+pub fn activity_audit() -> Result<Value, String> {
+    crate::cored_host::ask_owner("activity_audit", &serde_json::json!({}))
+}
+
 #[tauri::command]
 pub fn activity_persist_stats() -> Value {
     serde_json::json!({
