@@ -42,7 +42,8 @@ struct Lineage {
 pub(crate) fn run_ai_session_lineage(ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: Lineage| {
         // 읽기는 소유권을 안 본다 — 못 쓰는 것과 못 보는 것은 다른 사실이다(WAL 은 읽기 동시).
-        let conn = ctx.open_db()?;
-        soksak_store::session_lineage::ai_session_lineage(&conn, &a.cwd, a.view_id)
+        ctx.with_db(|conn| {
+            soksak_store::session_lineage::ai_session_lineage(&conn, &a.cwd, a.view_id)
+        })
     })
 }

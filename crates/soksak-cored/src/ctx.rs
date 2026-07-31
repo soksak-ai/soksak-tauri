@@ -97,6 +97,39 @@ impl Ctx {
     /// 부팅 게이트(무결성·형태·FTS 정합·쓰기 카나리아)는 여기 없다. 이 자리는 호출마다 지나는
     /// 자리라 게이트를 걸면 매 명령이 저장소를 전수로 훑고, 그중 절반은 쓰기다. 게이트는
     /// 저장소를 소유한 쪽이 부팅에서 한 번 지난다(`claim_writes` → `ensure_schema`).
+    /// 저장소 커넥션 하나를 연다.
+    ///
+    /// **매 호출마다 새로 열지 않는다.** SQLite WAL 은 읽기 동시·쓰기 단일이라, 한 프로세스가
+    /// 커넥션을 여럿 열고 쓰면 자기 커넥션끼리 `database is locked` 를 낸다(실측 2026-08-01:
+    /// 앱이 저장소를 놓은 뒤에도 이 프로세스가 27~44 회 막혔다 — 다투던 상대가 자기 자신이었다).
+    /// 앱이 단일 쓰기 커넥션을 Mutex 로 쥐는 것과 같은 계약이다.
+    ///
+    /// 호출자는 `&Connection` 을 받아 쓰고 곧 놓는다 — 규칙은 커넥션을 소유하지 않는다.
+    pub fn with_db<T>(
+        &self,
+        f: impl FnOnce(&rusqlite::Connection) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let path = self.db_path();
+        let cell = Self::writer();
+        let mut guard = cell
+            .lock()
+            .map_err(|_| "저장소 쓰기 잠금이 오염됐다".to_string())?;
+        if guard.is_none() {
+            *guard = Some(
+                soksak_store::open::connect(&path)
+                    .map_err(|e| format!("저장소 열기 실패({}): {e}", path.display()))?,
+            );
+        }
+        f(guard.as_ref().expect("직전에 열었거나 이미 있던 커넥션"))
+    }
+
+    fn writer() -> &'static std::sync::Mutex<Option<rusqlite::Connection>> {
+        static W: std::sync::OnceLock<std::sync::Mutex<Option<rusqlite::Connection>>> =
+            std::sync::OnceLock::new();
+        W.get_or_init(|| std::sync::Mutex::new(None))
+    }
+
+    /// 옛 진입점 — 커넥션을 값으로 돌려준다. 남은 호출자를 with_db 로 옮기는 동안만 있다.
     pub fn open_db(&self) -> Result<rusqlite::Connection, String> {
         let path = self.db_path();
         soksak_store::open::connect(&path)

@@ -112,8 +112,30 @@ pub fn persist_only(db_path: &str, entry: &Value) -> Result<(), String> {
     persist(db_path, entry)
 }
 
+/// 이 프로세스의 **쓰기 커넥션 하나**. SQLite WAL 은 읽기 동시·쓰기 단일이라, 발행마다 새로
+/// 열면 자기 커넥션끼리 `database is locked` 를 낸다(실측 2026-08-01: 앱이 저장소를 놓은
+/// 뒤에도 cored 가 27~44 회 막혔다 — 다투던 상대가 자기 자신이었다). 앱이 단일 쓰기 커넥션을
+/// 쥐는 것과 같은 계약이다.
+fn writer(db_path: &str) -> &'static std::sync::Mutex<Option<rusqlite::Connection>> {
+    static W: std::sync::OnceLock<std::sync::Mutex<Option<rusqlite::Connection>>> =
+        std::sync::OnceLock::new();
+    let cell = W.get_or_init(|| std::sync::Mutex::new(None));
+    if let Ok(mut g) = cell.lock() {
+        if g.is_none() {
+            if let Ok(c) = soksak_store::open::connect(std::path::Path::new(db_path)) {
+                *g = Some(c);
+            }
+        }
+    }
+    cell
+}
+
 fn persist(db_path: &str, entry: &Value) -> Result<(), String> {
-    let conn = soksak_store::open::connect(std::path::Path::new(db_path))?;
+    let cell = writer(db_path);
+    let guard = cell.lock().map_err(|_| "원장 쓰기 잠금이 오염됐다".to_string())?;
+    let conn = guard.as_ref().ok_or_else(|| {
+        format!("원장 저장소를 열지 못했다({db_path})")
+    })?;
     if soksak_store::activity_persist::persist_entry(&conn, entry) {
         return Ok(());
     }

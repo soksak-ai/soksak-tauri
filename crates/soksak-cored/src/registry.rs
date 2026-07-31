@@ -340,19 +340,20 @@ struct RecentArgs {
 pub(crate) fn run_activity_recent(ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: RecentArgs| {
         use soksak_core::activity as act;
-        let conn = ctx.open_db()?;
-        let mut q = conn.prepare(act::RECENT_SQL).map_err(|e| e.to_string())?;
-        let rows = q
-            .query_map(rusqlite::params![act::NS, act::COLL], |r| r.get::<_, String>(0))
-            .map_err(|e| e.to_string())?;
-        let mut entries = Vec::new();
-        for row in rows {
-            let doc = row.map_err(|e| e.to_string())?;
-            // 못 읽는 줄은 건너뛰지 않는다 — 조용히 빠지면 커서가 어긋난 것을 아무도 모른다.
-            entries.push(serde_json::from_str(&doc).map_err(|e| format!("원장 행 파싱 실패: {e}"))?);
-        }
-        // 앱의 기본 상한과 같다(200) — 다르면 같은 호출이 프로세스마다 다른 길이를 답한다.
-        Ok(act::pick_recent(entries, a.since, a.limit.unwrap_or(200)))
+        ctx.with_db(|conn| {
+            let mut q = conn.prepare(act::RECENT_SQL).map_err(|e| e.to_string())?;
+            let rows = q
+                .query_map(rusqlite::params![act::NS, act::COLL], |r| r.get::<_, String>(0))
+                .map_err(|e| e.to_string())?;
+            let mut entries = Vec::new();
+            for row in rows {
+                let doc = row.map_err(|e| e.to_string())?;
+                // 못 읽는 줄은 건너뛰지 않는다 — 조용히 빠지면 커서가 어긋난 것을 아무도 모른다.
+                entries.push(serde_json::from_str(&doc).map_err(|e| format!("원장 행 파싱 실패: {e}"))?);
+            }
+            // 앱의 기본 상한과 같다(200) — 다르면 같은 호출이 프로세스마다 다른 길이를 답한다.
+            Ok(act::pick_recent(entries, a.since, a.limit.unwrap_or(200)))
+        })
     })
 }
 
@@ -502,8 +503,9 @@ struct DataDefine {
 pub(crate) fn run_data_define(ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: DataDefine| {
         soksak_core::kv::validate_ns(&a.ns)?;
-        let conn = ctx.open_db()?;
-        soksak_store::store::define(&conn, &a.ns, &a.coll, &a.indexes, &a.fts).map(|_| Value::Null)
+        ctx.with_db(|conn| {
+            soksak_store::store::define(&conn, &a.ns, &a.coll, &a.indexes, &a.fts).map(|_| Value::Null)
+        })
     })
 }
 
@@ -522,9 +524,10 @@ pub(crate) fn run_data_migrate_ns(ctx: &Ctx, params: &Value) -> Outcome {
             // 같은 ns 는 이행이 아니다 — 성공으로 답하되 사유를 값에 실어 부른 쪽이 가른다.
             return Ok(json!({ "migrated": false, "reason": "same-ns" }));
         }
-        let conn = ctx.open_db()?;
-        let out = soksak_store::store::migrate_ns(&conn, &a.from_ns, &a.to_ns)?;
-        serde_json::to_value(out).map_err(|e| e.to_string())
+        ctx.with_db(|conn| {
+            let out = soksak_store::store::migrate_ns(&conn, &a.from_ns, &a.to_ns)?;
+            serde_json::to_value(out).map_err(|e| e.to_string())
+        })
     })
 }
 
@@ -549,24 +552,25 @@ struct DataQuery {
 pub(crate) fn run_data_query(ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: DataQuery| {
         soksak_core::kv::validate_ns(&a.ns)?;
-        let conn = ctx.open_db()?;
-        // 봉인된 필드는 이 프로세스가 못 연다(볼트 없음) — 열쇠 해소자는 **없음**을 답한다.
-        // 지어낸 열쇠로 열려 들면 쓰레기를 평문으로 답하게 된다.
-        let rows = soksak_store::store::query(
-            &conn,
-            &a.ns,
-            &a.coll,
-            a.scope.as_deref(),
-            a.filter.as_ref(),
-            a.order.as_deref(),
-            a.desc.unwrap_or(true),
-            a.limit,
-            a.offset,
-            // 봉인 필드를 열 열쇠가 없다는 것을 **선언한다**. 지어낸 해소자를 주면 쓰레기를
-            // 평문으로 답하고, 그 오답은 오류로 보이지 않는다.
-            None,
-        )?;
-        Ok(Value::Array(rows))
+        ctx.with_db(|conn| {
+            // 봉인된 필드는 이 프로세스가 못 연다(볼트 없음) — 열쇠 해소자는 **없음**을 답한다.
+            // 지어낸 열쇠로 열려 들면 쓰레기를 평문으로 답하게 된다.
+            let rows = soksak_store::store::query(
+                &conn,
+                &a.ns,
+                &a.coll,
+                a.scope.as_deref(),
+                a.filter.as_ref(),
+                a.order.as_deref(),
+                a.desc.unwrap_or(true),
+                a.limit,
+                a.offset,
+                // 봉인 필드를 열 열쇠가 없다는 것을 **선언한다**. 지어낸 해소자를 주면 쓰레기를
+                // 평문으로 답하고, 그 오답은 오류로 보이지 않는다.
+                None,
+            )?;
+            Ok(Value::Array(rows))
+        })
     })
 }
 
@@ -966,41 +970,42 @@ pub(crate) fn run_window_census(_ctx: &Ctx, _params: &Value) -> Outcome {
 pub(crate) fn run_activity_audit(ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |_: NoArgs| {
         use soksak_core::activity as act;
-        let conn = ctx.open_db()?;
-        let mut q = conn.prepare(act::AUDIT_SQL).map_err(|e| e.to_string())?;
-        let rows = q
-            .query_map(rusqlite::params![act::NS, act::COLL], |r| {
-                Ok((r.get::<_, i64>(0)?.max(0) as u64, r.get::<_, i64>(1)?.max(0) as u64))
-            })
-            .map_err(|e| e.to_string())?;
-        let mut pairs = Vec::new();
-        for row in rows {
-            pairs.push(row.map_err(|e| e.to_string())?);
-        }
-        let audit = act::audit_ledger(&pairs);
-        let mut v = serde_json::to_value(&audit).map_err(|e| e.to_string())?;
-        // 이 프로세스의 영속 상태도 함께 답한다 — 원장이 안 자랄 때 "안 썼다"와 "쓰다 막혔다"는
-        // 다른 사실이고, 세는 자리가 없으면 둘이 똑같아 보인다. 프레임워크 쪽과 같은 축이다.
-        if let Some(o) = v.as_object_mut() {
-            o.insert(
-                "persist".into(),
-                json!({
-                    "failures": soksak_store::activity_persist::persist_failures(),
-                    "drops": soksak_store::activity_persist::persist_drops(),
-                    "pending": soksak_store::activity_persist::persist_pending(),
-                    "lastError": soksak_store::activity_persist::persist_last_error(),
-                }),
-            );
-        }
-        // 이 프로세스가 보는 원장이 어느 파일인지 함께 답한다 — 주인이 여럿일 때 "어느 원장을
-        // 감사했는가"가 답의 일부다.
-        if let Some(o) = v.as_object_mut() {
-            o.insert(
-                "ledger".into(),
-                Value::String(ctx.db_path().to_string_lossy().to_string()),
-            );
-        }
-        Ok(v)
+        ctx.with_db(|conn| {
+            let mut q = conn.prepare(act::AUDIT_SQL).map_err(|e| e.to_string())?;
+            let rows = q
+                .query_map(rusqlite::params![act::NS, act::COLL], |r| {
+                    Ok((r.get::<_, i64>(0)?.max(0) as u64, r.get::<_, i64>(1)?.max(0) as u64))
+                })
+                .map_err(|e| e.to_string())?;
+            let mut pairs = Vec::new();
+            for row in rows {
+                pairs.push(row.map_err(|e| e.to_string())?);
+            }
+            let audit = act::audit_ledger(&pairs);
+            let mut v = serde_json::to_value(&audit).map_err(|e| e.to_string())?;
+            // 이 프로세스의 영속 상태도 함께 답한다 — 원장이 안 자랄 때 "안 썼다"와 "쓰다 막혔다"는
+            // 다른 사실이고, 세는 자리가 없으면 둘이 똑같아 보인다. 프레임워크 쪽과 같은 축이다.
+            if let Some(o) = v.as_object_mut() {
+                o.insert(
+                    "persist".into(),
+                    json!({
+                        "failures": soksak_store::activity_persist::persist_failures(),
+                        "drops": soksak_store::activity_persist::persist_drops(),
+                        "pending": soksak_store::activity_persist::persist_pending(),
+                        "lastError": soksak_store::activity_persist::persist_last_error(),
+                    }),
+                );
+            }
+            // 이 프로세스가 보는 원장이 어느 파일인지 함께 답한다 — 주인이 여럿일 때 "어느 원장을
+            // 감사했는가"가 답의 일부다.
+            if let Some(o) = v.as_object_mut() {
+                o.insert(
+                    "ledger".into(),
+                    Value::String(ctx.db_path().to_string_lossy().to_string()),
+                );
+            }
+            Ok(v)
+        })
     })
 }
 
