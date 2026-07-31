@@ -10,11 +10,16 @@
 //
 // 웹뷰 축(webview.recover 의 label = b-<win>-<view>)은 다른 식별자 공간이다 — 창 하나에 여러
 // 웹뷰가 있어 생략의 뜻이 하나로 정해지지 않으므로 이 규칙 밖이고, 필수가 옳다.
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const SRC = readFileSync(join(__dirname, "catalog.ts"), "utf8");
+// 카탈로그는 여러 파일로 갈린다(창·캡처·건강·DOM…). 어느 파일에 있는지를 손으로 적으면 코드가
+// 옮겨간 날 게이트가 조용히 빈 집합을 세고 통과한다 — 파일 목록은 트리에서 발견한다.
+const SRC = readdirSync(__dirname)
+  .filter((f) => /^catalog.*\.ts$/.test(f) && !f.endsWith(".test.ts"))
+  .map((f) => readFileSync(join(__dirname, f), "utf8"))
+  .join("\n");
 
 /** register("<name>", { ... }) 블록들 — 다음 register 앞까지. */
 function blocks(): { name: string; body: string }[] {

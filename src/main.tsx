@@ -1,5 +1,6 @@
 import ReactDOM from "react-dom/client";
 import { invoke as bootInvoke } from "./framework";
+import { bootFactPayload } from "./lib/bootFact";
 // 부트 오류 관찰(P12 사각지대 커버) — 렌더/모듈 오류로 화면이 백지가 되면 스냅샷·DOM 으로는
 // 원인을 볼 수 없다. 전역 오류를 활동 허브(boot.error)로 발행해 소켓 activity.recent 만으로
 // 부트 크래시의 메시지·스택을 읽을 수 있게 한다. React 마운트 전에 걸어야 하므로 최상단.
@@ -88,7 +89,7 @@ function bootStamp(step: string): void {
   void bootInvoke("activity_publish", {
     kind: "boot.step",
     source: "boot",
-    payload: { step, message: `· boot ${step}` },
+    payload: bootFactPayload(step),
   }).catch(() => {});
 }
 

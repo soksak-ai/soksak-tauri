@@ -7,6 +7,7 @@
 import { moduleState } from "../lib/moduleState";
 import { create } from "zustand";
 import { invoke } from "../framework";
+import { bootFactPayload } from "../lib/bootFact";
 import { createCoreSync } from "./coreSync";
 import type { CoreStoreDeps } from "./coreStore";
 import {
@@ -616,13 +617,11 @@ export const usePlugins = moduleState("state/plugins#store", () =>
         void invoke("activity_publish", {
           kind: "boot.step",
           source: "boot",
-          payload: {
-            step: "plugin-activate",
+          payload: bootFactPayload("plugin-activate", {
             ms: total,
             top: top.map(([id, ms]) => `${id}:${ms}`),
-            message: `· plugin-activate ${total}ms`,
             origin: "internal",
-          },
+          }),
         }).catch(() => {});
       }
       await get().syncLedger();

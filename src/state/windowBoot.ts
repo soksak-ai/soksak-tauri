@@ -6,8 +6,9 @@
 //
 // coreStore 가 localStorage 동기캐시 + app.data 권위·broadcast 를 흡수하므로 여기선 직렬화/배선만.
 
-import { invoke, currentWindow } from "../framework";
+import { invoke, currentWindow, frameworkName } from "../framework";
 import { safeListen } from "../lib/safeListen";
+import { bootFactPayload } from "../lib/bootFact";
 import { currentWindowLabel } from "../lib/webviewLabels";
 import { makeCoreStore } from "./coreStore";
 import { validateProjectRoot, ensureDefaultProjectRoot } from "../lib/projectRoot";
@@ -28,7 +29,10 @@ import {
   restoreWindow,
   windowManifestEntry,
   upsertManifest,
+  restorableSlots,
+  forgetWindow,
   setManifestFocused,
+  frameworkScopedKey,
   type WindowSnapshot,
   type WindowManifest,
 } from "./windowPersistence";
@@ -106,7 +110,7 @@ export async function initWorkspacePersistence(
     void invoke("activity_publish", {
       kind: "boot.step",
       source: "boot",
-      payload: { step, window: label, message: `· boot ${step}` },
+      payload: bootFactPayload(step),
     }).catch(() => {});
 
   // 1) 복원
@@ -233,7 +237,11 @@ export async function respawnSavedWindows(): Promise<void> {
   try {
     let manifest = await manifestStore.hydrate();
     let pruned = false;
-    for (const slot of manifest.slots.filter((s) => s.label !== "main")) {
+    // 점유는 **모든 호스트**의 사실이라 cored 에게 묻는다 — 자기 프로세스만 세면 상대
+    // 프레임워크가 든 창을 "없다"고 읽고 같은 라벨을 또 만든다(restorableSlots 머리말).
+    // 못 물으면 되살리지 않는다: 안 여는 것은 다음 부팅에 회복되지만 겹쳐 만든 창은 남는다.
+    const live = await liveWindowLabels();
+    for (const slot of restorableSlots(manifest, live)) {
       const snapStore = makeCoreStore<WindowSnapshot>({
         key: `window/${slot.label}`,
         lsKey: `soksak.window.${slot.label}`,
@@ -287,17 +295,72 @@ export async function respawnSavedWindows(): Promise<void> {
   }
 }
 
+/**
+ * 지금 살아 있는 창 라벨 — **모든 호스트의 것**. 못 읽으면 null.
+ *
+ * 자기 프로세스의 창 목록으로는 답이 안 된다: 상대 프레임워크가 든 창이 안 보이고, 안 보이는
+ * 창은 "없다"로 읽혀 같은 라벨이 두 번 만들어진다. cored 는 붙은 호스트를 전부 알고, 라벨마다
+ * 그 라벨을 든 호스트 수를 답한다.
+ *
+ * 실패를 빈 집합으로 뭉개지 않는다 — 빈 집합은 "아무도 안 들었다"라서 전부 되살리게 된다.
+ */
+async function liveWindowLabels(): Promise<Set<string> | null> {
+  try {
+    const r = await invoke<{ windows?: { label?: string }[] }>("window_census");
+    const rows = r?.windows;
+    if (!Array.isArray(rows)) return null;
+    return new Set(rows.map((w) => w?.label).filter((l): l is string => typeof l === "string"));
+  } catch (e) {
+    console.error("창 점유 조회 실패 — 복원을 건너뛴다:", e);
+    return null;
+  }
+}
+
+/**
+ * 창을 장부에서 지운다 — `window.close` 명령이 부른다.
+ *
+ * 닫기가 창만 없애고 장부를 안 고치면 다음 부팅이 그 창을 되살린다. 종료 경로에서는 부르지
+ * 않는다: 종료도 창을 전부 닫지만 그때 장부를 비우면 다음 실행에 아무것도 안 열린다.
+ */
+export async function forgetWindowSlot(label: string): Promise<void> {
+  const manifestStore = makeCoreStore<WindowManifest>({
+    key: "windows",
+    lsKey: "soksak.windows",
+    fallback: EMPTY_MANIFEST,
+    ...coreStoreDeps,
+  });
+  try {
+    const manifest = await manifestStore.hydrate();
+    const next = forgetWindow(manifest, label);
+    if (next !== manifest) await manifestStore.save(next);
+  } catch (e) {
+    console.error(`창 slot 정리 실패(${label}):`, e);
+  }
+}
+
 // 컨트롤 플레인(main) 프레임 영속 — 워크스페이스 manifest 와 분리된 자체 키. main 은 워크스페이스
 // 스냅샷을 갖지 않으므로(오케스트레이터 전용) 프레임만 기억한다. 이동/리사이즈는 디바운스 저장.
+//
+// 키는 프레임워크를 싣는다(frameworkScopedKey) — 공유하면 두 프레임워크의 컨트롤 플레인 창이
+// 같은 자리에 겹쳐 뜬다. 옛 키(프레임워크 없음)는 첫 부팅이 읽어 자기 키로 옮긴다.
 export async function initControlPlaneFrame(): Promise<void> {
-  const store = makeCoreStore<{ x: number; y: number; w: number; h: number } | null>({
+  type Frame = { x: number; y: number; w: number; h: number } | null;
+  const key = frameworkScopedKey("controlPlaneFrame", frameworkName);
+  const store = makeCoreStore<Frame>({
+    key,
+    lsKey: `soksak.${key}`,
+    fallback: null,
+    ...coreStoreDeps,
+  });
+  const legacyStore = makeCoreStore<Frame>({
     key: "controlPlaneFrame",
     lsKey: "soksak.controlPlaneFrame",
     fallback: null,
     ...coreStoreDeps,
   });
   try {
-    const rect = await store.hydrate();
+    // 내 키가 비었으면 옛 키를 입양한다 — 이 변경 한 번에 창 자리가 초기화되지 않는다.
+    const rect = (await store.hydrate()) ?? (await legacyStore.hydrate().catch(() => null));
     if (rect) {
       const win = currentWindow();
       await win.setPosition(rect.x, rect.y).catch(() => {});

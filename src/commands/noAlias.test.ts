@@ -113,9 +113,12 @@ type Command = {
   returns: string;
 };
 
-/** 파일이 자기 안에 둔 공용 파라미터표(P) — `P.view` 같은 참조의 타입을 여기서 푼다. */
+/** 카탈로그의 공용 파라미터표(P) — `P.view` 같은 참조의 타입을 여기서 푼다.
+ *
+ *  표는 한 파일이 소유하고 형제 카탈로그가 import 한다. 그래서 파일마다 따로 풀면 표를 안 든
+ *  파일의 참조가 전부 unknown 이 되고, 그 unknown 은 오류가 아니라 **조용한 통과**로 보인다. */
 function paramTable(src: string): Record<string, string> {
-  const m = /\nconst P = \{/.exec(src);
+  const m = /\n(?:export )?const P = \{/.exec(src);
   if (!m) return {};
   const table: Record<string, string> = {};
   for (const entry of topLevelEntries(balanced(src, src.indexOf("{", m.index)))) {
@@ -167,9 +170,13 @@ function parseParams(block: string, table: Record<string, string>): Param[] {
 
 function commands(): Command[] {
   const out: Command[] = [];
+  // 표는 카탈로그 전체에서 한 번 모은다 — 어느 파일이 들고 있든 참조는 같은 뜻이다.
+  const table: Record<string, string> = {};
+  for (const file of catalogFiles()) {
+    Object.assign(table, paramTable(readFileSync(join(DIR, file), "utf8")));
+  }
   for (const file of catalogFiles()) {
     const src = readFileSync(join(DIR, file), "utf8");
-    const table = paramTable(src);
     const marks = [...src.matchAll(/\n {2}register\("([^"]+)", \{/g)];
     marks.forEach((mark, i) => {
       const start = mark.index ?? 0;

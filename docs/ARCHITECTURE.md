@@ -144,6 +144,24 @@ When two processes each open the same home's store, SQLite does not refuse; it m
 
 **Exposure is not an excuse to keep coupling**: making contention visible in `degraded` and moving on leaves the defect alive.
 
+### A23. The window ledger is user intent — the axis that divides is occupancy, not ownership.
+
+Two frameworks may run at once against the same home, and they must behave independently. The home does not split by framework (`home_suffix_for_identifier`) — settings, themes, plugins, bookmarks, project contents, the ledger and **the list of open windows** are one set. They are user assets, and closing the app does not end them.
+
+**Writing the launching framework's name into the ledger makes those windows its property.** Then a user who stops Tauri and runs only Electron loses every window — switching frameworks is not the same as discarding your work. With three frameworks the assets split three ways.
+
+So the dividing axis is **occupancy**: if some host currently holds that label, do not create it. Occupancy is a runtime fact, never written to the ledger, and it releases itself when the process dies — the same model as store ownership (A22), and it holds for any number of hosts.
+
+The truth about occupancy exists only where **all hosts are known**. Judging from one process's own window list reads a window held by the other as absent, and the same label gets created twice. Restore does not mint labels; it reuses the stored `w-<uuid>` (NAMING 4b), so the overlap is immediate — measured 2026-08-01: with the same label alive in two processes the second window painted nothing (181 KB against 832 KB for a healthy one). Preventing the overlap brought the same window back at 891 KB with both frameworks running. cored's `window_census` answers, per label, how many hosts hold it.
+
+If occupancy cannot be read, **do not restore.** Not opening is recovered by the next boot; a window created on top of an existing one simply stays. The two failures do not weigh the same.
+
+`cored` already refused ambiguous delivery (`AMBIGUOUS_HOST`) when a label was held by two hosts. That refusal is a defence; it does not remove the overlap. **Do not stop at the defence when the overlap itself can be prevented.**
+
+One value genuinely belongs to the process alone — **where its own window sits** (`controlPlaneFrame`). Shared, two control planes open stacked on the same spot. Nothing is lost by splitting it, so the key carries the framework (`frameworkScopedKey`). A user asset and a window's own position are different axes.
+
+**Closing a window is not quitting.** A closed window must leave the ledger (`forgetWindow`), or the next boot revives it. Quitting closes every window too, yet the list must survive — so the erasure belongs to the *close command*, never the shutdown path.
+
 ---
 
 ## 5. Extraction Targets

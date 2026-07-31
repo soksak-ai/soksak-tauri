@@ -74,6 +74,15 @@ export const engineProvision: EngineProvision = framework.engineProvision;
  */
 export const dragRegion = framework.dragRegion;
 
+/**
+ * 이 프로세스를 띄운 프레임워크의 이름.
+ *
+ * 홈은 프레임워크를 가르지 않는다(identity.rs `home_suffix_for_identifier`) — 둘이 같은 홈을
+ * 쓴다. 그래서 홈에 적히는 사실 중 "이 프로세스가 지금 무엇을 띄웠나"에 해당하는 것은 이
+ * 이름을 실어야 한다. 안 실으면 상대가 그것을 자기 것으로 읽는다.
+ */
+export const frameworkName: string = framework.name;
+
 /** 이 창의 구독자에게 사건을 직접 배달한다 — 이름·페이로드는 프레임워크가 뿌리는 것과 같다. */
 export const emitLocal: AppFramework["emitLocal"] = (event, payload) =>
   framework.emitLocal(event, payload);
