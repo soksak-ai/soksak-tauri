@@ -66,12 +66,20 @@ frameworks/tauri/src/activity_sink.rs 9
 frameworks/tauri/src/ai_session.rs 45
 frameworks/tauri/src/clipboard.rs 249
 frameworks/tauri/src/command_dispatch.rs 98
-frameworks/tauri/src/cored_host.rs 510
+# 재입법 2026-08-01 510 → 515. cored 를 띄울 때 **저장소 위치를 넘기는** 인자(--data-dir).
+#   앱은 debug 빌드에서 SOKSAK_DATA_DIR 로 저장소를 옮기는데 cored 는 그 env 를 안 읽어 자기
+#   파생을 했다 — 두 프로세스가 다른 파일을 열고 쓰기 소유권 잠금도 서로 다른 디렉터리에서
+#   잡혀 무의미해졌다. Option 이 아니라 필수 인자다: Option 은 "안 넘겨도 된다"는 뜻이고 그
+#   결과가 이 결함이었다. 제거 조건: cored 가 저장소를 안 열게 되면 이 인자도 함께 내린다.
+frameworks/tauri/src/cored_host.rs 515
 frameworks/tauri/src/cored_ledger.rs 248
 frameworks/tauri/src/cored_shape_gate.rs 229
 frameworks/tauri/src/daemon.rs 72
 frameworks/tauri/src/data/commands.rs 598
-frameworks/tauri/src/data/mod.rs 91
+# 재입법 2026-08-01 91 → 97. 저장소 위치 해소 자리(data_dir_in/data_dir). 앰비언트 env 를
+#   읽는 자리를 하나로 모으고, 그 값을 cored 에 넘긴다(cored_host.rs 재입법과 한 쌍).
+#   이전엔 db_path_in 안에 숨어 있어 밖에서 그 값을 물을 수 없었고, 그래서 아무도 안 넘겼다.
+frameworks/tauri/src/data/mod.rs 97
 frameworks/tauri/src/data/ring.rs 42
 frameworks/tauri/src/dockmenu.rs 70
 frameworks/tauri/src/fs.rs 80

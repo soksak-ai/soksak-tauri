@@ -96,7 +96,10 @@ fn boot(args: &[String]) -> Result<(String, Ctx), String> {
     let identifier = take_value(args, "--identifier")?;
     // 자기가 서빙하는 소켓을 지고 간다 — 이 프로세스가 띄우는 셸의 `SOKSAK_SOCKET` 이 이 값이다.
     let mut ctx = Ctx::new(Identity::new(home, identifier)).with_socket_path(socket.clone());
-    // 데이터 경로 이동은 띄운 쪽만 안다(앱의 debug 전용 격리). 안 주면 홈에서 파생한다.
+    // 데이터 경로 이동은 띄운 쪽만 안다(앱의 debug 전용 격리) — 앱은 **항상** 넘긴다
+    // (spawn_args 의 필수 인자). 안 받는 경우는 이 프로세스를 손으로 띄웠을 때뿐이고, 그때
+    // 홈에서 파생하는 자리가 여기 하나다. 이 파생이 두 벌이 되면 두 프로세스가 다른 파일을
+    // 열고, 쓰기 소유권 잠금도 서로 다른 디렉터리에서 잡혀 무의미해진다.
     if let Ok(shell) = take_value(args, "--login-shell") {
         ctx = ctx.with_login_shell(shell);
     }

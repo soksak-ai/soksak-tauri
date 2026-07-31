@@ -36,6 +36,11 @@ impl DbState {
 // 홈의 설치본 플러그인·사이드카는 그대로 쓰면서 DB 만 disposable temp 로 격리하는 오픈-테스트 메커니즘
 // (SOKSAK_VAULT_PATH 의 DB 대칭, home.rs SOKSAK_HOME 과 동형 debug-gate). DB 위치를 옮기는 env 는 새
 // 프로덕션 표면이라 release 엔 이 분기를 컴파일하지 않는다.
+/// 주어진 홈의 저장소 디렉터리 — env 오버라이드를 읽는 자리는 이 함수 하나다.
+pub fn data_dir_in(home: &Path) -> PathBuf {
+    data_dir_from(std::env::var("SOKSAK_DATA_DIR").ok().as_deref(), home)
+}
+
 fn data_dir_from(data_dir_env: Option<&str>, home: &Path) -> PathBuf {
     #[cfg(debug_assertions)]
     if let Some(d) = data_dir_env.filter(|s| !s.is_empty()) {
@@ -50,7 +55,7 @@ fn data_dir_from(data_dir_env: Option<&str>, home: &Path) -> PathBuf {
 /// 주어진 홈 아래의 DB 경로. 홈은 **인자로 온다** — cored 프로세스는 자기 홈을 전역으로
 /// 알 수 없고, 잘못 파생된 홈은 거부가 아니라 **다른 identity 의 DB 를 여는 것**으로 끝난다.
 pub fn db_path_in(home: &Path) -> Result<PathBuf, String> {
-    let dir = data_dir_from(std::env::var("SOKSAK_DATA_DIR").ok().as_deref(), home);
+    let dir = data_dir_in(home);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir.join(soksak_core::identity::DB_FILE))
 }
@@ -58,6 +63,15 @@ pub fn db_path_in(home: &Path) -> Result<PathBuf, String> {
 /// 이 프로세스의 홈 기준 DB 경로 — 앰비언트를 읽는 것은 여기 한 곳이다.
 pub fn db_path() -> Result<PathBuf, String> {
     db_path_in(crate::identity::ambient().home())
+}
+
+/// 이 실행에서 저장소가 사는 디렉터리 — **앰비언트를 읽는 것은 여기 한 곳이다.**
+///
+/// cored 는 이 값을 인자로 받는다(`spawn_args --data-dir`). 규칙을 양쪽에 두면 한쪽만
+/// 옮겨지고, 그때 두 프로세스는 다른 파일을 연다 — 쓰기 소유권 잠금도 서로 다른 디렉터리에서
+/// 잡혀 무의미해진다(실측 2026-08-01: cored 는 `SOKSAK_DATA_DIR` 를 아예 안 읽었다).
+pub fn data_dir() -> PathBuf {
+    data_dir_in(crate::identity::ambient().home())
 }
 
 #[cfg(test)]

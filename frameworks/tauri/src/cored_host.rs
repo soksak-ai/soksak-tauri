@@ -542,6 +542,7 @@ pub fn spawn_args(
     socket: &Path,
     home: &Path,
     identifier: &str,
+    data_dir: &Path,
     user_home: Option<&Path>,
     login_shell: Option<&str>,
 ) -> Vec<String> {
@@ -552,6 +553,12 @@ pub fn spawn_args(
         home.display().to_string(),
         "--identifier".to_string(),
         identifier.to_string(),
+        // 저장소 위치는 **넘기는 값**이다. 규칙을 양쪽에 두면 한쪽만 옮겨지고, 그때 두
+        // 프로세스는 다른 파일을 연다 — 쓰기 소유권 잠금도 서로 다른 디렉터리에서 잡혀
+        // 무의미해지고, 증상은 오류가 아니라 "저장한 것이 안 보인다"다.
+        // Option 이 아닌 이유: Option 은 "안 넘겨도 된다"는 뜻이고 그 결과가 지금 상태였다.
+        "--data-dir".to_string(),
+        data_dir.display().to_string(),
     ];
     if let Some(u) = user_home {
         args.push("--user-home".to_string());
@@ -585,6 +592,7 @@ pub fn ensure_cored(
     home: &Path,
     identifier: &str,
     binary: &Path,
+    data_dir: &Path,
     user_home: Option<&Path>,
     login_shell: Option<&str>,
 ) -> Result<Cored, String> {
@@ -598,7 +606,7 @@ pub fn ensure_cored(
         ));
     }
     let mut child = Command::new(binary)
-        .args(spawn_args(socket, home, identifier, user_home, login_shell))
+        .args(spawn_args(socket, home, identifier, data_dir, user_home, login_shell))
         .stdout(Stdio::piped())
         // stderr 는 물려준다 — cored 가 마지막에 말한 사유가 이 프로세스의 로그에 그대로 남는다.
         .stderr(Stdio::inherit())
@@ -765,6 +773,8 @@ pub fn stand_up(app: &tauri::AppHandle) -> Result<CoredHost, String> {
         identity.home(),
         identity.identifier(),
         &binary,
+        // 저장소 위치는 앱이 해소해 넘긴다 — cored 가 다시 파생하면 두 프로세스가 다른 파일을 연다.
+        &crate::data::data_dir(),
         user_home.as_deref(),
         Some(&login_shell),
     )?;

@@ -188,6 +188,7 @@ fn the_boot_arguments_are_values_this_process_hands_over() {
         Path::new("/h/cored.sock"),
         Path::new("/h"),
         "com.soksak.tauri.dev",
+        Path::new("/tmp/moved-data"),
         Some(Path::new("<machine-path>")),
         Some("/bin/zsh"),
     );
@@ -197,14 +198,46 @@ fn the_boot_arguments_are_values_this_process_hands_over() {
             "--socket", "/h/cored.sock",
             "--home", "/h",
             "--identifier", "com.soksak.tauri.dev",
+            "--data-dir", "/tmp/moved-data",
             "--user-home", "<machine-path>",
             "--login-shell", "/bin/zsh",
         ]
     );
     // 모르는 것은 지어내지 않는다 — 안 넘기면 cored 가 그 값이 필요한 명령만 이름을 달고
     // 거절하고 나머지는 계속 서빙한다. 빈 셸을 넘기면 그 거절이 "빈 셸로 실행"이 된다.
-    let bare = spawn_args(Path::new("/h/cored.sock"), Path::new("/h"), "com.soksak.tauri.dev", None, Some(""));
-    assert_eq!(bare.len(), 6, "{bare:?}");
+    let bare = spawn_args(
+        Path::new("/h/cored.sock"),
+        Path::new("/h"),
+        "com.soksak.tauri.dev",
+        Path::new("/h/data"),
+        None,
+        Some(""),
+    );
+    assert_eq!(bare.len(), 8, "{bare:?}");
+}
+
+/// 저장소 위치는 **넘긴다** — 파생 규칙을 양쪽에 두면 한쪽만 옮겨진다.
+///
+/// RED 근거(실측 2026-08-01): 앱은 debug 빌드에서 `SOKSAK_DATA_DIR` 를 읽어 저장소를 옮기는데
+/// (`data::data_dir_from`), cored 는 그 env 를 **아예 안 읽고** `identity.data_dir()` 로 자기
+/// 파생을 한다. `--data-dir` 을 받는 자리는 이미 있는데 아무도 안 넘겼다. 그러면 두 프로세스가
+/// **다른 파일**을 열고, 쓰기 소유권 잠금도 서로 다른 디렉터리에서 잡혀 무의미해진다 —
+/// 증상은 오류가 아니라 "저장한 것이 안 보인다"다.
+///
+/// 그래서 이 인자는 Option 이 아니다. Option 은 "안 넘겨도 된다"는 뜻이고, 지금 상태가 정확히
+/// 그 결과였다.
+#[test]
+fn the_store_location_is_handed_over_never_re_derived() {
+    let moved = spawn_args(
+        Path::new("/h/cored.sock"),
+        Path::new("/h"),
+        "com.soksak.tauri.dev",
+        Path::new("/tmp/e2e-store"),
+        None,
+        None,
+    );
+    let i = moved.iter().position(|a| a == "--data-dir").expect("저장소 위치를 넘긴다");
+    assert_eq!(moved[i + 1], "/tmp/e2e-store");
 }
 
 /// 준비 완료 줄은 **그 소켓**을 말해야 한다. 아니면 우리가 부른 것이 cored 가 아니거나 다른
@@ -230,6 +263,7 @@ fn a_live_cored_is_adopted_and_never_respawned() {
         &dir,
         "com.soksak.tauri.dev",
         &dir.join("없는-cored"),
+        Path::new("/h/data"),
         None,
         None,
     )
@@ -263,6 +297,7 @@ fn a_seat_nobody_answers_is_not_served() {
         &dir,
         "com.soksak.tauri.dev",
         &dir.join("없는-cored"),
+        Path::new("/h/data"),
         None,
         None,
     )
@@ -280,6 +315,7 @@ fn a_missing_binary_fails_by_name() {
         &dir,
         "com.soksak.tauri.dev",
         &dir.join("없는-cored"),
+        Path::new("/h/data"),
         None,
         None,
     )
@@ -294,8 +330,16 @@ fn a_missing_binary_fails_by_name() {
 fn a_helper_that_says_nothing_and_dies_is_a_failure() {
     let dir = fixture_dir("silent");
     let bin = fake_binary(&dir, "silent-cored", "exit 0");
-    let e = ensure_cored(&dir.join("h.sock"), &dir, "com.soksak.tauri.dev", &bin, None, None)
-        .unwrap_err();
+    let e = ensure_cored(
+        &dir.join("h.sock"),
+        &dir,
+        "com.soksak.tauri.dev",
+        &bin,
+        Path::new("/h/data"),
+        None,
+        None,
+    )
+    .unwrap_err();
     assert!(e.contains("준비 완료"), "{e}");
 }
 
@@ -309,8 +353,16 @@ fn a_helper_that_names_another_socket_is_reaped_and_refused() {
         "wrong-cored",
         "echo 'listening /elsewhere/cored.sock'; exec sleep 30",
     );
-    let e = ensure_cored(&dir.join("h.sock"), &dir, "com.soksak.tauri.dev", &bin, None, None)
-        .unwrap_err();
+    let e = ensure_cored(
+        &dir.join("h.sock"),
+        &dir,
+        "com.soksak.tauri.dev",
+        &bin,
+        Path::new("/h/data"),
+        None,
+        None,
+    )
+    .unwrap_err();
     assert!(e.contains("/elsewhere/cored.sock"), "{e}");
 }
 
@@ -325,8 +377,16 @@ fn we_reap_only_what_we_spawned() {
         "slow-cored",
         &format!("echo 'listening {}'; exec sleep 30", socket.display()),
     );
-    let mut cored = ensure_cored(&socket, &dir, "com.soksak.tauri.dev", &bin, None, None)
-        .expect("띄움");
+    let mut cored = ensure_cored(
+        &socket,
+        &dir,
+        "com.soksak.tauri.dev",
+        &bin,
+        Path::new("/h/data"),
+        None,
+        None,
+    )
+    .expect("띄움");
     assert_eq!(cored.origin, Origin::Spawned);
     assert!(cored.spawned_alive());
     cored.stop();
