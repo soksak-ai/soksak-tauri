@@ -234,12 +234,16 @@ export interface PluginCommandContextInput {
 
 // 권한 게이트 콜백(설정 store 를 registry 가 직접 알지 않게 주입).
 // danger 분류에 대해 허용 여부를 돌려준다.
-let permissionGate: (danger: "destructive" | "inject") => boolean = () => true;
+// 갈아끼우기 경계 밖 — 게이트가 새것이 되면 사람 승인 판정이 기본값으로 되돌아가고,
+// 그 되돌아감은 "왜 안 물었지"로만 나타난다.
+const gate = moduleState("commands/registry#gate.v", () => ({
+  v: (() => true) as (danger: "destructive" | "inject") => boolean,
+}));
 
 export function setPermissionGate(
   fn: (danger: "destructive" | "inject") => boolean,
 ): void {
-  permissionGate = fn;
+  gate.v = fn;
 }
 
 // 표준 응답 봉투(요청·진행·응답 3부의 응답) — 성공/실패 대칭. docs/MESSAGE-PROTOCOL.md 단일진실.
@@ -1009,7 +1013,9 @@ export function markRuntimeReady(): void {
  * 세어야 알고, 셀 수 없으면 고쳤는지도 증명하지 못한다(실측 2026-07-31: 원장이 정지한 것을
  * 사람이 두 번 조회해 시각을 비교해서야 알았다).
  */
-let persistStats: Record<string, number> | null = null;
+const persistBox = moduleState("commands/registry#persistBox.v", () => ({
+  v: null as Record<string, number> | null,
+}));
 
 /**
  * 영속 상태를 실어 둔다 — 프론트는 Rust 쪽 카운터를 직접 못 읽는다.
@@ -1019,12 +1025,12 @@ let persistStats: Record<string, number> | null = null;
  * 63건이 유실인지 대기인지 구분되지 않았다).
  */
 export function noteActivityPersist(stats: Record<string, number>): void {
-  persistStats = stats;
+  persistBox.v = stats;
 }
 
 export function commandHealth(): Record<string, unknown> {
   return {
-    persist: persistStats ?? { unknown: 1 },
+    persist: persistBox.v ?? { unknown: 1 },
     ready: trace.runtimeReady,
     commands: {
       registered: registry.size,
@@ -1253,7 +1259,7 @@ async function executeInner(
   const invalid = validate(spec, params);
   if (invalid) return { ok: false, code: "INVALID_PARAMS", message: invalid };
   // 권한 게이트: 원격(AI/CLI) 호출에서 위험 명령은 정책 확인. UI(사람) 호출은 면제.
-  if (ctx.remote && spec.danger && !permissionGate(spec.danger)) {
+  if (ctx.remote && spec.danger && !gate.v(spec.danger)) {
     return {
       ok: false,
       code: "PERMISSION_DENIED",
@@ -1380,9 +1386,9 @@ function degradedAxes(): string[] | undefined {
   if (!trace.sink) bad.push("commands: 실행 계측 sink 미설치(이 창의 실행이 원장에 안 남음)");
   // 영속이 밀리면 도장은 받았는데 원장에는 없다 — 그 차이는 조회로만 드러나고, 조회하는
   // 사람이 그 차이를 알 이유가 없다. 응답이 먼저 말한다.
-  if (persistStats && ((persistStats.pending ?? 0) > 0 || (persistStats.failures ?? 0) > 0)) {
+  if (persistBox.v && ((persistBox.v.pending ?? 0) > 0 || (persistBox.v.failures ?? 0) > 0)) {
     bad.push(
-      `activity: 원장 영속이 밀렸다(대기 ${persistStats.pending ?? 0} · 실패 누계 ${persistStats.failures ?? 0} · 버림 ${persistStats.drops ?? 0}) — 도장은 받았지만 원장에 없는 항목이 있다`,
+      `activity: 원장 영속이 밀렸다(대기 ${persistBox.v.pending ?? 0} · 실패 누계 ${persistBox.v.failures ?? 0} · 버림 ${persistBox.v.drops ?? 0}) — 도장은 받았지만 원장에 없는 항목이 있다`,
     );
   }
   return bad.length > 0 ? bad : undefined;

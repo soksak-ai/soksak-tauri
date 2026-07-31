@@ -3,6 +3,7 @@
 // 폴링 아님(출력 이벤트 디바운스). 오탐 가능(느린 스트리머·TUI 리드로) → opt-in(turn.idleDetection
 // 커맨드로 켬). 메일함 self-subscribe 의 idle 소스가 이걸 켠다(코어는 메일함을 모름 — 커맨드로 결합 0).
 
+import { moduleState } from "../lib/moduleState";
 import {
   subscribeAnyCommandStarted,
   subscribeAnyCommandFinished,
@@ -16,36 +17,42 @@ export interface IdleTurnPayload {
   source: "idle";
 }
 
-let emitFn: ((p: IdleTurnPayload) => void) | null = null;
-let projectInfoOf: (paneId: string) => { id: string; root: string | null } | null = () => null;
-let idleMs = 2000;
-let active: { dispose: () => void } | null = null;
+// 갈아끼우기 경계 밖 — 주입된 발화·조회 자리와 구독 해지 손잡이가 새것이 되면, 배선한
+// 쪽은 이미 배선했다고 알아 다시 주입하지 않는다(그 뒤로 이 감지기는 영영 조용하다).
+const moduleLocal = moduleState("terminal/idleTurnDetector#state", () => ({
+  emitFn: null as ((p: IdleTurnPayload) => void) | null,
+  projectInfoOf: (() => null) as (
+    paneId: string,
+  ) => { id: string; root: string | null } | null,
+  idleMs: 2000,
+  active: null as { dispose: () => void } | null,
+}));
 
 // 1회 배선(startPluginHooks) — emit/projectInfo 주입(순환 import 회피). 시작 전엔 무동작.
 export function configureIdleTurnDetector(deps: {
   emit: (p: IdleTurnPayload) => void;
   projectInfoOf: (paneId: string) => { id: string; root: string | null } | null;
 }): void {
-  emitFn = deps.emit;
-  projectInfoOf = deps.projectInfoOf;
+  moduleLocal.emitFn = deps.emit;
+  moduleLocal.projectInfoOf = deps.projectInfoOf;
 }
 
 export function isIdleTurnDetectionOn(): boolean {
-  return active !== null;
+  return moduleLocal.active !== null;
 }
 
 export function idleTurnMs(): number {
-  return idleMs;
+  return moduleLocal.idleMs;
 }
 
 // 토글 — enabled=true 면 감지 시작(이미 켜져 있으면 ms 만 갱신), false 면 정지·정리. 멱등.
 export function setIdleTurnDetection(enabled: boolean, ms?: number): void {
-  if (typeof ms === "number" && ms > 0) idleMs = Math.max(250, ms);
+  if (typeof ms === "number" && ms > 0) moduleLocal.idleMs = Math.max(250, ms);
   if (enabled) {
-    if (!active) active = startDetector();
-  } else if (active) {
-    active.dispose();
-    active = null;
+    if (!moduleLocal.active) moduleLocal.active = startDetector();
+  } else if (moduleLocal.active) {
+    moduleLocal.active.dispose();
+    moduleLocal.active = null;
   }
 }
 
@@ -61,14 +68,14 @@ function startDetector(): { dispose: () => void } {
     if (!e) return;
     if (e.timer) clearTimeout(e.timer);
     e.timer = setTimeout(() => {
-      const info = projectInfoOf(paneId);
-      emitFn?.({
+      const info = moduleLocal.projectInfoOf(paneId);
+      moduleLocal.emitFn?.({
         projectId: info?.id ?? null,
         root: info?.root ?? null,
         paneId,
         source: "idle",
       });
-    }, idleMs);
+    }, moduleLocal.idleMs);
   };
 
   const detach = (paneId: string) => {
@@ -99,11 +106,11 @@ function startDetector(): { dispose: () => void } {
 
 // 테스트용 — 전체 초기화.
 export function resetIdleTurnDetectorForTest(): void {
-  if (active) {
-    active.dispose();
-    active = null;
+  if (moduleLocal.active) {
+    moduleLocal.active.dispose();
+    moduleLocal.active = null;
   }
-  emitFn = null;
-  projectInfoOf = () => null;
-  idleMs = 2000;
+  moduleLocal.emitFn = null;
+  moduleLocal.projectInfoOf = () => null;
+  moduleLocal.idleMs = 2000;
 }

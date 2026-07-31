@@ -12,7 +12,7 @@
 //
 // 이미 도는 것과 앞으로 시작할 것 둘 다 잡아야 한다 — transitionrun/animationstart 가 새로 태어난
 // 애니메이션의 유일한 신호다. 기본값(1배속, 정지 없음)에서는 리스너가 아무것도 만지지 않는다.
-import { moduleState } from "../lib/moduleState";
+import { moduleState } from "./moduleState";
 import { invoke } from "../framework";
 
 // 갈아끼우기 경계 밖 — 이 표가 새것이 되면 채운 쪽은 이미 채웠다고 알아 다시 채우지 않는다.
@@ -25,16 +25,27 @@ export interface MotionDebugState {
   applied?: number;
 }
 
-let scale = 1;
-let hold = false;
-let wired = false;
+// 갈아끼우기 경계 밖 — 배선 여부(dbg.wired)와 관측 누적이 새것이 되면, 배선한 쪽은 이미
+// 배선했다고 알아 다시 붙이지 않는다. 그러면 이 계측면은 조용히 죽는다.
+//
+// 이름은 dbg 다: dbg.scale·dbg.hold 는 이 파일의 **타입 프로퍼티 이름**이기도 해서, 값과 타입을
+// 같은 이름으로 치환하면 타입 선언까지 망가진다(실측).
+const dbg = moduleState("lib/motionDebug#state", () => ({
+  scale: 1,
+  hold: false,
+  wired: false,
+  births: 0,
+  armedAt: null as number | null, // null = 재는 중이 아님(0 은 유효한 시각이다)
+  lagMs: 0,
+  swapObserver: null as MutationObserver | null,
+  inputObserved: false,
+}));
 /** 이 모듈이 판 예약들. 브라우저 목록에 잡히기를 기대하지 않고 직접 들고 있는다 —
  *  기대가 어긋나면 정지가 예약에 안 걸리고, 얼어붙은 순간을 착지가 지운다. */
 // 갈아끼우기 경계 밖 — 이 표가 새것이 되면 채운 쪽은 이미 채웠다고 알아 다시 채우지 않는다.
 const scheduled = moduleState("lib/motionDebug#scheduled", () => new Set<Retimable>());
 /** 진단: 갓 태어난 애니메이션을 몇 번 붙잡았는지. */
-let births = 0;
-/** 최근 태어난 전이들의 정체 — "births 43" 이 무엇이었는지 사실로 남긴다(관찰면).
+/** 최근 태어난 전이들의 정체 — "dbg.births 43" 이 무엇이었는지 사실로 남긴다(관찰면).
  *  잡은 순간의 rate 까지 기록해 "붙잡았는데 감속이 안 걸렸다"를 구분할 수 있게 한다. */
 export interface BirthRecord {
   at: string; // 전이가 태어난 요소(간이 식별 — 태그.클래스)
@@ -42,7 +53,7 @@ export interface BirthRecord {
   declaredMs: number;
   rate: number; // applyMotionTo 직후의 playbackRate — 감속 적용의 직접 증거
   t: number; // performance.now() — 어느 커밋의 탄생인지 시각으로 가른다(#22 실패 2형 판별)
-  held: boolean; // 탄생 시점의 hold 판독값 — 정지 중 탄생(동결 분기 미탑승)의 직접 증거
+  held: boolean; // 탄생 시점의 dbg.hold 판독값 — 정지 중 탄생(동결 분기 미탑승)의 직접 증거
 }
 const RECENT_BIRTHS_CAP = 64;
 const recentBirths: BirthRecord[] = [];
@@ -51,8 +62,6 @@ export function motionRecentBirths(): BirthRecord[] {
 }
 /** 위상 예약이 세기 시작한 시각과, 화면이 실제로 움직이기 시작한 시각의 차(ms).
  *  이 시차만큼 활강이 앞에서 잘린다 — 예약은 이미 세는데 화면은 아직 안 움직인다. */
-let armedAt: number | null = null; // null = 재는 중이 아님(0 은 유효한 시각이다)
-let lagMs = 0;
 
 /**
  * 화면이 실제로 움직이기 시작한 순간 — 위상 시계의 진짜 0 이다.
@@ -62,10 +71,10 @@ let lagMs = 0;
  * 선언된다. 여기서 그 시차만큼 예약을 뒤로 물려 둘의 0 을 맞춘다.
  */
 function noteVisualStart(): void {
-  if (armedAt === null) return;
-  lagMs = Math.round(nowMs() - armedAt);
-  armedAt = null; // 이 여정의 첫 움직임만 센다
-  if (lagMs > 0) deferBy(lagMs);
+  if (dbg.armedAt === null) return;
+  dbg.lagMs = Math.round(nowMs() - dbg.armedAt);
+  dbg.armedAt = null; // 이 여정의 첫 움직임만 센다
+  if (dbg.lagMs > 0) deferBy(dbg.lagMs);
 }
 
 /** 달리고 있는 위상 예약을 ms 만큼 뒤로 물린다. 예약은 이 모듈이 소유하므로 되감기가 남는다
@@ -218,10 +227,9 @@ const swapName = (el: HTMLElement): string | null => {
   if (el.classList.contains("space-plane")) return "space-plane";
   return null;
 };
-let swapObserver: MutationObserver | null = null;
 /** 스왑 감시 설치 — App 마운트에서 1회(멱등). 관측은 본체를 못 막는다(발행 실패는 삼킨다). */
 export function installSwapObserver(): void {
-  if (swapObserver || typeof MutationObserver === "undefined" || typeof document === "undefined")
+  if (dbg.swapObserver || typeof MutationObserver === "undefined" || typeof document === "undefined")
     return;
   // 선언 텍스트를 이름→값으로 — restyle 사건의 "무엇이 바뀌었나"를 이름으로 요약한다.
   const declsOf = (text: string): Map<string, string> => {
@@ -237,7 +245,7 @@ export function installSwapObserver(): void {
     if (swaps.length > SWAPS_CAP) swaps.shift();
     publishSwap(rec);
   };
-  swapObserver = new MutationObserver((muts) => {
+  dbg.swapObserver = new MutationObserver((muts) => {
     // 배치 재구성 — 변이 i 의 결과값은 변이 i+1 의 oldValue 다. 현재 el.style 은 배치의
     // 최종값이라, 그걸 매 변이의 결과로 읽으면 중간 왕복이 전부 최종 상태로 뭉개진다
     // (첫 판의 오판: 한 배치 4변이가 전부 parked→visible 로 보였다).
@@ -296,7 +304,7 @@ export function installSwapObserver(): void {
       }
     }
   });
-  swapObserver.observe(document.body, {
+  dbg.swapObserver.observe(document.body, {
     subtree: true,
     attributes: true,
     attributeFilter: ["style", "class"],
@@ -352,11 +360,10 @@ export function noteActivation(what: string, target: string): void {
     t: typeof performance === "undefined" ? 0 : performance.now(),
   });
 }
-let inputObserved = false;
 /** 입력 층 기록 — 탭/칸 표면에 닿은 pointerdown/up/click 만(캡처 단계, 본체 무간섭). */
 export function installInputObserver(): void {
-  if (inputObserved || typeof document === "undefined") return;
-  inputObserved = true;
+  if (dbg.inputObserved || typeof document === "undefined") return;
+  dbg.inputObserved = true;
   for (const type of ["pointerdown", "pointerup", "click"] as const) {
     document.addEventListener(
       type,
@@ -385,23 +392,23 @@ export function noteRectMotionSkip(at: string, why: string): void {
     declaredMs: 0,
     rate: 1,
     t: typeof performance === "undefined" ? 0 : performance.now(),
-    held: hold,
+    held: dbg.hold,
   });
   if (recentBirths.length > RECENT_BIRTHS_CAP) recentBirths.shift();
 }
 
 /** JS 소유 레이아웃 보간(코어가 element.animate 로 판 것)의 등록 지점 — WAAPI 애니메이션은
- *  animationstart 를 쏘지 않아 onStart 배선에 안 잡힌다(실측: births 0). 만든 쪽이 직접
+ *  animationstart 를 쏘지 않아 onStart 배선에 안 잡힌다(실측: dbg.births 0). 만든 쪽이 직접
  *  입양시켜야 같은 컨트롤러(배수·정지·원장)를 예외 없이 따른다. */
 export function adoptLayoutAnimation(a: Animation, at: string, declaredMs: number): void {
-  births++;
+  dbg.births++;
   recentBirths.push({
     at,
     what: "layout-rect",
     declaredMs,
     rate: motionPlaybackRate(),
     t: typeof performance === "undefined" ? 0 : performance.now(),
-    held: hold,
+    held: dbg.hold,
   });
   if (recentBirths.length > RECENT_BIRTHS_CAP) recentBirths.shift();
   applyMotionTo(a as unknown as Retimable);
@@ -417,7 +424,7 @@ export function adoptLayoutAnimation(a: Animation, at: string, declaredMs: numbe
     }
     // pending pause 중의 currentTime 세팅은 WebKit 이 무시할 수 있다(실측: 위 고정에도
     // 1프레임(≈17ms, ease 20%)에서 동결). ready(커밋 완료) 시점에 0 을 재고정한다 —
-    // 커밋 순서와 무관하게 최종적으로 0 이 이긴다. 그 사이 hold 가 풀렸으면 손대지 않는다.
+    // 커밋 순서와 무관하게 최종적으로 0 이 이긴다. 그 사이 dbg.hold 가 풀렸으면 손대지 않는다.
     void (a as { ready?: Promise<unknown> }).ready
       ?.then(() => {
         if (motionDebugState().hold) {
@@ -436,7 +443,7 @@ export function adoptLayoutAnimation(a: Animation, at: string, declaredMs: numbe
 export function applyMotionTo(a: Retimable): void {
   try {
     a.playbackRate = motionPlaybackRate();
-    if (hold) a.pause();
+    if (dbg.hold) a.pause();
     else if (a.playState === "paused") a.play();
   } catch {
     /* 이미 끝났거나 분리된 애니메이션 — 무해 */
@@ -455,15 +462,15 @@ function applyAll(): number {
 
 /** 새로 시작하는 전이/애니메이션도 같은 설정으로 태어나게 한다. 1회 배선. */
 function ensureWired(): void {
-  if (wired || typeof document === "undefined") return;
-  wired = true;
+  if (dbg.wired || typeof document === "undefined") return;
+  dbg.wired = true;
   const onStart = (e: Event) => {
     noteVisualStart(); // 평시에도 재는 유일한 것 — 위상 시계와 화면의 시차
-    if (scale === 1 && !hold) return; // 기본값 — 그 밖에는 아무것도 만지지 않는다
+    if (dbg.scale === 1 && !dbg.hold) return; // 기본값 — 그 밖에는 아무것도 만지지 않는다
     const t = e.target;
     if (!(t instanceof Element) || !t.getAnimations) return;
     for (const a of t.getAnimations()) {
-      births++;
+      dbg.births++;
       applyMotionTo(a as unknown as Retimable);
       const el = t as HTMLElement;
       const eff = (a as Animation).effect as KeyframeEffect | null;
@@ -478,7 +485,7 @@ function ensureWired(): void {
         declaredMs: typeof timing?.duration === "number" ? timing.duration : -1,
         rate: (a as Animation).playbackRate ?? 1,
         t: typeof performance === "undefined" ? 0 : performance.now(),
-        held: hold,
+        held: dbg.hold,
       });
       if (recentBirths.length > RECENT_BIRTHS_CAP) recentBirths.shift();
     }
@@ -488,7 +495,7 @@ function ensureWired(): void {
 }
 
 /** 지금 살아 있는 애니메이션의 수와 실제 재생 속도 — 효과의 직접 증거.
- *  설정값(scale)은 의도이고 이것은 결과다. 둘을 같이 봐야 "느려졌다"가 확인된다. */
+ *  설정값(dbg.scale)은 의도이고 이것은 결과다. 둘을 같이 봐야 "느려졌다"가 확인된다. */
 export function motionLiveRates(): {
   running: number;
   births: number;
@@ -497,7 +504,7 @@ export function motionLiveRates(): {
   wallMs: number[];
 } {
   const d = typeof document === "undefined" ? null : document;
-  if (!d?.getAnimations) return { running: 0, births, lagMs, rates: [], wallMs: [] };
+  if (!d?.getAnimations) return { running: 0, births: dbg.births, lagMs: dbg.lagMs, rates: [], wallMs: [] };
   const rates = new Set<number>();
   const wall = new Set<number>();
   let running = 0;
@@ -509,8 +516,8 @@ export function motionLiveRates(): {
   }
   return {
     running,
-    births,
-    lagMs,
+    births: dbg.births,
+    lagMs: dbg.lagMs,
     rates: [...rates].sort((x, y) => x - y),
     wallMs: [...wall].filter((n) => n > 0).sort((x, y) => x - y),
   };
@@ -578,30 +585,30 @@ function effectiveWallMs(a: Timed, rate: number): number {
 
 /** 현재 지속 배수 — 자기 시계를 직접 도는 소비자(위상 타이머)가 곱한다. */
 export function motionScale(): number {
-  return scale;
+  return dbg.scale;
 }
 
 /** 선언된 길이에 걸리는 재생 속도. 늘리는 축은 이것 하나다 — CSS 선언은 맨 길이로 둔다.
  *  선언까지 곱하면 화면만 배수의 제곱으로 늦고 자기 시계를 도는 타이머는 한 번만 곱해,
  *  이동 도중에 위상이 닫히며 튄다. 짝은 railMotion 의 테스트가 이 함수로 검사한다. */
 export function motionPlaybackRate(): number {
-  return 1 / scale;
+  return 1 / dbg.scale;
 }
 
 export function motionDebugState(): MotionDebugState {
-  return { scale, hold };
+  return { scale: dbg.scale, hold: dbg.hold };
 }
 
 /** 배수와 정지를 적용한다. 둘 다 선택 — 준 것만 바뀐다. 범위 밖 배수는 호출자가 거른다. */
 export function setMotionDebug(next: { scale?: number; hold?: boolean }): MotionDebugState {
   ensureWired();
-  if (typeof next.scale === "number" && next.scale > 0 && next.scale <= 200) scale = next.scale;
-  if (typeof next.hold === "boolean") hold = next.hold;
+  if (typeof next.scale === "number" && next.scale > 0 && next.scale <= 200) dbg.scale = next.scale;
+  if (typeof next.hold === "boolean") dbg.hold = next.hold;
   const r = root();
   if (r) {
     // 상태면 — ui.snapshot.dom·스크린샷으로 "지금 어떤 설정인가"가 화면에서 읽힌다.
-    r.style.setProperty("--motion-scale", String(scale));
-    r.toggleAttribute("data-motion-hold", hold);
+    r.style.setProperty("--motion-dbg.scale", String(dbg.scale));
+    r.toggleAttribute("data-motion-dbg.hold", dbg.hold);
   }
   adoptWaiting();
   const applied = applyAll();
@@ -630,7 +637,7 @@ export function scheduleMotion(ms: number, cb: () => void): () => void {
 
 /** 관측 중인가 — 기본값이면 아무것도 관측하지 않는다. */
 function observing(): boolean {
-  return scale !== 1 || hold;
+  return dbg.scale !== 1 || dbg.hold;
 }
 
 interface Slot {
@@ -655,7 +662,7 @@ function nowMs(): number {
 
 function arm(slot: Slot, ms: number, cb: () => void): void {
   if (observing() && armOnTimeline(slot, ms, cb)) return;
-  armOnTimer(slot, ms, ms * scale, cb);
+  armOnTimer(slot, ms, ms * dbg.scale, cb);
 }
 
 /** 문서 타임라인 위의 빈 애니메이션 — 배수·정지가 화면과 똑같이 걸린다. */
@@ -665,7 +672,7 @@ function armOnTimeline(slot: Slot, ms: number, cb: () => void): boolean {
   if (typeof Animation !== "function" || typeof KeyframeEffect !== "function") return false;
   const a = new Animation(new KeyframeEffect(d.documentElement, [], { duration: ms }), d.timeline);
   a.id = "phase"; // ui.motion 목록에 이 예약이 이름으로 뜬다
-  armedAt = nowMs();
+  dbg.armedAt = nowMs();
   const held = a as unknown as Retimable;
   a.onfinish = () => {
     scheduled.delete(held);
@@ -692,7 +699,7 @@ function armOnTimeline(slot: Slot, ms: number, cb: () => void): boolean {
  *  얹으면 가려진 창의 위상이 영영 안 닫혀 배치가 여정 상태로 좌초한다. 관측 도구가 프로덕션
  *  동작을 바꾸면 그건 도구가 아니라 결함이다 — 기본값에서는 한 줄도 달라지지 않는다. */
 function armOnTimer(slot: Slot, total: number, wallMs: number, cb: () => void): void {
-  armedAt = nowMs();
+  dbg.armedAt = nowMs();
   const w: Waiting = {
     slot,
     cb,
@@ -731,8 +738,8 @@ export function onMotionDebugChange(cb: () => void): () => void {
 }
 
 export function __resetMotionDebugForTest(): void {
-  scale = 1;
-  hold = false;
+  dbg.scale = 1;
+  dbg.hold = false;
   scheduled.clear();
   for (const w of [...waiting]) clearTimeout(w.timer);
   waiting.clear();
