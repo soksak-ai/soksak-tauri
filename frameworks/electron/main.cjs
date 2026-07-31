@@ -11,7 +11,7 @@
 // 프로세스엔 창이 없어 영영 그리로 못 간다. 그 표는 electron/native/ 가 갈래별로 소유하고,
 // 소켓 앞에 선다. 이 파일은 표를 쥐지 않는다 — 배선(창 레지스트리·다리·원장)만 쥔다.
 
-const { app, BrowserWindow, dialog, ipcMain, screen  } = require("electron");
+const { app, BrowserWindow, Menu, dialog, ipcMain, screen  } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const os = require("node:os");
@@ -556,8 +556,28 @@ if (!app.requestSingleInstanceLock()) {
   boot();
 }
 
+// 앱 메뉴는 제품 이름을 말한다 — macOS 의 앱 메뉴 타이틀은 `app.setName()` 이 아니라 **첫
+// 서브메뉴의 label** 에서 온다(미포장 실행에서는 번들의 CFBundleName 이 기본값이라 프레임워크
+// 이름이 그대로 노출된다: 실측 2026-07-31 메뉴바가 "Electron" 이었다).
+//
+// 메뉴를 아예 안 세우면 프레임워크의 기본 메뉴가 뜬다 — 그 메뉴는 이 제품을 모른다. 편집·창
+// 역할 메뉴도 함께 세운다: 복사/붙여넣기 단축키는 메뉴가 없으면 동작하지 않는다.
+function installApplicationMenu() {
+  const appItems = ["about", "-", "services", "-", "hide", "hideOthers", "unhide", "-", "quit"];
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      {
+        label: app.getName(),
+        submenu: appItems.map((r) => (r === "-" ? { type: "separator" } : { role: r })),
+      },
+      ...["editMenu", "viewMenu", "windowMenu"].map((role) => ({ role })),
+    ]),
+  );
+}
+
 function boot() {
   app.whenReady().then(() => {
+  installApplicationMenu();
   const label = CONTROL_PLANE_LABEL;
   const win = createWindow(label);
   wireWindowEvents(label, win);

@@ -21,7 +21,13 @@ frameworks/electron/activity.cjs 32
 frameworks/electron/backend.cjs 206
 frameworks/electron/control.cjs 132
 frameworks/electron/cored.cjs 242
-frameworks/electron/main.cjs 375
+# 재입법 2026-07-31 375 → 388. 증가분은 **배선이지 코어가 아니다** — 애플리케이션 메뉴다.
+# macOS 는 앱의 정체(메뉴바 타이틀)를 번들 Info.plist 에서 읽고, 메뉴 자체는 프레임워크 API
+# 로만 세운다. 메뉴를 안 세우면 프레임워크의 기본 메뉴가 뜨고 그 메뉴는 이 제품을 모른다
+# (실측: 메뉴바가 "Electron" 이었고 복사/붙여넣기 단축키가 프레임워크 기본에 기대고 있었다).
+# 원칙이 껍데기에 남긴다고 한 셋(표면·메인스레드·사건싱크) 중 표면에 해당한다. 항목 목록은
+# 데이터라 늘지 않는다 — 늘면 그때는 제품 결정이므로 공통으로 뺀다.
+frameworks/electron/main.cjs 388
 frameworks/electron/native/capture.cjs 70
 frameworks/electron/native/clipboard.cjs 24
 frameworks/electron/native/engine.cjs 26

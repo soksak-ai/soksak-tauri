@@ -75,8 +75,11 @@ build: spec-gate cli ## 릴리스 번들 빌드 → "soksak.app"(기본 아이�
 build-debug: spec-gate cli-debug ## 디버그 번들 빌드 → "soksak-debug.app"(주황 아이콘) + sok-debug
 	$(PNPM) tauri build --debug --config $(DEBUG_CONFIG)
 
-electron: ## Electron 프레임워크 스파이크(Tauri 프레임워크와 형제 — 교체 아님). vite dev(1420) 가 떠 있어야 한다.
-	$(PNPM) exec electron frameworks/electron/main.cjs
+electron: ## Electron 프레임워크(Tauri 프레임워크와 형제 — 교체 아님). vite dev(1420) 가 떠 있어야 한다.
+	@# 제품 번들로 실행한다 — macOS 는 앱의 정체(메뉴바·Dock·프로세스 이름)를 번들 Info.plist
+	@# 에서 읽으므로, 프레임워크의 기본 번들로 돌면 이 제품이 "Electron" 으로 보인다.
+	@APP=$$(frameworks/electron/bundle.sh soksak-electron-dev) && \
+	  "$$APP/Contents/MacOS/soksak-electron-dev" frameworks/electron/main.cjs
 
 run: ## 릴리스 soksak.app 실행(새 인스턴스)
 	@test -d "$(RELEASE_APP)" || { echo "먼저 'make build' 를 실행하세요."; exit 1; }

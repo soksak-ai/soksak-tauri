@@ -47,3 +47,5 @@ secret/
 
 # 기계별 빌드 설정 — 워크트리들이 target 을 공유하게 한다(절대경로라 커밋 불가)
 .cargo/config.toml
+# Electron 제품 번들(프레임워크 dist 복사 — 빌드 산출물)
+frameworks/electron/build/
