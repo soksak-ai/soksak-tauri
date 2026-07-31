@@ -34,6 +34,7 @@ export const LOCAL = new Map([
   ["framework-thin-binding.mjs", []],
   ["module-state-scan.mjs", []],
   ["platform-boundary-scan.mjs", ["--artifacts"]],
+  ["product-name-scan.mjs", []],
   ["test-home-isolation.mjs", []],
   ["vocabulary-framework-scan.mjs", []],
   ["workspace-root-not-framework.mjs", []],

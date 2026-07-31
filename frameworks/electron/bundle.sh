@@ -13,7 +13,12 @@ set -eu
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 SRC="$ROOT/node_modules/electron/dist/Electron.app"
-NAME=${1:?"제품 이름을 인자로 준다(예: soksak-electron-dev)"}
+# 이름은 **정체성에서 파생한다** — 여기 적으면 규칙이 한 벌 더 생기고, 두 벌은 갈릴 때까지
+# 조용하다. 파생 규칙의 정본은 crates/soksak-core/fixtures/identity.json 이고 Rust·JS 두
+# 구현이 그 픽스처에 묶여 있다. 이 스크립트는 그중 JS 쪽에 물어본다.
+IDENTIFIER=${1:?"정체성을 인자로 준다(예: com.soksak.electron.dev)"}
+NAME=$(node -e "process.stdout.write(require('$ROOT/frameworks/electron/cored.cjs').productName(process.argv[1]))" "$IDENTIFIER")
+[ -n "$NAME" ] || { echo "제품 이름을 파생하지 못했다: $IDENTIFIER" >&2; exit 1; }
 OUT_DIR="$ROOT/frameworks/electron/build"
 APP="$OUT_DIR/$NAME.app"
 
