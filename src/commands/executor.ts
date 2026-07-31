@@ -11,7 +11,7 @@ import { registerDebugCatalog } from "./catalogDebug";
 import { registerOrchestratorCatalog } from "./catalogOrchestrator";
 import { registerRemoteCatalog } from "./catalogRemote";
 import { registerRemoteConfirmDevCatalog } from "./catalogRemoteConfirmDev";
-import { getSpec, execute, setPermissionGate } from "./registry";
+import { getSpec, execute, markRuntimeReady, setPermissionGate } from "./registry";
 
 interface CmdRequest {
   id: number;
@@ -44,6 +44,8 @@ const hostReadyGate = new Promise<void>((resolve) => {
 /** 플러그인 호스트 활성화 완료 신호 — main.tsx 가 initPluginHost() 직후 1회 호출한다. */
 export function markCommandHostReady(): void {
   hostReady = true;
+  // 배선 완료 선언 — 이 뒤로 빠진 관측 배선은 "아직"이 아니라 결함이고, 응답이 그것을 말한다.
+  markRuntimeReady();
   resolveFrameworkReady?.();
 }
 

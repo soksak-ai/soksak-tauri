@@ -2,6 +2,7 @@
 // 모든 기능은 여기 등록된 command 하나로 표현되고, CLI(sok)/MCP/UI 는 호출자일 뿐이다.
 // 문서(sok help/docs)와 MCP tool 정의도 이 스펙에서 생성된다 — 코드와 어긋날 수 없다.
 
+import { activityHealth } from "../state/activityHealth";
 import { moduleState } from "../lib/moduleState";
 import type { CmdErrCode } from "../state/sessions";
 import type { LocalizedText } from "../plugins/spec";
@@ -282,6 +283,10 @@ export interface CommandOutcome {
   window?: string;
   // 후속 명령 후보(제시) — 성공 시 spec.hint, 실패 시 오류 코드별 표준 안내. 최대 3개.
   hint?: CommandHint[];
+  // 코어의 절름거리는 축 — **이 응답이 무엇을 답했든** 함께 온다. 따로 물어봐야 아는 사실은
+  // 아무도 안 묻는다(실측: 활동 발행이 끊긴 채로 앱은 멀쩡히 답했고, 알아내려면 원장을 두 번
+  // 조회해 시각을 비교해야 했다). 축이 성하면 이 키는 아예 없다.
+  degraded?: string[];
 }
 // 하위호환 별칭 — 실패 봉투를 지칭하던 기존 참조 유지.
 export type CommandError = CommandOutcome & { ok: false };
@@ -975,9 +980,28 @@ export interface CommandTrace {
   // 실행 유래(ctx.origin 관통) — 시스템 유래("schedule" 등)는 무낭독·흐림 표시(§5).
   origin?: string;
 }
-let traceSink: ((t: CommandTrace) => void) | null = null;
+// 계측의 건강 — **계측이 죽으면 그 사실도 계측되지 않는다.** 그래서 따로 센다.
+//
+// 실측(2026-07-31): 명령은 정상으로 답하는데 활동 원장에 아무것도 안 쌓였다. sink 가 붙었는지,
+// 마지막으로 언제 계측했는지를 밖에서 물을 길이 없어 원장을 두 번 조회해 시각을 비교했다 —
+// 그건 진단이 아니라 수작업이다. 상태는 갈아끼워도 살아남는다(모듈이 갈리면 sink 가 null 로
+// 돌아가는데, 그 순간 계측 상태까지 사라지면 남는 것이 없다).
+const trace = moduleState("commands/registry#trace", () => ({
+  sink: null as ((t: CommandTrace) => void) | null,
+  emitted: 0,
+  lastEmitAt: 0,
+  // 부팅이 "다 붙였다"고 선언하기 전에는 미설치가 결함이 아니다 — 아직 붙이는 중이거나, 이
+  // 부분을 켜지 않은 하니스다. 결함 판정에는 **언제부터 그것이 있어야 하는가**가 필요하고,
+  // 그 답은 부팅이 안다. 이 신호 없이 판정하면 부팅 중인 앱과 고장난 앱이 똑같아 보인다.
+  runtimeReady: false,
+}));
+
+/** 부팅이 배선을 끝냈다고 선언한다 — 이 뒤로 빠진 배선은 결함이다. */
+export function markRuntimeReady(): void {
+  trace.runtimeReady = true;
+}
 export function setCommandTraceSink(fn: ((t: CommandTrace) => void) | null): void {
-  traceSink = fn;
+  trace.sink = fn;
 }
 
 // 명령 실행. 결과는 항상 {ok:true,…} 또는 {ok:false,code,message}.
@@ -1018,7 +1042,9 @@ async function executeTracked(
     // activity.recent 아님 주의: 조회도 사실이라 기록된다). 노출(흐림·무낭독)은 origin 축이
     // 선별할 뿐 기록 여부를 정하지 않는다. 미등록 명령의 실패 봉투도 그대로 계측.
     if (registry.get(name)?.trace !== false) {
-      traceSink?.({
+      trace.emitted += 1;
+      trace.lastEmitAt = finished;
+      trace.sink?.({
         command: name,
         title: registry.get(name)?.title,
         source: channel === "plugin" ? "plugin" : ctx.remote ? "remote" : "ui",
@@ -1284,8 +1310,34 @@ function normalizeOutcome(spec: CommandSpec | undefined, result: unknown): Comma
 // 응답 공통 필드(창 label·hint)를 얹는 단일 지점 — execute 가 모든 경로를 여기로 통과시킨다.
 // window 는 언제나, hint 는 제시할 게 있을 때만. hint 는 지시가 아니라 가능성의 제시다:
 // "이런 것이 가능하다"를 알려 받은 쪽의 판단을 돕는다(강제 아님).
+// 죽은 축은 **모든 응답이 말한다** — 따로 물어봐야 아는 사실은 아무도 안 묻는다.
+//
+// 실측(2026-07-31): 활동 발행이 끊긴 채로 앱은 멀쩡히 명령에 답했다. 그 사실을 알려면 원장을
+// 두 번 조회해 최신 시각을 비교해야 했다. 조회하는 쪽이 무엇을 물었든, 코어가 절름거리고
+// 있으면 그 답에 실려 와야 한다.
+function degradedAxes(): string[] | undefined {
+  const bad: string[] = [];
+  const a = activityHealth();
+  if (!trace.runtimeReady) return undefined;
+  if (a.attempts === 0) {
+    // 시도 0 은 "건강"이 아니라 **미확인**이다. 침묵시키면 발행 배선이 통째로 빠진 창과
+    // 잘 도는 창이 똑같아 보인다 — 0 의 두 얼굴을 여기서도 가른다.
+    bad.push("activity: 허브 발행을 한 번도 시도하지 않음(배선 미확인)");
+  } else if (!a.healthy) {
+    bad.push(
+      `activity: 허브 발행 연속 실패 ${a.consecutiveFailures}회(누적 ${a.failed}/${a.attempts})${a.lastError ? ` — ${a.lastError}` : ""}`,
+    );
+  }
+  if (registry.size === 0) bad.push("commands: 등록부가 비어 있음(등록 0개)");
+  // sink 미설치는 "조용함"이 아니라 결함이다 — 이 창의 모든 실행이 원장에서 사라진다.
+  if (!trace.sink) bad.push("commands: 실행 계측 sink 미설치(이 창의 실행이 원장에 안 남음)");
+  return bad.length > 0 ? bad : undefined;
+}
+
 function withCommonFields(out: CommandOutcome, name: string, ctx: CommandContext): CommandOutcome {
   out.window = currentWindowLabel();
+  const degraded = degradedAxes();
+  if (degraded) out.degraded = degraded;
   if (out.ok) {
     // 성공 hint 는 명령 자신(spec.hint)이 짓는다. 최대 3개로 자른다. 예외가 발생해도 응답을 깨지 않고
     // hint 만 생략한다 — 제시의 실패가 실행의 성공을 무를 수 없다.

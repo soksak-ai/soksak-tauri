@@ -1,4 +1,5 @@
 import { memo, useRef, useState } from "react";
+import { execute } from "../commands/registry";
 import { isComposingEnter } from "../lib/imeKeys";
 import { Icon } from "../ui/icons/Icon";
 import { ProgramMenu } from "./ProgramMenu";
@@ -20,7 +21,6 @@ export const ContentTabs = memo(function ContentTabs({
   vertical?: boolean;
 }) {
   const t = useT();
-  const addContent = useSessions((s) => s.addContent);
   const requestCloseContent = useCloseConfirm((s) => s.requestCloseContent);
   const setActiveContent = useSessions((s) => s.setActiveContent);
   const renameContent = useSessions((s) => s.renameContent);
@@ -45,8 +45,12 @@ export const ContentTabs = memo(function ContentTabs({
     if (r) setMenuPos({ left: r.left, top: r.bottom + 2 });
   };
 
+  // 명령을 통해 만든다 — store 를 직접 부르면 관측·정규화·게이트가 통째로 빠진다. 실측
+  // (2026-07-31): 이 자리가 store 를 직접 불러서, 사용자가 + 로 만든 스페이스가 활동 원장에
+  // 한 줄도 남지 않았다. 무엇이 일어났는지 밖에서 읽을 수 없으면 원인 추적은 추측이 된다.
+  // CLI·AI 가 부르는 space.create 와 같은 경로여야 둘이 갈리지 않는다.
   const pick = (program: Program) => {
-    addContent(project.id, program);
+    void execute("space.create", { project: project.id, program }, {});
     setMenuPos(null);
   };
 
@@ -101,6 +105,10 @@ export const ContentTabs = memo(function ContentTabs({
           ref={addBtnRef}
           type="button"
           className="icon-btn space-tab-add"
+          // 주소 — 기계가 이 버튼을 누를 수 있어야 이 경로가 검증된다(§R2: 테스트가 어려우면
+          // 먼저 검증 가능한 표면을 만든다). 주소가 없던 동안 "+ 로 생성이 안 된다"를 밖에서
+          // 재현할 방법이 없었다.
+          data-node="tab/space/add"
           title={t("space.new")}
           onClick={toggleMenu}
         >

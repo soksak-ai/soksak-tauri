@@ -3,6 +3,7 @@
 // 계열 ②: 커맨드 레지스트리 execute 계측(CommandTrace) — 오케스트레이터가 내리는 모든 명령.
 // 허브가 seq/ts 를 부여하고 전 창 브로드캐스트+영속하므로 여기선 발행만 한다.
 
+import { notePublish } from "./activityHealth";
 import { invoke } from "../framework";
 import { currentWindowLabel } from "../lib/webviewLabels";
 import { onPluginEvent } from "../plugins/hooks";
@@ -19,9 +20,14 @@ export function publishActivity(
     kind,
     source,
     payload: { ...payload, window: currentWindowLabel() },
-  }).catch(() => {
-    // 허브 불능(테스트 하니스 등)은 라이브 동작을 막지 않는다.
-  });
+  })
+    .then(() => notePublish(true, Date.now()))
+    .catch((e: unknown) => {
+      // 허브 불능(테스트 하니스 등)은 라이브 동작을 막지 않는다 — 그러나 **센다**. 막지 않는
+      // 것과 사실을 안 남기는 것은 다르다: 삼킨 실패는 발행이 통째로 끊겨도 조용해서, 밖에서는
+      // 원장을 두 번 조회해 시각을 비교해야 알 수 있었다(실측 2026-07-31).
+      notePublish(false, Date.now(), e instanceof Error ? e.message : String(e));
+    });
 }
 const publish = publishActivity;
 
