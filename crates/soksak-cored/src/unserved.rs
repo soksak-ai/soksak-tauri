@@ -66,6 +66,14 @@ pub const UNSERVED: &[Unserved] = &[
                      같은 디렉터리에 동시에 설치해도 누구도 막지 않는다.",
     },
     Unserved {
+        name: "activity_persist_stats",
+        blocked_by: "이 프로세스의 영속 카운터를 답하는 이름이라 남이 대신 답할 수 없다 — 실패·대기·\
+                     버림·위임실패는 물은 쪽이 아니라 **쓴 쪽**의 사실이고, 이 프로세스가 답하면 \
+                     자기 수를 남의 것으로 내놓는다. cored 는 같은 축을 activity_audit 의 persist 에 \
+                     싣는다(두 프로세스가 각자 자기 것을 답한다). 이름이 프레임워크에 남는 것이 정답인 \
+                     자리다 — 옮길 몸이 아니라 프로세스 정체성에 붙은 사실이다.",
+    },
+    Unserved {
         name: "plugin_update",
         blocked_by: "fetch 후 원격 상태로 강제 동기화하는 것이 명령의 몸이라, git 스폰을 빼면 설치본은 \
                      그대로인데 성공이 나간다. 그 스폰은 core-git-scan 이 plugins.rs 한 파일로 봉인했다 \

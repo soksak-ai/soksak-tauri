@@ -185,7 +185,22 @@ pub fn publish(app: &AppHandle, kind: &str, source: &str, payload: Value) -> Val
     let entry = admit(&hub, kind, source, payload);
     // 창 배달 실패는 발행을 멈추지 않는다 — 원장의 진실은 링·영속이고, 창은 구독자 하나다.
     let _ = fan_out(&hub, app, &entry);
-    // 영속 실패도 스트림을 막지 않는다(라이브 우선, 회복 큐 + 콘솔 보고).
+    // 쓰기는 cored 가 진다 — 앱 프로세스의 SQLite 는 이 쓰기에서 NOMEM 을 낸다(실측
+    // 2026-07-31: 같은 쓰기 코드로 앱 실패 44·cored 실패 0). 도장은 여기가 계속 매긴다:
+    // seq 는 링·구독 커서의 기준이라 링을 가진 쪽이 주인이어야 하고, 그래야 주인이 하나다.
+    //
+    // **답을 기다리지 않는다.** 기다리면 cored 가 이 창의 답을 기다리는 중일 때 서로를 붙잡는다.
+    if let Some(host) = crate::cored_host::current() {
+        if host
+            .tell("activity_persist", &serde_json::json!({ "entry": entry }))
+            .is_ok()
+        {
+            return entry;
+        }
+        // 못 보냈으면 아래 로컬 경로로 떨어진다 — 조용히 버리지 않는다.
+        DELEGATION_MISSES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+    // 폴백 — cored 에 못 닿는 동안은 이 프로세스가 직접 쓴다(회복 큐가 실패를 진다).
     let st = app.state::<crate::data::DbState>();
     if let Ok(guard) = st.conn.lock() {
         if let Some(conn) = guard.as_ref() {
@@ -193,6 +208,13 @@ pub fn publish(app: &AppHandle, kind: &str, source: &str, payload: Value) -> Val
         }
     }
     entry
+}
+
+/// 위임에 실패해 직접 쓴 횟수 — 0 이 아니면 그 구간의 쓰기는 앱 프로세스가 졌다.
+static DELEGATION_MISSES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+pub fn persist_delegation_misses() -> u64 {
+    DELEGATION_MISSES.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 // ── 영속 실패 회복 큐 ────────────────────────────────────────────────────────
@@ -258,6 +280,8 @@ pub fn activity_persist_stats() -> Value {
         "drops": soksak_store::activity_persist::persist_drops(),
         "pending": soksak_store::activity_persist::persist_pending(),
         "lastError": soksak_store::activity_persist::persist_last_error(),
+        // 0 이 아니면 그 구간은 앱 프로세스가 직접 썼다(cored 에 못 닿았다).
+        "delegationMisses": persist_delegation_misses(),
     })
 }
 

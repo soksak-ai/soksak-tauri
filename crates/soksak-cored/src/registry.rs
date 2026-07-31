@@ -1004,6 +1004,27 @@ pub(crate) fn run_activity_audit(ctx: &Ctx, params: &Value) -> Outcome {
     })
 }
 
+#[derive(serde::Deserialize)]
+struct ActivityPersist {
+    entry: Value,
+}
+
+/// 도장 찍힌 항목을 **영속만** 한다 — 도장은 찍지 않는다.
+///
+/// 적재(도장)의 주인은 하나여야 하고, 그 자리는 창을 가진 프로세스다: seq 는 링·구독 커서의
+/// 기준이라 그 링을 가진 쪽이 매겨야 한다. 반면 **쓰기**는 이 프로세스가 져야 한다 — 앱
+/// 프로세스의 SQLite 는 이 쓰기에서 NOMEM 을 낸다(실측 2026-07-31: 같은 쓰기 코드로 앱 실패
+/// 44·cored 실패 0).
+///
+/// 그래서 둘을 가른다: 도장은 거기, 쓰기는 여기. 그리고 부른 쪽은 **답을 기다리지 않는다** —
+/// 기다리면 이 프로세스가 그 창의 답을 기다리는 중일 때 서로를 붙잡는다(실측: 앱 UI 미응답).
+pub(crate) fn run_activity_persist(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: ActivityPersist| {
+        crate::ledger::persist_only(&ctx.db_path().to_string_lossy(), &a.entry)?;
+        Ok(Value::Null)
+    })
+}
+
 pub(crate) fn run_activity_publish(ctx: &Ctx, params: &Value) -> Outcome {
     // 적재만 한다 — 단조·도장 규칙은 코어가, 원장 자원은 ledger 가 소유한다.
     //

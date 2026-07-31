@@ -104,6 +104,14 @@ pub fn admit(db_path: &str, kind: &str, source: &str, payload: Value) -> Result<
 /// 여기 raw SQL 을 두었던 동안 이 경로는 저장소 정책을 우회했고 **보관 정리를 한 번도 받지
 /// 않았다**(실측 2026-07-31 — 그 원장은 영원히 자란다). 규칙이 갈린 것이 아니라 한쪽이 통째로
 /// 빈약했고, 오류를 내지 않아 조용했다.
+/// 밖에서 도장 찍힌 항목을 영속만 한다 — 이 프로세스의 원장 커서는 건드리지 않는다.
+///
+/// 커서를 올리면 이 프로세스도 그 자리를 자기 것으로 여기고, 다음 자체 발행이 그 위를 이어
+/// 매긴다 — 주인이 둘이 되는 정확한 경로다. 쓰기만 진다.
+pub fn persist_only(db_path: &str, entry: &Value) -> Result<(), String> {
+    persist(db_path, entry)
+}
+
 fn persist(db_path: &str, entry: &Value) -> Result<(), String> {
     let conn = soksak_store::open::connect(std::path::Path::new(db_path))?;
     if soksak_store::activity_persist::persist_entry(&conn, entry) {

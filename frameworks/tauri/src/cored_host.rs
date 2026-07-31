@@ -370,6 +370,20 @@ impl CoredHost {
         wait_for(&self.waiters, &id, rx, within)
     }
 
+    /// 답을 기다리지 않고 보낸다 — **기다리면 교착한다.**
+    ///
+    /// 이 연결은 양방향이다: cored 가 명령을 밀고 이 프로세스가 답을 돌려준다. 그 배달을
+    /// 처리하는 중에 이쪽에서 답을 기다리면, cored 는 이쪽 답을 기다리고 이쪽은 cored 답을
+    /// 기다린다(실측 2026-07-31: 앱 UI 가 통째로 미응답). 답이 필요 없는 일은 던지고 끝낸다.
+    ///
+    /// 보낸 뒤의 실패는 값으로 돌아온다 — 못 보낸 것을 보낸 것으로 세면 유실이 조용해진다.
+    pub fn tell(&self, method: &str, params: &Value) -> Result<(), String> {
+        // id 는 답을 안 받아도 붙인다 — 받는 쪽 프로토콜이 같은 모양을 요구하고, 로그에서
+        // 어느 요청이었는지 가릴 수 있어야 한다.
+        let id = format!("t{}", self.seq.fetch_add(1, Ordering::Relaxed));
+        self.send(&request_envelope(&id, method, params))
+    }
+
     /// 지금 창 사실을 알리고, 그것이 장부에 설 때까지 기다린다.
     pub fn windows_settled(&self, within: Duration) -> Result<(), String> {
         self.report_settled(&self.facts.facts(), within)

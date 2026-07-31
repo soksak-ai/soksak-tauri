@@ -1153,6 +1153,12 @@ pub const COMMANDS: &[Command] = &[
         run: run_write_text_file,
     },
     Command {
+        name: "activity_persist",
+        args: &[Arg { name: "entry", ty: "json", required: REQ }],
+        returns: "null",
+        run: run_activity_persist,
+    },
+    Command {
         name: "activity_audit",
         args: &[],
         returns: "{ rows, minSeq, maxSeq, gaps, timeRegressions, firstRegressionSeq, singleWriter, ledger }",
