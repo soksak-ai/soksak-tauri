@@ -3636,8 +3636,18 @@ select.dctl {
      (height: calc(--h - --pane-inset*2 …)) 레일만 상단만 먹어, 카드가 창 아래끝에 붙어
      하단 테두리를 그릴 자리가 없었다(실측 2026-07-27: 카드 하단 1035 = 창 하단 —
      같은 화면의 다른 배치에선 사방 테두리가 정상이라 "여기에서만" 으로 보였다). */
+  /* 좌우도 같은 인셋이다 — 위 문단이 상·하를 맞춘 것과 같은 이유의 나머지 절반.
+     콘텐츠 칸은 네 방향 모두 --pane-inset 을 먹는데(width: calc(--w - --pane-inset*2))
+     레일만 세로만 먹어, 왼쪽이 창 가장자리에 붙고 오른쪽에만 여백이 남았다. */
   padding-top: var(--pane-inset, 0px);
   padding-bottom: var(--pane-inset, 0px);
+  padding-left: var(--pane-inset, 0px);
+  padding-right: var(--pane-inset, 0px);
+  /* 사이드바와 탭 사이의 세로 경계 — **사이드바가 right 를 소유한다**(§B2: 한 변의 주인은
+     하나). 레일이 border-right 를 소유하는 것과 같은 꼴이다. 리사이저는 이 선을 못 그린다
+     (§B6): 폭 0 오버레이라 hover 때만 색이 뜨고, 평상시엔 아무도 그리지 않아 경계가
+     사라져 있었다. 색은 패널 내부선 토큰(--bd-soft = --bd 55%)이라 테마를 따라간다(§B4). */
+  border-right: 1px solid var(--bd-soft);
 }
 /* 셀이 % 절대위치로 깔리는 그리드 — 콘텐츠 space 와 동일 모델. footer 는 그 아래 흐름. */
 .left-panes {
