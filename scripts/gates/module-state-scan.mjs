@@ -26,7 +26,7 @@ const ROOT = new URL("../../", import.meta.url).pathname;
 // 않음"이라는 침묵이다(실측: 계측 sink 가 그 모양이었고 원장이 통째로 비었다).
 // 남은 것은 대부분 자기 모듈이 채우는 캐시·카운터지만, 그 판별을 사람이 매번 하면 하나를
 // 놓친다 — 0 까지 내린다.
-const DECLARED_CAP = 20;
+const DECLARED_CAP = 16;
 
 function sourceFiles() {
   const out = execSync("git ls-files 'src/**/*.ts' 'src/**/*.tsx'", {

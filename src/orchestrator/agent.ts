@@ -48,14 +48,18 @@ const ms = moduleState("orchestrator/agent#state", () => ({
 // 준비물(가르침·카탈로그) 캐시 — 명령 표면은 플러그인 생명주기에서만 바뀐다: 턴마다 재조회하지
 // 않고, 활동 스트림에서 plugin.enable/disable/reload/... 실행이 관찰될 때만 무효화한다
 // (이벤트 기반 — TTL·폴링 없음). 준비 조회가 매 턴 세트를 채우던 소음의 제거.
-let prep: { key: string; skillDoc: string; catalog: string } | null = null;
+// 갈아끼우기 경계 밖 — 이 값들이 새것이 되면 "이미 했다"는 기억과 지연 초기화·구독
+// 해지 자리가 함께 사라지고, 채우던 쪽은 다시 채우지 않는다.
+const moduleLocal = moduleState("orchestrator/agent#state", () => ({
+  prep: null as { key: string; skillDoc: string; catalog: string } | null,
+}));
 
 /** 부트 1회(main) — 명령 표면 변동 관찰로 준비물 캐시를 무효화한다. */
 export function watchPrepInvalidation(): void {
   safeListen<{ kind: string; payload: Record<string, unknown> }>("activity", (e) => {
     if (e.payload.kind !== "command.executed") return;
     const cmd = String((e.payload.payload as { command?: unknown })?.command ?? "");
-    if (/^plugin\.(enable|disable|reload|install|remove|update)\b/.test(cmd)) prep = null;
+    if (/^plugin\.(enable|disable|reload|install|remove|update)\b/.test(cmd)) moduleLocal.prep = null;
   });
 }
 
@@ -267,8 +271,8 @@ async function askInner(text: string, explicitWindow?: string): Promise<CommandO
   const prepKey = stageWindow ?? "";
   let skillDoc: string;
   let catalog: string;
-  if (prep && prep.key === prepKey) {
-    ({ skillDoc, catalog } = prep);
+  if (moduleLocal.prep && moduleLocal.prep.key === prepKey) {
+    ({ skillDoc, catalog } = moduleLocal.prep);
   } else {
     try {
       skillDoc = await runCapture(`${sokPath} skill print`, { ...baseEnv, SOKSAK_PARENT: turnId });
@@ -291,7 +295,7 @@ async function askInner(text: string, explicitWindow?: string): Promise<CommandO
       ).catch(() => ""),
     );
     // 빈 카탈로그(실패)는 캐시하지 않는다 — 다음 턴이 다시 시도(느린 발견 경로로 강등만).
-    if (catalog) prep = { key: prepKey, skillDoc, catalog };
+    if (catalog) moduleLocal.prep = { key: prepKey, skillDoc, catalog };
   }
 
   const agentBin = useSettings.getState().orchestratorAgent.trim() || "claude";

@@ -6,6 +6,7 @@
 //  - ui.input.click: 주소 → 요소 click 디스패치(danger:inject). 불일치 = NOT_EXPOSED.
 // 노출(data-node)되지 않은 요소는 주소 트리에 없어 접근 불가 → 명확한 에러(추측 0).
 
+import { moduleState } from "../lib/moduleState";
 import { invoke, currentWindow } from "../framework";
 import { currentWindowLabel } from "../lib/webviewLabels";
 import { parseAddress, isParseError } from "./address";
@@ -25,8 +26,12 @@ type FocusTraceEntry = {
   dataNode: string | null;
   hasFocus: boolean;
 };
-let focusTrace: { events: FocusTraceEntry[]; recording: boolean } | null = null;
-let focusTraceStop: (() => void) | null = null;
+// 갈아끼우기 경계 밖 — 이 값들이 새것이 되면 "이미 했다"는 기억과 지연 초기화·구독
+// 해지 자리가 함께 사라지고, 채우던 쪽은 다시 채우지 않는다.
+const moduleLocal = moduleState("commands/catalogDom#state", () => ({
+  focusTrace: null as { events: FocusTraceEntry[]; recording: boolean } | null,
+  focusTraceStop: null as (() => void) | null,
+}));
 
 const notExposed = (addr: string) => ({
   ok: false as const,
@@ -431,7 +436,7 @@ export function registerDomCatalog(): void {
     message: (d) => tmsg("msg.ui.focus.trace.start", { ms: Number(d.ms ?? 0) }),
     examples: ['ui.focus.trace.start \'{"ms":10000}\''],
     handler: (p) => {
-      focusTraceStop?.();
+      moduleLocal.focusTraceStop?.();
       const ms = Math.min(Math.max(Number(p.ms) || 10_000, 100), 180_000);
       const buf: FocusTraceEntry[] = [];
       const t0 = performance.now();
@@ -451,13 +456,13 @@ export function registerDomCatalog(): void {
       };
       const types = ["mousedown", "mouseup", "focusin", "focusout"] as const;
       for (const t of types) window.addEventListener(t, record, true);
-      const timer = window.setTimeout(() => focusTraceStop?.(), ms);
-      focusTrace = { events: buf, recording: true };
-      focusTraceStop = () => {
+      const timer = window.setTimeout(() => moduleLocal.focusTraceStop?.(), ms);
+      moduleLocal.focusTrace = { events: buf, recording: true };
+      moduleLocal.focusTraceStop = () => {
         window.clearTimeout(timer);
         for (const t of types) window.removeEventListener(t, record, true);
-        if (focusTrace) focusTrace.recording = false;
-        focusTraceStop = null;
+        if (moduleLocal.focusTrace) moduleLocal.focusTrace.recording = false;
+        moduleLocal.focusTraceStop = null;
       };
       return { recording: true, ms };
     },
@@ -475,8 +480,8 @@ export function registerDomCatalog(): void {
       }),
     examples: ["ui.focus.trace.read"],
     handler: () => ({
-      recording: focusTrace?.recording ?? false,
-      events: focusTrace?.events ?? [],
+      recording: moduleLocal.focusTrace?.recording ?? false,
+      events: moduleLocal.focusTrace?.events ?? [],
     }),
   });
 
