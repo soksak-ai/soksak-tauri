@@ -70,7 +70,7 @@ frameworks/tauri/src/cored_host.rs 510
 frameworks/tauri/src/cored_ledger.rs 248
 frameworks/tauri/src/cored_shape_gate.rs 229
 frameworks/tauri/src/daemon.rs 72
-frameworks/tauri/src/data/commands.rs 610
+frameworks/tauri/src/data/commands.rs 598
 frameworks/tauri/src/data/mod.rs 91
 frameworks/tauri/src/data/ring.rs 42
 frameworks/tauri/src/dockmenu.rs 70

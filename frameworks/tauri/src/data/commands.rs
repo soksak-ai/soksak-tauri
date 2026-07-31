@@ -14,15 +14,6 @@ use soksak_store::write_policy::write_with_retry;
 use super::{db_path, DbState};
 use crate::secrets::SecretsState;
 
-#[derive(Serialize, Clone)]
-struct DataChange {
-    ns: String,
-    coll: Option<String>,
-    scope: Option<String>,
-    op: String,
-    id: Option<String>,
-}
-
 #[allow(clippy::too_many_arguments)]
 fn emit_change(
     app: &AppHandle,
@@ -32,16 +23,15 @@ fn emit_change(
     op: &str,
     id: Option<&str>,
 ) {
-    let _ = app.emit(
-        "data-change",
-        DataChange {
-            ns: ns.to_string(),
-            coll: coll.map(String::from),
-            scope: scope.map(String::from),
-            op: op.to_string(),
-            id: id.map(String::from),
-        },
-    );
+    // 허브가 있으면 허브로 — 붙은 호스트 전부가 받아야 같은 홈의 다른 프레임워크가 옛 값을
+    // 진실로 알지 않는다(A22 알림 축). 없으면 창 가진 프로세스는 이쪽뿐이라 직접 뿌린다.
+    // 두 길을 함께 타지 않는다: 방송은 이쪽에도 돌아온다.
+    let fact = soksak_core::data_change::payload(ns, coll, scope, op, id);
+    let hub = crate::cored_host::current()
+        .is_some_and(|h| h.tell("data_change_notify", &fact).is_ok());
+    if !hub {
+        let _ = app.emit(soksak_core::data_change::EVENT, fact);
+    }
     // 쓰기 사실 = 백업 링의 유일한 트리거(폴링 0) — 게이트(1h mtime)와 회전은 저장소 규칙이
     // 소유하고, 어느 저장소인지는 이 프로세스가 안다. 경로를 못 구하면 백업은 건너뛴다
     // (쓰기는 이미 끝났고, 다음 쓰기가 다시 신호한다).
@@ -155,7 +145,7 @@ pub fn data_kv_set(
         serde_json::json!({ "ns": ns, "key": key, "value": value }),
         |c| store::kv_set(c, &ns, &key, &value),
     )?;
-    emit_change(&app, &ns, None, None, "kv_set", Some(key.as_str()));
+    emit_change(&app, &ns, None, None, soksak_core::data_change::op::KV_SET, Some(key.as_str()));
     Ok(())
 }
 
@@ -174,7 +164,7 @@ pub fn data_kv_delete(
         |c| store::kv_delete(c, &ns, &key),
     )?;
     if removed {
-        emit_change(&app, &ns, None, None, "kv_delete", Some(key.as_str()));
+        emit_change(&app, &ns, None, None, soksak_core::data_change::op::KV_DELETE, Some(key.as_str()));
     }
     Ok(removed)
 }
@@ -235,7 +225,7 @@ pub fn data_put(
         &ns,
         Some(coll.as_str()),
         Some(scope_s.as_str()),
-        "put",
+        soksak_core::data_change::op::PUT,
         Some(new_id.as_str()),
     );
     Ok(new_id)
@@ -284,7 +274,7 @@ pub fn data_delete(
             &ns,
             Some(coll.as_str()),
             scope.as_deref(),
-            "delete",
+            soksak_core::data_change::op::DELETE,
             Some(id.as_str()),
         );
     }

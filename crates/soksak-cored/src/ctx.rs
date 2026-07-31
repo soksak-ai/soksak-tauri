@@ -112,6 +112,24 @@ impl Ctx {
         soksak_store::activity_persist::with_writer(&self.db_path(), f)
     }
 
+    /// 저장소를 **바꾸는** 경로 — 무엇이 바뀌었는지를 값으로 내놓아야 지나갈 수 있다.
+    ///
+    /// 알림을 규칙으로만 두면 새 쓰기 명령이 조용히 빠뜨린다. 소스를 훑어 세는 검사로는 함수
+    /// 경계 하나만 틀려도 빠뜨림이 통과로 보인다(실측 2026-08-01: 위반을 심었는데 게이트가
+    /// 통과했다). 그래서 세는 대신 **타입이 요구한다** — 이 문을 지나는 쓰기는 `Changed` 를
+    /// 돌려주고, 그것을 안 쓰면 컴파일이 막는다(`#[must_use]`).
+    ///
+    /// 소유권은 여기서 보지 않는다. 판정은 열기 **전에** 끝나야 하고(그 사이가 곧 이중 쓰기
+    /// 창이다), 그 자리는 명령의 첫 줄이다.
+    pub fn with_write<T>(
+        &self,
+        f: impl FnOnce(&rusqlite::Connection) -> Result<(T, Changed), String>,
+    ) -> Result<T, String> {
+        let (value, changed) = soksak_store::activity_persist::with_writer(&self.db_path(), f)?;
+        changed.announce();
+        Ok(value)
+    }
+
     /// 옛 진입점 — 커넥션을 값으로 돌려준다. 남은 호출자를 with_db 로 옮기는 동안만 있다.
     pub fn open_db(&self) -> Result<rusqlite::Connection, String> {
         let path = self.db_path();
@@ -265,6 +283,74 @@ mod tests {
         assert_eq!(
             ctx.identity().plugins_dir(),
             soksak_core::identity::plugins_dir(Path::new("/tmp/x-dev"))
+        );
+    }
+}
+
+/// 저장소에서 **무엇이 바뀌었는가** — 쓰기 경로가 값으로 내놓는 사실.
+///
+/// `#[must_use]` 라서 만들어 놓고 버리면 컴파일러가 막는다. 알림을 빠뜨리는 길이 문법적으로
+/// 없다는 뜻이다 — 소스를 훑어 세는 검사와 달리, 파싱이 틀려서 놓치는 일이 생기지 않는다.
+///
+/// 짚지 못하는 변경도 있다(가져오기·되돌리기는 저장소를 통째로 갈아치운다). 그때는 `whole()`
+/// 로 전면 갱신을 알린다 — 짚은 척하지 않고, 아무 말도 안 하지도 않는다.
+#[must_use = "저장소를 바꿨으면 붙은 호스트 전부가 알아야 한다 — 안 알리면 다른 프레임워크가 옛 값을 진실로 알고 다음 저장에서 덮는다"]
+pub struct Changed {
+    ns: String,
+    coll: Option<String>,
+    scope: Option<String>,
+    op: &'static str,
+    id: Option<String>,
+}
+
+impl Changed {
+    /// 한 항목이 바뀌었다.
+    pub fn one(ns: &str, coll: Option<&str>, scope: Option<&str>, op: &'static str, id: Option<String>) -> Self {
+        Self {
+            ns: ns.to_string(),
+            coll: coll.map(str::to_string),
+            scope: scope.map(str::to_string),
+            op,
+            id,
+        }
+    }
+
+    /// 무엇이 바뀌었는지 못 짚는다 — 구독자는 자기 키를 다시 읽는다.
+    pub fn whole(op: &'static str) -> Self {
+        Self {
+            ns: soksak_core::data_change::WHOLE_STORE.to_string(),
+            coll: None,
+            scope: None,
+            op,
+            id: None,
+        }
+    }
+
+    /// 아무것도 안 바뀌었다 — 지울 것이 없었거나 대상이 0건이었다.
+    ///
+    /// 이것도 값이다: "안 바뀜"을 말할 자리가 없으면 호출부가 조건부로 알림을 만들다가
+    /// `must_use` 를 우회하게 된다.
+    pub fn none() -> Self {
+        Self { ns: String::new(), coll: None, scope: None, op: "", id: None }
+    }
+
+    /// 이 사실을 붙은 호스트 전부에 뿌린다 — `Changed` 를 소비하는 유일한 길이다.
+    ///
+    /// `with_write` 는 자동으로 부른다. 직접 부르는 자리는 커넥션 밖에서 저장소를 바꾸는
+    /// 경우뿐이다(파일 자체를 갈아치우는 되돌리기).
+    pub fn announce(self) {
+        if self.op.is_empty() {
+            return;
+        }
+        crate::control::broadcast(
+            soksak_core::data_change::EVENT,
+            soksak_core::data_change::payload(
+                &self.ns,
+                self.coll.as_deref(),
+                self.scope.as_deref(),
+                self.op,
+                self.id.as_deref(),
+            ),
         );
     }
 }

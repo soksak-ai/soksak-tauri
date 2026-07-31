@@ -1077,6 +1077,21 @@ pub const COMMANDS: &[Command] = &[
         returns: "any[]",
         run: run_data_search,
     },
+    // 저장소를 **자기가 쓴** 프로세스가 그 사실을 여기로 넘긴다 — 창 가진 쪽들에 뿌리는 자리는
+    // 하나여야 한다(A22 의 알림 축). 저장소 소유가 선착순이라 실제 쓰기는 앱에서 일어날 수 있고,
+    // 그때 앱이 자기 창에만 뿌리면 같은 홈을 보는 다른 프레임워크는 옛 값을 진실로 안다.
+    Command {
+        name: "data_change_notify",
+        args: &[
+            Arg { name: "ns", ty: "string", required: REQ },
+            Arg { name: "op", ty: "string", required: REQ },
+            Arg { name: "coll", ty: "string?", required: OPT },
+            Arg { name: "scope", ty: "string?", required: OPT },
+            Arg { name: "id", ty: "string?", required: OPT },
+        ],
+        returns: "null",
+        run: run_data_change_notify,
+    },
     Command {
         name: "data_kv_delete",
         args: &[

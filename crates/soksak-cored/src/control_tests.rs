@@ -281,3 +281,36 @@ fn a_label_two_hosts_hold_is_reported_as_two() {
     drop((a, b));
     detach();
 }
+
+/// 저장소 변경은 **붙은 호스트 전부**에 간다 — 알림의 주인은 저장소의 주인과 같다(A22).
+///
+/// RED 근거(실측 2026-08-01): 저장소 소유는 cored 로 옮겼는데 알림은 프레임워크가 자기 창에만
+/// 뿌리고 있었다(`app.emit("data-change")`). 그러면 같은 홈을 보는 다른 프레임워크는 자기가 든
+/// 옛 값을 진실로 알고, 다음 저장에서 상대의 변경을 **덮는다** — 그 손실은 오류로 보이지 않는다.
+/// Electron 쪽에는 뿌리는 코드가 아예 없었다.
+///
+/// 쓰기 자체는 저장소를 열어야 하므로 여기서는 그 사실을 담는 값(`Changed`)으로 잰다 — 쓴 쪽이
+/// 어디든 그 사실이 이 자리를 지나 모든 호스트에 닿는지가 이 검사의 축이다. 값을 안 내놓는
+/// 길은 `with_write` 의 시그니처가 막고, 그 문을 안 지나는 쓰기는 게이트가 센다.
+#[test]
+fn a_data_change_reaches_every_host() {
+    let _serial = lock_serial();
+    detach();
+    let mut tauri_like = fake_host(&["w-t"], "w-t");
+    let mut electron_like = fake_host(&["w-e"], "w-e");
+
+    crate::ctx::Changed::one("core", None, None, "kv-set", Some("settings".into())).announce();
+
+    for (r, who) in [(&mut tauri_like, "첫째"), (&mut electron_like, "둘째")] {
+        let mut line = String::new();
+        r.read_line(&mut line)
+            .unwrap_or_else(|e| panic!("{who} 호스트가 데이터 변경을 받는다: {e}"));
+        let v: Value = serde_json::from_str(&line).expect("json");
+        assert_eq!(v["broadcast"]["event"], "data-change", "{who}");
+        // 페이로드 모양은 프레임워크가 뿌리는 것과 같아야 한다 — 구독자는 출처를 모른다.
+        assert_eq!(v["broadcast"]["payload"]["ns"], "core", "{who}");
+        assert_eq!(v["broadcast"]["payload"]["op"], "kv-set", "{who}");
+        assert_eq!(v["broadcast"]["payload"]["id"], "settings", "{who}");
+    }
+    detach();
+}

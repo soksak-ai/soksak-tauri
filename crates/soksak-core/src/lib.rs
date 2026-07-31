@@ -26,6 +26,7 @@ pub mod geometry;
 pub mod identity;
 pub mod artifact_integrity;
 pub mod deeplink;
+pub mod data_change;
 pub mod kv;
 pub mod pathx;
 pub mod shell_env;

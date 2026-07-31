@@ -6,7 +6,7 @@
 
 use serde_json::Value;
 
-use crate::ctx::Ctx;
+use crate::ctx::{Changed, Ctx};
 use crate::registry::{dispatch, Outcome, SqliteRows};
 
 
@@ -85,9 +85,10 @@ struct NsArg {
 pub(crate) fn run_data_ns_remove(ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: NsArg| {
         deny_without_write_ownership(ctx)?;
-        ctx.with_db(|conn| {
+        ctx.with_write(|conn| {
             let r = soksak_store::store::drop_ns(&conn, &a.ns)?;
-            serde_json::to_value(r).map_err(|e| e.to_string())
+            let v = serde_json::to_value(r).map_err(|e| e.to_string())?;
+            Ok((v, Changed::one(&a.ns, None, None, soksak_core::data_change::op::NS_REMOVE, None)))
         })
     })
 }
@@ -115,8 +116,11 @@ struct ImportArg {
 pub(crate) fn run_data_import(ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: ImportArg| {
         deny_without_write_ownership(ctx)?;
-        ctx.with_db(|conn| {
-            soksak_store::backup::import(&conn, &a.jsonl).map(Value::from)
+        ctx.with_write(|conn| {
+            let n = soksak_store::backup::import(&conn, &a.jsonl)?;
+            // 무엇이 바뀌었는지 짚지 못한다 — 통째로 들어왔다. 짚은 척하지 않고 전면 갱신을
+            // 알린다(구독자는 자기 키를 다시 읽는다).
+            Ok((Value::from(n), Changed::whole(soksak_core::data_change::op::IMPORT)))
         })
     })
 }
@@ -153,6 +157,8 @@ pub(crate) fn run_data_restore(ctx: &Ctx, params: &Value) -> Outcome {
         // 검증이 먼저다 — 못 쓸 파일로 덮어쓰면 되돌릴 것이 없다.
         soksak_store::backup::validate(&src)?;
         soksak_store::backup::restore_into(&ctx.db_path(), &src)?;
+        // 저장소가 통째로 갈렸다 — 무엇이 바뀌었는지 짚지 못하므로 전면 갱신을 알린다.
+        Changed::whole(soksak_core::data_change::op::RESTORE).announce();
         Ok(Value::Null)
     })
 }
@@ -202,9 +208,14 @@ struct ReapArg {
 pub(crate) fn run_data_retention_reap(ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: ReapArg| {
         deny_without_write_ownership(ctx)?;
-        ctx.with_db(|conn| {
-            soksak_store::store::retention_reap_ttl(&conn, &a.ns, &a.coll, a.cutoff_ms)
-                .map(|n| Value::from(n as u64))
+        ctx.with_write(|conn| {
+            let n = soksak_store::store::retention_reap_ttl(&conn, &a.ns, &a.coll, a.cutoff_ms)?;
+            let what = if n > 0 {
+                Changed::one(&a.ns, Some(&a.coll), None, soksak_core::data_change::op::REAP, None)
+            } else {
+                Changed::none()
+            };
+            Ok((Value::from(n as u64), what))
         })
     })
 }
@@ -221,9 +232,14 @@ struct TrimArg {
 pub(crate) fn run_data_retention_trim(ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: TrimArg| {
         deny_without_write_ownership(ctx)?;
-        ctx.with_db(|conn| {
-            soksak_store::store::retention_trim(&conn, &a.ns, &a.coll, &a.scope, a.cap)
-                .map(|n| Value::from(n as u64))
+        ctx.with_write(|conn| {
+            let n = soksak_store::store::retention_trim(&conn, &a.ns, &a.coll, &a.scope, a.cap)?;
+            let what = if n > 0 {
+                Changed::one(&a.ns, Some(&a.coll), Some(&a.scope), soksak_core::data_change::op::TRIM, None)
+            } else {
+                Changed::none()
+            };
+            Ok((Value::from(n as u64), what))
         })
     })
 }
@@ -263,7 +279,7 @@ struct PutArg {
 pub(crate) fn run_data_put(ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: PutArg| {
         deny_without_write_ownership(ctx)?;
-        ctx.with_db(|conn| {
+        ctx.with_write(|conn| {
             // 앱 경로와 같은 쓰기 정책을 탄다 — 정책이 한쪽에만 있으면 같은 이름이 어느 프로세스가
             // 답하느냐에 따라 다르게 쓴다: 한쪽은 압박을 견디고 다른 쪽은 첫 실패에 사용자의 저장을
             // 버린다. 그 차이는 오류가 아니라 잃어버린 데이터로 나타난다.
@@ -280,7 +296,8 @@ pub(crate) fn run_data_put(ctx: &Ctx, params: &Value) -> Outcome {
             // 쓰기 사실 = 백업 링의 유일한 트리거(폴링 0). 앱 경로만 걸면 이 프로세스가 서빙하는
             // 쓰기는 링을 한 번도 안 돌리고, 그 차이는 오류가 아니라 **없는 백업**으로 나타난다.
             crate::backup_ring::on_write(ctx);
-            Ok(Value::String(id))
+            let what = Changed::one(&a.ns, Some(&a.coll), a.scope.as_deref(), soksak_core::data_change::op::PUT, Some(id.clone()));
+            Ok((Value::String(id), what))
         })
     })
 }
@@ -326,9 +343,15 @@ struct DeleteArg {
 pub(crate) fn run_data_delete(ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: DeleteArg| {
         deny_without_write_ownership(ctx)?;
-        ctx.with_db(|conn| {
-            soksak_store::store::delete(&conn, &a.ns, &a.coll, &a.id, a.scope.as_deref())
-                .map(Value::Bool)
+        ctx.with_write(|conn| {
+            let removed =
+                soksak_store::store::delete(&conn, &a.ns, &a.coll, &a.id, a.scope.as_deref())?;
+            let what = if removed {
+                Changed::one(&a.ns, Some(&a.coll), a.scope.as_deref(), soksak_core::data_change::op::DELETE, Some(a.id.clone()))
+            } else {
+                Changed::none()
+            };
+            Ok((Value::Bool(removed), what))
         })
     })
 }
@@ -389,12 +412,17 @@ struct KvDeleteArg {
 pub(crate) fn run_data_kv_delete(ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: KvDeleteArg| {
         deny_without_write_ownership(ctx)?;
-        ctx.with_db(|conn| {
+        ctx.with_write(|conn| {
             // **지웠는가**를 답한다. 앱의 같은 이름이 bool 을 돌려주므로 여기서 null 을 주면
             // 위임한 프로세스가 "모양이 아니다"로 실패한다(실측 2024-08-01: 위임 전에는 두
             // 모양이 만날 일이 없어 조용했다). 같은 이름은 같은 것을 답해야 한다.
             let removed = soksak_store::store::kv_delete(&conn, &a.ns, &a.key)?;
-            Ok(Value::Bool(removed))
+            let what = if removed {
+                Changed::one(&a.ns, None, None, soksak_core::data_change::op::KV_DELETE, Some(a.key.clone()))
+            } else {
+                Changed::none()
+            };
+            Ok((Value::Bool(removed), what))
         })
     })
 }
@@ -418,18 +446,15 @@ pub(crate) fn run_data_kv_keys(ctx: &Ctx, params: &Value) -> Outcome {
 pub(crate) fn run_data_kv_set(ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: KvSetArg| {
         // 소유권 먼저 — 열기 전에 거절한다. 열고 나서 판단하면 그 사이가 곧 이중 쓰기 창이다.
-        if !ctx.owns_writes() {
-            return Err(format!(
-                "이 저장소의 쓰기는 다른 프로세스가 소유한다({}) — 같은 홈에 앱이나 다른                  cored 가 살아 있다. 읽기는 계속 서빙한다",
-                ctx.db_path().display()
-            ));
-        }
-        ctx.with_db(|conn| {
+        // 판정은 형제들과 같은 함수를 쓴다: 같은 판정이 두 모양이면 "쓰기 명령"을 기계로 셀 수
+        // 없고, 못 세면 새 명령이 알림을 빠뜨려도 조용하다(data-change-notify 게이트).
+        deny_without_write_ownership(ctx)?;
+        ctx.with_write(|conn| {
             let store = SqliteRows { conn };
             soksak_core::kv::set(&store, &a.ns, &a.key, &a.value, crate::ledger::now_ms())?;
             // 앱의 data_kv_set 은 () 를 돌려준다 — 같은 모양이라야 프레임워크가 값을 다시
             // 조립하지 않는다.
-            Ok(Value::Null)
+            Ok((Value::Null, Changed::one(&a.ns, None, None, soksak_core::data_change::op::KV_SET, Some(a.key.clone()))))
         })
     })
 }
@@ -449,4 +474,37 @@ pub(crate) fn run_data_stats(ctx: &Ctx, _params: &Value) -> Outcome {
         Ok(v) => Outcome::Ok(v),
         Err(e) => Outcome::Failed(e),
     }
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ChangeArg {
+    ns: String,
+    op: String,
+    coll: Option<String>,
+    scope: Option<String>,
+    id: Option<String>,
+}
+
+/// 남이 쓴 변경을 받아 창 가진 쪽들에 뿌린다 — 알림의 자리는 하나다.
+///
+/// 저장소 소유는 선착순이라 실제 쓰기가 앱에서 일어날 수 있다. 그때 앱이 자기 창에만 뿌리면
+/// 같은 홈을 보는 다른 프레임워크는 자기가 든 옛 값을 진실로 알고, 다음 저장에서 상대의 변경을
+/// 덮는다. 쓴 쪽이 여기로 넘기면 붙은 호스트 전부가 같은 사실을 같은 모양으로 받는다.
+pub(crate) fn run_data_change_notify(_ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: ChangeArg| {
+        // 받은 op 를 그대로 되뿌린다. 값은 남이 정한 것이라 정적 문자열이 아니다 —
+        // `Changed` 는 이 프로세스가 만든 사실을 담는 타입이고, 여기는 전달이다.
+        crate::control::broadcast(
+            soksak_core::data_change::EVENT,
+            soksak_core::data_change::payload(
+                &a.ns,
+                a.coll.as_deref(),
+                a.scope.as_deref(),
+                &a.op,
+                a.id.as_deref(),
+            ),
+        );
+        Ok(Value::Null)
+    })
 }
