@@ -1153,6 +1153,15 @@ pub const COMMANDS: &[Command] = &[
         run: run_write_text_file,
     },
     Command {
+        name: "write_file_base64",
+        args: &[
+            Arg { name: "path", ty: "string", required: REQ },
+            Arg { name: "base64", ty: "string", required: REQ },
+        ],
+        returns: "{ path, bytes }",
+        run: run_write_file_base64,
+    },
+    Command {
         name: "list_children",
         args: &[
             Arg { name: "path", ty: "string?", required: OPT },

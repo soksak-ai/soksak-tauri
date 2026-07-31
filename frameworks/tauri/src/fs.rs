@@ -41,6 +41,13 @@ pub fn write_text_file(path: String, content: String) -> Result<(), String> {
     soksak_core::fsx::write_text_file(&path, &content)
 }
 
+/// base64 이진 쓰기 — read_file_base64 의 대칭. 몸은 코어가 진다.
+#[tauri::command]
+pub fn write_file_base64(path: String, base64: String) -> Result<serde_json::Value, String> {
+    let bytes = soksak_core::fsx::write_file_base64(&path, &base64)?;
+    Ok(serde_json::json!({ "path": path, "bytes": bytes }))
+}
+
 #[tauri::command]
 pub fn list_children(path: Option<String>, meta: Option<bool>) -> Result<ChildListing, String> {
     soksak_core::fsx::list_children(path.as_deref(), meta, Some(&home_dir()))

@@ -4,10 +4,10 @@
 //     (SOKSAK_CALLER_TAB → 그 탭이 속한 pane/스페이스/프로젝트) 또는 활성 체인.
 //   - 모든 변이는 결과(새 id/변경 후 상태)를 반환 — 호출자가 응답만으로 검증 가능.
 
+import { registerCaptureCatalog } from "./catalogCapture";
 import { registerHealthCatalog } from "./catalogHealth";
 import { invoke, currentWindow, windowByLabel, frameworkPath } from "../framework";
 import { tmsg } from "../i18n";
-import { settleAnimationsForCapture } from "./captureSettle";
 import { suggestLayout, type MonitorFact, type WindowFact } from "../lib/layoutSuggest";
 import {
   DEFAULT_RAIL_PLACEMENT,
@@ -2711,125 +2711,6 @@ export function registerCatalog(): void {
     },
   });
 
-  register("window.snapshot", {
-    description:
-      "Capture the window contents to a PNG. Captures even when fully occluded by other apps (occlusion detection is temporarily disabled during capture). Includes WebGL terminal. Parent folder is created automatically. Pass base64:true to get the PNG inline instead of a file; rect (CSS px, window coords — same space as ui.measure) crops to a region and implies base64.",
-    triggers: { ko: "스크린샷 캡처 화면 저장 PNG 저장 스냅샷 부분 영역" },
-    params: {
-      path: {
-        type: "string",
-        description: "Output .png path (file mode). Omit to use a temp folder.",
-      },
-      base64: {
-        type: "boolean",
-        description: "Return the PNG as base64 instead of writing a file",
-      },
-      rect: {
-        type: "json",
-        description:
-          "Crop region {x,y,w,h} in CSS px, window coordinates (ui.measure space). Implies base64 mode.",
-      },
-    },
-    returns:
-      "{ saved, media:{kind,path} } (file mode) | { media:{kind:'image/png',base64} } (base64/rect mode)",
-    message: (d) =>
-      d.saved
-        ? tmsg("msg.window.snapshot.saved", { path: String(d.saved) })
-        : tmsg("msg.window.snapshot.captured"),
-    // 귀의 문장(§3) — 경로는 message(눈)에만. 실패는 message(진단) 에코.
-    speak: (out) => (out.ok ? (out.data?.saved ? "화면을 저장했어요." : "화면을 캡처했어요.") : out.message),
-    hint: (d) => {
-      if (d.code) return [];
-      // 재캡처의 두 갈래 — 뷰 최대화로 확대해 담거나, 다른 스페이스로 전환해 화면을 비교한다.
-      return [
-        { cmd: "tab.maximize", why: tmsg("hint.flow.snapshot.maximize") },
-        { cmd: "space.list", why: tmsg("hint.flow.snapshot.switch") },
-      ];
-    },
-    errors: ["INVALID_PARAMS"],
-    examples: [
-      "window.snapshot",
-      'window.snapshot \'{"path":"/tmp/shot.png"}\'',
-      'window.snapshot \'{"rect":{"x":100,"y":80,"w":400,"h":300},"base64":true}\'',
-    ],
-    handler: async (p) => {
-      // 캡처는 명령 — 창이 앞이든 뒤든 정확한 최종 프레임을 낸다. 비전면 창은 timeline 정지로
-      // 진입 애니메이션이 중간 프레임에 갇히므로(arm_capture 의 가림해제만으론 timeline 이 안
-      // 흐른다), 캡처 직전 유한 애니메이션을 명시 정착한다. 모든 캡처 경로 공통 앞단.
-      settleAnimationsForCapture();
-      const rect = p.rect as
-        | { x: number; y: number; w: number; h: number }
-        | undefined;
-      if (rect || p.base64) {
-        if (
-          rect &&
-          (typeof rect.x !== "number" ||
-            typeof rect.y !== "number" ||
-            typeof rect.w !== "number" ||
-            typeof rect.h !== "number")
-        ) {
-          return {
-            ok: false as const,
-            code: "INVALID_PARAMS" as const,
-            message: "rect 는 {x,y,w,h} 숫자 필수",
-          };
-        }
-        const pngBase64 = await invoke<string>(
-          "plugin:webview-capture|snapshot_region",
-          rect ? { x: rect.x, y: rect.y, w: rect.w, h: rect.h } : {},
-        );
-        // 이미지는 봉투 media 로 선언(표준) — 소비자는 키 추측 없이 media 만 렌더한다.
-        return { media: { kind: "image/png", base64: pngBase64 } };
-      }
-      let path = p.path as string | undefined;
-      if (!path) {
-        const { tempDir, join } = frameworkPath;
-        path = await join(
-          await tempDir(),
-          "soksak",
-          `snapshot-${Date.now()}.png`,
-        );
-      }
-      const saved = await invoke<string>("plugin:webview-capture|snapshot", {
-        path,
-      });
-      // 파일 캡처도 media 로 선언 — 피드가 경로를 읽어 이미지로 렌더한다(경로 텍스트만 보이지 않게).
-      return { saved, media: { kind: "image/png", path: saved } };
-    },
-  });
-
-  register("window.record", {
-    description:
-      "Capture the window as a sequence of PNGs (dir/f0000.png ...) for use as a video source. All frames are rendered even when occluded (occlusion detection disabled for the duration). Folder is created automatically.",
-    triggers: { ko: "녹화 연속 캡처 프레임 저장 동영상 소스" },
-    params: {
-      dir: {
-        type: "string",
-        description: "Output directory for frames",
-        required: true,
-      },
-      frames: { type: "number", description: "Number of frames (default 40, max 600)" },
-      intervalMs: { type: "number", description: "Interval between frames in ms (default 40)" },
-    },
-    returns: "{ dir, frames }",
-    message: (d) => tmsg("msg.window.record", { n: Number(d.frames) }),
-    examples: [
-      'window.record \'{"dir":"/tmp/rec"}\'',
-      'window.record \'{"dir":"/tmp/rec","frames":120,"intervalMs":33}\'',
-    ],
-    handler: async (p) => {
-      const dir = p.dir as string;
-      const frames = (p.frames as number | undefined) ?? 40;
-      const intervalMs = (p.intervalMs as number | undefined) ?? 40;
-      const n = await invoke<number>("plugin:webview-capture|record", {
-        dir,
-        frames,
-        intervalMs,
-      });
-      return { dir, frames: n };
-    },
-  });
-
   register("window.occlusion", {
     description:
       "Toggle occlusion detection. When false, rendering continues even when fully covered by other apps (for continuous background capture — note battery cost). Not needed for normal use; snapshot/record disable it automatically during capture.",
@@ -3261,6 +3142,7 @@ export function registerCatalog(): void {
   // ----- 분권 카탈로그(파일 분리 — 단일 진실은 동일 registry) -----
   registerFsWatchCatalog();
   registerHealthCatalog();
+  registerCaptureCatalog();
   registerPluginCatalog();
   registerDaemonCatalog();
   registerUpdateCatalog();

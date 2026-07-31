@@ -182,7 +182,33 @@ pub fn read_file_base64(path: &str) -> Result<FileData, String> {
 ///
 /// 그래서 규칙은 OS 의 것 그대로다 — 파일 단위로 마지막 쓰기가 남는다.
 pub fn write_text_file(path: &str, content: &str) -> Result<(), String> {
-    std::fs::write(path, content).map_err(|e| e.to_string())
+    write_bytes(path, content.as_bytes())
+}
+
+/// base64 로 실려 온 이진 파일을 쓴다 — `read_file_base64` 의 대칭.
+///
+/// 읽기는 base64 로 되는데 쓰기가 텍스트뿐이면, 이진 산출물(캡처 PNG 등)을 만든 쪽이 그것을
+/// 파일로 남길 길이 없다. 실측(2026-07-31): `window.snapshot` 이 rect 를 받으면 base64 만
+/// 답하고 `path` 를 통째로 무시했다 — 부른 쪽은 ok:true 를 받고 파일은 없었다. 표면이 없어서
+/// 생긴 조용한 무시다.
+pub fn write_file_base64(path: &str, base64: &str) -> Result<u64, String> {
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(base64)
+        .map_err(|e| format!("base64 해독 실패: {e}"))?;
+    let n = bytes.len() as u64;
+    write_bytes(path, &bytes)?;
+    Ok(n)
+}
+
+/// 부모 폴더를 만들고 쓴다 — 없는 폴더는 오류가 아니라 만들면 되는 상태다.
+fn write_bytes(path: &str, bytes: &[u8]) -> Result<(), String> {
+    if let Some(dir) = std::path::Path::new(path).parent() {
+        if !dir.as_os_str().is_empty() {
+            std::fs::create_dir_all(dir)
+                .map_err(|e| format!("부모 폴더를 만들지 못했다({}): {e}", dir.display()))?;
+        }
+    }
+    std::fs::write(path, bytes).map_err(|e| e.to_string())
 }
 
 // ── 디렉터리 나열 ────────────────────────────────────────────────────────────

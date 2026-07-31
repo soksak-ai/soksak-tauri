@@ -54,7 +54,12 @@ frameworks/tauri/src/data/commands.rs 610
 frameworks/tauri/src/data/mod.rs 91
 frameworks/tauri/src/data/ring.rs 42
 frameworks/tauri/src/dockmenu.rs 70
-frameworks/tauri/src/fs.rs 75
+# 재입법 2026-07-31 fs.rs 75 → 80, lib.rs 715 → 716. write_file_base64 배선이다.
+#   몸은 soksak_core::fsx::write_file_base64 에 있고 여기 있는 것은 tauri::command 진입점
+#   한 개와 등록 한 줄이다(read_file_base64 와 같은 모양). 읽기는 base64 로 되는데 쓰기가
+#   텍스트뿐이라 이진 산출물(캡처 PNG)을 파일로 남길 길이 없었다 — 그 비대칭이 window.snapshot
+#   의 path 무시로 나타났다. 증가분은 표면이고 코어는 크레이트에 산다.
+frameworks/tauri/src/fs.rs 80
 frameworks/tauri/src/headless.rs 30
 frameworks/tauri/src/home.rs 142
 frameworks/tauri/src/http.rs 39
@@ -62,7 +67,7 @@ frameworks/tauri/src/i18n.rs 155
 frameworks/tauri/src/id_registry.rs 144
 frameworks/tauri/src/identity.rs 59
 frameworks/tauri/src/ipc.rs 1232
-frameworks/tauri/src/lib.rs 715
+frameworks/tauri/src/lib.rs 716
 frameworks/tauri/src/login_shell.rs 28
 frameworks/tauri/src/main.rs 4
 frameworks/tauri/src/mediaproxy.rs 18

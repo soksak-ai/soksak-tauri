@@ -109,13 +109,7 @@ frameworks/tauri/src/ipc.rs 1562
 frameworks/tauri/src/webview.rs 2259
 packages/plugin-spec/src/pluginRuntime.ts 2081
 packages/plugin-spec/src/spec.ts 1785
-# 재입법 2026-07-31 catalog.ts 3284 → 3286, i18n.ts 1811 → 1815.
-#   state.health(관측 배선 상태 조회) 신설. 명령 몸은 catalogHealth.ts 로 **분할했고**, catalog.ts
-#   에 남은 둘은 분할의 필연적 비용이다(import 1 + 말미 등록 호출 1 — catalogProjection 선례와
-#   같은 모양). i18n 넷은 cmd 라벨·msg 문장을 ko/en 두 테이블에 놓은 값이다: 언어 테이블은
-#   콘텐츠라 축소할 수 없고, 라벨 없는 명령은 commandTitles 게이트가 거부한다.
-#   증가분은 전부 배선·문장이고 코어 로직은 새 파일에 산다.
-src/commands/catalog.ts 3286
+src/commands/catalog.ts 3168
 src/i18n.ts 1815
 src/plugins/api.ts 1926
 src/state/sessions.ts 2006

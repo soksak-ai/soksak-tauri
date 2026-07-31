@@ -638,6 +638,7 @@ pub fn run() {
             fs::list_children,
             fs::read_text_file,
             fs::write_text_file,
+            fs::write_file_base64,
             fs::read_file_base64,
             fs::themes_scan,
             fs::theme_install,

@@ -1045,6 +1045,22 @@ pub(crate) fn run_write_text_file(_ctx: &Ctx, params: &Value) -> Outcome {
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct WriteBase64 {
+    path: String,
+    base64: String,
+}
+
+/// base64 이진 쓰기 — `read_file_base64` 의 대칭. 이것이 없어서 이진 산출물을 만든 쪽이
+/// 파일로 남길 길이 없었다(실측: window.snapshot 의 rect 모드가 path 를 조용히 무시했다).
+pub(crate) fn run_write_file_base64(_ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: WriteBase64| {
+        let bytes = fsx::write_file_base64(&a.path, &a.base64)?;
+        Ok(json!({ "path": a.path, "bytes": bytes }))
+    })
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ListChildren {
     #[serde(default)]
     path: Option<String>,
