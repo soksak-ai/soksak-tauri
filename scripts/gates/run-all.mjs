@@ -32,6 +32,7 @@ export const LOCAL = new Map([
   ["framework-free-placement.mjs", []],
   ["framework-free-tenant.mjs", []],
   ["framework-thin-binding.mjs", []],
+  ["module-state-scan.mjs", []],
   ["platform-boundary-scan.mjs", ["--artifacts"]],
   ["test-home-isolation.mjs", []],
   ["vocabulary-framework-scan.mjs", []],

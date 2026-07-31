@@ -1,6 +1,7 @@
 // 명령 실행기: Rust 소켓 서버가 emit 한 cmd-request 를 registry 로 실행하고
 // invoke(cmd_result) 로 회신한다(요청 id 매칭). 앱 시작 시 1회 startExecutor().
 
+import { moduleState } from "../lib/moduleState";
 import { invoke } from "../framework";
 import { currentWindowLabel } from "../lib/webviewLabels";
 import { listenThisWindow } from "../lib/windowEvents";
@@ -25,7 +26,9 @@ interface CmdRequest {
   origin?: string | null;
 }
 
-let started = false;
+// "이미 채웠다"는 기억은 등록부와 **함께** 살아야 한다. 한쪽만 갈리면 둘이 어긋난다:
+// 등록부만 갈리면 영영 빈 채로 남고(코어 명령 소실), 기억만 갈리면 중복 등록으로 죽는다.
+const boot = moduleState("commands/executor#boot", () => ({ started: false }));
 
 // 부팅 준비 게이트 — 플러그인 활성화(initPluginHost) 완료 전에 도착한 외부 요청(스케줄러·소켓)을
 // 완료 이벤트까지 지연한다. 부팅 직후 발화가 아직 등록 전인 플러그인 명령(또는 등록은 됐지만
@@ -45,8 +48,8 @@ export function markCommandHostReady(): void {
 }
 
 export function startExecutor(): void {
-  if (started) return;
-  started = true;
+  if (boot.started) return;
+  boot.started = true;
   registerCatalog();
   // 원격 confirm 데스크톱 사람 게이트(remote.confirm) — remote-iroh 사이드카가 destructive 결정을
   // 위임하는 라이브 커맨드. 권위(PendingConfirms·토큰)는 사이드카, 사람 결정만 코어 모달에서.

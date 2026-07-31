@@ -1,6 +1,6 @@
 // Command Registry 계약 테스트 — 검증 매트릭스·ok 래핑·권한 게이트·등록/해제.
 // registry 는 모듈 전역 상태이므로 각 테스트는 자신이 등록한 명령을 정리한다.
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   catalogJson,
   composeTriggers,
@@ -39,6 +39,8 @@ afterEach(() => {
 
 describe("execute — 기본 계약", () => {
   it("미지 명령은 UNKNOWN_COMMAND", async () => {
+    // 등록부가 차 있어야 "이름이 없다"를 잰다 — 빈 등록부는 다른 사실이고 다른 코드로 답한다.
+    reg(TEST_PREFIX + "present", { handler: () => ({}) });
     const r = await execute(TEST_PREFIX + "nope", {}, {});
     expect(r).toMatchObject({ ok: false, code: "UNKNOWN_COMMAND" });
   });
@@ -219,6 +221,8 @@ describe("execute — 권한 게이트", () => {
 
 describe("register / unregister — 플러그인 생명주기 기반", () => {
   it("unregister 후 실행은 UNKNOWN_COMMAND, getSpec 은 undefined", async () => {
+    // 남는 등록 하나 — 마지막 하나를 걷으면 등록부가 비고, 그건 "이름 없음"과 다른 사실이다.
+    reg(TEST_PREFIX + "stays", {});
     reg(TEST_PREFIX + "gone", {});
     expect(getSpec(TEST_PREFIX + "gone")).toBeDefined();
     expect(unregister(TEST_PREFIX + "gone")).toBe(true);
@@ -538,6 +542,21 @@ describe("execute — 응답 공통 필드(window·hint)", () => {
 });
 
 describe("UNKNOWN_COMMAND 지능형 해석기 주입점", () => {
+  // 해석기는 "이름이 없다"의 안내다 — 등록부가 비면 그건 이름의 문제가 아니므로 해석기를
+  // 부르지 않는다. 그래서 이 묶음은 차 있는 등록부에서 잰다.
+  beforeEach(() => {
+    register("resolver.fixture.present", {
+      description: "fixture",
+      params: {},
+      returns: "void",
+      message: () => "ok",
+      handler: () => ({}),
+    });
+  });
+  afterEach(() => {
+    unregister("resolver.fixture.present");
+  });
+
   it("해석기가 결과를 주면 그 안내가 표준 안내보다 우선하고, 상한 3개로 잘린다", async () => {
     // resolver 는 명령 형태만 짓는다(실제 resolver 와 동형) — 프리픽스는 중앙 지점이 붙인다.
     setUnknownCommandResolver((name) => [

@@ -3,6 +3,8 @@
 // (GroupStatusBar)가 렌더한다. 코어는 아이템의 용도를 모른다 — claude-GUI 등 도메인은
 // 전부 플러그인 소유(command.started·data-pane-id 와 동일 decoupled 원칙).
 
+import { moduleState } from "../lib/moduleState";
+
 export interface StatusBarItem {
   /** 등록 식별자(해지·갱신 키). 보통 "<plugin>:<paneId>". */
   id: string;
@@ -18,8 +20,14 @@ export interface StatusBarItem {
   onClick: () => void;
 }
 
-const items = new Map<string, StatusBarItem>();
-const subs = new Set<() => void>();
+const items = moduleState(
+  "ui/statusBarItems#items",
+  () => new Map<string, StatusBarItem>(),
+);
+const subs = moduleState(
+  "ui/statusBarItems#subs",
+  () => new Set<() => void>(),
+);
 const notify = () => {
   for (const cb of [...subs]) {
     try {

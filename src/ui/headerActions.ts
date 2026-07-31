@@ -2,6 +2,8 @@
 // 다크모드·설정) 왼쪽에 토글 아이콘을 등록하면, App 의 PluginHeaderActions 가 flex 로 순차 렌더한다.
 // 코어는 아이템의 용도를 모른다(statusBarItems 와 동일 decoupled 원칙). pane 무관 전역 1개.
 
+import { moduleState } from "../lib/moduleState";
+
 export interface HeaderAction {
   /** 등록 식별자(해지·갱신 키). data-node 주소(titlebar/<id>)에도 쓰인다. */
   id: string;
@@ -18,8 +20,14 @@ export interface HeaderAction {
   onClick: () => void;
 }
 
-const actions = new Map<string, HeaderAction>();
-const subs = new Set<() => void>();
+const actions = moduleState(
+  "ui/headerActions#actions",
+  () => new Map<string, HeaderAction>(),
+);
+const subs = moduleState(
+  "ui/headerActions#subs",
+  () => new Set<() => void>(),
+);
 const notify = () => {
   for (const cb of [...subs]) {
     try {

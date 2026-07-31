@@ -8,6 +8,7 @@
 //     정적 형태의 등록도 동일 게이트(gateContribution declared-only)와 tracker 를 통과한다.
 //     레거시 수용은 전 1st-party 유닛 발행본이 정적 형태가 된 시점에 제거한다(코리도 종료 게이트).
 
+import { moduleState } from "../lib/moduleState";
 import {
   buildPluginApi,
   type Disposable,
@@ -443,7 +444,10 @@ export async function activateContractPlugin(
 
 // ── 활성 인스턴스 보관(비직렬화 객체 — store 밖) ─────────────────────────────
 
-const active = new Map<string, ActivePlugin>();
+const active = moduleState(
+  "plugins/loader#active",
+  () => new Map<string, ActivePlugin>(),
+);
 
 export function isActive(id: string): boolean {
   return active.has(id);

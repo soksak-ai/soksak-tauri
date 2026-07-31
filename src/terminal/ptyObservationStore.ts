@@ -10,6 +10,7 @@
 //   - 플러그인 터미널: app.pty.spawn 이 그 pane 의 PTY 출력을 feedPtyOutput 으로 흘린다.
 // 같은 paneId 를 두 producer 가 동시에 쓰는 일이 없으므로 OSC 가 한 번만 파싱된다(중복 emit 0).
 
+import { moduleState } from "../lib/moduleState";
 import {
   createPtyObservationParser,
   type PtyObservationParser,
@@ -34,7 +35,10 @@ interface TabObservation {
   io?: PtyIo;
 }
 
-const observations = new Map<string, TabObservation>();
+const observations = moduleState(
+  "terminal/ptyObservationStore#observations",
+  () => new Map<string, TabObservation>(),
+);
 
 // 전역(어느 pane 이든) 명령 시작/종료 구독자 — 플러그인 이벤트(command.started/finished,
 // turn.ended) 중계용. 끝난 명령라인·cwd 도 함께 전달(turn.ended 본문 enrich).

@@ -2,6 +2,7 @@
 // 뷰 구현과 배치는 직교(§0-6): 우측/좌측 사이드바·콘텐츠 영역 모두 여기 등록된
 // 동일한 provider 를 PluginViewHost 로 소비한다. version 은 UI 재구성 신호.
 
+import { moduleState } from "../lib/moduleState";
 import { create } from "zustand";
 import { qualifiedViewId, type ContributedView } from "./spec";
 
@@ -105,7 +106,11 @@ interface ViewRegistryState {
   setViewBadge: (key: string, badge: ViewBadge) => void;
 }
 
-export const useViewRegistry = create<ViewRegistryState>((set, get) => ({
+// 등록부는 모듈 경계 밖에 산다 — 갈아끼우기가 이 store 를 갈면 등록된 뷰가 통째로 사라지고,
+// 플러그인은 이미 활성이라 다시 등록하지 않는다. 그 소실은 "탭의 + 가 아무것도 안 준다"로만
+// 보인다(+ 메뉴는 등록 프로그램에서 온다).
+export const useViewRegistry = moduleState("plugins/viewRegistry#store", () =>
+  create<ViewRegistryState>((set, get) => ({
   views: {},
   version: 0,
   badges: {},
@@ -143,7 +148,8 @@ export const useViewRegistry = create<ViewRegistryState>((set, get) => ({
       else badges[key] = next;
       return { badges };
     }),
-}));
+})),
+);
 
 // 배치별 뷰 목록(아이콘 레일/탭 스트립용) — 등록 순서 유지.
 export function viewsForPlacement(

@@ -2,6 +2,7 @@
 // 모든 기능은 여기 등록된 command 하나로 표현되고, CLI(sok)/MCP/UI 는 호출자일 뿐이다.
 // 문서(sok help/docs)와 MCP tool 정의도 이 스펙에서 생성된다 — 코드와 어긋날 수 없다.
 
+import { moduleState } from "../lib/moduleState";
 import type { CmdErrCode } from "../state/sessions";
 import type { LocalizedText } from "../plugins/spec";
 import {
@@ -250,6 +251,8 @@ export type ErrCode =
   | "INTERNAL"
   | "TIMEOUT"
   | "UNKNOWN_COMMAND"
+  // 등록부가 통째로 비었다 — 이름의 문제가 아니라 등록의 문제다(부팅 미완·상태 소실).
+  | "REGISTRY_EMPTY"
   | "INVALID_PARAMS"
   | "AMBIGUOUS_TARGET"
   | "ALREADY_EXISTS"
@@ -606,8 +609,17 @@ function certifyBrokerSpec(name: string, command: CommandSpec): CommandBrokerSpe
   });
 }
 
-const registry = new Map<string, CommandSpec>();
-const authenticatedPluginContexts = new WeakSet<object>();
+// 등록부는 모듈 경계 밖에 산다 — dev 갈아끼우기가 이 Map 을 갈면 새 빈 것이 되는데, 이것을
+// 채우는 자리(executor 의 started)는 다른 모듈이라 함께 갈리지 않는다. 그러면 재등록이 영영
+// 오지 않아 코어 명령이 통째로 사라진다(실측 2026-07-31 — 사용자에겐 "탭 + 로 생성 안 됨").
+const registry = moduleState(
+  "commands/registry#registry",
+  () => new Map<string, CommandSpec>(),
+);
+const authenticatedPluginContexts = moduleState(
+  "commands/registry#authenticatedPluginContexts",
+  () => new WeakSet<object>(),
+);
 
 function snapshotCommandSpec(spec: CommandSpec, broker: CommandBrokerSpec | undefined): CommandSpec {
   // getSpec/catalog are read surfaces, not mutation seams. In particular, a caller must not add
@@ -639,6 +651,24 @@ export function register(name: string, spec: CommandSpec): void {
 // 등록 해제 — 플러그인 생명주기(비활성화/제거) 전용. 존재했으면 true.
 export function unregister(name: string): boolean {
   return registry.delete(name);
+}
+
+// 이름을 못 찾았다 — 그런데 **왜** 못 찾았는지가 두 가지다. 뭉개면 밖에서 원인을 못 읽는다.
+//
+//   등록부가 비었다 = 결함이다. 등록이 아직 안 왔거나(부팅 중) 갈아끼우기에 사라졌다.
+//   등록부는 찼는데 그 이름이 없다 = 사실이다. 오타이거나 그 창의 capability 가 아니다.
+//
+// 실측(2026-07-31): 코어 명령이 통째로 사라졌는데 응답은 "알 수 없는 명령: ui.validate" 였다.
+// 그 문장은 두 번째와 글자 그대로 같아서 첫 번째를 밖에서 읽을 방법이 없었다.
+function notFound(name: string): CommandOutcome {
+  if (registry.size === 0) {
+    return {
+      ok: false,
+      code: "REGISTRY_EMPTY",
+      message: `명령 등록부가 비어 있습니다(등록 0개) — ${name} 이전에 등록 자체가 없습니다`,
+    };
+  }
+  return { ok: false, code: "UNKNOWN_COMMAND", message: `알 수 없는 명령: ${name}` };
 }
 
 export function getSpec(name: string): CommandSpec | undefined {
@@ -1059,7 +1089,7 @@ async function executePluginInner(
     return pluginFailure("PLUGIN_AUTH_REQUIRED", "인증된 플러그인 런타임 컨텍스트가 필요합니다");
   }
   const spec = registry.get(name);
-  if (!spec) return { ok: false, code: "UNKNOWN_COMMAND", message: `알 수 없는 명령: ${name}` };
+  if (!spec) return notFound(name);
   if (!spec.broker) {
     return pluginFailure("PLUGIN_CALL_FORBIDDEN", `플러그인 호출이 선언되지 않은 명령: ${name}`);
   }
@@ -1143,9 +1173,7 @@ async function executeInner(
     );
   }
   const spec = registry.get(name);
-  if (!spec) {
-    return { ok: false, code: "UNKNOWN_COMMAND", message: `알 수 없는 명령: ${name}` };
-  }
+  if (!spec) return notFound(name);
   // 기본형 문법 — CLI 가 JSON 아닌 단일 값을 {"_": 값} 으로 보낸다(sok plugin.install activity).
   // 스펙이 진실이므로 해석은 여기 한 곳: 필수 매개변수가 정확히 하나일 때 그 이름으로 옮긴다.
   // 둘 이상이거나 없으면 그대로 두어 validate 가 INVALID_PARAMS 로 도움말을 안내하게 한다.

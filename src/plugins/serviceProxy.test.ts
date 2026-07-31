@@ -103,9 +103,19 @@ describe("registerServiceProxies — 매니페스트 데이터 합성 등록(PS3
 
   it("해제 함수는 등록을 전부 걷는다(프록시 수명 = 활성 수명)", async () => {
     const invoke = vi.fn(async () => ({ ok: true }));
+    // 남는 등록 하나 — 전부 걷어 등록부가 비면 그건 "이름 없음"과 다른 사실이라 다른 코드로
+    // 답한다. 이 검사가 재려는 것은 프록시 이름이 사라졌다는 것이다.
+    register("proxy.fixture.present", {
+      description: "fixture",
+      params: {},
+      returns: "void",
+      message: () => "ok",
+      handler: () => ({}),
+    });
     const dispose = registerServiceProxies(demoManifest(), deps(invoke));
     dispose();
     const out = await execute("plugin.demo.run", { doc: "a" }, {});
+    unregister("proxy.fixture.present");
     expect(out.code).toBe("UNKNOWN_COMMAND");
   });
 });

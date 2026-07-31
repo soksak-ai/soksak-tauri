@@ -8,8 +8,13 @@
 // 인-앱 메모리 pub/sub — 시스템 접근 0(파일·프로세스·네트워크 무관). 풀-트러스트 모델(§0-2)에서
 // 플러그인 간 coordination 은 본래 가능하므로 권한 게이트 없이 모든 플러그인에 제공(범용).
 
+import { moduleState } from "../lib/moduleState";
+
 type BusFn = (payload: unknown) => void;
-const topics = new Map<string, Set<BusFn>>();
+const topics = moduleState(
+  "plugins/bus#topics",
+  () => new Map<string, Set<BusFn>>(),
+);
 
 // 토픽 구독자에게 payload 전달. 한 리스너 오류가 다른 리스너/emit 을 막지 않는다(격리).
 export function busEmit(topic: string, payload: unknown): void {

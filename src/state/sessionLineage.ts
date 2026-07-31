@@ -3,6 +3,7 @@
 // 이벤트가 구동한다 — OS 가 파일 변경 시에만 깨운다(주기 조회 0, 폴링 아님). 전이 판정(직전 스냅샷 대비
 // 방금 쓰인 세션)은 코어 ai_session_active(SessionTracker)가 단일진실로 수행하고, 여기선 배선만 한다.
 
+import { moduleState } from "../lib/moduleState";
 import { invoke } from "../framework";
 import { safeListen } from "../lib/safeListen";
 
@@ -11,8 +12,14 @@ const LINEAGE_COLL = "ai_session_lineage";
 
 type Tracked = { viewIds: Set<string>; lastSession: string | null; cwd: string };
 // 세션 디렉토리별 추적(같은 cwd 멀티 터미널은 dir 공유 — PID 가 없어 더 못 좁힌다). viewId→dir 역인덱스.
-const byDir = new Map<string, Tracked>();
-const viewToDir = new Map<string, string>();
+const byDir = moduleState(
+  "state/sessionLineage#byDir",
+  () => new Map<string, Tracked>(),
+);
+const viewToDir = moduleState(
+  "state/sessionLineage#viewToDir",
+  () => new Map<string, string>(),
+);
 let fsUnlisten: (() => void) | null = null;
 let defined = false;
 
