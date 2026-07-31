@@ -31,6 +31,15 @@ interface Counters {
    * (PERSIST_SQL 이 ON CONFLICT DO UPDATE). 즉 조용한 과거 파괴라 반드시 이름으로 드러나야 한다.
    */
   stampRegressions: number;
+  /**
+   * 마지막으로 답한 원장의 이름. **두 원장이 각자 단조 증가하면 seq 만으로는 둘 다 정상으로
+   * 보인다** — 자기가 어느 원장에 쓰는지는 원장이 이름을 대야 안다.
+   */
+  ledger: string;
+  /** 답한 원장이 바뀐 횟수. 한 창의 발행이 두 원장으로 갈리면 어느 쪽도 전부를 갖지 못한다. */
+  ledgerSwitches: number;
+  /** 이름 없는 도장의 수 — 대조할 수 없는 응답이다. 없는 것을 같다고 세면 갈림이 안 보인다. */
+  unnamedLedger: number;
 }
 
 const counters = moduleState<Counters>("state/activityHealth#counters", () => ({
@@ -43,6 +52,9 @@ const counters = moduleState<Counters>("state/activityHealth#counters", () => ({
   lastError: "",
   lastStamp: 0,
   stampRegressions: 0,
+  ledger: "",
+  ledgerSwitches: 0,
+  unnamedLedger: 0,
 }));
 
 /**
@@ -61,12 +73,20 @@ export function stampOf(reply: unknown): number | null {
   return typeof seq === "number" && Number.isFinite(seq) ? seq : null;
 }
 
+/** 도장을 찍은 원장의 이름 — 이름 없는 응답은 대조할 수 없다(빈 문자열). */
+export function ledgerOf(reply: unknown): string {
+  if (!reply || typeof reply !== "object") return "";
+  const l = (reply as { ledger?: unknown }).ledger;
+  return typeof l === "string" ? l : "";
+}
+
 /** 발행 한 번의 결과를 남긴다. 성공은 연속 실패를 걷지만 지난 실패를 지우지는 않는다. */
 export function notePublish(
   ok: boolean,
   at: number,
   error?: string,
   stamp?: number,
+  ledger?: string,
 ): void {
   counters.attempts += 1;
   if (ok) {
@@ -75,6 +95,14 @@ export function notePublish(
         counters.stampRegressions += 1;
       }
       counters.lastStamp = stamp;
+    }
+    if (ledger === undefined || ledger === "") {
+      counters.unnamedLedger += 1;
+    } else {
+      if (counters.ledger !== "" && counters.ledger !== ledger) {
+        counters.ledgerSwitches += 1;
+      }
+      counters.ledger = ledger;
     }
     counters.ok += 1;
     counters.consecutiveFailures = 0;
@@ -98,6 +126,7 @@ export function activityHealth(): ActivityHealth {
     healthy:
       counters.ok > 0 &&
       counters.consecutiveFailures < UNHEALTHY_AFTER &&
-      counters.stampRegressions === 0,
+      counters.stampRegressions === 0 &&
+      counters.ledgerSwitches === 0,
   };
 }

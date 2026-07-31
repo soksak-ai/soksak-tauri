@@ -69,6 +69,31 @@ describe("활동 발행 건강 — 조용한 실패 금지", () => {
     expect(m.stampOf({ seq: "7" })).toBeNull();
   });
 
+  it("답한 원장이 바뀌면 그 사실을 남긴다", async () => {
+    const m = await import("./activityHealth");
+    // 두 원장이 각자 단조 증가하면 seq 만으로는 둘 다 정상으로 보인다 — 자기가 어느 원장에
+    // 쓰는지는 원장이 이름을 대야 안다(실측 2026-07-31: 앱 도장 2068, 허브 원장 84810 인데
+    // 앱은 아무 이상도 감지하지 못했다).
+    m.notePublish(true, 1000, undefined, 10, "/home/a/data/soksak.db");
+    expect(m.activityHealth().ledgerSwitches).toBe(0);
+    expect(m.activityHealth().ledger).toBe("/home/a/data/soksak.db");
+
+    m.notePublish(true, 2000, undefined, 11, "/home/b/data/soksak.db");
+
+    const h = m.activityHealth();
+    expect(h.ledgerSwitches).toBe(1);
+    expect(h.ledger).toBe("/home/b/data/soksak.db");
+    expect(h.healthy).toBe(false);
+  });
+
+  it("원장 이름이 없는 도장은 미확인이다", async () => {
+    const m = await import("./activityHealth");
+    m.notePublish(true, 1000, undefined, 10);
+    // 이름을 안 준 허브는 대조할 수 없다 — 없는 것을 같다고 세면 갈림이 영영 안 보인다.
+    expect(m.activityHealth().ledger).toBe("");
+    expect(m.activityHealth().unnamedLedger).toBe(1);
+  });
+
   it("건강 상태는 갈아끼워도 사라지지 않는다", async () => {
     const first = await import("./activityHealth");
     first.notePublish(true, 1000);

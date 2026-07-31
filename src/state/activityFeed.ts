@@ -3,7 +3,7 @@
 // 계열 ②: 커맨드 레지스트리 execute 계측(CommandTrace) — 오케스트레이터가 내리는 모든 명령.
 // 허브가 seq/ts 를 부여하고 전 창 브로드캐스트+영속하므로 여기선 발행만 한다.
 
-import { notePublish, stampOf } from "./activityHealth";
+import { ledgerOf, notePublish, stampOf } from "./activityHealth";
 import { invoke } from "../framework";
 import { currentWindowLabel } from "../lib/webviewLabels";
 import { onPluginEvent } from "../plugins/hooks";
@@ -32,7 +32,7 @@ export function publishActivity(
         );
         return;
       }
-      notePublish(true, Date.now(), undefined, seq);
+      notePublish(true, Date.now(), undefined, seq, ledgerOf(reply));
     })
     .catch((e: unknown) => {
       // 허브 불능(테스트 하니스 등)은 라이브 동작을 막지 않는다 — 그러나 **센다**. 막지 않는

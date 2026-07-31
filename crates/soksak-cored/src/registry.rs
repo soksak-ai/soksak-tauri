@@ -957,13 +957,20 @@ pub(crate) fn run_window_census(_ctx: &Ctx, _params: &Value) -> Outcome {
 
 pub(crate) fn run_activity_publish(ctx: &Ctx, params: &Value) -> Outcome {
     // 적재만 한다 — 단조·도장 규칙은 코어가, 원장 자원은 ledger 가 소유한다.
+    //
+    // **도장에 원장의 정체를 싣는다.** seq 만 돌려주면 부른 쪽은 "내 안에서 잘 늘고 있다"까지만
+    // 안다: 두 원장이 각자 단조 증가하면 양쪽 다 정상으로 보이고, 자기가 어느 원장에 쓰는지
+    // 알 방법이 없다(실측 2026-07-31 — 앱의 도장 수열과 이 프로세스의 원장이 전혀 달랐는데
+    // 앱은 아무 이상도 감지하지 못했다). 정체가 실려야 부른 쪽이 대조할 수 있다.
     dispatch(params, |a: ActivityPublish| {
-        crate::ledger::admit(
-            &ctx.db_path().to_string_lossy(),
-            &a.kind,
-            &a.source,
-            a.payload,
-        )
+        let ledger = ctx.db_path().to_string_lossy().to_string();
+        let mut entry = crate::ledger::admit(&ledger, &a.kind, &a.source, a.payload)?;
+        // 항목 자신은 오염시키지 않는다 — 원장에 남는 것은 사실이지 배달 메타가 아니다.
+        // 응답에만 얹는다(부채질은 모양 검사를 통과하고, 추가 키는 무시한다).
+        if let Some(obj) = entry.as_object_mut() {
+            obj.insert("ledger".into(), Value::String(ledger));
+        }
+        Ok(entry)
     })
 }
 
