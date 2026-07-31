@@ -1000,6 +1000,27 @@ const trace = moduleState("commands/registry#trace", () => ({
 export function markRuntimeReady(): void {
   trace.runtimeReady = true;
 }
+
+/**
+ * 관측 배선의 상태 — **묻는 자리**다.
+ *
+ * 봉투의 degraded 는 요약이라 "절름거린다"까지만 말한다. 어느 축이 언제부터 어떻게인지는
+ * 세어야 알고, 셀 수 없으면 고쳤는지도 증명하지 못한다(실측 2026-07-31: 원장이 정지한 것을
+ * 사람이 두 번 조회해 시각을 비교해서야 알았다).
+ */
+export function commandHealth(): Record<string, unknown> {
+  return {
+    ready: trace.runtimeReady,
+    commands: {
+      registered: registry.size,
+      traceSinkInstalled: trace.sink !== null,
+      emitted: trace.emitted,
+      lastEmitAt: trace.lastEmitAt,
+    },
+    activity: activityHealth(),
+    degradedAxes: degradedAxes() ?? [],
+  };
+}
 export function setCommandTraceSink(fn: ((t: CommandTrace) => void) | null): void {
   trace.sink = fn;
 }
@@ -1323,6 +1344,12 @@ function degradedAxes(): string[] | undefined {
     // 시도 0 은 "건강"이 아니라 **미확인**이다. 침묵시키면 발행 배선이 통째로 빠진 창과
     // 잘 도는 창이 똑같아 보인다 — 0 의 두 얼굴을 여기서도 가른다.
     bad.push("activity: 허브 발행을 한 번도 시도하지 않음(배선 미확인)");
+  } else if (a.stampRegressions > 0) {
+    // 도장이 뒤로 갔다 = 답한 원장이 바뀌었거나 재개 지점을 잃었다. 그 상태의 적재는 기존
+    // 행을 덮어쓰므로(ON CONFLICT DO UPDATE) 과거가 조용히 파괴된다.
+    bad.push(
+      `activity: 적재 도장이 뒤로 갔다 ${a.stampRegressions}회(마지막 seq ${a.lastStamp}) — 원장이 갈렸거나 재개 지점을 잃었다`,
+    );
   } else if (!a.healthy) {
     bad.push(
       `activity: 허브 발행 연속 실패 ${a.consecutiveFailures}회(누적 ${a.failed}/${a.attempts})${a.lastError ? ` — ${a.lastError}` : ""}`,

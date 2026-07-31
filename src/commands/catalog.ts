@@ -4,6 +4,7 @@
 //     (SOKSAK_CALLER_TAB → 그 탭이 속한 pane/스페이스/프로젝트) 또는 활성 체인.
 //   - 모든 변이는 결과(새 id/변경 후 상태)를 반환 — 호출자가 응답만으로 검증 가능.
 
+import { registerHealthCatalog } from "./catalogHealth";
 import { invoke, currentWindow, windowByLabel, frameworkPath } from "../framework";
 import { tmsg } from "../i18n";
 import { settleAnimationsForCapture } from "./captureSettle";
@@ -3259,6 +3260,7 @@ export function registerCatalog(): void {
 
   // ----- 분권 카탈로그(파일 분리 — 단일 진실은 동일 registry) -----
   registerFsWatchCatalog();
+  registerHealthCatalog();
   registerPluginCatalog();
   registerDaemonCatalog();
   registerUpdateCatalog();

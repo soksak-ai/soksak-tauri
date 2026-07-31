@@ -23,6 +23,14 @@ interface Counters {
   lastOkAt: number;
   lastFailAt: number;
   lastError: string;
+  /** 마지막으로 받은 적재 도장(seq). 허브의 원장 seq 와 대조하면 도장을 누가 찍었는지 갈린다. */
+  lastStamp: number;
+  /**
+   * 도장이 뒤로 간 횟수 — 원장 seq 는 단조 증가한다(id 가 `a{seq:016}` 이라 사전순이 곧 시간순).
+   * 뒤로 갔다면 답한 원장이 바뀌었거나 재개 지점을 잃은 것이고, 그때 적재는 기존 행을 **덮어쓴다**
+   * (PERSIST_SQL 이 ON CONFLICT DO UPDATE). 즉 조용한 과거 파괴라 반드시 이름으로 드러나야 한다.
+   */
+  stampRegressions: number;
 }
 
 const counters = moduleState<Counters>("state/activityHealth#counters", () => ({
@@ -33,12 +41,41 @@ const counters = moduleState<Counters>("state/activityHealth#counters", () => ({
   lastOkAt: 0,
   lastFailAt: 0,
   lastError: "",
+  lastStamp: 0,
+  stampRegressions: 0,
 }));
 
+/**
+ * 응답에서 적재 도장을 읽는다 — **resolve 는 적재의 증거가 아니다.**
+ *
+ * 허브는 적재하면 도장(seq)을 찍어 항목을 돌려준다(cored ledger::admit — 도장을 찍고 영속까지
+ * 한 뒤 그 항목을 응답에 싣는다). 그러니 응답에 seq 가 있으면 원장에 남은 것이고, 없으면
+ * 발행 호출은 갔는데 원장에는 안 남은 것이다.
+ *
+ * 실측(2026-07-31): 발행이 resolve 해서 성공으로 세어지는 동안 원장은 정지해 있었다. 호출의
+ * 성공만 세면 그 두 상태가 똑같아 보인다 — 경계를 세는 자리가 여기다.
+ */
+export function stampOf(reply: unknown): number | null {
+  if (!reply || typeof reply !== "object") return null;
+  const seq = (reply as { seq?: unknown }).seq;
+  return typeof seq === "number" && Number.isFinite(seq) ? seq : null;
+}
+
 /** 발행 한 번의 결과를 남긴다. 성공은 연속 실패를 걷지만 지난 실패를 지우지는 않는다. */
-export function notePublish(ok: boolean, at: number, error?: string): void {
+export function notePublish(
+  ok: boolean,
+  at: number,
+  error?: string,
+  stamp?: number,
+): void {
   counters.attempts += 1;
   if (ok) {
+    if (stamp !== undefined) {
+      if (counters.lastStamp > 0 && stamp < counters.lastStamp) {
+        counters.stampRegressions += 1;
+      }
+      counters.lastStamp = stamp;
+    }
     counters.ok += 1;
     counters.consecutiveFailures = 0;
     counters.lastOkAt = at;
@@ -58,6 +95,9 @@ export interface ActivityHealth extends Counters {
 export function activityHealth(): ActivityHealth {
   return {
     ...counters,
-    healthy: counters.ok > 0 && counters.consecutiveFailures < UNHEALTHY_AFTER,
+    healthy:
+      counters.ok > 0 &&
+      counters.consecutiveFailures < UNHEALTHY_AFTER &&
+      counters.stampRegressions === 0,
   };
 }

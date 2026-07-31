@@ -3,7 +3,7 @@
 // 계열 ②: 커맨드 레지스트리 execute 계측(CommandTrace) — 오케스트레이터가 내리는 모든 명령.
 // 허브가 seq/ts 를 부여하고 전 창 브로드캐스트+영속하므로 여기선 발행만 한다.
 
-import { notePublish } from "./activityHealth";
+import { notePublish, stampOf } from "./activityHealth";
 import { invoke } from "../framework";
 import { currentWindowLabel } from "../lib/webviewLabels";
 import { onPluginEvent } from "../plugins/hooks";
@@ -21,7 +21,19 @@ export function publishActivity(
     source,
     payload: { ...payload, window: currentWindowLabel() },
   })
-    .then(() => notePublish(true, Date.now()))
+    .then((reply) => {
+      // 도장이 있어야 적재다 — 호출이 resolve 한 것만으로는 원장에 남았다고 말할 수 없다.
+      const seq = stampOf(reply);
+      if (seq === null) {
+        notePublish(
+          false,
+          Date.now(),
+          "적재 도장 없음 — 발행은 갔는데 원장에 안 남았다(응답에 seq 부재)",
+        );
+        return;
+      }
+      notePublish(true, Date.now(), undefined, seq);
+    })
     .catch((e: unknown) => {
       // 허브 불능(테스트 하니스 등)은 라이브 동작을 막지 않는다 — 그러나 **센다**. 막지 않는
       // 것과 사실을 안 남기는 것은 다르다: 삼킨 실패는 발행이 통째로 끊겨도 조용해서, 밖에서는

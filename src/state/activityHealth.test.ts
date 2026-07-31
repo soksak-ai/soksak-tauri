@@ -58,6 +58,17 @@ describe("활동 발행 건강 — 조용한 실패 금지", () => {
     expect(h.failed).toBe(2);
   });
 
+  it("도장 없는 응답은 성공이 아니다 — resolve 는 적재의 증거가 아니다", async () => {
+    const m = await import("./activityHealth");
+    // 허브는 적재하면 도장(seq)을 찍어 돌려준다. 도장이 없으면 발행은 갔는데 원장에 안 남은
+    // 것이다 — 실측(2026-07-31): 발행이 resolve 해서 성공으로 세어지는 동안 원장은 정지해
+    // 있었고, 앱 안에서는 그 사실을 알 길이 없었다.
+    expect(m.stampOf({ seq: 7, ts: 1 })).toBe(7);
+    expect(m.stampOf({ ok: true })).toBeNull();
+    expect(m.stampOf(null)).toBeNull();
+    expect(m.stampOf({ seq: "7" })).toBeNull();
+  });
+
   it("건강 상태는 갈아끼워도 사라지지 않는다", async () => {
     const first = await import("./activityHealth");
     first.notePublish(true, 1000);
