@@ -3,8 +3,11 @@ import { moduleState } from "../lib/moduleState";
 // 로드. 순수 프론트(Rust 의존 0). AudioContext 는 지연 생성, suspended 면 resume 시도(데스크톱
 // 웹뷰는 대개 허용 — 막히면 무음, best-effort). 알림은 시스템 접근 0이라 권한 게이트는 api 표면에서.
 
-let ctx: AudioContext | null = null;
-
+// 갈아끼우기 경계 밖 — 이 값들이 새것이 되면 "이미 했다"는 기억과 지연 초기화가
+// 함께 사라지고, 채우던 쪽은 다시 채우지 않는다.
+const ms = moduleState("ui/sound#state", () => ({
+  ctx: null as AudioContext | null,
+}));
 function audio(): AudioContext | null {
   try {
     const Ctor =
@@ -12,9 +15,9 @@ function audio(): AudioContext | null {
       (window as unknown as { webkitAudioContext?: typeof AudioContext })
         .webkitAudioContext;
     if (!Ctor) return null;
-    if (!ctx) ctx = new Ctor();
-    if (ctx.state === "suspended") void ctx.resume();
-    return ctx;
+    if (!ms.ctx) ms.ctx = new Ctor();
+    if (ms.ctx.state === "suspended") void ms.ctx.resume();
+    return ms.ctx;
   } catch {
     return null;
   }

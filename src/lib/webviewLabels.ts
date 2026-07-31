@@ -1,3 +1,4 @@
+import { moduleState } from "../lib/moduleState";
 import { currentWindow } from "../framework";
 
 // 멀티 윈도우 식별자의 단일 진실. 브라우저 child webview label 처럼 *Tauri 전역에서 유일해야 하는*
@@ -11,15 +12,19 @@ import { currentWindow } from "../framework";
 // 현재 창 label(캐시). 각 창은 독립 JS 컨텍스트라 자기 label 을 캐시한다. Tauri 런타임 밖(jsdom
 // 테스트)에서는 getCurrentWebviewWindow 가 동기 throw 하므로 "" 로 폴백한다 — 테스트는 실제 webview 를
 // 만들지 않아 이 값이 Tauri 와 대조되지 않는다(폴백 값은 무해).
-let cached: string | null = null;
+// 갈아끼우기 경계 밖 — 이 값들이 새것이 되면 "이미 했다"는 기억과 지연 초기화가
+// 함께 사라지고, 채우던 쪽은 다시 채우지 않는다.
+const ms = moduleState("lib/webviewLabels#state", () => ({
+  cached: null as string | null,
+}));
 export function currentWindowLabel(): string {
-  if (cached !== null) return cached;
+  if (ms.cached !== null) return ms.cached;
   try {
-    cached = currentWindow().label;
+    ms.cached = currentWindow().label;
   } catch {
-    cached = "";
+    ms.cached = "";
   }
-  return cached;
+  return ms.cached;
 }
 
 // 브라우저 child webview 의 전역 유일 label. 형식: b-<windowLabel>-<viewId>.

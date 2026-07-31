@@ -11,6 +11,7 @@
 // 도배 방지: 같은 판정 조합이 이어지면 세기만 하고, 조합이 **바뀔 때**만 발행한다.
 // IME 결함은 "어느 신호가 갑자기 사라졌는가"로 드러나므로 전이가 곧 신호다.
 
+import { moduleState } from "../lib/moduleState";
 import { framework } from "../framework";
 
 export interface ImeDecision {
@@ -22,9 +23,12 @@ export interface ImeDecision {
   composing: boolean;
 }
 
-let lastKey = "";
-let repeats = 0;
-
+// 갈아끼우기 경계 밖 — 이 값들이 새것이 되면 "이미 했다"는 기억과 지연 초기화가
+// 함께 사라지고, 채우던 쪽은 다시 채우지 않는다.
+const ms = moduleState("lib/imeLedger#state", () => ({
+  lastKey: "",
+  repeats: 0,
+}));
 function publish(kind: string, payload: Record<string, unknown>): void {
   // 원장 발행은 진단이다 — 실패해도 입력 처리를 막지 않는다.
   void framework
@@ -34,14 +38,14 @@ function publish(kind: string, payload: Record<string, unknown>): void {
 
 export function noteImeDecision(d: ImeDecision): void {
   const key = `${d.isComposing}|${d.legacy}|${d.composing}`;
-  if (key === lastKey) {
-    repeats += 1;
+  if (key === ms.lastKey) {
+    ms.repeats += 1;
     return;
   }
-  const previous = lastKey;
-  const previousRepeats = repeats;
-  lastKey = key;
-  repeats = 1;
+  const previous = ms.lastKey;
+  const previousRepeats = ms.repeats;
+  ms.lastKey = key;
+  ms.repeats = 1;
   publish("ime.decision", {
     ...d,
     framework: framework.name,
@@ -54,6 +58,6 @@ export function noteImeDecision(d: ImeDecision): void {
 
 /** 테스트용 — 전이 상태를 비운다. */
 export function __resetImeLedgerForTest(): void {
-  lastKey = "";
-  repeats = 0;
+  ms.lastKey = "";
+  ms.repeats = 0;
 }

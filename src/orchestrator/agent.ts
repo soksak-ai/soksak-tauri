@@ -11,6 +11,7 @@
 // 역할을 정하고, 허용 도구는 이 identity 의 CLI 바이너리(Bash(<bin>:*),
 // <bin>=sok/sok-dev/sok-debug)뿐이다.
 
+import { moduleState } from "../lib/moduleState";
 import { createStream, invoke } from "../framework";
 import { safeListen } from "../lib/safeListen";
 import { useSettings } from "../state/settings";
@@ -35,12 +36,15 @@ interface ActiveTurn {
   proc: number;
 }
 
-let active: ActiveTurn | null = null;
-// BUSY 게이트 — active 는 spawn 해소 후에야 서므로(그 전 중복 ask 통과 레이스) 진입 즉시 세운다.
-let inFlight = false;
-let cancelled = false;
-let stopReason: string | null = null;
-
+// 갈아끼우기 경계 밖 — 이 값들이 새것이 되면 "이미 했다"는 기억과 지연 초기화가
+// 함께 사라지고, 채우던 쪽은 다시 채우지 않는다.
+const ms = moduleState("orchestrator/agent#state", () => ({
+  active: null as ActiveTurn | null,
+  inFlight: false,
+  cancelled: false,
+  stopReason: null as string | null,
+}));
+// BUSY 게이트 — ms.active 는 spawn 해소 후에야 서므로(그 전 중복 ask 통과 레이스) 진입 즉시 세운다.
 // 준비물(가르침·카탈로그) 캐시 — 명령 표면은 플러그인 생명주기에서만 바뀐다: 턴마다 재조회하지
 // 않고, 활동 스트림에서 plugin.enable/disable/reload/... 실행이 관찰될 때만 무효화한다
 // (이벤트 기반 — TTL·폴링 없음). 준비 조회가 매 턴 세트를 채우던 소음의 제거.
@@ -203,7 +207,7 @@ interface AskParams {
 
 /** 자연어 턴 실행 — orchestrator.ask 핸들러 본체. */
 export async function ask(p: AskParams): Promise<CommandOutcome> {
-  if (inFlight) {
+  if (ms.inFlight) {
     return {
       ok: false,
       code: "BUSY",
@@ -212,11 +216,11 @@ export async function ask(p: AskParams): Promise<CommandOutcome> {
   }
   const text = p.text.trim();
   if (!text) return { ok: false, code: "INVALID_PARAMS", message: "text: 비어 있지 않아야 함" };
-  inFlight = true;
+  ms.inFlight = true;
   try {
     return await askInner(text, p.window);
   } finally {
-    inFlight = false;
+    ms.inFlight = false;
   }
 }
 
@@ -387,7 +391,7 @@ async function askInner(text: string, explicitWindow?: string): Promise<CommandO
     stderr.tail = (stderr.tail + dec.decode(new Uint8Array(m), { stream: true })).slice(-500);
   };
   // 빠른 종료 레이스: 초단명 프로세스(스텁 등)는 spawn invoke 해소보다 exit 채널이 먼저 올 수
-  // 있다 — 종료 후 .then 이 active 를 되살리면 영구 BUSY. finished 게이트로 차단한다.
+  // 있다 — 종료 후 .then 이 ms.active 를 되살리면 영구 BUSY. finished 게이트로 차단한다.
   let finished = false;
   const exited = new Promise<number>((resolve) => {
     const onExit = createStream<number>();
@@ -409,14 +413,14 @@ async function askInner(text: string, explicitWindow?: string): Promise<CommandO
     }).then(
       (id) => {
         if (finished) return; // 이미 끝난 턴 — 재점유 금지
-        active = { turnId, proc: id };
+        ms.active = { turnId, proc: id };
         nsSet(TURN_KEY, JSON.stringify({ proc: id, turnId }));
       },
       () => resolve(-1),
     );
   });
 
-  cancelled = false;
+  ms.cancelled = false;
   const cap = setTimeout(() => {
     void stop("시간 상한(15분)으로 중단했어요.");
   }, TURN_CAP_MS);
@@ -424,15 +428,15 @@ async function askInner(text: string, explicitWindow?: string): Promise<CommandO
   finished = true;
   clearTimeout(cap);
   flushDelta();
-  const wasCancelled = cancelled;
-  cancelled = false;
-  active = null;
+  const wasCancelled = ms.cancelled;
+  ms.cancelled = false;
+  ms.active = null;
   nsSet(TURN_KEY, null);
   if (turn.session) nsSet(SESSION_KEY, turn.session);
 
   if (wasCancelled) {
-    const reason = stopReason ?? "중단했어요.";
-    stopReason = null;
+    const reason = ms.stopReason ?? "중단했어요.";
+    ms.stopReason = null;
     return close(false, "CANCELLED", reason);
   }
   // 이어가기 즉사 감지 — resume 을 썼고 아무 자취(스트림 텍스트) 없이 오류/무응답 종료.
@@ -465,10 +469,10 @@ async function askInner(text: string, explicitWindow?: string): Promise<CommandO
 
 /** 진행 중 턴 중단 — orchestrator.stop 핸들러 본체. ask 쪽 exit 경로가 세트를 닫는다. */
 export async function stop(reason?: string): Promise<CommandOutcome> {
-  if (!active) return { ok: true, code: "NOOP", message: "진행 중인 턴이 없어요.", data: { stopped: false } };
-  cancelled = true;
-  stopReason = reason ?? "중단했어요.";
-  await invoke("process_kill", { id: active.proc }).catch(() => {});
+  if (!ms.active) return { ok: true, code: "NOOP", message: "진행 중인 턴이 없어요.", data: { stopped: false } };
+  ms.cancelled = true;
+  ms.stopReason = reason ?? "중단했어요.";
+  await invoke("process_kill", { id: ms.active.proc }).catch(() => {});
   return { ok: true, code: "OK", message: "진행 중인 턴을 중단했어요.", data: { stopped: true } };
 }
 

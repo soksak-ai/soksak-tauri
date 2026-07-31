@@ -397,11 +397,14 @@ interface SessionsStore {
 // 재등장이 없으므로 "보존 id 위로 카운터를 올리는" 조율 자체가 필요 없어진다.
 // 내부 노드(split)만 지역 카운터를 유지한다 — 실체가 아니라 주소·명령·응답 어디에도
 // 나오지 않으므로(§1-2) 전역 유일성이 필요 없고, 접두 id 를 주면 idScope 게이트가 잡는다.
-let nextSplitId = 1;
-
+// 갈아끼우기 경계 밖 — 이 값들이 새것이 되면 "이미 했다"는 기억과 지연 초기화가
+// 함께 사라지고, 채우던 쪽은 다시 채우지 않는다.
+const ms = moduleState("state/sessions#state", () => ({
+  nextSplitId: 1,
+}));
 const newViewId = () => issueId("tab");
 const newGroupId = () => issueId("pane");
-const newSplitId = () => `s${nextSplitId++}`;
+const newSplitId = () => `s${ms.nextSplitId++}`;
 const newContentId = () => issueId("space");
 // split id 생성기(복원 시 windowSnapshot.deserialize 에 주입 — A2 는 split id 를 재생성한다).
 export const nextSplitIdGen = (): string => newSplitId();
@@ -418,7 +421,7 @@ export function newIds(): {
     project: issueId("project"),
     view: issueId("tab"),
     group: issueId("pane"),
-    split: `s${nextSplitId}`,
+    split: `s${ms.nextSplitId}`,
     content: issueId("space"),
   };
 }

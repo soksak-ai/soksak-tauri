@@ -11,7 +11,7 @@
 //
 // 폴링 아님: 트리거는 전부 사건(layout.reflow·view.parked·webview.* 활동·리사이즈 종료·
 // 부트 ready)이고, 타이머는 사건 후 레이아웃 정착 대기 1개뿐(400ms 디바운스 — 사건 이름
-// surface-audit-settle, 연속 사건은 마지막 것만 판정).
+// surface-audit-ms.settle, 연속 사건은 마지막 것만 판정).
 import { moduleState } from "../lib/moduleState";
 import { invoke } from "../framework";
 import { onPluginEvent } from "../plugins/hooks";
@@ -130,11 +130,14 @@ export function containedIn(surface: AuditRect, anchors: AuditRect[], tol = 2): 
   );
 }
 
-let lastSignature = "";
-let lastMissingSig = "[]";
-let lastDarkSig = "[]";
-let settle: ReturnType<typeof setTimeout> | null = null;
-
+// 갈아끼우기 경계 밖 — 이 값들이 새것이 되면 "이미 했다"는 기억과 지연 초기화가
+// 함께 사라지고, 채우던 쪽은 다시 채우지 않는다.
+const ms = moduleState("lib/surfaceAudit#state", () => ({
+  lastSignature: "",
+  lastMissingSig: "[]",
+  lastDarkSig: "[]",
+  settle: null as ReturnType<typeof setTimeout> | null,
+}));
 async function runAudit(): Promise<void> {
   const stats = await invoke<EngineStats>("engine_surface_stats").catch(() => null);
   if (!stats) return;
@@ -169,14 +172,14 @@ async function runAudit(): Promise<void> {
   // (open 전·재페인트 전)가 정상적으로 스치는 상태라, 두 번 연속 같은 판정일 때만 위반으로
   // 발행한다(지속 = 결함, 스침 = 과도기).
   const missingSig = JSON.stringify(verdict.missing);
-  const missingPersists = verdict.missing.length > 0 && missingSig === lastMissingSig;
-  lastMissingSig = missingSig;
+  const missingPersists = verdict.missing.length > 0 && missingSig === ms.lastMissingSig;
+  ms.lastMissingSig = missingSig;
   // dark(빈 본문 뷰)도 지속 2회일 때만 — 마운트 직후 한 프레임은 정상적으로 비어 있다.
   // 부트 중에는 판정하지 않는다(활성화 진행 = 로딩 계약의 시간).
   const dark = useBootPhase.getState().phase === "ready" ? darkViewRects() : [];
   const darkSig = JSON.stringify(dark);
-  const darkPersists = dark.length > 0 && darkSig === lastDarkSig;
-  lastDarkSig = darkSig;
+  const darkPersists = dark.length > 0 && darkSig === ms.lastDarkSig;
+  ms.lastDarkSig = darkSig;
   const bad =
     verdict.misplaced.length > 0 ||
     verdict.stacked.length > 0 ||
@@ -185,9 +188,9 @@ async function runAudit(): Promise<void> {
   const signature = bad
     ? JSON.stringify([verdict.misplaced, verdict.stacked.map((l) => l.length), missingPersists ? verdict.missing : [], darkPersists ? dark : []])
     : "clean";
-  if (signature === lastSignature) return; // 같은 사실의 반복 발행 금지(원장 소음 절제)
-  const wasBad = lastSignature !== "" && lastSignature !== "clean";
-  lastSignature = signature;
+  if (signature === ms.lastSignature) return; // 같은 사실의 반복 발행 금지(원장 소음 절제)
+  const wasBad = ms.lastSignature !== "" && ms.lastSignature !== "clean";
+  ms.lastSignature = signature;
   if (!bad && !wasBad) return; // 처음부터 깨끗 — 침묵이 정상
   void invoke("activity_publish", {
     kind: bad ? "surface.misplaced" : "surface.audit",
@@ -209,10 +212,10 @@ async function runAudit(): Promise<void> {
 }
 
 function schedule(): void {
-  if (settle !== null) clearTimeout(settle);
-  // 정착 디바운스(surface-audit-settle) — 사건 직후 레이아웃·bounds 반영이 끝난 뒤 1회 판정.
-  settle = setTimeout(() => {
-    settle = null;
+  if (ms.settle !== null) clearTimeout(ms.settle);
+  // 정착 디바운스(surface-audit-ms.settle) — 사건 직후 레이아웃·bounds 반영이 끝난 뒤 1회 판정.
+  ms.settle = setTimeout(() => {
+    ms.settle = null;
     void runAudit();
   }, 400);
 }
@@ -243,9 +246,9 @@ export function installSurfaceAudit(): void {
 /** 테스트 전용 초기화. */
 export function __resetSurfaceAuditForTest(): void {
   installedFlag.on = false;
-  lastSignature = "";
-  lastMissingSig = "[]";
-  lastDarkSig = "[]";
-  if (settle !== null) clearTimeout(settle);
-  settle = null;
+  ms.lastSignature = "";
+  ms.lastMissingSig = "[]";
+  ms.lastDarkSig = "[]";
+  if (ms.settle !== null) clearTimeout(ms.settle);
+  ms.settle = null;
 }

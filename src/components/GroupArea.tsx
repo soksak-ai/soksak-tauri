@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { moduleState } from "../lib/moduleState";
 import { execute } from "../commands/registry";
 import { rafThrottle } from "../lib/rafThrottle";
 import {
@@ -122,14 +123,17 @@ const titleOf = (v: Tab | undefined): string => (v ? viewDisplayTitle(v) : "");
 // divider 리사이즈 드래그 중복 시작 가드. divider 가 네이티브 child 없는 gap 위면 실제 DOM mousedown
 // 과, 코어 네이티브-마우스 브릿지(App.tsx)가 재생하는 합성 mousedown 이 둘 다 도착할 수 있다 — 먼저
 // 온 하나만 드래그를 소유하고 나머지는 무시(window 리스너 이중 등록 방지). 한 번에 divider 하나만 드래그.
-let resizeDragActive = false;
-
+// 갈아끼우기 경계 밖 — 이 값들이 새것이 되면 "이미 했다"는 기억과 지연 초기화가
+// 함께 사라지고, 채우던 쪽은 다시 채우지 않는다.
+const ms = moduleState("components/GroupArea.#state", () => ({
+  resizeDragActive: false,
+}));
 // 디바이더 드래그 제스처 사실을 두 소비자 계층에 알린다(코어는 의미를 모름 — 사실만):
 // ① 플러그인 events 채널(layout.resize-gesture) — 이 창의 뷰 제공자(브라우저 플러그인 등)가
 //    드래그 중 native bounds 커밋을 유예하고 freeze-frame 을 띄우는 근거.
 // ② Rust 릴레이(webview_resize_gesture) — 코어 layer 밖의 엔진 사이드카(CEF) surface 에
 //    같은 사실을 통지(webview_overlay_active 의 surface-occluded 패턴과 동형).
-// resizeDragActive 가드 뒤에서만 호출되므로 시작/끝이 항상 짝을 이룬다.
+// ms.resizeDragActive 가드 뒤에서만 호출되므로 시작/끝이 항상 짝을 이룬다.
 function emitResizeGesture(active: boolean): void {
   // 단일 진실 layoutMotion 으로 위임 — 드래그·주행·FLIP 이 겹쳐도 에지 짝이 보장된다.
   if (active) beginLayoutMotion("resize");
@@ -448,7 +452,7 @@ export const GroupArea = memo(function GroupArea({
     e.preventDefault();
     // 착지값 — 드래그 중 마지막으로 커밋한 비율. 완결 시 이것으로 명령을 한 번 남긴다.
     let lastResizeSizes: number[] | null = null;
-    if (resizeDragActive) return; // 중복 시작(DOM + 네이티브 합성) 무시.
+    if (ms.resizeDragActive) return; // 중복 시작(DOM + 네이티브 합성) 무시.
     const cont = containerRef.current;
     if (!cont) return;
     const contRect = cont.getBoundingClientRect();
@@ -458,7 +462,7 @@ export const GroupArea = memo(function GroupArea({
         : contRect.height;
     const splitPx = (totalPx * d.spanPct) / 100;
     if (splitPx <= 0) return;
-    resizeDragActive = true; // 실제 드래그 개시 확정 후에만(위 early-return 은 잠그지 않음).
+    ms.resizeDragActive = true; // 실제 드래그 개시 확정 후에만(위 early-return 은 잠그지 않음).
     emitResizeGesture(true);
     const startPos = d.dir === "row" ? e.clientX : e.clientY;
     const startSizes = [...d.sizes];
@@ -511,7 +515,7 @@ export const GroupArea = memo(function GroupArea({
       window.removeEventListener("mouseup", onUp);
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
-      resizeDragActive = false;
+      ms.resizeDragActive = false;
       // flush(최종 레이아웃 커밋) 뒤에 종료를 알린다 — 구독자(브라우저 provider)는
       // 이 시점의 슬롯 rect 를 최종값으로 신뢰하고 bounds 를 1회 커밋한다.
       emitResizeGesture(false);

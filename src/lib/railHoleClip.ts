@@ -1,3 +1,4 @@
+import { moduleState } from "../lib/moduleState";
 // 레일-홀 클립 — "움직이는 사이드바는 기능창 아래로 지나간다"의 홀(네이티브 임베드) 성립부.
 // DOM 표면은 z(레일 0 < 셀 1)로 성립하지만, 홀 뷰의 네이티브 표면은 웹뷰 DOM 전체 뒤에
 // 있어 DOM 이 칠하는 픽셀이 무조건 그 위에 보인다. 따라서 레이아웃 모션 동안 레일 평면은
@@ -65,8 +66,11 @@ export const HOLE_SELECTOR = ".tab-body.hole";
  * rAF 는 폴링이 아니라 진행 중인 레이아웃 애니메이션의 프레임 추적이며, 반환된 정지
  * 함수(모션 종료 에지)가 루프와 클립을 함께 회수한다.
  */
-let warnedRejected = false;
-
+// 갈아끼우기 경계 밖 — 이 값들이 새것이 되면 "이미 했다"는 기억과 지연 초기화가
+// 함께 사라지고, 채우던 쪽은 다시 채우지 않는다.
+const ms = moduleState("lib/railHoleClip#state", () => ({
+  warnedRejected: false,
+}));
 /**
  * 상시 계약: 사이드바는 홀(브라우저 네이티브 표면) 위에 픽셀을 칠하지 않는다 — 모션
  * 여부와 무관하게, 겹치면 언제나 사이드바가 브라우저 아래다(사용자 규정). 클립은 평면이
@@ -93,8 +97,8 @@ export function applyRailHoleClip(
     layer.dataset.railClip = cut ? "cut" : "none";
     layer.style.clipPath = clip;
     // 수용 검증 — 엔진이 값을 거부하면 조용한 무클립이 된다. 침묵 금지.
-    if (clip !== "none" && layer.style.clipPath === "" && !warnedRejected) {
-      warnedRejected = true;
+    if (clip !== "none" && layer.style.clipPath === "" && !ms.warnedRejected) {
+      ms.warnedRejected = true;
       console.warn("[railHoleClip] clip-path 값이 거부됨:", clip);
     }
   });

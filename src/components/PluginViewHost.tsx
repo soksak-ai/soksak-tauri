@@ -2,6 +2,7 @@
 // provider.mount/unmount 는 try/catch 경계(§0-4): mount 실패는 에러 카드, provider
 // 부재(플러그인 비활성/제거)는 플레이스홀더. 잔존 DOM 은 호스트가 정리한다.
 
+import { moduleState } from "../lib/moduleState";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   getRegisteredView,
@@ -18,8 +19,11 @@ import { useT } from "../i18n";
 
 // 컨테이너 세대 카운터 — 등록(reg) 세대마다 증가. 모듈 전역이라 창 내 모든 호스트가 공유해도
 // 값은 key 유일성에만 쓰여 충돌이 없다.
-let containerGeneration = 0;
-
+// 갈아끼우기 경계 밖 — 이 값들이 새것이 되면 "이미 했다"는 기억과 지연 초기화가
+// 함께 사라지고, 채우던 쪽은 다시 채우지 않는다.
+const ms = moduleState("components/PluginViewHost.#state", () => ({
+  containerGeneration: 0,
+}));
 // memo 경계(원칙 2).
 export const PluginViewHost = memo(function PluginViewHost({
   viewKey,
@@ -162,7 +166,7 @@ export const PluginViewHost = memo(function PluginViewHost({
   // 만든다. attachShadow 는 비가역이라 재활용 노드는 이전 세대의 shadow root(와 불완전한
   // provider.unmount 가 남긴 DOM/GL 잔재)를 다음 마운트에 물려준다. React key 로 노드를
   // 갈아끼워 세대를 격리한다 — 어떤 provider 도 이전 세대의 잔재 위에 마운트되지 않는다.
-  const generation = useMemo(() => ++containerGeneration, [reg]);
+  const generation = useMemo(() => ++ms.containerGeneration, [reg]);
   const containerKey = [
     generation,
     viewKey,

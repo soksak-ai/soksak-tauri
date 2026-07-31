@@ -107,15 +107,19 @@ export function beginLayoutMotion(
 ): void {
   counts[kind] += 1;
   scopes.push(scope ? new Set(scope) : null);
-  if (import.meta.env?.DEV && !scope && sender) lastGlobalSender = sender;
+  if (import.meta.env?.DEV && !scope && sender) ms.lastGlobalSender = sender;
   syncEmit();
 }
 
 // 마지막 전역 begin 의 발신자(진단 관측면) — window.__lastGlobalMotionSender 로 노출.
-let lastGlobalSender = "";
+// 갈아끼우기 경계 밖 — 이 값들이 새것이 되면 "이미 했다"는 기억과 지연 초기화가
+// 함께 사라지고, 채우던 쪽은 다시 채우지 않는다.
+const ms = moduleState("lib/layoutMotion#state", () => ({
+  lastGlobalSender: "",
+}));
 if (typeof window !== "undefined") {
   Object.defineProperty(window, "__lastGlobalMotionSender", {
-    get: () => lastGlobalSender,
+    get: () => ms.lastGlobalSender,
     configurable: true,
   });
 }

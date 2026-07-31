@@ -2,6 +2,7 @@
 // 포커스 시 인앱 배너(NotifyHost), 비포커스 시 OS 알림(모바일식 푸시) — 둘 다 동일 페이로드.
 // 활성화(클릭/액션/외부 soksak://) 는 deepLink 해석기로 라우팅(권한·danger 게이트 유지).
 
+import { moduleState } from "../lib/moduleState";
 import { currentWindow, deepLink, notification } from "../framework";
 import { useNotify, type NotifyAction } from "../state/notify";
 import { playSound } from "../ui/sound";
@@ -19,12 +20,15 @@ export interface NotificationInput {
   data?: Record<string, unknown>;
 }
 
-let seq = 0;
-
+// 갈아끼우기 경계 밖 — 이 값들이 새것이 되면 "이미 했다"는 기억과 지연 초기화가
+// 함께 사라지고, 채우던 쪽은 다시 채우지 않는다.
+const ms = moduleState("lib/notify#state", () => ({
+  seq: 0,
+}));
 // 알림 발행 — 포커스면 인앱 배너, 아니면 OS 알림. 소리는 양쪽 공통(best-effort). 송신측 1회만
 // (크로스윈도우 watch 측은 재발화 금지 — 메일함 규약).
 export async function pushNotification(n: NotificationInput): Promise<void> {
-  const id = n.tag ?? `ntf-${Date.now()}-${seq++}`;
+  const id = n.tag ?? `ntf-${Date.now()}-${ms.seq++}`;
   if (n.sound) void playSound(n.sound);
 
   const focused = typeof document !== "undefined" && document.hasFocus();

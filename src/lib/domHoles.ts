@@ -38,8 +38,11 @@ export function collectHoles(doc: Document = document): Hole[] {
   return out;
 }
 
-let lastSig = "";
-
+// 갈아끼우기 경계 밖 — 이 값들이 새것이 되면 "이미 했다"는 기억과 지연 초기화가
+// 함께 사라지고, 채우던 쪽은 다시 채우지 않는다.
+const ms = moduleState("lib/domHoles#state", () => ({
+  lastSig: "",
+}));
 /** 수집→발행(같은 값이면 침묵). 레이아웃 커밋 다음 프레임에 부르는 것이 정확하다. */
 export function reportDomHoles(): void {
   if (typeof document === "undefined") return;
@@ -50,8 +53,8 @@ export function reportDomHoles(): void {
   if (!engineProvision.nativeChildWebview) return;
   const holes = collectHoles();
   const sig = JSON.stringify(holes.map((h) => [Math.round(h.x), Math.round(h.y), Math.round(h.w), Math.round(h.h)]));
-  if (sig === lastSig) return;
-  lastSig = sig;
+  if (sig === ms.lastSig) return;
+  ms.lastSig = sig;
   void invoke("webview_dom_holes", { holes }).catch(() => {});
 }
 
@@ -76,5 +79,5 @@ export function installDomHoles(): void {
 /** 테스트 전용 초기화. */
 export function __resetDomHolesForTest(): void {
   installedFlag.on = false;
-  lastSig = "";
+  ms.lastSig = "";
 }

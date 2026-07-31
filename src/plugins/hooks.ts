@@ -225,16 +225,20 @@ export function onPluginEvent<K extends keyof PluginEventMap>(
 // flushBootPluginEvents 가 FIFO 재생한다 — 전달 시점은 예전 순서와 같고, 상태(복원)만 앞선다.
 // 버퍼는 부트가 명시적으로 켜는 모드다 — 기본은 즉시 전달(테스트·오케스트레이터 등 부트
 // 버퍼 계약 밖의 진입점은 현행 그대로). 워크스페이스 부트만 begin→flush 한 쌍을 계약한다.
-let bootBuffering = false;
+// 갈아끼우기 경계 밖 — 이 값들이 새것이 되면 "이미 했다"는 기억과 지연 초기화가
+// 함께 사라지고, 채우던 쪽은 다시 채우지 않는다.
+const ms = moduleState("plugins/hooks#state", () => ({
+  bootBuffering: false,
+}));
 const bootQueue: Array<[keyof PluginEventMap, unknown]> = [];
 
 export function beginBootPluginEventBuffer(): void {
-  bootBuffering = true;
+  ms.bootBuffering = true;
 }
 
 export function flushBootPluginEvents(): void {
-  if (!bootBuffering) return;
-  bootBuffering = false;
+  if (!ms.bootBuffering) return;
+  ms.bootBuffering = false;
   for (const [ev, pl] of bootQueue.splice(0)) {
     dispatchPluginEvent(ev, pl as PluginEventMap[typeof ev]);
   }
@@ -242,7 +246,7 @@ export function flushBootPluginEvents(): void {
 
 /** 테스트 전용 — 버퍼 상태 초기화(창 부트 1회 계약을 테스트마다 재현). */
 export function __resetBootPluginEventsForTest(): void {
-  bootBuffering = false;
+  ms.bootBuffering = false;
   bootQueue.length = 0;
 }
 
@@ -266,7 +270,7 @@ export function emitPluginEvent<K extends keyof PluginEventMap>(
   event: K,
   payload: PluginEventMap[K],
 ): void {
-  if (bootBuffering) {
+  if (ms.bootBuffering) {
     bootQueue.push([event, payload]);
     return;
   }

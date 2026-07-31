@@ -9,13 +9,17 @@
 // 바이너리로 실행돼야 한다 — dev 앱의 힌트는 sok-dev 로 실행돼야 dev 소켓에 닿는다. 프리픽스는
 // 데이터가 아니라 제시자(이 앱)의 정체성이므로, hint 생산자는 명령 형태만 짓고 이 값이 붙는다.
 
+import { moduleState } from "../lib/moduleState";
 import { invoke } from "../framework";
 
-let cached = "sok";
-
+// 갈아끼우기 경계 밖 — 이 값들이 새것이 되면 "이미 했다"는 기억과 지연 초기화가
+// 함께 사라지고, 채우던 쪽은 다시 채우지 않는다.
+const ms = moduleState("lib/cliIdentity#state", () => ({
+  cached: "sok",
+}));
 // 캐시된 CLI 이름. 부팅 로드 전이나 테스트에서는 기본 sok.
 export function cliName(): string {
-  return cached;
+  return ms.cached;
 }
 
 // 부팅 1회 — host 의 계산값(app_environment.cli)을 읽어 캐시한다. 실패(부팅 전·테스트·비-Tauri)면
@@ -24,7 +28,7 @@ export async function loadCliName(): Promise<void> {
   try {
     const env = await invoke<{ cli?: unknown }>("app_environment");
     const cli = env?.cli;
-    if (typeof cli === "string" && cli) cached = cli;
+    if (typeof cli === "string" && cli) ms.cached = cli;
   } catch {
     // 부팅 전/테스트/비-Tauri: 기본값 유지.
   }
@@ -32,5 +36,5 @@ export async function loadCliName(): Promise<void> {
 
 // 테스트 전용 — env 별 프리픽스 검증에 캐시를 직접 세운다.
 export function __setCliNameForTest(value: string): void {
-  cached = value;
+  ms.cached = value;
 }
