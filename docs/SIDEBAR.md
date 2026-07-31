@@ -128,6 +128,9 @@ A rail mount receives `{ projectId, root, paneId, boundViewId, setBadge }` plus 
 ### S5. Selection, keep-alive and fallback are the host's.
 The host owns pin-tab selection and keeps inactive views alive. When a view unregisters, the host falls back without dangling selections or orphaned mounts; a reloaded view reconciles from current state.
 
+### S5b. A binding change always reaches the view.
+Keeping an instance alive must never keep another binding's content on screen. A `shared` slot holds one instanceKey across bindings, so nothing remounts; without notification the previous binding's content stays painted (measured 2026-07-31). The host notifies on every field of the context's binding axis — the axis is declared once in `src/plugins/viewContext.ts`, never listed in prose. A provider implementing `update` receives the new context and keeps its instance; one that does not is remounted, because losing structural state beats painting another binding's data.
+
 ### S6. Theme via host CSS variables.
 A rail view inherits theme strictly through host-propagated CSS custom properties. No theme store reads, no palette literals, no theme-name branches.
 

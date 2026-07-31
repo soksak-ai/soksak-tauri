@@ -73,11 +73,16 @@ export interface PluginViewProvider {
     ctx: PluginViewContext,
     request: PluginViewFocusRequest,
   ): void;
-  // 라이브 갱신 — 구조(projectId/viewKey)는 그대로인데 추종 대상(paneId=cwd 따라갈 터미널)만 바뀔 때,
-  // 호스트가 remount 대신 이걸 호출해 같은 인스턴스에 새 ctx 를 전달한다. 탭 전환마다 활성 pane 이
-  // 바뀌므로 paneId 로 remount 하면 매번 뷰를 통째 재생성(파일트리 canvas 재구축 ~36ms)하고 뷰 상태
-  // (펼친 폴더 등)도 유실된다. update 를 구현하면 그 churn 을 없앤다. 미구현 provider 는 호스트가
-  // 기존대로 paneId 변경에 remount 로 폴백하므로 하위호환. (배지가 version 과 분리된 것과 같은 원칙.)
+  // 라이브 갱신 — **결부(binding 축) 가 바뀔 때** 호스트가 remount 대신 이걸 불러 같은 인스턴스에
+  // 새 ctx 를 전달한다. 축의 단일 진실은 viewContext 의 VIEW_CONTEXT_AXIS 다(여기 필드 이름을
+  // 나열하지 마라 — 나열은 계약과 갈리고, 갈린 목록은 조용하다).
+  //
+  // 구현 의무는 하나다: **받은 ctx 로 다시 그린다.** 일부 필드만 반영하는 구현은 계약 위반이다 —
+  // 호스트는 어느 필드가 바뀌었는지 알려 주지 않고, 알려 주기 시작하면 그 자체가 손목록이 된다.
+  //
+  // 구현하면 결부 전환에 뷰가 통째 재생성되지 않는다(파일트리 canvas 재구축 ~36ms, 펼친 폴더
+  // 유실 없음). 구현하지 않으면 호스트가 결부 변경에 remount 한다 — 통보 수단이 없는 provider 에게
+  // 남은 정직한 길이다: 남의 결부 데이터를 계속 그리는 것보다 구조 상태를 잃는 편이 옳다.
   update?(container: HTMLElement, ctx: PluginViewContext): void;
 }
 
