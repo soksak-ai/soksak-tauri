@@ -390,8 +390,11 @@ pub(crate) fn run_data_kv_delete(ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: KvDeleteArg| {
         deny_without_write_ownership(ctx)?;
         ctx.with_db(|conn| {
-            soksak_store::store::kv_delete(&conn, &a.ns, &a.key)?;
-            Ok(Value::Null)
+            // **지웠는가**를 답한다. 앱의 같은 이름이 bool 을 돌려주므로 여기서 null 을 주면
+            // 위임한 프로세스가 "모양이 아니다"로 실패한다(실측 2024-08-01: 위임 전에는 두
+            // 모양이 만날 일이 없어 조용했다). 같은 이름은 같은 것을 답해야 한다.
+            let removed = soksak_store::store::kv_delete(&conn, &a.ns, &a.key)?;
+            Ok(Value::Bool(removed))
         })
     })
 }

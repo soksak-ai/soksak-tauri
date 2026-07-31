@@ -1083,7 +1083,7 @@ pub const COMMANDS: &[Command] = &[
             Arg { name: "ns", ty: "string", required: REQ },
             Arg { name: "key", ty: "string", required: REQ },
         ],
-        returns: "null",
+        returns: "bool(지웠는가 — 앱의 같은 이름과 같은 모양)",
         run: run_data_kv_delete,
     },
     Command {
