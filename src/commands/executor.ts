@@ -11,7 +11,8 @@ import { registerDebugCatalog } from "./catalogDebug";
 import { registerOrchestratorCatalog } from "./catalogOrchestrator";
 import { registerRemoteCatalog } from "./catalogRemote";
 import { registerRemoteConfirmDevCatalog } from "./catalogRemoteConfirmDev";
-import { getSpec, execute, markRuntimeReady, setPermissionGate } from "./registry";
+import { getSpec, execute, setPermissionGate } from "./registry";
+import { markRuntimeReady } from "./commandObservation";
 
 interface CmdRequest {
   id: number;

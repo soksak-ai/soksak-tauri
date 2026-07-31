@@ -43,3 +43,28 @@ describe("moduleState — 갈아끼워도 사라지지 않는다", () => {
     expect(b.size).toBe(0);
   });
 });
+
+// 같은 이름을 다른 자리가 쓰면 **소리가 나야 한다** — 조용히 남의 값을 주면 그 상태는
+// 자기 필드가 없는 채로 돌고, 그 침묵은 오류를 내지 않는다.
+// 실측(2026-07-31): 한 파일에서 두 상태가 `#state` 를 함께 써서 뒤엣것이 앞엣것을 받았다.
+describe("moduleState — 이름 충돌은 조용할 수 없다", () => {
+  beforeEach(() => {
+    delete (globalThis as Record<string, unknown>)[BAG_KEY];
+    vi.resetModules();
+  });
+
+  it("다른 모양이 같은 이름을 쓰면 거절한다", async () => {
+    const m = await import("./moduleState");
+    m.moduleState("t/clash", () => ({ a: 1 }));
+    expect(() => m.moduleState("t/clash", () => ({ b: 2 }))).toThrow(/t\/clash/);
+  });
+
+  it("같은 자리의 재평가는 통과한다 — make 가 새 함수여도 모양이 같다", async () => {
+    const m = await import("./moduleState");
+    const first = m.moduleState("t/same", () => ({ a: 1 }));
+    first.a = 9;
+    const again = m.moduleState("t/same", () => ({ a: 1 }));
+    expect(again).toBe(first);
+    expect(again.a).toBe(9);
+  });
+});

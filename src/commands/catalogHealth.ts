@@ -4,7 +4,9 @@
 // 세어야 알고, 셀 수 없으면 고쳤는지도 증명하지 못한다 — 그래서 묻는 자리를 따로 둔다.
 
 import { tmsg } from "../i18n";
-import { commandHealth, noteActivityPersist, register } from "./registry";
+import { register } from "./registry";
+import { catalogJson } from "./registry";
+import { commandHealth, noteActivityPersist } from "./commandObservation";
 import { invoke } from "../framework";
 
 export function registerHealthCatalog(): void {
@@ -31,7 +33,8 @@ export function registerHealthCatalog(): void {
       } catch {
         // 못 물어도 나머지 축은 답한다 — 한 축의 침묵이 진단 전체를 막지 않는다.
       }
-      return commandHealth();
+      // 등록 수는 등록부가 답한다 — 관측 모듈은 등록부를 모른다(둘은 서로의 안을 안 본다).
+      return commandHealth(catalogJson().length);
     },
   });
 

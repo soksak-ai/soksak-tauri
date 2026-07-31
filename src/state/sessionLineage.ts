@@ -20,23 +20,27 @@ const viewToDir = moduleState(
   "state/sessionLineage#viewToDir",
   () => new Map<string, string>(),
 );
-// 갈아끼우기 경계 밖 — 이 값들이 새것이 되면 "이미 했다"는 기억과 지연 초기화·구독
-// 해지 자리가 함께 사라지고, 채우던 쪽은 다시 채우지 않는다.
-const ms = moduleState("state/sessionLineage#state", () => ({
+// 서로 다른 것은 따로 선다 — 한 가방에 넣으면 그것은 상태가 아니라 가방이다.
+/** 파일 감시 해지 손잡이. */
+const watcher = moduleState("state/sessionLineage#watcher", () => ({
   fsUnlisten: null as (() => void) | null,
+}));
+
+/** 컬렉션 정의 여부 — 감시와 수명이 다르다. */
+const schema = moduleState("state/sessionLineage#schema", () => ({
   defined: false,
 }));
 
 async function ensureDefined(): Promise<void> {
-  if (ms.defined) return;
-  ms.defined = true;
+  if (schema.defined) return;
+  schema.defined = true;
   await invoke("data_define", { ns: LINEAGE_NS, coll: LINEAGE_COLL, indexes: ["viewId"], fts: [] }).catch(() => {});
 }
 
 function ensureFsListener(): void {
-  if (ms.fsUnlisten) return;
+  if (watcher.fsUnlisten) return;
   // notify fs-change(변경 항목의 부모 디렉토리) — 우리가 watch 중인 세션 디렉토리면 그때만 확정.
-  ms.fsUnlisten = safeListen<string>("fs-change", (e) => {
+  watcher.fsUnlisten = safeListen<string>("fs-change", (e) => {
     if (byDir.has(e.payload)) void refresh(e.payload);
   });
 }

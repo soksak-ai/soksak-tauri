@@ -26,9 +26,9 @@ type FocusTraceEntry = {
   dataNode: string | null;
   hasFocus: boolean;
 };
-// 갈아끼우기 경계 밖 — 이 값들이 새것이 되면 "이미 했다"는 기억과 지연 초기화·구독
-// 해지 자리가 함께 사라지고, 채우던 쪽은 다시 채우지 않는다.
-const moduleLocal = moduleState("commands/catalogDom#state", () => ({
+// 서로 다른 것은 따로 선다 — 한 가방에 넣으면 그것은 상태가 아니라 가방이다.
+/** 포커스 추적 — 기록 중인 사건과 그 종료 손잡이는 한 몸이다. */
+const focusTrace = moduleState("commands/catalogDom#focusTrace", () => ({
   focusTrace: null as { events: FocusTraceEntry[]; recording: boolean } | null,
   focusTraceStop: null as (() => void) | null,
 }));
@@ -436,7 +436,7 @@ export function registerDomCatalog(): void {
     message: (d) => tmsg("msg.ui.focus.trace.start", { ms: Number(d.ms ?? 0) }),
     examples: ['ui.focus.trace.start \'{"ms":10000}\''],
     handler: (p) => {
-      moduleLocal.focusTraceStop?.();
+      focusTrace.focusTraceStop?.();
       const ms = Math.min(Math.max(Number(p.ms) || 10_000, 100), 180_000);
       const buf: FocusTraceEntry[] = [];
       const t0 = performance.now();
@@ -456,13 +456,13 @@ export function registerDomCatalog(): void {
       };
       const types = ["mousedown", "mouseup", "focusin", "focusout"] as const;
       for (const t of types) window.addEventListener(t, record, true);
-      const timer = window.setTimeout(() => moduleLocal.focusTraceStop?.(), ms);
-      moduleLocal.focusTrace = { events: buf, recording: true };
-      moduleLocal.focusTraceStop = () => {
+      const timer = window.setTimeout(() => focusTrace.focusTraceStop?.(), ms);
+      focusTrace.focusTrace = { events: buf, recording: true };
+      focusTrace.focusTraceStop = () => {
         window.clearTimeout(timer);
         for (const t of types) window.removeEventListener(t, record, true);
-        if (moduleLocal.focusTrace) moduleLocal.focusTrace.recording = false;
-        moduleLocal.focusTraceStop = null;
+        if (focusTrace.focusTrace) focusTrace.focusTrace.recording = false;
+        focusTrace.focusTraceStop = null;
       };
       return { recording: true, ms };
     },
@@ -480,8 +480,8 @@ export function registerDomCatalog(): void {
       }),
     examples: ["ui.focus.trace.read"],
     handler: () => ({
-      recording: moduleLocal.focusTrace?.recording ?? false,
-      events: moduleLocal.focusTrace?.events ?? [],
+      recording: focusTrace.focusTrace?.recording ?? false,
+      events: focusTrace.focusTrace?.events ?? [],
     }),
   });
 

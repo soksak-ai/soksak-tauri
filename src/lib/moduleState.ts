@@ -16,14 +16,14 @@
 
 const BAG_KEY = "__soksakModuleState";
 
-function bag(): Map<string, unknown> | null {
+function bag(): Map<string, { value: unknown; make: unknown }> | null {
   // env 는 번들러 주입이다 — 없거나 PROD 면 보존이 필요 없는 환경이다.
   const env = (import.meta as { env?: { PROD?: boolean } }).env;
   if (!env || env.PROD) return null;
   const g = globalThis as Record<string, unknown>;
   const existing = g[BAG_KEY];
-  if (existing instanceof Map) return existing as Map<string, unknown>;
-  const fresh = new Map<string, unknown>();
+  if (existing instanceof Map) return existing as Map<string, { value: unknown; make: unknown }>;
+  const fresh = new Map<string, { value: unknown; make: unknown }>();
   g[BAG_KEY] = fresh;
   return fresh;
 }
@@ -39,8 +39,32 @@ function bag(): Map<string, unknown> | null {
 export function moduleState<T>(key: string, make: () => T): T {
   const b = bag();
   if (!b) return make();
-  if (b.has(key)) return b.get(key) as T;
+  const hit = b.get(key) as { value: T; make: unknown } | undefined;
+  if (hit) {
+    // 같은 자리의 재평가면 make 가 새 함수여도 **이름이 같다** — 그것은 정상이다.
+    // 다른 자리가 같은 이름을 쓰면 조용히 남의 값을 받는다: 실측(2026-07-31) — 한 파일에서
+    // 두 상태가 `#state` 를 함께 써서, 뒤엣것이 앞엣것의 객체를 받아 자기 필드가 없었다.
+    // 침묵하는 오염이라 오류를 내지 않는다. 그래서 **모양으로** 가른다.
+    const want = make();
+    if (!sameShape(hit.value, want)) {
+      throw new Error(
+        `모듈 상태 이름 충돌: ${key} — 다른 모양의 상태가 같은 이름을 씁니다`,
+      );
+    }
+    return hit.value;
+  }
   const value = make();
-  b.set(key, value);
+  b.set(key, { value, make });
   return value;
+}
+
+/** 같은 자리인가 — 평범한 객체면 키 집합으로, 그 밖(Map·Set 등)이면 생성자로 가른다. */
+function sameShape(a: unknown, b: unknown): boolean {
+  if (a === null || b === null) return typeof a === typeof b;
+  if (typeof a !== "object" || typeof b !== "object") return typeof a === typeof b;
+  if (a.constructor !== (b as object).constructor) return false;
+  if (a.constructor !== Object) return true; // Map·Set·클래스는 생성자로 충분하다
+  const ka = Object.keys(a).sort().join(",");
+  const kb = Object.keys(b as object).sort().join(",");
+  return ka === kb;
 }

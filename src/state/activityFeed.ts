@@ -7,7 +7,7 @@ import { ledgerOf, notePublish, stampOf } from "./activityHealth";
 import { invoke } from "../framework";
 import { currentWindowLabel } from "../lib/webviewLabels";
 import { onPluginEvent } from "../plugins/hooks";
-import { setCommandTraceSink } from "../commands/registry";
+import { setCommandTraceSink } from "../commands/commandObservation";
 import { tmsg } from "../i18n";
 
 /** 허브 발행(창 label 자동 동반) — 코어 공급자 공용(이 파일의 계측 + orchestrator 대화 세트). */

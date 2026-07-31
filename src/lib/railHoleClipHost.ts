@@ -15,10 +15,14 @@ import { onLayoutMotion } from "./layoutMotion";
 
 // 갈아끼우기 경계 밖 — 이 표가 새것이 되면 채운 쪽은 이미 채웠다고 알아 다시 채우지 않는다.
 const planes = moduleState("lib/railHoleClipHost#planes", () => new Set<HTMLElement>());
-// 갈아끼우기 경계 밖 — 이 값들이 새것이 되면 "이미 했다"는 기억과 지연 초기화·구독
-// 해지 자리가 함께 사라지고, 채우던 쪽은 다시 채우지 않는다.
-const ms = moduleState("lib/railHoleClipHost#state", () => ({
+// 서로 다른 것은 따로 선다 — 한 가방에 넣으면 그것은 상태가 아니라 가방이다.
+/** 모션 구독 해지 손잡이. */
+const subscription = moduleState("lib/railHoleClipHost#subscription", () => ({
   offMotion: null as (() => void) | null,
+}));
+
+/** 프레임 합치기 상태 — 구독과 수명이 다르다. */
+const frame = moduleState("lib/railHoleClipHost#frame", () => ({
   raf: 0,
   coalescing: false,
 }));
@@ -41,33 +45,33 @@ export function syncRailHoleClips(): void {
  *    그때 아직 등록되지 않은 pane 들이 그 프레임에 클립을 못 받는다.
  */
 export function requestRailHoleClipSync(): void {
-  if (ms.coalescing) return;
-  ms.coalescing = true;
+  if (frame.coalescing) return;
+  frame.coalescing = true;
   queueMicrotask(() => {
-    ms.coalescing = false;
+    frame.coalescing = false;
     syncRailHoleClips();
   });
 }
 
 function startTracking(): void {
-  if (ms.raf) return;
+  if (frame.raf) return;
   const tick = () => {
     syncRailHoleClips();
-    ms.raf = requestAnimationFrame(tick);
+    frame.raf = requestAnimationFrame(tick);
   };
-  ms.raf = requestAnimationFrame(tick);
+  frame.raf = requestAnimationFrame(tick);
 }
 
 function stopTracking(): void {
-  if (!ms.raf) return;
-  cancelAnimationFrame(ms.raf);
-  ms.raf = 0;
+  if (!frame.raf) return;
+  cancelAnimationFrame(frame.raf);
+  frame.raf = 0;
   syncRailHoleClips(); // 해제가 아니라 최종 기하로 정착
 }
 
 function ensureMotionSubscription(): void {
-  if (ms.offMotion) return;
-  ms.offMotion = onLayoutMotion((active) => {
+  if (subscription.offMotion) return;
+  subscription.offMotion = onLayoutMotion((active) => {
     if (active) startTracking();
     else stopTracking();
   });
@@ -81,17 +85,17 @@ export function registerRailPlane(plane: HTMLElement): () => void {
     planes.delete(plane);
     if (planes.size === 0) {
       stopTracking();
-      ms.offMotion?.();
-      ms.offMotion = null;
+      subscription.offMotion?.();
+      subscription.offMotion = null;
     }
   };
 }
 
 export function __resetRailHoleClipHostForTest(): void {
   planes.clear();
-  if (ms.raf) cancelAnimationFrame(ms.raf);
-  ms.raf = 0;
-  ms.coalescing = false;
-  ms.offMotion?.();
-  ms.offMotion = null;
+  if (frame.raf) cancelAnimationFrame(frame.raf);
+  frame.raf = 0;
+  frame.coalescing = false;
+  subscription.offMotion?.();
+  subscription.offMotion = null;
 }

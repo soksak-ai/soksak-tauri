@@ -17,14 +17,22 @@ export interface IdleTurnPayload {
   source: "idle";
 }
 
-// 갈아끼우기 경계 밖 — 주입된 발화·조회 자리와 구독 해지 손잡이가 새것이 되면, 배선한
-// 쪽은 이미 배선했다고 알아 다시 주입하지 않는다(그 뒤로 이 감지기는 영영 조용하다).
-const moduleLocal = moduleState("terminal/idleTurnDetector#state", () => ({
+// 서로 다른 것은 따로 선다 — 한 가방에 넣으면 그것은 상태가 아니라 가방이다.
+/** 주입된 배선 — 발화·조회 자리(순환 import 회피). 설정·수명과 다르다. */
+const wiring = moduleState("terminal/idleTurnDetector#wiring", () => ({
   emitFn: null as ((p: IdleTurnPayload) => void) | null,
   projectInfoOf: (() => null) as (
     paneId: string,
   ) => { id: string; root: string | null } | null,
+}));
+
+/** 감지 문턱 — 사람이 정한다. */
+const tuning = moduleState("terminal/idleTurnDetector#tuning", () => ({
   idleMs: 2000,
+}));
+
+/** 돌고 있는 감지기 — 해지 손잡이. */
+const running = moduleState("terminal/idleTurnDetector#running", () => ({
   active: null as { dispose: () => void } | null,
 }));
 
@@ -33,26 +41,26 @@ export function configureIdleTurnDetector(deps: {
   emit: (p: IdleTurnPayload) => void;
   projectInfoOf: (paneId: string) => { id: string; root: string | null } | null;
 }): void {
-  moduleLocal.emitFn = deps.emit;
-  moduleLocal.projectInfoOf = deps.projectInfoOf;
+  wiring.emitFn = deps.emit;
+  wiring.projectInfoOf = deps.projectInfoOf;
 }
 
 export function isIdleTurnDetectionOn(): boolean {
-  return moduleLocal.active !== null;
+  return running.active !== null;
 }
 
 export function idleTurnMs(): number {
-  return moduleLocal.idleMs;
+  return tuning.idleMs;
 }
 
 // 토글 — enabled=true 면 감지 시작(이미 켜져 있으면 ms 만 갱신), false 면 정지·정리. 멱등.
 export function setIdleTurnDetection(enabled: boolean, ms?: number): void {
-  if (typeof ms === "number" && ms > 0) moduleLocal.idleMs = Math.max(250, ms);
+  if (typeof ms === "number" && ms > 0) tuning.idleMs = Math.max(250, ms);
   if (enabled) {
-    if (!moduleLocal.active) moduleLocal.active = startDetector();
-  } else if (moduleLocal.active) {
-    moduleLocal.active.dispose();
-    moduleLocal.active = null;
+    if (!running.active) running.active = startDetector();
+  } else if (running.active) {
+    running.active.dispose();
+    running.active = null;
   }
 }
 
@@ -68,14 +76,14 @@ function startDetector(): { dispose: () => void } {
     if (!e) return;
     if (e.timer) clearTimeout(e.timer);
     e.timer = setTimeout(() => {
-      const info = moduleLocal.projectInfoOf(paneId);
-      moduleLocal.emitFn?.({
+      const info = wiring.projectInfoOf(paneId);
+      wiring.emitFn?.({
         projectId: info?.id ?? null,
         root: info?.root ?? null,
         paneId,
         source: "idle",
       });
-    }, moduleLocal.idleMs);
+    }, tuning.idleMs);
   };
 
   const detach = (paneId: string) => {
@@ -106,11 +114,11 @@ function startDetector(): { dispose: () => void } {
 
 // 테스트용 — 전체 초기화.
 export function resetIdleTurnDetectorForTest(): void {
-  if (moduleLocal.active) {
-    moduleLocal.active.dispose();
-    moduleLocal.active = null;
+  if (running.active) {
+    running.active.dispose();
+    running.active = null;
   }
-  moduleLocal.emitFn = null;
-  moduleLocal.projectInfoOf = () => null;
-  moduleLocal.idleMs = 2000;
+  wiring.emitFn = null;
+  wiring.projectInfoOf = () => null;
+  tuning.idleMs = 2000;
 }

@@ -38,19 +38,21 @@ interface ActiveTurn {
 
 // 갈아끼우기 경계 밖 — 이 값들이 새것이 되면 "이미 했다"는 기억과 지연 초기화가
 // 함께 사라지고, 채우던 쪽은 다시 채우지 않는다.
-const ms = moduleState("orchestrator/agent#state", () => ({
+/** 진행 중인 턴 — 하나뿐이고 취소·중단 사유가 그 턴에 붙는다. */
+const liveTurn = moduleState("orchestrator/agent#turn", () => ({
   active: null as ActiveTurn | null,
   inFlight: false,
   cancelled: false,
   stopReason: null as string | null,
 }));
-// BUSY 게이트 — ms.active 는 spawn 해소 후에야 서므로(그 전 중복 ask 통과 레이스) 진입 즉시 세운다.
+// BUSY 게이트 — liveTurn.active 는 spawn 해소 후에야 서므로(그 전 중복 ask 통과 레이스) 진입 즉시 세운다.
 // 준비물(가르침·카탈로그) 캐시 — 명령 표면은 플러그인 생명주기에서만 바뀐다: 턴마다 재조회하지
 // 않고, 활동 스트림에서 plugin.enable/disable/reload/... 실행이 관찰될 때만 무효화한다
 // (이벤트 기반 — TTL·폴링 없음). 준비 조회가 매 턴 세트를 채우던 소음의 제거.
 // 갈아끼우기 경계 밖 — 이 값들이 새것이 되면 "이미 했다"는 기억과 지연 초기화·구독
 // 해지 자리가 함께 사라지고, 채우던 쪽은 다시 채우지 않는다.
-const moduleLocal = moduleState("orchestrator/agent#state", () => ({
+/** 준비물 캐시 — 턴과 수명이 다르다(명령 표면이 바뀔 때만 무효화된다). */
+const prepCache = moduleState("orchestrator/agent#prepCache", () => ({
   prep: null as { key: string; skillDoc: string; catalog: string } | null,
 }));
 
@@ -59,7 +61,7 @@ export function watchPrepInvalidation(): void {
   safeListen<{ kind: string; payload: Record<string, unknown> }>("activity", (e) => {
     if (e.payload.kind !== "command.executed") return;
     const cmd = String((e.payload.payload as { command?: unknown })?.command ?? "");
-    if (/^plugin\.(enable|disable|reload|install|remove|update)\b/.test(cmd)) moduleLocal.prep = null;
+    if (/^plugin\.(enable|disable|reload|install|remove|update)\b/.test(cmd)) prepCache.prep = null;
   });
 }
 
@@ -211,7 +213,7 @@ interface AskParams {
 
 /** 자연어 턴 실행 — orchestrator.ask 핸들러 본체. */
 export async function ask(p: AskParams): Promise<CommandOutcome> {
-  if (ms.inFlight) {
+  if (liveTurn.inFlight) {
     return {
       ok: false,
       code: "BUSY",
@@ -220,11 +222,11 @@ export async function ask(p: AskParams): Promise<CommandOutcome> {
   }
   const text = p.text.trim();
   if (!text) return { ok: false, code: "INVALID_PARAMS", message: "text: 비어 있지 않아야 함" };
-  ms.inFlight = true;
+  liveTurn.inFlight = true;
   try {
     return await askInner(text, p.window);
   } finally {
-    ms.inFlight = false;
+    liveTurn.inFlight = false;
   }
 }
 
@@ -271,8 +273,8 @@ async function askInner(text: string, explicitWindow?: string): Promise<CommandO
   const prepKey = stageWindow ?? "";
   let skillDoc: string;
   let catalog: string;
-  if (moduleLocal.prep && moduleLocal.prep.key === prepKey) {
-    ({ skillDoc, catalog } = moduleLocal.prep);
+  if (prepCache.prep && prepCache.prep.key === prepKey) {
+    ({ skillDoc, catalog } = prepCache.prep);
   } else {
     try {
       skillDoc = await runCapture(`${sokPath} skill print`, { ...baseEnv, SOKSAK_PARENT: turnId });
@@ -295,7 +297,7 @@ async function askInner(text: string, explicitWindow?: string): Promise<CommandO
       ).catch(() => ""),
     );
     // 빈 카탈로그(실패)는 캐시하지 않는다 — 다음 턴이 다시 시도(느린 발견 경로로 강등만).
-    if (catalog) moduleLocal.prep = { key: prepKey, skillDoc, catalog };
+    if (catalog) prepCache.prep = { key: prepKey, skillDoc, catalog };
   }
 
   const agentBin = useSettings.getState().orchestratorAgent.trim() || "claude";
@@ -395,7 +397,7 @@ async function askInner(text: string, explicitWindow?: string): Promise<CommandO
     stderr.tail = (stderr.tail + dec.decode(new Uint8Array(m), { stream: true })).slice(-500);
   };
   // 빠른 종료 레이스: 초단명 프로세스(스텁 등)는 spawn invoke 해소보다 exit 채널이 먼저 올 수
-  // 있다 — 종료 후 .then 이 ms.active 를 되살리면 영구 BUSY. finished 게이트로 차단한다.
+  // 있다 — 종료 후 .then 이 liveTurn.active 를 되살리면 영구 BUSY. finished 게이트로 차단한다.
   let finished = false;
   const exited = new Promise<number>((resolve) => {
     const onExit = createStream<number>();
@@ -417,14 +419,14 @@ async function askInner(text: string, explicitWindow?: string): Promise<CommandO
     }).then(
       (id) => {
         if (finished) return; // 이미 끝난 턴 — 재점유 금지
-        ms.active = { turnId, proc: id };
+        liveTurn.active = { turnId, proc: id };
         nsSet(TURN_KEY, JSON.stringify({ proc: id, turnId }));
       },
       () => resolve(-1),
     );
   });
 
-  ms.cancelled = false;
+  liveTurn.cancelled = false;
   const cap = setTimeout(() => {
     void stop("시간 상한(15분)으로 중단했어요.");
   }, TURN_CAP_MS);
@@ -432,15 +434,15 @@ async function askInner(text: string, explicitWindow?: string): Promise<CommandO
   finished = true;
   clearTimeout(cap);
   flushDelta();
-  const wasCancelled = ms.cancelled;
-  ms.cancelled = false;
-  ms.active = null;
+  const wasCancelled = liveTurn.cancelled;
+  liveTurn.cancelled = false;
+  liveTurn.active = null;
   nsSet(TURN_KEY, null);
   if (turn.session) nsSet(SESSION_KEY, turn.session);
 
   if (wasCancelled) {
-    const reason = ms.stopReason ?? "중단했어요.";
-    ms.stopReason = null;
+    const reason = liveTurn.stopReason ?? "중단했어요.";
+    liveTurn.stopReason = null;
     return close(false, "CANCELLED", reason);
   }
   // 이어가기 즉사 감지 — resume 을 썼고 아무 자취(스트림 텍스트) 없이 오류/무응답 종료.
@@ -473,10 +475,10 @@ async function askInner(text: string, explicitWindow?: string): Promise<CommandO
 
 /** 진행 중 턴 중단 — orchestrator.stop 핸들러 본체. ask 쪽 exit 경로가 세트를 닫는다. */
 export async function stop(reason?: string): Promise<CommandOutcome> {
-  if (!ms.active) return { ok: true, code: "NOOP", message: "진행 중인 턴이 없어요.", data: { stopped: false } };
-  ms.cancelled = true;
-  ms.stopReason = reason ?? "중단했어요.";
-  await invoke("process_kill", { id: ms.active.proc }).catch(() => {});
+  if (!liveTurn.active) return { ok: true, code: "NOOP", message: "진행 중인 턴이 없어요.", data: { stopped: false } };
+  liveTurn.cancelled = true;
+  liveTurn.stopReason = reason ?? "중단했어요.";
+  await invoke("process_kill", { id: liveTurn.active.proc }).catch(() => {});
   return { ok: true, code: "OK", message: "진행 중인 턴을 중단했어요.", data: { stopped: true } };
 }
 

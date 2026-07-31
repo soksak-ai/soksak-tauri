@@ -35,8 +35,9 @@ describe("응답이 절름거리는 축을 말한다", () => {
 
   it("배선 완료 뒤 계측 sink 가 없으면 응답이 그렇게 말한다", async () => {
     const reg = await import("./registry");
+    const obs = await import("./commandObservation");
     reg.register("d.fixture", SPEC as never);
-    reg.markRuntimeReady();
+    obs.markRuntimeReady();
 
     const r = await reg.execute("d.fixture", {}, {});
     // 실행은 성공한다 — 관측이 죽었다고 동작을 막지 않는다.
@@ -47,9 +48,10 @@ describe("응답이 절름거리는 축을 말한다", () => {
 
   it("허브 발행을 한 번도 시도하지 않았으면 그 사실도 말한다", async () => {
     const reg = await import("./registry");
+    const obs = await import("./commandObservation");
     reg.register("d.fixture", SPEC as never);
-    reg.setCommandTraceSink(() => {});
-    reg.markRuntimeReady();
+    obs.setCommandTraceSink(() => {});
+    obs.markRuntimeReady();
 
     const r = await reg.execute("d.fixture", {}, {});
     // 시도 0 은 "건강"이 아니라 미확인이다 — 배선이 통째로 빠진 창과 잘 도는 창을 가른다.
@@ -58,11 +60,12 @@ describe("응답이 절름거리는 축을 말한다", () => {
 
   it("배선이 성하면 축을 말하지 않는다", async () => {
     const reg = await import("./registry");
+    const obs = await import("./commandObservation");
     const health = await import("../state/activityHealth");
     reg.register("d.fixture", SPEC as never);
-    reg.setCommandTraceSink(() => {});
+    obs.setCommandTraceSink(() => {});
     health.notePublish(true, 1000);
-    reg.markRuntimeReady();
+    obs.markRuntimeReady();
 
     const r = await reg.execute("d.fixture", {}, {});
     // 오라클 생존 — 성한 배선에서도 축이 뜨면 이 검사는 아무것도 가르지 못한다.

@@ -1,21 +1,8 @@
 // Command Registry 계약 테스트 — 검증 매트릭스·ok 래핑·권한 게이트·등록/해제.
 // registry 는 모듈 전역 상태이므로 각 테스트는 자신이 등록한 명령을 정리한다.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
-  catalogJson,
-  composeTriggers,
-  effectiveSpeak,
-  execute,
-  getSpec,
-  register,
-  setPermissionGate,
-  unregister,
-  type CommandSpec,
-  type CommandOutcome,
-  setCommandTraceSink,
-  setUnknownCommandResolver,
-  type CommandTrace,
-} from "./registry";
+import { catalogJson, composeTriggers, effectiveSpeak, execute, getSpec, register, setPermissionGate, unregister, type CommandSpec, type CommandOutcome, setUnknownCommandResolver, type CommandTrace } from "./registry";
+import { setCommandTraceSink } from "./commandObservation";
 
 const TEST_PREFIX = "test.";
 const registered: string[] = [];

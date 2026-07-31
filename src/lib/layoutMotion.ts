@@ -33,8 +33,9 @@ function activeScope(): Set<string> | null {
 }
 // 갈아끼우기 경계 밖 — 이 값들이 새것이 되면 "이미 했다"는 기억과 지연 초기화·구독
 // 해지 자리가 함께 사라지고, 채우던 쪽은 다시 채우지 않는다.
-const moduleLocal = moduleState("lib/layoutMotion#state", () => ({
-  lastEmittedKey: null as string | null, // 마지막 발화 상태(active+kinds) — 중복 발화 억제
+/** 중복 발화 억제 — 마지막으로 내보낸 상태(active+kinds). */
+const emitted = moduleState("lib/layoutMotion#emitted", () => ({
+  lastEmittedKey: null as string | null,
 }));
 type MotionListener = (
   active: boolean,
@@ -77,8 +78,8 @@ function syncEmit(): void {
   // 스코프 위상이 연달아 시작될 때 두 번째 통지가 삼켜지고, 실제로 움직이는 표면이 자기
   // 위상을 통보받지 못한다(실사고).
   const key = `${active}:${kinds.join(",")}:${scopeViews ? [...scopeViews].sort().join("+") : "*"}`;
-  if (key === moduleLocal.lastEmittedKey) return;
-  moduleLocal.lastEmittedKey = key;
+  if (key === emitted.lastEmittedKey) return;
+  emitted.lastEmittedKey = key;
 
   // 플러그인 채널은 사실만 싣는다(active·kinds). 어느 표면이 이 위상의 대상인지는 브로드캐스트
   // 로 추측할 일이 아니다 — 코어가 동결한 슬롯에 view.veiled 로 정확히 통지한다(§4.6).
@@ -111,19 +112,20 @@ export function beginLayoutMotion(
 ): void {
   counts[kind] += 1;
   scopes.push(scope ? new Set(scope) : null);
-  if (import.meta.env?.DEV && !scope && sender) ms.lastGlobalSender = sender;
+  if (import.meta.env?.DEV && !scope && sender) lastSender.lastGlobalSender = sender;
   syncEmit();
 }
 
 // 마지막 전역 begin 의 발신자(진단 관측면) — window.__lastGlobalMotionSender 로 노출.
 // 갈아끼우기 경계 밖 — 이 값들이 새것이 되면 "이미 했다"는 기억과 지연 초기화가
 // 함께 사라지고, 채우던 쪽은 다시 채우지 않는다.
-const ms = moduleState("lib/layoutMotion#state", () => ({
+/** 관측면 — 마지막 발신자(디버그 창이 읽는다). 발화 억제와 수명도 뜻도 다르다. */
+const lastSender = moduleState("lib/layoutMotion#sender", () => ({
   lastGlobalSender: "",
 }));
 if (typeof window !== "undefined") {
   Object.defineProperty(window, "__lastGlobalMotionSender", {
-    get: () => ms.lastGlobalSender,
+    get: () => lastSender.lastGlobalSender,
     configurable: true,
   });
 }
@@ -139,6 +141,6 @@ export function __resetLayoutMotionForTest(): void {
   counts.move = 0;
   counts.resize = 0;
   scopes.length = 0;
-  moduleLocal.lastEmittedKey = null;
+  emitted.lastEmittedKey = null;
   listeners.clear();
 }

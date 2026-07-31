@@ -10,10 +10,14 @@ import { moduleState } from "../lib/moduleState";
 import { createSlotFreeze, type SlotFreeze, type SlotFreezeDeps } from "./slotFreeze";
 import { onLayoutMotion } from "./layoutMotion";
 
-// 갈아끼우기 경계 밖 — 이 값들이 새것이 되면 "이미 했다"는 기억과 지연 초기화·구독
-// 해지 자리가 함께 사라지고, 채우던 쪽은 다시 채우지 않는다.
-const ms = moduleState("lib/slotFreezeHost#state", () => ({
+// 서로 다른 것은 따로 선다 — 한 가방에 넣으면 그것은 상태가 아니라 가방이다.
+/** 설치된 동결기 — 있으면 이미 붙은 것이다. */
+const installed = moduleState("lib/slotFreezeHost#installed", () => ({
   host: null as SlotFreeze | null,
+}));
+
+/** 구독 해지 손잡이와 정착 타이머 — 설치와 별개로 붙었다 떨어진다. */
+const subscription = moduleState("lib/slotFreezeHost#subscription", () => ({
   offMotion: null as (() => void) | null,
   settleTimer: 0,
 }));
@@ -22,10 +26,10 @@ const SETTLE_DEBOUNCE_MS = 350;
 
 /** 창에 엔진이 서 있게 한다(멱등). 두 번째 호출은 무연산 — 소유자는 창 하나에 하나다. */
 export function ensureSlotFreezeHost(deps: SlotFreezeDeps): SlotFreeze {
-  if (ms.host) return ms.host;
+  if (installed.host) return installed.host;
   const engine = createSlotFreeze(deps);
-  ms.host = engine;
-  ms.offMotion = onLayoutMotion((active, kinds, scope) => {
+  installed.host = engine;
+  subscription.offMotion = onLayoutMotion((active, kinds, scope) => {
     engine.onMotion(active, kinds, scope);
     if (!active) scheduleSlotSettleCapture();
   });
@@ -33,26 +37,26 @@ export function ensureSlotFreezeHost(deps: SlotFreezeDeps): SlotFreeze {
 }
 
 export function slotFreezeHost(): SlotFreeze | null {
-  return ms.host;
+  return installed.host;
 }
 
 /** 레이아웃 정착 에지 — 디바운스 후 1회 선캡처. */
 export function scheduleSlotSettleCapture(): void {
-  if (ms.settleTimer) window.clearTimeout(ms.settleTimer);
-  ms.settleTimer = window.setTimeout(() => {
-    ms.settleTimer = 0;
-    ms.host?.captureSettled();
+  if (subscription.settleTimer) window.clearTimeout(subscription.settleTimer);
+  subscription.settleTimer = window.setTimeout(() => {
+    subscription.settleTimer = 0;
+    installed.host?.captureSettled();
   }, SETTLE_DEBOUNCE_MS);
 }
 
 /** 활강의 전제 — 이 뷰들의 홀 표면을 전부 덮을 수 있는가(엔진이 없으면 덮을 수 없다). */
 export function canGlideViews(viewIds: readonly string[]): boolean {
-  return ms.host ? ms.host.canFreezeAll(viewIds) : false;
+  return installed.host ? installed.host.canFreezeAll(viewIds) : false;
 }
 
 /** 내용이 바뀐 뷰의 스냅을 버린다(항행 등) — 낡은 프레임을 세우지 않는 유일한 축. */
 export function invalidateSlotSnapshot(viewId: string): void {
-  ms.host?.invalidate(viewId);
+  installed.host?.invalidate(viewId);
 }
 
 /**
@@ -60,14 +64,14 @@ export function invalidateSlotSnapshot(viewId: string): void {
  * 관측해 넘긴다 — 스탠드인은 이 사실 위에서 물러난다(시간 추측 금지).
  */
 export function noteSurfaceWrite(viewId: string): void {
-  ms.host?.noteSurfaceWrite(viewId);
+  installed.host?.noteSurfaceWrite(viewId);
 }
 
 export function disposeSlotFreezeHost(): void {
-  if (ms.settleTimer) window.clearTimeout(ms.settleTimer);
-  ms.settleTimer = 0;
-  ms.offMotion?.();
-  ms.offMotion = null;
-  ms.host?.dispose();
-  ms.host = null;
+  if (subscription.settleTimer) window.clearTimeout(subscription.settleTimer);
+  subscription.settleTimer = 0;
+  subscription.offMotion?.();
+  subscription.offMotion = null;
+  installed.host?.dispose();
+  installed.host = null;
 }

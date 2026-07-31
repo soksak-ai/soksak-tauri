@@ -23,9 +23,9 @@ export interface ImeDecision {
   composing: boolean;
 }
 
-// 갈아끼우기 경계 밖 — 이 값들이 새것이 되면 "이미 했다"는 기억과 지연 초기화가
-// 함께 사라지고, 채우던 쪽은 다시 채우지 않는다.
-const ms = moduleState("lib/imeLedger#state", () => ({
+// 서로 다른 것은 따로 선다 — 한 가방에 넣으면 그것은 상태가 아니라 가방이다.
+/** 직전 키와 반복 수 — 한 몸이다(같은 키가 이어지는가). */
+const lastKey = moduleState("lib/imeLedger#lastKey", () => ({
   lastKey: "",
   repeats: 0,
 }));
@@ -38,14 +38,14 @@ function publish(kind: string, payload: Record<string, unknown>): void {
 
 export function noteImeDecision(d: ImeDecision): void {
   const key = `${d.isComposing}|${d.legacy}|${d.composing}`;
-  if (key === ms.lastKey) {
-    ms.repeats += 1;
+  if (key === lastKey.lastKey) {
+    lastKey.repeats += 1;
     return;
   }
-  const previous = ms.lastKey;
-  const previousRepeats = ms.repeats;
-  ms.lastKey = key;
-  ms.repeats = 1;
+  const previous = lastKey.lastKey;
+  const previousRepeats = lastKey.repeats;
+  lastKey.lastKey = key;
+  lastKey.repeats = 1;
   publish("ime.decision", {
     ...d,
     framework: framework.name,
@@ -58,6 +58,6 @@ export function noteImeDecision(d: ImeDecision): void {
 
 /** 테스트용 — 전이 상태를 비운다. */
 export function __resetImeLedgerForTest(): void {
-  ms.lastKey = "";
-  ms.repeats = 0;
+  lastKey.lastKey = "";
+  lastKey.repeats = 0;
 }

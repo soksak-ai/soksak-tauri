@@ -56,7 +56,8 @@ function liveBrowserLabels(): Set<string> {
 
 // "이미 붙였다"는 기억은 갈아끼우기 경계를 넘어야 한다 — 이 플래그만 사라지면 설치는
 // 안 남았는데 채우던 쪽은 이미 돌았다고 알아 다시 붙이지 않는다(영영 미설치).
-const startedFlag = moduleState("lib/webviewGc#startedFlag.on", () => ({ on: false }));
+/** 스윕 루프가 이미 섰는가 — 이것만 사라지면 세운 쪽은 이미 세웠다고 알아 다시 안 세운다. */
+const started = moduleState("lib/webviewGc#started", () => ({ on: false }));
 
 // 복구 리부트 가드(webview_health recovery-in-flight 1회 플래그) — 크래시한 메인 webview 의
 // 복구 리로드 직후 프론트는 스토어가 빈 채로 부팅하므로, 세션 복원이 적용되기 전의 스윕은
@@ -75,25 +76,30 @@ export function gateAfterConsume(cur: GcGateState, inFlight: boolean): GcGateSta
 
 // 갈아끼우기 경계 밖 — 게이트 상태와 청소 자리가 새것이 되면 "이미 열었다"는 판정이
 // 사라지고, 여는 쪽은 이미 열었다고 알아 다시 열지 않는다.
-const moduleLocal = moduleState("lib/webviewGc#state", () => ({
+/** 복구 리부트 가드 — 단방향 해제(released 는 되돌아가지 않는다). */
+const gate = moduleState("lib/webviewGc#gate", () => ({
   gcGate: "pending" as GcGateState,
+}));
+
+/** 청소 자리 — 게이트와 별개로 배선된다(수명이 다르다). */
+const sweepHandle = moduleState("lib/webviewGc#sweep", () => ({
   sweepRef: null as (() => void) | null,
 }));
 
 export function releaseWebviewGcHold(): void {
-  const was = moduleLocal.gcGate;
-  moduleLocal.gcGate = "released";
-  if (was !== "released") moduleLocal.sweepRef?.();
+  const was = gate.gcGate;
+  gate.gcGate = "released";
+  if (was !== "released") sweepHandle.sweepRef?.();
 }
 
 export function startWebviewGc(): void {
-  if (startedFlag.on) return;
-  startedFlag.on = true;
+  if (started.on) return;
+  started.on = true;
 
   let lastKey: string | null = null;
   const sweep = rafThrottle(() => {
-    // 복구 리부트 가드 — 복원 적용(release) 전 스윕 금지(위 moduleLocal.gcGate 머리말).
-    if (moduleLocal.gcGate !== "released") return;
+    // 복구 리부트 가드 — 복원 적용(release) 전 스윕 금지(위 gate.gcGate 머리말).
+    if (gate.gcGate !== "released") return;
     // 매니페스트 미적재(부팅 직후·플러그인 스캔 전) 동안은 판정 불가 — live=∅ 오판으로 HMR 생존
     // webview 를 잘못 회수할 수 있다. 선언이 실릴 때까지 보류(usePlugins 구독이 적재 시 재발화).
     if (Object.keys(usePlugins.getState().plugins).length === 0) return;
@@ -116,21 +122,21 @@ export function startWebviewGc(): void {
       .catch(() => {});
   });
 
-  moduleLocal.sweepRef = sweep;
+  sweepHandle.sweepRef = sweep;
   useSessions.subscribe(() => sweep());
   usePlugins.subscribe(() => sweep()); // 매니페스트 적재/변경 시 재판정(부팅 보류 해제 포함)
   // 복구 리부트 여부를 코어에서 1회 소모 — 아니면 즉시 released 로 평시 스윕 재개.
   void invoke<boolean>("webview_recovery_consume")
     .then((inFlight) => {
-      const next = gateAfterConsume(moduleLocal.gcGate, inFlight);
-      if (moduleLocal.gcGate === next) return;
-      moduleLocal.gcGate = next;
+      const next = gateAfterConsume(gate.gcGate, inFlight);
+      if (gate.gcGate === next) return;
+      gate.gcGate = next;
       if (next === "released") sweep();
     })
     .catch(() => {
       // 코어 조회 실패(테스트 런타임 등) — 보류를 영구화하지 않는다.
-      if (moduleLocal.gcGate !== "released") {
-        moduleLocal.gcGate = "released";
+      if (gate.gcGate !== "released") {
+        gate.gcGate = "released";
         sweep();
       }
     });
