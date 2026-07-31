@@ -26,12 +26,12 @@ pub(crate) fn run_data_kv_get(ctx: &Ctx, params: &Value) -> Outcome {
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
         )
         .map_err(|e| format!("저장소 열기 실패: {e}"))?;
-        let rows = SqliteRows { conn };
+        let rows = SqliteRows { conn: &conn };
         soksak_core::kv::get(&rows, &a.ns, &a.key)
     })
 }
 
-impl soksak_core::kv::KvWrite for SqliteRows {
+impl soksak_core::kv::KvWrite for SqliteRows<'_> {
     fn put(&self, ns: &str, key: &str, raw: &str, updated_ms: u64) -> Result<(), String> {
         self.conn
             .execute(soksak_core::kv::UPSERT_SQL, (ns, key, raw, updated_ms as i64))
@@ -40,7 +40,7 @@ impl soksak_core::kv::KvWrite for SqliteRows {
     }
 }
 
-impl soksak_core::kv::KvDelete for SqliteRows {
+impl soksak_core::kv::KvDelete for SqliteRows<'_> {
     fn remove(&self, ns: &str, key: &str) -> Result<bool, String> {
         self.conn
             .execute(soksak_core::kv::DELETE_SQL, (ns, key))
@@ -158,7 +158,7 @@ pub(crate) fn run_data_restore(ctx: &Ctx, params: &Value) -> Outcome {
 }
 
 pub(crate) fn run_data_verify(ctx: &Ctx, _params: &Value) -> Outcome {
-    match ctx.open_db().and_then(|c| soksak_store::integrity::check(&c)) {
+    match ctx.with_db(|c| soksak_store::integrity::check(c)) {
         Ok(v) => Outcome::Ok(Value::Array(v.into_iter().map(Value::String).collect())),
         Err(e) => Outcome::Failed(e),
     }
@@ -181,7 +181,7 @@ pub(crate) fn run_data_canary(ctx: &Ctx, _params: &Value) -> Outcome {
     }
     // 앱 경로와 같은 쓰기 정책 — 카나리아가 정책 밖에서 돌면 "지금 쓸 수 있는가"를 실제 쓰기와
     // 다른 조건으로 답한다(견디는 쓰기는 되는데 카나리아만 실패한다).
-    match ctx.open_db().and_then(|c| {
+    match ctx.with_db(|c| {
         soksak_store::write_policy::write_with_retry(&c, || {
             soksak_store::integrity::write_canary(&c)
         })
@@ -424,11 +424,13 @@ pub(crate) fn run_data_kv_set(ctx: &Ctx, params: &Value) -> Outcome {
                 ctx.db_path().display()
             ));
         }
-        let conn = ctx.open_db()?;
-        let store = SqliteRows { conn };
-        soksak_core::kv::set(&store, &a.ns, &a.key, &a.value, crate::ledger::now_ms())?;
-        // 앱의 data_kv_set 은 () 를 돌려준다 — 같은 모양이라야 프레임워크가 값을 다시 조립하지 않는다.
-        Ok(Value::Null)
+        ctx.with_db(|conn| {
+            let store = SqliteRows { conn };
+            soksak_core::kv::set(&store, &a.ns, &a.key, &a.value, crate::ledger::now_ms())?;
+            // 앱의 data_kv_set 은 () 를 돌려준다 — 같은 모양이라야 프레임워크가 값을 다시
+            // 조립하지 않는다.
+            Ok(Value::Null)
+        })
     })
 }
 

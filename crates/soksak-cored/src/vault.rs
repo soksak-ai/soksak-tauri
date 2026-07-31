@@ -65,7 +65,8 @@ pub fn secrets() -> &'static soksak_vault::SecretsState {
 /// [R23] 봉투 키가 등록돼 있으면 볼트가 있어야 한다 — 부재 시 자동생성을 거부한다(전손 차단).
 /// 저장소가 열린 뒤에만 답할 수 있어 부팅과 분리한다.
 pub fn expect_vault_from_store(ctx: &Ctx) {
-    if let Ok(c) = ctx.open_db() {
-        state().set_expect_vault(soksak_store::doc::has_any_keys(&c).unwrap_or(false));
-    }
+    let _ = ctx.with_db(|c| {
+        state().set_expect_vault(soksak_store::doc::has_any_keys(c).unwrap_or(false));
+        Ok(())
+    });
 }

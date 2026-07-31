@@ -21,7 +21,7 @@ pub(crate) fn run_data_encrypt_enable(ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: Scope| {
         deny_without_write_ownership(ctx)?;
         crate::vault::install(ctx);
-        encryption::data_encrypt_enable(&ctx.open_db()?, &VaultKeys, a.scope)
+        ctx.with_db(|conn| encryption::data_encrypt_enable(conn, &VaultKeys, a.scope))
     })
 }
 
@@ -36,7 +36,7 @@ pub(crate) fn run_data_encrypt_recover(ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: Recover| {
         deny_without_write_ownership(ctx)?;
         crate::vault::install(ctx);
-        encryption::data_encrypt_recover(&ctx.open_db()?, &VaultKeys, a.scope, a.recovery_code)
+        ctx.with_db(|conn| encryption::data_encrypt_recover(conn, &VaultKeys, a.scope, a.recovery_code))
     })
 }
 
@@ -44,7 +44,7 @@ pub(crate) fn run_data_encrypt_rotate(ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: Scope| {
         deny_without_write_ownership(ctx)?;
         crate::vault::install(ctx);
-        encryption::data_encrypt_rotate(&ctx.open_db()?, &VaultKeys, a.scope)
+        ctx.with_db(|conn| encryption::data_encrypt_rotate(conn, &VaultKeys, a.scope))
     })
 }
 
@@ -52,7 +52,7 @@ pub(crate) fn run_data_encrypt_change_recovery(ctx: &Ctx, params: &Value) -> Out
     dispatch(params, |a: Scope| {
         deny_without_write_ownership(ctx)?;
         crate::vault::install(ctx);
-        encryption::data_encrypt_change_recovery(&ctx.open_db()?, &VaultKeys, a.scope)
+        ctx.with_db(|conn| encryption::data_encrypt_change_recovery(conn, &VaultKeys, a.scope))
     })
 }
 
@@ -66,7 +66,7 @@ struct Convert {
 pub(crate) fn run_data_encrypt_convert(ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: Convert| {
         deny_without_write_ownership(ctx)?;
-        encryption::data_encrypt_convert(&ctx.open_db()?, a.ns, a.coll, a.scope)
+        ctx.with_db(|conn| encryption::data_encrypt_convert(conn, a.ns, a.coll, a.scope))
     })
 }
 
@@ -74,6 +74,6 @@ pub(crate) fn run_data_encrypt_status(ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: Scope| {
         // 상태는 읽기다 — 쓰기 소유권을 요구하지 않는다. 다만 볼트는 서야 unlocked 를 답한다.
         crate::vault::install(ctx);
-        encryption::data_encrypt_status(&ctx.open_db()?, &VaultKeys, a.scope)
+        ctx.with_db(|conn| encryption::data_encrypt_status(conn, &VaultKeys, a.scope))
     })
 }

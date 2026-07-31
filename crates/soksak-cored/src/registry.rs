@@ -887,11 +887,16 @@ struct WindowTracesArg {
 }
 
 // 저장소 커넥션을 코어의 KvRows 로 보이게 하는 어댑터 — 질의문은 코어가 소유한다.
-pub(crate) struct SqliteRows {
-    pub(crate) conn: rusqlite::Connection,
+/// kv 어댑터 — 커넥션을 **빌려 쓴다.**
+///
+/// 값으로 쥐면 이 구조를 만들 때마다 새 커넥션을 열어야 하고, 그러면 한 프로세스가 자기
+/// 커넥션끼리 `database is locked` 를 낸다(실측 2026-08-01). 쓰기 커넥션은 프로세스에
+/// 하나이고(Ctx::with_db), 어댑터는 그것을 잠깐 빌린다.
+pub(crate) struct SqliteRows<'a> {
+    pub(crate) conn: &'a rusqlite::Connection,
 }
 
-impl soksak_core::kv::KvRows for SqliteRows {
+impl soksak_core::kv::KvRows for SqliteRows<'_> {
     fn value(&self, ns: &str, key: &str) -> Result<Option<String>, String> {
         // 질의문은 코어가 소유한다 — 두 프로세스가 각자 SQL 을 적으면 언젠가 갈라진다.
         match self
@@ -914,8 +919,8 @@ pub(crate) fn run_window_traces_prune(ctx: &Ctx, params: &Value) -> Outcome {
                 ctx.db_path().display()
             ));
         }
-        let conn = ctx.open_db()?;
-        let store = SqliteRows { conn };
+        ctx.with_db(|conn| {
+            let store = SqliteRows { conn };
         let ns = soksak_core::window_traces::NS;
 
         // ① 스냅샷. 없던 것을 지우는 것은 성공이다(멱등).
@@ -933,6 +938,7 @@ pub(crate) fn run_window_traces_prune(ctx: &Ctx, params: &Value) -> Outcome {
             }
         }
         Ok(serde_json::json!({ "snapshot": snapshot_removed, "slot": slot_removed }))
+        })
     })
 }
 #[derive(serde::Deserialize)]

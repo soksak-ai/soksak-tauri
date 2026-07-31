@@ -273,6 +273,9 @@ pub fn run() {
                     data::set_route(owner);
                     owner.delegates()
                 } => {
+                    // 저장소를 위임해도 **재개는 해야 한다** — 안 하면 링이 0 에서 시작하고
+                    // 이 프로세스의 도장이 주인의 원장에서 과거를 덮는다.
+                    activity::resume_seq_from_owner(app.handle());
                     eprintln!(
                         "[data] 이 홈의 저장소는 다른 프로세스가 소유한다 — 열지 않고 cored 에 묻는다({})",
                         db_path.display()

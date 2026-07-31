@@ -320,6 +320,41 @@ pub fn resume_seq(app: &AppHandle, conn: &rusqlite::Connection) {
     }
 }
 
+/// 저장소를 **위임한** 프로세스의 재개 — 주인에게 마지막 seq 를 묻는다.
+///
+/// 커넥션이 없다고 재개를 건너뛰면 링이 0 에서 시작하고, 이 프로세스가 찍은 도장이 주인의
+/// 원장에서 **과거를 덮는다**(id 가 `a{seq:016}` 이라 겹친다). 실측(2026-08-01): 소유를
+/// cored 로 옮긴 직후 역행이 2 → 4 로 늘고 첫 역행 seq 가 85 로 내려갔다 — 소유를 옮기면서
+/// 재개 경로를 함께 옮기지 않은 탓이다.
+///
+/// 못 물으면 **재개하지 않고 센다.** 모르면 안 찍는 것이 덮는 것보다 낫다.
+pub fn resume_seq_from_owner(app: &AppHandle) {
+    match crate::cored_host::ask_owner("activity_audit", &serde_json::json!({})) {
+        Ok(v) => {
+            let last = v
+                .get("data")
+                .unwrap_or(&v)
+                .get("max_seq")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            if last > 0 {
+                app.state::<ActivityHub>().resume_from(last);
+                return;
+            }
+            RESUME_FAILURES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if let Ok(mut slot) = RESUME_ERROR.lock() {
+                *slot = "주인이 max_seq 를 답하지 않았다".to_string();
+            }
+        }
+        Err(e) => {
+            RESUME_FAILURES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if let Ok(mut slot) = RESUME_ERROR.lock() {
+                *slot = e;
+            }
+        }
+    }
+}
+
 /// 재개 지점을 못 읽은 횟수 — 0 이 아니면 그 부팅의 도장은 신뢰할 수 없다.
 static RESUME_FAILURES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static RESUME_ERROR: Mutex<String> = Mutex::new(String::new());
