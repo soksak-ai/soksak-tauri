@@ -10,6 +10,7 @@
 //! (`Ledger`)는 원장을 지는 쪽이 하나만 소유한다 — 전역을 여기 두면 첫 호출자가 원장을
 //! 정하게 되고, 그건 프로세스마다 다른 답이다.
 
+use serde::Serialize;
 use serde_json::{json, Value};
 
 /// 보관 2계층. 저신호(payload.origin 보유: 스케줄·internal)가 신호(사람 유래·환경 사실)의
@@ -221,6 +222,124 @@ pub fn pick_recent(entries: Vec<Value>, since: Option<u64>, limit: usize) -> Vec
 pub const RECENT_SQL: &str = "\
     SELECT doc FROM records WHERE ns=?1 AND coll=?2 ORDER BY id";
 
+/// 원장 무결성 감사 질의 — seq 와 ts 만 순서대로 읽는다(doc 전문은 필요 없다).
+///
+/// 이 원장은 **한 주인**을 전제한다: seq 는 단조 증가하고 id 가 `a{seq:016}` 이라 사전순이
+/// 곧 시간순이다. 주인이 여럿이면 각자 1부터 매기고, 겹친 id 는 저장 질의가 덮어쓴다
+/// (INSERT … ON CONFLICT DO UPDATE). 그 덮어쓰기는 오류를 내지 않으므로 조용하다.
+///
+/// 그래서 두 가지를 센다: **구멍**(기대 개수와 실제 개수의 차)과 **시간 역행**(seq 는 느는데
+/// ts 가 줄어드는 자리). 역행은 다른 주인이 낮은 seq 로 끼어들어 과거를 덮은 흔적이다.
+/// 원장 감사 결과 — 한 주인 전제가 지켜졌는가.
+#[derive(Debug, Serialize, PartialEq)]
+pub struct LedgerAudit {
+    /// 실제 행 수.
+    pub rows: usize,
+    pub min_seq: u64,
+    pub max_seq: u64,
+    /// 기대 개수(max-min+1)와 실제의 차.
+    ///
+    /// **손상 신호가 아니다.** 보관이 2계층이라(SCOPE/SCOPE_LOW) 저신호가 먼저 잘리면 seq
+    /// 중간에 구멍이 남는다 — 정상 동작이다. 이것을 손상으로 읽으면 잘 도는 원장이 매번
+    /// 경보를 낸다(실측 2026-07-31: 구멍 1496, 시간 역행 0).
+    pub gaps: u64,
+    /// seq 는 느는데 ts 가 줄어든 자리 수 — 다른 주인이 낮은 seq 로 끼어든 흔적.
+    pub time_regressions: usize,
+    /// 역행이 처음 나타난 seq(없으면 0) — 겹친 구간의 시작점을 가리킨다.
+    pub first_regression_seq: u64,
+    /// 한 주인 전제가 지켜졌는가 — **판정은 시간 역행만 본다.**
+    ///
+    /// 덮어쓰기는 낮은 seq 자리에 나중 ts 를 밀어 넣으므로 seq 순서와 시간 순서가 어긋난다.
+    /// 구멍은 보관 정책으로도 생기므로 증거가 못 된다.
+    pub single_writer: bool,
+}
+
+/// (seq, ts) 를 seq 순으로 받아 감사한다 — 저장소를 모르는 순수 판정이라 표로 검증된다.
+pub fn audit_ledger(rows: &[(u64, u64)]) -> LedgerAudit {
+    if rows.is_empty() {
+        return LedgerAudit {
+            rows: 0,
+            min_seq: 0,
+            max_seq: 0,
+            gaps: 0,
+            time_regressions: 0,
+            first_regression_seq: 0,
+            single_writer: true,
+        };
+    }
+    let min_seq = rows[0].0;
+    let max_seq = rows[rows.len() - 1].0;
+    let expected = max_seq.saturating_sub(min_seq) + 1;
+    let gaps = expected.saturating_sub(rows.len() as u64);
+    let mut time_regressions = 0usize;
+    let mut first_regression_seq = 0u64;
+    for w in rows.windows(2) {
+        if w[1].1 < w[0].1 {
+            time_regressions += 1;
+            if first_regression_seq == 0 {
+                first_regression_seq = w[1].0;
+            }
+        }
+    }
+    LedgerAudit {
+        rows: rows.len(),
+        min_seq,
+        max_seq,
+        gaps,
+        time_regressions,
+        first_regression_seq,
+        single_writer: time_regressions == 0,
+    }
+}
+
+pub const AUDIT_SQL: &str = "\
+    SELECT CAST(json_extract(doc,'$.seq') AS INTEGER), \
+           CAST(json_extract(doc,'$.ts') AS INTEGER) \
+    FROM records WHERE ns=?1 AND coll=?2 ORDER BY id";
+
 #[cfg(test)]
 #[path = "activity_recent_tests.rs"]
 mod recent_tests;
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+
+    /// 한 주인이 쓴 원장 — 구멍도 역행도 없다.
+    #[test]
+    fn a_single_writer_leaves_no_trace() {
+        let rows = vec![(1, 100), (2, 110), (3, 120)];
+        let a = audit_ledger(&rows);
+        assert!(a.single_writer, "{a:?}");
+        assert_eq!((a.gaps, a.time_regressions), (0, 0));
+    }
+
+    /// 덮어쓰기의 흔적 — 겹친 id 는 저장 질의가 덮으므로 **행이 줄고**, 낮은 seq 에 새 ts 가
+    /// 들어와 시간이 뒤로 간다. 오라클: 둘 중 하나만 봐도 놓치는 경우가 있어 함께 센다.
+    #[test]
+    fn overwriting_shows_up_as_gaps_and_time_going_backwards() {
+        // 두 번째 주인이 seq 2 를 자기 것(더 나중 ts)으로 덮었고, seq 3 은 아직 옛것이다.
+        let rows = vec![(1, 100), (2, 900), (3, 120)];
+        let a = audit_ledger(&rows);
+        assert_eq!(a.time_regressions, 1, "{a:?}");
+        assert_eq!(a.gaps, 0);
+        assert_eq!(a.first_regression_seq, 3);
+        assert!(!a.single_writer);
+    }
+
+    /// 구멍은 세되 손상으로 읽지 않는다 — 보관 2계층에서 저신호가 먼저 잘리면 정상으로 생긴다.
+    /// 이 경계를 못 박지 않으면 잘 도는 원장이 매번 손상으로 보고된다(실측: 구멍 1496·역행 0).
+    #[test]
+    fn gaps_are_counted_but_are_not_damage() {
+        let rows = vec![(1, 100), (5, 110)];
+        let a = audit_ledger(&rows);
+        assert_eq!(a.gaps, 3, "{a:?}");
+        assert!(a.single_writer, "구멍만으로 손상 판정하면 보관 정책이 경보가 된다");
+    }
+
+    /// 빈 원장은 손상이 아니다 — 0 을 결함으로 읽으면 새 홈이 매번 경보를 낸다.
+    #[test]
+    fn an_empty_ledger_is_not_damage() {
+        assert!(audit_ledger(&[]).single_writer);
+    }
+}

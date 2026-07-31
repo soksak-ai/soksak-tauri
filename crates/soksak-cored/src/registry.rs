@@ -955,6 +955,42 @@ pub(crate) fn run_window_census(_ctx: &Ctx, _params: &Value) -> Outcome {
     Outcome::Ok(json!({ "windows": crate::control::window_census() }))
 }
 
+/// 원장 무결성 감사 — **한 주인 전제가 지켜졌는가.**
+///
+/// 이 원장은 seq 를 매기는 주인이 하나임을 전제한다. 여럿이면 각자 1부터 매기고, 겹친 id 는
+/// 저장 질의가 덮어쓴다(ON CONFLICT DO UPDATE) — 오류가 없으니 조용하다. 실측(2026-07-31):
+/// 프레임워크마다 원장 구현이 하나씩 있고 cored 에도 있어, 같은 DB 에 셋이 각자 매기고 있었다.
+///
+/// 이관 전에 이미 덮어써진 구간이 있는지 여기서 센다 — 겹친 구간은 복구할 수 없으므로,
+/// 옮기기 전에 무엇을 잃었는지 알아야 한다.
+pub(crate) fn run_activity_audit(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |_: NoArgs| {
+        use soksak_core::activity as act;
+        let conn = ctx.open_db()?;
+        let mut q = conn.prepare(act::AUDIT_SQL).map_err(|e| e.to_string())?;
+        let rows = q
+            .query_map(rusqlite::params![act::NS, act::COLL], |r| {
+                Ok((r.get::<_, i64>(0)?.max(0) as u64, r.get::<_, i64>(1)?.max(0) as u64))
+            })
+            .map_err(|e| e.to_string())?;
+        let mut pairs = Vec::new();
+        for row in rows {
+            pairs.push(row.map_err(|e| e.to_string())?);
+        }
+        let audit = act::audit_ledger(&pairs);
+        let mut v = serde_json::to_value(&audit).map_err(|e| e.to_string())?;
+        // 이 프로세스가 보는 원장이 어느 파일인지 함께 답한다 — 주인이 여럿일 때 "어느 원장을
+        // 감사했는가"가 답의 일부다.
+        if let Some(o) = v.as_object_mut() {
+            o.insert(
+                "ledger".into(),
+                Value::String(ctx.db_path().to_string_lossy().to_string()),
+            );
+        }
+        Ok(v)
+    })
+}
+
 pub(crate) fn run_activity_publish(ctx: &Ctx, params: &Value) -> Outcome {
     // 적재만 한다 — 단조·도장 규칙은 코어가, 원장 자원은 ledger 가 소유한다.
     //
