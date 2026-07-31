@@ -201,6 +201,15 @@ pub fn publish(app: &AppHandle, kind: &str, source: &str, payload: Value) -> Val
         DELEGATION_MISSES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
     // 폴백 — cored 에 못 닿는 동안은 이 프로세스가 직접 쓴다(회복 큐가 실패를 진다).
+    //
+    // **이 경로는 걷지 않는다.** 부팅 계약이 "못 붙어도 앱은 산다"이기 때문이다(lib.rs
+    // stand_up 의 사유). 그 구간에도 관측은 남아야 한다 — boot.step 이 사라지면 복원 결함을
+    // 규명할 길이 함께 사라진다(실측 이력). 위임실패가 0 이라는 것은 지금 cored 가 늘 선다는
+    // 뜻이지, 못 설 수 있다는 사실이 없어진다는 뜻이 아니다.
+    //
+    // 대신 그 구간을 **말한다**: delegationMisses 가 0 이 아니면 봉투의 degraded 가 "그 구간은
+    // 앱 프로세스가 직접 썼다"고 답한다. 주인이 둘이었던 구간을 숨기지 않는 것이 이 경로의
+    // 값이다.
     let st = app.state::<crate::data::DbState>();
     if let Ok(guard) = st.conn.lock() {
         if let Some(conn) = guard.as_ref() {

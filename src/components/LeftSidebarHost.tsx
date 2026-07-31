@@ -6,6 +6,7 @@
 
 import { execute } from "../commands/registry";
 import { gutterOwnerOf } from "../lib/gutterAddress";
+import { beginGesture } from "../lib/gesture";
 import {
   memo,
   useCallback,
@@ -85,7 +86,6 @@ export const LeftSidebarHost = memo(function LeftSidebarHost({
     [version],
   );
   const reconcileSidebar = useSessions((s) => s.reconcileSidebar);
-  const resizeSidebar = useSessions((s) => s.resizeSidebar);
   const setLeftTab = useSessions((s) => s.setLeftTab);
 
   // 등록 뷰와 reconcile.
@@ -216,12 +216,28 @@ export const LeftSidebarHost = memo(function LeftSidebarHost({
     const startSizes = [...d.sizes];
     const i = d.index;
     const minFrac = 0.1;
-    // 착지값 — 드래그 중 마지막 비율. 완결 시 이것으로 명령을 한 번 남긴다.
-    let landed: number[] | null = null;
-    const commit = rafThrottle((sizes: number[]) => {
-      landed = sizes;
-      resizeSidebar(project.id, d.splitId, sizes);
+    // 표현과 동작을 한 자리에서 짝지운다 — preview 는 매 프레임(store 직접, 그것이 표현이다),
+    // commit 은 착지 한 번(명령을 탄다). 짝을 강제하므로 "화면은 바뀌는데 원장엔 없다"가
+    // 구조적으로 불가능하다.
+    const gesture = beginGesture<number[]>({
+      preview: (sizes) =>
+        // 표현은 store 를 직접 만진다 — 매 프레임이라 명령을 탈 자리가 아니다. 구독이 아니라
+        // 그때의 상태를 부르는 것이라 훅 밖에서 읽는다(렌더와 무관한 제스처 경로다).
+        useSessions.getState().resizeSidebar(project.id, d.splitId, sizes),
+      commit: (sizes) => {
+        // 골은 이름으로 지목한다 — 내부 split id 는 밖으로 나가지 않는다(IDENTITY §4).
+        const owner = gutterOwnerOf(layout, d.splitId, d.index, cellId);
+        const key = owner?.pane.split("|")[0];
+        if (key) {
+          void execute(
+            "sidebar.left.resize",
+            { project: project.id, viewKey: key, sizes },
+            {},
+          );
+        }
+      },
     });
+    const throttled = rafThrottle((sizes: number[]) => gesture.move(sizes));
     const onMove = (ev: MouseEvent) => {
       const cur = d.dir === "row" ? ev.clientX : ev.clientY;
       let delta = (cur - startPos) / splitPx;
@@ -229,24 +245,11 @@ export const LeftSidebarHost = memo(function LeftSidebarHost({
       const sizes = [...startSizes];
       sizes[i] = startSizes[i] + delta;
       sizes[i + 1] = startSizes[i + 1] - delta;
-      commit(sizes);
+      throttled(sizes);
     };
     const onUp = () => {
-      commit.flush();
-      // 착지 한 번만 명령으로 — 중간값까지 보낼 이유가 없다(매 프레임이다). 골은 이름으로
-      // 지목한다: 내부 split id 는 밖으로 나가지 않으므로(IDENTITY §4) 그 골에 닿는 leaf
-      // (사이드바에서는 viewKey)로 바꿔 부른다. 렌더러는 트리를 손에 들고 있다.
-      if (landed) {
-        const owner = gutterOwnerOf(layout, d.splitId, d.index, cellId);
-        const key = owner?.pane.split("|")[0];
-        if (key) {
-          void execute(
-            "sidebar.left.resize",
-            { project: project.id, viewKey: key, sizes: landed },
-            {},
-          );
-        }
-      }
+      throttled.flush(); // 리스너 제거 전에 — 마지막 프레임 유실 = 스냅백.
+      gesture.end();
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
       document.body.style.cursor = "";

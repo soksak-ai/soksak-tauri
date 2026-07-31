@@ -23,6 +23,7 @@ import { useGutterHover } from "../state/gutterHover";
 import { ViewTabs } from "./ViewTabs";
 import { computeSplitLayout, hitTestCells } from "../lib/splitLayout";
 import { gutterAddress, gutterOwnerOf } from "../lib/gutterAddress";
+import { beginGesture } from "../lib/gesture";
 import { useT } from "../i18n";
 import { useTheme } from "../state/theme";
 import { useSettings } from "../state/settings";
@@ -450,8 +451,24 @@ export const GroupArea = memo(function GroupArea({
 
   const onGutterDown = (d: Gutter) => (e: React.MouseEvent) => {
     e.preventDefault();
-    // 착지값 — 드래그 중 마지막으로 커밋한 비율. 완결 시 이것으로 명령을 한 번 남긴다.
-    let lastResizeSizes: number[] | null = null;
+    // 표현과 동작을 한 자리에서 짝지운다 — preview 는 매 프레임(라인 그룹 한 커밋),
+    // commit 은 착지 한 번(명령을 탄다). 짝을 강제하므로 "화면은 바뀌는데 원장엔 없다"가
+    // 구조적으로 불가능하다.
+    const gesture = beginGesture<number[]>({
+      preview: (sizes) => commitResize([{ splitId: d.splitId, sizes }]),
+      commit: (sizes) => {
+        // 골은 이름으로 지목한다 — 내부 split id 는 밖으로 나가지 않는다(IDENTITY §4).
+        const owner = gutterOwnerOf(displayLayout, d.splitId, d.index, (g) => g.id);
+        const pair = sizes[d.index] + sizes[d.index + 1];
+        if (owner && pair > 0) {
+          void execute(
+            "pane.resize",
+            { pane: owner.pane, edge: owner.side, ratio: sizes[d.index] / pair },
+            {},
+          );
+        }
+      },
+    });
     if (ms.resizeDragActive) return; // 중복 시작(DOM + 네이티브 합성) 무시.
     const cont = containerRef.current;
     if (!cont) return;
@@ -492,25 +509,11 @@ export const GroupArea = memo(function GroupArea({
       const sizes = [...startSizes];
       sizes[i] = startSizes[i] + delta;
       sizes[i + 1] = startSizes[i + 1] - delta;
-      lastResizeSizes = sizes;
-      commitResize([{ splitId: d.splitId, sizes }]);
+      gesture.move(sizes);
     };
     const onUp = () => {
       commitResize.flush(); // 리스너 제거 전에 — 마지막 프레임 유실 = 스냅백.
-      // 착지 한 번만 명령으로 남긴다 — 중간값까지 명령으로 보낼 이유가 없다(매 프레임이다).
-      // 그러나 완결은 사용자 의도 동작이므로 원장에 남고 CLI·AI 와 같은 경로여야 한다.
-      const landed = lastResizeSizes;
-      if (landed) {
-        const owner = gutterOwnerOf(displayLayout, d.splitId, d.index, (g) => g.id);
-        const pair = landed[d.index] + landed[d.index + 1];
-        if (owner && pair > 0) {
-          void execute(
-            "pane.resize",
-            { pane: owner.pane, edge: owner.side, ratio: landed[d.index] / pair },
-            {},
-          );
-        }
-      }
+      gesture.end();
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
       document.body.style.cursor = "";

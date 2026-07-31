@@ -20,13 +20,9 @@ const ROOT = new URL("../../", import.meta.url).pathname;
 // 실측 2026-07-31: 17 → 2. 스페이스 생성·전환·이름변경, 탭 열기/닫기/활성/최대화/복원/이동,
 // 패널 활성·분할·이동, 프로젝트 설정·색, 사이드바 드롭이 전부 명령을 탄다.
 //
-// 남은 1건은 **드래그 중 표현**이다. 축은 맞췄다: 골은 내부 split id 가 아니라 그 골에 닿는
-// leaf 이름으로 지목하고(IDENTITY §4 — 내부 노드 무명, 기하 증명), 렌더러가 gutterOwnerOf 로
-// 그 자리에서 바꾼다. 완결(mouseup)은 pane.resize·pane.equalize·sidebar.left.resize 를 탄다.
-//
-// 드래그 중 매 프레임 반영까지 명령으로 보낼 이유는 없다 — 그것은 **표현**이고 동작은 착지
-// 하나다. 이 1건이 그 표현 경로이며, 표현과 동작을 기계로 가르는 규칙이 서기 전까지 여기 있다.
-const BYPASS_CAP = 1;
+// 2026-08-01 **0 도달**. 마지막 1건(드래그 중 표현)은 beginGesture 로 동작과 짝지어졌고,
+// 이 스캔이 그 구조를 읽는다 — 표현임을 사람이 주장하는 것이 아니라 짝이 코드에 있다.
+const BYPASS_CAP = 0;
 
 function files(glob) {
   return execSync(`git ls-files ${glob}`, { cwd: ROOT, encoding: "utf8" })
@@ -57,10 +53,36 @@ const REPORTING_CHANNELS = new Set([
   "setViewRuntime",
 ]);
 
+// 연속 제스처의 매 프레임 반영은 **표현**이고 동작은 착지 하나다. 그 둘은 beginGesture 가
+// 한 자리에서 짝지으므로(preview/commit), preview 안의 store 호출은 우회가 아니다 — 짝이
+// 강제되어 "화면은 바뀌는데 원장엔 없다"가 구조적으로 불가능하기 때문이다.
+//
+// 표식이 아니라 **구조**를 읽는다: `preview:` 가 열고 같은 객체에 `commit:` 이 있는 구간만
+// 표현으로 인정한다. 표식 한 줄만 보면 아무 데나 붙여 규칙을 무력화할 수 있고, 짝(commit)이
+// 없으면 그것은 표현이 아니라 그냥 우회다.
+function previewRanges(text) {
+  const lines = text.split("\n");
+  const out = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!/^\s*preview:\s*\(/.test(lines[i])) continue;
+    // 같은 객체 안에서 commit: 을 찾는다 — 못 찾으면 짝이 없는 것이라 인정하지 않는다.
+    let end = -1;
+    for (let j = i + 1; j < Math.min(lines.length, i + 40); j += 1) {
+      if (/^\s*commit:\s*\(/.test(lines[j])) { end = j; break; }
+      if (/^\s*\}\)/.test(lines[j])) break;
+    }
+    if (end > 0) out.push([i, end - 1]);
+  }
+  return out;
+}
+
 const bypass = [];
 for (const f of [...files("'src/components/*.tsx'"), ...files("'src/ui/*.ts'")]) {
   const text = readFileSync(ROOT + f, "utf8");
+  const previews = previewRanges(text);
   text.split("\n").forEach((line, i) => {
+    // 표현 — commit 과 짝지어진 preview 안이다.
+    if (previews.some(([a, b]) => i >= a && i <= b)) return;
     for (const fn of commanded) {
       if (REPORTING_CHANNELS.has(fn)) continue;
       // `s.addContent` 구독이든 `getState().addContent` 든 같은 우회다.
