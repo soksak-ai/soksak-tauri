@@ -746,6 +746,7 @@ pub fn run() {
             window_set_background,
             activity::activity_publish,
             activity::activity_recent,
+            activity::activity_persist_stats,
             id_registry::id_registry_declare,
             id_registry::id_registry_resolve,
             project_registry::project_claim,

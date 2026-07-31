@@ -1008,8 +1008,22 @@ export function markRuntimeReady(): void {
  * 세어야 알고, 셀 수 없으면 고쳤는지도 증명하지 못한다(실측 2026-07-31: 원장이 정지한 것을
  * 사람이 두 번 조회해 시각을 비교해서야 알았다).
  */
+let persistStats: Record<string, number> | null = null;
+
+/**
+ * 영속 상태를 실어 둔다 — 프론트는 Rust 쪽 카운터를 직접 못 읽는다.
+ *
+ * 발행이 도장을 받은 것과 그 항목이 원장에 남은 것은 다른 사실이다. 쓰기가 실패하면 회복
+ * 큐에 담기는데, 세는 자리가 없으면 그 사이 밖에서는 "발행 성공"만 보인다(실측 2026-07-31:
+ * 63건이 유실인지 대기인지 구분되지 않았다).
+ */
+export function noteActivityPersist(stats: Record<string, number>): void {
+  persistStats = stats;
+}
+
 export function commandHealth(): Record<string, unknown> {
   return {
+    persist: persistStats ?? { unknown: 1 },
     ready: trace.runtimeReady,
     commands: {
       registered: registry.size,
@@ -1363,6 +1377,13 @@ function degradedAxes(): string[] | undefined {
   if (registry.size === 0) bad.push("commands: 등록부가 비어 있음(등록 0개)");
   // sink 미설치는 "조용함"이 아니라 결함이다 — 이 창의 모든 실행이 원장에서 사라진다.
   if (!trace.sink) bad.push("commands: 실행 계측 sink 미설치(이 창의 실행이 원장에 안 남음)");
+  // 영속이 밀리면 도장은 받았는데 원장에는 없다 — 그 차이는 조회로만 드러나고, 조회하는
+  // 사람이 그 차이를 알 이유가 없다. 응답이 먼저 말한다.
+  if (persistStats && ((persistStats.pending ?? 0) > 0 || (persistStats.failures ?? 0) > 0)) {
+    bad.push(
+      `activity: 원장 영속이 밀렸다(대기 ${persistStats.pending ?? 0} · 실패 누계 ${persistStats.failures ?? 0} · 버림 ${persistStats.drops ?? 0}) — 도장은 받았지만 원장에 없는 항목이 있다`,
+    );
+  }
   return bad.length > 0 ? bad : undefined;
 }
 

@@ -979,6 +979,19 @@ pub(crate) fn run_activity_audit(ctx: &Ctx, params: &Value) -> Outcome {
         }
         let audit = act::audit_ledger(&pairs);
         let mut v = serde_json::to_value(&audit).map_err(|e| e.to_string())?;
+        // 이 프로세스의 영속 상태도 함께 답한다 — 원장이 안 자랄 때 "안 썼다"와 "쓰다 막혔다"는
+        // 다른 사실이고, 세는 자리가 없으면 둘이 똑같아 보인다. 프레임워크 쪽과 같은 축이다.
+        if let Some(o) = v.as_object_mut() {
+            o.insert(
+                "persist".into(),
+                json!({
+                    "failures": soksak_store::activity_persist::persist_failures(),
+                    "drops": soksak_store::activity_persist::persist_drops(),
+                    "pending": soksak_store::activity_persist::persist_pending(),
+                    "lastError": soksak_store::activity_persist::persist_last_error(),
+                }),
+            );
+        }
         // 이 프로세스가 보는 원장이 어느 파일인지 함께 답한다 — 주인이 여럿일 때 "어느 원장을
         // 감사했는가"가 답의 일부다.
         if let Some(o) = v.as_object_mut() {

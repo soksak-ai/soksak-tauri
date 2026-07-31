@@ -35,7 +35,11 @@ frameworks/electron/native/webview.cjs 166
 frameworks/electron/native/window.cjs 149
 frameworks/electron/preload.cjs 50
 frameworks/electron/windowEvents.cjs 13
-frameworks/tauri/src/activity.rs 346
+# 재입법 2026-07-31 346 → 355, lib.rs 716 → 717. activity_persist_stats 배선이다.
+#   몸은 soksak_store::activity_persist 의 카운터이고 여기 있는 것은 그것을 읽어 답하는
+#   커맨드 하나와 등록 한 줄이다. 이 표면이 없던 동안 영속이 OOM 으로 막혀 42건이 회복 큐에
+#   대기 중인 것을 밖에서 알 수 없었다 — 도장은 받았는데 원장에는 없는 상태가 조용했다.
+frameworks/tauri/src/activity.rs 355
 frameworks/tauri/src/activity_sink.rs 9
 frameworks/tauri/src/ai_session.rs 45
 frameworks/tauri/src/clipboard.rs 249
@@ -56,7 +60,7 @@ frameworks/tauri/src/i18n.rs 155
 frameworks/tauri/src/id_registry.rs 144
 frameworks/tauri/src/identity.rs 59
 frameworks/tauri/src/ipc.rs 1232
-frameworks/tauri/src/lib.rs 716
+frameworks/tauri/src/lib.rs 717
 frameworks/tauri/src/login_shell.rs 28
 frameworks/tauri/src/main.rs 4
 frameworks/tauri/src/mediaproxy.rs 18

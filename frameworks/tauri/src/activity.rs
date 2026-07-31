@@ -245,6 +245,22 @@ pub fn activity_publish(app: AppHandle, kind: String, source: String, payload: V
     publish(&app, &kind, &source, payload)
 }
 
+/// 영속 상태 — **도장을 받은 것과 원장에 남은 것이 갈릴 수 있다.**
+///
+/// 발행은 도장(seq)을 받고 끝나지만 영속은 그다음이다. 쓰기가 실패하면 회복 큐에 담기고
+/// 다음 성공에 흘러가는데, 그 사이 밖에서는 "발행 성공"만 보인다 — 실측 2026-07-31: 앱 도장
+/// 86160, DB 최대 86097 로 63건이 어디에도 안 보인 채 대기 중이었다. 세는 자리가 없으면
+/// 그 63건은 유실인지 대기인지조차 구분되지 않는다.
+#[tauri::command]
+pub fn activity_persist_stats() -> Value {
+    serde_json::json!({
+        "failures": soksak_store::activity_persist::persist_failures(),
+        "drops": soksak_store::activity_persist::persist_drops(),
+        "pending": soksak_store::activity_persist::persist_pending(),
+        "lastError": soksak_store::activity_persist::persist_last_error(),
+    })
+}
+
 // 조회 — activity.recent 커맨드 핸들러(창 무관 단일진실이라 어느 창에서 물어도 같다).
 #[tauri::command]
 pub fn activity_recent(app: AppHandle, since: Option<u64>, limit: Option<usize>) -> Vec<Value> {

@@ -32,6 +32,8 @@ struct PendingRow {
 static PENDING: Mutex<VecDeque<PendingRow>> = Mutex::new(VecDeque::new());
 static DROPS: AtomicU64 = AtomicU64::new(0);
 static FAILURES: AtomicU64 = AtomicU64::new(0);
+/// 마지막 실패 사유 — 세기만 하고 왜인지 안 남기면 "밀렸다"까지만 알고 고칠 수가 없다.
+static LAST_ERROR: Mutex<String> = Mutex::new(String::new());
 
 fn pending_push(q: &mut VecDeque<PendingRow>, row: PendingRow) -> u64 {
     let mut dropped = 0;
@@ -51,6 +53,11 @@ pub fn persist_failures() -> u64 {
 /// 회복 큐 초과로 버린 수.
 pub fn persist_drops() -> u64 {
     DROPS.load(Ordering::Relaxed)
+}
+
+/// 마지막 영속 실패 사유.
+pub fn persist_last_error() -> String {
+    LAST_ERROR.lock().map(|e| e.clone()).unwrap_or_default()
 }
 
 /// 대기 중인 회복 행 수.
@@ -85,7 +92,9 @@ pub fn persist_entry(conn: &rusqlite::Connection, entry: &Value) -> bool {
 
     if let Err(e) = crate::store::put(conn, act::NS, act::COLL, scope, id.clone(), &doc) {
         FAILURES.fetch_add(1, Ordering::Relaxed);
-        let _ = e;
+        if let Ok(mut slot) = LAST_ERROR.lock() {
+            *slot = e.to_string();
+        }
         if let Ok(mut q) = PENDING.lock() {
             let dropped = pending_push(&mut q, PendingRow { scope, id, doc });
             if dropped > 0 {
