@@ -603,3 +603,19 @@ Writing a contract and not reading it is the same as not having one. The compari
 **The need is derived, not asked for.** `docs/SIDECARS.md §1` already states it: the `engine` model is an in-process dylib whose Surface column reads *renders into pane surfaces (NSView)*. A surface-less engine does not exist by that definition. Making an author restate it as `requiresNativeChildWebview: true` would be a second copy of a fact the manifest already carries — and second copies stay quiet until they diverge, which is exactly what happened.
 
 **A permission is an open door, not a footprint.** The first cut read the `sidecar` permission as evidence of engine use and dropped a headless plugin that merely over-declared it. The evidence of the service model is the `service` declaration — the spec already keeps that field for that meaning.
+
+### Two axes, not one
+
+The first cut derived the engine need as `requiresNativeChildWebview`. The outcome was right and **the reason was false**.
+
+`docs/SIDECARS.md §8` states two compositing modes: `windowed` attaches a native child view under the window; `offscreen` has the engine draw into its own layer, with pixels moving only as a GPU handle inside the process. Only the first needs a child view. What both need is something else — **can this process take the module in at all** (dlopen + main thread + a window).
+
+So the axis is its own: `engineModules`. Each framework fills its own fact — Tauri opens it because its backend is Rust; this framework does not, because its main process is JS and has no dlopen. That is a value that changes the day a native addon is added: **not "cannot", but "not yet wired".**
+
+Merging the two axes would refuse an offscreen consumer for a missing child view it never wanted. The outcome would look identical and the next person would go fix the wrong thing.
+
+### What is not being changed, and why
+
+The offscreen axis is **not** a gap in the core. It was proven on 2026-07-08 and lives deliberately in the engine protocol vocabulary — *zero core change to the feature*. Reading that record corrected two conclusions drawn here in ignorance of it: that an input-injection seam was missing from the content-view host (it belongs to offscreen hosting, not to content views), and that a design-surface plugin was redundant complexity worth deleting (it is the first proof of the promotion path, and nothing else does what it does).
+
+Both frameworks now drop the engine consumers by name with a true reason. That is the design working, not a defect.
