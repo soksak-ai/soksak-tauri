@@ -109,24 +109,7 @@ impl Ctx {
         &self,
         f: impl FnOnce(&rusqlite::Connection) -> Result<T, String>,
     ) -> Result<T, String> {
-        let path = self.db_path();
-        let cell = Self::writer();
-        let mut guard = cell
-            .lock()
-            .map_err(|_| "저장소 쓰기 잠금이 오염됐다".to_string())?;
-        if guard.is_none() {
-            *guard = Some(
-                soksak_store::open::connect(&path)
-                    .map_err(|e| format!("저장소 열기 실패({}): {e}", path.display()))?,
-            );
-        }
-        f(guard.as_ref().expect("직전에 열었거나 이미 있던 커넥션"))
-    }
-
-    fn writer() -> &'static std::sync::Mutex<Option<rusqlite::Connection>> {
-        static W: std::sync::OnceLock<std::sync::Mutex<Option<rusqlite::Connection>>> =
-            std::sync::OnceLock::new();
-        W.get_or_init(|| std::sync::Mutex::new(None))
+        soksak_store::activity_persist::with_writer(&self.db_path(), f)
     }
 
     /// 옛 진입점 — 커넥션을 값으로 돌려준다. 남은 호출자를 with_db 로 옮기는 동안만 있다.

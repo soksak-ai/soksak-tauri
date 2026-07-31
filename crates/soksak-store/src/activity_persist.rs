@@ -111,3 +111,27 @@ pub fn persist_entry(conn: &rusqlite::Connection, entry: &Value) -> bool {
 #[cfg(test)]
 #[path = "activity_persist_tests.rs"]
 mod tests;
+
+/// 이 프로세스의 **쓰기 커넥션 하나** — 저장소를 쓰는 모든 자리가 이것을 빌린다.
+///
+/// SQLite WAL 은 읽기 동시·쓰기 단일이다. 한 프로세스가 커넥션을 여럿 열고 쓰면 자기
+/// 커넥션끼리 `database is locked` 를 낸다 — 실측(2026-08-01): 앱이 저장소를 놓은 뒤에도
+/// cored 가 막혔고, 다투던 상대가 자기 자신이었다. 싱글톤을 **두 곳에** 두었다가 같은 결함을
+/// 두 번 만들기도 했다(원장 쓰기와 명령 경로가 각자 하나씩).
+///
+/// 그래서 자리는 하나다: 저장소 계층. 커넥션은 저장소의 자원이고, 규칙은 `&Connection` 을
+/// 받아 쓰고 놓는다.
+pub fn with_writer<T>(
+    db_path: &std::path::Path,
+    f: impl FnOnce(&rusqlite::Connection) -> Result<T, String>,
+) -> Result<T, String> {
+    static W: Mutex<Option<rusqlite::Connection>> = Mutex::new(None);
+    let mut guard = W.lock().map_err(|_| "저장소 쓰기 잠금이 오염됐다".to_string())?;
+    if guard.is_none() {
+        *guard = Some(
+            crate::open::connect(db_path)
+                .map_err(|e| format!("저장소 열기 실패({}): {e}", db_path.display()))?,
+        );
+    }
+    f(guard.as_ref().expect("직전에 열었거나 이미 있던 커넥션"))
+}
