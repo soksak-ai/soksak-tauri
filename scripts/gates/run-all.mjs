@@ -35,6 +35,7 @@ export const LOCAL = new Map([
   ["module-state-scan.mjs", []],
   ["platform-boundary-scan.mjs", ["--artifacts"]],
   ["product-name-scan.mjs", []],
+  ["rust-tests.mjs", []],
   ["ui-through-commands-scan.mjs", []],
   ["test-home-isolation.mjs", []],
   ["vocabulary-framework-scan.mjs", []],

@@ -5,6 +5,7 @@
 // 예외든 `sok events --kinds renderer.error` 로 기계 판독되게 한다. 발행 실패는 삼킨다
 // (관측이 본체를 못 막는다). 같은 메시지의 반복은 창당 8회로 상한(폭주 억제 — 원인
 // 1건이면 충분하고, 상한 도달 사실도 남긴다).
+import { moduleState } from "../lib/moduleState";
 import { invoke } from "../framework";
 
 const seen = new Map<string, number>();
@@ -30,11 +31,13 @@ function publish(kind: "error" | "unhandledrejection", message: string, stack: s
   }).catch(() => {});
 }
 
-let installed = false;
+// "이미 붙였다"는 기억은 갈아끼우기 경계를 넘어야 한다 — 이 플래그만 사라지면 설치는
+// 안 남았는데 채우던 쪽은 이미 돌았다고 알아 다시 붙이지 않는다(영영 미설치).
+const installedFlag = moduleState("lib/errorLedger#installedFlag.on", () => ({ on: false }));
 
 export function installErrorLedger(): void {
-  if (installed || typeof window === "undefined") return;
-  installed = true;
+  if (installedFlag.on || typeof window === "undefined") return;
+  installedFlag.on = true;
   window.addEventListener("error", (e) => {
     const err = e.error as Error | undefined;
     publish("error", String(err?.message ?? e.message ?? "unknown"), err?.stack ?? null);

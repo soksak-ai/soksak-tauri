@@ -3,6 +3,7 @@
 // 열어도 전 창이 같은 목록을 본다). 기록 시점 = 명시적 열기 성공(addProjectClaimed)
 // 과 기본 부트 — 복원은 기록하지 않는다(이미 목록에 있던 것의 유지일 뿐).
 
+import { moduleState } from "../lib/moduleState";
 import { useEffect, useState } from "react";
 import { coreStoreDeps } from "./windowBoot";
 import { makeCoreStore } from "./coreStore";
@@ -28,15 +29,17 @@ export function upsertRecent(
 }
 
 type Store = ReturnType<typeof makeCoreStore<RecentProject[]>>;
-let store: Store | null = null;
+// 주입점은 갈아끼우기 경계를 넘어야 한다 — 이 자리만 비면 채운 쪽은 이미 채웠다고 알고
+// 다시 채우지 않는다. 그때 남는 것은 "아무도 답하지 않음"이고, 그 침묵은 오류가 아니다.
+const storeSlot = moduleState("state/recentProjects#storeSlot.v", () => ({ v: null as Store | null }));
 function recentStore(): Store {
-  store ??= makeCoreStore<RecentProject[]>({
+  storeSlot.v ??= makeCoreStore<RecentProject[]>({
     key: "recentProjects",
     lsKey: "soksak.recentProjects",
     fallback: [],
     ...coreStoreDeps,
   });
-  return store;
+  return storeSlot.v;
 }
 
 /** 열기 성공 기록 — 실패해도 열기를 방해하지 않는다(목록은 편의 데이터). */

@@ -1437,9 +1437,14 @@ function withCommonFields(out: CommandOutcome, name: string, ctx: CommandContext
 // UNKNOWN_COMMAND 지능형 해석기 — 미지의 명령 이름을 레지스트리 카탈로그와 대조해 원인별
 // 안내(미설치→install, 비활성→enable)를 짓는다. 카탈로그·플러그인 상태는 상위 계층(catalogPlugins)
 // 소유이므로 여기서는 주입점만 둔다(순환 의존 방지 — registry 는 상태 저장소를 모른다).
-let unknownCommandResolver: ((name: string) => CommandHint[]) | null = null;
+// 주입점은 갈아끼우기 경계를 넘어야 한다 — 이 자리만 비면 채운 쪽은 이미 채웠다고 알고
+// 다시 채우지 않는다. 그때 남는 것은 "아무도 답하지 않음"이고, 그 침묵은 오류가 아니다.
+const unknownCommandResolverSlot = moduleState(
+  "commands/registry#unknownCommandResolver",
+  () => ({ v: null as ((name: string) => CommandHint[]) | null }),
+);
 export function setUnknownCommandResolver(fn: (name: string) => CommandHint[]): void {
-  unknownCommandResolver = fn;
+  unknownCommandResolverSlot.v = fn;
 }
 
 function standardErrorHints(code: string, command: string): CommandHint[] | undefined {
@@ -1447,7 +1452,7 @@ function standardErrorHints(code: string, command: string): CommandHint[] | unde
     case "UNKNOWN_COMMAND": {
       // 해석기가 원인을 알아내면 그 안내가 우선한다(설치·활성 경로). 실패·부재 시 일반 탐색 안내.
       try {
-        const resolved = unknownCommandResolver?.(command);
+        const resolved = unknownCommandResolverSlot.v?.(command);
         if (resolved && resolved.length) return resolved.slice(0, 3);
       } catch {
         /* 해석 실패는 안내 품질 저하일 뿐 — 응답을 깨지 않는다 */

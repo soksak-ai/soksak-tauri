@@ -1,3 +1,4 @@
+import { moduleState } from "../lib/moduleState";
 import type {
   CertifiedRegistryIndex,
   RegistryUnitIdentity,
@@ -22,20 +23,21 @@ const unavailable: RegistryInstallRuntimeHandler = async () => ({
   message: "the native atomic release installer is not available in this build",
 });
 
-let handler = unavailable;
-
+// 주입점은 갈아끼우기 경계를 넘어야 한다 — 이 자리만 비면 채운 쪽은 이미 채웠다고 알고
+// 다시 채우지 않는다. 그때 남는 것은 "아무도 답하지 않음"이고, 그 침묵은 오류가 아니다.
+const handlerSlot = moduleState("plugins/registryInstallRuntime#handlerSlot.v", () => ({ v: unavailable }));
 export function setRegistryInstallRuntime(
   next: RegistryInstallRuntimeHandler,
 ): () => void {
-  const current = handler;
-  handler = next;
+  const current = handlerSlot.v;
+  handlerSlot.v = next;
   return () => {
-    handler = current;
+    handlerSlot.v = current;
   };
 }
 
 export function installCertifiedRegistryUnit(
   input: RegistryInstallRuntimeInput,
 ): Promise<RegistryInstallRuntimeResult> {
-  return handler(input);
+  return handlerSlot.v(input);
 }

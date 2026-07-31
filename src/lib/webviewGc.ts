@@ -10,6 +10,7 @@
 // contributes.views[].nativeSurface=true 로 "선언"하고(spec 데이터 주도), 여기는 그 선언에서 파생한
 // ownsSurface 술어로만 판정한다. 코어에 플러그인 id 하드코딩 = 강결합(플러그인/코어 분리 원칙 위반).
 
+import { moduleState } from "../lib/moduleState";
 import { invoke } from "../framework";
 import { rafThrottle } from "./rafThrottle";
 import { allGroups, useSessions, type Project } from "../state/sessions";
@@ -53,7 +54,9 @@ function liveBrowserLabels(): Set<string> {
   return collectWebviewLabels(useSessions.getState().projects, ownsSurfaceFromManifests);
 }
 
-let started = false;
+// "이미 붙였다"는 기억은 갈아끼우기 경계를 넘어야 한다 — 이 플래그만 사라지면 설치는
+// 안 남았는데 채우던 쪽은 이미 돌았다고 알아 다시 붙이지 않는다(영영 미설치).
+const startedFlag = moduleState("lib/webviewGc#startedFlag.on", () => ({ on: false }));
 
 // 복구 리부트 가드(webview_health recovery-in-flight 1회 플래그) — 크래시한 메인 webview 의
 // 복구 리로드 직후 프론트는 스토어가 빈 채로 부팅하므로, 세션 복원이 적용되기 전의 스윕은
@@ -80,8 +83,8 @@ export function releaseWebviewGcHold(): void {
 }
 
 export function startWebviewGc(): void {
-  if (started) return;
-  started = true;
+  if (startedFlag.on) return;
+  startedFlag.on = true;
 
   let lastKey: string | null = null;
   const sweep = rafThrottle(() => {

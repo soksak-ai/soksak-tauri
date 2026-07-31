@@ -11,6 +11,7 @@
 //
 // 계약: 홀 목록 = 열린 우측 사이드바 + 보이는 모든 골. 갱신은 사건 구동(레이아웃 커밋·창
 // 리사이즈·사이드바 변화)이고, 같은 값의 재발행은 침묵한다(멱등).
+import { moduleState } from "../lib/moduleState";
 import { engineProvision, invoke } from "../framework";
 import { onPluginEvent } from "../plugins/hooks";
 
@@ -54,12 +55,14 @@ export function reportDomHoles(): void {
   void invoke("webview_dom_holes", { holes }).catch(() => {});
 }
 
-let installed = false;
+// "이미 붙였다"는 기억은 갈아끼우기 경계를 넘어야 한다 — 이 플래그만 사라지면 설치는
+// 안 남았는데 채우던 쪽은 이미 돌았다고 알아 다시 붙이지 않는다(영영 미설치).
+const installedFlag = moduleState("lib/domHoles#installedFlag.on", () => ({ on: false }));
 
 /** 사건 구동 갱신 설치 — 부트 1회(멱등). 폴링 없음. */
 export function installDomHoles(): void {
-  if (installed || typeof window === "undefined") return;
-  installed = true;
+  if (installedFlag.on || typeof window === "undefined") return;
+  installedFlag.on = true;
   const schedule = () => requestAnimationFrame(() => reportDomHoles());
   // 레이아웃 커밋(분할·탭 전환·사이드바·레일 주행)의 단일 신호.
   onPluginEvent("layout.reflow", schedule);
@@ -72,6 +75,6 @@ export function installDomHoles(): void {
 
 /** 테스트 전용 초기화. */
 export function __resetDomHolesForTest(): void {
-  installed = false;
+  installedFlag.on = false;
   lastSig = "";
 }

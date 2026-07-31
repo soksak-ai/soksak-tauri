@@ -1,4 +1,5 @@
 import { invoke } from "../framework";
+import { moduleState } from "../lib/moduleState";
 import { create } from "zustand";
 import {
   certifyRegistryIndex,
@@ -315,13 +316,14 @@ interface RegistryRuntimeDeps {
 }
 
 const defaultRuntimeDeps: RegistryRuntimeDeps = { load: loadRegistryDocument, now: Date.now };
-let runtimeDeps = defaultRuntimeDeps;
-
+// 주입점은 갈아끼우기 경계를 넘어야 한다 — 이 자리만 비면 채운 쪽은 이미 채웠다고 알고
+// 다시 채우지 않는다. 그때 남는 것은 "아무도 답하지 않음"이고, 그 침묵은 오류가 아니다.
+const runtimeDepsSlot = moduleState("state/registry#runtimeDepsSlot.v", () => ({ v: defaultRuntimeDeps }));
 export function setRegistryRuntimeDeps(patch: Partial<RegistryRuntimeDeps>): () => void {
-  const previous = runtimeDeps;
-  runtimeDeps = { ...runtimeDeps, ...patch };
+  const previous = runtimeDepsSlot.v;
+  runtimeDepsSlot.v = { ...runtimeDepsSlot.v, ...patch };
   return () => {
-    runtimeDeps = previous;
+    runtimeDepsSlot.v = previous;
   };
 }
 
@@ -372,7 +374,7 @@ export const useRegistry = create<RegistryState>((set, get) => ({
         message: `registry trust key is already pinned: ${descriptor.id}`,
       };
     }
-    const now = runtimeDeps.now();
+    const now = runtimeDepsSlot.v.now();
     set((state) => {
       const descriptors = [...state.descriptors, descriptor];
       const trustRecords = {
@@ -399,7 +401,7 @@ export const useRegistry = create<RegistryState>((set, get) => ({
     if (!get().registries[registryId]) {
       return { ok: false, code: "TARGET_NOT_FOUND", message: `registry not found: ${registryId}` };
     }
-    const now = runtimeDeps.now();
+    const now = runtimeDepsSlot.v.now();
     set((state) => {
       const descriptors = state.descriptors.filter((descriptor) => descriptor.id !== registryId);
       const { [registryId]: _removed, ...registries } = state.registries;
@@ -427,7 +429,7 @@ export const useRegistry = create<RegistryState>((set, get) => ({
       if (source.status === "fetching" || (source.fetchedOnce && !force)) {
         return { registryId: descriptor.id, status: source.status, skipped: true };
       }
-      const startedAt = runtimeDeps.now();
+      const startedAt = runtimeDepsSlot.v.now();
       set((state) => {
         const current = state.registries[descriptor.id];
         if (!current) return state;
@@ -443,7 +445,7 @@ export const useRegistry = create<RegistryState>((set, get) => ({
       });
 
       try {
-        const raw = await runtimeDeps.load(descriptor);
+        const raw = await runtimeDepsSlot.v.load(descriptor);
         let highWater = get().trustRecords[descriptor.id]?.highWater;
         let certified: Awaited<ReturnType<typeof certifyRegistryIndex>>;
         for (;;) {
@@ -451,7 +453,7 @@ export const useRegistry = create<RegistryState>((set, get) => ({
             expectedRegistryId: descriptor.id,
             expectedKeyId: descriptor.trustedPublicKey.keyId,
             publicKey: descriptor.trustedPublicKey,
-            now: runtimeDeps.now(),
+            now: runtimeDepsSlot.v.now(),
             ...(highWater ? { highWater } : {}),
           });
           const current = get();
@@ -463,7 +465,7 @@ export const useRegistry = create<RegistryState>((set, get) => ({
           if (sameHighWater(highWater, currentHighWater)) break;
           highWater = currentHighWater;
         }
-        const finishedAt = runtimeDeps.now();
+        const finishedAt = runtimeDepsSlot.v.now();
         if (!certified.ok) {
           const error = `${certified.code}: ${certified.errors.join("; ")}`;
           set((state) => {
@@ -528,7 +530,7 @@ export const useRegistry = create<RegistryState>((set, get) => ({
         });
         return { registryId: descriptor.id, status: "live" };
       } catch (cause) {
-        const finishedAt = runtimeDeps.now();
+        const finishedAt = runtimeDepsSlot.v.now();
         const error = cause instanceof Error ? cause.message : String(cause);
         set((state) => {
           const current = state.registries[descriptor.id];

@@ -12,6 +12,7 @@
 // 폴링 아님: 트리거는 전부 사건(layout.reflow·view.parked·webview.* 활동·리사이즈 종료·
 // 부트 ready)이고, 타이머는 사건 후 레이아웃 정착 대기 1개뿐(400ms 디바운스 — 사건 이름
 // surface-audit-settle, 연속 사건은 마지막 것만 판정).
+import { moduleState } from "../lib/moduleState";
 import { invoke } from "../framework";
 import { onPluginEvent } from "../plugins/hooks";
 import { useBootPhase } from "../state/bootPhase";
@@ -216,12 +217,14 @@ function schedule(): void {
   }, 400);
 }
 
-let installed = false;
+// "이미 붙였다"는 기억은 갈아끼우기 경계를 넘어야 한다 — 이 플래그만 사라지면 설치는
+// 안 남았는데 채우던 쪽은 이미 돌았다고 알아 다시 붙이지 않는다(영영 미설치).
+const installedFlag = moduleState("lib/surfaceAudit#installedFlag.on", () => ({ on: false }));
 
 /** 상시 감사 설치 — 부트에서 1회(멱등). 트리거는 전부 사건이다. */
 export function installSurfaceAudit(): void {
-  if (installed || typeof document === "undefined") return;
-  installed = true;
+  if (installedFlag.on || typeof document === "undefined") return;
+  installedFlag.on = true;
   onPluginEvent("layout.reflow", schedule);
   onPluginEvent("view.parked", schedule);
   onPluginEvent("window.live-resize", (p) => {
@@ -239,7 +242,7 @@ export function installSurfaceAudit(): void {
 
 /** 테스트 전용 초기화. */
 export function __resetSurfaceAuditForTest(): void {
-  installed = false;
+  installedFlag.on = false;
   lastSignature = "";
   lastMissingSig = "[]";
   lastDarkSig = "[]";

@@ -280,9 +280,14 @@ export function emitFileSaved(payload: PluginEventMap["file.saved"]): void {
 
 // 부트 복원 적용 직후 세션 diff 기준점을 현재로 재씨딩 — 복원은 생성이 아니다(§5).
 // startPluginHooks 가 실체를 주입한다(그 전 호출은 no-op — 훅 미기동 창은 diff 도 없다).
-let reseedSessions: (() => void) | null = null;
+// 주입점은 갈아끼우기 경계를 넘어야 한다 — 이 자리만 비면 채운 쪽은 이미 채웠다고 알고
+// 다시 채우지 않는다. 그때 남는 것은 "아무도 답하지 않음"이고, 그 침묵은 오류가 아니다.
+const reseedSessionsSlot = moduleState(
+  "plugins/hooks#reseedSessions",
+  () => ({ v: null as (() => void) | null }),
+);
 export function reseedSessionsSnapshot(): void {
-  reseedSessions?.();
+  reseedSessionsSlot.v?.();
 }
 
 // ── 상태 diff 합성 ───────────────────────────────────────────────────────────
@@ -371,12 +376,14 @@ function diffSessions(prev: SessionsSnapshot, next: SessionsSnapshot): void {
   }
 }
 
-let started = false;
+// "이미 붙였다"는 기억은 갈아끼우기 경계를 넘어야 한다 — 이 플래그만 사라지면 설치는
+// 안 남았는데 채우던 쪽은 이미 돌았다고 알아 다시 붙이지 않는다(영영 미설치).
+const startedFlag = moduleState("plugins/hooks#startedFlag.on", () => ({ on: false }));
 
 // 앱 시작 시 1회 — store 구독을 건다(initPluginHost 에서 호출).
 export function startPluginHooks(): void {
-  if (started) return;
-  started = true;
+  if (startedFlag.on) return;
+  startedFlag.on = true;
 
   // 모든 store 쓰기마다 O(n) 스냅샷+diff 를 돌리지 않는다(원칙 1·5,
   // docs/PERFORMANCE.md) — 드래그 중 resizeSplit 은 60Hz+ 로 쓰지만 이 이벤트들
@@ -401,7 +408,7 @@ export function startPluginHooks(): void {
   // 복원 델타 삼킴(§5 "재생은 관찰이 아니다") — 부트 복원이 적용된 직후 windowBoot 가
   // 호출한다. 복원으로 나타난 프로젝트를 diff 가 "생성"으로 오인해 project.created 를
   // 창마다 발화하던 원천(실측: 창마다 git.init 자동 실행 + "OK" 낭독 연발).
-  reseedSessions = () => {
+  reseedSessionsSlot.v = () => {
     prevSessions = snapshotSessions(useSessions.getState());
   };
 
