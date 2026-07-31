@@ -4,6 +4,7 @@
 //   - 활성 인스턴스(모듈/Disposable — 비직렬화)는 loader 의 Map 에 보관, 여기는
 //     직렬화 가능한 런타임 상태만 담는다(plugin.list 가 그대로 나르는 형태).
 
+import { moduleState } from "../lib/moduleState";
 import { create } from "zustand";
 import { invoke } from "../framework";
 import { createCoreSync } from "./coreSync";
@@ -363,7 +364,10 @@ function basename(path: string): string {
   return parts[parts.length - 1] ?? path;
 }
 
-export const usePlugins = create<PluginsState>((set, get) => {
+// store 는 모듈 경계 밖에 산다 — 갈아끼우기가 이것을 갈면 등록·구독·화면 상태가 통째로
+// 새것이 되고, 채우던 쪽은 이미 채웠다고 알아 다시 채우지 않는다(영영 빈 채).
+export const usePlugins = moduleState("state/plugins#store", () =>
+  create<PluginsState>((set, get) => {
   const persisted = loadPersisted();
 
   const persist = () => {
@@ -862,4 +866,5 @@ export const usePlugins = create<PluginsState>((set, get) => {
       return ok({ id, dir: selectedPath });
     },
   };
-});
+}),
+);

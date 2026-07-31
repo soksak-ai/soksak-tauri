@@ -4,6 +4,7 @@
 // 화면이 동작 전체를 명령 그대로 고지). 메뉴(ProgramMenu)·설정(기본
 // 프로그램)·명령(view.open program=)이 전부 여기를 소비한다(§0-1).
 
+import { moduleState } from "../lib/moduleState";
 import { create } from "zustand";
 import type { ContributedProgram, LibraryDep } from "./spec";
 
@@ -19,7 +20,10 @@ interface ProgramRegistryState {
   register: (pluginId: string, decl: ContributedProgram) => () => void;
 }
 
-export const useProgramRegistry = create<ProgramRegistryState>((set, get) => ({
+// store 는 모듈 경계 밖에 산다 — 갈아끼우기가 이것을 갈면 등록·구독·화면 상태가 통째로
+// 새것이 되고, 채우던 쪽은 이미 채웠다고 알아 다시 채우지 않는다(영영 빈 채).
+export const useProgramRegistry = moduleState("plugins/programRegistry#store", () =>
+  create<ProgramRegistryState>((set, get) => ({
   programs: {},
   order: [],
   version: 0,
@@ -48,7 +52,8 @@ export const useProgramRegistry = create<ProgramRegistryState>((set, get) => ({
       });
     };
   },
-}));
+})),
+);
 
 export function getRegisteredProgram(id: string): RegisteredProgram | null {
   return useProgramRegistry.getState().programs[id] ?? null;

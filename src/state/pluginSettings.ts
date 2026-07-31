@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { moduleState } from "../lib/moduleState";
 import type { MapEntry } from "../plugins/spec";
 import { createCoreSync } from "./coreSync";
 import type { CoreStoreDeps } from "./coreStore";
@@ -72,7 +73,10 @@ function bagDelete(bag: Bag, pluginId: string, key?: string): Bag {
   return { ...bag, [pluginId]: inner };
 }
 
-export const usePluginSettings = create<PluginSettingsState>((set, get) => {
+// store 는 모듈 경계 밖에 산다 — 갈아끼우기가 이것을 갈면 등록·구독·화면 상태가 통째로
+// 새것이 되고, 채우던 쪽은 이미 채웠다고 알아 다시 채우지 않는다(영영 빈 채).
+export const usePluginSettings = moduleState("state/pluginSettings#store", () =>
+  create<PluginSettingsState>((set, get) => {
   const persist = () => {
     const s = get();
     pluginSettingsSync.save({ global: s.global, byProject: s.byProject });
@@ -120,4 +124,5 @@ export const usePluginSettings = create<PluginSettingsState>((set, get) => {
       return out;
     },
   };
-});
+}),
+);

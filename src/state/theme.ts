@@ -1,4 +1,5 @@
 import { invoke, currentWindow } from "../framework";
+import { moduleState } from "../lib/moduleState";
 import { create } from "zustand";
 import { createCoreSync } from "./coreSync";
 import type { CoreStoreDeps } from "./coreStore";
@@ -108,7 +109,10 @@ function loadSelection(): ThemeSel {
   return themeSync.loadSync();
 }
 
-export const useTheme = create<ThemeState>((set, get) => {
+// store 는 모듈 경계 밖에 산다 — 갈아끼우기가 이것을 갈면 등록·구독·화면 상태가 통째로
+// 새것이 되고, 채우던 쪽은 이미 채웠다고 알아 다시 채우지 않는다(영영 빈 채).
+export const useTheme = moduleState("state/theme#store", () =>
+  create<ThemeState>((set, get) => {
   const { themes, warnings } = loadBuiltins();
   const sel = loadSelection();
   const initial =
@@ -198,4 +202,5 @@ export const useTheme = create<ThemeState>((set, get) => {
       return dst;
     },
   };
-});
+}),
+);

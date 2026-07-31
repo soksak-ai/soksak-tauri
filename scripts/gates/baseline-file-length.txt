@@ -114,4 +114,8 @@ packages/plugin-spec/src/spec.ts 1785
 src/commands/catalog.ts 3169
 src/i18n.ts 1815
 src/plugins/api.ts 1926
-src/state/sessions.ts 2006
+# 재입법 2026-07-31 2006 → 2011. store 를 모듈 경계 밖으로 옮기며 붙인 사유 주석이다
+#   (moduleState 선언 한 줄 + 왜인지 두 줄). 코드가 아니라 근거이고, 이 파일이 사라지면
+#   다음 사람이 store 를 다시 모듈 안으로 되돌린다 — 그때 등록·구독·화면 상태가 통째로
+#   사라지는 것이 오늘 실측한 결함이다.
+src/state/sessions.ts 2011

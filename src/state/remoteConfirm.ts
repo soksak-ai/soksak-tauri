@@ -10,6 +10,7 @@
 // store 는 그 TTL 을 사람에게 카운트다운으로 보여줄 뿐 — 실제 차단은 Rust 가 한다(이 타이머가 끊겨도
 // destructive 는 절대 실행되지 않는다, Rust 가 단일 권위). 카운트다운이 0 에 닿으면 머리를 큐에서
 // 떨어뜨리고(데스크톱 표시 정리) 다음으로 승급한다 — Rust 가 이미 AUTO-DENY 했으므로 resolve 불필요.
+import { moduleState } from "../lib/moduleState";
 import { create } from "zustand";
 
 // Rust app.emit("remote-confirm-request", …) 의 페이로드(transport.rs ConfirmRequest 의 거울).
@@ -89,7 +90,10 @@ export function activeRequest(s: RemoteConfirmState): RemoteConfirmRequest | nul
   return s.queue[0] ?? null;
 }
 
-export const useRemoteConfirm = create<RemoteConfirmState>((set, get) => ({
+// store 는 모듈 경계 밖에 산다 — 갈아끼우기가 이것을 갈면 등록·구독·화면 상태가 통째로
+// 새것이 되고, 채우던 쪽은 이미 채웠다고 알아 다시 채우지 않는다(영영 빈 채).
+export const useRemoteConfirm = moduleState("state/remoteConfirm#store", () =>
+  create<RemoteConfirmState>((set, get) => ({
   queue: [],
   sink: null,
 
@@ -118,4 +122,5 @@ export const useRemoteConfirm = create<RemoteConfirmState>((set, get) => ({
     if (!head || head.request_id !== requestId) return;
     set({ queue: q.slice(1) });
   },
-}));
+})),
+);

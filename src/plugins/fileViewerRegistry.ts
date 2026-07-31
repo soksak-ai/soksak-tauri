@@ -2,6 +2,7 @@
 // 엔진 중립(계약 A13): 코어는 매칭·호스팅만 한다. 렌더 엔진(CodeMirror/Monaco/미디어 등)은 전적으로
 // 플러그인 소유 — provider.mount 가 컨테이너에 직접 그린다(viewRegistry 와 동형). version 은 UI 재구성 신호.
 
+import { moduleState } from "../lib/moduleState";
 import { create } from "zustand";
 import { qualifiedViewId, type ContributedFileViewer } from "./spec";
 
@@ -37,7 +38,10 @@ interface FileViewerRegistryState {
   ) => () => void;
 }
 
-export const useFileViewerRegistry = create<FileViewerRegistryState>(
+// store 는 모듈 경계 밖에 산다 — 갈아끼우기가 이것을 갈면 등록·구독·화면 상태가 통째로
+// 새것이 되고, 채우던 쪽은 이미 채웠다고 알아 다시 채우지 않는다(영영 빈 채).
+export const useFileViewerRegistry = moduleState("plugins/fileViewerRegistry#store", () =>
+  create<FileViewerRegistryState>(
   (set, get) => ({
     viewers: {},
     version: 0,
@@ -62,6 +66,7 @@ export const useFileViewerRegistry = create<FileViewerRegistryState>(
       };
     },
   }),
+),
 );
 
 // 파일명 끝의 확장자(소문자). 'Makefile'/'.zshrc' 처럼 없으면 "".

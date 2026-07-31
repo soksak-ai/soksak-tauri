@@ -2,6 +2,7 @@
 // 내장 lucide 는 항상 존재하는 폴백: 선택된 셋이 없거나(플러그인 비활성/제거)
 // 이름이 비어도 UI 는 성립한다.
 
+import { moduleState } from "../../lib/moduleState";
 import { create } from "zustand";
 import { ICON_NAMES, type IconGlyph, type IconName, type IconSetData } from "./types";
 import { LUCIDE_ICONS } from "./sets/lucide";
@@ -22,7 +23,10 @@ interface IconRegistryState {
   unregister: (id: string) => void;
 }
 
-export const useIconRegistry = create<IconRegistryState>((set) => ({
+// store 는 모듈 경계 밖에 산다 — 갈아끼우기가 이것을 갈면 등록·구독·화면 상태가 통째로
+// 새것이 되고, 채우던 쪽은 이미 채웠다고 알아 다시 채우지 않는다(영영 빈 채).
+export const useIconRegistry = moduleState("ui/icons/registry#store", () =>
+  create<IconRegistryState>((set) => ({
   sets: {
     [BUILTIN_ICON_SET]: { id: BUILTIN_ICON_SET, name: "Lucide", data: LUCIDE_ICONS },
   },
@@ -40,7 +44,8 @@ export const useIconRegistry = create<IconRegistryState>((set) => ({
       delete next[id];
       return { sets: next, version: st.version + 1 };
     }),
-}));
+})),
+);
 
 // 셋 데이터 검증 — 전 시맨틱 이름을 제공해야 등록 가능(부분 셋이면 어느 이름이
 // 비었는지 메시지로 반환). 플러그인 입력 방어.

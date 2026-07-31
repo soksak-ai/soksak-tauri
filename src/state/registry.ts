@@ -351,7 +351,10 @@ const persisted = safePersisted(registrySync.loadSync());
 const initialDescriptors = [OFFICIAL_REGISTRY_DESCRIPTOR, ...persisted.descriptors];
 const initialRegistries = sourcesFor(initialDescriptors, persisted.trustRecords);
 
-export const useRegistry = create<RegistryState>((set, get) => ({
+// store 는 모듈 경계 밖에 산다 — 갈아끼우기가 이것을 갈면 등록·구독·화면 상태가 통째로
+// 새것이 되고, 채우던 쪽은 이미 채웠다고 알아 다시 채우지 않는다(영영 빈 채).
+export const useRegistry = moduleState("state/registry#store", () =>
+  create<RegistryState>((set, get) => ({
   descriptors: initialDescriptors,
   registries: initialRegistries,
   trustRecords: persisted.trustRecords,
@@ -555,4 +558,5 @@ export const useRegistry = create<RegistryState>((set, get) => ({
       }
     }));
   },
-}));
+})),
+);

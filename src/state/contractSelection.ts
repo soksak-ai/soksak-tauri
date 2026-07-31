@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { moduleState } from "../lib/moduleState";
 import { createCoreSync } from "./coreSync";
 import type { CoreStoreDeps } from "./coreStore";
 
@@ -45,7 +46,10 @@ function load(): PersistedContractSelection {
   return { ...DEFAULTS, ...contractSelectionSync.loadSync() };
 }
 
-export const useContractSelection = create<ContractSelectionState>((set, get) => {
+// store 는 모듈 경계 밖에 산다 — 갈아끼우기가 이것을 갈면 등록·구독·화면 상태가 통째로
+// 새것이 되고, 채우던 쪽은 이미 채웠다고 알아 다시 채우지 않는다(영영 빈 채).
+export const useContractSelection = moduleState("state/contractSelection#store", () =>
+  create<ContractSelectionState>((set, get) => {
   const save = () => {
     contractSelectionSync.save(serialize(get()));
   };
@@ -62,4 +66,5 @@ export const useContractSelection = create<ContractSelectionState>((set, get) =>
       save();
     },
   };
-});
+}),
+);

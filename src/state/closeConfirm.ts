@@ -1,6 +1,7 @@
 // 닫기 오케스트레이션(R6/§5) — 판정은 closeGuard 순수함수가, 모달 대기 상태는 이 store 가.
 // closeView/closeContent 는 동기 CmdResult 라 그 안에서 비동기 확인창을 못 띄운다 → 이 store 가 중재.
 //   x 클릭 → request*: 설정 warn 이고 blocking 이면 pending(확인창), 아니면 즉시 close. off 면 항상 즉시.
+import { moduleState } from "../lib/moduleState";
 import { create } from "zustand";
 import { allViews, useSessions, type Space, type Tab } from "./sessions";
 import { useSettings } from "./settings";
@@ -39,7 +40,10 @@ function findContent(
 
 const isWarn = () => useSettings.getState().tabCloseConfirm === "warn";
 
-export const useCloseConfirm = create<CloseConfirmState>((set, get) => ({
+// store 는 모듈 경계 밖에 산다 — 갈아끼우기가 이것을 갈면 등록·구독·화면 상태가 통째로
+// 새것이 되고, 채우던 쪽은 이미 채웠다고 알아 다시 채우지 않는다(영영 빈 채).
+export const useCloseConfirm = moduleState("state/closeConfirm#store", () =>
+  create<CloseConfirmState>((set, get) => ({
   pending: null,
 
   requestCloseView: (projectId, viewId) => {
@@ -73,4 +77,5 @@ export const useCloseConfirm = create<CloseConfirmState>((set, get) => ({
   },
 
   cancel: () => set({ pending: null }),
-}));
+})),
+);

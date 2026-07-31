@@ -6,6 +6,7 @@
 // 배선(실제 deps: viewRegistry·contractResolve·plugins)은 소비 지점에서 주입한다 — 이
 // 모듈은 레지스트리를 직접 읽지 않는다(테스트 가능·강결합 0).
 
+import { moduleState } from "../lib/moduleState";
 import { create } from "zustand";
 import type { ContributedSidebar, SidebarInstance, SidebarSlot } from "../plugins/spec";
 
@@ -207,7 +208,10 @@ function withPin(entry: ProjectEntry, side: "left" | "right", ref: string): Proj
   };
 }
 
-export const useProjection = create<ProjectionStore>((set) => ({
+// store 는 모듈 경계 밖에 산다 — 갈아끼우기가 이것을 갈면 등록·구독·화면 상태가 통째로
+// 새것이 되고, 채우던 쪽은 이미 채웠다고 알아 다시 채우지 않는다(영영 빈 채).
+export const useProjection = moduleState("state/projection#store", () =>
+  create<ProjectionStore>((set) => ({
   byProject: {},
 
   noteBinding: (projectId, viewId) =>
@@ -282,4 +286,5 @@ export const useProjection = create<ProjectionStore>((set) => ({
       delete byProject[projectId];
       return { byProject };
     }),
-}));
+})),
+);

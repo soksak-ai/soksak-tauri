@@ -1,6 +1,7 @@
 // 인앱 알림 배너 스토어 — 앱이 포커스 상태일 때의 알림 표시(비포커스는 OS 알림). 창마다 자체
 // store(멀티윈도우) — push 를 호출한 그 창에만 배너가 뜬다(클릭 단일 처리). 최근 N개만 유지.
 
+import { moduleState } from "../lib/moduleState";
 import { create } from "zustand";
 
 export interface NotifyAction {
@@ -26,7 +27,10 @@ interface NotifyState {
   dismiss: (id: string) => void;
 }
 
-export const useNotify = create<NotifyState>((set) => ({
+// store 는 모듈 경계 밖에 산다 — 갈아끼우기가 이것을 갈면 등록·구독·화면 상태가 통째로
+// 새것이 되고, 채우던 쪽은 이미 채웠다고 알아 다시 채우지 않는다(영영 빈 채).
+export const useNotify = moduleState("state/notify#store", () =>
+  create<NotifyState>((set) => ({
   banners: [],
   // 같은 id 는 교체(중복 제거), 최근 MAX_VISIBLE 개만.
   show: (b) =>
@@ -34,4 +38,5 @@ export const useNotify = create<NotifyState>((set) => ({
       banners: [...s.banners.filter((x) => x.id !== b.id), b].slice(-MAX_VISIBLE),
     })),
   dismiss: (id) => set((s) => ({ banners: s.banners.filter((x) => x.id !== id) })),
-}));
+})),
+);

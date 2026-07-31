@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { moduleState } from "../lib/moduleState";
 import { issueId } from "./ids";
 import { noteActivation } from "../lib/motionDebug";
 import {
@@ -859,7 +860,10 @@ function makeProject(id: string, opts: NewProjectOpts): Project {
 const noProject = (id: string): CmdErr =>
   err("TARGET_NOT_FOUND", `프로젝트 없음: ${id}`);
 
-export const useSessions = create<SessionsStore>((set, get) => ({
+// store 는 모듈 경계 밖에 산다 — 갈아끼우기가 이것을 갈면 등록·구독·화면 상태가 통째로
+// 새것이 되고, 채우던 쪽은 이미 채웠다고 알아 다시 채우지 않는다(영영 빈 채).
+export const useSessions = moduleState("state/sessions#store", () =>
+  create<SessionsStore>((set, get) => ({
   // 부트(main.tsx)가 기본 루트(~/.soksak/projects/project1)를 준비한 뒤
   // bootstrapFirstProject 로 첫 프로젝트를 만든다(P3) — 렌더 전이므로
   // 프로젝트 0개 상태는 화면에 나타나지 않는다(부트 실패만의 예외 상태).
@@ -2003,4 +2007,5 @@ export const useSessions = create<SessionsStore>((set, get) => ({
     return r;
   },
 
-}));
+})),
+);

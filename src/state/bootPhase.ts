@@ -7,6 +7,7 @@
 //   · PluginViewHost — ready 전 미등록 = 불러오는 중, ready 후 미등록 = 진짜 부재.
 //   · BootPhaseBadge — ready 전 창 구석의 은은한 진행 표시.
 // 초기값은 ready — 부트 계약 밖 진입점(테스트·오케스트레이터)은 위상 없이 현행 그대로다.
+import { moduleState } from "../lib/moduleState";
 import { create } from "zustand";
 
 export type BootPhase = "restoring" | "activating" | "ready";
@@ -16,7 +17,11 @@ interface BootPhaseState {
   setPhase: (phase: BootPhase) => void;
 }
 
-export const useBootPhase = create<BootPhaseState>((set) => ({
+// store 는 모듈 경계 밖에 산다 — 갈아끼우기가 이것을 갈면 등록·구독·화면 상태가 통째로
+// 새것이 되고, 채우던 쪽은 이미 채웠다고 알아 다시 채우지 않는다(영영 빈 채).
+export const useBootPhase = moduleState("state/bootPhase#store", () =>
+  create<BootPhaseState>((set) => ({
   phase: "ready",
   setPhase: (phase) => set({ phase }),
-}));
+})),
+);

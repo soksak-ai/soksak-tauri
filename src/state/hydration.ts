@@ -6,6 +6,7 @@
 // requestIdleCallback 재귀, 큐가 비면 소멸). 과정은 노출되지 않는다: 파킹/비활성
 // 슬롯이라 채워지는 모습은 보이지 않고, 열어보면 이미(또는 즉시) 채워져 있다.
 
+import { moduleState } from "../lib/moduleState";
 import { create } from "zustand";
 import { useSessions, allGroups } from "./sessions";
 
@@ -16,7 +17,10 @@ interface HydrationStore {
   promote: (viewId: string) => void;
 }
 
-export const useHydration = create<HydrationStore>((set, get) => ({
+// store 는 모듈 경계 밖에 산다 — 갈아끼우기가 이것을 갈면 등록·구독·화면 상태가 통째로
+// 새것이 되고, 채우던 쪽은 이미 채웠다고 알아 다시 채우지 않는다(영영 빈 채).
+export const useHydration = moduleState("state/hydration#store", () =>
+  create<HydrationStore>((set, get) => ({
   cold: new Set(),
   markCold: (viewIds) => {
     if (viewIds.length === 0) return;
@@ -29,7 +33,8 @@ export const useHydration = create<HydrationStore>((set, get) => ({
     next.delete(viewId);
     set({ cold: next });
   },
-}));
+})),
+);
 
 /** 복원 직후 1회 — 화면에 보이지 않는 복원 뷰들을 cold 로 표시하고 idle 승격 체인을 켠다.
  *  보이는 뷰 = 활성 프로젝트의 활성 컨텐츠에서 각 그룹의 activeViewId(분할이면 여러 개). */

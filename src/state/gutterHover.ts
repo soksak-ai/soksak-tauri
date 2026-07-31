@@ -6,6 +6,7 @@
 // 파일명과 useGutterHover 라는 이름만 옛 낱말로 남아 있다. 이 심볼은 명령 층(catalogDom)이
 // 소비하므로 개명이 두 레인을 동시에 건드린다 — 명령 표면 레인이 그 import 한 줄과 함께 옮긴다.
 // 그때 파일도 gutterHover.ts 가 된다. 담고 있는 값은 이미 정본 골 주소다(아래 key 주석).
+import { moduleState } from "../lib/moduleState";
 import { create } from "zustand";
 
 interface GutterHoverState {
@@ -13,8 +14,12 @@ interface GutterHoverState {
   set: (key: string | null) => void;
 }
 
-export const useGutterHover = create<GutterHoverState>((set) => ({
+// store 는 모듈 경계 밖에 산다 — 갈아끼우기가 이것을 갈면 등록·구독·화면 상태가 통째로
+// 새것이 되고, 채우던 쪽은 이미 채웠다고 알아 다시 채우지 않는다(영영 빈 채).
+export const useGutterHover = moduleState("state/gutterHover#store", () =>
+  create<GutterHoverState>((set) => ({
   key: null,
   // 같은 값이면 상태 객체를 바꾸지 않는다 — hover 이동(대부분 gutter 아님=null)마다 불필요한 리렌더 방지.
   set: (key) => set((s) => (s.key === key ? s : { key })),
-}));
+})),
+);

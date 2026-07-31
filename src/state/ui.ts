@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { moduleState } from "../lib/moduleState";
 import { create } from "zustand";
 import { invoke } from "../framework";
 
@@ -33,7 +34,10 @@ function syncNative(prev: number, next: number): void {
 // 네이티브 게이트엔 직전 상태(true)가 남을 수 있다 — 시작 시 1회 false 로 맞춘다.
 invoke("webview_overlay_active", { active: false }).catch(() => {});
 
-export const useUi = create<UiState>((set) => ({
+// store 는 모듈 경계 밖에 산다 — 갈아끼우기가 이것을 갈면 등록·구독·화면 상태가 통째로
+// 새것이 되고, 채우던 쪽은 이미 채웠다고 알아 다시 채우지 않는다(영영 빈 채).
+export const useUi = moduleState("state/ui#store", () =>
+  create<UiState>((set) => ({
   overlayCount: 0,
   consentPreviewId: null,
   setConsentPreview: (id) => set({ consentPreviewId: id }),
@@ -50,7 +54,8 @@ export const useUi = create<UiState>((set) => ({
       syncNative(s.overlayCount, next);
       return { overlayCount: next };
     }),
-}));
+})),
+);
 
 // 마운트 동안(active 가 true 인 동안) 오버레이로 등록한다 — 모든 모달/메뉴/
 // 드롭다운은 반드시 이 훅을 사용한다(표시 제어가 아니라 입력 게이트다).

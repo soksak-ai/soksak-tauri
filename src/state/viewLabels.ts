@@ -7,6 +7,7 @@
 // 영속: app.data core ns "viewLabels"(멀티창 일관성). boot(windowBoot)가 hydrate+subscribe.
 // 동기 부트는 localStorage 캐시(coreStore) — 다른 영속 상태와 동일 패턴.
 
+import { moduleState } from "../lib/moduleState";
 import { create } from "zustand";
 import { makeCoreStore, type CoreStoreDeps } from "./coreStore";
 
@@ -20,7 +21,10 @@ interface ViewLabelsState {
   replaceAll: (labels: LabelMap) => void;
 }
 
-export const useViewLabels = create<ViewLabelsState>((set, get) => ({
+// store 는 모듈 경계 밖에 산다 — 갈아끼우기가 이것을 갈면 등록·구독·화면 상태가 통째로
+// 새것이 되고, 채우던 쪽은 이미 채웠다고 알아 다시 채우지 않는다(영영 빈 채).
+export const useViewLabels = moduleState("state/viewLabels#store", () =>
+  create<ViewLabelsState>((set, get) => ({
   labels: {},
   setLabel: (viewKey, label) => {
     const trimmed = label.trim();
@@ -37,7 +41,8 @@ export const useViewLabels = create<ViewLabelsState>((set, get) => ({
     persist?.(labels);
   },
   replaceAll: (labels) => set({ labels }),
-}));
+})),
+);
 
 // viewKey 의 표시 라벨 — 오버라이드 우선, 없으면 fallback(manifest title).
 export function resolveViewLabel(viewKey: string, fallback: string): string {
