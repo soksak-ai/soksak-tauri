@@ -10,6 +10,7 @@
 // 자신에게 왕복하는 셈이다.
 //
 // 두 구현이 같은 계약을 만족한다는 것이 요점이다. 호출자(plugins/api.ts)는 어느 쪽인지 모른다.
+import { moduleState } from "../lib/moduleState";
 import { engineProvision, invoke } from "../framework";
 import { bridgeContentViewEvents } from "./contentViewEvents";
 import { applyParked } from "./layerPark";
@@ -76,8 +77,8 @@ export function contentViewHost(): ContentViewHost {
 const HOST_ID = "content-view-host";
 
 /** label → 사건 해지. 뷰를 닫을 때 함께 끊는다 — 안 끊으면 죽은 label 로 뿌린다. */
-const bridges = new Map<string, () => void>();
-
+// 갈아끼우기 경계 밖 — 이 표가 새것이 되면 채운 쪽은 이미 채웠다고 알아 다시 채우지 않는다.
+const bridges = moduleState("lib/contentViews#bridges", () => new Map<string, () => void>());
 /** 요소가 붙는 자리. 없으면 만든다 — 배치는 호출자가 bounds 로 정한다. */
 function root(doc: Document): HTMLElement {
   let el = doc.getElementById(HOST_ID);

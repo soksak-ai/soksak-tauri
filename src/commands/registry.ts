@@ -294,9 +294,10 @@ export type CommandError = CommandOutcome & { ok: false };
 const MAX_MACHINE_SCHEMA_DEPTH = 16;
 const MAX_MACHINE_SCHEMA_NODES = 512;
 const MAX_MACHINE_RESULT_ERRORS = 16;
-const UNSAFE_RECORD_KEYS = new Set(["__proto__", "prototype", "constructor"]);
-const PLUGIN_ROLES = new Set(["controller", "view", "file-viewer", "overlay", "preview"]);
-
+// 갈아끼우기 경계 밖 — 이 표가 새것이 되면 채운 쪽은 이미 채웠다고 알아 다시 채우지 않는다.
+const UNSAFE_RECORD_KEYS = moduleState("commands/registry#UNSAFE_RECORD_KEYS", () => new Set(["__proto__", "prototype", "constructor"]));
+// 갈아끼우기 경계 밖 — 이 표가 새것이 되면 채운 쪽은 이미 채웠다고 알아 다시 채우지 않는다.
+const PLUGIN_ROLES = moduleState("commands/registry#PLUGIN_ROLES", () => new Set(["controller", "view", "file-viewer", "overlay", "preview"]));
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
   const prototype = Object.getPrototypeOf(value);

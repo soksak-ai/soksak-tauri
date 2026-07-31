@@ -12,10 +12,11 @@
 //
 // 이미 도는 것과 앞으로 시작할 것 둘 다 잡아야 한다 — transitionrun/animationstart 가 새로 태어난
 // 애니메이션의 유일한 신호다. 기본값(1배속, 정지 없음)에서는 리스너가 아무것도 만지지 않는다.
+import { moduleState } from "../lib/moduleState";
 import { invoke } from "../framework";
 
-const listeners = new Set<() => void>();
-
+// 갈아끼우기 경계 밖 — 이 표가 새것이 되면 채운 쪽은 이미 채웠다고 알아 다시 채우지 않는다.
+const listeners = moduleState("lib/motionDebug#listeners", () => new Set<() => void>());
 export interface MotionDebugState {
   /** 지속 배수 — 1 = 보통, 20 = 스무 배 느리게. 화면에는 속도(1/20)로 적는다. */
   scale: number;
@@ -29,7 +30,8 @@ let hold = false;
 let wired = false;
 /** 이 모듈이 판 예약들. 브라우저 목록에 잡히기를 기대하지 않고 직접 들고 있는다 —
  *  기대가 어긋나면 정지가 예약에 안 걸리고, 얼어붙은 순간을 착지가 지운다. */
-const scheduled = new Set<Retimable>();
+// 갈아끼우기 경계 밖 — 이 표가 새것이 되면 채운 쪽은 이미 채웠다고 알아 다시 채우지 않는다.
+const scheduled = moduleState("lib/motionDebug#scheduled", () => new Set<Retimable>());
 /** 진단: 갓 태어난 애니메이션을 몇 번 붙잡았는지. */
 let births = 0;
 /** 최근 태어난 전이들의 정체 — "births 43" 이 무엇이었는지 사실로 남긴다(관찰면).
@@ -645,8 +647,8 @@ interface Waiting {
   timer: number;
 }
 
-const waiting = new Set<Waiting>();
-
+// 갈아끼우기 경계 밖 — 이 표가 새것이 되면 채운 쪽은 이미 채웠다고 알아 다시 채우지 않는다.
+const waiting = moduleState("lib/motionDebug#waiting", () => new Set<Waiting>());
 function nowMs(): number {
   return typeof performance === "undefined" ? 0 : performance.now();
 }

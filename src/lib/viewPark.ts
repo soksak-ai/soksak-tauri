@@ -5,6 +5,7 @@
 //   ② 플러그인에 view.parked 사실을 통지 — 엔진 서피스 소유 플러그인이 표시/숨김·재스냅을 이 사실에
 //      맞춘다. 각 플러그인의 뷰포트 추측(IntersectionObserver)·재스냅 경쟁이 규칙 하나로 대체된다.
 // 멱등: 같은 상태 재커밋은 no-op — 렌더마다 불러도 비용은 변화 시에만 발생한다.
+import { moduleState } from "../lib/moduleState";
 import { contentViewHost } from "./contentViews";
 import { emitPluginEvent } from "../plugins/hooks";
 import { browserLabel } from "./webviewLabels";
@@ -32,8 +33,8 @@ export function viewSurfaceStyle(visible: boolean, exclusive: boolean) {
   };
 }
 
-const visibleByView = new Map<string, boolean>();
-
+// 갈아끼우기 경계 밖 — 이 표가 새것이 되면 채운 쪽은 이미 채웠다고 알아 다시 채우지 않는다.
+const visibleByView = moduleState("lib/viewPark#visibleByView", () => new Map<string, boolean>());
 export function commitViewVisibility(viewId: string, visible: boolean): void {
   if (visibleByView.get(viewId) === visible) return;
   visibleByView.set(viewId, visible);

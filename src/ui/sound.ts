@@ -1,3 +1,4 @@
+import { moduleState } from "../lib/moduleState";
 // 알림 소리 — 내장음은 Web Audio 로 합성(바이너리 에셋 동봉 불필요), 커스텀음은 URL/asset 경로
 // 로드. 순수 프론트(Rust 의존 0). AudioContext 는 지연 생성, suspended 면 resume 시도(데스크톱
 // 웹뷰는 대개 허용 — 막히면 무음, best-effort). 알림은 시스템 접근 0이라 권한 게이트는 api 표면에서.
@@ -68,8 +69,8 @@ const BUILTINS: Record<string, Note[]> = {
 
 export const BUILTIN_SOUNDS = Object.keys(BUILTINS);
 
-const bufCache = new Map<string, AudioBuffer>();
-
+// 갈아끼우기 경계 밖 — 이 표가 새것이 되면 채운 쪽은 이미 채웠다고 알아 다시 채우지 않는다.
+const bufCache = moduleState("ui/sound#bufCache", () => new Map<string, AudioBuffer>());
 // 내장음 이름이면 합성, 아니면 URL/asset 경로로 보고 로드·재생(캐시). 실패는 무음(best-effort).
 export async function playSound(sound: string): Promise<void> {
   if (Object.prototype.hasOwnProperty.call(BUILTINS, sound)) {

@@ -12,6 +12,7 @@
 //            하며 freeze 는 금지다(과거 freeze-frame 이 제거된 이유 — 콘텐츠 박제·잔상).
 // 페이로드 { active, kinds }: kinds = 그 순간 활성인 종별들. active 인 채 종별 구성이
 // 바뀌면 active:true 를 재발화한다 — 소비자는 재평가한다(예: 주행 중 디바이더 개입 → 해동).
+import { moduleState } from "../lib/moduleState";
 import { invoke } from "../framework";
 import { emitPluginEvent } from "../plugins/hooks";
 
@@ -36,8 +37,8 @@ type MotionListener = (
   kinds: LayoutMotionKind[],
   scope: Set<string> | null,
 ) => void;
-const listeners = new Set<MotionListener>();
-
+// 갈아끼우기 경계 밖 — 이 표가 새것이 되면 채운 쪽은 이미 채웠다고 알아 다시 채우지 않는다.
+const listeners = moduleState("lib/layoutMotion#listeners", () => new Set<MotionListener>());
 /** 모션 에지(시작/끝) 구독. 반환 함수로 해지한다. */
 export function onLayoutMotion(listener: MotionListener): () => void {
   listeners.add(listener);

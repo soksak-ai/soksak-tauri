@@ -2,6 +2,7 @@
 // 출처는 코어 테마 엔진과 App.css 다. 여기서 직접 가져오거나 열거한다(다른 곳에 복제 금지).
 // 플러그인 CSS 가 이 집합 밖의 var(--X) 를 참조하면 코어가 그 이름으로 값을 안 주므로 폴백 색만
 // 먹고 테마가 적용되지 않는다(조용한 시각 버그). findGhostThemeVars 가 그 부정합을 기계적으로 잡는다.
+import { moduleState } from "../lib/moduleState";
 import { COLOR_SLOTS } from "../theme/engine";
 
 // 엔진이 슬롯 외에 추가로 setProperty 하는 변수(engine.ts applyThemeToDom) + App.tsx.
@@ -26,13 +27,13 @@ export const CORE_THEME_VARS: ReadonlySet<string> = new Set<string>([
 // 유령 판정 범위를 이 어휘로 한정한다: 라이브러리/사적 네임스페이스(radix-*, trees-*, color-blue-500,
 // gap …)는 어휘 밖이라 검사하지 않는다(false positive 방지). 어휘 안 이름인데 코어가 안 주면 = 진짜 버그.
 // 예: text/surface/accent/border/background/foreground/hover/bg2 → 코어엔 fg/card/acc/bd/bg 만 있음.
-const HOST_THEME_VOCAB: ReadonlySet<string> = new Set<string>([
+// 갈아끼우기 경계 밖 — 이 표가 새것이 되면 채운 쪽은 이미 채웠다고 알아 다시 채우지 않는다.
+const HOST_THEME_VOCAB: ReadonlySet<string>  = moduleState("plugins/themeContract#HOST_THEME_VOCAB", () => new Set<string>([
   "bg", "fg", "text", "foreground", "background", "surface", "card", "panel",
   "side", "sidebar", "inset", "bd", "border", "acc", "accent", "accbg", "ok",
   "success", "shadow", "hover", "muted", "primary", "secondary", "danger",
   "warning", "error", "link", "ring", "focus", "selection", "highlight",
-]);
-
+]));
 // 직렬화 가능한 계약(Doctor 가 contract.json 으로 소비 — 코어가 단일 발행).
 export function themeVarContract(): { vars: string[]; vocab: string[] } {
   return {

@@ -9,10 +9,12 @@
 // 폴링 없음: 입력은 두 가지 에지뿐이다 — React 커밋(호출자)과 모션 에지(onLayoutMotion).
 // 위상 중 rAF 는 진행 중인 애니메이션의 프레임 추적이지 감시가 아니며, 위상 종료 에지가
 // 루프를 회수하고 최종 기하로 1회 정착시킨다(상시 계약).
+import { moduleState } from "../lib/moduleState";
 import { applyRailHoleClip, collectHoleRects } from "./railHoleClip";
 import { onLayoutMotion } from "./layoutMotion";
 
-const planes = new Set<HTMLElement>();
+// 갈아끼우기 경계 밖 — 이 표가 새것이 되면 채운 쪽은 이미 채웠다고 알아 다시 채우지 않는다.
+const planes = moduleState("lib/railHoleClipHost#planes", () => new Set<HTMLElement>());
 let offMotion: (() => void) | null = null;
 let raf = 0;
 let coalescing = false;

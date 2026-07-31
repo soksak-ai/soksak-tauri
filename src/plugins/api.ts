@@ -6,6 +6,7 @@
 //   - 모든 등록은 내부 tracker 가 자동 수거 — 비활성화 시 누수 불가(§0-4).
 //   - 의존성은 deps 로 주입(테스트 가능 구조 — 꼼수가 아니라 구조로 해결).
 
+import { moduleState } from "../lib/moduleState";
 import type {
   CommandContext,
   CommandOutcome,
@@ -679,7 +680,8 @@ export class DisposableTracker {
 // ── 관리 명령 차단(§0-5 자기증식 금지) ───────────────────────────────────────
 // plugin.view.* 는 뷰 열기/닫기(관리 아님)라 허용. plugin.<id>.* (플러그인 명령)도 허용.
 
-const BLOCKED_MANAGEMENT = new Set([
+// 갈아끼우기 경계 밖 — 이 표가 새것이 되면 채운 쪽은 이미 채웠다고 알아 다시 채우지 않는다.
+const BLOCKED_MANAGEMENT = moduleState("plugins/api#BLOCKED_MANAGEMENT", () => new Set([
   "plugin.list",
   "plugin.install",
   "plugin.update",
@@ -687,8 +689,7 @@ const BLOCKED_MANAGEMENT = new Set([
   "plugin.enable",
   "plugin.disable",
   "plugin.reload",
-]);
-
+]));
 // message 미제공(라벨 폴백)으로 등록된 플러그인 명령 전역 집합 — plugin.conformance 가 정확히
 // 보고하는 게이트 소스(로드타임 거부 대신 발행/진단 경계에서 강제, MESSAGE-PROTOCOL §3).
 export const commandsMissingMessage = new Set<string>();

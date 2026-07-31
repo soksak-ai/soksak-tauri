@@ -42,13 +42,14 @@ const observations = moduleState(
 
 // 전역(어느 pane 이든) 명령 시작/종료 구독자 — 플러그인 이벤트(command.started/finished,
 // turn.ended) 중계용. 끝난 명령라인·cwd 도 함께 전달(turn.ended 본문 enrich).
-const anyCmdStartSubs = new Set<
+// 갈아끼우기 경계 밖 — 이 표가 새것이 되면 채운 쪽은 이미 채웠다고 알아 다시 채우지 않는다.
+const anyCmdStartSubs = moduleState("terminal/ptyObservationStore#anyCmdStartSubs", () => new Set<
   (paneId: string, commandLine: string, cwd: string | null) => void
->();
-const anyCmdFinishedSubs = new Set<
+>());
+// 갈아끼우기 경계 밖 — 이 표가 새것이 되면 채운 쪽은 이미 채웠다고 알아 다시 채우지 않는다.
+const anyCmdFinishedSubs = moduleState("terminal/ptyObservationStore#anyCmdFinishedSubs", () => new Set<
   (paneId: string, commandLine?: string | null, cwd?: string | null, exitCode?: number) => void
->();
-
+>());
 /**
  * paneId 의 관찰을 시작한다(PTY spawn 시 1회). 멱등 — 이미 있으면 기존 것을 유지.
  * 이후 feedPtyOutput(paneId, …) 로 출력을 먹이면 OSC 가 파싱되어 구독자에 흐른다.

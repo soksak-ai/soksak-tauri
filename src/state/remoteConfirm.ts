@@ -43,8 +43,8 @@ export const DEFAULT_CONFIRM_TTL_SECS = 120;
 // enqueue 하고 사람 결정을 **await** 한다 — 이 맵이 request_id ↔ 그 await 의 resolver 다. 모달의
 // resolve/expire 가 sink 로 (request_id, approve) 를 보내면 wireRemoteConfirm 의 sink 가 이 맵에서
 // 해당 resolver 를 깨운다(스토어 큐 로직은 무수정 — 기존 직렬 큐 의미 그대로). 멱등: 두 번째 결정은 무시.
-const decisionWaiters = new Map<number, (approve: boolean) => void>();
-
+// 갈아끼우기 경계 밖 — 이 표가 새것이 되면 채운 쪽은 이미 채웠다고 알아 다시 채우지 않는다.
+const decisionWaiters = moduleState("state/remoteConfirm#decisionWaiters", () => new Map<number, (approve: boolean) => void>());
 // request_id 의 사람 결정을 기다리는 Promise 를 등록한다(remote.confirm 핸들러가 호출). 같은 id 가
 // 이미 대기 중이면 그 대기를 deny 로 정리하고 새로 등록(중복 요청 방어 — 무결정 누수 0).
 export function awaitDecision(requestId: number): Promise<boolean> {

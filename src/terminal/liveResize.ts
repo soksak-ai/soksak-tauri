@@ -1,3 +1,4 @@
+import { moduleState } from "../lib/moduleState";
 import { listenThisWindow } from "../lib/windowEvents";
 
 // 창 라이브 리사이즈(가장자리 드래그) 상태 — 네이티브(frameworks/tauri/browser.rs
@@ -9,8 +10,8 @@ import { listenThisWindow } from "../lib/windowEvents";
 // emit_to(그 창)하므로, 각 창은 자기 리사이즈만 받는다(프론트 필터 불필요).
 
 let liveResizing = false;
-const endCallbacks = new Set<() => void>();
-
+// 갈아끼우기 경계 밖 — 이 표가 새것이 되면 채운 쪽은 이미 채웠다고 알아 다시 채우지 않는다.
+const endCallbacks = moduleState("terminal/liveResize#endCallbacks", () => new Set<() => void>());
 // 앱 수명 1회 구독(모듈 적재 시). 이 창에 emit_to 된 신호만 받는다(전역 listen 이면 다른 창의
 // 리사이즈도 받아 오반영). Tauri 런타임 밖(테스트 jsdom)에서는 조용히 무시 — 그 환경엔 리사이즈 없음.
 listenThisWindow<boolean>("window-live-resize", (e) => {

@@ -5,6 +5,7 @@
 // unacked high watermark otherwise), and keeps a bounded raw tail ring. The core never
 // interprets the bytes — readers strip/parse on their side.
 
+import { moduleState } from "../lib/moduleState";
 import { createStream, invoke } from "../framework";
 import { register, type CommandBrokerSpec, type CommandMachineObjectSchema } from "./registry";
 import { currentWindowLabel } from "../lib/webviewLabels";
@@ -36,8 +37,8 @@ interface SessionState {
 
 // window-scoped: each workspace window registers its own catalog, and daemon sessions are
 // keyed by (window label, session id) — the module map mirrors that scope naturally.
-const sessions = new Map<string, SessionState>();
-
+// 갈아끼우기 경계 밖 — 이 표가 새것이 되면 채운 쪽은 이미 채웠다고 알아 다시 채우지 않는다.
+const sessions = moduleState("commands/catalogPtySession#sessions", () => new Map<string, SessionState>());
 function invalid(message: string) {
   return { ok: false as const, code: "INVALID_PARAMS" as const, message };
 }

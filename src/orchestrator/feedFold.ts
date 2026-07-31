@@ -1,3 +1,4 @@
+import { moduleState } from "../lib/moduleState";
 // 활동 피드 폴딩(순수) — 스트림 엔트리를 표시 단위로 접는다. 두 상관이 공존한다:
 // ① parentId 정확 상관(정본): chat.prompt(turnId) 가 연 대화 세트로 payload.parentId 가
 //    일치하는 엔트리(command.executed 자식·command.progress 델타·chat.answer 닫음)를 접합.
@@ -33,8 +34,8 @@ const parentIdOf = (e: ActivityEntry): string =>
   typeof e.payload.parentId === "string" ? e.payload.parentId : "";
 
 // 사람 손의 소스 — 발화자 라벨이 붙지 않는다(행의 주인이 곧 사람: 창·콘솔 이름이 발화자).
-const HUMAN_SOURCES = new Set(["ui", "orchestrator"]);
-
+// 갈아끼우기 경계 밖 — 이 표가 새것이 되면 채운 쪽은 이미 채웠다고 알아 다시 채우지 않는다.
+const HUMAN_SOURCES = moduleState("orchestrator/feedFold#HUMAN_SOURCES", () => new Set(["ui", "orchestrator"]));
 /** 발화자 키(§5 R3, 단일 파생 규칙) — origin 우선, 없으면 비인간 소스가 곧 키. "" = 사람.
  *  라벨은 소비자의 i18n 테이블 `actor.<키>` 가 해소한다(키 추가 = 테이블 1줄, 이 규칙 불변). */
 export function actorKeyOf(e: ActivityEntry): string {

@@ -1,4 +1,5 @@
 // 드래그 영역을 주는 쪽이 그 되돌림(no-drag)도 진다 — 앱 CSS 에 두면 종속이 샌다.
+import { moduleState } from "../lib/moduleState";
 import "./electron.css";
 import type { EngineProvision } from "@soksak-ai/plugin-spec";
 // Electron 프레임워크 어댑터 — AppFramework 계약의 Electron 구현(스파이크).
@@ -92,8 +93,8 @@ function attachDragDrop(cb: (event: unknown) => void): () => void {
  * 프레임워크가 미는 사건(preload 창구)과 **같은 이름 공간**을 쓴다. 구독자는 어느 쪽에서
  * 왔는지 모르고, 알 필요도 없다 — 그것이 계약이다.
  */
-const localBus = new Map<string, Set<(payload: unknown) => void>>();
-
+// 갈아끼우기 경계 밖 — 이 표가 새것이 되면 채운 쪽은 이미 채웠다고 알아 다시 채우지 않는다.
+const localBus = moduleState("framework/electron#localBus", () => new Map<string, Set<(payload: unknown) => void>>());
 function onLocal(event: string, cb: (payload: unknown) => void): () => void {
   let set = localBus.get(event);
   if (!set) localBus.set(event, (set = new Set()));

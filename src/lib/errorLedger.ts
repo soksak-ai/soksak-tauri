@@ -8,7 +8,8 @@
 import { moduleState } from "../lib/moduleState";
 import { invoke } from "../framework";
 
-const seen = new Map<string, number>();
+// 갈아끼우기 경계 밖 — 이 표가 새것이 되면 채운 쪽은 이미 채웠다고 알아 다시 채우지 않는다.
+const seen = moduleState("lib/errorLedger#seen", () => new Map<string, number>());
 const CAP = 8;
 
 function publish(kind: "error" | "unhandledrejection", message: string, stack: string | null): void {
