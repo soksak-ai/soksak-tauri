@@ -220,7 +220,6 @@ export const GroupArea = memo(function GroupArea({
   // 본문/탭/타이틀 클릭은 상태와 무관하게 항상 그 그룹의 focused pane 에 실포커스
   // 뷰 내부 포커스(터미널 등)는 플러그인 뷰가 마운트/활성 시 스스로 처리한다 — 코어는
   // 그룹 활성화만 한다(코어가 더 이상 터미널 host-div 를 소유하지 않음).
-  const resizeSplit = useSessions((s) => s.resizeSplit);
   const resizeSplits = useSessions((s) => s.resizeSplits);
   const pushOverlay = useUi((s) => s.pushOverlay);
   const popOverlay = useUi((s) => s.popOverlay);
@@ -437,15 +436,18 @@ export const GroupArea = memo(function GroupArea({
       );
       return;
     }
-    const sizes = [...d.sizes];
-    const half = (sizes[d.index] + sizes[d.index + 1]) / 2;
-    sizes[d.index] = half;
-    sizes[d.index + 1] = half;
-    resizeSplit(projectId, d.splitId, sizes);
+    // 명령을 통해 균등화한다 — 골은 이름으로 지목한다(내부 split id 는 밖으로 나가지 않는다,
+    // IDENTITY §4). 렌더러는 트리를 손에 들고 있으므로 그 자리에서 이름 있는 좌표로 바꾼다.
+    const owner = gutterOwnerOf(displayLayout, d.splitId, d.index, (g) => g.id);
+    if (owner) {
+      void execute("pane.equalize", { pane: owner.pane, edge: owner.side }, {});
+    }
   };
 
   const onGutterDown = (d: Gutter) => (e: React.MouseEvent) => {
     e.preventDefault();
+    // 착지값 — 드래그 중 마지막으로 커밋한 비율. 완결 시 이것으로 명령을 한 번 남긴다.
+    let lastResizeSizes: number[] | null = null;
     if (resizeDragActive) return; // 중복 시작(DOM + 네이티브 합성) 무시.
     const cont = containerRef.current;
     if (!cont) return;
@@ -486,10 +488,25 @@ export const GroupArea = memo(function GroupArea({
       const sizes = [...startSizes];
       sizes[i] = startSizes[i] + delta;
       sizes[i + 1] = startSizes[i + 1] - delta;
+      lastResizeSizes = sizes;
       commitResize([{ splitId: d.splitId, sizes }]);
     };
     const onUp = () => {
       commitResize.flush(); // 리스너 제거 전에 — 마지막 프레임 유실 = 스냅백.
+      // 착지 한 번만 명령으로 남긴다 — 중간값까지 명령으로 보낼 이유가 없다(매 프레임이다).
+      // 그러나 완결은 사용자 의도 동작이므로 원장에 남고 CLI·AI 와 같은 경로여야 한다.
+      const landed = lastResizeSizes;
+      if (landed) {
+        const owner = gutterOwnerOf(displayLayout, d.splitId, d.index, (g) => g.id);
+        const pair = landed[d.index] + landed[d.index + 1];
+        if (owner && pair > 0) {
+          void execute(
+            "pane.resize",
+            { pane: owner.pane, edge: owner.side, ratio: landed[d.index] / pair },
+            {},
+          );
+        }
+      }
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
       document.body.style.cursor = "";

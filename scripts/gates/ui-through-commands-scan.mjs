@@ -20,12 +20,13 @@ const ROOT = new URL("../../", import.meta.url).pathname;
 // 실측 2026-07-31: 17 → 2. 스페이스 생성·전환·이름변경, 탭 열기/닫기/활성/최대화/복원/이동,
 // 패널 활성·분할·이동, 프로젝트 설정·색, 사이드바 드롭이 전부 명령을 탄다.
 //
-// 남은 둘은 **명령이 UI 와 다른 인자 축으로 지목한다**: 드래그 리사이즈는 splitId 와 비율
-// 배열을 쥐고 있는데 sidebar.left.resize 는 viewKey 로 지목하고, pane.resize 도 축이 다르다.
-// 축이 다른 채로 억지로 부르면 같은 동작이 두 모양으로 노출되고, 그 차이는 값이 갈릴 때까지
-// 조용하다 — 옮기기 전에 **축을 먼저 맞춘다**. 그것이 이 둘의 제거 조건이다.
-// (연속 제스처라 중간값을 명령으로 보낼 이유는 없다: 축을 맞춘 뒤에도 완결 시점 하나만 보낸다.)
-const BYPASS_CAP = 2;
+// 남은 1건은 **드래그 중 표현**이다. 축은 맞췄다: 골은 내부 split id 가 아니라 그 골에 닿는
+// leaf 이름으로 지목하고(IDENTITY §4 — 내부 노드 무명, 기하 증명), 렌더러가 gutterOwnerOf 로
+// 그 자리에서 바꾼다. 완결(mouseup)은 pane.resize·pane.equalize·sidebar.left.resize 를 탄다.
+//
+// 드래그 중 매 프레임 반영까지 명령으로 보낼 이유는 없다 — 그것은 **표현**이고 동작은 착지
+// 하나다. 이 1건이 그 표현 경로이며, 표현과 동작을 기계로 가르는 규칙이 서기 전까지 여기 있다.
+const BYPASS_CAP = 1;
 
 function files(glob) {
   return execSync(`git ls-files ${glob}`, { cwd: ROOT, encoding: "utf8" })

@@ -5,6 +5,7 @@
 // keep-alive: 한 번 연 뷰는 mount 유지(display 토글).
 
 import { execute } from "../commands/registry";
+import { gutterOwnerOf } from "../lib/gutterAddress";
 import {
   memo,
   useCallback,
@@ -215,9 +216,12 @@ export const LeftSidebarHost = memo(function LeftSidebarHost({
     const startSizes = [...d.sizes];
     const i = d.index;
     const minFrac = 0.1;
-    const commit = rafThrottle((sizes: number[]) =>
-      resizeSidebar(project.id, d.splitId, sizes),
-    );
+    // 착지값 — 드래그 중 마지막 비율. 완결 시 이것으로 명령을 한 번 남긴다.
+    let landed: number[] | null = null;
+    const commit = rafThrottle((sizes: number[]) => {
+      landed = sizes;
+      resizeSidebar(project.id, d.splitId, sizes);
+    });
     const onMove = (ev: MouseEvent) => {
       const cur = d.dir === "row" ? ev.clientX : ev.clientY;
       let delta = (cur - startPos) / splitPx;
@@ -229,6 +233,20 @@ export const LeftSidebarHost = memo(function LeftSidebarHost({
     };
     const onUp = () => {
       commit.flush();
+      // 착지 한 번만 명령으로 — 중간값까지 보낼 이유가 없다(매 프레임이다). 골은 이름으로
+      // 지목한다: 내부 split id 는 밖으로 나가지 않으므로(IDENTITY §4) 그 골에 닿는 leaf
+      // (사이드바에서는 viewKey)로 바꿔 부른다. 렌더러는 트리를 손에 들고 있다.
+      if (landed) {
+        const owner = gutterOwnerOf(layout, d.splitId, d.index, cellId);
+        const key = owner?.pane.split("|")[0];
+        if (key) {
+          void execute(
+            "sidebar.left.resize",
+            { project: project.id, viewKey: key, sizes: landed },
+            {},
+          );
+        }
+      }
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
       document.body.style.cursor = "";
