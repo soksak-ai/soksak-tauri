@@ -28,6 +28,19 @@ describe("캡처 — 자르기와 저장은 조합된다", () => {
     }
   });
 
+  it("탭을 이름으로 담고, 해소 결과를 답한다", async () => {
+    const exec = await import("./executor");
+    exec.startExecutor();
+    const reg = await import("./registry");
+    const spec = reg.getSpec("window.snapshot")!;
+    expect(Object.keys(spec.params)).toContain("tab");
+    // 대상 축을 받았으면 무엇으로 해소했는지 답한다 — 부른 쪽이 응답만으로 검증할 수 있어야 한다.
+    expect(spec.returns).toContain("tabId");
+    // 비활성 탭은 창 밖으로 파킹되므로 이 명령이 활성화한다. 그 사실과 되돌린다는 약속이
+    // 설명에 있어야 부른 쪽이 화면이 잠깐 바뀌는 것을 결함으로 읽지 않는다.
+    expect(spec.description).toContain("restores");
+  });
+
   it("자른 결과도 파일로 남길 수 있다고 선언한다", async () => {
     const exec = await import("./executor");
     exec.startExecutor();

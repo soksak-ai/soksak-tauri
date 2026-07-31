@@ -121,7 +121,7 @@ function withArrangement(projectId: string, result: object): object {
   };
 }
 
-interface Location {
+export interface Location {
   project: Project;
   space: Space;
   pane: Pane;
@@ -187,7 +187,8 @@ function splitSizesOf(node: PaneNode, splitId: string): number[] | null {
 
 // 탭 id 가 속한 위치를 전 프로젝트에서 검색. 터미널 대상도 이 함수로 해소한다 — 터미널은
 // 플러그인 뷰이고 그 인스턴스가 탭이다(코어 터미널 없음).
-function locateTab(tabId: string): Location | null {
+/** 탭 위치 — 캡처 등 다른 카탈로그 파일도 같은 자리를 쓴다(두 벌이면 같은 id 가 다른 곳을 답한다). */
+export function locateTab(tabId: string): Location | null {
   const s = useSessions.getState();
   for (const project of s.projects) {
     for (const space of project.spaces) {

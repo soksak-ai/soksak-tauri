@@ -109,7 +109,9 @@ frameworks/tauri/src/ipc.rs 1562
 frameworks/tauri/src/webview.rs 2259
 packages/plugin-spec/src/pluginRuntime.ts 2081
 packages/plugin-spec/src/spec.ts 1785
-src/commands/catalog.ts 3168
+# 재입법 2026-07-31 3168 → 3169. locateTab 에 export 주석 한 줄 — 캡처가 같은 자리를 쓴다.
+#   두 벌이면 같은 탭 id 가 다른 곳을 답한다.
+src/commands/catalog.ts 3169
 src/i18n.ts 1815
 src/plugins/api.ts 1926
 src/state/sessions.ts 2006
