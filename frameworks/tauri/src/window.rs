@@ -259,6 +259,37 @@ pub fn window_list(app: AppHandle) -> Vec<String> {
     app.windows().keys().cloned().collect()
 }
 
+/// 지금 살아 있는 창 라벨 — **모든 호스트의 것**. 못 알아내면 `None`.
+///
+/// `window_list` 로는 답이 안 된다: 그건 이 프로세스의 창만 센다. 같은 홈을 다른 프레임워크가
+/// 함께 보고 있으면 상대가 든 창이 "없다"로 읽히고, 그 창의 라벨을 이쪽이 또 만든다 — 같은
+/// 라벨의 창이 두 프로세스에 살아나면 나중 것이 아무것도 그리지 않는다(A23).
+///
+/// 그래서 모든 호스트를 아는 쪽(cored)에 묻는다. 안 붙어 있으면 창 가진 프로세스는 이쪽뿐이라
+/// 자기 목록이 곧 전부다 — 폴백이 아니라 위상이다.
+///
+/// 실패는 빈 목록으로 뭉개지 않는다. 빈 목록은 "아무도 안 들었다"라서 전부 되살리게 되고,
+/// 그것이 이 함수가 막으려는 바로 그 겹침이다.
+/// 지금 살아 있는 창 라벨 — **모든 호스트의 것**. 못 알아내면 `None`.
+///
+/// `window_list` 로는 답이 안 된다: 그건 이 프로세스의 창만 센다. 같은 홈을 다른 프레임워크가
+/// 함께 보고 있으면 상대가 든 창이 "없다"로 읽히고, 그 라벨을 이쪽이 또 만든다 — 같은 라벨의
+/// 창이 두 프로세스에 살아나면 나중 것이 아무것도 그리지 않는다(A23).
+///
+/// 모양은 코어가 소유한다(`soksak_core::window_census`) — 여기서 손으로 적으면 cored 와 두 벌이
+/// 되고, 부르는 쪽은 누가 답했는지 모르므로 갈리면 한쪽에서만 조용히 파싱이 빈다.
+/// 붙어 있으면 붙은 호스트를 전부 아는 쪽이 답한다. 안 붙어 있으면 창 가진 프로세스는
+/// 이쪽뿐이라 자기 목록이 곧 전부다 — 폴백이 아니라 위상이다.
+#[tauri::command]
+pub fn window_census(app: AppHandle) -> Option<serde_json::Value> {
+    use soksak_core::window_census as census;
+    if let Some(host) = crate::cored_host::current() {
+        let ask = host.ask("window_census", &serde_json::json!({}), std::time::Duration::from_secs(5));
+        return Some(census::reply(census::from_reply(&ask.ok()?)?));
+    }
+    Some(census::reply(census::of_labels(app.windows().keys(), None)))
+}
+
 // 모니터·창 배치 팩트(A4) — 판단 없이 사실만: 모니터 목록(물리 px rect·배율·이름)과
 // 각 창의 물리 rect + 소속 모니터 인덱스. 전략(어디에 둘지)은 layout.suggest 순수함수가
 // 프론트에서 계산한다(팩트/전략 분리 — 확정 결정).

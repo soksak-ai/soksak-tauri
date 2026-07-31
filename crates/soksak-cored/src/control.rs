@@ -92,27 +92,16 @@ fn union_live(hs: &[Host]) -> Vec<String> {
 ///
 /// 배달은 이미 이 겹침을 이름으로 거절한다(AMBIGUOUS_HOST). 이 자리는 그 거절을 **보기 전에**
 /// 알 수 있게 하는 관측면이다: 부른 쪽이 실패로 배우지 않아도 된다.
-pub fn window_census() -> Vec<Value> {
+pub fn window_census() -> Vec<soksak_core::window_census::WindowRow> {
     let g = hosts().lock().unwrap_or_else(|e| e.into_inner());
     let f = focus().lock().unwrap_or_else(|e| e.into_inner());
     let focused = f.focused().to_string();
-    let mut out: Vec<Value> = Vec::new();
-    for h in g.iter() {
-        for l in &h.live {
-            match out.iter_mut().find(|w| w["label"] == l.as_str()) {
-                Some(w) => {
-                    let n = w["hosts"].as_u64().unwrap_or(0) + 1;
-                    w["hosts"] = Value::from(n);
-                }
-                None => out.push(json!({
-                    "label": l,
-                    "hosts": 1,
-                    "focused": *l == focused,
-                })),
-            }
-        }
-    }
-    out
+    // 모양은 코어가 소유한다 — 만드는 쪽이 둘이라(cored·홀로 도는 프레임워크) 여기서 손으로
+    // 적으면 두 벌이 되고, 갈리면 소비자 한쪽에서만 조용히 파싱이 빈다.
+    soksak_core::window_census::fold(
+        g.iter()
+            .flat_map(|h| soksak_core::window_census::of_labels(&h.live, Some(&focused))),
+    )
 }
 
 fn pending() -> &'static Mutex<HashMap<u64, Sender<Value>>> {

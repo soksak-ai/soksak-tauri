@@ -770,6 +770,7 @@ pub fn run() {
             window::window_monitors,
             window::window_place,
             window::window_list,
+            window::window_census,
             window::window_focus,
             window::window_close,
             ipc::cmd_result,

@@ -92,8 +92,15 @@ TABLE[CAPABILITIES] = {
   }),
 };
 
-/** 이 이름은 프레임워크가 답한다 — 등재됐거나, 프레임워크 갈래이거나. 나머지는 백엔드의 것이다. */
-const claims = (cmd) => cmd === CAPABILITIES || isFrameworkBranch(cmd) || cmd in TABLE;
+/** 갈래 이름이지만 답이 **이 프로세스 밖**에 있는 것(`window_census`)은 백엔드로 넘긴다.
+ *
+ *  `window_census` 는 "붙은 호스트 **전부**가 든 창"이다. 이 프로세스의 창 목록으로는 답이
+ *  안 된다: 같은 홈을 다른 프레임워크가 함께 보면 상대가 든 창이 "없다"로 읽히고, 그 라벨을
+ *  이쪽이 또 만들어 같은 라벨의 창이 둘 살아난다(A23 — 나중 것이 아무것도 안 그린다).
+ *  모든 호스트를 아는 쪽은 백엔드뿐이므로 갈래 규칙의 예외다.
+ *
+ *  나머지는 프레임워크가 답한다 — 등재됐거나, 갈래이거나. 그 밖은 백엔드의 것이다. */
+const claims = (cmd) => cmd !== "window_census" && (cmd === CAPABILITIES || isFrameworkBranch(cmd) || cmd in TABLE);
 
 /** 갈래는 프레임워크의 것인데 표에 없다. 사유를 지어내지 않고 "이 프레임워크엔 없다"만 말한다. */
 const unlisted = (cmd) => ({

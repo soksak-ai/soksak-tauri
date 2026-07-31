@@ -82,7 +82,10 @@ frameworks/tauri/src/i18n.rs 155
 frameworks/tauri/src/id_registry.rs 144
 frameworks/tauri/src/identity.rs 59
 frameworks/tauri/src/ipc.rs 1232
-frameworks/tauri/src/lib.rs 719
+# 재입법 2026-08-01 719 → 720. 커맨드 등록 한 줄(window_census). 창 복원이 "모든 호스트가 든
+#   창"을 알아야 같은 라벨이 두 프로세스에 살아나지 않는다(A23) — 등록 목록은 배선이라
+#   공통 크레이트로 뺄 수 없다. 제거 조건: 이 커맨드가 사라지면 이 줄도 함께 내린다.
+frameworks/tauri/src/lib.rs 720
 frameworks/tauri/src/login_shell.rs 28
 frameworks/tauri/src/main.rs 4
 frameworks/tauri/src/mediaproxy.rs 18
@@ -110,6 +113,10 @@ frameworks/tauri/src/updater.rs 42
 frameworks/tauri/src/watcher.rs 15
 frameworks/tauri/src/webview.rs 1760
 frameworks/tauri/src/webview_health.rs 572
-frameworks/tauri/src/window.rs 364
+# 재입법 2026-08-01 364 → 373. window_census — "붙은 호스트 **전부**가 든 창"을 답한다.
+#   프레임워크만 할 수 있는 일이다: 백엔드 통로와 자기 창 목록 둘 다 가진 쪽이 여기뿐이다.
+#   행 모양은 코어가 소유한다(soksak_core::window_census) — 여기 남은 것은 두 갈래 배선이다.
+#   이것이 없으면 같은 라벨의 창이 두 프로세스에 살아나고 나중 것이 아무것도 안 그린다(A23).
+frameworks/tauri/src/window.rs 373
 frameworks/tauri/src/window_oracle.rs 102
 frameworks/tauri/src/ws.rs 47

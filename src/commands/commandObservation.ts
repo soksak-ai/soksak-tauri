@@ -6,6 +6,7 @@
 // 판정에 등록부가 필요한 곳은 **수 하나**뿐이라 인자로 받는다. 그래야 이 파일이 등록부를
 // 모르고, 등록부도 관측의 안을 모른다.
 
+import { dataChangeHealth } from "../state/dataChangeHealth";
 import { activityHealth } from "../state/activityHealth";
 import { moduleState } from "../lib/moduleState";
 import type { CommandTrace } from "./registry";
@@ -145,6 +146,7 @@ export function commandHealth(registeredCount: number): Record<string, unknown> 
       lastEmitAt: traceCount.lastEmitAt,
     },
     activity: activityHealth(),
+    dataChange: dataChangeHealth(),
     degradedAxes: degradedAxes(registeredCount) ?? [],
   };
 }

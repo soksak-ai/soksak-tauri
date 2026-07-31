@@ -45,6 +45,7 @@ pub mod skillgen;
 pub mod file_lock;
 
 pub mod store_lock;
+pub mod window_census;
 pub mod store_open;
 pub mod stream;
 pub mod stream_sink;

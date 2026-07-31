@@ -271,12 +271,12 @@ fn a_label_two_hosts_hold_is_reported_as_two() {
     let seen = super::window_census();
     let shared = seen
         .iter()
-        .find(|w| w["label"] == "w-shared")
+        .find(|w| w.label == "w-shared")
         .expect("겹친 라벨이 목록에 있다");
-    assert_eq!(shared["hosts"], 2, "겹침이 수로 보여야 한다: {shared}");
+    assert_eq!(shared.hosts, 2, "겹침이 수로 보여야 한다: {shared:?}");
 
-    let only = seen.iter().find(|w| w["label"] == "w-only-a").expect("단독 라벨");
-    assert_eq!(only["hosts"], 1, "{only}");
+    let only = seen.iter().find(|w| w.label == "w-only-a").expect("단독 라벨");
+    assert_eq!(only.hosts, 1, "{only:?}");
 
     drop((a, b));
     detach();

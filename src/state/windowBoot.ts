@@ -9,6 +9,7 @@
 import { invoke, currentWindow, frameworkName } from "../framework";
 import { safeListen } from "../lib/safeListen";
 import { bootFactPayload } from "../lib/bootFact";
+import { noteDataChange } from "./dataChangeHealth";
 import { currentWindowLabel } from "../lib/webviewLabels";
 import { makeCoreStore } from "./coreStore";
 import { validateProjectRoot, ensureDefaultProjectRoot } from "../lib/projectRoot";
@@ -61,7 +62,10 @@ async function currentFrame(): Promise<
 
 // core ns data-change → coreStore 가 기대하는 (key)=>void. kv 키는 페이로드 id 필드.
 function coreOnDataChange(cb: (key: string) => void): () => void {
-  return safeListen<{ ns: string; id: string | null }>("data-change", (e) => {
+  return safeListen<{ ns: string; id: string | null; op?: string }>("data-change", (e) => {
+    // 도착을 먼저 센다 — 이 창이 안 쓰는 ns 의 알림도 **경로가 산 증거**다. 거르고 나서 세면
+    // "안 왔다"와 "왔는데 내 것이 아니었다"가 같아 보인다(A22 알림 축).
+    noteDataChange(e.payload.ns, e.payload.op ?? "");
     if (e.payload.ns === "core" && e.payload.id) cb(e.payload.id);
   });
 }
@@ -234,6 +238,15 @@ export async function respawnSavedWindows(): Promise<void> {
     fallback: EMPTY_MANIFEST,
     ...coreStoreDeps,
   });
+  // 복원 경로의 관찰면 — "창이 안 열렸다"는 결과만으로는 장부가 빈 것인지, 점유를 못 읽은
+  // 것인지, 스냅샷이 없는 것인지 가릴 수 없다. 셋은 서로 다른 결함이고 고치는 자리도 다르다.
+  const respawnFact = (step: string) =>
+    void invoke("activity_publish", {
+      kind: "boot.step",
+      source: "boot",
+      payload: bootFactPayload(step),
+    }).catch(() => {});
+
   try {
     let manifest = await manifestStore.hydrate();
     let pruned = false;
@@ -241,7 +254,11 @@ export async function respawnSavedWindows(): Promise<void> {
     // 프레임워크가 든 창을 "없다"고 읽고 같은 라벨을 또 만든다(restorableSlots 머리말).
     // 못 물으면 되살리지 않는다: 안 여는 것은 다음 부팅에 회복되지만 겹쳐 만든 창은 남는다.
     const live = await liveWindowLabels();
-    for (const slot of restorableSlots(manifest, live)) {
+    const slots = restorableSlots(manifest, live);
+    respawnFact(
+      `respawn:slots:${manifest.slots.length}:live:${live === null ? "unknown" : live.size}:restorable:${slots.length}`,
+    );
+    for (const slot of slots) {
       const snapStore = makeCoreStore<WindowSnapshot>({
         key: `window/${slot.label}`,
         lsKey: `soksak.window.${slot.label}`,
@@ -252,6 +269,7 @@ export async function respawnSavedWindows(): Promise<void> {
       if (snap.projects.length === 0) {
         manifest = upsertManifest(manifest, { ...slot, roots: [] }); // slot 제거
         pruned = true;
+        respawnFact(`respawn:ghost:${slot.label}`);
         console.warn(`[restore] 유령 slot 정리(스냅샷 없음): ${slot.label}`);
         continue;
       }
@@ -271,7 +289,12 @@ export async function respawnSavedWindows(): Promise<void> {
         // 백그라운드 복원 — 포커스를 뺏지 않는다. 오케스트레이터를 열면 오케스트레이터가 포커스를
         // 유지하고, 복원된 워크스페이스 창들은 뒤에 되살아난다(임의 포커스 이동 금지, 자연스러운 동작).
         focus: false,
-      }).catch((e) => console.error(`창 리스폰 실패(${slot.label}):`, e));
+      })
+        .then(() => respawnFact(`respawn:spawned:${slot.label}`))
+        .catch((e) => {
+          respawnFact(`respawn:failed:${slot.label}:${String(e).slice(0, 80)}`);
+          console.error(`창 리스폰 실패(${slot.label}):`, e);
+        });
     }
     if (pruned) await manifestStore.save(manifest);
     // 복원은 포커스를 옮기지 않는다 — 직전 포커스 창으로 강제 이동하던 로직 제거. 부팅 시 활성 창
@@ -291,6 +314,7 @@ export async function respawnSavedWindows(): Promise<void> {
       }
     }
   } catch (e) {
+    respawnFact(`respawn:error:${String(e).slice(0, 100)}`);
     console.error("멀티윈도우 리스폰 실패:", e);
   }
 }
