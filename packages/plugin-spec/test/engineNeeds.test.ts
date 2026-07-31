@@ -95,3 +95,36 @@ describe("매니페스트 — 요구는 아는 값만 받는다", () => {
     expect(r.validation.errors.join(" ")).toContain("requiresNativeChildWebview");
   });
 });
+
+// 엔진 모듈 호스팅은 **자식 뷰와 다른 축**이다.
+//
+// SIDECARS.md §8 이 두 합성 모드를 적어 뒀다: `windowed` 는 네이티브 자식 뷰를 창에 붙이고,
+// `offscreen` 은 엔진이 자기 레이어에 그려 올린다(픽셀은 프로세스 안 GPU 핸들로만 움직인다).
+// 자식 뷰가 필요한 것은 앞의 하나뿐이다.
+//
+// 그러면 둘의 **공통 요구**는 자식 뷰가 아니라 "이 프로세스 안에 엔진 모듈을 적재할 수
+// 있는가"다(dlopen + 메인스레드 + 창). 그것으로 안 가르면 offscreen 소비자가 틀린 사유로
+// 거절당한다 — 결과는 같아도 사유가 거짓이면 다음 사람이 엉뚱한 것을 고친다.
+describe("엔진 모듈 호스팅 축", () => {
+  const HOSTS = { chromium: true, nativeChildWebview: true, engineModules: true };
+  const NO_HOST = { chromium: true, nativeChildWebview: false, engineModules: false };
+
+  it("호스팅 못 하는 곳에서 엔진 요구는 그 이름으로 온다", () => {
+    expect(unmetNeeds({ requiresEngineModules: true }, NO_HOST)).toEqual([
+      "requiresEngineModules",
+    ]);
+  });
+
+  it("호스팅하는 곳에서는 자식 뷰 여부와 무관하게 선다 — offscreen 이 그 경우다", () => {
+    expect(
+      unmetNeeds({ requiresEngineModules: true }, { ...HOSTS, nativeChildWebview: false }),
+    ).toEqual([]);
+  });
+
+  it("자식 뷰 요구는 여전히 자기 축으로 잰다 — 두 축을 뭉치지 않는다", () => {
+    expect(unmetNeeds({ requiresNativeChildWebview: true }, HOSTS)).toEqual([]);
+    expect(unmetNeeds({ requiresNativeChildWebview: true }, NO_HOST)).toEqual([
+      "requiresNativeChildWebview",
+    ]);
+  });
+});

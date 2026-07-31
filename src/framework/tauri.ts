@@ -103,6 +103,9 @@ export const dragRegion: Record<string, unknown> = { "data-tauri-drag-region": t
 export const engineProvision: EngineProvision = {
   chromium: false,
   nativeChildWebview: true,
+  // 엔진 모듈을 이 프로세스에 적재한다 — 백엔드가 Rust 라 dlopen 이 있고, 메인스레드와 창도
+  // 이 프로세스의 것이다. 그래서 두 합성 모드(SIDECARS.md §8) 가 다 여기서 선다.
+  engineModules: true,
 };
 
 export const tauriFramework: AppFramework = {

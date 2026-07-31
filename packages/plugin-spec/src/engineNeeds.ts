@@ -36,12 +36,25 @@ export interface EngineProvision {
    * 그래서 이 값이 false 인 프레임워크에서는 자식 웹뷰를 전제한 표면만 빠진다.
    */
   nativeChildWebview: boolean;
+  /**
+   * 이 프로세스 안에 **엔진 모듈을 적재**할 수 있는가 — dlopen + 메인스레드 + 창.
+   *
+   * 자식 뷰와 다른 축이다. SIDECARS.md §8 의 두 합성 모드 중 `windowed` 만 자식 뷰를 쓰고
+   * `offscreen` 은 엔진이 자기 레이어에 그린다(픽셀은 프로세스 안 GPU 핸들로만 움직인다).
+   * 둘의 공통 요구는 자식 뷰가 아니라 **모듈을 이 프로세스에 들일 수 있는가**다.
+   *
+   * 두 축을 뭉치면 offscreen 소비자가 틀린 사유로 거절당한다 — 결과가 같아도 사유가 거짓이면
+   * 다음 사람이 엉뚱한 것을 고친다.
+   */
+  engineModules: boolean;
 }
 
 /** 플러그인이 선언하는 필요. 둘 다 선택 — 안 적으면 요구가 없다는 뜻이다. */
 export interface EngineNeeds {
   requiresEngine?: EngineGrade;
   requiresNativeChildWebview?: boolean;
+  /** 엔진 모듈을 이 프로세스에 적재해야 하는가(합성 모드와 무관). */
+  requiresEngineModules?: boolean;
 }
 
 /** 필요를 못 채운 항목들. 비어 있으면 적재 가능하다. */
@@ -52,6 +65,9 @@ export function unmetNeeds(needs: EngineNeeds, has: EngineProvision): string[] {
   }
   if (needs.requiresNativeChildWebview && !has.nativeChildWebview) {
     unmet.push("requiresNativeChildWebview");
+  }
+  if (needs.requiresEngineModules && !has.engineModules) {
+    unmet.push("requiresEngineModules");
   }
   return unmet;
 }

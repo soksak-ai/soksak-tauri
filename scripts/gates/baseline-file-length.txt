@@ -97,12 +97,18 @@
 # 직렬화 없이는 그 사실이 프로세스 안에 갇힌다.
 #
 # 줄이는 길: registry.rs 의 표를 갈래별 파일로 나눈다(저장소·창·프로세스·플러그인).
+#
+# 2026-07-31 재입법 — packages/plugin-spec/src/spec.ts 1783 → 1785.
+# 엔진 요구 축 하나(requiresEngineModules) 신설: 필드 선언 한 줄과 whitelist 등재 한 줄이다.
+# 산문이 아니라 **코드**이고, 줄일 방법은 축을 없애는 것뿐인데 그 축이 없으면 offscreen
+# 소비자가 자식 뷰 부재라는 **틀린 사유**로 거절당한다(SIDECARS.md §8 은 두 합성 모드 중
+# windowed 만 자식 뷰를 쓴다고 적어 뒀다). 뜻은 engineNeeds.ts 가 지고 여기는 자리만 연다.
 crates/soksak-cli/src/lib.rs 1706
 crates/soksak-store/src/store.rs 2116
 frameworks/tauri/src/ipc.rs 1562
 frameworks/tauri/src/webview.rs 2259
 packages/plugin-spec/src/pluginRuntime.ts 2081
-packages/plugin-spec/src/spec.ts 1783
+packages/plugin-spec/src/spec.ts 1785
 src/commands/catalog.ts 3284
 src/i18n.ts 1811
 src/plugins/api.ts 1926

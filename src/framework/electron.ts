@@ -214,6 +214,10 @@ export const dragRegion: Record<string, unknown> = {
 export const engineProvision: EngineProvision = {
   chromium: true,
   nativeChildWebview: false,
+  // 엔진 모듈을 적재하지 못한다 — 이 프레임워크의 메인 프로세스는 JS 이고 dlopen 이 없다
+  // (네이티브 애드온을 붙이면 달라지는 값이라, 못 하는 것이 아니라 **아직 안 붙인** 것이다).
+  // 자식 뷰 축과 뭉치지 않는다: offscreen 은 자식 뷰를 안 쓰고도 이 축이 필요하다.
+  engineModules: false,
 };
 
 export const electronFramework: AppFramework = {

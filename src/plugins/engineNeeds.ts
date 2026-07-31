@@ -51,9 +51,14 @@ export function enforceEngineNeeds(
   const unmet = unmetNeeds(
     {
       requiresEngine: manifest.requiresEngine,
+      requiresNativeChildWebview: manifest.requiresNativeChildWebview,
       // 적힌 것과 **파생된 것**의 합집합. 파생이 없으면 저자의 기억이 유일한 방어가 된다.
-      requiresNativeChildWebview:
-        manifest.requiresNativeChildWebview || consumesEngineSidecar(manifest),
+      //
+      // 자식 뷰가 아니라 **모듈 적재** 축이다. 두 합성 모드(SIDECARS.md §8) 중 offscreen 은
+      // 자식 뷰를 안 쓰지만 모듈 적재는 여전히 필요하다 — 두 축을 뭉치면 그 소비자가 틀린
+      // 사유로 거절당하고, 사유가 거짓이면 다음 사람이 엉뚱한 것을 고친다.
+      requiresEngineModules:
+        manifest.requiresEngineModules || consumesEngineSidecar(manifest),
     },
     has,
   );

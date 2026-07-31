@@ -10,8 +10,8 @@
 import { describe, expect, it } from "vitest";
 import { unmetNeeds } from "@soksak-ai/plugin-spec";
 
-const ELECTRON = { chromium: true, nativeChildWebview: false };
-const TAURI_MACOS = { chromium: true, nativeChildWebview: true };
+const ELECTRON = { chromium: true, nativeChildWebview: false, engineModules: false };
+const TAURI_MACOS = { chromium: true, nativeChildWebview: true, engineModules: true };
 
 describe("엔진 요구 대조", () => {
   it("자식 웹뷰를 전제한 표면은 그 장치가 없는 곳에서 못 채운 요구를 낸다", () => {
@@ -68,7 +68,7 @@ describe("엔진 모델 소비는 그 자체가 표면 요구다", () => {
   it("선언을 안 적어도 엔진 사이드카 소비가 요구를 세운다", async () => {
     const { enforceEngineNeeds } = await import("./engineNeeds");
     expect(() => enforceEngineNeeds(engineManifest as never, ELECTRON)).toThrow(
-      /requiresNativeChildWebview/,
+      /requiresEngineModules/,
     );
   });
 

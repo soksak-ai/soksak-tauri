@@ -499,6 +499,7 @@ export interface PluginManifest {
   // platform(OS)도 이름으로 적지 않는다 — 요구는 등급이고, 충족은 그 조합이 정한다.
   requiresEngine?: EngineGrade;
   requiresNativeChildWebview?: boolean;
+  requiresEngineModules?: boolean;
   // plugin service 선언(제3 실행 형태 — 규범 docs/PLUGIN-SERVICE.md). sidecar 는 sidecars[]
   // 의 상주 바이너리 참조, interface 는 와이어 계약 id(PS5·PS6). "service" 권한 필수.
   service?: ServiceDecl;
@@ -761,6 +762,7 @@ export function parseManifest(
       "sidecars",
       "requiresEngine",
       "requiresNativeChildWebview",
+      "requiresEngineModules",
       "service",
       "implements",
       "consumes",
