@@ -1,5 +1,6 @@
 // 프로젝트 설정 모달 — 생성 시 설정 전부를 관리: 폴더(읽기 전용)·별칭·식별 색·셸.
 // 탭/레일 칩 더블클릭으로 연다(인라인 rename 대체).
+import { execute } from "../commands/registry";
 import { useEffect, useState } from "react";
 import { isComposingEnter } from "../lib/imeKeys";
 import { useSessions } from "../state/sessions";
@@ -34,8 +35,6 @@ export function ProjectSettingsModal({
   // 오버레이 등록 — 모달이 떠 있는 동안 브라우저 홀의 마우스 통과를 차단한다.
   useOverlayActive();
   const project = useSessions((s) => s.projects.find((x) => x.id === projectId));
-  const updateProject = useSessions((s) => s.updateProject);
-  const setProjectColor = useSessions((s) => s.setProjectColor);
   const defaultProjectRoot = useSettings((s) => s.defaultProjectRoot);
   const setDefaultProjectRoot = useSettings((s) => s.setDefaultProjectRoot);
   const [name, setName] = useState(project?.title ?? "");
@@ -55,12 +54,15 @@ export function ProjectSettingsModal({
 
   if (!project) return null;
 
+  // 명령을 통해 저장한다 — store 를 직접 부르면 관측·정규화·게이트가 통째로 빠지고,
+  // CLI·AI 가 부르는 project.update 와 다른 경로가 된다(두 경로는 갈릴 때까지 조용하다).
   const save = () => {
-    updateProject(projectId, {
+    void execute("project.update", {
+      project: projectId,
       // 별칭 비우면 폴더명 폴백(P4 — 표시명은 항상 존재).
       title: name.trim() || baseName(project.root),
-      shell: shell.trim() || null,
-    });
+      shell: shell.trim() || "",
+    }, {});
     onClose();
   };
 
@@ -137,7 +139,7 @@ export function ProjectSettingsModal({
                 type="button"
                 className={`color-swatch color-none${!project.color ? " on" : ""}`}
                 title={t("color.default")}
-                onClick={() => setProjectColor(projectId, null)}
+                onClick={() => void execute("project.color", { project: projectId }, {})}
               >
                 <Icon name="none" size="sm" />
               </button>
@@ -148,7 +150,7 @@ export function ProjectSettingsModal({
                   className={`color-swatch${project.color === c ? " on" : ""}`}
                   style={{ background: c }}
                   title={c}
-                  onClick={() => setProjectColor(projectId, c)}
+                  onClick={() => void execute("project.color", { project: projectId, color: c }, {})}
                 />
               ))}
             </div>

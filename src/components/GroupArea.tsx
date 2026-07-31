@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { execute } from "../commands/registry";
 import { rafThrottle } from "../lib/rafThrottle";
 import {
   commitViewVisibility,
@@ -211,9 +212,6 @@ export const GroupArea = memo(function GroupArea({
   // 포커스 스포트라이트 실험 — 전체를 가라앉히고 선택만 명확하게(결정 시 소거).
   const focusDim = useSettings((s) => s.focusDim);
   const inset = PANE_INSET[paneStyle] ?? 0;
-  const setActiveGroup = useSessions((s) => s.setActiveGroup);
-  const setActiveView = useSessions((s) => s.setActiveView);
-  const restoreView = useSessions((s) => s.restoreView);
 
   // 클릭 = 활성 + 실포커스 불변식. 상태 변경 effect 에만 의존하면 "이미 활성인
   // 그룹/pane 재클릭"이 no-op 인 채 mousedown 기본동작(비포커서블 클릭 → blur)
@@ -222,12 +220,8 @@ export const GroupArea = memo(function GroupArea({
   // 본문/탭/타이틀 클릭은 상태와 무관하게 항상 그 그룹의 focused pane 에 실포커스
   // 뷰 내부 포커스(터미널 등)는 플러그인 뷰가 마운트/활성 시 스스로 처리한다 — 코어는
   // 그룹 활성화만 한다(코어가 더 이상 터미널 host-div 를 소유하지 않음).
-  const closeView = useSessions((s) => s.closeView);
-  const moveViewToGroup = useSessions((s) => s.moveViewToGroup);
-  const moveGroupToGroup = useSessions((s) => s.moveGroupToGroup);
   const resizeSplit = useSessions((s) => s.resizeSplit);
   const resizeSplits = useSessions((s) => s.resizeSplits);
-  const splitWithNewView = useSessions((s) => s.splitWithNewView);
   const pushOverlay = useUi((s) => s.pushOverlay);
   const popOverlay = useUi((s) => s.popOverlay);
   // 플러그인 뷰(콘텐츠 배치) 호스트에 넘길 프로젝트 루트.
@@ -395,21 +389,21 @@ export const GroupArea = memo(function GroupArea({
             // 실포커스와 분리될 수 없다(클릭 분기와 동일 불변식). 분할 드롭은
             // 새 그룹이 생성되므로 결과의 groupId 로 포커스한다.
             if (kind === "view")
-              moveViewToGroup(projectId, id, target.groupId, target.zone);
-            else moveGroupToGroup(projectId, id, target.groupId, target.zone);
+              void execute("tab.move", { tab: id, dst: target.groupId, zone: target.zone }, {});
+            else void execute("pane.move", { project: projectId, src: id, dst: target.groupId, zone: target.zone }, {});
           }
         } else if (kind === "view") {
           transferViewFocus(activeSessionViewId(), id, () =>
-            setActiveView(projectId, id),
+            void execute("tab.activate", { tab: id }, {}),
           ); // 클릭 = 탭 전환 + 실포커스
         } else {
           const targetViewId = sourceGroup?.activeTabId;
           if (targetViewId) {
             transferViewFocus(activeSessionViewId(), targetViewId, () =>
-              setActiveGroup(projectId, id),
+              void execute("pane.activate", { pane: id }, {}),
             );
           } else {
-            setActiveGroup(projectId, id);
+            void execute("pane.activate", { pane: id }, {});
           }
         }
         setDrag(null);
@@ -421,10 +415,6 @@ export const GroupArea = memo(function GroupArea({
     [
       projectId,
       hitTest,
-      moveViewToGroup,
-      moveGroupToGroup,
-      setActiveView,
-      setActiveGroup,
       pushOverlay,
       popOverlay,
     ],
@@ -641,7 +631,7 @@ export const GroupArea = memo(function GroupArea({
               <div
                 className="pane-title active"
                 title={t("view.restoreHint")}
-                onDoubleClick={() => restoreView(projectId)}
+                onDoubleClick={() => void execute("tab.restore", { project: projectId }, {})}
               >
                 <span className="pane-title-icon icon-inline">
                   {active?.kind === "file" ? (
@@ -657,7 +647,7 @@ export const GroupArea = memo(function GroupArea({
                   type="button"
                   className="icon-btn pane-title-btn"
                   title={t("view.restore")}
-                  onClick={() => restoreView(projectId)}
+                  onClick={() => void execute("tab.restore", { project: projectId }, {})}
                 >
                   <Icon name="minus" size="sm" />
                 </button>
@@ -693,7 +683,7 @@ export const GroupArea = memo(function GroupArea({
                   className="icon-btn pane-title-btn"
                   title={t("panel.split")}
                   onMouseDown={(e) => e.stopPropagation()}
-                  onClick={() => splitWithNewView(projectId, group.id, "right")}
+                  onClick={() => void execute("pane.split", { project: projectId, pane: group.id, side: "right" }, {})}
                 >
                   <Icon name="split" size="sm" />
                 </button>
@@ -702,7 +692,7 @@ export const GroupArea = memo(function GroupArea({
                   className="icon-btn pane-title-btn"
                   title={t("view.close")}
                   onMouseDown={(e) => e.stopPropagation()}
-                  onClick={() => closeView(projectId, group.activeTabId)}
+                  onClick={() => group.activeTabId && void execute("tab.close", { tab: group.activeTabId }, {})}
                 >
                   <Icon name="close" size="sm" />
                 </button>
@@ -780,10 +770,10 @@ export const GroupArea = memo(function GroupArea({
                     transferViewFocus(
                       activeSessionViewId(),
                       group.activeTabId,
-                      () => setActiveGroup(projectId, group.id),
+                      () => void execute("pane.activate", { pane: group.id }, {}),
                     );
                   } else {
-                    setActiveGroup(projectId, group.id);
+                    void execute("pane.activate", { pane: group.id }, {});
                   }
                 });
               }}

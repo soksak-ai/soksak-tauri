@@ -3,7 +3,7 @@ import { execute } from "../commands/registry";
 import { isComposingEnter } from "../lib/imeKeys";
 import { Icon } from "../ui/icons/Icon";
 import { ProgramMenu } from "./ProgramMenu";
-import { useSessions, type Program, type Project } from "../state/sessions";
+import { type Program, type Project } from "../state/sessions";
 import { useCloseConfirm } from "../state/closeConfirm";
 import { useProgramRegistry } from "../plugins/programRegistry";
 import { useT } from "../i18n";
@@ -22,8 +22,6 @@ export const ContentTabs = memo(function ContentTabs({
 }) {
   const t = useT();
   const requestCloseContent = useCloseConfirm((s) => s.requestCloseContent);
-  const setActiveContent = useSessions((s) => s.setActiveContent);
-  const renameContent = useSessions((s) => s.renameContent);
   const hasPrograms = useProgramRegistry((s) => s.order.length > 0);
   const [editingId, setEditingId] = useState<string | null>(null);
   const addBtnRef = useRef<HTMLButtonElement>(null);
@@ -32,7 +30,7 @@ export const ContentTabs = memo(function ContentTabs({
   );
 
   const commit = (id: string, raw: string, fallback: string) => {
-    renameContent(project.id, id, raw.trim() || fallback);
+    void execute("space.rename", { project: project.id, space: id, title: raw.trim() || fallback }, {});
     setEditingId(null);
   };
 
@@ -61,7 +59,7 @@ export const ContentTabs = memo(function ContentTabs({
           key={c.id}
           className={`space-tab${c.id === project.activeSpaceId ? " active" : ""}${editingId === c.id ? " editing" : ""}`}
           data-node={`tab/space/${idx}`}
-          onClick={() => setActiveContent(project.id, c.id)}
+          onClick={() => void execute("space.activate", { project: project.id, space: c.id }, {})}
           onDoubleClick={() => setEditingId(c.id)}
           title={c.title}
         >

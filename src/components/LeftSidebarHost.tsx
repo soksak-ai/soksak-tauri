@@ -4,6 +4,7 @@
 // 사이드바는 폭이 좁아 col(세로) 분할이 자연스럽지만 콘텐츠와 같은 4방향 드롭을 지원한다(좌/우=row).
 // keep-alive: 한 번 연 뷰는 mount 유지(display 토글).
 
+import { execute } from "../commands/registry";
 import {
   memo,
   useCallback,
@@ -34,7 +35,6 @@ import { useTheme } from "../state/theme";
 import { useViewLabels, resolveViewLabel } from "../state/viewLabels";
 import {
   type SidebarGroup,
-  type SidebarDrop,
   reconcileSidebarLayout,
   sidebarViewKeys,
 } from "../state/sidebarLayout";
@@ -49,13 +49,6 @@ const PANE_INSET: Record<string, number> = { flat: 0, card: 5, floating: 6 };
 
 // 콘텐츠 zone → 사이드바 drop(콘텐츠와 동일 4방향). center=탭 합류, 좌/우=가로(row) 분할,
 // 상/하=세로(col) 분할.
-function zoneToDrop(targetKey: string, zone: DropZone): SidebarDrop {
-  if (zone === "center") return { type: "into", targetKey };
-  const dir = zone === "left" || zone === "right" ? "row" : "col";
-  const before = zone === "left" || zone === "top";
-  return { type: "split", targetKey, dir, before };
-}
-
 export const LeftSidebarHost = memo(function LeftSidebarHost({
   project,
   paneId,
@@ -91,7 +84,6 @@ export const LeftSidebarHost = memo(function LeftSidebarHost({
     [version],
   );
   const reconcileSidebar = useSessions((s) => s.reconcileSidebar);
-  const moveSidebarView = useSessions((s) => s.moveSidebarView);
   const resizeSidebar = useSessions((s) => s.resizeSidebar);
   const setLeftTab = useSessions((s) => s.setLeftTab);
 
@@ -184,7 +176,18 @@ export const LeftSidebarHost = memo(function LeftSidebarHost({
             const keys = targetCell?.value.viewKeys ?? [];
             const targetKey = keys.find((k) => k !== viewKey) ?? targetCell?.value.activeViewKey ?? "";
             if (targetKey && !(h.id === srcCellId && h.zone === "center")) {
-              moveSidebarView(project.id, viewKey, zoneToDrop(targetKey, h.zone));
+              // 명령을 통해 옮긴다 — CLI·AI 가 부르는 sidebar.left.move 와 같은 경로여야
+              // 둘이 갈리지 않는다. zone 어휘도 그 명령이 정본이다(center = into).
+              void execute(
+                "sidebar.left.move",
+                {
+                  project: project.id,
+                  viewKey,
+                  target: targetKey,
+                  zone: h.zone === "center" ? "into" : h.zone,
+                },
+                {},
+              );
             }
           }
         } else {
@@ -196,7 +199,7 @@ export const LeftSidebarHost = memo(function LeftSidebarHost({
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
     },
-    [project.id, hitTest, moveSidebarView, setLeftTab],
+    [project.id, hitTest, setLeftTab],
   );
 
   // divider 드래그(분할 비율). 콘텐츠 onGutterDown 과 동일 로직.
