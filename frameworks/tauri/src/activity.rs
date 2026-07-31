@@ -174,6 +174,12 @@ pub fn fan_out(hub: &ActivityHub, windows: &dyn WindowOracle, entry: &Value) -> 
 ///
 /// 회복 큐·보관 정리·실패 계수가 여기 살던 동안 cored 의 같은 일은 raw SQL 한 줄이었다.
 /// 두 벌은 갈릴 때까지 조용하고, 실제로 한쪽만 보관 정리를 받고 있었다.
+/// 영속 — 쓰기는 저장소 계층이 소유한다(soksak_store::activity_persist).
+///
+/// **발행 경로는 이 함수를 부르지 않는다.** 앱 프로세스의 SQLite 는 이 쓰기에서 NOMEM 을
+/// 내므로(실측: 같은 코드로 앱 44 실패·cored 0) 적재는 cored 가 진다. 여기 남은 것은 요약·
+/// 상한 계약을 검사가 확인하는 자리다 — 부르는 곳이 생기면 그 순간 원장의 주인이 둘이 된다.
+#[cfg(test)]
 pub fn persist(conn: &rusqlite::Connection, entry: &Value) -> bool {
     soksak_store::activity_persist::persist_entry(conn, entry)
 }
@@ -190,34 +196,70 @@ pub fn publish(app: &AppHandle, kind: &str, source: &str, payload: Value) -> Val
     // seq 는 링·구독 커서의 기준이라 링을 가진 쪽이 주인이어야 하고, 그래야 주인이 하나다.
     //
     // **답을 기다리지 않는다.** 기다리면 cored 가 이 창의 답을 기다리는 중일 때 서로를 붙잡는다.
-    if let Some(host) = crate::cored_host::current() {
-        if host
-            .tell("activity_persist", &serde_json::json!({ "entry": entry }))
-            .is_ok()
-        {
-            return entry;
-        }
-        // 못 보냈으면 아래 로컬 경로로 떨어진다 — 조용히 버리지 않는다.
-        DELEGATION_MISSES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    }
-    // 폴백 — cored 에 못 닿는 동안은 이 프로세스가 직접 쓴다(회복 큐가 실패를 진다).
     //
-    // **이 경로는 걷지 않는다.** 부팅 계약이 "못 붙어도 앱은 산다"이기 때문이다(lib.rs
-    // stand_up 의 사유). 그 구간에도 관측은 남아야 한다 — boot.step 이 사라지면 복원 결함을
-    // 규명할 길이 함께 사라진다(실측 이력). 위임실패가 0 이라는 것은 지금 cored 가 늘 선다는
-    // 뜻이지, 못 설 수 있다는 사실이 없어진다는 뜻이 아니다.
+    // 못 닿으면 **기다린다 — 직접 쓰지 않는다.** 처음엔 로컬 쓰기로 떨어뜨렸는데 그것은
+    // 고장난 경로다: 앱이 직접 쓰면 바로 그 NOMEM 이 나고, 회복 큐는 같은 프로세스에서
+    // 같은 쓰기를 재시도하므로 영영 안 나간 채 상한에서 버려진다. 그리고 그 구간 동안
+    // 원장의 주인이 둘이 된다.
     //
-    // 대신 그 구간을 **말한다**: delegationMisses 가 0 이 아니면 봉투의 degraded 가 "그 구간은
-    // 앱 프로세스가 직접 썼다"고 답한다. 주인이 둘이었던 구간을 숨기지 않는 것이 이 경로의
-    // 값이다.
-    let st = app.state::<crate::data::DbState>();
-    if let Ok(guard) = st.conn.lock() {
-        if let Some(conn) = guard.as_ref() {
-            let _ = persist(conn, &entry);
+    // 그래서 항목을 들고 있다가 cored 가 붙는 순간 흘려보낸다. 부팅 계약("못 붙어도 앱은
+    // 산다")은 지켜지고 — 라이브(링·창 배달)는 이미 위에서 끝났다 — 관측도 잃지 않는다.
+    match crate::cored_host::current() {
+        Some(host) => {
+            drain_pending(&host);
+            if host
+                .tell("activity_persist", &serde_json::json!({ "entry": entry }))
+                .is_err()
+            {
+                DELEGATION_MISSES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                hold(entry.clone());
+            }
         }
+        None => hold(entry.clone()),
     }
     entry
 }
+
+/// cored 가 서기 전의 항목들 — 붙는 순간 순서대로 흘려보낸다.
+///
+/// 상한이 있다. 없으면 cored 가 영영 안 서는 배치에서 이 큐가 메모리를 먹는다. 넘치면
+/// 오래된 것부터 버리되 **버린 수를 센다** — 조용히 사라지는 사실이 없어야 한다.
+const PENDING_CAP: usize = 512;
+static PENDING: Mutex<VecDeque<Value>> = Mutex::new(VecDeque::new());
+static PENDING_DROPS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn hold(entry: Value) {
+    let Ok(mut q) = PENDING.lock() else { return };
+    while q.len() >= PENDING_CAP {
+        q.pop_front();
+        PENDING_DROPS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+    q.push_back(entry);
+}
+
+/// 밀린 것을 먼저 보낸다 — 첫 건이 막히면 즉시 멈춘다(순서 보존, 헛시도 방지).
+fn drain_pending(host: &crate::cored_host::CoredHost) {
+    let Ok(mut q) = PENDING.lock() else { return };
+    while let Some(front) = q.front() {
+        if host
+            .tell("activity_persist", &serde_json::json!({ "entry": front }))
+            .is_err()
+        {
+            break;
+        }
+        q.pop_front();
+    }
+}
+
+/// 아직 못 보낸 항목 수 / 상한 초과로 버린 수 — 밖에서 셀 수 있어야 한다.
+pub fn pending_to_cored() -> usize {
+    PENDING.lock().map(|q| q.len()).unwrap_or(0)
+}
+
+pub fn pending_drops() -> u64 {
+    PENDING_DROPS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 
 /// 위임에 실패해 직접 쓴 횟수 — 0 이 아니면 그 구간의 쓰기는 앱 프로세스가 졌다.
 static DELEGATION_MISSES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -249,25 +291,45 @@ use soksak_core::activity::PERSIST_DOC_CAP;
 /// 부트 1회 — 영속 최댓값에서 seq 재개(재시작을 넘는 단조). 레코드 없음(신선 설치) = 0 유지.
 /// 전 scope(신호+저신호) 최댓값 — 어느 쪽이 마지막이었든 뒤로 가지 않는다.
 pub fn resume_seq(app: &AppHandle, conn: &rusqlite::Connection) {
-    let last = soksak_store::store::query(
-        conn,
-        NS,
-        COLL,
-        None,
-        None,
-        Some("seq"),
-        true,
-        Some(1),
-        None,
-        None,
-    )
-    .ok()
-    .and_then(|rows| {
-        rows.first()
-            .and_then(|e| e.get("seq").and_then(Value::as_u64))
-    })
-    .unwrap_or(0);
-    app.state::<ActivityHub>().resume_from(last);
+    // **조회 실패를 0 으로 읽지 않는다.** id 가 `a{seq:016}` 이라 0 부터 다시 매기면 그 행들이
+    // 이미 있는 과거를 덮어쓴다(ON CONFLICT DO UPDATE) — 오류를 내지 않는 파괴다.
+    //
+    // 실측(2026-08-01): 저장소가 NOMEM·lock 으로 막힌 구간에 이 조회가 실패했고, 그때 0 에서
+    // 재개해 seq 1 부터 다시 매겼다. 원장 범위가 74583~ 에서 1~ 로 넓어졌고 시간 역행이
+    // 나타났다 — 그 구간의 과거는 복구할 수 없다.
+    //
+    // 못 읽으면 재개하지 않는다: 링의 커서는 그대로 두고(부팅 전 값 = 0 이면 아직 아무것도
+    // 발행 안 한 상태다) 사실을 센다. 발행은 계속되지만 그 발행은 cored 가 도장을 다시
+    // 매기는 쪽으로 흐르므로 과거를 덮지 않는다.
+    match soksak_store::store::query(
+        conn, NS, COLL, None, None, Some("seq"), true, Some(1), None, None,
+    ) {
+        Ok(rows) => {
+            let last = rows
+                .first()
+                .and_then(|e| e.get("seq").and_then(Value::as_u64))
+                .unwrap_or(0);
+            app.state::<ActivityHub>().resume_from(last);
+        }
+        Err(e) => {
+            RESUME_FAILURES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if let Ok(mut slot) = RESUME_ERROR.lock() {
+                *slot = e.to_string();
+            }
+        }
+    }
+}
+
+/// 재개 지점을 못 읽은 횟수 — 0 이 아니면 그 부팅의 도장은 신뢰할 수 없다.
+static RESUME_FAILURES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static RESUME_ERROR: Mutex<String> = Mutex::new(String::new());
+
+pub fn resume_failures() -> u64 {
+    RESUME_FAILURES.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+pub fn resume_last_error() -> String {
+    RESUME_ERROR.lock().map(|e| e.clone()).unwrap_or_default()
 }
 
 // 프론트 공급자 진입점 — activityFeed.ts / registry.ts 계측이 invoke.
@@ -291,6 +353,12 @@ pub fn activity_persist_stats() -> Value {
         "lastError": soksak_store::activity_persist::persist_last_error(),
         // 0 이 아니면 그 구간은 앱 프로세스가 직접 썼다(cored 에 못 닿았다).
         "delegationMisses": persist_delegation_misses(),
+        // cored 에 아직 못 보낸 항목 — 붙는 순간 흘러간다. 0 이 아니면 그 구간은 원장에 없다.
+        "pendingToCored": pending_to_cored(),
+        "pendingDrops": pending_drops(),
+        // 재개 실패 — 0 이 아니면 그 부팅의 도장이 과거를 덮었을 수 있다.
+        "resumeFailures": resume_failures(),
+        "resumeLastError": resume_last_error(),
     })
 }
 

@@ -45,7 +45,15 @@ frameworks/electron/windowEvents.cjs 13
 #   근거: 앱 프로세스의 SQLite 가 이 쓰기에서만 NOMEM 을 냈다(실측 앱 44 실패 · cored 0).
 #   답을 기다리면 cored 가 이 창의 답을 기다리는 중에 서로를 붙잡는다(실측: UI 통째 미응답) —
 #   그래서 ask 가 아니라 tell 이다. 위임실패가 0 으로 유지되면 폴백 경로를 걷고 이 수를 내린다.
-frameworks/tauri/src/activity.rs 369
+# 재입법 2026-08-01 369 → 406. 대기 큐와 재개 실패 계수다.
+#   ① 폴백을 로컬 쓰기에서 **대기**로 바꿨다. 로컬 쓰기는 고장난 경로다 — 앱이 직접 쓰면
+#      바로 그 NOMEM 이 나고, 회복 큐는 같은 프로세스에서 같은 쓰기를 재시도하므로 영영
+#      안 나간 채 상한에서 버려지며, 그 구간 원장의 주인이 둘이 된다. 이제 들고 있다가
+#      cored 가 붙는 순간 순서대로 흘려보낸다.
+#   ② 재개 지점 조회 실패를 0 으로 읽지 않는다. 0 에서 재매기면 id 가 겹쳐 과거를 덮는다
+#      — 실측 2026-08-01: 원장 범위가 74583~ 에서 1~ 로 넓어졌고 시간 역행이 나타났다.
+#   몸(도장 규칙·쓰기)은 여전히 코어와 저장소에 있고, 여기 있는 것은 배달 대기와 계수다.
+frameworks/tauri/src/activity.rs 406
 frameworks/tauri/src/activity_sink.rs 9
 frameworks/tauri/src/ai_session.rs 45
 frameworks/tauri/src/clipboard.rs 249

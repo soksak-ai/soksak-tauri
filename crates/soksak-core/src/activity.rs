@@ -337,6 +337,20 @@ mod audit_tests {
         assert!(a.single_writer, "구멍만으로 손상 판정하면 보관 정책이 경보가 된다");
     }
 
+    /// **0 에서 재개하면 과거를 덮는다** — 그 흔적은 낮은 seq 에 나중 ts 가 앉는 것이다.
+    ///
+    /// 실측(2026-08-01): 저장소가 막힌 구간에 재개 조회가 실패해 0 부터 다시 매겼고, seq 1~
+    /// 이 이미 있던 과거를 덮었다(범위가 74583~ 에서 1~ 로 넓어졌다). 이 검사가 그 모양을
+    /// 못 박는다 — 재개 실패를 0 으로 읽는 코드가 다시 생기면 여기서 잡힌다.
+    #[test]
+    fn restarting_from_zero_shows_up_as_time_going_backwards() {
+        // 옛 원장(seq 100~102, 오래된 ts) 위에 0 부터 다시 매긴 행(seq 1~2, 최신 ts)이 앉았다.
+        let rows = vec![(1, 9000), (2, 9001), (100, 100), (101, 110), (102, 120)];
+        let a = audit_ledger(&rows);
+        assert!(a.time_regressions > 0, "{a:?}");
+        assert!(!a.single_writer);
+    }
+
     /// 빈 원장은 손상이 아니다 — 0 을 결함으로 읽으면 새 홈이 매번 경보를 낸다.
     #[test]
     fn an_empty_ledger_is_not_damage() {
