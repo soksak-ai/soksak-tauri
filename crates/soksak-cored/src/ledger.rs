@@ -99,29 +99,18 @@ pub fn admit(db_path: &str, kind: &str, source: &str, payload: Value) -> Result<
 /// 시작된다(실측 2026-07-28, Electron 라이브 — publish 24회 성공에 records 0행).
 ///
 /// 규칙·문장은 코어가 소유하고 여기는 연결만 갖는다.
+/// 원장 항목을 남긴다 — 쓰기는 저장소 계층이 소유한다(soksak_store::activity_persist).
+///
+/// 여기 raw SQL 을 두었던 동안 이 경로는 저장소 정책을 우회했고 **보관 정리를 한 번도 받지
+/// 않았다**(실측 2026-07-31 — 그 원장은 영원히 자란다). 규칙이 갈린 것이 아니라 한쪽이 통째로
+/// 빈약했고, 오류를 내지 않아 조용했다.
 fn persist(db_path: &str, entry: &Value) -> Result<(), String> {
-    use soksak_core::activity as act;
-    let conn = rusqlite::Connection::open(db_path)
-        .map_err(|e| format!("원장 저장소 열기 실패({db_path}): {e}"))?;
-    let doc = act::summarize_for_persist(entry);
-    let seq = entry.get("seq").and_then(Value::as_u64).ok_or("seq 없는 항목")?;
-    let doc_s = serde_json::to_string(&doc).map_err(|e| e.to_string())?;
-    let now = entry.get("ts").and_then(Value::as_u64).unwrap_or(0) as i64;
-    conn.execute(
-        act::PERSIST_SQL,
-        rusqlite::params![
-            act::NS,
-            act::COLL,
-            act::retention_scope(entry),
-            act::row_id(seq),
-            doc_s,
-            now,
-            0i64,
-            Option::<String>::None
-        ],
-    )
-    .map_err(|e| format!("원장 쓰기 실패: {e}"))?;
-    Ok(())
+    let conn = soksak_store::open::connect(std::path::Path::new(db_path))?;
+    if soksak_store::activity_persist::persist_entry(&conn, entry) {
+        return Ok(());
+    }
+    // 실패는 회복 큐에 담겼다 — 다음 성공에 함께 흘러간다. 부른 쪽에는 사실대로 알린다.
+    Err("원장 쓰기 실패(회복 큐에 보관됨)".to_string())
 }
 
 #[cfg(test)]

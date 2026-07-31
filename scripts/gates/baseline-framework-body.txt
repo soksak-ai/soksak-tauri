@@ -21,12 +21,6 @@ frameworks/electron/activity.cjs 32
 frameworks/electron/backend.cjs 206
 frameworks/electron/control.cjs 132
 frameworks/electron/cored.cjs 242
-# 재입법 2026-07-31 375 → 388. 증가분은 **배선이지 코어가 아니다** — 애플리케이션 메뉴다.
-# macOS 는 앱의 정체(메뉴바 타이틀)를 번들 Info.plist 에서 읽고, 메뉴 자체는 프레임워크 API
-# 로만 세운다. 메뉴를 안 세우면 프레임워크의 기본 메뉴가 뜨고 그 메뉴는 이 제품을 모른다
-# (실측: 메뉴바가 "Electron" 이었고 복사/붙여넣기 단축키가 프레임워크 기본에 기대고 있었다).
-# 원칙이 껍데기에 남긴다고 한 셋(표면·메인스레드·사건싱크) 중 표면에 해당한다. 항목 목록은
-# 데이터라 늘지 않는다 — 늘면 그때는 제품 결정이므로 공통으로 뺀다.
 frameworks/electron/main.cjs 388
 frameworks/electron/native/capture.cjs 70
 frameworks/electron/native/clipboard.cjs 24
@@ -41,7 +35,7 @@ frameworks/electron/native/webview.cjs 166
 frameworks/electron/native/window.cjs 149
 frameworks/electron/preload.cjs 50
 frameworks/electron/windowEvents.cjs 13
-frameworks/tauri/src/activity.rs 434
+frameworks/tauri/src/activity.rs 346
 frameworks/tauri/src/activity_sink.rs 9
 frameworks/tauri/src/ai_session.rs 45
 frameworks/tauri/src/clipboard.rs 249
@@ -54,11 +48,6 @@ frameworks/tauri/src/data/commands.rs 610
 frameworks/tauri/src/data/mod.rs 91
 frameworks/tauri/src/data/ring.rs 42
 frameworks/tauri/src/dockmenu.rs 70
-# 재입법 2026-07-31 fs.rs 75 → 80, lib.rs 715 → 716. write_file_base64 배선이다.
-#   몸은 soksak_core::fsx::write_file_base64 에 있고 여기 있는 것은 tauri::command 진입점
-#   한 개와 등록 한 줄이다(read_file_base64 와 같은 모양). 읽기는 base64 로 되는데 쓰기가
-#   텍스트뿐이라 이진 산출물(캡처 PNG)을 파일로 남길 길이 없었다 — 그 비대칭이 window.snapshot
-#   의 path 무시로 나타났다. 증가분은 표면이고 코어는 크레이트에 산다.
 frameworks/tauri/src/fs.rs 80
 frameworks/tauri/src/headless.rs 30
 frameworks/tauri/src/home.rs 142

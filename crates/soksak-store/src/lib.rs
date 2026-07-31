@@ -15,6 +15,8 @@ pub mod write_policy;
 pub mod open;
 pub mod ring;
 pub mod store;
+// 활동 원장의 영속 — 적재하는 모든 프로세스가 지나는 한 자리(규칙은 core, 쓰기는 여기).
+pub mod activity_persist;
 
 pub use ids::{gen_id, now_millis, validate_coll, validate_field};
 // AI 세션 계보 — 조회 한 경로.
