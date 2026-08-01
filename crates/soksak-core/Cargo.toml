@@ -9,6 +9,7 @@ description = "Command logic with no framework in it: no window, no app handle, 
 # 줄인다. 프레임워크·런타임·플랫폼 크레이트는 게이트(tests/no_framework.rs)가 거부한다.
 [dependencies]
 serde = { version = "1", features = ["derive"] }
+soksak-spec-socket = { path = "../soksak-spec-socket" }
 sha2 = "0.10"
 serde_json = "1"
 # 미리보기 인코딩 — 순수 변환이라 프레임워크를 끌고 오지 않는다(앱과 같은 판).

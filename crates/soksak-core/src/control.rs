@@ -9,19 +9,35 @@
 use serde::Deserialize;
 use serde_json::Value;
 
-/// 밖에서 온 한 줄. 필드 이름은 하니스가 보내는 그대로다.
-#[derive(Debug, Deserialize, Default)]
-pub struct Request {
-    pub id: Option<Value>,
-    pub method: String,
-    #[serde(default)]
-    pub params: Value,
-    pub pane: Option<String>,
-    /// 타겟 창 label. 생략하면 아래 규칙이 고른다.
-    pub window: Option<String>,
-    /// 회신 대기 상한(ms). 생략은 호출자가 기본을 쓴다는 뜻이다.
-    #[serde(rename = "timeoutMs")]
-    pub timeout_ms: Option<u64>,
+/// 밖에서 온 한 줄 — 봉투는 **계약 크레이트가 소유한다**.
+///
+/// 여기서 필드를 다시 적으면 그 목록이 두 번째 계약이 된다. serde 는 모르는 키를 버리므로
+/// 한쪽에만 있는 필드는 실패가 아니라 **소멸**한다(실측 2026-08-01: `parent` 가 그렇게 사라져
+/// cored 를 지나는 요청에는 실리지 않았다). 이 자리가 안 읽는 필드도 없어진 것은 아니다.
+pub use soksak_spec_socket::RequestEnvelope as Request;
+
+/// 배달 봉투 — 창 가진 쪽으로 미는 한 줄. **만드는 자리는 이 함수 하나다.**
+///
+/// 리터럴로 적으면 필드를 빠뜨려도 아무 오류가 안 난다: 받는 쪽 serde 가 없는 키를 그냥 안
+/// 채우고, 그 값은 실패가 아니라 **소멸**한다. 실측(2026-08-01) — 배달 봉투가 5키였고 요청
+/// 봉투는 10키라, `sok --parent` 로 온 상관 id 가 cored 를 지나는 순간 사라졌다. 창에서 돌던
+/// 명령은 성공했고 활동 원장에만 부모가 없었다.
+///
+/// `window` 는 요청의 것이 아니라 **해소된 타겟**이다 — 생략된 요청도 여기서는 이름을 갖는다.
+pub fn deliver_envelope(id: u64, req: &Request, target: &str) -> Value {
+    serde_json::json!({
+        "deliver": {
+            "id": id,
+            "method": req.method,
+            "params": req.params,
+            "pane": req.pane,
+            "window": target,
+            "parent": req.parent,
+            "origin": req.origin,
+            "timeoutMs": req.timeout_ms,
+            "idempotencyKey": req.idempotency_key,
+        }
+    })
 }
 
 /// 타겟을 못 고른 이유 — 셋은 서로 다른 사실이다.

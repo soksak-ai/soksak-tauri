@@ -20,20 +20,13 @@ use std::sync::Mutex;
 use crate::ctx::Ctx;
 use crate::registry::{self, Outcome};
 
-/// 요청. 앱 소켓의 요청에서 **창 관련 필드를 뺀 것**이다 — cored 에는 창이 없다.
-/// 모르는 필드는 무시한다(계약의 추가-필드 규칙): 창을 실어 보내는 프레임워크도 거절당하지 않는다.
-#[derive(Deserialize)]
-pub struct Request {
-    pub id: Option<Value>,
-    pub method: String,
-    #[serde(default)]
-    pub params: Value,
-    pub protocol: Option<u32>,
-    /// 어느 창에서 불렀는가. 배달 경로가 쓰던 봉투 칸을 서빙 경로도 읽는다 — 프레임워크가
-    /// 창 핸들을 주입하는 자리에 대응한다(이름마다 인자로 싣지 않는다).
-    #[serde(default)]
-    pub window: Option<String>,
-}
+/// 요청 — 봉투는 **계약 크레이트가 소유한다**(판 상수와 같은 규칙: 여기 베끼면 두 프로세스가
+/// 다른 것을 말한다).
+///
+/// 이 프로세스가 안 읽는 필드도 있다(창이 없으므로 pane 은 지나갈 뿐이다). 안 읽는 것과 없는
+/// 것은 다르다 — 필드 목록을 여기서 다시 적으면 그 차이가 사라지고, 한쪽에만 있는 필드는
+/// 실패가 아니라 **소멸**한다(실측 2026-08-01: `parent` 가 그렇게 사라졌다).
+pub use soksak_spec_socket::RequestEnvelope as Request;
 
 pub fn ok_reply(data: Value) -> Value {
     json!({ "ok": true, "data": data })

@@ -79,10 +79,17 @@ pub trait WindowFactsSource: Send + Sync + 'static {
 pub struct Delivery {
     /// 배달 상관 id — 회신(`cmd_result`)이 이 번호로 짝지어진다.
     pub id: u64,
-    pub method: String,
-    pub params: Value,
-    pub pane: Option<String>,
-    pub window: String,
+    /// 봉투 그대로. **필드를 여기서 나열하지 않는다** — 나열하면 하나가 빠지고, 빠진 값은
+    /// 실패가 아니라 소멸한다(실측 2026-08-01: `parent` 가 그렇게 사라졌다). 타겟 창은 이미
+    /// 해소돼 봉투 안에 있다(cored 가 넣는다).
+    pub req: soksak_spec_socket::RequestEnvelope,
+}
+
+impl Delivery {
+    /// 이 배달이 향하는 창 — cored 가 해소해 봉투에 넣은 값이다.
+    pub fn window(&self) -> &str {
+        self.req.window.as_deref().unwrap_or_default()
+    }
 }
 
 /// 배달을 실행하는 쪽. cored 가 고른 창으로 **그대로** 간다.
@@ -162,20 +169,16 @@ pub fn classify(line: &str) -> Result<Incoming, String> {
         });
     }
     if let Some(d) = v.get("deliver") {
-        let (Some(id), Some(method), Some(window)) = (
-            d.get("id").and_then(Value::as_u64),
-            d.get("method").and_then(Value::as_str),
-            d.get("window").and_then(Value::as_str),
-        ) else {
-            return Err(format!("배달 봉투가 모자라다: {d}"));
+        let Some(id) = d.get("id").and_then(Value::as_u64) else {
+            return Err(format!("배달 봉투에 상관 id 가 없다: {d}"));
         };
-        return Ok(Incoming::Deliver(Delivery {
-            id,
-            method: method.to_string(),
-            params: d.get("params").cloned().unwrap_or(Value::Null),
-            pane: d.get("pane").and_then(Value::as_str).map(str::to_string),
-            window: window.to_string(),
-        }));
+        // 봉투는 통째로 읽는다 — 키를 골라 담으면 새 필드가 생길 때마다 이 자리가 빠뜨린다.
+        let req: soksak_spec_socket::RequestEnvelope =
+            serde_json::from_value(d.clone()).map_err(|e| format!("배달 봉투가 모자라다: {e}"))?;
+        if req.window.as_deref().unwrap_or_default().is_empty() {
+            return Err(format!("배달 봉투가 창을 짚지 않았다: {d}"));
+        }
+        return Ok(Incoming::Deliver(Delivery { id, req }));
     }
     Ok(Incoming::Answer {
         id: v.get("id").cloned().unwrap_or(Value::Null),
@@ -465,7 +468,7 @@ fn pump(
                 std::thread::spawn(move || {
                     let out = exec.execute(&d);
                     if let Err(why) = write_line(&writer, &result_envelope(d.id, out)) {
-                        eprintln!("[cored-host] 회신이 cored 에 닿지 못했다({}): {why}", d.method);
+                        eprintln!("[cored-host] 회신이 cored 에 닿지 못했다({}): {why}", d.req.method);
                     }
                 });
             }
@@ -704,13 +707,8 @@ struct AppExec(tauri::AppHandle);
 
 impl DeliveryExec for AppExec {
     fn execute(&self, d: &Delivery) -> Value {
-        crate::ipc::request_in_window(
-            &self.0,
-            d.window.clone(),
-            d.method.clone(),
-            d.params.clone(),
-            d.pane.clone(),
-        )
+        // 봉투를 그대로 넘긴다 — 여기서 필드를 골라 다시 조립하면 그것이 두 번째 계약이다.
+        crate::ipc::request_delivered(&self.0, d.req.clone())
     }
     fn broadcast(&self, event: &str, payload: Value) -> bool {
         crate::window_oracle::WindowOracle::broadcast(&self.0, event, payload)

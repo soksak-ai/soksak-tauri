@@ -265,12 +265,9 @@ fn route(req: control::Request) -> Value {
     let (tx, rx): (Sender<Value>, Receiver<Value>) = channel();
     pending().lock().unwrap_or_else(|e| e.into_inner()).insert(id, tx);
 
-    let push = json!({
-        "deliver": {
-            "id": id, "method": req.method, "params": req.params,
-            "pane": req.pane, "window": target,
-        }
-    });
+    // 봉투는 코어가 만든다 — 여기서 리터럴로 적으면 필드를 빠뜨려도 오류가 안 나고, 빠진
+    // 값은 실패가 아니라 소멸한다(soksak_core::control::deliver_envelope 머리말).
+    let push = soksak_core::control::deliver_envelope(id, &req, &target);
     // 그 창을 가진 호스트로만 민다. 아무 호스트에나 밀면 남의 프레임워크 창에서 명령이 돌고
     // 성공을 답한다 — 그 오답은 오류로 보이지 않는다.
     match push_to_owner(&target, &push) {

@@ -91,36 +91,12 @@ impl CmdBridge {
 
 static SEQ: AtomicU64 = AtomicU64::new(1);
 
-#[derive(Debug, Deserialize)]
-struct Request {
-    // 클라이언트 상관 id(있으면 응답에 echo).
-    id: Option<Value>,
-    method: String,
-    #[serde(default)]
-    params: Value,
-    pane: Option<String>,
-    // 멀티 윈도우 타겟 창 label. 생략 시 활성 창(마지막 포커스), 그것도 없으면 "main".
-    // tmux -t 관례 — 특정 창을 명시할 때 지정한다.
-    window: Option<String>,
-    // 프론트 응답 대기 상한(ms). 생략 시 10s(정상 커맨드의 빠른 행 감지 유지). 느린 커맨드(실 LLM
-    // 에이전트 턴 등)는 크게 지정. [1s, 3600s] 로 클램프(무한대기 금지). camelCase(timeoutMs) 수용.
-    #[serde(default, rename = "timeoutMs")]
-    timeout_ms: Option<u64>,
-    // 상관 부모(대화 턴 id) — 오케스트레이터가 스폰한 에이전트의 SOKSAK_PARENT env 가 sok 을 타고
-    // 도착한다. registry trace 를 거쳐 활동 엔트리 payload.parentId 로 실려 턴 세트를 묶는다.
-    parent: Option<String>,
-    // 실행 유래(MESSAGE-PROTOCOL §5) — 사람 유래(생략)와 시스템 유래("schedule" 등)를 가른다.
-    // 시스템 유래는 낭독 후보에서 제외되고 피드에서 흐리게 표시된다. 소켓 클라이언트는 쓰지
-    // 않는다(사람/에이전트=사람 유래) — Rust 내부 발화(스케줄러)만 싣는다.
-    origin: Option<String>,
-    // 클라이언트가 선언하는 소켓 프로토콜 판(soksak-spec-socket 계약). 부재=0(레거시) —
-    // effective_protocol 규칙 하나로 구세대 자동 수용과 미래 차단 스위치를 겸한다.
-    protocol: Option<u32>,
-    // idempotency 키(PS12) — bind:"service" 커맨드 전용. 스케줄 발화는 job+due 로 안정 키를
-    // 싣고, 소켓 클라이언트도 명시할 수 있다. 서비스가 키로 dedup(res 캐시 재생)한다.
-    #[serde(default, rename = "idempotencyKey")]
-    key: Option<String>,
-}
+/// 밖에서 온 한 줄 — 봉투는 **계약 크레이트가 소유한다**(soksak_spec_socket::RequestEnvelope).
+///
+/// 이 자리에 필드를 다시 적으면 그 목록이 두 번째 계약이 된다. serde 는 모르는 키를 버리므로
+/// 한쪽에만 있는 필드는 실패가 아니라 **소멸**한다 — 실측 2026-08-01: 세 벌이 6·5·10 키였고
+/// `parent` 는 cored 를 지나는 경로에서 사라졌다.
+use soksak_spec_socket::RequestEnvelope as Request;
 
 // 포커스 사실은 **코어의 장부**가 진다(soksak_core::control::FocusLedger). 갱신 규칙(컨트롤
 // 플레인 포커스는 워크스페이스 기억을 지우지 않는다·닫힌 창은 두 기록에서 놓는다)이 여기와
@@ -706,7 +682,7 @@ fn route(app: &AppHandle, req: Request) -> Value {
                 .dispatch(
                     &req.method,
                     req.params.clone(),
-                    req.key.clone(),
+                    req.idempotency_key.clone(),
                     req.origin.as_deref().unwrap_or("socket"),
                     req.parent.clone(),
                     timeout,
@@ -958,7 +934,7 @@ pub fn request_command(
             origin: origin.map(str::to_string),
             // Rust 내부 발화는 같은 빌드다 — 스큐가 구조적으로 불가능(게이트도 미경유).
             protocol: None,
-            key,
+            idempotency_key: key,
         },
     )
 }
@@ -972,7 +948,21 @@ pub fn request_command(
 //
 // origin 은 싣지 않는다 — 이 명령의 유래는 사람(하니스·에이전트·sok)이고, 시스템 유래로
 // 표시하면 활동 스트림의 낭독·표시 규칙이 그것을 배경 잡음으로 가린다.
-pub fn request_in_window(
+/// cored 가 민 배달을 이 창에서 실행한다 — **봉투 그대로**.
+///
+/// 필드를 골라 다시 조립하지 않는다: 조립하는 자리는 새 필드를 모르고, 모르는 필드는 실패가
+/// 아니라 소멸한다(실측 2026-08-01: `parent` 가 이 자리에서 None 으로 덮여 사라졌다).
+///
+/// 상한만 지운다 — cored 가 자기 요청에 이미 걸었고, 여기서 더 긴 값을 쓰면 저쪽이 먼저
+/// 포기해 뒤늦은 회신이 짝을 잃는다.
+pub fn request_delivered(app: &AppHandle, mut req: Request) -> Value {
+    req.timeout_ms = None;
+    req.protocol = None;
+    route(app, req)
+}
+
+#[allow(dead_code)]
+fn request_in_window_unused(
     app: &AppHandle,
     window: String,
     method: String,
@@ -987,15 +977,13 @@ pub fn request_in_window(
             params,
             pane,
             window: Some(window),
-            // 상한은 cored 가 자기 요청에 대해 이미 걸고 있다. 여기서 더 긴 값을 쓰면 저쪽이
-            // 먼저 포기하고, 뒤늦은 회신은 짝을 잃는다.
             timeout_ms: None,
             parent: None,
             origin: None,
             // 같은 빌드의 프로세스 간 발화가 아니다 — 그러나 봉투를 만든 것은 이 프로세스이고
             // 스큐 게이트는 소켓 클라이언트의 선언을 보는 자리라 여기서는 대상이 아니다.
             protocol: None,
-            key: None,
+            idempotency_key: None,
         },
     )
 }

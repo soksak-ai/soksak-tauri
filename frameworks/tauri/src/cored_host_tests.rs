@@ -122,22 +122,29 @@ fn the_result_envelope_carries_the_delivery_id() {
 }
 
 /// 배달 봉투를 그대로 읽는다 — 이름을 바꾸거나 값을 채우면 그것이 두 번째 계약이 된다.
+///
+/// 키를 골라 담지 않는다는 것이 요점이다: 고르는 자리는 새 필드를 모르고, 모르는 필드는 실패가
+/// 아니라 **소멸**한다. 실측(2026-08-01) — 배달 봉투가 5키였고 요청 봉투는 10키라 `--parent` 로
+/// 온 상관 id 가 cored 를 지나며 사라졌다. 그래서 여기서 `parent`·`origin` 까지 함께 잰다.
 #[test]
 fn a_delivery_is_read_as_it_came() {
-    let line = r#"{"deliver":{"id":3,"method":"panel.split","params":{"side":"right"},"pane":"p3","window":"w-1"}}"#;
+    let line = r#"{"deliver":{"id":3,"method":"panel.split","params":{"side":"right"},"pane":"p3","window":"w-1","parent":"turn-9","origin":"schedule"}}"#;
     let Ok(Incoming::Deliver(d)) = classify(line) else {
         panic!("배달로 읽지 못했다");
     };
-    assert_eq!(
-        d,
-        Delivery {
-            id: 3,
-            method: "panel.split".into(),
-            params: json!({ "side": "right" }),
-            pane: Some("p3".into()),
-            window: "w-1".into(),
-        }
-    );
+    assert_eq!(d.id, 3);
+    assert_eq!(d.req.method, "panel.split");
+    assert_eq!(d.req.params, json!({ "side": "right" }));
+    assert_eq!(d.req.pane.as_deref(), Some("p3"));
+    assert_eq!(d.window(), "w-1");
+    assert_eq!(d.req.parent.as_deref(), Some("turn-9"), "상관 부모가 배달에서 살아남는다");
+    assert_eq!(d.req.origin.as_deref(), Some("schedule"), "유래도 살아남는다");
+}
+
+/// 창을 안 짚은 배달은 거절한다 — 아무 창에서나 돌면 남의 창이 답하고 그 오답은 오류로 안 보인다.
+#[test]
+fn a_delivery_without_a_window_is_refused() {
+    assert!(classify(r#"{"deliver":{"id":1,"method":"x.y"}}"#).is_err());
 }
 
 /// 방송과 배달은 다른 키다. 같은 것으로 읽으면 방송마다 없는 id 로 회신하게 되고, 그 회신은

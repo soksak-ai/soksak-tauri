@@ -111,14 +111,10 @@ function createControlHost({ socketPath, facts, deliver, broadcast = () => true,
       }
       return;
     }
-    // 페이로드는 **그대로** 간다. 이름을 바꾸거나 값을 채우면 그것이 두 번째 계약이 된다.
-    const reached = deliver(d.window, {
-      id: d.id,
-      method: d.method,
-      params: d.params ?? null,
-      pane: d.pane ?? null,
-      window: d.window ?? null,
-    });
+    // 페이로드는 **그대로** 간다 — 키를 골라 다시 적으면 그것이 두 번째 계약이다. 고르는
+    // 자리는 새 필드를 모르고, 모르는 필드는 실패가 아니라 소멸한다(실측 2026-08-01:
+    // 여기서 5키만 옮겨 `parent`·`origin` 이 창에 닿지 못했다).
+    const reached = deliver(d.window, d);
     if (!reached) {
       // 못 닿은 배달은 부른 쪽에서 상한으로만 보인다(회신이 영영 안 온다). 왜 안 왔는지는
       // 이 줄이 유일한 자국이다.

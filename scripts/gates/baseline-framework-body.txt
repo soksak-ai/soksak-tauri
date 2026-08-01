@@ -19,7 +19,7 @@
 # 지고, 그 파일은 처음부터 이 폴더의 몫으로 등재됐다(native/updater.cjs 33, index.cjs +1 = 조립 한 줄).
 frameworks/electron/activity.cjs 32
 frameworks/electron/backend.cjs 206
-frameworks/electron/control.cjs 132
+frameworks/electron/control.cjs 126
 frameworks/electron/cored.cjs 242
 frameworks/electron/main.cjs 388
 frameworks/electron/native/capture.cjs 70
@@ -66,12 +66,12 @@ frameworks/tauri/src/activity_sink.rs 9
 frameworks/tauri/src/ai_session.rs 45
 frameworks/tauri/src/clipboard.rs 249
 frameworks/tauri/src/command_dispatch.rs 98
-# 재입법 2026-08-01 510 → 515. cored 를 띄울 때 **저장소 위치를 넘기는** 인자(--data-dir).
+# 재입법 2026-08-01 510 → 515(이후 봉투 단일화로 506 으로 내려갔다). cored 를 띄울 때 **저장소 위치를 넘기는** 인자(--data-dir).
 #   앱은 debug 빌드에서 SOKSAK_DATA_DIR 로 저장소를 옮기는데 cored 는 그 env 를 안 읽어 자기
 #   파생을 했다 — 두 프로세스가 다른 파일을 열고 쓰기 소유권 잠금도 서로 다른 디렉터리에서
 #   잡혀 무의미해졌다. Option 이 아니라 필수 인자다: Option 은 "안 넘겨도 된다"는 뜻이고 그
 #   결과가 이 결함이었다. 제거 조건: cored 가 저장소를 안 열게 되면 이 인자도 함께 내린다.
-frameworks/tauri/src/cored_host.rs 515
+frameworks/tauri/src/cored_host.rs 506
 frameworks/tauri/src/cored_ledger.rs 248
 frameworks/tauri/src/cored_shape_gate.rs 229
 frameworks/tauri/src/daemon.rs 72
@@ -89,7 +89,7 @@ frameworks/tauri/src/http.rs 39
 frameworks/tauri/src/i18n.rs 155
 frameworks/tauri/src/id_registry.rs 144
 frameworks/tauri/src/identity.rs 59
-frameworks/tauri/src/ipc.rs 1232
+frameworks/tauri/src/ipc.rs 1223
 # 재입법 2026-08-01 719 → 720. 커맨드 등록 한 줄(window_census). 창 복원이 "모든 호스트가 든
 #   창"을 알아야 같은 라벨이 두 프로세스에 살아나지 않는다(A23) — 등록 목록은 배선이라
 #   공통 크레이트로 뺄 수 없다. 제거 조건: 이 커맨드가 사라지면 이 줄도 함께 내린다.

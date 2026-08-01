@@ -290,3 +290,76 @@ mod tests {
         assert_eq!(Lang::from_tag("ko_KR.UTF-8"), Lang::Ko);
     }
 }
+
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+/// The request envelope — **one field list, shared by everyone who parses or builds it.**
+///
+/// Measured 2026-08-01: three hand-written copies existed with 6, 5 and 10 fields
+/// (`soksak_core::control::Request`, `soksak_cored::wire::Request`, the app's IPC struct).
+/// serde drops unknown keys, so a field present in one copy and absent in another does not
+/// fail — it *disappears*. `parent` was already being lost that way: `sok` sends it, the app
+/// reads it, and the same request routed through cored never carried it.
+///
+/// Every field except `method` is optional, and a consumer that does not care about a field
+/// simply does not read it. Not reading a field is not the same as the field not existing —
+/// that difference is exactly what a per-consumer copy erases.
+///
+/// Additive optional fields do not bump the protocol version (see the rules above); adding
+/// one here is how the whole system learns about it at once.
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestEnvelope {
+    /// Client correlation id, echoed on the reply when present.
+    pub id: Option<Value>,
+    pub method: String,
+    #[serde(default)]
+    pub params: Value,
+    /// Pane the call is addressed to, when the caller names one.
+    pub pane: Option<String>,
+    /// Target window label. Omitted means the receiver picks by its own rule.
+    pub window: Option<String>,
+    /// Reply deadline in ms. Omitted means the receiver's default.
+    pub timeout_ms: Option<u64>,
+    /// Correlating parent (a conversation turn id) so spawned agents' calls group together.
+    pub parent: Option<String>,
+    /// Origin of the call — human (omitted) vs system ("schedule" and friends).
+    pub origin: Option<String>,
+    /// Protocol version the client declares. Absent = 0 (legacy).
+    pub protocol: Option<u32>,
+    /// Idempotency key for service-bound commands — the servicer dedupes on it.
+    pub idempotency_key: Option<String>,
+}
+
+#[cfg(test)]
+mod envelope_tests {
+    use super::*;
+
+    #[test]
+    fn every_field_survives_a_round_trip() {
+        // A copy that omits a field does not fail — it silently drops the value. This test is
+        // the oracle that the one shared list still carries all of them.
+        let raw = serde_json::json!({
+            "id": 7, "method": "x.y", "params": { "a": 1 }, "pane": "pan-1",
+            "window": "w-1", "timeoutMs": 5000, "parent": "turn-9", "origin": "schedule",
+            "protocol": 1, "idempotencyKey": "k1",
+        });
+        let env: RequestEnvelope = serde_json::from_value(raw).expect("parses");
+        assert_eq!(env.method, "x.y");
+        assert_eq!(env.pane.as_deref(), Some("pan-1"));
+        assert_eq!(env.timeout_ms, Some(5000));
+        assert_eq!(env.parent.as_deref(), Some("turn-9"), "parent must not vanish");
+        assert_eq!(env.origin.as_deref(), Some("schedule"));
+        assert_eq!(env.protocol, Some(1));
+        assert_eq!(env.idempotency_key.as_deref(), Some("k1"));
+    }
+
+    #[test]
+    fn only_method_is_required() {
+        let env: RequestEnvelope =
+            serde_json::from_value(serde_json::json!({ "method": "x.y" })).expect("parses");
+        assert_eq!(env.method, "x.y");
+        assert!(env.id.is_none() && env.window.is_none() && env.parent.is_none());
+    }
+}

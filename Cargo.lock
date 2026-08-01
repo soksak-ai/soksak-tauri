@@ -4575,6 +4575,7 @@ dependencies = [
  "sha2",
  "soksak-seal",
  "soksak-spec-pty",
+ "soksak-spec-socket",
  "url",
  "uuid",
 ]
@@ -4805,6 +4806,10 @@ dependencies = [
 [[package]]
 name = "soksak-spec-socket"
 version = "0.0.1"
+dependencies = [
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "soksak-store"
