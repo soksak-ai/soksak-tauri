@@ -508,6 +508,49 @@ struct KvNsArg {
     prefix: Option<String>,
 }
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KvSetSurfaceArg {
+    ns: String,
+    key: String,
+    value: Value,
+}
+
+/// `data.kv.set` — 명령 표면. 저장소 쓰기는 **주인이 한 번** 한다.
+///
+/// 이 이름이 표에 없던 동안에는 창으로 배달됐고, 두 앱을 함께 켜면 같은 쓰기가 두 프로세스
+/// 에서 각각 돌았다(실측 2026-08-01). 저장소는 주인이 하나다(A22).
+pub(crate) fn run_kv_set_surface(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: KvSetSurfaceArg| {
+        deny_without_write_ownership(ctx)?;
+        ctx.with_write(|conn| {
+            let store = SqliteRows { conn };
+            soksak_core::kv::set_keeping_past(&store, &a.ns, &a.key, &a.value, crate::ledger::now_ms())?;
+            Ok((
+                serde_json::json!({ "ns": a.ns, "key": a.key }),
+                Changed::one(&a.ns, None, None, soksak_core::data_change::op::KV_SET, Some(a.key.clone())),
+            ))
+        })
+    })
+}
+
+/// `data.kv.delete` — 명령 표면. 없던 칸을 지우는 것은 성공이다(멱등).
+pub(crate) fn run_kv_delete_surface(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: KvSurfaceArg| {
+        deny_without_write_ownership(ctx)?;
+        ctx.with_write(|conn| {
+            let store = SqliteRows { conn };
+            let deleted = soksak_core::kv::delete_keeping_past(&store, &a.ns, &a.key, crate::ledger::now_ms())?;
+            let what = if deleted {
+                Changed::one(&a.ns, None, None, soksak_core::data_change::op::KV_DELETE, Some(a.key.clone()))
+            } else {
+                Changed::none()
+            };
+            Ok((serde_json::json!({ "ns": a.ns, "key": a.key, "deleted": deleted }), what))
+        })
+    })
+}
+
 /// 이 칸이 간직한 과거 — 최신 직전 값이 앞이다.
 pub(crate) fn run_data_kv_history(ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: KvDeleteArg| {

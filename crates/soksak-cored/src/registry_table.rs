@@ -917,6 +917,25 @@ pub const COMMANDS: &[Command] = &[
         run: run_kv_get_surface,
     },
     Command {
+        name: "data.kv.set",
+        args: &[
+            Arg { name: "ns", ty: "string", required: REQ },
+            Arg { name: "key", ty: "string", required: REQ },
+            Arg { name: "value", ty: "json", required: REQ },
+        ],
+        returns: "{ ns, key }",
+        run: run_kv_set_surface,
+    },
+    Command {
+        name: "data.kv.delete",
+        args: &[
+            Arg { name: "ns", ty: "string", required: REQ },
+            Arg { name: "key", ty: "string", required: REQ },
+        ],
+        returns: "{ ns, key, deleted }",
+        run: run_kv_delete_surface,
+    },
+    Command {
         name: "data.kv.keys",
         args: &[
             Arg { name: "ns", ty: "string", required: REQ },

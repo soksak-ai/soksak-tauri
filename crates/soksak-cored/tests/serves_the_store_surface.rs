@@ -130,3 +130,30 @@ fn the_store_surface_is_actually_served_not_merely_named() {
         not_served.len()
     );
 }
+
+/// **저장소 명령은 창으로 새지 않는다.**
+///
+/// 이 프로세스의 표는 밑줄 이름(`data_kv_get`)을 쓰고 사람·CLI·에이전트가 부르는 이름은 점
+/// (`data.kv.get`)이다. 점 이름이 표에 없으면 라우터는 그것을 "창이 답할 이름"으로 넘긴다 —
+/// 저장소는 주인이 하나인데(A22) 그 조회가 창으로 갔고, 두 앱을 함께 켜자 같은 이름을 두 창이
+/// 들어 조회는 막히고 쓰기는 **두 번** 돌았다(실측 2026-08-01).
+///
+/// 이름의 존재만 잰다. 답의 모양은 delegated-shape 게이트와 각 명령의 검사가 잰다.
+#[test]
+fn the_store_command_surface_is_served_here_not_by_a_window() {
+    let cored = start("store-surface-names");
+    let decl = ask(&cored.socket, json!({ "id": 1, "method": "cored.commands" }));
+    let names: Vec<String> = decl["data"]["commands"]
+        .as_array()
+        .expect("표")
+        .iter()
+        .filter_map(|c| c["name"].as_str().map(str::to_string))
+        .collect();
+    for surface in ["data.kv.get", "data.kv.set", "data.kv.delete", "data.kv.keys"] {
+        assert!(
+            names.iter().any(|n| n == surface),
+            "{surface} 를 이 프로세스가 안 든다 — 창으로 배달되고, 두 앱을 켜면 조회는 막히고 \
+             쓰기는 두 번 돈다"
+        );
+    }
+}
