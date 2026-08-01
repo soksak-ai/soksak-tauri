@@ -26,6 +26,26 @@ export function registerSystemCatalog(): void {
     handler: () => invoke("ipc_hello_info"),
   });
 
+  // 끌 수 있는 이름이 없으면 하니스가 운영체제를 빌린다(`osascript ... to quit`) — 그래서
+  // 만든다(A27). 자기 죽음은 죽은 뒤에 못 적으므로 프레임워크가 끄기 전에 남긴다.
+  //
+  // 한 홈에 두 앱이 서면 같은 이름을 둘이 든다. 이 명령은 **부른 창이 사는 앱**을 끈다 —
+  // 창-지역으로 두는 이유가 그것이다(windowScoped 를 끄면 두 앱이 함께 죽는다).
+  register("app.quit", {
+    description:
+      "Quit the app this window lives in. The other framework on the same home keeps running.",
+    triggers: { ko: "앱 종료 끄기 quit" },
+    params: {},
+    danger: "destructive",
+    returns: "{ ok }",
+    message: () => tmsg("msg.app.quit"),
+    examples: ["app.quit"],
+    handler: async () => {
+      await invoke("app_quit");
+      return { ok: true };
+    },
+  });
+
   register("app.environment", {
     description:
       "Read this app's compile-time core identity, isolated home, matching CLI name, build profile, updater channel, and explicitly selected development units.",

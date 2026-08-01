@@ -277,6 +277,7 @@ export const ko = {
   // 명령 라벨(아나운서체) — 코어 전 명령. 커버리지는 commandTitles.test.ts 게이트가 강제한다.
   // 언어 추가 = 언어 테이블 1장 추가(명령 정의는 불변). 플러그인 라벨은 각 매니페스트 title 소유.
   "cmd.activity.recent": "활동 기록을 조회합니다",
+  "cmd.app.quit": "이 창이 사는 앱을 끕니다",
   "cmd.app.environment": "앱 환경을 조회합니다",
   "cmd.framework.provision": "프레임워크가 제공하는 축을 조회합니다",
   "cmd.ai.session.detect": "AI 에이전트 실행 여부를 판별합니다",
@@ -642,6 +643,7 @@ export const ko = {
   "msg.media.proxy.info": "미디어 프록시가 포트 {port} 에서 동작 중입니다",
   "msg.media.proxy.playlist": "프록시 HLS 플레이리스트 URL 을 만들었습니다",
   "msg.media.proxy.stream": "프록시 미디어 스트림 URL 을 만들었습니다",
+  "msg.app.quit": "이 앱을 끕니다 — 같은 홈의 다른 앱은 계속 돕니다",
   "msg.app.environment": "{core} 코어 · {mode} 유닛",
   "msg.framework.provision": "{name} · 콘텐츠 뷰 {views}",
   "msg.net.http.request": "상태 {status} 로 응답했습니다",

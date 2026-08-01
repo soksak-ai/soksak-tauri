@@ -272,6 +272,7 @@ export const en: Record<MsgKey, string> = {
 
   // Command labels (announcer tone) — every core command; coverage enforced by commandTitles.test.ts.
   "cmd.activity.recent": "Reads recent activity",
+  "cmd.app.quit": "Quits the app this window lives in",
   "cmd.app.environment": "Reads the app environment",
   "cmd.framework.provision": "Reads what this framework provides",
   "cmd.ai.session.detect": "Detects an AI agent launch",
@@ -629,6 +630,7 @@ export const en: Record<MsgKey, string> = {
   "msg.data.search": "{n} matches",
   "msg.debug.sleep": "Held the reply for {ms}ms",
   "msg.dev.remoteConfirmMock": "Queued a mock remote confirm request (#{id})",
+  "msg.app.quit": "Quitting this app — the other app on the same home keeps running",
   "msg.app.environment": "{core} core · {mode} units",
   "msg.framework.provision": "{name} · content views: {views}",
   "msg.explorer.list": "{n} entries",

@@ -15,6 +15,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   unregister("system.hello");
+  unregister("app.quit");
   unregister("app.environment");
   unregister("framework.provision");
 });

@@ -124,7 +124,9 @@ fi
 
 # ── 4. quit → corrupt → relaunch ─────────────────────────────────────────────
 echo "4. quit app, corrupt soksak.db, relaunch"
-osascript -e "tell application id \"$IDENT\" to quit" >/dev/null 2>&1
+# 앱은 자기 이름으로 끈다 — 운영체제를 빌리지 않는다(A27). 자기 죽음은 자기만 끝낼 수
+# 있어서 cored 는 이 이름을 답하지 않는다(UNSERVED app_quit).
+"$SOK" app.quit >/dev/null 2>&1
 if wait_socket_gone 15; then chk 1 "app quit (socket down)"; else chk 0 "app quit (socket down)"; fi
 
 printf 'this is definitely not a sqlite database' > "$DB"

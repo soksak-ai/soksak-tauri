@@ -249,6 +249,8 @@ function nativeContext(sender) {
       callBackend("deeplink_open", { url: String(url ?? "") }).catch((e) =>
         note(`[electron-spike] 알림 클릭 딥링크 실패: ${e.code || e.message}`),
       ),
+    // 죽기 전에 남길 자리 — 자기 죽음은 죽은 뒤에 못 적는다.
+    note,
     windowFor,
     createWindow,
     // 앱을 전면으로 — 창 하나를 key 로 만드는 것과 다른 일이다. steal 은 다른 앱에서

@@ -289,6 +289,7 @@ describe("표 — UI 가 읽을 수 있는 능력면", () => {
   // 하나여야 한다 — 한 파일이 조립에서 빠지면 그 갈래가 통째로 사라지고, UI 는 없는 줄도 모른다.
   // 표에서 직접 읽는다 — 손으로 적은 목록은 표가 늘 때마다 낡고, 그 낡음이 곧 거짓 GREEN 이다.
   const DECLARED = [
+    "app_quit",
     ...Object.keys(requireCjs(join(HERE, "../../frameworks/electron/native/window.cjs"))),
     ...Object.keys(requireCjs(join(HERE, "../../frameworks/electron/native/webview.cjs"))),
     ...Object.keys(requireCjs(join(HERE, "../../frameworks/electron/native/engine.cjs"))),

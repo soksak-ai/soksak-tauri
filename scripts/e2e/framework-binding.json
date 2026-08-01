@@ -95,11 +95,6 @@
       "kind": "reducible",
       "why": "앱이 살아 있는지 프로세스 목록으로 본다. 소켓 응답이 같은 사실을 더 정확히 답한다.",
       "env": "SOKSAK_SOCKET"
-    },
-    "app-activate": {
-      "kind": "reducible",
-      "why": "OS 자동화로 앱을 전면화·종료한다. window.focus 와 종료 명령이 같은 일을 한다.",
-      "env": "SOKSAK_APP_LAUNCH"
     }
   },
   "files": [
@@ -172,10 +167,9 @@
       "surfaces": [
         "app-home-path",
         "build-artifact-path",
-        "app-bundle-launch",
-        "app-activate"
+        "app-bundle-launch"
       ],
-      "note": "저장소가 찢어진 뒤 백업 링에서 살아나는지 본다. 판정은 저장소 사실이고, 프레임워크는 앱을 껐다 켜는 손일 뿐이다."
+      "note": "저장소가 찢어진 뒤 백업 링에서 살아나는지 본다. 판정은 저장소 사실이고, 프레임워크는 앱을 껐다 켜는 손일 뿐이다. 끄기는 앱 자기 이름으로 한다(app.quit) — 운영체제를 빌리지 않는다."
     },
     {
       "file": "divider-freeze.sh",

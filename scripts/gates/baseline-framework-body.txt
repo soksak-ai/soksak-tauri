@@ -21,11 +21,13 @@ frameworks/electron/activity.cjs 32
 frameworks/electron/backend.cjs 236
 frameworks/electron/control.cjs 144
 frameworks/electron/cored.cjs 252
-frameworks/electron/main.cjs 415
+# 재입법 2026-08-02 415 → 416. 죽기 전에 남길 자리(note) 를 ctx 에 싣는다.
+frameworks/electron/main.cjs 416
 frameworks/electron/native/capture.cjs 70
 frameworks/electron/native/engine.cjs 26
 frameworks/electron/native/error.cjs 9
-frameworks/electron/native/index.cjs 85
+# 재입법 2026-08-02 85 → 86. lifecycle.cjs 등재 한 줄.
+frameworks/electron/native/index.cjs 86
 frameworks/electron/native/notify.cjs 42
 frameworks/electron/native/project.cjs 58
 frameworks/electron/native/titlebar.cjs 7
@@ -55,7 +57,7 @@ frameworks/tauri/src/id_registry.rs 144
 frameworks/tauri/src/identity.rs 59
 frameworks/tauri/src/ipc.rs 1227
 # 재입법 2026-08-02 722 → 724. app_nap 모듈 선언과 setup 의 한 줄 호출.
-frameworks/tauri/src/lib.rs 724
+frameworks/tauri/src/lib.rs 725
 frameworks/tauri/src/login_shell.rs 28
 frameworks/tauri/src/main.rs 4
 frameworks/tauri/src/mediaproxy.rs 18
@@ -77,7 +79,9 @@ frameworks/tauri/src/sidecar.rs 166
 frameworks/tauri/src/skillgen.rs 16
 frameworks/tauri/src/stream_sink.rs 21
 frameworks/tauri/src/titlebar.rs 218
-frameworks/tauri/src/unit_dev.rs 59
+# 재입법 2026-08-02 59 → 69. app_quit — 끌 수 있는 이름이 있어야 검증할 수 있다(A27).
+#   프로세스 종료는 이 실행물의 몸이다. 죽기 전에 원장에 남기고 끈다.
+frameworks/tauri/src/unit_dev.rs 69
 frameworks/tauri/src/unit_installer.rs 55
 frameworks/tauri/src/updater.rs 42
 frameworks/tauri/src/watcher.rs 15
@@ -90,3 +94,6 @@ frameworks/tauri/src/ws.rs 47
 #   플랫폼 표면(NSProcessInfo)이 몸이라 코어로 갈 수 없다. 검증이 OS 를 빌려 창을 앞으로 내던
 #   것을 없애는 자리다(운영체제 비의존·포커스 불가침).
 frameworks/tauri/src/app_nap.rs 24
+# 신규 2026-08-02 11줄. 이 실행물을 끄는 이름 — 끌 수 있어야 검증할 수 있다(A27).
+#   프로세스 종료는 이 실행물의 몸이라 코어로 갈 수 없다.
+frameworks/electron/native/lifecycle.cjs 11

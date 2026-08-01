@@ -42,6 +42,25 @@ pub fn unit_dev_remove(kind: String, id: String) -> Result<bool, String> {
     remove_source(crate::identity::ambient().home(), &kind, &id)
 }
 
+// 이 실행물을 끈다.
+//
+// 하니스가 앱을 끄려고 운영체제를 빌렸다(`osascript ... to quit`). 끌 수 있는 이름이 없었기
+// 때문이다 — 부를 수 없는 것은 검증할 수 없고, 없으면 만드는 것까지가 이 자리의 몫이다(A27).
+//
+// **이 명령은 자기 죽음을 기록하지 못한다.** 종료가 기록보다 먼저 끝나기 때문이다. 그래서 끄기
+// 전에 그 사실을 원장에 적고, 그 다음에 끈다 — 원장에 없으면 "끄라는 말을 못 들었다"와
+// "듣고 죽었다"를 구분할 수 없다.
+#[tauri::command]
+pub fn app_quit(app: tauri::AppHandle) {
+    crate::activity::publish(
+        &app,
+        "app.quit",
+        "command",
+        serde_json::json!({ "reason": "명령으로 끈다 — 이 뒤로 이 프로세스의 기록은 없다" }),
+    );
+    app.exit(0);
+}
+
 #[tauri::command]
 pub fn app_environment() -> Result<AppEnvironment, String> {
     // 앰비언트 전역은 여기서 **한 번** 읽어 값으로 만든다. 옛 판은 identifier·홈을 각각
