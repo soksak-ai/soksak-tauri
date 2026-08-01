@@ -62,10 +62,8 @@ export const DECLARED = new Map([
   ["frameworks/electron/native/engine.cjs", ["framework", "엔진 서피스가 붙는 자리가 창이다"]],
   ["frameworks/electron/native/error.cjs", ["framework", "프레임워크가 이름을 달고 실패하는 방법"]],
   ["frameworks/electron/native/index.cjs", ["framework", "창·웹뷰·네이티브 표면 명령표"]],
+  ["frameworks/electron/native/notify.cjs", ["framework", "OS 알림 — 플랫폼 표면이고 띄우는 주체가 이 실행물이다"]],
   ["frameworks/electron/native/project.cjs", ["framework", "어느 창이 어느 root 를 점유하는가"]],
-  // 알림은 창을 요구하지 않는다(A26). 그런데 **앱 번들의 OS 정체성**은 요구한다 — 누가 띄웠는지
-  // OS 가 번들로 판단하고 활성화도 그 프로세스로 배달한다. cored 에는 번들이 없다.
-  ["frameworks/electron/native/notify.cjs", ["framework", "알림은 앱 번들의 정체성으로 뜨고 그 프로세스로 활성화가 온다"]],
   ["frameworks/electron/native/titlebar.cjs", ["framework", "창 크롬"]],
   ["frameworks/electron/native/updater.cjs", ["framework", "앱 본체 실행물을 갈아 끼운다 — 그 실행물이 이 프레임워크다"]],
   ["frameworks/electron/native/webview.cjs", ["framework", "창 안에서만 답이 나온다"]],
