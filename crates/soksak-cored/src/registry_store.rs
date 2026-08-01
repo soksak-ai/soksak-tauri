@@ -484,3 +484,53 @@ pub(crate) fn run_data_change_notify(_ctx: &Ctx, params: &Value) -> Outcome {
         Ok(Value::Null)
     })
 }
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ManifestUpsertArg {
+    /// 이 창의 slot(label·roots·activeRoot·rect). 모양은 부르는 쪽이 만든다.
+    entry: Value,
+    /// 이 창이 지금 포커스면 마지막 포커스로 기록한다.
+    #[serde(default)]
+    focused: bool,
+}
+
+/// 창 복원 장부에 이 창의 slot 을 원자적으로 넣는다.
+///
+/// **읽기·병합·쓰기가 한 트랜잭션 안에서 일어난다.** 부르는 쪽이 전체를 읽어 고쳐 쓰면, 같은
+/// 홈을 보는 두 프로세스가 겹칠 때 나중 쓰기가 상대의 slot 을 지운다 — Tauri 와 Electron 은
+/// 함께 켜져 있을 수 있으므로 그 겹침은 가정이 아니라 일상이다. 그 손실은 오류가 아니라
+/// "재시작했더니 저쪽 창이 안 열린다"로 나타난다.
+///
+/// 병합 규칙은 코어가 소유한다(`window_traces::upsert_slot`) — 여기는 트랜잭션 경계다.
+pub(crate) fn run_window_manifest_upsert(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: ManifestUpsertArg| {
+        deny_without_write_ownership(ctx)?;
+        ctx.with_write(|conn| {
+            let store = SqliteRows { conn };
+            let ns = soksak_core::window_traces::NS;
+            let key = soksak_core::window_traces::MANIFEST_KEY;
+            let mut manifest = soksak_core::kv::get(&store, ns, key)?
+                .unwrap_or_else(|| serde_json::json!({ "slots": [] }));
+            // 모양이 없으면 세운다 — 첫 저장에서 병합할 자리가 있어야 한다.
+            if manifest.get("slots").is_none() {
+                manifest["slots"] = Value::Array(vec![]);
+            }
+            let mut changed = soksak_core::window_traces::upsert_slot(&mut manifest, &a.entry);
+            if a.focused {
+                if let Some(label) = a.entry.get("label").and_then(|l| l.as_str()) {
+                    changed |= soksak_core::window_traces::set_focused(&mut manifest, label);
+                }
+            }
+            if !changed {
+                // 안 바뀐 값을 다시 쓰지 않는다 — 그 쓰기가 다른 창의 동시 갱신을 되돌린다.
+                return Ok((Value::Bool(false), Changed::none()));
+            }
+            soksak_core::kv::set(&store, ns, key, &manifest, crate::ledger::now_ms())?;
+            Ok((
+                Value::Bool(true),
+                Changed::one(ns, None, None, "kv-set", Some(key.to_string())),
+            ))
+        })
+    })
+}

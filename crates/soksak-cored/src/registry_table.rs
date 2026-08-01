@@ -1092,6 +1092,17 @@ pub const COMMANDS: &[Command] = &[
         returns: "null",
         run: run_data_change_notify,
     },
+    // 창 복원 장부의 slot 병합 — **읽기·병합·쓰기가 한 트랜잭션 안**이다. 부르는 쪽이 전체를
+    // 읽어 고쳐 쓰면 두 프레임워크가 겹칠 때 나중 쓰기가 상대의 창을 지운다.
+    Command {
+        name: "window_manifest_upsert",
+        args: &[
+            Arg { name: "entry", ty: "any", required: REQ },
+            Arg { name: "focused", ty: "bool?", required: OPT },
+        ],
+        returns: "bool(장부가 바뀌었는가)",
+        run: run_window_manifest_upsert,
+    },
     Command {
         name: "data_kv_delete",
         args: &[
