@@ -105,7 +105,7 @@ frameworks/tauri/src/http.rs 39
 frameworks/tauri/src/i18n.rs 155
 frameworks/tauri/src/id_registry.rs 144
 frameworks/tauri/src/identity.rs 59
-frameworks/tauri/src/ipc.rs 1223
+frameworks/tauri/src/ipc.rs 1216
 # 재입법 2026-08-01 719 → 720. 커맨드 등록 한 줄(window_census). 창 복원이 "모든 호스트가 든
 #   창"을 알아야 같은 라벨이 두 프로세스에 살아나지 않는다(A23) — 등록 목록은 배선이라
 #   공통 크레이트로 뺄 수 없다. 제거 조건: 이 커맨드가 사라지면 이 줄도 함께 내린다.

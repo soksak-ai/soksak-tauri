@@ -40,6 +40,23 @@ pub fn deliver_envelope(id: u64, req: &Request, target: &str) -> Value {
     })
 }
 
+/// 회신 대기 상한의 규칙 — **여기가 그 유일한 자리다.**
+///
+/// 무한대기는 금지한다(답 안 하는 창 하나가 그 연결을 영원히 붙잡는다). 그러면서도 천장은
+/// provider 강제종료 캡보다 길어야 한다 — 짧으면 provider 가 도는 중에 부른 쪽이 먼저
+/// TIMEOUT 하고, 그 뒤 재시도가 **중복 발화**가 된다.
+///
+/// 실측(2026-08-01): 앱은 클램프했고 cored 는 안 했다. 같은 요청이 어느 프로세스를 지나느냐로
+/// 상한이 달랐고, 그 차이는 오류가 아니라 "어떤 경로에서만 안 끝나는 명령"으로 나타난다.
+pub const MIN_REPLY_WAIT_MS: u64 = 1_000;
+pub const MAX_REPLY_WAIT_MS: u64 = 3_600_000;
+pub const DEFAULT_REPLY_WAIT_MS: u64 = 10_000;
+
+/// 요청이 말한 상한을 규칙 안으로 접는다. 생략은 기본값이다.
+pub fn reply_wait_ms(requested: Option<u64>) -> u64 {
+    requested.unwrap_or(DEFAULT_REPLY_WAIT_MS).clamp(MIN_REPLY_WAIT_MS, MAX_REPLY_WAIT_MS)
+}
+
 /// 타겟을 못 고른 이유 — 셋은 서로 다른 사실이다.
 #[derive(Debug, PartialEq, Eq)]
 pub enum NoTarget {
@@ -258,5 +275,30 @@ mod focus_ledger_tests {
         let live = vec!["main".to_string(), "w-1".to_string()];
         assert_eq!(resolve_target("plugin.x", l.focused(), l.last_workspace(), &live).unwrap(), "w-1");
         assert_eq!(resolve_target("state.tree", l.focused(), l.last_workspace(), &live).unwrap(), "main");
+    }
+}
+
+#[cfg(test)]
+mod reply_wait_tests {
+    use super::*;
+
+    /// 생략은 기본값이다 — 부르는 쪽이 상한을 몰라도 명령이 선다.
+    #[test]
+    fn 생략은_기본값이다() {
+        assert_eq!(reply_wait_ms(None), DEFAULT_REPLY_WAIT_MS);
+    }
+
+    /// 무한대기 금지 — 0 이나 과도한 값은 규칙 안으로 접힌다. 접지 않으면 답 안 하는 창
+    /// 하나가 그 연결을 영원히 붙잡는다(실측: cored 는 접지 않아 앱과 다른 상한을 썼다).
+    #[test]
+    fn 규칙_밖의_값은_접힌다() {
+        assert_eq!(reply_wait_ms(Some(0)), MIN_REPLY_WAIT_MS);
+        assert_eq!(reply_wait_ms(Some(u64::MAX)), MAX_REPLY_WAIT_MS);
+    }
+
+    /// 천장은 provider 캡보다 길어야 한다 — 짧으면 부른 쪽이 먼저 포기하고 재시도가 중복 발화가 된다.
+    #[test]
+    fn 긴_턴도_기다릴_수_있다() {
+        assert_eq!(reply_wait_ms(Some(1_800_000)), 1_800_000);
     }
 }

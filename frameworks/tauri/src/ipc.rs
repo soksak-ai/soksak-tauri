@@ -287,15 +287,9 @@ fn transport_route(
 // 무한대기는 금지(hung UI 하드캡)하되, 단일 LLM 턴(검색 fan-out + 긴 추론, 30분+)이 provider
 // 강제종료 캡 안에서 끝까지 응답을 기다릴 수 있어야 한다 — 천장이 provider 캡(soksak-workflow
 // provider.rs)보다 짧으면 provider 가 도는 중 스케줄러/호출자가 먼저 TIMEOUT → 중복 발화.
-const MIN_TIMEOUT_MS: u64 = 1_000;
-const MAX_TIMEOUT_MS: u64 = 3_600_000;
-const DEFAULT_TIMEOUT_MS: u64 = 10_000;
-
-fn clamp_timeout_ms(requested: Option<u64>) -> u64 {
-    requested
-        .unwrap_or(DEFAULT_TIMEOUT_MS)
-        .clamp(MIN_TIMEOUT_MS, MAX_TIMEOUT_MS)
-}
+// 규칙은 코어가 소유한다(control::reply_wait_ms) — 값을 여기 다시 적으면 두 벌이고, 그때
+// 같은 요청이 어느 프로세스를 지나느냐로 상한이 달라진다.
+use soksak_core::control::reply_wait_ms as clamp_timeout_ms;
 
 // ─── 전송 시임(transport seam) ──────────────────────────────────────────────
 // JSON-RPC 서버가 OS 전송을 만지는 유일한 경계. 오늘의 구현은 unix domain socket

@@ -105,7 +105,7 @@
 # windowed 만 자식 뷰를 쓴다고 적어 뒀다). 뜻은 engineNeeds.ts 가 지고 여기는 자리만 연다.
 crates/soksak-cli/src/lib.rs 1706
 crates/soksak-store/src/store.rs 2116
-frameworks/tauri/src/ipc.rs 1550
+frameworks/tauri/src/ipc.rs 1544
 frameworks/tauri/src/webview.rs 2259
 packages/plugin-spec/src/pluginRuntime.ts 2081
 packages/plugin-spec/src/spec.ts 1785

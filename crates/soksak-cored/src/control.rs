@@ -26,8 +26,11 @@ use std::time::Duration;
 use serde_json::{json, Value};
 use soksak_core::control::{self, FocusLedger, NoTarget};
 
-/// 회신 대기 상한 기본값. 원본과 같다 — 느린 명령은 요청이 timeoutMs 로 늘린다.
-pub const DEFAULT_TIMEOUT_MS: u64 = 10_000;
+/// 회신 대기 상한 기본값 — **규칙은 코어가 소유한다**(control::reply_wait_ms).
+///
+/// 값을 여기 다시 적으면 두 벌이고, 실제로 그랬다: 앱은 클램프했고 이 프로세스는 안 했다.
+/// 같은 요청이 어느 프로세스를 지나느냐로 상한이 달라진다.
+pub use soksak_core::control::DEFAULT_REPLY_WAIT_MS as DEFAULT_TIMEOUT_MS;
 
 /// 붙어 있는 창 호스트 하나. 하나도 없으면 배달할 곳이 없다.
 struct Host {
@@ -290,7 +293,8 @@ fn route(req: control::Request) -> Value {
         }
     }
 
-    let wait = Duration::from_millis(req.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS));
+    // 무한대기 금지도 규칙의 일부다 — 접지 않으면 답 안 하는 창 하나가 이 연결을 영원히 붙잡는다.
+    let wait = Duration::from_millis(control::reply_wait_ms(req.timeout_ms));
     match rx.recv_timeout(wait) {
         Ok(v) => v,
         Err(_) => {
