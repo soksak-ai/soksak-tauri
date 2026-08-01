@@ -51,7 +51,9 @@ frameworks/electron/cored.cjs 252
 #   규칙은 코어의 것이고(soksak-core deeplink.rs) 여기는 부수효과와 창을 아는 자리라 프레임워크의
 #   몫이다(그 파일이 그렇게 적어 두었다). 창이 나기 전에 온 링크는 들고 있다가 창이 물으면 준다 —
 #   버리면 그 링크는 아무 데도 안 닿고 사용자는 "안 열린다"만 본다.
-frameworks/electron/main.cjs 418
+# 재입법 2026-08-01 418 → 419. open-url 에 자국 한 줄. 없으면 "링크가 안 열린다"에서 어느 홉이
+#   끊겼는지 못 가른다 — 실제로 그 자국이 OS→앱 홉이 살아 있음을 처음 보여 줬다.
+frameworks/electron/main.cjs 419
 frameworks/electron/native/capture.cjs 70
 frameworks/electron/native/clipboard.cjs 24
 frameworks/electron/native/engine.cjs 26

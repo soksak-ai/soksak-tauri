@@ -316,9 +316,14 @@ export const electronFramework: AppFramework = {
   deepLink: {
     // OS 가 넘긴 `soksak://…` 은 창 사건으로 온다(main.cjs `open-url`). 규칙은 코어의 것이고
     // (soksak-core deeplink.rs) 이 자리는 받아 넘기기만 한다.
+    // **창 기하 사건 채널이 아니다.** `onWindowEvent` 는 `framework:window-event`(resized·moved)
+    // 를 듣고, 프레임워크가 임의 사건을 창에 나르는 통로는 `framework:event` 다(`onEvent`).
+    // 처음에 그것을 헷갈려 보내는 채널과 듣는 채널이 갈렸고, 그 어긋남은 오류가 아니라
+    // **아무 일도 안 일어남**으로 나타났다(실측 2026-08-01: 링크에 앱은 앞으로 나왔는데
+    // 명령이 안 돌았다).
     onOpenUrl: async (cb) => {
-      const off = bridge().onWindowEvent("deep-link", (m) => {
-        const urls = (m as { urls?: unknown }).urls;
+      const off = bridge().onEvent("deep-link", (payload) => {
+        const urls = (payload as { urls?: unknown })?.urls;
         if (Array.isArray(urls) && urls.length > 0) cb(urls.map(String));
       });
       return () => off();

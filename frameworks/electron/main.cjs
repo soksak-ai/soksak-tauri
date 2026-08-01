@@ -595,6 +595,8 @@ if (!app.requestSingleInstanceLock()) {
   // (`deeplink_current`) — 버리면 그 링크는 아무 데도 안 닿고 사용자는 "안 열린다"만 본다.
   app.on("open-url", (e, url) => {
     e.preventDefault();
+    // 자국을 남긴다 — 안 남기면 "링크가 안 열린다"에서 어느 홉이 끊겼는지 못 가른다.
+    note(`[electron-spike] 딥링크: ${url}`);
     pendingDeepLinks.push(url);
     let delivered = false;
     for (const w of windows.values()) {
