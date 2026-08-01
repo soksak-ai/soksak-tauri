@@ -39,6 +39,8 @@ for (const f of tracked) {
   if (!src.includes(STALE)) continue;
   src.split("\n").forEach((line, i) => {
     if (!line.includes(STALE)) return;
+    // 그 자리를 **지우는 명령**은 이름을 알아야 한다. 단 한 줄 — 선언 하나만 허용한다.
+    if (f === "Makefile" && /^ORPHAN_TARGET\s*:=/.test(line)) return;
     // 주석에서 사유로 인용하는 것은 허용한다 — 다만 사유가 있어야 한다.
     const isProse = /^\s*(#|\/\/|\*)/.test(line);
     if (isProse) return;

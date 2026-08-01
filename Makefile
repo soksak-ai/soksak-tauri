@@ -19,6 +19,10 @@ REGISTRY_URL := https://raw.githubusercontent.com/soksak-ai/soksak-plugin-regist
 # 잡힌다. 실측 2026-08-01: 뿌리는 이미 저장소 루트로 옮겨갔는데 열여덟 곳이 옛 자리를 그대로
 # 가리켰고, 나는 7/28 바이너리로 검증해서 그날 고친 결함이 아직 살아 있다는 답을 받았다.
 # 오류는 없었다. 답만 틀렸다.
+# 옛 워크스페이스 뿌리가 남긴 고아 산출물. **이 이름은 여기 한 번만 적는다** — 지우는 명령
+# 말고 아무도 이 자리를 알아서는 안 된다(알면 조용히 옛 산출물을 잡는다).
+ORPHAN_TARGET := frameworks/tauri/target
+
 CARGO_TARGET := $(shell cargo metadata --no-deps --format-version 1 --offline 2>/dev/null | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')
 
 RELEASE_CONFIG := frameworks/tauri/tauri.release.conf.json
@@ -30,7 +34,7 @@ DEBUG_APP   := $(CARGO_TARGET)/debug/bundle/macos/soksak-debug.app
 
 .DEFAULT_GOAL := help
 
-.PHONY: doctor doctor-fix help install icons dev build build-debug run run-debug typecheck check test test-front verify gates e2e-framework-binding clean stop cli cli-dev cli-debug install-cli install-cli-dev install-cli-debug docs registry
+.PHONY: clean-orphan-target doctor doctor-fix help install icons dev build build-debug run run-debug typecheck check test test-front verify gates e2e-framework-binding clean stop cli cli-dev cli-debug install-cli install-cli-dev install-cli-debug docs registry
 
 help: ## 사용 가능한 명령 목록
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -234,6 +238,20 @@ clean: ## dev 에 불필요한 재생성 산출물 제거(release 프로파일·
 
 clean-deep: clean ## clean + 증분 컴파일 캐시(target/debug/incremental) 제거. deps 는 유지하나 다음 빌드 때 앱 크레이트만 전체 재컴파일(deps 재컴파일 X). 디스크 압박 시만
 	rm -rf $(CARGO_TARGET)/debug/incremental
+
+clean-orphan-target: ## 옛 워크스페이스 뿌리가 남긴 고아 산출물 제거($(ORPHAN_TARGET))
+	@# 워크스페이스 뿌리가 저장소 루트로 옮겨간 뒤 이 자리는 cargo 가 더는 쓰지 않는다.
+	@# 그런데 옛 산출물이 남아 있어서, 손으로 그 경로를 치면 조용히 옛 바이너리가 잡힌다
+	@# (실측 2026-08-01: 7/28 sok-dev 로 검증해 이미 고친 결함이 살아 있다는 답을 받았다).
+	@#
+	@# 지우기 전에 **cargo 가 그 자리를 안 쓴다는 것**을 확인한다 — 뿌리가 되돌아왔는데
+	@# 지우면 그것은 살아 있는 산출물을 지우는 것이다.
+	@test "$(CARGO_TARGET)" != "$(CURDIR)/$(ORPHAN_TARGET)" || \
+	  { echo "거부: cargo 가 이 자리를 쓴다 — 고아가 아니다"; exit 1; }
+	@if [ -d $(ORPHAN_TARGET) ]; then \
+	  echo "제거: $(ORPHAN_TARGET) ($$(du -sh $(ORPHAN_TARGET) | cut -f1))"; \
+	  rm -rf $(ORPHAN_TARGET); \
+	else echo "없음: $(ORPHAN_TARGET) (이미 정리됨)"; fi
 
 stop: ## 실행 중인 개발 스택 전체 종료(tauri 바이너리 + tauri.js dev + Vite)
 	@pkill -f "target/debug/soksak-dev" 2>/dev/null || true
