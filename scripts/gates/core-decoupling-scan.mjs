@@ -12,7 +12,7 @@
 //   - *.test.ts / *.test.tsx / *.test.mjs — 테스트 픽스처 영역, 실행 경로가 아니다.
 //   - Rust 최상위 #[cfg(test)] mod 블록 — 같은 이유. 위치 무관(말미·중간·복수) 각 모듈만
 //     brace 깊이로 건너뛰고, 그 앞뒤 최상위 실행 경로 코드는 계속 스캔한다.
-//   - frameworks/tauri/target, frameworks/tauri/gen, node_modules, .git — 산출물·외부물.
+//   - target, frameworks/tauri/gen, node_modules, .git — 산출물·외부물.
 //
 // ALLOWLIST 는 아래 목록이 전부다. 추가는 C5 절차(명시 문제 제기 → 재입법 커밋)로만 한다.
 // 무언 추가 금지. stale 항목(파일은 있는데 매칭 0건)은 실패다 — 죽은 예외를 남기지 마라.

@@ -20,7 +20,7 @@
 cd frameworks/tauri && cargo build --release -p sok
 ```
 
-산출물 `frameworks/tauri/target/release/sok`. 이 바이너리가 세 채널의 진입점이다(MCP·Skill 도 이걸 호출).
+산출물 `target/release/sok`. 이 바이너리가 세 채널의 진입점이다(MCP·Skill 도 이걸 호출).
 
 확인:
 ```
@@ -58,7 +58,7 @@ resource `soksak://skill`(라이브 SKILL.md). 앱 가동 중일 때만 substrat
 - 릴리스 앱: `com.soksak.sock`  · dev: `com.soksak.dev.sock`  · debug: `com.soksak.debug.sock`
 
 ```
-SOK=/ABS/PATH/frameworks/tauri/target/release/sok
+SOK=/ABS/PATH/target/release/sok
 SOCK=$HOME/.soksak/com.soksak.dev.sock
 
 claude mcp add --scope user soksak -e SOKSAK_SOCKET="$SOCK" -- "$SOK" mcp

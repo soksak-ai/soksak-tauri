@@ -68,4 +68,4 @@ jobs:
         run: make build-debug
 
       - name: Run the built CLI
-        run: ./frameworks/tauri/target/debug/sok-debug --help
+        run: ./target/debug/sok-debug --help

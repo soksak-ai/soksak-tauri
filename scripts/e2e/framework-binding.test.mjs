@@ -54,7 +54,7 @@ describe("표면 실측", () => {
   });
 
   it("경로만 직접 아는 파일은 B", () => {
-    write("pathy.sh", 'SOK="$REPO/frameworks/tauri/target/debug/sok"\n');
+    write("pathy.sh", 'SOK="$REPO/target/debug/sok"\n');
     const [row] = scanFiles(root);
     expect(row.class).toBe("B");
     expect(row.surfaces.map((s) => s.name)).toEqual(["build-artifact-path"]);

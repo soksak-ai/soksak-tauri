@@ -29,7 +29,7 @@ REPO="$(cd "$HERE/../.." && pwd)"
 
 # Build artifacts follow the cargo target-dir, which a worktree may redirect to a
 # shared checkout (.cargo/config.toml) — resolve it so paths land on the real target.
-TARGET="$REPO/frameworks/tauri/target"
+TARGET="$REPO/target"
 if [ -f "$REPO/.cargo/config.toml" ]; then
   TD=$(grep -E '^[[:space:]]*target-dir[[:space:]]*=' "$REPO/.cargo/config.toml" | head -1 | sed -E 's/.*=[[:space:]]*"([^"]+)".*/\1/')
   [ -n "${TD:-}" ] && TARGET="$TD"

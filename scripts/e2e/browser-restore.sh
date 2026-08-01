@@ -18,7 +18,7 @@ set -uo pipefail
 IDENTITY=debug
 [ "${1:-}" = "--identity" ] && IDENTITY="$2"
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-APP="$ROOT_DIR/frameworks/tauri/target/debug/bundle/macos/soksak-$IDENTITY.app"
+APP="$ROOT_DIR/target/debug/bundle/macos/soksak-$IDENTITY.app"
 # identity 홈 계약(docs/ARCHITECTURE.md — home.rs·sok CLI 와 동일): app=~/.soksak, 그 외 -<identity>.
 if [ "$IDENTITY" = "app" ]; then SOKSAK_E2E_HOME="$HOME/.soksak"; else SOKSAK_E2E_HOME="$HOME/.soksak-$IDENTITY"; fi
 SOCK="$SOKSAK_E2E_HOME/com.soksak.$IDENTITY.sock"

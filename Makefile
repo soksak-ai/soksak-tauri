@@ -13,12 +13,20 @@ PNPM  := pnpm
 # 레지스트리 카탈로그 단일 진실(P2) — 코어는 이 URL 만 안다. src/state/registry.ts 와 동일.
 REGISTRY_URL := https://raw.githubusercontent.com/soksak-ai/soksak-plugin-registry/main/registry.json
 
+# cargo 산출물 자리 — **cargo 에게 묻는다.**
+#
+# 손으로 적으면 워크스페이스 뿌리가 옮겨간 뒤에도 옛 자리가 남아 있는 한 조용히 그 옛 산출물이
+# 잡힌다. 실측 2026-08-01: 뿌리는 이미 저장소 루트로 옮겨갔는데 열여덟 곳이 옛 자리를 그대로
+# 가리켰고, 나는 7/28 바이너리로 검증해서 그날 고친 결함이 아직 살아 있다는 답을 받았다.
+# 오류는 없었다. 답만 틀렸다.
+CARGO_TARGET := $(shell cargo metadata --no-deps --format-version 1 --offline 2>/dev/null | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')
+
 RELEASE_CONFIG := frameworks/tauri/tauri.release.conf.json
-RELEASE_CONFIG_GENERATED := frameworks/tauri/target/release-config/tauri.conf.json
+RELEASE_CONFIG_GENERATED := $(CARGO_TARGET)/release-config/tauri.conf.json
 DEBUG_CONFIG   := frameworks/tauri/tauri.debug.conf.json
 
-RELEASE_APP := frameworks/tauri/target/release/bundle/macos/soksak.app
-DEBUG_APP   := frameworks/tauri/target/debug/bundle/macos/soksak-debug.app
+RELEASE_APP := $(CARGO_TARGET)/release/bundle/macos/soksak.app
+DEBUG_APP   := $(CARGO_TARGET)/debug/bundle/macos/soksak-debug.app
 
 .DEFAULT_GOAL := help
 
@@ -102,22 +110,22 @@ cli-debug: ## sok-debug CLI(debug 환경, debug 프로파일) — 이 빌드는 
 
 install-cli: cli ## sok(release) regular binary를 /usr/local/bin에 원자 설치(멱등)
 	@mkdir -p /usr/local/bin 2>/dev/null || true
-	@bash scripts/install/install-regular-file.sh "$(abspath frameworks/tauri/target/release/sok)" /usr/local/bin/sok
+	@bash scripts/install/install-regular-file.sh "$(CARGO_TARGET)/release/sok" /usr/local/bin/sok
 	@echo "설치 완료: /usr/local/bin/sok (release regular binary)"
 
 install-cli-dev: cli-dev ## sok-dev regular binary를 /usr/local/bin에 원자 설치
 	@mkdir -p /usr/local/bin 2>/dev/null || true
-	@bash scripts/install/install-regular-file.sh "$(abspath frameworks/tauri/target/debug/sok-dev)" /usr/local/bin/sok-dev
+	@bash scripts/install/install-regular-file.sh "$(CARGO_TARGET)/debug/sok-dev" /usr/local/bin/sok-dev
 	@echo "설치 완료: /usr/local/bin/sok-dev (dev regular binary)"
 
 install-cli-debug: cli-debug ## sok-debug regular binary를 /usr/local/bin에 원자 설치
 	@mkdir -p /usr/local/bin 2>/dev/null || true
-	@bash scripts/install/install-regular-file.sh "$(abspath frameworks/tauri/target/debug/sok-debug)" /usr/local/bin/sok-debug
+	@bash scripts/install/install-regular-file.sh "$(CARGO_TARGET)/debug/sok-debug" /usr/local/bin/sok-debug
 	@echo "설치 완료: /usr/local/bin/sok-debug (debug regular binary)"
 
 docs: ## 명령 레퍼런스 생성(docs/COMMANDS.md — 앱이 실행 중이어야 함)
 	@mkdir -p docs
-	$(or $(DOCS_SOK),frameworks/tauri/target/release/sok) docs --core > docs/COMMANDS.md
+	$(or $(DOCS_SOK),$(CARGO_TARGET)/release/sok) docs --core > docs/COMMANDS.md
 	@echo "생성: docs/COMMANDS.md"
 
 # 발행(plugin-publish)은 코어에 두지 않는다(P1·P3) — 각 플러그인은 자기 독립 repo 에서
@@ -222,10 +230,10 @@ perf-gate: ## 터미널 성능 게이트(W4) — 게이트 자체검증 후 t1/t
 
 clean: ## dev 에 불필요한 재생성 산출물 제거(release 프로파일·번들·dist). 증분 빌드 자산(deps/.fingerprint/build/incremental/바이너리)은 보존 — 다음 dev 빌드 영향 0
 	cd frameworks/tauri && cargo clean --release
-	rm -rf dist frameworks/tauri/target/debug/bundle
+	rm -rf dist $(CARGO_TARGET)/debug/bundle
 
 clean-deep: clean ## clean + 증분 컴파일 캐시(target/debug/incremental) 제거. deps 는 유지하나 다음 빌드 때 앱 크레이트만 전체 재컴파일(deps 재컴파일 X). 디스크 압박 시만
-	rm -rf frameworks/tauri/target/debug/incremental
+	rm -rf $(CARGO_TARGET)/debug/incremental
 
 stop: ## 실행 중인 개발 스택 전체 종료(tauri 바이너리 + tauri.js dev + Vite)
 	@pkill -f "target/debug/soksak-dev" 2>/dev/null || true

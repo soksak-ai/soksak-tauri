@@ -11,7 +11,7 @@ function arg(name, fallback) {
 }
 
 const basePath = resolve(arg("--base", "frameworks/tauri/tauri.release.conf.json"));
-const outPath = resolve(arg("--out", "frameworks/tauri/target/release-config/tauri.conf.json"));
+const outPath = resolve(arg("--out", "target/release-config/tauri.conf.json"));
 const publicKey = (process.env.TAURI_UPDATER_PUBLIC_KEY ?? "").trim();
 
 if (!publicKey || /placeholder/i.test(publicKey)) {

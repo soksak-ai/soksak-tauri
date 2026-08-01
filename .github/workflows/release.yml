@@ -98,7 +98,7 @@ jobs:
           GH_TOKEN: ${{ steps.release-token.outputs.token }}
         run: |
           ver="${GITHUB_REF_NAME#v}"
-          bundle="frameworks/tauri/target/release/bundle"
+          bundle="target/release/bundle"
           app_tar="$(ls "$bundle"/macos/*.app.tar.gz)"
           app_sig="$(ls "$bundle"/macos/*.app.tar.gz.sig)"
           dmg="$(ls "$bundle"/dmg/*.dmg 2>/dev/null || true)"

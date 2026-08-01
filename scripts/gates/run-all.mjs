@@ -22,6 +22,7 @@ export const REPO_ROOT = resolve(HERE, "../..");
 /** 로컬에서 도는 게이트가 인자를 요구하면 여기 적는다. 값이 `[]` 면 인자 없음. */
 export const LOCAL = new Map([
   ["baseline-gate.mjs", []],
+  ["build-output-path.mjs", []],
   ["command-ownership.mjs", []],
   ["c2-transparency-scan.mjs", ["--plugins", process.env.SOKSAK_PLUGINS || `${process.env.HOME}/.soksak-dev/plugins`]],
   ["core-decoupling-scan.mjs", []],

@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const SOK = join(here, "../../frameworks/tauri/target/release/sok");
+const SOK = join(here, "../../target/release/sok");
 const ENV = process.env.E2E_IDENTITY || "dev";
 const onlyArg = process.argv.indexOf("--only");
 const only = onlyArg !== -1 ? process.argv[onlyArg + 1].split(",") : null;

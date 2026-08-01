@@ -113,11 +113,11 @@ jobs:
           # fallback to another environment: fail loudly if neither name exists.
           BIN=""
           for name in soksak-debug soksak-dev; do
-            cand="$CORE/frameworks/tauri/target/debug/$name"
+            cand="$CORE/target/debug/$name"
             if [ -x "$cand" ]; then BIN="$cand"; break; fi
           done
-          test -n "$BIN" || { echo "debug app binary not found under frameworks/tauri/target/debug"; ls -l "$CORE/frameworks/tauri/target/debug" || true; exit 1; }
-          SOK="$CORE/frameworks/tauri/target/debug/sok-debug"
+          test -n "$BIN" || { echo "debug app binary not found under target/debug"; ls -l "$CORE/target/debug" || true; exit 1; }
+          SOK="$CORE/target/debug/sok-debug"
           test -x "$SOK" || { echo "sok-debug CLI not found: $SOK"; exit 1; }
           echo "app binary: $BIN"
 

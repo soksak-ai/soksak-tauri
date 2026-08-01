@@ -20,7 +20,7 @@ esac; done
 
 export SOKSAK_SOCKET; SOKSAK_SOCKET="$(identity_socket "$IDENTITY")"
 [ -S "$SOKSAK_SOCKET" ] || { echo "소켓 없음: $SOKSAK_SOCKET" >&2; exit 1; }
-SOK="$REPO/frameworks/tauri/target/debug/sok"; [ "$IDENTITY" = "debug" ] && SOK="$REPO/frameworks/tauri/target/debug/sok-debug"
+SOK="$REPO/target/debug/sok"; [ "$IDENTITY" = "debug" ] && SOK="$REPO/target/debug/sok-debug"
 
 # pid 귀속: 번들/bare 모두 커버(메인) + CEF 헬퍼. WebKit XPC 는 lsof 전수라 느려 제외 —
 # 드래그 경로의 지배 비용(bounds IPC·setFrame·CEF churn)은 메인+CEF 에 잡힌다.
