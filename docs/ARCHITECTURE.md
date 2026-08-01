@@ -181,9 +181,21 @@ Three conditions must hold: ① both sites state the **same fact**, ② fixing o
 
 **Across languages the type cannot reach.** JS and TS cannot read a Rust constant, so a copy remains. Then the gate **reads both files and compares** — never write the value into the gate, or the copy becomes three.
 
-**Distinguish "could not read" from "none".** Collapsing failure into an empty array reads as "nobody holds it" and drives the opposite behaviour.
+**Distinguish "could not read" from "none".** Collapsing failure into an empty array reads as "nobody holds it" and drives the opposite behaviour. The most expensive instance was state persistence (measured 2026-08-01): a snapshot read failed, that failure stayed behind as the number `0`, and the save guard read it as "this window was always empty" and opened the door — the empty state overwrote the user's workspace. **Distinguishing is not enough; failure must not be expressible as a success value.** Hand back a read result that carries whether it was read, not a count, and there is no syntactic path for `0` and "unread" to be the same value.
 
 **A wrong standard makes the test defend the defect.** The `browser-loading` axis was that: the comment asserted snake_case was the original and the test pinned it, while both the emitter and the consumers used camelCase — in that framework the back button was permanently disabled. Lowering a standard you cannot meet is betrayal; but when the standard itself is wrong, state the evidence and correct it.
+
+---
+
+### A25. What you are attached to must be replaceable — one at a time, not once for all.
+
+If a process lives attached to something (the store owner, a daemon, a sidecar), that peer dies: upgrades, force-quit, crashes. Hold it in a seat that cannot be swapped (`OnceLock`) and the app loses that peer **for the rest of its life**.
+
+Measured 2026-08-01: a Tauri app lost cored exactly that way and every store read failed in 2ms — not a timeout, an immediate failure, which means it was never attached. One consumer wrote that failure down as "empty" (A24), and the empty value overwrote the user's workspace. **A connection that could not be swapped cost user data.**
+
+The seat carries three rules — ① **never hand out a dead one** (pretending it is alive makes every caller wait to the limit and then fail without a reason), ② **the new one takes the seat** (keeping the first registration holds a corpse while a live peer stands beside it), ③ **an empty seat is rebuilt by demand** (not polling — an attempt happens only when there is work to do, and a floor keeps repeated failures from piling up).
+
+**Put the rule in a type, not a global.** A global leaves exactly one place in the process to test it, so tests trample each other. What stays in the framework is one fact of its own: **is this connection still open?**
 
 ---
 
