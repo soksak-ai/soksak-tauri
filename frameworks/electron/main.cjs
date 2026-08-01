@@ -577,7 +577,15 @@ function installApplicationMenu() {
 
 function boot() {
   app.whenReady().then(() => {
-  installApplicationMenu();
+  // 메뉴는 창을 막지 못한다. 앱 이름을 말하는 일이 실패한다고 창이 안 서면, 사용자는 이름이
+  // 틀린 앱이 아니라 **안 켜지는 앱**을 본다(실측 2026-08-01: 이 한 줄이 던져 부팅 창이
+  // 통째로 사라졌고, whenReady 안의 예외라 아무 자국도 안 남았다).
+  // 삼키되 센다 — 막지 않는 것과 사실을 안 남기는 것은 다르다.
+  try {
+    installApplicationMenu();
+  } catch (e) {
+    note(`[electron-spike] 앱 메뉴를 세우지 못했다 — 이름이 프레임워크의 것으로 보인다: ${e}`);
+  }
   const label = CONTROL_PLANE_LABEL;
   const win = createWindow(label);
   wireWindowEvents(label, win);

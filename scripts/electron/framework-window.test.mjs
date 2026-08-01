@@ -84,6 +84,9 @@ function loadFramework(created) {
       getVersion: () => "0.0.0",
     },
     BrowserWindow: W,
+    // 실물이 갖는 것 — 스텁이 더 좁으면 그 차이가 곧 거짓 GREEN 이다. 이 둘이 없어서
+    // 부팅이 whenReady 안에서 던졌고, 창이 통째로 안 서는데 아무 자국도 없었다.
+    Menu: { setApplicationMenu: () => {}, buildFromTemplate: (t) => t },
     dialog: {},
     ipcMain: { handle: (c, fn) => handlers.set(c, fn) },
     screen: {

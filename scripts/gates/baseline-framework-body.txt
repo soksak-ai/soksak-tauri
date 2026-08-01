@@ -21,7 +21,11 @@ frameworks/electron/activity.cjs 32
 frameworks/electron/backend.cjs 206
 frameworks/electron/control.cjs 126
 frameworks/electron/cored.cjs 242
-frameworks/electron/main.cjs 388
+# 재입법 2026-08-01 388 → 392. 앱 메뉴 설치를 창 생성에서 떼어낸 try/catch(4줄).
+#   메뉴 한 줄이 던져 부팅 창이 통째로 안 섰고, whenReady 안의 예외라 아무 자국도 없었다
+#   (프레임워크 테스트 22건이 그 상태를 재고 있었다). 삼키되 센다 — 막지 않는 것과 사실을
+#   안 남기는 것은 다르다. 제거 조건: 메뉴 API 가 실패할 수 없게 되면 이 갈래도 함께 내린다.
+frameworks/electron/main.cjs 392
 frameworks/electron/native/capture.cjs 70
 frameworks/electron/native/clipboard.cjs 24
 frameworks/electron/native/engine.cjs 26
