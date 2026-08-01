@@ -36,8 +36,9 @@ function startMock(name, handler) {
   const server = net.createServer((sock) => {
     conns.push(sock);
     let buf = "";
+    sock.setEncoding("utf8");
     sock.on("data", (d) => {
-      buf += d.toString("utf8");
+      buf += d;
       let i;
       while ((i = buf.indexOf("\n")) >= 0) {
         const line = buf.slice(0, i);
@@ -229,5 +230,29 @@ describe("백엔드가 거절하거나 사라질 때 — 조용히 넘어가지 
     expect(demands).toEqual([
       { cmd: "process_reclaim_window", served: false, code: "BACKEND_TIMEOUT" },
     ]);
+  });
+});
+
+/// UTF-8 은 청크 경계에서 잘린다 — **바이트를 모으고 나서** 디코드해야 한다.
+///
+/// 실측(2026-08-01): 이 다리가 `buf += chunk.toString("utf8")` 로 청크마다 개별 디코드했다.
+/// 유닉스 소켓 청크는 임의 지점에서 나뉘므로 한글 한 글자(3바이트)가 경계에 걸리면 앞뒤가 각각
+/// U+FFFD 로 대체된다. 그렇게 깨진 값이 상태에 들어가 다시 저장됐고, 스냅샷에
+/// `터미널(����티)` 가 박혀 영구히 화면에 떴다 — 정본도 앱이 받는 값도 멀쩡했는데.
+///
+/// 형제 파일(control.cjs)은 `sock.setEncoding("utf8")` 로 맞게 했다. 같은 사실이 두 자리에
+/// 다르게 적혀 한쪽만 틀린 모양이다.
+describe("멀티바이트가 청크 경계에 걸려도 온전하다", () => {
+  it("한글이 두 청크로 쪼개져 와도 안 깨진다", async () => {
+    const KOREAN = "터미널(고스티) 가나다라마바사";
+    const { socketPath } = await startMock("utf8.sock", (req, s) => {
+      // 답 한 줄을 **바이트 중간**에서 자른다 — 실제 소켓이 하는 일이다.
+      const line = Buffer.from(JSON.stringify({ id: req.id, ok: true, data: KOREAN }) + "\n", "utf8");
+      const cut = line.indexOf(Buffer.from("고", "utf8")) + 1; // 한 글자 한가운데
+      s.write(line.subarray(0, cut));
+      setTimeout(() => s.write(line.subarray(cut)), 5);
+    });
+    const got = await client({ socketPath }).call("x.y", {});
+    expect(got).toBe(KOREAN);
   });
 });

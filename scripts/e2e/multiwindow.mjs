@@ -30,8 +30,9 @@ function connect() {
     sock.setNoDelay(true);
     sock.once("connect", resolve);
     sock.once("error", reject);
+    sock.setEncoding("utf8");
     sock.on("data", (d) => {
-      rbuf += d.toString("utf8");
+      rbuf += d;
       let i;
       while ((i = rbuf.indexOf("\n")) >= 0) {
         const line = rbuf.slice(0, i);

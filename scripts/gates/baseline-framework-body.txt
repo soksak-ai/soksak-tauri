@@ -18,9 +18,13 @@
 # main.cjs 는 그 값을 표에 건네는 ctx 한 줄이다. 규칙과 답은 새 파일(native/updater.cjs)이
 # 지고, 그 파일은 처음부터 이 폴더의 몫으로 등재됐다(native/updater.cjs 33, index.cjs +1 = 조립 한 줄).
 frameworks/electron/activity.cjs 32
-frameworks/electron/backend.cjs 206
+# 재입법 2026-08-01 206 → 207. 소켓에 setEncoding("utf8") 한 줄. 청크 경계는 글자 경계가
+#   아니라, 이것이 없으면 멀티바이트가 걸린 자리에서 U+FFFD 로 조용히 바뀐다 — 그 값이 상태에
+#   들어가 다시 저장되면 손상이 영구히 남는다(실측: 스냅샷의 `터미널(????티)`).
+frameworks/electron/backend.cjs 207
 frameworks/electron/control.cjs 126
-frameworks/electron/cored.cjs 242
+# 재입법 2026-08-01 242 → 244. 자식 stdout/stderr 에 setEncoding("utf8") 두 줄(같은 사유).
+frameworks/electron/cored.cjs 244
 # 재입법 2026-08-01 388 → 392. 앱 메뉴 설치를 창 생성에서 떼어낸 try/catch(4줄).
 #   메뉴 한 줄이 던져 부팅 창이 통째로 안 섰고, whenReady 안의 예외라 아무 자국도 없었다
 #   (프레임워크 테스트 22건이 그 상태를 재고 있었다). 삼키되 센다 — 막지 않는 것과 사실을

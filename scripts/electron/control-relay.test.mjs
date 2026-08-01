@@ -50,8 +50,9 @@ function askRaw(socketPath, req) {
       reject(new Error(`응답 없음(${PATIENCE_MS}ms): ${req.method}`));
     }, PATIENCE_MS);
     sock.on("connect", () => sock.write(`${JSON.stringify(req)}\n`));
+    sock.setEncoding("utf8");
     sock.on("data", (d) => {
-      buf += d.toString("utf8");
+      buf += d;
       const at = buf.indexOf("\n");
       if (at < 0) return;
       clearTimeout(timer);

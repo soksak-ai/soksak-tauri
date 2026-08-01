@@ -39,6 +39,7 @@ function connect() {
     sock.setEncoding("utf8");
     sock.on("connect", resolve);
     sock.on("error", reject);
+    sock.setEncoding("utf8");
     sock.on("data", (chunk) => {
       rbuf += chunk;
       let nl;

@@ -75,8 +75,9 @@ function openClient() {
         close: () => state.sock.destroy(),
       }),
     );
+    state.sock.setEncoding("utf8");
     state.sock.on("data", (d) => {
-      state.buf += d.toString("utf8");
+      state.buf += d;
       let i;
       while ((i = state.buf.indexOf("\n")) >= 0) {
         const line = state.buf.slice(0, i);

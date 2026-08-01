@@ -90,7 +90,11 @@ function createBackendClient(options = {}) {
   }
 
   function onData(chunk) {
-    buf += chunk.toString("utf8");
+    // 청크는 이미 문자열이다 — 소켓에 `setEncoding("utf8")` 를 걸어 두었기 때문이다.
+    // 여기서 Buffer 를 직접 디코드하면 안 된다: 소켓 청크는 임의 지점에서 나뉘므로 멀티바이트
+    // 한 글자가 경계에 걸리면 앞뒤가 각각 U+FFFD 로 대체된다. 그렇게 깨진 값이 상태에 들어가
+    // 다시 저장되면 그 손상은 영구히 남는다(실측 2026-08-01: 스냅샷에 `터미널(����티)`).
+    buf += chunk;
     let i;
     while ((i = buf.indexOf("\n")) >= 0) {
       const line = buf.slice(0, i);
@@ -147,6 +151,8 @@ function createBackendClient(options = {}) {
         sock = s;
         connecting = null;
         buf = "";
+        // 경계 조립은 Node 에게 맡긴다 — 형제 파일(control.cjs)이 쓰는 것과 같은 규칙이다.
+        s.setEncoding("utf8");
         s.on("data", onData);
         // 선언이 먼저다. 같은 연결·같은 순서라 첫 명령이 이 줄보다 앞설 수 없다.
         // 선언에도 상관 id 를 단다 — 짝이 없으면 답이 "짝 없는 응답"으로 버려지고, 선언이

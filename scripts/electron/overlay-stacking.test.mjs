@@ -100,6 +100,7 @@ function measure() {
   return new Promise((resolve, reject) => {
     const child = (spawned = spawn(ELECTRON, [main, page, out], { stdio: ["ignore", "pipe", "pipe"] }));
     let err = "";
+    child.stderr.setEncoding("utf8");
     child.stderr.on("data", (d) => (err += d));
     const timer = setTimeout(() => {
       child.kill();

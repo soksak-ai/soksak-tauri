@@ -311,8 +311,13 @@ async function ensureCored({
       failWith(`cored를 띄우지 못했다: ${binary} (${e.code || e.message})`),
     );
 
+    // 경계 조립은 Node 에게 맡긴다 — 청크는 임의 지점에서 나뉘고, 멀티바이트 한 글자가 거기
+    // 걸리면 앞뒤가 각각 U+FFFD 가 된다(backend.cjs 의 같은 결함이 스냅샷에 영구 손상을 남겼다).
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+
     child.stdout.on("data", (chunk) => {
-      out += chunk.toString("utf8");
+      out += chunk;
       const at = out.indexOf("\n");
       if (settled || at < 0) return;
       const line = out.slice(0, at).trim();
@@ -335,7 +340,7 @@ async function ensureCored({
     });
 
     child.stderr.on("data", (chunk) => {
-      const text = chunk.toString("utf8");
+      const text = chunk;
       err = `${err}${text}`.slice(-4000);
       onLog(text.trimEnd());
     });

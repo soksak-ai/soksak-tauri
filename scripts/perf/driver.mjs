@@ -48,8 +48,9 @@ const pending = new Map();
 let buf = "";
 
 function attach(sock) {
+  sock.setEncoding("utf8");
   sock.on("data", (d) => {
-    buf += d.toString("utf8");
+    buf += d;
     let i;
     while ((i = buf.indexOf("\n")) >= 0) {
       const line = buf.slice(0, i);
@@ -362,8 +363,9 @@ async function subscribeEvents(kinds) {
   let buf = "";
   const backlog = [];
   const waiters = []; // {pred, resolve, reject, timer}
+  s.setEncoding("utf8");
   s.on("data", (d) => {
-    buf += d.toString("utf8");
+    buf += d;
     let i;
     while ((i = buf.indexOf("\n")) >= 0) {
       const line = buf.slice(0, i);

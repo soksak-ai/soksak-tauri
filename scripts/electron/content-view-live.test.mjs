@@ -105,6 +105,7 @@ function run() {
   return new Promise((resolve, reject) => {
     const child = (spawned = spawn(ELECTRON, [main, page, out], { stdio: ["ignore", "pipe", "pipe"] }));
     let err = "";
+    child.stderr.setEncoding("utf8");
     child.stderr.on("data", (d) => (err += d));
     const t = setTimeout(() => { child.kill(); reject(new Error("측정이 끝나지 않았다")); }, 45_000);
     child.on("exit", (code) => {

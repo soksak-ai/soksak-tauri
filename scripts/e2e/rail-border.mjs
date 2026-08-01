@@ -47,6 +47,7 @@ function connect() {
     sock = net.createConnection(SOCKET, () => resolve());
     sock.on("error", reject);
     let buf = "";
+    sock.setEncoding("utf8");
     sock.on("data", (d) => {
       buf += d.toString();
       let i;

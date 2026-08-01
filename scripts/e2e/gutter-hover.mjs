@@ -51,8 +51,9 @@ function openClient() {
         close: () => st.sock.destroy(),
       }),
     );
+    st.sock.setEncoding("utf8");
     st.sock.on("data", (d) => {
-      st.buf += d.toString("utf8");
+      st.buf += d;
       let i;
       while ((i = st.buf.indexOf("\n")) >= 0) {
         const line = st.buf.slice(0, i);

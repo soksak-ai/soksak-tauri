@@ -44,8 +44,9 @@ function startMock(name, reply) {
   const seen = [];
   const server = net.createServer((sock) => {
     let buf = "";
+    sock.setEncoding("utf8");
     sock.on("data", (d) => {
-      buf += d.toString("utf8");
+      buf += d;
       let i;
       while ((i = buf.indexOf("\n")) >= 0) {
         const line = buf.slice(0, i);

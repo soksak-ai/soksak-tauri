@@ -79,8 +79,9 @@ fs.writeFileSync(socket + ".argv", JSON.stringify(args));
 fs.writeFileSync(socket + ".pid", String(process.pid));
 const server = net.createServer((c) => {
   let buf = "";
+  c.setEncoding("utf8");
   c.on("data", (d) => {
-    buf += d.toString("utf8");
+    buf += d;
     let i;
     while ((i = buf.indexOf("\\n")) >= 0) {
       const line = buf.slice(0, i);
@@ -111,8 +112,9 @@ ${extra}
 function startServer(socketPath) {
   const server = net.createServer((sock) => {
     let buf = "";
+    sock.setEncoding("utf8");
     sock.on("data", (d) => {
-      buf += d.toString("utf8");
+      buf += d;
       let i;
       while ((i = buf.indexOf("\n")) >= 0) {
         const line = buf.slice(0, i);

@@ -43,8 +43,9 @@ function connect() {
     sock.setNoDelay(true);
     sock.once("connect", resolve);
     sock.once("error", reject);
+    sock.setEncoding("utf8");
     sock.on("data", (d) => {
-      buf += d.toString("utf8");
+      buf += d;
       let i;
       while ((i = buf.indexOf("\n")) >= 0) {
         const line = buf.slice(0, i);
