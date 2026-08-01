@@ -37,7 +37,9 @@
     "deep-link": {
       "desktop": {
         "schemes": [
-          "soksak"
+          "soksak",
+          "soksak-dev",
+          "soksak-debug"
         ]
       }
     }

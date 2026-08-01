@@ -153,6 +153,12 @@ function frameworkDir(identifier) {
   return framework ? `framework-${framework}` : "framework";
 }
 
+/** 이 정체성의 URI 스킴 — **홈 접미사와 같은 규칙**이다(코어 deeplink.rs scheme_for).
+ *  한 스킴을 모든 정체성이 주장하면 어느 앱이 링크를 받을지 제비뽑기가 된다. */
+function uriScheme(identifier) {
+  return `${PRODUCT}${homeSuffix(identifier)}`;
+}
+
 /** 홈의 이름 — framework 축을 뺀 정체성(`com.soksak.<env>`). 홈을 가르는 축은 env 하나다. */
 function homeIdentity(identifier) {
   const { env } = identityAxes(identifier);
@@ -388,6 +394,7 @@ module.exports = {
   identityAxes,
   coreBuildOf,
   homeSuffix,
+  uriScheme,
   productName,
   coredBinary,
   ensureCored,

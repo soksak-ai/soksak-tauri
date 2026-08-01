@@ -35,7 +35,9 @@ frameworks/electron/backend.cjs 236
 frameworks/electron/control.cjs 144
 # 재입법 2026-08-01 244 → 248. cored 를 **홈 이름**으로 띄운다(homeIdentity). 홈에 하나뿐인
 #   공용 프로세스를 띄운 프레임워크의 이름으로 부르면 그 이름이 공용 자원에 박힌다.
-frameworks/electron/cored.cjs 248
+# 재입법 2026-08-01 248 → 252. URI 스킴을 정체성에서 판다(uriScheme — 홈 접미사와 같은 규칙).
+#   한 스킴을 모든 정체성이 주장하면 어느 앱이 링크를 받을지 제비뽑기가 된다.
+frameworks/electron/cored.cjs 252
 # 재입법 2026-08-01 398 → 410. 이 이름을 **백엔드가 서빙하는가**를 선언에 묻는 자리
 #   (backendServes). 이름 접두사로 가르면 틀린다: `window_` 로 시작하지만 창이 아니라 저장소가
 #   답하는 이름이 있고(window_manifest_upsert), 그것을 가로채면 Electron 에서만 워크스페이스

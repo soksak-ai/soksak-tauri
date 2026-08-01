@@ -52,13 +52,18 @@ done
 # 코어가 쥔다(soksak-core deeplink.rs). 여기서 하는 것은 OS 에 그 사실을 알리는 일뿐이다.
 # 등록이 없으면 `open soksak://…` 이 이 앱에 영영 안 닿고, 그 부재는 오류가 아니라 "저 앱에서는
 # 링크가 안 열린다"로만 나타난다.
+# 스킴은 **정체성으로 갈린다**(코어 deeplink.rs scheme_for) — 홈과 같은 축이다. 한 스킴을 모든
+# 정체성이 주장하면 어느 앱이 그 링크를 받을지 제비뽑기가 된다(실측 2026-08-01: 이 기계에
+# `soksak:` 주장 번들이 200 개가 넘었고 도는 앱에 안 닿았다).
+SCHEME=$(node -e "process.stdout.write(require('$ROOT/frameworks/electron/cored.cjs').uriScheme(process.argv[1]))" "$IDENTIFIER")
+[ -n "$SCHEME" ] || { echo "URI 스킴을 파생하지 못했다: $IDENTIFIER" >&2; exit 1; }
 /usr/libexec/PlistBuddy -c "Delete :CFBundleURLTypes" "$PLIST" 2>/dev/null || true
 /usr/libexec/PlistBuddy \
   -c "Add :CFBundleURLTypes array" \
   -c "Add :CFBundleURLTypes:0 dict" \
   -c "Add :CFBundleURLTypes:0:CFBundleURLName string $NAME" \
   -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" \
-  -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string soksak" \
+  -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string $SCHEME" \
   "$PLIST"
 
 # 서명은 이름을 바꾼 순간 깨진다 — ad-hoc 으로 다시 붙인다. 안 붙이면 실행 자체가 막힌다.
