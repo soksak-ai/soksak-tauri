@@ -45,9 +45,9 @@ MARKER="E2EMARK_0123456789_ABCDEFGHIJ_END"
 
 command -v node >/dev/null || { echo "RED: node 없음" >&2; exit 1; }
 
-# 앱 전면 활성화(백그라운드 WKWebView 는 이벤트 루프 스로틀로 측정 무효).
-osascript -e "tell application \"System Events\" to set frontmost of (first process whose name contains \"$APP\") to true" 2>/dev/null
-sleep 0.8
+# 앞으로 내지 않는다. 가려진 창도 계속 그린다는 것은 **앱이 선언한 보장**이다
+# (tauri: app_nap::hold · electron: backgroundThrottling=false). OS 를 빌려 전면화하면
+# 운영체제 표면에 기대는 데다 사용자가 보던 화면을 빼앗는다 — 둘 다 하지 않는다.
 
 # T1(blank) 가용성: macOS + 화면 녹화 동의 + 도구 + 창 좌표(AX 읽기, 마우스 무관).
 RECORD_OK=0

@@ -54,7 +54,8 @@ frameworks/tauri/src/i18n.rs 155
 frameworks/tauri/src/id_registry.rs 144
 frameworks/tauri/src/identity.rs 59
 frameworks/tauri/src/ipc.rs 1227
-frameworks/tauri/src/lib.rs 722
+# 재입법 2026-08-02 722 → 724. app_nap 모듈 선언과 setup 의 한 줄 호출.
+frameworks/tauri/src/lib.rs 724
 frameworks/tauri/src/login_shell.rs 28
 frameworks/tauri/src/main.rs 4
 frameworks/tauri/src/mediaproxy.rs 18
@@ -85,3 +86,7 @@ frameworks/tauri/src/webview_health.rs 572
 frameworks/tauri/src/window.rs 387
 frameworks/tauri/src/window_oracle.rs 102
 frameworks/tauri/src/ws.rs 47
+# 신규 2026-08-02 24줄. 이 실행물이 자기에게 주는 보장 — 가려져도 계속 그린다(App Nap 해제).
+#   플랫폼 표면(NSProcessInfo)이 몸이라 코어로 갈 수 없다. 검증이 OS 를 빌려 창을 앞으로 내던
+#   것을 없애는 자리다(운영체제 비의존·포커스 불가침).
+frameworks/tauri/src/app_nap.rs 24

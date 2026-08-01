@@ -452,10 +452,9 @@
         "pixel-oracle",
         "synthetic-input",
         "screen-record",
-        "frame-decode",
-        "app-activate"
+        "frame-decode"
       ],
-      "note": "실제 커서로 디바이더를 흔들며 본문 blank·프롬프트·TUI 를 본다. 손과 눈이 전부 OS 것이다."
+      "note": "실제 커서로 디바이더를 흔들며 본문 blank·프롬프트·TUI 를 본다. 손과 눈이 전부 OS 것이다. 앞으로 내지 않는다 — 가려져도 그린다는 보장은 앱이 선언한다(app_nap·backgroundThrottling)."
     },
     {
       "file": "restore-load.mjs",

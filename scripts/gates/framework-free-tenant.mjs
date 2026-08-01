@@ -68,6 +68,7 @@ export const DECLARED = new Map([
   ["frameworks/electron/native/updater.cjs", ["framework", "앱 본체 실행물을 갈아 끼운다 — 그 실행물이 이 프레임워크다"]],
   ["frameworks/electron/native/webview.cjs", ["framework", "창 안에서만 답이 나온다"]],
   ["frameworks/electron/native/window.cjs", ["framework", "창 자체 — cored 에는 창이 없다"]],
+  ["frameworks/tauri/src/app_nap.rs", ["framework", "이 실행물이 App Nap 에 들지 않게 든다 — 몸이 NSProcessInfo 다"]],
   ["frameworks/tauri/build.rs", ["framework", "이 프레임워크의 빌드 스크립트"]],
   ["frameworks/tauri/src/main.rs", ["framework", "이 실행물의 진입점"]],
   ["frameworks/tauri/src/identity.rs", ["framework", "이 프로세스의 앰비언트 정체성 결속(규칙은 코어)"]],

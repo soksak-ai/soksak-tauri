@@ -1,5 +1,6 @@
 mod activity;
 mod ai_session;
+mod app_nap;
 // 이 프레임워크가 cored 의 창 호스트가 되는 자리. `pub` 인 이유는 검증이다 — 붙는 계약은
 // 소켓 위에서 재야 하고(tests/attaches_to_cored.rs), 통합 검사는 이 크레이트 **밖**에서 돈다.
 // 배달 통로는 유닉스 소켓이라 cored 자신과 같은 축으로 가른다(cored 는 unix 전용이다).
@@ -168,6 +169,8 @@ pub fn run() {
     });
     builder
         .setup(|app| {
+            // 가려진 창도 계속 그린다 — 앞으로 내지 않고도 잴 수 있게 하는 자기 선언.
+            app_nap::hold();
             // identity 홈 확정 — 모든 경로(데이터·플러그인·사이드카·테마·프로젝트·소켓·시크릿)가
             // 이 값에서 파생되므로 어떤 경로 사용보다 먼저 1회 고정한다(home.rs 원칙).
             home::init(&app.config().identifier);
