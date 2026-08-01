@@ -66,7 +66,7 @@ afterEach(() => {
 describe("OS 알림", () => {
   it("제목과 본문을 그대로 띄운다", () => {
     const table = loadTable();
-    expect(table.notify_show.answer({}, { title: "제목", body: "본문" })).toBe(null);
+    expect(table.notify_show.answer({}, { title: "제목", body: "본문" })).toEqual({ handle: 1 });
     expect(shown).toEqual([{ title: "제목", body: "본문" }]);
   });
 
@@ -74,8 +74,47 @@ describe("OS 알림", () => {
    *  같은 이름에 다른 기준을 갖는다. 값이 없으면 빈 문자열로 그대로 넘긴다(Tauri 와 같다). */
   it("인자 판정을 하지 않는다 — 규칙은 프레임워크의 것이 아니다", () => {
     const table = loadTable();
-    expect(table.notify_show.answer({}, {})).toBe(null);
+    expect(table.notify_show.answer({}, {})).toEqual({ handle: 1 });
     expect(shown).toEqual([{ title: undefined, body: undefined }]);
+  });
+
+  /** 활성화에 **주소가 없으면** 사람 손가락 말고는 부를 길이 없다. 부를 수 없는 사건은
+   *  동작한다고 말할 수 없다 — 띄운 알림은 handle 로 되부를 수 있어야 한다. */
+  it("띄운 알림은 주소를 돌려준다", () => {
+    const table = loadTable();
+    const a = table.notify_show.answer({ deepLink: () => {} }, { title: "가", body: "나" });
+    const b = table.notify_show.answer({ deepLink: () => {} }, { title: "다", body: "라" });
+    expect(a.handle).not.toBe(b.handle);
+  });
+
+  /** **사람 손가락과 같은 문이다.** 활성화 경로가 둘이면 이 명령이 통과해도 클릭은 죽어 있을
+   *  수 있고, 그때 이 검사는 아무것도 증명하지 않는다. 같은 함수인지를 잰다. */
+  it("notify_activate 는 OS 클릭과 같은 함수를 부른다", () => {
+    const table = loadTable();
+    const sent = [];
+    const ctx = { deepLink: (u) => sent.push(u) };
+    const { handle } = table.notify_show.answer(ctx, {
+      title: "제목",
+      body: "본문",
+      extra: { deepLink: "soksak-dev://cmd/bookmark.list" },
+    });
+    // 등록된 클릭 핸들러와 명령이 부르는 것이 **같은 함수**여야 한다.
+    expect(table.notify_activate.answer({}, { handle })).toBe(null);
+    expect(sent).toEqual(["soksak-dev://cmd/bookmark.list"]);
+    clicks.get("click")();
+    expect(sent).toEqual(["soksak-dev://cmd/bookmark.list", "soksak-dev://cmd/bookmark.list"]);
+  });
+
+  /** 없는 것을 조용히 성공으로 답하면 부른 쪽은 알림이 반응했다고 믿는다. */
+  it("살아 있지 않은 알림은 이름을 달고 거절한다", () => {
+    const table = loadTable();
+    let code = null;
+    try {
+      table.notify_activate.answer({}, { handle: 9999 });
+    } catch (e) {
+      code = e.code;
+    }
+    expect(code).toBe("FRAMEWORK_NOTIFICATION_UNKNOWN");
   });
 
   /** 알림 클릭은 **밖에서 온 명령 실행**이다 — 딥링크와 같다. 그래서 이 창이 아니라 명령 표면의

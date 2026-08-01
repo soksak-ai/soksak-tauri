@@ -26,7 +26,12 @@ frameworks/electron/native/capture.cjs 70
 frameworks/electron/native/engine.cjs 26
 frameworks/electron/native/error.cjs 9
 frameworks/electron/native/index.cjs 85
-frameworks/electron/native/notify.cjs 24
+# 재입법 2026-08-01 24 → 45. **한 사건에 한 길** — 알림 활성화에 주소를 붙인다.
+#   활성화가 하는 일(실어 온 것을 주인에게 돌려준다)은 `activate` 한 함수에만 적고, OS 클릭과
+#   notify_activate 가 그 같은 함수를 부른다. 이름이 없으면 사람 손가락 말고는 부를 길이 없고,
+#   부를 수 없는 사건은 동작한다고 말할 수 없다. 게이트 one-event-one-path 가 자리를 하나로 고정.
+#   이 몸은 코어로 갈 것이다(framework-free-tenant 등재 tenant) — 그때 이 줄은 사라진다.
+frameworks/electron/native/notify.cjs 45
 frameworks/electron/native/project.cjs 58
 frameworks/electron/native/titlebar.cjs 7
 frameworks/electron/native/updater.cjs 33
