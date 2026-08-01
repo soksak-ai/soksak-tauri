@@ -738,6 +738,30 @@ struct WindowFacts {
 }
 
 #[derive(serde::Deserialize)]
+struct DeepLinkArg {
+    url: String,
+}
+
+/// 딥링크 하나를 명령 실행으로 푼다 — **밖에서 온 명령은 명령 표면의 주인이 받는다.**
+///
+/// 프레임워크는 OS 가 준 URL 을 그대로 넘긴다. 형식은 코어가 읽고(deeplink.rs), 실행은 이
+/// 프로세스의 평소 라우팅이 한다: 주인이 답하는 이름이면 여기서 답하고, 창의 것이면 창으로
+/// 배달한다. 창에 먼저 넘기면 창 없는 곳에 영영 못 닿고, 형식도 창마다 한 벌씩 생긴다.
+///
+/// 형식이 아니면 **아무 일도 하지 않는다**(미치환 명령 실행 0). 그 사실은 값으로 답한다 —
+/// 조용히 성공하면 부른 쪽이 링크가 먹은 줄 안다.
+pub(crate) fn run_deeplink_open(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: DeepLinkArg| {
+        let Some((cmd, p)) = soksak_core::deeplink::parse_command_url(&a.url) else {
+            return Ok(json!({ "ran": false, "reason": "명령 URI 가 아니다" }));
+        };
+        let line = json!({ "id": "deeplink", "method": cmd, "params": p }).to_string();
+        let reply = crate::wire::answer(ctx, &line);
+        Ok(json!({ "ran": true, "command": cmd, "reply": reply }))
+    })
+}
+
+#[derive(serde::Deserialize)]
 struct OwnerAnsweredArg {
     names: Vec<String>,
 }

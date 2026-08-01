@@ -131,13 +131,6 @@ module.exports = {
   // **자국은 파괴를 관측하는 쪽이 남긴다.** 렌더러가 스스로 `location.reload()` 를 부르면
   // 자기 죽음을 기록할 수 없다 — 창이 죽는 순간 발행 통로가 끊긴다. 여기서 부르면 죽는 것은
   // 렌더러고 부탁받은 이 프로세스는 산다(실측 2026-08-01: 그 명령만 원장에 아무 자국이 없었다).
-  // 창이 나기 전에 온 딥링크를 묻는다. 링크가 앱을 깨운 경우 사건은 창보다 먼저 오므로,
-  // 들고 있다가 창이 물을 때 준다 — 버리면 그 링크는 아무 데도 안 닿는다.
-  deeplink_current: {
-    concept: "대기 중 딥링크",
-    answer: (ctx) => ctx.pendingDeepLinks(),
-  },
-
   window_reload: {
     concept: "창 다시 적재",
     source: "webContents.reload",

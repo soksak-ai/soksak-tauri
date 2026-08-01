@@ -314,25 +314,13 @@ export const electronFramework: AppFramework = {
     onAction: async () => unimplemented("notification.onAction"),
   },
   deepLink: {
-    // OS 가 넘긴 `soksak://…` 은 창 사건으로 온다(main.cjs `open-url`). 규칙은 코어의 것이고
-    // (soksak-core deeplink.rs) 이 자리는 받아 넘기기만 한다.
-    // **창 기하 사건 채널이 아니다.** `onWindowEvent` 는 `framework:window-event`(resized·moved)
-    // 를 듣고, 프레임워크가 임의 사건을 창에 나르는 통로는 `framework:event` 다(`onEvent`).
-    // 처음에 그것을 헷갈려 보내는 채널과 듣는 채널이 갈렸고, 그 어긋남은 오류가 아니라
-    // **아무 일도 안 일어남**으로 나타났다(실측 2026-08-01: 링크에 앱은 앞으로 나왔는데
-    // 명령이 안 돌았다).
-    onOpenUrl: async (cb) => {
-      const off = bridge().onEvent("deep-link", (payload) => {
-        const urls = (payload as { urls?: unknown })?.urls;
-        if (Array.isArray(urls) && urls.length > 0) cb(urls.map(String));
-      });
-      return () => off();
-    },
-    // 링크가 앱을 깨운 경우 사건은 창보다 먼저 온다 — 그때 들고 있던 것을 여기서 받는다.
-    current: async () => {
-      const urls = unwrap<string[]>(await bridge().invoke("deeplink_current"), "deeplink_current");
-      return urls.length > 0 ? urls : null;
-    },
+    // **딥링크는 이 창으로 오지 않는다.** 밖에서 온 명령이므로 명령 표면의 주인(cored)이 받고
+    // 형식도 거기서 읽는다(soksak-core deeplink.rs) — 창에 넘기면 창 없는 곳에 영영 못 닿고,
+    // 형식이 프레임워크마다 한 벌이 된다(실측 2026-08-01: 실제로 두 벌이었고 갈려 있었다).
+    //
+    // 계약을 지우지 않고 **없다고 말한다**: 조용히 성공하면 부른 쪽이 오지 않을 사건을 기다린다.
+    onOpenUrl: async () => unimplemented("deepLink.onOpenUrl — 딥링크는 주인이 받는다"),
+    current: async () => unimplemented("deepLink.current — 딥링크는 주인이 받는다"),
   },
 };
 

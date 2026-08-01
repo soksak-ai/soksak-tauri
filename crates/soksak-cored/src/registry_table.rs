@@ -811,6 +811,14 @@ pub const COMMANDS: &[Command] = &[
         returns: "null",
         run: run_control_host_attach,
     },
+    // 딥링크 — 밖에서 온 명령은 명령 표면의 주인이 받는다. 프레임워크는 OS 가 준 URL 을
+    // 그대로 넘기고, 형식은 코어가 읽는다(창에 먼저 넘기면 창 없는 곳에 영영 못 닿는다).
+    Command {
+        name: "deeplink_open",
+        args: &[Arg { name: "url", ty: "string", required: REQ }],
+        returns: "{ ran, command?, reply? }",
+        run: run_deeplink_open,
+    },
     // 창이 신고한다: 이 이름들은 **주인이 답한다**. 같은 이름을 든 창이 여럿일 때 배달이 이
     // 값을 보고 한 곳에만 보낸다 — 안 그러면 같은 쓰기가 두 프로세스에서 각각 돈다.
     // 어느 쪽인지는 명령 자신이 알고(CommandSpec.windowScoped), 그 사실을 아는 것은 창이다.

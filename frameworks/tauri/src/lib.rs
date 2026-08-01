@@ -422,10 +422,17 @@ pub fn run() {
                 let dl_handle = app.handle().clone();
                 let _ = app.deep_link().register_all();
                 app.deep_link().on_open_url(move |event| {
+                    // **주인에게 넘긴다.** 밖에서 온 명령이므로 명령 표면의 주인(cored)이 받고,
+                    // 형식도 거기서 읽는다 — 여기서 읽으면 그 규칙이 프레임워크마다 한 벌이 되고
+                    // (실측 2026-08-01: 실제로 두 벌이었고 형식이 갈려 있었다), 창에 넘기면 창
+                    // 없는 곳에 영영 못 닿는다.
+                    let _ = &dl_handle;
                     for u in event.urls() {
-                        if let Some((cmd, params)) = soksak_core::deeplink::parse_command_url(u.as_str()) {
-                            let _ =
-                                ipc::request_command(&dl_handle, cmd, params, 10_000, None, None);
+                        if let Err(why) = cored_host::ask_owner(
+                            "deeplink_open",
+                            &serde_json::json!({ "url": u.as_str() }),
+                        ) {
+                            eprintln!("[deep-link] 주인에게 넘기지 못했다: {why}");
                         }
                     }
                 });

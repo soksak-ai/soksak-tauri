@@ -21,6 +21,12 @@ function coerce(v: string): unknown {
   }
 }
 
+/** 이 제품의 명령 스킴인가 — 정체성 접미사를 받아들인다(`soksak:` · `soksak-dev:` …). */
+function isCommandScheme(protocol: string): boolean {
+  const s = protocol.replace(/:$/, "");
+  return s === "soksak" || /^soksak-[a-z0-9]+$/.test(s);
+}
+
 // `soksak://cmd/<command>?<query>` → {command, params}. 형식 불일치/빈 command 는 null.
 export function parseDeepLink(url: string): DeepLink | null {
   let u: URL;
@@ -29,7 +35,11 @@ export function parseDeepLink(url: string): DeepLink | null {
   } catch {
     return null;
   }
-  if (u.protocol !== "soksak:" || u.host !== "cmd") return null;
+  // 스킴은 **정체성으로 갈린다**(`soksak` · `soksak-dev` · `soksak-debug`) — 한 스킴을 모든
+  // 정체성이 주장하면 어느 앱이 그 링크를 받을지 제비뽑기가 된다(실측 2026-08-01: 이 기계에
+  // `soksak:` 주장 번들이 200 개가 넘었다). 판정은 코어와 같다(soksak-core deeplink.rs
+  // is_command_scheme) — 여기서 다르게 적으면 한쪽이 읽는 링크를 다른 쪽이 못 읽는다.
+  if (!isCommandScheme(u.protocol) || u.host !== "cmd") return null;
   const command = decodeURIComponent(u.pathname.replace(/^\//, ""));
   if (!command) return null;
   const params: Record<string, unknown> = {};

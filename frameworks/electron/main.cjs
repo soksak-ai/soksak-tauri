@@ -244,8 +244,6 @@ function nativeContext(sender) {
     labelOf: (win) => [...windows.entries()].find(([, w]) => w === win)?.[0] ?? null,
     // 지도가 바뀐 사실을 이 프레임워크의 창 전부에 — 크로스윈도우 반응은 이 신호를 듣는다.
     announce: (event, payload) => { for (const w of windows.values()) deliverEvent(w, event, payload); },
-    // 창이 나기 전에 온 딥링크 — 물으면 주고 그 자리에서 비운다(같은 링크를 두 번 열지 않는다).
-    pendingDeepLinks: () => pendingDeepLinks.splice(0, pendingDeepLinks.length),
     windowFor,
     createWindow,
     // 앱을 전면으로 — 창 하나를 key 로 만드는 것과 다른 일이다. steal 은 다른 앱에서
@@ -403,12 +401,6 @@ function pipeStreams(client, args, sender) {
     });
   }
 }
-
-/** 창이 나기 전에 온 딥링크. 창이 물으면 준다(`deeplink_current`). */
-const pendingDeepLinks = [];
-
-/** 창에 딥링크를 나르는 사건 이름. 프론트 어댑터가 같은 이름으로 듣는다. */
-const DEEP_LINK_EVENT = "deep-link";
 
 /** 창이 신고한 "답이 주인의 것인 이름". 다시 붙을 때 다시 선언하려고 쥔다. */
 let ownerAnsweredNames = [];
@@ -597,15 +589,11 @@ if (!app.requestSingleInstanceLock()) {
     e.preventDefault();
     // 자국을 남긴다 — 안 남기면 "링크가 안 열린다"에서 어느 홉이 끊겼는지 못 가른다.
     note(`[electron-spike] 딥링크: ${url}`);
-    pendingDeepLinks.push(url);
-    let delivered = false;
-    for (const w of windows.values()) {
-      if (w.isDestroyed()) continue;
-      deliverEvent(w, DEEP_LINK_EVENT, { urls: [url] });
-      delivered = true;
-    }
-    // 닿았으면 들고 있을 이유가 없다 — 남기면 다음에 묻는 창이 옛 링크를 또 연다.
-    if (delivered) pendingDeepLinks.length = 0;
+    // **주인에게 넘긴다.** 밖에서 온 명령이므로 명령 표면의 주인(cored)이 받고 형식도 거기서
+    // 읽는다 — 창에 넘기면 창 없는 곳에 영영 못 닿고, 형식이 프레임워크마다 한 벌이 된다.
+    void callBackend("deeplink_open", { url }).catch((err) => {
+      note(`[electron-spike] 딥링크를 주인에게 넘기지 못했다: ${err.code || err.message}`);
+    });
   });
 
   app.on("second-instance", () => {

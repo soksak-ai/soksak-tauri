@@ -1,4 +1,4 @@
-//! 딥링크 command URI 라우팅 — `soksak://run?cmd=<명령>&p=<JSON>` 을 명령 실행으로 푼다.
+//! 딥링크 command URI 라우팅 — `soksak[-env]://cmd/<명령>?<query>` 를 명령 실행으로 푼다.
 //!
 //! 알림 클릭·외부 진입(`open soksak://…`)이 한 명령을 실행하는 단일 경로다. 여기는 **파싱과
 //! 라우팅만** 한다 — 실행은 부르는 쪽이 자기 registry 에 위임한다(단일 실행 경로).
@@ -38,33 +38,50 @@ pub fn is_command_scheme(scheme: &str) -> bool {
             .is_some_and(|env| !env.is_empty())
 }
 
-/// soksak://run?cmd=NAME&p=JSON → (명령 이름, params 오브젝트). 스킴≠soksak·호스트≠run·cmd 없음/빈값이면
-/// None. p 는 URL-인코딩된 JSON 오브젝트(생략·비오브젝트면 빈 오브젝트). 미지 query 키는 무시.
+/// `soksak[-env]://cmd/<명령>?<query>` → (명령 이름, params 오브젝트).
+///
+/// **형식은 여기 하나다.** 한때 이 파서와 프론트 파서가 서로 다른 형식을 읽었고 둘 다 살아
+/// 있었다(Tauri 는 이쪽, Electron 은 저쪽) — 한 프레임워크에서 되는 링크가 다른 쪽에서 안 됐고,
+/// 그 어긋남은 오류가 아니라 "저 앱에서는 안 열린다"로만 났다(실측 2026-08-01).
+///
+/// 딥링크는 **밖에서 온 명령 실행**이다. 명령 표면의 주인은 이 프로세스이므로 파싱도 여기 있다 —
+/// 창이 없어도 닿아야 하고, 코어 명령·플러그인 명령이 창 유무와 무관하게 돌아야 한다.
 pub fn parse_command_url(raw: &str) -> Option<(String, Value)> {
     let u = Url::parse(raw).ok()?;
-    if !is_command_scheme(u.scheme()) || u.host_str() != Some("run") {
+    if !is_command_scheme(u.scheme()) || u.host_str() != Some("cmd") {
         return None;
     }
-    let mut cmd: Option<String> = None;
-    let mut params = Value::Object(serde_json::Map::new());
-    for (k, v) in u.query_pairs() {
-        match k.as_ref() {
-            "cmd" => cmd = Some(v.to_string()),
-            "p" => {
-                if let Ok(parsed) = serde_json::from_str::<Value>(&v) {
-                    if parsed.is_object() {
-                        params = parsed;
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-    let cmd = cmd?;
+    let cmd = percent_decode(u.path().trim_start_matches('/'));
     if cmd.is_empty() {
         return None;
     }
-    Some((cmd, params))
+    // query 는 그대로 params 다. 값 강제(숫자·불리언 해석)는 여기서 하지 않는다 — 그것은 명령의
+    // 파라미터 계약이고, 여기서 추측하면 그 계약이 두 벌이 된다.
+    let mut params = serde_json::Map::new();
+    for (k, v) in u.query_pairs() {
+        params.insert(k.to_string(), Value::String(v.to_string()));
+    }
+    Some((cmd, Value::Object(params)))
+}
+
+/// URL 경로 한 조각의 퍼센트 해독 — 프론트가 `encodeURIComponent` 로 짓는다.
+/// 새 의존을 들이지 않는다: 이 한 가지를 위해 크레이트를 늘리면 그것이 다음 사람의 짐이 된다.
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' && i + 2 < b.len() {
+            if let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
+                out.push(v);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8(out).unwrap_or_else(|_| s.to_string())
 }
 
 #[cfg(test)]

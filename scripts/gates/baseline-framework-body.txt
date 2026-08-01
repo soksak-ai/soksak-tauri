@@ -18,64 +18,21 @@
 # main.cjs 는 그 값을 표에 건네는 ctx 한 줄이다. 규칙과 답은 새 파일(native/updater.cjs)이
 # 지고, 그 파일은 처음부터 이 폴더의 몫으로 등재됐다(native/updater.cjs 33, index.cjs +1 = 조립 한 줄).
 frameworks/electron/activity.cjs 32
-# 재입법 2026-08-01 217 → 236. 이 연결이 붙자마자 **무엇을 서빙하는지** 묻고 그 답을 든다
-#   (declare). 누가 답하는가를 이름 접두사로 추측하면 창이 아니라 저장소가 답하는 이름을
-#   프레임워크가 가로챈다 — 실측 2026-08-01: `window_manifest_upsert` 가 그 길로 막혀 Electron
-#   에서만 워크스페이스 저장이 통째로 실패했고 Tauri 는 멀쩡했다. 명령 호출 경로에서 물으면
-#   그 질문이 요구 원장에 섞이고 부른 적 없는 요청이 첫 줄로 나가므로, 연결의 사실로 둔다.
 frameworks/electron/backend.cjs 236
-# 재입법 2026-08-01 126 → 138. 끊긴 제어면이 **다시 붙는다**. cored 는 죽는다(판올림·강제종료·
-#   크래시). 한 번 끊겼다고 그대로 두면 이 앱은 남은 수명 내내 밖에서 부를 수 없는 창이 되고,
-#   두 앱을 함께 켜 두면 한쪽만 조용히 그렇게 된다 — 실측 2026-08-01: cored 를 갈아 끼우자
-#   Electron 의 제어면이 영영 안 돌아왔고 Tauri 만 멀쩡했다. 폴링이 아니다: 끊김 사건이 재접속을
-#   부르고, 바닥(500ms)은 cored 가 아직 안 섰을 때 시도가 몰리는 것을 막는다.
-# 재입법 2026-08-01 138 → 144. 붙을 때마다 **다시 선언한다**. 신고를 한 번만 보내면 주인이
-#   재시작하는 순간 그 목록이 비고, 그때부터 주인이 답하는 명령이 다시 전부에게 간다(실측
-#   2026-08-01: cored 를 갈아 끼우자 known 이 0 이 됐다). 창 사실과 같은 규칙이다.
 frameworks/electron/control.cjs 144
-# 재입법 2026-08-01 244 → 248. cored 를 **홈 이름**으로 띄운다(homeIdentity). 홈에 하나뿐인
-#   공용 프로세스를 띄운 프레임워크의 이름으로 부르면 그 이름이 공용 자원에 박힌다.
-# 재입법 2026-08-01 248 → 252. URI 스킴을 정체성에서 판다(uriScheme — 홈 접미사와 같은 규칙).
-#   한 스킴을 모든 정체성이 주장하면 어느 앱이 링크를 받을지 제비뽑기가 된다.
 frameworks/electron/cored.cjs 252
-# 재입법 2026-08-01 398 → 410. 이 이름을 **백엔드가 서빙하는가**를 선언에 묻는 자리
-#   (backendServes). 이름 접두사로 가르면 틀린다: `window_` 로 시작하지만 창이 아니라 저장소가
-#   답하는 이름이 있고(window_manifest_upsert), 그것을 가로채면 Electron 에서만 워크스페이스
-#   저장이 통째로 실패한다(실측 2026-08-01). 손으로 판 예외 목록은 답이 아니다 — 새 이름마다
-#   한 곳만 고쳐지고 그 어긋남은 "저쪽 프레임워크에서만 안 된다"로만 나타난다. 선언을 묻는
-#   일은 연결의 사실이라 backend.cjs 가 지고, 여기 남은 것은 그 답을 보는 한 줄이다.
-# 재입법 2026-08-01 399 → 404. 창이 신고한 목록을 쥐고 **붙을 때마다 다시 선언한다**. 한 번만
-#   보내면 주인이 재시작하는 순간 그 목록이 비고, 그때부터 주인이 답하는 명령이 다시 전부에게
-#   간다(실측: cored 를 갈아 끼우자 known 이 0 이 됐다). 창 사실과 같은 규칙이다.
-# 재입법 2026-08-01 404 → 418. 딥링크 — OS 가 `soksak://…` 을 넘기면 받아서 창에 나른다.
-#   규칙은 코어의 것이고(soksak-core deeplink.rs) 여기는 부수효과와 창을 아는 자리라 프레임워크의
-#   몫이다(그 파일이 그렇게 적어 두었다). 창이 나기 전에 온 링크는 들고 있다가 창이 물으면 준다 —
-#   버리면 그 링크는 아무 데도 안 닿고 사용자는 "안 열린다"만 본다.
-# 재입법 2026-08-01 418 → 419. open-url 에 자국 한 줄. 없으면 "링크가 안 열린다"에서 어느 홉이
-#   끊겼는지 못 가른다 — 실제로 그 자국이 OS→앱 홉이 살아 있음을 처음 보여 줬다.
-frameworks/electron/main.cjs 419
+frameworks/electron/main.cjs 411
 frameworks/electron/native/capture.cjs 70
 frameworks/electron/native/clipboard.cjs 24
 frameworks/electron/native/engine.cjs 26
 frameworks/electron/native/error.cjs 9
 frameworks/electron/native/index.cjs 86
-# 재입법 2026-08-01 18 → 22. `notify_supported` — 지원 여부는 물어서 아는 사실이다. 이 프레임워크
-#   에는 권한 절차가 없어 어댑터가 notification.isPermissionGranted 를 미구현으로 두고 있었는데,
-#   그건 "권한 없음"과 "그런 절차가 없음"을 같게 만든다. 띄울 수 있는가 하나만 답한다.
 frameworks/electron/native/notify.cjs 22
 frameworks/electron/native/project.cjs 58
 frameworks/electron/native/titlebar.cjs 7
 frameworks/electron/native/updater.cjs 33
 frameworks/electron/native/webview.cjs 167
-# 재입법 2026-08-01 149 → 157. `window_reload` — 파괴를 관측하는 쪽이 자국을 남긴다.
-#   렌더러가 스스로 location.reload() 를 부르면 자기 죽음을 기록할 수 없다(창이 죽는 순간 발행
-#   통로가 끊긴다). 실측 2026-08-01: 다른 명령은 전부 원장에 남는데 그 명령만 아무 자국이 없었다.
-#   창을 다시 적재하는 일은 창을 가진 쪽만 할 수 있으므로 프레임워크의 몫이다.
-# 재입법 2026-08-01 157 → 161. 딥링크 — OS 가 `soksak://…` 을 넘기면 받아서 창에 나른다.
-#   규칙은 코어의 것이고(soksak-core deeplink.rs) 여기는 부수효과와 창을 아는 자리라 프레임워크의
-#   몫이다(그 파일이 그렇게 적어 두었다). 창이 나기 전에 온 링크는 들고 있다가 창이 물으면 준다 —
-#   버리면 그 링크는 아무 데도 안 닿고 사용자는 "안 열린다"만 본다.
-frameworks/electron/native/window.cjs 161
+frameworks/electron/native/window.cjs 157
 frameworks/electron/preload.cjs 50
 frameworks/electron/windowEvents.cjs 13
 frameworks/tauri/src/activity.rs 434
@@ -83,11 +40,6 @@ frameworks/tauri/src/activity_sink.rs 9
 frameworks/tauri/src/ai_session.rs 45
 frameworks/tauri/src/clipboard.rs 249
 frameworks/tauri/src/command_dispatch.rs 98
-# 재입법 2026-08-01 521 → 525. 그 신고를 주인에게 나르는 통로. 판정도 목록도 창이 쥐고 이
-#   자리는 나르기만 한다(Electron 은 선언을 물어 이미 백엔드로 보낸다).
-# 재입법 2026-08-01 525 → 534. 창이 신고한 목록을 쥐고 **붙을 때마다 다시 선언한다**. 한 번만
-#   보내면 주인이 재시작하는 순간 그 목록이 비고, 그때부터 주인이 답하는 명령이 다시 전부에게
-#   간다(실측: cored 를 갈아 끼우자 known 이 0 이 됐다). 창 사실과 같은 규칙이다.
 frameworks/tauri/src/cored_host.rs 534
 frameworks/tauri/src/cored_ledger.rs 248
 frameworks/tauri/src/cored_shape_gate.rs 229
@@ -103,15 +55,8 @@ frameworks/tauri/src/http.rs 39
 frameworks/tauri/src/i18n.rs 155
 frameworks/tauri/src/id_registry.rs 144
 frameworks/tauri/src/identity.rs 59
-# 재입법 2026-08-01 1216 → 1227. 소켓 자리를 **홈의 것**으로 옮겼다. 예전에는 identifier(프레임워크
-#   축 포함)로 자기 소켓을 지어, 껍데기 이름이 주소가 됐다 — 밖에서 겨눌 때마다 어느 껍데기를
-#   겨눌지 골라야 했고, 고르는 순간 나머지는 검증에서 빠진다(그 편향으로 Electron 에서만 죽는
-#   결함 둘이 살아 있었다). 홈에 하나뿐인 자리라 먼저 선 쪽이 서고, 못 서면 자기 소켓 없이
-#   산다 — 밖에서 오는 명령은 cored 가 창 호스트로 배달한다.
 frameworks/tauri/src/ipc.rs 1227
-# 재입법 2026-08-01 724 → 725. window_reload 를 invoke 표에 거는 한 줄.
-# 재입법 2026-08-01 725 → 727. control_owner_answered 를 invoke 표에 거는 두 줄(cfg 포함).
-frameworks/tauri/src/lib.rs 727
+frameworks/tauri/src/lib.rs 730
 frameworks/tauri/src/login_shell.rs 28
 frameworks/tauri/src/main.rs 4
 frameworks/tauri/src/mediaproxy.rs 18
@@ -139,15 +84,6 @@ frameworks/tauri/src/updater.rs 42
 frameworks/tauri/src/watcher.rs 15
 frameworks/tauri/src/webview.rs 1760
 frameworks/tauri/src/webview_health.rs 572
-# 재입법 2026-08-01 373 → 392. `window_reload` — 파괴를 관측하는 쪽이 자국을 남긴다.
-#   렌더러가 스스로 location.reload() 를 부르면 자기 죽음을 기록할 수 없다: 활동 발행은
-#   fire-and-forget 이고 창이 죽는 순간 끊긴다. 실측 2026-08-01 — 다른 명령은 전부 원장에
-#   남는데 `window.reload` 만 `command.executed` 조차 안 남았고, 리로드가 창을 응답 불능으로
-#   만들어도 사유가 어디에도 없었다. 여기서 부르면 죽는 것은 렌더러고 부탁받은 쪽은 산다:
-#   **먼저 적고 그다음에 죽인다.** 창을 다시 적재하는 일은 창을 가진 쪽만 할 수 있다.
-#   `get_webview_window` 은 단일-webview 창 전용이라 브라우저 child 를 연 창이 거기서 빠진다
-#   (ipc.rs 가 이미 적어 둔 함정을 그대로 밟았다). 창 핸들로 잡고 그 창의 메인 webview 를
-#   라벨로 고른다 — `b-` 형제는 남의 페이지라 건드리지 않는다.
 frameworks/tauri/src/window.rs 387
 frameworks/tauri/src/window_oracle.rs 102
 frameworks/tauri/src/ws.rs 47
