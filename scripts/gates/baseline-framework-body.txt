@@ -48,7 +48,11 @@ frameworks/electron/native/project.cjs 58
 frameworks/electron/native/titlebar.cjs 7
 frameworks/electron/native/updater.cjs 33
 frameworks/electron/native/webview.cjs 167
-frameworks/electron/native/window.cjs 149
+# 재입법 2026-08-01 149 → 157. `window_reload` — 파괴를 관측하는 쪽이 자국을 남긴다.
+#   렌더러가 스스로 location.reload() 를 부르면 자기 죽음을 기록할 수 없다(창이 죽는 순간 발행
+#   통로가 끊긴다). 실측 2026-08-01: 다른 명령은 전부 원장에 남는데 그 명령만 아무 자국이 없었다.
+#   창을 다시 적재하는 일은 창을 가진 쪽만 할 수 있으므로 프레임워크의 몫이다.
+frameworks/electron/native/window.cjs 157
 frameworks/electron/preload.cjs 50
 frameworks/electron/windowEvents.cjs 13
 frameworks/tauri/src/activity.rs 434
@@ -72,7 +76,8 @@ frameworks/tauri/src/i18n.rs 155
 frameworks/tauri/src/id_registry.rs 144
 frameworks/tauri/src/identity.rs 59
 frameworks/tauri/src/ipc.rs 1216
-frameworks/tauri/src/lib.rs 724
+# 재입법 2026-08-01 724 → 725. window_reload 를 invoke 표에 거는 한 줄.
+frameworks/tauri/src/lib.rs 725
 frameworks/tauri/src/login_shell.rs 28
 frameworks/tauri/src/main.rs 4
 frameworks/tauri/src/mediaproxy.rs 18
@@ -100,6 +105,15 @@ frameworks/tauri/src/updater.rs 42
 frameworks/tauri/src/watcher.rs 15
 frameworks/tauri/src/webview.rs 1760
 frameworks/tauri/src/webview_health.rs 572
-frameworks/tauri/src/window.rs 373
+# 재입법 2026-08-01 373 → 392. `window_reload` — 파괴를 관측하는 쪽이 자국을 남긴다.
+#   렌더러가 스스로 location.reload() 를 부르면 자기 죽음을 기록할 수 없다: 활동 발행은
+#   fire-and-forget 이고 창이 죽는 순간 끊긴다. 실측 2026-08-01 — 다른 명령은 전부 원장에
+#   남는데 `window.reload` 만 `command.executed` 조차 안 남았고, 리로드가 창을 응답 불능으로
+#   만들어도 사유가 어디에도 없었다. 여기서 부르면 죽는 것은 렌더러고 부탁받은 쪽은 산다:
+#   **먼저 적고 그다음에 죽인다.** 창을 다시 적재하는 일은 창을 가진 쪽만 할 수 있다.
+#   `get_webview_window` 은 단일-webview 창 전용이라 브라우저 child 를 연 창이 거기서 빠진다
+#   (ipc.rs 가 이미 적어 둔 함정을 그대로 밟았다). 창 핸들로 잡고 그 창의 메인 webview 를
+#   라벨로 고른다 — `b-` 형제는 남의 페이지라 건드리지 않는다.
+frameworks/tauri/src/window.rs 387
 frameworks/tauri/src/window_oracle.rs 102
 frameworks/tauri/src/ws.rs 47

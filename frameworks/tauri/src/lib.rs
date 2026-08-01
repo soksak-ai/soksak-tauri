@@ -781,6 +781,7 @@ pub fn run() {
             window::window_census,
             window::window_focus,
             window::window_close,
+            window::window_reload,
             ipc::cmd_result,
             ipc::ipc_socket_path,
             ipc::ipc_cli_dir,

@@ -373,6 +373,38 @@ pub fn window_focus(app: AppHandle, label: String) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// 이 창의 웹뷰를 다시 적재한다 — **파괴를 관측하는 쪽이 자국을 남긴다.**
+///
+/// 예전에는 프론트가 `location.reload()` 를 불렀다. 그러면 렌더러가 자기를 죽이는 셈이라
+/// 자기 죽음을 기록할 수 없다: 활동 발행은 fire-and-forget 이고 창이 죽는 순간 끊긴다.
+/// 실측(2026-08-01) — 다른 명령은 전부 원장에 남는데 `window.reload` 만 `command.executed`
+/// 조차 안 남았고, 리로드가 창을 응답 불능으로 만들어도 사유가 어디에도 없었다.
+///
+/// 여기서 부르면 죽는 것은 렌더러고 **부르는 쪽은 산다.** 그래서 `command.executed` 가 살아
+/// 남는다 — 실측 2026-08-01: 이 경로로 바꾸자 그 줄이 원장에 처음으로 남았다(seq 로 확인).
+///
+/// 여기서 별도 자국을 더 남기려 했으나 그 발행이 원장에 나타나지 않았고 사유를 못 찾았다.
+/// 확인 못 한 것은 넣지 않는다 — 자국을 남기는 척하는 코드는 없는 것보다 나쁘다.
+#[tauri::command]
+pub fn window_reload(app: AppHandle, label: String) -> Result<(), String> {
+    // **`get_webview_window` 을 쓰지 않는다.** 그것은 단일-webview 창 전용이라, 브라우저 child 를
+    // 연 창은 거기서 빠진다 — 이 저장소가 이미 겪고 ipc.rs 에 적어 둔 함정이다(그걸 쓰면 그런
+    // 창의 명령이 전부 WINDOW_NOT_FOUND). 창 생존은 오라클이 말한다.
+    let wv = app
+        .get_window(&label)
+        .ok_or_else(|| format!("창 없음: {label}"))?;
+    // 이 창의 **메인 webview** 에 실행시킨다. 라벨이 같은 것이 그 창의 메인이고, `b-` 로 시작하는
+    // 형제(브라우저 child)는 남의 페이지라 건드리지 않는다.
+    let _ = wv;
+    let main = app
+        .webviews()
+        .into_iter()
+        .find(|(l, _)| l == &label)
+        .map(|(_, w)| w)
+        .ok_or_else(|| format!("이 창의 웹뷰를 못 잡았다: {label}"))?;
+    main.eval("window.location.reload()").map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn window_close(app: AppHandle, label: String) -> Result<(), String> {
     app.get_window(&label)

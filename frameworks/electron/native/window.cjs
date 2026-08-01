@@ -128,6 +128,18 @@ module.exports = {
     },
   },
 
+  // **자국은 파괴를 관측하는 쪽이 남긴다.** 렌더러가 스스로 `location.reload()` 를 부르면
+  // 자기 죽음을 기록할 수 없다 — 창이 죽는 순간 발행 통로가 끊긴다. 여기서 부르면 죽는 것은
+  // 렌더러고 부탁받은 이 프로세스는 산다(실측 2026-08-01: 그 명령만 원장에 아무 자국이 없었다).
+  window_reload: {
+    concept: "창 다시 적재",
+    source: "webContents.reload",
+    answer: (ctx, args) => {
+      need(ctx, args).webContents.reload();
+      return null;
+    },
+  },
+
   window_close: {
     concept: "창 닫기",
     source: "BrowserWindow.close",

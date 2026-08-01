@@ -152,8 +152,31 @@ export function registerWindowCatalog(): void {
       } catch {
         /* 표면 없음/조회 실패 — 리로드를 막지 않는다 */
       }
-      // 소켓 응답을 먼저 흘려보낸 뒤 다음 틱에 리로드(응답 유실 방지).
-      setTimeout(() => window.location.reload(), 30);
+      // **자국은 파괴를 관측하는 쪽이 남긴다.** 렌더러가 스스로 `location.reload()` 를 부르면
+      // 자기 죽음을 기록할 수 없다 — 활동 발행은 fire-and-forget 이라 창이 죽는 순간 끊긴다.
+      // 실측(2026-08-01): 다른 명령은 전부 원장에 남는데 이 명령만 `command.executed` 조차
+      // 안 남았고, 리로드가 창을 응답 불능으로 만들어도 사유가 어디에도 없었다.
+      //
+      // 프레임워크에 부탁하면 죽는 것은 렌더러고 부탁받은 쪽은 산다: 먼저 적고 그다음에 죽인다.
+      // 응답은 여전히 먼저 흘려보낸다 — 통로가 파괴로 함께 죽는다.
+      // **삼키지 않는다.** 이 호출이 실패하면 창은 그대로 살아 있고 부른 쪽은 `reloaded:true`
+      // 를 이미 받았다 — 그 어긋남이 조용하면 "리로드가 가끔 안 먹는다"로만 나타난다.
+      // 실측 2026-08-01: `void` 로 삼킨 탓에, 잘못된 창 조회로 이 호출이 매번 실패하는 동안에도
+      // 화면은 리로드된 것처럼 보였다(옛 경로가 남아 있었다).
+      setTimeout(() => {
+        void invoke("window_reload", { label: currentWindowLabel() }).catch((e) =>
+          invoke("activity_publish", {
+            kind: "webview.lifecycle",
+            source: "webview",
+            payload: {
+              event: "reload-failed",
+              labels: [currentWindowLabel()],
+              origin: "command",
+              message: `· webview reload failed — ${String(e).slice(0, 120)}`,
+            },
+          }).catch(() => {}),
+        );
+      }, 30);
       return { reloaded: true };
     },
   });
