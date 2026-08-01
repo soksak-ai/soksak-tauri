@@ -107,7 +107,12 @@
 #   이름을 달고 떠서 두 축 비교가 한쪽만 잡았다) — 제거 조건까지 함께.
 crates/soksak-cli/src/lib.rs 1710
 crates/soksak-store/src/store.rs 2068
-frameworks/tauri/src/ipc.rs 1544
+# 재입법 2026-08-01 1544 → 1566. 소켓 자리를 **홈의 것**으로 옮겼다. 예전에는 identifier(프레임워크
+#   축 포함)로 자기 소켓을 지어, 껍데기 이름이 주소가 됐다 — 밖에서 겨눌 때마다 어느 껍데기를
+#   겨눌지 골라야 했고, 고르는 순간 나머지는 검증에서 빠진다(그 편향으로 Electron 에서만 죽는
+#   결함 둘이 살아 있었다). 홈에 하나뿐인 자리라 먼저 선 쪽이 서고, 못 서면 자기 소켓 없이
+#   산다 — 밖에서 오는 명령은 cored 가 창 호스트로 배달한다.
+frameworks/tauri/src/ipc.rs 1566
 frameworks/tauri/src/webview.rs 2259
 packages/plugin-spec/src/pluginRuntime.ts 2081
 packages/plugin-spec/src/spec.ts 1785

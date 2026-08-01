@@ -399,11 +399,33 @@ pub fn start(app: AppHandle) -> Result<String, String> {
     let identifier = app.config().identifier.clone();
     // 자리 규칙은 코어가 소유한다 — 앱·sok CLI·cored 가 각자 문자열을 적으면 한쪽만
     // 고쳐질 수 있고, 그 어긋남은 "연결 실패" 한 줄로만 나타난다.
-    let path = soksak_core::identity::control_socket(&dir, &identifier)
-        .to_string_lossy()
-        .to_string();
+    // **홈의 자리에 선다 — 껍데기의 자리가 아니라.**
+    //
+    // 예전에는 identifier(프레임워크 축을 포함한다)로 자기 소켓을 지었다. 프레임워크는
+    // 껍데기인데 그 껍데기 이름이 주소가 된 것이고, 그래서 밖에서 겨눌 때마다 어느 껍데기를
+    // 겨눌지 골라야 했다 — 고르는 순간 나머지는 검증에서 빠진다(실측 2026-08-01: 그 편향으로
+    // Electron 에서만 죽는 결함 둘이 살아 있었다).
+    //
+    // 홈에 하나뿐인 자리이므로 **먼저 선 쪽이 서고, 이미 서 있으면 그 자리는 그 쪽의 것이다.**
+    // 그때 이 프로세스는 자기 소켓 없이 산다: 밖에서 오는 명령은 cored 가 창 호스트로 배달하고
+    // (cored_host), 그 길은 어느 프레임워크가 떠 있든 같다.
+    let path = soksak_core::identity::control_socket(
+        &dir,
+        &soksak_core::identity::home_identity_of(&identifier),
+    )
+    .to_string_lossy()
+    .to_string();
 
-    let listener = bind_transport(&path)?;
+    // 이미 선 쪽이 있으면 이 프로세스는 자기 소켓 없이 산다 — 실패가 아니다.
+    let listener = match bind_transport(&path) {
+        Ok(l) => l,
+        Err(why) => {
+            eprintln!(
+                "[ipc] 홈의 소켓은 이미 다른 프로세스가 든다 — 이 프로세스는 cored 를 통해 서빙된다: {why}"
+            );
+            return Ok(path);
+        }
+    };
     let _ = SOCKET_PATH.set(path.clone());
     // system.hello 의 startedAt — 서버 기동 시각을 1회 기록.
     let _ = STARTED_AT_MS.set(
