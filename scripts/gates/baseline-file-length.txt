@@ -122,5 +122,8 @@ packages/plugin-spec/src/spec.ts 1785
 #   여럿일 때(오케스트레이터는 앱마다 하나다) 배달이 그 목록을 보고 한 곳에만 보낸다 — 안 그러면
 #   같은 쓰기가 두 프로세스에서 각각 돈다(실측 2026-08-01: data.kv.set).
 src/commands/catalog.ts 2814
-src/plugins/api.ts 1927
+# 재입법 2026-08-01 1927 → 1950. 클립보드 감시 거절을 받는다. 못 서는 프레임워크의 거절은
+#   옳지만 부르는 쪽이 void 로 던져 둬서 부팅마다 처리 안 된 reject 가 터졌다 — 그 소음이
+#   진짜 오류를 덮는다. 삼키지 않고 사유를 원장에 남긴다(plugin.capability).
+src/plugins/api.ts 1950
 src/state/sessions.ts 2014

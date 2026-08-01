@@ -116,12 +116,16 @@ export const domHost: ContentViewHost = {
     if (find(label, doc)) return;
     const el = doc.createElement("webview");
     el.setAttribute("data-content-view", label);
-    if (typeof opts.url === "string") el.setAttribute("src", opts.url);
     // 파킹으로 숨긴다 — display:none 은 상자를 레이아웃에서 빼고, 되살릴 때 게스트가 0×0
     // 뷰포트로 붙는다(URL 은 맞는데 화면만 백지). 규칙은 layerPark 가 단일 진실이다.
     el.style.cssText = "position:absolute";
     applyParked(el, false);
     root(doc).appendChild(el);
+    // **주소는 붙인 뒤에 준다.** 안 붙은 태그에 `src` 를 주면 그 프레임워크의 태그 구현이
+    // 내부적으로 적재를 시작하다 "DOM 에 붙고 dom-ready 가 난 뒤에야 부를 수 있다"로 던진다 —
+    // 그 예외는 **Uncaught 라 부팅 경로를 거기서 끊는다**(실측 2026-08-01: Electron 부팅마다).
+    // 다른 프레임워크에서는 조용해서 한쪽에서만 죽는다.
+    if (typeof opts.url === "string") el.setAttribute("src", opts.url);
     // 사건을 앱이 아는 이름으로 잇는다. 이것이 없으면 app.webview.on(label, "nav") 구독자가
     // 영영 안 불리고, 그 침묵은 오류로 보이지 않는다.
     bridges.set(label, bridgeContentViewEvents(el, label));
