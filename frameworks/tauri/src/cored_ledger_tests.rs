@@ -50,7 +50,9 @@ use super::*;
 /// (ALLOWLIST 는 자리 이름으로 등재하는 장치다). 데몬 restart·upgrade 는 "파괴적이라 어느
 /// 프로세스가 할지는 별개 결정"으로 남아 있었는데, 데몬을 지는 쪽이 정해진 뒤로 그 결정은
 /// 이미 내려져 있었다.
-const STATE_BOUND_UNANSWERED: usize = 10;
+// 2026-08-01: 10 → 7. 클립보드 셋(read·write·watch_start/stop 중 미답이던 것)이 코어로 갔다 —
+// 능력의 집을 가르는 축은 "창을 요구하는가"이고(A26), 클립보드는 창 없이 된다.
+const STATE_BOUND_UNANSWERED: usize = 7;
 
 /// state-bound 갈래에서 아직 아무 답도 없는 이름들.
 fn state_bound_unanswered() -> Vec<String> {

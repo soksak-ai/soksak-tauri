@@ -8,7 +8,6 @@ crates/soksak-core/src/proc.rs 2
 crates/soksak-net/src/mediaproxy.rs 1
 crates/soksak-store/src/store.rs 3
 frameworks/tauri/src/activity.rs 9
-frameworks/tauri/src/clipboard.rs 1
 frameworks/tauri/src/data/mod.rs 1
 frameworks/tauri/src/id_registry.rs 4
 frameworks/tauri/src/project_registry.rs 5

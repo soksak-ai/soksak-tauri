@@ -64,10 +64,24 @@ fn the_dependency_tree_carries_no_framework_crate() {
     // 실패한다(지어낸 포인터는 유효한 주소로 읽혀 남의 메모리에 얹는다).
     //
     // 쓸 곳 없이 미리 열지 않았다: 이 이름이 풀린 커밋이 곧 그 셋을 서빙하는 커밋이다.
-    for banned in [
-        "tauri", "wry", "tao", "objc2", "block2",
-        "clipboard-rs", "x11rb", "windows-sys", "interprocess", "portable-pty",
-    ] {
+    // **금지의 근거는 "창을 요구하는가"이지 "네이티브인가"가 아니다.**
+    //
+    // 한때 `clipboard-rs` 가 이 목록에 `tauri`·`wry`·`tao` 와 나란히 있었다. 그것들은 GUI
+    // 프레임워크고 클립보드는 플랫폼 능력 라이브러리다 — 범주가 다르다. 그 한 줄 때문에 클립보드
+    // 능력이 **프레임워크마다 하나씩** 생겼고, 한쪽만 감시가 됐다(실측 2026-08-01: Tauri 는 되고
+    // Electron 은 "이 프레임워크는 그 사건을 주지 않는다"로 거절 — 그런데 형제도 macOS 에서는
+    // changeCount 폴링이었다. 원칙이 아니라 사정이었다).
+    //
+    // 클립보드는 macOS·Windows·Wayland 에서 **창 없이** 된다. X11 만 선택 전송을 받을 창을
+    // 요구하고, 그것은 이 프로세스가 그 플랫폼에서 이름을 달고 거절할 일이지 능력 전체를 밖에
+    // 묶어 둘 이유가 아니다. 넓게 그은 금지가 능력을 두 벌로 만들었다.
+    // 남은 이름은 **창을 만들거나 창을 요구하는 것들**이다. `objc2`·`block2`·`x11rb`·
+    // `windows-sys` 는 그 자체로는 창을 안 만드는 플랫폼 바인딩이라 이름으로 막지 않는다 —
+    // 막으면 창 없이 되는 능력(클립보드)까지 밖에 묶여 프레임워크마다 한 벌씩 생긴다.
+    //
+    // 창을 요구하는 자리는 그 자리가 이름을 달고 거절한다(X11 클립보드의 선택 전송처럼).
+    // 이름으로 넓게 긋는 것이 능력을 두 벌로 만든 원인이었다(실측 2026-08-01).
+    for banned in ["tauri", "wry", "tao", "interprocess", "portable-pty"] {
         assert!(
             !names.iter().any(|n| *n == banned || n.starts_with(&format!("{banned}-"))),
             "cored 의존성에 프레임워크/런타임 크레이트가 있다: {banned}"

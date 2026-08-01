@@ -5,6 +5,7 @@
 
 use crate::registry::*;
 use crate::registry_session::{run_ai_session_active, run_ai_session_lineage, run_ai_session_untrack};
+use crate::registry_clipboard::*;
 use crate::registry_store::*;
 use crate::registry_encrypt::{
     run_data_encrypt_change_recovery, run_data_encrypt_convert, run_data_encrypt_enable,
@@ -810,6 +811,32 @@ pub const COMMANDS: &[Command] = &[
         ],
         returns: "null",
         run: run_control_host_attach,
+    },
+    // 클립보드 — **플랫폼 자원**이라 이 프로세스가 진다(A26). 프레임워크마다 하나씩 두면
+    // 한쪽만 되고, 그 차이는 "저 앱에서는 복사가 안 잡힌다"로만 나타난다.
+    Command {
+        name: "clipboard_read",
+        args: &[],
+        returns: "string (비텍스트면 빈 문자열)",
+        run: run_clipboard_read,
+    },
+    Command {
+        name: "clipboard_write",
+        args: &[Arg { name: "text", ty: "string", required: REQ }],
+        returns: "null",
+        run: run_clipboard_write,
+    },
+    Command {
+        name: "clipboard_watch_start",
+        args: &[],
+        returns: "null (변경은 clipboard-change 방송으로 간다)",
+        run: run_clipboard_watch_start,
+    },
+    Command {
+        name: "clipboard_watch_stop",
+        args: &[],
+        returns: "null",
+        run: run_clipboard_watch_stop,
     },
     // 딥링크 — 밖에서 온 명령은 명령 표면의 주인이 받는다. 프레임워크는 OS 가 준 URL 을
     // 그대로 넘기고, 형식은 코어가 읽는다(창에 먼저 넘기면 창 없는 곳에 영영 못 닿는다).

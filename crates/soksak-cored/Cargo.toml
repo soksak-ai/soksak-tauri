@@ -9,6 +9,11 @@ description = "Helper process that serves framework-free commands over a socket:
 # 여기 들어오는 순간 이 크레이트는 두 번째 프레임워크가 된다. 로직은 전부 soksak-core 이
 # 소유하고 여기는 배선만 한다.
 [dependencies]
+# 클립보드 — **플랫폼 자원이고 창을 요구하지 않는다**(X11 만 예외). 프레임워크마다 두면 한쪽만
+# 되고, 그 차이는 오류가 아니라 "저 앱에서는 복사가 안 잡힌다"로만 나타난다. 변경 감시는 OS 가
+# 준다: Win=WM_CLIPBOARDUPDATE · X11=XFixes · Wayland=wl-data-control · macOS 만 changeCount
+# 폴링(이벤트 API 부재). 그 넷을 이 크레이트가 한 핸들러로 흡수한다.
+clipboard-rs = "0.2"
 base64 = "0.22"
 soksak-spec-pty = { path = "../soksak-spec-pty" }
 soksak-core = { path = "../soksak-core" }

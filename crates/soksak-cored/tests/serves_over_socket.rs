@@ -488,7 +488,7 @@ fn what_it_refuses_is_discoverable_with_the_reason() {
         "media_proxy_info",
         "app_relaunch",
         "sidecar_ensure",
-        "clipboard_read",
+        "sidecar_ensure",
         "media_proxy_info",
         "plugin_install_git",
         "plugin_update",
@@ -513,7 +513,7 @@ fn calling_an_audited_name_carries_the_reason_across_the_socket() {
     let table = helper.ask(json!({ "id": 9, "method": "cored.commands" }));
 
     // 두 벌을 본다 — 한 이름만 보면 그 항목만 배선되고 나머지는 목록에만 있는 채로 통과한다.
-    for (id, name) in [(10, "app_relaunch"), (11, "clipboard_read")] {
+    for (id, name) in [(10, "app_relaunch"), (11, "sidecar_ensure")] {
         let declared = table["data"]["unserved"]
             .as_array()
             .and_then(|u| u.iter().find(|e| e["name"] == name))

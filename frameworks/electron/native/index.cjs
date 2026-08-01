@@ -69,7 +69,6 @@ const TABLE = assemble([
   ["project.cjs", require("./project.cjs")],
   ["capture.cjs", require("./capture.cjs")],
   ["notify.cjs", require("./notify.cjs")],
-  ["clipboard.cjs", require("./clipboard.cjs")],
   ["updater.cjs", require("./updater.cjs")],
 ]);
 

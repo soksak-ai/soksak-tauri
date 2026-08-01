@@ -230,7 +230,7 @@ pub(crate) fn run_ai_session_detect(_ctx: &Ctx, params: &Value) -> Outcome {
 /// 인자를 받지 않는 명령 — 앱의 같은 명령도 받지 않는다. `{}`·`null` 둘 다 허용하고
 /// 낯선 키가 실려 와도 거부하지 않는다(프레임워크가 봉투에 무엇을 더 얹든 이 명령의 답은 같다).
 #[derive(serde::Deserialize)]
-struct NoArgs {}
+pub(crate) struct NoArgs {}
 
 pub(crate) fn run_themes_scan(ctx: &Ctx, params: &Value) -> Outcome {
     // 홈은 부팅 상태에서 온다. 앱은 `identity::ambient().themes_dir()` 로 같은 곳을 본다.

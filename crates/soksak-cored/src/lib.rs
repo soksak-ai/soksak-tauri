@@ -6,12 +6,14 @@
 //! INVALID_PARAMS 라는 한 줄로만 드러났다(2026-07-28 실측: 서빙한다고 믿은 5개가 전부
 //! 이 상태였다). 라이브러리로 세우면 그 대조가 컴파일 대상이 된다.
 
+pub mod clipboard;
 pub mod control;
 pub mod ctx;
 pub mod pty;
 pub mod streams;
 pub mod ledger;
 pub mod registry;
+pub mod registry_clipboard;
 // 명령 표 — 선언만 산다(몸은 registry.rs).
 pub mod registry_table;
 // WebSocket 명령의 몸 — 표와 갈라 둔다.

@@ -41,14 +41,6 @@ pub const UNSERVED: &[Unserved] = &[
                      그 다음 app.sidecar.open 이 dlopen 에서 처음 깨진다.",
     },
     Unserved {
-        name: "clipboard_read",
-        blocked_by: "OS 클립보드를 읽는 것이 명령의 전부인데 그 클라이언트가 전부 네이티브다 — \
-                     clipboard-rs·objc2·x11rb 가 이 프로세스의 no_framework 금지 목록에 이름으로 있고, \
-                     X11 경로는 선택 전송을 받을 창까지 필요하다(cored 에는 창이 없다). 게다가 이 명령의 \
-                     계약은 실패를 빈 문자열로 답하는 것이라(비텍스트 클립 = \"\"), 못 읽어서 낸 \"\" 가 \
-                     '텍스트가 아닌 클립'과 글자 하나 다르지 않다.",
-    },
-    Unserved {
         name: "media_proxy_info",
         blocked_by: "tokio 는 더 이상 벽이 아니다 — 이 프로세스는 이미 soksak-net 을 지고 그 위에서 \
                      ws 를 서빙한다(2026-07-30). 남은 것은 **누가 프록시를 세우는가**라는 결정 하나다: \

@@ -23,10 +23,9 @@ frameworks/electron/control.cjs 144
 frameworks/electron/cored.cjs 252
 frameworks/electron/main.cjs 411
 frameworks/electron/native/capture.cjs 70
-frameworks/electron/native/clipboard.cjs 24
 frameworks/electron/native/engine.cjs 26
 frameworks/electron/native/error.cjs 9
-frameworks/electron/native/index.cjs 86
+frameworks/electron/native/index.cjs 85
 frameworks/electron/native/notify.cjs 22
 frameworks/electron/native/project.cjs 58
 frameworks/electron/native/titlebar.cjs 7
@@ -38,7 +37,6 @@ frameworks/electron/windowEvents.cjs 13
 frameworks/tauri/src/activity.rs 434
 frameworks/tauri/src/activity_sink.rs 9
 frameworks/tauri/src/ai_session.rs 45
-frameworks/tauri/src/clipboard.rs 249
 frameworks/tauri/src/command_dispatch.rs 98
 frameworks/tauri/src/cored_host.rs 534
 frameworks/tauri/src/cored_ledger.rs 248
@@ -56,7 +54,7 @@ frameworks/tauri/src/i18n.rs 155
 frameworks/tauri/src/id_registry.rs 144
 frameworks/tauri/src/identity.rs 59
 frameworks/tauri/src/ipc.rs 1227
-frameworks/tauri/src/lib.rs 730
+frameworks/tauri/src/lib.rs 722
 frameworks/tauri/src/login_shell.rs 28
 frameworks/tauri/src/main.rs 4
 frameworks/tauri/src/mediaproxy.rs 18

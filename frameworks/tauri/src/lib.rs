@@ -1,6 +1,5 @@
 mod activity;
 mod ai_session;
-mod clipboard;
 // 이 프레임워크가 cored 의 창 호스트가 되는 자리. `pub` 인 이유는 검증이다 — 붙는 계약은
 // 소켓 위에서 재야 하고(tests/attaches_to_cored.rs), 통합 검사는 이 크레이트 **밖**에서 돈다.
 // 배달 통로는 유닉스 소켓이라 cored 자신과 같은 축으로 가른다(cored 는 unix 전용이다).
@@ -108,7 +107,6 @@ pub fn run() {
         .manage(daemon::DaemonManager::default())
         .manage(ProcessManager::default())
         .manage(FsWatcher::default())
-        .manage(clipboard::ClipboardState::default())
         .manage(CmdBridge::default())
         .manage(data::DbState::default())
         .manage(secrets::SecretsState::default())
@@ -387,10 +385,6 @@ pub fn run() {
             // 파일 워처 1회 초기화(이벤트 콜백에 앱 핸들 주입).
             let handle = app.handle().clone();
             crate::watcher::init(&app.state::<FsWatcher>(), handle);
-            // 클립보드 watcher 1회 초기화(이벤트 emit 용 앱 핸들 주입). 실제 감시는 플러그인이
-            // clipboard_watch_start 를 호출할 때 시작 — 쓰지 않으면 스레드/폴링 0.
-            app.state::<clipboard::ClipboardState>()
-                .init(app.handle().clone());
             // app-internal command socket(JSON-RPC). sok CLI 가 직접 사용하고, `sok mcp` 서브프로세스가
             // stdio MCP↔이 소켓 브리지로 사용한다. app 은 MCP 서버가 아니다 — docs/AI-CONTROL.md P6.
             if let Err(e) = ipc::start(app.handle().clone()) {
@@ -738,10 +732,6 @@ pub fn run() {
             secrets::secret_backend,
             watcher::watch_dir,
             watcher::unwatch_dir,
-            clipboard::clipboard_read,
-            clipboard::clipboard_write,
-            clipboard::clipboard_watch_start,
-            clipboard::clipboard_watch_stop,
             webview::webview_open,
             webview::webview_bounds,
             webview::webview_navigate,

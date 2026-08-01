@@ -199,6 +199,39 @@ The seat carries three rules — ① **never hand out a dead one** (pretending i
 
 ---
 
+### A26. One axis decides where a capability lives: **does it need a window?**
+
+Hesitate about that and the same capability grows one copy per shell, working on one and quietly broken on the other.
+
+- **Needs a window → the framework.** Windows, webviews, the main thread, OS event sinks. cored has no window, so these can never move.
+- **Does not → core.** Native or not. The store, command routing, formats, and **the clipboard** live here.
+
+**"Is it native?" is not the axis.** Core's forbidden-dependency list once put `clipboard-rs`, `objc2` and `x11rb` beside `tauri`, `wry` and `tao` — the former are platform bindings, the latter GUI frameworks. Different categories on one line, and that line gave the clipboard **one copy per framework**. Measured 2026-08-01: Tauri could watch and Electron refused with "this framework gives no clipboard-change event", while the sibling was polling changeCount on macOS all along — **a circumstance written as a principle**.
+
+**A ban drawn too wide duplicates the capability.** Ban by name only what creates or requires a window. Bar something that works windowless and it is pushed out of core, and outside core there are only shells — so it is copied once per shell.
+
+**Where a platform genuinely needs a window, that spot refuses by name.** The clipboard works windowless on macOS, Windows and Wayland; only X11 needs a window to receive selection transfer. Refusing that one spot by name beats exiling the whole capability.
+
+**If the symptom is "it doesn't work in that app", the home is wrong** — the capability sits in a framework without using a window.
+
+---
+
+### A26. A capability has three possible homes — core, framework, sidecar. There is no fourth.
+
+Hesitate about where something belongs and the same capability grows one copy per shell, working on one of them and quietly broken on the other. Two questions decide it: **does it need a window**, and **does it need native code**.
+
+- **Neither → core.** The store, command routing, formats. Whatever must answer with no window belongs here.
+- **A window → the framework.** Windows, webviews, the main thread, OS event sinks. cored has no window, so these can never move there.
+- **Native code but not *this app's* window → a sidecar.** Its own process carrying its own dependencies, reached identically by both frameworks through core (the terminal and browser engines live there).
+
+**Core's forbidden-dependency list is this rule's enforcement.** Pulling a name from that list (`clipboard-rs`, `objc2`, `x11rb`, `portable-pty`…) into core breaks the rule; it does not earn an exception. If it cannot go in, the capability goes to **a sidecar** — never one copy per framework.
+
+Measured 2026-08-01: the clipboard had one copy per framework and only one of them could watch. The refusal — "this framework gives no clipboard-change event" — was written as a principle but was **a circumstance**: the sibling framework polls changeCount on macOS too (there is no event API). An attempt to move it into core hit the forbidden list, and rather than lower the rule we wrote this clause. The clipboard's home is a sidecar: X11 needs a window to receive selection transfer, that window has **no reason to be this app's window**, and a sidecar can own one.
+
+**If the symptom is "it doesn't work in that app", the home is wrong.** Either the capability sits in a framework without using a window, or it belongs in core but demands native code.
+
+---
+
 ## 5. Extraction Targets
 
 For each subsystem: what STAYS in the skeleton (the generic interface), what MOVES to the plugin (the concrete implementation), and the generic capability the skeleton must expose. Gaps are cited from the grounded subsystem maps.

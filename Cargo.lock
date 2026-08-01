@@ -4585,6 +4585,7 @@ name = "soksak-cored"
 version = "0.0.1"
 dependencies = [
  "base64 0.22.1",
+ "clipboard-rs",
  "libc",
  "rusqlite",
  "serde",
@@ -4624,7 +4625,6 @@ dependencies = [
  "base64 0.22.1",
  "block2",
  "chacha20poly1305",
- "clipboard-rs",
  "flate2",
  "futures-util",
  "interprocess",
