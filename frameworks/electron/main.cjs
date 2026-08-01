@@ -202,6 +202,8 @@ function announceWindows() {
 function standUpControl(socketPath) {
   controlHost = createControlHost({
     socketPath,
+    // 신고는 이 다리를 지나간다 — 지나갈 때 쥐어 두고, 다시 붙을 때 다시 보낸다.
+    ownerAnswered: () => ownerAnsweredNames,
     facts: windowFacts,
     deliver: (label, payload) => deliverEvent(windowFor(label), CMD_REQUEST, payload),
     // 방송은 창을 가리지 않는다 — 활동 부채질과 같은 집합(창 레지스트리 전부).
@@ -400,7 +402,13 @@ function pipeStreams(client, args, sender) {
   }
 }
 
+/** 창이 신고한 "답이 주인의 것인 이름". 다시 붙을 때 다시 선언하려고 쥔다. */
+let ownerAnsweredNames = [];
+
 ipcMain.handle("framework:invoke", async (e, { cmd, args }) => {
+  if (cmd === "control_owner_answered" && Array.isArray(args?.names)) {
+    ownerAnsweredNames = args.names.map(String);
+  }
   // 프레임워크의 것이 먼저다 — 창·웹뷰·네이티브 표면은 소켓 너머로 물어볼 수 없다(거기엔 창이 없다).
   // 다만 **백엔드가 서빙한다고 선언한 이름은 백엔드의 것**이다(위 backendServes).
   // 백엔드가 **스스로 선언한** 이름은 백엔드의 것이다(backend.cjs `declare`). 이름 접두사로

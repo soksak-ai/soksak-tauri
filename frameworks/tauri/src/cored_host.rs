@@ -285,6 +285,15 @@ impl CoredHost {
             closed: Arc::new(AtomicBool::new(false)),
         };
         host.send(&attach_envelope(&facts.facts()))?;
+        // 붙은 김에 다시 선언한다 — 주인이 새로 섰으면 그쪽 목록은 비어 있다.
+        let known = OWNER_ANSWERED.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        if !known.is_empty() {
+            host.send(&request_envelope(
+                "owner-answered",
+                "control_owner_answered",
+                &json!({ "names": known }),
+            ))?;
+        }
         let socket_name = socket.display().to_string();
         let closed = Arc::clone(&host.closed);
         std::thread::spawn(move || pump(read_half, writer, exec, socket_name, waiters, closed));
@@ -745,6 +754,13 @@ impl DeliveryExec for AppExec {
 // 그 규칙에 이 프레임워크의 호스트 타입을 끼우는 배선뿐이다.
 static HOST: HostSlot<CoredHost> = HostSlot::with_floor(REBUILD_FLOOR);
 
+/// 창이 신고한 "답이 주인의 것인 이름". **붙을 때마다 다시 보낸다.**
+///
+/// 신고를 한 번만 보내면 주인이 재시작하는 순간 그 목록이 비고, 그때부터 주인이 답하는 명령이
+/// 다시 전부에게 간다(실측 2026-08-01: cored 를 갈아 끼우자 `known` 이 0 이 됐다). 다시 붙으면
+/// 다시 선언한다 — 창 사실(`control_windows`)과 같은 규칙이다.
+static OWNER_ANSWERED: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
 /// 재건 시도 사이의 최소 간격. 저장은 사용자 변경마다 오므로, 주인이 안 서는 동안 그 수만큼
 /// 세우려 들면 스폰이 몰린다. 폴링이 아니다 — 시도는 **부를 일이 있을 때만** 일어난다.
 const REBUILD_FLOOR: Duration = Duration::from_secs(1);
@@ -793,6 +809,8 @@ pub fn ask_owner(method: &str, params: &Value) -> Result<Value, String> {
 /// 그대로 cored 에 넘긴다 — 판정도 목록도 창이 쥐고, 이 자리는 나르기만 한다.
 #[tauri::command]
 pub fn control_owner_answered(names: Vec<String>) -> Result<Value, String> {
+    // 쥐고 나서 넘긴다 — 다음에 다시 붙을 때 이 목록이 없으면 그 주인은 아무것도 모른다.
+    *OWNER_ANSWERED.lock().unwrap_or_else(|e| e.into_inner()) = names.clone();
     ask_owner("control_owner_answered", &json!({ "names": names }))
 }
 

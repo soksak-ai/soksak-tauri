@@ -37,7 +37,8 @@ const ATTACH_ID = "attach";
  * deliver(label, payload) = 그 창에 사건 하나. 닿았는지 돌려준다.
  * broadcast(event, payload) = 살아 있는 창 **전부**에 같은 사건. 전부에 닿았는지 돌려준다.
  */
-function createControlHost({ socketPath, facts, deliver, broadcast = () => true, onLog = () => {} }) {
+function createControlHost({
+  ownerAnswered = () => [], socketPath, facts, deliver, broadcast = () => true, onLog = () => {} }) {
   let sock = null;
   let buf = "";
   let closed = false;
@@ -128,7 +129,14 @@ function createControlHost({ socketPath, facts, deliver, broadcast = () => true,
   /** 지금의 창 사실로 등록한다 — 붙을 때마다 새로 읽는다(낡은 사본으로 등록하지 않는다). */
   function attach() {
     const f = facts();
-    return send({ id: ATTACH_ID, method: ATTACH, params: f });
+    const sent = send({ id: ATTACH_ID, method: ATTACH, params: f });
+    // 붙은 김에 **다시 선언한다** — 주인이 새로 섰으면 그쪽 목록은 비어 있다. 한 번만 보내면
+    // cored 가 재시작하는 순간 주인이 답하는 명령이 다시 전부에게 간다(실측 2026-08-01).
+    const known = ownerAnswered();
+    if (known.length > 0) {
+      send({ id: "owner-answered", method: "control_owner_answered", params: { names: known } });
+    }
+    return sent;
   }
 
   function connect() {
