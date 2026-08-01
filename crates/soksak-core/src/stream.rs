@@ -51,6 +51,16 @@ pub fn frame(token: &str, msg: Value) -> Value {
     json!({ FRAME_KEY: { "token": token, "msg": msg } })
 }
 
+/// 종료 메시지 — **수 하나로 건넌다.**
+///
+/// 봉투를 씌우면 소비자가 프레임워크마다 다른 것을 받는다. 코어 계약은 `onExit(code: number)`
+/// 이고(플러그인 API), 그 계약을 만족하는 모양은 하나다. 실측(2026-08-01): 앱은 수를,
+/// cored 는 `{"code":N}` 을 보내고 있었다 — 같은 이름의 종료가 어느 프로세스를 지났느냐에
+/// 따라 소비자에게 숫자로도 객체로도 도착했다.
+pub fn exit_msg(code: i32) -> Value {
+    Value::from(code)
+}
+
 /// 밀려온 줄에서 프레임을 읽는다. 프레임이 아니면 None — 응답 봉투는 그대로 응답이다.
 pub fn read_frame(line: &Value) -> Option<(String, Value)> {
     let f = line.get(FRAME_KEY)?.as_object()?;
@@ -145,5 +155,18 @@ mod tests {
     fn stripping_leaves_a_non_object_alone() {
         assert_eq!(without_tokens(&json!(null)), json!(null));
         assert_eq!(without_tokens(&json!([1])), json!([1]));
+    }
+}
+
+#[cfg(test)]
+mod exit_tests {
+    use super::*;
+
+    /// 종료는 수 하나다 — 봉투를 씌우면 `onExit(code: number)` 계약이 깨진다.
+    #[test]
+    fn 종료는_봉투_없이_수로_간다() {
+        let v = exit_msg(130);
+        assert!(v.is_number(), "객체로 감싸면 소비자가 숫자를 못 읽는다: {v}");
+        assert_eq!(v.as_i64(), Some(130));
     }
 }

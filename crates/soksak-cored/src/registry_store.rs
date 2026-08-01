@@ -244,27 +244,6 @@ pub(crate) fn run_data_retention_trim(ctx: &Ctx, params: &Value) -> Outcome {
     })
 }
 
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ConvertArg {
-    ns: String,
-    coll: String,
-    scope: String,
-}
-
-pub(crate) fn run_data_encrypt_convert(ctx: &Ctx, params: &Value) -> Outcome {
-    dispatch(params, |a: ConvertArg| {
-        deny_without_write_ownership(ctx)?;
-        ctx.with_db(|conn| {
-            // batch 상한은 앱과 같은 값을 쓴다 — 다르면 같은 이름이 프로세스마다 다른 양을 옮긴다.
-            soksak_store::store::convert_pending(&conn, &a.ns, &a.coll, &a.scope, ENCRYPT_CONVERT_BATCH)
-                .map(|n| Value::from(n as u64))
-        })
-    })
-}
-
-/// 한 번에 변환하는 레코드 수 — 앱의 data_encrypt_convert 와 같은 값이라야 한다.
-const ENCRYPT_CONVERT_BATCH: i64 = 200;
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -106,7 +106,8 @@ impl ExitTokenSink {
 
 impl soksak_core::stream_sink::ExitSink for ExitTokenSink {
     fn deliver(&self, code: i32) -> Delivered {
-        if crate::streams::push(&self.token, json!({ "code": code })) {
+        // 모양은 코어가 소유한다 — 여기서 봉투를 씌우면 소비자가 프로세스마다 다른 것을 받는다.
+        if crate::streams::push(&self.token, soksak_core::stream::exit_msg(code)) {
             Delivered::Ok
         } else {
             Delivered::Gone

@@ -7,8 +7,8 @@ use crate::registry::*;
 use crate::registry_session::{run_ai_session_active, run_ai_session_lineage, run_ai_session_untrack};
 use crate::registry_store::*;
 use crate::registry_encrypt::{
-    run_data_encrypt_change_recovery, run_data_encrypt_enable, run_data_encrypt_recover,
-    run_data_encrypt_rotate, run_data_encrypt_status,
+    run_data_encrypt_change_recovery, run_data_encrypt_convert, run_data_encrypt_enable,
+    run_data_encrypt_recover, run_data_encrypt_rotate, run_data_encrypt_status,
 };
 use crate::registry_sidecar::{run_sidecar_close, run_sidecar_open, run_sidecar_send};
 use crate::registry_ptyd::{run_pty_daemon_restart, run_pty_daemon_upgrade};
