@@ -20,6 +20,13 @@ const { frameworkError } = require("./error.cjs");
 const UNSUPPORTED = "FRAMEWORK_NOTIFICATION_UNSUPPORTED";
 
 module.exports = {
+  // 지원 여부는 **물어서 아는 사실**이다. 권한 절차가 없는 플랫폼에서 "권한 있음"을 지어내면
+  // 부른 쪽이 없는 절차 위에 흐름을 세운다 — 아는 것 하나(띄울 수 있는가)를 그대로 답한다.
+  notify_supported: {
+    concept: "OS 알림 지원 여부",
+    answer: () => Notification.isSupported(),
+  },
+
   notify_show: {
     concept: "OS 알림 띄우기",
     answer: (_ctx, args) => {

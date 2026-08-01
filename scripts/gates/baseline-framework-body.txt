@@ -45,7 +45,10 @@ frameworks/electron/native/clipboard.cjs 24
 frameworks/electron/native/engine.cjs 26
 frameworks/electron/native/error.cjs 9
 frameworks/electron/native/index.cjs 86
-frameworks/electron/native/notify.cjs 18
+# 재입법 2026-08-01 18 → 22. `notify_supported` — 지원 여부는 물어서 아는 사실이다. 이 프레임워크
+#   에는 권한 절차가 없어 어댑터가 notification.isPermissionGranted 를 미구현으로 두고 있었는데,
+#   그건 "권한 없음"과 "그런 절차가 없음"을 같게 만든다. 띄울 수 있는가 하나만 답한다.
+frameworks/electron/native/notify.cjs 22
 frameworks/electron/native/project.cjs 58
 frameworks/electron/native/titlebar.cjs 7
 frameworks/electron/native/updater.cjs 33

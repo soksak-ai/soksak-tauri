@@ -295,9 +295,22 @@ export const electronFramework: AppFramework = {
     openDirectory: (options) => hostOp("openDirectory", { ...options }),
   },
   notification: {
-    isPermissionGranted: async () => unimplemented("notification.isPermissionGranted"),
-    requestPermission: async () => unimplemented("notification.requestPermission"),
-    send: () => unimplemented("notification.send"),
+    // 이 프레임워크는 **권한을 따로 묻지 않는다** — OS 가 앱 단위로 정하고 앱은 그것을 물을 수
+    // 있을 뿐이다. 지원 여부(`notify_show` 가 아는 사실)를 그대로 답한다: 지원하면 띄울 수 있고,
+    // 아니면 이름을 달고 거절한다. "권한 없음"을 지어내지 않는다 — 없는 절차를 있는 척하면
+    // 부른 쪽이 그 위에 흐름을 세운다.
+    isPermissionGranted: async () =>
+      unwrap<boolean>(await bridge().invoke("notify_supported"), "notify_supported"),
+    // 물을 절차가 없으므로 **지금 사실**을 그대로 돌린다. 조용히 true 를 답하지 않는다.
+    requestPermission: async () =>
+      (unwrap<boolean>(await bridge().invoke("notify_supported"), "notify_supported")
+        ? "granted"
+        : "denied") as NotificationPermission,
+    // 띄우기는 이미 프레임워크가 답하는 이름이다(notify_show). 여기서 다시 짓지 않는다 —
+    // 두 자리가 같은 일을 하면 한쪽만 고쳐진다.
+    send: (options) => {
+      void bridge().invoke("notify_show", { ...options });
+    },
     onAction: async () => unimplemented("notification.onAction"),
   },
   deepLink: {
