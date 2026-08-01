@@ -41,6 +41,31 @@ const PAIRS = [
     copies: [],
   },
   {
+    // 갈리면 두 프로세스가 **다른 장부**를 본다. 앱이 쓴 slot 을 cored 가 못 찾고, 재시작하면
+    // 그 창이 안 열린다 — 오류가 아니라 "창이 사라졌다"로 나타난다. 오늘 이 키 위에서
+    // 워크스페이스를 네 번 잃었다.
+    what: "워크스페이스 장부 키",
+    truth: {
+      file: "crates/soksak-core/src/window_traces.rs",
+      re: /pub const MANIFEST_KEY: &str = "([^"]+)"/,
+    },
+    // **값을 패턴에 박지 않는다** — 박으면 틀린 값이 아예 안 잡혀 게이트가 통과한다(실측:
+    // 그렇게 만들었고 심은 위반을 못 물었다). 자리는 형제 줄(lsKey)로 짚는다.
+    copies: [
+      { file: "src/state/windowBoot.ts", re: /key: "([^"]+)",\n\s*lsKey: "soksak\.windows"/ },
+    ],
+  },
+  {
+    // 오케스트레이터 라벨. 갈리면 컨트롤 플레인 분기가 영영 거짓이라 앱이 부팅만 하고 만다
+    // (src/main.tsx 가 이 이름 하나로 분기한다).
+    what: "오케스트레이터 창 라벨",
+    truth: {
+      file: "crates/soksak-core/src/control.rs",
+      re: /pub const CONTROL_PLANE_LABEL: &str = "([^"]+)"/,
+    },
+    copies: [{ file: "src/state/windowPersistence.ts", re: /s\.label !== "([^"]+)"/ }],
+  },
+  {
     what: "콘텐츠 뷰 항행 사건",
     truth: { file: "crates/soksak-core/src/webview_event.rs", re: /pub const NAV: &str = "([^"]+)"/ },
     copies: [{ file: "src/lib/contentViewEvents.ts", re: /nav: "([^"]+)"/ }],
