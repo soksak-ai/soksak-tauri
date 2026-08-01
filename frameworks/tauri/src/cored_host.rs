@@ -787,6 +787,15 @@ pub fn ask_owner(method: &str, params: &Value) -> Result<Value, String> {
     host.ask(method, params, OWNER_ASK_LIMIT)
 }
 
+/// 창이 신고한 "답이 주인의 것인 이름" 을 주인에게 넘긴다.
+///
+/// 이 프레임워크는 자기 소켓으로도 창을 서빙하므로, 프론트의 `invoke` 는 여기로 온다. 그것을
+/// 그대로 cored 에 넘긴다 — 판정도 목록도 창이 쥐고, 이 자리는 나르기만 한다.
+#[tauri::command]
+pub fn control_owner_answered(names: Vec<String>) -> Result<Value, String> {
+    ask_owner("control_owner_answered", &json!({ "names": names }))
+}
+
 /// 주인의 답을 기다리는 상한. 없으면 답하지 않는 cored 하나가 그 명령을 부른 창을 영원히
 /// 붙잡는다. 저장소 한 번의 왕복이라 짧게 잡는다 — 길면 UI 가 멈춘 것처럼 보인다.
 pub const OWNER_ASK_LIMIT: Duration = Duration::from_secs(10);

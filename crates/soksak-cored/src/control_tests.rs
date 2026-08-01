@@ -208,6 +208,46 @@ fn one_host_leaving_does_not_take_the_others_windows() {
     detach();
 }
 
+/// 답이 **주인의 것이면 한 곳에만** 간다.
+///
+/// 오케스트레이터는 앱마다 하나라 같은 이름을 둘이 드는 것이 정상이고, 창-지역 명령은 둘 다
+/// 돌아야 한다. 그러나 주인이 답하는 명령까지 전부에게 가면 **같은 일이 두 번 돈다** — 실측
+/// 2026-08-01: `data.kv.set` 이 두 프로세스에서 각각 실행됐다. 어느 쪽인지는 명령 자신이 알고
+/// (`CommandSpec.windowScoped`), 창이 그것을 신고한다.
+#[test]
+fn an_owner_answered_command_runs_once() {
+    let _serial = lock_serial();
+    detach();
+    let mut first = fake_host(&["main"], "main");
+    let mut second = fake_host(&["main"], "main");
+    note_owner_answered(&["data.kv.set".to_string()]);
+
+    let _ = answer(r#"{"id":41,"method":"data.kv.set","window":"main","timeoutMs":150}"#);
+    // 한 쪽만 받는다. 어느 쪽인지는 정하지 않는다 — 답이 같으므로 고르는 것이 규칙이 아니다.
+    // 한 쪽만 받는다. 어느 쪽이 받았는지는 정하지 않는다 — 답이 같으므로 고르는 것이 규칙이
+    // 아니다. 그래서 "첫째가 받았으면 둘째는 못 받는다"로 잰다.
+    let mut line = String::new();
+    first.read_line(&mut line).expect("한 쪽은 받는다");
+    nothing_arrives(&mut second, "둘째 호스트");
+    detach();
+}
+
+/// 신고받지 않은 이름은 **창의 것**으로 본다 — 안전한 쪽이 기본이다.
+#[test]
+fn an_unreported_command_still_goes_to_both() {
+    let _serial = lock_serial();
+    detach();
+    let mut first = fake_host(&["main"], "main");
+    let mut second = fake_host(&["main"], "main");
+
+    let _ = answer(r#"{"id":42,"method":"ui.something","window":"main","timeoutMs":150}"#);
+    for (h, who) in [(&mut first, "첫째"), (&mut second, "둘째")] {
+        let mut line = String::new();
+        h.read_line(&mut line).unwrap_or_else(|e| panic!("{who} 호스트가 못 받았다: {e}"));
+    }
+    detach();
+}
+
 /// 같은 이름을 둘이 들면 **둘 다에게 간다.**
 ///
 /// `main` 은 오케스트레이터 역할이라 앱 프로세스마다 하나씩 있다 — 겹치는 것이 정상이다.

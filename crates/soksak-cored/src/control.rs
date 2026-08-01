@@ -50,6 +50,13 @@ static HOSTS: OnceLock<Mutex<Vec<Host>>> = OnceLock::new();
 static FOCUS: OnceLock<Mutex<FocusLedger>> = OnceLock::new();
 /// 배달한 요청의 회신을 기다리는 자리 — id → 보내는 쪽.
 static PENDING: OnceLock<Mutex<HashMap<u64, Sender<Value>>>> = OnceLock::new();
+/// 답의 주인이 창이 아닌 이름들 — 창이 스스로 신고한다(`control_owner_answered`).
+///
+/// 같은 이름을 든 창이 여럿일 때 배달은 전부에게 간다(오케스트레이터는 앱마다 하나이므로 그것이
+/// 맞다). 그러나 **주인이 답하는 명령까지 전부에게 가면 같은 일이 두 번 돈다** — 실측
+/// 2026-08-01: `data.kv.set` 이 두 프로세스에서 각각 실행됐다. 어느 쪽인지는 명령 자신이 알고
+/// (`CommandSpec.windowScoped`), 그 사실을 아는 것은 창이므로 창이 신고한다.
+static OWNER_ANSWERED: OnceLock<Mutex<std::collections::HashSet<String>>> = OnceLock::new();
 /// 배달 상관 id. **앱과 같은 축(u64 seq)이다** — 창 쪽 실행기는 받은 id 를 그대로 되울리므로,
 /// 여기서 다른 모양(문자열 등)을 쓰면 cmd_result 의 인자 타입이 프로세스마다 갈린다.
 static SEQ: OnceLock<Mutex<u64>> = OnceLock::new();
@@ -105,6 +112,28 @@ pub fn window_census() -> Vec<soksak_core::window_census::WindowRow> {
         g.iter()
             .flat_map(|h| soksak_core::window_census::of_labels(&h.live, Some(&focused))),
     )
+}
+
+fn owner_answered() -> &'static Mutex<std::collections::HashSet<String>> {
+    OWNER_ANSWERED.get_or_init(|| Mutex::new(std::collections::HashSet::new()))
+}
+
+/// 창이 신고한다: 이 이름들은 주인이 답한다. 합집합으로 쌓는다 — 창마다 카탈로그가 다를 수
+/// 있고(플러그인), 한 창이 모르는 이름을 다른 창이 안다.
+pub fn note_owner_answered(names: &[String]) -> usize {
+    let mut g = owner_answered().lock().unwrap_or_else(|e| e.into_inner());
+    for n in names {
+        g.insert(n.clone());
+    }
+    g.len()
+}
+
+/// 이 이름의 답이 주인의 것인가 — 신고받지 않은 이름은 창의 것으로 본다(안전한 쪽).
+pub fn is_owner_answered(method: &str) -> bool {
+    owner_answered()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .contains(method)
 }
 
 fn pending() -> &'static Mutex<HashMap<u64, Sender<Value>>> {
@@ -349,10 +378,20 @@ enum Delivered {
 /// 되쓴다(NAMING 4b). 한 홈을 두 프레임워크가 보면 같은 슬롯을 각자 되살린다.
 fn push_to_owner(label: &str, v: &Value) -> Delivered {
     let g = hosts().lock().unwrap_or_else(|e| e.into_inner());
+    // 답이 주인의 것이면 **한 곳에만** 보낸다. 어느 창에서 돌든 같은 답이므로 여럿에게 보내는
+    // 것은 같은 일을 두 번 시키는 것이고, 쓰기면 그 두 번이 그대로 두 번 일어난다.
+    let once = v
+        .get("deliver")
+        .and_then(|d| d.get("method"))
+        .and_then(Value::as_str)
+        .is_some_and(is_owner_answered);
     let mut sent = 0usize;
     for h in g.iter().filter(|h| h.live.iter().any(|l| l == label)) {
         if h.writer.write_line(&v.to_string()) {
             sent += 1;
+        }
+        if once && sent > 0 {
+            break;
         }
     }
     if sent == 0 {

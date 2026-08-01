@@ -737,6 +737,28 @@ struct WindowFacts {
     focused: String,
 }
 
+#[derive(serde::Deserialize)]
+struct OwnerAnsweredArg {
+    names: Vec<String>,
+}
+
+/// 창이 신고한다: 이 이름들은 주인이 답한다. 합집합으로 쌓는다 — 창마다 카탈로그가 다를 수
+/// 있고(플러그인), 한 창이 모르는 이름을 다른 창이 안다.
+#[cfg(unix)]
+pub(crate) fn run_control_owner_answered(_ctx: &Ctx, params: &Value) -> Outcome {
+    let a: OwnerAnsweredArg = match serde_json::from_value(params.clone()) {
+        Ok(v) => v,
+        Err(e) => return Outcome::InvalidParams(e.to_string()),
+    };
+    let known = crate::control::note_owner_answered(&a.names);
+    Outcome::Ok(json!({ "known": known }))
+}
+
+#[cfg(not(unix))]
+pub(crate) fn run_control_owner_answered(_ctx: &Ctx, _params: &Value) -> Outcome {
+    Outcome::Ok(json!({ "known": 0 }))
+}
+
 #[cfg(unix)]
 pub(crate) fn run_control_host_attach(_ctx: &Ctx, params: &Value) -> Outcome {
     let a: WindowFacts = match serde_json::from_value(params.clone()) {

@@ -65,7 +65,9 @@ frameworks/tauri/src/activity_sink.rs 9
 frameworks/tauri/src/ai_session.rs 45
 frameworks/tauri/src/clipboard.rs 249
 frameworks/tauri/src/command_dispatch.rs 98
-frameworks/tauri/src/cored_host.rs 521
+# 재입법 2026-08-01 521 → 525. 그 신고를 주인에게 나르는 통로. 판정도 목록도 창이 쥐고 이
+#   자리는 나르기만 한다(Electron 은 선언을 물어 이미 백엔드로 보낸다).
+frameworks/tauri/src/cored_host.rs 525
 frameworks/tauri/src/cored_ledger.rs 248
 frameworks/tauri/src/cored_shape_gate.rs 229
 frameworks/tauri/src/daemon.rs 72
@@ -87,7 +89,8 @@ frameworks/tauri/src/identity.rs 59
 #   산다 — 밖에서 오는 명령은 cored 가 창 호스트로 배달한다.
 frameworks/tauri/src/ipc.rs 1227
 # 재입법 2026-08-01 724 → 725. window_reload 를 invoke 표에 거는 한 줄.
-frameworks/tauri/src/lib.rs 725
+# 재입법 2026-08-01 725 → 727. control_owner_answered 를 invoke 표에 거는 두 줄(cfg 포함).
+frameworks/tauri/src/lib.rs 727
 frameworks/tauri/src/login_shell.rs 28
 frameworks/tauri/src/main.rs 4
 frameworks/tauri/src/mediaproxy.rs 18

@@ -2788,4 +2788,27 @@ export function registerCatalog(): void {
   registerUnitDevCatalog();
   registerReleaseCatalog();
   registerWebviewCatalog();
+  reportOwnerAnswered();
+}
+
+/**
+ * 이 창이 아는 것 중 **답이 주인의 것인** 이름을 신고한다.
+ *
+ * 한 홈에 두 앱이 뜨면 `main` 같은 이름을 둘이 든다(오케스트레이터는 앱마다 하나다). 그때
+ * 배달은 전부에게 가고, 창-지역 명령은 그것이 맞다. 그러나 주인이 답하는 명령까지 전부에게
+ * 가면 **같은 일이 두 번 돈다** — 실측 2026-08-01: `data.kv.set` 이 두 프로세스에서 각각
+ * 실행됐다. 어느 쪽인지는 명령 자신이 알고(`CommandSpec.windowScoped`), 그 사실을 아는 것은
+ * 카탈로그를 든 이 창이다. 그래서 창이 신고한다.
+ *
+ * 실패는 삼킨다 — 신고 못 하면 예전대로 전부에게 갈 뿐 기능이 죽지는 않는다. 다만 조용히
+ * 넘기지 않고 사실을 남긴다.
+ */
+function reportOwnerAnswered(): void {
+  const names = catalogJson()
+    .filter((c) => !c.windowScoped)
+    .map((c) => c.name);
+  if (names.length === 0) return;
+  void invoke("control_owner_answered", { names }).catch((e) =>
+    console.warn(`[commands] 답의 주인 신고 실패 — 같은 이름을 든 창이 여럿이면 두 번 돈다: ${e}`),
+  );
 }

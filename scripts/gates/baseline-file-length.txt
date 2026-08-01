@@ -118,6 +118,9 @@ packages/plugin-spec/src/pluginRuntime.ts 2081
 packages/plugin-spec/src/spec.ts 1785
 # 재입법 2026-08-01 2787 → 2791. 명령이 자기 답의 주인을 선언한다(windowScoped) — 두 앱이
 #   같은 이름을 들 때 주인이 답하는 명령까지 두 번 도는 것을 막는 축이다.
-src/commands/catalog.ts 2791
+# 재입법 2026-08-01 2791 → 2814. 창이 "답이 주인의 것인 이름"을 신고한다. 같은 이름을 든 창이
+#   여럿일 때(오케스트레이터는 앱마다 하나다) 배달이 그 목록을 보고 한 곳에만 보낸다 — 안 그러면
+#   같은 쓰기가 두 프로세스에서 각각 돈다(실측 2026-08-01: data.kv.set).
+src/commands/catalog.ts 2814
 src/plugins/api.ts 1927
 src/state/sessions.ts 2014

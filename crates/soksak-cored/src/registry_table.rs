@@ -811,6 +811,15 @@ pub const COMMANDS: &[Command] = &[
         returns: "null",
         run: run_control_host_attach,
     },
+    // 창이 신고한다: 이 이름들은 **주인이 답한다**. 같은 이름을 든 창이 여럿일 때 배달이 이
+    // 값을 보고 한 곳에만 보낸다 — 안 그러면 같은 쓰기가 두 프로세스에서 각각 돈다.
+    // 어느 쪽인지는 명령 자신이 알고(CommandSpec.windowScoped), 그 사실을 아는 것은 창이다.
+    Command {
+        name: "control_owner_answered",
+        args: &[Arg { name: "names", ty: "string[]", required: REQ }],
+        returns: "{ known }",
+        run: run_control_owner_answered,
+    },
     // 이 연결은 창의 다리다 — 서빙하지 않는 이름이 와도 창으로 되돌리지 않는다.
     // 창이 자기가 물은 것을 자기가 받으면 회신할 자리가 없어 상한까지 침묵한다.
     Command {

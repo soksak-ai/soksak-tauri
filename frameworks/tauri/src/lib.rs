@@ -782,6 +782,8 @@ pub fn run() {
             window::window_focus,
             window::window_close,
             window::window_reload,
+            #[cfg(unix)]
+            cored_host::control_owner_answered,
             ipc::cmd_result,
             ipc::ipc_socket_path,
             ipc::ipc_cli_dir,
