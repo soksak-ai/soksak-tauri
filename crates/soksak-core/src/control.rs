@@ -63,7 +63,10 @@ impl NoTarget {
 }
 
 /// 워크스페이스 창의 접두사 — 컨트롤 플레인("main")과 가르는 유일한 표식이다.
-pub const WORKSPACE_PREFIX: &str = "w-";
+///
+/// 라벨의 **모양**은 `window_spec` 이 소유한다. 같은 크레이트 안이라도 값을 다시 적으면 두
+/// 벌이고, 한쪽만 고쳐도 컴파일은 안 막는다 — 그때 배달은 워크스페이스 창을 못 알아본다.
+pub use crate::window_spec::WORKSPACE_PREFIX;
 
 /// 컨트롤 플레인 창의 라벨 — 플랫폼 예약어다(NAMING §1-4b). 라벨에서 역할을 파싱하는 것이
 /// 아니라 **예약어와 비교**한다.

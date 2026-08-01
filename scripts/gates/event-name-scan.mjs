@@ -1,4 +1,7 @@
-// 프로세스를 건너는 사건 이름은 **한 자리에서 온다** — 리터럴로 적으면 갈린다.
+// 프로세스를 건너는 이름은 **한 자리에서 온다** — 리터럴로 적으면 갈린다.
+//
+// 사건 이름과 만나는 자리 이름(소켓 파일명)이 같은 축이다: 한쪽만 고치면 발행이 아무에게도
+// 안 닿거나, 붙으려는 쪽이 빈 자리를 두드린다. 둘 다 오류가 아니라 **아무 일도 안 일어남**이다.
 //
 // 발행자가 여럿이고 구독자는 어느 프로세스가 보냈는지 모른다. 이름이 갈리면 한쪽 발행은
 // 아무에게도 안 닿고, 그 부재는 오류가 아니라 **안 오는 사건**이다.
@@ -36,6 +39,16 @@ const PAIRS = [
     what: "저장소 변경 사건",
     truth: { file: "crates/soksak-core/src/data_change.rs", re: /pub const EVENT: &str = "([^"]+)"/ },
     copies: [],
+  },
+  {
+    // 사건이 아니라 **만나는 자리**의 이름이다. 갈리면 한쪽이 띄운 cored 를 다른 쪽이 못 찾고,
+    // 그때 프레임워크는 자기 것을 또 띄운다 — 같은 홈에 백엔드가 둘이 된다.
+    what: "cored 소켓 파일명",
+    truth: {
+      file: "crates/soksak-core/src/identity.rs",
+      re: /pub const CORED_SOCKET_FILE: &str = "([^"]+)"/,
+    },
+    copies: [{ file: "frameworks/electron/cored.cjs", re: /const SOCKET_FILE = "([^"]+)"/ }],
   },
 ];
 
