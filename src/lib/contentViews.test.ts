@@ -129,7 +129,11 @@ describe("콘텐츠 뷰 호스트", () => {
     const m = await load();
     await expect(m.domHost.navigate("nope", "u")).rejects.toThrow("콘텐츠 뷰가 없습니다");
     await m.domHost.open("b-2", {});
-    // 태그 메서드가 아직 안 붙은 요소(jsdom 의 기본 상태)
+    // 준비는 났는데 태그 메서드가 없는 요소(jsdom 의 기본 상태) — 준비를 안 내면 그 앞에서
+    // 준비 상한에 걸려, 이 검사가 재려던 "없는 메서드"에 닿지 못한다.
+    document
+      .querySelector('[data-content-view="b-2"]')!
+      .dispatchEvent(new Event("dom-ready"));
     await expect(m.domHost.navigate("b-2", "u")).rejects.toThrow("loadURL");
   });
 

@@ -49,14 +49,33 @@ function nav(label: string) {
   };
 }
 
+/**
+ * 태그에게 물어본다 — **못 물으면 그 사실이 답이다.**
+ *
+ * `canGoBack`/`canGoForward` 는 내부에서 게스트 id 를 잡는다(`getWebContentsId`). 그래서
+ * `dom-ready` 전에 오는 적재 사건에서 부르면 던지고, 그 예외는 사건 핸들러 안이라 **Uncaught**
+ * 로 새어 부팅 경로를 끊는다(실측 2026-08-01 스택: canGoBack → getWebContentsId).
+ *
+ * 아직 못 여는 것은 사실이다: 준비 전에는 히스토리가 없으므로 `false` 가 맞다. 조용히 넘기지
+ * 않고 그 값을 그대로 싣는다 — 준비 뒤의 사건이 곧바로 참값을 실어 온다.
+ */
+function ask(el: Tag, name: "canGoBack" | "canGoForward"): boolean {
+  // 태그에 묶어 부른다 — 함수만 떼면 `this` 가 없어 그 자체로 던진다.
+  try {
+    return el[name]?.() ?? false;
+  } catch {
+    return false;
+  }
+}
+
 function loading(el: Tag, label: string, on: boolean) {
   return () =>
     emitLocal(BROWSER_EVENT.loading, {
       label,
       loading: on,
       // 뒤·앞 가능 여부는 적재 순간의 사실이다 — 원본이 그 셋을 함께 싣는다.
-      canBack: el.canGoBack?.() ?? false,
-      canForward: el.canGoForward?.() ?? false,
+      canBack: ask(el, "canGoBack"),
+      canForward: ask(el, "canGoForward"),
     });
 }
 

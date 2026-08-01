@@ -117,18 +117,33 @@ const READY = moduleState(
   () => new WeakMap<HTMLElement, Promise<void>>(),
 );
 
+/**
+ * 준비를 기다리는 상한. **기다림은 끝나야 한다** — 게스트가 죽으면 `dom-ready` 는 영영 안 오고,
+ * 상한이 없으면 그 제어면 호출 하나가 부른 쪽을 영원히 붙잡는다(행). 종결 사건은 `dom-ready`
+ * 이고 이 수는 그것이 안 올 때의 탈출구다.
+ */
+const READY_LIMIT_MS = 3000;
+
 /** 태그를 만든 자리가 부른다 — 준비 사건을 놓치지 않게 곧바로 건다. */
 function armReady(el: HTMLElement): void {
   READY.set(
     el,
-    new Promise((done) => {
+    new Promise<void>((done, fail) => {
+      const timer = setTimeout(() => {
+        el.removeEventListener("dom-ready", on);
+        // 이름을 달고 실패한다 — 조용히 지나가면 그 다음 줄이 안 붙은 태그에 제어면을 부른다.
+        fail(new Error("콘텐츠 뷰가 준비되지 않았습니다(dom-ready 없음)"));
+      }, READY_LIMIT_MS);
       const on = () => {
+        clearTimeout(timer);
         el.removeEventListener("dom-ready", on);
         done();
       };
       el.addEventListener("dom-ready", on);
     }),
   );
+  // 아무도 안 기다리는 사이 실패가 나면 처리 안 된 reject 가 된다 — 한 번 받아 둔다.
+  READY.get(el)?.catch(() => {});
 }
 
 function ready(el: HTMLElement): Promise<void> {
@@ -189,7 +204,7 @@ export const domHost: ContentViewHost = {
     return find(label, document) !== null;
   },
   async navigate(label, url) {
-    must<(u: string) => void>(find(label, document), label, "loadURL")(url);
+    (await onReady<(u: string) => void>(label, "loadURL"))(url);
   },
   async bounds(label, x, y, w, h) {
     const el = find(label, document);
@@ -207,9 +222,8 @@ export const domHost: ContentViewHost = {
     if (el) applyParked(el, visible);
   },
   async history(label, delta) {
-    const el = find(label, document);
-    if (delta < 0) must<() => void>(el, label, "goBack")();
-    else if (delta > 0) must<() => void>(el, label, "goForward")();
+    if (delta < 0) (await onReady<() => void>(label, "goBack"))();
+    else if (delta > 0) (await onReady<() => void>(label, "goForward"))();
   },
   async stop(label) {
     (await onReady<() => void>(label, "stop"))();
