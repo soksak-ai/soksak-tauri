@@ -30,7 +30,9 @@ frameworks/electron/backend.cjs 236
 #   Electron 의 제어면이 영영 안 돌아왔고 Tauri 만 멀쩡했다. 폴링이 아니다: 끊김 사건이 재접속을
 #   부르고, 바닥(500ms)은 cored 가 아직 안 섰을 때 시도가 몰리는 것을 막는다.
 frameworks/electron/control.cjs 138
-frameworks/electron/cored.cjs 244
+# 재입법 2026-08-01 244 → 248. cored 를 **홈 이름**으로 띄운다(homeIdentity). 홈에 하나뿐인
+#   공용 프로세스를 띄운 프레임워크의 이름으로 부르면 그 이름이 공용 자원에 박힌다.
+frameworks/electron/cored.cjs 248
 # 재입법 2026-08-01 398 → 410. 이 이름을 **백엔드가 서빙하는가**를 선언에 묻는 자리
 #   (backendServes). 이름 접두사로 가르면 틀린다: `window_` 로 시작하지만 창이 아니라 저장소가
 #   답하는 이름이 있고(window_manifest_upsert), 그것을 가로채면 Electron 에서만 워크스페이스

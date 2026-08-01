@@ -12,6 +12,8 @@ export function registerAiSessionCatalog(): void {
       "Detect whether a shell command launches a tracked AI agent (claude or codex). Returns the agent kind or null. Used to tag terminal command blocks with agentKind.",
     triggers: { ko: "에이전트탐지 세션탐지 ai탐지" },
     params: { command: { type: "string", description: "The shell command line to classify", required: true } },
+    // 답은 주인이 정한다 — 어느 창에서 돌든 같다(registry.ts windowScoped).
+    windowScoped: false,
     returns: "{ kind }",
     message: (d) => (d.kind ? tmsg("msg.ai.session.detect.agent", { kind: String(d.kind) }) : tmsg("msg.ai.session.detect.none")),
     errors: ["INVALID_PARAMS"],
@@ -33,6 +35,8 @@ export function registerAiSessionCatalog(): void {
       cwd: { type: "string", description: "Working directory (scope) to read lineage for", required: true },
       tabId: { type: "string", description: "Limit to one terminal tab; omit for all in this cwd" },
     },
+    // 답은 주인이 정한다 — 어느 창에서 돌든 같다(registry.ts windowScoped).
+    windowScoped: false,
     returns: "{ rows }",
     message: (d) => tmsg("msg.ai.session.lineage", { n: ((d.rows as unknown[]) ?? []).length }),
     errors: ["INVALID_PARAMS", "INTERNAL"],
@@ -54,6 +58,8 @@ export function registerAiSessionCatalog(): void {
       "Find the most recent claude session for a working directory by reading its session folder (~/.claude/projects/<encoded-cwd>/). Returns sessionId and cwd, or null. Used to tag a terminal's command block with the session it launched (on-demand, no live watch). codex uses date folders and is resolved later.",
     triggers: { ko: "세션찾기 세션조회 현세션" },
     params: { cwd: { type: "string", description: "Working directory the agent ran in", required: true } },
+    // 답은 주인이 정한다 — 어느 창에서 돌든 같다(registry.ts windowScoped).
+    windowScoped: false,
     returns: "{ session }",
     message: (d) => (d.session ? tmsg("msg.ai.session.find.found") : tmsg("msg.ai.session.find.none")),
     errors: ["INVALID_PARAMS", "INTERNAL"],
@@ -72,6 +78,8 @@ export function registerAiSessionCatalog(): void {
       "Read a claude/codex session jsonl file's header and return its sessionId and cwd. Only paths under ~/.claude/projects or ~/.codex/sessions are allowed; arbitrary file reads are rejected. The sessionId is validated against a UUID whitelist.",
     triggers: { ko: "세션점검 세션식별 세션정보" },
     params: { path: { type: "string", description: "Path to the session .jsonl file", required: true } },
+    // 답은 주인이 정한다 — 어느 창에서 돌든 같다(registry.ts windowScoped).
+    windowScoped: false,
     returns: "{ session }",
     message: (d) => (d.session ? tmsg("msg.ai.session.inspect.read") : tmsg("msg.ai.session.inspect.none")),
     errors: ["INVALID_PARAMS", "INTERNAL"],

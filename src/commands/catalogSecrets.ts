@@ -31,6 +31,8 @@ export function registerSecretsCatalog(): void {
       "Query the transparent-unlock status: KEK backend label, seal_available (whether the OS key store is reachable, so sealing/opening works), expect_vault (app.data envelope keys registered), and the stored app.data key ids. Use to check whether secrets can be sealed before performing operations.",
     triggers: { ko: "시크릿 볼트 상태 백엔드 봉인가능 status" },
     params: {},
+    // 답은 주인이 정한다 — 어느 창에서 돌든 같다(registry.ts windowScoped).
+    windowScoped: false,
     returns: "{ backend, seal_available, expect_vault, data_key_ids }",
     message: (d) =>
       d.seal_available
@@ -53,6 +55,8 @@ export function registerSecretsCatalog(): void {
       "Query the KEK backend label and whether sealing is available (compat shim over secret.status; unlocked = seal_available). Prefer secret.status.",
     triggers: { ko: "시크릿 볼트 상태 백엔드 봉인가능" },
     params: {},
+    // 답은 주인이 정한다 — 어느 창에서 돌든 같다(registry.ts windowScoped).
+    windowScoped: false,
     returns: "{ backend, unlocked }",
     message: (d) => d.unlocked ? tmsg("msg.secret.backend.unlocked", { backend: String(d.backend) }) : tmsg("msg.secret.backend.locked", { backend: String(d.backend) }),
     errors: ["INTERNAL"],
@@ -67,6 +71,8 @@ export function registerSecretsCatalog(): void {
       "Store a sensitive value under ns/key using envelope encryption (per-item DEK wrapped by the device KEK). Overwrites the existing value if the key already exists. Rejected when the OS key store is unavailable (no secret service).",
     triggers: { ko: "시크릿 저장 설정 키 값 저장 set 보관" },
     params: { ns: NS_PARAM, key: KEY_PARAM, value: { type: "string", description: "Sensitive value to store", required: true } },
+    // 답은 주인이 정한다 — 어느 창에서 돌든 같다(registry.ts windowScoped).
+    windowScoped: false,
     returns: "{ ok }",
     message: () => tmsg("msg.secret.set"),
     danger: "inject",
@@ -85,6 +91,8 @@ export function registerSecretsCatalog(): void {
     description: "Check whether ns/key exists in the vault without exposing the value (plaintext readback is blocked by the core).",
     triggers: { ko: "시크릿 존재 확인 있는지 has 체크" },
     params: { ns: NS_PARAM, key: KEY_PARAM },
+    // 답은 주인이 정한다 — 어느 창에서 돌든 같다(registry.ts windowScoped).
+    windowScoped: false,
     returns: "{ has }",
     message: (d) => d.has ? tmsg("msg.secret.has.present") : tmsg("msg.secret.has.absent"),
     errors: ["INVALID_PARAMS", "INTERNAL"],
@@ -102,6 +110,8 @@ export function registerSecretsCatalog(): void {
     description: "List the secret key names stored under a namespace (values are never returned). Use to audit what is stored in a namespace.",
     triggers: { ko: "시크릿 목록 키 리스트 조회" },
     params: { ns: NS_PARAM },
+    // 답은 주인이 정한다 — 어느 창에서 돌든 같다(registry.ts windowScoped).
+    windowScoped: false,
     returns: "{ keys: string[] }",
     message: (d) => tmsg("msg.secret.keys", { n: ((d.keys as unknown[]) ?? []).length }),
     errors: ["INVALID_PARAMS", "INTERNAL"],

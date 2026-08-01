@@ -170,9 +170,13 @@ fn identity_for_env(env: &str) -> Result<String, String> {
     Ok(format!("com.soksak.{}", validate_env(env)?))
 }
 
-// 소켓 저편의 앱이 이 CLI 의 홈에 사는가 — 판정 축은 env 하나다. identifier 는 두 축
-// (`com.soksak.<framework>.<env>`)이고 홈을 가르는 것은 env 뿐이라(코어 identity.rs),
-// 프레임워크 세그먼트를 같이 비교하면 한 홈에 선 tauri/electron 중 하나만 잡힌다.
+// 소켓 저편이 이 CLI 의 홈인가 — 판정 축은 env 하나다.
+//
+// 저편은 cored 이고 cored 는 **홈의 이름**으로 산다(`home_identity_of`). 그래서 보통은 두 축을
+// 비교해도 같은 답이 나온다. 그래도 env 로만 가르는 이유는 옛 데몬 때문이다: 한때 cored 가
+// 자기를 띄운 프레임워크의 이름을 달고 떠서(`com.soksak.tauri.dev`), 두 축을 비교하면 한 홈에
+// 선 둘 중 하나만 잡혔다. 그 데몬이 아직 살아 있을 수 있으므로 이 관용은 남긴다 —
+// **제거 조건**: 그 시절 데몬이 더는 없다고 확신할 때.
 fn validate_peer_identity(reply: &Value, expected: &str) -> Result<(), String> {
     let actual = reply
         .get("identity")

@@ -21,6 +21,8 @@ export function registerServiceCatalog(): void {
         description: "Plugin id to query one service; omit for all.",
       },
     },
+    // 답은 주인이 정한다 — 어느 창에서 돌든 같다(registry.ts windowScoped).
+    windowScoped: false,
     returns:
       "{ services: [{ plugin, status, ops, inflight, generation, secretDependent }] } or { plugin, status }",
     message: (d) =>

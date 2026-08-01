@@ -153,6 +153,12 @@ function frameworkDir(identifier) {
   return framework ? `framework-${framework}` : "framework";
 }
 
+/** 홈의 이름 — framework 축을 뺀 정체성(`com.soksak.<env>`). 홈을 가르는 축은 env 하나다. */
+function homeIdentity(identifier) {
+  const { env } = identityAxes(identifier);
+  return `com.${PRODUCT}.${env}`;
+}
+
 function frameworkIdentity({ env = process.env, argv = process.argv, homedir = os.homedir() } = {}) {
   const identifier =
     argValue(argv, IDENTIFIER_ARG) || env[IDENTIFIER_ENV] || DEFAULT_IDENTIFIER;
@@ -264,7 +270,10 @@ async function ensureCored({
     [
       "--socket", socketPath,
       "--home", identity.home,
-      "--identifier", identity.identifier,
+      // **홈 이름으로 띄운다** — cored 는 홈에 하나뿐인 공용 프로세스다. 띄운 프레임워크의
+      // 이름으로 부르면 그 이름이 공용 자원에 박히고, 붙는 쪽마다 "저건 남의 앱인가"를 우회로
+      // 가려야 한다(실측 2026-08-01: CLI 가 그 우회를 갖고 있었다).
+      "--identifier", homeIdentity(identity.identifier),
       ...(userHome ? ["--user-home", userHome] : []),
       ...(loginShell ? ["--login-shell", loginShell] : []),
     ],

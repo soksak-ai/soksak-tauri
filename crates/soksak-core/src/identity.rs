@@ -187,8 +187,13 @@ pub const PRODUCT: &str = "soksak";
 
 /// identifier 의 두 축 — `com.soksak.<framework>.<env>`.
 ///
-/// 축이 둘인 이유: 두 프레임워크가 **같은 env 에서 동시에** 설 수 있어야 한다. 저장소는 단일
-/// 쓰기 소유이고 소켓·데몬도 홈당 하나라, 동시에 서려면 홈이 갈려야 하고 홈은 이름에서 나온다.
+/// 축이 둘인 이유: 두 프레임워크가 **같은 env 에서 동시에** 설 수 있어야 한다. 그때 갈리는
+/// 것은 홈이 아니라 **이름**이다 — 홈은 env 로만 갈리므로(`home_suffix_for_identifier`) 둘은
+/// 같은 홈을 함께 쓰고, 그 홈에 하나뿐인 것(저장소·cored)은 점유로 가른다(A23·A22).
+/// framework 축이 정하는 것은 제품 표시 이름과 그 프로세스 자신의 소켓뿐이다.
+///
+/// **홈에 하나뿐인 것을 이 이름으로 부르지 마라.** 그러면 먼저 띄운 프레임워크의 이름이 공용
+/// 자원에 박힌다 — 그 자리에는 `home_identity_of` 를 쓴다.
 ///
 /// 목록을 하드코딩하지 않는다 — 새 framework 도 새 env 도 자동으로 자기 홈을 갖는다.
 /// 세그먼트가 모자라면(`com.soksak.dev` 같은 옛 모양) framework 는 없고 env 만 있다.
@@ -208,6 +213,20 @@ pub fn axes_of_identifier(identifier: &str) -> (Option<String>, String) {
             }
         }
     }
+}
+
+/// 이 홈의 이름 — **framework 축을 뺀** 정체성(`com.soksak.<env>`).
+///
+/// 홈을 가르는 축은 env 하나다(`home_suffix_for_identifier`). 그래서 한 홈에는 두 프레임워크가
+/// 함께 서고, 그 홈에 하나뿐인 것들(저장소·cored)은 **어느 프레임워크가 먼저 띄웠는지와 무관
+/// 해야 한다.** 공용 프로세스를 띄우는 쪽의 이름으로 부르면 그 이름이 공용 자원에 박힌다.
+///
+/// 실측(2026-08-01): cored 가 `--identifier com.soksak.tauri.dev` 로 떴고, 그래서 CLI 가 붙었을 때
+/// "소켓 앱은 com.soksak.tauri.dev" 라고 답했다 — 두 프레임워크가 같이 쓰는 데몬인데도. 그 답을
+/// 쓰는 쪽은 env 축만 비교하는 우회를 갖고 있었다. 우회가 필요했다는 것이 이 결함의 증거다.
+pub fn home_identity_of(identifier: &str) -> String {
+    let (_, env) = axes_of_identifier(identifier);
+    format!("com.{PRODUCT}.{env}")
 }
 
 /// release core 판정.
@@ -373,3 +392,50 @@ pub fn dev_source_accepted(source: &Path, home: &Path, core_build: &str) -> bool
 #[cfg(test)]
 #[path = "identity_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod home_identity_tests {
+    use super::*;
+
+    /// 홈에 하나뿐인 것(저장소·cored)은 **어느 프레임워크가 먼저 띄웠는지와 무관해야** 한다.
+    ///
+    /// RED 근거(실측 2026-08-01): cored 가 `--identifier com.soksak.tauri.dev` 로 떴고, CLI 가
+    /// 붙었을 때 "소켓 앱은 com.soksak.tauri.dev" 라고 답했다 — 두 프레임워크가 같이 쓰는
+    /// 데몬인데도. 그 답을 쓰는 쪽은 env 축만 비교하는 우회를 갖고 있었고, 우회가 필요했다는
+    /// 것 자체가 결함의 증거다.
+    #[test]
+    fn the_shared_home_has_no_framework_in_its_name() {
+        for id in ["com.soksak.tauri.dev", "com.soksak.electron.dev"] {
+            assert_eq!(home_identity_of(id), "com.soksak.dev", "{id}");
+        }
+    }
+
+    /// 같은 홈이면 같은 이름이다 — 두 프레임워크가 같은 데몬을 부른다는 뜻이다.
+    #[test]
+    fn both_frameworks_name_the_same_home() {
+        assert_eq!(
+            home_identity_of("com.soksak.tauri.dev"),
+            home_identity_of("com.soksak.electron.dev")
+        );
+    }
+
+    /// 이미 홈 이름인 것은 그대로다(멱등) — 두 번 거쳐도 같은 값이라야 한다.
+    #[test]
+    fn naming_a_home_twice_is_the_same_home() {
+        let once = home_identity_of("com.soksak.tauri.debug");
+        assert_eq!(home_identity_of(&once), once);
+        assert_eq!(once, "com.soksak.debug");
+    }
+
+    /// 홈 경로는 안 바뀐다 — 이름을 바꾸는 것이 홈을 옮기는 일이 되면 안 된다.
+    #[test]
+    fn the_home_path_does_not_move() {
+        for id in ["com.soksak.tauri.dev", "com.soksak.electron.dev"] {
+            assert_eq!(
+                home_suffix_for_identifier(id),
+                home_suffix_for_identifier(&home_identity_of(id)),
+                "{id}"
+            );
+        }
+    }
+}

@@ -295,15 +295,18 @@ describe("띄우기 — 준비 완료는 stdout 첫 줄", () => {
     const identity = identityAt(root);
     await ensure({ identity, binary: fakeHelper("serving", SERVING) });
     const argv = JSON.parse(readFileSync(`${identity.socketPath}.argv`, "utf8"));
-    // 정체성 셋은 프레임워크가 지목한 값 그대로다.
+    // 자리는 프레임워크가 지목한 값 그대로다. 다만 **이름은 홈의 것**이다 — cored 는 홈당
+    // 하나라, 띄운 프레임워크의 이름으로 부르면 그 이름이 공용 자원에 박힌다(실측 2026-08-01:
+    // cored 가 `com.soksak.tauri.dev` 로 떠 있었고, 붙는 쪽마다 그것을 우회로 가려야 했다).
     expect(argv.slice(0, 6)).toEqual([
       "--socket",
       identity.socketPath,
       "--home",
       identity.home,
       "--identifier",
-      identity.identifier,
+      "com.soksak.dev",
     ]);
+    expect(identity.identifier).not.toEqual("com.soksak.dev");
     // 앰비언트 사실도 전부 인자로 간다 — cored 는 자기 환경에서 읽지 않는다. 값은 이
     // 프로세스가 읽은 것과 같아야 한다: 다르면 cored 가 다른 사용자의 답을 낸다.
     const pair = (flag) => argv[argv.indexOf(flag) + 1];
@@ -507,8 +510,9 @@ describe("프레임워크 배선 — 소켓을 안 주면 스스로 띄운다", 
 
     const r = await invoke(framework, "app_environment", {});
     expect(r.ok, `프레임워크가 백엔드에 닿지 못했다: ${JSON.stringify(r)}`).toBe(true);
-    // cored는 프레임워크가 준 정체성으로 답한다 — 스스로 파생한 홈이 아니다.
-    expect(r.value).toMatchObject({ home, identifier: "com.soksak.electron.dev" });
+    // cored는 프레임워크가 준 값으로 답한다 — 스스로 파생한 홈이 아니다. 이름은 **홈의 것**
+    // 이다: cored 는 홈당 하나라 띄운 프레임워크의 이름을 달면 그것이 공용 자원에 박힌다.
+    expect(r.value).toMatchObject({ home, identifier: "com.soksak.dev" });
     expect(ledger(home)).toEqual([{ t: expect.any(Number), cmd: "app_environment", served: true }]);
 
     await framework.appEvents.get("will-quit")();

@@ -103,12 +103,16 @@
 # 산문이 아니라 **코드**이고, 줄일 방법은 축을 없애는 것뿐인데 그 축이 없으면 offscreen
 # 소비자가 자식 뷰 부재라는 **틀린 사유**로 거절당한다(SIDECARS.md §8 은 두 합성 모드 중
 # windowed 만 자식 뷰를 쓴다고 적어 뒀다). 뜻은 engineNeeds.ts 가 지고 여기는 자리만 연다.
-crates/soksak-cli/src/lib.rs 1706
+# 재입법 2026-08-01 1706 → 1710. 공용 데몬 이름 관용의 사유를 적었다(옛 cored 가 프레임워크
+#   이름을 달고 떠서 두 축 비교가 한쪽만 잡았다) — 제거 조건까지 함께.
+crates/soksak-cli/src/lib.rs 1710
 crates/soksak-store/src/store.rs 2068
 frameworks/tauri/src/ipc.rs 1544
 frameworks/tauri/src/webview.rs 2259
 packages/plugin-spec/src/pluginRuntime.ts 2081
 packages/plugin-spec/src/spec.ts 1785
-src/commands/catalog.ts 2787
+# 재입법 2026-08-01 2787 → 2791. 명령이 자기 답의 주인을 선언한다(windowScoped) — 두 앱이
+#   같은 이름을 들 때 주인이 답하는 명령까지 두 번 도는 것을 막는 축이다.
+src/commands/catalog.ts 2791
 src/plugins/api.ts 1927
 src/state/sessions.ts 2014

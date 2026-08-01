@@ -18,6 +18,8 @@ export function registerScheduleCatalog(): void {
       params: { type: "json", description: "Command parameters (defaults to empty object when omitted)" },
       id: { type: "string", description: "Existing schedule id to replace (a new id is issued when omitted)" },
     },
+    // 답은 주인이 정한다 — 어느 창에서 돌든 같다(registry.ts windowScoped).
+    windowScoped: false,
     returns: "{ scheduleId }",
     message: (d) => tmsg("msg.schedule.set", { id: String(d.scheduleId) }),
     danger: "inject",
@@ -54,6 +56,8 @@ export function registerScheduleCatalog(): void {
       process_lease: { type: "boolean", description: "Hold lease until fired process exits (exec-one)" },
       zombie_backstop_ms: { type: "number", description: "Process-lease zombie cap (ms). null=infinite, default 3h" },
     },
+    // 답은 주인이 정한다 — 어느 창에서 돌든 같다(registry.ts windowScoped).
+    windowScoped: false,
     returns: "{ jobId }",
     message: (d) => tmsg("msg.schedule.register", { id: String(d.jobId) }),
     danger: "inject",
@@ -86,6 +90,8 @@ export function registerScheduleCatalog(): void {
       "Fire a job immediately (completion trigger / external change). id given = that job; omitted = all reconcile jobs. Running jobs coalesce (re-fire once after completion).",
     triggers: { ko: "스케줄 깨우기 poke 재평가 reconcile 틱" },
     params: { id: { type: "string", description: "Job id (omit = all reconcile jobs)" } },
+    // 답은 주인이 정한다 — 어느 창에서 돌든 같다(registry.ts windowScoped).
+    windowScoped: false,
     returns: "{ ok }",
     message: () => tmsg("msg.schedule.poke"),
     danger: "inject",
@@ -101,6 +107,8 @@ export function registerScheduleCatalog(): void {
     description: "Cancel a pending schedule by id. Returns removed=true if the schedule existed.",
     triggers: { ko: "스케줄 취소 삭제 예약취소 cancel" },
     params: { id: { type: "string", description: "Schedule id issued by schedule.set", required: true } },
+    // 답은 주인이 정한다 — 어느 창에서 돌든 같다(registry.ts windowScoped).
+    windowScoped: false,
     returns: "{ removed }",
     message: (d) => d.removed ? tmsg("msg.schedule.cancel.removed") : tmsg("msg.schedule.cancel.missing"),
     errors: ["INVALID_PARAMS", "INTERNAL"],
@@ -119,6 +127,8 @@ export function registerScheduleCatalog(): void {
       "List all jobs sorted by next fire time ascending. Each: { id, trigger, command, params, next_at, running, concurrency }. next_at=null means waiting (reconcile/event) or running. running=true means a fire is in flight (lease held).",
     triggers: { ko: "스케줄 목록 예약 리스트 조회" },
     params: {},
+    // 답은 주인이 정한다 — 어느 창에서 돌든 같다(registry.ts windowScoped).
+    windowScoped: false,
     returns: "{ schedules: [{ id, trigger, command, params, next_at, running, concurrency }] }",
     message: (d) => tmsg("msg.schedule.list", { n: ((d.schedules as unknown[]) ?? []).length }),
     errors: ["INTERNAL"],

@@ -593,6 +593,8 @@ export function registerPluginCatalog(): void {
       id: { type: "string", description: "Plugin id", required: true },
       registryId: { type: "string", description: "Origin registry id when the unit id exists in multiple registries" },
     },
+    // 답은 주인이 정한다 — 어느 창에서 돌든 같다(registry.ts windowScoped).
+    windowScoped: false,
     returns: "{ id, version, generation }",
     message: (d) => tmsg("msg.plugin.update", { id: String(d.id), version: String(d.version) }),
     errors: ["TARGET_NOT_FOUND", "INVALID_PARAMS", "INTERNAL"],

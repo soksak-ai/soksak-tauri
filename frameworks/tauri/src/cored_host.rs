@@ -807,7 +807,10 @@ pub fn stand_up(app: &tauri::AppHandle) -> Result<CoredHost, String> {
     let cored = ensure_cored(
         &socket,
         identity.home(),
-        identity.identifier(),
+        // **홈 이름으로 띄운다** — cored 는 홈에 하나뿐인 공용 프로세스다. 띄운 프레임워크의
+        // 이름으로 부르면 그 이름이 공용 자원에 박히고, 붙는 쪽마다 "저건 남의 앱인가"를
+        // 우회로 가려야 한다(실측 2026-08-01: CLI 가 그 우회를 갖고 있었다).
+        &soksak_core::identity::home_identity_of(identity.identifier()),
         &binary,
         // 저장소 위치는 앱이 해소해 넘긴다 — cored 가 다시 파생하면 두 프로세스가 다른 파일을 연다.
         &crate::data::data_dir(),

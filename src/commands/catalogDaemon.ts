@@ -204,6 +204,8 @@ export function registerDaemonCatalog(): void {
       "Start a declared daemon (omit name = every declared daemon that is not running). Output goes to an in-memory ring buffer — read it with daemon.logs.",
     triggers: { ko: "데몬 시작 서버 시작 기동" },
     params: { name: { ...P.name, required: false }, project: P.project },
+    // 답은 주인이 정한다 — 어느 창에서 돌든 같다(registry.ts windowScoped).
+    windowScoped: false,
     returns: "{ projectId, started: [{ name, pid }] }",
     primary: "name",
     message: (d) => tmsg("msg.daemon.start", { n: ((d.started as unknown[]) ?? []).length }),
@@ -240,6 +242,8 @@ export function registerDaemonCatalog(): void {
       "Stop a running daemon (omit name = all). The whole process tree is terminated — SIGTERM first, SIGKILL after a grace period. A managed daemon (one with a stop command set via daemon.set) runs its stop command instead.",
     triggers: { ko: "데몬 정지 서버 정지 중지" },
     params: { name: { ...P.name, required: false }, project: P.project },
+    // 답은 주인이 정한다 — 어느 창에서 돌든 같다(registry.ts windowScoped).
+    windowScoped: false,
     returns: "{ projectId, stopped: [name] }",
     primary: "name",
     message: (d) => tmsg("msg.daemon.stop", { n: ((d.stopped as unknown[]) ?? []).length }),
@@ -300,6 +304,8 @@ export function registerDaemonCatalog(): void {
       lines: { type: "number", description: "How many recent lines (default 100)" },
       project: P.project,
     },
+    // 답은 주인이 정한다 — 어느 창에서 돌든 같다(registry.ts windowScoped).
+    windowScoped: false,
     returns: "{ projectId, name, lines: [string] }",
     message: (d) => tmsg("msg.daemon.logs", { n: ((d.lines as unknown[]) ?? []).length }),
     errors: ["TARGET_NOT_FOUND"],
@@ -392,6 +398,8 @@ export function registerDaemonCatalog(): void {
       "Report the PTY session daemon (soksak-ptyd): whether it is running, its pid and protocol generation, how many shell sessions it owns, and whether the staged binary exists in the identity home. A dead daemon here means terminals fall back to in-process PTYs on their next spawn.",
     triggers: { ko: "pty데몬 상태 터미널 데몬 세션 데몬" },
     params: {},
+    // 답은 주인이 정한다 — 어느 창에서 돌든 같다(registry.ts windowScoped).
+    windowScoped: false,
     returns: "{ running, pid?, sessions?, protocol, staged, stagedPath }",
     message: (d) =>
       d.running
@@ -411,6 +419,8 @@ export function registerDaemonCatalog(): void {
       "Restart the PTY session daemon. Destructive: every daemon-owned shell and its child processes are killed before a fresh daemon is staged and started — open terminals lose their sessions and respawn fresh shells.",
     triggers: { ko: "pty데몬 재시작 터미널 데몬 재시작" },
     params: {},
+    // 답은 주인이 정한다 — 어느 창에서 돌든 같다(registry.ts windowScoped).
+    windowScoped: false,
     returns: "{ killed, pid }",
     message: (d) => tmsg("msg.pty.daemon.restart", { killed: Number(d.killed ?? 0) }),
     danger: "destructive",
@@ -424,6 +434,8 @@ export function registerDaemonCatalog(): void {
       "Hot-upgrade the PTY session daemon in place — no restart, no lost sessions. The running daemon stages the new binary, hands each live shell's master fd to a new daemon by fd inheritance (the shell never sees a SIGHUP), then exits. Distinct from pty.daemon.restart, which kills every shell. Use it to roll a new ptyd generation without disturbing open terminals.",
     triggers: { ko: "pty데몬 판올림 무중단 업그레이드 데몬 핫스왑" },
     params: {},
+    // 답은 주인이 정한다 — 어느 창에서 돌든 같다(registry.ts windowScoped).
+    windowScoped: false,
     returns: "{ upgraded, pid, sessions }",
     message: (d) => tmsg("msg.pty.daemon.upgrade", { sessions: Number(d.sessions ?? 0) }),
     errors: ["INTERNAL"],

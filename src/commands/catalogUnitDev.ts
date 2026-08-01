@@ -15,6 +15,8 @@ export function registerUnitDevCatalog(): void {
       "List development source selections for plugins, sidecars, and kits in this CLI identity home. Core build and unit source mode are independent.",
     triggers: { ko: "유닛 개발 소스 목록 플러그인 사이드카 키트 작업공간" },
     params: {},
+    // 답은 주인이 정한다 — 어느 창에서 돌든 같다(registry.ts windowScoped).
+    windowScoped: false,
     returns: "{ unitMode: official|mixed, units: Array<{kind,id,source}> }",
     message: (d) =>
       tmsg("msg.unit.dev.list", {

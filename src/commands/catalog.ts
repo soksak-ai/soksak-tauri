@@ -928,6 +928,8 @@ export function registerCatalog(): void {
       alive: { type: "boolean", description: "Only entries that are still running" },
       window: { type: "string", description: "Only entries spawned by this window label" },
     },
+    // 답은 주인이 정한다 — 어느 창에서 돌든 같다(registry.ts windowScoped).
+    windowScoped: false,
     returns: "{ processes: [{id, pid, window, cmd, group, detached, alive}], count }",
     message: (d) => tmsg("msg.process.list", { n: Number(d.count ?? 0) }),
     examples: ["process.list", 'process.list \'{"alive":true}\''],
@@ -2471,6 +2473,8 @@ export function registerCatalog(): void {
         default: 200,
       },
     },
+    // 답은 주인이 정한다 — 어느 창에서 돌든 같다(registry.ts windowScoped).
+    windowScoped: false,
     returns: "{ entries: [{ seq, ts, kind, source, payload }] }",
     message: (d) => tmsg("msg.activity.recent", { n: ((d.entries as unknown[]) ?? []).length }),
     examples: [

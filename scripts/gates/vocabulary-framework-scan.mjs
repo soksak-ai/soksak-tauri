@@ -210,6 +210,7 @@ export const PROSE_LEDGER = new Map([
   ["crates/soksak-cored/src/pty_tests.rs", [2, "[진짜 셸] 로그인 셸 추측 금지 검사"]],
   ["crates/soksak-cored/src/main.rs", [1, "[진짜 셸] 부팅 인자 --login-shell"]],
   ["frameworks/tauri/src/activity.rs", [1, "[프레임워크] \"셸 타입\"·\"셸에 넘긴다\""]],
+  ["scripts/gates/harness-address-scan.mjs", [1, "[프레임워크] 이 게이트의 규칙이 곧 \"주소에 프레임워크 이름을 박지 마라\" 라, 그 이름들을 적지 않고는 규칙을 쓸 수 없다"]],
   ["frameworks/tauri/src/navigation_policy.rs", [2, "[UI] \"app shell\" — 앱 웹뷰의 항행 정책"]],
   ["crates/soksak-core/src/kv.rs", [1, "[프레임워크] \"자원이지 셸이 아니다\"·\"무-셸 게이트\"·\"셸 타입\""]],
   ["crates/soksak-core/src/identity.rs", [1, "[프레임워크] \"앱은 셸 설정에서\"·\"붙는 것은 셸의 일\""]],
