@@ -282,6 +282,8 @@ function connectBackend(socketPath, ensureUp) {
     // 이 연결은 창의 다리다. 밝히지 않으면 cored 가 서빙하지 않는 이름을 창으로 되돌리고,
     // 그 창이 바로 물어본 쪽이라 회신이 오지 않는다 — 이름 대신 상한이 나온다.
     announce: ["control_bridge_attach"],
+    // 붙자마자 무엇을 서빙하는지 물어 둔다 — 누가 답하는가는 선언이 정한다(추측 아님).
+    declare: "cored.commands",
   });
   return backend;
 }
@@ -400,8 +402,10 @@ function pipeStreams(client, args, sender) {
 
 ipcMain.handle("framework:invoke", async (e, { cmd, args }) => {
   // 프레임워크의 것이 먼저다 — 창·웹뷰·네이티브 표면은 소켓 너머로 물어볼 수 없다(거기엔 창이 없다).
-  // 판별은 이름으로 한다: 프레임워크 갈래는 표에 없더라도 소켓으로 새지 않는다.
-  if (native.claims(cmd)) {
+  // 다만 **백엔드가 서빙한다고 선언한 이름은 백엔드의 것**이다(위 backendServes).
+  // 백엔드가 **스스로 선언한** 이름은 백엔드의 것이다(backend.cjs `declare`). 이름 접두사로
+  // 가르면 창이 아니라 저장소가 답하는 이름을 프레임워크가 가로챈다.
+  if (!backend?.serves(cmd) && native.claims(cmd)) {
     return native.serve(cmd, args, nativeContext(e && e.sender), recordDemand);
   }
   try {

@@ -33,6 +33,10 @@ const CONTROL_WIRING = new Set([
   "control_host_attach", // 창은 내가 갖고 있다
   "control_windows", // 창 사실이 바뀌었다
   "control_bridge_attach", // 이 연결은 창의 다리다
+  // 이 연결이 붙자마자 "무엇을 서빙하는가"를 묻는다. 누가 답하는가를 이름 접두사로 추측하면
+  // 창이 아니라 저장소가 답하는 이름을 프레임워크가 가로챈다(실측 2026-08-01: Electron 에서만
+  // 워크스페이스 저장이 죽었다). 이것도 배선이지 UI 가 부른 명령이 아니다.
+  "cored.commands",
 ]);
 const commands = (mock) => mock.seen.filter((r) => !CONTROL_WIRING.has(r.method));
 

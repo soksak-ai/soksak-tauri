@@ -41,6 +41,9 @@ function createControlHost({ socketPath, facts, deliver, broadcast = () => true,
   let sock = null;
   let buf = "";
   let closed = false;
+  /** 다시 붙기까지의 바닥. cored 가 다시 서는 데 드는 시간보다 짧으면 시도만 쌓인다. */
+  const RETRY_MS = 500;
+  let retry = null;
   // 등록 완료 신호. **폴링하지 않는다** — cored 가 등록 요청에 답하는 그 줄이 신호다.
   // 붙었는지 반복해 물으면 그 질문 자체가 배달로 나가 창이 유령 명령을 받는다(실측).
   let announceReady;
@@ -152,7 +155,20 @@ function createControlHost({ socketPath, facts, deliver, broadcast = () => true,
       sock = null;
       buf = "";
       dropAwaiting();
-      if (!closed) onLog(`제어면: 연결이 끊겼다(${why}) — 밖에서 오는 명령이 닿지 않는다`);
+      if (closed) return;
+      onLog(`제어면: 연결이 끊겼다(${why}) — 다시 붙는다`);
+      // **다시 붙는다.** cored 는 죽는다(판올림·강제종료·크래시). 한 번 끊겼다고 그대로 두면
+      // 이 앱은 남은 수명 내내 밖에서 부를 수 없는 창이 된다 — 두 앱을 함께 켜 두면 한쪽만
+      // 조용히 그렇게 되고, 그 사실은 "저쪽 프레임워크에서만 안 된다"로만 나타난다
+      // (실측 2026-08-01: cored 를 갈아 끼우자 Electron 의 제어면이 영영 안 돌아왔다).
+      //
+      // 폴링이 아니다: 끊김 사건이 이 재접속을 부른다. 바닥(RETRY_MS)은 cored 가 아직 안 섰을
+      // 때 붙기 시도가 몰리는 것을 막는다.
+      retry = setTimeout(() => {
+        retry = null;
+        connect();
+      }, RETRY_MS);
+      if (typeof retry.unref === "function") retry.unref();
     };
     sock.on("error", (e) => drop(e.code || e.message));
     sock.on("close", () => drop("close"));
@@ -175,6 +191,10 @@ function createControlHost({ socketPath, facts, deliver, broadcast = () => true,
     },
     stop() {
       closed = true;
+      if (retry) {
+        clearTimeout(retry);
+        retry = null;
+      }
       dropAwaiting();
       if (sock) {
         sock.removeAllListeners();

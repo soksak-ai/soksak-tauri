@@ -90,6 +90,8 @@ const ALLOWED: { file: string; mark: string; event: string; why: string }[] = [
   { file: "frameworks/electron/backend.cjs", mark: "const ENSURE_FLOOR_MS = 1000;", event: "store-owner-attached", why: "다시 붙는 것이 종결 사건이고 시도는 부를 일이 있을 때만 일어난다(폴링 아님) — 이 바닥은 주인이 안 서는 동안 호출 수만큼 스폰이 몰리는 것을 막는다. Tauri 쪽 REBUILD_FLOOR 와 같은 규칙" },
   { file: "frameworks/electron/cored.cjs", mark: "const DEFAULT_TIMEOUT_MS = 15_000;", event: "cored-ready-line", why: "cored 의 준비 완료 줄이 종결 사건이고 그 프로세스가 먼저 죽으면 종료가 끝낸다 — 둘 다 오지 않을 때 부팅이 영영 안 끝나는 것을 막는 안전망(Tauri 쪽 READY_LIMIT 과 같은 규칙)" },
   { file: "frameworks/electron/cored.cjs", mark: "const timer = setTimeout(", event: "cored-ready-line", why: "위 상한을 거는 자리 — 넘기면 우리가 띄운 프로세스를 거둔다(소켓 쥔 고아 방지)" },
+  { file: "frameworks/electron/control.cjs", mark: "const RETRY_MS = 500;", event: "control-plane-attached", why: "다시 붙는 것이 종결 사건이고, 재접속을 부르는 것은 **끊김 사건**이다(폴링 아님) — 이 바닥은 cored 가 아직 안 섰을 때 붙기 시도가 몰리는 것을 막는다. 제거 조건 = cored 가 자기 기동을 알리는 사건을 주는 날" },
+  { file: "frameworks/electron/control.cjs", mark: "retry = setTimeout(() => {", event: "control-plane-attached", why: "위 바닥을 거는 자리 — 끊김 사건이 부른다" },
   { file: "frameworks/electron/cored.cjs", mark: "const KILL_GRACE_MS = 2_000;", event: "child-exit", why: "SIGTERM 뒤 종료가 종결 사건 — 이 유예를 넘기면 SIGKILL. 유예가 없으면 정상 종료 경로를 못 밟는다" },
   { file: "frameworks/electron/cored.cjs", mark: "const hard = setTimeout(() => child.kill(\"SIGKILL\"), KILL_GRACE_MS);", event: "child-exit", why: "위 유예를 거는 자리" },
   // ── ③ 유한 안전망 ──

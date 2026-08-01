@@ -18,10 +18,26 @@
 # main.cjs 는 그 값을 표에 건네는 ctx 한 줄이다. 규칙과 답은 새 파일(native/updater.cjs)이
 # 지고, 그 파일은 처음부터 이 폴더의 몫으로 등재됐다(native/updater.cjs 33, index.cjs +1 = 조립 한 줄).
 frameworks/electron/activity.cjs 32
-frameworks/electron/backend.cjs 217
-frameworks/electron/control.cjs 126
+# 재입법 2026-08-01 217 → 236. 이 연결이 붙자마자 **무엇을 서빙하는지** 묻고 그 답을 든다
+#   (declare). 누가 답하는가를 이름 접두사로 추측하면 창이 아니라 저장소가 답하는 이름을
+#   프레임워크가 가로챈다 — 실측 2026-08-01: `window_manifest_upsert` 가 그 길로 막혀 Electron
+#   에서만 워크스페이스 저장이 통째로 실패했고 Tauri 는 멀쩡했다. 명령 호출 경로에서 물으면
+#   그 질문이 요구 원장에 섞이고 부른 적 없는 요청이 첫 줄로 나가므로, 연결의 사실로 둔다.
+frameworks/electron/backend.cjs 236
+# 재입법 2026-08-01 126 → 138. 끊긴 제어면이 **다시 붙는다**. cored 는 죽는다(판올림·강제종료·
+#   크래시). 한 번 끊겼다고 그대로 두면 이 앱은 남은 수명 내내 밖에서 부를 수 없는 창이 되고,
+#   두 앱을 함께 켜 두면 한쪽만 조용히 그렇게 된다 — 실측 2026-08-01: cored 를 갈아 끼우자
+#   Electron 의 제어면이 영영 안 돌아왔고 Tauri 만 멀쩡했다. 폴링이 아니다: 끊김 사건이 재접속을
+#   부르고, 바닥(500ms)은 cored 가 아직 안 섰을 때 시도가 몰리는 것을 막는다.
+frameworks/electron/control.cjs 138
 frameworks/electron/cored.cjs 244
-frameworks/electron/main.cjs 398
+# 재입법 2026-08-01 398 → 410. 이 이름을 **백엔드가 서빙하는가**를 선언에 묻는 자리
+#   (backendServes). 이름 접두사로 가르면 틀린다: `window_` 로 시작하지만 창이 아니라 저장소가
+#   답하는 이름이 있고(window_manifest_upsert), 그것을 가로채면 Electron 에서만 워크스페이스
+#   저장이 통째로 실패한다(실측 2026-08-01). 손으로 판 예외 목록은 답이 아니다 — 새 이름마다
+#   한 곳만 고쳐지고 그 어긋남은 "저쪽 프레임워크에서만 안 된다"로만 나타난다. 선언을 묻는
+#   일은 연결의 사실이라 backend.cjs 가 지고, 여기 남은 것은 그 답을 보는 한 줄이다.
+frameworks/electron/main.cjs 399
 frameworks/electron/native/capture.cjs 70
 frameworks/electron/native/clipboard.cjs 24
 frameworks/electron/native/engine.cjs 26

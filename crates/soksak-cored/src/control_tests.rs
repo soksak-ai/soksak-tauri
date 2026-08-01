@@ -208,32 +208,32 @@ fn one_host_leaving_does_not_take_the_others_windows() {
     detach();
 }
 
-/// 두 호스트가 같은 라벨을 들면 **이름을 달고 거절한다** — 아무 쪽이나 고르지 않는다.
+/// 같은 이름을 둘이 들면 **둘 다에게 간다.**
 ///
-/// 우연이 아니라 필연이다: 창 복원은 라벨을 새로 만들지 않고 manifest 의 원래 `w-<uuid>` 를
-/// 의도적으로 되쓴다. 홈을 공유하면 두 프레임워크가 같은 라벨의 창을 각자 되살린다.
-/// 그때 첫 매치를 고르면 남의 프레임워크 창에서 명령이 돌고 성공을 답한다 — 그 오답은
-/// 오류로 보이지 않는다. 그 라벨은 PTY 재접속 키이기도 해서, 조용히 고르면 남의 셸에 닿는다.
+/// `main` 은 오케스트레이터 역할이라 앱 프로세스마다 하나씩 있다 — 겹치는 것이 정상이다.
+/// 그때 거절하면 두 앱을 함께 켠 순간 **어느 쪽 오케스트레이터도 밖에서 부를 수 없다**
+/// (실측 2026-08-01: Tauri·Electron 을 같은 홈에 함께 띄우자 저장소 조회조차 막혔다).
+///
+/// 고르지 않는다는 판단은 옳았지만 결론이 틀렸다: 고를 수 없으면 **전부에게 보내고 전부의
+/// 답을 돌린다.** 하나만 원하는 부름은 유일한 주소(`w-<uuid>`)를 쓰면 된다.
 #[test]
-fn a_label_two_hosts_both_claim_is_refused_by_name() {
+fn a_label_two_hosts_both_claim_goes_to_both() {
     let _serial = lock_serial();
     detach();
-    let mut first = fake_host(&["w-same"], "w-same");
-    let mut second = fake_host(&["w-same"], "w-same");
+    let mut first = fake_host(&["main"], "main");
+    let mut second = fake_host(&["main"], "main");
 
-    // AMBIGUOUS_WINDOW 가 아니다 — 그것은 "어느 창인지 못 정했다"이고, 부른 쪽은 이미
-    // 창을 지목했다. 여기서 갈리지 않는 것은 그 이름을 든 **호스트**다.
-    let r = answer(r#"{"id":16,"method":"x","window":"w-same","timeoutMs":300}"#);
-    assert_eq!(r["code"], "AMBIGUOUS_HOST");
-    assert!(
-        r["message"].as_str().unwrap().contains("w-same"),
-        "어느 라벨이 겹쳤는지 말한다: {}",
-        r["message"]
-    );
-    nothing_arrives(&mut first, "첫째 호스트");
-    nothing_arrives(&mut second, "둘째 호스트");
+    // 답은 안 온다(가짜 호스트는 회신하지 않는다) — 재는 것은 **어디로 갔는가**다.
+    let _ = answer(r#"{"id":31,"method":"x","window":"main","timeoutMs":150}"#);
+    for (h, who) in [(&mut first, "첫째"), (&mut second, "둘째")] {
+        let mut line = String::new();
+        h.read_line(&mut line).unwrap_or_else(|e| panic!("{who} 호스트가 못 받았다: {e}"));
+        let v: Value = serde_json::from_str(&line).expect("json");
+        assert_eq!(v["deliver"]["window"], "main", "{who}");
+    }
     detach();
 }
+
 
 /// 방송은 주인 없는 사실이다 — 창을 가진 쪽 **전부**가 받아야 한다. 하나만 받으면
 /// 나머지 프레임워크의 창은 파일이 바뀐 줄 모르고 낡은 화면을 계속 보여 준다.

@@ -34,8 +34,14 @@ export interface CoreStore<T> {
   stage: (value: T) => void;
   /** 권위(app.data) + 캐시(localStorage) 양쪽 기록. */
   save: (value: T) => Promise<void>;
-  /** 권위값을 읽어 캐시 갱신 후 반환. 권위가 비면 캐시를 권위로 1회 마이그레이션. */
+  /** 권위값을 읽어 캐시 갱신 후 반환. 권위가 비면 캐시에 **내용이 있을 때만** 권위로 옮긴다. */
   hydrate: () => Promise<T>;
+  /** 권위에 이 키가 **있는가**와 그 값. 없으면 `found:false` 이고 값은 fallback 이다.
+   *
+   *  없는 것과 비어 있는 것을 가르는 자리다. 소비자가 그 둘을 같게 읽으면 자산을 지운다 —
+   *  창 리스폰이 `projects.length === 0` 으로 장부 slot 을 지웠고, 스냅샷이 없는 창과 사용자가
+   *  비운 창이 같은 답이라 그 창은 다시 안 열렸다(실측 2026-08-01). 못 읽으면 던진다. */
+  read: () => Promise<{ found: boolean; value: T }>;
   /** 다른 창의 같은 key data-change 시 최신 권위값을 콜백. 해지 함수 반환. */
   subscribe: (cb: (value: T) => void) => () => void;
 }
@@ -90,21 +96,31 @@ export function makeCoreStore<T>(opts: CoreStoreOpts<T>): CoreStore<T> {
     dirty = false; // SQLite == staged — 이제 디스크가 권위
   };
 
-  const hydrate = async (): Promise<T> => {
+  const read = async (): Promise<{ found: boolean; value: T }> => {
     // read-your-writes: 미flush 로컬 쓰기(dirty)는 stale SQLite 보다 최신 — 방금 쓴 값을 권위로.
-    if (dirty && staged != null) return staged;
+    if (dirty && staged != null) return { found: true, value: staged };
     const remote = await readRemote();
     if (remote != null) {
       staged = remote;
       writeCache(remote);
-      return remote;
+      return { found: true, value: remote };
     }
-    // 권위 비어있음 — 동기 캐시를 권위로 1회 마이그레이션(있을 때만). 마이그레이션은 즉시 디스크 기록이라
-    // dirty 아님(디바운스 대상 아님).
-    const cached = loadSync();
-    await invoke("data_kv_set", { ns: NS, key, value: cached });
-    staged = cached;
-    return cached;
+    return { found: false, value: loadSync() };
+  };
+
+  const hydrate = async (): Promise<T> => {
+    const { found, value } = await read();
+    if (found) return value;
+    // 권위가 비었다 — 캐시에 **내용이 있을 때만** 권위로 옮긴다(무중단 이관).
+    //
+    // 빈 fallback 을 권위에 쓰면 "아직 없다"가 그 순간 "비어 있다"로 확정되고, 그것을 읽는
+    // 소비자는 사용자가 비운 것으로 읽는다 — 창 리스폰이 그 답으로 장부 slot 을 지웠다.
+    // 쓸 것이 없으면 쓰지 않는다.
+    if (JSON.stringify(value) !== JSON.stringify(fallback)) {
+      await invoke("data_kv_set", { ns: NS, key, value });
+    }
+    staged = value;
+    return value;
   };
 
   const subscribe = (cb: (value: T) => void): (() => void) =>
@@ -123,5 +139,5 @@ export function makeCoreStore<T>(opts: CoreStoreOpts<T>): CoreStore<T> {
       });
     });
 
-  return { loadSync, stage, save, hydrate, subscribe };
+  return { loadSync, stage, save, hydrate, read, subscribe };
 }

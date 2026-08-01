@@ -181,8 +181,11 @@ pub fn update_windows(conn_id: u64, live: Vec<String>, focused: String) -> bool 
 /// 렌더러의 회신이 도착했다. 짝이 없으면 조용히 버린다 — 이미 상한에서 끝난 늦은 회신이고,
 /// 그것은 오류가 아니다. 오류로 만들면 정상 경로가 로그를 물들인다.
 pub fn deliver_result(id: u64, result: Value) -> bool {
-    let mut p = pending().lock().unwrap_or_else(|e| e.into_inner());
-    match p.remove(&id) {
+    // 자리를 **걷지 않고** 보낸다. 한 배달이 여러 호스트로 갔으면 답도 여럿이고, 첫 답에
+    // 자리를 걷으면 나머지는 "짝 없는 늦은 회신"으로 버려진다 — 부른 쪽은 하나만 돈 것으로
+    // 읽는다. 자리를 거두는 것은 기다림이 끝나는 쪽의 일이다(거기서 한 번만 거둔다).
+    let p = pending().lock().unwrap_or_else(|e| e.into_inner());
+    match p.get(&id) {
         Some(tx) => tx.send(result).is_ok(),
         None => false,
     }
@@ -273,8 +276,15 @@ fn route(req: control::Request) -> Value {
     let push = soksak_core::control::deliver_envelope(id, &req, &target);
     // 그 창을 가진 호스트로만 민다. 아무 호스트에나 밀면 남의 프레임워크 창에서 명령이 돌고
     // 성공을 답한다 — 그 오답은 오류로 보이지 않는다.
-    match push_to_owner(&target, &push) {
-        Delivered::Yes => {}
+    // 그 이름을 든 **전부**에게 민다.
+    //
+    // 겹침은 우연이 아니다: `main` 은 오케스트레이터 역할이라 앱 프로세스마다 하나씩 있고,
+    // 워크스페이스 창은 저장된 `w-<uuid>` 를 의도적으로 되쓴다(NAMING 4b). 한때 여기서 겹치면
+    // 거절했는데, 그러면 두 앱을 함께 켠 순간 **어느 쪽 오케스트레이터도 밖에서 못 부른다**
+    // (실측 2026-08-01: 저장소 조회조차 막혔다). 고르지 않는다는 판단은 옳고 결론이 틀렸다 —
+    // 고를 수 없으면 전부에게 보낸다. 하나만 원하는 부름은 유일한 주소를 쓰면 된다.
+    let sent = match push_to_owner(&target, &push) {
+        Delivered::To(n) => n,
         Delivered::NoOwner => {
             pending().lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
             return json!({
@@ -282,23 +292,36 @@ fn route(req: control::Request) -> Value {
                 "message": format!("창 호스트에 배달하지 못했다: {target}")
             });
         }
-        Delivered::ManyOwners(n) => {
-            pending().lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
-            return json!({
-                "ok": false, "code": "AMBIGUOUS_HOST",
-                "message": format!(
-                    "창 이름 {target} 을(를) 호스트 {n} 곳이 든다 — 고르지 않는다(고르면 남의 창이 답한다)"
-                ),
-            });
-        }
-    }
+    };
 
     // 무한대기 금지도 규칙의 일부다 — 접지 않으면 답 안 하는 창 하나가 이 연결을 영원히 붙잡는다.
     let wait = Duration::from_millis(control::reply_wait_ms(req.timeout_ms));
-    match rx.recv_timeout(wait) {
+    // 여럿에게 보냈으면 **여럿의 답**을 모은다. 첫 답만 돌리면 나머지가 어디로 갔는지 아무도
+    // 모르고, 부른 쪽은 하나만 돈 것으로 읽는다.
+    if sent > 1 {
+        let mut answers = Vec::with_capacity(sent);
+        let until = std::time::Instant::now() + wait;
+        while answers.len() < sent {
+            let left = until.saturating_duration_since(std::time::Instant::now());
+            if left.is_zero() {
+                break;
+            }
+            match rx.recv_timeout(left) {
+                Ok(v) => answers.push(v),
+                Err(_) => break,
+            }
+        }
+        pending().lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
+        return json!({
+            "ok": true,
+            "data": { "hosts": sent, "answers": answers },
+        });
+    }
+    let single = rx.recv_timeout(wait);
+    pending().lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
+    match single {
         Ok(v) => v,
         Err(_) => {
-            pending().lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
             // 상한이 없으면 답하지 않는 창 하나가 그 연결을 영원히 붙잡는다.
             json!({
                 "ok": false, "code": "TIMEOUT",
@@ -310,11 +333,10 @@ fn route(req: control::Request) -> Value {
 
 /// 배달을 시도한 결과. "못 했다"를 한 가지로 뭉치면 부른 쪽이 사유를 못 듣는다.
 enum Delivered {
-    Yes,
-    /// 그 라벨을 든 호스트가 없다(또는 쓰기가 실패했다).
+    /// 이만큼의 주인에게 갔다(하나 이상).
+    To(usize),
+    /// 그 라벨을 든 호스트가 없다(또는 쓰기가 전부 실패했다).
     NoOwner,
-    /// 그 라벨을 **여럿**이 들었다. 고르지 않는다.
-    ManyOwners(usize),
 }
 
 /// 이 창을 가진 호스트에게만 민다.
@@ -327,17 +349,16 @@ enum Delivered {
 /// 되쓴다(NAMING 4b). 한 홈을 두 프레임워크가 보면 같은 슬롯을 각자 되살린다.
 fn push_to_owner(label: &str, v: &Value) -> Delivered {
     let g = hosts().lock().unwrap_or_else(|e| e.into_inner());
-    let owners: Vec<&Host> = g.iter().filter(|h| h.live.iter().any(|l| l == label)).collect();
-    match owners.len() {
-        0 => Delivered::NoOwner,
-        1 => {
-            if owners[0].writer.write_line(&v.to_string()) {
-                Delivered::Yes
-            } else {
-                Delivered::NoOwner
-            }
+    let mut sent = 0usize;
+    for h in g.iter().filter(|h| h.live.iter().any(|l| l == label)) {
+        if h.writer.write_line(&v.to_string()) {
+            sent += 1;
         }
-        n => Delivered::ManyOwners(n),
+    }
+    if sent == 0 {
+        Delivered::NoOwner
+    } else {
+        Delivered::To(sent)
     }
 }
 

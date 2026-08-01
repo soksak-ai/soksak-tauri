@@ -294,22 +294,24 @@ fn a_window_that_died_stops_being_an_address() {
     assert_eq!(caller.join().expect("부른 쪽")["ok"], true);
 }
 
-/// 같은 라벨을 두 프레임워크가 들면 **거절이 옳은 동작이다**.
+/// 같은 라벨을 두 프레임워크가 들면 **둘 다 실행하고 둘의 답이 온다.**
 ///
-/// 우연이 아니라 필연이다: 창 복원은 라벨을 새로 만들지 않고 저장된 `w-<uuid>` 를 되쓰고,
-/// `main` 은 두 프레임워크가 각자 쓴다. 한 홈을 둘이 보면 같은 라벨이 겹친다. 그때 아무나 고르면
-/// 남의 프레임워크 창에서 명령이 돌고 성공을 답한다 — 그리고 그 라벨은 PTY 재접속 키이기도 해서
-/// 조용히 고른 결과가 남의 셸에 닿는다.
+/// 겹침은 우연이 아니라 필연이다: 창 복원은 저장된 `w-<uuid>` 를 되쓰고, `main` 은 오케스트
+/// 레이터 역할이라 두 프레임워크가 각자 하나씩 든다. 한 홈을 둘이 보면 반드시 겹친다.
+///
+/// 한때 그때 거절했는데, 그러면 두 앱을 함께 켠 순간 어느 쪽도 밖에서 못 부른다(실측
+/// 2026-08-01). 고를 수 없으면 전부에게 보낸다 — 하나만 원하면 유일한 주소를 쓰면 된다.
 #[test]
-fn a_label_both_frameworks_claim_is_refused_and_neither_runs() {
+fn a_label_both_frameworks_claim_runs_on_both() {
     let (_h1, _f1, w1, _d1, _b1) = attach(&["t-same"], "t-same", json!({ "ok": true, "data": 1 }));
     let (_h2, _f2, w2, _d2, _b2) = attach(&["t-same"], "t-same", json!({ "ok": true, "data": 2 }));
 
     let r = ask(json!({ "id": 6, "method": "x.y", "window": "t-same", "timeoutMs": 2000 }));
-    assert_eq!(r["code"], "AMBIGUOUS_HOST", "{r}");
-    assert!(r["message"].as_str().unwrap_or_default().contains("t-same"), "{r}");
-    assert_eq!(w1.ran(), 0, "고르지 않아야 하는데 첫째가 실행했다");
-    assert_eq!(w2.ran(), 0, "고르지 않아야 하는데 둘째가 실행했다");
+    assert_eq!(r["data"]["hosts"], 2, "{r}");
+    let answers = r["data"]["answers"].as_array().cloned().unwrap_or_default();
+    assert_eq!(answers.len(), 2, "둘의 답이 다 와야 한다: {r}");
+    assert_eq!(w1.ran(), 1, "첫째가 실행하지 않았다");
+    assert_eq!(w2.ran(), 1, "둘째가 실행하지 않았다");
 }
 
 /// 방송은 주인 없는 사실이다 — 붙은 쪽이 받아 자기 창에 뿌린다.

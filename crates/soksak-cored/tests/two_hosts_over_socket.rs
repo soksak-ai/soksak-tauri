@@ -193,22 +193,25 @@ fn a_broadcast_reaches_both_frameworks() {
     }
 }
 
-/// 같은 라벨을 둘이 들면 **이름을 달고 거절한다** — 아무 쪽이나 고르지 않는다.
+/// 같은 라벨을 둘이 들면 **둘 다에게 간다.**
 ///
-/// 우연이 아니라 필연이다: 창 복원은 라벨을 새로 만들지 않고 저장된 `w-<uuid>` 를 되쓴다.
-/// 홈을 공유하면 두 프레임워크가 같은 라벨의 창을 각자 되살린다. 그때 첫 매치를 고르면 남의
-/// 프레임워크 창에서 명령이 돌고, 그 라벨은 PTY 재접속 키이기도 해서 남의 셸에 닿는다.
+/// 겹침은 우연이 아니라 필연이다: `main` 은 오케스트레이터 역할이라 앱 프로세스마다 하나씩
+/// 있고, 워크스페이스 창 복원은 저장된 `w-<uuid>` 를 되쓴다. 홈을 공유하면 두 프레임워크가
+/// 같은 라벨을 각자 든다.
+///
+/// 한때 그때 거절했는데, 그러면 두 앱을 함께 켠 순간 **어느 쪽도 밖에서 못 부른다**(실측
+/// 2026-08-01: 저장소 조회조차 막혔다). 고르지 않는다는 판단은 옳고 결론이 틀렸다 — 고를 수
+/// 없으면 전부에게 보내고 전부의 답을 돌린다. 하나만 원하면 유일한 주소를 쓰면 된다.
 #[test]
-fn a_label_both_frameworks_claim_is_refused_by_name() {
+fn a_label_both_frameworks_claim_goes_to_both() {
     let cored = Cored::start("ambiguous");
     let mut a = Host::attach(&cored.socket, &["w-same"], "w-same");
     let mut b = Host::attach(&cored.socket, &["w-same"], "w-same");
 
-    let r = cored.ask(json!({"id":3,"method":"x.y","window":"w-same","timeoutMs":2000}));
-    assert_eq!(r["code"], "AMBIGUOUS_HOST", "{r}");
-    assert!(r["message"].as_str().unwrap().contains("w-same"), "{r}");
-    assert!(a.pushed().is_none(), "고르지 않아야 하는데 첫째에 갔다");
-    assert!(b.pushed().is_none(), "고르지 않아야 하는데 둘째에 갔다");
+    let r = cored.ask(json!({"id":3,"method":"x.y","window":"w-same","timeoutMs":600}));
+    assert_eq!(r["data"]["hosts"], 2, "{r}");
+    assert!(a.pushed().is_some(), "첫째 호스트가 못 받았다");
+    assert!(b.pushed().is_some(), "둘째 호스트가 못 받았다");
 }
 
 /// 한쪽이 끊겨도 나머지는 계속 서빙한다 — 그리고 떠난 쪽의 창은 주소가 아니다.

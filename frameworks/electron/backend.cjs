@@ -75,6 +75,13 @@ function createBackendClient(options = {}) {
   // 잃는다 — 읽기가 실패하고, 실패한 읽기를 "비어 있음"으로 적는 소비자 하나가 곧 데이터
   // 소실이다(실측 2026-08-01: 워크스페이스 3차 소실). 넣지 않으면 예전대로 붙기만 한다.
   const ensureUp = options.ensureUp ?? null;
+  // 붙자마자 **무엇을 서빙하는지** 물어 둔다. 이름 접두사로 "누가 답하는가"를 가르면 틀린다:
+  // `window_` 로 시작하지만 창이 아니라 저장소가 답하는 이름이 있고, 그것을 프레임워크가
+  // 가로채면 그 프레임워크에서만 기능이 죽는다(실측 2026-08-01: Electron 워크스페이스 저장).
+  // 선언은 **연결의 사실**이라 여기서 묻는다 — 명령 호출 경로에서 물으면 그 질문이 요구
+  // 원장에 섞이고, 부른 적 없는 요청이 첫 줄로 나간다.
+  const declare = options.declare ?? null;
+  let served = null;
   /** 마지막 재건 시도. 실패가 이어질 때 호출마다 세우려 들지 않기 위한 바닥이다. */
   let lastEnsure = 0;
   const ENSURE_FLOOR_MS = 1000;
@@ -174,6 +181,23 @@ function createBackendClient(options = {}) {
         // 선언이 먼저다. 같은 연결·같은 순서라 첫 명령이 이 줄보다 앞설 수 없다.
         // 선언에도 상관 id 를 단다 — 짝이 없으면 답이 "짝 없는 응답"으로 버려지고, 선언이
         // **거절당한 것**과 그냥 조용한 것이 구분되지 않는다.
+        if (declare) {
+          const id = ++seq;
+          pending.set(id, {
+            command: declare,
+            timer: setTimeout(() => pending.delete(id), timeoutMs),
+            resolve: (v) => {
+              const list = v?.data?.commands ?? v?.commands ?? [];
+              const names = (Array.isArray(list) ? list : [])
+                .map((c) => String(c?.name ?? c))
+                .filter(Boolean);
+              // 빈 답을 굳히지 않는다 — 그러면 그 연결 내내 전부 프레임워크가 가로챈다.
+              if (names.length > 0) served = new Set(names);
+            },
+            reject: () => {},
+          });
+          s.write(`${JSON.stringify({ id, method: declare })}\n`);
+        }
         for (const method of announce) {
           const id = ++seq;
           pending.set(id, {
@@ -298,7 +322,10 @@ function createBackendClient(options = {}) {
     rejectAll(DISCONNECTED, "프레임워크가 백엔드 연결을 닫았다");
   }
 
-  return { call, close, onStream, socketPath };
+  /** 이 백엔드가 서빙한다고 **스스로 선언한** 이름인가. 아직 못 물었으면 false. */
+  const serves = (name) => served?.has(String(name)) ?? false;
+
+  return { call, close, onStream, socketPath, serves };
 }
 
 module.exports = {

@@ -465,6 +465,49 @@ pub(crate) fn run_data_kv_set(ctx: &Ctx, params: &Value) -> Outcome {
     })
 }
 
+// ── 명령 표면의 이름 ─────────────────────────────────────────────────────────
+//
+// 저장소는 주인이 하나다(A22). 그런데 이 표의 이름은 밑줄(`data_kv_get`)이고 사람·CLI·에이전트가
+// 부르는 이름은 점(`data.kv.get`)이라, 점 이름은 이 표에서 안 보였고 라우터는 그것을 **창이 답할
+// 이름**으로 넘겼다. 그래서 저장소 조회가 창으로 갔고, 두 앱을 함께 켜자 그 이름을 두 창이 들어
+// 통째로 막혔다(실측 2026-08-01). 창에 물을 일이 애초에 없는 명령이다.
+//
+// 철자만 바꿔 넘기지 않는다: 점 이름은 **명령 표면의 계약**이라 답 모양이 다르다(`{ns,key,value}`).
+// 밑줄 이름은 저장소를 위임한 프로세스가 쓰는 내부 연산이고 값 자체를 돌린다. 둘은 층이 다르므로
+// 각자 선언한다 — 자동 변환으로 이으면 소비처가 받던 모양이 조용히 바뀐다.
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KvSurfaceArg {
+    ns: String,
+    key: String,
+}
+
+/// `data.kv.get` — 명령 표면. 무엇을 물었는지 답에 실린다(`{ns,key,value}`).
+pub(crate) fn run_kv_get_surface(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: KvSurfaceArg| {
+        let conn = ctx.open_db()?;
+        let value = soksak_core::kv::get(&SqliteRows { conn: &conn }, &a.ns, &a.key)?;
+        Ok(serde_json::json!({ "ns": a.ns, "key": a.key, "value": value }))
+    })
+}
+
+/// `data.kv.keys` — 명령 표면.
+pub(crate) fn run_kv_keys_surface(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: KvNsArg| {
+        let conn = ctx.open_db()?;
+        let keys = soksak_store::store::kv_keys(&conn, &a.ns, a.prefix.as_deref())?;
+        Ok(serde_json::json!({ "ns": a.ns, "keys": keys }))
+    })
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KvNsArg {
+    ns: String,
+    prefix: Option<String>,
+}
+
 /// 이 칸이 간직한 과거 — 최신 직전 값이 앞이다.
 pub(crate) fn run_data_kv_history(ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: KvDeleteArg| {

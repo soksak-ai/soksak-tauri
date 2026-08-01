@@ -203,7 +203,7 @@ test-e2e: ## 실행 중 앱 소켓 대상 E2E 스위트(멱등·자기정리). I
 	echo "── e2e: ui-verify ──"; SOKSAK_SOCKET="$$HOME/.soksak-$$IDENTITY/com.soksak.$$IDENTITY.sock" node scripts/e2e/ui-verify.mjs || fail=1; \
 	echo "── e2e: browser-pixels ──"; SOKSAK_SOCKET="$$HOME/.soksak-$$IDENTITY/com.soksak.$$IDENTITY.sock" node scripts/e2e/browser-pixels.mjs || fail=1; \
 	echo "── e2e: gutter-hover ──"; SOKSAK_SOCKET="$$HOME/.soksak-$$IDENTITY/com.soksak.$$IDENTITY.sock" node scripts/e2e/gutter-hover.mjs || fail=1; \
-	for m in surface-park tab-switch-ghost restore-load motion-slow restore-timing; do \
+	for m in surface-park tab-switch-ghost restore-load motion-slow restore-timing snapshot-generation; do \
 		echo "── e2e: $$m ──"; SOKSAK_SOCKET="$$HOME/.soksak-$$IDENTITY/com.soksak.$$IDENTITY.sock" node scripts/e2e/$$m.mjs || fail=1; \
 	done; \
 	echo "── e2e: resize ──"; bash scripts/e2e/resize.sh --identity $$IDENTITY || fail=1; \

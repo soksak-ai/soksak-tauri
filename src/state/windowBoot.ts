@@ -304,12 +304,22 @@ export async function respawnSavedWindows(): Promise<void> {
         fallback: EMPTY_WINDOW,
         ...coreStoreDeps,
       });
-      const snap = await snapStore.hydrate();
+      // **없는 것과 비어 있는 것을 가른다.** 예전에는 둘 다 "프로젝트 0" 이라, 스냅샷이 아직
+      // 없거나 지워진 창까지 장부에서 지웠다 — 그 창은 다시는 안 열린다(되돌릴 자리가 없던
+      // 시절에는 그대로 소실이었다). 지우는 것은 **사용자가 비운 창** 하나뿐이다.
+      const { found, value: snap } = await snapStore.read();
+      if (!found) {
+        // 스냅샷이 없다 — 되살릴 것이 없으니 열지 않는다. 그러나 장부는 건드리지 않는다:
+        // 안 여는 것은 다음 부팅에 회복되지만, 지운 slot 은 돌아오지 않는다.
+        respawnFact(`respawn:no-snapshot:${slot.label}`);
+        console.warn(`[restore] 스냅샷 없음 — 열지 않고 장부는 둔다: ${slot.label}`);
+        continue;
+      }
       if (snap.projects.length === 0) {
         manifest = upsertManifest(manifest, { ...slot, roots: [] }); // slot 제거
         pruned = true;
         respawnFact(`respawn:ghost:${slot.label}`);
-        console.warn(`[restore] 유령 slot 정리(스냅샷 없음): ${slot.label}`);
+        console.warn(`[restore] 빈 창 slot 정리(사용자가 비운 창): ${slot.label}`);
         continue;
       }
       // 창 라벨 불변식(NAMING 4b) — 런타임 창은 w-<uuid> 뿐이다. 다른 라벨은 capability 밖이라

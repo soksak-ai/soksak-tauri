@@ -906,6 +906,25 @@ pub const COMMANDS: &[Command] = &[
         returns: "any | null (저장된 값)",
         run: run_data_kv_get,
     },
+    // 명령 표면의 이름 — 저장소 명령이 창으로 새지 않게 이 표가 직접 든다(registry_store 머리말).
+    Command {
+        name: "data.kv.get",
+        args: &[
+            Arg { name: "ns", ty: "string", required: REQ },
+            Arg { name: "key", ty: "string", required: REQ },
+        ],
+        returns: "{ ns, key, value }",
+        run: run_kv_get_surface,
+    },
+    Command {
+        name: "data.kv.keys",
+        args: &[
+            Arg { name: "ns", ty: "string", required: REQ },
+            Arg { name: "prefix", ty: "string", required: OPT },
+        ],
+        returns: "{ ns, keys }",
+        run: run_kv_keys_surface,
+    },
     // 되돌릴 자리는 **물어서 알 수 있어야 한다**. 저장소가 과거를 간직해도 꺼낼 길이 없으면
     // 그 과거는 없는 것과 같다 — 사고가 난 순간 사람이 볼 수 있어야 한다.
     Command {

@@ -28,6 +28,86 @@ function harness(initialLs?: Record<string, string>) {
   return { ls, remote, invoke, onDataChange, fireRemoteChange, localStorage };
 }
 
+// 없는 것과 비어 있는 것은 다르다 — 그 둘이 같은 값이면 소비자가 자산을 지운다.
+//
+// RED 근거(실측 2026-08-01): 창 리스폰이 스냅샷을 hydrate 해서 `projects.length === 0` 이면
+// 장부에서 그 창의 slot 을 지운다. 그런데 hydrate 는 권위가 비었을 때 **fallback 을 권위로
+// 써 버려**, 스냅샷이 없는 창과 사용자가 비운 창이 같은 답이 됐다. 그 창은 다시는 안 열린다.
+describe("read: 없는 것과 비어 있는 것을 가른다", () => {
+  it("권위에 값이 있으면 found 다", async () => {
+    const h = harness();
+    h.remote.set("window/w-1", { projects: [1] });
+    const store = makeCoreStore<{ projects: number[] }>({
+      key: "window/w-1",
+      lsKey: "ls.w1",
+      fallback: { projects: [] },
+      invoke: h.invoke,
+      onDataChange: h.onDataChange,
+      localStorage: h.localStorage,
+    });
+    expect(await store.read()).toEqual({ found: true, value: { projects: [1] } });
+  });
+
+  it("권위에 없으면 found 가 아니다 — fallback 을 값인 척 돌리지 않는다", async () => {
+    const h = harness();
+    const store = makeCoreStore<{ projects: number[] }>({
+      key: "window/w-2",
+      lsKey: "ls.w2",
+      fallback: { projects: [] },
+      invoke: h.invoke,
+      onDataChange: h.onDataChange,
+      localStorage: h.localStorage,
+    });
+    expect((await store.read()).found).toBe(false);
+  });
+
+  it("권위가 비어 있다고 그 자리에 빈 값을 쓰지 않는다 — 없음이 그 순간 확정된다", async () => {
+    const h = harness();
+    const store = makeCoreStore<{ projects: number[] }>({
+      key: "window/w-3",
+      lsKey: "ls.w3",
+      fallback: { projects: [] },
+      invoke: h.invoke,
+      onDataChange: h.onDataChange,
+      localStorage: h.localStorage,
+    });
+    await store.hydrate();
+    expect(h.remote.has("window/w-3")).toBe(false);
+    expect(h.invoke.mock.calls.filter((c) => c[0] === "data_kv_set")).toHaveLength(0);
+  });
+
+  it("캐시에 내용이 있으면 그것은 권위로 옮긴다 — 무중단 이관은 남는다", async () => {
+    const h = harness({ "ls.w4": JSON.stringify({ projects: [7] }) });
+    const store = makeCoreStore<{ projects: number[] }>({
+      key: "window/w-4",
+      lsKey: "ls.w4",
+      fallback: { projects: [] },
+      invoke: h.invoke,
+      onDataChange: h.onDataChange,
+      localStorage: h.localStorage,
+    });
+    expect(await store.hydrate()).toEqual({ projects: [7] });
+    expect(h.remote.get("window/w-4")).toEqual({ projects: [7] });
+  });
+
+  it("읽기가 실패하면 던진다 — 못 읽음을 없음으로 접지 않는다", async () => {
+    const h = harness();
+    h.invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "data_kv_get") throw new Error("주인이 없다");
+      return undefined;
+    });
+    const store = makeCoreStore<{ projects: number[] }>({
+      key: "window/w-5",
+      lsKey: "ls.w5",
+      fallback: { projects: [] },
+      invoke: h.invoke,
+      onDataChange: h.onDataChange,
+      localStorage: h.localStorage,
+    });
+    await expect(store.read()).rejects.toThrow("주인이 없다");
+  });
+});
+
 describe("makeCoreStore", () => {
   it("loadSync: localStorage 캐시를 동기 반환(부트 — render 전)", () => {
     const h = harness({ "soksak.settings": JSON.stringify({ a: 1 }) });
