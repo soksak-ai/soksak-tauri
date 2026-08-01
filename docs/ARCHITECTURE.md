@@ -66,7 +66,7 @@ Anything a plugin cannot express through these four seams, the plugin must not d
 
 ---
 
-## 4. Principles (A1–A17)
+## 4. Principles
 
 These are HARD. They are stated absolutely on purpose.
 
@@ -165,6 +165,25 @@ If occupancy cannot be read, **do not restore.** Not opening is recovered by the
 One value genuinely belongs to the process alone — **where its own window sits** (`controlPlaneFrame`). Shared, two control planes open stacked on the same spot. Nothing is lost by splitting it, so the key carries the framework (`frameworkScopedKey`). A user asset and a window's own position are different axes.
 
 **Closing a window is not quitting.** A closed window must leave the ledger (`forgetWindow`), or the next boot revives it. Quitting closes every window too, yet the list must survive — so the erasure belongs to the *close command*, never the shutdown path.
+
+
+### A24. One fact has one home — require it, do not count it.
+
+Write the same fact in two places and it **will** diverge. That is measured, not assumed: of 52 candidates swept on 2026-08-01, the 8 that were verified were all real and **7 had already diverged**. This is the default case, not the exception.
+
+Three conditions must hold: ① both sites state the **same fact**, ② fixing one side diverges **silently** (neither compiler nor tests object), ③ the symptom is not an error but **different data / an event that never arrives / an empty result**. Coincidentally equal strings, two implementations bound by a spec plus an oracle, and relationships the type system already enforces do not qualify.
+
+**The home of a shape is where both sides already depend.** Request and delivery envelopes belong to the owner of the protocol constants (`soksak-spec-socket`); activity entries, store-change, window occupancy, exit codes and content-view events belong to core. Never add a dependency for it — if you must, that is not the right home.
+
+**Require the rule; do not count it.** A gate that scans source passes when a single function boundary is parsed wrong (planting a violation proved exactly that). When a type *demands* the value there is no syntactic way to omit it: the write door cannot be passed without producing what changed (`Changed`, `#[must_use]`), and that one receipt carries both notification and backup. **Give "nothing changed" a way to be said** (`none()`) — without it, callers build the value conditionally and route around the enforcement.
+
+**The gate is the layer after the type**: it counts writes that never enter that door. And **it cannot count at all when the same decision has two shapes** — one command spelled its ownership check by hand and was missing from the tally; unifying it took the counted writes from 14 to 15. Always **plant a violation** to prove a gate bites. Never hand-list the files either: the day code moves, the gate quietly counts an empty set and passes.
+
+**Across languages the type cannot reach.** JS and TS cannot read a Rust constant, so a copy remains. Then the gate **reads both files and compares** — never write the value into the gate, or the copy becomes three.
+
+**Distinguish "could not read" from "none".** Collapsing failure into an empty array reads as "nobody holds it" and drives the opposite behaviour.
+
+**A wrong standard makes the test defend the defect.** The `browser-loading` axis was that: the comment asserted snake_case was the original and the test pinned it, while both the emitter and the consumers used camelCase — in that framework the back button was permanently disabled. Lowering a standard you cannot meet is betrayal; but when the standard itself is wrong, state the evidence and correct it.
 
 ---
 
