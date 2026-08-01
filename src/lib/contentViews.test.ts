@@ -23,6 +23,11 @@ async function load() {
 }
 
 /** <webview> 태그가 붙이는 메서드를 흉내낸다 — jsdom 에는 그 요소가 없다. */
+/** 태그 대역 — 제어면과 함께 **준비 사건**도 낸다.
+ *
+ *  제어면은 `dom-ready` 뒤에만 부를 수 있다(태그 구현이 예외로 강제한다). 목이 그 사건을 안
+ *  내면 이 검사는 실제와 다른 세계를 재고, 진짜 결함(안 붙은 태그에 제어면 호출)을 가린다 —
+ *  실측 2026-08-01: Electron 부팅마다 그 예외가 Uncaught 로 났는데 검사는 전부 GREEN 이었다. */
 function stubTag(el: Element) {
   Object.assign(el, {
     loadURL: vi.fn(),
@@ -33,6 +38,8 @@ function stubTag(el: Element) {
     openDevTools: vi.fn(),
     executeJavaScript: vi.fn(async () => "ok"),
   });
+  // 준비를 알린다 — 실제 태그가 붙고 나서 내는 그 사건이다.
+  el.dispatchEvent(new Event("dom-ready"));
 }
 
 describe("콘텐츠 뷰 호스트", () => {
@@ -141,6 +148,9 @@ describe("콘텐츠 뷰 호스트", () => {
     // 실패하는 자리가 오류 없이 생긴다 — 그것이 이 검사가 막는 것이다.
     expect(() => m.domHost.injectScript("b-1", "1", "document-start")).toThrow("document-start");
     expect(typeof m.domHost.injectScript("b-1", "1", "document-end")).toBe("function");
+    // 주입은 **준비를 기다린 뒤** 실행된다 — 안 붙은 태그에 제어면을 부르면 Uncaught 다.
+    // 그래서 해지 함수는 즉시 돌아오고 실행은 다음 틱이다.
+    await new Promise((r) => setTimeout(r, 0));
     expect((el as unknown as Record<string, ReturnType<typeof vi.fn>>).executeJavaScript)
       .toHaveBeenCalledWith("1");
   });
@@ -195,6 +205,8 @@ describe("게스트 스크립트 — js 는 함수 본문이다", () => {
       unknown
     >;
     el.executeJavaScript = async (code: string) => (0, eval)(code);
+    // 제어면은 준비 뒤에만 부를 수 있다 — 실제 태그가 내는 그 사건을 여기서도 낸다.
+    (el as unknown as EventTarget).dispatchEvent(new Event("dom-ready"));
     expect(await m.domHost.evalJs("b-eval", "return 1 + 1")).toBe("2");
   });
 
@@ -206,6 +218,8 @@ describe("게스트 스크립트 — js 는 함수 본문이다", () => {
       unknown
     >;
     el.executeJavaScript = async (code: string) => (0, eval)(code);
+    // 제어면은 준비 뒤에만 부를 수 있다 — 실제 태그가 내는 그 사건을 여기서도 낸다.
+    (el as unknown as EventTarget).dispatchEvent(new Event("dom-ready"));
     expect(await m.domHost.evalJs("b-eval2", "const v = await Promise.resolve(7); return v")).toBe(
       "7",
     );

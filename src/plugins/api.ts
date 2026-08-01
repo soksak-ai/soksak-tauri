@@ -1815,7 +1815,11 @@ export function buildPluginApi(
                           payload: {
                             capability: "clipboard.watch",
                             available: false,
-                            message: `· clipboard.watch 없음 — ${String(e).slice(0, 160)}`,
+                            // 보이는 줄은 **사람에게 하는 말**이다. 프레임워크가 거절한 사유는
+                            // 개발자의 것이라 페이로드에 둔다 — 피드에 그대로 흘리면 사용자는
+                            // 자기가 뭘 잘못했나 읽는다.
+                            message: "· 이 앱은 클립보드 변경을 감시하지 않습니다",
+                            reason: String(e).slice(0, 200),
                           },
                         })
                         .catch(() => {});

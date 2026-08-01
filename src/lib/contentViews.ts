@@ -101,6 +101,41 @@ function find(label: string, doc: Document): HTMLElement | null {
 }
 
 /** 태그가 아직 그 메서드를 안 붙였으면 조용히 성공하지 않는다. */
+/**
+ * 이 태그가 제어면을 받을 준비가 됐다는 약속. **만들 때 건다.**
+ *
+ * `dom-ready` 는 한 번만 난다 — 나중에 구독하면 영영 못 받는다. 그래서 태그를 만드는 자리에서
+ * 곧바로 걸어 둔다: 준비가 먼저 나도 그 사실이 약속에 남는다.
+ *
+ * 제어면은 준비된 뒤에만 부를 수 있고, 태그 구현이 그 규칙을 예외로 강제한다("DOM 에 붙고
+ * dom-ready 가 난 뒤에야 부를 수 있다"). 부르는 쪽마다 타이밍을 맞추면 한 곳만 어긋나도
+ * **Uncaught 로 부팅이 끊긴다** — 실측 2026-08-01: Electron 부팅마다 그 예외가 났고 다른
+ * 프레임워크에서는 조용해 한쪽에서만 죽었다. 그래서 규칙을 **이 문 하나**에 둔다.
+ */
+const READY = moduleState(
+  "lib/contentViews#ready",
+  () => new WeakMap<HTMLElement, Promise<void>>(),
+);
+
+/** 태그를 만든 자리가 부른다 — 준비 사건을 놓치지 않게 곧바로 건다. */
+function armReady(el: HTMLElement): void {
+  READY.set(
+    el,
+    new Promise((done) => {
+      const on = () => {
+        el.removeEventListener("dom-ready", on);
+        done();
+      };
+      el.addEventListener("dom-ready", on);
+    }),
+  );
+}
+
+function ready(el: HTMLElement): Promise<void> {
+  // 걸어 두지 않은 태그(남이 만든 것)는 기다릴 근거가 없다 — 그대로 지나간다.
+  return READY.get(el) ?? Promise.resolve();
+}
+
 function must<T>(el: HTMLElement | null, label: string, name: string): T {
   if (!el) throw new Error(`콘텐츠 뷰가 없습니다: ${label}`);
   const fn = (el as unknown as Record<string, unknown>)[name];
@@ -110,11 +145,21 @@ function must<T>(el: HTMLElement | null, label: string, name: string): T {
   return fn.bind(el) as T;
 }
 
+/** 준비를 기다린 뒤 제어면을 부른다 — 이 문을 지나지 않는 호출이 그 예외를 만든다. */
+async function onReady<T>(label: string, name: string): Promise<T> {
+  const el = find(label, document);
+  if (!el) throw new Error(`콘텐츠 뷰가 없습니다: ${label}`);
+  await ready(el);
+  return must<T>(el, label, name);
+}
+
 export const domHost: ContentViewHost = {
   async open(label, opts) {
     const doc = document;
     if (find(label, doc)) return;
     const el = doc.createElement("webview");
+    // 준비 약속을 **만들자마자** 건다 — dom-ready 는 한 번만 나고, 나중에 구독하면 놓친다.
+    armReady(el);
     el.setAttribute("data-content-view", label);
     // 파킹으로 숨긴다 — display:none 은 상자를 레이아웃에서 빼고, 되살릴 때 게스트가 0×0
     // 뷰포트로 붙는다(URL 은 맞는데 화면만 백지). 규칙은 layerPark 가 단일 진실이다.
@@ -167,21 +212,21 @@ export const domHost: ContentViewHost = {
     else if (delta > 0) must<() => void>(el, label, "goForward")();
   },
   async stop(label) {
-    must<() => void>(find(label, document), label, "stop")();
+    (await onReady<() => void>(label, "stop"))();
   },
   async zoom(label, factor) {
     // 태그는 배율이 아니라 레벨을 받는다(level = log1.2(factor)) — 번역은 여기서 한다.
-    must<(l: number) => void>(find(label, document), label, "setZoomLevel")(
+    (await onReady<(l: number) => void>(label, "setZoomLevel"))(
       Math.log(factor) / Math.log(1.2),
     );
     return factor;
   },
   async devtools(label) {
-    must<() => void>(find(label, document), label, "openDevTools")();
+    (await onReady<() => void>(label, "openDevTools"))();
     return true;
   },
   async evalJs(label, js) {
-    const run = must<(s: string) => Promise<unknown>>(find(label, document), label, "executeJavaScript");
+    const run = await onReady<(s: string) => Promise<unknown>>(label, "executeJavaScript");
     // `js` 는 **비동기 함수 본문**이다 — 계약의 정본은 WKWebView 의 callAsyncJavaScript(body)
     // 이고, 부르는 쪽은 그렇게 쓴다("return document.title"). 태그의 executeJavaScript 는
     // 그것을 **스크립트**로 평가하므로 최상위 return 이 문법 오류다. 감싸지 않으면 게스트
@@ -198,8 +243,10 @@ export const domHost: ContentViewHost = {
         `document-start 주입은 이 콘텐츠 뷰가 보장하지 못합니다(태그는 preload 로만 가능): ${label}`,
       );
     }
-    const run = must<(s: string) => Promise<unknown>>(find(label, document), label, "executeJavaScript");
-    void run(code);
+    // 준비를 기다린 뒤 실행한다 — 이 문을 안 지나면 안 붙은 태그에 제어면을 불러 Uncaught 다.
+    void onReady<(s: string) => Promise<unknown>>(label, "executeJavaScript").then((run) =>
+      run(code),
+    );
     return () => {};
   },
   async openWindow(url) {
