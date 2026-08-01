@@ -62,12 +62,13 @@ pub(crate) fn run_pty_daemon_upgrade(ctx: &Ctx, _params: &Value) -> Outcome {
         Ok(v) => Outcome::Ok(v),
         Err(why) => {
             crate::control::broadcast(
-                "activity",
-                serde_json::json!({
-                    "kind": "pty.daemon.upgrade.refused",
-                    "ns": "core",
-                    "payload": { "reason": why },
-                }),
+                soksak_core::activity::EVENT,
+                soksak_core::activity::notice(
+                    crate::ledger::now_ms(),
+                    "pty.daemon.upgrade.refused",
+                    "core",
+                    serde_json::json!({ "reason": why }),
+                ),
             );
             Outcome::Failed(why)
         }

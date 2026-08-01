@@ -27,9 +27,9 @@ use rusqlite::{Connection, OpenFlags};
 use serde_json::Value;
 use soksak_core::activity::Ledger;
 
-/// 활동 원장이 사는 자리 — 앱의 `activity.rs` 와 같은 ns·컬렉션이다.
-const NS: &str = "core";
-const COLL: &str = "activity";
+/// 활동 원장이 사는 자리 — 코어가 소유한다. 여기서 값을 다시 적으면 "같다"는 주석만 남고
+/// 실제로는 한쪽이 쓴 것을 다른 쪽이 못 읽는 상태가 조용히 생긴다.
+use soksak_core::activity::{COLL, NS};
 
 /// 원장별 할당자. 경로 문자열이 원장의 이름이다.
 static LEDGERS: Mutex<Vec<(String, Ledger)>> = Mutex::new(Vec::new());

@@ -10,13 +10,16 @@ struct LedgerReporter;
 
 impl soksak_store::ring::BackupReporter for LedgerReporter {
     fn failed(&self, detail: &str) {
+        // 모양은 코어가 소유한다 — 손으로 만들면 소비자 계약(seq·ts·kind·source·payload)에서
+        // 키가 빠지고, 빠진 항목은 오류 없이 피드에서 자리를 못 잡는다.
         crate::control::broadcast(
-            "activity",
-            serde_json::json!({
-                "kind": "data.backup.failed",
-                "ns": "core",
-                "payload": { "error": detail },
-            }),
+            soksak_core::activity::EVENT,
+            soksak_core::activity::notice(
+                crate::ledger::now_ms(),
+                "data.backup.failed",
+                "core",
+                serde_json::json!({ "error": detail }),
+            ),
         );
         eprintln!("[cored] 백업 링 스냅샷 실패: {detail}");
     }

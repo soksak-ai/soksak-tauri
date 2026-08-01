@@ -179,6 +179,29 @@ pub fn summarize_for_persist(entry: &Value) -> Value {
 pub const NS: &str = "core";
 pub const COLL: &str = "activity";
 
+/// 창으로 뿌리는 사건 이름 — 발행하는 프로세스가 여럿이라 여기서 정한다.
+///
+/// 구독자는 어느 프로세스가 보냈는지 모른다. 이름이 갈리면 한쪽 발행은 아무에게도 안 닿고,
+/// 그 부재는 오류가 아니라 **안 오는 사건**이다.
+pub const EVENT: &str = "activity";
+
+/// 도장을 못 받은 항목의 seq — 원장에 자리를 못 얻었다는 뜻이다.
+///
+/// 알림 자체를 버리지 않는다: 백업 실패 같은 사실이 저장소 실패 때문에 함께 사라지면, 가장
+/// 알아야 할 순간에 아무 말도 안 하게 된다. 대신 모양은 **같게 유지한다** — 소비자가 키를
+/// 골라 읽지 않아도 되고, 정렬에서 이 항목이 도장 있는 것들과 섞이지 않는다.
+pub const UNSTAMPED_SEQ: u64 = 0;
+
+/// 도장 없는 알림 — 원장을 못 거쳤을 때도 **같은 키 집합**으로 나간다.
+///
+/// 실측(2026-08-01): cored 세 곳이 `{kind, ns, payload}` 를 손으로 만들어 뿌리고 있었다.
+/// 소비자 계약은 `{seq, ts, kind, source, payload}` 라(오케스트레이터 `ActivityEntry`),
+/// 그 항목들은 `source` 가 비고 `seq` 가 없어 정렬에서 자리를 못 잡았다 — 오류는 아무 데도
+/// 안 났다.
+pub fn notice(ts_ms: u64, kind: &str, source: &str, payload: Value) -> Value {
+    stamp(UNSTAMPED_SEQ, ts_ms, kind, source, payload)
+}
+
 /// 행 id — seq 를 0 채움해 사전순이 곧 시간순이다. 정렬을 질의가 다시 하지 않는다.
 pub fn row_id(seq: u64) -> String {
     format!("a{seq:016}")
@@ -355,5 +378,39 @@ mod audit_tests {
     #[test]
     fn an_empty_ledger_is_not_damage() {
         assert!(audit_ledger(&[]).single_writer);
+    }
+}
+
+#[cfg(test)]
+mod shape_tests {
+    use super::*;
+
+    /// 도장 있는 항목과 없는 항목은 **같은 키 집합**이다 — 소비자는 둘을 가려 읽지 않는다.
+    ///
+    /// RED 근거(실측 2026-08-01): cored 세 곳이 `{kind, ns, payload}` 를 손으로 만들어 뿌렸다.
+    /// 소비자 계약은 `{seq, ts, kind, source, payload}` 라(오케스트레이터 `ActivityEntry`) 그
+    /// 항목들은 `source` 가 비고 `seq` 가 없었다. 오류는 아무 데도 안 났고, 피드에서 자리만
+    /// 못 잡았다.
+    #[test]
+    fn 도장_없는_알림도_같은_키를_갖는다() {
+        let stamped = stamp(7, 1000, "k", "src", serde_json::json!({ "a": 1 }));
+        let notice = notice(1000, "k", "src", serde_json::json!({ "a": 1 }));
+        let keys = |v: &Value| {
+            let mut k: Vec<String> = v.as_object().unwrap().keys().cloned().collect();
+            k.sort();
+            k
+        };
+        assert_eq!(keys(&stamped), keys(&notice), "키 집합이 갈리면 소비자가 둘을 가려 읽어야 한다");
+        assert_eq!(notice["seq"], UNSTAMPED_SEQ, "도장 없음은 값으로 말한다");
+        assert_eq!(notice["source"], "src", "source 는 ns 가 아니다");
+    }
+
+    /// 소비자가 읽는 축이 전부 있는가 — 이름을 하나라도 바꾸면 그 자리가 조용히 빈다.
+    #[test]
+    fn 소비자_계약의_축을_전부_싣는다() {
+        let v = stamp(1, 2, "kind", "source", Value::Null);
+        for key in ["seq", "ts", "kind", "source", "payload"] {
+            assert!(v.get(key).is_some(), "{key} 축이 빠졌다 — 소비자는 undefined 를 읽는다");
+        }
     }
 }

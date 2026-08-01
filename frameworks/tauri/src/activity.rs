@@ -165,7 +165,7 @@ pub fn admit(hub: &ActivityHub, kind: &str, source: &str, payload: Value) -> Val
 /// 반환 = 창에 닿았는가. 삼키지 않는다 — 무시할지는 호출자가 정한다.
 pub fn fan_out(hub: &ActivityHub, windows: &dyn WindowOracle, entry: &Value) -> bool {
     hub.fan_out_subs(entry);
-    windows.broadcast("activity", entry.clone())
+    windows.broadcast(soksak_core::activity::EVENT, entry.clone())
 }
 
 /// 영속(retention trim) — 커넥션 하나면 선다. 반환 = 이번 항목이 기록됐는가.

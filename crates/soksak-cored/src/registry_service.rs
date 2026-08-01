@@ -21,8 +21,8 @@ struct CoredServiceHost;
 impl ServiceHost for CoredServiceHost {
     fn publish(&self, kind: &str, source: &str, payload: Value) {
         crate::control::broadcast(
-            "activity",
-            json!({ "kind": kind, "ns": source, "payload": payload }),
+            soksak_core::activity::EVENT,
+            soksak_core::activity::notice(crate::ledger::now_ms(), kind, source, payload),
         );
     }
 

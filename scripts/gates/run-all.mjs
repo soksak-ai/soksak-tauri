@@ -28,6 +28,7 @@ export const LOCAL = new Map([
   ["core-git-scan.mjs", []],
   ["core-terminal-scan.mjs", []],
   ["data-change-notify-scan.mjs", []],
+  ["event-name-scan.mjs", []],
   ["delegated-shape-scan.mjs", []],
   ["distribution-invariants-scan.mjs", []],
   ["framework-folder-vocabulary.mjs", []],
