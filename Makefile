@@ -192,19 +192,23 @@ verify: spec-gate gates typecheck check test test-front ## 헤드리스 게이�
 
 test-unit: spec-gate gates typecheck check test test-front ## 결정적 단위(LLM 0·앱 불요) — 전 repo 표준 타깃(docs/TESTING.md)
 
-test-e2e: ## 실행 중 앱 소켓 대상 E2E 스위트(멱등·자기정리). IDENTITY 기본 debug. 앱 실행+전면 필요
+test-e2e: ## 실행 중 앱 대상 E2E 스위트(멱등·자기정리). IDENTITY 기본 debug. 앱 실행+전면 필요
+	@# 주소는 **cored 소켓**이다 — 프레임워크의 앱 소켓을 쓰면 그 프레임워크만 검증한다.
+	@# cored 는 그 창을 든 쪽으로 배달하므로, 어느 프레임워크가 떠 있든 같은 명령이 닿는다.
+	@# 실측 2026-08-01: 앱 소켓을 기본으로 두는 동안 Electron 은 매번 검증에서 빠졌고, 그
+	@# 프레임워크에서만 죽는 결함 둘(워크스페이스 저장·제어면 재접속)이 그대로 살아 있었다.
 	@IDENTITY=$${IDENTITY:-debug}; \
 	fail=0; \
 	for h in orchestrator project-rail nl-console browser-restore; do \
 		echo "── e2e: $$h ──"; bash scripts/e2e/$$h.sh --identity $$IDENTITY || fail=1; \
 	done; \
-	echo "── e2e: multiwindow ──"; SOKSAK_SOCKET="$$HOME/.soksak-$$IDENTITY/com.soksak.$$IDENTITY.sock" node scripts/e2e/multiwindow.mjs || fail=1; \
-	echo "── e2e: slot-freeze ──"; SOKSAK_SOCKET="$$HOME/.soksak-$$IDENTITY/com.soksak.$$IDENTITY.sock" node scripts/e2e/slot-freeze.mjs || fail=1; \
-	echo "── e2e: ui-verify ──"; SOKSAK_SOCKET="$$HOME/.soksak-$$IDENTITY/com.soksak.$$IDENTITY.sock" node scripts/e2e/ui-verify.mjs || fail=1; \
-	echo "── e2e: browser-pixels ──"; SOKSAK_SOCKET="$$HOME/.soksak-$$IDENTITY/com.soksak.$$IDENTITY.sock" node scripts/e2e/browser-pixels.mjs || fail=1; \
-	echo "── e2e: gutter-hover ──"; SOKSAK_SOCKET="$$HOME/.soksak-$$IDENTITY/com.soksak.$$IDENTITY.sock" node scripts/e2e/gutter-hover.mjs || fail=1; \
+	echo "── e2e: multiwindow ──"; SOKSAK_SOCKET="$$HOME/.soksak-$$IDENTITY/cored.sock" node scripts/e2e/multiwindow.mjs || fail=1; \
+	echo "── e2e: slot-freeze ──"; SOKSAK_SOCKET="$$HOME/.soksak-$$IDENTITY/cored.sock" node scripts/e2e/slot-freeze.mjs || fail=1; \
+	echo "── e2e: ui-verify ──"; SOKSAK_SOCKET="$$HOME/.soksak-$$IDENTITY/cored.sock" node scripts/e2e/ui-verify.mjs || fail=1; \
+	echo "── e2e: browser-pixels ──"; SOKSAK_SOCKET="$$HOME/.soksak-$$IDENTITY/cored.sock" node scripts/e2e/browser-pixels.mjs || fail=1; \
+	echo "── e2e: gutter-hover ──"; SOKSAK_SOCKET="$$HOME/.soksak-$$IDENTITY/cored.sock" node scripts/e2e/gutter-hover.mjs || fail=1; \
 	for m in surface-park tab-switch-ghost restore-load motion-slow restore-timing snapshot-generation; do \
-		echo "── e2e: $$m ──"; SOKSAK_SOCKET="$$HOME/.soksak-$$IDENTITY/com.soksak.$$IDENTITY.sock" node scripts/e2e/$$m.mjs || fail=1; \
+		echo "── e2e: $$m ──"; SOKSAK_SOCKET="$$HOME/.soksak-$$IDENTITY/cored.sock" node scripts/e2e/$$m.mjs || fail=1; \
 	done; \
 	echo "── e2e: resize ──"; bash scripts/e2e/resize.sh --identity $$IDENTITY || fail=1; \
 	[ $$fail = 0 ] && echo "✓ test-e2e 전체 GREEN" || { echo "✗ test-e2e 실패"; exit 1; }
