@@ -29,6 +29,8 @@ export const LOCAL = new Map([
   ["core-terminal-scan.mjs", []],
   ["data-change-notify-scan.mjs", []],
   ["event-name-scan.mjs", []],
+  ["font-stack-scan.mjs", []],
+  ["browser-module-scan.mjs", []],
   ["delegated-shape-scan.mjs", []],
   ["distribution-invariants-scan.mjs", []],
   ["framework-folder-vocabulary.mjs", []],

@@ -5,6 +5,17 @@
      --bd-soft(패널 내부선) 두 토큰뿐(§B4). --bd 는 테마 엔진이 주입, soft 는 파생 —
      테마 슬롯을 늘리지 않는다. 직색 보더는 게이트(cssContract)가 빌드 실패시킨다. */
   --bd-soft: color-mix(in srgb, var(--bd) 55%, transparent);
+  /* 모노 글꼴 스택 — **한 자리에서 온다.**
+     스택이 자리마다 흩어지면 한글 폴백이 그중 몇 군데에서만 빠지고, 그때 같은 문자열이
+     같은 화면 안에서 어떤 요소는 정상·어떤 요소는 두부(□)로 그려진다. 실측(2026-08-01):
+     탭 제목만 `터미널(고스티)` 의 `고`·`스` 가 □□ 였고 나머지 UI 한글은 멀쩡했다.
+     `system-ui` 가 뒤에 서 있는 이유: 이 스택의 모노 폰트들은 한글 글리프를 하나도 안
+     갖는다. 그러면 엔진의 마지막 폴백으로 가는데 그것이 엔진마다 다르다 — WebKit 은 시스템
+     한글 폰트를, Chromium 은 `monospace` 를 집는다. 같은 문자열이 프레임워크마다 다르게
+     보이는 것은 취향이 아니라 결함이다. */
+  --font-mono:
+    "JetBrains Mono", "SF Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
+    system-ui, monospace;
   /* 상태색(오류/주의) 파생 상수 — 테마 슬롯 아님(전 테마 공통 시맨틱). */
   --danger: #e5534b;
   --danger-soft: color-mix(in srgb, var(--danger) 50%, transparent);
@@ -64,15 +75,17 @@ body,
   height: 100%;
   overflow: hidden;
   background: transparent;
-  /* 앱 UI 폰트 = 설정의 글꼴(--app-font). 미설정 시 기본 모노 스택. */
-  font-family: var(
-    --app-font,
-    "JetBrains Mono",
-    "SF Mono",
-    Menlo,
-    Consolas,
-    monospace
-  );
+  /* 앱 UI 폰트 = 설정의 글꼴(--app-font). 미설정 시 기본 모노 스택.
+
+     `system-ui` 가 모노 뒤에 서 있는 이유: 이 스택의 모노 폰트들은 **한글 글리프를 하나도
+     안 갖는다.** 그러면 한글은 엔진의 마지막 폴백으로 가는데, 그 폴백이 엔진마다 다르다 —
+     WebKit 은 시스템 한글 폰트를 집고 Chromium 은 `monospace` 로 가서 일부 음절이 두부(tofu)로
+     그려진다(실측 2026-08-01: `터미널(고스티)` 의 `고`·`스` 만 □□ 로, 나머지 한글은 정상).
+     같은 문자열이 프레임워크마다 다르게 보이는 것은 "폰트 취향"이 아니라 결함이다.
+
+     `var()` 의 기본값 자리에 넣지 않는다: 거기 두면 사용자가 글꼴을 지정하는 순간 폴백 전체가
+     사라져 같은 결함이 돌아온다. 첫 자리만 대체하고 나머지 체인은 항상 남는다. */
+  font-family: var(--app-font, var(--font-mono));
   /* 앱 UI 기준 글자 크기. 크기 변수 축(appFontSize)은 소거됐다 — 밀도 조절은 줌
      (⌘±: 뷰 포커스=뷰 줌, 프레임 선택=창 줌)이 담당한다. */
   font-size: 13px;
@@ -1562,7 +1575,7 @@ body,
   border-radius: 3px;
   font-size: 11px;
   line-height: 1;
-  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-family: var(--font-mono);
 }
 .cmf-opt:hover {
   background: rgba(127, 127, 127, 0.22);
@@ -1681,7 +1694,7 @@ body,
   overflow: auto;
 }
 .fv-markdown code {
-  font-family: monospace;
+  font-family: var(--font-mono);
   font-size: 0.92em;
 }
 .fv-markdown a {
@@ -2168,7 +2181,7 @@ body,
 :root[data-chrome-font="mono"] .pane-status,
 :root[data-chrome-font="mono"] .space-tab-menu,
 :root[data-chrome-font="mono"] .ft-sidebar {
-  font-family: "JetBrains Mono", monospace;
+  font-family: var(--font-mono);
 }
 
 /* ── 효과: 글로우(크롬 텍스트) + 스캔라인 오버레이 ── */
@@ -2292,7 +2305,7 @@ body::after {
   word-break: break-all;
 }
 .dremote-confirm-mono {
-  font-family: "JetBrains Mono", monospace;
+  font-family: var(--font-mono);
   font-size: 11.5px;
 }
 .dremote-confirm-params {
@@ -2705,9 +2718,7 @@ select.dctl {
   background-repeat: no-repeat;
 }
 .dctl-mono {
-  font:
-    12px "JetBrains Mono",
-    monospace;
+  font: 12px var(--font-mono);
 }
 .dctl-btn {
   cursor: pointer;
@@ -2739,9 +2750,7 @@ select.dctl {
   color: var(--fg);
 }
 .dpath {
-  font:
-    11px "JetBrains Mono",
-    monospace;
+  font: 11px var(--font-mono);
   color: var(--fg3);
   word-break: break-all;
   padding-left: 130px;
@@ -2867,7 +2876,7 @@ select.dctl {
   display: flex;
   align-items: center;
   justify-content: center;
-  font: 600 13px "JetBrains Mono", monospace;
+  font: 600 13px var(--font-mono);
   color: var(--fg2);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
   cursor: pointer;
@@ -2886,7 +2895,7 @@ select.dctl {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--fg3);
-  font: 11.5px "JetBrains Mono", monospace;
+  font: 11.5px var(--font-mono);
   border: none;
   background: transparent;
 }
@@ -2961,7 +2970,7 @@ select.dctl {
   border: 1px solid var(--acc);
   background: var(--inset);
   color: var(--fg);
-  font: 600 12px "JetBrains Mono", monospace;
+  font: 600 12px var(--font-mono);
   outline: none;
 }
 
@@ -3212,7 +3221,7 @@ select.dctl {
 }
 .plugin-error-msg {
   margin-top: 4px;
-  font: 11px "JetBrains Mono", monospace;
+  font: 11px var(--font-mono);
   word-break: break-all;
   color: var(--fg2);
 }
@@ -3426,7 +3435,7 @@ select.dctl {
   color: var(--fg2);
 }
 .plugin-rejected-dir {
-  font: 10.5px "JetBrains Mono", monospace;
+  font: 10.5px var(--font-mono);
   color: var(--fg3);
   word-break: break-all;
 }
@@ -3440,7 +3449,7 @@ select.dctl {
   width: 440px;
 }
 .plugin-consent-meta {
-  font: 11px "JetBrains Mono", monospace;
+  font: 11px var(--font-mono);
   color: var(--fg3);
 }
 .plugin-consent-desc {
@@ -3484,7 +3493,7 @@ select.dctl {
   border: 1px solid var(--bd-soft);
   border-radius: 5px;
   background: var(--inset);
-  font-family: var(--mono, monospace);
+  font-family: var(--font-mono);
   font-size: 10.5px;
   color: var(--fg2);
   word-break: break-all;
@@ -4055,7 +4064,7 @@ select.dctl {
 }
 .orch-win.selected { border-color: var(--acc); }
 .orch-feed-wrap { flex: 1; display: flex; flex-direction: column; min-width: 0; padding: 10px; }
-.orch-feed { flex: 1; overflow-y: auto; font-family: var(--mono, monospace); font-size: 12px; }
+.orch-feed { flex: 1; overflow-y: auto; font-family: var(--font-mono); font-size: 12px; }
 .orch-entry { display: flex; gap: 8px; padding: 2px 0; white-space: nowrap; }
 .orch-seq { opacity: 0.35; min-width: 42px; text-align: right; }
 .orch-src { opacity: 0.55; min-width: 110px; }
@@ -4319,7 +4328,7 @@ select.dctl {
   margin: 2px 0 2px 18px;
   font-size: 11px;
   opacity: 0.55;
-  font-family: var(--mono, monospace);
+  font-family: var(--font-mono);
 }
 
 /* 대화 세트 카드 — 자연어 턴(질문→자식 명령·델타→답변)이 parentId 로 접힌 한 단위.

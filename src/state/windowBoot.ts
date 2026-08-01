@@ -9,6 +9,7 @@
 import { invoke, currentWindow, frameworkName } from "../framework";
 import { safeListen } from "../lib/safeListen";
 import { bootFactPayload } from "../lib/bootFact";
+import { mayPersist } from "./persistGuard";
 import { noteDataChange } from "./dataChangeHealth";
 import { currentWindowLabel } from "../lib/webviewLabels";
 import { makeCoreStore } from "./coreStore";
@@ -119,8 +120,13 @@ export async function initWorkspacePersistence(
 
   // 1) 복원
   let restored = false;
+  // 복원 전에 **알고 있던 것**의 크기. 이 수가 있는데 하나도 못 살리면 저장을 막는다 —
+  // 그때의 빈 상태는 사용자 의도가 아니라 복원 실패의 흔적이다(persistGuard 머리말).
+  let snapshotProjects = 0;
+  let restoredProjects = 0;
   try {
     const snap = await winStore.hydrate();
+    snapshotProjects = snap.projects.length;
     bootFact(`restore:hydrated:${snap.projects.length}`);
     if (snap.projects.length > 0) {
       const { projects, activeId, projections } = restoreWindow(snap, nextSplitIdGen);
@@ -169,7 +175,8 @@ export async function initWorkspacePersistence(
         // spawn 분산), idle 체인이 lastActivity 순으로 채운다. 외형은 즉시 전부.
         beginRestoreHydration();
       }
-      restored = useSessions.getState().projects.length > 0;
+      restoredProjects = useSessions.getState().projects.length;
+      restored = restoredProjects > 0;
     }
     bootFact(`restore:done:${restored}`);
   } catch (e) {
@@ -185,6 +192,11 @@ export async function initWorkspacePersistence(
   // (coreSync.ts 와 동일 패턴 — B1 정합성: 저장은 종료 시 flush 보장).
   const doPersist = () => {
     const { projects, activeId } = useSessions.getState();
+    // 모르는 것으로 아는 것을 덮지 않는다 — 복원이 통째로 실패한 창은 저장하지 않는다.
+    // 이 한 줄이 없어서 실측 2026-08-01 에 사용자 워크스페이스가 두 번 지워졌다(10KB → 32B).
+    if (!mayPersist({ snapshotProjects, restoredProjects, liveProjects: projects.length })) {
+      return;
+    }
     const projections: Record<string, { pins: Pins }> = {};
     for (const [pid, e] of Object.entries(useProjection.getState().byProject)) {
       projections[pid] = { pins: e.pins };
