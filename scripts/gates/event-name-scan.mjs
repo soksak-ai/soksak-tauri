@@ -56,6 +56,13 @@ const PAIRS = [
     ],
   },
   {
+    // 코어 저장소의 네임스페이스. 갈리면 설정·레이아웃·워크스페이스가 통째로 다른 칸에 들어가
+    // "처음 켠 앱"처럼 보인다 — 오류가 아니라 빈 화면이다.
+    what: "코어 네임스페이스",
+    truth: { file: "crates/soksak-core/src/activity.rs", re: /pub const NS: &str = "([^"]+)"/ },
+    copies: [{ file: "src/state/coreStore.ts", re: /const NS = "([^"]+)"/ }],
+  },
+  {
     // 오케스트레이터 라벨. 갈리면 컨트롤 플레인 분기가 영영 거짓이라 앱이 부팅만 하고 만다
     // (src/main.tsx 가 이 이름 하나로 분기한다).
     what: "오케스트레이터 창 라벨",
