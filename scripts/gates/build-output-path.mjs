@@ -67,17 +67,17 @@ if (!decl[1].includes("cargo metadata")) {
 }
 
 // 같은 자리를 두 철자로 부른다: Makefile 은 cargo 에게 묻고, 스크립트는 `$REPO/target` 을 쓴다.
-// **두 철자가 같은 자리를 가리키는지 여기서 잰다** — 어긋나면 한쪽이 조용히 다른 산출물을 잡는다.
-const asked = execFileSync("cargo", ["metadata", "--no-deps", "--format-version", "1", "--offline"], {
-  cwd: ROOT,
-  encoding: "utf8",
-  maxBuffer: 64 * 1024 * 1024,
-});
-const dir = JSON.parse(asked).target_directory;
-const byRepo = ROOT.replace(/\/$/, "") + "/target";
-if (dir !== byRepo) {
-  console.error(`build-output-path: 두 철자가 다른 자리를 가리킨다 — cargo=${dir} · \$REPO/target=${byRepo}`);
-  console.error("  스크립트가 $REPO/target 을 쓰는 근거가 사라졌다. 스크립트도 cargo 에게 묻게 고쳐라.");
+// **두 철자가 같은 자리를 가리키는 근거**를 여기서 잰다 — cargo 를 부르지 않는다(게이트가 툴체인을
+// 요구하면, 툴체인 없는 자리에서 이 규칙만 조용히 안 돌게 된다). 근거는 하나다: 워크스페이스
+// 뿌리가 저장소 뿌리다. 뿌리가 다시 옮겨가면 이 검사가 먼저 깨진다.
+const rootManifest = readFileSync(ROOT + "Cargo.toml", "utf8");
+if (!/^\[workspace\]/m.test(rootManifest)) {
+  console.error("build-output-path: 저장소 뿌리가 워크스페이스 뿌리가 아니다 — $REPO/target 의 근거가 사라졌다");
   process.exit(1);
 }
-console.log(`build-output-path: OK — 손으로 적은 옛 자리 0 · 두 철자 같은 자리(${dir})`);
+const fwManifest = readFileSync(ROOT + "frameworks/tauri/Cargo.toml", "utf8");
+if (/^\[workspace\]/m.test(fwManifest)) {
+  console.error("build-output-path: 프레임워크가 다시 워크스페이스 뿌리다 — 산출물이 두 자리로 갈린다");
+  process.exit(1);
+}
+console.log("build-output-path: OK — 손으로 적은 옛 자리 0 · 뿌리는 저장소 뿌리($REPO/target)");
