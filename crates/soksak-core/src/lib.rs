@@ -23,6 +23,7 @@ pub mod ambient_gate;
 pub mod control;
 pub mod fsx;
 pub mod geometry;
+pub mod host_slot;
 pub mod identity;
 pub mod artifact_integrity;
 pub mod deeplink;

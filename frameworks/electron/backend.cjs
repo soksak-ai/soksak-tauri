@@ -70,6 +70,14 @@ function createBackendClient(options = {}) {
   // 창으로 되돌리면 물어본 그 창에 배달되고, 회신할 자리가 없어 상한까지 침묵한다(실측 10초).
   // 응답은 기다리지 않는다 — 선언은 이 연결의 사실이고, 첫 명령보다 먼저 줄에 오른다.
   const announce = options.announce ?? [];
+  // 주인이 아예 사라졌을 때 **다시 세우는 법.** 소켓이 끊긴 것과 주인이 없어진 것은 다른 사실
+  // 이다: 앞엣것은 다시 붙으면 되지만, 뒤엣것은 세우지 않으면 이 앱은 남은 수명 내내 저장소를
+  // 잃는다 — 읽기가 실패하고, 실패한 읽기를 "비어 있음"으로 적는 소비자 하나가 곧 데이터
+  // 소실이다(실측 2026-08-01: 워크스페이스 3차 소실). 넣지 않으면 예전대로 붙기만 한다.
+  const ensureUp = options.ensureUp ?? null;
+  /** 마지막 재건 시도. 실패가 이어질 때 호출마다 세우려 들지 않기 위한 바닥이다. */
+  let lastEnsure = 0;
+  const ENSURE_FLOOR_MS = 1000;
 
   let sock = null;
   let connecting = null;
@@ -138,12 +146,21 @@ function createBackendClient(options = {}) {
       s.setNoDelay(true);
       const onConnectError = (e) => {
         connecting = null;
-        reject(
-          new BackendError(
-            UNREACHABLE,
-            `백엔드 소켓에 붙지 못했다: ${socketPath} (${e.code || e.message})`,
-          ),
+        const why = new BackendError(
+          UNREACHABLE,
+          `백엔드 소켓에 붙지 못했다: ${socketPath} (${e.code || e.message})`,
         );
+        // 못 붙었으면 **주인이 서 있는지부터** 본다. 폴링이 아니다: 시도는 부를 일이 있을 때만
+        // 일어나고, 바닥(1s)이 연속 실패의 몰림을 막는다.
+        if (!ensureUp || Date.now() - lastEnsure < ENSURE_FLOOR_MS) {
+          reject(why);
+          return;
+        }
+        lastEnsure = Date.now();
+        Promise.resolve()
+          .then(() => ensureUp())
+          .then(() => connect())
+          .then(resolve, () => reject(why));
       };
       s.once("error", onConnectError);
       s.once("connect", () => {

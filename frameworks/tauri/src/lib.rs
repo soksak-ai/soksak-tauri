@@ -245,18 +245,24 @@ pub fn run() {
             // 못 붙어도 앱은 산다. 이 프레임워크는 아직 자기 소켓으로 자기 창을 서빙하고 있어
             // 여기서 죽으면 그 서빙까지 죽는다 — 다만 조용히 지나가지 않는다.
             #[cfg(unix)]
-            match cored_host::stand_up(app.handle()) {
+            {
+                // 다시 세우는 법을 **붙기 전에** 넣는다. cored 는 죽을 수 있고(판올림·강제종료·
+                // 크래시), 갈아탈 수 없으면 그 앱은 남은 수명 내내 저장소를 잃는다 — 읽기가
+                // 실패하고, 실패한 읽기를 "비어 있음"으로 적는 소비자 하나가 곧 데이터 소실이다.
+                let handle = app.handle().clone();
+                cored_host::rebuild_with(Box::new(move || {
+                    cored_host::stand_up(&handle).map(std::sync::Arc::new)
+                }));
                 // 창 사건이 이 호스트를 다시 찾을 수 있어야 한다 — 값으로 들고 있지 않으면
                 // 붙은 연결이 여기서 끝나고, 그 끊김은 "명령이 안 먹는다"로만 나타난다.
-                Ok(host) => {
-                    // 두 자리에 둔다. `manage` 는 창 사건이 State 로 찾는 길이고, `install` 은
-                    // 저장소를 위임한 명령이 찾는 길이다 — 그쪽은 State 를 안 받는 자리가 많고,
-                    // 받게 고치면 29개 명령의 시그니처가 한꺼번에 바뀐다.
-                    let shared = std::sync::Arc::new(host);
-                    cored_host::install(std::sync::Arc::clone(&shared));
-                    app.manage(shared);
+                //
+                // 자리는 **하나**다. 예전에는 `install` 과 `app.manage` 두 자리에 뒀는데, 실은
+                // `manage` 는 `Arc<CoredHost>` 로 싣고 읽는 쪽은 `CoredHost` 로 꺼내 언제나 빈손
+                // 이었다 — 창 사건 통지가 그래서 0 건이었고, 죽은 라벨이 cored 센서스에 남았다.
+                match cored_host::stand_up(app.handle()) {
+                    Ok(host) => cored_host::install(std::sync::Arc::new(host)),
+                    Err(e) => eprintln!("[cored-host] 붙지 못했다: {e} — 이 창들은 cored 가 모른다"),
                 }
-                Err(e) => eprintln!("[cored-host] 붙지 못했다: {e} — 이 창들은 cored 가 모른다"),
             }
             // 범용 데이터 스토어(app.data) — 소켓 서버 이전에 연다(커맨드가 즉시 쓸 수 있도록).
             // open_or_recover: 본체 손상 시 손상본 격리→백업 슬롯 복원→재개방(무음 미초기화 제거).

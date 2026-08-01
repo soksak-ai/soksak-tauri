@@ -21,7 +21,14 @@ frameworks/electron/activity.cjs 32
 # 재입법 2026-08-01 206 → 207. 소켓에 setEncoding("utf8") 한 줄. 청크 경계는 글자 경계가
 #   아니라, 이것이 없으면 멀티바이트가 걸린 자리에서 U+FFFD 로 조용히 바뀐다 — 그 값이 상태에
 #   들어가 다시 저장되면 손상이 영구히 남는다(실측: 스냅샷의 `터미널(????티)`).
-frameworks/electron/backend.cjs 207
+# 재입법 2026-08-01 207 → 217. 주인이 **사라졌을 때 다시 세우는 길**(ensureUp + 시도 바닥).
+#   소켓이 끊긴 것과 주인이 없어진 것은 다른 사실이다: 앞엣것은 이미 다시 붙었지만, 뒤엣것은
+#   세우지 않으면 이 앱이 남은 수명 내내 저장소를 잃는다. 이것은 배선이 아니라 **규칙**이고,
+#   같은 규칙이 Rust 쪽(soksak-core::host_slot)에도 있다 — 두 런타임이 코드를 하나도 안 나눠
+#   가지므로 한 규칙이 두 벌로 적힌다. 그 두 벌이 갈리지 않게 잡는 것은 양쪽의 같은 이름 검사다
+#   (backend-socket.test.mjs · host_slot_tests.rs — 셋 다 같은 세 규칙을 재고 이름도 같다).
+#   제거 조건: 이 프레임워크의 다리가 Rust 쪽 구현을 부르게 되는 날 이 몸은 통째로 내려간다.
+frameworks/electron/backend.cjs 217
 frameworks/electron/control.cjs 126
 # 재입법 2026-08-01 242 → 244. 자식 stdout/stderr 에 setEncoding("utf8") 두 줄(같은 사유).
 frameworks/electron/cored.cjs 244
@@ -32,7 +39,11 @@ frameworks/electron/cored.cjs 244
 # 재입법 2026-08-01 392 → 393. 창 전부에 사실을 미는 통로(announce) 한 줄. 지도가 바뀐 것을
 #   창에 뿌리는 일은 프레임워크만 할 수 있고, 이 프레임워크엔 그 통로가 없어 프로젝트 점유·
 #   해제를 같은 프로세스의 다른 창도 몰랐다.
-frameworks/electron/main.cjs 393
+# 재입법 2026-08-01 393 → 398. cored 를 **세우는 일**과 그 소켓에 **붙는 일**을 두 함수로 갈랐다
+#   (ensureCoredProcess / standUpCored). 하나로 두면 다시 세우려고 부른 자리가 다리까지 새로
+#   만들어 같은 앱에 다리가 둘이 되고, 그때부터 어느 다리의 답을 받는지가 우연이 된다.
+#   증가는 배선이다 — 규칙은 backend.cjs 가 지고 이 파일은 그 법을 건네는 인자 한 줄이다.
+frameworks/electron/main.cjs 398
 frameworks/electron/native/capture.cjs 70
 frameworks/electron/native/clipboard.cjs 24
 frameworks/electron/native/engine.cjs 26
@@ -87,7 +98,13 @@ frameworks/tauri/src/command_dispatch.rs 98
 #   파생을 했다 — 두 프로세스가 다른 파일을 열고 쓰기 소유권 잠금도 서로 다른 디렉터리에서
 #   잡혀 무의미해졌다. Option 이 아니라 필수 인자다: Option 은 "안 넘겨도 된다"는 뜻이고 그
 #   결과가 이 결함이었다. 제거 조건: cored 가 저장소를 안 열게 되면 이 인자도 함께 내린다.
-frameworks/tauri/src/cored_host.rs 506
+# 재입법 2026-08-01 506 → 521. 자리의 **규칙은 코어로 갔다**(soksak-core::host_slot — 한 번에
+#   하나·죽으면 비운다·비면 요구가 다시 세운다, 86줄). 여기 남은 15줄은 둘뿐이다: ① 이 연결이
+#   살아 있는가라는 **이 프레임워크의 사실**(closed 플래그와 그것을 세우는 받는 스레드, 그리고
+#   그 사실을 코어 계약에 끼우는 Attachment impl), ② 그 자리를 프로세스에 하나 세우고 부팅이
+#   재건법을 넣는 배선. RED: cored 가 죽으면 이 앱은 OnceLock 때문에 갈아탈 수 없었고, 저장소
+#   읽기가 전부 실패했다 — 그 실패를 "비어 있음"으로 적는 소비자가 워크스페이스를 덮었다.
+frameworks/tauri/src/cored_host.rs 521
 frameworks/tauri/src/cored_ledger.rs 248
 frameworks/tauri/src/cored_shape_gate.rs 229
 frameworks/tauri/src/daemon.rs 72
@@ -109,7 +126,11 @@ frameworks/tauri/src/ipc.rs 1216
 # 재입법 2026-08-01 719 → 720. 커맨드 등록 한 줄(window_census). 창 복원이 "모든 호스트가 든
 #   창"을 알아야 같은 라벨이 두 프로세스에 살아나지 않는다(A23) — 등록 목록은 배선이라
 #   공통 크레이트로 뺄 수 없다. 제거 조건: 이 커맨드가 사라지면 이 줄도 함께 내린다.
-frameworks/tauri/src/lib.rs 720
+# 재입법 2026-08-01 720 → 722. 부팅이 호스트 재건법을 넣는 줄(rebuild_with). 무엇으로 다시
+#   세우는지는 부팅만 알고, 자리는 그것을 모른 채 규칙만 진다. 같은 커밋에서 app.manage 중복
+#   등재를 지웠다 — 실은 `Arc<CoredHost>` 로 싣고 `CoredHost` 로 꺼내 **언제나 빈손**이었고,
+#   그래서 창 사건 통지가 0 건이라 죽은 라벨이 cored 센서스에 남았다.
+frameworks/tauri/src/lib.rs 722
 frameworks/tauri/src/login_shell.rs 28
 frameworks/tauri/src/main.rs 4
 frameworks/tauri/src/mediaproxy.rs 18

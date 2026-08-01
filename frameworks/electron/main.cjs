@@ -271,10 +271,14 @@ let backend = null;
 /** 우리가 띄운 cored. 외부 지목이거나 이미 살아 있던 것이면 null — 남의 것은 거두지 않는다. */
 let ownedCored = null;
 
-function connectBackend(socketPath) {
+function connectBackend(socketPath, ensureUp) {
   backend = createBackendClient({
     socketPath,
     onDemand: recordDemand,
+    // 주인이 사라졌으면 다시 세운다 — 끊긴 연결은 다시 붙으면 되지만, 없어진 주인은 세우지
+    // 않으면 이 앱이 남은 수명 내내 저장소를 잃는다. 외부 지목 소켓에는 넣지 않는다: 남의
+    // 프로세스를 우리가 세우면 그것에 붙어 있던 다른 프레임워크의 창이 주소를 잃는다.
+    ensureUp,
     // 이 연결은 창의 다리다. 밝히지 않으면 cored 가 서빙하지 않는 이름을 창으로 되돌리고,
     // 그 창이 바로 물어본 쪽이라 회신이 오지 않는다 — 이름 대신 상한이 나온다.
     announce: ["control_bridge_attach"],
@@ -282,8 +286,13 @@ function connectBackend(socketPath) {
   return backend;
 }
 
-/** cored를 세우고 그 소켓에 다리를 놓는다. 못 세우면 이름을 달고 실패한다(조용한 no-op 아님). */
-async function standUpCored() {
+/**
+ * cored **프로세스**가 서 있게 한다. 이미 살아 있으면 그것을 채택하고, 없으면 띄운다.
+ *
+ * 다리는 놓지 않는다. 세우는 일과 붙는 일을 한 함수에 두면, 다시 세우려고 부른 자리가 다리까지
+ * 새로 만들어 같은 앱에 다리가 둘이 된다 — 그때부터 어느 다리의 답을 받는지가 우연이 된다.
+ */
+async function ensureCoredProcess() {
   const binary = // frameworks/electron 은 저장소 루트에서 두 단계다 — 한 단계로 세면 frameworks/ 를 루트로 본다.
     coredBinary({ root: path.join(__dirname, "..", "..") });
   const cored = await ensureCored({
@@ -297,7 +306,15 @@ async function standUpCored() {
     `[electron-spike] cored ${cored.origin === "spawned" ? `띄움(pid ${cored.pid})` : "이미 살아 있음"}` +
       `: ${binary} → ${cored.socketPath}`,
   );
-  return connectBackend(cored.socketPath);
+  return cored.socketPath;
+}
+
+/** cored를 세우고 그 소켓에 다리를 놓는다. 못 세우면 이름을 달고 실패한다(조용한 no-op 아님). */
+async function standUpCored() {
+  const socketPath = await ensureCoredProcess();
+  // 다시 세우는 법은 처음 세운 법과 **같아야 한다** — 여기서 다르게 세우면 재건된 주인이
+  // 처음 것과 다른 홈을 열고, 그 어긋남은 "가끔 값이 없다"로만 나타난다.
+  return connectBackend(socketPath, ensureCoredProcess);
 }
 
 const backendReady = externalSocket

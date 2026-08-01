@@ -83,6 +83,15 @@ const ALLOWED: { file: string; mark: string; event: string; why: string }[] = [
   { file: "crates/soksak-daemon/src/lib.rs", mark: "from_millis(300)", event: "child-exit-poll", why: "크래시 재시작 감시 — 동일 사유(몸)" },
   { file: "crates/soksak-schedule/src/lib.rs", mark: "Duration::from_secs(3_600)", event: "scheduler-idle-cap", why: "다음 예약 없음 상태의 유휴 상한(스케줄 등록이 즉시 깨운다)" },
   { file: "crates/soksak-watch/src/lib.rs", mark: "from_millis(250)", event: "fs-debounce", why: "파일와처 디바운스 — 이벤트 병합 창" },
+  // ── 다른 프레임워크(Electron) — 규칙은 프레임워크를 가리지 않는다 ──
+  { file: "frameworks/electron/backend.cjs", mark: "timer: setTimeout(() => pending.delete(id), timeoutMs),", event: "caller-specified", why: "선언의 답을 기다리는 자리 정리 — 상한은 호출자 지정 timeoutMs" },
+  { file: "frameworks/electron/backend.cjs", mark: "const timer = setTimeout(() => {", event: "backend-answer", why: "백엔드 회신이 종결 사건이고 연결이 끊기면 그것이 끝낸다 — 이 상한은 둘 다 오지 않을 때 호출이 영영 안 끝나는 것을 막는다" },
+  { file: "frameworks/electron/backend.cjs", mark: "const DEFAULT_TIMEOUT_MS = 30_000;", event: "backend-answer", why: "위 상한의 기본값 — 호출자가 timeoutMs 로 덮는다" },
+  { file: "frameworks/electron/backend.cjs", mark: "const ENSURE_FLOOR_MS = 1000;", event: "store-owner-attached", why: "다시 붙는 것이 종결 사건이고 시도는 부를 일이 있을 때만 일어난다(폴링 아님) — 이 바닥은 주인이 안 서는 동안 호출 수만큼 스폰이 몰리는 것을 막는다. Tauri 쪽 REBUILD_FLOOR 와 같은 규칙" },
+  { file: "frameworks/electron/cored.cjs", mark: "const DEFAULT_TIMEOUT_MS = 15_000;", event: "cored-ready-line", why: "cored 의 준비 완료 줄이 종결 사건이고 그 프로세스가 먼저 죽으면 종료가 끝낸다 — 둘 다 오지 않을 때 부팅이 영영 안 끝나는 것을 막는 안전망(Tauri 쪽 READY_LIMIT 과 같은 규칙)" },
+  { file: "frameworks/electron/cored.cjs", mark: "const timer = setTimeout(", event: "cored-ready-line", why: "위 상한을 거는 자리 — 넘기면 우리가 띄운 프로세스를 거둔다(소켓 쥔 고아 방지)" },
+  { file: "frameworks/electron/cored.cjs", mark: "const KILL_GRACE_MS = 2_000;", event: "child-exit", why: "SIGTERM 뒤 종료가 종결 사건 — 이 유예를 넘기면 SIGKILL. 유예가 없으면 정상 종료 경로를 못 밟는다" },
+  { file: "frameworks/electron/cored.cjs", mark: "const hard = setTimeout(() => child.kill(\"SIGKILL\"), KILL_GRACE_MS);", event: "child-exit", why: "위 유예를 거는 자리" },
   // ── ③ 유한 안전망 ──
   { file: "frameworks/tauri/src/activity.rs", mark: "wait_timeout(q, Duration::from_secs(1))", event: "condvar-safety-net", why: "cv 사건이 주 경로 — 1s 는 closed 플래그 재확인 안전망" },
   { file: "crates/soksak-service/src/lib.rs", mark: "wait_timeout(inner, Duration::from_millis(20))", event: "condvar-safety-net", why: "크래시 전이가 cv 를 울린다 — 20ms 는 유실 안전망" },
@@ -96,13 +105,17 @@ const ALLOWED: { file: string; mark: string; event: string; why: string }[] = [
   { file: "frameworks/tauri/src/webview.rs", mark: "tokio::time::sleep(Duration::from_millis(400))", event: "extraction-page-settle", why: "추출용 임시 webview 의 페이지 정착 유한 재시도(timeout 상한)" },
   { file: "frameworks/tauri/src/cored_host.rs", mark: "const READY_LIMIT: Duration = Duration::from_secs(15);", event: "cored-ready-line", why: "cored 의 준비 완료 줄이 종결 사건이고(블로킹 read), 그 프로세스가 먼저 죽으면 EOF 가 끝낸다 — 이 상한은 둘 다 오지 않을 때 부팅이 영영 안 끝나는 것을 막는 안전망" },
   { file: "frameworks/tauri/src/cored_host.rs", mark: "const OWNER_ASK_LIMIT: Duration = Duration::from_secs(10);", event: "store-owner-answer", why: "주인의 회신이 종결 사건이고 연결이 끊기면 그것이 끝낸다 — 이 상한은 둘 다 오지 않을 때, 답하지 않는 주인 하나가 그 명령을 부른 창을 영영 붙잡는 것을 막는다" },
+  { file: "frameworks/tauri/src/cored_host.rs", mark: "const REBUILD_FLOOR: Duration = Duration::from_secs(1);", event: "store-owner-attached", why: "다시 붙는 것이 종결 사건이고 시도는 **부를 일이 있을 때만** 일어난다(폴링 아님) — 이 바닥은 주인이 안 서는 동안 저장 요청 수만큼 스폰이 몰리는 것을 막는다. 제거 조건 = cored 가 자기 기동을 알리는 사건을 주는 날" },
 ];
 
 /** grep -r 과 같은 순회 — 숨김/빌드 산출물은 grep 도 안 읽는 곳만 건너뛴다. */
 function walk(dir: string): string[] {
   const out: string[] = [];
   for (const name of readdirSync(dir).sort()) {
-    if (name === "node_modules" || name === "target" || name.startsWith(".")) continue;
+    // `build` 는 산출물이다 — 그 안에는 Electron 자신의 번들이 있어 내려가는 것만으로 수백
+    // 메가를 읽는다(실측: 이 게이트가 5초 상한에 걸렸다). 걸러내기 전에 읽으면 이미 늦다.
+    if (name === "node_modules" || name === "target" || name === "build" || name.startsWith("."))
+      continue;
     const p = join(dir, name);
     if (statSync(p).isDirectory()) out.push(...walk(p));
     else out.push(p);
@@ -139,6 +152,20 @@ function unregistered(sites: string[]): string[] {
 /** 질의1 — 명령 핸들러의 숫자 리터럴 타이머. */
 function tsSites(): string[] {
   return grepLines("src/commands", /setTimeout\(|sleep\(/).filter((l) => /[0-9]{2,}/.test(l));
+}
+
+/** 질의1b — **다른 프레임워크의** 숫자 리터럴 타이머.
+ *
+ *  규칙은 프레임워크를 가리지 않는다. Tauri 만 보면 같은 기다림이 Electron 에서는 아무도 안
+ *  보는 자리가 되고, 그 비대칭은 "저쪽은 되는데 이쪽은 안 된다"로만 나타난다. 두 프레임워크는
+ *  동급이다 — 규칙도 동급으로 건다. */
+function electronSites(): string[] {
+  // 소스만 센다. 빌드 산출물(`build/`)에는 Electron 자신의 번들이 들어 있어, 그것까지 세면
+  // 남의 코드 수백 줄이 우리 규칙 위반으로 보고된다 — 게이트가 자기 대상을 모르면 그 수는
+  // 아무 뜻이 없다.
+  return grepLines("frameworks/electron", /setTimeout\(|setInterval\(|_MS\s*=\s*[0-9]/)
+    .filter((l) => /^frameworks\/electron\/[^:]*\.(c?js|mjs):/.test(l))
+    .filter((l) => /[0-9]{2,}/.test(l));
 }
 
 /** 질의2 — 코어 Rust 의 숫자 리터럴 타이머. 테스트 모듈 안은 세지 않는다.
@@ -206,6 +233,10 @@ describe("기다림은 사건으로 끝난다 — 숫자 리터럴 타이머 금
   it("코어 Rust 에 미등록 타이머가 없다 (frameworks/tauri/src)", () => {
     expect(unregistered(rsSites())).toEqual([]);
   });
+
+  it("다른 프레임워크에도 미등록 타이머가 없다 (frameworks/electron)", () => {
+    expect(unregistered(electronSites())).toEqual([]);
+  });
 });
 
 describe("예외는 사건 이름과 함께만 산다", () => {
@@ -215,7 +246,9 @@ describe("예외는 사건 이름과 함께만 산다", () => {
   });
 
   it("등록된 예외는 실재하는 자리를 가리킨다 — 사라진 자리를 표가 붙잡고 있지 않다", () => {
-    const sites = [...tsSites(), ...rsSites()];
+    // 세는 자리 **전부**를 본다. 하나라도 빠지면 그 프레임워크의 등록이 통째로 "사라진 자리"로
+    // 보고되고, 표를 지우는 것이 GREEN 으로 보인다.
+    const sites = [...tsSites(), ...rsSites(), ...electronSites()];
     const stale = ALLOWED.filter(
       (a) =>
         !sites.some(

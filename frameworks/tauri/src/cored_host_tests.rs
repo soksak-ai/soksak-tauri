@@ -480,3 +480,48 @@ fn asking_without_a_host_fails_by_name() {
     let e = ask_owner("data_get", &serde_json::json!({})).expect_err("호스트가 없다");
     assert!(e.contains("cored"), "사유가 어디에 못 물었는지 말하지 않는다: {e}");
 }
+
+// ── 자리는 갈아탈 수 있어야 한다 ─────────────────────────────────────────────
+//
+// 자리의 규칙(한 번에 하나·죽으면 비운다·비면 요구가 다시 세운다)은 **코어가 진다** —
+// 그 검사는 crates/soksak-core/src/host_slot_tests.rs 에 있다. 여기서 재는 것은 이 프레임워크가
+// 그 자리에 끼우는 사실 하나뿐이다: **이 연결이 아직 살아 있는가.**
+//
+// RED 근거(실측 2026-08-01): cored 가 죽어도 이 호스트는 자기 죽음을 몰랐고, 죽은 연결을 든
+// 채로 건네졌다. 저장소 읽기가 전부 실패했고, 그 실패를 "비어 있음"으로 적는 소비자가 사용자
+// 워크스페이스를 덮었다.
+
+use soksak_core::host_slot::Attachment;
+
+/// 가짜 cored 하나를 세우고 그것에 붙은 호스트를 돌린다. 연결을 쥔 쪽도 함께 돌린다 —
+/// 놓으면 그 순간 EOF 라 "붙어 있다"를 잴 수 없다.
+fn attached_host(name: &str) -> (CoredHost, std::os::unix::net::UnixStream) {
+    let dir = fixture_dir(name);
+    let socket = dir.join("h.sock");
+    let listener = std::os::unix::net::UnixListener::bind(&socket).expect("가짜 cored");
+    let accepted = std::thread::spawn(move || listener.accept().map(|(c, _)| c).expect("연결"));
+    let host = CoredHost::attach(&socket, Arc::new(SilentFacts), Arc::new(SilentExec)).expect("붙는다");
+    (host, accepted.join().expect("가짜 cored 연결"))
+}
+
+/// 붙어 있는 동안은 살아 있다고 답한다.
+#[test]
+fn a_live_connection_says_it_is_open() {
+    let (host, held) = attached_host("open-live");
+    assert!(host.is_open(), "붙어 있는데 끝났다고 한다");
+    drop(held);
+}
+
+/// 상대가 죽으면 **그 사실을 값으로 안다.** 모르면 죽은 연결이 산 것처럼 건네지고, 부른 쪽은
+/// 매번 상한까지 기다린 뒤 사유 없이 실패한다.
+#[test]
+fn a_closed_connection_says_it_is_closed() {
+    let (host, held) = attached_host("open-dead");
+    drop(held); // cored 가 죽었다 — 받는 스레드가 EOF 를 만난다
+    // 받는 스레드가 끝났다는 사실을 세울 때까지가 유일한 대기다(상한 안에서 끝나야 한다).
+    let until = std::time::Instant::now() + Duration::from_secs(2);
+    while host.is_open() && std::time::Instant::now() < until {
+        std::thread::yield_now();
+    }
+    assert!(!host.is_open(), "연결이 끝났는데 살아 있다고 한다");
+}

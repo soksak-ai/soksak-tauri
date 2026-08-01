@@ -232,10 +232,10 @@ fn attaching_makes_this_frameworks_window_an_address_in_cored() {
 
     // 배달은 **밀려온다**(폴링이 아니다). 상한은 답 없는 한쪽이 검사를 멈추게 하지 않기 위한 것이다.
     let d = delivered.recv_timeout(LIMIT).expect("배달이 실행기로 온다");
-    assert_eq!(d.window, "t-attach", "cored 가 고른 창이 그대로 와야 한다");
-    assert_eq!(d.method, "panel.split");
-    assert_eq!(d.params, json!({ "side": "right" }));
-    assert_eq!(d.pane.as_deref(), Some("p-1"), "pane 은 배달의 일부다");
+    assert_eq!(d.window(), "t-attach", "cored 가 고른 창이 그대로 와야 한다");
+    assert_eq!(d.req.method, "panel.split");
+    assert_eq!(d.req.params, json!({ "side": "right" }));
+    assert_eq!(d.req.pane.as_deref(), Some("p-1"), "pane 은 배달의 일부다");
 
     // 회신은 배달 id 로 짝지어 돌아간다 — 짝이 어긋나면 부른 쪽은 사유 없는 TIMEOUT 만 본다.
     let out = caller.join().expect("부른 쪽");
@@ -265,7 +265,7 @@ fn a_window_that_opens_after_the_attach_becomes_an_address() {
 
     let caller = ask_async(json!({ "id": 3, "method": "x.y", "window": "t-grow-2", "timeoutMs": 4000 }));
     let d = delivered.recv_timeout(LIMIT).expect("새 창으로 배달된다");
-    assert_eq!(d.window, "t-grow-2");
+    assert_eq!(d.window(), "t-grow-2");
     assert_eq!(caller.join().expect("부른 쪽")["ok"], true);
 }
 
@@ -290,7 +290,7 @@ fn a_window_that_died_stops_being_an_address() {
 
     // 남은 창은 그대로 받는다 — 보고 한 번이 이 프레임워크의 창을 통째로 지우지 않는다.
     let caller = ask_async(json!({ "id": 5, "method": "x.y", "window": "t-stays", "timeoutMs": 4000 }));
-    assert_eq!(delivered.recv_timeout(LIMIT).expect("남은 창").window, "t-stays");
+    assert_eq!(delivered.recv_timeout(LIMIT).expect("남은 창").window(), "t-stays");
     assert_eq!(caller.join().expect("부른 쪽")["ok"], true);
 }
 

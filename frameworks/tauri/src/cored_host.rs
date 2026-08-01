@@ -30,11 +30,13 @@ use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use serde_json::{json, Value};
+
+use soksak_core::host_slot::{HostSlot, Rebuild};
 
 /// cored 가 창 호스트를 아는 세 이름. 문자열을 부르는 자리마다 다시 적으면 한쪽만 고쳐질 수
 /// 있고, 그 어긋남은 `UNKNOWN_COMMAND` 한 줄로만 나타난다.
@@ -209,6 +211,10 @@ pub struct CoredHost {
     verdict: OnceLock<Result<(), String>>,
     /// 보고의 상관 id 축. 이 연결 안에서만 유일하면 된다.
     seq: AtomicU64,
+    /// 연결이 끝났는가. 받는 스레드가 EOF 를 만나면 세운다 — **끝났다는 사실을 값으로 가진
+    /// 쪽이 없으면** 죽은 연결을 든 호스트가 산 것처럼 건네지고, 부른 쪽은 매번 상한까지
+    /// 기다린 뒤 사유 없이 실패한다.
+    closed: Arc<AtomicBool>,
 }
 
 /// 보낸 것의 답을 기다리는 자리 — 상관 id → 기다리는 쪽.
@@ -276,10 +282,12 @@ impl CoredHost {
             answer: Mutex::new(Some(rx)),
             verdict: OnceLock::new(),
             seq: AtomicU64::new(1),
+            closed: Arc::new(AtomicBool::new(false)),
         };
         host.send(&attach_envelope(&facts.facts()))?;
         let socket_name = socket.display().to_string();
-        std::thread::spawn(move || pump(read_half, writer, exec, socket_name, waiters));
+        let closed = Arc::clone(&host.closed);
+        std::thread::spawn(move || pump(read_half, writer, exec, socket_name, waiters, closed));
         Ok(host)
     }
 
@@ -424,6 +432,7 @@ fn pump(
     exec: Arc<dyn DeliveryExec>,
     socket: String,
     waiters: Arc<Waiters>,
+    closed: Arc<AtomicBool>,
 ) {
     let reader = BufReader::new(read_half);
     for line in reader.lines() {
@@ -474,6 +483,9 @@ fn pump(
             }
         }
     }
+    // 끝났다는 사실을 먼저 세운다 — 기다리던 쪽을 깨우기 전에 세워야, 그 답을 받고 곧바로
+    // 다시 묻는 쪽이 죽은 호스트를 한 번 더 잡지 않는다.
+    closed.store(true, Ordering::Release);
     // 기다리는 쪽을 상한까지 세워 두지 않는다 — 연결이 끝났다는 것 자체가 답이고, 그 답이
     // 늦으면 부팅 진단이 "느리다"와 "안 붙었다"를 구분하지 못한다.
     let left: Vec<_> = waiters
@@ -724,24 +736,50 @@ impl DeliveryExec for AppExec {
 //
 // 부팅이 세우고, 저장소를 위임한 명령이 이 자리로 묻는다. 세우기 전에는 **없다** — 없는 것을
 // 있는 척하면 부른 쪽이 상한까지 기다린다.
-static HOST: std::sync::OnceLock<Arc<CoredHost>> = std::sync::OnceLock::new();
+//
+// 한 번에 하나지, 한 번뿐이 아니다. cored 는 죽을 수 있고(판올림·강제종료·크래시) 그때 이
+// 자리의 호스트는 **죽은 연결을 든 껍데기**가 된다. 갈아탈 수 없는 자리에 두면 그 앱은 남은
+// 수명 내내 저장소를 잃는다 — 읽기도 쓰기도 실패하고, 실패한 읽기를 "비어 있음"으로 적는
+// 소비자가 하나라도 있으면 그것이 곧 사용자 데이터 소실이다(실측 2026-08-01).
+// 규칙(한 번에 하나·죽으면 비운다·비면 요구가 다시 세운다)은 **코어가 진다** — 이 자리는
+// 그 규칙에 이 프레임워크의 호스트 타입을 끼우는 배선뿐이다.
+static HOST: HostSlot<CoredHost> = HostSlot::with_floor(REBUILD_FLOOR);
 
-/// 부팅이 세운 호스트를 이 자리에 둔다. 두 번째는 무시된다 — 첫 등록이 이긴다.
-pub fn install(host: Arc<CoredHost>) {
-    let _ = HOST.set(host);
+/// 재건 시도 사이의 최소 간격. 저장은 사용자 변경마다 오므로, 주인이 안 서는 동안 그 수만큼
+/// 세우려 들면 스폰이 몰린다. 폴링이 아니다 — 시도는 **부를 일이 있을 때만** 일어난다.
+const REBUILD_FLOOR: Duration = Duration::from_secs(1);
+
+/// 붙어 있는 것은 스스로 답한다 — 자리는 무엇에 붙었는지 모른다.
+impl soksak_core::host_slot::Attachment for CoredHost {
+    fn is_open(&self) -> bool {
+        !self.closed.load(Ordering::Acquire)
+    }
 }
 
-/// 지금 붙어 있는 호스트. 부팅 전이면 없다.
+/// 부팅이 세운 호스트를 프로세스 자리에 둔다.
+pub fn install(host: Arc<CoredHost>) {
+    HOST.install(host);
+}
+
+/// 자리가 비었을 때 다시 세우는 법 — 부팅이 넣는다.
+pub fn rebuild_with(f: Rebuild<CoredHost>) {
+    HOST.rebuild_with(f);
+}
+
+/// 지금 붙어 있는 호스트. 부팅 전이거나 연결이 끝났으면 없다.
 pub fn current() -> Option<Arc<CoredHost>> {
-    HOST.get().cloned()
+    HOST.current()
 }
 
 /// 저장소 주인에게 묻는다 — 이 프로세스가 저장소를 위임했을 때 지나는 길.
 ///
-/// 물을 곳이 없으면 **이름을 달고** 실패한다. 조용한 실패는 "명령이 사라진다"로만 보이고,
-/// 그때 사람은 저장소가 아니라 명령을 의심한다.
+/// 붙어 있지 않으면 **다시 붙어 본다.** 주인은 판올림이나 크래시로 갈릴 수 있고, 그때 한 번
+/// 끊겼다는 이유로 남은 수명 내내 저장소를 잃으면 그 앱은 읽지도 쓰지도 못한다.
+///
+/// 그래도 물을 곳이 없으면 **이름을 달고** 실패한다. 조용한 실패는 "명령이 사라진다"로만
+/// 보이고, 그때 사람은 저장소가 아니라 명령을 의심한다.
 pub fn ask_owner(method: &str, params: &Value) -> Result<Value, String> {
-    let Some(host) = current() else {
+    let Some(host) = HOST.live() else {
         return Err(format!(
             "cored 에 붙지 않았다 — {method} 를 물을 곳이 없다(이 프로세스는 저장소를 위임했다)"
         ));
@@ -794,8 +832,13 @@ pub fn stand_up(app: &tauri::AppHandle) -> Result<CoredHost, String> {
 }
 
 /// 창 사실이 바뀌었다고 알린다. 아직 안 붙었으면 할 일이 없다 — 붙을 때 지금 사실로 등록한다.
-pub fn announce_windows(app: &tauri::AppHandle) {
-    if let Some(host) = tauri::Manager::try_state::<CoredHost>(app) {
+///
+/// 호스트는 **한 자리**(HOST)에서만 온다. 예전에는 이 자리가 Tauri State 를 봤는데, 부팅은
+/// `Arc<CoredHost>` 를 실었고 여기서는 `CoredHost` 를 꺼냈다 — 타입 키가 달라 **언제나 없었다.**
+/// 그래서 창이 나고 죽어도 cored 는 못 들었고, 죽은 라벨이 센서스에 남았다. 같은 사실을 두
+/// 자리에 두면 그중 하나는 답하지 않고, 그 침묵은 아무 데도 오류로 나타나지 않는다.
+pub fn announce_windows(_app: &tauri::AppHandle) {
+    if let Some(host) = current() {
         host.windows_changed();
     }
 }
@@ -805,8 +848,8 @@ pub fn announce_windows(app: &tauri::AppHandle) {
 /// 파괴 사건을 받은 자리는 그 창이 죽었다는 것을 이미 아는데, 프레임워크의 창 목록이 그것을
 /// 언제 놓는지는 프레임워크의 사정이다. 목록만 믿고 보고하면 죽은 라벨이 그대로 남고, cored 는
 /// 그 라벨로 다음 명령을 민다 — 답은 오지 않고 부른 쪽은 사유 없는 TIMEOUT 만 본다.
-pub fn announce_windows_without(app: &tauri::AppHandle, gone: &str) {
-    let Some(host) = tauri::Manager::try_state::<CoredHost>(app) else { return };
+pub fn announce_windows_without(_app: &tauri::AppHandle, gone: &str) {
+    let Some(host) = current() else { return };
     let mut f = host.facts.facts();
     f.live.retain(|l| l != gone);
     // 포커스도 죽은 창을 가리킬 수 있다. 코어의 장부가 살아 있는 목록으로 스스로 맞추므로

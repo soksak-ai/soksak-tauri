@@ -221,6 +221,51 @@ describe("백엔드가 거절하거나 사라질 때 — 조용히 넘어가지 
     expect(mock.conns).toHaveLength(2);
   });
 
+  // ── 주인이 사라졌을 때 ──────────────────────────────────────────────────
+  //
+  // 소켓이 끊긴 것과 **주인이 없어진 것**은 다른 사실이다. 앞엣것은 다시 붙으면 되지만(위),
+  // 뒤엣것은 세우지 않으면 이 앱은 남은 수명 내내 저장소를 잃는다 — 읽기가 실패하고, 실패한
+  // 읽기를 "비어 있음"으로 적는 소비자 하나가 곧 사용자 데이터 소실이다(실측 2026-08-01).
+
+  it("주인이 없으면 다시 세워 보고, 서면 그 호출이 답을 받는다", async () => {
+    const socketPath = join(root, "gone.sock");
+    let ups = 0;
+    // 아무도 안 듣는 자리로 시작한다 — 주인이 사라진 상태다.
+    const c = client({
+      socketPath,
+      ensureUp: async () => {
+        ups += 1;
+        await startMock("gone.sock", (req, sock) => reply(sock, { id: req.id, ok: true, data: "다시 섰다" }));
+      },
+    });
+    await expect(c.call("data_kv_get", {})).resolves.toBe("다시 섰다");
+    expect(ups).toBe(1);
+  });
+
+  it("세우는 법이 없으면 조용히 성공하지 않는다 — 예전대로 이름을 달고 실패한다", async () => {
+    const c = client({ socketPath: join(root, "nobody.sock") });
+    await expect(c.call("data_kv_get", {})).rejects.toMatchObject({
+      code: "BACKEND_UNREACHABLE",
+    });
+  });
+
+  it("세우기가 실패하면 호출마다 다시 세우려 들지 않는다 — 실패가 스폰을 부르면 몰린다", async () => {
+    let ups = 0;
+    const c = client({
+      socketPath: join(root, "never.sock"),
+      ensureUp: async () => {
+        ups += 1;
+        throw new Error("주인을 못 세운다");
+      },
+    });
+    for (let i = 0; i < 4; i += 1) {
+      await expect(c.call("data_kv_get", {})).rejects.toMatchObject({
+        code: "BACKEND_UNREACHABLE",
+      });
+    }
+    expect(ups).toBe(1);
+  });
+
   it("답이 없으면 영원히 기다리지 않고 타임아웃 이름을 단다", async () => {
     const mock = await startMock("silent.sock", () => {});
     const c = client({ socketPath: mock.socketPath, timeoutMs: 60 });

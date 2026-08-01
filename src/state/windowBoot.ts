@@ -9,7 +9,13 @@
 import { invoke, currentWindow, frameworkName } from "../framework";
 import { safeListen } from "../lib/safeListen";
 import { bootFactPayload } from "../lib/bootFact";
-import { mayPersist } from "./persistGuard";
+import {
+  mayPersist,
+  mayAdoptLateRead,
+  snapshotRead,
+  snapshotUnread,
+  type SnapshotRead,
+} from "./persistGuard";
 import { losesContent, previousGenerationKey } from "./snapshotGeneration";
 import { noteDataChange } from "./dataChangeHealth";
 import { currentWindowLabel } from "../lib/webviewLabels";
@@ -34,7 +40,6 @@ import {
   upsertManifest,
   restorableSlots,
   forgetWindow,
-  setManifestFocused,
   frameworkScopedKey,
   type WindowSnapshot,
   type WindowManifest,
@@ -103,13 +108,6 @@ export async function initWorkspacePersistence(
     fallback: EMPTY_WINDOW,
     ...coreStoreDeps,
   });
-  const manifestStore = makeCoreStore<WindowManifest>({
-    key: "windows",
-    lsKey: "soksak.windows",
-    fallback: EMPTY_MANIFEST,
-    ...coreStoreDeps,
-  });
-
   // 복원 경로 관찰면 — 백지/빈 복원은 스냅샷·DOM 으로 원인을 볼 수 없다(boot.error 와
   // 같은 이유). 단계 사실(hydrate 수·드롭 수·결과)을 활동 허브로 발행해 소켓만으로 읽는다.
   const bootFact = (step: string) =>
@@ -121,13 +119,16 @@ export async function initWorkspacePersistence(
 
   // 1) 복원
   let restored = false;
-  // 복원 전에 **알고 있던 것**의 크기. 이 수가 있는데 하나도 못 살리면 저장을 막는다 —
-  // 그때의 빈 상태는 사용자 의도가 아니라 복원 실패의 흔적이다(persistGuard 머리말).
-  let snapshotProjects = 0;
+  // 복원 전에 **알고 있던 것**. 알던 것이 있는데 하나도 못 살리면 저장을 막는다 — 그때의 빈
+  // 상태는 사용자 의도가 아니라 복원 실패의 흔적이다(persistGuard 머리말).
+  //
+  // 읽기 자체가 실패할 수 있다(저장소 주인은 별도 프로세스다). 그 실패는 수 0 이 아니라 **못
+  // 읽음**으로 남아야 한다 — 0 으로 적으면 "원래 빈 창"과 같은 값이 되어 가드가 열린다.
+  let snapshot: SnapshotRead = snapshotUnread();
   let restoredProjects = 0;
   try {
     const snap = await winStore.hydrate();
-    snapshotProjects = snap.projects.length;
+    snapshot = snapshotRead(snap.projects.length);
     bootFact(`restore:hydrated:${snap.projects.length}`);
     if (snap.projects.length > 0) {
       const { projects, activeId, projections } = restoreWindow(snap, nextSplitIdGen);
@@ -191,19 +192,42 @@ export async function initWorkspacePersistence(
   // 2) 자동 저장 — 변경마다 디바운스(빠른 연속 변경 1회 저장). pagehide(창 닫힘·앱 종료
   // 직전)에 잔여 기록을 즉시 flush — 디바운스 창(≤400ms) 내 종료의 마지막 변경 유실 방지
   // (coreSync.ts 와 동일 패턴 — B1 정합성: 저장은 종료 시 flush 보장).
-  const doPersist = () => {
+  // 부트에서 스냅샷을 못 읽었으면 쓰지 않는다. 다만 영영 못 쓰면 그것도 손실이라, **쓸 일이
+  // 생긴 이 순간** 한 번 더 읽어본다 — 주인(cored)이 늦게 섰거나 다시 섰으면 여기서 풀린다.
+  // 폴링이 아니다: 사용자 변경이 있을 때만 돌고, 한 번 읽히면 다시 오지 않는다.
+  const settleUnread = async (): Promise<void> => {
+    if (snapshot.read) return;
+    let late: WindowSnapshot;
+    try {
+      late = await winStore.hydrate();
+    } catch (e) {
+      bootFact(`persist:blocked:unread:${String(e).slice(0, 80)}`);
+      return;
+    }
+    if (!mayAdoptLateRead(late.projects.length)) {
+      // 늦게 읽었더니 차 있다 — 이 창은 그것을 복원한 적이 없다(persistGuard 머리말).
+      bootFact(`persist:blocked:unrestored:${late.projects.length}`);
+      return;
+    }
+    snapshot = snapshotRead(late.projects.length);
+    bootFact("persist:unblocked:0");
+  };
+
+  const persistOnce = async (): Promise<void> => {
+    await settleUnread();
     const { projects, activeId } = useSessions.getState();
-    // 모르는 것으로 아는 것을 덮지 않는다 — 복원이 통째로 실패한 창은 저장하지 않는다.
-    // 이 한 줄이 없어서 실측 2026-08-01 에 사용자 워크스페이스가 두 번 지워졌다(10KB → 32B).
-    if (!mayPersist({ snapshotProjects, restoredProjects, liveProjects: projects.length })) {
+    // 모르는 것으로 아는 것을 덮지 않는다 — 복원이 통째로 실패했거나 스냅샷을 못 읽은 창은
+    // 저장하지 않는다. 이 가드가 없어서 실측 2026-08-01 에 사용자 워크스페이스가 지워졌다.
+    if (!mayPersist({ snapshot, restoredProjects, liveProjects: projects.length })) {
       return;
     }
     const projections: Record<string, { pins: Pins }> = {};
     for (const [pid, e] of Object.entries(useProjection.getState().byProject)) {
       projections[pid] = { pins: e.pins };
     }
-    void persistNow(label, projects, activeId, projections, winStore, manifestStore);
+    await persistNow(label, projects, activeId, projections, winStore);
   };
+  const doPersist = () => void persistOnce();
   const persist = debounce(doPersist, 400);
   useSessions.subscribe(persist);
   // 핀·seen 변화도 저장 트리거(§4.5) — 같은 디바운스로 coalesce.
@@ -223,14 +247,15 @@ async function persistNow(
   activeId: string,
   projections: Record<string, { pins: Pins }>,
   winStore: ReturnType<typeof makeCoreStore<WindowSnapshot>>,
-  manifestStore: ReturnType<typeof makeCoreStore<WindowManifest>>,
 ): Promise<void> {
   try {
     const snap = snapshotWindow(projects, activeId, projections);
     // 잃는 쓰기 전에 직전 값을 남긴다 — 저장은 덮어쓰기라 이전 값이 그 자리에서 사라지고,
     // 백업 링은 최소 간격이 1시간이라 그 사이는 어디에도 없다(snapshotGeneration 머리말).
     // 원인은 다 막을 수 없으니(크래시·강제종료·앞으로 생길 버그) 되돌릴 자리를 남긴다.
-    const prevSnap = await winStore.hydrate().catch(() => null);
+    // 직전 값을 **못 읽었으면 쓰지 않는다.** 못 읽음을 null(없음)로 적으면 되돌릴 자리를 안
+    // 남긴 채 덮게 된다 — 되돌릴 수 없는 쓰기는 이 파일이 막으려던 바로 그 손이다.
+    const prevSnap = await winStore.hydrate();
     if (losesContent(prevSnap, snap)) {
       await invoke("data_kv_set", {
         ns: "core",
@@ -239,13 +264,12 @@ async function persistNow(
       }).catch((e) => console.error("직전 세대 보존 실패:", e));
     }
     await winStore.save(snap);
-    const manifest = await manifestStore.hydrate();
     // 창 프레임(B2) — 리스폰이 같은 자리·크기로 되살린다(듀얼 모니터 배치 유지).
     const entry = { ...windowManifestEntry(label, projects, activeId), rect: await currentFrame() };
-    let next = upsertManifest(manifest, entry);
-    // 마지막 포커스 창(B2) — 재시작 후 그 창을 앞으로.
-    if (document.hasFocus()) next = setManifestFocused(next, label);
-    await manifestStore.save(next);
+    // 장부는 **읽어서 고쳐 쓰지 않는다.** 같은 홈을 두 프레임워크가 함께 보므로, 전체를 읽어
+    // 쓰면 나중 쓰기가 상대의 slot 을 지운다 — "재시작했더니 저쪽 창이 안 열린다"로 나타난다.
+    // 병합은 저장소를 쥔 쪽이 한 트랜잭션 안에서 한다(window_manifest_upsert).
+    await invoke("window_manifest_upsert", { entry, focused: document.hasFocus() });
   } catch (e) {
     console.error("워크스페이스 저장 실패:", e);
   }
