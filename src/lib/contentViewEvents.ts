@@ -5,9 +5,25 @@
 // 프로세스 밖으로 보냈다가 되받을 이유가 없다. emitLocal 이 그 자리다.
 //
 // **이름과 필드는 원본 그대로다.** 구독자는 어디서 왔는지 모르고, 다르면 같은 코드가
-// 프레임워크마다 다른 것을 본다. 특히 can_back·can_forward 는 스네이크다(원본 필드) — 카멜로
-// 바꾸면 소비자가 undefined 를 본다.
+// 프레임워크마다 다른 것을 본다.
+//
+// 원본은 Rust 다: `webview.rs` 의 페이로드가 `#[serde(rename_all = "camelCase")]` 라 실제로
+// 나가는 이름은 `canBack`·`canForward` 다. 소비자도 그것을 읽는다(발행된 browser-native·
+// browser-chromium 이 `p.canBack` 을 본다). 이 자리는 한때 스네이크를 실었고 주석과 검사가
+// 그 틀린 기준을 지키고 있었다 — 그 사이 이 프레임워크가 낸 사건은 아무도 못 읽었고, 증상은
+// 오류가 아니라 **항상 비활성인 뒤로가기 버튼**이었다(실측 2026-08-01).
 import { emitLocal } from "../framework";
+
+/** 사건 이름 — 정본은 `crates/soksak-core/src/webview_event.rs` 다(webview-event-scan 게이트가
+ *  두 값을 대조한다). TS 는 Rust 상수를 못 읽으므로 사본이고, 갈리면 이 프레임워크가 낸 사건은
+ *  아무에게도 안 닿는다. */
+export const BROWSER_EVENT = {
+  nav: "browser-nav",
+  title: "browser-title",
+  loading: "browser-loading",
+  status: "browser-status",
+  openExternal: "browser-open-external",
+} as const;
 
 /**
  * 태그가 내는 사건의 필드 — **이벤트 객체 위에 바로 붙는다.**
@@ -29,18 +45,18 @@ type Tag = HTMLElement & {
 function nav(label: string) {
   return (e: Event) => {
     const url = field<string>(e, "url");
-    if (typeof url === "string") emitLocal("browser-nav", { label, url });
+    if (typeof url === "string") emitLocal(BROWSER_EVENT.nav, { label, url });
   };
 }
 
 function loading(el: Tag, label: string, on: boolean) {
   return () =>
-    emitLocal("browser-loading", {
+    emitLocal(BROWSER_EVENT.loading, {
       label,
       loading: on,
       // 뒤·앞 가능 여부는 적재 순간의 사실이다 — 원본이 그 셋을 함께 싣는다.
-      can_back: el.canGoBack?.() ?? false,
-      can_forward: el.canGoForward?.() ?? false,
+      canBack: el.canGoBack?.() ?? false,
+      canForward: el.canGoForward?.() ?? false,
     });
 }
 
@@ -58,7 +74,7 @@ export function bridgeContentViewEvents(el: Tag, label: string): () => void {
       "page-title-updated",
       (e) => {
         const title = field<string>(e, "title");
-        if (typeof title === "string") emitLocal("browser-title", { label, title });
+        if (typeof title === "string") emitLocal(BROWSER_EVENT.title, { label, title });
       },
     ],
     ["did-start-loading", loading(el, label, true)],
@@ -68,14 +84,14 @@ export function bridgeContentViewEvents(el: Tag, label: string): () => void {
       (e) => {
         // 링크를 벗어나면 빈 문자열이다 — 그것도 사건이라 걸러내지 않는다(상태표시줄이 비어야 한다).
         const url = field<string>(e, "url");
-        emitLocal("browser-status", { label, url: typeof url === "string" ? url : "" });
+        emitLocal(BROWSER_EVENT.status, { label, url: typeof url === "string" ? url : "" });
       },
     ],
     [
       "new-window",
       (e) => {
         const url = field<string>(e, "url");
-        if (typeof url === "string") emitLocal("browser-open-external", { label, url });
+        if (typeof url === "string") emitLocal(BROWSER_EVENT.openExternal, { label, url });
       },
     ],
   ];

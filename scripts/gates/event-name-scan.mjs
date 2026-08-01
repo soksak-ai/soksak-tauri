@@ -41,6 +41,34 @@ const PAIRS = [
     copies: [],
   },
   {
+    what: "콘텐츠 뷰 항행 사건",
+    truth: { file: "crates/soksak-core/src/webview_event.rs", re: /pub const NAV: &str = "([^"]+)"/ },
+    copies: [{ file: "src/lib/contentViewEvents.ts", re: /nav: "([^"]+)"/ }],
+  },
+  {
+    what: "콘텐츠 뷰 제목 사건",
+    truth: { file: "crates/soksak-core/src/webview_event.rs", re: /pub const TITLE: &str = "([^"]+)"/ },
+    copies: [{ file: "src/lib/contentViewEvents.ts", re: /title: "([^"]+)"/ }],
+  },
+  {
+    what: "콘텐츠 뷰 적재 사건",
+    truth: { file: "crates/soksak-core/src/webview_event.rs", re: /pub const LOADING: &str = "([^"]+)"/ },
+    copies: [{ file: "src/lib/contentViewEvents.ts", re: /loading: "([^"]+)"/ }],
+  },
+  {
+    what: "콘텐츠 뷰 상태 사건",
+    truth: { file: "crates/soksak-core/src/webview_event.rs", re: /pub const STATUS: &str = "([^"]+)"/ },
+    copies: [{ file: "src/lib/contentViewEvents.ts", re: /status: "([^"]+)"/ }],
+  },
+  {
+    what: "콘텐츠 뷰 외부열기 사건",
+    truth: {
+      file: "crates/soksak-core/src/webview_event.rs",
+      re: /pub const OPEN_EXTERNAL: &str = "([^"]+)"/,
+    },
+    copies: [{ file: "src/lib/contentViewEvents.ts", re: /openExternal: "([^"]+)"/ }],
+  },
+  {
     // 이름이 아니라 **문법**이다. 웹뷰 목록은 앱 전역이라 "자기 창 것만 고르는 일"이 세 자리에서
     // 일어난다 — 접두사가 갈리면 한쪽은 남의 창 웹뷰를 자기 것으로 세거나 자기 것을 못 찾는다.
     what: "브라우저 자식 웹뷰 라벨 접두사",

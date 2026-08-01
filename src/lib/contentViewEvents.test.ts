@@ -7,7 +7,7 @@
 // 다섯과 그 페이로드는 원본 그대로다(frameworks/tauri/src/webview.rs):
 //   browser-nav            { label, url }
 //   browser-title          { label, title }
-//   browser-loading        { label, loading, can_back, can_forward }
+//   browser-loading        { label, loading, canBack, canForward }
 //   browser-status         { label, url }
 //   browser-open-external  { label, url }
 // 이름이나 필드를 바꾸면 같은 구독 코드가 프레임워크마다 다른 것을 본다.
@@ -71,18 +71,20 @@ describe("콘텐츠 뷰 사건 다리", () => {
     expect(emit).toHaveBeenCalledWith("browser-title", { label: "b-1", title: "T" });
   });
 
-  // can_back·can_forward 는 스네이크다(원본 필드). 카멜로 바꾸면 소비자가 undefined 를 본다.
+  // canBack·canForward 는 카멜이다 — Rust 페이로드가 `rename_all = "camelCase"` 라 실제로
+  // 나가는 이름이 그것이고, 발행된 플러그인도 `p.canBack` 을 읽는다. 이 검사는 한때 스네이크를
+  // 고정하고 있었다: 기준이 틀리면 검사는 결함을 지킨다(실측 2026-08-01, 기준 정정).
   it("적재 상태는 browser-loading 으로 나가고 뒤·앞 가능 여부를 싣는다", async () => {
     const m = await load();
     const el = fakeTag();
     m.bridgeContentViewEvents(el, "b-1");
     el.dispatchEvent(new Event("did-start-loading"));
     expect(emit).toHaveBeenCalledWith("browser-loading", {
-      label: "b-1", loading: true, can_back: true, can_forward: false,
+      label: "b-1", loading: true, canBack: true, canForward: false,
     });
     el.dispatchEvent(new Event("did-stop-loading"));
     expect(emit).toHaveBeenCalledWith("browser-loading", {
-      label: "b-1", loading: false, can_back: true, can_forward: false,
+      label: "b-1", loading: false, canBack: true, canForward: false,
     });
   });
 
