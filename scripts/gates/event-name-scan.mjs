@@ -22,6 +22,17 @@ const PAIRS = [
     copies: [{ file: "frameworks/electron/activity.cjs", re: /const ACTIVITY_EVENT = "([^"]+)"/ }],
   },
   {
+    what: "프로젝트 지도 변경 사건",
+    truth: {
+      file: "crates/soksak-core/src/project_registry.rs",
+      re: /pub const CHANGE_EVENT: &str = "([^"]+)"/,
+    },
+    copies: [
+      { file: "frameworks/electron/native/project.cjs", re: /const CHANGE_EVENT = "([^"]+)"/ },
+      { file: "src/state/projectRegistry.ts", re: /safeListen\("([^"]+)", refresh\)/ },
+    ],
+  },
+  {
     what: "저장소 변경 사건",
     truth: { file: "crates/soksak-core/src/data_change.rs", re: /pub const EVENT: &str = "([^"]+)"/ },
     copies: [],

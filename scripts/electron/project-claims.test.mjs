@@ -21,11 +21,15 @@ const TABLE = join(ROOT, "frameworks/electron/native/project.cjs");
 const FIXTURE = join(ROOT, "crates/soksak-core/fixtures/project-claims.json");
 
 /** 창 문맥 스텁 — 살아 있는 라벨과 "부른 창"만 준다. */
-function ctxFor(labels, caller) {
+function ctxFor(labels, caller, announced = []) {
   return {
     labels: () => labels,
     window: { __label: caller },
     labelOf: (w) => w?.__label ?? null,
+    // 실물이 갖는 것 — 스텁이 더 좁으면 그 차이가 곧 거짓 GREEN 이다. 여기서는 더 나아가
+    // **통지가 났는지도 잰다**: 지도가 바뀌었는데 아무도 못 들으면 다른 창의 프로젝트 픽커가
+    // 낡은 목록을 계속 보인다(실측 2026-08-01: 이 프레임워크엔 발행이 아예 없었다).
+    announce: (event) => announced.push(event),
   };
 }
 
@@ -42,6 +46,8 @@ describe("점유 규칙 — Rust 레지스트리와 같은 답", () => {
       delete requireCjs.cache[TABLE];
       const table = requireCjs(TABLE);
       let alive = ["w-1", "w-2"];
+      const announced = [];
+      let mutations = 0;
       for (const s of c.steps) {
         if (s.op === "alive") {
           alive = s.labels;
@@ -49,13 +55,20 @@ describe("점유 규칙 — Rust 레지스트리와 같은 답", () => {
           table.project_owners.answer(ctxFor(alive, alive[0]));
           continue;
         }
-        const ctx = ctxFor(alive, s.label);
+        const before = JSON.stringify(table.project_owners.answer(ctxFor(alive, alive[0])).owners);
+        const ctx = ctxFor(alive, s.label, announced);
         const got = table[`project_${s.op}`].answer(ctx, { root: s.root });
         expect(got, `${c.why} — ${s.op} ${s.root} by ${s.label}`).toMatchObject(s.want);
+        const after = JSON.stringify(table.project_owners.answer(ctxFor(alive, alive[0])).owners);
+        if (before !== after) mutations += 1;
       }
       const owners = table.project_owners.answer(ctxFor(alive, alive[0])).owners;
       // 목록은 root 순서로 결정적이다 — 순서가 흔들리면 같은 상태에 다른 답이 나간다.
       expect([...owners].sort((a, b) => a.root.localeCompare(b.root))).toEqual(c.owners);
+      // 지도가 바뀐 만큼만 알린다. 덜 알리면 다른 창이 낡은 목록을 보이고, 더 알리면 바뀐 것도
+      // 없는데 전 창이 다시 읽는다 — 둘 다 규칙 위반이라 수로 못 박는다.
+      expect(announced.length, `${c.why} — 통지 수가 변이 수와 같아야 한다`).toBe(mutations);
+      expect(new Set(announced).size, "이름은 한 벌이다").toBeLessThanOrEqual(1);
     });
   }
 });

@@ -20,13 +20,18 @@ pub struct ProjectRegistry {
 impl ProjectRegistry {
     /// root 를 label 창이 점유. 이미 다른 창이 점유 중이면 Err(그 창 label).
     /// 같은 창의 재청구는 멱등 Ok(복원·재시도 경로가 안전하도록).
-    pub fn claim(&self, root: &str, label: &str) -> Result<(), String> {
+    /// 점유. `Ok(true)` = 지도가 실제로 바뀌었다, `Ok(false)` = 같은 창의 재청구(멱등).
+    ///
+    /// 둘을 가르는 이유: 통지는 **변이에만** 따라야 한다. 안 바뀐 것도 뿌리면 복원·재시도가
+    /// 매번 전 창을 다시 읽게 만들고, 그 소음 속에서 진짜 변경이 묻힌다.
+    pub fn claim(&self, root: &str, label: &str) -> Result<bool, String> {
         let mut m = self.map.lock().unwrap();
         match m.get(root) {
             Some(owner) if owner != label => Err(owner.clone()),
-            _ => {
+            Some(_) => Ok(false),
+            None => {
                 m.insert(root.to_string(), label.to_string());
-                Ok(())
+                Ok(true)
             }
         }
     }
@@ -86,7 +91,7 @@ impl ProjectRegistry {
 // 변이는 전 창 브로드캐스트("project-registry-change") — 크로스윈도우 반응(픽커 최근목록
 // 비활성화 표시 등)은 이 신호를 listen 한다(폴링 금지).
 fn emit_change(windows: &dyn WindowOracle) {
-    windows.broadcast("project-registry-change", serde_json::Value::Null);
+    windows.broadcast(soksak_core::project_registry::CHANGE_EVENT, serde_json::Value::Null);
 }
 
 /// root 를 label 창이 점유. 성사되면 변이를 알린다. 충돌이면 소유 창 label 을 Err 로.
@@ -97,10 +102,11 @@ pub(crate) fn claim(
     label: &str,
 ) -> Result<(), String> {
     let outcome = registry.claim(root, label);
-    if outcome.is_ok() {
+    // 지도가 바뀌었을 때만 알린다 — 같은 창의 재청구는 아무것도 안 바꾼다.
+    if matches!(outcome, Ok(true)) {
         emit_change(windows);
     }
-    outcome
+    outcome.map(|_| ())
 }
 
 /// root 해제(소유 창만). 반환 = 실제로 해제됐는가.
@@ -247,6 +253,15 @@ mod tests {
         let o = fake(&["main", "w-1"]);
         assert!(claim(&r, &o, "/a", "main").is_ok());
         assert_eq!(o.sent.lock().unwrap().as_slice(), ["project-registry-change"]);
+        // 같은 창의 재청구는 지도를 안 바꾼다 — 안 바뀐 것을 뿌리면 복원·재시도가 매번 전
+        // 창을 다시 읽게 만들고, 그 소음 속에서 진짜 변경이 묻힌다(Electron 쪽 픽스처 검사와
+        // 같은 규칙: 통지 수 = 변이 수).
+        assert!(claim(&r, &o, "/a", "main").is_ok(), "재청구는 멱등이다");
+        assert_eq!(
+            o.sent.lock().unwrap().len(),
+            1,
+            "멱등 재청구는 지도를 안 바꿨으니 알릴 것도 없다"
+        );
         assert_eq!(claim(&r, &o, "/a", "w-1"), Err("main".to_string()));
         assert_eq!(
             o.sent.lock().unwrap().len(),

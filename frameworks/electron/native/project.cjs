@@ -13,6 +13,9 @@
 
 const { frameworkError } = require("./error.cjs");
 
+// 이름의 정본은 crates/soksak-core/src/project_registry.rs 다 — event-name-scan 게이트가 대조한다.
+const CHANGE_EVENT = "project-registry-change";
+
 /** root → 창 라벨. 프로세스 안의 지도이고, 그것이 옳은 수명이다. */
 const owners = new Map();
 
@@ -44,7 +47,10 @@ module.exports = {
       if (!label) throw frameworkError("NO_WINDOW", "부른 창을 짚지 못했다");
       const owner = owners.get(root);
       if (owner && owner !== label) return { ok: false, ownedBy: owner };
+      const changed = owner !== label;
       owners.set(root, label);
+      // 지도가 실제로 바뀌었을 때만 알린다 — 같은 창의 재청구는 아무것도 안 바꾼다.
+      if (changed) ctx.announce(CHANGE_EVENT, null);
       return { ok: true };
     },
   },
@@ -59,6 +65,7 @@ module.exports = {
       const label = ctx.window && ctx.labelOf(ctx.window);
       if (owners.get(root) === label) {
         owners.delete(root);
+        ctx.announce(CHANGE_EVENT, null);
         return { released: true };
       }
       return { released: false };

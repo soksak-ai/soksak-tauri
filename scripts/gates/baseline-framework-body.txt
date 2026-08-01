@@ -25,14 +25,19 @@ frameworks/electron/cored.cjs 242
 #   메뉴 한 줄이 던져 부팅 창이 통째로 안 섰고, whenReady 안의 예외라 아무 자국도 없었다
 #   (프레임워크 테스트 22건이 그 상태를 재고 있었다). 삼키되 센다 — 막지 않는 것과 사실을
 #   안 남기는 것은 다르다. 제거 조건: 메뉴 API 가 실패할 수 없게 되면 이 갈래도 함께 내린다.
-frameworks/electron/main.cjs 392
+# 재입법 2026-08-01 392 → 393. 창 전부에 사실을 미는 통로(announce) 한 줄. 지도가 바뀐 것을
+#   창에 뿌리는 일은 프레임워크만 할 수 있고, 이 프레임워크엔 그 통로가 없어 프로젝트 점유·
+#   해제를 같은 프로세스의 다른 창도 몰랐다.
+frameworks/electron/main.cjs 393
 frameworks/electron/native/capture.cjs 70
 frameworks/electron/native/clipboard.cjs 24
 frameworks/electron/native/engine.cjs 26
 frameworks/electron/native/error.cjs 9
 frameworks/electron/native/index.cjs 86
 frameworks/electron/native/notify.cjs 18
-frameworks/electron/native/project.cjs 54
+# 재입법 2026-08-01 54 → 58. 점유·해제가 지도 변이를 알린다(변이일 때만). 통지가 없으면
+#   다른 창의 프로젝트 픽커가 낡은 목록을 계속 보인다 — 오류는 안 난다.
+frameworks/electron/native/project.cjs 58
 frameworks/electron/native/titlebar.cjs 7
 frameworks/electron/native/updater.cjs 33
 frameworks/electron/native/webview.cjs 166
@@ -107,7 +112,11 @@ frameworks/tauri/src/notify.rs 14
 frameworks/tauri/src/os_key.rs 1
 frameworks/tauri/src/plugins.rs 428
 frameworks/tauri/src/process.rs 150
-frameworks/tauri/src/project_registry.rs 299
+# 재입법 2026-08-01 299 → 306. 점유가 "지도를 바꿨는가"를 값으로 답하고(Ok(true|false)),
+#   통지는 변이에만 따른다. 이전엔 성사 전부에 뿌려 같은 창의 재청구(복원·재시도)까지 전 창을
+#   다시 읽게 했다. 오라클도 함께 왔다(멱등 재청구에 통지 0). 제거 조건: 지도가 코어로 가면
+#   이 판정도 함께 내린다 — 다만 지도의 수명이 창의 수명이라 지금은 옮기지 않는다.
+frameworks/tauri/src/project_registry.rs 306
 frameworks/tauri/src/pty.rs 790
 frameworks/tauri/src/pty_delivery.rs 1
 frameworks/tauri/src/runtime_dep.rs 162

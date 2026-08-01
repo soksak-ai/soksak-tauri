@@ -240,6 +240,8 @@ function nativeContext(sender) {
     labels: () => [...windows.keys()].filter((l) => !windows.get(l).isDestroyed()),
     // 창 → 라벨 역참조. 점유처럼 "부른 창이 누구인가"가 답의 일부인 명령이 쓴다.
     labelOf: (win) => [...windows.entries()].find(([, w]) => w === win)?.[0] ?? null,
+    // 지도가 바뀐 사실을 이 프레임워크의 창 전부에 — 크로스윈도우 반응은 이 신호를 듣는다.
+    announce: (event, payload) => { for (const w of windows.values()) deliverEvent(w, event, payload); },
     windowFor,
     createWindow,
     // 앱을 전면으로 — 창 하나를 key 로 만드는 것과 다른 일이다. steal 은 다른 앱에서
