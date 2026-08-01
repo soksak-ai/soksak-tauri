@@ -75,6 +75,29 @@ describe("windowsUnder", () => {
     // 끝 슬래시가 있든 없든 같은 답이다.
     expect(windowsUnder(map, "/e2e/").map((w) => w.label)).toEqual(["w-a", "w-b"]);
   });
+
+  // 창은 프로젝트를 여럿 든다. 그중 하나가 픽스처라고 그 창을 닫으면 **같은 창에 있던 사용자
+  // 프로젝트가 함께 닫힌다.**
+  //
+  // RED 근거(실측 2026-08-01): 사용자 창 하나가 core + 픽스처 둘을 들고 있었다. 회수가 그 창을
+  // 픽스처 창으로 보고 닫았고, 스냅샷 키까지 지웠다 — 백업에서 되살렸다. 창을 닫는 판정은
+  // "이 창에 픽스처가 있는가" 가 아니라 **"이 창이 픽스처뿐인가"** 여야 한다.
+  it("사용자 프로젝트를 함께 든 창은 고르지 않는다 — 하나라도 밖에 있으면 남의 창이다", () => {
+    const map = [
+      { root: "/e2e/a", window: "w-mixed" },
+      { root: "/home/me/core", window: "w-mixed" },
+      { root: "/e2e/b", window: "w-pure" },
+    ];
+    expect(windowsUnder(map, "/e2e").map((w) => w.label)).toEqual(["w-pure"]);
+  });
+
+  it("한 창이 픽스처만 여럿 들었으면 한 번만 고른다 — 같은 창을 두 번 닫지 않는다", () => {
+    const map = [
+      { root: "/e2e/a", window: "w-pure" },
+      { root: "/e2e/b", window: "w-pure" },
+    ];
+    expect(windowsUnder(map, "/e2e").map((w) => w.label)).toEqual(["w-pure"]);
+  });
 });
 
 describe("acquireFixtureWindow", () => {

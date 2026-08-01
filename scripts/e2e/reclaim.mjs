@@ -16,6 +16,7 @@ import path from "node:path";
 import { openClient, resolveControlWindow } from "./lib/client.mjs";
 import {
   emptyWorkspaceWindows,
+  forgetFixtureData,
   projectMap,
   releaseFixtureWindowsNamed,
   releaseFixtureWindowsUnder,
@@ -54,7 +55,63 @@ async function main() {
 
   console.log(`회수 ${swept.length + (SWEEP_EMPTY ? empty.length : 0)} 개 — 프로젝트 창 ${after.length} 개 남음`);
   for (const p of after) console.log(`  남김 ${p.window}  ${p.root}`);
+
+  // 창을 닫아도 저장소에 쓴 것은 남는다. 앞 판들이 두고 간 그 데이터를 여기서 걷는다.
+  await sweepStoredResidue(rpc, ctrl, labels);
   c.close();
+}
+
+/**
+ * 앞 판들이 저장소에 두고 간 것을 걷는다.
+ *
+ *  ① 유령 스냅샷: `window/<label>` 인데 그 창이 **지금도 없고 앞으로도 안 살아난다.** 살아날
+ *     창은 장부(`windows`)가 안다 — 지금 안 열려 있다고 지우면 다음 부팅에 되살아날 창을
+ *     지운다. 그리고 스냅샷이 픽스처만 들었을 때만 지운다: 사용자 창의 스냅샷은 지우면 그
+ *     창의 내용이 통째로 사라진다(실측 2026-08-01 — 그렇게 지웠고 백업에서 되살렸다).
+ *  ② 픽스처가 차지한 최근 목록: 목록은 20칸이라, 픽스처가 채우면 사용자의 실제 프로젝트가
+ *     목록 밖으로 밀려난다(실측: 20칸 중 19칸이 픽스처였다).
+ *
+ * 지금 열려 있는 프로젝트는 픽스처 밭에 있어도 남긴다 — 쓰고 있는 것을 목록에서 빼지 않는다.
+ */
+async function sweepStoredResidue(rpc, ctrl, liveLabels) {
+  const field = FIELD.replace(/\/+$/, "") + "/";
+  const keep = new Set(liveLabels.map(String));
+  // 장부에 선 창은 살아날 창이다 — 지금 닫혀 있어도 남긴다.
+  const manifest = (await rpc("data.kv.get", { ns: "core", key: "windows" }, ctrl))?.data?.value;
+  for (const slot of manifest?.slots ?? []) keep.add(String(slot?.label ?? ""));
+
+  const keys = (await rpc("data.kv.keys", { ns: "core" }, ctrl))?.data ?? [];
+  const labels = [
+    ...new Set(
+      (Array.isArray(keys) ? keys : (keys.keys ?? []))
+        .map(String)
+        .filter((k) => k.startsWith("window/"))
+        .map((k) => k.replace(/#prev$/, "").slice("window/".length)),
+    ),
+  ].filter((label) => !keep.has(label));
+
+  let swept = 0;
+  for (const label of labels) {
+    // 무엇을 들고 있는지 보고 나서 지운다. 픽스처가 아닌 것이 하나라도 있으면 사용자의 것이다.
+    const snap = (await rpc("data.kv.get", { ns: "core", key: `window/${label}` }, ctrl))?.data?.value;
+    const roots = (snap?.projects ?? []).map((p) => String(p?.root ?? ""));
+    if (roots.some((r) => !r.startsWith(field))) {
+      console.log(`  남김 window/${label} — 픽스처가 아닌 프로젝트를 들고 있다`);
+      continue;
+    }
+    await forgetFixtureData(rpc, ctrl, { label });
+    swept += 1;
+  }
+  console.log(`유령 스냅샷 ${swept} 개 회수`);
+
+  const openRoots = new Set((await projectMap(rpc, ctrl)).map((p) => String(p.root)));
+  const recents = (await rpc("project.recent", {}, ctrl))?.data ?? [];
+  const list = Array.isArray(recents) ? recents : (recents.recents ?? []);
+  const stale = list
+    .map((r) => String(r?.root ?? r))
+    .filter((root) => root.startsWith(field) && !openRoots.has(root));
+  for (const root of stale) await forgetFixtureData(rpc, ctrl, { root });
+  console.log(`최근 목록에서 픽스처 ${stale.length} 개 회수 — 열려 있는 것은 남겼다`);
 }
 
 main().catch((e) => {

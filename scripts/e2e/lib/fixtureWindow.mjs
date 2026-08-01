@@ -27,12 +27,31 @@ export function windowForRoot(projects, root) {
   return null;
 }
 
-/** 지도에서 이 디렉터리 **아래**의 루트를 든 창 전부. 픽스처 밭 통째 회수용. */
+/**
+ * 지도에서 **픽스처만 든** 창 전부. 픽스처 밭 통째 회수용.
+ *
+ * 판정은 "이 창에 픽스처가 있는가" 가 아니라 **"이 창이 픽스처뿐인가"** 다. 창은 프로젝트를
+ * 여럿 들고, 그중 하나가 픽스처라고 창을 닫으면 같은 창에 있던 사용자 프로젝트가 함께 닫힌다.
+ *
+ * RED 근거(실측 2026-08-01): 사용자 창 하나가 core + 픽스처 둘을 들고 있었다. 회수가 그 창을
+ * 픽스처 창으로 보고 닫았고 스냅샷 키까지 지웠다 — 백업에서 되살렸다.
+ *
+ * 같은 창은 한 번만 돌려준다. 두 번 돌려주면 이미 닫힌 창을 또 닫고, 그 실패는 조용하다.
+ */
 export function windowsUnder(projects, dir) {
   const prefix = String(dir).replace(/\/+$/, "") + "/";
-  return (projects ?? [])
-    .filter((p) => String(p?.root ?? "").startsWith(prefix))
-    .map((p) => ({ label: String(p.window), root: String(p.root) }));
+  const byWindow = new Map();
+  for (const p of projects ?? []) {
+    const label = String(p?.window ?? "");
+    const root = String(p?.root ?? "");
+    const seen = byWindow.get(label) ?? { label, root, all: true };
+    if (!root.startsWith(prefix)) seen.all = false;
+    else if (!seen.root.startsWith(prefix)) seen.root = root;
+    byWindow.set(label, seen);
+  }
+  return [...byWindow.values()]
+    .filter((w) => w.all && w.label)
+    .map((w) => ({ label: w.label, root: w.root }));
 }
 
 /**
@@ -42,13 +61,24 @@ export function windowsUnder(projects, dir) {
  * 걷으면 남의 것을 닫는다. 이름 규약(`soksak-e2e-*`)이 우리 것임을 말하는 유일한 표식이다.
  */
 export function windowsNamed(projects, prefix) {
-  return (projects ?? [])
-    .filter((p) => {
-      const root = String(p?.root ?? "");
-      const base = root.slice(root.replace(/\/+$/, "").lastIndexOf("/") + 1);
-      return base.startsWith(prefix);
-    })
-    .map((p) => ({ label: String(p.window), root: String(p.root) }));
+  // windowsUnder 와 같은 판정이다: 이 창이 **픽스처뿐일 때만** 고른다. 하나라도 밖에 있으면
+  // 사용자의 창이고, 닫으면 같은 창에 있던 사용자 프로젝트가 함께 닫힌다.
+  const named = (root) => {
+    const base = root.slice(root.replace(/\/+$/, "").lastIndexOf("/") + 1);
+    return base.startsWith(prefix);
+  };
+  const byWindow = new Map();
+  for (const p of projects ?? []) {
+    const label = String(p?.window ?? "");
+    const root = String(p?.root ?? "");
+    const seen = byWindow.get(label) ?? { label, root, all: true };
+    if (!named(root)) seen.all = false;
+    else if (!named(seen.root)) seen.root = root;
+    byWindow.set(label, seen);
+  }
+  return [...byWindow.values()]
+    .filter((w) => w.all && w.label)
+    .map((w) => ({ label: w.label, root: w.root }));
 }
 
 /**
@@ -128,6 +158,33 @@ async function closeAll(rpc, ctrl, found, opts) {
   for (const w of found) {
     await rpc("window.close", { label: w.label }, ctrl).catch(() => {});
     await sleep(opts.settleMs ?? 150);
+    // 창을 닫는 것으로 끝나지 않는다 — 그 창이 **저장소에 남긴 것**까지가 이 픽스처의 것이다.
+    await forgetFixtureData(rpc, ctrl, w);
   }
   return found;
+}
+
+/**
+ * 픽스처가 저장소에 남긴 것을 거둔다 — **회수는 화면만이 아니다.**
+ *
+ * RED 근거(실측 2026-08-01): 하니스들이 창은 닫고 나갔지만 스냅샷 키(`window/<label>`)와 최근
+ * 프로젝트 항목은 그대로 남았다. 사용자 홈에 유령 창 스냅샷 7개가 쌓였고, 최근 목록 20칸 중
+ * 19칸을 픽스처가 차지해 **사용자의 실제 프로젝트가 목록 밖으로 밀려났다**(RECENT_CAP=20).
+ * 화면에서 사라진 것과 저장소에서 사라진 것은 다른 사실이다.
+ *
+ * 못 지운 것은 조용히 넘기지 않는다 — 남은 것이 있으면 다음 판이 같은 자리에서 다시 만난다.
+ */
+export async function forgetFixtureData(rpc, ctrl, w) {
+  const gone = { key: false, recent: false };
+  if (w.label) {
+    const r = await rpc("data.kv.delete", { ns: "core", key: `window/${w.label}` }, ctrl).catch(() => null);
+    gone.key = r?.ok !== false;
+    // 직전 세대도 이 창의 것이다 — 남기면 되돌릴 대상 없는 세대만 쌓인다.
+    await rpc("data.kv.delete", { ns: "core", key: `window/${w.label}#prev` }, ctrl).catch(() => {});
+  }
+  if (w.root) {
+    const r = await rpc("project.recent.remove", { root: w.root }, ctrl).catch(() => null);
+    gone.recent = r?.ok !== false;
+  }
+  return gone;
 }
