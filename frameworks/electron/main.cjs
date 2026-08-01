@@ -244,6 +244,8 @@ function nativeContext(sender) {
     labelOf: (win) => [...windows.entries()].find(([, w]) => w === win)?.[0] ?? null,
     // 지도가 바뀐 사실을 이 프레임워크의 창 전부에 — 크로스윈도우 반응은 이 신호를 듣는다.
     announce: (event, payload) => { for (const w of windows.values()) deliverEvent(w, event, payload); },
+    // 창이 나기 전에 온 딥링크 — 물으면 주고 그 자리에서 비운다(같은 링크를 두 번 열지 않는다).
+    pendingDeepLinks: () => pendingDeepLinks.splice(0, pendingDeepLinks.length),
     windowFor,
     createWindow,
     // 앱을 전면으로 — 창 하나를 key 로 만드는 것과 다른 일이다. steal 은 다른 앱에서
@@ -401,6 +403,12 @@ function pipeStreams(client, args, sender) {
     });
   }
 }
+
+/** 창이 나기 전에 온 딥링크. 창이 물으면 준다(`deeplink_current`). */
+const pendingDeepLinks = [];
+
+/** 창에 딥링크를 나르는 사건 이름. 프론트 어댑터가 같은 이름으로 듣는다. */
+const DEEP_LINK_EVENT = "deep-link";
 
 /** 창이 신고한 "답이 주인의 것인 이름". 다시 붙을 때 다시 선언하려고 쥔다. */
 let ownerAnsweredNames = [];
@@ -578,6 +586,26 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   // 먼저 선 쪽이 두 번째 실행을 받는다. 사용자가 아이콘을 다시 눌렀다는 뜻이므로 자기 창을
   // 앞으로 낸다 — 아무 반응이 없으면 "안 켜진다"로 읽힌다.
+  // 딥링크 — OS 가 `soksak://…` 을 이 앱으로 넘긴다(번들 Info.plist 의 URI 스킴 등록).
+  //
+  // 규칙은 코어의 것이다(soksak-core deeplink.rs: `soksak://run?cmd=…`). 여기서 하는 것은
+  // **받아서 창에 나르는 일**뿐이다 — 부수효과이고 창을 아는 자리라 프레임워크의 몫이다.
+  //
+  // 창이 아직 없을 수 있다(링크가 앱을 깨운 경우). 그때는 들고 있다가 창이 물으면 준다
+  // (`deeplink_current`) — 버리면 그 링크는 아무 데도 안 닿고 사용자는 "안 열린다"만 본다.
+  app.on("open-url", (e, url) => {
+    e.preventDefault();
+    pendingDeepLinks.push(url);
+    let delivered = false;
+    for (const w of windows.values()) {
+      if (w.isDestroyed()) continue;
+      deliverEvent(w, DEEP_LINK_EVENT, { urls: [url] });
+      delivered = true;
+    }
+    // 닿았으면 들고 있을 이유가 없다 — 남기면 다음에 묻는 창이 옛 링크를 또 연다.
+    if (delivered) pendingDeepLinks.length = 0;
+  });
+
   app.on("second-instance", () => {
     const first = [...windows.values()].find((w) => !w.isDestroyed());
     if (!first) return;

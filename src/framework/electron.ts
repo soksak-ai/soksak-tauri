@@ -314,8 +314,20 @@ export const electronFramework: AppFramework = {
     onAction: async () => unimplemented("notification.onAction"),
   },
   deepLink: {
-    onOpenUrl: async () => unimplemented("deepLink.onOpenUrl"),
-    current: async () => unimplemented("deepLink.current"),
+    // OS 가 넘긴 `soksak://…` 은 창 사건으로 온다(main.cjs `open-url`). 규칙은 코어의 것이고
+    // (soksak-core deeplink.rs) 이 자리는 받아 넘기기만 한다.
+    onOpenUrl: async (cb) => {
+      const off = bridge().onWindowEvent("deep-link", (m) => {
+        const urls = (m as { urls?: unknown }).urls;
+        if (Array.isArray(urls) && urls.length > 0) cb(urls.map(String));
+      });
+      return () => off();
+    },
+    // 링크가 앱을 깨운 경우 사건은 창보다 먼저 온다 — 그때 들고 있던 것을 여기서 받는다.
+    current: async () => {
+      const urls = unwrap<string[]>(await bridge().invoke("deeplink_current"), "deeplink_current");
+      return urls.length > 0 ? urls : null;
+    },
   },
 };
 
