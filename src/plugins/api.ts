@@ -1798,11 +1798,34 @@ export function buildPluginApi(
               : undefined,
             watch: has("clipboard:read")
               ? (cb: (e: { text: string }) => void) => {
-                  void deps.invoke("clipboard_watch_start");
+                  // 감시를 못 서는 프레임워크가 있다(클립보드 변경 사건을 안 주는 쪽). 그것은
+                  // **이름을 달고 거절**되고, 그 거절은 받아야 한다 — `void` 로 던져 두면 부팅마다
+                  // 처리 안 된 reject 가 터지고(실측 2026-08-01: Electron 부팅마다 두 번),
+                  // 그 소음이 진짜 오류를 덮는다.
+                  //
+                  // 삼키지는 않는다: 사유를 원장에 남긴다. 안 남기면 "감시가 안 된다"가 아무
+                  // 데도 안 보이고, 플러그인은 오지 않을 변화를 기다린다.
+                  void deps
+                    .invoke("clipboard_watch_start")
+                    .catch((e) => {
+                      void deps
+                        .invoke("activity_publish", {
+                          kind: "plugin.capability",
+                          source: "plugin",
+                          payload: {
+                            capability: "clipboard.watch",
+                            available: false,
+                            message: `· clipboard.watch 없음 — ${String(e).slice(0, 160)}`,
+                          },
+                        })
+                        .catch(() => {});
+                    });
                   const un = deps.onClipboardChange((text) => cb({ text }));
                   return tracker.wrap(() => {
                     un();
-                    void deps.invoke("clipboard_watch_stop");
+                    // 멈춤도 같은 이유로 거절될 수 있다 — 받아 둔다. 안 받으면 dispose 마다
+                    // 처리 안 된 reject 가 또 하나 생긴다.
+                    void deps.invoke("clipboard_watch_stop").catch(() => {});
                   });
                 }
               : undefined,
