@@ -40,7 +40,10 @@ frameworks/electron/native/notify.cjs 18
 frameworks/electron/native/project.cjs 58
 frameworks/electron/native/titlebar.cjs 7
 frameworks/electron/native/updater.cjs 33
-frameworks/electron/native/webview.cjs 166
+# 재입법 2026-08-01 166 → 167. 브라우저 자식 웹뷰 라벨 접두사 상수 한 줄. 정본은 코어이고
+#   (window_spec::BROWSER_PREFIX) JS 는 Rust 상수를 못 읽어 사본이다 — event-name-scan 이
+#   두 값을 대조한다. 리터럴로 흩어져 있으면 한쪽이 남의 창 웹뷰를 자기 것으로 센다.
+frameworks/electron/native/webview.cjs 167
 frameworks/electron/native/window.cjs 149
 frameworks/electron/preload.cjs 50
 frameworks/electron/windowEvents.cjs 13

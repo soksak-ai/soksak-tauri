@@ -1727,7 +1727,7 @@ pub async fn webview_media_extract(
 pub fn webview_list(app: AppHandle) -> Vec<String> {
     app.webviews()
         .keys()
-        .filter(|l| l.starts_with("b-"))
+        .filter(|l| l.starts_with(soksak_core::window_spec::BROWSER_PREFIX))
         .cloned()
         .collect()
 }

@@ -41,6 +41,19 @@ const PAIRS = [
     copies: [],
   },
   {
+    // 이름이 아니라 **문법**이다. 웹뷰 목록은 앱 전역이라 "자기 창 것만 고르는 일"이 세 자리에서
+    // 일어난다 — 접두사가 갈리면 한쪽은 남의 창 웹뷰를 자기 것으로 세거나 자기 것을 못 찾는다.
+    what: "브라우저 자식 웹뷰 라벨 접두사",
+    truth: {
+      file: "crates/soksak-core/src/window_spec.rs",
+      re: /pub const BROWSER_PREFIX: &str = "([^"]+)"/,
+    },
+    copies: [
+      { file: "src/lib/webviewLabels.ts", re: /export const BROWSER_PREFIX = "([^"]+)"/ },
+      { file: "frameworks/electron/native/webview.cjs", re: /const BROWSER_PREFIX = "([^"]+)"/ },
+    ],
+  },
+  {
     // 사건이 아니라 **만나는 자리**의 이름이다. 갈리면 한쪽이 띄운 cored 를 다른 쪽이 못 찾고,
     // 그때 프레임워크는 자기 것을 또 띄운다 — 같은 홈에 백엔드가 둘이 된다.
     what: "cored 소켓 파일명",

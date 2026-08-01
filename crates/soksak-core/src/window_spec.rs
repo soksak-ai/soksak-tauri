@@ -10,7 +10,23 @@
 ///
 /// 불투명하고 **재사용되지 않는다**: 닫힌 창의 라벨이 새 창에 붙으면 그 창이 옛 창의 복원
 /// 상태를 물려받는다(유령 복원). 의도적 재사용은 리스폰뿐이고, 그때는 라벨이 주어진다.
-pub const WORKSPACE_PREFIX: &str = "w-";
+///
+/// 이름에 `WINDOW` 가 있는 이유: 이것은 **창 라벨의** 접두사다. 짧게 `WORKSPACE_PREFIX` 라고
+/// 부르면 "워크스페이스의 접두사"로 읽혀, `w-` 가 창의 것인지 워크스페이스의 것인지 되묻게
+/// 된다(실측 2026-08-01, 사용자 지적). IDENTITY §1 은 그 둘을 이렇게 못 박는다 —
+/// **창이 곧 워크스페이스다**(`w-<uuid4>` window — it IS the workspace). 컨트롤 플레인 창
+/// (`CONTROL_PLANE_LABEL`)과 가르는 것이 이 접두사의 일이다.
+///
+/// 값은 못 바꾼다: `win-` 은 소각된 세대이고(IDENTITY §7 — ba7c23fb), capability glob 이
+/// `w-*` 을 가정하며 재등록은 테스트가 막는다.
+pub const WORKSPACE_WINDOW_PREFIX: &str = "w-";
+
+/// 브라우저 자식 웹뷰 라벨의 접두사 — 문법은 `b-<창>-<뷰>`.
+///
+/// 웹뷰 목록은 앱 전역이라 **자기 창 것만 고르는 일**이 세 자리에서 일어난다(TS 회수·Tauri
+/// 목록·Electron 목록). 접두사가 갈리면 한쪽은 남의 창 웹뷰를 자기 것으로 세거나 자기 것을
+/// 못 찾는다 — 오류가 아니라 **안 닫히는 유령**과 **빈 목록**으로 나타난다.
+pub const BROWSER_PREFIX: &str = "b-";
 
 /// 창 자리 — 물리 px(window_place·window_monitors 와 같은 좌표계).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -40,7 +56,7 @@ pub fn rect_of(x: Option<f64>, y: Option<f64>, w: Option<f64>, h: Option<f64>) -
 
 /// 이 라벨이 워크스페이스 창의 것인가 — 컨트롤 플레인("main")과 가르는 표식.
 pub fn is_workspace(label: &str) -> bool {
-    label.starts_with(WORKSPACE_PREFIX)
+    label.starts_with(WORKSPACE_WINDOW_PREFIX)
 }
 
 /// 새 창을 앞으로 낼 것인가. 기본은 **참**이다 — 사용자가 새 창을 열면 그 창이 포커스된다.

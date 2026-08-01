@@ -2,6 +2,10 @@
 
 const { frameworkError } = require("./error.cjs");
 
+// 브라우저 자식 웹뷰 라벨 접두사 — 정본은 crates/soksak-core/src/window_spec.rs 다
+// (event-name-scan 게이트가 대조한다). 갈리면 남의 창 웹뷰를 자기 것으로 센다.
+const BROWSER_PREFIX = "b-";
+
 /// 새 창으로 열어도 되는 주소인가 — 코어와 같은 규칙(soksak-core surface_spec).
 ///
 /// http·https 만이다. file·data·javascript 는 창 하나가 로컬 파일을 읽거나 스크립트를 실행하는
@@ -41,7 +45,7 @@ module.exports = {
   webview_list: {
     concept: "브라우저 자식 웹뷰 목록",
     source: "프레임워크 표면 레지스트리(프레임워크가 라벨을 부여한 창·뷰)",
-    answer: (ctx) => ctx.surfaces().filter((l) => l.startsWith("b-")),
+    answer: (ctx) => ctx.surfaces().filter((l) => l.startsWith(BROWSER_PREFIX)),
   },
 
   // 복구 리로드 in-flight 1회 소모 — 프론트 GC 가 부팅 시 읽어 스윕을 보류한다.

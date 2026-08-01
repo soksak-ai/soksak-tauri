@@ -32,18 +32,26 @@ export function browserLabel(viewId: string): string {
   return `b-${currentWindowLabel()}-${viewId}`;
 }
 
+/** 브라우저 자식 웹뷰 라벨의 접두사 — 정본은 `soksak_core::window_spec::BROWSER_PREFIX` 다.
+ *
+ *  TS 는 Rust 상수를 못 읽으므로 사본이고, event-name-scan 게이트가 두 값을 대조한다.
+ *  갈리면 한쪽은 남의 창 웹뷰를 자기 것으로 세거나 자기 것을 못 찾는다. */
+export const BROWSER_PREFIX = "b-";
+
 // 이 창의 브라우저 webview label 접두사 — GC 가 *자기 창* 브라우저만 대조·회수하도록 필터링한다
 // (webview_list 는 앱 전역 모든 창의 브라우저를 반환하므로, 접두사로 자기 것만 골라야 다른 창 것을
 // 잘못 닫지 않는다).
 export function browserLabelPrefix(): string {
-  return `b-${currentWindowLabel()}-`;
+  return `${BROWSER_PREFIX}${currentWindowLabel()}-`;
 }
 
 // 전역 고아 판정 — 부모 창이 살아있지 않은 브라우저 child label. label 문법(b-<창>-<뷰>)의
 // 소유는 이 모듈이므로 판정도 여기 산다(inline 재구성 금지 게이트의 대상 문법).
 export function orphanBrowserLabels(labels: string[], windows: string[]): string[] {
   return labels.filter(
-    (l) => l.startsWith("b-") && !windows.some((w) => l.startsWith(`b-${w}-`)),
+    (l) =>
+      l.startsWith(BROWSER_PREFIX) &&
+      !windows.some((w) => l.startsWith(`${BROWSER_PREFIX}${w}-`)),
   );
 }
 

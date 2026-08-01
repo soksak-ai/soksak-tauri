@@ -66,7 +66,7 @@ impl NoTarget {
 ///
 /// 라벨의 **모양**은 `window_spec` 이 소유한다. 같은 크레이트 안이라도 값을 다시 적으면 두
 /// 벌이고, 한쪽만 고쳐도 컴파일은 안 막는다 — 그때 배달은 워크스페이스 창을 못 알아본다.
-pub use crate::window_spec::WORKSPACE_PREFIX;
+pub use crate::window_spec::WORKSPACE_WINDOW_PREFIX;
 
 /// 컨트롤 플레인 창의 라벨 — 플랫폼 예약어다(NAMING §1-4b). 라벨에서 역할을 파싱하는 것이
 /// 아니라 **예약어와 비교**한다.
@@ -147,7 +147,7 @@ pub fn resolve_target(
     live: &[String],
 ) -> Result<String, NoTarget> {
     let mut workspaces: Vec<&String> =
-        live.iter().filter(|l| l.starts_with(WORKSPACE_PREFIX)).collect();
+        live.iter().filter(|l| l.starts_with(WORKSPACE_WINDOW_PREFIX)).collect();
     // 정렬은 결정성을 위해서다 — 모호 목록이 호출마다 뒤바뀌면 같은 상황에 다른 메시지가 나간다.
     workspaces.sort();
     let sole = if workspaces.len() == 1 { Some(workspaces[0].clone()) } else { None };
