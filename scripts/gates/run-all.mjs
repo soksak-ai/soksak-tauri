@@ -47,6 +47,7 @@ export const LOCAL = new Map([
   ["vocabulary-framework-scan.mjs", []],
   ["workspace-root-not-framework.mjs", []],
   ["harness-address-scan.mjs", []],
+  ["owner-answer-scan.mjs", []],
 ]);
 
 /** 네트워크를 타는 게이트 — 발행 전에 따로 돈다(`make gates-registry`). 사유를 적는다. */

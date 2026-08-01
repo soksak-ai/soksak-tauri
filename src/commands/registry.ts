@@ -906,6 +906,9 @@ export function catalogJson(): {
   errors: readonly string[];
   examples: readonly string[];
   danger?: "destructive" | "inject";
+  // 답의 주인 — 창-지역이면 true. 카탈로그에 싣는 이유는 **읽힐 수 있어야** 하기 때문이다:
+  // 같은 이름을 든 창이 여럿일 때 배달이 이 값을 보고 한 번만 보낼지 전부에 보낼지 정한다.
+  windowScoped: boolean;
   pluginCallable: boolean;
   broker?: CommandBrokerSpec;
 }[] {
@@ -918,6 +921,8 @@ export function catalogJson(): {
       returns: s.returns,
       errors: s.errors ?? [],
       examples: s.examples ?? [],
+      // 안 적었으면 창-지역이다 — 안전한 쪽이 기본이다(registry.ts CommandSpec.windowScoped).
+      windowScoped: s.windowScoped !== false,
       pluginCallable: s.broker !== undefined,
       // 선언만 공개한다. 실제 principal/grant/authority 값은 컨텍스트에만 있고 카탈로그에 없다.
       ...(s.broker ? { broker: publicBrokerMetadata(s.broker) } : {}),
