@@ -10,6 +10,7 @@ import { invoke, currentWindow, frameworkName } from "../framework";
 import { safeListen } from "../lib/safeListen";
 import { bootFactPayload } from "../lib/bootFact";
 import { mayPersist } from "./persistGuard";
+import { losesContent, previousGenerationKey } from "./snapshotGeneration";
 import { noteDataChange } from "./dataChangeHealth";
 import { currentWindowLabel } from "../lib/webviewLabels";
 import { makeCoreStore } from "./coreStore";
@@ -225,7 +226,19 @@ async function persistNow(
   manifestStore: ReturnType<typeof makeCoreStore<WindowManifest>>,
 ): Promise<void> {
   try {
-    await winStore.save(snapshotWindow(projects, activeId, projections));
+    const snap = snapshotWindow(projects, activeId, projections);
+    // 잃는 쓰기 전에 직전 값을 남긴다 — 저장은 덮어쓰기라 이전 값이 그 자리에서 사라지고,
+    // 백업 링은 최소 간격이 1시간이라 그 사이는 어디에도 없다(snapshotGeneration 머리말).
+    // 원인은 다 막을 수 없으니(크래시·강제종료·앞으로 생길 버그) 되돌릴 자리를 남긴다.
+    const prevSnap = await winStore.hydrate().catch(() => null);
+    if (losesContent(prevSnap, snap)) {
+      await invoke("data_kv_set", {
+        ns: "core",
+        key: previousGenerationKey(`window/${label}`),
+        value: prevSnap,
+      }).catch((e) => console.error("직전 세대 보존 실패:", e));
+    }
+    await winStore.save(snap);
     const manifest = await manifestStore.hydrate();
     // 창 프레임(B2) — 리스폰이 같은 자리·크기로 되살린다(듀얼 모니터 배치 유지).
     const entry = { ...windowManifestEntry(label, projects, activeId), rect: await currentFrame() };

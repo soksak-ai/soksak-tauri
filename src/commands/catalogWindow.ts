@@ -11,6 +11,11 @@ import { register } from "./registry";
 import { browserLabelPrefix, currentWindowLabel } from "../lib/webviewLabels";
 import { validateProjectRoot } from "../lib/projectRoot";
 import { forgetWindowSlot } from "../state/windowBoot";
+import {
+  previousGenerationKey,
+  snapshotSize,
+  type WindowSnapshotLike,
+} from "../state/snapshotGeneration";
 import { windowTarget, P, notFound } from "./catalog";
 
 export function registerWindowCatalog(): void {
@@ -261,6 +266,46 @@ export function registerWindowCatalog(): void {
     message: (d) => tmsg("msg.window.list", { n: ((d.labels as unknown[]) ?? []).length }),
     examples: ["window.list"],
     handler: async () => ({ labels: await invoke<string[]>("window_list") }),
+  });
+
+  // 보존된 직전 세대를 사람이 볼 수 있어야 안전망이다 — 못 꺼내는 백업은 백업이 아니다.
+  register("window.restorePrevious", {
+    description:
+      "Inspect or restore the previous workspace generation for a window. Saves that lose content (projects or tabs disappearing) preserve the prior snapshot first, because the store overwrites in place and the backup ring only rotates hourly. Without `apply` this only reports what is there.",
+    triggers: { ko: "이전 워크스페이스 복구 직전 세대 되돌리기 작업 복구" },
+    params: {
+      label: P.windowLabel,
+      apply: {
+        type: "boolean",
+        description: "Write the previous generation back (default false = report only).",
+      },
+    },
+    returns: "{ found, projects, tabs, applied }",
+    message: (d) =>
+      d.found
+        ? tmsg("msg.window.restorePrevious.found", {
+            n: Number(d.projects ?? 0),
+            applied: String(d.applied),
+          })
+        : tmsg("msg.window.restorePrevious.none"),
+    errors: ["TARGET_NOT_FOUND"],
+    examples: ["window.restorePrevious", 'window.restorePrevious \'{"apply":true}\''],
+    handler: async (p) => {
+      const label = windowTarget(p);
+      const key = `window/${label}`;
+      const prev = await invoke<WindowSnapshotLike | null>("data_kv_get", {
+        ns: "core",
+        key: previousGenerationKey(key),
+      });
+      if (!prev) return { found: false, projects: 0, tabs: 0, applied: false };
+      const size = snapshotSize(prev);
+      if (p.apply !== true) return { found: true, ...size, applied: false };
+      // 되돌리는 것도 잃는 쓰기일 수 있다 — 지금 값을 그 자리에 남기고 바꾼다(왕복 가능).
+      const now = await invoke<WindowSnapshotLike | null>("data_kv_get", { ns: "core", key });
+      await invoke("data_kv_set", { ns: "core", key, value: prev });
+      await invoke("data_kv_set", { ns: "core", key: previousGenerationKey(key), value: now });
+      return { found: true, ...size, applied: true };
+    },
   });
 
   register("window.projects", {

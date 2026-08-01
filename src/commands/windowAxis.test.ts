@@ -55,6 +55,7 @@ describe("창 축은 한 곳에 정의된다", () => {
       "window.focus",
       "window.maximize",
       "window.place",
+      "window.restorePrevious",
     ]);
   });
 

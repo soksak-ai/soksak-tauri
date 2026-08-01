@@ -110,7 +110,6 @@ frameworks/tauri/src/webview.rs 2259
 packages/plugin-spec/src/pluginRuntime.ts 2081
 packages/plugin-spec/src/spec.ts 1785
 src/commands/catalog.ts 2787
-src/i18n.ts 1815
 # 재입법 2026-07-31 1926 → 1927. 모듈 전역 표를 경계 밖으로 옮기며 붙인 사유 한 줄이다.
 src/plugins/api.ts 1927
 # 재입법 2026-07-31 2006 → 2011. store 를 모듈 경계 밖으로 옮기며 붙인 사유 주석이다

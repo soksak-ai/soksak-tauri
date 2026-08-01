@@ -495,6 +495,13 @@
       "note": "슬롯이 얼어붙는 결함을 네이티브 뷰 계층과 프레임으로 본다 — 자식 표면 위치가 판정 축이다."
     },
     {
+      "file": "snapshot-generation.mjs",
+      "role": "harness",
+      "class": "A",
+      "surfaces": [],
+      "note": "잃는 쓰기가 직전 세대를 남기는지 — 소켓 명령만 쓴다(space.create/close · window.restorePrevious). 픽셀도 네이티브 표면도 안 본다: 판정 축이 저장소의 값이라 프레임워크를 바꿔도 그대로 선다."
+    },
+    {
       "file": "surface-park.mjs",
       "role": "harness",
       "class": "C",
@@ -533,6 +540,13 @@
       "note": "한 identity 홈의 터미널 엔진 유닛을 정합시킨다. 파일 배치 작업이고, 홈 경로만 밖에서 오면 프레임워크를 모른다."
     },
     {
+      "file": "tui-probe.sh",
+      "role": "fixture",
+      "class": "A",
+      "surfaces": [],
+      "note": "WINCH 마다 다시 그리는 결정적 TUI. 터미널 안에서만 돌고 앱을 모른다."
+    },
+    {
       "file": "two-apps.mjs",
       "role": "harness",
       "class": "B",
@@ -541,13 +555,6 @@
         "build-artifact-path"
       ],
       "note": "두 프레임워크의 앱을 한 홈에 동시에 세우고, 그 홈의 저장소·볼트가 한 소유자만 갖는지를 본다. 두 실행물을 직접 띄우는 것이 이 하니스의 일이라 산출물 경로는 남지만, 공유 홈은 밖에서 오면 사라진다."
-    },
-    {
-      "file": "tui-probe.sh",
-      "role": "fixture",
-      "class": "A",
-      "surfaces": [],
-      "note": "WINCH 마다 다시 그리는 결정적 TUI. 터미널 안에서만 돌고 앱을 모른다."
     },
     {
       "file": "ui-verify.mjs",
