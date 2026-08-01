@@ -723,12 +723,36 @@ fn run_docs(core_only: bool, format: &str, lang: &str) -> ExitCode {
         eprintln!("사용: sok docs [--core] [--format md|json] [--lang en|ko]");
         return ExitCode::FAILURE;
     }
-    let data = v.get("data").cloned().unwrap_or(Value::Null);
+    // 한 홈에 두 앱이 서면 같은 이름을 둘이 들고, 답이 `data.answers[]` 로 온다. 단일 답 모양만
+    // 읽으면 그 순간 표면이 0개가 된다 — 실패가 아니라 **빈 성공**으로 보인다(실측 2026-08-02).
+    // 봉투가 어느 모양이든 표면을 든 답 하나를 고른다.
+    let data = {
+        let d = v.get("data").cloned().unwrap_or(Value::Null);
+        match d.get("answers").and_then(Value::as_array) {
+            None => d,
+            Some(answers) => answers
+                .iter()
+                .filter_map(|a| a.get("data").cloned())
+                .find(|d| d.get("core").and_then(Value::as_array).is_some_and(|c| !c.is_empty()))
+                .unwrap_or(Value::Null),
+        }
+    };
     let core = data
         .get("core")
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
+    // **빈 답은 문서가 아니다.** 명령 표면은 창-지역 등록이라, 아직 등록되지 않은 창에 물으면
+    // 0개가 돌아온다. 그 0을 그대로 찍으면 정본이 통째로 지워진다 — 실측 2026-08-02: 이 자리가
+    // 빈 답을 받아 `docs/COMMANDS.md` 에서 3432줄을 지웠고, 아무도 실패라고 말하지 않았다.
+    // 못 읽은 것은 성공값으로 표현될 수 없어야 한다.
+    if core.is_empty() {
+        eprintln!(
+            "EMPTY_SURFACE: 명령 표면이 비어 있다 — 창이 아직 명령을 등록하지 않았을 수 있다.\n\
+             빈 답으로 문서를 덮지 않는다. 앱이 뜬 뒤 다시 부르십시오."
+        );
+        return ExitCode::FAILURE;
+    }
     let bin = bin_name_for_env(default_env());
     println!("# soksak 명령 레퍼런스\n");
     println!(

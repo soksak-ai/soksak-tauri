@@ -716,6 +716,26 @@ sok-dev explorer.list
 sok-dev explorer.list '{"path":"/tmp"}'
 ```
 
+## `framework.info`
+
+Read which app framework this window actually runs on (the resolved adapter, e.g. tauri or electron) and which contract capabilities that adapter exposes. Capability names are reported by presence only — nothing is invoked, because an unimplemented capability throws when called. Use when diagnosing an incident, driving a harness, or stamping a ledger entry with the framework it came from. | 프레임워크 어댑터 플랫폼 활성 런타임 진단 능력 어느프레임워크
+
+**Returns**: { framework, capabilities[] } — the active adapter name and the contract capability names it exposes (nested groups flattened as group.member).
+
+```bash
+sok-dev framework.info
+```
+
+## `framework.provision`
+
+Read what this window's framework provides: adapter name, whether the engine is Chromium, and whether content views are native child webviews (as opposed to elements inside the page). Branch verification on these axes, never on the adapter name. | 프레임워크 능력 제공 축 네이티브 자식 웹뷰 엔진
+
+**Returns**: { name, chromium, nativeChildWebview }
+
+```bash
+sok-dev framework.provision
+```
+
 ## `fs.unwatch`
 
 Release one fs.watch subscription for a directory. The OS watch is removed only when the last subscription is released; unwatching a path that is not watched is a no-op. | 디렉토리 감시 해제 폴더 변경 감지 중지 언워치
@@ -900,20 +920,62 @@ Send a UDP datagram to any host:port, including broadcast addresses (e.g. Wake-o
 sok-dev net.udp.send '{"host":"255.255.255.255","port":9,"data":"ffffffffffff","broadcast":true}'
 ```
 
-## `notify.show`
+## `notify.activate`
 
-Show an OS desktop notification (title + body). Behaves like a push notification when the window is not focused. To trigger a command on click, embed a deep-link URL (soksak://run?cmd=<command>&p=<JSON>) in the body or follow-up message. | 알림 보내기 푸시 통지 데스크톱알림
+Activate a notification previously shown by `notify.show`, using its `handle`. Runs exactly what an OS click runs. | 알림 누르기 알림 활성화 클릭 | 알림 누르기 활성화
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `body` | string | ✓ | Notification body text |
-| `title` | string | ✓ | Notification title |
+| `handle` | number | ✓ | Handle returned by notify.show |
 
 **Returns**: { ok }
 **Errors**: INVALID_PARAMS, INTERNAL
 
 ```bash
+sok-dev notify.activate '{"handle":1}'
+```
+
+## `notify.show`
+
+Show an OS desktop notification (title + body). Behaves like a push notification when the window is not focused. Clicking runs the deep link this notification carries — pass it as `deepLink` (soksak[-env]://cmd/<name>?<query>). | 알림 보내기 푸시 통지 데스크톱알림
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `body` | string | ✓ | Notification body text |
+| `deepLink` | string |  | Deep link to run when the notification is clicked (soksak[-env]://cmd/<name>) |
+| `title` | string | ✓ | Notification title |
+
+**Returns**: { ok, handle }
+**Errors**: INVALID_PARAMS, INTERNAL
+
+```bash
 sok-dev notify.show '{"title":"배포 완료","body":"prod 배포가 끝났습니다"}'
+```
+
+## `orchestrator.ask`
+
+Run one natural-language turn: spawns the configured agent CLI (settings orchestratorAgent) which drives the app through single `sok` commands. Every execution born from the turn carries payload.parentId=turnId, and the turn itself is recorded as chat.prompt → command.progress deltas → chat.answer — one conversation set in the activity stream. Long-running: pass a large timeoutMs when calling over the socket. | 자연어 명령 대화 실행 오케스트레이터 물어보기 시켜줘
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `text` | string | ✓ | Natural-language instruction |
+| `window` | string |  | Stage window label for the turn (SOKSAK_WINDOW for the agent — its sok commands default there). Omit = no stage; the agent discovers windows itself. |
+
+**Returns**: { turnId, answer } — message is the agent's final answer
+**Errors**: INTERNAL, TIMEOUT
+
+```bash
+sok-dev --window main orchestrator.ask '{"text":"열린 창을 알려줘","timeoutMs":300000}'
+```
+
+## `orchestrator.stop`
+
+Cancel the in-flight natural-language turn (kills the agent process; the set closes as CANCELLED). | 중단 멈춰 취소 턴 중지
+
+**Returns**: { stopped }
+
+```bash
+sok-dev --window main orchestrator.stop
 ```
 
 ## `pane.activate`
@@ -2372,6 +2434,16 @@ Resolve the caller's position: project/space/pane/tab that $SOKSAK_CALLER_TAB be
 sok-dev state.context
 ```
 
+## `state.health`
+
+Report the liveness of the core's observation wiring: command registry size, execution trace sink, and activity hub publishing (attempts/ok/failed/consecutive/lastError/lastStampAt). Use this when responses look fine but nothing is being recorded. | 상태 진단 건강 관측 배선
+
+**Returns**: { ready, commands{registered,traceSinkInstalled,emitted,lastEmitAt}, activity{...}, persist{...}, degradedAxes, ledger{minSeq,maxSeq,gaps,timeRegressions,singleWriter,persist} — ledger 는 cored 가 답한다(저장소를 쓰는 프로세스가 둘이라 한쪽만으로는 판정할 수 없다) }
+
+```bash
+sok-dev state.health
+```
+
 ## `state.tree`
 
 Full layout snapshot (address book): all ids and active state across project → space → pane (display rect %) → tab. Each space exposes displayed and canonical stored layouts plus projection provenance; each project exposes its effective left-rail position and clean grid lines.
@@ -2888,6 +2960,21 @@ sok-dev ui.input.key '{"address":"win/main/content/view/x/node/composer-input","
 sok-dev ui.input.key '{"address":"…/node/composer-input","key":"ArrowDown"}'
 ```
 
+## `ui.input.observe`
+
+Record which input events actually reach this window over a bounded span (ms ≤ 5000). Listens on window in the capture phase, so arrivals are recorded even if app handlers stop propagation. Use it to split a failed injection into 'the event never arrived' versus 'it arrived and nothing moved' — the two have different fixes. Drive the input from another connection while this runs. | 입력 도착 관측 이벤트 수신 확인 주입 검증
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `events` | json |  | Event type names to record (default: mousedown, mousemove, mouseup) |
+| `ms` | number |  | Recording window in ms (default 1000, max 5000) |
+
+**Returns**: { ms, counts: { <type>: n }, samples: [{ t, type, x, y, target }] }
+
+```bash
+sok-dev ui.input.observe '{"events":["mousemove"],"ms":1500}'
+```
+
 ## `ui.input.pointer` (danger: inject)
 
 Drive the pointer the way the OS does: enter/move onto an exposed node, or leave (no address = the pointer is not over us). Hover state that a native child surface can steal — gutter highlight — is owned by app state, not CSS :hover, precisely so it can be driven and read back here. Returns the gutter-hover key now held, so a test can assert both the arming and the release. | 포인터 이동 hover 강조 진입 이탈 마우스 주입 E2E
@@ -3019,12 +3106,13 @@ sok-dev ui.slot '{"address":"win/main/content/view/soksak-plugin-<id>.<view>"}'
 
 ## `ui.snapshot.dom`
 
-Measure every exposed node in one pass — one consistent instant, not several round trips that drift apart. Returns address, rect, and the requested computed properties for each, so you can read where a line sits, how wide a pane is, and how big its children are, all from the same moment. Pair with ui.motion hold to stop time first. filter narrows by address substring. | 돔 일괄 측정 스냅샷 좌표 폭 한번에 관측 선 위치
+Measure every exposed node in one pass — one consistent instant, not several round trips that drift apart. Returns address, rect, and the requested computed properties for each, so you can read where a line sits, how wide a pane is, and how big its children are, all from the same moment. Pair with ui.motion hold to stop time first. filter narrows by address substring; selector measures raw elements that carry no address (a content-view host, a plugin body) — read-only, it drives nothing. | 돔 일괄 측정 스냅샷 좌표 폭 한번에 관측 선 위치
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `filter` | string |  | Only addresses containing this substring |
 | `props` | json |  | Extra computed-style property names, e.g. ["backgroundColor","zIndex"] |
+| `selector` | string |  | CSS selector for elements that carry no exposed address (e.g. webview[data-content-view]). Observation only — input still requires an address. |
 
 **Returns**: { count, nodes: [{ address, nodePath, rect, style? }] }
 **Errors**: INVALID_PARAMS
@@ -3033,6 +3121,18 @@ Measure every exposed node in one pass — one consistent instant, not several r
 sok-dev ui.snapshot.dom
 sok-dev ui.snapshot.dom '{"filter":"pane","props":["backgroundColor"]}'
 ```
+
+## `ui.trace`
+
+Sample an exposed node's rect over a bounded window (ms ≤ 5000) at animation-frame cadence and return the series. This is how you verify that a layout change actually moves — and how slow/hold (ui.motion) visibly stretch or freeze that movement. Trigger the mutation right after starting the trace (it samples from the next frame). | 노드 추적 이동 기록 rect 시계열 트레이스
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `address` | string | ✓ | Exposed node address (ui.tree) |
+| `ms` | number |  | Sampling window in ms (default 1000, max 5000) |
+
+**Returns**: { address, from, to, samples: [{ t, x, y, w, h }], moved, translatedOnly(true = x/y changed while w/h stayed — the move-contract), resized }
+**Errors**: NOT_EXPOSED, AMBIGUOUS, INVALID_PARAMS
 
 ## `ui.tree`
 
@@ -3184,6 +3284,16 @@ Manually recover a webview: reset its circuit breaker (clears the crash window a
 
 ```bash
 sok-dev webview.recover '{"label":"b-w-1234-v7"}'
+```
+
+## `webview.surfaces`
+
+Reconcile this window's state (which views exist) against the browser child webviews actually alive for this window. ghosts = child webviews whose view no longer exists in state — a stale native surface floating over the window (the 'browser over an empty window' mismatch); a non-empty ghosts list is always a defect fact. Judged from the same sources the app itself uses (state store + webview_list), no pixels involved. | 표면 정합 유령 웹뷰 잔존 브라우저 대조 확인
+
+**Returns**: { window, actual: [label], ghosts: [label], orphans: [label], engine: {registered, hostPresent}, bodies: [{node,x,y,w,h,children,overlay,…}], stateViews }
+
+```bash
+sok-dev webview.surfaces
 ```
 
 ## `window.close`
@@ -3396,23 +3506,44 @@ Resize the window to a physical pixel size (for automation and resize-path E2E �
 sok-dev window.resize '{"w":1200,"h":800}'
 ```
 
+## `window.restorePrevious`
+
+Inspect or restore the previous workspace generation for a window. The store keeps the last few values of every key, so any write — a bug, a crash, a bad tool — leaves something to come back to. Without `apply` this only reports what is there. | 이전 워크스페이스 복구 직전 세대 되돌리기 작업
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `apply` | boolean |  | Write the previous generation back (default false = report only). |
+| `label` | string |  | Window label (omit = the addressed window; see window.list) |
+
+**Returns**: { found, projects, tabs, applied }
+**Errors**: TARGET_NOT_FOUND
+
+```bash
+sok-dev window.restorePrevious
+sok-dev window.restorePrevious '{"apply":true}'
+```
+
 ## `window.snapshot`
 
-Capture the window contents to a PNG. Captures even when fully occluded by other apps (occlusion detection is temporarily disabled during capture). Includes WebGL terminal. Parent folder is created automatically. Pass base64:true to get the PNG inline instead of a file; rect (CSS px, window coords — same space as ui.measure) crops to a region and implies base64. | 스크린샷 캡처 화면 저장 PNG 스냅샷 부분 영역
+Capture the window contents to a PNG. Captures even when fully occluded by other apps (occlusion detection is temporarily disabled during capture). Includes WebGL terminal. Parent folder is created automatically. Cropping and saving compose freely: rect (CSS px, window coords — same space as ui.measure), node (an exposed address from ui.tree), or tab (a content tab id) selects the region, and path saves it while base64:true returns it inline. Capturing a tab that is not active activates it for the shot and restores whatever was active afterwards, so the screen returns to where it was. With neither path nor base64, a cropped capture still returns inline. | 스크린샷 캡처 화면 저장 PNG 스냅샷 부분 영역
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `base64` | boolean |  | Return the PNG as base64 instead of writing a file |
+| `node` | string |  | Exposed address (ui.tree) to capture — its rect is measured for you. Use this to capture one panel or element without computing coordinates. |
 | `path` | string |  | Output .png path (file mode). Omit to use a temp folder. |
-| `rect` | json |  | Crop region {x,y,w,h} in CSS px, window coordinates (ui.measure space). Implies base64 mode. |
+| `rect` | json |  | Crop region {x,y,w,h} in CSS px, window coordinates (ui.measure space). Combine with path to save the crop. |
+| `tab` | string |  | Content tab id to capture. Inactive tabs are parked offscreen, so this activates the tab (and its space) for the shot and restores what was active afterwards. |
 
-**Returns**: { saved, media:{kind,path} } (file mode) | { media:{kind:'image/png',base64} } (base64/rect mode)
+**Returns**: { tabId?, saved, media:{kind,path} } when path is given (cropped or full) | { tabId?, media:{kind:'image/png',base64} } otherwise — tabId echoes the resolved tab when tab was passed
 **Errors**: INVALID_PARAMS
 
 ```bash
 sok-dev window.snapshot
 sok-dev window.snapshot '{"path":"/tmp/shot.png"}'
 sok-dev window.snapshot '{"rect":{"x":100,"y":80,"w":400,"h":300},"base64":true}'
+sok-dev window.snapshot '{"rect":{"x":100,"y":80,"w":400,"h":300},"path":"/tmp/crop.png"}'
+sok-dev window.snapshot '{"node":"win/main/proj/p1/chrome/tab/space/0","path":"/tmp/tab.png"}'
 ```
 
 ## `window.themeScan`
