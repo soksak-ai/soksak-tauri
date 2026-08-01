@@ -216,21 +216,15 @@ Hesitate about that and the same capability grows one copy per shell, working on
 
 ---
 
-### A26. A capability has three possible homes — core, framework, sidecar. There is no fourth.
+### A27. Verification depends on nothing outside the app, and never takes the screen.
 
-Hesitate about where something belongs and the same capability grows one copy per shell, working on one of them and quietly broken on the other. Two questions decide it: **does it need a window**, and **does it need native code**.
+An event you cannot call is an event you cannot verify, and what you cannot verify you cannot claim works. Reaching for the operating system to trigger it — UI scripting, an accessibility grant, a click on a notification banner — buys the trigger and loses everything else: the check now hangs on a human approval, and where that approval does not exist (CI, another machine) it stops running without saying so. Bringing the window to the front is the same mistake wearing a second face: it takes the screen the user was looking at. Focus is given after all work is done, when the thing is not visible and the user asks for it.
 
-- **Neither → core.** The store, command routing, formats. Whatever must answer with no window belongs here.
-- **A window → the framework.** Windows, webviews, the main thread, OS event sinks. cored has no window, so these can never move there.
-- **Native code but not *this app's* window → a sidecar.** Its own process carrying its own dependencies, reached identically by both frameworks through core (the terminal and browser engines live there).
+**So expose the event.** Give what cannot be called an **address**, and let a command call it back (`notify_show` returns a handle, `notify_activate` rings it). The load-bearing part is that the human path and the command path must be **the same function** — with two paths the command can pass while the click is dead, and then the check proves nothing. A test measures that equivalence.
 
-**Core's forbidden-dependency list is this rule's enforcement.** Pulling a name from that list (`clipboard-rs`, `objc2`, `x11rb`, `portable-pty`…) into core breaks the rule; it does not earn an exception. If it cannot go in, the capability goes to **a sidecar** — never one copy per framework.
+**And when the reason is real, fix the app, not the harness.** A background webview is throttled, so measuring it while it is behind is invalid — that reason was true. The harness answered it by fronting the window through the OS. The app answers it by declaring the guarantee: the sibling framework already did (`backgroundThrottling: false`), and this one now holds the same one for its process lifetime (`app_nap::hold`). One declaration removed the OS dependency and the focus theft together (measured 2026-08-02).
 
-Measured 2026-08-01: the clipboard had one copy per framework and only one of them could watch. The refusal — "this framework gives no clipboard-change event" — was written as a principle but was **a circumstance**: the sibling framework polls changeCount on macOS too (there is no event API). An attempt to move it into core hit the forbidden list, and rather than lower the rule we wrote this clause. The clipboard's home is a sidecar: X11 needs a window to receive selection transfer, that window has **no reason to be this app's window**, and a sidecar can own one.
-
-**If the symptom is "it doesn't work in that app", the home is wrong.** Either the capability sits in a framework without using a window, or it belongs in core but demands native code.
-
----
+**"There is no exposed command, so I could not verify" is not a finding.** Building the command is part of the work.
 
 ## 5. Extraction Targets
 

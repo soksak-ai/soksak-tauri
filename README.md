@@ -101,6 +101,8 @@ state and stay visually distinct in the Dock.
 - Debug app: `target/debug/bundle/macos/soksak-debug.app`
 - Installer image: `target/release/bundle/dmg/soksak_<version>_aarch64.dmg`
 
+Cargo writes under the workspace root. Do not spell that location by hand — `make` asks cargo for it (`CARGO_TARGET`), and a gate refuses a hand-written copy. An earlier root left an orphan tree behind whose stale binaries were silently picked up by anything still naming it; `make clean-orphan-target` removes it (idempotent, and it refuses if cargo still writes there).
+
 ---
 
 한국어 안내는 [README.ko.md](README.ko.md).

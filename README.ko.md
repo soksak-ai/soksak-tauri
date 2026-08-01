@@ -99,6 +99,8 @@ make docs         # 라이브 카탈로그에서 docs/COMMANDS.md 재생성
 - 디버그 앱: `target/debug/bundle/macos/soksak-debug.app`
 - 설치 이미지: `target/release/bundle/dmg/soksak_<version>_aarch64.dmg`
 
+cargo 는 워크스페이스 뿌리 아래에 쓴다. 그 자리를 손으로 적지 마라 — `make` 가 cargo 에게 묻고(`CARGO_TARGET`), 손으로 적은 사본은 게이트가 거절한다. 옛 뿌리가 남긴 고아 트리의 낡은 바이너리가, 그 자리를 아직 부르는 모든 것에 조용히 잡혔다. `make clean-orphan-target` 이 지운다(멱등이고, cargo 가 아직 그 자리에 쓰면 거절한다).
+
 ---
 
 English guide: [README.md](README.md).
