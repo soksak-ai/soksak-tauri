@@ -272,9 +272,6 @@ pub(crate) fn run_data_put(ctx: &Ctx, params: &Value) -> Outcome {
                     &a.doc,
                 )
             })?;
-            // 쓰기 사실 = 백업 링의 유일한 트리거(폴링 0). 앱 경로만 걸면 이 프로세스가 서빙하는
-            // 쓰기는 링을 한 번도 안 돌리고, 그 차이는 오류가 아니라 **없는 백업**으로 나타난다.
-            crate::backup_ring::on_write(ctx);
             let what = Changed::one(&a.ns, Some(&a.coll), a.scope.as_deref(), soksak_core::data_change::op::PUT, Some(id.clone()));
             Ok((Value::String(id), what))
         })

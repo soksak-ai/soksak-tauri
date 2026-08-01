@@ -913,13 +913,10 @@ impl soksak_core::kv::KvRows for SqliteRows<'_> {
 
 pub(crate) fn run_window_traces_prune(ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: WindowTracesArg| {
-        if !ctx.owns_writes() {
-            return Err(format!(
-                "이 저장소의 쓰기는 다른 프로세스가 소유한다({}) — 흔적 폐기는 그쪽이 한다",
-                ctx.db_path().display()
-            ));
-        }
-        ctx.with_db(|conn| {
+        // 판정은 형제들과 같은 함수를 쓴다 — 같은 술어를 손으로 다시 적으면 "쓰기 명령"을
+        // 기계로 셀 수 없고, 못 세면 이 명령이 알림 검사에서 통째로 빠진다(실측: 그랬다).
+        crate::registry_store::deny_without_write_ownership(ctx)?;
+        ctx.with_write(|conn| {
             let store = SqliteRows { conn };
         let ns = soksak_core::window_traces::NS;
 
@@ -937,7 +934,13 @@ pub(crate) fn run_window_traces_prune(ctx: &Ctx, params: &Value) -> Outcome {
                 slot_removed = true;
             }
         }
-        Ok(serde_json::json!({ "snapshot": snapshot_removed, "slot": slot_removed }))
+        // 흔적을 지운 것도 저장소 변경이다 — 안 알리면 다른 창의 창 목록이 낡은 채로 남는다.
+        let what = if snapshot_removed || slot_removed {
+            crate::ctx::Changed::one(ns, None, None, "window-traces-prune", Some(a.label.clone()))
+        } else {
+            crate::ctx::Changed::none()
+        };
+        Ok((serde_json::json!({ "snapshot": snapshot_removed, "slot": slot_removed }), what))
         })
     })
 }

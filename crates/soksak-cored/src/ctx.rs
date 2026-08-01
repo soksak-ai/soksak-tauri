@@ -126,7 +126,14 @@ impl Ctx {
         f: impl FnOnce(&rusqlite::Connection) -> Result<(T, Changed), String>,
     ) -> Result<T, String> {
         let (value, changed) = soksak_store::activity_persist::with_writer(&self.db_path(), f)?;
-        changed.announce();
+        let wrote = changed.announce();
+        // 쓰기 사실은 백업 링의 유일한 트리거다(폴링 0). 이 문이 알림과 백업 **둘 다**를 지는
+        // 이유: 신호를 명령마다 손으로 걸면 하나가 빠지고, 빠진 그 명령의 쓰기는 링을 한 번도
+        // 안 돌린다 — 그 차이는 오류가 아니라 **없는 백업**으로 나타난다(실측 2026-08-01:
+        // cored 는 run_data_put 한 자리에만 걸려 있었다).
+        if wrote {
+            crate::backup_ring::on_write(self);
+        }
         Ok(value)
     }
 
@@ -338,9 +345,9 @@ impl Changed {
     ///
     /// `with_write` 는 자동으로 부른다. 직접 부르는 자리는 커넥션 밖에서 저장소를 바꾸는
     /// 경우뿐이다(파일 자체를 갈아치우는 되돌리기).
-    pub fn announce(self) {
+    pub fn announce(self) -> bool {
         if self.op.is_empty() {
-            return;
+            return false;
         }
         crate::control::broadcast(
             soksak_core::data_change::EVENT,
@@ -352,5 +359,6 @@ impl Changed {
                 self.id.as_deref(),
             ),
         );
+        true
     }
 }
