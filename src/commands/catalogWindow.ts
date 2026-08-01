@@ -12,7 +12,6 @@ import { browserLabelPrefix, currentWindowLabel } from "../lib/webviewLabels";
 import { validateProjectRoot } from "../lib/projectRoot";
 import { forgetWindowSlot } from "../state/windowBoot";
 import {
-  previousGenerationKey,
   snapshotSize,
   type WindowSnapshotLike,
 } from "../state/snapshotGeneration";
@@ -271,7 +270,7 @@ export function registerWindowCatalog(): void {
   // 보존된 직전 세대를 사람이 볼 수 있어야 안전망이다 — 못 꺼내는 백업은 백업이 아니다.
   register("window.restorePrevious", {
     description:
-      "Inspect or restore the previous workspace generation for a window. Saves that lose content (projects or tabs disappearing) preserve the prior snapshot first, because the store overwrites in place and the backup ring only rotates hourly. Without `apply` this only reports what is there.",
+      "Inspect or restore the previous workspace generation for a window. The store keeps the last few values of every key, so any write — a bug, a crash, a bad tool — leaves something to come back to. Without `apply` this only reports what is there.",
     triggers: { ko: "이전 워크스페이스 복구 직전 세대 되돌리기 작업 복구" },
     params: {
       label: P.windowLabel,
@@ -293,18 +292,17 @@ export function registerWindowCatalog(): void {
     handler: async (p) => {
       const label = windowTarget(p);
       const key = `window/${label}`;
-      const prev = await invoke<WindowSnapshotLike | null>("data_kv_get", {
-        ns: "core",
-        key: previousGenerationKey(key),
-      });
+      // 과거는 **저장소가 간직한다.** 여기서 따로 사본을 두면 같은 사실이 두 자리가 되고, 그때
+      // 한쪽만 갱신되어 "되돌렸는데 엉뚱한 값이 온다"가 된다. 저장소는 모든 쓰기에 대해
+      // 남기므로 여기서 남길 조건을 판단할 것도 없다.
+      const past = await invoke<WindowSnapshotLike[]>("data_kv_history", { ns: "core", key });
+      const prev = past?.[0] ?? null;
       if (!prev) return { found: false, projects: 0, tabs: 0, applied: false };
       const size = snapshotSize(prev);
       if (p.apply !== true) return { found: true, ...size, applied: false };
-      // 되돌리는 것도 잃는 쓰기일 수 있다 — 지금 값을 그 자리에 남기고 바꾼다(왕복 가능).
-      const now = await invoke<WindowSnapshotLike | null>("data_kv_get", { ns: "core", key });
-      await invoke("data_kv_set", { ns: "core", key, value: prev });
-      await invoke("data_kv_set", { ns: "core", key: previousGenerationKey(key), value: now });
-      return { found: true, ...size, applied: true };
+      // 되돌리기도 쓰기라 지금 값이 과거로 밀린다 — 잘못 되돌렸으면 다시 되돌아올 수 있다.
+      const restored = await invoke<boolean>("data_kv_undo", { ns: "core", key });
+      return { found: true, ...size, applied: restored };
     },
   });
 

@@ -49,6 +49,35 @@ impl soksak_core::kv::KvDelete for SqliteRows<'_> {
     }
 }
 
+/// 이 프로세스가 저장소 주인이다 — 덮어쓰기·삭제가 여기를 지난다. 규칙도 질의문도 코어가
+/// 소유하고 여기는 연결만 준다. 예전에는 이 어댑터가 자기 UPSERT 를 직접 돌아, 형제
+/// 프로세스가 남기던 과거를 통째로 지나쳤다.
+impl soksak_core::kv::KvPast for SqliteRows<'_> {
+    fn push_past(&self, ns: &str, key: &str, raw: &str, at_ms: u64) -> Result<(), String> {
+        self.conn
+            .execute(soksak_core::kv::PAST_INSERT_SQL, (ns, key, raw, at_ms as i64))
+            .map_err(|e| e.to_string())?;
+        self.conn
+            .execute(
+                soksak_core::kv::PAST_PRUNE_SQL,
+                (ns, key, soksak_core::kv::PAST_DEPTH as i64),
+            )
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    fn past(&self, ns: &str, key: &str) -> Result<Vec<String>, String> {
+        let mut stmt = self
+            .conn
+            .prepare(soksak_core::kv::PAST_SELECT_SQL)
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map((ns, key), |r| r.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    }
+}
+
 
 
 #[derive(serde::Deserialize)]
@@ -427,10 +456,44 @@ pub(crate) fn run_data_kv_set(ctx: &Ctx, params: &Value) -> Outcome {
         deny_without_write_ownership(ctx)?;
         ctx.with_write(|conn| {
             let store = SqliteRows { conn };
-            soksak_core::kv::set(&store, &a.ns, &a.key, &a.value, crate::ledger::now_ms())?;
+            // 덮기 전에 지금 값을 과거로 민다 — 규칙은 코어가 진다.
+            soksak_core::kv::set_keeping_past(&store, &a.ns, &a.key, &a.value, crate::ledger::now_ms())?;
             // 앱의 data_kv_set 은 () 를 돌려준다 — 같은 모양이라야 프레임워크가 값을 다시
             // 조립하지 않는다.
             Ok((Value::Null, Changed::one(&a.ns, None, None, soksak_core::data_change::op::KV_SET, Some(a.key.clone()))))
+        })
+    })
+}
+
+/// 이 칸이 간직한 과거 — 최신 직전 값이 앞이다.
+pub(crate) fn run_data_kv_history(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: KvDeleteArg| {
+        let conn = ctx.open_db()?;
+        // 배열 그대로 답한다 — 위임한 프로세스의 같은 이름이 배열을 돌리므로, 여기서 감싸면
+        // 부른 쪽이 "누가 답했는가"를 알아야 한다(그건 부른 쪽이 몰라도 되는 사실이다).
+        let past = soksak_core::kv::past(&SqliteRows { conn: &conn }, &a.ns, &a.key)?;
+        Ok(serde_json::Value::Array(past))
+    })
+}
+
+/// 직전 값으로 되돌린다.
+///
+/// 되돌리기도 쓰기다 — 그래서 지금 값이 다시 과거로 밀린다. 되돌린 것을 되돌릴 수 없으면
+/// 그것은 새로운 잃는 길이다(잘못 되돌렸을 때 돌아올 자리가 없다).
+pub(crate) fn run_data_kv_undo(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: KvDeleteArg| {
+        deny_without_write_ownership(ctx)?;
+        ctx.with_write(|conn| {
+            let store = SqliteRows { conn };
+            // 되돌릴 것이 없으면 그렇게 말한다 — 조용히 성공하면 부른 쪽은 되돌아간 줄 안다.
+            let restored = soksak_core::kv::undo(&store, &a.ns, &a.key, crate::ledger::now_ms())?;
+            let what = if restored {
+                Changed::one(&a.ns, None, None, soksak_core::data_change::op::KV_SET, Some(a.key.clone()))
+            } else {
+                Changed::none()
+            };
+            // bool 그대로 답한다 — 위임한 프로세스의 같은 이름이 bool 을 돌린다.
+            Ok((serde_json::Value::Bool(restored), what))
         })
     })
 }

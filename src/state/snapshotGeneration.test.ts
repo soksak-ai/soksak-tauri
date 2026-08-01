@@ -1,21 +1,16 @@
-// 사용자 자산을 덮어쓰기 전에 **직전 값을 남긴다** — 덮어쓰기가 일어나도 되돌릴 수 있게.
+// 되돌리기 전에 **무엇이 들어오는지** 사람이 볼 수 있어야 한다.
 //
-// 실측(2026-08-01): 워크스페이스 스냅샷은 `DO UPDATE SET v=excluded.v` 로 저장된다. 즉 쓰는
-// 순간 이전 값이 사라진다. 백업 링은 있지만 최소 간격이 1시간이라, 그 사이의 작업은 어디에도
-// 없다. 실제로 그 구멍에서 사용자 워크스페이스가 사라졌고 1시간 전 백업으로만 되살렸다.
+// 되돌릴 자리를 남기는 일 자체는 저장소가 한다(kv_past — 모든 쓰기에 대해 조건 없이). 한때
+// 여기서 "잃는 쓰기"만 골라 사본을 따로 뒀는데, 그 규칙이 못 잡는 쓰기는 되돌릴 자리가 없었고
+// 같은 사실이 두 자리에 있어 한쪽만 갱신되면 엉뚱한 값이 돌아왔다. 남은 것은 크기 세기다.
 //
-// "복원 실패 시 저장 금지"(persistGuard)는 **원인 하나**를 막는다. 그러나 원인은 그것만이
-// 아니다 — 크래시·강제종료·플러그인 오작동·앞으로 생길 버그. 원인을 다 막을 수는 없으므로,
-// **잃어도 되돌릴 수 있어야** 한다.
-//
-// 모든 저장마다 세대를 남기면 400ms 전 값만 남아 쓸모가 없다. 남길 가치가 있는 것은
-// **줄어드는 쓰기** 하나다: 프로젝트나 탭이 사라지는 저장 직전의 값.
+// RED 근거(실측 2026-08-01): 이 크기를 **런타임 모양**(`spaces`·`type:"leaf"`·`tabs`)으로 세다가
+// 늘 0 을 답했다. 저장 모양은 `contents`·`t:"l"`·`views` 다. 테스트도 런타임 모양으로 쓰여 있어
+// GREEN 이었고 e2e 가 잡았다 — **목이 실제 모양과 다르면 진짜 결함을 가린다.**
 import { describe, it, expect } from "vitest";
-import { losesContent } from "./snapshotGeneration";
+import { snapshotSize } from "./snapshotGeneration";
 
-// **저장 모양**으로 짓는다 — 런타임 모양(`spaces`·`type:"leaf"`·`tabs`)이 아니라 직렬화가
-// 실제로 남기는 모양(`contents`·`t:"l"`·`views`)이다. 처음엔 런타임 모양으로 써서 이 검사가
-// 전부 GREEN 인데 실제로는 늘 0 을 세고 있었다 — e2e 가 그 거짓 GREEN 을 잡았다(2026-08-01).
+// **저장 모양**으로 짓는다 — 직렬화가 실제로 남기는 모양이다.
 const snap = (projects: number, tabsPerSpace = 1, spacesPerProject = 1) => ({
   activeId: "p0",
   projects: Array.from({ length: projects }, (_, i) => ({
@@ -31,35 +26,43 @@ const snap = (projects: number, tabsPerSpace = 1, spacesPerProject = 1) => ({
   })),
 });
 
-describe("잃는 쓰기를 가른다", () => {
-  it("프로젝트가 줄면 잃는 쓰기다", () => {
-    expect(losesContent(snap(3), snap(2))).toBe(true);
+describe("스냅샷 크기는 저장 모양에서 센다", () => {
+  it("프로젝트·스페이스·탭을 센다", () => {
+    expect(snapshotSize(snap(2, 3, 2))).toEqual({ projects: 2, spaces: 4, tabs: 12 });
   });
 
-  it("탭이 줄어도 잃는 쓰기다", () => {
-    expect(losesContent(snap(1, 3), snap(1, 1))).toBe(true);
+  it("빈 스냅샷은 0 이다", () => {
+    expect(snapshotSize(snap(0))).toEqual({ projects: 0, spaces: 0, tabs: 0 });
   });
 
-  it("전부 사라지는 것은 가장 잃는 쓰기다 — 복원 실패의 모양이다", () => {
-    expect(losesContent(snap(3), snap(0))).toBe(true);
+  it("없는 스냅샷도 0 이다 — 세는 자리가 던지면 되돌리기 조회가 통째로 실패한다", () => {
+    expect(snapshotSize(null)).toEqual({ projects: 0, spaces: 0, tabs: 0 });
   });
 
-  it("늘거나 그대로면 잃지 않는다 — 세대를 남길 이유가 없다", () => {
-    expect(losesContent(snap(2), snap(3))).toBe(false);
-    expect(losesContent(snap(2), snap(2))).toBe(false);
-    expect(losesContent(snap(1, 1), snap(1, 4))).toBe(false);
+  it("중첩 분할의 탭도 센다 — 한 겹만 보면 분할한 스페이스의 탭이 사라진다", () => {
+    const nested = {
+      projects: [
+        {
+          contents: [
+            {
+              layout: {
+                t: "s",
+                children: [
+                  { t: "l", v: { views: [{ id: "a" }, { id: "b" }] } },
+                  { t: "s", children: [{ t: "l", v: { views: [{ id: "c" }] } }] },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    };
+    expect(snapshotSize(nested)).toEqual({ projects: 1, spaces: 1, tabs: 3 });
   });
 
-  it("스페이스가 줄어도 잃는 쓰기다 — 빈 스페이스를 닫는 것도 자산이 준다", () => {
-    // e2e RED(2026-08-01): 탭만 세면 빈 스페이스가 사라지는 저장이 안 잡혔다.
-    expect(losesContent(snap(1, 0, 2), snap(1, 0, 1))).toBe(true);
-  });
-
-  it("이전 값이 없으면 잃을 것도 없다 — 첫 저장", () => {
-    expect(losesContent(null, snap(1))).toBe(false);
-  });
-
-  it("빈 것에서 빈 것으로는 잃지 않는다", () => {
-    expect(losesContent(snap(0), snap(0))).toBe(false);
+  it("런타임 모양은 세지 않는다 — 저장 모양이 아니면 0 이다", () => {
+    // 이 검사가 없으면 두 모양을 헷갈린 구현이 GREEN 으로 지나간다(실측: 지나갔다).
+    const runtime = { projects: [{ spaces: [{ layout: { type: "leaf", tabs: [1, 2] } }] }] };
+    expect(snapshotSize(runtime)).toEqual({ projects: 1, spaces: 0, tabs: 0 });
   });
 });

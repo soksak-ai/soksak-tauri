@@ -126,7 +126,7 @@ pub fn data_kv_get(
         &state,
         "data_kv_get",
         serde_json::json!({ "ns": ns, "key": key }),
-        |c| soksak_core::kv::get(&store::ConnKvRows(c), &ns, &key),
+        |c| soksak_core::kv::get(&store::ConnKv(c), &ns, &key),
     )
 }
 
@@ -167,6 +167,47 @@ pub fn data_kv_delete(
         emit_change(&app, &ns, None, None, soksak_core::data_change::op::KV_DELETE, Some(key.as_str()));
     }
     Ok(removed)
+}
+
+/// 이 칸이 간직한 과거 — 최신 직전 값이 앞. 되돌릴 자리는 **물어서 알 수 있어야 한다.**
+#[tauri::command]
+pub fn data_kv_history(
+    ns: String,
+    key: String,
+    state: State<'_, DbState>,
+) -> Result<Vec<Value>, String> {
+    validate_ns(&ns)?;
+    // 주인에게 물었을 때와 **같은 모양**을 돌린다 — 한쪽만 감싸면 부른 쪽이 위임 여부를 알아야
+    // 한다(그건 부른 쪽이 몰라도 되는 사실이다).
+    store_op(
+        &state,
+        "data_kv_history",
+        serde_json::json!({ "ns": ns, "key": key }),
+        |c| store::kv_history(c, &ns, &key),
+    )
+}
+
+/// 직전 값으로 되돌린다. 되돌리기도 쓰기라 지금 값이 과거로 밀린다 — 잘못 되돌렸으면 다시
+/// 되돌아올 수 있다.
+#[tauri::command]
+pub fn data_kv_undo(
+    app: AppHandle,
+    ns: String,
+    key: String,
+    state: State<'_, DbState>,
+) -> Result<bool, String> {
+    validate_ns(&ns)?;
+    // 주인에게 물었을 때와 **같은 모양**이다(bool).
+    let restored: bool = store_op(
+        &state,
+        "data_kv_undo",
+        serde_json::json!({ "ns": ns, "key": key }),
+        |c| store::kv_undo(c, &ns, &key),
+    )?;
+    if restored {
+        emit_change(&app, &ns, None, None, soksak_core::data_change::op::KV_SET, Some(key.as_str()));
+    }
+    Ok(restored)
 }
 
 #[tauri::command]

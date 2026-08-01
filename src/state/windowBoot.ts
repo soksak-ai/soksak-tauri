@@ -16,7 +16,6 @@ import {
   snapshotUnread,
   type SnapshotRead,
 } from "./persistGuard";
-import { losesContent, previousGenerationKey } from "./snapshotGeneration";
 import { noteDataChange } from "./dataChangeHealth";
 import { currentWindowLabel } from "../lib/webviewLabels";
 import { makeCoreStore } from "./coreStore";
@@ -250,19 +249,10 @@ async function persistNow(
 ): Promise<void> {
   try {
     const snap = snapshotWindow(projects, activeId, projections);
-    // 잃는 쓰기 전에 직전 값을 남긴다 — 저장은 덮어쓰기라 이전 값이 그 자리에서 사라지고,
-    // 백업 링은 최소 간격이 1시간이라 그 사이는 어디에도 없다(snapshotGeneration 머리말).
-    // 원인은 다 막을 수 없으니(크래시·강제종료·앞으로 생길 버그) 되돌릴 자리를 남긴다.
-    // 직전 값을 **못 읽었으면 쓰지 않는다.** 못 읽음을 null(없음)로 적으면 되돌릴 자리를 안
-    // 남긴 채 덮게 된다 — 되돌릴 수 없는 쓰기는 이 파일이 막으려던 바로 그 손이다.
-    const prevSnap = await winStore.hydrate();
-    if (losesContent(prevSnap, snap)) {
-      await invoke("data_kv_set", {
-        ns: "core",
-        key: previousGenerationKey(`window/${label}`),
-        value: prevSnap,
-      }).catch((e) => console.error("직전 세대 보존 실패:", e));
-    }
+    // 직전 값을 남기는 것은 **저장소가 한다**(kv_past — 모든 쓰기에 대해, 조건 없이).
+    // 한때 여기서 "잃는 쓰기"만 골라 사본을 따로 뒀는데, 그러면 ① 고르는 규칙이 못 잡는 쓰기는
+    // 되돌릴 자리가 없고 ② 같은 사실이 두 자리가 되어 한쪽만 갱신되면 엉뚱한 값이 돌아온다.
+    // 이 창이 무엇을 하든, 어떤 버그가 새로 생기든 저장소에 되돌릴 자리가 있다.
     await winStore.save(snap);
     // 창 프레임(B2) — 리스폰이 같은 자리·크기로 되살린다(듀얼 모니터 배치 유지).
     const entry = { ...windowManifestEntry(label, projects, activeId), rect: await currentFrame() };

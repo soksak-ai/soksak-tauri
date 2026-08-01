@@ -104,18 +104,11 @@
 # 소비자가 자식 뷰 부재라는 **틀린 사유**로 거절당한다(SIDECARS.md §8 은 두 합성 모드 중
 # windowed 만 자식 뷰를 쓴다고 적어 뒀다). 뜻은 engineNeeds.ts 가 지고 여기는 자리만 연다.
 crates/soksak-cli/src/lib.rs 1706
-crates/soksak-store/src/store.rs 2116
+crates/soksak-store/src/store.rs 2068
 frameworks/tauri/src/ipc.rs 1544
 frameworks/tauri/src/webview.rs 2259
 packages/plugin-spec/src/pluginRuntime.ts 2081
 packages/plugin-spec/src/spec.ts 1785
 src/commands/catalog.ts 2787
-# 재입법 2026-07-31 1926 → 1927. 모듈 전역 표를 경계 밖으로 옮기며 붙인 사유 한 줄이다.
 src/plugins/api.ts 1927
-# 재입법 2026-07-31 2006 → 2011. store 를 모듈 경계 밖으로 옮기며 붙인 사유 주석이다
-#   (moduleState 선언 한 줄 + 왜인지 두 줄). 코드가 아니라 근거이고, 이 파일이 사라지면
-#   다음 사람이 store 를 다시 모듈 안으로 되돌린다 — 그때 등록·구독·화면 상태가 통째로
-#   사라지는 것이 오늘 실측한 결함이다.
-# 재입법 2026-07-31 2011 → 2014. 같은 이유로 모듈 전역 let(카운터·지연 초기화)도 경계 밖으로
-#   옮기며 붙인 사유다.
 src/state/sessions.ts 2014

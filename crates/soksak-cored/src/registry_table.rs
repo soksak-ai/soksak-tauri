@@ -906,6 +906,26 @@ pub const COMMANDS: &[Command] = &[
         returns: "any | null (저장된 값)",
         run: run_data_kv_get,
     },
+    // 되돌릴 자리는 **물어서 알 수 있어야 한다**. 저장소가 과거를 간직해도 꺼낼 길이 없으면
+    // 그 과거는 없는 것과 같다 — 사고가 난 순간 사람이 볼 수 있어야 한다.
+    Command {
+        name: "data_kv_history",
+        args: &[
+            Arg { name: "ns", ty: "string", required: REQ },
+            Arg { name: "key", ty: "string", required: REQ },
+        ],
+        returns: "any[] (최신 직전 값이 앞)",
+        run: run_data_kv_history,
+    },
+    Command {
+        name: "data_kv_undo",
+        args: &[
+            Arg { name: "ns", ty: "string", required: REQ },
+            Arg { name: "key", ty: "string", required: REQ },
+        ],
+        returns: "bool (되돌렸으면 true)",
+        run: run_data_kv_undo,
+    },
     // 활동 발행 — cored 는 **적재만** 한다. 부채질(창 emit)은 프레임워크의 것이고, 영속(records 쓰기)은
     // 저장소 소유자의 것이다. 적재분을 답에 실어 보내면 창을 가진 프레임워크가 그것을 뿌린다.
     // 저장소 경로는 인자가 아니라 부팅 상태다 — 앱의 activity_publish 도 받지 않는다.

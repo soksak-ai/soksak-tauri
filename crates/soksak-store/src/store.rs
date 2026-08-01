@@ -11,60 +11,9 @@ use rusqlite::{Connection, OptionalExtension, ToSql};
 use serde_json::{json, Value};
 
 pub use crate::ids::{gen_id, now_millis, validate_coll, validate_field};
-
-// ── KV ───────────────────────────────────────────────────────────────────────
-
-// 저장된 원문 한 칸. 질의문과 연결은 여기 남고, 해독 규칙은 soksak-core 이 갖는다.
-pub fn kv_raw(conn: &Connection, ns: &str, k: &str) -> Result<Option<String>, String> {
-    conn.query_row("SELECT v FROM kv WHERE ns=?1 AND k=?2", (ns, k), |r| {
-        r.get(0)
-    })
-    .optional()
-    .map_err(|e| e.to_string())
-}
-
-// 연결을 KvRows 로 내보내는 어댑터 — cored 는 자기 연결로 같은 트레이트를 채운다.
-pub struct ConnKvRows<'a>(pub &'a Connection);
-
-impl soksak_core::kv::KvRows for ConnKvRows<'_> {
-    fn value(&self, ns: &str, key: &str) -> Result<Option<String>, String> {
-        kv_raw(self.0, ns, key)
-    }
-}
-
-pub fn kv_get(conn: &Connection, ns: &str, k: &str) -> Result<Option<Value>, String> {
-    soksak_core::kv::decode(kv_raw(conn, ns, k)?)
-}
-
-pub fn kv_set(conn: &Connection, ns: &str, k: &str, v: &Value) -> Result<(), String> {
-    let s = serde_json::to_string(v).map_err(|e| e.to_string())?;
-    conn.execute(
-        "INSERT INTO kv(ns,k,v,updated) VALUES(?1,?2,?3,?4)\
-         ON CONFLICT(ns,k) DO UPDATE SET v=excluded.v, updated=excluded.updated",
-        (ns, k, s, now_millis()),
-    )
-    .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-pub fn kv_delete(conn: &Connection, ns: &str, k: &str) -> Result<bool, String> {
-    let n = conn
-        .execute("DELETE FROM kv WHERE ns=?1 AND k=?2", (ns, k))
-        .map_err(|e| e.to_string())?;
-    Ok(n > 0)
-}
-
-pub fn kv_keys(conn: &Connection, ns: &str, prefix: Option<&str>) -> Result<Vec<String>, String> {
-    let pat = format!("{}%", prefix.unwrap_or(""));
-    let mut stmt = conn
-        .prepare("SELECT k FROM kv WHERE ns=?1 AND k LIKE ?2 ORDER BY k")
-        .map_err(|e| e.to_string())?;
-    let rows = stmt
-        .query_map((ns, pat), |r| r.get::<_, String>(0))
-        .map_err(|e| e.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())
-}
+// KV 는 형제 파일이 진다. 이름은 여기 그대로 둔다 — 부르는 자리가 30곳이고, 그 자리를 옮기는
+// 것은 이 분할과 다른 일이다(한 커밋에 섞으면 무엇이 무엇을 깼는지 못 가른다).
+pub use crate::kv_conn::{kv_delete, kv_get, kv_history, kv_keys, kv_raw, kv_set, kv_undo, ConnKv};
 
 // ── 컬렉션 메타 ────────────────────────────────────────────────────────────────
 
@@ -208,6 +157,9 @@ pub fn drop_ns(conn: &Connection, ns: &str) -> Result<NsRemoval, String> {
         .map_err(|e| e.to_string())?;
     let kv = conn
         .execute("DELETE FROM kv WHERE ns=?1", [ns])
+        .map_err(|e| e.to_string())?;
+    // 과거도 이 ns 의 것이다 — 걷는데 과거만 남으면 그것이 곧 남의 저장소에 남긴 흔적이다.
+    conn.execute(soksak_core::kv::PAST_DROP_NS_SQL, [ns])
         .map_err(|e| e.to_string())?;
     for cid in &cids {
         // FTS 표는 그 컬렉션 전용이라 통째로 버린다. 표현식 인덱스는 records(공유 표)에 붙어 있으므로
@@ -1115,7 +1067,7 @@ mod tests {
         let c = mem();
         define(
             &c,
-            "plugin:probe",
+            "plugin-probe",
             "t",
             &["issue".into()],
             &["title".into()],
@@ -1123,34 +1075,34 @@ mod tests {
         .unwrap();
         put(
             &c,
-            "plugin:probe",
+            "plugin-probe",
             "t",
             "s",
             Some("x1".into()),
             &json!({"issue":"i-1","title":"probe"}),
         )
         .unwrap();
-        kv_set(&c, "plugin:probe", "k", &json!({"a":1})).unwrap();
+        kv_set(&c, "plugin-probe", "k", &json!({"a":1})).unwrap();
 
-        define(&c, "plugin:keeper", "t", &["issue".into()], &[]).unwrap();
+        define(&c, "plugin-keeper", "t", &["issue".into()], &[]).unwrap();
         put(
             &c,
-            "plugin:keeper",
+            "plugin-keeper",
             "t",
             "s",
             Some("y1".into()),
             &json!({"issue":"i-2"}),
         )
         .unwrap();
-        kv_set(&c, "plugin:keeper", "k", &json!({"b":2})).unwrap();
+        kv_set(&c, "plugin-keeper", "k", &json!({"b":2})).unwrap();
 
-        let out = drop_ns(&c, "plugin:probe").unwrap();
+        let out = drop_ns(&c, "plugin-probe").unwrap();
         assert_eq!((out.collections, out.records, out.kv), (1, 1, 1));
 
         // 지운 ns 는 흔적이 없다 — 레코드·kv·컬렉션 정의·표현식 인덱스·FTS 표까지.
         assert!(query(
             &c,
-            "plugin:probe",
+            "plugin-probe",
             "t",
             Some("s"),
             None,
@@ -1162,7 +1114,7 @@ mod tests {
         )
         .unwrap()
         .is_empty());
-        assert!(kv_get(&c, "plugin:probe", "k").unwrap().is_none());
+        assert!(kv_get(&c, "plugin-probe", "k").unwrap().is_none());
         let leftovers: i64 = c
             .query_row(
                 "SELECT count(*) FROM sqlite_master WHERE name LIKE 'idx_%' AND sql LIKE '%issue%'",
@@ -1176,7 +1128,7 @@ mod tests {
         assert_eq!(
             query(
                 &c,
-                "plugin:keeper",
+                "plugin-keeper",
                 "t",
                 Some("s"),
                 None,
@@ -1190,10 +1142,10 @@ mod tests {
             .len(),
             1
         );
-        assert!(kv_get(&c, "plugin:keeper", "k").unwrap().is_some());
+        assert!(kv_get(&c, "plugin-keeper", "k").unwrap().is_some());
 
         // 멱등 — 없는 ns 를 지우는 것은 실패가 아니다.
-        let again = drop_ns(&c, "plugin:probe").unwrap();
+        let again = drop_ns(&c, "plugin-probe").unwrap();
         assert_eq!((again.collections, again.records, again.kv), (0, 0, 0));
     }
 

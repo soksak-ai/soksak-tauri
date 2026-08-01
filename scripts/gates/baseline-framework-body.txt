@@ -18,31 +18,9 @@
 # main.cjs 는 그 값을 표에 건네는 ctx 한 줄이다. 규칙과 답은 새 파일(native/updater.cjs)이
 # 지고, 그 파일은 처음부터 이 폴더의 몫으로 등재됐다(native/updater.cjs 33, index.cjs +1 = 조립 한 줄).
 frameworks/electron/activity.cjs 32
-# 재입법 2026-08-01 206 → 207. 소켓에 setEncoding("utf8") 한 줄. 청크 경계는 글자 경계가
-#   아니라, 이것이 없으면 멀티바이트가 걸린 자리에서 U+FFFD 로 조용히 바뀐다 — 그 값이 상태에
-#   들어가 다시 저장되면 손상이 영구히 남는다(실측: 스냅샷의 `터미널(????티)`).
-# 재입법 2026-08-01 207 → 217. 주인이 **사라졌을 때 다시 세우는 길**(ensureUp + 시도 바닥).
-#   소켓이 끊긴 것과 주인이 없어진 것은 다른 사실이다: 앞엣것은 이미 다시 붙었지만, 뒤엣것은
-#   세우지 않으면 이 앱이 남은 수명 내내 저장소를 잃는다. 이것은 배선이 아니라 **규칙**이고,
-#   같은 규칙이 Rust 쪽(soksak-core::host_slot)에도 있다 — 두 런타임이 코드를 하나도 안 나눠
-#   가지므로 한 규칙이 두 벌로 적힌다. 그 두 벌이 갈리지 않게 잡는 것은 양쪽의 같은 이름 검사다
-#   (backend-socket.test.mjs · host_slot_tests.rs — 셋 다 같은 세 규칙을 재고 이름도 같다).
-#   제거 조건: 이 프레임워크의 다리가 Rust 쪽 구현을 부르게 되는 날 이 몸은 통째로 내려간다.
 frameworks/electron/backend.cjs 217
 frameworks/electron/control.cjs 126
-# 재입법 2026-08-01 242 → 244. 자식 stdout/stderr 에 setEncoding("utf8") 두 줄(같은 사유).
 frameworks/electron/cored.cjs 244
-# 재입법 2026-08-01 388 → 392. 앱 메뉴 설치를 창 생성에서 떼어낸 try/catch(4줄).
-#   메뉴 한 줄이 던져 부팅 창이 통째로 안 섰고, whenReady 안의 예외라 아무 자국도 없었다
-#   (프레임워크 테스트 22건이 그 상태를 재고 있었다). 삼키되 센다 — 막지 않는 것과 사실을
-#   안 남기는 것은 다르다. 제거 조건: 메뉴 API 가 실패할 수 없게 되면 이 갈래도 함께 내린다.
-# 재입법 2026-08-01 392 → 393. 창 전부에 사실을 미는 통로(announce) 한 줄. 지도가 바뀐 것을
-#   창에 뿌리는 일은 프레임워크만 할 수 있고, 이 프레임워크엔 그 통로가 없어 프로젝트 점유·
-#   해제를 같은 프로세스의 다른 창도 몰랐다.
-# 재입법 2026-08-01 393 → 398. cored 를 **세우는 일**과 그 소켓에 **붙는 일**을 두 함수로 갈랐다
-#   (ensureCoredProcess / standUpCored). 하나로 두면 다시 세우려고 부른 자리가 다리까지 새로
-#   만들어 같은 앱에 다리가 둘이 되고, 그때부터 어느 다리의 답을 받는지가 우연이 된다.
-#   증가는 배선이다 — 규칙은 backend.cjs 가 지고 이 파일은 그 법을 건네는 인자 한 줄이다.
 frameworks/electron/main.cjs 398
 frameworks/electron/native/capture.cjs 70
 frameworks/electron/native/clipboard.cjs 24
@@ -50,68 +28,23 @@ frameworks/electron/native/engine.cjs 26
 frameworks/electron/native/error.cjs 9
 frameworks/electron/native/index.cjs 86
 frameworks/electron/native/notify.cjs 18
-# 재입법 2026-08-01 54 → 58. 점유·해제가 지도 변이를 알린다(변이일 때만). 통지가 없으면
-#   다른 창의 프로젝트 픽커가 낡은 목록을 계속 보인다 — 오류는 안 난다.
 frameworks/electron/native/project.cjs 58
 frameworks/electron/native/titlebar.cjs 7
 frameworks/electron/native/updater.cjs 33
-# 재입법 2026-08-01 166 → 167. 브라우저 자식 웹뷰 라벨 접두사 상수 한 줄. 정본은 코어이고
-#   (window_spec::BROWSER_PREFIX) JS 는 Rust 상수를 못 읽어 사본이다 — event-name-scan 이
-#   두 값을 대조한다. 리터럴로 흩어져 있으면 한쪽이 남의 창 웹뷰를 자기 것으로 센다.
 frameworks/electron/native/webview.cjs 167
 frameworks/electron/native/window.cjs 149
 frameworks/electron/preload.cjs 50
 frameworks/electron/windowEvents.cjs 13
-# 재입법 2026-07-31 346 → 355, lib.rs 716 → 717. activity_persist_stats 배선이다.
-#   몸은 soksak_store::activity_persist 의 카운터이고 여기 있는 것은 그것을 읽어 답하는
-#   커맨드 하나와 등록 한 줄이다. 이 표면이 없던 동안 영속이 OOM 으로 막혀 42건이 회복 큐에
-#   대기 중인 것을 밖에서 알 수 없었다 — 도장은 받았는데 원장에는 없는 상태가 조용했다.
-# 재입법 2026-07-31 355 → 369, cored_host.rs 506 → 510. 적재 위임 배선이다.
-#   쓰기를 cored 에 넘기고(tell — 답을 기다리지 않는다), 못 넘긴 횟수를 센다. 몸(도장 규칙·
-#   쓰기·회복 큐)은 코어와 저장소에 있고 여기 있는 것은 위임과 계수다.
-#   근거: 앱 프로세스의 SQLite 가 이 쓰기에서만 NOMEM 을 냈다(실측 앱 44 실패 · cored 0).
-#   답을 기다리면 cored 가 이 창의 답을 기다리는 중에 서로를 붙잡는다(실측: UI 통째 미응답) —
-#   그래서 ask 가 아니라 tell 이다. 위임실패가 0 으로 유지되면 폴백 경로를 걷고 이 수를 내린다.
-# 재입법 2026-08-01 369 → 406. 대기 큐와 재개 실패 계수다.
-#   ① 폴백을 로컬 쓰기에서 **대기**로 바꿨다. 로컬 쓰기는 고장난 경로다 — 앱이 직접 쓰면
-#      바로 그 NOMEM 이 나고, 회복 큐는 같은 프로세스에서 같은 쓰기를 재시도하므로 영영
-#      안 나간 채 상한에서 버려지며, 그 구간 원장의 주인이 둘이 된다. 이제 들고 있다가
-#      cored 가 붙는 순간 순서대로 흘려보낸다.
-#   ② 재개 지점 조회 실패를 0 으로 읽지 않는다. 0 에서 재매기면 id 가 겹쳐 과거를 덮는다
-#      — 실측 2026-08-01: 원장 범위가 74583~ 에서 1~ 로 넓어졌고 시간 역행이 나타났다.
-#   몸(도장 규칙·쓰기)은 여전히 코어와 저장소에 있고, 여기 있는 것은 배달 대기와 계수다.
-# 재입법 2026-08-01 406 → 410, lib.rs 717 → 718. activity_audit 위임 배선이다.
-#   원장 주인에게 묻는 한 줄(ask_owner)과 등록 한 줄 — 몸은 cored 에 있다. 이 표면이 없던
-#   동안 cored 의 쓰기가 44회 막혔는데 그 사실이 앱의 어느 상태면에도 오지 않았다.
-# 재입법 2026-08-01 410 → 434, lib.rs 718 → 719. 위임 상태의 재개 배선이다.
-#   저장소를 위임하면 커넥션이 없어 resume_seq 가 아예 안 돌고, 링이 0 에서 시작해 이
-#   프로세스의 도장이 주인의 원장에서 과거를 덮는다 — 실측 2026-08-01: 소유를 옮긴 직후
-#   역행이 2 → 4 로 늘고 첫 역행 seq 가 85 로 내려갔다. 소유를 옮기면서 재개 경로를 함께
-#   옮기지 않은 탓이다. 주인에게 묻고(ask_owner), 못 물으면 재개하지 않고 센다.
 frameworks/tauri/src/activity.rs 434
 frameworks/tauri/src/activity_sink.rs 9
 frameworks/tauri/src/ai_session.rs 45
 frameworks/tauri/src/clipboard.rs 249
 frameworks/tauri/src/command_dispatch.rs 98
-# 재입법 2026-08-01 510 → 515(이후 봉투 단일화로 506 으로 내려갔다). cored 를 띄울 때 **저장소 위치를 넘기는** 인자(--data-dir).
-#   앱은 debug 빌드에서 SOKSAK_DATA_DIR 로 저장소를 옮기는데 cored 는 그 env 를 안 읽어 자기
-#   파생을 했다 — 두 프로세스가 다른 파일을 열고 쓰기 소유권 잠금도 서로 다른 디렉터리에서
-#   잡혀 무의미해졌다. Option 이 아니라 필수 인자다: Option 은 "안 넘겨도 된다"는 뜻이고 그
-#   결과가 이 결함이었다. 제거 조건: cored 가 저장소를 안 열게 되면 이 인자도 함께 내린다.
-# 재입법 2026-08-01 506 → 521. 자리의 **규칙은 코어로 갔다**(soksak-core::host_slot — 한 번에
-#   하나·죽으면 비운다·비면 요구가 다시 세운다, 86줄). 여기 남은 15줄은 둘뿐이다: ① 이 연결이
-#   살아 있는가라는 **이 프레임워크의 사실**(closed 플래그와 그것을 세우는 받는 스레드, 그리고
-#   그 사실을 코어 계약에 끼우는 Attachment impl), ② 그 자리를 프로세스에 하나 세우고 부팅이
-#   재건법을 넣는 배선. RED: cored 가 죽으면 이 앱은 OnceLock 때문에 갈아탈 수 없었고, 저장소
-#   읽기가 전부 실패했다 — 그 실패를 "비어 있음"으로 적는 소비자가 워크스페이스를 덮었다.
 frameworks/tauri/src/cored_host.rs 521
 frameworks/tauri/src/cored_ledger.rs 248
 frameworks/tauri/src/cored_shape_gate.rs 229
 frameworks/tauri/src/daemon.rs 72
-frameworks/tauri/src/data/commands.rs 598
-# 재입법 2026-08-01 91 → 97. 저장소 위치 해소 자리(data_dir_in/data_dir). 앰비언트 env 를
-#   읽는 자리를 하나로 모으고, 그 값을 cored 에 넘긴다(cored_host.rs 재입법과 한 쌍).
-#   이전엔 db_path_in 안에 숨어 있어 밖에서 그 값을 물을 수 없었고, 그래서 아무도 안 넘겼다.
+frameworks/tauri/src/data/commands.rs 631
 frameworks/tauri/src/data/mod.rs 97
 frameworks/tauri/src/data/ring.rs 42
 frameworks/tauri/src/dockmenu.rs 70
@@ -123,14 +56,7 @@ frameworks/tauri/src/i18n.rs 155
 frameworks/tauri/src/id_registry.rs 144
 frameworks/tauri/src/identity.rs 59
 frameworks/tauri/src/ipc.rs 1216
-# 재입법 2026-08-01 719 → 720. 커맨드 등록 한 줄(window_census). 창 복원이 "모든 호스트가 든
-#   창"을 알아야 같은 라벨이 두 프로세스에 살아나지 않는다(A23) — 등록 목록은 배선이라
-#   공통 크레이트로 뺄 수 없다. 제거 조건: 이 커맨드가 사라지면 이 줄도 함께 내린다.
-# 재입법 2026-08-01 720 → 722. 부팅이 호스트 재건법을 넣는 줄(rebuild_with). 무엇으로 다시
-#   세우는지는 부팅만 알고, 자리는 그것을 모른 채 규칙만 진다. 같은 커밋에서 app.manage 중복
-#   등재를 지웠다 — 실은 `Arc<CoredHost>` 로 싣고 `CoredHost` 로 꺼내 **언제나 빈손**이었고,
-#   그래서 창 사건 통지가 0 건이라 죽은 라벨이 cored 센서스에 남았다.
-frameworks/tauri/src/lib.rs 722
+frameworks/tauri/src/lib.rs 724
 frameworks/tauri/src/login_shell.rs 28
 frameworks/tauri/src/main.rs 4
 frameworks/tauri/src/mediaproxy.rs 18
@@ -140,10 +66,6 @@ frameworks/tauri/src/notify.rs 14
 frameworks/tauri/src/os_key.rs 1
 frameworks/tauri/src/plugins.rs 428
 frameworks/tauri/src/process.rs 150
-# 재입법 2026-08-01 299 → 306. 점유가 "지도를 바꿨는가"를 값으로 답하고(Ok(true|false)),
-#   통지는 변이에만 따른다. 이전엔 성사 전부에 뿌려 같은 창의 재청구(복원·재시도)까지 전 창을
-#   다시 읽게 했다. 오라클도 함께 왔다(멱등 재청구에 통지 0). 제거 조건: 지도가 코어로 가면
-#   이 판정도 함께 내린다 — 다만 지도의 수명이 창의 수명이라 지금은 옮기지 않는다.
 frameworks/tauri/src/project_registry.rs 306
 frameworks/tauri/src/pty.rs 790
 frameworks/tauri/src/pty_delivery.rs 1
@@ -162,10 +84,6 @@ frameworks/tauri/src/updater.rs 42
 frameworks/tauri/src/watcher.rs 15
 frameworks/tauri/src/webview.rs 1760
 frameworks/tauri/src/webview_health.rs 572
-# 재입법 2026-08-01 364 → 373. window_census — "붙은 호스트 **전부**가 든 창"을 답한다.
-#   프레임워크만 할 수 있는 일이다: 백엔드 통로와 자기 창 목록 둘 다 가진 쪽이 여기뿐이다.
-#   행 모양은 코어가 소유한다(soksak_core::window_census) — 여기 남은 것은 두 갈래 배선이다.
-#   이것이 없으면 같은 라벨의 창이 두 프로세스에 살아나고 나중 것이 아무것도 안 그린다(A23).
 frameworks/tauri/src/window.rs 373
 frameworks/tauri/src/window_oracle.rs 102
 frameworks/tauri/src/ws.rs 47

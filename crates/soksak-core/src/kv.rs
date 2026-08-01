@@ -34,6 +34,42 @@ pub trait KvDelete {
     fn remove(&self, ns: &str, key: &str) -> Result<bool, String>;
 }
 
+/// 덮어쓰기·삭제 **전에** 지금 값을 옮겨 둘 자리.
+///
+/// kv 는 `DO UPDATE` 라 쓰는 순간 이전 값이 그 자리에서 사라진다. 2026-08-01 하루에 사용자
+/// 워크스페이스가 네 번 사라졌고 원인은 매번 달랐다(복원 실패, 읽기 실패를 0 으로 적음, 연결을
+/// 못 갈아탐, 회수 도구). **원인마다 가드를 세우는 것으로는 다음 원인을 못 막는다.**
+///
+/// 규칙(언제 미는가)은 아래 `set`·`delete` 가 지고, 질의문은 형제 상수들과 같은 이유로 여기가
+/// 소유한다. 구현자는 연결만 준다 — 두 프로세스가 각자 SQL 을 적으면 한쪽만 과거를 남긴다.
+pub trait KvPast {
+    /// 원문 한 벌을 과거로 민다. 링을 넘긴 것은 같은 호출에서 버린다.
+    fn push_past(&self, ns: &str, key: &str, raw: &str, at_ms: u64) -> Result<(), String>;
+    /// 이 칸이 간직한 과거 — **최신 직전 값이 앞**.
+    fn past(&self, ns: &str, key: &str) -> Result<Vec<String>, String>;
+}
+
+/// 한 칸이 간직하는 과거의 깊이.
+///
+/// 되돌리기는 보통 한 걸음이지만 **잘못된 쓰기가 연달아 오면 한 걸음으로는 못 돌아간다**
+/// (저장은 400ms 디바운스라 몇 초 사이에 여러 번 쓴다). kv 는 전부 합쳐 2MB 남짓이라 이
+/// 깊이의 비용은 사실상 없다(실측 2026-08-01: 66행 1.8MB).
+pub const PAST_DEPTH: usize = 5;
+
+/// 과거로 미는 질의문.
+pub const PAST_INSERT_SQL: &str =
+    "INSERT INTO kv_past(ns,k,v,replaced) VALUES(?1,?2,?3,?4)";
+
+/// 링을 넘긴 과거를 버리는 질의문. 안 버리면 되돌릴 자리가 아니라 사본 더미가 된다.
+pub const PAST_PRUNE_SQL: &str = "DELETE FROM kv_past WHERE ns=?1 AND k=?2 AND seq NOT IN      (SELECT seq FROM kv_past WHERE ns=?1 AND k=?2 ORDER BY seq DESC LIMIT ?3)";
+
+/// 과거 조회 질의문 — 최신이 앞.
+pub const PAST_SELECT_SQL: &str =
+    "SELECT v FROM kv_past WHERE ns=?1 AND k=?2 ORDER BY seq DESC";
+
+/// ns 를 걷을 때 그 과거도 함께 걷는 질의문 — 남기면 그것이 곧 남의 저장소에 남긴 흔적이다.
+pub const PAST_DROP_NS_SQL: &str = "DELETE FROM kv_past WHERE ns=?1";
+
 /// 조회 질의문 — 구현자는 이것을 그대로 쓴다.
 pub const SELECT_SQL: &str = "SELECT v FROM kv WHERE ns=?1 AND k=?2";
 
@@ -90,6 +126,80 @@ pub fn set(
     validate_ns(ns)?;
     let raw = serde_json::to_string(value).map_err(|e| e.to_string())?;
     store.put(ns, key, &raw, updated_ms)
+}
+
+/// 덮어쓰기 한 번 — **덮기 전에 지금 값을 과거로 민다.**
+///
+/// 같은 값이면 밀지 않는다: 안 바뀐 쓰기까지 세대를 만들면 링이 같은 값으로 차고, 진짜
+/// 직전 값이 그만큼 밖으로 밀려난다.
+pub fn set_keeping_past<S>(
+    store: &S,
+    ns: &str,
+    key: &str,
+    value: &Value,
+    updated_ms: u64,
+) -> Result<(), String>
+where
+    S: KvRows + KvWrite + KvPast + ?Sized,
+{
+    validate_ns(ns)?;
+    let raw = serde_json::to_string(value).map_err(|e| e.to_string())?;
+    if let Some(current) = store.value(ns, key)? {
+        if current != raw {
+            store.push_past(ns, key, &current, updated_ms)?;
+        }
+    }
+    store.put(ns, key, &raw, updated_ms)
+}
+
+/// 삭제 한 번 — **지우기 전에 지금 값을 과거로 민다.**
+///
+/// 삭제는 덮어쓰기보다 되돌릴 일이 잦다: 지운 쪽은 그 값을 다시 만들어 낼 수 없다.
+pub fn delete_keeping_past<S>(
+    store: &S,
+    ns: &str,
+    key: &str,
+    at_ms: u64,
+) -> Result<bool, String>
+where
+    S: KvRows + KvDelete + KvPast + ?Sized,
+{
+    validate_ns(ns)?;
+    if let Some(current) = store.value(ns, key)? {
+        store.push_past(ns, key, &current, at_ms)?;
+    }
+    store.remove(ns, key)
+}
+
+/// 직전 값으로 되돌린다 — 되돌릴 것이 없으면 `false`.
+///
+/// 되돌리기도 쓰기라 지금 값이 과거로 밀린다. 왕복이 안 되면 잘못 되돌렸을 때 돌아올 자리가
+/// 없고, 그것은 새로운 잃는 길이다.
+pub fn undo<S>(store: &S, ns: &str, key: &str, at_ms: u64) -> Result<bool, String>
+where
+    S: KvRows + KvWrite + KvPast + ?Sized,
+{
+    validate_ns(ns)?;
+    // 과거 조회는 `&dyn` 을 받는다 — 여기 S 는 크기를 몰라도 되므로(?Sized) 참조로 넘긴다.
+    let mut decoded = Vec::new();
+    for raw in store.past(ns, key)? {
+        decoded.push(serde_json::from_str::<Value>(&raw).map_err(|e| e.to_string())?);
+    }
+    let Some(prev) = decoded.into_iter().next() else {
+        return Ok(false);
+    };
+    set_keeping_past(store, ns, key, &prev, at_ms)?;
+    Ok(true)
+}
+
+/// 이 칸이 간직한 과거 — 값으로 해독해 돌린다. 최신 직전 값이 앞.
+pub fn past(store: &dyn KvPast, ns: &str, key: &str) -> Result<Vec<Value>, String> {
+    validate_ns(ns)?;
+    let mut out = Vec::new();
+    for raw in store.past(ns, key)? {
+        out.push(serde_json::from_str(&raw).map_err(|e| e.to_string())?);
+    }
+    Ok(out)
 }
 
 /// KV 삭제 한 번 — ns 검사, 삭제. 조회·기록과 같은 순서다(검사가 먼저).
@@ -252,6 +362,12 @@ mod write_tests {
 // 잡은 프로세스에만 있다 — 앱이 만들든 cored 가 만들든 같은 형태가 나오고, 동시에 둘이
 // 만들지는 않는다.
 //
+// `kv_past` 는 **되돌릴 자리**다. kv 는 `DO UPDATE` 라 쓰는 순간 이전 값이 그 자리에서
+// 사라진다 — 2026-08-01 하루에 사용자 워크스페이스가 네 번 사라졌고 원인은 매번 달랐다
+// (복원 실패, 읽기 실패를 0 으로 적음, 연결을 못 갈아탐, 회수 도구). 원인마다 가드를 세우는
+// 것으로는 다음 원인을 못 막는다. 그래서 저장소 층에 직전 값을 남긴다: 소비자가 무엇을 하든,
+// 어떤 버그가 새로 생기든 되돌릴 자리가 있다.
+//
 // 전부 `IF NOT EXISTS` 라 멱등이다. 이미 있는 저장소를 다시 열어도 형태가 변하지 않고,
 // 한쪽이 먼저 만든 뒤 다른 쪽이 열어도 빠진 것만 채워진다.
 pub const BASE_SCHEMA_SQL: &str = "\
@@ -259,6 +375,11 @@ pub const BASE_SCHEMA_SQL: &str = "\
         ns TEXT NOT NULL, k TEXT NOT NULL, v TEXT NOT NULL, updated INTEGER NOT NULL,\
         PRIMARY KEY(ns, k)\
      ) WITHOUT ROWID;\
+     CREATE TABLE IF NOT EXISTS kv_past (\
+        ns TEXT NOT NULL, k TEXT NOT NULL, v TEXT NOT NULL, replaced INTEGER NOT NULL,\
+        seq INTEGER PRIMARY KEY AUTOINCREMENT\
+     );\
+     CREATE INDEX IF NOT EXISTS kv_past_key ON kv_past(ns, k, seq);\
      CREATE TABLE IF NOT EXISTS records (\
         ns TEXT NOT NULL, coll TEXT NOT NULL, scope TEXT NOT NULL, id TEXT NOT NULL,\
         doc TEXT NOT NULL, created INTEGER NOT NULL, updated INTEGER NOT NULL,\

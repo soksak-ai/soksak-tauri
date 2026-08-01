@@ -32,16 +32,43 @@ for (const f of files) {
   }
 }
 
-// 값을 돌려주는 앱 커맨드가 주인 쪽에서 null 이면 역직렬화가 깨진다.
+// 답의 **종류**를 본다. null ↔ 값만 보면 객체 ↔ 배열·객체 ↔ bool 이 그대로 지나간다 —
+// 실측 2026-08-01: 한 자리에서 그 둘을 연달아 틀렸고(`{past:[]}` ↔ 배열, `{restored}` ↔ bool),
+// 이 게이트는 둘 다 통과시켰다. 종류를 모르는 자리(any)는 판정하지 않는다: 모르는 것을 틀렸다고
+// 하면 게이트가 소음이 되고, 소음이 되면 아무도 안 본다.
+const kindOfOwner = (s) => {
+  const t = s.trim();
+  if (/^\s*(null|\(\))?\s*$/.test(t)) return "null";
+  if (/^\{/.test(t)) return "object";
+  if (/^(any\[\]|\[)/.test(t) || /^\w+\[\]/.test(t)) return "array";
+  if (/^bool\b/.test(t)) return "bool";
+  if (/^(string|str)\b/.test(t)) return "string";
+  if (/^(u\d+|i\d+|f\d+|number)\b/.test(t)) return "number";
+  return "any";
+};
+const kindOfApp = (s) => {
+  const t = s.trim();
+  if (/Result<\s*\(\)\s*,/.test(t) || /^\(\)$/.test(t)) return "null";
+  const inner = t.match(/Result<\s*([^,]+?)\s*,/)?.[1] ?? t;
+  const bare = inner.replace(/^Option<\s*/, "").replace(/>\s*$/, "").trim();
+  if (/^Vec</.test(bare)) return "array";
+  if (/^bool$/.test(bare)) return "bool";
+  if (/^String$/.test(bare)) return "string";
+  if (/^(u\d+|i\d+|f\d+|usize|isize)$/.test(bare)) return "number";
+  if (/^Value$/.test(bare)) return "any";
+  return "any";
+};
+
 const bad = [];
 let checked = 0;
 for (const [name, cshape] of cored) {
   const ashape = app.get(name);
   if (!ashape) continue;
   checked += 1;
-  const coredNull = /^\s*(null|\(\))?\s*$/.test(cshape);
-  const appValue = !/Result<\(\)/.test(ashape) && !/->\s*\(\)/.test(ashape) && !/Result<\s*\(\)\s*,/.test(ashape);
-  if (coredNull && appValue) bad.push(`${name}: 주인 "${cshape}" ↔ 앱 "${ashape}"`);
+  const owner = kindOfOwner(cshape);
+  const mine = kindOfApp(ashape);
+  if (owner === "any" || mine === "any") continue;
+  if (owner !== mine) bad.push(`${name}: 주인 ${owner} "${cshape}" ↔ 앱 ${mine} "${ashape}"`);
 }
 
 if (checked === 0) {

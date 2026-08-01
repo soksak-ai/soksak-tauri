@@ -7,10 +7,13 @@
 // 간격이 1시간이라 그 사이의 작업은 어디에도 없었다.
 //
 // 원인 하나는 막았지만(persistGuard — 복원 실패 시 저장 금지) 원인을 다 막을 수는 없다:
-// 크래시·강제종료·앞으로 생길 버그. 그러니 **잃어도 되돌릴 수 있어야** 한다.
+// 크래시·강제종료·회수 도구·앞으로 생길 버그. 그러니 **잃어도 되돌릴 수 있어야** 한다.
+//
+// 그래서 되돌릴 자리는 저장소가 진다(kv_past) — **모든 쓰기에 대해, 조건 없이.** 한때 "잃는
+// 쓰기"만 골라 남겼는데, 고르는 규칙이 못 잡는 쓰기는 되돌릴 자리가 없었다.
 //
 // 이 하니스가 판정하는 것:
-//   ① 잃는 쓰기(스페이스가 사라지는 저장) 뒤에 직전 세대가 남는가
+//   ① 어떤 쓰기든 뒤에 직전 세대가 남는가
 //   ② 그 세대가 무엇을 담았는지 사람이 물어볼 수 있는가(window.restorePrevious)
 //   ③ 되돌리면 실제로 돌아오는가, 그리고 되돌린 것도 되돌릴 수 있는가(왕복)
 //
@@ -47,12 +50,12 @@ async function main() {
     const project = must(await c.rpc("state.tree", {}, win), "상태 트리").projects?.[0]?.id;
     if (!project) throw new Error("픽스처 창에 프로젝트가 없다");
 
-    // ① 늘리는 쓰기는 세대를 남기지 않는다 — 남기면 직전 값이 그 쓰기로 밀린다.
+    // ① 어떤 쓰기든 직전 값을 남긴다 — 되돌릴 이유는 나중에 생긴다.
     must(await c.rpc("space.create", { project }, win), "스페이스 추가");
     await sleep(PERSIST_SETTLE_MS);
     const afterAdd = must(await c.rpc("window.restorePrevious", {}, win), "추가 뒤 조회");
-    if (afterAdd.found) throw new Error("늘리는 쓰기가 세대를 남겼다 — 되돌릴 이유가 없는 쓰기다");
-    ok("늘리는 쓰기는 세대를 남기지 않는다");
+    if (!afterAdd.found) throw new Error("쓰기가 직전 값을 안 남겼다 — 되돌릴 자리가 없다");
+    ok("어떤 쓰기든 직전 값을 남긴다");
 
     const spaces = must(await c.rpc("space.list", { project }, win), "스페이스 목록").spaces;
     if (spaces.length < 2) throw new Error(`스페이스가 둘 이상이어야 한다: ${spaces.length}`);
@@ -65,7 +68,10 @@ async function main() {
     if (!kept.found) {
       throw new Error("잃는 쓰기가 직전 세대를 안 남겼다 — 되돌릴 자리가 없다(원래 결함의 모양)");
     }
-    ok(`잃는 쓰기가 세대를 남긴다 (프로젝트 ${kept.projects} · 탭 ${kept.tabs})`);
+    if (kept.spaces <= 1) {
+      throw new Error(`직전 세대가 닫기 전 상태가 아니다 — 스페이스 ${kept.spaces}`);
+    }
+    ok(`잃는 쓰기가 세대를 남긴다 (프로젝트 ${kept.projects} · 스페이스 ${kept.spaces} · 탭 ${kept.tabs})`);
 
     // ③ 되돌리면 돌아온다.
     const applied = must(

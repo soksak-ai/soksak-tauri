@@ -689,6 +689,8 @@ pub fn run() {
             data::commands::data_kv_set,
             data::commands::data_kv_delete,
             data::commands::data_kv_keys,
+            data::commands::data_kv_history,
+            data::commands::data_kv_undo,
             data::commands::data_define,
             data::commands::data_put,
             data::commands::data_get,

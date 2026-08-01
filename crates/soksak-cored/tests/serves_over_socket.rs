@@ -685,6 +685,88 @@ fn writing_twice_keeps_the_last_value() {
     assert_eq!(got["data"], 2, "{got}");
 }
 
+/// **덮어써도 지워도 직전 값이 남는다.** 저장소 주인이 이 프로세스이므로, 여기서 안 남기면
+/// 아무 데도 안 남는다.
+///
+/// RED 근거(실측 2026-08-01): 이 프로세스의 kv 어댑터가 자기 UPSERT 를 직접 돌아, 형제
+/// 프로세스가 남기던 과거를 통째로 지나쳤다. 같은 사실이 두 자리에 있으면 한쪽만 고쳐지고,
+/// 그 어긋남은 오류가 아니라 "되돌릴 자리가 없다"로 나타난다.
+#[test]
+fn an_overwrite_keeps_the_previous_value() {
+    let helper = spawn_helper("kv-past");
+    kv_store(&helper);
+    for v in [1, 2, 3] {
+        let r = helper.ask(json!({
+            "method": "data_kv_set", "params": { "ns": "core", "key": "w", "value": v }
+        }));
+        assert_eq!(r["ok"], true, "{r}");
+    }
+    let past = helper.ask(json!({
+        "method": "data_kv_history", "params": { "ns": "core", "key": "w" }
+    }));
+    assert_eq!(past["ok"], true, "{past}");
+    assert_eq!(past["data"][0], 2, "최신 직전 값이 앞에 와야 한다: {past}");
+    assert_eq!(past["data"][1], 1, "{past}");
+}
+
+/// 지운 값도 되돌릴 자리가 있어야 한다 — 지운 쪽은 그 값을 다시 만들어 낼 수 없다.
+#[test]
+fn a_delete_keeps_the_previous_value() {
+    let helper = spawn_helper("kv-past-delete");
+    kv_store(&helper);
+    helper.ask(json!({
+        "method": "data_kv_set", "params": { "ns": "core", "key": "w", "value": { "projects": [1] } }
+    }));
+    let del = helper.ask(json!({
+        "method": "data_kv_delete", "params": { "ns": "core", "key": "w" }
+    }));
+    assert_eq!(del["ok"], true, "{del}");
+    let past = helper.ask(json!({
+        "method": "data_kv_history", "params": { "ns": "core", "key": "w" }
+    }));
+    assert_eq!(past["data"][0]["projects"][0], 1, "{past}");
+}
+
+/// 되돌리기가 실제로 값을 되돌리고, **되돌린 것도 되돌릴 수 있어야** 한다. 왕복이 아니면
+/// 잘못 되돌렸을 때 돌아올 자리가 없다.
+#[test]
+fn undo_restores_and_can_itself_be_undone() {
+    let helper = spawn_helper("kv-undo");
+    kv_store(&helper);
+    for v in [1, 2] {
+        helper.ask(json!({
+            "method": "data_kv_set", "params": { "ns": "core", "key": "w", "value": v }
+        }));
+    }
+    let undone = helper.ask(json!({
+        "method": "data_kv_undo", "params": { "ns": "core", "key": "w" }
+    }));
+    assert_eq!(undone["data"], true, "{undone}");
+    let now = helper.ask(json!({
+        "method": "data_kv_get", "params": { "ns": "core", "key": "w" }
+    }));
+    assert_eq!(now["data"], 1, "되돌아가지 않았다: {now}");
+    let past = helper.ask(json!({
+        "method": "data_kv_history", "params": { "ns": "core", "key": "w" }
+    }));
+    assert_eq!(past["data"][0], 2, "되돌리기가 직전 값을 안 남겼다: {past}");
+}
+
+/// 되돌릴 것이 없으면 그렇게 말한다 — 조용히 성공하면 부른 쪽은 되돌아간 줄 안다.
+#[test]
+fn undo_without_a_past_says_so() {
+    let helper = spawn_helper("kv-undo-empty");
+    kv_store(&helper);
+    helper.ask(json!({
+        "method": "data_kv_set", "params": { "ns": "core", "key": "w", "value": 1 }
+    }));
+    let r = helper.ask(json!({
+        "method": "data_kv_undo", "params": { "ns": "core", "key": "w" }
+    }));
+    assert_eq!(r["ok"], true, "{r}");
+    assert_eq!(r["data"], false, "{r}");
+}
+
 /// 네임스페이스 규칙은 앱과 같은 것을 쓴다 — cored 에서만 통과하는 ns 가 있으면 안 된다.
 #[test]
 fn the_namespace_rule_is_the_apps_rule() {
