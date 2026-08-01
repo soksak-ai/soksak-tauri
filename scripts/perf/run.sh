@@ -67,7 +67,8 @@ fi
 case "$IDENTITY" in
   debug)   open "$REPO_ROOT/target/debug/bundle/macos/soksak-debug.app" ;;
   release) open "$REPO_ROOT/target/release/bundle/macos/soksak.app" ;;
-  dev)     osascript -e 'tell application "System Events" to set frontmost of process "soksak-dev" to true' 2>/dev/null || true ;;
+  # dev 는 앞으로 내지 않는다 — 가려져도 그린다는 보장은 앱이 선언한다(app_nap::hold).
+  dev)     : ;;
 esac
 sleep 1
 

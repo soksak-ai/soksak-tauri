@@ -68,7 +68,10 @@ activate_identity() {
   if [ -n "$bundle" ] && [ -d "$bundle" ]; then
     open "$bundle"
   else
-    osascript -e "tell application \"System Events\" to set frontmost of process \"$(identity_app_name "$IDENTITY")\" to true" 2>/dev/null || true
+    # 앞으로 내지 않는다 — 가려져도 그린다는 보장은 앱이 선언한다
+    # (tauri app_nap::hold · electron backgroundThrottling=false). OS 를 빌려 전면화하면
+    # 운영체제 표면에 기대는 데다 사용자가 보던 화면을 빼앗는다.
+    :
   fi
 }
 activate_identity
