@@ -232,7 +232,11 @@ fn build_session_env(
         pane_id,
         window_label,
         std::env::vars(),
-        crate::ipc::socket_path().as_deref(),
+        // **홈의 주소를 준다 — 이 프로세스의 것이 아니라.** 프레임워크는 껍데기라 셸이 그
+        // 껍데기를 겨눌 이유가 없다. cored 소켓은 홈당 하나이고, 그리로 온 명령은 그 창을 든
+        // 쪽으로 배달된다 — 어느 프레임워크가 떠 있든 같은 `sok` 이 같은 일을 한다.
+        // 예전에는 자기 소켓을 줬고, 그래서 터미널 안의 모든 도구가 한 껍데기에 묶였다.
+        Some(crate::identity::ambient().cored_socket().to_string_lossy().as_ref()),
         &crate::process::AI_SESSION_ENV,
         &std::env::temp_dir(),
         &orig_zdotdir(),
