@@ -21,7 +21,7 @@ export function registerNotifyCatalog(): void {
         required: false,
       },
     },
-    returns: "{ ok }",
+    returns: "{ ok, handle }",
     message: () => tmsg("msg.notify.show"),
     errors: ["INVALID_PARAMS", "INTERNAL"],
     examples: ['notify.show \'{"title":"배포 완료","body":"prod 배포가 끝났습니다"}\''],
@@ -30,11 +30,39 @@ export function registerNotifyCatalog(): void {
         return { ok: false as const, code: "INVALID_PARAMS" as const, message: "title·body 필요" };
       }
       // 클릭이 실어 갈 것을 그대로 넘긴다 — 명령 URI 인지는 코어가 답한다(아니면 `ran:false`).
-      await invoke("notify_show", {
+      const r = await invoke<{ handle: number } | null>("notify_show", {
         title: p.title,
         body: p.body,
         extra: { deepLink: typeof p.deepLink === "string" ? p.deepLink : null },
       });
+      // 주소를 돌려준다 — 없으면 띄운 알림을 되부를 길이 없다.
+      return { ok: true, data: { handle: r?.handle ?? null } };
+    },
+  });
+
+  // 알림 활성화 — **사람 손가락과 같은 문**이다.
+  //
+  // 활성화가 하는 일은 하나(실어 온 것을 주인에게 돌려준다)이고 프레임워크가 그 한 자리를
+  // 가진다. 여기서 다시 적으면 두 길이 되고, 그때 이 명령이 통과해도 클릭은 죽어 있을 수 있다.
+  //
+  // 이것은 테스트용 뒷문이 아니다. 새 문을 내는 것이 아니라 이미 있는 문에 주소를 붙인 것이다
+  // — 이름 없는 사건은 부를 수 없고, 부를 수 없는 것은 동작한다고 말할 수 없다.
+  register("notify.activate", {
+    description:
+      "Activate a notification previously shown by `notify.show`, using its `handle`. Runs exactly what an OS click runs. | 알림 누르기 알림 활성화 클릭",
+    triggers: { ko: "알림 누르기 알림 활성화" },
+    params: {
+      handle: { type: "number", description: "Handle returned by notify.show", required: true },
+    },
+    returns: "{ ok }",
+    message: () => tmsg("msg.notify.activate"),
+    errors: ["INVALID_PARAMS", "INTERNAL"],
+    examples: ['notify.activate \'{"handle":1}\''],
+    handler: async (p) => {
+      if (typeof p.handle !== "number") {
+        return { ok: false as const, code: "INVALID_PARAMS" as const, message: "handle 필요" };
+      }
+      await invoke("notify_activate", { handle: p.handle });
       return { ok: true };
     },
   });
