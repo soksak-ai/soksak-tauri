@@ -21,12 +21,12 @@ frameworks/electron/activity.cjs 32
 frameworks/electron/backend.cjs 236
 frameworks/electron/control.cjs 144
 frameworks/electron/cored.cjs 252
-frameworks/electron/main.cjs 411
+frameworks/electron/main.cjs 415
 frameworks/electron/native/capture.cjs 70
 frameworks/electron/native/engine.cjs 26
 frameworks/electron/native/error.cjs 9
 frameworks/electron/native/index.cjs 85
-frameworks/electron/native/notify.cjs 22
+frameworks/electron/native/notify.cjs 24
 frameworks/electron/native/project.cjs 58
 frameworks/electron/native/titlebar.cjs 7
 frameworks/electron/native/updater.cjs 33

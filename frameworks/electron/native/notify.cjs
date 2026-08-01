@@ -29,7 +29,7 @@ module.exports = {
 
   notify_show: {
     concept: "OS 알림 띄우기",
-    answer: (_ctx, args) => {
+    answer: (ctx, args) => {
       if (!Notification.isSupported()) {
         throw frameworkError(
           UNSUPPORTED,
@@ -37,7 +37,14 @@ module.exports = {
         );
       }
       // 인자는 그대로 간다 — 여기서 채우거나 고르면 그것이 규칙이 된다.
-      new Notification({ title: args.title, body: args.body }).show();
+      const n = new Notification({ title: args.title, body: args.body });
+      // 클릭은 **밖에서 온 명령 실행**이다. 알림이 실어 온 딥링크를 명령 표면의 주인에게
+      // 그대로 넘긴다 — 창에 넘기면 그 창이 닫혔을 때 클릭이 유실되고, 여기서 형식을 읽으면
+      // 그 규칙이 프레임워크마다 한 벌이 된다(딥링크와 같은 길을 쓴다).
+      // **판정하지 않는다.** 실어 온 것을 그대로 주인에게 넘기고, 그것이 명령 URI 인지는
+      // 코어가 답한다(아니면 `ran:false`). 여기서 고르면 그 규칙이 프레임워크마다 한 벌이 된다.
+      n.on("click", () => ctx.deepLink(args.extra?.deepLink));
+      n.show();
       return null;
     },
   },

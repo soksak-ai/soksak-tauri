@@ -311,7 +311,12 @@ export const electronFramework: AppFramework = {
     send: (options) => {
       void bridge().invoke("notify_show", { ...options });
     },
-    onAction: async () => unimplemented("notification.onAction"),
+    // **클릭은 이 창으로 오지 않는다.** 알림이 실어 온 딥링크를 프레임워크가 명령 표면의
+    // 주인에게 그대로 넘긴다(딥링크와 같은 길) — 창에 넘기면 그 창이 닫혔을 때 클릭이 유실되고,
+    // 형식이 프레임워크마다 한 벌이 된다.
+    //
+    // 계약을 지우지 않고 **없다고 말한다**: 조용히 성공하면 부른 쪽이 오지 않을 사건을 기다린다.
+    onAction: async () => unimplemented("notification.onAction — 클릭은 주인이 받는다"),
   },
   deepLink: {
     // **딥링크는 이 창으로 오지 않는다.** 밖에서 온 명령이므로 명령 표면의 주인(cored)이 받고

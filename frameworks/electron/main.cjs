@@ -244,6 +244,11 @@ function nativeContext(sender) {
     labelOf: (win) => [...windows.entries()].find(([, w]) => w === win)?.[0] ?? null,
     // 지도가 바뀐 사실을 이 프레임워크의 창 전부에 — 크로스윈도우 반응은 이 신호를 듣는다.
     announce: (event, payload) => { for (const w of windows.values()) deliverEvent(w, event, payload); },
+    // 알림 클릭이 실어 온 딥링크를 주인에게 넘긴다 — 딥링크와 같은 길이다(창을 안 거친다).
+    deepLink: (url) =>
+      callBackend("deeplink_open", { url: String(url ?? "") }).catch((e) =>
+        note(`[electron-spike] 알림 클릭 딥링크 실패: ${e.code || e.message}`),
+      ),
     windowFor,
     createWindow,
     // 앱을 전면으로 — 창 하나를 key 로 만드는 것과 다른 일이다. steal 은 다른 앱에서

@@ -14,6 +14,8 @@ const NATIVE = join(HERE, "../../frameworks/electron/native");
 
 let shown;
 let supported;
+/** 알림이 건 사건 핸들러 — 클릭이 어디로 가는지 재는 자리. */
+let clicks;
 
 /** electron 을 손으로 세운다 — 좁은 스텁은 실물과의 차이가 곧 거짓 GREEN 이다. */
 function stubElectron() {
@@ -29,6 +31,11 @@ function stubElectron() {
         }
         constructor(opts) {
           this.opts = opts;
+        }
+        // 실제 알림은 클릭 사건을 낸다 — 목이 안 내면 이 검사가 실제와 다른 세계를 잰다.
+        on(event, cb) {
+          clicks.set(event, cb);
+          return this;
         }
         show() {
           shown.push(this.opts);
@@ -47,6 +54,7 @@ function loadTable() {
 
 beforeEach(() => {
   shown = [];
+  clicks = new Map();
   supported = true;
   stubElectron();
 });
@@ -68,6 +76,29 @@ describe("OS 알림", () => {
     const table = loadTable();
     expect(table.notify_show.answer({}, {})).toBe(null);
     expect(shown).toEqual([{ title: undefined, body: undefined }]);
+  });
+
+  /** 알림 클릭은 **밖에서 온 명령 실행**이다 — 딥링크와 같다. 그래서 이 창이 아니라 명령 표면의
+   *  주인에게 간다: 창에 넘기면 그 창이 닫혔을 때 클릭이 유실되고, 창마다 다른 답이 된다. */
+  it("클릭은 이 창이 아니라 주인에게 간다", () => {
+    const table = loadTable();
+    const sent = [];
+    table.notify_show.answer(
+      { deepLink: (u) => sent.push(u) },
+      { title: "제목", body: "본문", extra: { deepLink: "soksak-dev://cmd/bookmark.list" } },
+    );
+    clicks.get("click")();
+    expect(sent).toEqual(["soksak-dev://cmd/bookmark.list"]);
+  });
+
+  /** 실어 온 것이 명령 URI 인지는 코어가 답한다(아니면 `ran:false`). 여기서 고르면 그 규칙이
+   *  프레임워크마다 한 벌이 되고, 두 껍데기가 같은 클릭에 다르게 반응한다. */
+  it("클릭이 실어 온 것을 판정하지 않는다", () => {
+    const table = loadTable();
+    const sent = [];
+    table.notify_show.answer({ deepLink: (u) => sent.push(u) }, { title: "제목", body: "본문" });
+    clicks.get("click")();
+    expect(sent).toEqual([undefined]);
   });
 
   /** 지원하지 않는 플랫폼에서 조용히 성공하면 부른 쪽은 알림이 떴다고 믿는다. */
