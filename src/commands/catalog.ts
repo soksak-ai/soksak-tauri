@@ -597,7 +597,7 @@ export function registerCatalog(): void {
     },
     params: { project: P.project },
     returns:
-      "{ projectId, spaceId, station, cleanLines[], switched, cells[].{id,rect,railSide}, movesFrom:{focusId, moves[].{id,dLeftPct,dRailUnits}} }",
+      "{ projectId, spaceId, station, cleanLines[], switched, betweenIds[] (panes stranded between the rail and the focused pane when the rail could not reach it — they do not move, they dim), cells[].{id,rect,railSide}, movesFrom:{focusId, moves[].{id,dLeftPct,dRailUnits}} }",
     message: (d) => tmsg("msg.layout.arrangement", { n: Number(d.station) }),
     errors: ["TARGET_NOT_FOUND"],
     examples: ["layout.arrangement"],
@@ -613,6 +613,10 @@ export function registerCatalog(): void {
         station: solved.station,
         cleanLines: solved.cleanLines,
         switched: solved.swapped,
+        // 레일이 포커스 판까지 못 갔을 때 사이에 낀 칸 — 움직이지 않지만 가려진 것들이다.
+        // 손으로 나열한 목록은 계약이 자랄 때마다 하나씩 빠진다(실측 2026-08-02: 이 자리가
+        // betweenIds 를 빠뜨려 명령이 그 사실을 못 답했다).
+        betweenIds: solved.betweenIds,
         railOpen,
         cells: solved.cells.map((cell) => ({
           id: cell.id,

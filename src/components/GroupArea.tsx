@@ -156,6 +156,7 @@ export const GroupArea = memo(function GroupArea({
   displayMaximizedId = undefined,
   railWidthPx = 0,
   displayLayout: solvedLayout,
+  betweenIds,
   moves,
   travel,
 }: {
@@ -182,6 +183,8 @@ export const GroupArea = memo(function GroupArea({
   /** 해결기가 푼 표시 배열. 생략하면 정본 배열(비활성 콘텐츠). */
   displayLayout?: SplitTree<Pane>;
   /** 해가 지시한 이동량 — 위상 중에만 실린다. 여기 없는 패널은 움직이지 않는다. */
+  /** 레일과 포커스 판 사이에 낀 칸 — 움직이지 않지만 가려진 것이므로 흐린다. */
+  betweenIds?: string[];
   moves?: ArrangementMove[];
   /** 위상의 두 station. 장식 span(디바이더)의 이동량은 이것에서 나온다 — moves 와 같은 위상에서
    *  같이 와야 한다(하나만 오면 셀은 활강하고 복도만 순간이동해 화면이 찢긴다). */
@@ -771,7 +774,9 @@ export const GroupArea = memo(function GroupArea({
               // 전부 이 클래스 하나를 본다.
               className={`tab-body${isHoleView(view) ? " hole" : ""}${
                 group.id === content.activePaneId ? " spot-clear" : ""
-              }${shown && flipMoves(group.id) ? " flip-move" : ""}`}
+              }${shown && flipMoves(group.id) ? " flip-move" : ""}${
+                betweenIds?.includes(group.id) ? " rail-blocked" : ""
+              }`}
               // 네이티브 클릭 판정용(App.tsx native-mousedown → elementFromPoint).
               // 값은 이 슬롯이 사는 칸(pane)의 id — 이름과 값이 같은 실체를 가리킨다(IDENTITY).
               data-pane={group.id}

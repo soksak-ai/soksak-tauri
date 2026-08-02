@@ -558,6 +558,13 @@ body,
    바뀔 때마다 160ms 동안 매 프레임 그 레이어를 재래스터한다(실사고: 무관한 탭 클릭에
    패널이 움찔). 상시 승격 자체는 무해하니 filter 는 남기고 전이만 걷는다. 전이감이 필요한
    곳은 ::after 베일(페인트만, 승격 무관)이 담당한다 — 홀 슬롯 규칙 참조. */
+/* 레일이 포커스 판까지 못 가서 **사이에 낀** 칸 — 움직이지 않지만 가려진 것이다.
+   흐림은 focusDim 과 같은 방법을 쓴다(밝기·채도 하강). 새 방법을 만들면 두 곳이 갈린다.
+   전이는 걸지 않는다: filter 는 합성 레이어를 만들고, 전이를 걸면 포커스가 바뀔 때마다
+   그 레이어를 매 프레임 재래스터한다(같은 자리의 실사고 — 무관한 클릭에 패널이 움찔). */
+.tab-body.rail-blocked {
+  filter: brightness(0.82) saturate(0.7);
+}
 .space[data-focus-dim] .pane,
 .space[data-focus-dim] .tab-body {
   filter: brightness(0.93) saturate(0.85);

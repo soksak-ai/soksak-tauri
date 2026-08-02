@@ -410,3 +410,61 @@ describe("당겨오기 — 선언한 쪽만 움직인다", () => {
     expect(a.station).toBe(0);
   });
 });
+
+/**
+ * **레일이 못 가면 사이에 낀 판을 말한다.**
+ *
+ * 안 당기기로 하면 판은 제자리이고 레일이 그 판으로 간다. 그런데 갈 수 있는 선은 깨끗한 선뿐
+ * 이다 — 아래 칸이 통짜면 위쪽 50% 선은 막혀 있고, 레일은 그 앞(0)에 머문다. 그때 레일과
+ * 포커스 판 사이에 다른 판이 낀다.
+ *
+ * 낀 판을 답에 담지 않으면 화면은 "아무 일도 안 일어남"이 된다(실측 2026-08-02: 보더가 통째로
+ * 사라졌다). 움직이지 않는다는 것은 아무것도 안 한다는 뜻이 아니다 — 가려진 것들이 흐려져야
+ * 어느 판이 활성인지 보인다.
+ */
+describe("레일과 포커스 판 사이에 낀 판", () => {
+  const blocked = (): SplitTree<Pane> => ({
+    type: "split",
+    id: "root",
+    dir: "col",
+    sizes: [0.5, 0.5],
+    children: [
+      { type: "split", id: "top", dir: "row", sizes: [0.5, 0.5], children: [leaf("L"), leaf("R")] },
+      leaf("B"),
+    ],
+  });
+
+  it("레일이 못 간 만큼 사이에 낀 판을 답한다", () => {
+    const a = solveArrangement({
+      layout: blocked(),
+      focusId: "R",
+      placement: { mode: "pin", station: 0 },
+      railOpen: true,
+      pullFocused: false,
+    });
+    expect(a.station).toBe(0); // 50 은 막힌 선이라 레일이 못 간다
+    expect(a.betweenIds).toEqual(["L"]);
+  });
+
+  it("레일이 닿으면 낀 판이 없다", () => {
+    const a = solveArrangement({
+      layout: blocked(),
+      focusId: "L",
+      placement: { mode: "pin", station: 0 },
+      railOpen: true,
+      pullFocused: false,
+    });
+    expect(a.betweenIds).toEqual([]);
+  });
+
+  it("당겨오면 낀 판이 없다 — 판이 레일 옆으로 왔다", () => {
+    const a = solveArrangement({
+      layout: blocked(),
+      focusId: "R",
+      placement: { mode: "pin", station: 0 },
+      railOpen: true,
+      pullFocused: true,
+    });
+    expect(a.betweenIds).toEqual([]);
+  });
+});

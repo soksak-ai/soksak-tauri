@@ -42,6 +42,17 @@ export interface Arrangement<L> {
   cells: ArrangementCell[];
   focusId: string | null;
   /**
+   * 레일과 포커스 판 **사이에 낀** 판들 — 레일이 그 판까지 못 갔을 때만 비지 않는다.
+   *
+   * 안 당기기로 하면 판은 제자리이고 레일이 간다. 그런데 갈 수 있는 자리는 깨끗한 선뿐이라,
+   * 막힌 선 앞에서 멈춘다. 그때 레일과 포커스 판 사이에 다른 판이 남는다.
+   *
+   * 그 사실을 답에 담지 않으면 화면은 "아무 일도 안 일어남"이 된다(실측 2026-08-02: 보더가
+   * 통째로 사라졌다). 움직이지 않는 것과 아무것도 안 하는 것은 다르다 — 낀 판이 흐려져야
+   * 어느 판이 활성인지 보인다. 흐리는 방법은 소비자가 정한다(이 자리는 사실만 답한다).
+   */
+  betweenIds: string[];
+  /**
    * 이 해가 최대화를 그리고 있는가 — 그 패널 id, 아니면 null.
    *
    * 소비자가 "최대화인가"를 **생짜 상태에서 다시 읽으면 안 된다.** station 과 rect 는 이 해가
@@ -227,6 +238,8 @@ export function solveArrangement<L extends { id: string }>(input: {
       cleanLines,
       displayLayout: input.layout,
       swapped: false,
+      // 최대화는 [레일 | 기능] 단일 평면이라 사이에 낄 자리가 없다.
+      betweenIds: [],
       cells,
       focusId,
       maximizedId: input.maximizedId,
@@ -257,15 +270,18 @@ export function solveArrangement<L extends { id: string }>(input: {
     rect,
   }));
   const cleanLines = cleanRailLines(cells.map((cell) => cell.rect));
+  const station =
+    pull && input.placement.mode === "pin"
+      ? snapRailStation(cleanLines, input.placement.station)
+      : flowStation(cells, focusId, cleanLines, input.fallbackStation ?? 0);
 
   return {
     station:
       // 한 축이 둘을 정한다 — 당기면 판이 오고 레일은 제자리, 안 당기면 레일이 찾아간다.
       // 둘 다 움직이면 이중이다.
-      pull && input.placement.mode === "pin"
-        ? snapRailStation(cleanLines, input.placement.station)
-        : flowStation(cells, focusId, cleanLines, input.fallbackStation ?? 0),
+      station,
     cleanLines,
+    betweenIds: betweenRailAndFocus(cells, focusId, station),
     displayLayout,
     swapped: displayLayout !== input.layout,
     cells,
@@ -352,4 +368,30 @@ export function viewIdsOfMoves<
   return moves.flatMap(
     (move) => groups.find((g) => g.id === move.id)?.tabs.map((v) => v.id) ?? [],
   );
+}
+
+/**
+ * 레일(station)과 포커스 판 사이에 낀 판들 — 같은 행에서 레일보다 뒤, 포커스보다 앞.
+ *
+ * 레일이 포커스 판에 닿았으면 빈다. 그것이 "가려진 것이 없다"는 사실이다.
+ */
+function betweenRailAndFocus(
+  cells: ArrangementCell[],
+  focusId: string | null,
+  station: number,
+): string[] {
+  if (!focusId) return [];
+  const focused = cells.find((cell) => cell.id === focusId);
+  if (!focused) return [];
+  return cells
+    .filter(
+      (cell) =>
+        cell.id !== focusId &&
+        // 같은 행에 있고(세로로 겹치고), 레일 뒤이며, 포커스 판보다 앞이다.
+        cell.rect.top < focused.rect.top + focused.rect.height &&
+        cell.rect.top + cell.rect.height > focused.rect.top &&
+        cell.rect.left + RAIL_EPSILON >= station &&
+        cell.rect.left + cell.rect.width <= focused.rect.left + RAIL_EPSILON,
+    )
+    .map((cell) => cell.id);
 }

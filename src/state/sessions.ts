@@ -653,6 +653,16 @@ function maximizedGroupId(content: Space): string | null {
 export function projectArrangement(
   project: Project,
   fallbackStation = 0,
+  /**
+   * 붙이는 방법 — **부르는 쪽이 준다.**
+   *
+   * 여기서 store 를 몰래 읽으면 React 가 그 값이 입력인 줄 모른다. 설정을 바꿔도 다시 그리지
+   * 않아 화면이 옛 배치에 머문다(실측 2026-08-02: 값은 바뀌는데 아무 변화가 없었다).
+   * 구독하는 쪽이 값을 실어 보내면 그 변화가 렌더의 입력이 된다.
+   *
+   * React 밖(명령·내부 계산)은 store 값을 그대로 준다 — 같은 자리에서 읽으므로 갈리지 않는다.
+   */
+  pullFocused = useSettings.getState().railPullFocused,
 ): Arrangement<Pane> | null {
   const content =
     project.spaces.find((item) => item.id === project.activeSpaceId) ??
@@ -670,8 +680,7 @@ export function projectArrangement(
     // 가 g3 소속인데 layout={"panel":"g5"}, DOM 슬롯 0개, 창 전체 백지).
     maximizedId: maximizedGroupId(content),
     fallbackStation,
-    // 당겨오는가는 선언이 정한다 — 적어 두고 안 읽으면 없는 것과 같다.
-    pullFocused: useSettings.getState().railPullFocused,
+    pullFocused,
   });
 }
 

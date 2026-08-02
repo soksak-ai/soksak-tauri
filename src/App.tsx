@@ -195,7 +195,9 @@ const ProjectPlane = memo(function ProjectPlane({
   // 미해소 포커스 렌더에서 station 이 0 으로 붕괴하지 않게 직전 확정값을 폴백으로 준다.
   const lastStationRef = useRef(0);
   // 배치는 해결기가 푼다 — station·배열·만들어진 인접·이동량의 단일 진실(재계산 금지).
-  const solved = projectArrangement(project, lastStationRef.current);
+  // 붙이는 방법을 **구독**해서 넘긴다 — getState 로 몰래 읽으면 설정을 바꿔도 다시 안 그린다.
+  const railPullFocused = useSettings((s) => s.railPullFocused);
+  const solved = projectArrangement(project, lastStationRef.current, railPullFocused);
   lastStationRef.current = solved?.station ?? 0;
   const railGeometryScope = railGeometryScopeId(
     activeContent?.id,
@@ -550,6 +552,8 @@ const ProjectPlane = memo(function ProjectPlane({
                   projectId={project.id}
                   surfaceActive={isActiveProject && isActiveContent}
                   // 배치는 해가 정한다 — 비활성 콘텐츠는 자기 정본 배열 그대로(레일 없음).
+                  // 레일이 못 간 만큼 가려진 칸 — 움직이지 않지만 흐려야 어느 판이 활성인지 보인다.
+                  betweenIds={isActiveContent ? (solved?.betweenIds ?? []) : []}
                   displayLayout={
                     isActiveContent ? arrangement?.displayLayout : undefined
                   }

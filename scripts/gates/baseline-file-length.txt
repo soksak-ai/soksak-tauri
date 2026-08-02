@@ -113,6 +113,10 @@ frameworks/tauri/src/ipc.rs 1566
 frameworks/tauri/src/webview.rs 2269
 packages/plugin-spec/src/pluginRuntime.ts 2081
 packages/plugin-spec/src/spec.ts 1785
-src/commands/catalog.ts 2829
+# 재입법 2026-08-02 2829 → 2833. betweenIds 노출 — 손으로 나열한 목록이 계약이 자랄 때마다
+#   하나씩 빠진다(실측: 이 자리가 그 필드를 빠뜨려 명령이 사실을 못 답했다).
+src/commands/catalog.ts 2833
 src/plugins/api.ts 1962
-src/state/sessions.ts 2017
+# 재입법 2026-08-02 2017 → 2026. 붙이는 방법을 부르는 쪽이 준다 — store 를 몰래 읽으면
+#   React 가 그 값이 입력인 줄 몰라 설정을 바꿔도 다시 안 그린다.
+src/state/sessions.ts 2026
