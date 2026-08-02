@@ -226,6 +226,12 @@ export function registerDomCatalog(): void {
           'Extra computed-style property names to read, camelCase or kebab (e.g. ["zIndex","backgroundColor"]) — lifts the fixed field set',
         required: false,
       },
+      pseudo: {
+        type: "string",
+        description:
+          'Read the computed style of a pseudo-element instead of the node itself ("::before" | "::after"). rect and dataset still describe the node. Required when a surface paints through a pseudo-element veil — those pixels belong to no measurable node otherwise',
+        required: false,
+      },
       occlusion: {
         type: "boolean",
         description:
@@ -254,7 +260,19 @@ export function registerDomCatalog(): void {
       if (!("el" in found)) return found;
       const el = found.el;
       const r = el.getBoundingClientRect();
-      const cs = getComputedStyle(el);
+      // pseudo — 베일(::after)처럼 **어떤 노드에도 속하지 않는 픽셀**을 재는 축. 이 자리가
+      // 없으면 홀 슬롯의 흐림은 눈으로 때려맞히는 수밖에 없다(실사고 2026-08-02: 7% 를 22%
+      // 라고 읽었다). 이름을 달고 거절한다 — 모르는 값을 조용히 요소 측정으로 떨어뜨리면
+      // "쟀다"는 답이 거짓이 된다.
+      const pseudo = typeof p.pseudo === "string" ? p.pseudo : null;
+      if (pseudo && pseudo !== "::before" && pseudo !== "::after") {
+        return {
+          ok: false as const,
+          code: "INVALID_PARAMS" as const,
+          message: `pseudo 는 "::before" 또는 "::after" 만 잰다: ${pseudo}`,
+        };
+      }
+      const cs = getComputedStyle(el, pseudo);
       const style: Record<string, string> = {
         display: cs.display,
         height: cs.height,
@@ -276,8 +294,11 @@ export function registerDomCatalog(): void {
           if (typeof name === "string") style[name] = readComputed(cs, name);
         }
       }
+      // pseudo 는 "없음"도 답이어야 한다 — content:none 이면 그 베일은 애초에 안 그려진다.
+      if (pseudo) style.content = readComputed(cs, "content");
       const out: Record<string, unknown> = {
         address: addr,
+        ...(pseudo ? { pseudo } : {}),
         // 모든 data-* 선언은 공개 상태다. 자동화/플러그인은 private DOM 속성명을
         // 다시 추측하지 않고 ui.tree → ui.measure 한 경로로 읽는다.
         dataset: Object.fromEntries(Object.entries(el.dataset)),

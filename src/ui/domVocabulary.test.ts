@@ -30,7 +30,7 @@ const ALLOWED = new Set([
   "data-view-addr", // 노드 스캔 baseAddress(절대 주소) — view 는 종류 축(생존 어휘)
   "data-tab-id", // 탭 인스턴스 역참조 앵커(정본 — viewHostAnchors)
   "data-testid", // 테스트 관례(외부 표준 이름)
-  "data-focus-dim", // 포커스 흐림 위상
+  "data-dim", // 흐림 단계(clear|idle|blocked) — 사유가 아니라 결과(lib/dimLevel)
   "data-project-plane", // 프로젝트 평면 표식
   "data-gutter-key", // 골 정본 주소 키(gutter 확정 어휘)
   "data-gutter", // 테마 seam 토큰 스탬프(theme.chrome.gutter — 옛 data-divider 의 정본)

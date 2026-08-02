@@ -20,7 +20,7 @@ function rules(): [string, string][] {
 // 합성 레이어 승격·재래스터를 유발하는 속성 — 무관 표면에 걸리면 위상마다 움찔한다.
 const PROMOTING = ["animation", "will-change", "transform", "filter", "backdrop-filter"];
 // 위상·상태를 나타내는 클래스(이 하위에서 전체 선택은 곧 "무관 요소까지 포함"이다).
-const PHASE = ["traveling", "dragging", "resizing", "data-focus-dim"];
+const PHASE = ["traveling", "dragging", "resizing", "data-dim"];
 
 describe("시각 효과 소유권 — 위상 하위 전체 선택 금지", () => {
   it("위상 클래스 하위에서 슬롯·셀의 레이어 승격 속성을 애니메이션·전이하지 않는다", () => {
@@ -57,7 +57,7 @@ describe("시각 효과 소유권 — 위상 하위 전체 선택 금지", () =>
 
   it("홀 슬롯은 filter 축에서 제외된다(스탠드인과 네이티브의 dim 강도 일치)", () => {
     expect(css).toMatch(
-      /\.space\[data-focus-dim\] \.tab-body\.hole \{[^}]*filter: none/,
+      /\.tab-body\.hole\[data-dim\] \{[^}]*filter: none/,
     );
   });
 

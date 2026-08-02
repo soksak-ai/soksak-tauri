@@ -316,21 +316,34 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
 });
 
 describe("slotFreeze — dim 상태 캡처 배제(포커스 장식 박제 금지)", () => {
-  it("focus-dim 이 걸린(비활성) 슬롯은 정착 캡처를 건너뛴다 — 청정 스냅만 굽는다", async () => {
+  it("흐린 슬롯은 정착 캡처를 건너뛴다 — 청정 스냅만 굽는다", async () => {
     const area = document.createElement("div");
     area.className = "space";
-    area.setAttribute("data-focus-dim", "1");
     document.body.appendChild(area);
     const slot = makeSlot("v1");
-    area.appendChild(slot); // dim 대상(스팟 아님)
+    slot.dataset.dim = "idle"; // 비활성으로 가라앉은 슬롯
+    area.appendChild(slot);
     const f = build();
     f.captureSettled();
     await microtasks();
     expect(slot.dataset.freezeSnapAt).toBeUndefined();
-    slot.classList.add("spot-clear"); // 활성(청정) — 이제 캡처된다
+    slot.dataset.dim = "clear"; // 활성(청정) — 이제 캡처된다
     f.captureSettled();
     await microtasks();
     expect(slot.dataset.freezeSnapAt).toBeDefined();
+  });
+
+  it("낀 슬롯도 건너뛴다 — 단계는 달라도 베일이 구워진 것은 같다", async () => {
+    const area = document.createElement("div");
+    area.className = "space";
+    document.body.appendChild(area);
+    const slot = makeSlot("v2");
+    slot.dataset.dim = "blocked";
+    area.appendChild(slot);
+    const f = build();
+    f.captureSettled();
+    await microtasks();
+    expect(slot.dataset.freezeSnapAt).toBeUndefined();
   });
 });
 

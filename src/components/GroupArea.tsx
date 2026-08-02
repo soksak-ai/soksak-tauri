@@ -27,6 +27,7 @@ import { beginGesture } from "../lib/gesture";
 import { useT } from "../i18n";
 import { useTheme } from "../state/theme";
 import { useSettings } from "../state/settings";
+import { dimLevel } from "../lib/dimLevel";
 import { useUi } from "../state/ui";
 import {
   type Space,
@@ -220,6 +221,15 @@ export const GroupArea = memo(function GroupArea({
   // 포커스 스포트라이트 실험 — 전체를 가라앉히고 선택만 명확하게(결정 시 소거).
   const focusDim = useSettings((s) => s.focusDim);
   const inset = PANE_INSET[paneStyle] ?? 0;
+
+  // 흐림은 단계 하나다 — 칸(.pane)과 슬롯(.tab-body)은 서로 다른 순회에 살지만 같은 값을
+  // 읽어야 한다. 각자 사유를 다시 조합하면 두 표면이 조용히 갈린다(한 사실 한 자리).
+  const dimOf = (groupId: string) =>
+    dimLevel({
+      active: groupId === content.activePaneId,
+      focusDim,
+      blocked: !!betweenIds?.includes(groupId),
+    });
 
   // 클릭 = 활성 + 실포커스 불변식. 상태 변경 effect 에만 의존하면 "이미 활성인
   // 그룹/pane 재클릭"이 no-op 인 채 mousedown 기본동작(비포커서블 클릭 → blur)
@@ -612,7 +622,6 @@ export const GroupArea = memo(function GroupArea({
   return (
     <div
       className="space"
-      data-focus-dim={focusDim ? "1" : undefined}
       data-node={`layout/space/${content.id}`}
       data-projection={
         content.maximizedTabId
@@ -647,8 +656,10 @@ export const GroupArea = memo(function GroupArea({
           <div
             key={`cell-${group.id}`}
             className={`pane${holeCell ? " hole" : ""}${
-              group.id === content.activePaneId ? " spot-clear" : ""
-            }${flipMoves(group.id) ? " flip-move" : ""}`}
+              flipMoves(group.id) ? " flip-move" : ""
+            }`}
+            // 흐림 단계 — 사유가 아니라 결과 하나(lib/dimLevel). CSS 는 이름당 한 벌만 그린다.
+            data-dim={dimOf(group.id)}
             data-node={`layout/pane/${group.id}`}
             style={cellVars(rect, group.id)}
             ref={rectMotion.ref}
@@ -773,10 +784,10 @@ export const GroupArea = memo(function GroupArea({
               // 기준은 셀과 동일한 단일 선언 축(isHoleView) — 홀 배경·베일·레일 클립이
               // 전부 이 클래스 하나를 본다.
               className={`tab-body${isHoleView(view) ? " hole" : ""}${
-                group.id === content.activePaneId ? " spot-clear" : ""
-              }${shown && flipMoves(group.id) ? " flip-move" : ""}${
-                betweenIds?.includes(group.id) ? " rail-blocked" : ""
+                shown && flipMoves(group.id) ? " flip-move" : ""
               }`}
+              // 칸과 같은 값을 읽는다 — 사유를 여기서 다시 조합하면 두 표면이 조용히 갈린다.
+              data-dim={dimOf(group.id)}
               // 네이티브 클릭 판정용(App.tsx native-mousedown → elementFromPoint).
               // 값은 이 슬롯이 사는 칸(pane)의 id — 이름과 값이 같은 실체를 가리킨다(IDENTITY).
               data-pane={group.id}

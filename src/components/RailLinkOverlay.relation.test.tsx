@@ -191,32 +191,29 @@ describe("railRelation 모드 CSS 갈래 (App.css)", () => {
     expect(d).not.toMatch(/var\(--relation-stroke\)/);
   });
 
-  it("포커스 스포트라이트: 전체 dim + 활성만 filter 해제(선택만 명확)", () => {
+  it("포커스 스포트라이트: 비활성만 가라앉고 활성은 청정(선택만 명확)", () => {
     // 사용자 개념: "전체를 흐리게 하고 선택된 것만 명확하게". blur 는 텍스트를 뭉개므로
-    // 밝기·채도 하강만 쓴다. 전이가 있어 활성 이동 시 어둠이 옮겨간다.
+    // 밝기·채도 하강만 쓴다. 단계는 한 자리(lib/dimLevel)가 정하고 CSS 는 이름당 한 벌만
+    // 그린다 — 활성은 "해제 규칙"이 아니라 애초에 clear 단계라 칠하는 규칙이 없다.
     for (const part of [".pane", ".tab-body"]) {
-      const dim = decls(`.space[data-focus-dim] ${part}`);
+      const dim = decls(`${part}[data-dim="idle"]`);
       expect(dim).toMatch(/filter:\s*brightness\(0\.93\)\s*saturate\(0\.85\)/);
       // filter 전이는 금지다 — 포커스마다 승격된 레이어를 160ms 재래스터해 패널이 움찔했다
       // (실사고). 전이감은 ::after 베일(페인트만)이 담당한다.
       expect(dim).not.toMatch(/transition:[^;]*filter/);
-      const clear = decls(`.space[data-focus-dim] ${part}.spot-clear`);
-      expect(clear).toMatch(/filter:\s*none/);
+      // clear 단계를 칠하는 규칙은 없다(해제 규칙을 두면 그게 또 하나의 겨룰 자리가 된다).
+      expect(css).not.toMatch(new RegExp(`\\${part}\\[data-dim="clear"\\]`));
     }
     // 네이티브 표면 셰이드 — 레이어 역전(DOM 최상위, 엔진·child 웹뷰는 투명 홀 아래) 때문에
     // filter 는 네이티브에 닿지 않는다. 셰이드는 홀 위 라이브 계층(::after z4) — 동결 스탠드인
-    // (z3)보다 위라 스냅에 구워진 상태와 무관하게 현재 포커스를 따라 전이한다(배경이던 시절
+    // (z3)보다 위라 스냅에 구워진 상태와 무관하게 현재 단계를 따라 전이한다(배경이던 시절
     // 스탠드인이 베일을 가려 스왑마다 포커스 플랩으로 보였다 — 실측). 홀 슬롯은 filter 제외
     // (네이티브는 베일만 받으니 스탠드인도 베일만 받아야 dim 강도가 일치한다).
+    expect(css).toMatch(/\.tab-body\.hole\[data-dim\] \{[^}]*filter: none/);
     expect(css).toMatch(
-      /\.space\[data-focus-dim\] \.tab-body\.hole \{[^}]*filter: none/,
+      /\.tab-body\.hole\[data-dim="idle"\]::after \{[^}]*background-color: color-mix\(in srgb, #000 7%, transparent\)/,
     );
-    expect(css).toMatch(
-      /\.space\[data-focus-dim\] \.tab-body\.hole::after \{[^}]*background-color: color-mix\(in srgb, #000 7%, transparent\);[^}]*transition:[^;}]*background-color/,
-    );
-    expect(css).toMatch(
-      /\.space\[data-focus-dim\] \.tab-body\.hole\.spot-clear::after \{[^}]*background-color: transparent/,
-    );
+    expect(css).toMatch(/::after,\n\.tab-body\.hole\[data-dim="blocked"\]::after \{[^}]*transition:[^;}]*background-color/);
     // pane 스타일 배경은 홀을 원천 제외한다(특이성 전쟁 금지 — 홀은 스타일이 아니라 표면
     // 종류의 사실. 실사고: pane 규칙이 홀 투명을 이겨 card/floating 에서 전 홀 폐쇄).
     expect(css).toMatch(

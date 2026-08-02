@@ -93,6 +93,16 @@ Read this app's compile-time core identity, isolated home, matching CLI name, bu
 sok-dev app.environment
 ```
 
+## `app.quit` (danger: destructive)
+
+Quit the app this window lives in. The other framework on the same home keeps running. | 앱 종료 끄기 quit
+
+**Returns**: { ok }
+
+```bash
+sok-dev app.quit
+```
+
 ## `bookmark.add`
 
 Add a URL to browser bookmarks. | 즐겨찾기 추가 북마크 저장
@@ -792,7 +802,7 @@ The solved arrangement of the active space: the rail station, whether the focuse
 |---|---|---|---|
 | `project` | string |  | Target project id (omit = caller's context project) |
 
-**Returns**: { projectId, spaceId, station, cleanLines[], switched, cells[].{id,rect,railSide}, movesFrom:{focusId, moves[].{id,dLeftPct,dRailUnits}} }
+**Returns**: { projectId, spaceId, station, cleanLines[], switched, betweenIds[] (panes stranded between the rail and the focused pane when the rail could not reach it — they do not move, they dim), cells[].{id,rect,railSide}, movesFrom:{focusId, moves[].{id,dLeftPct,dRailUnits}} }
 **Errors**: TARGET_NOT_FOUND
 
 ```bash
@@ -2182,7 +2192,7 @@ sok-dev service.status '{"plugin":"<plugin-id>"}'
 
 Retrieve all application settings. | 설정 확인 앱 조회 환경설정
 
-**Returns**: { language, projectTabPosition, iconSet, iconBox, focusIndicator, railRelation, railFill, focusDim, railSeamStyle, appFontFamily, windowZoom, orchestratorAgent, orchestratorModel, bg }
+**Returns**: { language, projectTabPosition, iconSet, iconBox, focusIndicator, railRelation, railFill, focusDim, railSeamStyle, railPullFocused, appFontFamily, windowZoom, orchestratorAgent, orchestratorModel, bg }
 
 ```bash
 sok-dev settings.get
@@ -2190,12 +2200,12 @@ sok-dev settings.get
 
 ## `settings.set`
 
-Change an application setting. key: language|projectTabPosition|iconSet|iconBox|focusIndicator|railRelation|railFill|focusDim|railSeamStyle|appFontFamily|windowZoom|orchestratorAgent|orchestratorModel | 설정 변경 바꾸기 환경설정 폰트 크기 언어
+Change an application setting. key: language|projectTabPosition|iconSet|iconBox|focusIndicator|railRelation|railFill|focusDim|railSeamStyle|railPullFocused|appFontFamily|windowZoom|orchestratorAgent|orchestratorModel | 설정 변경 바꾸기 환경설정 폰트 크기 언어
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `key` | string | ✓ | Setting key (language|projectTabPosition|iconSet|iconBox|focusIndicator|railRelation|railFill|focusDim|railSeamStyle|appFontFamily|windowZoom|orchestratorAgent|orchestratorModel) |
-| `value` | json | ✓ | Value — language:ko|en, projectTabPosition:top|left, iconSet:string (registered set id — unregistered falls back to lucide), iconBox:boolean, focusIndicator:outline|corners, railRelation:tint|moment|stroke (rail-pane relation surface — tint fill only, moment flash on rebind, stroke outline+label), railFill:none|faint (bound-pane background in stroke mode — none is the default, faint is a 1% accent tint), focusDim:boolean (spotlight — every pane dims except the active one), railSeamStyle:seam|edge (how a manufactured adjacency is marked: seam dashes the inner shared edge, edge dashes the outer right edge), appFontFamily:string (CSS font-family stack), windowZoom:number (0.5-2.0 — whole-window zoom factor applied to the main webview and every child webview), orchestratorAgent:string (agent CLI command or path the natural-language console spawns), orchestratorModel:string (--model alias for the agent; empty = CLI default) |
+| `key` | string | ✓ | Setting key (language|projectTabPosition|iconSet|iconBox|focusIndicator|railRelation|railFill|focusDim|railSeamStyle|railPullFocused|appFontFamily|windowZoom|orchestratorAgent|orchestratorModel) |
+| `value` | json | ✓ | Value — language:ko|en, projectTabPosition:top|left, iconSet:string (registered set id — unregistered falls back to lucide), iconBox:boolean, focusIndicator:outline|corners, railRelation:tint|moment|stroke (rail-pane relation surface — tint fill only, moment flash on rebind, stroke outline+label), railFill:none|faint (bound-pane background in stroke mode — none is the default, faint is a 1% accent tint), focusDim:boolean (spotlight — every pane dims except the active one), railSeamStyle:seam|edge (how a manufactured adjacency is marked: seam dashes the inner shared edge, edge dashes the outer right edge), railPullFocused:boolean (how the focused pane ends up next to the rail — true pulls the pane to the rail and the rail holds still, so the adjacency is manufactured and marked dashed; false leaves the pane where it is and the rail travels to it, so the adjacency is real and the seam is solid. Both move something; enabling both would move two things), appFontFamily:string (CSS font-family stack), windowZoom:number (0.5-2.0 — whole-window zoom factor applied to the main webview and every child webview), orchestratorAgent:string (agent CLI command or path the natural-language console spawns), orchestratorModel:string (--model alias for the agent; empty = CLI default) |
 
 **Returns**: { key, value }
 **Errors**: INVALID_PARAMS
@@ -2859,6 +2869,8 @@ Dispatch a real-click sequence (mousedown → mouseup → click) to an exposed n
 |---|---|---|---|
 | `address` | string | ✓ | Exposed node address from ui.tree |
 | `phase` | string |  | 'down' = mousedown only; 'up' = mouseup+click only; omit for the full sequence |
+| `x` | number |  | Content-view-relative x (CSS px). Only when the address resolves to a content view; the click is delivered inside it as real input. |
+| `y` | number |  | Content-view-relative y (CSS px). |
 
 **Returns**: { clicked, address, phase? }
 **Errors**: NOT_EXPOSED, AMBIGUOUS, INVALID_PARAMS
@@ -3015,6 +3027,7 @@ Measure an exposed node — its viewport rect (px) and computed style. style alw
 | `address` | string | ✓ | Exposed node address from ui.tree |
 | `occlusion` | boolean |  | Also hit-test the node's center (Shadow-DOM-piercing): report the topmost element there and whether it is this node (reachable) or something covers it [default false] |
 | `props` | json |  | Extra computed-style property names to read, camelCase or kebab (e.g. ["zIndex","backgroundColor"]) — lifts the fixed field set |
+| `pseudo` | string |  | Read the computed style of a pseudo-element instead of the node itself ("::before" | "::after"). rect and dataset still describe the node. Required when a surface paints through a pseudo-element veil — those pixels belong to no measurable node otherwise |
 | `screen` | boolean |  | Also return global logical screen coordinates (window inner origin + viewport rect). cx/cy is the node center — pass it directly to an OS-level pointer tool for a real hit-tested click [default false] |
 
 **Returns**: { address, dataset, rect:{x,y,w,h}, style, occlusion?:{ reachable, topTag, topNode }, screen?:{ x, y, cx, cy } } — dataset contains every declared data-* field on the exposed node

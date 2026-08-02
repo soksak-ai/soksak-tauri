@@ -127,9 +127,13 @@ install-cli-debug: cli-debug ## sok-debug regular binary를 /usr/local/bin에 �
 	@bash scripts/install/install-regular-file.sh "$(CARGO_TARGET)/debug/sok-debug" /usr/local/bin/sok-debug
 	@echo "설치 완료: /usr/local/bin/sok-debug (debug regular binary)"
 
+# 컨트롤 플레인(main)에 묻는다 — 명령 표면은 창마다 다르다. 워크스페이스 창에는 orchestrator.*
+# 가 등록되지 않으므로(그 창에선 UNKNOWN_COMMAND 가 정답), 창을 안 집으면 아무 창이나 답해
+# 그 명령들이 조용히 빠진 문서가 나온다(실측 2026-08-02). 게이트
+# command-reference-whole-surface 가 그런 문서를 거절한다.
 docs: ## 명령 레퍼런스 생성(docs/COMMANDS.md — 앱이 실행 중이어야 함)
 	@mkdir -p docs
-	$(or $(DOCS_SOK),$(CARGO_TARGET)/release/sok) docs --core > docs/COMMANDS.md
+	$(or $(DOCS_SOK),$(CARGO_TARGET)/release/sok) --window main docs --core > docs/COMMANDS.md
 	@echo "생성: docs/COMMANDS.md"
 
 # 발행(plugin-publish)은 코어에 두지 않는다(P1·P3) — 각 플러그인은 자기 독립 repo 에서

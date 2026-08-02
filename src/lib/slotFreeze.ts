@@ -15,6 +15,7 @@
 //  - bounds 커밋은 이 계층과 무관하게 계속 흐른다(동결은 표현이지 정책이 아니다).
 import { HOLE_SELECTOR } from "./railHoleClip";
 import { surfaceRectOf } from "./surfaceRect";
+import { isDimmed, type DimLevel } from "./dimLevel";
 
 interface SlotSnap {
   img: HTMLImageElement;
@@ -151,10 +152,11 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
         skip("tiny");
         continue;
       }
-      // 포커스 장식 박제 금지 — dim 이 걸린(스팟 아닌) 슬롯의 창 픽셀엔 셰이드 베일이 구워져
-      // 있다. 그걸 스탠드인으로 쓰면 동결 중 라이브 dim 과 어긋나 "포커스 인/아웃" 플랩으로
-      // 보인다(실측). 청정(스팟) 상태의 스냅만 굽고, dim 은 라이브 계층(::after·filter)이 얹는다.
-      if (slot.closest("[data-focus-dim]") && !slot.classList.contains("spot-clear")) {
+      // 포커스 장식 박제 금지 — 흐린 슬롯의 창 픽셀엔 셰이드 베일이 구워져 있다. 그걸
+      // 스탠드인으로 쓰면 동결 중 라이브 dim 과 어긋나 "포커스 인/아웃" 플랩으로 보인다
+      // (실측). 청정(clear) 상태의 스냅만 굽고, dim 은 라이브 계층(::after·filter)이 얹는다.
+      // 흐렸는지는 표면이 답한다(data-dim) — 사유를 여기서 다시 조합하지 않는다.
+      if (isDimmed((slot.dataset.dim ?? "clear") as DimLevel)) {
         skip("dim");
         continue;
       }
