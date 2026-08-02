@@ -8,9 +8,15 @@ const R = (x: number, y: number, w = 554, h = 341) => ({ x, y, w, h });
 
 describe("judgeSurfaces — 서피스↔홀 정합", () => {
   it("자기 홀에 맞는 서피스는 깨끗하다(허용 오차 안)", () => {
-    const v = judgeSurfaces([R(906, 100), R(906, 500)], [R(910, 104), R(906, 500)]);
+    const v = judgeSurfaces([R(906, 100), R(906, 500)], [R(907, 101), R(906, 500)]);
     expect(v.misplaced).toEqual([]);
     expect(v.stacked).toEqual([]);
+  });
+
+  it("반올림 범위를 넘는 3px 어긋남은 정합으로 숨기지 않는다", () => {
+    const v = judgeSurfaces([R(906, 100)], [R(909, 100)]);
+    expect(v.misplaced).toHaveLength(1);
+    expect(v.missing).toHaveLength(1);
   });
 
   it("어느 홀과도 안 맞는 가시 서피스는 오배치다 — 실사고의 우상단 겹침", () => {
@@ -80,6 +86,19 @@ describe("visibleAnchorRects — Tauri가 공개 content-view 슬롯에서 투�
     const anchors = visibleAnchorRects();
     expect(anchors.source).toBe("content-view-slot");
     expect(anchors.rects).toHaveLength(0);
+  });
+
+  it("hidden 조상 아래에서 자식이 visible을 선언해도 합성 앵커가 아니다", () => {
+    document.body.innerHTML = "";
+    const project = document.createElement("div");
+    project.dataset.projectPlane = "p-inactive";
+    project.style.visibility = "hidden";
+    const slot = div("tab-body", { x: 906, y: 149, w: 554, h: 341 });
+    slot.dataset.tauriHole = "content";
+    slot.style.visibility = "visible";
+    project.appendChild(slot);
+    document.body.appendChild(project);
+    expect(visibleAnchorRects().rects).toEqual([]);
   });
 });
 

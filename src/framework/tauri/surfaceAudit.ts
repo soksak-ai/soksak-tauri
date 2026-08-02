@@ -33,6 +33,9 @@ export interface SurfaceVerdict {
   holes: number;
 }
 
+/** DOM→AppKit 왕복에서 허용하는 서브픽셀 정수화 폭. 그보다 큰 차이는 합성 불일치다. */
+export const SURFACE_RECT_TOLERANCE_PX = 2;
+
 const near = (a: number, b: number, tol: number) => Math.abs(a - b) <= tol;
 const matches = (s: AuditRect, h: AuditRect, tol: number) =>
   near(s.x, h.x, tol) && near(s.y, h.y, tol) && near(s.w, h.w, tol) && near(s.h, h.h, tol);
@@ -41,7 +44,7 @@ const matches = (s: AuditRect, h: AuditRect, tol: number) =>
 export function judgeSurfaces(
   surfaces: AuditRect[],
   holes: AuditRect[],
-  tol = 12,
+  tol = SURFACE_RECT_TOLERANCE_PX,
 ): SurfaceVerdict {
   const byHole = new Map<number, AuditRect[]>();
   const misplaced: AuditRect[] = [];
@@ -63,9 +66,19 @@ export function judgeSurfaces(
 /** 보이는 네이티브 앵커 rect 수집. 실제 content-view 슬롯에서 Tauri가 투영한 marker만
  * 정본이며, 플러그인의 내부 클래스나 shadow 구조를 추측하지 않는다. */
 export function visibleAnchorRects(): { rects: AuditRect[]; source: string } {
+  const hiddenByTree = (el: HTMLElement): boolean => {
+    for (let cur: HTMLElement | null = el; cur; cur = cur.parentElement) {
+      const style = cur.ownerDocument.defaultView?.getComputedStyle(cur);
+      if (style?.visibility === "hidden" || style?.display === "none") return true;
+      // 프로젝트 활성성은 DOM 합성의 명시 계약이다. 자식의 잘못된 visible 선언이 CSS 상속을
+      // 뚫더라도 비활성 프로젝트를 네이티브 홀로 승격하지 않는다.
+      if (cur.hasAttribute("data-project-plane") && cur.dataset.projectActive !== "1") return true;
+    }
+    return false;
+  };
   const collect = (els: Iterable<HTMLElement>, out: AuditRect[]) => {
     for (const el of els) {
-      if (el.style.visibility === "hidden" || el.style.display === "none") continue;
+      if (hiddenByTree(el)) continue;
       const r = el.getBoundingClientRect();
       if (r.width < 4 || r.height < 4) continue;
       if (r.x + r.width <= 0 || r.x >= window.innerWidth) continue; // 파킹(오프스크린)
