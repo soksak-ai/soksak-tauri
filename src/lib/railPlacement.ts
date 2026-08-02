@@ -186,9 +186,10 @@ export function projectRailRect(
   station: number,
   hostWidthPx: number,
   railWidthPx: number,
+  rightInsetPx = 0,
 ): RailRect {
   const side = sideOf(rect, station);
-  const paneWidth = Math.max(0, hostWidthPx - railWidthPx);
+  const paneWidth = Math.max(0, hostWidthPx - railWidthPx - Math.max(0, rightInsetPx));
   return {
     left:
       (paneWidth * rect.left) / 100 +
