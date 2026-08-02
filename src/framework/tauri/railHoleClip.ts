@@ -1,4 +1,5 @@
-import { moduleState } from "../lib/moduleState";
+import { moduleState } from "../../lib/moduleState";
+import { TAURI_CONTENT_HOLE } from "./holeMarkers";
 // 레일-홀 클립 — "움직이는 사이드바는 기능창 아래로 지나간다"의 홀(네이티브 임베드) 성립부.
 // DOM 표면은 z(레일 0 < 셀 1)로 성립하지만, 홀 뷰의 네이티브 표면은 웹뷰 DOM 전체 뒤에
 // 있어 DOM 이 칠하는 픽셀이 무조건 그 위에 보인다. 따라서 레이아웃 모션 동안 레일 평면은
@@ -54,12 +55,9 @@ export function visibleHoles(
   return out;
 }
 
-// 홀 기준은 뷰의 transparent 선언 하나다 — GroupArea 가 본문 자신에 .hole 로 새긴다
-// (본문은 칸의 자식이 아니라 영속 레이어의 형제 — 셀렉터 조합으로는 절대 못 잡는다. 실측:
-// 칸 하위 셀렉터가 공집합이라 네이티브 클립까지 통째로 퇴행했던 사고). App.css 홀
-// 배경 규칙과 같은 기준. 콘텐츠 클래스 등 제2 기준 도입 금지.
-/** 홀 본문 단일 기준 셀렉터(transparent 선언의 DOM 표식) — 레일 클립·본문 동결이 공유한다. */
-export const HOLE_SELECTOR = ".tab-body.hole";
+// 실제 content-view 슬롯에서 Tauri가 투영한 private marker가 유일한 합성 기준이다.
+/** Tauri 합성 슬롯 셀렉터 — 레일 클립·본문 동결이 공유한다. */
+export const HOLE_SELECTOR = TAURI_CONTENT_HOLE;
 
 /**
  * 모션 위상 동안 레일 평면의 clip-path 를 홀 rect 에 프레임 동기로 맞춘다.
@@ -68,7 +66,7 @@ export const HOLE_SELECTOR = ".tab-body.hole";
  */
 // 갈아끼우기 경계 밖 — 이 값들이 새것이 되면 "이미 했다"는 기억과 지연 초기화가
 // 함께 사라지고, 채우던 쪽은 다시 채우지 않는다.
-const ms = moduleState("lib/railHoleClip#state", () => ({
+const ms = moduleState("framework/tauri/railHoleClip#state", () => ({
   warnedRejected: false,
 }));
 /**

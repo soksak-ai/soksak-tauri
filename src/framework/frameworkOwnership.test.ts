@@ -1,0 +1,71 @@
+// 프레임워크 소유권 계약 — DOM 밖 네이티브 표면을 보정하는 장치는 Tauri 구현이다.
+// 공통 코드가 이름이나 수명 호출을 알면 Electron도 그 판정의 영향을 받으므로 위치 자체를 막는다.
+// @vitest-environment node
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
+import { describe, expect, it } from "vitest";
+
+const ROOT = resolve(import.meta.dirname, "../..");
+const SRC = resolve(ROOT, "src");
+const TAURI_FIXES = [
+  "slotFreeze.ts",
+  "slotFreezeHost.ts",
+  "railHoleClip.ts",
+  "railHoleClipHost.ts",
+  "surfaceAudit.ts",
+];
+
+function productionFiles(dir: string, out: string[] = []): string[] {
+  for (const name of readdirSync(dir)) {
+    const path = join(dir, name);
+    if (statSync(path).isDirectory()) productionFiles(path, out);
+    else if (/\.(?:ts|tsx|css)$/.test(name) && !/\.test\./.test(name)) out.push(path);
+  }
+  return out;
+}
+
+describe("Tauri native-composition ownership", () => {
+  it("보정 구현은 framework/tauri 밖에 존재하지 않는다", () => {
+    const misplaced = TAURI_FIXES.filter((name) => existsSync(resolve(SRC, "lib", name)));
+    expect(misplaced).toEqual([]);
+    for (const name of TAURI_FIXES) {
+      expect(existsSync(resolve(SRC, "framework/tauri", name)), name).toBe(true);
+    }
+  });
+
+  it("공통 App과 플러그인 API가 freeze·hole-clip 수명을 호출하지 않는다", () => {
+    const files = ["src/App.tsx", "src/plugins/api.ts"];
+    const offenders = files.filter((file) =>
+      /slotFreeze|railHoleClip|noteSurfaceWrite|invalidateSlotSnapshot/.test(
+        readFileSync(resolve(ROOT, file), "utf8"),
+      ),
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it("공통 DOM과 스타일은 Tauri hole 표식을 만들거나 해석하지 않는다", () => {
+    const offenders: string[] = [];
+    for (const file of productionFiles(SRC)) {
+      const rel = relative(SRC, file);
+      if (rel.startsWith("framework/tauri/")) continue;
+      const source = readFileSync(file, "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/^\s*\/\/.*$/gm, "");
+      if (
+        /(?:^|[^\w-])\.hole\b|classList\.(?:add|contains)\(["']hole["']\)|isHoleView|["'] hole["']/m.test(
+          source,
+        )
+      ) {
+        offenders.push(rel);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("공통 DOM 파킹은 일반 DOM 가시성만 쓰고 좌표·z-index 보정을 하지 않는다", () => {
+    const source = readFileSync(resolve(SRC, "lib/layerPark.ts"), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    expect(source).not.toMatch(/translate|zIndex|z-index|OFFSCREEN/);
+  });
+});

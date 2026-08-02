@@ -21,11 +21,6 @@ import { resolveTerminalProgram } from "./plugins/terminalEngine";
 import { startPointerOrderRepair } from "./lib/pointerOrderRepair";
 import { applyWindowZoom, isPrimaryModifier, routeZoom } from "./lib/zoomIntent";
 import { beginLayoutMotion, endLayoutMotion } from "./lib/layoutMotion";
-import { registerRailPlane, requestRailHoleClipSync } from "./lib/railHoleClipHost";
-import {
-  canGlideViews,
-  scheduleSlotSettleCapture,
-} from "./lib/slotFreezeHost";
 import { startViewFocusSync } from "./plugins/viewFocus";
 import { bindPaneUnder } from "./lib/bindPaneUnder";
 import { browserViewIdFromLabel } from "./lib/webviewLabels";
@@ -218,8 +213,6 @@ const ProjectPlane = memo(function ProjectPlane({
     solved,
     railGeometryScope,
     contentKey,
-    // 여정 모드 판정 — 위상이 시작에 한 번 묻는다(매 렌더 재평가 금지).
-    (from, to) => canGlideViews(viewIdsOfMoves(from.displayLayout, arrangementMoves(from, to))),
   );
   const arrangement = phase.displayed;
   const railCells = arrangement?.cells ?? [];
@@ -298,19 +291,6 @@ const ProjectPlane = memo(function ProjectPlane({
     return () => endLayoutMotion("move");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [railTraveling, movingKey]);
-  // 사이드바는 홀(브라우저 네이티브 표면) 위에 칠하지 않는다 — 상시 계약(사용자 규정:
-  // 겹치면 언제나 사이드바가 브라우저 아래). DOM 표면은 z(레일 0 < 셀 1)로 성립하지만
-  // 홀 뷰의 네이티브 표면은 DOM 전체 뒤라 클립 제외만이 유일한 방법이다(railHoleClip).
-  // 정적 상태는 매 커밋에서, 애니메이션 중간 프레임은 모션 위상 rAF 가 갱신한다.
-  // 소유자는 창이다(railHoleClipHost). pane 은 자기 평면을 맡기고 커밋마다 동기를 요청만
-  // 한다 — 문서 스캔도 위상 rAF 도 창에 하나뿐이라 프로젝트 수에 비례하지 않는다.
-  useLayoutEffect(() => {
-    const plane = railPlaneRef.current;
-    return plane ? registerRailPlane(plane) : undefined;
-  }, []);
-  useLayoutEffect(() => {
-    requestRailHoleClipSync();
-  });
   // pane 그리드 행 계약 소비 — 레일 헤더가 pane 그룹 헤더와 같은 행에 앉도록
   // 같은 소스(GroupArea 상수 + 테마 paneStyle)의 치수를 레일 서브트리에 주입한다.
   const paneStyle = useTheme((s) => s.spec.chrome.paneStyle);
@@ -378,7 +358,7 @@ const ProjectPlane = memo(function ProjectPlane({
       sidebarW,
     ],
   );
-  // 콘텐츠 탭 전환 시 비활성 슬롯은 화면 밖으로 파킹된다(parkedStyle transform). 그 파킹/언파킹은
+  // 콘텐츠 탭 전환 시 비활성 슬롯은 DOM 수명을 유지한 채 숨는다. 그 가시성 전환은
   // 이 렌더 커밋에서 DOM 에 반영되므로, 커밋 직후(useLayoutEffect, paint 전) 코어가 layout.reflow 를
   // 발화한다 → 네이티브 webview 를 소유한 플러그인(브라우저)이 최종 앵커로 bounds 를 1회 재스냅해
   // 클릭에 즉시 반응한다. 전환 신호(view.activated)는 store diff 마이크로태스크라 커밋 전이라 여기서
@@ -390,7 +370,6 @@ const ProjectPlane = memo(function ProjectPlane({
   // (사용자 실측: 브라우저 탭이 여럿인 패널에서 다른 탭을 고르면 이질감과 깜빡임).
   useLayoutEffect(() => {
     emitPluginEvent("layout.reflow", { activeSpaceId: project.activeSpaceId });
-    scheduleSlotSettleCapture(); // 레이아웃 정착 에지 — 슬롯 동결 스냅 갱신(디바운스)
   }, [
     contentKey,
     activeContent?.activePaneId,
@@ -410,10 +389,8 @@ const ProjectPlane = memo(function ProjectPlane({
       // 주소가 프로젝트를 실어야 rail/left 가 하나로 풀린다(collectExposed 가 읽는다).
       data-project-plane={project.id}
       data-project-active={isActiveProject ? "1" : undefined}
-      // 비활성 프로젝트도 화면 밖으로 파킹한다(R12 단일 진실) — visibility:hidden 은 DOM 만 감추고
-      // GPU 레이어(터미널 WebGL)와 네이티브 child(브라우저 webview)는 그대로 합성된다. 콘텐츠·뷰 슬롯과
-      // 같은 헬퍼를 쓰는 이유가 그것이다(층 간 일치). 프로젝트를 전환해도 이전 브라우저가 화면에
-      // 남던 결함이 이 층의 누락이었다.
+      // 비활성 프로젝트도 언마운트하지 않고 일반 DOM 가시성으로 숨긴다. 문서 밖 표면의 가시성은
+      // view.parked/content-view host 계약을 소비하는 해당 프레임워크가 별도로 책임진다.
       style={parkedStyle(isActiveProject)}
     >
       {/* 상위 콘텐츠 탭은 rail 밖에 남고, 선택된 패널 grid만 rail과 좌표계를 공유한다. */}
@@ -451,6 +428,7 @@ const ProjectPlane = memo(function ProjectPlane({
             <div
               ref={railPlaneRef}
               className="left-rail-plane"
+              data-node="rail/plane"
               style={
                 {
                   "--pane-inset": `${railPaneInset}px`,
@@ -552,9 +530,7 @@ const ProjectPlane = memo(function ProjectPlane({
               <div
                 key={c.id}
                 className="space-plane"
-                // 비활성 콘텐츠는 화면 밖으로 파킹(R12 단일 진실) — visibility:hidden 만으로는 그 안의
-                // 터미널 WebGL 캔버스가 GPU 레이어로 합성돼 활성 콘텐츠의 브라우저 홀로 비친다. 뷰 슬롯
-                // (GroupArea)과 동일 규칙을 같은 헬퍼로 적용(층 간 일치).
+                // 비활성 콘텐츠도 DOM 수명과 상자를 보존하고 가시성만 끈다.
                 style={parkedStyle(isActiveContent)}
               >
                 <GroupArea
@@ -778,10 +754,6 @@ function App() {
   // 원격 destructive confirm 배선(폰-링크 안전모델) — Rust app.emit("remote-confirm-request")를
   // store 큐에 잇고, 결정 sink 를 remote_confirm_resolve 로 잇는다(데스크톱 단일 권위). 부팅 1회.
   useEffect(() => wireRemoteConfirm(), []);
-  // 이동-동결(스탠드인)은 여기서 걸지 않는다 — 그것은 콘텐츠가 문서 밖인 프레임워크가 자기
-  // 사정을 갚는 장치이고, 그 프레임워크가 스스로 건다(framework/tauri/install.ts). 안 걸리면
-  // 아래 표면(scheduleSlotSettleCapture·canGlideViews)은 그대로 서 있되 아무 일도 안 한다.
-
   // 활성 project/space/pane/tab 체인과 실제 키보드 포커스는 하나의 계약이다.
   // 마운트 시 자동포커스하지 않고, 최신 활성 뷰 의도만 provider 에 전달한다.
   useEffect(() => startViewFocusSync(), []);

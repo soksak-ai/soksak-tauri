@@ -37,6 +37,7 @@ export const LOCAL = new Map([
   ["delegated-shape-scan.mjs", []],
   ["distribution-invariants-scan.mjs", []],
   ["framework-folder-vocabulary.mjs", []],
+  ["framework-artifact-isolation.mjs", []],
   ["framework-free-placement.mjs", []],
   ["framework-free-tenant.mjs", []],
   ["framework-thin-binding.mjs", []],

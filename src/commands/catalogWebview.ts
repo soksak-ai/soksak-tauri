@@ -9,7 +9,7 @@ import { register, type CommandHint } from "./registry";
 import { tmsg } from "../i18n";
 import { allViews, useSessions } from "../state/sessions";
 import { browserLabelPrefix, browserViewIdFromLabel, orphanBrowserLabels } from "../lib/webviewLabels";
-import { CONTENT_VIEW_SLOT, contentViewHost } from "../lib/contentViews";
+import { CONTENT_VIEW_BODY, contentViewHost } from "../lib/contentViews";
 
 interface LabelHealth {
   label: string;
@@ -116,7 +116,7 @@ export function registerWebviewCatalog(): void {
       const inDocument = document.querySelectorAll("[data-content-view]");
       for (const el of inDocument) {
         const own = el.getAttribute("data-content-view") ?? "";
-        if (el.parentElement?.closest(`[${CONTENT_VIEW_SLOT}]`)?.getAttribute(CONTENT_VIEW_SLOT) !== own)
+        if (el.parentElement?.closest(`[${CONTENT_VIEW_BODY}]`)?.getAttribute(CONTENT_VIEW_BODY) !== own)
           detached.push(own);
       }
       return {

@@ -7,6 +7,8 @@
 // 이름과 인자는 앱의 것 그대로다. 번역하면 새 드리프트 면이 생긴다.
 import type { ContentViewHost } from "../../lib/contentViews";
 import { invoke } from "@tauri-apps/api/core";
+import { browserViewIdFromLabel } from "../../lib/webviewLabels";
+import { invalidateSlotSnapshot, noteSurfaceWrite } from "./slotFreezeHost";
 
 const call = <T>(cmd: string, args?: Record<string, unknown>): Promise<T> =>
   invoke(cmd, args) as Promise<T>;
@@ -16,9 +18,17 @@ export const nativeHost: ContentViewHost = {
   close: (label) => call("webview_close", { label }),
   list: () => call("webview_list"),
   alive: (label) => call("webview_alive", { label }),
-  navigate: (label, url) => call("webview_navigate", { label, url }),
+  navigate: (label, url) => {
+    const viewId = browserViewIdFromLabel(label);
+    if (viewId) invalidateSlotSnapshot(viewId);
+    return call("webview_navigate", { label, url });
+  },
   bounds: (label, x, y, w, h) => call("webview_bounds", { label, x, y, w, h }),
-  visible: (label, visible, focus) => call("webview_visible", { label, visible, focus }),
+  visible: async (label, visible, focus) => {
+    await call("webview_visible", { label, visible, focus });
+    const viewId = visible ? browserViewIdFromLabel(label) : null;
+    if (viewId) noteSurfaceWrite(viewId);
+  },
   history: (label, delta) => call("webview_history", { label, delta }),
   stop: (label) => call("webview_stop", { label }),
   zoom: (label, factor) => call("webview_zoom_view", { label, factor }),

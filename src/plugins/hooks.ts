@@ -79,7 +79,7 @@ export interface PluginEventMap {
   "window.zoom": { factor: number };
   // 뷰 본문 슬롯의 유효 가시성(스페이스 활성 && 탭 활성) 변화 — 코어가 단일 소유(R12 네이티브 층 확장).
   // 네이티브 표면(엔진 서피스·child webview)을 가진 플러그인이 표시/숨김과 재스냅을 이 사실에 맞춘다
-  // (뷰포트 추측 IntersectionObserver 대체). parked=true 는 화면 밖 파킹, false 는 복귀.
+  // (뷰포트 추측 IntersectionObserver 대체). parked=true 는 비가시, false 는 복귀.
   "view.parked": { viewId: string; parked: boolean };
   // 표면 가림(코어 슬롯 동결) — 스탠드인이 선 동안 네이티브 표면을 숨기라는 신호.
   // view.parked 와 동형의 릴레이 계약: 사이드카 표면 소유자는 veiled 를 hidden 으로 넘긴다.

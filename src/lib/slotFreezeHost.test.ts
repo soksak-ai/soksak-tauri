@@ -12,7 +12,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 async function load() {
   vi.resetModules();
-  const m = await import("./slotFreezeHost");
+  const m = await import("../framework/tauri/slotFreezeHost");
   m.disposeSlotFreezeHost();
   return m;
 }

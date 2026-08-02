@@ -642,7 +642,7 @@ offscreen 축은 코어의 공백이 **아니다**. 2026-07-08 에 검증됐고 
 
 | | 주인 |
 | --- | --- |
-| `ContentViewHost` 계약, `data-content-view-slot` 자리 선언, 등록부 | `src/lib/contentViews.ts` |
+| `ContentViewHost` 계약, `data-content-view-body` 본문 선언, 등록부 | `src/lib/contentViews.ts` |
 | 네이티브 자식 구현, 홀, 스탠드인, 레일 클립, 네이티브 마우스, 골 강조바, 오버레이 게이트, 리사이즈 릴레이, `webview.emitNative` | `src/framework/tauri/` |
 | DOM `<webview>` 구현 | `src/framework/electron/` |
 | 홀 CSS | `src/framework/tauri/styles.css` |

@@ -814,9 +814,10 @@ body,
 .space-plane {
   position: absolute;
   inset: 0;
-  /* z 는 parkedStyle 인라인(active=1)이 소유 — CSS 로 덮지 않는다(인라인이 이긴다).
-     레일 평면(z:0)보다 위라 주행하는 레일이 이 그리드(카드들) 뒤로 지나간다. 컨테이너 자체는
+  /* 레일 평면(z:0)보다 위라는 DOM 관계만 이 레이어가 소유한다. 가시성 전환은 z를 바꾸지 않는다.
+     주행하는 레일이 이 그리드(카드들) 뒤로 지나간다. 컨테이너 자체는
      히트 투명(복도의 빈 영역 클릭은 아래 레일의 것) — 실요소가 각자 이벤트를 소유한다. */
+  z-index: 1;
   pointer-events: none;
 }
 .space {
@@ -2082,15 +2083,10 @@ body,
 :root[data-pane-style="floating"] .pane-status {
   background: transparent; /* 내부선(§B2)은 base 가 소유 — 여기선 배경만 */
 }
-/* 배경을 안 그린다고 선언한 뷰(transparent)는 배경을 받지 않는다 — 그 선언이 슬롯에
-   `.hole` 로 새겨진다. 이 규칙은 공통이다: 어느 프레임워크에서든 "자기 배경을 안 그리겠다"는
-   선언은 같은 뜻이고, 선언이 없으면 `:not(.hole)` 은 모두를 고른다.
-   근거(실사고): 이 카브아웃이 없으면 pane 배경(0-3-0)이 홀 투명(0-2-0)을 특이성으로 이겨
-   card/floating 에서 모든 홀이 닫혔다. 비포커스에서만 dim 베일이 우연히 이걸 눌러 열려
-   "포커스 때만 블랭크"로 위장됐다. 뚫린 자리를 실제로 쓰는 쪽의 규칙은 그 프레임워크가
-   들고 온다(framework/tauri/styles.css). */
-:root[data-pane-style="card"] .tab-body:not(.hole),
-:root[data-pane-style="floating"] .tab-body:not(.hole) {
+/* DOM 본문은 항상 자기 배경을 그린다. 문서 밖 표면 때문에 이 배경을 비워야 하는 구현은
+   자기 어댑터 스타일에서 정확한 슬롯만 재정의한다. */
+:root[data-pane-style="card"] .tab-body,
+:root[data-pane-style="floating"] .tab-body {
   background: var(--bg);
 }
 :root[data-pane-style="card"] .tab-body,

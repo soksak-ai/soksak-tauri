@@ -57,7 +57,7 @@ export function collectExposed(): ScannedNode[] {
   }
   // 호스트 크롬 — 뷰 컨테이너 밖의 [data-node].
   //
-  // 프로젝트 평면은 전부 마운트된다(비활성은 화면 밖 파킹). 그래서 평면 안의 크롬 노드는
+  // 프로젝트 평면은 전부 마운트된다(비활성은 DOM 가시성만 꺼진다). 그래서 평면 안의 크롬 노드는
   // 프로젝트마다 한 벌씩 살고, 프로젝트 축이 없으면 rail/left 가 둘로 풀린다(실측).
   // 정본 주소는 프로젝트를 싣고, 활성 평면만 생략형 별칭을 함께 가진다(문법의 "생략=활성").
   for (const el of document.querySelectorAll<HTMLElement>("[data-node]")) {

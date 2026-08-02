@@ -205,30 +205,6 @@ describe("railRelation 모드 CSS 갈래 (스타일 표면)", () => {
       // 단계 이름으로 갈래친 규칙은 없다 — 갈래가 둘이면 다시 특이성으로 겨룬다.
       expect(css).not.toMatch(new RegExp(`\\${part}\\[data-dim="`));
     }
-    // 네이티브 표면 셰이드 — 레이어 역전(DOM 최상위, 엔진·child 웹뷰는 투명 홀 아래) 때문에
-    // filter 는 네이티브에 닿지 않는다. 셰이드는 홀 위 라이브 계층(::after z4) — 동결 스탠드인
-    // (z3)보다 위라 스냅에 구워진 상태와 무관하게 현재 단계를 따라 전이한다(배경이던 시절
-    // 스탠드인이 베일을 가려 스왑마다 포커스 플랩으로 보였다 — 실측). 홀 슬롯은 filter 제외
-    // (네이티브는 베일만 받으니 스탠드인도 베일만 받아야 dim 강도가 일치한다).
-    expect(css).toMatch(/\.tab-body\.hole\[data-dim\] \{[^}]*filter: none/);
-    expect(css).toMatch(
-      /\.tab-body\.hole\[data-dim\]::after \{[^}]*background-color: rgb\(0 0 0 \/ var\(--dim\)\)[^}]*transition:[^;}]*background-color/,
-    );
-    // pane 스타일 배경은 홀을 원천 제외한다(특이성 전쟁 금지 — 홀은 스타일이 아니라 표면
-    // 종류의 사실. 실사고: pane 규칙이 홀 투명을 이겨 card/floating 에서 전 홀 폐쇄).
-    expect(css).toMatch(
-      /:root\[data-pane-style="card"\] \.tab-body:not\(\.hole\)/,
-    );
-    // 홀 기준은 뷰의 transparent 선언 하나(hole — 슬롯은 영속 레이어의 형제라 슬롯
-    // 자신에 새긴다. PLUGIN-CONTRACT §Transparent). 홀 규칙이 베일을 이겨 브라우저만 안
-    // 어두워졌던 실측 결함의 예외를 같은 기준 위에 명시한다: 스포트라이트 베일은 반투명이라
-    // 홀을 막지 않으면서 아래 네이티브를 어둡힌다. pane 스타일 무관(홀은 표면 종류의 사실).
-    expect(css).toMatch(/\.tab-body\.hole \{[^}]*background: transparent/);
-    // 이중 베일 금지 — 슬롯 자체 배경 베일이 되살아나면 동결 스탠드인이 그 층만 가려
-    // 위상마다 밝음-펄스가 재발한다(실사고). ::after 가 유일 베일이다.
-    expect(css).not.toMatch(
-      /\.tab-body\.hole:not\(\.spot-clear\) \{[^}]*background-color: color-mix/,
-    );
   });
 
   it("railFill 갈래는 두 채움 경로(shape=자연 인접·fill=교체 분리 렌더)를 모두 덮는다", () => {

@@ -21,8 +21,8 @@ export function surfaceShown(projectActive: boolean, spaceActive: boolean, tabAc
 }
 
 /**
- * 뷰 슬롯의 DOM/GPU 합성 계약. 평상시 비활성 탭은 세션 크기를 보존하는 오프스크린
- * 파킹을 쓰지만, 최대화처럼 한 표면만 존재해야 하는 exclusive 상태에서는 제외 슬롯을
+ * 뷰 슬롯의 DOM 수명 계약. 평상시 비활성 탭은 상자를 보존한 채 가시성만 끄지만,
+ * 최대화처럼 한 표면만 레이아웃에 존재해야 하는 exclusive 상태에서는 제외 슬롯을
  * display:none으로 합성 트리에서도 제거한다. DOM과 플러그인 인스턴스는 언마운트하지
  * 않으며, 복원 커밋의 layout.reflow가 다시 현재 슬롯 크기를 전달한다.
  */

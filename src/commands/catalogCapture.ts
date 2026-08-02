@@ -204,9 +204,7 @@ async function resolveRegion(p: Record<string, unknown>): Promise<Region | Refus
         message: `노드가 화면에 크기를 갖지 않습니다(${Math.round(r.width)}x${Math.round(r.height)}): ${nodeAddr}`,
       };
     }
-    // 화면 밖은 캡처할 픽셀이 없다 — 비활성 슬롯은 창 밖으로 파킹된다(실측: x=-3490).
-    // 이것을 캡처 계층까지 흘려보내면 "빈/무효 crop rect" 라는 INTERNAL 로 뭉개져, 부른
-    // 쪽은 무엇을 고쳐야 할지 알 수 없다. 이름과 사유로 거절하고 회복 경로를 준다.
+    // 실제 화면 밖 rect는 캡처할 픽셀이 없다. 이름과 사유로 거절하고 회복 경로를 준다.
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     if (
@@ -219,7 +217,7 @@ async function resolveRegion(p: Record<string, unknown>): Promise<Region | Refus
       return {
         ok: false,
         code: "OFFSCREEN",
-        message: `노드가 화면 밖입니다(x=${cropped.x}, y=${cropped.y} · 뷰포트 ${vw}x${vh}) — 비활성 슬롯은 창 밖으로 파킹됩니다. 먼저 그 스페이스/탭을 활성화하세요: ${nodeAddr}`,
+        message: `노드가 화면 밖입니다(x=${cropped.x}, y=${cropped.y} · 뷰포트 ${vw}x${vh}). 먼저 그 스페이스/탭을 활성화하세요: ${nodeAddr}`,
       };
     }
     rect = { x: cropped.x, y: cropped.y, w: cropped.w, h: cropped.h };

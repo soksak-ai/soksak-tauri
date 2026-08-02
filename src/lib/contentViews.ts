@@ -51,17 +51,17 @@ export interface ContentViewHost {
 /**
  * 콘텐츠 뷰가 **어디에 사는가**를 선언하는 속성 — 값은 label 이다.
  *
- *   <div className="bv-area" data-content-view-slot={label} />
+ *   <div className="bv-area" data-content-view-body={label} />
  *
  * 선언은 하나이고 읽는 쪽이 둘이다: 좌표로 미는 구현에게 이 자리는 **추종 앵커**이고,
  * 문서 안에 사는 구현에게는 **부모**다. 선언하는 쪽(플러그인)은 그 차이를 몰라도 된다.
  */
-export const CONTENT_VIEW_SLOT = "data-content-view-slot";
+export const CONTENT_VIEW_BODY = "data-content-view-body";
 
 /** 이 label 을 위해 선언된 자리. 없으면 이 뷰는 **자리가 없는** 뷰다(화면에 놓이지 않는다). */
 export function findContentViewSlot(label: string, doc: Document): HTMLElement | null {
-  for (const el of doc.querySelectorAll<HTMLElement>(`[${CONTENT_VIEW_SLOT}]`)) {
-    if (el.getAttribute(CONTENT_VIEW_SLOT) === label) return el;
+  for (const el of doc.querySelectorAll<HTMLElement>(`[${CONTENT_VIEW_BODY}]`)) {
+    if (el.getAttribute(CONTENT_VIEW_BODY) === label) return el;
   }
   return null;
 }

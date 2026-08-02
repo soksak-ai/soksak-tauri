@@ -4,13 +4,14 @@
 // 배선돼 있었다 — 다른 네이티브 표면은 같은 이질감을 그대로 가진다. 코어가 슬롯 계층에서
 // 시행하면 소비자 의무는 선언 + (사이드카 표면의) veil 릴레이뿐이다.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createSlotFreeze, type SlotFreeze } from "./slotFreeze";
+import { createSlotFreeze, type SlotFreeze } from "../framework/tauri/slotFreeze";
 
 const PNG = "data:image/png;base64,x";
 
 function makeSlot(viewId: string): HTMLElement {
   const el = document.createElement("div");
-  el.className = "tab-body hole";
+  el.className = "tab-body";
+  el.dataset.tauriHole = "content";
   el.setAttribute("data-node", `layout/tab/${viewId}`);
   document.body.appendChild(el);
   // jsdom 은 레이아웃이 없다 — 가시 슬롯 rect 를 명시 주입한다.
@@ -134,7 +135,7 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
   });
 
   it("파킹된 뷰(비활성 탭)는 활강 전제를 죽이지 않는다 — 보이지 않는 것은 덮을 필요가 없다", async () => {
-    // 한 패널에 브라우저 탭이 둘 이상이면 비활성 탭은 화면 밖(파킹)에 있다. 그 뷰의 스냅은
+    // 한 패널에 브라우저 탭이 둘 이상이면 비활성 탭은 DOM 가시성이 꺼진다. 그 뷰의 스냅은
     // 굽히지도 않고 낡아 가는데, 활강 전제가 그것까지 물으면 **탭이 둘 이상인 패널은 영원히
     // 활강하지 못한다**(사용자 실측: 브라우저 탭 3개 패널에서 여정이 통째로 순간이동).
     // 보이지 않는 표면은 옛 자리를 드러낼 수 없으므로 스탠드인이 필요 없다.
@@ -143,9 +144,7 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
     const f = build();
     f.captureSettled();
     await microtasks();
-    // 파킹 — 화면 밖으로 이동(layerPark 와 같은 규칙: 큰 음수 좌표).
-    parked.getBoundingClientRect = () =>
-      ({ left: -3484, top: 10, right: -3184, bottom: 210, width: 300, height: 200 }) as DOMRect;
+    parked.style.visibility = "hidden";
     // 파킹된 슬롯의 스냅이 낡았더라도 전제를 깨지 않는다 — 그 표면은 보이지 않는다.
     f.invalidate("v2");
     expect(f.canFreezeAll(["v1", "v2"])).toBe(true);

@@ -11,7 +11,6 @@ import { Icon } from "../ui/icons/Icon";
 import { FileViewerHost } from "./FileViewerHost";
 import { GroupStatusBar } from "./GroupStatusBar";
 import { PluginViewHost } from "./PluginViewHost";
-import { getRegisteredView } from "../plugins/viewRegistry";
 import {
   activeSessionViewId,
   transferViewFocus,
@@ -95,17 +94,6 @@ export const PANE_INSET: Record<string, number> = { flat: 0, card: 5, floating: 
 
 // 최대화 시 셀/슬롯이 차지하는 전체 rect(컨텐츠 영역 기준 %).
 const FULL_RECT = { left: 0, top: 0, width: 100, height: 100 };
-
-// 홀 판정의 단일 진실 — 뷰의 transparent 선언(레지스트리 decl) 하나. 칸(.pane.hole 밴드)과
-// 본문(.tab-body.hole 배경·베일·레일 클립)이 같은 함수를 소비한다. 클래스도 하나(.hole 수정자)인
-// 이유가 그것이다 — 판정 축이 하나인데 이름이 둘이면 절반이 갈라진다. 제2 기준(콘텐츠 클래스 등)
-// 도입 금지 — 기준이 갈라지면 절반의 소비자가 못 보는 홀이 생긴다(PLUGIN-CONTRACT §Transparent).
-function isHoleView(view: Tab | undefined | null): boolean {
-  return (
-    view?.kind === "plugin" &&
-    !!getRegisteredView(`${view.pluginId}.${view.view}`)?.decl.transparent
-  );
-}
 
 // 콘텐츠 셀 레이아웃 = 공유 머신(computeSplitLayout). leaf 값(Pane)을 cell.group 으로 매핑.
 // [중복 제거] 좌측 사이드바와 동일한 레이아웃/히트테스트를 공유한다(splitLayout.ts).
@@ -665,18 +653,13 @@ export const GroupArea = memo(function GroupArea({
       {displayCells.map(({ group, rect }) => {
         const isActiveGroup = group.id === content.activePaneId;
         const active = group.tabs.find((v) => v.id === group.activeTabId);
-        // 홀 셀(레이어 원칙): 활성 뷰 아래 네이티브 레이어(임베드 webview)가 비쳐야 하면 본문 영역에
-        // 배경을 칠하면 안 된다 — CSS 가 헤더/상태바 밴드만 칠하도록 클래스로 표시. 데이터 주도:
-        // transparent 선언 플러그인 콘텐츠 뷰(예: 브라우저 플러그인)만 홀로 처리(코어 하드 체크 없음).
-        const holeCell = isHoleView(active);
         return (
           <div
             key={`cell-${group.id}`}
-            className={`pane${holeCell ? " hole" : ""}${
-              flipMoves(group.id) ? " flip-move" : ""
-            }`}
+            className={`pane${flipMoves(group.id) ? " flip-move" : ""}`}
             // 흐림 — 이름(단계)과 세기(값)를 함께 낸다(lib/dimLevel). CSS 는 그리기만 한다.
             {...dimOf(group.id)}
+            data-pane={group.id}
             data-node={`layout/pane/${group.id}`}
             style={{ ...cellVars(rect, group.id), ...dimOf(group.id).style }}
             ref={rectMotion.ref}
@@ -796,13 +779,7 @@ export const GroupArea = memo(function GroupArea({
           return (
             <div
               key={view.id}
-              // .hole: 본문은 칸의 자식이 아니라 영속 레이어의 형제라서, 홀 표시는
-              // 셀렉터 조합(.pane.hole 하위)이 아니라 본문 자신의 클래스여야 한다.
-              // 기준은 셀과 동일한 단일 선언 축(isHoleView) — 홀 배경·베일·레일 클립이
-              // 전부 이 클래스 하나를 본다.
-              className={`tab-body${isHoleView(view) ? " hole" : ""}${
-                shown && flipMoves(group.id) ? " flip-move" : ""
-              }`}
+              className={`tab-body${shown && flipMoves(group.id) ? " flip-move" : ""}`}
               // 칸과 같은 값을 읽는다 — 사유를 여기서 다시 조합하면 두 표면이 조용히 갈린다.
               {...dimOf(group.id)}
               // 네이티브 클릭 판정용(App.tsx native-mousedown → elementFromPoint).
@@ -811,8 +788,8 @@ export const GroupArea = memo(function GroupArea({
               data-project-id={projectId}
               data-node={`layout/tab/${view.id}`}
               ref={shown ? rectMotion.ref : undefined}
-              // 평상시 비활성 슬롯은 화면 밖으로 파킹하고, 최대화의 제외 슬롯은 합성 트리에서도
-              // 제거한다(viewSurfaceStyle 단일 진실). 둘 다 DOM/플러그인 인스턴스는 유지한다.
+              // 평상시 비활성 슬롯은 가시성만 끄고, 최대화의 제외 슬롯은 합성 트리에서도
+              // 제거한다(viewSurfaceStyle 단일 진실). 둘 다 DOM/플러그인 인스턴스 수명은 유지한다.
               style={{
                 ...cellVars(slotRect, group.id),
                 ...viewSurfaceStyle(shown, !!maxCell),

@@ -17,13 +17,8 @@ import { createStream } from "../framework";
 import { contentViewHost } from "../lib/contentViews";
 import {
   browserLabel,
-  browserViewIdFromLabel,
   currentWindowLabel,
 } from "../lib/webviewLabels";
-import {
-  invalidateSlotSnapshot,
-  noteSurfaceWrite,
-} from "../lib/slotFreezeHost";
 import { busEmit, busOn } from "./bus";
 import {
   onPluginEvent,
@@ -1893,13 +1888,7 @@ export function buildPluginApi(
           bounds: (label, x, y, w, h) =>
             contentViewHost().bounds(label, x, y, w, h) as unknown as Promise<void>,
           visible: (label, visible, focus) => {
-            const done = contentViewHost().visible(label, visible, focus);
-            // 착지 관측 — 스탠드인은 표면이 **제자리에 놓이고 다시 보이게 된 뒤**에 물러난다.
-            // bounds 쓰기만 보고 걷으면 표면이 아직 감춰진 채라 홀이 먼저 열려 배경이 한두
-            // 프레임 드러난다(소유자는 bounds → visible 순서로 부른다). 시간 추측은 하지 않는다.
-            const viewId = visible ? browserViewIdFromLabel(label) : null;
-            if (viewId) void done.then(() => noteSurfaceWrite(viewId), () => {});
-            return done;
+            return contentViewHost().visible(label, visible, focus);
           },
           alive: (label) => contentViewHost().alive(label),
           navigate: (label, url) => contentViewHost().navigate(label, url),
@@ -1917,12 +1906,6 @@ export function buildPluginApi(
           on: (label, event, cb) =>
             tracker.wrap(
               deps.subscribeWebview(label, event, (payload) => {
-                // 항행 = 내용이 바뀌었다는 뜻. 낡은 프레임을 스탠드인으로 세우지 않으려면
-                // 이 순간 스냅을 버려야 한다 — 나이(시계)가 아니라 내용 변화가 유일한 축이다.
-                if (event === "nav") {
-                  const viewId = browserViewIdFromLabel(label);
-                  if (viewId) invalidateSlotSnapshot(viewId);
-                }
                 cb(payload);
               }),
             ),

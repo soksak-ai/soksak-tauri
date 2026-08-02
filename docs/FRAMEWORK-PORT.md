@@ -642,7 +642,7 @@ A third framework writes its own `whale/` folder. Core does not change, and it d
 
 | | Owner |
 | --- | --- |
-| `ContentViewHost` contract, `data-content-view-slot` declaration, host registry | `src/lib/contentViews.ts` |
+| `ContentViewHost` contract, `data-content-view-body` declaration, host registry | `src/lib/contentViews.ts` |
 | Native child implementation, holes, standin, rail clip, native mouse, divider bar, overlay gate, resize relay, `webview.emitNative` | `src/framework/tauri/` |
 | DOM `<webview>` implementation | `src/framework/electron/` |
 | Hole CSS | `src/framework/tauri/styles.css` |

@@ -6,18 +6,18 @@
 // 스탠드인이 N 개 겹치고 veil 도 N 번 발화했다. 소유자를 창으로 올려 그 불일치를 없앤다.
 //
 // 폴링 없음: 모션 에지(onLayoutMotion)와 정착 에지(호출자)만이 입력이다.
-import { moduleState } from "../lib/moduleState";
+import { moduleState } from "../../lib/moduleState";
 import { createSlotFreeze, type SlotFreeze, type SlotFreezeDeps } from "./slotFreeze";
-import { onLayoutMotion } from "./layoutMotion";
+import { onLayoutMotion } from "../../lib/layoutMotion";
 
 // 서로 다른 것은 따로 선다 — 한 가방에 넣으면 그것은 상태가 아니라 가방이다.
 /** 설치된 동결기 — 있으면 이미 붙은 것이다. */
-const installed = moduleState("lib/slotFreezeHost#installed", () => ({
+const installed = moduleState("framework/tauri/slotFreezeHost#installed", () => ({
   host: null as SlotFreeze | null,
 }));
 
 /** 구독 해지 손잡이와 정착 타이머 — 설치와 별개로 붙었다 떨어진다. */
-const subscription = moduleState("lib/slotFreezeHost#subscription", () => ({
+const subscription = moduleState("framework/tauri/slotFreezeHost#subscription", () => ({
   offMotion: null as (() => void) | null,
   settleTimer: 0,
 }));

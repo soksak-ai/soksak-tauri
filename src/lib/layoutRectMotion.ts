@@ -187,25 +187,13 @@ export function createRectMotionTracker(): RectMotionTracker {
         const now: Snap = { x: r.x, y: r.y, w: r.width, h: r.height };
         const was = prev.get(el);
         prev.set(el, now);
-        // 가시성 전환(파킹↔등장)은 FLIP 대상이 아니다 — 파킹은 transform 오프스크린이라
-        // rect 차이가 화면폭급이고, 그걸 보간하면 슬롯이 화면을 가로질러 날아간다(실측
-        // 여정 로그: 탭 교체 1회에 573→-1027 여정 발화 — 사용자가 본 "a·b 가 두 번
-        // 교체되는" 모션의 정체). 보이는→보이는 레이아웃 변화만 보간한다.
+        // 새로 등록된 요소에는 비교할 이전 rect가 없다. 가시성 전환은 ref 등록/해제로 갈리므로
+        // 보이는→보이는 레이아웃 변화만 이 지점에 도달한다.
         if (!was) continue;
         // 프레임워크가 건 제외 — "이 자리 아래의 표면은 슬롯의 transform 을 안 따라온다".
         // 코어는 무엇이 걸렸는지 묻지 않는다. 안 걸리면 아무것도 빠지지 않는다.
         if (excluded(el)) {
           noteRectMotionSkip(el.dataset.node ?? el.className, "framework-excluded");
-          continue;
-        }
-        // 파킹 전환은 FLIP 대상이 아니다 — 판정은 프록시(가시성)가 아니라 좌표다: 파킹은
-        // 항상 뷰포트 밖(-200vw)이므로, 출발·도착 어느 쪽이든 화면 밖이면 그것은 레이아웃
-        // 모션이 아니라 파킹↔등장이다. (가시성 프록시는 스타일 반영 시차로 오판했다 —
-        // 실측 여정 로그 vis:true/true 로 파킹 보간이 발화, 슬롯이 화면을 가로질러 날았다.)
-        const vw = window.innerWidth || 4096;
-        const offscreen = (r2: Snap) => r2.x + r2.w <= 0 || r2.x >= vw;
-        if (offscreen(was) || offscreen(now)) {
-          noteRectMotionSkip(el.dataset.node ?? el.className, "park-transition");
           continue;
         }
         // 레일 활강(CSS rail-flip-x)이 소유한 이동은 보간하지 않는다 — 한 이동 한 모션.

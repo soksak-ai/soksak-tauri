@@ -1,8 +1,8 @@
 // @vitest-environment node
 // 문서 안 게스트에 **조상의 효과가 닿는가** — 프레임 단위로 잰다.
 //
-// 콘텐츠가 문서 밖인 프레임워크에서는 조상의 `filter` 가 콘텐츠에 안 닿고, 숨기려면 화면 밖으로
-// 옮겨야 한다(별도 합성 레이어라 `visibility:hidden` 만으로는 안 빠진다 — lib/layerPark 머리말).
+// 콘텐츠가 문서 밖인 프레임워크에서는 조상의 `filter` 가 콘텐츠에 안 닿는다. 그 보정은 해당
+// 프레임워크 어댑터가 소유한다. 이 테스트는 문서 안 게스트에 공통 파킹이 더 필요하지 않음을 잰다.
 // 그 둘이 홀 베일과 오프스크린 파킹의 존재 이유다.
 //
 // 문서 안 게스트에도 같은 것이 참인지는 **재기 전에는 모른다.** 참이 아닌데 같은 장치를 걸면
@@ -101,16 +101,12 @@ app.whenReady().then(async () => {
     await run("document.getElementById('park').style.visibility = ''");
     await settle();
 
-    // ── U2: 오프스크린 파킹에서 돌아오는 첫 프레임 ──
+    // ── U2: 공통 DOM 파킹에서 돌아오는 첫 프레임 ──
     // lib/layerPark 가 바르는 그대로 바른다 — 흉내가 아니라 같은 선언이어야 답이 같다.
     const park = \`(() => { const el = document.getElementById('park');
-      el.style.visibility = 'hidden'; el.style.zIndex = '0';
-      el.style.transform = 'translateX(-200vw)';
-      el.style.setProperty('content-visibility', 'hidden'); })()\`;
+      el.style.visibility = 'hidden'; el.style.pointerEvents = 'none'; })()\`;
     const unpark = \`(() => { const el = document.getElementById('park');
-      el.style.visibility = 'visible'; el.style.zIndex = '1';
-      el.style.transform = '';
-      el.style.setProperty('content-visibility', 'visible'); })()\`;
+      el.style.visibility = 'visible'; el.style.pointerEvents = ''; })()\`;
 
     // 파킹 선언을 **하나씩** 갈라 본다 — 어느 줄이 빈 프레임을 만드는지 이름으로 알아야
     // 고칠 자리가 정해진다. 통째로 재면 "파킹이 문제"까지만 알고 끝난다.
@@ -118,11 +114,6 @@ app.whenReady().then(async () => {
     const VARIANTS = {
       full: [park, unpark],
       visibility: [\`\${el}.visibility='hidden'\`, \`\${el}.visibility='visible'\`],
-      transform: [\`\${el}.transform='translateX(-200vw)'\`, \`\${el}.transform=''\`],
-      contentVisibility: [
-        \`\${el}.setProperty('content-visibility','hidden')\`,
-        \`\${el}.setProperty('content-visibility','visible')\`,
-      ],
     };
     out.variants = {};
     for (const [name, [on, off]] of Object.entries(VARIANTS)) {

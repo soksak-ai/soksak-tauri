@@ -9,27 +9,27 @@
 // 폴링 없음: 입력은 두 가지 에지뿐이다 — React 커밋(호출자)과 모션 에지(onLayoutMotion).
 // 위상 중 rAF 는 진행 중인 애니메이션의 프레임 추적이지 감시가 아니며, 위상 종료 에지가
 // 루프를 회수하고 최종 기하로 1회 정착시킨다(상시 계약).
-import { moduleState } from "../lib/moduleState";
+import { moduleState } from "../../lib/moduleState";
 import { applyRailHoleClip, collectHoleRects } from "./railHoleClip";
-import { onLayoutMotion } from "./layoutMotion";
-
-// 갈아끼우기 경계 밖 — 이 표가 새것이 되면 채운 쪽은 이미 채웠다고 알아 다시 채우지 않는다.
-const planes = moduleState("lib/railHoleClipHost#planes", () => new Set<HTMLElement>());
+import { onLayoutMotion } from "../../lib/layoutMotion";
+import { onPluginEvent } from "../../plugins/hooks";
 // 서로 다른 것은 따로 선다 — 한 가방에 넣으면 그것은 상태가 아니라 가방이다.
 /** 모션 구독 해지 손잡이. */
-const subscription = moduleState("lib/railHoleClipHost#subscription", () => ({
+const subscription = moduleState("framework/tauri/railHoleClipHost#subscription", () => ({
   offMotion: null as (() => void) | null,
+  offReflow: null as (() => void) | null,
 }));
 
 /** 프레임 합치기 상태 — 구독과 수명이 다르다. */
-const frame = moduleState("lib/railHoleClipHost#frame", () => ({
+const frame = moduleState("framework/tauri/railHoleClipHost#frame", () => ({
   raf: 0,
   coalescing: false,
 }));
 
 /** 등록된 모든 plane 에 클립을 건다 — 문서 스캔은 이 한 지점에서 1회. */
 export function syncRailHoleClips(): void {
-  if (planes.size === 0) return; // 걸 곳이 없으면 스캔도 하지 않는다
+  const planes = document.querySelectorAll<HTMLElement>('[data-node="rail/plane"]');
+  if (planes.length === 0) return;
   const holeRects = collectHoleRects();
   for (const plane of planes) applyRailHoleClip(plane, holeRects);
 }
@@ -85,34 +85,19 @@ function ensureMotionSubscription(): void {
  * 아무 일도 하지 않는다 — 부르는 쪽(pane)은 누가 걸었는지 몰라도 된다.
  */
 export function installRailHoleClip(): void {
-  engine.installed = true;
-}
-
-/** 걸렸는가 — 설치와 등록은 다른 축이라 따로 선다. */
-const engine = moduleState("lib/railHoleClipHost#engine", () => ({ installed: false }));
-
-/** pane 이 자기 레일 평면을 창 소유자에게 맡긴다. 반환 함수로 해지한다. */
-export function registerRailPlane(plane: HTMLElement): () => void {
-  // 걸린 것이 없으면 맡을 것도 없다 — 등록하지 않으면 스캔도 rAF 도 서지 않는다.
-  if (!engine.installed) return () => {};
-  planes.add(plane);
   ensureMotionSubscription();
-  return () => {
-    planes.delete(plane);
-    if (planes.size === 0) {
-      stopTracking();
-      subscription.offMotion?.();
-      subscription.offMotion = null;
-    }
-  };
+  if (!subscription.offReflow) {
+    subscription.offReflow = onPluginEvent("layout.reflow", requestRailHoleClipSync).dispose;
+  }
+  requestRailHoleClipSync();
 }
 
 export function __resetRailHoleClipHostForTest(): void {
-  engine.installed = false;
-  planes.clear();
   if (frame.raf) cancelAnimationFrame(frame.raf);
   frame.raf = 0;
   frame.coalescing = false;
   subscription.offMotion?.();
   subscription.offMotion = null;
+  subscription.offReflow?.();
+  subscription.offReflow = null;
 }

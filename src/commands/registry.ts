@@ -163,8 +163,7 @@ export interface CommandSpec {
     | "TIMEOUT"
     | "AMBIGUOUS_TARGET"
     | "ALREADY_EXISTS"
-    // 노드는 노출돼 있는데 화면 밖에 서 있다 — 캡처·측정할 픽셀이 없다(비활성 슬롯은 창 밖으로
-    // 파킹된다). 없는 것도 잘못 부른 것도 아니라서 제 이름으로 거절한다: 회복 경로가 다르다.
+    // 노드는 노출돼 있는데 실제 rect가 화면 밖이다 — 캡처·측정할 픽셀이 없다.
     | "OFFSCREEN"
   )[];
   // CLI 사용 예시(매뉴얼용).

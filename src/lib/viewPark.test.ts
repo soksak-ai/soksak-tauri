@@ -23,9 +23,14 @@ describe("뷰 유효 가시성 — 세 층 모두", () => {
 });
 
 describe("viewSurfaceStyle — exclusive(maximize) 합성 계약", () => {
-  it("일반 비활성은 세션 보존 파킹을 쓰되 display:none으로 만들지 않는다", () => {
+  it("일반 비활성은 DOM 수명을 보존하며 일반 가시성만 끈다", () => {
     expect(viewSurfaceStyle(false, false).display).toBeUndefined();
-    expect(viewSurfaceStyle(false, false).transform).toContain("-200vw");
+    expect(viewSurfaceStyle(false, false)).toMatchObject({
+      visibility: "hidden",
+      pointerEvents: "none",
+    });
+    expect(viewSurfaceStyle(false, false)).not.toHaveProperty("transform");
+    expect(viewSurfaceStyle(false, false)).not.toHaveProperty("zIndex");
   });
 
   it("최대화에서 제외된 슬롯은 WebGL/GPU 합성에서도 빠지도록 display:none이다", () => {

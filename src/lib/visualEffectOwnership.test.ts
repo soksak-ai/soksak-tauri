@@ -56,22 +56,15 @@ describe("시각 효과 소유권 — 위상 하위 전체 선택 금지", () =>
     expect(offenders).toEqual([]);
   });
 
-  it("홀 슬롯은 filter 축에서 제외된다(스탠드인과 네이티브의 dim 강도 일치)", () => {
-    expect(css).toMatch(
-      /\.tab-body\.hole\[data-dim\] \{[^}]*filter: none/,
-    );
-  });
-
   // 재입법(2026-07-26, 사용자 확정): 명령발 레이아웃 변화는 실제 모션이어야 한다 — 기하
   // 전이를 전면 금지하던 옛 규칙을, 옛 근거(네이티브 표면은 CSS 전이를 못 따라간다)가
   // 실제로 가리키던 좁은 대상으로 정밀화한다. 기하 전이는 허용하되 두 짝이 반드시 함께
   // 있어야 한다: ① 위상 억제(:root.layout-motion-live … transition: none — 드래그·활강은
-  // 자체 시스템이 이동을 소유) ② 홀 슬롯 제외(.tab-body.hole { transition: none } — 네이티브
-  // 추종 불가의 실체). 짝이 빠진 기하 전이는 여전히 위반이다.
-  it("슬롯 기하 전이는 위상 억제·홀 제외 짝과 함께만 존재한다(재입법)", () => {
+  // 자체 시스템이 이동을 소유). Tauri 전용 제외는 그 어댑터의 테스트가 소유한다.
+  it("슬롯 기하 전이는 위상 억제 짝과 함께만 존재한다(재입법)", () => {
     let geometryTransition = false;
     for (const [sel, body] of rules()) {
-      if (!/tab-body/.test(sel) || /layout-motion-live|\.hole/.test(sel)) continue;
+      if (!/tab-body/.test(sel) || /layout-motion-live/.test(sel)) continue;
       const tr = /transition:\s*([^;]+)/.exec(body)?.[1] ?? "";
       // 기하 축은 속성명과 등록 변수(--l/--t/--w/--h — @property 로 보간되는 기하) 둘 다다.
       if (/\b(left|top|width|height)\b|--[ltwh]\b/.test(tr)) geometryTransition = true;
@@ -85,11 +78,7 @@ describe("시각 효과 소유권 — 위상 하위 전체 선택 금지", () =>
           /tab-body/.test(sel) &&
           /transition:\s*none/.test(body),
       );
-      const holeExempt = rules().some(
-        ([sel, body]) => /\.tab-body\.hole/.test(sel) && /transition:\s*none/.test(body),
-      );
       expect(suppressed, "위상 억제 짝(:root.layout-motion-live … transition:none) 필요").toBe(true);
-      expect(holeExempt, "홀 제외 짝(.tab-body.hole { transition:none }) 필요").toBe(true);
     }
   });
 });

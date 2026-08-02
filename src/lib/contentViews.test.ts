@@ -61,9 +61,9 @@ describe("콘텐츠 뷰 계약", () => {
   it("자리 선언을 label 로 읽는다", async () => {
     const m = await load();
     const a = document.createElement("div");
-    a.setAttribute(m.CONTENT_VIEW_SLOT, "b-1");
+    a.setAttribute(m.CONTENT_VIEW_BODY, "b-1");
     const b = document.createElement("div");
-    b.setAttribute(m.CONTENT_VIEW_SLOT, "b-2");
+    b.setAttribute(m.CONTENT_VIEW_BODY, "b-2");
     document.body.append(a, b);
     expect(m.findContentViewSlot("b-2", document)).toBe(b);
     // 선언하지 않은 label 은 **자리가 없는** 뷰다 — 없는 것을 아무 자리로 채우지 않는다.

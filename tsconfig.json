@@ -10,7 +10,7 @@
     "moduleResolution": "bundler",
     "baseUrl": ".",
     "paths": {
-      "#framework-adapter": ["src/framework/selected.test.ts"]
+      "#framework-adapter": ["src/framework/selected.neutral.ts"]
     },
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,

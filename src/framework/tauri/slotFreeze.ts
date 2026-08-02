@@ -14,7 +14,7 @@
 //  - 스냅 부재·낡음·크기 드리프트는 폴백 = 라이브 추종(동결 없음).
 //  - bounds 커밋은 이 계층과 무관하게 계속 흐른다(동결은 표현이지 정책이 아니다).
 import { HOLE_SELECTOR } from "./railHoleClip";
-import { surfaceRectOf } from "./surfaceRect";
+import { surfaceRectOf } from "../../lib/surfaceRect";
 
 interface SlotSnap {
   img: HTMLImageElement;
@@ -85,7 +85,7 @@ function viewIdOf(slot: HTMLElement): string | null {
 }
 
 /**
- * 화면 밖(파킹) 슬롯인가. 비활성 탭의 뷰는 코어가 화면 밖으로 옮겨 둔다(layerPark) — 그 표면은
+ * DOM 가시성이 꺼진 슬롯인가. 비활성 탭은 상자와 수명은 유지하되 보이지 않는다 — 그 표면은
  * 보이지 않으므로 덮을 것도, 옛 자리를 드러낼 일도 없다. 세 곳이 같은 기준을 봐야 한다:
  *  - 캡처: 그 rect 의 창 픽셀은 남의 것이다.
  *  - 활강 전제: 보이지 않는 뷰의 스냅이 없다고 여정 전체를 스냅으로 떨어뜨리면, 브라우저 탭이
@@ -93,16 +93,8 @@ function viewIdOf(slot: HTMLElement): string | null {
  *  - 동결: 파킹된 슬롯을 동결하면 해동 에지에 veil(false) 가 가고, 표면 소유자는 그 신호에
  *    좌표를 쓰고 다시 보이게 한다 — 비활성 탭이 여정마다 번쩍인다(실측 깜빡임).
  */
-function parkedSlot(r: {
-  left: number;
-  top: number;
-  right: number;
-  bottom: number;
-}): boolean {
-  if (typeof window === "undefined") return false;
-  return (
-    r.right <= 0 || r.bottom <= 0 || r.left >= window.innerWidth || r.top >= window.innerHeight
-  );
+function parkedSlot(slot: HTMLElement): boolean {
+  return slot.style.visibility === "hidden" || slot.style.display === "none";
 }
 
 /** 부동소수 잔재를 CSS 에 흘리지 않는다(0.7999999999999545px) — 0.01px 격자면 충분하다. */
@@ -158,7 +150,7 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
         skip("tiny");
         continue;
       }
-      if (parkedSlot(rect)) {
+      if (parkedSlot(slot)) {
         skip("parked");
         continue;
       }
@@ -210,7 +202,7 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
       return;
     }
     const r = slot.getBoundingClientRect();
-    if (parkedSlot(r)) return; // 보이지 않는 표면 — 덮을 것도, 해동에 되살릴 것도 없다
+    if (parkedSlot(slot)) return; // 보이지 않는 표면 — 덮을 것도, 해동에 되살릴 것도 없다
     const surface = surfaceRectOf(r);
     // 스냅 이후 표면 크기가 변했으면 세우지 않고 그 스냅을 버린다 — 늘어난 정지 사진은 박제이고,
     // 남겨 두면 다시 구워지지 못한 채 활강 전제를 계속 거부한다(canFreezeAll 과 같은 규칙).
@@ -305,8 +297,8 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
         const slot = byView.get(viewId);
         // 홀이 아닌 뷰(DOM 표면)는 스탠드인이 필요 없다 — 스스로 활강한다.
         if (!slot || !slot.isConnected) continue;
+        if (parkedSlot(slot)) continue; // 비활성 탭 — 이 뷰 때문에 여정이 스냅으로 떨어지지 않는다
         const rect = slot.getBoundingClientRect();
-        if (parkedSlot(rect)) continue; // 비활성 탭 — 이 뷰 때문에 여정이 스냅으로 떨어지지 않는다
         const snap = snaps.get(slot);
         if (!snap) {
           verdict(slot, "no:nosnap");

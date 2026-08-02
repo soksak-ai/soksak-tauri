@@ -16,11 +16,12 @@ import styles from "./styles.css?inline";
 import { nativeHost } from "./contentViews";
 import { adoptFrameworkStyles } from "../styles";
 import { registerContentViewHost } from "../../lib/contentViews";
-import { emitPluginEvent } from "../../plugins/hooks";
-import { ensureSlotFreezeHost, scheduleSlotSettleCapture } from "../../lib/slotFreezeHost";
-import { installRailHoleClip } from "../../lib/railHoleClipHost";
-import { installSurfaceAudit } from "../../lib/surfaceAudit";
+import { emitPluginEvent, onPluginEvent } from "../../plugins/hooks";
+import { ensureSlotFreezeHost, scheduleSlotSettleCapture } from "./slotFreezeHost";
+import { installRailHoleClip } from "./railHoleClipHost";
+import { installSurfaceAudit } from "./surfaceAudit";
 import { installDomHoles } from "./domHoles";
+import { installTauriHoleMarkers, TAURI_CONTENT_HOLE } from "./holeMarkers";
 import { useUi } from "../../state/ui";
 import { useGutterHover } from "../../state/gutterHover";
 import { bindPaneUnder } from "../../lib/bindPaneUnder";
@@ -29,9 +30,9 @@ import { registerRectMotionExclusion } from "../../lib/layoutRectMotion";
 import { listenThisWindow } from "../../lib/windowEvents";
 import { register } from "../../commands/registry";
 import { tmsg } from "../../i18n";
-
-/** 부팅 직후의 첫 정착 — 첫 레이아웃이 앉을 때까지 기다렸다 한 번 굽는다. */
-const BOOT_SETTLE_MS = 1200;
+import { CONTENT_VIEW_EVENT } from "../../lib/contentViewEvents";
+import { browserViewIdFromLabel } from "../../lib/webviewLabels";
+import { invalidateSlotSnapshot } from "./slotFreezeHost";
 
 /**
  * 이동-동결(스탠드인) — 문서 밖 표면은 활강 중 제자리에 머문다. 슬롯만 미끄러지면 그 옛 자리가
@@ -54,7 +55,12 @@ function installSlotFreeze(): void {
     emitVeil: (viewId, veiled, hidden) =>
       emitPluginEvent("view.veiled", { viewId, veiled, hidden }),
   });
-  window.setTimeout(() => scheduleSlotSettleCapture(), BOOT_SETTLE_MS);
+  onPluginEvent("layout.reflow", scheduleSlotSettleCapture);
+  listenThisWindow<{ label: string }>(CONTENT_VIEW_EVENT.nav, ({ payload }) => {
+    const viewId = browserViewIdFromLabel(payload.label);
+    if (viewId) invalidateSlotSnapshot(viewId);
+  });
+  scheduleSlotSettleCapture();
 }
 
 /**
@@ -239,6 +245,8 @@ export function installTauri(): void {
   registerContentViewHost(nativeHost);
   // 홀 CSS — 셀렉터에 프레임워크 이름이 없다. 안 걸리면 그 규칙은 애초에 문서에 없다.
   adoptFrameworkStyles("tauri", styles);
+  // 공개 슬롯을 Tauri 전용 합성 표식으로 투영한다. 공통 DOM 은 hole 개념을 갖지 않는다.
+  installTauriHoleMarkers();
   installSlotFreeze();
   // 사이드바는 홀 위에 칠하지 않는다 — 문서 밖 표면은 DOM 전체 뒤라 클립 제외만이 유일한 길이다.
   installRailHoleClip();
@@ -259,5 +267,5 @@ export function installTauri(): void {
   // 홀 슬롯은 FLIP 보간에서 뺀다 — 그 아래 표면은 문서 밖이라 슬롯의 transform 을 안 따라오고,
   // 보간 프레임마다 좌표를 써 주면 못 따라와 옛 픽셀이 남는다. 문서 안 게스트에는 일어날 수
   // 없는 일이므로 그 프레임워크에서는 아무것도 빠지지 않는다.
-  registerRectMotionExclusion((el) => el.classList.contains("hole"));
+  registerRectMotionExclusion((el) => el.matches(TAURI_CONTENT_HOLE));
 }

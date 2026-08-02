@@ -7,8 +7,7 @@
  * 셀렉터에 프레임워크 이름을 붙이지 않는다 — **파일이 곧 조건**이다. 안 걸리면 이 규칙은
  * 애초에 문서에 없다. 이름을 셀렉터에 넣으면 세 번째 프레임워크가 남의 조건을 읽어야 한다.
  *
- * `.hole` 클래스 자체와 `.tab-body.hole { transition: none }` 은 코어에 남는다 — 그것은
- * "살아 있는 페이지는 매 프레임 재레이아웃할 수 없다"는 사실이고 문서 안 게스트에도 참이다. */
+ * `data-tauri-hole`은 이 어댑터가 실제 content-view 슬롯에서 파생하는 private marker다. */
 
 /* 홀 슬롯의 흐림은 filter 가 아니라 베일이다.
  *
@@ -19,10 +18,10 @@
  * 베일은 스탠드인(z3)보다 위의 라이브 계층(z4) — 스냅에 구워진 상태와 무관하게 현재 세기를
  * 따라 전이한다(배경이던 시절엔 스탠드인이 베일을 가려 스왑마다 포커스 인/아웃 플랩으로
  * 보였다 — 실측). pseudo 는 히트테스트가 없어 클릭 관통이 보장된다. */
-.tab-body.hole[data-dim] {
+.tab-body[data-tauri-hole="content"][data-dim] {
   filter: none;
 }
-.tab-body.hole[data-dim]::after {
+.tab-body[data-tauri-hole="content"][data-dim]::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -34,19 +33,16 @@
 
 /* 홀 셀: 활성 뷰가 브라우저면 본문 영역이 홀 — 카드 배경을 헤더/상태바 밴드로만 칠한다
    (중간은 투명, bv-bar 는 자체 배경). 라운드 모서리는 overflow:hidden 이 밴드를 그대로 클립한다. */
-:root[data-pane-style="card"] .pane.hole,
-:root[data-pane-style="floating"] .pane.hole {
+:root[data-pane-style="card"] .pane[data-tauri-hole="pane"],
+:root[data-pane-style="floating"] .pane[data-tauri-hole="pane"] {
   background:
     linear-gradient(var(--card), var(--card)) top / 100% var(--header-h) no-repeat,
     linear-gradient(var(--card), var(--card)) bottom / 100% var(--status-h) no-repeat;
 }
 
-/* 홀 슬롯은 배경을 칠하지 않는다 — 기준은 뷰의 transparent 선언 하나이며, 슬롯은 셀의
-   자식이 아니라 영속 레이어의 형제이므로 GroupArea 가 슬롯 자신에 hole 로 새긴다.
-   콘텐츠 클래스(:has(.browser-view)) 기준은 폐지: 선언 없이 우연히 성립하는 홀도,
-   선언했는데 새는 홀도 없어야 한다. pane 스타일 무관: 홀은 스타일이 아니라 표면 종류의
-   사실이다. */
-.tab-body.hole {
+/* 실제 content-view 슬롯은 배경을 칠하지 않는다. Tauri가 공개 슬롯에서 파생한 marker가
+   단일 기준이며 플러그인 내부 클래스나 공통 DOM은 이 판정을 소유하지 않는다. */
+.tab-body[data-tauri-hole="content"] {
   background: transparent;
 }
 

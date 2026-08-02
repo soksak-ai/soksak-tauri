@@ -1,6 +1,6 @@
 // 레일-홀 클립 순수부 — 모션 중 레일 평면이 홀(네이티브 임베드) 영역을 칠하지 않는 계약.
 import { describe, expect, it } from "vitest";
-import { holeClipPath, visibleHoles } from "./railHoleClip";
+import { holeClipPath, visibleHoles } from "../framework/tauri/railHoleClip";
 
 describe("holeClipPath", () => {
   it("자를 것이 없으면 클립을 걸지 않는다 — 아무것도 안 자르는 클립도 클립 노드다", () => {

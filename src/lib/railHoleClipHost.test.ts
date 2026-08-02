@@ -1,11 +1,10 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { HOLE_SELECTOR } from "./railHoleClip";
+import { HOLE_SELECTOR } from "../framework/tauri/railHoleClip";
 import {
   __resetRailHoleClipHostForTest,
   installRailHoleClip,
-  registerRailPlane,
   requestRailHoleClipSync,
-} from "./railHoleClipHost";
+} from "../framework/tauri/railHoleClipHost";
 import { __resetLayoutMotionForTest, beginLayoutMotion, endLayoutMotion } from "./layoutMotion";
 
 // 홀 슬롯은 창의 DOM 에 살고 모션 신호도 창 단위인데, 클립을 프로젝트 pane 이 소유했다.
@@ -15,6 +14,7 @@ import { __resetLayoutMotionForTest, beginLayoutMotion, endLayoutMotion } from "
 function plane(): HTMLElement {
   const p = document.createElement("div");
   p.className = "rail-plane";
+  p.dataset.node = "rail/plane";
   for (const cls of ["sidebar", "sidebar"]) {
     const layer = document.createElement("div");
     layer.className = cls;
@@ -26,7 +26,8 @@ function plane(): HTMLElement {
 
 function hole(): HTMLElement {
   const h = document.createElement("div");
-  h.className = "tab-body hole";
+  h.className = "tab-body";
+  h.dataset.tauriHole = "content";
   document.body.appendChild(h);
   return h;
 }
@@ -36,10 +37,10 @@ let realQSA: typeof document.querySelectorAll;
 
 beforeEach(() => {
   __resetRailHoleClipHostForTest();
+  __resetLayoutMotionForTest();
   // 거는 쪽이 있어야 엔진이 선다 — 클립은 홀을 파는 프레임워크의 장치이고, 안 걸면 등록도
   // 스캔도 없다(재입법 2026-08-03: 옛 검사는 코어가 항상 건다고 전제했다).
   installRailHoleClip();
-  __resetLayoutMotionForTest();
   document.body.innerHTML = "";
   scans = 0;
   realQSA = document.querySelectorAll.bind(document);
@@ -57,7 +58,7 @@ afterEach(() => {
 
 test("커밋 패스 하나가 문서를 한 번만 스캔한다 — plane 수와 무관", async () => {
   hole();
-  for (let i = 0; i < 6; i++) registerRailPlane(plane());
+  for (let i = 0; i < 6; i++) plane();
 
   // 한 React 커밋에서 pane 6 개가 각자 layout effect 를 돌린다.
   for (let i = 0; i < 6; i++) requestRailHoleClipSync();
@@ -69,14 +70,12 @@ test("커밋 패스 하나가 문서를 한 번만 스캔한다 — plane 수와
 // React 는 컴포넌트별로 [등록, 동기요청] 을 번갈아 돌린다. 첫 요청에서 즉시 훑으면
 // 그 뒤에 등록되는 pane 들이 그 프레임에 클립을 못 받는다 — 첫 페인트에 사이드바가
 // 홀 위에 비친다. 합치는 지점은 그 커밋의 등록이 전부 끝난 뒤여야 한다.
-test("같은 커밋에서 늦게 등록된 plane 도 그 패스에 클립을 받는다", async () => {
+test("같은 커밋에서 늦게 붙은 공개 plane 도 그 패스에 클립을 받는다", async () => {
   hole();
-  const first = plane();
+  plane();
   const late = plane();
 
-  registerRailPlane(first);
   requestRailHoleClipSync(); // 첫 번째 칸의 layout effect
-  registerRailPlane(late);
   requestRailHoleClipSync(); // 두 번째 칸의 layout effect — 억제된다
 
   await Promise.resolve();
@@ -87,8 +86,6 @@ test("같은 커밋에서 늦게 등록된 plane 도 그 패스에 클립을 받
 test("클립은 그 패스에서 등록된 모든 plane 에 걸린다 — 스캔을 아끼려고 빠뜨리지 않는다", async () => {
   hole();
   const planes = [plane(), plane(), plane()];
-  for (const p of planes) registerRailPlane(p);
-
   requestRailHoleClipSync();
   await Promise.resolve();
 
@@ -104,7 +101,7 @@ test("클립은 그 패스에서 등록된 모든 plane 에 걸린다 — 스캔
 
 test("다음 마이크로태스크 뒤의 커밋은 다시 스캔한다 — 억제는 한 패스 안에서만", async () => {
   hole();
-  registerRailPlane(plane());
+  plane();
 
   requestRailHoleClipSync();
   requestRailHoleClipSync();
@@ -118,7 +115,7 @@ test("다음 마이크로태스크 뒤의 커밋은 다시 스캔한다 — 억�
 
 test("모션 위상의 rAF 루프는 창에 하나뿐이다 — plane 6 개여도 프레임당 스캔 1회", () => {
   hole();
-  for (let i = 0; i < 6; i++) registerRailPlane(plane());
+  for (let i = 0; i < 6; i++) plane();
 
   const frames: FrameRequestCallback[] = [];
   vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation(((cb: FrameRequestCallback) => {
@@ -138,13 +135,11 @@ test("모션 위상의 rAF 루프는 창에 하나뿐이다 — plane 6 개여�
   endLayoutMotion("resize");
 });
 
-test("등록 해제한 plane 은 더 이상 클립을 받지 않는다", async () => {
+test("DOM에서 제거된 plane 은 더 이상 클립을 받지 않는다", async () => {
   hole();
   const kept = plane();
   const gone = plane();
-  registerRailPlane(kept);
-  const off = registerRailPlane(gone);
-  off();
+  gone.remove();
   gone.querySelector<HTMLElement>(".sidebar")!.style.clipPath = "";
 
   requestRailHoleClipSync();

@@ -168,15 +168,12 @@ describe("프레임워크 장치는 자기 집에만 산다", () => {
    * 홀은 **문서 밖에 표면이 있을 때만** 뜻이 있다. 그 규칙이 코어 스타일시트에 있으면 어느
    * 프레임워크에서든 문서에 서고, 뚫을 것이 없는 곳에서 멀쩡한 판을 뚫는다.
    *
-   * `.hole` 클래스를 **거는** 것은 코어다(뷰의 transparent 선언) — 그 선언의 뜻은 "자기 배경을
-   * 안 그린다"이고 어느 프레임워크에서나 같다. 갈리는 것은 그 자리를 **쓰는 쪽**의 규칙이다.
+   * Tauri private marker를 거는 것도 그 어댑터다. 코어는 hole 개념을 만들거나 해석하지 않는다.
    */
   it("코어 스타일시트는 홀을 그리지 않는다", () => {
     const css = readFileSync(join(SRC, "App.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
     const rules = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].map((m) => m[1].replace(/\s+/g, " ").trim());
-    // 홀을 **고르는** 규칙만 금지한다. `:not(.hole)` 카브아웃은 "선언한 뷰는 배경을 안 받는다"
-    // 라는 공통 사실이고, 선언이 없는 프레임워크에서는 모두를 고른다.
-    const drawing = rules.filter((sel) => /(^|[^:(])\.hole\b/.test(sel.replace(/:not\([^)]*\)/g, "")));
+    const drawing = rules.filter((sel) => /\.hole\b|data-tauri-hole/.test(sel));
     expect(drawing).toEqual([]);
     // 오라클 생존 — 규칙을 하나도 못 읽었으면 위 단언이 공짜로 통과한다.
     expect(rules.length).toBeGreaterThan(100);

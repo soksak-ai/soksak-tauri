@@ -4,7 +4,7 @@
 // 사실(surface.misplaced)로 남긴다. `sok events --kinds surface.misplaced` 가 실시간 판독면.
 //
 // 판정 계약: 화면에 보이는 엔진 서피스(코어 layer 실측 — engine_surface_stats)는 반드시
-// 보이는 홀 슬롯(.tab-body.hole — 네이티브 표면의 자리) 하나와 일치해야 한다. 홀 없는
+// 보이는 Tauri content 슬롯(data-tauri-hole — 네이티브 표면의 자리) 하나와 일치해야 한다. 슬롯 없는
 // 서피스 = 오배치(misplaced), 한 홀에 둘 = 겹침(stacked). 실사고: 콜드 부팅에서 서피스가
 // 전부 오른쪽 열로 몰려 native 브라우저 위에 다른 엔진 프레임이 겹쳐 보였는데("이전
 // 브라우저"), 카운트 기준 관측은 그것을 정상이라 했다 — 판정 축은 개별 frame 이다.
@@ -12,10 +12,11 @@
 // 폴링 아님: 트리거는 전부 사건(layout.reflow·view.parked·webview.* 활동·리사이즈 종료·
 // 부트 ready)이고, 타이머는 사건 후 레이아웃 정착 대기 1개뿐(400ms 디바운스 — 사건 이름
 // surface-audit-settleTimer.settle, 연속 사건은 마지막 것만 판정).
-import { moduleState } from "../lib/moduleState";
-import { invoke } from "../framework";
-import { onPluginEvent } from "../plugins/hooks";
-import { useBootPhase } from "../state/bootPhase";
+import { moduleState } from "../../lib/moduleState";
+import { invoke } from "../index";
+import { onPluginEvent } from "../../plugins/hooks";
+import { useBootPhase } from "../../state/bootPhase";
+import { TAURI_CONTENT_HOLE } from "./holeMarkers";
 
 export interface AuditRect {
   x: number;
@@ -59,12 +60,8 @@ export function judgeSurfaces(
   return { misplaced, stacked, missing, surfaces: surfaces.length, holes: holes.length };
 }
 
-/** 보이는 네이티브 앵커 rect 수집 — 정본 앵커는 .bv-area("bounds 구동원 — 네이티브
- *  webview 가 DOM 슬롯(.bv-area)을 추종한다", 두 브라우저 플러그인 공통 계약)다.
- *  .tab-body.hole(툴바 포함 탭 전체)을 앵커로 삼으면 툴바 높이만큼 어긋나 정상 배치를
- *  오배치로 오판한다(실측: 48px 오프셋 misplaced ×2 — 첫 판의 측정 앵커 오류).
- *  플러그인 뷰는 shadow root 안에 그리므로 라이트 DOM 과 shadow 둘 다 훑는다.
- *  bv-area 가 하나도 없으면 hole 로 폴백(브라우저 외 네이티브 표면). */
+/** 보이는 네이티브 앵커 rect 수집. 실제 content-view 슬롯에서 Tauri가 투영한 marker만
+ * 정본이며, 플러그인의 내부 클래스나 shadow 구조를 추측하지 않는다. */
 export function visibleAnchorRects(): { rects: AuditRect[]; source: string } {
   const collect = (els: Iterable<HTMLElement>, out: AuditRect[]) => {
     for (const el of els) {
@@ -75,16 +72,9 @@ export function visibleAnchorRects(): { rects: AuditRect[]; source: string } {
       out.push({ x: r.x, y: r.y, w: r.width, h: r.height });
     }
   };
-  const bv: AuditRect[] = [];
-  collect(document.querySelectorAll<HTMLElement>(".bv-area"), bv);
-  for (const hostEl of document.querySelectorAll<HTMLElement>(".tab-viewer")) {
-    const sr = hostEl.shadowRoot;
-    if (sr) collect(sr.querySelectorAll<HTMLElement>(".bv-area"), bv);
-  }
-  if (bv.length > 0) return { rects: bv, source: "bv-area" };
   const holes: AuditRect[] = [];
-  collect(document.querySelectorAll<HTMLElement>(".tab-body.hole"), holes);
-  return { rects: holes, source: "hole" };
+  collect(document.querySelectorAll<HTMLElement>(TAURI_CONTENT_HOLE), holes);
+  return { rects: holes, source: "content-view-slot" };
 }
 
 /** 빈 본문 뷰(dark) 수집 — 보이는 plugin 뷰 컨테이너인데 본문이 아무것도 없다(라이트 DOM
@@ -132,14 +122,14 @@ export function containedIn(surface: AuditRect, anchors: AuditRect[], tol = 2): 
 
 // 서로 다른 것은 따로 선다 — 한 가방에 넣으면 그것은 상태가 아니라 가방이다.
 /** 마지막으로 발행한 서명 — 같은 사실을 두 번 말하지 않기 위한 것. */
-const lastSeen = moduleState("lib/surfaceAudit#lastSeen", () => ({
+const lastSeen = moduleState("framework/tauri/surfaceAudit#lastSeen", () => ({
   lastSignature: "",
   lastMissingSig: "[]",
   lastDarkSig: "[]",
 }));
 
 /** 정착 대기 손잡이 — 서명과 수명이 다르다. */
-const settleTimer = moduleState("lib/surfaceAudit#settleTimer", () => ({
+const settleTimer = moduleState("framework/tauri/surfaceAudit#settleTimer", () => ({
   settle: null as ReturnType<typeof setTimeout> | null,
 }));
 async function runAudit(): Promise<void> {
@@ -226,7 +216,7 @@ function schedule(): void {
 
 // "이미 붙였다"는 기억은 갈아끼우기 경계를 넘어야 한다 — 이 플래그만 사라지면 설치는
 // 안 남았는데 채우던 쪽은 이미 돌았다고 알아 다시 붙이지 않는다(영영 미설치).
-const installedFlag = moduleState("lib/surfaceAudit#installedFlag.on", () => ({ on: false }));
+const installedFlag = moduleState("framework/tauri/surfaceAudit#installedFlag.on", () => ({ on: false }));
 
 /** 상시 감사 설치 — 부트에서 1회(멱등). 트리거는 전부 사건이다. */
 export function installSurfaceAudit(): void {

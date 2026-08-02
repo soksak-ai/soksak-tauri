@@ -2,7 +2,7 @@
 // RED 근거(2026-07-27 실측): 콜드 부팅에서 엔진 서피스들이 오른쪽 열로 몰려 native 브라우저
 // 위에 겹쳤는데(오배치 1 + 겹침 1), 카운트 기준 관측은 그것을 정상이라 판정했다.
 import { describe, expect, it } from "vitest";
-import { judgeSurfaces, visibleAnchorRects } from "./surfaceAudit";
+import { judgeSurfaces, visibleAnchorRects } from "../framework/tauri/surfaceAudit";
 
 const R = (x: number, y: number, w = 554, h = 341) => ({ x, y, w, h });
 
@@ -39,7 +39,7 @@ describe("judgeSurfaces — 서피스↔홀 정합", () => {
   });
 });
 
-describe("visibleAnchorRects — 측정 앵커의 정본은 bv-area 다", () => {
+describe("visibleAnchorRects — Tauri가 공개 content-view 슬롯에서 투영한 rect가 정본이다", () => {
   const div = (cls: string, rect: { x: number; y: number; w: number; h: number }) => {
     const el = document.createElement("div");
     el.className = cls;
@@ -49,29 +49,24 @@ describe("visibleAnchorRects — 측정 앵커의 정본은 bv-area 다", () => 
     return el;
   };
 
-  it("RED 재현 — hole(툴바 포함)로 재면 정상 배치가 오배치로 오판된다", () => {
-    // 실사고(2026-07-27): 서피스는 툴바(48px) 아래에 정확히 붙어 있었는데,
-    // 앵커를 탭 전체(hole)로 재서 misplaced ×2 가 발행됐다 — 측정 앵커 오류.
+  it("표식 없는 일반 tab-body는 Tauri 합성 앵커가 아니다", () => {
     document.body.innerHTML = "";
-    div("tab-body hole", { x: 906, y: 101, w: 554, h: 389 });
-    const surface = { x: 906, y: 149, w: 554, h: 341 }; // 툴바 48px 아래 = 실제 정상
-    const holeOnly = visibleAnchorRects();
-    expect(holeOnly.source).toBe("hole");
-    expect(judgeSurfaces([surface], holeOnly.rects).misplaced).toHaveLength(1); // 오판 재현
+    div("tab-body", { x: 906, y: 101, w: 554, h: 389 });
+    expect(visibleAnchorRects().rects).toEqual([]);
   });
 
-  it("GREEN — bv-area 가 있으면 그것이 앵커고, 같은 서피스가 정합으로 판정된다", () => {
+  it("Tauri content 표식의 rect와 같은 표면은 정합이다", () => {
     document.body.innerHTML = "";
-    div("tab-body hole", { x: 906, y: 101, w: 554, h: 389 });
-    div("bv-area", { x: 906, y: 149, w: 554, h: 341 });
+    const slot = div("tab-body", { x: 906, y: 149, w: 554, h: 341 });
+    slot.dataset.tauriHole = "content";
     const anchors = visibleAnchorRects();
-    expect(anchors.source).toBe("bv-area");
+    expect(anchors.source).toBe("content-view-slot");
     const v = judgeSurfaces([{ x: 906, y: 149, w: 554, h: 341 }], anchors.rects);
     expect(v.misplaced).toEqual([]);
     expect(v.stacked).toEqual([]);
   });
 
-  it("shadow root 안의 bv-area 도 앵커로 잡힌다(플러그인 뷰는 shadow 에 그린다)", () => {
+  it("플러그인 shadow 내부 클래스는 앵커로 추측하지 않는다", () => {
     document.body.innerHTML = "";
     const hostEl = document.createElement("div");
     hostEl.className = "tab-viewer";
@@ -83,13 +78,13 @@ describe("visibleAnchorRects — 측정 앵커의 정본은 bv-area 다", () => 
       ({ x: 160, y: 149, width: 554, height: 341 }) as DOMRect;
     sr.appendChild(inner);
     const anchors = visibleAnchorRects();
-    expect(anchors.source).toBe("bv-area");
-    expect(anchors.rects).toHaveLength(1);
+    expect(anchors.source).toBe("content-view-slot");
+    expect(anchors.rects).toHaveLength(0);
   });
 });
 
 // 포함 판정 — 집행(코어가 가림)의 조건. 슬롯 밖으로 나간 픽셀은 이웃 칸을 덮는다.
-import { containedIn } from "./surfaceAudit";
+import { containedIn } from "../framework/tauri/surfaceAudit";
 import { describe as dC, it as iC, expect as eC } from "vitest";
 
 dC("containedIn — 표면은 자기 슬롯 안에 있어야 한다", () => {

@@ -1,4 +1,4 @@
-// 프런트엔드 셸 바인딩 계약 — 선택하지 않은 어댑터는 실행되지 않는 정도가 아니라
+// 프런트엔드 프레임워크 바인딩 계약 — 선택하지 않은 어댑터는 실행되지 않는 정도가 아니라
 // import graph에 존재하지 않아야 한다. 런타임 분기는 이미 두 구현을 한 산출물에 섞은 뒤다.
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -26,11 +26,11 @@ describe("framework build binding", () => {
     expect(adapterImports(electron)).toEqual(["./electron"]);
   });
 
-  it("알 수 없는 셸 이름에는 fallback이 없다", () => {
+  it("알 수 없는 프레임워크 이름에는 fallback이 없다", () => {
     const config = readFileSync(resolve(ROOT, "vite.config.ts"), "utf8");
     expect(config).not.toContain('?? "tauri"');
     expect(config).toContain("SOKSAK_FRAMEWORK를 tauri 또는 electron으로 명시해야 합니다");
     const tsconfig = readFileSync(resolve(ROOT, "tsconfig.json"), "utf8");
-    expect(tsconfig).toContain('"src/framework/selected.test.ts"');
+    expect(tsconfig).toContain('"src/framework/selected.neutral.ts"');
   });
 });

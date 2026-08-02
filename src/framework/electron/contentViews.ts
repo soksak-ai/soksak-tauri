@@ -12,7 +12,7 @@
 // 이름 공간을 쓰지 않으면 호출자가 어느 쪽인지 알게 된다.
 import { moduleState } from "../../lib/moduleState";
 import {
-  CONTENT_VIEW_SLOT,
+  CONTENT_VIEW_BODY,
   findContentViewSlot,
   type ContentViewHost,
 } from "../../lib/contentViews";
@@ -27,7 +27,7 @@ const bridges = moduleState("framework/electron.fix#bridges", () => new Map<stri
  * 이 구현의 숨김 — **평범한 `visibility` 다.**
  *
  * 문서 밖에 사는 표면은 별도 합성 레이어라 `visibility:hidden` 으로 빠지지 않는다. 그래서
- * 그쪽에는 화면 밖으로 옮기는 파킹이 있다(lib/layerPark). 문서 안 게스트에는 그 사정이 없다 —
+ * 그쪽의 보정은 Tauri 어댑터가 소유한다. 문서 안 게스트에는 그 사정이 없다 —
  * 실측 2026-08-03(scripts/electron/guest-under-effects.test.mjs): `visibility:hidden` 하나로
  * 게스트가 사라졌다(중앙 픽셀 234 → 0).
  *
@@ -188,7 +188,7 @@ export const domHost: ContentViewHost = {
   async bounds(label, x, y, w, h) {
     const el = find(label, document);
     if (!el) return false;
-    const slot = el.closest(`[${CONTENT_VIEW_SLOT}]`);
+    const slot = el.closest(`[${CONTENT_VIEW_BODY}]`);
     if (!slot) {
       el.style.left = `${x}px`;
       el.style.top = `${y}px`;

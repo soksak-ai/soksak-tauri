@@ -77,7 +77,7 @@ describe("DOM 콘텐츠 뷰 구현", () => {
   it("선언된 자리의 자식이 된다 — 전역 층에 붙지 않는다", async () => {
     const m = await load();
     const slot = document.createElement("div");
-    slot.setAttribute("data-content-view-slot", "b-1");
+    slot.setAttribute("data-content-view-body", "b-1");
     document.body.appendChild(slot);
 
     await m.domHost.open("b-1", { url: "https://x" });
@@ -93,7 +93,7 @@ describe("DOM 콘텐츠 뷰 구현", () => {
   it("자리가 좌표계를 안 가지면 채우는 쪽이 보장한다", async () => {
     const m = await load();
     const slot = document.createElement("div");
-    slot.setAttribute("data-content-view-slot", "b-2");
+    slot.setAttribute("data-content-view-body", "b-2");
     document.body.appendChild(slot);
     await m.domHost.open("b-2", {});
     // static 이면 inset:0 이 엉뚱한 조상에 걸린다 — 그 어긋남은 오류가 아니라 "이상한 데 있다"다.
@@ -118,7 +118,7 @@ describe("DOM 콘텐츠 뷰 구현", () => {
   it("DOM 구현은 배치를 쓰지 않고 대조한다", async () => {
     const m = await load();
     const slot = document.createElement("div");
-    slot.setAttribute("data-content-view-slot", "b-1");
+    slot.setAttribute("data-content-view-body", "b-1");
     document.body.appendChild(slot);
     await m.domHost.open("b-1", {});
     const el = document.querySelector<HTMLElement>('[data-content-view="b-1"]')!;
@@ -266,7 +266,7 @@ describe("DOM 콘텐츠 뷰의 숨김", () => {
   it("숨겨도 상자를 잃지 않는다 — display:none 도 오프스크린 파킹도 쓰지 않는다", async () => {
     const { domHost: host } = await load();
     const slot = document.createElement("div");
-    slot.setAttribute("data-content-view-slot", "b-1");
+    slot.setAttribute("data-content-view-body", "b-1");
     document.body.appendChild(slot);
 
     await host.open("b-1", { url: "https://example.com" });
