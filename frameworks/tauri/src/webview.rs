@@ -74,7 +74,7 @@ fn emit_page_title<R: tauri::Runtime>(webview: &tauri::Webview<R>, label: &str) 
         if let Some(t) = wk.title() {
             let title = t.to_string();
             if !title.is_empty() {
-                let _ = app.emit(soksak_core::webview_event::TITLE, TitlePayload { label, title });
+                let _ = app.emit(soksak_spec_content_view::TITLE, TitlePayload { label, title });
             }
         }
     });
@@ -990,7 +990,7 @@ pub fn webview_open(
                 // 마커 가로채기는 항상 차단(false). 새 탭/새 창 분기는 프론트 설정이
                 // 소유하므로 여기선 무조건 emit — 프론트가 browserNewWindow 로 라우팅한다.
                 let _ = nav_app.emit(
-                    soksak_core::webview_event::OPEN_EXTERNAL,
+                    soksak_spec_content_view::OPEN_EXTERNAL,
                     BrowserOpenPayload {
                         label: nav_label.clone(),
                         url: target.to_string(),
@@ -1006,7 +1006,7 @@ pub fn webview_open(
             let u = payload.url().as_str();
             if u != "about:blank" {
                 let _ = pl_app.emit(
-                    soksak_core::webview_event::NAV,
+                    soksak_spec_content_view::NAV,
                     NavPayload {
                         label: pl_label.clone(),
                         url: u.to_string(),
@@ -1032,7 +1032,7 @@ pub fn webview_open(
                     let can_back: bool = msg_send![&*wk, canGoBack];
                     let can_forward: bool = msg_send![&*wk, canGoForward];
                     let _ = ld_app.emit(
-                        soksak_core::webview_event::LOADING,
+                        soksak_spec_content_view::LOADING,
                         LoadingPayload {
                             label: ld_label.clone(),
                             loading: !finished,
@@ -1080,7 +1080,7 @@ pub fn webview_open(
                 wk,
                 Box::new(move |url| {
                     let _ = st_app.emit(
-                        soksak_core::webview_event::STATUS,
+                        soksak_spec_content_view::STATUS,
                         StatusPayload {
                             label: st_label.clone(),
                             url,

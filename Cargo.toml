@@ -13,6 +13,7 @@ members = [
   "crates/soksak-spec-socket",
   "crates/soksak-spec-pty",
   "crates/soksak-spec-service",
+  "crates/soksak-spec-content-view",
   "crates/soksak-seal",
   "crates/soksak-core",
   "crates/soksak-store",

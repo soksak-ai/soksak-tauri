@@ -74,28 +74,28 @@ const PAIRS = [
   },
   {
     what: "콘텐츠 뷰 항행 사건",
-    truth: { file: "crates/soksak-core/src/webview_event.rs", re: /pub const NAV: &str = "([^"]+)"/ },
+    truth: { file: "crates/soksak-spec-content-view/src/lib.rs", re: /pub const NAV: &str = "([^"]+)"/ },
     copies: [{ file: "src/lib/contentViewEvents.ts", re: /nav: "([^"]+)"/ }],
   },
   {
     what: "콘텐츠 뷰 제목 사건",
-    truth: { file: "crates/soksak-core/src/webview_event.rs", re: /pub const TITLE: &str = "([^"]+)"/ },
+    truth: { file: "crates/soksak-spec-content-view/src/lib.rs", re: /pub const TITLE: &str = "([^"]+)"/ },
     copies: [{ file: "src/lib/contentViewEvents.ts", re: /title: "([^"]+)"/ }],
   },
   {
     what: "콘텐츠 뷰 적재 사건",
-    truth: { file: "crates/soksak-core/src/webview_event.rs", re: /pub const LOADING: &str = "([^"]+)"/ },
+    truth: { file: "crates/soksak-spec-content-view/src/lib.rs", re: /pub const LOADING: &str = "([^"]+)"/ },
     copies: [{ file: "src/lib/contentViewEvents.ts", re: /loading: "([^"]+)"/ }],
   },
   {
     what: "콘텐츠 뷰 상태 사건",
-    truth: { file: "crates/soksak-core/src/webview_event.rs", re: /pub const STATUS: &str = "([^"]+)"/ },
+    truth: { file: "crates/soksak-spec-content-view/src/lib.rs", re: /pub const STATUS: &str = "([^"]+)"/ },
     copies: [{ file: "src/lib/contentViewEvents.ts", re: /status: "([^"]+)"/ }],
   },
   {
     what: "콘텐츠 뷰 외부열기 사건",
     truth: {
-      file: "crates/soksak-core/src/webview_event.rs",
+      file: "crates/soksak-spec-content-view/src/lib.rs",
       re: /pub const OPEN_EXTERNAL: &str = "([^"]+)"/,
     },
     copies: [{ file: "src/lib/contentViewEvents.ts", re: /openExternal: "([^"]+)"/ }],

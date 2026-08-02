@@ -172,7 +172,7 @@ function createWindow(label, rect, bootQuery) {
   // 눌렀을 때만 옮겨갔다. 형제 프레임워크는 같은 사실을 네이티브 클릭 모니터로 알아내 넘긴다.
   //
   // OS 를 빌리지 않는다(A27). guest 의 입력 사건을 그대로 듣고 **계약의 이름**으로 낸다
-  // (webview_event.rs ACTIVATED). 알아내는 방법은 프레임워크마다 달라도 이름은 하나다.
+  // (spec-content-view ACTIVATED). 알아내는 방법은 프레임워크마다 달라도 이름은 하나다.
   win.webContents.on("did-attach-webview", (_e, guest) => {
     guest.on("input-event", (_ev, input) => {
       if (input && input.type === "mouseDown") {

@@ -4652,7 +4652,6 @@ dependencies = [
  "soksak-seal",
  "soksak-service",
  "soksak-sidecar-host",
- "soksak-spec-content-view",
  "soksak-spec-contract",
  "soksak-spec-pty",
  "soksak-spec-service",
@@ -4775,10 +4774,6 @@ dependencies = [
  "serde_json",
  "soksak-spec-contract",
 ]
-
-[[package]]
-name = "soksak-spec-content-view"
-version = "0.0.1"
 
 [[package]]
 name = "soksak-spec-contract"

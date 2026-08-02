@@ -82,7 +82,7 @@ export type { Disposable } from "./hooks";
 
 // ── 의존성 주입 표면 ─────────────────────────────────────────────────────────
 
-/** 플러그인이 부르는 짧은 키. 와이어 이름은 deps 의 표가 안다(정본은 Rust webview_event.rs). */
+/** 플러그인이 부르는 짧은 키. 와이어 이름은 deps 의 표가 안다(정본은 Rust spec-content-view). */
 export type ContentViewEventKey = "nav" | "title" | "status" | "open-external" | "loading";
 
 export interface PluginApiDeps {

@@ -47,7 +47,6 @@ pub mod file_lock;
 
 pub mod project_registry;
 pub mod store_lock;
-pub mod webview_event;
 pub mod window_census;
 pub mod store_open;
 pub mod stream;
