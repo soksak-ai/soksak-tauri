@@ -26,6 +26,8 @@ const SRC = join(dirname(fileURLToPath(import.meta.url)), "..");
  *  이름이 실체 어휘와 다른 항목은 그 사유가 적혀 있어야 한다. */
 const ALLOWED = new Set([
   "data-node", // 노출 노드 주소 조각(주소 공리) — ui.tree 스캔 축
+  "data-framework", // 이 스타일시트를 들고 온 프레임워크(framework/styles) — 값=어댑터 이름
+  "data-content-view-slot", // 콘텐츠 뷰가 사는 자리 선언(값=label) — 프레임워크가 각자 읽는다
   "data-change", // 파일트리 git 상태 축
   "data-view-addr", // 노드 스캔 baseAddress(절대 주소) — view 는 종류 축(생존 어휘)
   "data-tab-id", // 탭 인스턴스 역참조 앵커(정본 — viewHostAnchors)

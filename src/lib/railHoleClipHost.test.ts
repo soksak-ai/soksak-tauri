@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { HOLE_SELECTOR } from "./railHoleClip";
 import {
   __resetRailHoleClipHostForTest,
+  installRailHoleClip,
   registerRailPlane,
   requestRailHoleClipSync,
 } from "./railHoleClipHost";
@@ -35,6 +36,9 @@ let realQSA: typeof document.querySelectorAll;
 
 beforeEach(() => {
   __resetRailHoleClipHostForTest();
+  // 거는 쪽이 있어야 엔진이 선다 — 클립은 홀을 파는 프레임워크의 장치이고, 안 걸면 등록도
+  // 스캔도 없다(재입법 2026-08-03: 옛 검사는 코어가 항상 건다고 전제했다).
+  installRailHoleClip();
   __resetLayoutMotionForTest();
   document.body.innerHTML = "";
   scans = 0;

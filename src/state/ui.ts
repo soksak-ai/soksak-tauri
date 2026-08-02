@@ -1,13 +1,18 @@
 import { useEffect } from "react";
 import { moduleState } from "../lib/moduleState";
 import { create } from "zustand";
-import { invoke } from "../framework";
 
 // 일시적 UI 상태. overlayCount: DOM 오버레이(모달/메뉴/드롭다운/드래그)가 떠 있는
-// 동안의 카운터(중첩 안전). 레이어 원칙(frameworks/tauri/browser.rs 머리말): DOM(메인
-// webview)은 항상 브라우저 child webview "위"에 그려지므로 브라우저를 숨길 필요가
-// 없다 — 오버레이 동안은 홀(브라우저 영역)의 마우스 통과만 차단해(네이티브 hitTest
-// 게이트) "바깥 클릭=닫기"가 성립한다. 브라우저는 보이되 비활성(모달의 본래 의미).
+// 동안의 카운터(중첩 안전).
+//
+// **여기서 프레임워크를 부르지 않는다.** 오버레이가 떠 있는 동안 아래 표면의 마우스를
+// 막아야 하는 것은 콘텐츠가 문서 밖인 프레임워크의 사정이다 — 문서 안에 사는 콘텐츠는
+// 평범한 쌓임으로 이미 막힌다. 그 반응은 그 프레임워크가 이 카운터를 구독해서 건다
+// (framework/tauri/install.ts). 코어는 사실만 들고 있는다.
+//
+// 모듈 평가 중에 프레임워크를 부르면 적재 순서에 매인다 — 실측 2026-08-03: 이 파일이
+// 모듈 최상위에서 invoke 를 불러, 순환 적재에서 "invoke is not a function" 으로 부팅과
+// 검사 13벌이 통째로 죽었다. 부팅 정렬도 거는 쪽(install)이 함께 진다.
 // (배경/색은 테마 스토어 state/theme.ts 가 단일 소스.)
 
 interface UiState {
@@ -23,17 +28,6 @@ interface UiState {
   setSettingsSection: (s: string | null) => void;
 }
 
-// 0↔1 경계에서만 네이티브 hitTest 게이트를 동기화(불필요 IPC 억제).
-function syncNative(prev: number, next: number): void {
-  if (prev > 0 === next > 0) return;
-  // 코어가 호출 창을 자동 인지(window 주입)하므로 label 전달 불요 — 이 창의 게이트만 갱신.
-  invoke("webview_overlay_active", { active: next > 0 }).catch(() => {});
-}
-
-// 부트 정렬: 메인 webview 리로드(HMR/새로고침)는 카운터를 0부터 다시 시작하지만
-// 네이티브 게이트엔 직전 상태(true)가 남을 수 있다 — 시작 시 1회 false 로 맞춘다.
-invoke("webview_overlay_active", { active: false }).catch(() => {});
-
 // store 는 모듈 경계 밖에 산다 — 갈아끼우기가 이것을 갈면 등록·구독·화면 상태가 통째로
 // 새것이 되고, 채우던 쪽은 이미 채웠다고 알아 다시 채우지 않는다(영영 빈 채).
 export const useUi = moduleState("state/ui#store", () =>
@@ -43,17 +37,8 @@ export const useUi = moduleState("state/ui#store", () =>
   setConsentPreview: (id) => set({ consentPreviewId: id }),
   settingsSection: null,
   setSettingsSection: (s) => set({ settingsSection: s }),
-  pushOverlay: () =>
-    set((s) => {
-      syncNative(s.overlayCount, s.overlayCount + 1);
-      return { overlayCount: s.overlayCount + 1 };
-    }),
-  popOverlay: () =>
-    set((s) => {
-      const next = Math.max(0, s.overlayCount - 1);
-      syncNative(s.overlayCount, next);
-      return { overlayCount: next };
-    }),
+  pushOverlay: () => set((s) => ({ overlayCount: s.overlayCount + 1 })),
+  popOverlay: () => set((s) => ({ overlayCount: Math.max(0, s.overlayCount - 1) })),
 })),
 );
 

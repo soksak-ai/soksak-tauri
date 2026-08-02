@@ -83,11 +83,11 @@ When one axis carries three words, every reader has to ask which meaning is in p
 
 ## The seam
 
-`src/framework/contract.ts` declares `AppFramework`. `src/framework/tauri.ts` implements it. `src/framework/index.ts` resolves the active adapter and re-exports named functions. Every other file imports from `../platform` and never learns which framework is underneath.
+`src/framework/contract.ts` declares `AppFramework`. Each framework owns a folder — `src/framework/tauri/`, `src/framework/electron/` — whose `index.ts` implements the contract. `src/framework/index.ts` resolves the active adapter and re-exports named functions. Every other file imports from `../framework` and never learns which framework is underneath.
 
 - **Only what is used.** The contract carries `invoke`, streams, global listen, the current/labelled window (logical and physical axes, theme, drag-drop), app, path, dialog, notification, deep link — because those are the capabilities the app actually calls. Declaring a capability nobody uses leaves a blank every adapter must fake, and fakes get filled by reaching around the seam.
 - **Vendor defects are absorbed by the adapter.** Tauri's unlisten rejects a promise when a listener was already released; the contract says "release is idempotent", so the adapter swallows it and records why. Absorption belongs to the adapter — policy and state do not, because a policy that differs per framework is itself framework coupling.
-- **The gate enforces it.** `src/framework/frameworkSeam.test.ts` fails if any file outside `src/framework/` imports a framework vendor. Tests obey the same rule: they mock `../platform`, never the vendor. A test that knows the vendor makes swapping the framework a test rewrite too.
+- **The gate enforces it.** `src/framework/frameworkSeam.test.ts` fails if any file outside `src/framework/` imports a framework vendor. Tests obey the same rule: they mock `../framework`, never the vendor. A test that knows the vendor makes swapping the framework a test rewrite too.
 
 Adding a framework is one adapter file plus one row in the resolution table. No app file changes.
 
@@ -619,3 +619,66 @@ Merging the two axes would refuse an offscreen consumer for a missing child view
 The offscreen axis is **not** a gap in the core. It was proven on 2026-07-08 and lives deliberately in the engine protocol vocabulary — *zero core change to the feature*. Reading that record corrected two conclusions drawn here in ignorance of it: that an input-injection seam was missing from the content-view host (it belongs to offscreen hosting, not to content views), and that a design-surface plugin was redundant complexity worth deleting (it is the first proof of the promotion path, and nothing else does what it does).
 
 Both frameworks now drop the engine consumers by name with a true reason. That is the design working, not a defect.
+
+## One core surface, two ways of filling it (2026-08-03)
+
+Standing both frameworks up exposed the last premise: the app still carried **one framework's compensations as if they were the app's own**.
+
+### What went wrong
+
+Content lives in a different place per framework. Under Tauri it is an OS child view — outside the document, composited behind the whole DOM, moved only by writing coordinates, and the mouse over it never reaches this document. Under Electron it is a `<webview>` tag — inside the document, moved by its own parent, stacked by ordinary z-order, with the mouse arriving normally.
+
+Everything Tauri needs to repay that difference — holes, standins, rail clipping, a native mouse bridge, an overlay hit-test gate, a divider bar drawn natively — sat in core and therefore ran under **both**. Electron has no debt to repay, so those devices only covered and blanked perfectly good panes. Measured 2026-08-03: during one frame of a pane-activation transition, two browser panes went completely empty.
+
+The root was smaller and worse: `domHost` had **copied the Tauri model into the DOM**. It parented every `<webview>` to one global layer and pushed it around by writing `left/top/width/height`. Slot and surface then became two clocks, and one of them is always late.
+
+### The rule
+
+> The core surface is identical for both. Core asks neither the framework's name nor its capabilities. The single branch is choosing the adapter — `src/framework/index.ts` — and there is none after it. Each framework hangs its own implementation, devices and styles on that surface.
+
+A third framework writes its own `whale/` folder. Core does not change, and it does not inherit anyone else's fix.
+
+### Where things live now
+
+| | Owner |
+| --- | --- |
+| `ContentViewHost` contract, `data-content-view-slot` declaration, host registry | `src/lib/contentViews.ts` |
+| Native child implementation, holes, standin, rail clip, native mouse, divider bar, overlay gate, resize relay, `webview.emitNative` | `src/framework/tauri/` |
+| DOM `<webview>` implementation | `src/framework/electron/` |
+| Hole CSS | `src/framework/tauri/styles.css` |
+| Drag-region reversal CSS | `src/framework/electron/styles.css` |
+
+The slot is declared once, by the plugin, and read differently by each side: to a coordinate-pushing implementation it is the follow anchor; to one that lives in the document it is the **parent**. The plugin never learns the difference.
+
+### `install()` is a contract member, and it is lazy
+
+The bundle is one — Electron loads the same front end — so both adapters are always present. If hanging happened at import, the unselected framework's things would hang too. That already leaked: `electron.css` was in the Tauri build, harmless only because it declared `-webkit-app-region`.
+
+So `AppFramework.install()` was added, and boot calls it once on the selected adapter. It is `Promise<void>` and loads its own code with a dynamic import, for two reasons:
+
+- The adapter must stay a **leaf**. What hangs touches app modules (plugin bus, stores, DOM) and those look back at the framework door. Wiring that statically made the cycle real: `invoke is not a function` killed 13 suites at once.
+- The unselected framework's hanging code is then **never even fetched**.
+
+Boot awaits it. Not awaiting would be a guess that nobody calls the surface in between, and that guess eventually breaks.
+
+Styles hang the same way — `styles.css?inline` plus `adoptFrameworkStyles(name, css)`. The selectors carry no framework name: **the file is the condition.** If it is not hung, the rule is not in the document at all. Naming the framework in the selector would make a third framework read someone else's condition.
+
+### `bounds` is a comparison, not a command
+
+For an implementation that lives inside its slot, the surface already fills it. Writing coordinates again would recreate the two clocks, so `bounds` **checks** instead and answers `false` when the slot and the request point at different things. A silent `true` would let the caller believe it moved something while the screen says otherwise.
+
+A view that declared no slot is a different thing (the offscreen extraction view) — it carries its own box, because a request is the only geometry it has.
+
+### What stayed common
+
+`.hole` is applied by core from the view's `transparent` declaration — "this view does not paint its own background" means the same everywhere, and the `:not(.hole)` carve-out selects everything where nothing declares it. `layoutRectMotion` still excludes those slots from interpolation, because the reason is not holes but *a live page cannot be re-laid-out every frame* — true of an in-document guest too. `bindPaneUnder` is one function so the two ways in (a content view took focus; a coordinate over the surface) cannot drift apart.
+
+### Gates
+
+- `frameworkSeam.test.ts` now also fails when core names a device that presumes an out-of-document surface (`webview_dom_holes`, `webview_overlay_active`, `webview_divider_highlight`, `webview_resize_gesture`, `native-mouse*`), and when the core stylesheet draws holes. Both were confirmed by planting a violation. `plugin:webview-capture|*` is deliberately **not** on that list — it is a shared capability that both frameworks answer, wearing a name shaped like one framework's plugin syntax. That name is naming debt, not a device leak.
+- The vendor scan now skips relative specifiers. Our own folder is called `electron`, and without that the gate reported our house as the vendor.
+- `scripts/e2e/transition-blank-scan.mjs` freezes a transition step by step and, at each step, asks each pane for **its own** rect and crops that. A fixed rectangle cannot be used: panes move during a transition, so the old rect lands between panes and reads as "the pane is empty" — that illusion made this look unfixed once. Judgement is per-pane against its own resting value, because an absolute threshold cannot separate a sparse terminal (7.3 at rest) from a genuinely blanked browser pane (3.7). A baseline must prove itself stable across two samples; a pane still loading is not counted, and that exclusion is printed rather than hidden.
+
+### Still open
+
+The live blink the whole thing started from could not be reproduced after the split, and no planted violation made the transition scan fail — so the scan is an instrument here, not yet a proven guard for that symptom. What is proven: every content surface sits inside its declared slot (`detached: 0`), a frozen mid-transition frame shows every pane painted, and the audit command now answers from the host instead of the native list — before this it reported `actual: []` on the DOM side, so ghost detection was computing from an empty set and could only ever say "no ghosts".

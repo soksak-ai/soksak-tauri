@@ -27,7 +27,7 @@ import type {
   FrameworkWindowHandle,
   Stream,
   Unlisten,
-} from "./contract";
+} from "../contract";
 
 /** Tauri 의 UnlistenFn 은 내부적으로 async — 이미 해제된 리스너의 재해지가 동기 throw 가
  *  아니라 반환 promise 의 reject 로 온다. 계약은 "해지는 멱등"이므로 여기서 흡수한다. */
@@ -116,6 +116,8 @@ export const tauriFramework: AppFramework = {
   dragRegion,
   engineProvision,
   name: "tauri",
+  // 거는 코드는 그때 가져온다 — 이 파일은 벤더를 번역하는 잎으로 남는다(contract.install).
+  install: () => import("./install").then((m) => m.installTauri()),
 
   invoke: <T,>(cmd: string, args?: Record<string, unknown>) => tauriInvoke<T>(cmd, args),
 

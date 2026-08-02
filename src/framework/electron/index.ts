@@ -1,6 +1,5 @@
 // 드래그 영역을 주는 쪽이 그 되돌림(no-drag)도 진다 — 앱 CSS 에 두면 종속이 샌다.
-import { moduleState } from "../lib/moduleState";
-import "./electron.css";
+import { moduleState } from "../../lib/moduleState";
 import type { EngineProvision } from "@soksak-ai/plugin-spec";
 // Electron 프레임워크 어댑터 — AppFramework 계약의 Electron 구현(스파이크).
 //
@@ -19,7 +18,7 @@ import type {
   FrameworkWindowHandle,
   Stream,
   Unlisten,
-} from "./contract";
+} from "../contract";
 
 /** 창구가 돌려주는 봉투 — 실패는 값이 아니라 코드로 온다. */
 interface OpResult {
@@ -228,6 +227,8 @@ export const electronFramework: AppFramework = {
   dragRegion,
   engineProvision,
   name: "electron",
+  // 거는 코드는 그때 가져온다 — 이 파일은 창구를 번역하는 잎으로 남는다(contract.install).
+  install: () => import("./install").then((m) => m.installElectron()),
 
   invoke: async <T,>(cmd: string, args?: Record<string, unknown>): Promise<T> => {
     const r = await bridge().invoke(cmd, args);

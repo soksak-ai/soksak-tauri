@@ -1,0 +1,57 @@
+/* Tauri 전용 스타일 — 이 어댑터를 고를 때만 문서에 선다(install.ts → adoptFrameworkStyles).
+ *
+ * 전부 **홀**의 규칙이다. 홀은 이 프레임워크의 사정이다: 콘텐츠가 OS 자식 뷰라 DOM 전체보다
+ * 뒤에 합성되므로, 그 자리를 덮는 DOM 을 투명하게 뚫어야 콘텐츠가 보인다. 콘텐츠가 문서 안에
+ * 사는 프레임워크에는 뚫을 것이 없고, 거기서 이 규칙이 돌면 멀쩡한 판을 비운다.
+ *
+ * 셀렉터에 프레임워크 이름을 붙이지 않는다 — **파일이 곧 조건**이다. 안 걸리면 이 규칙은
+ * 애초에 문서에 없다. 이름을 셀렉터에 넣으면 세 번째 프레임워크가 남의 조건을 읽어야 한다.
+ *
+ * `.hole` 클래스 자체와 `.tab-body.hole { transition: none }` 은 코어에 남는다 — 그것은
+ * "살아 있는 페이지는 매 프레임 재레이아웃할 수 없다"는 사실이고 문서 안 게스트에도 참이다. */
+
+/* 홀 슬롯의 흐림은 filter 가 아니라 베일이다.
+ *
+ * 홀 아래의 콘텐츠는 이 문서의 픽셀이 아니라 합성기의 다른 층이다 — 조상의 `filter` 는 그
+ * 층에 닿지 않는다. 그래서 홀에서는 filter 를 끄고, 같은 세기를 검은 베일로 칠한다.
+ * 검은 베일 alpha a 는 정의상 `brightness(1−a)` 이므로 두 매체의 세기가 정확히 같다.
+ *
+ * 베일은 스탠드인(z3)보다 위의 라이브 계층(z4) — 스냅에 구워진 상태와 무관하게 현재 세기를
+ * 따라 전이한다(배경이던 시절엔 스탠드인이 베일을 가려 스왑마다 포커스 인/아웃 플랩으로
+ * 보였다 — 실측). pseudo 는 히트테스트가 없어 클릭 관통이 보장된다. */
+.tab-body.hole[data-dim] {
+  filter: none;
+}
+.tab-body.hole[data-dim]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+  background-color: rgb(0 0 0 / var(--dim));
+  transition: background-color 160ms ease;
+}
+
+/* 홀 셀: 활성 뷰가 브라우저면 본문 영역이 홀 — 카드 배경을 헤더/상태바 밴드로만 칠한다
+   (중간은 투명, bv-bar 는 자체 배경). 라운드 모서리는 overflow:hidden 이 밴드를 그대로 클립한다. */
+:root[data-pane-style="card"] .pane.hole,
+:root[data-pane-style="floating"] .pane.hole {
+  background:
+    linear-gradient(var(--card), var(--card)) top / 100% var(--header-h) no-repeat,
+    linear-gradient(var(--card), var(--card)) bottom / 100% var(--status-h) no-repeat;
+}
+
+/* 홀 슬롯은 배경을 칠하지 않는다 — 기준은 뷰의 transparent 선언 하나이며, 슬롯은 셀의
+   자식이 아니라 영속 레이어의 형제이므로 GroupArea 가 슬롯 자신에 hole 로 새긴다.
+   콘텐츠 클래스(:has(.browser-view)) 기준은 폐지: 선언 없이 우연히 성립하는 홀도,
+   선언했는데 새는 홀도 없어야 한다. pane 스타일 무관: 홀은 스타일이 아니라 표면 종류의
+   사실이다. */
+.tab-body.hole {
+  background: transparent;
+}
+
+/* transparent 선언 콘텐츠 뷰(네이티브 자식 뷰를 셀-hole 아래로 비치게 하는 뷰)는 컨테이너
+   배경을 비운다 — var(--bg) 가 hole 을 덮어 자식 뷰가 안 보이는 것을 막는다. */
+.tab-viewer.transparent {
+  background: transparent;
+}

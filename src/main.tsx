@@ -1,5 +1,5 @@
 import ReactDOM from "react-dom/client";
-import { invoke as bootInvoke } from "./framework";
+import { installFramework, invoke as bootInvoke } from "./framework";
 import { bootFactPayload } from "./lib/bootFact";
 // 부트 오류 관찰(P12 사각지대 커버) — 렌더/모듈 오류로 화면이 백지가 되면 스냅샷·DOM 으로는
 // 원인을 볼 수 없다. 전역 오류를 활동 허브(boot.error)로 발행해 소켓 activity.recent 만으로
@@ -40,8 +40,6 @@ import {
 } from "./state/windowBoot";
 import { initWindowTitle } from "./state/windowTitle";
 import { installSwapObserver, installInputObserver } from "./lib/motionDebug";
-import { installSurfaceAudit } from "./lib/surfaceAudit";
-import { installDomHoles } from "./lib/domHoles";
 import { installErrorLedger } from "./lib/errorLedger";
 import { beginBootPluginEventBuffer, flushBootPluginEvents } from "./plugins/hooks";
 import { useBootPhase } from "./state/bootPhase";
@@ -104,6 +102,9 @@ function bootDone(): void {
 
 async function boot(): Promise<void> {
   installErrorLedger(); // 오류 원장 — 부트 최서두(어떤 이후 예외도 침묵하지 못한다)
+  // 고른 프레임워크가 자기 것을 건다 — 구현·장치·스타일. 무엇이 걸리는지 여기서 묻지 않는다.
+  // 부팅 최서두여야 한다: 콘텐츠 뷰 구현이 안 걸린 채 플러그인이 뷰를 열면 이름을 달고 거절된다.
+  await installFramework();
   bootStamp("enter");
   // 이 앱의 CLI 이름(sok/sok-dev/sok-debug)을 창 종류 분기 전에 캐시한다 — 앱-전역 정체성이라
   // 오케스트레이터(main)와 워크스페이스(w-*) 둘 다 필요하다(hint 프리픽스·에이전트 스폰 단일 출처).
@@ -182,8 +183,8 @@ async function boot(): Promise<void> {
   );
   bootStamp("render");
   installSwapObserver(); // 교체(파킹↔등장) 관측 — 렌더 이후 문서 전체 1회
-  installSurfaceAudit(); // 표면 정합 상시 감사(사건 구동 — 위반은 surface.misplaced 로 자동 발행)
-  installDomHoles(); // DOM 홀(골·사이드바) 사건 구동 갱신 — 네이티브 층 아래 마우스 소유
+  // 표면 감사·DOM 홀은 여기서 걸지 않는다 — 둘 다 콘텐츠가 문서 밖일 때만 뜻이 있는 장치이고,
+  // 그 프레임워크가 스스로 건다(framework/tauri/install.ts).
   installInputObserver(); // 입력 발화 관측(제스처→활성화 인과 사슬)
   // 프로그래매틱 오픈(window.new{root}) — 창 생성자가 부트 지시를 URL 쿼리로 전달한다
   // (창별 JS 컨텍스트 분리의 유일한 통로). 지시가 있으면 복원보다 우선: 사용자 의도가

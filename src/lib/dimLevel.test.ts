@@ -4,14 +4,11 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { dimAmount, dimLevel, isDimmed } from "./dimLevel";
 import { useSettings } from "../state/settings";
+import { styleSurfaceRules } from "../ui/styleSurface";
 
-const css = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "..", "App.css"),
-  "utf8",
-);
-/** 선언만 — 규칙은 **칠하는 것**을 검사한다. 주석까지 세면 사고를 적어 둔 근거 문장이
- *  위반으로 잡히고, 규칙이 자기 근거를 지우게 만든다. */
-const rules = css.replace(/\/\*[\s\S]*?\*\//g, "");
+/** 표면 전체 — 코어와 각 프레임워크의 스타일시트가 함께 문서에 선다. 한 파일만 읽으면
+ *  규칙이 다른 파일로 옮겨간 순간 검사에서 사라진다(ui/styleSurface). */
+const rules = styleSurfaceRules();
 const appTsx = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "..", "App.tsx"),
   "utf8",
@@ -93,8 +90,9 @@ describe("흐림 단계 — 표면 규칙", () => {
   });
 
   it("홀 슬롯은 어느 단계에서도 filter 를 안 받는다 — 흐림 축은 베일 하나다", () => {
-    // 네이티브/게스트 콘텐츠는 DOM 필터에 안 닿는다. 스탠드인만 받으면 둘의 흐림이 어긋난다.
-    expect(css).toMatch(/\.tab-body\.hole\[data-dim\] \{[^}]*filter: none/);
+    // 문서 밖 콘텐츠는 DOM 필터에 안 닿는다. 스탠드인만 받으면 둘의 흐림이 어긋난다.
+    // 그 규칙은 홀을 파는 프레임워크가 자기 스타일시트로 들고 온다 — 표면 전체에서 찾는다.
+    expect(rules).toMatch(/\.tab-body\.hole\[data-dim\] \{[^}]*filter: none/);
   });
 });
 

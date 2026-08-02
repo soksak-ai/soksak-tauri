@@ -77,8 +77,24 @@ function ensureMotionSubscription(): void {
   });
 }
 
+/**
+ * 이 프레임워크는 홀을 판다 — 레일을 그 위에서 오려낸다.
+ *
+ * **거는 쪽은 프레임워크다.** 콘텐츠가 문서 안에 사는 프레임워크에는 오려낼 홀이 없고,
+ * 거기서 오려내면 멀쩡한 레일에 구멍이 뚫린다. 안 걸면 아래 표면은 그대로 서 있되
+ * 아무 일도 하지 않는다 — 부르는 쪽(pane)은 누가 걸었는지 몰라도 된다.
+ */
+export function installRailHoleClip(): void {
+  engine.installed = true;
+}
+
+/** 걸렸는가 — 설치와 등록은 다른 축이라 따로 선다. */
+const engine = moduleState("lib/railHoleClipHost#engine", () => ({ installed: false }));
+
 /** pane 이 자기 레일 평면을 창 소유자에게 맡긴다. 반환 함수로 해지한다. */
 export function registerRailPlane(plane: HTMLElement): () => void {
+  // 걸린 것이 없으면 맡을 것도 없다 — 등록하지 않으면 스캔도 rAF 도 서지 않는다.
+  if (!engine.installed) return () => {};
   planes.add(plane);
   ensureMotionSubscription();
   return () => {
@@ -92,6 +108,7 @@ export function registerRailPlane(plane: HTMLElement): () => void {
 }
 
 export function __resetRailHoleClipHostForTest(): void {
+  engine.installed = false;
   planes.clear();
   if (frame.raf) cancelAnimationFrame(frame.raf);
   frame.raf = 0;

@@ -24,15 +24,10 @@ import { beginLayoutMotion, endLayoutMotion } from "./lib/layoutMotion";
 import { registerRailPlane, requestRailHoleClipSync } from "./lib/railHoleClipHost";
 import {
   canGlideViews,
-  disposeSlotFreezeHost,
-  ensureSlotFreezeHost,
   scheduleSlotSettleCapture,
 } from "./lib/slotFreezeHost";
-import {
-  activeSessionViewId,
-  startViewFocusSync,
-  transferViewFocus,
-} from "./plugins/viewFocus";
+import { startViewFocusSync } from "./plugins/viewFocus";
+import { bindPaneUnder } from "./lib/bindPaneUnder";
 import { browserViewIdFromLabel } from "./lib/webviewLabels";
 import {
   CONTENT_VIEW_EVENT,
@@ -63,10 +58,8 @@ import { NotifyHost } from "./ui/NotifyHost";
 import { MotionDebug } from "./components/MotionDebug";
 import { PluginHeaderActions } from "./ui/PluginHeaderActions";
 import { useUi } from "./state/ui";
-import { useGutterHover } from "./state/gutterHover";
 import { useT } from "./i18n";
 import { useBootPhase } from "./state/bootPhase";
-import { reportDomHoles } from "./lib/domHoles";
 import {
   allGroups,
   cwdTabOf as resolveCwdTab,
@@ -785,30 +778,9 @@ function App() {
   // 원격 destructive confirm 배선(폰-링크 안전모델) — Rust app.emit("remote-confirm-request")를
   // store 큐에 잇고, 결정 sink 를 remote_confirm_resolve 로 잇는다(데스크톱 단일 권위). 부팅 1회.
   useEffect(() => wireRemoteConfirm(), []);
-  // 코어 소유 이동-동결(§4.6 시행) — 창에 엔진 하나. 홀 슬롯은 창의 DOM 에 살고 모션 신호도
-  // 창 단위이므로 소유자도 창이다(프로젝트마다 하나씩 만들면 같은 슬롯을 N 번 덮고 캡처도
-  // N 배로 나간다). 정착 스냅 갱신은 이벤트 에지에서만 — 폴링 아님.
-  useEffect(() => {
-    ensureSlotFreezeHost({
-      root: () => document,
-      capture: async (r) => {
-        const b64 = (await invoke("plugin:webview-capture|snapshot_region", {
-          x: r.x,
-          y: r.y,
-          w: r.w,
-          h: r.h,
-        })) as string;
-        return `data:image/png;base64,${b64}`;
-      },
-      emitVeil: (viewId, veiled, hidden) =>
-        emitPluginEvent("view.veiled", { viewId, veiled, hidden }),
-    });
-    const boot = window.setTimeout(() => scheduleSlotSettleCapture(), 1200);
-    return () => {
-      window.clearTimeout(boot);
-      disposeSlotFreezeHost();
-    };
-  }, []);
+  // 이동-동결(스탠드인)은 여기서 걸지 않는다 — 그것은 콘텐츠가 문서 밖인 프레임워크가 자기
+  // 사정을 갚는 장치이고, 그 프레임워크가 스스로 건다(framework/tauri/install.ts). 안 걸리면
+  // 아래 표면(scheduleSlotSettleCapture·canGlideViews)은 그대로 서 있되 아무 일도 안 한다.
 
   // 활성 project/space/pane/tab 체인과 실제 키보드 포커스는 하나의 계약이다.
   // 마운트 시 자동포커스하지 않고, 최신 활성 뷰 의도만 provider 에 전달한다.
@@ -832,54 +804,17 @@ function App() {
     if (windowZoom !== 1) applyWindowZoom(windowZoom);
   }, [windowZoom]);
 
-  // 네이티브 child webview(브라우저) 위 클릭은 메인 DOM 에 이벤트가 오지 않아
-  // 포커스 추적이 끊긴다 — 네이티브 모니터(browser.rs)가 emit 한 좌표를
-  // elementFromPoint 로 판정해 그룹을 활성화한다. 모달 등이 위에 떠 있으면
-  // 그 요소가 잡혀 자연 차단되고, DOM 클릭과 중복돼도 같은 결과라 무해.
+  // 콘텐츠 뷰가 포커스를 받았다는 사실 → 그 아래 칸을 짚는다.
+  //
+  // **guest 안의 클릭은 호스트에 안 온다.** 콘텐츠 뷰는 별도 프로세스라 그 안의 mousedown 이
+  // 이 문서로 넘어오지 않는다 — 그래서 브라우저를 눌러도 결합이 안 따라갔다(실측 2026-08-02).
+  // 그때 호스트가 받는 유일한 사실은 **그 엘리먼트가 포커스를 받았다**는 것이다.
+  //
+  // OS 를 빌리지 않는다(A27). 프레임워크가 계약의 이름으로 그 사실을 내고, 좌표로 들어오든
+  // 이 사건으로 들어오든 **같은 함수**(lib/bindPaneUnder)를 부른다 — 경로가 갈리면 한쪽만
+  // 고쳐지고 그 어긋남은 조용하다. 좌표로 들어오는 길은 그 프레임워크가 자기 것으로 건다
+  // (framework/tauri/install.ts) — 여기 있는 것은 두 프레임워크 모두의 길이다.
   useEffect(() => {
-    // 이 창에 emit_to 된 native-mouse* 만 받는다(전역 listen 이면 다른 창 이벤트도 받아 엉뚱한 창을
-    // 건드림). lib/windowEvents 머리말 참조.
-    //
-    // 두 역할: (1) 포커스 — mousedown 좌표의 그룹 활성화. (2) 분할 divider 리사이즈 — 네이티브 child
-    // (브라우저 등)는 OS 뷰라 그 위의 mousedown/move/up 이 DOM 에 오지 않아, 그 위를 지나는 divider 를
-    // 드래그로 못 잡는다. 좌표의 divider(elementFromPoint 는 DOM 만 보므로 네이티브 위여도 divider 반환)
-    // 에 합성 마우스 이벤트를 재생해 기존 드래그 로직(GroupArea 의 window mousemove/up 리스너)을 그대로
-    // 구동한다 → gap 이나 child 숨김 없이, 화면을 꽉 채운 채 리사이즈. GroupArea 가 중복 시작을 가드한다
-    // (divider 가 gap 위면 실제 DOM 이벤트와 이 합성이 겹칠 수 있음).
-    const fire = (target: EventTarget, type: string, x: number, y: number) =>
-      target.dispatchEvent(
-        new MouseEvent(type, {
-          clientX: x,
-          clientY: y,
-          bubbles: true,
-          cancelable: true,
-          button: 0,
-          buttons: type === "mouseup" ? 0 : 1,
-          view: window, // React 위임이 SyntheticEvent 를 만들려면 view(defaultView)가 필요할 수 있다.
-        }),
-      );
-    let dragging = false;
-    const offDown = listenThisWindow<{ x: number; y: number }>("native-mousedown", (e) => {
-      const { x, y } = e.payload;
-      const el = document.elementFromPoint(x, y);
-      // 네이티브 child 위 드래그 중계 대상: 분할 divider + [data-native-drag] 선언 요소(범용 계약 —
-      // 플러그인 내부 리사이저 등). 드래그가 child 영역에 들어가면 실 이벤트는 child 가 삼키므로,
-      // 여기서 mousedown 을 쏘고 move/up 을 window 로 중계해야 DOM 드래그가 이어진다.
-      const divider = el?.closest<HTMLElement>(".pane-gutter, [data-native-drag]");
-      if (divider) {
-        dragging = true;
-        fire(divider, "mousedown", x, y);
-        return;
-      }
-      bindPaneUnder(el);
-    });
-    // **guest 안의 클릭은 호스트에 안 온다.** 콘텐츠 뷰는 별도 프로세스라 그 안의 mousedown 이
-    // 이 문서로 넘어오지 않는다 — 그래서 브라우저를 눌러도 결합이 안 따라갔다(실측 2026-08-02,
-    // Electron). 그때 호스트가 받는 유일한 사실은 **그 엘리먼트가 포커스를 받았다**는 것이다.
-    //
-    // OS 를 빌리지 않는다(A27). 프레임워크가 계약의 이름으로 그 사실을 내고, 좌표로 들어오든
-    // 이 사건으로 들어오든 **같은 함수**를 부른다 — 경로가 갈리면 한쪽만 고쳐지고 그 어긋남은
-    // 조용하다.
     // 프레임워크가 손잡이로 알린 것을 계약 모양으로 바꿔 다시 뿌린다 — 적어 두고 아무도
     // 안 부르면 없는 것과 같다.
     const offRelay = relayFrameworkContentViewEvents((name, cb) =>
@@ -894,105 +829,15 @@ function App() {
         : null;
       bindPaneUnder(slot);
     });
-    // 어느 길로 들어오든 칸을 짚는 **한 함수** — 좌표(네이티브 모니터)와 콘텐츠 뷰 활성화가
-    // 같은 자리를 부른다. 갈리면 한쪽만 고쳐지고 그 어긋남은 오류로 안 보인다.
-    function bindPaneUnder(el: Element | null) {
-      const slot = el?.closest<HTMLElement>("[data-pane]");
-      // 이름과 값이 같은 실체를 가리킨다 — 속성은 `data-pane`(칸 id)이다. `dataset.groupId` 는
-      // 있지도 않은 `data-group-id` 를 찾아 언제나 undefined 이고, 그러면 이 아래가 통째로
-      // 안 돈다(계측 2026-08-02: pane 은 잡히는데 결합이 안 일어났다).
-      const groupId = slot?.dataset.pane;
-      const projectId = slot?.dataset.projectId;
-      if (groupId && projectId) {
-        const state = useSessions.getState();
-        const project = state.projects.find((item) => item.id === projectId);
-        const space = project?.spaces.find(
-          (item) => item.id === project.activeSpaceId,
-        );
-        const group = space
-          ? allGroups(space.layout).find((item) => item.id === groupId)
-          : null;
-        const targetViewId = group?.activeTabId;
-        if (targetViewId) {
-          transferViewFocus(activeSessionViewId(), targetViewId, () =>
-            state.setActiveGroup(projectId, groupId),
-          );
-        } else {
-          state.setActiveGroup(projectId, groupId);
-        }
-      }
-    }
-    const offMove = listenThisWindow<{ x: number; y: number }>("native-mousemove", (e) => {
-      if (dragging) {
-        fire(window, "mousemove", e.payload.x, e.payload.y);
-        return;
-      }
-      // hover(버튼 안 누름) — 네이티브 child 위에선 divider :hover 가 발동하지 않으므로, 좌표의 divider
-      // (elementFromPoint 는 DOM 만 보므로 네이티브 밑의 divider 를 반환)를 store 에 기록한다. GroupArea 가
-      // 그걸 강조 + 좌우 셀을 잠깐 물려 divider 를 드러낸다. divider 아니면 null(강조 해제).
-      const el = document.elementFromPoint(e.payload.x, e.payload.y);
-      const div = el?.closest<HTMLElement>(".pane-gutter");
-      // 발행(GroupArea data-gutter-key)과 같은 이름을 읽는다 — 개명에서 이 판독부만 남아
-      // dataset.dividerKey 가 항상 undefined 였다(네이티브 child 위 gutter 강조 무음 사망, 감사 적발).
-      useGutterHover.getState().set(div?.dataset.gutterKey ?? null);
-    });
-    const offUp = listenThisWindow<{ x: number; y: number }>("native-mouseup", (e) => {
-      if (!dragging) return;
-      dragging = false;
-      fire(window, "mouseup", e.payload.x, e.payload.y);
-    });
-    // 포인터 부재 — 코어가 창 resignKey·앱 resignActive 에서 낸다. hover 는 "있음"만 말하는
-    // 소스에서 오므로 이 짝이 없으면 꺼질 방법이 없다: 포인터가 창 밖으로 나가면 mousemove 가
-    // 끊기고, 끊긴 것과 그 자리에 멈춘 것이 구별되지 않아 강조가 영원히 남는다(실측: accent
-    // 세로선이 브라우저를 가로지른 채 굳음 — ui.hit 이 divider s1:0, rect 가 네이티브 강조바와 동일).
-    const offLeave = listenThisWindow("native-mouseleave", () => {
-      dragging = false;
-      useGutterHover.getState().set(null);
-    });
     return () => {
-      offDown();
       offViewFocus();
       offRelay();
-      offMove();
-      offUp();
-      offLeave();
     };
   }, []);
 
-  // hover/드래그 중인 divider → 코어가 그 화면 rect 에 accent 바를 브라우저 위(네이티브)에 그린다.
-  // 네이티브 child 위에선 DOM 강조가 안 보이므로 유일한 길. rAF 추적 루프: 드래그(리사이즈)로 DOM
-  // divider 가 움직이면 매 프레임 rect 를 재측정해 네이티브 바가 정확히 따라간다 — 1회성 배치는 드래그
-  // 중 바가 제자리에 남는다(회귀). rect 가 안 변한 프레임은 IPC 를 보내지 않는다(변화시에만 invoke).
-  const gutterHoverKey = useGutterHover((s) => s.key);
-  useEffect(() => {
-    const send = (rect: { x: number; y: number; w: number; h: number } | null) => {
-      void invoke("webview_divider_highlight", { rect }).catch(() => {});
-    };
-    if (!gutterHoverKey) {
-      send(null);
-      return;
-    }
-    const sel = `.pane-gutter[data-gutter-key="${CSS.escape(gutterHoverKey)}"]`;
-    let raf = 0;
-    let last = "";
-    const tick = () => {
-      const el = document.querySelector(sel);
-      if (el instanceof HTMLElement) {
-        const r = el.getBoundingClientRect();
-        const sig = `${r.left.toFixed(1)},${r.top.toFixed(1)},${r.width.toFixed(1)},${r.height.toFixed(1)}`;
-        if (sig !== last) {
-          last = sig;
-          send({ x: r.left, y: r.top, w: r.width, h: r.height });
-        }
-      }
-      raf = requestAnimationFrame(tick);
-    };
-    tick();
-    return () => {
-      cancelAnimationFrame(raf);
-      send(null);
-    };
-  }, [gutterHoverKey]);
+  // 골 강조바는 여기서 그리지 않는다 — DOM 강조가 표면에 가려지는 것은 콘텐츠가 문서 밖인
+  // 프레임워크의 사정이고, 그 프레임워크가 hover 상태를 구독해 자기 방식으로 그린다
+  // (framework/tauri/install.ts). 코어는 hover 사실(useGutterHover)만 들고 있는다.
 
   // 구독 최소 원칙(docs/PERFORMANCE.md 1): 필드/액션별 셀렉터만 — bare 훅 금지.
   // zustand 액션은 create() 시점에 고정되는 안정 참조라 액션 셀렉터는 리렌더 없음.
@@ -1043,25 +888,25 @@ function App() {
   const rightRect =
     activeProject?.rightOpen && rightSidebarMode !== "push" ? rightW : 0;
   useLayoutEffect(() => {
-    // 닫힘(rightOpen false 또는 폭 0)이면 홀 비움.
-    if (!activeProject?.rightOpen || rightW <= 0) {
-      requestAnimationFrame(() => reportDomHoles()); // 사이드바가 빠져도 골 홀은 남는다
-      return;
-    }
-    // 폭 변경 등 레이아웃이 커밋된 *다음* 프레임에 측정한다 — rAF 전엔 사이드바 폭이
-    // 아직 반영 전이라 rect 가 어긋난다.
-    // 홀 목록의 소유자는 lib/domHoles(사이드바 + 모든 골) — 여기서는 사이드바 변화 에지에
-    // 재수집만 요청한다(사각형 조립을 두 곳에서 하지 않는다).
-    const report = () => reportDomHoles();
-    const raf = requestAnimationFrame(report);
-    // 창 리사이즈도 사이드바 rect(우변 고정·높이)를 옮긴다 — 다시 측정.
-    const onWinResize = () => requestAnimationFrame(report);
+    // 사이드바가 열리고 닫히고 넓어지는 것은 **레이아웃이 다시 앉는 일**이다 — 그 사실을
+    // 뿌린다. 그 사실로 무엇을 할지는 듣는 쪽이 정한다(문서 밖 표면을 가진 프레임워크는
+    // 홀 목록을 다시 보내고, 플러그인은 자기 표면을 다시 잰다).
+    //
+    // 여기서 홀을 직접 부르지 않는다: 부르면 코어가 홀이라는 개념을 알게 되고, 그 개념이
+    // 없는 프레임워크에서도 그 줄이 돈다.
+    //
+    // 레이아웃이 커밋된 *다음* 프레임에 알린다 — rAF 전엔 사이드바 폭이 아직 반영 전이라
+    // 재는 쪽이 옛 rect 를 읽는다.
+    const notify = () => emitPluginEvent("layout.reflow", { activeSpaceId: activeProject?.activeSpaceId ?? null });
+    const raf = requestAnimationFrame(notify);
+    // 창 리사이즈도 사이드바 rect(우변 고정·높이)를 옮긴다 — 다시 알린다.
+    const onWinResize = () => requestAnimationFrame(notify);
     window.addEventListener("resize", onWinResize);
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", onWinResize);
     };
-    // rightRect = rightOpen·rightW 의 단일 파생 — 둘 중 무엇이 바뀌어도 재측정.
+    // rightRect = rightOpen·rightW 의 단일 파생 — 둘 중 무엇이 바뀌어도 다시 알린다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rightRect]);
 

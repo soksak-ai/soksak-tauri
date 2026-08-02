@@ -30,13 +30,21 @@ function walk(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-/** 실물 import/require 만 센다 — 주석 속 서술(경계의 근거를 적은 글)은 규칙이 아니다. */
+/**
+ * 실물 import/require 만 센다 — 주석 속 서술(경계의 근거를 적은 글)은 규칙이 아니다.
+ *
+ * **상대 경로는 벤더가 아니다.** 우리 폴더 이름이 벤더 패키지 이름과 같을 수 있다
+ * (`src/framework/electron/`) — 경로로 가르지 않으면 자기 집을 벤더로 신고한다
+ * (실측 2026-08-03: `../framework/electron/contentViews` 가 위반으로 잡혔다).
+ * 패키지 지정자는 `.` 이나 `/` 로 시작하지 않는다.
+ */
 function vendorImports(src: string): string[] {
   const hits: string[] = [];
   for (const line of src.split("\n")) {
     const code = line.replace(/\/\/.*$/, "").replace(/\/\*.*?\*\//g, "");
     const m = code.match(/(?:from|import|require)\s*\(?\s*["']([^"']+)["']/);
     if (!m) continue;
+    if (m[1].startsWith(".") || m[1].startsWith("/")) continue;
     if (VENDOR.some((re) => re.test(m[1]))) hits.push(m[1]);
   }
   return hits;
@@ -101,5 +109,76 @@ describe("프레임워크 경계 — 벤더 SDK 는 어댑터만 안다", () => 
       .filter((rel) => !rel.startsWith(ADAPTER_DIR))
       .flatMap((rel) => leaksIn(rel, readFileSync(join(SRC, rel), "utf8")));
     expect(hits).toEqual([]);
+  });
+});
+
+/**
+ * 프레임워크가 자기 사정으로 거는 **장치**도 코어에 남으면 안 된다.
+ *
+ * import 게이트는 벤더 SDK 만 본다. 그런데 장치는 벤더를 안 물고도 샌다 — 명령 이름 하나,
+ * 사건 이름 하나면 된다. 그 이름들은 **문서 밖에 표면이 있다**는 전제 위에 서 있고, 그 전제가
+ * 없는 프레임워크에서는 없는 개념에 대한 호출이다. 거절을 삼키면 조용해지고, 안 삼키면 부팅
+ * 원장이 실패로 물든다 — 그리고 삼키든 아니든 **멀쩡한 판을 가리고 비운다**(실측 2026-08-03:
+ * 판 활성 전이의 한 프레임에서 브라우저 판 둘이 통째로 비었다).
+ *
+ * 그래서 규칙은 하나다: 코어 표면은 둘 다 동일하고, 그 표면에 자기 것을 거는 것은 각
+ * 프레임워크다(framework/<name>/install.ts). 코어는 무엇이 걸렸는지 묻지 않는다.
+ */
+describe("프레임워크 장치는 자기 집에만 산다", () => {
+  /** 문서 밖 표면을 전제하는 이름들 — 있는 자리는 그 프레임워크의 폴더뿐이다. */
+  const DEVICE_NAMES: [RegExp, string][] = [
+    [/webview_dom_holes/, "홀 목록 — 문서 밖 표면 아래의 마우스 소유"],
+    [/webview_overlay_active/, "오버레이 히트테스트 게이트 — 표면이 마우스를 가져가는 것을 막는다"],
+    [/webview_divider_highlight/, "골 강조바 — DOM 강조가 표면에 가려질 때만 필요하다"],
+    [/webview_resize_gesture/, "리사이즈 위상 릴레이 — 네이티브 쪽에만 필요하다"],
+    // `plugin:webview-capture|*` 는 여기 없다 — **공통 능력**이다(window.snapshot·record). 두
+    // 프레임워크가 다 답하며, 이름만 한쪽 프레임워크의 플러그인 문법을 닮았을 뿐이다. 그 이름을
+    // 고치는 것은 어휘의 빚이고 이 규칙의 축이 아니다 — 여기서 금지하면 멀쩡한 공통 능력이
+    // 프레임워크 폴더로 밀려난다.
+    [/["']native-mouse/, "네이티브 마우스 모니터 — 표면 위의 입력이 이 문서에 안 올 때만 필요하다"],
+  ];
+
+  function walkSrc(dir: string, out: string[] = []): string[] {
+    for (const name of readdirSync(dir)) {
+      const p = join(dir, name);
+      if (statSync(p).isDirectory()) walkSrc(p, out);
+      else if (/\.(ts|tsx)$/.test(name) && !/\.test\.tsx?$/.test(name)) out.push(p);
+    }
+    return out;
+  }
+
+  it("코어는 문서 밖 표면 전용 명령·사건을 부르지 않는다", () => {
+    const files = walkSrc(SRC).map((f) => relative(SRC, f));
+    // 오라클 생존 — 훑은 파일이 없으면 아래 단언이 공짜로 통과한다.
+    expect(files.length).toBeGreaterThan(50);
+    const offenders: string[] = [];
+    for (const rel of files) {
+      if (rel.split("/")[0] === ADAPTER_DIR) continue;
+      const src = readFileSync(join(SRC, rel), "utf8");
+      // 주석은 벗긴다 — 경계의 근거를 적은 글이 위반으로 잡히면 규칙이 자기 근거를 지운다.
+      const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+      for (const [re, why] of DEVICE_NAMES) {
+        if (re.test(code)) offenders.push(`${rel} → ${re.source} (${why})`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  /**
+   * 홀은 **문서 밖에 표면이 있을 때만** 뜻이 있다. 그 규칙이 코어 스타일시트에 있으면 어느
+   * 프레임워크에서든 문서에 서고, 뚫을 것이 없는 곳에서 멀쩡한 판을 뚫는다.
+   *
+   * `.hole` 클래스를 **거는** 것은 코어다(뷰의 transparent 선언) — 그 선언의 뜻은 "자기 배경을
+   * 안 그린다"이고 어느 프레임워크에서나 같다. 갈리는 것은 그 자리를 **쓰는 쪽**의 규칙이다.
+   */
+  it("코어 스타일시트는 홀을 그리지 않는다", () => {
+    const css = readFileSync(join(SRC, "App.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    const rules = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].map((m) => m[1].replace(/\s+/g, " ").trim());
+    // 홀을 **고르는** 규칙만 금지한다. `:not(.hole)` 카브아웃은 "선언한 뷰는 배경을 안 받는다"
+    // 라는 공통 사실이고, 선언이 없는 프레임워크에서는 모두를 고른다.
+    const drawing = rules.filter((sel) => /(^|[^:(])\.hole\b/.test(sel.replace(/:not\([^)]*\)/g, "")));
+    expect(drawing).toEqual([]);
+    // 오라클 생존 — 규칙을 하나도 못 읽었으면 위 단언이 공짜로 통과한다.
+    expect(rules.length).toBeGreaterThan(100);
   });
 });

@@ -533,6 +533,17 @@
       "note": "한 identity 홈의 터미널 엔진 유닛을 정합시킨다. 파일 배치 작업이고, 홈 경로만 밖에서 오면 프레임워크를 모른다."
     },
     {
+      "file": "transition-blank-scan.mjs",
+      "role": "harness",
+      "class": "C",
+      "surfaces": [
+        "window.snapshot",
+        "webview.surfaces",
+        "pixel-oracle"
+      ],
+      "note": "전이를 걸음마다 정지시켜 각 판이 자기 자리에서 실제로 그려졌는지를 캡처 픽셀로 본다 — 판정이 캡처와 자식 웹뷰 목록에 서므로 프레임워크마다 답이 다르다."
+    },
+    {
       "file": "tui-probe.sh",
       "role": "fixture",
       "class": "A",

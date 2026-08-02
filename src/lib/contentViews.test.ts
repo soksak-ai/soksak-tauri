@@ -1,320 +1,86 @@
-// 두 구현이 같은 계약을 만족한다 — 호출자는 어느 쪽인지 모른다.
+// 콘텐츠 뷰 계약 — 코어가 아는 것 전부.
 //
-// 이 검사가 없으면 한쪽에만 있는 동작이 생기고, 그 차이는 오류가 아니라 "이 프레임워크에서는
-// 안 되는 기능"으로 나타난다. 그때 호출자가 프레임워크를 알아야 하고, 아는 순간 경계가 샌다.
+// 코어는 **누가 걸었는지 묻지 않는다.** 그래서 여기서 재는 것은 셋뿐이다: 등록부가 건 것을
+// 돌려주는가, 안 걸렸을 때 이름을 달고 거절하는가, 자리 선언을 읽는가.
+//
+// 구현이 계약을 지키는지는 각 프레임워크의 검사가 본다(framework/<name>/contentViews.test.ts).
+// 그 둘의 표면이 정확히 같은지는 아래 마지막 검사가 본다 — 갈리면 호출자가 어느 쪽인지 알게
+// 되고, 아는 순간 경계가 샌다.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const invoke = vi.fn(async (_cmd: string, _args?: unknown) => undefined as unknown);
-/** emitLocal 이 실제로 불렸는지 — 다리가 걸렸는가의 유일한 관측면. */
-const emitted: [string, unknown][] = [];
-let provision = { chromium: false, nativeChildWebview: true };
-
-vi.mock("../framework", () => ({
-  invoke: (cmd: string, args?: unknown) => invoke(cmd, args),
-  get engineProvision() {
-    return provision;
-  },
-  emitLocal: (event: string, payload: unknown) => emitted.push([event, payload]),
-}));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => undefined) }));
 
 async function load() {
   vi.resetModules();
   return import("./contentViews");
 }
 
-/** <webview> 태그가 붙이는 메서드를 흉내낸다 — jsdom 에는 그 요소가 없다. */
-/** 태그 대역 — 제어면과 함께 **준비 사건**도 낸다.
- *
- *  제어면은 `dom-ready` 뒤에만 부를 수 있다(태그 구현이 예외로 강제한다). 목이 그 사건을 안
- *  내면 이 검사는 실제와 다른 세계를 재고, 진짜 결함(안 붙은 태그에 제어면 호출)을 가린다 —
- *  실측 2026-08-01: Electron 부팅마다 그 예외가 Uncaught 로 났는데 검사는 전부 GREEN 이었다. */
-function stubTag(el: Element) {
-  Object.assign(el, {
-    loadURL: vi.fn(),
-    goBack: vi.fn(),
-    goForward: vi.fn(),
+const stubHost = () =>
+  ({
+    open: vi.fn(),
+    close: vi.fn(),
+    list: vi.fn(),
+    alive: vi.fn(),
+    navigate: vi.fn(),
+    bounds: vi.fn(),
+    visible: vi.fn(),
+    history: vi.fn(),
     stop: vi.fn(),
-    setZoomLevel: vi.fn(),
-    openDevTools: vi.fn(),
-    executeJavaScript: vi.fn(async () => "ok"),
-  });
-  // 준비를 알린다 — 실제 태그가 붙고 나서 내는 그 사건이다.
-  el.dispatchEvent(new Event("dom-ready"));
-}
+    zoom: vi.fn(),
+    devtools: vi.fn(),
+    evalJs: vi.fn(),
+    injectScript: vi.fn(),
+    openWindow: vi.fn(),
+    sendInput: vi.fn(),
+  }) as unknown as import("./contentViews").ContentViewHost;
 
-describe("콘텐츠 뷰 호스트", () => {
-  beforeEach(() => {
-    invoke.mockClear();
-    emitted.length = 0;
+describe("콘텐츠 뷰 계약", () => {
+  beforeEach(async () => {
+    (await load()).__resetContentViewHostForTest();
     document.body.innerHTML = "";
   });
 
-  it("능력이 구현을 고른다 — 프레임워크 이름은 쓰지 않는다", async () => {
+  // 능력으로 고르던 자리를 없앴다(2026-08-03). 콘텐츠가 네이티브 자식인지 태그인지는 앱이
+  // 고르는 것이 아니라 프레임워크가 **줄 수 있는 것**이다 — 한쪽은 태그를 못 주고 다른 쪽은
+  // label 로 부르는 OS 자식 뷰를 못 준다. 그래서 거는 쪽도 프레임워크다.
+  it("건 것을 돌려준다 — 프레임워크 이름도 능력도 묻지 않는다", async () => {
     const m = await load();
-    provision = { chromium: false, nativeChildWebview: true };
-    expect(m.contentViewHost()).toBe(m.nativeHost);
-    provision = { chromium: true, nativeChildWebview: false };
-    expect(m.contentViewHost()).toBe(m.domHost);
+    const host = stubHost();
+    m.registerContentViewHost(host);
+    expect(m.contentViewHost()).toBe(host);
+    expect(m.hasContentViewHost()).toBe(true);
   });
 
-  it("두 구현의 표면이 정확히 같다", async () => {
+  // 빈 구현을 돌려주면 부른 쪽은 열었다고 믿은 채 아무것도 안 보이는 화면을 본다.
+  it("아무도 안 걸었으면 이름을 달고 거절한다", async () => {
     const m = await load();
+    expect(m.hasContentViewHost()).toBe(false);
+    expect(() => m.contentViewHost()).toThrow("걸려 있지 않습니다");
+  });
+
+  it("자리 선언을 label 로 읽는다", async () => {
+    const m = await load();
+    const a = document.createElement("div");
+    a.setAttribute(m.CONTENT_VIEW_SLOT, "b-1");
+    const b = document.createElement("div");
+    b.setAttribute(m.CONTENT_VIEW_SLOT, "b-2");
+    document.body.append(a, b);
+    expect(m.findContentViewSlot("b-2", document)).toBe(b);
+    // 선언하지 않은 label 은 **자리가 없는** 뷰다 — 없는 것을 아무 자리로 채우지 않는다.
+    expect(m.findContentViewSlot("b-9", document)).toBeNull();
+  });
+});
+
+// 한쪽에만 있는 동작이 생기면 그 차이는 오류가 아니라 "이 프레임워크에서는 안 되는 기능"으로
+// 나타난다. 그때 호출자가 프레임워크를 알아야 하고, 아는 순간 경계가 샌다.
+describe("두 구현의 표면이 정확히 같다", () => {
+  it("키가 하나도 어긋나지 않는다", async () => {
+    vi.resetModules();
+    const { nativeHost } = await import("../framework/tauri/contentViews");
+    const { domHost } = await import("../framework/electron/contentViews");
     const keys = (o: object) => Object.keys(o).sort();
-    expect(keys(m.domHost)).toEqual(keys(m.nativeHost));
+    expect(keys(domHost)).toEqual(keys(nativeHost));
     // 오라클 생존 — 표면이 비면 위 단언이 공짜로 통과한다.
-    expect(keys(m.nativeHost).length).toBeGreaterThan(10);
-  });
-
-  it("네이티브 구현은 이름과 인자를 번역하지 않는다", async () => {
-    const m = await load();
-    await m.nativeHost.open("b-1", { url: "https://x" });
-    expect(invoke).toHaveBeenCalledWith("webview_open", { label: "b-1", url: "https://x" });
-    await m.nativeHost.bounds("b-1", 1, 2, 3, 4);
-    expect(invoke).toHaveBeenCalledWith("webview_bounds", { label: "b-1", x: 1, y: 2, w: 3, h: 4 });
-  });
-
-  it("DOM 구현은 요소를 만들고 label 로 찾는다", async () => {
-    const m = await load();
-    await m.domHost.open("b-1", { url: "https://x" });
-    expect(await m.domHost.list()).toEqual(["b-1"]);
-    expect(await m.domHost.alive("b-1")).toBe(true);
-    // 같은 label 을 두 번 열어도 하나다 — 중복은 배치가 갈리는 조용한 결함이 된다.
-    await m.domHost.open("b-1", { url: "https://y" });
-    expect(await m.domHost.list()).toEqual(["b-1"]);
-    await m.domHost.close("b-1");
-    expect(await m.domHost.alive("b-1")).toBe(false);
-  });
-
-  it("DOM 구현은 프로세스를 건너지 않는다", async () => {
-    const m = await load();
-    await m.domHost.open("b-1", { url: "https://x" });
-    await m.domHost.bounds("b-1", 10, 20, 30, 40);
-    expect(invoke).not.toHaveBeenCalled();
-  });
-
-  it("DOM 구현이 배치를 실제로 반영한다", async () => {
-    const m = await load();
-    await m.domHost.open("b-1", {});
-    expect(await m.domHost.bounds("b-1", 10, 20, 30, 40)).toBe(true);
-    const el = document.querySelector<HTMLElement>('[data-content-view="b-1"]')!;
-    expect([el.style.left, el.style.top, el.style.width, el.style.height]).toEqual([
-      "10px", "20px", "30px", "40px",
-    ]);
-    // 없는 뷰의 배치는 false 다 — true 를 돌려주면 호출자가 놓인 줄 안다.
-    expect(await m.domHost.bounds("nope", 0, 0, 1, 1)).toBe(false);
-  });
-
-  it("태그 제어면으로 위임한다", async () => {
-    const m = await load();
-    await m.domHost.open("b-1", {});
-    const el = document.querySelector('[data-content-view="b-1"]')!;
-    stubTag(el);
-    const tag = el as unknown as Record<string, ReturnType<typeof vi.fn>>;
-
-    await m.domHost.navigate("b-1", "https://z");
-    expect(tag.loadURL).toHaveBeenCalledWith("https://z");
-    await m.domHost.history("b-1", -1);
-    expect(tag.goBack).toHaveBeenCalled();
-    await m.domHost.history("b-1", 1);
-    expect(tag.goForward).toHaveBeenCalled();
-    await m.domHost.stop("b-1");
-    expect(tag.stop).toHaveBeenCalled();
-    expect(await m.domHost.evalJs("b-1", "1")).toBe("ok");
-    // 배율 → 레벨 번역(level = log1.2(factor)). 1.2 배는 정확히 한 단계다.
-    await m.domHost.zoom("b-1", 1.2);
-    expect(tag.setZoomLevel.mock.calls[0][0]).toBeCloseTo(1, 6);
-  });
-
-  it("없는 뷰·없는 메서드는 이름을 달고 실패한다 — 조용히 성공하지 않는다", async () => {
-    const m = await load();
-    await expect(m.domHost.navigate("nope", "u")).rejects.toThrow("콘텐츠 뷰가 없습니다");
-    await m.domHost.open("b-2", {});
-    // 준비는 났는데 태그 메서드가 없는 요소(jsdom 의 기본 상태) — 준비를 안 내면 그 앞에서
-    // 준비 상한에 걸려, 이 검사가 재려던 "없는 메서드"에 닿지 못한다.
-    document
-      .querySelector('[data-content-view="b-2"]')!
-      .dispatchEvent(new Event("dom-ready"));
-    await expect(m.domHost.navigate("b-2", "u")).rejects.toThrow("loadURL");
-  });
-
-  it("새 창은 프레임워크의 것이다 — DOM 구현도 그것만은 건넌다", async () => {
-    const m = await load();
-    await m.domHost.openWindow("https://x");
-    expect(invoke).toHaveBeenCalledWith("window_create", { url: "https://x" });
-  });
-
-  it("지킬 수 없는 주입 시점은 이름을 달고 실패한다", async () => {
-    const m = await load();
-    await m.domHost.open("b-1", {});
-    const el = document.querySelector('[data-content-view="b-1"]')!;
-    stubTag(el);
-    // document-start 는 preload 로만 보장된다. 조용히 document-end 로 낮추면 주입이 늦어
-    // 실패하는 자리가 오류 없이 생긴다 — 그것이 이 검사가 막는 것이다.
-    expect(() => m.domHost.injectScript("b-1", "1", "document-start")).toThrow("document-start");
-    expect(typeof m.domHost.injectScript("b-1", "1", "document-end")).toBe("function");
-    // 주입은 **준비를 기다린 뒤** 실행된다 — 안 붙은 태그에 제어면을 부르면 Uncaught 다.
-    // 그래서 해지 함수는 즉시 돌아오고 실행은 다음 틱이다.
-    await new Promise((r) => setTimeout(r, 0));
-    expect((el as unknown as Record<string, ReturnType<typeof vi.fn>>).executeJavaScript)
-      .toHaveBeenCalledWith("1");
-  });
-
-  it("네이티브 주입은 해지가 no-op 임을 스스로 밝힌다", async () => {
-    const m = await load();
-    const off = m.nativeHost.injectScript("b-1", "1", "document-start");
-    expect(invoke).toHaveBeenCalledWith("webview_inject_script", {
-      label: "b-1", code: "1", phase: "document-start",
-    });
-    expect(() => off()).not.toThrow();
-  });
-
-  // open 이 사건 다리를 걸지 않으면 app.webview.on 구독자가 영영 안 불린다. 다리 자체가
-  // 검사돼 있어도 **거는 자리**가 빠지면 그 침묵은 어디에도 안 남는다(실측: 배선을 지웠는데
-  // 아무 검사도 실패하지 않았다).
-  it("open 이 사건 다리를 걸고 close 가 끊는다", async () => {
-    const m = await load();
-    await m.domHost.open("b-1", {});
-    const el = document.querySelector('[data-content-view="b-1"]')!;
-
-    const before = emitted.length;
-    // `<webview>` 는 필드를 **이벤트 객체 위에** 붙인다 — detail 로 흉내내면 다리가 detail 을
-    // 읽어도 통과하고, 그 통과는 살아있는 앱에서 주소창이 안 따라오는 것으로 나타난다.
-    el.dispatchEvent(Object.assign(new Event("did-navigate"), { url: "https://x" }));
-    expect(emitted.length, "다리가 안 걸렸다").toBeGreaterThan(before);
-    expect(emitted[emitted.length - 1]).toEqual(["content-view-navigated", { label: "b-1", url: "https://x", inPage: false }]);
-
-    await m.domHost.close("b-1");
-    // 닫힌 뒤에도 뿌리면 구독자가 그 label 을 살아 있는 것으로 읽는다.
-    const after = emitted.length;
-    el.dispatchEvent(Object.assign(new Event("did-navigate"), { url: "https://y" }));
-    expect(emitted.length, "닫은 뒤에도 뿌린다").toBe(after);
-  });
-});
-
-/**
- * `js` 는 **비동기 함수 본문**이다 — 계약의 정본은 WKWebView 의 callAsyncJavaScript(body) 이고,
- * 플러그인도 그렇게 부른다("return document.title").
- *
- * RED 근거(실측 2026-07-28): Electron 은 executeJavaScript 로 그것을 **스크립트**로 평가해
- * `return` 이 최상위에 오면 문법 오류다. 살아있는 앱에서 dom.text·eval 이 전부
- * "Script failed to execute" 로 죽었고, 그 사유는 브라우저 자동화 전체를 막았다.
- * 흉내로 문자열을 대조하지 않는다 — 만들어진 코드를 **실제로 평가**해 값을 본다.
- */
-describe("게스트 스크립트 — js 는 함수 본문이다", () => {
-  it("본문에 return 이 있어도 값이 나온다", async () => {
-    const m = await load();
-    await m.domHost.open("b-eval", {});
-    const el = document.querySelector('[data-content-view="b-eval"]')! as unknown as Record<
-      string,
-      unknown
-    >;
-    el.executeJavaScript = async (code: string) => (0, eval)(code);
-    // 제어면은 준비 뒤에만 부를 수 있다 — 실제 태그가 내는 그 사건을 여기서도 낸다.
-    (el as unknown as EventTarget).dispatchEvent(new Event("dom-ready"));
-    expect(await m.domHost.evalJs("b-eval", "return 1 + 1")).toBe("2");
-  });
-
-  it("await 을 쓰는 본문도 그대로 선다", async () => {
-    const m = await load();
-    await m.domHost.open("b-eval2", {});
-    const el = document.querySelector('[data-content-view="b-eval2"]')! as unknown as Record<
-      string,
-      unknown
-    >;
-    el.executeJavaScript = async (code: string) => (0, eval)(code);
-    // 제어면은 준비 뒤에만 부를 수 있다 — 실제 태그가 내는 그 사건을 여기서도 낸다.
-    (el as unknown as EventTarget).dispatchEvent(new Event("dom-ready"));
-    expect(await m.domHost.evalJs("b-eval2", "const v = await Promise.resolve(7); return v")).toBe(
-      "7",
-    );
-  });
-});
-
-describe("DOM 콘텐츠 뷰의 숨김", () => {
-  // `display:none` 은 상자를 레이아웃에서 빼고, 다시 켤 때 게스트가 0×0 뷰포트로 붙는다 —
-  // URL 은 맞는데 화면만 백지다(실측 2026-07-30: 되돌아온 탭에서 innerWidth/innerHeight = 0,
-  // 컨테이너는 586×428). 크기가 돌아오는 것은 **누군가 bounds 를 다시 불러 줄 때뿐**이라,
-  // 복원이 우연에 달린다.
-  //
-  // 이 저장소에는 이미 그 규칙이 단일 진실로 있다(layerPark.parkedStyle): 화면 밖으로 옮기되
-  // 크기와 세션은 보존한다. 그 헤더가 바로 "display:none 의 재-fit 회피"라고 적어 뒀다.
-  // 여기만 그 규칙을 안 쓰고 있었다.
-  it("숨겨도 상자를 잃지 않는다 — display:none 을 쓰지 않는다", async () => {
-    provision = { chromium: false, nativeChildWebview: false };
-    const { contentViewHost } = await load();
-    const host = contentViewHost();
-
-    await host.open("b-1", { url: "https://example.com" });
-    await host.bounds("b-1", 10, 20, 586, 428);
-    const el = document.querySelector('[data-content-view="b-1"]') as HTMLElement;
-    expect(el).toBeTruthy();
-
-    await host.visible("b-1", false);
-    expect(el.style.display).not.toBe("none");
-    // 상자는 그대로 남는다 — 켤 때 다시 재어 줄 사람이 없어도 크기가 살아 있다.
-    expect(el.style.width).toBe("586px");
-    expect(el.style.height).toBe("428px");
-    // 그리고 화면 밖이다 — 숨긴 것이 보이면 그것은 숨긴 것이 아니다.
-    expect(el.style.visibility).toBe("hidden");
-    expect(el.style.transform).toContain("translateX");
-
-    await host.visible("b-1", true);
-    expect(el.style.visibility).toBe("visible");
-    expect(el.style.transform === "" || el.style.transform === "none").toBe(true);
-    expect(el.style.width).toBe("586px");
-  });
-
-  // 만든 직후도 같은 규칙이다 — 여기만 display:none 이면 첫 표시가 같은 함정을 밟는다.
-  it("만들 때도 파킹으로 숨긴다", async () => {
-    provision = { chromium: false, nativeChildWebview: false };
-    const { contentViewHost } = await load();
-    await contentViewHost().open("b-2", { url: "https://example.com" });
-    const el = document.querySelector('[data-content-view="b-2"]') as HTMLElement;
-    expect(el.style.display).not.toBe("none");
-    expect(el.style.visibility).toBe("hidden");
-  });
-});
-
-/** 주입은 **그 문서와 함께 산다.** 페이지가 이동하면 주입된 것도 사라지므로, 한 번만 넣으면
- *  첫 문서에서만 살아 있고 그 뒤로는 조용히 없다 — 계약이 "매 내비게이션 재주입"이라고 적어
- *  두었는데 DOM 구현은 한 번만 넣고 있었다. 해지도 진짜여야 한다: `() => {}` 를 돌려주면
- *  부르는 쪽은 껐다고 믿고 다음 문서에서 또 도는 스크립트를 본다. */
-describe("게스트 스크립트 주입 — 문서가 새로 설 때마다", () => {
-  beforeEach(() => {
-    invoke.mockClear();
-    document.body.innerHTML = "";
-  });
-
-  it("이동할 때마다 다시 넣는다 — 한 번만 넣으면 다음 문서에는 없다", async () => {
-    const m = await load();
-    await m.domHost.open("b-1", { url: "https://x" });
-    const el = document.querySelector('[data-content-view="b-1"]')!;
-    stubTag(el);
-    m.domHost.injectScript("b-1", "sentinel()", "document-end");
-    await Promise.resolve();
-    await Promise.resolve();
-    const run = (el as unknown as { executeJavaScript: ReturnType<typeof vi.fn> })
-      .executeJavaScript;
-    expect(run).toHaveBeenCalledWith("sentinel()");
-    const first = run.mock.calls.length;
-    // 페이지가 새로 섰다 — 태그는 이동마다 dom-ready 를 다시 낸다.
-    el.dispatchEvent(new Event("dom-ready"));
-    expect(run.mock.calls.length).toBeGreaterThan(first);
-  });
-
-  it("해지하면 다음 문서에서는 안 넣는다 — 껐다는 말이 사실이어야 한다", async () => {
-    const m = await load();
-    await m.domHost.open("b-2", { url: "https://x" });
-    const el = document.querySelector('[data-content-view="b-2"]')!;
-    stubTag(el);
-    const off = m.domHost.injectScript("b-2", "sentinel()", "document-end");
-    await Promise.resolve();
-    await Promise.resolve();
-    const run = (el as unknown as { executeJavaScript: ReturnType<typeof vi.fn> })
-      .executeJavaScript;
-    off();
-    const before = run.mock.calls.length;
-    el.dispatchEvent(new Event("dom-ready"));
-    expect(run.mock.calls.length).toBe(before);
+    expect(keys(nativeHost).length).toBeGreaterThan(10);
   });
 });

@@ -44,6 +44,22 @@ function resolveFramework(): AppFramework {
 /** 활성 프레임워크. 진단·원장에 이름을 실을 때 쓴다. */
 export const framework: AppFramework = resolveFramework();
 
+/**
+ * 고른 쪽만 자기 것을 건다 — 구현·장치·스타일.
+ *
+ * 번들에는 두 어댑터가 다 들어 있으므로(Electron 도 같은 프론트를 적재한다) 적재만으로
+ * 걸리게 두면 안 고른 프레임워크의 것도 함께 걸린다 — 실측 2026-08-03: `electron.css` 가
+ * Tauri 빌드에도 들어와 있었다. 그래서 거는 시점을 **선택 뒤**로 옮긴다.
+ *
+ * **모듈 평가 중에 부르지 않는다.** 거는 쪽은 앱 모듈(플러그인 버스·스토어·DOM)을 만지고,
+ * 그 모듈들은 다시 이 파일을 본다 — 평가 도중에 부르면 순환 적재에서 아직 안 선 바인딩을
+ * 밟는다(실측 2026-08-03: "invoke is not a function" 으로 검사 13벌이 통째로 죽었다).
+ * 부팅이 한 번 부른다(main.tsx). 무엇이 걸리는지는 여기서도 거기서도 묻지 않는다.
+ */
+export function installFramework(): Promise<void> {
+  return framework.install();
+}
+
 // ── 이름 있는 재수출 — 호출부는 프레임워크를 모른 채 이것만 쓴다 ─────────────
 export const invoke: AppFramework["invoke"] = (cmd, args) => framework.invoke(cmd, args);
 export const createStream: AppFramework["createStream"] = () => framework.createStream();

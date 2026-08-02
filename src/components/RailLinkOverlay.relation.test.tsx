@@ -29,6 +29,7 @@ vi.mock("../i18n", () => ({ useT: () => () => "LINKED" }));
 
 import { RailLinkOverlay } from "./RailLinkOverlay";
 import { useSettings } from "../state/settings";
+import { styleSurfaceRules } from "../ui/styleSurface";
 
 class ResizeObserverMock {
   observe() {}
@@ -169,19 +170,17 @@ describe("RailLinkOverlay — railRelation 3안 스위치", () => {
   });
 });
 
-// CSS 갈래는 jsdom 이 계산하지 않으므로 App.css 를 직접 게이트한다(cssContract 선례).
+// CSS 갈래는 jsdom 이 계산하지 않으므로 스타일 표면을 직접 게이트한다(cssContract 선례).
 // 이 규칙들도 실험 임시물 — 3안 결정 시 테스트째 소거.
-describe("railRelation 모드 CSS 갈래 (App.css)", () => {
-  // 주석 제거 후 매칭 — 규칙 사이·안의 설명 주석이 셀렉터 탐색을 오염시키지 않게.
-  const css = readFileSync(join(process.cwd(), "src", "App.css"), "utf8")
-    .replace(/\/\*[\s\S]*?\*\//g, "");
+describe("railRelation 모드 CSS 갈래 (스타일 표면)", () => {
+  const css = styleSurfaceRules();
 
   function decls(selector: string): string {
     const escaped = selector.replace(/[.[\]"=]/g, (c) => `\\${c}`);
     const match = css.match(
       new RegExp(`(?:^|,|\\})\\s*(?:[^,{}]+,\\s*)*${escaped}\\s*(?:,[^{}]+)?\\{([^}]*)\\}`),
     );
-    expect(match, `App.css 에 ${selector} 규칙이 있어야 한다`).not.toBeNull();
+    expect(match, `스타일 표면에 ${selector} 규칙이 있어야 한다`).not.toBeNull();
     return match![1];
   }
 

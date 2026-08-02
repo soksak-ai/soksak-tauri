@@ -7,7 +7,7 @@
 // 노출(data-node)되지 않은 요소는 주소 트리에 없어 접근 불가 → 명확한 에러(추측 0).
 
 import { moduleState } from "../lib/moduleState";
-import { invoke, currentWindow } from "../framework";
+import { currentWindow } from "../framework";
 import { browserLabel, currentWindowLabel } from "../lib/webviewLabels";
 import { contentViewHost } from "../lib/contentViews";
 import { parseAddress, isParseError } from "./address";
@@ -1332,21 +1332,4 @@ export function registerDomCatalog(): void {
     },
   });
 
-  // native 마우스 브릿지(App 의 native-mousedown/move/up)를 소켓으로 구동 — 브라우저(네이티브 child)
-  // 위 골 드래그를 실제 마우스 없이 E2E 자가검증. kind = native-mousedown|native-mousemove|native-mouseup.
-  register("webview.emitNative", {
-    description: "Emit a native mouse-bridge event (native-mousedown/move/up) at viewport x,y — drives divider drag/resize over a native child (browser) without a real mouse, for E2E. Pair with ui.input.drag (DOM path); this is the native path. Occluded/unfocused windows pause rAF and may not respond — call window.focus to bring the window forward first.",
-    params: {
-      kind: { type: "string", description: "native-mousedown | native-mousemove | native-mouseup", required: true },
-      x: { type: "number", description: "viewport x", required: true },
-      y: { type: "number", description: "viewport y", required: true },
-    },
-    returns: "{ ok, kind }",
-    message: (d) => tmsg("msg.webview.emitNative", { kind: String(d.kind) }),
-    examples: ['webview.emitNative \'{"kind":"native-mousedown","x":400,"y":300}\''],
-    handler: async (p) => {
-      await invoke("webview_emit_native", { kind: p.kind, x: p.x, y: p.y });
-      return { ok: true, kind: p.kind };
-    },
-  });
 }

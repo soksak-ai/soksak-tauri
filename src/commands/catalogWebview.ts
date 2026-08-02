@@ -9,6 +9,7 @@ import { register, type CommandHint } from "./registry";
 import { tmsg } from "../i18n";
 import { allViews, useSessions } from "../state/sessions";
 import { browserLabelPrefix, browserViewIdFromLabel, orphanBrowserLabels } from "../lib/webviewLabels";
+import { CONTENT_VIEW_SLOT, contentViewHost } from "../lib/contentViews";
 
 interface LabelHealth {
   label: string;
@@ -23,21 +24,27 @@ interface LabelHealth {
 export function registerWebviewCatalog(): void {
   register("webview.surfaces", {
     description:
-      "Reconcile this window's state (which views exist) against the browser child webviews actually alive for this window. ghosts = child webviews whose view no longer exists in state — a stale native surface floating over the window (the 'browser over an empty window' mismatch); a non-empty ghosts list is always a defect fact. Judged from the same sources the app itself uses (state store + webview_list), no pixels involved.",
+      "Reconcile this window's state (which views exist) against the browser content views actually alive for this window. ghosts = views whose view no longer exists in state — a stale surface floating over the window (the 'browser over an empty window' mismatch). detached = content surfaces that live in the document but not inside the slot that declared them — they are being pushed by coordinates, so slot and surface are two clocks and one of them is always late (empty pane, edge afterimage). A non-empty ghosts or detached list is always a defect fact. Judged from the same sources the app itself uses (state store + the content view host), no pixels involved.",
     triggers: { ko: "표면 정합 유령 웹뷰 잔존 브라우저 대조 확인" },
     params: {},
-    returns: "{ window, actual: [label], ghosts: [label], orphans: [label], engine: {registered, hostPresent}, bodies: [{node,x,y,w,h,children,overlay,…}], stateViews }",
+    returns:
+      "{ window, actual: [label], ghosts: [label], orphans: [label], engine: {registered, hostPresent}, bodies: [{node,x,y,w,h,children,overlay,…}], contentViews: {inDocument, detached: [label]}, stateViews }",
     message: (d) => {
       const bad =
         Number((d.ghosts as string[] | undefined)?.length ?? 0) +
-        Number((d.orphans as string[] | undefined)?.length ?? 0);
+        Number((d.orphans as string[] | undefined)?.length ?? 0) +
+        Number((d.contentViews as { detached?: string[] } | undefined)?.detached?.length ?? 0);
       return bad > 0
         ? tmsg("msg.webview.surfaces.ghost", { n: bad })
         : tmsg("msg.webview.surfaces.clean", { n: Number(d.stateViews ?? 0) });
     },
     examples: ["webview.surfaces"],
     handler: async () => {
-      const labels = await invoke<string[]>("webview_list");
+      // **호스트에게 묻는다.** 프레임워크의 네이티브 목록(webview_list)만 보면, 콘텐츠가 문서
+      // 안에 사는 구현에서는 살아 있는 표면이 셋인데 목록이 비어 답이 통째로 공짜가 된다 —
+      // 유령 판정이 빈 집합에서 나오니 언제나 "유령 없음"이다(실측 2026-08-03: 브라우저 뷰 3개가
+      // 떠 있는데 actual: []). 호스트는 두 구현 모두 자기 목록을 안다.
+      const labels = await contentViewHost().list();
       const mine = labels.filter((l) => l.startsWith(browserLabelPrefix()));
       // 전역 고아 — 부모 창이 이미 닫힌 child(b-<win>-…)는 어느 창의 접두사에도 안 걸려
       // 창-로컬 대조가 영영 못 본다(실사고: 빈 main 창 위에 닫힌 하니스 창의 브라우저가
@@ -99,7 +106,28 @@ export function registerWebviewCatalog(): void {
                 : "none",
         });
       }
-      return { actual: mine, ghosts, orphans, engine, bodies, stateViews: viewIds.size };
+      // 표면이 **자기 자리에 사는가.** 문서 안에 사는 표면은 선언된 자리의 자손이어야 한다 —
+      // 자리 밖에 있으면 그 표면은 좌표로 밀리고 있다는 뜻이고, 자리와 표면이 두 기준이 되어
+      // 하나는 반드시 늦는다(슬롯은 새 자리, 표면은 옛 자리 = 빈 판·경계의 잔상).
+      //
+      // 프레임워크를 묻지 않는다: 문서에 표면이 없으면 셋 다 0 이고 그것이 사실이다. 있는데
+      // 자리 밖이면 detached 에 이름이 남는다 — "없음"과 "밖에 있음"이 갈린다.
+      const detached: string[] = [];
+      const inDocument = document.querySelectorAll("[data-content-view]");
+      for (const el of inDocument) {
+        const own = el.getAttribute("data-content-view") ?? "";
+        if (el.parentElement?.closest(`[${CONTENT_VIEW_SLOT}]`)?.getAttribute(CONTENT_VIEW_SLOT) !== own)
+          detached.push(own);
+      }
+      return {
+        actual: mine,
+        ghosts,
+        orphans,
+        engine,
+        bodies,
+        stateViews: viewIds.size,
+        contentViews: { inDocument: inDocument.length, detached },
+      };
     },
   });
 

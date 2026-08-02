@@ -5,9 +5,10 @@
 // 원칙(NATIVE-SURFACES §2): 표면의 기하도 표현도 직접 조작으로만 변한다 — 위상은 실제로
 // 변하는 요소만 대상으로 삼는다. 이 테스트는 그 원칙을 CSS 수준에서 강제한다.
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { styleSurface } from "../ui/styleSurface";
 
-const css = readFileSync(new URL("../App.css", import.meta.url), "utf8");
+// 표면 전체 — 코어와 각 프레임워크의 스타일시트가 함께 문서에 선다(ui/styleSurface).
+const css = styleSurface();
 
 /** 규칙 목록: [셀렉터, 선언부] — 주석은 제거하고 파싱한다. */
 function rules(): [string, string][] {

@@ -1,0 +1,258 @@
+// Tauri 전용 장치 — **이 프레임워크가 자기 사정을 스스로 갚는 자리.**
+//
+// 이 프레임워크의 콘텐츠는 문서 밖에 산다(OS 자식 뷰). 문서 밖 표면은 DOM 전체보다 뒤에
+// 합성되고, 좌표를 써 줘야 움직이고, 그 위의 마우스는 이 문서에 오지 않는다. 그래서 이
+// 프레임워크에는 그 셋을 갚는 장치가 필요하다 — 홀·스탠드인·클립·네이티브 마우스.
+//
+// **그 장치는 코어의 것이 아니다.** 콘텐츠가 문서 안에 사는 프레임워크에는 갚을 빚이 없고,
+// 거기서 같은 장치가 돌면 멀쩡한 판을 가리고 비운다(실측 2026-08-03: 판 활성 전이의 한
+// 프레임에서 브라우저 판 둘이 통째로 비었다 — 스탠드인·베일이 문서 안 게스트에게도 걸렸다).
+//
+// 그래서 규칙은 하나다: **코어 표면은 둘 다 동일하고, 그 표면에 자기 fix 를 거는 것은 각
+// 프레임워크다.** 코어는 무엇이 걸렸는지 묻지 않는다 — 안 걸리면 아무 일도 안 일어난다.
+// 새 프레임워크가 오면 자기 파일에 자기 것을 적는다. 남의 fix 를 물려받지 않는다.
+import { invoke } from "@tauri-apps/api/core";
+import styles from "./styles.css?inline";
+import { nativeHost } from "./contentViews";
+import { adoptFrameworkStyles } from "../styles";
+import { registerContentViewHost } from "../../lib/contentViews";
+import { emitPluginEvent } from "../../plugins/hooks";
+import { ensureSlotFreezeHost, scheduleSlotSettleCapture } from "../../lib/slotFreezeHost";
+import { installRailHoleClip } from "../../lib/railHoleClipHost";
+import { installSurfaceAudit } from "../../lib/surfaceAudit";
+import { installDomHoles } from "./domHoles";
+import { useUi } from "../../state/ui";
+import { useGutterHover } from "../../state/gutterHover";
+import { bindPaneUnder } from "../../lib/bindPaneUnder";
+import { onLayoutMotion } from "../../lib/layoutMotion";
+import { listenThisWindow } from "../../lib/windowEvents";
+import { register } from "../../commands/registry";
+import { tmsg } from "../../i18n";
+
+/** 부팅 직후의 첫 정착 — 첫 레이아웃이 앉을 때까지 기다렸다 한 번 굽는다. */
+const BOOT_SETTLE_MS = 1200;
+
+/**
+ * 이동-동결(스탠드인) — 문서 밖 표면은 활강 중 제자리에 머문다. 슬롯만 미끄러지면 그 옛 자리가
+ * 드러나므로, 코어가 미리 구운 그림으로 슬롯을 덮고 착지에서 물러난다.
+ *
+ * 캡처는 이 프레임워크의 플러그인이 답한다 — 명령 이름부터 이 프레임워크의 것이다.
+ */
+function installSlotFreeze(): void {
+  ensureSlotFreezeHost({
+    root: () => document,
+    capture: async (r) => {
+      const b64 = (await invoke("plugin:webview-capture|snapshot_region", {
+        x: r.x,
+        y: r.y,
+        w: r.w,
+        h: r.h,
+      })) as string;
+      return `data:image/png;base64,${b64}`;
+    },
+    emitVeil: (viewId, veiled, hidden) =>
+      emitPluginEvent("view.veiled", { viewId, veiled, hidden }),
+  });
+  window.setTimeout(() => scheduleSlotSettleCapture(), BOOT_SETTLE_MS);
+}
+
+/**
+ * 오버레이 히트테스트 게이트 — 모달·메뉴가 떠 있는 동안 아래 표면이 마우스를 못 가져가게 한다.
+ *
+ * 콘텐츠가 문서 밖이라 필요한 장치다. 이 문서의 hitTest 가 nil 을 돌려주는 자리에서는 아래
+ * 네이티브가 마우스를 가져가므로, "바깥 클릭 = 닫기"가 성립하려면 그 통과를 막아야 한다.
+ * 문서 안에 사는 콘텐츠는 평범한 쌓임으로 이미 막힌다 — 거기서는 걸 것이 없다.
+ *
+ * 0↔1 경계에서만 보낸다(불필요 IPC 억제). 카운터는 코어의 사실이고, 그 반응이 여기 있다.
+ */
+function installOverlayGate(): void {
+  // 부트 정렬: 이 문서의 재적재는 카운터를 0부터 다시 시작하지만 네이티브 게이트엔 직전
+  // 상태(true)가 남을 수 있다 — 시작 시 1회 false 로 맞춘다.
+  let up = false;
+  const send = (active: boolean) => {
+    void invoke("webview_overlay_active", { active }).catch(() => {});
+  };
+  send(false);
+  useUi.subscribe((s) => {
+    const now = s.overlayCount > 0;
+    if (now === up) return;
+    up = now;
+    // 코어가 호출 창을 자동 인지(window 주입)하므로 label 전달 불요 — 이 창의 게이트만 갱신.
+    send(now);
+  });
+}
+
+/**
+ * 표면 위의 마우스를 문서가 되찾는다.
+ *
+ * 콘텐츠가 OS 자식 뷰라 그 위의 mousedown/move/up 이 이 문서에 오지 않는다. 그래서 둘이 끊긴다:
+ * ① 포커스 — 표면을 눌러도 그 아래 칸이 활성화되지 않는다.
+ * ② 분할 드래그 — 표면 위를 지나는 골을 잡을 수 없다.
+ *
+ * 프레임워크의 입력 모니터가 좌표를 낸다. 좌표의 요소는 `elementFromPoint` 가 답하고(그것은
+ * DOM 만 보므로 표면 아래의 골도 반환한다), 골이면 합성 마우스 사건을 재생해 **기존 드래그
+ * 로직을 그대로** 구동한다 — 골을 감추거나 표면을 숨기는 우회 없이 화면을 꽉 채운 채 끌린다.
+ *
+ * 칸을 짚는 판정은 코어의 한 함수를 부른다(lib/bindPaneUnder) — 콘텐츠 뷰 활성화로 들어오는
+ * 길과 같은 자리다. 갈리면 한쪽만 고쳐지고 그 어긋남은 오류로 안 보인다.
+ */
+function installNativeMouse(): void {
+  const fire = (target: EventTarget, type: string, x: number, y: number) =>
+    target.dispatchEvent(
+      new MouseEvent(type, {
+        clientX: x,
+        clientY: y,
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+        buttons: type === "mouseup" ? 0 : 1,
+        view: window, // React 위임이 SyntheticEvent 를 만들려면 view(defaultView)가 필요할 수 있다.
+      }),
+    );
+  let dragging = false;
+  // 이 창에 emit_to 된 것만 받는다(전역 listen 이면 다른 창 사건도 받아 엉뚱한 창을 건드린다).
+  listenThisWindow<{ x: number; y: number }>("native-mousedown", (e) => {
+    const { x, y } = e.payload;
+    const el = document.elementFromPoint(x, y);
+    // 중계 대상: 분할 골 + `[data-native-drag]` 선언 요소(범용 계약 — 플러그인 내부 리사이저 등).
+    const divider = el?.closest<HTMLElement>(".pane-gutter, [data-native-drag]");
+    if (divider) {
+      dragging = true;
+      fire(divider, "mousedown", x, y);
+      return;
+    }
+    bindPaneUnder(el);
+  });
+  listenThisWindow<{ x: number; y: number }>("native-mousemove", (e) => {
+    if (dragging) {
+      fire(window, "mousemove", e.payload.x, e.payload.y);
+      return;
+    }
+    // hover(버튼 안 누름) — 표면 위에선 골의 :hover 가 발동하지 않으므로 좌표의 골을 기록한다.
+    // 발행(GroupArea data-gutter-key)과 같은 이름을 읽는다 — 개명에서 이 판독부만 남아
+    // dataset.dividerKey 가 항상 undefined 였다(표면 위 골 강조 무음 사망, 감사 적발).
+    const el = document.elementFromPoint(e.payload.x, e.payload.y);
+    const div = el?.closest<HTMLElement>(".pane-gutter");
+    useGutterHover.getState().set(div?.dataset.gutterKey ?? null);
+  });
+  listenThisWindow<{ x: number; y: number }>("native-mouseup", (e) => {
+    if (!dragging) return;
+    dragging = false;
+    fire(window, "mouseup", e.payload.x, e.payload.y);
+  });
+  // 포인터 부재 — 창 resignKey·앱 resignActive 에서 온다. hover 는 "있음"만 말하는 소스에서
+  // 오므로 이 짝이 없으면 꺼질 방법이 없다: 포인터가 창 밖으로 나가면 mousemove 가 끊기고,
+  // 끊긴 것과 그 자리에 멈춘 것이 구별되지 않아 강조가 영원히 남는다(실측: accent 세로선이
+  // 브라우저를 가로지른 채 굳음).
+  listenThisWindow("native-mouseleave", () => {
+    dragging = false;
+    useGutterHover.getState().set(null);
+  });
+}
+
+/**
+ * 골 강조바 — 표면 위에서는 DOM 강조가 안 보이므로 프레임워크가 그 자리에 직접 그린다.
+ *
+ * rAF 추적: 드래그로 골이 움직이면 매 프레임 rect 를 다시 재야 바가 정확히 따라간다(1회성
+ * 배치는 드래그 중 바가 제자리에 남는다 — 회귀). rect 가 안 변한 프레임은 보내지 않는다.
+ */
+function installDividerBar(): void {
+  let raf = 0;
+  let last = "";
+  const send = (rect: { x: number; y: number; w: number; h: number } | null) => {
+    void invoke("webview_divider_highlight", { rect }).catch(() => {});
+  };
+  const stop = () => {
+    if (raf) cancelAnimationFrame(raf);
+    raf = 0;
+    last = "";
+    send(null);
+  };
+  useGutterHover.subscribe((s) => {
+    const key = s.key;
+    if (!key) return stop();
+    if (raf) return; // 이미 추적 중 — 대상만 바뀌면 다음 프레임이 새 rect 를 읽는다
+    const tick = () => {
+      const sel = `.pane-gutter[data-gutter-key="${CSS.escape(useGutterHover.getState().key ?? "")}"]`;
+      const el = document.querySelector(sel);
+      if (el instanceof HTMLElement) {
+        const r = el.getBoundingClientRect();
+        const sig = `${r.left.toFixed(1)},${r.top.toFixed(1)},${r.width.toFixed(1)},${r.height.toFixed(1)}`;
+        if (sig !== last) {
+          last = sig;
+          send({ x: r.left, y: r.top, w: r.width, h: r.height });
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    tick();
+  });
+}
+
+/**
+ * 리사이즈 위상 릴레이 — 표면이 문서 밖이라 위상 동안 그 표면을 다루려면 프레임워크가 알아야 한다.
+ *
+ * 플러그인 채널(layout.resize-gesture)은 코어가 이미 뿌린다 — 그건 두 프레임워크 모두의 사실이다.
+ * 여기 있는 것은 **이 프레임워크의 네이티브 쪽**에만 필요한 릴레이다.
+ */
+function installResizeGestureRelay(): void {
+  onLayoutMotion((active) => {
+    void invoke("webview_resize_gesture", { active }).catch(() => {
+      // 비-macOS 등 릴레이 미지원은 무해 — 플러그인 채널은 이미 전달됐다.
+    });
+  });
+}
+
+/**
+ * 이 프레임워크의 입력 브릿지를 소켓에서 구동하는 명령 — 표면 위 골 드래그의 E2E 자가검증.
+ *
+ * 명령도 **거는 것**이다. 코어 등록부에 걸되 거는 쪽은 이 프레임워크다: 다른 프레임워크에는
+ * 그 브릿지가 없고, 거기서 이 이름이 목록에 있으면 부른 쪽은 있는 줄 알고 부른다.
+ */
+function installNativeBridgeCommand(): void {
+  register("webview.emitNative", {
+    description:
+      "Emit a native mouse-bridge event (native-mousedown/move/up) at viewport x,y — drives divider drag/resize over a content surface that lives outside the document, without a real mouse, for E2E. Pair with ui.input.drag (DOM path); this is the native path. Occluded/unfocused windows pause rAF and may not respond — call window.focus to bring the window forward first.",
+    params: {
+      kind: {
+        type: "string",
+        description: "native-mousedown | native-mousemove | native-mouseup",
+        required: true,
+      },
+      x: { type: "number", description: "viewport x", required: true },
+      y: { type: "number", description: "viewport y", required: true },
+    },
+    returns: "{ ok, kind }",
+    message: (d) => tmsg("msg.webview.emitNative", { kind: String(d.kind) }),
+    examples: ['webview.emitNative \'{"kind":"native-mousedown","x":400,"y":300}\''],
+    handler: async (p) => {
+      await invoke("webview_emit_native", { kind: p.kind, x: p.x, y: p.y });
+      return { ok: true, kind: p.kind };
+    },
+  });
+}
+
+/** 이 프레임워크가 코어 표면에 거는 것 전부. 고른 어댑터만 불린다(contract.install). */
+export function installTauri(): void {
+  // 콘텐츠 뷰 구현 — 이 프레임워크가 줄 수 있는 것은 OS 자식 뷰다.
+  registerContentViewHost(nativeHost);
+  // 홀 CSS — 셀렉터에 프레임워크 이름이 없다. 안 걸리면 그 규칙은 애초에 문서에 없다.
+  adoptFrameworkStyles("tauri", styles);
+  installSlotFreeze();
+  // 사이드바는 홀 위에 칠하지 않는다 — 문서 밖 표면은 DOM 전체 뒤라 클립 제외만이 유일한 길이다.
+  installRailHoleClip();
+  // 표면 정합 상시 감사 — 문서 밖 표면은 상태와 따로 살 수 있어(유령) 그 어긋남을 계속 본다.
+  installSurfaceAudit();
+  // 홀(골·사이드바) 갱신 — 네이티브 층 아래의 마우스 소유를 문서가 되찾는 자리.
+  installDomHoles();
+  // 오버레이 동안 아래 표면의 마우스 통과를 막는다 — 문서 안 콘텐츠에는 걸 것이 없다.
+  installOverlayGate();
+  // 표면 위의 마우스를 문서가 되찾는다(포커스·분할 드래그).
+  installNativeMouse();
+  // 골 강조바 — 표면 위에서는 DOM 강조가 안 보인다.
+  installDividerBar();
+  // 리사이즈 위상을 네이티브 쪽에 알린다.
+  installResizeGestureRelay();
+  // 이 프레임워크에만 있는 명령 표면.
+  installNativeBridgeCommand();
+}

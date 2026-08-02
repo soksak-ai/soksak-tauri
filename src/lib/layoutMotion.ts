@@ -13,7 +13,6 @@
 // 페이로드 { active, kinds }: kinds = 그 순간 활성인 종별들. active 인 채 종별 구성이
 // 바뀌면 active:true 를 재발화한다 — 소비자는 재평가한다(예: 주행 중 디바이더 개입 → 해동).
 import { moduleState } from "../lib/moduleState";
-import { invoke } from "../framework";
 import { emitPluginEvent } from "../plugins/hooks";
 
 export type LayoutMotionKind = "move" | "resize";
@@ -84,9 +83,8 @@ function syncEmit(): void {
   // 플러그인 채널은 사실만 싣는다(active·kinds). 어느 표면이 이 위상의 대상인지는 브로드캐스트
   // 로 추측할 일이 아니다 — 코어가 동결한 슬롯에 view.veiled 로 정확히 통지한다(§4.6).
   emitPluginEvent("layout.resize-gesture", { active, kinds });
-  void invoke("webview_resize_gesture", { active }).catch(() => {
-    // 비-macOS 등 릴레이 미지원은 무해 — 플러그인 채널은 이미 전달됨.
-  });
+  // 네이티브 쪽 릴레이는 여기 없다 — 문서 밖 표면을 가진 프레임워크만 필요로 하고, 그
+  // 프레임워크가 아래 로컬 리스너로 스스로 건다(framework/tauri/install.ts).
   // 로컬 리스너: 에지에서 부르되(기존 계약), 활성 중 종별 변화도 전달한다 — 코어 소비자
   // (슬롯 동결)가 kinds·scope 재평가를 해야 하므로 플러그인 채널과 같은 조건으로 부른다.
   for (const l of listeners) l(active, kinds, scopeViews);

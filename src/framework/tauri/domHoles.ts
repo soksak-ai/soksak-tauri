@@ -11,9 +11,9 @@
 //
 // 계약: 홀 목록 = 열린 우측 사이드바 + 보이는 모든 골. 갱신은 사건 구동(레이아웃 커밋·창
 // 리사이즈·사이드바 변화)이고, 같은 값의 재발행은 침묵한다(멱등).
-import { moduleState } from "../lib/moduleState";
-import { engineProvision, invoke } from "../framework";
-import { onPluginEvent } from "../plugins/hooks";
+import { moduleState } from "../../lib/moduleState";
+import { invoke } from "@tauri-apps/api/core";
+import { onPluginEvent } from "../../plugins/hooks";
 
 export interface Hole {
   x: number;
@@ -46,11 +46,8 @@ const ms = moduleState("lib/domHoles#state", () => ({
 /** 수집→발행(같은 값이면 침묵). 레이아웃 커밋 다음 프레임에 부르는 것이 정확하다. */
 export function reportDomHoles(): void {
   if (typeof document === "undefined") return;
-  // 홀은 **네이티브 층이 있을 때만** 뜻이 있다. 콘텐츠가 DOM 안에 사는 프레임워크에는 그
-  // 층이 없어 OS 히트테스트가 끼어들 자리도 없다 — 그때 보내는 것은 없는 개념에 대한
-  // 호출이고, 프레임워크는 그것을 거절한다. 거절을 삼키면 조용해지고 안 삼키면 부팅 원장이
-  // 실패로 물든다. 둘 다 답이 아니라 **묻지 않는 것**이 답이다.
-  if (!engineProvision.nativeChildWebview) return;
+  // 안 걸었으면 보낼 것도 없다 — 설치 전의 사건(부팅 중 reflow)이 먼저 도착할 수 있다.
+  if (!installedFlag.on) return;
   const holes = collectHoles();
   const sig = JSON.stringify(holes.map((h) => [Math.round(h.x), Math.round(h.y), Math.round(h.w), Math.round(h.h)]));
   if (sig === ms.lastSig) return;
@@ -62,7 +59,13 @@ export function reportDomHoles(): void {
 // 안 남았는데 채우던 쪽은 이미 돌았다고 알아 다시 붙이지 않는다(영영 미설치).
 const installedFlag = moduleState("lib/domHoles#installedFlag.on", () => ({ on: false }));
 
-/** 사건 구동 갱신 설치 — 부트 1회(멱등). 폴링 없음. */
+/**
+ * 사건 구동 갱신 설치 — 부트 1회(멱등). 폴링 없음.
+ *
+ * 입력은 **코어가 이미 뿌리는 사실**뿐이다: 레이아웃 커밋(layout.reflow — 분할·탭 전환·
+ * 사이드바·레일 주행)과 창 리사이즈. 코어가 이 장치를 직접 부르지 않는다 — 부르면 코어가
+ * 홀이라는 개념을 알게 되고, 그 개념이 없는 프레임워크에서도 그 줄이 돈다.
+ */
 export function installDomHoles(): void {
   if (installedFlag.on || typeof window === "undefined") return;
   installedFlag.on = true;
