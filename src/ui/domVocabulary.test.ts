@@ -30,6 +30,8 @@ const ALLOWED = new Set([
   "data-view-addr", // 노드 스캔 baseAddress(절대 주소) — view 는 종류 축(생존 어휘)
   "data-tab-id", // 탭 인스턴스 역참조 앵커(정본 — viewHostAnchors)
   "data-testid", // 테스트 관례(외부 표준 이름)
+  "data-rail", // 결부 보더의 레일 상자(호스트 상대 px "x,y,w,h") — 판 상자와 다른 것
+  "data-box", // 결부 보더가 실제로 그린 상자(호스트 상대 px "x,y,w,h") — 관측면
   "data-dim", // 흐림 단계(clear|idle|blocked) — 사유가 아니라 결과(lib/dimLevel)
   "data-project-plane", // 프로젝트 평면 표식
   "data-gutter-key", // 골 정본 주소 키(gutter 확정 어휘)

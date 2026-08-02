@@ -177,19 +177,25 @@ export function projectRailCssSpan(
 /**
  * 칸의 백분율을 호스트 픽셀로 투영한다.
  *
- * **판 영역은 레일 하나만 뺀 나머지가 아니다.** 오른쪽에 밀기 사이드바가 서면 그만큼 더 좁다.
- * 안 빼면 투영이 늘어나 칸 상자가 호스트 밖으로 나가고, 직각이어야 할 경로가 스스로 교차해
- * 사선으로 그려진다(실측 2026-08-02: 결합 보더가 긴 사선 하나로 나왔다).
+ * **기준 폭은 호스트가 답한다.** 판 영역은 호스트에서 레일만 뺀 나머지다 — 레일은 호스트
+ * *안*에 서기 때문이다. 호스트 밖에 선 것(밀기 사이드바)은 여기서 뺄 것이 아니다: 그것이
+ * 서면 호스트 자체가 이미 그만큼 좁다.
+ *
+ * 재입법(2026-08-02, 실측): 여기서 `rightInsetPx` 를 한 번 더 빼고 있었다. 밀기 모드에서
+ * 그린 보더의 오른쪽 끝이 창 1017px 인데 결합 판의 오른쪽 끝은 1336px — 정확히 사이드바
+ * 폭만큼 모자랐다(오버레이 호스트 폭도 1204 vs 오버레이 모드 1529 로 이미 좁았다).
+ * 그것을 넣은 커밋(ac9a1e58)은 "사선" 증상을 보고 "안 뺐다"로 진단했지만, 호스트가 이미
+ * 좁으므로 안 빼서 넘칠 수가 없다. 뺄 것을 하나 더 두면 그 값은 언젠가 두 번 세어진다 —
+ * 그래서 인자를 없앤다. 없는 인자는 틀릴 수 없다.
  */
 export function projectRailRect(
   rect: RailRect,
   station: number,
   hostWidthPx: number,
   railWidthPx: number,
-  rightInsetPx = 0,
 ): RailRect {
   const side = sideOf(rect, station);
-  const paneWidth = Math.max(0, hostWidthPx - railWidthPx - Math.max(0, rightInsetPx));
+  const paneWidth = Math.max(0, hostWidthPx - railWidthPx);
   return {
     left:
       (paneWidth * rect.left) / 100 +

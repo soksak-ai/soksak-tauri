@@ -52,11 +52,10 @@ export function railLinkBoxes(
   railWidth: number,
   station: number,
   target: RailRect,
-  /** 오른쪽에서 판을 밀고 들어온 폭(밀기 사이드바). 안 빼면 칸이 호스트 밖으로 나간다. */
-  rightInset = 0,
 ): { rail: PixelBox; panel: PixelBox } | null {
   if (hostWidth <= 0 || hostHeight <= 0 || railWidth <= 0) return null;
-  const projected = projectRailRect(target, station, hostWidth, railWidth, rightInset);
+  // 기준은 호스트다 — 오른쪽에 선 것을 여기서 또 빼지 않는다(호스트가 이미 좁다).
+  const projected = projectRailRect(target, station, hostWidth, railWidth);
   return {
     rail: {
       x: railLeftPx(hostWidth, railWidth, station),

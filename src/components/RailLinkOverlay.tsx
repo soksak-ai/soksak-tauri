@@ -43,7 +43,6 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
   boundViewId,
   boundPaneId,
   railWidth,
-  rightInset = 0,
   railStation,
   targetRect,
   projected = false,
@@ -54,7 +53,6 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
   railWidth: number;
   /** 오른쪽에서 판을 밀고 들어온 폭 — 밀기 사이드바가 서면 판이 그만큼 좁다. 안 넘기면
    *  투영이 늘어나 칸이 호스트 밖으로 나가고 경로가 사선이 된다. */
-  rightInset?: number;
   railStation: number;
   targetRect: RailRect;
   /** 이 인접이 focus-near 투영(교체)으로 성립했는가 — 봉합선 표시의 유일 입력. */
@@ -142,7 +140,6 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
     railWidth,
     railStation,
     targetRect,
-    rightInset,
   );
   const polygon = boxes ? railLinkPolygon(boxes.rail, boxes.panel) : null;
   const path = polygon
@@ -165,6 +162,20 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
       data-bound-tab={boundViewId}
       data-bound-pane={boundPaneId}
       data-connected={path ? "true" : "false"}
+      // 그린 상자를 밖에서 잰다 — 보더는 SVG path 안에만 있어 "어디에 그려졌나"를 물을 자리가
+      // 없었다. 없으면 눈으로 때려맞히게 된다. 호스트 상대 px, "x,y,w,h" 한 사실 하나.
+      // 레일 상자와 판 상자는 서로 다른 것이다 — 한 가방에 넣지 않는다. 이음매가 흔들리면
+      // 둘 중 어느 쪽이 움직였는지부터 갈라야 한다.
+      data-rail={
+        boxes
+          ? `${Math.round(boxes.rail.x)},${Math.round(boxes.rail.y)},${Math.round(boxes.rail.width)},${Math.round(boxes.rail.height)}`
+          : undefined
+      }
+      data-box={
+        boxes
+          ? `${Math.round(boxes.panel.x)},${Math.round(boxes.panel.y)},${Math.round(boxes.panel.width)},${Math.round(boxes.panel.height)}`
+          : undefined
+      }
       data-projected={projected ? "true" : undefined}
       data-flash={railRelation === "moment" ? String(flash) : undefined}
       aria-hidden="true"

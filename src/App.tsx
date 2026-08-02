@@ -439,8 +439,6 @@ const ProjectPlane = memo(function ProjectPlane({
                 boundViewId={boundView.id}
                 boundPaneId={boundGroup.id}
                 railWidth={sidebarW}
-                // 밀기 모드에서만 판을 민다 — 오버레이는 판 위에 뜨므로 폭을 안 가져간다.
-                rightInset={project.rightOpen && rightMode === "push" ? rightW : 0}
                 railStation={renderedStation}
                 // 보더가 감싸는 상자는 **레일부터 결합 판의 오른쪽 끝까지**다. 결합 판이
                 // 레일 옆이면 그 판 자신이 되고(좁은 경우), 사이에 다른 판이 끼면 그것까지
