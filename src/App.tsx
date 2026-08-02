@@ -1,5 +1,5 @@
 import { railBoundBox } from "./lib/railBoundBox";
-import { currentWindow, appInfo, invoke, dragRegion, surfaceFollowsLayout } from "./framework";
+import { currentWindow, appInfo, invoke, dragRegion, engineProvision } from "./framework";
 import { execute } from "./commands/registry";
 import {
   memo,
@@ -794,7 +794,7 @@ function App() {
     // 드러내게 되고, 그 사이 한 프레임이 배경으로 빈다: 워크어라운드가 없던 결함을 만든다
     // (실측 2026-08-02 사용자 "교체가 끝나고 딱 한 프레임에서 사라졌다 다음 프레임에 나타난다").
     // 두 껍데기는 동급이다 — 한쪽의 물리를 코어의 기본으로 두지 않는다.
-    if (surfaceFollowsLayout) return;
+    if (!engineProvision.nativeChildWebview) return;
     ensureSlotFreezeHost({
       root: () => document,
       capture: async (r) => {

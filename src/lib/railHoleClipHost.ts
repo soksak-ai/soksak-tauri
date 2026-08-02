@@ -9,6 +9,7 @@
 // 폴링 없음: 입력은 두 가지 에지뿐이다 — React 커밋(호출자)과 모션 에지(onLayoutMotion).
 // 위상 중 rAF 는 진행 중인 애니메이션의 프레임 추적이지 감시가 아니며, 위상 종료 에지가
 // 루프를 회수하고 최종 기하로 1회 정착시킨다(상시 계약).
+import { engineProvision } from "../framework";
 import { moduleState } from "../lib/moduleState";
 import { applyRailHoleClip, collectHoleRects } from "./railHoleClip";
 import { onLayoutMotion } from "./layoutMotion";
@@ -29,6 +30,10 @@ const frame = moduleState("lib/railHoleClipHost#frame", () => ({
 
 /** 등록된 모든 plane 에 클립을 건다 — 문서 스캔은 이 한 지점에서 1회. */
 export function syncRailHoleClips(): void {
+  // **자식 뷰 층이 없으면 클립할 이유가 없다.** 클립은 "네이티브 표면이 DOM 전체 뒤라 DOM 이
+  // 칠하면 무조건 그 위에 보인다"는 한 껍데기의 물리에서 나온 장치다. 콘텐츠가 DOM 안에 살면
+  // 겹침은 z 로 정해지고, 그때 거는 클립은 레일을 이유 없이 잘라낸다.
+  if (!engineProvision.nativeChildWebview) return;
   if (planes.size === 0) return; // 걸 곳이 없으면 스캔도 하지 않는다
   const holeRects = collectHoleRects();
   for (const plane of planes) applyRailHoleClip(plane, holeRects);

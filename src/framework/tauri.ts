@@ -114,9 +114,6 @@ export const tauriFramework: AppFramework = {
     void getCurrentWebviewWindow().emit(event, payload);
   },
   dragRegion,
-  // 콘텐츠는 문서 밖 네이티브 자식이다 — 표면은 명시 좌표 쓰기로만 움직이므로, 움직이는 동안
-  // 정지 사진으로 덮고 감추는 장치가 필요하다(slotFreeze). 이 프레임워크의 물리다.
-  surfaceFollowsLayout: false,
   engineProvision,
   name: "tauri",
 

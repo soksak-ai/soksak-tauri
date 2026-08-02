@@ -68,6 +68,24 @@ Provision is what each adapter states as its own fact.
 
 Electron's `false` does not mean it cannot. In a single Chromium world one compositor composites UI and content, so the mechanism is **unnecessary**. Only surfaces that assume that mechanism drop out; surfaces that need the grade alone simply stand, with no sidecar.
 
+### The workaround belongs to the framework that needs it
+
+`nativeChildWebview: false` is not merely "one surface drops out". A whole apparatus grows out of that one physical fact — the content surface lives **outside the document**, so it moves only by an explicit coordinate write, and such a write can never track a compositor animation. Everything below exists for that:
+
+| device | what it does | why it exists |
+| --- | --- | --- |
+| `slotFreeze` | covers the slot with a still photo and hides the surface while it moves | a write cannot follow an animation |
+| `railHoleClip` | clips the rail plane so it paints no pixels over the surface | the surface sits behind the whole DOM |
+| `domHoles` | reports DOM overlay rects as OS hit-test holes | the native layer takes input first |
+| `layoutRectMotion` `.hole` exclusion | leaves hole slots out of the FLIP | the surface cannot follow interpolated frames |
+| `webview_bounds` | moves the surface by explicit coordinates | it has no layout of its own |
+
+**None of them may stand as a core default.** Where content lives inside the DOM, the slot and the content move together; running the apparatus there hides and re-reveals a surface that never needed hiding, and the gap between the two is exactly one blank frame. Measured 2026-08-02: after a pane swap the browser vanished for one frame and returned on the next — the flicker was manufactured by the workaround.
+
+So every device asks the declared axis, and the gate `framework-physics-declared` counts whether it does. Exemptions carry a reason: an implementation does not question its own existence — its **owner** decides whether to install it.
+
+One more rule fell out of the same incident: do not make a device's absence a precondition. "Can we glide?" was answered by "is the freeze engine present?", which took motion away from the framework that needs no freeze. The question is "is there anything to cover?".
+
 ## Three axes, three words
 
 When one axis carries three words, every reader has to ask which meaning is in play. Here they name different things.

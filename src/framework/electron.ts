@@ -226,8 +226,6 @@ export const electronFramework: AppFramework = {
     for (const cb of localBus.get(event) ?? []) cb(payload);
   },
   dragRegion,
-  // 콘텐츠는 DOM 안에 산다(<webview>) — 슬롯이 움직이면 같이 움직인다. 덮을 것도 감출 것도 없다.
-  surfaceFollowsLayout: true,
   engineProvision,
   name: "electron",
 
