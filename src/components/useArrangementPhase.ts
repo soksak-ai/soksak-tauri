@@ -56,12 +56,32 @@ interface PhaseState<L> {
 }
 
 /** 위상 재무장 판정용 해 서명 — 렌더마다 새 객체가 오므로 값으로 비교한다. */
+/**
+ * 이 해의 서명 — **위상이 붙잡는 것 전부**를 센다.
+ *
+ * 위상은 기하만 애니메이션하지만 **해 전체를 들고 있고**, 소비자는 그 해에서 포커스가 정하는
+ * 사실까지 읽는다(어느 판에 결부됐나·사이에 낀 판·교환으로 만들어진 인접인가). 서명이 기하만
+ * 서명하면 포커스만 바뀐 해는 "같은 것"으로 보여 **아예 받아들여지지 않는다** — 그 사실들은
+ * 영영 옛 값에 머문다.
+ *
+ * 실측(2026-08-02): ① 여행 모드(정의상 아무것도 안 움직임)에서 포커스를 옮겨도 낀 판이 계속
+ * idle 이었다 ② 이미 레일 옆인 판을 활성화하면 결부가 옛 판에 머물러 보더 폭이 안 돌아왔다.
+ * 둘 다 같은 자리다. 기하가 안 움직이는 해는 아래에서 **여정 없이 즉시** 반영되므로, 서명만
+ * 정확하면 그 길로 간다.
+ */
 function arrangementKey<L>(a: Arrangement<L> | null): string {
   if (!a) return "";
   const cells = a.cells
     .map((c) => `${c.id}@${c.rect.left.toFixed(3)}`)
     .join(",");
-  return `${a.station.toFixed(3)}|${cells}`;
+  return [
+    a.station.toFixed(3),
+    cells,
+    a.focusId ?? "",
+    a.swapped ? "1" : "0",
+    a.betweenIds.join("+"),
+    a.maximizedId ?? "",
+  ].join("|");
 }
 
 export function useArrangementPhase<L extends { id: string }>(

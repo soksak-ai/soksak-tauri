@@ -89,6 +89,45 @@ afterEach(() => {
 });
 
 describe("useArrangementPhase", () => {
+  it("포커스만 바뀐 해도 즉시 받아들인다 — 기하가 그대로여도 해는 새 것이다", () => {
+    // 위상은 기하만 애니메이션하지만 **해 전체를 들고 있다.** 소비자는 그 해에서 포커스가
+    // 정하는 사실을 읽는다(결부·낀 판·교환 인접). 서명이 기하만 서명하면 포커스만 바뀐 해는
+    // "같은 것"으로 보여 아예 안 들어오고, 그 사실들은 영영 옛 값에 머문다.
+    //
+    // 실측 2026-08-02: ① 여행 모드(정의상 아무것도 안 움직임)에서 포커스를 옮겨도 낀 판이
+    // 계속 idle ② 이미 레일 옆인 판을 활성화해도 결부가 옛 판에 머물러 보더 폭이 안 돌아옴.
+    // 아래 행이 전폭이면 깨끗한 세로선은 0 과 100 뿐이다 — 레일이 갈 자리가 없다. 당기지도
+    // 않으면(pullFocused:false) 판도 안 움직인다. 그래서 포커스만 다른 두 해가 나온다.
+    const stack: SplitTree<G> = {
+      type: "split",
+      id: "c",
+      dir: "col",
+      sizes: [0.5, 0.5],
+      children: [threeColumns, leaf("d")],
+    };
+    const still = (focusId: string) =>
+      solveArrangement<G>({
+        layout: stack,
+        focusId,
+        placement: { mode: "flow" },
+        railOpen: true,
+        pullFocused: false,
+      });
+    const at = still("a");
+    const to = still("c");
+    expect(to.cells.map((c) => `${c.id}@${c.rect.left}`)).toEqual(
+      at.cells.map((c) => `${c.id}@${c.rect.left}`),
+    );
+    expect(to.station).toBe(at.station);
+    expect(to.focusId).not.toBe(at.focusId);
+
+    act(() => root.render(<Probe arrangement={at} scopeId={scopeOf(at)} />));
+    act(() => root.render(<Probe arrangement={to} scopeId={scopeOf(to)} />));
+    // 여정이 아니다(움직일 것이 없다) — 그러므로 기다림 없이 최신이어야 한다.
+    expect(el().dataset.traveling).toBe("0");
+    expect(el().dataset.content).toBe("live");
+  });
+
   it("해가 바뀌면 이동하는 패널만 실어 주행하고 RAIL_TRAVEL_MS 뒤 착지한다", () => {
     const at = solve(twoColumns, "a");
     const to = solve(twoColumns, "b");

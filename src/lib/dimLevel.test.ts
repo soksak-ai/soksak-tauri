@@ -98,14 +98,15 @@ describe("흐림 단계 — 표면 규칙", () => {
   });
 });
 
-describe("흐림은 기하가 아니라 포커스의 사실이다", () => {
-  it("낀 판 목록은 방금 푼 해에서 온다 — 위상은 움직임이 있을 때만 다음 해를 받는다", () => {
+describe("한 상자는 한 해에서 나온다", () => {
+  it("낀 판 목록은 화면이 그리는 해에서 온다 — 셀·결부와 같은 자리다", () => {
     // 실측 2026-08-02: phase.displayed 에서 읽었더니, 여행 모드(정의상 아무것도 안 움직임)에서
     // 포커스를 옮겨도 흐림이 영원히 갱신되지 않았다. 명령은 between=[pan-aecvk3,pan-q7lxti]
     // 인데 슬롯은 계속 idle 이었고 기하는 완전히 동일했다.
     const m = appTsx.match(/betweenIds=\{[^}]*\}/);
     expect(m, "betweenIds 배선을 못 찾았다").toBeTruthy();
-    expect(m?.[0]).toContain("solved?.betweenIds");
-    expect(m?.[0]).not.toContain("arrangement?.betweenIds");
+    // 한 상자는 한 해에서 나온다 — 낀 판도 railCells·결부와 같은 해를 읽는다. 포커스만 바뀐
+    // 해를 위상이 즉시 받아들이는 것은 arrangementKey 가 보장한다(그 짝 검사가 따로 있다).
+    expect(m?.[0]).toContain("arrangement?.betweenIds");
   });
 });

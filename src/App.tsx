@@ -238,11 +238,17 @@ const ProjectPlane = memo(function ProjectPlane({
   //
   // 같은 규칙이 이미 투영 배선에 있다(boundViewInContent: 락이 없으면 활성 판). 두 자리가
   // 서로 다른 기본값을 쓰면 "관계가 있다고 보는 쪽"과 "그리는 쪽"이 갈린다.
+  // **결합은 화면이 그리는 해를 따른다.** 포커스는 클릭 즉시 바뀌지만 기하는 위상이 받아들일
+  // 때 바뀐다. 새 결합에 옛 기하를 붙이면 그 상자는 어느 해의 것도 아니다 — 한 프레임 동안
+  // 엉뚱한 폭이 그려지고 그것이 "움찔"로 보인다(실측 2026-08-02: pan-aecvk3 활성 직후 폭
+  // 1369 를 한 번 그리고 456 으로 돌아왔다. 사용자 녹화에서 보더가 좁은 상자와 넓은 상자를
+  // 몇 프레임 왕복). 해가 자기 포커스를 답하므로(focusId) 그것을 읽는다.
+  // 명시 잠금(railBindingTabId)은 다른 축이다 — 기하를 안 바꾸므로 지연이 없다.
   const boundGroup = activeContent
     ? (allGroups(activeContent.layout).find((group) =>
         activeContent.railBindingTabId
           ? group.tabs.some((view) => view.id === activeContent.railBindingTabId)
-          : group.id === activeContent.activePaneId,
+          : group.id === (arrangement?.focusId ?? activeContent.activePaneId),
       ) ?? allGroups(activeContent.layout)[0])
     : undefined;
   const boundView = activeContent?.railBindingTabId
@@ -565,13 +571,11 @@ const ProjectPlane = memo(function ProjectPlane({
                   // 배치는 해가 정한다 — 비활성 콘텐츠는 자기 정본 배열 그대로(레일 없음).
                   // 레일이 못 간 만큼 가려진 칸 — 움직이지 않지만 흐려야 어느 판이 활성인지 보인다.
                   //
-                  // **흐림은 기하가 아니라 포커스의 사실이다.** 그래서 방금 푼 해(solved)에서
-                  // 가져온다. 위상(phase.displayed)은 기하의 주인이라 **움직임이 있을 때만**
-                  // 다음 해를 받아들이는데, 여행 모드는 정의상 아무것도 움직이지 않는다 —
-                  // 위상에서 읽으면 포커스를 옮겨도 흐림이 영원히 갱신되지 않는다(실측
-                  // 2026-08-02: 명령은 between=[pan-aecvk3,pan-q7lxti] 인데 슬롯은 계속 idle,
-                  // 기하는 완전히 동일). 기하는 위상이, 포커스는 해가 답한다.
-                  betweenIds={isActiveContent ? (solved?.betweenIds ?? []) : []}
+                  // 화면이 그리는 해에서 가져온다 — railCells·결부와 같은 자리다. 한 상자는
+                  // 한 해에서 나온다: 새 사실에 옛 기하를 붙이면 그 그림은 어느 해의 것도
+                  // 아니다. 포커스만 바뀐 해도 위상이 즉시 받아들인다(arrangementKey 가 그
+                  // 사실까지 서명한다 — 안 그러면 여기서 영영 옛 값을 읽는다).
+                  betweenIds={isActiveContent ? (arrangement?.betweenIds ?? []) : []}
                   displayLayout={
                     isActiveContent ? arrangement?.displayLayout : undefined
                   }
