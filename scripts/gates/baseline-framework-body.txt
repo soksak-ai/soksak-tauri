@@ -22,7 +22,10 @@ frameworks/electron/backend.cjs 236
 frameworks/electron/control.cjs 144
 frameworks/electron/cored.cjs 252
 # 재입법 2026-08-02 415 → 416. 죽기 전에 남길 자리(note) 를 ctx 에 싣는다.
-frameworks/electron/main.cjs 416
+# 재입법 2026-08-02 416 → 423. guest 안의 클릭은 호스트 문서에 아무것도 안 남긴다(계측:
+#   도착 사건 0). 그 사실을 아는 것은 프레임워크뿐이라 계약의 이름으로 낸다
+#   (webview_event.rs ACTIVATED). 알아내는 방법은 프레임워크마다 달라도 이름은 하나다.
+frameworks/electron/main.cjs 423
 frameworks/electron/native/capture.cjs 70
 frameworks/electron/native/engine.cjs 26
 frameworks/electron/native/error.cjs 9

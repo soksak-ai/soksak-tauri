@@ -165,6 +165,21 @@ function createWindow(label, rect, bootQuery) {
   // 부트 지시는 쿼리로 간다 — 앱이 conf url 에 얹는 그 자리와 같다. 새 창의 프론트가 그것을
   // 읽어 무엇을 열지 정한다(창만 나고 안이 비는 것을 막는 유일한 통로다).
   void win.loadURL(bootQuery ? `${DEV_URL}?${bootQuery}` : DEV_URL);
+    // **guest 안의 클릭은 호스트 문서에 아무것도 안 남긴다.**
+  //
+  // 계측 2026-08-02: 브라우저 페이지 안을 눌렀을 때 호스트에 도착한 사건이 0 이었다
+  // (focusin WEBVIEW 한 줄도 없다). 그래서 칸 결합이 안 따라갔고, 호스트 DOM 인 주소창을
+  // 눌렀을 때만 옮겨갔다. 형제 프레임워크는 같은 사실을 네이티브 클릭 모니터로 알아내 넘긴다.
+  //
+  // OS 를 빌리지 않는다(A27). guest 의 입력 사건을 그대로 듣고 **계약의 이름**으로 낸다
+  // (webview_event.rs ACTIVATED). 알아내는 방법은 프레임워크마다 달라도 이름은 하나다.
+  win.webContents.on("did-attach-webview", (_e, guest) => {
+    guest.on("input-event", (_ev, input) => {
+      if (input && input.type === "mouseDown") {
+        deliverEvent(win, "content-view-activated", { id: guest.id });
+      }
+    });
+  });
   return win;
 }
 

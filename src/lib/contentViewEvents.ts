@@ -23,6 +23,8 @@ export const BROWSER_EVENT = {
   loading: "browser-loading",
   status: "browser-status",
   openExternal: "browser-open-external",
+  /** 사용자가 이 뷰를 눌렀다 — 칸 결합이 따라가야 할 유일한 사실(webview_event.rs ACTIVATED). */
+  activated: "content-view-activated",
 } as const;
 
 /**
@@ -118,4 +120,27 @@ export function bridgeContentViewEvents(el: Tag, label: string): () => void {
   return () => {
     for (const [name, fn] of wired) el.removeEventListener(name, fn);
   };
+}
+
+/**
+ * 프레임워크가 낸 원시 사건을 **계약 모양으로** 바꿔 뿌린다.
+ *
+ * 콘텐츠가 프로세스 밖에 있는 프레임워크는 자기 손잡이(webContents id)로 말할 수밖에 없다.
+ * 그 손잡이는 알아낸 방법의 흔적이지 사실이 아니다 — 구독자가 그것을 읽으면 그 방법이 없는
+ * 프레임워크에서 조용히 아무 일도 안 일어난다. 사실은 **어느 뷰인가**이고, 그 답은 라벨이다.
+ *
+ * 그래서 이음매에서 한 번 번역한다. 앱은 계약 모양 하나만 안다.
+ */
+export function activatedLabelOf(id: unknown, doc: Document = document): string | null {
+  if (typeof id !== "number") return null;
+  for (const el of doc.querySelectorAll<HTMLElement & { getWebContentsId?: () => number }>(
+    "[data-content-view]",
+  )) {
+    try {
+      if (el.getWebContentsId?.() === id) return el.getAttribute("data-content-view");
+    } catch {
+      // 아직 안 붙은 태그는 묻는 즉시 던진다 — 못 찾은 것과 같다.
+    }
+  }
+  return null;
 }

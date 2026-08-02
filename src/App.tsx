@@ -32,6 +32,8 @@ import {
   startViewFocusSync,
   transferViewFocus,
 } from "./plugins/viewFocus";
+import { browserViewIdFromLabel } from "./lib/webviewLabels";
+import { BROWSER_EVENT, activatedLabelOf } from "./lib/contentViewEvents";
 import { LeftSidebarHost } from "./components/LeftSidebarHost";
 import { RailGridSurface } from "./components/RailGridSurface";
 import { RailLinkOverlay } from "./components/RailLinkOverlay";
@@ -834,8 +836,33 @@ function App() {
         fire(divider, "mousedown", x, y);
         return;
       }
+      bindPaneUnder(el);
+    });
+    // **guest 안의 클릭은 호스트에 안 온다.** 콘텐츠 뷰는 별도 프로세스라 그 안의 mousedown 이
+    // 이 문서로 넘어오지 않는다 — 그래서 브라우저를 눌러도 결합이 안 따라갔다(실측 2026-08-02,
+    // Electron). 그때 호스트가 받는 유일한 사실은 **그 엘리먼트가 포커스를 받았다**는 것이다.
+    //
+    // OS 를 빌리지 않는다(A27). 프레임워크가 계약의 이름으로 그 사실을 내고, 좌표로 들어오든
+    // 이 사건으로 들어오든 **같은 함수**를 부른다 — 경로가 갈리면 한쪽만 고쳐지고 그 어긋남은
+    // 조용하다.
+    const offViewFocus = listenThisWindow<{ id: number }>(BROWSER_EVENT.activated, (e) => {
+      // 손잡이(webContents id)를 사실(라벨)로 바꾸는 것은 이음매의 일이다 — 앱은 라벨만 안다.
+      const label = activatedLabelOf(e.payload?.id);
+      const viewId = label ? browserViewIdFromLabel(label) : null;
+      const slot = viewId
+        ? document.querySelector<HTMLElement>(`[data-node="layout/tab/${viewId}"]`)
+        : null;
+      bindPaneUnder(slot);
+    });
+    // 어느 길로 들어오든 칸을 짚는 **한 함수** — 좌표(네이티브 모니터)와 콘텐츠 뷰 활성화가
+    // 같은 자리를 부른다. 갈리면 한쪽만 고쳐지고 그 어긋남은 오류로 안 보인다.
+    function bindPaneUnder(el: Element | null) {
       const slot = el?.closest<HTMLElement>("[data-pane]");
-      const { groupId, projectId } = slot?.dataset ?? {};
+      // 이름과 값이 같은 실체를 가리킨다 — 속성은 `data-pane`(칸 id)이다. `dataset.groupId` 는
+      // 있지도 않은 `data-group-id` 를 찾아 언제나 undefined 이고, 그러면 이 아래가 통째로
+      // 안 돈다(계측 2026-08-02: pane 은 잡히는데 결합이 안 일어났다).
+      const groupId = slot?.dataset.pane;
+      const projectId = slot?.dataset.projectId;
       if (groupId && projectId) {
         const state = useSessions.getState();
         const project = state.projects.find((item) => item.id === projectId);
@@ -854,7 +881,7 @@ function App() {
           state.setActiveGroup(projectId, groupId);
         }
       }
-    });
+    }
     const offMove = listenThisWindow<{ x: number; y: number }>("native-mousemove", (e) => {
       if (dragging) {
         fire(window, "mousemove", e.payload.x, e.payload.y);
@@ -884,6 +911,7 @@ function App() {
     });
     return () => {
       offDown();
+      offViewFocus();
       offMove();
       offUp();
       offLeave();
