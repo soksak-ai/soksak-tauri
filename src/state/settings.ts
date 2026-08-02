@@ -161,8 +161,15 @@ const KEY = "soksak.settings";
 
 type PersistedSettings = typeof DEFAULTS;
 
-// 영속 대상 필드만 추출(setter·메서드 제외) — load/save/applyPersisted 공유 단일진실.
-function serialize(s: SettingsState): PersistedSettings {
+/**
+ * 영속 대상 필드만 추출 — load/save/applyPersisted 와 **읽기 표면**의 공유 단일진실.
+ *
+ * 저장되는 것은 전부 읽힌다. 값을 못 읽으면 상태를 진단할 수 없고, 진단이 안 되면 결함이
+ * "재현이 안 된다"로 끝난다(실사고 2026-08-02: `railLook` 은 저장되는데 읽을 자리도 바꿀
+ * 자리도 없어서, 사용자 화면의 조건이 무엇인지 물어볼 수조차 없었다).
+ * 쓰기는 좁아도 된다 — 전용 명령이 자기 검증을 지는 설정이 있다. 읽기는 좁으면 안 된다.
+ */
+export function serialize(s: SettingsState): PersistedSettings {
   return {
     language: s.language,
     projectTabPosition: s.projectTabPosition,

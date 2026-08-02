@@ -12,7 +12,7 @@ import { suggestLayout, type MonitorFact, type WindowFact } from "../lib/layoutS
 import { tmsg } from "../i18n";
 import { register } from "./registry";
 import { notFound } from "./refuse";
-import { useSettings } from "../state/settings";
+import { serialize, useSettings } from "../state/settings";
 import { useTheme } from "../state/theme";
 import { useIconRegistry } from "../ui/icons/registry";
 import { applyWindowZoom } from "../lib/zoomIntent";
@@ -43,14 +43,16 @@ export function registerSettingsCatalog(): void {
     description: "Retrieve all application settings.",
     triggers: { ko: "설정 확인 앱 설정 조회 환경설정" },
     params: {},
-    returns: `{ ${SETTING_KEYS.join(", ")}, bg }`,
+    returns: "{ <every persisted setting>, iconSets[], theme, themeMode }",
     message: () => tmsg("msg.settings.get"),
     examples: ["settings.get"],
     handler: () => {
       const s = useSettings.getState();
       return {
-        // 값은 **키 목록에서 파생한다** — 손으로 나열하면 반드시 하나가 빠지고 조용하다.
-        ...Object.fromEntries(SETTING_KEYS.map((k) => [k, s[k]])),
+        // **저장되는 것은 전부 읽힌다.** 쓰기 목록(SETTING_KEYS)에서 파생하면 전용 명령을 가진
+        // 설정들이 조용히 빠지고, 그중 하나(railLook)는 아예 물어볼 자리가 없었다. 읽기의
+        // 원천은 영속 스냅샷 하나다 — 저장 목록이 자라면 읽기도 함께 자란다.
+        ...serialize(s),
         // 선택 가능한 아이콘 셋 목록(내장 + 활성 플러그인 등록분).
         iconSets: Object.values(useIconRegistry.getState().sets).map((x) => ({
           id: x.id,

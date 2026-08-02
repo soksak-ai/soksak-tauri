@@ -2192,7 +2192,7 @@ sok-dev service.status '{"plugin":"<plugin-id>"}'
 
 Retrieve all application settings. | 설정 확인 앱 조회 환경설정
 
-**Returns**: { language, projectTabPosition, iconSet, iconBox, focusIndicator, railRelation, railFill, focusDim, railSeamStyle, railPullFocused, railSolidColor, dimIdle, dimBlocked, appFontFamily, windowZoom, orchestratorAgent, orchestratorModel, bg }
+**Returns**: { <every persisted setting>, iconSets[], theme, themeMode }
 
 ```bash
 sok-dev settings.get

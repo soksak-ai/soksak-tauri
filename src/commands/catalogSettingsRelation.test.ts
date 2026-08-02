@@ -15,7 +15,7 @@ vi.mock("../framework", () => ({ invoke: vi.fn(async () => undefined) }));
 
 import { registerCatalog } from "./catalog";
 import { execute } from "./registry";
-import { useSettings } from "../state/settings";
+import { serialize, useSettings } from "../state/settings";
 
 registerCatalog();
 
@@ -108,5 +108,19 @@ describe("settings.railRelation 명령 표면", () => {
     );
     expect(result).toMatchObject({ ok: false, code: "INVALID_PARAMS" });
     expect(useSettings.getState().railRelation).toBe("stroke");
+  });
+});
+
+describe("설정 읽기 표면", () => {
+  it("저장되는 설정은 전부 읽힌다 — 못 읽는 값은 진단할 수 없다", async () => {
+    // 실사고 2026-08-02: railLook 은 저장되는데 읽을 자리도 바꿀 자리도 없었다. 그래서
+    // 사용자 화면의 조건이 무엇인지 물어볼 수조차 없었고, 재현이 "안 된다"로 끝났다.
+    // 쓰기는 좁아도 된다(전용 명령이 자기 검증을 진다). 읽기는 좁으면 안 된다.
+    const persisted = Object.keys(serialize(useSettings.getState()));
+    const got = await execute("settings.get", {}, {});
+    expect(got.ok).toBe(true);
+    const data = got.data as Record<string, unknown>;
+    const missing = persisted.filter((k) => !(k in data));
+    expect(missing).toEqual([]);
   });
 });
