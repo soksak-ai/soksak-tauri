@@ -6,7 +6,8 @@
 //  - stroke: 현행 그대로(기준점).
 //  - 공통: 레일이 결부 셀에 인접하지 않으면(논리 간격 1%p 초과) 관계면을 아예 렌더하지 않는다.
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -291,5 +292,38 @@ describe("railRelation 모드 CSS 갈래 (App.css)", () => {
     // will-change 로 승격시켜, 위상마다 재래스터가 DOM(주소표시줄)을 움찔거렸다.
     expect(css).toMatch(/\.rail-traveling \.tab-body\.flip-move/);
     expect(css).not.toMatch(/\.rail-traveling \.tab-body,/);
+  });
+});
+
+describe("잰 크기를 스케일에 싣지 않는다", () => {
+  // 선언만 본다 — 주석까지 세면 사고를 적어 둔 근거 문장이 위반으로 잡히고, 규칙이 자기
+  // 근거를 지우게 만든다(같은 함정을 오늘 두 번째로 만난다).
+  const overlaySrc = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "RailLinkOverlay.tsx"),
+    "utf8",
+  )
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, "")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+
+  it("SVG 가 viewBox 로 늘어나지 않는다 — 낡은 측정이 그림을 일그러뜨린다", () => {
+    // 실사고 2026-08-02: viewBox 에 **관측으로 들어오는** 호스트 크기를 싣고
+    // preserveAspectRatio="none" 을 걸어 두었다. ResizeObserver 는 페인트 뒤에 오므로 호스트가
+    // 줄거나 늘어난 그 프레임은 옛 크기로 그려지고, 그림 전체가 (새폭/옛폭) 배로 눌리거나
+    // 늘어났다. x=0 은 스케일해도 0 이라 바깥 변만 제자리였고 안쪽 변만 안/밖으로 밀렸다 —
+    // 사용자가 본 것이 정확히 그것이다(밀 때 안으로, 접을 때 밖으로, 그리고 정확히 복귀).
+    //
+    // 좌표는 이미 요소의 CSS px 이다. 스케일 축을 두지 않으면 낡은 측정은 "틀린 자리"일 뿐
+    // "일그러진 그림"이 될 수 없다 — 실패의 모양이 한 단계 순해진다.
+    expect(overlaySrc).not.toMatch(/viewBox=/);
+    expect(overlaySrc).not.toMatch(/preserveAspectRatio/);
+  });
+
+  it("그리기 전에 잰다 — 관측은 밖에서 오는 변화만 맡는다", () => {
+    // 매 렌더 뒤(페인트 전)에 다시 재는 effect 가 있어야 한다. 값이 같으면 no-op 이라
+    // 추가 렌더가 없고, 달라진 프레임에서만 페인트 전에 한 번 더 그린다.
+    expect(overlaySrc).toMatch(
+      /useLayoutEffect\(\(\) => \{[^}]*getBoundingClientRect\(\);\s*commitSize\([^)]*\);\s*\}\);/,
+    );
   });
 });

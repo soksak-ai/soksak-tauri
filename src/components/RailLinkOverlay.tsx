@@ -98,26 +98,39 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
   }, []);
   const adjacent = railLinkAdjacent(railStation, targetRect);
 
+  const commitSize = useCallback((width: number, height: number) => {
+    setSize((current) =>
+      current.width === width && current.height === height ? current : { width, height },
+    );
+  }, []);
+
+  /**
+   * **그리기 전에 잰다.** ResizeObserver 는 페인트 뒤에 온다 — 호스트가 줄거나 늘어난 그
+   * 프레임에는 옛 크기로 그려지고, 관측이 도착한 다음 프레임에 제자리로 튄다. 그 한 프레임이
+   * 사용자가 본 "안/밖으로 밀렸다가 정확히 복귀"다.
+   *
+   * 그래서 매 렌더 뒤(페인트 전)에 다시 잰다. 값이 그대로면 setState 가 no-op 이라 추가 렌더는
+   * 없고, 달라진 프레임에서만 페인트 전에 한 번 더 그린다. 관측자는 **밖에서 오는** 크기 변화
+   * (창 리사이즈 등 렌더 없이 일어나는 것)를 위해 남긴다 — 둘은 다른 사건이다.
+   */
+  useLayoutEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const rect = host.getBoundingClientRect();
+    commitSize(rect.width, rect.height);
+  });
+
   useLayoutEffect(() => {
     // 비인접 렌더 억제 중엔 host 가 없다 — 인접 복귀 때 이 effect 가 다시 붙는다.
     const host = hostRef.current;
     if (!host) return;
-    const commit = (width: number, height: number) => {
-      setSize((current) =>
-        current.width === width && current.height === height
-          ? current
-          : { width, height },
-      );
-    };
-    const rect = host.getBoundingClientRect();
-    commit(rect.width, rect.height);
     const observer = new ResizeObserver((entries) => {
       const next = entries[0]?.contentRect;
-      if (next) commit(next.width, next.height);
+      if (next) commitSize(next.width, next.height);
     });
     observer.observe(host);
     return () => observer.disconnect();
-  }, [adjacent]);
+  }, [adjacent, commitSize]);
 
   // moment: 결부 정체성(boundViewId/targetRect)이 바뀐 순간만 잠깐 관계 토큰을 노출.
   const identity = `${boundViewId}|${targetRect.left}|${targetRect.top}|${targetRect.width}|${targetRect.height}`;
@@ -181,12 +194,14 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
       aria-hidden="true"
       style={solidColorStyle}
     >
+      {/* **늘리지 않는다.** viewBox 에 잰 크기를 싣고 preserveAspectRatio="none" 을 걸면, 그
+          크기가 한 프레임이라도 낡았을 때 그림 전체가 (새폭/옛폭) 배로 눌리거나 늘어난다.
+          x=0 은 스케일해도 0 이라 바깥 변만 제자리고 안쪽 변만 안/밖으로 밀린다 — 사용자가 본
+          것이 정확히 그것이다(실측 2026-08-02: 밀 때 안으로, 접을 때 밖으로, 그리고 정확히 복귀).
+          좌표는 이미 이 요소의 CSS px 이므로 viewBox 없이 그대로 그린다: 낡아도 틀린 자리에 그릴
+          뿐 일그러지지는 않는다. */}
       {path && boxes && (
-        <svg
-          className="rail-link-canvas"
-          viewBox={`0 0 ${size.width} ${size.height}`}
-          preserveAspectRatio="none"
-        >
+        <svg className="rail-link-canvas">
           {projected && railSeamStyle === "edge" ? (() => {
             // B안 — 바깥 오른쪽 변 점선: 외곽선에서 최우측 변만 분리해 점선으로,
             // 나머지는 열린 실선으로 그린다. 채움은 닫힌 원경로가 소유(스트로크 없음).
