@@ -32,6 +32,7 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
   boundViewId,
   boundPaneId,
   railWidth,
+  rightInset = 0,
   railStation,
   targetRect,
   projected = false,
@@ -40,6 +41,9 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
   boundViewId: string;
   boundPaneId: string;
   railWidth: number;
+  /** 오른쪽에서 판을 밀고 들어온 폭 — 밀기 사이드바가 서면 판이 그만큼 좁다. 안 넘기면
+   *  투영이 늘어나 칸이 호스트 밖으로 나가고 경로가 사선이 된다. */
+  rightInset?: number;
   railStation: number;
   targetRect: RailRect;
   /** 이 인접이 focus-near 투영(교체)으로 성립했는가 — 봉합선 표시의 유일 입력. */
@@ -96,6 +100,7 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
     railWidth,
     railStation,
     targetRect,
+    rightInset,
   );
   const polygon = boxes ? railLinkPolygon(boxes.rail, boxes.panel) : null;
   const path = polygon

@@ -97,3 +97,34 @@ describe("오른쪽 변 분리(B안 — 바깥 변 점선, 라운드 보존)", (
 
 
 });
+
+/** 판 영역은 **레일 하나만 뺀 나머지가 아니다.** 오른쪽에 밀기(push) 사이드바가 서면 그만큼
+ *  더 좁다. 그것을 안 빼면 투영이 늘어나 칸 상자가 호스트 밖으로 나가고, 직각이어야 할 경로가
+ *  스스로 교차해 **사선**으로 그려진다(실측 2026-08-02). */
+describe("판 영역 — 오른쪽에 선 것도 뺀다", () => {
+  it("오른쪽 밀기 폭만큼 칸이 좁아진다", () => {
+    const wide = railLinkBoxes(1000, 500, 100, 0, { left: 0, top: 0, width: 100, height: 100 });
+    const narrow = railLinkBoxes(
+      1000,
+      500,
+      100,
+      0,
+      { left: 0, top: 0, width: 100, height: 100 },
+      200,
+    );
+    expect(wide?.panel.width).toBe(900);
+    expect(narrow?.panel.width).toBe(700);
+  });
+
+  it("칸의 오른쪽 끝이 호스트 밖으로 못 나간다 — 나가면 경로가 스스로 교차한다", () => {
+    const b = railLinkBoxes(
+      1000,
+      500,
+      100,
+      0,
+      { left: 0, top: 0, width: 100, height: 100 },
+      200,
+    );
+    expect((b?.panel.x ?? 0) + (b?.panel.width ?? 0)).toBeLessThanOrEqual(800);
+  });
+});

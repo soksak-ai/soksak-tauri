@@ -174,14 +174,22 @@ export function projectRailCssSpan(
 }
 
 /** 픽셀 기준 참조 사상(테스트·UI drag 계산용). top/height는 세로 논리값 그대로다. */
+/**
+ * 칸의 백분율을 호스트 픽셀로 투영한다.
+ *
+ * **판 영역은 레일 하나만 뺀 나머지가 아니다.** 오른쪽에 밀기 사이드바가 서면 그만큼 더 좁다.
+ * 안 빼면 투영이 늘어나 칸 상자가 호스트 밖으로 나가고, 직각이어야 할 경로가 스스로 교차해
+ * 사선으로 그려진다(실측 2026-08-02: 결합 보더가 긴 사선 하나로 나왔다).
+ */
 export function projectRailRect(
   rect: RailRect,
   station: number,
   hostWidthPx: number,
   railWidthPx: number,
+  rightInsetPx = 0,
 ): RailRect {
   const side = sideOf(rect, station);
-  const paneWidth = Math.max(0, hostWidthPx - railWidthPx);
+  const paneWidth = Math.max(0, hostWidthPx - railWidthPx - Math.max(0, rightInsetPx));
   return {
     left:
       (paneWidth * rect.left) / 100 +
