@@ -693,6 +693,7 @@ Both were left in core, and one of them was defended in this document as common.
 The old standard that pinned the exclusion ungated rested on a measurement from 2026-08-02 — an in-document guest leaving stale pixels at the end of an interpolation. **That ground is gone**: the guest was in a global layer being pushed by coordinates at the time. It is now a child of its slot.
 
 - **The DOM implementation hides with plain `visibility`.** The off-screen park (`translateX(-200vw)` + `content-visibility`) exists because a surface outside the document is a separate compositing layer that `visibility:hidden` does not remove. Measured for an in-document guest (`scripts/electron/guest-under-effects.test.mjs`): `visibility:hidden` alone removes it (centre pixel 234 → 0). `display:none` is still refused — it drops the box and the guest returns with a 0×0 viewport.
+- **A visible child layer does not declare `visibility:visible`.** Project→space→tab is a nested parking contract. CSS visibility permits a child that explicitly declares `visible` to reappear below a hidden ancestor, so visible layers clear the property and inherit; only hidden layers declare `hidden`. `webview.surfaces.contentViews.dom` exposes every DOM content surface's direct/computed visibility, project activation, slot label and rect so the composition can be audited externally.
 
 ### Gates
 

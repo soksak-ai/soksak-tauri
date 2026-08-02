@@ -3303,7 +3303,7 @@ sok-dev webview.recover '{"label":"b-w-1234-v7"}'
 
 Reconcile this window's state (which views exist) against the browser child webviews actually alive for this window. ghosts = child webviews whose view no longer exists in state — a stale native surface floating over the window (the 'browser over an empty window' mismatch); a non-empty ghosts list is always a defect fact. Judged from the same sources the app itself uses (state store + webview_list), no pixels involved. | 표면 정합 유령 웹뷰 잔존 브라우저 대조 확인
 
-**Returns**: { window, actual: [label], ghosts: [label], orphans: [label], engine: {registered, hostPresent}, bodies: [{node,x,y,w,h,children,overlay,…}], stateViews }
+**Returns**: { window, actual: [label], ghosts: [label], orphans: [label], engine: {registered, hostPresent}, bodies: [{node,x,y,w,h,children,overlay,…}], contentViews: {inDocument, detached, dom: [{label,slotLabel,directVisibility,computedVisibility,display,projectId,projectActive,rect}]}, stateViews }
 
 ```bash
 sok-dev webview.surfaces
@@ -3601,4 +3601,3 @@ Measure whether a dark/light theme transition is atomic across screen regions. R
 sok-dev window.themeScan
 sok-dev window.themeScan '{"theme":"Midnight","frames":48}'
 ```
-

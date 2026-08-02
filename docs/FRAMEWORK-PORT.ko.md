@@ -692,6 +692,7 @@ offscreen 축은 코어의 공백이 **아니다**. 2026-07-08 에 검증됐고 
 그 제외를 "축에 걸지 마라"로 못 박았던 옛 기준은 2026-08-02 실측에 서 있었다 — 문서 안 게스트가 보간 끝에 옛 픽셀을 남겼다는. **그 근거가 사라졌다**: 그때 게스트는 전역 층에 달려 좌표로 밀리고 있었다. 지금은 자기 자리의 자식이다.
 
 - **DOM 구현의 숨김은 평범한 `visibility` 다.** 오프스크린 파킹(`translateX(-200vw)` + `content-visibility`)은 문서 밖 표면이 별도 합성 레이어라 `visibility:hidden` 으로 안 빠지기 때문에 있다. 문서 안 게스트로 재 보니(`scripts/electron/guest-under-effects.test.mjs`) `visibility:hidden` 하나로 사라졌다(중앙 픽셀 234 → 0). `display:none` 은 여전히 거절한다 — 상자를 잃으면 게스트가 0×0 뷰포트로 돌아온다.
+- **보이는 하위 층은 `visibility:visible` 을 선언하지 않는다.** 프로젝트→스페이스→탭은 중첩된 파킹 계약이다. CSS `visibility`는 hidden 조상 아래에서도 자식이 `visible`을 직접 선언하면 다시 드러날 수 있으므로, 보임은 속성을 비워 상속하고 숨김만 `hidden`을 선언한다. `webview.surfaces.contentViews.dom`은 각 DOM 콘텐츠 표면의 직접/계산 가시성, 프로젝트 활성성, 슬롯 label과 rect를 공개해 이 합성을 밖에서 대조할 수 있게 한다.
 
 ### 게이트
 

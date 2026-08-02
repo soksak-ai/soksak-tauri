@@ -9,7 +9,7 @@ import { register, type CommandHint } from "./registry";
 import { tmsg } from "../i18n";
 import { allViews, useSessions } from "../state/sessions";
 import { browserLabelPrefix, browserViewIdFromLabel, orphanBrowserLabels } from "../lib/webviewLabels";
-import { CONTENT_VIEW_BODY, contentViewHost } from "../lib/contentViews";
+import { CONTENT_VIEW_BODY, contentViewDomFacts, contentViewHost } from "../lib/contentViews";
 
 interface LabelHealth {
   label: string;
@@ -126,7 +126,7 @@ export function registerWebviewCatalog(): void {
         engine,
         bodies,
         stateViews: viewIds.size,
-        contentViews: { inDocument: inDocument.length, detached },
+        contentViews: { inDocument: inDocument.length, detached, dom: contentViewDomFacts() },
       };
     },
   });

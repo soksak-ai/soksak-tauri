@@ -69,6 +69,26 @@ describe("콘텐츠 뷰 계약", () => {
     // 선언하지 않은 label 은 **자리가 없는** 뷰다 — 없는 것을 아무 자리로 채우지 않는다.
     expect(m.findContentViewSlot("b-9", document)).toBeNull();
   });
+
+  it("문서 안 콘텐츠 뷰의 직접·계산 가시성을 상태로 노출한다", async () => {
+    const m = await load();
+    const slot = document.createElement("div");
+    slot.setAttribute(m.CONTENT_VIEW_BODY, "b-1");
+    const view = document.createElement("webview");
+    view.setAttribute("data-content-view", "b-1");
+    view.style.visibility = "hidden";
+    slot.appendChild(view);
+    document.body.appendChild(slot);
+
+    expect(m.contentViewDomFacts(document)).toEqual([
+      expect.objectContaining({
+        label: "b-1",
+        directVisibility: "hidden",
+        computedVisibility: "hidden",
+        slotLabel: "b-1",
+      }),
+    ]);
+  });
 });
 
 // 한쪽에만 있는 동작이 생기면 그 차이는 오류가 아니라 "이 프레임워크에서는 안 되는 기능"으로

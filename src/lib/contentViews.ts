@@ -66,6 +66,44 @@ export function findContentViewSlot(label: string, doc: Document): HTMLElement |
   return null;
 }
 
+export interface ContentViewDomFact {
+  label: string;
+  slotLabel: string | null;
+  directVisibility: string;
+  computedVisibility: string;
+  display: string;
+  projectId: string | null;
+  projectActive: boolean;
+  rect: { x: number; y: number; w: number; h: number };
+}
+
+/** 문서 안 콘텐츠 표면의 공개 상태. 네이티브 구현에서는 빈 목록이 곧 사실이다. */
+export function contentViewDomFacts(doc: Document = document): ContentViewDomFact[] {
+  const out: ContentViewDomFact[] = [];
+  for (const el of doc.querySelectorAll<HTMLElement>("[data-content-view]")) {
+    const slot = el.closest<HTMLElement>(`[${CONTENT_VIEW_BODY}]`);
+    const project = el.closest<HTMLElement>("[data-project-plane]");
+    const style = doc.defaultView?.getComputedStyle(el);
+    const rect = el.getBoundingClientRect();
+    out.push({
+      label: el.getAttribute("data-content-view") ?? "",
+      slotLabel: slot?.getAttribute(CONTENT_VIEW_BODY) ?? null,
+      directVisibility: el.style.visibility,
+      computedVisibility: style?.visibility ?? "",
+      display: style?.display ?? "",
+      projectId: project?.dataset.projectPlane ?? null,
+      projectActive: project?.dataset.projectActive === "1",
+      rect: {
+        x: +rect.x.toFixed(2),
+        y: +rect.y.toFixed(2),
+        w: +rect.width.toFixed(2),
+        h: +rect.height.toFixed(2),
+      },
+    });
+  }
+  return out;
+}
+
 // 갈아끼우기 경계 밖 — 이 자리가 새것이 되면 건 쪽은 이미 걸었다고 알아 다시 걸지 않는다.
 const registered = moduleState("lib/contentViews#host", () => ({
   host: null as ContentViewHost | null,
