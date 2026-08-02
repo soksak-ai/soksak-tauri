@@ -1,0 +1,8 @@
+[package]
+name = "soksak-spec-content-view"
+version = "0.0.1"
+edition = "2021"
+publish = false
+license = "MIT"
+repository = "https://github.com/soksak-ai/soksak-spec"
+description = "Content view event contract shared by the frameworks (emitters) and the app (consumer): wire names and payload axes. No emit code."
