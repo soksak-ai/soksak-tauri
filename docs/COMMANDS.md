@@ -3274,6 +3274,20 @@ Emit a native mouse-bridge event (native-mousedown/move/up) at viewport x,y — 
 sok-dev webview.emitNative '{"kind":"native-mousedown","x":400,"y":300}'
 ```
 
+## `webview.composition`
+
+Tauri-only composition audit. Reports every visible DOM content hole and every live native
+surface in both coordinate systems, correlates child-webview labels to slot labels, and returns
+a strict one-to-one verdict. `coordinateContract.tolerancePx` is limited to integer-rounding
+error; any larger position or size difference is a defect. This command is intentionally absent
+from Electron because Electron content lives in the DOM and is inspected by `webview.surfaces`.
+
+**Returns**: { coordinateContract, anchors:[{label,viewId,projectId,rect}], surfaces:[{label,ptr,hidden,effectivelyHidden,nativeFrame,domFrame}], matches, verdict:{misplaced,stacked,missing,surfaces,holes} }
+
+```bash
+sok-dev webview.composition
+```
+
 ## `webview.health.query`
 
 Report webview renderer-process health per label: circuit-breaker state (closed / recovering / open), crash counts in the rolling 60s window, lifetime total, and the last termination reason if the platform provided one. Labels: a window label is that window's main webview, b-<win>-<view> is a browser child. state=open means automatic recovery is exhausted — recover it manually with webview.recover. | 웹뷰 건강 상태 크래시 조회 복구

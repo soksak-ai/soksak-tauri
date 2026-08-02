@@ -19,7 +19,7 @@ import { registerContentViewHost } from "../../lib/contentViews";
 import { emitPluginEvent, onPluginEvent } from "../../plugins/hooks";
 import { ensureSlotFreezeHost, scheduleSlotSettleCapture } from "./slotFreezeHost";
 import { installRailHoleClip } from "./railHoleClipHost";
-import { installSurfaceAudit } from "./surfaceAudit";
+import { installSurfaceAudit, surfaceCompositionSnapshot } from "./surfaceAudit";
 import { installDomHoles } from "./domHoles";
 import { installTauriHoleMarkers, TAURI_CONTENT_HOLE } from "./holeMarkers";
 import { useUi } from "../../state/ui";
@@ -239,6 +239,23 @@ function installNativeBridgeCommand(): void {
   });
 }
 
+/** DOM 홀과 실제 NSView frame의 일대일 합성 상태 — Tauri에만 존재하는 공개 진단면. */
+function installCompositionCommand(): void {
+  register("webview.composition", {
+    description:
+      "Tauri-only composition audit: expose every visible DOM content hole and live native surface frame in both coordinate systems, with one-to-one matches and a strict rounding-only verdict.",
+    params: {},
+    returns:
+      "{ coordinateContract, anchors:[{label,viewId,projectId,rect}], surfaces:[{label,ptr,hidden,effectivelyHidden,nativeFrame,domFrame}], matches, verdict:{misplaced,stacked,missing,surfaces,holes} }",
+    message: (d) => {
+      const verdict = d.verdict as { misplaced?: unknown[]; stacked?: unknown[]; missing?: unknown[] };
+      const bad = (verdict.misplaced?.length ?? 0) + (verdict.stacked?.length ?? 0) + (verdict.missing?.length ?? 0);
+      return bad === 0 ? "Tauri DOM 홀과 네이티브 표면이 일치합니다" : `Tauri 합성 불일치 ${bad}건`;
+    },
+    handler: () => surfaceCompositionSnapshot(),
+  });
+}
+
 /** 이 프레임워크가 코어 표면에 거는 것 전부. 고른 어댑터만 불린다(contract.install). */
 export function installTauri(): void {
   // 콘텐츠 뷰 구현 — 이 프레임워크가 줄 수 있는 것은 OS 자식 뷰다.
@@ -264,6 +281,7 @@ export function installTauri(): void {
   installResizeGestureRelay();
   // 이 프레임워크에만 있는 명령 표면.
   installNativeBridgeCommand();
+  installCompositionCommand();
   // 홀 슬롯은 FLIP 보간에서 뺀다 — 그 아래 표면은 문서 밖이라 슬롯의 transform 을 안 따라오고,
   // 보간 프레임마다 좌표를 써 주면 못 따라와 옛 픽셀이 남는다. 문서 안 게스트에는 일어날 수
   // 없는 일이므로 그 프레임워크에서는 아무것도 빠지지 않는다.

@@ -131,6 +131,7 @@ describe("프레임워크 장치는 자기 집에만 산다", () => {
     [/webview_overlay_active/, "오버레이 히트테스트 게이트 — 표면이 마우스를 가져가는 것을 막는다"],
     [/webview_divider_highlight/, "골 강조바 — DOM 강조가 표면에 가려질 때만 필요하다"],
     [/webview_resize_gesture/, "리사이즈 위상 릴레이 — 네이티브 쪽에만 필요하다"],
+    [/webview\.composition/, "DOM 홀↔NSView frame 정합 — 문서 밖 표면에만 존재한다"],
     // `plugin:webview-capture|*` 는 여기 없다 — **공통 능력**이다(window.snapshot·record). 두
     // 프레임워크가 다 답하며, 이름만 한쪽 프레임워크의 플러그인 문법을 닮았을 뿐이다. 그 이름을
     // 고치는 것은 어휘의 빚이고 이 규칙의 축이 아니다 — 여기서 금지하면 멀쩡한 공통 능력이

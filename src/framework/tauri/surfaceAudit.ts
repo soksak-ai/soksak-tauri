@@ -25,6 +25,37 @@ export interface AuditRect {
   h: number;
 }
 
+export interface SurfaceAnchorFact {
+  label: string | null;
+  viewId: string | null;
+  projectId: string | null;
+  rect: AuditRect;
+}
+
+export interface NativeSurfaceFact {
+  ptr: number;
+  label: string | null;
+  hidden: boolean;
+  effectivelyHidden: boolean;
+  nativeFrame: AuditRect;
+  domFrame: AuditRect;
+}
+
+export interface SurfaceCompositionSnapshot {
+  coordinateContract: { dom: string; native: string; windowZoom: number; tolerancePx: number };
+  anchors: SurfaceAnchorFact[];
+  surfaces: NativeSurfaceFact[];
+  matches: {
+    surfaceLabel: string | null;
+    ptr: number;
+    anchorLabel: string | null;
+    viewId: string | null;
+    projectId: string | null;
+    matched: boolean;
+  }[];
+  verdict: SurfaceVerdict;
+}
+
 export interface SurfaceVerdict {
   misplaced: AuditRect[]; // 어느 홀과도 안 맞는 가시 서피스
   stacked: AuditRect[][]; // 같은 홀을 차지한 서피스 묶음(겹침)
@@ -37,7 +68,7 @@ export interface SurfaceVerdict {
 export const SURFACE_RECT_TOLERANCE_PX = 2;
 
 const near = (a: number, b: number, tol: number) => Math.abs(a - b) <= tol;
-const matches = (s: AuditRect, h: AuditRect, tol: number) =>
+const rectMatches = (s: AuditRect, h: AuditRect, tol: number) =>
   near(s.x, h.x, tol) && near(s.y, h.y, tol) && near(s.w, h.w, tol) && near(s.h, h.h, tol);
 
 /** 순수 판정 — 서피스·홀 rect 는 같은 좌표계(DOM top-left)로 넘긴다. */
@@ -49,7 +80,7 @@ export function judgeSurfaces(
   const byHole = new Map<number, AuditRect[]>();
   const misplaced: AuditRect[] = [];
   for (const s of surfaces) {
-    const hi = holes.findIndex((h) => matches(s, h, tol));
+    const hi = holes.findIndex((h) => rectMatches(s, h, tol));
     if (hi < 0) {
       misplaced.push(s);
       continue;
@@ -65,7 +96,7 @@ export function judgeSurfaces(
 
 /** 보이는 네이티브 앵커 rect 수집. 실제 content-view 슬롯에서 Tauri가 투영한 marker만
  * 정본이며, 플러그인의 내부 클래스나 shadow 구조를 추측하지 않는다. */
-export function visibleAnchorRects(): { rects: AuditRect[]; source: string } {
+export function visibleAnchorFacts(doc: Document = document): SurfaceAnchorFact[] {
   const hiddenByTree = (el: HTMLElement): boolean => {
     for (let cur: HTMLElement | null = el; cur; cur = cur.parentElement) {
       const style = cur.ownerDocument.defaultView?.getComputedStyle(cur);
@@ -76,18 +107,33 @@ export function visibleAnchorRects(): { rects: AuditRect[]; source: string } {
     }
     return false;
   };
-  const collect = (els: Iterable<HTMLElement>, out: AuditRect[]) => {
+  const out: SurfaceAnchorFact[] = [];
+  const collect = (els: Iterable<HTMLElement>) => {
     for (const el of els) {
       if (hiddenByTree(el)) continue;
       const r = el.getBoundingClientRect();
       if (r.width < 4 || r.height < 4) continue;
       if (r.x + r.width <= 0 || r.x >= window.innerWidth) continue; // 파킹(오프스크린)
-      out.push({ x: r.x, y: r.y, w: r.width, h: r.height });
+      const slot = el.querySelector<HTMLElement>("[data-content-view-body]");
+      const node = el.dataset.node ?? "";
+      out.push({
+        label: slot?.getAttribute("data-content-view-body") ?? null,
+        viewId: node.startsWith("layout/tab/") ? node.slice("layout/tab/".length) : null,
+        projectId: el.dataset.projectId ?? null,
+        rect: { x: r.x, y: r.y, w: r.width, h: r.height },
+      });
     }
   };
-  const holes: AuditRect[] = [];
-  collect(document.querySelectorAll<HTMLElement>(TAURI_CONTENT_HOLE), holes);
-  return { rects: holes, source: "content-view-slot" };
+  collect(doc.querySelectorAll<HTMLElement>(TAURI_CONTENT_HOLE));
+  return out;
+}
+
+/** 기존 감사 소비면 — 상세 identity를 버리지 않고 rect 보기만 제공한다. */
+export function visibleAnchorRects(): { rects: AuditRect[]; source: string } {
+  return {
+    rects: visibleAnchorFacts().map((anchor) => anchor.rect),
+    source: "content-view-slot",
+  };
 }
 
 /** 빈 본문 뷰(dark) 수집 — 보이는 plugin 뷰 컨테이너인데 본문이 아무것도 없다(라이트 DOM
@@ -118,7 +164,73 @@ function darkViewRects(): AuditRect[] {
 }
 
 interface EngineStats {
-  surfaces?: { ptr: number; hidden: boolean; effectivelyHidden: boolean; frame: AuditRect }[];
+  windowZoom?: number;
+  surfaces?: {
+    ptr: number;
+    label?: string | null;
+    hidden: boolean;
+    effectivelyHidden: boolean;
+    frame: AuditRect;
+  }[];
+}
+
+export function normalizeNativeSurfaces(
+  stats: EngineStats,
+  innerHeight: number,
+  windowZoom = stats.windowZoom ?? 1,
+): NativeSurfaceFact[] {
+  const scale = Number.isFinite(windowZoom) && windowZoom > 0 ? windowZoom : 1;
+  return (stats.surfaces ?? []).map((surface) => ({
+    ptr: surface.ptr,
+    label: surface.label ?? null,
+    hidden: surface.hidden,
+    effectivelyHidden: surface.effectivelyHidden,
+    nativeFrame: surface.frame,
+    // NSView(bottom-left) → DOM(top-left). 입력과 출력 좌표계를 함께 공개해 변환을 숨기지 않는다.
+    domFrame: {
+      x: surface.frame.x / scale,
+      y: innerHeight - (surface.frame.y + surface.frame.h) / scale,
+      w: surface.frame.w / scale,
+      h: surface.frame.h / scale,
+    },
+  }));
+}
+
+/** Tauri 합성의 공개 상태 — DOM 앵커와 실제 NSView frame을 같은 답에서 일대일 대조한다. */
+export async function surfaceCompositionSnapshot(): Promise<SurfaceCompositionSnapshot> {
+  const stats = await invoke<EngineStats>("engine_surface_stats");
+  const anchors = visibleAnchorFacts();
+  const surfaces = normalizeNativeSurfaces(stats, window.innerHeight);
+  const visible = surfaces.filter((surface) => !surface.effectivelyHidden);
+  const verdict = judgeSurfaces(
+    visible.map((surface) => surface.domFrame),
+    anchors.map((anchor) => anchor.rect),
+  );
+  const matches = visible.map((surface) => {
+    const anchor = anchors.find((candidate) =>
+      rectMatches(surface.domFrame, candidate.rect, SURFACE_RECT_TOLERANCE_PX),
+    );
+    return {
+      surfaceLabel: surface.label,
+      ptr: surface.ptr,
+      anchorLabel: anchor?.label ?? null,
+      viewId: anchor?.viewId ?? null,
+      projectId: anchor?.projectId ?? null,
+      matched: !!anchor,
+    };
+  });
+  return {
+    coordinateContract: {
+      dom: "CSS px, viewport top-left",
+      native: "AppKit pt, content-view bottom-left",
+      windowZoom: stats.windowZoom ?? 1,
+      tolerancePx: SURFACE_RECT_TOLERANCE_PX,
+    },
+    anchors,
+    surfaces,
+    matches,
+    verdict,
+  };
 }
 
 /** 표면이 어느 슬롯에도 담기지 않는가 — 포함 판정(집행의 조건). 슬롯보다 밖으로 1px 이라도
@@ -146,31 +258,16 @@ const settleTimer = moduleState("framework/tauri/surfaceAudit#settleTimer", () =
   settle: null as ReturnType<typeof setTimeout> | null,
 }));
 async function runAudit(): Promise<void> {
-  const stats = await invoke<EngineStats>("engine_surface_stats").catch(() => null);
-  if (!stats) return;
-  const innerH = window.innerHeight;
-  // NSView(bottom-left) → DOM(top-left) 변환. 줌 1 기준 pt=CSSpx — 오차는 tol 이 흡수.
-  const visible = (stats.surfaces ?? [])
-    .filter((s) => !s.effectivelyHidden)
-    .map((s) => ({
-      x: s.frame.x,
-      y: innerH - (s.frame.y + s.frame.h),
-      w: s.frame.w,
-      h: s.frame.h,
-    }));
-  const anchors = visibleAnchorRects();
-  const verdict = judgeSurfaces(visible, anchors.rects);
+  const composition = await surfaceCompositionSnapshot().catch(() => null);
+  if (!composition) return;
+  const anchors = { rects: composition.anchors.map((anchor) => anchor.rect), source: "content-view-slot" };
+  const verdict = composition.verdict;
   // 집행 — 어느 앵커에도 담기지 않는 가시 표면은 코어가 즉시 가린다(마지막 방어선).
   // 판정만 하고 두면 이웃 칸이 계속 덮인다(실측: 좌 129px 침범이 사용자 화면에 남았다).
   // 되살리기는 소유자의 정상 경로(bounds→가시성)가 한다 — 코어는 넘은 것을 가릴 뿐이다.
-  for (const s of stats.surfaces ?? []) {
+  for (const s of composition.surfaces) {
     if (s.effectivelyHidden) continue;
-    const dom = {
-      x: s.frame.x,
-      y: innerH - (s.frame.y + s.frame.h),
-      w: s.frame.w,
-      h: s.frame.h,
-    };
+    const dom = s.domFrame;
     if (!containedIn(dom, anchors.rects)) {
       void invoke("engine_surface_hide", { ptr: s.ptr, hidden: true }).catch(() => {});
     }

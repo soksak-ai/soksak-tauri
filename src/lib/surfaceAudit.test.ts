@@ -2,7 +2,12 @@
 // RED 근거(2026-07-27 실측): 콜드 부팅에서 엔진 서피스들이 오른쪽 열로 몰려 native 브라우저
 // 위에 겹쳤는데(오배치 1 + 겹침 1), 카운트 기준 관측은 그것을 정상이라 판정했다.
 import { describe, expect, it } from "vitest";
-import { judgeSurfaces, visibleAnchorRects } from "../framework/tauri/surfaceAudit";
+import {
+  judgeSurfaces,
+  normalizeNativeSurfaces,
+  visibleAnchorFacts,
+  visibleAnchorRects,
+} from "../framework/tauri/surfaceAudit";
 
 const R = (x: number, y: number, w = 554, h = 341) => ({ x, y, w, h });
 
@@ -72,6 +77,25 @@ describe("visibleAnchorRects — Tauri가 공개 content-view 슬롯에서 투�
     expect(v.stacked).toEqual([]);
   });
 
+  it("공개 앵커 상태는 콘텐츠 label과 view identity를 rect와 함께 싣는다", () => {
+    document.body.innerHTML = "";
+    const body = div("tab-body", { x: 20, y: 30, w: 400, h: 300 });
+    body.dataset.tauriHole = "content";
+    body.dataset.node = "layout/tab/tab-7";
+    body.dataset.projectId = "pjt-2";
+    const slot = document.createElement("div");
+    slot.dataset.contentViewBody = "b-window-tab-7";
+    body.appendChild(slot);
+    expect(visibleAnchorFacts()).toEqual([
+      {
+        label: "b-window-tab-7",
+        viewId: "tab-7",
+        projectId: "pjt-2",
+        rect: { x: 20, y: 30, w: 400, h: 300 },
+      },
+    ]);
+  });
+
   it("플러그인 shadow 내부 클래스는 앵커로 추측하지 않는다", () => {
     document.body.innerHTML = "";
     const hostEl = document.createElement("div");
@@ -99,6 +123,56 @@ describe("visibleAnchorRects — Tauri가 공개 content-view 슬롯에서 투�
     project.appendChild(slot);
     document.body.appendChild(project);
     expect(visibleAnchorRects().rects).toEqual([]);
+  });
+});
+
+describe("native frame 좌표 공개", () => {
+  it("AppKit bottom-left 원본과 DOM top-left 변환을 둘 다 보존한다", () => {
+    expect(
+      normalizeNativeSurfaces(
+        {
+          surfaces: [
+            {
+              ptr: 7,
+              label: "b-7",
+              hidden: false,
+              effectivelyHidden: false,
+              frame: { x: 10, y: 50, w: 300, h: 200 },
+            },
+          ],
+        },
+        800,
+      ),
+    ).toEqual([
+      {
+        ptr: 7,
+        label: "b-7",
+        hidden: false,
+        effectivelyHidden: false,
+        nativeFrame: { x: 10, y: 50, w: 300, h: 200 },
+        domFrame: { x: 10, y: 550, w: 300, h: 200 },
+      },
+    ]);
+  });
+
+  it("창 줌으로 확대된 AppKit frame을 DOM CSS px로 역변환한다", () => {
+    expect(
+      normalizeNativeSurfaces(
+        {
+          surfaces: [
+            {
+              ptr: 8,
+              label: "b-8",
+              hidden: false,
+              effectivelyHidden: false,
+              frame: { x: 125, y: 375, w: 500, h: 375 },
+            },
+          ],
+        },
+        800,
+        1.25,
+      )[0].domFrame,
+    ).toEqual({ x: 100, y: 200, w: 400, h: 300 });
   });
 });
 

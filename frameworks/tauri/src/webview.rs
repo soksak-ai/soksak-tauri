@@ -215,6 +215,10 @@ mod layer {
     // 취급). identity(포인터)만 저장하고 geometry 는 live frame(sub.frame())에서 읽는다 — "홀 = 보이는
     // child frame" 불변식 보존(별도 rect 레지스트리 없음).
     static SURFACES: LazyLock<Mutex<HashSet<usize>>> = LazyLock::new(|| Mutex::new(HashSet::new()));
+    // 코어 child webview 는 label 이 공개 identity다. 엔진 모듈 표면은 label을 주지 않을 수
+    // 있으므로 ptr 멤버십과 분리해 선택적으로 기록한다. 기하는 여전히 live NSView frame만 읽는다.
+    static SURFACE_LABELS: LazyLock<Mutex<HashMap<usize, String>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
     // 교체 전 원본 hitTest IMP. 클래스(WryWebView) 단위 스위즐이라 앱 전역 1회면 충분.
     static ORIG_HIT_TEST: AtomicUsize = AtomicUsize::new(0);
 
@@ -247,15 +251,26 @@ mod layer {
 
     // Backend N surface 등록/해제 — webview_open 직후(가시 홀 편입), webview_close 직전(회수).
     // 오프스크린 추출 webview(media_extract, -20000)는 홀이 아니므로 등록하지 않는다.
-    pub fn register_surface(ptr: usize) {
+    pub fn register_surface(ptr: usize, label: Option<&str>) {
         if let Ok(mut s) = SURFACES.lock() {
             s.insert(ptr);
+        }
+        if let Some(label) = label {
+            if let Ok(mut labels) = SURFACE_LABELS.lock() {
+                labels.insert(ptr, label.to_string());
+            }
         }
     }
     pub fn unregister_surface(ptr: usize) {
         if let Ok(mut s) = SURFACES.lock() {
             s.remove(&ptr);
         }
+        if let Ok(mut labels) = SURFACE_LABELS.lock() {
+            labels.remove(&ptr);
+        }
+    }
+    pub fn surface_label(ptr: usize) -> Option<String> {
+        SURFACE_LABELS.lock().ok()?.get(&ptr).cloned()
     }
 
     // 등록된 엔진 서피스 수 — 관측면(webview.surfaces 의 engine 축)이 읽는다.
@@ -566,6 +581,22 @@ mod layer {
             dump_view(&sub, depth + 1, out);
         }
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::{register_surface, surface_label, unregister_surface};
+
+        #[test]
+        fn child_surface_label_has_the_same_lifetime_as_pointer_membership() {
+            let token = 0usize;
+            let ptr = &token as *const usize as usize;
+            unregister_surface(ptr);
+            register_surface(ptr, Some("b-window-tab-7"));
+            assert_eq!(surface_label(ptr).as_deref(), Some("b-window-tab-7"));
+            unregister_surface(ptr);
+            assert_eq!(surface_label(ptr), None);
+        }
+    }
 }
 
 // 엔진 사이드카의 native surface 를 레이어 시스템(SURFACES — hitTest 위임)에 편입/해제.
@@ -573,7 +604,7 @@ mod layer {
 // 코어는 의미를 모른다 — 포인터 멤버십만 관리(엔진 중립: WKWebView·Chromium 동일 취급).
 #[cfg(target_os = "macos")]
 pub(crate) fn register_engine_surface(ptr: usize) {
-    layer::register_surface(ptr);
+    layer::register_surface(ptr, None);
 }
 #[cfg(target_os = "macos")]
 pub(crate) fn unregister_engine_surface(ptr: usize) {
@@ -723,6 +754,7 @@ pub async fn engine_surface_stats(app: AppHandle, window: tauri::Window) -> serd
                 let f = v.frame();
                 surfaces.push(serde_json::json!({
                     "ptr": ptr,
+                    "label": layer::surface_label(ptr),
                     "hidden": v.isHidden(),
                     "effectivelyHidden": unsafe { v.isHiddenOrHasHiddenAncestor() },
                     "frame": { "x": f.origin.x, "y": f.origin.y, "w": f.size.width, "h": f.size.height },
@@ -733,6 +765,7 @@ pub async fn engine_surface_stats(app: AppHandle, window: tauri::Window) -> serd
                 "otherWindows": other_windows,
                 "hostPresent": host != 0,
                 "hostHidden": host_hidden,
+                "windowZoom": window_zoom_of(&label),
                 "surfaces": surfaces,
             }));
         });
@@ -1084,7 +1117,7 @@ pub fn webview_open(
         let _ = webview.with_webview(move |pw| {
             use objc2_web_kit::WKWebView;
             // Backend N 레지스트리 등록 — 이 child 가 hit_test 의 "홀"이 된다(NSView 포인터 = 형제 비교 키).
-            layer::register_surface(pw.inner() as usize);
+            layer::register_surface(pw.inner() as usize, Some(&st_label));
             let wk = unsafe { &*(pw.inner() as *const WKWebView) };
             status::install(
                 wk,
