@@ -366,3 +366,47 @@ describe("포커스 간 판은 레일 옆으로 온다", () => {
     expect(a.cells.find((c) => c.id === "R")?.rect.left).toBe(50);
   });
 });
+
+/**
+ * **당겨오기는 선택이다.**
+ *
+ * 선언하지 않으면 포커스 판은 제자리에 있고, 레일이 그 판을 찾아간다. 그때 인접은 실재하므로
+ * 이음매는 실선이고, 가까운 판이 흐려지는 것은 별개 축(focusDim)이 답한다.
+ *
+ * 두 방식은 같은 목적의 다른 방법이라 **동시에 켜면 이중으로 움직인다** — 판도 오고 레일도
+ * 따라간다. 그래서 한 축이 방법을 정한다.
+ */
+describe("당겨오기 — 선언한 쪽만 움직인다", () => {
+  const two = (): SplitTree<Pane> => ({
+    type: "split",
+    id: "root",
+    dir: "row",
+    sizes: [0.5, 0.5],
+    children: [leaf("L"), leaf("R")],
+  });
+
+  it("당기지 않으면 판은 제자리다 — 레일이 그 선으로 간다", () => {
+    const a = solveArrangement({
+      layout: two(),
+      focusId: "R",
+      placement: { mode: "pin", station: 0 },
+      railOpen: true,
+      pullFocused: false,
+    });
+    expect(a.cells.find((c) => c.id === "R")?.rect.left).toBe(50);
+    expect(a.swapped).toBe(false);
+    expect(a.station).toBe(50);
+  });
+
+  it("당기면 판이 온다 — 레일은 제자리다", () => {
+    const a = solveArrangement({
+      layout: two(),
+      focusId: "R",
+      placement: { mode: "pin", station: 0 },
+      railOpen: true,
+      pullFocused: true,
+    });
+    expect(a.cells.find((c) => c.id === "R")?.rect.left).toBe(0);
+    expect(a.station).toBe(0);
+  });
+});

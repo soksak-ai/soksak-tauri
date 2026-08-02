@@ -109,27 +109,10 @@
 #   빈 답을 그대로 찍어 정본 3432줄을 지웠던 자리다 — 못 읽음은 성공값으로 표현될 수 없다.
 crates/soksak-cli/src/lib.rs 1734
 crates/soksak-store/src/store.rs 2068
-# 재입법 2026-08-01 1544 → 1566. 소켓 자리를 **홈의 것**으로 옮겼다. 예전에는 identifier(프레임워크
-#   축 포함)로 자기 소켓을 지어, 껍데기 이름이 주소가 됐다 — 밖에서 겨눌 때마다 어느 껍데기를
-#   겨눌지 골라야 했고, 고르는 순간 나머지는 검증에서 빠진다(그 편향으로 Electron 에서만 죽는
-#   결함 둘이 살아 있었다). 홈에 하나뿐인 자리라 먼저 선 쪽이 서고, 못 서면 자기 소켓 없이
-#   산다 — 밖에서 오는 명령은 cored 가 창 호스트로 배달한다.
 frameworks/tauri/src/ipc.rs 1566
-# 재입법 2026-08-02 2259 → 2269. 항행 페이로드에 inPage 축을 세운다. 그 축이 없으면 소비자가
-#   새 문서와 같은 문서 안 이동을 구분 못 해, 진짜 제목이 주소로 덮인 채 굳는다.
 frameworks/tauri/src/webview.rs 2269
 packages/plugin-spec/src/pluginRuntime.ts 2081
 packages/plugin-spec/src/spec.ts 1785
-# 재입법 2026-08-01 2787 → 2791. 명령이 자기 답의 주인을 선언한다(windowScoped) — 두 앱이
-#   같은 이름을 들 때 주인이 답하는 명령까지 두 번 도는 것을 막는 축이다.
-# 재입법 2026-08-01 2791 → 2814. 창이 "답이 주인의 것인 이름"을 신고한다. 같은 이름을 든 창이
-#   여럿일 때(오케스트레이터는 앱마다 하나다) 배달이 그 목록을 보고 한 곳에만 보낸다 — 안 그러면
-#   같은 쓰기가 두 프로세스에서 각각 돈다(실측 2026-08-01: data.kv.set).
-src/commands/catalog.ts 2814
-# 재입법 2026-08-01 1927 → 1950. 클립보드 감시 거절을 받는다. 못 서는 프레임워크의 거절은
-#   옳지만 부르는 쪽이 void 로 던져 둬서 부팅마다 처리 안 된 reject 가 터졌다 — 그 소음이
-#   진짜 오류를 덮는다. 삼키지 않고 사유를 원장에 남긴다(plugin.capability).
-# 재입법 2026-08-02 1956 → 1962. 콘텐츠 뷰 사건 키에 축을 세운다(ContentViewEventKey).
-#   `string` 이면 오타가 컴파일을 통과해 "안 오는 사건"이 되고 그 부재는 오류로 안 보인다.
+src/commands/catalog.ts 2829
 src/plugins/api.ts 1962
-src/state/sessions.ts 2014
+src/state/sessions.ts 2017

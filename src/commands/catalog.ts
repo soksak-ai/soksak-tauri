@@ -2280,6 +2280,7 @@ export function registerCatalog(): void {
     "railFill",
     "focusDim",
     "railSeamStyle",
+    "railPullFocused",
     "appFontFamily",
     "windowZoom",
     "orchestratorAgent",
@@ -2305,6 +2306,7 @@ export function registerCatalog(): void {
         railFill: s.railFill,
         focusDim: s.focusDim,
         railSeamStyle: s.railSeamStyle,
+        railPullFocused: s.railPullFocused,
         appFontFamily: s.appFontFamily,
         windowZoom: s.windowZoom,
         orchestratorAgent: s.orchestratorAgent,
@@ -2333,7 +2335,7 @@ export function registerCatalog(): void {
       value: {
         type: "json",
         description:
-          "Value — language:ko|en, projectTabPosition:top|left, iconSet:string (registered set id — unregistered falls back to lucide), iconBox:boolean, focusIndicator:outline|corners, railRelation:tint|moment|stroke (rail-pane relation surface — tint fill only, moment flash on rebind, stroke outline+label), railFill:none|faint (bound-pane background in stroke mode — none is the default, faint is a 1% accent tint), focusDim:boolean (spotlight — every pane dims except the active one), railSeamStyle:seam|edge (how a manufactured adjacency is marked: seam dashes the inner shared edge, edge dashes the outer right edge), appFontFamily:string (CSS font-family stack), windowZoom:number (0.5-2.0 — whole-window zoom factor applied to the main webview and every child webview), orchestratorAgent:string (agent CLI command or path the natural-language console spawns), orchestratorModel:string (--model alias for the agent; empty = CLI default)",
+          "Value — language:ko|en, projectTabPosition:top|left, iconSet:string (registered set id — unregistered falls back to lucide), iconBox:boolean, focusIndicator:outline|corners, railRelation:tint|moment|stroke (rail-pane relation surface — tint fill only, moment flash on rebind, stroke outline+label), railFill:none|faint (bound-pane background in stroke mode — none is the default, faint is a 1% accent tint), focusDim:boolean (spotlight — every pane dims except the active one), railSeamStyle:seam|edge (how a manufactured adjacency is marked: seam dashes the inner shared edge, edge dashes the outer right edge), railPullFocused:boolean (how the focused pane ends up next to the rail — true pulls the pane to the rail and the rail holds still, so the adjacency is manufactured and marked dashed; false leaves the pane where it is and the rail travels to it, so the adjacency is real and the seam is solid. Both move something; enabling both would move two things), appFontFamily:string (CSS font-family stack), windowZoom:number (0.5-2.0 — whole-window zoom factor applied to the main webview and every child webview), orchestratorAgent:string (agent CLI command or path the natural-language console spawns), orchestratorModel:string (--model alias for the agent; empty = CLI default)",
         required: true,
       },
     },
@@ -2392,6 +2394,10 @@ export function registerCatalog(): void {
           if (v !== "seam" && v !== "edge") return bad("seam|edge");
           s.setRailSeamStyle(v);
           break;
+        case "railPullFocused":
+          if (typeof v !== "boolean") return bad("boolean");
+          s.setRailPullFocused(v);
+          break;
         case "appFontFamily":
           if (typeof v !== "string" || !v.trim())
             return bad("string(CSS font-family 스택)");
@@ -2412,6 +2418,15 @@ export function registerCatalog(): void {
           if (typeof v !== "string") return bad('string(모델 별칭 — "" = CLI 기본)');
           s.setOrchestratorModel(v.trim());
           break;
+        default:
+          // **키 목록에 올리고 분기를 빠뜨리면 조용히 성공한다.** 그러면 부른 쪽은 설정이
+          // 바뀌었다고 믿고 그 위에 흐름을 세우는데 값은 그대로다(실측 2026-08-02:
+          // railPullFocused 가 OK 를 받고 안 바뀌었다). 안 다루는 키는 이름을 달고 거절한다.
+          return {
+            ok: false as const,
+            code: "INVALID_PARAMS" as const,
+            message: `이 설정은 아직 적용 자리가 없습니다: ${key}`,
+          };
       }
       return { key, value: v };
     },

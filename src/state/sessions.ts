@@ -7,6 +7,7 @@ import {
   isCleanRailStation,
   type RailPlacement,
 } from "../lib/railPlacement";
+import { useSettings } from "./settings";
 import {
   solveArrangement,
   type Arrangement,
@@ -669,6 +670,8 @@ export function projectArrangement(
     // 가 g3 소속인데 layout={"panel":"g5"}, DOM 슬롯 0개, 창 전체 백지).
     maximizedId: maximizedGroupId(content),
     fallbackStation,
+    // 당겨오는가는 선언이 정한다 — 적어 두고 안 읽으면 없는 것과 같다.
+    pullFocused: useSettings.getState().railPullFocused,
   });
 }
 

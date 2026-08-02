@@ -201,6 +201,18 @@ export function solveArrangement<L extends { id: string }>(input: {
   maximizedId?: string | null;
   /** 미해소 포커스에서 지킬 현 위치. */
   fallbackStation?: number;
+  /**
+   * 포커스 판을 레일 옆으로 **당겨오는가**.
+   *
+   * 두 방법은 같은 목적을 다르게 이룬다 — 당기면 판이 오고, 안 당기면 레일이 그 판을 찾아간다.
+   * 동시에 켜면 둘 다 움직여 이중이 되므로 이 축 하나가 방법을 정한다.
+   *
+   * 안 당길 때 인접은 **실재**한다(레일이 그 선에 섰다) — 이음매가 실선인 이유다. 당길 때는
+   * 인접이 만들어진 것이라 점선으로 표시한다. 가까운 판을 흐리는 것은 별개 축(focusDim)이 답한다.
+   *
+   * 기본은 당김이다 — 레일에 가까운 쪽에 포커스 판이 온다는 법칙의 직접적 표현이다.
+   */
+  pullFocused?: boolean;
 }): Arrangement<L> {
   const focusId = input.focusId ?? null;
 
@@ -229,8 +241,16 @@ export function solveArrangement<L extends { id: string }>(input: {
   // 거짓이 되어 교체가 죽었다(실측 2026-08-02: 오른쪽 칸을 눌러도 배치가 그대로였다).
   //
   // 닫힌 레일에는 붙을 상대가 없으므로 어느 모드든 배열을 안 건드린다.
+  // **안 당기기로 했으면 판은 제자리다.** 옛 규칙("행이 어긋나 막히면 앞으로 세운다")도
+  // 배치를 바꾸는 일이라, 그것까지 켜 두면 껐는데도 판이 움직인다(실측 2026-08-02: 아래 칸이
+  // 통짜라 위쪽 50% 선이 막혀 있었고, pull=false 인데 매번 교체됐다).
+  //
+  // 막힌 선은 레일이 감당한다 — flowStation 이 그 앞의 가장 가까운 깨끗한 선으로 선다.
+  const pull = input.pullFocused ?? true;
   const displayLayout =
-    input.railOpen && focusId ? switchFocusedToFront(input.layout, focusId, input.placement.mode) : input.layout;
+    pull && input.railOpen && focusId
+      ? switchFocusedToFront(input.layout, focusId, input.placement.mode)
+      : input.layout;
 
   const cells = computeSplitLayout(displayLayout).cells.map(({ value, rect }) => ({
     id: value.id,
@@ -240,7 +260,9 @@ export function solveArrangement<L extends { id: string }>(input: {
 
   return {
     station:
-      input.placement.mode === "pin"
+      // 한 축이 둘을 정한다 — 당기면 판이 오고 레일은 제자리, 안 당기면 레일이 찾아간다.
+      // 둘 다 움직이면 이중이다.
+      pull && input.placement.mode === "pin"
         ? snapRailStation(cleanLines, input.placement.station)
         : flowStation(cells, focusId, cleanLines, input.fallbackStation ?? 0),
     cleanLines,
