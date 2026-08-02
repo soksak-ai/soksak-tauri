@@ -576,6 +576,9 @@ const ProjectPlane = memo(function ProjectPlane({
                   // 아니다. 포커스만 바뀐 해도 위상이 즉시 받아들인다(arrangementKey 가 그
                   // 사실까지 서명한다 — 안 그러면 여기서 영영 옛 값을 읽는다).
                   betweenIds={isActiveContent ? (arrangement?.betweenIds ?? []) : []}
+                  // 흐림도 같은 해를 따른다 — 기하가 위상을 따르는데 흐림만 즉시 바뀌면,
+                  // 여정 시작 순간에 동결 사진이 못 쓰게 되고 표면을 덮을 것이 없어진다.
+                  focusedPaneId={isActiveContent ? arrangement?.focusId : undefined}
                   displayLayout={
                     isActiveContent ? arrangement?.displayLayout : undefined
                   }

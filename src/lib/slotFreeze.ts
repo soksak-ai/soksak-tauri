@@ -15,13 +15,19 @@
 //  - bounds 커밋은 이 계층과 무관하게 계속 흐른다(동결은 표현이지 정책이 아니다).
 import { HOLE_SELECTOR } from "./railHoleClip";
 import { surfaceRectOf } from "./surfaceRect";
-import { isDimmed, type DimLevel } from "./dimLevel";
 
 interface SlotSnap {
   img: HTMLImageElement;
   t: number;
   w: number;
   h: number;
+  /**
+   * 이 사진이 구워질 때 슬롯의 흐림 단계.
+   *
+   * 창 픽셀을 찍으므로 흐림 베일이 사진에 **들어간다**. 그래서 사진은 그때의 흐림과 한 몸이다 —
+   * 단계가 달라지면 그 사진은 더 이상 이 슬롯의 그림이 아니다(크기 드리프트와 같은 규칙).
+   */
+  dim: string;
 }
 
 export interface SlotFreezeDeps {
@@ -152,14 +158,6 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
         skip("tiny");
         continue;
       }
-      // 포커스 장식 박제 금지 — 흐린 슬롯의 창 픽셀엔 셰이드 베일이 구워져 있다. 그걸
-      // 스탠드인으로 쓰면 동결 중 라이브 dim 과 어긋나 "포커스 인/아웃" 플랩으로 보인다
-      // (실측). 청정(clear) 상태의 스냅만 굽고, dim 은 라이브 계층(::after·filter)이 얹는다.
-      // 흐렸는지는 표면이 답한다(data-dim) — 사유를 여기서 다시 조합하지 않는다.
-      if (isDimmed((slot.dataset.dim ?? "clear") as DimLevel)) {
-        skip("dim");
-        continue;
-      }
       if (parkedSlot(rect)) {
         skip("parked");
         continue;
@@ -178,7 +176,7 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
           const img = makeImage();
           img.src = url;
           await img.decode();
-          snaps.set(slot, { img, t: now(), w, h });
+          snaps.set(slot, { img, t: now(), w, h, dim: slot.dataset.dim ?? "clear" });
           byView.set(viewId, slot);
           slot.dataset.freezeSnapAt = String(Math.round(now())); // 관측면(ui.hit)
           // 구운 크기도 관측면이다 — 스냅의 존재만으로는 아무것도 보장되지 않는다. 분할 전
@@ -203,6 +201,14 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
     if (!viewId) return;
     const snap = snaps.get(slot);
     if (!snap || !fresh(snap)) return;
+    // 흐림이 달라졌으면 그 사진은 이 슬롯의 그림이 아니다 — 베일이 사진에 들어 있으므로
+    // 단계가 바뀌면 세울 수 없다(크기 드리프트와 같은 규칙: 버리고 다시 굽게 둔다).
+    if (snap.dim !== (slot.dataset.dim ?? "clear")) {
+      snaps.delete(slot);
+      delete slot.dataset.freezeSnapAt;
+      delete slot.dataset.freezeSnapSize;
+      return;
+    }
     const r = slot.getBoundingClientRect();
     if (parkedSlot(r)) return; // 보이지 않는 표면 — 덮을 것도, 해동에 되살릴 것도 없다
     const surface = surfaceRectOf(r);
@@ -214,6 +220,10 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
       delete slot.dataset.freezeSnapSize;
       return;
     }
+    // 스탠드인은 **베일 위**(z5)에 선다. 흐림은 이미 사진에 구워져 있으므로 라이브 베일을 또
+    // 얹으면 두 번 어두워진다. 예전엔 z3 이었고 베일이 그 위에서 살아 있었는데, 그 이유는
+    // 여정 중 흐림이 바뀔 수 있었기 때문이다 — 지금은 흐림도 화면이 그리는 해를 따르므로
+    // 여정 중에는 바뀌지 않는다(App: dimOf ← arrangement.focusId). 그래서 사진 하나로 족하다.
     const img = snap.img; // 정착 에지에서 디코드 완료 — append 즉시 페인트
     img.className = "slot-freeze-frame";
     // 관측 주소 — "스탠드인이 유일한 홀을 완전히 덮는다"가 표면 무숨김(§4.6-3)의 load-bearing
@@ -226,7 +236,7 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
     // 온 자리에 그대로 되돌려 놓는다.
     img.style.cssText =
       `position:absolute;left:${cssPx(surface.x - r.left)};top:${cssPx(surface.y - r.top)};` +
-      `width:${snap.w}px;height:${snap.h}px;pointer-events:none;z-index:3;`;
+      `width:${snap.w}px;height:${snap.h}px;pointer-events:none;z-index:5;`;
     slot.appendChild(img);
     frozen.set(slot, { img, viewId });
     slot.dataset.freeze = "1"; // 관측면(ui.hit)

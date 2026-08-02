@@ -315,25 +315,30 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
   });
 });
 
-describe("slotFreeze — dim 상태 캡처 배제(포커스 장식 박제 금지)", () => {
-  it("흐린 슬롯은 정착 캡처를 건너뛴다 — 청정 스냅만 굽는다", async () => {
+describe("slotFreeze — 흐림은 사진을 막지 않는다(재입법 2026-08-02)", () => {
+  // 옛 기준: "흐린 슬롯은 안 찍는다 — 베일이 사진에 구워지니까".
+  // 그 기준은 동결을 **굶겼다.** 청정한 슬롯은 포커스 판 하나뿐인데, 움직이는 것은 포커스 판과
+  // 자리를 바꾸는 상대다. 상대는 늘 흐리니 사진이 없고, 하나라도 못 덮으면 활강을 포기한다 —
+  // 즉 교체는 구조적으로 절대 동결될 수 없었다. 실측: 교체 정점에서 브라우저 둘이 통째로 비었다
+  // (홀은 애니메이션을 타는데 표면은 안 타므로, 덮을 사진이 없으면 배경이 드러난다).
+  //
+  // 새 기준: 찍는다. 사진은 그때의 흐림과 한 몸이고, 단계가 달라지면 크기 드리프트와 같은
+  // 규칙으로 버린다. 여정 중에는 흐림이 바뀌지 않는다(흐림도 화면이 그리는 해를 따른다).
+  it("흐린 슬롯도 찍는다 — 안 찍으면 활강에서 덮을 것이 없다", async () => {
     const area = document.createElement("div");
     area.className = "space";
     document.body.appendChild(area);
     const slot = makeSlot("v1");
-    slot.dataset.dim = "idle"; // 비활성으로 가라앉은 슬롯
+    slot.dataset.dim = "idle";
     area.appendChild(slot);
     const f = build();
     f.captureSettled();
     await microtasks();
-    expect(slot.dataset.freezeSnapAt).toBeUndefined();
-    slot.dataset.dim = "clear"; // 활성(청정) — 이제 캡처된다
-    f.captureSettled();
-    await microtasks();
     expect(slot.dataset.freezeSnapAt).toBeDefined();
+    expect(slot.dataset.freezeSnapSkip).toBeUndefined();
   });
 
-  it("낀 슬롯도 건너뛴다 — 단계는 달라도 베일이 구워진 것은 같다", async () => {
+  it("낀 슬롯도 찍는다", async () => {
     const area = document.createElement("div");
     area.className = "space";
     document.body.appendChild(area);
@@ -343,6 +348,24 @@ describe("slotFreeze — dim 상태 캡처 배제(포커스 장식 박제 금지
     const f = build();
     f.captureSettled();
     await microtasks();
+    expect(slot.dataset.freezeSnapAt).toBeDefined();
+  });
+
+  it("사진의 흐림이 슬롯과 달라지면 세우지 않고 버린다 — 크기 드리프트와 같은 규칙", async () => {
+    const area = document.createElement("div");
+    area.className = "space";
+    document.body.appendChild(area);
+    const slot = makeSlot("v3");
+    slot.dataset.dim = "idle";
+    area.appendChild(slot);
+    const f = build();
+    f.captureSettled();
+    await microtasks();
+    expect(slot.dataset.freezeSnapAt).toBeDefined();
+
+    slot.dataset.dim = "clear"; // 흐림이 바뀌었다 — 구운 그림은 더 이상 이 슬롯의 것이 아니다
+    f.onMotion(true, ["move"], null);
+    expect(slot.querySelector("img")).toBeNull();
     expect(slot.dataset.freezeSnapAt).toBeUndefined();
   });
 });
@@ -370,5 +393,26 @@ describe("slotFreeze — scope 축(영향 범위 밖 표면 불가침)", () => {
     expect(a.querySelector("img")).not.toBeNull();
     expect(b.querySelector("img")).not.toBeNull();
     f.onMotion(false, []);
+  });
+});
+
+describe("스탠드인은 베일 위에 선다", () => {
+  it("z-index 가 베일(z4)보다 위다 — 흐림은 이미 사진에 들어 있다", async () => {
+    // z3 이던 시절엔 라이브 베일이 사진 위에서 또 한 번 어둡게 했다. 그때는 여정 중 흐림이
+    // 바뀔 수 있어서 베일이 살아 있어야 했지만, 지금은 흐림도 화면이 그리는 해를 따르므로
+    // 여정 중에는 바뀌지 않는다 — 사진 하나면 족하고, 두 번 어두워지지 않는다.
+    const area = document.createElement("div");
+    area.className = "space";
+    document.body.appendChild(area);
+    const slot = makeSlot("v9");
+    slot.dataset.dim = "idle";
+    area.appendChild(slot);
+    const f = build();
+    f.captureSettled();
+    await microtasks();
+    f.onMotion(true, ["move"], null);
+    const img = slot.querySelector("img");
+    expect(img).not.toBeNull();
+    expect(img?.getAttribute("style")).toContain("z-index: 5");
   });
 });

@@ -152,6 +152,7 @@ function emitResizeGesture(active: boolean): void {
 export const GroupArea = memo(function GroupArea({
   content,
   projectId,
+  focusedPaneId,
   surfaceActive = true,
   railStation = 0,
   displayMaximizedId = undefined,
@@ -163,6 +164,8 @@ export const GroupArea = memo(function GroupArea({
 }: {
   content: Space;
   projectId: string;
+  /** 화면이 그리는 해의 포커스 판 — 흐림은 기하와 같은 해를 따른다(생략 = 정본 활성). */
+  focusedPaneId?: string | null;
   /** 이 스페이스(콘텐츠)가 활성인가 — 뷰 유효 가시성(스페이스 && 탭) 판정에 쓰인다. */
   // 이 그룹이 실린 표면(프로젝트+스페이스)이 지금 화면에 있는가 — 뷰 가시성의 상위 두 층.
   surfaceActive?: boolean;
@@ -231,7 +234,11 @@ export const GroupArea = memo(function GroupArea({
   // 이름(왜 흐린가)과 세기(얼마나)를 함께 낸다 — 둘 다 여기서 정해져야 매체가 안 갈린다.
   const dimOf = (groupId: string) => {
     const level = dimLevel({
-      active: groupId === content.activePaneId,
+      // **흐림도 화면이 그리는 해를 따른다.** 포커스는 클릭 즉시 바뀌지만 기하는 위상이
+      // 받아들일 때 바뀐다. 흐림만 즉시 바뀌면 여정이 시작되는 그 순간 슬롯의 단계가 달라지고,
+      // 그때 구워 둔 동결 사진(베일이 들어 있다)이 못 쓰게 된다 — 그러면 활강 내내 표면을 덮을
+      // 것이 없어 홀이 배경을 드러낸다(실측 2026-08-02: 교체 정점에서 브라우저 둘이 통째로 빔).
+      active: groupId === (focusedPaneId ?? content.activePaneId),
       focusDim,
       blocked: !!betweenIds?.includes(groupId),
     });
