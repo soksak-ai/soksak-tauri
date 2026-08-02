@@ -46,6 +46,183 @@ function settledLayout(): Promise<void> {
   });
 }
 
+/**
+ * 칠해진 픽셀의 통계 — 그림이 아니라 숫자.
+ *
+ * 넓은 영역을 전부 읽지 않는다: 표본이 충분하면 평균은 안 흔들리고, 전수는 그저 느리다.
+ * 격자로 고르게 훑는다(무작위 금지 — 같은 화면은 같은 답이어야 한다).
+ *
+ * 휘도는 **표시값 기준**이다(감마 해제 안 함). 여기서 답할 질문이 "사람 눈에 얼마나 어두워
+ * 보이나"이고, 검은 베일 alpha a 는 표시값에 (1 − a) 를 곱하므로 이 축에서 정확히 읽힌다.
+ */
+async function pixelStats(pngBase64: string): Promise<{
+  w: number;
+  h: number;
+  samples: number;
+  mean: { r: number; g: number; b: number };
+  luminance: number;
+  min: number;
+  max: number;
+}> {
+  const img = new Image();
+  img.src = `data:image/png;base64,${pngBase64}`;
+  await img.decode();
+  const w = img.naturalWidth;
+  const h = img.naturalHeight;
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) throw new Error("2d 컨텍스트를 못 얻었다 — 픽셀을 읽을 수 없다");
+  ctx.drawImage(img, 0, 0);
+  const { data } = ctx.getImageData(0, 0, w, h);
+  // 표본 상한 — 격자 간격은 넓이에서 나온다(값이 아니라 규칙).
+  const MAX_SAMPLES = 200_000;
+  const step = Math.max(1, Math.ceil(Math.sqrt((w * h) / MAX_SAMPLES)));
+  let sr = 0;
+  let sg = 0;
+  let sb = 0;
+  let n = 0;
+  let min = 1;
+  let max = 0;
+  for (let y = 0; y < h; y += step) {
+    for (let x = 0; x < w; x += step) {
+      const i = (y * w + x) * 4;
+      const r = data[i] ?? 0;
+      const g = data[i + 1] ?? 0;
+      const b = data[i + 2] ?? 0;
+      sr += r;
+      sg += g;
+      sb += b;
+      n += 1;
+      const l = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+      if (l < min) min = l;
+      if (l > max) max = l;
+    }
+  }
+  const round = (v: number) => Math.round(v * 1000) / 1000;
+  const mean = { r: Math.round(sr / n), g: Math.round(sg / n), b: Math.round(sb / n) };
+  return {
+    w,
+    h,
+    samples: n,
+    mean,
+    luminance: round((0.2126 * mean.r + 0.7152 * mean.g + 0.0722 * mean.b) / 255),
+    min: round(min),
+    max: round(max),
+  };
+}
+
+/** 자른 자리와 되돌릴 일 — 자르기 축의 답. */
+type Region = {
+  rect?: { x: number; y: number; w: number; h: number };
+  tabId?: string;
+  restore: (() => void) | null;
+};
+
+type Refusal = { ok: false; code: string; message: string };
+
+const isRefusal = (v: Region | Refusal): v is Refusal => "ok" in v;
+
+/**
+ * 자르기 축을 해소한다 — rect(좌표) · node(주소) · tab(탭 이름) 셋이 같은 답으로 모인다.
+ *
+ * 이 자리가 한 곳이어야 한다: 픽셀을 찍는 명령과 픽셀을 재는 명령이 각자 해소하면, 같은
+ * 주소가 두 자리를 답하는 날이 온다. 되돌릴 일(restore)도 답의 일부다 — 관측은 변경이
+ * 아니므로, 활성화해서 찍었으면 원래 활성이던 것을 되돌린다.
+ */
+async function resolveRegion(p: Record<string, unknown>): Promise<Region | Refusal> {
+  let rect = p.rect as { x: number; y: number; w: number; h: number } | undefined;
+  let restore: (() => void) | null = null;
+  let tabId: string | undefined;
+  let nodeAddr = p.node as string | undefined;
+  if (typeof p.tab === "string" && p.tab) {
+    const loc = locateTab(p.tab);
+    if (!loc || !loc.tab) {
+      return { ok: false, code: "TARGET_NOT_FOUND", message: `탭 없음: ${p.tab}` };
+    }
+    const st = useSessions.getState();
+    const prevSpace = loc.project.activeSpaceId;
+    const prevView = loc.pane.activeTabId;
+    if (prevSpace !== loc.space.id || prevView !== loc.tab.id) {
+      st.setActiveContent(loc.project.id, loc.space.id);
+      st.setActiveView(loc.project.id, loc.tab.id);
+      restore = () => {
+        const back = useSessions.getState();
+        if (prevView) back.setActiveView(loc.project.id, prevView);
+        if (prevSpace) back.setActiveContent(loc.project.id, prevSpace);
+      };
+      // 전환은 레이아웃을 움직인다 — 슬롯이 최종 자리에 선 뒤에 찍어야 한다.
+      //
+      // 기다림은 **사건으로 끝난다.** rAF 는 못 쓴다(가려진 창은 rAF 가 정지하는데, 창이 앞이
+      // 아닐 때 찍는 것이 이 명령의 요점이다 — 실측 2026-07-31: 30초 타임아웃에 되돌리기까지
+      // 못 했다). 숫자 타이머도 안 쓴다(얼마를 적든 그 수는 근거가 없다). 레이아웃 모션은
+      // 자기 시작·끝을 알리므로 그 끝을 기다린다.
+      settleAnimationsForCapture();
+      await settledLayout();
+    }
+    tabId = loc.tab.id;
+    nodeAddr = nodeOfTab(loc.project.id, loc.tab.id);
+  }
+  // 주소로 지목한 영역 — 좌표를 손으로 계산하지 않고 탭·패널 하나를 그대로 담는다.
+  // 재는 자리는 ui.measure 와 같다(resolveExposed): 두 벌이면 같은 주소가 다른 자리를 답한다.
+  if (nodeAddr) {
+    const found = resolveExposed(nodeAddr);
+    if (!("el" in found)) {
+      restore?.();
+      return found as Refusal;
+    }
+    const r = found.el.getBoundingClientRect();
+    // 표면 rect 규칙을 그대로 쓴다(surfaceRectOf — 안쪽으로 접기). 노드 rect 는 거의 항상
+    // 분수인데 캡처는 정수 픽셀에만 서므로, 접지 않고 넘기면 "빈/무효 crop rect" 로 거절
+    // 당한다(실측 2026-07-31). 접는 규칙이 두 벌이면 캡처와 스탠드인이 다른 자리에 선다.
+    const cropped = surfaceRectOf({
+      left: r.left,
+      top: r.top,
+      right: r.right,
+      bottom: r.bottom,
+    });
+    if (cropped.w < 1 || cropped.h < 1) {
+      restore?.();
+      return {
+        ok: false,
+        code: "INVALID_PARAMS",
+        message: `노드가 화면에 크기를 갖지 않습니다(${Math.round(r.width)}x${Math.round(r.height)}): ${nodeAddr}`,
+      };
+    }
+    // 화면 밖은 캡처할 픽셀이 없다 — 비활성 슬롯은 창 밖으로 파킹된다(실측: x=-3490).
+    // 이것을 캡처 계층까지 흘려보내면 "빈/무효 crop rect" 라는 INTERNAL 로 뭉개져, 부른
+    // 쪽은 무엇을 고쳐야 할지 알 수 없다. 이름과 사유로 거절하고 회복 경로를 준다.
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    if (
+      cropped.x + cropped.w <= 0 ||
+      cropped.y + cropped.h <= 0 ||
+      cropped.x >= vw ||
+      cropped.y >= vh
+    ) {
+      restore?.();
+      return {
+        ok: false,
+        code: "OFFSCREEN",
+        message: `노드가 화면 밖입니다(x=${cropped.x}, y=${cropped.y} · 뷰포트 ${vw}x${vh}) — 비활성 슬롯은 창 밖으로 파킹됩니다. 먼저 그 스페이스/탭을 활성화하세요: ${nodeAddr}`,
+      };
+    }
+    rect = { x: cropped.x, y: cropped.y, w: cropped.w, h: cropped.h };
+  }
+  if (
+    rect &&
+    (typeof rect.x !== "number" ||
+      typeof rect.y !== "number" ||
+      typeof rect.w !== "number" ||
+      typeof rect.h !== "number")
+  ) {
+    restore?.();
+    return { ok: false, code: "INVALID_PARAMS", message: "rect 는 {x,y,w,h} 숫자 필수" };
+  }
+  return { rect, tabId, restore };
+}
+
 export function registerCaptureCatalog(): void {
   register("window.snapshot", {
     description:
@@ -92,7 +269,7 @@ export function registerCaptureCatalog(): void {
         { cmd: "space.list", why: tmsg("hint.flow.snapshot.switch") },
       ];
     },
-    errors: ["INVALID_PARAMS"],
+    errors: ["INVALID_PARAMS", "OFFSCREEN", "TARGET_NOT_FOUND", "NOT_EXPOSED"],
     examples: [
       "window.snapshot",
       'window.snapshot \'{"path":"/tmp/shot.png"}\'',
@@ -105,107 +282,11 @@ export function registerCaptureCatalog(): void {
       // 진입 애니메이션이 중간 프레임에 갇히므로(arm_capture 의 가림해제만으론 timeline 이 안
       // 흐른다), 캡처 직전 유한 애니메이션을 명시 정착한다. 모든 캡처 경로 공통 앞단.
       settleAnimationsForCapture();
-      let rect = p.rect as
-        | { x: number; y: number; w: number; h: number }
-        | undefined;
-      // 탭을 이름으로 담는다 — 비활성 탭은 창 밖으로 파킹되므로(실측 x=-3490) 주소만으로는
-      // 캡처할 픽셀이 없다. 부른 쪽에 "먼저 활성화하라"를 떠넘기지 않는다: 이 명령이 활성화하고,
-      // 찍고, **원래 활성이던 것을 되돌린다**. 캡처는 관측이지 변경이 아니다.
-      let restore: (() => void) | null = null;
-      let tabId: string | undefined;
-      let nodeAddr = p.node as string | undefined;
-      if (typeof p.tab === "string" && p.tab) {
-        const loc = locateTab(p.tab);
-        if (!loc || !loc.tab) {
-          return {
-            ok: false as const,
-            code: "TARGET_NOT_FOUND" as const,
-            message: `탭 없음: ${p.tab}`,
-          };
-        }
-        const st = useSessions.getState();
-        const prevSpace = loc.project.activeSpaceId;
-        const prevView = loc.pane.activeTabId;
-        if (prevSpace !== loc.space.id || prevView !== loc.tab.id) {
-          st.setActiveContent(loc.project.id, loc.space.id);
-          st.setActiveView(loc.project.id, loc.tab.id);
-          restore = () => {
-            const back = useSessions.getState();
-            if (prevView) back.setActiveView(loc.project.id, prevView);
-            if (prevSpace) back.setActiveContent(loc.project.id, prevSpace);
-          };
-          // 전환은 레이아웃을 움직인다 — 슬롯이 최종 자리에 선 뒤에 찍어야 한다.
-          //
-          // 기다림은 **사건으로 끝난다.** rAF 는 못 쓴다(가려진 창은 rAF 가 정지하는데, 창이 앞이
-          // 아닐 때 찍는 것이 이 명령의 요점이다 — 실측 2026-07-31: 30초 타임아웃에 되돌리기까지
-          // 못 했다). 숫자 타이머도 안 쓴다(얼마를 적든 그 수는 근거가 없다). 레이아웃 모션은
-          // 자기 시작·끝을 알리므로 그 끝을 기다린다.
-          settleAnimationsForCapture();
-          await settledLayout();
-        }
-        tabId = loc.tab.id;
-        nodeAddr = nodeOfTab(loc.project.id, loc.tab.id);
-      }
-      // 주소로 지목한 영역 — 좌표를 손으로 계산하지 않고 탭·패널 하나를 그대로 담는다.
-      // 재는 자리는 ui.measure 와 같다(resolveExposed): 두 벌이면 같은 주소가 다른 자리를 답한다.
-      if (nodeAddr) {
-        const found = resolveExposed(nodeAddr);
-        if (!("el" in found)) {
-          restore?.();
-          return found;
-        }
-        const r = found.el.getBoundingClientRect();
-        // 표면 rect 규칙을 그대로 쓴다(surfaceRectOf — 안쪽으로 접기). 노드 rect 는 거의 항상
-        // 분수인데 캡처는 정수 픽셀에만 서므로, 접지 않고 넘기면 "빈/무효 crop rect" 로 거절
-        // 당한다(실측 2026-07-31). 접는 규칙이 두 벌이면 캡처와 스탠드인이 다른 자리에 선다.
-        const cropped = surfaceRectOf({
-          left: r.left,
-          top: r.top,
-          right: r.right,
-          bottom: r.bottom,
-        });
-        if (cropped.w < 1 || cropped.h < 1) {
-          restore?.();
-          return {
-            ok: false as const,
-            code: "INVALID_PARAMS" as const,
-            message: `노드가 화면에 크기를 갖지 않습니다(${Math.round(r.width)}x${Math.round(r.height)}): ${nodeAddr}`,
-          };
-        }
-        // 화면 밖은 캡처할 픽셀이 없다 — 비활성 슬롯은 창 밖으로 파킹된다(실측: x=-3490).
-        // 이것을 캡처 계층까지 흘려보내면 "빈/무효 crop rect" 라는 INTERNAL 로 뭉개져, 부른
-        // 쪽은 무엇을 고쳐야 할지 알 수 없다. 이름과 사유로 거절하고 회복 경로를 준다.
-        const vw = window.innerWidth;
-        const vh = window.innerHeight;
-        if (
-          cropped.x + cropped.w <= 0 ||
-          cropped.y + cropped.h <= 0 ||
-          cropped.x >= vw ||
-          cropped.y >= vh
-        ) {
-          restore?.();
-          return {
-            ok: false as const,
-            code: "OFFSCREEN" as const,
-            message: `노드가 화면 밖입니다(x=${cropped.x}, y=${cropped.y} · 뷰포트 ${vw}x${vh}) — 비활성 슬롯은 창 밖으로 파킹됩니다. 먼저 그 스페이스/탭을 활성화하세요: ${nodeAddr}`,
-          };
-        }
-        rect = { x: cropped.x, y: cropped.y, w: cropped.w, h: cropped.h };
-      }
+      // 자르기 축은 한 곳에서 해소한다(resolveRegion) — window.pixels 와 같은 함수다.
+      const region = await resolveRegion(p);
+      if (isRefusal(region)) return region;
+      const { rect, tabId, restore } = region;
       if (rect || p.base64) {
-        if (
-          rect &&
-          (typeof rect.x !== "number" ||
-            typeof rect.y !== "number" ||
-            typeof rect.w !== "number" ||
-            typeof rect.h !== "number")
-        ) {
-          return {
-            ok: false as const,
-            code: "INVALID_PARAMS" as const,
-            message: "rect 는 {x,y,w,h} 숫자 필수",
-          };
-        }
         const pngBase64 = await invoke<string>(
           "plugin:webview-capture|snapshot_region",
           rect ? { x: rect.x, y: rect.y, w: rect.w, h: rect.h } : {},
@@ -248,6 +329,61 @@ export function registerCaptureCatalog(): void {
       });
       // 파일 캡처도 media 로 선언 — 피드가 경로를 읽어 이미지로 렌더한다(경로 텍스트만 보이지 않게).
       return { saved, media: { kind: "image/png", path: saved } };
+    },
+  });
+
+  // 화면에 **실제로 무엇이 칠해졌는가**를 숫자로 답한다.
+  //
+  // 왜 명령이어야 하는가(실사고 2026-08-02): 흐림이 안 걸린 것을 두 번 연달아 "됐다"고
+  // 답했다. 계산된 스타일은 맞았고(베일 alpha 0.22 → 0.7) 캡처도 있었는데, 그 캡처를 **눈으로**
+  // 보고 판정했기 때문이다. 눈은 "조금 어두워 보인다"와 "70% 어둡다"를 못 가른다. 잴 수 없는
+  // 축은 반드시 때려맞히게 되고, 그 답은 신뢰할 수 없다.
+  //
+  // 선언(스타일)과 결과(픽셀)는 다른 사실이다. 선언이 맞아도 가려지거나, 클립되거나, 아래
+  // 계층에 깔리면 픽셀은 안 바뀐다. 그래서 픽셀을 따로 묻는 자리를 둔다.
+  register("window.pixels", {
+    description:
+      "Measure what is actually painted in a region — mean color and luminance, not a picture. Same region axes as window.snapshot (rect | node | tab), so the address you measure is the address you capture. Use this to verify that a declared style reached the screen: computed style says what was declared, this says what was painted (an overlay can be clipped, covered, or composited under a native surface and the declaration still reads correct). Compare two states or two regions by their luminance.",
+    triggers: { ko: "픽셀 색 밝기 실제칠해짐 검증 휘도 평균색" },
+    params: {
+      rect: {
+        type: "json",
+        description:
+          "Region {x,y,w,h} in CSS px, window coordinates (ui.measure space)",
+      },
+      node: {
+        type: "string",
+        description: "Exposed address (ui.tree) — its rect is measured for you",
+      },
+      tab: {
+        type: "string",
+        description:
+          "Content tab id. Inactive tabs are parked offscreen, so this activates the tab for the shot and restores what was active afterwards",
+      },
+    },
+    returns:
+      "{ tabId?, w, h, samples, mean:{r,g,b}, luminance, min, max } — luminance is 0..1 on displayed (gamma-encoded) values; min/max are the darkest and brightest sampled luminance",
+    message: (d) =>
+      tmsg("msg.window.pixels", { l: Number(d.luminance ?? 0).toFixed(3) }),
+    errors: ["INVALID_PARAMS", "OFFSCREEN", "TARGET_NOT_FOUND", "NOT_EXPOSED"],
+    examples: [
+      'window.pixels \'{"node":"win/main/proj/p1/chrome/layout/tab/tab-abc"}\'',
+      'window.pixels \'{"rect":{"x":100,"y":80,"w":400,"h":300}}\'',
+    ],
+    handler: async (p) => {
+      settleAnimationsForCapture();
+      const region = await resolveRegion(p);
+      if (isRefusal(region)) return region;
+      const { rect, tabId, restore } = region;
+      try {
+        const pngBase64 = await invoke<string>(
+          "plugin:webview-capture|snapshot_region",
+          rect ? { x: rect.x, y: rect.y, w: rect.w, h: rect.h } : {},
+        );
+        return { ...(tabId ? { tabId } : {}), ...(await pixelStats(pngBase64)) };
+      } finally {
+        restore?.();
+      }
     },
   });
 

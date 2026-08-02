@@ -495,6 +495,7 @@ export const ko = {
   "cmd.window.restorePrevious": "직전 워크스페이스 세대를 보거나 되돌립니다",
   "cmd.window.resize": "창 크기를 조절합니다",
   "cmd.window.snapshot": "화면을 캡처합니다",
+  "cmd.window.pixels": "칠해진 픽셀을 잽니다",
   "cmd.window.themeScan": "테마 전환을 측정합니다",
 
   // 오류 hint(제시, MESSAGE-PROTOCOL) — 실패 응답에 얹히는 후속 명령 후보. 지시가 아니라
@@ -889,6 +890,7 @@ export const ko = {
   "msg.window.resize": "창 크기를 {w}×{h}로 바꿨습니다",
   "msg.window.snapshot": "화면을 캡처했습니다",
   "msg.window.snapshot.captured": "화면을 캡처했습니다",
+  "msg.window.pixels": "칠해진 밝기 {l}",
   "msg.window.snapshot.saved": "화면을 {path}에 저장했습니다",
   "msg.window.themeScan": "테마 전환을 측정했습니다",
   "msg.window.themeScan.atomic": "테마가 원자적으로 전환됐습니다",

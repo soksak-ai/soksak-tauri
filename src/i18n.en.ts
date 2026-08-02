@@ -490,6 +490,7 @@ export const en: Record<MsgKey, string> = {
   "cmd.window.restorePrevious": "Inspects or restores the previous workspace generation",
   "cmd.window.resize": "Resizes the window",
   "cmd.window.snapshot": "Captures the window",
+  "cmd.window.pixels": "Measures painted pixels",
   "cmd.window.themeScan": "Measures a theme transition",
 
   // 오류 hint(제시, MESSAGE-PROTOCOL) — 실패 응답에 얹히는 후속 명령 후보. 지시가 아니라
@@ -884,6 +885,7 @@ export const en: Record<MsgKey, string> = {
   "msg.window.resize": "Resized the window to {w}×{h}",
   "msg.window.snapshot": "Captured the screen",
   "msg.window.snapshot.captured": "Captured the screen",
+  "msg.window.pixels": "Painted luminance {l}",
   "msg.window.snapshot.saved": "Saved the screen to {path}",
   "msg.window.themeScan": "Measured the theme transition",
   "msg.window.themeScan.atomic": "The theme switched atomically",

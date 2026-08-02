@@ -3447,6 +3447,24 @@ sok-dev window.open '{"root":"/Users/me/work"}'
 sok-dev window.open '{"mode":"orchestrator"}'
 ```
 
+## `window.pixels`
+
+Measure what is actually painted in a region — mean color and luminance, not a picture. Same region axes as window.snapshot (rect | node | tab), so the address you measure is the address you capture. Use this to verify that a declared style reached the screen: computed style says what was declared, this says what was painted (an overlay can be clipped, covered, or composited under a native surface and the declaration still reads correct). Compare two states or two regions by their luminance. | 픽셀 색 밝기 실제칠해짐 검증 휘도 평균색
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `node` | string |  | Exposed address (ui.tree) — its rect is measured for you |
+| `rect` | json |  | Region {x,y,w,h} in CSS px, window coordinates (ui.measure space) |
+| `tab` | string |  | Content tab id. Inactive tabs are parked offscreen, so this activates the tab for the shot and restores what was active afterwards |
+
+**Returns**: { tabId?, w, h, samples, mean:{r,g,b}, luminance, min, max } — luminance is 0..1 on displayed (gamma-encoded) values; min/max are the darkest and brightest sampled luminance
+**Errors**: INVALID_PARAMS, OFFSCREEN, TARGET_NOT_FOUND, NOT_EXPOSED
+
+```bash
+sok-dev window.pixels '{"node":"win/main/proj/p1/chrome/layout/tab/tab-abc"}'
+sok-dev window.pixels '{"rect":{"x":100,"y":80,"w":400,"h":300}}'
+```
+
 ## `window.place`
 
 Place a window at an exact frame (physical px — the window.monitors coordinate space). Position and size applied once. Use layout.suggest output directly. The OS may clamp frames into the usable area (e.g. below the macOS menu bar) — read back window.monitors for the settled frame. | 창 배치 이동 모니터로 옮기기 위치 지정
@@ -3549,7 +3567,7 @@ Capture the window contents to a PNG. Captures even when fully occluded by other
 | `tab` | string |  | Content tab id to capture. Inactive tabs are parked offscreen, so this activates the tab (and its space) for the shot and restores what was active afterwards. |
 
 **Returns**: { tabId?, saved, media:{kind,path} } when path is given (cropped or full) | { tabId?, media:{kind:'image/png',base64} } otherwise — tabId echoes the resolved tab when tab was passed
-**Errors**: INVALID_PARAMS
+**Errors**: INVALID_PARAMS, OFFSCREEN, TARGET_NOT_FOUND, NOT_EXPOSED
 
 ```bash
 sok-dev window.snapshot

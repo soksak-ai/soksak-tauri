@@ -566,10 +566,14 @@ const ProjectPlane = memo(function ProjectPlane({
                   surfaceActive={isActiveProject && isActiveContent}
                   // 배치는 해가 정한다 — 비활성 콘텐츠는 자기 정본 배열 그대로(레일 없음).
                   // 레일이 못 간 만큼 가려진 칸 — 움직이지 않지만 흐려야 어느 판이 활성인지 보인다.
-                  // 화면이 그리는 해에서 가져온다 — railCells 와 같은 자리다. solved 는 방금
-                  // 푼 값이라 전이 중에는 화면과 갈리고, 그 갈림이 "흐림이 안 붙는다"로 나온다.
-                  // 화면이 그리는 해에서 가져온다 — railCells 와 같은 자리다.
-                  betweenIds={isActiveContent ? (arrangement?.betweenIds ?? []) : []}
+                  //
+                  // **흐림은 기하가 아니라 포커스의 사실이다.** 그래서 방금 푼 해(solved)에서
+                  // 가져온다. 위상(phase.displayed)은 기하의 주인이라 **움직임이 있을 때만**
+                  // 다음 해를 받아들이는데, 여행 모드는 정의상 아무것도 움직이지 않는다 —
+                  // 위상에서 읽으면 포커스를 옮겨도 흐림이 영원히 갱신되지 않는다(실측
+                  // 2026-08-02: 명령은 between=[pan-aecvk3,pan-q7lxti] 인데 슬롯은 계속 idle,
+                  // 기하는 완전히 동일). 기하는 위상이, 포커스는 해가 답한다.
+                  betweenIds={isActiveContent ? (solved?.betweenIds ?? []) : []}
                   displayLayout={
                     isActiveContent ? arrangement?.displayLayout : undefined
                   }
