@@ -3455,6 +3455,7 @@ Measure what is actually painted in a region — mean color and luminance, not a
 |---|---|---|---|
 | `node` | string |  | Exposed address (ui.tree) — its rect is measured for you |
 | `rect` | json |  | Region {x,y,w,h} in CSS px, window coordinates (ui.measure space) |
+| `settle` | boolean |  | Finish in-flight finite animations before capturing (default true — a command must yield the frame that should be showing). Pass false to capture the CURRENT instant instead: required to see mismatches that exist only mid-transition, because settling ends them. |
 | `tab` | string |  | Content tab id. Inactive tabs are parked offscreen, so this activates the tab for the shot and restores what was active afterwards |
 
 **Returns**: { tabId?, w, h, samples, mean:{r,g,b}, luminance, min, max } — luminance is 0..1 on displayed (gamma-encoded) values; min/max are the darkest and brightest sampled luminance
@@ -3564,6 +3565,7 @@ Capture the window contents to a PNG. Captures even when fully occluded by other
 | `node` | string |  | Exposed address (ui.tree) to capture — its rect is measured for you. Use this to capture one panel or element without computing coordinates. |
 | `path` | string |  | Output .png path (file mode). Omit to use a temp folder. |
 | `rect` | json |  | Crop region {x,y,w,h} in CSS px, window coordinates (ui.measure space). Combine with path to save the crop. |
+| `settle` | boolean |  | Finish in-flight finite animations before capturing (default true — a command must yield the frame that should be showing). Pass false to capture the CURRENT instant instead: required to see mismatches that exist only mid-transition, because settling ends them. |
 | `tab` | string |  | Content tab id to capture. Inactive tabs are parked offscreen, so this activates the tab (and its space) for the shot and restores what was active afterwards. |
 
 **Returns**: { tabId?, saved, media:{kind,path} } when path is given (cropped or full) | { tabId?, media:{kind:'image/png',base64} } otherwise — tabId echoes the resolved tab when tab was passed

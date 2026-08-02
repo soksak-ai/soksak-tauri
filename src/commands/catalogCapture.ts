@@ -47,6 +47,20 @@ function settledLayout(): Promise<void> {
 }
 
 /**
+ * "보여야 할 최종 프레임"과 "지금 이 순간"은 다른 요구다.
+ *
+ * 기본은 정착이다 — 명령을 받으면 상태 불문 정확한 결과를 내야 한다. 그런데 정착은 진행 중인
+ * 유한 애니메이션을 끝으로 보내므로, **전이 중에만 어긋나는 것**은 이 경로로 영영 볼 수 없다
+ * (실사고 2026-08-02: 여러 층이 서로 다른 프레임에 따라붙는 어긋남을 앱 캡처로 재는데 전부
+ * 정착 뒤 그림만 나와 "정상"으로 읽혔다).
+ */
+const SETTLE_PARAM = {
+  type: "boolean" as const,
+  description:
+    "Finish in-flight finite animations before capturing (default true — a command must yield the frame that should be showing). Pass false to capture the CURRENT instant instead: required to see mismatches that exist only mid-transition, because settling ends them.",
+};
+
+/**
  * 칠해진 픽셀의 통계 — 그림이 아니라 숫자.
  *
  * 넓은 영역을 전부 읽지 않는다: 표본이 충분하면 평균은 안 흔들리고, 전수는 그저 느리다.
@@ -252,6 +266,7 @@ export function registerCaptureCatalog(): void {
         description:
           "Content tab id to capture. Inactive tabs are parked offscreen, so this activates the tab (and its space) for the shot and restores what was active afterwards.",
       },
+      settle: SETTLE_PARAM,
     },
     returns:
       "{ tabId?, saved, media:{kind,path} } when path is given (cropped or full) | { tabId?, media:{kind:'image/png',base64} } otherwise — tabId echoes the resolved tab when tab was passed",
@@ -281,7 +296,7 @@ export function registerCaptureCatalog(): void {
       // 캡처는 명령 — 창이 앞이든 뒤든 정확한 최종 프레임을 낸다. 비전면 창은 timeline 정지로
       // 진입 애니메이션이 중간 프레임에 갇히므로(arm_capture 의 가림해제만으론 timeline 이 안
       // 흐른다), 캡처 직전 유한 애니메이션을 명시 정착한다. 모든 캡처 경로 공통 앞단.
-      settleAnimationsForCapture();
+      if (p.settle !== false) settleAnimationsForCapture();
       // 자르기 축은 한 곳에서 해소한다(resolveRegion) — window.pixels 와 같은 함수다.
       const region = await resolveRegion(p);
       if (isRefusal(region)) return region;
@@ -360,6 +375,7 @@ export function registerCaptureCatalog(): void {
         description:
           "Content tab id. Inactive tabs are parked offscreen, so this activates the tab for the shot and restores what was active afterwards",
       },
+      settle: SETTLE_PARAM,
     },
     returns:
       "{ tabId?, w, h, samples, mean:{r,g,b}, luminance, min, max } — luminance is 0..1 on displayed (gamma-encoded) values; min/max are the darkest and brightest sampled luminance",
@@ -371,7 +387,7 @@ export function registerCaptureCatalog(): void {
       'window.pixels \'{"rect":{"x":100,"y":80,"w":400,"h":300}}\'',
     ],
     handler: async (p) => {
-      settleAnimationsForCapture();
+      if (p.settle !== false) settleAnimationsForCapture();
       const region = await resolveRegion(p);
       if (isRefusal(region)) return region;
       const { rect, tabId, restore } = region;
@@ -406,15 +422,30 @@ export function registerCaptureCatalog(): void {
       'window.record \'{"dir":"/tmp/rec"}\'',
       'window.record \'{"dir":"/tmp/rec","frames":120,"intervalMs":33}\'',
     ],
+    // **프레임 루프는 정책이지 표면이 아니다.** 프레임워크는 이미 "한 장 담기"를 답한다
+    // (snapshot_region). 몇 장을 어떤 간격으로 어떤 이름에 쓸지는 이 앱이 정하는 일이고, 그것을
+    // 껍데기마다 다시 구현하면 프레임워크에 따라 되거나 안 된다 — 실제로 한쪽만 답해서 전이 중
+    // 결함을 한쪽에서는 볼 수 없었다(실측 2026-08-02: Electron 에서 UNKNOWN, 그래서 토글 순간을
+    // 못 봤다). 여기서 한 번 돌면 어느 껍데기에서도 같은 답이 나온다.
+    //
+    // 정착하지 않는다 — 녹화의 요점이 **전이 중**이다. 정착시키면 보려던 것이 그 순간 끝난다.
     handler: async (p) => {
       const dir = p.dir as string;
-      const frames = (p.frames as number | undefined) ?? 40;
-      const intervalMs = (p.intervalMs as number | undefined) ?? 40;
-      const n = await invoke<number>("plugin:webview-capture|record", {
-        dir,
-        frames,
-        intervalMs,
-      });
+      const frames = Math.max(1, Math.min(600, (p.frames as number | undefined) ?? 40));
+      // 간격은 부른 쪽이 발화한다 — 무엇을 몇 fps 로 봐야 하는지는 이 자리가 모른다.
+      const intervalMs = Math.max(0, (p.intervalMs as number | undefined) ?? 40);
+      let n = 0;
+      for (let i = 0; i < frames; i += 1) {
+        const started = performance.now();
+        const png = await invoke<string>("plugin:webview-capture|snapshot_region", {});
+        await invoke("write_file_base64", {
+          path: `${dir}/f${String(i).padStart(4, "0")}.png`,
+          base64: png,
+        });
+        n += 1;
+        const rest = intervalMs - (performance.now() - started);
+        if (rest > 0) await new Promise((resolve) => setTimeout(resolve, rest));
+      }
       return { dir, frames: n };
     },
   });

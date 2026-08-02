@@ -50,6 +50,7 @@ const ROOT = join(__dirname, "..", "..");
  *  여기 없는 새 타이머는 게이트가 잡는다 — 이 표가 게이트의 존재 이유다. */
 const ALLOWED: { file: string; mark: string; event: string; why: string }[] = [
   // ── ① 사용자 파라미터 대기 ──
+  { file: "src/commands/catalogCapture.ts", mark: "if (rest > 0) await new Promise((resolve) => setTimeout(resolve, rest));", event: "caller-specified", why: "녹화 프레임 간격 — 무엇을 몇 fps 로 볼지는 부른 쪽이 발화한다(intervalMs)" },
   { file: "src/commands/catalog.ts", mark: "const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));", event: "caller-specified", why: "sleep 헬퍼 — 소비처는 전부 호출자 지정 ms" },
   { file: "src/commands/catalog.ts", mark: "await sleep(settleMs);", event: "caller-specified", why: "settleMs 파라미터 — 캡처 정착 시간을 호출자가 발화" },
   { file: "src/commands/catalog.ts", mark: "await sleep(applyAtMs);", event: "caller-specified", why: "applyAtMs 파라미터" },
