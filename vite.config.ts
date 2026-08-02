@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import devEndpoints from "./frameworks/dev-endpoints.json";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
@@ -20,6 +21,7 @@ export default defineConfig(async ({ mode }) => {
     process.cwd(),
     `src/framework/selected.${framework}.ts`,
   );
+  const devEndpoint = framework === "tauri" ? devEndpoints.tauri : devEndpoints.electron;
 
   return {
   plugins: [react()],
@@ -39,7 +41,7 @@ export default defineConfig(async ({ mode }) => {
   clearScreen: false,
   // 2. tauri expects a fixed port, fail if that port is not available
   server: {
-    port: 1420,
+    port: devEndpoint.port,
     strictPort: true,
     host: host || false,
     hmr: host
@@ -53,6 +55,10 @@ export default defineConfig(async ({ mode }) => {
       // 3. tell Vite to ignore watching `frameworks/tauri`
       ignored: ["**/frameworks/tauri/**"],
     },
+  },
+  preview: {
+    port: devEndpoint.port,
+    strictPort: true,
   },
   };
 });

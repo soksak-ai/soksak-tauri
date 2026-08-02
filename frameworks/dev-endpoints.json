@@ -1,0 +1,10 @@
+{
+  "tauri": {
+    "url": "http://localhost:1420",
+    "port": 1420
+  },
+  "electron": {
+    "url": "http://localhost:1422",
+    "port": 1422
+  }
+}

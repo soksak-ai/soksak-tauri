@@ -13,6 +13,25 @@ export function adapterImports(source: string): string[] {
 }
 
 describe("framework build binding", () => {
+  it("제품 프레임워크의 개발 엔드포인트는 서로 겹치지 않는다", () => {
+    const endpoints = JSON.parse(
+      readFileSync(resolve(ROOT, "frameworks/dev-endpoints.json"), "utf8"),
+    ) as Record<"tauri" | "electron", { url: string; port: number }>;
+    const tauri = JSON.parse(
+      readFileSync(resolve(ROOT, "frameworks/tauri/tauri.conf.json"), "utf8"),
+    ) as { build: { devUrl: string } };
+    const electron = readFileSync(resolve(ROOT, "frameworks/electron/main.cjs"), "utf8");
+    const vite = readFileSync(resolve(ROOT, "vite.config.ts"), "utf8");
+
+    expect(endpoints.electron.url).not.toBe(endpoints.tauri.url);
+    expect(endpoints.electron.port).not.toBe(endpoints.tauri.port);
+    expect(tauri.build.devUrl).toBe(endpoints.tauri.url);
+    expect(electron).toContain('require("../dev-endpoints.json")');
+    expect(electron).toContain("DEV_ENDPOINTS.electron.url");
+    expect(vite).toContain('from "./frameworks/dev-endpoints.json"');
+    expect(vite).toContain("port: devEndpoint.port");
+  });
+
   it("공통 문은 구체 어댑터를 함께 import하지 않는다", () => {
     const source = readFileSync(resolve(ROOT, "src/framework/index.ts"), "utf8");
     expect(adapterImports(source)).toEqual([]);

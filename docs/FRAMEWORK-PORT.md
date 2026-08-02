@@ -91,6 +91,12 @@ When one axis carries three words, every reader has to ask which meaning is in p
 
 Adding a framework is one adapter file plus one row in the resolution table. No app file changes.
 
+The development server is part of framework identity too. `frameworks/dev-endpoints.json` declares each
+framework's URL and port, and both Vite and the Electron host read that declaration. Tauri's
+`build.devUrl` is held equal to the same declaration by a test. Product frameworks never share a development
+endpoint: serving one framework's bundle to the other host changes the adapter import graph itself and is not
+something runtime detection can repair.
+
 ## The stream exit
 
 The seam above covers the app side. The exit that high-volume output takes on its way out of the process is a second one, and it is what pinned native handlers in place.

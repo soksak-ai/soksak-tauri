@@ -27,8 +27,9 @@ const { createControlHost, CMD_REQUEST } = require("./control.cjs");
 const { deliverEvent } = require("./windowEvents.cjs");
 const native = require("./native/index.cjs");
 const { frameworkError } = native;
+const DEV_ENDPOINTS = require("../dev-endpoints.json");
 
-const DEV_URL = process.env.SOKSAK_ELECTRON_URL || "http://localhost:1420";
+const DEV_URL = process.env.SOKSAK_ELECTRON_URL || DEV_ENDPOINTS.electron.url;
 
 // 이 프레임워크의 정체성 — 홈은 identifier 에서 나오고, 원장도 cored 소켓도 그 홈 안에 산다.
 // 홈은 프레임워크의 것이다: cored는 이 값을 부팅 인자로 **받는다**(파생하지 않는다).
