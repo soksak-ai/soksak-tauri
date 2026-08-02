@@ -253,6 +253,20 @@ export function SettingsModal({
               <option value="off">{t("tabCloseConfirm.off")}</option>
             </select>
           </div>
+          {/* 포커스 판이 레일 옆에 오는 **방법**을 고른다 — 판을 당기거나 레일이 가거나.
+              둘 다 켤 수 없는 축이라 select 다: 스위치 둘이면 한 클릭에 두 개가 움직인다. */}
+          <div className="drow">
+            <span className="drow-label">{t("settings.railPullFocused")}</span>
+            <select
+              className="dctl"
+              data-node="settings/railPullFocused"
+              value={s.railPullFocused ? "pull" : "travel"}
+              onChange={(e) => s.setRailPullFocused(e.target.value === "pull")}
+            >
+              <option value="pull">{t("railPullFocused.pull")}</option>
+              <option value="travel">{t("railPullFocused.travel")}</option>
+            </select>
+          </div>
           <div className="drow">
             <span className="drow-label">{t("settings.language")}</span>
             <select
