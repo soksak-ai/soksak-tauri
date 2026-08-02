@@ -17,6 +17,7 @@
 //    이 제외의 사유를 내가 한 번 잘못 귀속했다(2026-08-02): 자식 뷰 층이 있는 껍데기만의
 //    사정으로 보고 축에 걸었더니, DOM 안 게스트가 보간 끝에 옛 픽셀을 남겨 경계에 브라우저
 //    한 줄이 머물고 제 판은 비었다(사용자 캡처). 사유가 둘이었고 그중 하나는 보편이다.
+import { moduleState } from "./moduleState";
 import { LAYOUT_MOTION_MS, layoutMotionFacts } from "./layoutMotion";
 import {
   adoptLayoutAnimation,
@@ -39,6 +40,36 @@ export interface RectMotionTracker {
   ref: (el: HTMLElement | null) => void;
   /** 커밋 직후(useLayoutEffect) 한 번 — 이전 rect 와 비교해 변화분을 보간한다. */
   flush: () => void;
+}
+
+/**
+ * 보간에서 빼야 하는 자리를 **프레임워크가 건다.**
+ *
+ * 뺄 이유는 하나다: 그 자리 아래의 표면이 슬롯의 `transform` 을 **안 따라온다**. 콘텐츠가
+ * 문서 밖에 사는 프레임워크에서만 참이다 — 거기서는 표면이 다른 합성기에 있어 좌표를 따로
+ * 써 줘야 하고, 보간 프레임마다 그것을 쓰면 표면이 못 따라와 옛 픽셀이 남는다.
+ *
+ * 콘텐츠가 문서 안에 살면 그 일이 **일어날 수 없다.** 표면은 자리의 자식이고, 조상의
+ * `transform` 은 재레이아웃이 아니라 합성이라 게스트가 그대로 실려 간다. 그런데도 빼면
+ * 그 판만 혼자 즉시 도착하고 이웃은 미끄러진다 — 없던 결함을 제외가 만든다.
+ *
+ * 그래서 판정은 코어가 갖지 않는다. 건 쪽이 자기 사유로 답한다(framework/tauri/install.ts).
+ */
+const exclusions = moduleState(
+  "lib/layoutRectMotion#exclusions",
+  () => new Set<(el: HTMLElement) => boolean>(),
+);
+
+export function registerRectMotionExclusion(fn: (el: HTMLElement) => boolean): () => void {
+  exclusions.add(fn);
+  return () => {
+    exclusions.delete(fn);
+  };
+}
+
+function excluded(el: HTMLElement): boolean {
+  for (const fn of exclusions) if (fn(el)) return true;
+  return false;
 }
 
 export function createRectMotionTracker(): RectMotionTracker {
@@ -160,8 +191,13 @@ export function createRectMotionTracker(): RectMotionTracker {
         // rect 차이가 화면폭급이고, 그걸 보간하면 슬롯이 화면을 가로질러 날아간다(실측
         // 여정 로그: 탭 교체 1회에 573→-1027 여정 발화 — 사용자가 본 "a·b 가 두 번
         // 교체되는" 모션의 정체). 보이는→보이는 레이아웃 변화만 보간한다.
-        // 살아 있는 페이지는 보간 프레임을 못 따라간다 — 프레임워크와 무관하다.
-        if (!was || el.classList.contains("hole")) continue;
+        if (!was) continue;
+        // 프레임워크가 건 제외 — "이 자리 아래의 표면은 슬롯의 transform 을 안 따라온다".
+        // 코어는 무엇이 걸렸는지 묻지 않는다. 안 걸리면 아무것도 빠지지 않는다.
+        if (excluded(el)) {
+          noteRectMotionSkip(el.dataset.node ?? el.className, "framework-excluded");
+          continue;
+        }
         // 파킹 전환은 FLIP 대상이 아니다 — 판정은 프록시(가시성)가 아니라 좌표다: 파킹은
         // 항상 뷰포트 밖(-200vw)이므로, 출발·도착 어느 쪽이든 화면 밖이면 그것은 레이아웃
         // 모션이 아니라 파킹↔등장이다. (가시성 프록시는 스타일 반영 시차로 오판했다 —

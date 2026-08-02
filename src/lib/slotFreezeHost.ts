@@ -49,9 +49,20 @@ export function scheduleSlotSettleCapture(): void {
   }, SETTLE_DEBOUNCE_MS);
 }
 
-/** 활강의 전제 — 이 뷰들의 홀 표면을 전부 덮을 수 있는가(엔진이 없으면 덮을 수 없다). */
+/**
+ * 활강의 전제 — 이 뷰들의 이동하는 표면을 **전부 덮을 수 있는가**.
+ *
+ * 덮어야 하는 이유는 표면이 문서 밖에 살아 활강을 안 따라오기 때문이다. 콘텐츠가 문서 안에
+ * 사는 프레임워크에는 그 장치가 걸리지 않고, 표면은 자기 자리의 자식이라 자리와 함께 움직인다
+ * — **덮을 것이 없으므로 전제는 이미 성립이다.**
+ *
+ * 안 걸렸다고 `false` 를 답하면 "못 덮는다"와 "덮을 게 없다"가 한 값을 쓴다("0 의 두 얼굴").
+ * 그 값은 `phase.glide` 로 굳고 → `railTraveling` 이 거짓이 되고 → 배치 전환이 활강 대신
+ * **즉시 스냅**으로 떨어지며 `beginLayoutMotion` 조차 뜨지 않는다. 멀쩡한 전환이 통째로 죽는데
+ * 아무것도 실패하지 않는다(실측 2026-08-03).
+ */
 export function canGlideViews(viewIds: readonly string[]): boolean {
-  return installed.host ? installed.host.canFreezeAll(viewIds) : false;
+  return installed.host ? installed.host.canFreezeAll(viewIds) : true;
 }
 
 /** 내용이 바뀐 뷰의 스냅을 버린다(항행 등) — 낡은 프레임을 세우지 않는 유일한 축. */

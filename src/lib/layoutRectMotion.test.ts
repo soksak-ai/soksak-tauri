@@ -16,7 +16,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it } from "vitest";
-import { createRectMotionTracker } from "./layoutRectMotion";
+import { createRectMotionTracker, registerRectMotionExclusion } from "./layoutRectMotion";
 import { setMotionDebug } from "./motionDebug";
 
 function rectOf(x: number, y: number, w: number, h: number): DOMRect {
@@ -112,21 +112,65 @@ describe("정지 중의 레이아웃 변화", () => {
   });
 });
 
-describe("살아 있는 페이지는 보간하지 않는다 — 프레임워크와 무관하다", () => {
-  it("홀 제외를 프레임워크 축에 걸지 않는다", () => {
-    // 실사고 2026-08-02: 이 제외의 사유를 "자식 뷰 층이 있는 껍데기의 사정"으로만 보고
-    // engineProvision.nativeChildWebview 에 걸었다. 그러자 DOM 안 게스트(<webview>=OOPIF)가
-    // 보간 끝에 옛 픽셀을 남겨, 경계에 브라우저 한 줄이 머물고 제 판은 비었다.
-    //
-    // 사유는 둘이었고 그중 하나는 보편이다: 페이지는 매 프레임 재레이아웃·재합성할 수 없다.
-    // 그러므로 이 제외는 축을 묻지 않는다.
-    const src = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), "layoutRectMotion.ts"),
-      "utf8",
-    )
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/^\s*\/\/.*$/gm, "");
-    expect(src).toMatch(/el\.classList\.contains\("hole"\)/);
-    expect(src, "홀 제외를 프레임워크 축에 걸지 마라").not.toMatch(/nativeChildWebview/);
+describe("보간 제외는 코어의 것이 아니다", () => {
+  // 재입법 2026-08-03 — 옛 기준은 "홀 제외를 프레임워크 축에 걸지 마라"였고, 그 근거는
+  // 2026-08-02 실측이었다: DOM 안 게스트가 보간 끝에 옛 픽셀을 남겼다.
+  //
+  // **그 근거가 사라졌다.** 그때 게스트는 전역 층에 달려 좌표로 밀리고 있었다(domHost 가 문서
+  // 밖 모델을 문서 안에 베낀 상태). 지금 게스트는 자기 자리의 자식이라 조상의 transform 을
+  // 그대로 타고 간다 — 재레이아웃이 아니라 합성이므로 못 따라갈 일 자체가 없다.
+  //
+  // 남은 사유는 하나뿐이고 그것은 보편이 아니다: "그 자리 아래의 표면이 슬롯의 transform 을
+  // 안 따라온다"는 콘텐츠가 문서 밖일 때만 참이다. 코어가 그것을 들고 있으면, 그럴 일이 없는
+  // 프레임워크에서 그 판만 혼자 즉시 도착하고 이웃은 미끄러진다 — 없던 결함을 제외가 만든다.
+  const src = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "layoutRectMotion.ts"),
+    "utf8",
+  )
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+
+  it("코어는 홀을 알지 않는다 — 뺄 자리는 건 쪽이 답한다", () => {
+    expect(src, "코어가 홀을 직접 뺀다").not.toMatch(/classList\.contains\("hole"\)/);
+    expect(src, "코어가 프레임워크 축을 묻는다").not.toMatch(/nativeChildWebview/);
+    // 걸 자리는 있어야 한다 — 없으면 뺄 방법 자체가 사라진 것이고, 그것은 다른 결함이다.
+    expect(src).toMatch(/registerRectMotionExclusion/);
+  });
+
+  it("안 걸면 홀 자리도 보간된다 — 그럴 일이 없는 프레임워크에서 없던 결함을 만들지 않는다", () => {
+    setMotionDebug({ hold: true }); // 인라인으로 옛 rect 를 세우는 경로 — 관측이 확실하다
+    const t = createRectMotionTracker();
+    const { el, move } = laidOut(100, 50);
+    el.classList.add("hole");
+    t.ref(el);
+    t.flush();
+    move(300, 50);
+    t.flush();
+    // 보간 대상이면 옛 폭이 그 자리에 선다. 빠졌다면 아무것도 안 선다.
+    expect(el.style.width, "홀 자리가 코어에서 빠졌다").toBe("100px");
+  });
+
+  it("걸면 그 자리가 빠진다 — 판정은 건 쪽의 것이다", () => {
+    setMotionDebug({ hold: true });
+    const off = registerRectMotionExclusion((e) => e.classList.contains("hole"));
+    try {
+      const t = createRectMotionTracker();
+      const { el, move } = laidOut(100, 50);
+      el.classList.add("hole");
+      t.ref(el);
+      t.flush();
+      move(300, 50);
+      t.flush();
+      expect(el.style.width, "걸었는데 홀 자리가 그대로 보간됐다").toBe("");
+      // 오라클 생존 — 홀이 아닌 자리는 여전히 보간된다(제외가 전부를 삼키지 않는다).
+      const other = laidOut(100, 50);
+      t.ref(other.el);
+      t.flush();
+      other.move(300, 50);
+      t.flush();
+      expect(other.el.style.width).toBe("100px");
+    } finally {
+      off();
+    }
   });
 });

@@ -258,34 +258,36 @@ describe("DOM 콘텐츠 뷰의 숨김", () => {
   // 컨테이너는 586×428). 크기가 돌아오는 것은 **누군가 bounds 를 다시 불러 줄 때뿐**이라,
   // 복원이 우연에 달린다.
   //
-  // 이 저장소에는 이미 그 규칙이 단일 진실로 있다(layerPark.parkedStyle): 화면 밖으로 옮기되
-  // 크기와 세션은 보존한다. 그 헤더가 바로 "display:none 의 재-fit 회피"라고 적어 뒀다.
-  // 여기만 그 규칙을 안 쓰고 있었다.
-  it("숨겨도 상자를 잃지 않는다 — display:none 을 쓰지 않는다", async () => {
+  // 재입법 2026-08-03 — 옛 검사는 화면 밖으로 옮기는 파킹(translateX(-200vw))까지 요구했다.
+  // 그것은 **문서 밖에 사는 표면의 사정**이다: 별도 합성 레이어라 `visibility:hidden` 으로
+  // 안 빠진다(lib/layerPark 머리말). 문서 안 게스트에는 그 사정이 없고, 실측이 그렇게 답했다
+  // (scripts/electron/guest-under-effects.test.mjs: visibility 만으로 중앙 픽셀 234 → 0).
+  // 그럴 이유가 없는 자리에 남의 장치를 두면 그 자체가 다음 결함의 자리다.
+  it("숨겨도 상자를 잃지 않는다 — display:none 도 오프스크린 파킹도 쓰지 않는다", async () => {
     const { domHost: host } = await load();
+    const slot = document.createElement("div");
+    slot.setAttribute("data-content-view-slot", "b-1");
+    document.body.appendChild(slot);
 
     await host.open("b-1", { url: "https://example.com" });
-    await host.bounds("b-1", 10, 20, 586, 428);
     const el = document.querySelector('[data-content-view="b-1"]') as HTMLElement;
     expect(el).toBeTruthy();
 
     await host.visible("b-1", false);
     expect(el.style.display).not.toBe("none");
-    // 상자는 그대로 남는다 — 켤 때 다시 재어 줄 사람이 없어도 크기가 살아 있다.
-    expect(el.style.width).toBe("586px");
-    expect(el.style.height).toBe("428px");
-    // 그리고 화면 밖이다 — 숨긴 것이 보이면 그것은 숨긴 것이 아니다.
     expect(el.style.visibility).toBe("hidden");
-    expect(el.style.transform).toContain("translateX");
+    // 화면 밖으로 옮기지 않는다 — 문서 안 게스트는 그냥 안 그려지면 된다.
+    expect(el.style.transform === "" || el.style.transform === "none").toBe(true);
+    // 상자는 그대로다 — 자리를 채우고 있으므로 켤 때 다시 재어 줄 사람이 없어도 된다.
+    expect(el.style.inset).toBe("0px");
 
     await host.visible("b-1", true);
     expect(el.style.visibility).toBe("visible");
-    expect(el.style.transform === "" || el.style.transform === "none").toBe(true);
-    expect(el.style.width).toBe("586px");
+    expect(el.style.inset).toBe("0px");
   });
 
-  // 만든 직후도 같은 규칙이다 — 여기만 display:none 이면 첫 표시가 같은 함정을 밟는다.
-  it("만들 때도 파킹으로 숨긴다", async () => {
+  // 만든 직후도 같은 규칙이다 — 자리에 놓이기 전에 보이면 옛 자리에서 한 번 그려진다.
+  it("만들 때도 숨겨 둔다", async () => {
     const { domHost } = await load();
     await domHost.open("b-2", { url: "https://example.com" });
     const el = document.querySelector('[data-content-view="b-2"]') as HTMLElement;

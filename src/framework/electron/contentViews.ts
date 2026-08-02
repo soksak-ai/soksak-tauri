@@ -17,12 +17,27 @@ import {
   type ContentViewHost,
 } from "../../lib/contentViews";
 import { bridgeContentViewEvents } from "../../lib/contentViewEvents";
-import { applyParked } from "../../lib/layerPark";
 import { invoke } from "../index";
 
 /** label → 사건 해지. 뷰를 닫을 때 함께 끊는다 — 안 끊으면 죽은 label 로 뿌린다. */
 // 갈아끼우기 경계 밖 — 이 표가 새것이 되면 채운 쪽은 이미 채웠다고 알아 다시 채우지 않는다.
 const bridges = moduleState("framework/electron.fix#bridges", () => new Map<string, () => void>());
+
+/**
+ * 이 구현의 숨김 — **평범한 `visibility` 다.**
+ *
+ * 문서 밖에 사는 표면은 별도 합성 레이어라 `visibility:hidden` 으로 빠지지 않는다. 그래서
+ * 그쪽에는 화면 밖으로 옮기는 파킹이 있다(lib/layerPark). 문서 안 게스트에는 그 사정이 없다 —
+ * 실측 2026-08-03(scripts/electron/guest-under-effects.test.mjs): `visibility:hidden` 하나로
+ * 게스트가 사라졌다(중앙 픽셀 234 → 0).
+ *
+ * `display:none` 은 쓰지 않는다. 상자를 레이아웃에서 빼면 되살릴 때 게스트가 0×0 뷰포트로
+ * 붙어 URL 은 맞는데 화면만 백지가 되고, 크기가 돌아오는 것이 "누가 bounds 를 다시 불러
+ * 주는가"라는 우연에 달린다(실측 2026-07-30).
+ */
+function setShown(el: HTMLElement, shown: boolean): void {
+  el.style.visibility = shown ? "visible" : "hidden";
+}
 
 /**
  * 자리 안에 채운다 — **좌표를 쓰지 않는다.**
@@ -135,9 +150,8 @@ export const domHost: ContentViewHost = {
       el.style.cssText = "position:absolute";
       doc.body.appendChild(el);
     }
-    // 파킹으로 숨긴다 — display:none 은 상자를 레이아웃에서 빼고, 되살릴 때 게스트가 0×0
-    // 뷰포트로 붙는다(URL 은 맞는데 화면만 백지). 규칙은 layerPark 가 단일 진실이다.
-    applyParked(el, false);
+    // 만들 때는 숨겨 둔다 — 자리에 놓이기 전에 보이면 옛 자리에서 한 번 그려진다.
+    setShown(el, false);
     // **주소는 붙인 뒤에 준다.** 안 붙은 태그에 `src` 를 주면 태그 구현이 내부적으로 적재를
     // 시작하다 "DOM 에 붙고 dom-ready 가 난 뒤에야 부를 수 있다"로 던진다 — 그 예외는
     // **Uncaught 라 부팅 경로를 거기서 끊는다**(실측 2026-08-01: 부팅마다).
@@ -193,9 +207,9 @@ export const domHost: ContentViewHost = {
   },
   async visible(label, visible) {
     const el = find(label, document);
-    // 크기는 건드리지 않는다 — 숨김이 상자를 지우면 복원이 "누가 bounds 를 다시 불러 주는가"에
+    // 상자는 건드리지 않는다 — 숨김이 상자를 지우면 복원이 "누가 bounds 를 다시 불러 주는가"에
     // 달리고, 그 우연이 백지 탭으로 나타난다.
-    if (el) applyParked(el, visible);
+    if (el) setShown(el, visible);
   },
   async history(label, delta) {
     if (delta < 0) (await onReady<() => void>(label, "goBack"))();

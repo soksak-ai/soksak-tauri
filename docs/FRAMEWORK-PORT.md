@@ -671,7 +671,18 @@ A view that declared no slot is a different thing (the offscreen extraction view
 
 ### What stayed common
 
-`.hole` is applied by core from the view's `transparent` declaration — "this view does not paint its own background" means the same everywhere, and the `:not(.hole)` carve-out selects everything where nothing declares it. `layoutRectMotion` still excludes those slots from interpolation, because the reason is not holes but *a live page cannot be re-laid-out every frame* — true of an in-document guest too. `bindPaneUnder` is one function so the two ways in (a content view took focus; a coordinate over the surface) cannot drift apart.
+`.hole` is applied by core from the view's `transparent` declaration — "this view does not paint its own background" means the same everywhere, and the `:not(.hole)` carve-out selects everything where nothing declares it. `bindPaneUnder` is one function so the two ways in (a content view took focus; a coordinate over the surface) cannot drift apart.
+
+### Two things that were called common and were not (corrected same day)
+
+Both were left in core, and one of them was defended in this document as common. Both changed Electron's behaviour.
+
+- **`canGlideViews` answered `false` when no freeze engine was installed.** The question it asks is *can every moving surface be covered* — and where content lives in the document there is nothing to cover, so the premise is already satisfied. Answering `false` made one value carry both "cannot cover" and "nothing needs covering". That value freezes into `phase.glide`, `railTraveling` goes false, the arrangement change drops from a glide to an instant snap, and `beginLayoutMotion` never even fires. A whole transition dies and nothing fails.
+- **`layoutRectMotion` excluded `.hole` slots from FLIP interpolation.** The comment claimed the reason was universal — *a live page cannot follow interpolated frames*. It is not: FLIP moves by `transform`, and an in-document guest is carried by its ancestor's transform as compositing, not re-layout. It cannot fail to keep up. The exclusion is now registered by the framework that owns out-of-document surfaces (`registerRectMotionExclusion`), so core no longer knows what a hole is. Without the fix the browser pane arrived instantly while every neighbour slid.
+
+The old standard that pinned the exclusion ungated rested on a measurement from 2026-08-02 — an in-document guest leaving stale pixels at the end of an interpolation. **That ground is gone**: the guest was in a global layer being pushed by coordinates at the time. It is now a child of its slot.
+
+- **The DOM implementation hides with plain `visibility`.** The off-screen park (`translateX(-200vw)` + `content-visibility`) exists because a surface outside the document is a separate compositing layer that `visibility:hidden` does not remove. Measured for an in-document guest (`scripts/electron/guest-under-effects.test.mjs`): `visibility:hidden` alone removes it (centre pixel 234 → 0). `display:none` is still refused — it drops the box and the guest returns with a 0×0 viewport.
 
 ### Gates
 
@@ -679,6 +690,12 @@ A view that declared no slot is a different thing (the offscreen extraction view
 - The vendor scan now skips relative specifiers. Our own folder is called `electron`, and without that the gate reported our house as the vendor.
 - `scripts/e2e/transition-blank-scan.mjs` freezes a transition step by step and, at each step, asks each pane for **its own** rect and crops that. A fixed rectangle cannot be used: panes move during a transition, so the old rect lands between panes and reads as "the pane is empty" — that illusion made this look unfixed once. Judgement is per-pane against its own resting value, because an absolute threshold cannot separate a sparse terminal (7.3 at rest) from a genuinely blanked browser pane (3.7). A baseline must prove itself stable across two samples; a pane still loading is not counted, and that exclusion is printed rather than hidden.
 
-### Still open
+### Measuring the guest instead of assuming
 
-The live blink the whole thing started from could not be reproduced after the split, and no planted violation made the transition scan fail — so the scan is an instrument here, not yet a proven guard for that symptom. What is proven: every content surface sits inside its declared slot (`detached: 0`), a frozen mid-transition frame shows every pane painted, and the audit command now answers from the host instead of the native list — before this it reported `actual: []` on the DOM side, so ghost detection was computing from an empty set and could only ever say "no ghosts".
+`scripts/electron/guest-under-effects.test.mjs` answers the three questions this refactor rested on, per frame:
+
+- **An ancestor `filter` does reach the guest** (234 → 96 under `brightness(0.4)`). So turning `filter` off on hole slots and painting a veil instead is a compensation for an out-of-document surface, and belongs to that framework. This was planned as a prerequisite and then skipped; the decision had been made on assumption until now.
+- **`visibility:hidden` alone hides the guest.** The off-screen park is not needed in the document.
+- **Coming back from a park costs no blank frame.** Reading that took care: a frame subscription delivers the current frame first, so the pre-unpark frame reads as a blank that is not one. The page now carries a heartbeat (so frames keep flowing while nothing changes) and a marker set in the same script as the unpark, so the first frame that *can* show the guest is identified rather than guessed. With that, every park variant — full, `visibility`, `transform`, `content-visibility` — returns painted on its first frame.
+
+What is proven overall: every content surface sits inside its declared slot (`detached: 0`), a frozen mid-transition frame shows every pane painted, arrangement changes glide again on the DOM side, and the audit command answers from the host instead of the native list — before this it reported `actual: []` there, so ghost detection was computing from an empty set and could only ever say "no ghosts".

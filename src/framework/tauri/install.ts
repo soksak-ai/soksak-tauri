@@ -25,6 +25,7 @@ import { useUi } from "../../state/ui";
 import { useGutterHover } from "../../state/gutterHover";
 import { bindPaneUnder } from "../../lib/bindPaneUnder";
 import { onLayoutMotion } from "../../lib/layoutMotion";
+import { registerRectMotionExclusion } from "../../lib/layoutRectMotion";
 import { listenThisWindow } from "../../lib/windowEvents";
 import { register } from "../../commands/registry";
 import { tmsg } from "../../i18n";
@@ -255,4 +256,8 @@ export function installTauri(): void {
   installResizeGestureRelay();
   // 이 프레임워크에만 있는 명령 표면.
   installNativeBridgeCommand();
+  // 홀 슬롯은 FLIP 보간에서 뺀다 — 그 아래 표면은 문서 밖이라 슬롯의 transform 을 안 따라오고,
+  // 보간 프레임마다 좌표를 써 주면 못 따라와 옛 픽셀이 남는다. 문서 안 게스트에는 일어날 수
+  // 없는 일이므로 그 프레임워크에서는 아무것도 빠지지 않는다.
+  registerRectMotionExclusion((el) => el.classList.contains("hole"));
 }
