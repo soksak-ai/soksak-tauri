@@ -25,6 +25,7 @@ const {
 const activity = require("./activity.cjs");
 const { createControlHost, CMD_REQUEST } = require("./control.cjs");
 const { deliverEvent } = require("./windowEvents.cjs");
+const { revealWindow } = require("./presentation.cjs");
 const native = require("./native/index.cjs");
 const { frameworkError } = native;
 const DEV_ENDPOINTS = require("../dev-endpoints.json");
@@ -118,7 +119,7 @@ function createWindow(label, rect, bootQuery) {
     },
   });
   windows.set(label, win);
-  win.once("ready-to-show", () => win.show());
+  win.once("ready-to-show", () => revealWindow(win));
   // 포커스는 사실이고, 그 사실이 바뀌면 cored 가 알아야 한다 — 낡은 사실로 타겟을 고르면
   // 밖에서 온 명령이 사용자가 보고 있지 않은 창에서 돈다.
   win.on("focus", () => {
