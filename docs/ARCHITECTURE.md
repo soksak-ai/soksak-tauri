@@ -226,6 +226,16 @@ An event you cannot call is an event you cannot verify, and what you cannot veri
 
 **"There is no exposed command, so I could not verify" is not a finding.** Building the command is part of the work.
 
+### A28. A fact lives in the house that owns it — core is not a neutral shelf.
+
+Core is where the platform's own facts live, and the pull to put *any* shared name there is strong: two processes need to agree, core is visible to both, done. That reasoning is wrong and it is quiet. Measured 2026-08-02: the content-view event names sat in core as `browser-nav`, `browser-title`, `browser-loading` — so the platform knew the vocabulary of a plugin that lives on top of it (C1). Nobody noticed, because nothing failed.
+
+Two questions place a name. **Who emits it, and who consumes it?** For those events the answer was: the frameworks emit, the app and its plugins consume. Core is neither. A shared name with no owner among the parties belongs in a contract of its own — `spec-*` crates exist for exactly this: what two sides must agree on, and no code that acts on it.
+
+**Renaming is not relocating.** The first pass changed `browser-*` to `content-view-*` and left the file in core, with a justification that read well and was false ("`webview_open`/`navigate` are core commands" — they are not; the frameworks carry them). A wrong home defended by an unchecked sentence is worse than an unexamined one: the sentence stops the next reader from looking.
+
+**And check what the standard already is before adding one.** Focus already had a contract (`requestViewFocus`/`transferViewFocus`). What the frameworks needed was not a second standard but a *carrier* across the process boundary, ending in that same function. A new event that ends somewhere else would have been a second focus standard, and the two would drift without either being wrong on its own.
+
 ## 5. Extraction Targets
 
 For each subsystem: what STAYS in the skeleton (the generic interface), what MOVES to the plugin (the concrete implementation), and the generic capability the skeleton must expose. Gaps are cited from the grounded subsystem maps.
