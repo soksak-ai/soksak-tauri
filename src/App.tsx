@@ -1,4 +1,3 @@
-import { overlayRightInset } from "./lib/overlayInset";
 import { currentWindow, appInfo, invoke, dragRegion } from "./framework";
 import { execute } from "./commands/registry";
 import {
@@ -409,15 +408,6 @@ const ProjectPlane = memo(function ProjectPlane({
       {/* 상위 콘텐츠 탭은 rail 밖에 남고, 선택된 패널 grid만 rail과 좌표계를 공유한다. */}
       <div
         className={`content${contentTabPosition === "left" ? " space-tabs-left" : ""}`}
-        // 겹침으로 못 가리는 표면이 있다 — 콘텐츠 뷰는 별도 합성 레이어라 오버레이 패널의
-        // z-index 를 무시하고 위로 올라온다. 그래서 덮는 대신 **판을 좁힌다**(overlayInset).
-        style={{
-          paddingRight: overlayRightInset({
-            open: project.rightOpen,
-            mode: rightMode,
-            width: rightW,
-          }),
-        }}
       >
         {project.rootMissing && (
           <div className="root-missing-banner" data-node="banner/root-missing">

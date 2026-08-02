@@ -99,14 +99,30 @@ const HOST_ID = "content-view-host";
 // 갈아끼우기 경계 밖 — 이 표가 새것이 되면 채운 쪽은 이미 채웠다고 알아 다시 채우지 않는다.
 const bridges = moduleState("lib/contentViews#bridges", () => new Map<string, () => void>());
 /** 요소가 붙는 자리. 없으면 만든다 — 배치는 호출자가 bounds 로 정한다. */
+/**
+ * 콘텐츠 뷰가 붙는 자리 — **앱 트리 안**이다.
+ *
+ * 이 프레임워크의 콘텐츠는 DOM 안에 산다. 그러면 가리는 일은 평범한 쌓임으로 끝나야 하고,
+ * z 를 조작할 이유가 없다. 조작이 필요했던 것은 호스트가 `body` 아래, 즉 **앱 트리 밖**에
+ * 있었기 때문이다 — 크롬(사이드바 등)은 프로젝트 컨테이너 안에 있고 그 컨테이너가 자기
+ * 쌓임 맥락을 만드는데, 밖에 있는 호스트는 그 맥락과 비교되지 않는다. 그래서 안쪽의 z 20 이
+ * 바깥의 z 5 를 못 이기고, 브라우저가 오버레이 사이드바 위로 그려졌다(실측 2026-08-02).
+ *
+ * 안에 두면 같은 맥락에서 순서대로 쌓인다. 콘텐츠가 먼저, 크롬이 나중 — DOM 순서 그대로다.
+ *
+ * 홀·파킹·z 조작은 **콘텐츠가 문서 밖인 프레임워크의 사정**이다. 여기서는 쓰지 않는다.
+ */
 function root(doc: Document): HTMLElement {
   let el = doc.getElementById(HOST_ID);
   if (!el) {
     el = doc.createElement("div");
     el.id = HOST_ID;
     el.style.cssText = "position:absolute;left:0;top:0;width:0;height:0";
-    doc.body.appendChild(el);
   }
+  // 앱 트리 안의 첫 자리에 둔다 — 크롬보다 먼저 그려지고, 그래서 크롬이 위에 온다.
+  // 앱이 아직 없으면(부팅 중) body 에 둔다: 붙을 자리가 없다고 뷰를 못 만들면 그것이 더 나쁘다.
+  const host = doc.querySelector<HTMLElement>(".app-root") ?? doc.body;
+  if (el.parentElement !== host) host.insertBefore(el, host.firstChild);
   return el;
 }
 
