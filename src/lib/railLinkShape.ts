@@ -39,25 +39,40 @@ export function railLinkAdjacent(station: number, target: RailRect): boolean {
   return Math.abs(target.left - station) <= RAIL_LINK_ADJACENT_TOLERANCE;
 }
 
-/** 논리 패널 rect와 고정폭 레일을 같은 px 좌표계로 해소한다. */
+/**
+ * 레일과 판을 같은 px 좌표계로 놓는다.
+ *
+ * 판의 자리는 **잰 값이 답이다.** 백분율은 배치의 원인이지 결과가 아니다 — CSS 가 실제로 놓은
+ * 자리에는 거터·테두리·패딩이 섞여 있어서, 같은 백분율을 다시 곱해도 그 자리가 안 나온다.
+ * 그 어긋남은 보더가 판 밖으로 삐져나오는 것으로 나타난다(실측 2026-08-02: 판은 304..1396
+ * 인데 보더는 298..1402 를 그렸다 — 폭이 12px 컸다).
+ *
+ * 잰 값이 없을 때만 백분율로 세운다(첫 프레임·비인접 복귀). 없는 것을 지어내지 않는다.
+ */
 export function railLinkBoxes(
   hostWidth: number,
   hostHeight: number,
   railWidth: number,
   station: number,
   target: RailRect,
-  /** 오른쪽에서 판을 밀고 들어온 폭(밀기 사이드바). 안 빼면 칸이 호스트 밖으로 나간다. */
-  rightInset = 0,
+  measured?: { x: number; y: number; w: number; h: number },
 ): { rail: PixelBox; panel: PixelBox } | null {
   if (hostWidth <= 0 || hostHeight <= 0 || railWidth <= 0) return null;
-  const projected = projectRailRect(target, station, hostWidth, railWidth, rightInset);
+  const rail = {
+    x: railLeftPx(hostWidth, railWidth, station),
+    y: 0,
+    width: railWidth,
+    height: hostHeight,
+  };
+  if (measured) {
+    return {
+      rail,
+      panel: { x: measured.x, y: measured.y, width: measured.w, height: measured.h },
+    };
+  }
+  const projected = projectRailRect(target, station, hostWidth, railWidth);
   return {
-    rail: {
-      x: railLeftPx(hostWidth, railWidth, station),
-      y: 0,
-      width: railWidth,
-      height: hostHeight,
-    },
+    rail,
     panel: {
       x: projected.left,
       y: (target.top / 100) * hostHeight,
@@ -83,13 +98,26 @@ function compact(points: Point[]): Point[] {
  * 전체 높이 rail과 바로 오른쪽 panel의 합집합 외곽선. 떨어진 패널은 중간 패널을
  * 관계 표면으로 오인시키므로 null이다.
  */
+/**
+ * 레일과 판을 한 테두리로 잇는다 — 둘이 **맞닿아 있을 때만**.
+ *
+ * 맞닿음의 기준은 픽셀 동일이 아니다. 실제 배치에는 거터가 있어서 레일 오른끝과 판 시작이
+ * 몇 px 떨어진다(실측 2026-08-02: 레일 160, 판 166 — 6px). 그것을 "안 붙었다"로 읽으면
+ * 보더가 통째로 사라진다. 붙었다고 볼 만한 간격은 거터 한 칸이다.
+ *
+ * 간격이 있으면 판을 레일 쪽으로 **당겨 붙인다** — 그 사이는 어차피 아무것도 아닌 자리이고,
+ * 벌린 채 그리면 테두리가 끊긴다.
+ */
 export function railLinkPolygon(
   rail: PixelBox,
   panel: PixelBox,
-  epsilon = 0.5,
+  epsilon = GUTTER_TOLERANCE_PX,
 ): Point[] | null {
   const railRight = rail.x + rail.width;
   if (Math.abs(panel.x - railRight) > epsilon) return null;
+  if (panel.x !== railRight) {
+    panel = { ...panel, width: panel.width + (panel.x - railRight), x: railRight };
+  }
   const paneRight = panel.x + panel.width;
   const paneBottom = panel.y + panel.height;
   return compact([
@@ -103,6 +131,9 @@ export function railLinkPolygon(
     { x: rail.x, y: rail.y + rail.height },
   ]);
 }
+
+/** 거터 한 칸 — 이만큼 떨어져 있어도 맞닿은 것으로 읽는다(실측 6px, 여유 두 배). */
+const GUTTER_TOLERANCE_PX = 12;
 
 const fmt = (value: number) => Number(value.toFixed(2)).toString();
 

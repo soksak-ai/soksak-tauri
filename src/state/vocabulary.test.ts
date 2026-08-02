@@ -77,6 +77,8 @@ const VERDICTS: Record<Scope, Record<string, Verdict>> = {
     // ── 새 뜻(칸) — 배치 실체와 그 응답·스펙 필드 ─────────────────────────────
     // 좌표·포커스 어느 쪽으로 들어와도 같은 칸을 짚는 한 함수 — 가리키는 것은 칸이다.
     bindPaneUnder: "pane",
+    // 결합된 칸을 재는 함수 — 가리키는 것은 칸이다.
+    measurePane: "pane",
     Pane: "pane",
     PaneNode: "pane",
     pane: "pane",

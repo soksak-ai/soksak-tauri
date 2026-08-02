@@ -427,8 +427,6 @@ const ProjectPlane = memo(function ProjectPlane({
                 boundViewId={boundView.id}
                 boundPaneId={boundGroup.id}
                 railWidth={sidebarW}
-                // 밀기 모드에서만 판을 민다 — 오버레이는 판 위에 뜨므로 폭을 안 가져간다.
-                rightInset={project.rightOpen && rightMode === "push" ? rightW : 0}
                 railStation={renderedStation}
                 targetRect={boundCell.rect}
                 projected={arrangement?.swapped ?? false}

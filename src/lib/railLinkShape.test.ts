@@ -98,33 +98,18 @@ describe("오른쪽 변 분리(B안 — 바깥 변 점선, 라운드 보존)", (
 
 });
 
-/** 판 영역은 **레일 하나만 뺀 나머지가 아니다.** 오른쪽에 밀기(push) 사이드바가 서면 그만큼
- *  더 좁다. 그것을 안 빼면 투영이 늘어나 칸 상자가 호스트 밖으로 나가고, 직각이어야 할 경로가
- *  스스로 교차해 **사선**으로 그려진다(실측 2026-08-02). */
-describe("판 영역 — 오른쪽에 선 것도 뺀다", () => {
-  it("오른쪽 밀기 폭만큼 칸이 좁아진다", () => {
-    const wide = railLinkBoxes(1000, 500, 100, 0, { left: 0, top: 0, width: 100, height: 100 });
-    const narrow = railLinkBoxes(
-      1000,
-      500,
-      100,
-      0,
-      { left: 0, top: 0, width: 100, height: 100 },
-      200,
-    );
-    expect(wide?.panel.width).toBe(900);
-    expect(narrow?.panel.width).toBe(700);
+/** 판의 자리는 **한 번만** 정해진다. 백분율로 다시 계산하면 CSS 가 실제로 배치한 것과 어긋나고,
+ *  그 어긋남은 보더가 판 밖으로 삐져나오는 것으로 나타난다(실측 2026-08-02: 판은 304..1396
+ *  인데 보더는 298..1402 를 그렸다 — 폭이 12px 크다). 잰 값이 있으면 그것이 답이다. */
+describe("잰 판이 있으면 그것을 쓴다", () => {
+  it("잰 값이 백분율 재계산을 이긴다", () => {
+    const measured = { x: 166, y: 6, w: 1092, h: 505.5 };
+    const b = railLinkBoxes(1264, 1035, 160, 0, { left: 0, top: 0, width: 100, height: 50 }, measured);
+    expect(b?.panel).toEqual(measured ? { x: 166, y: 6, width: 1092, height: 505.5 } : null);
   });
 
-  it("칸의 오른쪽 끝이 호스트 밖으로 못 나간다 — 나가면 경로가 스스로 교차한다", () => {
-    const b = railLinkBoxes(
-      1000,
-      500,
-      100,
-      0,
-      { left: 0, top: 0, width: 100, height: 100 },
-      200,
-    );
-    expect((b?.panel.x ?? 0) + (b?.panel.width ?? 0)).toBeLessThanOrEqual(800);
+  it("잰 값이 없으면 백분율로 세운다 — 없는 것을 지어내지 않는다", () => {
+    const b = railLinkBoxes(1264, 1035, 160, 0, { left: 0, top: 0, width: 100, height: 50 });
+    expect(b?.panel.x).toBe(160);
   });
-});
+})

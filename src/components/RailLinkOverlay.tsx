@@ -32,7 +32,6 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
   boundViewId,
   boundPaneId,
   railWidth,
-  rightInset = 0,
   railStation,
   targetRect,
   projected = false,
@@ -41,9 +40,6 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
   boundViewId: string;
   boundPaneId: string;
   railWidth: number;
-  /** 오른쪽에서 판을 밀고 들어온 폭 — 밀기 사이드바가 서면 판이 그만큼 좁다. 안 넘기면
-   *  투영이 늘어나 칸이 호스트 밖으로 나가고 경로가 사선이 된다. */
-  rightInset?: number;
   railStation: number;
   targetRect: RailRect;
   /** 이 인접이 focus-near 투영(교체)으로 성립했는가 — 봉합선 표시의 유일 입력. */
@@ -94,13 +90,28 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
 
   if (!adjacent) return null;
 
+  // 판의 자리는 **재서** 안다. 백분율은 배치의 원인이지 결과가 아니다.
+  //
+  // 첫 렌더에는 host 가 아직 없어 못 잰다. 그때 백분율로 그리고 끝내면 어긋난 채 굳는다 —
+  // 다시 잴 계기가 없기 때문이다. 그래서 배치가 바뀔 때마다 다시 잰다(레이아웃 후 1회).
+  const [measured, setMeasured] = useState<
+    { x: number; y: number; w: number; h: number } | undefined
+  >(undefined);
+  useLayoutEffect(() => {
+    const next = measurePane(hostRef.current, boundPaneId);
+    setMeasured((cur) =>
+      cur && next && cur.x === next.x && cur.y === next.y && cur.w === next.w && cur.h === next.h
+        ? cur
+        : next,
+    );
+  });
   const boxes = railLinkBoxes(
     size.width,
     size.height,
     railWidth,
     railStation,
     targetRect,
-    rightInset,
+    measured,
   );
   const polygon = boxes ? railLinkPolygon(boxes.rail, boxes.panel) : null;
   const path = polygon
@@ -190,3 +201,22 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
     </div>
   );
 });
+
+/**
+ * 결합된 판을 호스트 좌표계에서 잰다 — 없으면 null(백분율로 세운다).
+ *
+ * 두 rect 를 빼서 상대 좌표로 만든다. 절대 좌표를 그대로 쓰면 호스트가 어디 있든 그림이
+ * 어긋난다 — 호스트는 창 안 어디에나 놓일 수 있다.
+ */
+function measurePane(
+  host: HTMLElement | null,
+  paneId: string,
+): { x: number; y: number; w: number; h: number } | undefined {
+  if (!host) return undefined;
+  const pane = document.querySelector<HTMLElement>(`[data-node="layout/pane/${paneId}"]`);
+  if (!pane) return undefined;
+  const h = host.getBoundingClientRect();
+  const p = pane.getBoundingClientRect();
+  if (p.width <= 0 || p.height <= 0) return undefined;
+  return { x: p.left - h.left, y: p.top - h.top, w: p.width, h: p.height };
+}
