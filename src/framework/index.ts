@@ -63,14 +63,6 @@ export const deepLink = framework.deepLink;
  * 능력을 묻는다: 네이티브 자식 층이 있는가, 엔진이 chromium 등급인가. 같은 축을 플러그인은
  * 매니페스트에 요구로 적는다(engineNeeds.ts) — 여기는 그 요구를 채우는 쪽의 사실이다.
  */
-/**
- * 콘텐츠 표면이 DOM 레이아웃을 따라가는가 — 껍데기의 물리.
- *
- * 이 축을 코어가 추측하면 그 추측이 곧 기본값이 되고, 한쪽 껍데기의 워크어라운드가 다른 쪽에서
- * 없던 결함을 만든다. 어댑터가 답한다.
- */
-export const surfaceFollowsLayout: boolean = framework.surfaceFollowsLayout;
-
 export const engineProvision: EngineProvision = framework.engineProvision;
 
 /**

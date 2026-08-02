@@ -9,7 +9,6 @@
 import { moduleState } from "../lib/moduleState";
 import { createSlotFreeze, type SlotFreeze, type SlotFreezeDeps } from "./slotFreeze";
 import { onLayoutMotion } from "./layoutMotion";
-import { surfaceFollowsLayout } from "../framework";
 
 // 서로 다른 것은 따로 선다 — 한 가방에 넣으면 그것은 상태가 아니라 가방이다.
 /** 설치된 동결기 — 있으면 이미 붙은 것이다. */
@@ -50,15 +49,8 @@ export function scheduleSlotSettleCapture(): void {
   }, SETTLE_DEBOUNCE_MS);
 }
 
-/**
- * 활강의 전제 — 이 뷰들의 홀 표면을 전부 덮을 수 있는가.
- *
- * **표면이 DOM 을 따라가면 덮을 것이 없다.** 슬롯이 움직이면 콘텐츠도 같이 움직이므로 전제는
- * 이미 성립한다 — 엔진이 없다는 이유로 활강을 막으면, 워크어라운드가 필요 없는 껍데기에서
- * 오히려 움직임을 빼앗는다. 없는 장치를 조건으로 삼지 않는다.
- */
+/** 활강의 전제 — 이 뷰들의 홀 표면을 전부 덮을 수 있는가(엔진이 없으면 덮을 수 없다). */
 export function canGlideViews(viewIds: readonly string[]): boolean {
-  if (surfaceFollowsLayout) return true;
   return installed.host ? installed.host.canFreezeAll(viewIds) : false;
 }
 
