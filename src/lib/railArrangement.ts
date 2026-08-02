@@ -125,12 +125,50 @@ function swapCandidates<L extends { id: string }>(
 function switchFocusedToFront<L extends { id: string }>(
   canonical: SplitTree<L>,
   focusId: string,
+  mode: RailPlacement["mode"],
 ): SplitTree<L> {
-  if (focusedLeftIsClean(canonical, focusId)) return canonical;
+  // FLOW 는 레일이 찾아가므로 판을 옮길 이유가 없다 — 옮기면 둘 다 움직여 이중이 된다.
+  // 다만 행이 어긋나 레일이 못 닿는 자리는 그때도 앞으로 세운다(그것이 옛 규칙이다).
+  if (mode === "flow") {
+    if (focusedLeftIsClean(canonical, focusId)) return canonical;
+    for (const candidate of swapCandidates(canonical, focusId)) {
+      if (focusedLeftIsClean(candidate, focusId)) return candidate;
+    }
+    return canonical;
+  }
+  // **포커스 간 판은 레일 옆자리로 온다.** 그것이 법칙이다 — 레일에 가까운 쪽에 붙는다.
+  //
+  // 한때 이 자리는 "선이 막혔을 때만" 바꿨다(`focusedLeftIsClean` 게이트). 그 축소는
+  // `099a2f1f` 가 "레일이 스스로 이동한다"는 **별개 결함**을 고치면서 이 기능까지 함께
+  // 폐지한 데서 왔고, `19c45707` 이 그 축소판만 되살렸다. 폐지의 당위가 없다: 레일이 저
+  // 혼자 움직이는 것은 결함이고, 클릭으로 판이 옮겨지는 것은 직접 조작의 결과다 — 같은
+  // 커밋이 내세운 원칙("기하는 자기 판을 직접 조작할 때만 바뀐다")에 클릭은 안 걸린다.
+  //
+  // 실측 2026-08-02: 나란한 두 칸에서 오른쪽을 눌러도 아무 일이 없었다. activePaneId 는
+  // 오른쪽으로 바뀌는데 배치가 그대로였다 — 오른쪽 칸의 왼쪽선이 안 막혀 게이트가 통과했다.
+  //
+  // 이미 레일 옆이면 후보가 그것을 답하므로 자연히 제자리다(아래 첫 후보 채택).
   for (const candidate of swapCandidates(canonical, focusId)) {
-    if (focusedLeftIsClean(candidate, focusId)) return candidate;
+    if (focusedIsFirstInRow(candidate, focusId)) return candidate;
   }
   return canonical;
+}
+
+/** 포커스 판이 자기 행의 **맨 앞**인가 — 레일이 닿는 자리가 거기다. */
+function focusedIsFirstInRow<L extends { id: string }>(
+  tree: SplitTree<L>,
+  focusId: string,
+): boolean {
+  const { cells } = computeSplitLayout(tree);
+  const target = cells.find((cell) => cell.value.id === focusId);
+  if (!target) return true;
+  return !cells.some(
+    (cell) =>
+      cell.value.id !== focusId &&
+      cell.rect.top < target.rect.top + target.rect.height &&
+      cell.rect.top + cell.rect.height > target.rect.top &&
+      cell.rect.left < target.rect.left,
+  );
 }
 
 /** FLOW: 포커스 패널의 왼쪽 선, 막혔으면 그 앞(왼쪽)의 가장 가까운 깨끗한 선. */
@@ -183,12 +221,16 @@ export function solveArrangement<L extends { id: string }>(input: {
     };
   }
 
-  // 스위칭은 레일이 실제로 포커스를 따라갈 때만 뜻이 있다 — PIN 이거나 사이드바가 닫혀 있으면
-  // 붙을 상대가 없으므로 배열을 건드리지 않는다.
+  // **레일에 가까운 쪽에 포커스 판이 온다.** 방법은 모드가 정한다.
+  //
+  // FLOW 는 레일이 포커스를 찾아간다 — 배열은 그대로 두고 레일이 그 판의 왼쪽선에 선다.
+  // PIN 은 레일이 제자리를 지킨다 — 그러면 **판이 온다.** 한때 이 자리는 두 경우 모두
+  // FLOW 만 보고 있었고, `099a2f1f` 가 FLOW 를 없애 pin-only 로 만들면서 조건이 영원히
+  // 거짓이 되어 교체가 죽었다(실측 2026-08-02: 오른쪽 칸을 눌러도 배치가 그대로였다).
+  //
+  // 닫힌 레일에는 붙을 상대가 없으므로 어느 모드든 배열을 안 건드린다.
   const displayLayout =
-    input.railOpen && input.placement.mode === "flow" && focusId
-      ? switchFocusedToFront(input.layout, focusId)
-      : input.layout;
+    input.railOpen && focusId ? switchFocusedToFront(input.layout, focusId, input.placement.mode) : input.layout;
 
   const cells = computeSplitLayout(displayLayout).cells.map(({ value, rect }) => ({
     id: value.id,

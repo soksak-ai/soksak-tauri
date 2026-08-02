@@ -82,7 +82,11 @@ describe("배치 해결기 — station 은 그리드와 포커스의 함수다",
     const atC = solve(threeColumns(), "c", pinned);
     expect(atA.station).toBeCloseTo(100 / 3, 6); // 가장 가까운 클린 라인으로 snap
     expect(atC.station).toBe(atA.station);
-    expect(atC.swapped).toBe(false);
+    // **선은 포커스를 안 쓴다. 배치는 쓴다.** PIN 에서 레일은 제자리를 지키고, 그래서 포커스
+    // 간 판이 레일 옆으로 온다 — 그것이 "레일에 가까운 쪽에 붙는다"는 법칙의 PIN 쪽 방법이다.
+    // 둘을 한 기준으로 묶으면 배치가 죽는다(실측 2026-08-02: 오른쪽을 눌러도 그대로였다).
+    expect(atC.swapped).toBe(true);
+    expect(atA.swapped).toBe(false);
   });
 
   it("미해소 포커스는 0 으로 붕괴하지 않고 현 위치를 유지한다", () => {
@@ -305,5 +309,60 @@ describe("장식 span 이동량 — 복도는 패널과 같은 곡선으로 움�
     // 한계로 남긴다.
     const wide = { left: 0, top: 50, width: 100, height: 0 };
     expect(moveOffsetPx(spanMoveAcross(wide, 0, 50), HOST_W, RAIL_W)).toBeCloseTo(RAIL_W, 6);
+  });
+});
+
+/**
+ * **포커스 간 판은 레일 옆자리로 온다.** 그것이 법칙이다 — 레일에 가까운 쪽에 붙는다.
+ *
+ * 한때 이것은 켜고 끄는 설정(railFocusNear)이었고, `099a2f1f` 가 "레일이 스스로 이동한다"는
+ * 별개 결함을 고치면서 함께 폐지했다. 그 폐지에는 당위가 없다: 레일이 저 혼자 움직이는 것은
+ * 결함이고, 클릭으로 판이 옮겨지는 것은 **직접 조작의 결과**다. 같은 원칙("표면의 기하는 자기
+ * 판을 직접 조작할 때만 바뀐다")에 클릭은 걸리지 않는다.
+ *
+ * `19c45707` 이 되살린 것은 축소판이었다 — "행이 어긋나 레일이 못 닿을 때만" 바꾼다. 그래서
+ * 나란한 두 칸에서는 오른쪽을 눌러도 아무 일이 없다(실측 2026-08-02: activePaneId 는 오른쪽
+ * 칸으로 바뀌는데 cells 는 그대로였다).
+ */
+describe("포커스 간 판은 레일 옆으로 온다", () => {
+  const two = (): SplitTree<Pane> => ({
+    type: "split",
+    id: "root",
+    dir: "row",
+    sizes: [0.5, 0.5],
+    children: [leaf("L"), leaf("R")],
+  });
+
+  it("오른쪽에 포커스가 가면 자리를 바꾼다 — 레일 옆이 그 판이다", () => {
+    const a = solveArrangement({
+      layout: two(),
+      focusId: "R",
+      placement: { mode: "pin", station: 0 },
+      railOpen: true,
+    });
+    expect(a.cells.find((c) => c.id === "R")?.rect.left).toBe(0);
+    expect(a.swapped).toBe(true);
+  });
+
+  it("이미 레일 옆이면 그대로 — 움직일 이유가 없다", () => {
+    const a = solveArrangement({
+      layout: two(),
+      focusId: "L",
+      placement: { mode: "pin", station: 0 },
+      railOpen: true,
+    });
+    expect(a.cells.find((c) => c.id === "L")?.rect.left).toBe(0);
+    expect(a.swapped).toBe(false);
+  });
+
+  /** 레일이 닫혀 있으면 붙을 자리가 없다 — 배치를 흔들지 않는다. */
+  it("레일이 닫혀 있으면 안 바꾼다", () => {
+    const a = solveArrangement({
+      layout: two(),
+      focusId: "R",
+      placement: { mode: "pin", station: 0 },
+      railOpen: false,
+    });
+    expect(a.cells.find((c) => c.id === "R")?.rect.left).toBe(50);
   });
 });
