@@ -38,6 +38,7 @@ import {
 } from "../plugins/contractDiscovery";
 import { implementsViolations, executedCommandNames, unresolvedCommandCalls } from "../plugins/conformance";
 import { register, catalogJson, setUnknownCommandResolver, type CommandHint } from "./registry";
+import { notFound } from "./refuse";
 import { collectExposed } from "./catalogDom";
 import { pluginCommandName } from "../plugins/spec";
 import { commandsMissingMessage } from "../plugins/api";
@@ -81,11 +82,6 @@ function implementsNodes(): ImplementsNode[] {
   }));
 }
 
-const notFound = (what: string) => ({
-  ok: false as const,
-  code: "TARGET_NOT_FOUND" as const,
-  message: what,
-});
 const invalid = (what: string) => ({
   ok: false as const,
   code: "INVALID_PARAMS" as const,

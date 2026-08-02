@@ -67,6 +67,22 @@ interface SettingsState {
    * 가까운 판을 흐리는 것은 이 축이 아니다(focusDim).
    */
   railPullFocused: boolean;
+  /**
+   * 실선 이음매의 색 — 레일이 판을 찾아가 인접이 **실재**할 때 그리는 선(railPullFocused=false).
+   *
+   * "" 는 테마가 정한 색이다(비움 = 위임). 값을 넣으면 그 색이 이긴다. 테마 토큰을 덮어쓰지
+   * 않고 레일 오버레이 자기 자리에만 얹는다 — 한 토큰을 둘이 쓰면 어느 쪽이 이길지 특이성이
+   * 정한다.
+   */
+  railSolidColor: string;
+  /**
+   * 흐림 세기 — 0..1. 포커스가 아닌 판(dimIdle)과, 레일이 못 가 사이에 낀 판(dimBlocked).
+   *
+   * 두 값은 단계마다 숫자 하나라는 규칙의 사용자 손잡이다(lib/dimLevel). 칠하는 매체는 둘
+   * (홀 판은 베일, DOM 판은 filter)이지만 둘 다 이 숫자만 읽는다.
+   */
+  dimIdle: number;
+  dimBlocked: number;
   // FLOW에서 포커스 패널의 자체 왼쪽 선이 막혔을 때 같은 row 형제를 화면에서만 교환.
   // 앱 UI 폰트(=앱 크롬 전역). 터미널 폰트와 무관 — 터미널 폰트는 터미널 플러그인이 별도 소유.
   // appFontFamily → --app-font(루트 font-family), appFontSize → --app-font-size(루트 font-size).
@@ -96,6 +112,9 @@ interface SettingsState {
   setFocusDim: (v: boolean) => void;
   setRailSeamStyle: (v: RailSeamStyle) => void;
   setRailPullFocused: (v: boolean) => void;
+  setRailSolidColor: (v: string) => void;
+  setDimIdle: (v: number) => void;
+  setDimBlocked: (v: number) => void;
   setAppFontFamily: (v: string) => void;
   setWindowZoom: (v: number) => void;
   setOrchestratorAgent: (v: string) => void;
@@ -122,6 +141,11 @@ const DEFAULTS = {
   railSeamStyle: "edge" as RailSeamStyle,
   // 기본은 당김 — "레일에 가까운 쪽에 포커스 판이 온다"는 법칙의 직접적 표현이다.
   railPullFocused: true,
+  // 비움 = 테마 색. 사용자가 넣으면 그 색이 실선 이음매를 칠한다.
+  railSolidColor: "",
+  // 사용자 확정(2026-08-02): 포커스 아닌 판은 50%, 레일이 못 가 낀 판은 70% 가라앉는다.
+  dimIdle: 0.5,
+  dimBlocked: 0.7,
   appFontFamily:
     '"JetBrains Mono", "SF Mono", "Cascadia Code", Menlo, Consolas, "Courier New", monospace',
   // 창 전체 줌 배율(프레임 선택 시 ⌘±) — 값 하나를 전 표면(메인+자식 웹뷰)이 공동사용.
@@ -129,6 +153,9 @@ const DEFAULTS = {
   orchestratorAgent: "claude",
   orchestratorModel: "haiku",
 };
+
+/** 0..1 로 접는다 — 숫자가 아닌 값은 0 이 아니라 거절할 자리가 따로 있다(settings.set). */
+const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
 
 const KEY = "soksak.settings";
 
@@ -155,6 +182,9 @@ function serialize(s: SettingsState): PersistedSettings {
     focusDim: s.focusDim,
     railSeamStyle: s.railSeamStyle,
     railPullFocused: s.railPullFocused,
+    railSolidColor: s.railSolidColor,
+    dimIdle: s.dimIdle,
+    dimBlocked: s.dimBlocked,
     appFontFamily: s.appFontFamily,
     windowZoom: s.windowZoom,
     orchestratorAgent: s.orchestratorAgent,
@@ -266,6 +296,19 @@ export const useSettings = moduleState("state/settings#store", () =>
     },
     setRailPullFocused: (railPullFocused) => {
       set({ railPullFocused });
+      save();
+    },
+    setRailSolidColor: (railSolidColor) => {
+      set({ railSolidColor });
+      save();
+    },
+    // 세기는 0..1 밖으로 나갈 수 없다 — 밖으로 나가면 brightness 가 음수가 되어 화면이 뒤집힌다.
+    setDimIdle: (v) => {
+      set({ dimIdle: clamp01(v) });
+      save();
+    },
+    setDimBlocked: (v) => {
+      set({ dimBlocked: clamp01(v) });
       save();
     },
     setRightSidebarMode: (rightSidebarMode) => {

@@ -231,10 +231,41 @@ function existingPreamble(path) {
   return preamble.length > 0 ? preamble : null;
 }
 
+/** 항목 바로 위의 주석 = **그 항목의 사유**. 파일→그 줄들.
+ *
+ *  값을 올린 커밋은 여기에 근거를 적는다(재입법). 그런데 --prune 이 그것을 지웠다: 값이
+ *  그대로인 항목의 사유까지 통째로 날아갔다(실측 2026-08-02 — sessions.ts 의 재입법 근거가
+ *  남의 축소 반영에 사라졌다). 근거를 지우는 도구는 근거를 안 적게 만든다. */
+function readNotes(path) {
+  const notes = new Map();
+  if (!existsSync(path)) return notes;
+  let pending = [];
+  let seenEntry = false;
+  for (const line of readFileSync(path, "utf8").split("\n")) {
+    const t = line.trim();
+    if (!t) continue;
+    if (t.startsWith("#")) {
+      // 첫 항목 앞의 주석은 서문이다(existingPreamble 소유) — 항목 사유가 아니다.
+      if (seenEntry) pending.push(line);
+      continue;
+    }
+    const file = t.slice(0, t.lastIndexOf(" "));
+    if (pending.length > 0) notes.set(file, pending);
+    pending = [];
+    seenEntry = true;
+  }
+  return notes;
+}
+
 function writeBaseline(root, metric, map) {
   const entries = [...map.entries()].sort(([a], [b]) => (a < b ? -1 : 1));
-  const body = entries.map(([f, v]) => `${f} ${v}`).join("\n");
   const path = baselinePath(root, metric);
+  // 사유는 항목과 함께 산다 — 항목이 지워지면 사유도 간다(그 사실이 사라졌으니). 값만 줄면
+  // 사유는 남는다: 낡았다면 같은 커밋에서 저자가 고쳐 적는다(도구가 대신 지우지 않는다).
+  const notes = readNotes(path);
+  const body = entries
+    .map(([f, v]) => [...(notes.get(f) ?? []), `${f} ${v}`].join("\n"))
+    .join("\n");
   const preamble = existingPreamble(path) ?? metric.headerLines;
   mkdirSync(join(root, "scripts/gates"), { recursive: true });
   writeFileSync(path, `${preamble.join("\n")}\n${body}${body ? "\n" : ""}`);

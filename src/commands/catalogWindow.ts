@@ -8,6 +8,7 @@
 import { invoke, currentWindow, windowByLabel } from "../framework";
 import { tmsg } from "../i18n";
 import { register } from "./registry";
+import { notFound } from "./refuse";
 import { browserLabelPrefix, currentWindowLabel } from "../lib/webviewLabels";
 import { validateProjectRoot } from "../lib/projectRoot";
 import { forgetWindowSlot } from "../state/windowBoot";
@@ -15,7 +16,7 @@ import {
   snapshotSize,
   type WindowSnapshotLike,
 } from "../state/snapshotGeneration";
-import { windowTarget, P, notFound } from "./catalog";
+import { windowTarget, P } from "./catalog";
 
 export function registerWindowCatalog(): void {
   register("window.info", {

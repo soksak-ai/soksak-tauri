@@ -27,7 +27,7 @@ import { beginGesture } from "../lib/gesture";
 import { useT } from "../i18n";
 import { useTheme } from "../state/theme";
 import { useSettings } from "../state/settings";
-import { dimLevel } from "../lib/dimLevel";
+import { dimAmount, dimLevel } from "../lib/dimLevel";
 import { useUi } from "../state/ui";
 import {
   type Space,
@@ -222,14 +222,24 @@ export const GroupArea = memo(function GroupArea({
   const focusDim = useSettings((s) => s.focusDim);
   const inset = PANE_INSET[paneStyle] ?? 0;
 
+  // 흐림 세기 — 사용자가 정한다. 값이 표면으로 내려가므로 CSS 는 숫자를 안 적는다.
+  const dimIdle = useSettings((s) => s.dimIdle);
+  const dimBlocked = useSettings((s) => s.dimBlocked);
+
   // 흐림은 단계 하나다 — 칸(.pane)과 슬롯(.tab-body)은 서로 다른 순회에 살지만 같은 값을
   // 읽어야 한다. 각자 사유를 다시 조합하면 두 표면이 조용히 갈린다(한 사실 한 자리).
-  const dimOf = (groupId: string) =>
-    dimLevel({
+  // 이름(왜 흐린가)과 세기(얼마나)를 함께 낸다 — 둘 다 여기서 정해져야 매체가 안 갈린다.
+  const dimOf = (groupId: string) => {
+    const level = dimLevel({
       active: groupId === content.activePaneId,
       focusDim,
       blocked: !!betweenIds?.includes(groupId),
     });
+    return {
+      "data-dim": level,
+      style: { "--dim": dimAmount(level, { idle: dimIdle, blocked: dimBlocked }) },
+    };
+  };
 
   // 클릭 = 활성 + 실포커스 불변식. 상태 변경 effect 에만 의존하면 "이미 활성인
   // 그룹/pane 재클릭"이 no-op 인 채 mousedown 기본동작(비포커서블 클릭 → blur)
@@ -658,10 +668,10 @@ export const GroupArea = memo(function GroupArea({
             className={`pane${holeCell ? " hole" : ""}${
               flipMoves(group.id) ? " flip-move" : ""
             }`}
-            // 흐림 단계 — 사유가 아니라 결과 하나(lib/dimLevel). CSS 는 이름당 한 벌만 그린다.
-            data-dim={dimOf(group.id)}
+            // 흐림 — 이름(단계)과 세기(값)를 함께 낸다(lib/dimLevel). CSS 는 그리기만 한다.
+            {...dimOf(group.id)}
             data-node={`layout/pane/${group.id}`}
-            style={cellVars(rect, group.id)}
+            style={{ ...cellVars(rect, group.id), ...dimOf(group.id).style }}
             ref={rectMotion.ref}
           >
             {maxCell ? (
@@ -787,7 +797,7 @@ export const GroupArea = memo(function GroupArea({
                 shown && flipMoves(group.id) ? " flip-move" : ""
               }`}
               // 칸과 같은 값을 읽는다 — 사유를 여기서 다시 조합하면 두 표면이 조용히 갈린다.
-              data-dim={dimOf(group.id)}
+              {...dimOf(group.id)}
               // 네이티브 클릭 판정용(App.tsx native-mousedown → elementFromPoint).
               // 값은 이 슬롯이 사는 칸(pane)의 id — 이름과 값이 같은 실체를 가리킨다(IDENTITY).
               data-pane={group.id}
@@ -799,6 +809,7 @@ export const GroupArea = memo(function GroupArea({
               style={{
                 ...cellVars(slotRect, group.id),
                 ...viewSurfaceStyle(shown, !!maxCell),
+                ...dimOf(group.id).style,
               }}
               onMouseDownCapture={() => {
                 // 클릭 확인 후 이동(§12-④ 개정) — 활성화와 그에 따르는 투영 주행은 게스처

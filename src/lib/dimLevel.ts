@@ -41,3 +41,18 @@ export function dimLevel({ active, focusDim, blocked }: DimInput): DimLevel {
 export function isDimmed(level: DimLevel): boolean {
   return level !== "clear";
 }
+
+/** 단계별 세기 — 사용자가 정한다(settings). 값이 하나이므로 두 매체가 같은 것을 읽는다. */
+export type DimAmounts = { idle: number; blocked: number };
+
+/**
+ * 이 단계를 얼마나 가라앉히나(0..1).
+ *
+ * 이름(단계)과 세기(값)는 다른 축이다: 이름은 "왜 흐린가"를 정하고 값은 "얼마나"를 정한다.
+ * 값이 표면으로 내려가므로 CSS 는 숫자를 적지 않는다 — 적으면 사용자가 바꿔도 안 바뀐다.
+ */
+export function dimAmount(level: DimLevel, amounts: DimAmounts): number {
+  if (level === "blocked") return amounts.blocked;
+  if (level === "idle") return amounts.idle;
+  return 0;
+}

@@ -573,34 +573,22 @@ body,
    때마다 160ms 동안 매 프레임 그 레이어를 재래스터한다(실사고: 무관한 탭 클릭에 패널이
    움찔). 상시 승격 자체는 무해하니 filter 는 남기고 전이만 걷는다. 전이감이 필요한 곳은
    ::after 베일(페인트만, 승격 무관)이 담당한다 — 홀 슬롯 규칙 참조. */
-.pane[data-dim="idle"],
-.tab-body[data-dim="idle"] {
-  --dim: 0.07;
-}
-/* 낀 것 — 레일이 포커스 판까지 못 가서 그 사이에 남은 칸. 움직이지 않지만 가려진 것이다.
-   가려진 것은 깊이 가라앉는다(사용자 확정: 거의 70%) — 비활성의 "조금 흐림"과 한눈에
-   갈려야 "이건 못 쓴다"가 보인다. */
-.pane[data-dim="blocked"],
-.tab-body[data-dim="blocked"] {
-  --dim: 0.7;
-}
-.pane[data-dim="idle"],
-.pane[data-dim="blocked"],
-.tab-body[data-dim="idle"],
-.tab-body[data-dim="blocked"] {
+/* 세기(--dim)는 표면이 들고 온다 — 여기서는 그 숫자를 그리기만 한다. CSS 가 숫자를 적으면
+   사용자가 설정을 바꿔도 화면이 안 바뀐다(설정 = dimIdle · dimBlocked). */
+.pane[data-dim],
+.tab-body[data-dim] {
   filter: brightness(calc(1 - var(--dim)));
 }
 /* 홀 슬롯은 filter 축 밖이다 — 레이어 역전(DOM 이 최상위, 엔진·child 웹뷰는 투명 홀로 아래에서
    비침) 때문에 filter 는 네이티브 콘텐츠에 안 닿고, 동결 스탠드인(img)만 받으면 둘의 흐림이
    어긋난다. 그래서 홀의 흐림 축은 ::after 베일 하나다.
-   베일은 스탠드인(z3)보다 위의 라이브 계층(z4) — 스냅에 구워진 상태와 무관하게 현재 단계를
+   베일은 스탠드인(z3)보다 위의 라이브 계층(z4) — 스냅에 구워진 상태와 무관하게 현재 세기를
    따라 전이한다(배경이던 시절엔 스탠드인이 베일을 가려 스왑마다 포커스 인/아웃 플랩으로
    보였다 — 실측). pseudo 는 히트테스트가 없어 클릭 관통이 보장된다. */
 .tab-body.hole[data-dim] {
   filter: none;
 }
-.tab-body.hole[data-dim="idle"]::after,
-.tab-body.hole[data-dim="blocked"]::after {
+.tab-body.hole[data-dim]::after {
   content: "";
   position: absolute;
   inset: 0;

@@ -1,4 +1,4 @@
-import { useCallback, memo, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import type { RailRect } from "../lib/railPlacement";
 import { moduleState } from "../lib/moduleState";
 import {
@@ -65,6 +65,16 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
   const railRelation = useSettings((state) => state.railRelation);
   const railFill = useSettings((state) => state.railFill);
   const railSeamStyle = useSettings((state) => state.railSeamStyle);
+  // 실선 이음매의 색 — 레일이 판을 찾아가 인접이 **실재**할 때만(당기면 인접은 만들어진 것이라
+  // 점선이고, 그 색까지 사용자 손에 두면 두 모양이 한 값을 나눠 갖는다).
+  // 테마 토큰을 덮어쓰지 않고 이 오버레이 자기 자리에만 얹는다 — 한 토큰을 둘이 쓰면 어느
+  // 쪽이 이길지 특이성이 정한다. 비움 = 테마에 맡긴다.
+  const railPullFocused = useSettings((state) => state.railPullFocused);
+  const railSolidColor = useSettings((state) => state.railSolidColor);
+  const solidColorStyle =
+    !railPullFocused && railSolidColor
+      ? ({ "--relation-stroke": railSolidColor } as CSSProperties)
+      : undefined;
   const hostRef = useRef<HTMLDivElement>(null);
   // 마지막으로 잰 크기에서 시작한다 — 0 에서 시작하면 그 프레임의 기하가 null 이라 보더가
   // 사라졌다 돌아온다(실측 2026-08-02: 토글마다 `host=0` 프레임 둘이 기하까지 갔다).
@@ -158,6 +168,7 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
       data-projected={projected ? "true" : undefined}
       data-flash={railRelation === "moment" ? String(flash) : undefined}
       aria-hidden="true"
+      style={solidColorStyle}
     >
       {path && boxes && (
         <svg

@@ -686,7 +686,7 @@ export function unregister(name: string): boolean {
 //
 // 실측(2026-07-31): 코어 명령이 통째로 사라졌는데 응답은 "알 수 없는 명령: ui.validate" 였다.
 // 그 문장은 두 번째와 글자 그대로 같아서 첫 번째를 밖에서 읽을 방법이 없었다.
-function notFound(name: string): CommandOutcome {
+function unknownCommand(name: string): CommandOutcome {
   if (registry.size === 0) {
     return {
       ok: false,
@@ -1123,7 +1123,7 @@ async function executePluginInner(
     return pluginFailure("PLUGIN_AUTH_REQUIRED", "인증된 플러그인 런타임 컨텍스트가 필요합니다");
   }
   const spec = registry.get(name);
-  if (!spec) return notFound(name);
+  if (!spec) return unknownCommand(name);
   if (!spec.broker) {
     return pluginFailure("PLUGIN_CALL_FORBIDDEN", `플러그인 호출이 선언되지 않은 명령: ${name}`);
   }
@@ -1207,7 +1207,7 @@ async function executeInner(
     );
   }
   const spec = registry.get(name);
-  if (!spec) return notFound(name);
+  if (!spec) return unknownCommand(name);
   // 기본형 문법 — CLI 가 JSON 아닌 단일 값을 {"_": 값} 으로 보낸다(sok plugin.install activity).
   // 스펙이 진실이므로 해석은 여기 한 곳: 필수 매개변수가 정확히 하나일 때 그 이름으로 옮긴다.
   // 둘 이상이거나 없으면 그대로 두어 validate 가 INVALID_PARAMS 로 도움말을 안내하게 한다.

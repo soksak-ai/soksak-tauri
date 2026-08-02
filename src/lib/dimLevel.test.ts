@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { dimLevel, isDimmed, type DimLevel } from "./dimLevel";
+import { dimAmount, dimLevel, isDimmed } from "./dimLevel";
+import { useSettings } from "../state/settings";
 
 const css = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "..", "App.css"),
@@ -40,25 +41,32 @@ describe("흐림 단계 — 사유 여럿, 값 하나", () => {
   });
 });
 
-/** 단계별 셀렉터의 클래스/속성 개수 — 특이성 비교용(모두 요소 0, id 0). */
-function weight(sel: string): number {
-  return (sel.match(/\.[\w-]+|\[[^\]]+\]/g) ?? []).length;
-}
+describe("흐림 세기 — 값은 설정에서 온다", () => {
+  it("사용자가 정한 숫자를 단계가 그대로 받는다", () => {
+    const amounts = { idle: 0.5, blocked: 0.7 };
+    expect(dimAmount("clear", amounts)).toBe(0);
+    expect(dimAmount("idle", amounts)).toBe(0.5);
+    expect(dimAmount("blocked", amounts)).toBe(0.7);
+  });
 
-/** 그 단계를 칠하는 규칙들의 셀렉터. */
-function selectorsFor(level: DimLevel, part: string): string[] {
-  const out: string[] = [];
-  for (const m of css.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
-    const body = m[2] ?? "";
-    if (!/filter:|background-color:/.test(body)) continue;
-    for (const branch of (m[1] ?? "").split(",").map((s) => s.trim())) {
-      if (!branch.includes(`[data-dim="${level}"]`)) continue;
-      if (!branch.includes(part)) continue;
-      out.push(branch);
-    }
-  }
-  return out;
-}
+  it("기본값은 비활성 50% · 낀 판 70%(사용자 확정 2026-08-02)", () => {
+    const s = useSettings.getState();
+    expect(s.dimIdle).toBeCloseTo(0.5, 3);
+    expect(s.dimBlocked).toBeCloseTo(0.7, 3);
+    // 낀 것은 비활성보다 짙다 — 같은 값이면 "가려졌다"가 안 보인다.
+    expect(s.dimBlocked).toBeGreaterThan(s.dimIdle);
+  });
+
+  it("세기는 0..1 밖으로 못 나간다 — 넘으면 brightness 가 뒤집힌다", () => {
+    const s = useSettings.getState();
+    s.setDimIdle(5);
+    expect(useSettings.getState().dimIdle).toBe(1);
+    s.setDimBlocked(-2);
+    expect(useSettings.getState().dimBlocked).toBe(0);
+    s.setDimIdle(0.5);
+    s.setDimBlocked(0.7);
+  });
+});
 
 describe("흐림 단계 — 표면 규칙", () => {
   it("단계는 이름 하나로 나오고 CSS 는 이름당 한 벌만 그린다(사유 셀렉터 금지)", () => {
@@ -68,43 +76,19 @@ describe("흐림 단계 — 표면 규칙", () => {
     expect(rules).not.toMatch(/\.spot-clear/);
   });
 
-  it("짙은 단계가 옅은 단계에 특이성으로 지지 않는다(실사고 2026-08-02)", () => {
-    // 낀 판의 베일이 22% 여야 하는데 focusDim 규칙(클래스 4)이 이겨 7% 로 칠해졌다.
-    // 같은 픽셀을 칠하는 두 단계는 무게가 같아야 한다 — 그래야 순서만이 정하고, 순서는 없다.
-    for (const part of [".pane", ".tab-body.hole", ".tab-body"]) {
-      const idle = selectorsFor("idle", part).map(weight);
-      const blocked = selectorsFor("blocked", part).map(weight);
-      if (!idle.length || !blocked.length) continue;
-      expect(Math.max(...blocked)).toBe(Math.max(...idle));
-    }
-  });
-
-  it("세기는 단계마다 숫자 하나다 — 매체가 각자 적으면 같은 단계가 갈린다", () => {
-    // 실측 2026-08-02: 낀 단계가 베일 22% 인데 filter 는 brightness(0.7)=30% 어둠이었다.
-    // 세기를 올리면 그 어긋남이 뒤집힌다(70% 베일 vs brightness(0.7)=30% 어둠).
-    const amount = (level: DimLevel) => {
-      const re = new RegExp(`\\[data-dim="${level}"\\][^{]*\\{[^}]*--dim: ([\\d.]+);`);
-      const m = rules.match(re);
-      expect(m, `${level} 세기 선언이 없다`).toBeTruthy();
-      return Number(m?.[1]);
-    };
-    expect(amount("idle")).toBeGreaterThan(0);
-    // 사용자 확정: 가려진 판은 거의 70% 가라앉는다.
-    expect(amount("blocked")).toBeCloseTo(0.7, 2);
-    expect(amount("blocked")).toBeGreaterThan(amount("idle"));
-  });
-
-  it("두 매체는 그 숫자만 읽는다 — 세기를 직접 적는 자리는 단계 선언뿐이다", () => {
-    // 검은 베일 alpha a 는 모든 채널에 (1−a)를 곱하므로 정의상 brightness(1−a) 다.
-    // 그래서 둘은 같은 숫자만 읽으면 정의상 같은 세기가 된다.
+  it("두 매체는 표면이 들고 온 숫자만 읽는다 — CSS 는 세기를 적지 않는다", () => {
+    // 검은 베일 alpha a 는 모든 채널에 (1−a)를 곱하므로 정의상 brightness(1−a) 다. 둘이 같은
+    // 숫자만 읽으면 정의상 같은 세기가 된다. CSS 가 숫자를 적으면 설정을 바꿔도 안 바뀐다.
     expect(rules).toMatch(/filter: brightness\(calc\(1 - var\(--dim\)\)\)/);
     expect(rules).toMatch(/background-color: rgb\(0 0 0 \/ var\(--dim\)\)/);
-    // 채도 항은 없다 — 베일은 채도를 못 내린다. 두면 같은 단계의 홀 판과 DOM 판이 갈린다.
     for (const [sel, body] of [...rules.matchAll(/([^{}]+)\{([^}]*)\}/g)].map(
       (m) => [m[1] ?? "", m[2] ?? ""] as const,
     )) {
-      if (!sel.includes("[data-dim=")) continue;
+      if (!sel.includes("[data-dim")) continue;
+      // 채도 항은 없다 — 베일은 채도를 못 내린다. 두면 같은 단계의 홀 판과 DOM 판이 갈린다.
       expect(body, `${sel.trim()} 에 채도 항이 있다`).not.toMatch(/saturate\(/);
+      // 세기 리터럴도 없다 — 값의 자리는 설정 하나다.
+      expect(body, `${sel.trim()} 이 세기를 직접 적는다`).not.toMatch(/--dim:\s*[\d.]/);
     }
   });
 

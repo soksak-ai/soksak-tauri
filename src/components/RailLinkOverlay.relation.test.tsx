@@ -197,13 +197,13 @@ describe("railRelation 모드 CSS 갈래 (App.css)", () => {
     // DOM 판이 갈린다). 단계는 한 자리(lib/dimLevel)가 정하고 CSS 는 이름당 한 벌만
     // 그린다 — 활성은 "해제 규칙"이 아니라 애초에 clear 단계라 칠하는 규칙이 없다.
     for (const part of [".pane", ".tab-body"]) {
-      // 세기는 단계 선언에 숫자 하나로 서고, 칠하는 규칙은 그 숫자만 읽는다(lib/dimLevel 검사).
-      expect(decls(`${part}[data-dim="idle"]`)).toMatch(/--dim:\s*0\.07/);
+      // 세기는 표면이 값으로 들고 오고(--dim), 칠하는 규칙은 그 값만 읽는다(lib/dimLevel 검사).
+      expect(decls(`${part}[data-dim]`)).toMatch(/filter: brightness\(calc\(1 - var\(--dim\)\)\)/);
       // filter 전이는 금지다 — 포커스마다 승격된 레이어를 160ms 재래스터해 패널이 움찔했다
       // (실사고). 전이감은 ::after 베일(페인트만)이 담당한다.
-      expect(decls(`${part}[data-dim="idle"]`)).not.toMatch(/transition:[^;]*filter/);
-      // clear 단계를 칠하는 규칙은 없다(해제 규칙을 두면 그게 또 하나의 겨룰 자리가 된다).
-      expect(css).not.toMatch(new RegExp(`\\${part}\\[data-dim="clear"\\]`));
+      expect(decls(`${part}[data-dim]`)).not.toMatch(/transition:[^;]*filter/);
+      // 단계 이름으로 갈래친 규칙은 없다 — 갈래가 둘이면 다시 특이성으로 겨룬다.
+      expect(css).not.toMatch(new RegExp(`\\${part}\\[data-dim="`));
     }
     // 네이티브 표면 셰이드 — 레이어 역전(DOM 최상위, 엔진·child 웹뷰는 투명 홀 아래) 때문에
     // filter 는 네이티브에 닿지 않는다. 셰이드는 홀 위 라이브 계층(::after z4) — 동결 스탠드인
@@ -212,7 +212,7 @@ describe("railRelation 모드 CSS 갈래 (App.css)", () => {
     // (네이티브는 베일만 받으니 스탠드인도 베일만 받아야 dim 강도가 일치한다).
     expect(css).toMatch(/\.tab-body\.hole\[data-dim\] \{[^}]*filter: none/);
     expect(css).toMatch(
-      /\.tab-body\.hole\[data-dim="blocked"\]::after \{[^}]*background-color: rgb\(0 0 0 \/ var\(--dim\)\)[^}]*transition:[^;}]*background-color/,
+      /\.tab-body\.hole\[data-dim\]::after \{[^}]*background-color: rgb\(0 0 0 \/ var\(--dim\)\)[^}]*transition:[^;}]*background-color/,
     );
     // pane 스타일 배경은 홀을 원천 제외한다(특이성 전쟁 금지 — 홀은 스타일이 아니라 표면
     // 종류의 사실. 실사고: pane 규칙이 홀 투명을 이겨 card/floating 에서 전 홀 폐쇄).

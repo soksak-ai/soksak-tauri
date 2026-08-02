@@ -218,6 +218,32 @@ describe("baseline-gate", () => {
     expect(after).toContain("frameworks/tauri/src/a.rs 1");
   });
 
+  it("--prune 이 **다른 항목의** 사유까지 지우지 않는다", () => {
+    // 위 검사는 사유를 첫 항목 앞(서문)에 심어서 통과했다 — 실제로 쓰이는 자리는 항목 바로
+    // 위다. 그 자리의 사유는 지워졌다: 값이 그대로인 항목의 근거가 **남의 축소 반영**에
+    // 사라졌다(실측 2026-08-02, sessions.ts). 근거를 지우는 도구는 근거를 안 적게 만든다.
+    write("frameworks/tauri/src/a.rs", rustWithUnwraps(3));
+    write("frameworks/tauri/src/z.rs", rustWithUnwraps(3));
+    expect(runGate("--init").status).toBe(0);
+    const p = join(root, "scripts/gates/baseline-unwrap.txt");
+    const REASON = "# 재입법: z 는 진입점이라 여기서 전파할 상위가 없다";
+    writeFileSync(
+      readFileSync(p, "utf8") && p,
+      readFileSync(p, "utf8").replace(/\n(?=frameworks\/tauri\/src\/z\.rs)/, `\n${REASON}\n`),
+    );
+
+    // a 만 줄인다 — z 는 손대지 않았다.
+    write("frameworks/tauri/src/a.rs", rustWithUnwraps(1));
+    expect(runGate("--prune").status).toBe(0);
+
+    const after = readFileSync(p, "utf8");
+    expect(after).toContain("frameworks/tauri/src/a.rs 1");
+    expect(after).toContain("frameworks/tauri/src/z.rs 3");
+    // 손대지 않은 항목의 사유는 그 자리에 그대로 있어야 한다.
+    expect(after).toContain(REASON);
+    expect(after.indexOf(REASON)).toBeLessThan(after.indexOf("frameworks/tauri/src/z.rs 3"));
+  });
+
   it("--prune 은 신규 위반을 지우지 못한다", () => {
     expect(runGate("--init").status).toBe(0);
     write("frameworks/tauri/src/b.rs", rustWithUnwraps(1));
