@@ -1,3 +1,4 @@
+import { railBoundBox } from "./lib/railBoundBox";
 import { currentWindow, appInfo, invoke, dragRegion } from "./framework";
 import { execute } from "./commands/registry";
 import {
@@ -231,14 +232,23 @@ const ProjectPlane = memo(function ProjectPlane({
   const railCells = arrangement?.cells ?? [];
   const railCleanLines = arrangement?.cleanLines ?? [0, 100];
   const effectiveStation = arrangement?.station ?? 0;
-  const boundGroup = activeContent?.railBindingTabId
-    ? allGroups(activeContent.layout).find((group) =>
-        group.tabs.some((view) => view.id === activeContent.railBindingTabId),
-      )
+  // **결합의 기본은 포커스다.** 명시 결합(railBindingTabId)은 그것을 덮어쓰는 락이지,
+  // 결합이 있으려면 반드시 있어야 하는 값이 아니다. 락만 볼 때는 아무도 그 값을 안 세우면
+  // 결합 자체가 없어 보더가 통째로 안 그려졌다(실측 2026-08-02).
+  //
+  // 같은 규칙이 이미 투영 배선에 있다(boundViewInContent: 락이 없으면 활성 판). 두 자리가
+  // 서로 다른 기본값을 쓰면 "관계가 있다고 보는 쪽"과 "그리는 쪽"이 갈린다.
+  const boundGroup = activeContent
+    ? (allGroups(activeContent.layout).find((group) =>
+        activeContent.railBindingTabId
+          ? group.tabs.some((view) => view.id === activeContent.railBindingTabId)
+          : group.id === activeContent.activePaneId,
+      ) ?? allGroups(activeContent.layout)[0])
     : undefined;
-  const boundView = boundGroup?.tabs.find(
-    (view) => view.id === activeContent?.railBindingTabId,
-  );
+  const boundView = activeContent?.railBindingTabId
+    ? boundGroup?.tabs.find((view) => view.id === activeContent.railBindingTabId)
+    : (boundGroup?.tabs.find((view) => view.id === boundGroup.activeTabId) ??
+      boundGroup?.tabs[0]);
   const boundCell = boundGroup
     ? railCells.find((cell) => cell.id === boundGroup.id)
     : undefined;
@@ -432,7 +442,10 @@ const ProjectPlane = memo(function ProjectPlane({
                 // 밀기 모드에서만 판을 민다 — 오버레이는 판 위에 뜨므로 폭을 안 가져간다.
                 rightInset={project.rightOpen && rightMode === "push" ? rightW : 0}
                 railStation={renderedStation}
-                targetRect={boundCell.rect}
+                // 보더가 감싸는 상자는 **레일부터 결합 판의 오른쪽 끝까지**다. 결합 판이
+                // 레일 옆이면 그 판 자신이 되고(좁은 경우), 사이에 다른 판이 끼면 그것까지
+                // 품는다(넓은 경우) — 같은 식의 두 해다.
+                targetRect={railBoundBox(renderedStation, boundCell.rect)}
                 projected={arrangement?.swapped ?? false}
               />
             ) : undefined

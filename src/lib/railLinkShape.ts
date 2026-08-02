@@ -31,10 +31,16 @@ export function insetClippedEdges(
 }
 
 // 비인접 억제 허용오차(논리 %p). 결부 셀은 항상 clean line(레일 station)에서 시작하므로
-// 이보다 큰 간격은 부동소수 오차가 아니라 사이에 다른 패널이 낀 원거리 결부다.
+// 이보다 큰 간격은 부동소수 오차가 아니라 상자가 아직 레일에 안 닿은 중간 상태다.
 export const RAIL_LINK_ADJACENT_TOLERANCE = 1;
 
-/** 레일 변과 결부 셀 변의 논리 간격이 허용오차 이내인가 — 관계면 렌더 게이트. */
+/**
+ * 레일과 결부 상자를 한 테두리로 그릴 것인가 — 관계면 렌더 게이트.
+ *
+ * 결부 상자는 **레일에서 시작한다**(App 이 그렇게 만든다: 레일부터 결합 판의 오른쪽 끝까지).
+ * 그래서 여기서 모드를 알 필요가 없다 — 당기든 레일이 가든 상자의 왼쪽 변은 station 이다.
+ * 간격이 벌어졌다면 그것은 아직 안 온 중간 상태이므로 억제한다.
+ */
 export function railLinkAdjacent(station: number, target: RailRect): boolean {
   return Math.abs(target.left - station) <= RAIL_LINK_ADJACENT_TOLERANCE;
 }
