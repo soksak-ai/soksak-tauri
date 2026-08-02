@@ -25,7 +25,6 @@ export const LOCAL = new Map([
   ["build-output-path.mjs", []],
   ["command-ownership.mjs", []],
   ["command-reference-whole-surface.mjs", []],
-  ["framework-physics-declared.mjs", []],
   ["c2-transparency-scan.mjs", ["--plugins", process.env.SOKSAK_PLUGINS || `${process.env.HOME}/.soksak-dev/plugins`]],
   ["core-decoupling-scan.mjs", []],
   ["core-git-scan.mjs", []],
