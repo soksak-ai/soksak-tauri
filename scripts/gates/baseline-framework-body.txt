@@ -21,27 +21,24 @@ frameworks/electron/activity.cjs 32
 frameworks/electron/backend.cjs 236
 frameworks/electron/control.cjs 144
 frameworks/electron/cored.cjs 252
-# 재입법 2026-08-02 415 → 416. 죽기 전에 남길 자리(note) 를 ctx 에 싣는다.
-# 재입법 2026-08-02 416 → 423. guest 안의 클릭은 호스트 문서에 아무것도 안 남긴다(계측:
-#   도착 사건 0). 그 사실을 아는 것은 프레임워크뿐이라 계약의 이름으로 낸다
-#   (spec-content-view ACTIVATED). 알아내는 방법은 프레임워크마다 달라도 이름은 하나다.
-frameworks/electron/main.cjs 423
+frameworks/electron/main.cjs 430
 frameworks/electron/native/capture.cjs 70
 frameworks/electron/native/engine.cjs 26
 frameworks/electron/native/error.cjs 9
-# 재입법 2026-08-02 85 → 86. lifecycle.cjs 등재 한 줄.
 frameworks/electron/native/index.cjs 86
+frameworks/electron/native/lifecycle.cjs 11
 frameworks/electron/native/notify.cjs 42
 frameworks/electron/native/project.cjs 58
 frameworks/electron/native/titlebar.cjs 7
 frameworks/electron/native/updater.cjs 33
-frameworks/electron/native/webview.cjs 167
+frameworks/electron/native/webview.cjs 179
 frameworks/electron/native/window.cjs 157
 frameworks/electron/preload.cjs 50
 frameworks/electron/windowEvents.cjs 13
 frameworks/tauri/src/activity.rs 434
 frameworks/tauri/src/activity_sink.rs 9
 frameworks/tauri/src/ai_session.rs 45
+frameworks/tauri/src/app_nap.rs 24
 frameworks/tauri/src/command_dispatch.rs 98
 frameworks/tauri/src/cored_host.rs 534
 frameworks/tauri/src/cored_ledger.rs 248
@@ -59,7 +56,6 @@ frameworks/tauri/src/i18n.rs 155
 frameworks/tauri/src/id_registry.rs 144
 frameworks/tauri/src/identity.rs 59
 frameworks/tauri/src/ipc.rs 1227
-# 재입법 2026-08-02 722 → 724. app_nap 모듈 선언과 setup 의 한 줄 호출.
 frameworks/tauri/src/lib.rs 725
 frameworks/tauri/src/login_shell.rs 28
 frameworks/tauri/src/main.rs 4
@@ -82,8 +78,6 @@ frameworks/tauri/src/sidecar.rs 166
 frameworks/tauri/src/skillgen.rs 16
 frameworks/tauri/src/stream_sink.rs 21
 frameworks/tauri/src/titlebar.rs 218
-# 재입법 2026-08-02 59 → 69. app_quit — 끌 수 있는 이름이 있어야 검증할 수 있다(A27).
-#   프로세스 종료는 이 실행물의 몸이다. 죽기 전에 원장에 남기고 끈다.
 frameworks/tauri/src/unit_dev.rs 69
 frameworks/tauri/src/unit_installer.rs 55
 frameworks/tauri/src/updater.rs 42
@@ -93,10 +87,3 @@ frameworks/tauri/src/webview_health.rs 572
 frameworks/tauri/src/window.rs 387
 frameworks/tauri/src/window_oracle.rs 102
 frameworks/tauri/src/ws.rs 47
-# 신규 2026-08-02 24줄. 이 실행물이 자기에게 주는 보장 — 가려져도 계속 그린다(App Nap 해제).
-#   플랫폼 표면(NSProcessInfo)이 몸이라 코어로 갈 수 없다. 검증이 OS 를 빌려 창을 앞으로 내던
-#   것을 없애는 자리다(운영체제 비의존·포커스 불가침).
-frameworks/tauri/src/app_nap.rs 24
-# 신규 2026-08-02 11줄. 이 실행물을 끄는 이름 — 끌 수 있어야 검증할 수 있다(A27).
-#   프로세스 종료는 이 실행물의 몸이라 코어로 갈 수 없다.
-frameworks/electron/native/lifecycle.cjs 11

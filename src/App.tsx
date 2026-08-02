@@ -33,7 +33,11 @@ import {
   transferViewFocus,
 } from "./plugins/viewFocus";
 import { browserViewIdFromLabel } from "./lib/webviewLabels";
-import { CONTENT_VIEW_EVENT, activatedLabelOf } from "./lib/contentViewEvents";
+import {
+  CONTENT_VIEW_EVENT,
+  activatedLabelOf,
+  relayFrameworkContentViewEvents,
+} from "./lib/contentViewEvents";
 import { LeftSidebarHost } from "./components/LeftSidebarHost";
 import { RailGridSurface } from "./components/RailGridSurface";
 import { RailLinkOverlay } from "./components/RailLinkOverlay";
@@ -845,6 +849,11 @@ function App() {
     // OS 를 빌리지 않는다(A27). 프레임워크가 계약의 이름으로 그 사실을 내고, 좌표로 들어오든
     // 이 사건으로 들어오든 **같은 함수**를 부른다 — 경로가 갈리면 한쪽만 고쳐지고 그 어긋남은
     // 조용하다.
+    // 프레임워크가 손잡이로 알린 것을 계약 모양으로 바꿔 다시 뿌린다 — 적어 두고 아무도
+    // 안 부르면 없는 것과 같다.
+    const offRelay = relayFrameworkContentViewEvents((name, cb) =>
+      listenThisWindow<Record<string, unknown>>(name, (e) => cb(e.payload)),
+    );
     const offViewFocus = listenThisWindow<{ id: number }>(CONTENT_VIEW_EVENT.activated, (e) => {
       // 손잡이(webContents id)를 사실(라벨)로 바꾸는 것은 이음매의 일이다 — 앱은 라벨만 안다.
       const label = activatedLabelOf(e.payload?.id);
@@ -912,6 +921,7 @@ function App() {
     return () => {
       offDown();
       offViewFocus();
+      offRelay();
       offMove();
       offUp();
       offLeave();

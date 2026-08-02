@@ -88,6 +88,27 @@ module.exports = {
     },
   },
 
+  // 콘텐츠 뷰 **안**으로 진짜 입력을 넣는다.
+  //
+  // 태그의 `sendInputEvent` 는 전달하지 않는다(계측 2026-08-02: 게스트에 arm 한 리스너가
+  // 아무것도 못 받았다). 게스트의 webContents 에 직접 보내야 한다 — 그 핸들은 이 프로세스만
+  // 쥔다. 스크립트로 만든 클릭에는 사용자 활성화가 없어 엔진이 창-열기 같은 것을 막으므로,
+  // 그 경로를 검증하려면 엔진이 내는 진짜 입력이어야 한다(A27).
+  webview_send_input: {
+    concept: "콘텐츠 뷰에 입력 주입",
+    source: "게스트 webContents — 태그는 전달하지 않는다",
+    answer: (ctx, args) => {
+      const guest = ctx.webContentsById(Number(args.id));
+      if (!guest) throw frameworkError("NO_CONTENT_VIEW", `그 콘텐츠 뷰가 없다: ${args.id}`);
+      // 인자는 그대로 간다 — 기본값을 채우거나 반올림하면 그것이 규칙이 되고, 두 껍데기가
+      // 같은 이름에 다른 좌표를 쓴다. 무엇이 유효한 좌표인가는 부르는 쪽이 정한다.
+      const at = { x: args.x, y: args.y, button: "left", clickCount: 1 };
+      guest.sendInputEvent({ type: "mouseDown", ...at });
+      guest.sendInputEvent({ type: "mouseUp", ...at });
+      return null;
+    },
+  },
+
   webview_open: {
     concept: "콘텐츠 뷰 열기",
     delegated:

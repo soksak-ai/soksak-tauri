@@ -274,3 +274,47 @@ describe("DOM 콘텐츠 뷰의 숨김", () => {
     expect(el.style.visibility).toBe("hidden");
   });
 });
+
+/** 주입은 **그 문서와 함께 산다.** 페이지가 이동하면 주입된 것도 사라지므로, 한 번만 넣으면
+ *  첫 문서에서만 살아 있고 그 뒤로는 조용히 없다 — 계약이 "매 내비게이션 재주입"이라고 적어
+ *  두었는데 DOM 구현은 한 번만 넣고 있었다. 해지도 진짜여야 한다: `() => {}` 를 돌려주면
+ *  부르는 쪽은 껐다고 믿고 다음 문서에서 또 도는 스크립트를 본다. */
+describe("게스트 스크립트 주입 — 문서가 새로 설 때마다", () => {
+  beforeEach(() => {
+    invoke.mockClear();
+    document.body.innerHTML = "";
+  });
+
+  it("이동할 때마다 다시 넣는다 — 한 번만 넣으면 다음 문서에는 없다", async () => {
+    const m = await load();
+    await m.domHost.open("b-1", { url: "https://x" });
+    const el = document.querySelector('[data-content-view="b-1"]')!;
+    stubTag(el);
+    m.domHost.injectScript("b-1", "sentinel()", "document-end");
+    await Promise.resolve();
+    await Promise.resolve();
+    const run = (el as unknown as { executeJavaScript: ReturnType<typeof vi.fn> })
+      .executeJavaScript;
+    expect(run).toHaveBeenCalledWith("sentinel()");
+    const first = run.mock.calls.length;
+    // 페이지가 새로 섰다 — 태그는 이동마다 dom-ready 를 다시 낸다.
+    el.dispatchEvent(new Event("dom-ready"));
+    expect(run.mock.calls.length).toBeGreaterThan(first);
+  });
+
+  it("해지하면 다음 문서에서는 안 넣는다 — 껐다는 말이 사실이어야 한다", async () => {
+    const m = await load();
+    await m.domHost.open("b-2", { url: "https://x" });
+    const el = document.querySelector('[data-content-view="b-2"]')!;
+    stubTag(el);
+    const off = m.domHost.injectScript("b-2", "sentinel()", "document-end");
+    await Promise.resolve();
+    await Promise.resolve();
+    const run = (el as unknown as { executeJavaScript: ReturnType<typeof vi.fn> })
+      .executeJavaScript;
+    off();
+    const before = run.mock.calls.length;
+    el.dispatchEvent(new Event("dom-ready"));
+    expect(run.mock.calls.length).toBe(before);
+  });
+});

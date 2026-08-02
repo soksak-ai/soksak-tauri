@@ -11,7 +11,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { startPointerOrderRepair } from "../lib/pointerOrderRepair";
 
-vi.mock("../lib/webviewLabels", () => ({ currentWindowLabel: () => "main" }));
+// 모듈을 통째로 대체하면 **나중에 늘어난 수출이 조용히 undefined 가 된다** — 목은 그 모듈이
+// 실제로 주는 것을 따라가야 한다(실측 2026-08-02: browserLabel 을 안 넣어 핸들러가 죽었다).
+const sentInput: [string, number, number][] = [];
+vi.mock("../lib/contentViews", () => ({
+  contentViewHost: () => ({
+    sendInput: async (label: string, x: number, y: number) => {
+      sentInput.push([label, x, y]);
+    },
+  }),
+}));
+vi.mock("../lib/webviewLabels", () => ({
+  currentWindowLabel: () => "main",
+  browserLabel: (viewId: string) => `b-main-${viewId}`,
+}));
 // 프레임워크는 경계 하나로 mock 한다. 창 기하는 테스트가 갈아끼울 수 있게 홀더로 둔다 —
 // 정적 import 는 모듈 적재 시점에 묶이므로 doMock(뒤늦은 대체)으로는 닿지 않는다.
 const shellWin = vi.hoisted(() => ({
@@ -27,6 +40,7 @@ import { registerDomCatalog, deepElementFromPoint, deepActiveElement, viewContai
 import { catalogJson, execute, getSpec, unregister } from "./registry";
 
 beforeEach(() => {
+  sentInput.length = 0;
   registerDomCatalog();
 });
 afterEach(() => {
@@ -557,5 +571,57 @@ describe("ui.input.pointer — 골 강조는 상태로 무장되고 해제된다
     const r = await execute("ui.input.pointer", {}, {});
     expect(r.ok).toBe(true);
     expect((r.data as { gutterHover: string | null }).gutterHover).toBeNull();
+  });
+});
+
+/** 콘텐츠 뷰 **안**은 다른 프로세스라, DOM 으로 만든 클릭이 그 안에 닿지 않는다. 그리고 닿아도
+ *  사용자 활성화가 없어 엔진이 창-열기 같은 것을 막는다(실측 2026-08-02: `_blank` 링크를
+ *  스크립트로 눌러도 창-열기 요청이 0회였다). 그래서 이 명령이 콘텐츠 뷰를 가리키면 그 안으로
+ *  **진짜 입력**을 넣는다 — 없으면 만드는 것까지가 이 자리의 몫이다(A27). */
+describe("ui.input.click — 콘텐츠 뷰를 가리키면 그 안으로 넣는다", () => {
+  /** **콘텐츠 뷰는 탭 노드의 자손이 아니다** — 칸 밖 표면에 놓인다. 자손으로 세우면 검사가
+   *  실제와 다른 세계를 재고, 그 GREEN 은 아무것도 증명하지 않는다(실측 2026-08-02: 자손으로
+   *  짠 검사는 GREEN 이었는데 산 앱에서는 DOM 클릭으로 새고 있었다). */
+  function plantContentView() {
+    mountNode(`<div data-node="layout/tab/tab-probe"></div>`);
+    const view = document.createElement("div");
+    view.setAttribute("data-content-view", "b-main-tab-probe");
+    view.id = "cv";
+    Object.defineProperty(view, "getBoundingClientRect", {
+      value: () => ({ left: 100, top: 50, width: 200, height: 100, right: 300, bottom: 150 }),
+    });
+    document.body.appendChild(view);
+  }
+
+  /** 주소는 **발견 경로로** 얻는다 — 손으로 지으면 그 형식이 바뀌는 날 검사만 조용히 죽는다. */
+  async function probeAddress(): Promise<string> {
+    const r = (await execute("ui.tree", {}, {})) as {
+      data?: { nodes?: { address: string; nodePath: string }[] };
+    };
+    const hit = r.data?.nodes?.find((n) => n.nodePath.endsWith("layout/tab/tab-probe"));
+    if (!hit) throw new Error("탭 노드를 트리에서 못 찾았다 — 노출이 안 된 것이다");
+    return hit.address;
+  }
+
+  it("호스트 계약을 지나 그 안으로 넣는다 — DOM 클릭이 아니다", async () => {
+    plantContentView();
+    const address = await probeAddress();
+    let domClicks = 0;
+    document.getElementById("cv")!.addEventListener("mousedown", () => (domClicks += 1));
+    const r = (await execute("ui.input.click", { address }, {})) as {
+      ok: boolean;
+      data?: { contentView?: string };
+    };
+    expect(r.ok).toBe(true);
+    expect(r.data?.contentView).toBe("b-main-tab-probe");
+    expect(sentInput).toEqual([["b-main-tab-probe", 100, 50]]);
+    expect(domClicks).toBe(0);
+  });
+
+  it("오프셋은 뷰 좌표다 — 안 주면 왼쪽 위", async () => {
+    plantContentView();
+    const address = await probeAddress();
+    await execute("ui.input.click", { address, x: 7, y: 9 }, {});
+    expect(sentInput).toEqual([["b-main-tab-probe", 7, 9]]);
   });
 });

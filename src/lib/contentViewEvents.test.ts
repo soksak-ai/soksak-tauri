@@ -98,12 +98,56 @@ describe("콘텐츠 뷰 사건 다리", () => {
     expect(emit).toHaveBeenCalledWith("content-view-status", { label: "b-1", url: "" });
   });
 
-  it("새 창 요구는 content-view-open-external 로 나간다 — 앱 안 새 탭으로 여는 신호다", async () => {
+  /** 창-열기 요구는 **태그가 알려주지 않는다.** 이 엔진에서 `new-window` 사건은 사라졌다
+   *  (계측 2026-08-02: 새 탭 링크를 눌러도 0회, 같은 태그의 `page-title-updated` 는 5회).
+   *  죽은 구독은 오류를 내지 않고 아무 일도 안 일으켜서, 새 탭/새 창 설정이 적용될 통로가
+   *  없었다. 다시 걸면 이 검사가 잡는다. */
+  it("태그의 new-window 는 듣지 않는다 — 이 엔진에 없는 사건이다", async () => {
     const m = await load();
     const el = fakeTag();
     m.bridgeContentViewEvents(el, "b-1");
     el.dispatchEvent(tagEvent("new-window", { url: "https://z" }));
-    expect(emit).toHaveBeenCalledWith("content-view-open-external", { label: "b-1", url: "https://z" });
+    expect(emit).not.toHaveBeenCalledWith(
+      "content-view-open-external",
+      expect.objectContaining({ url: "https://z" }),
+    );
+  });
+
+  /** 산 통로는 프레임워크다 — 손잡이(webContents id)로 알려 온다. 이음매가 라벨로 바꿔
+   *  계약 모양으로 다시 뿌린다. 손잡이를 그대로 흘리면 그 방법이 없는 프레임워크에서
+   *  소비자가 조용히 아무것도 못 받는다. */
+  it("프레임워크가 손잡이로 알린 것을 라벨로 바꿔 계약 이름으로 뿌린다", async () => {
+    const m = await load();
+    const el = document.createElement("div");
+    el.setAttribute("data-content-view", "b-9");
+    Object.assign(el, { getWebContentsId: () => 42 });
+    document.body.appendChild(el);
+    let raw: ((p: Record<string, unknown>) => void) | null = null;
+    const off = m.relayFrameworkContentViewEvents((name: string, cb: typeof raw) => {
+      expect(name).toBe("content-view-open-external:raw");
+      raw = cb;
+      return () => {};
+    });
+    raw!({ id: 42, url: "https://z" });
+    expect(emit).toHaveBeenCalledWith("content-view-open-external", {
+      label: "b-9",
+      url: "https://z",
+    });
+    off();
+    document.body.innerHTML = "";
+  });
+
+  /** 못 찾은 손잡이는 버린다 — 빈 라벨로 뿌리면 아무 뷰도 아닌 사건이 소비자에게 간다. */
+  it("모르는 손잡이는 뿌리지 않는다", async () => {
+    const m = await load();
+    let raw: ((p: Record<string, unknown>) => void) | null = null;
+    m.relayFrameworkContentViewEvents((_n: string, cb: typeof raw) => {
+      raw = cb;
+      return () => {};
+    });
+    emit.mockClear();
+    raw!({ id: 999, url: "https://z" });
+    expect(emit).not.toHaveBeenCalled();
   });
 
   it("해지하면 더 안 나간다 — 뷰를 닫아도 구독이 남으면 죽은 label 로 뿌린다", async () => {

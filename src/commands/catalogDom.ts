@@ -8,7 +8,8 @@
 
 import { moduleState } from "../lib/moduleState";
 import { invoke, currentWindow } from "../framework";
-import { currentWindowLabel } from "../lib/webviewLabels";
+import { browserLabel, currentWindowLabel } from "../lib/webviewLabels";
+import { contentViewHost } from "../lib/contentViews";
 import { parseAddress, isParseError } from "./address";
 import { scanNodes, type ScannedNode } from "../plugins/nodeScan";
 import { register } from "./registry";
@@ -497,13 +498,20 @@ export function registerDomCatalog(): void {
           "'down' = mousedown only; 'up' = mouseup+click only; omit for the full sequence",
         required: false,
       },
+      x: {
+        type: "number",
+        description:
+          "Content-view-relative x (CSS px). Only when the address resolves to a content view; the click is delivered inside it as real input.",
+        required: false,
+      },
+      y: { type: "number", description: "Content-view-relative y (CSS px).", required: false },
     },
     returns: "{ clicked, address, phase? }",
     message: () => tmsg("msg.ui.input.click"),
     errors: ["NOT_EXPOSED", "AMBIGUOUS", "INVALID_PARAMS"],
     danger: "inject",
     examples: ['ui.input.click \'{"address":"win/main/chrome/modal/consent/agree"}\''],
-    handler: (p) => {
+    handler: async (p) => {
       const addr = p.address as string;
       const found = resolveExposed(addr);
       if (!("el" in found)) return found;
@@ -519,6 +527,41 @@ export function registerDomCatalog(): void {
           code: "INVALID_PARAMS",
           message: `phase must be 'down' or 'up', got: ${phase}`,
         };
+      }
+      // **콘텐츠 뷰를 가리키면 그 안으로 넣는다.**
+      //
+      // 그 안은 다른 프로세스라 DOM 으로 만든 클릭이 닿지 않고, 닿아도 사용자 활성화가 없어
+      // 엔진이 창-열기 같은 것을 막는다(실측 2026-08-02: `_blank` 링크를 스크립트로 눌러도
+      // 창-열기 요청이 0회였다). 태그가 게스트에 미는 입력은 엔진이 내는 진짜 입력이다.
+      //
+      // 좌표는 **뷰 좌표**다(CSS px). 안 주면 왼쪽 위 — 가운데를 기본으로 하면 무엇이 눌릴지
+      // 그 페이지가 정하고, 검사가 페이지 내용에 매달린다.
+      // **콘텐츠 뷰는 그 탭 노드의 자손이 아니다** — 칸 밖 표면에 놓인다(실측 2026-08-02:
+      // `[data-pane]` 조상도 없었다). 그래서 자손을 뒤지면 못 찾고 조용히 DOM 클릭이 된다.
+      // 소속은 라벨이 안다: `b-<창>-<뷰>`. 주소가 가리키는 탭의 뷰 id 로 라벨을 지어 찾는다.
+      const viewId = el.getAttribute("data-node")?.match(/^layout\/tab\/(.+)$/)?.[1];
+      // 선택자에 값을 끼워 넣지 않는다 — 이스케이프가 환경마다 있고 없고, 라벨에 특수문자가
+      // 들어오는 날 선택자가 조용히 다른 것을 고른다. 속성을 읽어 비교한다.
+      const wanted = viewId ? browserLabel(viewId) : null;
+      const byLabel = wanted
+        ? Array.from(document.querySelectorAll<HTMLElement>("[data-content-view]")).find(
+            (n) => n.getAttribute("data-content-view") === wanted,
+          ) ?? null
+        : null;
+      const view = el.matches("[data-content-view]")
+        ? el
+        : (el.querySelector<HTMLElement>("[data-content-view]") ?? byLabel);
+      if (view) {
+        const cvLabel = view.getAttribute("data-content-view") ?? "";
+        const r0 = view.getBoundingClientRect();
+        const at = {
+          x: typeof p.x === "number" ? p.x : Math.round(r0.left),
+          y: typeof p.y === "number" ? p.y : Math.round(r0.top),
+        };
+        // 호스트 계약을 지난다 — 태그를 직접 만지면 그 구현이 바뀌는 날 이 자리만 조용히 죽는다.
+        // 못 하는 구현은 그 자리에서 이름을 달고 거절한다(조용한 성공 금지).
+        await contentViewHost().sendInput(cvLabel, at.x, at.y);
+        return { clicked: true, address: addr, contentView: cvLabel };
       }
       const types =
         phase === "down"

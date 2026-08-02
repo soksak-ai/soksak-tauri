@@ -33,6 +33,16 @@ export interface ContentViewHost {
   injectScript(label: string, code: string, phase: "document-start" | "document-end"): () => void;
   /** 앱 밖 창으로 연다(외부 브라우저가 아니라 이 앱의 새 창). */
   openWindow(url: string): Promise<void>;
+  /**
+   * 콘텐츠 뷰 **안**으로 진짜 입력을 넣는다 — 뷰 좌표(CSS px).
+   *
+   * 스크립트로 만든 클릭에는 사용자 활성화가 없어서 엔진이 창-열기 같은 것을 막는다(실측
+   * 2026-08-02: `_blank` 링크를 스크립트로 눌러도 창-열기 요청이 0회였다). 그래서 검증이
+   * "잴 방법이 없다"로 멈췄다 — 없으면 만드는 것까지가 이 자리의 몫이다(A27).
+   *
+   * 못 하는 구현은 이름을 달고 거절한다. 조용히 성공하면 부른 쪽은 눌렀다고 믿는다.
+   */
+  sendInput(label: string, x: number, y: number): Promise<void>;
 }
 
 /**
@@ -53,6 +63,15 @@ export const nativeHost: ContentViewHost = {
   zoom: (label, factor) => invoke("webview_zoom_view", { label, factor }),
   devtools: (label) => invoke("webview_devtools", { label }),
   evalJs: (label, js) => invoke("webview_eval", { label, js }),
+  sendInput: async (label) => {
+    // **이 구현에는 아직 통로가 없다.** 콘텐츠가 OS 자식 뷰라, 입력을 넣으려면 그 뷰가 사는
+    // 창에 좌표를 실은 네이티브 사건을 얹어야 한다 — 이 프로세스의 입력 모니터는 읽기만 하고
+    // 쓰는 자리는 없다. 없는 명령을 부르면 유령 공백이 생기므로 이름을 달고 거절한다.
+    //
+    // 사용자 클릭은 이 구현에서도 이미 앱에 닿는다(모니터가 좌표를 나른다) — 없는 것은
+    // **구동**뿐이다. 그 차이를 조용한 성공으로 덮지 않는다.
+    throw new Error(`이 콘텐츠 뷰 구현은 입력 주입 통로가 없습니다: ${label}`);
+  },
   injectScript: (label, code, phase) => {
     void invoke("webview_inject_script", { label, code, phase });
     // 네이티브 주입은 해지 통로가 없다 — 없는 것을 있는 척하지 않는다.
@@ -257,11 +276,32 @@ export const domHost: ContentViewHost = {
         `document-start 주입은 이 콘텐츠 뷰가 보장하지 못합니다(태그는 preload 로만 가능): ${label}`,
       );
     }
-    // 준비를 기다린 뒤 실행한다 — 이 문을 안 지나면 안 붙은 태그에 제어면을 불러 Uncaught 다.
-    void onReady<(s: string) => Promise<unknown>>(label, "executeJavaScript").then((run) =>
-      run(code),
-    );
-    return () => {};
+    // **한 번이 아니다.** 주입된 스크립트는 그 문서와 함께 산다 — 페이지가 이동하면 함께
+    // 사라진다. 한 번만 넣으면 첫 문서에서만 살아 있고 그 뒤로는 조용히 없다. 계약이 "매
+    // 내비게이션 재주입"이라고 적어 두었는데(app.webview.injectScript) 이 자리는 안 지켰다.
+    //
+    // 태그는 이동마다 `dom-ready` 를 다시 낸다. 그 사건마다 다시 넣는다.
+    const el = find(label, document);
+    if (!el) throw new Error(`콘텐츠 뷰가 없습니다: ${label}`);
+    const run = () => {
+      const fn = (el as unknown as { executeJavaScript?: (s: string) => Promise<unknown> })
+        .executeJavaScript;
+      // 안 붙은 태그에 제어면을 부르면 Uncaught 다 — 있을 때만 부른다.
+      if (typeof fn === "function") void fn.call(el, code);
+    };
+    // 첫 문서는 이미 서 있을 수 있다(사건이 지나간 뒤에 구독하면 못 듣는다).
+    void ready(el).then(run);
+    el.addEventListener("dom-ready", run);
+    // 해지가 **진짜여야** 한다. `() => {}` 를 돌려주면 부르는 쪽은 껐다고 믿고, 다음 문서에서
+    // 또 도는 스크립트를 본다.
+    return () => el.removeEventListener("dom-ready", run);
+  },
+  async sendInput(label, x, y) {
+    // **태그는 전달하지 않는다**(계측 2026-08-02: 게스트에 arm 한 리스너가 아무것도 못 받았다).
+    // 게스트의 webContents 에 직접 보내야 하고, 그 핸들은 프레임워크만 쥔다. 태그가 아는 것은
+    // 자기 손잡이(id)뿐이라 그것을 넘긴다.
+    const getId = await onReady<() => number>(label, "getWebContentsId");
+    await invoke("webview_send_input", { id: getId(), x: Math.round(x), y: Math.round(y) });
   },
   async openWindow(url) {
     // 새 창은 프레임워크의 것이다 — DOM 이 만들 수 있는 것이 아니다.

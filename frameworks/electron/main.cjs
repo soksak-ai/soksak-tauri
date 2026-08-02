@@ -11,7 +11,7 @@
 // 프로세스엔 창이 없어 영영 그리로 못 간다. 그 표는 electron/native/ 가 갈래별로 소유하고,
 // 소켓 앞에 선다. 이 파일은 표를 쥐지 않는다 — 배선(창 레지스트리·다리·원장)만 쥔다.
 
-const { app, BrowserWindow, Menu, dialog, ipcMain, screen  } = require("electron");
+const { app, BrowserWindow, Menu, dialog, ipcMain, screen, webContents } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const os = require("node:os");
@@ -174,6 +174,22 @@ function createWindow(label, rect, bootQuery) {
   // OS 를 빌리지 않는다(A27). guest 의 입력 사건을 그대로 듣고 **계약의 이름**으로 낸다
   // (spec-content-view ACTIVATED). 알아내는 방법은 프레임워크마다 달라도 이름은 하나다.
   win.webContents.on("did-attach-webview", (_e, guest) => {
+    // **새 창을 여는 요청은 이 프레임워크만 가로챌 수 있다.**
+    //
+    // 태그의 `new-window` 사건은 이 엔진에서 사라졌다(계측 2026-08-02: 새 탭 링크를 눌러도
+    // 0회. `page-title-updated` 는 5회 났으므로 다리 자체는 살아 있다). 죽은 구독은 오류를
+    // 내지 않는다 — 그냥 아무 일도 안 일어나고, 그래서 "새 탭/새 창" 설정이 적용될 통로가
+    // 아예 없었다.
+    //
+    // 산 통로는 guest 의 창-열기 핸들러다. 여는 것은 거절하고(창은 앱이 정한다) 그 요청을
+    // 계약의 이름으로 넘긴다 — 무엇을 할지는 브라우저 플러그인이 설정을 보고 정한다.
+    guest.setWindowOpenHandler((d) => {
+      const url = d && typeof d.url === "string" ? d.url : "";
+      // 이 통로는 조용히 죽기 쉽다(엔진이 사건을 바꿔도 오류가 안 난다) — 지나갈 때마다 남긴다.
+      note(`[electron] 창-열기 요청 → 앱으로 넘긴다: ${url}`);
+      if (url) deliverEvent(win, "content-view-open-external:raw", { id: guest.id, url });
+      return { action: "deny" };
+    });
     guest.on("input-event", (_ev, input) => {
       if (input && input.type === "mouseDown") {
         deliverEvent(win, "content-view-activated", { id: guest.id });
@@ -266,6 +282,8 @@ function nativeContext(sender) {
       ),
     // 죽기 전에 남길 자리 — 자기 죽음은 죽은 뒤에 못 적는다.
     note,
+    // 게스트 핸들 — 콘텐츠 뷰 안으로 입력을 넣는 자리가 쓴다.
+    webContentsById: (id) => webContents.fromId(id),
     windowFor,
     createWindow,
     // 앱을 전면으로 — 창 하나를 key 로 만드는 것과 다른 일이다. steal 은 다른 앱에서
