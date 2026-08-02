@@ -1,15 +1,15 @@
-// 활성 프레임워크 해소 — 앱이 프레임워크를 만나는 유일한 문.
+// 활성 프레임워크 바인딩 — 앱이 프레임워크를 만나는 유일한 문.
 //
 // 앱 코드는 여기서만 가져온다: `import { invoke } from "../framework"`. 어느 프레임워크가 뒤에
 // 있는지는 여기 한 곳이 정하고, 나머지 전부는 계약(contract.ts)만 본다.
 //
-// 해소 규칙: 빌드 시 주입된 프레임워크 이름이 있으면 그것, 없으면 tauri(현 정본). 새 프레임워크를 붙이는
-// 일은 어댑터 파일 하나 + 이 표에 한 줄이며, 앱 코드는 한 줄도 바뀌지 않는다.
+// 선택은 **빌드가 한다**. `#framework-adapter`는 Tauri/Electron 산출물마다 서로 다른 잎으로
+// 해소되고, 그 잎은 자기 어댑터 하나만 import한다. 런타임 표식으로 둘을 함께 싣고 고르는
+// fallback은 없다 — 선택하지 않은 구현이 평가되지 않는 정도가 아니라 번들 그래프에 없어야 한다.
 
 import type { AppFramework } from "./contract";
 import type { EngineProvision } from "@soksak-ai/plugin-spec";
-import { electronFramework } from "./electron";
-import { tauriFramework } from "./tauri";
+import { selectedFramework } from "#framework-adapter";
 
 export type {
   FrameworkEvent,
@@ -20,29 +20,8 @@ export type {
   Unlisten,
 } from "./contract";
 
-const ADAPTERS: Record<string, AppFramework> = {
-  tauri: tauriFramework,
-  electron: electronFramework,
-};
-
-function resolveFramework(): AppFramework {
-  // 빌드 주입(vite define) 또는 런타임 표식. 없으면 정본.
-  // 프레임워크는 자기가 붙인 창구로 자신을 밝힌다 — 빌드 주입보다 런타임 사실이 앞선다.
-  const bridged = (globalThis as { __soksakFramework?: { name?: string } }).__soksakFramework?.name;
-  const declared =
-    bridged ?? (globalThis as { __SOKSAK_FRAMEWORK__?: string }).__SOKSAK_FRAMEWORK__ ?? "tauri";
-  const host = ADAPTERS[declared];
-  if (!host) {
-    // 침묵 폴백 금지 — 모르는 프레임워크를 조용히 tauri 로 취급하면 잘못된 프레임워크에서 도는 것을
-    // 아무도 모른다. 알리고 정본으로 간다.
-    console.error(`[framework] 알 수 없는 프레임워크 "${declared}" — tauri 로 진행한다`);
-    return tauriFramework;
-  }
-  return host;
-}
-
 /** 활성 프레임워크. 진단·원장에 이름을 실을 때 쓴다. */
-export const framework: AppFramework = resolveFramework();
+export const framework: AppFramework = selectedFramework;
 
 /**
  * 고른 쪽만 자기 것을 건다 — 구현·장치·스타일.
