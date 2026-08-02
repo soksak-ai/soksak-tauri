@@ -5,13 +5,16 @@ import type { CSSProperties } from "react";
 
 /** 같은 규칙을 React 밖 DOM 요소에도 적용한다. */
 export function applyParked(el: HTMLElement, active: boolean): void {
-  el.style.visibility = active ? "visible" : "hidden";
+  // 보임은 선언하지 않고 조상 계약을 상속한다. CSS visibility는 hidden 조상 아래의 자식이
+  // visible을 직접 선언하면 다시 드러날 수 있으므로, 중첩된 프로젝트→스페이스→탭 층에서
+  // `visible`은 국소 사실이 아니라 상위 파킹을 깨는 명령이 된다.
+  el.style.visibility = active ? "" : "hidden";
   el.style.pointerEvents = active ? "" : "none";
 }
 
 export function parkedStyle(active: boolean): CSSProperties {
   return {
-    visibility: active ? "visible" : "hidden",
+    visibility: active ? undefined : "hidden",
     pointerEvents: active ? undefined : "none",
   } as CSSProperties;
 }

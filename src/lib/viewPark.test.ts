@@ -42,7 +42,10 @@ describe("viewSurfaceStyle — exclusive(maximize) 합성 계약", () => {
 
   it("최대화 대상은 평상시 활성 슬롯과 같은 표시 스타일이다", () => {
     expect(viewSurfaceStyle(true, true).display).toBeUndefined();
-    expect(viewSurfaceStyle(true, true).visibility).toBe("visible");
+    // 보이는 자식은 visibility를 선언하지 않고 조상의 프로젝트/스페이스 가시성을 상속한다.
+    // `visible`을 직접 쓰면 hidden 조상 아래에서도 자식이 다시 드러나는 CSS 규칙 때문에
+    // 비활성 프로젝트의 활성 탭 표면이 화면을 덮는다.
+    expect(viewSurfaceStyle(true, true).visibility).toBeUndefined();
   });
 });
 
