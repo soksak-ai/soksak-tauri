@@ -566,7 +566,10 @@ const ProjectPlane = memo(function ProjectPlane({
                   surfaceActive={isActiveProject && isActiveContent}
                   // 배치는 해가 정한다 — 비활성 콘텐츠는 자기 정본 배열 그대로(레일 없음).
                   // 레일이 못 간 만큼 가려진 칸 — 움직이지 않지만 흐려야 어느 판이 활성인지 보인다.
-                  betweenIds={isActiveContent ? (solved?.betweenIds ?? []) : []}
+                  // 화면이 그리는 해에서 가져온다 — railCells 와 같은 자리다. solved 는 방금
+                  // 푼 값이라 전이 중에는 화면과 갈리고, 그 갈림이 "흐림이 안 붙는다"로 나온다.
+                  // 화면이 그리는 해에서 가져온다 — railCells 와 같은 자리다.
+                  betweenIds={isActiveContent ? (arrangement?.betweenIds ?? []) : []}
                   displayLayout={
                     isActiveContent ? arrangement?.displayLayout : undefined
                   }
