@@ -343,7 +343,27 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
       delete slot.dataset.freezeSnapSize;
     },
     noteSurfaceWrite(viewId) {
-      withdraw(viewId);
+      // **쓴 것과 그려진 것은 다른 사실이다.** 이 신호는 "표면 소유자가 좌표를 쓰고 다시
+      // 보이게 했다"까지다 — 그 표면이 새 자리에 실제로 그려졌다는 말이 아니다. 여기서 곧장
+      // 사진을 걷으면 렌더러는 다음 페인트에 홀을 열어 버리고, 표면의 표시가 그 페인트보다
+      // 늦으면 **정확히 한 프레임**이 배경으로 빈다(실측 2026-08-02, 사용자: "교체가 끝나고
+      // 딱 한 프레임에서 사라졌다 다음 프레임에서 나타난다" — 경로와 무관하게 공통이었다).
+      //
+      // 동결 에지는 같은 차이를 이미 알고 있다: 사진을 붙이고 **페인트가 커밋된 뒤**(이중 rAF)
+      // 표면을 숨긴다. 해동은 그 거울이어야 한다 — 표면을 보이게 하고, 페인트가 커밋된 뒤
+      // 사진을 걷는다. 사진은 같은 내용이라 두 프레임 더 서 있어도 보이지 않는다.
+      //
+      // 남은 불확실: 진짜 사실은 "표면이 새 rect 로 한 프레임을 제시했다"이고 그건 소유자만
+      // 안다. 여기서 세는 것은 렌더러의 프레임이다 — 그 ack 가 생기면 이 자리가 그것을 받는다.
+      const pending = awaiting.get(viewId);
+      if (!pending) return;
+      const img = pending.img;
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          if (awaiting.get(viewId)?.img !== img) return; // 그새 다시 얼었다 — 남의 사진이다
+          withdraw(viewId);
+        }),
+      );
     },
     onMotion(active, kinds, scope) {
       const want =

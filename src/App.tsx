@@ -1,5 +1,5 @@
 import { railBoundBox } from "./lib/railBoundBox";
-import { currentWindow, appInfo, invoke, dragRegion } from "./framework";
+import { currentWindow, appInfo, invoke, dragRegion, surfaceFollowsLayout } from "./framework";
 import { execute } from "./commands/registry";
 import {
   memo,
@@ -789,6 +789,12 @@ function App() {
   // 창 단위이므로 소유자도 창이다(프로젝트마다 하나씩 만들면 같은 슬롯을 N 번 덮고 캡처도
   // N 배로 나간다). 정착 스냅 갱신은 이벤트 에지에서만 — 폴링 아님.
   useEffect(() => {
+    // **따라가는 프레임워크에는 이 장치를 세우지 않는다.** 콘텐츠가 DOM 안에 살면 슬롯이
+    // 움직일 때 같이 움직인다 — 덮을 것도 감출 것도 없다. 그런데도 세우면 표면을 감췄다
+    // 드러내게 되고, 그 사이 한 프레임이 배경으로 빈다: 워크어라운드가 없던 결함을 만든다
+    // (실측 2026-08-02 사용자 "교체가 끝나고 딱 한 프레임에서 사라졌다 다음 프레임에 나타난다").
+    // 두 껍데기는 동급이다 — 한쪽의 물리를 코어의 기본으로 두지 않는다.
+    if (surfaceFollowsLayout) return;
     ensureSlotFreezeHost({
       root: () => document,
       capture: async (r) => {

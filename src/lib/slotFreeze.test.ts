@@ -227,7 +227,19 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
     // 그 프레임은 빈 구멍이다(느린 사이드카 경로의 실제 위험).
     vi.advanceTimersByTime(200);
     expect(slot.querySelector("img")).not.toBeNull();
+    // 재입법(2026-08-02, 사용자 실측): 옛 기준은 "쓰기가 도착하면 즉시 걷는다"였다. 그 즉시가
+    // 정확히 한 프레임을 만든다 — 이 신호는 "소유자가 좌표를 쓰고 보이게 했다"까지이고, 그
+    // 표면이 새 자리에 그려졌다는 말이 아니다. 곧장 걷으면 렌더러는 다음 페인트에 홀을 열고,
+    // 표면의 표시가 그보다 늦으면 배경이 한 프레임 드러난다("교체가 끝나고 딱 한 프레임에서
+    // 사라졌다 다음 프레임에서 나타난다" — 경로와 무관하게 공통).
+    //
+    // 동결 에지는 이미 같은 규율을 지킨다: 사진을 붙이고 페인트가 커밋된 뒤 표면을 숨긴다.
+    // 해동은 그 거울이다.
     f.noteSurfaceWrite("v1");
+    expect(slot.querySelector("img"), "쓰기 신호만으로 걷으면 안 된다").not.toBeNull();
+    flushRaf();
+    expect(slot.querySelector("img"), "한 프레임으로는 부족하다 — 커밋을 확인한다").not.toBeNull();
+    flushRaf();
     expect(slot.querySelector("img")).toBeNull();
   });
 
