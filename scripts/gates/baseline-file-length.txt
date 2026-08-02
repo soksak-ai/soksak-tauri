@@ -115,7 +115,9 @@ crates/soksak-store/src/store.rs 2068
 #   결함 둘이 살아 있었다). 홈에 하나뿐인 자리라 먼저 선 쪽이 서고, 못 서면 자기 소켓 없이
 #   산다 — 밖에서 오는 명령은 cored 가 창 호스트로 배달한다.
 frameworks/tauri/src/ipc.rs 1566
-frameworks/tauri/src/webview.rs 2259
+# 재입법 2026-08-02 2259 → 2269. 항행 페이로드에 inPage 축을 세운다. 그 축이 없으면 소비자가
+#   새 문서와 같은 문서 안 이동을 구분 못 해, 진짜 제목이 주소로 덮인 채 굳는다.
+frameworks/tauri/src/webview.rs 2269
 packages/plugin-spec/src/pluginRuntime.ts 2081
 packages/plugin-spec/src/spec.ts 1785
 # 재입법 2026-08-01 2787 → 2791. 명령이 자기 답의 주인을 선언한다(windowScoped) — 두 앱이

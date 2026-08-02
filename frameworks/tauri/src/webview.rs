@@ -19,9 +19,18 @@ use tauri::{
 };
 
 #[derive(Clone, Serialize)]
+// 카멜로 나간다 — 소비자는 카멜을 읽는다. 스네이크로 내면 undefined 를 읽고, 그것은 오류가
+// 아니라 "항상 새 문서"로 나타난다(같은 축의 canBack 이 그렇게 갈렸던 자리다).
+#[serde(rename_all = "camelCase")]
 struct NavPayload {
     label: String,
     url: String,
+    /// 문서가 바뀌었는가 — 같은 문서 안 이동이면 true.
+    ///
+    /// 이 축이 없으면 소비자가 새 문서와 같은 문서 안 이동을 구분 못 해 "이전 제목을 주소로
+    /// 되돌린다" 같은 규칙이 모든 항행에서 돌고, 진짜 제목이 주소로 덮인다.
+    /// 이 프레임워크의 페이지 적재 사건은 문서 커밋에서만 나므로 항상 false 다.
+    in_page: bool,
 }
 
 // 새 링크(_blank/window.open)를 "앱 내 새 탭"으로 열 때 프론트로 보내는 페이로드.
@@ -1010,6 +1019,7 @@ pub fn webview_open(
                     NavPayload {
                         label: pl_label.clone(),
                         url: u.to_string(),
+                        in_page: false,
                     },
                 );
             }

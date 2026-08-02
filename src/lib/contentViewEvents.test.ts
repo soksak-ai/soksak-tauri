@@ -5,7 +5,7 @@
 // 안 뿌렸다 — app.webview.on(label, "nav") 이 영영 안 불린다. 오류는 어디에도 안 남는다.
 //
 // 다섯과 그 페이로드는 원본 그대로다(frameworks/tauri/src/webview.rs):
-//   content-view-navigated            { label, url }
+//   content-view-navigated            { label, url, inPage }
 //   content-view-title          { label, title }
 //   content-view-loading        { label, loading, canBack, canForward }
 //   content-view-status         { label, url }
@@ -60,7 +60,27 @@ describe("콘텐츠 뷰 사건 다리", () => {
     const el = fakeTag();
     m.bridgeContentViewEvents(el, "b-1");
     el.dispatchEvent(tagEvent("did-navigate", { url: "https://x/page" }));
-    expect(emit).toHaveBeenCalledWith("content-view-navigated", { label: "b-1", url: "https://x/page" });
+    expect(emit).toHaveBeenCalledWith("content-view-navigated", {
+      label: "b-1",
+      url: "https://x/page",
+      inPage: false,
+    });
+  });
+
+  /** **같은 문서 안 이동인지가 사실이다.** 그 축이 없으면 소비자가 둘을 구분 못 해 "이전
+   *  제목을 주소로 되돌린다" 같은 규칙이 모든 항행에서 돌고, 엔진이 제목을 다시 안 내므로
+   *  진짜 제목이 주소로 덮인 채 굳는다(실측 2026-08-02: 탭이 "Google" 이 아니라
+   *  www.google.com 이었다). */
+  it("같은 문서 안 이동은 inPage 로 구분된다", async () => {
+    const m = await load();
+    const el = fakeTag();
+    m.bridgeContentViewEvents(el, "b-1");
+    el.dispatchEvent(tagEvent("did-navigate-in-page", { url: "https://x/page#a" }));
+    expect(emit).toHaveBeenCalledWith("content-view-navigated", {
+      label: "b-1",
+      url: "https://x/page#a",
+      inPage: true,
+    });
   });
 
   it("제목은 content-view-title 로 나간다", async () => {

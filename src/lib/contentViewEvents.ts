@@ -54,10 +54,18 @@ type Tag = HTMLElement & {
   canGoForward?: () => boolean;
 };
 
-function nav(label: string) {
+/**
+ * 항행 — 주소와 **문서가 바뀌었는지**를 함께 싣는다.
+ *
+ * `inPage` 가 없으면 소비자는 새 문서와 같은 문서 안 이동을 구분할 수 없고, "이전 제목이 남지
+ * 않게 주소로 되돌린다" 같은 규칙이 모든 항행에서 돈다. 같은 문서를 다시 항행할 때 엔진은
+ * 제목을 다시 안 내므로 진짜 제목이 주소로 덮인다(실측 2026-08-02: 탭 이름이 "Google" 이
+ * 아니라 `www.google.com` 으로 굳었다 — 사건은 다 도착했고 뒤에 온 nav 셋이 매번 덮었다).
+ */
+function nav(label: string, inPage: boolean) {
   return (e: Event) => {
     const url = field<string>(e, "url");
-    if (typeof url === "string") emitLocal(CONTENT_VIEW_EVENT.nav, { label, url });
+    if (typeof url === "string") emitLocal(CONTENT_VIEW_EVENT.nav, { label, url, inPage });
   };
 }
 
@@ -81,7 +89,7 @@ function ask(el: Tag, name: "canGoBack" | "canGoForward"): boolean {
 }
 
 function loading(el: Tag, label: string, on: boolean) {
-  return () =>
+  return () => {
     emitLocal(CONTENT_VIEW_EVENT.loading, {
       label,
       loading: on,
@@ -89,6 +97,7 @@ function loading(el: Tag, label: string, on: boolean) {
       canBack: ask(el, "canGoBack"),
       canForward: ask(el, "canGoForward"),
     });
+  };
 }
 
 /**
@@ -99,8 +108,8 @@ function loading(el: Tag, label: string, on: boolean) {
  */
 export function bridgeContentViewEvents(el: Tag, label: string): () => void {
   const wired: [string, EventListener][] = [
-    ["did-navigate", nav(label)],
-    ["did-navigate-in-page", nav(label)],
+    ["did-navigate", nav(label, false)],
+    ["did-navigate-in-page", nav(label, true)],
     [
       "page-title-updated",
       (e) => {
