@@ -25,11 +25,13 @@ async function load() {
 
 function layout() {
   document.body.innerHTML =
-    '<div class="pane-gutter" style="position:absolute;left:10px;top:0;width:6px;height:100px"></div>';
-  for (const el of document.querySelectorAll(".pane-gutter")) {
-    (el as HTMLElement).getBoundingClientRect = () =>
-      ({ x: 10, y: 0, width: 6, height: 100, left: 10, top: 0, right: 16, bottom: 100 }) as DOMRect;
-  }
+    '<div class="pane-gutter"></div><div data-native-drag></div>';
+  const gutter = document.querySelector<HTMLElement>(".pane-gutter")!;
+  gutter.getBoundingClientRect = () =>
+    ({ x: 10, y: 0, width: 6, height: 100, left: 10, top: 0, right: 16, bottom: 100 }) as DOMRect;
+  const drag = document.querySelector<HTMLElement>("[data-native-drag]")!;
+  drag.getBoundingClientRect = () =>
+    ({ x: 200, y: 20, width: 8, height: 80, left: 200, top: 20, right: 208, bottom: 100 }) as DOMRect;
 }
 
 describe("홀 보고는 그 장치를 건 프레임워크에서만 일어난다", () => {
@@ -56,6 +58,9 @@ describe("홀 보고는 그 장치를 건 프레임워크에서만 일어난다"
   // 오라클 생존 — 수집이 0건이면 위 두 단언이 같은 이유로 통과한다("0 의 두 얼굴").
   it("수집이 실제로 사각형을 찾는다", async () => {
     const m = await load();
-    expect(m.collectHoles(document).length).toBeGreaterThan(0);
+    expect(m.collectHoles(document)).toEqual([
+      { x: 10, y: 0, w: 6, h: 100 },
+      { x: 200, y: 20, w: 8, h: 80 },
+    ]);
   });
 });

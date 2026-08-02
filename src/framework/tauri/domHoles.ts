@@ -9,7 +9,8 @@
 // 그 자리에 네이티브 표면이 있으면 OS 히트테스트가 먼저 가져간다. 홀 등록은 우측 사이드바
 // 하나뿐이었고 골은 통째로 빠져 있었다 — 그 공백이 원인이다.
 //
-// 계약: 홀 목록 = 열린 우측 사이드바 + 보이는 모든 골. 갱신은 사건 구동(레이아웃 커밋·창
+// 계약: 홀 목록 = 열린 우측 사이드바 + 보이는 모든 골 + `data-native-drag` 선언 영역. 갱신은
+// 사건 구동(레이아웃 커밋·창
 // 리사이즈·사이드바 변화)이고, 같은 값의 재발행은 침묵한다(멱등).
 import { moduleState } from "../../lib/moduleState";
 import { invoke } from "@tauri-apps/api/core";
@@ -31,10 +32,11 @@ export function collectHoles(doc: Document = document): Hole[] {
     if (r.right <= 0 || r.left >= (doc.defaultView?.innerWidth ?? 1e9)) return; // 파킹
     out.push({ x: r.left, y: r.top, w: r.width, h: r.height });
   };
-  const sb = doc.querySelector(".sidebar-right.open");
-  if (sb) push(sb);
-  // 골은 전부 — 네이티브 표면 위에 있든 아니든 홀이어야 한다(표면은 언제든 그 아래로 온다).
-  for (const g of doc.querySelectorAll(".pane-gutter")) push(g);
+  // 입력 브리지가 읽는 선언과 홀 수집기가 읽는 선언은 같아야 한다. 한쪽만 `[data-native-drag]`
+  // 를 알면 DOM 드래그바와 실제 네이티브 히트 홀이 서로 다른 영역이 된다.
+  for (const el of doc.querySelectorAll(".sidebar-right.open, .pane-gutter, [data-native-drag]")) {
+    push(el);
+  }
   return out;
 }
 

@@ -304,6 +304,10 @@ The line counts are that date's measurement. The command surface is not frozen i
 
 The deep coupling is not spread out; it is concentrated in the native surface layer — child webviews, the hit-test swizzle that lets a transparent DOM region pass the mouse to the native view beneath, and window capture that composites those native children. A framework without region-level hit-test passthrough cannot reproduce the hole contract as written, and a capture that only sees the page cannot drive the pixel oracles. That is the part to prototype first, not the part to assume.
 
+The DOM declarations read by Tauri's native-input bridge are exactly those read by its hole collector.
+Every visible rectangle selected by `.pane-gutter` or `[data-native-drag]` is sent through
+`webview_dom_holes`; a declared drag target and its native hit hole cannot use different selector sets.
+
 ## Spike shape
 
 The first version read: "run the browser only as an offscreen CEF sidecar (frame stream → `<img>`) and leave native child webviews out of the first pass."
