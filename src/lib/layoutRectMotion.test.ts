@@ -12,6 +12,9 @@
 // 그래서 둘 다다: 인라인이 **그 프레임**을 세우고, 애니메이션이 **그 뒤**를 지킨다. 하나만
 // 두면 각자의 실패 모드로 돌아간다 — 어느 쪽도 지우지 마라.
 
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createRectMotionTracker } from "./layoutRectMotion";
 import { setMotionDebug } from "./motionDebug";
@@ -106,5 +109,24 @@ describe("정지 중의 레이아웃 변화", () => {
 
     expect(el.style.width, "해제했는데 옛 rect 가 박힌 채다").toBe("");
     expect(el.style.height).toBe("");
+  });
+});
+
+describe("살아 있는 페이지는 보간하지 않는다 — 프레임워크와 무관하다", () => {
+  it("홀 제외를 프레임워크 축에 걸지 않는다", () => {
+    // 실사고 2026-08-02: 이 제외의 사유를 "자식 뷰 층이 있는 껍데기의 사정"으로만 보고
+    // engineProvision.nativeChildWebview 에 걸었다. 그러자 DOM 안 게스트(<webview>=OOPIF)가
+    // 보간 끝에 옛 픽셀을 남겨, 경계에 브라우저 한 줄이 머물고 제 판은 비었다.
+    //
+    // 사유는 둘이었고 그중 하나는 보편이다: 페이지는 매 프레임 재레이아웃·재합성할 수 없다.
+    // 그러므로 이 제외는 축을 묻지 않는다.
+    const src = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "layoutRectMotion.ts"),
+      "utf8",
+    )
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    expect(src).toMatch(/el\.classList\.contains\("hole"\)/);
+    expect(src, "홀 제외를 프레임워크 축에 걸지 마라").not.toMatch(/nativeChildWebview/);
   });
 });

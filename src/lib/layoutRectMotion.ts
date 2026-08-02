@@ -9,11 +9,14 @@
 //
 // 제외 규칙(각각 소유자가 있다):
 //  - 위상 중(isLayoutMotionActive): 드래그·활강은 기존 시스템이 이동을 소유한다.
-//  - 홀 요소(.hole): **자식 뷰 층이 있는 껍데기에서만** 제외한다. 그 층이 있으면 네이티브
-//    표면은 보간 프레임을 따라가지 못한다(visualEffectOwnership). 층이 없는 껍데기에서는
-//    콘텐츠가 DOM 안에 살아 슬롯과 함께 움직이므로 제외할 이유가 없다 — 제외하면 브라우저
-//    판만 홀로 순간이동해 다른 판과 어긋난다(한쪽 껍데기의 물리를 기본으로 두지 마라).
-import { engineProvision } from "../framework";
+//  - 홀 요소(.hole): **프레임워크와 무관하게** 제외한다. 살아 있는 콘텐츠 뷰가 든 슬롯은
+//    기하를 보간하지 않는다 — 보간은 프레임마다 크기·자리를 바꾸는데, 페이지는 그 프레임을
+//    따라 재레이아웃·재합성할 수 없다. 문서 밖 자식이면 아예 못 따라오고, DOM 안 게스트
+//    (<webview>=OOPIF)면 따라오되 **낡은 표면을 남긴다**.
+//
+//    이 제외의 사유를 내가 한 번 잘못 귀속했다(2026-08-02): 자식 뷰 층이 있는 껍데기만의
+//    사정으로 보고 축에 걸었더니, DOM 안 게스트가 보간 끝에 옛 픽셀을 남겨 경계에 브라우저
+//    한 줄이 머물고 제 판은 비었다(사용자 캡처). 사유가 둘이었고 그중 하나는 보편이다.
 import { LAYOUT_MOTION_MS, layoutMotionFacts } from "./layoutMotion";
 import {
   adoptLayoutAnimation,
@@ -157,9 +160,8 @@ export function createRectMotionTracker(): RectMotionTracker {
         // rect 차이가 화면폭급이고, 그걸 보간하면 슬롯이 화면을 가로질러 날아간다(실측
         // 여정 로그: 탭 교체 1회에 573→-1027 여정 발화 — 사용자가 본 "a·b 가 두 번
         // 교체되는" 모션의 정체). 보이는→보이는 레이아웃 변화만 보간한다.
-        if (!was) continue;
-        // 자식 뷰 층이 있을 때만 홀을 뺀다 — 없으면 콘텐츠가 DOM 안이라 같이 움직인다.
-        if (engineProvision.nativeChildWebview && el.classList.contains("hole")) continue;
+        // 살아 있는 페이지는 보간 프레임을 못 따라간다 — 프레임워크와 무관하다.
+        if (!was || el.classList.contains("hole")) continue;
         // 파킹 전환은 FLIP 대상이 아니다 — 판정은 프록시(가시성)가 아니라 좌표다: 파킹은
         // 항상 뷰포트 밖(-200vw)이므로, 출발·도착 어느 쪽이든 화면 밖이면 그것은 레이아웃
         // 모션이 아니라 파킹↔등장이다. (가시성 프록시는 스타일 반영 시차로 오판했다 —
