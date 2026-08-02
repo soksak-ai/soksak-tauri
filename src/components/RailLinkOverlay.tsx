@@ -1,5 +1,6 @@
-import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { RailRect } from "../lib/railPlacement";
+import { moduleState } from "../lib/moduleState";
 import {
   insetClippedEdges,
   splitRightEdgeRounded,
@@ -10,6 +11,16 @@ import {
 } from "../lib/railLinkShape";
 import { useSettings } from "../state/settings";
 import { useTheme } from "../state/theme";
+
+/**
+ * 마지막으로 잰 호스트 크기 — 다시 붙어도 0 프레임이 없도록 잇는 자리.
+ *
+ * 갈아끼우기 경계 밖에 둔다. 모듈 지역 변수로 두면 HMR 이 모듈을 새로 만들 때 값을 잃고,
+ * 그러면 다시 0 프레임이 생긴다 — 담는 자리와 "이미 쟀다"는 기억이 함께 살아야 한다.
+ */
+const lastSizeRef = moduleState("components/RailLinkOverlay#lastSize", () => ({
+  value: { width: 0, height: 0 },
+}));
 
 interface Size {
   width: number;
@@ -55,7 +66,28 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
   const railFill = useSettings((state) => state.railFill);
   const railSeamStyle = useSettings((state) => state.railSeamStyle);
   const hostRef = useRef<HTMLDivElement>(null);
-  const [size, setSize] = useState<Size>({ width: 0, height: 0 });
+  // 마지막으로 잰 크기에서 시작한다 — 0 에서 시작하면 그 프레임의 기하가 null 이라 보더가
+  // 사라졌다 돌아온다(실측 2026-08-02: 토글마다 `host=0` 프레임 둘이 기하까지 갔다).
+  // 이 컴포넌트는 토글 때 다시 붙으므로 상태로는 못 잇는다 — 값을 모듈에 둔다.
+  const [size, setSize] = useState<Size>(lastSizeRef.value);
+  /**
+   * 붙는 **그 순간** 잰다.
+   *
+   * 0 으로 시작해 effect 에서 채우면 그 사이에 `hostWidth <= 0` 인 프레임이 생기고, 그때
+   * 기하는 null 이라 보더가 통째로 사라진다 — 토글마다 한 번 깜빡이는 것이 그것이다(실측
+   * 2026-08-02: 토글 직후 `host=0` 프레임이 로그에 찍혔다).
+   *
+   * ref 콜백은 DOM 이 붙는 시점에 불린다. 거기서 재면 안 잰 프레임이 없다.
+   */
+  const attach = useCallback((node: HTMLDivElement | null) => {
+    hostRef.current = node;
+    if (!node) return;
+    const r = node.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) lastSizeRef.value = { width: r.width, height: r.height };
+    setSize((cur) =>
+      cur.width === r.width && cur.height === r.height ? cur : { width: r.width, height: r.height },
+    );
+  }, []);
   const adjacent = railLinkAdjacent(railStation, targetRect);
 
   useLayoutEffect(() => {
@@ -117,7 +149,7 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
 
   return (
     <div
-      ref={hostRef}
+      ref={attach}
       className={`rail-link-overlay relation-${railRelation} fill-${railFill}`}
       data-node={`relation/rail/${contentId}`}
       data-bound-tab={boundViewId}
