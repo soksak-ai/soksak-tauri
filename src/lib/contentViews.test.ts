@@ -181,7 +181,7 @@ describe("콘텐츠 뷰 호스트", () => {
     // 읽어도 통과하고, 그 통과는 살아있는 앱에서 주소창이 안 따라오는 것으로 나타난다.
     el.dispatchEvent(Object.assign(new Event("did-navigate"), { url: "https://x" }));
     expect(emitted.length, "다리가 안 걸렸다").toBeGreaterThan(before);
-    expect(emitted[emitted.length - 1]).toEqual(["browser-nav", { label: "b-1", url: "https://x" }]);
+    expect(emitted[emitted.length - 1]).toEqual(["content-view-navigated", { label: "b-1", url: "https://x" }]);
 
     await m.domHost.close("b-1");
     // 닫힌 뒤에도 뿌리면 구독자가 그 label 을 살아 있는 것으로 읽는다.

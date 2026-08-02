@@ -1,4 +1,13 @@
-//! 콘텐츠 뷰(브라우저) 사건의 **이름과 축** — 내는 쪽이 둘이라 한 자리에 둔다.
+//! 콘텐츠 뷰 사건의 **이름과 축** — 내는 쪽이 둘이라 한 자리에 둔다.
+//!
+//! 이름에 `browser` 가 없다. 코어가 소유한 실체는 **콘텐츠 뷰**다(`webview_open`·`navigate` 가
+//! 코어 명령이다). "브라우저"는 그 위에 사는 플러그인의 낱말이고, 코어가 그 낱말을 쓰면 특정
+//! 기능을 아는 것이다(C1). 여기 있는 사실들 — 주소가 바뀌었다·제목이 바뀌었다·적재 중이다 —
+//! 은 무엇이 담겼든 콘텐츠 뷰의 사실이지 브라우저의 사실이 아니다.
+//!
+//! 개명 2026-08-02: `browser-*` → `content-view-*`. 소비자는 짧은 키로 구독하므로(app.webview.on
+//! 의 "nav"·"loading"…) 이 개명은 플러그인에 닿지 않는다 — 와이어 이름은 이 자리와 발행자만
+//! 안다.
 //!
 //! 같은 사건을 두 곳이 낸다: 콘텐츠가 프로세스 밖에 사는 프레임워크는 Rust 가 emit 하고,
 //! DOM 안에 사는 프레임워크는 렌더러가 그 자리에서 뿌린다(`contentViewEvents.ts`). 구독자는
@@ -10,15 +19,15 @@
 //! 이었다. 오류는 아무 데도 안 났고, 주석과 검사가 오히려 그 틀린 기준을 지키고 있었다.
 
 /// 항행 — 주소가 바뀌었다.
-pub const NAV: &str = "browser-nav";
+pub const NAV: &str = "content-view-navigated";
 /// 제목이 바뀌었다.
-pub const TITLE: &str = "browser-title";
+pub const TITLE: &str = "content-view-title";
 /// 적재 시작/끝 — 뒤·앞 가능 여부를 함께 싣는다.
-pub const LOADING: &str = "browser-loading";
+pub const LOADING: &str = "content-view-loading";
 /// 마우스가 가리키는 링크 등 상태줄 사실.
-pub const STATUS: &str = "browser-status";
+pub const STATUS: &str = "content-view-status";
 /// 이 뷰가 열 수 없는 주소 — 밖으로 넘긴다.
-pub const OPEN_EXTERNAL: &str = "browser-open-external";
+pub const OPEN_EXTERNAL: &str = "content-view-open-external";
 
 /// `LOADING` 이 싣는 축. **카멜이다** — 소비자가 그렇게 읽는다.
 pub const LOADING_FIELDS: &[&str] = &["label", "loading", "canBack", "canForward"];
@@ -27,11 +36,16 @@ pub const LOADING_FIELDS: &[&str] = &["label", "loading", "canBack", "canForward
 mod tests {
     use super::*;
 
-    /// 이름은 접두사를 공유한다 — 구독자가 `browser-` 로 거른다.
+    /// 이름은 접두사를 공유한다 — 구독자가 `content-view-` 로 거른다.
+    ///
+    /// 접두사에 특정 기능의 낱말을 쓰지 않는다(C1). 옛 판은 `browser-` 였고, 그래서 코어가
+    /// 자기 위에 사는 플러그인의 이름을 알고 있었다 — 이 갈래의 사실들은 무엇이 담겼든
+    /// 콘텐츠 뷰의 사실이다.
     #[test]
     fn 모든_이름이_같은_갈래에_산다() {
-        for n in [NAV, TITLE, LOADING, STATUS, OPEN_EXTERNAL] {
-            assert!(n.starts_with("browser-"), "{n}");
+        for n in [NAV, TITLE, LOADING, STATUS, OPEN_EXTERNAL, ACTIVATED] {
+            assert!(n.starts_with("content-view-"), "{n}");
+            assert!(!n.contains("browser"), "코어가 플러그인의 낱말을 안다: {n}");
         }
     }
 

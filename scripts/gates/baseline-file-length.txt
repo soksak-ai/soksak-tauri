@@ -127,5 +127,7 @@ src/commands/catalog.ts 2814
 # 재입법 2026-08-01 1927 → 1950. 클립보드 감시 거절을 받는다. 못 서는 프레임워크의 거절은
 #   옳지만 부르는 쪽이 void 로 던져 둬서 부팅마다 처리 안 된 reject 가 터졌다 — 그 소음이
 #   진짜 오류를 덮는다. 삼키지 않고 사유를 원장에 남긴다(plugin.capability).
-src/plugins/api.ts 1956
+# 재입법 2026-08-02 1956 → 1962. 콘텐츠 뷰 사건 키에 축을 세운다(ContentViewEventKey).
+#   `string` 이면 오타가 컴파일을 통과해 "안 오는 사건"이 되고 그 부재는 오류로 안 보인다.
+src/plugins/api.ts 1962
 src/state/sessions.ts 2014

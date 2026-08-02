@@ -82,6 +82,9 @@ export type { Disposable } from "./hooks";
 
 // ── 의존성 주입 표면 ─────────────────────────────────────────────────────────
 
+/** 플러그인이 부르는 짧은 키. 와이어 이름은 deps 의 표가 안다(정본은 Rust webview_event.rs). */
+export type ContentViewEventKey = "nav" | "title" | "status" | "open-external" | "loading";
+
 export interface PluginApiDeps {
   appVersion: string;
   invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
@@ -110,10 +113,13 @@ export interface PluginApiDeps {
   getCwd: (paneId: string) => string | undefined;
   subscribeCwd: (paneId: string, cb: (cwd: string) => void) => () => void;
   subscribeCommandFinished: (paneId: string, cb: () => void) => () => void;
-  // 코어가 browser.rs 에서 emit 하는 webview 이벤트(`browser-<event>`) label 필터 구독 — app.webview.on.
+  // 콘텐츠 뷰 사건 label 필터 구독 — app.webview.on.
+  //
+  // `event` 는 **축이 있는 값**이다. `string` 으로 두면 오타가 컴파일을 통과해 "안 오는 사건"이
+  // 되고, 그 부재는 오류로 안 보인다. 표면 선언과 같은 축을 쓴다.
   subscribeWebview: (
     label: string,
-    event: string,
+    event: ContentViewEventKey,
     cb: (payload: Record<string, unknown>) => void,
   ) => () => void;
 }
@@ -487,7 +493,7 @@ export interface SoksakPluginApi {
     /** webview 이벤트 구독: "nav"({url})·"title"({title})·"status"·"open-external"({url}). 반환=해지. */
     on: (
       label: string,
-      event: "nav" | "title" | "status" | "open-external" | "loading",
+      event: ContentViewEventKey,
       cb: (payload: Record<string, unknown>) => void,
     ) => Disposable;
     /** 현재 살아있는 webview label 목록(prefix 필터). GC/정리용. */

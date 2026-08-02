@@ -17,12 +17,19 @@ import { emitLocal } from "../framework";
 /** 사건 이름 — 정본은 `crates/soksak-core/src/webview_event.rs` 다(webview-event-scan 게이트가
  *  두 값을 대조한다). TS 는 Rust 상수를 못 읽으므로 사본이고, 갈리면 이 프레임워크가 낸 사건은
  *  아무에게도 안 닿는다. */
-export const BROWSER_EVENT = {
-  nav: "browser-nav",
-  title: "browser-title",
-  loading: "browser-loading",
-  status: "browser-status",
-  openExternal: "browser-open-external",
+/**
+ * 콘텐츠 뷰 사건의 와이어 이름 — 정본은 `crates/soksak-core/src/webview_event.rs` 다.
+ *
+ * 이름에 `browser` 가 없다. 코어가 소유한 실체는 콘텐츠 뷰이고 "브라우저"는 플러그인의
+ * 낱말이다(C1). 플러그인은 짧은 키로 구독하므로(`app.webview.on(label, "nav", …)`) 이 표는
+ * 플러그인에 노출되지 않는다 — 조립하지 말고 **여기서 골라라**.
+ */
+export const CONTENT_VIEW_EVENT = {
+  nav: "content-view-navigated",
+  title: "content-view-title",
+  loading: "content-view-loading",
+  status: "content-view-status",
+  openExternal: "content-view-open-external",
   /** 사용자가 이 뷰를 눌렀다 — 칸 결합이 따라가야 할 유일한 사실(webview_event.rs ACTIVATED). */
   activated: "content-view-activated",
 } as const;
@@ -47,7 +54,7 @@ type Tag = HTMLElement & {
 function nav(label: string) {
   return (e: Event) => {
     const url = field<string>(e, "url");
-    if (typeof url === "string") emitLocal(BROWSER_EVENT.nav, { label, url });
+    if (typeof url === "string") emitLocal(CONTENT_VIEW_EVENT.nav, { label, url });
   };
 }
 
@@ -72,7 +79,7 @@ function ask(el: Tag, name: "canGoBack" | "canGoForward"): boolean {
 
 function loading(el: Tag, label: string, on: boolean) {
   return () =>
-    emitLocal(BROWSER_EVENT.loading, {
+    emitLocal(CONTENT_VIEW_EVENT.loading, {
       label,
       loading: on,
       // 뒤·앞 가능 여부는 적재 순간의 사실이다 — 원본이 그 셋을 함께 싣는다.
@@ -95,7 +102,7 @@ export function bridgeContentViewEvents(el: Tag, label: string): () => void {
       "page-title-updated",
       (e) => {
         const title = field<string>(e, "title");
-        if (typeof title === "string") emitLocal(BROWSER_EVENT.title, { label, title });
+        if (typeof title === "string") emitLocal(CONTENT_VIEW_EVENT.title, { label, title });
       },
     ],
     ["did-start-loading", loading(el, label, true)],
@@ -105,14 +112,14 @@ export function bridgeContentViewEvents(el: Tag, label: string): () => void {
       (e) => {
         // 링크를 벗어나면 빈 문자열이다 — 그것도 사건이라 걸러내지 않는다(상태표시줄이 비어야 한다).
         const url = field<string>(e, "url");
-        emitLocal(BROWSER_EVENT.status, { label, url: typeof url === "string" ? url : "" });
+        emitLocal(CONTENT_VIEW_EVENT.status, { label, url: typeof url === "string" ? url : "" });
       },
     ],
     [
       "new-window",
       (e) => {
         const url = field<string>(e, "url");
-        if (typeof url === "string") emitLocal(BROWSER_EVENT.openExternal, { label, url });
+        if (typeof url === "string") emitLocal(CONTENT_VIEW_EVENT.openExternal, { label, url });
       },
     ],
   ];
