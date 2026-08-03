@@ -31,6 +31,7 @@ interface SurfaceState {
   appliedVisible: boolean | null;
   boundsWrites: number;
   precommitting: boolean;
+  precommitTarget: string;
   lastRect: string;
   observer: ResizeObserver | null;
   requested: boolean;
@@ -70,6 +71,7 @@ function stateOf(label: string): SurfaceState {
       appliedVisible: null,
       boundsWrites: 0,
       precommitting: false,
+      precommitTarget: "",
       lastRect: "",
       observer: null,
       requested: false,
@@ -193,6 +195,17 @@ function appliedFrame(state: SurfaceState): SlotRect | null {
   return { x: parts[0], y: parts[1], w: parts[2], h: parts[3] };
 }
 
+/** 목표 DOM 도착은 native 쓰기가 아니라 precommit 잠금 해제 사건이다. */
+function settlePreparedFrame(state: SurfaceState): boolean {
+  if (!state.precommitting) return false;
+  const slot = findContentViewSlot(state.label, document);
+  if (slot && rectKey(slotRect(slot)) === state.precommitTarget) {
+    state.precommitting = false;
+    state.precommitTarget = "";
+  }
+  return true;
+}
+
 function slotViewId(slot: HTMLElement): string | null {
   const node = slot.closest<HTMLElement>('[data-node^="layout/tab/"]')?.dataset.node;
   return node?.startsWith("layout/tab/") ? node.slice("layout/tab/".length) : null;
@@ -229,7 +242,10 @@ export async function prepareNativeContentViewMove(
     cancel: () => {},
   };
 
-  for (const { state } of targets) state.precommitting = true;
+  for (const { state, rect } of targets) {
+    state.precommitting = true;
+    state.precommitTarget = rectKey(rect);
+  }
   try {
     await Promise.all(targets.map(async ({ state, rect }) => {
       if (state.draining) await state.draining;
@@ -238,7 +254,10 @@ export async function prepareNativeContentViewMove(
       state.lastRect = rectKey(rect);
     }));
   } catch (error) {
-    for (const { state } of targets) state.precommitting = false;
+    for (const { state } of targets) {
+      state.precommitting = false;
+      state.precommitTarget = "";
+    }
     throw error;
   }
 
@@ -249,22 +268,30 @@ export async function prepareNativeContentViewMove(
       if (closed) return;
       closed = true;
       await Promise.all(targets.map(async ({ state, before, rect }) => {
-        state.precommitting = false;
         const slot = findContentViewSlot(state.label, document);
         if (!slot) return;
         const actual = slotRect(slot);
-        if (rectKey(actual) === rectKey(rect)) return;
+        if (rectKey(actual) === rectKey(rect)) {
+          state.precommitting = false;
+          state.precommitTarget = "";
+          return;
+        }
         // React의 부모 layout effect는 자식 DOM 이동이 확정되기 전에 실행될 수 있다. 이때
         // 이전 DOM 좌표를 다시 쓰면 precommit을 스스로 되돌린다. 이전 좌표라면 mutation
         // 사건이 최종 DOM을 알릴 때까지 준비한 frame을 유지한다.
         if (rectKey(actual) === rectKey(before)) return;
+        state.precommitting = false;
+        state.precommitTarget = "";
         await requestSlotSync(state, true);
       }));
     },
     cancel: () => {
       if (closed) return;
       closed = true;
-      for (const { state } of targets) state.precommitting = false;
+      for (const { state } of targets) {
+        state.precommitting = false;
+        state.precommitTarget = "";
+      }
       for (const { state } of targets) {
         void requestSlotSync(state, true).catch(() => {});
       }
@@ -287,6 +314,9 @@ export function installNativeContentViewComposition(): void {
   );
   composition.mutationObserver = new MutationObserver(() => {
     for (const state of composition.surfaces.values()) {
+      // 준비된 표면은 DOM의 중간 프레임을 추종하지 않는다. 목표 좌표 도착 mutation은
+      // 잠금만 닫으며 이미 목표에 둔 native frame을 중복해서 쓰지 않는다.
+      if (settlePreparedFrame(state)) continue;
       void requestSlotSync(state).catch((error) => {
         console.error(`[content-view] DOM 커밋 추종 실패: ${state.label}`, error);
       });
