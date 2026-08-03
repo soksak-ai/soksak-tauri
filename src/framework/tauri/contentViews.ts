@@ -34,6 +34,7 @@ interface SurfaceState {
   force: boolean;
   draining: Promise<void> | null;
   waiters: { resolve: () => void; reject: (reason: unknown) => void }[];
+  openOptions: Record<string, unknown> | null;
 }
 
 export interface NativeContentViewCompositionFact {
@@ -67,6 +68,7 @@ function stateOf(label: string): SurfaceState {
       force: false,
       draining: null,
       waiters: [],
+      openOptions: null,
     };
     composition.surfaces.set(label, state);
   }
@@ -98,6 +100,37 @@ function observeSlot(state: SurfaceState, slot: HTMLElement): void {
     });
   });
   state.observer.observe(slot);
+}
+
+async function openTrackedSurface(
+  state: SurfaceState,
+  opts: Record<string, unknown>,
+): Promise<void> {
+  const slot = findContentViewSlot(state.label, document);
+  const rect = slot ? slotRect(slot) : null;
+  if (!rect && ![opts.x, opts.y, opts.w, opts.h].every((value) => typeof value === "number")) {
+    throw new Error(`콘텐츠 뷰 자리 또는 명시 bounds가 없습니다: ${state.label}`);
+  }
+  const desired = state.desiredVisible ?? (slot ? contentViewSlotVisible(slot) : true);
+  state.openOptions = { ...opts };
+  await call("webview_open", { label: state.label, ...opts, ...(rect ?? {}) });
+  state.opened = true;
+  state.desiredVisible = desired;
+  state.lastRect = rect ? rectKey(rect) : "";
+  if (slot) observeSlot(state, slot);
+  if (!desired) {
+    await call("webview_visible", { label: state.label, visible: false, focus: false });
+  }
+}
+
+/** 복귀 에지에서 registry가 아니라 실제 child 부착을 확인하고, 어댑터가 자기 표면을 복구한다. */
+async function restoreIfDetached(state: SurfaceState): Promise<void> {
+  if (!state.opened || !state.openOptions) return;
+  const alive = await call<boolean>("webview_alive", { label: state.label });
+  if (alive !== false) return;
+  state.opened = false;
+  state.lastRect = "";
+  await openTrackedSurface(state, state.openOptions);
 }
 
 /**
@@ -156,6 +189,7 @@ async function setVeil(label: string, veiled: boolean, hidden: boolean): Promise
     return;
   }
   // 좌표를 먼저 확정하고 그 뒤에만 드러낸다. 역순이면 옛 자리 한 프레임이 보인다.
+  await restoreIfDetached(state);
   await requestSlotSync(state, true);
   await call("webview_visible", {
     label: state.label,
@@ -204,18 +238,7 @@ export function nativeContentViewCompositionStatus(): NativeContentViewCompositi
 export const nativeHost: ContentViewHost = {
   async open(label, opts) {
     const state = stateOf(label);
-    const slot = findContentViewSlot(label, document);
-    const rect = slot ? slotRect(slot) : null;
-    if (!rect && ![opts.x, opts.y, opts.w, opts.h].every((value) => typeof value === "number")) {
-      throw new Error(`콘텐츠 뷰 자리 또는 명시 bounds가 없습니다: ${label}`);
-    }
-    const desired = state.desiredVisible ?? (slot ? contentViewSlotVisible(slot) : true);
-    await call("webview_open", { label, ...opts, ...(rect ?? {}) });
-    state.opened = true;
-    state.desiredVisible = desired;
-    state.lastRect = rect ? rectKey(rect) : "";
-    if (slot) observeSlot(state, slot);
-    if (!desired) await call("webview_visible", { label, visible: false, focus: false });
+    await openTrackedSurface(state, opts);
   },
   async close(label) {
     const state = composition.surfaces.get(label);
@@ -230,6 +253,8 @@ export const nativeHost: ContentViewHost = {
   alive: (label) => call("webview_alive", { label }),
   navigate: (label, url) => {
     invalidateSlotSnapshot(label);
+    const state = composition.surfaces.get(label);
+    if (state?.openOptions) state.openOptions = { ...state.openOptions, url };
     return call("webview_navigate", { label, url });
   },
   async bounds(label, x, y, w, h) {
@@ -248,6 +273,7 @@ export const nativeHost: ContentViewHost = {
       return;
     }
     if (state.veiled) return;
+    await restoreIfDetached(state);
     await requestSlotSync(state);
     await call("webview_visible", { label, visible: true, focus });
   },

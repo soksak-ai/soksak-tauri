@@ -32,7 +32,8 @@ class ResizeObserverMock {
 
 async function load() {
   vi.resetModules();
-  invoke.mockClear();
+  invoke.mockReset();
+  invoke.mockResolvedValue(undefined);
   const module = await import("./contentViews");
   module.__resetNativeContentViewCompositionForTest();
   return module;
@@ -158,8 +159,32 @@ describe("네이티브 자식 뷰 구현", () => {
 
     listeners.get("content-view.veiled")?.({ label: "b--v1", veiled: false, hidden: false });
     await vi.waitFor(() => expect(invoke.mock.calls).toEqual([
+      ["webview_alive", { label: "b--v1" }],
       ["webview_bounds", { label: "b--v1", x: 120, y: 20, w: 300, h: 200 }],
       ["webview_visible", { label: "b--v1", visible: true, focus: false }],
     ]));
+  });
+
+  it("복귀 에지에서 떨어진 child를 플러그인 재마운트 없이 어댑터가 복구한다", async () => {
+    const slot = document.createElement("div");
+    slot.setAttribute("data-content-view-body", "b-recover");
+    slot.getBoundingClientRect = () => ({
+      x: 10, y: 20, left: 10, top: 20, right: 310, bottom: 220, width: 300, height: 200,
+    }) as DOMRect;
+    document.body.appendChild(slot);
+    const { nativeHost } = await load();
+    await nativeHost.open("b-recover", { url: "https://first" });
+    await nativeHost.navigate("b-recover", "https://current");
+    invoke.mockClear();
+    invoke.mockImplementation(async (cmd: string) => cmd === "webview_alive" ? false : undefined);
+
+    await nativeHost.visible("b-recover", true, false);
+    expect(invoke.mock.calls).toEqual([
+      ["webview_alive", { label: "b-recover" }],
+      ["webview_open", {
+        label: "b-recover", url: "https://current", x: 10, y: 20, w: 300, h: 200,
+      }],
+      ["webview_visible", { label: "b-recover", visible: true, focus: false }],
+    ]);
   });
 });
