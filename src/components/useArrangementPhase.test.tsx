@@ -187,6 +187,37 @@ describe("useArrangementPhase", () => {
     expect(cancel).not.toHaveBeenCalled();
   });
 
+  it("glide도 native commit 응답 전에는 DOM 이동을 공개하지 않는다", async () => {
+    const at = solve(twoColumns, "a");
+    const to = solve(twoColumns, "b");
+    let armNative!: () => void;
+    const commit = vi.fn(
+      () => new Promise<void>((resolve) => { armNative = resolve; }),
+    );
+    const prepareTravel = vi.fn(async (): Promise<PreparedLayoutTransition> => ({
+      mode: "glide",
+      commit,
+      cancel: vi.fn(),
+    }));
+    act(() => root.render(
+      <Probe arrangement={at} scopeId={scopeOf(at)} prepareTravel={prepareTravel} />,
+    ));
+    act(() => root.render(
+      <Probe arrangement={to} scopeId={scopeOf(to)} prepareTravel={prepareTravel} />,
+    ));
+
+    await act(async () => {});
+    expect(commit).toHaveBeenCalledTimes(1);
+    expect(el().dataset.preparing).toBe("1");
+    expect(el().dataset.traveling).toBe("0");
+    expect(el().dataset.content).toBe("stale");
+
+    await act(async () => armNative());
+    expect(el().dataset.preparing).toBe("0");
+    expect(el().dataset.traveling).toBe("1");
+    expect(el().dataset.content).toBe("live");
+  });
+
   it("세대(레일 key)는 도착이 상주가 되는 순간에만 전진한다 — 닫히는 레일은 서 있던 그것이다", () => {
     // 세대는 레일 레이어의 React key 다. 위상 시작에 전진시키면 출발선 레이어도 새 key 를 받아
     // **서 있던 사이드바가 파괴되고 빠질 자리에 새것이 끼워진다**(그것이 닫힌다). 사용자 규정:
