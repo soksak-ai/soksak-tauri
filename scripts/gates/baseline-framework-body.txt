@@ -85,6 +85,6 @@ frameworks/tauri/src/watcher.rs 15
 # 재입법 2026-08-02 1760 → 1763. 같은 축(inPage) — 이 프레임워크는 문서 커밋에서만 낸다.
 frameworks/tauri/src/webview.rs 1755
 frameworks/tauri/src/webview_health.rs 572
-frameworks/tauri/src/window.rs 387
+frameworks/tauri/src/window.rs 285
 frameworks/tauri/src/window_oracle.rs 102
 frameworks/tauri/src/ws.rs 47
