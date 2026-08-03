@@ -106,7 +106,7 @@ describe("layoutMotion — 로컬 리스너 kinds 전달", () => {
 });
 
 describe("layoutMotion — 채널은 사실만, 범위는 로컬 소비자에게", () => {
-  it("플러그인 채널은 범위를 싣지 않는다 — 대상 통지는 view.veiled 가 정확히 한다", () => {
+  it("플러그인 채널은 범위를 싣지 않는다 — 대상 통지는 content-view.veiled 가 정확히 한다", () => {
     beginLayoutMotion("move", ["vA"]);
     expect(payloads[payloads.length - 1]).toEqual({
       active: true,

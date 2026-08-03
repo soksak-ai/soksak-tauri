@@ -86,7 +86,7 @@ export interface PluginEventMap {
   // 표면 릴레이 — veiled = 따라가지 마라(위상 중 bounds 쓰기 금지), hidden = 지금 감춰라.
   // 둘은 다른 에지다: 추종 정지는 위상 시작 즉시, 감춤은 스탠드인 페인트가 커밋된 뒤에 온다
   // (반대 순서면 투명 홀이 배경을 노출한다 — NATIVE-SURFACES §4.6).
-  "view.veiled": { viewId: string; veiled: boolean; hidden: boolean };
+  "content-view.veiled": { label: string; veiled: boolean; hidden: boolean };
   // webview 건강(서킷 브레이커) 전이 — 코어(webview_health.rs)가 렌더러 프로세스 종료를
   // 감지·복구하며 그 창에 emit_to 한다. state: recovering=자동 복구 예약(attempt 동반),
   // open=상한 소진(자동 복구 중단 — webview.recover 로 수동 복구), closed=정상 복귀.
@@ -168,7 +168,7 @@ export const PLUGIN_EVENTS: readonly (keyof PluginEventMap)[] = [
   "layout.reflow",
   "window.zoom",
   "view.parked",
-  "view.veiled",
+  "content-view.veiled",
   "webview.health",
   "bookmarks.changed",
   "command.started",

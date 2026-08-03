@@ -81,7 +81,7 @@ function syncEmit(): void {
   emitted.lastEmittedKey = key;
 
   // 플러그인 채널은 사실만 싣는다(active·kinds). 어느 표면이 이 위상의 대상인지는 브로드캐스트
-  // 로 추측할 일이 아니다 — 코어가 동결한 슬롯에 view.veiled 로 정확히 통지한다(§4.6).
+  // 로 추측할 일이 아니다 — 코어가 동결한 슬롯에 content-view.veiled 로 정확히 통지한다(§4.6).
   emitPluginEvent("layout.resize-gesture", { active, kinds });
   // 네이티브 쪽 릴레이는 여기 없다 — 문서 밖 표면을 가진 프레임워크만 필요로 하고, 그
   // 프레임워크가 아래 로컬 리스너로 스스로 건다(framework/tauri/install.ts).

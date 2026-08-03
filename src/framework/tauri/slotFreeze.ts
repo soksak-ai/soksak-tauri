@@ -4,8 +4,8 @@
 // 동안 표면이 DOM(스탠드인)이면 기하 일치는 정의상 성립한다.
 //
 // 소유권: 재료 전부가 코어 것이다 — 홀-슬롯(transparent 선언의 DOM 표식), 모션 위상(kind 축),
-// 캡처(webview-capture), 슬롯 DOM. 표면 가시성만 소유자가 다르므로 view.veiled 이벤트로
-// 릴레이한다(view.parked 와 동형 — 사이드카 표면 플러그인의 유일한 의무).
+// 캡처(webview-capture), 슬롯 DOM. 표면 가시성만 소유자가 다르므로 공개 content-view label의
+// content-view.veiled 이벤트로 릴레이한다.
 //
 // 불변 계약(§4.6):
 //  - move 만, resize 는 절대 금지(변하는 크기 밑 정지 사진 = 콘텐츠 박제).
@@ -15,6 +15,7 @@
 //  - bounds 커밋은 이 계층과 무관하게 계속 흐른다(동결은 표현이지 정책이 아니다).
 import { HOLE_SELECTOR } from "./railHoleClip";
 import { surfaceRectOf } from "../../lib/surfaceRect";
+import { CONTENT_VIEW_BODY } from "../../lib/contentViews";
 
 interface SlotSnap {
   img: HTMLImageElement;
@@ -36,11 +37,11 @@ export interface SlotFreezeDeps {
   /** 창 좌표 rect(CSS px)를 PNG data URL 로 캡처한다. */
   capture: (rect: { x: number; y: number; w: number; h: number }) => Promise<string>;
   /**
-   * 표면 릴레이 — view.veiled { viewId, veiled, hidden } 발화(표면 소유자가 소비).
+   * 표면 릴레이 — content-view.veiled { label, veiled, hidden } 발화.
    * veiled = 따라가지 마라(위상 중 쓰기 금지). hidden = 지금 감춰라.
    * 둘은 다른 에지다: 추종 정지는 위상 시작 즉시, 감춤은 스탠드인 페인트가 커밋된 뒤(§5-2).
    */
-  emitVeil: (viewId: string, veiled: boolean, hidden: boolean) => void;
+  emitVeil: (label: string, veiled: boolean, hidden: boolean) => void;
   /** 착지 쓰기가 오지 않을 때 스탠드인을 걷는 상한(ms). 기본 400 — 340ms 주행보다 길다. */
   landingTimeoutMs?: number;
   /** 정착 스냅 신선도 상한(ms). 기본 120초. */
@@ -61,12 +62,12 @@ export interface SlotFreeze {
    */
   canFreezeAll(viewIds: readonly string[]): boolean;
   /** 내용이 바뀐 뷰의 스냅을 버린다(항행 등) — 낡은 프레임을 세우지 않기 위한 유일한 축. */
-  invalidate(viewId: string): void;
+  invalidate(label: string): void;
   /**
    * 표면 소유자가 실제로 착지 좌표를 쓴 사실. 코어가 자기 쓰기 경로(webview.bounds)에서
    * 관측한다 — 스탠드인은 이 사실 위에서 물러난다(시간 추측 금지).
    */
-  noteSurfaceWrite(viewId: string): void;
+  noteSurfaceWrite(label: string): void;
   /** 모션 신호 수신부 — onLayoutMotion (active, kinds, scope) 를 그대로 넘긴다.
    *  scope: 이 위상이 움직이는 viewId 집합(null=전역). 범위 밖 슬롯은 동결하지 않는다 —
    *  관련 없는 표면이 남의 스왑에 베일 펄스를 맞지 않는다(라이브 유지). */
@@ -82,6 +83,14 @@ function viewIdOf(slot: HTMLElement): string | null {
   if (!node || !node.startsWith(prefix)) return null;
   const id = node.slice(prefix.length);
   return id.length > 0 ? id : null;
+}
+
+/** 슬롯이 공개 선언한 content-view identity. 내부 클래스나 플러그인 label 문법은 읽지 않는다. */
+function contentViewLabelOf(slot: HTMLElement): string | null {
+  const body = slot.hasAttribute(CONTENT_VIEW_BODY)
+    ? slot
+    : slot.querySelector<HTMLElement>(`[${CONTENT_VIEW_BODY}]`);
+  return body?.getAttribute(CONTENT_VIEW_BODY) || null;
 }
 
 /**
@@ -115,9 +124,10 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
   const makeImage = deps.imageFactory ?? (() => document.createElement("img"));
   const snaps = new WeakMap<HTMLElement, SlotSnap>();
   const inFlight = new WeakSet<HTMLElement>();
-  const frozen = new Map<HTMLElement, { img: HTMLImageElement; viewId: string }>();
+  const frozen = new Map<HTMLElement, { img: HTMLImageElement; viewId: string; label: string }>();
   // viewId → 그 뷰의 홀 슬롯(스냅 조회·무효화용). 슬롯 엘리먼트는 뷰가 살아 있는 동안 안정적이다.
   const byView = new Map<string, HTMLElement>();
+  const byLabel = new Map<string, HTMLElement>();
   // 해동 뒤 착지 쓰기를 기다리는 스탠드인 — 소유자가 실제로 쓰면 그 프레임에 걷는다.
   const awaiting = new Map<string, { img: HTMLImageElement; timer: number }>();
 
@@ -126,7 +136,8 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
     if (!root) return;
     for (const slot of holeSlots(root)) {
       const viewId = viewIdOf(slot);
-      if (!viewId) continue;
+      const label = contentViewLabelOf(slot);
+      if (!viewId || !label) continue;
       // 시도 계수 — "정착 에지가 이 슬롯을 보았다"는 사실. 이것이 늘지 않으면 에지가 오지 않은
       // 것이고, 늘면서 snapAt 이 그대로면 아래 건너뛰기 중 하나에 걸린 것이다. 둘을 가르지
       // 못하면 "왜 스냅이 낡았는가"를 추측하게 된다.
@@ -170,6 +181,7 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
           await img.decode();
           snaps.set(slot, { img, t: now(), w, h, dim: slot.dataset.dim ?? "clear" });
           byView.set(viewId, slot);
+          byLabel.set(label, slot);
           slot.dataset.freezeSnapAt = String(Math.round(now())); // 관측면(ui.hit)
           // 구운 크기도 관측면이다 — 스냅의 존재만으로는 아무것도 보장되지 않는다. 분할 전
           // 크기의 스냅이 남아 있으면 활강 전제가 매번 거부되고, 밖에서는 그 이유를 알 수 없다.
@@ -190,7 +202,8 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
   const freezeSlot = (slot: HTMLElement): void => {
     if (frozen.has(slot)) return;
     const viewId = viewIdOf(slot);
-    if (!viewId) return;
+    const label = contentViewLabelOf(slot);
+    if (!viewId || !label) return;
     const snap = snaps.get(slot);
     if (!snap || !fresh(snap)) return;
     // 흐림이 달라졌으면 그 사진은 이 슬롯의 그림이 아니다 — 베일이 사진에 들어 있으므로
@@ -230,7 +243,7 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
       `position:absolute;left:${cssPx(surface.x - r.left)};top:${cssPx(surface.y - r.top)};` +
       `width:${snap.w}px;height:${snap.h}px;pointer-events:none;z-index:5;`;
     slot.appendChild(img);
-    frozen.set(slot, { img, viewId });
+    frozen.set(slot, { img, viewId, label });
     slot.dataset.freeze = "1"; // 관측면(ui.hit)
     // veil = "스탠드인이 섰다: 표면을 감추고, 따라가지 말고, 해동 에지에 정확히 한 번 착지하라."
     //
@@ -244,21 +257,21 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
     // 이미 디코드돼 있으므로(§5-3) append 즉시 페인트되고, 이중 rAF 뒤면 그 페인트는 커밋됐다.
     // ① 즉시: 따라가지 마라. 늦추면 그 사이 추종 루프가 최종 좌표로 한 번 써서 표면이 t0 에
     //    목적지로 텔레포트한다(계수 게이트가 잡는다).
-    deps.emitVeil(viewId, true, false);
+    deps.emitVeil(label, true, false);
     // ② 페인트 커밋 뒤: 감춰라. 반대 순서는 투명 홀이 1~2프레임 배경을 노출한다.
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
         if (frozen.get(slot)?.img !== img) return; // 그새 해동됨 — 감추지 않는다
-        deps.emitVeil(viewId, true, true);
+        deps.emitVeil(label, true, true);
       }),
     );
   };
 
   /** 스탠드인 철수 — 착지가 확정된 뒤에만. 남은 타이머는 정리한다. */
-  const withdraw = (viewId: string): void => {
-    const pending = awaiting.get(viewId);
+  const withdraw = (label: string): void => {
+    const pending = awaiting.get(label);
     if (!pending) return;
-    awaiting.delete(viewId);
+    awaiting.delete(label);
     window.clearTimeout(pending.timer);
     pending.img.remove();
   };
@@ -278,9 +291,9 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
     // 해동 = 착지 신호. 소유자가 이 에지에 정확히 한 번 최종 rect 로 쓴다. 스탠드인은 그 쓰기가
     // 실제로 도착한 뒤 물러난다 — 시간으로 추측하면(옛 90ms 고정) 느린 사이드카 경로에서 홀이
     // 표면보다 먼저 열려 한 프레임이 빈다. 상한은 소유자가 끝내 쓰지 않는 경우의 바닥일 뿐이다.
-    deps.emitVeil(cur.viewId, false, false);
-    const timer = window.setTimeout(() => withdraw(cur.viewId), landingTimeout);
-    awaiting.set(cur.viewId, { img: cur.img, timer });
+    deps.emitVeil(cur.label, false, false);
+    const timer = window.setTimeout(() => withdraw(cur.label), landingTimeout);
+    awaiting.set(cur.label, { img: cur.img, timer });
   };
 
   return {
@@ -327,14 +340,14 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
       }
       return true;
     },
-    invalidate(viewId) {
-      const slot = byView.get(viewId);
+    invalidate(label) {
+      const slot = byLabel.get(label);
       if (!slot) return;
       snaps.delete(slot);
       delete slot.dataset.freezeSnapAt;
       delete slot.dataset.freezeSnapSize;
     },
-    noteSurfaceWrite(viewId) {
+    noteSurfaceWrite(label) {
       // **쓴 것과 그려진 것은 다른 사실이다.** 이 신호는 "표면 소유자가 좌표를 쓰고 다시
       // 보이게 했다"까지다 — 그 표면이 새 자리에 실제로 그려졌다는 말이 아니다. 여기서 곧장
       // 사진을 걷으면 렌더러는 다음 페인트에 홀을 열어 버리고, 표면의 표시가 그 페인트보다
@@ -347,13 +360,13 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
       //
       // 남은 불확실: 진짜 사실은 "표면이 새 rect 로 한 프레임을 제시했다"이고 그건 소유자만
       // 안다. 여기서 세는 것은 렌더러의 프레임이다 — 그 ack 가 생기면 이 자리가 그것을 받는다.
-      const pending = awaiting.get(viewId);
+      const pending = awaiting.get(label);
       if (!pending) return;
       const img = pending.img;
       requestAnimationFrame(() =>
         requestAnimationFrame(() => {
-          if (awaiting.get(viewId)?.img !== img) return; // 그새 다시 얼었다 — 남의 사진이다
-          withdraw(viewId);
+          if (awaiting.get(label)?.img !== img) return; // 그새 다시 얼었다 — 남의 사진이다
+          withdraw(label);
         }),
       );
     },
@@ -387,14 +400,14 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
       }
     },
     dispose() {
-      for (const viewId of Array.from(awaiting.keys())) withdraw(viewId);
+      for (const label of Array.from(awaiting.keys())) withdraw(label);
       byView.clear();
       for (const [slot, cur] of frozen) {
         cur.img.remove();
         slot.dataset.freeze = "0";
         // 회수도 착지 에지다 — veil 을 켠 채 사라지면 소유자는 "따라가지 마라"를 영구히
         // 지키고, 그 표면은 이후 어떤 이동에도 bounds 를 보내지 않는다(정지 좌초).
-        deps.emitVeil(cur.viewId, false, false);
+        deps.emitVeil(cur.label, false, false);
       }
       frozen.clear();
     },

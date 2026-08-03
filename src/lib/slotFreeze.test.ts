@@ -13,6 +13,9 @@ function makeSlot(viewId: string): HTMLElement {
   el.className = "tab-body";
   el.dataset.tauriHole = "content";
   el.setAttribute("data-node", `layout/tab/${viewId}`);
+  const body = document.createElement("div");
+  body.setAttribute("data-content-view-body", `cv-${viewId}`);
+  el.appendChild(body);
   document.body.appendChild(el);
   // jsdom 은 레이아웃이 없다 — 가시 슬롯 rect 를 명시 주입한다.
   el.getBoundingClientRect = () =>
@@ -80,10 +83,10 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
     // 순서 계약(§5-2): 스탠드인 페인트가 커밋되기 전에는 표면을 건드리지 않는다 — 반대 순서는
     // 투명 홀이 배경을 노출한다. 이중 rAF 뒤에 비로소 veil(true).
     // 추종 정지는 즉시, 감춤은 페인트 커밋 뒤 — 다른 에지다.
-    expect(veils).toEqual([["v1", true, false]]);
+    expect(veils).toEqual([["cv-v1", true, false]]);
     flushRaf();
     flushRaf();
-    expect(veils).toEqual([["v1", true, false], ["v1", true, true]]);
+    expect(veils).toEqual([["cv-v1", true, false], ["cv-v1", true, true]]);
   });
 
   it("스탠드인은 표면이 서 있던 정수 rect 에 1:1 로 선다(분수 슬롯에서도 늘리지 않는다)", async () => {
@@ -146,7 +149,7 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
     await microtasks();
     parked.style.visibility = "hidden";
     // 파킹된 슬롯의 스냅이 낡았더라도 전제를 깨지 않는다 — 그 표면은 보이지 않는다.
-    f.invalidate("v2");
+    f.invalidate("cv-v2");
     expect(f.canFreezeAll(["v1", "v2"])).toBe(true);
 
     // 그리고 파킹된 슬롯은 동결 대상도 아니다. 동결하면 해동 에지에 veil(false) 가 가고,
@@ -155,7 +158,7 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
     f.onMotion(true, ["move"]);
     expect(shown.querySelector("img.slot-freeze-frame")).not.toBeNull();
     expect(parked.querySelector("img.slot-freeze-frame")).toBeNull();
-    expect(veils.map((v) => v[0])).toEqual(["v1"]);
+    expect(veils.map((v) => v[0])).toEqual(["cv-v1"]);
   });
 
   it("크기가 어긋난 스냅은 버려진다 — 낡은 크기가 활강을 영구히 막지 못한다", async () => {
@@ -218,9 +221,9 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
     flushRaf();
     f.onMotion(false, []);
     expect(veils).toEqual([
-      ["v1", true, false],
-      ["v1", true, true],
-      ["v1", false, false],
+      ["cv-v1", true, false],
+      ["cv-v1", true, true],
+      ["cv-v1", false, false],
     ]);
     // 시간이 흘러도 착지가 오지 않았으면 스탠드인은 서 있는다 — 홀이 표면보다 먼저 열리면
     // 그 프레임은 빈 구멍이다(느린 사이드카 경로의 실제 위험).
@@ -234,7 +237,7 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
     //
     // 동결 에지는 이미 같은 규율을 지킨다: 사진을 붙이고 페인트가 커밋된 뒤 표면을 숨긴다.
     // 해동은 그 거울이다.
-    f.noteSurfaceWrite("v1");
+    f.noteSurfaceWrite("cv-v1");
     expect(slot.querySelector("img"), "쓰기 신호만으로 걷으면 안 된다").not.toBeNull();
     flushRaf();
     expect(slot.querySelector("img"), "한 프레임으로는 부족하다 — 커밋을 확인한다").not.toBeNull();
@@ -263,7 +266,7 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
     // 둘 다 스냅이 구워졌다.
     expect(f.canFreezeAll(["vA", "vB"])).toBe(true);
     // 항행 등 내용 변화로 하나가 버려지면 그 위상은 활강 대상이 아니다(스냅이 정답).
-    f.invalidate("vB");
+    f.invalidate("cv-vB");
     expect(f.canFreezeAll(["vA", "vB"])).toBe(false);
     expect(f.canFreezeAll(["vA"])).toBe(true);
     // 홀이 아닌 뷰(스냅 없음·슬롯 없음)는 스탠드인이 필요 없다 — 거절 사유가 아니다.
@@ -297,9 +300,9 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
     f.onMotion(true, ["move", "resize"]);
     // resize 가 끼면 즉시 해동 — 변하는 크기 밑 정지 사진은 박제다(§4.6-1). 착지 신호도 간다.
     expect(veils).toEqual([
-      ["v1", true, false],
-      ["v1", true, true],
-      ["v1", false, false],
+      ["cv-v1", true, false],
+      ["cv-v1", true, true],
+      ["cv-v1", false, false],
     ]);
     expect(slot.dataset.freeze).toBe("0");
   });
@@ -314,12 +317,12 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
       f.onMotion(true, ["move"]);
       flushRaf();
       flushRaf();
-      expect(veils).toEqual([["v1", true, false], ["v1", true, true]]);
+      expect(veils).toEqual([["cv-v1", true, false], ["cv-v1", true, true]]);
       f.dispose();
       expect(veils).toEqual([
-        ["v1", true, false],
-        ["v1", true, true],
-        ["v1", false, false],
+        ["cv-v1", true, false],
+        ["cv-v1", true, true],
+        ["cv-v1", false, false],
       ]);
       expect(slot.querySelector("img")).toBeNull();
     });

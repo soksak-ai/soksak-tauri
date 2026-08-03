@@ -66,16 +66,16 @@ export function canGlideViews(viewIds: readonly string[]): boolean {
 }
 
 /** 내용이 바뀐 뷰의 스냅을 버린다(항행 등) — 낡은 프레임을 세우지 않는 유일한 축. */
-export function invalidateSlotSnapshot(viewId: string): void {
-  installed.host?.invalidate(viewId);
+export function invalidateSlotSnapshot(label: string): void {
+  installed.host?.invalidate(label);
 }
 
 /**
  * 표면 소유자가 착지 좌표를 실제로 썼다는 사실. 코어가 자기 쓰기 경로(webview.bounds)에서
  * 관측해 넘긴다 — 스탠드인은 이 사실 위에서 물러난다(시간 추측 금지).
  */
-export function noteSurfaceWrite(viewId: string): void {
-  installed.host?.noteSurfaceWrite(viewId);
+export function noteSurfaceWrite(label: string): void {
+  installed.host?.noteSurfaceWrite(label);
 }
 
 export function disposeSlotFreezeHost(): void {

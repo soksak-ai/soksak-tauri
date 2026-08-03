@@ -2,24 +2,56 @@
 //
 // 이름과 인자를 번역하지 않는 것이 이 구현의 전부다. 번역하면 새 드리프트 면이 생기고,
 // 그 드리프트는 "이 프레임워크에서만 안 되는 기능"으로 나타난다.
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const invoke = vi.fn(async (_cmd: string, _args?: unknown) => undefined as unknown);
+const listeners = new Map<string, (payload: Record<string, unknown>) => void>();
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (cmd: string, args?: unknown) => invoke(cmd, args),
 }));
+vi.mock("../../plugins/hooks", () => ({
+  onPluginEvent: (event: string, fn: (payload: Record<string, unknown>) => void) => {
+    listeners.set(event, fn);
+    return { dispose: () => listeners.delete(event) };
+  },
+}));
+
+class ResizeObserverMock {
+  static instances: ResizeObserverMock[] = [];
+  readonly callback: ResizeObserverCallback;
+  readonly observe = vi.fn();
+  readonly disconnect = vi.fn();
+  constructor(callback: ResizeObserverCallback) {
+    this.callback = callback;
+    ResizeObserverMock.instances.push(this);
+  }
+  fire() {
+    this.callback([], this as unknown as ResizeObserver);
+  }
+}
 
 async function load() {
   vi.resetModules();
   invoke.mockClear();
-  return import("./contentViews");
+  const module = await import("./contentViews");
+  module.__resetNativeContentViewCompositionForTest();
+  return module;
 }
 
 describe("네이티브 자식 뷰 구현", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    listeners.clear();
+    ResizeObserverMock.instances = [];
+    vi.stubGlobal("ResizeObserver", ResizeObserverMock);
+  });
+
   it("이름과 인자를 번역하지 않는다", async () => {
     const { nativeHost } = await load();
-    await nativeHost.open("b-1", { url: "https://x" });
-    expect(invoke).toHaveBeenCalledWith("webview_open", { label: "b-1", url: "https://x" });
+    await nativeHost.open("b-1", { url: "https://x", x: -20000, y: -20000, w: 1, h: 1 });
+    expect(invoke).toHaveBeenCalledWith("webview_open", {
+      label: "b-1", url: "https://x", x: -20000, y: -20000, w: 1, h: 1,
+    });
     await nativeHost.bounds("b-1", 1, 2, 3, 4);
     expect(invoke).toHaveBeenCalledWith("webview_bounds", { label: "b-1", x: 1, y: 2, w: 3, h: 4 });
   });
@@ -39,5 +71,95 @@ describe("네이티브 자식 뷰 구현", () => {
       phase: "document-start",
     });
     expect(() => off()).not.toThrow();
+  });
+
+  it("공개 슬롯의 현재 rect로 열고 사건·ResizeObserver로만 추종한다", async () => {
+    const slot = document.createElement("div");
+    slot.setAttribute("data-content-view-body", "b-1");
+    let rect = { left: 10.2, top: 20.4, right: 310.8, bottom: 220.9 };
+    slot.getBoundingClientRect = () => ({
+      ...rect,
+      x: rect.left,
+      y: rect.top,
+      width: rect.right - rect.left,
+      height: rect.bottom - rect.top,
+    }) as DOMRect;
+    document.body.appendChild(slot);
+
+    const {
+      installNativeContentViewComposition,
+      nativeContentViewCompositionStatus,
+      nativeHost,
+    } = await load();
+    installNativeContentViewComposition();
+    await nativeHost.open("b-1", { url: "https://x" });
+    expect(invoke).toHaveBeenCalledWith("webview_open", {
+      label: "b-1",
+      url: "https://x",
+      x: 11,
+      y: 21,
+      w: 299,
+      h: 199,
+    });
+    expect(nativeContentViewCompositionStatus()).toEqual([
+      expect.objectContaining({
+        label: "b-1",
+        opened: true,
+        slotPresent: true,
+        slotRect: { x: 11, y: 21, w: 299, h: 199 },
+        appliedRect: "11,21,299,199",
+        syncPending: false,
+      }),
+    ]);
+
+    invoke.mockClear();
+    rect = { left: 40, top: 50, right: 440, bottom: 350 };
+    listeners.get("layout.reflow")?.({ activeSpaceId: "c1" });
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("webview_bounds", {
+        label: "b-1", x: 40, y: 50, w: 400, h: 300,
+      });
+    });
+
+    invoke.mockClear();
+    rect = { left: 41, top: 50, right: 441, bottom: 350 };
+    ResizeObserverMock.instances[0].fire();
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith(
+      "webview_bounds",
+      { label: "b-1", x: 41, y: 50, w: 400, h: 300 },
+    ));
+    expect(vi.isMockFunction(globalThis.requestAnimationFrame)).toBe(false);
+  });
+
+  it("veil 중에는 쓰지 않고 해동에서 bounds를 먼저 확정한 뒤 표시한다", async () => {
+    const slot = document.createElement("div");
+    slot.setAttribute("data-content-view-body", "b--v1");
+    let x = 10;
+    slot.getBoundingClientRect = () => ({
+      x, y: 20, left: x, top: 20, right: x + 300, bottom: 220, width: 300, height: 200,
+    }) as DOMRect;
+    document.body.appendChild(slot);
+
+    const { installNativeContentViewComposition, nativeHost } = await load();
+    installNativeContentViewComposition();
+    await nativeHost.open("b--v1", { url: "https://x" });
+    invoke.mockClear();
+
+    listeners.get("content-view.veiled")?.({ label: "b--v1", veiled: true, hidden: true });
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith(
+      "webview_visible",
+      { label: "b--v1", visible: false, focus: false },
+    ));
+    invoke.mockClear();
+    x = 120;
+    listeners.get("layout.reflow")?.({ activeSpaceId: "c1" });
+    await Promise.resolve();
+    expect(invoke).not.toHaveBeenCalledWith("webview_bounds", expect.anything());
+
+    listeners.get("content-view.veiled")?.({ label: "b--v1", veiled: false, hidden: false });
+    await vi.waitFor(() => expect(invoke.mock.calls).toEqual([
+      ["webview_bounds", { label: "b--v1", x: 120, y: 20, w: 300, h: 200 }],
+      ["webview_visible", { label: "b--v1", visible: true, focus: false }],
+    ]));
   });
 });
