@@ -10,7 +10,7 @@ import { hasSidebarView as hasSidebarViewKey } from "../state/sidebarLayout";
 import { getRegisteredView, registeredViewIds } from "../plugins/viewRegistry";
 import { registeredFileViewerIds } from "../plugins/fileViewerRegistry";
 import { registeredIconSetIds } from "../ui/icons/registry";
-import { listPrograms } from "../plugins/programRegistry";
+import { getRegisteredProgram, listPrograms, useProgramRegistry } from "../plugins/programRegistry";
 import { localize, tmsg } from "../i18n";
 import {
   VIEW_PLACEMENTS,
@@ -136,6 +136,60 @@ export function registerPluginCatalog(): void {
         pluginId: p.pluginId,
       })),
     }),
+  });
+
+  register("program.wait", {
+    description:
+      "Wait for one declared program to enter the live registry. This is an event subscription, not a polling loop; use it at boot boundaries before opening a plugin-owned view.",
+    triggers: { ko: "프로그램 준비 대기 플러그인 등록 이벤트" },
+    params: {
+      id: { type: "string", description: "Program id to await", required: true },
+      timeoutMs: {
+        type: "number",
+        description: "Finite deadline in milliseconds (1..60000, default 20000)",
+        default: 20_000,
+      },
+    },
+    returns: "{ id, pluginId, kind }",
+    errors: ["INVALID_PARAMS", "TIMEOUT"],
+    message: (d) => `프로그램 준비: ${String(d.id)}`,
+    examples: ['program.wait \'{"id":"browser","timeoutMs":20000}\''],
+    handler: async (p) => {
+      const id = String(p.id ?? "");
+      const timeoutMs = p.timeoutMs === undefined ? 20_000 : Number(p.timeoutMs);
+      if (!id || !Number.isFinite(timeoutMs) || timeoutMs < 1 || timeoutMs > 60_000) {
+        return { ok: false as const, code: "INVALID_PARAMS", message: "id 또는 timeoutMs 범위가 올바르지 않다" };
+      }
+      const result = (found: NonNullable<ReturnType<typeof getRegisteredProgram>>) => ({
+        id: found.decl.id,
+        pluginId: found.pluginId,
+        kind: found.decl.kind,
+      });
+      const existing = getRegisteredProgram(id);
+      if (existing) return result(existing);
+
+      return new Promise<ReturnType<typeof result> | { ok: false; code: "TIMEOUT"; message: string }>((resolve) => {
+        let settled = false;
+        const finish = (value: ReturnType<typeof result> | { ok: false; code: "TIMEOUT"; message: string }) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          unsubscribe();
+          resolve(value);
+        };
+        const unsubscribe = useProgramRegistry.subscribe((state) => {
+          const found = state.programs[id];
+          if (found) finish(result(found));
+        });
+        const timer = setTimeout(
+          () => finish({ ok: false, code: "TIMEOUT", message: `프로그램 준비 시한 초과: ${id}` }),
+          timeoutMs,
+        );
+        // subscribe 직전 등록된 사건도 잃지 않는다.
+        const raced = getRegisteredProgram(id);
+        if (raced) finish(result(raced));
+      });
+    },
   });
 
   // 플러그인 단축 이름 해소 — 기본형 문법의 단일진실. "<name>" ≡ "soksak-plugin-<name>".

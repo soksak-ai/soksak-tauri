@@ -16,6 +16,7 @@ import { execute, getSpec } from "./registry";
 import { usePlugins, type PluginRuntime } from "../state/plugins";
 import { useSessions, type Project, type Tab } from "../state/sessions";
 import { parseManifest, type PluginManifest } from "../plugins/spec";
+import { useProgramRegistry } from "../plugins/programRegistry";
 
 function manifestOf(id: string, overrides: Record<string, unknown> = {}): PluginManifest {
   const { manifest, validation } = parseManifest(
@@ -77,6 +78,28 @@ describe("plugin.conformance 등록(발견성)", () => {
     const spec = getSpec("plugin.conformance");
     expect(spec).toBeDefined();
     expect(spec!.returns).toContain("c2");
+  });
+});
+
+describe("program.wait — 폴링 없는 프로그램 준비 경계", () => {
+  afterEach(() => {
+    useProgramRegistry.setState({ programs: {}, order: [], version: 0 });
+  });
+
+  it("등록 이벤트를 구독해 지정 프로그램이 서는 순간 완료한다", async () => {
+    const pending = execute("program.wait", { id: "browser", timeoutMs: 1_000 }, {});
+    const dispose = useProgramRegistry.getState().register("browser-plugin", {
+      id: "browser",
+      title: "Browser",
+      kind: "view",
+      view: "browser",
+    });
+
+    await expect(pending).resolves.toMatchObject({
+      ok: true,
+      data: { id: "browser", pluginId: "browser-plugin" },
+    });
+    dispose();
   });
 });
 
