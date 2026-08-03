@@ -1320,90 +1320,98 @@ fn animate_child_frame(
     timing: [f32; 4],
 ) -> Result<(), String> {
     let label = label.to_string();
-    wv.with_webview(move |pw| unsafe {
-        use objc2_app_kit::NSView;
-        use objc2_foundation::{ns_string, NSPoint, NSRect, NSSize, NSValue};
-        use objc2_quartz_core::{
-            CABasicAnimation, CAMediaTiming, CAMediaTimingFunction, CATransaction,
-        };
+    let (armed_tx, armed_rx) = std::sync::mpsc::sync_channel::<Result<(), String>>(1);
+    wv.with_webview(move |pw| {
+        let armed: Result<(), String> = (|| unsafe {
+            use objc2_app_kit::NSView;
+            use objc2_foundation::{ns_string, NSPoint, NSRect, NSSize, NSValue};
+            use objc2_quartz_core::{
+                CABasicAnimation, CAMediaTiming, CAMediaTimingFunction, CATransaction,
+            };
 
-        let view = &*(pw.inner() as *const NSView);
-        let Some(parent) = view.superview() else {
-            return;
-        };
-        let host_ptr = layer::surface_host_ptr(&label);
-        let coordinate_parent = if host_ptr != 0 {
-            parent.superview().unwrap_or_else(|| parent.clone())
-        } else {
-            parent.clone()
-        };
-        let (x, y, w, h) = top_left_rect_to_parent_frame(
-            coordinate_parent.bounds().size.height,
-            coordinate_parent.isFlipped(),
-            bounds,
-        );
-        let frame = NSRect::new(NSPoint::new(x, y), NSSize::new(w, h));
+            let view = &*(pw.inner() as *const NSView);
+            let Some(parent) = view.superview() else {
+                return Err("native surface parent가 없다".into());
+            };
+            let host_ptr = layer::surface_host_ptr(&label);
+            let coordinate_parent = if host_ptr != 0 {
+                parent.superview().unwrap_or_else(|| parent.clone())
+            } else {
+                parent.clone()
+            };
+            let (x, y, w, h) = top_left_rect_to_parent_frame(
+                coordinate_parent.bounds().size.height,
+                coordinate_parent.isFlipped(),
+                bounds,
+            );
+            let frame = NSRect::new(NSPoint::new(x, y), NSSize::new(w, h));
 
-        if host_ptr == 0 {
-            view.setFrame(frame);
-            return;
-        }
-        let host = &*(host_ptr as *const NSView);
-        // WKWebView backing surface의 frame은 애니메이션하지 않는다. 크기는 목표에 맞추되
-        // 이동은 layer-backed host의 presentation layer가 맡아 WebKit 재합성을 피한다.
-        view.setFrame(NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(w, h)));
-        let Some(layer) = host.layer() else {
-            host.setFrame(frame);
-            return;
-        };
-        let presentation = layer.presentationLayer();
-        let from = presentation.as_deref().unwrap_or(&layer);
-        let from_position = from.position();
-        let from_bounds = from.bounds();
+            if host_ptr == 0 {
+                view.setFrame(frame);
+                return Ok(());
+            }
+            let host = &*(host_ptr as *const NSView);
+            // WKWebView backing surface의 frame은 애니메이션하지 않는다. 크기는 목표에 맞추되
+            // 이동은 layer-backed host의 presentation layer가 맡아 WebKit 재합성을 피한다.
+            view.setFrame(NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(w, h)));
+            let Some(layer) = host.layer() else {
+                host.setFrame(frame);
+                return Ok(());
+            };
+            let presentation = layer.presentationLayer();
+            let from = presentation.as_deref().unwrap_or(&layer);
+            let from_position = from.position();
+            let from_bounds = from.bounds();
 
         // 모델은 목표 frame으로 원자적으로 확정하고, 화면에 보이는 presentation만 출발점에서
         // 목표로 이동한다. NSView animator proxy는 이 child-host 계층에서 중간 frame을 칠하지
         // 않고 마지막에 정착해 DOM 홀과의 교집합만 흰 띠로 남겼다.
-        CATransaction::begin();
-        CATransaction::setDisableActions(true);
-        host.setFrame(frame);
-        let to_position = layer.position();
-        let to_bounds = layer.bounds();
-        CATransaction::commit();
+            CATransaction::begin();
+            CATransaction::setDisableActions(true);
+            host.setFrame(frame);
+            let to_position = layer.position();
+            let to_bounds = layer.bounds();
+            CATransaction::commit();
 
-        let duration = duration_ms.max(0.0) / 1000.0;
-        let curve = CAMediaTimingFunction::functionWithControlPoints(
-            timing[0], timing[1], timing[2], timing[3],
-        );
-        let position = CABasicAnimation::animationWithKeyPath(Some(ns_string!("position")));
-        let from_position = NSValue::valueWithPoint(from_position);
-        let to_position = NSValue::valueWithPoint(to_position);
-        position.setFromValue(Some(&from_position));
-        position.setToValue(Some(&to_position));
-        position.setDuration(duration);
-        position.setTimingFunction(Some(&curve));
-        layer::raise_surface_host(&label);
-        let completion_label = label.clone();
-        let completion = block2::RcBlock::new(move || {
-            layer::lower_surface_host(&completion_label);
-        });
-        CATransaction::begin();
-        CATransaction::setCompletionBlock(Some(&completion));
-        layer.addAnimation_forKey(&position, Some(ns_string!("soksak.surface.position")));
+            let duration = duration_ms.max(0.0) / 1000.0;
+            let curve = CAMediaTimingFunction::functionWithControlPoints(
+                timing[0], timing[1], timing[2], timing[3],
+            );
+            let position = CABasicAnimation::animationWithKeyPath(Some(ns_string!("position")));
+            let from_position = NSValue::valueWithPoint(from_position);
+            let to_position = NSValue::valueWithPoint(to_position);
+            position.setFromValue(Some(&from_position));
+            position.setToValue(Some(&to_position));
+            position.setDuration(duration);
+            position.setTimingFunction(Some(&curve));
+            layer::raise_surface_host(&label);
+            let completion_label = label.clone();
+            let completion = block2::RcBlock::new(move || {
+                layer::lower_surface_host(&completion_label);
+            });
+            CATransaction::begin();
+            CATransaction::setCompletionBlock(Some(&completion));
+            layer.addAnimation_forKey(&position, Some(ns_string!("soksak.surface.position")));
 
-        if from_bounds != to_bounds {
-            let bounds = CABasicAnimation::animationWithKeyPath(Some(ns_string!("bounds")));
-            let from_bounds = NSValue::valueWithRect(from_bounds);
-            let to_bounds = NSValue::valueWithRect(to_bounds);
-            bounds.setFromValue(Some(&from_bounds));
-            bounds.setToValue(Some(&to_bounds));
-            bounds.setDuration(duration);
-            bounds.setTimingFunction(Some(&curve));
-            layer.addAnimation_forKey(&bounds, Some(ns_string!("soksak.surface.bounds")));
-        }
-        CATransaction::commit();
+            if from_bounds != to_bounds {
+                let bounds = CABasicAnimation::animationWithKeyPath(Some(ns_string!("bounds")));
+                let from_bounds = NSValue::valueWithRect(from_bounds);
+                let to_bounds = NSValue::valueWithRect(to_bounds);
+                bounds.setFromValue(Some(&from_bounds));
+                bounds.setToValue(Some(&to_bounds));
+                bounds.setDuration(duration);
+                bounds.setTimingFunction(Some(&curve));
+                layer.addAnimation_forKey(&bounds, Some(ns_string!("soksak.surface.bounds")));
+            }
+            CATransaction::commit();
+            Ok(())
+        })();
+        let _ = armed_tx.send(armed);
     })
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+    armed_rx
+        .recv_timeout(std::time::Duration::from_secs(1))
+        .map_err(|error| format!("native surface animation ACK 실패: {error}"))?
 }
 
 static APPLIED_BOUNDS: std::sync::LazyLock<
