@@ -168,7 +168,6 @@ export const IDENTIFIER_RESIDUE = new Map([
   ["shellwin", "src/commands/catalogDom.test.ts — 프레임워크 창 목(mock)"],
   ["hostshellpluginimport", "packages/plugin-spec — 발행된 계약 키(소비자 동반 개명 필요)"],
   ["host-shell-plugin-import", "packages/plugin-spec — 같은 축의 와이어 값"],
-  ["chromium-shell", "docs/NATIVE-SURFACES.md — 프레임워크가 Chromium 인 앱"],
 ]);
 
 // ── 진짜 셸을 말하는 줄의 표지 — R2 가 세지 않는다 ─────────────────────────────
@@ -235,10 +234,8 @@ export const PROSE_LEDGER = new Map([
   ["scripts/e2e/frame-verdict.mjs", [1, "[프레임워크] \"셸이 어떻게 찍었든\""]],
   ["packages/plugin-api/README.md", [2, "[UI] \"the shell\"·\"main shell renderer\" — 발행된 README"]],
   ["packages/plugin-spec/src/pluginRuntime.ts", [2, "[UI] \"main shell renderer\"·와이어 값 host-shell-plugin-import"]],
-  ["docs/FRAMEWORK-PORT.md", [2, "[인용] 옛말을 기록으로 남긴 자리 + [진짜 셸] ptyd 가 소유하는 셸(터미널 절)"]],
+  ["docs/FRAMEWORK-PORT.md", [3, "[인용] 옛말을 기록으로 남긴 자리 + [진짜 셸] ptyd 가 소유하는 셸(터미널 절)"]],
   ["docs/FRAMEWORK-PORT.ko.md", [1, "[인용] 옛말을 기록으로 남긴 자리"]],
-  ["docs/NATIVE-SURFACES.md", [4, "[프레임워크/UI] \"DOM shell\"·\"Chromium-shell apps\"·\"webview shell\""]],
-  ["docs/NATIVE-SURFACES.ko.md", [4, "[프레임워크/UI] 같은 축(한글)"]],
   ["docs/multiplatform-engine-strategy.md", [3, "[프레임워크/UI] \"host shell\"·\"app UI shell\""]],
   ["docs/multiplatform-engine-strategy.ko.md", [3, "[프레임워크/UI] 같은 축(한글)"]],
   // 배치 게이트 셋 — 어휘 넷을 **정의하는** 쪽이라 shell 축을 이름으로 적을 수밖에 없다.
