@@ -660,6 +660,14 @@ A third framework writes its own `whale/` folder. Core does not change, and it d
 
 The slot is declared once, by the plugin, and read differently by each side: to a coordinate-pushing implementation it is the follow anchor; to one that lives in the document it is the **parent**. The plugin never learns the difference.
 
+For the coordinate-pushing side, the rect belongs to the nested
+`data-content-view-body` element itself. The outer Tauri hole marker includes
+browser chrome and exists only for adapter effects; measuring it creates a
+second, incorrect geometry. Shell-owned layout axes outside `ProjectSurface`
+(project tabs top/left and their rail width) publish `layout.reflow` after
+commit, so native bounds do not depend on background delivery of
+ResizeObserver or rAF.
+
 ### `install()` is a contract member, and it is lazy
 
 The bundle is one — Electron loads the same front end — so both adapters are always present. If hanging happened at import, the unselected framework's things would hang too. That already leaked: `electron.css` was in the Tauri build, harmless only because it declared `-webkit-app-region`.
