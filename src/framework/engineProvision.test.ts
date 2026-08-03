@@ -14,6 +14,8 @@ describe("프레임워크가 자기 제공을 밝힌다", () => {
   it("Tauri 는 등급 미달이고 자식 웹뷰 합성을 제공한다", () => {
     expect(tauri.chromium).toBe(false);
     expect(tauri.nativeChildWebview).toBe(true);
+    expect(tauri.supportsDocumentStart).toBe(true);
+    expect(tauri.supportsInputInjection).toBe(false);
   });
 
   // Electron 은 통째로 Chromium 이라 승격이 no-op 이다. 자식 웹뷰 합성 장치는 없다 —
@@ -21,6 +23,8 @@ describe("프레임워크가 자기 제공을 밝힌다", () => {
   it("Electron 은 등급을 갖췄고 자식 웹뷰 합성은 없다", () => {
     expect(electron.chromium).toBe(true);
     expect(electron.nativeChildWebview).toBe(false);
+    expect(electron.supportsDocumentStart).toBe(false);
+    expect(electron.supportsInputInjection).toBe(true);
   });
 
   // 두 답이 같으면 이 축은 아무것도 가르지 않는다("0 의 두 얼굴").

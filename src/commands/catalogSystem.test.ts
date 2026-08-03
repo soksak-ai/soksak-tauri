@@ -4,6 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const invoke = vi.fn();
 vi.mock("../framework", () => ({
   invoke: (...a: unknown[]) => invoke(...a),
+  framework: { name: "test-adapter" },
+  engineProvision: {
+    chromium: true,
+    nativeChildWebview: false,
+    engineModules: false,
+    supportsDocumentStart: false,
+    supportsInputInjection: true,
+  },
 }));
 
 import { registerSystemCatalog } from "./catalogSystem";
@@ -89,6 +97,20 @@ describe("system.hello 실행(단일 소스 위임)", () => {
     expect(r).toMatchObject({
       ok: true,
       data: { protocol: 1, minClientProtocol: 0, capabilities: ["hello.v1"] },
+    });
+  });
+});
+
+describe("framework.provision 공개 capability", () => {
+  it("제품 동작 차이를 adapter 이름이 아니라 명시적 축으로 노출한다", async () => {
+    const r = await execute("framework.provision", {}, {});
+    expect(r).toMatchObject({
+      ok: true,
+      data: {
+        name: "test-adapter",
+        supportsDocumentStart: false,
+        supportsInputInjection: true,
+      },
     });
   });
 });
