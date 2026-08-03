@@ -509,7 +509,7 @@ export function registerDomCatalog(): void {
 
   register("ui.input.click", {
     description:
-      "Dispatch a real-click sequence (mousedown → mouseup → click) to an exposed node (E2E injection). Use to drive UI flows programmatically or in tests. Pass phase:'down' to send only the mousedown, then observe the mid-gesture state (ui.hit / ui.measure), then phase:'up' to finish with mouseup+click — the only way to verify contracts that live BETWEEN down and up (e.g. that a mid-gesture surface stays hittable, or that activation waits for gesture completion). Unexposed addresses return NOT_EXPOSED — no guessing. Occluded/unfocused windows pause rAF and may not respond — call window.focus to bring the window forward first.",
+      "Dispatch a real-click sequence (mousedown → mouseup → click) to an exposed node (E2E injection). Use to drive UI flows programmatically or in tests. Pass phase:'down' to send only the mousedown, then observe the mid-gesture state (ui.hit / ui.measure), then phase:'up' to finish with mouseup+click — the only way to verify contracts that live BETWEEN down and up. recordDir starts the finite framework-neutral recorder in this same serialized request before the click, so tab/sidebar transitions can be inspected without focusing the window or racing a second command. Unexposed addresses return NOT_EXPOSED — no guessing.",
     triggers: { ko: "클릭 주입 ui클릭 버튼클릭 E2E 게스처 다운 업 분해" },
     params: {
       address: { type: "string", description: "Exposed node address from ui.tree", required: true },
@@ -526,8 +526,28 @@ export function registerDomCatalog(): void {
         required: false,
       },
       y: { type: "number", description: "Content-view-relative y (CSS px).", required: false },
+      recordDir: {
+        type: "string",
+        description: "Optional output directory for finite transition frames captured concurrently with this click.",
+        required: false,
+      },
+      recordFrames: {
+        type: "number",
+        description: "Frames to capture when recordDir is set (1..600, default 40).",
+        default: 40,
+      },
+      recordIntervalMs: {
+        type: "number",
+        description: "Capture interval in milliseconds when recordDir is set (default 16).",
+        default: 16,
+      },
+      recordLeadMs: {
+        type: "number",
+        description: "Finite pre-click recording lead in milliseconds (0..2000, default 0).",
+        default: 0,
+      },
     },
-    returns: "{ clicked, address, phase? }",
+    returns: "{ clicked, address, phase?, recording?:{dir,frames,mode:'realtime'} }",
     message: () => tmsg("msg.ui.input.click"),
     errors: ["NOT_EXPOSED", "AMBIGUOUS", "INVALID_PARAMS"],
     danger: "inject",
@@ -549,6 +569,31 @@ export function registerDomCatalog(): void {
           message: `phase must be 'down' or 'up', got: ${phase}`,
         };
       }
+      const recordDir = p.recordDir as string | undefined;
+      const recordFrames = p.recordFrames === undefined ? 40 : Number(p.recordFrames);
+      const recordIntervalMs = p.recordIntervalMs === undefined ? 16 : Number(p.recordIntervalMs);
+      const recordLeadMs = p.recordLeadMs === undefined ? 0 : Number(p.recordLeadMs);
+      if (
+        recordDir &&
+        (!Number.isInteger(recordFrames) || recordFrames < 1 || recordFrames > 600 ||
+          !Number.isFinite(recordIntervalMs) || recordIntervalMs < 0 ||
+          !Number.isFinite(recordLeadMs) || recordLeadMs < 0 || recordLeadMs > 2_000)
+      ) {
+        return { ok: false as const, code: "INVALID_PARAMS", message: "녹화 인자가 범위를 벗어났다" };
+      }
+      const recording = recordDir
+        ? invoke<number>("plugin:webview-capture|record", {
+            dir: recordDir,
+            frames: recordFrames,
+            intervalMs: recordIntervalMs,
+          })
+        : null;
+      if (recording && recordLeadMs > 0) {
+        await new Promise((resolve) => window.setTimeout(resolve, recordLeadMs));
+      }
+      const recordingResult = async () => recording
+        ? { recording: { dir: recordDir, frames: await recording, mode: "realtime" as const } }
+        : {};
       // **콘텐츠 뷰를 가리키면 그 안으로 넣는다.**
       //
       // 그 안은 다른 프로세스라 DOM 으로 만든 클릭이 닿지 않고, 닿아도 사용자 활성화가 없어
@@ -582,7 +627,7 @@ export function registerDomCatalog(): void {
         // 호스트 계약을 지난다 — 태그를 직접 만지면 그 구현이 바뀌는 날 이 자리만 조용히 죽는다.
         // 못 하는 구현은 그 자리에서 이름을 달고 거절한다(조용한 성공 금지).
         await contentViewHost().sendInput(cvLabel, at.x, at.y);
-        return { clicked: true, address: addr, contentView: cvLabel };
+        return { clicked: true, address: addr, contentView: cvLabel, ...(await recordingResult()) };
       }
       const types =
         phase === "down"
@@ -599,8 +644,8 @@ export function registerDomCatalog(): void {
         );
       }
       return phase
-        ? { clicked: true, address: addr, phase }
-        : { clicked: true, address: addr };
+        ? { clicked: true, address: addr, phase, ...(await recordingResult()) }
+        : { clicked: true, address: addr, ...(await recordingResult()) };
     },
   });
 

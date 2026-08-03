@@ -460,6 +460,48 @@ describe("viewContainerOf — shadow 관통 뷰 판정", () => {
 });
 
 describe("ui.input.click — 합성 이벤트가 Shadow DOM 경계를 넘는다(composed, 실클릭 등가)", () => {
+  it("클릭과 같은 요청에서 유한 프레임 기록 계약을 공개한다", () => {
+    const spec = getSpec("ui.input.click");
+    expect(spec?.params.recordDir).toBeDefined();
+    expect(spec?.params.recordFrames).toBeDefined();
+    expect(spec?.params.recordIntervalMs).toBeDefined();
+    expect(spec?.params.recordLeadMs).toBeDefined();
+  });
+
+  it("프레임 기록을 클릭 전에 시작하고 완료된 기록을 같은 응답으로 반환한다", async () => {
+    mountNode(`<button data-node="btn">tab</button>`);
+    const node = document.querySelector<HTMLElement>("[data-node=btn]")!;
+    const mockedInvoke = vi.mocked(frameworkInvoke);
+    mockedInvoke.mockClear();
+    const order: string[] = [];
+    node.addEventListener("click", () => order.push("click"));
+    mockedInvoke.mockImplementationOnce(async () => {
+      order.push("record");
+      return 9;
+    });
+
+    const result = await execute("ui.input.click", {
+      address: ADDR,
+      recordDir: "/tmp/click-transition",
+      recordFrames: 9,
+      recordIntervalMs: 16,
+      recordLeadMs: 0,
+    }, {});
+
+    expect(order).toEqual(["record", "click"]);
+    expect(mockedInvoke).toHaveBeenCalledWith("plugin:webview-capture|record", {
+      dir: "/tmp/click-transition",
+      frames: 9,
+      intervalMs: 16,
+    });
+    expect(result.data).toMatchObject({
+      clicked: true,
+      recording: { dir: "/tmp/click-transition", frames: 9, mode: "realtime" },
+    });
+    mockedInvoke.mockReset();
+    mockedInvoke.mockResolvedValue({});
+  });
+
   it("shadow 안 노드 클릭이 경계 밖 캡처 리스너(본문 클릭 활성화 경로)에 닿는다", async () => {
     // 실구조 등가: 뷰 컨테이너(스캔 스코프) > shadow host > shadow 안 data-node.
     // 바깥 캡처 리스너 = GroupArea 본문 슬롯의 클릭 활성화 경로와 같은 위치 관계다.
