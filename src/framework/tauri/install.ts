@@ -30,7 +30,10 @@ import {
   installDomHoles,
   type Hole,
 } from "./domHoles";
-import { installTauriHoleMarkers, TAURI_CONTENT_HOLE } from "./holeMarkers";
+import {
+  installTauriHoleMarkers,
+  isTauriRectMotionExcluded,
+} from "./holeMarkers";
 import { useUi } from "../../state/ui";
 import { useGutterHover } from "../../state/gutterHover";
 import { bindPaneUnder } from "../../lib/bindPaneUnder";
@@ -294,8 +297,8 @@ export function installTauri(): void {
   installNativeBridgeCommand();
   installCompositionCommand();
   installHoleAuditCommand();
-  // 홀 슬롯은 FLIP 보간에서 뺀다 — 그 아래 표면은 문서 밖이라 슬롯의 transform 을 안 따라오고,
-  // 보간 프레임마다 좌표를 써 주면 못 따라와 옛 픽셀이 남는다. 문서 안 게스트에는 일어날 수
-  // 없는 일이므로 그 프레임워크에서는 아무것도 빠지지 않는다.
-  registerRectMotionExclusion((el) => el.matches(TAURI_CONTENT_HOLE));
+  // 실제 FLIP 추적 프레임(pane·tab-body) 중 native child를 품은 것만 뺀다. bounds 원천인
+  // content-view body는 그 자식이라 검사 대상이 아니다. 문서 안 게스트에는 이 표식도 등록도
+  // 없으므로 Electron의 DOM 보간은 그대로다.
+  registerRectMotionExclusion(isTauriRectMotionExcluded);
 }

@@ -687,8 +687,11 @@ rect 한 번으로 합친다. Electron 어댑터에는 이 구독과 추종 상�
 레일 재배치에서 Tauri 어댑터는 유한 snap 거래를 쓴다. 중간 mutation 쓰기를 잠그고 목표 DOM을
 커밋한 layout effect에서 공개 슬롯의 실제 rect를 읽어 한 번 적용한다. pane 이동량 밖에서 sidebar
 flow가 함께 바뀌어도 좌표를 예측하지 않는다. 같은 rect의 ACK가 다른 사건 경로에서 먼저 끝났으면
-중복 bounds 쓰기를 생략한다. 네이티브 자식의 z-order는 바뀌지 않으며
-스크린샷·veil·rAF handoff·프레임 추종은 없다. Electron은 언제나
+중복 bounds 쓰기를 생략한다. 또한 Tauri는 코어 FLIP이 실제 추적하는 표식된 `pane`과 `tab-body`를
+일반 WAAPI rect 보간에서 제외한다. 그 자식인 content-view body를 검사하면 제외는 발동하지 않고,
+유한 snap 거래가 성공한 뒤에도 follower가 compositor 중간 rect를 전부 받게 된다. 네이티브 자식의
+z-order는 바뀌지 않으며 스크린샷·veil·rAF handoff·프레임 추종은 없다. Electron은 이 제외를
+등록하지 않고 언제나
 `data-content-view-body`의 DOM 자식 배치만 수행한다.
 
 `webview.composition`은 DOM 앵커·실제 네이티브 frame뿐 아니라 label별 슬롯 rect, 마지막 적용

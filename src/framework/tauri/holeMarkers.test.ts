@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   __resetTauriHoleMarkersForTest,
   installTauriHoleMarkers,
+  isTauriRectMotionExcluded,
   syncTauriHoleMarkers,
 } from "./holeMarkers";
 
@@ -48,6 +49,22 @@ describe("Tauri private hole projection", () => {
     expect(p1.dataset.tauriHole).toBe("pane");
     expect(dom.dataset.tauriHole).toBeUndefined();
     expect(p2.dataset.tauriHole).toBeUndefined();
+  });
+
+  it("문서 밖 표면의 실제 FLIP 추적 프레임만 보간에서 제외한다", () => {
+    const p = pane("g1");
+    const native = body(p, "g1", "b-main-v1");
+    syncTauriHoleMarkers();
+
+    const slot = native.querySelector<HTMLElement>("[data-content-view-body]")!;
+    expect(isTauriRectMotionExcluded(p)).toBe(true);
+    expect(isTauriRectMotionExcluded(native)).toBe(true);
+    expect(isTauriRectMotionExcluded(slot)).toBe(false);
+
+    const ordinaryPane = pane("g2");
+    const ordinaryBody = body(ordinaryPane, "g2");
+    expect(isTauriRectMotionExcluded(ordinaryPane)).toBe(false);
+    expect(isTauriRectMotionExcluded(ordinaryBody)).toBe(false);
   });
 
   it("슬롯 제거 뒤 stale 표식을 남기지 않는다", () => {

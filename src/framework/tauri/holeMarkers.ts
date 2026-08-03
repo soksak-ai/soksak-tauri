@@ -8,6 +8,19 @@ import { onPluginEvent } from "../../plugins/hooks";
 export const TAURI_HOLE_ATTR = "data-tauri-hole";
 export const TAURI_HOLE_FRAME_ATTR = "data-tauri-hole-frame";
 export const TAURI_CONTENT_HOLE = `[${TAURI_HOLE_ATTR}="content"]`;
+const TAURI_PANE_HOLE = `[${TAURI_HOLE_ATTR}="pane"]`;
+const TAURI_CONTENT_HOLE_FRAME = `[${TAURI_HOLE_FRAME_ATTR}]`;
+
+/**
+ * layoutRectMotion이 실제로 추적하는 Tauri 외부 표면의 DOM 프레임인가.
+ *
+ * native bounds 원천인 content-view body는 추적 대상의 자식이므로 여기서 검사하면 제외가
+ * 영원히 발동하지 않는다. 추적 ref가 붙는 pane과 tab-body만 제외해야 문서 밖 child를
+ * 중간 WAAPI rect로 끌고 가지 않으며, 일반 DOM pane은 그대로 코어 보간을 사용한다.
+ */
+export function isTauriRectMotionExcluded(el: HTMLElement): boolean {
+  return el.matches(`${TAURI_PANE_HOLE}, ${TAURI_CONTENT_HOLE_FRAME}`);
+}
 
 const installed = moduleState("framework/tauri/holeMarkers#installed", () => ({
   on: false,

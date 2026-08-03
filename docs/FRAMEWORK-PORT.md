@@ -694,8 +694,11 @@ For a rail relocation, the Tauri adapter uses a finite snap transaction: it lock
 mutation writes, commits the target DOM, reads the public slot's actual rect in the layout effect,
 and applies it once. It does not predict coordinates, so a sidebar-flow change outside the pane move
 is included. If another event path already acknowledged the same rect, the duplicate bounds write is
-skipped. The native child never changes z-order and no screenshot, veil, rAF handoff, or
-frame-by-frame follow is involved. Electron always performs DOM-child placement under
+skipped. Tauri also excludes the actual core FLIP tracking frames — the marked `pane` and `tab-body`,
+not their nested content-view body — from generic WAAPI rect interpolation. Otherwise the follower
+would receive every intermediate compositor rect even though the finite snap transaction succeeded.
+The native child never changes z-order and no screenshot, veil, rAF handoff, or frame-by-frame follow
+is involved. Electron does not install that exclusion and always performs DOM-child placement under
 `data-content-view-body` and nothing else.
 
 `webview.composition` exposes not only DOM anchors and actual native frames, but also each label's slot
