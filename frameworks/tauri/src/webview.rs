@@ -19,6 +19,13 @@ use tauri::{
     WebviewWindowBuilder,
 };
 
+#[cfg(target_os = "macos")]
+use objc2::{define_class, msg_send, DefinedClass, MainThreadOnly};
+#[cfg(target_os = "macos")]
+use objc2_foundation::{MainThreadMarker, NSObject, NSObjectProtocol};
+#[cfg(target_os = "macos")]
+use objc2_quartz_core::{CAAnimation, CAAnimationDelegate};
+
 #[derive(Clone, Serialize)]
 // 카멜로 나간다 — 소비자는 카멜을 읽는다. 스네이크로 내면 undefined 를 읽고, 그것은 오류가
 // 아니라 "항상 새 문서"로 나타난다(같은 축의 canBack 이 그렇게 갈렸던 자리다).
@@ -210,6 +217,48 @@ fn surface_sibling_order(
 }
 
 #[cfg(target_os = "macos")]
+struct SurfaceAnimationDelegateIvars {
+    label: String,
+    motion_generation: u64,
+}
+
+#[cfg(target_os = "macos")]
+define_class!(
+    // SAFETY: NSObject has no subclassing requirements. Core Animation invokes its delegate on
+    // the main thread, matching the AppKit view hierarchy that the callback mutates.
+    #[unsafe(super(NSObject))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "SoksakSurfaceAnimationDelegate"]
+    #[ivars = SurfaceAnimationDelegateIvars]
+    struct SurfaceAnimationDelegate;
+
+    unsafe impl NSObjectProtocol for SurfaceAnimationDelegate {}
+
+    unsafe impl CAAnimationDelegate for SurfaceAnimationDelegate {
+        #[unsafe(method(animationDidStop:finished:))]
+        #[allow(non_snake_case)]
+        fn animationDidStop_finished(&self, _animation: &CAAnimation, _finished: bool) {
+            layer::finish_surface_host_motion(
+                &self.ivars().label,
+                self.ivars().motion_generation,
+            );
+        }
+    }
+);
+
+#[cfg(target_os = "macos")]
+impl SurfaceAnimationDelegate {
+    fn new(label: String, motion_generation: u64, mtm: MainThreadMarker) -> objc2::rc::Retained<Self> {
+        let this = Self::alloc(mtm);
+        let this = this.set_ivars(SurfaceAnimationDelegateIvars {
+            label,
+            motion_generation,
+        });
+        unsafe { msg_send![super(this), init] }
+    }
+}
+
+#[cfg(target_os = "macos")]
 mod layer {
     use std::collections::HashMap;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -248,6 +297,8 @@ mod layer {
     struct SurfaceHost {
         ptr: usize,
         window_label: String,
+        motion_generation: u64,
+        raised: bool,
     }
     static SURFACE_HOSTS: LazyLock<Mutex<HashMap<String, SurfaceHost>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -344,12 +395,37 @@ mod layer {
         parent.setSubviews(&NSArray::from_retained_slice(&ordered));
     }
 
-    pub fn raise_surface_host(label: &str) {
+    pub fn raise_surface_host(label: &str) -> Option<u64> {
+        let generation = SURFACE_HOSTS.lock().ok().and_then(|mut hosts| {
+            let host = hosts.get_mut(label)?;
+            host.motion_generation = host.motion_generation.wrapping_add(1);
+            host.raised = true;
+            Some(host.motion_generation)
+        })?;
         place_surface_host(label, NSWindowOrderingMode::Above);
+        Some(generation)
     }
 
     pub fn lower_surface_host(label: &str) {
+        if let Ok(mut hosts) = SURFACE_HOSTS.lock() {
+            if let Some(host) = hosts.get_mut(label) {
+                host.motion_generation = host.motion_generation.wrapping_add(1);
+                host.raised = false;
+            }
+        }
         place_surface_host(label, NSWindowOrderingMode::Below);
+    }
+
+    pub fn finish_surface_host_motion(label: &str, generation: u64) {
+        let owns_lease = SURFACE_HOSTS.lock().ok().is_some_and(|mut hosts| {
+            let Some(host) = hosts.get_mut(label) else { return false };
+            if host.motion_generation != generation { return false }
+            host.raised = false;
+            true
+        });
+        if owns_lease {
+            place_surface_host(label, NSWindowOrderingMode::Below);
+        }
     }
 
     pub fn lower_window_surface_hosts(window_label: &str) {
@@ -412,7 +488,12 @@ mod layer {
             let ptr = Retained::as_ptr(&host) as usize;
             SURFACES.register(ptr, Some(&surface_label));
             if let Ok(mut hosts) = SURFACE_HOSTS.lock() {
-                hosts.insert(surface_label, SurfaceHost { ptr, window_label });
+                hosts.insert(surface_label, SurfaceHost {
+                    ptr,
+                    window_label,
+                    motion_generation: 0,
+                    raised: false,
+                });
             }
         });
     }
@@ -1373,6 +1454,7 @@ fn animate_child_frame(
     wv.with_webview(move |pw| {
         let armed: Result<(), String> = (|| unsafe {
             use objc2_app_kit::NSView;
+            use objc2::runtime::ProtocolObject;
             use objc2_foundation::{ns_string, NSPoint, NSRect, NSSize, NSValue};
             use objc2_quartz_core::{
                 CABasicAnimation, CAMediaTiming, CAMediaTimingFunction, CATransaction,
@@ -1433,13 +1515,13 @@ fn animate_child_frame(
             position.setToValue(Some(&to_position));
             position.setDuration(duration);
             position.setTimingFunction(Some(&curve));
-            layer::raise_surface_host(&label);
-            let completion_label = label.clone();
-            let completion = block2::RcBlock::new(move || {
-                layer::lower_surface_host(&completion_label);
-            });
+            let generation = layer::raise_surface_host(&label)
+                .ok_or_else(|| format!("native surface host가 없다: {label}"))?;
+            let mtm = MainThreadMarker::new()
+                .ok_or_else(|| "native animation delegate는 main thread에서만 생성한다".to_string())?;
+            let delegate = SurfaceAnimationDelegate::new(label.clone(), generation, mtm);
+            position.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
             CATransaction::begin();
-            CATransaction::setCompletionBlock(Some(&completion));
             layer.addAnimation_forKey(&position, Some(ns_string!("soksak.surface.position")));
 
             if from_bounds != to_bounds {
@@ -1453,6 +1535,9 @@ fn animate_child_frame(
                 layer.addAnimation_forKey(&bounds, Some(ns_string!("soksak.surface.bounds")));
             }
             CATransaction::commit();
+            // CAAnimation이 delegate를 animation 수명 동안 보유한다. 함수 지역 Retained는 설치
+            // 직후 놓아도 되고, animationDidStop이 generation을 확인한 뒤 z-order를 회수한다.
+            drop(delegate);
             Ok(())
         })();
         let _ = armed_tx.send(armed);
