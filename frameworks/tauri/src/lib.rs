@@ -446,8 +446,8 @@ pub fn run() {
                 window::install_window_natives(app.handle(), "main");
                 // 앱 전역 모니터(클릭·라이브리사이즈) — 창 무관 1회 설치. 모든 창을 추적하고 어느
                 // 창인지 label 을 동반 emit 한다(MW4 — webview.rs 머리말). 프론트가 자기 창만 필터.
-                webview::install_click_monitor(app.handle());
-                webview::install_live_resize_monitor(app.handle());
+                webview::appkit_events::install_click_monitor(app.handle());
+                webview::appkit_events::install_live_resize_monitor(app.handle());
                 // 신호등 유지 옵저버 — 앱 전역 1회(모든 창). 창마다 달면 창 닫아도 안 빠져 누수.
                 // 신호등/titlebar 는 macOS 전용 개념(창 데코 커스터마이즈) — 모듈이 macos-only 라 gate.
                 #[cfg(target_os = "macos")]
@@ -547,7 +547,7 @@ pub fn run() {
                     #[cfg(unix)]
                     cored_host::announce_windows_without(window.app_handle(), window.label());
                     #[cfg(target_os = "macos")]
-                    webview::forget_nswindow_label(window.label()); // NSWindow↔label 캐시 회수(포인터 재사용 오해소 방지)
+                    webview::appkit_events::forget_nswindow_label(window.label()); // NSWindow↔label 캐시 회수
                     crate::sidecar::forget_window(window.label()); // 사이드카 surface 캐시 무효화(stale NSView 방지)
                     window::forget_teardown(window.label()); // 회수 마크 폐기(맵 무한 증가 차단)
                                                                    // 브레이커 엔트리 폐기 — 창 label 은 재사용 안 되므로 남기면 맵이 무한 증가(느린 누수).

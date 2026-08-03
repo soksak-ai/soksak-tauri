@@ -14,5 +14,5 @@ frameworks/tauri/src/project_registry.rs 5
 frameworks/tauri/src/pty.rs 9
 frameworks/tauri/src/schedule.rs 3
 frameworks/tauri/src/titlebar.rs 4
-frameworks/tauri/src/webview.rs 3
+frameworks/tauri/src/webview.rs 1
 frameworks/tauri/src/window.rs 3

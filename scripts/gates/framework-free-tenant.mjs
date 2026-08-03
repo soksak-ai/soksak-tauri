@@ -89,6 +89,7 @@ export const DECLARED = new Map([
   ["frameworks/tauri/src/home.rs", ["framework", "이 프로세스의 앰비언트 홈 결속(규칙은 코어)"]],
   ["frameworks/tauri/src/i18n.rs", ["framework", "문장은 자원이지만 내보내는 자리가 OS 알림·창이다"]],
   ["frameworks/tauri/src/titlebar.rs", ["framework", "창 크롬 — 몸이 tauri::Window 다"]],
+  ["frameworks/tauri/src/webview/appkit_events.rs", ["framework", "주입받은 앱 핸들로 AppKit 사건을 창에 배달한다"]],
 
   // ── tenant: 얇게 묶였을 뿐 몸은 무관하다 ────────────────────────────────────
   // ── tenant: 프레임워크 무관인데 여기 산다. 코어로 간다 ──────────────────────

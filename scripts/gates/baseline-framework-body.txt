@@ -23,7 +23,7 @@ frameworks/electron/control.cjs 144
 frameworks/electron/cored.cjs 252
 frameworks/electron/main.cjs 428
 frameworks/electron/native/capture.cjs 70
-frameworks/electron/native/engine.cjs 26
+frameworks/electron/native/engine.cjs 21
 frameworks/electron/native/error.cjs 9
 frameworks/electron/native/index.cjs 86
 frameworks/electron/native/lifecycle.cjs 11
@@ -56,7 +56,7 @@ frameworks/tauri/src/i18n.rs 155
 frameworks/tauri/src/id_registry.rs 144
 frameworks/tauri/src/identity.rs 59
 frameworks/tauri/src/ipc.rs 1227
-frameworks/tauri/src/lib.rs 725
+frameworks/tauri/src/lib.rs 724
 frameworks/tauri/src/login_shell.rs 28
 frameworks/tauri/src/main.rs 4
 frameworks/tauri/src/mediaproxy.rs 18
@@ -82,8 +82,11 @@ frameworks/tauri/src/unit_dev.rs 67
 frameworks/tauri/src/unit_installer.rs 55
 frameworks/tauri/src/updater.rs 42
 frameworks/tauri/src/watcher.rs 15
-# 재입법 2026-08-02 1760 → 1763. 같은 축(inPage) — 이 프레임워크는 문서 커밋에서만 낸다.
-frameworks/tauri/src/webview.rs 1755
+# 2026-08-04 경로 이전: 1755 총량을 명령 배선·AppKit 사건·레이어 바인딩으로 분리했다.
+# host/layout/창-label/throttle 규칙은 soksak-core로 옮겼고, 세 경로의 봉인 합은 늘리지 않는다.
+frameworks/tauri/src/webview.rs 1117
+frameworks/tauri/src/webview/appkit_events.rs 241
+frameworks/tauri/src/webview/layer.rs 397
 frameworks/tauri/src/webview_health.rs 572
 frameworks/tauri/src/window.rs 285
 frameworks/tauri/src/window_oracle.rs 102

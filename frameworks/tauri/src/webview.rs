@@ -12,6 +12,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde::{Deserialize, Serialize};
 use soksak_core::geometry::{rect_delta, scale_rect, top_left_rect_to_parent_frame};
+#[cfg(target_os = "macos")]
+use soksak_core::native_surface_ledger::surface_sibling_order;
+use soksak_core::native_surface_ledger::{NativeSurfaceLayout, SurfaceHole as Hole};
+
+static SURFACE_LAYOUT: std::sync::LazyLock<NativeSurfaceLayout> = std::sync::LazyLock::new(NativeSurfaceLayout::default);
 use tauri::{
     AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Url, WebviewUrl,
     WebviewWindowBuilder,
@@ -168,566 +173,13 @@ mod status {
 // DOM 오버레이 영역(사이드바 등) 사각형 — CSS 논리 px, top-left 원점(webview_bounds 와
 // 동일 규약). 프론트가 getBoundingClientRect 로 측정해 webview_dom_holes 로 보고한다.
 // 커맨드는 크로스플랫폼(모든 OS 등록)이나 좌표를 실제로 소비하는 hitTest 적용은 macOS objc 경로뿐.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-#[derive(Clone, Deserialize)]
-pub(crate) struct Hole {
-    x: f64,
-    y: f64,
-    w: f64,
-    h: f64,
-}
-
 // ── 레이어 정공법(macOS): z-순서 역전 + 투명 홀 + hitTest 위임 ────────────────
 // Tauri 에는 webview z-order API 가 없으므로(docs.rs 실측) AppKit 수준에서 직접
 // 수행한다 — webview.rs 의 기존 objc2 직접 호출(타이틀 KVO/eval/클릭 모니터)과
 // 같은 층위. 홀의 단일 진실 = "보이는 child webview 의 frame" 그 자체라서 별도
 // rect 레지스트리가 없다(set_position/set_size/hide 가 곧 홀 갱신).
 #[cfg(target_os = "macos")]
-fn surface_sibling_order(
-    siblings: &[usize],
-    host_ptr: usize,
-    main_ptr: usize,
-    above_main: bool,
-) -> Vec<usize> {
-    if host_ptr == main_ptr
-        || !siblings.contains(&host_ptr)
-        || !siblings.contains(&main_ptr)
-    {
-        return siblings.to_vec();
-    }
-    let mut reordered = siblings
-        .iter()
-        .copied()
-        .filter(|ptr| *ptr != host_ptr)
-        .collect::<Vec<_>>();
-    let Some(main_index) = reordered.iter().position(|ptr| *ptr == main_ptr) else {
-        return siblings.to_vec();
-    };
-    reordered.insert(main_index + usize::from(above_main), host_ptr);
-    reordered
-}
-
-#[cfg(target_os = "macos")]
-mod layer {
-    use std::collections::HashMap;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::{LazyLock, Mutex};
-
-    use objc2::msg_send;
-    use objc2::rc::Retained;
-    use objc2::runtime::{AnyObject, Sel};
-    use objc2::sel;
-    use objc2_app_kit::{NSView, NSWindowOrderingMode};
-    use objc2_foundation::{NSArray, NSNumber, NSPoint, NSString};
-    use soksak_core::native_surface_ledger::NativeSurfaceLedger;
-    use tauri::Manager;
-
-    // 창별 레이어 상태(멀티 윈도우): label → (그 창 메인 webview 의 NSView 포인터, 오버레이 게이트).
-    // 각 창이 자기 메인 view 와 오버레이 상태를 독립 보유한다. hit_test 는 this(view)가 *어느 창의*
-    // 메인인지 이 맵에서 판정하고, 홀 로직은 superview/형제 기준이라 창 독립적으로 그 창의 child
-    // webview 만 검사한다 — 그래서 한 맵으로 모든 창이 서로 간섭 없이 동작한다.
-    struct WinLayer {
-        main_ptr: usize,         // 메인 webview NSView 포인터(창 수명 동안 불변)
-        overlay: bool,           // 오버레이(모달/메뉴) 활성 시 홀 통과 차단
-        holes: Vec<super::Hole>, // DOM 오버레이(사이드바 등) 영역 — 이 안은 DOM 이 이벤트를 갖는다
-        host_ptr: usize,         // 엔진 호스트 컨테이너 NSView 포인터(0=미생성). 격리 계약: 모듈은
-                                 // contentView 가 아니라 이 컨테이너를 surface 로 받고 그 안에만 붙는다.
-    }
-    static LAYERS: LazyLock<Mutex<HashMap<String, WinLayer>>> =
-        LazyLock::new(|| Mutex::new(HashMap::new()));
-    // Backend N 네이티브 surface 레지스트리 — 등록된 child NSView 포인터 집합. hit_test 는 형제 중
-    // 이 집합에 든 것만 "홀"로 본다(classname 대신 멤버십 — 엔진 중립: WKWebView·Chromium surface 동일
-    // 취급). identity(포인터)만 저장하고 geometry 는 live frame(sub.frame())에서 읽는다 — "홀 = 보이는
-    // child frame" 불변식 보존(별도 rect 레지스트리 없음).
-    static SURFACES: LazyLock<NativeSurfaceLedger> = LazyLock::new(NativeSurfaceLedger::default);
-    // 브라우저 label → 전용 layer-backed 이동 host. WKWebView 자체 frame은 host 내부
-    // (0,0,w,h)에 고정하고, 화면 배치·애니메이션·hit-test surface는 host가 소유한다.
-    #[derive(Clone)]
-    struct SurfaceHost {
-        ptr: usize,
-        window_label: String,
-    }
-    static SURFACE_HOSTS: LazyLock<Mutex<HashMap<String, SurfaceHost>>> =
-        LazyLock::new(|| Mutex::new(HashMap::new()));
-    // 교체 전 원본 hitTest IMP. 클래스(WryWebView) 단위 스위즐이라 앱 전역 1회면 충분.
-    static ORIG_HIT_TEST: AtomicUsize = AtomicUsize::new(0);
-
-    // 창의 오버레이 게이트 갱신(프론트 ui 카운터 0↔1 전이 시 webview_overlay_active 가 호출).
-    pub fn set_overlay(label: &str, active: bool) {
-        if let Ok(mut layers) = LAYERS.lock() {
-            if let Some(w) = layers.get_mut(label) {
-                w.overlay = active;
-            }
-        }
-        if active {
-            lower_window_surface_hosts(label);
-        } else {
-            raise_window_surface_hosts(label);
-        }
-    }
-
-    // 창의 현재 홀 목록 — 관측면(ui.holes)이 읽는다. 계약을 눈이 아니라 값으로 확인한다.
-    pub fn holes_of(label: &str) -> Vec<super::Hole> {
-        LAYERS
-            .lock()
-            .ok()
-            .and_then(|m| m.get(label).map(|w| w.holes.clone()))
-            .unwrap_or_default()
-    }
-
-    // 창의 DOM 오버레이 홀 갱신(사이드바 열림/닫힘·폭 변화 시 webview_dom_holes 가 호출).
-    pub fn set_holes(label: &str, holes: Vec<super::Hole>) {
-        if let Ok(mut layers) = LAYERS.lock() {
-            if let Some(w) = layers.get_mut(label) {
-                w.holes = holes;
-            }
-        }
-    }
-
-    // Backend N surface 등록/해제 — webview_open 직후(가시 홀 편입), webview_close 직전(회수).
-    // 오프스크린 추출 webview(media_extract, -20000)는 홀이 아니므로 등록하지 않는다.
-    pub fn register_surface(ptr: usize, label: Option<&str>) {
-        SURFACES.register(ptr, label);
-    }
-    pub fn unregister_surface(ptr: usize) {
-        SURFACES.unregister(ptr);
-    }
-    pub fn surface_label(ptr: usize) -> Option<String> {
-        SURFACES.label(ptr)
-    }
-    pub fn surface_host_ptr(label: &str) -> usize {
-        SURFACE_HOSTS
-            .lock()
-            .ok()
-            .and_then(|m| m.get(label).map(|host| host.ptr))
-            .unwrap_or(0)
-    }
-
-    fn place_surface_host(label: &str, mode: NSWindowOrderingMode) {
-        let host = SURFACE_HOSTS.lock().ok().and_then(|m| m.get(label).cloned());
-        let Some(host) = host else { return };
-        let main_ptr = LAYERS
-            .lock()
-            .ok()
-            .and_then(|layers| layers.get(&host.window_label).map(|window| {
-                if mode == NSWindowOrderingMode::Above && window.overlay { 0 } else { window.main_ptr }
-            }))
-            .unwrap_or(0);
-        if main_ptr == 0 { return }
-        let main_view = unsafe { &*(main_ptr as *const NSView) };
-        let Some(parent) = (unsafe { main_view.superview() }) else { return };
-        // AppKit이 기존 subview의 순서 변경을 명시적으로 보장하는 `subviews` 계약을 쓴다.
-        // addSubview(_:positioned:relativeTo:)는 새 subview 삽입 API라 이미 붙은 host를 호출했을 때
-        // 실제 sibling 배열이 바뀌지 않았다. 배열은 back-to-front이고, setSubviews는 기존 view를
-        // 떼었다 붙이지 않은 채 필요한 항목만 이동한다.
-        let siblings = parent.subviews().into_iter().collect::<Vec<_>>();
-        let sibling_ptrs = siblings
-            .iter()
-            .map(|view| (&**view as *const NSView) as usize)
-            .collect::<Vec<_>>();
-        let ordered_ptrs = super::surface_sibling_order(
-            &sibling_ptrs,
-            host.ptr,
-            main_ptr,
-            mode == NSWindowOrderingMode::Above,
-        );
-        if ordered_ptrs == sibling_ptrs { return }
-        let ordered = ordered_ptrs
-            .iter()
-            .filter_map(|ptr| {
-                siblings
-                    .iter()
-                    .find(|view| (&***view as *const NSView) as usize == *ptr)
-                    .cloned()
-            })
-            .collect::<Vec<_>>();
-        parent.setSubviews(&NSArray::from_retained_slice(&ordered));
-    }
-
-    pub fn raise_surface_host(label: &str) {
-        place_surface_host(label, NSWindowOrderingMode::Above);
-    }
-
-    pub fn lower_surface_host(label: &str) {
-        place_surface_host(label, NSWindowOrderingMode::Below);
-    }
-
-    pub fn lower_window_surface_hosts(window_label: &str) {
-        let labels = SURFACE_HOSTS
-            .lock()
-            .ok()
-            .map(|hosts| {
-                hosts
-                    .iter()
-                    .filter(|(_, host)| host.window_label == window_label)
-                    .map(|(label, _)| label.clone())
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        for label in labels {
-            lower_surface_host(&label);
-        }
-    }
-
-    pub fn raise_window_surface_hosts(window_label: &str) {
-        let labels = SURFACE_HOSTS
-            .lock()
-            .ok()
-            .map(|hosts| {
-                hosts
-                    .iter()
-                    .filter(|(_, host)| host.window_label == window_label)
-                    .map(|(label, _)| label.clone())
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        for label in labels {
-            raise_surface_host(&label);
-        }
-    }
-
-    // child WKWebView를 전용 layer-backed NSView에 넣는다. host frame이 화면 좌표의 단일 진실이고
-    // child는 로컬 원점에 고정된다. addSubview는 기존 부모에서 표준 재부착을 수행한다.
-    pub fn adopt_surface_host<R: tauri::Runtime>(
-        webview: &tauri::Webview<R>,
-        surface_label: &str,
-        window_label: &str,
-    ) {
-        let surface_label = surface_label.to_string();
-        let window_label = window_label.to_string();
-        let _ = webview.with_webview(move |pw| unsafe {
-            use objc2::MainThreadOnly;
-            use objc2_foundation::{NSPoint, NSRect};
-
-            let main_ptr = LAYERS
-                .lock()
-                .ok()
-                .and_then(|l| l.get(&window_label).map(|w| w.main_ptr))
-                .unwrap_or(0);
-            if main_ptr == 0 {
-                return;
-            }
-            let Some(mtm) = objc2::MainThreadMarker::new() else {
-                return;
-            };
-            let child = &*(pw.inner() as *const NSView);
-            let main_view = &*(main_ptr as *const NSView);
-            let (Some(parent), Some(main_parent)) = (child.superview(), main_view.superview()) else {
-                return;
-            };
-            if Retained::as_ptr(&parent) != Retained::as_ptr(&main_parent) {
-                eprintln!("[layer] surface host 채택 실패: child와 main 부모가 다름 — {surface_label}");
-                return;
-            }
-            let frame = child.frame();
-            let host = NSView::initWithFrame(NSView::alloc(mtm), frame);
-            host.setWantsLayer(true);
-            parent.addSubview_positioned_relativeTo(
-                &host,
-                NSWindowOrderingMode::Above,
-                Some(main_view),
-            );
-            child.setFrame(NSRect::new(NSPoint::new(0.0, 0.0), frame.size));
-            host.addSubview(child);
-            let ptr = Retained::as_ptr(&host) as usize;
-            SURFACES.register(ptr, Some(&surface_label));
-            if let Ok(mut hosts) = SURFACE_HOSTS.lock() {
-                hosts.insert(surface_label, SurfaceHost {
-                    ptr,
-                    window_label,
-                });
-            }
-        });
-    }
-
-    pub fn set_surface_host_hidden(label: &str, hidden: bool) {
-        let ptr = surface_host_ptr(label);
-        if ptr != 0 {
-            let host = unsafe { &*(ptr as *const NSView) };
-            host.setHidden(hidden);
-        }
-    }
-
-    pub fn remove_surface_host(label: &str) {
-        let host = SURFACE_HOSTS.lock().ok().and_then(|mut m| m.remove(label));
-        let Some(host) = host else { return };
-        SURFACES.unregister(host.ptr);
-        let host = unsafe { &*(host.ptr as *const NSView) };
-        host.removeFromSuperview();
-    }
-
-    // 등록된 엔진 서피스 수 — 관측면(webview.surfaces 의 engine 축)이 읽는다.
-    pub fn surface_count() -> usize {
-        SURFACES.len()
-    }
-
-    // 창의 살아있는 등록 서피스 실측 — SURFACES(포인터 집합)를 직접 순회하면 파괴와
-    // 해제 relay 사이의 틈에 죽은 포인터로 msg_send 가 나간다(실사고: engine_surface_stats
-    // 의 NSView::window() 에서 SIGTRAP — use-after-free 앱 즉사). 순회의 원천은 창의
-    // live subview 트리다: 존재하는 뷰만 만지고, SURFACES 는 멤버십 판정에만 쓴다
-    // (hit_test 의 "형제 순회가 live subview 만 본다" 원리와 동일). 메인 스레드 전용.
-    pub fn live_registered_views(ns_window_ptr: usize) -> Vec<usize> {
-        let mut out = Vec::new();
-        let set = SURFACES.members();
-        if ns_window_ptr == 0 {
-            return out;
-        }
-        let ns_window: &objc2_app_kit::NSWindow =
-            unsafe { &*(ns_window_ptr as *const objc2_app_kit::NSWindow) };
-        let Some(content) = ns_window.contentView() else { return out };
-        fn walk(v: &objc2_app_kit::NSView, set: &std::collections::HashSet<usize>, out: &mut Vec<usize>) {
-            for sub in v.subviews().iter() {
-                let ptr = &*sub as *const objc2_app_kit::NSView as usize;
-                if set.contains(&ptr) {
-                    out.push(ptr);
-                }
-                walk(&sub, set, out);
-            }
-        }
-        walk(&content, &set, &mut out);
-        out
-    }
-
-    // 창의 엔진 호스트 컨테이너 포인터(0=미생성) — 재부팅 구간 숨김의 손잡이.
-    pub fn engine_host_ptr(label: &str) -> usize {
-        LAYERS
-            .lock()
-            .ok()
-            .and_then(|m| m.get(label).map(|w| w.host_ptr))
-            .unwrap_or(0)
-    }
-
-    type HitTestFn = unsafe extern "C-unwind" fn(*mut AnyObject, Sel, NSPoint) -> *mut AnyObject;
-
-    // hitTest: 교체 구현. 클래스(WryWebView) 단위 스위즐이므로 모든 webview 가
-    // 거치지만 메인 뷰만 홀 로직을 탄다 — isa-swizzle(인스턴스 클래스 교체)은
-    // AppKit 의 클래스 기반 design-property 조회(NSDP)가 런타임 서브클래스에서
-    // assert 로 SIGABRT 를 내므로 금지(실측: <select> 팝업 attachPopUpWithFrame
-    // 경로 크래시). 클래스 정체성은 절대 바꾸지 않는다.
-    //
-    // AppKit 은 부모가 서브뷰를 앞→뒤로 hitTest 하고 첫 비-nil 이 이긴다 —
-    // 메인(최상위)이 nil 을 돌려주면 같은 지점의 아래 child webview 가 자연히
-    // 수신한다. point 는 superview 좌표계(형제 frame 과 동일 공간)이므로 변환
-    // 없이 비교한다. 메인 스레드에서만 호출된다(AppKit).
-    unsafe extern "C-unwind" fn hit_test(
-        this: *mut AnyObject,
-        cmd: Sel,
-        point: NSPoint,
-    ) -> *mut AnyObject {
-        let orig: HitTestFn = std::mem::transmute(ORIG_HIT_TEST.load(Ordering::Relaxed));
-        let default = orig(this, cmd, point);
-        // this 가 *어느 창의* 메인 view 인가 + 그 창 오버레이 활성/홀? 미등록(child/팝업)이거나
-        // 맵 poisoned 면 원본 동작. (마우스 이벤트마다 호출 — lock 은 짧고 창 수는 적다.)
-        // overlay 와 holes(클론)를 lock 한 번에 같이 꺼낸다.
-        let (overlay, holes, host_ptr) = {
-            let Ok(layers) = LAYERS.lock() else {
-                return default;
-            };
-            match layers.values().find(|w| w.main_ptr == this as usize) {
-                None => return default, // child/팝업 webview — 원본 동작 그대로.
-                Some(w) => (w.overlay, w.holes.clone(), w.host_ptr),
-            }
-        };
-        // 등록된 Backend N surface 스냅샷(마우스 이벤트마다 — 탭 수만큼 작음, holes.clone 과 동일 층위).
-        let surfaces = SURFACES.members();
-        if default.is_null() || overlay {
-            return default;
-        }
-        let view = &*(this as *const NSView);
-        let Some(superview) = view.superview() else {
-            return default;
-        };
-        // 사이드바 등 DOM 오버레이 영역은 풀사이즈 브라우저 위에 떠 있어도 DOM 이 이벤트를
-        // 갖는다(스크롤이 브라우저로 새지 않음). 홀 안이면 default(메인 webview)를 그대로
-        // 돌려줘 DOM 이 이벤트를 받는다. holes 는 메인 webview 콘텐츠 기준 CSS 논리 px(top-left,
-        // webview_bounds 와 동일 규약)이고, point 는 superview 좌표계이므로 mf(메인 frame)를
-        // 통해 변환한다. mf 는 메인 webview 콘텐츠 전 영역이다.
-        let mf = view.frame();
-        let flipped = superview.isFlipped();
-        for hole in holes.iter() {
-            let xlo = mf.origin.x + hole.x;
-            let xhi = mf.origin.x + hole.x + hole.w;
-            // y 변환: superview 가 flipped(top-left 원점)면 hole.y 를 그대로 더한다.
-            // AppKit 기본(non-flipped, bottom-left 원점)이면 콘텐츠 상단이 mf 의 위쪽 변
-            // (mf.origin.y + mf.size.height)이므로 거기서 hole.y/hole.y+h 를 빼 뒤집는다.
-            let (ylo, yhi) = if flipped {
-                (mf.origin.y + hole.y, mf.origin.y + hole.y + hole.h)
-            } else {
-                let y_high = mf.origin.y + mf.size.height - hole.y;
-                let y_low = mf.origin.y + mf.size.height - (hole.y + hole.h);
-                (y_low, y_high)
-            };
-            if point.x >= xlo && point.x < xhi && point.y >= ylo && point.y < yhi {
-                return default;
-            }
-        }
-        // 등록된 surface 가 point 를 덮으면 null 반환(형제 stack 아래 child 가 이벤트 수신). surface 는
-        // ① contentView 직속 형제(레거시/코어 webview) ② 엔진 호스트 컨테이너 안(격리 계약)에 있을 수
-        // 있다. 두 곳 모두 검사한다. 컨테이너는 contentView 전체크기·원점(0,0)이라 그 안 surface 의 frame
-        // 은 contentView(=point) 좌표와 identity — 형제와 동일 비교식이 성립한다.
-        let hit = |parent: &NSView| -> bool {
-            for sub in parent.subviews().iter() {
-                if Retained::as_ptr(&sub) as *mut AnyObject == this || sub.isHidden() {
-                    continue;
-                }
-                if !surfaces.contains(&(Retained::as_ptr(&sub) as usize)) {
-                    continue;
-                }
-                let f = sub.frame();
-                if point.x >= f.origin.x
-                    && point.x < f.origin.x + f.size.width
-                    && point.y >= f.origin.y
-                    && point.y < f.origin.y + f.size.height
-                {
-                    return true;
-                }
-            }
-            false
-        };
-        if hit(&superview) {
-            return std::ptr::null_mut();
-        }
-        if host_ptr != 0 {
-            let host = &*(host_ptr as *const NSView);
-            if hit(host) {
-                return std::ptr::null_mut();
-            }
-        }
-        default
-    }
-
-    // 메인 webview 에 1회 설치: ① 자체 배경 비활성(KVC drawsBackground=false —
-    // wry 의 transparent 경로와 동일 기법; CSS 불투명 표면은 그대로 그려지고
-    // 투명 슬롯만 아래가 비친다) ② hitTest 메서드 스위즐(클래스 단위, 위 주석).
-    pub fn install(app: &tauri::AppHandle, label: &str) {
-        let Some(wv) = app.get_webview(label) else {
-            eprintln!("[layer] {label} webview 없음 — 레이어 역전 미설치");
-            return;
-        };
-        let label = label.to_string();
-        let _ = wv.with_webview(move |pw| unsafe {
-            let obj = pw.inner() as *mut AnyObject;
-            if let Ok(mut layers) = LAYERS.lock() {
-                layers.insert(
-                    label,
-                    WinLayer {
-                        main_ptr: obj as usize,
-                        overlay: false,
-                        holes: Vec::new(),
-                        host_ptr: 0,
-                    },
-                );
-            }
-
-            let no = NSNumber::new_bool(false);
-            let key = NSString::from_str("drawsBackground");
-            let _: () = msg_send![&*obj, setValue: Some(&*no as &AnyObject), forKey: &*key];
-
-            // hitTest 스위즐 — 클래스(WryWebView) 단위라 앱 전역 1회면 모든 창 webview 가 거친다.
-            // 원본 IMP 를 보관하고 같은 타입 인코딩으로 교체. 이미 설치됐으면(ORIG≠0) 건너뛴다.
-            if ORIG_HIT_TEST.load(Ordering::Relaxed) != 0 {
-                return;
-            }
-            let cls = (*obj).class();
-            let sel = sel!(hitTest:);
-            let Some(method) = cls.instance_method(sel) else {
-                eprintln!("[layer] hitTest 메서드 없음 — 홀 위임 미설치");
-                return;
-            };
-            ORIG_HIT_TEST.store(method.implementation() as usize, Ordering::Relaxed);
-            objc2::ffi::class_replaceMethod(
-                (cls as *const objc2::runtime::AnyClass).cast_mut(),
-                sel,
-                std::mem::transmute::<HitTestFn, objc2::runtime::Imp>(hit_test),
-                objc2::ffi::method_getTypeEncoding(method as *const objc2::runtime::Method),
-            );
-        });
-    }
-
-    // 엔진 호스트 컨테이너 취득(격리 계약) — 창 label 의 contentView 안, 메인 webview 아래에 코어 소유
-    // 전체크기 NSView 를 1회 생성해 그 포인터를 반환한다. 모듈은 이 컨테이너를 surface 로 받아 그 안에만
-    // child/레이어를 붙인다 → 모듈 결함의 피해가 컨테이너로 국한되고 contentView(=코어 소유)는 불가침.
-    // **메인 스레드에서만 호출**(NSView 생성/삽입). 미설치 창(WinLayer 없음)·실패 시 None → 호출부가
-    // contentView 폴백(격리는 심층방어라, 폴백 시 hitTest 형제 경로가 그대로 동작한다).
-    #[cfg(target_os = "macos")]
-    pub fn ensure_engine_host(label: &str) -> Option<usize> {
-        use objc2::MainThreadOnly; // NSView::alloc(mtm) 제공.
-        use objc2_app_kit::NSAutoresizingMaskOptions;
-        let mtm = objc2_foundation::MainThreadMarker::new()?; // 메인 스레드 계약 확인.
-        unsafe {
-            let main_ptr = {
-                let layers = LAYERS.lock().ok()?;
-                let w = layers.get(label)?;
-                if w.host_ptr != 0 {
-                    return Some(w.host_ptr); // 이미 생성됨(멱등).
-                }
-                w.main_ptr
-            };
-            if main_ptr == 0 {
-                return None;
-            }
-            let main_view = &*(main_ptr as *const NSView);
-            let content = main_view.superview()?; // contentView(코어 소유) — 컨테이너의 부모.
-            let bounds = content.bounds();
-            let host = NSView::initWithFrame(NSView::alloc(mtm), bounds);
-            // 합성 호스트는 레이어-백드여야 한다 — Chromium windowed 는 GPU 프로세스의 원격
-            // CALayer(CAContext) 를 자기 뷰 레이어에 호스팅하는데, 부모 사슬이 레이어-백드가
-            // 아니면 그 레이어가 창의 합성 트리에 영영 안 올라간다(실사고: 페이지 DOM 생존·
-            // 뷰 정위치·unhidden 인데 픽셀만 없음 — 단독 하니스(winit 레이어-백드)는 GREEN,
-            // 앱 임베딩만 블랭크). OSR 은 프레젠터가 자기 CALayer 를 직접 붙여 무사했다.
-            host.setWantsLayer(true);
-            // 컨테이너는 콘텐츠 전면을 채우고 리사이즈를 따라간다(원점 0,0 유지 → 좌표 identity).
-            host.setAutoresizingMask(
-                NSAutoresizingMaskOptions::ViewWidthSizable
-                    | NSAutoresizingMaskOptions::ViewHeightSizable,
-            );
-            // 메인 webview 아래(형제 최하단)에 삽입 — DOM 이 항상 위, 엔진 콘텐츠가 그 아래로 비친다.
-            content.addSubview_positioned_relativeTo(
-                &host,
-                NSWindowOrderingMode::Below,
-                Some(main_view),
-            );
-            let host_ptr = Retained::as_ptr(&host) as usize;
-            // Retained 를 leak 해 컨테이너 수명을 뷰 계층에 위임(창이 소유; 창 파괴 시 함께 해제).
-            std::mem::forget(host);
-            if let Ok(mut layers) = LAYERS.lock() {
-                if let Some(w) = layers.get_mut(label) {
-                    w.host_ptr = host_ptr;
-                }
-            }
-            Some(host_ptr)
-        }
-    }
-
-    // 실측 프로브: contentView 서브뷰 트리 덤프(클래스/frame/hidden) — 계층
-    // 가정(형제 구조·순서)의 검증·진단용.
-    pub fn dump_view(view: &NSView, depth: usize, out: &mut String) {
-        let f = view.frame();
-        let _ = std::fmt::Write::write_fmt(
-            out,
-            format_args!(
-                "{}{} frame=({}, {}, {}, {}) hidden={} layer={} wants={} ptr={:p}\n",
-                "  ".repeat(depth),
-                view.class().name().to_string_lossy(),
-                f.origin.x,
-                f.origin.y,
-                f.size.width,
-                f.size.height,
-                view.isHidden(),
-                unsafe { view.layer().is_some() },
-                unsafe { view.wantsLayer() },
-                view as *const NSView,
-            ),
-        );
-        if depth >= 6 {
-            return; // CEF windowed 의 원격 레이어 호스트(WebContentsViewCocoa 하위)까지 관측
-        }
-        for sub in view.subviews().iter() {
-            dump_view(&sub, depth + 1, out);
-        }
-    }
-
-}
+mod layer;
 
 // 엔진 사이드카의 native surface 를 레이어 시스템(SURFACES — hitTest 위임)에 편입/해제.
 // 엔진이 surface-created/destroyed 호스트 사실을 emit 하면 sidecar.rs 가 여기로 relay 한다.
@@ -852,7 +304,7 @@ pub async fn engine_surface_stats(app: AppHandle, window: tauri::Window) -> serd
                 "otherWindows": other_windows,
                 "hostPresent": host != 0,
                 "hostHidden": host_hidden,
-                "windowZoom": window_zoom_of(&label),
+                "windowZoom": SURFACE_LAYOUT.window_zoom(&label),
                 "surfaces": surfaces,
             }));
         });
@@ -1239,19 +691,16 @@ pub fn webview_zoom(window: tauri::Window, factor: f64) -> Result<(), String> {
     let f = factor.clamp(0.5, 2.0);
     let label = window.label().to_string();
     let app = window.app_handle();
-    if let Ok(mut m) = WINDOW_ZOOM.lock() {
-        m.insert(label.clone(), f);
-    }
+    SURFACE_LAYOUT.set_window_zoom(&label, f);
     let child_prefix = format!("b-{label}-");
     for (wl, wv) in app.webviews() {
         if wl == label {
             wv.set_zoom(f).map_err(|e| e.to_string())?;
         }
         if wl.starts_with(&child_prefix) {
-            wv.set_zoom(f * view_zoom_of(&wl)).map_err(|e| e.to_string())?;
+            wv.set_zoom(f * SURFACE_LAYOUT.view_zoom(&wl)).map_err(|e| e.to_string())?;
             // 프레임도 같은 배율로 즉시 재배치 — 프론트 레이아웃(CSS px)은 불변이라 여기서만 안다.
-            let raw = RAW_BOUNDS.lock().ok().and_then(|m| m.get(&wl).copied());
-            if let Some(raw) = raw {
+            if let Some(raw) = SURFACE_LAYOUT.raw(&wl) {
                 apply_child_bounds(&wv, &wl, raw)?;
             }
         }
@@ -1264,11 +713,9 @@ pub fn webview_zoom(window: tauri::Window, factor: f64) -> Result<(), String> {
 #[tauri::command]
 pub fn webview_zoom_view(app: AppHandle, label: String, factor: f64) -> Result<f64, String> {
     let f = factor.clamp(0.25, 4.0);
-    if let Ok(mut m) = VIEW_ZOOM.lock() {
-        m.insert(label.clone(), f);
-    }
+    SURFACE_LAYOUT.set_view_zoom(&label, f);
     if let Some(wv) = app.get_webview(&label) {
-        let win_f = window_zoom_of(wv.window().label());
+        let win_f = SURFACE_LAYOUT.window_zoom(wv.window().label());
         wv.set_zoom(win_f * f).map_err(|e| e.to_string())?;
     }
     Ok(f)
@@ -1298,7 +745,7 @@ pub fn webview_divider_highlight(window: tauri::Window, rect: Option<HlRect>) {
     #[cfg(target_os = "macos")]
     {
         let app = window.app_handle().clone();
-        set_divider_highlight(
+        appkit_events::set_divider_highlight(
             &app,
             window.label().to_string(),
             rect.map(|r| (r.x, r.y, r.w, r.h)),
@@ -1317,34 +764,6 @@ pub fn webview_divider_highlight(window: tauri::Window, rect: Option<HlRect>) {
 // 줌되면 화면상 위치·크기는 배율만큼 이동한다. bounds 적용 시 이 배율을 곱해야 프레임과
 // 콘텐츠(자식 자체 줌)가 나머지 UI 와 한 몸으로 스케일된다(실측: 미적용 시 프레임 제자리
 // + 콘텐츠만 확대 = 브라우저 깨짐).
-static WINDOW_ZOOM: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, f64>>> =
-    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
-// 자식 라벨 → 마지막 CSS bounds(원값). 줌 변경 순간 프론트는 rect 변화를 모르므로(레이아웃
-// 불변) 여기 캐시로 전 자식을 새 배율로 즉시 재배치한다.
-static RAW_BOUNDS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, (f64, f64, f64, f64)>>> =
-    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
-
-// 자식 라벨 → 뷰 자체 줌(브라우저 페이지 줌 등). 콘텐츠 유효 배율 = 창 배율 × 뷰 배율,
-// 프레임(bounds)은 창 배율만 따른다 — 뷰 줌은 콘텐츠만 키우는 축(줌 불변식).
-static VIEW_ZOOM: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, f64>>> =
-    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
-
-fn view_zoom_of(label: &str) -> f64 {
-    VIEW_ZOOM
-        .lock()
-        .ok()
-        .and_then(|m| m.get(label).copied())
-        .unwrap_or(1.0)
-}
-
-fn window_zoom_of(label: &str) -> f64 {
-    WINDOW_ZOOM
-        .lock()
-        .ok()
-        .and_then(|m| m.get(label).copied())
-        .unwrap_or(1.0)
-}
-
 #[cfg(target_os = "macos")]
 fn set_child_frame(
     wv: &tauri::Webview,
@@ -1391,19 +810,15 @@ fn set_child_frame(
         .map_err(|error| format!("native surface frame ACK 실패: {error}"))?
 }
 
-static APPLIED_BOUNDS: std::sync::LazyLock<
-    std::sync::Mutex<std::collections::HashMap<String, (f64, f64, f64, f64)>>,
-> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
-
 fn apply_child_bounds(
     wv: &tauri::Webview,
     label: &str,
     raw: (f64, f64, f64, f64),
 ) -> Result<(), String> {
     let win = wv.window();
-    let f = window_zoom_of(win.label());
+    let f = SURFACE_LAYOUT.window_zoom(win.label());
     let (x, y, w, h) = scale_rect(raw, f);
-    let prev = APPLIED_BOUNDS.lock().ok().and_then(|m| m.get(label).copied());
+    let prev = SURFACE_LAYOUT.applied(label);
     let (moved, resized) = rect_delta(prev, (x, y, w, h));
     if moved || resized {
         #[cfg(target_os = "macos")]
@@ -1420,9 +835,7 @@ fn apply_child_bounds(
             }
         }
     }
-    if let Ok(mut m) = APPLIED_BOUNDS.lock() {
-        m.insert(label.to_string(), (x, y, w, h));
-    }
+    SURFACE_LAYOUT.set_applied(label, (x, y, w, h));
     Ok(())
 }
 
@@ -1451,9 +864,7 @@ pub fn webview_bounds(
                 .map(|d| d.as_secs_f64() * 1000.0)
                 .unwrap_or(0.0)
         );
-        if let Ok(mut m) = RAW_BOUNDS.lock() {
-            m.insert(label.clone(), (x, y, w, h));
-        }
+        SURFACE_LAYOUT.set_raw(&label, (x, y, w, h));
         apply_child_bounds(&wv, &label, (x, y, w, h))?;
     }
     Ok(())
@@ -1737,15 +1148,7 @@ pub fn webview_close(app: AppHandle, label: String) -> Result<(), String> {
     if let Some(wv) = app.get_webview(&label) {
         // 파괴 예고(webview_health) — 닫히는 webview 의 프로세스 종료를 크래시로 오분류하지 않는다.
         crate::webview_health::mark_expected_teardown(&app, &label);
-        if let Ok(mut m) = RAW_BOUNDS.lock() {
-            m.remove(&label);
-        }
-        if let Ok(mut m) = VIEW_ZOOM.lock() {
-            m.remove(&label);
-        }
-        if let Ok(mut m) = APPLIED_BOUNDS.lock() {
-            m.remove(&label);
-        }
+        SURFACE_LAYOUT.remove_surface(&label);
         // 전용 surface host가 레지스트리·z-order·child containment를 함께 회수한다.
         #[cfg(target_os = "macos")]
         layer::remove_surface_host(&label);
@@ -1995,410 +1398,8 @@ pub fn webview_inject_script(
 // (별도 저장소, 멀티플랫폼). 앱은 .plugin(tauri_plugin_webview_capture::init()) 로
 // 등록하고 sok 명령(window.snapshot/record/occlusion)이 plugin:webview-capture|* 를 호출.
 
-// NSWindow 포인터 ↔ 창 label 캐시(MW1: 모든 네이티브 이벤트는 어느 창인지 label 로 식별).
-//
-// AppKit 통지 블록(클릭 모니터·포인터 부재·라이브 리사이즈)은 wry 가 창 맵(RefCell)을
-// mutably 빌린 채에도 불린다 — 창 파괴 중 resign-key 가 동기 발화한다. 그 안에서
-// Window::ns_window()(메인 스레드 인라인 wry 메시지 → 같은 RefCell 재차용)를 부르면
-// 프로세스가 죽는다(실측 백트레이스: install_pointer_absence → ns_window →
-// handle_user_message, "RefCell already mutably borrowed" wry lib.rs:3273 —
-// 브라우저 하니스의 window.close 가 앱 전체를 죽였다). 그래서 역해소는 창 생성 직후
-// (install_window_natives, 이벤트 루프 디스패치 밖 안전 문맥)에 채운 캐시 조회만으로
-// 한다 — 통지 블록 안 wry 질의 0 이 이 캐시의 존재 이유다.
 #[cfg(target_os = "macos")]
-static NSWINDOW_LABELS: std::sync::Mutex<Vec<(usize, String)>> = std::sync::Mutex::new(Vec::new());
-
-/// 창 생성 직후(안전 문맥)에서 한 번 — NSWindow 포인터를 label 에 묶는다. 같은 label 재등록은
-/// 갱신(멱등). window.reload 로 포인터가 바뀌어도 다음 등록이 걷는다.
-#[cfg(target_os = "macos")]
-pub fn note_nswindow_label(window: &tauri::Window) {
-    if let Ok(ns) = window.ns_window() {
-        nswindow_cache_put(ns as usize, window.label());
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn nswindow_cache_put(ns_ptr: usize, label: &str) {
-    if let Ok(mut g) = NSWINDOW_LABELS.lock() {
-        g.retain(|(p, l)| *p != ns_ptr && l != label);
-        g.push((ns_ptr, label.to_string()));
-    }
-}
-
-/// Destroyed — 그 창의 매핑 회수(포인터 재사용 시 죽은 label 로 오해소하지 않게).
-#[cfg(target_os = "macos")]
-pub fn forget_nswindow_label(label: &str) {
-    if let Ok(mut g) = NSWINDOW_LABELS.lock() {
-        g.retain(|(_, l)| l != label);
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn label_for_nswindow(ns_ptr: usize) -> Option<String> {
-    NSWINDOW_LABELS
-        .lock()
-        .ok()?
-        .iter()
-        .find(|(p, _)| *p == ns_ptr)
-        .map(|(_, l)| l.clone())
-}
-
-// AppKit 통지 블록에서의 이벤트 발행 — 블록 안에서는 wry 로 가는 어떤 호출도 금지다.
-// emit_to 조차 eval_script(인라인 wry 메시지 → RefCell 재차용)라, 창 파괴 중 동기 발화된
-// 블록에서 부르면 프로세스가 죽는다(실측 백트레이스 2호: install_pointer_absence →
-// emit_to → eval_script → handle_user_message, wry lib.rs:3644). 별도 스레드에서 부르면
-// proxy 경로로 큐잉되어 다음 이벤트 루프 차례에 실행된다(CloseRequested 지연과 동일 패턴).
-// 저빈도 통지 전용 — 순서 민감 경로에 쓰지 않는다.
-#[cfg(target_os = "macos")]
-fn emit_from_appkit_block<P: serde::Serialize + Clone + Send + 'static>(
-    handle: &AppHandle,
-    label: Option<String>,
-    event: &'static str,
-    payload: P,
-) {
-    let h = handle.clone();
-    std::thread::spawn(move || {
-        use tauri::Emitter;
-        let _ = match label {
-            Some(l) => h.emit_to(&l, event, payload),
-            None => h.emit(event, payload),
-        };
-    });
-}
-
-// 네이티브 child webview 위 클릭은 메인 webview DOM 에 도달하지 않아 포커스 추적(activeGroup)이
-// 끊긴다. NSEvent 로컬 모니터(앱 전역 1회)로 *모든 창*의 좌클릭을 잡아 {label, 좌표}를 emit 한다 —
-// 감지는 네이티브가, 판정(어느 창·그룹)은 레이아웃을 아는 프론트가 소유(자기 창 label 필터 +
-// elementFromPoint). 이벤트는 그대로 통과(클릭 동작 불변). MW1/MW4 — 단일 창(main_ptr) 가정 제거.
-#[cfg(target_os = "macos")]
-pub fn install_click_monitor(app: &AppHandle) {
-    use objc2::rc::Retained;
-    use objc2::MainThreadMarker;
-    use objc2_app_kit::{NSEvent, NSEventMask, NSEventType};
-
-    #[derive(Clone, Serialize)]
-    struct ClickPayload {
-        x: f64,
-        y: f64,
-    }
-
-    let handle = app.clone();
-    let block = block2::RcBlock::new(move |event: std::ptr::NonNull<NSEvent>| -> *mut NSEvent {
-        unsafe {
-            let ev = event.as_ref();
-            // Down/Dragged/Up 을 각각 native-mousedown/native-mousemove/native-mouseup 으로 브릿지한다.
-            // 왜 3종인가: 네이티브 child(브라우저 등)는 OS 뷰라 그 위의 mousedown/move/up 이 DOM 에 오지
-            // 않는다 → 그 위를 지나는 분할 divider 를 드래그로 리사이즈할 수 없다. 좌표를 프론트에 넘겨
-            // 프론트가 divider 판정+합성 이벤트로 드래그를 구동하게 한다. 이벤트는 통과(동작 불변).
-            // move/up 은 버튼 누른 드래그(LeftMouseDragged) 동안만 흐르므로 IPC 폭주 없음(hover 는 제외).
-            let name = match ev.r#type() {
-                NSEventType::LeftMouseDown => "native-mousedown",
-                NSEventType::LeftMouseDragged => "native-mousemove",
-                NSEventType::LeftMouseUp => "native-mouseup",
-                // hover(버튼 안 누름) — divider 강조용. 브라우저 위 마우스 이동은 매우 빈번하므로
-                // 25ms(~40Hz) 스로틀한다(드래그 Dragged 는 스로틀 없음 — 리사이즈 정밀).
-                NSEventType::MouseMoved => {
-                    static LAST_MS: std::sync::atomic::AtomicU64 =
-                        std::sync::atomic::AtomicU64::new(0);
-                    static CLOCK: std::sync::LazyLock<std::time::Instant> =
-                        std::sync::LazyLock::new(std::time::Instant::now);
-                    let now = CLOCK.elapsed().as_millis() as u64;
-                    if now.saturating_sub(LAST_MS.load(Ordering::Relaxed)) < 25 {
-                        return event.as_ptr();
-                    }
-                    LAST_MS.store(now, Ordering::Relaxed);
-                    "native-mousemove"
-                }
-                _ => return event.as_ptr(),
-            };
-            // 모니터 콜백은 메인 스레드에서 호출된다(AppKit 이벤트 루프).
-            let Some(mtm) = MainThreadMarker::new() else {
-                return event.as_ptr();
-            };
-            if let Some(win) = ev.window(mtm) {
-                let ns_ptr = Retained::as_ptr(&win) as usize;
-                if let Some(label) = label_for_nswindow(ns_ptr) {
-                    if let Some(view) = win.contentView() {
-                        let h = view.frame().size.height;
-                        let loc = ev.locationInWindow();
-                        // 그 창에만 — 블록 밖(별도 스레드 큐잉)으로 발행한다(블록 안 wry 금지).
-                        emit_from_appkit_block(
-                            &handle,
-                            Some(label),
-                            name,
-                            ClickPayload {
-                                x: loc.x,
-                                y: h - loc.y,
-                            },
-                        );
-                    }
-                }
-            }
-            event.as_ptr()
-        }
-    });
-    let mask = NSEventMask(
-        NSEventMask::LeftMouseDown.0
-            | NSEventMask::LeftMouseDragged.0
-            | NSEventMask::LeftMouseUp.0
-            | NSEventMask::MouseMoved.0,
-    );
-    let monitor = unsafe { NSEvent::addLocalMonitorForEventsMatchingMask_handler(mask, &block) };
-    // 모니터는 앱 수명 동안 유지 — drop 되면 해제되므로 의도적으로 leak.
-    std::mem::forget(monitor);
-
-    install_pointer_absence(app);
-}
-
-// 포인터가 더 이상 우리 위에 없다는 사실 — native-mouseleave.
-//
-// 위의 로컬 모니터는 "있음"만 말한다. 그 사실로 켜지는 상태(divider hover 강조)는 꺼질 방법이
-// 없었다: 포인터가 창 밖으로 나가면 MouseMoved 가 끊기고, 끊긴 것과 "그 자리에 멈춰 있다"가
-// 구별되지 않아 강조가 영원히 남는다(실측: accent 세로선이 창 본문 전체 높이로 브라우저를
-// 가로지른 채 굳음 — ui.hit 이 divider s1:0 을 반환, 그 rect 가 네이티브 강조바 프레임과 동일).
-// 스크린샷 단축키처럼 앱이 비활성화되는 순간이 전형적인 경로다.
-//
-// 있음만 말하는 소스에는 없음을 말하는 짝이 필요하다. 창이 key 를 잃거나 앱이 활성을 잃는
-// 것은 포인터가 우리 것이 아니게 됐다는 뜻이고, 둘 다 저빈도 통지라 비용이 없다.
-#[cfg(target_os = "macos")]
-fn install_pointer_absence(app: &AppHandle) {
-    use objc2::rc::Retained;
-    use objc2_app_kit::{
-        NSApplicationDidResignActiveNotification, NSWindow, NSWindowDidResignKeyNotification,
-    };
-    use objc2_foundation::{NSNotification, NSNotificationCenter};
-
-    let center = NSNotificationCenter::defaultCenter();
-
-    // 창 단위 — key 를 잃은 그 창에만.
-    let handle = app.clone();
-    let block = block2::RcBlock::new(move |note: std::ptr::NonNull<NSNotification>| {
-        let note = unsafe { note.as_ref() };
-        let Some(obj) = note.object() else { return };
-        let Ok(ns) = obj.downcast::<NSWindow>() else {
-            return;
-        };
-        let ns_ptr = Retained::as_ptr(&ns) as usize;
-        if let Some(label) = label_for_nswindow(ns_ptr) {
-            emit_from_appkit_block(&handle, Some(label), "native-mouseleave", ());
-        }
-    });
-    let token = unsafe {
-        center.addObserverForName_object_queue_usingBlock(
-            Some(NSWindowDidResignKeyNotification),
-            None,
-            None,
-            &block,
-        )
-    };
-    std::mem::forget(token);
-
-    // 앱 단위 — 어느 창이 key 였든 앱을 떠났으면 전부 꺼진다(창 통지가 안 오는 경로 대비).
-    let handle = app.clone();
-    let block = block2::RcBlock::new(move |_note: std::ptr::NonNull<NSNotification>| {
-        emit_from_appkit_block(&handle, None, "native-mouseleave", ());
-    });
-    let token = unsafe {
-        center.addObserverForName_object_queue_usingBlock(
-            Some(NSApplicationDidResignActiveNotification),
-            None,
-            None,
-            &block,
-        )
-    };
-    std::mem::forget(token);
-}
-
-// divider 강조바 = 순수 시각. hitTest 를 nil 반환해 마우스를 통과시킨다 — 그래야 강조바가 divider 위를
-// 덮어도 그 밑 divider 가 native-mousedown(드래그/리사이즈)을 받는다. NSBox 서브클래스(fillColor 가
-// NSColor 를 직접 받음 — CALayer.setBackgroundColor 는 objc2-core-graphics feature 게이트라 회피).
-#[cfg(target_os = "macos")]
-objc2::define_class!(
-    #[unsafe(super(objc2_app_kit::NSBox))]
-    #[thread_kind = objc2::MainThreadOnly]
-    struct DividerHiliteBox;
-
-    impl DividerHiliteBox {
-        #[unsafe(method(hitTest:))]
-        fn hit_test(&self, _point: objc2_foundation::NSPoint) -> *mut objc2_app_kit::NSView {
-            std::ptr::null_mut() // 마우스 통과 — 밑의 divider 가 드래그를 받는다
-        }
-    }
-);
-
-// 창별 divider 강조바(메인스레드 전용 — Retained 는 !Send 라 thread_local 로 소유).
-#[cfg(target_os = "macos")]
-thread_local! {
-    static HL_BARS: std::cell::RefCell<
-        std::collections::HashMap<String, objc2::rc::Retained<DividerHiliteBox>>,
-    > = std::cell::RefCell::new(std::collections::HashMap::new());
-}
-
-// hover 중인 divider 위치(창 클라이언트 좌표 top-left, px)에 accent 바를 브라우저(네이티브 뷰) "위"에
-// 그린다. rect=None 이면 숨김. seam(child 물림) 방식과 달리 브라우저를 건드리지 않아 밀림/리플로우 0 이고,
-// contentView 최상위 subview 라 브라우저(네이티브)를 덮어 flat 에서도 강조가 보인다.
-#[cfg(target_os = "macos")]
-pub fn set_divider_highlight(app: &AppHandle, label: String, rect: Option<(f64, f64, f64, f64)>) {
-    use objc2::rc::Retained;
-    use objc2::{msg_send, MainThreadMarker};
-    use objc2_app_kit::{NSBoxType, NSColor, NSTitlePosition, NSView, NSWindow};
-    use objc2_foundation::{NSPoint, NSRect, NSSize};
-    let app = app.clone();
-    let _ = app.clone().run_on_main_thread(move || {
-        let Some(mtm) = MainThreadMarker::new() else {
-            return;
-        };
-        let Some(win) = app.get_window(&label) else {
-            return;
-        };
-        let Ok(ns) = win.ns_window() else { return };
-        if ns.is_null() {
-            return;
-        }
-        let ns_window: &NSWindow = unsafe { &*(ns as *const NSWindow) };
-        let Some(content) = ns_window.contentView() else {
-            return;
-        };
-        let ch = content.frame().size.height;
-        HL_BARS.with(|cell| {
-            let mut bars = cell.borrow_mut();
-            match rect {
-                Some((x, y, w, h)) => {
-                    // top-left(웹) → bottom-left(NSView) y-flip.
-                    let frame = NSRect::new(
-                        NSPoint::new(x, ch - (y + h)),
-                        NSSize::new(w.max(1.0), h.max(1.0)),
-                    );
-                    let bar = bars.entry(label.clone()).or_insert_with(|| {
-                        let b: Retained<DividerHiliteBox> =
-                            unsafe { msg_send![mtm.alloc::<DividerHiliteBox>(), init] };
-                        {
-                            b.setBoxType(NSBoxType::Custom); // 커스텀 = fillColor 로 단색 채움(테두리/타이틀 X)
-                            b.setTitlePosition(NSTitlePosition::NoTitle);
-                            b.setBorderWidth(0.0);
-                            b.setFillColor(&NSColor::controlAccentColor());
-                        }
-                        b
-                    });
-                    let view: &NSView = bar;
-                    {
-                        view.setFrame(frame);
-                        view.removeFromSuperview();
-                        content.addSubview(view); // 맨 위 subview = 브라우저 child 포함 모든 것 위.
-                        view.setHidden(false);
-                    }
-                }
-                None => {
-                    if let Some(bar) = bars.get(&label) {
-                        let view: &NSView = bar;
-                        view.setHidden(true);
-                    }
-                }
-            }
-        });
-    });
-}
-
-// 창 라이브 리사이즈(가장자리 드래그) 시작/끝을 네이티브로 감지해 프론트에 emit.
-// 왜 네이티브인가: JS(ResizeObserver)는 "리사이즈 중"만 알 뿐 "끝났다"를 모른다 →
-// 디바운스 추측으로 반영 지연이 생긴다(사용자 지적). 네이티브 신호는 정확하다 —
-// 드래그 중엔 터미널 fit 을 멈춰 깜빡임 0, 놓는 즉시(didEnd) 0지연 reflow.
-// 멀티플랫폼: 프론트는 "window-live-resize" {active} 한 채널만 소비한다. macOS 는
-// NSWindow live-resize 알림이 신호원이고, Windows(WM_ENTER/EXITSIZEMOVE)·Linux 도
-// 같은 이벤트를 자기 신호원으로 먹이면 프론트 로직은 그대로 재사용된다(Tauri 를
-// 쓴 이유 — Rust 가 모든 플랫폼의 네이티브 창 이벤트를 잡는 단일 지점).
-#[cfg(target_os = "macos")]
-pub fn install_live_resize_monitor(app: &AppHandle) {
-    use objc2_app_kit::{
-        NSWindowDidEndLiveResizeNotification, NSWindowWillStartLiveResizeNotification,
-    };
-    use objc2_foundation::{NSNotification, NSNotificationCenter};
-
-    let center = NSNotificationCenter::defaultCenter();
-    // 통지 이름 상수는 extern static — 접근은 unsafe(읽기 전용, 항상 유효).
-    let events: [(bool, &'static objc2_foundation::NSNotificationName); 2] = unsafe {
-        [
-            (true, NSWindowWillStartLiveResizeNotification),
-            (false, NSWindowDidEndLiveResizeNotification),
-        ]
-    };
-    for (active, name) in events {
-        let handle = app.clone();
-        // object: None = 모든 창의 통지(MW1 — 단일 창 가정 제거). 콜백에서 통지의 NSWindow →
-        // label 을 찾아 그 창에만 emit_to(프론트 필터 불필요). child webview 창/패널은 label 매칭
-        // 실패로 자연 제외(webview_windows 에 없음).
-        let block = block2::RcBlock::new(move |note: std::ptr::NonNull<NSNotification>| unsafe {
-            let obj: *mut objc2::runtime::AnyObject = objc2::msg_send![note.as_ref(), object];
-            if let Some(label) = label_for_nswindow(obj as usize) {
-                emit_from_appkit_block(&handle, Some(label), "window-live-resize", active);
-            }
-        });
-        let token = unsafe {
-            center.addObserverForName_object_queue_usingBlock(Some(name), None, None, &block)
-        };
-        // 옵저버는 앱 수명 동안 유지 — 의도된 leak(앱 전역, 설치 1회).
-        std::mem::forget(token);
-    }
-}
+pub(crate) mod appkit_events;
 
 #[cfg(test)]
-mod zoom_bounds_tests {
-    #[cfg(target_os = "macos")]
-    use super::{
-        forget_nswindow_label, label_for_nswindow, nswindow_cache_put, surface_sibling_order,
-    };
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn surface_host_order_is_rebuilt_immediately_around_main_view() {
-        // AppKit subviews는 back-to-front다. 이동 임대 중 host는 main 바로 뒤(앞면),
-        // 임대 회수 뒤에는 main 바로 앞(뒷면)에 있어야 하며 나머지 순서는 보존한다.
-        let siblings = [10, 20, 30, 40];
-        assert_eq!(
-            surface_sibling_order(&siblings, 10, 40, true),
-            vec![20, 30, 40, 10]
-        );
-        assert_eq!(
-            surface_sibling_order(&siblings, 10, 40, false),
-            vec![20, 30, 10, 40]
-        );
-    }
-
-    // NSWindow↔label 캐시 — AppKit 통지 블록의 역해소는 이 캐시 조회뿐이다(블록 안 wry 질의 0).
-    // 실측 RED: 캐시 없던 시절 블록이 Window::ns_window() 를 물어 창 파괴 중 재차용 패닉
-    // ("RefCell already mutably borrowed") — 브라우저 하니스의 window.close 가 앱을 죽였다.
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn nswindow_cache_resolves_registered_and_forgets_destroyed() {
-        nswindow_cache_put(0xA110, "w-cache-a");
-        nswindow_cache_put(0xB220, "w-cache-b");
-        assert_eq!(label_for_nswindow(0xA110).as_deref(), Some("w-cache-a"));
-        // 같은 label 재등록(window.reload — 포인터 교체)은 갱신이다: 옛 포인터는 걷힌다.
-        nswindow_cache_put(0xA111, "w-cache-a");
-        assert_eq!(label_for_nswindow(0xA111).as_deref(), Some("w-cache-a"));
-        assert_eq!(label_for_nswindow(0xA110), None);
-        // Destroyed — 그 창의 매핑만 회수, 남의 창은 불변.
-        forget_nswindow_label("w-cache-a");
-        assert_eq!(label_for_nswindow(0xA111), None);
-        assert_eq!(label_for_nswindow(0xB220).as_deref(), Some("w-cache-b"));
-        forget_nswindow_label("w-cache-b");
-    }
-
-    #[test]
-    fn bounds_command_is_geometry_only() {
-        let source = include_str!("webview.rs");
-        let body = source
-            .split_once("fn apply_child_bounds(")
-            .expect("apply_child_bounds exists")
-            .1
-            .split_once("// 패널 레이아웃 변화")
-            .expect("bounds function boundary")
-            .0;
-        assert!(!body.contains(".show("), "bounds must not infer visible=true");
-        assert!(!body.contains(".hide("), "bounds must not infer visible=false");
-        assert!(
-            !body.contains("webview_visible"),
-            "bounds must not enter the visibility command path"
-        );
-    }
-}
+mod webview_tests;

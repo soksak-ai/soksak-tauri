@@ -28,7 +28,7 @@ pub fn install_window_natives(app: &AppHandle, label: &str) {
     crate::webview::install_layer_inversion(app, label);
     if let Some(window) = app.get_window(label) {
         // NSWindow↔label 캐시 등록 — AppKit 통지 블록이 wry 를 묻지 않고 역해소하게(webview.rs).
-        crate::webview::note_nswindow_label(&window);
+        crate::webview::appkit_events::note_nswindow_label(&window);
         let (x, y) = traffic_light_inset(app);
         crate::titlebar::install(&window, x, y);
     }
