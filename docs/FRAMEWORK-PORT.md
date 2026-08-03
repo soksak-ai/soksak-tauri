@@ -648,13 +648,24 @@ The root was smaller and worse: `domHost` had **copied the Tauri model into the 
 
 A third framework writes its own `whale/` folder. Core does not change, and it does not inherit anyone else's fix.
 
+A framework-identity branch is allowed at **that one adapter selection point**. Do not encode the
+same distinction again as a matrix of flags such as `supportsDocumentStart`. Add a capability only
+when a product truly needs to present or substitute a feature based on support; do not inventory
+implementation details in advance. An adapter that cannot honor a call rejects it explicitly.
+
+The public browser product keeps the single identity `soksak-plugin-browser-native`.
+`browser-webview` or `browser-embedded` may describe the product better in the long term, but a plugin
+id is persisted in sessions, dependency declarations and command namespaces. It is not renamed
+without a migration contract.
+
 ### Where things live now
 
 | | Owner |
 | --- | --- |
 | `ContentViewHost` contract, `data-content-view-body` declaration, host registry | `src/lib/contentViews.ts` |
-| Native child implementation, holes, standin, rail clip, native mouse, divider bar, overlay gate, resize relay, `webview.emitNative` | `src/framework/tauri/` |
+| Native child implementation, slot-bounds following, veil landing, holes, standin, rail clip, native mouse, divider bar, overlay gate, `webview.emitNative` | `src/framework/tauri/` |
 | DOM `<webview>` implementation | `src/framework/electron/` |
+| Address bar, navigation, DOM automation, media commands and the `data-content-view-body` declaration | `soksak-plugin-browser-native` |
 | Hole CSS | `src/framework/tauri/styles.css` |
 | Drag-region reversal CSS | `src/framework/electron/styles.css` |
 
@@ -666,7 +677,13 @@ browser chrome and exists only for adapter effects; measuring it creates a
 second, incorrect geometry. App-chrome layout axes outside `ProjectSurface`
 (project tabs top/left and their rail width) publish `layout.reflow` after
 commit, so native bounds do not depend on background delivery of
-ResizeObserver or rAF.
+rAF. `layout.reflow` wakes position changes and `ResizeObserver` wakes size changes in the Tauri
+adapter. That adapter serializes IPC per label and coalesces queued events into one read of the latest
+rect. The Electron adapter has none of these subscriptions or follower state.
+
+`webview.composition` exposes not only DOM anchors and actual native frames, but also each label's slot
+rect, last applied rect, visibility, veil and pending-sync state. The browser product plugin does not
+redeclare composition state as `surface.stats`.
 
 ### `install()` is a contract member, and it is lazy
 

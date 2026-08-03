@@ -647,13 +647,23 @@ offscreen 축은 코어의 공백이 **아니다**. 2026-07-08 에 검증됐고 
 
 세 번째 프레임워크는 자기 `whale/` 폴더에 자기 것을 쓴다. 코어는 안 바뀌고, 남의 fix 를 물려받지도 않는다.
 
+프레임워크 identity 분기는 **어댑터 선택 한 곳**에서 허용된다. 그 차이를
+`supportsDocumentStart` 같은 capability 조합표로 다시 표현하지 않는다. capability는 제품이
+실제로 지원 여부에 따라 기능을 표시하거나 대체해야 할 때만 추가하며, 구현 세부를 미리 열거하지
+않는다. 지킬 수 없는 호출은 선택된 어댑터가 이름을 달고 실패한다.
+
+공개 브라우저 제품 identity는 `soksak-plugin-browser-native` 하나를 유지한다. 장기적으로
+`browser-webview` 또는 `browser-embedded`가 제품 의미를 더 정확히 표현할 수 있지만, plugin id는
+세션·의존 선언·명령 namespace에 저장되는 identity다. 별도 migration 계약 없이 개명하지 않는다.
+
 ### 지금의 자리
 
 | | 주인 |
 | --- | --- |
 | `ContentViewHost` 계약, `data-content-view-body` 본문 선언, 등록부 | `src/lib/contentViews.ts` |
-| 네이티브 자식 구현, 홀, 스탠드인, 레일 클립, 네이티브 마우스, 골 강조바, 오버레이 게이트, 리사이즈 릴레이, `webview.emitNative` | `src/framework/tauri/` |
+| 네이티브 자식 구현, 슬롯 bounds 추종, veil 착지, 홀, 스탠드인, 레일 클립, 네이티브 마우스, 골 강조바, 오버레이 게이트, `webview.emitNative` | `src/framework/tauri/` |
 | DOM `<webview>` 구현 | `src/framework/electron/` |
+| 주소창·탐색·DOM 자동화·미디어 명령과 `data-content-view-body` 선언 | `soksak-plugin-browser-native` |
 | 홀 CSS | `src/framework/tauri/styles.css` |
 | 드래그 영역 되돌림 CSS | `src/framework/electron/styles.css` |
 
@@ -663,7 +673,13 @@ offscreen 축은 코어의 공백이 **아니다**. 2026-07-08 에 검증됐고 
 홀 표식은 브라우저 크롬까지 포함하고 어댑터 효과에만 쓰이므로, 그것을 재면 틀린 두 번째
 기하가 생긴다. `ProjectSurface` 바깥에서 앱 크롬이 소유하는 배치 축(프로젝트 탭 top/left와
 레일 폭)은 커밋 뒤 `layout.reflow`를 발행한다. 따라서 네이티브 bounds는 비전면 창에서
-멈출 수 있는 ResizeObserver나 rAF 전달에 의존하지 않는다.
+멈출 수 있는 rAF 전달에 의존하지 않는다. 위치 변화는 `layout.reflow`, 크기 변화는
+`ResizeObserver`가 Tauri 어댑터를 깨운다. 어댑터는 label별 IPC를 직렬화하고 대기 중 사건을 최신
+rect 한 번으로 합친다. Electron 어댑터에는 이 구독과 추종 상태가 전혀 없다.
+
+`webview.composition`은 DOM 앵커·실제 네이티브 frame뿐 아니라 label별 슬롯 rect, 마지막 적용
+rect, 가시성, veil, 동기화 대기 상태를 공개한다. 합성 상태를 브라우저 제품 플러그인이
+`surface.stats`로 재선언하지 않는다.
 
 ### `install()` 은 계약 멤버이고, 늦게 가져온다
 

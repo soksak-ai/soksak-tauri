@@ -5,6 +5,7 @@
 // ResizeObserver뿐이다. 프레임 루프나 포인터 추측은 없다.
 import { invoke } from "@tauri-apps/api/core";
 import { moduleState } from "../../lib/moduleState";
+import { surfaceRectOf } from "../../lib/surfaceRect";
 import {
   contentViewSlotVisible,
   findContentViewSlot,
@@ -77,15 +78,7 @@ function stateOf(label: string): SurfaceState {
 
 /** DOM 좌표를 네이티브 경계와 같은 정수 경계로 바꾼다. 폭/높이는 같은 양끝에서 산출한다. */
 function slotRect(slot: HTMLElement): SlotRect {
-  const rect = slot.getBoundingClientRect();
-  const x = Math.ceil(rect.left);
-  const y = Math.ceil(rect.top);
-  return {
-    x,
-    y,
-    w: Math.max(1, Math.floor(rect.right) - x),
-    h: Math.max(1, Math.floor(rect.bottom) - y),
-  };
+  return surfaceRectOf(slot.getBoundingClientRect());
 }
 
 function rectKey(rect: SlotRect): string {
