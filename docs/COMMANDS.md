@@ -3288,6 +3288,21 @@ from Electron because Electron content lives in the DOM and is inspected by `web
 sok-dev webview.composition
 ```
 
+## `webview.holes`
+
+Tauri-only input-hole audit. Reports every visible DOM declaration that must receive mouse
+input above an AppKit child surface (`right-sidebar`, `pane-gutter`, or `native-drag`) and the
+native hit-test-hole ledger, then returns a strict one-to-one verdict. The 1 CSS px tolerance is
+only for integer-boundary rounding. Missing and stale native holes are reported separately. This
+command is intentionally absent from Electron because Electron has no native child surface to
+hole-punch.
+
+**Returns**: { tolerancePx, dom:[{kind,node,rect}], native:[{x,y,w,h}], verdict:{missingNative,staleNative,matched} }
+
+```bash
+sok-dev webview.holes
+```
+
 ## `webview.health.query`
 
 Report webview renderer-process health per label: circuit-breaker state (closed / recovering / open), crash counts in the rolling 60s window, lifetime total, and the last termination reason if the platform provided one. Labels: a window label is that window's main webview, b-<win>-<view> is a browser child. state=open means automatic recovery is exhausted — recover it manually with webview.recover. | 웹뷰 건강 상태 크래시 조회 복구

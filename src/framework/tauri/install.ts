@@ -20,7 +20,12 @@ import { emitPluginEvent, onPluginEvent } from "../../plugins/hooks";
 import { ensureSlotFreezeHost, scheduleSlotSettleCapture } from "./slotFreezeHost";
 import { installRailHoleClip } from "./railHoleClipHost";
 import { installSurfaceAudit, surfaceCompositionSnapshot } from "./surfaceAudit";
-import { installDomHoles } from "./domHoles";
+import {
+  collectHoleFacts,
+  compareHoles,
+  installDomHoles,
+  type Hole,
+} from "./domHoles";
 import { installTauriHoleMarkers, TAURI_CONTENT_HOLE } from "./holeMarkers";
 import { useUi } from "../../state/ui";
 import { useGutterHover } from "../../state/gutterHover";
@@ -256,6 +261,34 @@ function installCompositionCommand(): void {
   });
 }
 
+/** DOM 드래그 선언과 AppKit hit-test 홀 장부의 일대일 상태 — Tauri 전용 공개 진단면. */
+function installHoleAuditCommand(): void {
+  register("webview.holes", {
+    description:
+      "Tauri-only input-hole audit: compare every visible DOM drag/sidebar declaration with the AppKit hit-test hole ledger one-to-one. Reports missing native holes and stale native holes separately.",
+    params: {},
+    returns:
+      "{ tolerancePx, dom:[{kind,node,rect}], native:[{x,y,w,h}], verdict:{missingNative,staleNative,matched} }",
+    message: (d) => {
+      const verdict = d.verdict as { missingNative?: unknown[]; staleNative?: unknown[] };
+      const bad = (verdict.missingNative?.length ?? 0) + (verdict.staleNative?.length ?? 0);
+      return bad === 0
+        ? "Tauri DOM 드래그 영역과 네이티브 홀이 일치합니다"
+        : `Tauri 입력 홀 불일치 ${bad}건`;
+    },
+    handler: async () => {
+      const dom = collectHoleFacts();
+      const native = await invoke<Hole[]>("webview_holes");
+      return {
+        tolerancePx: 1,
+        dom,
+        native,
+        verdict: compareHoles(dom, native),
+      };
+    },
+  });
+}
+
 /** 이 프레임워크가 코어 표면에 거는 것 전부. 고른 어댑터만 불린다(contract.install). */
 export function installTauri(): void {
   // 콘텐츠 뷰 구현 — 이 프레임워크가 줄 수 있는 것은 OS 자식 뷰다.
@@ -282,6 +315,7 @@ export function installTauri(): void {
   // 이 프레임워크에만 있는 명령 표면.
   installNativeBridgeCommand();
   installCompositionCommand();
+  installHoleAuditCommand();
   // 홀 슬롯은 FLIP 보간에서 뺀다 — 그 아래 표면은 문서 밖이라 슬롯의 transform 을 안 따라오고,
   // 보간 프레임마다 좌표를 써 주면 못 따라와 옛 픽셀이 남는다. 문서 안 게스트에는 일어날 수
   // 없는 일이므로 그 프레임워크에서는 아무것도 빠지지 않는다.

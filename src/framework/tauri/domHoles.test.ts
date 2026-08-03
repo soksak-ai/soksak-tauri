@@ -63,4 +63,33 @@ describe("홀 보고는 그 장치를 건 프레임워크에서만 일어난다"
       { x: 200, y: 20, w: 8, h: 80 },
     ]);
   });
+
+  it("공개 상태는 DOM 드래그 선언의 종류와 실제 네이티브 홀의 일대일 정합을 판정한다", async () => {
+    const m = await load();
+    expect(m.collectHoleFacts(document)).toEqual([
+      { kind: "pane-gutter", node: null, rect: { x: 10, y: 0, w: 6, h: 100 } },
+      { kind: "native-drag", node: null, rect: { x: 200, y: 20, w: 8, h: 80 } },
+    ]);
+
+    expect(
+      m.compareHoles(
+        m.collectHoleFacts(document),
+        [
+          { x: 10, y: 0, w: 6, h: 100 },
+          { x: 200, y: 20, w: 8, h: 80 },
+        ],
+      ),
+    ).toEqual({ missingNative: [], staleNative: [], matched: 2 });
+  });
+
+  it("DOM에만 있는 드래그바와 네이티브에만 남은 홀을 각각 감추지 않는다", async () => {
+    const m = await load();
+    const verdict = m.compareHoles(
+      [{ kind: "pane-gutter", node: "layout/gutter/g1", rect: { x: 10, y: 0, w: 6, h: 100 } }],
+      [{ x: 30, y: 0, w: 6, h: 100 }],
+    );
+    expect(verdict.missingNative).toHaveLength(1);
+    expect(verdict.staleNative).toHaveLength(1);
+    expect(verdict.matched).toBe(0);
+  });
 });

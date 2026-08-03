@@ -23,21 +23,72 @@ export interface Hole {
   h: number;
 }
 
-/** 지금 화면에서 DOM 이 마우스를 가져야 하는 사각형들(순수 수집 — 테스트가 직접 부른다). */
-export function collectHoles(doc: Document = document): Hole[] {
-  const out: Hole[] = [];
-  const push = (el: Element) => {
+export type HoleKind = "right-sidebar" | "pane-gutter" | "native-drag";
+export interface HoleFact {
+  kind: HoleKind;
+  node: string | null;
+  rect: Hole;
+}
+
+/** 공개 판독면용 수집 — 입력 선언의 종류와 노출 주소를 rect와 함께 보존한다. */
+export function collectHoleFacts(doc: Document = document): HoleFact[] {
+  const out: HoleFact[] = [];
+  for (const el of doc.querySelectorAll<HTMLElement>(
+    ".sidebar-right.open, .pane-gutter, [data-native-drag]",
+  )) {
     const r = el.getBoundingClientRect();
-    if (r.width < 1 || r.height < 1) return;
-    if (r.right <= 0 || r.left >= (doc.defaultView?.innerWidth ?? 1e9)) return; // 파킹
-    out.push({ x: r.left, y: r.top, w: r.width, h: r.height });
-  };
-  // 입력 브리지가 읽는 선언과 홀 수집기가 읽는 선언은 같아야 한다. 한쪽만 `[data-native-drag]`
-  // 를 알면 DOM 드래그바와 실제 네이티브 히트 홀이 서로 다른 영역이 된다.
-  for (const el of doc.querySelectorAll(".sidebar-right.open, .pane-gutter, [data-native-drag]")) {
-    push(el);
+    if (r.width < 1 || r.height < 1) continue;
+    if (r.right <= 0 || r.left >= (doc.defaultView?.innerWidth ?? 1e9)) continue;
+    const kind: HoleKind = el.matches(".sidebar-right.open")
+      ? "right-sidebar"
+      : el.matches(".pane-gutter")
+        ? "pane-gutter"
+        : "native-drag";
+    out.push({
+      kind,
+      node: el.dataset.node ?? null,
+      rect: { x: r.left, y: r.top, w: r.width, h: r.height },
+    });
   }
   return out;
+}
+
+/** 지금 화면에서 DOM 이 마우스를 가져야 하는 사각형들(순수 수집 — 테스트가 직접 부른다). */
+export function collectHoles(doc: Document = document): Hole[] {
+  return collectHoleFacts(doc).map((fact) => fact.rect);
+}
+
+const holeNear = (a: Hole, b: Hole, tolerance: number): boolean =>
+  Math.abs(a.x - b.x) <= tolerance &&
+  Math.abs(a.y - b.y) <= tolerance &&
+  Math.abs(a.w - b.w) <= tolerance &&
+  Math.abs(a.h - b.h) <= tolerance;
+
+/** DOM 선언↔네이티브 hit-test 장부의 일대일 판정. 허용치는 정수 경계 반올림 1px뿐이다. */
+export function compareHoles(
+  dom: readonly HoleFact[],
+  native: readonly Hole[],
+  tolerance = 1,
+): { missingNative: HoleFact[]; staleNative: Hole[]; matched: number } {
+  const unusedNative = new Set(native.map((_, index) => index));
+  const missingNative: HoleFact[] = [];
+  let matched = 0;
+  for (const fact of dom) {
+    const index = [...unusedNative].find((candidate) =>
+      holeNear(fact.rect, native[candidate], tolerance),
+    );
+    if (index === undefined) {
+      missingNative.push(fact);
+      continue;
+    }
+    unusedNative.delete(index);
+    matched += 1;
+  }
+  return {
+    missingNative,
+    staleNative: [...unusedNative].map((index) => native[index]),
+    matched,
+  };
 }
 
 // 갈아끼우기 경계 밖 — 이 값들이 새것이 되면 "이미 했다"는 기억과 지연 초기화가
@@ -71,7 +122,17 @@ const installedFlag = moduleState("lib/domHoles#installedFlag.on", () => ({ on: 
 export function installDomHoles(): void {
   if (installedFlag.on || typeof window === "undefined") return;
   installedFlag.on = true;
-  const schedule = () => requestAnimationFrame(() => reportDomHoles());
+  // 모든 입력은 DOM 커밋 뒤 사건이다. microtask로 같은 턴의 중복만 합치고 즉시 측정한다.
+  // rAF는 비전면 창에서 정지할 수 있어 네이티브 장부 갱신의 주 구동원이 될 수 없다.
+  let queued = false;
+  const schedule = () => {
+    if (queued) return;
+    queued = true;
+    queueMicrotask(() => {
+      queued = false;
+      reportDomHoles();
+    });
+  };
   // 레이아웃 커밋(분할·탭 전환·사이드바·레일 주행)의 단일 신호.
   onPluginEvent("layout.reflow", schedule);
   onPluginEvent("layout.resize-gesture", (p) => {
