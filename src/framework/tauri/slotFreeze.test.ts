@@ -7,14 +7,15 @@ import { createSlotFreeze, type SlotFreeze } from "./slotFreeze";
 const PNG = "data:image/png;base64,x";
 
 function makeSlot(viewId: string): HTMLElement {
+  const frame = document.createElement("div");
+  frame.className = "tab-body";
+  frame.dataset.tauriHoleFrame = "";
+  frame.setAttribute("data-node", `layout/tab/${viewId}`);
   const el = document.createElement("div");
-  el.className = "tab-body";
   el.dataset.tauriHole = "content";
-  el.setAttribute("data-node", `layout/tab/${viewId}`);
-  const body = document.createElement("div");
-  body.setAttribute("data-content-view-body", `cv-${viewId}`);
-  el.appendChild(body);
-  document.body.appendChild(el);
+  el.setAttribute("data-content-view-body", `cv-${viewId}`);
+  frame.appendChild(el);
+  document.body.appendChild(frame);
   // jsdom 은 레이아웃이 없다 — 가시 슬롯 rect 를 명시 주입한다.
   el.getBoundingClientRect = () =>
     ({ left: 10, top: 10, right: 310, bottom: 210, width: 300, height: 200 }) as DOMRect;
@@ -364,23 +365,36 @@ describe("slotFreeze — 흐림은 사진을 막지 않는다(재입법 2026-08-
     expect(slot.dataset.freezeSnapAt).toBeDefined();
   });
 
-  it("사진의 흐림이 슬롯과 달라지면 세우지 않고 버린다 — 크기 드리프트와 같은 규칙", async () => {
+  it("프레임의 흐림이 바뀌어도 raw 표면 스냅을 세운다 — dim은 살아 있는 DOM 베일의 책임", async () => {
     const area = document.createElement("div");
     area.className = "space";
     document.body.appendChild(area);
     const slot = makeSlot("v3");
-    slot.dataset.dim = "idle";
+    const frame = slot.closest<HTMLElement>(".tab-body")!;
+    frame.dataset.dim = "idle";
     area.appendChild(slot);
     const f = build();
     f.captureSettled();
     await microtasks();
     expect(slot.dataset.freezeSnapAt).toBeDefined();
 
-    slot.dataset.dim = "clear"; // 흐림이 바뀌었다 — 구운 그림은 더 이상 이 슬롯의 것이 아니다
+    frame.dataset.dim = "clear";
     f.onMotion(true, ["move"], null);
-    expect(slot.querySelector("img")).toBeNull();
-    expect(slot.dataset.freezeSnapAt).toBeUndefined();
-    expect(slot.dataset.freezeReject).toBe("dim:idle!=clear");
+    expect(slot.querySelector("img")).not.toBeNull();
+    expect(slot.dataset.freezeSnapAt).toBeDefined();
+    expect(slot.dataset.freezeReject).toBeUndefined();
+  });
+
+  it("캡처는 창 crop이 아니라 슬롯이 선언한 네이티브 표면 label을 요청한다", async () => {
+    const capture = vi.fn(async () => PNG);
+    makeSlot("v-native");
+    const f = build({ capture });
+    f.captureSettled();
+    await microtasks();
+    expect(capture).toHaveBeenCalledWith(
+      "cv-v-native",
+      { x: 10, y: 10, w: 300, h: 200 },
+    );
   });
 });
 
@@ -410,11 +424,8 @@ describe("slotFreeze — scope 축(영향 범위 밖 표면 불가침)", () => {
   });
 });
 
-describe("스탠드인은 베일 위에 선다", () => {
-  it("z-index 가 베일(z4)보다 위다 — 흐림은 이미 사진에 들어 있다", async () => {
-    // z3 이던 시절엔 라이브 베일이 사진 위에서 또 한 번 어둡게 했다. 그때는 여정 중 흐림이
-    // 바뀔 수 있어서 베일이 살아 있어야 했지만, 지금은 흐림도 화면이 그리는 해를 따르므로
-    // 여정 중에는 바뀌지 않는다 — 사진 하나면 족하고, 두 번 어두워지지 않는다.
+describe("스탠드인과 라이브 DOM 베일의 합성 순서", () => {
+  it("raw 표면 스탠드인은 베일(z4) 아래 z3에 선다", async () => {
     const area = document.createElement("div");
     area.className = "space";
     document.body.appendChild(area);
@@ -427,6 +438,6 @@ describe("스탠드인은 베일 위에 선다", () => {
     f.onMotion(true, ["move"], null);
     const img = slot.querySelector("img");
     expect(img).not.toBeNull();
-    expect(img?.getAttribute("style")).toContain("z-index: 5");
+    expect(img?.getAttribute("style")).toContain("z-index: 3");
   });
 });

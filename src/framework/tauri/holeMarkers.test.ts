@@ -41,7 +41,10 @@ describe("Tauri private hole projection", () => {
 
     syncTauriHoleMarkers();
 
-    expect(native.dataset.tauriHole).toBe("content");
+    const slot = native.querySelector<HTMLElement>("[data-content-view-body]")!;
+    expect(slot.dataset.tauriHole).toBe("content");
+    expect(native.dataset.tauriHole).toBeUndefined();
+    expect(native.dataset.tauriHoleFrame).toBe("");
     expect(p1.dataset.tauriHole).toBe("pane");
     expect(dom.dataset.tauriHole).toBeUndefined();
     expect(p2.dataset.tauriHole).toBeUndefined();
@@ -53,7 +56,7 @@ describe("Tauri private hole projection", () => {
     syncTauriHoleMarkers();
     native.replaceChildren();
     syncTauriHoleMarkers();
-    expect(native.dataset.tauriHole).toBeUndefined();
+    expect(native.dataset.tauriHoleFrame).toBeUndefined();
     expect(p.dataset.tauriHole).toBeUndefined();
   });
 
@@ -66,6 +69,7 @@ describe("Tauri private hole projection", () => {
     native.appendChild(slot);
     await new Promise<void>((resolve) => queueMicrotask(resolve));
     await Promise.resolve();
-    expect(native.dataset.tauriHole).toBe("content");
+    expect(slot.dataset.tauriHole).toBe("content");
+    expect(native.dataset.tauriHoleFrame).toBe("");
   });
 });

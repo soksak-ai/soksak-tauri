@@ -7,9 +7,9 @@ const css = readFileSync(new URL("./styles.css", import.meta.url), "utf8")
 
 describe("Tauri native-composition styles", () => {
   it("native content dim은 DOM filter 대신 같은 세기의 단일 veil을 쓴다", () => {
-    expect(css).toMatch(/\.tab-body\[data-tauri-hole="content"\]\[data-dim\] \{[^}]*filter: none/);
+    expect(css).toMatch(/\.tab-body\[data-tauri-hole-frame\]\[data-dim\] \{[^}]*filter: none/);
     expect(css).toMatch(
-      /\.tab-body\[data-tauri-hole="content"\]\[data-dim\]::after \{[^}]*background-color: rgb\(0 0 0 \/ var\(--dim\)\)/,
+      /\.tab-body\[data-tauri-hole-frame\]\[data-dim\]::after \{[^}]*background-color: rgb\(0 0 0 \/ var\(--dim\)\)/,
     );
   });
 
@@ -18,7 +18,7 @@ describe("Tauri native-composition styles", () => {
     // 공용 DOM 본문 배경(:root[data-pane-style] .tab-body)보다 구체적이어야 실제 계산
     // 스타일이 투명해진다. !important로 덮지 않고 Tauri가 자기 marker의 소유권을 명시한다.
     expect(css).toMatch(
-      /:root\[data-pane-style\] \.tab-body\[data-tauri-hole="content"\] \{[^}]*background: transparent/,
+      /:root\[data-pane-style\] \[data-tauri-hole="content"\] \{[^}]*background: transparent/,
     );
     expect(css).not.toContain("!important");
     expect(css).not.toMatch(/\.hole\b/);
