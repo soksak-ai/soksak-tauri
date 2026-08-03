@@ -114,8 +114,8 @@ run: ## 릴리스 soksak-tauri.app 실행(새 인스턴스)
 run-dev: ## 개발 정체성 soksak-tauri-dev.app 실행(새 인스턴스)
 	@test -x "$(DEV_EXECUTABLE)" || { echo "먼저 'make build-dev' 를 실행하세요."; exit 1; }
 	@mkdir -p "$(DEV_LOG_DIR)"
-	@open -n -g --stdout "$(DEV_LOG_DIR)/tauri-app.log" --stderr "$(DEV_LOG_DIR)/tauri-app.log" \
-	  --env SOKSAK_E2E_KEK=$(DEV_KEK) --env SOKSAK_VAULT_PATH=$(DEV_VAULT) "$(DEV_APP)"
+	@SOKSAK_E2E_KEK=$(DEV_KEK) SOKSAK_VAULT_PATH=$(DEV_VAULT) \
+	  "$(DEV_EXECUTABLE)" >>"$(DEV_LOG_DIR)/tauri-app.log" 2>&1 &
 	@echo "실행: $(DEV_APP) (로그: $(DEV_LOG_DIR)/tauri-app.log)"
 
 restart-dev: ## 실행 중 dev 앱을 app.quit으로 끝내고 같은 번들을 단일 인스턴스로 다시 실행
