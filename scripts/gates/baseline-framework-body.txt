@@ -21,7 +21,7 @@ frameworks/electron/activity.cjs 32
 frameworks/electron/backend.cjs 236
 frameworks/electron/control.cjs 144
 frameworks/electron/cored.cjs 252
-frameworks/electron/main.cjs 430
+frameworks/electron/main.cjs 428
 frameworks/electron/native/capture.cjs 70
 frameworks/electron/native/engine.cjs 26
 frameworks/electron/native/error.cjs 9
@@ -83,7 +83,7 @@ frameworks/tauri/src/unit_installer.rs 55
 frameworks/tauri/src/updater.rs 42
 frameworks/tauri/src/watcher.rs 15
 # 재입법 2026-08-02 1760 → 1763. 같은 축(inPage) — 이 프레임워크는 문서 커밋에서만 낸다.
-frameworks/tauri/src/webview.rs 1763
+frameworks/tauri/src/webview.rs 1762
 frameworks/tauri/src/webview_health.rs 572
 frameworks/tauri/src/window.rs 387
 frameworks/tauri/src/window_oracle.rs 102
