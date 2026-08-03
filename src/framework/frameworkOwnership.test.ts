@@ -74,7 +74,7 @@ describe("Tauri native-composition ownership", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("Tauri handoff는 비애니메이션 layer 좌표 재기준화만 사용한다", () => {
+  it("native surface handoff만 Tauri 어댑터에 있고 폐기한 frame animation은 남지 않는다", () => {
     const sources = [
       "frameworks/tauri/src/webview.rs",
       "frameworks/tauri/src/lib.rs",
@@ -82,12 +82,7 @@ describe("Tauri native-composition ownership", () => {
     ].map((file) => readFileSync(resolve(ROOT, file), "utf8")).join("\n");
     expect(sources).toMatch(/webview_surface_handoff/);
     expect(sources).not.toMatch(/webview_animate_bounds/);
-    expect(sources).not.toMatch(/CABasicAnimation|CAAnimationDelegate/);
-    expect(sources).toMatch(/CATransaction/);
-    expect(sources).toMatch(/CATransform3D/);
-    expect(sources).toMatch(/setDisableActions/);
-    expect(sources).toMatch(/stage_surface_host_frame/);
-    expect(sources).toMatch(/settle_surface_host_frame/);
+    expect(sources).not.toMatch(/CABasicAnimation|CAAnimationDelegate|CATransaction/);
     const outsideTauri = productionFiles(SRC)
       .filter((file) => !relative(SRC, file).startsWith("framework/tauri/"))
       .map((file) => readFileSync(file, "utf8"))
