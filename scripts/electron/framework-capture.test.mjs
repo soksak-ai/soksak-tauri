@@ -37,6 +37,7 @@ const record = (cmd, served, code) => demands.push({ cmd, served, code });
 /** capturePage 를 흉내내는 창. 무엇으로 불렸는지·앞으로 나갔는지를 남긴다. */
 function fakeWindow({ png = PNG_BYTES, empty = false } = {}) {
   const calls = [];
+  const captureOptions = [];
   let focused = false;
   let throttling = null;
   const win = {
@@ -46,8 +47,9 @@ function fakeWindow({ png = PNG_BYTES, empty = false } = {}) {
     },
     webContents: {
       on: () => {},
-      capturePage: async (rect) => {
+      capturePage: async (rect, opts) => {
         calls.push(rect); // 받은 그대로 — 없음(undefined)과 null 을 뭉개면 단위 검사가 무의미해진다
+        captureOptions.push(opts);
         return {
           isEmpty: () => empty,
           toPNG: () => (empty ? Buffer.alloc(0) : png),
@@ -60,6 +62,7 @@ function fakeWindow({ png = PNG_BYTES, empty = false } = {}) {
   };
   return {
     calls,
+    captureOptions,
     win,
     get focused() {
       return focused;
@@ -152,6 +155,16 @@ describe("캡처 — 창의 픽셀을 값으로", () => {
     await serve(SNAPSHOT, { path: join(root, "d.png") }, w);
     await serve(REGION, { x: 0, y: 0, w: 5, h: 5 }, w);
     expect(w.focused).toBe(false);
+  });
+
+  it("비전면 캡처는 창을 드러내지 않고 합성이 끝날 때까지 캡처러를 유지한다", async () => {
+    const w = fakeWindow();
+    await serve(SNAPSHOT, { path: join(root, "hidden.png") }, w);
+    await serve(REGION, { x: 0, y: 0, w: 5, h: 5 }, w);
+    expect(w.captureOptions).toEqual([
+      { stayHidden: true, stayAwake: true },
+      { stayHidden: true, stayAwake: true },
+    ]);
   });
 
   it("가림 손잡이는 배경 스로틀을 민다 — 정지한 창은 옛 프레임을 담는다", async () => {
