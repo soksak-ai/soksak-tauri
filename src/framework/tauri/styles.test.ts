@@ -15,7 +15,12 @@ describe("Tauri native-composition styles", () => {
 
   it("private marker만 pane와 content 배경을 연다", () => {
     expect(css).toMatch(/:root\[data-pane-style="card"\] \.pane\[data-tauri-hole="pane"\]/);
-    expect(css).toMatch(/\.tab-body\[data-tauri-hole="content"\] \{[^}]*background: transparent/);
+    // 공용 DOM 본문 배경(:root[data-pane-style] .tab-body)보다 구체적이어야 실제 계산
+    // 스타일이 투명해진다. !important로 덮지 않고 Tauri가 자기 marker의 소유권을 명시한다.
+    expect(css).toMatch(
+      /:root\[data-pane-style\] \.tab-body\[data-tauri-hole="content"\] \{[^}]*background: transparent/,
+    );
+    expect(css).not.toContain("!important");
     expect(css).not.toMatch(/\.hole\b/);
   });
 });
