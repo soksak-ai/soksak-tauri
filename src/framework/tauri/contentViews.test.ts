@@ -127,6 +127,7 @@ describe("네이티브 자식 뷰 구현", () => {
           scope: null,
           snapAt: null,
           snapFail: 2,
+          reject: null,
           snapSkip: "inflight",
           snapTry: 3,
           snapSize: null,

@@ -256,7 +256,7 @@ function installCompositionCommand(): void {
       "Tauri-only composition audit: expose every visible DOM content hole and live native surface frame in both coordinate systems, with one-to-one matches and a strict rounding-only verdict.",
     params: {},
     returns:
-      "{ coordinateContract, anchors, surfaces, placement:[{label,opened,desiredVisible,veiled,slotPresent,slotRect,appliedRect,syncPending,freeze:{active,pending,snapAt,snapTry,snapFail,snapSkip,snapSize,glide,scope}|null}], matches, verdict }",
+      "{ coordinateContract, anchors, surfaces, placement:[{label,opened,desiredVisible,veiled,slotPresent,slotRect,appliedRect,syncPending,freeze:{active,pending,snapAt,snapTry,snapFail,snapSkip,snapSize,reject,glide,scope}|null}], matches, verdict }",
     message: (d) => {
       const verdict = d.verdict as { misplaced?: unknown[]; stacked?: unknown[]; missing?: unknown[] };
       const bad = (verdict.misplaced?.length ?? 0) + (verdict.stacked?.length ?? 0) + (verdict.missing?.length ?? 0);

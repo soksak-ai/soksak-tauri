@@ -32,6 +32,7 @@ export interface NativeContentViewFreezeFact {
   snapFail: number;
   snapSkip: string | null;
   snapSize: string | null;
+  reject: string | null;
   glide: string | null;
   scope: string | null;
 }
@@ -116,6 +117,7 @@ function freezeFact(slot: HTMLElement | null): NativeContentViewFreezeFact | nul
     snapFail: numericDataset(hole.dataset.freezeSnapFail) ?? 0,
     snapSkip: hole.dataset.freezeSnapSkip ?? null,
     snapSize: hole.dataset.freezeSnapSize ?? null,
+    reject: hole.dataset.freezeReject ?? null,
     glide: hole.dataset.freezeGlide ?? null,
     scope: hole.dataset.freezeScope ?? null,
   };

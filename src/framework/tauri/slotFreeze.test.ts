@@ -380,6 +380,7 @@ describe("slotFreeze — 흐림은 사진을 막지 않는다(재입법 2026-08-
     f.onMotion(true, ["move"], null);
     expect(slot.querySelector("img")).toBeNull();
     expect(slot.dataset.freezeSnapAt).toBeUndefined();
+    expect(slot.dataset.freezeReject).toBe("dim:idle!=clear");
   });
 });
 

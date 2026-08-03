@@ -211,30 +211,49 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
       }
       return;
     }
+    const reject = (why: string): void => {
+      slot.dataset.freezeReject = why;
+    };
     const viewId = viewIdOf(slot);
     const label = contentViewLabelOf(slot);
-    if (!viewId || !label) return;
+    if (!viewId || !label) {
+      reject("identity");
+      return;
+    }
     const snap = snaps.get(slot);
-    if (!snap || !fresh(snap)) return;
+    if (!snap) {
+      reject("snap:missing");
+      return;
+    }
+    if (!fresh(snap)) {
+      reject(`snap:stale:${Math.round(now() - snap.t)}`);
+      return;
+    }
     // 흐림이 달라졌으면 그 사진은 이 슬롯의 그림이 아니다 — 베일이 사진에 들어 있으므로
     // 단계가 바뀌면 세울 수 없다(크기 드리프트와 같은 규칙: 버리고 다시 굽게 둔다).
     if (snap.dim !== (slot.dataset.dim ?? "clear")) {
+      reject(`dim:${snap.dim}!=${slot.dataset.dim ?? "clear"}`);
       snaps.delete(slot);
       delete slot.dataset.freezeSnapAt;
       delete slot.dataset.freezeSnapSize;
       return;
     }
     const r = slot.getBoundingClientRect();
-    if (parkedSlot(slot)) return; // 보이지 않는 표면 — 덮을 것도, 해동에 되살릴 것도 없다
+    if (parkedSlot(slot)) {
+      reject("parked");
+      return; // 보이지 않는 표면 — 덮을 것도, 해동에 되살릴 것도 없다
+    }
     const surface = surfaceRectOf(r);
     // 스냅 이후 표면 크기가 변했으면 세우지 않고 그 스냅을 버린다 — 늘어난 정지 사진은 박제이고,
     // 남겨 두면 다시 구워지지 못한 채 활강 전제를 계속 거부한다(canFreezeAll 과 같은 규칙).
     if (Math.abs(surface.w - snap.w) > 1 || Math.abs(surface.h - snap.h) > 1) {
+      reject(`size:${surface.w}x${surface.h}!=${snap.w}x${snap.h}`);
       snaps.delete(slot);
       delete slot.dataset.freezeSnapAt;
       delete slot.dataset.freezeSnapSize;
       return;
     }
+    delete slot.dataset.freezeReject;
     // 스탠드인은 **베일 위**(z5)에 선다. 흐림은 이미 사진에 구워져 있으므로 라이브 베일을 또
     // 얹으면 두 번 어두워진다. 예전엔 z3 이었고 베일이 그 위에서 살아 있었는데, 그 이유는
     // 여정 중 흐림이 바뀔 수 있었기 때문이다 — 지금은 흐림도 화면이 그리는 해를 따르므로
