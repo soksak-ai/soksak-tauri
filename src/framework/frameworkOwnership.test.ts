@@ -74,13 +74,19 @@ describe("Tauri native-composition ownership", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("동기화할 수 없는 CSS↔AppKit 이중 애니메이션 계약은 남지 않는다", () => {
-    expect(existsSync(resolve(SRC, "framework/tauri/nativeMotion.ts"))).toBe(false);
+  it("AppKit frame 전환은 Tauri 어댑터에만 있고 Electron·공통 DOM에는 새지 않는다", () => {
     const sources = [
       "frameworks/tauri/src/webview.rs",
       "frameworks/tauri/src/lib.rs",
       "frameworks/tauri/Cargo.toml",
     ].map((file) => readFileSync(resolve(ROOT, file), "utf8")).join("\n");
-    expect(sources).not.toMatch(/webview_animate_bounds|NSAnimationContext|objc2-quartz-core/);
+    expect(sources).toMatch(/webview_animate_bounds/);
+    expect(sources).toMatch(/NSAnimationContext/);
+    expect(sources).toMatch(/objc2-quartz-core/);
+    const outsideTauri = productionFiles(SRC)
+      .filter((file) => !relative(SRC, file).startsWith("framework/tauri/"))
+      .map((file) => readFileSync(file, "utf8"))
+      .join("\n");
+    expect(outsideTauri).not.toMatch(/webview_animate_bounds|NSAnimationContext/);
   });
 });

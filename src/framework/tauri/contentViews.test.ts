@@ -171,7 +171,7 @@ describe("네이티브 자식 뷰 구현", () => {
     ]);
   });
 
-  it("목표 DOM 커밋 전에 움직이는 view의 native bounds를 확정하고 snap을 요구한다", async () => {
+  it("DOM FLIP commit과 같은 목표·시간·곡선으로 native frame 전환을 한 번 시작한다", async () => {
     const frame = document.createElement("div");
     frame.className = "tab-body";
     frame.dataset.node = "layout/tab/v1";
@@ -188,18 +188,23 @@ describe("네이티브 자식 뷰 구현", () => {
     invoke.mockClear();
 
     const prepared = await prepareNativeContentViewMove([{ viewId: "v1", dx: 410 }]);
-    expect(prepared.mode).toBe("snap");
-    expect(invoke).toHaveBeenCalledTimes(1);
-    expect(invoke).toHaveBeenCalledWith("webview_bounds", {
-      label: "browser--v1", x: 210, y: 112, w: 212, h: 458,
-    });
+    expect(prepared.mode).toBe("glide");
+    expect(invoke).not.toHaveBeenCalled();
 
-    invoke.mockClear();
     slot.getBoundingClientRect = () => ({
       x: 210, y: 112, left: 210, top: 112, right: 422, bottom: 570, width: 212, height: 458,
     }) as DOMRect;
     await prepared.commit();
-    expect(invoke).not.toHaveBeenCalled();
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(invoke).toHaveBeenCalledWith("webview_animate_bounds", {
+      label: "browser--v1",
+      x: 210,
+      y: 112,
+      w: 212,
+      h: 458,
+      durationMs: 340,
+      timing: [0.4, 0, 0.2, 1],
+    });
   });
 
   it("DOM 재배치 mutation 뒤 공개 슬롯의 최종 위치로 native bounds를 대조한다", async () => {
@@ -252,6 +257,10 @@ describe("네이티브 자식 뷰 구현", () => {
     invoke.mockClear();
 
     await prepared.commit();
+    expect(invoke).toHaveBeenCalledWith("webview_animate_bounds", expect.objectContaining({
+      label: "browser--v1", x: 210,
+    }));
+    invoke.mockClear();
     expect(nativeContentViewCompositionStatus()[0].precommitPending).toBe(true);
     x = 500;
     frame.classList.add("layout-midpoint");
