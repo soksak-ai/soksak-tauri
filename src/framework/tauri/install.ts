@@ -17,9 +17,11 @@ import {
   installNativeContentViewComposition,
   nativeContentViewCompositionStatus,
   nativeHost,
+  prepareNativeContentViewMove,
 } from "./contentViews";
 import { adoptFrameworkStyles } from "../styles";
 import { registerContentViewHost } from "../../lib/contentViews";
+import { registerLayoutTransitionHost } from "../../lib/layoutTransitionHost";
 import { installRailHoleClip } from "./railHoleClipHost";
 import { installSurfaceAudit, surfaceCompositionSnapshot } from "./surfaceAudit";
 import {
@@ -266,6 +268,8 @@ function installHoleAuditCommand(): void {
 export function installTauri(): void {
   // 콘텐츠 뷰 구현 — 이 프레임워크가 줄 수 있는 것은 OS 자식 뷰다.
   registerContentViewHost(nativeHost);
+  // DOM 밖 표면이 포함된 배치만 목표 bounds 선확정 + DOM snap 거래로 바꾼다.
+  registerLayoutTransitionHost({ prepareMove: prepareNativeContentViewMove });
   // 공개 슬롯 → OS 자식 bounds/가시성/AppKit frame 전환. 플러그인은 슬롯만 선언한다.
   installNativeContentViewComposition();
   // 홀 CSS — 셀렉터에 프레임워크 이름이 없다. 안 걸리면 그 규칙은 애초에 문서에 없다.

@@ -79,6 +79,7 @@ import { railGeometryScopeId, railPresentationLayers } from "./lib/railMotion";
 import { useAppChromeLayoutReflow } from "./lib/appChromeLayoutReflow";
 import { useArrangementPhase } from "./components/useArrangementPhase";
 import { arrangementMoves, viewIdsOfMoves } from "./lib/railArrangement";
+import { prepareLayoutMove, viewLayoutMoves } from "./lib/layoutTransitionHost";
 import "./App.css";
 
 // 파일 경로를 셸·Claude Code 양쪽에서 안전하게: 영숫자와 안전문자 외에는 백슬래시
@@ -210,10 +211,28 @@ const ProjectPlane = memo(function ProjectPlane({
         : "",
     [activeContent],
   );
+  const prepareArrangementTravel = useCallback(
+    (from: NonNullable<typeof solved>, to: NonNullable<typeof solved>) => {
+      const hostWidth = railPlaneRef.current?.getBoundingClientRect().width ?? 0;
+      const groups = allGroups(to.displayLayout).map((group) => ({
+        id: group.id,
+        viewIds: group.tabs.map((view) => view.id),
+      }));
+      return prepareLayoutMove(viewLayoutMoves(
+        arrangementMoves(from, to),
+        groups,
+        hostWidth,
+        project.sidebarOpen ? sidebarW : 0,
+      ));
+    },
+    [project.sidebarOpen, sidebarW],
+  );
   const phase = useArrangementPhase(
     solved,
     railGeometryScope,
     contentKey,
+    undefined,
+    prepareArrangementTravel,
   );
   const arrangement = phase.displayed;
   const railCells = arrangement?.cells ?? [];
