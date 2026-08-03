@@ -2467,6 +2467,26 @@ mod zoom_bounds_tests {
         );
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn explicit_surface_animation_owns_its_z_order_release() {
+        let source = include_str!("webview.rs");
+        let body = source
+            .split_once("fn animate_child_frame(")
+            .expect("animate_child_frame exists")
+            .1
+            .split_once("static APPLIED_BOUNDS")
+            .expect("animate_child_frame boundary")
+            .0;
+        assert!(body.contains("setDelegate"));
+        assert!(source.contains("animationDidStop_finished"));
+        assert!(source.contains("motion_generation"));
+        assert!(
+            !body.contains("setCompletionBlock"),
+            "explicit CAAnimation 수명은 transaction completion이 소유하면 안 된다"
+        );
+    }
+
     // NSWindow↔label 캐시 — AppKit 통지 블록의 역해소는 이 캐시 조회뿐이다(블록 안 wry 질의 0).
     // 실측 RED: 캐시 없던 시절 블록이 Window::ns_window() 를 물어 창 파괴 중 재차용 패닉
     // ("RefCell already mutably borrowed") — 브라우저 하니스의 window.close 가 앱을 죽였다.
