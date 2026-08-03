@@ -210,7 +210,7 @@ export function useArrangementPhase<L extends { id: string }>(
       preparation.current.key = currentKey;
       setPhase((p) => ({ ...p, preparing: true }));
       void prepare(from, target)
-        .then((prepared) => {
+        .then(async (prepared) => {
           if (preparation.current.serial !== serial) {
             prepared.cancel();
             return;
@@ -236,9 +236,12 @@ export function useArrangementPhase<L extends { id: string }>(
             redeliverViewFocusIfLost();
             return;
           }
-          void prepared.commit().catch((error) => {
-            console.error("[layout] DOM glide 거래 완료 실패", error);
-          });
+          // 외부 native 표면의 애니메이션이 실제로 무장됐다는 응답이 DOM 위상 공개보다
+          // 먼저다. 호출만 던지고 DOM을 움직이면 IPC 지연 동안 native는 출발점에 남고,
+          // 이동한 투명 홀과의 교집합만 가느다란 띠로 보인다.
+          await prepared.commit();
+          if (preparation.current.serial !== serial) return;
+          if (arrangementKey(latest.current) !== currentKey) return;
           setPhase((p) => ({
             from: p.displayed,
             displayed: target,
