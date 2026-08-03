@@ -209,12 +209,13 @@ describe("네이티브 자식 뷰 구현", () => {
   });
 
   it("연속 여정의 목표는 stale native frame이 아니라 현재 DOM 슬롯에서 계산한다", async () => {
+    let x = 620;
     const frame = document.createElement("div");
     frame.dataset.node = "layout/tab/v1";
     const slot = document.createElement("div");
     slot.setAttribute("data-content-view-body", "browser--v1");
     slot.getBoundingClientRect = () => ({
-      x: 620, y: 112, left: 620, top: 112, right: 832, bottom: 570, width: 212, height: 458,
+      x, y: 112, left: x, top: 112, right: x + 212, bottom: 570, width: 212, height: 458,
     }) as DOMRect;
     frame.appendChild(slot);
     document.body.appendChild(frame);
@@ -226,6 +227,7 @@ describe("네이티브 자식 뷰 구현", () => {
     invoke.mockClear();
 
     const prepared = await prepareNativeContentViewMove([{ viewId: "v1", dx: 410 }]);
+    x = 210;
     await prepared.commit();
     expect(invoke).toHaveBeenCalledWith("webview_bounds", {
       label: "browser--v1", x: 210, y: 112, w: 212, h: 458,
@@ -281,29 +283,49 @@ describe("네이티브 자식 뷰 구현", () => {
     const prepared = await prepareNativeContentViewMove([{ viewId: "v1", dx: 410 }]);
     invoke.mockClear();
 
-    await prepared.commit();
-    expect(invoke).toHaveBeenCalledWith("webview_bounds", expect.objectContaining({
-      label: "browser--v1", x: 210,
-    }));
-    invoke.mockClear();
-    expect(nativeContentViewCompositionStatus()[0].precommitPending).toBe(true);
+    // 커밋 전 중간 좌표는 잠금이 막는다.
     x = 500;
     frame.classList.add("layout-midpoint");
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(invoke).not.toHaveBeenCalled();
 
-    x = 210;
-    frame.classList.add("layout-finished");
-    await vi.waitFor(() => {
-      expect(nativeContentViewCompositionStatus()[0].precommitPending).toBe(false);
-    });
-    expect(invoke).not.toHaveBeenCalled();
+    // pane 이동량 밖에서 sidebar flow도 함께 바뀐다. 예측치(620-410=210)가 아니라
+    // 커밋된 공개 슬롯의 실제 rect가 최종 좌표의 단일 진실이다.
+    x = 50;
+    await prepared.commit();
+    expect(invoke).toHaveBeenCalledWith("webview_bounds", expect.objectContaining({
+      label: "browser--v1", x: 50,
+    }));
+    invoke.mockClear();
+    expect(nativeContentViewCompositionStatus()[0].precommitPending).toBe(false);
 
     x = 220;
     frame.classList.add("layout-after-finished");
     await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("webview_bounds", {
       label: "browser--v1", x: 220, y: 112, w: 212, h: 458,
     }));
+  });
+
+  it("커밋 rect가 사건 경로에서 이미 적용됐으면 같은 bounds를 다시 쓰지 않는다", async () => {
+    let x = 620;
+    const frame = document.createElement("div");
+    frame.dataset.node = "layout/tab/v1";
+    const slot = document.createElement("div");
+    slot.setAttribute("data-content-view-body", "browser--v1");
+    slot.getBoundingClientRect = () => ({
+      x, y: 112, left: x, top: 112, right: x + 212, bottom: 570, width: 212, height: 458,
+    }) as DOMRect;
+    frame.appendChild(slot);
+    document.body.appendChild(frame);
+
+    const { nativeHost, prepareNativeContentViewMove } = await load();
+    await nativeHost.open("browser--v1", { url: "https://x" });
+    const prepared = await prepareNativeContentViewMove([{ viewId: "v1", dx: 410 }]);
+    x = 50;
+    invoke.mockClear();
+    await nativeHost.bounds("browser--v1", 50, 112, 212, 458);
+    await prepared.commit();
+    expect(invoke.mock.calls.filter(([cmd]) => cmd === "webview_bounds")).toHaveLength(1);
   });
 
   it("복귀 에지에서 떨어진 child를 플러그인 재마운트 없이 어댑터가 복구한다", async () => {

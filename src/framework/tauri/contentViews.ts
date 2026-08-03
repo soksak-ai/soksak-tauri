@@ -233,11 +233,9 @@ export async function prepareNativeContentViewMove(
     // 목표는 반드시 화면이 지금 그리는 DOM 슬롯에서 계산한다. native 장부는 직전 snap의
     // precommit 위치일 수 있어 연속 여정의 출발점이 아니다. 그 stale frame에 다음 dx를 접으면
     // 오차가 누적되어 DOM은 왼쪽인데 child는 가운데에 영구 정박한다.
-    const currentSlot = slotRect(slot);
     return [{
       state,
       before,
-      rect: { ...currentSlot, x: Math.round(currentSlot.x - move.dx) },
     }];
   });
   if (targets.length === 0) return {
@@ -246,9 +244,11 @@ export async function prepareNativeContentViewMove(
     cancel: () => {},
   };
 
-  for (const { state, rect } of targets) {
+  for (const { state } of targets) {
     state.precommitting = true;
-    state.precommitTarget = rectKey(rect);
+    // prepare 단계에는 목표 좌표를 예측하지 않는다. 빈 목표는 중간 mutation이 잠금을
+    // 조기에 풀 수 없게 하며, 실제 목표는 DOM commit의 layout effect에서만 정해진다.
+    state.precommitTarget = "";
   }
   let closed = false;
   return {
@@ -257,11 +257,23 @@ export async function prepareNativeContentViewMove(
       if (closed) return;
       closed = true;
       try {
-        await Promise.all(targets.map(async ({ state, before, rect }) => {
+        await Promise.all(targets.map(async ({ state, before }) => {
           if (state.draining) await state.draining;
+          const slot = findContentViewSlot(state.label, document);
+          if (!slot) throw new Error(`콘텐츠 뷰 자리가 커밋에서 사라졌습니다: ${state.label}`);
+          // 이 함수는 목표 DOM의 layout effect에서 호출된다. 따라서 계산된 dx가 아니라 지금
+          // 커밋된 공개 슬롯 rect가 좌표의 단일 진실이다. 그래야 pane 이동과 sidebar 이동이
+          // 동시에 일어나도 둘 중 하나를 빠뜨린 예측 좌표에 native surface가 정박하지 않는다.
+          const rect = slotRect(slot);
+          const key = rectKey(rect);
+          state.precommitTarget = key;
+          // ResizeObserver·명시 bounds 같은 사건 경로가 같은 커밋 rect를 먼저 적용했으면 그
+          // ACK가 이미 거래를 충족했다. 같은 frame을 다시 쓰는 것은 의미 없는 z/compositor
+          // 자극이며 교차 클릭 한 번에 두 번 흔들리는 원인이므로 생략한다.
+          if (state.lastRect === key) return;
           // 장부를 먼저 목표로 둔다. DOM mutation이 IPC ack보다 먼저 와도 일반 bounds sync가
           // 같은 목표를 다시 써 AppKit animation을 끊지 못한다.
-          state.lastRect = rectKey(rect);
+          state.lastRect = key;
           state.boundsWrites += 1;
           try {
             await call<boolean>("webview_bounds", {

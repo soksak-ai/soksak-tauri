@@ -691,10 +691,12 @@ adapter. That adapter serializes IPC per label and coalesces queued events into 
 rect. The Electron adapter has none of these subscriptions or follower state.
 
 For a rail relocation, the Tauri adapter uses a finite snap transaction: it locks out intermediate
-mutation writes, commits the target DOM, and applies one folded target rect in the layout effect.
-The native child never changes z-order and no screenshot, veil, rAF handoff, or frame-by-frame follow
-is involved. Electron always performs DOM-child placement under `data-content-view-body` and nothing
-else.
+mutation writes, commits the target DOM, reads the public slot's actual rect in the layout effect,
+and applies it once. It does not predict coordinates, so a sidebar-flow change outside the pane move
+is included. If another event path already acknowledged the same rect, the duplicate bounds write is
+skipped. The native child never changes z-order and no screenshot, veil, rAF handoff, or
+frame-by-frame follow is involved. Electron always performs DOM-child placement under
+`data-content-view-body` and nothing else.
 
 `webview.composition` exposes not only DOM anchors and actual native frames, but also each label's slot
 rect, last applied rect, visibility and pending-sync state. The browser product plugin does not
