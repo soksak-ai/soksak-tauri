@@ -99,4 +99,12 @@ describe("Tauri native-composition ownership", () => {
     expect(source).not.toMatch(/host\.animator\(\)\.setFrame/);
     expect(source).not.toMatch(/view\.animator\(\)\.setFrame/);
   });
+
+  it("surface host의 이동 z-order 임대는 Tauri가 열고 종료·overlay에서 반드시 회수한다", () => {
+    const source = readFileSync(resolve(ROOT, "frameworks/tauri/src/webview.rs"), "utf8");
+    expect(source).toMatch(/raise_surface_host/);
+    expect(source).toMatch(/lower_surface_host/);
+    expect(source).toMatch(/setCompletionBlock/);
+    expect(source).toMatch(/if active \{[\s\S]*lower_window_surface_hosts/);
+  });
 });
