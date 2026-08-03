@@ -45,6 +45,11 @@ Two standard targets across every repo — core, plugins, sidecars. A repo expos
 - **Target a workspace window explicitly.** `main` is the control plane with no workspace, so
   a harness that measures a project must open its own `w-*` window and route every command to
   it — an unaddressed command lands on the control plane and measures nothing.
+- **Process-owning live measurements get an isolated lane.** `pnpm test` runs ordinary Vitest
+  files in parallel, then runs `scripts/electron/content-view-live.test.mjs` alone. That test
+  boots a real Chromium guest; under the full worker fan-out it can starve for 45 seconds while
+  completing in under two seconds alone. Do not raise its timeout or omit it — keep both phases
+  under the same public test command.
 
 ## Plugin & sidecar repos
 
