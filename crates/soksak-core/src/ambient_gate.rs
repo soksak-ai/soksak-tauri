@@ -140,6 +140,12 @@ pub const ALLOWED: &[AmbientRead] = &[
         why: "개발 서버 주소 override — 프레임워크가 자기 웹뷰에 무엇을 띄울지의 값이라 창을 가진 프로세스의 것이다",
         after_split: "창이 없는 프로세스는 띄울 것이 없다 — 갈려도 이쪽에 남는다",
     },
+    AmbientRead {
+        path: "frameworks/electron/main.cjs",
+        key: "SOKSAK_START_INACTIVE",
+        why: "비전면 시각 검증이 새 창의 첫 표시 방법을 고른다 — 실제 BrowserWindow를 가진 프로세스만 적용할 수 있다",
+        after_split: "창 없는 코어로 옮기면 표시할 대상이 없고, 창 호스트에 전달하지 않으면 검증 창이 포커스를 빼앗는다. 이 값은 Electron 창 호스트에 남는다",
+    },
 ];
 
 /// 이 파일은 **검사**인가 — 규칙이 아니라 그 증명이다.
