@@ -110,11 +110,15 @@ export function visibleAnchorFacts(doc: Document = document): SurfaceAnchorFact[
   const out: SurfaceAnchorFact[] = [];
   const collect = (els: Iterable<HTMLElement>) => {
     for (const el of els) {
-      if (hiddenByTree(el)) continue;
-      const r = el.getBoundingClientRect();
+      // data-tauri-hole=content 는 tab-body에 붙는 Tauri 전용 시각 효과 표식일 뿐이다.
+      // 네이티브 child WebView가 실제로 채우는 자리는 공용 공개 계약인
+      // data-content-view-body 슬롯이다. 툴바까지 든 tab-body를 재면 그 높이만큼 감사
+      // 기준이 어긋나므로, 표식 아래 실제 슬롯의 rect만 합성 정본으로 인정한다.
+      const slot = el.querySelector<HTMLElement>("[data-content-view-body]");
+      if (!slot || hiddenByTree(slot)) continue;
+      const r = slot.getBoundingClientRect();
       if (r.width < 4 || r.height < 4) continue;
       if (r.x + r.width <= 0 || r.x >= window.innerWidth) continue; // 파킹(오프스크린)
-      const slot = el.querySelector<HTMLElement>("[data-content-view-body]");
       const node = el.dataset.node ?? "";
       out.push({
         label: slot?.getAttribute("data-content-view-body") ?? null,

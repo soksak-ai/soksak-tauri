@@ -68,8 +68,11 @@ describe("visibleAnchorRects — Tauri가 공개 content-view 슬롯에서 투�
 
   it("Tauri content 표식의 rect와 같은 표면은 정합이다", () => {
     document.body.innerHTML = "";
-    const slot = div("tab-body", { x: 906, y: 149, w: 554, h: 341 });
-    slot.dataset.tauriHole = "content";
+    const body = div("tab-body", { x: 906, y: 120, w: 554, h: 370 });
+    body.dataset.tauriHole = "content";
+    const slot = div("", { x: 906, y: 149, w: 554, h: 341 });
+    slot.dataset.contentViewBody = "b-window-tab";
+    body.appendChild(slot);
     const anchors = visibleAnchorRects();
     expect(anchors.source).toBe("content-view-slot");
     const v = judgeSurfaces([{ x: 906, y: 149, w: 554, h: 341 }], anchors.rects);
@@ -77,7 +80,7 @@ describe("visibleAnchorRects — Tauri가 공개 content-view 슬롯에서 투�
     expect(v.stacked).toEqual([]);
   });
 
-  it("공개 앵커 상태는 콘텐츠 label과 view identity를 rect와 함께 싣는다", () => {
+  it("툴바를 포함한 tab-body가 아니라 실제 콘텐츠 슬롯의 rect와 identity를 싣는다", () => {
     document.body.innerHTML = "";
     const body = div("tab-body", { x: 20, y: 30, w: 400, h: 300 });
     body.dataset.tauriHole = "content";
@@ -85,13 +88,15 @@ describe("visibleAnchorRects — Tauri가 공개 content-view 슬롯에서 투�
     body.dataset.projectId = "pjt-2";
     const slot = document.createElement("div");
     slot.dataset.contentViewBody = "b-window-tab-7";
+    slot.getBoundingClientRect = () =>
+      ({ x: 20, y: 58, width: 400, height: 272 }) as DOMRect;
     body.appendChild(slot);
     expect(visibleAnchorFacts()).toEqual([
       {
         label: "b-window-tab-7",
         viewId: "tab-7",
         projectId: "pjt-2",
-        rect: { x: 20, y: 30, w: 400, h: 300 },
+        rect: { x: 20, y: 58, w: 400, h: 272 },
       },
     ]);
   });
