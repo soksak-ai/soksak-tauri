@@ -15,6 +15,7 @@ import { solveArrangement, type Arrangement } from "../lib/railArrangement";
 import { RAIL_TRAVEL_MS } from "../lib/railMotion";
 import { railGeometryScopeId } from "../lib/railMotion";
 import { useArrangementPhase } from "./useArrangementPhase";
+import type { PreparedLayoutTransition } from "../lib/layoutTransitionHost";
 
 type G = { id: string };
 const leaf = (id: string): SplitTree<G> => ({ type: "leaf", value: { id } });
@@ -57,7 +58,7 @@ function Probe({
   prepareTravel?: (
     from: Arrangement<G>,
     to: Arrangement<G>,
-  ) => Promise<"glide" | "snap">;
+  ) => Promise<PreparedLayoutTransition>;
 }) {
   const phase = useArrangementPhase(
     arrangement,
@@ -160,10 +161,12 @@ describe("useArrangementPhase", () => {
   it("어댑터 준비가 끝나기 전에는 DOM 해를 바꾸지 않고 snap이면 준비 뒤 한 번에 정착한다", async () => {
     const at = solve(twoColumns, "a");
     const to = solve(twoColumns, "b");
-    let finish!: (mode: "glide" | "snap") => void;
+    let finish!: (prepared: PreparedLayoutTransition) => void;
     const prepareTravel = vi.fn(
-      () => new Promise<"glide" | "snap">((resolve) => { finish = resolve; }),
+      () => new Promise<PreparedLayoutTransition>((resolve) => { finish = resolve; }),
     );
+    const commit = vi.fn(async () => {});
+    const cancel = vi.fn();
     act(() => root.render(
       <Probe arrangement={at} scopeId={scopeOf(at)} prepareTravel={prepareTravel} />,
     ));
@@ -176,10 +179,12 @@ describe("useArrangementPhase", () => {
     expect(el().dataset.traveling).toBe("0");
     expect(el().dataset.content).toBe("stale");
 
-    await act(async () => finish("snap"));
+    await act(async () => finish({ mode: "snap", commit, cancel }));
     expect(el().dataset.preparing).toBe("0");
     expect(el().dataset.traveling).toBe("0");
     expect(el().dataset.content).toBe("live");
+    expect(commit).toHaveBeenCalledTimes(1);
+    expect(cancel).not.toHaveBeenCalled();
   });
 
   it("세대(레일 key)는 도착이 상주가 되는 순간에만 전진한다 — 닫히는 레일은 서 있던 그것이다", () => {

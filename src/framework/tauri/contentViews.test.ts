@@ -187,10 +187,18 @@ describe("네이티브 자식 뷰 구현", () => {
     await nativeHost.open("browser--v1", { url: "https://x" });
     invoke.mockClear();
 
-    await expect(
-      prepareNativeContentViewMove([{ viewId: "v1", dx: 410 }]),
-    ).resolves.toBe("snap");
+    const prepared = await prepareNativeContentViewMove([{ viewId: "v1", dx: 410 }]);
+    expect(prepared.mode).toBe("snap");
     expect(invoke).toHaveBeenCalledTimes(1);
+    expect(invoke).toHaveBeenCalledWith("webview_bounds", {
+      label: "browser--v1", x: 210, y: 112, w: 212, h: 458,
+    });
+
+    invoke.mockClear();
+    slot.getBoundingClientRect = () => ({
+      x: 210, y: 112, left: 210, top: 112, right: 422, bottom: 570, width: 212, height: 458,
+    }) as DOMRect;
+    await prepared.commit();
     expect(invoke).toHaveBeenCalledWith("webview_bounds", {
       label: "browser--v1", x: 210, y: 112, w: 212, h: 458,
     });
