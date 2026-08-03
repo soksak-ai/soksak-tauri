@@ -111,19 +111,20 @@ async function openTrackedSurface(
   state.desiredVisible = desired;
   state.lastRect = rect ? rectKey(rect) : "";
   if (slot) observeSlot(state, slot);
-  if (!desired) {
-    await call("webview_visible", { label: state.label, visible: false, focus: false });
-  }
+  // `webview_open`은 살아 있는 기존 child를 재채택할 수 있다. 그 표면에는 직전 hidden 상태가
+  // 남아 있으므로 생성 여부와 무관하게 장부의 현재 가시성을 명시적으로 재적용한다.
+  await call("webview_visible", { label: state.label, visible: desired, focus: false });
 }
 
 /** 복귀 에지에서 registry가 아니라 실제 child 부착을 확인하고, 어댑터가 자기 표면을 복구한다. */
-async function restoreIfDetached(state: SurfaceState): Promise<void> {
-  if (!state.opened || !state.openOptions) return;
+async function restoreIfDetached(state: SurfaceState): Promise<boolean> {
+  if (!state.opened || !state.openOptions) return false;
   const alive = await call<boolean>("webview_alive", { label: state.label });
-  if (alive !== false) return;
+  if (alive !== false) return false;
   state.opened = false;
   state.lastRect = "";
   await openTrackedSurface(state, state.openOptions);
+  return true;
 }
 
 /**
@@ -266,7 +267,7 @@ export const nativeHost: ContentViewHost = {
       return;
     }
     if (state.veiled) return;
-    await restoreIfDetached(state);
+    if (await restoreIfDetached(state)) return;
     await requestSlotSync(state);
     await call("webview_visible", { label, visible: true, focus });
   },

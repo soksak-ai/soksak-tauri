@@ -53,6 +53,9 @@ describe("네이티브 자식 뷰 구현", () => {
     expect(invoke).toHaveBeenCalledWith("webview_open", {
       label: "b-1", url: "https://x", x: -20000, y: -20000, w: 1, h: 1,
     });
+    expect(invoke).toHaveBeenCalledWith("webview_visible", {
+      label: "b-1", visible: true, focus: false,
+    });
     await nativeHost.bounds("b-1", 1, 2, 3, 4);
     expect(invoke).toHaveBeenCalledWith("webview_bounds", { label: "b-1", x: 1, y: 2, w: 3, h: 4 });
   });
