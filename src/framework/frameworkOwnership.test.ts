@@ -107,4 +107,12 @@ describe("Tauri native-composition ownership", () => {
     expect(source).toMatch(/setCompletionBlock/);
     expect(source).toMatch(/if active \{[\s\S]*lower_window_surface_hosts/);
   });
+
+  it("native 이동 command는 main-thread 설치 ACK 뒤에만 반환한다", () => {
+    const source = readFileSync(resolve(ROOT, "frameworks/tauri/src/webview.rs"), "utf8");
+    const body = source.split("fn animate_child_frame(")[1]?.split("#[cfg(not(target_os = \"macos\"))]")[0] ?? "";
+    expect(body).toMatch(/sync_channel/);
+    expect(body).toMatch(/recv_timeout/);
+    expect(body).toMatch(/armed_tx\.send/);
+  });
 });
