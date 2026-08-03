@@ -61,11 +61,13 @@ const ALLOWED: { file: string; mark: string; event: string; why: string }[] = [
   { file: "src/commands/catalogDebug.ts", mark: "await sleep(ms);", event: "caller-specified", why: "debug.sleep 본체" },
   { file: "src/commands/catalogDom.ts", mark: "window.setTimeout(() => focusTrace.focusTraceStop?.(), ms)", event: "caller-specified", why: "focus trace 자동 종료 ms — 호출자 지정" },
   { file: "src/commands/catalogDom.ts", mark: "window.setTimeout(resolve, durationMs / steps)", event: "caller-specified", why: "드래그 durationMs/steps — 호출자 지정" },
+  { file: "src/commands/catalogDom.ts", mark: "window.setTimeout(resolve, recordLeadMs)", event: "caller-specified", why: "드래그 녹화의 선행 프레임 구간 — 호출자가 recordLeadMs로 발화" },
   { file: "src/commands/catalogDom.ts", mark: "await new Promise<void>((done) => setTimeout(done, ms));", event: "caller-specified", why: "ui.input.observe 관측 창(ms) — 대기 자체가 명령의 기능이다(그 창 동안 도착한 입력을 센다). rAF 는 가려진 창에서 멈춰 명령이 안 끝난다" },
   { file: "src/commands/catalogDom.ts", mark: "else setTimeout(tick, 16);", event: "caller-specified", why: "ui.trace 표본 캐던스 — 호출자 지정 창(ms) 안의 계측 수집. rAF 는 가려진 창에서 멈춰 명령이 영영 안 끝난다(실측 TIMEOUT)" },
   { file: "src/commands/catalogRemote.ts", mark: "setTimeout(() => {", event: "caller-specified", why: "remote.confirm TTL(ttlSecs 파라미터) — 만료=Deny 가 계약(fail-closed)" },
   // ── ② 프로토콜·OS 경계 유예(TS) ──
   { file: "src/commands/catalogDom.ts", mark: "new Promise((r) => setTimeout(r, 50))", event: "dnd-frame-pacing", why: "합성 DragEvent 시퀀스의 프레임 간격 — 브라우저 DnD 상태기계가 같은 틱의 연속 이벤트를 접는다" },
+  { file: "src/commands/catalogDom.ts", mark: "window.setTimeout(() => finish(false), 50)", event: "animation-frame-commit", why: "rAF 커밋이 주 경로 — 가림 감지가 사건을 멈추면 명령을 무한 대기에 두지 않고 frameFallbacks로 관측 실패를 공개하는 유한 안전망" },
   // ── ② 프로토콜·OS 경계 유예 ──
   { file: "src/commands/catalogWindow.ts", mark: "setTimeout(() => {", event: "self-destruct-reply-flush", why: "자기 파괴 명령은 답을 먼저 흘린다 — 통로가 파괴로 함께 죽는다(window.reload). 파괴 자체는 프레임워크가 하고 자국도 거기서 남는다" },
   { file: "src/commands/catalogWindow.ts", mark: "setTimeout(() => void invoke(\"window_close\", { label }), 30);", event: "self-destruct-reply-flush", why: "동일 계약(window.close 자기 창)" },

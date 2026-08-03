@@ -253,7 +253,7 @@ describe("ui.input.drag — 실시간 재현 표면", () => {
     mockedInvoke.mockResolvedValue({});
   });
 
-  it("단계 캡처는 각 이동의 다음 작업 커밋을 본 뒤 픽셀을 읽는다", async () => {
+  it("단계 캡처는 각 이동의 다음 animation frame 커밋을 본 뒤 픽셀을 읽는다", async () => {
     mountNode(`<div data-node="btn">drag</div>`);
     const node = document.querySelector<HTMLElement>("[data-node=btn]")!;
     vi.spyOn(node, "getBoundingClientRect").mockReturnValue({
@@ -261,7 +261,7 @@ describe("ui.input.drag — 실시간 재현 표면", () => {
       width: 20, height: 20, toJSON: () => ({}),
     });
     let committedMoves = 0;
-    const onMove = () => window.setTimeout(() => { committedMoves += 1; }, 0);
+    const onMove = () => window.requestAnimationFrame(() => { committedMoves += 1; });
     window.addEventListener("mousemove", onMove);
     const seenBySnapshot: number[] = [];
     const mockedInvoke = vi.mocked(frameworkInvoke);

@@ -1147,7 +1147,7 @@ export function registerDomCatalog(): void {
       },
       captureSteps: {
         type: "boolean",
-        description: "With recordDir, capture the baseline, every injected move, and the released frame deterministically instead of running the real-time recorder. Works without focusing the window.",
+        description: "With recordDir, capture the baseline, every injected move, and the released frame after its animation-frame commit. Works without focusing the window; recording.frameFallbacks reports a paused compositor.",
         default: false,
       },
     },
@@ -1221,12 +1221,25 @@ export function registerDomCatalog(): void {
         );
       const dist = Math.hypot(toPt.x - fromPt.x, toPt.y - fromPt.y);
       let capturedSteps = 0;
+      let frameFallbacks = 0;
+      const waitForPaintCommit = () => new Promise<void>((resolve) => {
+        let finished = false;
+        const finish = (committed: boolean) => {
+          if (finished) return;
+          finished = true;
+          window.clearTimeout(guard);
+          if (!committed) frameFallbacks += 1;
+          resolve();
+        };
+        const guard = window.setTimeout(() => finish(false), 50);
+        window.requestAnimationFrame(() => finish(true));
+      });
       const captureStep = async (): Promise<void> => {
         if (!recordDir || !captureSteps) return;
-        // 합성 이벤트의 dispatch 반환은 React/DOM 소유자의 페인트 완료가 아니다. 다음 작업으로
-        // 한 번 넘긴 뒤 읽어야 방금 이동이 커밋된 픽셀을 얻는다. rAF는 비전면 창에서 멈출 수
-        // 있으므로 쓰지 않는다. 반복 감시가 아니라 입력 단계마다 정확히 한 번인 유한 경계다.
-        await new Promise((resolve) => window.setTimeout(resolve, 0));
+        // 패널 preview는 rAF로 고빈도 move를 합친다. 그 커밋 사건 뒤에 읽어야 방금 이동의
+        // 픽셀이 된다. 가림 감지가 rAF를 멈추면 유한 안전망으로 빠지고 그 횟수를 응답에 공개한다.
+        // 반복 감시가 아니라 입력 단계마다 정확히 한 번인 경계다.
+        await waitForPaintCommit();
         const png = await invoke<string>("plugin:webview-capture|snapshot_region", {});
         await invoke("write_file_base64", {
           path: `${recordDir}/f${String(capturedSteps).padStart(4, "0")}.png`,
@@ -1268,7 +1281,7 @@ export function registerDomCatalog(): void {
       fire("mouseup", toPt.x, toPt.y, window);
       await captureStep();
       const recordingResult = captureSteps
-        ? { recording: { dir: recordDir, frames: capturedSteps, mode: "steps" } }
+        ? { recording: { dir: recordDir, frames: capturedSteps, mode: "steps", frameFallbacks } }
         : recording
           ? { recording: { dir: recordDir, frames: await recording, mode: "realtime" } }
           : {};
