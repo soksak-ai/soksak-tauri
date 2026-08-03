@@ -1223,6 +1223,10 @@ export function registerDomCatalog(): void {
       let capturedSteps = 0;
       const captureStep = async (): Promise<void> => {
         if (!recordDir || !captureSteps) return;
+        // 합성 이벤트의 dispatch 반환은 React/DOM 소유자의 페인트 완료가 아니다. 다음 작업으로
+        // 한 번 넘긴 뒤 읽어야 방금 이동이 커밋된 픽셀을 얻는다. rAF는 비전면 창에서 멈출 수
+        // 있으므로 쓰지 않는다. 반복 감시가 아니라 입력 단계마다 정확히 한 번인 유한 경계다.
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
         const png = await invoke<string>("plugin:webview-capture|snapshot_region", {});
         await invoke("write_file_base64", {
           path: `${recordDir}/f${String(capturedSteps).padStart(4, "0")}.png`,

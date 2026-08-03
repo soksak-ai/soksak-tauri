@@ -253,6 +253,44 @@ describe("ui.input.drag — 실시간 재현 표면", () => {
     mockedInvoke.mockResolvedValue({});
   });
 
+  it("단계 캡처는 각 이동의 다음 작업 커밋을 본 뒤 픽셀을 읽는다", async () => {
+    mountNode(`<div data-node="btn">drag</div>`);
+    const node = document.querySelector<HTMLElement>("[data-node=btn]")!;
+    vi.spyOn(node, "getBoundingClientRect").mockReturnValue({
+      x: 10, y: 10, left: 10, top: 10, right: 30, bottom: 30,
+      width: 20, height: 20, toJSON: () => ({}),
+    });
+    let committedMoves = 0;
+    const onMove = () => window.setTimeout(() => { committedMoves += 1; }, 0);
+    window.addEventListener("mousemove", onMove);
+    const seenBySnapshot: number[] = [];
+    const mockedInvoke = vi.mocked(frameworkInvoke);
+    mockedInvoke.mockClear();
+    mockedInvoke.mockImplementation(async (command) => {
+      if (command === "plugin:webview-capture|snapshot_region") {
+        seenBySnapshot.push(committedMoves);
+        return "cG5n";
+      }
+      return undefined;
+    });
+    await execute(
+      "ui.input.drag",
+      {
+        from: ADDR,
+        dx: 100,
+        steps: 2,
+        durationMs: 0,
+        recordDir: "/tmp/drag-commit",
+        captureSteps: true,
+      },
+      {},
+    );
+    window.removeEventListener("mousemove", onMove);
+    expect(seenBySnapshot).toEqual([0, 1, 2, 2]);
+    mockedInvoke.mockReset();
+    mockedInvoke.mockResolvedValue({});
+  });
+
   it("steps/durationMs를 공개하고 지정 단계마다 mousemove를 보낸다", async () => {
     const spec = getSpec("ui.input.drag");
     expect(spec?.params.steps).toBeDefined();
