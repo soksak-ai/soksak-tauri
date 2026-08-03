@@ -6,8 +6,8 @@
 //
 // 그리고 **표시의 주인이 위상이다**: 주행 중에 도착한 새 해는 표시를 갈아치우지 않고 대기열
 // (깊이 1)에 앉는다. 표시를 즉시 갈면 달리는 애니메이션의 출발 오프셋이 CSS 변수 갱신으로
-// 다시 해석돼 요소가 남은 진행도만큼 튀고(최대 두 이동량의 합), 동결·veil·착지가 위상 한복판에
-// 한 번 더 돌아간다. 대기열은 그 두 결함을 구조적으로 없앤다 — 첫 여정이 끝난 뒤 다음 여정이
+// 다시 해석돼 요소가 남은 진행도만큼 튄다(최대 두 이동량의 합). 대기열은 그 결함을 구조적으로
+// 없앤다 — 첫 여정이 끝난 뒤 다음 여정이
 // 최신 목표로 출발하므로 언제나 매끄럽고, 클릭을 몇 번 하든 위상은 최대 둘이다(중간은 접힌다).
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -27,6 +27,8 @@ export interface ArrangementPhase<L> {
   /** 실제로 움직이는 패널만. 비어 있으면 위상이 아니다. */
   moves: ArrangementMove[];
   traveling: boolean;
+  /** 프레임워크 외부 표면이 목표 DOM 커밋 전 bounds를 준비하는 중. */
+  preparing: boolean;
   /**
    * 이 여정의 모드 — 활강(패널 FLIP + 빠질·생길 두 자리)인가. **시작에 한 번** 정해지고 위상
    * 내내 바뀌지 않는다. 중간에 바뀌면 레일 표상이 1장↔2장으로 형태를 바꾸고, 1장 렌더에서
@@ -53,6 +55,7 @@ interface PhaseState<L> {
   contentKey: string;
   /** 시작 시점에 굳힌 여정 모드. 정차 중에는 의미 없다. */
   glide: boolean;
+  preparing: boolean;
 }
 
 /** 위상 재무장 판정용 해 서명 — 렌더마다 새 객체가 오므로 값으로 비교한다. */
@@ -100,6 +103,14 @@ export function useArrangementPhase<L extends { id: string }>(
    * 표상 형태를 바꾼다. 생략하면 항상 활강이다.
    */
   canGlide?: (from: Arrangement<L>, to: Arrangement<L>) => boolean,
+  /**
+   * 목표 DOM 커밋 전에 프레임워크 외부 표면을 준비한다. `snap`은 준비 완료 뒤 DOM을 한 번에
+   * 놓고, `glide`는 기존 FLIP을 시작한다. 생략하면 준비할 외부 표면이 없는 DOM glide다.
+   */
+  prepareTravel?: (
+    from: Arrangement<L>,
+    to: Arrangement<L>,
+  ) => Promise<"glide" | "snap">,
 ): ArrangementPhase<L> {
   const [phase, setPhase] = useState<PhaseState<L>>({
     from: current,
@@ -108,6 +119,7 @@ export function useArrangementPhase<L extends { id: string }>(
     scopeId,
     contentKey,
     glide: true,
+    preparing: false,
   });
 
   // 커밋 시점의 최신값 — 무장 시점 캡처는 전환 중 일시값(placement 미적재 등)을 기준점에 박아
@@ -120,11 +132,14 @@ export function useArrangementPhase<L extends { id: string }>(
   latestContent.current = contentKey;
   const latestCanGlide = useRef(canGlide);
   latestCanGlide.current = canGlide;
+  const latestPrepareTravel = useRef(prepareTravel);
+  latestPrepareTravel.current = prepareTravel;
   /** 여정 시작 시점의 모드 결정 — 여기 한 곳만이 물어본다. */
   const decideGlide = (from: Arrangement<L> | null, to: Arrangement<L> | null): boolean =>
     from && to ? (latestCanGlide.current?.(from, to) ?? true) : true;
   /** 주행 중 도착한 최신 해(깊이 1) — 표시는 여정이 끝난 뒤에 갈아탄다. */
   const queued = useRef<Arrangement<L> | null>(null);
+  const preparation = useRef({ serial: 0, key: "" });
   /** 다음 해를 여정 없이 받는다 — 손 드래그가 이미 그 자리로 옮겨 놓은 경우. */
   const acceptWithoutTravel = useRef(false);
 
@@ -145,6 +160,7 @@ export function useArrangementPhase<L extends { id: string }>(
       scopeId: latestScope.current,
       contentKey: latestContent.current,
       glide: p.glide,
+      preparing: false,
     }));
   }, []);
 
@@ -183,14 +199,61 @@ export function useArrangementPhase<L extends { id: string }>(
       queued.current = latest.current; // 여정 중 — 표시는 그대로 두고 최신 목표만 기억
       return;
     }
+    const from = phase.displayed;
+    const target = latest.current;
+    const prepare = latestPrepareTravel.current;
+    if (prepare && from && target) {
+      if (preparation.current.key === currentKey) return;
+      const serial = ++preparation.current.serial;
+      preparation.current.key = currentKey;
+      setPhase((p) => ({ ...p, preparing: true }));
+      void prepare(from, target)
+        .then((mode) => {
+          if (preparation.current.serial !== serial) return;
+          preparation.current.key = "";
+          // 준비 중 더 최신 해가 왔으면 그 해의 준비 거래가 이미 별도 serial로 진행 중이다.
+          if (arrangementKey(latest.current) !== currentKey) return;
+          if (mode === "snap") {
+            setPhase((p) => ({
+              from: target,
+              displayed: target,
+              generation: p.generation + 1,
+              scopeId: latestScope.current,
+              contentKey: latestContent.current,
+              glide: false,
+              preparing: false,
+            }));
+            redeliverViewFocusIfLost();
+            return;
+          }
+          setPhase((p) => ({
+            from: p.displayed,
+            displayed: target,
+            generation: p.generation,
+            scopeId: latestScope.current,
+            contentKey: latestContent.current,
+            glide: decideGlide(p.displayed, target),
+            preparing: false,
+          }));
+        })
+        .catch((error) => {
+          if (preparation.current.serial !== serial) return;
+          // 같은 목표를 상태 변경만으로 무한 재시도하지 않는다. 새 목표가 오면 key가 달라져
+          // 정상적으로 다시 준비한다. 실패한 거래에서는 옛 DOM 배치를 그대로 보존한다.
+          preparation.current.key = currentKey;
+          setPhase((p) => ({ ...p, preparing: false }));
+          console.error("[layout] 목표 배치 준비 실패", error);
+        });
+      return;
+    }
     setPhase((p) => ({
       from: p.displayed,
-      displayed: latest.current,
-      // 출발선 레이어 = 서 있던 인스턴스. 여기서 전진시키면 그 인스턴스가 파괴된다.
+      displayed: target,
       generation: p.generation,
       scopeId: latestScope.current,
       contentKey: latestContent.current,
-      glide: decideGlide(p.displayed, latest.current),
+      glide: decideGlide(p.displayed, target),
+      preparing: false,
     }));
     // current 는 렌더마다 새 객체다 — 값 서명(currentKey·contentKey)만이 안정된 의존이다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -203,15 +266,17 @@ export function useArrangementPhase<L extends { id: string }>(
       setPhase((p) => {
         const next = queued.current;
         queued.current = null;
-        const advances =
-          next && p.displayed && arrangementMoves(p.displayed, next).length > 0;
+        // 다음 목표는 이 착지 뒤 일반 진입로에서 다시 준비한다. 여기서 바로 displayed를 바꾸면
+        // Tauri의 precommit bounds 거래를 우회한다.
+        void next;
         return {
           from: p.displayed,
-          displayed: advances ? next : p.displayed,
+          displayed: p.displayed,
           generation: p.generation + 1, // 도착 레이어가 상주가 된다
           scopeId: latestScope.current,
           contentKey: latestContent.current,
-          glide: advances ? decideGlide(p.displayed, next) : p.glide,
+          glide: p.glide,
+          preparing: false,
         };
       });
       // 재배열이 떨군 입력 포커스를 착지 시점에 재배달한다 — "바깥(그룹 활성)만 되고 내부
@@ -226,6 +291,7 @@ export function useArrangementPhase<L extends { id: string }>(
     from: traveling ? phase.from : phase.displayed,
     moves,
     traveling,
+    preparing: phase.preparing,
     glide: phase.glide,
     generation: phase.generation,
     rebase,
