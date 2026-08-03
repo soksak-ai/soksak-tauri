@@ -61,9 +61,9 @@ describe("Tauri private hole projection", () => {
     expect(isTauriRectMotionExcluded(native)).toBe(true);
     expect(isTauriRectMotionExcluded(slot)).toBe(false);
 
-    const ordinaryPane = pane("g2");
-    const ordinaryBody = body(ordinaryPane, "g2");
-    expect(isTauriRectMotionExcluded(ordinaryPane)).toBe(false);
+    const ordinaryFrame = pane("g2");
+    const ordinaryBody = body(ordinaryFrame, "g2");
+    expect(isTauriRectMotionExcluded(ordinaryFrame)).toBe(false);
     expect(isTauriRectMotionExcluded(ordinaryBody)).toBe(false);
   });
 
