@@ -6,34 +6,27 @@
 
 pub use soksak_core::unit_dev::*;
 
-use std::path::Path;
-
 #[tauri::command]
 pub fn unit_dev_list() -> Result<Vec<UnitDevSource>, String> {
     let id = crate::identity::ambient();
     list_in(id.home(), &crate::home::core_build_for_identifier(id.identifier()))
 }
 
-fn ensure_dev_identity() -> Result<(), String> {
-    ensure_dev_identity_build(&crate::home::core_build_for_identifier(
-        crate::identity::ambient().identifier(),
-    ))
-}
-
 #[tauri::command]
 pub fn unit_dev_set(kind: String, id: String, source: String) -> Result<UnitDevSource, String> {
-    ensure_dev_identity()?;
+    let build = crate::home::core_build_for_identifier(crate::identity::ambient().identifier());
+    ensure_dev_identity_build(&build)?;
     set_source(
         crate::identity::ambient().home(),
         &kind,
         &id,
-        Path::new(&source),
+        std::path::Path::new(&source),
     )
 }
 
 #[tauri::command]
 pub fn unit_dev_validate_path(source: String) -> Result<String, String> {
-    validate_source_path_in(Path::new(&source), crate::identity::ambient().home())?;
+    validate_source_path_in(std::path::Path::new(&source), crate::identity::ambient().home())?;
     Ok(source)
 }
 
@@ -59,10 +52,9 @@ pub fn app_quit(app: tauri::AppHandle) {
         "command",
         serde_json::json!({ "reason": "명령으로 끈다 — 이 뒤로 이 프로세스의 기록은 없다" }),
     );
-    let queued = app.clone();
     std::thread::spawn(move || {
-        let exiting = queued.clone();
-        let _ = queued.run_on_main_thread(move || exiting.exit(0));
+        let exiting = app.clone();
+        let _ = app.run_on_main_thread(move || exiting.exit(0));
     });
 }
 
