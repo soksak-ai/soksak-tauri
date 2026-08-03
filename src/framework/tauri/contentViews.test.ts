@@ -199,9 +199,32 @@ describe("네이티브 자식 뷰 구현", () => {
       x: 210, y: 112, left: 210, top: 112, right: 422, bottom: 570, width: 212, height: 458,
     }) as DOMRect;
     await prepared.commit();
-    expect(invoke).toHaveBeenCalledWith("webview_bounds", {
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("DOM 재배치 mutation 뒤 공개 슬롯의 최종 위치로 native bounds를 대조한다", async () => {
+    let x = 620;
+    const frame = document.createElement("div");
+    frame.className = "tab-body";
+    frame.dataset.node = "layout/tab/v1";
+    const slot = document.createElement("div");
+    slot.setAttribute("data-content-view-body", "browser--v1");
+    slot.getBoundingClientRect = () => ({
+      x, y: 112, left: x, top: 112, right: x + 212, bottom: 570, width: 212, height: 458,
+    }) as DOMRect;
+    frame.appendChild(slot);
+    document.body.appendChild(frame);
+
+    const { installNativeContentViewComposition, nativeHost } = await load();
+    installNativeContentViewComposition();
+    await nativeHost.open("browser--v1", { url: "https://x" });
+    invoke.mockClear();
+
+    x = 210;
+    frame.classList.add("layout-committed");
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("webview_bounds", {
       label: "browser--v1", x: 210, y: 112, w: 212, h: 458,
-    });
+    }));
   });
 
   it("복귀 에지에서 떨어진 child를 플러그인 재마운트 없이 어댑터가 복구한다", async () => {
