@@ -264,12 +264,13 @@ fn a_live_cored_is_adopted_and_never_respawned() {
     let dir = fixture_dir("adopt");
     let socket = dir.join("h.sock");
     let listener = std::os::unix::net::UnixListener::bind(&socket).expect("가짜 cored");
-    // 바이너리는 없는 것을 준다 — 채택했다면 그 자리에 닿지도 않는다.
+    // 바이너리는 아예 해소하지 않는다 — 채택은 스폰 준비보다 먼저 성립해야 한다.
+    // 앱 번들 안에 sidecar 가 누락되어도 이미 서빙 중인 홈의 cored 를 잃어서는 안 된다.
     let cored = ensure_cored(
         &socket,
         &dir,
         "com.soksak.tauri.dev",
-        &dir.join("없는-cored"),
+        None,
         Path::new("/h/data"),
         None,
         None,
@@ -303,7 +304,7 @@ fn a_seat_nobody_answers_is_not_served() {
         &socket,
         &dir,
         "com.soksak.tauri.dev",
-        &dir.join("없는-cored"),
+        Some(&dir.join("없는-cored")),
         Path::new("/h/data"),
         None,
         None,
@@ -321,13 +322,12 @@ fn a_missing_binary_fails_by_name() {
         &dir.join("h.sock"),
         &dir,
         "com.soksak.tauri.dev",
-        &dir.join("없는-cored"),
+        None,
         Path::new("/h/data"),
         None,
         None,
     )
     .unwrap_err();
-    assert!(e.contains("없는-cored"), "{e}");
     assert!(e.contains(CORED_BIN_ENV), "{e}");
 }
 
@@ -341,7 +341,7 @@ fn a_helper_that_says_nothing_and_dies_is_a_failure() {
         &dir.join("h.sock"),
         &dir,
         "com.soksak.tauri.dev",
-        &bin,
+        Some(&bin),
         Path::new("/h/data"),
         None,
         None,
@@ -364,7 +364,7 @@ fn a_helper_that_names_another_socket_is_reaped_and_refused() {
         &dir.join("h.sock"),
         &dir,
         "com.soksak.tauri.dev",
-        &bin,
+        Some(&bin),
         Path::new("/h/data"),
         None,
         None,
@@ -388,7 +388,7 @@ fn we_reap_only_what_we_spawned() {
         &socket,
         &dir,
         "com.soksak.tauri.dev",
-        &bin,
+        Some(&bin),
         Path::new("/h/data"),
         None,
         None,
