@@ -172,12 +172,7 @@ describe("네이티브 자식 뷰 구현", () => {
     ]);
   });
 
-  it("native surface 배치는 paint 경계까지 handoff를 유지하고 목표 bounds로 한 번 정착한다", async () => {
-    const frames: FrameRequestCallback[] = [];
-    vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((callback) => {
-      frames.push(callback);
-      return frames.length;
-    });
+  it("native surface 배치는 z-order를 왕복하지 않고 목표 bounds로 한 번 정착한다", async () => {
     const frame = document.createElement("div");
     frame.className = "tab-body";
     frame.dataset.node = "layout/tab/v1";
@@ -195,35 +190,12 @@ describe("네이티브 자식 뷰 구현", () => {
 
     const prepared = await prepareNativeContentViewMove([{ viewId: "v1", dx: 410 }]);
     expect(prepared.mode).toBe("snap");
-    expect(invoke.mock.calls).toEqual([
-      ["webview_surface_handoff", { label: "browser--v1", active: true }],
-    ]);
+    expect(invoke).not.toHaveBeenCalled();
 
     slot.getBoundingClientRect = () => ({
       x: 210, y: 112, left: 210, top: 112, right: 422, bottom: 570, width: 212, height: 458,
     }) as DOMRect;
-    const committed = prepared.commit();
-    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("webview_bounds", {
-      label: "browser--v1",
-      x: 210,
-      y: 112,
-      w: 212,
-      h: 458,
-    }));
-    expect(invoke).not.toHaveBeenCalledWith(
-      "webview_surface_handoff",
-      { label: "browser--v1", active: false },
-    );
-    await vi.waitFor(() => expect(frames).toHaveLength(1));
-    frames.shift()?.(0);
-    await Promise.resolve();
-    expect(invoke).not.toHaveBeenCalledWith(
-      "webview_surface_handoff",
-      { label: "browser--v1", active: false },
-    );
-    await vi.waitFor(() => expect(frames).toHaveLength(1));
-    frames.shift()?.(16);
-    await committed;
+    await prepared.commit();
     expect(invoke).toHaveBeenCalledWith("webview_bounds", {
       label: "browser--v1",
       x: 210,
@@ -231,11 +203,9 @@ describe("네이티브 자식 뷰 구현", () => {
       w: 212,
       h: 458,
     });
-    expect(invoke).toHaveBeenCalledWith(
-      "webview_surface_handoff",
-      { label: "browser--v1", active: false },
-    );
+    expect(invoke).not.toHaveBeenCalledWith("webview_surface_handoff", expect.anything());
     expect(invoke).not.toHaveBeenCalledWith("webview_animate_bounds", expect.anything());
+    expect(vi.isMockFunction(globalThis.requestAnimationFrame)).toBe(false);
   });
 
   it("DOM 재배치 mutation 뒤 공개 슬롯의 최종 위치로 native bounds를 대조한다", async () => {

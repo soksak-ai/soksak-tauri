@@ -74,13 +74,13 @@ describe("Tauri native-composition ownership", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("native surface handoff만 Tauri 어댑터에 있고 폐기한 frame animation은 남지 않는다", () => {
+  it("native surface 이동은 bounds만 쓰고 z-order handoff나 frame animation을 만들지 않는다", () => {
     const sources = [
       "frameworks/tauri/src/webview.rs",
       "frameworks/tauri/src/lib.rs",
       "frameworks/tauri/Cargo.toml",
     ].map((file) => readFileSync(resolve(ROOT, file), "utf8")).join("\n");
-    expect(sources).toMatch(/webview_surface_handoff/);
+    expect(sources).not.toMatch(/webview_surface_handoff/);
     expect(sources).not.toMatch(/webview_animate_bounds/);
     expect(sources).not.toMatch(/CABasicAnimation|CAAnimationDelegate|CATransaction/);
     const outsideTauri = productionFiles(SRC)
@@ -99,12 +99,13 @@ describe("Tauri native-composition ownership", () => {
     expect(source).not.toMatch(/view\.animator\(\)\.setFrame/);
   });
 
-  it("surface host의 합성 handoff는 Tauri가 열고 종료·overlay에서 반드시 회수한다", () => {
+  it("surface host의 정상 z-order는 고정하고 overlay 상태만 명시적으로 전환한다", () => {
     const source = readFileSync(resolve(ROOT, "frameworks/tauri/src/webview.rs"), "utf8");
     expect(source).toMatch(/raise_surface_host/);
     expect(source).toMatch(/lower_surface_host/);
-    expect(source).toMatch(/webview_surface_handoff/);
+    expect(source).not.toMatch(/webview_surface_handoff/);
     expect(source).toMatch(/if active \{[\s\S]*lower_window_surface_hosts/);
+    expect(source).toMatch(/else \{[\s\S]*raise_window_surface_hosts/);
   });
 
   it("native bounds command는 main-thread frame 설치 ACK 뒤에만 반환한다", () => {
