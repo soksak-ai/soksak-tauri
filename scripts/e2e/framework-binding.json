@@ -16,11 +16,6 @@
       "why": "창 내용을 네이티브로 합성해 PNG 로 굽는다. 네이티브 자식 웹뷰까지 한 장에 담기는 것이 판정 근거라, 페이지만 찍는 캡처로는 같은 답이 나오지 않는다.",
       "frameworkAnswers": "프레임워크가 자기 창 캡처를 제공한다"
     },
-    "window.record": {
-      "kind": "native",
-      "why": "창을 연속 프레임으로 받는다. 프레임 소스가 프레임워크의 창 합성기다.",
-      "frameworkAnswers": "프레임워크가 자기 창 녹화를 제공한다"
-    },
     "window.layers": {
       "kind": "native",
       "why": "네이티브 뷰 계층(클래스·frame·hidden)을 그대로 덤프한다. 계층의 모양 자체가 프레임워크마다 다르다.",
@@ -481,11 +476,9 @@
       "role": "harness",
       "class": "C",
       "surfaces": [
-        "window.snapshot",
-        "window.record",
-        "window.layers"
+        "window.snapshot"
       ],
-      "note": "슬롯이 얼어붙는 결함을 네이티브 뷰 계층과 프레임으로 본다 — 자식 표면 위치가 판정 축이다."
+      "note": "실제 탭 교차 클릭을 내장 연속 캡처와 공개 webview.composition 상태로 검증한다. 최종 픽셀 증거만 프레임워크 캡처 표면에 묶인다."
     },
     {
       "file": "snapshot-generation.mjs",
