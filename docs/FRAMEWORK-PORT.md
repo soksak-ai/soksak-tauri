@@ -663,7 +663,7 @@ The slot is declared once, by the plugin, and read differently by each side: to 
 For the coordinate-pushing side, the rect belongs to the nested
 `data-content-view-body` element itself. The outer Tauri hole marker includes
 browser chrome and exists only for adapter effects; measuring it creates a
-second, incorrect geometry. Shell-owned layout axes outside `ProjectSurface`
+second, incorrect geometry. App-chrome layout axes outside `ProjectSurface`
 (project tabs top/left and their rail width) publish `layout.reflow` after
 commit, so native bounds do not depend on background delivery of
 ResizeObserver or rAF.

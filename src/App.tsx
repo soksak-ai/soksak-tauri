@@ -76,7 +76,7 @@ import {
   snapRailStation,
 } from "./lib/railPlacement";
 import { railGeometryScopeId, railPresentationLayers } from "./lib/railMotion";
-import { useShellLayoutReflow } from "./lib/shellLayoutReflow";
+import { useAppChromeLayoutReflow } from "./lib/appChromeLayoutReflow";
 import { useArrangementPhase } from "./components/useArrangementPhase";
 import { arrangementMoves, viewIdsOfMoves } from "./lib/railArrangement";
 import "./App.css";
@@ -845,9 +845,9 @@ function App() {
     RAIL_MIN,
     RAIL_MAX,
   );
-  // 프로젝트 탭 레일은 ProjectSurface 바깥 셸이다. top↔left 교체와 레일 폭 변경도 안쪽
+  // 프로젝트 탭 레일은 ProjectSurface 바깥 앱 크롬이다. top↔left 교체와 레일 폭 변경도 안쪽
   // 콘텐츠 슬롯 기하를 바꾸므로, 그 커밋을 공용 reflow 사건으로 명시한다.
-  useShellLayoutReflow(
+  useAppChromeLayoutReflow(
     [projectTabPosition, railW].join(":"),
     activeProject?.activeSpaceId ?? null,
   );

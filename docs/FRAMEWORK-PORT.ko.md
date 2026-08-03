@@ -661,7 +661,7 @@ offscreen 축은 코어의 공백이 **아니다**. 2026-07-08 에 검증됐고 
 
 좌표로 미는 쪽의 rect는 중첩된 `data-content-view-body` 요소 자체가 소유한다. 바깥 Tauri
 홀 표식은 브라우저 크롬까지 포함하고 어댑터 효과에만 쓰이므로, 그것을 재면 틀린 두 번째
-기하가 생긴다. `ProjectSurface` 바깥에서 셸이 소유하는 배치 축(프로젝트 탭 top/left와
+기하가 생긴다. `ProjectSurface` 바깥에서 앱 크롬이 소유하는 배치 축(프로젝트 탭 top/left와
 레일 폭)은 커밋 뒤 `layout.reflow`를 발행한다. 따라서 네이티브 bounds는 비전면 창에서
 멈출 수 있는 ResizeObserver나 rAF 전달에 의존하지 않는다.
 
