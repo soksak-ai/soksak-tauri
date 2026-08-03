@@ -40,11 +40,15 @@
     linear-gradient(var(--card), var(--card)) bottom / 100% var(--status-h) no-repeat;
 }
 
-/* 실제 content-view 슬롯은 배경을 칠하지 않는다. Tauri가 공개 슬롯에서 파생한 marker가
-   단일 기준이며 플러그인 내부 클래스나 공통 DOM은 이 판정을 소유하지 않는다.
-   :root[data-pane-style]은 공용 DOM 본문 배경 규칙보다 marker 한 축만큼 구체적이다.
+/* 실제 content-view 슬롯과 그 DOM frame은 배경을 칠하지 않는다. 슬롯만 비우고 조상
+   tab-body가 var(--bg)를 칠하면 그 불투명 픽셀이 아래 WKWebView를 전부 가린다.
+   Tauri가 공개 슬롯에서 파생한 두 marker가 단일 기준이며 플러그인 내부 클래스나 공통 DOM은
+   이 판정을 소유하지 않는다. :root[data-pane-style]은 공용 DOM 본문 배경 규칙보다 구체적이다.
    선언 순서에 우연히 기대거나 !important로 강제하지 않고, 문서 밖 표면의 배경 소유권을
    선택된 Tauri 어댑터가 명시적으로 가져온다. */
+:root[data-pane-style] .tab-body[data-tauri-hole-frame] {
+  background: transparent;
+}
 :root[data-pane-style] [data-tauri-hole="content"] {
   background: transparent;
 }
