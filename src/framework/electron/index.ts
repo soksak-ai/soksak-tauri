@@ -218,6 +218,8 @@ export const engineProvision: EngineProvision = {
   // (네이티브 애드온을 붙이면 달라지는 값이라, 못 하는 것이 아니라 **아직 안 붙인** 것이다).
   // 자식 뷰 축과 뭉치지 않는다: offscreen 은 자식 뷰를 안 쓰고도 이 축이 필요하다.
   engineModules: false,
+  supportsDocumentStart: false,
+  supportsInputInjection: true,
 };
 
 export const electronFramework: AppFramework = {
@@ -329,4 +331,3 @@ export const electronFramework: AppFramework = {
     current: async () => unimplemented("deepLink.current — 딥링크는 주인이 받는다"),
   },
 };
-

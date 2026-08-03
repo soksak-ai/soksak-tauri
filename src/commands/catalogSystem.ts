@@ -77,10 +77,10 @@ export function registerSystemCatalog(): void {
   // nativeChildWebview)으로 가른다 — 프레임워크가 하나 더 늘어도 판정 코드는 그대로다.
   register("framework.provision", {
     description:
-      "Read what this window's framework provides: adapter name, whether the engine is Chromium, and whether content views are native child webviews (as opposed to elements inside the page). Branch verification on these axes, never on the adapter name.",
+      "Read what this window's framework provides. Adapter name is diagnostic identity; product behavior branches only on explicit capabilities such as document-start scripts and real input injection.",
     triggers: { ko: "프레임워크 능력 제공 축 네이티브 자식 웹뷰 엔진" },
     params: {},
-    returns: "{ name, chromium, nativeChildWebview }",
+    returns: "{ name, chromium, nativeChildWebview, supportsDocumentStart, supportsInputInjection }",
     message: (d) =>
       tmsg("msg.framework.provision", {
         name: String(d.name ?? ""),
@@ -91,6 +91,8 @@ export function registerSystemCatalog(): void {
       name: framework.name,
       chromium: engineProvision.chromium,
       nativeChildWebview: engineProvision.nativeChildWebview,
+      supportsDocumentStart: engineProvision.supportsDocumentStart,
+      supportsInputInjection: engineProvision.supportsInputInjection,
     }),
   });
 }

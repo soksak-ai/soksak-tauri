@@ -10,8 +10,20 @@
 import { describe, expect, it } from "vitest";
 import { unmetNeeds } from "@soksak-ai/plugin-spec";
 
-const ELECTRON = { chromium: true, nativeChildWebview: false, engineModules: false };
-const TAURI_MACOS = { chromium: true, nativeChildWebview: true, engineModules: true };
+const ELECTRON = {
+  chromium: true,
+  nativeChildWebview: false,
+  engineModules: false,
+  supportsDocumentStart: false,
+  supportsInputInjection: true,
+};
+const TAURI_MACOS = {
+  chromium: true,
+  nativeChildWebview: true,
+  engineModules: true,
+  supportsDocumentStart: true,
+  supportsInputInjection: false,
+};
 
 describe("엔진 요구 대조", () => {
   it("자식 웹뷰를 전제한 표면은 그 장치가 없는 곳에서 못 채운 요구를 낸다", () => {

@@ -34,7 +34,13 @@ const testWindow: FrameworkWindowHandle = {
 export const selectedFramework: AppFramework = {
   name: "test",
   dragRegion: {},
-  engineProvision: { chromium: false, nativeChildWebview: false, engineModules: false },
+  engineProvision: {
+    chromium: false,
+    nativeChildWebview: false,
+    engineModules: false,
+    supportsDocumentStart: false,
+    supportsInputInjection: false,
+  },
   emitLocal: () => {},
   install: async () => {},
   invoke: unsupported,

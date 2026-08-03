@@ -13,7 +13,7 @@ import type {
   CommandSpec,
   ParamSpec,
 } from "../commands/registry";
-import { createStream } from "../framework";
+import { createStream, engineProvision } from "../framework";
 import { contentViewHost } from "../lib/contentViews";
 import {
   browserLabel,
@@ -450,6 +450,11 @@ export interface SoksakPluginApi {
    *  네이티브 webview 는 코어가 label 키로 생성/소유, 플러그인은 label 로 구동(JS 가 WKWebView 못 만듦).
    *  macOS 우선 — eval/inject 는 macOS 한정(비-macOS graceful 에러/no-op). */
   webview?: {
+    /** 제품이 선택 기능을 판단하는 공개 축. adapter 이름으로 분기하지 않는다. */
+    capabilities: Readonly<{
+      supportsDocumentStart: boolean;
+      supportsInputInjection: boolean;
+    }>;
     /** viewId → 전역 유일 label(창 네임스페이스 `b-<win>-<view>`). webviewLabels 단일 진실. */
     label: (viewId: string) => string;
     /** content-view 생성. 공개 슬롯이면 어댑터가 rect를 소유하고, x/y/w/h는 슬롯 없는 표면만 쓴다. */
@@ -485,6 +490,8 @@ export interface SoksakPluginApi {
       code: string,
       phase?: "document-start" | "document-end",
     ) => Disposable;
+    /** 실제 엔진 입력 경로. capability가 false면 구현이 이름을 달고 거절한다. */
+    sendInput: (label: string, x: number, y: number) => Promise<void>;
     /** webview 이벤트 구독: "nav"({url})·"title"({title})·"status"·"open-external"({url}). 반환=해지. */
     on: (
       label: string,
@@ -495,9 +502,6 @@ export interface SoksakPluginApi {
     list: (prefix?: string) => Promise<string[]>;
     /** webview 종료 + 정리. */
     close: (label: string) => Promise<void>;
-    /** 창 합성 캡처를 rect(CSS px, 창 좌표)로 crop 한 PNG data URL. 가림 상태에서도 캡처.
-     *  드래그 중 네이티브 표면의 시각 연속 스탠드인(freeze-frame — layout.resize-gesture 와 짝). */
-    captureRegion: (rect: { x: number; y: number; w: number; h: number }) => Promise<string>;
   };
   /** PTY 백드 터미널 세션 spawn + raw 바이트 IO(터미널 플러그인이 xterm 구동). "pty" 권한.
    *  process 와 달리 PTY(flow control·셸 통합·SOKSAK_* env 주입은 코어 pty.rs 소유). 출력은 onData 스트림. */
@@ -1883,6 +1887,10 @@ export function buildPluginApi(
     // docs/NAMING.md 법). label 은 webviewLabels 단일진실에서만 파생.
     webview: has("webview")
       ? {
+          capabilities: Object.freeze({
+            supportsDocumentStart: engineProvision.supportsDocumentStart,
+            supportsInputInjection: engineProvision.supportsInputInjection,
+          }),
           label: (viewId: string) => browserLabel(viewId),
           open: (label, o) => contentViewHost().open(label, o as Record<string, unknown>),
           bounds: (label, x, y, w, h) =>
@@ -1903,6 +1911,7 @@ export function buildPluginApi(
             tracker.wrap(
               contentViewHost().injectScript(label, code, phase ?? "document-start"),
             ),
+          sendInput: (label, x, y) => contentViewHost().sendInput(label, x, y),
           on: (label, event, cb) =>
             tracker.wrap(
               deps.subscribeWebview(label, event, (payload) => {
@@ -1915,18 +1924,6 @@ export function buildPluginApi(
           },
           close: (label) =>
             contentViewHost().close(label),
-          // 창 합성 캡처를 rect(CSS px, 창 좌표 — getBoundingClientRect 공간)로 crop 한
-          // PNG data URL. 가림 상태에서도 캡처. 용도: 드래그 중 네이티브 표면의 시각 연속
-          // 스탠드인(freeze-frame — layout.resize-gesture 와 짝).
-          captureRegion: async (rect) => {
-            const b64 = (await deps.invoke("plugin:webview-capture|snapshot_region", {
-              x: rect.x,
-              y: rect.y,
-              w: rect.w,
-              h: rect.h,
-            })) as string;
-            return `data:image/png;base64,${b64}`;
-          },
         }
       : undefined,
     pty: has("pty") ? createPtyApi(deps, tracker) : undefined,

@@ -47,6 +47,10 @@ export interface EngineProvision {
    * 다음 사람이 엉뚱한 것을 고친다.
    */
   engineModules: boolean;
+  /** 내비게이션의 첫 문서 스크립트보다 먼저 document-start 주입을 보장하는가. */
+  supportsDocumentStart: boolean;
+  /** 합성 이벤트가 아니라 엔진의 실제 사용자 입력 경로를 주입할 수 있는가. */
+  supportsInputInjection: boolean;
 }
 
 /** 플러그인이 선언하는 필요. 둘 다 선택 — 안 적으면 요구가 없다는 뜻이다. */
