@@ -32,7 +32,6 @@ interface SurfaceState {
   boundsWrites: number;
   precommitting: boolean;
   precommitTarget: string;
-  handoffActive: boolean;
   lastRect: string;
   observer: ResizeObserver | null;
   requested: boolean;
@@ -53,7 +52,6 @@ export interface NativeContentViewCompositionFact {
   appliedRect: string | null;
   syncPending: boolean;
   precommitPending: boolean;
-  handoffActive: boolean;
 }
 
 const composition = moduleState("framework/tauri.fix#contentViewComposition", () => ({
@@ -74,7 +72,6 @@ function stateOf(label: string): SurfaceState {
       boundsWrites: 0,
       precommitting: false,
       precommitTarget: "",
-      handoffActive: false,
       lastRect: "",
       observer: null,
       requested: false,
@@ -215,17 +212,6 @@ function slotViewId(slot: HTMLElement): string | null {
 }
 
 /**
- * 두 rAF 사이에는 브라우저가 목표 DOM을 한 번 합성한다. 첫 콜백은 다음 paint 직전이므로
- * 그것만 기다리면 native host를 같은 paint 전에 다시 아래로 내려 한 프레임 조각을 만든다.
- * 반복 감시가 아니라 한 번의 compositor handoff를 닫는 유한 장벽이다.
- */
-function afterCommittedPaint(): Promise<void> {
-  return new Promise((resolve) => {
-    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-  });
-}
-
-/**
  * DOM 밖 표면의 배치 거래.
  *
  * 현재 native frame에 코어가 공개한 논리 이동량을 한 번 접어 목표 frame을 확정한다.
@@ -260,20 +246,6 @@ export async function prepareNativeContentViewMove(
     state.precommitting = true;
     state.precommitTarget = rectKey(rect);
   }
-  try {
-    await Promise.all(targets.map(async ({ state }) => {
-      await call("webview_surface_handoff", { label: state.label, active: true });
-      state.handoffActive = true;
-    }));
-  } catch (error) {
-    for (const { state } of targets) {
-      state.precommitting = false;
-      state.precommitTarget = "";
-      state.handoffActive = false;
-      void call("webview_surface_handoff", { label: state.label, active: false }).catch(() => {});
-    }
-    throw error;
-  }
   let closed = false;
   return {
     mode: "snap",
@@ -297,20 +269,12 @@ export async function prepareNativeContentViewMove(
             throw error;
           }
         }));
-        await afterCommittedPaint();
-        await Promise.all(targets.map(async ({ state }) => {
-          await call("webview_surface_handoff", { label: state.label, active: false });
-          state.handoffActive = false;
-          settlePreparedFrame(state);
-        }));
+        for (const { state } of targets) settlePreparedFrame(state);
       } catch (error) {
         for (const { state } of targets) {
           state.precommitting = false;
           state.precommitTarget = "";
-          state.handoffActive = false;
-          void call("webview_surface_handoff", { label: state.label, active: false })
-            .then(() => requestSlotSync(state, true))
-            .catch(() => {});
+          void requestSlotSync(state, true).catch(() => {});
         }
         throw error;
       }
@@ -321,12 +285,7 @@ export async function prepareNativeContentViewMove(
       for (const { state } of targets) {
         state.precommitting = false;
         state.precommitTarget = "";
-        state.handoffActive = false;
-      }
-      for (const { state } of targets) {
-        void call("webview_surface_handoff", { label: state.label, active: false })
-          .then(() => requestSlotSync(state, true))
-          .catch(() => {});
+        void requestSlotSync(state, true).catch(() => {});
       }
     },
   };
@@ -385,7 +344,6 @@ export function nativeContentViewCompositionStatus(): NativeContentViewCompositi
       appliedRect: state.lastRect || null,
       syncPending: state.requested || state.draining !== null,
       precommitPending: state.precommitting,
-      handoffActive: state.handoffActive,
     };
   });
 }

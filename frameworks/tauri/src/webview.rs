@@ -3,13 +3,10 @@
 // 이전/이후는 history.back()/forward() eval, URL 변화는 on_navigation 으로 프론트에
 // emit(폴링 없음). 위치/크기는 프론트 레이아웃(slot rect)을 따라 webview_bounds 로 동기화.
 //
-// 레이어 원칙(z-순서 역전 + 투명 홀 + hitTest 위임 — mod layer):
-// child webview 는 생성 직후 메인 아래에 서고, 메인은 자체 배경을 칠하지 않아
-// (CSS 투명 슬롯 = 홀) 아래 webview 가 비친다. DOM 재배치 때만 두 합성기 사이의 한 프레임
-// 선행을 막는 유한 handoff 동안 child host가 메인 위에 서며, 목표 DOM paint 뒤 즉시 복귀한다.
-// 마우스는 hitTest 가 위임한다 — 홀 안 + 오버레이 없음이면 아래 webview 가 받는다.
-// 그래서 모달/메뉴/드롭 인디케이터 등 모든 DOM 레이어가 브라우저 위에 그려진다
-// (과거의 "오버레이 동안 브라우저 숨김(suppress)" 우회는 폐지).
+// 레이어 원칙(명시적 멀티 웹뷰 경계 — mod layer):
+// browser child는 정상 상태에서 메인 DOM 웹뷰 앞에 고정한다. 이동은 bounds만 바꾸며 z-order를
+// 왕복하지 않는다. DOM overlay가 활성인 동안에만 child를 메인 뒤로 내리고, 종료 시 다시 앞면으로
+// 복원한다. 투명 슬롯은 논리적 자리와 hit-test 감사면이지 이동 중 합성을 가장하는 수단이 아니다.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -264,6 +261,8 @@ mod layer {
         }
         if active {
             lower_window_surface_hosts(label);
+        } else {
+            raise_window_surface_hosts(label);
         }
     }
 
@@ -357,13 +356,33 @@ mod layer {
         let labels = SURFACE_HOSTS
             .lock()
             .ok()
-            .map(|hosts| hosts.iter()
-                .filter(|(_, host)| host.window_label == window_label)
-                .map(|(label, _)| label.clone())
-                .collect::<Vec<_>>())
+            .map(|hosts| {
+                hosts
+                    .iter()
+                    .filter(|(_, host)| host.window_label == window_label)
+                    .map(|(label, _)| label.clone())
+                    .collect::<Vec<_>>()
+            })
             .unwrap_or_default();
         for label in labels {
             lower_surface_host(&label);
+        }
+    }
+
+    pub fn raise_window_surface_hosts(window_label: &str) {
+        let labels = SURFACE_HOSTS
+            .lock()
+            .ok()
+            .map(|hosts| {
+                hosts
+                    .iter()
+                    .filter(|(_, host)| host.window_label == window_label)
+                    .map(|(label, _)| label.clone())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        for label in labels {
+            raise_surface_host(&label);
         }
     }
 
@@ -405,7 +424,7 @@ mod layer {
             host.setWantsLayer(true);
             parent.addSubview_positioned_relativeTo(
                 &host,
-                NSWindowOrderingMode::Below,
+                NSWindowOrderingMode::Above,
                 Some(main_view),
             );
             child.setFrame(NSRect::new(NSPoint::new(0.0, 0.0), frame.size));
@@ -1177,7 +1196,7 @@ pub fn webview_open(
     if let Ok(mut m) = CHILD_BORN_AT.lock() {
         m.insert(label.clone(), std::time::Instant::now());
     }
-    // 레이어 원칙: child 는 DOM(부모 창 메인 webview) 아래 — 생성 직후 z-순서 강하.
+    // 멀티 웹뷰 원칙: child는 자기 bounds에서 직접 합성되며 정상 상태의 z-order는 메인 앞에 고정한다.
     #[cfg(target_os = "macos")]
     {
         // WKWebView를 직접 화면 배치하지 않는다. 전용 layer-backed host가 z-order·frame·motion·
@@ -1437,36 +1456,6 @@ pub fn webview_bounds(
         }
         apply_child_bounds(&wv, &label, (x, y, w, h))?;
     }
-    Ok(())
-}
-
-#[tauri::command]
-pub fn webview_surface_handoff(
-    app: AppHandle,
-    label: String,
-    active: bool,
-) -> Result<(), String> {
-    let Some(wv) = app.get_webview(&label) else {
-        return Ok(());
-    };
-    #[cfg(target_os = "macos")]
-    {
-        let (applied_tx, applied_rx) = std::sync::mpsc::sync_channel::<()>(1);
-        wv.with_webview(move |_| {
-            if active {
-                layer::raise_surface_host(&label);
-            } else {
-                layer::lower_surface_host(&label);
-            }
-            let _ = applied_tx.send(());
-        })
-        .map_err(|error| error.to_string())?;
-        applied_rx
-            .recv_timeout(std::time::Duration::from_secs(1))
-            .map_err(|error| format!("native surface handoff ACK 실패: {error}"))?;
-    }
-    #[cfg(not(target_os = "macos"))]
-    let _ = (wv, label, active);
     Ok(())
 }
 
