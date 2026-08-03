@@ -13,6 +13,7 @@
 import { moduleState } from "../../lib/moduleState";
 import {
   CONTENT_VIEW_BODY,
+  contentViewSlotVisible,
   findContentViewSlot,
   type ContentViewHost,
 } from "../../lib/contentViews";
@@ -150,8 +151,9 @@ export const domHost: ContentViewHost = {
       el.style.cssText = "position:absolute";
       doc.body.appendChild(el);
     }
-    // 만들 때는 숨겨 둔다 — 자리에 놓이기 전에 보이면 옛 자리에서 한 번 그려진다.
-    setShown(el, false);
+    // 공개 슬롯이 있으면 그 DOM 합성 가시성을 그대로 따른다. 좌표나 이전 프레임 상태로
+    // 추측하지 않는다. 자리 없는 오프스크린 뷰는 보일 이유가 없으므로 숨긴다.
+    setShown(el, slot ? contentViewSlotVisible(slot) : false);
     // **주소는 붙인 뒤에 준다.** 안 붙은 태그에 `src` 를 주면 태그 구현이 내부적으로 적재를
     // 시작하다 "DOM 에 붙고 dom-ready 가 난 뒤에야 부를 수 있다"로 던진다 — 그 예외는
     // **Uncaught 라 부팅 경로를 거기서 끊는다**(실측 2026-08-01: 부팅마다).

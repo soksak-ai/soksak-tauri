@@ -6,6 +6,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { moduleState } from "../../lib/moduleState";
 import {
+  contentViewSlotVisible,
   findContentViewSlot,
   type ContentViewHost,
 } from "../../lib/contentViews";
@@ -87,19 +88,6 @@ function slotRect(slot: HTMLElement): SlotRect {
 
 function rectKey(rect: SlotRect): string {
   return `${rect.x},${rect.y},${rect.w},${rect.h}`;
-}
-
-/** 새 표면의 초기 가시성은 좌표가 아니라 선언 자리의 실제 DOM 합성에서 읽는다. */
-function slotVisible(slot: HTMLElement): boolean {
-  for (let current: HTMLElement | null = slot; current; current = current.parentElement) {
-    const style = current.ownerDocument.defaultView?.getComputedStyle(current);
-    if (style?.visibility === "hidden" || style?.display === "none") return false;
-    if (
-      current.hasAttribute("data-project-plane") &&
-      current.dataset.projectActive !== "1"
-    ) return false;
-  }
-  return true;
 }
 
 function observeSlot(state: SurfaceState, slot: HTMLElement): void {
@@ -221,7 +209,7 @@ export const nativeHost: ContentViewHost = {
     if (!rect && ![opts.x, opts.y, opts.w, opts.h].every((value) => typeof value === "number")) {
       throw new Error(`콘텐츠 뷰 자리 또는 명시 bounds가 없습니다: ${label}`);
     }
-    const desired = state.desiredVisible ?? (slot ? slotVisible(slot) : true);
+    const desired = state.desiredVisible ?? (slot ? contentViewSlotVisible(slot) : true);
     await call("webview_open", { label, ...opts, ...(rect ?? {}) });
     state.opened = true;
     state.desiredVisible = desired;

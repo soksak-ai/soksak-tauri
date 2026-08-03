@@ -66,6 +66,19 @@ export function findContentViewSlot(label: string, doc: Document): HTMLElement |
   return null;
 }
 
+/** 슬롯의 실제 DOM 합성 가시성. 좌표나 프레임워크 표면 상태를 대리값으로 쓰지 않는다. */
+export function contentViewSlotVisible(slot: HTMLElement): boolean {
+  for (let current: HTMLElement | null = slot; current; current = current.parentElement) {
+    const style = current.ownerDocument.defaultView?.getComputedStyle(current);
+    if (style?.visibility === "hidden" || style?.display === "none") return false;
+    if (
+      current.hasAttribute("data-project-plane") &&
+      current.dataset.projectActive !== "1"
+    ) return false;
+  }
+  return true;
+}
+
 export interface ContentViewDomFact {
   label: string;
   slotLabel: string | null;

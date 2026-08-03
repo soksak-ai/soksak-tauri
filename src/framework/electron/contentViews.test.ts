@@ -253,6 +253,20 @@ describe("게스트 스크립트 — js 는 함수 본문이다", () => {
 });
 
 describe("DOM 콘텐츠 뷰의 숨김", () => {
+  it("공개 슬롯에서 열리면 그 DOM 가시성을 초기값으로 사용한다", async () => {
+    const { domHost } = await load();
+    const project = document.createElement("div");
+    project.dataset.projectPlane = "p1";
+    project.dataset.projectActive = "1";
+    const slot = document.createElement("div");
+    slot.setAttribute("data-content-view-body", "b-visible");
+    project.appendChild(slot);
+    document.body.appendChild(project);
+    await domHost.open("b-visible", { url: "https://example.com" });
+    expect(document.querySelector<HTMLElement>('[data-content-view="b-visible"]')?.style.visibility)
+      .toBe("visible");
+  });
+
   // `display:none` 은 상자를 레이아웃에서 빼고, 다시 켤 때 게스트가 0×0 뷰포트로 붙는다 —
   // URL 은 맞는데 화면만 백지다(실측 2026-07-30: 되돌아온 탭에서 innerWidth/innerHeight = 0,
   // 컨테이너는 586×428). 크기가 돌아오는 것은 **누군가 bounds 를 다시 불러 줄 때뿐**이라,

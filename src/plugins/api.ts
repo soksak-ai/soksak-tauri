@@ -452,10 +452,11 @@ export interface SoksakPluginApi {
   webview?: {
     /** viewId → 전역 유일 label(창 네임스페이스 `b-<win>-<view>`). webviewLabels 단일 진실. */
     label: (viewId: string) => string;
-    /** child webview 생성 + 슬롯 rect 에 임베드. 이미 있으면 no-op. */
+    /** content-view 생성. 공개 슬롯이 있으면 어댑터가 그 rect를 소유한다.
+     *  x/y/w/h는 슬롯 없는 오프스크린 표면에만 명시한다. */
     open: (
       label: string,
-      o: { url: string; x: number; y: number; w: number; h: number },
+      o: { url: string; x?: number; y?: number; w?: number; h?: number },
     ) => Promise<void>;
     /** 슬롯 rect 동기화(분할/리사이즈 — 프레임당 1회 권장). */
     bounds: (label: string, x: number, y: number, w: number, h: number) => Promise<void>;
