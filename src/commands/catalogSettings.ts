@@ -22,6 +22,7 @@ export function registerSettingsCatalog(): void {
   const SETTING_KEYS = [
     "language",
     "projectTabPosition",
+    "contentTabPosition",
     "iconSet",
     "iconBox",
     "focusIndicator",
@@ -77,7 +78,7 @@ export function registerSettingsCatalog(): void {
       value: {
         type: "json",
         description:
-          "Value — language:ko|en, projectTabPosition:top|left, iconSet:string (registered set id — unregistered falls back to lucide), iconBox:boolean, focusIndicator:outline|corners, railRelation:tint|moment|stroke (rail-pane relation surface — tint fill only, moment flash on rebind, stroke outline+label), railFill:none|faint (bound-pane background in stroke mode — none is the default, faint is a 1% accent tint), focusDim:boolean (spotlight — every pane dims except the active one), railSeamStyle:seam|edge (how a manufactured adjacency is marked: seam dashes the inner shared edge, edge dashes the outer right edge), railPullFocused:boolean (how the focused pane ends up next to the rail — true pulls the pane to the rail and the rail holds still, so the adjacency is manufactured and marked dashed; false leaves the pane where it is and the rail travels to it, so the adjacency is real and the seam is solid. Both move something; enabling both would move two things), railSolidColor:string (CSS color for the solid seam, i.e. the real adjacency drawn when railPullFocused is false — empty leaves it to the theme), dimIdle:number (0-1 — how far a pane that is not focused sinks), dimBlocked:number (0-1 — how far a pane stranded between the rail and the focused pane sinks; deeper than dimIdle, or being covered is invisible), appFontFamily:string (CSS font-family stack), windowZoom:number (0.5-2.0 — whole-window zoom factor applied to the main webview and every child webview), orchestratorAgent:string (agent CLI command or path the natural-language console spawns), orchestratorModel:string (--model alias for the agent; empty = CLI default)",
+          "Value — language:ko|en, projectTabPosition:top|left, contentTabPosition:top|left, iconSet:string (registered set id — unregistered falls back to lucide), iconBox:boolean, focusIndicator:outline|corners, railRelation:tint|moment|stroke (rail-pane relation surface — tint fill only, moment flash on rebind, stroke outline+label), railFill:none|faint (bound-pane background in stroke mode — none is the default, faint is a 1% accent tint), focusDim:boolean (spotlight — every pane dims except the active one), railSeamStyle:seam|edge (how a manufactured adjacency is marked: seam dashes the inner shared edge, edge dashes the outer right edge), railPullFocused:boolean (how the focused pane ends up next to the rail — true pulls the pane to the rail and the rail holds still, so the adjacency is manufactured and marked dashed; false leaves the pane where it is and the rail travels to it, so the adjacency is real and the seam is solid. Both move something; enabling both would move two things), railSolidColor:string (CSS color for the solid seam, i.e. the real adjacency drawn when railPullFocused is false — empty leaves it to the theme), dimIdle:number (0-1 — how far a pane that is not focused sinks), dimBlocked:number (0-1 — how far a pane stranded between the rail and the focused pane sinks; deeper than dimIdle, or being covered is invisible), appFontFamily:string (CSS font-family stack), windowZoom:number (0.5-2.0 — whole-window zoom factor applied to the main webview and every child webview), orchestratorAgent:string (agent CLI command or path the natural-language console spawns), orchestratorModel:string (--model alias for the agent; empty = CLI default)",
         required: true,
       },
     },
@@ -86,6 +87,7 @@ export function registerSettingsCatalog(): void {
     errors: ["INVALID_PARAMS"],
     examples: [
       'settings.set \'{"key":"projectTabPosition","value":"left"}\'',
+      'settings.set \'{"key":"contentTabPosition","value":"left"}\'',
       'settings.set \'{"key":"iconBox","value":true}\'',
     ],
     handler: (p) => {
@@ -105,6 +107,10 @@ export function registerSettingsCatalog(): void {
         case "projectTabPosition":
           if (v !== "top" && v !== "left") return bad("top|left");
           s.setProjectTabPosition(v);
+          break;
+        case "contentTabPosition":
+          if (v !== "top" && v !== "left") return bad("top|left");
+          s.setContentTabPosition(v);
           break;
         case "iconSet":
           if (typeof v !== "string" || !v.trim())

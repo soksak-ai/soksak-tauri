@@ -36,6 +36,30 @@ describe("settings.windowZoom 명령 표면", () => {
   });
 });
 
+describe("settings.contentTabPosition 명령 표면", () => {
+  it("DOM 슬롯 배치를 top|left 로 전환하고 그 밖의 값은 거부한다", async () => {
+    useSettings.setState({ contentTabPosition: "top" });
+
+    const left = await execute(
+      "settings.set",
+      { key: "contentTabPosition", value: "left" },
+      {},
+    );
+    expect(left.ok).toBe(true);
+    expect(useSettings.getState().contentTabPosition).toBe("left");
+
+    const bad = await execute(
+      "settings.set",
+      { key: "contentTabPosition", value: "bottom" },
+      {},
+    );
+    expect(bad).toMatchObject({ ok: false, code: "INVALID_PARAMS" });
+    expect(useSettings.getState().contentTabPosition).toBe("left");
+
+    await execute("settings.set", { key: "contentTabPosition", value: "top" }, {});
+  });
+});
+
 describe("settings.focusDim 명령 표면", () => {
   it("settings.get 반환(기본 false) + set 으로 토글, 비불리언 거부", async () => {
     const g = await execute("settings.get", {}, {});
