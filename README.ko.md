@@ -64,10 +64,12 @@ make dev       # 개발 서버(HMR) — soksak-dev
 
 ```bash
 make dev          # 개발 서버(HMR) — soksak-dev
-make build        # 릴리스 번들 → soksak.app + sok CLI
-make build-debug  # 디버그 번들 → soksak-debug.app + sok-debug
-make run          # 릴리스 soksak.app 실행
-make run-debug    # 디버그 soksak-debug.app 실행
+make build-dev    # 개발 앱 번들 → soksak-tauri-dev.app + soksak-cored
+make build        # 릴리스 번들 → soksak-tauri.app + sok CLI
+make build-debug  # 디버그 번들 → soksak-tauri-debug.app + sok-debug
+make run-dev      # 개발 soksak-tauri-dev.app 실행
+make run          # 릴리스 soksak-tauri.app 실행
+make run-debug    # 디버그 soksak-tauri-debug.app 실행
 make verify       # tsc + cargo check(커밋 전 게이트)
 make test         # Rust 단위 테스트
 make test-front   # 프론트엔드 단위 테스트(vitest)
@@ -85,19 +87,19 @@ make docs         # 라이브 카탈로그에서 docs/COMMANDS.md 재생성
 | | soksak-dev | soksak-debug | soksak |
 |---|---|---|---|
 | 용도 | HMR 개발 서버 | 디버그 번들(테스트) | 릴리스 번들(일상 사용) |
-| 명령 | `make dev` | `make build-debug` | `make build` |
+| 명령 | `make dev` / `make build-dev` | `make build-debug` | `make build` |
 | 홈 | `~/.soksak-dev` | `~/.soksak-debug` | `~/.soksak` |
-| Dock 이름 | `soksak-dev` | `soksak-debug` | `soksak` |
+| Dock 이름 | `soksak-dev`(HMR) / `soksak-tauri-dev`(번들) | `soksak-tauri-debug` | `soksak-tauri` |
 | 아이콘 | 초록(`icons-dev/`) | 주황(`icons-debug/`) | 기본(`icons/`) |
-| Identifier | `com.soksak.dev` | `com.soksak.debug` | `com.soksak.app` |
+| Identifier | `com.soksak.tauri.dev` | `com.soksak.tauri.debug` | `com.soksak.tauri.app` |
 
 `open -n` 은 새 인스턴스를 띄우므로 셋이 동시에 실행될 수 있다.
 
 ## 산출물
 
-- 릴리스 앱: `target/release/bundle/macos/soksak.app`
-- 디버그 앱: `target/debug/bundle/macos/soksak-debug.app`
-- 설치 이미지: `target/release/bundle/dmg/soksak_<version>_aarch64.dmg`
+- 개발 앱: `target/<target-triple>/debug/bundle/macos/soksak-tauri-dev.app`
+- 릴리스 앱: `target/<target-triple>/release/bundle/macos/soksak-tauri.app`
+- 디버그 앱: `target/<target-triple>/debug/bundle/macos/soksak-tauri-debug.app`
 
 cargo 는 워크스페이스 뿌리 아래에 쓴다. 그 자리를 손으로 적지 마라 — `make` 가 cargo 에게 묻고(`CARGO_TARGET`), 손으로 적은 사본은 게이트가 거절한다. 옛 뿌리가 남긴 고아 트리의 낡은 바이너리가, 그 자리를 아직 부르는 모든 것에 조용히 잡혔다. `make clean-orphan-target` 이 지운다(멱등이고, cargo 가 아직 그 자리에 쓰면 거절한다).
 

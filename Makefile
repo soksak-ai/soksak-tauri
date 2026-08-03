@@ -2,9 +2,10 @@
 # 임의 명령 대신 항상 이 타깃을 사용한다. (`make help` 로 목록 확인)
 #
 # 3-정체성 구분(독에서 한눈에):
-#   soksak-dev   = HMR 개발 서버(make dev). 번들 아님 → 바이너리명이 독에 그대로.
-#   soksak-debug = 디버그 번들(make build-debug). 주황 아이콘.
-#   soksak       = 릴리스 번들(make build). 기본 아이콘.
+#   soksak-dev         = HMR 개발 서버(make dev). 번들 아님 → 바이너리명이 독에 그대로.
+#   soksak-tauri-dev   = 개발 정체성 앱 번들(make build-dev). 초록 아이콘.
+#   soksak-tauri-debug = 디버그 앱 번들(make build-debug). 주황 아이콘.
+#   soksak-tauri       = 릴리스 앱 번들(make build). 기본 아이콘.
 # 기본 설정(tauri.conf.json)이 dev 정체성이고, 빌드 시 --config 로 정확히 푼다.
 
 SHELL := /bin/bash
@@ -35,8 +36,8 @@ RELEASE_CONFIG_GENERATED := $(CARGO_TARGET)/release-config/tauri.conf.json
 DEBUG_CONFIG   := frameworks/tauri/tauri.debug.conf.json
 DEV_BUNDLE_CONFIG := frameworks/tauri/tauri.dev-bundle.conf.json
 
-RELEASE_APP := $(TAURI_TARGET_DIR)/release/bundle/macos/soksak.app
-DEBUG_APP   := $(TAURI_TARGET_DIR)/debug/bundle/macos/soksak-debug.app
+RELEASE_APP := $(TAURI_TARGET_DIR)/release/bundle/macos/soksak-tauri.app
+DEBUG_APP   := $(TAURI_TARGET_DIR)/debug/bundle/macos/soksak-tauri-debug.app
 
 .DEFAULT_GOAL := help
 
@@ -86,14 +87,14 @@ dev-keychain: cli-dev ## 개발 서버 + 실볼트(키체인 프롬프트 있음
 # 번들 빌드는 spec-gate 를 선행한다 — 코어 프론트는 @soksak-ai/plugin-spec·plugin-api 의 **dist** 를
 # 소비하므로, 소스 타입만 고치고 dist 를 다시 안 빌드하면 tauri 의 pnpm build 가 옛 타입으로 깨진다
 # (typecheck 는 소스를 보고 통과하므로 verify 는 놓친다 — 실측: consumes 추가 후 build-debug 만 실패).
-build: spec-gate cli ## 릴리스 번들 빌드 → "soksak.app"(기본 아이콘) + sok; updater 공개키 필수
+build: spec-gate cli ## 릴리스 번들 빌드 → "soksak-tauri.app"(기본 아이콘) + sok; updater 공개키 필수
 	node scripts/release/prepare-tauri-config.mjs --base $(RELEASE_CONFIG) --out $(RELEASE_CONFIG_GENERATED)
 	CARGO_BUILD_TARGET=$(TAURI_TARGET) $(PNPM) tauri build --target $(TAURI_TARGET) --config $(RELEASE_CONFIG_GENERATED)
 
 build-dev: spec-gate cli-dev ## 개발 정체성 앱 번들 → "soksak-tauri-dev.app" + soksak-cored
 	CARGO_BUILD_TARGET=$(TAURI_TARGET) $(PNPM) tauri build --debug --bundles app --target $(TAURI_TARGET) --config $(DEV_BUNDLE_CONFIG)
 
-build-debug: spec-gate cli-debug ## 디버그 번들 빌드 → "soksak-debug.app"(주황 아이콘) + sok-debug
+build-debug: spec-gate cli-debug ## 디버그 번들 빌드 → "soksak-tauri-debug.app"(주황 아이콘) + sok-debug
 	CARGO_BUILD_TARGET=$(TAURI_TARGET) $(PNPM) tauri build --debug --target $(TAURI_TARGET) --config $(DEBUG_CONFIG)
 
 electron: ## Electron 프레임워크(Tauri 프레임워크와 형제 — 교체 아님). pnpm dev:electron(1422)이 떠 있어야 한다.
@@ -102,7 +103,7 @@ electron: ## Electron 프레임워크(Tauri 프레임워크와 형제 — 교체
 	@APP=$$(frameworks/electron/bundle.sh com.soksak.electron.dev) && \
 	  "$$APP/Contents/MacOS/$$(basename "$$APP" .app)" frameworks/electron/main.cjs
 
-run: ## 릴리스 soksak.app 실행(새 인스턴스)
+run: ## 릴리스 soksak-tauri.app 실행(새 인스턴스)
 	@test -d "$(RELEASE_APP)" || { echo "먼저 'make build' 를 실행하세요."; exit 1; }
 	open -n "$(RELEASE_APP)"
 
@@ -110,7 +111,7 @@ run-dev: ## 개발 정체성 soksak-tauri-dev.app 실행(새 인스턴스)
 	@test -d "$(TAURI_TARGET_DIR)/debug/bundle/macos/soksak-tauri-dev.app" || { echo "먼저 'make build-dev' 를 실행하세요."; exit 1; }
 	open -n "$(TAURI_TARGET_DIR)/debug/bundle/macos/soksak-tauri-dev.app"
 
-run-debug: ## 디버그 soksak-debug.app 실행(새 인스턴스)
+run-debug: ## 디버그 soksak-tauri-debug.app 실행(새 인스턴스)
 	@test -d "$(DEBUG_APP)" || { echo "먼저 'make build-debug' 를 실행하세요."; exit 1; }
 	open -n "$(DEBUG_APP)"
 

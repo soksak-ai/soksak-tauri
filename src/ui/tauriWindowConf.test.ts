@@ -41,4 +41,11 @@ describe("tauri.conf.json 창 계약", () => {
       expect(body, target).toContain("--target $(TAURI_TARGET)");
     }
   });
+
+  it("실행 명령의 앱 이름은 Tauri productName과 같다", () => {
+    const makefile = readFileSync(resolve(__dirname, "../../Makefile"), "utf8");
+    expect(makefile).toContain("soksak-tauri-dev.app");
+    expect(makefile).toContain("RELEASE_APP := $(TAURI_TARGET_DIR)/release/bundle/macos/soksak-tauri.app");
+    expect(makefile).toContain("DEBUG_APP   := $(TAURI_TARGET_DIR)/debug/bundle/macos/soksak-tauri-debug.app");
+  });
 });

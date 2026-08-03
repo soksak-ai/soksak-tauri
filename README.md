@@ -66,10 +66,12 @@ version-controlled). `make help` lists everything; the essentials:
 
 ```bash
 make dev          # development server (HMR) — soksak-dev
-make build        # release bundle → soksak.app + sok CLI
-make build-debug  # debug bundle → soksak-debug.app + sok-debug
-make run          # launch release soksak.app
-make run-debug    # launch debug soksak-debug.app
+make build-dev    # development app bundle → soksak-tauri-dev.app + soksak-cored
+make build        # release bundle → soksak-tauri.app + sok CLI
+make build-debug  # debug bundle → soksak-tauri-debug.app + sok-debug
+make run-dev      # launch development soksak-tauri-dev.app
+make run          # launch release soksak-tauri.app
+make run-debug    # launch debug soksak-tauri-debug.app
 make verify       # tsc + cargo check (pre-commit gate)
 make test         # Rust unit tests
 make test-front   # frontend unit tests (vitest)
@@ -87,19 +89,19 @@ state and stay visually distinct in the Dock.
 | | soksak-dev | soksak-debug | soksak |
 |---|---|---|---|
 | Purpose | HMR development server | debug bundle (testing) | release bundle (daily use) |
-| Command | `make dev` | `make build-debug` | `make build` |
+| Command | `make dev` / `make build-dev` | `make build-debug` | `make build` |
 | Home | `~/.soksak-dev` | `~/.soksak-debug` | `~/.soksak` |
-| Dock name | `soksak-dev` | `soksak-debug` | `soksak` |
+| Dock name | `soksak-dev` (HMR) / `soksak-tauri-dev` (bundle) | `soksak-tauri-debug` | `soksak-tauri` |
 | Icon | green (`icons-dev/`) | orange (`icons-debug/`) | default (`icons/`) |
-| Identifier | `com.soksak.dev` | `com.soksak.debug` | `com.soksak.app` |
+| Identifier | `com.soksak.tauri.dev` | `com.soksak.tauri.debug` | `com.soksak.tauri.app` |
 
 `open -n` launches a new instance, so all three can run at the same time.
 
 ## Artifacts
 
-- Release app: `target/release/bundle/macos/soksak.app`
-- Debug app: `target/debug/bundle/macos/soksak-debug.app`
-- Installer image: `target/release/bundle/dmg/soksak_<version>_aarch64.dmg`
+- Development app: `target/<target-triple>/debug/bundle/macos/soksak-tauri-dev.app`
+- Release app: `target/<target-triple>/release/bundle/macos/soksak-tauri.app`
+- Debug app: `target/<target-triple>/debug/bundle/macos/soksak-tauri-debug.app`
 
 Cargo writes under the workspace root. Do not spell that location by hand — `make` asks cargo for it (`CARGO_TARGET`), and a gate refuses a hand-written copy. An earlier root left an orphan tree behind whose stale binaries were silently picked up by anything still naming it; `make clean-orphan-target` removes it (idempotent, and it refuses if cargo still writes there).
 
