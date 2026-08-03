@@ -1,10 +1,8 @@
 // @vitest-environment jsdom
-// 코어 소유 이동-동결(§4.6 시행) — transparent 선언(홀-슬롯) 하나로 모든 네이티브 표면이
-// move 위상 동결을 얻는다. RED 근거: 판정된 동결 기계는 플러그인(browser-native)에만
-// 배선돼 있었다 — 다른 네이티브 표면은 같은 이질감을 그대로 가진다. 코어가 슬롯 계층에서
-// 시행하면 소비자 의무는 선언 + (사이드카 표면의) veil 릴레이뿐이다.
+// Tauri 자식 표면 기하 거래 — 제품 플러그인과 코어에 프레임워크 합성 정책을 넣지 않고,
+// Tauri 어댑터가 공개 홀-슬롯과 모션 위상을 소비해 DOM 스탠드인/veil 교대를 시행한다.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createSlotFreeze, type SlotFreeze } from "../framework/tauri/slotFreeze";
+import { createSlotFreeze, type SlotFreeze } from "./slotFreeze";
 
 const PNG = "data:image/png;base64,x";
 
@@ -67,7 +65,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("slotFreeze — 코어 소유 이동-동결", () => {
+describe("slotFreeze — Tauri 자식 표면 기하 거래", () => {
   it("정착 캡처 후 move 위상: 스탠드인 부착 → 페인트 커밋 뒤에야 veil(true)", async () => {
     const slot = makeSlot("v1");
     const f = build();
@@ -181,15 +179,17 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
     expect(f.canFreezeAll(["v1"])).toBe(true);
   });
 
-  it("resize 가 끼면(단독·혼합) 동결하지 않는다", async () => {
+  it("resize 동안 네이티브 표면 대신 슬롯 크기를 따르는 스탠드인을 합성한다", async () => {
     const slot = makeSlot("v1");
     const f = build();
     f.captureSettled();
     await microtasks();
     f.onMotion(true, ["resize"]);
-    f.onMotion(true, ["move", "resize"]);
-    expect(slot.querySelector("img")).toBeNull();
-    expect(veils).toEqual([]);
+    const standin = slot.querySelector<HTMLElement>("img.slot-freeze-frame")!;
+    expect(standin).not.toBeNull();
+    expect(standin.style.width).toBe("100%");
+    expect(standin.style.height).toBe("100%");
+    expect(veils).toEqual([["cv-v1", true, false]]);
   });
 
   it("스냅 없는 슬롯은 건너뛴다(폴백 = 라이브 추종)", () => {
@@ -289,7 +289,7 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
     expect(slot.dataset.freeze).not.toBe("1");
   });
 
-  it("활성 중 resize 개입(종별 재발화)이면 즉시 해동한다", async () => {
+  it("활성 중 resize가 합쳐져도 네이티브 합성 거래가 끝날 때까지 동결을 유지한다", async () => {
     const slot = makeSlot("v1");
     const f = build();
     f.captureSettled();
@@ -298,13 +298,12 @@ describe("slotFreeze — 코어 소유 이동-동결", () => {
     flushRaf();
     flushRaf();
     f.onMotion(true, ["move", "resize"]);
-    // resize 가 끼면 즉시 해동 — 변하는 크기 밑 정지 사진은 박제다(§4.6-1). 착지 신호도 간다.
+    // 종류 재발화는 같은 기하 거래다. 중간 해동은 네이티브 표면을 다시 한 프레임 늦게 만든다.
     expect(veils).toEqual([
       ["cv-v1", true, false],
       ["cv-v1", true, true],
-      ["cv-v1", false, false],
     ]);
-    expect(slot.dataset.freeze).toBe("0");
+    expect(slot.dataset.freeze).toBe("1");
   });
 
   it("회수(dispose)도 착지 신호를 보낸다 — veil 을 켠 채 사라지면 표면이 영구히 안 따라온다", () => {

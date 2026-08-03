@@ -1,18 +1,17 @@
-// 코어 소유 이동-동결(§4.6 시행) — move 위상 동안 홀-슬롯의 네이티브 표면을 DOM 스탠드인으로
-// 대체한다. 근거(실측): 샘플링 추종은 컴포지터 활강을 못 탄다 — DOM 은 매 vsync 보간되고
-// 표면은 샘플 도착 프레임에만 움직이며, 활강 중 메인 스레드가 바빠 스터터가 남는다. 활강
-// 동안 표면이 DOM(스탠드인)이면 기하 일치는 정의상 성립한다.
+// Tauri 자식 표면 기하 거래 — move/resize 위상 동안 홀-슬롯의 네이티브 표면을 DOM
+// 스탠드인으로 대체한다. 샘플링 bounds 추종은 DOM 컴포지터와 같은 프레임을 보장하지 못한다.
+// DOM 스탠드인이 슬롯 안에서 움직이거나 늘어나면 거래 중 기하 일치는 정의상 성립한다.
 //
-// 소유권: 재료 전부가 코어 것이다 — 홀-슬롯(transparent 선언의 DOM 표식), 모션 위상(kind 축),
-// 캡처(webview-capture), 슬롯 DOM. 표면 가시성만 소유자가 다르므로 공개 content-view label의
-// content-view.veiled 이벤트로 릴레이한다.
+// 소유권: 이 거래는 Tauri 어댑터만 시행한다. 코어는 홀-슬롯 선언, 모션 위상, 캡처라는 공개
+// 인터페이스만 제공하고 네이티브 표면 합성 정책을 알지 않는다. 제품 플러그인도 프레임워크를
+// 알지 않으며 공개 content-view label의 content-view.veiled 이벤트만 릴레이한다.
 //
 // 불변 계약(§4.6):
-//  - move 만, resize 는 절대 금지(변하는 크기 밑 정지 사진 = 콘텐츠 박제).
+//  - move 는 1:1 스냅, resize 는 슬롯 크기를 따르는 스냅으로 DOM 기하를 우선한다.
 //  - 선캡처·선디코드(정착 에지) — 동결 순간 디코드 지연 0.
 //  - 페인트 먼저, 숨김 나중 — 스탠드인 페인트가 커밋된 뒤(이중 rAF) veil(true).
 //  - 스냅 부재·낡음·크기 드리프트는 폴백 = 라이브 추종(동결 없음).
-//  - bounds 커밋은 이 계층과 무관하게 계속 흐른다(동결은 표현이지 정책이 아니다).
+//  - 거래 중 bounds 추종은 멈추고, 종료 에지에서 최종 bounds를 먼저 적용한 뒤 표면을 복귀한다.
 import { HOLE_SELECTOR } from "./railHoleClip";
 import { surfaceRectOf } from "../../lib/surfaceRect";
 import { CONTENT_VIEW_BODY } from "../../lib/contentViews";
@@ -124,7 +123,10 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
   const makeImage = deps.imageFactory ?? (() => document.createElement("img"));
   const snaps = new WeakMap<HTMLElement, SlotSnap>();
   const inFlight = new WeakSet<HTMLElement>();
-  const frozen = new Map<HTMLElement, { img: HTMLImageElement; viewId: string; label: string }>();
+  const frozen = new Map<
+    HTMLElement,
+    { img: HTMLImageElement; viewId: string; label: string; stretch: boolean }
+  >();
   // viewId → 그 뷰의 홀 슬롯(스냅 조회·무효화용). 슬롯 엘리먼트는 뷰가 살아 있는 동안 안정적이다.
   const byView = new Map<string, HTMLElement>();
   const byLabel = new Map<string, HTMLElement>();
@@ -199,8 +201,16 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
     }
   };
 
-  const freezeSlot = (slot: HTMLElement): void => {
-    if (frozen.has(slot)) return;
+  const freezeSlot = (slot: HTMLElement, stretch: boolean): void => {
+    const current = frozen.get(slot);
+    if (current) {
+      if (stretch && !current.stretch) {
+        current.stretch = true;
+        current.img.style.cssText =
+          "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:5;";
+      }
+      return;
+    }
     const viewId = viewIdOf(slot);
     const label = contentViewLabelOf(slot);
     if (!viewId || !label) return;
@@ -239,11 +249,12 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
     // 분수 슬롯에서 사진이 늘어나고(리샘플) 표면이 없던 자리로 올라간다: 실측 상단 0.8px,
     // 하단 2.6px 밀림이 동결 에지와 착지 에지에 각각 한 번씩 보인다. 캡처 픽셀은 늘리지 않고
     // 온 자리에 그대로 되돌려 놓는다.
-    img.style.cssText =
-      `position:absolute;left:${cssPx(surface.x - r.left)};top:${cssPx(surface.y - r.top)};` +
-      `width:${snap.w}px;height:${snap.h}px;pointer-events:none;z-index:5;`;
+    img.style.cssText = stretch
+      ? "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:5;"
+      : `position:absolute;left:${cssPx(surface.x - r.left)};top:${cssPx(surface.y - r.top)};` +
+        `width:${snap.w}px;height:${snap.h}px;pointer-events:none;z-index:5;`;
     slot.appendChild(img);
-    frozen.set(slot, { img, viewId, label });
+    frozen.set(slot, { img, viewId, label, stretch });
     slot.dataset.freeze = "1"; // 관측면(ui.hit)
     // veil = "스탠드인이 섰다: 표면을 감추고, 따라가지 말고, 해동 에지에 정확히 한 번 착지하라."
     //
@@ -286,8 +297,12 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
     // 둘이 1px 어긋난다. 여기가 사용자가 실제로 보는 유일한 교대 프레임이다.
     const lr = slot.getBoundingClientRect();
     const land = surfaceRectOf(lr);
+    cur.img.style.right = "auto";
+    cur.img.style.bottom = "auto";
     cur.img.style.left = cssPx(land.x - lr.left);
     cur.img.style.top = cssPx(land.y - lr.top);
+    cur.img.style.width = `${land.w}px`;
+    cur.img.style.height = `${land.h}px`;
     // 해동 = 착지 신호. 소유자가 이 에지에 정확히 한 번 최종 rect 로 쓴다. 스탠드인은 그 쓰기가
     // 실제로 도착한 뒤 물러난다 — 시간으로 추측하면(옛 90ms 고정) 느린 사이드카 경로에서 홀이
     // 표면보다 먼저 열려 한 프레임이 빈다. 상한은 소유자가 끝내 쓰지 않는 경우의 바닥일 뿐이다.
@@ -372,8 +387,11 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
     },
     onMotion(active, kinds, scope) {
       const want =
-        active && kinds.length > 0 && kinds.every((k) => k === "move");
+        active &&
+        kinds.length > 0 &&
+        kinds.every((k) => k === "move" || k === "resize");
       if (want) {
+        const stretch = kinds.includes("resize");
         const root = deps.root();
         if (!root) return;
         for (const slot of holeSlots(root)) {
@@ -386,7 +404,7 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
             slot.dataset.freezeSender = String(
               (window as unknown as { __lastGlobalMotionSender?: string }).__lastGlobalMotionSender ?? "?",
             );
-          freezeSlot(slot);
+          freezeSlot(slot, stretch);
         }
         // 범위 축소 재발화(위상 겹침 해소 등)로 범위 밖이 된 동결은 즉시 해동한다.
         for (const slot of Array.from(frozen.keys())) {
