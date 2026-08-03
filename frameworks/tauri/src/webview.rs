@@ -185,6 +185,31 @@ pub(crate) struct Hole {
 // 같은 층위. 홀의 단일 진실 = "보이는 child webview 의 frame" 그 자체라서 별도
 // rect 레지스트리가 없다(set_position/set_size/hide 가 곧 홀 갱신).
 #[cfg(target_os = "macos")]
+fn surface_sibling_order(
+    siblings: &[usize],
+    host_ptr: usize,
+    main_ptr: usize,
+    above_main: bool,
+) -> Vec<usize> {
+    if host_ptr == main_ptr
+        || !siblings.contains(&host_ptr)
+        || !siblings.contains(&main_ptr)
+    {
+        return siblings.to_vec();
+    }
+    let mut reordered = siblings
+        .iter()
+        .copied()
+        .filter(|ptr| *ptr != host_ptr)
+        .collect::<Vec<_>>();
+    let Some(main_index) = reordered.iter().position(|ptr| *ptr == main_ptr) else {
+        return siblings.to_vec();
+    };
+    reordered.insert(main_index + usize::from(above_main), host_ptr);
+    reordered
+}
+
+#[cfg(target_os = "macos")]
 mod layer {
     use std::collections::HashMap;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -195,7 +220,7 @@ mod layer {
     use objc2::runtime::{AnyObject, Sel};
     use objc2::sel;
     use objc2_app_kit::{NSView, NSWindowOrderingMode};
-    use objc2_foundation::{NSNumber, NSPoint, NSString};
+    use objc2_foundation::{NSArray, NSNumber, NSPoint, NSString};
     use soksak_core::native_surface_ledger::NativeSurfaceLedger;
     use tauri::Manager;
 
@@ -289,10 +314,34 @@ mod layer {
             }))
             .unwrap_or(0);
         if main_ptr == 0 { return }
-        let host_view = unsafe { &*(host.ptr as *const NSView) };
         let main_view = unsafe { &*(main_ptr as *const NSView) };
         let Some(parent) = (unsafe { main_view.superview() }) else { return };
-        parent.addSubview_positioned_relativeTo(host_view, mode, Some(main_view));
+        // AppKit이 기존 subview의 순서 변경을 명시적으로 보장하는 `subviews` 계약을 쓴다.
+        // addSubview(_:positioned:relativeTo:)는 새 subview 삽입 API라 이미 붙은 host를 호출했을 때
+        // 실제 sibling 배열이 바뀌지 않았다. 배열은 back-to-front이고, setSubviews는 기존 view를
+        // 떼었다 붙이지 않은 채 필요한 항목만 이동한다.
+        let siblings = parent.subviews().into_iter().collect::<Vec<_>>();
+        let sibling_ptrs = siblings
+            .iter()
+            .map(|view| (&**view as *const NSView) as usize)
+            .collect::<Vec<_>>();
+        let ordered_ptrs = super::surface_sibling_order(
+            &sibling_ptrs,
+            host.ptr,
+            main_ptr,
+            mode == NSWindowOrderingMode::Above,
+        );
+        if ordered_ptrs == sibling_ptrs { return }
+        let ordered = ordered_ptrs
+            .iter()
+            .filter_map(|ptr| {
+                siblings
+                    .iter()
+                    .find(|view| (&***view as *const NSView) as usize == *ptr)
+                    .cloned()
+            })
+            .collect::<Vec<_>>();
+        parent.setSubviews(&NSArray::from_retained_slice(&ordered));
     }
 
     pub fn raise_surface_host(label: &str) {
