@@ -1225,6 +1225,43 @@ pub(crate) fn scale_bounds(b: (f64, f64, f64, f64), f: f64) -> (f64, f64, f64, f
     (b.0 * f, b.1 * f, b.2 * f, b.3 * f)
 }
 
+/// DOM(top-left) rect 하나를 부모 NSView 좌표의 frame 하나로 바꾼다.
+///
+/// 위치와 크기를 별도 AppKit 메시지로 나누지 않는 것이 핵심이다. 둘 다 변한 레이아웃 커밋을
+/// `setFrameOrigin`/`setFrameSize` 두 번으로 적용하면 그 사이의 존재하지 않는 중간 rect가 화면에
+/// 제시될 수 있다.
+#[cfg(target_os = "macos")]
+pub(crate) fn appkit_child_frame(
+    parent_height: f64,
+    parent_flipped: bool,
+    bounds: (f64, f64, f64, f64),
+) -> (f64, f64, f64, f64) {
+    let (x, y, w, h) = bounds;
+    (
+        x,
+        if parent_flipped { y } else { parent_height - y - h },
+        w,
+        h,
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn set_child_frame(wv: &tauri::Webview, bounds: (f64, f64, f64, f64)) -> Result<(), String> {
+    wv.with_webview(move |pw| unsafe {
+        use objc2_app_kit::NSView;
+        use objc2_foundation::{NSPoint, NSRect, NSSize};
+
+        let view = &*(pw.inner() as *const NSView);
+        let Some(parent) = view.superview() else {
+            return;
+        };
+        let (x, y, w, h) =
+            appkit_child_frame(parent.bounds().size.height, parent.isFlipped(), bounds);
+        view.setFrame(NSRect::new(NSPoint::new(x, y), NSSize::new(w, h)));
+    })
+    .map_err(|e| e.to_string())
+}
+
 // 바뀐 축만 판정(순수) — 드래그바 표준: 강조바는 "변한 것만" 보낸다. child 도 같은 규율로,
 // 위치가 변하면 위치만·크기가 변하면 크기만 적용한다. 순수 이동에 매 프레임 set_size 를
 // 얹으면 WKWebView 가 프레임마다 내용 재배치를 태워 추종이 무거워진다(강조바 NSBox 와의
@@ -1256,13 +1293,20 @@ fn apply_child_bounds(
     let (x, y, w, h) = scale_bounds(raw, f);
     let prev = APPLIED_BOUNDS.lock().ok().and_then(|m| m.get(label).copied());
     let (moved, resized) = bounds_delta(prev, (x, y, w, h));
-    if moved {
-        wv.set_position(LogicalPosition::new(x, y))
-            .map_err(|e| e.to_string())?;
-    }
-    if resized {
-        wv.set_size(LogicalSize::new(w, h))
-            .map_err(|e| e.to_string())?;
+    if moved || resized {
+        #[cfg(target_os = "macos")]
+        set_child_frame(wv, (x, y, w, h))?;
+        #[cfg(not(target_os = "macos"))]
+        {
+            if moved {
+                wv.set_position(LogicalPosition::new(x, y))
+                    .map_err(|e| e.to_string())?;
+            }
+            if resized {
+                wv.set_size(LogicalSize::new(w, h))
+                    .map_err(|e| e.to_string())?;
+            }
+        }
     }
     if let Ok(mut m) = APPLIED_BOUNDS.lock() {
         m.insert(label.to_string(), (x, y, w, h));
@@ -2219,9 +2263,22 @@ pub fn install_live_resize_monitor(app: &AppHandle) {
 
 #[cfg(test)]
 mod zoom_bounds_tests {
-    use super::{bounds_delta, scale_bounds};
     #[cfg(target_os = "macos")]
-    use super::{forget_nswindow_label, label_for_nswindow, nswindow_cache_put};
+    use super::{
+        appkit_child_frame, forget_nswindow_label, label_for_nswindow, nswindow_cache_put,
+    };
+    use super::{bounds_delta, scale_bounds};
+
+    // 하나의 DOM rect 는 AppKit 에도 하나의 frame 으로 커밋돼야 한다. 위치와 크기를 별도
+    // 메시지로 보내면 양쪽이 함께 변하는 순간 중간 frame 이 실제 화면에 노출된다.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn maps_one_dom_rect_to_one_appkit_frame() {
+        let frame = appkit_child_frame(600.0, false, (120.0, 50.0, 720.0, 410.0));
+        assert_eq!(frame, (120.0, 140.0, 720.0, 410.0));
+        let flipped = appkit_child_frame(600.0, true, (120.0, 50.0, 720.0, 410.0));
+        assert_eq!(flipped, (120.0, 50.0, 720.0, 410.0));
+    }
 
     // 드래그바 표준 — 변한 축만 적용한다. 순수 이동에 set_size 를 얹지 않는 것이
     // 강조바(NSBox)가 매끄러운 실체적 이유였고, child 도 같은 규율을 따른다.
