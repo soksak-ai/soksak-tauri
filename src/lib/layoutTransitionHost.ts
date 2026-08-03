@@ -10,9 +10,18 @@ export interface LayoutMove {
 
 export type LayoutTransitionMode = "glide" | "snap";
 
+/** prepare 성공 뒤 DOM 커밋 또는 취소 중 정확히 하나로 닫아야 하는 배치 거래. */
+export interface PreparedLayoutTransition {
+  mode: LayoutTransitionMode;
+  /** 목표 DOM이 실제로 커밋된 직후 외부 표면 장부를 최종 rect와 대조한다. */
+  commit(): Promise<void>;
+  /** 목표가 준비 중 바뀌거나 컴포넌트가 사라지면 옛 DOM rect로 되돌린다. */
+  cancel(): void;
+}
+
 export interface LayoutTransitionHost {
   /** 목표 DOM 커밋 전에 프레임워크가 자기 외부 표면을 준비한다. */
-  prepareMove(moves: readonly LayoutMove[]): Promise<LayoutTransitionMode>;
+  prepareMove(moves: readonly LayoutMove[]): Promise<PreparedLayoutTransition>;
 }
 
 export interface LayoutViewGroup {
@@ -50,8 +59,12 @@ export function registerLayoutTransitionHost(host: LayoutTransitionHost): void {
 /** 미설치 = 콘텐츠가 DOM 배치를 그대로 따라가므로 기존 glide가 정답이다. */
 export function prepareLayoutMove(
   moves: readonly LayoutMove[],
-): Promise<LayoutTransitionMode> {
-  return registered.host?.prepareMove(moves) ?? Promise.resolve("glide");
+): Promise<PreparedLayoutTransition> {
+  return registered.host?.prepareMove(moves) ?? Promise.resolve({
+    mode: "glide",
+    commit: async () => {},
+    cancel: () => {},
+  });
 }
 
 export function __resetLayoutTransitionHostForTest(): void {

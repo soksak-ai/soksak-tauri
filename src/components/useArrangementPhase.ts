@@ -9,7 +9,7 @@
 // 다시 해석돼 요소가 남은 진행도만큼 튄다(최대 두 이동량의 합). 대기열은 그 결함을 구조적으로
 // 없앤다 — 첫 여정이 끝난 뒤 다음 여정이
 // 최신 목표로 출발하므로 언제나 매끄럽고, 클릭을 몇 번 하든 위상은 최대 둘이다(중간은 접힌다).
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   arrangementMoves,
   type Arrangement,
@@ -18,6 +18,7 @@ import {
 import { scheduleMotion } from "../lib/motionDebug";
 import { railTravelDeclaredMs } from "../lib/railMotion";
 import { redeliverViewFocusIfLost } from "../plugins/viewFocus";
+import type { PreparedLayoutTransition } from "../lib/layoutTransitionHost";
 
 export interface ArrangementPhase<L> {
   /** 지금 화면에 서 있는 배치 — 렌더의 단일 진실(위상 중에는 위상의 목표를 유지한다). */
@@ -110,7 +111,7 @@ export function useArrangementPhase<L extends { id: string }>(
   prepareTravel?: (
     from: Arrangement<L>,
     to: Arrangement<L>,
-  ) => Promise<"glide" | "snap">,
+  ) => Promise<PreparedLayoutTransition>,
 ): ArrangementPhase<L> {
   const [phase, setPhase] = useState<PhaseState<L>>({
     from: current,
@@ -140,6 +141,7 @@ export function useArrangementPhase<L extends { id: string }>(
   /** 주행 중 도착한 최신 해(깊이 1) — 표시는 여정이 끝난 뒤에 갈아탄다. */
   const queued = useRef<Arrangement<L> | null>(null);
   const preparation = useRef({ serial: 0, key: "" });
+  const pendingCommit = useRef<PreparedLayoutTransition | null>(null);
   /** 다음 해를 여정 없이 받는다 — 손 드래그가 이미 그 자리로 옮겨 놓은 경우. */
   const acceptWithoutTravel = useRef(false);
 
@@ -208,12 +210,20 @@ export function useArrangementPhase<L extends { id: string }>(
       preparation.current.key = currentKey;
       setPhase((p) => ({ ...p, preparing: true }));
       void prepare(from, target)
-        .then((mode) => {
-          if (preparation.current.serial !== serial) return;
+        .then((prepared) => {
+          if (preparation.current.serial !== serial) {
+            prepared.cancel();
+            return;
+          }
           preparation.current.key = "";
           // 준비 중 더 최신 해가 왔으면 그 해의 준비 거래가 이미 별도 serial로 진행 중이다.
-          if (arrangementKey(latest.current) !== currentKey) return;
-          if (mode === "snap") {
+          if (arrangementKey(latest.current) !== currentKey) {
+            prepared.cancel();
+            return;
+          }
+          if (prepared.mode === "snap") {
+            pendingCommit.current?.cancel();
+            pendingCommit.current = prepared;
             setPhase((p) => ({
               from: target,
               displayed: target,
@@ -226,6 +236,9 @@ export function useArrangementPhase<L extends { id: string }>(
             redeliverViewFocusIfLost();
             return;
           }
+          void prepared.commit().catch((error) => {
+            console.error("[layout] DOM glide 거래 완료 실패", error);
+          });
           setPhase((p) => ({
             from: p.displayed,
             displayed: target,
@@ -258,6 +271,22 @@ export function useArrangementPhase<L extends { id: string }>(
     // current 는 렌더마다 새 객체다 — 값 서명(currentKey·contentKey)만이 안정된 의존이다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentKey, displayedKey, contentKey, phase.contentKey, samePlane, traveling, adopt]);
+
+  // React가 목표 DOM을 커밋한 직후, 브라우저가 그 프레임을 칠하기 전에 준비 거래를 닫는다.
+  // Tauri는 이 시점까지 옛 reflow가 precommit bounds를 덮지 못하게 잠금을 유지한다.
+  useLayoutEffect(() => {
+    const prepared = pendingCommit.current;
+    if (!prepared) return;
+    pendingCommit.current = null;
+    void prepared.commit().catch((error) => {
+      console.error("[layout] 목표 배치 커밋 확인 실패", error);
+    });
+  }, [phase.displayed]);
+
+  useEffect(() => () => {
+    pendingCommit.current?.cancel();
+    pendingCommit.current = null;
+  }, []);
 
   // 여정 종료 — 대기 중인 목표가 있으면 그 자리에서 다음 여정을 시작한다.
   useEffect(() => {

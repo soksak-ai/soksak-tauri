@@ -12,7 +12,7 @@ import {
   type ContentViewHost,
 } from "../../lib/contentViews";
 import { onPluginEvent, type Disposable } from "../../plugins/hooks";
-import type { LayoutMove, LayoutTransitionMode } from "../../lib/layoutTransitionHost";
+import type { LayoutMove, PreparedLayoutTransition } from "../../lib/layoutTransitionHost";
 
 const call = <T>(cmd: string, args?: Record<string, unknown>): Promise<T> =>
   invoke(cmd, args) as Promise<T>;
@@ -207,7 +207,7 @@ function slotViewId(slot: HTMLElement): string | null {
  */
 export async function prepareNativeContentViewMove(
   moves: readonly LayoutMove[],
-): Promise<LayoutTransitionMode> {
+): Promise<PreparedLayoutTransition> {
   const byView = new Map(moves.map((move) => [move.viewId, move]));
   const targets = [...composition.surfaces.values()].flatMap((state) => {
     if (!state.opened || state.desiredVisible === false) return [];
@@ -218,7 +218,11 @@ export async function prepareNativeContentViewMove(
     if (!move || !current || Math.abs(move.dx) < 0.5) return [];
     return [{ state, rect: { ...current, x: Math.round(current.x - move.dx) } }];
   });
-  if (targets.length === 0) return "glide";
+  if (targets.length === 0) return {
+    mode: "glide",
+    commit: async () => {},
+    cancel: () => {},
+  };
 
   for (const { state } of targets) state.precommitting = true;
   try {
@@ -228,10 +232,23 @@ export async function prepareNativeContentViewMove(
       state.boundsWrites += 1;
       state.lastRect = rectKey(rect);
     }));
-    return "snap";
-  } finally {
+  } catch (error) {
     for (const { state } of targets) state.precommitting = false;
+    throw error;
   }
+
+  let closed = false;
+  const release = (forceSync: boolean) => {
+    if (closed) return Promise.resolve();
+    closed = true;
+    for (const { state } of targets) state.precommitting = false;
+    return Promise.all(targets.map(({ state }) => requestSlotSync(state, forceSync))).then(() => {});
+  };
+  return {
+    mode: "snap",
+    commit: () => release(true),
+    cancel: () => { void release(true).catch(() => {}); },
+  };
 }
 
 /** 이 어댑터의 DOM 사건 배선. 선택된 프레임워크 install에서만 한 번 호출한다. */
