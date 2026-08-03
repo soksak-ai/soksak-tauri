@@ -7,7 +7,7 @@
 // 노출(data-node)되지 않은 요소는 주소 트리에 없어 접근 불가 → 명확한 에러(추측 0).
 
 import { moduleState } from "../lib/moduleState";
-import { currentWindow } from "../framework";
+import { currentWindow, invoke } from "../framework";
 import { browserLabel, currentWindowLabel } from "../lib/webviewLabels";
 import { contentViewHost } from "../lib/contentViews";
 import { parseAddress, isParseError } from "./address";
@@ -1103,7 +1103,7 @@ export function registerDomCatalog(): void {
 
   register("ui.input.drag", {
     description:
-      "Drive a pointer drag (mousedown on `from` -> mousemove -> mouseup). Two modes: (1) drop onto a target — give `to` (+ optional zone); (2) drag by dx/dy for resize handles. steps and durationMs expose a finite real-time sequence for animation/layout verification; defaults preserve the immediate two-move behavior. mousemove+mouseup dispatch on window so window-level drag listeners receive them.",
+      "Drive a pointer drag (mousedown on `from` -> mousemove -> mouseup). Two modes: (1) drop onto a target — give `to` (+ optional zone); (2) drag by dx/dy for resize handles. steps and durationMs expose a finite real-time sequence for animation/layout verification; defaults preserve the immediate two-move behavior. recordDir starts the framework-neutral window recorder in the same request before the drag, so transition frames are observable even when control requests are serialized. mousemove+mouseup dispatch on window so window-level drag listeners receive them.",
     triggers: { ko: "드래그 주입 드롭 탭이동 분할 합치기 리사이즈 디바이더 E2E 포인터드래그" },
     params: {
       from: { type: "string", description: "Source node address (the tab / gutter / element to grab)", required: true },
@@ -1125,8 +1125,28 @@ export function registerDomCatalog(): void {
         description: "Total finite drag duration in milliseconds (0..10000). Default 0.",
         default: 0,
       },
+      recordDir: {
+        type: "string",
+        description: "Optional output directory for f0000.png... captured concurrently with this drag.",
+        required: false,
+      },
+      recordFrames: {
+        type: "number",
+        description: "Frames to capture when recordDir is set (1..600, default 120).",
+        default: 120,
+      },
+      recordIntervalMs: {
+        type: "number",
+        description: "Capture interval in milliseconds when recordDir is set (default 33).",
+        default: 33,
+      },
+      recordLeadMs: {
+        type: "number",
+        description: "Finite pre-drag recording lead in milliseconds (0..2000, default 100).",
+        default: 100,
+      },
     },
-    returns: "{ dragged, from, to?, zone?, dx?, dy?, steps, durationMs }",
+    returns: "{ dragged, from, to?, zone?, dx?, dy?, steps, durationMs, recording?:{dir,frames} }",
     message: (d) => (d.dragged ? tmsg("msg.ui.input.drag.dragged") : tmsg("msg.ui.input.drag.tap")),
     errors: ["NOT_EXPOSED", "AMBIGUOUS", "INVALID_PARAMS"],
     danger: "inject",
@@ -1142,6 +1162,18 @@ export function registerDomCatalog(): void {
       }
       if (!Number.isFinite(durationMs) || durationMs < 0 || durationMs > 10_000) {
         return { ok: false as const, code: "INVALID_PARAMS", message: "durationMs는 0..10000이어야 함" };
+      }
+      const recordDir = p.recordDir as string | undefined;
+      const recordFrames = p.recordFrames === undefined ? 120 : Number(p.recordFrames);
+      const recordIntervalMs = p.recordIntervalMs === undefined ? 33 : Number(p.recordIntervalMs);
+      const recordLeadMs = p.recordLeadMs === undefined ? 100 : Number(p.recordLeadMs);
+      if (
+        recordDir &&
+        (!Number.isInteger(recordFrames) || recordFrames < 1 || recordFrames > 600 ||
+          !Number.isFinite(recordIntervalMs) || recordIntervalMs < 0 ||
+          !Number.isFinite(recordLeadMs) || recordLeadMs < 0 || recordLeadMs > 2_000)
+      ) {
+        return { ok: false as const, code: "INVALID_PARAMS", message: "녹화 인자가 범위를 벗어났다" };
       }
       const fromR = resolveExposed(p.from as string);
       if (!("el" in fromR)) return fromR;
@@ -1179,6 +1211,16 @@ export function registerDomCatalog(): void {
           }),
         );
       const dist = Math.hypot(toPt.x - fromPt.x, toPt.y - fromPt.y);
+      const recording = recordDir
+        ? invoke<number>("plugin:webview-capture|record", {
+            dir: recordDir,
+            frames: recordFrames,
+            intervalMs: recordIntervalMs,
+          })
+        : null;
+      if (recording && recordLeadMs > 0) {
+        await new Promise((resolve) => window.setTimeout(resolve, recordLeadMs));
+      }
       // mousedown 은 잡는 요소(골/탭)에, move/up 은 window 에 — 골 리사이즈는 window 레벨
       // mousemove/mouseup 리스너를 그 핸들이 등록하므로 window 로 보내야 받는다.
       fire("mousedown", fromPt.x, fromPt.y, fromR.el);
@@ -1199,9 +1241,12 @@ export function registerDomCatalog(): void {
         }
       }
       fire("mouseup", toPt.x, toPt.y, window);
+      const recordingResult = recording
+        ? { recording: { dir: recordDir, frames: await recording } }
+        : {};
       return byDelta
-        ? { dragged: dist >= 5, from: p.from, dx: p.dx ?? 0, dy: p.dy ?? 0, steps, durationMs }
-        : { dragged: dist >= 5, click: dist < 5, from: p.from, to: p.to, zone: p.zone ?? "center", steps, durationMs };
+        ? { dragged: dist >= 5, from: p.from, dx: p.dx ?? 0, dy: p.dy ?? 0, steps, durationMs, ...recordingResult }
+        : { dragged: dist >= 5, click: dist < 5, from: p.from, to: p.to, zone: p.zone ?? "center", steps, durationMs, ...recordingResult };
     },
   });
 

@@ -10,6 +10,7 @@
 //     props[] 로 임의 computed prop 요청(하드코딩 필드 한계 제거), occlusion 도달성 판정.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { startPointerOrderRepair } from "../lib/pointerOrderRepair";
+import { invoke as frameworkInvoke } from "../framework";
 
 // 모듈을 통째로 대체하면 **나중에 늘어난 수출이 조용히 undefined 가 된다** — 목은 그 모듈이
 // 실제로 주는 것을 따라가야 한다(실측 2026-08-02: browserLabel 을 안 넣어 핸들러가 죽었다).
@@ -170,6 +171,46 @@ describe("ui.measure/ui.hit — 스펙 선언", () => {
 });
 
 describe("ui.input.drag — 실시간 재현 표면", () => {
+  it("드래그와 같은 제어 요청 안에서 프레임 기록 계약을 공개한다", () => {
+    const spec = getSpec("ui.input.drag");
+    expect(spec?.params.recordDir).toBeDefined();
+    expect(spec?.params.recordFrames).toBeDefined();
+    expect(spec?.params.recordIntervalMs).toBeDefined();
+  });
+
+  it("선택한 녹화를 드래그 전에 시작하고 같은 응답에서 완료 프레임을 보고한다", async () => {
+    mountNode(`<div data-node="btn">drag</div>`);
+    const node = document.querySelector<HTMLElement>("[data-node=btn]")!;
+    vi.spyOn(node, "getBoundingClientRect").mockReturnValue({
+      x: 10, y: 10, left: 10, top: 10, right: 30, bottom: 30,
+      width: 20, height: 20, toJSON: () => ({}),
+    });
+    vi.mocked(frameworkInvoke).mockResolvedValueOnce(7);
+    const result = await execute(
+      "ui.input.drag",
+      {
+        from: ADDR,
+        dx: 100,
+        steps: 3,
+        durationMs: 0,
+        recordDir: "/tmp/drag-scan",
+        recordFrames: 7,
+        recordIntervalMs: 0,
+        recordLeadMs: 0,
+      },
+      {},
+    );
+    expect(frameworkInvoke).toHaveBeenCalledWith("plugin:webview-capture|record", {
+      dir: "/tmp/drag-scan",
+      frames: 7,
+      intervalMs: 0,
+    });
+    expect(result.data).toMatchObject({
+      dragged: true,
+      recording: { dir: "/tmp/drag-scan", frames: 7 },
+    });
+  });
+
   it("steps/durationMs를 공개하고 지정 단계마다 mousemove를 보낸다", async () => {
     const spec = getSpec("ui.input.drag");
     expect(spec?.params.steps).toBeDefined();
