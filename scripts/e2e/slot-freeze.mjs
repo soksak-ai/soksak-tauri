@@ -1,701 +1,252 @@
-// 슬롯 동결(§4.6) E2E — 코어 이동-동결 엔진이 실행 중 앱에서 완주하는지 소켓으로 자가 검증한다.
-// 멱등: 전용 임시 root 창 안에서만 동작(사용자 워크스페이스 무접촉), 끝에 창을 닫는다.
+// 네이티브 웹뷰 안정 경계 E2E.
 //
-// 실행: SOKSAK_SOCKET=<앱 소켓> node scripts/e2e/slot-freeze.mjs
+// 사용자 동작과 같은 탭 헤더 교차 클릭으로 sidebar flow가 좌우 판 사이를 이동하는 동안,
+// Tauri child webview가 DOM 슬롯과 1:1로 남고 모든 전이 프레임이 보존되는지 검증한다.
+// Electron에서는 같은 제품 시나리오와 캡처를 수행하되 native composition 판정은 비적용이다.
 //
-// 검증:
-//   1) 정착 선캡처 — 브라우저(홀) 뷰 정착 후 슬롯 dataset.freezeSnapAt 이 선다
-//   2) 실제 탭 교차 클릭 — ui.input.click 이 클릭과 같은 요청에서 유한 연속 캡처를 시작한다.
-//      각 방향의 첫 프레임부터 착지까지 증거가 남고, freeze="0" 으로 동결→해동을 완주한다.
-//   3) 재캡처 — 사이클 뒤 freezeSnapAt 이 전진한다(착지 정착 에지가 다음 스냅을 굽는다)
-//   4) 포커스 보존 — 포커스 인/아웃 양쪽에서 슬롯 영역 스냅샷이 블랭크가 아니다
-//      (백지 판정 휴리스틱: 렌더된 영역의 PNG base64 는 블랭크보다 뚜렷이 크다)
-//   6) 해 == 관측 — layout.arrangement 의 답이 실측(ui.measure)과 같다
-//   7) 복도 계약 — 무관 포커스 변화의 허용 변화는 레일 복도의 railW 평행이동 하나뿐
-//      (가로지른 패널만 정확히 railW, 폭·y 불변, 가로지르지 않은 패널 0)
-//   8) 착지 일치 — 네이티브 child 이동량 == 슬롯 이동량(위상 중 표면 무이동 + 착지 1회의 결과)
-import net from "node:net";
+// 실행: SOKSAK_SOCKET=<cored.sock> node scripts/e2e/slot-freeze.mjs
+// 멱등: ~/.soksak-e2e/slot-freeze 전용 창과 evidence/slot-freeze/current만 소유한다.
+// 포커스 금지: window.focus/OS pointer를 쓰지 않고 ui.input.click+내장 recorder만 사용한다.
+
+import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
-import fs from "node:fs";
-import { requireSocket } from "./lib/client.mjs";
+import { openClient, requireSocket, must } from "./lib/client.mjs";
 import { acquireFixtureWindow, releaseFixtureWindow } from "./lib/fixtureWindow.mjs";
 
 const SOCKET = requireSocket();
-// 픽스처 루트 — 고정 경로 재사용(멱등, /tmp 금지 규율). 창 폐쇄가 회수를 담당한다.
 const FIXTURE_ROOT = path.join(os.homedir(), ".soksak-e2e", "slot-freeze");
-// 매 실행이 같은 자리를 교체한다 — timestamp 폴더를 쌓지 않는다. 이 디렉터리 밖은 절대
-// 지우지 않으며, 실패해도 마지막 RED 프레임이 남아 바로 검안할 수 있다.
-const EVIDENCE_ROOT = path.join(os.homedir(), ".soksak-e2e", "evidence", "slot-freeze");
-// 검증 대상 엔진 — 홀(네이티브 표면) 뷰는 엔진마다 표면 소유자가 다르다(자식 웹뷰 vs 사이드카
-// 프로세스). 한 엔진만 태우면 나머지는 검증되지 않은 채 남는다(실측: chromium 경로에서 깜빡임).
-// BROWSER_ENGINE=browser|browser-chromium|browser-chromium-offscreen.
-const ENGINE = process.env.BROWSER_ENGINE || "browser";
-// 표면을 담는 뷰 클래스는 엔진마다 다르다 — 자식 웹뷰(WryWebView)와 CEF 호스트 뷰
-// (CefBrowserHostView). 한 클래스만 찾으면 다른 엔진의 표면은 "판독 실패"로 남고, 위상 쓰기·
-// 착지 게이트가 그 엔진에 대해 아무것도 증명하지 못한다(실측: chromium 4게이트 판정 불가).
-const SURFACE_CLASS = /WryWebView|CefBrowserHostView/;
-const ENGINE_PLUGIN = {
+const EVIDENCE_ROOT = path.join(
+  os.homedir(),
+  ".soksak-e2e",
+  "evidence",
+  "slot-freeze",
+  "current",
+);
+const BROWSER_PROGRAM = process.env.BROWSER_ENGINE || "browser";
+const BROWSER_PLUGIN = {
   browser: "soksak-plugin-browser-native",
   "browser-chromium": "soksak-plugin-browser-chromium",
   "browser-chromium-offscreen": "soksak-plugin-browser-chromium-offscreen",
-}[ENGINE];
-if (!ENGINE_PLUGIN) throw new Error(`알 수 없는 엔진: ${ENGINE}`);
-// 표면 모델 — native: 창 자식 표면(자식 웹뷰·CEF 호스트 뷰)이라 동결·veil·착지 계약의 대상.
-// dom: 오프스크린 렌더를 DOM 으로 합성하므로 네이티브 표면이 없다(§4.6 면제) — 그 엔진에서
-// 표면 계수·프레임 판독 게이트는 적용 대상이 아니다. 조용히 건너뛰지 않고 그 사실을 출력한다.
-// 표면이 사는 자리는 엔진만 정하지 않는다 — **프레임워크도 정한다.** 콘텐츠 뷰가 페이지 안에
-// 사는 프레임워크에는 어떤 엔진을 써도 네이티브 자식 표면이 없다. 엔진만 보면 그 프레임워크에서
-// 이 게이트가 "없는 것"을 찾다가 실패하고, 그 실패는 결함처럼 보이지만 결함이 아니다.
-// 축은 프레임워크가 선언한다(framework.provision) — 이름으로 가르지 않는다.
-let ENGINE_SURFACE = ENGINE === "browser-chromium-offscreen" ? "dom" : "native";
+}[BROWSER_PROGRAM];
+const CYCLES = 3;
+const FRAMES_PER_CLICK = 36;
 
-// 소켓 클라이언트 — 연결마다 독립 봉투 큐. 둘 이상 열 수 있어야 한다: 녹화(window.record)는
-// 프레임 수만큼 응답을 붙잡으므로, 같은 연결로는 녹화 도중 위상을 태울 수 없다(실측: 활강이
-// 한 프레임도 안 찍히거나 이미 정착한 화면만 남았다). 카메라와 조작자는 다른 연결을 쓴다.
-function openClient() {
-  const state = { sock: null, seq: 0, pending: new Map(), buf: "" };
+if (!BROWSER_PLUGIN) throw new Error(`지원하지 않는 BROWSER_ENGINE: ${BROWSER_PROGRAM}`);
+
+function prepareEvidence() {
+  const boundary = path.join(os.homedir(), ".soksak-e2e", "evidence") + path.sep;
+  const resolved = path.resolve(EVIDENCE_ROOT);
+  if (!(`${resolved}${path.sep}`).startsWith(boundary)) {
+    throw new Error(`증거 경로 경계 위반: ${resolved}`);
+  }
+  fs.rmSync(resolved, { recursive: true, force: true });
+  fs.mkdirSync(resolved, { recursive: true });
+}
+
+function startPageServer() {
+  const server = http.createServer((_request, response) => {
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    response.end(`<!doctype html><meta charset="utf-8"><title>Boundary Fixture</title>
+      <style>html,body{margin:0;min-height:100%;background:#10202c;color:#f7f4df;font:24px system-ui}
+      main{min-height:100vh;display:grid;place-items:center;background:linear-gradient(135deg,#10202c 0 50%,#e0704f 50%)}
+      section{padding:48px;border:8px solid #f7f4df;background:#16394a;box-shadow:20px 20px 0 #10202c}
+      h1{font-size:52px;margin:0 0 12px}p{margin:0}</style>
+      <main><section><h1>Native Boundary</h1><p>DOM slot ↔ live webview</p></section></main>`);
+  });
   return new Promise((resolve, reject) => {
-    state.sock = net.createConnection(SOCKET);
-    state.sock.setNoDelay(true);
-    state.sock.once("error", reject);
-    state.sock.once("connect", () =>
-      resolve({
-        rpc(method, params = {}, window) {
-          return new Promise((res, rej) => {
-            const id = ++state.seq;
-            state.pending.set(id, res);
-            const req = { id, method, params };
-            if (window) req.window = window;
-            state.sock.write(`${JSON.stringify(req)}\n`);
-            setTimeout(() => {
-              if (state.pending.has(id)) {
-                state.pending.delete(id);
-                rej(new Error(`TIMEOUT ${method}`));
-              }
-            }, 30000);
-          });
-        },
-        close: () => state.sock.destroy(),
-      }),
-    );
-    state.sock.setEncoding("utf8");
-    state.sock.on("data", (d) => {
-      state.buf += d;
-      let i;
-      while ((i = state.buf.indexOf("\n")) >= 0) {
-        const line = state.buf.slice(0, i);
-        state.buf = state.buf.slice(i + 1);
-        if (!line.trim()) continue;
-        let msg;
-        try {
-          msg = JSON.parse(line);
-        } catch {
-          continue;
-        }
-        const p = state.pending.get(msg.id);
-        if (p) {
-          state.pending.delete(msg.id);
-          p(msg);
-        }
-      }
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (!address || typeof address === "string") return reject(new Error("fixture server address"));
+      resolve({ server, url: `http://127.0.0.1:${address.port}/` });
     });
   });
 }
 
-let primary;
-async function connect() {
-  primary = await openClient();
-}
-// 요청 봉투(MESSAGE-PROTOCOL·multiwindow.mjs 와 동형): { id, method, params, window? }.
-const rpc = (method, params, window) => primary.rpc(method, params, window);
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-async function pollUntilGentle(label, deadlineMs, intervalMs, fn) {
-  const t0 = Date.now();
-  for (;;) {
-    const v = await fn();
-    if (v) return v;
-    if (Date.now() - t0 > deadlineMs) throw new Error(`시한 초과: ${label}`);
-    await sleep(intervalMs);
+const addressForTab = (tree, tabId) => {
+  const node = (tree.nodes ?? []).find((n) => n.nodePath === `tab/view/${tabId}`);
+  if (!node?.address) throw new Error(`탭 DOM 주소가 노출되지 않았다: ${tabId}`);
+  return node.address;
+};
+
+function assertComposition(data, labels, beforeWrites) {
+  const verdict = data.verdict ?? {};
+  const errors = ["missing", "misplaced", "stacked"].flatMap((key) =>
+    (verdict[key] ?? []).map((item) => `${key}:${JSON.stringify(item)}`),
+  );
+  const placement = new Map((data.placement ?? []).map((p) => [p.label, p]));
+  for (const label of labels) {
+    const p = placement.get(label);
+    if (!p?.opened || !p.slotPresent) errors.push(`placement:${label}:not-open-or-no-slot`);
+    if (p?.syncPending || p?.precommitPending) errors.push(`placement:${label}:pending`);
+    if (p?.desiredVisible !== p?.appliedVisible) errors.push(`placement:${label}:visibility`);
+    if (beforeWrites.has(label)) {
+      const delta = Number(p?.boundsWrites ?? 0) - Number(beforeWrites.get(label));
+      if (delta < 0 || delta > 1) errors.push(`placement:${label}:boundsWrites+${delta}`);
+    }
   }
-}
-async function pollUntil(label, deadlineMs, fn) {
-  const t0 = Date.now();
-  for (;;) {
-    const v = await fn();
-    if (v) return v;
-    if (Date.now() - t0 > deadlineMs) throw new Error(`시한 초과: ${label}`);
-    await sleep(300);
-  }
-}
-let failures = 0;
-function assert(name, ok, detail = "") {
-  console.log(`${ok ? "✓" : "✗"} ${name}${detail ? ` — ${detail}` : ""}`);
-  if (!ok) failures += 1;
+  if (errors.length) throw new Error(`native composition 불일치 — ${errors.join(", ")}`);
+  return new Map((data.placement ?? []).map((p) => [p.label, Number(p.boundsWrites ?? 0)]));
 }
 
 async function main() {
-  // 전역 워치독 — 어떤 단계가 행이어도 유한 종료(멱등 재실행 가능).
-  setTimeout(() => {
-    console.error("✗ slot-freeze E2E 워치독(90s) — 행 감지, 중단");
-    process.exit(1);
-  }, 90_000).unref?.();
-  await connect();
-  console.log(`소켓 연결: ${SOCKET} — 엔진 ${ENGINE}`);
-  const evidenceBoundary = path.join(os.homedir(), ".soksak-e2e", "evidence") + path.sep;
-  if (!EVIDENCE_ROOT.startsWith(evidenceBoundary)) throw new Error("증거 경로 경계 위반");
-  fs.rmSync(EVIDENCE_ROOT, { recursive: true, force: true });
-  fs.mkdirSync(EVIDENCE_ROOT, { recursive: true });
-
-  // ── 픽스처: 전용 임시 root 창 + 브라우저(홀 뷰) + 터미널(교차 활성 상대) ──
-  // 창 확보는 lib/fixtureWindow 가 진다 — 루트가 주인이고, 있으면 물려받는다(멱등).
-  console.log(`픽스처 창 확보: ${FIXTURE_ROOT}`);
-  const acquired = await acquireFixtureWindow(rpc, FIXTURE_ROOT);
-  const win = acquired.label;
-
-  // 표면이 사는 자리의 나머지 절반 — 프레임워크가 선언한다.
-  const provision = (await rpc("framework.provision", {}, win)).data ?? {};
-  if (provision.nativeChildWebview === false) ENGINE_SURFACE = "dom";
-  console.log(
-    `프레임워크: ${provision.name} · 콘텐츠 뷰 ${provision.nativeChildWebview === false ? "in-page" : "native"} → 표면 모델 ${ENGINE_SURFACE}`,
-  );
-
-  // 새 창의 플러그인 적재는 비동기 — 프로그램 목록에 브라우저가 설 때까지 대기한다.
-  await pollUntil("browser 프로그램 적재", 20000, async () => {
-    const progs = await rpc("program.list", {}, win);
-    const ids = (progs.data?.programs ?? []).map((p) => p.id);
-    return ids.includes(ENGINE) ? true : null;
-  });
+  prepareEvidence();
+  const client = await openClient(SOCKET);
+  const rpc = (method, params = {}, window) => client.rpc(method, params, window);
+  let win;
+  let homeOverride = false;
+  const page = await startPageServer();
 
   try {
-  // 픽스처 루트의 영속 상태는 지난 실행이 남긴 것이다 — 패널이 없는 스페이스로 복원될 수
-  // 있으므로(중단된 실행의 잔재) 쓸 수 있는 평면을 보장한다. 멱등: 이미 패널이 있으면 무동작.
-  const panels = await rpc("pane.list", {}, win);
-  if (!panels.ok || !(panels.data?.panes ?? []).length) {
-    const made = await rpc("space.create", {}, win);
-    if (!made.ok) throw new Error(`스페이스 생성 실패: ${made.message}`);
-    await sleep(400);
-  }
-  const bv = await rpc("tab.open", { program: ENGINE }, win);
-  if (!bv.ok) throw new Error(`browser tab.open 실패: ${bv.message}`);
-  const browserView = bv.data?.tabId;
-  // 명시 URL 항행 + 로드 신원 검증 — 기본 홈페이지에 기대지 않는다. 픽셀 판정은 "알려진
-  // 페이지가 실제로 로드됐다"가 전제될 때만 의미가 있다(빈 페이지를 빈 페이지 하한으로
-  // 통과시키는 검사는 검사가 아니다).
-  // webview 준비 대기 — 생성 완료 전 navigate 는 유실/파손 레이스다(조기 항행 함정).
-  // 기본 홈(example.com)의 h1 이 읽히면 웹뷰·페이지 파이프라인 전체가 준비된 것이다.
-  // 준비 신호는 비침습이어야 한다 — dom.* 는 페이지에 JS 를 주입하므로 초기 로드와 경합해
-  // 로드 자체를 죽인다(실측: 폴링한 창만 <body> 빈 문서로 남음 — 감시가 대상을 파괴).
-  // 뷰 타이틀은 플러그인이 코어에 올리는 이벤트라 페이지 무접촉이다.
-  // 생성 정착 대기(고정 4s — 조기 dom 프로브는 초기 로드를 죽인다: 300ms 폴링에 body 가
-  // 영영 빈 문서로 남던 실측) 후 명시 항행, 2s 간격의 완만한 프로브로 신원을 단언한다.
-  await sleep(4000);
-  await rpc(`plugin.${ENGINE_PLUGIN}.navigate`, { url: "https://example.com/" }, win);
-  await sleep(2000);
-  await pollUntilGentle("example.com 로드(h1 텍스트)", 20000, 2000, async () => {
-    const q = await rpc(`plugin.${ENGINE_PLUGIN}.dom.text`, { selector: "h1" }, win);
-    const txt = JSON.stringify(q.data ?? "");
-    return txt.includes("Example Domain") ? true : null;
-  });
-  console.log("✓ 페이지 신원 — example.com h1 확인");
-  // 터미널 프로그램 적재 대기 — 브라우저만 기다리고 분할하면 뷰 없는 빈 패널이 생겨
-  // 이후 활성 전환이 INVALID_PARAMS 로 떨어진다(하니스 레이스, 실측).
-  // 교차 활성 상대의 program id 는 목록에서 해소한다 — "terminal" 은 등록 id 가 아니라
-  // 엔진 별칭이고, 미등록 id 는 계약대로 빈 패널(뷰 없음)을 만든다. 그러면 이후 활성 전환이
-  // INVALID_PARAMS 로 떨어져 위상이 아예 서지 않는다(실측 — 하니스가 낡아 있었다).
-  const termProgram = await pollUntil("terminal 엔진 program id", 20000, async () => {
-    const progs = await rpc("program.list", {}, win);
-    const ids = (progs.data?.programs ?? []).map((p) => p.id);
-    return ids.find((id) => id.startsWith("terminal-")) ?? null;
-  });
-  const tv = await rpc("pane.split", { side: "right", program: termProgram }, win);
-  if (!tv.ok) throw new Error(`pane.split 실패: ${tv.message}`);
-  const termView = tv.data?.tabId;
-  if (!termView) throw new Error(`분할이 뷰를 만들지 못함: ${JSON.stringify(tv.data)}`);
-  // 분할 응답은 착지한 배치를 싣는다 — 변경 직후 퍼즐이 이미 풀려 있다는 계약.
-  assert(
-    "분할 응답에 배치 동봉(station·cleanLines)",
-    Number.isFinite(tv.data?.arrangement?.station) &&
-      Array.isArray(tv.data?.arrangement?.cleanLines),
-    JSON.stringify(tv.data?.arrangement ?? null),
-  );
-  // 배치를 명시한다 — 픽스처 루트에 영속된 옛 PIN 에 기대면 게이트가 환경에 따라 갈린다.
-  const flowSet = await rpc("sidebar.left.position", { mode: "flow" }, win);
-  assert(
-    "레일 배치 = flow(포커스 추종)",
-    flowSet.data?.leftRailPosition?.mode === "flow",
-    JSON.stringify(flowSet.data?.leftRailPosition ?? flowSet.message),
-  );
-  const exposed = await rpc("ui.tree", {}, win);
-  const slotNode = (exposed.data?.nodes ?? []).find(
-    (n) => n.nodePath === "surface" && n.address.includes(`/tab/${browserView}/node/surface`),
-  );
-  if (!slotNode?.address) throw new Error(`브라우저 표면 DOM 주소 미노출: ${browserView}`);
-  const slotAddr = slotNode.address;
+    const acquired = await acquireFixtureWindow(rpc, FIXTURE_ROOT);
+    win = acquired.label;
+    console.log(`픽스처 창: ${win}${acquired.adopted ? " (재사용)" : " (생성)"}`);
 
-  const measure = async () => {
-    const m = await rpc("ui.measure", { address: slotAddr }, win);
-    return m.ok ? m.data : null;
-  };
-
-  // 탭 헤더 주소는 ui.tree 가 답한다 — project id나 주소 문법을 하니스가 조립하지 않는다.
-  // 클릭과 녹화가 한 직렬 요청에 있어야 카메라 시작과 조작 사이의 레이스가 없다.
-  const clickAddress = async (viewId) => {
-    const tree = await rpc("ui.tree", {}, win);
-    const node = (tree.data?.nodes ?? []).find((n) => n.nodePath === `tab/view/${viewId}`);
-    if (!node?.address) throw new Error(`탭 클릭 주소 미노출: ${viewId}`);
-    return node.address;
-  };
-  const tabAddress = {
-    browser: await clickAddress(browserView),
-    terminal: await clickAddress(termView),
-  };
-  let clickSeq = 0;
-  const clickWithCapture = async (kind) => {
-    clickSeq += 1;
-    const dir = path.join(EVIDENCE_ROOT, `${String(clickSeq).padStart(2, "0")}-${kind}`);
-    const clicked = await rpc(
-      "ui.input.click",
-      {
-        address: tabAddress[kind],
-        recordDir: dir,
-        recordFrames: 24,
-        recordIntervalMs: 16,
-      },
-      win,
+    // 레지스트리의 Zustand 사건을 구독하는 공개 준비 경계. 하니스 폴링은 없다.
+    must(
+      await rpc("program.wait", { id: BROWSER_PROGRAM, timeoutMs: 20_000 }, win),
+      `program.wait ${BROWSER_PROGRAM}`,
     );
-    if (!clicked.ok) throw new Error(`탭 클릭 실패(${kind}): ${clicked.code} ${clicked.message}`);
-    console.log(`  클릭+캡처 ${kind}: ${dir}`);
-    return dir;
-  };
-
-  // 1) 정착 선캡처 — 청정(스팟) 슬롯만 구워진다(dim 슬롯 skip 정책). 분할 직후엔 터미널이
-  // 활성이라 브라우저 슬롯이 dim — 실사용처럼 브라우저를 먼저 활성해 스팟 상태에서 기다린다.
-  await rpc("tab.activate", { tab: browserView }, win);
-  // 존재만 보면 아무것도 증명하지 못한다 — 분할 전에 구운 스냅(454px)이 분할 후(221px) 슬롯에
-  // 남아 있어도 이 게이트는 통과했고, 그 낡은 크기가 모든 여정의 활강 전제를 거부해 그리드가
-  // 통째로 순간이동했다(실측 freezeGlide=no:size:221x449!=454x449). 엔진의 판정을 직접 읽는다.
-  const surfaceSizeOf = (rect) =>
-    `${Math.floor(rect.x + rect.w) - Math.ceil(rect.x)}x${Math.floor(rect.y + rect.h) - Math.ceil(rect.y)}`;
-  const settled = await pollUntil("정착 스냅(현재 크기)", 20000, async () => {
-    const d = await measure();
-    if (!d?.dataset?.freezeSnapAt) return null;
-    return d.dataset.freezeSnapSize === surfaceSizeOf(d.rect) ? d : null;
-  });
-  const snapAt0 = Number(settled.dataset.freezeSnapAt);
-  assert(
-    "정착 선캡처 — 현재 슬롯 크기로 구운 스냅이 서 있다",
-    Number.isFinite(snapAt0) && settled.dataset.freezeSnapSize === surfaceSizeOf(settled.rect),
-    `snapAt=${snapAt0} snapSize=${settled.dataset.freezeSnapSize} slot=${surfaceSizeOf(settled.rect)}`,
-  );
-
-  // 2) 실제 탭 교차 클릭 — 각 클릭의 첫 프레임부터 착지까지 같은 요청에서 캡처한다.
-  // 명령으로 상태만 바꾸면 탭 헤더의 실제 클릭 경로(slotGesture/activation 귀속)를 검증하지 못한다.
-  await clickWithCapture("terminal");
-  await clickWithCapture("browser");
-  const cycled = await measure();
-  assert(
-    "실제 탭 교차 클릭 — 동결→해동 완주(freeze=0)",
-    cycled?.dataset?.freeze === "0",
-    JSON.stringify(cycled?.dataset ?? null),
-  );
-
-  // 2.5) 스탠드인 피복 — §4.6-3(표면을 숨기지 않는다)이 전적으로 기대는 가정: 스탠드인이
-  //      유일한 홀을 완전히 덮는다. 이 가정이 깨지면 표면이 스탠드인 위로 드러나 활강 내내
-  //      옛 자리의 픽셀이 보인다(핸드오프 §8 경고). 위상 한복판에 슬롯 중심을 히트해 최상단이
-  //      동결 프레임인지 직접 확인한다.
-  {
-    await rpc("tab.activate", { tab: browserView }, win);
-    await sleep(900);
-    const r0 = (await measure())?.rect;
-    const standinRect = async () => {
-      const m = await rpc(
-        "ui.measure",
-        { address: `win/${win}/chrome/layout/standin/${browserView}` },
+    must(
+      await rpc(
+        "plugin.settings.set",
+        { id: BROWSER_PLUGIN, key: "homeUrl", value: page.url, scope: "project" },
         win,
-      );
-      return m.ok ? m.data.rect : null;
-    };
-    await rpc("tab.activate", { tab: termView }, win);
-    let covered = null;
-    for (let i = 0; i < 10 && covered === null; i++) {
-      const st = await standinRect();
-      if (st) covered = st;
-      else if ((await measure())?.dataset?.freeze !== "1") break; // 위상 종료 — 더 볼 것 없음
-      await sleep(40);
-    }
-    const slotNow = (await measure())?.rect;
-    // 기준은 슬롯 rect 가 아니라 **표면 rect** 다. 슬롯은 분수고(실측 866.42×416.78) 네이티브
-    // 표면은 정수 픽셀에만 선다(866×415) — 슬롯에 맞춰 늘린 스탠드인은 표면이 없던 자리에서
-    // 늘어난 사진이고, 실측으로 하단 콘텐츠가 2.6px 밀렸다. 스탠드인은 표면 자리에 1:1 로 선다.
-    const surf = slotNow
-      ? {
-          w: Math.floor(slotNow.x + slotNow.w) - Math.ceil(slotNow.x),
-          h: Math.floor(slotNow.y + slotNow.h) - Math.ceil(slotNow.y),
-        }
-      : null;
-    assert(
-      "스탠드인 정합 — 활강 중 스탠드인이 표면 rect 에 1:1 로 선다(늘리지 않는다)",
-      !!covered && !!surf && Math.abs(covered.w - surf.w) <= 1 && Math.abs(covered.h - surf.h) <= 1,
-      covered
-        ? `standin=${JSON.stringify(covered)} surface=${JSON.stringify(surf)} slot=${JSON.stringify(slotNow)}`
-        : "동결 중 스탠드인 주소가 잡히지 않았다",
+      ),
+      "fixture homeUrl",
     );
-    await sleep(600);
-  }
+    homeOverride = true;
 
-  // 3) 재캡처 — 착지 정착 에지가 다음 스냅을 굽는다(freezeSnapAt 전진).
-  const recaptured = await pollUntil("착지 재캡처(freezeSnapAt 전진)", 10000, async () => {
-    const d = await measure();
-    return Number(d?.dataset?.freezeSnapAt) > snapAt0 ? d : null;
-  });
-  assert(
-    "착지 재캡처 — freezeSnapAt 전진",
-    Number(recaptured.dataset.freezeSnapAt) > snapAt0,
-    `${snapAt0} → ${recaptured.dataset.freezeSnapAt}`,
-  );
+    const panes = must(await rpc("pane.list", {}, win), "pane.list").panes ?? [];
+    if (panes.length === 0) must(await rpc("space.create", {}, win), "space.create");
 
-  // 4) 포커스 보존 — 포커스 인/아웃 양쪽에서 슬롯 영역이 렌더되어 있다(블랭크 금지).
-  // 블랭크(단색) 영역의 PNG 는 ~2KB 로 붕괴한다 — 렌더 하한은 그보다 뚜렷이 위, dim 압축
-  // (어두워지면 몇 % 줄어든다)은 통과할 만큼 아래로 잡는다. 추가로 인/아웃 비율을 묶어
-  // "포커스 아웃에서만 내용이 사라지는" 퇴행을 잡는다.
-  const BLANK_FLOOR = 4_000;
-  const slotShot = async () => {
-    const d = await measure();
-    const r = d?.rect;
-    if (!r) return 0;
-    const s = await rpc(
-      "window.snapshot",
-      { rect: { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.w), h: Math.round(r.h) }, base64: true },
-      win,
+    const left = must(await rpc("tab.open", { program: BROWSER_PROGRAM }, win), "left tab.open");
+    const right = must(
+      await rpc("pane.split", { side: "right", program: BROWSER_PROGRAM }, win),
+      "right pane.split",
     );
-    return (s.media?.base64 ?? "").length; // media 는 봉투 예약키(최상위) — data 아님
-  };
-  // 단일 사이클이 아니라 반복 사이클 뒤에 판정한다 — hide→show 를 여러 번 겪은 WKWebView 가
-  // 뷰어빌리티를 잃고 빈 레이어로 잠드는 회귀(실사고)는 반복 후에만 드러난다.
-  for (let i = 0; i < 3; i++) {
-    await clickWithCapture("terminal");
-    await clickWithCapture("browser");
-  }
-  const focusedLen = await slotShot();
-  await rpc("tab.activate", { tab: termView }, win);
-  await sleep(600);
-  const unfocusedLen = await slotShot();
-  const alive = await rpc(`plugin.${ENGINE_PLUGIN}.dom.text`, { selector: "h1" }, win);
-  assert(
-    "포커스 보존 — 사이클 후 페이지 신원 유지(h1)",
-    JSON.stringify(alive.data ?? "").includes("Example Domain"),
-  );
-  assert("포커스 보존 — 포커스 시 렌더", focusedLen > BLANK_FLOOR, `len=${focusedLen}`);
-  assert("포커스 보존 — 포커스 아웃 시 렌더", unfocusedLen > BLANK_FLOOR, `len=${unfocusedLen}`);
-  assert(
-    "포커스 보존 — 인/아웃 내용 등가(비율)",
-    unfocusedLen > focusedLen * 0.3,
-    `${unfocusedLen}/${focusedLen}`,
-  );
-
-    // 5) 홀 페인트 게이트 — 홀-슬롯은 어떤 pane 스타일에서도 스스로 배경을 칠하지 않는다.
-  // RED 근거(실사고): pane-style 배경 규칙이 홀 투명 규칙을 특이성으로 이겨 card/floating
-  // 에서 모든 홀이 닫혔다(포커스 시 블랭크로 위장). ui.hit painters 가 슬롯을 지목하면 RED.
-  {
-    const d0 = await measure();
-    const r0 = d0?.rect;
-    if (r0) {
-      const cx = Math.round(r0.x + r0.w / 2);
-      const cy = Math.round(r0.y + r0.h / 2);
-      await rpc("tab.activate", { tab: browserView }, win);
-      await sleep(400);
-      // pane 스타일은 테마 소유(설정 축 아님) — 현재 활성 스타일 하에서 단언한다.
-      // 계약은 스타일 무관("홀은 표면 종류의 사실")이므로 어떤 테마에서 돌아도 유효하다.
-      const hit = await rpc("ui.hit", { x: cx, y: cy }, win);
-      const painters = hit.data?.painters ?? [];
-      const slotPaints = painters.some(
-        (q) => typeof q.node === "string" && q.node.startsWith("layout/tab/"),
-      );
-      assert("홀 페인트 게이트 — 홀-슬롯 무배경(현 테마)", !slotPaints,
-        slotPaints ? JSON.stringify(painters[0]) : "");
+    const tabIds = [left.tabId, right.tabId];
+    if (tabIds.some((id) => typeof id !== "string")) {
+      throw new Error(`브라우저 탭 id 누락: ${JSON.stringify(tabIds)}`);
     }
-  }
+    must(await rpc("sidebar.left.position", { mode: "flow" }, win), "sidebar flow");
 
-  // 6) 해 == 관측 — layout.arrangement 가 답한 셀 rect 가 실측 슬롯 rect 와 같은가.
-  //    소수점까지 본다(정수로 자르면 소수 변화가 숨는다).
-  {
-    await rpc("tab.activate", { tab: browserView }, win);
-    await sleep(600);
-    const solved = await rpc("layout.arrangement", {}, win);
-    const cells = solved.data?.cells ?? [];
-    const railW = (await rpc("ui.measure", { address: `win/${win}/chrome/rail/left` }, win))
-      ?.data?.rect?.w;
-    assert(
-      "해 조회 — 셀·station·레일 폭이 사실로 나온다",
-      cells.length >= 2 && Number.isFinite(solved.data?.station) && railW > 0,
-      JSON.stringify({ cells: cells.length, station: solved.data?.station, railW }),
-    );
-
-    // 7) 복도 계약 — 무관 포커스 변화가 허용하는 기하 변화는 레일 복도의 railW 평행이동
-    //    하나뿐이다: 레일이 가로지른 패널만 정확히 railW 이동하고, 폭·높이·y 는 불변이며,
-    //    가로지르지 않은 패널은 0 이동. 그 밖의 어떤 이동도 결함이다.
-    const rectOf = async (view) => {
-      const m = await rpc("ui.measure", { address: `win/${win}/chrome/layout/tab/${view}` }, win);
-      return m.ok ? m.data.rect : null;
-    };
-    const b0 = await rectOf(browserView);
-    const t0r = await rectOf(termView);
-    await rpc("tab.activate", { tab: termView }, win);
-    await sleep(900); // 340ms 주행 + 착지 스냅 여유
-    const b1 = await rectOf(browserView);
-    const t1r = await rectOf(termView);
-    const dx = Math.abs(b1.x - b0.x);
-    assert(
-      "복도 계약 — 레일이 가로지른 브라우저만 railW 평행이동(폭·y 불변)",
-      Math.abs(dx - railW) < 1.5 &&
-        Math.abs(b1.w - b0.w) < 1 &&
-        Math.abs(b1.h - b0.h) < 1 &&
-        Math.abs(b1.y - b0.y) < 1,
-      `dx=${dx.toFixed(3)} railW=${railW} w=${b0.w}->${b1.w} y=${b0.y}->${b1.y}`,
-    );
-    assert(
-      "복도 계약 — 가로지르지 않은 터미널은 전 축 0 이동",
-      Math.abs(t1r.x - t0r.x) < 1 &&
-        Math.abs(t1r.y - t0r.y) < 1 &&
-        Math.abs(t1r.w - t0r.w) < 1,
-      `${JSON.stringify(t0r)} → ${JSON.stringify(t1r)}`,
-    );
-
-    // 8) 위상 쓰기 0 / 착지 1 — 표면 소유자의 송신 누계를 veil 전후로 읽는다. 착지 일치는
-    //    결과이고, 이것은 그 결과가 "아무도 안 썼기 때문"임을 증명한다.
-    //    DOM 합성 엔진은 네이티브 표면이 없어 쓸 것도 없다 — 적용 대상이 아님을 밝히고 넘긴다.
-    if (ENGINE_SURFACE === "dom") {
-      console.log(
-        "· 표면 계수·프레임 게이트 — DOM 합성 엔진(네이티브 표면 없음)이라 적용 대상 아님",
-      );
-    } else {
-      const sendsOf = async () => {
-        const r = await rpc(`plugin.${ENGINE_PLUGIN}.surface.stats`, {}, win);
-        const row = (r.data?.views ?? []).find((v) => v.viewId === browserView);
-        return row ? Number(row.sends) : -1;
-      };
-      await rpc("tab.activate", { tab: browserView }, win);
-      await sleep(900);
-      const s0 = await sendsOf();
-      await rpc("tab.activate", { tab: termView }, win);
-      await sleep(120); // 위상 한복판(340ms 주행 중)
-      const sMid = await sendsOf();
-      await sleep(1200); // 착지 + 정착
-      const s1 = await sendsOf();
-      assert(
-        "위상 쓰기 0 — 스탠드인 뒤에서는 아무도 표면에 쓰지 않는다",
-        s0 >= 0 && sMid === s0,
-        `before=${s0} mid=${sMid}`,
-      );
-      assert(
-        "착지 1 — 해동 에지에 정확히 한 번 쓴다",
-        s1 - s0 === 1,
-        `before=${s0} after=${s1}`,
-      );
-    }
-
-    if (ENGINE_SURFACE === "native") {
-      // 9) 착지 일치 — 네이티브 child 의 프레임 이동량이 슬롯 이동량과 같다. 위상 중 표면은
-      //    움직이지 않고 착지에서 한 번 놓이므로, 착지 후 둘은 정확히 같은 만큼 옮겨져 있어야
-      //    한다(오프셋 무관 델타 비교 — 플러그인 크롬 높이를 코어는 모른다).
-      // 브라우저 child 는 창의 네이티브 계층에서 WryWebView 로 선다(메인 웹뷰는 KVO 래핑된
-      // 전체 창 크기 항목이라 제외). 슬롯과 폭이 같은 항목이 그 child 다 — 높이는 플러그인
-      // 툴바만큼 짧고, 코어는 그 오프셋을 모르므로 폭으로 짚고 이동량(델타)만 비교한다.
-      const childX = async (slotW) => {
-        const h = await rpc("window.layers", {}, win);
-        const lines = String(h.data?.hierarchy ?? "").split("\n");
-        let best = null;
-        for (const line of lines) {
-          if (!SURFACE_CLASS.test(line) || line.includes("NSKVONotifying_")) continue;
-          const m = /frame=\((-?[\d.]+), (-?[\d.]+), (-?[\d.]+), (-?[\d.]+)\)/.exec(line);
-          if (!m) continue;
-          const [x, , w] = [parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3])];
-          const d = Math.abs(w - slotW);
-          if (d < 8 && (!best || d < best.d)) best = { x, d };
-        }
-        return best?.x ?? null;
-      };
-      const c1 = await childX(b1.w);
-      await rpc("tab.activate", { tab: browserView }, win);
-      await sleep(900);
-      const b2 = await rectOf(browserView);
-      const c2 = await childX(b2.w);
-      if (c1 == null || c2 == null) {
-        assert("착지 일치 — 네이티브 프레임 판독", false, `c1=${c1} c2=${c2} slotW=${b1.w}`);
-      } else {
-        const slotDelta = b2.x - b1.x;
-        const childDelta = c2 - c1;
-        assert(
-          "착지 일치 — 네이티브 child 이동량 == 슬롯 이동량(±1.5px)",
-          Math.abs(slotDelta - childDelta) < 1.5,
-          `slot=${slotDelta.toFixed(2)} child=${childDelta.toFixed(2)}`,
-        );
-      }
-    }
-    }
-
-  // 9.5) 절대 정합 — 델타 비교는 일정한 오프셋을 통과시킨다. 착지 후 네이티브 child 의
-  //      좌·우 경계가 슬롯의 그것과 같은 자리인지 절대값으로 잰다(가로는 오프셋이 없어야
-  //      한다 — 세로만 플러그인 크롬 높이만큼 다르다).
-  if (ENGINE_SURFACE === "native") {
-    await rpc("tab.activate", { tab: browserView }, win);
-    await sleep(1100);
-    const slot = (await measure())?.rect;
-    const h = await rpc("window.layers", {}, win);
-    let child = null;
-    for (const line of String(h.data?.hierarchy ?? "").split("\n")) {
-      if (!SURFACE_CLASS.test(line) || line.includes("NSKVONotifying_")) continue;
-      const m = /frame=\((-?[\d.]+), (-?[\d.]+), (-?[\d.]+), (-?[\d.]+)\)/.exec(line);
-      if (!m) continue;
-      const [x, y, w, hh] = m.slice(1, 5).map(parseFloat);
-      if (Math.abs(w - slot.w) < 8 && (!child || Math.abs(w - slot.w) < Math.abs(child.w - slot.w)))
-        child = { x, y, w, h: hh };
-    }
-    // 슬롯의 분수 rect 를 표면 규칙(ceil-left / floor-right)으로 접은 것이 표면이 서야 할 자리다.
-    const sx = Math.ceil(slot.x);
-    const sw = Math.floor(slot.x + slot.w) - sx;
-    assert(
-      "절대 정합 — 착지한 표면이 접힌 표면 rect 에 정확히 선다(±1px)",
-      !!child && Math.abs(child.x - sx) <= 1 && Math.abs(child.w - sw) <= 1,
-      child
-        ? `child x=${child.x} w=${child.w} / surface x=${sx} w=${sw} (slot x=${slot.x} w=${slot.w})`
-        : "child 판독 실패",
-    );
-  }
-
-
-  // 9.7) 레일 영역 인계 — 빠질 자리와 생길 자리. 규정: 빠지는 자리는 **원래 서 있던 것**이
-  //      닫히고(새것을 끼워넣지 않는다), 생기는 자리에 새것이 열린다. 이어져야 하는 것은
-  //      표면이므로 두 자리가 각자 투영 표면을 들고 있어야 한다 — 도착 자리가 빈 채로 열리면
-  //      그것이 "새것으로 교체"로 보인다. 주행 한복판에 투영 프레임 수와 x 를 직접 센다.
-  {
-    await rpc("tab.activate", { tab: browserView }, win);
-    await sleep(900);
-    const places = async () => {
-      const t = await rpc("ui.tree", {}, win);
-      const nodes = JSON.stringify(t.data ?? {});
-      const n = (re) => (nodes.match(re) ?? []).length;
-      return {
-        // 상주·도착 = rail/left, 빠지는 자리 = rail/left/leaving. nodePath 만 센다
-        // (address 가 같은 문자열을 한 번 더 싣는다).
-        standing: n(/"nodePath":"rail\/left"/g),
-        leaving: n(/"nodePath":"rail\/left\/leaving"/g),
-        // 표면 — 각 자리가 자기 투영 프레임을 들고 있어야 한다(빈 자리가 열리면 "교체"다).
-        surfaces: n(/"nodePath":"projection\/left\/frame\//g),
-        // 어떤 표면인지 — 빠지는 자리는 자기가 들고 있던 투영으로 닫혀야 한다. 두 자리가
-        // 같은 refKey 면 빠지는 자리가 새 투영으로 교체된 것이다(= 새로 마운트됐다).
-        refKeys: (nodes.match(/"nodePath":"projection\/left\/frame\/([^"]+)"/g) ?? []).map(
-          (m) => m.replace(/.*frame\//, "").replace(/"$/, ""),
+    // 생성 시점부터 로컬 fixture URL을 사용하고 guest DOM 준비 사건을 기다린다.
+    // 고정 sleep·재시도 폴링·navigate 직후 document 교체 레이스가 없다.
+    for (const tabId of tabIds) {
+      must(await rpc("tab.activate", { tab: tabId }, win), `tab.activate ${tabId}`);
+      must(
+        await rpc(
+          `plugin.${BROWSER_PLUGIN}.dom.wait-for`,
+          { selector: "h1", timeoutMs: 8_000, viewId: tabId },
+          win,
         ),
-      };
-    };
-    const resting = await places();
-    await rpc("tab.activate", { tab: termView }, win);
-    let during = { standing: 0, leaving: 0, surfaces: 0 };
-    for (let i = 0; i < 8; i++) {
-      const now = await places();
-      if (now.leaving > during.leaving) during = now;
-      if (during.leaving >= 1) break;
-    }
-    await sleep(900);
-    const landed = await places();
-    assert(
-      "레일 영역 인계 — 주행 중 빠질 자리와 생길 자리가 함께 서고 각자 표면을 든다",
-      resting.standing === 1 &&
-        resting.leaving === 0 &&
-        during.standing === 1 &&
-        during.leaving === 1 &&
-        during.surfaces >= 2 &&
-        landed.standing === 1 &&
-        landed.leaving === 0,
-      `정차=${JSON.stringify(resting)} 주행중=${JSON.stringify(during)} 착지=${JSON.stringify(landed)}`,
-    );
-  }
-
-  // 10) 행 불일치 스위칭 — 사용자가 규정한 예외 규칙의 라이브 증명. 아래를 둘로 나눠
-  //     [위 1 / 아래 2] 를 만들고 아래 뒷쪽을 포커스하면, 그 패널이 앞으로 스위칭되고
-  //     해가 만들어진 인접(switched)을 보고해야 한다(점선 봉합의 근거).
-  {
-    await rpc("tab.activate", { tab: termView }, win);
-    const below = await rpc("pane.split", { side: "bottom", program: termProgram }, win);
-    if (below.ok) {
-      const rear = await rpc("pane.split", { side: "right", program: termProgram }, win);
-      if (rear.ok && rear.data?.tabId) {
-        await rpc("tab.activate", { tab: rear.data.tabId }, win);
-        await sleep(700);
-        const solved = await rpc("layout.arrangement", {}, win);
-        const cells = solved.data?.cells ?? [];
-        const focusedLeft = cells.find((c) => c.id === rear.data.paneId)?.rect?.left;
-        assert(
-          "행 불일치 스위칭 — 뒷쪽 포커스가 앞으로 서고 해가 그것을 보고한다",
-          solved.data?.switched === true &&
-            Math.abs((focusedLeft ?? -1) - solved.data.station) < 0.01,
-          `switched=${solved.data?.switched} focusedLeft=${focusedLeft} station=${solved.data?.station}`,
-        );
-      } else {
-        assert("행 불일치 스위칭 — 픽스처 분할", false, JSON.stringify(rear.data ?? rear.message));
+        `browser ready ${tabId}`,
+      );
+      const identity = must(
+        await rpc(
+          `plugin.${BROWSER_PLUGIN}.dom.text`,
+          { selector: "h1", viewId: tabId },
+          win,
+        ),
+        `browser identity ${tabId}`,
+      );
+      if (identity.text !== "Native Boundary") {
+        throw new Error(`${tabId}: 페이지 신원 불일치(${JSON.stringify(identity.text)})`);
       }
-    } else {
-      assert("행 불일치 스위칭 — 픽스처 분할", false, JSON.stringify(below.message));
     }
-  }
 
-  // 10.5) 모션 판독(옵션) — SLOT_FREEZE_MOTION 으로 활강 구간을 프레임 열로 남긴다.
-  //       정착 스냅샷·계수는 모션에 대해 아무것도 증명하지 않는다(핸드오프 §1·§6-4): 출력
-  //       픽셀만이 근거다. window.record 는 가림 감지를 캡처 동안 스스로 끄므로 사용자 포커스를
-  //       가져오지 않는다. 포커스를 잡아야만 성립하는 검증은 이 하니스에서 금지다.
-  if (process.env.SLOT_FREEZE_MOTION) {
-    const dir =
-      process.env.SLOT_FREEZE_MOTION_DIR || path.join(os.tmpdir(), "slot-freeze-motion");
-    await rpc("tab.activate", { tab: browserView }, win);
-    await sleep(900);
-    // 카메라를 먼저 돌리고 위상을 태운다 — 한 연결로는 불가능하다(녹화가 프레임 수만큼 응답을
-    // 붙잡는다). 위상을 먼저 태우고 녹화하면 카메라 준비 지연만큼 앞이 잘려 이미 정착한 화면만
-    // 남는다(실측 두 번). 카메라 = 별 연결, 조작자 = 주 연결.
-    const cam = await openClient();
-    const rec = cam.rpc("window.record", { dir, frames: 34, intervalMs: 16 }, win);
-    // 카메라 준비 — 첫 프레임은 요청 즉시가 아니라 캡처 파이프라인이 서는 뒤에 떨어진다
-    // (실측 프레임 간격 ~108ms, 첫 프레임 지연 ~500ms). 짧게 기다리면 위상이 카메라보다
-    // 앞서 끝나 꼬리만 남는다.
-    await sleep(800);
-    await rpc("ui.input.click", { address: tabAddress.terminal }, win);
-    const done = await rec;
-    cam.close();
-    console.log(`  모션 프레임: ${done.data?.frames ?? "?"}장 → ${done.data?.dir ?? dir}`);
-    await sleep(500);
-  }
-
-  // 11) 시각 확인(옵션) — SLOT_FREEZE_SHOTS 로 정지 프레임 두 장을 남긴다: 브라우저 포커스와
-  //    터미널 포커스. 레일이 포커스 패널의 왼쪽 선에 서 있는지, 복도가 열린 자리가 맞는지,
-  //    표면이 온전히 렌더되는지는 사람이 픽셀로 확인해야 하는 사실이다(R3).
-  if (process.env.SLOT_FREEZE_SHOTS) {
-    const dir = process.env.SLOT_FREEZE_SHOTS_DIR || path.join(os.tmpdir(), "slot-freeze-shots");
-    for (const [name, tab] of [["browser-focus", browserView], ["terminal-focus", termView]]) {
-      await rpc("tab.activate", { tab }, win);
-      await sleep(900);
-      const shot = await rpc("window.snapshot", { path: path.join(dir, `${name}.png`) }, win);
-      console.log(`  캡처 ${name}: ${shot.ok ? shot.media?.path ?? shot.data?.media?.path : shot.message}`);
+    const tree = must(await rpc("ui.tree", {}, win), "ui.tree");
+    const addresses = tabIds.map((id) => addressForTab(tree, id));
+    const provision = must(await rpc("framework.provision", {}, win), "framework.provision");
+    const native = provision.nativeChildWebview === true;
+    const labels = tabIds.map((id) => `b-${win}-${id}`);
+    let writes = new Map();
+    let writeDeltaBaselineReady = false;
+    if (native) {
+      const initial = must(await rpc("webview.composition", {}, win), "initial composition");
+      writes = new Map(
+        (initial.placement ?? []).map((p) => [p.label, Number(p.boundsWrites ?? 0)]),
+      );
     }
-  }
 
+    let frameCount = 0;
+    for (let cycle = 0; cycle < CYCLES; cycle += 1) {
+      for (let side = 0; side < addresses.length; side += 1) {
+        const name = `${String(cycle * 2 + side + 1).padStart(2, "0")}-${side ? "right" : "left"}`;
+        const dir = path.join(EVIDENCE_ROOT, name);
+        const clicked = must(
+          await rpc(
+            "ui.input.click",
+            {
+              address: addresses[side],
+              recordDir: dir,
+              recordFrames: FRAMES_PER_CLICK,
+              recordIntervalMs: 16,
+              recordLeadMs: 700,
+            },
+            win,
+          ),
+          `교차 클릭 ${name}`,
+        );
+        const captured = Number(clicked.recording?.frames ?? 0);
+        if (captured !== FRAMES_PER_CLICK) {
+          throw new Error(`${name}: 캡처 ${captured}/${FRAMES_PER_CLICK}`);
+        }
+        const files = fs.readdirSync(dir).filter((f) => /^f\d{4}\.png$/.test(f));
+        if (files.length !== FRAMES_PER_CLICK) {
+          throw new Error(`${name}: PNG ${files.length}/${FRAMES_PER_CLICK}`);
+        }
+        if (files.some((f) => fs.statSync(path.join(dir, f)).size === 0)) {
+          throw new Error(`${name}: 0바이트 PNG`);
+        }
+        frameCount += files.length;
+
+        if (native) {
+          const current = must(await rpc("webview.composition", {}, win), `composition ${name}`);
+          writes = assertComposition(
+            current,
+            labels,
+            writeDeltaBaselineReady ? writes : new Map(),
+          );
+          writeDeltaBaselineReady = true;
+        }
+        console.log(`✓ ${name}: ${FRAMES_PER_CLICK} frames · composition exact`);
+      }
+    }
+
+    const finalPath = path.join(EVIDENCE_ROOT, "final.png");
+    must(await rpc("window.snapshot", { path: finalPath }, win), "final snapshot");
+    if (!fs.existsSync(finalPath) || fs.statSync(finalPath).size === 0) {
+      throw new Error("최종 스냅샷이 저장되지 않았다");
+    }
+    console.log(
+      `✓ slot-freeze GREEN — 실제 교차 클릭 ${CYCLES * 2}회, 연속 프레임 ${frameCount}장, ` +
+        `${native ? "Tauri DOM/native 1:1" : "DOM content view"}`,
+    );
+    console.log(`증거: ${EVIDENCE_ROOT}`);
   } finally {
-  // ── 자기정리 — 실패 경로 포함 픽스처 창 폐쇄(멱등: 다음 실행은 새로 연다).
-    // KEEP=1 이면 검안을 위해 보존한다(brestore 와 동일 관례).
-    if (process.env.KEEP !== "1") await releaseFixtureWindow(rpc, FIXTURE_ROOT).catch(() => {});
-    else console.log(`KEEP=1 — 픽스처 창 보존: ${win}`);
+    if (win && homeOverride) {
+      await rpc(
+        "plugin.settings.reset",
+        { id: BROWSER_PLUGIN, key: "homeUrl", scope: "project" },
+        win,
+      ).catch(() => {});
+    }
+    if (win && process.env.KEEP !== "1") {
+      await releaseFixtureWindow(rpc, FIXTURE_ROOT).catch(() => {});
+    } else if (win) {
+      console.log(`KEEP=1 — 픽스처 창 보존: ${win}`);
+    }
+    client.close();
+    await new Promise((resolve) => page.server.close(resolve));
   }
-
-  if (failures > 0) {
-    console.log(`✗ slot-freeze E2E 실패 ${failures}건`);
-    process.exit(1);
-  }
-  console.log("✓ slot-freeze E2E 전체 GREEN");
-  process.exit(0);
 }
 
-main().catch((e) => {
-  console.error(`✗ slot-freeze E2E 중단: ${e.message}`);
-  process.exit(1);
+main().catch((error) => {
+  console.error(`✗ slot-freeze RED — ${error instanceof Error ? error.message : String(error)}`);
+  process.exitCode = 1;
 });
