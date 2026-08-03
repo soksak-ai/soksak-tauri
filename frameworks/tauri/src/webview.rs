@@ -219,7 +219,12 @@ mod layer {
     static SURFACES: LazyLock<NativeSurfaceLedger> = LazyLock::new(NativeSurfaceLedger::default);
     // 브라우저 label → 전용 layer-backed 이동 host. WKWebView 자체 frame은 host 내부
     // (0,0,w,h)에 고정하고, 화면 배치·애니메이션·hit-test surface는 host가 소유한다.
-    static SURFACE_HOSTS: LazyLock<Mutex<HashMap<String, usize>>> =
+    #[derive(Clone)]
+    struct SurfaceHost {
+        ptr: usize,
+        window_label: String,
+    }
+    static SURFACE_HOSTS: LazyLock<Mutex<HashMap<String, SurfaceHost>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
     // 교체 전 원본 hitTest IMP. 클래스(WryWebView) 단위 스위즐이라 앱 전역 1회면 충분.
     static ORIG_HIT_TEST: AtomicUsize = AtomicUsize::new(0);
@@ -230,6 +235,9 @@ mod layer {
             if let Some(w) = layers.get_mut(label) {
                 w.overlay = active;
             }
+        }
+        if active {
+            lower_window_surface_hosts(label);
         }
     }
 
@@ -266,8 +274,47 @@ mod layer {
         SURFACE_HOSTS
             .lock()
             .ok()
-            .and_then(|m| m.get(label).copied())
+            .and_then(|m| m.get(label).map(|host| host.ptr))
             .unwrap_or(0)
+    }
+
+    fn place_surface_host(label: &str, mode: NSWindowOrderingMode) {
+        let host = SURFACE_HOSTS.lock().ok().and_then(|m| m.get(label).cloned());
+        let Some(host) = host else { return };
+        let main_ptr = LAYERS
+            .lock()
+            .ok()
+            .and_then(|layers| layers.get(&host.window_label).map(|window| {
+                if mode == NSWindowOrderingMode::Above && window.overlay { 0 } else { window.main_ptr }
+            }))
+            .unwrap_or(0);
+        if main_ptr == 0 { return }
+        let host_view = unsafe { &*(host.ptr as *const NSView) };
+        let main_view = unsafe { &*(main_ptr as *const NSView) };
+        let Some(parent) = (unsafe { main_view.superview() }) else { return };
+        parent.addSubview_positioned_relativeTo(host_view, mode, Some(main_view));
+    }
+
+    pub fn raise_surface_host(label: &str) {
+        place_surface_host(label, NSWindowOrderingMode::Above);
+    }
+
+    pub fn lower_surface_host(label: &str) {
+        place_surface_host(label, NSWindowOrderingMode::Below);
+    }
+
+    pub fn lower_window_surface_hosts(window_label: &str) {
+        let labels = SURFACE_HOSTS
+            .lock()
+            .ok()
+            .map(|hosts| hosts.iter()
+                .filter(|(_, host)| host.window_label == window_label)
+                .map(|(label, _)| label.clone())
+                .collect::<Vec<_>>())
+            .unwrap_or_default();
+        for label in labels {
+            lower_surface_host(&label);
+        }
     }
 
     // child WKWebView를 전용 layer-backed NSView에 넣는다. host frame이 화면 좌표의 단일 진실이고
@@ -316,7 +363,7 @@ mod layer {
             let ptr = Retained::as_ptr(&host) as usize;
             SURFACES.register(ptr, Some(&surface_label));
             if let Ok(mut hosts) = SURFACE_HOSTS.lock() {
-                hosts.insert(surface_label, ptr);
+                hosts.insert(surface_label, SurfaceHost { ptr, window_label });
             }
         });
     }
@@ -330,10 +377,10 @@ mod layer {
     }
 
     pub fn remove_surface_host(label: &str) {
-        let ptr = SURFACE_HOSTS.lock().ok().and_then(|mut m| m.remove(label));
-        let Some(ptr) = ptr else { return };
-        SURFACES.unregister(ptr);
-        let host = unsafe { &*(ptr as *const NSView) };
+        let host = SURFACE_HOSTS.lock().ok().and_then(|mut m| m.remove(label));
+        let Some(host) = host else { return };
+        SURFACES.unregister(host.ptr);
+        let host = unsafe { &*(host.ptr as *const NSView) };
         host.removeFromSuperview();
     }
 
@@ -1335,6 +1382,13 @@ fn animate_child_frame(
         position.setToValue(Some(&to_position));
         position.setDuration(duration);
         position.setTimingFunction(Some(&curve));
+        layer::raise_surface_host(&label);
+        let completion_label = label.clone();
+        let completion = block2::RcBlock::new(move || {
+            layer::lower_surface_host(&completion_label);
+        });
+        CATransaction::begin();
+        CATransaction::setCompletionBlock(Some(&completion));
         layer.addAnimation_forKey(&position, Some(ns_string!("soksak.surface.position")));
 
         if from_bounds != to_bounds {
@@ -1347,6 +1401,7 @@ fn animate_child_frame(
             bounds.setTimingFunction(Some(&curve));
             layer.addAnimation_forKey(&bounds, Some(ns_string!("soksak.surface.bounds")));
         }
+        CATransaction::commit();
     })
     .map_err(|e| e.to_string())
 }
