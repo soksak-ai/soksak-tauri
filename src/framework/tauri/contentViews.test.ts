@@ -7,6 +7,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const invoke = vi.fn(async (_cmd: string, _args?: unknown) => undefined as unknown);
 const noteSurfaceWrite = vi.fn();
 const listeners = new Map<string, (payload: Record<string, unknown>) => void>();
+let motionListener:
+  | ((active: boolean, kinds: ("move" | "resize")[], scope: Set<string> | null) => void)
+  | null = null;
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (cmd: string, args?: unknown) => invoke(cmd, args),
 }));
@@ -19,6 +22,16 @@ vi.mock("../../plugins/hooks", () => ({
 vi.mock("./slotFreezeHost", () => ({
   invalidateSlotSnapshot: vi.fn(),
   noteSurfaceWrite: (...args: unknown[]) => noteSurfaceWrite(...args),
+}));
+vi.mock("../../lib/layoutMotion", () => ({
+  onLayoutMotion: (
+    fn: (active: boolean, kinds: ("move" | "resize")[], scope: Set<string> | null) => void,
+  ) => {
+    motionListener = fn;
+    return () => {
+      if (motionListener === fn) motionListener = null;
+    };
+  },
 }));
 
 class ResizeObserverMock {
@@ -49,6 +62,7 @@ describe("네이티브 자식 뷰 구현", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
     listeners.clear();
+    motionListener = null;
     ResizeObserverMock.instances = [];
     vi.stubGlobal("ResizeObserver", ResizeObserverMock);
   });
@@ -193,7 +207,7 @@ describe("네이티브 자식 뷰 구현", () => {
     ]);
   });
 
-  it("veil은 제품 visibility를 건드리지 않고 해동에서 bounds→native veil 해제→표면 ack 순서를 지킨다", async () => {
+  it("veil은 native presentation을 건드리지 않고 해동에서 bounds→표면 ack 순서를 지킨다", async () => {
     const slot = document.createElement("div");
     slot.setAttribute("data-content-view-body", "b--v1");
     let x = 10;
@@ -208,10 +222,8 @@ describe("네이티브 자식 뷰 구현", () => {
     invoke.mockClear();
 
     listeners.get("content-view.veiled")?.({ label: "b--v1", veiled: true, hidden: true });
-    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith(
-      "webview_veil",
-      { label: "b--v1", hidden: true },
-    ));
+    await Promise.resolve();
+    expect(invoke).not.toHaveBeenCalled();
     invoke.mockClear();
     x = 120;
     listeners.get("layout.reflow")?.({ activeSpaceId: "c1" });
@@ -222,9 +234,42 @@ describe("네이티브 자식 뷰 구현", () => {
     await vi.waitFor(() => expect(invoke.mock.calls).toEqual([
       ["webview_alive", { label: "b--v1" }],
       ["webview_bounds", { label: "b--v1", x: 120, y: 20, w: 300, h: 200 }],
-      ["webview_veil", { label: "b--v1", hidden: false }],
     ]));
     expect(noteSurfaceWrite).toHaveBeenCalledWith("b--v1");
+  });
+
+  it("move 에지에서 CSS FLIP 델타를 native animation 한 번으로 번역하고 종료에서 정착한다", async () => {
+    const frame = document.createElement("div");
+    frame.className = "tab-body flip-move";
+    frame.setAttribute("style", "--flip-x: 410px");
+    const slot = document.createElement("div");
+    slot.setAttribute("data-content-view-body", "browser--v1");
+    slot.getBoundingClientRect = () => ({
+      x: 620, y: 112, left: 620, top: 112, right: 832, bottom: 570, width: 212, height: 458,
+    }) as DOMRect;
+    frame.appendChild(slot);
+    document.body.appendChild(frame);
+
+    const { installNativeContentViewComposition, nativeHost } = await load();
+    installNativeContentViewComposition();
+    await nativeHost.open("browser--v1", { url: "https://x" });
+    invoke.mockClear();
+
+    motionListener?.(true, ["move"], new Set(["v1"]));
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("webview_animate_bounds", {
+      label: "browser--v1", x: 210, y: 112, w: 212, h: 458,
+      durationMs: 340,
+      timing: [0.4, 0, 0.2, 1],
+    }));
+
+    invoke.mockClear();
+    slot.getBoundingClientRect = () => ({
+      x: 210, y: 112, left: 210, top: 112, right: 422, bottom: 570, width: 212, height: 458,
+    }) as DOMRect;
+    motionListener?.(false, [], null);
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("webview_bounds", {
+      label: "browser--v1", x: 210, y: 112, w: 212, h: 458,
+    }));
   });
 
   it("복귀 에지에서 떨어진 child를 플러그인 재마운트 없이 어댑터가 복구한다", async () => {
