@@ -5,6 +5,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const invoke = vi.fn(async (_cmd: string, _args?: unknown) => undefined as unknown);
+const noteSurfaceWrite = vi.fn();
 const listeners = new Map<string, (payload: Record<string, unknown>) => void>();
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (cmd: string, args?: unknown) => invoke(cmd, args),
@@ -14,6 +15,10 @@ vi.mock("../../plugins/hooks", () => ({
     listeners.set(event, fn);
     return { dispose: () => listeners.delete(event) };
   },
+}));
+vi.mock("./slotFreezeHost", () => ({
+  invalidateSlotSnapshot: vi.fn(),
+  noteSurfaceWrite: (...args: unknown[]) => noteSurfaceWrite(...args),
 }));
 
 class ResizeObserverMock {
@@ -33,6 +38,7 @@ class ResizeObserverMock {
 async function load() {
   vi.resetModules();
   invoke.mockReset();
+  noteSurfaceWrite.mockReset();
   invoke.mockResolvedValue(undefined);
   const module = await import("./contentViews");
   module.__resetNativeContentViewCompositionForTest();
@@ -187,7 +193,7 @@ describe("네이티브 자식 뷰 구현", () => {
     ]);
   });
 
-  it("veil 중에는 쓰지 않고 해동에서 bounds를 먼저 확정한 뒤 표시한다", async () => {
+  it("veil은 제품 visibility를 건드리지 않고 해동에서 bounds→native veil 해제→표면 ack 순서를 지킨다", async () => {
     const slot = document.createElement("div");
     slot.setAttribute("data-content-view-body", "b--v1");
     let x = 10;
@@ -203,8 +209,8 @@ describe("네이티브 자식 뷰 구현", () => {
 
     listeners.get("content-view.veiled")?.({ label: "b--v1", veiled: true, hidden: true });
     await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith(
-      "webview_visible",
-      { label: "b--v1", visible: false, focus: false },
+      "webview_veil",
+      { label: "b--v1", hidden: true },
     ));
     invoke.mockClear();
     x = 120;
@@ -216,8 +222,9 @@ describe("네이티브 자식 뷰 구현", () => {
     await vi.waitFor(() => expect(invoke.mock.calls).toEqual([
       ["webview_alive", { label: "b--v1" }],
       ["webview_bounds", { label: "b--v1", x: 120, y: 20, w: 300, h: 200 }],
-      ["webview_visible", { label: "b--v1", visible: true, focus: false }],
+      ["webview_veil", { label: "b--v1", hidden: false }],
     ]));
+    expect(noteSurfaceWrite).toHaveBeenCalledWith("b--v1");
   });
 
   it("복귀 에지에서 떨어진 child를 플러그인 재마운트 없이 어댑터가 복구한다", async () => {
