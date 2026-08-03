@@ -89,4 +89,12 @@ describe("Tauri native-composition ownership", () => {
       .join("\n");
     expect(outsideTauri).not.toMatch(/webview_animate_bounds|NSAnimationContext/);
   });
+
+  it("WKWebView 자체가 아니라 전용 layer-backed surface host만 이동한다", () => {
+    const source = readFileSync(resolve(ROOT, "frameworks/tauri/src/webview.rs"), "utf8");
+    expect(source).toMatch(/adopt_surface_host/);
+    expect(source).toMatch(/surface_host_ptr/);
+    expect(source).toMatch(/host\.animator\(\)\.setFrame/);
+    expect(source).not.toMatch(/view\.animator\(\)\.setFrame/);
+  });
 });
