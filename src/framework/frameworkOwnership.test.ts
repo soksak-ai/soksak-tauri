@@ -67,4 +67,11 @@ describe("Tauri native-composition ownership", () => {
       .replace(/^\s*\/\/.*$/gm, "");
     expect(source).not.toMatch(/translate|zIndex|z-index|OFFSCREEN/);
   });
+
+  it("폐기한 PNG·veil 합성 계약은 제품 코드에 남지 않는다", () => {
+    const offenders = productionFiles(SRC)
+      .filter((file) => /slotFreeze|content-view\.veiled|webview_snapshot/.test(readFileSync(file, "utf8")))
+      .map((file) => relative(SRC, file));
+    expect(offenders).toEqual([]);
+  });
 });
