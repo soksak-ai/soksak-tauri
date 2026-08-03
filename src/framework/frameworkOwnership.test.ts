@@ -74,27 +74,29 @@ describe("Tauri native-composition ownership", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("AppKit frame 전환은 Tauri 어댑터에만 있고 Electron·공통 DOM에는 새지 않는다", () => {
+  it("Core Animation frame 전환은 Tauri 어댑터에만 있고 Electron·공통 DOM에는 새지 않는다", () => {
     const sources = [
       "frameworks/tauri/src/webview.rs",
       "frameworks/tauri/src/lib.rs",
       "frameworks/tauri/Cargo.toml",
     ].map((file) => readFileSync(resolve(ROOT, file), "utf8")).join("\n");
     expect(sources).toMatch(/webview_animate_bounds/);
-    expect(sources).toMatch(/NSAnimationContext/);
+    expect(sources).toMatch(/CABasicAnimation/);
+    expect(sources).toMatch(/CATransaction/);
     expect(sources).toMatch(/objc2-quartz-core/);
     const outsideTauri = productionFiles(SRC)
       .filter((file) => !relative(SRC, file).startsWith("framework/tauri/"))
       .map((file) => readFileSync(file, "utf8"))
       .join("\n");
-    expect(outsideTauri).not.toMatch(/webview_animate_bounds|NSAnimationContext/);
+    expect(outsideTauri).not.toMatch(/webview_animate_bounds|CABasicAnimation|CATransaction/);
   });
 
   it("WKWebView 자체가 아니라 전용 layer-backed surface host만 이동한다", () => {
     const source = readFileSync(resolve(ROOT, "frameworks/tauri/src/webview.rs"), "utf8");
     expect(source).toMatch(/adopt_surface_host/);
     expect(source).toMatch(/surface_host_ptr/);
-    expect(source).toMatch(/host\.animator\(\)\.setFrame/);
+    expect(source).toMatch(/layer\.addAnimation_forKey/);
+    expect(source).not.toMatch(/host\.animator\(\)\.setFrame/);
     expect(source).not.toMatch(/view\.animator\(\)\.setFrame/);
   });
 });
