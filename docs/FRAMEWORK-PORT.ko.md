@@ -679,6 +679,12 @@ offscreen 축은 코어의 공백이 **아니다**. 2026-07-08 에 검증됐고 
 `ResizeObserver`가 Tauri 어댑터를 깨운다. 어댑터는 label별 IPC를 직렬화하고 대기 중 사건을 최신
 rect 한 번으로 합친다. Electron 어댑터에는 이 구독과 추종 상태가 전혀 없다.
 
+move·resize 제스처에서 Tauri 어댑터는 공개 모션 범위에 든 슬롯만 유한 기하
+거래로 바꾼다. 선디코드 DOM 스탠드인이 슬롯을 따라가는 동안 네이티브 bounds를
+멈추고, 종료 에지에서 최종 접힌 rect를 원자적으로 적용한 뒤 복귀시킨다. 이 엔진은
+`src/framework/tauri/slotFreeze.ts`에만 있으며 Electron과 코어에는 설치되지 않는다.
+Electron은 언제나 `data-content-view-body`의 DOM 자식 배치만 수행한다.
+
 `webview.composition`은 DOM 앵커·실제 네이티브 frame뿐 아니라 label별 슬롯 rect, 마지막 적용
 rect, 가시성, veil, 동기화 대기 상태를 공개한다. 합성 상태를 브라우저 제품 플러그인이
 `surface.stats`로 재선언하지 않는다.

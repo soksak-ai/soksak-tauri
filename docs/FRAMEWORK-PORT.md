@@ -683,6 +683,14 @@ rAF. `layout.reflow` wakes position changes and `ResizeObserver` wakes size chan
 adapter. That adapter serializes IPC per label and coalesces queued events into one read of the latest
 rect. The Electron adapter has none of these subscriptions or follower state.
 
+During move and resize gestures, the Tauri adapter turns only the slots in the
+public motion scope into finite geometry transactions. A pre-decoded DOM
+stand-in follows the slot while native bounds are paused; at the end edge the
+adapter applies the final folded rect atomically and restores the surface. This
+engine exists only in `src/framework/tauri/slotFreeze.ts`; it is installed in
+neither Electron nor core. Electron always performs DOM-child placement under
+`data-content-view-body` and nothing else.
+
 `webview.composition` exposes not only DOM anchors and actual native frames, but also each label's slot
 rect, last applied rect, visibility, veil and pending-sync state. The browser product plugin does not
 redeclare composition state as `surface.stats`.
