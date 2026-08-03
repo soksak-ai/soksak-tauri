@@ -8,7 +8,6 @@ import { describe, expect, it } from "vitest";
 const ROOT = resolve(import.meta.dirname, "../..");
 const SRC = resolve(ROOT, "src");
 const TAURI_FIXES = [
-  "nativeMotion.ts",
   "railHoleClip.ts",
   "railHoleClipHost.ts",
   "surfaceAudit.ts",
@@ -73,5 +72,15 @@ describe("Tauri native-composition ownership", () => {
       .filter((file) => /slotFreeze|content-view\.veiled|webview_snapshot/.test(readFileSync(file, "utf8")))
       .map((file) => relative(SRC, file));
     expect(offenders).toEqual([]);
+  });
+
+  it("동기화할 수 없는 CSS↔AppKit 이중 애니메이션 계약은 남지 않는다", () => {
+    expect(existsSync(resolve(SRC, "framework/tauri/nativeMotion.ts"))).toBe(false);
+    const sources = [
+      "frameworks/tauri/src/webview.rs",
+      "frameworks/tauri/src/lib.rs",
+      "frameworks/tauri/Cargo.toml",
+    ].map((file) => readFileSync(resolve(ROOT, file), "utf8")).join("\n");
+    expect(sources).not.toMatch(/webview_animate_bounds|NSAnimationContext|objc2-quartz-core/);
   });
 });
