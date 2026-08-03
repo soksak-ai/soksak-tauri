@@ -1,8 +1,8 @@
 // Tauri 콘텐츠 뷰 구현 — 콘텐츠가 문서 밖에 산다.
 //
 // 플러그인은 `data-content-view-body=<label>` 자리만 선언한다. 이 어댑터가 그 자리를 읽어
-// OS 자식 뷰의 bounds·가시성·배치 거래를 전담한다. 추종 입력은 레이아웃 커밋 사건과
-// ResizeObserver뿐이다. 프레임 루프나 포인터 추측은 없다.
+// OS 자식 뷰의 bounds·가시성·배치 거래를 전담한다. 추종 입력은 공개 레이아웃 사건과
+// DOM mutation·ResizeObserver뿐이다. 프레임 루프나 포인터 추측은 없다.
 import { invoke } from "@tauri-apps/api/core";
 import { moduleState } from "../../lib/moduleState";
 import { surfaceRectOf } from "../../lib/surfaceRect";
@@ -56,6 +56,7 @@ export interface NativeContentViewCompositionFact {
 const composition = moduleState("framework/tauri.fix#contentViewComposition", () => ({
   surfaces: new Map<string, SurfaceState>(),
   subscriptions: [] as Disposable[],
+  mutationObserver: null as MutationObserver | null,
   installed: false,
 }));
 
@@ -216,7 +217,11 @@ export async function prepareNativeContentViewMove(
     const move = viewId ? byView.get(viewId) : undefined;
     const current = appliedFrame(state);
     if (!move || !current || Math.abs(move.dx) < 0.5) return [];
-    return [{ state, rect: { ...current, x: Math.round(current.x - move.dx) } }];
+    return [{
+      state,
+      before: current,
+      rect: { ...current, x: Math.round(current.x - move.dx) },
+    }];
   });
   if (targets.length === 0) return {
     mode: "glide",
@@ -238,16 +243,32 @@ export async function prepareNativeContentViewMove(
   }
 
   let closed = false;
-  const release = (forceSync: boolean) => {
-    if (closed) return Promise.resolve();
-    closed = true;
-    for (const { state } of targets) state.precommitting = false;
-    return Promise.all(targets.map(({ state }) => requestSlotSync(state, forceSync))).then(() => {});
-  };
   return {
     mode: "snap",
-    commit: () => release(true),
-    cancel: () => { void release(true).catch(() => {}); },
+    commit: async () => {
+      if (closed) return;
+      closed = true;
+      await Promise.all(targets.map(async ({ state, before, rect }) => {
+        state.precommitting = false;
+        const slot = findContentViewSlot(state.label, document);
+        if (!slot) return;
+        const actual = slotRect(slot);
+        if (rectKey(actual) === rectKey(rect)) return;
+        // React의 부모 layout effect는 자식 DOM 이동이 확정되기 전에 실행될 수 있다. 이때
+        // 이전 DOM 좌표를 다시 쓰면 precommit을 스스로 되돌린다. 이전 좌표라면 mutation
+        // 사건이 최종 DOM을 알릴 때까지 준비한 frame을 유지한다.
+        if (rectKey(actual) === rectKey(before)) return;
+        await requestSlotSync(state, true);
+      }));
+    },
+    cancel: () => {
+      if (closed) return;
+      closed = true;
+      for (const { state } of targets) state.precommitting = false;
+      for (const { state } of targets) {
+        void requestSlotSync(state, true).catch(() => {});
+      }
+    },
   };
 }
 
@@ -264,6 +285,19 @@ export function installNativeContentViewComposition(): void {
       }
     }),
   );
+  composition.mutationObserver = new MutationObserver(() => {
+    for (const state of composition.surfaces.values()) {
+      void requestSlotSync(state).catch((error) => {
+        console.error(`[content-view] DOM 커밋 추종 실패: ${state.label}`, error);
+      });
+    }
+  });
+  composition.mutationObserver.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["class", "style", "hidden"],
+    childList: true,
+    subtree: true,
+  });
 }
 
 /** 공개 합성 상태 — 슬롯·적용 rect·대기 여부를 한 label 단위로 대조한다. */
@@ -346,5 +380,7 @@ export function __resetNativeContentViewCompositionForTest(): void {
   for (const state of composition.surfaces.values()) state.observer?.disconnect();
   composition.surfaces.clear();
   for (const subscription of composition.subscriptions.splice(0)) subscription.dispose();
+  composition.mutationObserver?.disconnect();
+  composition.mutationObserver = null;
   composition.installed = false;
 }
