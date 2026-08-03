@@ -13,6 +13,7 @@ import {
 } from "../../lib/contentViews";
 import { onPluginEvent, type Disposable } from "../../plugins/hooks";
 import type { LayoutMove, PreparedLayoutTransition } from "../../lib/layoutTransitionHost";
+import { railTravelWallMs } from "../../lib/railMotion";
 
 const call = <T>(cmd: string, args?: Record<string, unknown>): Promise<T> =>
   invoke(cmd, args) as Promise<T>;
@@ -214,10 +215,9 @@ function slotViewId(slot: HTMLElement): string | null {
 /**
  * DOM 밖 표면의 배치 거래.
  *
- * DOM FLIP과 AppKit 애니메이션은 서로 같은 타임라인을 공유하지 않으므로 동기화 대상으로 삼지
- * 않는다. 현재 native frame에 코어가 공개한 논리 이동량을 한 번 접어 목표 frame을 확정하고,
- * 모든 IPC가 성공한 뒤에만 호출자가 목표 DOM을 커밋한다. 영향받는 native 표면이 없으면 평범한
- * DOM glide를 그대로 허용한다.
+ * 현재 native frame에 코어가 공개한 논리 이동량을 한 번 접어 목표 frame을 확정한다. commit은
+ * DOM FLIP과 같은 duration·curve의 AppKit frame 전환을 정확히 한 번 시작한다. 프레임 샘플링은
+ * 하지 않고, DOM 착지 사건에서 같은 최종 rect를 대조한다.
  */
 export async function prepareNativeContentViewMove(
   moves: readonly LayoutMove[],
@@ -246,44 +246,40 @@ export async function prepareNativeContentViewMove(
     state.precommitting = true;
     state.precommitTarget = rectKey(rect);
   }
-  try {
-    await Promise.all(targets.map(async ({ state, rect }) => {
-      if (state.draining) await state.draining;
-      await call<boolean>("webview_bounds", { label: state.label, ...rect });
-      state.boundsWrites += 1;
-      state.lastRect = rectKey(rect);
-    }));
-  } catch (error) {
-    for (const { state } of targets) {
-      state.precommitting = false;
-      state.precommitTarget = "";
-    }
-    throw error;
-  }
-
   let closed = false;
   return {
-    mode: "snap",
+    mode: "glide",
     commit: async () => {
       if (closed) return;
       closed = true;
-      await Promise.all(targets.map(async ({ state, before, rect }) => {
-        const slot = findContentViewSlot(state.label, document);
-        if (!slot) return;
-        const actual = slotRect(slot);
-        if (rectKey(actual) === rectKey(rect)) {
+      try {
+        await Promise.all(targets.map(async ({ state, before, rect }) => {
+          if (state.draining) await state.draining;
+          // 장부를 먼저 목표로 둔다. DOM mutation이 IPC ack보다 먼저 와도 일반 bounds sync가
+          // 같은 목표를 다시 써 AppKit animation을 끊지 못한다.
+          state.lastRect = rectKey(rect);
+          state.boundsWrites += 1;
+          try {
+            await call<boolean>("webview_animate_bounds", {
+              label: state.label,
+              ...rect,
+              durationMs: railTravelWallMs(),
+              timing: [0.4, 0, 0.2, 1],
+            });
+          } catch (error) {
+            state.lastRect = rectKey(before);
+            throw error;
+          }
+          settlePreparedFrame(state);
+        }));
+      } catch (error) {
+        for (const { state } of targets) {
           state.precommitting = false;
           state.precommitTarget = "";
-          return;
+          void requestSlotSync(state, true).catch(() => {});
         }
-        // React의 부모 layout effect는 자식 DOM 이동이 확정되기 전에 실행될 수 있다. 이때
-        // 이전 DOM 좌표를 다시 쓰면 precommit을 스스로 되돌린다. 이전 좌표라면 mutation
-        // 사건이 최종 DOM을 알릴 때까지 준비한 frame을 유지한다.
-        if (rectKey(actual) === rectKey(before)) return;
-        state.precommitting = false;
-        state.precommitTarget = "";
-        await requestSlotSync(state, true);
-      }));
+        throw error;
+      }
     },
     cancel: () => {
       if (closed) return;
@@ -327,6 +323,13 @@ export function installNativeContentViewComposition(): void {
     attributeFilter: ["class", "style", "hidden"],
     childList: true,
     subtree: true,
+  });
+  const onAnimationEnd = () => {
+    for (const state of composition.surfaces.values()) settlePreparedFrame(state);
+  };
+  document.addEventListener("animationend", onAnimationEnd, true);
+  composition.subscriptions.push({
+    dispose: () => document.removeEventListener("animationend", onAnimationEnd, true),
   });
 }
 

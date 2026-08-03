@@ -1198,6 +1198,42 @@ fn set_child_frame(wv: &tauri::Webview, bounds: (f64, f64, f64, f64)) -> Result<
     .map_err(|e| e.to_string())
 }
 
+#[cfg(target_os = "macos")]
+fn animate_child_frame(
+    wv: &tauri::Webview,
+    bounds: (f64, f64, f64, f64),
+    duration_ms: f64,
+    timing: [f32; 4],
+) -> Result<(), String> {
+    wv.with_webview(move |pw| unsafe {
+        use objc2_app_kit::{NSAnimatablePropertyContainer, NSAnimationContext, NSView};
+        use objc2_foundation::{NSPoint, NSRect, NSSize};
+        use objc2_quartz_core::CAMediaTimingFunction;
+
+        let view = &*(pw.inner() as *const NSView);
+        let Some(parent) = view.superview() else {
+            return;
+        };
+        let (x, y, w, h) = top_left_rect_to_parent_frame(
+            parent.bounds().size.height,
+            parent.isFlipped(),
+            bounds,
+        );
+        let frame = NSRect::new(NSPoint::new(x, y), NSSize::new(w, h));
+
+        NSAnimationContext::beginGrouping();
+        let context = NSAnimationContext::currentContext();
+        context.setDuration(duration_ms.max(0.0) / 1000.0);
+        let curve = CAMediaTimingFunction::functionWithControlPoints(
+            timing[0], timing[1], timing[2], timing[3],
+        );
+        context.setTimingFunction(Some(&curve));
+        view.animator().setFrame(frame);
+        NSAnimationContext::endGrouping();
+    })
+    .map_err(|e| e.to_string())
+}
+
 static APPLIED_BOUNDS: std::sync::LazyLock<
     std::sync::Mutex<std::collections::HashMap<String, (f64, f64, f64, f64)>>,
 > = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
@@ -1262,6 +1298,37 @@ pub fn webview_bounds(
             m.insert(label.clone(), (x, y, w, h));
         }
         apply_child_bounds(&wv, &label, (x, y, w, h))?;
+    }
+    Ok(())
+}
+
+// DOM FLIP의 Tauri 짝. 목표 frame·시간·곡선을 한 번 받아 AppKit이 WKWebView(NSView)를
+// 보간한다. JS 프레임 샘플링은 없으며 장부에는 model layer의 최종 frame을 기록한다.
+#[tauri::command]
+pub fn webview_animate_bounds(
+    app: AppHandle,
+    label: String,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    duration_ms: f64,
+    timing: [f32; 4],
+) -> Result<(), String> {
+    let Some(wv) = app.get_webview(&label) else {
+        return Ok(());
+    };
+    let raw = (x, y, w, h);
+    if let Ok(mut m) = RAW_BOUNDS.lock() {
+        m.insert(label.clone(), raw);
+    }
+    let scaled = scale_rect(raw, window_zoom_of(wv.window().label()));
+    #[cfg(target_os = "macos")]
+    animate_child_frame(&wv, scaled, duration_ms, timing)?;
+    #[cfg(not(target_os = "macos"))]
+    apply_child_bounds(&wv, &label, raw)?;
+    if let Ok(mut m) = APPLIED_BOUNDS.lock() {
+        m.insert(label, scaled);
     }
     Ok(())
 }
