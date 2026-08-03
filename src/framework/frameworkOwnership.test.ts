@@ -8,8 +8,7 @@ import { describe, expect, it } from "vitest";
 const ROOT = resolve(import.meta.dirname, "../..");
 const SRC = resolve(ROOT, "src");
 const TAURI_FIXES = [
-  "slotFreeze.ts",
-  "slotFreezeHost.ts",
+  "nativeMotion.ts",
   "railHoleClip.ts",
   "railHoleClipHost.ts",
   "surfaceAudit.ts",
@@ -33,10 +32,10 @@ describe("Tauri native-composition ownership", () => {
     }
   });
 
-  it("공통 App과 플러그인 API가 freeze·hole-clip 수명을 호출하지 않는다", () => {
+  it("공통 App과 플러그인 API가 native-motion·hole-clip 수명을 호출하지 않는다", () => {
     const files = ["src/App.tsx", "src/plugins/api.ts"];
     const offenders = files.filter((file) =>
-      /slotFreeze|railHoleClip|noteSurfaceWrite|invalidateSlotSnapshot/.test(
+      /nativeMotion|railHoleClip|webview_animate_bounds/.test(
         readFileSync(resolve(ROOT, file), "utf8"),
       ),
     );

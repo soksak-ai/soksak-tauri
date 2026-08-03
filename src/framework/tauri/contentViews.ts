@@ -1,7 +1,7 @@
 // Tauri 콘텐츠 뷰 구현 — 콘텐츠가 문서 밖에 산다.
 //
 // 플러그인은 `data-content-view-body=<label>` 자리만 선언한다. 이 어댑터가 그 자리를 읽어
-// OS 자식 뷰의 bounds·가시성·veil 착지를 전담한다. 추종 입력은 레이아웃 커밋 사건과
+// OS 자식 뷰의 bounds·가시성·네이티브 frame 전환을 전담한다. 추종 입력은 레이아웃 커밋 사건과
 // ResizeObserver뿐이다. 프레임 루프나 포인터 추측은 없다.
 import { invoke } from "@tauri-apps/api/core";
 import { moduleState } from "../../lib/moduleState";
@@ -12,7 +12,9 @@ import {
   type ContentViewHost,
 } from "../../lib/contentViews";
 import { onPluginEvent, type Disposable } from "../../plugins/hooks";
-import { invalidateSlotSnapshot, noteSurfaceWrite } from "./slotFreezeHost";
+import { onLayoutMotion } from "../../lib/layoutMotion";
+import { railTravelWallMs } from "../../lib/railMotion";
+import { nativeMoveTargetOf, type NativeFrame } from "./nativeMotion";
 
 const call = <T>(cmd: string, args?: Record<string, unknown>): Promise<T> =>
   invoke(cmd, args) as Promise<T>;
@@ -24,24 +26,13 @@ interface SlotRect {
   h: number;
 }
 
-export interface NativeContentViewFreezeFact {
-  active: boolean;
-  pending: boolean;
-  snapAt: number | null;
-  snapTry: number;
-  snapFail: number;
-  snapSkip: string | null;
-  snapSize: string | null;
-  reject: string | null;
-  glide: string | null;
-  scope: string | null;
-}
-
 interface SurfaceState {
   label: string;
   opened: boolean;
   desiredVisible: boolean | null;
-  veiled: boolean;
+  appliedVisible: boolean | null;
+  boundsWrites: number;
+  nativeMoving: boolean;
   lastRect: string;
   observer: ResizeObserver | null;
   requested: boolean;
@@ -55,13 +46,12 @@ export interface NativeContentViewCompositionFact {
   label: string;
   opened: boolean;
   desiredVisible: boolean | null;
-  veiled: boolean;
+  appliedVisible: boolean | null;
+  boundsWrites: number;
   slotPresent: boolean;
   slotRect: SlotRect | null;
   appliedRect: string | null;
   syncPending: boolean;
-  /** Tauri 스탠드인 거래의 공개 근거. 없으면 왜 동결되지 않았는지 추측하게 된다. */
-  freeze: NativeContentViewFreezeFact | null;
 }
 
 const composition = moduleState("framework/tauri.fix#contentViewComposition", () => ({
@@ -77,7 +67,9 @@ function stateOf(label: string): SurfaceState {
       label,
       opened: false,
       desiredVisible: null,
-      veiled: false,
+      appliedVisible: null,
+      boundsWrites: 0,
+      nativeMoving: false,
       lastRect: "",
       observer: null,
       requested: false,
@@ -98,29 +90,6 @@ function slotRect(slot: HTMLElement): SlotRect {
 
 function rectKey(rect: SlotRect): string {
   return `${rect.x},${rect.y},${rect.w},${rect.h}`;
-}
-
-function numericDataset(value: string | undefined): number | null {
-  if (value == null || value === "") return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function freezeFact(slot: HTMLElement | null): NativeContentViewFreezeFact | null {
-  const hole = slot?.closest<HTMLElement>('[data-tauri-hole="content"]') ?? null;
-  if (!hole) return null;
-  return {
-    active: hole.dataset.freeze === "1",
-    pending: hole.dataset.freezePending === "1",
-    snapAt: numericDataset(hole.dataset.freezeSnapAt),
-    snapTry: numericDataset(hole.dataset.freezeSnapTry) ?? 0,
-    snapFail: numericDataset(hole.dataset.freezeSnapFail) ?? 0,
-    snapSkip: hole.dataset.freezeSnapSkip ?? null,
-    snapSize: hole.dataset.freezeSnapSize ?? null,
-    reject: hole.dataset.freezeReject ?? null,
-    glide: hole.dataset.freezeGlide ?? null,
-    scope: hole.dataset.freezeScope ?? null,
-  };
 }
 
 function observeSlot(state: SurfaceState, slot: HTMLElement): void {
@@ -152,6 +121,7 @@ async function openTrackedSurface(
   // `webview_open`은 살아 있는 기존 child를 재채택할 수 있다. 그 표면에는 직전 hidden 상태가
   // 남아 있으므로 생성 여부와 무관하게 장부의 현재 가시성을 명시적으로 재적용한다.
   await call("webview_visible", { label: state.label, visible: desired, focus: false });
+  state.appliedVisible = desired;
 }
 
 /** 복귀 에지에서 registry가 아니라 실제 child 부착을 확인하고, 어댑터가 자기 표면을 복구한다. */
@@ -183,15 +153,19 @@ function requestSlotSync(state: SurfaceState, force = false): Promise<void> {
       // 가시성 장부가 숨김인 동안에는 좌표를 적용하지 않는다. backend의 bounds는 순수 기하
       // 명령이며 show/hide를 추론하지 않지만, 불필요한 숨은 child 쓰기를 막고 복귀 에지에서
       // `force`로 최신 rect 하나만 먼저 적용하는 순서를 보장한다.
-      if (!state.opened || state.veiled || state.desiredVisible === false) continue;
+      if (
+        !state.opened ||
+        state.nativeMoving ||
+        state.desiredVisible === false
+      ) continue;
       const slot = findContentViewSlot(state.label, document);
       if (!slot) continue;
       const rect = slotRect(slot);
       const key = rectKey(rect);
       if (!forced && key === state.lastRect) continue;
       await call<boolean>("webview_bounds", { label: state.label, ...rect });
+      state.boundsWrites += 1;
       state.lastRect = key;
-      noteSurfaceWrite(state.label);
     }
   })()
     .then(() => {
@@ -213,24 +187,58 @@ function requestSlotSync(state: SurfaceState, force = false): Promise<void> {
   return done;
 }
 
-async function setVeil(label: string, veiled: boolean, hidden: boolean): Promise<void> {
-  const state = composition.surfaces.get(label);
-  if (!state?.opened) return;
-  state.veiled = veiled;
-  if (veiled) {
-    if (hidden) {
-      await call("webview_visible", { label: state.label, visible: false, focus: false });
+function appliedFrame(state: SurfaceState): NativeFrame | null {
+  const parts = state.lastRect.split(",").map(Number);
+  if (parts.length !== 4 || parts.some((part) => !Number.isFinite(part))) return null;
+  return { x: parts[0], y: parts[1], w: parts[2], h: parts[3] };
+}
+
+function slotViewId(slot: HTMLElement): string | null {
+  const node = slot.closest<HTMLElement>('[data-node^="layout/tab/"]')?.dataset.node;
+  return node?.startsWith("layout/tab/") ? node.slice("layout/tab/".length) : null;
+}
+
+/**
+ * CSS FLIP과 별도 compositor에 사는 WKWebView를 프레임 샘플링으로 뒤쫓지 않는다.
+ * 위상 시작 한 번에 같은 최종 frame·duration·curve를 AppKit에 넘기고, 종료에서 최종 bounds를
+ * 다시 대조한다. 이 구독은 Tauri 어댑터를 고른 경우에만 설치된다.
+ */
+function installNativeFrameMotion(): Disposable {
+  const off = onLayoutMotion((active, kinds, scope) => {
+    if (active && kinds.includes("move")) {
+      for (const state of composition.surfaces.values()) {
+        if (!state.opened || state.desiredVisible === false || state.nativeMoving) continue;
+        const slot = findContentViewSlot(state.label, document);
+        const current = appliedFrame(state);
+        if (!slot || !current) continue;
+        const viewId = slotViewId(slot);
+        if (scope && (!viewId || !scope.has(viewId))) continue;
+        const target = nativeMoveTargetOf(slot, current);
+        if (!target) continue;
+        state.nativeMoving = true;
+        void call("webview_animate_bounds", {
+          label: state.label,
+          ...target,
+          durationMs: railTravelWallMs(),
+          timing: [0.4, 0, 0.2, 1],
+        }).catch((error) => {
+          state.nativeMoving = false;
+          console.error(`[content-view] native frame 전환 실패: ${state.label}`, error);
+          void requestSlotSync(state, true).catch(() => {});
+        });
+      }
+      return;
     }
-    return;
-  }
-  // 좌표를 먼저 확정하고 그 뒤에만 드러낸다. 역순이면 옛 자리 한 프레임이 보인다.
-  await restoreIfDetached(state);
-  await requestSlotSync(state, true);
-  await call("webview_visible", {
-    label: state.label,
-    visible: state.desiredVisible ?? true,
-    focus: false,
+    if (active) return;
+    for (const state of composition.surfaces.values()) {
+      if (!state.nativeMoving) continue;
+      state.nativeMoving = false;
+      void requestSlotSync(state, true).catch((error) => {
+        console.error(`[content-view] native frame 정착 실패: ${state.label}`, error);
+      });
+    }
   });
+  return { dispose: off };
 }
 
 /** 이 어댑터의 DOM 사건 배선. 선택된 프레임워크 install에서만 한 번 호출한다. */
@@ -238,6 +246,7 @@ export function installNativeContentViewComposition(): void {
   if (composition.installed) return;
   composition.installed = true;
   composition.subscriptions.push(
+    installNativeFrameMotion(),
     onPluginEvent("layout.reflow", () => {
       for (const state of composition.surfaces.values()) {
         void requestSlotSync(state).catch((error) => {
@@ -245,15 +254,10 @@ export function installNativeContentViewComposition(): void {
         });
       }
     }),
-    onPluginEvent("content-view.veiled", ({ label, veiled, hidden }) => {
-      void setVeil(label, veiled, hidden).catch((error) => {
-        console.error(`[content-view] veil 합성 실패: ${label}`, error);
-      });
-    }),
   );
 }
 
-/** 공개 합성 상태 — 슬롯·적용 rect·veil·대기 여부를 한 label 단위로 대조한다. */
+/** 공개 합성 상태 — 슬롯·적용 rect·대기 여부를 한 label 단위로 대조한다. */
 export function nativeContentViewCompositionStatus(): NativeContentViewCompositionFact[] {
   return [...composition.surfaces.values()].map((state) => {
     const slot = findContentViewSlot(state.label, document);
@@ -261,12 +265,12 @@ export function nativeContentViewCompositionStatus(): NativeContentViewCompositi
       label: state.label,
       opened: state.opened,
       desiredVisible: state.desiredVisible,
-      veiled: state.veiled,
+      appliedVisible: state.appliedVisible,
+      boundsWrites: state.boundsWrites,
       slotPresent: slot !== null,
       slotRect: slot ? slotRect(slot) : null,
       appliedRect: state.lastRect || null,
       syncPending: state.requested || state.draining !== null,
-      freeze: freezeFact(slot),
     };
   });
 }
@@ -288,7 +292,6 @@ export const nativeHost: ContentViewHost = {
   list: () => call("webview_list"),
   alive: (label) => call("webview_alive", { label }),
   navigate: (label, url) => {
-    invalidateSlotSnapshot(label);
     const state = composition.surfaces.get(label);
     if (state?.openOptions) state.openOptions = { ...state.openOptions, url };
     return call("webview_navigate", { label, url });
@@ -297,7 +300,7 @@ export const nativeHost: ContentViewHost = {
     const result = await call<boolean>("webview_bounds", { label, x, y, w, h });
     const state = composition.surfaces.get(label);
     if (state) state.lastRect = rectKey({ x, y, w, h });
-    noteSurfaceWrite(label);
+    if (state) state.boundsWrites += 1;
     return result;
   },
   async visible(label, visible, focus) {
@@ -306,12 +309,13 @@ export const nativeHost: ContentViewHost = {
     if (!state.opened) return;
     if (!visible) {
       await call("webview_visible", { label, visible: false, focus });
+      state.appliedVisible = false;
       return;
     }
-    if (state.veiled) return;
     if (await restoreIfDetached(state)) return;
     await requestSlotSync(state);
     await call("webview_visible", { label, visible: true, focus });
+    state.appliedVisible = true;
   },
   history: (label, delta) => call("webview_history", { label, delta }),
   stop: (label) => call("webview_stop", { label }),

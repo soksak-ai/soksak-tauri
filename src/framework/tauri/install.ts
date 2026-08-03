@@ -20,12 +20,6 @@ import {
 } from "./contentViews";
 import { adoptFrameworkStyles } from "../styles";
 import { registerContentViewHost } from "../../lib/contentViews";
-import { emitPluginEvent, onPluginEvent } from "../../plugins/hooks";
-import {
-  ensureSlotFreezeHost,
-  invalidateSlotSnapshot,
-  scheduleSlotSettleCapture,
-} from "./slotFreezeHost";
 import { installRailHoleClip } from "./railHoleClipHost";
 import { installSurfaceAudit, surfaceCompositionSnapshot } from "./surfaceAudit";
 import {
@@ -43,31 +37,6 @@ import { registerRectMotionExclusion } from "../../lib/layoutRectMotion";
 import { listenThisWindow } from "../../lib/windowEvents";
 import { register } from "../../commands/registry";
 import { tmsg } from "../../i18n";
-import { CONTENT_VIEW_EVENT } from "../../lib/contentViewEvents";
-
-/**
- * 이동-동결(스탠드인) — 문서 밖 표면은 활강 중 제자리에 머문다. 슬롯만 미끄러지면 그 옛 자리가
- * 드러나므로, 코어가 미리 구운 그림으로 슬롯을 덮고 착지에서 물러난다.
- *
- * 캡처는 Tauri 자식 WKWebView 자체가 답한다. 창 합성 결과를 crop하면 DOM dim/toolbar와 다른
- * 표면이 섞여 정착 사진이 focus 변경 즉시 무효가 되므로, 네이티브 표면이 유일한 원천이다.
- */
-function installSlotFreeze(): void {
-  ensureSlotFreezeHost({
-    root: () => document,
-    capture: async (label) => {
-      const b64 = (await invoke("webview_snapshot", { label })) as string;
-      return `data:image/png;base64,${b64}`;
-    },
-    emitVeil: (label, veiled, hidden) =>
-      emitPluginEvent("content-view.veiled", { label, veiled, hidden }),
-  });
-  onPluginEvent("layout.reflow", scheduleSlotSettleCapture);
-  listenThisWindow<{ label: string }>(CONTENT_VIEW_EVENT.nav, ({ payload }) => {
-    invalidateSlotSnapshot(payload.label);
-  });
-  scheduleSlotSettleCapture();
-}
 
 /**
  * 오버레이 히트테스트 게이트 — 모달·메뉴가 떠 있는 동안 아래 표면이 마우스를 못 가져가게 한다.
@@ -252,7 +221,7 @@ function installCompositionCommand(): void {
       "Tauri-only composition audit: expose every visible DOM content hole and live native surface frame in both coordinate systems, with one-to-one matches and a strict rounding-only verdict.",
     params: {},
     returns:
-      "{ coordinateContract, anchors, surfaces, placement:[{label,opened,desiredVisible,veiled,slotPresent,slotRect,appliedRect,syncPending,freeze:{active,pending,snapAt,snapTry,snapFail,snapSkip,snapSize,reject,glide,scope}|null}], matches, verdict }",
+      "{ coordinateContract, anchors, surfaces, placement:[{label,opened,desiredVisible,appliedVisible,boundsWrites,slotPresent,slotRect,appliedRect,syncPending}], matches, verdict }",
     message: (d) => {
       const verdict = d.verdict as { misplaced?: unknown[]; stacked?: unknown[]; missing?: unknown[] };
       const bad = (verdict.misplaced?.length ?? 0) + (verdict.stacked?.length ?? 0) + (verdict.missing?.length ?? 0);
@@ -297,13 +266,12 @@ function installHoleAuditCommand(): void {
 export function installTauri(): void {
   // 콘텐츠 뷰 구현 — 이 프레임워크가 줄 수 있는 것은 OS 자식 뷰다.
   registerContentViewHost(nativeHost);
-  // 공개 슬롯 → OS 자식 bounds/가시성/veil 착지. 플러그인은 슬롯만 선언한다.
+  // 공개 슬롯 → OS 자식 bounds/가시성/AppKit frame 전환. 플러그인은 슬롯만 선언한다.
   installNativeContentViewComposition();
   // 홀 CSS — 셀렉터에 프레임워크 이름이 없다. 안 걸리면 그 규칙은 애초에 문서에 없다.
   adoptFrameworkStyles("tauri", styles);
   // 공개 슬롯을 Tauri 전용 합성 표식으로 투영한다. 공통 DOM 은 hole 개념을 갖지 않는다.
   installTauriHoleMarkers();
-  installSlotFreeze();
   // 사이드바는 홀 위에 칠하지 않는다 — 문서 밖 표면은 DOM 전체 뒤라 클립 제외만이 유일한 길이다.
   installRailHoleClip();
   // 표면 정합 상시 감사 — 문서 밖 표면은 상태와 따로 살 수 있어(유령) 그 어긋남을 계속 본다.

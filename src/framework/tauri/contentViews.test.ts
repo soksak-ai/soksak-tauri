@@ -5,7 +5,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const invoke = vi.fn(async (_cmd: string, _args?: unknown) => undefined as unknown);
-const noteSurfaceWrite = vi.fn();
 const listeners = new Map<string, (payload: Record<string, unknown>) => void>();
 let motionListener:
   | ((active: boolean, kinds: ("move" | "resize")[], scope: Set<string> | null) => void)
@@ -18,10 +17,6 @@ vi.mock("../../plugins/hooks", () => ({
     listeners.set(event, fn);
     return { dispose: () => listeners.delete(event) };
   },
-}));
-vi.mock("./slotFreezeHost", () => ({
-  invalidateSlotSnapshot: vi.fn(),
-  noteSurfaceWrite: (...args: unknown[]) => noteSurfaceWrite(...args),
 }));
 vi.mock("../../lib/layoutMotion", () => ({
   onLayoutMotion: (
@@ -51,7 +46,6 @@ class ResizeObserverMock {
 async function load() {
   vi.resetModules();
   invoke.mockReset();
-  noteSurfaceWrite.mockReset();
   invoke.mockResolvedValue(undefined);
   const module = await import("./contentViews");
   module.__resetNativeContentViewCompositionForTest();
@@ -102,10 +96,6 @@ describe("네이티브 자식 뷰 구현", () => {
     slot.setAttribute("data-content-view-body", "b-1");
     const hole = document.createElement("div");
     hole.setAttribute("data-tauri-hole", "content");
-    hole.dataset.freezeSnapTry = "3";
-    hole.dataset.freezeSnapFail = "2";
-    hole.dataset.freezeSnapSkip = "inflight";
-    hole.dataset.freezeGlide = "no:nosnap";
     hole.appendChild(slot);
     let rect = { left: 10.2, top: 20.4, right: 310.8, bottom: 220.9 };
     slot.getBoundingClientRect = () => ({
@@ -140,18 +130,6 @@ describe("네이티브 자식 뷰 구현", () => {
         slotRect: { x: 11, y: 21, w: 299, h: 199 },
         appliedRect: "11,21,299,199",
         syncPending: false,
-        freeze: {
-          active: false,
-          glide: "no:nosnap",
-          pending: false,
-          scope: null,
-          snapAt: null,
-          snapFail: 2,
-          reject: null,
-          snapSkip: "inflight",
-          snapTry: 3,
-          snapSize: null,
-        },
       }),
     ]);
 
@@ -207,40 +185,10 @@ describe("네이티브 자식 뷰 구현", () => {
     ]);
   });
 
-  it("veil은 native presentation을 건드리지 않고 해동에서 bounds→표면 ack 순서를 지킨다", async () => {
-    const slot = document.createElement("div");
-    slot.setAttribute("data-content-view-body", "b--v1");
-    let x = 10;
-    slot.getBoundingClientRect = () => ({
-      x, y: 20, left: x, top: 20, right: x + 300, bottom: 220, width: 300, height: 200,
-    }) as DOMRect;
-    document.body.appendChild(slot);
-
-    const { installNativeContentViewComposition, nativeHost } = await load();
-    installNativeContentViewComposition();
-    await nativeHost.open("b--v1", { url: "https://x" });
-    invoke.mockClear();
-
-    listeners.get("content-view.veiled")?.({ label: "b--v1", veiled: true, hidden: true });
-    await Promise.resolve();
-    expect(invoke).not.toHaveBeenCalled();
-    invoke.mockClear();
-    x = 120;
-    listeners.get("layout.reflow")?.({ activeSpaceId: "c1" });
-    await Promise.resolve();
-    expect(invoke).not.toHaveBeenCalledWith("webview_bounds", expect.anything());
-
-    listeners.get("content-view.veiled")?.({ label: "b--v1", veiled: false, hidden: false });
-    await vi.waitFor(() => expect(invoke.mock.calls).toEqual([
-      ["webview_alive", { label: "b--v1" }],
-      ["webview_bounds", { label: "b--v1", x: 120, y: 20, w: 300, h: 200 }],
-    ]));
-    expect(noteSurfaceWrite).toHaveBeenCalledWith("b--v1");
-  });
-
   it("move 에지에서 CSS FLIP 델타를 native animation 한 번으로 번역하고 종료에서 정착한다", async () => {
     const frame = document.createElement("div");
     frame.className = "tab-body flip-move";
+    frame.dataset.node = "layout/tab/v1";
     frame.setAttribute("style", "--flip-x: 410px");
     const slot = document.createElement("div");
     slot.setAttribute("data-content-view-body", "browser--v1");
