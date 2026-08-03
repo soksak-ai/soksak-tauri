@@ -65,6 +65,7 @@ const ALLOWED: { file: string; mark: string; event: string; why: string }[] = [
   { file: "src/commands/catalogDom.ts", mark: "await new Promise<void>((done) => setTimeout(done, ms));", event: "caller-specified", why: "ui.input.observe 관측 창(ms) — 대기 자체가 명령의 기능이다(그 창 동안 도착한 입력을 센다). rAF 는 가려진 창에서 멈춰 명령이 안 끝난다" },
   { file: "src/commands/catalogDom.ts", mark: "else setTimeout(tick, 16);", event: "caller-specified", why: "ui.trace 표본 캐던스 — 호출자 지정 창(ms) 안의 계측 수집. rAF 는 가려진 창에서 멈춰 명령이 영영 안 끝난다(실측 TIMEOUT)" },
   { file: "src/commands/catalogRemote.ts", mark: "setTimeout(() => {", event: "caller-specified", why: "remote.confirm TTL(ttlSecs 파라미터) — 만료=Deny 가 계약(fail-closed)" },
+  { file: "src/commands/catalogPlugins.ts", mark: "const timer = setTimeout(", event: "program-registered", why: "프로그램 등록 사건이 주 경로이고 timeoutMs는 호출자가 정한 유한 deadline — 부트 실패가 명령을 영원히 붙잡지 않게 한다" },
   // ── ② 프로토콜·OS 경계 유예(TS) ──
   { file: "src/commands/catalogDom.ts", mark: "new Promise((r) => setTimeout(r, 50))", event: "dnd-frame-pacing", why: "합성 DragEvent 시퀀스의 프레임 간격 — 브라우저 DnD 상태기계가 같은 틱의 연속 이벤트를 접는다" },
   // ── ② 프로토콜·OS 경계 유예 ──
@@ -78,6 +79,7 @@ const ALLOWED: { file: string; mark: string; event: string; why: string }[] = [
   { file: "crates/soksak-store/src/ring.rs", mark: "busy_timeout(Duration::from_secs(5))", event: "sqlite-busy-timeout", why: "SQLite busy_timeout — DB 계약" },
   { file: "crates/soksak-net/src/transport.rs", mark: "timeout(Duration::from_secs(60))", event: "http-client-timeout", why: "원격 HTTP 상한 — 네트워크는 사건을 보장하지 않는다" },
   { file: "frameworks/tauri/src/webview.rs", mark: ".recv_timeout(std::time::Duration::from_secs(2))", event: "engine-surface-stats-reply", why: "메인 스레드 서피스 판독 회신 대기의 유한 안전장치 — 회신 채널이 사건이고 상한은 관측 명령의 무한 대기 방지" },
+  { file: "frameworks/tauri/src/webview.rs", mark: ".recv_timeout(std::time::Duration::from_secs(1))", event: "native-frame-applied", why: "메인 스레드 frame 적용 ACK가 종결 사건 — 창이 답하지 않을 때 bounds 호출이 영원히 멈추지 않게 하는 유한 안전망" },
   { file: "frameworks/tauri/src/pty.rs", mark: "from_millis(400)", event: "ptyd-shutdown-grace", why: "옛 데몬의 종료 유예(응답 후 150ms) 계약을 넘긴다 — 재기동 1회 한정" },
   { file: "frameworks/tauri/src/pty.rs", mark: "from_millis(400)", event: "ptyd-socket-rebind", why: "구 데몬 소켓 해제→신 데몬 bind 사이 — 소켓 계승 신호가 없다" },
   { file: "frameworks/tauri/src/webview.rs", mark: "from_millis(450)", event: "wk-inspector-async-show", why: "WebKit _inspector show 는 비동기이고 완료 콜백이 없다(SPI)" },
