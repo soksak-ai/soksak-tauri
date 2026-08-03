@@ -4,8 +4,9 @@
 // emit(폴링 없음). 위치/크기는 프론트 레이아웃(slot rect)을 따라 webview_bounds 로 동기화.
 //
 // 레이어 원칙(z-순서 역전 + 투명 홀 + hitTest 위임 — mod layer):
-// DOM(메인 webview)이 항상 최상위 레이어다. child webview 는 생성 직후 메인 아래로
-// 내리고, 메인은 자체 배경을 칠하지 않아(CSS 투명 슬롯 = 홀) 아래 webview 가 비친다.
+// child webview 는 생성 직후 메인 아래에 서고, 메인은 자체 배경을 칠하지 않아
+// (CSS 투명 슬롯 = 홀) 아래 webview 가 비친다. DOM 재배치 때만 두 합성기 사이의 한 프레임
+// 선행을 막는 유한 handoff 동안 child host가 메인 위에 서며, 목표 DOM paint 뒤 즉시 복귀한다.
 // 마우스는 hitTest 가 위임한다 — 홀 안 + 오버레이 없음이면 아래 webview 가 받는다.
 // 그래서 모달/메뉴/드롭 인디케이터 등 모든 DOM 레이어가 브라우저 위에 그려진다
 // (과거의 "오버레이 동안 브라우저 숨김(suppress)" 우회는 폐지).
@@ -18,13 +19,6 @@ use tauri::{
     AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Url, WebviewUrl,
     WebviewWindowBuilder,
 };
-
-#[cfg(target_os = "macos")]
-use objc2::{define_class, msg_send, DefinedClass, MainThreadOnly};
-#[cfg(target_os = "macos")]
-use objc2_foundation::{MainThreadMarker, NSObject, NSObjectProtocol};
-#[cfg(target_os = "macos")]
-use objc2_quartz_core::{CAAnimation, CAAnimationDelegate};
 
 #[derive(Clone, Serialize)]
 // 카멜로 나간다 — 소비자는 카멜을 읽는다. 스네이크로 내면 undefined 를 읽고, 그것은 오류가
@@ -217,48 +211,6 @@ fn surface_sibling_order(
 }
 
 #[cfg(target_os = "macos")]
-struct SurfaceAnimationDelegateIvars {
-    label: String,
-    motion_generation: u64,
-}
-
-#[cfg(target_os = "macos")]
-define_class!(
-    // SAFETY: NSObject has no subclassing requirements. Core Animation invokes its delegate on
-    // the main thread, matching the AppKit view hierarchy that the callback mutates.
-    #[unsafe(super(NSObject))]
-    #[thread_kind = MainThreadOnly]
-    #[name = "SoksakSurfaceAnimationDelegate"]
-    #[ivars = SurfaceAnimationDelegateIvars]
-    struct SurfaceAnimationDelegate;
-
-    unsafe impl NSObjectProtocol for SurfaceAnimationDelegate {}
-
-    unsafe impl CAAnimationDelegate for SurfaceAnimationDelegate {
-        #[unsafe(method(animationDidStop:finished:))]
-        #[allow(non_snake_case)]
-        fn animationDidStop_finished(&self, _animation: &CAAnimation, _finished: bool) {
-            layer::finish_surface_host_motion(
-                &self.ivars().label,
-                self.ivars().motion_generation,
-            );
-        }
-    }
-);
-
-#[cfg(target_os = "macos")]
-impl SurfaceAnimationDelegate {
-    fn new(label: String, motion_generation: u64, mtm: MainThreadMarker) -> objc2::rc::Retained<Self> {
-        let this = Self::alloc(mtm);
-        let this = this.set_ivars(SurfaceAnimationDelegateIvars {
-            label,
-            motion_generation,
-        });
-        unsafe { msg_send![super(this), init] }
-    }
-}
-
-#[cfg(target_os = "macos")]
 mod layer {
     use std::collections::HashMap;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -297,8 +249,6 @@ mod layer {
     struct SurfaceHost {
         ptr: usize,
         window_label: String,
-        motion_generation: u64,
-        raised: bool,
     }
     static SURFACE_HOSTS: LazyLock<Mutex<HashMap<String, SurfaceHost>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -395,37 +345,12 @@ mod layer {
         parent.setSubviews(&NSArray::from_retained_slice(&ordered));
     }
 
-    pub fn raise_surface_host(label: &str) -> Option<u64> {
-        let generation = SURFACE_HOSTS.lock().ok().and_then(|mut hosts| {
-            let host = hosts.get_mut(label)?;
-            host.motion_generation = host.motion_generation.wrapping_add(1);
-            host.raised = true;
-            Some(host.motion_generation)
-        })?;
+    pub fn raise_surface_host(label: &str) {
         place_surface_host(label, NSWindowOrderingMode::Above);
-        Some(generation)
     }
 
     pub fn lower_surface_host(label: &str) {
-        if let Ok(mut hosts) = SURFACE_HOSTS.lock() {
-            if let Some(host) = hosts.get_mut(label) {
-                host.motion_generation = host.motion_generation.wrapping_add(1);
-                host.raised = false;
-            }
-        }
         place_surface_host(label, NSWindowOrderingMode::Below);
-    }
-
-    pub fn finish_surface_host_motion(label: &str, generation: u64) {
-        let owns_lease = SURFACE_HOSTS.lock().ok().is_some_and(|mut hosts| {
-            let Some(host) = hosts.get_mut(label) else { return false };
-            if host.motion_generation != generation { return false }
-            host.raised = false;
-            true
-        });
-        if owns_lease {
-            place_surface_host(label, NSWindowOrderingMode::Below);
-        }
     }
 
     pub fn lower_window_surface_hosts(window_label: &str) {
@@ -491,8 +416,6 @@ mod layer {
                 hosts.insert(surface_label, SurfaceHost {
                     ptr,
                     window_label,
-                    motion_generation: 0,
-                    raised: false,
                 });
             }
         });
@@ -1410,55 +1333,11 @@ fn set_child_frame(
     bounds: (f64, f64, f64, f64),
 ) -> Result<(), String> {
     let label = label.to_string();
-    wv.with_webview(move |pw| unsafe {
-        use objc2_app_kit::NSView;
-        use objc2_foundation::{NSPoint, NSRect, NSSize};
-
-        let view = &*(pw.inner() as *const NSView);
-        let Some(parent) = view.superview() else {
-            return;
-        };
-        let host_ptr = layer::surface_host_ptr(&label);
-        let coordinate_parent = if host_ptr != 0 {
-            parent.superview().unwrap_or_else(|| parent.clone())
-        } else {
-            parent.clone()
-        };
-        let (x, y, w, h) = top_left_rect_to_parent_frame(
-            coordinate_parent.bounds().size.height,
-            coordinate_parent.isFlipped(),
-            bounds,
-        );
-        let frame = NSRect::new(NSPoint::new(x, y), NSSize::new(w, h));
-        if host_ptr != 0 {
-            let host = &*(host_ptr as *const NSView);
-            host.setFrame(frame);
-            view.setFrame(NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(w, h)));
-        } else {
-            view.setFrame(frame);
-        }
-    })
-    .map_err(|e| e.to_string())
-}
-
-#[cfg(target_os = "macos")]
-fn animate_child_frame(
-    wv: &tauri::Webview,
-    label: &str,
-    bounds: (f64, f64, f64, f64),
-    duration_ms: f64,
-    timing: [f32; 4],
-) -> Result<(), String> {
-    let label = label.to_string();
-    let (armed_tx, armed_rx) = std::sync::mpsc::sync_channel::<Result<(), String>>(1);
+    let (applied_tx, applied_rx) = std::sync::mpsc::sync_channel::<Result<(), String>>(1);
     wv.with_webview(move |pw| {
-        let armed: Result<(), String> = (|| unsafe {
+        let applied: Result<(), String> = (|| unsafe {
             use objc2_app_kit::NSView;
-            use objc2::runtime::ProtocolObject;
-            use objc2_foundation::{ns_string, NSPoint, NSRect, NSSize, NSValue};
-            use objc2_quartz_core::{
-                CABasicAnimation, CAMediaTiming, CAMediaTimingFunction, CATransaction,
-            };
+            use objc2_foundation::{NSPoint, NSRect, NSSize};
 
             let view = &*(pw.inner() as *const NSView);
             let Some(parent) = view.superview() else {
@@ -1476,76 +1355,21 @@ fn animate_child_frame(
                 bounds,
             );
             let frame = NSRect::new(NSPoint::new(x, y), NSSize::new(w, h));
-
-            if host_ptr == 0 {
-                view.setFrame(frame);
-                return Ok(());
-            }
-            let host = &*(host_ptr as *const NSView);
-            // WKWebView backing surface의 frame은 애니메이션하지 않는다. 크기는 목표에 맞추되
-            // 이동은 layer-backed host의 presentation layer가 맡아 WebKit 재합성을 피한다.
-            view.setFrame(NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(w, h)));
-            let Some(layer) = host.layer() else {
+            if host_ptr != 0 {
+                let host = &*(host_ptr as *const NSView);
                 host.setFrame(frame);
-                return Ok(());
-            };
-            let presentation = layer.presentationLayer();
-            let from = presentation.as_deref().unwrap_or(&layer);
-            let from_position = from.position();
-            let from_bounds = from.bounds();
-
-        // 모델은 목표 frame으로 원자적으로 확정하고, 화면에 보이는 presentation만 출발점에서
-        // 목표로 이동한다. NSView animator proxy는 이 child-host 계층에서 중간 frame을 칠하지
-        // 않고 마지막에 정착해 DOM 홀과의 교집합만 흰 띠로 남겼다.
-            CATransaction::begin();
-            CATransaction::setDisableActions(true);
-            host.setFrame(frame);
-            let to_position = layer.position();
-            let to_bounds = layer.bounds();
-            CATransaction::commit();
-
-            let duration = duration_ms.max(0.0) / 1000.0;
-            let curve = CAMediaTimingFunction::functionWithControlPoints(
-                timing[0], timing[1], timing[2], timing[3],
-            );
-            let position = CABasicAnimation::animationWithKeyPath(Some(ns_string!("position")));
-            let from_position = NSValue::valueWithPoint(from_position);
-            let to_position = NSValue::valueWithPoint(to_position);
-            position.setFromValue(Some(&from_position));
-            position.setToValue(Some(&to_position));
-            position.setDuration(duration);
-            position.setTimingFunction(Some(&curve));
-            let generation = layer::raise_surface_host(&label)
-                .ok_or_else(|| format!("native surface host가 없다: {label}"))?;
-            let mtm = MainThreadMarker::new()
-                .ok_or_else(|| "native animation delegate는 main thread에서만 생성한다".to_string())?;
-            let delegate = SurfaceAnimationDelegate::new(label.clone(), generation, mtm);
-            position.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
-            CATransaction::begin();
-            layer.addAnimation_forKey(&position, Some(ns_string!("soksak.surface.position")));
-
-            if from_bounds != to_bounds {
-                let bounds = CABasicAnimation::animationWithKeyPath(Some(ns_string!("bounds")));
-                let from_bounds = NSValue::valueWithRect(from_bounds);
-                let to_bounds = NSValue::valueWithRect(to_bounds);
-                bounds.setFromValue(Some(&from_bounds));
-                bounds.setToValue(Some(&to_bounds));
-                bounds.setDuration(duration);
-                bounds.setTimingFunction(Some(&curve));
-                layer.addAnimation_forKey(&bounds, Some(ns_string!("soksak.surface.bounds")));
+                view.setFrame(NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(w, h)));
+            } else {
+                view.setFrame(frame);
             }
-            CATransaction::commit();
-            // CAAnimation이 delegate를 animation 수명 동안 보유한다. 함수 지역 Retained는 설치
-            // 직후 놓아도 되고, animationDidStop이 generation을 확인한 뒤 z-order를 회수한다.
-            drop(delegate);
             Ok(())
         })();
-        let _ = armed_tx.send(armed);
+        let _ = applied_tx.send(applied);
     })
     .map_err(|e| e.to_string())?;
-    armed_rx
+    applied_rx
         .recv_timeout(std::time::Duration::from_secs(1))
-        .map_err(|error| format!("native surface animation ACK 실패: {error}"))?
+        .map_err(|error| format!("native surface frame ACK 실패: {error}"))?
 }
 
 static APPLIED_BOUNDS: std::sync::LazyLock<
@@ -1564,7 +1388,7 @@ fn apply_child_bounds(
     let (moved, resized) = rect_delta(prev, (x, y, w, h));
     if moved || resized {
         #[cfg(target_os = "macos")]
-            set_child_frame(wv, label, (x, y, w, h))?;
+        set_child_frame(wv, label, (x, y, w, h))?;
         #[cfg(not(target_os = "macos"))]
         {
             if moved {
@@ -1616,34 +1440,33 @@ pub fn webview_bounds(
     Ok(())
 }
 
-// DOM FLIP의 Tauri 짝. 목표 frame·시간·곡선을 한 번 받아 AppKit이 WKWebView(NSView)를
-// 보간한다. JS 프레임 샘플링은 없으며 장부에는 model layer의 최종 frame을 기록한다.
 #[tauri::command]
-pub fn webview_animate_bounds(
+pub fn webview_surface_handoff(
     app: AppHandle,
     label: String,
-    x: f64,
-    y: f64,
-    w: f64,
-    h: f64,
-    duration_ms: f64,
-    timing: [f32; 4],
+    active: bool,
 ) -> Result<(), String> {
     let Some(wv) = app.get_webview(&label) else {
         return Ok(());
     };
-    let raw = (x, y, w, h);
-    if let Ok(mut m) = RAW_BOUNDS.lock() {
-        m.insert(label.clone(), raw);
-    }
-    let scaled = scale_rect(raw, window_zoom_of(wv.window().label()));
     #[cfg(target_os = "macos")]
-    animate_child_frame(&wv, &label, scaled, duration_ms, timing)?;
-    #[cfg(not(target_os = "macos"))]
-    apply_child_bounds(&wv, &label, raw)?;
-    if let Ok(mut m) = APPLIED_BOUNDS.lock() {
-        m.insert(label, scaled);
+    {
+        let (applied_tx, applied_rx) = std::sync::mpsc::sync_channel::<()>(1);
+        wv.with_webview(move |_| {
+            if active {
+                layer::raise_surface_host(&label);
+            } else {
+                layer::lower_surface_host(&label);
+            }
+            let _ = applied_tx.send(());
+        })
+        .map_err(|error| error.to_string())?;
+        applied_rx
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .map_err(|error| format!("native surface handoff ACK 실패: {error}"))?;
     }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (wv, label, active);
     Ok(())
 }
 
@@ -2549,26 +2372,6 @@ mod zoom_bounds_tests {
         assert_eq!(
             surface_sibling_order(&siblings, 10, 40, false),
             vec![20, 30, 10, 40]
-        );
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn explicit_surface_animation_owns_its_z_order_release() {
-        let source = include_str!("webview.rs");
-        let body = source
-            .split_once("fn animate_child_frame(")
-            .expect("animate_child_frame exists")
-            .1
-            .split_once("static APPLIED_BOUNDS")
-            .expect("animate_child_frame boundary")
-            .0;
-        assert!(body.contains("setDelegate"));
-        assert!(source.contains("animationDidStop_finished"));
-        assert!(source.contains("motion_generation"));
-        assert!(
-            !body.contains("setCompletionBlock"),
-            "explicit CAAnimation 수명은 transaction completion이 소유하면 안 된다"
         );
     }
 

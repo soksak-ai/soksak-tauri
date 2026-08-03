@@ -41,6 +41,7 @@ async function load() {
 
 describe("네이티브 자식 뷰 구현", () => {
   beforeEach(() => {
+    vi.restoreAllMocks();
     document.body.innerHTML = "";
     listeners.clear();
     ResizeObserverMock.instances = [];
@@ -213,12 +214,14 @@ describe("네이티브 자식 뷰 구현", () => {
       "webview_surface_handoff",
       { label: "browser--v1", active: false },
     );
+    await vi.waitFor(() => expect(frames).toHaveLength(1));
     frames.shift()?.(0);
     await Promise.resolve();
     expect(invoke).not.toHaveBeenCalledWith(
       "webview_surface_handoff",
       { label: "browser--v1", active: false },
     );
+    await vi.waitFor(() => expect(frames).toHaveLength(1));
     frames.shift()?.(16);
     await committed;
     expect(invoke).toHaveBeenCalledWith("webview_bounds", {
