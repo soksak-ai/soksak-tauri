@@ -142,7 +142,10 @@ function requestSlotSync(state: SurfaceState, force = false): Promise<void> {
       const forced = state.force;
       state.requested = false;
       state.force = false;
-      if (!state.opened || state.veiled) continue;
+      // 가시성 장부가 숨김인 동안에는 좌표를 적용하지 않는다. backend의 bounds는 순수 기하
+      // 명령이며 show/hide를 추론하지 않지만, 불필요한 숨은 child 쓰기를 막고 복귀 에지에서
+      // `force`로 최신 rect 하나만 먼저 적용하는 순서를 보장한다.
+      if (!state.opened || state.veiled || state.desiredVisible === false) continue;
       const slot = findContentViewSlot(state.label, document);
       if (!slot) continue;
       const rect = slotRect(slot);

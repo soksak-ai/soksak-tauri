@@ -135,6 +135,39 @@ describe("네이티브 자식 뷰 구현", () => {
     expect(vi.isMockFunction(globalThis.requestAnimationFrame)).toBe(false);
   });
 
+  it("숨긴 표면은 기하 사건이 다시 표시하지 못하고 복귀 직전에만 최신 rect를 받는다", async () => {
+    const slot = document.createElement("div");
+    slot.setAttribute("data-content-view-body", "b-hidden");
+    let x = 10;
+    slot.getBoundingClientRect = () => ({
+      x, y: 20, left: x, top: 20, right: x + 300, bottom: 220, width: 300, height: 200,
+    }) as DOMRect;
+    document.body.appendChild(slot);
+
+    const { installNativeContentViewComposition, nativeHost } = await load();
+    installNativeContentViewComposition();
+    await nativeHost.open("b-hidden", { url: "https://x" });
+    await nativeHost.visible("b-hidden", false, false);
+    invoke.mockClear();
+
+    x = 120;
+    listeners.get("layout.reflow")?.({ activeSpaceId: "c1" });
+    ResizeObserverMock.instances[0].fire();
+    await Promise.resolve();
+    expect(invoke).not.toHaveBeenCalledWith("webview_bounds", expect.anything());
+    expect(invoke).not.toHaveBeenCalledWith(
+      "webview_visible",
+      expect.objectContaining({ visible: true }),
+    );
+
+    await nativeHost.visible("b-hidden", true, false);
+    expect(invoke.mock.calls).toEqual([
+      ["webview_alive", { label: "b-hidden" }],
+      ["webview_bounds", { label: "b-hidden", x: 120, y: 20, w: 300, h: 200 }],
+      ["webview_visible", { label: "b-hidden", visible: true, focus: false }],
+    ]);
+  });
+
   it("veil 중에는 쓰지 않고 해동에서 bounds를 먼저 확정한 뒤 표시한다", async () => {
     const slot = document.createElement("div");
     slot.setAttribute("data-content-view-body", "b--v1");

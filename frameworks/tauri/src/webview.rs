@@ -1273,41 +1273,13 @@ fn apply_child_bounds(
     if let Ok(mut m) = APPLIED_BOUNDS.lock() {
         m.insert(label.to_string(), (x, y, w, h));
     }
-    if let (Ok(size), Ok(scale)) = (win.inner_size(), win.scale_factor()) {
-        let (ww, wh) = (size.width as f64 / scale, size.height as f64 / scale);
-        let visible = x + w > 0.0 && y + h > 0.0 && x < ww && y < wh;
-        let mut map = BOUNDS_VIS.lock().unwrap();
-        if map.get(label).copied() != Some(visible) {
-            #[cfg(debug_assertions)]
-            eprintln!("[vis-trace] bounds-vis {label} -> {visible} (x={x:.0} y={y:.0} w={w:.0} h={h:.0})");
-            if visible {
-                wv.show().map_err(|e| e.to_string())?;
-                #[cfg(target_os = "macos")]
-                wake_child_if_was_hidden(wv, label);
-            } else {
-                wv.hide().map_err(|e| e.to_string())?;
-                #[cfg(target_os = "macos")]
-                if let Ok(mut s) = HIDDEN_CHILDREN.lock() {
-                    s.insert(label.to_string());
-                }
-            }
-            map.insert(label.to_string(), visible);
-        }
-    }
     Ok(())
 }
 
-static BOUNDS_VIS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, bool>>> =
-    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
-
 // 패널 레이아웃 변화(분할/리사이즈/이동)에 맞춰 위치/크기 동기화.
 //
-// 가시성은 기하가 결정한다: frame 이 창과 전혀 겹치지 않으면(비활성 탭 파킹 = 화면 밖 이동,
-// layerPark.ts) 그 웹뷰는 사실상 안 보이는데, WKWebView 는 창 소속만으로 visible 로 판정해
-// 페이지가 visibilitychange(hidden) 를 받지 못하고 풀스피드로 돈다(실측: 비활성 브라우저 탭의
-// 광고·애니메이션이 상시 CPU ~10%). 교집합에 따라 hide/show 를 동기화해 웹 표준 시맨틱을
-// 복원한다 — 페이지 스스로 백그라운드 스로틀에 들어간다(임의 스로틀 발명이 아니라 사실 전달).
-// 의도적 오프스크린 웹뷰(media_extract)는 bounds 를 쓰지 않으므로 영향 없음.
+// 이 명령은 순수 기하다. 같은 화면 좌표를 가진 비활성 탭도 존재하므로 rect는 가시성의 증거가
+// 아니다. show/hide는 `webview_visible` 한 경로와 프론트의 `commitViewVisibility` 장부만 소유한다.
 #[tauri::command]
 pub fn webview_bounds(
     app: AppHandle,
@@ -1499,8 +1471,7 @@ pub fn webview_alive(app: AppHandle, label: String) -> bool {
 }
 
 // hide 를 거친 child 라벨 — show 시 재부착(뷰어빌리티 기상)이 필요한 대상. webview_close 가 지운다.
-// 숨김 경로는 둘(webview_visible·BOUNDS_VIS 자동 숨김) — 어느 쪽이든 등록하고, 어느 쪽의
-// show 든 재부착한다(한쪽만 깨우면 다른 경로로 숨었던 child 가 빈 레이어로 남는다 — 실측).
+// 숨김의 단일 경로는 webview_visible이다. 좌표 명령은 이 장부를 건드리지 않는다.
 #[cfg(target_os = "macos")]
 static HIDDEN_CHILDREN: std::sync::LazyLock<std::sync::Mutex<std::collections::HashSet<String>>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashSet::new()));
@@ -1639,7 +1610,6 @@ pub fn webview_close(app: AppHandle, label: String) -> Result<(), String> {
                 "message": format!("· webview closed {label}") }),
         );
     }
-    BOUNDS_VIS.lock().unwrap().remove(&label);
     if let Ok(mut m) = CHILD_BORN_AT.lock() {
         m.remove(&label);
     }
@@ -2246,5 +2216,23 @@ mod zoom_bounds_tests {
         assert_eq!(label_for_nswindow(0xA111), None);
         assert_eq!(label_for_nswindow(0xB220).as_deref(), Some("w-cache-b"));
         forget_nswindow_label("w-cache-b");
+    }
+
+    #[test]
+    fn bounds_command_is_geometry_only() {
+        let source = include_str!("webview.rs");
+        let body = source
+            .split_once("fn apply_child_bounds(")
+            .expect("apply_child_bounds exists")
+            .1
+            .split_once("// 패널 레이아웃 변화")
+            .expect("bounds function boundary")
+            .0;
+        assert!(!body.contains(".show("), "bounds must not infer visible=true");
+        assert!(!body.contains(".hide("), "bounds must not infer visible=false");
+        assert!(
+            !body.contains("webview_visible"),
+            "bounds must not enter the visibility command path"
+        );
     }
 }
