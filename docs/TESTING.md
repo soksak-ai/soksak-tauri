@@ -45,6 +45,10 @@ Two standard targets across every repo — core, plugins, sidecars. A repo expos
 - **Target a workspace window explicitly.** `main` is the control plane with no workspace, so
   a harness that measures a project must open its own `w-*` window and route every command to
   it — an unaddressed command lands on the control plane and measures nothing.
+- **Background step captures use an event boundary, never a timer.** `ui.input.drag` with
+  `captureSteps:true` uses rAF after a focused paint, but an unfocused WebKit has no rAF and
+  throttles even short timers. Its no-focus path therefore waits for one `MessageChannel` task,
+  forces DOM layout, and reports each such boundary in `recording.frameFallbacks`.
 - **Process-owning live measurements get an isolated lane.** `pnpm test` runs ordinary Vitest
   files in parallel, then runs `scripts/electron/content-view-live.test.mjs` alone. That test
   boots a real Chromium guest; under the full worker fan-out it can starve for 45 seconds while

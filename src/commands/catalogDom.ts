@@ -1147,11 +1147,11 @@ export function registerDomCatalog(): void {
       },
       captureSteps: {
         type: "boolean",
-        description: "With recordDir, capture the baseline, every injected move, and the released frame after its animation-frame commit. Works without focusing the window; recording.frameFallbacks reports a paused compositor.",
+        description: "With recordDir, capture the baseline, every injected move, and the released frame. A focused window uses its animation-frame paint boundary; an unfocused window uses one next-task DOM layout boundary without taking focus. recording.frameFallbacks reports how many captures used that non-compositor boundary.",
         default: false,
       },
     },
-    returns: "{ dragged, from, to?, zone?, dx?, dy?, steps, durationMs, recording?:{dir,frames} }",
+    returns: "{ dragged, from, to?, zone?, dx?, dy?, steps, durationMs, recording?:{dir,frames,mode,frameFallbacks?} }",
     message: (d) => (d.dragged ? tmsg("msg.ui.input.drag.dragged") : tmsg("msg.ui.input.drag.tap")),
     errors: ["NOT_EXPOSED", "AMBIGUOUS", "INVALID_PARAMS"],
     danger: "inject",

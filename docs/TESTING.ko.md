@@ -39,6 +39,10 @@
 - **워크스페이스 창을 명시 타게팅.** `main` 은 워크스페이스 없는 컨트롤 플레인이라, 프로젝트를
   측정하는 하니스는 자기 `w-*` 창을 열고 모든 명령을 그 창으로 라우팅한다 — 창 미지정 명령은
   컨트롤 플레인에 착지해 아무것도 측정하지 못한다.
+- **비전면 단계 캡처는 timer가 아니라 사건 경계를 쓴다.** `ui.input.drag`의
+  `captureSteps:true`는 전면 paint 뒤에는 rAF를 쓰지만, 비전면 WebKit은 rAF가 없고 짧은 timer도
+  throttle한다. 포커스 없는 경로는 `MessageChannel` task를 한 번 기다려 DOM layout을 확정하고,
+  이 경계를 쓴 횟수를 `recording.frameFallbacks`로 보고한다.
 - **실제 프로세스를 소유하는 측정은 격리 레인에서 돈다.** `pnpm test`는 일반 Vitest 파일을
   병렬 실행한 뒤 `scripts/electron/content-view-live.test.mjs`를 단독 실행한다. 이 검사는 실제
   Chromium 게스트를 띄워 전체 worker 경쟁에서는 45초 동안 굶지만 단독으로는 2초 안에 끝난다.
