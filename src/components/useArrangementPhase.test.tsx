@@ -47,14 +47,25 @@ function Probe({
   contentKey = "",
   onPhase,
   canGlide,
+  prepareTravel,
 }: {
   arrangement: Arrangement<G>;
   scopeId: string;
   contentKey?: string;
   onPhase?: (rebase: () => void) => void;
   canGlide?: () => boolean;
+  prepareTravel?: (
+    from: Arrangement<G>,
+    to: Arrangement<G>,
+  ) => Promise<"glide" | "snap">;
 }) {
-  const phase = useArrangementPhase(arrangement, scopeId, contentKey, canGlide);
+  const phase = useArrangementPhase(
+    arrangement,
+    scopeId,
+    contentKey,
+    canGlide,
+    prepareTravel,
+  );
   onPhase?.(phase.rebase);
   return (
     <div
@@ -65,6 +76,7 @@ function Probe({
       data-content={String(phase.displayed === arrangement ? "live" : "stale")}
       data-gen={String(phase.generation)}
       data-glide={phase.glide ? "1" : "0"}
+      data-preparing={phase.preparing ? "1" : "0"}
     />
   );
 }
@@ -143,6 +155,31 @@ describe("useArrangementPhase", () => {
     expect(el().dataset.traveling).toBe("0");
     // 재배열이 떨군 입력 포커스는 착지 시점에 1회 재배달한다.
     expect(redeliverViewFocusIfLost).toHaveBeenCalledTimes(1);
+  });
+
+  it("어댑터 준비가 끝나기 전에는 DOM 해를 바꾸지 않고 snap이면 준비 뒤 한 번에 정착한다", async () => {
+    const at = solve(twoColumns, "a");
+    const to = solve(twoColumns, "b");
+    let finish!: (mode: "glide" | "snap") => void;
+    const prepareTravel = vi.fn(
+      () => new Promise<"glide" | "snap">((resolve) => { finish = resolve; }),
+    );
+    act(() => root.render(
+      <Probe arrangement={at} scopeId={scopeOf(at)} prepareTravel={prepareTravel} />,
+    ));
+    act(() => root.render(
+      <Probe arrangement={to} scopeId={scopeOf(to)} prepareTravel={prepareTravel} />,
+    ));
+
+    expect(prepareTravel).toHaveBeenCalledWith(at, to);
+    expect(el().dataset.preparing).toBe("1");
+    expect(el().dataset.traveling).toBe("0");
+    expect(el().dataset.content).toBe("stale");
+
+    await act(async () => finish("snap"));
+    expect(el().dataset.preparing).toBe("0");
+    expect(el().dataset.traveling).toBe("0");
+    expect(el().dataset.content).toBe("live");
   });
 
   it("세대(레일 key)는 도착이 상주가 되는 순간에만 전진한다 — 닫히는 레일은 서 있던 그것이다", () => {
