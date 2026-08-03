@@ -395,7 +395,7 @@ export function registerWindowCatalog(): void {
 
   register("window.occlusion", {
     description:
-      "Toggle occlusion detection. When false, rendering continues even when fully covered by other apps (for continuous background capture — note battery cost). Not needed for normal use; snapshot/record disable it automatically during capture.",
+      "Toggle occlusion detection for every native webview in the addressed window. When false, the main renderer and native child content surfaces continue rendering while fully covered by other apps. Returns the number of native webviews actually updated, so capture automation can reject a main-only partial arm.",
     params: {
       enabled: {
         type: "boolean",
@@ -403,14 +403,14 @@ export function registerWindowCatalog(): void {
         required: true,
       },
     },
-    returns: "{ occlusion }",
+    returns: "{ occlusion, webviews }",
     message: (d) =>
       d.occlusion ? tmsg("msg.window.occlusion.on") : tmsg("msg.window.occlusion.off"),
     examples: ['window.occlusion \'{"enabled":false}\''],
     handler: async (p) => {
       const enabled = !!p.enabled;
-      await invoke("plugin:webview-capture|set_occlusion", { enabled });
-      return { occlusion: enabled };
+      const webviews = await invoke<number>("plugin:webview-capture|set_occlusion", { enabled });
+      return { occlusion: enabled, webviews };
     },
   });
 
