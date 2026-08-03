@@ -5,12 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/framework-required.mjs dev",
-    "dev:tauri": "SOKSAK_FRAMEWORK=tauri vite",
+    "dev:tauri": "pnpm build:cored && SOKSAK_FRAMEWORK=tauri vite",
     "dev:electron": "SOKSAK_FRAMEWORK=electron vite",
     "build:platform": "pnpm --filter @soksak-ai/plugin-spec build && pnpm --filter @soksak-ai/plugin-api build",
     "prebuild": "pnpm run build:platform",
     "build": "tsc && SOKSAK_FRAMEWORK=tauri vite build && SOKSAK_FRAMEWORK=electron vite build",
-    "build:tauri": "pnpm run build:platform && tsc && SOKSAK_FRAMEWORK=tauri vite build",
+    "build:tauri": "pnpm stage:cored && pnpm run build:platform && tsc && SOKSAK_FRAMEWORK=tauri vite build",
     "build:electron": "pnpm run build:platform && tsc && SOKSAK_FRAMEWORK=electron vite build",
     "check:framework-artifacts": "node scripts/gates/framework-artifact-isolation.mjs",
     "preview": "node scripts/framework-required.mjs preview",
@@ -19,6 +19,8 @@
     "pretest": "pnpm run build:platform",
     "test": "vitest run",
     "tauri": "tauri",
+    "build:cored": "node scripts/build/prepare-cored-sidecar.mjs --build-only",
+    "stage:cored": "node scripts/build/prepare-cored-sidecar.mjs --stage",
     "icons:extract": "node scripts/icons/extract.mjs",
     "check:utterances": "node scripts/e2e/check-utterances.mjs"
   },

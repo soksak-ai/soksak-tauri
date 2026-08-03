@@ -4,6 +4,9 @@
   "mainBinaryName": "soksak",
   "identifier": "com.soksak.tauri.app",
   "bundle": {
+    "externalBin": [
+      "binaries/soksak-cored"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

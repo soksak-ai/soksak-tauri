@@ -4,6 +4,9 @@
   "mainBinaryName": "soksak-debug",
   "identifier": "com.soksak.tauri.debug",
   "bundle": {
+    "externalBin": [
+      "binaries/soksak-cored"
+    ],
     "icon": [
       "icons-debug/32x32.png",
       "icons-debug/128x128.png",

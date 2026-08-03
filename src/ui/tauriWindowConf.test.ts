@@ -18,4 +18,27 @@ describe("tauri.conf.json 창 계약", () => {
       expect(w.acceptFirstMouse).toBe(true);
     }
   });
+
+  it("앱 번들은 홈의 cored가 없을 때 세울 정식 sidecar를 선언한다", () => {
+    for (const name of [
+      "tauri.dev-bundle.conf.json",
+      "tauri.debug.conf.json",
+      "tauri.release.conf.json",
+    ]) {
+      const conf = JSON.parse(
+        readFileSync(resolve(__dirname, `../../frameworks/tauri/${name}`), "utf8"),
+      ) as { bundle?: { externalBin?: string[] } };
+      expect(conf.bundle?.externalBin, name).toEqual(["binaries/soksak-cored"]);
+    }
+  });
+
+  it("공개 번들 명령은 앱과 sidecar에 같은 target triple을 명시한다", () => {
+    const makefile = readFileSync(resolve(__dirname, "../../Makefile"), "utf8");
+    expect(makefile).toMatch(/^TAURI_TARGET \?= .*rustc -vV/m);
+    for (const target of ["build", "build-dev", "build-debug"]) {
+      const body = makefile.match(new RegExp(`^${target}:[\\s\\S]*?(?=^[a-zA-Z_-]+:|\\Z)`, "m"))?.[0];
+      expect(body, target).toContain("CARGO_BUILD_TARGET=$(TAURI_TARGET)");
+      expect(body, target).toContain("--target $(TAURI_TARGET)");
+    }
+  });
 });

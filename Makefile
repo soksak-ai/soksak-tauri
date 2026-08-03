@@ -24,17 +24,23 @@ REGISTRY_URL := https://raw.githubusercontent.com/soksak-ai/soksak-plugin-regist
 ORPHAN_TARGET := frameworks/tauri/target
 
 CARGO_TARGET := $(shell cargo metadata --no-deps --format-version 1 --offline 2>/dev/null | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')
+# 앱과 sidecar가 반드시 같은 아키텍처여야 한다. Tauri CLI가 Node 실행물의 아키텍처를 앱의
+# target으로 추측하게 두지 않는다(실측: x86 Node가 arm64 Cargo 앱의 sidecar를 x86으로 요구).
+# 교차 빌드는 `make … TAURI_TARGET=<triple>`로 같은 한 값을 양쪽에 넘긴다.
+TAURI_TARGET ?= $(shell rustc -vV | sed -n 's/^host: //p')
+TAURI_TARGET_DIR := $(CARGO_TARGET)/$(TAURI_TARGET)
 
 RELEASE_CONFIG := frameworks/tauri/tauri.release.conf.json
 RELEASE_CONFIG_GENERATED := $(CARGO_TARGET)/release-config/tauri.conf.json
 DEBUG_CONFIG   := frameworks/tauri/tauri.debug.conf.json
+DEV_BUNDLE_CONFIG := frameworks/tauri/tauri.dev-bundle.conf.json
 
-RELEASE_APP := $(CARGO_TARGET)/release/bundle/macos/soksak.app
-DEBUG_APP   := $(CARGO_TARGET)/debug/bundle/macos/soksak-debug.app
+RELEASE_APP := $(TAURI_TARGET_DIR)/release/bundle/macos/soksak.app
+DEBUG_APP   := $(TAURI_TARGET_DIR)/debug/bundle/macos/soksak-debug.app
 
 .DEFAULT_GOAL := help
 
-.PHONY: clean-orphan-target doctor doctor-fix help install icons dev build build-debug run run-debug typecheck check test test-front verify gates e2e-framework-binding clean stop cli cli-dev cli-debug install-cli install-cli-dev install-cli-debug docs registry
+.PHONY: clean-orphan-target doctor doctor-fix help install icons dev build build-dev build-debug run run-dev run-debug typecheck check test test-front verify gates e2e-framework-binding clean stop cli cli-dev cli-debug install-cli install-cli-dev install-cli-debug docs registry
 
 help: ## 사용 가능한 명령 목록
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -82,10 +88,13 @@ dev-keychain: cli-dev ## 개발 서버 + 실볼트(키체인 프롬프트 있음
 # (typecheck 는 소스를 보고 통과하므로 verify 는 놓친다 — 실측: consumes 추가 후 build-debug 만 실패).
 build: spec-gate cli ## 릴리스 번들 빌드 → "soksak.app"(기본 아이콘) + sok; updater 공개키 필수
 	node scripts/release/prepare-tauri-config.mjs --base $(RELEASE_CONFIG) --out $(RELEASE_CONFIG_GENERATED)
-	$(PNPM) tauri build --config $(RELEASE_CONFIG_GENERATED)
+	CARGO_BUILD_TARGET=$(TAURI_TARGET) $(PNPM) tauri build --target $(TAURI_TARGET) --config $(RELEASE_CONFIG_GENERATED)
+
+build-dev: spec-gate cli-dev ## 개발 정체성 앱 번들 → "soksak-tauri-dev.app" + soksak-cored
+	CARGO_BUILD_TARGET=$(TAURI_TARGET) $(PNPM) tauri build --debug --bundles app --target $(TAURI_TARGET) --config $(DEV_BUNDLE_CONFIG)
 
 build-debug: spec-gate cli-debug ## 디버그 번들 빌드 → "soksak-debug.app"(주황 아이콘) + sok-debug
-	$(PNPM) tauri build --debug --config $(DEBUG_CONFIG)
+	CARGO_BUILD_TARGET=$(TAURI_TARGET) $(PNPM) tauri build --debug --target $(TAURI_TARGET) --config $(DEBUG_CONFIG)
 
 electron: ## Electron 프레임워크(Tauri 프레임워크와 형제 — 교체 아님). pnpm dev:electron(1422)이 떠 있어야 한다.
 	@# 제품 번들로 실행한다 — macOS 는 앱의 정체(메뉴바·Dock·프로세스 이름)를 번들 Info.plist
@@ -96,6 +105,10 @@ electron: ## Electron 프레임워크(Tauri 프레임워크와 형제 — 교체
 run: ## 릴리스 soksak.app 실행(새 인스턴스)
 	@test -d "$(RELEASE_APP)" || { echo "먼저 'make build' 를 실행하세요."; exit 1; }
 	open -n "$(RELEASE_APP)"
+
+run-dev: ## 개발 정체성 soksak-tauri-dev.app 실행(새 인스턴스)
+	@test -d "$(TAURI_TARGET_DIR)/debug/bundle/macos/soksak-tauri-dev.app" || { echo "먼저 'make build-dev' 를 실행하세요."; exit 1; }
+	open -n "$(TAURI_TARGET_DIR)/debug/bundle/macos/soksak-tauri-dev.app"
 
 run-debug: ## 디버그 soksak-debug.app 실행(새 인스턴스)
 	@test -d "$(DEBUG_APP)" || { echo "먼저 'make build-debug' 를 실행하세요."; exit 1; }
