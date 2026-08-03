@@ -67,7 +67,7 @@ make dev          # 개발 서버(HMR) — soksak-dev
 make build-dev    # 개발 앱 번들 → soksak-tauri-dev.app + soksak-cored
 make build        # 릴리스 번들 → soksak-tauri.app + sok CLI
 make build-debug  # 디버그 번들 → soksak-tauri-debug.app + sok-debug
-make run-dev      # 개발 soksak-tauri-dev.app 실행
+make run-dev      # 개발 볼트 환경으로 soksak-tauri-dev.app 실행(로그: ~/.soksak-dev/logs/tauri-app.log)
 make run          # 릴리스 soksak-tauri.app 실행
 make run-debug    # 디버그 soksak-tauri-debug.app 실행
 make verify       # tsc + cargo check(커밋 전 게이트)

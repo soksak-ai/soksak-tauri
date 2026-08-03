@@ -69,7 +69,7 @@ make dev          # development server (HMR) — soksak-dev
 make build-dev    # development app bundle → soksak-tauri-dev.app + soksak-cored
 make build        # release bundle → soksak-tauri.app + sok CLI
 make build-debug  # debug bundle → soksak-tauri-debug.app + sok-debug
-make run-dev      # launch development soksak-tauri-dev.app
+make run-dev      # launch soksak-tauri-dev.app with its dev vault (log: ~/.soksak-dev/logs/tauri-app.log)
 make run          # launch release soksak-tauri.app
 make run-debug    # launch debug soksak-tauri-debug.app
 make verify       # tsc + cargo check (pre-commit gate)

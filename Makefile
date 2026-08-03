@@ -37,7 +37,10 @@ DEBUG_CONFIG   := frameworks/tauri/tauri.debug.conf.json
 DEV_BUNDLE_CONFIG := frameworks/tauri/tauri.dev-bundle.conf.json
 
 RELEASE_APP := $(TAURI_TARGET_DIR)/release/bundle/macos/soksak-tauri.app
+DEV_APP     := $(TAURI_TARGET_DIR)/debug/bundle/macos/soksak-tauri-dev.app
 DEBUG_APP   := $(TAURI_TARGET_DIR)/debug/bundle/macos/soksak-tauri-debug.app
+DEV_EXECUTABLE := $(DEV_APP)/Contents/MacOS/soksak-dev
+DEV_LOG_DIR ?= $(HOME)/.soksak-dev/logs
 
 .DEFAULT_GOAL := help
 
@@ -108,8 +111,11 @@ run: ## 릴리스 soksak-tauri.app 실행(새 인스턴스)
 	open -n "$(RELEASE_APP)"
 
 run-dev: ## 개발 정체성 soksak-tauri-dev.app 실행(새 인스턴스)
-	@test -d "$(TAURI_TARGET_DIR)/debug/bundle/macos/soksak-tauri-dev.app" || { echo "먼저 'make build-dev' 를 실행하세요."; exit 1; }
-	open -n "$(TAURI_TARGET_DIR)/debug/bundle/macos/soksak-tauri-dev.app"
+	@test -x "$(DEV_EXECUTABLE)" || { echo "먼저 'make build-dev' 를 실행하세요."; exit 1; }
+	@mkdir -p "$(DEV_LOG_DIR)"
+	@SOKSAK_E2E_KEK=$(DEV_KEK) SOKSAK_VAULT_PATH=$(DEV_VAULT) \
+	  nohup "$(DEV_EXECUTABLE)" >>"$(DEV_LOG_DIR)/tauri-app.log" 2>&1 &
+	@echo "실행: $(DEV_APP) (로그: $(DEV_LOG_DIR)/tauri-app.log)"
 
 run-debug: ## 디버그 soksak-tauri-debug.app 실행(새 인스턴스)
 	@test -d "$(DEBUG_APP)" || { echo "먼저 'make build-debug' 를 실행하세요."; exit 1; }
