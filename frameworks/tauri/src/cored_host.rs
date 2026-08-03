@@ -819,6 +819,19 @@ pub fn control_owner_answered(names: Vec<String>) -> Result<Value, String> {
 /// 붙잡는다. 저장소 한 번의 왕복이라 짧게 잡는다 — 길면 UI 가 멈춘 것처럼 보인다.
 pub const OWNER_ASK_LIMIT: Duration = Duration::from_secs(10);
 
+/// 새 창 생성 성공을 답하기 전에 cored 주소 원장에 그 창이 서기를 기다리는 상한.
+/// 완료 신호(`control_windows`의 상관 응답)가 끝내며, 시간은 응답이 영영 오지 않는 경우의
+/// 안전망일 뿐이다. 포커스 없는 복원 창도 같은 계약을 지켜야 하므로 포커스 사건에 맡기지 않는다.
+const WINDOW_REPORT_LIMIT: Duration = Duration::from_secs(5);
+
+/// 방금 생성된 창을 주소 원장에 세우고, 그 사실이 확인된 뒤에만 성공한다.
+pub fn announce_windows_settled(_app: &tauri::AppHandle) -> Result<(), String> {
+    let host = current().ok_or_else(|| {
+        "cored 창 호스트가 없어 생성된 창을 명령 주소로 등록할 수 없다".to_string()
+    })?;
+    host.windows_settled(WINDOW_REPORT_LIMIT)
+}
+
 /// 실패해도 앱은 선다. 이 프레임워크는 아직 자기 소켓으로 자기 창을 서빙하고 있고, 여기서
 /// 죽으면 그 서빙까지 함께 죽는다. 대신 조용히 지나가지 않는다 — 못 한 것은 이름을 달고 남고,
 /// 부른 쪽이 그 사유를 값으로 받는다.

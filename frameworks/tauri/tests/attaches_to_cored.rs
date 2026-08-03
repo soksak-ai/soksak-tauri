@@ -247,8 +247,8 @@ fn attaching_makes_this_frameworks_window_an_address_in_cored() {
 
 /// 붙은 뒤에 난 창도 주소가 된다 — 알리지 않으면 cored 의 주소록은 부팅 시점에 멈춘다.
 ///
-/// 새 창은 나면서 포커스를 받고, 그 포커스 사건이 `control_windows` 를 부른다. 그 길이 끊기면
-/// 사용자가 방금 연 창에 대고 부른 명령이 "창 없음"으로 거절된다.
+/// 새 창 생성 경로가 `control_windows`의 상관 응답까지 기다린다. 포커스 없는 복원 창도 같은
+/// 경로를 지나야 하며, 포커스 사건에 기대면 그 창만 "창 없음"으로 거절된다.
 #[test]
 fn a_window_that_opens_after_the_attach_becomes_an_address() {
     let (host, facts, _w, delivered, _b) =

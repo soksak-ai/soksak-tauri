@@ -180,6 +180,24 @@ fn create_window_core(
     // 이 창에 네이티브 설치(레이어 역전·신호등) — main 과 동일한 단일 진입점.
     #[cfg(target_os = "macos")]
     install_window_natives(app, label);
+
+    // 창 생성의 완료 조건에는 명령 주소 등록이 포함된다. focus=false 복원 창은 Focused(true)
+    // 사건을 내지 않으므로 포커스 콜백에 맡기면 window.list에는 보이지만 cored는 못 찾는 창이
+    // 된다. 상관 응답을 기다리는 사건 경로이며 폴링하지 않는다.
+    #[cfg(unix)]
+    if let Err(why) = crate::cored_host::announce_windows_settled(app) {
+        // 주소 없는 창을 성공 산출물로 남기지 않는다. 아직 프론트 부트가 시작되기 전의 새 창만
+        // 되돌리며, 실패도 숨기지 않고 호출자에게 원인과 함께 돌려준다.
+        let rollback = app
+            .get_window(label)
+            .ok_or_else(|| format!("새 창 주소 등록 실패({why}); 되돌릴 창도 없다: {label}"))?
+            .destroy()
+            .map_err(|e| format!("새 창 주소 등록 실패({why}); 창 되돌리기도 실패했다: {e}"));
+        return match rollback {
+            Ok(()) => Err(format!("새 창 주소 등록 실패로 생성을 되돌렸다: {why}")),
+            Err(e) => Err(e),
+        };
+    }
     Ok(())
 }
 
@@ -418,6 +436,22 @@ pub fn window_close(app: AppHandle, label: String) -> Result<(), String> {
 // 아니라 통과한다.
 #[cfg(test)]
 mod mw_rules {
+    #[test]
+    fn created_window_is_an_address_before_creation_returns() {
+        let src = std::fs::read_to_string("src/window.rs").expect("window source");
+        let create = src
+            .split_once("fn create_window_core(")
+            .expect("create_window_core")
+            .1
+            .split_once("// 창 포커스")
+            .expect("create_window_core boundary")
+            .0;
+        assert!(
+            create.contains("cored_host::announce_windows_settled(app)"),
+            "window_create가 성공을 답하기 전에 새 창이 cored 주소 원장에 서야 한다"
+        );
+    }
+
     #[test]
     fn no_hardcoded_main_window() {
         const PATS: [&str; 3] = [
