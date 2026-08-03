@@ -1,7 +1,7 @@
 // Tauri 콘텐츠 뷰 구현 — 콘텐츠가 문서 밖에 산다.
 //
 // 플러그인은 `data-content-view-body=<label>` 자리만 선언한다. 이 어댑터가 그 자리를 읽어
-// OS 자식 뷰의 bounds·가시성·네이티브 frame 전환을 전담한다. 추종 입력은 레이아웃 커밋 사건과
+// OS 자식 뷰의 bounds·가시성·배치 거래를 전담한다. 추종 입력은 레이아웃 커밋 사건과
 // ResizeObserver뿐이다. 프레임 루프나 포인터 추측은 없다.
 import { invoke } from "@tauri-apps/api/core";
 import { moduleState } from "../../lib/moduleState";
@@ -12,9 +12,7 @@ import {
   type ContentViewHost,
 } from "../../lib/contentViews";
 import { onPluginEvent, type Disposable } from "../../plugins/hooks";
-import { onLayoutMotion } from "../../lib/layoutMotion";
-import { railTravelWallMs } from "../../lib/railMotion";
-import { nativeMoveTargetOf, type NativeFrame } from "./nativeMotion";
+import type { LayoutMove, LayoutTransitionMode } from "../../lib/layoutTransitionHost";
 
 const call = <T>(cmd: string, args?: Record<string, unknown>): Promise<T> =>
   invoke(cmd, args) as Promise<T>;
@@ -32,7 +30,7 @@ interface SurfaceState {
   desiredVisible: boolean | null;
   appliedVisible: boolean | null;
   boundsWrites: number;
-  nativeMoving: boolean;
+  precommitting: boolean;
   lastRect: string;
   observer: ResizeObserver | null;
   requested: boolean;
@@ -52,6 +50,7 @@ export interface NativeContentViewCompositionFact {
   slotRect: SlotRect | null;
   appliedRect: string | null;
   syncPending: boolean;
+  precommitPending: boolean;
 }
 
 const composition = moduleState("framework/tauri.fix#contentViewComposition", () => ({
@@ -69,7 +68,7 @@ function stateOf(label: string): SurfaceState {
       desiredVisible: null,
       appliedVisible: null,
       boundsWrites: 0,
-      nativeMoving: false,
+      precommitting: false,
       lastRect: "",
       observer: null,
       requested: false,
@@ -155,7 +154,7 @@ function requestSlotSync(state: SurfaceState, force = false): Promise<void> {
       // `force`로 최신 rect 하나만 먼저 적용하는 순서를 보장한다.
       if (
         !state.opened ||
-        state.nativeMoving ||
+        state.precommitting ||
         state.desiredVisible === false
       ) continue;
       const slot = findContentViewSlot(state.label, document);
@@ -187,7 +186,7 @@ function requestSlotSync(state: SurfaceState, force = false): Promise<void> {
   return done;
 }
 
-function appliedFrame(state: SurfaceState): NativeFrame | null {
+function appliedFrame(state: SurfaceState): SlotRect | null {
   const parts = state.lastRect.split(",").map(Number);
   if (parts.length !== 4 || parts.some((part) => !Number.isFinite(part))) return null;
   return { x: parts[0], y: parts[1], w: parts[2], h: parts[3] };
@@ -199,46 +198,40 @@ function slotViewId(slot: HTMLElement): string | null {
 }
 
 /**
- * CSS FLIP과 별도 compositor에 사는 WKWebView를 프레임 샘플링으로 뒤쫓지 않는다.
- * 위상 시작 한 번에 같은 최종 frame·duration·curve를 AppKit에 넘기고, 종료에서 최종 bounds를
- * 다시 대조한다. 이 구독은 Tauri 어댑터를 고른 경우에만 설치된다.
+ * DOM 밖 표면의 배치 거래.
+ *
+ * DOM FLIP과 AppKit 애니메이션은 서로 같은 타임라인을 공유하지 않으므로 동기화 대상으로 삼지
+ * 않는다. 현재 native frame에 코어가 공개한 논리 이동량을 한 번 접어 목표 frame을 확정하고,
+ * 모든 IPC가 성공한 뒤에만 호출자가 목표 DOM을 커밋한다. 영향받는 native 표면이 없으면 평범한
+ * DOM glide를 그대로 허용한다.
  */
-function installNativeFrameMotion(): Disposable {
-  const off = onLayoutMotion((active, kinds, scope) => {
-    if (active && kinds.includes("move")) {
-      for (const state of composition.surfaces.values()) {
-        if (!state.opened || state.desiredVisible === false || state.nativeMoving) continue;
-        const slot = findContentViewSlot(state.label, document);
-        const current = appliedFrame(state);
-        if (!slot || !current) continue;
-        const viewId = slotViewId(slot);
-        if (scope && (!viewId || !scope.has(viewId))) continue;
-        const target = nativeMoveTargetOf(slot, current);
-        if (!target) continue;
-        state.nativeMoving = true;
-        void call("webview_animate_bounds", {
-          label: state.label,
-          ...target,
-          durationMs: railTravelWallMs(),
-          timing: [0.4, 0, 0.2, 1],
-        }).catch((error) => {
-          state.nativeMoving = false;
-          console.error(`[content-view] native frame 전환 실패: ${state.label}`, error);
-          void requestSlotSync(state, true).catch(() => {});
-        });
-      }
-      return;
-    }
-    if (active) return;
-    for (const state of composition.surfaces.values()) {
-      if (!state.nativeMoving) continue;
-      state.nativeMoving = false;
-      void requestSlotSync(state, true).catch((error) => {
-        console.error(`[content-view] native frame 정착 실패: ${state.label}`, error);
-      });
-    }
+export async function prepareNativeContentViewMove(
+  moves: readonly LayoutMove[],
+): Promise<LayoutTransitionMode> {
+  const byView = new Map(moves.map((move) => [move.viewId, move]));
+  const targets = [...composition.surfaces.values()].flatMap((state) => {
+    if (!state.opened || state.desiredVisible === false) return [];
+    const slot = findContentViewSlot(state.label, document);
+    const viewId = slot ? slotViewId(slot) : null;
+    const move = viewId ? byView.get(viewId) : undefined;
+    const current = appliedFrame(state);
+    if (!move || !current || Math.abs(move.dx) < 0.5) return [];
+    return [{ state, rect: { ...current, x: Math.round(current.x - move.dx) } }];
   });
-  return { dispose: off };
+  if (targets.length === 0) return "glide";
+
+  for (const { state } of targets) state.precommitting = true;
+  try {
+    await Promise.all(targets.map(async ({ state, rect }) => {
+      if (state.draining) await state.draining;
+      await call<boolean>("webview_bounds", { label: state.label, ...rect });
+      state.boundsWrites += 1;
+      state.lastRect = rectKey(rect);
+    }));
+    return "snap";
+  } finally {
+    for (const { state } of targets) state.precommitting = false;
+  }
 }
 
 /** 이 어댑터의 DOM 사건 배선. 선택된 프레임워크 install에서만 한 번 호출한다. */
@@ -246,7 +239,6 @@ export function installNativeContentViewComposition(): void {
   if (composition.installed) return;
   composition.installed = true;
   composition.subscriptions.push(
-    installNativeFrameMotion(),
     onPluginEvent("layout.reflow", () => {
       for (const state of composition.surfaces.values()) {
         void requestSlotSync(state).catch((error) => {
@@ -271,6 +263,7 @@ export function nativeContentViewCompositionStatus(): NativeContentViewCompositi
       slotRect: slot ? slotRect(slot) : null,
       appliedRect: state.lastRect || null,
       syncPending: state.requested || state.draining !== null,
+      precommitPending: state.precommitting,
     };
   });
 }
