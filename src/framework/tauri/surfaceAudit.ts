@@ -110,20 +110,21 @@ export function visibleAnchorFacts(doc: Document = document): SurfaceAnchorFact[
   const out: SurfaceAnchorFact[] = [];
   const collect = (els: Iterable<HTMLElement>) => {
     for (const el of els) {
-      // data-tauri-hole=content 는 tab-body에 붙는 Tauri 전용 시각 효과 표식일 뿐이다.
-      // 네이티브 child WebView가 실제로 채우는 자리는 공용 공개 계약인
-      // data-content-view-body 슬롯이다. 툴바까지 든 tab-body를 재면 그 높이만큼 감사
-      // 기준이 어긋나므로, 표식 아래 실제 슬롯의 rect만 합성 정본으로 인정한다.
-      const slot = el.querySelector<HTMLElement>("[data-content-view-body]");
+      // marker는 실제 data-content-view-body 슬롯 자체에 선다. 탭 frame 전체를 앵커로 쓰면
+      // toolbar 높이만큼 네이티브 표면과 어긋난다. identity만 공개 조상에서 읽는다.
+      const slot = el.hasAttribute("data-content-view-body")
+        ? el
+        : el.querySelector<HTMLElement>("[data-content-view-body]");
       if (!slot || hiddenByTree(slot)) continue;
       const r = slot.getBoundingClientRect();
       if (r.width < 4 || r.height < 4) continue;
       if (r.x + r.width <= 0 || r.x >= window.innerWidth) continue; // 파킹(오프스크린)
-      const node = el.dataset.node ?? "";
+      const frame = slot.closest<HTMLElement>('[data-node^="layout/tab/"]');
+      const node = frame?.dataset.node ?? "";
       out.push({
-        label: slot?.getAttribute("data-content-view-body") ?? null,
+        label: slot.getAttribute("data-content-view-body") ?? null,
         viewId: node.startsWith("layout/tab/") ? node.slice("layout/tab/".length) : null,
-        projectId: el.dataset.projectId ?? null,
+        projectId: frame?.dataset.projectId ?? null,
         rect: { x: r.x, y: r.y, w: r.width, h: r.height },
       });
     }
