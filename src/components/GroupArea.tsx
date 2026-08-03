@@ -23,6 +23,7 @@ import { ViewTabs } from "./ViewTabs";
 import { computeSplitLayout, hitTestCells } from "../lib/splitLayout";
 import { gutterAddress, gutterOwnerOf } from "../lib/gutterAddress";
 import { beginGesture } from "../lib/gesture";
+import { commitDomLayout } from "../lib/domLayoutCommit";
 import { useT } from "../i18n";
 import { useTheme } from "../state/theme";
 import { useSettings } from "../state/settings";
@@ -530,7 +531,11 @@ export const GroupArea = memo(function GroupArea({
       gesture.move(sizes);
     };
     const onUp = () => {
-      commitResize.flush(); // 리스너 제거 전에 — 마지막 프레임 유실 = 스냅백.
+      // store의 마지막 비율뿐 아니라 그 비율을 소비한 React DOM까지 먼저 확정한다. 단순
+      // rafThrottle.flush 뒤 즉시 종료를 발행하면 Tauri 소비자가 출발 슬롯 rect를 읽고,
+      // DOM만 다음 커밋에서 넓어져 release 프레임에 검은 간극이 생긴다. 이 계약은 프레임워크
+      // 보정이 아니라 종료 사건의 의미다 — Electron도 같은 최종 DOM을 보되 별도 합성은 없다.
+      commitDomLayout(() => commitResize.flush());
       gesture.end();
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
