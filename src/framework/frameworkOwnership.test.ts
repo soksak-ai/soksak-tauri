@@ -100,7 +100,13 @@ describe("Tauri native-composition ownership", () => {
   });
 
   it("surface host의 정상 z-order는 고정하고 overlay 상태만 명시적으로 전환한다", () => {
-    const source = readFileSync(resolve(ROOT, "frameworks/tauri/src/webview.rs"), "utf8");
+    // 명령 진입점과 AppKit 바인딩은 물리적으로 분리되어 있다. 어느 한 파일만 읽으면
+    // 구현이 올바르게 모듈화된 순간 계약이 사라졌다고 오판한다. 두 파일을 하나의 어댑터
+    // 표면으로 읽되, 아래 z-order 기준 자체는 그대로 유지한다.
+    const source = [
+      "frameworks/tauri/src/webview.rs",
+      "frameworks/tauri/src/webview/layer.rs",
+    ].map((file) => readFileSync(resolve(ROOT, file), "utf8")).join("\n");
     expect(source).toMatch(/raise_surface_host/);
     expect(source).toMatch(/lower_surface_host/);
     expect(source).not.toMatch(/webview_surface_handoff/);
