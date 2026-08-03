@@ -261,6 +261,7 @@ describe("ui.input.drag — 실시간 재현 표면", () => {
       width: 20, height: 20, toJSON: () => ({}),
     });
     let committedMoves = 0;
+    const focused = vi.spyOn(document, "hasFocus").mockReturnValue(true);
     const onMove = () => window.requestAnimationFrame(() => { committedMoves += 1; });
     window.addEventListener("mousemove", onMove);
     const seenBySnapshot: number[] = [];
@@ -286,9 +287,51 @@ describe("ui.input.drag — 실시간 재현 표면", () => {
       {},
     );
     window.removeEventListener("mousemove", onMove);
+    focused.mockRestore();
     expect(seenBySnapshot).toEqual([0, 1, 2, 2]);
     mockedInvoke.mockReset();
     mockedInvoke.mockResolvedValue({});
+  });
+
+  it("비전면에서 rAF가 멈춰도 throttle되는 timer 없이 단계 캡처를 끝낸다", async () => {
+    mountNode(`<div data-node="btn">drag</div>`);
+    const node = document.querySelector<HTMLElement>("[data-node=btn]")!;
+    vi.spyOn(node, "getBoundingClientRect").mockReturnValue({
+      x: 10, y: 10, left: 10, top: 10, right: 30, bottom: 30,
+      width: 20, height: 20, toJSON: () => ({}),
+    });
+    const raf = vi.spyOn(window, "requestAnimationFrame").mockImplementation(() => 1);
+    const focused = vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    const timer = vi.spyOn(window, "setTimeout").mockImplementation(() => {
+      throw new Error("비전면 WebKit에서 timer는 throttle되므로 캡처 종료 사건이 될 수 없다");
+    });
+    const mockedInvoke = vi.mocked(frameworkInvoke);
+    mockedInvoke.mockClear();
+    mockedInvoke.mockResolvedValue("cG5n");
+
+    try {
+      const result = await execute(
+        "ui.input.drag",
+        {
+          from: ADDR,
+          dx: 100,
+          steps: 1,
+          durationMs: 0,
+          recordDir: "/tmp/drag-background",
+          captureSteps: true,
+        },
+        {},
+      );
+      expect(result.data).toMatchObject({
+        recording: { frames: 3, frameFallbacks: 3 },
+      });
+    } finally {
+      raf.mockRestore();
+      focused.mockRestore();
+      timer.mockRestore();
+      mockedInvoke.mockReset();
+      mockedInvoke.mockResolvedValue({});
+    }
   });
 
   it("steps/durationMs를 공개하고 지정 단계마다 mousemove를 보낸다", async () => {

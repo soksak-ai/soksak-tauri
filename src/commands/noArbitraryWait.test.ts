@@ -67,7 +67,6 @@ const ALLOWED: { file: string; mark: string; event: string; why: string }[] = [
   { file: "src/commands/catalogRemote.ts", mark: "setTimeout(() => {", event: "caller-specified", why: "remote.confirm TTL(ttlSecs 파라미터) — 만료=Deny 가 계약(fail-closed)" },
   // ── ② 프로토콜·OS 경계 유예(TS) ──
   { file: "src/commands/catalogDom.ts", mark: "new Promise((r) => setTimeout(r, 50))", event: "dnd-frame-pacing", why: "합성 DragEvent 시퀀스의 프레임 간격 — 브라우저 DnD 상태기계가 같은 틱의 연속 이벤트를 접는다" },
-  { file: "src/commands/catalogDom.ts", mark: "window.setTimeout(() => finish(false), 50)", event: "animation-frame-commit", why: "rAF 커밋이 주 경로 — 가림 감지가 사건을 멈추면 명령을 무한 대기에 두지 않고 frameFallbacks로 관측 실패를 공개하는 유한 안전망" },
   // ── ② 프로토콜·OS 경계 유예 ──
   { file: "src/commands/catalogWindow.ts", mark: "setTimeout(() => {", event: "self-destruct-reply-flush", why: "자기 파괴 명령은 답을 먼저 흘린다 — 통로가 파괴로 함께 죽는다(window.reload). 파괴 자체는 프레임워크가 하고 자국도 거기서 남는다" },
   { file: "src/commands/catalogWindow.ts", mark: "setTimeout(() => void invoke(\"window_close\", { label }), 30);", event: "self-destruct-reply-flush", why: "동일 계약(window.close 자기 창)" },

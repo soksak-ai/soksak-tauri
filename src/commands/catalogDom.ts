@@ -1222,23 +1222,31 @@ export function registerDomCatalog(): void {
       const dist = Math.hypot(toPt.x - fromPt.x, toPt.y - fromPt.y);
       let capturedSteps = 0;
       let frameFallbacks = 0;
-      const waitForPaintCommit = () => new Promise<void>((resolve) => {
-        let finished = false;
-        const finish = (committed: boolean) => {
-          if (finished) return;
-          finished = true;
-          window.clearTimeout(guard);
-          if (!committed) frameFallbacks += 1;
-          resolve();
-        };
-        const guard = window.setTimeout(() => finish(false), 50);
-        window.requestAnimationFrame(() => finish(true));
-      });
+      const waitForPaintCommit = async (): Promise<void> => {
+        // 전면 창은 compositor의 실제 paint 경계를 따른다. 비전면 WebKit은 rAF뿐 아니라 짧은
+        // timer도 수 초 단위로 throttle한다(실측: 50ms×10단계가 120초). 포커스를 빼앗지 않는
+        // 캡처에서는 이미 dispatch된 React 입력을 다음 task까지 보내고, 강제 layout read로 그
+        // task의 DOM 기하를 확정한다. MessageChannel은 1회성 사건이며 반복 감시가 아니다.
+        if (document.hasFocus() && document.visibilityState !== "hidden") {
+          await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+          return;
+        }
+        frameFallbacks += 1;
+        await new Promise<void>((resolve) => {
+          const channel = new MessageChannel();
+          channel.port1.onmessage = () => {
+            channel.port1.close();
+            channel.port2.close();
+            resolve();
+          };
+          channel.port2.postMessage(null);
+        });
+        void document.documentElement.getBoundingClientRect();
+      };
       const captureStep = async (): Promise<void> => {
         if (!recordDir || !captureSteps) return;
-        // 패널 preview는 rAF로 고빈도 move를 합친다. 그 커밋 사건 뒤에 읽어야 방금 이동의
-        // 픽셀이 된다. 가림 감지가 rAF를 멈추면 유한 안전망으로 빠지고 그 횟수를 응답에 공개한다.
-        // 반복 감시가 아니라 입력 단계마다 정확히 한 번인 경계다.
+        // 전면은 rAF paint 뒤, 비전면은 다음 DOM task의 강제 layout 뒤에 읽는다. 어느 경계를
+        // 썼는지는 frameFallbacks로 공개한다 — 포커스 없는 캡처를 성공처럼 위장하지 않는다.
         await waitForPaintCommit();
         const png = await invoke<string>("plugin:webview-capture|snapshot_region", {});
         await invoke("write_file_base64", {
