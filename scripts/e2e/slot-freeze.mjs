@@ -5,7 +5,8 @@
 //
 // 검증:
 //   1) 정착 선캡처 — 브라우저(홀) 뷰 정착 후 슬롯 dataset.freezeSnapAt 이 선다
-//   2) 동결 사이클 — 뷰 교차 활성(move 위상)에 freeze 가 "0" 으로 남는다(동결→해동 완주)
+//   2) 실제 탭 교차 클릭 — ui.input.click 이 클릭과 같은 요청에서 유한 연속 캡처를 시작한다.
+//      각 방향의 첫 프레임부터 착지까지 증거가 남고, freeze="0" 으로 동결→해동을 완주한다.
 //   3) 재캡처 — 사이클 뒤 freezeSnapAt 이 전진한다(착지 정착 에지가 다음 스냅을 굽는다)
 //   4) 포커스 보존 — 포커스 인/아웃 양쪽에서 슬롯 영역 스냅샷이 블랭크가 아니다
 //      (백지 판정 휴리스틱: 렌더된 영역의 PNG base64 는 블랭크보다 뚜렷이 크다)
@@ -17,12 +18,16 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import fs from "node:fs";
 import { requireSocket } from "./lib/client.mjs";
 import { acquireFixtureWindow, releaseFixtureWindow } from "./lib/fixtureWindow.mjs";
 
 const SOCKET = requireSocket();
 // 픽스처 루트 — 고정 경로 재사용(멱등, /tmp 금지 규율). 창 폐쇄가 회수를 담당한다.
 const FIXTURE_ROOT = path.join(os.homedir(), ".soksak-e2e", "slot-freeze");
+// 매 실행이 같은 자리를 교체한다 — timestamp 폴더를 쌓지 않는다. 이 디렉터리 밖은 절대
+// 지우지 않으며, 실패해도 마지막 RED 프레임이 남아 바로 검안할 수 있다.
+const EVIDENCE_ROOT = path.join(os.homedir(), ".soksak-e2e", "evidence", "slot-freeze");
 // 검증 대상 엔진 — 홀(네이티브 표면) 뷰는 엔진마다 표면 소유자가 다르다(자식 웹뷰 vs 사이드카
 // 프로세스). 한 엔진만 태우면 나머지는 검증되지 않은 채 남는다(실측: chromium 경로에서 깜빡임).
 // BROWSER_ENGINE=browser|browser-chromium|browser-chromium-offscreen.
@@ -138,6 +143,10 @@ async function main() {
   }, 90_000).unref?.();
   await connect();
   console.log(`소켓 연결: ${SOCKET} — 엔진 ${ENGINE}`);
+  const evidenceBoundary = path.join(os.homedir(), ".soksak-e2e", "evidence") + path.sep;
+  if (!EVIDENCE_ROOT.startsWith(evidenceBoundary)) throw new Error("증거 경로 경계 위반");
+  fs.rmSync(EVIDENCE_ROOT, { recursive: true, force: true });
+  fs.mkdirSync(EVIDENCE_ROOT, { recursive: true });
 
   // ── 픽스처: 전용 임시 root 창 + 브라우저(홀 뷰) + 터미널(교차 활성 상대) ──
   // 창 확보는 lib/fixtureWindow 가 진다 — 루트가 주인이고, 있으면 물려받는다(멱등).
@@ -225,6 +234,37 @@ async function main() {
     return m.ok ? m.data : null;
   };
 
+  // 탭 헤더 주소는 ui.tree 가 답한다 — project id나 주소 문법을 하니스가 조립하지 않는다.
+  // 클릭과 녹화가 한 직렬 요청에 있어야 카메라 시작과 조작 사이의 레이스가 없다.
+  const clickAddress = async (viewId) => {
+    const tree = await rpc("ui.tree", {}, win);
+    const node = (tree.data?.nodes ?? []).find((n) => n.nodePath === `tab/view/${viewId}`);
+    if (!node?.address) throw new Error(`탭 클릭 주소 미노출: ${viewId}`);
+    return node.address;
+  };
+  const tabAddress = {
+    browser: await clickAddress(browserView),
+    terminal: await clickAddress(termView),
+  };
+  let clickSeq = 0;
+  const clickWithCapture = async (kind) => {
+    clickSeq += 1;
+    const dir = path.join(EVIDENCE_ROOT, `${String(clickSeq).padStart(2, "0")}-${kind}`);
+    const clicked = await rpc(
+      "ui.input.click",
+      {
+        address: tabAddress[kind],
+        recordDir: dir,
+        recordFrames: 24,
+        recordIntervalMs: 16,
+      },
+      win,
+    );
+    if (!clicked.ok) throw new Error(`탭 클릭 실패(${kind}): ${clicked.code} ${clicked.message}`);
+    console.log(`  클릭+캡처 ${kind}: ${dir}`);
+    return dir;
+  };
+
   // 1) 정착 선캡처 — 청정(스팟) 슬롯만 구워진다(dim 슬롯 skip 정책). 분할 직후엔 터미널이
   // 활성이라 브라우저 슬롯이 dim — 실사용처럼 브라우저를 먼저 활성해 스팟 상태에서 기다린다.
   await rpc("tab.activate", { tab: browserView }, win);
@@ -245,15 +285,16 @@ async function main() {
     `snapAt=${snapAt0} snapSize=${settled.dataset.freezeSnapSize} slot=${surfaceSizeOf(settled.rect)}`,
   );
 
-  // 2) 동결 사이클 — 교차 활성이 move 위상을 태우고, 착지에서 해동돼 있어야 한다.
-  await rpc("tab.activate", { tab: termView }, win);
-  await sleep(700);
-  await rpc("tab.activate", { tab: browserView }, win);
-  const cycled = await pollUntil("동결 사이클(freeze=0)", 10000, async () => {
-    const d = await measure();
-    return d?.dataset?.freeze === "0" ? d : null;
-  });
-  assert("동결 사이클 — 동결→해동 완주(freeze=0)", cycled.dataset.freeze === "0");
+  // 2) 실제 탭 교차 클릭 — 각 클릭의 첫 프레임부터 착지까지 같은 요청에서 캡처한다.
+  // 명령으로 상태만 바꾸면 탭 헤더의 실제 클릭 경로(slotGesture/activation 귀속)를 검증하지 못한다.
+  await clickWithCapture("terminal");
+  await clickWithCapture("browser");
+  const cycled = await measure();
+  assert(
+    "실제 탭 교차 클릭 — 동결→해동 완주(freeze=0)",
+    cycled?.dataset?.freeze === "0",
+    JSON.stringify(cycled?.dataset ?? null),
+  );
 
   // 2.5) 스탠드인 피복 — §4.6-3(표면을 숨기지 않는다)이 전적으로 기대는 가정: 스탠드인이
   //      유일한 홀을 완전히 덮는다. 이 가정이 깨지면 표면이 스탠드인 위로 드러나 활강 내내
@@ -329,10 +370,8 @@ async function main() {
   // 단일 사이클이 아니라 반복 사이클 뒤에 판정한다 — hide→show 를 여러 번 겪은 WKWebView 가
   // 뷰어빌리티를 잃고 빈 레이어로 잠드는 회귀(실사고)는 반복 후에만 드러난다.
   for (let i = 0; i < 3; i++) {
-    await rpc("tab.activate", { tab: termView }, win);
-    await sleep(500);
-    await rpc("tab.activate", { tab: browserView }, win);
-    await sleep(700);
+    await clickWithCapture("terminal");
+    await clickWithCapture("browser");
   }
   const focusedLen = await slotShot();
   await rpc("tab.activate", { tab: termView }, win);
@@ -600,13 +639,11 @@ async function main() {
 
   // 10.5) 모션 판독(옵션) — SLOT_FREEZE_MOTION 으로 활강 구간을 프레임 열로 남긴다.
   //       정착 스냅샷·계수는 모션에 대해 아무것도 증명하지 않는다(핸드오프 §1·§6-4): 출력
-  //       픽셀만이 근거다. 모션 프레임은 창이 전면일 때만 찍힌다(가려진 창은 애니를 최종
-  //       프레임으로 settle 한다) — 그래서 이 단계만 창을 전면으로 가져온다.
+  //       픽셀만이 근거다. window.record 는 가림 감지를 캡처 동안 스스로 끄므로 사용자 포커스를
+  //       가져오지 않는다. 포커스를 잡아야만 성립하는 검증은 이 하니스에서 금지다.
   if (process.env.SLOT_FREEZE_MOTION) {
     const dir =
       process.env.SLOT_FREEZE_MOTION_DIR || path.join(os.tmpdir(), "slot-freeze-motion");
-    await rpc("window.focus", {}, win);
-    await sleep(500);
     await rpc("tab.activate", { tab: browserView }, win);
     await sleep(900);
     // 카메라를 먼저 돌리고 위상을 태운다 — 한 연결로는 불가능하다(녹화가 프레임 수만큼 응답을
@@ -618,7 +655,7 @@ async function main() {
     // (실측 프레임 간격 ~108ms, 첫 프레임 지연 ~500ms). 짧게 기다리면 위상이 카메라보다
     // 앞서 끝나 꼬리만 남는다.
     await sleep(800);
-    await rpc("tab.activate", { tab: termView }, win);
+    await rpc("ui.input.click", { address: tabAddress.terminal }, win);
     const done = await rec;
     cam.close();
     console.log(`  모션 프레임: ${done.data?.frames ?? "?"}장 → ${done.data?.dir ?? dir}`);
