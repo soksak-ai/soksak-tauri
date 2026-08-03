@@ -228,12 +228,16 @@ export async function prepareNativeContentViewMove(
     const slot = findContentViewSlot(state.label, document);
     const viewId = slot ? slotViewId(slot) : null;
     const move = viewId ? byView.get(viewId) : undefined;
-    const current = appliedFrame(state);
-    if (!move || !current || Math.abs(move.dx) < 0.5) return [];
+    const before = appliedFrame(state);
+    if (!move || !before || !slot || Math.abs(move.dx) < 0.5) return [];
+    // 목표는 반드시 화면이 지금 그리는 DOM 슬롯에서 계산한다. native 장부는 직전 snap의
+    // precommit 위치일 수 있어 연속 여정의 출발점이 아니다. 그 stale frame에 다음 dx를 접으면
+    // 오차가 누적되어 DOM은 왼쪽인데 child는 가운데에 영구 정박한다.
+    const currentSlot = slotRect(slot);
     return [{
       state,
-      before: current,
-      rect: { ...current, x: Math.round(current.x - move.dx) },
+      before,
+      rect: { ...currentSlot, x: Math.round(currentSlot.x - move.dx) },
     }];
   });
   if (targets.length === 0) return {

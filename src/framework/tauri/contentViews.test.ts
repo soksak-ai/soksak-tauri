@@ -208,6 +208,30 @@ describe("네이티브 자식 뷰 구현", () => {
     expect(vi.isMockFunction(globalThis.requestAnimationFrame)).toBe(false);
   });
 
+  it("연속 여정의 목표는 stale native frame이 아니라 현재 DOM 슬롯에서 계산한다", async () => {
+    const frame = document.createElement("div");
+    frame.dataset.node = "layout/tab/v1";
+    const slot = document.createElement("div");
+    slot.setAttribute("data-content-view-body", "browser--v1");
+    slot.getBoundingClientRect = () => ({
+      x: 620, y: 112, left: 620, top: 112, right: 832, bottom: 570, width: 212, height: 458,
+    }) as DOMRect;
+    frame.appendChild(slot);
+    document.body.appendChild(frame);
+
+    const { nativeHost, prepareNativeContentViewMove } = await load();
+    await nativeHost.open("browser--v1", { url: "https://x" });
+    // 직전 여정이 남긴 native 장부는 DOM 출발점과 다르다. 다음 목표는 이 값에 기대면 안 된다.
+    await nativeHost.bounds("browser--v1", 800, 112, 212, 458);
+    invoke.mockClear();
+
+    const prepared = await prepareNativeContentViewMove([{ viewId: "v1", dx: 410 }]);
+    await prepared.commit();
+    expect(invoke).toHaveBeenCalledWith("webview_bounds", {
+      label: "browser--v1", x: 210, y: 112, w: 212, h: 458,
+    });
+  });
+
   it("DOM 재배치 mutation 뒤 공개 슬롯의 최종 위치로 native bounds를 대조한다", async () => {
     let x = 620;
     const frame = document.createElement("div");
