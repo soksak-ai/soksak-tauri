@@ -6,9 +6,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const invoke = vi.fn(async (_cmd: string, _args?: unknown) => undefined as unknown);
 const listeners = new Map<string, (payload: Record<string, unknown>) => void>();
-let motionListener:
-  | ((active: boolean, kinds: ("move" | "resize")[], scope: Set<string> | null) => void)
-  | null = null;
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (cmd: string, args?: unknown) => invoke(cmd, args),
 }));
@@ -16,16 +13,6 @@ vi.mock("../../plugins/hooks", () => ({
   onPluginEvent: (event: string, fn: (payload: Record<string, unknown>) => void) => {
     listeners.set(event, fn);
     return { dispose: () => listeners.delete(event) };
-  },
-}));
-vi.mock("../../lib/layoutMotion", () => ({
-  onLayoutMotion: (
-    fn: (active: boolean, kinds: ("move" | "resize")[], scope: Set<string> | null) => void,
-  ) => {
-    motionListener = fn;
-    return () => {
-      if (motionListener === fn) motionListener = null;
-    };
   },
 }));
 
@@ -56,7 +43,6 @@ describe("네이티브 자식 뷰 구현", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
     listeners.clear();
-    motionListener = null;
     ResizeObserverMock.instances = [];
     vi.stubGlobal("ResizeObserver", ResizeObserverMock);
   });
@@ -185,11 +171,10 @@ describe("네이티브 자식 뷰 구현", () => {
     ]);
   });
 
-  it("move 에지에서 CSS FLIP 델타를 native animation 한 번으로 번역하고 종료에서 정착한다", async () => {
+  it("목표 DOM 커밋 전에 움직이는 view의 native bounds를 확정하고 snap을 요구한다", async () => {
     const frame = document.createElement("div");
-    frame.className = "tab-body flip-move";
+    frame.className = "tab-body";
     frame.dataset.node = "layout/tab/v1";
-    frame.setAttribute("style", "--flip-x: 410px");
     const slot = document.createElement("div");
     slot.setAttribute("data-content-view-body", "browser--v1");
     slot.getBoundingClientRect = () => ({
@@ -198,26 +183,17 @@ describe("네이티브 자식 뷰 구현", () => {
     frame.appendChild(slot);
     document.body.appendChild(frame);
 
-    const { installNativeContentViewComposition, nativeHost } = await load();
-    installNativeContentViewComposition();
+    const { nativeHost, prepareNativeContentViewMove } = await load();
     await nativeHost.open("browser--v1", { url: "https://x" });
     invoke.mockClear();
 
-    motionListener?.(true, ["move"], new Set(["v1"]));
-    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("webview_animate_bounds", {
+    await expect(
+      prepareNativeContentViewMove([{ viewId: "v1", dx: 410 }]),
+    ).resolves.toBe("snap");
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(invoke).toHaveBeenCalledWith("webview_bounds", {
       label: "browser--v1", x: 210, y: 112, w: 212, h: 458,
-      durationMs: 340,
-      timing: [0.4, 0, 0.2, 1],
-    }));
-
-    invoke.mockClear();
-    slot.getBoundingClientRect = () => ({
-      x: 210, y: 112, left: 210, top: 112, right: 422, bottom: 570, width: 212, height: 458,
-    }) as DOMRect;
-    motionListener?.(false, [], null);
-    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("webview_bounds", {
-      label: "browser--v1", x: 210, y: 112, w: 212, h: 458,
-    }));
+    });
   });
 
   it("복귀 에지에서 떨어진 child를 플러그인 재마운트 없이 어댑터가 복구한다", async () => {
