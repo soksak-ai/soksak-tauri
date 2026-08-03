@@ -92,9 +92,9 @@ the mount opens blank, and blank is exactly what "replaced with a new one" looks
 like. A projected view keeps its state outside the mount, keyed by project and
 region, and tolerates being mounted in both corridors at once.
 
-`scripts/e2e/slot-freeze.mjs` gates the two places live: mid-travel one
-`rail/left` and one `rail/left/leaving` stand together, each holding a
-projection surface, and the leaving place is gone after the landing.
+The corridor identity is gated by `useArrangementPhase` and projection-frame unit tests.
+`scripts/e2e/slot-freeze.mjs` separately drives real cross-panel tab clicks and records every frame,
+proving that an out-of-document content surface remains live while the rail binding relocates.
 
 ## 4. Commands and Events
 

@@ -416,7 +416,11 @@ cored 는 터미널을 로컬 폴백 없이 서빙한다. 앱은 데몬을 못 �
 
 `surface-park`·`slot-freeze`·`gutter-drag` 는 **네이티브 자식 표면**을 읽었다 — `webview_list`, 엔진 서피스 통계, 합성된 자식의 rect. 이 프레임워크에서 그것들은 구조상 비어 있고, cored 는 숫자를 지어내는 대신 `FRAMEWORK_CONCEPT_ABSENT` 로 답한다. 판정하는 쪽에는 그 사실을 **물을 자리**가 없었다.
 
-`framework.provision` 이 그 자리다: `chromium`·`nativeChildWebview`. 능력 선언이지 이름 분기가 아니다 — `name` 은 원장·진단에만 쓰고, 판정은 축으로 가른다. 기준은 그대로 두고 재는 자리만 바꾼다: 활성 브라우저가 실제로 서는지는 네이티브 표면 목록이거나 페이지 안 본문의 rect 이고(`webview.surfaces` 의 `bodies` 가 이제 위치도 싣는다 — 크기만 실은 rect 로는 "접힌 자리에 정확히 섰는가"를 물을 수 없다), 슬롯 착지 게이트는 표면 모델이 `dom` 이면 사유를 밝히고 비적용이 된다(엔진만 보던 축에 프레임워크를 더했다).
+`framework.provision`이 그 자리다. `chromium`·`nativeChildWebview`는 렌더링 기반을 설명하고,
+`supportsDocumentStart`·`supportsInputInjection`은 제품에 보이는 선택 기능을 설명한다. `name`은
+원장·진단에만 쓴다. 합성 구현 분기는 capability 조합표가 아니라 어댑터 선택 한 곳에 남는다.
+활성 브라우저가 실제로 서는지는 네이티브 표면 목록 또는 문서 안 본문의 rect로 판정하며, DOM-only
+껍데기는 네이티브 슬롯 착지를 지어내지 않고 사유와 함께 비적용으로 보고한다.
 
 그 과정에서 거짓 GREEN 이 나왔다. `gutter-drag` 의 축 격리 검사는 두 겹으로 공허했다 — 구동을 네이티브 입력으로만 해서 그 명령이 없는 프레임워크에서는 아무것도 안 끌었고, 높이 오라클이 rect 없는 트리를 읽어 `-1` 끼리 비교했다. 재는 자리를 고치자 곧바로 진짜 실패가 드러났다.
 
@@ -638,7 +642,7 @@ offscreen 축은 코어의 공백이 **아니다**. 2026-07-08 에 검증됐고 
 
 ### 무엇이 잘못됐나
 
-콘텐츠가 사는 자리가 프레임워크마다 다르다. Tauri 에서는 OS 자식 뷰다 — 문서 밖에 살고, DOM 전체보다 뒤에 합성되며, 좌표를 써 줘야 움직이고, 그 위의 마우스는 이 문서에 오지 않는다. Electron 에서는 `<webview>` 태그다 — 문서 안에 살고, 자기 부모를 따라 움직이며, 평범한 쌓임 순서로 가려지고, 마우스는 그냥 온다.
+콘텐츠가 사는 자리가 프레임워크마다 다르다. Tauri 에서는 OS 자식 뷰다 — 문서 밖에 살고 메인 웹뷰 앞의 안정된 자식 웹뷰 경계에 고정되며 좌표를 써 줘야 움직인다. Electron 에서는 `<webview>` 태그로 문서 안에 살며 기하 추종 없이 자기 부모를 따라 움직인다.
 
 그 차이를 갚는 Tauri 의 장치 전부 — 홀·스탠드인·레일 클립·네이티브 마우스 브릿지·오버레이 히트테스트 게이트·네이티브로 그리는 골 강조바 — 가 코어에 앉아 **양쪽 모두에서** 돌았다. Electron 에는 갚을 빚이 없으니 그 장치는 멀쩡한 판을 가리고 비우기만 했다. 실측 2026-08-03: 판 활성 전이의 한 프레임에서 브라우저 판 둘이 통째로 비었다.
 
@@ -650,10 +654,10 @@ offscreen 축은 코어의 공백이 **아니다**. 2026-07-08 에 검증됐고 
 
 세 번째 프레임워크는 자기 `whale/` 폴더에 자기 것을 쓴다. 코어는 안 바뀌고, 남의 fix 를 물려받지도 않는다.
 
-프레임워크 identity 분기는 **어댑터 선택 한 곳**에서 허용된다. 그 차이를
-`supportsDocumentStart` 같은 capability 조합표로 다시 표현하지 않는다. capability는 제품이
-실제로 지원 여부에 따라 기능을 표시하거나 대체해야 할 때만 추가하며, 구현 세부를 미리 열거하지
-않는다. 지킬 수 없는 호출은 선택된 어댑터가 이름을 달고 실패한다.
+프레임워크 identity 분기는 **어댑터 선택 한 곳**에서 허용된다. 합성 구현 차이는 capability로
+분기하지 않고 어댑터 안에 둔다. 단, 제품이 실제로 기능을 표시하거나 대체해야 하는
+`supportsDocumentStart`, `supportsInputInjection`은 공개 capability다. 지킬 수 없는 호출은 선택된
+어댑터가 이름을 달고 실패한다.
 
 공개 브라우저 제품 identity는 `soksak-plugin-browser-native` 하나를 유지한다. 장기적으로
 `browser-webview` 또는 `browser-embedded`가 제품 의미를 더 정확히 표현할 수 있지만, plugin id는
@@ -664,7 +668,7 @@ offscreen 축은 코어의 공백이 **아니다**. 2026-07-08 에 검증됐고 
 | | 주인 |
 | --- | --- |
 | `ContentViewHost` 계약, `data-content-view-body` 본문 선언, 등록부 | `src/lib/contentViews.ts` |
-| 네이티브 자식 구현, 슬롯 bounds 추종, veil 착지, 홀, 스탠드인, 레일 클립, 네이티브 마우스, 골 강조바, 오버레이 게이트, `webview.emitNative` | `src/framework/tauri/` |
+| 네이티브 자식 구현, 사건 기반 슬롯 bounds 추종, 안정 z-order, 레일 클립, 네이티브 마우스, 골 강조바, 오버레이 게이트, `webview.emitNative` | `src/framework/tauri/` |
 | DOM `<webview>` 구현 | `src/framework/electron/` |
 | 주소창·탐색·DOM 자동화·미디어 명령과 `data-content-view-body` 선언 | `soksak-plugin-browser-native` |
 | 홀 CSS | `src/framework/tauri/styles.css` |
@@ -680,14 +684,13 @@ offscreen 축은 코어의 공백이 **아니다**. 2026-07-08 에 검증됐고 
 `ResizeObserver`가 Tauri 어댑터를 깨운다. 어댑터는 label별 IPC를 직렬화하고 대기 중 사건을 최신
 rect 한 번으로 합친다. Electron 어댑터에는 이 구독과 추종 상태가 전혀 없다.
 
-move·resize 제스처에서 Tauri 어댑터는 공개 모션 범위에 든 슬롯만 유한 기하
-거래로 바꾼다. 선디코드 DOM 스탠드인이 슬롯을 따라가는 동안 네이티브 bounds를
-멈추고, 종료 에지에서 최종 접힌 rect를 원자적으로 적용한 뒤 복귀시킨다. 이 엔진은
-`src/framework/tauri/slotFreeze.ts`에만 있으며 Electron과 코어에는 설치되지 않는다.
-Electron은 언제나 `data-content-view-body`의 DOM 자식 배치만 수행한다.
+레일 재배치에서 Tauri 어댑터는 유한 snap 거래를 쓴다. 중간 mutation 쓰기를 잠그고 목표 DOM을
+커밋한 layout effect에서 접힌 목표 rect를 한 번 적용한다. 네이티브 자식의 z-order는 바뀌지 않으며
+스크린샷·veil·rAF handoff·프레임 추종은 없다. Electron은 언제나
+`data-content-view-body`의 DOM 자식 배치만 수행한다.
 
 `webview.composition`은 DOM 앵커·실제 네이티브 frame뿐 아니라 label별 슬롯 rect, 마지막 적용
-rect, 가시성, veil, 동기화 대기 상태를 공개한다. 합성 상태를 브라우저 제품 플러그인이
+rect, 가시성, 동기화 대기 상태를 공개한다. 합성 상태를 브라우저 제품 플러그인이
 `surface.stats`로 재선언하지 않는다.
 
 ### `install()` 은 계약 멤버이고, 늦게 가져온다

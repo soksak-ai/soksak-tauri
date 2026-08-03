@@ -58,31 +58,19 @@ but **delayed spikes** (e.g. hundreds of SIGWINCHes → a TUI redraw cascade for
 seconds). Forced layout reads (getBoundingClientRect etc.) never run
 synchronously per render — move them to rAF timing.
 
-#### 5a. Visual continuity during gestures (freeze-frame)
+#### 5a. Visual continuity at a native composition boundary
 
-Deferring a native surface's bounds commit (settle-then-once above) must not
-expose a visual gap: during the gesture the slot moves live while the native
-surface below holds its stale bounds, so the pane appears torn or blank.
-The rule: a user gesture never shows discontinuous content.
+A user gesture never shows discontinuous content. The means depends on where the content lives:
 
-- The core emits the gesture fact (`layout.resize-gesture` plugin event, start
-  and end) and provides capture (`app.webview.captureRegion`). It does not
-  know what providers do with them.
-- A native-surface provider covers its slot with a stand-in for the duration:
-  capture the slot at gesture start, show it top-left anchored without
-  scaling inside an opaque container (slot growth must not reveal the stale
-  native beneath), commit bounds exactly once at gesture end, remove the
-  stand-in after the native has repainted. On capture failure, fall back to
-  the pre-existing behavior rather than blanking content.
-- Engine-sidecar surfaces (outside the core layer system, composited above
-  the DOM) are orchestrated by their provider plugin, not by the relay: the
-  stand-in must be mounted before the surface hides (hide-first would blank
-  the pane until the capture arrives) and the surface must be shown again
-  before the stand-in is removed. The sidecar host-fact relay
-  (`resize-gesture`) exists for engines that have no DOM-side provider.
-- This does not conflict with the [HARD] rule below: the stand-in is a
-  deliberate, temporary visual bridge over a deferred resize whose end state
-  is a true repaint — not a cover-up of a rendering artifact.
+- An in-document surface follows its DOM parent. Core and Electron install no native bounds follower,
+  screenshot stand-in, veil handoff, or z-order transaction.
+- A Tauri child webview stays live at one stable z-order. Predictable rail relocation is a finite snap
+  transaction: the current DOM slot is the source coordinate, intermediate mutation writes are locked,
+  and the folded target frame is committed once. A stale native frame is never used as the next
+  journey's origin.
+- Unpredictable resize input is event-driven (`ResizeObserver` and explicit gesture edges), coalesced
+  per label, and always converges on the current public slot. It does not run a frame polling loop.
+- Captured pixels are evidence (`window.record` / `window.snapshot`), never replacement UI.
 
 ### 6. Preserve the platform paint path
 
@@ -169,8 +157,6 @@ Rules:
   switch in place (WebGL addon load/dispose).
 - [HARD] Workarounds that hide the stretch by covering the body are forbidden
   — concealment is not a fix. Renderer choice (DOM) is the only root remedy.
-  (The gesture stand-in of 5a is not this: it bridges a deferred resize and
-  ends in a true repaint.)
 
 Evidence (2026-06 investigation, URLs verified):
 

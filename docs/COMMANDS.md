@@ -738,9 +738,9 @@ sok-dev framework.info
 
 ## `framework.provision`
 
-Read what this window's framework provides: adapter name, whether the engine is Chromium, and whether content views are native child webviews (as opposed to elements inside the page). Branch verification on these axes, never on the adapter name. | 프레임워크 능력 제공 축 네이티브 자식 웹뷰 엔진
+Read what this window's framework provides. Adapter name is diagnostic identity; product behavior branches only on explicit capabilities such as document-start scripts and real input injection. | 프레임워크 능력 제공 축 네이티브 자식 웹뷰 엔진
 
-**Returns**: { name, chromium, nativeChildWebview }
+**Returns**: { name, chromium, nativeChildWebview, supportsDocumentStart, supportsInputInjection }
 
 ```bash
 sok-dev framework.provision
@@ -1562,6 +1562,22 @@ List all programs available in the new-tab menu. Every entry is plugin-registere
 
 ```bash
 sok-dev program.list
+```
+
+## `program.wait`
+
+Wait for one declared program to enter the live registry. This is an event subscription, not a polling loop; use it at boot boundaries before opening a plugin-owned view. | 프로그램 준비 대기 플러그인 등록 이벤트
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `id` | string | ✓ | Program id to await |
+| `timeoutMs` | number |  | Finite deadline in milliseconds (1..60000, default 20000) [default 20000] |
+
+**Returns**: { id, pluginId, kind }
+**Errors**: INVALID_PARAMS, TIMEOUT
+
+```bash
+sok-dev program.wait '{"id":"browser","timeoutMs":20000}'
 ```
 
 ## `project.activate`
@@ -2864,16 +2880,20 @@ sok-dev ui.hit '{"x":200,"y":140}'
 
 ## `ui.input.click` (danger: inject)
 
-Dispatch a real-click sequence (mousedown → mouseup → click) to an exposed node (E2E injection). Use to drive UI flows programmatically or in tests. Pass phase:'down' to send only the mousedown, then observe the mid-gesture state (ui.hit / ui.measure), then phase:'up' to finish with mouseup+click — the only way to verify contracts that live BETWEEN down and up (e.g. that a mid-gesture surface stays hittable, or that activation waits for gesture completion). Unexposed addresses return NOT_EXPOSED — no guessing. Occluded/unfocused windows pause rAF and may not respond — call window.focus to bring the window forward first. | 클릭 주입 ui클릭 버튼클릭 E2E 게스처 다운 업 분해
+Dispatch a real-click sequence (mousedown → mouseup → click) to an exposed node (E2E injection). Use to drive UI flows programmatically or in tests. Pass phase:'down' to send only the mousedown, then observe the mid-gesture state (ui.hit / ui.measure), then phase:'up' to finish with mouseup+click — the only way to verify contracts that live BETWEEN down and up. recordDir starts the finite framework-neutral recorder in this same serialized request before the click, so tab/sidebar transitions can be inspected without focusing the window or racing a second command. Unexposed addresses return NOT_EXPOSED — no guessing. | 클릭 주입 ui클릭 버튼클릭 E2E 게스처 다운 업 분해
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `address` | string | ✓ | Exposed node address from ui.tree |
 | `phase` | string |  | 'down' = mousedown only; 'up' = mouseup+click only; omit for the full sequence |
+| `recordDir` | string |  | Optional output directory for finite transition frames captured concurrently with this click. |
+| `recordFrames` | number |  | Frames to capture when recordDir is set (1..600, default 40). [default 40] |
+| `recordIntervalMs` | number |  | Capture interval in milliseconds when recordDir is set (default 16). [default 16] |
+| `recordLeadMs` | number |  | Finite pre-click recording lead in milliseconds (0..2000, default 0). [default 0] |
 | `x` | number |  | Content-view-relative x (CSS px). Only when the address resolves to a content view; the click is delivered inside it as real input. |
 | `y` | number |  | Content-view-relative y (CSS px). |
 
-**Returns**: { clicked, address, phase? }
+**Returns**: { clicked, address, phase?, recording?:{dir,frames,mode:'realtime'} }
 **Errors**: NOT_EXPOSED, AMBIGUOUS, INVALID_PARAMS
 
 ```bash
@@ -2916,19 +2936,24 @@ sok-dev ui.input.dnd '{"to":".../node/img/s2/hero","files":[{"name":"a.png","typ
 
 ## `ui.input.drag` (danger: inject)
 
-Drive a pointer drag (mousedown on `from` -> mousemove -> mouseup). Two modes: (1) drop onto a target — give `to` (+ optional zone); (2) drag by dx/dy for resize handles. steps and durationMs expose a finite real-time sequence for animation/layout verification; defaults preserve the immediate two-move behavior. mousemove+mouseup dispatch on window so window-level drag listeners receive them. | 드래그 주입 드롭 탭이동 분할 합치기 리사이즈 디바이더 E2E 포인터드래그
+Drive a pointer drag (mousedown on `from` -> mousemove -> mouseup). Two modes: (1) drop onto a target — give `to` (+ optional zone); (2) drag by dx/dy for resize handles. steps and durationMs expose a finite real-time sequence for animation/layout verification; defaults preserve the immediate two-move behavior. recordDir starts the framework-neutral window recorder in the same request before the drag, so transition frames are observable even when control requests are serialized. mousemove+mouseup dispatch on window so window-level drag listeners receive them. | 드래그 주입 드롭 탭이동 분할 합치기 리사이즈 디바이더 E2E 포인터드래그
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
+| `captureSteps` | boolean |  | With recordDir, capture the baseline, every injected move, and the released frame. A focused window uses its animation-frame paint boundary; an unfocused window uses one next-task DOM layout boundary without taking focus. recording.frameFallbacks reports how many captures used that non-compositor boundary. [default false] |
 | `durationMs` | number |  | Total finite drag duration in milliseconds (0..10000). Default 0. [default 0] |
 | `dx` | number |  | Horizontal drag distance in CSS px from `from` center (mode 2 — resize/gutter). Alternative to `to`. |
 | `dy` | number |  | Vertical drag distance in CSS px from `from` center (mode 2). |
 | `from` | string | ✓ | Source node address (the tab / gutter / element to grab) |
+| `recordDir` | string |  | Optional output directory for f0000.png... captured concurrently with this drag. |
+| `recordFrames` | number |  | Frames to capture when recordDir is set (1..600, default 120). [default 120] |
+| `recordIntervalMs` | number |  | Capture interval in milliseconds when recordDir is set (default 33). [default 33] |
+| `recordLeadMs` | number |  | Finite pre-drag recording lead in milliseconds (0..2000, default 0). [default 0] |
 | `steps` | number |  | Number of evenly spaced mousemove events (1..120). Default 2. [default 2] |
 | `to` | string |  | Target node address to drop onto (mode 1). Omit when using dx/dy. |
 | `zone` | string |  | center | left | right | top | bottom — point within the target rect (mode 1) (center|left|right|top|bottom) |
 
-**Returns**: { dragged, from, to?, zone?, dx?, dy?, steps, durationMs }
+**Returns**: { dragged, from, to?, zone?, dx?, dy?, steps, durationMs, recording?:{dir,frames,mode,frameFallbacks?} }
 **Errors**: NOT_EXPOSED, AMBIGUOUS, INVALID_PARAMS
 
 ```bash
@@ -3259,9 +3284,15 @@ Survey what can be updated without applying anything. Reports the app body (rele
 sok-dev update.check
 ```
 
+## `webview.composition`
+
+Tauri-only composition audit: expose every visible DOM content hole and live native surface frame in both coordinate systems, with one-to-one matches and a strict rounding-only verdict.
+
+**Returns**: { coordinateContract, anchors, surfaces, placement:[{label,opened,desiredVisible,appliedVisible,boundsWrites,slotPresent,slotRect,appliedRect,syncPending}], matches, verdict }
+
 ## `webview.emitNative`
 
-Emit a native mouse-bridge event (native-mousedown/move/up) at viewport x,y — drives divider drag/resize over a native child (browser) without a real mouse, for E2E. Pair with ui.input.drag (DOM path); this is the native path. Occluded/unfocused windows pause rAF and may not respond — call window.focus to bring the window forward first.
+Emit a native mouse-bridge event (native-mousedown/move/up) at viewport x,y — drives divider drag/resize over a content surface that lives outside the document, without a real mouse, for E2E. Pair with ui.input.drag (DOM path); this is the native path. Occluded/unfocused windows pause rAF and may not respond — call window.focus to bring the window forward first.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -3275,35 +3306,6 @@ Emit a native mouse-bridge event (native-mousedown/move/up) at viewport x,y — 
 sok-dev webview.emitNative '{"kind":"native-mousedown","x":400,"y":300}'
 ```
 
-## `webview.composition`
-
-Tauri-only composition audit. Reports every visible DOM content hole and every live native
-surface in both coordinate systems, correlates child-webview labels to slot labels, and returns
-a strict one-to-one verdict. `coordinateContract.tolerancePx` is limited to integer-rounding
-error; any larger position or size difference is a defect. This command is intentionally absent
-from Electron because Electron content lives in the DOM and is inspected by `webview.surfaces`.
-
-**Returns**: { coordinateContract, anchors:[{label,viewId,projectId,rect}], surfaces:[{label,ptr,hidden,effectivelyHidden,nativeFrame,domFrame}], matches, verdict:{misplaced,stacked,missing,surfaces,holes} }
-
-```bash
-sok-dev webview.composition
-```
-
-## `webview.holes`
-
-Tauri-only input-hole audit. Reports every visible DOM declaration that must receive mouse
-input above an AppKit child surface (`right-sidebar`, `pane-gutter`, or `native-drag`) and the
-native hit-test-hole ledger, then returns a strict one-to-one verdict. The 1 CSS px tolerance is
-only for integer-boundary rounding. Missing and stale native holes are reported separately. This
-command is intentionally absent from Electron because Electron has no native child surface to
-hole-punch.
-
-**Returns**: { tolerancePx, dom:[{kind,node,rect}], native:[{x,y,w,h}], verdict:{missingNative,staleNative,matched} }
-
-```bash
-sok-dev webview.holes
-```
-
 ## `webview.health.query`
 
 Report webview renderer-process health per label: circuit-breaker state (closed / recovering / open), crash counts in the rolling 60s window, lifetime total, and the last termination reason if the platform provided one. Labels: a window label is that window's main webview, b-<win>-<view> is a browser child. state=open means automatic recovery is exhausted — recover it manually with webview.recover. | 웹뷰 건강 상태 크래시 조회 복구
@@ -3313,6 +3315,12 @@ Report webview renderer-process health per label: circuit-breaker state (closed 
 ```bash
 sok-dev webview.health.query
 ```
+
+## `webview.holes`
+
+Tauri-only input-hole audit: compare every visible DOM drag/sidebar declaration with the AppKit hit-test hole ledger one-to-one. Reports missing native holes and stale native holes separately.
+
+**Returns**: { tolerancePx, dom:[{kind,node,rect}], native:[{x,y,w,h}], verdict:{missingNative,staleNative,matched} }
 
 ## `webview.recover`
 
@@ -3331,9 +3339,9 @@ sok-dev webview.recover '{"label":"b-w-1234-v7"}'
 
 ## `webview.surfaces`
 
-Reconcile this window's state (which views exist) against the browser child webviews actually alive for this window. ghosts = child webviews whose view no longer exists in state — a stale native surface floating over the window (the 'browser over an empty window' mismatch); a non-empty ghosts list is always a defect fact. Judged from the same sources the app itself uses (state store + webview_list), no pixels involved. | 표면 정합 유령 웹뷰 잔존 브라우저 대조 확인
+Reconcile this window's state (which views exist) against the browser content views actually alive for this window. ghosts = views whose view no longer exists in state — a stale surface floating over the window (the 'browser over an empty window' mismatch). detached = content surfaces that live in the document but not inside the slot that declared them — they are being pushed by coordinates, so slot and surface are two clocks and one of them is always late (empty pane, edge afterimage). A non-empty ghosts or detached list is always a defect fact. Judged from the same sources the app itself uses (state store + the content view host), no pixels involved. | 표면 정합 유령 웹뷰 잔존 브라우저 대조 확인
 
-**Returns**: { window, actual: [label], ghosts: [label], orphans: [label], engine: {registered, hostPresent}, bodies: [{node,x,y,w,h,children,overlay,…}], contentViews: {inDocument, detached, dom: [{label,slotLabel,directVisibility,computedVisibility,display,projectId,projectActive,rect}]}, stateViews }
+**Returns**: { window, actual: [label], ghosts: [label], orphans: [label], engine: {registered, hostPresent}, bodies: [{node,x,y,w,h,children,overlay,…}], contentViews: {inDocument, detached: [label]}, stateViews }
 
 ```bash
 sok-dev webview.surfaces
@@ -3446,13 +3454,13 @@ sok-dev window.move '{"x":0,"y":0}'
 
 ## `window.occlusion`
 
-Toggle occlusion detection. When false, rendering continues even when fully covered by other apps (for continuous background capture — note battery cost). Not needed for normal use; snapshot/record disable it automatically during capture.
+Toggle occlusion detection for every native webview in the addressed window. When false, the main renderer and native child content surfaces continue rendering while fully covered by other apps. Returns the number of native webviews actually updated, so capture automation can reject a main-only partial arm.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `enabled` | boolean | ✓ | Occlusion detection on (default) / off |
 
-**Returns**: { occlusion }
+**Returns**: { occlusion, webviews }
 
 ```bash
 sok-dev window.occlusion '{"enabled":false}'

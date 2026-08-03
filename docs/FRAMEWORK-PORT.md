@@ -419,7 +419,12 @@ What the harnesses judge today, against this framework: `p0-contracts` 24/0, `mu
 
 `surface-park`, `slot-freeze`, and `gutter-drag` read **native child surfaces** — `webview_list`, engine surface stats, the rect of a composited child. On this framework those are empty by construction, and cored answers `FRAMEWORK_CONCEPT_ABSENT` rather than inventing a number. What the judging side lacked was a place to *ask*.
 
-`framework.provision` is that place: `chromium`, `nativeChildWebview`. It is a capability declaration, not a name switch — `name` goes to ledgers and diagnostics, while verification branches on the axes. The standard stays; only the place it is measured moves. Whether the active browser actually stands is either a native surface list or the rect of an in-page body (`webview.surfaces` now reports position as well — a rect carrying only size cannot answer "did it land exactly on the folded slot"). The slot-landing gate becomes non-applicable, with its reason printed, when the surface model is `dom` — an axis that previously read the engine alone and now reads the framework too.
+`framework.provision` is that place. `chromium` and `nativeChildWebview` describe the rendering substrate;
+`supportsDocumentStart` and `supportsInputInjection` describe product-visible optional behavior. `name`
+goes only to ledgers and diagnostics. Composition implementation still branches once at adapter selection,
+not through a growing capability matrix. Whether the active browser actually stands is either a native
+surface list or the rect of an in-page body; a DOM-only shell reports native slot-landing as non-applicable
+with its reason instead of inventing native state.
 
 That work surfaced a false green. `gutter-drag`'s axis-isolation check was vacuous twice over: it drove only through native input, so on a framework without that command it dragged nothing, and its height oracle read a tree that carries no rect, comparing `-1` to `-1`. Fixing where it measures made a real failure appear immediately.
 
@@ -639,7 +644,7 @@ Standing both frameworks up exposed the last premise: the app still carried **on
 
 ### What went wrong
 
-Content lives in a different place per framework. Under Tauri it is an OS child view — outside the document, composited behind the whole DOM, moved only by writing coordinates, and the mouse over it never reaches this document. Under Electron it is a `<webview>` tag — inside the document, moved by its own parent, stacked by ordinary z-order, with the mouse arriving normally.
+Content lives in a different place per framework. Under Tauri it is an OS child view — outside the document, kept at a stable child-webview boundary in front of the main webview, and moved only by writing coordinates. Under Electron it is a `<webview>` tag inside the document and follows its parent without a geometry follower.
 
 Everything Tauri needs to repay that difference — holes, standins, rail clipping, a native mouse bridge, an overlay hit-test gate, a divider bar drawn natively — sat in core and therefore ran under **both**. Electron has no debt to repay, so those devices only covered and blanked perfectly good panes. Measured 2026-08-03: during one frame of a pane-activation transition, two browser panes went completely empty.
 
@@ -651,10 +656,11 @@ The root was smaller and worse: `domHost` had **copied the Tauri model into the 
 
 A third framework writes its own `whale/` folder. Core does not change, and it does not inherit anyone else's fix.
 
-A framework-identity branch is allowed at **that one adapter selection point**. Do not encode the
-same distinction again as a matrix of flags such as `supportsDocumentStart`. Add a capability only
-when a product truly needs to present or substitute a feature based on support; do not inventory
-implementation details in advance. An adapter that cannot honor a call rejects it explicitly.
+A framework-identity branch is allowed at **that one adapter selection point**. Composition details
+stay inside that adapter and are not capability branches. Product-visible optional behavior is the
+exception: `supportsDocumentStart` and `supportsInputInjection` are public capabilities because a
+browser product can actually offer or substitute those features. An unsupported call still rejects
+explicitly.
 
 The public browser product keeps the single identity `soksak-plugin-browser-native`.
 `browser-webview` or `browser-embedded` may describe the product better in the long term, but a plugin
@@ -666,7 +672,7 @@ without a migration contract.
 | | Owner |
 | --- | --- |
 | `ContentViewHost` contract, `data-content-view-body` declaration, host registry | `src/lib/contentViews.ts` |
-| Native child implementation, slot-bounds following, veil landing, holes, standin, rail clip, native mouse, divider bar, overlay gate, `webview.emitNative` | `src/framework/tauri/` |
+| Native child implementation, event-driven slot-bounds following, stable z-order, rail clip, native mouse, divider bar, overlay gate, `webview.emitNative` | `src/framework/tauri/` |
 | DOM `<webview>` implementation | `src/framework/electron/` |
 | Address bar, navigation, DOM automation, media commands and the `data-content-view-body` declaration | `soksak-plugin-browser-native` |
 | Hole CSS | `src/framework/tauri/styles.css` |
@@ -684,16 +690,14 @@ rAF. `layout.reflow` wakes position changes and `ResizeObserver` wakes size chan
 adapter. That adapter serializes IPC per label and coalesces queued events into one read of the latest
 rect. The Electron adapter has none of these subscriptions or follower state.
 
-During move and resize gestures, the Tauri adapter turns only the slots in the
-public motion scope into finite geometry transactions. A pre-decoded DOM
-stand-in follows the slot while native bounds are paused; at the end edge the
-adapter applies the final folded rect atomically and restores the surface. This
-engine exists only in `src/framework/tauri/slotFreeze.ts`; it is installed in
-neither Electron nor core. Electron always performs DOM-child placement under
-`data-content-view-body` and nothing else.
+For a rail relocation, the Tauri adapter uses a finite snap transaction: it locks out intermediate
+mutation writes, commits the target DOM, and applies one folded target rect in the layout effect.
+The native child never changes z-order and no screenshot, veil, rAF handoff, or frame-by-frame follow
+is involved. Electron always performs DOM-child placement under `data-content-view-body` and nothing
+else.
 
 `webview.composition` exposes not only DOM anchors and actual native frames, but also each label's slot
-rect, last applied rect, visibility, veil and pending-sync state. The browser product plugin does not
+rect, last applied rect, visibility and pending-sync state. The browser product plugin does not
 redeclare composition state as `surface.stats`.
 
 ### `install()` is a contract member, and it is lazy
