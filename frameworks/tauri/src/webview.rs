@@ -1274,9 +1274,11 @@ fn animate_child_frame(
 ) -> Result<(), String> {
     let label = label.to_string();
     wv.with_webview(move |pw| unsafe {
-        use objc2_app_kit::{NSAnimatablePropertyContainer, NSAnimationContext, NSView};
-        use objc2_foundation::{NSPoint, NSRect, NSSize};
-        use objc2_quartz_core::CAMediaTimingFunction;
+        use objc2_app_kit::NSView;
+        use objc2_foundation::{ns_string, NSPoint, NSRect, NSSize, NSValue};
+        use objc2_quartz_core::{
+            CABasicAnimation, CAMediaTiming, CAMediaTimingFunction, CATransaction,
+        };
 
         let view = &*(pw.inner() as *const NSView);
         let Some(parent) = view.superview() else {
@@ -1301,18 +1303,50 @@ fn animate_child_frame(
         }
         let host = &*(host_ptr as *const NSView);
         // WKWebView backing surface의 frame은 애니메이션하지 않는다. 크기는 목표에 맞추되
-        // 이동은 layer-backed host가 맡아 WebKit 재합성을 피한다.
+        // 이동은 layer-backed host의 presentation layer가 맡아 WebKit 재합성을 피한다.
         view.setFrame(NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(w, h)));
+        let Some(layer) = host.layer() else {
+            host.setFrame(frame);
+            return;
+        };
+        let presentation = layer.presentationLayer();
+        let from = presentation.as_deref().unwrap_or(&layer);
+        let from_position = from.position();
+        let from_bounds = from.bounds();
 
-        NSAnimationContext::beginGrouping();
-        let context = NSAnimationContext::currentContext();
-        context.setDuration(duration_ms.max(0.0) / 1000.0);
+        // 모델은 목표 frame으로 원자적으로 확정하고, 화면에 보이는 presentation만 출발점에서
+        // 목표로 이동한다. NSView animator proxy는 이 child-host 계층에서 중간 frame을 칠하지
+        // 않고 마지막에 정착해 DOM 홀과의 교집합만 흰 띠로 남겼다.
+        CATransaction::begin();
+        CATransaction::setDisableActions(true);
+        host.setFrame(frame);
+        let to_position = layer.position();
+        let to_bounds = layer.bounds();
+        CATransaction::commit();
+
+        let duration = duration_ms.max(0.0) / 1000.0;
         let curve = CAMediaTimingFunction::functionWithControlPoints(
             timing[0], timing[1], timing[2], timing[3],
         );
-        context.setTimingFunction(Some(&curve));
-        host.animator().setFrame(frame);
-        NSAnimationContext::endGrouping();
+        let position = CABasicAnimation::animationWithKeyPath(Some(ns_string!("position")));
+        let from_position = NSValue::valueWithPoint(from_position);
+        let to_position = NSValue::valueWithPoint(to_position);
+        position.setFromValue(Some(&from_position));
+        position.setToValue(Some(&to_position));
+        position.setDuration(duration);
+        position.setTimingFunction(Some(&curve));
+        layer.addAnimation_forKey(&position, Some(ns_string!("soksak.surface.position")));
+
+        if from_bounds != to_bounds {
+            let bounds = CABasicAnimation::animationWithKeyPath(Some(ns_string!("bounds")));
+            let from_bounds = NSValue::valueWithRect(from_bounds);
+            let to_bounds = NSValue::valueWithRect(to_bounds);
+            bounds.setFromValue(Some(&from_bounds));
+            bounds.setToValue(Some(&to_bounds));
+            bounds.setDuration(duration);
+            bounds.setTimingFunction(Some(&curve));
+            layer.addAnimation_forKey(&bounds, Some(ns_string!("soksak.surface.bounds")));
+        }
     })
     .map_err(|e| e.to_string())
 }
