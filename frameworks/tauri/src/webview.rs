@@ -2398,7 +2398,25 @@ pub fn install_live_resize_monitor(app: &AppHandle) {
 #[cfg(test)]
 mod zoom_bounds_tests {
     #[cfg(target_os = "macos")]
-    use super::{forget_nswindow_label, label_for_nswindow, nswindow_cache_put};
+    use super::{
+        forget_nswindow_label, label_for_nswindow, nswindow_cache_put, surface_sibling_order,
+    };
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn surface_host_order_is_rebuilt_immediately_around_main_view() {
+        // AppKit subviews는 back-to-front다. 이동 임대 중 host는 main 바로 뒤(앞면),
+        // 임대 회수 뒤에는 main 바로 앞(뒷면)에 있어야 하며 나머지 순서는 보존한다.
+        let siblings = [10, 20, 30, 40];
+        assert_eq!(
+            surface_sibling_order(&siblings, 10, 40, true),
+            vec![20, 30, 40, 10]
+        );
+        assert_eq!(
+            surface_sibling_order(&siblings, 10, 40, false),
+            vec![20, 30, 10, 40]
+        );
+    }
 
     // NSWindow↔label 캐시 — AppKit 통지 블록의 역해소는 이 캐시 조회뿐이다(블록 안 wry 질의 0).
     // 실측 RED: 캐시 없던 시절 블록이 Window::ns_window() 를 물어 창 파괴 중 재차용 패닉
