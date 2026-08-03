@@ -67,8 +67,8 @@ export interface PluginEventMap {
   // 라이프사이클). 이 창에 emit_to 된 신호만 받는다(per-window — listenThisWindow).
   "window.live-resize": { active: boolean };
   // 패널 디바이더 드래그 제스처 시작(true)/끝(false) — window.live-resize(창 가장자리)와
-  // 동형의 레이아웃-내부 제스처 채널. 네이티브 표면 제공자(브라우저 플러그인)가 드래그 중
-  // bounds 커밋을 유예하고 시각 연속 스탠드인(freeze-frame)을 띄우는 근거 신호. 발화는
+  // 동형의 레이아웃-내부 제스처 채널. 네이티브 표면 어댑터가 move와 resize를 구분해
+  // 자기 배치 전환을 시작·종료하는 근거 신호. 발화는
   // GroupArea 디바이더 핸들러(실드래그·네이티브 브리지·E2E 합성 모두 같은 경로). 권한 불요.
   "layout.resize-gesture": { active: boolean; kinds?: ("move" | "resize")[] };
   // 콘텐츠 탭 전환 등으로 콘텐츠 슬롯이 파킹/언파킹된 뒤(코어 useLayoutEffect = React 커밋 후)
@@ -81,12 +81,6 @@ export interface PluginEventMap {
   // 네이티브 표면(엔진 서피스·child webview)을 가진 플러그인이 표시/숨김과 재스냅을 이 사실에 맞춘다
   // (뷰포트 추측 IntersectionObserver 대체). parked=true 는 비가시, false 는 복귀.
   "view.parked": { viewId: string; parked: boolean };
-  // 표면 가림(코어 슬롯 동결) — 스탠드인이 선 동안 네이티브 표면을 숨기라는 신호.
-  // view.parked 와 동형의 릴레이 계약: 사이드카 표면 소유자는 veiled 를 hidden 으로 넘긴다.
-  // 표면 릴레이 — veiled = 따라가지 마라(위상 중 bounds 쓰기 금지), hidden = 지금 감춰라.
-  // 둘은 다른 에지다: 추종 정지는 위상 시작 즉시, 감춤은 스탠드인 페인트가 커밋된 뒤에 온다
-  // (반대 순서면 투명 홀이 배경을 노출한다 — NATIVE-SURFACES §4.6).
-  "content-view.veiled": { label: string; veiled: boolean; hidden: boolean };
   // webview 건강(서킷 브레이커) 전이 — 코어(webview_health.rs)가 렌더러 프로세스 종료를
   // 감지·복구하며 그 창에 emit_to 한다. state: recovering=자동 복구 예약(attempt 동반),
   // open=상한 소진(자동 복구 중단 — webview.recover 로 수동 복구), closed=정상 복귀.
@@ -168,7 +162,6 @@ export const PLUGIN_EVENTS: readonly (keyof PluginEventMap)[] = [
   "layout.reflow",
   "window.zoom",
   "view.parked",
-  "content-view.veiled",
   "webview.health",
   "bookmarks.changed",
   "command.started",
