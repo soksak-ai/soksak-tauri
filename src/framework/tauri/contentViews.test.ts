@@ -80,6 +80,13 @@ describe("네이티브 자식 뷰 구현", () => {
   it("공개 슬롯의 현재 rect로 열고 사건·ResizeObserver로만 추종한다", async () => {
     const slot = document.createElement("div");
     slot.setAttribute("data-content-view-body", "b-1");
+    const hole = document.createElement("div");
+    hole.setAttribute("data-tauri-hole", "content");
+    hole.dataset.freezeSnapTry = "3";
+    hole.dataset.freezeSnapFail = "2";
+    hole.dataset.freezeSnapSkip = "inflight";
+    hole.dataset.freezeGlide = "no:nosnap";
+    hole.appendChild(slot);
     let rect = { left: 10.2, top: 20.4, right: 310.8, bottom: 220.9 };
     slot.getBoundingClientRect = () => ({
       ...rect,
@@ -88,7 +95,7 @@ describe("네이티브 자식 뷰 구현", () => {
       width: rect.right - rect.left,
       height: rect.bottom - rect.top,
     }) as DOMRect;
-    document.body.appendChild(slot);
+    document.body.appendChild(hole);
 
     const {
       installNativeContentViewComposition,
@@ -113,6 +120,17 @@ describe("네이티브 자식 뷰 구현", () => {
         slotRect: { x: 11, y: 21, w: 299, h: 199 },
         appliedRect: "11,21,299,199",
         syncPending: false,
+        freeze: {
+          active: false,
+          glide: "no:nosnap",
+          pending: false,
+          scope: null,
+          snapAt: null,
+          snapFail: 2,
+          snapSkip: "inflight",
+          snapTry: 3,
+          snapSize: null,
+        },
       }),
     ]);
 

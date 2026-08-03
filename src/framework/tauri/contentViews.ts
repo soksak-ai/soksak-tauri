@@ -24,6 +24,18 @@ interface SlotRect {
   h: number;
 }
 
+export interface NativeContentViewFreezeFact {
+  active: boolean;
+  pending: boolean;
+  snapAt: number | null;
+  snapTry: number;
+  snapFail: number;
+  snapSkip: string | null;
+  snapSize: string | null;
+  glide: string | null;
+  scope: string | null;
+}
+
 interface SurfaceState {
   label: string;
   opened: boolean;
@@ -47,6 +59,8 @@ export interface NativeContentViewCompositionFact {
   slotRect: SlotRect | null;
   appliedRect: string | null;
   syncPending: boolean;
+  /** Tauri 스탠드인 거래의 공개 근거. 없으면 왜 동결되지 않았는지 추측하게 된다. */
+  freeze: NativeContentViewFreezeFact | null;
 }
 
 const composition = moduleState("framework/tauri.fix#contentViewComposition", () => ({
@@ -83,6 +97,28 @@ function slotRect(slot: HTMLElement): SlotRect {
 
 function rectKey(rect: SlotRect): string {
   return `${rect.x},${rect.y},${rect.w},${rect.h}`;
+}
+
+function numericDataset(value: string | undefined): number | null {
+  if (value == null || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function freezeFact(slot: HTMLElement | null): NativeContentViewFreezeFact | null {
+  const hole = slot?.closest<HTMLElement>('[data-tauri-hole="content"]') ?? null;
+  if (!hole) return null;
+  return {
+    active: hole.dataset.freeze === "1",
+    pending: hole.dataset.freezePending === "1",
+    snapAt: numericDataset(hole.dataset.freezeSnapAt),
+    snapTry: numericDataset(hole.dataset.freezeSnapTry) ?? 0,
+    snapFail: numericDataset(hole.dataset.freezeSnapFail) ?? 0,
+    snapSkip: hole.dataset.freezeSnapSkip ?? null,
+    snapSize: hole.dataset.freezeSnapSize ?? null,
+    glide: hole.dataset.freezeGlide ?? null,
+    scope: hole.dataset.freezeScope ?? null,
+  };
 }
 
 function observeSlot(state: SurfaceState, slot: HTMLElement): void {
@@ -228,6 +264,7 @@ export function nativeContentViewCompositionStatus(): NativeContentViewCompositi
       slotRect: slot ? slotRect(slot) : null,
       appliedRect: state.lastRect || null,
       syncPending: state.requested || state.draining !== null,
+      freeze: freezeFact(slot),
     };
   });
 }
