@@ -217,6 +217,10 @@ mod layer {
     // 취급). identity(포인터)만 저장하고 geometry 는 live frame(sub.frame())에서 읽는다 — "홀 = 보이는
     // child frame" 불변식 보존(별도 rect 레지스트리 없음).
     static SURFACES: LazyLock<NativeSurfaceLedger> = LazyLock::new(NativeSurfaceLedger::default);
+    // 브라우저 label → 전용 layer-backed 이동 host. WKWebView 자체 frame은 host 내부
+    // (0,0,w,h)에 고정하고, 화면 배치·애니메이션·hit-test surface는 host가 소유한다.
+    static SURFACE_HOSTS: LazyLock<Mutex<HashMap<String, usize>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
     // 교체 전 원본 hitTest IMP. 클래스(WryWebView) 단위 스위즐이라 앱 전역 1회면 충분.
     static ORIG_HIT_TEST: AtomicUsize = AtomicUsize::new(0);
 
@@ -257,6 +261,80 @@ mod layer {
     }
     pub fn surface_label(ptr: usize) -> Option<String> {
         SURFACES.label(ptr)
+    }
+    pub fn surface_host_ptr(label: &str) -> usize {
+        SURFACE_HOSTS
+            .lock()
+            .ok()
+            .and_then(|m| m.get(label).copied())
+            .unwrap_or(0)
+    }
+
+    // child WKWebView를 전용 layer-backed NSView에 넣는다. host frame이 화면 좌표의 단일 진실이고
+    // child는 로컬 원점에 고정된다. addSubview는 기존 부모에서 표준 재부착을 수행한다.
+    pub fn adopt_surface_host<R: tauri::Runtime>(
+        webview: &tauri::Webview<R>,
+        surface_label: &str,
+        window_label: &str,
+    ) {
+        let surface_label = surface_label.to_string();
+        let window_label = window_label.to_string();
+        let _ = webview.with_webview(move |pw| unsafe {
+            use objc2::MainThreadOnly;
+            use objc2_foundation::{NSPoint, NSRect};
+
+            let main_ptr = LAYERS
+                .lock()
+                .ok()
+                .and_then(|l| l.get(&window_label).map(|w| w.main_ptr))
+                .unwrap_or(0);
+            if main_ptr == 0 {
+                return;
+            }
+            let Some(mtm) = objc2::MainThreadMarker::new() else {
+                return;
+            };
+            let child = &*(pw.inner() as *const NSView);
+            let main_view = &*(main_ptr as *const NSView);
+            let (Some(parent), Some(main_parent)) = (child.superview(), main_view.superview()) else {
+                return;
+            };
+            if Retained::as_ptr(&parent) != Retained::as_ptr(&main_parent) {
+                eprintln!("[layer] surface host 채택 실패: child와 main 부모가 다름 — {surface_label}");
+                return;
+            }
+            let frame = child.frame();
+            let host = NSView::initWithFrame(NSView::alloc(mtm), frame);
+            host.setWantsLayer(true);
+            parent.addSubview_positioned_relativeTo(
+                &host,
+                NSWindowOrderingMode::Below,
+                Some(main_view),
+            );
+            child.setFrame(NSRect::new(NSPoint::new(0.0, 0.0), frame.size));
+            host.addSubview(child);
+            let ptr = Retained::as_ptr(&host) as usize;
+            SURFACES.register(ptr, Some(&surface_label));
+            if let Ok(mut hosts) = SURFACE_HOSTS.lock() {
+                hosts.insert(surface_label, ptr);
+            }
+        });
+    }
+
+    pub fn set_surface_host_hidden(label: &str, hidden: bool) {
+        let ptr = surface_host_ptr(label);
+        if ptr != 0 {
+            let host = unsafe { &*(ptr as *const NSView) };
+            host.setHidden(hidden);
+        }
+    }
+
+    pub fn remove_surface_host(label: &str) {
+        let ptr = SURFACE_HOSTS.lock().ok().and_then(|mut m| m.remove(label));
+        let Some(ptr) = ptr else { return };
+        SURFACES.unregister(ptr);
+        let host = unsafe { &*(ptr as *const NSView) };
+        host.removeFromSuperview();
     }
 
     // 등록된 엔진 서피스 수 — 관측면(webview.surfaces 의 engine 축)이 읽는다.
@@ -500,38 +578,6 @@ mod layer {
             }
             Some(host_ptr)
         }
-    }
-
-    // child webview 를 메인(DOM) 아래로 강하. add_child 는 최상위에 붙이므로
-    // 생성 직후 1회 호출한다. 기존 서브뷰에 addSubview:positioned:relativeTo: 를
-    // 호출하면 제거 후 재삽입(AppKit 표준 동작)으로 순서만 바뀐다.
-    pub fn lower_below_main<R: tauri::Runtime>(webview: &tauri::Webview<R>, label: &str) {
-        let label = label.to_string();
-        let _ = webview.with_webview(move |pw| unsafe {
-            let main_ptr = LAYERS
-                .lock()
-                .ok()
-                .and_then(|l| l.get(&label).map(|w| w.main_ptr))
-                .unwrap_or(0);
-            if main_ptr == 0 {
-                return;
-            }
-            let child = &*(pw.inner() as *const NSView);
-            let main_view = &*(main_ptr as *const NSView);
-            let (Some(child_sv), Some(main_sv)) = (child.superview(), main_view.superview()) else {
-                return;
-            };
-            // 형제가 아니면(계층 가정 위반) 건드리지 않는다 — 진단만 남김.
-            if Retained::as_ptr(&child_sv) != Retained::as_ptr(&main_sv) {
-                eprintln!("[layer] child 와 main 이 형제가 아님 — z-순서 강하 생략");
-                return;
-            }
-            child_sv.addSubview_positioned_relativeTo(
-                child,
-                NSWindowOrderingMode::Below,
-                Some(main_view),
-            );
-        });
     }
 
     // 실측 프로브: contentView 서브뷰 트리 덤프(클래스/frame/hidden) — 계층
@@ -925,6 +971,8 @@ pub fn webview_open(
         }
         #[cfg(debug_assertions)]
         eprintln!("[vis-trace] webview_open {label}: 좀비 감지 — 정리 후 재생성");
+        #[cfg(target_os = "macos")]
+        layer::remove_surface_host(&label);
         let _ = existing.close();
         if app.get_webview(&label).is_some() {
             // close 정리가 아직 안 끝났다 — 충돌 생성 대신 명시 실패(호출자 힐이 재시도한다).
@@ -1032,14 +1080,14 @@ pub fn webview_open(
     // 레이어 원칙: child 는 DOM(부모 창 메인 webview) 아래 — 생성 직후 z-순서 강하.
     #[cfg(target_os = "macos")]
     {
-        layer::lower_below_main(&webview, window.label());
+        // WKWebView를 직접 화면 배치하지 않는다. 전용 layer-backed host가 z-order·frame·motion·
+        // hit-test surface를 소유하고, WKWebView는 그 안의 고정 로컬 child다.
+        layer::adopt_surface_host(&webview, &label, window.label());
         // 상태표시줄: 링크 hover → browser-status emit. 메시지 핸들러를 이 webview 에 등록.
         let st_app = app.clone();
         let st_label = label.clone();
         let _ = webview.with_webview(move |pw| {
             use objc2_web_kit::WKWebView;
-            // Backend N 레지스트리 등록 — 이 child 가 hit_test 의 "홀"이 된다(NSView 포인터 = 형제 비교 키).
-            layer::register_surface(pw.inner() as usize, Some(&st_label));
             let wk = unsafe { &*(pw.inner() as *const WKWebView) };
             status::install(
                 wk,
@@ -1179,7 +1227,12 @@ fn window_zoom_of(label: &str) -> f64 {
 }
 
 #[cfg(target_os = "macos")]
-fn set_child_frame(wv: &tauri::Webview, bounds: (f64, f64, f64, f64)) -> Result<(), String> {
+fn set_child_frame(
+    wv: &tauri::Webview,
+    label: &str,
+    bounds: (f64, f64, f64, f64),
+) -> Result<(), String> {
+    let label = label.to_string();
     wv.with_webview(move |pw| unsafe {
         use objc2_app_kit::NSView;
         use objc2_foundation::{NSPoint, NSRect, NSSize};
@@ -1188,12 +1241,25 @@ fn set_child_frame(wv: &tauri::Webview, bounds: (f64, f64, f64, f64)) -> Result<
         let Some(parent) = view.superview() else {
             return;
         };
+        let host_ptr = layer::surface_host_ptr(&label);
+        let coordinate_parent = if host_ptr != 0 {
+            parent.superview().unwrap_or_else(|| parent.clone())
+        } else {
+            parent.clone()
+        };
         let (x, y, w, h) = top_left_rect_to_parent_frame(
-            parent.bounds().size.height,
-            parent.isFlipped(),
+            coordinate_parent.bounds().size.height,
+            coordinate_parent.isFlipped(),
             bounds,
         );
-        view.setFrame(NSRect::new(NSPoint::new(x, y), NSSize::new(w, h)));
+        let frame = NSRect::new(NSPoint::new(x, y), NSSize::new(w, h));
+        if host_ptr != 0 {
+            let host = &*(host_ptr as *const NSView);
+            host.setFrame(frame);
+            view.setFrame(NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(w, h)));
+        } else {
+            view.setFrame(frame);
+        }
     })
     .map_err(|e| e.to_string())
 }
@@ -1201,10 +1267,12 @@ fn set_child_frame(wv: &tauri::Webview, bounds: (f64, f64, f64, f64)) -> Result<
 #[cfg(target_os = "macos")]
 fn animate_child_frame(
     wv: &tauri::Webview,
+    label: &str,
     bounds: (f64, f64, f64, f64),
     duration_ms: f64,
     timing: [f32; 4],
 ) -> Result<(), String> {
+    let label = label.to_string();
     wv.with_webview(move |pw| unsafe {
         use objc2_app_kit::{NSAnimatablePropertyContainer, NSAnimationContext, NSView};
         use objc2_foundation::{NSPoint, NSRect, NSSize};
@@ -1214,12 +1282,27 @@ fn animate_child_frame(
         let Some(parent) = view.superview() else {
             return;
         };
+        let host_ptr = layer::surface_host_ptr(&label);
+        let coordinate_parent = if host_ptr != 0 {
+            parent.superview().unwrap_or_else(|| parent.clone())
+        } else {
+            parent.clone()
+        };
         let (x, y, w, h) = top_left_rect_to_parent_frame(
-            parent.bounds().size.height,
-            parent.isFlipped(),
+            coordinate_parent.bounds().size.height,
+            coordinate_parent.isFlipped(),
             bounds,
         );
         let frame = NSRect::new(NSPoint::new(x, y), NSSize::new(w, h));
+
+        if host_ptr == 0 {
+            view.setFrame(frame);
+            return;
+        }
+        let host = &*(host_ptr as *const NSView);
+        // WKWebView backing surface의 frame은 애니메이션하지 않는다. 크기는 목표에 맞추되
+        // 이동은 layer-backed host가 맡아 WebKit 재합성을 피한다.
+        view.setFrame(NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(w, h)));
 
         NSAnimationContext::beginGrouping();
         let context = NSAnimationContext::currentContext();
@@ -1228,7 +1311,7 @@ fn animate_child_frame(
             timing[0], timing[1], timing[2], timing[3],
         );
         context.setTimingFunction(Some(&curve));
-        view.animator().setFrame(frame);
+        host.animator().setFrame(frame);
         NSAnimationContext::endGrouping();
     })
     .map_err(|e| e.to_string())
@@ -1250,7 +1333,7 @@ fn apply_child_bounds(
     let (moved, resized) = rect_delta(prev, (x, y, w, h));
     if moved || resized {
         #[cfg(target_os = "macos")]
-        set_child_frame(wv, (x, y, w, h))?;
+            set_child_frame(wv, label, (x, y, w, h))?;
         #[cfg(not(target_os = "macos"))]
         {
             if moved {
@@ -1324,7 +1407,7 @@ pub fn webview_animate_bounds(
     }
     let scaled = scale_rect(raw, window_zoom_of(wv.window().label()));
     #[cfg(target_os = "macos")]
-    animate_child_frame(&wv, scaled, duration_ms, timing)?;
+    animate_child_frame(&wv, &label, scaled, duration_ms, timing)?;
     #[cfg(not(target_os = "macos"))]
     apply_child_bounds(&wv, &label, raw)?;
     if let Ok(mut m) = APPLIED_BOUNDS.lock() {
@@ -1522,10 +1605,7 @@ fn wake_child_if_was_hidden(wv: &tauri::Webview, label: &str) {
         let _: () = msg_send![&*view, removeFromSuperview];
         let _: () = msg_send![&*superview, addSubview: &*kept];
     });
-    // 재부착은 최상위로 붙는다 — 레이어 원칙(child 는 DOM 아래) 복원 필수. 이게 빠지면
-    // 기상한 child 가 DOM 위에 떠서 홀 계약 밖에서 "우연히 보이는" 위장 상태가 된다(실사고:
-    // 홀이 닫혀 있는데도 WK 만 보여 진단을 흐렸다).
-    layer::lower_below_main(wv, wv.window().label());
+    // child는 전용 surface host 안에 다시 붙는다. host의 z-order와 frame은 불변이다.
 }
 
 // 탭/뷰 전환 시 표시/숨김(native 레이어는 DOM 위에 떠서 CSS visibility 가 안 닿는다).
@@ -1546,6 +1626,8 @@ pub fn webview_visible(
             // 리사이즈로도 안 깨어남). 숨겼던 child 에만 재부착 기상을 적용한다.
             #[cfg(target_os = "macos")]
             wake_child_if_was_hidden(&wv, &label);
+            #[cfg(target_os = "macos")]
+            layer::set_surface_host_hidden(&label, false);
             // 포커스를 임의로 옮기지 않는다 — 부모 창이 이미 활성일 때만 webview 에 포커스를 준다.
             // hide→show 첫 클릭 무시 방지는 활성 창 안(탭 전환)에서만 필요하고, 백그라운드 창의
             // 뷰 mount(부팅 리스폰·플러그인 활성화 ~수초 뒤)가 그 창을 앞으로 끌어오는 지연 포커스
@@ -1556,6 +1638,8 @@ pub fn webview_visible(
                 let _ = wv.set_focus();
             }
         } else {
+            #[cfg(target_os = "macos")]
+            layer::set_surface_host_hidden(&label, true);
             #[cfg(target_os = "macos")]
             if let Ok(mut s) = HIDDEN_CHILDREN.lock() {
                 s.insert(label.clone());
@@ -1619,12 +1703,9 @@ pub fn webview_close(app: AppHandle, label: String) -> Result<(), String> {
         if let Ok(mut m) = APPLIED_BOUNDS.lock() {
             m.remove(&label);
         }
-        // Backend N 레지스트리 회수 — close 전에 surface 포인터를 집합에서 제거(위생; 미제거여도
-        // 형제 순회가 live subview 만 보므로 자가치유되나 누수 방지).
+        // 전용 surface host가 레지스트리·z-order·child containment를 함께 회수한다.
         #[cfg(target_os = "macos")]
-        {
-            let _ = wv.with_webview(|pw| layer::unregister_surface(pw.inner() as usize));
-        }
+        layer::remove_surface_host(&label);
         wv.close().map_err(|e| e.to_string())?;
         crate::activity::publish(
             &app,
