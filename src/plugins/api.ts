@@ -452,8 +452,7 @@ export interface SoksakPluginApi {
   webview?: {
     /** viewId → 전역 유일 label(창 네임스페이스 `b-<win>-<view>`). webviewLabels 단일 진실. */
     label: (viewId: string) => string;
-    /** content-view 생성. 공개 슬롯이 있으면 어댑터가 그 rect를 소유한다.
-     *  x/y/w/h는 슬롯 없는 오프스크린 표면에만 명시한다. */
+    /** content-view 생성. 공개 슬롯이면 어댑터가 rect를 소유하고, x/y/w/h는 슬롯 없는 표면만 쓴다. */
     open: (
       label: string,
       o: { url: string; x?: number; y?: number; w?: number; h?: number },

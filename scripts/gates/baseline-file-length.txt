@@ -110,7 +110,7 @@
 crates/soksak-cli/src/lib.rs 1734
 crates/soksak-store/src/store.rs 2068
 frameworks/tauri/src/ipc.rs 1566
-frameworks/tauri/src/webview.rs 2266
+frameworks/tauri/src/webview.rs 2250
 packages/plugin-spec/src/pluginRuntime.ts 2081
 packages/plugin-spec/src/spec.ts 1785
 # 축소 2026-08-02 2833 → 2316. settings.*/theme.* 를 catalogSettings.ts 로 분리(봉인이 요구한

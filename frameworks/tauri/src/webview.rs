@@ -13,6 +13,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde::{Deserialize, Serialize};
+use soksak_core::geometry::{rect_delta, scale_rect, top_left_rect_to_parent_frame};
 use tauri::{
     AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Url, WebviewUrl,
     WebviewWindowBuilder,
@@ -1220,31 +1221,6 @@ fn window_zoom_of(label: &str) -> f64 {
         .unwrap_or(1.0)
 }
 
-/// CSS bounds → 창 줌 배율 적용 논리 bounds. 순수 함수(단위 테스트 대상).
-pub(crate) fn scale_bounds(b: (f64, f64, f64, f64), f: f64) -> (f64, f64, f64, f64) {
-    (b.0 * f, b.1 * f, b.2 * f, b.3 * f)
-}
-
-/// DOM(top-left) rect 하나를 부모 NSView 좌표의 frame 하나로 바꾼다.
-///
-/// 위치와 크기를 별도 AppKit 메시지로 나누지 않는 것이 핵심이다. 둘 다 변한 레이아웃 커밋을
-/// `setFrameOrigin`/`setFrameSize` 두 번으로 적용하면 그 사이의 존재하지 않는 중간 rect가 화면에
-/// 제시될 수 있다.
-#[cfg(target_os = "macos")]
-pub(crate) fn appkit_child_frame(
-    parent_height: f64,
-    parent_flipped: bool,
-    bounds: (f64, f64, f64, f64),
-) -> (f64, f64, f64, f64) {
-    let (x, y, w, h) = bounds;
-    (
-        x,
-        if parent_flipped { y } else { parent_height - y - h },
-        w,
-        h,
-    )
-}
-
 #[cfg(target_os = "macos")]
 fn set_child_frame(wv: &tauri::Webview, bounds: (f64, f64, f64, f64)) -> Result<(), String> {
     wv.with_webview(move |pw| unsafe {
@@ -1255,28 +1231,14 @@ fn set_child_frame(wv: &tauri::Webview, bounds: (f64, f64, f64, f64)) -> Result<
         let Some(parent) = view.superview() else {
             return;
         };
-        let (x, y, w, h) =
-            appkit_child_frame(parent.bounds().size.height, parent.isFlipped(), bounds);
+        let (x, y, w, h) = top_left_rect_to_parent_frame(
+            parent.bounds().size.height,
+            parent.isFlipped(),
+            bounds,
+        );
         view.setFrame(NSRect::new(NSPoint::new(x, y), NSSize::new(w, h)));
     })
     .map_err(|e| e.to_string())
-}
-
-// 바뀐 축만 판정(순수) — 드래그바 표준: 강조바는 "변한 것만" 보낸다. child 도 같은 규율로,
-// 위치가 변하면 위치만·크기가 변하면 크기만 적용한다. 순수 이동에 매 프레임 set_size 를
-// 얹으면 WKWebView 가 프레임마다 내용 재배치를 태워 추종이 무거워진다(강조바 NSBox 와의
-// 실체 차이가 정확히 이것이었다).
-pub(crate) fn bounds_delta(
-    prev: Option<(f64, f64, f64, f64)>,
-    next: (f64, f64, f64, f64),
-) -> (bool, bool) {
-    match prev {
-        None => (true, true),
-        Some((px, py, pw, ph)) => (
-            (px - next.0).abs() > 0.01 || (py - next.1).abs() > 0.01,
-            (pw - next.2).abs() > 0.01 || (ph - next.3).abs() > 0.01,
-        ),
-    }
 }
 
 static APPLIED_BOUNDS: std::sync::LazyLock<
@@ -1290,9 +1252,9 @@ fn apply_child_bounds(
 ) -> Result<(), String> {
     let win = wv.window();
     let f = window_zoom_of(win.label());
-    let (x, y, w, h) = scale_bounds(raw, f);
+    let (x, y, w, h) = scale_rect(raw, f);
     let prev = APPLIED_BOUNDS.lock().ok().and_then(|m| m.get(label).copied());
-    let (moved, resized) = bounds_delta(prev, (x, y, w, h));
+    let (moved, resized) = rect_delta(prev, (x, y, w, h));
     if moved || resized {
         #[cfg(target_os = "macos")]
         set_child_frame(wv, (x, y, w, h))?;
@@ -2264,42 +2226,7 @@ pub fn install_live_resize_monitor(app: &AppHandle) {
 #[cfg(test)]
 mod zoom_bounds_tests {
     #[cfg(target_os = "macos")]
-    use super::{
-        appkit_child_frame, forget_nswindow_label, label_for_nswindow, nswindow_cache_put,
-    };
-    use super::{bounds_delta, scale_bounds};
-
-    // 하나의 DOM rect 는 AppKit 에도 하나의 frame 으로 커밋돼야 한다. 위치와 크기를 별도
-    // 메시지로 보내면 양쪽이 함께 변하는 순간 중간 frame 이 실제 화면에 노출된다.
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn maps_one_dom_rect_to_one_appkit_frame() {
-        let frame = appkit_child_frame(600.0, false, (120.0, 50.0, 720.0, 410.0));
-        assert_eq!(frame, (120.0, 140.0, 720.0, 410.0));
-        let flipped = appkit_child_frame(600.0, true, (120.0, 50.0, 720.0, 410.0));
-        assert_eq!(flipped, (120.0, 50.0, 720.0, 410.0));
-    }
-
-    // 드래그바 표준 — 변한 축만 적용한다. 순수 이동에 set_size 를 얹지 않는 것이
-    // 강조바(NSBox)가 매끄러운 실체적 이유였고, child 도 같은 규율을 따른다.
-    #[test]
-    fn applies_only_the_axis_that_changed() {
-        let prev = Some((100.0, 50.0, 700.0, 400.0));
-        assert_eq!(bounds_delta(prev, (120.0, 50.0, 700.0, 400.0)), (true, false)); // 순수 이동
-        assert_eq!(bounds_delta(prev, (100.0, 50.0, 720.0, 400.0)), (false, true)); // 순수 크기
-        assert_eq!(bounds_delta(prev, (120.0, 60.0, 720.0, 410.0)), (true, true)); // 둘 다
-        assert_eq!(bounds_delta(prev, (100.0, 50.0, 700.0, 400.0)), (false, false)); // 무변화
-        assert_eq!(bounds_delta(None, (1.0, 2.0, 3.0, 4.0)), (true, true)); // 첫 적용
-    }
-
-    #[test]
-    fn scales_every_component_by_the_window_factor() {
-        assert_eq!(
-            scale_bounds((100.0, 50.0, 300.0, 200.0), 1.2),
-            (120.0, 60.0, 360.0, 240.0)
-        );
-        assert_eq!(scale_bounds((10.0, 20.0, 30.0, 40.0), 1.0), (10.0, 20.0, 30.0, 40.0));
-    }
+    use super::{forget_nswindow_label, label_for_nswindow, nswindow_cache_put};
 
     // NSWindow↔label 캐시 — AppKit 통지 블록의 역해소는 이 캐시 조회뿐이다(블록 안 wry 질의 0).
     // 실측 RED: 캐시 없던 시절 블록이 Window::ns_window() 를 물어 창 파괴 중 재차용 패닉

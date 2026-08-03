@@ -45,6 +45,35 @@ pub fn monitor_of(window: Rect, monitors: &[Rect]) -> Option<usize> {
     monitors.iter().position(|m| m.contains(cx, cy))
 }
 
+/// 사각형 네 성분에 같은 배율을 적용한다.
+pub fn scale_rect(rect: (f64, f64, f64, f64), factor: f64) -> (f64, f64, f64, f64) {
+    (rect.0 * factor, rect.1 * factor, rect.2 * factor, rect.3 * factor)
+}
+
+/// 부모가 bottom-left 좌표계면 DOM top-left y를 뒤집고, flipped면 그대로 둔다.
+pub fn top_left_rect_to_parent_frame(
+    parent_height: f64,
+    parent_flipped: bool,
+    rect: (f64, f64, f64, f64),
+) -> (f64, f64, f64, f64) {
+    let (x, y, w, h) = rect;
+    (x, if parent_flipped { y } else { parent_height - y - h }, w, h)
+}
+
+/// 이전 rect와 다음 rect 사이에서 위치·크기 축이 각각 변했는지 판정한다.
+pub fn rect_delta(
+    previous: Option<(f64, f64, f64, f64)>,
+    next: (f64, f64, f64, f64),
+) -> (bool, bool) {
+    match previous {
+        None => (true, true),
+        Some((px, py, pw, ph)) => (
+            (px - next.0).abs() > 0.01 || (py - next.1).abs() > 0.01,
+            (pw - next.2).abs() > 0.01 || (ph - next.3).abs() > 0.01,
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -88,6 +117,34 @@ mod tests {
     #[test]
     fn a_machine_with_no_monitors_answers_none() {
         assert_eq!(monitor_of(Rect { x: 0, y: 0, w: 10, h: 10 }, &[]), None);
+    }
+
+    #[test]
+    fn one_dom_rect_maps_to_one_parent_frame() {
+        assert_eq!(
+            top_left_rect_to_parent_frame(600.0, false, (120.0, 50.0, 720.0, 410.0)),
+            (120.0, 140.0, 720.0, 410.0),
+        );
+        assert_eq!(
+            top_left_rect_to_parent_frame(600.0, true, (120.0, 50.0, 720.0, 410.0)),
+            (120.0, 50.0, 720.0, 410.0),
+        );
+    }
+
+    #[test]
+    fn rect_delta_separates_position_and_size_changes() {
+        let previous = Some((100.0, 50.0, 700.0, 400.0));
+        assert_eq!(rect_delta(previous, (120.0, 50.0, 700.0, 400.0)), (true, false));
+        assert_eq!(rect_delta(previous, (100.0, 50.0, 720.0, 400.0)), (false, true));
+        assert_eq!(rect_delta(previous, (120.0, 60.0, 720.0, 410.0)), (true, true));
+        assert_eq!(rect_delta(previous, (100.0, 50.0, 700.0, 400.0)), (false, false));
+        assert_eq!(rect_delta(None, (1.0, 2.0, 3.0, 4.0)), (true, true));
+    }
+
+    #[test]
+    fn scaling_changes_every_rect_component() {
+        assert_eq!(scale_rect((100.0, 50.0, 300.0, 200.0), 1.2), (120.0, 60.0, 360.0, 240.0));
+        assert_eq!(scale_rect((10.0, 20.0, 30.0, 40.0), 1.0), (10.0, 20.0, 30.0, 40.0));
     }
 
     /// 중심 계산의 나머지 버림 방향까지 같아야 두 프로세스가 같은 답을 낸다.

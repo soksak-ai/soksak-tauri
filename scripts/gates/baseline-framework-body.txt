@@ -40,7 +40,7 @@ frameworks/tauri/src/activity_sink.rs 9
 frameworks/tauri/src/ai_session.rs 45
 frameworks/tauri/src/app_nap.rs 24
 frameworks/tauri/src/command_dispatch.rs 98
-frameworks/tauri/src/cored_host.rs 534
+frameworks/tauri/src/cored_host.rs 532
 frameworks/tauri/src/cored_ledger.rs 248
 frameworks/tauri/src/cored_shape_gate.rs 229
 frameworks/tauri/src/daemon.rs 72
@@ -83,7 +83,7 @@ frameworks/tauri/src/unit_installer.rs 55
 frameworks/tauri/src/updater.rs 42
 frameworks/tauri/src/watcher.rs 15
 # 재입법 2026-08-02 1760 → 1763. 같은 축(inPage) — 이 프레임워크는 문서 커밋에서만 낸다.
-frameworks/tauri/src/webview.rs 1762
+frameworks/tauri/src/webview.rs 1755
 frameworks/tauri/src/webview_health.rs 572
 frameworks/tauri/src/window.rs 387
 frameworks/tauri/src/window_oracle.rs 102

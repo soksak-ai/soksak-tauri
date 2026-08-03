@@ -623,11 +623,7 @@ pub fn ensure_cored(
     if is_served(socket) {
         return Ok(Cored { socket: socket.to_path_buf(), origin: Origin::Adopted, child: None });
     }
-    let binary = binary.ok_or_else(|| {
-        format!(
-            "cored 바이너리를 못 찾았다 — {CORED_BIN_ENV}=<경로> 로 지목하거나 이 실행물 옆에 둔다"
-        )
-    })?;
+    let binary = binary.ok_or_else(|| format!("cored 바이너리를 못 찾았다 — {CORED_BIN_ENV}=<경로> 로 지목하거나 이 실행물 옆에 둔다"))?;
     if !binary.is_file() {
         return Err(format!(
             "cored 바이너리가 없다: {} ({CORED_BIN_ENV}=<경로> 로 지목하거나 이 실행물 옆에 둔다)",
@@ -831,7 +827,6 @@ pub fn stand_up(app: &tauri::AppHandle) -> Result<CoredHost, String> {
     let socket = identity.cored_socket();
     // 이미 서빙 중인 홈의 cored 채택은 스폰 실행물 해소보다 먼저 성립한다. 번들 누락 같은
     // 스폰 준비 결함이 살아 있는 공용 저장소 연결까지 끊어서는 안 된다.
-    let binary = cored_source();
     // OS 사용자 홈과 로그인 셸은 **이 프로세스가 상속한 값**이다. cored 가 자기 환경에서 읽으면
     // 자기를 띄운 쪽의 환경을 사용자의 것인 양 답한다.
     let user_home = std::env::var("HOME").ok().filter(|s| !s.is_empty()).map(PathBuf::from);
@@ -843,7 +838,7 @@ pub fn stand_up(app: &tauri::AppHandle) -> Result<CoredHost, String> {
         // 이름으로 부르면 그 이름이 공용 자원에 박히고, 붙는 쪽마다 "저건 남의 앱인가"를
         // 우회로 가려야 한다(실측 2026-08-01: CLI 가 그 우회를 갖고 있었다).
         &soksak_core::identity::home_identity_of(identity.identifier()),
-        binary.as_deref(),
+        cored_source().as_deref(),
         // 저장소 위치는 앱이 해소해 넘긴다 — cored 가 다시 파생하면 두 프로세스가 다른 파일을 연다.
         &crate::data::data_dir(),
         user_home.as_deref(),

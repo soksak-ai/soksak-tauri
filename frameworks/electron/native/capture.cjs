@@ -10,8 +10,7 @@
 // 스로틀이 꺼져 있어야 한다 — 그 설정은 창을 만드는 자리가 준다(electron/main.cjs).
 // 여기서 창을 앞으로 내면 사용자가 보던 화면이 캡처 때문에 바뀐다.
 
-const fs = require("node:fs");
-const path = require("node:path");
+const fs = require("node:fs"), path = require("node:path");
 
 const { frameworkError } = require("./error.cjs");
 
@@ -81,9 +80,7 @@ module.exports = {
     source: "webContents.capturePage(rect)",
     answer: async (ctx, args) => {
       const rect = cropOf(args);
-      const png = pngOf(
-        await contents(ctx).capturePage(rect ?? undefined, BACKGROUND_CAPTURE),
-      );
+      const png = pngOf(await contents(ctx).capturePage(rect ?? undefined, BACKGROUND_CAPTURE));
       return png.toString("base64");
     },
   },
