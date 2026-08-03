@@ -21,20 +21,16 @@ interface SlotSnap {
   t: number;
   w: number;
   h: number;
-  /**
-   * 이 사진이 구워질 때 슬롯의 흐림 단계.
-   *
-   * 창 픽셀을 찍으므로 흐림 베일이 사진에 **들어간다**. 그래서 사진은 그때의 흐림과 한 몸이다 —
-   * 단계가 달라지면 그 사진은 더 이상 이 슬롯의 그림이 아니다(크기 드리프트와 같은 규칙).
-   */
-  dim: string;
 }
 
 export interface SlotFreezeDeps {
   /** 슬롯 탐색 루트(보통 document). null 이면 그 시점 동작은 no-op. */
   root: () => ParentNode | null;
-  /** 창 좌표 rect(CSS px)를 PNG data URL 로 캡처한다. */
-  capture: (rect: { x: number; y: number; w: number; h: number }) => Promise<string>;
+  /** label이 소유한 네이티브 표면 자체를 PNG data URL로 캡처한다. rect는 정합 진단값이다. */
+  capture: (
+    label: string,
+    rect: { x: number; y: number; w: number; h: number },
+  ) => Promise<string>;
   /**
    * 표면 릴레이 — content-view.veiled { label, veiled, hidden } 발화.
    * veiled = 따라가지 마라(위상 중 쓰기 금지). hidden = 지금 감춰라.
@@ -77,7 +73,7 @@ export interface SlotFreeze {
 
 // 슬롯의 탭 귀속 — 슬롯이 공개하는 노드 주소(data-node="layout/tab/<tab-id>")가 원천이다.
 function viewIdOf(slot: HTMLElement): string | null {
-  const node = slot.getAttribute("data-node");
+  const node = slot.closest<HTMLElement>('[data-node^="layout/tab/"]')?.getAttribute("data-node");
   const prefix = "layout/tab/";
   if (!node || !node.startsWith(prefix)) return null;
   const id = node.slice(prefix.length);
@@ -102,7 +98,10 @@ function contentViewLabelOf(slot: HTMLElement): string | null {
  *    좌표를 쓰고 다시 보이게 한다 — 비활성 탭이 여정마다 번쩍인다(실측 깜빡임).
  */
 function parkedSlot(slot: HTMLElement): boolean {
-  return slot.style.visibility === "hidden" || slot.style.display === "none";
+  for (let el: HTMLElement | null = slot; el; el = el.parentElement) {
+    if (el.style.visibility === "hidden" || el.style.display === "none") return true;
+  }
+  return false;
 }
 
 /** 부동소수 잔재를 CSS 에 흘리지 않는다(0.7999999999999545px) — 0.01px 격자면 충분하다. */
@@ -174,14 +173,14 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
       // 활강하지 않는가"를 추측하게 된다(실측: chromium 슬롯의 snapAt 이 한 값에 멈춰 있었다).
       slot.dataset.freezePending = "1";
       void deps
-        .capture({ x, y, w, h })
+        .capture(label, { x, y, w, h })
         .then(async (url) => {
           // 여기서 미리 디코드까지 끝내 둔다 — 동결 순간의 디코드 지연(1~2프레임)이 "표면
           // 숨김이 스탠드인 페인트보다 먼저 착지 → 배경 번쩍"의 재료였다(실측).
           const img = makeImage();
           img.src = url;
           await img.decode();
-          snaps.set(slot, { img, t: now(), w, h, dim: slot.dataset.dim ?? "clear" });
+          snaps.set(slot, { img, t: now(), w, h });
           byView.set(viewId, slot);
           byLabel.set(label, slot);
           slot.dataset.freezeSnapAt = String(Math.round(now())); // 관측면(ui.hit)
@@ -207,7 +206,7 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
       if (stretch && !current.stretch) {
         current.stretch = true;
         current.img.style.cssText =
-          "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:5;";
+          "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:3;";
       }
       return;
     }
@@ -229,15 +228,6 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
       reject(`snap:stale:${Math.round(now() - snap.t)}`);
       return;
     }
-    // 흐림이 달라졌으면 그 사진은 이 슬롯의 그림이 아니다 — 베일이 사진에 들어 있으므로
-    // 단계가 바뀌면 세울 수 없다(크기 드리프트와 같은 규칙: 버리고 다시 굽게 둔다).
-    if (snap.dim !== (slot.dataset.dim ?? "clear")) {
-      reject(`dim:${snap.dim}!=${slot.dataset.dim ?? "clear"}`);
-      snaps.delete(slot);
-      delete slot.dataset.freezeSnapAt;
-      delete slot.dataset.freezeSnapSize;
-      return;
-    }
     const r = slot.getBoundingClientRect();
     if (parkedSlot(slot)) {
       reject("parked");
@@ -254,10 +244,8 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
       return;
     }
     delete slot.dataset.freezeReject;
-    // 스탠드인은 **베일 위**(z5)에 선다. 흐림은 이미 사진에 구워져 있으므로 라이브 베일을 또
-    // 얹으면 두 번 어두워진다. 예전엔 z3 이었고 베일이 그 위에서 살아 있었는데, 그 이유는
-    // 여정 중 흐림이 바뀔 수 있었기 때문이다 — 지금은 흐림도 화면이 그리는 해를 따르므로
-    // 여정 중에는 바뀌지 않는다(App: dimOf ← arrangement.focusId). 그래서 사진 하나로 족하다.
+    // 스탠드인은 raw 네이티브 표면이므로 DOM 베일(z4) 아래 z3에 선다. focus/dim은 위상 시작과
+    // 동시에 바뀔 수 있으며, 살아 있는 DOM이 그 상태를 계속 그려야 사진 폐기나 이중 dim이 없다.
     const img = snap.img; // 정착 에지에서 디코드 완료 — append 즉시 페인트
     img.className = "slot-freeze-frame";
     // 관측 주소 — "스탠드인이 유일한 홀을 완전히 덮는다"가 표면 무숨김(§4.6-3)의 load-bearing
@@ -269,9 +257,9 @@ export function createSlotFreeze(deps: SlotFreezeDeps): SlotFreeze {
     // 하단 2.6px 밀림이 동결 에지와 착지 에지에 각각 한 번씩 보인다. 캡처 픽셀은 늘리지 않고
     // 온 자리에 그대로 되돌려 놓는다.
     img.style.cssText = stretch
-      ? "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:5;"
+      ? "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:3;"
       : `position:absolute;left:${cssPx(surface.x - r.left)};top:${cssPx(surface.y - r.top)};` +
-        `width:${snap.w}px;height:${snap.h}px;pointer-events:none;z-index:5;`;
+        `width:${snap.w}px;height:${snap.h}px;pointer-events:none;z-index:3;`;
     slot.appendChild(img);
     frozen.set(slot, { img, viewId, label, stretch });
     slot.dataset.freeze = "1"; // 관측면(ui.hit)

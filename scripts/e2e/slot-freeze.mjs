@@ -227,7 +227,12 @@ async function main() {
     flowSet.data?.leftRailPosition?.mode === "flow",
     JSON.stringify(flowSet.data?.leftRailPosition ?? flowSet.message),
   );
-  const slotAddr = `win/${win}/chrome/layout/tab/${browserView}`;
+  const exposed = await rpc("ui.tree", {}, win);
+  const slotNode = (exposed.data?.nodes ?? []).find(
+    (n) => n.nodePath === "surface" && n.address.includes(`/tab/${browserView}/node/surface`),
+  );
+  if (!slotNode?.address) throw new Error(`브라우저 표면 DOM 주소 미노출: ${browserView}`);
+  const slotAddr = slotNode.address;
 
   const measure = async () => {
     const m = await rpc("ui.measure", { address: slotAddr }, win);

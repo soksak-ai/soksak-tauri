@@ -49,18 +49,14 @@ import { CONTENT_VIEW_EVENT } from "../../lib/contentViewEvents";
  * 이동-동결(스탠드인) — 문서 밖 표면은 활강 중 제자리에 머문다. 슬롯만 미끄러지면 그 옛 자리가
  * 드러나므로, 코어가 미리 구운 그림으로 슬롯을 덮고 착지에서 물러난다.
  *
- * 캡처는 이 프레임워크의 플러그인이 답한다 — 명령 이름부터 이 프레임워크의 것이다.
+ * 캡처는 Tauri 자식 WKWebView 자체가 답한다. 창 합성 결과를 crop하면 DOM dim/toolbar와 다른
+ * 표면이 섞여 정착 사진이 focus 변경 즉시 무효가 되므로, 네이티브 표면이 유일한 원천이다.
  */
 function installSlotFreeze(): void {
   ensureSlotFreezeHost({
     root: () => document,
-    capture: async (r) => {
-      const b64 = (await invoke("plugin:webview-capture|snapshot_region", {
-        x: r.x,
-        y: r.y,
-        w: r.w,
-        h: r.h,
-      })) as string;
+    capture: async (label) => {
+      const b64 = (await invoke("webview_snapshot", { label })) as string;
       return `data:image/png;base64,${b64}`;
     },
     emitVeil: (label, veiled, hidden) =>

@@ -7,7 +7,7 @@
  * 셀렉터에 프레임워크 이름을 붙이지 않는다 — **파일이 곧 조건**이다. 안 걸리면 이 규칙은
  * 애초에 문서에 없다. 이름을 셀렉터에 넣으면 세 번째 프레임워크가 남의 조건을 읽어야 한다.
  *
- * `data-tauri-hole`은 이 어댑터가 실제 content-view 슬롯에서 파생하는 private marker다. */
+ * `data-tauri-hole`은 실제 content-view body, `data-tauri-hole-frame`은 그 DOM frame에만 선다. */
 
 /* 홀 슬롯의 흐림은 filter 가 아니라 베일이다.
  *
@@ -18,10 +18,10 @@
  * 베일은 스탠드인(z3)보다 위의 라이브 계층(z4) — 스냅에 구워진 상태와 무관하게 현재 세기를
  * 따라 전이한다(배경이던 시절엔 스탠드인이 베일을 가려 스왑마다 포커스 인/아웃 플랩으로
  * 보였다 — 실측). pseudo 는 히트테스트가 없어 클릭 관통이 보장된다. */
-.tab-body[data-tauri-hole="content"][data-dim] {
+.tab-body[data-tauri-hole-frame][data-dim] {
   filter: none;
 }
-.tab-body[data-tauri-hole="content"][data-dim]::after {
+.tab-body[data-tauri-hole-frame][data-dim]::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -45,7 +45,7 @@
    :root[data-pane-style]은 공용 DOM 본문 배경 규칙보다 marker 한 축만큼 구체적이다.
    선언 순서에 우연히 기대거나 !important로 강제하지 않고, 문서 밖 표면의 배경 소유권을
    선택된 Tauri 어댑터가 명시적으로 가져온다. */
-:root[data-pane-style] .tab-body[data-tauri-hole="content"] {
+:root[data-pane-style] [data-tauri-hole="content"] {
   background: transparent;
 }
 

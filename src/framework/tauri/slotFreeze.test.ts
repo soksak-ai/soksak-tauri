@@ -343,8 +343,8 @@ describe("slotFreeze — 흐림은 사진을 막지 않는다(재입법 2026-08-
     area.className = "space";
     document.body.appendChild(area);
     const slot = makeSlot("v1");
-    slot.dataset.dim = "idle";
-    area.appendChild(slot);
+    slot.closest<HTMLElement>(".tab-body")!.dataset.dim = "idle";
+    area.appendChild(slot.closest(".tab-body")!);
     const f = build();
     f.captureSettled();
     await microtasks();
@@ -357,8 +357,8 @@ describe("slotFreeze — 흐림은 사진을 막지 않는다(재입법 2026-08-
     area.className = "space";
     document.body.appendChild(area);
     const slot = makeSlot("v2");
-    slot.dataset.dim = "blocked";
-    area.appendChild(slot);
+    slot.closest<HTMLElement>(".tab-body")!.dataset.dim = "blocked";
+    area.appendChild(slot.closest(".tab-body")!);
     const f = build();
     f.captureSettled();
     await microtasks();
@@ -372,7 +372,7 @@ describe("slotFreeze — 흐림은 사진을 막지 않는다(재입법 2026-08-
     const slot = makeSlot("v3");
     const frame = slot.closest<HTMLElement>(".tab-body")!;
     frame.dataset.dim = "idle";
-    area.appendChild(slot);
+    area.appendChild(frame);
     const f = build();
     f.captureSettled();
     await microtasks();
@@ -430,8 +430,8 @@ describe("스탠드인과 라이브 DOM 베일의 합성 순서", () => {
     area.className = "space";
     document.body.appendChild(area);
     const slot = makeSlot("v9");
-    slot.dataset.dim = "idle";
-    area.appendChild(slot);
+    slot.closest<HTMLElement>(".tab-body")!.dataset.dim = "idle";
+    area.appendChild(slot.closest(".tab-body")!);
     const f = build();
     f.captureSettled();
     await microtasks();

@@ -1747,6 +1747,80 @@ pub async fn webview_eval(_app: AppHandle, _label: String, _js: String) -> Resul
     Err("webview_eval 은 현재 macOS 전용".into())
 }
 
+// child WKWebView가 실제로 그린 표면의 PNG를 반환한다. 창 스크린샷 crop은 DOM toolbar·dim과
+// 네이티브 표면을 이미 합성한 결과라 slot-freeze의 원본이 될 수 없다. WKWebView의 비동기
+// completion callback을 그대로 기다리며 주기 감시하지 않는다.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub async fn webview_snapshot(app: AppHandle, label: String) -> Result<String, String> {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let wv = app
+        .get_webview(&label)
+        .ok_or_else(|| format!("webview 없음: {label}"))?;
+    let (tx, rx) = mpsc::sync_channel::<Result<Vec<u8>, String>>(1);
+
+    wv.with_webview(move |pw| {
+        use block2::RcBlock;
+        use objc2::rc::Retained;
+        use objc2::runtime::AnyObject;
+        use objc2::MainThreadMarker;
+        use objc2_app_kit::{
+            NSBitmapImageFileType, NSBitmapImageRep, NSBitmapImageRepPropertyKey, NSImage,
+        };
+        use objc2_foundation::{NSDictionary, NSError};
+        use objc2_web_kit::{WKSnapshotConfiguration, WKWebView};
+
+        unsafe {
+            let wk = &*(pw.inner() as *const WKWebView);
+            let mtm = MainThreadMarker::new_unchecked();
+            let config = WKSnapshotConfiguration::new(mtm);
+            config.setAfterScreenUpdates(true);
+            let tx = tx.clone();
+            let callback = RcBlock::new(move |image: *mut NSImage, error: *mut NSError| {
+                let result = (|| {
+                    if !error.is_null() {
+                        return Err((*error).localizedDescription().to_string());
+                    }
+                    let image = image
+                        .as_ref()
+                        .ok_or_else(|| "WKWebView snapshot image 없음".to_string())?;
+                    let tiff = image
+                        .TIFFRepresentation()
+                        .ok_or_else(|| "WKWebView snapshot TIFF 변환 실패".to_string())?;
+                    let bitmap = NSBitmapImageRep::imageRepWithData(&tiff)
+                        .ok_or_else(|| "WKWebView snapshot bitmap 변환 실패".to_string())?;
+                    let props: Retained<NSDictionary<NSBitmapImageRepPropertyKey, AnyObject>> =
+                        NSDictionary::new();
+                    bitmap
+                        .representationUsingType_properties(NSBitmapImageFileType::PNG, &props)
+                        .map(|png| png.to_vec())
+                        .ok_or_else(|| "WKWebView snapshot PNG 변환 실패".to_string())
+                })();
+                let _ = tx.try_send(result);
+            });
+            wk.takeSnapshotWithConfiguration_completionHandler(Some(&config), &callback);
+        }
+    })
+    .map_err(|e| e.to_string())?;
+
+    let bytes = tauri::async_runtime::spawn_blocking(move || {
+        rx.recv_timeout(Duration::from_secs(15))
+            .map_err(|_| "WKWebView snapshot 시간 초과".to_string())?
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    Ok(STANDARD.encode(bytes))
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+pub async fn webview_snapshot(_app: AppHandle, _label: String) -> Result<String, String> {
+    Err("webview_snapshot 은 현재 macOS 전용".into())
+}
+
 // 열린 webview 에 init script(WKUserScript)를 주입한다 — 다음 내비게이션마다 자동 재주입.
 // 코어가 하드코딩하던 NEW_WINDOW_NAV/MEDIA_SNIFF/HOVER_SCRIPT 를 브라우저 플러그인이 소유하게 하는 통로.
 // phase = "document-start"(기본) | "document-end". macOS 전용(비-macOS no-op).

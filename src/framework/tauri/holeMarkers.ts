@@ -6,6 +6,7 @@ import { CONTENT_VIEW_BODY } from "../../lib/contentViews";
 import { onPluginEvent } from "../../plugins/hooks";
 
 export const TAURI_HOLE_ATTR = "data-tauri-hole";
+export const TAURI_HOLE_FRAME_ATTR = "data-tauri-hole-frame";
 export const TAURI_CONTENT_HOLE = `[${TAURI_HOLE_ATTR}="content"]`;
 
 const installed = moduleState("framework/tauri/holeMarkers#installed", () => ({
@@ -19,12 +20,18 @@ export function syncTauriHoleMarkers(doc: Document = document): void {
   for (const el of doc.querySelectorAll<HTMLElement>(`[${TAURI_HOLE_ATTR}]`)) {
     el.removeAttribute(TAURI_HOLE_ATTR);
   }
+  for (const el of doc.querySelectorAll<HTMLElement>(`[${TAURI_HOLE_FRAME_ATTR}]`)) {
+    el.removeAttribute(TAURI_HOLE_FRAME_ATTR);
+  }
 
   for (const slot of doc.querySelectorAll<HTMLElement>(`[${CONTENT_VIEW_BODY}]`)) {
     if (!slot.getAttribute(CONTENT_VIEW_BODY)) continue;
     const body = slot.closest<HTMLElement>(".tab-body");
     if (!body) continue;
-    body.setAttribute(TAURI_HOLE_ATTR, "content");
+    // 네이티브 자식 표면의 bounds 원천은 공개 content-view body 자체다. tab-body 전체를 hole로
+    // 잡으면 플러그인 toolbar와 DOM dim까지 창 crop에 섞여 실제 표면과 다른 직사각형이 된다.
+    slot.setAttribute(TAURI_HOLE_ATTR, "content");
+    body.setAttribute(TAURI_HOLE_FRAME_ATTR, "");
     const paneId = body.dataset.pane;
     if (!paneId) continue;
     for (const pane of doc.querySelectorAll<HTMLElement>(".pane[data-pane]")) {

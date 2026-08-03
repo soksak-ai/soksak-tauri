@@ -755,6 +755,7 @@ pub fn run() {
             webview::webview_holes,
             webview::webview_open_window,
             webview::webview_eval,
+            webview::webview_snapshot,
             webview::webview_inject_script,
             webview::webview_media_extract,
             webview::webview_overlay_active,
