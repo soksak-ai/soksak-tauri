@@ -206,6 +206,11 @@ export function registerWindowCatalog(): void {
           "orchestrator = bring the control plane (main) forward. Mutually exclusive with root.",
         enum: ["orchestrator"],
       },
+      focus: {
+        type: "boolean",
+        description:
+          "Whether the new window takes focus (default true). Automation and visual verification must pass false to preserve the user's active app.",
+      },
     },
     returns: "{ label } | { existingWindow } (root already open — focused instead)",
     message: (d) =>
@@ -225,6 +230,7 @@ export function registerWindowCatalog(): void {
     },
     examples: [
       'window.open \'{"root":"/Users/me/work"}\'',
+      'window.open \'{"root":"/Users/me/work","focus":false}\'',
       'window.open \'{"mode":"orchestrator"}\'',
     ],
     handler: async (p) => {
@@ -277,7 +283,12 @@ export function registerWindowCatalog(): void {
       let init = `root=${encodeURIComponent(root)}`;
       if (typeof p.alias === "string" && p.alias) init += `&alias=${encodeURIComponent(p.alias)}`;
       if (typeof p.shell === "string" && p.shell) init += `&shell=${encodeURIComponent(p.shell)}`;
-      return { label: await invoke<string>("window_create", { init }) };
+      return {
+        label: await invoke<string>("window_create", {
+          init,
+          ...(typeof p.focus === "boolean" ? { focus: p.focus } : {}),
+        }),
+      };
     },
   });
 

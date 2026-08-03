@@ -3449,6 +3449,7 @@ Open a new project window for a project root (P6: if the root is already open in
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `alias` | string |  | Display alias for the project tab (defaults to the folder name). |
+| `focus` | boolean |  | Whether the new window takes focus (default true). Automation and visual verification must pass false to preserve the user's active app. |
 | `mode` | string |  | orchestrator = bring the control plane (main) forward. Mutually exclusive with root. (orchestrator) |
 | `root` | string |  | Project root to open in the new window (absolute path). |
 | `shell` | string |  | Shell binary for the project's terminals (defaults to the user shell). |
@@ -3458,6 +3459,7 @@ Open a new project window for a project root (P6: if the root is already open in
 
 ```bash
 sok-dev window.open '{"root":"/Users/me/work"}'
+sok-dev window.open '{"root":"/Users/me/work","focus":false}'
 sok-dev window.open '{"mode":"orchestrator"}'
 ```
 
