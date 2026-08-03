@@ -1,7 +1,7 @@
-// 표면 정합 상시 감사 — 관측은 기계적이어야 한다(사용자 확정 2026-07-27: "언제는 관측,
-// 언제는 비관측이면 안 된다"). 사람이 명령(webview.surfaces)을 치는 순간에만 보이는 관측은
-// 관측이 아니다 — 표면 세계가 변하는 사건마다 앱이 스스로 판정하고, 위반을 활동 허브에
-// 사실(surface.misplaced)로 남긴다. `sok events --kinds surface.misplaced` 가 실시간 판독면.
+// 표면 정합 상시 감사 — 사람이 명령(webview.surfaces)을 치는 순간에만 보이는 관측은
+// 관측이 아니다. 표면 세계가 변하는 사건마다 앱이 스스로 판정하고, 위반을 활동 허브에
+// 사실(surface.misplaced)로 남긴다. 감사는 표면을 숨기거나 보이지 않는다. 가시성 변경은
+// 표면 소유자의 장부를 통해서만 수행해야 판정 중 스친 과도 상태가 영구 상태가 되지 않는다.
 //
 // 판정 계약: 화면에 보이는 엔진 서피스(코어 layer 실측 — engine_surface_stats)는 반드시
 // 보이는 Tauri content 슬롯(data-tauri-hole — 네이티브 표면의 자리) 하나와 일치해야 한다. 슬롯 없는
@@ -237,7 +237,7 @@ export async function surfaceCompositionSnapshot(): Promise<SurfaceCompositionSn
   };
 }
 
-/** 표면이 어느 슬롯에도 담기지 않는가 — 포함 판정(집행의 조건). 슬롯보다 밖으로 1px 이라도
+/** 표면이 어느 슬롯에도 담기지 않는가 — 진단용 포함 판정. 슬롯보다 밖으로 1px 이라도
  *  나가면 침범이다: 그 픽셀이 이웃 칸을 덮는다. tol 은 반올림 오차만 흡수한다. */
 export function containedIn(surface: AuditRect, anchors: AuditRect[], tol = 2): boolean {
   return anchors.some(
@@ -266,16 +266,6 @@ async function runAudit(): Promise<void> {
   if (!composition) return;
   const anchors = { rects: composition.anchors.map((anchor) => anchor.rect), source: "content-view-slot" };
   const verdict = composition.verdict;
-  // 집행 — 어느 앵커에도 담기지 않는 가시 표면은 코어가 즉시 가린다(마지막 방어선).
-  // 판정만 하고 두면 이웃 칸이 계속 덮인다(실측: 좌 129px 침범이 사용자 화면에 남았다).
-  // 되살리기는 소유자의 정상 경로(bounds→가시성)가 한다 — 코어는 넘은 것을 가릴 뿐이다.
-  for (const s of composition.surfaces) {
-    if (s.effectivelyHidden) continue;
-    const dom = s.domFrame;
-    if (!containedIn(dom, anchors.rects)) {
-      void invoke("engine_surface_hide", { ptr: s.ptr, hidden: true }).catch(() => {});
-    }
-  }
   // missing("보여야 하는데 안 보임" — 실사고: 활성 구글 페인이 검게 안뜸)은 로딩 과도기
   // (open 전·재페인트 전)가 정상적으로 스치는 상태라, 두 번 연속 같은 판정일 때만 위반으로
   // 발행한다(지속 = 결함, 스침 = 과도기).

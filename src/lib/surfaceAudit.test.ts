@@ -1,8 +1,11 @@
 // 표면 감사 판정의 계약 — 관측은 기계적이어야 하므로 판정은 순수 함수로 고정한다.
 // RED 근거(2026-07-27 실측): 콜드 부팅에서 엔진 서피스들이 오른쪽 열로 몰려 native 브라우저
 // 위에 겹쳤는데(오배치 1 + 겹침 1), 카운트 기준 관측은 그것을 정상이라 판정했다.
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  containedIn,
   judgeSurfaces,
   normalizeNativeSurfaces,
   visibleAnchorFacts,
@@ -181,23 +184,39 @@ describe("native frame 좌표 공개", () => {
   });
 });
 
-// 포함 판정 — 집행(코어가 가림)의 조건. 슬롯 밖으로 나간 픽셀은 이웃 칸을 덮는다.
-import { containedIn } from "../framework/tauri/surfaceAudit";
-import { describe as dC, it as iC, expect as eC } from "vitest";
+// 포함 판정은 진단 사실만 만든다. 슬롯 밖으로 나간 픽셀은 이웃 칸을 덮지만 감사가 직접
+// NSView를 만지면 레이아웃 전이 중 과도 상태가 영구 hidden 상태가 된다.
 
-dC("containedIn — 표면은 자기 슬롯 안에 있어야 한다", () => {
+describe("surface audit — 관측은 표면 소유권을 침범하지 않는다", () => {
+  it("감사가 NSView를 직접 숨기는 집행 명령을 호출하지 않는다", () => {
+    const source = readFileSync(
+      join(process.cwd(), "src/framework/tauri/surfaceAudit.ts"),
+      "utf8",
+    );
+    expect(source).not.toContain('invoke("engine_surface_hide"');
+  });
+
+  it("Tauri가 감사 우회용 네이티브 명령을 공개하지 않는다", () => {
+    const webview = readFileSync(join(process.cwd(), "frameworks/tauri/src/webview.rs"), "utf8");
+    const commands = readFileSync(join(process.cwd(), "frameworks/tauri/src/lib.rs"), "utf8");
+    expect(webview).not.toContain("pub fn engine_surface_hide");
+    expect(commands).not.toContain("webview::engine_surface_hide");
+  });
+});
+
+describe("containedIn — 표면은 자기 슬롯 안에 있어야 한다", () => {
   const slot = { x: 100, y: 100, w: 400, h: 300 };
-  iC("정확히 겹치면 담긴다", () => {
-    eC(containedIn({ x: 100, y: 100, w: 400, h: 300 }, [slot])).toBe(true);
+  it("정확히 겹치면 담긴다", () => {
+    expect(containedIn({ x: 100, y: 100, w: 400, h: 300 }, [slot])).toBe(true);
   });
-  iC("반올림 오차(±2px)는 흡수한다", () => {
-    eC(containedIn({ x: 99, y: 101, w: 401, h: 299 }, [slot])).toBe(true);
+  it("반올림 오차(±2px)는 흡수한다", () => {
+    expect(containedIn({ x: 99, y: 101, w: 401, h: 299 }, [slot])).toBe(true);
   });
-  iC("한 변이라도 넘으면 침범이다 — 실사고의 좌 129px", () => {
-    eC(containedIn({ x: -29, y: 100, w: 529, h: 300 }, [slot])).toBe(false);
-    eC(containedIn({ x: 100, y: 100, w: 400, h: 480 }, [slot])).toBe(false);
+  it("한 변이라도 넘으면 침범이다 — 실사고의 좌 129px", () => {
+    expect(containedIn({ x: -29, y: 100, w: 529, h: 300 }, [slot])).toBe(false);
+    expect(containedIn({ x: 100, y: 100, w: 400, h: 480 }, [slot])).toBe(false);
   });
-  iC("앵커가 없으면 어떤 표면도 담기지 않는다(빈 창 위 표면)", () => {
-    eC(containedIn({ x: 0, y: 0, w: 10, h: 10 }, [])).toBe(false);
+  it("앵커가 없으면 어떤 표면도 담기지 않는다(빈 창 위 표면)", () => {
+    expect(containedIn({ x: 0, y: 0, w: 10, h: 10 }, [])).toBe(false);
   });
 });

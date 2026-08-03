@@ -753,7 +753,6 @@ pub fn run() {
             webview::engine_host_visible,
             webview::engine_surface_stats,
             webview::webview_holes,
-            webview::engine_surface_hide,
             webview::webview_open_window,
             webview::webview_eval,
             webview::webview_inject_script,
@@ -963,4 +962,3 @@ mod handler_registration_tests {
         assert_eq!(broken, Vec::<String>::new(), "등록이 도는 플랫폼에 본체가 없다");
     }
 }
-
