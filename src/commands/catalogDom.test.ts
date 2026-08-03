@@ -176,6 +176,7 @@ describe("ui.input.drag — 실시간 재현 표면", () => {
     expect(spec?.params.recordDir).toBeDefined();
     expect(spec?.params.recordFrames).toBeDefined();
     expect(spec?.params.recordIntervalMs).toBeDefined();
+    expect(spec?.params.captureSteps).toBeDefined();
   });
 
   it("선택한 녹화를 드래그 전에 시작하고 같은 응답에서 완료 프레임을 보고한다", async () => {
@@ -209,6 +210,47 @@ describe("ui.input.drag — 실시간 재현 표면", () => {
       dragged: true,
       recording: { dir: "/tmp/drag-scan", frames: 7 },
     });
+  });
+
+  it("단계 캡처는 기준·각 이동·놓은 뒤를 외부 타이머 없이 순서대로 저장한다", async () => {
+    mountNode(`<div data-node="btn">drag</div>`);
+    const node = document.querySelector<HTMLElement>("[data-node=btn]")!;
+    vi.spyOn(node, "getBoundingClientRect").mockReturnValue({
+      x: 10, y: 10, left: 10, top: 10, right: 30, bottom: 30,
+      width: 20, height: 20, toJSON: () => ({}),
+    });
+    const mockedInvoke = vi.mocked(frameworkInvoke);
+    mockedInvoke.mockClear();
+    mockedInvoke.mockResolvedValue("cG5n");
+    const result = await execute(
+      "ui.input.drag",
+      {
+        from: ADDR,
+        dx: 100,
+        steps: 3,
+        durationMs: 0,
+        recordDir: "/tmp/drag-steps",
+        captureSteps: true,
+      },
+      {},
+    );
+    const snapshots = mockedInvoke.mock.calls.filter(
+      ([command]) => command === "plugin:webview-capture|snapshot_region",
+    );
+    const writes = mockedInvoke.mock.calls.filter(([command]) => command === "write_file_base64");
+    expect(snapshots).toHaveLength(5);
+    expect(writes.map(([, args]) => (args as { path: string }).path)).toEqual([
+      "/tmp/drag-steps/f0000.png",
+      "/tmp/drag-steps/f0001.png",
+      "/tmp/drag-steps/f0002.png",
+      "/tmp/drag-steps/f0003.png",
+      "/tmp/drag-steps/f0004.png",
+    ]);
+    expect(result.data).toMatchObject({
+      recording: { dir: "/tmp/drag-steps", frames: 5, mode: "steps" },
+    });
+    mockedInvoke.mockReset();
+    mockedInvoke.mockResolvedValue({});
   });
 
   it("steps/durationMs를 공개하고 지정 단계마다 mousemove를 보낸다", async () => {

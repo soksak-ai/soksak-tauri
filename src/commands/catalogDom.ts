@@ -1142,8 +1142,13 @@ export function registerDomCatalog(): void {
       },
       recordLeadMs: {
         type: "number",
-        description: "Finite pre-drag recording lead in milliseconds (0..2000, default 100).",
-        default: 100,
+        description: "Finite pre-drag recording lead in milliseconds (0..2000, default 0).",
+        default: 0,
+      },
+      captureSteps: {
+        type: "boolean",
+        description: "With recordDir, capture the baseline, every injected move, and the released frame deterministically instead of running the real-time recorder. Works without focusing the window.",
+        default: false,
       },
     },
     returns: "{ dragged, from, to?, zone?, dx?, dy?, steps, durationMs, recording?:{dir,frames} }",
@@ -1164,9 +1169,10 @@ export function registerDomCatalog(): void {
         return { ok: false as const, code: "INVALID_PARAMS", message: "durationMs는 0..10000이어야 함" };
       }
       const recordDir = p.recordDir as string | undefined;
+      const captureSteps = p.captureSteps === true;
       const recordFrames = p.recordFrames === undefined ? 120 : Number(p.recordFrames);
       const recordIntervalMs = p.recordIntervalMs === undefined ? 33 : Number(p.recordIntervalMs);
-      const recordLeadMs = p.recordLeadMs === undefined ? 100 : Number(p.recordLeadMs);
+      const recordLeadMs = p.recordLeadMs === undefined ? 0 : Number(p.recordLeadMs);
       if (
         recordDir &&
         (!Number.isInteger(recordFrames) || recordFrames < 1 || recordFrames > 600 ||
@@ -1174,6 +1180,9 @@ export function registerDomCatalog(): void {
           !Number.isFinite(recordLeadMs) || recordLeadMs < 0 || recordLeadMs > 2_000)
       ) {
         return { ok: false as const, code: "INVALID_PARAMS", message: "녹화 인자가 범위를 벗어났다" };
+      }
+      if (captureSteps && !recordDir) {
+        return { ok: false as const, code: "INVALID_PARAMS", message: "captureSteps에는 recordDir가 필요하다" };
       }
       const fromR = resolveExposed(p.from as string);
       if (!("el" in fromR)) return fromR;
@@ -1211,13 +1220,24 @@ export function registerDomCatalog(): void {
           }),
         );
       const dist = Math.hypot(toPt.x - fromPt.x, toPt.y - fromPt.y);
-      const recording = recordDir
+      let capturedSteps = 0;
+      const captureStep = async (): Promise<void> => {
+        if (!recordDir || !captureSteps) return;
+        const png = await invoke<string>("plugin:webview-capture|snapshot_region", {});
+        await invoke("write_file_base64", {
+          path: `${recordDir}/f${String(capturedSteps).padStart(4, "0")}.png`,
+          base64: png,
+        });
+        capturedSteps += 1;
+      };
+      const recording = recordDir && !captureSteps
         ? invoke<number>("plugin:webview-capture|record", {
             dir: recordDir,
             frames: recordFrames,
             intervalMs: recordIntervalMs,
           })
         : null;
+      await captureStep();
       if (recording && recordLeadMs > 0) {
         await new Promise((resolve) => window.setTimeout(resolve, recordLeadMs));
       }
@@ -1233,6 +1253,7 @@ export function registerDomCatalog(): void {
             fromPt.y + (toPt.y - fromPt.y) * progress,
             window,
           );
+          await captureStep();
           if (durationMs > 0 && step < steps) {
             await new Promise((resolve) =>
               window.setTimeout(resolve, durationMs / steps),
@@ -1241,9 +1262,12 @@ export function registerDomCatalog(): void {
         }
       }
       fire("mouseup", toPt.x, toPt.y, window);
-      const recordingResult = recording
-        ? { recording: { dir: recordDir, frames: await recording } }
-        : {};
+      await captureStep();
+      const recordingResult = captureSteps
+        ? { recording: { dir: recordDir, frames: capturedSteps, mode: "steps" } }
+        : recording
+          ? { recording: { dir: recordDir, frames: await recording, mode: "realtime" } }
+          : {};
       return byDelta
         ? { dragged: dist >= 5, from: p.from, dx: p.dx ?? 0, dy: p.dy ?? 0, steps, durationMs, ...recordingResult }
         : { dragged: dist >= 5, click: dist < 5, from: p.from, to: p.to, zone: p.zone ?? "center", steps, durationMs, ...recordingResult };
