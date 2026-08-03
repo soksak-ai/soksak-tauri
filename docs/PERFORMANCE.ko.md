@@ -39,7 +39,9 @@ FileViewer=view, ProjectPane=project …). 경계를 넘는 prop 은 참조 안�
 
 mousemove/dragover/스크롤 연동 등 연속 입력 핸들러는 `rafThrottle`(src/lib)로
 프레임당 1회로 합친다. 제스처 종료 시 `flush()` 로 마지막 값을 반드시 커밋한다
-(리스너 제거 전에 — 아니면 마지막 프레임이 유실돼 스냅백한다).
+(리스너 제거 전에 — 아니면 마지막 프레임이 유실돼 스냅백한다). 비전면 WebKit은 rAF를
+멈추므로 그 상태에서는 같은 helper가 `MessageChannel` task 하나로 합친다. 이것은 timer나
+폴링이 아닌 1회성 사건 경계이며, 포커스 없는 명령 주입도 요청한 각 DOM 레이아웃을 만든다.
 
 ### 5. 비싼 부수효과는 정착 후 1회
 

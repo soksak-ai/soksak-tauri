@@ -4,6 +4,7 @@ import { rafThrottle } from "./rafThrottle";
 // rAF 를 수동 제어: 콜백을 모아 두고 frame() 으로 한 프레임을 진행시킨다.
 let queue: FrameRequestCallback[] = [];
 let nextId = 1;
+let focusSpy: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
   queue = [];
@@ -17,9 +18,11 @@ beforeEach(() => {
     void id;
     queue = [];
   });
+  focusSpy = vi.spyOn(document, "hasFocus").mockReturnValue(true);
 });
 
 afterEach(() => {
+  focusSpy.mockRestore();
   vi.unstubAllGlobals();
 });
 
@@ -30,6 +33,26 @@ function frame() {
 }
 
 describe("rafThrottle", () => {
+  it("비전면에서는 멈춘 rAF 대신 one-shot task로 마지막 값을 커밋한다", async () => {
+    focusSpy.mockReturnValue(false);
+    const fn = vi.fn();
+    const t = rafThrottle(fn);
+    t(1);
+    t(2);
+    await new Promise<void>((resolve) => {
+      const turn = new MessageChannel();
+      turn.port1.onmessage = () => {
+        turn.port1.close();
+        turn.port2.close();
+        resolve();
+      };
+      turn.port2.postMessage(null);
+    });
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(fn).toHaveBeenCalledWith(2);
+    expect(queue).toHaveLength(0);
+  });
+
   it("한 프레임 안의 다중 호출을 마지막 인자 1회로 합친다", () => {
     const fn = vi.fn();
     const t = rafThrottle(fn);

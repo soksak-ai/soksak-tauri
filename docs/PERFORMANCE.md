@@ -45,7 +45,10 @@ once per frame. Writing to the store on every mousemove is forbidden.
 Continuous-input handlers (mousemove, dragover, scroll-linked work) are
 coalesced to once per frame with `rafThrottle` (src/lib). At gesture end,
 `flush()` commits the final value — before removing listeners, or the last
-frame is lost and the UI snaps back.
+frame is lost and the UI snaps back. A non-focused WebKit pauses rAF; in that
+state the same helper coalesces to one `MessageChannel` task instead. This is a
+one-shot event boundary, not a timer or polling loop, and keeps no-focus command
+injection capable of producing each requested DOM layout.
 
 ### 5. Expensive side effects run once, after input settles
 

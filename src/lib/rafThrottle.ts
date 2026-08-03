@@ -15,10 +15,21 @@ export function rafThrottle<A extends unknown[]>(
   fn: (...args: A) => void,
 ): RafThrottled<A> {
   let rafId = 0;
+  let task: MessageChannel | null = null;
+  let scheduled = false;
   let lastArgs: A | null = null;
 
-  const invoke = () => {
+  const clearSchedule = () => {
+    if (rafId) cancelAnimationFrame(rafId);
     rafId = 0;
+    task?.port1.close();
+    task?.port2.close();
+    task = null;
+    scheduled = false;
+  };
+
+  const invoke = () => {
+    clearSchedule();
     if (lastArgs === null) return;
     const args = lastArgs;
     lastArgs = null;
@@ -27,17 +38,27 @@ export function rafThrottle<A extends unknown[]>(
 
   const throttled = (...args: A) => {
     lastArgs = args;
-    if (!rafId) rafId = requestAnimationFrame(invoke);
+    if (scheduled) return;
+    scheduled = true;
+    // 전면 입력은 compositor 프레임당 1회로 합친다. 비전면 WebKit은 rAF를 멈추므로
+    // 포커스를 빼앗지 않는 자동화가 마지막 값조차 커밋하지 못한다. 그 경우에만 다음 task
+    // 사건으로 같은 coalesce 계약을 수행한다. timer·반복 감시·프레임워크 분기는 없다.
+    if (typeof document !== "undefined" && !document.hasFocus()) {
+      task = new MessageChannel();
+      task.port1.onmessage = invoke;
+      task.port2.postMessage(null);
+    } else {
+      rafId = requestAnimationFrame(invoke);
+    }
   };
 
   throttled.cancel = () => {
-    if (rafId) cancelAnimationFrame(rafId);
-    rafId = 0;
+    clearSchedule();
     lastArgs = null;
   };
 
   throttled.flush = () => {
-    if (rafId) cancelAnimationFrame(rafId);
+    clearSchedule();
     invoke();
   };
 
