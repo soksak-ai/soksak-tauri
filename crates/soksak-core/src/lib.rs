@@ -58,6 +58,7 @@ pub mod unit_target;
 pub mod window_spec;
 pub mod window_traces;
 pub mod surface_spec;
+pub mod native_surface_ledger;
 // 예약 명세 — 스케줄러와 서비스 원장이 공유하는 순수 타입.
 pub mod schedule_spec;
 // 명령 중개 계약 — 부르는 쪽이 창을 모르게 한다.

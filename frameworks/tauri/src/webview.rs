@@ -185,7 +185,7 @@ pub(crate) struct Hole {
 // rect 레지스트리가 없다(set_position/set_size/hide 가 곧 홀 갱신).
 #[cfg(target_os = "macos")]
 mod layer {
-    use std::collections::{HashMap, HashSet};
+    use std::collections::HashMap;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{LazyLock, Mutex};
 
@@ -195,6 +195,7 @@ mod layer {
     use objc2::sel;
     use objc2_app_kit::{NSView, NSWindowOrderingMode};
     use objc2_foundation::{NSNumber, NSPoint, NSString};
+    use soksak_core::native_surface_ledger::NativeSurfaceLedger;
     use tauri::Manager;
 
     // 창별 레이어 상태(멀티 윈도우): label → (그 창 메인 webview 의 NSView 포인터, 오버레이 게이트).
@@ -214,11 +215,7 @@ mod layer {
     // 이 집합에 든 것만 "홀"로 본다(classname 대신 멤버십 — 엔진 중립: WKWebView·Chromium surface 동일
     // 취급). identity(포인터)만 저장하고 geometry 는 live frame(sub.frame())에서 읽는다 — "홀 = 보이는
     // child frame" 불변식 보존(별도 rect 레지스트리 없음).
-    static SURFACES: LazyLock<Mutex<HashSet<usize>>> = LazyLock::new(|| Mutex::new(HashSet::new()));
-    // 코어 child webview 는 label 이 공개 identity다. 엔진 모듈 표면은 label을 주지 않을 수
-    // 있으므로 ptr 멤버십과 분리해 선택적으로 기록한다. 기하는 여전히 live NSView frame만 읽는다.
-    static SURFACE_LABELS: LazyLock<Mutex<HashMap<usize, String>>> =
-        LazyLock::new(|| Mutex::new(HashMap::new()));
+    static SURFACES: LazyLock<NativeSurfaceLedger> = LazyLock::new(NativeSurfaceLedger::default);
     // 교체 전 원본 hitTest IMP. 클래스(WryWebView) 단위 스위즐이라 앱 전역 1회면 충분.
     static ORIG_HIT_TEST: AtomicUsize = AtomicUsize::new(0);
 
@@ -252,36 +249,18 @@ mod layer {
     // Backend N surface 등록/해제 — webview_open 직후(가시 홀 편입), webview_close 직전(회수).
     // 오프스크린 추출 webview(media_extract, -20000)는 홀이 아니므로 등록하지 않는다.
     pub fn register_surface(ptr: usize, label: Option<&str>) {
-        if let Ok(mut s) = SURFACES.lock() {
-            s.insert(ptr);
-        }
-        if let Some(label) = label {
-            if let Ok(mut labels) = SURFACE_LABELS.lock() {
-                labels.insert(ptr, label.to_string());
-            }
-        }
+        SURFACES.register(ptr, label);
     }
     pub fn unregister_surface(ptr: usize) {
-        if let Ok(mut s) = SURFACES.lock() {
-            s.remove(&ptr);
-        }
-        if let Ok(mut labels) = SURFACE_LABELS.lock() {
-            labels.remove(&ptr);
-        }
+        SURFACES.unregister(ptr);
     }
     pub fn surface_label(ptr: usize) -> Option<String> {
-        SURFACE_LABELS.lock().ok()?.get(&ptr).cloned()
+        SURFACES.label(ptr)
     }
 
     // 등록된 엔진 서피스 수 — 관측면(webview.surfaces 의 engine 축)이 읽는다.
     pub fn surface_count() -> usize {
-        SURFACES.lock().map(|s| s.len()).unwrap_or(0)
-    }
-
-    // 등록된 서피스 포인터 스냅샷 — 서피스별 실측(isHidden·frame)용. 메인 스레드에서
-    // 각 포인터를 NSView 로 직독한다(관측 기준을 "카운트"에서 "개별 가시 사실"로 내린다).
-    pub fn surface_ptrs() -> Vec<usize> {
-        SURFACES.lock().map(|s| s.iter().copied().collect()).unwrap_or_default()
+        SURFACES.len()
     }
 
     // 창의 살아있는 등록 서피스 실측 — SURFACES(포인터 집합)를 직접 순회하면 파괴와
@@ -291,7 +270,7 @@ mod layer {
     // (hit_test 의 "형제 순회가 live subview 만 본다" 원리와 동일). 메인 스레드 전용.
     pub fn live_registered_views(ns_window_ptr: usize) -> Vec<usize> {
         let mut out = Vec::new();
-        let Ok(set) = SURFACES.lock() else { return out };
+        let set = SURFACES.members();
         if ns_window_ptr == 0 {
             return out;
         }
@@ -352,7 +331,7 @@ mod layer {
             }
         };
         // 등록된 Backend N surface 스냅샷(마우스 이벤트마다 — 탭 수만큼 작음, holes.clone 과 동일 층위).
-        let surfaces = SURFACES.lock().ok().map(|s| s.clone()).unwrap_or_default();
+        let surfaces = SURFACES.members();
         if default.is_null() || overlay {
             return default;
         }
@@ -582,21 +561,6 @@ mod layer {
         }
     }
 
-    #[cfg(test)]
-    mod tests {
-        use super::{register_surface, surface_label, unregister_surface};
-
-        #[test]
-        fn child_surface_label_has_the_same_lifetime_as_pointer_membership() {
-            let token = 0usize;
-            let ptr = &token as *const usize as usize;
-            unregister_surface(ptr);
-            register_surface(ptr, Some("b-window-tab-7"));
-            assert_eq!(surface_label(ptr).as_deref(), Some("b-window-tab-7"));
-            unregister_surface(ptr);
-            assert_eq!(surface_label(ptr), None);
-        }
-    }
 }
 
 // 엔진 사이드카의 native surface 를 레이어 시스템(SURFACES — hitTest 위임)에 편입/해제.
