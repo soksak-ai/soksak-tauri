@@ -171,7 +171,12 @@ describe("네이티브 자식 뷰 구현", () => {
     ]);
   });
 
-  it("native surface 배치는 DOM glide를 만들지 않고 목표 bounds로 한 번 정착한다", async () => {
+  it("native surface 배치는 paint 경계까지 handoff를 유지하고 목표 bounds로 한 번 정착한다", async () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((callback) => {
+      frames.push(callback);
+      return frames.length;
+    });
     const frame = document.createElement("div");
     frame.className = "tab-body";
     frame.dataset.node = "layout/tab/v1";
@@ -189,13 +194,33 @@ describe("네이티브 자식 뷰 구현", () => {
 
     const prepared = await prepareNativeContentViewMove([{ viewId: "v1", dx: 410 }]);
     expect(prepared.mode).toBe("snap");
-    expect(invoke).not.toHaveBeenCalled();
+    expect(invoke.mock.calls).toEqual([
+      ["webview_surface_handoff", { label: "browser--v1", active: true }],
+    ]);
 
     slot.getBoundingClientRect = () => ({
       x: 210, y: 112, left: 210, top: 112, right: 422, bottom: 570, width: 212, height: 458,
     }) as DOMRect;
-    await prepared.commit();
-    expect(invoke).toHaveBeenCalledTimes(1);
+    const committed = prepared.commit();
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("webview_bounds", {
+      label: "browser--v1",
+      x: 210,
+      y: 112,
+      w: 212,
+      h: 458,
+    }));
+    expect(invoke).not.toHaveBeenCalledWith(
+      "webview_surface_handoff",
+      { label: "browser--v1", active: false },
+    );
+    frames.shift()?.(0);
+    await Promise.resolve();
+    expect(invoke).not.toHaveBeenCalledWith(
+      "webview_surface_handoff",
+      { label: "browser--v1", active: false },
+    );
+    frames.shift()?.(16);
+    await committed;
     expect(invoke).toHaveBeenCalledWith("webview_bounds", {
       label: "browser--v1",
       x: 210,
@@ -203,6 +228,10 @@ describe("네이티브 자식 뷰 구현", () => {
       w: 212,
       h: 458,
     });
+    expect(invoke).toHaveBeenCalledWith(
+      "webview_surface_handoff",
+      { label: "browser--v1", active: false },
+    );
     expect(invoke).not.toHaveBeenCalledWith("webview_animate_bounds", expect.anything());
   });
 

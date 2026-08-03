@@ -74,16 +74,15 @@ describe("Tauri native-composition ownership", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("Core Animation frame 전환은 Tauri 어댑터에만 있고 Electron·공통 DOM에는 새지 않는다", () => {
+  it("native surface handoff만 Tauri 어댑터에 있고 폐기한 frame animation은 남지 않는다", () => {
     const sources = [
       "frameworks/tauri/src/webview.rs",
       "frameworks/tauri/src/lib.rs",
       "frameworks/tauri/Cargo.toml",
     ].map((file) => readFileSync(resolve(ROOT, file), "utf8")).join("\n");
-    expect(sources).toMatch(/webview_animate_bounds/);
-    expect(sources).toMatch(/CABasicAnimation/);
-    expect(sources).toMatch(/CATransaction/);
-    expect(sources).toMatch(/objc2-quartz-core/);
+    expect(sources).toMatch(/webview_surface_handoff/);
+    expect(sources).not.toMatch(/webview_animate_bounds/);
+    expect(sources).not.toMatch(/CABasicAnimation|CAAnimationDelegate|CATransaction/);
     const outsideTauri = productionFiles(SRC)
       .filter((file) => !relative(SRC, file).startsWith("framework/tauri/"))
       .map((file) => readFileSync(file, "utf8"))
@@ -91,28 +90,28 @@ describe("Tauri native-composition ownership", () => {
     expect(outsideTauri).not.toMatch(/webview_animate_bounds|CABasicAnimation|CATransaction/);
   });
 
-  it("WKWebView 자체가 아니라 전용 layer-backed surface host만 이동한다", () => {
+  it("WKWebView 자체가 아니라 전용 layer-backed surface host만 배치한다", () => {
     const source = readFileSync(resolve(ROOT, "frameworks/tauri/src/webview.rs"), "utf8");
     expect(source).toMatch(/adopt_surface_host/);
     expect(source).toMatch(/surface_host_ptr/);
-    expect(source).toMatch(/layer\.addAnimation_forKey/);
+    expect(source).toMatch(/host\.setFrame/);
     expect(source).not.toMatch(/host\.animator\(\)\.setFrame/);
     expect(source).not.toMatch(/view\.animator\(\)\.setFrame/);
   });
 
-  it("surface host의 이동 z-order 임대는 Tauri가 열고 종료·overlay에서 반드시 회수한다", () => {
+  it("surface host의 합성 handoff는 Tauri가 열고 종료·overlay에서 반드시 회수한다", () => {
     const source = readFileSync(resolve(ROOT, "frameworks/tauri/src/webview.rs"), "utf8");
     expect(source).toMatch(/raise_surface_host/);
     expect(source).toMatch(/lower_surface_host/);
-    expect(source).toMatch(/setCompletionBlock/);
+    expect(source).toMatch(/webview_surface_handoff/);
     expect(source).toMatch(/if active \{[\s\S]*lower_window_surface_hosts/);
   });
 
-  it("native 이동 command는 main-thread 설치 ACK 뒤에만 반환한다", () => {
+  it("native bounds command는 main-thread frame 설치 ACK 뒤에만 반환한다", () => {
     const source = readFileSync(resolve(ROOT, "frameworks/tauri/src/webview.rs"), "utf8");
-    const body = source.split("fn animate_child_frame(")[1]?.split("#[cfg(not(target_os = \"macos\"))]")[0] ?? "";
+    const body = source.split("fn set_child_frame(")[1]?.split("#[cfg(not(target_os = \"macos\"))]")[0] ?? "";
     expect(body).toMatch(/sync_channel/);
     expect(body).toMatch(/recv_timeout/);
-    expect(body).toMatch(/armed_tx\.send/);
+    expect(body).toMatch(/applied_tx\.send/);
   });
 });
