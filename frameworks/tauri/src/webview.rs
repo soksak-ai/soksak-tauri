@@ -222,7 +222,6 @@ mod layer {
     use objc2::sel;
     use objc2_app_kit::{NSView, NSWindowOrderingMode};
     use objc2_foundation::{NSArray, NSNumber, NSPoint, NSString};
-    use objc2_quartz_core::{CATransaction, CATransform3D, CATransform3DIdentity};
     use soksak_core::native_surface_ledger::NativeSurfaceLedger;
     use tauri::Manager;
 
@@ -250,8 +249,6 @@ mod layer {
     struct SurfaceHost {
         ptr: usize,
         window_label: String,
-        handoff_active: bool,
-        pending_frame: Option<(f64, f64, f64, f64)>,
     }
     static SURFACE_HOSTS: LazyLock<Mutex<HashMap<String, SurfaceHost>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -349,71 +346,10 @@ mod layer {
     }
 
     pub fn raise_surface_host(label: &str) {
-        if let Ok(mut hosts) = SURFACE_HOSTS.lock() {
-            if let Some(host) = hosts.get_mut(label) {
-                host.handoff_active = true;
-                host.pending_frame = None;
-            }
-        }
         place_surface_host(label, NSWindowOrderingMode::Above);
     }
 
-    /// 보이는 surface는 기존 NSView frame을 유지한 채 layer translation으로 목표 좌표에 둔다.
-    /// WKWebView의 remote layer는 host frame 원점 변경 직후 한 프레임 비므로, handoff 중에는
-    /// AppKit layout을 건드리지 않는다. 이 함수는 main thread에서만 호출된다.
-    pub fn stage_surface_host_frame(
-        label: &str,
-        frame: objc2_foundation::NSRect,
-    ) -> Result<bool, String> {
-        let mut hosts = SURFACE_HOSTS
-            .lock()
-            .map_err(|_| "surface host lock poisoned".to_string())?;
-        let Some(state) = hosts.get_mut(label) else { return Ok(false) };
-        if !state.handoff_active { return Ok(false) }
-        let host = unsafe { &*(state.ptr as *const NSView) };
-        let current = host.frame();
-        if (current.size.width - frame.size.width).abs() > 0.5
-            || (current.size.height - frame.size.height).abs() > 0.5
-        {
-            return Err("surface handoff는 크기가 같은 위치 이동만 허용한다".into());
-        }
-        let Some(layer) = host.layer() else {
-            return Err("surface host layer가 없다".into());
-        };
-        let dx = frame.origin.x - current.origin.x;
-        let dy = frame.origin.y - current.origin.y;
-        CATransaction::begin();
-        CATransaction::setDisableActions(true);
-        layer.setTransform(CATransform3D::new_translation(dx, dy, 0.0));
-        CATransaction::commit();
-        state.pending_frame = Some((frame.origin.x, frame.origin.y, frame.size.width, frame.size.height));
-        Ok(true)
-    }
-
-    /// DOM이 목표 위치를 그린 뒤 model frame과 presentation transform을 한 CA transaction에서
-    /// 교환한다. 화면상의 유효 좌표는 transaction 전후 모두 목표 frame으로 동일하다.
-    pub fn settle_surface_host_frame(label: &str) {
-        let pending = SURFACE_HOSTS.lock().ok().and_then(|mut hosts| {
-            let state = hosts.get_mut(label)?;
-            state.handoff_active = false;
-            state.pending_frame.take().map(|frame| (state.ptr, frame))
-        });
-        let Some((ptr, (x, y, w, h))) = pending else { return };
-        let host = unsafe { &*(ptr as *const NSView) };
-        let Some(layer) = host.layer() else { return };
-        let frame = objc2_foundation::NSRect::new(
-            objc2_foundation::NSPoint::new(x, y),
-            objc2_foundation::NSSize::new(w, h),
-        );
-        CATransaction::begin();
-        CATransaction::setDisableActions(true);
-        host.setFrame(frame);
-        layer.setTransform(unsafe { CATransform3DIdentity });
-        CATransaction::commit();
-    }
-
     pub fn lower_surface_host(label: &str) {
-        settle_surface_host_frame(label);
         place_surface_host(label, NSWindowOrderingMode::Below);
     }
 
@@ -480,8 +416,6 @@ mod layer {
                 hosts.insert(surface_label, SurfaceHost {
                     ptr,
                     window_label,
-                    handoff_active: false,
-                    pending_frame: None,
                 });
             }
         });
@@ -1423,9 +1357,7 @@ fn set_child_frame(
             let frame = NSRect::new(NSPoint::new(x, y), NSSize::new(w, h));
             if host_ptr != 0 {
                 let host = &*(host_ptr as *const NSView);
-                if !layer::stage_surface_host_frame(&label, frame)? {
-                    host.setFrame(frame);
-                }
+                host.setFrame(frame);
                 view.setFrame(NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(w, h)));
             } else {
                 view.setFrame(frame);
