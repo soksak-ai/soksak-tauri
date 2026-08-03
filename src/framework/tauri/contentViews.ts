@@ -13,7 +13,6 @@ import {
 } from "../../lib/contentViews";
 import { onPluginEvent, type Disposable } from "../../plugins/hooks";
 import type { LayoutMove, PreparedLayoutTransition } from "../../lib/layoutTransitionHost";
-import { railTravelWallMs } from "../../lib/railMotion";
 
 const call = <T>(cmd: string, args?: Record<string, unknown>): Promise<T> =>
   invoke(cmd, args) as Promise<T>;
@@ -215,9 +214,10 @@ function slotViewId(slot: HTMLElement): string | null {
 /**
  * DOM 밖 표면의 배치 거래.
  *
- * 현재 native frame에 코어가 공개한 논리 이동량을 한 번 접어 목표 frame을 확정한다. commit은
- * DOM FLIP과 같은 duration·curve의 AppKit frame 전환을 정확히 한 번 시작한다. 프레임 샘플링은
- * 하지 않고, DOM 착지 사건에서 같은 최종 rect를 대조한다.
+ * 현재 native frame에 코어가 공개한 논리 이동량을 한 번 접어 목표 frame을 확정한다.
+ * 문서 밖 표면은 CSS compositor와 같은 중간 프레임을 공유할 수 없으므로 glide를 가장하지
+ * 않는다. 목표 DOM commit의 layout effect에서 실제 child bounds를 한 번 정착시키고 같은 최종
+ * rect를 대조한다. 문서 안 표면만 있는 Electron은 이 host를 설치하지 않아 DOM glide 그대로다.
  */
 export async function prepareNativeContentViewMove(
   moves: readonly LayoutMove[],
@@ -248,7 +248,7 @@ export async function prepareNativeContentViewMove(
   }
   let closed = false;
   return {
-    mode: "glide",
+    mode: "snap",
     commit: async () => {
       if (closed) return;
       closed = true;
@@ -260,11 +260,9 @@ export async function prepareNativeContentViewMove(
           state.lastRect = rectKey(rect);
           state.boundsWrites += 1;
           try {
-            await call<boolean>("webview_animate_bounds", {
+            await call<boolean>("webview_bounds", {
               label: state.label,
               ...rect,
-              durationMs: railTravelWallMs(),
-              timing: [0.4, 0, 0.2, 1],
             });
           } catch (error) {
             state.lastRect = rectKey(before);
