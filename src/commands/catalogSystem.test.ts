@@ -10,14 +10,29 @@ import { registerSystemCatalog } from "./catalogSystem";
 import { execute, getSpec, unregister } from "./registry";
 
 beforeEach(() => {
-  invoke.mockClear();
+  invoke.mockReset();
   registerSystemCatalog();
 });
 afterEach(() => {
+  vi.useRealTimers();
   unregister("system.hello");
   unregister("app.quit");
   unregister("app.environment");
   unregister("framework.provision");
+});
+
+describe("app.quit — 성공 응답 뒤 자기 파괴", () => {
+  it("호출자 응답이 끝난 다음 이벤트 차례에만 네이티브 종료를 요청", async () => {
+    vi.useFakeTimers();
+    invoke.mockResolvedValueOnce(undefined);
+
+    const result = await execute("app.quit", {}, {});
+    expect(result).toMatchObject({ ok: true });
+    expect(invoke).not.toHaveBeenCalledWith("app_quit");
+
+    await vi.runOnlyPendingTimersAsync();
+    expect(invoke).toHaveBeenCalledWith("app_quit");
+  });
 });
 
 describe("app.environment — core identity와 unit source mode를 분리해 노출", () => {

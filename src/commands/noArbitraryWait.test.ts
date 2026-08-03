@@ -70,6 +70,7 @@ const ALLOWED: { file: string; mark: string; event: string; why: string }[] = [
   // ── ② 프로토콜·OS 경계 유예 ──
   { file: "src/commands/catalogWindow.ts", mark: "setTimeout(() => {", event: "self-destruct-reply-flush", why: "자기 파괴 명령은 답을 먼저 흘린다 — 통로가 파괴로 함께 죽는다(window.reload). 파괴 자체는 프레임워크가 하고 자국도 거기서 남는다" },
   { file: "src/commands/catalogWindow.ts", mark: "setTimeout(() => void invoke(\"window_close\", { label }), 30);", event: "self-destruct-reply-flush", why: "동일 계약(window.close 자기 창)" },
+  { file: "src/commands/catalogSystem.ts", mark: "setTimeout(() => void invoke(\"app_quit\"), 30);", event: "self-destruct-reply-flush", why: "app.quit 성공 응답을 먼저 흘린 뒤 그 응답 통로를 가진 프로세스를 끝낸다" },
   { file: "src/commands/catalogSettings.ts", mark: "await sleep(250);", event: "theme-css-cascade", why: "테마 클래스 전환 후 CSS 캐스케이드 반영 유예 — 브라우저가 완료 신호를 주지 않는다" },
   { file: "frameworks/tauri/src/window.rs", mark: "std::time::Duration::from_secs(5)", event: "reply-deadline", why: "다른 프로세스의 회신 상한 — 사건으로 끝날 수 없다(답 안 하는 상대가 이 부팅을 영원히 붙잡는다). 못 읽으면 복원을 건너뛴다" },
   { file: "crates/soksak-store/src/write_policy.rs", mark: "WRITE_BACKOFF: std::time::Duration = std::time::Duration::from_millis(60)", event: "sqlite-write-backoff", why: "SQLITE_BUSY 재시도 백오프" },

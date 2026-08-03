@@ -47,9 +47,10 @@ pub fn unit_dev_remove(kind: String, id: String) -> Result<bool, String> {
 // 하니스가 앱을 끄려고 운영체제를 빌렸다(`osascript ... to quit`). 끌 수 있는 이름이 없었기
 // 때문이다 — 부를 수 없는 것은 검증할 수 없고, 없으면 만드는 것까지가 이 자리의 몫이다(A27).
 //
-// **이 명령은 자기 죽음을 기록하지 못한다.** 종료가 기록보다 먼저 끝나기 때문이다. 그래서 끄기
-// 전에 그 사실을 원장에 적고, 그 다음에 끈다 — 원장에 없으면 "끄라는 말을 못 들었다"와
-// "듣고 죽었다"를 구분할 수 없다.
+// **이 명령은 자기 죽음을 기록하지 못한다.** 그래서 끄기 전에 그 사실을 원장에 적는다. 다만
+// 호출자에게 성공을 답하기도 전에 프로세스를 끝내면 호출자는 성공과 사고를 구분할 수 없다.
+// 별도 스레드에서 메인 이벤트 큐에 종료를 넣어 invoke 응답이 먼저 반환되게 한다. 메인 스레드에서
+// run_on_main_thread 를 부르면 인라인 실행될 수 있으므로 반드시 바깥 스레드에서 큐잉한다.
 #[tauri::command]
 pub fn app_quit(app: tauri::AppHandle) {
     crate::activity::publish(
@@ -58,7 +59,11 @@ pub fn app_quit(app: tauri::AppHandle) {
         "command",
         serde_json::json!({ "reason": "명령으로 끈다 — 이 뒤로 이 프로세스의 기록은 없다" }),
     );
-    app.exit(0);
+    let queued = app.clone();
+    std::thread::spawn(move || {
+        let exiting = queued.clone();
+        let _ = queued.run_on_main_thread(move || exiting.exit(0));
+    });
 }
 
 #[tauri::command]

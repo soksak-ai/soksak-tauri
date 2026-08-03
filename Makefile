@@ -40,11 +40,12 @@ RELEASE_APP := $(TAURI_TARGET_DIR)/release/bundle/macos/soksak-tauri.app
 DEV_APP     := $(TAURI_TARGET_DIR)/debug/bundle/macos/soksak-tauri-dev.app
 DEBUG_APP   := $(TAURI_TARGET_DIR)/debug/bundle/macos/soksak-tauri-debug.app
 DEV_EXECUTABLE := $(DEV_APP)/Contents/MacOS/soksak-dev
+DEV_CLI := $(CARGO_TARGET)/debug/sok-dev
 DEV_LOG_DIR ?= $(HOME)/.soksak-dev/logs
 
 .DEFAULT_GOAL := help
 
-.PHONY: clean-orphan-target doctor doctor-fix help install icons dev build build-dev build-debug run run-dev run-debug typecheck check test test-front verify gates e2e-framework-binding clean stop cli cli-dev cli-debug install-cli install-cli-dev install-cli-debug docs registry
+.PHONY: clean-orphan-target doctor doctor-fix help install icons dev build build-dev build-debug run run-dev restart-dev run-debug typecheck check test test-front verify gates e2e-framework-binding e2e-slot-freeze-dev clean stop cli cli-dev cli-debug install-cli install-cli-dev install-cli-debug docs registry
 
 help: ## 사용 가능한 명령 목록
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -113,9 +114,23 @@ run: ## 릴리스 soksak-tauri.app 실행(새 인스턴스)
 run-dev: ## 개발 정체성 soksak-tauri-dev.app 실행(새 인스턴스)
 	@test -x "$(DEV_EXECUTABLE)" || { echo "먼저 'make build-dev' 를 실행하세요."; exit 1; }
 	@mkdir -p "$(DEV_LOG_DIR)"
-	@SOKSAK_E2E_KEK=$(DEV_KEK) SOKSAK_VAULT_PATH=$(DEV_VAULT) \
-	  nohup "$(DEV_EXECUTABLE)" >>"$(DEV_LOG_DIR)/tauri-app.log" 2>&1 &
+	@open -n -g --stdout "$(DEV_LOG_DIR)/tauri-app.log" --stderr "$(DEV_LOG_DIR)/tauri-app.log" \
+	  --env SOKSAK_E2E_KEK=$(DEV_KEK) --env SOKSAK_VAULT_PATH=$(DEV_VAULT) "$(DEV_APP)"
 	@echo "실행: $(DEV_APP) (로그: $(DEV_LOG_DIR)/tauri-app.log)"
+
+restart-dev: ## 실행 중 dev 앱을 app.quit으로 끝내고 같은 번들을 단일 인스턴스로 다시 실행
+	@test -x "$(DEV_EXECUTABLE)" -a -x "$(DEV_CLI)" || { echo "먼저 'make build-dev' 를 실행하세요."; exit 1; }
+	@CLI="$(DEV_CLI)"; \
+	host_ready() { "$$CLI" window.list >/dev/null 2>&1; }; \
+	if host_ready; then \
+	  "$$CLI" app.quit >/dev/null || { echo "app.quit 실패"; exit 1; }; \
+	  for _ in $$(seq 1 100); do host_ready || break; sleep 0.1; done; \
+	  host_ready && { echo "종료 실패: dev 창 호스트가 계속 응답한다"; exit 1; }; \
+	fi; \
+	$(MAKE) --no-print-directory run-dev >/dev/null; \
+	for _ in $$(seq 1 300); do host_ready && break; sleep 0.1; done; \
+	host_ready || { echo "재실행 준비 실패: dev 창 호스트가 공개 명령에 응답하지 않는다"; exit 1; }; \
+	echo "재실행: dev 창 호스트 준비 완료"
 
 run-debug: ## 디버그 soksak-tauri-debug.app 실행(새 인스턴스)
 	@test -d "$(DEBUG_APP)" || { echo "먼저 'make build-debug' 를 실행하세요."; exit 1; }
@@ -218,6 +233,9 @@ gates: ## 코어 규율 게이트(blocking) — 디렉터리에서 **발견해**
 
 e2e-framework-binding: ## e2e 하니스의 프레임워크 결속 분류(A 프레임워크무관·B 경로결속·C 네이티브)를 읽는다. 하니스를 돌리지 않는다
 	@node scripts/e2e/framework-binding.mjs $(ARGS)
+
+e2e-slot-freeze-dev: restart-dev ## dev 앱 재시작→브라우저/터미널 배치→실제 탭 교차 클릭·연속 캡처
+	@SOKSAK_SOCKET="$(HOME)/.soksak-dev/cored.sock" node scripts/e2e/slot-freeze.mjs
 
 gates-registry: ## 배포 카탈로그 권위 게이트(네트워크) — 라이브 registry.json 의 GitHub 매니페스트 실측. C2 승격 소용돌이(시행 모집단=측정 모집단) + 의존 그래프 충족(의존 대상이 카탈로그에 함께 배포되는가) + 계약 동기(doctor 발행본 ≡ 코어 contract). 발행 전 GREEN 필수. 로컬(make gates)은 개발 사전점검일 뿐.
 	@node scripts/gates/c2-transparency-scan.mjs --registry

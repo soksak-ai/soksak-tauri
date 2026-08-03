@@ -40,8 +40,10 @@ export function registerSystemCatalog(): void {
     returns: "{ ok }",
     message: () => tmsg("msg.app.quit"),
     examples: ["app.quit"],
-    handler: async () => {
-      await invoke("app_quit");
+    handler: () => {
+      // 자기 파괴는 명령 응답을 먼저 cored 로 흘린 뒤 다음 task 에서 실행한다. 즉시 invoke 하면
+      // Tauri 프로세스와 응답 통로가 함께 닫혀 호출자는 성공과 크래시를 구분할 수 없다.
+      setTimeout(() => void invoke("app_quit"), 30);
       return { ok: true };
     },
   });
