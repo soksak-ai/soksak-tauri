@@ -63,6 +63,7 @@ describe("공통 브라우저 fixture", () => {
     expect(html).toContain('id="typed-marker"');
     expect(html).toContain(fixtureInputMarkers[0]);
     expect(html).toContain("width:160px;height:40px");
+    expect(html).toContain("@media(max-height:520px)");
   });
 
   it("무포커스 조명 합성 뒤에도 marker hue를 표면 생존 증거로 센다", () => {

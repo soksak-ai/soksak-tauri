@@ -129,12 +129,13 @@ export function fixtureHtml() {
     <style>
       html,body{margin:0;min-height:100%;background:#10202c;color:#f7f4df;font:24px system-ui}
       main{min-height:100vh;display:grid;place-items:center;background:linear-gradient(135deg,#10202c 0 50%,#e0704f 50%)}
-      section{padding:36px;border:8px solid #f7f4df;background:#16394a;box-shadow:20px 20px 0 #10202c;max-width:520px}
+      section{padding:16px;border:8px solid #f7f4df;background:#16394a;box-shadow:20px 20px 0 #10202c;max-width:520px}
       h1{font-size:48px;margin:0 0 8px}p{margin:0 0 20px}
       label{display:grid;gap:8px;font-size:18px}input{box-sizing:border-box;width:100%;font:28px system-ui;padding:10px 12px;border:4px solid #e0704f;background:#fff;color:#10202c}
       #marker{width:160px;height:40px;margin:0 0 16px;background:var(--marker,#ff00ff)}
       #typed-marker{height:24px;margin-top:10px;background:#000}
       output{display:block;min-height:1.4em;margin-top:10px;font-size:18px;color:#f7f4df}
+      @media(max-height:520px){h1{font-size:36px}p{font-size:20px;margin-bottom:10px}label{gap:4px}input{font-size:24px;padding:6px 8px}#marker{margin-bottom:10px}output{margin-top:4px}#typed-marker{margin-top:4px}}
     </style></head><body>
     <main><section><h1>Browser Boundary</h1><p>DOM slot ↔ live browser surface</p><div id="marker"></div>
       <label>IME input<input id="ime" autocomplete="off" spellcheck="false"></label>

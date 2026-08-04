@@ -267,7 +267,7 @@ async function runEngine(client, page, engine) {
         } else if (windowed) {
           await assertWindowedComposition(rpc, win, plugin, tabIds, addresses);
         }
-        console.log(`✓ ${name}: ${FRAMES_PER_CLICK} frames · 두 live marker · ${native ? "DOM/native exact" : windowed ? "DOM/CEF exact" : "DOM presenter"}`);
+        console.log(`✓ ${name}: ${FRAMES_PER_CLICK} frames · 두 live marker · ${native ? "DOM/native exact" : windowed ? "DOM/CEF exact" : "DOM/native-offscreen exact"}`);
       }
     }
 
