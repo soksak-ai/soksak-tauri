@@ -50,7 +50,7 @@ const ROOT = join(__dirname, "..", "..");
  *  여기 없는 새 타이머는 게이트가 잡는다 — 이 표가 게이트의 존재 이유다. */
 const ALLOWED: { file: string; mark: string; event: string; why: string }[] = [
   // ── ① 사용자 파라미터 대기 ──
-  { file: "src/commands/catalogCapture.ts", mark: "if (rest > 0) await new Promise((resolve) => setTimeout(resolve, rest));", event: "caller-specified", why: "녹화 프레임 간격 — 무엇을 몇 fps 로 볼지는 부른 쪽이 발화한다(intervalMs)" },
+  { file: "src/commands/windowRecorder.ts", mark: "if (rest > 0) await new Promise((resolve) => setTimeout(resolve, rest));", event: "caller-specified", why: "녹화 프레임 간격 — 무엇을 몇 fps 로 볼지는 부른 쪽이 발화한다(intervalMs)" },
   { file: "src/commands/catalog.ts", mark: "const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));", event: "caller-specified", why: "sleep 헬퍼 — 소비처는 전부 호출자 지정 ms" },
   { file: "src/commands/catalog.ts", mark: "await sleep(settleMs);", event: "caller-specified", why: "settleMs 파라미터 — 캡처 정착 시간을 호출자가 발화" },
   { file: "src/commands/catalog.ts", mark: "await sleep(applyAtMs);", event: "caller-specified", why: "applyAtMs 파라미터" },
@@ -110,6 +110,7 @@ const ALLOWED: { file: string; mark: string; event: string; why: string }[] = [
   { file: "crates/soksak-core/src/ptyd.rs", mark: "from_millis(50)", event: "ptyd-bootstrap-handshake", why: "동일 루프의 재시도 간격" },
   { file: "frameworks/tauri/src/webview.rs", mark: "tokio::time::sleep(Duration::from_millis(400))", event: "extraction-page-settle", why: "추출용 임시 webview 의 페이지 정착 유한 재시도(timeout 상한)" },
   { file: "frameworks/tauri/src/cored_host.rs", mark: "const READY_LIMIT: Duration = Duration::from_secs(15);", event: "cored-ready-line", why: "cored 의 준비 완료 줄이 종결 사건이고(블로킹 read), 그 프로세스가 먼저 죽으면 EOF 가 끝낸다 — 이 상한은 둘 다 오지 않을 때 부팅이 영영 안 끝나는 것을 막는 안전망" },
+  { file: "frameworks/tauri/src/cored_host.rs", mark: "const CORED_WRITE_LIMIT: Duration = Duration::from_millis(250);", event: "cored-write-returned", why: "UnixStream 쓰기 완료/오류가 종결 사건 — 정체된 cored의 가득 찬 송신 버퍼가 renderer/main thread를 영원히 붙잡지 않게 하는 유한 deadline" },
   { file: "frameworks/tauri/src/cored_host.rs", mark: "const OWNER_ASK_LIMIT: Duration = Duration::from_secs(10);", event: "store-owner-answer", why: "주인의 회신이 종결 사건이고 연결이 끊기면 그것이 끝낸다 — 이 상한은 둘 다 오지 않을 때, 답하지 않는 주인 하나가 그 명령을 부른 창을 영영 붙잡는 것을 막는다" },
   { file: "frameworks/tauri/src/cored_host.rs", mark: "const REBUILD_FLOOR: Duration = Duration::from_secs(1);", event: "store-owner-attached", why: "다시 붙는 것이 종결 사건이고 시도는 **부를 일이 있을 때만** 일어난다(폴링 아님) — 이 바닥은 주인이 안 서는 동안 저장 요청 수만큼 스폰이 몰리는 것을 막는다. 제거 조건 = cored 가 자기 기동을 알리는 사건을 주는 날" },
 ];

@@ -8,6 +8,7 @@
 // 터미널 플러그인이 소유한다(manifest configuration → plugin.<id>.settings.*).
 
 import { invoke, frameworkPath } from "../framework";
+import { recordWindowFrames } from "./windowRecorder";
 import { suggestLayout, type MonitorFact, type WindowFact } from "../lib/layoutSuggest";
 import { tmsg } from "../i18n";
 import { register } from "./registry";
@@ -391,7 +392,7 @@ export function registerSettingsCatalog(): void {
         // 2) 녹화 시작(비대기) → applyAtMs 후 끝 모드로 토글 → 녹화 완료 대기.
         stage = "record";
         const recT0 = performance.now();
-        const recP = invoke<number>("plugin:webview-capture|record", {
+        const recP = recordWindowFrames({
           dir,
           frames,
           intervalMs,

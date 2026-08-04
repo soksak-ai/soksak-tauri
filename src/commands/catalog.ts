@@ -9,6 +9,7 @@ import { registerSettingsCatalog } from "./catalogSettings";
 import { registerHealthCatalog } from "./catalogHealth";
 import { registerWindowCatalog } from "./catalogWindow";
 import { invoke, frameworkPath } from "../framework";
+import { recordWindowFrames } from "./windowRecorder";
 import { tmsg } from "../i18n";
 import {
   DEFAULT_RAIL_PLACEMENT,
@@ -1381,7 +1382,7 @@ export function registerCatalog(): void {
       await sleep(settleMs);
       // 2) 녹화 시작(비대기) → applyAtMs 후 대상 스페이스로 전환 → 완료 대기.
       const recT0 = performance.now();
-      const recP = invoke<number>("plugin:webview-capture|record", {
+      const recP = recordWindowFrames({
         dir,
         frames,
         intervalMs,

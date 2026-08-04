@@ -11,6 +11,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { startPointerOrderRepair } from "../lib/pointerOrderRepair";
 import { invoke as frameworkInvoke } from "../framework";
+import { recordWindowFrames } from "./windowRecorder";
 
 // 모듈을 통째로 대체하면 **나중에 늘어난 수출이 조용히 undefined 가 된다** — 목은 그 모듈이
 // 실제로 주는 것을 따라가야 한다(실측 2026-08-02: browserLabel 을 안 넣어 핸들러가 죽었다).
@@ -36,12 +37,16 @@ vi.mock("../framework", () => ({
   invoke: vi.fn(async () => ({})),
   currentWindow: () => shellWin,
 }));
+vi.mock("./windowRecorder", () => ({
+  recordWindowFrames: vi.fn(),
+}));
 
 import { registerDomCatalog, deepElementFromPoint, deepActiveElement, viewContainerOf } from "./catalogDom";
 import { catalogJson, execute, getSpec, unregister } from "./registry";
 
 beforeEach(() => {
   sentInput.length = 0;
+  vi.mocked(recordWindowFrames).mockReset();
   registerDomCatalog();
 });
 afterEach(() => {
@@ -186,7 +191,7 @@ describe("ui.input.drag — 실시간 재현 표면", () => {
       x: 10, y: 10, left: 10, top: 10, right: 30, bottom: 30,
       width: 20, height: 20, toJSON: () => ({}),
     });
-    vi.mocked(frameworkInvoke).mockResolvedValueOnce(7);
+    vi.mocked(recordWindowFrames).mockResolvedValueOnce(7);
     const result = await execute(
       "ui.input.drag",
       {
@@ -201,7 +206,7 @@ describe("ui.input.drag — 실시간 재현 표면", () => {
       },
       {},
     );
-    expect(frameworkInvoke).toHaveBeenCalledWith("plugin:webview-capture|record", {
+    expect(recordWindowFrames).toHaveBeenCalledWith({
       dir: "/tmp/drag-scan",
       frames: 7,
       intervalMs: 0,
@@ -475,7 +480,7 @@ describe("ui.input.click — 합성 이벤트가 Shadow DOM 경계를 넘는다(
     mockedInvoke.mockClear();
     const order: string[] = [];
     node.addEventListener("click", () => order.push("click"));
-    mockedInvoke.mockImplementationOnce(async () => {
+    vi.mocked(recordWindowFrames).mockImplementationOnce(async () => {
       order.push("record");
       return 9;
     });
@@ -489,7 +494,7 @@ describe("ui.input.click — 합성 이벤트가 Shadow DOM 경계를 넘는다(
     }, {});
 
     expect(order).toEqual(["record", "click"]);
-    expect(mockedInvoke).toHaveBeenCalledWith("plugin:webview-capture|record", {
+    expect(recordWindowFrames).toHaveBeenCalledWith({
       dir: "/tmp/click-transition",
       frames: 9,
       intervalMs: 16,

@@ -18,6 +18,7 @@ import { viewFocusSnapshot } from "../plugins/viewFocus";
 import { useGutterHover } from "../state/gutterHover";
 import { motionLiveList, motionLiveRates, setMotionDebug, motionRecentBirths, motionJourneys, motionSwaps, motionTriggers } from "../lib/motionDebug";
 import { railTravelMs, railTravelWallMs } from "../lib/railMotion";
+import { recordWindowFrames } from "./windowRecorder";
 
 type FocusTraceEntry = {
   t: number;
@@ -582,7 +583,7 @@ export function registerDomCatalog(): void {
         return { ok: false as const, code: "INVALID_PARAMS", message: "녹화 인자가 범위를 벗어났다" };
       }
       const recording = recordDir
-        ? invoke<number>("plugin:webview-capture|record", {
+        ? recordWindowFrames({
             dir: recordDir,
             frames: recordFrames,
             intervalMs: recordIntervalMs,
@@ -1301,7 +1302,7 @@ export function registerDomCatalog(): void {
         capturedSteps += 1;
       };
       const recording = recordDir && !captureSteps
-        ? invoke<number>("plugin:webview-capture|record", {
+        ? recordWindowFrames({
             dir: recordDir,
             frames: recordFrames,
             intervalMs: recordIntervalMs,

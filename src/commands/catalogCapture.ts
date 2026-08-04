@@ -15,6 +15,7 @@ import { formatAddress } from "./address";
 import { currentWindowLabel } from "../lib/webviewLabels";
 import { locateTab } from "./catalog";
 import { useSessions } from "../state/sessions";
+import { recordWindowFrames } from "./windowRecorder";
 
 /**
  * 탭의 본문 슬롯 절대 주소 — GroupArea 가 `layout/tab/<viewId>` 로 노출한다(그 자리와 한 벌).
@@ -432,19 +433,7 @@ export function registerCaptureCatalog(): void {
       const frames = Math.max(1, Math.min(600, (p.frames as number | undefined) ?? 40));
       // 간격은 부른 쪽이 발화한다 — 무엇을 몇 fps 로 봐야 하는지는 이 자리가 모른다.
       const intervalMs = Math.max(0, (p.intervalMs as number | undefined) ?? 40);
-      let n = 0;
-      for (let i = 0; i < frames; i += 1) {
-        const started = performance.now();
-        const png = await invoke<string>("plugin:webview-capture|snapshot_region", {});
-        await invoke("write_file_base64", {
-          path: `${dir}/f${String(i).padStart(4, "0")}.png`,
-          base64: png,
-        });
-        n += 1;
-        const rest = intervalMs - (performance.now() - started);
-        if (rest > 0) await new Promise((resolve) => setTimeout(resolve, rest));
-      }
-      return { dir, frames: n };
+      return { dir, frames: await recordWindowFrames({ dir, frames, intervalMs }) };
     },
   });
 }
