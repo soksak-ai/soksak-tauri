@@ -2,7 +2,7 @@
 //
 // 이름과 인자를 번역하지 않는 것이 이 구현의 전부다. 번역하면 새 드리프트 면이 생기고,
 // 그 드리프트는 "이 프레임워크에서만 안 되는 기능"으로 나타난다.
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const invoke = vi.fn(async (_cmd: string, _args?: unknown) => undefined as unknown);
 const listeners = new Map<string, (payload: Record<string, unknown>) => void>();
@@ -40,6 +40,8 @@ async function load() {
 }
 
 describe("네이티브 자식 뷰 구현", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
   beforeEach(() => {
     vi.restoreAllMocks();
     document.body.innerHTML = "";
@@ -144,6 +146,11 @@ describe("네이티브 자식 뷰 구현", () => {
   });
 
   it("창 resize는 같은 최종 DOM rect여도 native child에 권위 frame을 다시 쓴다", async () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", vi.fn((callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    }));
     const slot = document.createElement("div");
     slot.setAttribute("data-content-view-body", "b-resize");
     slot.getBoundingClientRect = () => ({
@@ -160,6 +167,11 @@ describe("네이티브 자식 뷰 구현", () => {
     // 같은 크기로 돌아와도 JS lastRect는 그 네이티브 변화를 관측하지 못하므로 캐시 hit가
     // 최종 정착의 증거가 될 수 없다.
     window.dispatchEvent(new Event("resize"));
+    await Promise.resolve();
+    expect(invoke).not.toHaveBeenCalledWith("webview_bounds", expect.anything());
+    frames.shift()?.(0);
+    expect(invoke).not.toHaveBeenCalledWith("webview_bounds", expect.anything());
+    frames.shift()?.(16);
     await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("webview_bounds", {
       label: "b-resize", x: 10, y: 20, w: 300, h: 200,
     }));
