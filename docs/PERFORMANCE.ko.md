@@ -67,6 +67,10 @@ debounce 로 입력이 정착한 뒤 1회 실행한다. 스톰은 본구간 CPU 
   같은 `--dim` 값을 AppKit 평면에 투영하며, 그 frame은 surface frame 거래와 함께 커밋한다.
   SVG base veil의 포커스 구멍은 luminance mask다. 흰 영역은 veil을 유지하고 검은 aperture는
   제거한다. alpha mask로 바꾸면 두 색이 모두 불투명해져 포커스 구멍이 닫히므로 금지한다.
+- `viewId`는 제품 뷰의 정체성이고 DOM container는 React 렌더 세대다. 같은 세대의 중복
+  mount 등록은 멱등 acquire이며, 새 세대는 이전 세대를 원자적으로 승계한다. 이전 세대의 늦은
+  cleanup은 identity guard로 새 세대를 지우지 않는다. 공간·탭 DOM 교체를 전역 중복 예외로
+  막으면 정상 전환이 renderer 전체를 내리므로 금지한다.
 - 캡처 픽셀은 증거(`window.record` / `window.snapshot`)이며 대체 UI가 아니다.
   Electron 캡처는 `capturePage`의 정규 capturer 수명으로 부모와 `<webview>` guest를 함께
   합성한다. `stayHidden:true`로 guest 합성을 막지 않으며 캡처를 위해 창을 포커스하지 않는다.

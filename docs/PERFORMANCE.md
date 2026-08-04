@@ -75,6 +75,11 @@ A user gesture never shows discontinuous content. The means depends on where the
   adapter projects the same `--dim` value to an AppKit plane, committed with the surface frame. The
   SVG base veil uses a luminance mask: white retains the veil and a black aperture removes it. An
   alpha mask is forbidden because both colors are opaque and therefore close the aperture.
+- A `viewId` is product-view identity; its DOM container is a React render generation. Duplicate
+  registration of the same generation is an idempotent acquire, while a new generation atomically
+  supersedes the old one. A late cleanup from the old generation is identity-guarded and cannot remove
+  the new owner. Treating normal space/tab replacement as a global duplicate error is forbidden because
+  it can tear down the entire renderer.
 - Captured pixels are evidence (`window.record` / `window.snapshot`), never replacement UI.
   Electron capture uses the normal `capturePage` capturer lifetime so the parent and `<webview>` guest
   are composited together. It does not force `stayHidden:true` and never focuses the window.
