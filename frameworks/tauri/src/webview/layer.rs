@@ -60,6 +60,23 @@ thread_local! {
         std::cell::RefCell::new(HashMap::new());
 }
 
+// 엔진 표면 컨테이너는 메인 webview 위에 서지만, 자식 표면 밖의 빈 영역은 DOM 입력을
+// 가로채지 않는다. 자식이 nil을 돌려주는 입력-투과 표면(OSR)도 그대로 DOM으로 통과한다.
+objc2::define_class!(
+    #[unsafe(super(NSView))]
+    #[thread_kind = objc2::MainThreadOnly]
+    struct EngineSurfaceHost;
+
+    impl EngineSurfaceHost {
+        #[unsafe(method(hitTest:))]
+        fn hit_test(&self, point: NSPoint) -> *mut NSView {
+            let hit: *mut NSView = unsafe { msg_send![super(self), hitTest: point] };
+            let this = self as *const Self as *mut NSView;
+            if hit == this { std::ptr::null_mut() } else { hit }
+        }
+    }
+);
+
 fn apply_surface_dim(label: &str) {
     let Some(host_ptr) = SURFACE_HOSTS.ptr(label) else {
         return;
@@ -171,10 +188,34 @@ pub fn set_overlay(label: &str, active: bool) {
         }
     }
     if active {
+        place_engine_host(label, false);
         lower_window_surface_hosts(label);
     } else {
+        place_engine_host(label, true);
         raise_window_surface_hosts(label);
     }
+}
+
+fn place_engine_host(label: &str, above_main: bool) {
+    let (host_ptr, main_ptr) = LAYERS
+        .lock()
+        .ok()
+        .and_then(|layers| layers.get(label).map(|w| (w.host_ptr, w.main_ptr)))
+        .unwrap_or((0, 0));
+    if host_ptr == 0 || main_ptr == 0 {
+        return;
+    }
+    let main = unsafe { &*(main_ptr as *const NSView) };
+    let Some(parent) = (unsafe { main.superview() }) else { return };
+    let siblings = parent.subviews().into_iter().collect::<Vec<_>>();
+    let ptrs = siblings.iter().map(|v| Retained::as_ptr(v) as usize).collect::<Vec<_>>();
+    let ordered_ptrs = super::surface_sibling_order(&ptrs, host_ptr, main_ptr, above_main);
+    if ordered_ptrs == ptrs { return; }
+    let ordered = ordered_ptrs
+        .iter()
+        .filter_map(|ptr| siblings.iter().find(|v| Retained::as_ptr(v) as usize == *ptr).cloned())
+        .collect::<Vec<_>>();
+    parent.setSubviews(&NSArray::from_retained_slice(&ordered));
 }
 
 // 창의 현재 홀 목록 — 관측면(ui.holes)이 읽는다. 계약을 눈이 아니라 값으로 확인한다.
@@ -569,7 +610,6 @@ pub fn install(app: &tauri::AppHandle, label: &str) {
 // contentView 폴백(격리는 심층방어라, 폴백 시 hitTest 형제 경로가 그대로 동작한다).
 #[cfg(target_os = "macos")]
 pub fn ensure_engine_host(label: &str) -> Option<usize> {
-    use objc2::MainThreadOnly; // NSView::alloc(mtm) 제공.
     use objc2_app_kit::NSAutoresizingMaskOptions;
     let mtm = objc2_foundation::MainThreadMarker::new()?; // 메인 스레드 계약 확인.
     unsafe {
@@ -587,22 +627,25 @@ pub fn ensure_engine_host(label: &str) -> Option<usize> {
         let main_view = &*(main_ptr as *const NSView);
         let content = main_view.superview()?; // contentView(코어 소유) — 컨테이너의 부모.
         let bounds = content.bounds();
-        let host = NSView::initWithFrame(NSView::alloc(mtm), bounds);
+        let host: Retained<EngineSurfaceHost> =
+            msg_send![mtm.alloc::<EngineSurfaceHost>(), initWithFrame: bounds];
+        let host_view: &NSView = &host;
         // 합성 호스트는 레이어-백드여야 한다 — Chromium windowed 는 GPU 프로세스의 원격
         // CALayer(CAContext) 를 자기 뷰 레이어에 호스팅하는데, 부모 사슬이 레이어-백드가
         // 아니면 그 레이어가 창의 합성 트리에 영영 안 올라간다(실사고: 페이지 DOM 생존·
         // 뷰 정위치·unhidden 인데 픽셀만 없음 — 단독 하니스(winit 레이어-백드)는 GREEN,
         // 앱 임베딩만 블랭크). OSR 은 프레젠터가 자기 CALayer 를 직접 붙여 무사했다.
-        host.setWantsLayer(true);
+        host_view.setWantsLayer(true);
         // 컨테이너는 콘텐츠 전면을 채우고 리사이즈를 따라간다(원점 0,0 유지 → 좌표 identity).
-        host.setAutoresizingMask(
+        host_view.setAutoresizingMask(
             NSAutoresizingMaskOptions::ViewWidthSizable
                 | NSAutoresizingMaskOptions::ViewHeightSizable,
         );
-        // 메인 webview 아래(형제 최하단)에 삽입 — DOM 이 항상 위, 엔진 콘텐츠가 그 아래로 비친다.
+        // 엔진 픽셀은 메인 webview 위에 선다. 자식 bounds 밖과 입력-투과 OSR 자식은
+        // EngineSurfaceHost.hitTest=nil 계약으로 DOM 입력을 그대로 받는다.
         content.addSubview_positioned_relativeTo(
-            &host,
-            NSWindowOrderingMode::Below,
+            host_view,
+            NSWindowOrderingMode::Above,
             Some(main_view),
         );
         let host_ptr = Retained::as_ptr(&host) as usize;

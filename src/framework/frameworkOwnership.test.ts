@@ -128,6 +128,15 @@ describe("Tauri native-composition ownership", () => {
     expect(source).toMatch(/else \{[\s\S]*raise_window_surface_hosts/);
   });
 
+  it("Tauri engine host는 픽셀만 DOM 위에 두고 빈 영역 입력은 DOM에 돌려준다", () => {
+    const source = readFileSync(resolve(ROOT, "frameworks/tauri/src/webview/layer.rs"), "utf8");
+    expect(source).toMatch(/struct EngineSurfaceHost/);
+    expect(source).toMatch(/if hit == this \{ std::ptr::null_mut\(\) \}/);
+    expect(source).toMatch(/host_view,[\s\S]*NSWindowOrderingMode::Above,[\s\S]*Some\(main_view\)/);
+    expect(source).toMatch(/if active \{[\s\S]*place_engine_host\(label, false\)/);
+    expect(source).toMatch(/else \{[\s\S]*place_engine_host\(label, true\)/);
+  });
+
   it("native bounds command는 main-thread frame 설치 ACK 뒤에만 반환한다", () => {
     const source = readFileSync(resolve(ROOT, "frameworks/tauri/src/webview.rs"), "utf8");
     const body = source.split("fn set_child_frame(")[1]?.split("#[cfg(not(target_os = \"macos\"))]")[0] ?? "";
