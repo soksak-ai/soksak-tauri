@@ -115,6 +115,13 @@ describe("acquireFixtureWindow", () => {
     expect(got).toEqual({ label: "w-fresh", adopted: false });
   });
 
+  it("시각 검증 창은 사용자 포커스를 가져오지 않는다", async () => {
+    const app = fakeApp({ openLabel: "w-background" });
+    await acquireFixtureWindow(app.rpc, ROOT, app.opts);
+    const opened = app.calls.find((c) => c.name === "window.open");
+    expect(opened?.params).toEqual({ root: ROOT, focus: false });
+  });
+
   /** 굳은 창을 그대로 쓰면 판정이 아니라 타임아웃이 나오고, 그건 결함처럼 보이지 않는다. */
   it("물려받은 창이 답하지 못하면 닫고 다시 연다", async () => {
     const app = fakeApp({

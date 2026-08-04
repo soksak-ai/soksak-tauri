@@ -118,7 +118,9 @@ export async function acquireFixtureWindow(rpc, root, opts = {}) {
     await sleep(opts.settleMs ?? 500);
   }
 
-  const opened = body(await rpc("window.open", { root }, ctrl));
+  // 시각 검증은 포커스 상태가 아니라 화면을 측정한다. 새 창·기존 창 모두 뒤에서
+  // 제어할 수 있으므로 사용자의 현재 앱을 활성화할 권한이 없다.
+  const opened = body(await rpc("window.open", { root, focus: false }, ctrl));
   const label = opened.label ?? opened.existingWindow;
   if (typeof label !== "string" || !label.startsWith("w-")) {
     throw new Error(`픽스처 창 확보 실패 — ${JSON.stringify(opened).slice(0, 140)}`);
