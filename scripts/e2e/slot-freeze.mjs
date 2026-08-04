@@ -20,6 +20,7 @@ import {
   browserSurfaceInvariant,
   fixtureHtml,
   fixtureInputMarkers,
+  compositorCalibrationMarker,
   fixtureMarkerSize,
   fixtureMarkers,
   hostileWindowResizeSizes,
@@ -27,6 +28,7 @@ import {
   parseBrowserEngines,
   unwrapEvalValue,
   viewportAlignment,
+  transitionFrameAlignment,
 } from "./lib/browser-matrix.mjs";
 
 const SOCKET = requireSocket();
@@ -161,17 +163,26 @@ async function assertEngineSurfaceLedger(rpc, win, implementation, tabIds, stage
   return verdict;
 }
 
-function assertFrameMarkers(file, name, scale, { requireInput = true } = {}) {
+function assertFrameMarkers(file, name, scale, { requireInput = true, compareDomEpoch = false } = {}) {
   const bytes = fs.readFileSync(file);
+  const domEvidence = compareDomEpoch
+    ? markerEvidence(bytes, compositorCalibrationMarker, 24, MARKER_SAMPLE_STEP).largest
+    : null;
+  if (compareDomEpoch && (domEvidence.count < MIN_MARKER_COMPONENT || domEvidence.width < 40 || domEvidence.height < MIN_MARKER_HEIGHT)) {
+    throw new Error(`${name}: DOM compositor calibration 소실(${JSON.stringify(domEvidence)})`);
+  }
   const kinds = [["page", fixtureMarkers]];
   if (requireInput) kinds.push(["input", fixtureInputMarkers]);
   for (const [kind, markers] of kinds) {
     for (let slot = 0; slot < markers.length; slot += 1) {
       const evidence = markerEvidence(bytes, markers[slot], 24, MARKER_SAMPLE_STEP).largest;
-      if (evidence.count < MIN_MARKER_COMPONENT || evidence.width < MIN_MARKER_WIDTH || evidence.height < MIN_MARKER_HEIGHT) {
+      if (evidence.count < MIN_MARKER_COMPONENT || evidence.width < (compareDomEpoch ? 40 : MIN_MARKER_WIDTH) || evidence.height < MIN_MARKER_HEIGHT) {
         throw new Error(`${name}: slot ${slot} ${kind} marker 소실(${JSON.stringify(evidence)})`);
       }
-      if (kind === "page" && scale) {
+      if (kind === "page" && compareDomEpoch) {
+        const aligned = transitionFrameAlignment({ browser: evidence, dom: domEvidence });
+        if (!aligned.ok) throw new Error(`${name}: slot ${slot} browser-only stretch — ${aligned.errors.join(", ")}`);
+      } else if (kind === "page" && scale) {
         const aligned = viewportAlignment({
           slot: { w: 1, h: 1 }, viewport: { w: 1, h: 1 },
           marker: fixtureMarkerSize, markerPixels: evidence, scale,
@@ -401,6 +412,10 @@ async function runEngine(client, page, engine) {
     // 최종 정합만 맞고 도중에 blank/stale/hang이면 프레임 생존 또는 거래 시간에서 RED다.
     const fastResizeDir = path.join(engineEvidence, "resize-window-fast");
     const fastSizes = hostileWindowResizeSizes(originalWindow);
+    const calibration = must(await rpc("capture.calibration", { visible: true }, win), "DOM compositor calibration show");
+    if (!calibration.visible || calibration.rect?.w !== 64 || calibration.rect?.h !== 40) {
+      throw new Error(`DOM compositor calibration 계약 불일치: ${JSON.stringify(calibration)}`);
+    }
     const fastResize = must(await rpc("window.resizeSequence", {
       sizes: fastSizes,
       intervalMs: 8,
@@ -418,8 +433,10 @@ async function runEngine(client, page, engine) {
     // 최소 높이에서는 입력 아래의 상태 marker가 정상적으로 viewport 밖에 놓일 수 있다. 전이 중에는
     // 상단의 고정 ruler로 live frame을 판정하고, 원복 직후 실제 input 값·event ledger를 다시 읽는다.
     for (const file of fastFiles) assertFrameMarkers(
-      path.join(fastResizeDir, file), `${engine}/window-fast/${file}`, scale, { requireInput: false },
+      path.join(fastResizeDir, file), `${engine}/window-fast/${file}`, scale,
+      { requireInput: false, compareDomEpoch: true },
     );
+    must(await rpc("capture.calibration", { visible: false }, win), "DOM compositor calibration hide");
     frameCount += fastFiles.length;
     await assertViewportComposition(rpc, win, plugin, tabIds, addresses, scale,
       path.join(engineEvidence, "resize-window-restored.png"), `${engine}/window-restored`);

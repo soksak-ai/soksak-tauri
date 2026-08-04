@@ -708,8 +708,16 @@ Tauri compositor에 등록한 모든 네이티브 surface는 AppKit의 `DuringVi
 주인이다. 전체창 engine host 자체는 autoresize할 수 있지만, 명시 bounds가 오기 전에 그 안의 임의
 위치 child까지 비례 resize하면 안 된다. 적용값은
 `webview.composition.surfaces[].autoresizingMask`로 공개한다.
+windowed Chromium은 각 브라우저마다 전용 AppKit slot host를 가진다. DOM-slot bounds는 이 host에만
+적용하고 CEF child는 host 로컬 `(0,0,w,h)`를 채운다. 여러 CEF child를 전체창 host에 직접 붙여
+Cocoa 부모 추종과 슬롯 거래가 같은 frame을 함께 소유하는 구조는 금지한다.
 `webview.composition.engine.preservesContentDuringLiveResize`가 보존 정책을 공개하며 반드시 `false`여야
 한다. Electron은 일반 DOM/창 동작을 유지하고 이 규칙들을 설치하지 않는다.
+
+전이 캡처는 브라우저 marker만 절대 픽셀 크기로 판정하지 않는다. `capture.calibration`이 노출하는
+동일 CSS 크기의 DOM 기준자와 페이지 기준자를 매 프레임 대조해 WindowServer의 창 전체 backing epoch와
+브라우저만의 blank/stretch를 분리한다. 전이 중 두 기준자는 rounding 범위에서 같아야 하고, 정착
+프레임은 기존 절대 픽셀 크기와 DOM-slot↔viewport 정합도 함께 통과해야 한다.
 
 레일 재배치에서 Tauri 어댑터는 유한 snap 거래를 쓴다. 중간 mutation 쓰기를 잠그고 목표 DOM을
 커밋한 layout effect에서 공개 슬롯의 실제 rect를 읽어 한 번 적용한다. 플러그인 소유 외부 표면도

@@ -715,9 +715,19 @@ The registered surface autoresizing mask is `0`: the public DOM-slot bounds tran
 frame owner. The full-window engine host may autoresize, but it must not proportionally resize its
 arbitrarily positioned children before their explicit bounds arrive. The applied mask is exposed as
 `webview.composition.surfaces[].autoresizingMask`.
+Windowed Chromium has one dedicated AppKit slot host per browser. DOM-slot bounds apply only to that
+host, while the CEF child fills local `(0,0,w,h)`. Attaching arbitrary CEF children directly to the
+full-window host is forbidden because Cocoa parent following and the slot transaction would then own
+the same frame concurrently.
 `webview.composition.engine.preservesContentDuringLiveResize`
 exposes the preservation policy and must be `false`. Electron retains its ordinary DOM/window behavior
 and installs none of these rules.
+
+Transition capture does not judge a browser marker by absolute pixels alone. The same-size DOM marker
+exposed by `capture.calibration` is compared with every page marker in every frame, separating a
+WindowServer whole-window backing epoch from a browser-only blank or stretch. The two markers must
+match within rounding during the transition; settled frames still have to pass the original absolute
+pixel size and DOM-slot-to-viewport alignment checks.
 
 For a rail relocation, the Tauri adapter uses a finite snap transaction: it locks out intermediate
 mutation writes, commits the target DOM, reads the public slot's actual rect in the layout effect,

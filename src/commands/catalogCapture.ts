@@ -17,6 +17,40 @@ import { locateTab } from "./catalog";
 import { useSessions } from "../state/sessions";
 import { recordWindowFrames } from "./windowRecorder";
 
+const CALIBRATION_ID = "soksak-capture-calibration";
+const CALIBRATION_COLOR = "#ff0000";
+
+/** 창 compositor와 embedded surface가 같은 epoch를 그리는지 재는 공개 DOM 기준자.
+ * 명령으로만 나타나고 같은 visible 적용은 멱등이다. 테스트 종료 시 제거되므로 제품 UI가 아니다. */
+function setCaptureCalibration(visible: boolean) {
+  let el = document.getElementById(CALIBRATION_ID) as HTMLDivElement | null;
+  if (visible && !el) {
+    el = document.createElement("div");
+    el.id = CALIBRATION_ID;
+    el.dataset.node = "capture-calibration";
+    Object.assign(el.style, {
+      position: "fixed",
+      left: "4px",
+      top: "4px",
+      width: "64px",
+      height: "40px",
+      background: CALIBRATION_COLOR,
+      pointerEvents: "none",
+      zIndex: "2147483647",
+    });
+    document.body.append(el);
+  } else if (!visible && el) {
+    el.remove();
+    el = null;
+  }
+  const rect = el?.getBoundingClientRect();
+  return {
+    visible: Boolean(el),
+    color: CALIBRATION_COLOR,
+    rect: rect ? { x: rect.x, y: rect.y, w: rect.width, h: rect.height } : null,
+  };
+}
+
 /**
  * 탭의 본문 슬롯 절대 주소 — GroupArea 가 `layout/tab/<viewId>` 로 노출한다(그 자리와 한 벌).
  *
@@ -237,6 +271,21 @@ async function resolveRegion(p: Record<string, unknown>): Promise<Region | Refus
 }
 
 export function registerCaptureCatalog(): void {
+  register("capture.calibration", {
+    description:
+      "Show, hide, or inspect the fixed 64×40 DOM compositor calibration marker used to compare shell pixels with embedded-surface pixels during window transitions. Reapplying the same visibility is idempotent.",
+    params: {
+      visible: { type: "boolean", description: "true=show, false=remove; omit to inspect current status" },
+    },
+    returns: "{ visible, color, rect }",
+    message: (d) => `DOM compositor calibration: ${d.visible ? "visible" : "hidden"}`,
+    examples: ['capture.calibration \'{"visible":true}\'', 'capture.calibration \'{"visible":false}\''],
+    handler: async (p) =>
+      typeof p.visible === "boolean"
+        ? setCaptureCalibration(p.visible)
+        : setCaptureCalibration(Boolean(document.getElementById(CALIBRATION_ID))),
+  });
+
   register("window.snapshot", {
     description:
       "Capture the window contents to a PNG. Captures even when fully occluded by other apps (occlusion detection is temporarily disabled during capture). Includes WebGL terminal. Parent folder is created automatically. Cropping and saving compose freely: rect (CSS px, window coords — same space as ui.measure), node (an exposed address from ui.tree), or tab (a content tab id) selects the region, and path saves it while base64:true returns it inline. Capturing a tab that is not active activates it for the shot and restores whatever was active afterwards, so the screen returns to where it was. With neither path nor base64, a cropped capture still returns inline.",

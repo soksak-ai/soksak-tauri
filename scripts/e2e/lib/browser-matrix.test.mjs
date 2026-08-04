@@ -13,6 +13,7 @@ import {
   hostileWindowResizeSizes,
   unwrapEvalValue,
   viewportAlignment,
+  transitionFrameAlignment,
 } from "./browser-matrix.mjs";
 import { encodePng } from "./png.mjs";
 
@@ -109,6 +110,17 @@ describe("공통 브라우저 fixture", () => {
       marker: fixtureMarkerSize,
       markerPixels: { width: 474, height: 122 },
       scale: 2,
+    }).ok).toBe(false);
+  });
+
+  it("창 합성 epoch의 전역 배율과 브라우저 고유 stretch를 구분한다", () => {
+    expect(transitionFrameAlignment({
+      browser: { width: 96, height: 60 },
+      dom: { width: 96, height: 60 },
+    })).toEqual({ ok: true, errors: [] });
+    expect(transitionFrameAlignment({
+      browser: { width: 96, height: 60 },
+      dom: { width: 128, height: 80 },
     }).ok).toBe(false);
   });
 

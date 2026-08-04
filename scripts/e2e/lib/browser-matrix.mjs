@@ -17,6 +17,7 @@ export const browserImplementations = Object.freeze({
 
 export const fixtureMarkers = Object.freeze(["#ff00ff", "#00ffff"]);
 export const fixtureInputMarkers = Object.freeze(["#ffff00", "#00ff00"]);
+export const compositorCalibrationMarker = "#ff0000";
 // hostile resize의 최소 2-pane viewport에도 잘리지 않는 고정 ruler. 작아지는 반응형 marker가
 // 아니라 언제나 같은 64 CSS px이므로 캡처에서 확대/압축된 옛 프레임을 엄격히 검출할 수 있다.
 export const fixtureMarkerSize = Object.freeze({ width: 64, height: 40 });
@@ -41,10 +42,13 @@ export function markerEvidence(bytes, hex, tolerance = 24, sampleStep = 1) {
       // 함께 합성하므로 원색의 절대 RGB는 보존되지 않지만 색상 채널의 우세 관계는 보존된다.
       // 큰 marker의 hue를 세면 필요한 focus lighting을 유지하면서도 표면 생존을 판정할 수 있다.
       const [r, g, b] = rgb;
-      const kind = target[0] === 255 && target[1] === 0 && target[2] === 255 ? "magenta"
+      const kind = target[0] === 255 && target[1] === 0 && target[2] === 0 ? "red"
+        : target[0] === 255 && target[1] === 0 && target[2] === 255 ? "magenta"
         : target[0] === 0 && target[1] === 255 && target[2] === 255 ? "cyan"
           : target[0] === 255 && target[1] === 255 ? "yellow" : "green";
-      const hit = kind === "magenta"
+      const hit = kind === "red"
+        ? r - g >= 48 && r - b >= 48 && Math.abs(g - b) <= tolerance * 2
+        : kind === "magenta"
         ? r - g >= 48 && b - g >= 48 && Math.abs(r - b) <= tolerance * 2
         : kind === "cyan"
           ? g - r >= 48 && b - r >= 48 && Math.abs(g - b) <= tolerance * 2
@@ -204,6 +208,18 @@ export function viewportAlignment({ slot, viewport, marker, markerPixels, scale 
   }
   if (Math.abs(Number(markerPixels.height) - expectedHeight) > 4) {
     errors.push(`marker.height=${markerPixels.height}/${expectedHeight}`);
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+/** WindowServer가 창 전체의 이전 backing을 한 epoch 재투영한 것과 브라우저 표면만의 stretch를
+ * 분리한다. 동일 CSS 크기의 DOM 기준자와 페이지 기준자는 전이 중에도 같은 픽셀 크기여야 한다. */
+export function transitionFrameAlignment({ browser, dom }) {
+  const errors = [];
+  for (const key of ["width", "height"]) {
+    if (Math.abs(Number(browser[key]) - Number(dom[key])) > 4) {
+      errors.push(`${key}=browser:${browser[key]}/dom:${dom[key]}`);
+    }
   }
   return { ok: errors.length === 0, errors };
 }
