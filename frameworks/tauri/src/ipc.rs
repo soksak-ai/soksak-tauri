@@ -969,12 +969,16 @@ pub fn request_command(
 /// 필드를 골라 다시 조립하지 않는다: 조립하는 자리는 새 필드를 모르고, 모르는 필드는 실패가
 /// 아니라 소멸한다(실측 2026-08-01: `parent` 가 이 자리에서 None 으로 덮여 사라졌다).
 ///
-/// 상한만 지운다 — cored 가 자기 요청에 이미 걸었고, 여기서 더 긴 값을 쓰면 저쪽이 먼저
-/// 포기해 뒤늦은 회신이 짝을 잃는다.
-pub fn request_delivered(app: &AppHandle, mut req: Request) -> Value {
-    req.timeout_ms = None;
+/// protocol만 지운다 — cored와 앱은 같은 빌드이므로 스큐 재검사가 불필요하다. 호출자가 정한
+/// reply deadline은 보존한다. 여기서 없애 기본 10s로 되돌리면 cored가 60s를 기다려도 앱이 먼저
+/// 명령을 잘라 늦은 성공과 TIMEOUT이 동시에 기록된다.
+fn prepare_delivered_request(mut req: Request) -> Request {
     req.protocol = None;
-    route(app, req)
+    req
+}
+
+pub fn request_delivered(app: &AppHandle, req: Request) -> Value {
+    route(app, prepare_delivered_request(req))
 }
 
 #[allow(dead_code)]
@@ -1562,5 +1566,18 @@ mod tests {
         let bridge = CmdBridge::default();
         assert!(post_request(&o, &bridge, "w-gone", |seq| json!({ "id": seq })).is_none());
         assert_eq!(bridge.cancel_window("w-gone"), 0);
+    }
+
+    #[test]
+    fn cored_delivery_preserves_the_callers_reply_deadline() {
+        let req = Request {
+            method: "window.resizeSequence".into(),
+            timeout_ms: Some(60_000),
+            protocol: Some(1),
+            ..Request::default()
+        };
+        let delivered = prepare_delivered_request(req);
+        assert_eq!(delivered.timeout_ms, Some(60_000));
+        assert_eq!(delivered.protocol, None, "cored와 같은 빌드의 내부 배달은 스큐 재검사 대상이 아니다");
     }
 }
