@@ -75,6 +75,11 @@ function excluded(el: HTMLElement): boolean {
 export function createRectMotionTracker(): RectMotionTracker {
   const els = new Set<HTMLElement>();
   const prev = new WeakMap<HTMLElement, Snap>();
+  // OS 창 경계 변화는 명령발 패널 재배치와 다른 사건이다. viewport가 바뀐 커밋을 FLIP으로
+  // 보간하면 resize 이벤트마다 모든 pane/tab이 animation을 취소·재생성하고 활동 원장까지
+  // 발행한다. live resize는 새 viewport에 즉시 reflow해야 하므로 tracker별 마지막 viewport와
+  // 비교해 그 flush 전체를 보간에서 뺀다. 프레임워크 이벤트나 벤더 이름에는 기대지 않는다.
+  let viewport = { w: window.innerWidth, h: window.innerHeight };
   // 요소당 활성 보간 1개 — 새 변화가 오면 이전 것을 취소하고 이어서 시작한다. 취소 없이
   // 겹치면 두 애니메이션이 동시에 살아 겹침·잔상이 되고(실측: 사용자 화면), 진행 중 gBCR
   // (보간값)을 prev 로 삼아 다음 FLIP 의 출발점까지 오염된다.
@@ -159,6 +164,10 @@ export function createRectMotionTracker(): RectMotionTracker {
     },
     flush: () => {
       const facts = layoutMotionFacts();
+      const nextViewport = { w: window.innerWidth, h: window.innerHeight };
+      const viewportReflow =
+        nextViewport.w !== viewport.w || nextViewport.h !== viewport.h;
+      viewport = nextViewport;
       // 위상 스킵의 정밀 조건 — 전면 스킵은 1/50 간헐 원속의 원인이었다(실측: resize 순간
       // 다른 활강 위상이 열려 있으면 무관한 pane 의 FLIP 까지 통째로 죽어 즉시 점프).
       //  · resize 위상(드래그): 전면 스킵 — 즉각 추종이 계약.
@@ -211,9 +220,14 @@ export function createRectMotionTracker(): RectMotionTracker {
           ? el.dataset.node.slice("layout/tab/".length)
           : null;
         const skip =
-          skipAll || (facts.active && tabId !== null && (facts.scope?.has(tabId) ?? false));
+          viewportReflow ||
+          skipAll ||
+          (facts.active && tabId !== null && (facts.scope?.has(tabId) ?? false));
         if (skip) {
-          noteRectMotionSkip(el.dataset.node ?? el.className, facts.kinds.join("+") || "live");
+          noteRectMotionSkip(
+            el.dataset.node ?? el.className,
+            viewportReflow ? "viewport-reflow" : facts.kinds.join("+") || "live",
+          );
           continue;
         }
         const dxq = was.x - now.x;

@@ -15,7 +15,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createRectMotionTracker, registerRectMotionExclusion } from "./layoutRectMotion";
 import { setMotionDebug } from "./motionDebug";
 
@@ -109,6 +109,39 @@ describe("정지 중의 레이아웃 변화", () => {
 
     expect(el.style.width, "해제했는데 옛 rect 가 박힌 채다").toBe("");
     expect(el.style.height).toBe("");
+  });
+});
+
+describe("viewport resize는 레이아웃 모션이 아니다", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    setMotionDebug({ hold: false, scale: 1 });
+  });
+
+  it("창 경계가 바뀐 flush는 요소별 FLIP을 만들지 않는다", () => {
+    let viewportWidth = 1200;
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      get: () => viewportWidth,
+    });
+    const t = createRectMotionTracker();
+    const { el, move } = laidOut(600, 400);
+    const animate = vi.fn(() => ({
+      cancel: vi.fn(),
+      pause: vi.fn(),
+      play: vi.fn(),
+      currentTime: 0,
+      playbackRate: 1,
+    }));
+    Object.defineProperty(el, "animate", { configurable: true, value: animate });
+    t.ref(el);
+    t.flush();
+
+    viewportWidth = 900;
+    move(450, 400);
+    t.flush();
+
+    expect(animate, "viewport reflow를 요소별 모션으로 승격했다").not.toHaveBeenCalled();
   });
 });
 
