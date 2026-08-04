@@ -40,10 +40,10 @@ export function registerSystemCatalog(): void {
     returns: "{ ok }",
     message: () => tmsg("msg.app.quit"),
     examples: ["app.quit"],
-    handler: () => {
-      // 자기 파괴는 명령 응답을 먼저 cored 로 흘린 뒤 다음 task 에서 실행한다. 즉시 invoke 하면
-      // Tauri 프로세스와 응답 통로가 함께 닫혀 호출자는 성공과 크래시를 구분할 수 없다.
-      setTimeout(() => void invoke("app_quit"), 30);
+    // 각 프레임워크의 native command가 먼저 응답하고 자기 main event queue에 종료를 건다.
+    // renderer 타이머에 미루면 비전면 throttle 때문에 CLI는 성공인데 프로세스가 남을 수 있다.
+    handler: async () => {
+      await invoke("app_quit");
       return { ok: true };
     },
   });

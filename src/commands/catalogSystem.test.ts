@@ -29,16 +29,12 @@ afterEach(() => {
   unregister("framework.provision");
 });
 
-describe("app.quit — 성공 응답 뒤 자기 파괴", () => {
-  it("호출자 응답이 끝난 다음 이벤트 차례에만 네이티브 종료를 요청", async () => {
-    vi.useFakeTimers();
+describe("app.quit — 네이티브 종료 거래에 즉시 위임", () => {
+  it("renderer 타이머에 기대지 않고 네이티브 경계가 응답 뒤 종료를 책임진다", async () => {
     invoke.mockResolvedValueOnce(undefined);
 
     const result = await execute("app.quit", {}, {});
     expect(result).toMatchObject({ ok: true });
-    expect(invoke).not.toHaveBeenCalledWith("app_quit");
-
-    await vi.runOnlyPendingTimersAsync();
     expect(invoke).toHaveBeenCalledWith("app_quit");
   });
 });
