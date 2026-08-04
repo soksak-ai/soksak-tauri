@@ -291,9 +291,17 @@ pub async fn engine_surface_stats(app: AppHandle, window: tauri::Window) -> serd
                 let v: &objc2_app_kit::NSView = unsafe { &*(ptr as *const objc2_app_kit::NSView) };
                 let _ = ns_win; // 소속은 live 순회(이 창 트리)가 이미 보장한다
                 let f = v.frame();
+                let surface_label = layer::surface_label(ptr);
+                let dim = surface_label.as_deref().map(layer::surface_dim).unwrap_or(0.0);
+                let lighting = surface_label
+                    .as_deref()
+                    .map(layer::surface_dim_state)
+                    .unwrap_or_else(|| serde_json::json!({ "veilPresent": false }));
                 surfaces.push(serde_json::json!({
                     "ptr": ptr,
-                    "label": layer::surface_label(ptr),
+                    "label": surface_label,
+                    "dim": dim,
+                    "lighting": lighting,
                     "hidden": v.isHidden(),
                     "effectivelyHidden": unsafe { v.isHiddenOrHasHiddenAncestor() },
                     "frame": { "x": f.origin.x, "y": f.origin.y, "w": f.size.width, "h": f.size.height },
@@ -336,6 +344,24 @@ pub fn webview_overlay_active(window: tauri::Window, active: bool) {
     }));
     #[cfg(not(target_os = "macos"))]
     let _ = (window, active);
+}
+
+// 포커스 조명의 native projection. 메인 DOM의 조명과 같은 공개 `--dim` 값을 Tauri
+// surface 바로 위의 input-transparent AppKit 평면으로 옮긴다. Electron에는 이 명령도 장치도 없다.
+#[tauri::command]
+pub fn webview_dim(window: tauri::Window, label: String, amount: f64) -> Result<(), String> {
+    if !amount.is_finite() || !(0.0..=1.0).contains(&amount) {
+        return Err("amount는 0..1 유한수여야 한다".into());
+    }
+    let prefix = format!("b-{}-", window.label());
+    if !label.starts_with(&prefix) {
+        return Err(format!("이 창의 surface가 아니다: {label}"));
+    }
+    #[cfg(target_os = "macos")]
+    layer::set_surface_dim(&label, amount);
+    #[cfg(not(target_os = "macos"))]
+    let _ = (&label, amount);
+    Ok(())
 }
 
 // 패널 디바이더 드래그 제스처 릴레이 — 프론트(GroupArea)가 드래그 시작/끝에 호출한다.
@@ -797,6 +823,7 @@ fn set_child_frame(
                 let host = &*(host_ptr as *const NSView);
                 host.setFrame(frame);
                 view.setFrame(NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(w, h)));
+                layer::set_surface_dim(&label, layer::surface_dim(&label));
             } else {
                 view.setFrame(frame);
             }

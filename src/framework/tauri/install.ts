@@ -34,6 +34,7 @@ import {
   installTauriHoleMarkers,
   isTauriRectMotionExcluded,
 } from "./holeMarkers";
+import { installNativeLighting } from "./nativeLighting";
 import { useUi } from "../../state/ui";
 import { useGutterHover } from "../../state/gutterHover";
 import { bindPaneUnder } from "../../lib/bindPaneUnder";
@@ -279,6 +280,8 @@ export function installTauri(): void {
   adoptFrameworkStyles("tauri", styles);
   // 공개 슬롯을 Tauri 전용 합성 표식으로 투영한다. 공통 DOM 은 hole 개념을 갖지 않는다.
   installTauriHoleMarkers();
+  // native child는 DOM 조명 평면보다 앞에 있으므로 같은 dim 사실을 native 합성면에 투영한다.
+  installNativeLighting();
   // 사이드바는 홀 위에 칠하지 않는다 — 문서 밖 표면은 DOM 전체 뒤라 클립 제외만이 유일한 길이다.
   installRailHoleClip();
   // 표면 정합 상시 감사 — 문서 밖 표면은 상태와 따로 살 수 있어(유령) 그 어긋남을 계속 본다.

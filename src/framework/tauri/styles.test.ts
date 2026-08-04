@@ -6,9 +6,9 @@ const css = readFileSync(new URL("./styles.css", import.meta.url), "utf8")
   .replace(/\/\*[\s\S]*?\*\//g, "");
 
 describe("Tauri native-composition styles", () => {
-  it("조명은 코어 공통 평면의 책임이라 Tauri가 별도 dim veil을 중복하지 않는다", () => {
-    expect(css).not.toMatch(/\[data-dim\]/);
+  it("native 조명은 surface host가 소유하므로 CSS veil/filter를 만들지 않는다", () => {
     expect(css).not.toMatch(/brightness\(/);
+    expect(css).not.toMatch(/\[data-dim\]/);
   });
 
   it("private marker만 pane·frame·content 배경을 연다", () => {

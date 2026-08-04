@@ -6,7 +6,10 @@ use objc2::msg_send;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, Sel};
 use objc2::sel;
-use objc2_app_kit::{NSView, NSWindowOrderingMode};
+use objc2_app_kit::{
+    NSAutoresizingMaskOptions, NSBox, NSBoxType, NSColor, NSTitlePosition, NSView,
+    NSWindowOrderingMode,
+};
 use objc2_foundation::{NSArray, NSNumber, NSPoint, NSString};
 use soksak_core::native_surface_ledger::{NativeSurfaceHosts, NativeSurfaceLedger};
 use tauri::Manager;
@@ -30,8 +33,135 @@ static LAYERS: LazyLock<Mutex<HashMap<String, WinLayer>>> =
 // child frame" 불변식 보존(별도 rect 레지스트리 없음).
 static SURFACES: LazyLock<NativeSurfaceLedger> = LazyLock::new(NativeSurfaceLedger::default);
 static SURFACE_HOSTS: LazyLock<NativeSurfaceHosts> = LazyLock::new(NativeSurfaceHosts::default);
+static SURFACE_DIMS: LazyLock<Mutex<HashMap<String, f64>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 // 교체 전 원본 hitTest IMP. 클래스(WryWebView) 단위 스위즐이라 앱 전역 1회면 충분.
 static ORIG_HIT_TEST: AtomicUsize = AtomicUsize::new(0);
+
+// native surface host 바로 위(contentView의 같은 자식 축)에 서는 순수 시각 조명 평면.
+// Chromium의 remote CALayer는 host 내부의 일반 AppKit 자식보다 앞에서 합성될 수 있으므로
+// veil을 host 안에 넣지 않는다. host frame 커밋과 같은 경로에서 frame을 복사하고,
+// hitTest=nil이라 브라우저 입력을 가로채지 않는다.
+objc2::define_class!(
+    #[unsafe(super(NSBox))]
+    #[thread_kind = objc2::MainThreadOnly]
+    struct NativeDimVeilBox;
+
+    impl NativeDimVeilBox {
+        #[unsafe(method(hitTest:))]
+        fn hit_test(&self, _point: NSPoint) -> *mut NSView {
+            std::ptr::null_mut()
+        }
+    }
+);
+
+thread_local! {
+    static DIM_VEILS: std::cell::RefCell<HashMap<String, Retained<NativeDimVeilBox>>> =
+        std::cell::RefCell::new(HashMap::new());
+}
+
+fn apply_surface_dim(label: &str) {
+    let Some(host_ptr) = SURFACE_HOSTS.ptr(label) else {
+        return;
+    };
+    let amount = SURFACE_DIMS
+        .lock()
+        .ok()
+        .and_then(|dims| dims.get(label).copied())
+        .unwrap_or(0.0);
+    let Some(mtm) = objc2::MainThreadMarker::new() else {
+        return;
+    };
+    let host = unsafe { &*(host_ptr as *const NSView) };
+    let Some(parent) = (unsafe { host.superview() }) else {
+        return;
+    };
+    DIM_VEILS.with(|cell| {
+        let mut veils = cell.borrow_mut();
+        let veil = veils.entry(label.to_owned()).or_insert_with(|| {
+            let box_view: Retained<NativeDimVeilBox> =
+                unsafe { msg_send![mtm.alloc::<NativeDimVeilBox>(), init] };
+            box_view.setBoxType(NSBoxType::Custom);
+            box_view.setTitlePosition(NSTitlePosition::NoTitle);
+            box_view.setBorderWidth(0.0);
+            box_view.setFillColor(&NSColor::blackColor());
+            box_view.setTransparent(false);
+            let view: &NSView = &box_view;
+            view.setWantsLayer(true);
+            view.setAutoresizingMask(
+                NSAutoresizingMaskOptions::ViewWidthSizable
+                    | NSAutoresizingMaskOptions::ViewHeightSizable,
+            );
+            box_view
+        });
+        let view: &NSView = veil;
+        view.setFrame(host.frame());
+        view.setAlphaValue(amount);
+        view.removeFromSuperview();
+        parent.addSubview_positioned_relativeTo(view, NSWindowOrderingMode::Above, Some(host));
+        view.setHidden(amount <= 0.0 || host.isHidden());
+    });
+}
+
+pub fn set_surface_dim(label: &str, amount: f64) {
+    if let Ok(mut dims) = SURFACE_DIMS.lock() {
+        dims.insert(label.to_owned(), amount);
+    }
+    apply_surface_dim(label);
+}
+
+pub fn surface_dim(label: &str) -> f64 {
+    SURFACE_DIMS
+        .lock()
+        .ok()
+        .and_then(|dims| dims.get(label).copied())
+        .unwrap_or(0.0)
+}
+
+// 요청값뿐 아니라 실제 AppKit 합성면의 존재·alpha·frame 정합을 공개 상태로 반환한다.
+// 반드시 메인 스레드에서 호출한다.
+pub fn surface_dim_state(label: &str) -> serde_json::Value {
+    let requested = surface_dim(label);
+    let Some(host_ptr) = SURFACE_HOSTS.ptr(label) else {
+        return serde_json::json!({ "requested": requested, "veilPresent": false });
+    };
+    let host = unsafe { &*(host_ptr as *const NSView) };
+    DIM_VEILS.with(|cell| {
+        let veils = cell.borrow();
+        let Some(veil) = veils.get(label) else {
+            return serde_json::json!({ "requested": requested, "veilPresent": false });
+        };
+        let view: &NSView = veil;
+        let vf = view.frame();
+        let hf = host.frame();
+        let sibling_order = unsafe { host.superview() }.map(|parent| {
+            let siblings = parent.subviews();
+            let host_index = siblings
+                .iter()
+                .position(|s| Retained::as_ptr(&s) as usize == host_ptr);
+            let veil_ptr = view as *const NSView as usize;
+            let veil_index = siblings
+                .iter()
+                .position(|s| Retained::as_ptr(&s) as usize == veil_ptr);
+            serde_json::json!({
+                "surface": host_index,
+                "veil": veil_index,
+                "veilAboveSurface": matches!((host_index, veil_index), (Some(h), Some(v)) if v > h),
+            })
+        });
+        serde_json::json!({
+            "requested": requested,
+            "veilPresent": true,
+            "appliedAlpha": view.alphaValue(),
+            "veilHidden": view.isHidden(),
+            "veilTransparent": veil.isTransparent(),
+            "veilLayerBacked": view.wantsLayer(),
+            "siblingOrder": sibling_order,
+            "frameMatchesSurface": vf == hf,
+            "frame": { "x": vf.origin.x, "y": vf.origin.y, "w": vf.size.width, "h": vf.size.height },
+        })
+    })
+}
 
 // 창의 오버레이 게이트 갱신(프론트 ui 카운터 0↔1 전이 시 webview_overlay_active 가 호출).
 pub fn set_overlay(label: &str, active: bool) {
@@ -136,10 +266,19 @@ fn place_surface_host(label: &str, mode: NSWindowOrderingMode) {
 
 pub fn raise_surface_host(label: &str) {
     place_surface_host(label, NSWindowOrderingMode::Above);
+    // overlay 종료 뒤에는 veil도 host 바로 위로 되돌려 하나의 native surface처럼 복원한다.
+    apply_surface_dim(label);
 }
 
 pub fn lower_surface_host(label: &str) {
     place_surface_host(label, NSWindowOrderingMode::Below);
+    // DOM overlay가 surface를 덮는 동안 veil만 main 위에 남아 모달을 가리면 안 된다.
+    DIM_VEILS.with(|cell| {
+        if let Some(veil) = cell.borrow().get(label) {
+            let view: &NSView = veil;
+            view.setHidden(true);
+        }
+    });
 }
 
 pub fn lower_window_surface_hosts(window_label: &str) {
@@ -200,6 +339,7 @@ pub fn adopt_surface_host<R: tauri::Runtime>(
         let ptr = Retained::as_ptr(&host) as usize;
         SURFACES.register(ptr, Some(&surface_label));
         SURFACE_HOSTS.register(&surface_label, ptr, &window_label);
+        apply_surface_dim(&surface_label);
     });
 }
 
@@ -208,6 +348,7 @@ pub fn set_surface_host_hidden(label: &str, hidden: bool) {
         let host = unsafe { &*(ptr as *const NSView) };
         host.setHidden(hidden);
     }
+    apply_surface_dim(label);
 }
 
 pub fn remove_surface_host(label: &str) {
@@ -216,6 +357,15 @@ pub fn remove_surface_host(label: &str) {
     SURFACES.unregister(host.ptr);
     let host = unsafe { &*(host.ptr as *const NSView) };
     host.removeFromSuperview();
+    if let Ok(mut dims) = SURFACE_DIMS.lock() {
+        dims.remove(label);
+    }
+    DIM_VEILS.with(|cell| {
+        if let Some(veil) = cell.borrow_mut().remove(label) {
+            let view: &NSView = &veil;
+            view.removeFromSuperview();
+        }
+    });
 }
 
 // 등록된 엔진 서피스 수 — 관측면(webview.surfaces 의 engine 축)이 읽는다.
