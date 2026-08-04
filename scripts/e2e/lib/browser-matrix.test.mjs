@@ -163,6 +163,13 @@ describe("공통 브라우저 fixture", () => {
     expect(markerPixels(png, fixtureMarkers[1])).toBe(0);
   });
 
+  it("DOM compositor 기준자의 순수 파랑을 별도 연결 성분으로 센다", () => {
+    const px = Buffer.alloc(80 * 50 * 3, 0);
+    for (let y = 5; y < 45; y += 1) for (let x = 8; x < 72; x += 1) px[(y * 80 + x) * 3 + 2] = 255;
+    const evidence = markerEvidence(encodePng({ w: 80, h: 50, ch: 3, px }), "#0000ff");
+    expect(evidence.largest).toEqual({ count: 2560, width: 64, height: 40 });
+  });
+
   it("흩어진 장식 픽셀과 넓게 이어진 fixture marker를 구분한다", () => {
     const px = Buffer.alloc(180 * 50 * 3, 0);
     for (let y = 10; y < 34; y += 1) for (let x = 20; x < 160; x += 1) {

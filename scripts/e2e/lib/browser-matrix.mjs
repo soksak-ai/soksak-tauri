@@ -17,7 +17,7 @@ export const browserImplementations = Object.freeze({
 
 export const fixtureMarkers = Object.freeze(["#ff00ff", "#00ffff"]);
 export const fixtureInputMarkers = Object.freeze(["#ffff00", "#00ff00"]);
-export const compositorCalibrationMarker = "#ff0000";
+export const compositorCalibrationMarker = "#0000ff";
 // hostile resize의 최소 2-pane viewport에도 잘리지 않는 고정 ruler. 작아지는 반응형 marker가
 // 아니라 언제나 같은 64 CSS px이므로 캡처에서 확대/압축된 옛 프레임을 엄격히 검출할 수 있다.
 export const fixtureMarkerSize = Object.freeze({ width: 64, height: 40 });
@@ -42,11 +42,14 @@ export function markerEvidence(bytes, hex, tolerance = 24, sampleStep = 1) {
       // 함께 합성하므로 원색의 절대 RGB는 보존되지 않지만 색상 채널의 우세 관계는 보존된다.
       // 큰 marker의 hue를 세면 필요한 focus lighting을 유지하면서도 표면 생존을 판정할 수 있다.
       const [r, g, b] = rgb;
-      const kind = target[0] === 255 && target[1] === 0 && target[2] === 0 ? "red"
+      const kind = target[0] === 0 && target[1] === 0 && target[2] === 255 ? "blue"
+        : target[0] === 255 && target[1] === 0 && target[2] === 0 ? "red"
         : target[0] === 255 && target[1] === 0 && target[2] === 255 ? "magenta"
         : target[0] === 0 && target[1] === 255 && target[2] === 255 ? "cyan"
           : target[0] === 255 && target[1] === 255 ? "yellow" : "green";
-      const hit = kind === "red"
+      const hit = kind === "blue"
+        ? b - r >= 64 && b - g >= 64 && Math.abs(r - g) <= tolerance
+        : kind === "red"
         ? r - g >= 48 && r - b >= 48 && Math.abs(g - b) <= tolerance * 2
         : kind === "magenta"
         ? r - g >= 48 && b - g >= 48 && Math.abs(r - b) <= tolerance * 2

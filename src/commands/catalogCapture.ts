@@ -18,7 +18,7 @@ import { useSessions } from "../state/sessions";
 import { recordWindowFrames } from "./windowRecorder";
 
 const CALIBRATION_ID = "soksak-capture-calibration";
-const CALIBRATION_COLOR = "#ff0000";
+const CALIBRATION_COLOR = "#0000ff";
 
 /** 창 compositor와 embedded surface가 같은 epoch를 그리는지 재는 공개 DOM 기준자.
  * 명령으로만 나타나고 같은 visible 적용은 멱등이다. 테스트 종료 시 제거되므로 제품 UI가 아니다. */
