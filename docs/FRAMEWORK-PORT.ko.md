@@ -714,8 +714,9 @@ Cocoa 부모 추종과 슬롯 거래가 같은 frame을 함께 소유하는 구�
 `webview.composition.engine.preservesContentDuringLiveResize`가 보존 정책을 공개하며 반드시 `false`여야
 한다. Electron은 일반 DOM/창 동작을 유지하고 이 규칙들을 설치하지 않는다.
 
-전이 캡처는 브라우저 marker만 절대 픽셀 크기로 판정하지 않는다. `capture.calibration`이 노출하는
-동일 CSS 크기의 DOM 기준자와 페이지 기준자를 매 프레임 대조해 WindowServer의 창 전체 backing epoch와
+전이 캡처는 브라우저 marker만 절대 픽셀 크기로 판정하지 않는다. `capture.calibration`은 네이티브
+홀이 없는 왼쪽 DOM 레일의 상·중·하에 동일한 64×40 기준자를 멱등하게 노출한다. 창 backing이 전이 중
+잘려도 살아남은 가장 큰 DOM 기준자와 페이지 기준자를 매 프레임 대조해 WindowServer의 창 전체 backing epoch와
 브라우저만의 blank/stretch를 분리한다. 전이 중 두 기준자는 rounding 범위에서 같아야 하고, 정착
 프레임은 기존 절대 픽셀 크기와 DOM-slot↔viewport 정합도 함께 통과해야 한다.
 

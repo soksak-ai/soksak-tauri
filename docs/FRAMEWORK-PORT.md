@@ -723,8 +723,10 @@ the same frame concurrently.
 exposes the preservation policy and must be `false`. Electron retains its ordinary DOM/window behavior
 and installs none of these rules.
 
-Transition capture does not judge a browser marker by absolute pixels alone. The same-size DOM marker
-exposed by `capture.calibration` is compared with every page marker in every frame, separating a
+Transition capture does not judge a browser marker by absolute pixels alone. `capture.calibration`
+idempotently exposes equal 64×40 rulers at the top, middle, and bottom of the DOM-only left rail. The
+largest surviving DOM ruler remains measurable when a transitional window backing is cropped and is
+compared with every page marker in every frame, separating a
 WindowServer whole-window backing epoch from a browser-only blank or stretch. The two markers must
 match within rounding during the transition; settled frames still have to pass the original absolute
 pixel size and DOM-slot-to-viewport alignment checks.
