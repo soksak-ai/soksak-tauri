@@ -240,6 +240,22 @@
       "note": "컨트롤 창 해소의 기준. 굳은 잔재 창이 포커스 폴백을 점유해도 해소가 결정적이어야 한다는 법을 고정한다."
     },
     {
+      "file": "lib/browser-matrix.mjs",
+      "role": "lib",
+      "class": "C",
+      "surfaces": [
+        "pixel-oracle"
+      ],
+      "note": "세 브라우저 구현에 같은 문서·IME·픽셀 생존 기준을 적용하는 판정 한 벌. 입력은 PNG 바이트지만 그 바이트에는 프레임워크별 창 합성 결과가 들어 있다."
+    },
+    {
+      "file": "lib/browser-matrix.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "브라우저 matrix의 구현 목록·마커 판정·eval 봉투 해소를 순수 바이트와 값으로 고정한다. 앱이나 프레임워크가 필요 없다."
+    },
+    {
       "file": "lib/fixtureWindow.mjs",
       "role": "lib",
       "class": "A",
@@ -270,6 +286,20 @@
         "pixel-oracle"
       ],
       "note": "오라클의 기준. 어디까지가 백지고 어디부터가 렌더인지를 실물 바이트(fixtures/frames)로 고정한다."
+    },
+    {
+      "file": "lib/http-fixture.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "브라우저 acceptance 문서를 loopback HTTP로 제공하고 연결 종료 사건으로 회수한다. 프레임워크 경로나 네이티브 표면을 알지 않는다."
+    },
+    {
+      "file": "lib/http-fixture.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "fixture 서버의 응답·no-store·종료 계약을 Node HTTP만으로 검증한다."
     },
     {
       "file": "lib/png.mjs",
