@@ -396,7 +396,7 @@ pub fn foreign_identity_home(source: &Path, home: &Path) -> Option<PathBuf> {
     crate::identity::foreign_identity_home(source, home)
 }
 
-pub fn read_config_in(home: &Path) -> Result<UnitDevConfig, String> {
+fn read_config_in(home: &Path) -> Result<UnitDevConfig, String> {
     let path = config_path(home);
     if !path.exists() {
         return Ok(UnitDevConfig {
@@ -433,7 +433,7 @@ pub fn read_config_in(home: &Path) -> Result<UnitDevConfig, String> {
     Ok(config)
 }
 
-pub fn write_config_in(home: &Path, config: &UnitDevConfig) -> Result<(), String> {
+fn write_config_in(home: &Path, config: &UnitDevConfig) -> Result<(), String> {
     let path = config_path(home);
     let parent = path
         .parent()
