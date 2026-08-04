@@ -672,7 +672,7 @@ without a migration contract.
 | | Owner |
 | --- | --- |
 | `ContentViewHost` contract, `data-content-view-body` declaration, host registry | `src/lib/contentViews.ts` |
-| Native child implementation, event-driven slot-bounds following, stable z-order, rail clip, native mouse, divider bar, overlay gate, `webview.emitNative` | `src/framework/tauri/` |
+| Native child implementation, event-driven slot-bounds following, native focus lighting, stable z-order, rail clip, native mouse, divider bar, overlay gate, `webview.emitNative` | `src/framework/tauri/` |
 | DOM `<webview>` implementation | `src/framework/electron/` |
 | Address bar, navigation, DOM automation, media commands and the `data-content-view-body` declaration | `soksak-plugin-browser-native` |
 | Hole CSS | `src/framework/tauri/styles.css` |
@@ -697,13 +697,21 @@ is included. If another event path already acknowledged the same rect, the dupli
 skipped. Tauri also excludes the actual core FLIP tracking frames — the marked `pane` and `tab-body`,
 not their nested content-view body — from generic WAAPI rect interpolation. Otherwise the follower
 would receive every intermediate compositor rect even though the finite snap transaction succeeded.
-The native child never changes z-order and no screenshot, veil, rAF handoff, or frame-by-frame follow
+The native child never changes z-order and no screenshot, motion stand-in, rAF handoff, or frame-by-frame follow
 is involved. Electron does not install that exclusion and always performs DOM-child placement under
 `data-content-view-body` and nothing else.
 
 `webview.composition` exposes not only DOM anchors and actual native frames, but also each label's slot
 rect, last applied rect, visibility and pending-sync state. The browser product plugin does not
 redeclare composition state as `surface.stats`.
+
+The product fact for focus lighting is the shared `--dim` value, but the composition device is not
+shared. Core paints in-document pixels with one SVG plane outside the content tree and never applies
+`filter` or `opacity` to a content ancestor. Electron uses only that path. The Tauri adapter observes
+the public content slot and `--dim` changes as events and projects the value to an input-transparent
+AppKit plane immediately above the surface host. There is no second follower loop: a surface-frame
+commit updates the lighting frame too. `webview.surfaces` exposes requested value, applied alpha,
+frame equality, and sibling order.
 
 ### `install()` is a contract member, and it is lazy
 
@@ -750,7 +758,10 @@ The old standard that pinned the exclusion ungated rested on a measurement from 
 
 `scripts/electron/guest-under-effects.test.mjs` answers the three questions this refactor rested on, per frame:
 
-- **An ancestor `filter` does reach the guest** (234 → 96 under `brightness(0.4)`). So turning `filter` off on hole slots and painting a veil instead is a compensation for an out-of-document surface, and belongs to that framework. This was planned as a prerequisite and then skipped; the decision had been made on assumption until now.
+- **An ancestor `filter` reaches an Electron guest but corrupts WebGL terminal glyph composition.**
+  It therefore cannot be the shared lighting device. In-document content is dimmed by the single SVG
+  plane outside the content tree; only an out-of-document Tauri surface receives the same value
+  through the Tauri adapter's AppKit lighting plane.
 - **`visibility:hidden` alone hides the guest.** The off-screen park is not needed in the document.
 - **Coming back from a park costs no blank frame.** Reading that took care: a frame subscription delivers the current frame first, so the pre-unpark frame reads as a blank that is not one. The page now carries a heartbeat (so frames keep flowing while nothing changes) and a marker set in the same script as the unpark, so the first frame that *can* show the guest is identified rather than guessed. With that, every park variant — full, `visibility`, `transform`, `content-visibility` — returns painted on its first frame.
 

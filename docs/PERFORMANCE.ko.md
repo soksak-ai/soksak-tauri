@@ -62,6 +62,9 @@ debounce 로 입력이 정착한 뒤 1회 실행한다. 스톰은 본구간 CPU 
   한 번 커밋한다. stale native frame을 다음 여정의 출발점으로 쓰지 않는다.
 - 예측 불가능한 resize 입력은 사건(`ResizeObserver`와 명시적 제스처 에지)으로 받고 label별로
   합쳐 현재 공개 슬롯에 수렴한다. 프레임 폴링 루프는 없다.
+- 포커스 조명은 콘텐츠 조상의 `filter`/`opacity`가 아니라 작업면 밖 SVG 평면 하나가 그린다.
+  그래야 DOM·canvas·WebGL renderer의 합성 경로를 바꾸지 않는다. Tauri native child만 어댑터가
+  같은 `--dim` 값을 AppKit 평면에 투영하며, 그 frame은 surface frame 거래와 함께 커밋한다.
 - 캡처 픽셀은 증거(`window.record` / `window.snapshot`)이며 대체 UI가 아니다.
 
 ### 6. 플랫폼 페인트 경로 보존

@@ -668,7 +668,7 @@ offscreen 축은 코어의 공백이 **아니다**. 2026-07-08 에 검증됐고 
 | | 주인 |
 | --- | --- |
 | `ContentViewHost` 계약, `data-content-view-body` 본문 선언, 등록부 | `src/lib/contentViews.ts` |
-| 네이티브 자식 구현, 사건 기반 슬롯 bounds 추종, 안정 z-order, 레일 클립, 네이티브 마우스, 골 강조바, 오버레이 게이트, `webview.emitNative` | `src/framework/tauri/` |
+| 네이티브 자식 구현, 사건 기반 슬롯 bounds 추종, native 포커스 조명, 안정 z-order, 레일 클립, 네이티브 마우스, 골 강조바, 오버레이 게이트, `webview.emitNative` | `src/framework/tauri/` |
 | DOM `<webview>` 구현 | `src/framework/electron/` |
 | 주소창·탐색·DOM 자동화·미디어 명령과 `data-content-view-body` 선언 | `soksak-plugin-browser-native` |
 | 홀 CSS | `src/framework/tauri/styles.css` |
@@ -690,13 +690,19 @@ flow가 함께 바뀌어도 좌표를 예측하지 않는다. 같은 rect의 ACK
 중복 bounds 쓰기를 생략한다. 또한 Tauri는 코어 FLIP이 실제 추적하는 표식된 `pane`과 `tab-body`를
 일반 WAAPI rect 보간에서 제외한다. 그 자식인 content-view body를 검사하면 제외는 발동하지 않고,
 유한 snap 거래가 성공한 뒤에도 follower가 compositor 중간 rect를 전부 받게 된다. 네이티브 자식의
-z-order는 바뀌지 않으며 스크린샷·veil·rAF handoff·프레임 추종은 없다. Electron은 이 제외를
+z-order는 바뀌지 않으며 스크린샷·모션 스탠드인·rAF handoff·프레임 추종은 없다. Electron은 이 제외를
 등록하지 않고 언제나
 `data-content-view-body`의 DOM 자식 배치만 수행한다.
 
 `webview.composition`은 DOM 앵커·실제 네이티브 frame뿐 아니라 label별 슬롯 rect, 마지막 적용
 rect, 가시성, 동기화 대기 상태를 공개한다. 합성 상태를 브라우저 제품 플러그인이
 `surface.stats`로 재선언하지 않는다.
+
+포커스 조명의 제품 사실은 공통 `--dim` 값이지만 합성 장치는 공통이 아니다. 코어는 콘텐츠 밖 SVG
+평면 하나로 문서 안 픽셀을 그리고 콘텐츠 조상에 `filter`/`opacity`를 적용하지 않는다. Electron은
+이 경로만 쓴다. Tauri 어댑터는 공개 content slot과 `--dim` 변화를 사건으로 받아 surface host 바로
+위 input-transparent AppKit 평면에 투영한다. 별도 추종 루프 없이 surface frame 커밋이 조명 frame도
+같이 갱신한다. `webview.surfaces`는 요청값·실제 alpha·frame 정합·sibling 순서를 공개한다.
 
 ### `install()` 은 계약 멤버이고, 늦게 가져온다
 
@@ -743,7 +749,9 @@ rect, 가시성, 동기화 대기 상태를 공개한다. 합성 상태를 브�
 
 `scripts/electron/guest-under-effects.test.mjs` 가 이 리팩토링이 딛고 선 세 질문을 프레임 단위로 답한다.
 
-- **조상 `filter` 는 게스트에 닿는다**(`brightness(0.4)` 에서 234 → 96). 그러므로 홀 슬롯에서 `filter` 를 끄고 베일로 칠하는 것은 문서 밖 표면의 보상이고, 그 프레임워크의 것이다. 이것은 선행 측정으로 계획해 놓고 건너뛴 항목이었다 — 지금까지 그 결정은 전제 위에 서 있었다.
+- **조상 `filter` 는 Electron 게스트에는 닿지만 WebGL 터미널의 글리프 합성을 깨뜨린다.** 따라서
+  `filter`는 공통 조명 장치가 될 수 없다. 문서 안 콘텐츠는 콘텐츠 트리 밖의 단일 SVG 평면이
+  어둡게 하고, 문서 밖 Tauri surface만 Tauri 어댑터의 AppKit 조명 평면이 같은 값을 투영한다.
 - **`visibility:hidden` 하나로 게스트가 사라진다.** 문서 안에서는 오프스크린 파킹이 필요 없다.
 - **파킹에서 돌아올 때 빈 프레임이 없다.** 이걸 읽는 데 주의가 필요했다: 프레임 구독은 현재 프레임을 먼저 배달하므로, 해동 **전** 프레임이 빈 프레임처럼 읽힌다. 그래서 페이지에 박동(정지 상태에서도 프레임이 흐르게)과 표식(해동과 같은 스크립트에서 켠다)을 두어, 게스트를 보일 수 있는 첫 프레임을 추측이 아니라 특정한다. 그렇게 재면 파킹 변형 넷(전체·`visibility`·`transform`·`content-visibility`) 모두 첫 프레임부터 그려져 있다.
 
