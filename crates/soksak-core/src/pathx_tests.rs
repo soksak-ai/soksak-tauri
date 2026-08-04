@@ -5,7 +5,6 @@
 use super::*;
 
 // ── tests ──
-use super::*;
 
 #[test]
 fn tilde_alone_is_the_home() {
@@ -87,7 +86,6 @@ fn the_verdict_follows_the_home_it_is_given() {
 }
 
 // ── symlink_tests ──
-use super::*;
 
 #[test]
 fn a_parent_component_is_refused_outright() {
