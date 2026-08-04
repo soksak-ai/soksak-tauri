@@ -43,6 +43,7 @@ export interface NativeSurfaceFact {
 
 export interface SurfaceCompositionSnapshot {
   coordinateContract: { dom: string; native: string; windowZoom: number; tolerancePx: number };
+  engine: { preservesContentDuringLiveResize: boolean | null };
   anchors: SurfaceAnchorFact[];
   surfaces: NativeSurfaceFact[];
   matches: {
@@ -170,6 +171,7 @@ function darkViewRects(): AuditRect[] {
 
 interface EngineStats {
   windowZoom?: number;
+  preservesContentDuringLiveResize?: boolean;
   surfaces?: {
     ptr: number;
     label?: string | null;
@@ -230,6 +232,12 @@ export async function surfaceCompositionSnapshot(): Promise<SurfaceCompositionSn
       native: "AppKit pt, content-view bottom-left",
       windowZoom: stats.windowZoom ?? 1,
       tolerancePx: SURFACE_RECT_TOLERANCE_PX,
+    },
+    engine: {
+      preservesContentDuringLiveResize:
+        typeof stats.preservesContentDuringLiveResize === "boolean"
+          ? stats.preservesContentDuringLiveResize
+          : null,
     },
     anchors,
     surfaces,
