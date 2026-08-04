@@ -157,13 +157,13 @@ describe("캡처 — 창의 픽셀을 값으로", () => {
     expect(w.focused).toBe(false);
   });
 
-  it("비전면 캡처는 창을 드러내지 않고 합성이 끝날 때까지 캡처러를 유지한다", async () => {
+  it("비전면 캡처는 창을 포커스하지 않고 게스트 합성을 위해 캡처 동안 visible로 취급한다", async () => {
     const w = fakeWindow();
     await serve(SNAPSHOT, { path: join(root, "hidden.png") }, w);
     await serve(REGION, { x: 0, y: 0, w: 5, h: 5 }, w);
     expect(w.captureOptions).toEqual([
-      { stayHidden: true, stayAwake: true },
-      { stayHidden: true, stayAwake: true },
+      { stayAwake: true },
+      { stayAwake: true },
     ]);
   });
 

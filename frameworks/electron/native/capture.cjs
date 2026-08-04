@@ -21,10 +21,11 @@ const SET_OCCLUSION = "plugin:webview-capture|set_occlusion";
 const NO_WINDOW = "FRAMEWORK_NO_WINDOW";
 const BAD_RECT = "FRAMEWORK_BAD_RECT";
 const EMPTY_CAPTURE = "FRAMEWORK_EMPTY_CAPTURE";
-// Electron 의 capturer 수명을 캡처 Promise 와 묶는다. 기본 옵션은 가려진 창을 잠깐 visible 로
-// 취급할 수 있고, GPU Viz 가 그 전환을 못 끝내면 UnknownVizError 또는 무응답이 된다. 이 명령은
-// 사용자 창을 드러내지 않는 계약이므로 두 경로 모두 같은 명시 옵션을 쓴다.
-const BACKGROUND_CAPTURE = Object.freeze({ stayHidden: true, stayAwake: true });
+// Electron 의 capturer 수명을 캡처 Promise 와 묶는다. 캡처 중 page를 visible로 취급하는 기본
+// 동작은 창 포커스/전면화가 아니다. 이 동작을 `stayHidden:true`로 막으면 부모와 별도 compositor
+// surface인 <webview> guest가 PNG에서 검게 빠지고 Viz 전이가 실패할 수 있다. 시스템 sleep만
+// 막고, 보이는 창의 전체 합성 결과는 Electron의 정규 캡처 수명에 맡긴다.
+const BACKGROUND_CAPTURE = Object.freeze({ stayAwake: true });
 
 /** 부른 창의 웹콘텐츠. 없으면 이름을 달고 실패한다 — 빈 PNG 를 돌려주면 "검게 나왔다"가 된다. */
 function contents(ctx) {

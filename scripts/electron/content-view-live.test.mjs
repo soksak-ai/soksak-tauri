@@ -66,7 +66,8 @@ app.whenReady().then(async () => {
   await w.loadFile(process.argv[2]);
   const drove = await w.webContents.executeJavaScript(\`(async () => { ${DRIVE} })()\`);
   await new Promise((r) => setTimeout(r, 1200));
-  const img = await w.webContents.capturePage();
+  // 실제 어댑터와 같은 옵션. 부모 DOM뿐 아니라 별도 guest surface도 한 PNG에 합성되어야 한다.
+  const img = await w.webContents.capturePage(undefined, { stayAwake: true });
   const { width, height } = img.getSize();
   const bmp = img.getBitmap();
   const at = (x, y) => { const i = (y * width + x) * 4; return { b: bmp[i], g: bmp[i+1], r: bmp[i+2] }; };
