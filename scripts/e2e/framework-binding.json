@@ -476,9 +476,10 @@
       "role": "harness",
       "class": "C",
       "surfaces": [
-        "window.snapshot"
+        "window.snapshot",
+        "webview.surfaces"
       ],
-      "note": "실제 탭 교차 클릭을 내장 연속 캡처와 공개 webview.composition 상태로 검증한다. 최종 픽셀 증거만 프레임워크 캡처 표면에 묶인다."
+      "note": "실제 content surface 교차 클릭을 내장 연속 캡처와 공개 webview.composition 상태로 검증하고, 네이티브 표면에서는 조명의 요청값·적용값·frame·stack도 대조한다."
     },
     {
       "file": "snapshot-generation.mjs",

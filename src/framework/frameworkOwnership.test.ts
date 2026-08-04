@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 const ROOT = resolve(import.meta.dirname, "../..");
 const SRC = resolve(ROOT, "src");
 const TAURI_FIXES = [
+  "nativeLighting.ts",
   "railHoleClip.ts",
   "railHoleClipHost.ts",
   "surfaceAudit.ts",
@@ -39,6 +40,19 @@ describe("Tauri native-composition ownership", () => {
       ),
     );
     expect(offenders).toEqual([]);
+  });
+
+  it("native 조명 observer와 IPC는 Tauri 어댑터 밖으로 새지 않는다", () => {
+    const offenders = productionFiles(SRC)
+      .filter((file) => !relative(SRC, file).startsWith("framework/tauri/"))
+      .filter((file) => /webview_dim|nativeLighting|NativeDimVeil/.test(readFileSync(file, "utf8")))
+      .map((file) => relative(SRC, file));
+    expect(offenders).toEqual([]);
+
+    const electron = productionFiles(resolve(SRC, "framework/electron"))
+      .map((file) => readFileSync(file, "utf8"))
+      .join("\n");
+    expect(electron).not.toMatch(/MutationObserver|webview_dim|nativeLighting/);
   });
 
   it("공통 DOM과 스타일은 Tauri hole 표식을 만들거나 해석하지 않는다", () => {
