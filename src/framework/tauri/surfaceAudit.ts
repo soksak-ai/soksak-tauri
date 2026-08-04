@@ -37,6 +37,8 @@ export interface NativeSurfaceFact {
   label: string | null;
   hidden: boolean;
   effectivelyHidden: boolean;
+  layerContentsRedrawPolicy: number | null;
+  layerContentsPlacement: number | null;
   nativeFrame: AuditRect;
   domFrame: AuditRect;
 }
@@ -177,6 +179,8 @@ interface EngineStats {
     label?: string | null;
     hidden: boolean;
     effectivelyHidden: boolean;
+    layerContentsRedrawPolicy?: number;
+    layerContentsPlacement?: number;
     frame: AuditRect;
   }[];
 }
@@ -192,6 +196,12 @@ export function normalizeNativeSurfaces(
     label: surface.label ?? null,
     hidden: surface.hidden,
     effectivelyHidden: surface.effectivelyHidden,
+    layerContentsRedrawPolicy: Number.isFinite(surface.layerContentsRedrawPolicy)
+      ? Number(surface.layerContentsRedrawPolicy)
+      : null,
+    layerContentsPlacement: Number.isFinite(surface.layerContentsPlacement)
+      ? Number(surface.layerContentsPlacement)
+      : null,
     nativeFrame: surface.frame,
     // NSView(bottom-left) → DOM(top-left). 입력과 출력 좌표계를 함께 공개해 변환을 숨기지 않는다.
     domFrame: {

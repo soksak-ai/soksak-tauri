@@ -113,6 +113,30 @@ fn physical_resize_replies_after_appkit_applied_and_displayed_the_size() {
 }
 
 #[test]
+fn registered_native_surfaces_never_scale_cached_layer_pixels() {
+    let src = std::fs::read_to_string("src/webview/layer.rs").expect("layer source");
+    let policy = src
+        .split_once("fn configure_surface_resize(")
+        .expect("native surface resize policy")
+        .1
+        .split_once("\n}")
+        .expect("policy boundary")
+        .0;
+    assert!(
+        policy.contains("DuringViewResize"),
+        "AppKit이 surface 크기 변화마다 redraw하도록 선언해야 한다"
+    );
+    assert!(
+        policy.contains("TopLeft"),
+        "새 paint 전 cached layer image를 새 bounds에 scale하지 않아야 한다"
+    );
+    assert!(
+        src.contains("configure_surface_resize(view)"),
+        "엔진이 등록한 실제 NSView에도 정책을 적용해야 한다"
+    );
+}
+
+#[test]
 fn prune_window_persistence_removes_only_that_window() {
     let c = rusqlite::Connection::open_in_memory().unwrap();
     c.execute_batch("PRAGMA foreign_keys=ON;").unwrap();

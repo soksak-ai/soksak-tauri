@@ -96,6 +96,19 @@ function assertNativeComposition(data, labels, beforeWrites) {
   return new Map((data.placement ?? []).map((item) => [item.label, Number(item.boundsWrites ?? 0)]));
 }
 
+function assertTauriSurfaceResizePolicy(data, stage) {
+  const errors = [];
+  const surfaces = data.surfaces ?? [];
+  if (!surfaces.length) errors.push("surface:none");
+  for (const surface of surfaces) {
+    if (surface.layerContentsRedrawPolicy !== 2)
+      errors.push(`${surface.label ?? surface.ptr}:redraw=${surface.layerContentsRedrawPolicy}/2`);
+    if (surface.layerContentsPlacement !== 11)
+      errors.push(`${surface.label ?? surface.ptr}:placement=${surface.layerContentsPlacement}/11`);
+  }
+  if (errors.length) throw new Error(`${stage}: Tauri surface resize policy 불일치 — ${errors.join(", ")}`);
+}
+
 async function assertWindowedComposition(rpc, win, plugin, tabIds, addresses) {
   const stats = must(await rpc(`plugin.${plugin}.stats`, {}, win), "windowed stats");
   const surfaces = new Map((stats.surfaces ?? []).map((surface) => [surface.id, surface]));
@@ -326,6 +339,10 @@ async function runEngine(client, page, engine) {
     if (native) {
       const initial = must(await rpc("webview.composition", {}, win), "initial composition");
       writes = new Map((initial.placement ?? []).map((item) => [item.label, Number(item.boundsWrites ?? 0)]));
+      assertTauriSurfaceResizePolicy(initial, "initial native composition");
+    } else if (windowed) {
+      const initial = must(await rpc("webview.composition", {}, win), "initial windowed composition");
+      assertTauriSurfaceResizePolicy(initial, "initial windowed composition");
     }
     await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, "first-paint-ledger");
     const firstPaintPath = path.join(engineEvidence, "first-paint.png");

@@ -8,7 +8,7 @@ use objc2::runtime::{AnyObject, Sel};
 use objc2::sel;
 use objc2_app_kit::{
     NSAutoresizingMaskOptions, NSBox, NSBoxType, NSColor, NSTitlePosition, NSView,
-    NSWindowOrderingMode,
+    NSViewLayerContentsPlacement, NSViewLayerContentsRedrawPolicy, NSWindowOrderingMode,
 };
 use objc2_foundation::{NSArray, NSNumber, NSPoint, NSString};
 use soksak_core::native_surface_ledger::{NativeSurfaceHosts, NativeSurfaceLedger};
@@ -236,9 +236,22 @@ pub fn set_holes(label: &str, holes: Vec<super::Hole>) {
     }
 }
 
+// AppKit의 layer-hosting 기본값은 redraw=Never, placement=ScaleAxesIndependently다. 원격
+// WKWebView/CEF layer가 새 픽셀을 제출하기 전 cached image를 새 bounds에 늘여 그리므로,
+// 등록된 Tauri 합성 surface는 resize redraw를 요청하고 그 사이의 cached image는 원래 픽셀
+// 크기로 top-left에 둔다. 가림/스냅샷이 아니라 AppKit이 제공하는 layer resize 정책이다.
+fn configure_surface_resize(view: &NSView) {
+    view.setLayerContentsRedrawPolicy(NSViewLayerContentsRedrawPolicy::DuringViewResize);
+    view.setLayerContentsPlacement(NSViewLayerContentsPlacement::TopLeft);
+}
+
 // Backend N surface 등록/해제 — webview_open 직후(가시 홀 편입), webview_close 직전(회수).
 // 오프스크린 추출 webview(media_extract, -20000)는 홀이 아니므로 등록하지 않는다.
 pub fn register_surface(ptr: usize, label: Option<&str>) {
+    if ptr != 0 {
+        let view = unsafe { &*(ptr as *const NSView) };
+        configure_surface_resize(view);
+    }
     SURFACES.register(ptr, label);
 }
 pub fn unregister_surface(ptr: usize) {
@@ -370,6 +383,8 @@ pub fn adopt_surface_host<R: tauri::Runtime>(
         let frame = child.frame();
         let host = NSView::initWithFrame(NSView::alloc(mtm), frame);
         host.setWantsLayer(true);
+        configure_surface_resize(&host);
+        configure_surface_resize(child);
         parent.addSubview_positioned_relativeTo(
             &host,
             NSWindowOrderingMode::Above,
@@ -636,6 +651,7 @@ pub fn ensure_engine_host(label: &str) -> Option<usize> {
         // 뷰 정위치·unhidden 인데 픽셀만 없음 — 단독 하니스(winit 레이어-백드)는 GREEN,
         // 앱 임베딩만 블랭크). OSR 은 프레젠터가 자기 CALayer 를 직접 붙여 무사했다.
         host_view.setWantsLayer(true);
+        configure_surface_resize(host_view);
         // 컨테이너는 콘텐츠 전면을 채우고 리사이즈를 따라간다(원점 0,0 유지 → 좌표 identity).
         host_view.setAutoresizingMask(
             NSAutoresizingMaskOptions::ViewWidthSizable
