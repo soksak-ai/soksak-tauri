@@ -15,4 +15,14 @@ describe("dev 번들 수명 계약", () => {
     expect(target).toContain('"$(DEV_APP)"');
     expect(target).not.toMatch(/"\$\(DEV_EXECUTABLE\)"[^\n]*&/);
   });
+
+  it("restart-dev는 응답 재등장이 아니라 dev IPC 소유 PID의 실제 교체를 증명한다", () => {
+    const target = makefile.match(/restart-dev:[\s\S]*?\n\nrun-debug:/)?.[0] ?? "";
+    expect(makefile).toMatch(/^DEV_SOCKET\s*:=/m);
+    expect(target).toMatch(/owner_pid\(\)/);
+    expect(target).toContain('old_pid="$$(owner_pid)"');
+    expect(target).toMatch(/new_pid=.*owner_pid/);
+    expect(target).toMatch(/new_pid.*old_pid|old_pid.*new_pid/);
+    expect(target).toMatch(/kill -0/);
+  });
 });

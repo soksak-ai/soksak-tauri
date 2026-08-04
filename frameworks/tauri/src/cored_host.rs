@@ -60,6 +60,10 @@ pub const CORED_BIN_ENV: &str = "SOKSAK_CORED_BIN";
 /// 먼저 죽으면 EOF 가 그것도 끝낸다. 이 수는 둘 다 오지 않는 경우에만 쓰인다 — 그 경우에
 /// 상한이 없으면 답 없는 헬퍼 하나가 부팅을 영원히 잡는다.
 const READY_LIMIT: Duration = Duration::from_secs(15);
+// tell은 응답을 기다리지 않지만 UnixStream 쓰기는 커널 송신 버퍼가 차면 기다릴 수 있다.
+// cored 정체가 renderer/main thread를 붙잡지 못하도록 모든 host 쓰기에 유한 상한을 둔다.
+// 실패한 activity는 상위의 bounded pending queue로 돌아가며, 명령 회신은 오류를 기록하고 끝난다.
+const CORED_WRITE_LIMIT: Duration = Duration::from_millis(250);
 
 // ── 창 사실 ──────────────────────────────────────────────────────────────────
 
@@ -261,6 +265,8 @@ impl CoredHost {
     ) -> Result<CoredHost, String> {
         let conn = UnixStream::connect(socket)
             .map_err(|e| format!("cored 에 붙지 못했다({}): {e}", socket.display()))?;
+        conn.set_write_timeout(Some(CORED_WRITE_LIMIT))
+            .map_err(|e| format!("cored 쓰기 상한을 설정하지 못했다: {e}"))?;
         let read_half = conn
             .try_clone()
             .map_err(|e| format!("연결을 나누지 못했다: {e}"))?;

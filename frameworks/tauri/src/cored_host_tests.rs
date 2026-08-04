@@ -94,6 +94,23 @@ fn silence_is_not_a_registration() {
     drop(held.join().expect("가짜 cored 연결"));
 }
 
+#[test]
+fn cored_writer_has_a_finite_write_deadline() {
+    let dir = fixture_dir("bounded-writer");
+    let socket = dir.join("h.sock");
+    let listener = std::os::unix::net::UnixListener::bind(&socket).expect("가짜 cored");
+    let held = std::thread::spawn(move || listener.accept().map(|(c, _)| c));
+    let host = CoredHost::attach(&socket, Arc::new(SilentFacts), Arc::new(SilentExec)).expect("붙는다");
+    let timeout = host
+        .writer
+        .lock()
+        .expect("writer lock")
+        .write_timeout()
+        .expect("timeout query");
+    assert_eq!(timeout, Some(CORED_WRITE_LIMIT));
+    drop(held.join().expect("가짜 cored 연결"));
+}
+
 struct SilentFacts;
 impl WindowFactsSource for SilentFacts {
     fn facts(&self) -> WindowFacts {

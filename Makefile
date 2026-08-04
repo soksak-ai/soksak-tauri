@@ -42,6 +42,7 @@ DEBUG_APP   := $(TAURI_TARGET_DIR)/debug/bundle/macos/soksak-tauri-debug.app
 DEV_EXECUTABLE := $(DEV_APP)/Contents/MacOS/soksak-dev
 DEV_CLI := $(CARGO_TARGET)/debug/sok-dev
 DEV_LOG_DIR ?= $(HOME)/.soksak-dev/logs
+DEV_SOCKET := $(HOME)/.soksak-dev/com.soksak.dev.sock
 
 .DEFAULT_GOAL := help
 
@@ -125,17 +126,30 @@ run-dev: ## 개발 정체성 soksak-tauri-dev.app 실행(새 인스턴스)
 
 restart-dev: ## 실행 중 dev 앱을 app.quit으로 끝내고 같은 번들을 단일 인스턴스로 다시 실행
 	@test -x "$(DEV_EXECUTABLE)" -a -x "$(DEV_CLI)" || { echo "먼저 'make build-dev' 를 실행하세요."; exit 1; }
-	@CLI="$(DEV_CLI)"; \
+	@CLI="$(DEV_CLI)"; SOCKET="$(DEV_SOCKET)"; \
+	owner_pid() { lsof -t "$$SOCKET" 2>/dev/null | head -n 1; }; \
 	host_ready() { "$$CLI" window.list >/dev/null 2>&1; }; \
-	if host_ready; then \
+	old_pid="$$(owner_pid)"; \
+	if [ -n "$$old_pid" ] && host_ready; then \
 	  "$$CLI" app.quit >/dev/null || { echo "app.quit 실패"; exit 1; }; \
-	  for _ in $$(seq 1 100); do host_ready || break; sleep 0.1; done; \
-	  host_ready && { echo "종료 실패: dev 창 호스트가 계속 응답한다"; exit 1; }; \
+	fi; \
+	if [ -n "$$old_pid" ]; then \
+	  for _ in $$(seq 1 100); do kill -0 "$$old_pid" 2>/dev/null || break; sleep 0.1; done; \
+	  kill -0 "$$old_pid" 2>/dev/null && { echo "종료 실패: dev IPC 소유 PID $$old_pid 가 남았다"; exit 1; }; \
 	fi; \
 	$(MAKE) --no-print-directory run-dev >/dev/null; \
-	for _ in $$(seq 1 300); do host_ready && break; sleep 0.1; done; \
-	host_ready || { echo "재실행 준비 실패: dev 창 호스트가 공개 명령에 응답하지 않는다"; exit 1; }; \
-	echo "재실행: dev 창 호스트 준비 완료"
+	new_pid=""; \
+	for _ in $$(seq 1 300); do \
+	  new_pid="$$(owner_pid)"; \
+	  [ -n "$$new_pid" ] && [ "$$new_pid" != "$$old_pid" ] && kill -0 "$$new_pid" 2>/dev/null && host_ready && break; \
+	  sleep 0.1; \
+	done; \
+	[ -n "$$new_pid" ] && [ "$$new_pid" != "$$old_pid" ] && kill -0 "$$new_pid" 2>/dev/null && host_ready || \
+	  { echo "재실행 준비 실패: dev IPC 소유 프로세스가 교체되어 응답하지 않는다"; exit 1; }; \
+	sleep 0.5; \
+	[ "$$(owner_pid)" = "$$new_pid" ] && kill -0 "$$new_pid" 2>/dev/null || \
+	  { echo "재실행 수명 실패: 새 dev PID $$new_pid 가 유지되지 않는다"; exit 1; }; \
+	echo "재실행: dev PID $$old_pid → $$new_pid, 창 호스트 준비 완료"
 
 run-debug: ## 디버그 soksak-tauri-debug.app 실행(새 인스턴스)
 	@test -d "$(DEBUG_APP)" || { echo "먼저 'make build-debug' 를 실행하세요."; exit 1; }
