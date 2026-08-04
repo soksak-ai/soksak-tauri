@@ -8,6 +8,7 @@ interface MountedView {
   container: HTMLElement;
   provider: PluginViewProvider;
   context: () => PluginViewContext;
+  registrations: number;
 }
 
 interface FocusIntent {
@@ -86,10 +87,28 @@ export class ViewFocusCoordinator {
     provider: PluginViewProvider,
     context: () => PluginViewContext,
   ): () => void {
-    if (this.mounted.has(viewId)) {
-      throw new Error(`이미 마운트된 포커스 대상 뷰: ${viewId}`);
+    const previous = this.mounted.get(viewId);
+    if (previous?.container === container && previous.provider === provider) {
+      // StrictMode나 동일 호스트의 중복 배선은 같은 세대의 멱등한 acquire다. 최신 context를
+      // 사용하되 첫 cleanup이 나머지 등록까지 지우지 않도록 lease 수를 센다.
+      previous.context = context;
+      previous.registrations += 1;
+      return this.releaseMountedView(viewId, previous);
     }
-    const mounted = { container, provider, context };
+
+    // React는 새 effect를 세운 뒤 이전 effect의 cleanup을 실행할 수 있다. viewId는 제품
+    // 정체성이고 DOM container는 렌더 세대다. 새 세대가 등록되면 한 거래로 소유권을 넘기고,
+    // 이전 세대의 늦은 cleanup은 identity guard로 무시한다.
+    if (previous && this.intent?.viewId === viewId) {
+      this.intent.controller.abort();
+      this.intent = {
+        viewId,
+        controller: new AbortController(),
+        queued: false,
+        delivered: false,
+      };
+    }
+    const mounted = { container, provider, context, registrations: 1 };
     this.mounted.set(viewId, mounted);
     // 이 뷰가 이제 명령을 받을 수 있다 — provider.mount 가 끝난 뒤이므로 플러그인은 자기
     // 뷰를 등록해 두었다. 기다리던 호출자를 깨운다(폴링 없이 이 한 지점이 신호다).
@@ -99,10 +118,20 @@ export class ViewFocusCoordinator {
       for (const w of waiters) w();
     }
     if (this.intent?.viewId === viewId) this.publishFocused(viewId, true);
+    else if (this.focusedViewId === viewId) this.publishFocused(viewId, true);
     this.queueCurrentIntent();
 
+    return this.releaseMountedView(viewId, mounted);
+  }
+
+  private releaseMountedView(viewId: string, mounted: MountedView): () => void {
+    let released = false;
     return () => {
+      if (released) return;
+      released = true;
       if (this.mounted.get(viewId) !== mounted) return;
+      mounted.registrations -= 1;
+      if (mounted.registrations > 0) return;
       this.mounted.delete(viewId);
       if (this.intent?.viewId !== viewId) return;
 

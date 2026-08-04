@@ -49,6 +49,40 @@ afterEach(() => {
 });
 
 describe("view focus ownership", () => {
+  it("동일 viewId의 React 세대 교체를 원자적으로 승계하고 늦은 cleanup을 무시한다", () => {
+    const { coordinator, flushFrame } = fixture();
+    const previous = document.createElement("section");
+    const next = document.createElement("section");
+    const nextInput = document.createElement("input");
+    next.append(nextInput);
+    document.body.append(previous, next);
+    const nextFocus = vi.fn(() => nextInput.focus());
+
+    const releasePrevious = coordinator.registerMountedView(
+      "same-view",
+      previous,
+      provider({ focus: vi.fn() }),
+      () => context,
+    );
+    const releaseNext = coordinator.registerMountedView(
+      "same-view",
+      next,
+      provider({ focus: nextFocus }),
+      () => context,
+    );
+
+    // React가 이전 effect cleanup을 나중에 실행해도 새 세대의 소유권은 지워지지 않는다.
+    releasePrevious();
+    coordinator.requestFocus("same-view");
+    flushFrame();
+    expect(nextFocus).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(nextInput);
+    expect(coordinator.snapshot()).toMatchObject({ mounted: true, delivered: true });
+
+    releaseNext();
+    expect(coordinator.snapshot().mounted).toBe(false);
+  });
+
   it("commits the source before activation and focuses the target after the click boundary", () => {
     const { coordinator, flushFrame } = fixture();
     const source = document.createElement("section");
