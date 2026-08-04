@@ -109,6 +109,17 @@ module.exports = {
     },
   },
 
+  webview_type_text: {
+    concept: "콘텐츠 뷰 확정 텍스트 입력",
+    source: "게스트 webContents.insertText — 포커스된 편집 요소의 엔진 입력 경로",
+    answer: async (ctx, args) => {
+      const guest = ctx.webContentsById(Number(args.id));
+      if (!guest) throw frameworkError("NO_CONTENT_VIEW", `그 콘텐츠 뷰가 없다: ${args.id}`);
+      await guest.insertText(String(args.text ?? ""));
+      return null;
+    },
+  },
+
   webview_open: {
     concept: "콘텐츠 뷰 열기",
     delegated:

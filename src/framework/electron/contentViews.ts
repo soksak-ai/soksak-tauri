@@ -276,6 +276,10 @@ export const domHost: ContentViewHost = {
     const getId = await onReady<() => number>(label, "getWebContentsId");
     await invoke("webview_send_input", { id: getId(), x: Math.round(x), y: Math.round(y) });
   },
+  async typeText(label, text) {
+    const getId = await onReady<() => number>(label, "getWebContentsId");
+    await invoke("webview_type_text", { id: getId(), text });
+  },
   async openWindow(url) {
     // 새 창은 프레임워크의 것이다 — DOM 이 만들 수 있는 것이 아니다.
     await invoke("window_create", { url });

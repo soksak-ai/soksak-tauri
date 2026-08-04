@@ -747,6 +747,7 @@ pub fn run() {
             webview::webview_close,
             webview::webview_divider_highlight,
             webview::webview_emit_native,
+            webview::webview_type_text,
             webview::webview_zoom,
             webview::webview_zoom_view,
             webview::webview_list,

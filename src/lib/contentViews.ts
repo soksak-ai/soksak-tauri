@@ -46,6 +46,8 @@ export interface ContentViewHost {
    * 못 하는 구현은 이름을 달고 거절한다. 조용히 성공하면 부른 쪽은 눌렀다고 믿는다.
    */
   sendInput(label: string, x: number, y: number): Promise<void>;
+  /** 현재 포커스된 편집 요소에 확정 문자열을 엔진의 텍스트 입력 경로로 넣는다. */
+  typeText(label: string, text: string): Promise<void>;
 }
 
 /**

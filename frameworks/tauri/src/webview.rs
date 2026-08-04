@@ -22,6 +22,70 @@ use tauri::{
     WebviewWindowBuilder,
 };
 
+/// 포커스된 child 웹뷰 편집자에 확정 문자열을 전달한다.
+///
+/// DOM 값을 쓰는 자동화 명령이 아니다. AppKit responder chain의 NSTextInputClient 진입점으로
+/// 들어가므로 WKWebView가 일반 사용자 텍스트 입력과 같은 beforeinput/input 편집 경로를 수행한다.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub async fn webview_type_text(app: AppHandle, label: String, text: String) -> Result<(), String> {
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let webview = app
+        .get_webview(&label)
+        .ok_or_else(|| format!("webview 없음: {label}"))?;
+    let (tx, rx) = mpsc::sync_channel::<Result<(), String>>(1);
+    webview
+        .with_webview(move |platform| unsafe {
+            use objc2::runtime::AnyObject;
+            use objc2::{msg_send, sel};
+            use objc2_foundation::{NSNotFound, NSRange, NSString};
+
+            let wk = platform.inner() as *mut AnyObject;
+            if wk.is_null() {
+                let _ = tx.try_send(Err("WKWebView 핸들이 비어 있습니다".to_string()));
+                return;
+            }
+            let window: *mut AnyObject = msg_send![&*wk, window];
+            if window.is_null() {
+                let _ = tx.try_send(Err("WKWebView가 창에 붙어 있지 않습니다".to_string()));
+                return;
+            }
+            let responder: *mut AnyObject = msg_send![&*window, firstResponder];
+            if responder.is_null() {
+                let _ = tx.try_send(Err("child 웹뷰에 포커스된 입력자가 없습니다".to_string()));
+                return;
+            }
+            let accepts: bool = msg_send![&*responder,
+                respondsToSelector: sel!(insertText:replacementRange:)
+            ];
+            if !accepts {
+                let _ = tx.try_send(Err(
+                    "child 웹뷰의 현재 입력자가 NSTextInputClient가 아닙니다".to_string(),
+                ));
+                return;
+            }
+            let value = NSString::from_str(&text);
+            let replacement = NSRange::new(NSNotFound as usize, 0);
+            let _: () = msg_send![&*responder, insertText: &*value, replacementRange: replacement];
+            let _ = tx.try_send(Ok(()));
+        })
+        .map_err(|error| error.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        rx.recv_timeout(Duration::from_secs(3))
+            .map_err(|_| "텍스트 입력자 응답 시간 초과".to_string())?
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+pub async fn webview_type_text(_app: AppHandle, _label: String, _text: String) -> Result<(), String> {
+    Err("webview_type_text는 현재 macOS 입력 구현이 필요합니다".into())
+}
+
 #[derive(Clone, Serialize)]
 // 카멜로 나간다 — 소비자는 카멜을 읽는다. 스네이크로 내면 undefined 를 읽고, 그것은 오류가
 // 아니라 "항상 새 문서"로 나타난다(같은 축의 canBack 이 그렇게 갈렸던 자리다).

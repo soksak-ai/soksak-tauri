@@ -156,6 +156,21 @@ describe("DOM 콘텐츠 뷰 구현", () => {
     expect(tag.setZoomLevel.mock.calls[0][0]).toBeCloseTo(1, 6);
   });
 
+  it("확정 텍스트를 게스트 webContents 입력자로 보낸다", async () => {
+    const m = await load();
+    await m.domHost.open("b-1", {});
+    const el = document.querySelector('[data-content-view="b-1"]')!;
+    stubTag(el);
+    Object.assign(el, { getWebContentsId: vi.fn(() => 17) });
+
+    await (m.domHost as unknown as { typeText(label: string, text: string): Promise<void> })
+      .typeText("b-1", "한글 입력");
+    expect(invoke).toHaveBeenCalledWith("webview_type_text", {
+      id: 17,
+      text: "한글 입력",
+    });
+  });
+
   it("없는 뷰·없는 메서드는 이름을 달고 실패한다 — 조용히 성공하지 않는다", async () => {
     const m = await load();
     await expect(m.domHost.navigate("nope", "u")).rejects.toThrow("콘텐츠 뷰가 없습니다");

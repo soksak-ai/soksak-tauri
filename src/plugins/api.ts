@@ -492,6 +492,8 @@ export interface SoksakPluginApi {
     ) => Disposable;
     /** 실제 엔진 입력 경로. capability가 false면 구현이 이름을 달고 거절한다. */
     sendInput: (label: string, x: number, y: number) => Promise<void>;
+    /** 현재 포커스된 편집 요소에 확정 문자열을 엔진의 텍스트 입력 경로로 넣는다. */
+    typeText: (label: string, text: string) => Promise<void>;
     /** webview 이벤트 구독: "nav"({url})·"title"({title})·"status"·"open-external"({url}). 반환=해지. */
     on: (
       label: string,
@@ -1912,6 +1914,7 @@ export function buildPluginApi(
               contentViewHost().injectScript(label, code, phase ?? "document-start"),
             ),
           sendInput: (label, x, y) => contentViewHost().sendInput(label, x, y),
+          typeText: (label, text) => contentViewHost().typeText(label, text),
           on: (label, event, cb) =>
             tracker.wrap(
               deps.subscribeWebview(label, event, (payload) => {

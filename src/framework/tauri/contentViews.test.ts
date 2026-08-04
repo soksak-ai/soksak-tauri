@@ -61,10 +61,14 @@ describe("네이티브 자식 뷰 구현", () => {
     expect(invoke).toHaveBeenCalledWith("webview_bounds", { label: "b-1", x: 1, y: 2, w: 3, h: 4 });
   });
 
-  // 없는 것을 있는 척하지 않는다 — 조용한 성공은 부른 쪽이 눌렀다고 믿게 만든다.
-  it("입력 주입은 통로가 없음을 이름을 달고 밝힌다", async () => {
+  it("확정 텍스트를 child 웹뷰의 네이티브 입력자로 보낸다", async () => {
     const { nativeHost } = await load();
-    await expect(nativeHost.sendInput("b-1", 1, 2)).rejects.toThrow("입력 주입 통로가 없습니다");
+    await (nativeHost as unknown as { typeText(label: string, text: string): Promise<void> })
+      .typeText("b-1", "한글 입력");
+    expect(invoke).toHaveBeenCalledWith("webview_type_text", {
+      label: "b-1",
+      text: "한글 입력",
+    });
   });
 
   it("주입 해지가 no-op 임을 스스로 밝힌다", async () => {

@@ -412,8 +412,9 @@ export const nativeHost: ContentViewHost = {
   devtools: (label) => call("webview_devtools", { label }),
   evalJs: (label, js) => call("webview_eval", { label, js }),
   sendInput: async (label) => {
-    throw new Error(`이 콘텐츠 뷰 구현은 입력 주입 통로가 없습니다: ${label}`);
+    throw new Error(`이 콘텐츠 뷰 구현은 포인터 입력 주입 통로가 없습니다: ${label}`);
   },
+  typeText: (label, text) => call("webview_type_text", { label, text }),
   injectScript: (label, code, phase) => {
     void call("webview_inject_script", { label, code, phase });
     return () => {};

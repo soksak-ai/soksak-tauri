@@ -35,6 +35,11 @@ import {
   registerPtyIo,
   resetPtyObservationStoreForTest,
 } from "../terminal/ptyObservationStore";
+import {
+  __resetContentViewHostForTest,
+  registerContentViewHost,
+  type ContentViewHost,
+} from "../lib/contentViews";
 
 function manifestOf(overrides: Record<string, unknown>): PluginManifest {
   const { manifest, validation } = parseManifest(
@@ -77,6 +82,28 @@ function fakeDeps(overrides: Partial<PluginApiDeps> = {}): PluginApiDeps {
 beforeEach(() => {
   useViewRegistry.setState({ views: {}, version: 0 });
   useFileViewerRegistry.setState({ viewers: {}, version: 0 });
+  __resetContentViewHostForTest();
+});
+
+describe("webview 입력 표면(webview 권한)", () => {
+  it("typeText를 등록된 콘텐츠 뷰 호스트의 실제 입력 경로로 위임한다", async () => {
+    const typeText = vi.fn(async () => undefined);
+    registerContentViewHost({ typeText } as unknown as ContentViewHost);
+    const { api } = buildPluginApi(
+      manifestOf({ permissions: ["webview"] }),
+      "/d",
+      fakeDeps(),
+    );
+
+    await api.webview?.typeText("b-window-view", "한글 입력");
+
+    expect(typeText).toHaveBeenCalledExactlyOnceWith("b-window-view", "한글 입력");
+  });
+
+  it("webview 권한이 없으면 입력 표면도 노출하지 않는다", () => {
+    const { api } = buildPluginApi(manifestOf({}), "/d", fakeDeps());
+    expect(api.webview).toBeUndefined();
+  });
 });
 
 describe("fs.readBinary (A13 미디어 — fs:read)", () => {
