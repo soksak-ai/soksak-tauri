@@ -15,7 +15,7 @@ vi.mock("../framework", () => ({
 }));
 
 import { registerSystemCatalog } from "./catalogSystem";
-import { execute, getSpec, unregister } from "./registry";
+import { execute, getSpec, unregister, type CommandContext } from "./registry";
 
 beforeEach(() => {
   invoke.mockReset();
@@ -29,12 +29,20 @@ afterEach(() => {
   unregister("framework.provision");
 });
 
-describe("app.quit — 네이티브 종료 거래에 즉시 위임", () => {
-  it("renderer 타이머에 기대지 않고 네이티브 경계가 응답 뒤 종료를 책임진다", async () => {
+describe("app.quit — 응답 뒤 네이티브 종료 거래", () => {
+  it("명령 성공 응답을 만든 시점에는 종료하지 않고 reply 이후 거래를 등록한다", async () => {
     invoke.mockResolvedValueOnce(undefined);
+    const afterReply = vi.fn();
 
-    const result = await execute("app.quit", {}, {});
+    const result = await execute("app.quit", {}, {
+      afterReply,
+    } as unknown as CommandContext);
     expect(result).toMatchObject({ ok: true });
+    expect(invoke).not.toHaveBeenCalled();
+    expect(afterReply).toHaveBeenCalledTimes(1);
+
+    const quit = afterReply.mock.calls[0][0] as () => Promise<void>;
+    await quit();
     expect(invoke).toHaveBeenCalledWith("app_quit");
   });
 });

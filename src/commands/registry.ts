@@ -200,10 +200,18 @@ export interface CommandContext {
   // 실행 유래(§5) — 생략=사람 유래(콘솔·터미널·에이전트 턴). "schedule" 등 시스템 유래는
   // 낭독 후보에서 제외되고(아래 execute) 피드에서 흐리게 표시된다.
   origin?: string;
+  /**
+   * Register a side effect that may run only after the caller has received this command's result.
+   * The socket executor owns this boundary. Commands that terminate or replace their own host must
+   * use it so a successful result cannot be destroyed together with the process.
+   */
+  afterReply?: (task: CommandAfterReplyTask) => void;
   // 격리 런타임 principal/grant. 오직 issuePluginCommandContext 가 발급한 객체만 인증된다.
   // 플러그인 메시지에서 역직렬화한 객체를 직접 넣어도 WeakSet 인증을 통과하지 못한다.
   readonly plugin?: AuthenticatedPluginCommandIdentity;
 }
+
+export type CommandAfterReplyTask = () => Promise<void> | void;
 
 export type PluginAuthorityJson =
   | null

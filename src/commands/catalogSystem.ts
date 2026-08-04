@@ -40,10 +40,13 @@ export function registerSystemCatalog(): void {
     returns: "{ ok }",
     message: () => tmsg("msg.app.quit"),
     examples: ["app.quit"],
-    // 각 프레임워크의 native command가 먼저 응답하고 자기 main event queue에 종료를 건다.
-    // renderer 타이머에 미루면 비전면 throttle 때문에 CLI는 성공인데 프로세스가 남을 수 있다.
-    handler: async () => {
-      await invoke("app_quit");
+    // 종료는 결과 회신을 파괴할 수 있는 비가역 부수효과다. 소켓 executor가 cmd_result 전달을
+    // 완료한 뒤에만 네이티브 경계를 호출한다. renderer 타이머나 프레임워크별 지연은 없다.
+    handler: (_params, ctx) => {
+      if (!ctx.afterReply) {
+        throw new Error("app.quit에는 명령 응답 경계가 필요합니다");
+      }
+      ctx.afterReply(() => invoke("app_quit"));
       return { ok: true };
     },
   });

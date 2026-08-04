@@ -13,6 +13,8 @@ import { registerRemoteCatalog } from "./catalogRemote";
 import { registerRemoteConfirmDevCatalog } from "./catalogRemoteConfirmDev";
 import { getSpec, execute, setPermissionGate } from "./registry";
 import { markRuntimeReady } from "./commandObservation";
+import { completeCommandReply } from "./commandReplyTransaction";
+import type { CommandAfterReplyTask } from "./registry";
 
 interface CmdRequest {
   id: number;
@@ -90,15 +92,19 @@ export function startExecutor(): void {
     if (!ms.hostReady && getSpec(method) === undefined) await hostReadyGate;
     // 소켓 경유 = 원격(AI/CLI) 호출 → 권한 게이트 적용 대상. window 는 자기 창 label
     // (라우팅 확인·명령 컨텍스트용).
+    const afterReply: CommandAfterReplyTask[] = [];
     const result = await execute(method, params ?? {}, {
       pane: pane ?? undefined,
       remote: true,
       window: window ? { label: window } : undefined,
       parent: parent ?? undefined,
       origin: origin ?? undefined,
+      afterReply: (task) => afterReply.push(task),
     });
-    invoke("cmd_result", { id, result }).catch((err) =>
-      console.error("cmd_result 회신 실패:", err),
+    await completeCommandReply(
+      () => invoke("cmd_result", { id, result }),
+      afterReply,
+      (err) => console.error("cmd_result 회신 실패:", err),
     );
   });
 }
