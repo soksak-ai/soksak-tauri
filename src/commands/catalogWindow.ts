@@ -73,7 +73,7 @@ export function registerWindowCatalog(): void {
 
   register("window.resizeSequence", {
     description:
-      "Apply a finite sequence of native physical window sizes in order while optionally recording every transition frame. Used to reproduce live-resize stalls, blanks, stale frames, and surface drift without focusing the window.",
+      "Apply a finite sequence of native physical window sizes in order while optionally recording every transition frame. Recording writes a baseline frame and emits readiness before the first resize, so the stimulus never races capture startup. Used to reproduce live-resize stalls, blanks, stale frames, and surface drift without focusing the window.",
     params: {
       sizes: {
         type: "json",

@@ -589,6 +589,7 @@ export function registerDomCatalog(): void {
             intervalMs: recordIntervalMs,
           })
         : null;
+      if (recording) await recording.ready;
       if (recording && recordLeadMs > 0) {
         await new Promise((resolve) => window.setTimeout(resolve, recordLeadMs));
       }
@@ -1308,6 +1309,7 @@ export function registerDomCatalog(): void {
             intervalMs: recordIntervalMs,
           })
         : null;
+      if (recording) await recording.ready;
       await captureStep();
       if (recording && recordLeadMs > 0) {
         await new Promise((resolve) => window.setTimeout(resolve, recordLeadMs));

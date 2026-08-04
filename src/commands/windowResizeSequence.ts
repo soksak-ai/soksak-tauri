@@ -14,7 +14,7 @@ interface ResizeSequenceRequest {
   intervalMs: number;
   record?: WindowResizeRecording;
   setSize: (w: number, h: number) => Promise<void>;
-  recordFrames: (request: WindowResizeRecording) => Promise<number>;
+  recordFrames: (request: WindowResizeRecording) => Promise<number> & { ready: Promise<void> };
 }
 
 const MAX_STEPS = 120;
@@ -54,14 +54,17 @@ export async function runWindowResizeSequence({
   }
 
   const startedAt = performance.now();
-  const recording = record ? recordFrames(record) : Promise.resolve(0);
+  const recording = record ? recordFrames(record) : null;
+  // 녹화 명령이 첫 기준 프레임을 실제로 저장한 사건 뒤에만 자극을 시작한다. Promise를 호출한
+  // 사실은 네이티브 캡처가 준비됐다는 뜻이 아니며, 그 경쟁은 f0000의 의미를 실행마다 바꾼다.
+  if (recording) await recording.ready;
   for (let index = 0; index < sizes.length; index += 1) {
     const size = sizes[index];
     await setSize(size.w, size.h);
     if (index + 1 < sizes.length) await delay(intervalMs);
   }
   const resizeElapsedMs = Math.round(performance.now() - startedAt);
-  const frames = await recording;
+  const frames = recording ? await recording : 0;
   return {
     steps: sizes.length,
     frames,

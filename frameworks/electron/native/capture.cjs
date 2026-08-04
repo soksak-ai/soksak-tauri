@@ -105,6 +105,7 @@ module.exports = {
         const started = Date.now();
         const png = pngOf(await contents(ctx).capturePage(undefined, BACKGROUND_CAPTURE));
         fs.writeFileSync(path.join(dir, `f${String(i).padStart(4, "0")}.png`), png);
+        if (i === 0) ctx.stream?.(args?.onReady, 1);
         const rest = intervalMs - (Date.now() - started);
         if (rest > 0 && i + 1 < frames) {
           await new Promise((resolve) => setTimeout(resolve, rest));

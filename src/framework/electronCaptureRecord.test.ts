@@ -22,14 +22,20 @@ it("Electron도 공통 record 계약을 포커스 없이 유한 PNG로 구현한
     isEmpty: () => false,
     toPNG: () => Buffer.from("png-frame"),
   }));
+  const onReady = { __frameworkStream: "ready-1" };
+  const stream = vi.fn(() => {
+    expect(readFileSync(join(dir, "f0000.png"), "utf8")).toBe("png-frame");
+  });
 
   const frames = await capture["plugin:webview-capture|record"].answer(
-    { window: { webContents: { capturePage } } },
-    { dir, frames: 2, intervalMs: 0 },
+    { window: { webContents: { capturePage } }, stream },
+    { dir, frames: 2, intervalMs: 0, onReady },
   );
 
   expect(frames).toBe(2);
   expect(capturePage).toHaveBeenCalledTimes(2);
+  expect(stream).toHaveBeenCalledOnce();
+  expect(stream).toHaveBeenCalledWith(onReady, 1);
   expect(readFileSync(join(dir, "f0000.png"), "utf8")).toBe("png-frame");
   expect(readFileSync(join(dir, "f0001.png"), "utf8")).toBe("png-frame");
 });

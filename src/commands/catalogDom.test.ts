@@ -480,9 +480,9 @@ describe("ui.input.click — 합성 이벤트가 Shadow DOM 경계를 넘는다(
     mockedInvoke.mockClear();
     const order: string[] = [];
     node.addEventListener("click", () => order.push("click"));
-    vi.mocked(recordWindowFrames).mockImplementationOnce(async () => {
+    vi.mocked(recordWindowFrames).mockImplementationOnce(() => {
       order.push("record");
-      return 9;
+      return Object.assign(Promise.resolve(9), { ready: Promise.resolve() });
     });
 
     const result = await execute("ui.input.click", {

@@ -1,28 +1,36 @@
 // @vitest-environment jsdom
 
 import { beforeEach, expect, it, vi } from "vitest";
-import { invoke } from "../framework";
+import { createStream, invoke } from "../framework";
 import { recordWindowFrames } from "./windowRecorder";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 vi.mock("../framework", () => ({
   invoke: vi.fn(),
+  createStream: vi.fn(),
 }));
+
+const readyStream = { onmessage: (_message: number) => {} };
 
 beforeEach(() => {
   vi.mocked(invoke).mockReset();
-  vi.mocked(invoke).mockImplementation(async (command, args) =>
-    command === "plugin:webview-capture|record" ? args?.frames : undefined,
-  );
+  vi.mocked(createStream).mockReturnValue(readyStream as never);
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command !== "plugin:webview-capture|record") return undefined;
+    readyStream.onmessage(1);
+    return args?.frames;
+  });
 });
 
 it("공통 record 계약 한 번으로 유한 프레임 시퀀스를 저장한다", async () => {
-  const frames = await recordWindowFrames({
+  const recording = recordWindowFrames({
     dir: "/tmp/framework-neutral-record",
     frames: 2,
     intervalMs: 0,
   });
+  await recording.ready;
+  const frames = await recording;
 
   expect(frames).toBe(2);
   expect(vi.mocked(invoke)).toHaveBeenCalledOnce();
@@ -30,6 +38,7 @@ it("공통 record 계약 한 번으로 유한 프레임 시퀀스를 저장한�
     dir: "/tmp/framework-neutral-record",
     frames: 2,
     intervalMs: 0,
+    onReady: readyStream,
   });
 });
 

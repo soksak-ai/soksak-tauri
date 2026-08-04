@@ -265,6 +265,10 @@ function standUpControl(socketPath) {
 function nativeContext(sender) {
   return {
     window: BrowserWindow.fromWebContents(sender),
+    stream: (token, msg) => {
+      const id = token && typeof token.__frameworkStream === "string" ? token.__frameworkStream : "";
+      if (id && !sender.isDestroyed()) sender.send(STREAM_CHANNEL, { id, msg });
+    },
     surfaces: () => [...windows.keys()],
     // 창 갈래가 필요로 하는 것 — 라벨로 짚기, 만들기, 그리고 화면 사실. 표가 electron 을
     // 직접 require 하지 않게 여기서 넘긴다: 그래야 표를 테스트가 스텁 하나로 몰 수 있다.
