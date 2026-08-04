@@ -26,6 +26,11 @@ export interface PluginViewContext {
   // 터미널 뷰는 restore.cwd 에서 spawn(마지막 작업 위치 복원). state 는 setRestoreState 로
   // 기록했던 플러그인 관찰 상태(예: 브라우저 URL). 새로 연 뷰는 null — 잔재 유입이 구조적으로 불가.
   restore: { cwd: string | null; state: unknown } | null;
+  // 코어가 소유하는 현재 유효 가시성. 비활성 슬롯도 레이아웃 보존을 위해 같은 rect 를
+  // 유지할 수 있으므로 DOM 기하/IntersectionObserver 로 이 값을 추측하면 안 된다.
+  isVisible: () => boolean;
+  // mount 뒤 가시성 변화 구독. 최초 상태는 isVisible()로 읽고 이후 변화만 여기서 받는다.
+  onVisibilityChange: (listener: (visible: boolean) => void) => () => void;
   // 이 뷰의 사이드바 탭 배지(읽지않음 표시). number=카운트, "dot"=점, null=해제.
   // 창마다 자체 store라 per-window(그 창의 활성 프로젝트 기준). 데이터는 app.data.watch 로 재계산.
   setBadge: (badge: number | "dot" | null) => void;

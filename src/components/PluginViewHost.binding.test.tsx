@@ -106,6 +106,47 @@ describe("PluginViewHost — 결부가 바뀌면 뷰가 안다", () => {
     expect(log.mounts.length).toBe(1);
   });
 
+  it("가시성은 DOM rect가 아니라 코어 현재값과 구독으로 전달된다", () => {
+    const seen: boolean[] = [];
+    let initial: boolean | null = null;
+    const provider = {
+      mount(_el: HTMLElement, ctx: PluginViewContext) {
+        initial = ctx.isVisible();
+        ctx.onVisibilityChange((visible) => seen.push(visible));
+      },
+    };
+    act(() => {
+      useViewRegistry.getState().register("p", DECL, provider);
+      root = createRoot(host);
+      root.render(
+        <PluginViewHost
+          viewKey="p.list"
+          projectId="p1"
+          root="/r"
+          region="content"
+          viewId="v-a"
+          surfaceVisible={false}
+        />,
+      );
+    });
+
+    expect(initial).toBe(false);
+
+    act(() => {
+      root!.render(
+        <PluginViewHost
+          viewKey="p.list"
+          projectId="p1"
+          root="/r"
+          region="content"
+          viewId="v-a"
+          surfaceVisible
+        />,
+      );
+    });
+    expect(seen[seen.length - 1]).toBe(true);
+  });
+
   it("update 미구현 provider 는 결부 변경에 remount 된다", () => {
     const { provider, log } = makeProvider(false);
     act(() => {

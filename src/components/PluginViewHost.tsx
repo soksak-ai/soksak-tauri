@@ -36,6 +36,7 @@ export const PluginViewHost = memo(function PluginViewHost({
   command = null,
   restore = null,
   instanceId = null,
+  surfaceVisible = true,
 }: {
   viewKey: string; // "<pluginId>.<viewId>"
   projectId: string;
@@ -54,6 +55,8 @@ export const PluginViewHost = memo(function PluginViewHost({
   // 주소 유일성 축(공리 A1) — 같은 viewKey 가 한 영역에 두 번 마운트될 때 이것이 둘을 가른다.
   // 미지정이면 viewId 를 쓴다. 마운트 자리가 자기 인스턴스를 알므로 호스트가 추측하지 않는다.
   instanceId?: string | null;
+  // 콘텐츠 활성-chain의 단일 판정. 사이드바처럼 별도 파킹이 없는 배치는 기본 true.
+  surfaceVisible?: boolean;
 }) {
   // 이 뷰 컨테이너의 절대 주소(노드 스캔의 baseAddress). project 는 경로(슬래시 충돌)라 활성 기준 생략 —
   // <region>/view/<viewKey>. win 생략=현재 창. 안정 세그먼트(region·qualifiedViewId)라 멱등. ui.tree 가 읽는다.
@@ -68,6 +71,9 @@ export const PluginViewHost = memo(function PluginViewHost({
   useViewRegistry((s) => s.version);
   const reg = getRegisteredView(viewKey);
   const containerRef = useRef<HTMLDivElement>(null);
+  const surfaceVisibleRef = useRef(surfaceVisible);
+  surfaceVisibleRef.current = surfaceVisible;
+  const visibilityListenersRef = useRef(new Set<(visible: boolean) => void>());
   const [error, setError] = useState<string | null>(null);
   // provider 가 라이브 update 를 구현하면 paneId 변경을 remount 대신 update 로 전달한다(아래 deps 참조).
   const supportsUpdate = typeof reg?.provider.update === "function";
@@ -82,6 +88,11 @@ export const PluginViewHost = memo(function PluginViewHost({
     boundViewId: boundViewId ?? null,
     command: command ?? null,
     restore: restore ?? null,
+    isVisible: () => surfaceVisibleRef.current,
+    onVisibilityChange: (listener) => {
+      visibilityListenersRef.current.add(listener);
+      return () => visibilityListenersRef.current.delete(listener);
+    },
     // 이 창의 그 뷰 탭 배지(per-window — 창마다 자체 store). 데이터 변경 시 플러그인이 재계산.
     setBadge: (badge) => useViewRegistry.getState().setViewBadge(viewKey, badge),
     // status 보고(R1) — 콘텐츠 배치(viewId 有)만 sessions view.status 로. 사이드바는 no-op.
@@ -105,6 +116,10 @@ export const PluginViewHost = memo(function PluginViewHost({
         ? useSessions.getState().setViewRuntime(projectId, viewId, { state })
         : undefined,
   };
+
+  useEffect(() => {
+    for (const listener of visibilityListenersRef.current) listener(surfaceVisible);
+  }, [surfaceVisible]);
 
   // 결부 정체성 — ctx 의 binding 축 값 전부(viewContext 의 축 선언이 단일 진실). 필드 이름을
   // 여기 나열하지 않는다: 나열하면 새 필드가 조용히 빠지고, 빠진 필드는 "결부는 바뀌었는데

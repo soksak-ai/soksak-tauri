@@ -13,6 +13,8 @@ const context = {
   boundViewId: null,
   command: null,
   restore: null,
+  isVisible: () => true,
+  onVisibilityChange: () => () => {},
   setBadge: () => {},
   setStatus: () => {},
   setTitle: () => {},
