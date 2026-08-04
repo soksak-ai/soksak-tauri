@@ -122,7 +122,7 @@ function assertComposition(data, labels, beforeWrites) {
 async function main() {
   prepareEvidence();
   const client = await openClient(SOCKET);
-  const rpc = (method, params = {}, window) => client.rpc(method, params, window);
+  const rpc = (method, params = {}, window, options) => client.rpc(method, params, window, options);
   let win;
   let homeOverride = false;
   const page = await startPageServer();
@@ -216,6 +216,9 @@ async function main() {
               recordLeadMs: 700,
             },
             win,
+            // Tauri의 비전면 native snapshot은 장당 시간이 16ms보다 길 수 있다. 48장 완주
+            // 사건을 기다리는 유한 상한이며 params 오염이나 고정 sleep이 아니다.
+            { timeoutMs: 60_000 },
           ),
           `교차 클릭 ${name}`,
         );

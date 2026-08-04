@@ -20,6 +20,19 @@ export function requireSocket(env = process.env) {
   return v;
 }
 
+/** Build the public socket envelope. Long finite work owns its deadline at the call site. */
+export function commandRequestEnvelope(id, method, params = {}, window, options = {}) {
+  const req = { id, method, params };
+  if (window) req.window = window;
+  if (options.timeoutMs !== undefined) {
+    if (!Number.isFinite(options.timeoutMs) || options.timeoutMs <= 0) {
+      throw new Error(`timeoutMs must be a positive finite number: ${options.timeoutMs}`);
+    }
+    req.timeoutMs = Math.floor(options.timeoutMs);
+  }
+  return req;
+}
+
 export function openClient(socket = requireSocket()) {
   const st = { sock: null, seq: 0, pending: new Map(), buf: "" };
   return new Promise((resolve, reject) => {
@@ -28,7 +41,7 @@ export function openClient(socket = requireSocket()) {
     st.sock.once("error", reject);
     st.sock.once("connect", () =>
       resolve({
-        rpc(method, params = {}, window) {
+        rpc(method, params = {}, window, options = {}) {
           return new Promise((res, rej) => {
             const id = ++st.seq;
             // 상한 타이머는 답이 오면 **끈다**. 안 끄면 답을 받은 뒤에도 이 프로세스가 30초를
@@ -38,13 +51,12 @@ export function openClient(socket = requireSocket()) {
                 st.pending.delete(id);
                 rej(new Error(`TIMEOUT ${method}`));
               }
-            }, 30000);
+            }, Math.max(30_000, Number(options.timeoutMs ?? 0) + 5_000));
             st.pending.set(id, (v) => {
               clearTimeout(timer);
               res(v);
             });
-            const req = { id, method, params };
-            if (window) req.window = window;
+            const req = commandRequestEnvelope(id, method, params, window, options);
             st.sock.write(`${JSON.stringify(req)}\n`);
           });
         },
