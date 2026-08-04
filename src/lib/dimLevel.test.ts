@@ -74,10 +74,11 @@ describe("흐림 단계 — 표면 규칙", () => {
   });
 
   it("두 매체는 표면이 들고 온 숫자만 읽는다 — CSS 는 세기를 적지 않는다", () => {
-    // 검은 베일 alpha a 는 모든 채널에 (1−a)를 곱하므로 정의상 brightness(1−a) 다. 둘이 같은
-    // 숫자만 읽으면 정의상 같은 세기가 된다. CSS 가 숫자를 적으면 설정을 바꿔도 안 바뀐다.
-    expect(rules).toMatch(/filter: brightness\(calc\(1 - var\(--dim\)\)\)/);
-    expect(rules).toMatch(/background-color: rgb\(0 0 0 \/ var\(--dim\)\)/);
+    // 콘텐츠별 filter가 아니라 공통 조명 평면만 검은 veil의 alpha를 읽는다. filter는
+    // WebGL canvas의 합성 표면을 재구성해 글리프 atlas를 깨뜨리므로 상태 표면에 금지한다.
+    expect(rules).not.toMatch(/\.(?:pane|tab-body)\[data-dim\][^{]*\{[^}]*filter\s*:/s);
+    expect(rules).toMatch(/\.focus-lighting-plane\b/);
+    expect(rules).toMatch(/\.focus-lighting-region\b/);
     for (const [sel, body] of [...rules.matchAll(/([^{}]+)\{([^}]*)\}/g)].map(
       (m) => [m[1] ?? "", m[2] ?? ""] as const,
     )) {

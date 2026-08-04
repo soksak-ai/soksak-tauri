@@ -24,10 +24,16 @@ const PROMOTING = ["animation", "will-change", "transform", "filter", "backdrop-
 const PHASE = ["traveling", "dragging", "resizing", "data-dim"];
 
 describe("시각 효과 소유권 — 위상 하위 전체 선택 금지", () => {
+  it("콘텐츠 표면에는 filter를 적용하지 않는다 — 조명은 독립 평면의 책임이다", () => {
+    const offenders = rules()
+      .filter(([sel, body]) => /(?:\.pane|\.tab-body)(?:\b|\[)/.test(sel) && /(^|;)\s*filter\s*:/.test(body))
+      .map(([sel]) => sel);
+    expect(offenders).toEqual([]);
+  });
+
   it("위상 클래스 하위에서 슬롯·셀의 레이어 승격 속성을 애니메이션·전이하지 않는다", () => {
-    // 정밀 계약: 상시 승격(예: focusDim 동안의 filter)은 무해하다 — 승격/해제나 값 변경이
-    // 위상마다 반복되는 것이 유해하다. 그래서 금지 대상은 "전체 선택 + 승격 속성의
-    // animation/transition"이다(실사고 둘: travel animation 전체 적용, dim filter 전이).
+    // 콘텐츠의 상시 filter도 위 검사에서 금지한다. 여기서는 그보다 넓게 위상 선택자가
+    // 무관 표면 전체를 승격시키는 animation/transition까지 막는다.
     const offenders: string[] = [];
     for (const [sel, body] of rules()) {
       if (!PHASE.some((p) => sel.includes(p))) continue;

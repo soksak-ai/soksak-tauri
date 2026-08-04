@@ -6,11 +6,9 @@ const css = readFileSync(new URL("./styles.css", import.meta.url), "utf8")
   .replace(/\/\*[\s\S]*?\*\//g, "");
 
 describe("Tauri native-composition styles", () => {
-  it("native content dim은 DOM filter 대신 같은 세기의 단일 veil을 쓴다", () => {
-    expect(css).toMatch(/\.tab-body\[data-tauri-hole-frame\]\[data-dim\] \{[^}]*filter: none/);
-    expect(css).toMatch(
-      /\.tab-body\[data-tauri-hole-frame\]\[data-dim\]::after \{[^}]*background-color: rgb\(0 0 0 \/ var\(--dim\)\)/,
-    );
+  it("조명은 코어 공통 평면의 책임이라 Tauri가 별도 dim veil을 중복하지 않는다", () => {
+    expect(css).not.toMatch(/\[data-dim\]/);
+    expect(css).not.toMatch(/brightness\(/);
   });
 
   it("private marker만 pane·frame·content 배경을 연다", () => {

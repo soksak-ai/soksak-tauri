@@ -551,36 +551,41 @@ body,
   stroke-dasharray: 4 4;
   vector-effect: non-scaling-stroke;
 }
-/* 흐림은 **단계 하나**다 — 값은 한 자리에서 정하고(lib/dimLevel), 여기서는 그리기만 한다.
-   사유(비활성·가려짐)마다 규칙을 세우면 같은 픽셀을 두 규칙이 칠하게 되고, 그 하나를
-   **특이성이** 정한다: 짙은 단계가 옅은 단계에 진다. 실사고 2026-08-02 —
-   `.space[data-focus-dim] .tab-body.hole::after`(클래스 4)가 `.tab-body.hole.rail-blocked::after`
-   (클래스 3)를 이겨, 낀 판의 베일이 22% 가 아니라 비활성과 **같은** 7% 로 칠해졌다. 코드에
-   있고 검사도 통과하는데 화면은 그대로였다. 그래서 규칙끼리 겨룰 자리를 없앤다: 단계는
-   이름 하나(data-dim)로 오고, 여기서는 이름당 한 벌만 그린다.
+/* 포커스 조명 — 기본 작업면은 어둡고 포커스 pane만 aperture로 원래 밝기를 드러낸다.
+   콘텐츠별 filter/opacity는 금지다. WebGL canvas를 포함한 subtree에 filter 값을 바꾸면
+   WKWebView가 그 합성 표면을 다시 만들면서 살아 있는 texture atlas가 깨질 수 있다.
 
-   ── 세기도 숫자 하나다(--dim).
-   흐림을 칠하는 매체는 둘이다: 홀 판은 ::after 베일, DOM 판은 filter. 둘이 각자 숫자를
-   적으면 같은 단계인데 세기가 갈린다 — 실측 2026-08-02: 낀 단계가 베일 22% 인데 filter 는
-   brightness(0.7), 즉 30% 어둠이었다. 세기를 올리면 그 어긋남이 뒤집힌다(70% 베일 vs
-   brightness(0.7)=30% 어둠).
-   그래서 세기는 단계마다 숫자 하나로 서고 두 매체가 그것을 읽는다. 변환은 정확하다:
-   검은 베일 alpha a 는 모든 채널에 (1 − a) 를 곱하므로 정의상 brightness(1 − a) 와 같다.
-   채도 항은 두지 않는다 — 베일은 채도를 못 내리므로, 채도를 내리는 순간 같은 단계의 홀 판과
-   DOM 판이 달라 보인다(옛 filter 의 saturate 가 그 자리였다).
-
-   dim 은 값 전이를 하지 않는다 — filter 는 합성 레이어를 만들고, 전이를 걸면 포커스가 바뀔
-   때마다 160ms 동안 매 프레임 그 레이어를 재래스터한다(실사고: 무관한 탭 클릭에 패널이
-   움찔). 상시 승격 자체는 무해하니 filter 는 남기고 전이만 걷는다. 전이감이 필요한 곳은
-   ::after 베일(페인트만, 승격 무관)이 담당한다 — 홀 슬롯 규칙 참조. */
-/* 세기(--dim)는 표면이 들고 온다 — 여기서는 그 숫자를 그리기만 한다. CSS 가 숫자를 적으면
-   사용자가 설정을 바꿔도 화면이 안 바뀐다(설정 = dimIdle · dimBlocked). */
-.pane[data-dim],
-.tab-body[data-dim] {
-  filter: brightness(calc(1 - var(--dim)));
+   이 SVG 하나가 DOM·WebGL·문서 밖 native child 위에 검은 픽셀을 칠한다. Tauri가 별도
+   dim veil을 중복하지 않으므로 프레임워크마다 조도가 갈리지 않는다. 입력은 통과하고,
+   mask에서 focus·blocked를 먼저 뺀 뒤 blocked를 자기 농도로 한 번만 칠해 alpha 중첩을 막는다. */
+.focus-lighting-plane {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 6;
 }
-/* 홀 슬롯의 흐림은 여기 없다 — 문서 밖 콘텐츠를 가진 프레임워크만 홀을 파고, 그 규칙은
-   그 프레임워크가 들고 온다(framework/tauri/styles.css). 여기 남는 것은 filter 축뿐이다. */
+.focus-lighting-mask {
+  mask-type: alpha;
+}
+/* SVG2 geometry properties — pane/tab-body와 같은 변수·같은 산수를 소비한다. 좌표를 다시
+   측정하거나 추종하지 않으므로 별도 clock이 생기지 않는다. */
+.focus-lighting-region {
+  x: calc(var(--l) + var(--rail-dx, 0px) + var(--pane-inset));
+  y: calc(var(--t) + var(--pane-inset));
+  width: calc(var(--w) + var(--rail-dw, 0px) - var(--pane-inset) * 2);
+  height: calc(var(--h) - var(--pane-inset) * 2);
+}
+:root[data-pane-style="card"] .focus-lighting-region {
+  rx: 11px;
+  ry: 11px;
+}
+:root[data-pane-style="floating"] .focus-lighting-region {
+  rx: 14px;
+  ry: 14px;
+}
 /* [임시 — 결부 바탕 2안 비교 스위치] railFill 설정(none|faint) — 사용자 요청(① 빼기
    ② 아주 옅게). stroke 안의 fill 만 갈래친다(tint/moment 는 fill 이 본질이라 불간섭).
    결정 시 채택안만 남기고 소거. */
@@ -628,6 +633,7 @@ body,
 .space-body.rail-traveling .pane.flip-move,
 .space-body.rail-traveling .pane-border.flip-move,
 .space-body.rail-traveling .tab-body.flip-move,
+.space-body.rail-traveling .focus-lighting-region.flip-move,
 .space-body.rail-traveling .drop-ind-wrap.flip-move,
 .space-body.rail-traveling .pane-gutter.flip-move {
   animation: rail-flip-x var(--rail-travel-ms) cubic-bezier(0.4, 0, 0.2, 1);
@@ -2047,6 +2053,11 @@ body,
   height: calc(var(--h) - var(--pane-inset) * 2);
   pointer-events: none;
   z-index: 5;
+}
+/* 조명 평면(z6)은 비활성 pane의 프레임까지 함께 가라앉힌다. 포커스 프레임만 조명 위에
+   남는다. 이 둘은 장식적 z-index가 아니라 작업면→조명→포커스 표시의 명시적 시각 계약이다. */
+.pane-border.focus {
+  z-index: 7;
 }
 :root[data-pane-style="card"] .pane-border {
   border: 1px solid var(--bd);

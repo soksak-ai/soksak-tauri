@@ -9,28 +9,6 @@
  *
  * `data-tauri-hole`은 실제 content-view body, `data-tauri-hole-frame`은 그 DOM frame에만 선다. */
 
-/* 홀 슬롯의 흐림은 filter 가 아니라 베일이다.
- *
- * 홀 아래의 콘텐츠는 이 문서의 픽셀이 아니라 합성기의 다른 층이다 — 조상의 `filter` 는 그
- * 층에 닿지 않는다. 그래서 홀에서는 filter 를 끄고, 같은 세기를 검은 베일로 칠한다.
- * 검은 베일 alpha a 는 정의상 `brightness(1−a)` 이므로 두 매체의 세기가 정확히 같다.
- *
- * 베일은 스탠드인(z3)보다 위의 라이브 계층(z4) — 스냅에 구워진 상태와 무관하게 현재 세기를
- * 따라 전이한다(배경이던 시절엔 스탠드인이 베일을 가려 스왑마다 포커스 인/아웃 플랩으로
- * 보였다 — 실측). pseudo 는 히트테스트가 없어 클릭 관통이 보장된다. */
-.tab-body[data-tauri-hole-frame][data-dim] {
-  filter: none;
-}
-.tab-body[data-tauri-hole-frame][data-dim]::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 4;
-  background-color: rgb(0 0 0 / var(--dim));
-  transition: background-color 160ms ease;
-}
-
 /* 홀 셀: 활성 뷰가 브라우저면 본문 영역이 홀 — 카드 배경을 헤더/상태바 밴드로만 칠한다
    (중간은 투명, bv-bar 는 자체 배경). 라운드 모서리는 overflow:hidden 이 밴드를 그대로 클립한다. */
 :root[data-pane-style="card"] .pane[data-tauri-hole="pane"],

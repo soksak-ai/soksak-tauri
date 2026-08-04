@@ -20,6 +20,7 @@ import { beginLayoutMotion, endLayoutMotion } from "../lib/layoutMotion";
 import { createRectMotionTracker } from "../lib/layoutRectMotion";
 import { useGutterHover } from "../state/gutterHover";
 import { ViewTabs } from "./ViewTabs";
+import { FocusLightingPlane } from "./FocusLightingPlane";
 import { computeSplitLayout, hitTestCells } from "../lib/splitLayout";
 import { gutterAddress, gutterOwnerOf } from "../lib/gutterAddress";
 import { beginGesture } from "../lib/gesture";
@@ -601,6 +602,17 @@ export const GroupArea = memo(function GroupArea({
     }) as React.CSSProperties;
   };
 
+  const lightingFocusId = focusedPaneId ?? content.activePaneId;
+  const lightingFocusCell = displayCells.find((c) => c.group.id === lightingFocusId);
+  const blockedLighting = displayCells
+    .filter((c) => c.group.id !== lightingFocusId && betweenIds?.includes(c.group.id))
+    .map((c) => ({
+      id: c.group.id,
+      style: cellVars(c.rect, c.group.id),
+      moving: flipMoves(c.group.id),
+      amount: dimBlocked,
+    }));
+
   // 장식 span(디바이더·드롭 표시)은 패널이 아니라 복도의 일부다 — 이동량의 유일한 원천은
   // 삽입 지점 변화이고, 해결기의 같은 사상(spanMoveAcross)이 그것을 소유한다.
   const spanFlipPx = (rect: Rect): number =>
@@ -846,6 +858,23 @@ export const GroupArea = memo(function GroupArea({
           );
         }),
       )}
+
+      {/* 포커스 조명은 콘텐츠별 효과가 아니다. 작업면 전체를 한 번 어둡게 하고 화면이
+          그리는 해의 focus pane만 aperture로 연다. DOM·WebGL·Tauri native child 모두
+          같은 검은 픽셀 아래 놓이며, 어떤 콘텐츠 subtree에도 filter를 적용하지 않는다. */}
+      <FocusLightingPlane
+        baseAmount={focusDim ? dimIdle : 0}
+        focused={
+          lightingFocusCell
+            ? {
+                id: lightingFocusCell.group.id,
+                style: cellVars(lightingFocusCell.rect, lightingFocusCell.group.id),
+                moving: flipMoves(lightingFocusCell.group.id),
+              }
+            : undefined
+        }
+        blocked={blockedLighting}
+      />
 
       {/* ── 리사이저(분할 경계 — 위치 지정이 본질인 요소). 최대화 중엔 경계 없음 ── */}
       {!maxCell &&
