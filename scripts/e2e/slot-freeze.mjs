@@ -306,6 +306,13 @@ async function runEngine(client, page, engine) {
     win = acquired.label;
     console.log(`\n[${engine}] 픽스처 창: ${win}${acquired.adopted ? " (재사용)" : " (생성)"}`);
     must(await rpc("program.wait", { id: engine, timeoutMs: 20_000 }, win), `program.wait ${engine}`);
+    const calibration = must(
+      await rpc("capture.calibration", { visible: true }, win),
+      "DOM compositor calibration show",
+    );
+    if (!calibration.visible || calibration.rect?.w !== 64 || calibration.rect?.h !== 40) {
+      throw new Error(`DOM compositor calibration 계약 불일치: ${JSON.stringify(calibration)}`);
+    }
     const originalWindow = must(await rpc("window.info", {}, win), "window.info");
     const scale = Number(originalWindow.scale ?? 1);
     must(await rpc("plugin.settings.set", { id: plugin, key: "homeUrl", value: page.url, scope: "project" }, win), "fixture homeUrl");
@@ -412,10 +419,6 @@ async function runEngine(client, page, engine) {
     // 최종 정합만 맞고 도중에 blank/stale/hang이면 프레임 생존 또는 거래 시간에서 RED다.
     const fastResizeDir = path.join(engineEvidence, "resize-window-fast");
     const fastSizes = hostileWindowResizeSizes(originalWindow);
-    const calibration = must(await rpc("capture.calibration", { visible: true }, win), "DOM compositor calibration show");
-    if (!calibration.visible || calibration.rect?.w !== 64 || calibration.rect?.h !== 40) {
-      throw new Error(`DOM compositor calibration 계약 불일치: ${JSON.stringify(calibration)}`);
-    }
     const fastResize = must(await rpc("window.resizeSequence", {
       sizes: fastSizes,
       intervalMs: 8,
