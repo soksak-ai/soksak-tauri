@@ -114,9 +114,14 @@ run: ## 릴리스 soksak-tauri.app 실행(새 인스턴스)
 run-dev: ## 개발 정체성 soksak-tauri-dev.app 실행(새 인스턴스)
 	@test -x "$(DEV_EXECUTABLE)" || { echo "먼저 'make build-dev' 를 실행하세요."; exit 1; }
 	@mkdir -p "$(DEV_LOG_DIR)"
-	@SOKSAK_E2E_KEK=$(DEV_KEK) SOKSAK_VAULT_PATH=$(DEV_VAULT) \
-	  "$(DEV_EXECUTABLE)" >>"$(DEV_LOG_DIR)/tauri-app.log" 2>&1 &
-	@echo "실행: $(DEV_APP) (로그: $(DEV_LOG_DIR)/tauri-app.log)"
+	@# macOS GUI 번들의 수명 주인은 호출 셸이 아니라 LaunchServices다. 실행물을 `&`/nohup으로
+	@# 직접 띄우면 자동화 셸 종료와 함께 앱 호스트도 사라져 restart-dev가 거짓 성공한다.
+	@# -g는 창을 전면으로 가져오지 않고, --env/-i/-o가 dev 정체성과 진단면을 그대로 보존한다.
+	@open -n -g -i /dev/null \
+	  -o "$(DEV_LOG_DIR)/tauri-app.log" --stderr "$(DEV_LOG_DIR)/tauri-app.error.log" \
+	  --env SOKSAK_E2E_KEK=$(DEV_KEK) --env SOKSAK_VAULT_PATH=$(DEV_VAULT) \
+	  "$(DEV_APP)"
+	@echo "실행: $(DEV_APP) (로그: $(DEV_LOG_DIR)/tauri-app.log, tauri-app.error.log)"
 
 restart-dev: ## 실행 중 dev 앱을 app.quit으로 끝내고 같은 번들을 단일 인스턴스로 다시 실행
 	@test -x "$(DEV_EXECUTABLE)" -a -x "$(DEV_CLI)" || { echo "먼저 'make build-dev' 를 실행하세요."; exit 1; }
