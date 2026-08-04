@@ -16,6 +16,7 @@ const { frameworkError } = require("./error.cjs");
 
 const SNAPSHOT = "plugin:webview-capture|snapshot";
 const SNAPSHOT_REGION = "plugin:webview-capture|snapshot_region";
+const RECORD = "plugin:webview-capture|record";
 const SET_OCCLUSION = "plugin:webview-capture|set_occlusion";
 
 const NO_WINDOW = "FRAMEWORK_NO_WINDOW";
@@ -83,6 +84,33 @@ module.exports = {
       const rect = cropOf(args);
       const png = pngOf(await contents(ctx).capturePage(rect ?? undefined, BACKGROUND_CAPTURE));
       return png.toString("base64");
+    },
+  },
+
+  [RECORD]: {
+    concept: "창 합성 픽셀의 유한 연사 PNG",
+    source: "webContents.capturePage",
+    answer: async (ctx, args) => {
+      const dir = String(args?.dir || "");
+      const frames = Number(args?.frames);
+      const intervalMs = Number(args?.intervalMs ?? 0);
+      if (!dir || !Number.isInteger(frames) || frames < 1 || frames > 600) {
+        throw frameworkError("INVALID_PARAMS", "dir 및 frames(1..600) 필수");
+      }
+      if (!Number.isFinite(intervalMs) || intervalMs < 0) {
+        throw frameworkError("INVALID_PARAMS", "intervalMs는 0 이상의 수");
+      }
+      fs.mkdirSync(dir, { recursive: true });
+      for (let i = 0; i < frames; i += 1) {
+        const started = Date.now();
+        const png = pngOf(await contents(ctx).capturePage(undefined, BACKGROUND_CAPTURE));
+        fs.writeFileSync(path.join(dir, `f${String(i).padStart(4, "0")}.png`), png);
+        const rest = intervalMs - (Date.now() - started);
+        if (rest > 0 && i + 1 < frames) {
+          await new Promise((resolve) => setTimeout(resolve, rest));
+        }
+      }
+      return frames;
     },
   },
 

@@ -18,17 +18,5 @@ export async function recordWindowFrames({
   frames,
   intervalMs,
 }: WindowRecordRequest): Promise<number> {
-  let captured = 0;
-  for (let i = 0; i < frames; i += 1) {
-    const started = performance.now();
-    const png = await invoke<string>("plugin:webview-capture|snapshot_region", {});
-    await invoke("write_file_base64", {
-      path: `${dir}/f${String(i).padStart(4, "0")}.png`,
-      base64: png,
-    });
-    captured += 1;
-    const rest = intervalMs - (performance.now() - started);
-    if (rest > 0) await new Promise((resolve) => setTimeout(resolve, rest));
-  }
-  return captured;
+  return invoke<number>("plugin:webview-capture|record", { dir, frames, intervalMs });
 }
