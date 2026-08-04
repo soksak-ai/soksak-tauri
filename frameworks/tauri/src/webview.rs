@@ -337,6 +337,13 @@ pub async fn engine_surface_stats(app: AppHandle, window: tauri::Window) -> serd
         let ns_win = window.ns_window().ok().map(|p| p as usize).unwrap_or(0);
         let (tx, rx) = std::sync::mpsc::channel::<serde_json::Value>();
         let _ = app.run_on_main_thread(move || {
+            let preserves_content_during_live_resize = if ns_win != 0 {
+                let native: &objc2_app_kit::NSWindow =
+                    unsafe { &*(ns_win as *const objc2_app_kit::NSWindow) };
+                native.preservesContentDuringLiveResize()
+            } else {
+                true
+            };
             let host = layer::engine_host_ptr(&label);
             let host_hidden = if host != 0 {
                 let v: &objc2_app_kit::NSView = unsafe { &*(host as *const objc2_app_kit::NSView) };
@@ -376,6 +383,7 @@ pub async fn engine_surface_stats(app: AppHandle, window: tauri::Window) -> serd
                 "otherWindows": other_windows,
                 "hostPresent": host != 0,
                 "hostHidden": host_hidden,
+                "preservesContentDuringLiveResize": preserves_content_during_live_resize,
                 "windowZoom": SURFACE_LAYOUT.window_zoom(&label),
                 "surfaces": surfaces,
             }));

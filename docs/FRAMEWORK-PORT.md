@@ -694,6 +694,14 @@ rAF. `layout.reflow` wakes position changes and `ResizeObserver` wakes size chan
 adapter. That adapter serializes IPC per label and coalesces queued events into one read of the latest
 rect. The Electron adapter has none of these subscriptions or follower state.
 
+A native window resize is an authority edge even when the final DOM rect equals the pre-resize rect:
+AppKit can alter a child compositor's frame outside the JavaScript ledger. The Tauri adapter therefore
+forces the current slot rect through its same serialized drain on every finite window `resize` event.
+On macOS it also disables `NSWindow.preservesContentDuringLiveResize`; preserving an old backing store
+is invalid for a composition of independently rendered DOM, WKWebView, and CEF surfaces and produces a
+stretched mixed-epoch frame. `webview.composition.engine.preservesContentDuringLiveResize` exposes this
+policy and must be `false`. Electron retains its ordinary DOM/window behavior and installs neither rule.
+
 For a rail relocation, the Tauri adapter uses a finite snap transaction: it locks out intermediate
 mutation writes, commits the target DOM, reads the public slot's actual rect in the layout effect,
 and applies it once. A plugin-owned external surface can claim the same public DOM transaction; Tauri

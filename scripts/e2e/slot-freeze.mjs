@@ -78,6 +78,9 @@ function assertNativeComposition(data, labels, beforeWrites) {
   const errors = ["missing", "misplaced", "stacked"].flatMap((key) =>
     (data.verdict?.[key] ?? []).map((item) => `${key}:${JSON.stringify(item)}`),
   );
+  if (data.engine?.preservesContentDuringLiveResize !== false) {
+    errors.push(`window:preservesContentDuringLiveResize=${data.engine?.preservesContentDuringLiveResize}`);
+  }
   const placements = new Map((data.placement ?? []).map((item) => [item.label, item]));
   for (const label of labels) {
     const placement = placements.get(label);

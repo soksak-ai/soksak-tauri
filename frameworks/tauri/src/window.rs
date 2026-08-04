@@ -27,6 +27,14 @@ pub fn traffic_light_inset(app: &AppHandle) -> (f64, f64) {
 pub fn install_window_natives(app: &AppHandle, label: &str) {
     crate::webview::install_layer_inversion(app, label);
     if let Some(window) = app.get_window(label) {
+        // 이 창의 가시 내용은 DOM WKWebView·child WKWebView·CEF remote layer처럼 각자
+        // compositor를 가진 표면의 합성이다. AppKit 기본값(true)의 옛 backing 보존은 이 구조에서
+        // resize epoch가 다른 표면을 한 프레임으로 늘여 붙인다. 보존을 끄면 각 표면이 새 bounds를
+        // 직접 다시 그리며, Tauri 어댑터 밖(Electron DOM 창)에는 이 정책이 존재하지 않는다.
+        if let Ok(ptr) = window.ns_window() {
+            let ns = unsafe { &*(ptr as *const objc2_app_kit::NSWindow) };
+            ns.setPreservesContentDuringLiveResize(false);
+        }
         // NSWindow↔label 캐시 등록 — AppKit 통지 블록이 wry 를 묻지 않고 역해소하게(webview.rs).
         crate::webview::appkit_events::note_nswindow_label(&window);
         let (x, y) = traffic_light_inset(app);
