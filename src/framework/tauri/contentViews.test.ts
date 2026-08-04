@@ -2,7 +2,7 @@
 //
 // 이름과 인자를 번역하지 않는 것이 이 구현의 전부다. 번역하면 새 드리프트 면이 생기고,
 // 그 드리프트는 "이 프레임워크에서만 안 되는 기능"으로 나타난다.
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const invoke = vi.fn(async (_cmd: string, _args?: unknown) => undefined as unknown);
 const listeners = new Map<string, (payload: Record<string, unknown>) => void>();
@@ -40,8 +40,6 @@ async function load() {
 }
 
 describe("네이티브 자식 뷰 구현", () => {
-  afterEach(() => vi.unstubAllGlobals());
-
   beforeEach(() => {
     vi.restoreAllMocks();
     document.body.innerHTML = "";
@@ -145,17 +143,11 @@ describe("네이티브 자식 뷰 구현", () => {
     expect(vi.isMockFunction(globalThis.requestAnimationFrame)).toBe(false);
   });
 
-  it("창 resize는 DOM paint 뒤 현재 rect로 native child를 정착시킨다", async () => {
-    const frames: FrameRequestCallback[] = [];
-    vi.stubGlobal("requestAnimationFrame", vi.fn((callback: FrameRequestCallback) => {
-      frames.push(callback);
-      return frames.length;
-    }));
+  it("창 resize는 같은 최종 DOM rect여도 native child에 권위 frame을 다시 쓴다", async () => {
     const slot = document.createElement("div");
     slot.setAttribute("data-content-view-body", "b-resize");
-    let width = 300;
     slot.getBoundingClientRect = () => ({
-      x: 10, y: 20, left: 10, top: 20, right: 10 + width, bottom: 220, width, height: 200,
+      x: 10, y: 20, left: 10, top: 20, right: 310, bottom: 220, width: 300, height: 200,
     }) as DOMRect;
     document.body.appendChild(slot);
 
@@ -164,16 +156,12 @@ describe("네이티브 자식 뷰 구현", () => {
     await nativeHost.open("b-resize", { url: "https://x" });
     invoke.mockClear();
 
-    width = 340;
+    // AppKit은 부모 창의 중간 resize에서 child 내부 frame을 바꿀 수 있다. DOM rect가 처음과
+    // 같은 크기로 돌아와도 JS lastRect는 그 네이티브 변화를 관측하지 못하므로 캐시 hit가
+    // 최종 정착의 증거가 될 수 없다.
     window.dispatchEvent(new Event("resize"));
-    ResizeObserverMock.instances[0].fire();
-    await Promise.resolve();
-    expect(invoke).not.toHaveBeenCalledWith("webview_bounds", expect.anything());
-    frames.shift()?.(0);
-    expect(invoke).not.toHaveBeenCalledWith("webview_bounds", expect.anything());
-    frames.shift()?.(16);
     await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("webview_bounds", {
-      label: "b-resize", x: 10, y: 20, w: 340, h: 200,
+      label: "b-resize", x: 10, y: 20, w: 300, h: 200,
     }));
   });
 

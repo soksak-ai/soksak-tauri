@@ -248,15 +248,6 @@ fn configure_surface_resize(view: &NSView) {
     view.setLayerContentsPlacement(NSViewLayerContentsPlacement::TopLeft);
 }
 
-// 메인 DOM WKWebView는 창 전체를 따라가는 자기 autoresizing 소유권을 유지한다. 다만 wry가
-// layer-hosting view로 만든 기본값(Never + ScaleAxesIndependently)을 그대로 두면 WebKit의 새
-// backing이 오기 전 shell만 과거 픽셀을 새 창 크기에 확대·축소한다. child surface와 같은
-// redraw/placement 계약을 주되 frame 소유권은 건드리지 않는다.
-fn configure_shell_resize(view: &NSView) {
-    view.setLayerContentsRedrawPolicy(NSViewLayerContentsRedrawPolicy::DuringViewResize);
-    view.setLayerContentsPlacement(NSViewLayerContentsPlacement::TopLeft);
-}
-
 // Backend N surface 등록/해제 — webview_open 직후(가시 홀 편입), webview_close 직전(회수).
 // 오프스크린 추출 webview(media_extract, -20000)는 홀이 아니므로 등록하지 않는다.
 pub fn register_surface(ptr: usize, label: Option<&str>) {
@@ -593,8 +584,6 @@ pub fn install(app: &tauri::AppHandle, label: &str) {
     let label = label.to_string();
     let _ = wv.with_webview(move |pw| unsafe {
         let obj = pw.inner() as *mut AnyObject;
-        let main_view = &*(obj as *const NSView);
-        configure_shell_resize(main_view);
         if let Ok(mut layers) = LAYERS.lock() {
             layers.insert(
                 label,

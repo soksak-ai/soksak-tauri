@@ -141,21 +141,6 @@ fn registered_native_surfaces_never_scale_cached_layer_pixels() {
 }
 
 #[test]
-fn main_dom_webview_never_scales_cached_backing_pixels() {
-    let src = std::fs::read_to_string("src/webview/layer.rs").expect("layer source");
-    let policy = src
-        .split_once("fn configure_shell_resize(")
-        .expect("main DOM webview resize policy")
-        .1
-        .split_once("\n}")
-        .expect("policy boundary")
-        .0;
-    assert!(policy.contains("DuringViewResize"));
-    assert!(policy.contains("TopLeft"));
-    assert!(src.contains("configure_shell_resize(main_view)"));
-}
-
-#[test]
 fn prune_window_persistence_removes_only_that_window() {
     let c = rusqlite::Connection::open_in_memory().unwrap();
     c.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
