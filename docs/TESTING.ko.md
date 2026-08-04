@@ -27,6 +27,11 @@
   (에이전트 턴)는 관용 재시도하며 특정 모델 출력에 게이트하지 않는다.
 - **실제 신호를 측정.** 런타임 사실을 직접 읽는다(터미널 출력=`term.read`, 실 winsize=`stty size`,
   렌더=픽셀 밝기) — 정적/추론값이 아니라.
+- **브라우저 구현은 한 acceptance matrix를 공유.** `slot-freeze.mjs`는 시스템 웹뷰·windowed
+  Chromium·offscreen Chromium에 같은 로컬 문서를 제공한다. 각 구현은 주소표시줄과 페이지 신원을
+  노출하고, `beforeinput`·`input`을 동반한 한글을 커밋하며, 양 탭을 6회 교차 이동하는 동안 전이당
+  무포커스 48프레임 모두에서 두 live page marker를 유지해야 한다. 구현별 status는 실패를 설명할
+  수 있지만 제품 기준을 낮출 수 없다.
 
 ## 하니스 규칙 (실측으로 얻은)
 

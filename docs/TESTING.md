@@ -32,6 +32,11 @@ Two standard targets across every repo — core, plugins, sidecars. A repo expos
 - **Measure the real signal.** Read the actual runtime fact (`term.read` for terminal output,
   `stty size` for the live winsize, pixel brightness for render) — not a static or inferred
   value.
+- **Browser implementations share one acceptance matrix.** `slot-freeze.mjs` serves one local
+  document to the system webview, windowed Chromium, and offscreen Chromium. Each must expose its
+  address bar and page identity, commit Korean text with `beforeinput` and `input`, survive six
+  alternating tab moves, and retain both live page markers in every one of 48 no-focus frames per
+  move. An implementation-specific status may explain a failure; it cannot lower the product rule.
 
 ## Harness rules (learned the hard way)
 

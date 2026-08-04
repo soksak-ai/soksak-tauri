@@ -68,6 +68,9 @@ A user gesture never shows discontinuous content. The means depends on where the
   transaction: the current DOM slot is the source coordinate, intermediate mutation writes are locked,
   and the folded target frame is committed once. A stale native frame is never used as the next
   journey's origin.
+- A plugin-owned windowed engine joins that same Tauri transaction through the public DOM claim event.
+  Tauri supplies the final committed rect and awaits the engine ACK; the plugin does not infer a
+  framework name or chase intermediate relocation frames.
 - Unpredictable resize input is event-driven (`ResizeObserver` and explicit gesture edges), coalesced
   per label, and always converges on the current public slot. It does not run a frame polling loop.
 - Focus lighting is one SVG plane outside the work surface, never `filter` or `opacity` on a content

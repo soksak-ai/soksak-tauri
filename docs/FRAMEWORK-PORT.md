@@ -696,7 +696,9 @@ rect. The Electron adapter has none of these subscriptions or follower state.
 
 For a rail relocation, the Tauri adapter uses a finite snap transaction: it locks out intermediate
 mutation writes, commits the target DOM, reads the public slot's actual rect in the layout effect,
-and applies it once. It does not predict coordinates, so a sidebar-flow change outside the pane move
+and applies it once. A plugin-owned external surface can claim the same public DOM transaction; Tauri
+then supplies the committed rect and waits for the plugin's engine bounds ACK before closing it. It
+does not predict coordinates, so a sidebar-flow change outside the pane move
 is included. If another event path already acknowledged the same rect, the duplicate bounds write is
 skipped. Tauri also excludes the actual core FLIP tracking frames — the marked `pane` and `tab-body`,
 not their nested content-view body — from generic WAAPI rect interpolation. Otherwise the follower

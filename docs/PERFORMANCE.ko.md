@@ -60,6 +60,9 @@ debounce 로 입력이 정착한 뒤 1회 실행한다. 스톰은 본구간 CPU 
 - Tauri child 웹뷰는 하나의 안정 z-order에서 계속 살아 있다. 예측 가능한 레일 재배치는 유한
   snap 거래다. 현재 DOM 슬롯을 출발 좌표로 삼고 중간 mutation 쓰기를 잠근 뒤 접힌 목표 frame을
   한 번 커밋한다. stale native frame을 다음 여정의 출발점으로 쓰지 않는다.
+- 플러그인 소유 windowed 엔진도 공개 DOM claim 사건으로 같은 Tauri 거래에 참여한다. Tauri가
+  커밋된 최종 rect를 주고 엔진 ACK를 기다리며, 플러그인은 프레임워크 이름을 추론하거나 재배치
+  중간 frame을 뒤쫓지 않는다.
 - 예측 불가능한 resize 입력은 사건(`ResizeObserver`와 명시적 제스처 에지)으로 받고 label별로
   합쳐 현재 공개 슬롯에 수렴한다. 프레임 폴링 루프는 없다.
 - 포커스 조명은 콘텐츠 조상의 `filter`/`opacity`가 아니라 작업면 밖 SVG 평면 하나가 그린다.

@@ -688,7 +688,9 @@ offscreen 축은 코어의 공백이 **아니다**. 2026-07-08 에 검증됐고 
 rect 한 번으로 합친다. Electron 어댑터에는 이 구독과 추종 상태가 전혀 없다.
 
 레일 재배치에서 Tauri 어댑터는 유한 snap 거래를 쓴다. 중간 mutation 쓰기를 잠그고 목표 DOM을
-커밋한 layout effect에서 공개 슬롯의 실제 rect를 읽어 한 번 적용한다. pane 이동량 밖에서 sidebar
+커밋한 layout effect에서 공개 슬롯의 실제 rect를 읽어 한 번 적용한다. 플러그인 소유 외부 표면도
+같은 공개 DOM 거래를 claim할 수 있으며, Tauri는 커밋 rect를 전달하고 플러그인의 엔진 bounds ACK를
+기다린 뒤 거래를 닫는다. pane 이동량 밖에서 sidebar
 flow가 함께 바뀌어도 좌표를 예측하지 않는다. 같은 rect의 ACK가 다른 사건 경로에서 먼저 끝났으면
 중복 bounds 쓰기를 생략한다. 또한 Tauri는 코어 FLIP이 실제 추적하는 표식된 `pane`과 `tab-body`를
 일반 WAAPI rect 보간에서 제외한다. 그 자식인 content-view body를 검사하면 제외는 발동하지 않고,
