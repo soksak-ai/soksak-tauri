@@ -10,7 +10,7 @@
 //! 트랜잭션은 하나다: 스테이징 → git init → 원자 rename. 어느 하나가 실패하면 디렉터리를
 //! 지운다. 반쪽을 남기면 답은 성공인데 유닛은 아무도 적재하지 않는다.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde::Serialize;
 

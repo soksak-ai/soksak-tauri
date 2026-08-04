@@ -5,7 +5,6 @@
 // 섞인 것으로 세어진다(core-decoupling 게이트).
 
 use super::*;
-use std::fs;
 
 #[test]
 fn sidecar_scaffold_shape() {

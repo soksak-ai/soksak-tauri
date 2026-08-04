@@ -3,7 +3,8 @@
 // 회전이 복구 코드 발급을 빠뜨리면 새 active 키에 recovery 가 NULL 이 되고, 기계·키체인을
 // 잃는 순간 봉인 데이터가 영구 복호불가다. 그 무손실을 여기서 지킨다.
 use super::*;
-use super::*;
+use base64::Engine;
+use serde_json::{json, Value};
 use soksak_vault::gen_asym_keypair;
 
 fn mem() -> Connection {

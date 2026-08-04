@@ -3,9 +3,7 @@
 // 봉인 형식과 키 표는 soksak-store(doc)가, 열쇠 유도·복구 코드는 soksak-vault 가 진다.
 // 여기 남는 것은 그 둘을 잇는 두 함수뿐이고, 어느 쪽도 창을 모른다.
 
-use base64::Engine;
 use rusqlite::Connection;
-use serde_json::{json, Value};
 
 // 복구 코드 발급은 **볼트의 일**이라 여기 남는다 — 저장 크레이트는 "이 바이트를 이 열쇠로
 // 잠근다"까지이고, 사람에게 줄 코드를 만드는 것은 그 위층이다.
