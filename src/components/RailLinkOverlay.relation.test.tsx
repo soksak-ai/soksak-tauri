@@ -192,19 +192,13 @@ describe("railRelation 모드 CSS 갈래 (스타일 표면)", () => {
   });
 
   it("포커스 스포트라이트: 비활성만 가라앉고 활성은 청정(선택만 명확)", () => {
-    // 사용자 개념: "전체를 흐리게 하고 선택된 것만 명확하게". blur 는 텍스트를 뭉개므로
-    // 밝기 하강만 쓴다(채도는 안 내린다 — 베일이 채도를 못 내려서 같은 단계의 홀 판과
-    // DOM 판이 갈린다). 단계는 한 자리(lib/dimLevel)가 정하고 CSS 는 이름당 한 벌만
-    // 그린다 — 활성은 "해제 규칙"이 아니라 애초에 clear 단계라 칠하는 규칙이 없다.
-    for (const part of [".pane", ".tab-body"]) {
-      // 세기는 표면이 값으로 들고 오고(--dim), 칠하는 규칙은 그 값만 읽는다(lib/dimLevel 검사).
-      expect(decls(`${part}[data-dim]`)).toMatch(/filter: brightness\(calc\(1 - var\(--dim\)\)\)/);
-      // filter 전이는 금지다 — 포커스마다 승격된 레이어를 160ms 재래스터해 패널이 움찔했다
-      // (실사고). 전이감은 ::after 베일(페인트만)이 담당한다.
-      expect(decls(`${part}[data-dim]`)).not.toMatch(/transition:[^;]*filter/);
-      // 단계 이름으로 갈래친 규칙은 없다 — 갈래가 둘이면 다시 특이성으로 겨룬다.
-      expect(css).not.toMatch(new RegExp(`\\${part}\\[data-dim="`));
-    }
+    // 콘텐츠 조상 filter는 DOM/canvas/WebGL 합성 경로를 바꾸므로 금지한다. 전체 어둠과
+    // 포커스 aperture는 작업면 밖 SVG 평면 한 벌이 그린다.
+    expect(css).not.toMatch(/\.(?:pane|tab-body)\[data-dim\][^{]*\{[^}]*filter\s*:/s);
+    expect(decls(".focus-lighting-plane")).toMatch(/pointer-events:\s*none/);
+    expect(decls(".focus-lighting-mask")).toMatch(/mask-type:\s*luminance/);
+    // 단계 이름으로 갈래친 규칙은 없다 — 갈래가 둘이면 다시 특이성으로 겨룬다.
+    expect(css).not.toMatch(/\.(?:pane|tab-body)\[data-dim="/);
   });
 
   it("railFill 갈래는 두 채움 경로(shape=자연 인접·fill=교체 분리 렌더)를 모두 덮는다", () => {

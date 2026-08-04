@@ -204,6 +204,14 @@ module.exports = {
       "원본은 이 신호를 사이드카 표면에 중계한다(sidecar::notify_all). 이 프레임워크는 콘텐츠가 DOM 안이라 중계할 사이드카 표면이 없다 — 드래그 중 재배치는 CSS 가 그대로 따라간다.",
   },
 
+  // native child 바로 위에 두는 AppKit 조명 평면. Electron의 content view는 DOM 자식이라
+  // 공통 SVG 조명 평면 안에서 이미 합성되고, 별도 native projection은 개념 자체가 없다.
+  webview_dim: {
+    concept: "네이티브 콘텐츠 표면 포커스 조명",
+    absent:
+      "Electron 콘텐츠 뷰는 DOM 자식이라 공통 SVG 조명 평면이 직접 그린다 — 투영할 네이티브 형제 표면이나 AppKit veil이 없다.",
+  },
+
   // 건강 원장 조회 — 관측 대상은 회로차단기 상태이고, 그것은 앱 프로세스의 것이다.
   webview_health_query: {
     concept: "콘텐츠 뷰 건강 원장",
