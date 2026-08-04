@@ -17,6 +17,9 @@ export const browserImplementations = Object.freeze({
 
 export const fixtureMarkers = Object.freeze(["#ff00ff", "#00ffff"]);
 export const fixtureInputMarkers = Object.freeze(["#ffff00", "#00ff00"]);
+// hostile resize의 최소 2-pane viewport에도 잘리지 않는 고정 ruler. 작아지는 반응형 marker가
+// 아니라 언제나 같은 64 CSS px이므로 캡처에서 확대/압축된 옛 프레임을 엄격히 검출할 수 있다.
+export const fixtureMarkerSize = Object.freeze({ width: 64, height: 40 });
 
 export function markerEvidence(bytes, hex, tolerance = 24, sampleStep = 1) {
   const image = decodePng(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes));
@@ -97,6 +100,73 @@ export function parseBrowserEngines(raw) {
   return [...new Set(engines)];
 }
 
+/**
+ * 한 workspace window 안에서 플러그인 view 장부와 실제 엔진 surface 장부가 같은 대상을
+ * 가리키는지 판정한다. 엔진의 전역 stats에는 다른 window의 surface도 함께 보이므로 owner를
+ * `plugin@window`로 범위화한다. DOM/픽셀 판정 전에 이 연결이 끊겼다면 화면은 우연히 남은
+ * 프레임일 뿐 live surface가 아니다.
+ */
+export function browserSurfaceInvariant({
+  surface,
+  plugin,
+  windowLabel,
+  viewIds,
+  expectedVisible,
+  stats,
+}) {
+  const errors = [];
+  const expectedOwner = `${plugin}@${windowLabel}`;
+  const offscreen = surface === "engine-offscreen";
+  const engine = offscreen ? stats?.engine : stats;
+  const engineSurfaces = Array.isArray(engine?.surfaces) ? engine.surfaces : [];
+  const byId = new Map(engineSurfaces.map((item) => [Number(item.id), item]));
+  const engineIds = new Set((Array.isArray(engine?.ids) ? engine.ids : []).map(Number));
+  const offscreenMap = new Map(
+    (Array.isArray(stats?.ids) ? stats.ids : []).map((item) => [item?.viewId, Number(item?.surfaceId)]),
+  );
+  const mappedIds = [];
+
+  for (let index = 0; index < viewIds.length; index += 1) {
+    const viewId = viewIds[index];
+    const key = offscreen ? viewId : `chromium-${viewId}`;
+    const id = offscreen ? offscreenMap.get(viewId) : Number(stats?.idMap?.[key]);
+    if (!Number.isFinite(id)) {
+      errors.push(`${viewId}:mapping-missing`);
+      continue;
+    }
+    mappedIds.push(id);
+    const live = engineIds.has(id) && byId.has(id);
+    if (!live) {
+      errors.push(`${viewId}:engine-live-missing:${id}`);
+      continue;
+    }
+    const actual = byId.get(id);
+    if (actual.owner !== expectedOwner) errors.push(`${viewId}:owner=${actual.owner}/${expectedOwner}`);
+    const visible = expectedVisible[index] === true;
+    if (actual.hidden !== !visible) errors.push(`${viewId}:hidden=${actual.hidden}/${!visible}`);
+    if (!offscreen && stats?.visibility?.[key] !== visible) {
+      errors.push(`${viewId}:plugin-visible=${stats?.visibility?.[key]}/${visible}`);
+    }
+    if (!offscreen && visible && !actual.bounds) errors.push(`${viewId}:bounds-missing`);
+    if (offscreen && actual.resize?.pending === true) errors.push(`${viewId}:resize-pending`);
+    if (offscreen && actual.viewport?.matches !== true) errors.push(`${viewId}:viewport-mismatch`);
+  }
+
+  const sortedMapped = [...mappedIds].sort((a, b) => a - b);
+  const ledger = (Array.isArray(stats?.ledger) ? stats.ledger : []).map(Number).sort((a, b) => a - b);
+  if (JSON.stringify(ledger) !== JSON.stringify(sortedMapped)) {
+    errors.push(`ledger=${JSON.stringify(ledger)}/mapped=${JSON.stringify(sortedMapped)}`);
+  }
+  const ownedLive = engineSurfaces
+    .filter((item) => item.owner === expectedOwner)
+    .map((item) => Number(item.id))
+    .sort((a, b) => a - b);
+  if (JSON.stringify(ownedLive) !== JSON.stringify(sortedMapped)) {
+    errors.push(`owned-live=${JSON.stringify(ownedLive)}/mapped=${JSON.stringify(sortedMapped)}`);
+  }
+  return { ok: errors.length === 0, errors, mappedIds: sortedMapped };
+}
+
 /** 같은 원본 크기에는 언제나 같은 급격한 왕복을 만든다. 마지막 단계는 정확한 원복이다. */
 export function hostileWindowResizeSizes(original) {
   const w = Math.round(Number(original.w));
@@ -147,7 +217,7 @@ export function fixtureHtml() {
       section{padding:16px;border:8px solid #f7f4df;background:#16394a;box-shadow:20px 20px 0 #10202c;max-width:520px}
       h1{font-size:48px;margin:0 0 8px}p{margin:0 0 20px}
       label{display:grid;gap:8px;font-size:18px}input{box-sizing:border-box;width:100%;font:28px system-ui;padding:10px 12px;border:4px solid #e0704f;background:#fff;color:#10202c}
-      #marker{width:160px;height:40px;margin:0 0 16px;background:var(--marker,#ff00ff)}
+      #marker{width:${fixtureMarkerSize.width}px;height:${fixtureMarkerSize.height}px;margin:0 0 16px;background:var(--marker,#ff00ff)}
       #typed-marker{height:24px;margin-top:10px;background:#000}
       output{display:block;min-height:1.4em;margin-top:10px;font-size:18px;color:#f7f4df}
       @media(max-height:520px){h1{font-size:36px}p{font-size:20px;margin-bottom:10px}label{gap:4px}input{font-size:24px;padding:6px 8px}#marker{margin-bottom:10px}output{margin-top:4px}#typed-marker{margin-top:4px}}

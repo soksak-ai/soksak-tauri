@@ -40,7 +40,12 @@ Two standard targets across every repo — core, plugins, sidecars. A repo expos
   while recording 64 frames. Both markers must survive every frame, the finite resize transaction
   must complete within its deadline, and the final DOM slot, page viewport, and fixed marker size
   must match with rounding-only tolerance. An implementation-specific status may explain a failure;
-  it cannot lower the product rule.
+  it cannot lower the product rule. At creation, first paint, every cross-click, window-resize
+  settlement, both pane-resize endpoints, and final capture, engine-backed implementations must
+  also prove `viewId -> surfaceId -> live engine surface`, exact `plugin@window` ownership,
+  visibility, ledger equality, and settled viewport state. A second no-focus fixture window runs
+  the public owner-scoped `gc`; the first window must keep the same live surface id, DOM identity,
+  Korean input state, and pixels. This is the regression gate for cross-window surface reaping.
 
 ## Harness rules (learned the hard way)
 

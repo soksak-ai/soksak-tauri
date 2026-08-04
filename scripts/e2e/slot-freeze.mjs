@@ -17,8 +17,10 @@ import { acquireFixtureWindow, releaseFixtureWindow } from "./lib/fixtureWindow.
 import { closeHtmlFixture, startHtmlFixture } from "./lib/http-fixture.mjs";
 import {
   browserImplementations,
+  browserSurfaceInvariant,
   fixtureHtml,
   fixtureInputMarkers,
+  fixtureMarkerSize,
   fixtureMarkers,
   hostileWindowResizeSizes,
   markerEvidence,
@@ -116,9 +118,36 @@ async function assertWindowedComposition(rpc, win, plugin, tabIds, addresses) {
   if (errors.length) throw new Error(`windowed composition 불일치 — ${errors.join(", ")}`);
 }
 
-function assertFrameMarkers(file, name, scale) {
+async function assertEngineSurfaceLedger(rpc, win, implementation, tabIds, stage) {
+  if (implementation.surface === "framework-native") return;
+  if (implementation.surface === "engine-offscreen") {
+    for (const viewId of tabIds) {
+      must(await rpc(
+        `plugin.${implementation.plugin}.surface.wait-settled`,
+        { viewId, timeoutMs: 8_000 },
+        win,
+        { timeoutMs: 20_000 },
+      ), `${stage} settle ${viewId}`);
+    }
+  }
+  const stats = must(await rpc(`plugin.${implementation.plugin}.stats`, {}, win), `${stage} stats`);
+  const verdict = browserSurfaceInvariant({
+    surface: implementation.surface,
+    plugin: implementation.plugin,
+    windowLabel: win,
+    viewIds: tabIds,
+    expectedVisible: tabIds.map(() => true),
+    stats,
+  });
+  if (!verdict.ok) throw new Error(`${stage}: view→surface→engine 불일치 — ${verdict.errors.join(", ")}`);
+  return verdict;
+}
+
+function assertFrameMarkers(file, name, scale, { requireInput = true } = {}) {
   const bytes = fs.readFileSync(file);
-  for (const [kind, markers] of [["page", fixtureMarkers], ["input", fixtureInputMarkers]]) {
+  const kinds = [["page", fixtureMarkers]];
+  if (requireInput) kinds.push(["input", fixtureInputMarkers]);
+  for (const [kind, markers] of kinds) {
     for (let slot = 0; slot < markers.length; slot += 1) {
       const evidence = markerEvidence(bytes, markers[slot], 24, MARKER_SAMPLE_STEP).largest;
       if (evidence.count < MIN_MARKER_COMPONENT || evidence.width < MIN_MARKER_WIDTH || evidence.height < MIN_MARKER_HEIGHT) {
@@ -127,10 +156,20 @@ function assertFrameMarkers(file, name, scale) {
       if (kind === "page" && scale) {
         const aligned = viewportAlignment({
           slot: { w: 1, h: 1 }, viewport: { w: 1, h: 1 },
-          marker: { width: 160, height: 40 }, markerPixels: evidence, scale,
+          marker: fixtureMarkerSize, markerPixels: evidence, scale,
         });
         if (!aligned.ok) throw new Error(`${name}: slot ${slot} stale-frame stretch — ${aligned.errors.join(", ")}`);
       }
+    }
+  }
+}
+
+function assertSentinelMarkers(file, name) {
+  const bytes = fs.readFileSync(file);
+  for (const [kind, marker] of [["page", fixtureMarkers[0]], ["input", fixtureInputMarkers[0]]]) {
+    const evidence = markerEvidence(bytes, marker, 24, MARKER_SAMPLE_STEP).largest;
+    if (evidence.count < MIN_MARKER_COMPONENT || evidence.width < MIN_MARKER_WIDTH || evidence.height < MIN_MARKER_HEIGHT) {
+      throw new Error(`${name}: sentinel ${kind} marker 소실(${JSON.stringify(evidence)})`);
     }
   }
 }
@@ -187,6 +226,19 @@ async function verifyIme(rpc, win, plugin, tabId, text) {
   }
 }
 
+async function assertImePersisted(rpc, win, plugin, tabIds, stage) {
+  for (let index = 0; index < tabIds.length; index += 1) {
+    const result = must(await rpc(`plugin.${plugin}.eval`, {
+      viewId: tabIds[index],
+      js: "const el=document.querySelector('#ime'); return { value:el?.value, ledger:window.__browserFixture };",
+    }, win), `${stage} IME ${index}`);
+    const value = unwrapEvalValue(result);
+    if (value?.value !== IME_TEXTS[index] || value?.ledger?.values?.at?.(-1) !== IME_TEXTS[index]) {
+      throw new Error(`${stage}: ${tabIds[index]} IME 상태 소실 ${JSON.stringify(value)}`);
+    }
+  }
+}
+
 async function runEngine(client, page, engine) {
   const implementation = browserImplementations[engine];
   const plugin = implementation.plugin;
@@ -195,7 +247,32 @@ async function runEngine(client, page, engine) {
   const rpc = (method, params = {}, window, options) => client.rpc(method, params, window, options);
   let win;
   let homeOverride = false;
+  let sentinelWin;
+  let sentinelHomeOverride = false;
+  let sentinelTabId;
+  let sentinelSurfaceId;
   try {
+    if (implementation.surface !== "framework-native") {
+      const sentinelRoot = path.join(FIXTURE_ROOT, "owner-sentinel", engine);
+      fs.mkdirSync(sentinelRoot, { recursive: true });
+      sentinelWin = (await acquireFixtureWindow(rpc, sentinelRoot)).label;
+      must(await rpc("program.wait", { id: engine, timeoutMs: 20_000 }, sentinelWin), `sentinel program.wait ${engine}`);
+      must(await rpc("plugin.settings.set", { id: plugin, key: "homeUrl", value: page.url, scope: "project" }, sentinelWin), "sentinel homeUrl");
+      sentinelHomeOverride = true;
+      const sentinelTab = must(await rpc("tab.open", { program: engine }, sentinelWin), "sentinel tab.open");
+      sentinelTabId = sentinelTab.tabId;
+      must(await rpc(`plugin.${plugin}.navigate`, { viewId: sentinelTabId, url: `${page.url}?slot=0` }, sentinelWin), "sentinel navigate");
+      must(await rpc(`plugin.${plugin}.dom.wait-for`, {
+        selector: "#ime", timeoutMs: 8_000, viewId: sentinelTabId,
+      }, sentinelWin, { timeoutMs: 30_000 }), "sentinel ready");
+      await verifyIme(rpc, sentinelWin, plugin, sentinelTabId, IME_TEXTS[0]);
+      const sentinelVerdict = await assertEngineSurfaceLedger(
+        rpc, sentinelWin, implementation, [sentinelTabId], "sentinel-created",
+      );
+      sentinelSurfaceId = sentinelVerdict.mappedIds[0];
+    }
+
+    fs.mkdirSync(FIXTURE_ROOT, { recursive: true });
     const acquired = await acquireFixtureWindow(rpc, FIXTURE_ROOT);
     win = acquired.label;
     console.log(`\n[${engine}] 픽스처 창: ${win}${acquired.adopted ? " (재사용)" : " (생성)"}`);
@@ -231,6 +308,9 @@ async function runEngine(client, page, engine) {
       const identity = must(await rpc(`plugin.${plugin}.dom.text`, { selector: "h1", viewId: tabId }, win), `browser identity ${tabId}`);
       if (identity.text !== "Browser Boundary") throw new Error(`${tabId}: 페이지 신원 불일치(${JSON.stringify(identity.text)})`);
       await verifyIme(rpc, win, plugin, tabId, IME_TEXTS[index]);
+      // tab.open + pane.split은 두 view를 먼저 선언하므로 엔진도 둘을 병렬 생성할 수 있다.
+      // 부분 prefix를 기대하지 않고 선언된 전체 view 집합과 엔진 장부의 일대일성을 검사한다.
+      await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, `create-${index}`);
     }
 
     const tree = must(await rpc("ui.tree", {}, win), "ui.tree");
@@ -243,6 +323,27 @@ async function runEngine(client, page, engine) {
     if (native) {
       const initial = must(await rpc("webview.composition", {}, win), "initial composition");
       writes = new Map((initial.placement ?? []).map((item) => [item.label, Number(item.boundsWrites ?? 0)]));
+    }
+    await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, "first-paint-ledger");
+    const firstPaintPath = path.join(engineEvidence, "first-paint.png");
+    must(await rpc("window.snapshot", { path: firstPaintPath }, win), "first paint snapshot");
+    assertFrameMarkers(firstPaintPath, `${engine}/first-paint`, scale);
+
+    if (sentinelWin && sentinelTabId) {
+      must(await rpc(`plugin.${plugin}.gc`, {}, win, { timeoutMs: 20_000 }), "challenger owner-scoped gc");
+      const preserved = await assertEngineSurfaceLedger(
+        rpc, sentinelWin, implementation, [sentinelTabId], "cross-window-preserved",
+      );
+      if (preserved.mappedIds[0] !== sentinelSurfaceId) {
+        throw new Error(`cross-window surface identity 교체: ${sentinelSurfaceId}→${preserved.mappedIds[0]}`);
+      }
+      const identity = must(await rpc(`plugin.${plugin}.dom.text`, {
+        selector: "h1", viewId: sentinelTabId,
+      }, sentinelWin), "cross-window sentinel identity");
+      if (identity.text !== "Browser Boundary") throw new Error(`cross-window sentinel DOM 소실: ${JSON.stringify(identity)}`);
+      const sentinelPath = path.join(engineEvidence, "cross-window-sentinel.png");
+      must(await rpc("window.snapshot", { path: sentinelPath }, sentinelWin), "cross-window sentinel snapshot");
+      assertSentinelMarkers(sentinelPath, `${engine}/cross-window-sentinel`);
     }
 
     let frameCount = 0;
@@ -269,6 +370,7 @@ async function runEngine(client, page, engine) {
         } else if (windowed) {
           await assertWindowedComposition(rpc, win, plugin, tabIds, addresses);
         }
+        await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, `cross-click-${name}`);
         console.log(`✓ ${name}: ${FRAMES_PER_CLICK} frames · 두 live marker · ${native ? "DOM/native exact" : windowed ? "DOM/CEF exact" : "DOM/native-offscreen exact"}`);
       }
     }
@@ -291,10 +393,16 @@ async function runEngine(client, page, engine) {
     if (Number(fastResize.resizeElapsedMs) > 4_000) {
       throw new Error(`rapid window resize 응답 정지: ${fastResize.resizeElapsedMs}ms/${fastSizes.length}단계`);
     }
-    for (const file of fastFiles) assertFrameMarkers(path.join(fastResizeDir, file), `${engine}/window-fast/${file}`, scale);
+    // 최소 높이에서는 입력 아래의 상태 marker가 정상적으로 viewport 밖에 놓일 수 있다. 전이 중에는
+    // 상단의 고정 ruler로 live frame을 판정하고, 원복 직후 실제 input 값·event ledger를 다시 읽는다.
+    for (const file of fastFiles) assertFrameMarkers(
+      path.join(fastResizeDir, file), `${engine}/window-fast/${file}`, scale, { requireInput: false },
+    );
     frameCount += fastFiles.length;
     await assertViewportComposition(rpc, win, plugin, tabIds, addresses, scale,
       path.join(engineEvidence, "resize-window-restored.png"), `${engine}/window-restored`);
+    await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, "window-resize-restored");
+    await assertImePersisted(rpc, win, plugin, tabIds, "window-resize-restored");
 
     // 탭 패널 경계 resize — 실제 gutter pointer path를 양방향으로 움직이고 전 구간을 캡처한다.
     const resizeTree = must(await rpc("ui.tree", { rects: true }, win), "resize ui.tree");
@@ -315,12 +423,14 @@ async function runEngine(client, page, engine) {
       for (const file of files) assertFrameMarkers(path.join(dir, file), `${engine}/pane-${direction}/${file}`, scale);
       await assertViewportComposition(rpc, win, plugin, tabIds, addresses, scale,
         path.join(engineEvidence, `resize-pane-${direction}.png`), `${engine}/pane-${direction}`);
+      await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, `pane-resize-${direction}`);
       frameCount += files.length;
     }
 
     const finalPath = path.join(engineEvidence, "final.png");
     must(await rpc("window.snapshot", { path: finalPath }, win), "final snapshot");
     assertFrameMarkers(finalPath, `${engine}/final`, scale);
+    await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, "final-ledger");
     console.log(`✓ ${engine} GREEN — 한글 IME 2개 · 교차 클릭 ${CYCLES * 2}회 · 급격한 창 resize ${fastSizes.length}단계/${fastResize.resizeElapsedMs}ms · 패널 resize 왕복 · 연속 프레임 ${frameCount}장`);
     return frameCount;
   } finally {
@@ -329,6 +439,12 @@ async function runEngine(client, page, engine) {
     }
     if (win && process.env.KEEP !== "1") await releaseFixtureWindow(rpc, FIXTURE_ROOT).catch(() => {});
     else if (win) console.log(`KEEP=1 — 픽스처 창 보존: ${win}`);
+    if (sentinelWin && sentinelHomeOverride) {
+      await rpc("plugin.settings.reset", { id: plugin, key: "homeUrl", scope: "project" }, sentinelWin).catch(() => {});
+    }
+    if (sentinelWin && process.env.KEEP !== "1") {
+      await releaseFixtureWindow(rpc, path.join(FIXTURE_ROOT, "owner-sentinel", engine)).catch(() => {});
+    }
   }
 }
 

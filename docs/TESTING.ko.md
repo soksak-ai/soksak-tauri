@@ -34,7 +34,11 @@
   큰 폭의 축소·확대를 짧은 간격으로 반복하면서 64프레임을 기록한다. 모든 프레임에서 두 marker가
   살아 있고, resize 거래가 정해진 시간 안에 끝나며, 마지막 DOM 슬롯·페이지 viewport·고정 marker
   크기가 rounding-only로 일치해야 한다. 구현별 status는 실패를 설명할 수 있지만 제품 기준을 낮출
-  수 없다.
+  수 없다. 생성·첫 페인트·매 교차 클릭·창 resize 정착·패널 resize 양 끝·최종 캡처마다 엔진 기반
+  구현은 `viewId -> surfaceId -> 실제 live engine surface`, 정확한 `plugin@window` 소유권,
+  visibility, ledger 동일성, viewport 정착도 함께 증명한다. 별도 무포커스 fixture 창이 공개된
+  owner-scope `gc`를 실행해도 첫 창의 surface id·DOM 신원·한글 입력 상태·픽셀이 그대로여야 한다.
+  이것이 교차 창 surface 오회수의 회귀 게이트다.
 
 ## 하니스 규칙 (실측으로 얻은)
 

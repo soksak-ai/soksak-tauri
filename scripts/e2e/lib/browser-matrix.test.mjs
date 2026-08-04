@@ -2,10 +2,12 @@
 import { describe, expect, it } from "vitest";
 import {
   browserImplementations,
+  browserSurfaceInvariant,
   fixtureHtml,
   parseBrowserEngines,
   fixtureMarkers,
   fixtureInputMarkers,
+  fixtureMarkerSize,
   markerEvidence,
   markerPixels,
   hostileWindowResizeSizes,
@@ -37,6 +39,59 @@ describe("브라우저 구현 행렬", () => {
     expect(new Set(dw)).toEqual(new Set([-1, 0, 1]));
     expect(new Set(dh)).toEqual(new Set([-1, 0, 1]));
   });
+
+  it("windowed view→surface→engine 장부가 창 owner·가시성·bounds까지 일치해야 한다", () => {
+    expect(browserSurfaceInvariant({
+      surface: "engine-windowed",
+      plugin: "soksak-plugin-browser-chromium",
+      windowLabel: "w-a",
+      viewIds: ["tab-left", "tab-right"],
+      expectedVisible: [true, true],
+      stats: {
+        ids: [11, 12, 90],
+        idMap: { "chromium-tab-left": 11, "chromium-tab-right": 12 },
+        ledger: [11, 12],
+        visibility: { "chromium-tab-left": true, "chromium-tab-right": true },
+        surfaces: [
+          { id: 11, owner: "soksak-plugin-browser-chromium@w-a", hidden: false, bounds: { x: 1, y: 2, w: 300, h: 200 } },
+          { id: 12, owner: "soksak-plugin-browser-chromium@w-a", hidden: false, bounds: { x: 301, y: 2, w: 300, h: 200 } },
+          { id: 90, owner: "soksak-plugin-browser-chromium@w-b", hidden: false },
+        ],
+      },
+    })).toEqual({ ok: true, errors: [], mappedIds: [11, 12] });
+  });
+
+  it("offscreen의 죽은 surface 매핑·타 창 owner·pending resize를 모두 RED로 만든다", () => {
+    const verdict = browserSurfaceInvariant({
+      surface: "engine-offscreen",
+      plugin: "soksak-plugin-browser-chromium-offscreen",
+      windowLabel: "w-a",
+      viewIds: ["tab-left", "tab-right"],
+      expectedVisible: [true, true],
+      stats: {
+        ids: [
+          { viewId: "tab-left", surfaceId: 3 },
+          { viewId: "tab-right", surfaceId: 7 },
+        ],
+        ledger: [3, 7],
+        engine: {
+          ids: [7],
+          surfaces: [{
+            id: 7,
+            owner: "soksak-plugin-browser-chromium-offscreen@w-b",
+            hidden: false,
+            resize: { pending: true },
+            viewport: { matches: false },
+          }],
+        },
+      },
+    });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.errors.join("\n")).toContain("tab-left:engine-live-missing:3");
+    expect(verdict.errors.join("\n")).toContain("tab-right:owner");
+    expect(verdict.errors.join("\n")).toContain("tab-right:resize-pending");
+    expect(verdict.errors.join("\n")).toContain("tab-right:viewport-mismatch");
+  });
 });
 
 describe("공통 브라우저 fixture", () => {
@@ -44,14 +99,14 @@ describe("공통 브라우저 fixture", () => {
     expect(viewportAlignment({
       slot: { w: 608, h: 262 },
       viewport: { w: 608, h: 262 },
-      marker: { width: 160, height: 40 },
-      markerPixels: { width: 320, height: 80 },
+      marker: fixtureMarkerSize,
+      markerPixels: { width: 128, height: 80 },
       scale: 2,
     })).toEqual({ ok: true, errors: [] });
     expect(viewportAlignment({
       slot: { w: 900, h: 400 },
       viewport: { w: 608, h: 262 },
-      marker: { width: 160, height: 40 },
+      marker: fixtureMarkerSize,
       markerPixels: { width: 474, height: 122 },
       scale: 2,
     }).ok).toBe(false);
@@ -73,7 +128,7 @@ describe("공통 브라우저 fixture", () => {
     expect(html).toContain('id="marker"');
     expect(html).toContain('id="typed-marker"');
     expect(html).toContain(fixtureInputMarkers[0]);
-    expect(html).toContain("width:160px;height:40px");
+    expect(html).toContain(`width:${fixtureMarkerSize.width}px;height:${fixtureMarkerSize.height}px`);
     expect(html).toContain("@media(max-height:520px)");
   });
 
