@@ -37,6 +37,7 @@ export interface NativeSurfaceFact {
   label: string | null;
   hidden: boolean;
   effectivelyHidden: boolean;
+  autoresizingMask: number | null;
   layerContentsRedrawPolicy: number | null;
   layerContentsPlacement: number | null;
   nativeFrame: AuditRect;
@@ -179,6 +180,7 @@ interface EngineStats {
     label?: string | null;
     hidden: boolean;
     effectivelyHidden: boolean;
+    autoresizingMask?: number;
     layerContentsRedrawPolicy?: number;
     layerContentsPlacement?: number;
     frame: AuditRect;
@@ -196,6 +198,9 @@ export function normalizeNativeSurfaces(
     label: surface.label ?? null,
     hidden: surface.hidden,
     effectivelyHidden: surface.effectivelyHidden,
+    autoresizingMask: Number.isFinite(surface.autoresizingMask)
+      ? Number(surface.autoresizingMask)
+      : null,
     layerContentsRedrawPolicy: Number.isFinite(surface.layerContentsRedrawPolicy)
       ? Number(surface.layerContentsRedrawPolicy)
       : null,

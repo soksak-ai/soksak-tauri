@@ -131,6 +131,10 @@ fn registered_native_surfaces_never_scale_cached_layer_pixels() {
         "새 paint 전 cached layer image를 새 bounds에 scale하지 않아야 한다"
     );
     assert!(
+        policy.contains("setAutoresizingMask(NSAutoresizingMaskOptions(0))"),
+        "공용 전체창 host의 resize가 명시적 bounds 소유 surface를 다시 resize하면 안 된다"
+    );
+    assert!(
         src.contains("configure_surface_resize(view)"),
         "엔진이 등록한 실제 NSView에도 정책을 적용해야 한다"
     );

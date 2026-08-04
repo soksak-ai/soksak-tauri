@@ -375,6 +375,7 @@ pub async fn engine_surface_stats(app: AppHandle, window: tauri::Window) -> serd
                     "lighting": lighting,
                     "hidden": v.isHidden(),
                     "effectivelyHidden": unsafe { v.isHiddenOrHasHiddenAncestor() },
+                    "autoresizingMask": v.autoresizingMask().0,
                     "layerContentsRedrawPolicy": v.layerContentsRedrawPolicy().0,
                     "layerContentsPlacement": v.layerContentsPlacement().0,
                     "frame": { "x": f.origin.x, "y": f.origin.y, "w": f.size.width, "h": f.size.height },

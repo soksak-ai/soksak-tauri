@@ -711,6 +711,10 @@ Every native surface registered with the Tauri compositor also uses AppKit's
 defaults are `Never` and `ScaleAxesIndependently`; those defaults stretch the last remote-layer image
 until WKWebView or CEF submits its next frame. `webview.composition.surfaces[]` exposes both applied
 policy values (`2` and `11`) alongside each live frame.
+The registered surface autoresizing mask is `0`: the public DOM-slot bounds transaction is its only
+frame owner. The full-window engine host may autoresize, but it must not proportionally resize its
+arbitrarily positioned children before their explicit bounds arrive. The applied mask is exposed as
+`webview.composition.surfaces[].autoresizingMask`.
 `webview.composition.engine.preservesContentDuringLiveResize`
 exposes the preservation policy and must be `false`. Electron retains its ordinary DOM/window behavior
 and installs none of these rules.

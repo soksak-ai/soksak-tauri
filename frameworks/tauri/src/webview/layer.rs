@@ -241,6 +241,9 @@ pub fn set_holes(label: &str, holes: Vec<super::Hole>) {
 // 등록된 Tauri 합성 surface는 resize redraw를 요청하고 그 사이의 cached image는 원래 픽셀
 // 크기로 top-left에 둔다. 가림/스냅샷이 아니라 AppKit이 제공하는 layer resize 정책이다.
 fn configure_surface_resize(view: &NSView) {
+    // surface frame은 공개 DOM slot→Tauri bounds transaction만 쓴다. 공용 전체창 host의
+    // autoresize가 같은 child를 먼저 비례 변경하면 resize 주인이 둘이 된다.
+    view.setAutoresizingMask(NSAutoresizingMaskOptions(0));
     view.setLayerContentsRedrawPolicy(NSViewLayerContentsRedrawPolicy::DuringViewResize);
     view.setLayerContentsPlacement(NSViewLayerContentsPlacement::TopLeft);
 }

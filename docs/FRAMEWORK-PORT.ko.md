@@ -704,6 +704,10 @@ Tauri compositor에 등록한 모든 네이티브 surface는 AppKit의 `DuringVi
 `ScaleAxesIndependently`는 WKWebView/CEF가 다음 프레임을 제출하기 전 마지막 remote-layer 이미지를
 새 bounds에 늘인다. `webview.composition.surfaces[]`가 각 live frame과 함께 적용된 두 정책값
 (`2`, `11`)을 공개한다.
+등록 surface의 autoresizing mask는 `0`이다. 공개 DOM-slot bounds transaction만 그 frame의
+주인이다. 전체창 engine host 자체는 autoresize할 수 있지만, 명시 bounds가 오기 전에 그 안의 임의
+위치 child까지 비례 resize하면 안 된다. 적용값은
+`webview.composition.surfaces[].autoresizingMask`로 공개한다.
 `webview.composition.engine.preservesContentDuringLiveResize`가 보존 정책을 공개하며 반드시 `false`여야
 한다. Electron은 일반 DOM/창 동작을 유지하고 이 규칙들을 설치하지 않는다.
 

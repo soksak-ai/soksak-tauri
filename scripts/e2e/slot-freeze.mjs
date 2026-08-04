@@ -105,6 +105,8 @@ function assertTauriSurfaceResizePolicy(data, stage) {
       errors.push(`${surface.label ?? surface.ptr}:redraw=${surface.layerContentsRedrawPolicy}/2`);
     if (surface.layerContentsPlacement !== 11)
       errors.push(`${surface.label ?? surface.ptr}:placement=${surface.layerContentsPlacement}/11`);
+    if (surface.autoresizingMask !== 0)
+      errors.push(`${surface.label ?? surface.ptr}:autoresizing=${surface.autoresizingMask}/0`);
   }
   if (errors.length) throw new Error(`${stage}: Tauri surface resize policy 불일치 — ${errors.join(", ")}`);
 }
