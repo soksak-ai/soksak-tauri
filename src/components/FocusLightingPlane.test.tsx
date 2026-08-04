@@ -45,11 +45,20 @@ describe("FocusLightingPlane — 기본은 어둡고 포커스만 밝다", () =>
     const plane = host.querySelector<SVGSVGElement>("[data-node='focus-lighting/space-a']");
     expect(plane).not.toBeNull();
     expect(plane?.getAttribute("aria-hidden")).toBe("true");
+    expect(host.querySelector("mask")?.getAttribute("data-node")).toBe(
+      "focus-lighting/space-a/mask",
+    );
     expect(host.querySelectorAll("[data-lighting-base]")).toHaveLength(1);
+    expect(host.querySelector("[data-lighting-base]")?.getAttribute("data-node")).toBe(
+      "focus-lighting/space-a/base",
+    );
     expect(host.querySelector("[data-lighting-base]")?.getAttribute("fill-opacity")).toBe("0.5");
 
     const aperture = host.querySelector<SVGRectElement>("[data-lighting-aperture='focused']");
     expect(aperture).not.toBeNull();
+    expect(aperture?.getAttribute("data-node")).toBe(
+      "focus-lighting/space-a/aperture/focused",
+    );
     expect(aperture?.classList.contains("flip-move")).toBe(true);
     expect(aperture?.style.getPropertyValue("--l")).toBe("50%");
   });
@@ -69,7 +78,13 @@ describe("FocusLightingPlane — 기본은 어둡고 포커스만 밝다", () =>
     // mask의 blocked cutout이 base와 blocked veil의 중첩을 막는다. 0.5 위에 0.7을
     // 덧칠해 0.85가 되는 구현은 허용하지 않는다.
     expect(host.querySelectorAll("[data-lighting-cutout='blocked']")).toHaveLength(1);
+    expect(
+      host.querySelector("[data-lighting-cutout='blocked']")?.getAttribute("data-node"),
+    ).toBe("focus-lighting/space-b/cutout/blocked");
     const blocked = host.querySelector<SVGRectElement>("[data-lighting-blocked='blocked']");
+    expect(blocked?.getAttribute("data-node")).toBe(
+      "focus-lighting/space-b/blocked/blocked",
+    );
     expect(blocked?.getAttribute("fill-opacity")).toBe("0.7");
   });
 });

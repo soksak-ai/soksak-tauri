@@ -44,6 +44,7 @@ export function FocusLightingPlane({
         <mask
           id={maskId}
           className="focus-lighting-mask"
+          data-node={`focus-lighting/${scopeId}/mask`}
           x="0"
           y="0"
           width="100%"
@@ -54,6 +55,7 @@ export function FocusLightingPlane({
           {focused && (
             <rect
               className={regionClass(focused.moving)}
+              data-node={`focus-lighting/${scopeId}/aperture/${focused.id}`}
               data-lighting-aperture={focused.id}
               style={focused.style}
               fill="black"
@@ -63,6 +65,7 @@ export function FocusLightingPlane({
             <rect
               key={`cutout-${region.id}`}
               className={regionClass(region.moving)}
+              data-node={`focus-lighting/${scopeId}/cutout/${region.id}`}
               data-lighting-cutout={region.id}
               style={region.style}
               fill="black"
@@ -73,6 +76,7 @@ export function FocusLightingPlane({
 
       <rect
         className="focus-lighting-base"
+        data-node={`focus-lighting/${scopeId}/base`}
         data-lighting-base="idle"
         width="100%"
         height="100%"
@@ -85,6 +89,7 @@ export function FocusLightingPlane({
         <rect
           key={`blocked-${region.id}`}
           className={regionClass(region.moving)}
+          data-node={`focus-lighting/${scopeId}/blocked/${region.id}`}
           data-lighting-blocked={region.id}
           style={region.style}
           fill="black"

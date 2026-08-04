@@ -79,6 +79,7 @@ describe("흐림 단계 — 표면 규칙", () => {
     expect(rules).not.toMatch(/\.(?:pane|tab-body)\[data-dim\][^{]*\{[^}]*filter\s*:/s);
     expect(rules).toMatch(/\.focus-lighting-plane\b/);
     expect(rules).toMatch(/\.focus-lighting-region\b/);
+    expect(rules).toMatch(/\.focus-lighting-mask\s*\{[^}]*mask-type:\s*luminance/s);
     for (const [sel, body] of [...rules.matchAll(/([^{}]+)\{([^}]*)\}/g)].map(
       (m) => [m[1] ?? "", m[2] ?? ""] as const,
     )) {

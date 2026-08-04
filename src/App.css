@@ -568,7 +568,9 @@ body,
   z-index: 6;
 }
 .focus-lighting-mask {
-  mask-type: alpha;
+  /* 흰 base는 veil을 유지하고 검은 aperture/cutout은 제거한다. 색의 명도를 의미로 쓰므로
+     alpha가 아니라 luminance다. alpha에서는 둘 다 불투명(alpha=1)이라 구멍이 사라진다. */
+  mask-type: luminance;
 }
 /* SVG2 geometry properties — pane/tab-body와 같은 변수·같은 산수를 소비한다. 좌표를 다시
    측정하거나 추종하지 않으므로 별도 clock이 생기지 않는다. */
