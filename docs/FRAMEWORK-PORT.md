@@ -703,7 +703,10 @@ stretched mixed-epoch frame. Disabling preservation is necessary but does not co
 `setSize`: every registered app-window `NSWindowDidResize` notification also completes AppKit layout,
 invalidates the window hierarchy, and displays it before returning from that notification turn. This
 single event-driven transaction covers both edge-drag and programmatic resize; it does not poll and does
-not run for engine-owned helper windows. `webview.composition.engine.preservesContentDuringLiveResize`
+not run for engine-owned helper windows. The Tauri framework adapter does not expose tao's macOS
+fire-and-forget `setSize` as the shared `setPhysicalSize` contract: its backend command performs
+`setContentSize`, layout, and display on the main thread and resolves only after that transaction.
+`webview.composition.engine.preservesContentDuringLiveResize`
 exposes the preservation policy and must be `false`. Electron retains its ordinary DOM/window behavior
 and installs none of these rules.
 

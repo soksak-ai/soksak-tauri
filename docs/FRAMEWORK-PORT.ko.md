@@ -696,6 +696,9 @@ child compositor frame을 바꿀 수 있기 때문이다. 따라서 Tauri 어댑
 `NSWindowDidResize` 통지에서 AppKit layout을 끝내고 창 계층을 invalidate한 뒤 그 통지 차례가
 끝나기 전에 display한다. 이 하나의 사건 기반 transaction이 가장자리 드래그와 programmatic resize를
 함께 덮으며, polling하지 않고 엔진 소유 보조 창에는 적용하지 않는다.
+Tauri 프레임워크 어댑터는 tao의 macOS fire-and-forget `setSize`를 공용 `setPhysicalSize` 계약으로
+노출하지 않는다. 백엔드 명령이 메인 스레드에서 `setContentSize`·layout·display를 수행하고 그
+transaction이 끝난 뒤에만 resolve한다.
 `webview.composition.engine.preservesContentDuringLiveResize`가 보존 정책을 공개하며 반드시 `false`여야
 한다. Electron은 일반 DOM/창 동작을 유지하고 이 규칙들을 설치하지 않는다.
 

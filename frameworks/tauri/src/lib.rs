@@ -777,6 +777,7 @@ pub fn run() {
             project_registry::project_release,
             project_registry::project_owners,
             window::window_create,
+            window::window_set_physical_size,
             window::window_monitors,
             window::window_place,
             window::window_list,

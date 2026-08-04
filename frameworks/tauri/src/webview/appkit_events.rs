@@ -40,7 +40,7 @@ pub fn forget_nswindow_label(label: &str) {
 // constraint를 먼저 layout하고, 전체 창을 invalidate한 뒤 즉시 display한다. 이 함수는 AppKit
 // 객체만 만지며 wry/Tauri 창 레지스트리를 재진입하지 않는다.
 #[cfg(target_os = "macos")]
-fn commit_resize_composition(window: &objc2_app_kit::NSWindow) {
+pub(crate) fn commit_resize_composition(window: &objc2_app_kit::NSWindow) {
     window.layoutIfNeeded();
     if let Some(content) = window.contentView() {
         content.layoutSubtreeIfNeeded();

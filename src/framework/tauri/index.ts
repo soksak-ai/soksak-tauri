@@ -16,7 +16,6 @@ import {
   LogicalPosition,
   LogicalSize,
   PhysicalPosition,
-  PhysicalSize,
   Window,
 } from "@tauri-apps/api/window";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -69,7 +68,9 @@ function wrapWindow(win: Window, label: string): FrameworkWindowHandle {
     },
     scaleFactor: () => win.scaleFactor(),
     setPhysicalPosition: (x, y) => win.setPosition(new PhysicalPosition(x, y)),
-    setPhysicalSize: (w, h) => win.setSize(new PhysicalSize(w, h)),
+    // tao/macOS의 Window.setSize는 실제 setContentSize를 메인 큐에 async dispatch한 뒤 먼저
+    // resolve한다. Tauri 백엔드가 적용+AppKit display를 끝낸 뒤 답하는 명령으로 그 차이를 흡수한다.
+    setPhysicalSize: (w, h) => tauriInvoke("window_set_physical_size", { label, width: w, height: h }),
     setAlwaysOnTop: (on) => win.setAlwaysOnTop(on),
     maximize: () => win.maximize(),
     unmaximize: () => win.unmaximize(),

@@ -89,6 +89,30 @@ fn every_appkit_resize_commits_layout_and_display_in_the_notification_turn() {
 }
 
 #[test]
+fn physical_resize_replies_after_appkit_applied_and_displayed_the_size() {
+    let src = std::fs::read_to_string("src/window.rs").expect("window source");
+    let command = src
+        .split_once("fn window_set_physical_size(")
+        .expect("framework resize command")
+        .1
+        .split_once("\n}\n\n// 한 창의")
+        .expect("command boundary")
+        .0;
+    assert!(
+        command.contains("setContentSize"),
+        "tao의 비동기 setContentSize dispatch를 앱 창 계약으로 노출하면 안 된다"
+    );
+    assert!(
+        command.contains("commit_resize_composition"),
+        "크기 적용 뒤 같은 메인스레드 transaction에서 layout/display를 확정해야 한다"
+    );
+    assert!(
+        command.contains("recv_timeout"),
+        "명령 응답은 메인스레드 resize transaction 완료를 기다려야 한다"
+    );
+}
+
+#[test]
 fn prune_window_persistence_removes_only_that_window() {
     let c = rusqlite::Connection::open_in_memory().unwrap();
     c.execute_batch("PRAGMA foreign_keys=ON;").unwrap();

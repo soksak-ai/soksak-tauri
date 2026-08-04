@@ -7,6 +7,55 @@
 
 use tauri::{AppHandle, Manager, WebviewWindowBuilder};
 
+/// 물리 픽셀 창 크기를 **적용 완료 후** 답하는 Tauri 경계.
+///
+/// tao의 macOS `set_inner_size`는 `setContentSize:`를 메인 GCD 큐에 async dispatch하고 즉시
+/// 반환한다. 그 SDK Promise를 완료 계약으로 노출하면 다음 크기·캡처가 이전 resize와 겹쳐
+/// WindowServer의 확대/축소 중간 합성물이 실제 프레임으로 보인다. 이 명령은 메인 스레드에서
+/// 크기와 AppKit layout/display를 한 transaction으로 적용하고, 그 closure의 완료를 기다린다.
+#[tauri::command]
+pub async fn window_set_physical_size(
+    app: AppHandle,
+    label: String,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
+    if width == 0 || height == 0 {
+        return Err("창 크기는 0보다 커야 한다".into());
+    }
+    let window = app
+        .get_window(&label)
+        .ok_or_else(|| format!("창 없음: {label}"))?;
+
+    #[cfg(target_os = "macos")]
+    {
+        let scale = window.scale_factor().map_err(|e| e.to_string())?;
+        let ptr = window.ns_window().map_err(|e| e.to_string())? as usize;
+        if ptr == 0 {
+            return Err(format!("창의 NSWindow를 찾지 못했다: {label}"));
+        }
+        let (tx, rx) = std::sync::mpsc::sync_channel::<Result<(), String>>(1);
+        app.run_on_main_thread(move || {
+            use objc2_foundation::NSSize;
+            let native = unsafe { &*(ptr as *const objc2_app_kit::NSWindow) };
+            native.setContentSize(NSSize::new(width as f64 / scale, height as f64 / scale));
+            crate::webview::appkit_events::commit_resize_composition(native);
+            let _ = tx.send(Ok(()));
+        })
+        .map_err(|e| e.to_string())?;
+        return rx
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .map_err(|_| format!("창 resize transaction 시간 초과: {label}"))?;
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        window
+            .set_size(tauri::PhysicalSize::new(width, height))
+            .map_err(|e| e.to_string())
+    }
+}
+
 // 한 창의 네이티브를 설치하는 단일 진입점(MW1) — main(setup)·새 창(window_create)이 같은 함수를
 // 호출해 중복·누락을 막는다. 레이어 역전(hole-punch)과 신호등을 그 창에 건다. 앱 전역 모니터
 // (클릭·라이브리사이즈)는 창과 무관하게 1회만 설치되므로 여기 포함하지 않는다(lib.rs setup).
