@@ -64,6 +64,7 @@ const composition = moduleState("framework/tauri.fix#contentViewComposition", ()
   subscriptions: [] as Disposable[],
   mutationObserver: null as MutationObserver | null,
   installed: false,
+  windowResizeCommitScheduled: false,
 }));
 
 function stateOf(label: string): SurfaceState {
@@ -102,6 +103,9 @@ function rectKey(rect: SlotRect): string {
 function observeSlot(state: SurfaceState, slot: HTMLElement): void {
   state.observer?.disconnect();
   state.observer = new ResizeObserver(() => {
+    // window resize epoch는 onWindowResize의 post-paint commit이 현재 rect를 강제 적용한다.
+    // 그 전에 ResizeObserver가 같은 child를 새 bounds로 보내면 DOM backing보다 앞서간다.
+    if (composition.windowResizeCommitScheduled) return;
     void requestSlotSync(state).catch((error) => {
       console.error(`[content-view] 슬롯 크기 추종 실패: ${state.label}`, error);
     });
@@ -351,11 +355,20 @@ export function installNativeContentViewComposition(): void {
   // 전과 같아도 캐시 hit로 생략하면 안 된다. 브라우저 resize 사건을 권위 재정착 에지로 삼고
   // 기존 label별 drain이 폭주를 최신 rect 한 번으로 합친다. 타이머/rAF 추종은 없다.
   const onWindowResize = () => {
-    for (const state of composition.surfaces.values()) {
-      void requestSlotSync(state, true).catch((error) => {
-        console.error(`[content-view] 창 resize 정착 실패: ${state.label}`, error);
-      });
-    }
+    if (composition.windowResizeCommitScheduled) return;
+    composition.windowResizeCommitScheduled = true;
+    // resize 이벤트와 ResizeObserver는 새 layout 뒤·그 frame의 paint 전이다. 이 자리에서
+    // native child를 먼저 resize하면 WindowServer가 아직 과거 DOM backing인 shell과 새 native
+    // surface를 한 프레임에 섞는다. 두 번째 rAF는 첫 rAF 뒤의 DOM paint를 한 번 통과한 뒤 실행된다.
+    // 사건 폭주는 이 단일 예약으로 합치며 반복 감시나 타이머는 없다.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      composition.windowResizeCommitScheduled = false;
+      for (const state of composition.surfaces.values()) {
+        void requestSlotSync(state, true).catch((error) => {
+          console.error(`[content-view] 창 resize 정착 실패: ${state.label}`, error);
+        });
+      }
+    }));
   };
   window.addEventListener("resize", onWindowResize);
   composition.subscriptions.push({
@@ -479,4 +492,5 @@ export function __resetNativeContentViewCompositionForTest(): void {
   composition.mutationObserver?.disconnect();
   composition.mutationObserver = null;
   composition.installed = false;
+  composition.windowResizeCommitScheduled = false;
 }
