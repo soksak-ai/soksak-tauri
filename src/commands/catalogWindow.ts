@@ -17,6 +17,11 @@ import {
   type WindowSnapshotLike,
 } from "../state/snapshotGeneration";
 import { windowTarget, P } from "./catalog";
+import { recordWindowFrames } from "./windowRecorder";
+import {
+  runWindowResizeSequence,
+  type PhysicalWindowSize,
+} from "./windowResizeSequence";
 
 export function registerWindowCatalog(): void {
   register("window.info", {
@@ -63,6 +68,59 @@ export function registerWindowCatalog(): void {
     handler: async (p) => {
       await currentWindow().setPhysicalSize(p.w as number, p.h as number);
       return { w: p.w, h: p.h };
+    },
+  });
+
+  register("window.resizeSequence", {
+    description:
+      "Apply a finite sequence of native physical window sizes in order while optionally recording every transition frame. Used to reproduce live-resize stalls, blanks, stale frames, and surface drift without focusing the window.",
+    params: {
+      sizes: {
+        type: "json",
+        description: "Ordered array of physical pixel sizes: [{w,h}, ...] (1..120)",
+        required: true,
+      },
+      intervalMs: {
+        type: "number",
+        description: "Caller-owned delay between size changes in ms (default 8, 0..1000)",
+      },
+      recordDir: { type: "string", description: "Optional output directory for transition PNGs" },
+      recordFrames: { type: "number", description: "Frames to record when recordDir is set (default 64, max 600)" },
+      recordIntervalMs: { type: "number", description: "Recording interval in ms (default 16)" },
+    },
+    returns: "{ steps, frames, resizeElapsedMs, elapsedMs, final:{w,h} }",
+    message: (d) => tmsg("msg.window.resizeSequence", { steps: Number(d.steps), frames: Number(d.frames) }),
+    errors: ["INVALID_PARAMS"],
+    examples: [
+      'window.resizeSequence \'{"sizes":[{"w":900,"h":700},{"w":1500,"h":800},{"w":1200,"h":900}],"intervalMs":8}\'',
+    ],
+    handler: async (p) => {
+      try {
+        const sizes = p.sizes as PhysicalWindowSize[];
+        const intervalMs = (p.intervalMs as number | undefined) ?? 8;
+        const recordDir = p.recordDir as string | undefined;
+        const record = recordDir
+          ? {
+              dir: recordDir,
+              frames: Math.max(1, Math.min(600, (p.recordFrames as number | undefined) ?? 64)),
+              intervalMs: Math.max(0, (p.recordIntervalMs as number | undefined) ?? 16),
+            }
+          : undefined;
+        const win = currentWindow();
+        return await runWindowResizeSequence({
+          sizes,
+          intervalMs,
+          record,
+          setSize: (w, h) => win.setPhysicalSize(w, h),
+          recordFrames: recordWindowFrames,
+        });
+      } catch (error) {
+        return {
+          ok: false as const,
+          code: "INVALID_PARAMS" as const,
+          message: error instanceof Error ? error.message : String(error),
+        };
+      }
     },
   });
 

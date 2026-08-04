@@ -20,6 +20,7 @@ import {
   fixtureHtml,
   fixtureInputMarkers,
   fixtureMarkers,
+  hostileWindowResizeSizes,
   markerEvidence,
   parseBrowserEngines,
   unwrapEvalValue,
@@ -32,6 +33,7 @@ const EVIDENCE_ROOT = path.join(os.homedir(), ".soksak-e2e", "evidence", "slot-f
 const ENGINES = parseBrowserEngines(process.env.BROWSER_ENGINES ?? process.env.BROWSER_ENGINE);
 const CYCLES = 3;
 const FRAMES_PER_CLICK = 48;
+const FAST_RESIZE_FRAMES = 64;
 const MARKER_SAMPLE_STEP = 2;
 // 장식의 동색 픽셀 합계가 아니라 넓고 이어진 fixture 직사각형 하나를 요구한다.
 const MIN_MARKER_WIDTH = 100;
@@ -271,12 +273,26 @@ async function runEngine(client, page, engine) {
       }
     }
 
-    // 창 경계 resize — 축소와 원복(확대)을 모두 거쳐 같은 viewport/marker 기준으로 판정한다.
-    const smaller = { w: Math.max(1000, Number(originalWindow.w) - 240), h: Math.max(760, Number(originalWindow.h) - 160) };
-    must(await rpc("window.resize", smaller, win), "window shrink");
-    await assertViewportComposition(rpc, win, plugin, tabIds, addresses, scale,
-      path.join(engineEvidence, "resize-window-smaller.png"), `${engine}/window-smaller`);
-    must(await rpc("window.resize", { w: originalWindow.w, h: originalWindow.h }, win), "window restore");
+    // 전체 창 경계 resize — 녹화를 먼저 열고 큰 폭의 축소/확대를 짧은 간격으로 반복한다.
+    // 최종 정합만 맞고 도중에 blank/stale/hang이면 프레임 생존 또는 거래 시간에서 RED다.
+    const fastResizeDir = path.join(engineEvidence, "resize-window-fast");
+    const fastSizes = hostileWindowResizeSizes(originalWindow);
+    const fastResize = must(await rpc("window.resizeSequence", {
+      sizes: fastSizes,
+      intervalMs: 8,
+      recordDir: fastResizeDir,
+      recordFrames: FAST_RESIZE_FRAMES,
+      recordIntervalMs: 16,
+    }, win, { timeoutMs: 60_000 }), "rapid window resize");
+    const fastFiles = fs.readdirSync(fastResizeDir).filter((file) => /^f\d{4}\.png$/.test(file)).sort();
+    if (Number(fastResize.steps) !== fastSizes.length || Number(fastResize.frames) !== FAST_RESIZE_FRAMES || fastFiles.length !== FAST_RESIZE_FRAMES) {
+      throw new Error(`rapid window resize 거래 누락: ${JSON.stringify(fastResize)} PNG=${fastFiles.length}`);
+    }
+    if (Number(fastResize.resizeElapsedMs) > 4_000) {
+      throw new Error(`rapid window resize 응답 정지: ${fastResize.resizeElapsedMs}ms/${fastSizes.length}단계`);
+    }
+    for (const file of fastFiles) assertFrameMarkers(path.join(fastResizeDir, file), `${engine}/window-fast/${file}`, scale);
+    frameCount += fastFiles.length;
     await assertViewportComposition(rpc, win, plugin, tabIds, addresses, scale,
       path.join(engineEvidence, "resize-window-restored.png"), `${engine}/window-restored`);
 
@@ -305,7 +321,7 @@ async function runEngine(client, page, engine) {
     const finalPath = path.join(engineEvidence, "final.png");
     must(await rpc("window.snapshot", { path: finalPath }, win), "final snapshot");
     assertFrameMarkers(finalPath, `${engine}/final`, scale);
-    console.log(`✓ ${engine} GREEN — 한글 IME 2개 · 교차 클릭 ${CYCLES * 2}회 · 창/패널 resize 왕복 · 연속 프레임 ${frameCount}장`);
+    console.log(`✓ ${engine} GREEN — 한글 IME 2개 · 교차 클릭 ${CYCLES * 2}회 · 급격한 창 resize ${fastSizes.length}단계/${fastResize.resizeElapsedMs}ms · 패널 resize 왕복 · 연속 프레임 ${frameCount}장`);
     return frameCount;
   } finally {
     if (win && homeOverride) {

@@ -8,6 +8,7 @@ import {
   fixtureInputMarkers,
   markerEvidence,
   markerPixels,
+  hostileWindowResizeSizes,
   unwrapEvalValue,
   viewportAlignment,
 } from "./browser-matrix.mjs";
@@ -25,6 +26,16 @@ describe("브라우저 구현 행렬", () => {
 
   it("알 수 없는 구현을 조용히 건너뛰지 않는다", () => {
     expect(() => parseBrowserEngines("browser,unknown")).toThrow("지원하지 않는 브라우저 구현");
+  });
+
+  it("전체 창 resize는 큰 폭의 양방향 교차를 반복하고 정확히 원복한다", () => {
+    const sizes = hostileWindowResizeSizes({ w: 2400, h: 1600 });
+    expect(sizes.length).toBeGreaterThanOrEqual(12);
+    expect(sizes.at(-1)).toEqual({ w: 2400, h: 1600 });
+    const dw = sizes.slice(1).map((size, i) => Math.sign(size.w - sizes[i].w));
+    const dh = sizes.slice(1).map((size, i) => Math.sign(size.h - sizes[i].h));
+    expect(new Set(dw)).toEqual(new Set([-1, 0, 1]));
+    expect(new Set(dh)).toEqual(new Set([-1, 0, 1]));
   });
 });
 

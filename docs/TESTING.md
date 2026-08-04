@@ -36,7 +36,11 @@ Two standard targets across every repo — core, plugins, sidecars. A repo expos
   document to the system webview, windowed Chromium, and offscreen Chromium. Each must expose its
   address bar and page identity, commit Korean text with `beforeinput` and `input`, survive six
   alternating tab moves, and retain both live page markers in every one of 48 no-focus frames per
-  move. An implementation-specific status may explain a failure; it cannot lower the product rule.
+  move. It then uses `window.resizeSequence` to alternate large shrink/grow steps at a short cadence
+  while recording 64 frames. Both markers must survive every frame, the finite resize transaction
+  must complete within its deadline, and the final DOM slot, page viewport, and fixed marker size
+  must match with rounding-only tolerance. An implementation-specific status may explain a failure;
+  it cannot lower the product rule.
 
 ## Harness rules (learned the hard way)
 

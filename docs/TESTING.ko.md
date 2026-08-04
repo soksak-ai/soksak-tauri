@@ -30,8 +30,11 @@
 - **브라우저 구현은 한 acceptance matrix를 공유.** `slot-freeze.mjs`는 시스템 웹뷰·windowed
   Chromium·offscreen Chromium에 같은 로컬 문서를 제공한다. 각 구현은 주소표시줄과 페이지 신원을
   노출하고, `beforeinput`·`input`을 동반한 한글을 커밋하며, 양 탭을 6회 교차 이동하는 동안 전이당
-  무포커스 48프레임 모두에서 두 live page marker를 유지해야 한다. 구현별 status는 실패를 설명할
-  수 있지만 제품 기준을 낮출 수 없다.
+  무포커스 48프레임 모두에서 두 live page marker를 유지해야 한다. 이어서 `window.resizeSequence`가
+  큰 폭의 축소·확대를 짧은 간격으로 반복하면서 64프레임을 기록한다. 모든 프레임에서 두 marker가
+  살아 있고, resize 거래가 정해진 시간 안에 끝나며, 마지막 DOM 슬롯·페이지 viewport·고정 marker
+  크기가 rounding-only로 일치해야 한다. 구현별 status는 실패를 설명할 수 있지만 제품 기준을 낮출
+  수 없다.
 
 ## 하니스 규칙 (실측으로 얻은)
 

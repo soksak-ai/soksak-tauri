@@ -97,6 +97,21 @@ export function parseBrowserEngines(raw) {
   return [...new Set(engines)];
 }
 
+/** 같은 원본 크기에는 언제나 같은 급격한 왕복을 만든다. 마지막 단계는 정확한 원복이다. */
+export function hostileWindowResizeSizes(original) {
+  const w = Math.round(Number(original.w));
+  const h = Math.round(Number(original.h));
+  const compact = { w: Math.max(1280, w - 720), h: Math.max(900, h - 440) };
+  const wide = { w, h: Math.max(900, h - 360) };
+  const tall = { w: Math.max(1400, w - 560), h };
+  const mid = { w: Math.max(1360, w - 420), h: Math.max(940, h - 260) };
+  const originalSize = { w, h };
+  return [
+    compact, originalSize, wide, tall, compact, mid, originalSize,
+    tall, wide, compact, originalSize, mid, compact, originalSize,
+  ].map((size) => ({ ...size }));
+}
+
 /** 플러그인 command 봉투의 eval 결과를 구현별 포장 차이 없이 페이지 반환값으로 푼다. */
 export function unwrapEvalValue(result) {
   if (result && typeof result === "object" && ("active" in result || "ledger" in result)) return result;
