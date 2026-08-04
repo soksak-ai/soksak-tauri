@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import {
   builtBinaryPath,
+  buildProfile,
   cargoBuildArgs,
   hostTriple,
   profileFromEnv,
@@ -14,6 +15,11 @@ describe("Tauri cored sidecar 준비 계약", () => {
     expect(profileFromEnv({ TAURI_ENV_DEBUG: "true" })).toBe("debug");
     expect(profileFromEnv({ TAURI_ENV_DEBUG: "false" })).toBe("release");
     expect(() => profileFromEnv({})).toThrow(/TAURI_ENV_DEBUG/);
+  });
+
+  it("중립 build-only는 Tauri 환경 없이 개발 프로필을 선택한다", () => {
+    expect(buildProfile({}, false)).toBe("debug");
+    expect(() => buildProfile({}, true)).toThrow(/TAURI_ENV_DEBUG/);
   });
 
   it("호스트 빌드는 중복 target 폴더 없이 읽고 Tauri 규약 이름으로 복사한다", () => {

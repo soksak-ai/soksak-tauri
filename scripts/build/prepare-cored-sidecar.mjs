@@ -12,6 +12,12 @@ export function profileFromEnv(env) {
   throw new Error("TAURI_ENV_DEBUG가 없다 — Tauri의 beforeDevCommand/beforeBuildCommand에서 실행해야 한다");
 }
 
+/** 번들 stage는 Tauri가 선택한 프로필을 그대로 따른다. 중립 build-only는 개발용
+ * 실행물을 준비하는 공개 명령이므로 프레임워크 환경 없이 debug를 선택한다. */
+export function buildProfile(env, stage) {
+  return stage ? profileFromEnv(env) : (env.TAURI_ENV_DEBUG === "false" ? "release" : "debug");
+}
+
 export function hostTriple(rustcVersion) {
   const line = rustcVersion.split(/\r?\n/).find((entry) => entry.startsWith("host: "));
   if (!line) throw new Error("rustc -vV에서 host triple을 찾지 못했다");
@@ -36,7 +42,7 @@ export function stagedBinaryPath(repoRoot, targetTriple) {
 }
 
 export function prepare({ env = process.env, stage }) {
-  const profile = profileFromEnv(env);
+  const profile = buildProfile(env, stage);
   const rustc = execFileSync("rustc", ["-vV"], { cwd: REPO_ROOT, encoding: "utf8" });
   const host = hostTriple(rustc);
   const declaredTarget = env.TAURI_ENV_TARGET_TRIPLE || env.CARGO_BUILD_TARGET;
