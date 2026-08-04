@@ -13,6 +13,11 @@ import {
 } from "../../lib/contentViews";
 import { onPluginEvent, type Disposable } from "../../plugins/hooks";
 import type { LayoutMove, PreparedLayoutTransition } from "../../lib/layoutTransitionHost";
+import {
+  EXTERNAL_SURFACE_TRANSITION_EVENT,
+  type ExternalSurfaceTransitionDetail,
+  type ExternalSurfaceTransitionParticipant,
+} from "../../lib/externalSurfaceTransition";
 
 const call = <T>(cmd: string, args?: Record<string, unknown>): Promise<T> =>
   invoke(cmd, args) as Promise<T>;
@@ -238,7 +243,32 @@ export async function prepareNativeContentViewMove(
       before,
     }];
   });
-  if (targets.length === 0) return {
+  // 이 어댑터가 직접 연 표면만으로 전체 문서 밖 표면을 추측하지 않는다. 공개 DOM 슬롯이
+  // 자기 소유자에게 참여 기회를 주며, 제공자는 동기적으로 claim해서 전환 잠금을 건다.
+  // 엔진·플러그인 이름은 양쪽 모두 해석하지 않는다.
+  const externalTargets = [...document.querySelectorAll<HTMLElement>(
+    "[data-content-view-body]",
+  )].flatMap((slot) => {
+    const viewId = slotViewId(slot);
+    const move = viewId ? byView.get(viewId) : undefined;
+    if (!viewId || !move || Math.abs(move.dx) < 0.5) return [];
+    // 객체 셀은 CustomEvent listener의 동기적 claim 쓰기를 TypeScript 제어 흐름에도 보존한다.
+    const claimed: { participant: ExternalSurfaceTransitionParticipant | null } = {
+      participant: null,
+    };
+    const detail: ExternalSurfaceTransitionDetail = {
+      viewId,
+      claim(next) {
+        if (claimed.participant) {
+          throw new Error(`콘텐츠 슬롯의 외부 표면 소유자가 둘입니다: ${viewId}`);
+        }
+        claimed.participant = next;
+      },
+    };
+    slot.dispatchEvent(new CustomEvent(EXTERNAL_SURFACE_TRANSITION_EVENT, { detail }));
+    return claimed.participant ? [{ slot, participant: claimed.participant }] : [];
+  });
+  if (targets.length === 0 && externalTargets.length === 0) return {
     mode: "glide",
     commit: async () => {},
     cancel: () => {},
@@ -257,34 +287,37 @@ export async function prepareNativeContentViewMove(
       if (closed) return;
       closed = true;
       try {
-        await Promise.all(targets.map(async ({ state, before }) => {
-          if (state.draining) await state.draining;
-          const slot = findContentViewSlot(state.label, document);
-          if (!slot) throw new Error(`콘텐츠 뷰 자리가 커밋에서 사라졌습니다: ${state.label}`);
-          // 이 함수는 목표 DOM의 layout effect에서 호출된다. 따라서 계산된 dx가 아니라 지금
-          // 커밋된 공개 슬롯 rect가 좌표의 단일 진실이다. 그래야 pane 이동과 sidebar 이동이
-          // 동시에 일어나도 둘 중 하나를 빠뜨린 예측 좌표에 native surface가 정박하지 않는다.
-          const rect = slotRect(slot);
-          const key = rectKey(rect);
-          state.precommitTarget = key;
-          // ResizeObserver·명시 bounds 같은 사건 경로가 같은 커밋 rect를 먼저 적용했으면 그
-          // ACK가 이미 거래를 충족했다. 같은 frame을 다시 쓰는 것은 의미 없는 z/compositor
-          // 자극이며 교차 클릭 한 번에 두 번 흔들리는 원인이므로 생략한다.
-          if (state.lastRect === key) return;
-          // 장부를 먼저 목표로 둔다. DOM mutation이 IPC ack보다 먼저 와도 일반 bounds sync가
-          // 같은 목표를 다시 써 AppKit animation을 끊지 못한다.
-          state.lastRect = key;
-          state.boundsWrites += 1;
-          try {
-            await call<boolean>("webview_bounds", {
-              label: state.label,
-              ...rect,
-            });
-          } catch (error) {
-            state.lastRect = rectKey(before);
-            throw error;
-          }
-        }));
+        await Promise.all([
+          ...targets.map(async ({ state, before }) => {
+            if (state.draining) await state.draining;
+            const slot = findContentViewSlot(state.label, document);
+            if (!slot) throw new Error(`콘텐츠 뷰 자리가 커밋에서 사라졌습니다: ${state.label}`);
+            // 이 함수는 목표 DOM의 layout effect에서 호출된다. 따라서 계산된 dx가 아니라 지금
+            // 커밋된 공개 슬롯 rect가 좌표의 단일 진실이다. 그래야 pane 이동과 sidebar 이동이
+            // 동시에 일어나도 둘 중 하나를 빠뜨린 예측 좌표에 native surface가 정박하지 않는다.
+            const rect = slotRect(slot);
+            const key = rectKey(rect);
+            state.precommitTarget = key;
+            // ResizeObserver·명시 bounds 같은 사건 경로가 같은 커밋 rect를 먼저 적용했으면 그
+            // ACK가 이미 거래를 충족했다. 같은 frame을 다시 쓰는 것은 의미 없는 z/compositor
+            // 자극이며 교차 클릭 한 번에 두 번 흔들리는 원인이므로 생략한다.
+            if (state.lastRect === key) return;
+            // 장부를 먼저 목표로 둔다. DOM mutation이 IPC ack보다 먼저 와도 일반 bounds sync가
+            // 같은 목표를 다시 써 AppKit animation을 끊지 못한다.
+            state.lastRect = key;
+            state.boundsWrites += 1;
+            try {
+              await call<boolean>("webview_bounds", {
+                label: state.label,
+                ...rect,
+              });
+            } catch (error) {
+              state.lastRect = rectKey(before);
+              throw error;
+            }
+          }),
+          ...externalTargets.map(({ slot, participant }) => participant.commit(slotRect(slot))),
+        ]);
         for (const { state } of targets) settlePreparedFrame(state);
       } catch (error) {
         for (const { state } of targets) {
@@ -292,6 +325,7 @@ export async function prepareNativeContentViewMove(
           state.precommitTarget = "";
           void requestSlotSync(state, true).catch(() => {});
         }
+        for (const { participant } of externalTargets) participant.cancel();
         throw error;
       }
     },
@@ -303,6 +337,7 @@ export async function prepareNativeContentViewMove(
         state.precommitTarget = "";
         void requestSlotSync(state, true).catch(() => {});
       }
+      for (const { participant } of externalTargets) participant.cancel();
     },
   };
 }

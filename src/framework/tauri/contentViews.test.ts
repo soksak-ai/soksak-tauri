@@ -212,6 +212,64 @@ describe("네이티브 자식 뷰 구현", () => {
     expect(vi.isMockFunction(globalThis.requestAnimationFrame)).toBe(false);
   });
 
+  it("공개 DOM 슬롯의 외부 표면 claim을 snap 거래로 묶고 최종 rect ACK를 기다린다", async () => {
+    const frame = document.createElement("div");
+    frame.dataset.node = "layout/tab/v-external";
+    const slot = document.createElement("div");
+    slot.setAttribute("data-content-view-body", "engine-v-external");
+    let x = 620;
+    slot.getBoundingClientRect = () => ({
+      x, y: 112, left: x, top: 112, right: x + 212, bottom: 570, width: 212, height: 458,
+    }) as DOMRect;
+    frame.appendChild(slot);
+    document.body.appendChild(frame);
+
+    let releaseAck!: () => void;
+    const commit = vi.fn(() => new Promise<void>((resolve) => { releaseAck = resolve; }));
+    const cancel = vi.fn();
+    slot.addEventListener("soksak:external-surface-layout-transition", ((event: CustomEvent) => {
+      event.detail.claim({ commit, cancel });
+    }) as EventListener);
+
+    const { prepareNativeContentViewMove } = await load();
+    const prepared = await prepareNativeContentViewMove([{ viewId: "v-external", dx: 410 }]);
+    expect(prepared.mode).toBe("snap");
+    expect(commit).not.toHaveBeenCalled();
+
+    x = 210;
+    let settled = false;
+    const committing = prepared.commit().then(() => { settled = true; });
+    await Promise.resolve();
+    expect(commit).toHaveBeenCalledWith({ x: 210, y: 112, w: 212, h: 458 });
+    expect(settled).toBe(false);
+    releaseAck();
+    await committing;
+    expect(settled).toBe(true);
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
+  it("폐기된 외부 표면 거래는 cancel로 잠금을 해제한다", async () => {
+    const frame = document.createElement("div");
+    frame.dataset.node = "layout/tab/v-external";
+    const slot = document.createElement("div");
+    slot.setAttribute("data-content-view-body", "engine-v-external");
+    slot.getBoundingClientRect = () => ({
+      x: 620, y: 112, left: 620, top: 112, right: 832, bottom: 570, width: 212, height: 458,
+    }) as DOMRect;
+    frame.appendChild(slot);
+    document.body.appendChild(frame);
+    const cancel = vi.fn();
+    slot.addEventListener("soksak:external-surface-layout-transition", ((event: CustomEvent) => {
+      event.detail.claim({ commit: async () => {}, cancel });
+    }) as EventListener);
+
+    const { prepareNativeContentViewMove } = await load();
+    const prepared = await prepareNativeContentViewMove([{ viewId: "v-external", dx: 410 }]);
+    prepared.cancel();
+    prepared.cancel();
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
   it("연속 여정의 목표는 stale native frame이 아니라 현재 DOM 슬롯에서 계산한다", async () => {
     let x = 620;
     const frame = document.createElement("div");
