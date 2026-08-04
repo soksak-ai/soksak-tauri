@@ -346,6 +346,21 @@ export async function prepareNativeContentViewMove(
 export function installNativeContentViewComposition(): void {
   if (composition.installed) return;
   composition.installed = true;
+  // AppKit은 부모 창의 live/programmatic resize 동안 child WKWebView의 내부 frame을 바꿀 수
+  // 있다. JS 장부의 lastRect는 그 문서 밖 변화를 관측하지 못하므로, 최종 DOM rect가 resize
+  // 전과 같아도 캐시 hit로 생략하면 안 된다. 브라우저 resize 사건을 권위 재정착 에지로 삼고
+  // 기존 label별 drain이 폭주를 최신 rect 한 번으로 합친다. 타이머/rAF 추종은 없다.
+  const onWindowResize = () => {
+    for (const state of composition.surfaces.values()) {
+      void requestSlotSync(state, true).catch((error) => {
+        console.error(`[content-view] 창 resize 정착 실패: ${state.label}`, error);
+      });
+    }
+  };
+  window.addEventListener("resize", onWindowResize);
+  composition.subscriptions.push({
+    dispose: () => window.removeEventListener("resize", onWindowResize),
+  });
   composition.subscriptions.push(
     onPluginEvent("layout.reflow", () => {
       for (const state of composition.surfaces.values()) {

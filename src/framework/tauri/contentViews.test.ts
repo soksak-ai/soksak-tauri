@@ -143,6 +143,28 @@ describe("네이티브 자식 뷰 구현", () => {
     expect(vi.isMockFunction(globalThis.requestAnimationFrame)).toBe(false);
   });
 
+  it("창 resize는 같은 최종 DOM rect여도 native child에 권위 frame을 다시 쓴다", async () => {
+    const slot = document.createElement("div");
+    slot.setAttribute("data-content-view-body", "b-resize");
+    slot.getBoundingClientRect = () => ({
+      x: 10, y: 20, left: 10, top: 20, right: 310, bottom: 220, width: 300, height: 200,
+    }) as DOMRect;
+    document.body.appendChild(slot);
+
+    const { installNativeContentViewComposition, nativeHost } = await load();
+    installNativeContentViewComposition();
+    await nativeHost.open("b-resize", { url: "https://x" });
+    invoke.mockClear();
+
+    // AppKit은 부모 창의 중간 resize에서 child 내부 frame을 바꿀 수 있다. DOM rect가 처음과
+    // 같은 크기로 돌아와도 JS lastRect는 그 네이티브 변화를 관측하지 못하므로 캐시 hit가
+    // 최종 정착의 증거가 될 수 없다.
+    window.dispatchEvent(new Event("resize"));
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("webview_bounds", {
+      label: "b-resize", x: 10, y: 20, w: 300, h: 200,
+    }));
+  });
+
   it("숨긴 표면은 기하 사건이 다시 표시하지 못하고 복귀 직전에만 최신 rect를 받는다", async () => {
     const slot = document.createElement("div");
     slot.setAttribute("data-content-view-body", "b-hidden");
