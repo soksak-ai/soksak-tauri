@@ -7,7 +7,6 @@
 //! **그대로** 실린다. 프레임워크 어댑터는 `data` 를 벗겨 invoke 의 약속에 그대로 얹으면 된다 —
 //! cored 를 거쳤다고 값의 모양이 달라지지 않는다.
 
-use serde::Deserialize;
 use serde_json::{json, Value};
 use soksak_spec_socket::{
     effective_protocol, evaluate_compat, skew_sentence, Lang, MIN_COMPATIBLE_CLIENT_PROTOCOL,
