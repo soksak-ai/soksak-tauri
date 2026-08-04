@@ -1,6 +1,6 @@
 // 네이티브 웹뷰 안정 경계 E2E.
 //
-// 사용자 동작과 같은 탭 헤더 교차 클릭으로 sidebar flow가 좌우 판 사이를 이동하는 동안,
+// 사용자 동작과 같은 탭 content surface 교차 클릭으로 sidebar flow가 좌우 판 사이를 이동하는 동안,
 // Tauri child webview가 DOM 슬롯과 1:1로 남고 모든 전이 프레임이 보존되는지 검증한다.
 // Electron에서는 같은 제품 시나리오와 캡처를 수행하되 native composition 판정은 비적용이다.
 //
@@ -32,7 +32,7 @@ const BROWSER_PLUGIN = {
   "browser-chromium-offscreen": "soksak-plugin-browser-chromium-offscreen",
 }[BROWSER_PROGRAM];
 const CYCLES = 3;
-const FRAMES_PER_CLICK = 36;
+const FRAMES_PER_CLICK = 48;
 
 if (!BROWSER_PLUGIN) throw new Error(`지원하지 않는 BROWSER_ENGINE: ${BROWSER_PROGRAM}`);
 
@@ -67,10 +67,37 @@ function startPageServer() {
 }
 
 const addressForTab = (tree, tabId) => {
-  const node = (tree.nodes ?? []).find((n) => n.nodePath === `tab/view/${tabId}`);
-  if (!node?.address) throw new Error(`탭 DOM 주소가 노출되지 않았다: ${tabId}`);
+  const tabToken = `/tab/${tabId}/`;
+  const node = (tree.nodes ?? []).find(
+    (n) => n.nodePath === "surface" && n.address.includes(tabToken),
+  );
+  if (!node?.address) throw new Error(`탭 content surface 주소가 노출되지 않았다: ${tabId}`);
   return node.address;
 };
+
+function assertNativeLighting(data, activeLabel, labels) {
+  const surfaces = new Map(
+    (data.engine?.surfaces ?? []).map((surface) => [surface.label, surface]),
+  );
+  const errors = [];
+  for (const label of labels) {
+    const surface = surfaces.get(label);
+    const expected = label === activeLabel ? 0 : 0.5;
+    if (!surface) {
+      errors.push(`${label}:missing`);
+      continue;
+    }
+    if (surface.dim !== expected) errors.push(`${label}:requested=${surface.dim}/${expected}`);
+    const lighting = surface.lighting ?? {};
+    if (lighting.appliedAlpha !== expected) {
+      errors.push(`${label}:applied=${lighting.appliedAlpha}/${expected}`);
+    }
+    if (!lighting.frameMatchesSurface) errors.push(`${label}:frame`);
+    if (!lighting.siblingOrder?.veilAboveSurface) errors.push(`${label}:stack`);
+    if (expected > 0 && lighting.veilHidden) errors.push(`${label}:hidden`);
+  }
+  if (errors.length) throw new Error(`native lighting 불일치 — ${errors.join(", ")}`);
+}
 
 function assertComposition(data, labels, beforeWrites) {
   const verdict = data.verdict ?? {};
@@ -213,6 +240,8 @@ async function main() {
             writeDeltaBaselineReady ? writes : new Map(),
           );
           writeDeltaBaselineReady = true;
+          const surfaces = must(await rpc("webview.surfaces", {}, win), `surfaces ${name}`);
+          assertNativeLighting(surfaces, labels[side], labels);
         }
         console.log(`✓ ${name}: ${FRAMES_PER_CLICK} frames · composition exact`);
       }
