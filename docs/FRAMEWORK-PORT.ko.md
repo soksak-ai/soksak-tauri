@@ -692,8 +692,12 @@ child compositor frame을 바꿀 수 있기 때문이다. 따라서 Tauri 어댑
 현재 슬롯 rect를 같은 직렬 drain으로 강제 적용한다. macOS에서는
 `NSWindow.preservesContentDuringLiveResize`도 끈다. 독립적으로 렌더하는 DOM·WKWebView·CEF 표면의
 합성에서는 옛 backing 보존이 유효하지 않고 서로 다른 epoch를 늘인 한 프레임으로 만들기 때문이다.
-`webview.composition.engine.preservesContentDuringLiveResize`가 이 정책을 공개하며 반드시 `false`여야
-한다. Electron은 일반 DOM/창 동작을 유지하고 두 규칙 모두 설치하지 않는다.
+보존을 끄는 것만으로 programmatic `setSize`의 합성이 확정되지는 않는다. 등록된 앱 창의 모든
+`NSWindowDidResize` 통지에서 AppKit layout을 끝내고 창 계층을 invalidate한 뒤 그 통지 차례가
+끝나기 전에 display한다. 이 하나의 사건 기반 transaction이 가장자리 드래그와 programmatic resize를
+함께 덮으며, polling하지 않고 엔진 소유 보조 창에는 적용하지 않는다.
+`webview.composition.engine.preservesContentDuringLiveResize`가 보존 정책을 공개하며 반드시 `false`여야
+한다. Electron은 일반 DOM/창 동작을 유지하고 이 규칙들을 설치하지 않는다.
 
 레일 재배치에서 Tauri 어댑터는 유한 snap 거래를 쓴다. 중간 mutation 쓰기를 잠그고 목표 DOM을
 커밋한 layout effect에서 공개 슬롯의 실제 rect를 읽어 한 번 적용한다. 플러그인 소유 외부 표면도

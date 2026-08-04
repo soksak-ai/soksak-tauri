@@ -32,6 +32,24 @@ pub fn forget_nswindow_label(label: &str) {
     NSWINDOW_LABELS.forget(label);
 }
 
+// 한 resize epoch의 AppKit 합성을 그 통지 차례 안에서 끝낸다.
+//
+// NSWindow의 frame만 바꾸고 이벤트 루프로 돌아가면 WindowServer는 다음 display까지 이전
+// backing을 새 frame에 맞춰 확대·축소할 수 있다. DOM WKWebView와 네이티브 child surface가
+// 섞인 창에서는 그 한 프레임도 서로 다른 좌표 epoch가 된다. 따라서 resize 통지에서 현재
+// constraint를 먼저 layout하고, 전체 창을 invalidate한 뒤 즉시 display한다. 이 함수는 AppKit
+// 객체만 만지며 wry/Tauri 창 레지스트리를 재진입하지 않는다.
+#[cfg(target_os = "macos")]
+fn commit_resize_composition(window: &objc2_app_kit::NSWindow) {
+    window.layoutIfNeeded();
+    if let Some(content) = window.contentView() {
+        content.layoutSubtreeIfNeeded();
+        content.setNeedsDisplay(true);
+    }
+    window.setViewsNeedDisplay(true);
+    window.displayIfNeeded();
+}
+
 // AppKit 통지 블록에서의 이벤트 발행 — 블록 안에서는 wry 로 가는 어떤 호출도 금지다.
 // emit_to 조차 eval_script(인라인 wry 메시지 → RefCell 재차용)라, 창 파괴 중 동기 발화된
 // 블록에서 부르면 프로세스가 죽는다(실측 백트레이스 2호: install_pointer_absence →
@@ -292,8 +310,10 @@ pub fn set_divider_highlight(app: &AppHandle, label: String, rect: Option<(f64, 
 // 쓴 이유 — Rust 가 모든 플랫폼의 네이티브 창 이벤트를 잡는 단일 지점).
 #[cfg(target_os = "macos")]
 pub fn install_live_resize_monitor(app: &AppHandle) {
+    use objc2::rc::Retained;
     use objc2_app_kit::{
-        NSWindowDidEndLiveResizeNotification, NSWindowWillStartLiveResizeNotification,
+        NSWindow, NSWindowDidEndLiveResizeNotification, NSWindowDidResizeNotification,
+        NSWindowWillStartLiveResizeNotification,
     };
     use objc2_foundation::{NSNotification, NSNotificationCenter};
 
@@ -322,4 +342,28 @@ pub fn install_live_resize_monitor(app: &AppHandle) {
         // 옵저버는 앱 수명 동안 유지 — 의도된 leak(앱 전역, 설치 1회).
         std::mem::forget(token);
     }
+
+    // DidResize는 가장자리 live resize와 programmatic setSize 모두에 대해 발화한다. start/end만
+    // 보면 자동화·복원 같은 programmatic 경로의 첫 합성 프레임을 놓친다. 등록된 앱 창만
+    // transaction 대상으로 삼아 CEF가 만든 보조 NSWindow 등 타 소유 창에는 개입하지 않는다.
+    let block = block2::RcBlock::new(move |note: std::ptr::NonNull<NSNotification>| {
+        let note = unsafe { note.as_ref() };
+        let Some(obj) = note.object() else { return };
+        let Ok(window) = obj.downcast::<NSWindow>() else {
+            return;
+        };
+        let ns_ptr = Retained::as_ptr(&window) as usize;
+        if NSWINDOW_LABELS.label(ns_ptr).is_some() {
+            commit_resize_composition(&window);
+        }
+    });
+    let token = unsafe {
+        center.addObserverForName_object_queue_usingBlock(
+            Some(NSWindowDidResizeNotification),
+            None,
+            None,
+            &block,
+        )
+    };
+    std::mem::forget(token);
 }

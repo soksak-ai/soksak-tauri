@@ -65,6 +65,30 @@ fn capability_covers_new_windows() {
 }
 
 #[test]
+fn every_appkit_resize_commits_layout_and_display_in_the_notification_turn() {
+    let src = std::fs::read_to_string("src/webview/appkit_events.rs").expect("appkit events");
+    assert!(
+        src.contains("NSWindowDidResizeNotification"),
+        "programmatic·live resize 모두를 덮는 NSWindowDidResize 통지가 필요하다"
+    );
+    let commit = src
+        .split_once("fn commit_resize_composition(")
+        .expect("resize composition transaction")
+        .1
+        .split_once("\n}\n\n// AppKit")
+        .expect("transaction boundary")
+        .0;
+    assert!(
+        commit.contains("layoutIfNeeded") || commit.contains("layoutSubtreeIfNeeded"),
+        "새 frame의 view hierarchy layout을 같은 통지 차례에 확정해야 한다"
+    );
+    assert!(
+        commit.contains("setViewsNeedDisplay") && commit.contains("displayIfNeeded"),
+        "이전 backing을 확대·축소해 보이지 않게 새 layout을 invalidate하고 즉시 display해야 한다"
+    );
+}
+
+#[test]
 fn prune_window_persistence_removes_only_that_window() {
     let c = rusqlite::Connection::open_in_memory().unwrap();
     c.execute_batch("PRAGMA foreign_keys=ON;").unwrap();

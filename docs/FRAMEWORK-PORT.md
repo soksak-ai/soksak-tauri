@@ -699,8 +699,13 @@ AppKit can alter a child compositor's frame outside the JavaScript ledger. The T
 forces the current slot rect through its same serialized drain on every finite window `resize` event.
 On macOS it also disables `NSWindow.preservesContentDuringLiveResize`; preserving an old backing store
 is invalid for a composition of independently rendered DOM, WKWebView, and CEF surfaces and produces a
-stretched mixed-epoch frame. `webview.composition.engine.preservesContentDuringLiveResize` exposes this
-policy and must be `false`. Electron retains its ordinary DOM/window behavior and installs neither rule.
+stretched mixed-epoch frame. Disabling preservation is necessary but does not commit a programmatic
+`setSize`: every registered app-window `NSWindowDidResize` notification also completes AppKit layout,
+invalidates the window hierarchy, and displays it before returning from that notification turn. This
+single event-driven transaction covers both edge-drag and programmatic resize; it does not poll and does
+not run for engine-owned helper windows. `webview.composition.engine.preservesContentDuringLiveResize`
+exposes the preservation policy and must be `false`. Electron retains its ordinary DOM/window behavior
+and installs none of these rules.
 
 For a rail relocation, the Tauri adapter uses a finite snap transaction: it locks out intermediate
 mutation writes, commits the target DOM, reads the public slot's actual rect in the layout effect,
