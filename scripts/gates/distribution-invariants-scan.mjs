@@ -40,8 +40,8 @@ export function scanRoot(root = REPO_ROOT) {
   const violations = [];
   const makefile = read(root, "Makefile");
   const base = json(root, "frameworks/tauri/tauri.conf.json", violations);
-  const debug = json(root, "frameworks/tauri/tauri.debug.conf.json", violations);
-  const release = read(root, "frameworks/tauri/tauri.release.conf.json");
+  const debug = json(root, "frameworks/tauri/tauri.build-debug.conf.json", violations);
+  const release = read(root, "frameworks/tauri/tauri.build-release.conf.json");
   const releaseWorkflow = read(root, ".github/workflows/release.yml");
   const releaseTool = read(root, "scripts/release/prepare-tauri-config.mjs");
   const appHome = read(root, "frameworks/tauri/src/home.rs");
@@ -61,7 +61,7 @@ export function scanRoot(root = REPO_ROOT) {
     violations.push("frameworks/tauri/tauri.conf.json: dev identity updater 금지");
   }
   if (updaterEnabled(debug)) {
-    violations.push("frameworks/tauri/tauri.debug.conf.json: debug identity updater 금지");
+    violations.push("frameworks/tauri/tauri.build-debug.conf.json: debug identity updater 금지");
   }
   if (releaseSurface.includes("soksak-ai/soksak/releases")) {
     violations.push("release: private core 저장소 updater/asset URL 금지");

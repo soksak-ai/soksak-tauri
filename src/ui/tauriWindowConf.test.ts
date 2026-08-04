@@ -21,9 +21,9 @@ describe("tauri.conf.json 창 계약", () => {
 
   it("앱 번들은 홈의 cored가 없을 때 세울 정식 sidecar를 선언한다", () => {
     for (const name of [
-      "tauri.dev-bundle.conf.json",
-      "tauri.debug.conf.json",
-      "tauri.release.conf.json",
+      "tauri.build-dev.conf.json",
+      "tauri.build-debug.conf.json",
+      "tauri.build-release.conf.json",
     ]) {
       const conf = JSON.parse(
         readFileSync(resolve(__dirname, `../../frameworks/tauri/${name}`), "utf8"),

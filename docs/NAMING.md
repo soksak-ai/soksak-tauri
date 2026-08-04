@@ -22,6 +22,14 @@ git/clipboard/ai.session) and removes the violators.
    contribution kind already provide the outer namespace, so dots, slashes, callback
    names, and a repeated plugin domain are not local ids. Runtime module map keys must
    exactly equal these manifest ids; normalization never repairs an off-law id.
+1b. **Tauri configuration files** separate the runtime base from build-channel overlays.
+   `frameworks/tauri/tauri.conf.json` is the base used by `tauri dev` and owns the shared window
+   contract plus the development identity. A bundled build selects exactly one
+   `tauri.build-<channel>.conf.json`, where channel is `dev`, `debug`, or `release`. The token order
+   is purpose then variant; mixed shapes such as `tauri.dev-bundle.conf.json` and bare channel files
+   such as `tauri.debug.conf.json` are forbidden because they make equivalent overlays look like
+   different artifact kinds. Generated release configuration lives under the build target and is
+   not a second source file.
 2. **Tauri invoke command** = `<capability>_<verb>` (snake_case), same stem as the registry.
    Invoke is internal transport — renames are safe; the only public surface is the registry.
 3. **Core Rust file** = one file per capability, filename = capability = command prefix.

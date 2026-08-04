@@ -31,10 +31,10 @@ CARGO_TARGET := $(shell cargo metadata --no-deps --format-version 1 --offline 2>
 TAURI_TARGET ?= $(shell rustc -vV | sed -n 's/^host: //p')
 TAURI_TARGET_DIR := $(CARGO_TARGET)/$(TAURI_TARGET)
 
-RELEASE_CONFIG := frameworks/tauri/tauri.release.conf.json
+RELEASE_CONFIG := frameworks/tauri/tauri.build-release.conf.json
 RELEASE_CONFIG_GENERATED := $(CARGO_TARGET)/release-config/tauri.conf.json
-DEBUG_CONFIG   := frameworks/tauri/tauri.debug.conf.json
-DEV_BUNDLE_CONFIG := frameworks/tauri/tauri.dev-bundle.conf.json
+DEBUG_CONFIG   := frameworks/tauri/tauri.build-debug.conf.json
+DEV_BUNDLE_CONFIG := frameworks/tauri/tauri.build-dev.conf.json
 
 RELEASE_APP := $(TAURI_TARGET_DIR)/release/bundle/macos/soksak-tauri.app
 DEV_APP     := $(TAURI_TARGET_DIR)/debug/bundle/macos/soksak-tauri-dev.app

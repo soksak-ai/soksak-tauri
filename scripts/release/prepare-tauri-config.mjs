@@ -10,7 +10,7 @@ function arg(name, fallback) {
   return i >= 0 ? process.argv[i + 1] : fallback;
 }
 
-const basePath = resolve(arg("--base", "frameworks/tauri/tauri.release.conf.json"));
+const basePath = resolve(arg("--base", "frameworks/tauri/tauri.build-release.conf.json"));
 const outPath = resolve(arg("--out", "target/release-config/tauri.conf.json"));
 const publicKey = (process.env.TAURI_UPDATER_PUBLIC_KEY ?? "").trim();
 
@@ -32,4 +32,3 @@ config.bundle = { ...(config.bundle ?? {}), createUpdaterArtifacts: true };
 mkdirSync(dirname(outPath), { recursive: true });
 writeFileSync(outPath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
 console.log(`release config: ${outPath}`);
-

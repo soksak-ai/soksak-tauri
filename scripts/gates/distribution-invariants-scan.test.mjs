@@ -16,8 +16,8 @@ function write(rel, body) {
 
 function configs() {
   write("frameworks/tauri/tauri.conf.json", JSON.stringify({ identifier: "com.soksak.dev", bundle: {} }));
-  write("frameworks/tauri/tauri.debug.conf.json", JSON.stringify({ identifier: "com.soksak.debug", bundle: {} }));
-  write("frameworks/tauri/tauri.release.conf.json", JSON.stringify({ identifier: "com.soksak.app" }));
+  write("frameworks/tauri/tauri.build-debug.conf.json", JSON.stringify({ identifier: "com.soksak.debug", bundle: {} }));
+  write("frameworks/tauri/tauri.build-release.conf.json", JSON.stringify({ identifier: "com.soksak.app" }));
   write(".github/workflows/release.yml", "# https://github.com/soksak-ai/soksak-app/releases\n");
   write(
     "scripts/release/prepare-tauri-config.mjs",

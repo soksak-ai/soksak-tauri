@@ -29,8 +29,8 @@ if (expected.size === 0) {
 // 대조 밖이므로, 새 프레임워크 설정을 더할 때 이 목록도 함께 는다.
 const CONFIGS = [
   "frameworks/tauri/tauri.conf.json",
-  "frameworks/tauri/tauri.debug.conf.json",
-  "frameworks/tauri/tauri.release.conf.json",
+  "frameworks/tauri/tauri.build-debug.conf.json",
+  "frameworks/tauri/tauri.build-release.conf.json",
 ];
 
 const bad = [];
