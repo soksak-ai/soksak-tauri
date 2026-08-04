@@ -145,7 +145,7 @@ describe("네이티브 자식 뷰 구현", () => {
     expect(vi.isMockFunction(globalThis.requestAnimationFrame)).toBe(false);
   });
 
-  it("창 resize는 같은 최종 DOM rect여도 native child에 권위 frame을 다시 쓴다", async () => {
+  it("창 resize는 DOM paint 뒤 현재 rect로 native child를 정착시킨다", async () => {
     const frames: FrameRequestCallback[] = [];
     vi.stubGlobal("requestAnimationFrame", vi.fn((callback: FrameRequestCallback) => {
       frames.push(callback);
@@ -153,8 +153,9 @@ describe("네이티브 자식 뷰 구현", () => {
     }));
     const slot = document.createElement("div");
     slot.setAttribute("data-content-view-body", "b-resize");
+    let width = 300;
     slot.getBoundingClientRect = () => ({
-      x: 10, y: 20, left: 10, top: 20, right: 310, bottom: 220, width: 300, height: 200,
+      x: 10, y: 20, left: 10, top: 20, right: 10 + width, bottom: 220, width, height: 200,
     }) as DOMRect;
     document.body.appendChild(slot);
 
@@ -163,17 +164,16 @@ describe("네이티브 자식 뷰 구현", () => {
     await nativeHost.open("b-resize", { url: "https://x" });
     invoke.mockClear();
 
-    // AppKit은 부모 창의 중간 resize에서 child 내부 frame을 바꿀 수 있다. DOM rect가 처음과
-    // 같은 크기로 돌아와도 JS lastRect는 그 네이티브 변화를 관측하지 못하므로 캐시 hit가
-    // 최종 정착의 증거가 될 수 없다.
+    width = 340;
     window.dispatchEvent(new Event("resize"));
+    ResizeObserverMock.instances[0].fire();
     await Promise.resolve();
     expect(invoke).not.toHaveBeenCalledWith("webview_bounds", expect.anything());
     frames.shift()?.(0);
     expect(invoke).not.toHaveBeenCalledWith("webview_bounds", expect.anything());
     frames.shift()?.(16);
     await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("webview_bounds", {
-      label: "b-resize", x: 10, y: 20, w: 300, h: 200,
+      label: "b-resize", x: 10, y: 20, w: 340, h: 200,
     }));
   });
 
