@@ -49,13 +49,14 @@ describe("tauri.conf.json 창 계약", () => {
     expect(makefile).toContain("DEBUG_APP   := $(TAURI_TARGET_DIR)/debug/bundle/macos/soksak-tauri-debug.app");
   });
 
-  it("run-dev는 개발 볼트 환경을 실제 앱 프로세스에 직접 전달한다", () => {
+  it("run-dev는 개발 볼트 환경을 LaunchServices 소유 앱 프로세스에 직접 전달한다", () => {
     const makefile = readFileSync(resolve(__dirname, "../../Makefile"), "utf8");
     const body = makefile.match(/^run-dev:[\s\S]*?(?=^[a-zA-Z_-]+:|\Z)/m)?.[0] ?? "";
 
     expect(body).toContain("SOKSAK_E2E_KEK=$(DEV_KEK)");
     expect(body).toContain("SOKSAK_VAULT_PATH=$(DEV_VAULT)");
-    expect(body).toContain('"$(DEV_EXECUTABLE)"');
-    expect(body).not.toContain("open -n");
+    expect(body).toMatch(/\bopen\s+-n\s+-g\b/);
+    expect(body).toContain('"$(DEV_APP)"');
+    expect(body).not.toMatch(/"\$\(DEV_EXECUTABLE\)"[^\n]*&/);
   });
 });

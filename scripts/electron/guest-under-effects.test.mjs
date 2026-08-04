@@ -26,10 +26,11 @@ const ELECTRON = require_("electron");
 /**
  * 게스트는 빨강, 판 배경은 검정 — 게스트가 빠진 프레임은 검정으로 나타난다.
  *
- * 두 장치가 더 있다. **박동**(파란 사각형이 매 rAF 마다 켜졌다 꺼진다)은 합성기가 프레임을
+ * 두 장치가 더 있다. **박동**(파란 사각형이 매 rAF 마다 세대값을 올린다)은 합성기가 프레임을
  * 계속 만들게 한다 — 정지 화면에서는 새 프레임이 아예 안 나므로 "구독 직후 배달된 옛 프레임"과
  * "해동 뒤의 빈 프레임"이 구별되지 않는다. **표식**(초록 사각형)은 해동과 **같은 스크립트**에서
- * 켜지므로, 표식이 처음 보이는 프레임이 곧 해동이 반영될 수 있는 첫 프레임이다.
+ * 켜지므로, 표식이 처음 보이는 프레임이 곧 해동이 반영될 수 있는 첫 프레임이다. 두 색 토글은
+ * rAF와 프레임 구독의 위상이 같으면 한 색만 관측되는 aliasing이 생기므로 오라클로 쓰지 않는다.
  */
 const PAGE = `<!doctype html><html><body style="margin:0;background:#000">
 <div id="park" style="position:absolute;left:0;top:0;width:400px;height:400px">
@@ -41,7 +42,10 @@ const PAGE = `<!doctype html><html><body style="margin:0;background:#000">
 <script>
   let n = 0;
   const beat = document.getElementById("beat");
-  (function tick() { beat.style.background = (n++ % 2) ? "#0000ff" : "#000"; requestAnimationFrame(tick); })();
+  (function tick() {
+    beat.style.background = 'rgb(0,0,' + (n++ % 251) + ')';
+    requestAnimationFrame(tick);
+  })();
 </script>
 </body></html>`;
 
@@ -59,7 +63,9 @@ app.whenReady().then(async () => {
   try {
     const w = new BrowserWindow({
       width: 400, height: 400, show: false,
-      webPreferences: { webviewTag: true, offscreen: false },
+      // 실사용 창을 건드리지 않는 숨은 측정 창에서도 rAF/합성 프레임이 멈추지 않아야
+      // beginFrameSubscription이 "프레임 부재"를 "빈 프레임 부재"로 오판하지 않는다.
+      webPreferences: { webviewTag: true, offscreen: false, backgroundThrottling: false },
     });
     await w.loadFile(process.argv[2]);
     await new Promise((r) => setTimeout(r, 2500));
@@ -203,7 +209,7 @@ describe("문서 안 게스트 — 조상의 효과가 닿는가", () => {
     const blanky = [];
     for (const [name, v] of Object.entries(px.variants)) {
       // 박동이 도는지 먼저 본다 — 프레임이 안 흐르면 아래 판정이 공짜로 통과한다.
-      const beats = new Set(v.frames.map((f) => f.beat > 120)).size;
+      const beats = new Set(v.frames.map((f) => f.beat)).size;
       // 해동이 실릴 수 있는 **첫 프레임** = 표식이 처음 보인 프레임. 그 전 프레임의 검정은
       // 파킹 상태 그 자체이지 결함이 아니다.
       const from = v.frames.findIndex((f) => f.mark > 120);
@@ -213,7 +219,7 @@ describe("문서 안 게스트 — 조상의 효과가 닿는가", () => {
       report.push(
         `${name}: 표식 ${from} · 해동후 [${after.slice(0, 6).map((f) => f.guest).join(",")}] · 빈 ${blanks}`,
       );
-      expect(beats, `${name}: 박동이 안 돈다 — 프레임이 흐르지 않는다`).toBe(2);
+      expect(beats, `${name}: 박동 세대가 안 변한다 — 프레임이 흐르지 않는다`).toBeGreaterThan(1);
       expect(from, `${name}: 표식을 실은 프레임이 없다 — 해동 시점을 특정할 수 없다`).toBeGreaterThanOrEqual(0);
       expect(painted, `${name}: 해동 뒤 그려진 프레임이 하나도 없다`).toBeGreaterThan(0);
       if (blanks > 0) blanky.push(name);
