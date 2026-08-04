@@ -16,7 +16,7 @@
     "preview": "node scripts/framework-required.mjs preview",
     "preview:tauri": "SOKSAK_FRAMEWORK=tauri vite preview",
     "preview:electron": "SOKSAK_FRAMEWORK=electron vite preview",
-    "pretest": "pnpm run build:platform",
+    "pretest": "pnpm run build:platform && cargo build -p soksak-cored --bin soksak-cored",
     "test": "vitest run --exclude scripts/electron/content-view-live.test.mjs && vitest run scripts/electron/content-view-live.test.mjs",
     "tauri": "tauri",
     "build:cored": "node scripts/build/prepare-cored-sidecar.mjs --build-only",
