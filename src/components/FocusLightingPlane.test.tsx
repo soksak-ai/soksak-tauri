@@ -34,6 +34,7 @@ describe("FocusLightingPlane — 기본은 어둡고 포커스만 밝다", () =>
     await act(async () => {
       root.render(
         <FocusLightingPlane
+          scopeId="space-a"
           baseAmount={0.5}
           focused={region("focused", 50, true)}
           blocked={[]}
@@ -41,7 +42,7 @@ describe("FocusLightingPlane — 기본은 어둡고 포커스만 밝다", () =>
       );
     });
 
-    const plane = host.querySelector<SVGSVGElement>("[data-node='focus-lighting']");
+    const plane = host.querySelector<SVGSVGElement>("[data-node='focus-lighting/space-a']");
     expect(plane).not.toBeNull();
     expect(plane?.getAttribute("aria-hidden")).toBe("true");
     expect(host.querySelectorAll("[data-lighting-base]")).toHaveLength(1);
@@ -57,6 +58,7 @@ describe("FocusLightingPlane — 기본은 어둡고 포커스만 밝다", () =>
     await act(async () => {
       root.render(
         <FocusLightingPlane
+          scopeId="space-b"
           baseAmount={0.5}
           focused={region("focused", 50)}
           blocked={[{ ...region("blocked", 0), amount: 0.7 }]}

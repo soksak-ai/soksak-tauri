@@ -18,10 +18,13 @@ type BlockedLightingRegion = LightingRegion & { amount: number };
  * 낸다. SVG는 시각만 소유하며 입력과 접근성 트리에는 참여하지 않는다.
  */
 export function FocusLightingPlane({
+  scopeId,
   baseAmount,
   focused,
   blocked,
 }: {
+  /** 한 프로젝트 안의 조명 평면을 일대일로 발견하는 stable space identity. */
+  scopeId: string;
   baseAmount: number;
   focused?: LightingRegion;
   blocked: BlockedLightingRegion[];
@@ -33,7 +36,7 @@ export function FocusLightingPlane({
   return (
     <svg
       className="focus-lighting-plane"
-      data-node="focus-lighting"
+      data-node={`focus-lighting/${scopeId}`}
       aria-hidden="true"
       focusable="false"
     >

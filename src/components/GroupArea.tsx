@@ -859,10 +859,11 @@ export const GroupArea = memo(function GroupArea({
         }),
       )}
 
-      {/* 포커스 조명은 콘텐츠별 효과가 아니다. 작업면 전체를 한 번 어둡게 하고 화면이
-          그리는 해의 focus pane만 aperture로 연다. DOM·WebGL·Tauri native child 모두
-          같은 검은 픽셀 아래 놓이며, 어떤 콘텐츠 subtree에도 filter를 적용하지 않는다. */}
+      {/* 포커스 조명은 콘텐츠별 효과가 아니다. 문서 안 작업면 전체를 한 번 어둡게 하고
+          focus pane만 aperture로 연다. 어떤 콘텐츠 subtree에도 filter를 적용하지 않는다.
+          문서 밖 native surface는 framework adapter가 같은 공개 --dim 사실을 투영한다. */}
       <FocusLightingPlane
+        scopeId={content.id}
         baseAmount={focusDim ? dimIdle : 0}
         focused={
           lightingFocusCell
