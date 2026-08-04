@@ -65,7 +65,11 @@ debounce 로 입력이 정착한 뒤 1회 실행한다. 스톰은 본구간 CPU 
 - 포커스 조명은 콘텐츠 조상의 `filter`/`opacity`가 아니라 작업면 밖 SVG 평면 하나가 그린다.
   그래야 DOM·canvas·WebGL renderer의 합성 경로를 바꾸지 않는다. Tauri native child만 어댑터가
   같은 `--dim` 값을 AppKit 평면에 투영하며, 그 frame은 surface frame 거래와 함께 커밋한다.
+  SVG base veil의 포커스 구멍은 luminance mask다. 흰 영역은 veil을 유지하고 검은 aperture는
+  제거한다. alpha mask로 바꾸면 두 색이 모두 불투명해져 포커스 구멍이 닫히므로 금지한다.
 - 캡처 픽셀은 증거(`window.record` / `window.snapshot`)이며 대체 UI가 아니다.
+  Electron 캡처는 `capturePage`의 정규 capturer 수명으로 부모와 `<webview>` guest를 함께
+  합성한다. `stayHidden:true`로 guest 합성을 막지 않으며 캡처를 위해 창을 포커스하지 않는다.
 
 ### 6. 플랫폼 페인트 경로 보존
 

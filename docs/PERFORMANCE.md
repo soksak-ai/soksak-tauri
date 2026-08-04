@@ -72,8 +72,12 @@ A user gesture never shows discontinuous content. The means depends on where the
   per label, and always converges on the current public slot. It does not run a frame polling loop.
 - Focus lighting is one SVG plane outside the work surface, never `filter` or `opacity` on a content
   ancestor, so DOM, canvas, and WebGL renderers keep their normal composition path. Only the Tauri
-  adapter projects the same `--dim` value to an AppKit plane, committed with the surface frame.
+  adapter projects the same `--dim` value to an AppKit plane, committed with the surface frame. The
+  SVG base veil uses a luminance mask: white retains the veil and a black aperture removes it. An
+  alpha mask is forbidden because both colors are opaque and therefore close the aperture.
 - Captured pixels are evidence (`window.record` / `window.snapshot`), never replacement UI.
+  Electron capture uses the normal `capturePage` capturer lifetime so the parent and `<webview>` guest
+  are composited together. It does not force `stayHidden:true` and never focuses the window.
 
 ### 6. Preserve the platform paint path
 

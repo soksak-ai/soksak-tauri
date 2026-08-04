@@ -702,7 +702,15 @@ rect, 가시성, 동기화 대기 상태를 공개한다. 합성 상태를 브�
 평면 하나로 문서 안 픽셀을 그리고 콘텐츠 조상에 `filter`/`opacity`를 적용하지 않는다. Electron은
 이 경로만 쓴다. Tauri 어댑터는 공개 content slot과 `--dim` 변화를 사건으로 받아 surface host 바로
 위 input-transparent AppKit 평면에 투영한다. 별도 추종 루프 없이 surface frame 커밋이 조명 frame도
-같이 갱신한다. `webview.surfaces`는 요청값·실제 alpha·frame 정합·sibling 순서를 공개한다.
+같이 갱신한다. SVG 평면의 base veil은 luminance mask이고 검은 aperture만 veil을 제거한다.
+mask·base·aperture·cutout·blocked 영역은 모두 `data-node` 주소로 노출한다.
+`webview.surfaces`는 요청값·실제 alpha·frame 정합·sibling 순서를 공개한다.
+
+Electron의 `window.snapshot`과 `window.record`는 부모 `webContents.capturePage`의 정규 capturer
+수명을 사용한다. 이 수명은 숨었거나 가려진 renderer를 캡처 동안 그리게 하면서 창을 포커스하지
+않는다. `stayHidden:true`는 별도 `<webview>` guest surface를 합성 결과에서 제외할 수 있으므로
+사용하지 않는다. 프레임 수·간격·파일명은 공통 `windowRecorder`가 소유하고 프레임워크는 한 장의
+픽셀만 제공한다.
 
 ### `install()` 은 계약 멤버이고, 늦게 가져온다
 

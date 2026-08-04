@@ -710,8 +710,15 @@ shared. Core paints in-document pixels with one SVG plane outside the content tr
 `filter` or `opacity` to a content ancestor. Electron uses only that path. The Tauri adapter observes
 the public content slot and `--dim` changes as events and projects the value to an input-transparent
 AppKit plane immediately above the surface host. There is no second follower loop: a surface-frame
-commit updates the lighting frame too. `webview.surfaces` exposes requested value, applied alpha,
-frame equality, and sibling order.
+commit updates the lighting frame too. The SVG base veil uses a luminance mask whose black aperture
+removes the veil. Mask, base, aperture, cutout, and blocked regions all expose `data-node` addresses.
+`webview.surfaces` exposes requested value, applied alpha, frame equality, and sibling order.
+
+Electron `window.snapshot` and `window.record` use the normal parent `webContents.capturePage`
+capturer lifetime. It keeps a hidden or occluded renderer painting during capture without focusing
+the window. `stayHidden:true` is not used because it may exclude the separate `<webview>` guest
+surface from the composite. Common `windowRecorder` owns frame count, cadence, and file names; each
+framework provides only one frame of pixels.
 
 ### `install()` is a contract member, and it is lazy
 
