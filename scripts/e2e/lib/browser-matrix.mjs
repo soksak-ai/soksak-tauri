@@ -103,6 +103,26 @@ export function unwrapEvalValue(result) {
   return result?.value;
 }
 
+/** 브라우저 구현 공통 resize 판정. DOM 슬롯과 페이지 viewport는 rounding 외 차이가 없어야 하고,
+ * fixed-size marker는 캡처 픽셀에서도 같은 크기여야 한다(옛 프레임 확대/압축 금지). */
+export function viewportAlignment({ slot, viewport, marker, markerPixels, scale }) {
+  const errors = [];
+  for (const key of ["w", "h"]) {
+    if (Math.abs(Number(slot[key]) - Number(viewport[key])) > 1) {
+      errors.push(`viewport.${key}=${viewport[key]}/slot.${key}=${slot[key]}`);
+    }
+  }
+  const expectedWidth = Number(marker.width) * Number(scale);
+  const expectedHeight = Number(marker.height) * Number(scale);
+  if (Math.abs(Number(markerPixels.width) - expectedWidth) > 4) {
+    errors.push(`marker.width=${markerPixels.width}/${expectedWidth}`);
+  }
+  if (Math.abs(Number(markerPixels.height) - expectedHeight) > 4) {
+    errors.push(`marker.height=${markerPixels.height}/${expectedHeight}`);
+  }
+  return { ok: errors.length === 0, errors };
+}
+
 /** 세 구현이 같은 문서·같은 입력 사건을 실행하는 정적 fixture. */
 export function fixtureHtml() {
   return `<!doctype html><html><head><meta charset="utf-8"><title>Browser Boundary</title>
@@ -112,7 +132,7 @@ export function fixtureHtml() {
       section{padding:36px;border:8px solid #f7f4df;background:#16394a;box-shadow:20px 20px 0 #10202c;max-width:520px}
       h1{font-size:48px;margin:0 0 8px}p{margin:0 0 20px}
       label{display:grid;gap:8px;font-size:18px}input{box-sizing:border-box;width:100%;font:28px system-ui;padding:10px 12px;border:4px solid #e0704f;background:#fff;color:#10202c}
-      #marker{height:36px;margin:0 0 16px;background:var(--marker,#ff00ff)}
+      #marker{width:160px;height:40px;margin:0 0 16px;background:var(--marker,#ff00ff)}
       #typed-marker{height:24px;margin-top:10px;background:#000}
       output{display:block;min-height:1.4em;margin-top:10px;font-size:18px;color:#f7f4df}
     </style></head><body>

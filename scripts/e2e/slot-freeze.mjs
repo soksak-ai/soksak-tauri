@@ -23,6 +23,7 @@ import {
   markerEvidence,
   parseBrowserEngines,
   unwrapEvalValue,
+  viewportAlignment,
 } from "./lib/browser-matrix.mjs";
 
 const SOCKET = requireSocket();
@@ -113,7 +114,7 @@ async function assertWindowedComposition(rpc, win, plugin, tabIds, addresses) {
   if (errors.length) throw new Error(`windowed composition 불일치 — ${errors.join(", ")}`);
 }
 
-function assertFrameMarkers(file, name) {
+function assertFrameMarkers(file, name, scale) {
   const bytes = fs.readFileSync(file);
   for (const [kind, markers] of [["page", fixtureMarkers], ["input", fixtureInputMarkers]]) {
     for (let slot = 0; slot < markers.length; slot += 1) {
@@ -121,8 +122,39 @@ function assertFrameMarkers(file, name) {
       if (evidence.count < MIN_MARKER_COMPONENT || evidence.width < MIN_MARKER_WIDTH || evidence.height < MIN_MARKER_HEIGHT) {
         throw new Error(`${name}: slot ${slot} ${kind} marker 소실(${JSON.stringify(evidence)})`);
       }
+      if (kind === "page" && scale) {
+        const aligned = viewportAlignment({
+          slot: { w: 1, h: 1 }, viewport: { w: 1, h: 1 },
+          marker: { width: 160, height: 40 }, markerPixels: evidence, scale,
+        });
+        if (!aligned.ok) throw new Error(`${name}: slot ${slot} stale-frame stretch — ${aligned.errors.join(", ")}`);
+      }
     }
   }
+}
+
+async function assertViewportComposition(rpc, win, plugin, tabIds, addresses, scale, file, name) {
+  must(await rpc("window.snapshot", { path: file }, win), `${name} snapshot`);
+  const bytes = fs.readFileSync(file);
+  const errors = [];
+  for (let index = 0; index < tabIds.length; index += 1) {
+    const measured = must(await rpc("ui.measure", { address: addresses[index] }, win), `${name} slot ${index}`);
+    const result = must(await rpc(`plugin.${plugin}.eval`, {
+      viewId: tabIds[index],
+      js: "const r=document.querySelector('#marker')?.getBoundingClientRect(); return { viewport:{w:innerWidth,h:innerHeight}, marker:r&&{width:r.width,height:r.height} };",
+    }, win), `${name} viewport ${index}`);
+    const page = unwrapEvalValue(result);
+    const markerPixels = markerEvidence(bytes, fixtureMarkers[index], 24, MARKER_SAMPLE_STEP).largest;
+    const verdict = viewportAlignment({
+      slot: measured.rect,
+      viewport: page?.viewport ?? {},
+      marker: page?.marker ?? {},
+      markerPixels,
+      scale,
+    });
+    if (!verdict.ok) errors.push(`${tabIds[index]}:${verdict.errors.join("|")}`);
+  }
+  if (errors.length) throw new Error(`${name}: resize composition 불일치 — ${errors.join(", ")}`);
 }
 
 async function verifyIme(rpc, win, plugin, tabId, text) {
@@ -166,6 +198,8 @@ async function runEngine(client, page, engine) {
     win = acquired.label;
     console.log(`\n[${engine}] 픽스처 창: ${win}${acquired.adopted ? " (재사용)" : " (생성)"}`);
     must(await rpc("program.wait", { id: engine, timeoutMs: 20_000 }, win), `program.wait ${engine}`);
+    const originalWindow = must(await rpc("window.info", {}, win), "window.info");
+    const scale = Number(originalWindow.scale ?? 1);
     must(await rpc("plugin.settings.set", { id: plugin, key: "homeUrl", value: page.url, scope: "project" }, win), "fixture homeUrl");
     homeOverride = true;
 
@@ -222,7 +256,7 @@ async function runEngine(client, page, engine) {
         if (captured !== FRAMES_PER_CLICK) throw new Error(`${name}: 캡처 ${captured}/${FRAMES_PER_CLICK}`);
         const files = fs.readdirSync(dir).filter((file) => /^f\d{4}\.png$/.test(file)).sort();
         if (files.length !== FRAMES_PER_CLICK) throw new Error(`${name}: PNG ${files.length}/${FRAMES_PER_CLICK}`);
-        for (const file of files) assertFrameMarkers(path.join(dir, file), `${engine}/${name}/${file}`);
+        for (const file of files) assertFrameMarkers(path.join(dir, file), `${engine}/${name}/${file}`, scale);
         frameCount += files.length;
 
         if (native) {
@@ -237,10 +271,41 @@ async function runEngine(client, page, engine) {
       }
     }
 
+    // 창 경계 resize — 축소와 원복(확대)을 모두 거쳐 같은 viewport/marker 기준으로 판정한다.
+    const smaller = { w: Math.max(1000, Number(originalWindow.w) - 240), h: Math.max(760, Number(originalWindow.h) - 160) };
+    must(await rpc("window.resize", smaller, win), "window shrink");
+    await assertViewportComposition(rpc, win, plugin, tabIds, addresses, scale,
+      path.join(engineEvidence, "resize-window-smaller.png"), `${engine}/window-smaller`);
+    must(await rpc("window.resize", { w: originalWindow.w, h: originalWindow.h }, win), "window restore");
+    await assertViewportComposition(rpc, win, plugin, tabIds, addresses, scale,
+      path.join(engineEvidence, "resize-window-restored.png"), `${engine}/window-restored`);
+
+    // 탭 패널 경계 resize — 실제 gutter pointer path를 양방향으로 움직이고 전 구간을 캡처한다.
+    const resizeTree = must(await rpc("ui.tree", { rects: true }, win), "resize ui.tree");
+    const gutter = (resizeTree.nodes ?? []).find((node) =>
+      String(node.nodePath ?? "").startsWith("gutter/") && Number(node.rect?.h) > Number(node.rect?.w) * 4,
+    );
+    if (!gutter?.address) throw new Error("세로 pane gutter가 노출되지 않았다");
+    for (const [direction, dx] of [["wider", 80], ["restored", -80]]) {
+      const dir = path.join(engineEvidence, `resize-pane-${direction}`);
+      const dragged = must(await rpc("ui.input.drag", {
+        from: gutter.address, dx, steps: 12, durationMs: 240,
+        recordDir: dir, recordFrames: FRAMES_PER_CLICK, recordIntervalMs: 16,
+      }, win, { timeoutMs: 60_000 }), `pane resize ${direction}`);
+      const files = fs.readdirSync(dir).filter((file) => /^f\d{4}\.png$/.test(file)).sort();
+      if (Number(dragged.recording?.frames ?? 0) !== FRAMES_PER_CLICK || files.length !== FRAMES_PER_CLICK) {
+        throw new Error(`pane resize ${direction}: 캡처 ${files.length}/${FRAMES_PER_CLICK}`);
+      }
+      for (const file of files) assertFrameMarkers(path.join(dir, file), `${engine}/pane-${direction}/${file}`, scale);
+      await assertViewportComposition(rpc, win, plugin, tabIds, addresses, scale,
+        path.join(engineEvidence, `resize-pane-${direction}.png`), `${engine}/pane-${direction}`);
+      frameCount += files.length;
+    }
+
     const finalPath = path.join(engineEvidence, "final.png");
     must(await rpc("window.snapshot", { path: finalPath }, win), "final snapshot");
-    assertFrameMarkers(finalPath, `${engine}/final`);
-    console.log(`✓ ${engine} GREEN — 한글 IME 2개 · 교차 클릭 ${CYCLES * 2}회 · 연속 프레임 ${frameCount}장`);
+    assertFrameMarkers(finalPath, `${engine}/final`, scale);
+    console.log(`✓ ${engine} GREEN — 한글 IME 2개 · 교차 클릭 ${CYCLES * 2}회 · 창/패널 resize 왕복 · 연속 프레임 ${frameCount}장`);
     return frameCount;
   } finally {
     if (win && homeOverride) {

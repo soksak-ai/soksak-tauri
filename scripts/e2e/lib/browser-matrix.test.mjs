@@ -9,6 +9,7 @@ import {
   markerEvidence,
   markerPixels,
   unwrapEvalValue,
+  viewportAlignment,
 } from "./browser-matrix.mjs";
 import { encodePng } from "./png.mjs";
 
@@ -28,6 +29,23 @@ describe("브라우저 구현 행렬", () => {
 });
 
 describe("공통 브라우저 fixture", () => {
+  it("DOM viewport와 fixed marker가 슬롯·캡처에 rounding-only로 착지해야 한다", () => {
+    expect(viewportAlignment({
+      slot: { w: 608, h: 262 },
+      viewport: { w: 608, h: 262 },
+      marker: { width: 160, height: 40 },
+      markerPixels: { width: 320, height: 80 },
+      scale: 2,
+    })).toEqual({ ok: true, errors: [] });
+    expect(viewportAlignment({
+      slot: { w: 900, h: 400 },
+      viewport: { w: 608, h: 262 },
+      marker: { width: 160, height: 40 },
+      markerPixels: { width: 474, height: 122 },
+      scale: 2,
+    }).ok).toBe(false);
+  });
+
   it("평탄/중첩 eval 봉투를 같은 페이지 반환값으로 푼다", () => {
     const page = { value: "한글", active: true, ledger: { inputEvents: 1 } };
     expect(unwrapEvalValue(page)).toEqual(page);
@@ -44,6 +62,7 @@ describe("공통 브라우저 fixture", () => {
     expect(html).toContain('id="marker"');
     expect(html).toContain('id="typed-marker"');
     expect(html).toContain(fixtureInputMarkers[0]);
+    expect(html).toContain("width:160px;height:40px");
   });
 
   it("무포커스 조명 합성 뒤에도 marker hue를 표면 생존 증거로 센다", () => {
