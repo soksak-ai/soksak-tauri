@@ -658,6 +658,18 @@ fn format_command_md(c: &Value) -> String {
     out
 }
 
+fn format_command_list(commands: &[Value], trailing_separator: bool) -> String {
+    let mut out = commands
+        .iter()
+        .map(format_command_md)
+        .collect::<Vec<_>>()
+        .join("\n");
+    if trailing_separator {
+        out.push('\n');
+    }
+    out
+}
+
 fn run_help(cmd: &str) -> ExitCode {
     match fetch_commands() {
         Err(e) => {
@@ -766,9 +778,7 @@ fn run_docs(core_only: bool, format: &str, lang: &str) -> ExitCode {
     } else {
         println!("가능한 명령 전체(코어 + 모든 플러그인)를 하나의 목록으로 수록한다.\n");
     }
-    for c in &core {
-        println!("{}", format_command_md(c));
-    }
+    print!("{}", format_command_list(&core, !core_only));
     if core_only {
         return ExitCode::SUCCESS;
     }

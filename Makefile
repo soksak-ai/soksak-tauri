@@ -42,11 +42,13 @@ DEBUG_APP   := $(TAURI_TARGET_DIR)/debug/bundle/macos/soksak-tauri-debug.app
 DEV_EXECUTABLE := $(DEV_APP)/Contents/MacOS/soksak-dev
 DEV_CLI := $(CARGO_TARGET)/debug/sok-dev
 DEV_LOG_DIR ?= $(HOME)/.soksak-dev/logs
-DEV_SOCKET := $(HOME)/.soksak-dev/com.soksak.dev.sock
+# 창 호스트 IPC와 영속 저장소 daemon은 서로 다른 공개 좌석이다.
+DEV_HOST_SOCKET := $(HOME)/.soksak-dev/com.soksak.dev.sock
+DEV_CORED_SOCKET := $(HOME)/.soksak-dev/cored.sock
 
 .DEFAULT_GOAL := help
 
-.PHONY: clean-orphan-target doctor doctor-fix help install icons dev build build-dev build-debug run run-dev restart-dev run-debug typecheck check test test-front verify gates e2e-framework-binding e2e-slot-freeze-dev clean stop cli cli-dev cli-debug install-cli install-cli-dev install-cli-debug docs registry
+.PHONY: clean-orphan-target doctor doctor-fix help install icons dev build build-dev build-debug run run-dev restart-dev run-debug typecheck check test test-front verify gates e2e-framework-binding e2e-slot-freeze-dev clean stop cli cli-dev cli-debug install-cli install-cli-dev install-cli-debug docs docs-dev registry
 
 help: ## 사용 가능한 명령 목록
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -126,7 +128,7 @@ run-dev: ## 개발 정체성 soksak-tauri-dev.app 실행(새 인스턴스)
 
 restart-dev: ## 실행 중 dev 앱을 app.quit으로 끝내고 같은 번들을 단일 인스턴스로 다시 실행
 	@test -x "$(DEV_EXECUTABLE)" -a -x "$(DEV_CLI)" || { echo "먼저 'make build-dev' 를 실행하세요."; exit 1; }
-	@CLI="$(DEV_CLI)"; SOCKET="$(DEV_SOCKET)"; \
+	@CLI="$(DEV_CLI)"; SOCKET="$(DEV_HOST_SOCKET)"; \
 	owner_pid() { lsof -t "$$SOCKET" 2>/dev/null | head -n 1; }; \
 	host_ready() { "$$CLI" window.list >/dev/null 2>&1; }; \
 	old_pid="$$(owner_pid)"; \
@@ -187,8 +189,25 @@ install-cli-debug: cli-debug ## sok-debug regular binary를 /usr/local/bin에 �
 # command-reference-whole-surface 가 그런 문서를 거절한다.
 docs: ## 명령 레퍼런스 생성(docs/COMMANDS.md — 앱이 실행 중이어야 함)
 	@mkdir -p docs
-	$(or $(DOCS_SOK),$(CARGO_TARGET)/release/sok) --window main docs --core > docs/COMMANDS.md
+	@set -eu; \
+	tmp="$$(mktemp "$$(pwd)/docs/.COMMANDS.md.XXXXXX")"; \
+	cleanup() { case "$$tmp" in "$$(pwd)"/docs/.COMMANDS.md.*) rm -f -- "$$tmp" ;; esac; }; \
+	trap cleanup EXIT; \
+	$(or $(DOCS_SOK),$(CARGO_TARGET)/release/sok) --window main docs --core > "$$tmp"; \
+	mv -- "$$tmp" docs/COMMANDS.md; \
+	trap - EXIT
 	@echo "생성: docs/COMMANDS.md"
+
+docs-dev: cli-dev ## dev 앱의 실제 command catalog로 명령 레퍼런스 생성
+	@mkdir -p docs
+	@set -eu; \
+	tmp="$$(mktemp "$$(pwd)/docs/.COMMANDS.md.XXXXXX")"; \
+	cleanup() { case "$$tmp" in "$$(pwd)"/docs/.COMMANDS.md.*) rm -f -- "$$tmp" ;; esac; }; \
+	trap cleanup EXIT; \
+	SOKSAK_SOCKET="$(DEV_CORED_SOCKET)" "$(DEV_CLI)" --window main docs --core > "$$tmp"; \
+	mv -- "$$tmp" docs/COMMANDS.md; \
+	trap - EXIT
+	@echo "생성(dev): docs/COMMANDS.md"
 
 # 발행(plugin-publish)은 코어에 두지 않는다(P1·P3) — 각 플러그인은 자기 독립 repo 에서
 # 직접 커밋·태그·push 한다. 카탈로그 갱신(각 repo plugin.json → registry.json)은
@@ -254,7 +273,7 @@ e2e-framework-binding: ## e2e 하니스의 프레임워크 결속 분류(A 프�
 	@node scripts/e2e/framework-binding.mjs $(ARGS)
 
 e2e-slot-freeze-dev: build-dev restart-dev ## 현재 소스로 dev 앱 빌드·재시작→실제 탭 교차 클릭·연속 캡처
-	@SOKSAK_SOCKET="$(HOME)/.soksak-dev/cored.sock" node scripts/e2e/slot-freeze.mjs
+	@SOKSAK_SOCKET="$(DEV_CORED_SOCKET)" node scripts/e2e/slot-freeze.mjs
 
 gates-registry: ## 배포 카탈로그 권위 게이트(네트워크) — 라이브 registry.json 의 GitHub 매니페스트 실측. C2 승격 소용돌이(시행 모집단=측정 모집단) + 의존 그래프 충족(의존 대상이 카탈로그에 함께 배포되는가) + 계약 동기(doctor 발행본 ≡ 코어 contract). 발행 전 GREEN 필수. 로컬(make gates)은 개발 사전점검일 뿐.
 	@node scripts/gates/c2-transparency-scan.mjs --registry

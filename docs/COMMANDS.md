@@ -674,41 +674,6 @@ Check the data store for corruption (full integrity check — it cross-checks ev
 sok-dev data.verify
 ```
 
-## `debug.sleep` (danger: inject)
-
-DEV-ONLY: hold the reply for `ms` then return (ok by default; ok:false when fail=true). Simulates a held-reply process (exec-one onExit) so the scheduler's process_lease lease — no-kill while running, single in-flight, cancel-wakes-wait — can be e2e-tested without a real LLM. Absent in production builds. | 디버그 슬립 대기 보류 테스트 lease 스케줄러
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `fail` | boolean |  | Return ok:false instead of ok:true (exercises backoff/crash path). |
-| `ms` | number |  | Milliseconds to hold the reply before returning (default 3000). |
-
-**Returns**: { slept } (ok:true) | { ok:false } when fail
-**Errors**: INTERNAL
-
-```bash
-sok-dev debug.sleep '{"ms":5000}'
-sok-dev debug.sleep '{"ms":2000,"fail":true}'
-```
-
-## `dev.remoteConfirmMock` (danger: inject)
-
-DEV-ONLY: emit a mock remote destructive confirm request so the desktop RemoteConfirmModal renders without a paired phone. For visual verification and headless E2E only; does not touch the Rust confirm authority. Absent in production builds. | 원격 confirm mock 데스크톱 테스트 모달
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `command` | string |  | Command summary to show (default pane.close). |
-| `device_id` | string |  | Requesting device label to show (default iPhone-mock). |
-| `params` | string |  | Optional params summary string to show. |
-| `ttl_secs` | number |  | Countdown seconds to show (default 120). |
-
-**Returns**: { request_id }
-
-```bash
-sok-dev dev.remoteConfirmMock
-sok-dev dev.remoteConfirmMock '{"command":"terminal.clear","device_id":"Pixel-9"}'
-```
-
 ## `explorer.list`
 
 List direct children of a directory (same view as the file tree). Omit path to use the project root (falls back to HOME). | 파일 목록 디렉토리 폴더 내용 탐색
@@ -3576,6 +3541,25 @@ Resize the window to a physical pixel size (for automation and resize-path E2E �
 
 ```bash
 sok-dev window.resize '{"w":1200,"h":800}'
+```
+
+## `window.resizeSequence`
+
+Apply a finite sequence of native physical window sizes in order while optionally recording every transition frame. Used to reproduce live-resize stalls, blanks, stale frames, and surface drift without focusing the window.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `intervalMs` | number |  | Caller-owned delay between size changes in ms (default 8, 0..1000) |
+| `recordDir` | string |  | Optional output directory for transition PNGs |
+| `recordFrames` | number |  | Frames to record when recordDir is set (default 64, max 600) |
+| `recordIntervalMs` | number |  | Recording interval in ms (default 16) |
+| `sizes` | json | ✓ | Ordered array of physical pixel sizes: [{w,h}, ...] (1..120) |
+
+**Returns**: { steps, frames, resizeElapsedMs, elapsedMs, final:{w,h} }
+**Errors**: INVALID_PARAMS
+
+```bash
+sok-dev window.resizeSequence '{"sizes":[{"w":900,"h":700},{"w":1500,"h":800},{"w":1200,"h":900}],"intervalMs":8}'
 ```
 
 ## `window.restorePrevious`

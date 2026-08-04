@@ -5,6 +5,21 @@
 // 대조를 값으로 고정한다.
 use super::*;
 
+#[test]
+fn generated_core_reference_has_separators_between_commands_but_no_blank_eof() {
+    let command = |name: &str| serde_json::json!({
+        "name": name,
+        "description": "d",
+        "params": {},
+        "returns": "{}",
+        "examples": [name],
+    });
+    let md = format_command_list(&[command("a"), command("b")], false);
+    assert!(md.contains("```\n\n## `b`"), "commands keep one blank separator");
+    assert!(md.ends_with("```\n"));
+    assert!(!md.ends_with("```\n\n"), "generated file must not gain a blank EOF line");
+}
+
 // SKILL.md frontmatter name 추출 — 설치 디렉토리명(dir==name 관례).
 #[test]
 fn skill_frontmatter_name_parses() {
