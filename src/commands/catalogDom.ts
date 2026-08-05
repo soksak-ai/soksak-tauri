@@ -16,9 +16,12 @@ import { register } from "./registry";
 import { tmsg } from "../i18n";
 import { viewFocusSnapshot } from "../plugins/viewFocus";
 import { useGutterHover } from "../state/gutterHover";
+import { useSessions } from "../state/sessions";
 import { motionLiveList, motionLiveRates, setMotionDebug, motionRecentBirths, motionJourneys, motionSwaps, motionTriggers } from "../lib/motionDebug";
 import { railTravelMs, railTravelWallMs } from "../lib/railMotion";
 import { recordWindowFrames } from "./windowRecorder";
+import { createFiniteDomTraceSampler } from "./finiteDomTrace";
+import { layoutSettlementStatus, waitLayoutSettled } from "./waitLayoutSettled";
 
 type FocusTraceEntry = {
   t: number;
@@ -547,8 +550,14 @@ export function registerDomCatalog(): void {
         description: "Finite pre-click recording lead in milliseconds (0..2000, default 0).",
         default: 0,
       },
+      traceAddresses: {
+        type: "json",
+        description:
+          "Optional exposed node addresses sampled on each saved recording frame. Requires recordDir; every sample maps 1:1 to fNNNN.png.",
+        required: false,
+      },
     },
-    returns: "{ clicked, address, phase?, recording?:{dir,frames,mode:'realtime'} }",
+    returns: "{ clicked, address, phase?, recording?:{dir,frames,mode:'realtime'}, trace?:{frames,samples} }",
     message: () => tmsg("msg.ui.input.click"),
     errors: ["NOT_EXPOSED", "AMBIGUOUS", "INVALID_PARAMS"],
     danger: "inject",
@@ -574,6 +583,7 @@ export function registerDomCatalog(): void {
       const recordFrames = p.recordFrames === undefined ? 40 : Number(p.recordFrames);
       const recordIntervalMs = p.recordIntervalMs === undefined ? 16 : Number(p.recordIntervalMs);
       const recordLeadMs = p.recordLeadMs === undefined ? 0 : Number(p.recordLeadMs);
+      const traceAddresses = p.traceAddresses === undefined ? [] : p.traceAddresses;
       if (
         recordDir &&
         (!Number.isInteger(recordFrames) || recordFrames < 1 || recordFrames > 600 ||
@@ -582,20 +592,54 @@ export function registerDomCatalog(): void {
       ) {
         return { ok: false as const, code: "INVALID_PARAMS", message: "녹화 인자가 범위를 벗어났다" };
       }
+      if (
+        !Array.isArray(traceAddresses) ||
+        traceAddresses.length > 16 ||
+        traceAddresses.some((address) => typeof address !== "string" || address.length === 0) ||
+        (traceAddresses.length > 0 && !recordDir)
+      ) {
+        return {
+          ok: false as const,
+          code: "INVALID_PARAMS",
+          message: "traceAddresses는 공개 주소 16개 이하이며 recordDir과 함께 써야 한다",
+        };
+      }
+      const traceTargets = [];
+      for (const address of traceAddresses as string[]) {
+        const resolved = resolveExposed(address);
+        if (!("el" in resolved)) return resolved;
+        traceTargets.push({ address, el: resolved.el });
+      }
+      const trace = traceTargets.length > 0
+        ? createFiniteDomTraceSampler(traceTargets)
+        : null;
       const recording = recordDir
         ? recordWindowFrames({
             dir: recordDir,
             frames: recordFrames,
             intervalMs: recordIntervalMs,
+            onFrame: (frame) => trace?.sample(frame),
           })
         : null;
-      if (recording) await recording.ready;
+      await (recording?.ready ?? Promise.resolve());
       if (recording && recordLeadMs > 0) {
         await new Promise((resolve) => window.setTimeout(resolve, recordLeadMs));
       }
-      const recordingResult = async () => recording
-        ? { recording: { dir: recordDir, frames: await recording, mode: "realtime" as const } }
-        : {};
+      const observationResult = async () => {
+        // trace.samples()는 현재 배열의 snapshot이다. 녹화와 Promise.all 인자에서 동시에
+        // 평가하면 첫 ready 사건 직후의 1장만 복사하고 나머지 onFrame 사건을 잃는다.
+        // 녹화 완료가 모든 frame 사건의 상한이므로 먼저 그 경계를 지난 뒤 snapshot한다.
+        const recordedFrames = await (recording ?? Promise.resolve(null));
+        const traceSamples = trace?.samples() ?? null;
+        return {
+          ...(recordedFrames == null
+            ? {}
+            : { recording: { dir: recordDir, frames: recordedFrames, mode: "realtime" as const } }),
+          ...(traceSamples == null
+            ? {}
+            : { trace: { frames: traceSamples.length, samples: traceSamples } }),
+        };
+      };
       // **콘텐츠 뷰를 가리키면 그 안으로 넣는다.**
       //
       // 그 안은 다른 프로세스라 DOM 으로 만든 클릭이 닿지 않고, 닿아도 사용자 활성화가 없어
@@ -629,7 +673,7 @@ export function registerDomCatalog(): void {
         // 호스트 계약을 지난다 — 태그를 직접 만지면 그 구현이 바뀌는 날 이 자리만 조용히 죽는다.
         // 못 하는 구현은 그 자리에서 이름을 달고 거절한다(조용한 성공 금지).
         await contentViewHost().sendInput(cvLabel, at.x, at.y);
-        return { clicked: true, address: addr, contentView: cvLabel, ...(await recordingResult()) };
+        return { clicked: true, address: addr, contentView: cvLabel, ...(await observationResult()) };
       }
       const types =
         phase === "down"
@@ -646,8 +690,8 @@ export function registerDomCatalog(): void {
         );
       }
       return phase
-        ? { clicked: true, address: addr, phase, ...(await recordingResult()) }
-        : { clicked: true, address: addr, ...(await recordingResult()) };
+        ? { clicked: true, address: addr, phase, ...(await observationResult()) }
+        : { clicked: true, address: addr, ...(await observationResult()) };
     },
   });
 
@@ -829,6 +873,45 @@ export function registerDomCatalog(): void {
       // 판정은 payload 의 passed 다 — ok 는 봉투 예약키라 여기 실으면 삼켜지고, 호출자는
       // "명령이 돌았다" 를 "검사가 통과했다" 로 읽는다(검사 자체가 가짜 GREEN 이 된다).
       return { passed: failed.length === 0, failed: failed.length, checks };
+    },
+  });
+
+  register("ui.layout.status", {
+    description:
+      "Return this window's event-driven layout barrier facts: motion owners, pending settlement revision, running layout animations, and visible content-view labels.",
+    triggers: { ko: "레이아웃 거래 상태 장벽 진단 정착 리비전 애니메이션" },
+    params: {},
+    returns: "{ settled, motion, settlement, animations, contentViewLabels }",
+    message: () => tmsg("msg.ui.motion"),
+    examples: ["ui.layout.status"],
+    handler: () => layoutSettlementStatus(useSessions.getState().activeId || undefined),
+  });
+
+  register("ui.layout.wait-settled", {
+    description:
+      "Wait until the current layout transaction is fully settled. Event-driven: consumes layout-motion edges and Web Animations finished promises; timeoutMs is only a finite failure bound, never a polling interval.",
+    triggers: { ko: "레이아웃 거래 정착 대기 애니메이션 완료" },
+    params: {
+      timeoutMs: { type: "number", description: "Finite failure bound in ms (default 4000, max 30000)" },
+    },
+    returns: "{ waitedMs, animations }",
+    message: () => tmsg("msg.ui.motion"),
+    errors: ["INVALID_PARAMS", "TIMEOUT"],
+    examples: ['ui.layout.wait-settled \'{"timeoutMs":8000}\''],
+    handler: async (p) => {
+      const timeoutMs = typeof p.timeoutMs === "number" ? p.timeoutMs : 4_000;
+      if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 30_000) {
+        return { ok: false as const, code: "INVALID_PARAMS" as const, message: "timeoutMs must be in (0, 30000]" };
+      }
+      try {
+        return await waitLayoutSettled(timeoutMs, useSessions.getState().activeId || undefined);
+      } catch (error) {
+        return {
+          ok: false as const,
+          code: "TIMEOUT" as const,
+          message: error instanceof Error ? error.message : String(error),
+        };
+      }
     },
   });
 

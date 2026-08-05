@@ -720,7 +720,7 @@ Cocoa 부모 추종과 슬롯 거래가 같은 frame을 함께 소유하는 구�
 선언한 정사각 고유비를 유지한 완전한 DOM 기준자만 CSS 크기로 정규화한다. crop된 조각은 epoch
 근거가 아니며 완전한 기준자가 하나도 없는 프레임은 RED다. 먼저 DOM 기준자끼리 한 합성 epoch인지
 판정하고 모든 페이지 기준자가 그 epoch와 일치하는지 대조한다. 이 규칙은 clipping을 배율로 오인하지
-않으면서 shell epoch tear와 브라우저만의 blank/stretch를 분리한다. 정착 프레임은 기존 절대 픽셀
+않으면서 chrome epoch tear와 브라우저만의 blank/stretch를 분리한다. 정착 프레임은 기존 절대 픽셀
 크기와 DOM-slot↔viewport 정합도 함께 통과해야 한다.
 
 레일 재배치에서 Tauri 어댑터는 유한 snap 거래를 쓴다. 중간 mutation 쓰기를 잠그고 목표 DOM을

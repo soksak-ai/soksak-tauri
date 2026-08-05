@@ -1,5 +1,7 @@
 // webview_* — 자식 웹뷰와 메인 웹뷰 표면. 창 안에서만 답이 나오므로 프레임워크의 것이다.
 
+const fs = require("node:fs");
+const { PNG } = require("pngjs");
 const { frameworkError } = require("./error.cjs");
 
 // 브라우저 자식 웹뷰 라벨 접두사 — 정본은 crates/soksak-core/src/window_spec.rs 다
@@ -19,6 +21,133 @@ function isOpenableUrl(raw) {
   if (!rest.startsWith("//") || rest.length <= 2) return false;
   const scheme = s.slice(0, at).toLowerCase();
   return scheme === "http" || scheme === "https";
+}
+
+function tilePositions(total, viewport) {
+  if (!(total > 0 && viewport > 0)) throw frameworkError("INVALID_CAPTURE_SIZE", "전체 캡처 기하가 0 이하입니다");
+  const last = Math.max(0, total - viewport);
+  const positions = [];
+  for (let at = 0; at < last; at += viewport) positions.push(at);
+  positions.push(last);
+  return [...new Set(positions)];
+}
+
+async function scrollGuestTo(guest, x, y) {
+  const expression = `new Promise(resolve => {
+    const x=${JSON.stringify(x)}, y=${JSON.stringify(y)};
+    const done=()=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve({x:scrollX,y:scrollY})));
+    if (Math.abs(scrollX-x)<0.5 && Math.abs(scrollY-y)<0.5) done();
+    else { addEventListener("scroll", done, {once:true}); scrollTo(x,y); }
+  })`;
+  const reply = await guest.debugger.sendCommand("Runtime.evaluate", {
+    expression, awaitPromise: true, returnByValue: true,
+  });
+  return reply?.result?.value;
+}
+
+async function suppressGuestScrollbars(guest) {
+  const reply = await guest.debugger.sendCommand("Runtime.evaluate", {
+    expression: `(() => {
+      const entries = [document.documentElement, document.body].filter(Boolean).map((element) => ({
+        element,
+        value: element.style.getPropertyValue("overflow"),
+        priority: element.style.getPropertyPriority("overflow"),
+      }));
+      for (const entry of entries) entry.element.style.setProperty("overflow", "hidden", "important");
+      return { entries };
+    })()`,
+    returnByValue: false,
+  });
+  const objectId = reply?.result?.objectId;
+  if (!objectId) throw frameworkError("CAPTURE_SCROLLBAR_STATE", "전체 캡처 scrollbar 상태를 붙잡지 못했습니다");
+  await guest.debugger.sendCommand("Runtime.evaluate", {
+    expression: "new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+    awaitPromise: true,
+  });
+  return objectId;
+}
+
+async function restoreGuestScrollbars(guest, objectId) {
+  await guest.debugger.sendCommand("Runtime.callFunctionOn", {
+    objectId,
+    functionDeclaration: `function() {
+      for (const entry of this.entries) {
+        if (entry.value) entry.element.style.setProperty("overflow", entry.value, entry.priority);
+        else entry.element.style.removeProperty("overflow");
+      }
+    }`,
+  });
+  await guest.debugger.sendCommand("Runtime.releaseObject", { objectId });
+}
+
+async function captureFullGuest(guest, outputPath, width, height) {
+  const geometryReply = await guest.debugger.sendCommand("Runtime.evaluate", {
+    expression: "({x:scrollX,y:scrollY,vw:innerWidth,vh:innerHeight})",
+    returnByValue: true,
+  });
+  const geometry = geometryReply?.result?.value;
+  const viewportWidth = Math.max(1, Math.round(Number(geometry?.vw)));
+  const viewportHeight = Math.max(1, Math.round(Number(geometry?.vh)));
+  const documentWidth = Math.max(1, Math.ceil(Number(width)));
+  const documentHeight = Math.max(1, Math.ceil(Number(height)));
+  const original = { x: Number(geometry?.x) || 0, y: Number(geometry?.y) || 0 };
+  const xs = tilePositions(documentWidth, viewportWidth);
+  const ys = tilePositions(documentHeight, viewportHeight);
+  let output;
+  let scale;
+  const scrollbarState = await suppressGuestScrollbars(guest);
+  try {
+    for (const y of ys) {
+      for (const x of xs) {
+        const landed = await scrollGuestTo(guest, x, y);
+        if (Math.abs(Number(landed?.x) - x) > 1 || Math.abs(Number(landed?.y) - y) > 1) {
+          throw frameworkError("CAPTURE_SCROLL_MISMATCH", `전체 캡처 scroll 착지 실패: ${JSON.stringify({ x, y, landed })}`);
+        }
+        const tile = PNG.sync.read((await guest.capturePage(undefined, { stayAwake: true })).toPNG());
+        const tileScale = tile.width / viewportWidth;
+        if (!(tileScale > 0) || Math.abs(tile.height / viewportHeight - tileScale) > 0.03) {
+          throw frameworkError("CAPTURE_SCALE_MISMATCH", `전체 캡처 tile 배율 불일치: ${tile.width}x${tile.height}`);
+        }
+        if (scale === undefined) {
+          scale = tileScale;
+          const outputWidth = Math.ceil(documentWidth * scale);
+          const outputHeight = Math.ceil(documentHeight * scale);
+          if (outputWidth * outputHeight > 100_000_000) {
+            throw frameworkError("CAPTURE_TOO_LARGE", `전체 캡처가 1억 픽셀을 넘습니다: ${outputWidth}x${outputHeight}`);
+          }
+          output = new PNG({ width: outputWidth, height: outputHeight });
+        } else if (Math.abs(tileScale - scale) > 0.03) {
+          throw frameworkError("CAPTURE_SCALE_CHANGED", "전체 캡처 도중 device scale이 바뀌었습니다");
+        }
+        const destX = Math.round(x * scale);
+        const destY = Math.round(y * scale);
+        const copyWidth = Math.min(tile.width, output.width - destX);
+        const copyHeight = Math.min(tile.height, output.height - destY);
+        for (let row = 0; row < copyHeight; row += 1) {
+          const from = row * tile.width * 4;
+          const to = ((destY + row) * output.width + destX) * 4;
+          tile.data.copy(output.data, to, from, from + copyWidth * 4);
+        }
+      }
+    }
+    const bytes = PNG.sync.write(output);
+    fs.writeFileSync(outputPath, bytes);
+    return bytes.length;
+  } finally {
+    // 캡처 성공보다 원래 사용자 상태 복원이 더 강한 사후조건이다. 복원 실패를 삼키면
+    // 명령은 성공을 답하면서 실제 탭은 다른 scroll 위치에 남는다.
+    const restored = await Promise.allSettled([
+      scrollGuestTo(guest, original.x, original.y),
+      restoreGuestScrollbars(guest, scrollbarState),
+    ]);
+    const failures = restored.filter((result) => result.status === "rejected");
+    if (failures.length) {
+      throw frameworkError(
+        "CAPTURE_RESTORE_FAILED",
+        `전체 캡처 뒤 사용자 상태 복원 실패: ${failures.map((failure) => String(failure.reason)).join("; ")}`,
+      );
+    }
+  }
 }
 
 module.exports = {
@@ -106,6 +235,48 @@ module.exports = {
       guest.sendInputEvent({ type: "mouseDown", ...at });
       guest.sendInputEvent({ type: "mouseUp", ...at });
       return null;
+    },
+  },
+
+  webview_send_wheel: {
+    concept: "콘텐츠 뷰에 휠 입력 주입",
+    source: "게스트 CDP Input.dispatchMouseEvent(mouseWheel)",
+    answer: async (ctx, args) => {
+      const guest = ctx.webContentsById(Number(args.id));
+      if (!guest) throw frameworkError("NO_CONTENT_VIEW", `그 콘텐츠 뷰가 없다: ${args.id}`);
+      const attached = guest.debugger.isAttached();
+      if (!attached) guest.debugger.attach("1.3");
+      try {
+        await guest.debugger.sendCommand("Input.dispatchMouseEvent", {
+          type: "mouseWheel",
+          x: Number(args.x),
+          y: Number(args.y),
+          deltaX: Number(args.dx),
+          deltaY: Number(args.dy),
+        });
+      } finally {
+        if (!attached && guest.debugger.isAttached()) guest.debugger.detach();
+      }
+      return null;
+    },
+  },
+
+  webview_capture_full: {
+    concept: "콘텐츠 뷰 전체 문서 캡처",
+    source: "guest scroll event/rAF + capturePage 유한 viewport 거래",
+    answer: async (ctx, args) => {
+      const guest = ctx.webContentsById(Number(args.id));
+      if (!guest) throw frameworkError("NO_CONTENT_VIEW", `그 콘텐츠 뷰가 없다: ${args.id}`);
+      const attached = guest.debugger.isAttached();
+      if (!attached) guest.debugger.attach("1.3");
+      try {
+        const bytes = await captureFullGuest(
+          guest, String(args.path), Number(args.width), Number(args.height),
+        );
+        return { path: String(args.path), bytes };
+      } finally {
+        if (!attached && guest.debugger.isAttached()) guest.debugger.detach();
+      }
     },
   },
 

@@ -15,6 +15,7 @@ import process from "node:process";
 import { openClient, requireSocket, must } from "./lib/client.mjs";
 import { acquireFixtureWindow, releaseFixtureWindow } from "./lib/fixtureWindow.mjs";
 import { closeHtmlFixture, startHtmlFixture } from "./lib/http-fixture.mjs";
+import { decodePng } from "./lib/png.mjs";
 import {
   browserImplementations,
   browserSurfaceInvariant,
@@ -23,25 +24,47 @@ import {
   fixtureInputMarkerSize,
   fixtureMotionMarkers,
   compositorCalibrationMarker,
+  domTransitionTraceVerdict,
   fixtureMarkerSize,
   fixtureMarkers,
   hostileWindowResizeSizes,
   markerEvidence,
   motionMarkerAlignment,
+  numericCompositionTraceVerdict,
+  pinnedDomTraceVerdict,
   parseBrowserEngines,
   snapshotCssScale,
+  selectFixtureMarkerComponent,
   unwrapEvalValue,
   viewportAlignment,
   transitionFrameAlignment,
   completeCalibrationComponents,
+  summarizeFrameSequence,
 } from "./lib/browser-matrix.mjs";
 
 const SOCKET = requireSocket();
 const FIXTURE_ROOT = path.join(os.homedir(), ".soksak-e2e", "slot-freeze");
 const EVIDENCE_ROOT = path.join(os.homedir(), ".soksak-e2e", "evidence", "slot-freeze", "current");
 const ENGINES = parseBrowserEngines(process.env.BROWSER_ENGINES ?? process.env.BROWSER_ENGINE);
-const CYCLES = 3;
+const SCENARIOS = (() => {
+  const allowed = new Set(["flow", "pin", "resize", "overlay", "scroll"]);
+  const selected = new Set((process.env.BROWSER_SCENARIOS ?? "flow,pin,resize,overlay,scroll")
+    .split(",").map((value) => value.trim()).filter(Boolean));
+  const invalid = [...selected].filter((value) => !allowed.has(value));
+  if (!selected.size || invalid.length) {
+    throw new Error(`BROWSER_SCENARIOS는 flow,pin,resize,overlay,scroll의 비어 있지 않은 부분집합이어야 한다: ${invalid.join(",")}`);
+  }
+  return selected;
+})();
+const CYCLES = (() => {
+  const value = Number(process.env.CROSS_CLICK_CYCLES ?? 3);
+  if (!Number.isInteger(value) || value < 0 || value > 20) {
+    throw new Error(`CROSS_CLICK_CYCLES는 0..20 정수여야 한다: ${process.env.CROSS_CLICK_CYCLES}`);
+  }
+  return value;
+})();
 const FRAMES_PER_CLICK = 48;
+const PIN_FRAMES_PER_CLICK = 24;
 const FAST_RESIZE_FRAMES = 64;
 const MARKER_SAMPLE_STEP = 2;
 // 장식의 동색 픽셀 합계가 아니라 넓고 이어진 fixture 직사각형 하나를 요구한다.
@@ -49,6 +72,11 @@ const MIN_MARKER_WIDTH = 100;
 const MIN_MARKER_HEIGHT = 16;
 const MIN_MARKER_COMPONENT = 200;
 const IME_TEXTS = ["한글 입력 왼쪽", "한글 입력 오른쪽"];
+const CHROME_MARKERS = Object.freeze({
+  railAdd: "#ff0000",
+  rightSidebar: "#00ff00",
+  modalOverlayProbe: "#ff00ff",
+});
 
 function prepareEvidence() {
   const boundary = path.join(os.homedir(), ".soksak-e2e", "evidence") + path.sep;
@@ -65,11 +93,36 @@ const addressForTab = (tree, tabId) => {
   return node.address;
 };
 
-const layoutAddressForTab = (tree, tabId) => {
-  const node = (tree.nodes ?? []).find((item) => item.nodePath === `layout/tab/${tabId}`);
-  if (!node?.address) throw new Error(`탭 layout 주소가 노출되지 않았다: ${tabId}`);
+const motionAddressForTab = (tree, tabId) => {
+  const token = `/tab/${tabId}/`;
+  const node = (tree.nodes ?? []).find((item) => item.nodePath === "toolbar" && item.address.includes(token));
+  if (!node?.address) throw new Error(`탭의 영속 content toolbar 주소가 노출되지 않았다: ${tabId}`);
   return node.address;
 };
+
+const activationAddressForTab = (tree, tabId) => {
+  const node = (tree.nodes ?? []).find(
+    (item) => item.nodePath === `tab/view/${tabId}`,
+  );
+  if (!node?.address) throw new Error(`탭 활성화 주소가 노출되지 않았다: ${tabId}`);
+  return node.address;
+};
+
+const paneAddress = (tree, paneId) => {
+  const node = (tree.nodes ?? []).find((item) => item.nodePath === `layout/pane/${paneId}`);
+  if (!node?.address) throw new Error(`pane 공개 DOM 주소가 노출되지 않았다: ${paneId}`);
+  return node.address;
+};
+
+async function assertActivePane(rpc, win, expectedPaneId, stage) {
+  const state = must(await rpc("pane.list", {}, win), `${stage} pane.list`);
+  if (state.activePaneId !== expectedPaneId) {
+    throw new Error(
+      `${stage}: pane 활성화 실패 expected=${expectedPaneId} actual=${state.activePaneId}`,
+    );
+  }
+  return state;
+}
 
 function assertNativeLighting(data, activeLabel, labels) {
   const surfaces = new Map((data.engine?.surfaces ?? []).map((surface) => [surface.label, surface]));
@@ -174,7 +227,11 @@ async function assertEngineSurfaceLedger(rpc, win, implementation, tabIds, stage
   return verdict;
 }
 
-function assertFrameMarkers(file, name, scale, { requireInput = true, compareDomEpoch = false } = {}) {
+function assertFrameMarkers(file, name, scale, {
+  requireInput = true,
+  compareDomEpoch = false,
+  slots = [0, 1],
+} = {}) {
   const bytes = fs.readFileSync(file);
   const domEvidence = compareDomEpoch
     ? completeCalibrationComponents(markerEvidence(bytes, compositorCalibrationMarker, 24, MARKER_SAMPLE_STEP)
@@ -186,17 +243,21 @@ function assertFrameMarkers(file, name, scale, { requireInput = true, compareDom
   const kinds = [["page", fixtureMarkers]];
   if (requireInput) kinds.push(["input", fixtureInputMarkers]);
   for (const [kind, markers] of kinds) {
-    for (let slot = 0; slot < markers.length; slot += 1) {
-      const evidence = markerEvidence(bytes, markers[slot], 24, MARKER_SAMPLE_STEP).largest;
-      const expectedWidth = (compareDomEpoch
-        ? 40
-        : kind === "input" ? fixtureInputMarkerSize.minWidth : fixtureMarkerSize.width) * scale;
-      const expectedHeight = (compareDomEpoch
-        ? 40
-        : kind === "input" ? fixtureInputMarkerSize.height : fixtureMarkerSize.height) * scale;
-      if (evidence.count < MIN_MARKER_COMPONENT || evidence.width < expectedWidth - 4 || evidence.height < expectedHeight - 4) {
-        throw new Error(`${name}: slot ${slot} ${kind} marker 소실(${JSON.stringify(evidence)})`);
+    for (const slot of slots) {
+      const expectedWidth = (kind === "input" ? fixtureInputMarkerSize.minWidth : fixtureMarkerSize.width) * scale;
+      const expectedHeight = (kind === "input" ? fixtureInputMarkerSize.height : fixtureMarkerSize.height) * scale;
+      const raw = markerEvidence(bytes, markers[slot], 24, MARKER_SAMPLE_STEP);
+      const selected = selectFixtureMarkerComponent(raw.components, {
+        expectedWidth,
+        expectedHeight,
+        minWidth: kind === "input",
+        tolerance: 4,
+        minCount: MIN_MARKER_COMPONENT,
+      });
+      if (!selected) {
+        throw new Error(`${name}: slot ${slot} ${kind} marker 소실(${JSON.stringify(raw.largest)})`);
       }
+      const evidence = { ...selected, width: selected.bodyWidth, height: selected.bodyHeight };
       if (kind === "page" && compareDomEpoch) {
         const aligned = transitionFrameAlignment({ browser: evidence, dom: domEvidence });
         if (!aligned.ok) throw new Error(`${name}: compositor epoch 불일치 — ${aligned.errors.join(", ")}`);
@@ -219,6 +280,202 @@ function assertFrameMotion(file, name, scale) {
       throw new Error(`${name}: slot ${slot} DOM/surface 궤적 불일치 — ${verdict.errors.join(", ")}`);
     }
   }
+}
+
+function assertChromeAnchor(file, name, color, scale) {
+  const expected = 12 * scale;
+  const components = markerEvidence(fs.readFileSync(file), color, 16, 1).components.filter((component) =>
+    Math.abs(component.width - expected) <= 4 && Math.abs(component.height - expected) <= 4);
+  if (!components.length) throw new Error(`${name}: chrome anchor ${color} 소실`);
+}
+
+function assertChromeAnchorWithin(file, name, color, scale, point) {
+  const expected = 12 * scale;
+  const expectedX = point.x * scale;
+  const expectedY = point.y * scale;
+  const components = markerEvidence(fs.readFileSync(file), color, 16, 1).components.filter((component) =>
+    Math.abs(component.width - expected) <= 4
+    && Math.abs(component.height - expected) <= 4
+    && Math.abs(component.x - expectedX) <= 4
+    && Math.abs(component.y - expectedY) <= 4);
+  if (!components.length) {
+    throw new Error(`${name}: DOM overlay anchor ${color}가 native surface 위에서 소실`);
+  }
+}
+
+async function assertCaptureInstrumentationCleared(rpc, win) {
+  const anchors = must(await rpc("capture.motion-anchors", { anchors: [] }, win), "capture anchors cleanup");
+  const calibration = must(await rpc("capture.calibration", { visible: false }, win), "capture calibration cleanup");
+  if (anchors.count !== 0 || anchors.visible || calibration.visible) {
+    throw new Error(`capture instrumentation 잔류: ${JSON.stringify({ anchors, calibration })}`);
+  }
+}
+
+function assertFrameSequence(files, name, scale, options = {}) {
+  const observations = files.map((file) => {
+    const errors = [];
+    try { assertFrameMarkers(file, path.join(name, path.basename(file)), scale, options); }
+    catch (error) { errors.push(error instanceof Error ? error.message : String(error)); }
+    let motionDx = 0;
+    if (options.motion) {
+      try { assertFrameMotion(file, path.join(name, path.basename(file)), scale); }
+      catch (error) { errors.push(error instanceof Error ? error.message : String(error)); }
+      const bytes = fs.readFileSync(file);
+      for (const color of fixtureMotionMarkers) {
+        const verdict = motionMarkerAlignment(bytes, color, scale);
+        if (Number.isFinite(verdict.dx)) motionDx = Math.max(motionDx, verdict.dx);
+      }
+    }
+    for (const chrome of options.chromeAnchors ?? []) {
+      try { assertChromeAnchor(file, path.join(name, path.basename(file)), chrome, scale); }
+      catch (error) { errors.push(error instanceof Error ? error.message : String(error)); }
+    }
+    return { frame: path.basename(file), errors, motionDx };
+  });
+  const verdict = summarizeFrameSequence(observations);
+  if (!verdict.ok) throw new Error(`${name}: ${verdict.summary}`);
+  return verdict;
+}
+
+const nodeAddress = (tree, nodePath) => {
+  const node = (tree.nodes ?? []).find((item) => item.nodePath === nodePath);
+  if (!node?.address) throw new Error(`공개 DOM 주소 누락: ${nodePath}`);
+  return node.address;
+};
+
+async function assertFocusLighting(rpc, win, addresses, activeIndex, stage) {
+  const luminance = [];
+  for (let index = 0; index < addresses.length; index += 1) {
+    const measured = must(await rpc("ui.measure", { address: addresses[index] }, win), `${stage} lighting slot ${index}`);
+    const rect = measured.rect;
+    const pixels = must(await rpc("window.pixels", {
+      rect: { x: rect.x + rect.w - 36, y: rect.y + 12, w: 24, h: 24 },
+      settle: false,
+    }, win), `${stage} lighting pixels ${index}`);
+    luminance.push(Number(pixels.luminance));
+  }
+  const active = luminance[activeIndex];
+  const inactive = luminance[activeIndex === 0 ? 1 : 0];
+  const ratio = inactive / active;
+  if (![active, inactive, ratio].every(Number.isFinite) || active <= 0 || ratio < 0.35 || ratio > 0.65) {
+    throw new Error(`${stage}: focus lighting 픽셀 불일치 active=${active} inactive=${inactive} ratio=${ratio}`);
+  }
+  return { active, inactive, ratio };
+}
+
+async function assertRailCompositionContract(
+  rpc,
+  win,
+  railAddress,
+  expectedPaneId,
+  stage,
+  { connected = true, side, placement } = {},
+) {
+  const tree = must(await rpc("ui.tree", {}, win), `${stage} rail composition tree`);
+  const railPlaneNode = (tree.nodes ?? []).find((node) => node.nodePath === "rail/plane");
+  const lightingNode = (tree.nodes ?? []).find((node) =>
+    typeof node.nodePath === "string" && /^focus-lighting\/[^/]+$/.test(node.nodePath));
+  const relationNode = (tree.nodes ?? []).find((node) =>
+    typeof node.nodePath === "string" && node.nodePath.startsWith("relation/rail/"));
+  if (!railPlaneNode?.address || !lightingNode?.address || !relationNode?.address) {
+    throw new Error(`${stage}: rail 평면/조명/관계 공개 노드 누락 ${JSON.stringify({ railPlaneNode, lightingNode, relationNode })}`);
+  }
+  const [rail, railPlane, lighting, relation] = await Promise.all([
+    rpc("ui.measure", { address: railAddress }, win),
+    rpc("ui.measure", { address: railPlaneNode.address, props: ["zIndex"] }, win),
+    rpc("ui.measure", { address: lightingNode.address, props: ["zIndex"] }, win),
+    rpc("ui.measure", { address: relationNode.address, props: ["zIndex"] }, win),
+  ]).then((values) => values.map((value, index) => must(value, `${stage} rail layer ${index}`)));
+  const railZ = Number(railPlane.style?.zIndex);
+  const lightingZ = Number(lighting.style?.zIndex);
+  const relationZ = Number(relation.style?.zIndex);
+  const errors = [];
+  if (rail.dataset?.focusLighting !== "exempt") errors.push("rail-not-lighting-exempt");
+  if (!(railZ > lightingZ)) errors.push(`rail-z=${railZ}<=lighting-z=${lightingZ}`);
+  if (!(relationZ > railZ)) errors.push(`relation-z=${relationZ}<=rail-z=${railZ}`);
+  if (relation.dataset?.connected !== String(connected)) {
+    errors.push(`relation-connected=${relation.dataset?.connected}/${connected}`);
+  }
+  if (side && relation.dataset?.side !== side) errors.push(`relation-side=${relation.dataset?.side}/${side}`);
+  if (placement && relation.dataset?.placement !== placement) {
+    errors.push(`relation-placement=${relation.dataset?.placement}/${placement}`);
+  }
+  if (relation.dataset?.boundPane !== expectedPaneId) {
+    errors.push(`bound-pane=${relation.dataset?.boundPane}/${expectedPaneId}`);
+  }
+  if (!relation.dataset?.rail || !relation.dataset?.box) errors.push("relation-geometry-missing");
+  if (errors.length) throw new Error(`${stage}: rail composition 불일치 — ${errors.join(", ")}`);
+  return { railZ, lightingZ, relationZ, relation: relation.dataset };
+}
+
+async function assertChromeOverlayContract(rpc, win, engineEvidence, scale) {
+  must(await rpc("sidebar.right.mode", { mode: "overlay" }, win), "right sidebar overlay mode");
+  must(await rpc("project.rightbar.toggle", { open: true }, win), "right sidebar open");
+  const tree = must(await rpc("ui.tree", { rects: true }, win), "chrome ui.tree");
+  const railAdd = nodeAddress(tree, "rail/add");
+  const rightSidebar = nodeAddress(tree, "sidebar/right");
+  for (const [name, address] of [["rail/add", railAdd], ["sidebar/right", rightSidebar]]) {
+    const measured = must(await rpc("ui.measure", {
+      address, occlusion: true, props: ["zIndex", "position"],
+    }, win), `chrome measure ${name}`);
+    if (!measured.occlusion?.reachable || measured.rect.w <= 0 || measured.rect.h <= 0) {
+      throw new Error(`${name}: DOM 크롬 조작면이 도달 불가 ${JSON.stringify(measured)}`);
+    }
+  }
+  must(await rpc("capture.motion-anchors", {
+    anchors: [
+      { address: railAdd, color: CHROME_MARKERS.railAdd },
+      { address: rightSidebar, color: CHROME_MARKERS.rightSidebar },
+    ],
+  }, win), "chrome overlay anchors");
+  const before = path.join(engineEvidence, "chrome-overlay.png");
+  must(await rpc("window.snapshot", { path: before }, win), "chrome overlay snapshot");
+  assertChromeAnchor(before, `${path.basename(engineEvidence)}/chrome-overlay`, CHROME_MARKERS.railAdd, scale);
+  assertChromeAnchor(before, `${path.basename(engineEvidence)}/chrome-overlay`, CHROME_MARKERS.rightSidebar, scale);
+
+  must(await rpc("ui.input.click", { address: railAdd }, win), "rail add click");
+  const modalTree = must(await rpc("ui.tree", { rects: true }, win), "project modal ui.tree");
+  const modal = nodeAddress(modalTree, "modal/project-new");
+  const close = nodeAddress(modalTree, "modal/project-new/close");
+  const measuredModal = must(await rpc("ui.measure", {
+    address: modal, occlusion: true, props: ["zIndex", "position"],
+  }, win), "project modal measure");
+  if (!measuredModal.occlusion?.reachable || Number(measuredModal.style.zIndex) < 300) {
+    throw new Error(`project modal이 브라우저 위 크롬 평면에 없다: ${JSON.stringify(measuredModal)}`);
+  }
+  const surfaceAddresses = (modalTree.nodes ?? [])
+    .filter((node) => node.nodePath === "surface" && typeof node.address === "string")
+    .map((node) => node.address);
+  let surfaceRect;
+  for (const address of surfaceAddresses) {
+    const measured = must(await rpc("ui.measure", { address }, win), "modal overlap surface measure");
+    if (measured.rect.w > 100 && measured.rect.h > 100) {
+      surfaceRect = measured.rect;
+      break;
+    }
+  }
+  if (!surfaceRect) throw new Error("모달과 겹칠 browser surface가 공개 DOM에서 발견되지 않았다");
+  const probePoint = { x: surfaceRect.x + 24, y: surfaceRect.y + 24 };
+  must(await rpc("capture.motion-anchors", {
+    anchors: [{
+      address: modal,
+      color: CHROME_MARKERS.modalOverlayProbe,
+      x: probePoint.x - measuredModal.rect.x,
+      y: probePoint.y - measuredModal.rect.y,
+    }],
+  }, win), "modal overlay probe");
+  const modalPath = path.join(engineEvidence, "chrome-project-modal.png");
+  must(await rpc("window.snapshot", { path: modalPath }, win), "project modal snapshot");
+  assertChromeAnchorWithin(
+    modalPath,
+    `${path.basename(engineEvidence)}/chrome-project-modal`,
+    CHROME_MARKERS.modalOverlayProbe,
+    scale,
+    probePoint,
+  );
+  must(await rpc("ui.input.click", { address: close }, win), "project modal close");
+  must(await rpc("project.rightbar.toggle", { open: false }, win), "right sidebar close");
+  return { railAdd, rightSidebar, modalPath };
 }
 
 function assertSentinelMarkers(file, name, scale) {
@@ -246,7 +503,12 @@ async function assertViewportComposition(rpc, win, plugin, tabIds, addresses, sc
       js: "const r=document.querySelector('#marker')?.getBoundingClientRect(); return { viewport:{w:innerWidth,h:innerHeight}, marker:r&&{width:r.width,height:r.height} };",
     }, win), `${name} viewport ${index}`);
     const page = unwrapEvalValue(result);
-    const markerPixels = markerEvidence(bytes, fixtureMarkers[index], 24, MARKER_SAMPLE_STEP).largest;
+    const rawMarkerPixels = markerEvidence(bytes, fixtureMarkers[index], 24, MARKER_SAMPLE_STEP).largest;
+    const markerPixels = {
+      ...rawMarkerPixels,
+      width: rawMarkerPixels.bodyWidth,
+      height: rawMarkerPixels.bodyHeight,
+    };
     const verdict = viewportAlignment({
       slot: measured.rect,
       viewport: page?.viewport ?? {},
@@ -261,7 +523,12 @@ async function assertViewportComposition(rpc, win, plugin, tabIds, addresses, sc
 
 async function verifyIme(rpc, win, plugin, tabId, text) {
   must(
-    await rpc(`plugin.${plugin}.input.type`, { viewId: tabId, selector: "#ime", text }, win),
+    await rpc(
+      `plugin.${plugin}.input.type`,
+      { viewId: tabId, selector: "#ime", text },
+      win,
+      { timeoutMs: 30_000 },
+    ),
     `input.type ${tabId}`,
   );
   const result = must(
@@ -285,6 +552,72 @@ async function verifyIme(rpc, win, plugin, tabId, text) {
   if (value.ledger?.values?.at?.(-1) !== text) {
     throw new Error(`${tabId}: input 사건 값 불일치 ${JSON.stringify(value.ledger?.values)}`);
   }
+}
+
+async function verifyScrollInput(rpc, win, plugin, tabId, evidencePath) {
+  const readScroll = async (stage) => {
+    const result = must(await rpc(`plugin.${plugin}.eval`, {
+      viewId: tabId,
+      js: "return { y:scrollY, h:document.documentElement.scrollHeight, v:innerHeight, seq:Number(document.documentElement.dataset.scrollSeq||0) };",
+    }, win), `${stage} scroll audit ${tabId}`);
+    return unwrapEvalValue(result);
+  };
+  const before = await readScroll("before");
+  if (Number(before?.y) !== 0 || Number(before?.h) <= Number(before?.v) + 960) {
+    throw new Error(`${tabId}: scroll fixture 계약 불일치 ${JSON.stringify(before)}`);
+  }
+  must(await rpc(`plugin.${plugin}.input.scroll`, {
+    viewId: tabId, selector: "body", dx: 0, dy: 480,
+  }, win), `input.scroll forward ${tabId}`);
+  const forwardApplied = must(await rpc(`plugin.${plugin}.dom.wait-for`, {
+    viewId: tabId, selector: 'html[data-scroll-seq]:not([data-scroll-seq="0"])', timeoutMs: 8_000,
+  }, win, { timeoutMs: 10_000 }), `input.scroll forward applied ${tabId}`);
+  if (forwardApplied.found !== true) {
+    throw new Error(`${tabId}: 실제 wheel 전진 사건 미도달 ${JSON.stringify(forwardApplied)}`);
+  }
+  const after = await readScroll("after");
+  const afterY = Number(after?.y);
+  if (afterY < 479 || afterY > 481) {
+    throw new Error(`${tabId}: 실제 wheel 전진량 불일치 ${JSON.stringify({ before, afterY })}`);
+  }
+  must(await rpc("window.snapshot", { tab: tabId, path: evidencePath }, win), `scroll snapshot ${tabId}`);
+  must(await rpc(`plugin.${plugin}.input.scroll`, {
+    viewId: tabId, selector: "body", dx: 0, dy: -480,
+  }, win), `input.scroll restore ${tabId}`);
+  const restoreApplied = must(await rpc(`plugin.${plugin}.dom.wait-for`, {
+    viewId: tabId, selector: `html[data-scroll-seq]:not([data-scroll-seq="${Number(after.seq)}"])`, timeoutMs: 8_000,
+  }, win, { timeoutMs: 10_000 }), `input.scroll restore applied ${tabId}`);
+  if (restoreApplied.found !== true) {
+    throw new Error(`${tabId}: 실제 wheel 복원 사건 미도달 ${JSON.stringify(restoreApplied)}`);
+  }
+  const restored = await readScroll("restored");
+  const restoredY = Number(restored?.y);
+  if (restoredY !== 0) {
+    throw new Error(`${tabId}: 실제 wheel 복원량 불일치 ${JSON.stringify({ afterY, restoredY })}`);
+  }
+  return { beforeY: Number(before.y), afterY, restoredY };
+}
+
+async function verifyFullCapture(rpc, win, plugin, tabId, outputPath, identityMarker) {
+  const result = must(await rpc(`plugin.${plugin}.capture.full`, {
+    viewId: tabId, path: outputPath,
+  }, win, { timeoutMs: 40_000 }), `capture.full ${tabId}`);
+  if (!fs.existsSync(outputPath) || Number(result.bytes) !== fs.statSync(outputPath).size) {
+    throw new Error(`${tabId}: full capture 파일/바이트 불일치 ${JSON.stringify(result)}`);
+  }
+  const image = decodePng(fs.readFileSync(outputPath));
+  const width = Number(result.width);
+  const height = Number(result.height);
+  const xScale = image.w / width;
+  const yScale = image.h / height;
+  const tail = markerEvidence(fs.readFileSync(outputPath), "#ff8000", 24, 2).components
+    .find((component) => component.width >= 100 && component.height >= 40 && component.y >= image.h * 0.75);
+  const identityMarkers = markerEvidence(fs.readFileSync(outputPath), identityMarker, 24, 1).components
+    .filter((component) => component.width >= 50 && component.height >= 30);
+  if (!(height > 1400 && image.h > image.w && Math.abs(xScale - yScale) <= 0.03 && tail && identityMarkers.length === 1)) {
+    throw new Error(`${tabId}: full capture 문서 기하/단일성 불일치 ${JSON.stringify({ result, image: { w: image.w, h: image.h }, xScale, yScale, identityMarkers })}`);
+  }
+  return { path: outputPath, bytes: result.bytes, width, height, pngWidth: image.w, pngHeight: image.h };
 }
 
 async function assertImePersisted(rpc, win, plugin, tabIds, stage) {
@@ -312,6 +645,8 @@ async function runEngine(client, page, engine) {
   let sentinelHomeOverride = false;
   let sentinelTabId;
   let sentinelSurfaceId;
+  let originalSettings;
+  let originalRightMode;
   try {
     if (implementation.surface !== "framework-native") {
       const sentinelRoot = path.join(FIXTURE_ROOT, "owner-sentinel", engine);
@@ -346,6 +681,12 @@ async function runEngine(client, page, engine) {
       throw new Error(`DOM compositor calibration 계약 불일치: ${JSON.stringify(calibration)}`);
     }
     const originalWindow = must(await rpc("window.info", {}, win), "window.info");
+    originalSettings = must(await rpc("settings.get", {}, win), "settings.get");
+    originalRightMode = must(await rpc("sidebar.right.mode", {}, win), "sidebar.right.mode").mode;
+    for (const [key, value] of [["projectTabPosition", "left"], ["focusDim", true], ["dimIdle", 0.5]]) {
+      must(await rpc("settings.set", { key, value }, win), `fixture setting ${key}`);
+    }
+    must(await rpc("project.rightbar.toggle", { open: false }, win), "fixture right sidebar closed");
     must(await rpc("plugin.settings.set", { id: plugin, key: "homeUrl", value: page.url, scope: "project" }, win), "fixture homeUrl");
     homeOverride = true;
 
@@ -354,7 +695,9 @@ async function runEngine(client, page, engine) {
     const left = must(await rpc("tab.open", { program: engine }, win), "left tab.open");
     const right = must(await rpc("pane.split", { side: "right", program: engine }, win), "right pane.split");
     const tabIds = [left.tabId, right.tabId];
+    const paneIds = [left.paneId, right.paneId];
     if (tabIds.some((id) => typeof id !== "string")) throw new Error(`브라우저 탭 id 누락: ${JSON.stringify(tabIds)}`);
+    if (paneIds.some((id) => typeof id !== "string")) throw new Error(`브라우저 pane id 누락: ${JSON.stringify(paneIds)}`);
     must(await rpc("sidebar.left.position", { mode: "flow" }, win), "sidebar flow");
 
     for (let index = 0; index < tabIds.length; index += 1) {
@@ -375,6 +718,22 @@ async function runEngine(client, page, engine) {
       const identity = must(await rpc(`plugin.${plugin}.dom.text`, { selector: "h1", viewId: tabId }, win), `browser identity ${tabId}`);
       if (identity.text !== "Browser Boundary") throw new Error(`${tabId}: 페이지 신원 불일치(${JSON.stringify(identity.text)})`);
       await verifyIme(rpc, win, plugin, tabId, IME_TEXTS[index]);
+      if (SCENARIOS.has("scroll")) {
+        const scroll = await verifyScrollInput(
+          rpc, win, plugin, tabId, path.join(engineEvidence, `scroll-${index}.png`),
+        );
+        fs.writeFileSync(
+          path.join(engineEvidence, `scroll-${index}.json`),
+          `${JSON.stringify(scroll, null, 2)}\n`,
+        );
+        const full = await verifyFullCapture(
+          rpc, win, plugin, tabId, path.join(engineEvidence, `full-${index}.png`), fixtureMarkers[index],
+        );
+        fs.writeFileSync(
+          path.join(engineEvidence, `full-${index}.json`),
+          `${JSON.stringify(full, null, 2)}\n`,
+        );
+      }
       // tab.open + pane.split은 두 view를 먼저 선언하므로 엔진도 둘을 병렬 생성할 수 있다.
       // 부분 prefix를 기대하지 않고 선언된 전체 view 집합과 엔진 장부의 일대일성을 검사한다.
       await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, `create-${index}`);
@@ -382,12 +741,22 @@ async function runEngine(client, page, engine) {
 
     const tree = must(await rpc("ui.tree", {}, win), "ui.tree");
     const addresses = tabIds.map((id) => addressForTab(tree, id));
-    const layoutAddresses = tabIds.map((id) => layoutAddressForTab(tree, id));
+    const activationAddresses = tabIds.map((id) => activationAddressForTab(tree, id));
+    // 플러그인 인스턴스와 함께 영속하고 surface와 같은 x축을 소유하는 공개 toolbar가
+    // 브라우저 표면 궤적의 기준이다. 앱 크롬 합성은 별도로 persistent rail root와 pane root를
+    // 같은 rAF에서 측정한다 — 콘텐츠 표면 검증과 크롬 DOM 검증을 한 값으로 뭉개지 않는다.
+    const motionAddresses = tabIds.map((id) => motionAddressForTab(tree, id));
+    const paneAddresses = paneIds.map((id) => paneAddress(tree, id));
+    const railAddress = nodeAddress(tree, "rail/left");
+    const railAddAddress = nodeAddress(tree, "rail/add");
     must(await rpc("capture.motion-anchors", {
-      anchors: layoutAddresses.map((address, index) => ({
-        address,
-        color: fixtureMotionMarkers[index],
-      })),
+      anchors: [
+        ...motionAddresses.map((address, index) => ({
+          address,
+          color: fixtureMotionMarkers[index],
+        })),
+        { address: railAddAddress, color: CHROME_MARKERS.railAdd },
+      ],
     }, win), "motion anchors");
     const native = implementation.surface === "framework-native";
     const windowed = implementation.surface === "engine-windowed";
@@ -403,6 +772,7 @@ async function runEngine(client, page, engine) {
       assertTauriSurfaceResizePolicy(initial, "initial windowed composition");
     }
     await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, "first-paint-ledger");
+    must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }), "first paint layout settled");
     const firstPaintPath = path.join(engineEvidence, "first-paint.png");
     must(await rpc("window.snapshot", { path: firstPaintPath }, win), "first paint snapshot");
     const scale = snapshotCssScale(fs.readFileSync(firstPaintPath), originalWindow);
@@ -428,24 +798,79 @@ async function runEngine(client, page, engine) {
     }
 
     let frameCount = 0;
-    for (let cycle = 0; cycle < CYCLES; cycle += 1) {
+    const numericTraceFailures = [];
+    await assertActivePane(rpc, win, paneIds[1], "교차 클릭 시작 상태");
+    await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, "cross-click-initial-right");
+    for (let cycle = 0; cycle < (SCENARIOS.has("flow") ? CYCLES : 0); cycle += 1) {
       for (let side = 0; side < addresses.length; side += 1) {
         const name = `${String(cycle * 2 + side + 1).padStart(2, "0")}-${side ? "right" : "left"}`;
         const dir = path.join(engineEvidence, name);
+        const trace = implementation.surface === "engine-offscreen"
+          ? must(await rpc(
+            `plugin.${plugin}.surface.trace.start`,
+            { durationMs: 800 },
+            win,
+          ), `합성 수치 trace 무장 ${name}`)
+          : null;
         const clicked = must(await rpc("ui.input.click", {
-          address: addresses[side], recordDir: dir, recordFrames: FRAMES_PER_CLICK,
+          address: activationAddresses[side], recordDir: dir, recordFrames: FRAMES_PER_CLICK,
           recordIntervalMs: 16, recordLeadMs: 32,
+          traceAddresses: [railAddress, ...paneAddresses],
         }, win, { timeoutMs: 60_000 }), `교차 클릭 ${name}`);
         const captured = Number(clicked.recording?.frames ?? 0);
         if (captured !== FRAMES_PER_CLICK) throw new Error(`${name}: 캡처 ${captured}/${FRAMES_PER_CLICK}`);
         const files = fs.readdirSync(dir).filter((file) => /^f\d{4}\.png$/.test(file)).sort();
         if (files.length !== FRAMES_PER_CLICK) throw new Error(`${name}: PNG ${files.length}/${FRAMES_PER_CLICK}`);
-        for (const file of files) {
-          const frame = path.join(dir, file);
-          assertFrameMarkers(frame, `${engine}/${name}/${file}`, scale);
-          assertFrameMotion(frame, `${engine}/${name}/${file}`, scale);
+        await assertActivePane(rpc, win, paneIds[side], name);
+        const domVerdict = domTransitionTraceVerdict(clicked.trace?.samples, {
+          railAddress,
+          paneAddresses,
+          // 이 E2E는 사용자 창을 빼앗지 않는 비전면 캡처다. WebKit document timeline이
+          // 정지할 수 있으므로 중간 좌표 없는 단일-frame 거래를 요구한다.
+          motionMode: "snap",
+        });
+        fs.writeFileSync(
+          path.join(dir, "dom-transition-trace.json"),
+          `${JSON.stringify({ samples: clicked.trace?.samples ?? [], verdict: domVerdict }, null, 2)}\n`,
+        );
+        if (!domVerdict.ok) {
+          throw new Error(`${engine}/${name}: sidebar/tab DOM transaction 불일치 — ${domVerdict.errors.join(", ")}`);
         }
+        if (trace) {
+          const observed = must(await rpc(
+            `plugin.${plugin}.surface.trace.read`,
+            { traceId: trace.traceId },
+            win,
+            { timeoutMs: 10_000 },
+          ), `합성 수치 trace 판독 ${name}`);
+          const verdict = numericCompositionTraceVerdict(observed.samples);
+          fs.writeFileSync(
+            path.join(dir, "composition-trace.json"),
+            `${JSON.stringify({ traceId: trace.traceId, samples: observed.samples, verdict }, null, 2)}\n`,
+          );
+          if (!verdict.ok) {
+            const failure = `${engine}/${name}: DOM/native presentation trace 불일치 `
+              + `compared=${verdict.compared} maxDelta=${verdict.maxDelta} — ${verdict.errors.join(", ")}`;
+            numericTraceFailures.push(failure);
+            console.error(`RED ${failure}`);
+          }
+        }
+        assertFrameSequence(
+          files.map((file) => path.join(dir, file)),
+          `${engine}/${name}`,
+          scale,
+          { motion: true, chromeAnchors: [CHROME_MARKERS.railAdd] },
+        );
         frameCount += files.length;
+
+        const lighting = await assertFocusLighting(rpc, win, addresses, side, `${engine}/${name}`);
+        await assertRailCompositionContract(
+          rpc,
+          win,
+          railAddress,
+          paneIds[side],
+          `${engine}/${name}`,
+        );
 
         if (native) {
           const current = must(await rpc("webview.composition", {}, win), `composition ${name}`);
@@ -456,8 +881,151 @@ async function runEngine(client, page, engine) {
           await assertWindowedComposition(rpc, win, plugin, tabIds, addresses);
         }
         await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, `cross-click-${name}`);
-        console.log(`✓ ${name}: ${FRAMES_PER_CLICK} frames · 두 live marker · ${native ? "DOM/native exact" : windowed ? "DOM/CEF exact" : "DOM/native-offscreen exact"}`);
+        console.log(`✓ ${name}: ${FRAMES_PER_CLICK} frames · 두 live marker · focus ratio ${lighting.ratio.toFixed(3)} · ${native ? "DOM/native exact" : windowed ? "DOM/CEF exact" : "DOM/native-offscreen exact"}`);
       }
+    }
+    if (numericTraceFailures.length) {
+      throw new Error(`합성 수치 trace RED ${numericTraceFailures.length}건\n${numericTraceFailures.join("\n")}`);
+    }
+
+    // PIN 계약 — 사이드바와 분할 rect는 포커스 클릭의 입력이 아니다. station 0에서 오른쪽
+    // 인접/비인접을, station 50에서 왼쪽 인접을 각각 실제 클릭·동일 tick trace·PNG로 검증한다.
+    const pinCases = SCENARIOS.has("pin") ? [
+      { station: 0, side: 0, relationSide: "right", connected: true, name: "pin-right-adjacent" },
+      { station: 0, side: 1, relationSide: "detached", connected: false, name: "pin-detached" },
+      { station: 50, side: 0, relationSide: "left", connected: true, name: "pin-left-adjacent" },
+    ] : [];
+    for (const pinCase of pinCases) {
+      must(await rpc("sidebar.left.position", { mode: "pin", station: pinCase.station }, win), `${pinCase.name} set pin`);
+      must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }), `${pinCase.name} pin settled`);
+      const before = must(await rpc("layout.arrangement", {}, win), `${pinCase.name} arrangement before`);
+      const nativeBefore = native
+        ? must(await rpc("webview.composition", {}, win), `${pinCase.name} native before`)
+        : null;
+      const dir = path.join(engineEvidence, pinCase.name);
+      const clicked = must(await rpc("ui.input.click", {
+        address: activationAddresses[pinCase.side],
+        recordDir: dir,
+        recordFrames: PIN_FRAMES_PER_CLICK,
+        recordIntervalMs: 16,
+        recordLeadMs: 32,
+        traceAddresses: [railAddress, ...paneAddresses],
+      }, win, { timeoutMs: 60_000 }), `${pinCase.name} click`);
+      const files = fs.readdirSync(dir).filter((file) => /^f\d{4}\.png$/.test(file)).sort();
+      if (Number(clicked.recording?.frames ?? 0) !== PIN_FRAMES_PER_CLICK || files.length !== PIN_FRAMES_PER_CLICK) {
+        throw new Error(`${pinCase.name}: 캡처 ${files.length}/${PIN_FRAMES_PER_CLICK}`);
+      }
+      const pinTrace = pinnedDomTraceVerdict(clicked.trace?.samples, {
+        addresses: [railAddress, ...paneAddresses],
+      });
+      fs.writeFileSync(
+        path.join(dir, "pin-dom-trace.json"),
+        `${JSON.stringify({ samples: clicked.trace?.samples ?? [], verdict: pinTrace }, null, 2)}\n`,
+      );
+      if (!pinTrace.ok) {
+        throw new Error(`${engine}/${pinCase.name}: PIN DOM 고정 불일치 — ${pinTrace.errors.join(", ")}`);
+      }
+      const after = must(await rpc("layout.arrangement", {}, win), `${pinCase.name} arrangement after`);
+      if (before.station !== pinCase.station || after.station !== before.station) {
+        throw new Error(`${pinCase.name}: station 변경 ${before.station}→${after.station}, expected=${pinCase.station}`);
+      }
+      if (before.switched || after.switched || JSON.stringify(before.cells) !== JSON.stringify(after.cells)) {
+        throw new Error(`${pinCase.name}: PIN이 분할 배치를 변경 ${JSON.stringify({ before, after })}`);
+      }
+      await assertActivePane(rpc, win, paneIds[pinCase.side], pinCase.name);
+      const paneState = must(await rpc("pane.list", {}, win), `${pinCase.name} pane.list`);
+      const stateRelation = paneState.railRelation;
+      if (!stateRelation
+          || stateRelation.placement !== "pin"
+          || stateRelation.connected !== pinCase.connected
+          || stateRelation.side !== pinCase.relationSide) {
+        throw new Error(`${pinCase.name}: 공개 relation 판정 불일치 ${JSON.stringify(stateRelation)}`);
+      }
+      await assertRailCompositionContract(rpc, win, railAddress, paneIds[pinCase.side], pinCase.name, {
+        connected: pinCase.connected,
+        side: pinCase.relationSide,
+        placement: "pin",
+      });
+      assertFrameSequence(
+        files.map((file) => path.join(dir, file)),
+        `${engine}/${pinCase.name}`,
+        scale,
+        { motion: false, chromeAnchors: [CHROME_MARKERS.railAdd] },
+      );
+      if (native && nativeBefore) {
+        const nativeAfter = must(await rpc("webview.composition", {}, win), `${pinCase.name} native after`);
+        const beforeWrites = new Map((nativeBefore.placement ?? []).map((item) => [item.label, Number(item.boundsWrites ?? 0)]));
+        for (const item of nativeAfter.placement ?? []) {
+          if (beforeWrites.has(item.label) && Number(item.boundsWrites ?? 0) !== beforeWrites.get(item.label)) {
+            throw new Error(`${pinCase.name}: PIN 클릭이 native bounds를 기록 ${item.label}:${beforeWrites.get(item.label)}→${item.boundsWrites}`);
+          }
+        }
+      }
+      frameCount += files.length;
+      console.log(`✓ ${pinCase.name}: station=${pinCase.station} side=${pinCase.relationSide} connected=${pinCase.connected} · rect 고정 · ${PIN_FRAMES_PER_CLICK} frames`);
+    }
+    if (SCENARIOS.has("pin")) {
+      must(await rpc("sidebar.left.position", { mode: "pin", station: 50 }, win), "pin maximize station");
+      must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }), "pin maximize station settled");
+      const restoredBaseline = must(await rpc("layout.arrangement", {}, win), "pin maximize baseline");
+      const maximizeCases = [
+        { side: 0, station: 100, relationSide: "left", name: "pin-maximize-left" },
+        { side: 1, station: 0, relationSide: "right", name: "pin-maximize-right" },
+      ];
+      for (const maximizeCase of maximizeCases) {
+        must(await rpc("tab.maximize", { tab: tabIds[maximizeCase.side] }, win), `${maximizeCase.name} maximize`);
+        must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }), `${maximizeCase.name} settled`);
+        const maximized = must(await rpc("layout.arrangement", {}, win), `${maximizeCase.name} arrangement`);
+        const maximizedRect = maximized.cells?.[0]?.rect;
+        if (maximized.station !== maximizeCase.station
+            || maximized.cells?.length !== 1
+            || maximized.cells[0]?.id !== paneIds[maximizeCase.side]
+            || Number(maximizedRect?.left) !== 0
+            || Number(maximizedRect?.top) !== 0
+            || Number(maximizedRect?.width) !== 100
+            || Number(maximizedRect?.height) !== 100) {
+          throw new Error(`${maximizeCase.name}: PIN 방향 최대화 불일치 expectedPane=${paneIds[maximizeCase.side]} actual=${JSON.stringify(maximized)}`);
+        }
+        const persisted = must(await rpc("sidebar.left.position", {}, win), `${maximizeCase.name} persisted pin`);
+        if (persisted.leftRailPosition?.mode !== "pin" || persisted.leftRailPosition?.station !== 50) {
+          throw new Error(`${maximizeCase.name}: 최대화가 저장 PIN을 변경 ${JSON.stringify(persisted.leftRailPosition)}`);
+        }
+        await assertRailCompositionContract(rpc, win, railAddress, paneIds[maximizeCase.side], maximizeCase.name, {
+          connected: true,
+          side: maximizeCase.relationSide,
+          placement: "pin",
+        });
+        const screenshot = path.join(engineEvidence, `${maximizeCase.name}.png`);
+        must(await rpc("window.snapshot", { path: screenshot }, win), `${maximizeCase.name} snapshot`);
+        assertFrameMarkers(screenshot, `${engine}/${maximizeCase.name}`, scale, { slots: [maximizeCase.side] });
+        must(await rpc("tab.restore", {}, win), `${maximizeCase.name} restore`);
+        must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }), `${maximizeCase.name} restore settled`);
+        const restored = must(await rpc("layout.arrangement", {}, win), `${maximizeCase.name} restored arrangement`);
+        if (restored.station !== 50 || JSON.stringify(restored.cells) !== JSON.stringify(restoredBaseline.cells)) {
+          throw new Error(`${maximizeCase.name}: 복원이 PIN/분할을 바꿈 ${JSON.stringify({ baseline: restoredBaseline, restored })}`);
+        }
+        console.log(`✓ ${maximizeCase.name}: station=${maximizeCase.station} · 저장 PIN=50 · 복원 동일`);
+      }
+    }
+    must(await rpc("sidebar.left.position", { mode: "flow" }, win), "restore sidebar flow after pin contract");
+    must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }), "flow restore settled");
+
+    if (SCENARIOS.size === 1 && (SCENARIOS.has("pin") || SCENARIOS.has("scroll"))) {
+      const finalPath = path.join(engineEvidence, "pin-final.png");
+      must(await rpc("window.snapshot", { path: finalPath }, win), "pin final snapshot");
+      if (native) {
+        const finalComposition = must(await rpc("webview.composition", {}, win), "pin final composition");
+        fs.writeFileSync(
+          path.join(engineEvidence, "pin-final-composition.json"),
+          `${JSON.stringify(finalComposition, null, 2)}\n`,
+        );
+      }
+      assertFrameMarkers(finalPath, `${engine}/pin-final`, scale);
+      await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, "pin-final-ledger");
+      console.log(SCENARIOS.has("pin")
+        ? `✓ ${engine} PIN GREEN — 좌·우 결합 + 비인접 독립 보더 · 연속 프레임 ${frameCount}장`
+        : `✓ ${engine} SCROLL GREEN — 실제 wheel 2개 탭 0→480→0 · 탭 지정 viewport/full 캡처 각 2장`);
+      return frameCount;
     }
 
     // 전체 창 경계 resize — 녹화를 먼저 열고 큰 폭의 축소/확대를 짧은 간격으로 반복한다.
@@ -480,9 +1048,11 @@ async function runEngine(client, page, engine) {
     }
     // 최소 높이에서는 입력 아래의 상태 marker가 정상적으로 viewport 밖에 놓일 수 있다. 전이 중에는
     // 상단의 고정 ruler로 live frame을 판정하고, 원복 직후 실제 input 값·event ledger를 다시 읽는다.
-    for (const file of fastFiles) assertFrameMarkers(
-      path.join(fastResizeDir, file), `${engine}/window-fast/${file}`, scale,
-      { requireInput: false, compareDomEpoch: true },
+    assertFrameSequence(
+      fastFiles.map((file) => path.join(fastResizeDir, file)),
+      `${engine}/window-fast`,
+      scale,
+      { requireInput: false, compareDomEpoch: true, chromeAnchors: [CHROME_MARKERS.railAdd] },
     );
     must(await rpc("capture.calibration", { visible: false }, win), "DOM compositor calibration hide");
     frameCount += fastFiles.length;
@@ -507,12 +1077,19 @@ async function runEngine(client, page, engine) {
       if (Number(dragged.recording?.frames ?? 0) !== FRAMES_PER_CLICK || files.length !== FRAMES_PER_CLICK) {
         throw new Error(`pane resize ${direction}: 캡처 ${files.length}/${FRAMES_PER_CLICK}`);
       }
-      for (const file of files) assertFrameMarkers(path.join(dir, file), `${engine}/pane-${direction}/${file}`, scale);
+      assertFrameSequence(
+        files.map((file) => path.join(dir, file)),
+        `${engine}/pane-${direction}`,
+        scale,
+        { chromeAnchors: [CHROME_MARKERS.railAdd] },
+      );
       await assertViewportComposition(rpc, win, plugin, tabIds, addresses, scale,
         path.join(engineEvidence, `resize-pane-${direction}.png`), `${engine}/pane-${direction}`);
       await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, `pane-resize-${direction}`);
       frameCount += files.length;
     }
+
+    await assertChromeOverlayContract(rpc, win, engineEvidence, scale);
 
     const finalPath = path.join(engineEvidence, "final.png");
     must(await rpc("window.snapshot", { path: finalPath }, win), "final snapshot");
@@ -521,9 +1098,18 @@ async function runEngine(client, page, engine) {
     console.log(`✓ ${engine} GREEN — 한글 IME 2개 · 교차 클릭 ${CYCLES * 2}회 · 급격한 창 resize ${fastSizes.length}단계/${fastResize.resizeElapsedMs}ms · 패널 resize 왕복 · 연속 프레임 ${frameCount}장`);
     return frameCount;
   } finally {
-    if (win) await rpc("capture.motion-anchors", { anchors: [] }, win).catch(() => {});
+    // 계측은 제품 UI가 아니다. 성공·RED·KEEP 어느 경로에서도 제거 ACK와 0개 상태를
+    // 확인한 뒤에만 창을 사용자에게 돌려준다.
+    if (win) await assertCaptureInstrumentationCleared(rpc, win);
     if (win && homeOverride) {
       await rpc("plugin.settings.reset", { id: plugin, key: "homeUrl", scope: "project" }, win).catch(() => {});
+    }
+    if (win) await rpc("project.rightbar.toggle", { open: false }, win).catch(() => {});
+    if (win && originalRightMode) await rpc("sidebar.right.mode", { mode: originalRightMode }, win).catch(() => {});
+    if (win && originalSettings) {
+      for (const key of ["projectTabPosition", "focusDim", "dimIdle"]) {
+        await rpc("settings.set", { key, value: originalSettings[key] }, win).catch(() => {});
+      }
     }
     if (win && process.env.KEEP !== "1") await releaseFixtureWindow(rpc, FIXTURE_ROOT).catch(() => {});
     else if (win) console.log(`KEEP=1 — 픽스처 창 보존: ${win}`);

@@ -18,27 +18,31 @@ beforeEach(() => {
   vi.mocked(createStream).mockReturnValue(readyStream as never);
   vi.mocked(invoke).mockImplementation(async (command, args) => {
     if (command !== "plugin:webview-capture|record") return undefined;
-    readyStream.onmessage(1);
     return args?.frames;
   });
 });
 
 it("공통 record 계약 한 번으로 유한 프레임 시퀀스를 저장한다", async () => {
+  const observed: number[] = [];
   const recording = recordWindowFrames({
     dir: "/tmp/framework-neutral-record",
     frames: 2,
     intervalMs: 0,
+    onFrame: (frame) => observed.push(frame),
   });
+  readyStream.onmessage(0);
+  readyStream.onmessage(1);
   await recording.ready;
   const frames = await recording;
 
   expect(frames).toBe(2);
+  expect(observed).toEqual([0, 1]);
   expect(vi.mocked(invoke)).toHaveBeenCalledOnce();
   expect(vi.mocked(invoke)).toHaveBeenCalledWith("plugin:webview-capture|record", {
     dir: "/tmp/framework-neutral-record",
     frames: 2,
     intervalMs: 0,
-    onReady: readyStream,
+    onFrame: readyStream,
   });
 });
 

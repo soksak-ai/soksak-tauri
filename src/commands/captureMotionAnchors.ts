@@ -5,10 +5,19 @@ export interface CaptureMotionAnchorTarget {
   address: string;
   color: string;
   host: HTMLElement;
+  x?: number;
+  y?: number;
 }
 
 function currentAnchors(document: Document): HTMLElement[] {
   return [...document.querySelectorAll<HTMLElement>(`[${CAPTURE_MOTION_ANCHOR_ATTR}]`)];
+}
+
+function removeAnchor(anchor: HTMLElement): void {
+  const host = anchor.parentElement;
+  const restore = anchor.dataset.captureMotionRestorePosition;
+  anchor.remove();
+  if (host && restore !== undefined) host.style.position = restore;
 }
 
 /**
@@ -22,15 +31,19 @@ export function setCaptureMotionAnchors(
   document: Document,
   targets: readonly CaptureMotionAnchorTarget[],
 ) {
-  for (const anchor of currentAnchors(document)) anchor.remove();
+  for (const anchor of currentAnchors(document)) removeAnchor(anchor);
 
   for (const target of targets) {
     const anchor = document.createElement("div");
     anchor.setAttribute(CAPTURE_MOTION_ANCHOR_ATTR, target.address);
+    if (target.host.ownerDocument.defaultView?.getComputedStyle(target.host).position === "static") {
+      anchor.dataset.captureMotionRestorePosition = target.host.style.position;
+      target.host.style.position = "relative";
+    }
     Object.assign(anchor.style, {
       position: "absolute",
-      left: "0",
-      top: "0",
+      left: `${target.x ?? 0}px`,
+      top: `${target.y ?? 0}px`,
       width: `${CAPTURE_MOTION_ANCHOR_SIZE}px`,
       height: `${CAPTURE_MOTION_ANCHOR_SIZE}px`,
       background: target.color,

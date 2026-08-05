@@ -4,6 +4,8 @@ export type WindowRecordRequest = {
   dir: string;
   frames: number;
   intervalMs: number;
+  /** 저장이 끝난 각 캡처 프레임의 0-based 번호. 캡처와 수치 관측의 공통 시계다. */
+  onFrame?: (frame: number) => void;
 };
 
 export type WindowRecording = Promise<number> & { ready: Promise<void> };
@@ -19,8 +21,9 @@ export function recordWindowFrames({
   dir,
   frames,
   intervalMs,
+  onFrame,
 }: WindowRecordRequest): WindowRecording {
-  const onReady = createStream<number>();
+  const frameEvents = createStream<number>();
   let settled = false;
   let resolveReady!: () => void;
   let rejectReady!: (reason: unknown) => void;
@@ -31,16 +34,18 @@ export function recordWindowFrames({
   // 완료 Promise만 소비하는 기존 호출에서도 별도 readiness 거절이 unhandled가 되지 않는다.
   // 같은 Promise 자체는 유지하므로 준비를 기다리는 호출자는 여전히 그 오류를 받는다.
   ready.catch(() => {});
-  onReady.onmessage = () => {
-    if (settled) return;
-    settled = true;
-    resolveReady();
+  frameEvents.onmessage = (frame) => {
+    onFrame?.(frame);
+    if (!settled) {
+      settled = true;
+      resolveReady();
+    }
   };
   const finished = invoke<number>("plugin:webview-capture|record", {
     dir,
     frames,
     intervalMs,
-    onReady,
+    onFrame: frameEvents,
   }).catch((error) => {
     if (!settled) {
       settled = true;

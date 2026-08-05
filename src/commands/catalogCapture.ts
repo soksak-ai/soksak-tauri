@@ -241,7 +241,7 @@ async function resolveRegion(p: Record<string, unknown>): Promise<Region | Refus
 export function registerCaptureCatalog(): void {
   register("capture.calibration", {
     description:
-      "Show, hide, or inspect the three fixed 64×40 DOM compositor calibration rulers used to compare shell pixels with embedded-surface pixels during cropped window transitions. Reapplying the same visibility is idempotent.",
+      "Show, hide, or inspect the three fixed 64×40 DOM compositor calibration rulers used to compare chrome pixels with embedded-surface pixels during cropped window transitions. Reapplying the same visibility is idempotent.",
     params: {
       visible: { type: "boolean", description: "true=show, false=remove; omit to inspect current status" },
     },
@@ -260,7 +260,7 @@ export function registerCaptureCatalog(): void {
     params: {
       anchors: {
         type: "json",
-        description: "Complete declaration: [{address,color}]. Addresses must come from ui.tree.",
+        description: "Complete declaration: [{address,color,x?,y?}]. Addresses must come from ui.tree; x/y are finite CSS-pixel offsets inside the exposed node.",
         required: true,
       },
     },
@@ -274,13 +274,17 @@ export function registerCaptureCatalog(): void {
       }
       const targets = [];
       for (const raw of p.anchors) {
-        const item = raw as { address?: unknown; color?: unknown };
+        const item = raw as { address?: unknown; color?: unknown; x?: unknown; y?: unknown };
         if (typeof item?.address !== "string" || typeof item.color !== "string") {
           return { ok: false, code: "INVALID_PARAMS", message: "anchor requires string address and color" };
         }
+        if ((item.x !== undefined && (typeof item.x !== "number" || !Number.isFinite(item.x)))
+          || (item.y !== undefined && (typeof item.y !== "number" || !Number.isFinite(item.y)))) {
+          return { ok: false, code: "INVALID_PARAMS", message: "anchor x/y must be finite numbers" };
+        }
         const found = resolveExposed(item.address);
         if (!("el" in found)) return found;
-        targets.push({ address: item.address, color: item.color, host: found.el });
+        targets.push({ address: item.address, color: item.color, host: found.el, x: item.x, y: item.y });
       }
       return setCaptureMotionAnchors(document, targets);
     },

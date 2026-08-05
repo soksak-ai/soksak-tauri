@@ -244,6 +244,7 @@
       "role": "lib",
       "class": "C",
       "surfaces": [
+        "window.snapshot",
         "pixel-oracle"
       ],
       "note": "세 브라우저 구현에 같은 문서·IME·픽셀 생존 기준을 적용하는 판정 한 벌. 입력은 PNG 바이트지만 그 바이트에는 프레임워크별 창 합성 결과가 들어 있다."
@@ -251,9 +252,11 @@
     {
       "file": "lib/browser-matrix.test.mjs",
       "role": "test",
-      "class": "A",
-      "surfaces": [],
-      "note": "브라우저 matrix의 구현 목록·마커 판정·eval 봉투 해소를 순수 바이트와 값으로 고정한다. 앱이나 프레임워크가 필요 없다."
+      "class": "C",
+      "surfaces": [
+        "window.snapshot"
+      ],
+      "note": "브라우저 matrix의 구현 목록·마커 판정·eval 봉투 해소를 순수 바이트와 값으로 고정하며, 창 캡처 좌표계 계약도 직접 검증하므로 네이티브 표면에 결속된다."
     },
     {
       "file": "lib/fixtureWindow.mjs",
@@ -502,11 +505,19 @@
       "note": "스케줄이 실제로 발화해 명령이 도는지 본다. 판정은 소켓 명령뿐인데, 더미 플러그인 하나를 릴리즈 홈 경로에서 적재해 그만큼 홈에 묶여 있다."
     },
     {
+      "file": "slot-freeze.contract.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "slot-freeze 하니스가 공개 장벽·복원·캡처 생명주기 계약을 소스 수준에서 보존하는지 검증한다. 앱이나 프레임워크를 실행하지 않는다."
+    },
+    {
       "file": "slot-freeze.mjs",
       "role": "harness",
       "class": "C",
       "surfaces": [
         "window.snapshot",
+        "pixel-oracle",
         "webview.surfaces"
       ],
       "note": "실제 content surface 교차 클릭을 내장 연속 캡처와 공개 webview.composition 상태로 검증하고, 네이티브 표면에서는 조명의 요청값·적용값·frame·stack도 대조한다."

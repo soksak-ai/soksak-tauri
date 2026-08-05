@@ -13,9 +13,11 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 
 const require_ = createRequire(import.meta.url);
 const ELECTRON = require_("electron");
+const WEBVIEW_NATIVE = fileURLToPath(new URL("../../frameworks/electron/native/webview.cjs", import.meta.url));
 
 const PAGE = `<!doctype html><html><body style="margin:0;background:#000">
 <div id="host" style="position:absolute;left:0;top:0"></div>
@@ -27,12 +29,16 @@ const PAGE = `<!doctype html><html><body style="margin:0;background:#000">
 const DRIVE = `
   const el = document.createElement("webview");
   el.setAttribute("data-content-view", "b-1");
-  el.setAttribute("src", "data:text/html,<body style='margin:0;background:%23ff0000'></body>");
+  const guestHtml = "<body style='margin:0;min-height:1400px;background:#ff0000'>" +
+    "<div id='tail' style='position:absolute;left:0;top:1320px;width:300px;height:80px;background:#ff8000'></div>" +
+    "</body>";
+  el.setAttribute("src", "data:text/html," + encodeURIComponent(guestHtml));
   el.style.cssText = "position:absolute;left:0px;top:0px;width:400px;height:400px";
   document.getElementById("host").appendChild(el);
   await new Promise((r) => el.addEventListener("dom-ready", r, { once: true }));
   return ({
     found: document.querySelectorAll("[data-content-view]").length,
+    id: el.getWebContentsId(),
     methods: ["loadURL","goBack","goForward","stop","setZoomLevel","openDevTools","executeJavaScript"]
       .filter((m) => typeof el[m] === "function"),
     evaluated: await el.executeJavaScript("1+1"),
@@ -40,7 +46,7 @@ const DRIVE = `
 `;
 
 const MAIN = `
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, webContents, nativeImage } = require("electron");
 const fs = require("node:fs");
 app.commandLine.appendSwitch("disable-gpu");
 // 이 프로세스는 **스스로** 끝난다 — 밖에서 죽이는 절차에 기대지 않는다.
@@ -65,6 +71,27 @@ app.whenReady().then(async () => {
   });
   await w.loadFile(process.argv[2]);
   const drove = await w.webContents.executeJavaScript(\`(async () => { ${DRIVE} })()\`);
+  const guest = webContents.fromId(drove.id);
+  const nativeWebview = require(process.argv[4]);
+  const nativeContext = { webContentsById: (id) => webContents.fromId(id) };
+  let full;
+  let scrollY;
+  let tailDom;
+  await guest.executeJavaScript("window.__scrollDone = new Promise(resolve => addEventListener('scroll', () => resolve(scrollY), {once:true})); true");
+  await nativeWebview.webview_send_wheel.answer(
+    nativeContext, { id: drove.id, x: 40, y: 40, dx: 0, dy: 480 },
+  );
+  scrollY = await Promise.race([
+    guest.executeJavaScript("window.__scrollDone"),
+    new Promise((_, reject) => setTimeout(() => reject(new Error("wheel scroll event timeout")), 3000)),
+  ]);
+  tailDom = await guest.executeJavaScript("(() => { const el=document.querySelector('#tail'); const r=el?.getBoundingClientRect(); return { found:!!el, color:el&&getComputedStyle(el).backgroundColor, rect:r&&{x:r.x,y:r.y,width:r.width,height:r.height}, scrollY, docHeight:document.documentElement.scrollHeight }; })()");
+  await nativeWebview.webview_capture_full.answer(
+    nativeContext,
+    { id: drove.id, path: process.argv[5], width: 400, height: 1400 },
+  );
+  full = nativeImage.createFromPath(process.argv[5]);
+  if (process.env.ELECTRON_LIVE_EVIDENCE) fs.copyFileSync(process.argv[5], process.env.ELECTRON_LIVE_EVIDENCE);
   await new Promise((r) => setTimeout(r, 1200));
   // 실제 어댑터와 같은 옵션. 부모 DOM뿐 아니라 별도 guest surface도 한 PNG에 합성되어야 한다.
   const img = await w.webContents.capturePage(undefined, { stayAwake: true });
@@ -73,6 +100,32 @@ app.whenReady().then(async () => {
   const at = (x, y) => { const i = (y * width + x) * 4; return { b: bmp[i], g: bmp[i+1], r: bmp[i+2] }; };
   fs.writeFileSync(process.argv[3], JSON.stringify({
     ...drove,
+    scrollY,
+    restoredScrollY: await guest.executeJavaScript("scrollY"),
+    tailDom,
+    fullSize: full.getSize(),
+    fullTop: (() => {
+      const size = full.getSize(), bmp = full.getBitmap();
+      const x = Math.min(100, size.width - 1), y = 30, i = (y * size.width + x) * 4;
+      return { b: bmp[i], g: bmp[i+1], r: bmp[i+2] };
+    })(),
+    fullTail: (() => {
+      const size = full.getSize(), bmp = full.getBitmap();
+      const x = Math.min(100, size.width - 1), y = size.height - 30, i = (y * size.width + x) * 4;
+      return { b: bmp[i], g: bmp[i+1], r: bmp[i+2] };
+    })(),
+    fullScrollbarPixels: (() => {
+      const size = full.getSize(), bmp = full.getBitmap();
+      let count = 0;
+      for (let y = 0; y < size.height; y += 1) {
+        for (let x = Math.max(0, size.width - 24); x < size.width; x += 1) {
+          const i = (y * size.width + x) * 4;
+          const b = bmp[i], g = bmp[i + 1], r = bmp[i + 2];
+          if (r > 220 && g > 60 && g < 220 && b > 60 && b < 220) count += 1;
+        }
+      }
+      return count;
+    })(),
     content: at(Math.round(width * 0.12), Math.round(height * 0.12)),
     overlap: at(Math.round(width * 0.5), Math.round(height * 0.5)),
   }));
@@ -100,11 +153,11 @@ afterEach(() => {
 
 function run() {
   dir = mkdtempSync(join(tmpdir(), "cvlive-"));
-  const page = join(dir, "p.html"), main = join(dir, "m.cjs"), out = join(dir, "o.json");
+  const page = join(dir, "p.html"), main = join(dir, "m.cjs"), out = join(dir, "o.json"), full = join(dir, "full.png");
   writeFileSync(page, PAGE);
   writeFileSync(main, MAIN);
   return new Promise((resolve, reject) => {
-    const child = (spawned = spawn(ELECTRON, [main, page, out], { stdio: ["ignore", "pipe", "pipe"] }));
+    const child = (spawned = spawn(ELECTRON, [main, page, out, WEBVIEW_NATIVE, full], { stdio: ["ignore", "pipe", "pipe"] }));
     let err = "";
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (d) => (err += d));
@@ -120,6 +173,7 @@ function run() {
 describe("라이브 — DOM 콘텐츠 뷰", () => {
   it("선다 · 그린다 · 제어된다 · DOM 이 그 위에 온다", async () => {
     const r = await run();
+    expect(r.error).toBeUndefined();
 
     // ① 요소가 서고 label 로 찾힌다
     expect(r.found).toBe(1);
@@ -131,6 +185,16 @@ describe("라이브 — DOM 콘텐츠 뷰", () => {
     );
     // 게스트 안에서 코드가 돈다(프로세스가 갈렸음에도)
     expect(r.evaluated).toBe(2);
+
+    // 실제 guest webContents 입력과 전체 문서 캡처 — DOM scroll/stitching 없이 엔진 사건으로 판정한다.
+    expect(r.scrollY).toBeGreaterThan(0);
+    expect(r.restoredScrollY).toBe(r.scrollY);
+    expect(r.fullSize.height).toBeGreaterThan(1200);
+    expect(r.tailDom).toMatchObject({ found: true, color: "rgb(255, 128, 0)", docHeight: 1400 });
+    expect(r.fullTail.r).toBeGreaterThan(180);
+    expect(r.fullTail.g, JSON.stringify({ tailDom: r.tailDom, fullTop: r.fullTop, fullTail: r.fullTail }))
+      .toBeGreaterThan(r.fullTop.g + 20);
+    expect(r.fullScrollbarPixels, "viewport 합성 경계마다 native overlay scrollbar가 반복되면 안 된다").toBe(0);
 
     // ③ 게스트가 실제로 그렸다 — 오라클 생존(검은 화면이면 ④ 가 공짜로 통과한다)
     expect(r.content.r).toBeGreaterThan(180);

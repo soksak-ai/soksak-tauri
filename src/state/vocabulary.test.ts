@@ -111,6 +111,8 @@ const VERDICTS: Record<Scope, Record<string, Verdict>> = {
     paneWidth: "pane", // 레일을 뺀 칸 평면 폭
     paneNameViolates: "pane", // CSS 게이트의 칸 이름 판별기
     paneInvariant: "pane", // 그 불변식 게이트의 파일 이름(주석 인용)
+    independentPanelPath: "pane", // 레일과 떨어진 칸을 별도 외곽선으로 그리는 SVG 경로
+    paneAnimation: "pane", // 칸 DOM의 Web Animation 테스트 픽스처
     // ── 옛 뜻(탭 인스턴스) — 계약면이라 이행 기간 동안 이름이 남는다 ──────────
     // 뜻-분기(감사 적발): 옛 뜻(탭 인스턴스) 사이트는 tabId·callerTab 으로 이행하지만,
     // **개명 후의 pane 축 에코**(targetEcho 표준 AXIS_ECHO pane→paneId, pane.resize 의

@@ -17,6 +17,9 @@ import { recordWindowFrames } from "./windowRecorder";
 // 실제로 주는 것을 따라가야 한다(실측 2026-08-02: browserLabel 을 안 넣어 핸들러가 죽었다).
 const sentInput: [string, number, number][] = [];
 vi.mock("../lib/contentViews", () => ({
+  CONTENT_VIEW_BODY: "data-content-view-body",
+  contentViewSlotVisible: () => true,
+  hasContentViewHost: () => false,
   contentViewHost: () => ({
     sendInput: async (label: string, x: number, y: number) => {
       sentInput.push([label, x, y]);
@@ -56,6 +59,20 @@ afterEach(() => {
     if (name.startsWith("ui.") || name === "webview.emitNative") unregister(name);
   }
   document.body.innerHTML = "";
+});
+
+describe("ui.layout.status — 공개 레이아웃 장벽 진단", () => {
+  it("wait 명령과 같은 motion·revision·animation·content label 사실을 노출한다", async () => {
+    document.body.innerHTML = '<div data-content-view-body="b-current"></div>';
+    const result = await execute("ui.layout.status", {}, {});
+    expect(result.data).toMatchObject({
+      settled: true,
+      motion: { active: false },
+      settlement: { active: false },
+      animations: [],
+      contentViewLabels: ["b-current"],
+    });
+  });
 });
 
 describe("deepElementFromPoint — shadow 관통 히트테스트", () => {
@@ -471,6 +488,8 @@ describe("ui.input.click — 합성 이벤트가 Shadow DOM 경계를 넘는다(
     expect(spec?.params.recordFrames).toBeDefined();
     expect(spec?.params.recordIntervalMs).toBeDefined();
     expect(spec?.params.recordLeadMs).toBeDefined();
+    expect(spec?.params.traceAddresses).toBeDefined();
+    expect(spec?.params.traceFrames).toBeUndefined();
   });
 
   it("프레임 기록을 클릭 전에 시작하고 완료된 기록을 같은 응답으로 반환한다", async () => {
@@ -498,6 +517,7 @@ describe("ui.input.click — 합성 이벤트가 Shadow DOM 경계를 넘는다(
       dir: "/tmp/click-transition",
       frames: 9,
       intervalMs: 16,
+      onFrame: expect.any(Function),
     });
     expect(result.data).toMatchObject({
       clicked: true,
@@ -505,6 +525,48 @@ describe("ui.input.click — 합성 이벤트가 Shadow DOM 경계를 넘는다(
     });
     mockedInvoke.mockReset();
     mockedInvoke.mockResolvedValue({});
+  });
+
+  it("녹화 프레임 사건과 같은 시계에서 공개 DOM 좌표·animation clock의 유한 trace를 반환한다", async () => {
+    mountNode(`<button data-node="btn">tab</button>`);
+    let finishRecording!: () => void;
+    vi.mocked(recordWindowFrames).mockImplementationOnce((request) => {
+      request.onFrame?.(0);
+      const finished = new Promise<number>((resolve) => {
+        finishRecording = () => {
+          request.onFrame?.(1);
+          resolve(2);
+        };
+      });
+      return Object.assign(finished, { ready: Promise.resolve() });
+    });
+    const executing = execute("ui.input.click", {
+      address: ADDR,
+      recordDir: "/tmp/click-trace",
+      recordFrames: 2,
+      traceAddresses: [ADDR],
+    }, {});
+    finishRecording();
+    const result = await executing;
+    expect(result.data).toMatchObject({
+      clicked: true,
+      trace: {
+        frames: 2,
+        samples: [
+          { captureFrame: 0, nodes: [{ address: ADDR }] },
+          { captureFrame: 1, nodes: [{ address: ADDR }] },
+        ],
+      },
+    });
+  });
+
+  it("별도 rAF 시계를 만들지 않도록 DOM trace 단독 요청을 거절한다", async () => {
+    mountNode(`<button data-node="btn">tab</button>`);
+    const result = await execute("ui.input.click", {
+      address: ADDR,
+      traceAddresses: [ADDR],
+    }, {});
+    expect(result).toMatchObject({ ok: false, code: "INVALID_PARAMS" });
   });
 
   it("shadow 안 노드 클릭이 경계 밖 캡처 리스너(본문 클릭 활성화 경로)에 닿는다", async () => {

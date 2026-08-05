@@ -46,6 +46,20 @@ Two standard targets across every repo — core, plugins, sidecars. A repo expos
   visibility, ledger equality, and settled viewport state. A second no-focus fixture window runs
   the public owner-scoped `gc`; the first window must keep the same live surface id, DOM identity,
   Korean input state, and pixels. This is the regression gate for cross-window surface reaping.
+  In PIN mode the same matrix also records left-adjacent, right-adjacent, and detached focus
+  changes with invariant DOM rects, then maximizes one pane on each side. Maximize must preserve
+  the pane/rail direction without writing the stored station, and restore must reproduce the exact
+  pre-maximize split.
+  SCROLL mode sends real engine wheel input to each tab and waits for the page's `scroll` event,
+  without polling. Every implementation must report exactly `0→480→0`. It then writes a viewport
+  PNG and a full-document PNG for the explicit `viewId`. An Electron guest, which has no
+  full-document surface primitive, composes a finite viewport set whose positions are confirmed by
+  real scroll events and two presentation frames. During that transaction only, the two document roots
+  hide their default overlay scrollbars; success requires restoring their exact inline overflow values,
+  priorities, and original scroll position. The live RED fixes scrollbar-colored pixels at the PNG edge to zero.
+  Polling and fixed delays are forbidden. Every path must preserve document geometry and CSS/PNG scale,
+  with exactly one top identity marker and one bottom tail marker. Depending on the active tab or
+  the pre-capture scroll position is a failure.
 
 ## Harness rules (learned the hard way)
 

@@ -171,6 +171,25 @@ describe("DOM 콘텐츠 뷰 구현", () => {
     });
   });
 
+  it("휠을 게스트 webContents의 실제 입력 경로로 보낸다", async () => {
+    const m = await load();
+    await m.domHost.open("b-1", {});
+    const el = document.querySelector('[data-content-view="b-1"]')!;
+    stubTag(el);
+    Object.assign(el, { getWebContentsId: vi.fn(() => 17) });
+
+    await (m.domHost as unknown as {
+      wheel(label: string, x: number, y: number, dx: number, dy: number): Promise<void>;
+    }).wheel("b-1", 23.4, 45.6, 0, 240);
+    expect(invoke).toHaveBeenCalledWith("webview_send_wheel", {
+      id: 17,
+      x: 23,
+      y: 46,
+      dx: 0,
+      dy: 240,
+    });
+  });
+
   it("없는 뷰·없는 메서드는 이름을 달고 실패한다 — 조용히 성공하지 않는다", async () => {
     const m = await load();
     await expect(m.domHost.navigate("nope", "u")).rejects.toThrow("콘텐츠 뷰가 없습니다");

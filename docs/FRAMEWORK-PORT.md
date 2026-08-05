@@ -427,7 +427,7 @@ What the harnesses judge today, against this framework: `p0-contracts` 24/0, `mu
 `supportsDocumentStart` and `supportsInputInjection` describe product-visible optional behavior. `name`
 goes only to ledgers and diagnostics. Composition implementation still branches once at adapter selection,
 not through a growing capability matrix. Whether the active browser actually stands is either a native
-surface list or the rect of an in-page body; a DOM-only shell reports native slot-landing as non-applicable
+surface list or the rect of an in-page body; a DOM-only framework reports native slot-landing as non-applicable
 with its reason instead of inventing native state.
 
 That work surfaced a false green. `gutter-drag`'s axis-isolation check was vacuous twice over: it drove only through native input, so on a framework without that command it dragged nothing, and its height oracle read a tree that carries no rect, comparing `-1` to `-1`. Fixing where it measures made a real failure appear immediately.
@@ -729,7 +729,7 @@ ruler must fit inside the narrowest rail; a ruler that extends under a native su
 calibration. Every complete DOM ruler that retains the declared square aspect is normalized by its
 declared CSS size before comparison; cropped fragments are not epoch evidence, and a frame with no
 complete ruler is RED. DOM rulers must first agree on one compositor epoch, then every page ruler must agree with that epoch.
-This distinguishes a shell epoch tear from a browser-only blank/stretch without treating clipping as
+This distinguishes a chrome epoch tear from a browser-only blank/stretch without treating clipping as
 scale. Settled frames still have to pass the original absolute pixel size and DOM-slot-to-viewport
 alignment checks.
 

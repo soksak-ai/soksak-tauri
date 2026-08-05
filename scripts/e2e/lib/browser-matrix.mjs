@@ -17,7 +17,9 @@ export const browserImplementations = Object.freeze({
 
 export const fixtureMarkers = Object.freeze(["#ff00ff", "#00ffff"]);
 export const fixtureInputMarkers = Object.freeze(["#ffff00", "#00ff00"]);
-export const fixtureMotionMarkers = Object.freeze(["#00ffff", "#ffff00"]);
+// 궤적 기준자는 page/input/lighting/calibration 팔레트와 겹치지 않는다. 같은 색을 재사용하면
+// 다른 12px 조각을 두 번째 기준자로 오인해 실제 착지 뒤에도 거짓 dx가 생긴다.
+export const fixtureMotionMarkers = Object.freeze(["#8000ff", "#ff8000"]);
 export const fixtureMotionMarkerSize = Object.freeze({ width: 12, height: 12 });
 export const fixtureInputMarkerSize = Object.freeze({ minWidth: 64, height: 24 });
 export const compositorCalibrationMarker = "#0000ff";
@@ -65,22 +67,34 @@ export function markerEvidence(bytes, hex, tolerance = 24, sampleStep = 1) {
       // 함께 합성하므로 원색의 절대 RGB는 보존되지 않지만 색상 채널의 우세 관계는 보존된다.
       // 큰 marker의 hue를 세면 필요한 focus lighting을 유지하면서도 표면 생존을 판정할 수 있다.
       const [r, g, b] = rgb;
-      const kind = target[0] === 0 && target[1] === 0 && target[2] === 255 ? "blue"
+      const dimDominant = 20;
+      const dimChroma = 12;
+      const dimBalance = 8;
+      const managedBalance = Math.max(dimBalance, Math.max(r, g, b) * 0.08);
+      const kind = target[0] === 128 && target[1] === 0 && target[2] === 255 ? "violet"
+        : target[0] === 255 && target[1] === 128 && target[2] === 0 ? "orange"
+        : target[0] === 0 && target[1] === 0 && target[2] === 255 ? "blue"
         : target[0] === 255 && target[1] === 0 && target[2] === 0 ? "red"
         : target[0] === 255 && target[1] === 0 && target[2] === 255 ? "magenta"
         : target[0] === 0 && target[1] === 255 && target[2] === 255 ? "cyan"
           : target[0] === 255 && target[1] === 255 ? "yellow" : "green";
-      const hit = kind === "blue"
+      const hit = kind === "violet"
+        ? b - g >= 48 && r - g >= 24 && b - r >= 24
+        : kind === "orange"
+        ? r - b >= 48 && g - b >= 24 && r - g >= 24
+        : kind === "blue"
         ? b - r >= 64 && b - g >= 64 && Math.abs(r - g) <= tolerance
         : kind === "red"
         ? r - g >= 48 && r - b >= 48 && Math.abs(g - b) <= tolerance * 2
         : kind === "magenta"
-        ? r - g >= 48 && b - g >= 48 && Math.abs(r - b) <= tolerance * 2
+        // blocked pane은 제품 계약상 70% veil(원색의 약 30%)까지 내려간다. 절대 밝기가 아니라
+        // magenta 채도와 R/B 균형으로 식별하고, 생존 판정은 호출부의 큰 연결성분 기준이 맡는다.
+        ? Math.max(r, b) >= dimDominant && r - g >= dimChroma && b - g >= dimChroma && Math.abs(r - b) <= managedBalance
         : kind === "cyan"
-          ? g - r >= 48 && b - r >= 48 && Math.abs(g - b) <= tolerance * 2
+          ? Math.max(g, b) >= dimDominant && g - r >= dimChroma && b - r >= dimChroma && Math.abs(g - b) <= managedBalance
           : kind === "yellow"
-            ? r - b >= 48 && g - b >= 48 && Math.abs(r - g) <= tolerance * 2
-            : g - r >= 48 && g - b >= 48;
+            ? Math.max(r, g) >= dimDominant && r - b >= dimChroma && g - b >= dimChroma && Math.abs(r - g) <= managedBalance
+            : g >= dimDominant && g - r >= dimChroma && g - b >= dimChroma;
       if (hit) {
         matches[gy * gridWidth + gx] = 1;
         total += 1;
@@ -96,6 +110,9 @@ export function markerEvidence(bytes, hex, tolerance = 24, sampleStep = 1) {
     stack.push(start);
     let count = 0;
     let minX = gridWidth, maxX = 0, minY = gridHeight, maxY = 0;
+    const rowExtents = new Map();
+    const columnExtents = new Map();
+    const rowPoints = new Map();
     while (stack.length) {
       const at = stack.pop();
       const x = at % gridWidth;
@@ -103,6 +120,15 @@ export function markerEvidence(bytes, hex, tolerance = 24, sampleStep = 1) {
       count += 1;
       minX = Math.min(minX, x); maxX = Math.max(maxX, x);
       minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+      const row = rowExtents.get(y) ?? [x, x];
+      row[0] = Math.min(row[0], x); row[1] = Math.max(row[1], x);
+      rowExtents.set(y, row);
+      const points = rowPoints.get(y) ?? [];
+      points.push(x);
+      rowPoints.set(y, points);
+      const column = columnExtents.get(x) ?? [y, y];
+      column[0] = Math.min(column[0], y); column[1] = Math.max(column[1], y);
+      columnExtents.set(x, column);
       for (const next of [at - 1, at + 1, at - gridWidth, at + gridWidth]) {
         if (next < 0 || next >= matches.length || !matches[next]) continue;
         const nx = next % gridWidth;
@@ -111,13 +137,36 @@ export function markerEvidence(bytes, hex, tolerance = 24, sampleStep = 1) {
         stack.push(next);
       }
     }
+    const median = (values) => {
+      const sorted = [...values].sort((a, b) => a - b);
+      return sorted[Math.floor(sorted.length / 2)] ?? 0;
+    };
     const component = {
       count,
       x: minX * step,
       y: minY * step,
       width: (maxX - minX + 1) * step,
       height: (maxY - minY + 1) * step,
+      bodyWidth: median([...rowExtents.values()].map(([lo, hi]) => hi - lo + 1)) * step,
+      bodyHeight: median([...columnExtents.values()].map(([lo, hi]) => hi - lo + 1)) * step,
     };
+    const rowRuns = [...rowPoints.values()].map((points) => {
+      const sorted = points.sort((a, b) => a - b);
+      let longest = 0;
+      let run = 0;
+      let previous = -2;
+      for (const point of sorted) {
+        run = point === previous + 1 ? run + 1 : 1;
+        longest = Math.max(longest, run);
+        previous = point;
+      }
+      return longest * step;
+    });
+    // 진단 JSON은 기존의 작은 요약을 유지하되, 선택기는 연결 성분 안의 직사각 본체를 읽는다.
+    Object.defineProperties(component, {
+      rowRuns: { value: rowRuns, enumerable: false },
+      sampleStep: { value: step, enumerable: false },
+    });
     components.push(component);
     if (count > largest.count) largest = component;
   }
@@ -127,6 +176,32 @@ export function markerEvidence(bytes, hex, tolerance = 24, sampleStep = 1) {
 
 export function markerPixels(bytes, hex, tolerance = 24, sampleStep = 1) {
   return markerEvidence(bytes, hex, tolerance, sampleStep).total;
+}
+
+/** 같은 hue의 페이지 배경이 있어도 fixture의 선언된 본체 기하와 맞는 성분만 고른다. */
+export function selectFixtureMarkerComponent(
+  components,
+  { expectedWidth, expectedHeight, minWidth = false, tolerance = 4, minCount = 200 },
+) {
+  return (components ?? [])
+    .filter((component) => component.count >= minCount)
+    .filter((component) => {
+      const rectangleHeight = (component.rowRuns ?? []).filter((width) => minWidth
+        ? width >= expectedWidth - tolerance
+        : Math.abs(width - expectedWidth) <= tolerance).length * (component.sampleStep ?? 1);
+      const bodyHeightMatches = Math.abs(component.bodyHeight - expectedHeight) <= tolerance;
+      const bodyWidthMatches = minWidth
+        ? component.bodyWidth >= expectedWidth - tolerance
+        : Math.abs(component.bodyWidth - expectedWidth) <= tolerance;
+      const outerHeightMatches = Math.abs(component.height - expectedHeight) <= tolerance;
+      const outerWidthMatches = minWidth
+        ? component.width >= expectedWidth - tolerance
+        : Math.abs(component.width - expectedWidth) <= tolerance;
+      return (bodyHeightMatches && bodyWidthMatches)
+        || rectangleHeight >= expectedHeight - tolerance
+        || (outerHeightMatches && outerWidthMatches);
+    })
+    .sort((a, b) => b.count - a.count)[0] ?? null;
 }
 
 /** 같은 색의 DOM slot anchor와 페이지 surface marker가 한 프레임에서 같은 x에 있는지 판정한다. */
@@ -144,9 +219,235 @@ export function motionMarkerAlignment(bytes, hex, scale, tolerance = 4) {
   const dx = Math.abs(candidates[0].x - candidates[1].x);
   return {
     ok: dx <= tolerance,
+    dx,
     errors: dx <= tolerance ? [] : [`motion-x=${candidates[0].x}/${candidates[1].x} dx=${dx}`],
     candidates,
   };
+}
+
+/** 유한 캡처 구간을 끝까지 읽고 실패 분포와 최대 궤적 이탈을 한 판정으로 만든다. */
+export function summarizeFrameSequence(observations) {
+  const rows = Array.isArray(observations) ? observations : [];
+  const failures = rows.filter((row) => Array.isArray(row.errors) && row.errors.length > 0);
+  const maxMotionDx = rows.reduce(
+    (max, row) => Math.max(max, Number.isFinite(Number(row.motionDx)) ? Number(row.motionDx) : 0),
+    0,
+  );
+  const details = failures.map((row) => `${row.frame}:${row.errors.join("|")}`);
+  return {
+    ok: failures.length === 0,
+    checked: rows.length,
+    failed: failures.length,
+    maxMotionDx,
+    failures,
+    summary: `frames=${rows.length} failed=${failures.length} maxMotionDx=${maxMotionDx}${details.length ? ` ${details.join(", ")}` : ""}`,
+  };
+}
+
+/**
+ * 사이드바와 탭 pane의 DOM 전이를 녹화와 독립된 수치로 판정한다.
+ * 주소는 전이 전에 한 번 해석된 같은 Element를 가리키므로 connected=false는 DOM 교체/분리다.
+ * 실제로 움직이는 노드들은 중앙 거래가 부여한 하나의 FLIP 시계를 공유해야 한다.
+ */
+export function domTransitionTraceVerdict(
+  samples,
+  {
+    railAddress,
+    paneAddresses,
+    animationName = "rail-flip-x",
+    clockToleranceMs = 0.1,
+    progressTolerance = 0.001,
+    positionTolerancePx = 1,
+    minSamples = 3,
+    motionMode = "glide",
+  },
+) {
+  const rows = Array.isArray(samples) ? samples : [];
+  const expected = [railAddress, ...(paneAddresses ?? [])];
+  const errors = [];
+  const animatedAddresses = new Set();
+  let sharedClockFrames = 0;
+  if (rows.length < minSamples) errors.push(`frames=${rows.length}/${minSamples}`);
+
+  for (const [sampleIndex, sample] of rows.entries()) {
+    const byAddress = new Map((sample?.nodes ?? []).map((node) => [node.address, node]));
+    const moving = [];
+    for (const address of expected) {
+      const node = byAddress.get(address);
+      if (!node) {
+        errors.push(`s${sampleIndex}:missing:${address}`);
+        continue;
+      }
+      if (node.connected !== true) errors.push(`s${sampleIndex}:disconnected:${address}`);
+      const rect = node.rect;
+      if (![rect?.x, rect?.y, rect?.w, rect?.h].every((value) => Number.isFinite(Number(value)))) {
+        errors.push(`s${sampleIndex}:rect-non-finite:${address}`);
+      } else if (Number(rect.w) <= 0 || Number(rect.h) <= 0) {
+        errors.push(`s${sampleIndex}:rect-empty:${address}:${rect.w}x${rect.h}`);
+      }
+      const animation = (node.animations ?? []).find((item) => item.name === animationName);
+      if (animation) {
+        animatedAddresses.add(address);
+        moving.push({ address, animation });
+      }
+    }
+    if (moving.length === 1) {
+      errors.push(`s${sampleIndex}:clock-participants=${moving[0].address}`);
+    } else if (moving.length > 1) {
+      sharedClockFrames += 1;
+      const basis = moving[0];
+      for (const current of moving.slice(1)) {
+        const startSkew = Math.abs(Number(current.animation.startTime) - Number(basis.animation.startTime));
+        const currentSkew = Math.abs(Number(current.animation.currentTime) - Number(basis.animation.currentTime));
+        const progressSkew = Math.abs(Number(current.animation.progress) - Number(basis.animation.progress));
+        if (!Number.isFinite(startSkew) || startSkew > clockToleranceMs) {
+          errors.push(`s${sampleIndex}:clock-start-skew=${basis.address}/${current.address}:${startSkew}`);
+        }
+        if (!Number.isFinite(currentSkew) || currentSkew > clockToleranceMs) {
+          errors.push(`s${sampleIndex}:clock-current-skew=${basis.address}/${current.address}:${currentSkew}`);
+        }
+        if (!Number.isFinite(progressSkew) || progressSkew > progressTolerance) {
+          errors.push(`s${sampleIndex}:clock-progress-skew=${basis.address}/${current.address}:${progressSkew}`);
+        }
+      }
+    }
+  }
+
+  if (motionMode === "glide") {
+    if (!animatedAddresses.has(railAddress)) errors.push(`animation-missing:${railAddress}`);
+    if (!(paneAddresses ?? []).some((address) => animatedAddresses.has(address))) {
+      errors.push("animation-missing:pane");
+    }
+    if (sharedClockFrames === 0) errors.push("shared-clock-frames=0");
+  } else if (motionMode === "snap") {
+    if (animatedAddresses.size > 0) errors.push(`animation-forbidden:${[...animatedAddresses].join("/")}`);
+    const changeFrames = [];
+    for (const address of expected) {
+      const xs = rows.map((sample) => Number(
+        (sample?.nodes ?? []).find((node) => node.address === address)?.rect?.x,
+      )).filter(Number.isFinite);
+      const distinct = xs.filter((value, index) => index === 0 || Math.abs(value - xs[index - 1]) > positionTolerancePx);
+      if (distinct.length > 2) errors.push(`snap-intermediate:${address}:${distinct.join("/")}`);
+      if (distinct.length === 2) {
+        changeFrames.push({ address, frame: xs.findIndex((value) => Math.abs(value - xs[0]) > positionTolerancePx) });
+      }
+    }
+    if (!changeFrames.some(({ address }) => address === railAddress)) errors.push(`snap-missing:${railAddress}`);
+    if (!changeFrames.some(({ address }) => (paneAddresses ?? []).includes(address))) errors.push("snap-missing:pane");
+    const frames = new Set(changeFrames.map(({ frame }) => frame));
+    if (frames.size > 1) errors.push(`snap-frame-skew:${changeFrames.map(({ address, frame }) => `${address}@${frame}`).join("/")}`);
+  } else {
+    errors.push(`motion-mode-unknown:${motionMode}`);
+  }
+
+  for (const address of expected) {
+    const xs = rows
+      .map((sample) => (sample?.nodes ?? []).find((node) => node.address === address)?.rect?.x)
+      .map(Number)
+      .filter(Number.isFinite);
+    if (xs.length < 2) continue;
+    const direction = Math.sign(xs.at(-1) - xs[0]);
+    if (direction === 0) continue;
+    for (let index = 1; index < xs.length; index += 1) {
+      const step = xs[index] - xs[index - 1];
+      if (step * direction < -positionTolerancePx) {
+        errors.push(`s${index}:position-reversed:${address}:${xs[index - 1]}/${xs[index]}`);
+      }
+    }
+  }
+
+  return { ok: errors.length === 0, errors, frames: rows.length, sharedClockFrames, motionMode };
+}
+
+/**
+ * PIN 포커스 변경은 레이아웃 거래가 아니다. 같은 공개 DOM들이 전 프레임 연결된 채 같은 rect를
+ * 유지하고, 레일 이동 FLIP에 참여하지 않아야 한다. 녹화 프레임 이벤트와 같은 tick의 trace를
+ * 소비하므로 화면과 수치 판정의 관측 구간도 같다.
+ */
+export function pinnedDomTraceVerdict(
+  samples,
+  { addresses, tolerancePx = 0.5, minSamples = 3, animationName = "rail-flip-x" },
+) {
+  const rows = Array.isArray(samples) ? samples : [];
+  const expected = Array.isArray(addresses) ? addresses : [];
+  const errors = [];
+  const baseline = new Map();
+  if (rows.length < minSamples) errors.push(`frames=${rows.length}/${minSamples}`);
+  if (!expected.length) errors.push("addresses=0");
+
+  for (const [sampleIndex, sample] of rows.entries()) {
+    const byAddress = new Map((sample?.nodes ?? []).map((node) => [node.address, node]));
+    for (const address of expected) {
+      const node = byAddress.get(address);
+      if (!node) {
+        errors.push(`s${sampleIndex}:missing:${address}`);
+        continue;
+      }
+      if (node.connected !== true) errors.push(`s${sampleIndex}:disconnected:${address}`);
+      const rect = node.rect;
+      if (![rect?.x, rect?.y, rect?.w, rect?.h].every((value) => Number.isFinite(Number(value)))) {
+        errors.push(`s${sampleIndex}:rect-non-finite:${address}`);
+        continue;
+      }
+      if (!baseline.has(address)) baseline.set(address, { ...rect });
+      const first = baseline.get(address);
+      for (const key of ["x", "y", "w", "h"]) {
+        const from = Number(first[key]);
+        const to = Number(rect[key]);
+        if (Math.abs(to - from) > tolerancePx) {
+          errors.push(`s${sampleIndex}:rect-changed:${address}:${key}=${from}/${to}`);
+        }
+      }
+      for (const animation of node.animations ?? []) {
+        if (animation?.name === animationName) {
+          errors.push(`s${sampleIndex}:animation-forbidden:${address}:${animationName}`);
+        }
+      }
+    }
+  }
+  return { ok: errors.length === 0, errors, frames: rows.length };
+}
+
+/**
+ * 녹화 픽셀이 아니라 같은 유한 trace tick에서 읽은 DOM rect와 native presentation rect를
+ * 비교한다. tick의 왕복 불확실성이 크면 좌표가 맞아도 관측 실패다.
+ */
+export function numericCompositionTraceVerdict(
+  samples,
+  { tolerancePx = 1, maxUncertaintyMs = 2, minSamples = 3 } = {},
+) {
+  const errors = [];
+  let maxDelta = 0;
+  let compared = 0;
+  for (const [sampleIndex, sample] of (samples ?? []).entries()) {
+    const uncertaintyMs = Number(sample?.uncertaintyMs);
+    if (!Number.isFinite(uncertaintyMs) || uncertaintyMs > maxUncertaintyMs) {
+      errors.push(`s${sampleIndex}:clock-uncertainty=${uncertaintyMs}/${maxUncertaintyMs}ms`);
+      continue;
+    }
+    for (const pair of sample?.surfaces ?? []) {
+      const dom = pair?.domRect;
+      const native = pair?.presentationRect;
+      if (!dom || !native) {
+        errors.push(`s${sampleIndex}:${pair?.viewId ?? "unknown"}:rect-missing`);
+        continue;
+      }
+      compared += 1;
+      for (const key of ["x", "y", "w", "h"]) {
+        const delta = Math.abs(Number(dom[key]) - Number(native[key]));
+        if (!Number.isFinite(delta)) {
+          errors.push(`s${sampleIndex}:${pair.viewId}:${key}=non-finite`);
+          continue;
+        }
+        maxDelta = Math.max(maxDelta, delta);
+        if (delta > tolerancePx) {
+          errors.push(`s${sampleIndex}:${pair.viewId}:${key}=${dom[key]}/${native[key]} dx=${delta}`);
+        }
+      }
+    }
+  }
+  if (compared < minSamples) errors.push(`samples=${compared}/${minSamples}`);
+  return { ok: errors.length === 0, errors, compared, maxDelta };
 }
 
 /** 정사각 DOM ruler의 고유비를 유지한 component만 합성 배율 근거로 쓴다.
@@ -251,8 +552,12 @@ export function hostileWindowResizeSizes(original) {
 
 /** 플러그인 command 봉투의 eval 결과를 구현별 포장 차이 없이 페이지 반환값으로 푼다. */
 export function unwrapEvalValue(result) {
-  if (result && typeof result === "object" && ("active" in result || "ledger" in result)) return result;
-  return result?.value;
+  if (!result || typeof result !== "object") return result;
+  if ("active" in result || "ledger" in result) return result;
+  return Object.prototype.hasOwnProperty.call(result, "viewId")
+    && Object.prototype.hasOwnProperty.call(result, "value")
+    ? result.value
+    : result;
 }
 
 /** 브라우저 구현 공통 resize 판정. DOM 슬롯과 페이지 viewport는 rounding 외 차이가 없어야 하고,
@@ -292,7 +597,7 @@ export function transitionFrameAlignment({ browser, dom }) {
   const torn = domScales.find((candidate) =>
     Math.abs(Number(candidate.width) - Number(first?.width)) > scaleTolerance
     || Math.abs(Number(candidate.height) - Number(first?.height)) > scaleTolerance);
-  if (first && torn) errors.push(`shell-epoch-tear=${dimensions(first)}/${dimensions(torn)}`);
+  if (first && torn) errors.push(`chrome-epoch-tear=${dimensions(first)}/${dimensions(torn)}`);
   const browserMatchesDom = domScales.some((candidate) =>
     Math.abs(browserScale.width - candidate.width) <= scaleTolerance
     && Math.abs(browserScale.height - candidate.height) <= scaleTolerance);
@@ -306,21 +611,24 @@ export function transitionFrameAlignment({ browser, dom }) {
 export function fixtureHtml() {
   return `<!doctype html><html><head><meta charset="utf-8"><title>Browser Boundary</title>
     <style>
-      html,body{margin:0;min-height:100%;background:#10202c;color:#f7f4df;font:24px system-ui}
-      main{min-height:100vh;display:grid;place-items:center;background:linear-gradient(135deg,#10202c 0 50%,#e0704f 50%)}
-      section{padding:16px;border:8px solid #f7f4df;background:#16394a;box-shadow:20px 20px 0 #10202c;max-width:520px}
+      html,body{margin:0;min-height:100%;background:#181818;color:#f7f4df;font:24px system-ui}
+      main{min-height:100vh;display:grid;place-items:center;background:linear-gradient(135deg,#181818 0 50%,#242424 50%)}
+      section{box-sizing:border-box;width:min(520px,100%);padding:16px;border:8px solid #f7f4df;background:#292929;box-shadow:20px 20px 0 #111}
       h1{font-size:48px;margin:0 0 8px}p{margin:0 0 20px}
-      label{display:grid;gap:8px;font-size:18px}input{box-sizing:border-box;width:100%;font:28px system-ui;padding:10px 12px;border:4px solid #e0704f;background:#fff;color:#10202c}
+      label{display:grid;gap:8px;font-size:18px}input{box-sizing:border-box;width:100%;font:28px system-ui;padding:10px 12px;border:4px solid #e0704f;background:#fff;color:#181818}
       #motion-marker{position:fixed;z-index:2147483647;left:0;top:0;width:${fixtureMotionMarkerSize.width}px;height:${fixtureMotionMarkerSize.height}px;background:var(--motion-marker,#00ffff)}
+      #lighting-marker{position:fixed;z-index:2147483647;right:8px;top:8px;width:32px;height:32px;background:#ff0000}
       #marker{width:${fixtureMarkerSize.width}px;height:${fixtureMarkerSize.height}px;margin:0 0 16px;background:var(--marker,#ff00ff)}
       #typed-marker{height:24px;margin-top:10px;background:#000}
+      #scroll-track{box-sizing:border-box;height:1440px;padding:32px;background:linear-gradient(#123 0 33%,#234 33% 66%,#345 66%);color:#fff}
+      #scroll-tail{margin-top:1280px;height:64px;background:#ff8000;color:#181818;font-weight:700}
       output{display:block;min-height:1.4em;margin-top:10px;font-size:18px;color:#f7f4df}
       @media(max-height:520px){h1{font-size:36px}p{font-size:20px;margin-bottom:10px}label{gap:4px}input{font-size:24px;padding:6px 8px}#marker{margin-bottom:10px}output{margin-top:4px}#typed-marker{margin-top:4px}}
     </style></head><body>
-    <div id="motion-marker"></div><main><section><h1>Browser Boundary</h1><p>DOM slot ↔ live browser surface</p><div id="marker"></div>
+    <div id="motion-marker"></div><div id="lighting-marker"></div><main><section><h1>Browser Boundary</h1><p>DOM slot ↔ live browser surface</p><div id="marker"></div>
       <label>IME input<input id="ime" autocomplete="off" spellcheck="false"></label>
       <output id="events">beforeinput:0 input:0</output><div id="typed-marker"></div>
-    </section></main>
+    </section></main><div id="scroll-track">wheel input track<div id="scroll-tail">full-page tail</div></div>
     <script>
       window.__browserFixture = { beforeInput: 0, inputEvents: 0, values: [] };
       const slot = Number(new URLSearchParams(location.search).get("slot") || 0);
@@ -330,6 +638,15 @@ export function fixtureHtml() {
       const events = document.getElementById("events");
       const typedMarker = document.getElementById("typed-marker");
       const render = () => { events.textContent = "beforeinput:" + window.__browserFixture.beforeInput + " input:" + window.__browserFixture.inputEvents; };
+      let scrollEvents = 0;
+      const recordScroll = () => {
+        scrollEvents += 1;
+        document.documentElement.dataset.scrollY = String(Math.round(scrollY));
+        document.documentElement.dataset.scrollSeq = String(scrollEvents);
+      };
+      document.documentElement.dataset.scrollY = "0";
+      document.documentElement.dataset.scrollSeq = "0";
+      addEventListener("scroll", recordScroll, { passive: true });
       ime.addEventListener("beforeinput", () => { window.__browserFixture.beforeInput += 1; render(); });
       ime.addEventListener("input", () => { window.__browserFixture.inputEvents += 1; window.__browserFixture.values.push(ime.value); typedMarker.style.background=${JSON.stringify(fixtureInputMarkers)}[slot]; render(); });
     </script></body></html>`;

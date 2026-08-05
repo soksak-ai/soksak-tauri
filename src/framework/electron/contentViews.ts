@@ -213,6 +213,8 @@ export const domHost: ContentViewHost = {
     // 달리고, 그 우연이 백지 탭으로 나타난다.
     if (el) setShown(el, visible);
   },
+  // Electron 표면은 슬롯의 DOM 자식이므로 DOM 커밋이 곧 표시 경계다.
+  async presentationSettled(_labels) {},
   async history(label, delta) {
     if (delta < 0) (await onReady<() => void>(label, "goBack"))();
     else if (delta > 0) (await onReady<() => void>(label, "goForward"))();
@@ -275,6 +277,20 @@ export const domHost: ContentViewHost = {
     // 자기 손잡이(id)뿐이라 그것을 넘긴다.
     const getId = await onReady<() => number>(label, "getWebContentsId");
     await invoke("webview_send_input", { id: getId(), x: Math.round(x), y: Math.round(y) });
+  },
+  async wheel(label, x, y, dx, dy) {
+    const getId = await onReady<() => number>(label, "getWebContentsId");
+    await invoke("webview_send_wheel", {
+      id: getId(),
+      x: Math.round(x),
+      y: Math.round(y),
+      dx: Math.round(dx),
+      dy: Math.round(dy),
+    });
+  },
+  async captureFull(label, path, width, height) {
+    const getId = await onReady<() => number>(label, "getWebContentsId");
+    return invoke("webview_capture_full", { id: getId(), path, width, height });
   },
   async typeText(label, text) {
     const getId = await onReady<() => number>(label, "getWebContentsId");

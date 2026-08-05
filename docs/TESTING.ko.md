@@ -39,6 +39,18 @@
   visibility, ledger 동일성, viewport 정착도 함께 증명한다. 별도 무포커스 fixture 창이 공개된
   owner-scope `gc`를 실행해도 첫 창의 surface id·DOM 신원·한글 입력 상태·픽셀이 그대로여야 한다.
   이것이 교차 창 surface 오회수의 회귀 게이트다.
+  PIN 모드에서는 같은 행렬이 좌측 인접·우측 인접·분리 포커스 변경을 DOM rect 불변으로 녹화한
+  뒤 양쪽 판을 각각 최대화한다. 최대화는 저장 station을 쓰지 않고 판/레일 방향을 보존해야 하며,
+  복원은 최대화 전 분할을 정확히 재현해야 한다.
+  SCROLL 모드는 각 탭에 실제 엔진 wheel 입력을 보내고 폴링 없이 페이지 `scroll` 사건을 기다린다.
+  모든 구현은 정확히 `0→480→0`을 보고해야 한다. 이어서 명시한 `viewId`의 viewport PNG와 문서
+  전체 PNG를 저장한다. 문서 전체 primitive가 없는 Electron guest는 유한한 viewport 집합을 실제
+  scroll 사건과 두 presentation frame으로 확정해 합성한다. 합성 중 기본 오버레이 scrollbar는
+  문서의 두 루트에서만 일시 비표시하고, 원래 inline overflow 값·우선순위와 정확한 scroll 위치를
+  모두 복원한 뒤에만 성공한다. 라이브 RED는 전체 PNG 우측의 scrollbar 색 픽셀을 0으로 고정한다.
+  폴링이나 고정 지연은 허용하지 않는다. 모든 경로에서 문서 기하와 CSS/PNG 배율이 일치하고 상단 신원 marker가
+  정확히 한 번, 하단 tail marker가 정확히 한 번 존재해야 한다. 다른 탭의 활성 상태나 캡처 전
+  scroll 위치에 기대는 구현은 실패다.
 
 ## 하니스 규칙 (실측으로 얻은)
 

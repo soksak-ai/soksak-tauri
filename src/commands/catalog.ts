@@ -54,6 +54,7 @@ import { hasPtyObservation } from "../terminal/ptyObservationStore";
 import { resolveTermTab } from "./termResolve";
 import { computeLayout } from "../components/GroupArea";
 import type { Arrangement } from "../lib/railArrangement";
+import { classifyRailRelation } from "../lib/railLinkShape";
 import { catalogJson, register, type CommandContext, type CommandHint } from "./registry";
 import { notFound } from "./refuse";
 import { registerFsWatchCatalog } from "./catalogFsWatch";
@@ -360,6 +361,7 @@ function serializeSpace(
   arrangement: Arrangement<Pane> | null,
   railStation?: number,
   railOpen = true,
+  railPlacement: RailPlacement["mode"] = "flow",
 ) {
   const displayLayout = arrangement?.displayLayout ?? c.layout;
   const canonicalLayout = serializeLayout(c.layout);
@@ -404,15 +406,16 @@ function serializeSpace(
         group.tabs.some((tab) => tab.id === c.railBindingTabId),
       )
     : undefined;
+  const relationSide = boundPane && railStation !== undefined
+    ? classifyRailRelation(railStation, boundPane.rect)
+    : "detached";
   const railRelation = c.railBindingTabId
     ? {
         boundTabId: c.railBindingTabId,
         boundPaneId: boundPane?.group.id ?? null,
-        connected:
-          railOpen &&
-          !!boundPane &&
-          railStation !== undefined &&
-          Math.abs(boundPane.rect.left - railStation) <= 0.01,
+        placement: railPlacement,
+        connected: railOpen && relationSide !== "detached",
+        side: relationSide,
       }
     : null;
   return {
@@ -485,6 +488,7 @@ function serializeTree() {
             c.id === t.activeSpaceId ? arrangement : null,
             leftRailPosition.effectiveStation,
             t.sidebarOpen,
+            leftRailPosition.mode,
           ),
         ),
       };
@@ -572,7 +576,7 @@ export function registerCatalog(): void {
       "Full layout snapshot (address book): all ids and active state across project → space → pane (display rect %) → tab. Each space exposes displayed and canonical stored layouts plus projection provenance; each project exposes its effective left-rail position and clean grid lines.",
     params: {},
     returns:
-      "{ activeProjectId, projects[].{ leftRailPosition, spaces[].{ layout, canonicalLayout, projection, railRelation:{boundTabId,boundPaneId,connected}?, panes[] } } } — layout/panes are displayed state; canonicalLayout is the stored SplitTree",
+      "{ activeProjectId, projects[].{ leftRailPosition, spaces[].{ layout, canonicalLayout, projection, railRelation:{boundTabId,boundPaneId,placement,connected,side:left|right|detached}?, panes[] } } } — layout/panes are displayed state; canonicalLayout is the stored SplitTree",
     message: (d) => tmsg("msg.state.tree", { n: ((d.projects as unknown[]) ?? []).length }),
     examples: ["state.tree"],
     handler: () => serializeTree(),
@@ -1456,7 +1460,7 @@ export function registerCatalog(): void {
       "List displayed panes in a space, including rect (%), displayed layout, immutable canonical layout, and projection provenance.",
     params: { project: P.project, space: P.space },
     returns:
-      "{ projectId, spaceId, activePaneId, layout, canonicalLayout, projection, railRelation:{boundTabId,boundPaneId,connected}?, panes[] }",
+      "{ projectId, spaceId, activePaneId, layout, canonicalLayout, projection, railRelation:{boundTabId,boundPaneId,placement,connected,side:left|right|detached}?, panes[] }",
     message: (d) => tmsg("msg.pane.list", { n: ((d.panes as unknown[]) ?? []).length }),
     errors: ["TARGET_NOT_FOUND"],
     examples: ["pane.list"],
@@ -1476,6 +1480,7 @@ export function registerCatalog(): void {
         arrangement,
         serializeLeftRailPosition(t).effectiveStation,
         t.sidebarOpen,
+        (t.leftRailPlacement ?? DEFAULT_RAIL_PLACEMENT).mode,
       );
       return {
         projectId: t.id,

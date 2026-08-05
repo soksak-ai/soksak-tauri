@@ -40,4 +40,25 @@ describe("capture motion anchors", () => {
     expect(setCaptureMotionAnchors(document, [])).toMatchObject({ visible: false, count: 0 });
     expect(setCaptureMotionAnchors(document, [])).toMatchObject({ visible: false, count: 0 });
   });
+
+  it("places a visual oracle at an explicit offset inside an exposed chrome surface", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    setCaptureMotionAnchors(document, [
+      { address: "modal/project-new", color: "#ff00ff", host, x: 24, y: 80 },
+    ]);
+
+    const anchor = document.querySelector<HTMLElement>(`[${CAPTURE_MOTION_ANCHOR_ATTR}]`);
+    expect(anchor?.style.left).toBe("24px");
+    expect(anchor?.style.top).toBe("80px");
+  });
+
+  it("anchors static hosts locally and restores their inline positioning on cleanup", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    setCaptureMotionAnchors(document, [{ address: "toolbar", color: "#00ffff", host }]);
+    expect(host.style.position).toBe("relative");
+    setCaptureMotionAnchors(document, []);
+    expect(host.style.position).toBe("");
+  });
 });

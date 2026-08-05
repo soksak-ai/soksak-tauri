@@ -236,15 +236,11 @@ Two questions place a name. **Who emits it, and who consumes it?** For those eve
 
 **And check what the standard already is before adding one.** Focus already had a contract (`requestViewFocus`/`transferViewFocus`). What the frameworks needed was not a second standard but a *carrier* across the process boundary, ending in that same function. A new event that ends somewhere else would have been a second focus standard, and the two would drift without either being wrong on its own.
 
-### A29. Two ways to reach the same place are one axis, not two switches.
+### A29. Pin fixes both position and identity.
 
-"The focused pane ends up next to the rail" is the law. There are two ways to satisfy it: pull the pane to the rail, or let the rail travel to the pane. Enable both and two things move for one click. Measured 2026-08-02: with the pull turned off the pane still moved, because a second rule ("switch the focused pane forward when its own left line is blocked") was still running underneath — the same outcome reached by a different door.
+Changing focus under a `pin` sidebar changes selection state; it is not a layout operation. The sidebar station and DOM identity, plus the split tree order and rects, remain unchanged. FLOW policies, including `railPullFocused`, cannot override this invariant.
 
-**So one axis names the method, and everything downstream reads that axis.** `railPullFocused` decides both the arrangement and the station: pulling means the rail holds still, not pulling means it travels. A setting that only guards one of them leaves the other free to contradict it.
-
-**The seam tells which door was used.** A pulled pane sits next to the rail because we put it there — the adjacency is manufactured, and it is marked dashed. A rail that traveled found a real adjacency, so the seam is solid. Fading the neighbour is a different axis again (`focusDim`); folding it into this one would make "how it got there" and "how it looks" impossible to set independently.
-
-**Abolishing a feature to fix a defect needs the two to be the same fact.** `099a2f1f` removed follow-focus relocation and focus-near projection together because both showed up as "a browser nobody touched moved". They are not the same fact: a rail that relocates on its own is a defect, and a pane that moves because you clicked it is the result of direct manipulation — the very principle that commit invoked. The restoration in `19c45707` kept only the narrow case, and since the same commit made placement pin-only, the surviving condition was never true again. A feature can die of a condition that can no longer hold.
+The relation follows actual geometry. A selected pane touching the fixed sidebar on its left receives a left union border; one touching on its right receives a right union border. If neither edge touches, the intervening space is not promoted into a relation surface: the sidebar and selected pane each receive an independent active border. Borders are therefore results of fixed geometry and selection, never causes of rearrangement.
 
 ## 5. Extraction Targets
 
@@ -281,6 +277,13 @@ the original extraction plan it was carried out under.
 
 **Generic capability the skeleton must expose (browser-map gaps D1–D10, risks E1–E10):**
 - `app.webview.label(hint) → label` — app-level, Tauri-global-unique label coordination across windows (gap D1, risk E1).
+- `app.webview.wheel(label, {x,y,dx,dy})` — real engine wheel input without focus theft. A
+  plugin exposes it through its own `input.scroll` command and uses the page event as completion.
+- `app.webview.captureFull(label, path, width, height)` — a full-document PNG of the explicit
+  child webview. Each framework owns its engine's full-document rendering transaction. When an
+  Electron guest exposes no full-document surface primitive, the framework composes a finite,
+  event-confirmed viewport set. It hides only the default repeated scrollbar during the transaction and
+  must restore the exact inline overflow declarations and original scroll position before succeeding.
 - Generic webview events: `webview.on(label, "nav"|"title"|"open-external"|"status", cb)` replacing hardcoded `browser-*` event names (gap D2, principle A3).
 - Generic `ui.overlayActive(label, bool)` and `ui.domHoles(label, holes[])` replacing `webview_overlay_active` (gap D3 — the invoke was renamed; the generic registry surface is still the target).
 - Generic `native.click.on(label, cb)` and resize subscription, scoped via `emit_to(label, ...)` (gap D4, risk E4).

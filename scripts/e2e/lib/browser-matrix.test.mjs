@@ -3,18 +3,24 @@ import { describe, expect, it } from "vitest";
 import {
   browserImplementations,
   browserSurfaceInvariant,
+  domTransitionTraceVerdict,
   fixtureHtml,
   parseBrowserEngines,
   fixtureMarkers,
   fixtureInputMarkers,
   fixtureInputMarkerSize,
   fixtureMotionMarkers,
+  compositorCalibrationMarker,
   fixtureMarkerSize,
   markerEvidence,
   markerPixels,
   motionMarkerAlignment,
+  numericCompositionTraceVerdict,
+  pinnedDomTraceVerdict,
   snapshotCssScale,
+  selectFixtureMarkerComponent,
   hostileWindowResizeSizes,
+  summarizeFrameSequence,
   unwrapEvalValue,
   viewportAlignment,
   transitionFrameAlignment,
@@ -23,6 +29,145 @@ import {
 import { encodePng } from "./png.mjs";
 
 describe("브라우저 구현 행렬", () => {
+  it("사이드바와 탭 pane의 단일 DOM·공유 animation epoch 위반을 RED로 만든다", () => {
+    const node = (address, x, startTime, currentTime, connected = true) => ({
+      address,
+      connected,
+      rect: { x, y: 20, w: 160, h: 500 },
+      animations: startTime == null ? [] : [{
+        name: "rail-flip-x", playState: "running", startTime, currentTime,
+        progress: currentTime / 280,
+      }],
+    });
+    const verdict = domTransitionTraceVerdict([
+      { nodes: [node("rail", 500, null, null), node("pane", 100, null, null)] },
+      { nodes: [node("rail", 500, 100, 20), node("pane", 100, 112, 8)] },
+      { nodes: [node("rail", 300, 100, 120, false), node("pane", 300, 112, 108)] },
+    ], { railAddress: "rail", paneAddresses: ["pane"] });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.errors.join("\n")).toContain("disconnected:rail");
+    expect(verdict.errors.join("\n")).toContain("clock-start-skew");
+  });
+
+  it("하나의 지속 rail DOM과 pane이 같은 FLIP 시계를 공유하면 GREEN이다", () => {
+    const sample = (xRail, xPane, currentTime = null) => ({ nodes: [
+      {
+        address: "rail", connected: true, rect: { x: xRail, y: 20, w: 160, h: 500 },
+        animations: currentTime == null ? [] : [{ name: "rail-flip-x", playState: "running", startTime: 100, currentTime, progress: currentTime / 280 }],
+      },
+      {
+        address: "pane", connected: true, rect: { x: xPane, y: 20, w: 500, h: 500 },
+        animations: currentTime == null ? [] : [{ name: "rail-flip-x", playState: "running", startTime: 100, currentTime, progress: currentTime / 280 }],
+      },
+    ] });
+    const verdict = domTransitionTraceVerdict([
+      sample(500, 100), sample(500, 100, 20), sample(400, 200, 120), sample(300, 300),
+    ], { railAddress: "rail", paneAddresses: ["pane"] });
+    expect(verdict).toMatchObject({ ok: true, sharedClockFrames: 2 });
+  });
+
+  it("비전면 전환은 rail/pane이 같은 단일 프레임에 중간 좌표 없이 snap하면 GREEN이다", () => {
+    const node = (address, x) => ({
+      address, connected: true, rect: { x, y: 20, w: 160, h: 500 }, animations: [],
+    });
+    const sample = (railX, leftX, rightX) => ({ nodes: [
+      node("rail", railX), node("left", leftX), node("right", rightX),
+    ] });
+    const verdict = domTransitionTraceVerdict([
+      sample(347, 60, 513), sample(347, 60, 513), sample(54, 220, 513), sample(54, 220, 513),
+    ], { railAddress: "rail", paneAddresses: ["left", "right"], motionMode: "snap" });
+    expect(verdict).toMatchObject({ ok: true, motionMode: "snap", sharedClockFrames: 0 });
+  });
+
+  it("비전면 snap에서 중간 좌표나 rail/pane 프레임 차이를 RED로 만든다", () => {
+    const node = (address, x) => ({
+      address, connected: true, rect: { x, y: 20, w: 160, h: 500 }, animations: [],
+    });
+    const sample = (railX, paneX) => ({ nodes: [node("rail", railX), node("pane", paneX)] });
+    const intermediate = domTransitionTraceVerdict([
+      sample(347, 60), sample(200, 60), sample(54, 220),
+    ], { railAddress: "rail", paneAddresses: ["pane"], motionMode: "snap" });
+    expect(intermediate.ok).toBe(false);
+    expect(intermediate.errors.join("\n")).toContain("snap-intermediate:rail");
+
+    const skewed = domTransitionTraceVerdict([
+      sample(347, 60), sample(54, 60), sample(54, 220),
+    ], { railAddress: "rail", paneAddresses: ["pane"], motionMode: "snap" });
+    expect(skewed.ok).toBe(false);
+    expect(skewed.errors.join("\n")).toContain("snap-frame-skew");
+  });
+
+  it("PIN 포커스 전환에서 rail/pane 좌표 변화나 FLIP을 RED로 만든다", () => {
+    const node = (address, x, animations = []) => ({
+      address, connected: true, rect: { x, y: 20, w: 160, h: 500 }, animations,
+    });
+    const verdict = pinnedDomTraceVerdict([
+      { nodes: [node("rail", 0), node("left", 160), node("right", 680)] },
+      { nodes: [node("rail", 0), node("left", 160), node("right", 520, [{ name: "rail-flip-x" }])] },
+      { nodes: [node("rail", 0), node("left", 160), node("right", 680)] },
+    ], { addresses: ["rail", "left", "right"] });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.errors.join("\n")).toContain("rect-changed:right:x=680/520");
+    expect(verdict.errors.join("\n")).toContain("animation-forbidden:right:rail-flip-x");
+  });
+
+  it("PIN 포커스 전환에서 같은 DOM·같은 rect·무 animation이면 GREEN이다", () => {
+    const sample = () => ({ nodes: [
+      { address: "rail", connected: true, rect: { x: 0, y: 20, w: 160, h: 500 }, animations: [] },
+      { address: "left", connected: true, rect: { x: 160, y: 20, w: 520, h: 500 }, animations: [] },
+      { address: "right", connected: true, rect: { x: 680, y: 20, w: 520, h: 500 }, animations: [] },
+    ] });
+    expect(pinnedDomTraceVerdict([sample(), sample(), sample()], {
+      addresses: ["rail", "left", "right"],
+    })).toMatchObject({ ok: true, frames: 3 });
+  });
+
+  it("녹화 픽셀 없이 관측된 322px DOM/native 이탈을 RED로 만든다", () => {
+    const sample = (domX, nativeX, uncertaintyMs = 0.4) => ({
+      uncertaintyMs,
+      surfaces: [{
+        viewId: "iana",
+        domRect: { x: domX, y: 120, w: 322, h: 500 },
+        presentationRect: { x: nativeX, y: 120, w: 322, h: 500 },
+      }],
+    });
+    const verdict = numericCompositionTraceVerdict([
+      sample(442, 442),
+      sample(120, 442),
+      sample(120, 120),
+    ]);
+    expect(verdict.ok).toBe(false);
+    expect(verdict.maxDelta).toBe(322);
+    expect(verdict.errors).toContain("s1:iana:x=120/442 dx=322");
+  });
+
+  it("합성 trace의 시계 불확실성과 rounding-only 기준을 함께 검사한다", () => {
+    const samples = Array.from({ length: 3 }, (_, index) => ({
+      uncertaintyMs: index === 2 ? 2.1 : 0.5,
+      surfaces: [{
+        viewId: "v1",
+        domRect: { x: 10.4, y: 20, w: 300, h: 200 },
+        presentationRect: { x: 11, y: 20, w: 300, h: 200 },
+      }],
+    }));
+    const verdict = numericCompositionTraceVerdict(samples);
+    expect(verdict.ok).toBe(false);
+    expect(verdict.errors).toContain("s2:clock-uncertainty=2.1/2ms");
+  });
+
+  it("첫 실패에서 멈추지 않고 전체 이동 궤적과 최대 이탈을 보고한다", () => {
+    const verdict = summarizeFrameSequence([
+      { frame: "f0001.png", errors: ["motion-x=10/16 dx=6"], motionDx: 6 },
+      { frame: "f0002.png", errors: ["motion-x=10/266 dx=256"], motionDx: 256 },
+      { frame: "f0003.png", errors: [], motionDx: 0 },
+    ]);
+
+    expect(verdict).toMatchObject({ ok: false, checked: 3, failed: 2, maxMotionDx: 256 });
+    expect(verdict.summary).toContain("f0001.png");
+    expect(verdict.summary).toContain("f0002.png");
+    expect(verdict.summary).toContain("maxMotionDx=256");
+  });
+
   it("기본값은 Native·Windowed Chromium·Offscreen Chromium 전부다", () => {
     expect(parseBrowserEngines(undefined)).toEqual([
       "browser",
@@ -30,6 +175,18 @@ describe("브라우저 구현 행렬", () => {
       "browser-chromium-offscreen",
     ]);
     expect(Object.keys(browserImplementations)).toEqual(parseBrowserEngines(undefined));
+  });
+
+  it("fixture 배경은 marker hue와 합쳐지지 않는 무채색이어야 한다", () => {
+    const html = fixtureHtml();
+    expect(html).toContain("background:#181818");
+    expect(html).toContain("background:#292929");
+    expect(html).not.toContain("#10202c");
+    expect(html).not.toContain("#16394a");
+  });
+
+  it("fixture 본문은 좁은 pane에서도 viewport를 넘지 않는다", () => {
+    expect(fixtureHtml()).toContain("width:min(520px,100%)");
   });
 
   it("알 수 없는 구현을 조용히 건너뛰지 않는다", () => {
@@ -130,13 +287,13 @@ describe("공통 브라우저 fixture", () => {
       browser: { width: 128, height: 80 },
       dom: [{ width: 80, height: 80 }, { width: 80, height: 80 }],
     })).toEqual({ ok: true, errors: [] });
-    const shellTear = transitionFrameAlignment({
+    const chromeTear = transitionFrameAlignment({
       browser: { width: 128, height: 80 },
       dom: [{ width: 80, height: 80 }, { width: 70, height: 80 }],
     });
-    expect(shellTear.ok).toBe(false);
-    expect(shellTear.errors).toContain("shell-epoch-tear=2x2/1.75x2");
-    expect(shellTear.errors.join("\n")).not.toContain("browser-only");
+    expect(chromeTear.ok).toBe(false);
+    expect(chromeTear.errors).toContain("chrome-epoch-tear=2x2/1.75x2");
+    expect(chromeTear.errors.join("\n")).not.toContain("browser-only");
     expect(transitionFrameAlignment({
       browser: { width: 96, height: 60 },
       dom: [{ width: 80, height: 80 }, { width: 80, height: 80 }],
@@ -157,6 +314,9 @@ describe("공통 브라우저 fixture", () => {
     const page = { value: "한글", active: true, ledger: { inputEvents: 1 } };
     expect(unwrapEvalValue(page)).toEqual(page);
     expect(unwrapEvalValue({ value: page, viewId: "tab-1" })).toEqual(page);
+    const scroll = { y: 480, h: 2400, v: 600 };
+    expect(unwrapEvalValue(scroll)).toEqual(scroll);
+    expect(unwrapEvalValue({ value: scroll, viewId: "tab-1" })).toEqual(scroll);
   });
 
   it("엔진 중립 신원과 실제 편집 요소·입력 사건 장부를 제공한다", () => {
@@ -186,6 +346,44 @@ describe("공통 브라우저 fixture", () => {
     expect(markerPixels(png, fixtureMarkers[1])).toBe(0);
   });
 
+  it("blocked 70% + 비활성 창 조명 뒤의 magenta도 채도로 식별한다", () => {
+    const px = Buffer.alloc(20 * 20 * 3, 0);
+    for (let i = 0; i < 120; i += 1) {
+      px[i * 3] = 23;
+      px[i * 3 + 1] = 0;
+      px[i * 3 + 2] = 23;
+    }
+    const png = encodePng({ w: 20, h: 20, ch: 3, px });
+    expect(markerPixels(png, fixtureMarkers[0])).toBe(120);
+    expect(markerPixels(png, fixtureMarkers[1])).toBe(0);
+  });
+
+  it("색 관리가 주 채널을 비대칭 변환한 실제 magenta도 같은 hue로 식별한다", () => {
+    const px = Buffer.alloc(20 * 20 * 3, 0);
+    for (let i = 0; i < 120; i += 1) {
+      px[i * 3] = 234;
+      px[i * 3 + 1] = 51;
+      px[i * 3 + 2] = 247;
+    }
+    const png = encodePng({ w: 20, h: 20, ch: 3, px });
+    expect(markerPixels(png, fixtureMarkers[0])).toBe(120);
+    expect(markerPixels(png, fixtureMarkers[1])).toBe(0);
+  });
+
+  it("같은 조명 아래 cyan/yellow/green도 동일한 채도 기준으로 식별한다", () => {
+    for (const [color, rgb] of [
+      [fixtureMarkers[1], [0, 23, 23]],
+      [fixtureInputMarkers[0], [23, 23, 0]],
+      [fixtureInputMarkers[1], [0, 23, 0]],
+    ]) {
+      const px = Buffer.alloc(20 * 20 * 3, 0);
+      for (let i = 0; i < 120; i += 1) {
+        px[i * 3] = rgb[0]; px[i * 3 + 1] = rgb[1]; px[i * 3 + 2] = rgb[2];
+      }
+      expect(markerPixels(encodePng({ w: 20, h: 20, ch: 3, px }), color)).toBe(120);
+    }
+  });
+
   it("밝기만 비슷한 무채색은 marker로 오인하지 않는다", () => {
     const px = Buffer.alloc(20 * 20 * 3, 117);
     const png = encodePng({ w: 20, h: 20, ch: 3, px });
@@ -197,7 +395,9 @@ describe("공통 브라우저 fixture", () => {
     const px = Buffer.alloc(80 * 50 * 3, 0);
     for (let y = 5; y < 45; y += 1) for (let x = 8; x < 72; x += 1) px[(y * 80 + x) * 3 + 2] = 255;
     const evidence = markerEvidence(encodePng({ w: 80, h: 50, ch: 3, px }), "#0000ff");
-    expect(evidence.largest).toEqual({ count: 2560, x: 8, y: 5, width: 64, height: 40 });
+    expect(evidence.largest).toEqual({
+      count: 2560, x: 8, y: 5, width: 64, height: 40, bodyWidth: 64, bodyHeight: 40,
+    });
   });
 
   it("흩어진 장식 픽셀과 넓게 이어진 fixture marker를 구분한다", () => {
@@ -211,13 +411,70 @@ describe("공통 브라우저 fixture", () => {
     expect(evidence.largest.height).toBe(24);
   });
 
+  it("표식에 같은 색 장식이 일부 붙어도 직사각형 본체 크기는 변하지 않는다", () => {
+    const px = Buffer.alloc(120 * 100 * 3, 0);
+    const mark = (x, y) => {
+      const at = (y * 120 + x) * 3;
+      px[at + 1] = 255; px[at + 2] = 255;
+    };
+    for (let y = 20; y < 60; y += 1) for (let x = 20; x < 84; x += 1) mark(x, y);
+    for (let n = 0; n < 18; n += 1) mark(84 + n, 20 + n);
+    const evidence = markerEvidence(encodePng({ w: 120, h: 100, ch: 3, px }), fixtureMarkers[1]);
+    expect(evidence.largest.width).toBeGreaterThan(64);
+    expect(evidence.largest.height).toBe(40);
+    expect(evidence.largest.bodyWidth).toBe(64);
+    expect(evidence.largest.bodyHeight).toBe(40);
+  });
+
+  it("같은 hue의 긴 배경 줄기에 연결돼도 선언된 직사각 본체를 선택한다", () => {
+    const px = Buffer.alloc(120 * 240 * 3, 0);
+    const mark = (x, y) => {
+      const at = (y * 120 + x) * 3;
+      px[at + 1] = 127; px[at + 2] = 127;
+    };
+    for (let y = 20; y < 220; y += 1) for (let x = 10; x < 18; x += 1) mark(x, y);
+    for (let y = 80; y < 120; y += 1) for (let x = 10; x < 74; x += 1) mark(x, y);
+    const evidence = markerEvidence(encodePng({ w: 120, h: 240, ch: 3, px }), fixtureMarkers[1]);
+    expect(evidence.largest.bodyWidth).toBe(8);
+    expect(selectFixtureMarkerComponent(evidence.components, {
+      expectedWidth: 64,
+      expectedHeight: 40,
+      minCount: 200,
+    })).not.toBeNull();
+  });
+
+  it("같은 hue의 큰 배경보다 선언된 64x40 표식 성분을 선택한다", () => {
+    const selected = selectFixtureMarkerComponent([
+      { count: 90_000, bodyWidth: 264, bodyHeight: 364 },
+      { count: 2_560, bodyWidth: 64, bodyHeight: 40 },
+    ], { expectedWidth: 64, expectedHeight: 40, minCount: 200 });
+    expect(selected).toMatchObject({ bodyWidth: 64, bodyHeight: 40 });
+  });
+
+  it("다른 합성 레이어가 표식 내부를 가려도 정확한 외곽 경계와 생존 픽셀로 선택한다", () => {
+    const selected = selectFixtureMarkerComponent([
+      {
+        count: 512,
+        x: 538,
+        y: 344,
+        width: 64,
+        height: 40,
+        bodyWidth: 62,
+        bodyHeight: 34,
+        rowRuns: [62, 62, 56, 48],
+        sampleStep: 1,
+      },
+    ], { expectedWidth: 64, expectedHeight: 40, minCount: 200 });
+    expect(selected).toMatchObject({ width: 64, height: 40 });
+  });
+
   it("같은 프레임의 DOM anchor와 surface marker x좌표를 엄격히 판정한다", () => {
     const frame = (surfaceX) => {
       const px = Buffer.alloc(100 * 60 * 3, 0);
       for (const [x0, y0] of [[10, 4], [surfaceX, 32]]) {
         for (let y = y0; y < y0 + 12; y += 1) for (let x = x0; x < x0 + 12; x += 1) {
           const at = (y * 100 + x) * 3;
-          px[at + 1] = 255;
+          px[at] = 128;
           px[at + 2] = 255;
         }
       }
@@ -229,5 +486,25 @@ describe("공통 브라우저 fixture", () => {
       ok: false,
       errors: ["motion-x=10/38 dx=28"],
     });
+  });
+
+  it("motion 팔레트는 다른 fixture 색과 겹치지 않고 조명 감광 뒤에도 검출된다", () => {
+    expect(new Set([
+      ...fixtureMarkers,
+      ...fixtureInputMarkers,
+      ...fixtureMotionMarkers,
+      compositorCalibrationMarker,
+      "#ff0000",
+    ]).size).toBe(8);
+    const px = Buffer.alloc(80 * 50 * 3, 0);
+    for (const [x0, level] of [[8, 1], [40, 0.5]]) {
+      for (let y = 8; y < 20; y += 1) for (let x = x0; x < x0 + 12; x += 1) {
+        const at = (y * 80 + x) * 3;
+        px[at] = Math.round(128 * level);
+        px[at + 2] = Math.round(255 * level);
+      }
+    }
+    const evidence = markerEvidence(encodePng({ w: 80, h: 50, ch: 3, px }), fixtureMotionMarkers[0]);
+    expect(evidence.components.filter((component) => component.width === 12 && component.height === 12)).toHaveLength(2);
   });
 });
