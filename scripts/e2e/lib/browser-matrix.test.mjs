@@ -14,6 +14,7 @@ import {
   unwrapEvalValue,
   viewportAlignment,
   transitionFrameAlignment,
+  completeCalibrationComponents,
 } from "./browser-matrix.mjs";
 import { encodePng } from "./png.mjs";
 
@@ -129,6 +130,16 @@ describe("공통 브라우저 fixture", () => {
       browser: { width: 96, height: 60 },
       dom: [{ width: 80, height: 80 }, { width: 80, height: 80 }],
     }).errors).toContain("browser-only-stretch=1.5x1.5/dom:2x2");
+  });
+
+  it("전이 crop에 잘린 보정자는 epoch 배율 근거로 쓰지 않는다", () => {
+    expect(completeCalibrationComponents([
+      { count: 6400, width: 80, height: 80 },
+      { count: 3830, width: 80, height: 48 },
+    ])).toEqual([{ count: 6400, width: 80, height: 80 }]);
+    expect(completeCalibrationComponents([
+      { count: 3830, width: 80, height: 48 },
+    ])).toEqual([]);
   });
 
   it("평탄/중첩 eval 봉투를 같은 페이지 반환값으로 푼다", () => {
