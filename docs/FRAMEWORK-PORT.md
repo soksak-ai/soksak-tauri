@@ -715,7 +715,8 @@ The registered surface autoresizing mask is `0`: the public DOM-slot contract is
 owner. The Tauri adapter stores an affine contract from the ratios exposed by `.space` and
 `.tab-body` plus the slot's fixed chrome, then projects it into the new viewport inside
 `NSWindowDidResize`. The later JavaScript resize event settles and verifies; it is not the live
-follower. Proportional whole-host child resizing and polling are forbidden. The applied mask is exposed as
+follower. `webview_bounds` rejects a write whose contract viewport belongs to an older native-parent
+viewport. Proportional whole-host child resizing and polling are forbidden. The applied mask is exposed as
 `webview.composition.surfaces[].autoresizingMask`.
 Windowed Chromium has one dedicated AppKit slot host per browser. DOM-slot bounds apply only to that
 host, while the CEF child fills local `(0,0,w,h)`. Attaching arbitrary CEF children directly to the

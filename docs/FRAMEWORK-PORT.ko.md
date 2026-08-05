@@ -707,7 +707,8 @@ Tauri compositor에 등록한 모든 네이티브 surface는 AppKit의 `DuringVi
 등록 surface의 autoresizing mask는 `0`이다. 공개 DOM-slot 계약만 그 frame의 주인이다. Tauri
 어댑터는 `.space`와 `.tab-body`가 공개한 비율 및 slot의 고정 chrome을 affine 계약으로 저장하고,
 `NSWindowDidResize` 통지 안에서 새 viewport에 투영한다. 후행 JS resize 사건은 최종 정착·검증이며
-실시간 추종자가 아니다. 전체창 engine host 자체의 임의 비례 resize와 폴링은 금지한다. 적용값은
+실시간 추종자가 아니다. `webview_bounds`는 계약의 viewport와 현재 native parent viewport가 다른
+과거 세대 쓰기를 거부한다. 전체창 engine host 자체의 임의 비례 resize와 폴링은 금지한다. 적용값은
 `webview.composition.surfaces[].autoresizingMask`로 공개한다.
 windowed Chromium은 각 브라우저마다 전용 AppKit slot host를 가진다. DOM-slot bounds는 이 host에만
 적용하고 CEF child는 host 로컬 `(0,0,w,h)`를 채운다. 여러 CEF child를 전체창 host에 직접 붙여

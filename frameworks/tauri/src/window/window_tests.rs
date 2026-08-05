@@ -106,6 +106,16 @@ fn physical_resize_replies_after_appkit_applied_and_displayed_the_size() {
         command.contains("commit_resize_composition"),
         "크기 적용 뒤 같은 메인스레드 transaction에서 layout/display를 확정해야 한다"
     );
+    let layout = command.find("layoutIfNeeded")
+        .expect("새 content viewport를 affine 투영 전에 확정해야 한다");
+    let project = command.find("resize_registered_surface_hosts")
+        .expect("공개 DOM affine 계약을 같은 명령 transaction에서 투영해야 한다");
+    let commit = command.find("commit_resize_composition")
+        .expect("resize composition commit");
+    assert!(
+        layout < project && project < commit,
+        "content layout → native surface 투영 → 전체 창 display commit 순서여야 한다"
+    );
     assert!(
         command.contains("recv_timeout"),
         "명령 응답은 메인스레드 resize transaction 완료를 기다려야 한다"

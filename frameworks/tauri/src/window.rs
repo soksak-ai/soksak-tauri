@@ -34,11 +34,16 @@ pub async fn window_set_physical_size(
         if ptr == 0 {
             return Err(format!("창의 NSWindow를 찾지 못했다: {label}"));
         }
+        let resize_label = label.clone();
         let (tx, rx) = std::sync::mpsc::sync_channel::<Result<(), String>>(1);
         app.run_on_main_thread(move || {
             use objc2_foundation::NSSize;
             let native = unsafe { &*(ptr as *const objc2_app_kit::NSWindow) };
             native.setContentSize(NSSize::new(width as f64 / scale, height as f64 / scale));
+            // setContentSize는 NSWindow frame을 먼저 바꾸고 content hierarchy의 bounds 정착은
+            // layout에서 끝낸다. affine 투영이 이전 parent bounds를 읽지 않게 순서를 고정한다.
+            native.layoutIfNeeded();
+            crate::webview::resize_registered_surface_hosts(&resize_label);
             crate::webview::appkit_events::commit_resize_composition(native);
             let _ = tx.send(Ok(()));
         })

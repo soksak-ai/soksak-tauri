@@ -556,6 +556,11 @@ mod status {
 #[cfg(target_os = "macos")]
 mod layer;
 
+#[cfg(target_os = "macos")]
+pub(crate) fn resize_registered_surface_hosts(window: &str) {
+    layer::resize_registered_surface_hosts(window);
+}
+
 // 엔진 사이드카의 native surface 를 레이어 시스템(SURFACES — hitTest 위임)에 편입/해제.
 // 엔진이 surface-created/destroyed 호스트 사실을 emit 하면 sidecar.rs 가 여기로 relay 한다.
 // 코어는 의미를 모른다 — 포인터 멤버십만 관리(엔진 중립: WKWebView·Chromium 동일 취급).
@@ -924,7 +929,7 @@ pub fn webview_open(
         if child_is_newborn(&label) || native_child_alive(&existing) {
             #[cfg(target_os = "macos")]
             if let Some(layout) = layout {
-                layer::set_surface_layout(&label, layout);
+                let _ = layer::accept_surface_layout(&label, layout);
             }
             #[cfg(debug_assertions)]
             eprintln!("[open-trace] webview_open {label}: 기존 생존 — no-op");
@@ -1053,7 +1058,7 @@ pub fn webview_open(
         // hit-test surface를 소유하고, WKWebView는 그 안의 고정 로컬 child다.
         layer::adopt_surface_host(&webview, &label, window.label(), transparent);
         if let Some(layout) = layout {
-            layer::set_surface_layout(&label, layout);
+            let _ = layer::accept_surface_layout(&label, layout);
         }
         // 상태표시줄: 링크 hover → browser-status emit. 메시지 핸들러를 이 webview 에 등록.
         let st_app = app.clone();
@@ -1320,7 +1325,11 @@ pub fn webview_bounds(
         SURFACE_LAYOUT.set_raw(&label, (x, y, w, h));
         #[cfg(target_os = "macos")]
         if let Some(layout) = layout {
-            layer::set_surface_layout(&label, layout);
+            if !layer::accept_surface_layout(&label, layout) {
+                #[cfg(debug_assertions)]
+                eprintln!("[bounds-trace] {label} stale viewport 계약 거부");
+                return Ok(());
+            }
         }
         apply_child_bounds(&wv, &label, (x, y, w, h))?;
     }

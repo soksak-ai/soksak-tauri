@@ -86,6 +86,11 @@ impl super::SurfaceLayoutContract {
             (self.height_ratio * root_h + self.fixed_h).max(0.0),
         )
     }
+
+    fn belongs_to_viewport(&self, viewport_w: f64, viewport_h: f64) -> bool {
+        (self.viewport_w - viewport_w).abs() <= 1.0
+            && (self.viewport_h - viewport_h).abs() <= 1.0
+    }
 }
 
 impl super::PaneMemberLayoutContract {
@@ -574,6 +579,19 @@ pub fn set_surface_layout(label: &str, layout: super::SurfaceLayoutContract) {
     }
 }
 
+/// 이전 window viewport에서 측정한 후행 IPC가 현재 native frame을 되돌리지 못하게 한다.
+pub fn accept_surface_layout(label: &str, layout: super::SurfaceLayoutContract) -> bool {
+    let Some(ptr) = SURFACE_HOSTS.ptr(label) else { return false };
+    let host = unsafe { &*(ptr as *const NSView) };
+    let Some(parent) = (unsafe { host.superview() }) else { return false };
+    let bounds = parent.bounds();
+    if !layout.belongs_to_viewport(bounds.size.width, bounds.size.height) {
+        return false;
+    }
+    set_surface_layout(label, layout);
+    true
+}
+
 /// 일반 DOM renderer 아래의 native surface를 NSWindowDidResize와 같은 AppKit epoch에 옮긴다.
 /// JavaScript resize 이벤트는 이보다 뒤에 오므로 최종 검증/정착 경로일 뿐 실시간 추종자가 아니다.
 pub fn resize_registered_surface_hosts(window: &str) {
@@ -696,6 +714,8 @@ mod pane_layout_tests {
         };
         let rect = contract.rect_for_viewport(600.0, 450.0);
         assert_eq!(rect, (469.0, 121.0, 124.0, 115.0));
+        assert!(contract.belongs_to_viewport(900.5, 1079.5));
+        assert!(!contract.belongs_to_viewport(600.0, 450.0));
     }
 
     #[test]
