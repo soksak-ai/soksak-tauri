@@ -327,6 +327,8 @@ describe("공통 브라우저 fixture", () => {
     expect(html).toContain("beforeinput");
     expect(html).toContain("inputEvents");
     expect(html).toContain('id="marker"');
+    expect(html.match(/class="fixture-marker"/g)).toHaveLength(3);
+    expect(html).toContain('id="marker" class="fixture-marker"');
     expect(html).toContain('id="typed-marker"');
     expect(html).toContain(fixtureInputMarkers[0]);
     expect(html).toContain(`#typed-marker{height:${fixtureInputMarkerSize.height}px`);
@@ -485,6 +487,45 @@ describe("공통 브라우저 fixture", () => {
     expect(motionMarkerAlignment(frame(38), fixtureMotionMarkers[0], 1)).toMatchObject({
       ok: false,
       errors: ["motion-x=10/38 dx=28"],
+    });
+  });
+
+  it("상위 장식이 두 anchor를 조각내도 경계 안에서 복원하고 x 기준은 유지한다", () => {
+    const frame = (surfaceX) => {
+      const px = Buffer.alloc(100 * 70 * 3, 0);
+      for (const [x0, y0] of [[10, 4], [surfaceX, 32]]) {
+        for (let y = y0; y < y0 + 12; y += 1) for (let x = x0; x < x0 + 12; x += 1) {
+          if (x >= x0 + 4 && x < x0 + 8) continue;
+          const at = (y * 100 + x) * 3;
+          px[at] = 128;
+          px[at + 2] = 255;
+        }
+      }
+      return encodePng({ w: 100, h: 70, ch: 3, px });
+    };
+    expect(motionMarkerAlignment(frame(10), fixtureMotionMarkers[0], 1)).toMatchObject({ ok: true, dx: 0 });
+    expect(motionMarkerAlignment(frame(30), fixtureMotionMarkers[0], 1)).toMatchObject({
+      ok: false,
+      errors: ["motion-x=10/30 dx=20"],
+    });
+  });
+
+  it("상위 장식이 2x 기준자의 오른쪽 5px을 덮어도 남은 왼쪽 경계로 x를 판정한다", () => {
+    const frame = (surfaceX) => {
+      const px = Buffer.alloc(160 * 100 * 3, 0);
+      for (const [x0, y0, visibleWidth] of [[20, 8, 24], [surfaceX, 64, 19]]) {
+        for (let y = y0; y < y0 + 24; y += 1) for (let x = x0; x < x0 + visibleWidth; x += 1) {
+          const at = (y * 160 + x) * 3;
+          px[at] = 128;
+          px[at + 2] = 255;
+        }
+      }
+      return encodePng({ w: 160, h: 100, ch: 3, px });
+    };
+    expect(motionMarkerAlignment(frame(20), fixtureMotionMarkers[0], 2)).toMatchObject({ ok: true, dx: 0 });
+    expect(motionMarkerAlignment(frame(60), fixtureMotionMarkers[0], 2)).toMatchObject({
+      ok: false,
+      errors: ["motion-x=20/60 dx=40"],
     });
   });
 

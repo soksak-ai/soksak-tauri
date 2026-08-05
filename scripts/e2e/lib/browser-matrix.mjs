@@ -212,12 +212,41 @@ export function selectFixtureMarkerComponent(
 export function motionMarkerAlignment(bytes, hex, scale, tolerance = 4) {
   const expected = Number(scale) * fixtureMotionMarkerSize.width;
   const expectedGap = Number(scale) * fixtureMotionMarkerVerticalGap;
-  const candidates = markerEvidence(bytes, hex, 24, 1).components
-    .filter((component) =>
-      Math.abs(component.width - expected) <= tolerance
-      && Math.abs(component.height - expected) <= tolerance
-      && Math.abs(component.bodyWidth - expected) <= tolerance
-      && Math.abs(component.bodyHeight - expected) <= tolerance);
+  // 앱의 장식 평면은 브라우저와 DOM anchor보다 위에 그려질 수 있다. 장식이 marker를
+  // 가로지르면 같은 12px 사각형이 여러 연결 성분으로 갈리지만 그 외곽과 x는 변하지 않는다.
+  // 한 marker 경계 안에서만 조각을 합쳐 관측 오염을 복구하고, 두 marker의 x 동일성은 그대로
+  // 엄격히 판정한다. 멀리 떨어진 같은 hue 장식은 이 경계에 들어오지 못한다.
+  const fragments = markerEvidence(bytes, hex, 24, 1).components;
+  const clusters = [];
+  for (const component of fragments) {
+    let merged = false;
+    for (const cluster of clusters) {
+      const x = Math.min(cluster.x, component.x);
+      const y = Math.min(cluster.y, component.y);
+      const right = Math.max(cluster.x + cluster.width, component.x + component.width);
+      const bottom = Math.max(cluster.y + cluster.height, component.y + component.height);
+      if (right - x <= expected + tolerance && bottom - y <= expected + tolerance) {
+        cluster.x = x;
+        cluster.y = y;
+        cluster.width = right - x;
+        cluster.height = bottom - y;
+        cluster.bodyWidth = cluster.width;
+        cluster.bodyHeight = cluster.height;
+        cluster.count += component.count;
+        merged = true;
+        break;
+      }
+    }
+    if (!merged) clusters.push({ ...component });
+  }
+  const candidates = clusters.filter((component) =>
+    component.count >= expected * expected * 0.2
+    // 위에 있는 장식은 marker의 오른쪽 일부를 덮을 수 있다. x축 판정의 기준인 왼쪽
+    // 경계와 전체 높이가 살아 있으면 최대 25%의 오른쪽 가림은 허용하되, 두 기준자의 x
+    // 동일성 자체는 아래에서 같은 tolerance로 계속 엄격히 판정한다.
+    && component.width >= expected - Math.max(tolerance, Math.ceil(expected * 0.25))
+    && component.width <= expected + tolerance
+    && Math.abs(component.height - expected) <= tolerance);
   const pairs = candidates.flatMap((first, index) => candidates.slice(index + 1).map((second) => ({
     pair: [first, second],
     gapError: Math.abs(Math.abs(first.y - second.y) - expectedGap),
@@ -630,14 +659,15 @@ export function fixtureHtml() {
       label{display:grid;gap:8px;font-size:18px}input{box-sizing:border-box;width:100%;font:28px system-ui;padding:10px 12px;border:4px solid #e0704f;background:#fff;color:#181818}
       #motion-marker{position:fixed;z-index:2147483647;left:0;top:0;width:${fixtureMotionMarkerSize.width}px;height:${fixtureMotionMarkerSize.height}px;background:var(--motion-marker,#00ffff)}
       #lighting-marker{position:fixed;z-index:2147483647;right:8px;top:8px;width:32px;height:32px;background:#ff0000}
-      #marker{width:${fixtureMarkerSize.width}px;height:${fixtureMarkerSize.height}px;margin:0 0 16px;background:var(--marker,#ff00ff)}
+      .marker-row{display:flex;gap:8px;margin:0 0 16px}
+      .fixture-marker{flex:0 0 auto;width:${fixtureMarkerSize.width}px;height:${fixtureMarkerSize.height}px;background:var(--marker,#ff00ff)}
       #typed-marker{height:24px;margin-top:10px;background:#000}
       #scroll-track{box-sizing:border-box;height:1440px;padding:32px;background:linear-gradient(#123 0 33%,#234 33% 66%,#345 66%);color:#fff}
       #scroll-tail{margin-top:1280px;height:64px;background:#ff8000;color:#181818;font-weight:700}
       output{display:block;min-height:1.4em;margin-top:10px;font-size:18px;color:#f7f4df}
-      @media(max-height:520px){h1{font-size:36px}p{font-size:20px;margin-bottom:10px}label{gap:4px}input{font-size:24px;padding:6px 8px}#marker{margin-bottom:10px}output{margin-top:4px}#typed-marker{margin-top:4px}}
+      @media(max-height:520px){h1{font-size:36px}p{font-size:20px;margin-bottom:10px}label{gap:4px}input{font-size:24px;padding:6px 8px}.marker-row{margin-bottom:10px}output{margin-top:4px}#typed-marker{margin-top:4px}}
     </style></head><body>
-    <div id="motion-marker"></div><div id="lighting-marker"></div><main><section><h1>Browser Boundary</h1><p>DOM slot ↔ live browser surface</p><div id="marker"></div>
+    <div id="motion-marker"></div><div id="lighting-marker"></div><main><section><h1>Browser Boundary</h1><p>DOM slot ↔ live browser surface</p><div class="marker-row"><div id="marker" class="fixture-marker"></div><div class="fixture-marker"></div><div class="fixture-marker"></div></div>
       <label>IME input<input id="ime" autocomplete="off" spellcheck="false"></label>
       <output id="events">beforeinput:0 input:0</output><div id="typed-marker"></div>
     </section></main><div id="scroll-track">wheel input track<div id="scroll-tail">full-page tail</div></div>
