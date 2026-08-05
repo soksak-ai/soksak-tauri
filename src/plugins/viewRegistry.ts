@@ -56,6 +56,10 @@ export interface PluginViewFocusRequest {
 
 // 플러그인이 구현하는 뷰. React 비요구 — 컨테이너 DOM 에 직접 그린다.
 export interface PluginViewProvider {
+  // 뷰 인스턴스의 제품 수명. 명령 대상·상태처럼 DOM 노드와 무관한 소유권은 여기서
+  // 등록한다. 프레임워크가 별도 renderer에서 DOM을 그려도 같은 인스턴스 계약을 쓴다.
+  // 반환 cleanup은 mount/unmount 수명이 끝난 뒤 호출된다.
+  connect?(ctx: PluginViewContext): void | (() => void);
   mount(container: HTMLElement, ctx: PluginViewContext): void;
   unmount?(container: HTMLElement): void;
   // 현재 활성-chain이 이 뷰를 가리키는지 알린다. 입력 실행 focus()와 별개이므로, 이미
@@ -90,6 +94,32 @@ export interface PluginViewProvider {
   // 유실 없음). 구현하지 않으면 호스트가 결부 변경에 remount 한다 — 통보 수단이 없는 provider 에게
   // 남은 정직한 길이다: 남의 결부 데이터를 계속 그리는 것보다 구조 상태를 잃는 편이 옳다.
   update?(container: HTMLElement, ctx: PluginViewContext): void;
+}
+
+export interface PluginViewPresentationRuntime {
+  source: string;
+  pluginId: string;
+  app: () => unknown;
+}
+
+const presentationRuntimes = moduleState(
+  "plugins/viewRegistry#presentationRuntimes",
+  () => new WeakMap<PluginViewProvider, PluginViewPresentationRuntime>(),
+);
+
+/** 로더만 쓰는 실행 재료 부착. provider 공개 객체를 변형하지 않아 플러그인이 위조할 필드가 없다. */
+export function attachViewPresentationRuntime(
+  provider: PluginViewProvider,
+  runtime: PluginViewPresentationRuntime,
+): PluginViewProvider {
+  presentationRuntimes.set(provider, runtime);
+  return provider;
+}
+
+export function viewPresentationRuntime(
+  provider: PluginViewProvider,
+): PluginViewPresentationRuntime | null {
+  return presentationRuntimes.get(provider) ?? null;
 }
 
 export interface RegisteredView {

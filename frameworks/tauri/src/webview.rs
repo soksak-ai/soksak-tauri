@@ -20,6 +20,12 @@ use tauri::{
     WebviewWindowBuilder,
 };
 
+// PaneSurfaceHost로 NSView 부모를 바꾼 뒤에도 label 정체성은 앱 전역 registry가 소유한다.
+// Manager::get_webview의 부모 탐색 결과를 명령 가능성의 기준으로 쓰지 않는다.
+fn registered_webview(app: &AppHandle, label: &str) -> Option<tauri::Webview> {
+    app.webviews().get(label).cloned()
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PageLoadState {
@@ -67,7 +73,7 @@ pub async fn webview_wait_loaded(
     label: String,
     timeout_ms: Option<u64>,
 ) -> Result<serde_json::Value, String> {
-    if app.get_webview(&label).is_none() {
+    if registered_webview(&app, &label).is_none() {
         return Err(format!("webview 없음: {label}"));
     }
     let mut events = PAGE_LOAD_EVENTS.subscribe();
@@ -102,8 +108,7 @@ pub async fn webview_type_text(app: AppHandle, label: String, text: String) -> R
     use std::sync::mpsc;
     use std::time::Duration;
 
-    let webview = app
-        .get_webview(&label)
+    let webview = registered_webview(&app, &label)
         .ok_or_else(|| format!("webview 없음: {label}"))?;
     let (tx, rx) = mpsc::sync_channel::<Result<(), String>>(1);
     webview
@@ -187,8 +192,7 @@ pub async fn webview_send_wheel(
     use std::sync::mpsc;
     use std::time::Duration;
 
-    let webview = app
-        .get_webview(&label)
+    let webview = registered_webview(&app, &label)
         .ok_or_else(|| format!("webview 없음: {label}"))?;
     let (tx, rx) = mpsc::sync_channel::<Result<(), String>>(1);
     webview
@@ -295,7 +299,7 @@ pub async fn webview_capture_full(
     if !width.is_finite() || !height.is_finite() || width <= 0.0 || height <= 0.0 {
         return Err("전체 캡처 문서 크기가 유효하지 않습니다".into());
     }
-    let webview = app.get_webview(&label).ok_or_else(|| format!("webview 없음: {label}"))?;
+    let webview = registered_webview(&app, &label).ok_or_else(|| format!("webview 없음: {label}"))?;
     let output = path.clone();
     let (tx, rx) = mpsc::sync_channel::<Result<usize, String>>(1);
     webview.with_webview(move |platform| unsafe {
@@ -883,7 +887,7 @@ pub fn webview_open(
 ) -> Result<(), String> {
     #[cfg(debug_assertions)]
     eprintln!("[open-trace] webview_open {label} 진입 (url={url})");
-    if let Some(existing) = app.get_webview(&label) {
+    if let Some(existing) = registered_webview(&app, &label) {
         // 실물 생존 검사 — 라벨은 registry 에 살아있어도 native view 가 창에서 떨어져 나간
         // 좀비일 수 있다(실사고: close 가 반쯤 진행된 라벨에 open 이 no-op → 영구 빈 홀,
         // visible/list 도 건강 오판). open 의 계약은 "호출하면 반드시 살아있는 child"다 —
@@ -898,7 +902,7 @@ pub fn webview_open(
         #[cfg(target_os = "macos")]
         layer::remove_surface_host(&label);
         let _ = existing.close();
-        if app.get_webview(&label).is_some() {
+        if registered_webview(&app, &label).is_some() {
             // close 정리가 아직 안 끝났다 — 충돌 생성 대신 명시 실패(호출자 힐이 재시도한다).
             return Err(format!("webview {label} 좀비 정리 대기 — 재시도 필요"));
         }
@@ -1075,7 +1079,7 @@ pub fn webview_zoom(window: tauri::Window, factor: f64) -> Result<(), String> {
 pub fn webview_zoom_view(app: AppHandle, label: String, factor: f64) -> Result<f64, String> {
     let f = factor.clamp(0.25, 4.0);
     SURFACE_LAYOUT.set_view_zoom(&label, f);
-    if let Some(wv) = app.get_webview(&label) {
+    if let Some(wv) = registered_webview(&app, &label) {
         let win_f = SURFACE_LAYOUT.window_zoom(wv.window().label());
         wv.set_zoom(win_f * f).map_err(|e| e.to_string())?;
     }
@@ -1264,7 +1268,7 @@ pub fn webview_bounds(
     w: f64,
     h: f64,
 ) -> Result<(), String> {
-    if let Some(wv) = app.get_webview(&label) {
+    if let Some(wv) = registered_webview(&app, &label) {
         // 갱신 케이던스 실측 트레이스(디버그 빌드 전용) — 위치 추종이 굼뜰 때 JS→Rust 송신
         // 주기를 dev 로그에서 바로 읽는다(스크린 녹화 없이 병목 층위 판정).
         #[cfg(debug_assertions)]
@@ -1293,8 +1297,7 @@ pub async fn webview_presented(app: AppHandle, label: String) -> Result<(), Stri
     use std::sync::mpsc;
     use std::time::Duration;
 
-    let wv = app
-        .get_webview(&label)
+    let wv = registered_webview(&app, &label)
         .ok_or_else(|| format!("webview 없음: {label}"))?;
     let (tx, rx) = mpsc::sync_channel::<Result<(), String>>(1);
     wv.with_webview(move |pw| unsafe {
@@ -1349,7 +1352,7 @@ pub fn webview_transition_prepare(
     start_at_unix_ms: f64,
     duration_ms: f64,
 ) -> Result<(), String> {
-    let Some(webview) = app.get_webview(&label) else { return Err(format!("webview 없음: {label}")); };
+    let Some(webview) = registered_webview(&app, &label) else { return Err(format!("webview 없음: {label}")); };
     let raw = (x, y, w, h);
     let factor = SURFACE_LAYOUT.window_zoom(webview.window().label());
     let scaled = scale_rect(raw, factor);
@@ -1384,7 +1387,7 @@ pub fn webview_transition_cancel(
     w: f64,
     h: f64,
 ) -> Result<(), String> {
-    let Some(webview) = app.get_webview(&label) else { return Ok(()); };
+    let Some(webview) = registered_webview(&app, &label) else { return Ok(()); };
     let cancel_label = label.clone();
     let (tx, rx) = std::sync::mpsc::sync_channel(1);
     webview.with_webview(move |_| {
@@ -1413,10 +1416,10 @@ pub fn webview_transition_cancel(
 
 #[tauri::command]
 pub fn webview_navigate(app: AppHandle, label: String, url: String) -> Result<(), String> {
-    if let Some(wv) = app.get_webview(&label) {
-        wv.navigate(Url::parse(&url).map_err(|e| e.to_string())?)
-            .map_err(|e| e.to_string())?;
-    }
+    let wv = registered_webview(&app, &label)
+        .ok_or_else(|| format!("webview not found: {label}"))?;
+    wv.navigate(Url::parse(&url).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -1427,7 +1430,7 @@ pub fn webview_navigate(app: AppHandle, label: String, url: String) -> Result<()
 // 반환 = 토글 후 열림 여부(UI 버튼 on 동기화).
 #[tauri::command]
 pub fn webview_devtools(app: AppHandle, label: String) -> Result<bool, String> {
-    if let Some(wv) = app.get_webview(&label) {
+    if let Some(wv) = registered_webview(&app, &label) {
         if wv.is_devtools_open() {
             wv.close_devtools();
             Ok(false)
@@ -1463,7 +1466,7 @@ pub fn webview_devtools(app: AppHandle, label: String) -> Result<bool, String> {
 #[cfg(target_os = "macos")]
 #[tauri::command]
 pub fn webview_history(app: AppHandle, label: String, delta: i32) -> Result<(), String> {
-    if let Some(wv) = app.get_webview(&label) {
+    if let Some(wv) = registered_webview(&app, &label) {
         wv.with_webview(move |pw| unsafe {
             use objc2_web_kit::WKWebView;
             let wk = &*(pw.inner() as *const WKWebView);
@@ -1483,7 +1486,7 @@ pub fn webview_history(app: AppHandle, label: String, delta: i32) -> Result<(), 
 #[cfg(not(target_os = "macos"))]
 #[tauri::command]
 pub fn webview_history(app: AppHandle, label: String, delta: i32) -> Result<(), String> {
-    if let Some(wv) = app.get_webview(&label) {
+    if let Some(wv) = registered_webview(&app, &label) {
         wv.eval(format!("history.go({delta})"))
             .map_err(|e| e.to_string())?;
     }
@@ -1493,7 +1496,7 @@ pub fn webview_history(app: AppHandle, label: String, delta: i32) -> Result<(), 
 // 로딩 정지 — WKWebView stopLoading. 툴바 reload↔stop 토글(soksak-browser-kit nav-state)용.
 #[tauri::command]
 pub fn webview_stop(app: AppHandle, label: String) -> Result<(), String> {
-    if let Some(wv) = app.get_webview(&label) {
+    if let Some(wv) = registered_webview(&app, &label) {
         #[cfg(target_os = "macos")]
         {
             let _ = wv.with_webview(|pw| unsafe {
@@ -1561,7 +1564,7 @@ pub fn webview_alive(app: AppHandle, label: String) -> bool {
     if child_is_newborn(&label) {
         return true; // 부착 전 신생아 — 좀비 아님
     }
-    let registered = app.get_webview(&label);
+    let registered = registered_webview(&app, &label);
     let alive = registered.as_ref().map(native_child_alive).unwrap_or(false);
     #[cfg(debug_assertions)]
     eprintln!(
@@ -1584,11 +1587,11 @@ pub fn webview_pane_group(
     w: f64,
     h: f64,
 ) -> Result<(), String> {
-    if app.get_webview(&renderer).is_none() {
+    if registered_webview(&app, &renderer).is_none() {
         return Err(format!("pane renderer webview가 없습니다: {renderer}"));
     }
     for label in &members {
-        if app.get_webview(label).is_none() {
+        if registered_webview(&app, label).is_none() {
             return Err(format!("pane member webview가 없습니다: {label}"));
         }
     }
@@ -1607,6 +1610,35 @@ pub fn webview_pane_group(
         let _ = (window, pane, renderer, members, x, y, w, h);
     }
     Ok(())
+}
+
+#[tauri::command]
+pub fn webview_pane_bounds(
+    pane: String,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    { return layer::set_pane_surface_host_bounds(&pane, (x, y, w, h)); }
+    #[cfg(not(target_os = "macos"))]
+    { let _ = (pane, x, y, w, h); Ok(()) }
+}
+
+#[tauri::command]
+pub fn webview_pane_member_bounds(
+    pane: String,
+    label: String,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    { return layer::set_pane_surface_member_bounds(&pane, &label, (x, y, w, h)); }
+    #[cfg(not(target_os = "macos"))]
+    { let _ = (pane, label, x, y, w, h); Ok(()) }
 }
 
 #[tauri::command]
@@ -1684,7 +1716,7 @@ pub fn webview_visible(
 ) -> Result<(), String> {
     #[cfg(debug_assertions)]
     eprintln!("[vis-trace] webview_visible {label} visible={visible} focus={focus:?}");
-    if let Some(wv) = app.get_webview(&label) {
+    if let Some(wv) = registered_webview(&app, &label) {
         if visible {
             wv.show().map_err(|e| e.to_string())?;
             // hide→show 를 겪은 WKWebView 는 뷰어빌리티를 되찾지 못하고 레이어를 비운 채
@@ -1757,7 +1789,7 @@ pub fn webview_visible(
 // 뷰가 영구히 닫힐 때 webview 정리.
 #[tauri::command]
 pub fn webview_close(app: AppHandle, label: String) -> Result<(), String> {
-    if let Some(wv) = app.get_webview(&label) {
+    if let Some(wv) = registered_webview(&app, &label) {
         // 파괴 예고(webview_health) — 닫히는 webview 의 프로세스 종료를 크래시로 오분류하지 않는다.
         crate::webview_health::mark_expected_teardown(&app, &label);
         SURFACE_LAYOUT.remove_surface(&label);
@@ -1862,7 +1894,7 @@ pub async fn webview_media_extract(
         }
         tokio::time::sleep(Duration::from_millis(400)).await;
     }
-    if let Some(wv) = app.get_webview(&label) {
+    if let Some(wv) = registered_webview(&app, &label) {
         // 파괴 예고 — 추출용 임시 webview 의 close 를 크래시로 오분류하지 않는다.
         crate::webview_health::mark_expected_teardown(&app, &label);
         let _ = wv.close();
@@ -1899,8 +1931,7 @@ pub async fn webview_eval(app: AppHandle, label: String, js: String) -> Result<S
     use std::sync::mpsc;
     use std::time::Duration;
 
-    let wv = app
-        .get_webview(&label)
+    let wv = registered_webview(&app, &label)
         .ok_or_else(|| format!("webview 없음: {label}"))?;
     let (tx, rx) = mpsc::sync_channel::<Result<String, String>>(1);
 
@@ -1967,8 +1998,7 @@ pub fn webview_inject_script(
     code: String,
     phase: Option<String>,
 ) -> Result<(), String> {
-    let wv = app
-        .get_webview(&label)
+    let wv = registered_webview(&app, &label)
         .ok_or_else(|| format!("webview 없음: {label}"))?;
     let at_start = phase.as_deref() != Some("document-end");
     wv.with_webview(move |pw| {

@@ -7,6 +7,8 @@ import { onPluginEvent } from "../../plugins/hooks";
 
 export const TAURI_HOLE_ATTR = "data-tauri-hole";
 export const TAURI_HOLE_FRAME_ATTR = "data-tauri-hole-frame";
+/** Tauri가 플러그인 DOM을 별도 child renderer로 소유하는 메인 문서의 자리. */
+export const TAURI_PANE_RENDERER_ATTR = "data-tauri-pane-renderer";
 export const TAURI_CONTENT_HOLE = `[${TAURI_HOLE_ATTR}="content"]`;
 const TAURI_PANE_HOLE = `[${TAURI_HOLE_ATTR}="pane"]`;
 const TAURI_CONTENT_HOLE_FRAME = `[${TAURI_HOLE_FRAME_ATTR}]`;
@@ -37,19 +39,27 @@ export function syncTauriHoleMarkers(doc: Document = document): void {
     el.removeAttribute(TAURI_HOLE_FRAME_ATTR);
   }
 
-  for (const slot of doc.querySelectorAll<HTMLElement>(`[${CONTENT_VIEW_BODY}]`)) {
-    if (!slot.getAttribute(CONTENT_VIEW_BODY)) continue;
-    const body = slot.closest<HTMLElement>(".tab-body");
-    if (!body) continue;
+  const project = (hole: HTMLElement): void => {
+    const body = hole.closest<HTMLElement>(".tab-body");
+    if (!body) return;
     // 네이티브 자식 표면의 bounds 원천은 공개 content-view body 자체다. tab-body 전체를 hole로
     // 잡으면 플러그인 toolbar와 DOM dim까지 창 crop에 섞여 실제 표면과 다른 직사각형이 된다.
-    slot.setAttribute(TAURI_HOLE_ATTR, "content");
+    hole.setAttribute(TAURI_HOLE_ATTR, "content");
     body.setAttribute(TAURI_HOLE_FRAME_ATTR, "");
     const paneId = body.dataset.pane;
-    if (!paneId) continue;
+    if (!paneId) return;
     for (const pane of doc.querySelectorAll<HTMLElement>(".pane[data-pane]")) {
       if (pane.dataset.pane === paneId) pane.setAttribute(TAURI_HOLE_ATTR, "pane");
     }
+  };
+
+  for (const slot of doc.querySelectorAll<HTMLElement>(`[${CONTENT_VIEW_BODY}]`)) {
+    if (!slot.getAttribute(CONTENT_VIEW_BODY)) continue;
+    project(slot);
+  }
+  for (const renderer of doc.querySelectorAll<HTMLElement>(`[${TAURI_PANE_RENDERER_ATTR}]`)) {
+    if (!renderer.getAttribute(TAURI_PANE_RENDERER_ATTR)) continue;
+    project(renderer);
   }
 }
 
@@ -72,7 +82,7 @@ export function installTauriHoleMarkers(): void {
     childList: true,
     subtree: true,
     attributes: true,
-    attributeFilter: [CONTENT_VIEW_BODY, "data-pane"],
+    attributeFilter: [CONTENT_VIEW_BODY, TAURI_PANE_RENDERER_ATTR, "data-pane"],
   });
   schedule();
 }

@@ -33,6 +33,14 @@ export default defineConfig(async ({ mode }) => {
   build: {
     outDir: `dist/${framework}`,
     emptyOutDir: true,
+    rollupOptions: {
+      input: framework === "tauri"
+        ? {
+            main: resolve(process.cwd(), "index.html"),
+            pluginView: resolve(process.cwd(), "plugin-view.html"),
+          }
+        : { main: resolve(process.cwd(), "index.html") },
+    },
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

@@ -28,6 +28,7 @@ import {
 } from "./hooks";
 import { gateContribution } from "./conformance";
 import {
+  attachViewPresentationRuntime,
   useViewRegistry,
   type PluginViewProvider,
 } from "./viewRegistry";
@@ -1164,6 +1165,7 @@ export function buildPluginApi(
   manifest: PluginManifest,
   _dir: string,
   deps: PluginApiDeps,
+  entrySource?: string,
 ): {
   api: SoksakPluginApi;
   tracker: DisposableTracker;
@@ -1399,9 +1401,16 @@ export function buildPluginApi(
               idOf: (v) => v.id,
             });
             registered.views.add(viewId);
+            const registeredProvider = entrySource
+              ? attachViewPresentationRuntime(provider, {
+                  source: entrySource,
+                  pluginId: id,
+                  app: () => api,
+                })
+              : provider;
             const remove = useViewRegistry
               .getState()
-              .register(id, decl, provider);
+              .register(id, decl, registeredProvider);
             return tracker.wrap(remove);
           },
           registerFileViewer: (viewerId, provider) => {

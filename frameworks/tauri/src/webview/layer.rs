@@ -131,6 +131,12 @@ fn configure_surface_resize(view: &NSView) {
     view.setLayerContentsPlacement(NSViewLayerContentsPlacement::TopLeft);
 }
 
+fn clip_surface_children(view: &NSView) -> Result<(), String> {
+    let layer = view.layer().ok_or_else(|| "surface host layer가 없습니다".to_string())?;
+    layer.setMasksToBounds(true);
+    Ok(())
+}
+
 // Backend N surface 등록/해제 — webview_open 직후(가시 홀 편입), webview_close 직전(회수).
 // 오프스크린 추출 webview(media_extract, -20000)는 홀이 아니므로 등록하지 않는다.
 pub fn register_surface(ptr: usize, label: Option<&str>) {
@@ -341,6 +347,10 @@ pub fn adopt_surface_host<R: tauri::Runtime>(
         let host = NSView::initWithFrame(NSView::alloc(mtm), frame);
         host.setWantsLayer(true);
         configure_surface_resize(&host);
+        if let Err(error) = clip_surface_children(&host) {
+            eprintln!("[layer] surface clip 설정 실패: {surface_label}: {error}");
+            return;
+        }
         configure_surface_resize(child);
         parent.addSubview_positioned_relativeTo(
             &host,
@@ -408,6 +418,7 @@ pub fn group_pane_surface_host(
     let pane_view: &NSView = &pane_host;
     pane_view.setWantsLayer(true);
     configure_surface_resize(pane_view);
+    clip_surface_children(pane_view)?;
     // parent는 창별 EngineSurfaceHost다. 그 host 자체가 main UI renderer 아래에 있으므로
     // 여기서는 pane끼리의 자식 순서만 소유한다.
     parent.addSubview(pane_view);
@@ -451,6 +462,7 @@ pub fn pane_surface_host_state() -> serde_json::Value {
     serde_json::Value::Array(hosts.iter().map(|(pane, record)| {
         let host = unsafe { &*(record.ptr as *const NSView) };
         let frame = host.frame();
+        let clips_to_bounds = host.layer().map(|layer| layer.masksToBounds()).unwrap_or(false);
         let renderer_ptr = views.as_ref().and_then(|map| map.get(&record.renderer)).copied().unwrap_or(0);
         let topology = record.members.first()
             .and_then(|label| views.as_ref().and_then(|map| map.get(label)).copied())
@@ -463,9 +475,65 @@ pub fn pane_surface_host_state() -> serde_json::Value {
                 .and_then(|map| map.get(&record.renderer)).copied().unwrap_or(false),
             "members": record.members,
             "frame": { "x": frame.origin.x, "y": frame.origin.y, "w": frame.size.width, "h": frame.size.height },
+            "clipsToBounds": clips_to_bounds,
             "rendererTopology": topology,
         })
     }).collect())
+}
+
+/// 일반 레이아웃/창 리사이즈의 정착 경로. 위치 전용 transition과 달리 크기 변화도 허용하고,
+/// renderer/member는 PaneSurfaceHost의 자식으로 남긴 채 부모 frame 하나만 바꾼다.
+pub fn set_pane_surface_host_bounds(
+    pane: &str,
+    rect: (f64, f64, f64, f64),
+) -> Result<(), String> {
+    let record = PANE_SURFACE_HOSTS.lock().map_err(|_| "pane host 잠금 실패")?
+        .get(pane).cloned().ok_or_else(|| format!("pane surface host가 없습니다: {pane}"))?;
+    let host = unsafe { &*(record.ptr as *const NSView) };
+    let parent = unsafe { host.superview() }.ok_or_else(|| format!("pane host 부모가 없습니다: {pane}"))?;
+    CATransaction::begin();
+    CATransaction::setDisableActions(true);
+    host.setFrame(css_rect_in_parent(&parent, rect.0, rect.1, rect.2, rect.3));
+    settle_surface_frame(host);
+    CATransaction::commit();
+    Ok(())
+}
+
+/// child renderer가 공개한 content slot의 pane-local CSS 좌표를 실제 member frame에 적용한다.
+/// 전역 좌표를 다시 빼지 않는다. 그룹 뒤 기하의 단일 좌표계는 PaneSurfaceHost local이다.
+pub fn set_pane_surface_member_bounds(
+    pane: &str,
+    label: &str,
+    rect: (f64, f64, f64, f64),
+) -> Result<(), String> {
+    let record = PANE_SURFACE_HOSTS.lock().map_err(|_| "pane host 잠금 실패")?
+        .get(pane).cloned().ok_or_else(|| format!("pane surface host가 없습니다: {pane}"))?;
+    if !record.members.iter().any(|member| member == label) {
+        return Err(format!("pane member가 아닙니다: {pane}/{label}"));
+    }
+    let host = unsafe { &*(record.ptr as *const NSView) };
+    let surface_ptr = surface_host_ptr(label);
+    if surface_ptr == 0 { return Err(format!("pane member host가 없습니다: {label}")); }
+    let surface = unsafe { &*(surface_ptr as *const NSView) };
+    let same_parent = unsafe { surface.superview() }
+        .map(|parent| Retained::as_ptr(&parent) == host as *const NSView)
+        .unwrap_or(false);
+    if !same_parent { return Err(format!("pane member 부모가 일치하지 않습니다: {pane}/{label}")); }
+    CATransaction::begin();
+    CATransaction::setDisableActions(true);
+    let target = css_rect_in_parent(host, rect.0, rect.1, rect.2, rect.3);
+    surface.setFrame(target);
+    if let Some(child_ptr) = SURFACE_VIEWS.lock().map_err(|_| "surface view 잠금 실패")?.get(label).copied() {
+        let child = unsafe { &*(child_ptr as *const NSView) };
+        child.setFrame(objc2_foundation::NSRect::new(
+            objc2_foundation::NSPoint::new(0.0, 0.0),
+            target.size,
+        ));
+        settle_surface_frame(child);
+    }
+    settle_surface_frame(surface);
+    CATransaction::commit();
+    Ok(())
 }
 
 pub fn prepare_pane_surface_host_translation(

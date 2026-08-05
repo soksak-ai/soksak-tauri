@@ -32,6 +32,10 @@ fn is_browser_surface(label: &str) -> bool {
             .is_some_and(|seq| !seq.is_empty() && seq.bytes().all(|byte| byte.is_ascii_digit()))
 }
 
+fn is_plugin_view_renderer(label: &str) -> bool {
+    label.strip_prefix("pv-").is_some_and(|identity| !identity.is_empty())
+}
+
 fn same_origin(left: &Url, right: &Url) -> bool {
     left.scheme() == right.scheme()
         && left.host_str() == right.host_str()
@@ -65,6 +69,12 @@ pub(crate) fn navigation_allowed(webview_label: &str, target: &Url, dev_url: Opt
             target.scheme(),
             "http" | "https" | "about" | "data" | "blob"
         );
+    }
+    if is_plugin_view_renderer(webview_label) {
+        return is_application_asset(target)
+            || is_empty_document(target)
+            || target.scheme() == "blob"
+            || dev_url.is_some_and(|origin| same_origin(origin, target));
     }
     false
 }
@@ -158,6 +168,20 @@ mod tests {
             &url("http://127.0.0.1:1420/index.html"),
             Some(&dev),
         ));
+    }
+
+    #[test]
+    fn plugin_view_renderer_loads_only_app_assets_and_blob_modules() {
+        let label = "pv-w-2c22da8b-b873-4c4b-9ee2-a3ff6fb81c04-1";
+        assert!(navigation_allowed(label, &url("tauri://localhost/plugin-view.html"), None));
+        assert!(navigation_allowed(label, &url("blob:tauri://localhost/renderer"), None));
+        for denied in [
+            "https://attacker.example/exfiltrate",
+            "file:///private/etc/passwd",
+            "ipc://localhost/secret_keys",
+        ] {
+            assert!(!navigation_allowed(label, &url(denied), None));
+        }
     }
 
     #[test]

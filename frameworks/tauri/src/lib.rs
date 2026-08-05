@@ -750,6 +750,8 @@ pub fn run() {
             webview::webview_alive,
             webview::webview_wait_loaded,
             webview::webview_pane_group,
+            webview::webview_pane_bounds,
+            webview::webview_pane_member_bounds,
             webview::webview_pane_transition_prepare,
             webview::webview_pane_hosts,
             webview::webview_close,

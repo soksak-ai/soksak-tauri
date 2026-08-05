@@ -455,6 +455,7 @@ export const usePlugins = moduleState("state/plugins#store", () =>
       p.manifest,
       p.dir,
       defaultPluginDeps(get().appVersion),
+      data.content,
     );
     setActive(p.manifest.id, instance);
   };

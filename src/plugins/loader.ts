@@ -325,6 +325,7 @@ export async function activatePlugin(
   manifest: PluginManifest,
   dir: string,
   deps: PluginApiDeps,
+  entrySource?: string,
 ): Promise<ActivePlugin> {
   const entry = resolveEntry(module);
   if (!entry) {
@@ -340,7 +341,7 @@ export async function activatePlugin(
   // [C3] L2 계약-핀 — implements 선언의 generic 검사(형태·문법·중복)를 같은 경계에서 시행.
   enforceImplements(manifest);
 
-  const { api, tracker, registered } = buildPluginApi(manifest, dir, deps);
+  const { api, tracker, registered } = buildPluginApi(manifest, dir, deps, entrySource);
 
   // 선언적 기여 자동 적용: programs 는 데이터만으로 충분(코드 바인딩 불요) —
   // 동작 전체가 매니페스트에 있어 동의 화면이 그대로 고지한다(§0-2).

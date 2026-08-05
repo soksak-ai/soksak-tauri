@@ -4,6 +4,7 @@ import {
   installTauriHoleMarkers,
   isTauriRectMotionExcluded,
   syncTauriHoleMarkers,
+  TAURI_PANE_RENDERER_ATTR,
 } from "./holeMarkers";
 
 function pane(id: string): HTMLElement {
@@ -51,6 +52,40 @@ describe("Tauri private hole projection", () => {
     expect(p2.dataset.tauriHole).toBeUndefined();
   });
 
+  it("문서 밖 plugin renderer 자리도 Tauri private source에서 hole로 투영한다", () => {
+    const p1 = pane("g1");
+    const p2 = pane("g2");
+    const remote = body(p1, "g1");
+    const ordinary = body(p2, "g2");
+    const placeholder = document.createElement("div");
+    placeholder.setAttribute(TAURI_PANE_RENDERER_ATTR, "pv-main-1");
+    remote.appendChild(placeholder);
+
+    syncTauriHoleMarkers();
+
+    expect(placeholder.dataset.tauriHole).toBe("content");
+    expect(remote.dataset.tauriHoleFrame).toBe("");
+    expect(p1.dataset.tauriHole).toBe("pane");
+    expect(ordinary.dataset.tauriHoleFrame).toBeUndefined();
+    expect(p2.dataset.tauriHole).toBeUndefined();
+  });
+
+  it("plugin renderer source 제거 뒤 stale hole을 남기지 않는다", () => {
+    const p = pane("g1");
+    const remote = body(p, "g1");
+    const placeholder = document.createElement("div");
+    placeholder.setAttribute(TAURI_PANE_RENDERER_ATTR, "pv-main-1");
+    remote.appendChild(placeholder);
+    syncTauriHoleMarkers();
+
+    placeholder.removeAttribute(TAURI_PANE_RENDERER_ATTR);
+    syncTauriHoleMarkers();
+
+    expect(placeholder.dataset.tauriHole).toBeUndefined();
+    expect(remote.dataset.tauriHoleFrame).toBeUndefined();
+    expect(p.dataset.tauriHole).toBeUndefined();
+  });
+
   it("문서 밖 표면의 실제 FLIP 추적 프레임만 보간에서 제외한다", () => {
     const p = pane("g1");
     const native = body(p, "g1", "b-main-v1");
@@ -88,5 +123,21 @@ describe("Tauri private hole projection", () => {
     await Promise.resolve();
     expect(slot.dataset.tauriHole).toBe("content");
     expect(native.dataset.tauriHoleFrame).toBe("");
+  });
+
+  it("설치는 plugin renderer source 속성 사건도 반영한다", async () => {
+    const p = pane("g1");
+    const remote = body(p, "g1");
+    const placeholder = document.createElement("div");
+    remote.appendChild(placeholder);
+    installTauriHoleMarkers();
+
+    placeholder.setAttribute(TAURI_PANE_RENDERER_ATTR, "pv-main-1");
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    await Promise.resolve();
+
+    expect(placeholder.dataset.tauriHole).toBe("content");
+    expect(remote.dataset.tauriHoleFrame).toBe("");
+    expect(p.dataset.tauriHole).toBe("pane");
   });
 });

@@ -22,6 +22,12 @@ import {
 import { adoptFrameworkStyles } from "../styles";
 import { registerContentViewHost } from "../../lib/contentViews";
 import { registerLayoutTransitionHost } from "../../lib/layoutTransitionHost";
+import {
+  awaitPluginViewPresentation,
+  installPluginViewPresentation,
+  pluginViewPresentationStatus,
+  preparePresentedPluginViewMove,
+} from "./pluginViewPresentation";
 import { installRailHoleClip } from "./railHoleClipHost";
 import { installSurfaceAudit, surfaceCompositionSnapshot } from "./surfaceAudit";
 import {
@@ -270,6 +276,28 @@ function installHoleAuditCommand(): void {
 
 /** 공통 PaneSurfaceHost를 실제 child webview로 구동·관측하는 Tauri 전용 공개 표면. */
 function installPaneSurfaceHostCommands(): void {
+  register("webview.pane.presentation", {
+    description:
+      "Read the Tauri plugin-view presentation lifecycle: total renderer owners, grouped owners, and pending pane ids.",
+    params: {},
+    returns: "{ total, grouped, pending }",
+    message: (data) => `plugin presentation ${String(data.grouped)}/${String(data.total)}`,
+    handler: async () => pluginViewPresentationStatus(),
+  });
+  register("webview.pane.wait", {
+    description:
+      "Wait through presentation lifecycle events until at least minGrouped PaneSurfaceHosts are grouped; no polling.",
+    params: {
+      minGrouped: { type: "number", description: "Required grouped presentation count", required: true },
+      timeoutMs: { type: "number", description: "Finite timeout in milliseconds (default 30000)" },
+    },
+    returns: "{ total, grouped, pending }",
+    message: (data) => `plugin presentation ready ${String(data.grouped)}/${String(data.total)}`,
+    handler: async (params) => awaitPluginViewPresentation(
+      Number(params.minGrouped),
+      Number(params.timeoutMs ?? 30_000),
+    ),
+  });
   register("webview.pane.surface-open", {
     description:
       "Open one Tauri child webview at an explicit viewport rect for PaneSurfaceHost composition. This is the reusable low-level surface constructor used by renderer/surface integration tests and adapters; it never focuses the window.",
@@ -405,7 +433,20 @@ export function installTauri(): void {
   // 콘텐츠 뷰 구현 — 이 프레임워크가 줄 수 있는 것은 OS 자식 뷰다.
   registerContentViewHost(nativeHost);
   // DOM 밖 표면이 포함된 배치만 목표 bounds 선확정 + DOM snap 거래로 바꾼다.
-  registerLayoutTransitionHost({ prepareMove: prepareNativeContentViewMove });
+  registerLayoutTransitionHost({
+    prepareMove: async (moves) => {
+      const [legacy, presented] = await Promise.all([
+        prepareNativeContentViewMove(moves),
+        preparePresentedPluginViewMove(moves),
+      ]);
+      return {
+        mode: legacy.mode === "snap" || presented.mode === "snap" ? "snap" : "glide",
+        commit: async () => { await Promise.all([legacy.commit(), presented.commit()]); },
+        cancel: () => { legacy.cancel(); presented.cancel(); },
+      };
+    },
+  });
+  installPluginViewPresentation();
   // 공개 슬롯 → OS 자식 bounds/가시성/AppKit frame 전환. 플러그인은 슬롯만 선언한다.
   installNativeContentViewComposition();
   // 홀 CSS — 셀렉터에 프레임워크 이름이 없다. 안 걸리면 그 규칙은 애초에 문서에 없다.
