@@ -134,14 +134,16 @@ mod unix {
     use std::os::unix::fs::PermissionsExt;
     use std::os::unix::net::{UnixListener, UnixStream};
     use std::path::Path;
+    use std::time::Duration;
 
     use soksak_cored::ctx::Ctx;
 
     pub fn serve(socket: &Path, ctx: Ctx) {
         // 싱글턴 프로브 — 살아 있는 응답자가 그 경로를 서빙하면 물러난다(ptyd 와 같은 판정).
-        // 죽은 소켓 파일만 치운다: 연결이 되는 소켓을 지우면 남의 서빙을 끊는다.
+        // 죽은 소켓 파일과 연결만 받는 상속 listener를 치운다. connect 성공만 보면 cored가
+        // 아닌 프로세스를 서버로 오인하고 새 cored도 물러나 그 홈의 명령이 전부 멈춘다.
         if socket.exists() {
-            if UnixStream::connect(socket).is_ok() {
+            if soksak_core::cored_probe::is_cored_served(socket, Duration::from_millis(250)) {
                 eprintln!("soksak-cored: another helper serves {socket:?}; exiting");
                 std::process::exit(0);
             }

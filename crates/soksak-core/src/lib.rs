@@ -63,3 +63,4 @@ pub mod native_surface_ledger;
 pub mod schedule_spec;
 // 명령 중개 계약 — 부르는 쪽이 창을 모르게 한다.
 pub mod command_dispatch;
+pub mod cored_probe;

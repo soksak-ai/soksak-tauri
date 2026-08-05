@@ -281,6 +281,20 @@ fn a_live_cored_is_adopted_and_never_respawned() {
     let dir = fixture_dir("adopt");
     let socket = dir.join("h.sock");
     let listener = std::os::unix::net::UnixListener::bind(&socket).expect("가짜 cored");
+    let worker = std::thread::spawn(move || {
+        for _ in 0..2 {
+            let (mut conn, _) = listener.accept().expect("hello probe");
+            let read = conn.try_clone().expect("read half");
+            let mut line = String::new();
+            std::io::BufReader::new(read).read_line(&mut line).expect("hello read");
+            assert!(line.contains("system.hello"), "{line}");
+            writeln!(
+                conn,
+                "{{\"id\":\"cored-probe\",\"ok\":true,\"role\":\"cored\",\"protocol\":1}}"
+            )
+            .expect("hello reply");
+        }
+    });
     // 바이너리는 아예 해소하지 않는다 — 채택은 스폰 준비보다 먼저 성립해야 한다.
     // 앱 번들 안에 sidecar 가 누락되어도 이미 서빙 중인 홈의 cored 를 잃어서는 안 된다.
     let cored = ensure_cored(
@@ -296,7 +310,23 @@ fn a_live_cored_is_adopted_and_never_respawned() {
     assert_eq!(cored.origin, Origin::Adopted);
     assert_eq!(cored.socket, socket);
     assert!(is_served(&socket), "받는 쪽이 있어서 채택했다");
-    drop(listener);
+    worker.join().expect("가짜 cored 종료");
+}
+
+#[test]
+fn a_listener_that_accepts_but_cannot_answer_cored_hello_is_not_served() {
+    let dir = fixture_dir("mute-listener");
+    let socket = dir.join("h.sock");
+    let listener = std::os::unix::net::UnixListener::bind(&socket).expect("유령 listener");
+    let worker = std::thread::spawn(move || {
+        let (_conn, _) = listener.accept().expect("probe connect");
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    });
+    assert!(
+        !is_served(&socket),
+        "connect만 받고 system.hello에 답하지 않는 listener는 cored가 아니다"
+    );
+    worker.join().expect("listener 종료");
 }
 
 /// 자리에 자국이 남아 있어도 **받는 쪽이 없으면 서빙이 아니다.**

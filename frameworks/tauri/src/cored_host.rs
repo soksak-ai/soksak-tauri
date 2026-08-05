@@ -610,7 +610,7 @@ pub fn readiness_names_socket(line: &str, socket: &Path) -> bool {
 /// 그 자리를 지금 누가 서빙하고 있는가. 파일 존재가 아니라 **연결**로 판정한다 — 죽은 소켓
 /// 파일은 남고, 그것을 살아 있음으로 읽으면 아무도 없는 자리에 붙는다.
 pub fn is_served(socket: &Path) -> bool {
-    UnixStream::connect(socket).is_ok()
+    soksak_core::cored_probe::is_cored_served(socket, CORED_WRITE_LIMIT)
 }
 
 /// 이 정체성의 cored 를 세운다 — 채택하거나, 띄운다.
