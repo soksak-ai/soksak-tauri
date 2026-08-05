@@ -115,20 +115,20 @@ describe("공통 브라우저 fixture", () => {
 
   it("창 합성 epoch의 전역 배율과 브라우저 고유 stretch를 구분한다", () => {
     expect(transitionFrameAlignment({
-      browser: { width: 96, height: 60 },
-      dom: [{ width: 96, height: 60 }, { width: 96, height: 60 }],
+      browser: { width: 128, height: 80 },
+      dom: [{ width: 80, height: 80 }, { width: 80, height: 80 }],
     })).toEqual({ ok: true, errors: [] });
     const shellTear = transitionFrameAlignment({
       browser: { width: 128, height: 80 },
-      dom: [{ width: 128, height: 80 }, { width: 112, height: 80 }],
+      dom: [{ width: 80, height: 80 }, { width: 70, height: 80 }],
     });
     expect(shellTear.ok).toBe(false);
-    expect(shellTear.errors).toContain("shell-epoch-tear=128x80/112x80");
+    expect(shellTear.errors).toContain("shell-epoch-tear=2x2/1.75x2");
     expect(shellTear.errors.join("\n")).not.toContain("browser-only");
     expect(transitionFrameAlignment({
       browser: { width: 96, height: 60 },
-      dom: [{ width: 128, height: 80 }, { width: 128, height: 80 }],
-    }).errors).toContain("browser-only-stretch=96x60/dom:128x80");
+      dom: [{ width: 80, height: 80 }, { width: 80, height: 80 }],
+    }).errors).toContain("browser-only-stretch=1.5x1.5/dom:2x2");
   });
 
   it("평탄/중첩 eval 봉투를 같은 페이지 반환값으로 푼다", () => {

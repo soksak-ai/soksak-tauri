@@ -5,7 +5,7 @@ import { setCaptureCalibration } from "./captureCalibration";
 describe("capture compositor calibration", () => {
   afterEach(() => setCaptureCalibration(false));
 
-  it("keeps fixed-size rulers at the top, middle, and bottom of the DOM-only rail", () => {
+  it("keeps fixed-size rulers inside the narrowest DOM-only rail", () => {
     const first = setCaptureCalibration(true);
     const second = setCaptureCalibration(true);
     const rulers = [...document.querySelectorAll<HTMLElement>("[data-capture-calibration-anchor]")];
@@ -14,7 +14,7 @@ describe("capture compositor calibration", () => {
     expect(second.visible).toBe(true);
     expect(rulers).toHaveLength(3);
     expect(rulers.map((el) => el.dataset.captureCalibrationAnchor)).toEqual(["top", "middle", "bottom"]);
-    expect(rulers.every((el) => el.style.width === "64px" && el.style.height === "40px")).toBe(true);
+    expect(rulers.every((el) => el.style.width === "40px" && el.style.height === "40px")).toBe(true);
     expect(document.querySelectorAll("#soksak-capture-calibration")).toHaveLength(1);
   });
 
