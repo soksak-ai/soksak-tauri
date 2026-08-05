@@ -26,6 +26,34 @@ fn registered_webview(app: &AppHandle, label: &str) -> Option<tauri::Webview> {
     app.webviews().get(label).cloned()
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PaneLayoutContract {
+    viewport_w: f64,
+    viewport_h: f64,
+    root_x: f64,
+    root_y: f64,
+    root_w: f64,
+    root_h: f64,
+    left_ratio: f64,
+    top_ratio: f64,
+    width_ratio: f64,
+    height_ratio: f64,
+    fixed_x: f64,
+    fixed_y: f64,
+    fixed_w: f64,
+    fixed_h: f64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PaneMemberLayoutContract {
+    left: f64,
+    top: f64,
+    right: f64,
+    bottom: f64,
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PageLoadState {
@@ -1619,11 +1647,12 @@ pub fn webview_pane_bounds(
     y: f64,
     w: f64,
     h: f64,
+    layout: Option<PaneLayoutContract>,
 ) -> Result<(), String> {
     #[cfg(target_os = "macos")]
-    { return layer::set_pane_surface_host_bounds(&pane, (x, y, w, h)); }
+    { return layer::set_pane_surface_host_bounds(&pane, (x, y, w, h), layout); }
     #[cfg(not(target_os = "macos"))]
-    { let _ = (pane, x, y, w, h); Ok(()) }
+    { let _ = (pane, x, y, w, h, layout); Ok(()) }
 }
 
 #[tauri::command]
@@ -1634,11 +1663,12 @@ pub fn webview_pane_member_bounds(
     y: f64,
     w: f64,
     h: f64,
+    layout: Option<PaneMemberLayoutContract>,
 ) -> Result<(), String> {
     #[cfg(target_os = "macos")]
-    { return layer::set_pane_surface_member_bounds(&pane, &label, (x, y, w, h)); }
+    { return layer::set_pane_surface_member_bounds(&pane, &label, (x, y, w, h), layout); }
     #[cfg(not(target_os = "macos"))]
-    { let _ = (pane, label, x, y, w, h); Ok(()) }
+    { let _ = (pane, label, x, y, w, h, layout); Ok(()) }
 }
 
 #[tauri::command]

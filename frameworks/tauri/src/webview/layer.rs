@@ -75,12 +75,38 @@ objc2::define_class!(
     }
 );
 
+impl super::PaneLayoutContract {
+    fn rect_for_viewport(&self, viewport_w: f64, viewport_h: f64) -> (f64, f64, f64, f64) {
+        let root_w = (self.root_w + viewport_w - self.viewport_w).max(0.0);
+        let root_h = (self.root_h + viewport_h - self.viewport_h).max(0.0);
+        (
+            self.root_x + self.left_ratio * root_w + self.fixed_x,
+            self.root_y + self.top_ratio * root_h + self.fixed_y,
+            (self.width_ratio * root_w + self.fixed_w).max(0.0),
+            (self.height_ratio * root_h + self.fixed_h).max(0.0),
+        )
+    }
+}
+
+impl super::PaneMemberLayoutContract {
+    fn rect_for_host(&self, width: f64, height: f64) -> (f64, f64, f64, f64) {
+        (
+            self.left,
+            self.top,
+            (width - self.left - self.right).max(0.0),
+            (height - self.top - self.bottom).max(0.0),
+        )
+    }
+}
+
 #[derive(Clone)]
 struct PaneSurfaceRecord {
     ptr: usize,
     window: String,
     renderer: String,
     members: Vec<String>,
+    layout: Option<super::PaneLayoutContract>,
+    member_layouts: HashMap<String, super::PaneMemberLayoutContract>,
 }
 
 static PANE_SURFACE_HOSTS: LazyLock<Mutex<HashMap<String, PaneSurfaceRecord>>> =
@@ -449,6 +475,8 @@ pub fn group_pane_surface_host(
             window: window.to_owned(),
             renderer: renderer.to_owned(),
             members: members.to_vec(),
+            layout: None,
+            member_layouts: HashMap::new(),
         },
     );
     std::mem::forget(pane_host);
@@ -478,6 +506,23 @@ pub fn pane_surface_host_state() -> serde_json::Value {
         let topology = record.members.first()
             .and_then(|label| views.as_ref().and_then(|map| map.get(label)).copied())
             .map(|surface_ptr| renderer_pair_topology(renderer_ptr, surface_ptr));
+        let member_frames = record.members.iter().map(|label| {
+            let ptr = surface_host_ptr(label);
+            let frame = if ptr == 0 { None } else {
+                let member = unsafe { &*(ptr as *const NSView) };
+                let raw = member.frame();
+                let y = if host.isFlipped() {
+                    raw.origin.y
+                } else {
+                    host.bounds().size.height - raw.origin.y - raw.size.height
+                };
+                Some(serde_json::json!({
+                    "x": raw.origin.x, "y": y,
+                    "w": raw.size.width, "h": raw.size.height,
+                }))
+            };
+            serde_json::json!({ "label": label, "cssFrame": frame })
+        }).collect::<Vec<_>>();
         serde_json::json!({
             "pane": pane,
             "window": record.window,
@@ -485,6 +530,7 @@ pub fn pane_surface_host_state() -> serde_json::Value {
             "rendererTransparent": transparency.as_ref()
                 .and_then(|map| map.get(&record.renderer)).copied().unwrap_or(false),
             "members": record.members,
+            "memberFrames": member_frames,
             "frame": { "x": frame.origin.x, "y": frame.origin.y, "w": frame.size.width, "h": frame.size.height },
             "cssFrame": css_frame,
             "clipsToBounds": clips_to_bounds,
@@ -498,17 +544,118 @@ pub fn pane_surface_host_state() -> serde_json::Value {
 pub fn set_pane_surface_host_bounds(
     pane: &str,
     rect: (f64, f64, f64, f64),
+    layout: Option<super::PaneLayoutContract>,
 ) -> Result<(), String> {
-    let record = PANE_SURFACE_HOSTS.lock().map_err(|_| "pane host 잠금 실패")?
-        .get(pane).cloned().ok_or_else(|| format!("pane surface host가 없습니다: {pane}"))?;
+    let record = {
+        let mut hosts = PANE_SURFACE_HOSTS.lock().map_err(|_| "pane host 잠금 실패")?;
+        let record = hosts.get_mut(pane).ok_or_else(|| format!("pane surface host가 없습니다: {pane}"))?;
+        if let Some(layout) = layout { record.layout = Some(layout); }
+        record.clone()
+    };
     let host = unsafe { &*(record.ptr as *const NSView) };
     let parent = unsafe { host.superview() }.ok_or_else(|| format!("pane host 부모가 없습니다: {pane}"))?;
     CATransaction::begin();
     CATransaction::setDisableActions(true);
-    host.setFrame(css_rect_in_parent(&parent, rect.0, rect.1, rect.2, rect.3));
+    let target = css_rect_in_parent(&parent, rect.0, rect.1, rect.2, rect.3);
+    host.setFrame(target);
+    resize_pane_children(&record, host, target.size);
     settle_surface_frame(host);
     CATransaction::commit();
     Ok(())
+}
+
+/// NSWindowDidResize 통지 차례에서 DOM IPC보다 먼저 실행된다. 마지막으로 확정된 공개 CSS
+/// 레이아웃 계약을 새 viewport에 투영해 모든 pane host를 같은 native resize epoch로 옮긴다.
+pub fn resize_pane_surface_hosts(window: &str) {
+    let viewport = PANE_SURFACE_HOSTS.lock().ok().and_then(|hosts| {
+        hosts.values().find(|record| record.window == window).and_then(|record| {
+            let host = unsafe { &*(record.ptr as *const NSView) };
+            unsafe { host.superview() }.map(|parent| {
+                let bounds = parent.bounds();
+                (bounds.size.width, bounds.size.height)
+            })
+        })
+    });
+    if let Some((width, height)) = viewport {
+        resize_pane_surface_hosts_for_viewport(window, width, height);
+    }
+}
+
+/// windowWillResize가 알려 준 다음 content viewport를 실제 창 frame 적용보다 먼저 투영한다.
+/// 후행 DidResize와 같은 식을 쓰므로 선행/확정 경로가 서로 다른 좌표 규칙을 만들지 않는다.
+fn resize_pane_surface_hosts_for_viewport(window: &str, viewport_w: f64, viewport_h: f64) {
+    let records = PANE_SURFACE_HOSTS.lock().ok().map(|hosts| {
+        hosts.iter()
+            .filter(|(_, record)| record.window == window && record.layout.is_some())
+            .map(|(pane, record)| (pane.clone(), record.clone()))
+            .collect::<Vec<_>>()
+    }).unwrap_or_default();
+    for (_pane, record) in records {
+        let Some(ref layout) = record.layout else { continue };
+        let host = unsafe { &*(record.ptr as *const NSView) };
+        let Some(parent) = (unsafe { host.superview() }) else { continue };
+        let rect = layout.rect_for_viewport(viewport_w, viewport_h);
+        CATransaction::begin();
+        CATransaction::setDisableActions(true);
+        let target = css_rect_in_parent(&parent, rect.0, rect.1, rect.2, rect.3);
+        host.setFrame(target);
+        resize_pane_children(&record, host, target.size);
+        settle_surface_frame(host);
+        CATransaction::commit();
+    }
+}
+
+fn resize_surface_host(label: &str, frame: objc2_foundation::NSRect) {
+    let host_ptr = surface_host_ptr(label);
+    if host_ptr == 0 { return; }
+    let surface_host = unsafe { &*(host_ptr as *const NSView) };
+    surface_host.setFrame(frame);
+    if let Some(child_ptr) = SURFACE_VIEWS.lock().ok().and_then(|views| views.get(label).copied()) {
+        let child = unsafe { &*(child_ptr as *const NSView) };
+        child.setFrame(objc2_foundation::NSRect::new(NSPoint::new(0.0, 0.0), frame.size));
+        settle_surface_frame(child);
+    }
+    settle_surface_frame(surface_host);
+}
+
+fn resize_pane_children(record: &PaneSurfaceRecord, host: &NSView, size: objc2_foundation::NSSize) {
+    resize_surface_host(
+        &record.renderer,
+        objc2_foundation::NSRect::new(NSPoint::new(0.0, 0.0), size),
+    );
+    for (label, layout) in &record.member_layouts {
+        let rect = layout.rect_for_host(size.width, size.height);
+        resize_surface_host(
+            label,
+            css_rect_in_parent(host, rect.0, rect.1, rect.2, rect.3),
+        );
+    }
+}
+
+#[cfg(test)]
+mod pane_layout_tests {
+    use crate::webview::{PaneLayoutContract, PaneMemberLayoutContract};
+
+    #[test]
+    fn projects_percentage_grid_and_fixed_chrome_into_the_new_viewport() {
+        let contract = PaneLayoutContract {
+            viewport_w: 900.0, viewport_h: 1080.0,
+            root_x: 54.0, root_y: 82.0, root_w: 846.0, root_h: 998.0,
+            left_ratio: 2.0 / 3.0, top_ratio: 0.0,
+            width_ratio: 1.0 / 3.0, height_ratio: 0.5,
+            fixed_x: 51.0, fixed_y: 39.0, fixed_w: -58.0, fixed_h: -69.0,
+        };
+        let rect = contract.rect_for_viewport(600.0, 450.0);
+        assert_eq!(rect, (469.0, 121.0, 124.0, 115.0));
+    }
+
+    #[test]
+    fn keeps_member_insets_while_the_pane_host_resizes() {
+        let contract = PaneMemberLayoutContract {
+            left: 0.0, top: 56.0, right: 0.0, bottom: 0.0,
+        };
+        assert_eq!(contract.rect_for_host(320.0, 240.0), (0.0, 56.0, 320.0, 184.0));
+    }
 }
 
 /// child renderer가 공개한 content slot의 pane-local CSS 좌표를 실제 member frame에 적용한다.
@@ -517,9 +664,14 @@ pub fn set_pane_surface_member_bounds(
     pane: &str,
     label: &str,
     rect: (f64, f64, f64, f64),
+    layout: Option<super::PaneMemberLayoutContract>,
 ) -> Result<(), String> {
-    let record = PANE_SURFACE_HOSTS.lock().map_err(|_| "pane host 잠금 실패")?
-        .get(pane).cloned().ok_or_else(|| format!("pane surface host가 없습니다: {pane}"))?;
+    let record = {
+        let mut hosts = PANE_SURFACE_HOSTS.lock().map_err(|_| "pane host 잠금 실패")?;
+        let record = hosts.get_mut(pane).ok_or_else(|| format!("pane surface host가 없습니다: {pane}"))?;
+        if let Some(layout) = layout { record.member_layouts.insert(label.to_owned(), layout); }
+        record.clone()
+    };
     if !record.members.iter().any(|member| member == label) {
         return Err(format!("pane member가 아닙니다: {pane}/{label}"));
     }

@@ -1047,6 +1047,24 @@ async function runEngine(client, page, engine) {
     if (Number(fastResize.resizeElapsedMs) > 4_000) {
       throw new Error(`rapid window resize 응답 정지: ${fastResize.resizeElapsedMs}ms/${fastSizes.length}단계`);
     }
+    fs.writeFileSync(
+      path.join(fastResizeDir, "composition-samples.json"),
+      `${JSON.stringify(fastResize.samples ?? [], null, 2)}\n`,
+    );
+    if (native) {
+      const redSamples = (fastResize.samples ?? []).filter((sample) => sample.observation?.verdict !== "green");
+      if (redSamples.length) {
+        const summary = redSamples.map((sample) => {
+          const failed = (sample.observation?.matches ?? []).filter((match) => !match.ok);
+          return `s${sample.step}:${failed.map((match) => {
+            const member = (match.memberMatches ?? []).filter((item) => !item.ok)
+              .map((item) => `${item.label}:${JSON.stringify(item.delta)}`).join("|");
+            return `${match.pane}:${JSON.stringify(match.delta)}${member ? ` member=${member}` : ""}`;
+          }).join(",")}`;
+        });
+        throw new Error(`rapid window resize DOM/native 수치 RED — ${summary.join("; ")}`);
+      }
+    }
     // 최소 높이에서는 입력 아래의 상태 marker가 정상적으로 viewport 밖에 놓일 수 있다. 전이 중에는
     // 상단의 고정 ruler로 live frame을 판정하고, 원복 직후 실제 input 값·event ledger를 다시 읽는다.
     assertFrameSequence(

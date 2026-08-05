@@ -52,12 +52,60 @@ const state = moduleState("framework/tauri#pluginViewPresentation", () => ({
 
 const rectOf = (element: HTMLElement) => surfaceRectOf(element.getBoundingClientRect());
 
+type PaneLayoutContract = {
+  viewportW: number; viewportH: number;
+  rootX: number; rootY: number; rootW: number; rootH: number;
+  leftRatio: number; topRatio: number; widthRatio: number; heightRatio: number;
+  fixedX: number; fixedY: number; fixedW: number; fixedH: number;
+};
+
+const percentageVariable = (style: CSSStyleDeclaration, name: string): number | null => {
+  const raw = style.getPropertyValue(name).trim();
+  if (!raw.endsWith("%")) return null;
+  const value = Number.parseFloat(raw.slice(0, -1));
+  return Number.isFinite(value) ? value / 100 : null;
+};
+
+/** GroupArea가 공개한 셀 변수에서 native resize가 같은 식을 실행할 affine 계약을 만든다. */
+export function paneLayoutContractOf(container: HTMLElement): PaneLayoutContract | null {
+  const tabBody = container.closest<HTMLElement>(".tab-body");
+  const root = tabBody?.closest<HTMLElement>(".space");
+  if (!tabBody || !root) return null;
+  const style = getComputedStyle(tabBody);
+  const leftRatio = percentageVariable(style, "--l");
+  const topRatio = percentageVariable(style, "--t");
+  const widthRatio = percentageVariable(style, "--w");
+  const heightRatio = percentageVariable(style, "--h");
+  if ([leftRatio, topRatio, widthRatio, heightRatio].some((value) => value === null)) return null;
+  const pane = rectOf(container);
+  const rootFrame = rectOf(root);
+  const l = leftRatio!; const t = topRatio!; const w = widthRatio!; const h = heightRatio!;
+  return {
+    viewportW: window.innerWidth, viewportH: window.innerHeight,
+    rootX: rootFrame.x, rootY: rootFrame.y, rootW: rootFrame.w, rootH: rootFrame.h,
+    leftRatio: l, topRatio: t, widthRatio: w, heightRatio: h,
+    fixedX: pane.x - rootFrame.x - l * rootFrame.w,
+    fixedY: pane.y - rootFrame.y - t * rootFrame.h,
+    fixedW: pane.w - w * rootFrame.w,
+    fixedH: pane.h - h * rootFrame.h,
+  };
+}
+
 type PaneRect = { x: number; y: number; w: number; h: number };
-type DomPaneFact = { pane: string; frame: PaneRect };
+type DomPaneFact = {
+  pane: string;
+  frame: PaneRect;
+  members?: {
+    label: string;
+    frame: PaneRect;
+    viewport?: { w: number; h: number; revision: number; reportedAtUnixMs: number; receivedAtUnixMs: number };
+  }[];
+};
 type NativePaneFact = {
   pane: string;
   window: string;
   cssFrame: PaneRect;
+  memberFrames?: { label: string; cssFrame: PaneRect | null }[];
   [key: string]: unknown;
 };
 
@@ -83,15 +131,40 @@ export function comparePanePresentation(
     const candidates = scoped.filter((fact) => fact.pane === domFact.pane);
     const nativeFact = candidates.length === 1 ? candidates[0] : null;
     const delta = nativeFact ? rectDelta(domFact.frame, nativeFact.cssFrame) : null;
+    const memberMatches = (domFact.members ?? []).map((domMember) => {
+      const nativeMembers = nativeFact?.memberFrames?.filter((fact) => fact.label === domMember.label) ?? [];
+      const nativeMember = nativeMembers.length === 1 ? nativeMembers[0] : null;
+      const memberDelta = nativeMember?.cssFrame
+        ? rectDelta(domMember.frame, nativeMember.cssFrame)
+        : null;
+      return {
+        label: domMember.label,
+        domFrame: domMember.frame,
+        nativeFrame: nativeMember?.cssFrame ?? null,
+        nativeCount: nativeMembers.length,
+        delta: memberDelta,
+        viewport: domMember.viewport ?? null,
+        viewportDelta: domMember.viewport && nativeFact
+          ? {
+              w: Math.abs(domMember.viewport.w - nativeFact.cssFrame.w),
+              h: Math.abs(domMember.viewport.h - nativeFact.cssFrame.h),
+            }
+          : null,
+        ok: nativeMembers.length === 1 && memberDelta !== null
+          && Object.values(memberDelta).every((value) => value <= tolerancePx),
+      };
+    });
     const ok = candidates.length === 1
       && delta !== null
-      && Object.values(delta).every((value) => value <= tolerancePx);
+      && Object.values(delta).every((value) => value <= tolerancePx)
+      && memberMatches.every((match) => match.ok);
     return {
       pane: domFact.pane,
       domFrame: domFact.frame,
       nativeFrame: nativeFact?.cssFrame ?? null,
       nativeCount: candidates.length,
       delta,
+      memberMatches,
       ok,
     };
   });
@@ -190,7 +263,11 @@ async function syncPaneFrame(view: PresentedState): Promise<void> {
   if (view.disposed) return;
   const rect = rectOf(view.container);
   if (view.grouped) {
-    await invoke("webview_pane_bounds", { pane: view.pane, ...rect });
+    await invoke("webview_pane_bounds", {
+      pane: view.pane,
+      ...rect,
+      layout: paneLayoutContractOf(view.container),
+    });
   } else {
     await invoke("webview_bounds", { label: view.renderer, ...rect });
   }
@@ -205,6 +282,12 @@ async function syncMemberFrame(view: PresentedState, frame: PluginViewSlotFrame)
     y: frame.y,
     w: frame.w,
     h: frame.h,
+    layout: {
+      left: frame.x,
+      top: frame.y,
+      right: Math.max(0, frame.rootW - frame.x - frame.w),
+      bottom: Math.max(0, frame.rootH - frame.y - frame.h),
+    },
   });
 }
 
@@ -238,6 +321,7 @@ async function openAndGroup(
     });
     view.grouped = true;
     state.readiness.set(view.pane, true);
+    await syncPaneFrame(view);
   }
   await syncMemberFrame(view, slot);
   await invoke("webview_visible", { label, visible: view.visible, focus: false });
@@ -397,11 +481,29 @@ export function pluginViewPresentationStatus() {
 
 export async function pluginViewCompositionStatus() {
   const windowLabel = currentWindowLabel();
+  const sampledAtUnixMs = Date.now();
   const dom = [...state.views.values()]
     .filter((view) => view.grouped && !view.disposed)
-    .map((view) => ({ pane: view.pane, frame: rectOf(view.container) }));
+    .map((view) => ({
+      pane: view.pane,
+      frame: rectOf(view.container),
+      members: view.slots.frames().map((slot) => ({
+        label: slot.label,
+        frame: { x: slot.x, y: slot.y, w: slot.w, h: slot.h },
+        viewport: {
+          w: slot.rootW, h: slot.rootH, revision: slot.revision,
+          reportedAtUnixMs: slot.reportedAtUnixMs,
+          receivedAtUnixMs: slot.receivedAtUnixMs,
+        },
+      })),
+    }));
   const native = await invoke<NativePaneFact[]>("webview_pane_hosts");
-  return comparePanePresentation(dom, native, windowLabel);
+  const result = comparePanePresentation(dom, native, windowLabel);
+  return {
+    ...result,
+    sampledAtUnixMs,
+    verdict: result.ok ? "green" as const : "red" as const,
+  };
 }
 
 export function awaitPluginViewPresentation(

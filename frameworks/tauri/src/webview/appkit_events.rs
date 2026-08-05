@@ -353,7 +353,8 @@ pub fn install_live_resize_monitor(app: &AppHandle) {
             return;
         };
         let ns_ptr = Retained::as_ptr(&window) as usize;
-        if NSWINDOW_LABELS.label(ns_ptr).is_some() {
+        if let Some(label) = NSWINDOW_LABELS.label(ns_ptr) {
+            super::layer::resize_pane_surface_hosts(&label);
             commit_resize_composition(&window);
         }
     });

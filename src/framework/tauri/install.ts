@@ -420,8 +420,8 @@ function installPaneSurfaceHostCommands(): void {
     description:
       "Compare every live plugin DOM pane with its Tauri PaneSurfaceHost in one CSS coordinate system. Requires one-to-one ownership and permits rounding error only.",
     params: {},
-    returns: "{ window, tolerancePx, matches:[{pane,domFrame,nativeFrame,nativeCount,delta,ok}], orphanNative, foreignNative, ok }",
-    message: (d) => `PaneSurfaceHost 정합 ${d.ok === true ? "GREEN" : "RED"}`,
+    returns: "{ window, tolerancePx, matches:[{pane,domFrame,nativeFrame,nativeCount,delta,memberMatches,ok}], orphanNative, foreignNative, verdict:green|red }",
+    message: (d) => `PaneSurfaceHost 정합 ${d.verdict === "green" ? "GREEN" : "RED"}`,
     handler: async () => pluginViewCompositionStatus(),
   });
   register("webview.pane.eval", {

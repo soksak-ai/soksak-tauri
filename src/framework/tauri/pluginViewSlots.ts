@@ -9,10 +9,12 @@ interface Waiter {
 /** child renderer의 slot 보고와 surface open 요청을 사건으로 합류시킨다. */
 export class PluginViewSlotRegistry {
   readonly #frames = new Map<string, PluginViewSlotFrame>();
+  readonly #receivedAt = new Map<string, number>();
   readonly #waiters = new Map<string, Set<Waiter>>();
 
   report(frame: PluginViewSlotFrame): void {
     this.#frames.set(frame.label, frame);
+    this.#receivedAt.set(frame.label, Date.now());
     const waiters = this.#waiters.get(frame.label);
     if (!waiters) return;
     this.#waiters.delete(frame.label);
@@ -24,6 +26,13 @@ export class PluginViewSlotRegistry {
 
   frame(label: string): PluginViewSlotFrame | undefined {
     return this.#frames.get(label);
+  }
+
+  frames(): (PluginViewSlotFrame & { receivedAtUnixMs: number })[] {
+    return [...this.#frames.values()].map((frame) => ({
+      ...frame,
+      receivedAtUnixMs: this.#receivedAt.get(frame.label) ?? 0,
+    }));
   }
 
   wait(label: string, timeoutMs = 10_000): Promise<PluginViewSlotFrame> {
@@ -57,5 +66,6 @@ export class PluginViewSlotRegistry {
     }
     this.#waiters.clear();
     this.#frames.clear();
+    this.#receivedAt.clear();
   }
 }

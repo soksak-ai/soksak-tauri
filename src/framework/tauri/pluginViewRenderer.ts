@@ -14,6 +14,7 @@ if (!parent || !renderer) throw new Error("plugin view renderer 주소에 parent
 const event = (name: string) => `soksak://plugin-view/${renderer}/${name}`;
 
 let sequence = 0;
+let layoutRevision = 0;
 let activeLabel: string | null = null;
 const pending = new Map<number, { resolve(value: unknown): void; reject(error: unknown): void }>();
 const listeners = new Map<string, (payload: unknown) => void>();
@@ -49,6 +50,8 @@ function subscribe(path: string, args: unknown[], callback: (payload: any) => vo
 }
 
 function reportSlots(): void {
+  const revision = ++layoutRevision;
+  const reportedAtUnixMs = Date.now();
   for (const element of document.querySelectorAll<HTMLElement>("[data-content-view-body]")) {
     const label = element.getAttribute("data-content-view-body");
     if (!label) continue;
@@ -58,6 +61,10 @@ function reportSlots(): void {
       x: Math.round(rect.left), y: Math.round(rect.top),
       w: Math.max(1, Math.round(rect.right) - Math.round(rect.left)),
       h: Math.max(1, Math.round(rect.bottom) - Math.round(rect.top)),
+      rootW: window.innerWidth,
+      rootH: window.innerHeight,
+      revision,
+      reportedAtUnixMs,
     };
     void emitTo(parent!, event("slot"), frame);
   }
@@ -71,6 +78,10 @@ function reportSlots(): void {
         x: Math.round(rect.left), y: Math.round(rect.top),
         w: Math.max(1, Math.round(rect.right) - Math.round(rect.left)),
         h: Math.max(1, Math.round(rect.bottom) - Math.round(rect.top)),
+        rootW: window.innerWidth,
+        rootH: window.innerHeight,
+        revision,
+        reportedAtUnixMs,
       };
       void emitTo(parent!, event("node"), frame);
     }
@@ -88,6 +99,7 @@ function observeSlots(): void {
   reportSlots();
 }
 new MutationObserver(observeSlots).observe(document.documentElement, { childList: true, subtree: true });
+window.addEventListener("resize", reportSlots);
 
 await listen<PluginViewInit>(event("init"), async ({ payload: init }) => {
   activeLabel = init.label;

@@ -39,6 +39,13 @@ export interface PluginViewSlotFrame {
   y: number;
   w: number;
   h: number;
+  /** child renderer viewport at the same measurement epoch. */
+  rootW: number;
+  rootH: number;
+  /** child renderer가 같은 viewport에서 만든 단조 증가 측정 번호. */
+  revision: number;
+  /** child renderer 측정 시각. 부모 수신/창 resize와의 지연을 수치화한다. */
+  reportedAtUnixMs: number;
 }
 
 export interface PluginViewNodeFrame extends PluginViewSlotFrame {
