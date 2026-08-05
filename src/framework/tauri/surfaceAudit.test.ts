@@ -31,9 +31,10 @@ describe("Tauri 표면 감사의 DOM 정본", () => {
 
   it("DOM renderer와 native surface가 창 루트에서만 만나는 구조를 panel-atomic 불가로 판정한다", () => {
     expect(classifyRendererTopology({
-      domRendererPath: ["TaoView", "WryWebView"],
-      nativeSurfacePath: ["TaoView", "EngineSurfaceHost", "NSView", "WryWebView"],
-      lowestCommonAncestorDepth: 0,
+      domRendererPath: ["NSThemeFrame", "TaoView", "WryWebView"],
+      nativeSurfacePath: ["NSThemeFrame", "TaoView", "EngineSurfaceHost", "NSView", "WryWebView"],
+      lowestCommonAncestorDepth: 1,
+      lowestCommonAncestorIsWindowContentRoot: true,
     })).toEqual({
       verdict: "independent-renderer-roots",
       panelAtomicMotion: false,
@@ -41,11 +42,21 @@ describe("Tauri 표면 감사의 DOM 정본", () => {
     });
   });
 
+  it("윈도우 프레임만 공유하는 구조를 pane host로 오인하지 않는다", () => {
+    expect(classifyRendererTopology({
+      domRendererPath: ["NSThemeFrame", "TaoView", "WryWebView"],
+      nativeSurfacePath: ["NSThemeFrame", "DetachedSurfaceHost", "WryWebView"],
+      lowestCommonAncestorDepth: 0,
+      lowestCommonAncestorIsWindowContentRoot: false,
+    }).panelAtomicMotion).toBe(false);
+  });
+
   it("DOM renderer와 native surface가 같은 pane host 아래 있으면 panel-atomic 가능으로 판정한다", () => {
     expect(classifyRendererTopology({
       domRendererPath: ["TaoView", "PaneSurfaceHost", "WryWebView"],
       nativeSurfacePath: ["TaoView", "PaneSurfaceHost", "BrowserSurface"],
       lowestCommonAncestorDepth: 1,
+      lowestCommonAncestorIsWindowContentRoot: false,
     })).toEqual({
       verdict: "shared-pane-host",
       panelAtomicMotion: true,

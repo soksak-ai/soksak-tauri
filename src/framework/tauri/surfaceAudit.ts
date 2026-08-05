@@ -67,6 +67,7 @@ export interface RendererTopologyFact {
   domRendererPath: string[];
   nativeSurfacePath: string[];
   lowestCommonAncestorDepth: number;
+  lowestCommonAncestorIsWindowContentRoot: boolean;
 }
 
 export interface RendererTopologyVerdict {
@@ -82,7 +83,9 @@ export interface RendererTopologyVerdict {
  */
 export function classifyRendererTopology(fact: RendererTopologyFact): RendererTopologyVerdict {
   const depth = fact.lowestCommonAncestorDepth;
-  const sharedPaneHost = depth > 0 ? (fact.domRendererPath[depth] ?? null) : null;
+  const sharedPaneHost = depth > 0 && !fact.lowestCommonAncestorIsWindowContentRoot
+    ? (fact.domRendererPath[depth] ?? null)
+    : null;
   return sharedPaneHost
     ? { verdict: "shared-pane-host", panelAtomicMotion: true, sharedPaneHost }
     : { verdict: "independent-renderer-roots", panelAtomicMotion: false, sharedPaneHost: null };

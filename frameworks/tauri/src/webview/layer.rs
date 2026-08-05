@@ -268,17 +268,23 @@ pub fn renderer_topology(window_label: &str, surface_ptr: usize) -> serde_json::
     let dom = ancestry(main_ptr as *mut NSView);
     let native = ancestry(surface_ptr as *mut NSView);
     let mut common_depth: i64 = -1;
+    let mut common_ptr = 0usize;
     for (index, (dom_ptr, _)) in dom.iter().enumerate() {
         if native.get(index).map(|(ptr, _)| ptr) == Some(dom_ptr) {
             common_depth = index as i64;
+            common_ptr = *dom_ptr;
         } else {
             break;
         }
     }
+    let window_content_root = unsafe { (&*(main_ptr as *const NSView)).superview() }
+        .map(|view| Retained::as_ptr(&view) as usize)
+        .unwrap_or(0);
     serde_json::json!({
         "domRendererPath": dom.into_iter().map(|(_, class)| class).collect::<Vec<_>>(),
         "nativeSurfacePath": native.into_iter().map(|(_, class)| class).collect::<Vec<_>>(),
         "lowestCommonAncestorDepth": common_depth,
+        "lowestCommonAncestorIsWindowContentRoot": common_ptr != 0 && common_ptr == window_content_root,
     })
 }
 
