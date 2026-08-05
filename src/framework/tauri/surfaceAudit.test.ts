@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from "vitest";
-import { visibleAnchorFacts } from "./surfaceAudit";
+import { classifyRendererTopology, visibleAnchorFacts } from "./surfaceAudit";
 
 describe("Tauri 표면 감사의 DOM 정본", () => {
   beforeEach(() => {
@@ -27,5 +27,29 @@ describe("Tauri 표면 감사의 DOM 정본", () => {
         rect: { x: 10, y: 20, w: 300, h: 200 },
       },
     ]);
+  });
+
+  it("DOM renderer와 native surface가 창 루트에서만 만나는 구조를 panel-atomic 불가로 판정한다", () => {
+    expect(classifyRendererTopology({
+      domRendererPath: ["TaoView", "WryWebView"],
+      nativeSurfacePath: ["TaoView", "EngineSurfaceHost", "NSView", "WryWebView"],
+      lowestCommonAncestorDepth: 0,
+    })).toEqual({
+      verdict: "independent-renderer-roots",
+      panelAtomicMotion: false,
+      sharedPaneHost: null,
+    });
+  });
+
+  it("DOM renderer와 native surface가 같은 pane host 아래 있으면 panel-atomic 가능으로 판정한다", () => {
+    expect(classifyRendererTopology({
+      domRendererPath: ["TaoView", "PaneSurfaceHost", "WryWebView"],
+      nativeSurfacePath: ["TaoView", "PaneSurfaceHost", "BrowserSurface"],
+      lowestCommonAncestorDepth: 1,
+    })).toEqual({
+      verdict: "shared-pane-host",
+      panelAtomicMotion: true,
+      sharedPaneHost: "PaneSurfaceHost",
+    });
   });
 });

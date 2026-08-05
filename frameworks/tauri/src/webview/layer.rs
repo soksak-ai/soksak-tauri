@@ -242,6 +242,46 @@ pub fn surface_host_ptr(label: &str) -> usize {
     SURFACE_HOSTS.ptr(label).unwrap_or(0)
 }
 
+// DOM renderer와 native surface의 실제 NSView 조상 경로를 공개한다. 둘의 최소 공통
+// 조상이 창 content root뿐이면 패널 하나를 원자적으로 움직일 공통 소유자가 없는 구조다.
+// 같은 CATransaction/시각 epoch는 이 구조 사실을 바꾸지 못한다.
+pub fn renderer_topology(window_label: &str, surface_ptr: usize) -> serde_json::Value {
+    fn ancestry(mut ptr: *mut NSView) -> Vec<(usize, String)> {
+        let mut out = Vec::new();
+        while !ptr.is_null() {
+            let view = unsafe { &*ptr };
+            out.push((ptr as usize, view.class().name().to_string_lossy().into_owned()));
+            ptr = unsafe { msg_send![view, superview] };
+        }
+        out.reverse();
+        out
+    }
+
+    let main_ptr = LAYERS
+        .lock()
+        .ok()
+        .and_then(|layers| layers.get(window_label).map(|layer| layer.main_ptr))
+        .unwrap_or(0);
+    if main_ptr == 0 || surface_ptr == 0 {
+        return serde_json::json!(null);
+    }
+    let dom = ancestry(main_ptr as *mut NSView);
+    let native = ancestry(surface_ptr as *mut NSView);
+    let mut common_depth: i64 = -1;
+    for (index, (dom_ptr, _)) in dom.iter().enumerate() {
+        if native.get(index).map(|(ptr, _)| ptr) == Some(dom_ptr) {
+            common_depth = index as i64;
+        } else {
+            break;
+        }
+    }
+    serde_json::json!({
+        "domRendererPath": dom.into_iter().map(|(_, class)| class).collect::<Vec<_>>(),
+        "nativeSurfacePath": native.into_iter().map(|(_, class)| class).collect::<Vec<_>>(),
+        "lowestCommonAncestorDepth": common_depth,
+    })
+}
+
 const LAYOUT_POSITION_KEY: &str = "soksak-layout-position-x";
 
 fn add_layout_position(view: &NSView, dx: f64, start_delay: f64, duration: f64) -> Result<(), String> {

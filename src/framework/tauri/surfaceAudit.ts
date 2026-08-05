@@ -46,7 +46,10 @@ export interface NativeSurfaceFact {
 
 export interface SurfaceCompositionSnapshot {
   coordinateContract: { dom: string; native: string; windowZoom: number; tolerancePx: number };
-  engine: { preservesContentDuringLiveResize: boolean | null };
+  engine: {
+    preservesContentDuringLiveResize: boolean | null;
+    rendererTopology: RendererTopologyVerdict | null;
+  };
   anchors: SurfaceAnchorFact[];
   surfaces: NativeSurfaceFact[];
   matches: {
@@ -58,6 +61,31 @@ export interface SurfaceCompositionSnapshot {
     matched: boolean;
   }[];
   verdict: SurfaceVerdict;
+}
+
+export interface RendererTopologyFact {
+  domRendererPath: string[];
+  nativeSurfacePath: string[];
+  lowestCommonAncestorDepth: number;
+}
+
+export interface RendererTopologyVerdict {
+  verdict: "shared-pane-host" | "independent-renderer-roots";
+  panelAtomicMotion: boolean;
+  sharedPaneHost: string | null;
+}
+
+/**
+ * 패널 단위 원자 이동은 DOM renderer와 native surface가 창 전체보다 좁은 동일 조상을
+ * 공유할 때만 성립한다. 같은 epoch·CATransaction·ACK는 서로 다른 원격 renderer의 표시
+ * 제출을 하나로 만들지 못한다. 이 판정은 타이밍을 성공으로 오인하지 않게 하는 구조 계약이다.
+ */
+export function classifyRendererTopology(fact: RendererTopologyFact): RendererTopologyVerdict {
+  const depth = fact.lowestCommonAncestorDepth;
+  const sharedPaneHost = depth > 0 ? (fact.domRendererPath[depth] ?? null) : null;
+  return sharedPaneHost
+    ? { verdict: "shared-pane-host", panelAtomicMotion: true, sharedPaneHost }
+    : { verdict: "independent-renderer-roots", panelAtomicMotion: false, sharedPaneHost: null };
 }
 
 export interface SurfaceVerdict {
@@ -175,6 +203,7 @@ function darkViewRects(): AuditRect[] {
 interface EngineStats {
   windowZoom?: number;
   preservesContentDuringLiveResize?: boolean;
+  rendererTopology?: RendererTopologyFact;
   surfaces?: {
     ptr: number;
     label?: string | null;
@@ -253,6 +282,9 @@ export async function surfaceCompositionSnapshot(): Promise<SurfaceCompositionSn
         typeof stats.preservesContentDuringLiveResize === "boolean"
           ? stats.preservesContentDuringLiveResize
           : null,
+      rendererTopology: stats.rendererTopology
+        ? classifyRendererTopology(stats.rendererTopology)
+        : null,
     },
     anchors,
     surfaces,

@@ -564,6 +564,10 @@ pub async fn engine_surface_stats(app: AppHandle, window: tauri::Window) -> serd
             // holes 0)을 스코프로 막는다. 남의 창 것은 숫자만 남긴다(숨기지 않는다).
             let mut surfaces = Vec::new();
             let live = layer::live_registered_views(ns_win);
+            let renderer_topology = live
+                .first()
+                .map(|ptr| layer::renderer_topology(&label, *ptr))
+                .unwrap_or(serde_json::Value::Null);
             let other_windows = layer::surface_count().saturating_sub(live.len());
             for ptr in live {
                 let v: &objc2_app_kit::NSView = unsafe { &*(ptr as *const objc2_app_kit::NSView) };
@@ -594,6 +598,7 @@ pub async fn engine_surface_stats(app: AppHandle, window: tauri::Window) -> serd
                 "hostPresent": host != 0,
                 "hostHidden": host_hidden,
                 "preservesContentDuringLiveResize": preserves_content_during_live_resize,
+                "rendererTopology": renderer_topology,
                 "windowZoom": SURFACE_LAYOUT.window_zoom(&label),
                 "surfaces": surfaces,
             }));
