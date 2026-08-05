@@ -46,6 +46,7 @@ describe("네이티브 자식 뷰 구현", () => {
     listeners.clear();
     ResizeObserverMock.instances = [];
     vi.stubGlobal("ResizeObserver", ResizeObserverMock);
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
   });
 
   it("이름과 인자를 번역하지 않는다", async () => {
@@ -69,6 +70,32 @@ describe("네이티브 자식 뷰 구현", () => {
       label: "b-1",
       text: "한글 입력",
     });
+  });
+
+  it("휠을 child 웹뷰의 네이티브 입력 경로로 보낸다", async () => {
+    const { nativeHost } = await load();
+    await (nativeHost as unknown as {
+      wheel(label: string, x: number, y: number, dx: number, dy: number): Promise<void>;
+    }).wheel("b-1", 23.4, 45.6, 0, 240);
+    expect(invoke).toHaveBeenCalledWith("webview_send_wheel", {
+      label: "b-1",
+      x: 23,
+      y: 46,
+      dx: 0,
+      dy: 240,
+    });
+  });
+
+  it("표시 장벽은 요청한 현재 창 label만 기다리고 다른 창 표면과 결합하지 않는다", async () => {
+    const { nativeHost } = await load();
+    await nativeHost.open("b-current", { url: "https://current", x: 0, y: 0, w: 100, h: 100 });
+    await nativeHost.open("b-other", { url: "https://other", x: 0, y: 0, w: 100, h: 100 });
+    invoke.mockClear();
+
+    await nativeHost.presentationSettled(["b-current"]);
+
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(invoke).toHaveBeenCalledWith("webview_presented", { label: "b-current" });
   });
 
   it("주입 해지가 no-op 임을 스스로 밝힌다", async () => {
@@ -198,7 +225,30 @@ describe("네이티브 자식 뷰 구현", () => {
     ]);
   });
 
-  it("native surface 배치는 z-order를 왕복하지 않고 목표 bounds로 한 번 정착한다", async () => {
+  it("숨김→복귀는 DOM rect가 같아도 native frame을 권위 재정착한다", async () => {
+    const slot = document.createElement("div");
+    slot.setAttribute("data-content-view-body", "b-return");
+    slot.getBoundingClientRect = () => ({
+      x: 10, y: 20, left: 10, top: 20, right: 310, bottom: 220, width: 300, height: 200,
+    }) as DOMRect;
+    document.body.appendChild(slot);
+
+    const { nativeHost } = await load();
+    await nativeHost.open("b-return", { url: "https://x" });
+    await nativeHost.visible("b-return", false, false);
+    invoke.mockClear();
+
+    // 숨긴 동안 AppKit이 child frame을 바꿔도 JS lastRect는 알 수 없다.
+    // DOM 좌표가 같다는 캐시 hit로 복귀 bounds를 생략하면 부분 표면이 남는다.
+    await nativeHost.visible("b-return", true, false);
+    expect(invoke.mock.calls).toEqual([
+      ["webview_alive", { label: "b-return" }],
+      ["webview_bounds", { label: "b-return", x: 10, y: 20, w: 300, h: 200 }],
+      ["webview_visible", { label: "b-return", visible: true, focus: false }],
+    ]);
+  });
+
+  it("native surface 위치는 Tauri compositor에 먼저 무장하고 DOM과 같은 epoch에 활강한다", async () => {
     const frame = document.createElement("div");
     frame.className = "tab-body";
     frame.dataset.node = "layout/tab/v1";
@@ -215,26 +265,92 @@ describe("네이티브 자식 뷰 구현", () => {
     invoke.mockClear();
 
     const prepared = await prepareNativeContentViewMove([{ viewId: "v1", dx: 410 }]);
-    expect(prepared.mode).toBe("snap");
-    expect(invoke).not.toHaveBeenCalled();
-
-    slot.getBoundingClientRect = () => ({
-      x: 210, y: 112, left: 210, top: 112, right: 422, bottom: 570, width: 212, height: 458,
-    }) as DOMRect;
-    await prepared.commit();
-    expect(invoke).toHaveBeenCalledWith("webview_bounds", {
+    expect(prepared.mode).toBe("glide");
+    expect(prepared.startAtUnixMs).toEqual(expect.any(Number));
+    expect(invoke).toHaveBeenCalledWith("webview_transition_prepare", {
       label: "browser--v1",
       x: 210,
       y: 112,
       w: 212,
       h: 458,
+      startAtUnixMs: prepared.startAtUnixMs,
+      durationMs: 340,
     });
+
+    slot.getBoundingClientRect = () => ({
+      x: 210, y: 112, left: 210, top: 112, right: 422, bottom: 570, width: 212, height: 458,
+    }) as DOMRect;
+    await prepared.commit();
+    expect(invoke.mock.calls.filter(([command]) => command === "webview_bounds")).toHaveLength(0);
     expect(invoke).not.toHaveBeenCalledWith("webview_surface_handoff", expect.anything());
-    expect(invoke).not.toHaveBeenCalledWith("webview_animate_bounds", expect.anything());
     expect(vi.isMockFunction(globalThis.requestAnimationFrame)).toBe(false);
   });
 
-  it("공개 DOM 슬롯의 외부 표면 claim을 snap 거래로 묶고 최종 rect ACK를 기다린다", async () => {
+  it("비전면 문서는 정지한 DOM 시계와 native 시계를 섞지 않고 최종 rect를 snap한다", async () => {
+    vi.mocked(document.hasFocus).mockReturnValue(false);
+    let x = 620;
+    const frame = document.createElement("div");
+    frame.dataset.node = "layout/tab/v-background";
+    const slot = document.createElement("div");
+    slot.setAttribute("data-content-view-body", "browser--v-background");
+    slot.getBoundingClientRect = () => ({
+      x, y: 112, left: x, top: 112, right: x + 212, bottom: 570, width: 212, height: 458,
+    }) as DOMRect;
+    frame.appendChild(slot);
+    document.body.appendChild(frame);
+
+    const { nativeHost, prepareNativeContentViewMove } = await load();
+    await nativeHost.open("browser--v-background", { url: "https://x" });
+    invoke.mockClear();
+
+    const prepared = await prepareNativeContentViewMove([{ viewId: "v-background", dx: 410 }]);
+    expect(prepared.mode).toBe("snap");
+    expect(invoke).toHaveBeenCalledWith("webview_transition_prepare", {
+      label: "browser--v-background", x: 210, y: 112, w: 212, h: 458,
+      startAtUnixMs: expect.any(Number), durationMs: 1,
+    });
+    expect(invoke).not.toHaveBeenCalledWith("webview_bounds", expect.anything());
+
+    x = 210;
+    await prepared.commit();
+    expect(invoke.mock.calls.filter(([command]) => command === "webview_bounds")).toHaveLength(0);
+  });
+
+  it("비전면 외부 표면은 prepare/commit 애니메이션 대신 최종 DOM rect snap ACK를 기다린다", async () => {
+    vi.mocked(document.hasFocus).mockReturnValue(false);
+    let x = 620;
+    const frame = document.createElement("div");
+    frame.dataset.node = "layout/tab/v-external-background";
+    const slot = document.createElement("div");
+    slot.setAttribute("data-content-view-body", "engine-v-external-background");
+    slot.getBoundingClientRect = () => ({
+      x, y: 112, left: x, top: 112, right: x + 212, bottom: 570, width: 212, height: 458,
+    }) as DOMRect;
+    frame.appendChild(slot);
+    document.body.appendChild(frame);
+
+    const snap = vi.fn(async () => {});
+    const prepare = vi.fn(async () => {});
+    const commit = vi.fn(async () => {});
+    slot.addEventListener("soksak:external-surface-layout-transition", ((event: CustomEvent) => {
+      event.detail.claim({ snap, prepare, commit, cancel: vi.fn() });
+    }) as EventListener);
+
+    const { prepareNativeContentViewMove } = await load();
+    const prepared = await prepareNativeContentViewMove([{ viewId: "v-external-background", dx: 410 }]);
+    expect(prepared.mode).toBe("snap");
+    expect(prepare).toHaveBeenCalledWith(
+      { x: 210, y: 112, w: 212, h: 458 },
+      { startAtUnixMs: expect.any(Number), durationMs: 1 },
+    );
+
+    x = 210;
+    await prepared.commit();
+    expect(snap).not.toHaveBeenCalled();
+    expect(commit).toHaveBeenCalledWith({ x: 210, y: 112, w: 212, h: 458 });
+  });
+
+  it("공개 DOM 슬롯의 외부 표면을 공통 epoch에 먼저 무장하고 DOM 커밋 뒤 rect ACK를 기다린다", async () => {
     const frame = document.createElement("div");
     frame.dataset.node = "layout/tab/v-external";
     const slot = document.createElement("div");
@@ -247,15 +363,21 @@ describe("네이티브 자식 뷰 구현", () => {
     document.body.appendChild(frame);
 
     let releaseAck!: () => void;
+    const prepare = vi.fn(async () => {});
     const commit = vi.fn(() => new Promise<void>((resolve) => { releaseAck = resolve; }));
     const cancel = vi.fn();
     slot.addEventListener("soksak:external-surface-layout-transition", ((event: CustomEvent) => {
-      event.detail.claim({ commit, cancel });
+      event.detail.claim({ snap: async () => {}, prepare, commit, cancel });
     }) as EventListener);
 
     const { prepareNativeContentViewMove } = await load();
     const prepared = await prepareNativeContentViewMove([{ viewId: "v-external", dx: 410 }]);
-    expect(prepared.mode).toBe("snap");
+    expect(prepared.mode).toBe("glide");
+    expect(prepared.startAtUnixMs).toEqual(expect.any(Number));
+    expect(prepare).toHaveBeenCalledWith(
+      { x: 210, y: 112, w: 212, h: 458 },
+      { startAtUnixMs: prepared.startAtUnixMs, durationMs: 340 },
+    );
     expect(commit).not.toHaveBeenCalled();
 
     x = 210;
@@ -282,7 +404,7 @@ describe("네이티브 자식 뷰 구현", () => {
     document.body.appendChild(frame);
     const cancel = vi.fn();
     slot.addEventListener("soksak:external-surface-layout-transition", ((event: CustomEvent) => {
-      event.detail.claim({ commit: async () => {}, cancel });
+      event.detail.claim({ snap: async () => {}, prepare: async () => {}, commit: async () => {}, cancel });
     }) as EventListener);
 
     const { prepareNativeContentViewMove } = await load();
@@ -313,9 +435,10 @@ describe("네이티브 자식 뷰 구현", () => {
     const prepared = await prepareNativeContentViewMove([{ viewId: "v1", dx: 410 }]);
     x = 210;
     await prepared.commit();
-    expect(invoke).toHaveBeenCalledWith("webview_bounds", {
+    expect(invoke).toHaveBeenCalledWith("webview_transition_prepare", expect.objectContaining({
       label: "browser--v1", x: 210, y: 112, w: 212, h: 458,
-    });
+    }));
+    expect(invoke).not.toHaveBeenCalledWith("webview_transition_prepare", expect.objectContaining({ x: 390 }));
   });
 
   it("DOM 재배치 mutation 뒤 공개 슬롯의 최종 위치로 native bounds를 대조한다", async () => {

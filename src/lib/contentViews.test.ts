@@ -32,6 +32,7 @@ const stubHost = () =>
     injectScript: vi.fn(),
     openWindow: vi.fn(),
     sendInput: vi.fn(),
+    wheel: vi.fn(),
     typeText: vi.fn(),
   }) as unknown as import("./contentViews").ContentViewHost;
 

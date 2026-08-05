@@ -18,6 +18,7 @@ import {
   type ExternalSurfaceTransitionDetail,
   type ExternalSurfaceTransitionParticipant,
 } from "../../lib/externalSurfaceTransition";
+import { railTravelDeclaredMs } from "../../lib/railMotion";
 
 const call = <T>(cmd: string, args?: Record<string, unknown>): Promise<T> =>
   invoke(cmd, args) as Promise<T>;
@@ -44,6 +45,7 @@ interface SurfaceState {
   draining: Promise<void> | null;
   waiters: { resolve: () => void; reject: (reason: unknown) => void }[];
   openOptions: Record<string, unknown> | null;
+  visibilityPending: Promise<void> | null;
 }
 
 export interface NativeContentViewCompositionFact {
@@ -84,6 +86,7 @@ function stateOf(label: string): SurfaceState {
       draining: null,
       waiters: [],
       openOptions: null,
+      visibilityPending: null,
     };
     composition.surfaces.set(label, state);
   }
@@ -147,6 +150,11 @@ async function restoreIfDetached(state: SurfaceState): Promise<boolean> {
  * 최신 DOM rect 한 번으로 합친다. 이것은 이벤트 코얼레싱이며 반복 감시가 아니다.
  */
 function requestSlotSync(state: SurfaceState, force = false): Promise<void> {
+  // 숨겨진/미개방/선커밋 중인 표면의 기하 사건은 적용할 일이 아니다. 대기열에
+  // 남겨 복귀 에지와 경쟁시키지 않고, 복귀 자체가 최신 DOM rect를 force로 한 번 소유한다.
+  if (!state.opened || state.precommitting || state.desiredVisible === false) {
+    return Promise.resolve();
+  }
   state.requested = true;
   state.force ||= force;
   const done = new Promise<void>((resolve, reject) => state.waiters.push({ resolve, reject }));
@@ -219,10 +227,10 @@ function slotViewId(slot: HTMLElement): string | null {
 /**
  * DOM 밖 표면의 배치 거래.
  *
- * 현재 native frame에 코어가 공개한 논리 이동량을 한 번 접어 목표 frame을 확정한다.
- * 문서 밖 표면은 CSS compositor와 같은 중간 프레임을 공유할 수 없으므로 glide를 가장하지
- * 않는다. 목표 DOM commit의 layout effect에서 실제 child bounds를 한 번 정착시키고 같은 최종
- * rect를 대조한다. 문서 안 표면만 있는 Electron은 이 host를 설치하지 않아 DOM glide 그대로다.
+ * 현재 공개 DOM slot에 해결기가 발행한 논리 이동량을 한 번 접어 목표 frame을 확정한다.
+ * Tauri native surface는 목표 model frame과 위치 전용 compositor animation을 DOM 커밋 전에
+ * 무장하고 같은 절대 epoch에 출발한다. 목표 DOM의 layout effect에서는 실제 slot rect와 다시
+ * 대조한다. 문서 안 표면만 있는 Electron은 이 host를 설치하지 않아 일반 DOM glide 그대로다.
  */
 export async function prepareNativeContentViewMove(
   moves: readonly LayoutMove[],
@@ -241,6 +249,10 @@ export async function prepareNativeContentViewMove(
     return [{
       state,
       before,
+      target: {
+        ...slotRect(slot),
+        x: slotRect(slot).x - Math.round(move.dx),
+      },
     }];
   });
   // 이 어댑터가 직접 연 표면만으로 전체 문서 밖 표면을 추측하지 않는다. 공개 DOM 슬롯이
@@ -266,7 +278,14 @@ export async function prepareNativeContentViewMove(
       },
     };
     slot.dispatchEvent(new CustomEvent(EXTERNAL_SURFACE_TRANSITION_EVENT, { detail }));
-    return claimed.participant ? [{ slot, participant: claimed.participant }] : [];
+    return claimed.participant ? [{
+      slot,
+      participant: claimed.participant,
+      target: {
+        ...slotRect(slot),
+        x: slotRect(slot).x - Math.round(move.dx),
+      },
+    }] : [];
   });
   if (targets.length === 0 && externalTargets.length === 0) return {
     mode: "glide",
@@ -274,47 +293,138 @@ export async function prepareNativeContentViewMove(
     cancel: () => {},
   };
 
-  for (const { state } of targets) {
+  // 비전면 WebKit의 document timeline은 정지할 수 있다. 그 시계에 DOM FLIP을 걸고 AppKit의
+  // 실시간 시계만 진행시키면 외부 표면이 DOM을 수백 px 앞선다. 공유 진행 시계가 없는 창은
+  // CSS animation을 만들지 않는다. 외부 표면은 1ms 위치 transaction을 먼저 무장하고,
+  // 목표 DOM은 다음 paint에 snap하여 같은 render-server 제출 epoch에 착지한다.
+  if (!document.hasFocus()) {
+    const startAtUnixMs = Date.now();
+    const durationMs = 1;
+    for (const { state, target } of targets) {
+      if (state.draining) await state.draining;
+      state.precommitting = true;
+      state.precommitTarget = rectKey(target);
+    }
+    try {
+      await Promise.all([
+        ...targets.map(async ({ state, target }) => {
+          await call("webview_transition_prepare", {
+            label: state.label,
+            ...target,
+            startAtUnixMs,
+            durationMs,
+          });
+          state.boundsWrites += 1;
+          state.lastRect = rectKey(target);
+        }),
+        ...externalTargets.map(({ participant, target }) =>
+          participant.prepare(target, { startAtUnixMs, durationMs })),
+      ]);
+    } catch (error) {
+      for (const { state } of targets) {
+        state.precommitting = false;
+        state.precommitTarget = "";
+      }
+      for (const { participant } of externalTargets) participant.cancel();
+      throw error;
+    }
+    let closed = false;
+    return {
+      mode: "snap",
+      commit: async () => {
+        if (closed) return;
+        closed = true;
+        try {
+          await Promise.all([
+            ...targets.map(async ({ state, target }) => {
+              const slot = findContentViewSlot(state.label, document);
+              if (!slot) throw new Error(`콘텐츠 뷰 자리가 커밋에서 사라졌습니다: ${state.label}`);
+              const rect = slotRect(slot);
+              state.precommitTarget = rectKey(rect);
+              if (rectKey(rect) !== rectKey(target)) {
+                state.lastRect = rectKey(rect);
+                state.boundsWrites += 1;
+                await call<boolean>("webview_bounds", { label: state.label, ...rect });
+              }
+            }),
+            ...externalTargets.map(({ slot, participant }) => participant.commit(slotRect(slot))),
+          ]);
+          for (const { state } of targets) settlePreparedFrame(state);
+        } catch (error) {
+          for (const { state } of targets) {
+            state.precommitting = false;
+            state.precommitTarget = "";
+          }
+          for (const { participant } of externalTargets) participant.cancel();
+          throw error;
+        }
+      },
+      cancel: () => {
+        if (closed) return;
+        closed = true;
+        for (const { state } of targets) {
+          state.precommitting = false;
+          state.precommitTarget = "";
+        }
+        for (const { state, before } of targets) {
+          state.lastRect = rectKey(before);
+          void call("webview_transition_cancel", { label: state.label, ...before }).catch(() => {});
+        }
+        for (const { participant } of externalTargets) participant.cancel();
+      },
+    };
+  }
+
+  const startAtUnixMs = Date.now() + 100;
+  const durationMs = railTravelDeclaredMs();
+  for (const { state, target } of targets) {
+    if (state.draining) await state.draining;
     state.precommitting = true;
-    // prepare 단계에는 목표 좌표를 예측하지 않는다. 빈 목표는 중간 mutation이 잠금을
-    // 조기에 풀 수 없게 하며, 실제 목표는 DOM commit의 layout effect에서만 정해진다.
-    state.precommitTarget = "";
+    state.precommitTarget = rectKey(target);
+  }
+  try {
+    await Promise.all([
+      ...targets.map(async ({ state, target }) => {
+        await call("webview_transition_prepare", {
+          label: state.label,
+          ...target,
+          startAtUnixMs,
+          durationMs,
+        });
+        state.boundsWrites += 1;
+        state.lastRect = rectKey(target);
+      }),
+      ...externalTargets.map(({ participant, target }) =>
+        participant.prepare(target, { startAtUnixMs, durationMs })),
+    ]);
+  } catch (error) {
+    for (const { state } of targets) {
+      state.precommitting = false;
+      state.precommitTarget = "";
+    }
+    for (const { participant } of externalTargets) participant.cancel();
+    throw error;
   }
   let closed = false;
   return {
-    mode: "snap",
+    mode: "glide",
+    startAtUnixMs,
     commit: async () => {
       if (closed) return;
       closed = true;
       try {
         await Promise.all([
-          ...targets.map(async ({ state, before }) => {
-            if (state.draining) await state.draining;
+          ...targets.map(async ({ state, target }) => {
             const slot = findContentViewSlot(state.label, document);
             if (!slot) throw new Error(`콘텐츠 뷰 자리가 커밋에서 사라졌습니다: ${state.label}`);
-            // 이 함수는 목표 DOM의 layout effect에서 호출된다. 따라서 계산된 dx가 아니라 지금
-            // 커밋된 공개 슬롯 rect가 좌표의 단일 진실이다. 그래야 pane 이동과 sidebar 이동이
-            // 동시에 일어나도 둘 중 하나를 빠뜨린 예측 좌표에 native surface가 정박하지 않는다.
             const rect = slotRect(slot);
             const key = rectKey(rect);
             state.precommitTarget = key;
-            // ResizeObserver·명시 bounds 같은 사건 경로가 같은 커밋 rect를 먼저 적용했으면 그
-            // ACK가 이미 거래를 충족했다. 같은 frame을 다시 쓰는 것은 의미 없는 z/compositor
-            // 자극이며 교차 클릭 한 번에 두 번 흔들리는 원인이므로 생략한다.
             if (state.lastRect === key) return;
-            // 장부를 먼저 목표로 둔다. DOM mutation이 IPC ack보다 먼저 와도 일반 bounds sync가
-            // 같은 목표를 다시 써 AppKit animation을 끊지 못한다.
+            if (key === rectKey(target)) return;
             state.lastRect = key;
             state.boundsWrites += 1;
-            try {
-              await call<boolean>("webview_bounds", {
-                label: state.label,
-                ...rect,
-              });
-            } catch (error) {
-              state.lastRect = rectKey(before);
-              throw error;
-            }
+            await call<boolean>("webview_bounds", { label: state.label, ...rect });
           }),
           ...externalTargets.map(({ slot, participant }) => participant.commit(slotRect(slot))),
         ]);
@@ -335,7 +445,11 @@ export async function prepareNativeContentViewMove(
       for (const { state } of targets) {
         state.precommitting = false;
         state.precommitTarget = "";
-        void requestSlotSync(state, true).catch(() => {});
+        const target = targets.find((item) => item.state === state);
+        if (target) {
+          state.lastRect = rectKey(target.before);
+          void call("webview_transition_cancel", { label: state.label, ...target.before }).catch(() => {});
+        }
       }
       for (const { participant } of externalTargets) participant.cancel();
     },
@@ -442,19 +556,43 @@ export const nativeHost: ContentViewHost = {
     if (state) state.boundsWrites += 1;
     return result;
   },
-  async visible(label, visible, focus) {
+  visible(label, visible, focus) {
     const state = stateOf(label);
-    state.desiredVisible = visible;
-    if (!state.opened) return;
-    if (!visible) {
-      await call("webview_visible", { label, visible: false, focus });
-      state.appliedVisible = false;
-      return;
-    }
-    if (await restoreIfDetached(state)) return;
-    await requestSlotSync(state);
-    await call("webview_visible", { label, visible: true, focus });
-    state.appliedVisible = true;
+    const operation = (async () => {
+      const returningFromHidden = state.desiredVisible === false && visible;
+      state.desiredVisible = visible;
+      if (!state.opened) return;
+      if (!visible) {
+        await call("webview_visible", { label, visible: false, focus });
+        state.appliedVisible = false;
+        return;
+      }
+      if (await restoreIfDetached(state)) return;
+      // 숨김 동안 AppKit 부모가 child frame을 바꿔도 JS lastRect에는 보이지 않는다.
+      // 복귀 에지는 현재 DOM을 권위로 한 번 재적용한 뒤 표시한다.
+      if (state.draining) await state.draining;
+      await requestSlotSync(state, returningFromHidden);
+      await call("webview_visible", { label, visible: true, focus });
+      state.appliedVisible = true;
+    })();
+    state.visibilityPending = operation;
+    void operation.then(() => {
+      if (state.visibilityPending === operation) state.visibilityPending = null;
+    }, () => {
+      if (state.visibilityPending === operation) state.visibilityPending = null;
+    });
+    return operation;
+  },
+  async presentationSettled(labels) {
+    const requested = new Set(labels);
+    const surfaces = [...composition.surfaces.values()].filter((state) => requested.has(state.label));
+    await Promise.all(surfaces.map(async (state) => {
+      if (state.visibilityPending) await state.visibilityPending;
+      if (state.draining) await state.draining;
+    }));
+    await Promise.all(surfaces
+      .filter((state) => state.opened && state.desiredVisible !== false)
+      .map((state) => call("webview_presented", { label: state.label })));
   },
   history: (label, delta) => call("webview_history", { label, delta }),
   stop: (label) => call("webview_stop", { label }),
@@ -464,6 +602,16 @@ export const nativeHost: ContentViewHost = {
   sendInput: async (label) => {
     throw new Error(`이 콘텐츠 뷰 구현은 포인터 입력 주입 통로가 없습니다: ${label}`);
   },
+  wheel: (label, x, y, dx, dy) => call("webview_send_wheel", {
+    label,
+    x: Math.round(x),
+    y: Math.round(y),
+    dx: Math.round(dx),
+    dy: Math.round(dy),
+  }),
+  captureFull: (label, path, width, height) => call("webview_capture_full", {
+    label, path, width, height,
+  }),
   typeText: (label, text) => call("webview_type_text", { label, text }),
   injectScript: (label, code, phase) => {
     void call("webview_inject_script", { label, code, phase });

@@ -10,7 +10,11 @@ use objc2_app_kit::{
     NSAutoresizingMaskOptions, NSBox, NSBoxType, NSColor, NSTitlePosition, NSView,
     NSViewLayerContentsPlacement, NSViewLayerContentsRedrawPolicy, NSWindowOrderingMode,
 };
-use objc2_foundation::{NSArray, NSNumber, NSPoint, NSString};
+use objc2_foundation::{NSNumber, NSPoint, NSString};
+use objc2_quartz_core::{
+    CABasicAnimation, CACurrentMediaTime, CAMediaTiming, CAMediaTimingFunction, CATransaction,
+    kCAFillModeBackwards,
+};
 use soksak_core::native_surface_ledger::{NativeSurfaceHosts, NativeSurfaceLedger};
 use tauri::Manager;
 
@@ -187,35 +191,6 @@ pub fn set_overlay(label: &str, active: bool) {
             w.overlay = active;
         }
     }
-    if active {
-        place_engine_host(label, false);
-        lower_window_surface_hosts(label);
-    } else {
-        place_engine_host(label, true);
-        raise_window_surface_hosts(label);
-    }
-}
-
-fn place_engine_host(label: &str, above_main: bool) {
-    let (host_ptr, main_ptr) = LAYERS
-        .lock()
-        .ok()
-        .and_then(|layers| layers.get(label).map(|w| (w.host_ptr, w.main_ptr)))
-        .unwrap_or((0, 0));
-    if host_ptr == 0 || main_ptr == 0 {
-        return;
-    }
-    let main = unsafe { &*(main_ptr as *const NSView) };
-    let Some(parent) = (unsafe { main.superview() }) else { return };
-    let siblings = parent.subviews().into_iter().collect::<Vec<_>>();
-    let ptrs = siblings.iter().map(|v| Retained::as_ptr(v) as usize).collect::<Vec<_>>();
-    let ordered_ptrs = super::surface_sibling_order(&ptrs, host_ptr, main_ptr, above_main);
-    if ordered_ptrs == ptrs { return; }
-    let ordered = ordered_ptrs
-        .iter()
-        .filter_map(|ptr| siblings.iter().find(|v| Retained::as_ptr(v) as usize == *ptr).cloned())
-        .collect::<Vec<_>>();
-    parent.setSubviews(&NSArray::from_retained_slice(&ordered));
 }
 
 // 창의 현재 홀 목록 — 관측면(ui.holes)이 읽는다. 계약을 눈이 아니라 값으로 확인한다.
@@ -267,87 +242,113 @@ pub fn surface_host_ptr(label: &str) -> usize {
     SURFACE_HOSTS.ptr(label).unwrap_or(0)
 }
 
-fn place_surface_host(label: &str, mode: NSWindowOrderingMode) {
-    let Some(host) = SURFACE_HOSTS.host(label) else {
-        return;
-    };
-    let main_ptr = LAYERS
-        .lock()
-        .ok()
-        .and_then(|layers| {
-            layers.get(&host.window).map(|window| {
-                if mode == NSWindowOrderingMode::Above && window.overlay {
-                    0
-                } else {
-                    window.main_ptr
-                }
-            })
-        })
-        .unwrap_or(0);
-    if main_ptr == 0 {
-        return;
+const LAYOUT_POSITION_KEY: &str = "soksak-layout-position-x";
+
+fn add_layout_position(view: &NSView, dx: f64, start_delay: f64, duration: f64) -> Result<(), String> {
+    let layer = view.layer().ok_or_else(|| "native surface host layer가 없다".to_string())?;
+    let key_path = NSString::from_str("position.x");
+    let animation = CABasicAnimation::animationWithKeyPath(Some(&key_path));
+    // setFrame 뒤 model position이 목표다. 시작 presentation은 같은 좌표계에서 dx만큼
+    // 되감는다. transform.translation을 겹치면 AppKit frame geometry와 이동량이 중복된다.
+    let target_x = layer.position().x;
+    let from = NSNumber::new_f64(target_x + dx);
+    let to = NSNumber::new_f64(target_x);
+    unsafe {
+        animation.setFromValue(Some(&*from));
+        animation.setToValue(Some(&*to));
     }
-    let main_view = unsafe { &*(main_ptr as *const NSView) };
-    let Some(parent) = (unsafe { main_view.superview() }) else {
-        return;
-    };
-    // AppKit이 기존 subview의 순서 변경을 명시적으로 보장하는 `subviews` 계약을 쓴다.
-    // addSubview(_:positioned:relativeTo:)는 새 subview 삽입 API라 이미 붙은 host를 호출했을 때
-    // 실제 sibling 배열이 바뀌지 않았다. 배열은 back-to-front이고, setSubviews는 기존 view를
-    // 떼었다 붙이지 않은 채 필요한 항목만 이동한다.
-    let siblings = parent.subviews().into_iter().collect::<Vec<_>>();
-    let sibling_ptrs = siblings
-        .iter()
-        .map(|view| (&**view as *const NSView) as usize)
-        .collect::<Vec<_>>();
-    let ordered_ptrs = super::surface_sibling_order(
-        &sibling_ptrs,
-        host.ptr,
-        main_ptr,
-        mode == NSWindowOrderingMode::Above,
-    );
-    if ordered_ptrs == sibling_ptrs {
-        return;
-    }
-    let ordered = ordered_ptrs
-        .iter()
-        .filter_map(|ptr| {
-            siblings
-                .iter()
-                .find(|view| (&***view as *const NSView) as usize == *ptr)
-                .cloned()
-        })
-        .collect::<Vec<_>>();
-    parent.setSubviews(&NSArray::from_retained_slice(&ordered));
+    // CAMediaTiming.beginTime은 대상 layer의 local time이다. 전역 media time을 그대로 넣으면
+    // 부모 timing offset만큼 DOM epoch보다 먼저/늦게 출발한다.
+    let local_now = layer.convertTime_fromLayer(CACurrentMediaTime(), None);
+    animation.setBeginTime(local_now + start_delay);
+    animation.setDuration(duration);
+    animation.setFillMode(unsafe { kCAFillModeBackwards });
+    animation.setRemovedOnCompletion(true);
+    animation.setTimingFunction(Some(&CAMediaTimingFunction::functionWithControlPoints(
+        0.4, 0.0, 0.2, 1.0,
+    )));
+    layer.addAnimation_forKey(&animation, Some(&NSString::from_str(LAYOUT_POSITION_KEY)));
+    Ok(())
 }
 
-pub fn raise_surface_host(label: &str) {
-    place_surface_host(label, NSWindowOrderingMode::Above);
-    // overlay 종료 뒤에는 veil도 host 바로 위로 되돌려 하나의 native surface처럼 복원한다.
+/**
+ * frame ACK가 단지 NSView 숫자 변경의 ACK에 머물지 않게 자식 레이아웃·표시를 같이
+ * 정착시킨다. WKWebView는 내부 원격 표시 트리를 가지므로 host/child frame만 바꾸고
+ * 돌아오면 직후 WindowServer 캡처에 직전 viewport 프레임이 남을 수 있다.
+ */
+pub fn settle_surface_frame(view: &NSView) {
+    unsafe {
+        view.layoutSubtreeIfNeeded();
+        view.setNeedsDisplay(true);
+        view.displayIfNeeded();
+    }
+}
+
+/**
+ * 목표 model frame을 먼저 세우고 위치 transform만 공통 epoch에 표시한다.
+ * 크기 보간은 WKWebView raster를 늘이므로 거절한다. 호출자는 크기 변화 거래를 별도로 정착시킨다.
+ */
+pub fn prepare_surface_host_translation(
+    label: &str,
+    child: &NSView,
+    target: objc2_foundation::NSRect,
+    start_at_unix_ms: f64,
+    duration_ms: f64,
+) -> Result<(), String> {
+    let host_ptr = surface_host_ptr(label);
+    if host_ptr == 0 { return Err(format!("native surface host가 없다: {label}")); }
+    let host = unsafe { &*(host_ptr as *const NSView) };
+    let before = host.frame();
+    if (before.size.width - target.size.width).abs() > 0.5
+        || (before.size.height - target.size.height).abs() > 0.5
+    {
+        return Err(format!(
+            "위치 전용 거래에 크기 변화가 들어왔다: {}x{} -> {}x{}",
+            before.size.width, before.size.height, target.size.width, target.size.height,
+        ));
+    }
+    let dx = before.origin.x - target.origin.x;
+    let now_unix_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs_f64() * 1000.0)
+        .unwrap_or(start_at_unix_ms);
+    let start_delay = (start_at_unix_ms - now_unix_ms).max(0.0) / 1000.0;
+    let duration = duration_ms.max(1.0) / 1000.0;
+
+    CATransaction::begin();
+    CATransaction::setDisableActions(true);
+    host.setFrame(target);
+    child.setFrame(objc2_foundation::NSRect::new(
+        objc2_foundation::NSPoint::new(0.0, 0.0),
+        target.size,
+    ));
+    settle_surface_frame(child);
     apply_surface_dim(label);
-}
-
-pub fn lower_surface_host(label: &str) {
-    place_surface_host(label, NSWindowOrderingMode::Below);
-    // DOM overlay가 surface를 덮는 동안 veil만 main 위에 남아 모달을 가리면 안 된다.
+    let animation_result = add_layout_position(host, dx, start_delay, duration);
     DIM_VEILS.with(|cell| {
         if let Some(veil) = cell.borrow().get(label) {
             let view: &NSView = veil;
-            view.setHidden(true);
+            if !view.isHidden() {
+                let _ = add_layout_position(view, dx, start_delay, duration);
+            }
         }
     });
+    CATransaction::commit();
+    animation_result
 }
 
-pub fn lower_window_surface_hosts(window_label: &str) {
-    for label in SURFACE_HOSTS.labels_in(window_label) {
-        lower_surface_host(&label);
+pub fn cancel_surface_host_translation(label: &str) {
+    let key = NSString::from_str(LAYOUT_POSITION_KEY);
+    if let Some(host_ptr) = SURFACE_HOSTS.ptr(label) {
+        let host = unsafe { &*(host_ptr as *const NSView) };
+        if let Some(layer) = host.layer() { layer.removeAnimationForKey(&key); }
     }
-}
-
-pub fn raise_window_surface_hosts(window_label: &str) {
-    for label in SURFACE_HOSTS.labels_in(window_label) {
-        raise_surface_host(&label);
-    }
+    DIM_VEILS.with(|cell| {
+        if let Some(veil) = cell.borrow().get(label) {
+            let view: &NSView = veil;
+            if let Some(layer) = view.layer() { layer.removeAnimationForKey(&key); }
+        }
+    });
 }
 
 // child WKWebView를 전용 layer-backed NSView에 넣는다. host frame이 화면 좌표의 단일 진실이고
@@ -390,7 +391,7 @@ pub fn adopt_surface_host<R: tauri::Runtime>(
         configure_surface_resize(child);
         parent.addSubview_positioned_relativeTo(
             &host,
-            NSWindowOrderingMode::Above,
+            NSWindowOrderingMode::Below,
             Some(main_view),
         );
         child.setFrame(NSRect::new(NSPoint::new(0.0, 0.0), frame.size));
@@ -660,11 +661,11 @@ pub fn ensure_engine_host(label: &str) -> Option<usize> {
             NSAutoresizingMaskOptions::ViewWidthSizable
                 | NSAutoresizingMaskOptions::ViewHeightSizable,
         );
-        // 엔진 픽셀은 메인 webview 위에 선다. 자식 bounds 밖과 입력-투과 OSR 자식은
-        // EngineSurfaceHost.hitTest=nil 계약으로 DOM 입력을 그대로 받는다.
+        // 엔진 픽셀은 항상 메인 DOM 아래에 둔다. 보이는 범위의 단일 진실은 투명한
+        // data-content-view-body 슬롯이며, 이동 중에도 사이드바·버튼·모달을 덮을 수 없다.
         content.addSubview_positioned_relativeTo(
             host_view,
-            NSWindowOrderingMode::Above,
+            NSWindowOrderingMode::Below,
             Some(main_view),
         );
         let host_ptr = Retained::as_ptr(&host) as usize;

@@ -88,20 +88,22 @@ describe("Tauri native-composition ownership", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("native surface 이동은 bounds만 쓰고 z-order handoff나 frame animation을 만들지 않는다", () => {
+  it("native surface 위치 합성은 Tauri 어댑터만 소유하고 코어·Electron으로 새지 않는다", () => {
     const sources = [
       "frameworks/tauri/src/webview.rs",
+      "frameworks/tauri/src/webview/layer.rs",
       "frameworks/tauri/src/lib.rs",
       "frameworks/tauri/Cargo.toml",
     ].map((file) => readFileSync(resolve(ROOT, file), "utf8")).join("\n");
     expect(sources).not.toMatch(/webview_surface_handoff/);
-    expect(sources).not.toMatch(/webview_animate_bounds/);
-    expect(sources).not.toMatch(/CABasicAnimation|CAAnimationDelegate|CATransaction/);
+    expect(sources).toMatch(/webview_transition_prepare/);
+    expect(sources).toMatch(/CABasicAnimation|CATransaction/);
+    expect(sources).toMatch(/convertTime_fromLayer/);
     const outsideTauri = productionFiles(SRC)
       .filter((file) => !relative(SRC, file).startsWith("framework/tauri/"))
       .map((file) => readFileSync(file, "utf8"))
       .join("\n");
-    expect(outsideTauri).not.toMatch(/webview_animate_bounds|CABasicAnimation|CATransaction/);
+    expect(outsideTauri).not.toMatch(/webview_transition_prepare|CABasicAnimation|CATransaction/);
   });
 
   it("WKWebView 자체가 아니라 전용 layer-backed surface host만 배치한다", () => {
@@ -113,28 +115,23 @@ describe("Tauri native-composition ownership", () => {
     expect(source).not.toMatch(/view\.animator\(\)\.setFrame/);
   });
 
-  it("surface host의 정상 z-order는 고정하고 overlay 상태만 명시적으로 전환한다", () => {
-    // 명령 진입점과 AppKit 바인딩은 물리적으로 분리되어 있다. 어느 한 파일만 읽으면
-    // 구현이 올바르게 모듈화된 순간 계약이 사라졌다고 오판한다. 두 파일을 하나의 어댑터
-    // 표면으로 읽되, 아래 z-order 기준 자체는 그대로 유지한다.
+  it("surface host z-order는 Tauri DOM-hole 합성기가 영구적으로 DOM 아래에 둔다", () => {
     const source = [
       "frameworks/tauri/src/webview.rs",
       "frameworks/tauri/src/webview/layer.rs",
     ].map((file) => readFileSync(resolve(ROOT, file), "utf8")).join("\n");
-    expect(source).toMatch(/raise_surface_host/);
-    expect(source).toMatch(/lower_surface_host/);
     expect(source).not.toMatch(/webview_surface_handoff/);
-    expect(source).toMatch(/if active \{[\s\S]*lower_window_surface_hosts/);
-    expect(source).toMatch(/else \{[\s\S]*raise_window_surface_hosts/);
+    expect(source).not.toMatch(/place_window_surface_hosts\(label, !active\)/);
+    expect(source).toMatch(/NSWindowOrderingMode::Below/);
+    expect(source).not.toMatch(/surface-occluded/);
   });
 
-  it("Tauri engine host는 픽셀만 DOM 위에 두고 빈 영역 입력은 DOM에 돌려준다", () => {
+  it("Tauri engine host는 이동 중에도 DOM 아래에서 투명 content hole로만 보인다", () => {
     const source = readFileSync(resolve(ROOT, "frameworks/tauri/src/webview/layer.rs"), "utf8");
     expect(source).toMatch(/struct EngineSurfaceHost/);
     expect(source).toMatch(/if hit == this \{ std::ptr::null_mut\(\) \}/);
-    expect(source).toMatch(/host_view,[\s\S]*NSWindowOrderingMode::Above,[\s\S]*Some\(main_view\)/);
-    expect(source).toMatch(/if active \{[\s\S]*place_engine_host\(label, false\)/);
-    expect(source).toMatch(/else \{[\s\S]*place_engine_host\(label, true\)/);
+    expect(source).toMatch(/host_view,[\s\S]*NSWindowOrderingMode::Below,[\s\S]*Some\(main_view\)/);
+    expect(source).not.toMatch(/place_window_surface_hosts\(label, !active\)/);
   });
 
   it("native bounds command는 main-thread frame 설치 ACK 뒤에만 반환한다", () => {

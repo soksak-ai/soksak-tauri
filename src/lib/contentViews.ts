@@ -27,6 +27,8 @@ export interface ContentViewHost {
    */
   bounds(label: string, x: number, y: number, w: number, h: number): Promise<boolean>;
   visible(label: string, visible: boolean, focus?: boolean): Promise<void>;
+  /** 지정한 뷰의 좌표·가시성 변경이 실제 표시 프레임에 반영될 때 완료된다. */
+  presentationSettled(labels: readonly string[]): Promise<void>;
   history(label: string, delta: number): Promise<void>;
   stop(label: string): Promise<void>;
   zoom(label: string, factor: number): Promise<number>;
@@ -46,6 +48,9 @@ export interface ContentViewHost {
    * 못 하는 구현은 이름을 달고 거절한다. 조용히 성공하면 부른 쪽은 눌렀다고 믿는다.
    */
   sendInput(label: string, x: number, y: number): Promise<void>;
+  /** 콘텐츠 뷰 안으로 실제 휠 입력을 넣는다 — 뷰 좌표와 DOM WheelEvent 부호(+아래/+오른쪽). */
+  wheel(label: string, x: number, y: number, dx: number, dy: number): Promise<void>;
+  captureFull(label: string, path: string, width: number, height: number): Promise<{ path: string; bytes: number }>;
   /** 현재 포커스된 편집 요소에 확정 문자열을 엔진의 텍스트 입력 경로로 넣는다. */
   typeText(label: string, text: string): Promise<void>;
 }

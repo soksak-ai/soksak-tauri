@@ -1,18 +1,31 @@
-#[cfg(target_os = "macos")]
-use super::surface_sibling_order;
-
-#[cfg(target_os = "macos")]
 #[test]
-fn surface_host_order_is_rebuilt_immediately_around_main_view() {
-    let siblings = [10, 20, 30, 40];
-    assert_eq!(
-        surface_sibling_order(&siblings, 10, 40, true),
-        vec![20, 30, 40, 10]
-    );
-    assert_eq!(
-        surface_sibling_order(&siblings, 10, 40, false),
-        vec![20, 30, 10, 40]
-    );
+fn external_surface_hosts_are_always_below_the_dom_hole_plane() {
+    let source = include_str!("layer.rs");
+    let engine_host = source
+        .split_once("pub fn ensure_engine_host")
+        .expect("engine host constructor exists")
+        .1;
+    assert!(engine_host.contains("NSWindowOrderingMode::Below"));
+    assert!(!source.contains("place_window_surface_hosts(label, !active)"));
+    let adopted_host = source
+        .split_once("pub fn adopt_surface_host")
+        .expect("WKWebView host constructor exists")
+        .1;
+    assert!(adopted_host.contains("NSWindowOrderingMode::Below"));
+}
+
+#[test]
+fn native_layout_motion_animates_model_position_without_stacking_a_transform() {
+    let source = include_str!("layer.rs");
+    let motion = source
+        .split_once("fn add_layout_position")
+        .expect("position-only CA helper exists")
+        .1
+        .split_once("pub fn prepare_surface_host_translation")
+        .expect("helper boundary exists")
+        .0;
+    assert!(motion.contains("position.x"));
+    assert!(!motion.contains("transform.translation.x"));
 }
 
 #[test]
@@ -37,4 +50,40 @@ fn bounds_command_is_geometry_only() {
         !body.contains("webview_visible"),
         "bounds must not enter the visibility command path"
     );
+}
+
+#[test]
+fn every_native_frame_commit_settles_child_layout_and_display() {
+    let layer = include_str!("layer.rs");
+    let settle = layer
+        .split_once("pub fn settle_surface_frame")
+        .expect("native frame settle helper exists")
+        .1
+        .split_once("pub fn prepare_surface_host_translation")
+        .expect("settle helper boundary exists")
+        .0;
+    assert!(settle.contains("layoutSubtreeIfNeeded"));
+    assert!(settle.contains("setNeedsDisplay(true)"));
+    assert!(settle.contains("displayIfNeeded"));
+
+    let direct = include_str!("../webview.rs")
+        .split_once("fn set_child_frame(")
+        .expect("direct frame path exists")
+        .1
+        .split_once("fn prepare_child_frame_transition(")
+        .expect("direct frame path boundary exists")
+        .0;
+    assert!(direct.contains("settle_surface_frame(view)"));
+    assert!(direct.contains("CATransaction::begin()"));
+    assert!(direct.contains("CATransaction::setDisableActions(true)"));
+    assert!(direct.contains("CATransaction::commit()"));
+
+    let transition = layer
+        .split_once("pub fn prepare_surface_host_translation")
+        .expect("transition frame path exists")
+        .1
+        .split_once("pub fn cancel_surface_host_translation")
+        .expect("transition frame path boundary exists")
+        .0;
+    assert!(transition.contains("settle_surface_frame(child)"));
 }

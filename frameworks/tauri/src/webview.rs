@@ -4,16 +4,14 @@
 // emit(폴링 없음). 위치/크기는 프론트 레이아웃(slot rect)을 따라 webview_bounds 로 동기화.
 //
 // 레이어 원칙(명시적 멀티 웹뷰 경계 — mod layer):
-// browser child는 정상 상태에서 메인 DOM 웹뷰 앞에 고정한다. 이동은 bounds만 바꾸며 z-order를
-// 왕복하지 않는다. DOM overlay가 활성인 동안에만 child를 메인 뒤로 내리고, 종료 시 다시 앞면으로
-// 복원한다. 투명 슬롯은 논리적 자리와 hit-test 감사면이지 이동 중 합성을 가장하는 수단이 아니다.
+// browser child는 메인 DOM 웹뷰 아래에 고정하고 투명 content slot을 통해서만 보인다.
+// 이동·모달 여부로 z-order를 왕복하지 않는다. 따라서 네이티브 표면이 전이 중 사이드바·버튼·
+// 모달을 덮지 않으며, Electron의 순수 DOM 배치에는 이 Tauri 합성 규칙이 들어가지 않는다.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde::{Deserialize, Serialize};
 use soksak_core::geometry::{rect_delta, scale_rect, top_left_rect_to_parent_frame};
-#[cfg(target_os = "macos")]
-use soksak_core::native_surface_ledger::surface_sibling_order;
 use soksak_core::native_surface_ledger::{NativeSurfaceLayout, SurfaceHole as Hole};
 
 static SURFACE_LAYOUT: std::sync::LazyLock<NativeSurfaceLayout> = std::sync::LazyLock::new(NativeSurfaceLayout::default);
@@ -52,6 +50,15 @@ pub async fn webview_type_text(app: AppHandle, label: String, text: String) -> R
                 let _ = tx.try_send(Err("WKWebView가 창에 붙어 있지 않습니다".to_string()));
                 return;
             }
+            // 문서의 activeElement와 NSWindow firstResponder는 별개의 상태다. 특히 key가 아닌
+            // 자동화 창에서는 eval로 input.focus()를 해도 window responder가 메인 UI 웹뷰에
+            // 남을 수 있다. 대상 label로 찾은 child를 명시적으로 responder chain에 연결한다.
+            // makeFirstResponder는 창을 key/front로 만들지 않으므로 사용자의 포커스를 빼앗지 않는다.
+            let accepted: bool = msg_send![&*window, makeFirstResponder: &*wk];
+            if !accepted {
+                let _ = tx.try_send(Err("child 웹뷰를 입력 responder로 지정하지 못했습니다".to_string()));
+                return;
+            }
             let responder: *mut AnyObject = msg_send![&*window, firstResponder];
             if responder.is_null() {
                 let _ = tx.try_send(Err("child 웹뷰에 포커스된 입력자가 없습니다".to_string()));
@@ -84,6 +91,206 @@ pub async fn webview_type_text(app: AppHandle, label: String, text: String) -> R
 #[tauri::command]
 pub async fn webview_type_text(_app: AppHandle, _label: String, _text: String) -> Result<(), String> {
     Err("webview_type_text는 현재 macOS 입력 구현이 필요합니다".into())
+}
+
+/// child WKWebView에 실제 scroll-wheel 사건을 전달한다.
+///
+/// x/y는 WKWebView의 좌상단 기준 CSS px이고 dx/dy의 부호는 DOM WheelEvent와 같다
+/// (+오른쪽/+아래). AppKit/Quartz의 휠 부호는 반대이므로 이 경계에서 한 번만 변환한다.
+/// 창을 key/front로 만들지 않고 지정된 child에 직접 보낸다.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub async fn webview_send_wheel(
+    app: AppHandle,
+    label: String,
+    x: i32,
+    y: i32,
+    dx: i32,
+    dy: i32,
+) -> Result<(), String> {
+    use core_graphics::event::{CGEvent, ScrollEventUnit};
+    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+    use core_graphics::geometry::CGPoint;
+    use foreign_types::ForeignType;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let webview = app
+        .get_webview(&label)
+        .ok_or_else(|| format!("webview 없음: {label}"))?;
+    let (tx, rx) = mpsc::sync_channel::<Result<(), String>>(1);
+    webview
+        .with_webview(move |platform| unsafe {
+            use objc2::runtime::AnyObject;
+            use objc2::msg_send;
+            use objc2_foundation::{NSPoint, NSRect};
+
+            let wk = platform.inner() as *mut AnyObject;
+            if wk.is_null() {
+                let _ = tx.try_send(Err("WKWebView 핸들이 비어 있습니다".to_string()));
+                return;
+            }
+            let window: *mut AnyObject = msg_send![&*wk, window];
+            if window.is_null() {
+                let _ = tx.try_send(Err("WKWebView가 창에 붙어 있지 않습니다".to_string()));
+                return;
+            }
+
+            // 명령 좌표(좌상단)를 NSView local 좌표로 바꾸고, 다시 Quartz 전역 좌표로 바꾼다.
+            // 이 위치가 있어야 문서 전체뿐 아니라 포인터 아래의 중첩 스크롤 영역도 같은 입력을 받는다.
+            let bounds: NSRect = msg_send![&*wk, bounds];
+            let flipped: bool = msg_send![&*wk, isFlipped];
+            let local = NSPoint::new(
+                x as f64,
+                if flipped { y as f64 } else { bounds.size.height - y as f64 },
+            );
+            let nil_view: *mut AnyObject = std::ptr::null_mut();
+            let window_point: NSPoint = msg_send![&*wk, convertPoint: local, toView: nil_view];
+            let screen_point: NSPoint = msg_send![&*window, convertPointToScreen: window_point];
+            let screen_class = objc2::class!(NSScreen);
+            let main_screen: *mut AnyObject = msg_send![screen_class, mainScreen];
+            if main_screen.is_null() {
+                let _ = tx.try_send(Err("주 화면 좌표계를 찾지 못했습니다".to_string()));
+                return;
+            }
+            let main_frame: NSRect = msg_send![&*main_screen, frame];
+
+            let source = match CGEventSource::new(CGEventSourceStateID::HIDSystemState) {
+                Ok(source) => source,
+                Err(()) => {
+                    let _ = tx.try_send(Err("CGEventSource 생성 실패".to_string()));
+                    return;
+                }
+            };
+            let event = match CGEvent::new_scroll_event(
+                source,
+                ScrollEventUnit::PIXEL,
+                2,
+                dy.saturating_neg(),
+                dx.saturating_neg(),
+                0,
+            ) {
+                Ok(event) => event,
+                Err(()) => {
+                    let _ = tx.try_send(Err("scroll CGEvent 생성 실패".to_string()));
+                    return;
+                }
+            };
+            event.set_location(CGPoint::new(
+                screen_point.x,
+                main_frame.size.height - screen_point.y,
+            ));
+            let event_class = objc2::class!(NSEvent);
+            let event_ref = event.as_ptr().cast::<std::ffi::c_void>();
+            let ns_event: *mut AnyObject = msg_send![event_class, eventWithCGEvent: event_ref];
+            if ns_event.is_null() {
+                let _ = tx.try_send(Err("NSEvent 변환 실패".to_string()));
+                return;
+            }
+            let _: () = msg_send![&*wk, scrollWheel: &*ns_event];
+            let _ = tx.try_send(Ok(()));
+        })
+        .map_err(|error| error.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        rx.recv_timeout(Duration::from_secs(3))
+            .map_err(|_| "휠 입력자 응답 시간 초과".to_string())?
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FullCaptureResult {
+    path: String,
+    bytes: usize,
+}
+
+/// 지정 child 문서의 전체 rect를 WebKit PDF API로 한 장 생성하고 PNG로 래스터화한다.
+/// WKSnapshotConfiguration은 viewport bounds 밖을 담지 못하므로 full-page 근거로 쓰지 않는다.
+/// 스크롤 위치를 변경하거나 viewport 조각을 이어 붙이지 않는다.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub async fn webview_capture_full(
+    app: AppHandle,
+    label: String,
+    path: String,
+    width: f64,
+    height: f64,
+) -> Result<FullCaptureResult, String> {
+    use std::sync::mpsc;
+    use std::time::Duration;
+    if !width.is_finite() || !height.is_finite() || width <= 0.0 || height <= 0.0 {
+        return Err("전체 캡처 문서 크기가 유효하지 않습니다".into());
+    }
+    let webview = app.get_webview(&label).ok_or_else(|| format!("webview 없음: {label}"))?;
+    let output = path.clone();
+    let (tx, rx) = mpsc::sync_channel::<Result<usize, String>>(1);
+    webview.with_webview(move |platform| unsafe {
+        use block2::RcBlock;
+        use objc2::{msg_send, runtime::AnyObject};
+        use objc2_foundation::{NSPoint, NSRect, NSSize};
+
+        let wk = platform.inner() as *mut AnyObject;
+        let config: *mut AnyObject = msg_send![objc2::class!(WKPDFConfiguration), new];
+        if config.is_null() {
+            let _ = tx.try_send(Err("WKPDFConfiguration 생성 실패".into()));
+            return;
+        }
+        let rect = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(width, height));
+        let _: () = msg_send![&*config, setRect: rect];
+        let block = RcBlock::new(move |data: *mut AnyObject, error: *mut AnyObject| {
+            let result = {
+                if !error.is_null() {
+                    let description: *mut AnyObject = msg_send![&*error, localizedDescription];
+                    Err(format!("WebKit 전체 PDF 실패: {:?}", description))
+                } else if data.is_null() {
+                    Err("WebKit 전체 PDF가 비었습니다".into())
+                } else {
+                    let image: *mut AnyObject = msg_send![objc2::class!(NSImage), alloc];
+                    let image: *mut AnyObject = msg_send![&*image, initWithData: &*data];
+                    if image.is_null() { return tx.try_send(Err("WebKit PDF 래스터 이미지 생성 실패".into())).unwrap_or(()); }
+                    let tiff: *mut AnyObject = msg_send![&*image, TIFFRepresentation];
+                    let rep: *mut AnyObject = msg_send![objc2::class!(NSBitmapImageRep), imageRepWithData: tiff];
+                    let props: *mut AnyObject = msg_send![objc2::class!(NSDictionary), dictionary];
+                    let png: *mut AnyObject = msg_send![&*rep, representationUsingType: 4usize, properties: props];
+                    if png.is_null() { Err("WebKit PDF PNG 변환 실패".into()) } else {
+                        let len: usize = msg_send![&*png, length];
+                        let bytes: *const u8 = msg_send![&*png, bytes];
+                        let slice = std::slice::from_raw_parts(bytes, len);
+                        std::fs::write(&output, slice).map(|_| len).map_err(|e| e.to_string())
+                    }
+                }
+            };
+            let _ = tx.try_send(result);
+        });
+        let _: () = msg_send![&*wk, createPDFWithConfiguration: &*config, completionHandler: &*block];
+    }).map_err(|error| error.to_string())?;
+    let bytes = tauri::async_runtime::spawn_blocking(move || {
+        rx.recv_timeout(Duration::from_secs(20)).map_err(|_| "전체 캡처 응답 시간 초과".to_string())?
+    }).await.map_err(|error| error.to_string())??;
+    Ok(FullCaptureResult { path, bytes })
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+pub async fn webview_capture_full(
+    _app: AppHandle, _label: String, _path: String, _width: f64, _height: f64,
+) -> Result<FullCaptureResult, String> {
+    Err("webview_capture_full은 현재 macOS 구현이 필요합니다".into())
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+pub async fn webview_send_wheel(
+    _app: AppHandle,
+    _label: String,
+    _x: i32,
+    _y: i32,
+    _dx: i32,
+    _dy: i32,
+) -> Result<(), String> {
+    Err("webview_send_wheel은 현재 macOS 입력 구현이 필요합니다".into())
 }
 
 #[derive(Clone, Serialize)]
@@ -409,14 +616,6 @@ pub fn webview_overlay_active(window: tauri::Window, active: bool) {
     // window = 호출 창(MW2 — 자동 인지). 그 창의 오버레이 게이트만 갱신(프론트 label 전달 불요).
     #[cfg(target_os = "macos")]
     layer::set_overlay(window.label(), active);
-    // 엔진 사이드카(예: Chromium)의 native child 는 코어 layer 시스템 밖이라 오버레이 시 DOM 모달
-    // 위로 뚫고 올라온다 → 같은 호스트 사실(surface-occluded)을 로드된 모듈 전부에 통지해 모듈이
-    // 자기 surface 를 숨김/복원한다(코어는 의미 모름, relay 만). 로드 모듈 0 이면 no-op.
-    crate::sidecar::notify_all(&serde_json::json!({
-        "type": "surface-occluded",
-        "window": window.label(),
-        "occluded": active,
-    }));
     #[cfg(not(target_os = "macos"))]
     let _ = (window, active);
 }
@@ -894,14 +1093,19 @@ fn set_child_frame(
                 bounds,
             );
             let frame = NSRect::new(NSPoint::new(x, y), NSSize::new(w, h));
+            objc2_quartz_core::CATransaction::begin();
+            objc2_quartz_core::CATransaction::setDisableActions(true);
             if host_ptr != 0 {
                 let host = &*(host_ptr as *const NSView);
                 host.setFrame(frame);
                 view.setFrame(NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(w, h)));
+                layer::settle_surface_frame(view);
                 layer::set_surface_dim(&label, layer::surface_dim(&label));
             } else {
                 view.setFrame(frame);
+                layer::settle_surface_frame(view);
             }
+            objc2_quartz_core::CATransaction::commit();
             Ok(())
         })();
         let _ = applied_tx.send(applied);
@@ -910,6 +1114,52 @@ fn set_child_frame(
     applied_rx
         .recv_timeout(std::time::Duration::from_secs(1))
         .map_err(|error| format!("native surface frame ACK 실패: {error}"))?
+}
+
+#[cfg(target_os = "macos")]
+fn prepare_child_frame_transition(
+    wv: &tauri::Webview,
+    label: &str,
+    bounds: (f64, f64, f64, f64),
+    start_at_unix_ms: f64,
+    duration_ms: f64,
+) -> Result<(), String> {
+    let label = label.to_string();
+    let (applied_tx, applied_rx) = std::sync::mpsc::sync_channel::<Result<(), String>>(1);
+    wv.with_webview(move |pw| {
+        let applied: Result<(), String> = (|| unsafe {
+            use objc2_app_kit::NSView;
+            use objc2_foundation::{NSPoint, NSRect, NSSize};
+
+            let view = &*(pw.inner() as *const NSView);
+            let Some(parent) = view.superview() else {
+                return Err("native surface parent가 없다".into());
+            };
+            let host_ptr = layer::surface_host_ptr(&label);
+            if host_ptr == 0 {
+                return Err(format!("native surface host가 없다: {label}"));
+            }
+            let coordinate_parent = parent.superview().unwrap_or_else(|| parent.clone());
+            let (x, y, w, h) = top_left_rect_to_parent_frame(
+                coordinate_parent.bounds().size.height,
+                coordinate_parent.isFlipped(),
+                bounds,
+            );
+            let frame = NSRect::new(NSPoint::new(x, y), NSSize::new(w, h));
+            layer::prepare_surface_host_translation(
+                &label,
+                view,
+                frame,
+                start_at_unix_ms,
+                duration_ms,
+            )
+        })();
+        let _ = applied_tx.send(applied);
+    })
+    .map_err(|error| error.to_string())?;
+    applied_rx
+        .recv_timeout(std::time::Duration::from_secs(1))
+        .map_err(|error| format!("native surface transition ACK 실패: {error}"))?
 }
 
 fn apply_child_bounds(
@@ -970,6 +1220,135 @@ pub fn webview_bounds(
         apply_child_bounds(&wv, &label, (x, y, w, h))?;
     }
     Ok(())
+}
+
+/**
+ * 직전 frame/가시성 변경이 WebKit 원격 표시 트리에 반영된 후에만 답한다.
+ * `afterScreenUpdates=true` snapshot 완료는 이미지를 제품에 쓰려는 것이 아니라 WKWebView가
+ * pending screen update를 소비했다는 공식 완료 에지를 쓰는 표시 장벽이다.
+ */
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub async fn webview_presented(app: AppHandle, label: String) -> Result<(), String> {
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let wv = app
+        .get_webview(&label)
+        .ok_or_else(|| format!("webview 없음: {label}"))?;
+    let (tx, rx) = mpsc::sync_channel::<Result<(), String>>(1);
+    wv.with_webview(move |pw| unsafe {
+        use block2::RcBlock;
+        use objc2::MainThreadMarker;
+        use objc2_app_kit::NSImage;
+        use objc2_foundation::NSError;
+        use objc2_web_kit::{WKSnapshotConfiguration, WKWebView};
+
+        let wk = &*(pw.inner() as *const WKWebView);
+        let mtm = MainThreadMarker::new_unchecked();
+        let config = WKSnapshotConfiguration::new(mtm);
+        config.setAfterScreenUpdates(true);
+        let block = RcBlock::new(move |image: *mut NSImage, error: *mut NSError| {
+            let outcome = if !error.is_null() {
+                Err((*error).localizedDescription().to_string())
+            } else if image.is_null() {
+                Err("WKWebView 표시 snapshot이 비었습니다".into())
+            } else {
+                Ok(())
+            };
+            let _ = tx.try_send(outcome);
+        });
+        wk.takeSnapshotWithConfiguration_completionHandler(Some(&config), &block);
+    })
+    .map_err(|error| error.to_string())?;
+
+    tauri::async_runtime::spawn_blocking(move || {
+        rx.recv_timeout(Duration::from_secs(5))
+            .map_err(|_| "WKWebView 표시 정착 시간 초과".to_string())?
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+pub async fn webview_presented(_app: AppHandle, _label: String) -> Result<(), String> {
+    Ok(())
+}
+
+/** Tauri-only: 목표 model frame과 위치 전용 Core Animation을 DOM FLIP의 절대 epoch에 무장한다. */
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub fn webview_transition_prepare(
+    app: AppHandle,
+    label: String,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    start_at_unix_ms: f64,
+    duration_ms: f64,
+) -> Result<(), String> {
+    let Some(webview) = app.get_webview(&label) else { return Err(format!("webview 없음: {label}")); };
+    let raw = (x, y, w, h);
+    let factor = SURFACE_LAYOUT.window_zoom(webview.window().label());
+    let scaled = scale_rect(raw, factor);
+    prepare_child_frame_transition(&webview, &label, scaled, start_at_unix_ms, duration_ms)?;
+    SURFACE_LAYOUT.set_raw(&label, raw);
+    SURFACE_LAYOUT.set_applied(&label, scaled);
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+pub fn webview_transition_prepare(
+    _app: AppHandle,
+    _label: String,
+    _x: f64,
+    _y: f64,
+    _w: f64,
+    _h: f64,
+    _start_at_unix_ms: f64,
+    _duration_ms: f64,
+) -> Result<(), String> {
+    Err("native compositor 위치 거래는 이 Tauri 플랫폼에 구현되지 않았다".into())
+}
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub fn webview_transition_cancel(
+    app: AppHandle,
+    label: String,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+) -> Result<(), String> {
+    let Some(webview) = app.get_webview(&label) else { return Ok(()); };
+    let cancel_label = label.clone();
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    webview.with_webview(move |_| {
+        layer::cancel_surface_host_translation(&cancel_label);
+        let _ = tx.send(());
+    }).map_err(|error| error.to_string())?;
+    rx.recv_timeout(std::time::Duration::from_secs(1))
+        .map_err(|error| format!("native surface transition cancel ACK 실패: {error}"))?;
+    let raw = (x, y, w, h);
+    SURFACE_LAYOUT.set_raw(&label, raw);
+    apply_child_bounds(&webview, &label, raw)
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+pub fn webview_transition_cancel(
+    app: AppHandle,
+    label: String,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+) -> Result<(), String> {
+    webview_bounds(app, label, x, y, w, h)
 }
 
 #[tauri::command]

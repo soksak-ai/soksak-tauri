@@ -160,28 +160,6 @@ impl NativeSurfaceHosts {
     }
 }
 
-/// back-to-front sibling 목록에서 host 하나만 main 바로 앞/뒤 경계로 옮긴다.
-pub fn surface_sibling_order(
-    siblings: &[usize],
-    host_ptr: usize,
-    main_ptr: usize,
-    above_main: bool,
-) -> Vec<usize> {
-    if host_ptr == main_ptr || !siblings.contains(&host_ptr) || !siblings.contains(&main_ptr) {
-        return siblings.to_vec();
-    }
-    let mut reordered = siblings
-        .iter()
-        .copied()
-        .filter(|ptr| *ptr != host_ptr)
-        .collect::<Vec<_>>();
-    let Some(main_index) = reordered.iter().position(|ptr| *ptr == main_ptr) else {
-        return siblings.to_vec();
-    };
-    reordered.insert(main_index + usize::from(above_main), host_ptr);
-    reordered
-}
-
 pub type SurfaceRect = (f64, f64, f64, f64);
 
 #[derive(Default)]
@@ -248,8 +226,8 @@ impl NativeSurfaceLayout {
 #[cfg(test)]
 mod tests {
     use super::{
-        surface_sibling_order, EventThrottle, NativeSurfaceHosts, NativeSurfaceLayout,
-        NativeSurfaceLedger, NativeWindowLabels,
+        EventThrottle, NativeSurfaceHosts, NativeSurfaceLayout, NativeSurfaceLedger,
+        NativeWindowLabels,
     };
 
     #[test]
@@ -287,20 +265,6 @@ mod tests {
         assert_eq!(hosts.labels_in("window-a"), vec!["browser-a", "browser-b"]);
         assert_eq!(hosts.remove("browser-a").map(|host| host.ptr), Some(11));
         assert_eq!(hosts.ptr("browser-a"), None);
-    }
-
-    #[test]
-    fn sibling_order_moves_only_the_named_host_around_main() {
-        let siblings = [10, 20, 30, 40];
-        assert_eq!(
-            surface_sibling_order(&siblings, 10, 40, true),
-            vec![20, 30, 40, 10]
-        );
-        assert_eq!(
-            surface_sibling_order(&siblings, 10, 40, false),
-            vec![20, 30, 10, 40]
-        );
-        assert_eq!(surface_sibling_order(&siblings, 99, 40, true), siblings);
     }
 
     #[test]
