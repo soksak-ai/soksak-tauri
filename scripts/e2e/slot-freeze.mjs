@@ -39,6 +39,7 @@ import {
   viewportAlignment,
   transitionFrameAlignment,
   completeCalibrationComponents,
+  calibrationFrameScale,
   summarizeFrameSequence,
 } from "./lib/browser-matrix.mjs";
 
@@ -238,12 +239,15 @@ function assertFrameMarkers(file, name, scale, {
   if (compareDomEpoch && !domEvidence.length) {
     throw new Error(`${name}: DOM compositor calibration 소실(${JSON.stringify(domEvidence)})`);
   }
+  const frameScale = compareDomEpoch
+    ? calibrationFrameScale(domEvidence) ?? scale
+    : scale;
   const kinds = [["page", fixtureMarkers]];
   if (requireInput) kinds.push(["input", fixtureInputMarkers]);
   for (const [kind, markers] of kinds) {
     for (const slot of slots) {
-      const expectedWidth = (kind === "input" ? fixtureInputMarkerSize.minWidth : fixtureMarkerSize.width) * scale;
-      const expectedHeight = (kind === "input" ? fixtureInputMarkerSize.height : fixtureMarkerSize.height) * scale;
+      const expectedWidth = (kind === "input" ? fixtureInputMarkerSize.minWidth : fixtureMarkerSize.width) * frameScale;
+      const expectedHeight = (kind === "input" ? fixtureInputMarkerSize.height : fixtureMarkerSize.height) * frameScale;
       const raw = markerEvidence(bytes, markers[slot], 24, MARKER_SAMPLE_STEP);
       const selected = selectFixtureMarkerComponent(raw.components, {
         expectedWidth,
@@ -324,8 +328,12 @@ function assertFrameSequence(files, name, scale, options = {}) {
         if (Number.isFinite(verdict.dx)) motionDx = Math.max(motionDx, verdict.dx);
       }
     }
+    const bytes = fs.readFileSync(file);
+    const frameScale = options.compareDomEpoch
+      ? calibrationFrameScale(markerEvidence(bytes, compositorCalibrationMarker, 24, MARKER_SAMPLE_STEP).components) ?? scale
+      : scale;
     for (const chrome of options.chromeAnchors ?? []) {
-      try { assertChromeAnchor(file, path.join(name, path.basename(file)), chrome, scale); }
+      try { assertChromeAnchor(file, path.join(name, path.basename(file)), chrome, frameScale); }
       catch (error) { errors.push(error instanceof Error ? error.message : String(error)); }
     }
     return { frame: path.basename(file), errors, motionDx };

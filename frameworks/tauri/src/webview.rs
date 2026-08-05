@@ -28,7 +28,7 @@ fn registered_webview(app: &AppHandle, label: &str) -> Option<tauri::Webview> {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct PaneLayoutContract {
+pub(crate) struct SurfaceLayoutContract {
     viewport_w: f64,
     viewport_h: f64,
     root_x: f64,
@@ -912,6 +912,7 @@ pub fn webview_open(
     w: f64,
     h: f64,
     transparent: Option<bool>,
+    layout: Option<SurfaceLayoutContract>,
 ) -> Result<(), String> {
     #[cfg(debug_assertions)]
     eprintln!("[open-trace] webview_open {label} 진입 (url={url})");
@@ -921,6 +922,10 @@ pub fn webview_open(
         // visible/list 도 건강 오판). open 의 계약은 "호출하면 반드시 살아있는 child"다 —
         // 좀비면 잔재를 정리하고 아래에서 신규 생성한다. 검사·정리는 메인스레드 인라인.
         if child_is_newborn(&label) || native_child_alive(&existing) {
+            #[cfg(target_os = "macos")]
+            if let Some(layout) = layout {
+                layer::set_surface_layout(&label, layout);
+            }
             #[cfg(debug_assertions)]
             eprintln!("[open-trace] webview_open {label}: 기존 생존 — no-op");
             return Ok(());
@@ -1047,6 +1052,9 @@ pub fn webview_open(
         // WKWebView를 직접 화면 배치하지 않는다. 전용 layer-backed host가 z-order·frame·motion·
         // hit-test surface를 소유하고, WKWebView는 그 안의 고정 로컬 child다.
         layer::adopt_surface_host(&webview, &label, window.label(), transparent);
+        if let Some(layout) = layout {
+            layer::set_surface_layout(&label, layout);
+        }
         // 상태표시줄: 링크 hover → browser-status emit. 메시지 핸들러를 이 webview 에 등록.
         let st_app = app.clone();
         let st_label = label.clone();
@@ -1295,6 +1303,7 @@ pub fn webview_bounds(
     y: f64,
     w: f64,
     h: f64,
+    layout: Option<SurfaceLayoutContract>,
 ) -> Result<(), String> {
     if let Some(wv) = registered_webview(&app, &label) {
         // 갱신 케이던스 실측 트레이스(디버그 빌드 전용) — 위치 추종이 굼뜰 때 JS→Rust 송신
@@ -1309,6 +1318,10 @@ pub fn webview_bounds(
                 .unwrap_or(0.0)
         );
         SURFACE_LAYOUT.set_raw(&label, (x, y, w, h));
+        #[cfg(target_os = "macos")]
+        if let Some(layout) = layout {
+            layer::set_surface_layout(&label, layout);
+        }
         apply_child_bounds(&wv, &label, (x, y, w, h))?;
     }
     Ok(())
@@ -1439,7 +1452,7 @@ pub fn webview_transition_cancel(
     w: f64,
     h: f64,
 ) -> Result<(), String> {
-    webview_bounds(app, label, x, y, w, h)
+    webview_bounds(app, label, x, y, w, h, None)
 }
 
 #[tauri::command]
@@ -1647,7 +1660,7 @@ pub fn webview_pane_bounds(
     y: f64,
     w: f64,
     h: f64,
-    layout: Option<PaneLayoutContract>,
+    layout: Option<SurfaceLayoutContract>,
 ) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     { return layer::set_pane_surface_host_bounds(&pane, (x, y, w, h), layout); }

@@ -4,6 +4,7 @@ import { moduleState } from "../../lib/moduleState";
 import { currentWindowLabel } from "../../lib/webviewLabels";
 import type { LayoutMove, PreparedLayoutTransition } from "../../lib/layoutTransitionHost";
 import { surfaceRectOf } from "../../lib/surfaceRect";
+import { surfaceLayoutContractOf } from "./surfaceLayoutContract";
 import {
   registerPluginViewPresentationHost,
   type PresentedPluginView,
@@ -52,44 +53,7 @@ const state = moduleState("framework/tauri#pluginViewPresentation", () => ({
 
 const rectOf = (element: HTMLElement) => surfaceRectOf(element.getBoundingClientRect());
 
-type PaneLayoutContract = {
-  viewportW: number; viewportH: number;
-  rootX: number; rootY: number; rootW: number; rootH: number;
-  leftRatio: number; topRatio: number; widthRatio: number; heightRatio: number;
-  fixedX: number; fixedY: number; fixedW: number; fixedH: number;
-};
-
-const percentageVariable = (style: CSSStyleDeclaration, name: string): number | null => {
-  const raw = style.getPropertyValue(name).trim();
-  if (!raw.endsWith("%")) return null;
-  const value = Number.parseFloat(raw.slice(0, -1));
-  return Number.isFinite(value) ? value / 100 : null;
-};
-
-/** GroupArea가 공개한 셀 변수에서 native resize가 같은 식을 실행할 affine 계약을 만든다. */
-export function paneLayoutContractOf(container: HTMLElement): PaneLayoutContract | null {
-  const tabBody = container.closest<HTMLElement>(".tab-body");
-  const root = tabBody?.closest<HTMLElement>(".space");
-  if (!tabBody || !root) return null;
-  const style = getComputedStyle(tabBody);
-  const leftRatio = percentageVariable(style, "--l");
-  const topRatio = percentageVariable(style, "--t");
-  const widthRatio = percentageVariable(style, "--w");
-  const heightRatio = percentageVariable(style, "--h");
-  if ([leftRatio, topRatio, widthRatio, heightRatio].some((value) => value === null)) return null;
-  const pane = rectOf(container);
-  const rootFrame = rectOf(root);
-  const l = leftRatio!; const t = topRatio!; const w = widthRatio!; const h = heightRatio!;
-  return {
-    viewportW: window.innerWidth, viewportH: window.innerHeight,
-    rootX: rootFrame.x, rootY: rootFrame.y, rootW: rootFrame.w, rootH: rootFrame.h,
-    leftRatio: l, topRatio: t, widthRatio: w, heightRatio: h,
-    fixedX: pane.x - rootFrame.x - l * rootFrame.w,
-    fixedY: pane.y - rootFrame.y - t * rootFrame.h,
-    fixedW: pane.w - w * rootFrame.w,
-    fixedH: pane.h - h * rootFrame.h,
-  };
-}
+export const paneLayoutContractOf = surfaceLayoutContractOf;
 
 type PaneRect = { x: number; y: number; w: number; h: number };
 type DomPaneFact = {

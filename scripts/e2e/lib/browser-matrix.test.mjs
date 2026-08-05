@@ -25,10 +25,18 @@ import {
   viewportAlignment,
   transitionFrameAlignment,
   completeCalibrationComponents,
+  calibrationFrameScale,
 } from "./browser-matrix.mjs";
 import { encodePng } from "./png.mjs";
 
 describe("브라우저 구현 행렬", () => {
+  it("화면 경계에서 전체 창이 축소된 프레임은 DOM 기준자로 실제 pixel 배율을 복원한다", () => {
+    expect(calibrationFrameScale([
+      { width: 60, height: 60 },
+      { width: 60, height: 60 },
+      { width: 30, height: 60 },
+    ])).toBe(1.5);
+  });
   it("사이드바와 탭 pane의 단일 DOM·공유 animation epoch 위반을 RED로 만든다", () => {
     const node = (address, x, startTime, currentTime, connected = true) => ({
       address,

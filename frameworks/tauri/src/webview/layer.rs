@@ -75,7 +75,7 @@ objc2::define_class!(
     }
 );
 
-impl super::PaneLayoutContract {
+impl super::SurfaceLayoutContract {
     fn rect_for_viewport(&self, viewport_w: f64, viewport_h: f64) -> (f64, f64, f64, f64) {
         let root_w = (self.root_w + viewport_w - self.viewport_w).max(0.0);
         let root_h = (self.root_h + viewport_h - self.viewport_h).max(0.0);
@@ -105,7 +105,7 @@ struct PaneSurfaceRecord {
     window: String,
     renderer: String,
     members: Vec<String>,
-    layout: Option<super::PaneLayoutContract>,
+    layout: Option<super::SurfaceLayoutContract>,
     member_layouts: HashMap<String, super::PaneMemberLayoutContract>,
 }
 
@@ -116,6 +116,8 @@ static SURFACE_PANES: LazyLock<Mutex<HashMap<String, String>>> =
 static SURFACE_VIEWS: LazyLock<Mutex<HashMap<String, usize>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 static SURFACE_TRANSPARENCY: LazyLock<Mutex<HashMap<String, bool>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+static SURFACE_LAYOUTS: LazyLock<Mutex<HashMap<String, super::SurfaceLayoutContract>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 // 창의 오버레이 게이트 갱신(프론트 ui 카운터 0↔1 전이 시 webview_overlay_active 가 호출).
@@ -544,7 +546,7 @@ pub fn pane_surface_host_state() -> serde_json::Value {
 pub fn set_pane_surface_host_bounds(
     pane: &str,
     rect: (f64, f64, f64, f64),
-    layout: Option<super::PaneLayoutContract>,
+    layout: Option<super::SurfaceLayoutContract>,
 ) -> Result<(), String> {
     let record = {
         let mut hosts = PANE_SURFACE_HOSTS.lock().map_err(|_| "pane host 잠금 실패")?;
@@ -562,6 +564,53 @@ pub fn set_pane_surface_host_bounds(
     settle_surface_frame(host);
     CATransaction::commit();
     Ok(())
+}
+
+/// 공개 DOM 슬롯에서 받은 affine 계약을 해당 native surface identity에 결속한다.
+/// 계약은 플러그인/엔진 이름을 포함하지 않으며 창 resize 통지에서만 소비된다.
+pub fn set_surface_layout(label: &str, layout: super::SurfaceLayoutContract) {
+    if let Ok(mut layouts) = SURFACE_LAYOUTS.lock() {
+        layouts.insert(label.to_owned(), layout);
+    }
+}
+
+/// 일반 DOM renderer 아래의 native surface를 NSWindowDidResize와 같은 AppKit epoch에 옮긴다.
+/// JavaScript resize 이벤트는 이보다 뒤에 오므로 최종 검증/정착 경로일 뿐 실시간 추종자가 아니다.
+pub fn resize_registered_surface_hosts(window: &str) {
+    let labels = SURFACE_HOSTS.labels_in(window);
+    let layouts = SURFACE_LAYOUTS.lock().ok().map(|layouts| layouts.clone()).unwrap_or_default();
+    let pane_members = SURFACE_PANES.lock().ok().map(|members| members.clone()).unwrap_or_default();
+    let records = labels.into_iter().filter_map(|label| {
+        if pane_members.contains_key(&label) { return None; }
+        let layout = layouts.get(&label)?.clone();
+        let ptr = SURFACE_HOSTS.ptr(&label)?;
+        Some((label, ptr, layout))
+    }).collect::<Vec<_>>();
+    let viewport = records.first().and_then(|(_, ptr, _)| {
+        let host = unsafe { &*(*ptr as *const NSView) };
+        unsafe { host.superview() }.map(|parent| {
+            let bounds = parent.bounds();
+            (bounds.size.width, bounds.size.height)
+        })
+    });
+    let Some((viewport_w, viewport_h)) = viewport else { return };
+
+    CATransaction::begin();
+    CATransaction::setDisableActions(true);
+    for (label, ptr, layout) in records {
+        let host = unsafe { &*(ptr as *const NSView) };
+        let Some(parent) = (unsafe { host.superview() }) else { continue };
+        let rect = layout.rect_for_viewport(viewport_w, viewport_h);
+        let target = css_rect_in_parent(&parent, rect.0, rect.1, rect.2, rect.3);
+        host.setFrame(target);
+        if let Some(child_ptr) = SURFACE_VIEWS.lock().ok().and_then(|views| views.get(&label).copied()) {
+            let child = unsafe { &*(child_ptr as *const NSView) };
+            child.setFrame(objc2_foundation::NSRect::new(NSPoint::new(0.0, 0.0), target.size));
+            settle_surface_frame(child);
+        }
+        settle_surface_frame(host);
+    }
+    CATransaction::commit();
 }
 
 /// NSWindowDidResize 통지 차례에서 DOM IPC보다 먼저 실행된다. 마지막으로 확정된 공개 CSS
@@ -634,11 +683,11 @@ fn resize_pane_children(record: &PaneSurfaceRecord, host: &NSView, size: objc2_f
 
 #[cfg(test)]
 mod pane_layout_tests {
-    use crate::webview::{PaneLayoutContract, PaneMemberLayoutContract};
+    use crate::webview::{PaneMemberLayoutContract, SurfaceLayoutContract};
 
     #[test]
     fn projects_percentage_grid_and_fixed_chrome_into_the_new_viewport() {
-        let contract = PaneLayoutContract {
+        let contract = SurfaceLayoutContract {
             viewport_w: 900.0, viewport_h: 1080.0,
             root_x: 54.0, root_y: 82.0, root_w: 846.0, root_h: 998.0,
             left_ratio: 2.0 / 3.0, top_ratio: 0.0,
@@ -754,6 +803,9 @@ pub fn remove_surface_host(label: &str) {
     if let Ok(mut transparency) = SURFACE_TRANSPARENCY.lock() {
         transparency.remove(label);
     }
+    if let Ok(mut layouts) = SURFACE_LAYOUTS.lock() {
+        layouts.remove(label);
+    }
 }
 
 /// WindowEvent::Destroyed 뒤에는 NSView를 만지지 않는다. 창 소유 장부에서 identity만
@@ -765,6 +817,9 @@ pub fn forget_window(window: &str) {
     if let Ok(mut views) = SURFACE_VIEWS.lock() { views.retain(|label, _| !labels.contains(label)); }
     if let Ok(mut transparency) = SURFACE_TRANSPARENCY.lock() {
         transparency.retain(|label, _| !labels.contains(label));
+    }
+    if let Ok(mut layouts) = SURFACE_LAYOUTS.lock() {
+        layouts.retain(|label, _| !labels.contains(label));
     }
     if let Ok(mut panes) = SURFACE_PANES.lock() { panes.retain(|label, _| !labels.contains(label)); }
     if let Ok(mut hosts) = PANE_SURFACE_HOSTS.lock() { hosts.retain(|_, record| record.window != window); }

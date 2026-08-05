@@ -704,9 +704,10 @@ Tauri compositor에 등록한 모든 네이티브 surface는 AppKit의 `DuringVi
 `ScaleAxesIndependently`는 WKWebView/CEF가 다음 프레임을 제출하기 전 마지막 remote-layer 이미지를
 새 bounds에 늘인다. `webview.composition.surfaces[]`가 각 live frame과 함께 적용된 두 정책값
 (`2`, `11`)을 공개한다.
-등록 surface의 autoresizing mask는 `0`이다. 공개 DOM-slot bounds transaction만 그 frame의
-주인이다. 전체창 engine host 자체는 autoresize할 수 있지만, 명시 bounds가 오기 전에 그 안의 임의
-위치 child까지 비례 resize하면 안 된다. 적용값은
+등록 surface의 autoresizing mask는 `0`이다. 공개 DOM-slot 계약만 그 frame의 주인이다. Tauri
+어댑터는 `.space`와 `.tab-body`가 공개한 비율 및 slot의 고정 chrome을 affine 계약으로 저장하고,
+`NSWindowDidResize` 통지 안에서 새 viewport에 투영한다. 후행 JS resize 사건은 최종 정착·검증이며
+실시간 추종자가 아니다. 전체창 engine host 자체의 임의 비례 resize와 폴링은 금지한다. 적용값은
 `webview.composition.surfaces[].autoresizingMask`로 공개한다.
 windowed Chromium은 각 브라우저마다 전용 AppKit slot host를 가진다. DOM-slot bounds는 이 host에만
 적용하고 CEF child는 host 로컬 `(0,0,w,h)`를 채운다. 여러 CEF child를 전체창 host에 직접 붙여
@@ -723,11 +724,9 @@ Cocoa 부모 추종과 슬롯 거래가 같은 frame을 함께 소유하는 구�
 않으면서 chrome epoch tear와 브라우저만의 blank/stretch를 분리한다. 정착 프레임은 기존 절대 픽셀
 크기와 DOM-slot↔viewport 정합도 함께 통과해야 한다.
 
-레일 재배치에서 bounds ACK나 동일 시각을 독립 renderer 사이의 원자성으로 간주하지 않는다. Tauri에서
-함께 이동하는 pane renderer와 native content는 창 루트보다 좁은 동일 `PaneSurfaceHost`의 자식이어야
-한다. child는 pane-local frame과 z-order를 유지하고 이 공통 host만 이동한다.
-`webview.composition.engine.rendererTopology`가 이 구조를 공개하며 `panelAtomicMotion=false`인 제품
-경로는 GREEN이 아니다. Electron은 일반 DOM 자식 배치를 유지하며 이 native host 계약을 설치하지 않는다.
+레일 재배치 때문에 플러그인 DOM을 별도 renderer로 옮기지 않는다. 두 프레임워크 모두 같은 메인 DOM
+플러그인 UI를 쓰며, Tauri 어댑터만 DOM 커밋 전에 native 목표 frame을 준비하고 커밋 뒤 공개 슬롯과
+대조한다. Electron은 일반 DOM 자식 배치를 유지하며 이 native 거래를 설치하지 않는다.
 
 `webview.composition`은 DOM 앵커·실제 네이티브 frame뿐 아니라 label별 슬롯 rect, 마지막 적용
 rect, 가시성, 동기화 대기 상태를 공개한다. 합성 상태를 브라우저 제품 플러그인이

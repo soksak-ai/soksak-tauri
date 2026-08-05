@@ -16,10 +16,6 @@ import { registerMountedViewFocus } from "../plugins/viewFocus";
 import { useSessions } from "../state/sessions";
 import { useBootPhase } from "../state/bootPhase";
 import { useT } from "../i18n";
-import {
-  pluginViewPresentationHost,
-  type PresentedPluginView,
-} from "../plugins/viewPresentationHost";
 
 // 컨테이너 세대 카운터 — 등록(reg) 세대마다 증가. 모듈 전역이라 창 내 모든 호스트가 공유해도
 // 값은 key 유일성에만 쓰여 충돌이 없다.
@@ -78,7 +74,6 @@ export const PluginViewHost = memo(function PluginViewHost({
   const surfaceVisibleRef = useRef(surfaceVisible);
   surfaceVisibleRef.current = surfaceVisible;
   const visibilityListenersRef = useRef(new Set<(visible: boolean) => void>());
-  const presentedRef = useRef<PresentedPluginView | null>(null);
   const [error, setError] = useState<string | null>(null);
   // provider 가 라이브 update 를 구현하면 paneId 변경을 remount 대신 update 로 전달한다(아래 deps 참조).
   const supportsUpdate = typeof reg?.provider.update === "function";
@@ -124,7 +119,6 @@ export const PluginViewHost = memo(function PluginViewHost({
 
   useEffect(() => {
     for (const listener of visibilityListenersRef.current) listener(surfaceVisible);
-    presentedRef.current?.setVisible(surfaceVisible);
   }, [surfaceVisible]);
 
   // 결부 정체성 — ctx 의 binding 축 값 전부(viewContext 의 축 선언이 단일 진실). 필드 이름을
@@ -147,49 +141,6 @@ export const PluginViewHost = memo(function PluginViewHost({
       disconnected = true;
       disconnect?.();
     };
-    const presentationHost = reg.decl.nativeSurface
-      ? pluginViewPresentationHost()
-      : null;
-    if (presentationHost) {
-      try {
-        const presented = presentationHost.mount({
-          container: el,
-          registration: reg,
-          provider: reg.provider,
-          context: ctxRef.current!,
-        });
-        presentedRef.current = presented;
-        presented.setVisible(surfaceVisibleRef.current);
-        let unregisterFocus: (() => void) | null = null;
-        let disposed = false;
-        void presented.ready.then(() => {
-          if (disposed || !viewId) return;
-          unregisterFocus = registerMountedViewFocus(
-            viewId,
-            el,
-            reg.provider,
-            () => ctxRef.current!,
-          );
-        }).catch((e) => {
-          if (disposed) return;
-          console.error(`플러그인 presentation 준비 실패(${viewKey}):`, e);
-          setError(String(e));
-        });
-        return () => {
-          disposed = true;
-          unregisterFocus?.();
-          if (presentedRef.current === presented) presentedRef.current = null;
-          presented.dispose();
-          disconnectInstance();
-          el.replaceChildren();
-        };
-      } catch (e) {
-        disconnectInstance();
-        console.error(`플러그인 presentation mount 실패(${viewKey}):`, e);
-        setError(String(e));
-        return;
-      }
-    }
     try {
       reg.provider.mount(el, ctxRef.current!);
     } catch (e) {
@@ -226,10 +177,6 @@ export const PluginViewHost = memo(function PluginViewHost({
   useEffect(() => {
     const el = containerRef.current;
     if (!el || !reg || !supportsUpdate) return;
-    if (presentedRef.current) {
-      presentedRef.current.update(ctxRef.current!);
-      return;
-    }
     try {
       reg.provider.update!(el, ctxRef.current!);
     } catch (e) {

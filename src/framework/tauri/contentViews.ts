@@ -19,6 +19,7 @@ import {
   type ExternalSurfaceTransitionParticipant,
 } from "../../lib/externalSurfaceTransition";
 import { railTravelDeclaredMs } from "../../lib/railMotion";
+import { surfaceLayoutContractOf } from "./surfaceLayoutContract";
 
 const call = <T>(cmd: string, args?: Record<string, unknown>): Promise<T> =>
   invoke(cmd, args) as Promise<T>;
@@ -123,7 +124,13 @@ async function openTrackedSurface(
   }
   const desired = state.desiredVisible ?? (slot ? contentViewSlotVisible(slot) : true);
   state.openOptions = { ...opts };
-  await call("webview_open", { label: state.label, ...opts, ...(rect ?? {}) });
+  const layout = slot ? surfaceLayoutContractOf(slot) : null;
+  await call("webview_open", {
+    label: state.label,
+    ...opts,
+    ...(rect ?? {}),
+    ...(layout ? { layout } : {}),
+  });
   state.opened = true;
   state.desiredVisible = desired;
   state.lastRect = rect ? rectKey(rect) : "";
@@ -178,7 +185,12 @@ function requestSlotSync(state: SurfaceState, force = false): Promise<void> {
       const rect = slotRect(slot);
       const key = rectKey(rect);
       if (!forced && key === state.lastRect) continue;
-      await call<boolean>("webview_bounds", { label: state.label, ...rect });
+      const layout = surfaceLayoutContractOf(slot);
+      await call<boolean>("webview_bounds", {
+        label: state.label,
+        ...rect,
+        ...(layout ? { layout } : {}),
+      });
       state.boundsWrites += 1;
       state.lastRect = key;
     }
@@ -344,7 +356,12 @@ export async function prepareNativeContentViewMove(
               if (rectKey(rect) !== rectKey(target)) {
                 state.lastRect = rectKey(rect);
                 state.boundsWrites += 1;
-                await call<boolean>("webview_bounds", { label: state.label, ...rect });
+                const layout = surfaceLayoutContractOf(slot);
+                await call<boolean>("webview_bounds", {
+                  label: state.label,
+                  ...rect,
+                  ...(layout ? { layout } : {}),
+                });
               }
             }),
             ...externalTargets.map(({ slot, participant }) => participant.commit(slotRect(slot))),
@@ -424,7 +441,12 @@ export async function prepareNativeContentViewMove(
             if (key === rectKey(target)) return;
             state.lastRect = key;
             state.boundsWrites += 1;
-            await call<boolean>("webview_bounds", { label: state.label, ...rect });
+            const layout = surfaceLayoutContractOf(slot);
+            await call<boolean>("webview_bounds", {
+              label: state.label,
+              ...rect,
+              ...(layout ? { layout } : {}),
+            });
           }),
           ...externalTargets.map(({ slot, participant }) => participant.commit(slotRect(slot))),
         ]);
@@ -550,7 +572,16 @@ export const nativeHost: ContentViewHost = {
     return call("webview_navigate", { label, url });
   },
   async bounds(label, x, y, w, h) {
-    const result = await call<boolean>("webview_bounds", { label, x, y, w, h });
+    const slot = findContentViewSlot(label, document);
+    const layout = slot ? surfaceLayoutContractOf(slot) : null;
+    const result = await call<boolean>("webview_bounds", {
+      label,
+      x,
+      y,
+      w,
+      h,
+      ...(layout ? { layout } : {}),
+    });
     const state = composition.surfaces.get(label);
     if (state) state.lastRect = rectKey({ x, y, w, h });
     if (state) state.boundsWrites += 1;

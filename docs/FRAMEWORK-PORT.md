@@ -711,9 +711,11 @@ Every native surface registered with the Tauri compositor also uses AppKit's
 defaults are `Never` and `ScaleAxesIndependently`; those defaults stretch the last remote-layer image
 until WKWebView or CEF submits its next frame. `webview.composition.surfaces[]` exposes both applied
 policy values (`2` and `11`) alongside each live frame.
-The registered surface autoresizing mask is `0`: the public DOM-slot bounds transaction is its only
-frame owner. The full-window engine host may autoresize, but it must not proportionally resize its
-arbitrarily positioned children before their explicit bounds arrive. The applied mask is exposed as
+The registered surface autoresizing mask is `0`: the public DOM-slot contract is its only frame
+owner. The Tauri adapter stores an affine contract from the ratios exposed by `.space` and
+`.tab-body` plus the slot's fixed chrome, then projects it into the new viewport inside
+`NSWindowDidResize`. The later JavaScript resize event settles and verifies; it is not the live
+follower. Proportional whole-host child resizing and polling are forbidden. The applied mask is exposed as
 `webview.composition.surfaces[].autoresizingMask`.
 Windowed Chromium has one dedicated AppKit slot host per browser. DOM-slot bounds apply only to that
 host, while the CEF child fills local `(0,0,w,h)`. Attaching arbitrary CEF children directly to the
@@ -733,12 +735,10 @@ This distinguishes a chrome epoch tear from a browser-only blank/stretch without
 scale. Settled frames still have to pass the original absolute pixel size and DOM-slot-to-viewport
 alignment checks.
 
-Bounds ACKs and equal timestamps do not provide atomic rail relocation across independent renderers.
-On Tauri, a pane renderer and native content that move together must be children of one
-`PaneSurfaceHost` narrower than the window root. Children keep pane-local frames and stable z-order;
-only this common host moves. `webview.composition.engine.rendererTopology` exposes the structure, and
-a product path with `panelAtomicMotion=false` is not GREEN. Electron retains ordinary DOM-child
-placement and installs no native pane-host contract.
+Rail relocation must not move plugin DOM into a second renderer. Both frameworks use the same main-DOM
+plugin UI; only the Tauri adapter prepares the native target frame before the DOM commit and compares
+it with the public slot after commit. Electron retains ordinary DOM-child placement and installs no
+native transaction.
 
 `webview.composition` exposes not only DOM anchors and actual native frames, but also each label's slot
 rect, last applied rect, visibility and pending-sync state. The browser product plugin does not

@@ -498,6 +498,19 @@ export function completeCalibrationComponents(components, tolerance = 4) {
     Math.abs(Number(component.width) - Number(component.height)) <= tolerance);
 }
 
+/** WindowServer가 화면 경계에 맞춰 창 캡처 전체를 재투영할 수 있으므로 각 PNG 안의 DOM
+ * 기준자에서 그 프레임의 실제 CSS→pixel 배율을 읽는다. 브라우저만의 stretch는 이 값에
+ * 포함되지 않아 동일 epoch 비교 기준을 약화하지 않는다. */
+export function calibrationFrameScale(components, intrinsic = compositorCalibrationSize) {
+  const complete = completeCalibrationComponents(components);
+  if (!complete.length) return null;
+  const values = complete.flatMap((component) => [
+    Number(component.width) / Number(intrinsic.width),
+    Number(component.height) / Number(intrinsic.height),
+  ]).filter(Number.isFinite).sort((a, b) => a - b);
+  return values[Math.floor(values.length / 2)] ?? null;
+}
+
 export function parseBrowserEngines(raw) {
   const engines = String(raw ?? Object.keys(browserImplementations).join(","))
     .split(",")
