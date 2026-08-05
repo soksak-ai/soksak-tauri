@@ -166,9 +166,10 @@ async function assertEngineSurfaceLedger(rpc, win, implementation, tabIds, stage
 function assertFrameMarkers(file, name, scale, { requireInput = true, compareDomEpoch = false } = {}) {
   const bytes = fs.readFileSync(file);
   const domEvidence = compareDomEpoch
-    ? markerEvidence(bytes, compositorCalibrationMarker, 24, MARKER_SAMPLE_STEP).largest
+    ? markerEvidence(bytes, compositorCalibrationMarker, 24, MARKER_SAMPLE_STEP)
+      .components.filter((component) => component.count >= MIN_MARKER_COMPONENT && component.width >= 40 && component.height >= MIN_MARKER_HEIGHT)
     : null;
-  if (compareDomEpoch && (domEvidence.count < MIN_MARKER_COMPONENT || domEvidence.width < 40 || domEvidence.height < MIN_MARKER_HEIGHT)) {
+  if (compareDomEpoch && !domEvidence.length) {
     throw new Error(`${name}: DOM compositor calibration 소실(${JSON.stringify(domEvidence)})`);
   }
   const kinds = [["page", fixtureMarkers]];
@@ -181,7 +182,7 @@ function assertFrameMarkers(file, name, scale, { requireInput = true, compareDom
       }
       if (kind === "page" && compareDomEpoch) {
         const aligned = transitionFrameAlignment({ browser: evidence, dom: domEvidence });
-        if (!aligned.ok) throw new Error(`${name}: slot ${slot} browser-only stretch — ${aligned.errors.join(", ")}`);
+        if (!aligned.ok) throw new Error(`${name}: compositor epoch 불일치 — ${aligned.errors.join(", ")}`);
       } else if (kind === "page" && scale) {
         const aligned = viewportAlignment({
           slot: { w: 1, h: 1 }, viewport: { w: 1, h: 1 },

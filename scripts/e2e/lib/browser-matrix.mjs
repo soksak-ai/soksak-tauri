@@ -65,6 +65,7 @@ export function markerEvidence(bytes, hex, tolerance = 24, sampleStep = 1) {
     }
   }
   let largest = { count: 0, width: 0, height: 0 };
+  const components = [];
   const stack = [];
   for (let start = 0; start < matches.length; start += 1) {
     if (!matches[start]) continue;
@@ -87,9 +88,12 @@ export function markerEvidence(bytes, hex, tolerance = 24, sampleStep = 1) {
         stack.push(next);
       }
     }
-    if (count > largest.count) largest = { count, width: (maxX - minX + 1) * step, height: (maxY - minY + 1) * step };
+    const component = { count, width: (maxX - minX + 1) * step, height: (maxY - minY + 1) * step };
+    components.push(component);
+    if (count > largest.count) largest = component;
   }
-  return { total, largest };
+  components.sort((a, b) => b.count - a.count);
+  return { total, largest, components };
 }
 
 export function markerPixels(bytes, hex, tolerance = 24, sampleStep = 1) {
@@ -219,10 +223,18 @@ export function viewportAlignment({ slot, viewport, marker, markerPixels, scale 
  * 분리한다. 동일 CSS 크기의 DOM 기준자와 페이지 기준자는 전이 중에도 같은 픽셀 크기여야 한다. */
 export function transitionFrameAlignment({ browser, dom }) {
   const errors = [];
-  for (const key of ["width", "height"]) {
-    if (Math.abs(Number(browser[key]) - Number(dom[key])) > 4) {
-      errors.push(`${key}=browser:${browser[key]}/dom:${dom[key]}`);
-    }
+  const domEpochs = (Array.isArray(dom) ? dom : [dom]).filter(Boolean);
+  const dimensions = (value) => `${Number(value.width)}x${Number(value.height)}`;
+  const first = domEpochs[0];
+  const torn = domEpochs.find((candidate) =>
+    Math.abs(Number(candidate.width) - Number(first?.width)) > 4
+    || Math.abs(Number(candidate.height) - Number(first?.height)) > 4);
+  if (first && torn) errors.push(`shell-epoch-tear=${dimensions(first)}/${dimensions(torn)}`);
+  const browserMatchesDom = domEpochs.some((candidate) =>
+    Math.abs(Number(browser.width) - Number(candidate.width)) <= 4
+    && Math.abs(Number(browser.height) - Number(candidate.height)) <= 4);
+  if (first && !browserMatchesDom) {
+    errors.push(`browser-only-stretch=${dimensions(browser)}/dom:${dimensions(first)}`);
   }
   return { ok: errors.length === 0, errors };
 }
