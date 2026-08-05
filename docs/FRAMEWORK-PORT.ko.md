@@ -715,10 +715,12 @@ Cocoa 부모 추종과 슬롯 거래가 같은 frame을 함께 소유하는 구�
 한다. Electron은 일반 DOM/창 동작을 유지하고 이 규칙들을 설치하지 않는다.
 
 전이 캡처는 브라우저 marker만 절대 픽셀 크기로 판정하지 않는다. `capture.calibration`은 네이티브
-홀이 없는 왼쪽 DOM 레일의 상·중·하에 동일한 64×40 기준자를 멱등하게 노출한다. 창 backing이 전이 중
-잘려도 살아남은 가장 큰 DOM 기준자와 페이지 기준자를 매 프레임 대조해 WindowServer의 창 전체 backing epoch와
-브라우저만의 blank/stretch를 분리한다. 전이 중 두 기준자는 rounding 범위에서 같아야 하고, 정착
-프레임은 기존 절대 픽셀 크기와 DOM-slot↔viewport 정합도 함께 통과해야 한다.
+홀이 없는 왼쪽 DOM 레일의 상·중·하에 동일한 40×40 기준자를 멱등하게 노출한다. 기준자는 가장 좁은
+레일 안에도 완전히 들어가야 하며 네이티브 표면 아래로 뻗은 기준자는 DOM 보정자로 인정하지 않는다.
+살아남은 모든 DOM 기준자를 선언한 CSS 크기로 정규화한 뒤, 먼저 DOM 기준자끼리 한 합성 epoch인지
+판정하고 모든 페이지 기준자가 그 epoch와 일치하는지 대조한다. 이 규칙은 clipping을 배율로 오인하지
+않으면서 shell epoch tear와 브라우저만의 blank/stretch를 분리한다. 정착 프레임은 기존 절대 픽셀
+크기와 DOM-slot↔viewport 정합도 함께 통과해야 한다.
 
 레일 재배치에서 Tauri 어댑터는 유한 snap 거래를 쓴다. 중간 mutation 쓰기를 잠그고 목표 DOM을
 커밋한 layout effect에서 공개 슬롯의 실제 rect를 읽어 한 번 적용한다. 플러그인 소유 외부 표면도

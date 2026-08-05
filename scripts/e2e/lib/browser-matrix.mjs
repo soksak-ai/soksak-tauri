@@ -18,6 +18,7 @@ export const browserImplementations = Object.freeze({
 export const fixtureMarkers = Object.freeze(["#ff00ff", "#00ffff"]);
 export const fixtureInputMarkers = Object.freeze(["#ffff00", "#00ff00"]);
 export const compositorCalibrationMarker = "#0000ff";
+export const compositorCalibrationSize = Object.freeze({ width: 40, height: 40 });
 // hostile resize의 최소 2-pane viewport에도 잘리지 않는 고정 ruler. 작아지는 반응형 marker가
 // 아니라 언제나 같은 64 CSS px이므로 캡처에서 확대/압축된 옛 프레임을 엄격히 검출할 수 있다.
 export const fixtureMarkerSize = Object.freeze({ width: 64, height: 40 });
@@ -220,21 +221,28 @@ export function viewportAlignment({ slot, viewport, marker, markerPixels, scale 
 }
 
 /** WindowServer가 창 전체의 이전 backing을 한 epoch 재투영한 것과 브라우저 표면만의 stretch를
- * 분리한다. 동일 CSS 크기의 DOM 기준자와 페이지 기준자는 전이 중에도 같은 픽셀 크기여야 한다. */
+ * 분리한다. 서로 다른 CSS 크기는 고유 크기로 정규화하고, DOM 기준자끼리 먼저 한 epoch인지 판정한다. */
 export function transitionFrameAlignment({ browser, dom }) {
   const errors = [];
   const domEpochs = (Array.isArray(dom) ? dom : [dom]).filter(Boolean);
+  const scale = (value, intrinsic) => ({
+    width: Number(value.width) / Number(intrinsic.width),
+    height: Number(value.height) / Number(intrinsic.height),
+  });
+  const browserScale = scale(browser, fixtureMarkerSize);
+  const domScales = domEpochs.map((value) => scale(value, compositorCalibrationSize));
   const dimensions = (value) => `${Number(value.width)}x${Number(value.height)}`;
-  const first = domEpochs[0];
-  const torn = domEpochs.find((candidate) =>
-    Math.abs(Number(candidate.width) - Number(first?.width)) > 4
-    || Math.abs(Number(candidate.height) - Number(first?.height)) > 4);
+  const scaleTolerance = 4 / Math.min(fixtureMarkerSize.width, compositorCalibrationSize.width);
+  const first = domScales[0];
+  const torn = domScales.find((candidate) =>
+    Math.abs(Number(candidate.width) - Number(first?.width)) > scaleTolerance
+    || Math.abs(Number(candidate.height) - Number(first?.height)) > scaleTolerance);
   if (first && torn) errors.push(`shell-epoch-tear=${dimensions(first)}/${dimensions(torn)}`);
-  const browserMatchesDom = domEpochs.some((candidate) =>
-    Math.abs(Number(browser.width) - Number(candidate.width)) <= 4
-    && Math.abs(Number(browser.height) - Number(candidate.height)) <= 4);
+  const browserMatchesDom = domScales.some((candidate) =>
+    Math.abs(browserScale.width - candidate.width) <= scaleTolerance
+    && Math.abs(browserScale.height - candidate.height) <= scaleTolerance);
   if (first && !browserMatchesDom) {
-    errors.push(`browser-only-stretch=${dimensions(browser)}/dom:${dimensions(first)}`);
+    errors.push(`browser-only-stretch=${dimensions(browserScale)}/dom:${dimensions(first)}`);
   }
   return { ok: errors.length === 0, errors };
 }

@@ -724,12 +724,13 @@ exposes the preservation policy and must be `false`. Electron retains its ordina
 and installs none of these rules.
 
 Transition capture does not judge a browser marker by absolute pixels alone. `capture.calibration`
-idempotently exposes equal 64×40 rulers at the top, middle, and bottom of the DOM-only left rail. The
-largest surviving DOM ruler remains measurable when a transitional window backing is cropped and is
-compared with every page marker in every frame, separating a
-WindowServer whole-window backing epoch from a browser-only blank or stretch. The two markers must
-match within rounding during the transition; settled frames still have to pass the original absolute
-pixel size and DOM-slot-to-viewport alignment checks.
+idempotently exposes equal 40×40 rulers at the top, middle, and bottom of the DOM-only left rail. A
+ruler must fit inside the narrowest rail; a ruler that extends under a native surface is not a DOM
+calibration. Every surviving DOM ruler is normalized by its declared CSS size before comparison. DOM
+rulers must first agree on one compositor epoch, then every page ruler must agree with that epoch.
+This distinguishes a shell epoch tear from a browser-only blank/stretch without treating clipping as
+scale. Settled frames still have to pass the original absolute pixel size and DOM-slot-to-viewport
+alignment checks.
 
 For a rail relocation, the Tauri adapter uses a finite snap transaction: it locks out intermediate
 mutation writes, commits the target DOM, reads the public slot's actual rect in the layout effect,

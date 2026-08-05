@@ -311,7 +311,7 @@ async function runEngine(client, page, engine) {
       await rpc("capture.calibration", { visible: true }, win),
       "DOM compositor calibration show",
     );
-    if (!calibration.visible || calibration.rect?.w !== 64 || calibration.rect?.h !== 40) {
+    if (!calibration.visible || calibration.rect?.w !== 40 || calibration.rect?.h !== 40) {
       throw new Error(`DOM compositor calibration 계약 불일치: ${JSON.stringify(calibration)}`);
     }
     const originalWindow = must(await rpc("window.info", {}, win), "window.info");

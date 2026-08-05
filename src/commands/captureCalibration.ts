@@ -12,7 +12,7 @@ function createRuler(anchor: (typeof CALIBRATION_ANCHORS)[number]): HTMLDivEleme
   Object.assign(ruler.style, {
     position: "fixed",
     left: "4px",
-    width: "64px",
+    width: "40px",
     height: "40px",
     background: CALIBRATION_COLOR,
     pointerEvents: "none",
@@ -24,7 +24,7 @@ function createRuler(anchor: (typeof CALIBRATION_ANCHORS)[number]): HTMLDivEleme
 
 /**
  * WindowServer가 transition 중 창 backing을 잘라 재투영해도 최소 한 기준자가 남도록,
- * native content hole이 없는 왼쪽 DOM rail의 상·중·하에 같은 64×40 기준자를 둔다.
+ * native content hole이 없는 왼쪽 DOM rail의 상·중·하에 같은 40×40 기준자를 둔다.
  * 같은 visible 상태의 재적용은 DOM을 다시 만들지 않으며, 불완전한 기존 root는 복구한다.
  */
 export function setCaptureCalibration(visible: boolean) {
