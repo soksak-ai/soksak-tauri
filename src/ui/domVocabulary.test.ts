@@ -71,6 +71,8 @@ const ALLOWED = new Set([
   "data-chrome-font", // 크롬 폰트 토큰
   // ── 진단·관측 표식 ──
   "data-relation-label", // 레일 결부 관계 라벨(RailLinkOverlay 진단)
+  "data-capture-calibration-anchor", // DOM/스냅샷 좌표계 배율을 판정하는 고정 합성 자
+  "data-capture-motion-anchor", // 노출 슬롯과 외부 표면의 프레임별 궤적을 비교하는 합성 자
   // ── slot-freeze 관측 계약(이동-동결의 판정 표식 — slot-freeze 하니스가 소비) ──
   "data-freeze", // 동결 위상(0/1)
   "data-freeze-glide", // 활강 판정

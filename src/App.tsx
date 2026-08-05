@@ -597,6 +597,7 @@ const ProjectPlane = memo(function ProjectPlane({
       {project.rightOpen && (
         <div
           className="sidebar-right-resizer"
+          data-node="sidebar/right/resizer"
           style={{ right: rightW - 2 }}
           onMouseDown={startRightResize}
           title={t("plugin.sidebar.resize")}
@@ -604,6 +605,7 @@ const ProjectPlane = memo(function ProjectPlane({
       )}
       <div
         className={`sidebar-right${project.rightOpen ? " open" : ""}${rightMode === "push" ? " push" : ""}`}
+        data-node="sidebar/right"
         style={{
           width: project.rightOpen ? rightW : 0,
           borderLeftWidth: project.rightOpen ? 1 : 0,
@@ -1023,6 +1025,7 @@ function App() {
       <button
         type="button"
         className="icon-btn project-tab-add"
+        data-node="project/add"
         title={t("project.new")}
         onClick={() => setNewProjectOpen(true)}
       >
@@ -1117,6 +1120,7 @@ function App() {
       <button
         type="button"
         className="rail-add"
+        data-node="rail/add"
         title={t("project.new")}
         onClick={() => setNewProjectOpen(true)}
       >

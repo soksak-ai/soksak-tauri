@@ -101,7 +101,11 @@ export function NewProjectModal({
   };
 
   return (
-    <div className="dmodal-overlay" onMouseDown={onClose}>
+    <div
+      className="dmodal-overlay"
+      data-node="modal/project-new"
+      onMouseDown={onClose}
+    >
       <div
         ref={cardRef}
         className="dmodal-card dmodal-project"
@@ -120,6 +124,7 @@ export function NewProjectModal({
           <button
             type="button"
             className="icon-btn dmodal-close"
+            data-node="modal/project-new/close"
             onClick={onClose}
           >
             <Icon name="close" />
@@ -133,6 +138,7 @@ export function NewProjectModal({
               <button
                 type="button"
                 className={`dbtn dseg-btn${mode === "auto" ? " active" : ""}`}
+                data-node="modal/project-new/folder-auto"
                 onClick={() => {
                   setMode("auto");
                   setRoot(undefined);
@@ -144,6 +150,7 @@ export function NewProjectModal({
               <button
                 type="button"
                 className={`dbtn dseg-btn${mode === "manual" ? " active" : ""}`}
+                data-node="modal/project-new/folder-pick"
                 onClick={pickFolder}
               >
                 {root ? baseName(root) : t("project.pickFolder")}
@@ -163,6 +170,7 @@ export function NewProjectModal({
             </span>
             <input
               className="dctl"
+              data-node="modal/project-new/name"
               type="text"
               value={name}
               placeholder={
@@ -187,6 +195,7 @@ export function NewProjectModal({
             <span className="drow-label">{t("settings.shell")}</span>
             <input
               className="dctl dctl-mono"
+              data-node="modal/project-new/shell"
               type="text"
               list="np-shell-options"
               value={shell}
@@ -203,12 +212,18 @@ export function NewProjectModal({
           </div>
 
           <div className="dmodal-actions">
-            <button type="button" className="dbtn" onClick={onClose}>
+            <button
+              type="button"
+              className="dbtn"
+              data-node="modal/project-new/cancel"
+              onClick={onClose}
+            >
               {t("common.cancel")}
             </button>
             <button
               type="button"
               className="dbtn dbtn-acc"
+              data-node="modal/project-new/create"
               disabled={createDisabled}
               onClick={create}
             >
