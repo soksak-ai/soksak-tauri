@@ -17,6 +17,7 @@ import { locateTab } from "./catalog";
 import { useSessions } from "../state/sessions";
 import { recordWindowFrames } from "./windowRecorder";
 import { CAPTURE_CALIBRATION_ID, setCaptureCalibration } from "./captureCalibration";
+import { setCaptureMotionAnchors } from "./captureMotionAnchors";
 
 /**
  * 탭의 본문 슬롯 절대 주소 — GroupArea 가 `layout/tab/<viewId>` 로 노출한다(그 자리와 한 벌).
@@ -251,6 +252,38 @@ export function registerCaptureCatalog(): void {
       typeof p.visible === "boolean"
         ? setCaptureCalibration(p.visible)
         : setCaptureCalibration(Boolean(document.getElementById(CAPTURE_CALIBRATION_ID))),
+  });
+
+  register("capture.motion-anchors", {
+    description:
+      "Attach finite E2E pixel anchors to exposed DOM tab slots. Each anchor inherits its slot's layout transform, so a page marker of the same color must share its x coordinate in every recorded PNG. Passing an empty anchors array removes all anchors idempotently.",
+    params: {
+      anchors: {
+        type: "json",
+        description: "Complete declaration: [{address,color}]. Addresses must come from ui.tree.",
+        required: true,
+      },
+    },
+    returns: "{ visible, count, anchors:[{address,color,rect}] }",
+    message: (d) => `DOM motion anchors: ${Number(d.count ?? 0)}`,
+    errors: ["NOT_EXPOSED", "INVALID_PARAMS"],
+    examples: ['capture.motion-anchors \'{"anchors":[]}\''],
+    handler: async (p) => {
+      if (!Array.isArray(p.anchors)) {
+        return { ok: false, code: "INVALID_PARAMS", message: "anchors must be an array" };
+      }
+      const targets = [];
+      for (const raw of p.anchors) {
+        const item = raw as { address?: unknown; color?: unknown };
+        if (typeof item?.address !== "string" || typeof item.color !== "string") {
+          return { ok: false, code: "INVALID_PARAMS", message: "anchor requires string address and color" };
+        }
+        const found = resolveExposed(item.address);
+        if (!("el" in found)) return found;
+        targets.push({ address: item.address, color: item.color, host: found.el });
+      }
+      return setCaptureMotionAnchors(document, targets);
+    },
   });
 
   register("window.snapshot", {

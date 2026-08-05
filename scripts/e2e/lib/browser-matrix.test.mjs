@@ -7,9 +7,11 @@ import {
   parseBrowserEngines,
   fixtureMarkers,
   fixtureInputMarkers,
+  fixtureMotionMarkers,
   fixtureMarkerSize,
   markerEvidence,
   markerPixels,
+  motionMarkerAlignment,
   hostileWindowResizeSizes,
   unwrapEvalValue,
   viewportAlignment,
@@ -185,7 +187,7 @@ describe("공통 브라우저 fixture", () => {
     const px = Buffer.alloc(80 * 50 * 3, 0);
     for (let y = 5; y < 45; y += 1) for (let x = 8; x < 72; x += 1) px[(y * 80 + x) * 3 + 2] = 255;
     const evidence = markerEvidence(encodePng({ w: 80, h: 50, ch: 3, px }), "#0000ff");
-    expect(evidence.largest).toEqual({ count: 2560, width: 64, height: 40 });
+    expect(evidence.largest).toEqual({ count: 2560, x: 8, y: 5, width: 64, height: 40 });
   });
 
   it("흩어진 장식 픽셀과 넓게 이어진 fixture marker를 구분한다", () => {
@@ -197,5 +199,25 @@ describe("공통 브라우저 fixture", () => {
     const evidence = markerEvidence(encodePng({ w: 180, h: 50, ch: 3, px }), fixtureMarkers[0]);
     expect(evidence.largest.width).toBe(140);
     expect(evidence.largest.height).toBe(24);
+  });
+
+  it("같은 프레임의 DOM anchor와 surface marker x좌표를 엄격히 판정한다", () => {
+    const frame = (surfaceX) => {
+      const px = Buffer.alloc(100 * 60 * 3, 0);
+      for (const [x0, y0] of [[10, 4], [surfaceX, 32]]) {
+        for (let y = y0; y < y0 + 12; y += 1) for (let x = x0; x < x0 + 12; x += 1) {
+          const at = (y * 100 + x) * 3;
+          px[at + 1] = 255;
+          px[at + 2] = 255;
+        }
+      }
+      return encodePng({ w: 100, h: 60, ch: 3, px });
+    };
+
+    expect(motionMarkerAlignment(frame(10), fixtureMotionMarkers[0], 1).ok).toBe(true);
+    expect(motionMarkerAlignment(frame(38), fixtureMotionMarkers[0], 1)).toMatchObject({
+      ok: false,
+      errors: ["motion-x=10/38 dx=28"],
+    });
   });
 });

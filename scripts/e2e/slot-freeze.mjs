@@ -20,11 +20,13 @@ import {
   browserSurfaceInvariant,
   fixtureHtml,
   fixtureInputMarkers,
+  fixtureMotionMarkers,
   compositorCalibrationMarker,
   fixtureMarkerSize,
   fixtureMarkers,
   hostileWindowResizeSizes,
   markerEvidence,
+  motionMarkerAlignment,
   parseBrowserEngines,
   unwrapEvalValue,
   viewportAlignment,
@@ -58,6 +60,12 @@ const addressForTab = (tree, tabId) => {
   const token = `/tab/${tabId}/`;
   const node = (tree.nodes ?? []).find((item) => item.nodePath === "surface" && item.address.includes(token));
   if (!node?.address) throw new Error(`탭 content surface 주소가 노출되지 않았다: ${tabId}`);
+  return node.address;
+};
+
+const layoutAddressForTab = (tree, tabId) => {
+  const node = (tree.nodes ?? []).find((item) => item.nodePath === `layout/tab/${tabId}`);
+  if (!node?.address) throw new Error(`탭 layout 주소가 노출되지 않았다: ${tabId}`);
   return node.address;
 };
 
@@ -191,6 +199,16 @@ function assertFrameMarkers(file, name, scale, { requireInput = true, compareDom
         });
         if (!aligned.ok) throw new Error(`${name}: slot ${slot} stale-frame stretch — ${aligned.errors.join(", ")}`);
       }
+    }
+  }
+}
+
+function assertFrameMotion(file, name, scale) {
+  const bytes = fs.readFileSync(file);
+  for (let slot = 0; slot < fixtureMotionMarkers.length; slot += 1) {
+    const verdict = motionMarkerAlignment(bytes, fixtureMotionMarkers[slot], scale);
+    if (!verdict.ok) {
+      throw new Error(`${name}: slot ${slot} DOM/surface 궤적 불일치 — ${verdict.errors.join(", ")}`);
     }
   }
 }
@@ -353,6 +371,13 @@ async function runEngine(client, page, engine) {
 
     const tree = must(await rpc("ui.tree", {}, win), "ui.tree");
     const addresses = tabIds.map((id) => addressForTab(tree, id));
+    const layoutAddresses = tabIds.map((id) => layoutAddressForTab(tree, id));
+    must(await rpc("capture.motion-anchors", {
+      anchors: layoutAddresses.map((address, index) => ({
+        address,
+        color: fixtureMotionMarkers[index],
+      })),
+    }, win), "motion anchors");
     const native = implementation.surface === "framework-native";
     const windowed = implementation.surface === "engine-windowed";
     const labels = tabIds.map((id) => `b-${win}-${id}`);
@@ -395,13 +420,17 @@ async function runEngine(client, page, engine) {
         const dir = path.join(engineEvidence, name);
         const clicked = must(await rpc("ui.input.click", {
           address: addresses[side], recordDir: dir, recordFrames: FRAMES_PER_CLICK,
-          recordIntervalMs: 16, recordLeadMs: 700,
+          recordIntervalMs: 16, recordLeadMs: 32,
         }, win, { timeoutMs: 60_000 }), `교차 클릭 ${name}`);
         const captured = Number(clicked.recording?.frames ?? 0);
         if (captured !== FRAMES_PER_CLICK) throw new Error(`${name}: 캡처 ${captured}/${FRAMES_PER_CLICK}`);
         const files = fs.readdirSync(dir).filter((file) => /^f\d{4}\.png$/.test(file)).sort();
         if (files.length !== FRAMES_PER_CLICK) throw new Error(`${name}: PNG ${files.length}/${FRAMES_PER_CLICK}`);
-        for (const file of files) assertFrameMarkers(path.join(dir, file), `${engine}/${name}/${file}`, scale);
+        for (const file of files) {
+          const frame = path.join(dir, file);
+          assertFrameMarkers(frame, `${engine}/${name}/${file}`, scale);
+          assertFrameMotion(frame, `${engine}/${name}/${file}`, scale);
+        }
         frameCount += files.length;
 
         if (native) {
@@ -478,6 +507,7 @@ async function runEngine(client, page, engine) {
     console.log(`✓ ${engine} GREEN — 한글 IME 2개 · 교차 클릭 ${CYCLES * 2}회 · 급격한 창 resize ${fastSizes.length}단계/${fastResize.resizeElapsedMs}ms · 패널 resize 왕복 · 연속 프레임 ${frameCount}장`);
     return frameCount;
   } finally {
+    if (win) await rpc("capture.motion-anchors", { anchors: [] }, win).catch(() => {});
     if (win && homeOverride) {
       await rpc("plugin.settings.reset", { id: plugin, key: "homeUrl", scope: "project" }, win).catch(() => {});
     }

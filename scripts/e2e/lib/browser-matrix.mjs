@@ -17,6 +17,8 @@ export const browserImplementations = Object.freeze({
 
 export const fixtureMarkers = Object.freeze(["#ff00ff", "#00ffff"]);
 export const fixtureInputMarkers = Object.freeze(["#ffff00", "#00ff00"]);
+export const fixtureMotionMarkers = Object.freeze(["#00ffff", "#ffff00"]);
+export const fixtureMotionMarkerSize = Object.freeze({ width: 12, height: 12 });
 export const compositorCalibrationMarker = "#0000ff";
 export const compositorCalibrationSize = Object.freeze({ width: 40, height: 40 });
 // hostile resize의 최소 2-pane viewport에도 잘리지 않는 고정 ruler. 작아지는 반응형 marker가
@@ -65,7 +67,7 @@ export function markerEvidence(bytes, hex, tolerance = 24, sampleStep = 1) {
       }
     }
   }
-  let largest = { count: 0, width: 0, height: 0 };
+  let largest = { count: 0, x: 0, y: 0, width: 0, height: 0 };
   const components = [];
   const stack = [];
   for (let start = 0; start < matches.length; start += 1) {
@@ -89,7 +91,13 @@ export function markerEvidence(bytes, hex, tolerance = 24, sampleStep = 1) {
         stack.push(next);
       }
     }
-    const component = { count, width: (maxX - minX + 1) * step, height: (maxY - minY + 1) * step };
+    const component = {
+      count,
+      x: minX * step,
+      y: minY * step,
+      width: (maxX - minX + 1) * step,
+      height: (maxY - minY + 1) * step,
+    };
     components.push(component);
     if (count > largest.count) largest = component;
   }
@@ -99,6 +107,26 @@ export function markerEvidence(bytes, hex, tolerance = 24, sampleStep = 1) {
 
 export function markerPixels(bytes, hex, tolerance = 24, sampleStep = 1) {
   return markerEvidence(bytes, hex, tolerance, sampleStep).total;
+}
+
+/** 같은 색의 DOM slot anchor와 페이지 surface marker가 한 프레임에서 같은 x에 있는지 판정한다. */
+export function motionMarkerAlignment(bytes, hex, scale, tolerance = 4) {
+  const expected = Number(scale) * fixtureMotionMarkerSize.width;
+  const candidates = markerEvidence(bytes, hex, 24, 1).components
+    .filter((component) =>
+      Math.abs(component.width - expected) <= tolerance
+      && Math.abs(component.height - expected) <= tolerance)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 2);
+  if (candidates.length !== 2) {
+    return { ok: false, errors: [`motion-markers=${candidates.length}/2`], candidates };
+  }
+  const dx = Math.abs(candidates[0].x - candidates[1].x);
+  return {
+    ok: dx <= tolerance,
+    errors: dx <= tolerance ? [] : [`motion-x=${candidates[0].x}/${candidates[1].x} dx=${dx}`],
+    candidates,
+  };
 }
 
 /** 정사각 DOM ruler의 고유비를 유지한 component만 합성 배율 근거로 쓴다.
@@ -263,12 +291,13 @@ export function fixtureHtml() {
       section{padding:16px;border:8px solid #f7f4df;background:#16394a;box-shadow:20px 20px 0 #10202c;max-width:520px}
       h1{font-size:48px;margin:0 0 8px}p{margin:0 0 20px}
       label{display:grid;gap:8px;font-size:18px}input{box-sizing:border-box;width:100%;font:28px system-ui;padding:10px 12px;border:4px solid #e0704f;background:#fff;color:#10202c}
+      #motion-marker{position:fixed;z-index:2147483647;left:0;top:0;width:${fixtureMotionMarkerSize.width}px;height:${fixtureMotionMarkerSize.height}px;background:var(--motion-marker,#00ffff)}
       #marker{width:${fixtureMarkerSize.width}px;height:${fixtureMarkerSize.height}px;margin:0 0 16px;background:var(--marker,#ff00ff)}
       #typed-marker{height:24px;margin-top:10px;background:#000}
       output{display:block;min-height:1.4em;margin-top:10px;font-size:18px;color:#f7f4df}
       @media(max-height:520px){h1{font-size:36px}p{font-size:20px;margin-bottom:10px}label{gap:4px}input{font-size:24px;padding:6px 8px}#marker{margin-bottom:10px}output{margin-top:4px}#typed-marker{margin-top:4px}}
     </style></head><body>
-    <main><section><h1>Browser Boundary</h1><p>DOM slot ↔ live browser surface</p><div id="marker"></div>
+    <div id="motion-marker"></div><main><section><h1>Browser Boundary</h1><p>DOM slot ↔ live browser surface</p><div id="marker"></div>
       <label>IME input<input id="ime" autocomplete="off" spellcheck="false"></label>
       <output id="events">beforeinput:0 input:0</output><div id="typed-marker"></div>
     </section></main>
@@ -276,6 +305,7 @@ export function fixtureHtml() {
       window.__browserFixture = { beforeInput: 0, inputEvents: 0, values: [] };
       const slot = Number(new URLSearchParams(location.search).get("slot") || 0);
       document.documentElement.style.setProperty("--marker", ${JSON.stringify(fixtureMarkers)}[slot] || ${JSON.stringify(fixtureMarkers)}[0]);
+      document.documentElement.style.setProperty("--motion-marker", ${JSON.stringify(fixtureMotionMarkers)}[slot] || ${JSON.stringify(fixtureMotionMarkers)}[0]);
       const ime = document.getElementById("ime");
       const events = document.getElementById("events");
       const typedMarker = document.getElementById("typed-marker");
