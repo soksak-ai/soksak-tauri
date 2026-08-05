@@ -305,27 +305,29 @@ export async function prepareNativeContentViewMove(
       state.precommitting = true;
       state.precommitTarget = rectKey(target);
     }
-    // IPC ACK를 여기서 기다리면 AppKit 목표 frame이 먼저 WindowServer에 제출되고 React의
-    // 목표 DOM은 다음 JS turn에 제출된다. 비전면 문서에서는 그 사이가 실제 한 프레임으로
-    // 관측된다. 명령은 지금 발행하되 ACK 소유권은 아래 commit이 회수한다. 그러면 React가
-    // 같은 사건에서 목표 DOM을 커밋하고, 거래 완료는 두 제출이 모두 끝난 뒤에만 알려진다.
-    // 지연값·rAF·폴링은 없고 prepare→commit 한 거래의 경계만 바로잡는다.
-    const prepareAck = Promise.all([
-      ...targets.map(async ({ state, target }) => {
-        await call("webview_transition_prepare", {
-          label: state.label,
-          ...target,
-          startAtUnixMs,
-          durationMs,
-        });
-        state.boundsWrites += 1;
-        state.lastRect = rectKey(target);
-      }),
-      ...externalTargets.map(({ participant, target }) =>
-        participant.prepare(target, { startAtUnixMs, durationMs })),
-    ]);
-    // commit/cancel이 반드시 회수하지만 그 전 reject도 전역 unhandledrejection으로 새지 않는다.
-    void prepareAck.catch(() => {});
+    try {
+      await Promise.all([
+        ...targets.map(async ({ state, target }) => {
+          await call("webview_transition_prepare", {
+            label: state.label,
+            ...target,
+            startAtUnixMs,
+            durationMs,
+          });
+          state.boundsWrites += 1;
+          state.lastRect = rectKey(target);
+        }),
+        ...externalTargets.map(({ participant, target }) =>
+          participant.prepare(target, { startAtUnixMs, durationMs })),
+      ]);
+    } catch (error) {
+      for (const { state } of targets) {
+        state.precommitting = false;
+        state.precommitTarget = "";
+      }
+      for (const { participant } of externalTargets) participant.cancel();
+      throw error;
+    }
     let closed = false;
     return {
       mode: "snap",
@@ -333,7 +335,6 @@ export async function prepareNativeContentViewMove(
         if (closed) return;
         closed = true;
         try {
-          await prepareAck;
           await Promise.all([
             ...targets.map(async ({ state, target }) => {
               const slot = findContentViewSlot(state.label, document);
@@ -365,15 +366,11 @@ export async function prepareNativeContentViewMove(
           state.precommitting = false;
           state.precommitTarget = "";
         }
-        // 아직 비동기 prepare가 native 목표를 설치 중일 수 있다. 그 ACK 뒤에 옛 frame을
-        // 복구해야 늦게 도착한 prepare가 취소를 다시 덮지 않는다.
-        void prepareAck.finally(() => {
-          for (const { state, before } of targets) {
-            state.lastRect = rectKey(before);
-            void call("webview_transition_cancel", { label: state.label, ...before }).catch(() => {});
-          }
-          for (const { participant } of externalTargets) participant.cancel();
-        }).catch(() => {});
+        for (const { state, before } of targets) {
+          state.lastRect = rectKey(before);
+          void call("webview_transition_cancel", { label: state.label, ...before }).catch(() => {});
+        }
+        for (const { participant } of externalTargets) participant.cancel();
       },
     };
   }

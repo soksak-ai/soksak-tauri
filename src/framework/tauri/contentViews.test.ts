@@ -316,44 +316,6 @@ describe("네이티브 자식 뷰 구현", () => {
     expect(invoke.mock.calls.filter(([command]) => command === "webview_bounds")).toHaveLength(0);
   });
 
-  it("비전면 snap은 native 목표와 DOM 목표를 같은 사건에 발행하고 commit에서 native ACK를 회수한다", async () => {
-    vi.mocked(document.hasFocus).mockReturnValue(false);
-    let x = 620;
-    const frame = document.createElement("div");
-    frame.dataset.node = "layout/tab/v-atomic";
-    const slot = document.createElement("div");
-    slot.setAttribute("data-content-view-body", "browser--v-atomic");
-    slot.getBoundingClientRect = () => ({
-      x, y: 112, left: x, top: 112, right: x + 212, bottom: 570, width: 212, height: 458,
-    }) as DOMRect;
-    frame.appendChild(slot);
-    document.body.appendChild(frame);
-
-    const { nativeHost, prepareNativeContentViewMove } = await load();
-    await nativeHost.open("browser--v-atomic", { url: "https://x" });
-    let releaseNative!: () => void;
-    invoke.mockImplementation((command: string) => command === "webview_transition_prepare"
-      ? new Promise<void>((resolve) => { releaseNative = resolve; })
-      : Promise.resolve(undefined));
-
-    let prepared: Awaited<ReturnType<typeof prepareNativeContentViewMove>> | undefined;
-    const dispatch = prepareNativeContentViewMove([{ viewId: "v-atomic", dx: 410 }])
-      .then((value) => { prepared = value; });
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(prepared?.mode).toBe("snap");
-
-    x = 210;
-    let committed = false;
-    const commit = prepared!.commit().then(() => { committed = true; });
-    await Promise.resolve();
-    expect(committed).toBe(false);
-    releaseNative();
-    await dispatch;
-    await commit;
-    expect(committed).toBe(true);
-  });
-
   it("비전면 외부 표면은 prepare/commit 애니메이션 대신 최종 DOM rect snap ACK를 기다린다", async () => {
     vi.mocked(document.hasFocus).mockReturnValue(false);
     let x = 620;
