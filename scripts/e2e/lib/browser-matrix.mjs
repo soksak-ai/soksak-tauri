@@ -19,6 +19,7 @@ export const fixtureMarkers = Object.freeze(["#ff00ff", "#00ffff"]);
 export const fixtureInputMarkers = Object.freeze(["#ffff00", "#00ff00"]);
 export const fixtureMotionMarkers = Object.freeze(["#00ffff", "#ffff00"]);
 export const fixtureMotionMarkerSize = Object.freeze({ width: 12, height: 12 });
+export const fixtureInputMarkerSize = Object.freeze({ minWidth: 64, height: 24 });
 export const compositorCalibrationMarker = "#0000ff";
 export const compositorCalibrationSize = Object.freeze({ width: 40, height: 40 });
 // hostile resize의 최소 2-pane viewport에도 잘리지 않는 고정 ruler. 작아지는 반응형 marker가

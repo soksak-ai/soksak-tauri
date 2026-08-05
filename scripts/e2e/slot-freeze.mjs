@@ -20,6 +20,7 @@ import {
   browserSurfaceInvariant,
   fixtureHtml,
   fixtureInputMarkers,
+  fixtureInputMarkerSize,
   fixtureMotionMarkers,
   compositorCalibrationMarker,
   fixtureMarkerSize,
@@ -187,8 +188,12 @@ function assertFrameMarkers(file, name, scale, { requireInput = true, compareDom
   for (const [kind, markers] of kinds) {
     for (let slot = 0; slot < markers.length; slot += 1) {
       const evidence = markerEvidence(bytes, markers[slot], 24, MARKER_SAMPLE_STEP).largest;
-      const expectedWidth = (compareDomEpoch ? 40 : fixtureMarkerSize.width) * scale;
-      const expectedHeight = (compareDomEpoch ? 40 : fixtureMarkerSize.height) * scale;
+      const expectedWidth = (compareDomEpoch
+        ? 40
+        : kind === "input" ? fixtureInputMarkerSize.minWidth : fixtureMarkerSize.width) * scale;
+      const expectedHeight = (compareDomEpoch
+        ? 40
+        : kind === "input" ? fixtureInputMarkerSize.height : fixtureMarkerSize.height) * scale;
       if (evidence.count < MIN_MARKER_COMPONENT || evidence.width < expectedWidth - 4 || evidence.height < expectedHeight - 4) {
         throw new Error(`${name}: slot ${slot} ${kind} marker 소실(${JSON.stringify(evidence)})`);
       }
@@ -220,9 +225,11 @@ function assertSentinelMarkers(file, name, scale) {
   const bytes = fs.readFileSync(file);
   for (const [kind, marker] of [["page", fixtureMarkers[0]], ["input", fixtureInputMarkers[0]]]) {
     const evidence = markerEvidence(bytes, marker, 24, MARKER_SAMPLE_STEP).largest;
+    const expectedWidth = (kind === "input" ? fixtureInputMarkerSize.minWidth : fixtureMarkerSize.width) * scale;
+    const expectedHeight = (kind === "input" ? fixtureInputMarkerSize.height : fixtureMarkerSize.height) * scale;
     if (evidence.count < MIN_MARKER_COMPONENT
-        || evidence.width < fixtureMarkerSize.width * scale - 4
-        || evidence.height < fixtureMarkerSize.height * scale - 4) {
+        || evidence.width < expectedWidth - 4
+        || evidence.height < expectedHeight - 4) {
       throw new Error(`${name}: sentinel ${kind} marker 소실(${JSON.stringify(evidence)})`);
     }
   }

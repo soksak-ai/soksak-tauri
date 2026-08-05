@@ -7,6 +7,7 @@ import {
   parseBrowserEngines,
   fixtureMarkers,
   fixtureInputMarkers,
+  fixtureInputMarkerSize,
   fixtureMotionMarkers,
   fixtureMarkerSize,
   markerEvidence,
@@ -168,6 +169,7 @@ describe("공통 브라우저 fixture", () => {
     expect(html).toContain('id="marker"');
     expect(html).toContain('id="typed-marker"');
     expect(html).toContain(fixtureInputMarkers[0]);
+    expect(html).toContain(`#typed-marker{height:${fixtureInputMarkerSize.height}px`);
     expect(html).toContain(`width:${fixtureMarkerSize.width}px;height:${fixtureMarkerSize.height}px`);
     expect(html).toContain("@media(max-height:520px)");
   });
