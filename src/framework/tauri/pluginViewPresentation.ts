@@ -52,6 +52,61 @@ const state = moduleState("framework/tauri#pluginViewPresentation", () => ({
 
 const rectOf = (element: HTMLElement) => surfaceRectOf(element.getBoundingClientRect());
 
+type PaneRect = { x: number; y: number; w: number; h: number };
+type DomPaneFact = { pane: string; frame: PaneRect };
+type NativePaneFact = {
+  pane: string;
+  window: string;
+  cssFrame: PaneRect;
+  [key: string]: unknown;
+};
+
+const rectDelta = (a: PaneRect, b: PaneRect) => ({
+  x: Math.abs(a.x - b.x), y: Math.abs(a.y - b.y),
+  w: Math.abs(a.w - b.w), h: Math.abs(a.h - b.h),
+});
+
+/**
+ * 한 창의 공개 DOM pane과 AppKit PaneSurfaceHost를 동일한 CSS 좌표계에서 판정한다.
+ * 존재·중복은 정확히 1:1이어야 하고 기하는 반올림 오차(1px)만 허용한다. 다른 창의 native
+ * host는 섞어 판정하지 않되, 어댑터의 전역 장부 누수를 숨기지 않도록 별도 사실로 노출한다.
+ */
+export function comparePanePresentation(
+  dom: readonly DomPaneFact[],
+  native: readonly NativePaneFact[],
+  windowLabel: string,
+  tolerancePx = 1,
+) {
+  const scoped = native.filter((fact) => fact.window === windowLabel);
+  const foreignNative = native.filter((fact) => fact.window !== windowLabel).map((fact) => fact.pane);
+  const matches = dom.map((domFact) => {
+    const candidates = scoped.filter((fact) => fact.pane === domFact.pane);
+    const nativeFact = candidates.length === 1 ? candidates[0] : null;
+    const delta = nativeFact ? rectDelta(domFact.frame, nativeFact.cssFrame) : null;
+    const ok = candidates.length === 1
+      && delta !== null
+      && Object.values(delta).every((value) => value <= tolerancePx);
+    return {
+      pane: domFact.pane,
+      domFrame: domFact.frame,
+      nativeFrame: nativeFact?.cssFrame ?? null,
+      nativeCount: candidates.length,
+      delta,
+      ok,
+    };
+  });
+  const domPanes = new Set(dom.map((fact) => fact.pane));
+  const orphanNative = scoped.filter((fact) => !domPanes.has(fact.pane)).map((fact) => fact.pane);
+  return {
+    window: windowLabel,
+    tolerancePx,
+    matches,
+    orphanNative,
+    foreignNative,
+    ok: matches.every((match) => match.ok) && orphanNative.length === 0,
+  };
+}
+
 /**
  * Child renderer의 공개 content slot을 메인 문서 좌표계에 측정 가능한 DOM으로 투영한다.
  * `data-content-view-body`는 붙이지 않는다. 그것은 실제 content-view 생성 소유권이므로
@@ -338,6 +393,15 @@ function disposeView(view: PresentedState): void {
 
 export function pluginViewPresentationStatus() {
   return state.readiness.status();
+}
+
+export async function pluginViewCompositionStatus() {
+  const windowLabel = currentWindowLabel();
+  const dom = [...state.views.values()]
+    .filter((view) => view.grouped && !view.disposed)
+    .map((view) => ({ pane: view.pane, frame: rectOf(view.container) }));
+  const native = await invoke<NativePaneFact[]>("webview_pane_hosts");
+  return comparePanePresentation(dom, native, windowLabel);
 }
 
 export function awaitPluginViewPresentation(

@@ -22,6 +22,7 @@ import {
   runWindowResizeSequence,
   type PhysicalWindowSize,
 } from "./windowResizeSequence";
+import { sampleWindowResizeProbe } from "../lib/windowResizeProbe";
 
 export function registerWindowCatalog(): void {
   register("window.info", {
@@ -88,7 +89,7 @@ export function registerWindowCatalog(): void {
       recordFrames: { type: "number", description: "Frames to record when recordDir is set (default 64, max 600)" },
       recordIntervalMs: { type: "number", description: "Recording interval in ms (default 16)" },
     },
-    returns: "{ steps, frames, resizeElapsedMs, elapsedMs, final:{w,h} }",
+    returns: "{ steps, frames, resizeElapsedMs, elapsedMs, final:{w,h}, samples:[{step,size,observation}] }",
     message: (d) => tmsg("msg.window.resizeSequence", { steps: Number(d.steps), frames: Number(d.frames) }),
     errors: ["INVALID_PARAMS"],
     examples: [
@@ -113,6 +114,7 @@ export function registerWindowCatalog(): void {
           record,
           setSize: (w, h) => win.setPhysicalSize(w, h),
           recordFrames: recordWindowFrames,
+          observe: async () => await sampleWindowResizeProbe(),
         });
       } catch (error) {
         return {

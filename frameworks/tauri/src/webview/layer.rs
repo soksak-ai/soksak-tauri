@@ -462,6 +462,17 @@ pub fn pane_surface_host_state() -> serde_json::Value {
     serde_json::Value::Array(hosts.iter().map(|(pane, record)| {
         let host = unsafe { &*(record.ptr as *const NSView) };
         let frame = host.frame();
+        let css_frame = unsafe { host.superview() }.map(|parent| {
+            let y = if parent.isFlipped() {
+                frame.origin.y
+            } else {
+                parent.bounds().size.height - frame.origin.y - frame.size.height
+            };
+            serde_json::json!({
+                "x": frame.origin.x, "y": y,
+                "w": frame.size.width, "h": frame.size.height,
+            })
+        });
         let clips_to_bounds = host.layer().map(|layer| layer.masksToBounds()).unwrap_or(false);
         let renderer_ptr = views.as_ref().and_then(|map| map.get(&record.renderer)).copied().unwrap_or(0);
         let topology = record.members.first()
@@ -475,6 +486,7 @@ pub fn pane_surface_host_state() -> serde_json::Value {
                 .and_then(|map| map.get(&record.renderer)).copied().unwrap_or(false),
             "members": record.members,
             "frame": { "x": frame.origin.x, "y": frame.origin.y, "w": frame.size.width, "h": frame.size.height },
+            "cssFrame": css_frame,
             "clipsToBounds": clips_to_bounds,
             "rendererTopology": topology,
         })

@@ -22,9 +22,12 @@ import {
 import { adoptFrameworkStyles } from "../styles";
 import { registerContentViewHost } from "../../lib/contentViews";
 import { registerLayoutTransitionHost } from "../../lib/layoutTransitionHost";
+import { currentWindowLabel } from "../../lib/webviewLabels";
+import { registerWindowResizeProbe } from "../../lib/windowResizeProbe";
 import {
   awaitPluginViewPresentation,
   installPluginViewPresentation,
+  pluginViewCompositionStatus,
   pluginViewPresentationStatus,
   preparePresentedPluginViewMove,
 } from "./pluginViewPresentation";
@@ -407,9 +410,19 @@ function installPaneSurfaceHostCommands(): void {
     returns: "{ hosts:[{pane,window,renderer,members,frame,rendererTopology}] }",
     message: (d) => `PaneSurfaceHost ${Number(d.count ?? 0)}개`,
     handler: async () => {
-      const hosts = await invoke<Record<string, unknown>[]>("webview_pane_hosts");
+      const window = currentWindowLabel();
+      const hosts = (await invoke<Record<string, unknown>[]>("webview_pane_hosts"))
+        .filter((host) => host.window === window);
       return { count: hosts.length, hosts };
     },
+  });
+  register("webview.pane.composition", {
+    description:
+      "Compare every live plugin DOM pane with its Tauri PaneSurfaceHost in one CSS coordinate system. Requires one-to-one ownership and permits rounding error only.",
+    params: {},
+    returns: "{ window, tolerancePx, matches:[{pane,domFrame,nativeFrame,nativeCount,delta,ok}], orphanNative, foreignNative, ok }",
+    message: (d) => `PaneSurfaceHost 정합 ${d.ok === true ? "GREEN" : "RED"}`,
+    handler: async () => pluginViewCompositionStatus(),
   });
   register("webview.pane.eval", {
     description:
@@ -430,6 +443,7 @@ function installPaneSurfaceHostCommands(): void {
 
 /** 이 프레임워크가 코어 표면에 거는 것 전부. 고른 어댑터만 불린다(contract.install). */
 export function installTauri(): void {
+  registerWindowResizeProbe(pluginViewCompositionStatus);
   // 콘텐츠 뷰 구현 — 이 프레임워크가 줄 수 있는 것은 OS 자식 뷰다.
   registerContentViewHost(nativeHost);
   // DOM 밖 표면이 포함된 배치만 목표 bounds 선확정 + DOM snap 거래로 바꾼다.

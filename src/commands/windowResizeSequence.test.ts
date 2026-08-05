@@ -57,4 +57,19 @@ describe("window resize sequence", () => {
       setSize: vi.fn(), recordFrames: vi.fn() as never,
     })).rejects.toThrow("120");
   });
+
+  it("각 native resize 응답 직후 같은 단계의 공개 수치 사실을 누락 없이 기록한다", async () => {
+    let current = "";
+    const result = await runWindowResizeSequence({
+      sizes: [{ w: 900, h: 700 }, { w: 1500, h: 900 }],
+      intervalMs: 0,
+      setSize: vi.fn(async (w, h) => { current = `${w}x${h}`; }),
+      observe: vi.fn(async (step) => ({ step, current })),
+      recordFrames: vi.fn() as never,
+    });
+    expect(result.samples).toEqual([
+      { step: 0, size: { w: 900, h: 700 }, observation: { step: 0, current: "900x700" } },
+      { step: 1, size: { w: 1500, h: 900 }, observation: { step: 1, current: "1500x900" } },
+    ]);
+  });
 });

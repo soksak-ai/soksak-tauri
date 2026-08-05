@@ -15,6 +15,7 @@ interface ResizeSequenceRequest {
   record?: WindowResizeRecording;
   setSize: (w: number, h: number) => Promise<void>;
   recordFrames: (request: WindowResizeRecording) => Promise<number> & { ready: Promise<void> };
+  observe?: (step: number, size: PhysicalWindowSize) => Promise<unknown>;
 }
 
 const MAX_STEPS = 120;
@@ -35,12 +36,14 @@ export async function runWindowResizeSequence({
   record,
   setSize,
   recordFrames,
+  observe,
 }: ResizeSequenceRequest): Promise<{
   steps: number;
   frames: number;
   resizeElapsedMs: number;
   elapsedMs: number;
   final: PhysicalWindowSize;
+  samples: { step: number; size: PhysicalWindowSize; observation: unknown }[];
 }> {
   if (!Array.isArray(sizes) || sizes.length === 0) throw new Error("sizes must not be empty");
   if (sizes.length > MAX_STEPS) throw new Error(`sizes supports at most ${MAX_STEPS} steps`);
@@ -58,9 +61,11 @@ export async function runWindowResizeSequence({
   // 녹화 명령이 첫 기준 프레임을 실제로 저장한 사건 뒤에만 자극을 시작한다. Promise를 호출한
   // 사실은 네이티브 캡처가 준비됐다는 뜻이 아니며, 그 경쟁은 f0000의 의미를 실행마다 바꾼다.
   if (recording) await recording.ready;
+  const samples: { step: number; size: PhysicalWindowSize; observation: unknown }[] = [];
   for (let index = 0; index < sizes.length; index += 1) {
     const size = sizes[index];
     await setSize(size.w, size.h);
+    if (observe) samples.push({ step: index, size, observation: await observe(index, size) });
     if (index + 1 < sizes.length) await delay(intervalMs);
   }
   const resizeElapsedMs = Math.round(performance.now() - startedAt);
@@ -71,5 +76,6 @@ export async function runWindowResizeSequence({
     resizeElapsedMs,
     elapsedMs: Math.round(performance.now() - startedAt),
     final: sizes[sizes.length - 1],
+    samples,
   };
 }
