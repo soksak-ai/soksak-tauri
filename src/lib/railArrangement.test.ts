@@ -77,16 +77,19 @@ describe("배치 해결기 — station 은 그리드와 포커스의 함수다",
   });
 
   it("PIN 은 포커스를 입력으로 쓰지 않는다 — 어떤 포커스에서도 같은 선", () => {
+    const canonical = threeColumns();
     const pinned = { placement: { mode: "pin" as const, station: 31 } };
-    const atA = solve(threeColumns(), "a", pinned);
-    const atC = solve(threeColumns(), "c", pinned);
+    const atA = solve(canonical, "a", pinned);
+    const atC = solve(canonical, "c", pinned);
     expect(atA.station).toBeCloseTo(100 / 3, 6); // 가장 가까운 클린 라인으로 snap
     expect(atC.station).toBe(atA.station);
-    // **선은 포커스를 안 쓴다. 배치는 쓴다.** PIN 에서 레일은 제자리를 지키고, 그래서 포커스
-    // 간 판이 레일 옆으로 온다 — 그것이 "레일에 가까운 쪽에 붙는다"는 법칙의 PIN 쪽 방법이다.
-    // 둘을 한 기준으로 묶으면 배치가 죽는다(실측 2026-08-02: 오른쪽을 눌러도 그대로였다).
-    expect(atC.swapped).toBe(true);
+    // 고정은 레일뿐 아니라 레이아웃도 고정한다. 포커스는 보더의 결부 대상만 바꾸며
+    // canonical tree의 순서·정체성을 바꾸지 않는다.
+    expect(atA.displayLayout).toBe(canonical);
+    expect(atC.displayLayout).toBe(canonical);
+    expect(atC.swapped).toBe(false);
     expect(atA.swapped).toBe(false);
+    expect(arrangementMoves(atA, atC)).toEqual([]);
   });
 
   it("미해소 포커스는 0 으로 붕괴하지 않고 현 위치를 유지한다", () => {
@@ -108,6 +111,21 @@ describe("배치 해결기 — station 은 그리드와 포커스의 함수다",
     ]);
     expect(max.station).toBe(0);
     expect(max.swapped).toBe(false);
+  });
+
+  it("PIN 최대화는 활성 판이 있던 방향을 보존하고 저장된 station은 바꾸지 않는다", () => {
+    const canonical = threeColumns();
+    const placement = { mode: "pin" as const, station: 100 / 3 };
+
+    const left = solve(canonical, "a", { placement, maximizedId: "a" });
+    expect(left.station).toBe(100); // 판 왼쪽 · 사이드바 오른쪽
+
+    const right = solve(canonical, "c", { placement, maximizedId: "c" });
+    expect(right.station).toBe(0); // 사이드바 왼쪽 · 판 오른쪽
+
+    const restored = solve(canonical, "a", { placement });
+    expect(restored.station).toBeCloseTo(100 / 3, 6);
+    expect(restored.displayLayout).toBe(canonical);
   });
 });
 
@@ -312,19 +330,8 @@ describe("장식 span 이동량 — 복도는 패널과 같은 곡선으로 움�
   });
 });
 
-/**
- * **포커스 간 판은 레일 옆자리로 온다.** 그것이 법칙이다 — 레일에 가까운 쪽에 붙는다.
- *
- * 한때 이것은 켜고 끄는 설정(railFocusNear)이었고, `099a2f1f` 가 "레일이 스스로 이동한다"는
- * 별개 결함을 고치면서 함께 폐지했다. 그 폐지에는 당위가 없다: 레일이 저 혼자 움직이는 것은
- * 결함이고, 클릭으로 판이 옮겨지는 것은 **직접 조작의 결과**다. 같은 원칙("표면의 기하는 자기
- * 판을 직접 조작할 때만 바뀐다")에 클릭은 걸리지 않는다.
- *
- * `19c45707` 이 되살린 것은 축소판이었다 — "행이 어긋나 레일이 못 닿을 때만" 바꾼다. 그래서
- * 나란한 두 칸에서는 오른쪽을 눌러도 아무 일이 없다(실측 2026-08-02: activePaneId 는 오른쪽
- * 칸으로 바뀌는데 cells 는 그대로였다).
- */
-describe("포커스 간 판은 레일 옆으로 온다", () => {
+/** PIN의 포커스 변경은 선택 상태만 바꾸며 레이아웃 조작으로 승격되지 않는다. */
+describe("고정 레일 — 포커스는 배치를 바꾸지 않는다", () => {
   const two = (): SplitTree<Pane> => ({
     type: "split",
     id: "root",
@@ -333,15 +340,17 @@ describe("포커스 간 판은 레일 옆으로 온다", () => {
     children: [leaf("L"), leaf("R")],
   });
 
-  it("오른쪽에 포커스가 가면 자리를 바꾼다 — 레일 옆이 그 판이다", () => {
+  it("오른쪽에 포커스가 가도 사이드바와 두 판의 위치·순서를 유지한다", () => {
+    const canonical = two();
     const a = solveArrangement({
-      layout: two(),
+      layout: canonical,
       focusId: "R",
       placement: { mode: "pin", station: 0 },
       railOpen: true,
     });
-    expect(a.cells.find((c) => c.id === "R")?.rect.left).toBe(0);
-    expect(a.swapped).toBe(true);
+    expect(a.cells.find((c) => c.id === "R")?.rect.left).toBe(50);
+    expect(a.displayLayout).toBe(canonical);
+    expect(a.swapped).toBe(false);
   });
 
   it("이미 레일 옆이면 그대로 — 움직일 이유가 없다", () => {
@@ -367,16 +376,8 @@ describe("포커스 간 판은 레일 옆으로 온다", () => {
   });
 });
 
-/**
- * **당겨오기는 선택이다.**
- *
- * 선언하지 않으면 포커스 판은 제자리에 있고, 레일이 그 판을 찾아간다. 그때 인접은 실재하므로
- * 이음매는 실선이고, 가까운 판이 흐려지는 것은 별개 축(focusDim)이 답한다.
- *
- * 두 방식은 같은 목적의 다른 방법이라 **동시에 켜면 이중으로 움직인다** — 판도 오고 레일도
- * 따라간다. 그래서 한 축이 방법을 정한다.
- */
-describe("당겨오기 — 선언한 쪽만 움직인다", () => {
+/** railPullFocused는 FLOW의 막힌 선 해소 정책이며 PIN의 기하에는 영향이 없다. */
+describe("당겨오기 설정 — 고정 배치에는 개입하지 않는다", () => {
   const two = (): SplitTree<Pane> => ({
     type: "split",
     id: "root",
@@ -385,7 +386,7 @@ describe("당겨오기 — 선언한 쪽만 움직인다", () => {
     children: [leaf("L"), leaf("R")],
   });
 
-  it("당기지 않으면 판은 제자리다 — 레일이 그 선으로 간다", () => {
+  it("당기지 않아도 고정 레일과 판은 모두 제자리다", () => {
     const a = solveArrangement({
       layout: two(),
       focusId: "R",
@@ -395,10 +396,10 @@ describe("당겨오기 — 선언한 쪽만 움직인다", () => {
     });
     expect(a.cells.find((c) => c.id === "R")?.rect.left).toBe(50);
     expect(a.swapped).toBe(false);
-    expect(a.station).toBe(50);
+    expect(a.station).toBe(0);
   });
 
-  it("당기면 판이 온다 — 레일은 제자리다", () => {
+  it("당기기 설정이 켜져도 고정 판을 교체하지 않는다", () => {
     const a = solveArrangement({
       layout: two(),
       focusId: "R",
@@ -406,8 +407,9 @@ describe("당겨오기 — 선언한 쪽만 움직인다", () => {
       railOpen: true,
       pullFocused: true,
     });
-    expect(a.cells.find((c) => c.id === "R")?.rect.left).toBe(0);
+    expect(a.cells.find((c) => c.id === "R")?.rect.left).toBe(50);
     expect(a.station).toBe(0);
+    expect(a.swapped).toBe(false);
   });
 });
 
@@ -457,7 +459,7 @@ describe("레일과 포커스 판 사이에 낀 판", () => {
     expect(a.betweenIds).toEqual([]);
   });
 
-  it("당겨오면 낀 판이 없다 — 판이 레일 옆으로 왔다", () => {
+  it("당겨오기 설정이 켜져도 고정 판은 이동하지 않고 사이 판을 보고한다", () => {
     const a = solveArrangement({
       layout: blocked(),
       focusId: "R",
@@ -465,6 +467,6 @@ describe("레일과 포커스 판 사이에 낀 판", () => {
       railOpen: true,
       pullFocused: true,
     });
-    expect(a.betweenIds).toEqual([]);
+    expect(a.betweenIds).toEqual(["L"]);
   });
 });

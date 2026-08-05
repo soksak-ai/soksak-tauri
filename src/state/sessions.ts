@@ -4,6 +4,7 @@ import { issueId } from "./ids";
 import { noteActivation } from "../lib/motionDebug";
 import {
   DEFAULT_RAIL_PLACEMENT,
+  cleanRailLines,
   isCleanRailStation,
   type RailPlacement,
 } from "../lib/railPlacement";
@@ -38,6 +39,8 @@ import {
 } from "./sidebarLayout";
 import { browserViewIdFromLabel } from "../lib/webviewLabels";
 import { useProjection } from "./projection";
+import { invalidateLayout } from "../lib/layoutSettlement";
+import { computeSplitLayout } from "../lib/splitLayout";
 
 // 3단 구조:
 //   - 최상단 = 프로젝트(Project): 자체 사이드바(파일트리) + 스페이스들
@@ -687,7 +690,15 @@ export function projectArrangement(
 function leftRailLayoutConflict(project: Project): CmdErr | null {
   const placement = project.leftRailPlacement ?? DEFAULT_RAIL_PLACEMENT;
   if (placement.mode !== "pin") return null;
-  const cleanLines = projectArrangement(project)?.cleanLines ?? [0, 100];
+  const content =
+    project.spaces.find((item) => item.id === project.activeSpaceId) ??
+    project.spaces[0];
+  // PIN 유효성은 영속 정본인 분할 트리에 대해 판정한다. 최대화는 그 위의 임시 projection이라
+  // clean line을 [0,100]으로 접지만, 그것으로 저장 station을 거부하면 PIN에서는 최대화 자체가
+  // 불가능해진다. 반대로 실제 split/move/resize는 canonical rect를 바꾸므로 이 검사를 그대로 탄다.
+  const cleanLines = content
+    ? cleanRailLines(computeSplitLayout(content.layout).cells.map((cell) => cell.rect))
+    : [0, 100];
   return isCleanRailStation(cleanLines, placement.station)
     ? null
     : err(
@@ -1029,6 +1040,7 @@ export const useSessions = moduleState("state/sessions#store", () =>
 
   setLeftRailPlacement: (id, placement) => {
     let r: CmdResult<{ placement: RailPlacement }> = noProject(id);
+    let changed = false;
     if (
       placement.mode === "pin" &&
       (!Number.isFinite(placement.station) ||
@@ -1060,12 +1072,14 @@ export const useSessions = moduleState("state/sessions#store", () =>
         return s;
       }
       r = ok({ placement });
+      changed = true;
       return {
         projects: s.projects.map((item) =>
           item.id === id ? { ...item, leftRailPlacement: placement } : item,
         ),
       };
     });
+    if (changed) invalidateLayout(id);
     return r;
   },
 

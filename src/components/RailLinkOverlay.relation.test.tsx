@@ -42,6 +42,7 @@ function overlayProps(overrides: Partial<{
   boundViewId: string;
   railStation: number;
   targetRect: typeof adjacentRect;
+  placementMode: "flow" | "pin";
 }> = {}) {
   return {
     contentId: "c1",
@@ -50,6 +51,7 @@ function overlayProps(overrides: Partial<{
     railWidth: 300,
     railStation: overrides.railStation ?? 50,
     targetRect: overrides.targetRect ?? adjacentRect,
+    placementMode: overrides.placementMode ?? "flow",
   };
 }
 
@@ -124,6 +126,62 @@ describe("RailLinkOverlay — railRelation 3안 스위치", () => {
     expect(host.querySelector(".rail-link-overlay")).not.toBeNull();
   });
 
+  it("고정 레일 왼쪽의 결합 판도 연결된 관계면이다", () => {
+    act(() =>
+      root.render(
+        <RailLinkOverlay
+          {...overlayProps({
+            railStation: 60,
+            targetRect: { left: 0, top: 0, width: 60, height: 100 },
+            placementMode: "pin",
+          })}
+        />,
+      ),
+    );
+    const relation = host.querySelector<HTMLElement>(".rail-link-overlay");
+    expect(relation).not.toBeNull();
+    expect(relation?.dataset.connected).toBe("true");
+    expect(relation?.dataset.side).toBe("left");
+  });
+
+  it("고정 레일 오른쪽에 붙은 결합 판은 오른쪽 합성 보더다", () => {
+    act(() =>
+      root.render(
+        <RailLinkOverlay
+          {...overlayProps({
+            railStation: 40,
+            targetRect: { left: 40, top: 0, width: 30, height: 100 },
+            placementMode: "pin",
+          })}
+        />,
+      ),
+    );
+    const relation = host.querySelector<HTMLElement>(".rail-link-overlay");
+    expect(relation?.dataset.connected).toBe("true");
+    expect(relation?.dataset.side).toBe("right");
+  });
+
+  it("고정 레일과 떨어진 결합 판은 둘을 잇지 않고 독립 활성 보더 두 개를 그린다", () => {
+    act(() =>
+      root.render(
+        <RailLinkOverlay
+          {...overlayProps({
+            railStation: 0,
+            targetRect: { left: 50, top: 0, width: 50, height: 100 },
+            placementMode: "pin",
+          })}
+        />,
+      ),
+    );
+    const relation = host.querySelector<HTMLElement>(".rail-link-overlay");
+    expect(relation).not.toBeNull();
+    expect(relation?.dataset.connected).toBe("false");
+    expect(relation?.dataset.placement).toBe("pin");
+    expect(relation?.dataset.side).toBe("detached");
+    expect(relation?.querySelectorAll(".rail-link-independent")).toHaveLength(2);
+    expect(relation?.querySelector(".rail-link-union")).toBeNull();
+  });
+
   it("moment: 결부 정체성 변경 순간만 600ms 플래시 후 꺼진다(fake timer)", () => {
     vi.useFakeTimers();
     useSettings.setState({ railRelation: "moment" });
@@ -189,6 +247,12 @@ describe("railRelation 모드 CSS 갈래 (스타일 표면)", () => {
     expect(d).toMatch(/fill:\s*color-mix\(in srgb, var\(--acc\)\s*5%,\s*transparent\)/);
     expect(d).toMatch(/stroke:\s*none/);
     expect(d).not.toMatch(/var\(--relation-stroke\)/);
+  });
+
+  it("고정 비인접 관계는 모드와 무관하게 채움 없는 독립 활성 보더다", () => {
+    const d = decls(".rail-link-independent");
+    expect(d).toMatch(/fill:\s*none\s*!important/);
+    expect(d).toMatch(/stroke:\s*var\(--relation-stroke\)\s*!important/);
   });
 
   it("포커스 스포트라이트: 비활성만 가라앉고 활성은 청정(선택만 명확)", () => {
@@ -261,6 +325,16 @@ describe("railRelation 모드 CSS 갈래 (스타일 표면)", () => {
     // will-change 로 승격시켜, 위상마다 재래스터가 DOM(주소표시줄)을 움찔거렸다.
     expect(css).toMatch(/\.rail-traveling \.tab-body\.flip-move/);
     expect(css).not.toMatch(/\.rail-traveling \.tab-body,/);
+  });
+
+  it("FLIP 양방향은 같은 transform 함수 서명으로 수치 보간한다", () => {
+    // WebKit 실측 RED: individual `translate`는 -160px 방향은 보간했지만 +160px 방향은
+    // 진행률만 증가하고 used rect가 출발점에 머물다 끝에서 점프했다. CSS Transforms의
+    // 오래된 공통 primitive 경로를 사용하고, 시작/끝 함수 서명을 동일하게 유지한다.
+    const keyframes = css.match(/@keyframes rail-flip-x\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
+    expect(keyframes).toMatch(/from\s*\{\s*transform:\s*translateX\(var\(--flip-x,\s*0px\)\)/);
+    expect(keyframes).toMatch(/to\s*\{\s*transform:\s*translateX\(0px\)/);
+    expect(keyframes).not.toMatch(/\btranslate\s*:/);
   });
 });
 

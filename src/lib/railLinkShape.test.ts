@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  classifyRailRelation,
   insetClippedEdges,
   railLinkBoxes,
   railLinkPolygon,
@@ -8,6 +9,11 @@ import {
 } from "./railLinkShape";
 
 describe("레일 결부 관계 도형", () => {
+  it("실제 rect로 왼쪽·오른쪽 인접과 비인접을 한 기준으로 분류한다", () => {
+    expect(classifyRailRelation(50, { left: 0, top: 0, width: 50, height: 100 })).toBe("left");
+    expect(classifyRailRelation(50, { left: 50, top: 0, width: 25, height: 100 })).toBe("right");
+    expect(classifyRailRelation(0, { left: 50, top: 0, width: 50, height: 100 })).toBe("detached");
+  });
   it("고정폭 레일과 바로 오른쪽 상단 패널을 하나의 L자 합집합으로 만든다", () => {
     const boxes = railLinkBoxes(
       1200,

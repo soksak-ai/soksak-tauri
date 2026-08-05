@@ -19,6 +19,7 @@ import { scheduleMotion } from "../lib/motionDebug";
 import { railTravelDeclaredMs } from "../lib/railMotion";
 import { redeliverViewFocusIfLost } from "../plugins/viewFocus";
 import type { PreparedLayoutTransition } from "../lib/layoutTransitionHost";
+import { settleLayout } from "../lib/layoutSettlement";
 
 export interface ArrangementPhase<L> {
   /** 지금 화면에 서 있는 배치 — 렌더의 단일 진실(위상 중에는 위상의 목표를 유지한다). */
@@ -37,13 +38,7 @@ export interface ArrangementPhase<L> {
    * 닫힌다 — 실측 결함).
    */
   glide: boolean;
-  /**
-   * 상주 레일의 identity(레일 레이어 key). **도착이 상주가 되는 순간에만** 전진한다 —
-   * 위상 시작에 전진시키면 출발선 레이어도 새 key 를 받아 서 있던 사이드바가 파괴되고
-   * 빠질 자리에 새것이 끼워져 그것이 닫힌다. 빠지는 자리는 원래 있던 게 닫히면 끝이다.
-   * 내용 변화·평면 변화도 전진시키지 않는다(레일은 프로젝트 것이고 재마운트할 이유가 없다).
-   */
-  generation: number;
+  startAtUnixMs?: number;
   /** 다음 해를 여정 없이 받아들인다(손 드래그 착지 — 이미 손이 옮겨 놓았다). */
   rebase: () => void;
 }
@@ -51,12 +46,12 @@ export interface ArrangementPhase<L> {
 interface PhaseState<L> {
   from: Arrangement<L> | null;
   displayed: Arrangement<L> | null;
-  generation: number;
   scopeId: string;
   contentKey: string;
   /** 시작 시점에 굳힌 여정 모드. 정차 중에는 의미 없다. */
   glide: boolean;
   preparing: boolean;
+  startAtUnixMs?: number;
 }
 
 /** 위상 재무장 판정용 해 서명 — 렌더마다 새 객체가 오므로 값으로 비교한다. */
@@ -112,15 +107,17 @@ export function useArrangementPhase<L extends { id: string }>(
     from: Arrangement<L>,
     to: Arrangement<L>,
   ) => Promise<PreparedLayoutTransition>,
+  /** 상태 변이가 발행한 project-scoped layout revision의 ACK key. */
+  settlementKey?: string,
 ): ArrangementPhase<L> {
   const [phase, setPhase] = useState<PhaseState<L>>({
     from: current,
     displayed: current,
-    generation: 0,
     scopeId,
     contentKey,
     glide: true,
     preparing: false,
+    startAtUnixMs: undefined,
   });
 
   // 커밋 시점의 최신값 — 무장 시점 캡처는 전환 중 일시값(placement 미적재 등)을 기준점에 박아
@@ -158,11 +155,11 @@ export function useArrangementPhase<L extends { id: string }>(
     setPhase((p) => ({
       from: latest.current,
       displayed: latest.current,
-      generation: p.generation, // 여정이 아니다 — 상주 레일의 identity 는 그대로
       scopeId: latestScope.current,
       contentKey: latestContent.current,
       glide: p.glide,
       preparing: false,
+      startAtUnixMs: undefined,
     }));
   }, []);
 
@@ -221,35 +218,29 @@ export function useArrangementPhase<L extends { id: string }>(
             prepared.cancel();
             return;
           }
+          pendingCommit.current?.cancel();
+          pendingCommit.current = prepared;
           if (prepared.mode === "snap") {
-            pendingCommit.current?.cancel();
-            pendingCommit.current = prepared;
-            setPhase((p) => ({
+            setPhase(() => ({
               from: target,
               displayed: target,
-              generation: p.generation + 1,
               scopeId: latestScope.current,
               contentKey: latestContent.current,
               glide: false,
               preparing: false,
+              startAtUnixMs: undefined,
             }));
             redeliverViewFocusIfLost();
             return;
           }
-          // 외부 native 표면의 애니메이션이 실제로 무장됐다는 응답이 DOM 위상 공개보다
-          // 먼저다. 호출만 던지고 DOM을 움직이면 IPC 지연 동안 native는 출발점에 남고,
-          // 이동한 투명 홀과의 교집합만 가느다란 띠로 보인다.
-          await prepared.commit();
-          if (preparation.current.serial !== serial) return;
-          if (arrangementKey(latest.current) !== currentKey) return;
           setPhase((p) => ({
             from: p.displayed,
             displayed: target,
-            generation: p.generation,
             scopeId: latestScope.current,
             contentKey: latestContent.current,
             glide: decideGlide(p.displayed, target),
             preparing: false,
+            startAtUnixMs: prepared.startAtUnixMs,
           }));
         })
         .catch((error) => {
@@ -265,11 +256,11 @@ export function useArrangementPhase<L extends { id: string }>(
     setPhase((p) => ({
       from: p.displayed,
       displayed: target,
-      generation: p.generation,
       scopeId: latestScope.current,
       contentKey: latestContent.current,
       glide: decideGlide(p.displayed, target),
       preparing: false,
+      startAtUnixMs: undefined,
     }));
     // current 는 렌더마다 새 객체다 — 값 서명(currentKey·contentKey)만이 안정된 의존이다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -304,11 +295,11 @@ export function useArrangementPhase<L extends { id: string }>(
         return {
           from: p.displayed,
           displayed: p.displayed,
-          generation: p.generation + 1, // 도착 레이어가 상주가 된다
           scopeId: latestScope.current,
           contentKey: latestContent.current,
           glide: p.glide,
           preparing: false,
+          startAtUnixMs: undefined,
         };
       });
       // 재배열이 떨군 입력 포커스를 착지 시점에 재배달한다 — "바깥(그룹 활성)만 되고 내부
@@ -316,7 +307,13 @@ export function useArrangementPhase<L extends { id: string }>(
       redeliverViewFocusIfLost();
     });
     return cancel;
-  }, [traveling, phase.generation]);
+  }, [traveling]);
+
+  // 상태 변이의 공개 ACK는 최종 해가 실제 표시 해가 되고 준비·이동이 모두 닫힌 뒤에만 낸다.
+  useLayoutEffect(() => {
+    if (!settlementKey || phase.preparing || traveling || currentKey !== displayedKey) return;
+    settleLayout(settlementKey);
+  });
 
   return {
     displayed: phase.displayed,
@@ -325,7 +322,7 @@ export function useArrangementPhase<L extends { id: string }>(
     traveling,
     preparing: phase.preparing,
     glide: phase.glide,
-    generation: phase.generation,
+    startAtUnixMs: phase.startAtUnixMs,
     rebase,
   };
 }

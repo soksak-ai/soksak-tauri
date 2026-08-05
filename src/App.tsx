@@ -1,4 +1,4 @@
-import { railBoundBox } from "./lib/railBoundBox";
+import { flowRailBoundBox } from "./lib/railBoundBox";
 import { currentWindow, appInfo, invoke, dragRegion } from "./framework";
 import { execute } from "./commands/registry";
 import {
@@ -75,7 +75,11 @@ import {
   railStationFromLeftPx,
   snapRailStation,
 } from "./lib/railPlacement";
-import { railGeometryScopeId, railPresentationLayers } from "./lib/railMotion";
+import {
+  railFlipOffsetPx,
+  railGeometryScopeId,
+  railPresentation,
+} from "./lib/railMotion";
 import { useAppChromeLayoutReflow } from "./lib/appChromeLayoutReflow";
 import { useArrangementPhase } from "./components/useArrangementPhase";
 import { arrangementMoves, viewIdsOfMoves } from "./lib/railArrangement";
@@ -233,6 +237,7 @@ const ProjectPlane = memo(function ProjectPlane({
     contentKey,
     undefined,
     prepareArrangementTravel,
+    project.id,
   );
   const arrangement = phase.displayed;
   const railCells = arrangement?.cells ?? [];
@@ -294,14 +299,18 @@ const ProjectPlane = memo(function ProjectPlane({
     !!solved &&
     !!phase.displayed &&
     arrangementMoves(phase.displayed, solved).length > 0;
-  // 빠질 자리와 생길 자리 — 출발선 레이어는 서 있던 인스턴스(그것이 닫힌다), 도착선 레이어는
-  // 새것(그것이 열려 상주가 된다). 레일 자신은 평행이동하지 않는다: 패널이 덮고 드러내는 것이
-  // 곧 닫힘·열림이다(세대 전진은 착지에서만 — useArrangementPhase).
-  const railLayers = railPresentationLayers(
-    phase.generation,
+  // 레일은 한 영속 DOM이다. 목표 위치를 먼저 확정하고 탭과 같은 FLIP 위상으로 출발점에서
+  // 되감는다. source/target 복제는 ProjectionSlots와 플러그인 view를 재마운트해 빈 프레임을 만든다.
+  const rail = railPresentation(
     phase.from?.station ?? renderedStation,
     renderedStation,
     railTraveling,
+  );
+  const railFlipX = railFlipOffsetPx(
+    rail.fromStation,
+    rail.station,
+    railPlaneRef.current?.getBoundingClientRect().width ?? 0,
+    project.sidebarOpen ? sidebarW : 0,
   );
   // 위상 신호(§4.6) — 이동하는 표면을 코어가 스탠드인으로 덮는 근거. 위상 중 네이티브 표면은
   // 움직이지 않으므로(스탠드인이 시각을 전담) 여기서 네이티브를 구동하지 않는다.
@@ -428,6 +437,7 @@ const ProjectPlane = memo(function ProjectPlane({
         />
         <RailGridSurface
           traveling={railTraveling}
+          startAtUnixMs={railTraveling ? phase.startAtUnixMs : undefined}
           relationOverlay={
             project.sidebarOpen && activeContent && boundGroup && boundView && boundCell ? (
               <RailLinkOverlay
@@ -436,10 +446,15 @@ const ProjectPlane = memo(function ProjectPlane({
                 boundPaneId={boundGroup.id}
                 railWidth={sidebarW}
                 railStation={renderedStation}
-                // 보더가 감싸는 상자는 **레일부터 결합 판의 오른쪽 끝까지**다. 결합 판이
-                // 레일 옆이면 그 판 자신이 되고(좁은 경우), 사이에 다른 판이 끼면 그것까지
-                // 품는다(넓은 경우) — 같은 식의 두 해다.
-                targetRect={railBoundBox(renderedStation, boundCell.rect)}
+                placementMode={placement.mode}
+                // PIN은 실제 판 rect를 그대로 넘긴다. 인접 여부와 좌·우 방향을 관계면이
+                // 판정하며, 떨어진 판까지 사이 공간을 합성 보더로 오인하지 않는다.
+                // FLOW만 이동 중 결합 구간을 하나의 투영 상자로 표현한다.
+                targetRect={
+                  placement.mode === "pin"
+                    ? boundCell.rect
+                    : flowRailBoundBox(renderedStation, boundCell.rect)
+                }
                 projected={arrangement?.swapped ?? false}
               />
             ) : undefined
@@ -456,25 +471,17 @@ const ProjectPlane = memo(function ProjectPlane({
                 } as React.CSSProperties
               }
             >
-              {railLayers.map((layer) => (
-                <div
-                  // key = identity. 출발선 레이어는 서 있던 인스턴스의 key 를 그대로 받아
-                  // **원래 있던 그것이 닫힌다**. 도착선만 새 key 로 열리고, 착지에 상주 세대가
-                  // 그 key 로 전진해 재마운트 없이 상주가 된다(useArrangementPhase).
-                  key={layer.key}
-                  className={`sidebar rail-${railLook}`}
-                  // 빠지는 자리도 관측면이다 — 주소가 없으면 "원래 있던 것이 닫힌다"를 밖에서
-                  // 잴 방법이 없다. 상주·도착은 rail/left, 출발은 rail/left/leaving.
-                  data-node={layer.role === "source" ? "rail/left/leaving" : "rail/left"}
-                  data-rail-role={layer.role}
+              <div
+                  key={rail.key}
+                  className={`sidebar rail-${railLook}${rail.moving ? " flip-move" : ""}`}
+                  data-node="rail/left"
+                  data-rail-role={rail.moving ? "traveling" : "resting"}
+                  data-focus-lighting="exempt"
                   // 세로 경계의 소유자는 station 에 달렸다(가장자리는 바깥쪽 변 생략 — §B2).
                   // 판정 축이 인라인 스타일 안에만 있으면 계약이 그 법을 말할 수 없다 —
                   // 축을 밖에서 읽을 수 있게 발행한다(borderContract rail-pane-* 가 소비).
-                  data-station={layer.station}
-                  aria-hidden={!layer.interactive || undefined}
-                  onMouseDown={
-                    layer.interactive
-                      ? (e) => {
+                  data-station={rail.station}
+                  onMouseDown={(e) => {
                           // §12-① 헤더 = 이동 손잡이 — 프레임 헤더 아무 곳이나 잡으면 스테이션 드래그.
                           // 헤더 위 상호작용 컨트롤(버튼)은 제외.
                           const t = e.target as HTMLElement;
@@ -484,35 +491,33 @@ const ProjectPlane = memo(function ProjectPlane({
                           ) {
                             startRailStationDrag(e);
                           }
-                        }
-                      : undefined
-                  }
+                        }}
                   style={
                     {
-                      left: `calc(${layer.station}% - ${(sidebarW * layer.station) / 100}px)`,
+                      left: `calc(${rail.station}% - ${(sidebarW * rail.station) / 100}px)`,
                       width: project.sidebarOpen ? sidebarW : 0,
                       borderLeftWidth: railEdgeWidths(
                         railLook,
                         project.sidebarOpen,
-                        layer.station,
+                        rail.station,
                         paneStyle,
                       ).left,
                       borderRightWidth: railEdgeWidths(
                         railLook,
                         project.sidebarOpen,
-                        layer.station,
+                        rail.station,
                         paneStyle,
                       ).right,
-                      pointerEvents: layer.interactive ? "auto" : "none",
+                      "--flip-x": `${railFlipX}px`,
                     } as React.CSSProperties
                   }
                 >
                   <LeftSidebarHost
                     project={project}
                     paneId={cwdTabOf(project) ?? ""}
-                    commitProjection={layer.commitProjection && !arrangementPending}
+                    commitProjection={!arrangementPending}
                   />
-                  {project.sidebarOpen && layer.interactive && (
+                  {project.sidebarOpen && (
                     <div className="left-rail-controls">
                       <button
                         type="button"
@@ -531,7 +536,7 @@ const ProjectPlane = memo(function ProjectPlane({
                       </button>
                     </div>
                   )}
-                  {project.sidebarOpen && layer.interactive && (
+                  {project.sidebarOpen && (
                     <div
                       className="sidebar-resizer"
                       data-native-drag
@@ -540,7 +545,6 @@ const ProjectPlane = memo(function ProjectPlane({
                     />
                   )}
                 </div>
-              ))}
             </div>
           }
         >

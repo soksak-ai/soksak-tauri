@@ -495,9 +495,9 @@ body,
 .left-rail-plane {
   position: absolute;
   inset: 0;
-  /* 레일 표상은 정차·영역 인계 모두 그리드 바닥이다. 상호작용은 그리드 컨테이너의
-     pointer-events 투명화(아래 규칙)가 보장한다. */
-  z-index: 0;
+  /* 레일은 작업면 조명의 대상이 아닌 영구 도구면이다. focus veil(6)보다 위, 관계선(8)보다
+     아래라는 의미 순서를 이 한 stacking contract가 소유한다. */
+  z-index: 7;
   pointer-events: none;
 }
 /* 레일-기능 결부 관계면. paneStyle의 보더·gap·radius를 재사용하지 않고 테마 relation
@@ -506,7 +506,7 @@ body,
 .rail-link-overlay {
   position: absolute;
   inset: 0;
-  z-index: 6;
+  z-index: 8;
   pointer-events: none;
   overflow: hidden;
 }
@@ -520,6 +520,15 @@ body,
 .rail-link-shape {
   fill: var(--relation-fill);
   stroke: var(--relation-stroke);
+  stroke-width: var(--relation-stroke-w);
+  vector-effect: non-scaling-stroke;
+  stroke-linejoin: round;
+}
+/* 고정 레일과 선택 판이 떨어져 있으면 사이 공간을 관계면으로 채우지 않는다. 두 실제 상자의
+   활성 보더만 같은 토큰으로 그려 고정 위치와 선택을 동시에 드러낸다. */
+.rail-link-independent {
+  fill: none !important;
+  stroke: var(--relation-stroke) !important;
   stroke-width: var(--relation-stroke-w);
   vector-effect: non-scaling-stroke;
   stroke-linejoin: round;
@@ -624,8 +633,8 @@ body,
    되감아 0까지 보간한다. left/width 레이아웃 보간은 패널별 페인트가 어긋나 중간 프레임을
    찢으므로 금지한다. */
 @keyframes rail-flip-x {
-  from { translate: var(--flip-x, 0px) 0; }
-  to { translate: 0 0; }
+  from { transform: translateX(var(--flip-x, 0px)); }
+  to { transform: translateX(0px); }
 }
 /* 활강 애니메이션은 실제로 이동하는 요소에만 붙는다(GroupArea.flipMoves → .flip-move).
    위상 하위 전체 선택은 델타 0 인 요소까지 animation + will-change 로 합성 레이어에
@@ -637,9 +646,10 @@ body,
 .space-body.rail-traveling .tab-body.flip-move,
 .space-body.rail-traveling .focus-lighting-region.flip-move,
 .space-body.rail-traveling .drop-ind-wrap.flip-move,
-.space-body.rail-traveling .pane-gutter.flip-move {
-  animation: rail-flip-x var(--rail-travel-ms) cubic-bezier(0.4, 0, 0.2, 1);
-  will-change: translate;
+.space-body.rail-traveling .pane-gutter.flip-move,
+.space-body.rail-traveling .sidebar.flip-move {
+  animation: rail-flip-x var(--rail-travel-ms) cubic-bezier(0.4, 0, 0.2, 1) backwards;
+  will-change: transform;
 }
 /* §12-④ 개정 — 주행 중에도 입력은 열려 있다. straddle 방지는 히트 차단이 아니라 활성화
    귀속이 담당한다(slotGesture.armSlotActivation: 활성화=게스처 완결 시점, 시작 슬롯 귀속).
@@ -2920,6 +2930,7 @@ select.dctl {
   box-shadow: 0 0 0 1px var(--acc);
 }
 .rail-add {
+  position: relative;
   width: 34px;
   height: 34px;
   flex: 0 0 auto;

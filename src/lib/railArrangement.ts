@@ -37,19 +37,16 @@ export interface Arrangement<L> {
   cleanLines: number[];
   /** 화면에 그릴 배열. 스위칭이 없으면 정본과 객체 정체성이 같다. */
   displayLayout: SplitTree<L>;
-  /** 인접이 교환으로 만들어졌는가 — 점선 봉합의 단일 근거(자연 인접은 무표시). */
+  /** FLOW에서 인접이 교환으로 만들어졌는가 — 점선 봉합의 단일 근거. PIN은 항상 false다. */
   swapped: boolean;
   cells: ArrangementCell[];
   focusId: string | null;
   /**
    * 레일과 포커스 판 **사이에 낀** 판들 — 레일이 그 판까지 못 갔을 때만 비지 않는다.
    *
-   * 안 당기기로 하면 판은 제자리이고 레일이 간다. 그런데 갈 수 있는 자리는 깨끗한 선뿐이라,
-   * 막힌 선 앞에서 멈춘다. 그때 레일과 포커스 판 사이에 다른 판이 남는다.
-   *
-   * 그 사실을 답에 담지 않으면 화면은 "아무 일도 안 일어남"이 된다(실측 2026-08-02: 보더가
-   * 통째로 사라졌다). 움직이지 않는 것과 아무것도 안 하는 것은 다르다 — 낀 판이 흐려져야
-   * 어느 판이 활성인지 보인다. 흐리는 방법은 소비자가 정한다(이 자리는 사실만 답한다).
+   * PIN은 station과 판을 함께 고정하므로 떨어진 포커스까지의 사이 판을 답한다. FLOW도 판을
+   * 재배치하지 않도록 선언했고 포커스 선이 막힌 경우 같은 사실을 답한다. 표시 방법은 소비자가
+   * 정하지만 이 목록 자체는 순수 기하 사실이다.
    */
   betweenIds: string[];
   /**
@@ -136,50 +133,14 @@ function swapCandidates<L extends { id: string }>(
 function switchFocusedToFront<L extends { id: string }>(
   canonical: SplitTree<L>,
   focusId: string,
-  mode: RailPlacement["mode"],
 ): SplitTree<L> {
-  // FLOW 는 레일이 찾아가므로 판을 옮길 이유가 없다 — 옮기면 둘 다 움직여 이중이 된다.
-  // 다만 행이 어긋나 레일이 못 닿는 자리는 그때도 앞으로 세운다(그것이 옛 규칙이다).
-  if (mode === "flow") {
-    if (focusedLeftIsClean(canonical, focusId)) return canonical;
-    for (const candidate of swapCandidates(canonical, focusId)) {
-      if (focusedLeftIsClean(candidate, focusId)) return candidate;
-    }
-    return canonical;
-  }
-  // **포커스 간 판은 레일 옆자리로 온다.** 그것이 법칙이다 — 레일에 가까운 쪽에 붙는다.
-  //
-  // 한때 이 자리는 "선이 막혔을 때만" 바꿨다(`focusedLeftIsClean` 게이트). 그 축소는
-  // `099a2f1f` 가 "레일이 스스로 이동한다"는 **별개 결함**을 고치면서 이 기능까지 함께
-  // 폐지한 데서 왔고, `19c45707` 이 그 축소판만 되살렸다. 폐지의 당위가 없다: 레일이 저
-  // 혼자 움직이는 것은 결함이고, 클릭으로 판이 옮겨지는 것은 직접 조작의 결과다 — 같은
-  // 커밋이 내세운 원칙("기하는 자기 판을 직접 조작할 때만 바뀐다")에 클릭은 안 걸린다.
-  //
-  // 실측 2026-08-02: 나란한 두 칸에서 오른쪽을 눌러도 아무 일이 없었다. activePaneId 는
-  // 오른쪽으로 바뀌는데 배치가 그대로였다 — 오른쪽 칸의 왼쪽선이 안 막혀 게이트가 통과했다.
-  //
-  // 이미 레일 옆이면 후보가 그것을 답하므로 자연히 제자리다(아래 첫 후보 채택).
+  // FLOW에서 레일이 닿을 수 없는 행만 앞으로 해소한다. PIN은 이 함수에 들어오지 않는다:
+  // 고정 사이드바 클릭은 포커스 변경이지 레이아웃 조작이 아니며 canonical tree를 보존한다.
+  if (focusedLeftIsClean(canonical, focusId)) return canonical;
   for (const candidate of swapCandidates(canonical, focusId)) {
-    if (focusedIsFirstInRow(candidate, focusId)) return candidate;
+    if (focusedLeftIsClean(candidate, focusId)) return candidate;
   }
   return canonical;
-}
-
-/** 포커스 판이 자기 행의 **맨 앞**인가 — 레일이 닿는 자리가 거기다. */
-function focusedIsFirstInRow<L extends { id: string }>(
-  tree: SplitTree<L>,
-  focusId: string,
-): boolean {
-  const { cells } = computeSplitLayout(tree);
-  const target = cells.find((cell) => cell.value.id === focusId);
-  if (!target) return true;
-  return !cells.some(
-    (cell) =>
-      cell.value.id !== focusId &&
-      cell.rect.top < target.rect.top + target.rect.height &&
-      cell.rect.top + cell.rect.height > target.rect.top &&
-      cell.rect.left < target.rect.left,
-  );
 }
 
 /** FLOW: 포커스 패널의 왼쪽 선, 막혔으면 그 앞(왼쪽)의 가장 가까운 깨끗한 선. */
@@ -213,15 +174,10 @@ export function solveArrangement<L extends { id: string }>(input: {
   /** 미해소 포커스에서 지킬 현 위치. */
   fallbackStation?: number;
   /**
-   * 포커스 판을 레일 옆으로 **당겨오는가**.
+   * FLOW에서 레일이 닿지 않는 행의 포커스 판을 앞으로 해소하는가.
    *
-   * 두 방법은 같은 목적을 다르게 이룬다 — 당기면 판이 오고, 안 당기면 레일이 그 판을 찾아간다.
-   * 동시에 켜면 둘 다 움직여 이중이 되므로 이 축 하나가 방법을 정한다.
-   *
-   * 안 당길 때 인접은 **실재**한다(레일이 그 선에 섰다) — 이음매가 실선인 이유다. 당길 때는
-   * 인접이 만들어진 것이라 점선으로 표시한다. 가까운 판을 흐리는 것은 별개 축(focusDim)이 답한다.
-   *
-   * 기본은 당김이다 — 레일에 가까운 쪽에 포커스 판이 온다는 법칙의 직접적 표현이다.
+   * PIN에서는 무시한다. 고정 사이드바의 포커스 변경은 레이아웃 조작이 아니므로 판과 레일 모두
+   * 움직이지 않는다. 인접하면 합성 보더, 떨어지면 두 독립 보더가 관계를 표현한다.
    */
   pullFocused?: boolean;
 }): Arrangement<L> {
@@ -230,11 +186,21 @@ export function solveArrangement<L extends { id: string }>(input: {
   if (input.maximizedId) {
     const cells = [{ id: input.maximizedId, rect: FULL_RECT }];
     const cleanLines = cleanRailLines([FULL_RECT]);
+    let maximizedStation = 0;
+    if (input.placement.mode === "pin") {
+      const canonicalCells = computeSplitLayout(input.layout).cells.map(({ value, rect }) => ({
+        id: value.id,
+        rect,
+      }));
+      const canonicalLines = cleanRailLines(canonicalCells.map((cell) => cell.rect));
+      const pinnedStation = snapRailStation(canonicalLines, input.placement.station);
+      const original = canonicalCells.find((cell) => cell.id === input.maximizedId);
+      // 최대화는 PIN 설정을 쓰지 않는 임시 projection이다. 활성 판이 원래 레일의 왼쪽이면
+      // 판 왼쪽·사이드바 오른쪽, 오른쪽이면 사이드바 왼쪽·판 오른쪽으로 관계만 보존한다.
+      maximizedStation = original && original.rect.left < pinnedStation - RAIL_EPSILON ? 100 : 0;
+    }
     return {
-      station:
-        input.placement.mode === "pin"
-          ? snapRailStation(cleanLines, input.placement.station)
-          : 0,
+      station: maximizedStation,
       cleanLines,
       displayLayout: input.layout,
       swapped: false,
@@ -246,23 +212,12 @@ export function solveArrangement<L extends { id: string }>(input: {
     };
   }
 
-  // **레일에 가까운 쪽에 포커스 판이 온다.** 방법은 모드가 정한다.
-  //
-  // FLOW 는 레일이 포커스를 찾아간다 — 배열은 그대로 두고 레일이 그 판의 왼쪽선에 선다.
-  // PIN 은 레일이 제자리를 지킨다 — 그러면 **판이 온다.** 한때 이 자리는 두 경우 모두
-  // FLOW 만 보고 있었고, `099a2f1f` 가 FLOW 를 없애 pin-only 로 만들면서 조건이 영원히
-  // 거짓이 되어 교체가 죽었다(실측 2026-08-02: 오른쪽 칸을 눌러도 배치가 그대로였다).
-  //
-  // 닫힌 레일에는 붙을 상대가 없으므로 어느 모드든 배열을 안 건드린다.
-  // **안 당기기로 했으면 판은 제자리다.** 옛 규칙("행이 어긋나 막히면 앞으로 세운다")도
-  // 배치를 바꾸는 일이라, 그것까지 켜 두면 껐는데도 판이 움직인다(실측 2026-08-02: 아래 칸이
-  // 통짜라 위쪽 50% 선이 막혀 있었고, pull=false 인데 매번 교체됐다).
-  //
-  // 막힌 선은 레일이 감당한다 — flowStation 이 그 앞의 가장 가까운 깨끗한 선으로 선다.
+  // PIN은 정박 계약이다: 포커스와 설정이 레일·canonical layout 어느 쪽도 바꾸지 않는다.
+  // FLOW만 포커스를 찾아가며, 닿지 않는 행을 해소하도록 명시한 경우에만 판을 교체한다.
   const pull = input.pullFocused ?? true;
   const displayLayout =
-    pull && input.railOpen && focusId
-      ? switchFocusedToFront(input.layout, focusId, input.placement.mode)
+    input.placement.mode === "flow" && pull && input.railOpen && focusId
+      ? switchFocusedToFront(input.layout, focusId)
       : input.layout;
 
   const cells = computeSplitLayout(displayLayout).cells.map(({ value, rect }) => ({
@@ -271,14 +226,12 @@ export function solveArrangement<L extends { id: string }>(input: {
   }));
   const cleanLines = cleanRailLines(cells.map((cell) => cell.rect));
   const station =
-    pull && input.placement.mode === "pin"
+    input.placement.mode === "pin"
       ? snapRailStation(cleanLines, input.placement.station)
       : flowStation(cells, focusId, cleanLines, input.fallbackStation ?? 0);
 
   return {
     station:
-      // 한 축이 둘을 정한다 — 당기면 판이 오고 레일은 제자리, 안 당기면 레일이 찾아간다.
-      // 둘 다 움직이면 이중이다.
       station,
     cleanLines,
     betweenIds: betweenRailAndFocus(cells, focusId, station),

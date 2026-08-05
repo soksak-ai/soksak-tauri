@@ -34,6 +34,19 @@ export function insetClippedEdges(
 // 이보다 큰 간격은 부동소수 오차가 아니라 상자가 아직 레일에 안 닿은 중간 상태다.
 export const RAIL_LINK_ADJACENT_TOLERANCE = 1;
 
+export type RailRelationSide = "left" | "right" | "detached";
+
+/** 실제 논리 rect가 레일의 어느 변에 닿는지 분류하는 단일 기준. */
+export function classifyRailRelation(
+  station: number,
+  target: RailRect,
+): RailRelationSide {
+  const right = target.left + target.width;
+  if (Math.abs(right - station) <= RAIL_LINK_ADJACENT_TOLERANCE) return "left";
+  if (Math.abs(target.left - station) <= RAIL_LINK_ADJACENT_TOLERANCE) return "right";
+  return "detached";
+}
+
 /**
  * 레일과 결부 상자를 한 테두리로 그릴 것인가 — 관계면 렌더 게이트.
  *
@@ -42,7 +55,7 @@ export const RAIL_LINK_ADJACENT_TOLERANCE = 1;
  * 간격이 벌어졌다면 그것은 아직 안 온 중간 상태이므로 억제한다.
  */
 export function railLinkAdjacent(station: number, target: RailRect): boolean {
-  return Math.abs(target.left - station) <= RAIL_LINK_ADJACENT_TOLERANCE;
+  return classifyRailRelation(station, target) !== "detached";
 }
 
 /** 논리 패널 rect와 고정폭 레일을 같은 px 좌표계로 해소한다. */
@@ -94,9 +107,21 @@ export function railLinkPolygon(
   epsilon = 0.5,
 ): Point[] | null {
   const railRight = rail.x + rail.width;
-  if (Math.abs(panel.x - railRight) > epsilon) return null;
   const paneRight = panel.x + panel.width;
   const paneBottom = panel.y + panel.height;
+  if (Math.abs(paneRight - rail.x) <= epsilon) {
+    return compact([
+      { x: rail.x, y: rail.y },
+      { x: railRight, y: rail.y },
+      { x: railRight, y: rail.y + rail.height },
+      { x: rail.x, y: rail.y + rail.height },
+      { x: rail.x, y: paneBottom },
+      { x: panel.x, y: paneBottom },
+      { x: panel.x, y: panel.y },
+      { x: rail.x, y: panel.y },
+    ]);
+  }
+  if (Math.abs(panel.x - railRight) > epsilon) return null;
   return compact([
     { x: rail.x, y: rail.y },
     { x: railRight, y: rail.y },

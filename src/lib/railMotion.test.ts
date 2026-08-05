@@ -1,36 +1,32 @@
 import { describe, expect, it } from "vitest";
-import { railGeometryScopeId, railPresentationLayers } from "./railMotion";
+import {
+  railFlipOffsetPx,
+  railGeometryScopeId,
+  railPresentation,
+} from "./railMotion";
 
-describe("레일 영역 인계 — 빠질 자리와 생길 자리", () => {
-  it("출발선 레이어는 서 있던 key 를 그대로 쓴다(원래 있던 것이 닫힌다), 도착선만 새 key", () => {
-    expect(railPresentationLayers(7, 64, 20, true)).toEqual([
-      {
-        key: 7, // = 정차 중 상주 key. 여기가 새 key 면 빠질 자리에 새 사이드바가 끼워진다.
-        station: 64,
-        role: "source",
-        commitProjection: false,
-        interactive: false,
-      },
-      {
-        key: 8,
-        station: 20,
-        role: "target",
-        commitProjection: true,
-        interactive: true,
-      },
-    ]);
+describe("레일 표시 — 탭과 함께 이동하는 한 영속 DOM", () => {
+  it("주행 중에도 레일 identity와 투영 host는 하나이며 목표 위치에 최종 배치된다", () => {
+    expect(railPresentation(64, 20, true)).toEqual({
+      key: "persistent-rail",
+      station: 20,
+      fromStation: 64,
+      moving: true,
+    });
   });
 
-  it("착지 뒤 상주 세대는 도착 key 다 — 재마운트 없이 그것이 상주가 된다", () => {
-    expect(railPresentationLayers(8, 20, 20, false)).toEqual([
-      {
-        key: 8,
-        station: 20,
-        role: "resting",
-        commitProjection: true,
-        interactive: true,
-      },
-    ]);
+  it("착지 뒤에도 같은 identity를 보존한다", () => {
+    expect(railPresentation(20, 20, false)).toEqual({
+      key: "persistent-rail",
+      station: 20,
+      fromStation: 20,
+      moving: false,
+    });
+  });
+
+  it("최종 레이아웃에서 출발 위치를 재현하는 FLIP 오프셋은 레일 가용 폭 한 식으로 계산한다", () => {
+    expect(railFlipOffsetPx(64, 20, 900, 160)).toBeCloseTo(325.6);
+    expect(railFlipOffsetPx(20, 64, 900, 160)).toBeCloseTo(-325.6);
   });
 });
 

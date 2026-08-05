@@ -17,10 +17,19 @@ export interface ExternalSurfaceRect {
 }
 
 export interface ExternalSurfaceTransitionParticipant {
+  /** 진행 가능한 공유 시계가 없을 때 목표 rect를 애니메이션 없이 적용하고 ACK한다. */
+  snap(rect: ExternalSurfaceRect): Promise<void>;
+  /** 목표 model frame을 공통 epoch에 시작하도록 DOM 커밋 전에 무장한다. */
+  prepare(rect: ExternalSurfaceRect, timing: ExternalSurfaceTransitionTiming): Promise<void>;
   /** 목표 DOM이 커밋된 뒤 외부 표면의 frame을 적용하고 실제 적용 ACK까지 기다린다. */
   commit(rect: ExternalSurfaceRect): Promise<void>;
   /** 목표가 폐기되면 준비 잠금을 해제한다. 외부 frame을 임의 위치로 움직이지 않는다. */
   cancel(): void;
+}
+
+export interface ExternalSurfaceTransitionTiming {
+  startAtUnixMs: number;
+  durationMs: number;
 }
 
 export interface ExternalSurfaceTransitionDetail {

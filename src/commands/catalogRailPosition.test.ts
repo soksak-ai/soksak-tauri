@@ -224,6 +224,35 @@ describe("sidebar.left.position", () => {
 });
 
 describe("state.tree — 해가 공개 사실이다", () => {
+  it("고정 레일 관계를 좌·우·비인접 동일 기준으로 노출한다", async () => {
+    const withBinding = project({ mode: "pin", station: 0 });
+    withBinding.spaces[0] = {
+      ...withBinding.spaces[0],
+      activePaneId: "g2",
+      railBindingTabId: "v-g2",
+      layout: {
+        type: "split",
+        id: "s1",
+        dir: "row",
+        sizes: [0.5, 0.5],
+        children: [
+          { type: "leaf", value: group("g1", "v-g1") },
+          { type: "leaf", value: group("g2", "v-g2") },
+        ],
+      },
+    };
+    useSessions.setState({ projects: [withBinding], activeId: "t1" });
+    const detached = await execute("state.tree", {}, {});
+    const relation = (detached.data as { projects: Array<{ spaces: Array<{ railRelation: unknown }> }> })
+      .projects[0].spaces[0].railRelation;
+    expect(relation).toEqual({
+      boundTabId: "v-g2",
+      boundPaneId: "g2",
+      placement: "pin",
+      connected: false,
+      side: "detached",
+    });
+  });
   it("명령 조회와 동일한 계산으로 위치를 노출한다", async () => {
     useSessions.setState({
       projects: [project({ mode: "pin", station: 31 })],

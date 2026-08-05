@@ -31,59 +31,40 @@ export function railTravelWallMs(): number {
   return railTravelDeclaredMs() / motionPlaybackRate();
 }
 
-export type RailPresentationLayer = {
-  key: number;
+export type RailPresentation = {
+  key: "persistent-rail";
   station: number;
-  role: "source" | "target" | "resting";
-  /** 표면(내용) 투영을 최신으로 커밋하는가. 닫히는 레일은 자기가 들고 있던 표면을 유지한다. */
-  commitProjection: boolean;
-  interactive: boolean;
+  fromStation: number;
+  moving: boolean;
 };
 
 /**
- * 레일은 이동 물체가 아니라 그리드가 열고 닫는 두 영역이다 — 빠질 자리와 생길 자리.
- *
- * 계약의 핵심은 key 다. 출발선 레이어는 **서 있던 인스턴스의 key** 를 그대로 쓴다(그래서 원래
- * 있던 것이 닫힌다). 도착선 레이어는 새 key 로 열리고, 위상이 끝나면 상주 세대가 그 key 로
- * 전진해 재마운트 없이 그것이 상주가 된다. 세대를 위상 시작에 전진시키면 두 레이어 다 새것이
- * 되고, 빠질 자리에 갓 만든 사이드바가 끼워져 그것이 닫힌다(사용자 실측 결함).
- *
- * 이어져야 하는 것은 표면이다 — 인스턴스가 둘이어도 접힘·스크롤·플러그인 뷰 상태가 레이어 밖에
- * 있으면 도착 레이어는 같은 표면으로 즉시 열린다. 레이어 안에 사는 상태는 곧 "새것으로 교체"다.
+ * 레일은 탭 배열과 같은 DOM 평면을 달리는 하나의 영속 요소다.
+ * source/target 복제본은 목표 투영 host를 새로 마운트하여 전이 중 빈 레일을 만들고, 플러그인
+ * 인스턴스도 둘로 갈라 놓는다. 최종 위치를 먼저 배치하고 같은 identity를 FLIP으로 되감는다.
  */
-export function railPresentationLayers(
-  generation: number,
+export function railPresentation(
   fromStation: number,
   targetStation: number,
   traveling: boolean,
-): RailPresentationLayer[] {
-  if (!traveling) {
-    return [
-      {
-        key: generation,
-        station: targetStation,
-        role: "resting",
-        commitProjection: true,
-        interactive: true,
-      },
-    ];
-  }
-  return [
-    {
-      key: generation,
-      station: fromStation,
-      role: "source",
-      commitProjection: false,
-      interactive: false,
-    },
-    {
-      key: generation + 1,
-      station: targetStation,
-      role: "target",
-      commitProjection: true,
-      interactive: true,
-    },
-  ];
+): RailPresentation {
+  return {
+    key: "persistent-rail",
+    station: targetStation,
+    fromStation: traveling ? fromStation : targetStation,
+    moving: traveling && fromStation !== targetStation,
+  };
+}
+
+/** 목표 레이아웃에서 출발 레일 위치를 재현하는 유일한 FLIP 이동량. */
+export function railFlipOffsetPx(
+  fromStation: number,
+  targetStation: number,
+  planeWidthPx: number,
+  railWidthPx: number,
+): number {
+  const available = Math.max(0, planeWidthPx - railWidthPx);
+  return ((fromStation - targetStation) / 100) * available;
 }
 
 /** 레일 주행을 공유할 수 있는 패널 평면의 identity. split/merge로 선 집합이 바뀌면 새 평면이다. */
@@ -93,4 +74,3 @@ export function railGeometryScopeId(
 ): string {
   return `${spaceId ?? ""}:${cleanLines.join(",")}`;
 }
-

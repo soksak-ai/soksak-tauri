@@ -16,6 +16,11 @@ import { RAIL_TRAVEL_MS } from "../lib/railMotion";
 import { railGeometryScopeId } from "../lib/railMotion";
 import { useArrangementPhase } from "./useArrangementPhase";
 import type { PreparedLayoutTransition } from "../lib/layoutTransitionHost";
+import {
+  __resetLayoutSettlementForTest,
+  invalidateLayout,
+  layoutSettlementFacts,
+} from "../lib/layoutSettlement";
 
 type G = { id: string };
 const leaf = (id: string): SplitTree<G> => ({ type: "leaf", value: { id } });
@@ -49,6 +54,7 @@ function Probe({
   onPhase,
   canGlide,
   prepareTravel,
+  settlementKey,
 }: {
   arrangement: Arrangement<G>;
   scopeId: string;
@@ -59,6 +65,7 @@ function Probe({
     from: Arrangement<G>,
     to: Arrangement<G>,
   ) => Promise<PreparedLayoutTransition>;
+  settlementKey?: string;
 }) {
   const phase = useArrangementPhase(
     arrangement,
@@ -66,6 +73,7 @@ function Probe({
     contentKey,
     canGlide,
     prepareTravel,
+    settlementKey,
   );
   onPhase?.(phase.rebase);
   return (
@@ -75,7 +83,6 @@ function Probe({
       data-moves={phase.moves.map((m) => m.id).join(",")}
       data-station={String(phase.displayed?.station ?? "")}
       data-content={String(phase.displayed === arrangement ? "live" : "stale")}
-      data-gen={String(phase.generation)}
       data-glide={phase.glide ? "1" : "0"}
       data-preparing={phase.preparing ? "1" : "0"}
     />
@@ -89,6 +96,7 @@ const el = () => host.querySelector<HTMLElement>("[data-testid=p]")!;
 
 beforeEach(() => {
   vi.useFakeTimers();
+  __resetLayoutSettlementForTest();
   redeliverViewFocusIfLost.mockClear();
   host = document.createElement("div");
   document.body.appendChild(host);
@@ -102,6 +110,22 @@ afterEach(() => {
 });
 
 describe("useArrangementPhase", () => {
+  it("기하가 같은 상태 커밋도 최신 layout revision을 ACK한다", () => {
+    const at = solve(twoColumns, "a");
+    act(() => root.render(
+      <Probe arrangement={at} scopeId={scopeOf(at)} settlementKey="project-1" />,
+    ));
+
+    invalidateLayout("project-1");
+    expect(layoutSettlementFacts().active).toBe(true);
+
+    // PIN mode처럼 해의 기하 서명은 같지만 외부 상태 커밋 때문에 App은 다시 렌더된다.
+    act(() => root.render(
+      <Probe arrangement={at} scopeId={scopeOf(at)} settlementKey="project-1" />,
+    ));
+    expect(layoutSettlementFacts()).toEqual({ active: false, pending: [] });
+  });
+
   it("포커스만 바뀐 해도 즉시 받아들인다 — 기하가 그대로여도 해는 새 것이다", () => {
     // 위상은 기하만 애니메이션하지만 **해 전체를 들고 있다.** 소비자는 그 해에서 포커스가
     // 정하는 사실을 읽는다(결부·낀 판·교환 인접). 서명이 기하만 서명하면 포커스만 바뀐 해는
@@ -187,13 +211,11 @@ describe("useArrangementPhase", () => {
     expect(cancel).not.toHaveBeenCalled();
   });
 
-  it("glide도 native commit 응답 전에는 DOM 이동을 공개하지 않는다", async () => {
+  it("glide는 prepare 완료 뒤 DOM을 공개하고 commit은 그 DOM의 layout effect에서 실행한다", async () => {
     const at = solve(twoColumns, "a");
     const to = solve(twoColumns, "b");
-    let armNative!: () => void;
-    const commit = vi.fn(
-      () => new Promise<void>((resolve) => { armNative = resolve; }),
-    );
+    const committedContent: string[] = [];
+    const commit = vi.fn(async () => { committedContent.push(el().dataset.content ?? ""); });
     const prepareTravel = vi.fn(async (): Promise<PreparedLayoutTransition> => ({
       mode: "glide",
       commit,
@@ -207,47 +229,11 @@ describe("useArrangementPhase", () => {
     ));
 
     await act(async () => {});
-    expect(commit).toHaveBeenCalledTimes(1);
-    expect(el().dataset.preparing).toBe("1");
-    expect(el().dataset.traveling).toBe("0");
-    expect(el().dataset.content).toBe("stale");
-
-    await act(async () => armNative());
     expect(el().dataset.preparing).toBe("0");
     expect(el().dataset.traveling).toBe("1");
     expect(el().dataset.content).toBe("live");
-  });
-
-  it("세대(레일 key)는 도착이 상주가 되는 순간에만 전진한다 — 닫히는 레일은 서 있던 그것이다", () => {
-    // 세대는 레일 레이어의 React key 다. 위상 시작에 전진시키면 출발선 레이어도 새 key 를 받아
-    // **서 있던 사이드바가 파괴되고 빠질 자리에 새것이 끼워진다**(그것이 닫힌다). 사용자 규정:
-    // 빠지는 자리는 원래 있던 게 닫히면 끝이고, 새것은 생기는 자리에서만 열린다.
-    const at = solve(twoColumns, "a");
-    const to = solve(twoColumns, "b");
-    act(() => root.render(<Probe arrangement={at} scopeId={scopeOf(at)} />));
-    const standing = el().dataset.gen;
-
-    act(() => root.render(<Probe arrangement={to} scopeId={scopeOf(to)} />));
-    expect(el().dataset.traveling).toBe("1");
-    expect(el().dataset.gen).toBe(standing); // 출발선 레이어 = 서 있던 인스턴스
-
-    act(() => vi.advanceTimersByTime(RAIL_TRAVEL_MS + 10));
-    expect(Number(el().dataset.gen)).toBe(Number(standing) + 1); // 도착 레이어가 상주가 된다
-  });
-
-  it("내용 변화(뷰 열림·탭 전환)는 세대를 전진시키지 않는다 — 사이드바 재마운트 금지", () => {
-    const at = solve(twoColumns, "a");
-    act(() =>
-      root.render(<Probe arrangement={at} scopeId={scopeOf(at)} contentKey="v1" />),
-    );
-    const standing = el().dataset.gen;
-    act(() =>
-      root.render(
-        <Probe arrangement={solve(twoColumns, "a")} scopeId={scopeOf(at)} contentKey="v1,v2" />,
-      ),
-    );
-    expect(el().dataset.traveling).toBe("0");
-    expect(el().dataset.gen).toBe(standing);
+    expect(commit).toHaveBeenCalledTimes(1);
+    expect(committedContent).toEqual(["live"]);
   });
 
   it("여정 모드(활강 가능)는 시작에 한 번 정해지고 위상 중에 바뀌지 않는다", () => {

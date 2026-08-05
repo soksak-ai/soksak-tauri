@@ -57,15 +57,7 @@ interface SettingsState {
   railFill: RailFill;
   focusDim: boolean;
   railSeamStyle: RailSeamStyle;
-  /**
-   * 포커스 판을 레일 옆으로 **당겨오는가**.
-   *
-   * 당기면 판이 오고 레일은 제자리다(인접이 만들어진 것이라 이음매가 점선). 안 당기면 판은
-   * 제자리이고 레일이 그 판을 찾아간다(인접이 실재하므로 실선). 같은 목적의 두 방법이라
-   * 동시에 켜면 이중으로 움직인다 — 한 축이 방법을 정한다.
-   *
-   * 가까운 판을 흐리는 것은 이 축이 아니다(focusDim).
-   */
+  /** FLOW에서 포커스 왼쪽 선이 막혔을 때 판을 재배치해 인접을 해소할지 여부. PIN은 무시한다. */
   railPullFocused: boolean;
   /**
    * 실선 이음매의 색 — 레일이 판을 찾아가 인접이 **실재**할 때 그리는 선(railPullFocused=false).
@@ -139,7 +131,7 @@ const DEFAULTS = {
   railFill: "none" as RailFill,
   focusDim: true,
   railSeamStyle: "edge" as RailSeamStyle,
-  // 기본은 당김 — "레일에 가까운 쪽에 포커스 판이 온다"는 법칙의 직접적 표현이다.
+  // FLOW의 막힌 선은 기본적으로 최소 leaf 교환으로 해소한다. PIN에는 적용되지 않는다.
   railPullFocused: true,
   // 비움 = 테마 색. 사용자가 넣으면 그 색이 실선 이음매를 칠한다.
   railSolidColor: "",

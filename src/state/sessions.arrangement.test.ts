@@ -128,6 +128,26 @@ describe("세션 배치 — 표시는 해가 정하고 정본은 불변이다", 
     expect(restored.spaces[0].layout).toEqual(canonical);
   });
 
+  it("PIN 유효성은 임시 최대화 평면이 아니라 정본 분할의 clean line으로 판정한다", () => {
+    const project = projectFixture();
+    const station = projectArrangement(project)!.cleanLines.find((line) => line > 0 && line < 100);
+    expect(station).toBeTypeOf("number");
+    const pinned: Project = {
+      ...project,
+      leftRailPlacement: { mode: "pin", station: station! },
+    };
+    useSessions.setState({ projects: [pinned], activeId: pinned.id });
+
+    expect(useSessions.getState().maximizeView(pinned.id, "v-ghostty")).toEqual({
+      ok: true,
+      viewId: "v-ghostty",
+    });
+    expect(useSessions.getState().projects[0].leftRailPlacement).toEqual({
+      mode: "pin",
+      station,
+    });
+  });
+
   it("사이드바가 닫히면 붙을 레일이 없다 — 스위칭하지 않는다", () => {
     const project = projectFixture();
     useSessions.setState({

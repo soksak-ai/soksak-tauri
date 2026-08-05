@@ -57,7 +57,7 @@ sidebar is open, and it is the only place any of these decisions live:
 | Output | Rule |
 |---|---|
 | `station` | flow: the focused panel's left clean line (a full-height vertical line no panel crosses); if that line is blocked, the nearest clean line in front of it. pin: the stored station snapped to the nearest clean line. An unresolved focus holds the current position — it is not an instruction to go to zero. |
-| `displayLayout` / `switched` | Rows do not always line up (a wide panel above two below it). When the focused panel's left line is blocked, it switches with the nearest leaf sibling to its left — the first candidate that makes the line clean wins, so panels not involved stay put, and sizes swap with the panels so no content is resized. `switched` is the single reason a manufactured adjacency gets the dashed seam; natural adjacency is unmarked. |
+| `displayLayout` / `switched` | pin: preserve the canonical split tree order, rects, and object identity, with `switched=false`; focus is not a layout operation. flow: only when the focused left line is blocked and rearrangement is enabled, perform the smallest swap with a leaf sibling to the left. `switched` is the sole reason for a dashed manufactured seam in FLOW. |
 | `cells` | The displayed rects in the 0..100 plane. Widths are computed on `hostWidth - railWidth` regardless of station, so a station change never resizes a panel. |
 | moves (`arrangementMoves`) | The panels that actually move between two arrangements, as logical deltas: container % for a swap, rail-width multiples for a change of insertion side. The consumer with the measured host width folds them into one pixel offset (`moveOffsetPx`); folding the two axes anywhere else gets a click that both switches and travels wrong. Deltas below the epsilon are not movement — they are float residue from a resize, and treating them as travel opens a phantom phase on every tab switch. |
 
@@ -67,6 +67,19 @@ merge, move and close commands run the tree change and report the landed
 arrangement in their reply; `layout.arrangement` reads it directly. There is
 no command that sets an arrangement — it is a function of the tree and the
 focus, so a setter would be a second truth.
+
+### 3.5.1 Active borders for a pinned rail
+
+The pin relation classifies actual rects without moving a pane. If the selected pane's right
+edge touches the rail station, render a left union border; if its left edge touches, render a
+right union border. If neither edge touches, do not connect the intervening space: render two
+independent active borders, one for the rail and one for the selected pane. The relation node
+exposes the verdict as `data-placement`, `data-connected`, `data-side`, `data-rail`, and `data-box`.
+
+Tab maximize is a temporary projection and never writes the stored pin station or split tree. It
+preserves the selected pane's side of the pin: a pane originally left of the pin fills the left
+side with the rail at the right edge; a pane at or right of the pin fills the right side with the
+rail at the left edge. Restore returns to the exact stored station and canonical split rects.
 
 ## 3.6 The Handoff — What Closes, What Opens
 

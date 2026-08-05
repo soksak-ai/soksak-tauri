@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { splitLeaf } from "./splitTree";
-import { useSessions, type Project, type Pane } from "./sessions";
+import { projectArrangement, useSessions, type Project, type Pane } from "./sessions";
 
 function group(id: string, viewId: string): Pane {
   return {
@@ -73,24 +73,19 @@ describe("position PIN guards the clean grid line", () => {
     });
   });
 
-  it("rejects maximizing a panel across an internal PIN but allows an edge PIN", () => {
+  it("internal PIN에서도 최대화는 방향 projection으로 허용하고 저장 station을 보존한다", () => {
     const project = twoColumnProject();
     useSessions.setState({ projects: [project], activeId: project.id });
 
-    expect(useSessions.getState().maximizeView(project.id, "v-right")).toMatchObject({
-      ok: false,
-      code: "LAYOUT_CONFLICT",
-    });
-    expect(useSessions.getState().projects[0].spaces[0].maximizedTabId).toBeUndefined();
-
-    useSessions.getState().setLeftRailPlacement(project.id, {
-      mode: "pin",
-      station: 0,
-    });
     expect(useSessions.getState().maximizeView(project.id, "v-right")).toEqual({
       ok: true,
       viewId: "v-right",
     });
+    expect(projectArrangement(useSessions.getState().projects[0])!.station).toBe(0);
+    expect(useSessions.getState().projects[0].leftRailPlacement).toEqual({ mode: "pin", station: 50 });
+
+    expect(useSessions.getState().restoreView(project.id)).toEqual({ ok: true, viewId: "v-right" });
+    expect(projectArrangement(useSessions.getState().projects[0])!.station).toBe(50);
   });
 
   it("rejects removing the boundary that owns the PIN", () => {

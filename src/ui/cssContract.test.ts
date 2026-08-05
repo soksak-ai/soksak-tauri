@@ -87,7 +87,9 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
     expect(sync!.decls).toMatch(/animation:\s*rail-flip-x var\(--rail-travel-ms\) cubic-bezier\(0\.4, 0, 0\.2, 1\)/);
     // 이동량 합성은 한 변수(--flip-x)에서 끝난다 — 두 축을 CSS 에서 더하면 배열 교환과 주행이
     // 겹치는 위상에서 어긋난다(해결기가 px 로 접어 준다).
-    expect(css).toMatch(/@keyframes rail-flip-x\s*\{[\s\S]*from\s*\{\s*translate:\s*var\(--flip-x/);
+    const keyframes = css.match(/@keyframes rail-flip-x\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
+    expect(keyframes).toMatch(/from\s*\{\s*transform:\s*translateX\(var\(--flip-x/);
+    expect(keyframes).toMatch(/to\s*\{\s*transform:\s*translateX\(0px\)/);
     expect(css).not.toMatch(/--rail-flip-x/);
     expect(css).not.toMatch(/--focus-flip-x/);
     // 프레임도 실이동 요소만 활강한다 — 델타 0 요소를 위상마다 합성 레이어로 올렸다 내리는
@@ -98,10 +100,9 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
     expect(sync!.selector).toContain(".pane-gutter.flip-move");
     expect(sync!.selector).toContain(".drop-ind-wrap.flip-move");
     expect(sync!.selector).not.toMatch(/\.pane-gutter\s*\{/);
-    // pane 만 FLIP 한다. 레일은 이동 물체가 아니라 빠질 자리와 생길 자리이고, 패널이 덮고
-    // 드러내는 것이 곧 닫힘·열림이다. 레일에 평행이동을 얹으면 두 자리 규칙과 겹쳐 이중
-    // 이동이 된다. 어느 레일 표상도 활강 애니메이션을 받지 않는다.
-    expect(sync!.selector).not.toMatch(/\.sidebar/);
+    // 레일도 탭과 같은 영속 DOM 한 벌이 같은 FLIP을 소비한다. source/target 레일 두 벌을
+    // 만들면 목표 ProjectionSlots가 재마운트되어 전이 중 빈 사이드바가 된다.
+    expect(sync!.selector).toContain(".sidebar.flip-move");
   });
 
   it("§5.1-F7 위상 클래스는 하나뿐이다 — 스위칭도 주행과 같은 한 위상이다", () => {
@@ -116,9 +117,18 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
     const rail = rules().find((r) => r.selector === ".sidebar");
     expect(rail?.decls).not.toMatch(/opacity\s*:/);
     const restingPlane = rules().find((r) => r.selector === ".left-rail-plane");
-    expect(restingPlane?.decls).toMatch(/z-index\s*:\s*0/);
-    // 출발·도착 레일은 둘 다 바닥에 있어 pane이 자연스럽게 가리고 드러낸다.
+    expect(restingPlane?.decls).toMatch(/z-index\s*:\s*7/);
+    // 출발·도착 레일은 같은 레이어 계약을 유지한다.
     expect(css).not.toMatch(/\.space-body\.rail-traveling \.left-rail-plane\s*\{/);
+  });
+
+  it("포커스 조명은 레일을 흐리지 않고 관계선은 둘 위에 남는다", () => {
+    const z = (selector: string) => {
+      const decls = rules().find((rule) => rule.selector === selector)?.decls ?? "";
+      return Number(decls.match(/z-index\s*:\s*(\d+)/)?.[1] ?? Number.NaN);
+    };
+    expect(z(".left-rail-plane")).toBeGreaterThan(z(".focus-lighting-plane"));
+    expect(z(".rail-link-overlay")).toBeGreaterThan(z(".left-rail-plane"));
   });
 
   it("§12-④ 개정: 주행 중에도 입력은 열려 있다 — 셀·슬롯·디바이더 히트 차단 금지", () => {
