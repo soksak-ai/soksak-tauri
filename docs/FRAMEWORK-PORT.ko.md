@@ -671,7 +671,7 @@ offscreen 축은 코어의 공백이 **아니다**. 2026-07-08 에 검증됐고 
 | | 주인 |
 | --- | --- |
 | `ContentViewHost` 계약, `data-content-view-body` 본문 선언, 등록부 | `src/lib/contentViews.ts` |
-| 네이티브 자식 구현, 사건 기반 슬롯 bounds 추종, native 포커스 조명, 안정 z-order, 레일 클립, 네이티브 마우스, 골 강조바, 오버레이 게이트, `webview.emitNative` | `src/framework/tauri/` |
+| 네이티브 자식 구현, 사건 기반 슬롯 bounds 추종, 안정 z-order, 레일 클립, 네이티브 마우스, 골 강조바, 오버레이 게이트, `webview.emitNative` | `src/framework/tauri/` |
 | DOM `<webview>` 구현 | `src/framework/electron/` |
 | 주소창·탐색·DOM 자동화·미디어 명령과 `data-content-view-body` 선언 | `soksak-plugin-browser-native` |
 | 홀 CSS | `src/framework/tauri/styles.css` |
@@ -723,29 +723,19 @@ Cocoa 부모 추종과 슬롯 거래가 같은 frame을 함께 소유하는 구�
 않으면서 chrome epoch tear와 브라우저만의 blank/stretch를 분리한다. 정착 프레임은 기존 절대 픽셀
 크기와 DOM-slot↔viewport 정합도 함께 통과해야 한다.
 
-레일 재배치에서 Tauri 어댑터는 유한 snap 거래를 쓴다. 중간 mutation 쓰기를 잠그고 목표 DOM을
-커밋한 layout effect에서 공개 슬롯의 실제 rect를 읽어 한 번 적용한다. 플러그인 소유 외부 표면도
-같은 공개 DOM 거래를 claim할 수 있으며, Tauri는 커밋 rect를 전달하고 플러그인의 엔진 bounds ACK를
-기다린 뒤 거래를 닫는다. pane 이동량 밖에서 sidebar
-flow가 함께 바뀌어도 좌표를 예측하지 않는다. 같은 rect의 ACK가 다른 사건 경로에서 먼저 끝났으면
-중복 bounds 쓰기를 생략한다. 또한 Tauri는 코어 FLIP이 실제 추적하는 표식된 `pane`과 `tab-body`를
-일반 WAAPI rect 보간에서 제외한다. 그 자식인 content-view body를 검사하면 제외는 발동하지 않고,
-유한 snap 거래가 성공한 뒤에도 follower가 compositor 중간 rect를 전부 받게 된다. 네이티브 자식의
-z-order는 바뀌지 않으며 스크린샷·모션 스탠드인·rAF handoff·프레임 추종은 없다. Electron은 이 제외를
-등록하지 않고 언제나
-`data-content-view-body`의 DOM 자식 배치만 수행한다.
+레일 재배치에서 bounds ACK나 동일 시각을 독립 renderer 사이의 원자성으로 간주하지 않는다. Tauri에서
+함께 이동하는 pane renderer와 native content는 창 루트보다 좁은 동일 `PaneSurfaceHost`의 자식이어야
+한다. child는 pane-local frame과 z-order를 유지하고 이 공통 host만 이동한다.
+`webview.composition.engine.rendererTopology`가 이 구조를 공개하며 `panelAtomicMotion=false`인 제품
+경로는 GREEN이 아니다. Electron은 일반 DOM 자식 배치를 유지하며 이 native host 계약을 설치하지 않는다.
 
 `webview.composition`은 DOM 앵커·실제 네이티브 frame뿐 아니라 label별 슬롯 rect, 마지막 적용
 rect, 가시성, 동기화 대기 상태를 공개한다. 합성 상태를 브라우저 제품 플러그인이
 `surface.stats`로 재선언하지 않는다.
 
-포커스 조명의 제품 사실은 공통 `--dim` 값이지만 합성 장치는 공통이 아니다. 코어는 콘텐츠 밖 SVG
-평면 하나로 문서 안 픽셀을 그리고 콘텐츠 조상에 `filter`/`opacity`를 적용하지 않는다. Electron은
-이 경로만 쓴다. Tauri 어댑터는 공개 content slot과 `--dim` 변화를 사건으로 받아 surface host 바로
-위 input-transparent AppKit 평면에 투영한다. 별도 추종 루프 없이 surface frame 커밋이 조명 frame도
-같이 갱신한다. SVG 평면의 base veil은 luminance mask이고 검은 aperture만 veil을 제거한다.
-mask·base·aperture·cutout·blocked 영역은 모두 `data-node` 주소로 노출한다.
-`webview.surfaces`는 요청값·실제 alpha·frame 정합·sibling 순서를 공개한다.
+포커스 조명의 제품 사실과 장치는 공통 `--dim` 및 콘텐츠 밖 SVG 평면 하나다. 콘텐츠 조상에
+`filter`/`opacity`를 적용하지 않고, Tauri와 Electron 어댑터 모두 별도 조명 평면을 설치하지 않는다.
+SVG 평면의 mask·base·aperture·cutout·blocked 영역은 모두 `data-node` 주소로 노출한다.
 
 Electron의 `window.snapshot`과 `window.record`는 부모 `webContents.capturePage`의 정규 capturer
 수명을 사용한다. 이 수명은 숨었거나 가려진 renderer를 캡처 동안 그리게 하면서 창을 포커스하지

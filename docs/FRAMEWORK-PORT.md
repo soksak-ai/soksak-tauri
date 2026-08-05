@@ -676,7 +676,7 @@ without a migration contract.
 | | Owner |
 | --- | --- |
 | `ContentViewHost` contract, `data-content-view-body` declaration, host registry | `src/lib/contentViews.ts` |
-| Native child implementation, event-driven slot-bounds following, native focus lighting, stable z-order, rail clip, native mouse, divider bar, overlay gate, `webview.emitNative` | `src/framework/tauri/` |
+| Native child implementation, event-driven slot-bounds following, stable z-order, rail clip, native mouse, divider bar, overlay gate, `webview.emitNative` | `src/framework/tauri/` |
 | DOM `<webview>` implementation | `src/framework/electron/` |
 | Address bar, navigation, DOM automation, media commands and the `data-content-view-body` declaration | `soksak-plugin-browser-native` |
 | Hole CSS | `src/framework/tauri/styles.css` |
@@ -733,31 +733,20 @@ This distinguishes a chrome epoch tear from a browser-only blank/stretch without
 scale. Settled frames still have to pass the original absolute pixel size and DOM-slot-to-viewport
 alignment checks.
 
-For a rail relocation, the Tauri adapter uses a finite snap transaction: it locks out intermediate
-mutation writes, commits the target DOM, reads the public slot's actual rect in the layout effect,
-and applies it once. A plugin-owned external surface can claim the same public DOM transaction; Tauri
-then supplies the committed rect and waits for the plugin's engine bounds ACK before closing it. It
-does not predict coordinates, so a sidebar-flow change outside the pane move
-is included. If another event path already acknowledged the same rect, the duplicate bounds write is
-skipped. Tauri also excludes the actual core FLIP tracking frames — the marked `pane` and `tab-body`,
-not their nested content-view body — from generic WAAPI rect interpolation. Otherwise the follower
-would receive every intermediate compositor rect even though the finite snap transaction succeeded.
-The native child never changes z-order and no screenshot, motion stand-in, rAF handoff, or frame-by-frame follow
-is involved. Electron does not install that exclusion and always performs DOM-child placement under
-`data-content-view-body` and nothing else.
+Bounds ACKs and equal timestamps do not provide atomic rail relocation across independent renderers.
+On Tauri, a pane renderer and native content that move together must be children of one
+`PaneSurfaceHost` narrower than the window root. Children keep pane-local frames and stable z-order;
+only this common host moves. `webview.composition.engine.rendererTopology` exposes the structure, and
+a product path with `panelAtomicMotion=false` is not GREEN. Electron retains ordinary DOM-child
+placement and installs no native pane-host contract.
 
 `webview.composition` exposes not only DOM anchors and actual native frames, but also each label's slot
 rect, last applied rect, visibility and pending-sync state. The browser product plugin does not
 redeclare composition state as `surface.stats`.
 
-The product fact for focus lighting is the shared `--dim` value, but the composition device is not
-shared. Core paints in-document pixels with one SVG plane outside the content tree and never applies
-`filter` or `opacity` to a content ancestor. Electron uses only that path. The Tauri adapter observes
-the public content slot and `--dim` changes as events and projects the value to an input-transparent
-AppKit plane immediately above the surface host. There is no second follower loop: a surface-frame
-commit updates the lighting frame too. The SVG base veil uses a luminance mask whose black aperture
-removes the veil. Mask, base, aperture, cutout, and blocked regions all expose `data-node` addresses.
-`webview.surfaces` exposes requested value, applied alpha, frame equality, and sibling order.
+The product fact and device for focus lighting are the shared `--dim` value and one SVG plane outside
+the content tree. No content ancestor receives `filter` or `opacity`, and neither adapter installs a
+second lighting plane. Mask, base, aperture, cutout, and blocked regions expose `data-node` addresses.
 
 Electron `window.snapshot` and `window.record` use the normal parent `webContents.capturePage`
 capturer lifetime. It keeps a hidden or occluded renderer painting during capture without focusing
