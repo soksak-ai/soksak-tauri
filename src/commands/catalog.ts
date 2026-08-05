@@ -7,6 +7,7 @@
 import { registerCaptureCatalog } from "./catalogCapture";
 import { registerSettingsCatalog } from "./catalogSettings";
 import { registerHealthCatalog } from "./catalogHealth";
+import { registerBootCatalog } from "./catalogBoot";
 import { registerWindowCatalog } from "./catalogWindow";
 import { invoke, frameworkPath } from "../framework";
 import { recordWindowFrames } from "./windowRecorder";
@@ -566,6 +567,7 @@ export const P = {
 // ── 등록 ─────────────────────────────────────────────────────────────────────
 
 export function registerCatalog(): void {
+  registerBootCatalog();
   const S = () => useSessions.getState();
 
   // ----- state -----
