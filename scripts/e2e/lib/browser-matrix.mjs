@@ -21,6 +21,8 @@ export const fixtureInputMarkers = Object.freeze(["#ffff00", "#00ff00"]);
 // 다른 12px 조각을 두 번째 기준자로 오인해 실제 착지 뒤에도 거짓 dx가 생긴다.
 export const fixtureMotionMarkers = Object.freeze(["#8000ff", "#ff8000"]);
 export const fixtureMotionMarkerSize = Object.freeze({ width: 12, height: 12 });
+// 공용 브라우저 툴바의 DOM anchor와 페이지 fixed anchor 사이의 선언된 수직 간격.
+export const fixtureMotionMarkerVerticalGap = 28;
 export const fixtureInputMarkerSize = Object.freeze({ minWidth: 64, height: 24 });
 export const compositorCalibrationMarker = "#0000ff";
 export const compositorCalibrationSize = Object.freeze({ width: 40, height: 40 });
@@ -81,7 +83,9 @@ export function markerEvidence(bytes, hex, tolerance = 24, sampleStep = 1) {
       const hit = kind === "violet"
         ? b - g >= 48 && r - g >= 24 && b - r >= 24
         : kind === "orange"
-        ? r - b >= 48 && g - b >= 24 && r - g >= 24
+        // 비활성 표면은 제품 계약상 밝기가 크게 내려가므로 절대 원색 차이가 아니라 orange의
+        // 세 채널 순서와 최소 채도를 본다. 연결 성분의 직사각 본체 판정이 장식 조각을 배제한다.
+        ? r >= dimDominant && r - b >= dimChroma && g - b >= 6 && r - g >= 8
         : kind === "blue"
         ? b - r >= 64 && b - g >= 64 && Math.abs(r - g) <= tolerance
         : kind === "red"
@@ -207,20 +211,28 @@ export function selectFixtureMarkerComponent(
 /** 같은 색의 DOM slot anchor와 페이지 surface marker가 한 프레임에서 같은 x에 있는지 판정한다. */
 export function motionMarkerAlignment(bytes, hex, scale, tolerance = 4) {
   const expected = Number(scale) * fixtureMotionMarkerSize.width;
+  const expectedGap = Number(scale) * fixtureMotionMarkerVerticalGap;
   const candidates = markerEvidence(bytes, hex, 24, 1).components
     .filter((component) =>
       Math.abs(component.width - expected) <= tolerance
-      && Math.abs(component.height - expected) <= tolerance)
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 2);
-  if (candidates.length !== 2) {
-    return { ok: false, errors: [`motion-markers=${candidates.length}/2`], candidates };
+      && Math.abs(component.height - expected) <= tolerance
+      && Math.abs(component.bodyWidth - expected) <= tolerance
+      && Math.abs(component.bodyHeight - expected) <= tolerance);
+  const pairs = candidates.flatMap((first, index) => candidates.slice(index + 1).map((second) => ({
+    pair: [first, second],
+    gapError: Math.abs(Math.abs(first.y - second.y) - expectedGap),
+    count: first.count + second.count,
+  }))).filter((entry) => entry.gapError <= tolerance)
+    .sort((a, b) => a.gapError - b.gapError || b.count - a.count);
+  if (!pairs.length) {
+    return { ok: false, errors: [`motion-pair=0 candidates=${candidates.length}`], candidates };
   }
-  const dx = Math.abs(candidates[0].x - candidates[1].x);
+  const selected = pairs[0].pair;
+  const dx = Math.abs(selected[0].x - selected[1].x);
   return {
     ok: dx <= tolerance,
     dx,
-    errors: dx <= tolerance ? [] : [`motion-x=${candidates[0].x}/${candidates[1].x} dx=${dx}`],
+    errors: dx <= tolerance ? [] : [`motion-x=${selected[0].x}/${selected[1].x} dx=${dx}`],
     candidates,
   };
 }

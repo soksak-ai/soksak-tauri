@@ -507,4 +507,26 @@ describe("공통 브라우저 fixture", () => {
     const evidence = markerEvidence(encodePng({ w: 80, h: 50, ch: 3, px }), fixtureMotionMarkers[0]);
     expect(evidence.components.filter((component) => component.width === 12 && component.height === 12)).toHaveLength(2);
   });
+
+  it("비활성 native 표면의 감광 orange 기준자를 장식 조각 대신 선택한다", () => {
+    const px = Buffer.alloc(100 * 70 * 3, 0);
+    // DOM anchor: 색 관리가 적용된 밝은 orange.
+    for (let y = 4; y < 16; y += 1) for (let x = 10; x < 22; x += 1) {
+      const at = (y * 100 + x) * 3;
+      px[at] = 119; px[at + 1] = 67; px[at + 2] = 25;
+    }
+    // Native surface marker: 제품의 비활성 밝기 합성 뒤 실측값.
+    for (let y = 32; y < 44; y += 1) for (let x = 10; x < 22; x += 1) {
+      const at = (y * 100 + x) * 3;
+      px[at] = 54; px[at + 1] = 30; px[at + 2] = 11;
+    }
+    // 같은 hue의 장식은 바깥 bbox만 비슷하고 직사각 본체가 아니다.
+    for (let y = 20; y < 32; y += 1) for (let x = 60; x < 72 - Math.abs(26 - y); x += 1) {
+      const at = (y * 100 + x) * 3;
+      px[at] = 133; px[at + 1] = 70; px[at + 2] = 20;
+    }
+    expect(motionMarkerAlignment(
+      encodePng({ w: 100, h: 70, ch: 3, px }), fixtureMotionMarkers[1], 1,
+    )).toMatchObject({ ok: true, dx: 0 });
+  });
 });
