@@ -12,6 +12,7 @@ import {
   markerEvidence,
   markerPixels,
   motionMarkerAlignment,
+  snapshotCssScale,
   hostileWindowResizeSizes,
   unwrapEvalValue,
   viewportAlignment,
@@ -99,6 +100,13 @@ describe("브라우저 구현 행렬", () => {
 });
 
 describe("공통 브라우저 fixture", () => {
+  it("window.snapshot의 실제 PNG 좌표계를 물리 창 크기와 scale에서 산출한다", () => {
+    const png = encodePng({ w: 800, h: 600, ch: 3, px: Buffer.alloc(800 * 600 * 3) });
+    expect(snapshotCssScale(png, { w: 1600, h: 1200, scale: 2 })).toBe(1);
+    const retinaPng = encodePng({ w: 1600, h: 1200, ch: 3, px: Buffer.alloc(1600 * 1200 * 3) });
+    expect(snapshotCssScale(retinaPng, { w: 1600, h: 1200, scale: 2 })).toBe(2);
+  });
+
   it("DOM viewport와 fixed marker가 슬롯·캡처에 rounding-only로 착지해야 한다", () => {
     expect(viewportAlignment({
       slot: { w: 608, h: 262 },

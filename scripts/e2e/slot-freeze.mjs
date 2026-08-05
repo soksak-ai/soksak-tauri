@@ -28,6 +28,7 @@ import {
   markerEvidence,
   motionMarkerAlignment,
   parseBrowserEngines,
+  snapshotCssScale,
   unwrapEvalValue,
   viewportAlignment,
   transitionFrameAlignment,
@@ -186,7 +187,9 @@ function assertFrameMarkers(file, name, scale, { requireInput = true, compareDom
   for (const [kind, markers] of kinds) {
     for (let slot = 0; slot < markers.length; slot += 1) {
       const evidence = markerEvidence(bytes, markers[slot], 24, MARKER_SAMPLE_STEP).largest;
-      if (evidence.count < MIN_MARKER_COMPONENT || evidence.width < (compareDomEpoch ? 40 : MIN_MARKER_WIDTH) || evidence.height < MIN_MARKER_HEIGHT) {
+      const expectedWidth = (compareDomEpoch ? 40 : fixtureMarkerSize.width) * scale;
+      const expectedHeight = (compareDomEpoch ? 40 : fixtureMarkerSize.height) * scale;
+      if (evidence.count < MIN_MARKER_COMPONENT || evidence.width < expectedWidth - 4 || evidence.height < expectedHeight - 4) {
         throw new Error(`${name}: slot ${slot} ${kind} marker 소실(${JSON.stringify(evidence)})`);
       }
       if (kind === "page" && compareDomEpoch) {
@@ -213,11 +216,13 @@ function assertFrameMotion(file, name, scale) {
   }
 }
 
-function assertSentinelMarkers(file, name) {
+function assertSentinelMarkers(file, name, scale) {
   const bytes = fs.readFileSync(file);
   for (const [kind, marker] of [["page", fixtureMarkers[0]], ["input", fixtureInputMarkers[0]]]) {
     const evidence = markerEvidence(bytes, marker, 24, MARKER_SAMPLE_STEP).largest;
-    if (evidence.count < MIN_MARKER_COMPONENT || evidence.width < MIN_MARKER_WIDTH || evidence.height < MIN_MARKER_HEIGHT) {
+    if (evidence.count < MIN_MARKER_COMPONENT
+        || evidence.width < fixtureMarkerSize.width * scale - 4
+        || evidence.height < fixtureMarkerSize.height * scale - 4) {
       throw new Error(`${name}: sentinel ${kind} marker 소실(${JSON.stringify(evidence)})`);
     }
   }
@@ -334,7 +339,6 @@ async function runEngine(client, page, engine) {
       throw new Error(`DOM compositor calibration 계약 불일치: ${JSON.stringify(calibration)}`);
     }
     const originalWindow = must(await rpc("window.info", {}, win), "window.info");
-    const scale = Number(originalWindow.scale ?? 1);
     must(await rpc("plugin.settings.set", { id: plugin, key: "homeUrl", value: page.url, scope: "project" }, win), "fixture homeUrl");
     homeOverride = true;
 
@@ -394,6 +398,7 @@ async function runEngine(client, page, engine) {
     await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, "first-paint-ledger");
     const firstPaintPath = path.join(engineEvidence, "first-paint.png");
     must(await rpc("window.snapshot", { path: firstPaintPath }, win), "first paint snapshot");
+    const scale = snapshotCssScale(fs.readFileSync(firstPaintPath), originalWindow);
     assertFrameMarkers(firstPaintPath, `${engine}/first-paint`, scale);
 
     if (sentinelWin && sentinelTabId) {
@@ -410,7 +415,9 @@ async function runEngine(client, page, engine) {
       if (identity.text !== "Browser Boundary") throw new Error(`cross-window sentinel DOM 소실: ${JSON.stringify(identity)}`);
       const sentinelPath = path.join(engineEvidence, "cross-window-sentinel.png");
       must(await rpc("window.snapshot", { path: sentinelPath }, sentinelWin), "cross-window sentinel snapshot");
-      assertSentinelMarkers(sentinelPath, `${engine}/cross-window-sentinel`);
+      const sentinelInfo = must(await rpc("window.info", {}, sentinelWin), "cross-window sentinel info");
+      const sentinelScale = snapshotCssScale(fs.readFileSync(sentinelPath), sentinelInfo);
+      assertSentinelMarkers(sentinelPath, `${engine}/cross-window-sentinel`, sentinelScale);
     }
 
     let frameCount = 0;

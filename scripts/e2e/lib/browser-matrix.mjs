@@ -25,6 +25,25 @@ export const compositorCalibrationSize = Object.freeze({ width: 40, height: 40 }
 // 아니라 언제나 같은 64 CSS px이므로 캡처에서 확대/압축된 옛 프레임을 엄격히 검출할 수 있다.
 export const fixtureMarkerSize = Object.freeze({ width: 64, height: 40 });
 
+/** window.info는 물리 픽셀, window.snapshot은 구현이 선택한 PNG 픽셀을 반환한다.
+ * 두 값을 섞어 deviceScale을 추측하지 않고 실제 산출물의 CSS-px당 PNG-px 배율을 계산한다. */
+export function snapshotCssScale(bytes, windowInfo) {
+  const image = decodePng(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes));
+  const deviceScale = Number(windowInfo?.scale);
+  const cssWidth = Number(windowInfo?.w) / deviceScale;
+  const cssHeight = Number(windowInfo?.h) / deviceScale;
+  const x = image.w / cssWidth;
+  const y = image.h / cssHeight;
+  if (![deviceScale, cssWidth, cssHeight, x, y].every(Number.isFinite)
+      || deviceScale <= 0 || cssWidth <= 0 || cssHeight <= 0 || x <= 0 || y <= 0) {
+    throw new Error(`snapshot 좌표계 산출 불가: ${JSON.stringify({ image: { w: image.w, h: image.h }, windowInfo })}`);
+  }
+  if (Math.abs(x - y) > 0.02) {
+    throw new Error(`snapshot 비등방 배율: ${x}x${y}`);
+  }
+  return (x + y) / 2;
+}
+
 export function markerEvidence(bytes, hex, tolerance = 24, sampleStep = 1) {
   const image = decodePng(Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes));
   const target = [1, 3, 5].map((at) => Number.parseInt(hex.slice(at, at + 2), 16));
