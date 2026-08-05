@@ -29,6 +29,7 @@ import {
   unwrapEvalValue,
   viewportAlignment,
   transitionFrameAlignment,
+  completeCalibrationComponents,
 } from "./lib/browser-matrix.mjs";
 
 const SOCKET = requireSocket();
@@ -166,8 +167,8 @@ async function assertEngineSurfaceLedger(rpc, win, implementation, tabIds, stage
 function assertFrameMarkers(file, name, scale, { requireInput = true, compareDomEpoch = false } = {}) {
   const bytes = fs.readFileSync(file);
   const domEvidence = compareDomEpoch
-    ? markerEvidence(bytes, compositorCalibrationMarker, 24, MARKER_SAMPLE_STEP)
-      .components.filter((component) => component.count >= MIN_MARKER_COMPONENT && component.width >= 40 && component.height >= MIN_MARKER_HEIGHT)
+    ? completeCalibrationComponents(markerEvidence(bytes, compositorCalibrationMarker, 24, MARKER_SAMPLE_STEP)
+      .components.filter((component) => component.count >= MIN_MARKER_COMPONENT && component.width >= 40 && component.height >= MIN_MARKER_HEIGHT))
     : null;
   if (compareDomEpoch && !domEvidence.length) {
     throw new Error(`${name}: DOM compositor calibration 소실(${JSON.stringify(domEvidence)})`);

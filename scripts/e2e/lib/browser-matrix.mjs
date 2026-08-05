@@ -101,6 +101,13 @@ export function markerPixels(bytes, hex, tolerance = 24, sampleStep = 1) {
   return markerEvidence(bytes, hex, tolerance, sampleStep).total;
 }
 
+/** 정사각 DOM ruler의 고유비를 유지한 component만 합성 배율 근거로 쓴다.
+ * WindowServer crop이나 네이티브 표면에 일부 가려진 조각은 존재 증거일 뿐 epoch 증거가 아니다. */
+export function completeCalibrationComponents(components, tolerance = 4) {
+  return components.filter((component) =>
+    Math.abs(Number(component.width) - Number(component.height)) <= tolerance);
+}
+
 export function parseBrowserEngines(raw) {
   const engines = String(raw ?? Object.keys(browserImplementations).join(","))
     .split(",")

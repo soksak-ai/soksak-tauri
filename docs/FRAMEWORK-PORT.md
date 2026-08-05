@@ -726,8 +726,9 @@ and installs none of these rules.
 Transition capture does not judge a browser marker by absolute pixels alone. `capture.calibration`
 idempotently exposes equal 40×40 rulers at the top, middle, and bottom of the DOM-only left rail. A
 ruler must fit inside the narrowest rail; a ruler that extends under a native surface is not a DOM
-calibration. Every surviving DOM ruler is normalized by its declared CSS size before comparison. DOM
-rulers must first agree on one compositor epoch, then every page ruler must agree with that epoch.
+calibration. Every complete DOM ruler that retains the declared square aspect is normalized by its
+declared CSS size before comparison; cropped fragments are not epoch evidence, and a frame with no
+complete ruler is RED. DOM rulers must first agree on one compositor epoch, then every page ruler must agree with that epoch.
 This distinguishes a shell epoch tear from a browser-only blank/stretch without treating clipping as
 scale. Settled frames still have to pass the original absolute pixel size and DOM-slot-to-viewport
 alignment checks.
