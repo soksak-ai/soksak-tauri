@@ -158,6 +158,17 @@ impl NativeSurfaceHosts {
             })
             .unwrap_or_default()
     }
+
+    /// 창 파괴 시 그 창이 소유한 host를 한 번에 떼어낸다. 반환된 포인터는 이미 파괴 중인
+    /// NSView를 역참조하지 않고 다른 identity 장부에서 제거하는 키로만 쓴다.
+    pub fn remove_window(&self, window: &str) -> Vec<(String, NativeSurfaceHost)> {
+        let Ok(mut hosts) = self.0.lock() else { return Vec::new(); };
+        let labels = hosts.iter()
+            .filter(|(_, host)| host.window == window)
+            .map(|(label, _)| label.clone())
+            .collect::<Vec<_>>();
+        labels.into_iter().filter_map(|label| hosts.remove(&label).map(|host| (label, host))).collect()
+    }
 }
 
 pub type SurfaceRect = (f64, f64, f64, f64);
@@ -265,6 +276,14 @@ mod tests {
         assert_eq!(hosts.labels_in("window-a"), vec!["browser-a", "browser-b"]);
         assert_eq!(hosts.remove("browser-a").map(|host| host.ptr), Some(11));
         assert_eq!(hosts.ptr("browser-a"), None);
+
+        let removed = hosts.remove_window("window-a");
+        assert_eq!(removed, vec![("browser-b".into(), super::NativeSurfaceHost {
+            ptr: 22,
+            window: "window-a".into(),
+        })]);
+        assert!(hosts.labels_in("window-a").is_empty());
+        assert_eq!(hosts.ptr("browser-c"), Some(33));
     }
 
     #[test]

@@ -20,6 +20,78 @@ use tauri::{
     WebviewWindowBuilder,
 };
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PageLoadState {
+    revision: u64,
+    window: String,
+    url: String,
+    finished: bool,
+}
+
+static PAGE_LOAD_STATES: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<String, PageLoadState>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+static PAGE_LOAD_EVENTS: std::sync::LazyLock<tokio::sync::broadcast::Sender<String>> =
+    std::sync::LazyLock::new(|| tokio::sync::broadcast::channel(128).0);
+
+fn record_page_load(label: &str, window: &str, url: &str, finished: bool) {
+    if let Ok(mut states) = PAGE_LOAD_STATES.lock() {
+        let revision = states.get(label).map(|state| state.revision + 1).unwrap_or(1);
+        states.insert(label.to_owned(), PageLoadState {
+            revision,
+            window: window.to_owned(),
+            url: url.to_owned(),
+            finished,
+        });
+    }
+    let _ = PAGE_LOAD_EVENTS.send(label.to_owned());
+}
+
+pub fn forget_window(window: &str) {
+    if let Ok(mut states) = PAGE_LOAD_STATES.lock() { states.retain(|_, state| state.window != window); }
+    #[cfg(target_os = "macos")]
+    layer::forget_window(window);
+}
+
+fn loaded_page(label: &str) -> Option<PageLoadState> {
+    PAGE_LOAD_STATES.lock().ok().and_then(|states| states.get(label).cloned())
+        .filter(|state| state.finished && state.url != "about:blank")
+}
+
+/// child 생성 ACK와 페이지 준비 ACK는 다른 사실이다. on_page_load 사건만 소비하는 유한 장벽이며
+/// 타이머 간격으로 상태를 재조회하지 않는다.
+#[tauri::command]
+pub async fn webview_wait_loaded(
+    app: AppHandle,
+    label: String,
+    timeout_ms: Option<u64>,
+) -> Result<serde_json::Value, String> {
+    if app.get_webview(&label).is_none() {
+        return Err(format!("webview 없음: {label}"));
+    }
+    let mut events = PAGE_LOAD_EVENTS.subscribe();
+    if let Some(state) = loaded_page(&label) {
+        return serde_json::to_value(state).map_err(|error| error.to_string());
+    }
+    let timeout = std::time::Duration::from_millis(timeout_ms.unwrap_or(15_000).clamp(1, 60_000));
+    tokio::time::timeout(timeout, async {
+        loop {
+            match events.recv().await {
+                Ok(changed) if changed == label => {
+                    if let Some(state) = loaded_page(&label) { return Ok(state); }
+                }
+                Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    return Err("webview page-load 사건 통로가 닫혔습니다".to_string());
+                }
+            }
+        }
+    }).await
+        .map_err(|_| format!("webview page-load 시간 초과: {label}"))?
+        .and_then(|state| serde_json::to_value(state).map_err(|error| error.to_string()))
+}
+
 /// 포커스된 child 웹뷰 편집자에 확정 문자열을 전달한다.
 ///
 /// DOM 값을 쓰는 자동화 명령이 아니다. AppKit responder chain의 NSTextInputClient 진입점으로
@@ -574,16 +646,9 @@ pub async fn engine_surface_stats(app: AppHandle, window: tauri::Window) -> serd
                 let _ = ns_win; // 소속은 live 순회(이 창 트리)가 이미 보장한다
                 let f = v.frame();
                 let surface_label = layer::surface_label(ptr);
-                let dim = surface_label.as_deref().map(layer::surface_dim).unwrap_or(0.0);
-                let lighting = surface_label
-                    .as_deref()
-                    .map(layer::surface_dim_state)
-                    .unwrap_or_else(|| serde_json::json!({ "veilPresent": false }));
                 surfaces.push(serde_json::json!({
                     "ptr": ptr,
                     "label": surface_label,
-                    "dim": dim,
-                    "lighting": lighting,
                     "hidden": v.isHidden(),
                     "effectivelyHidden": unsafe { v.isHiddenOrHasHiddenAncestor() },
                     "autoresizingMask": v.autoresizingMask().0,
@@ -623,24 +688,6 @@ pub fn webview_overlay_active(window: tauri::Window, active: bool) {
     layer::set_overlay(window.label(), active);
     #[cfg(not(target_os = "macos"))]
     let _ = (window, active);
-}
-
-// 포커스 조명의 native projection. 메인 DOM의 조명과 같은 공개 `--dim` 값을 Tauri
-// surface 바로 위의 input-transparent AppKit 평면으로 옮긴다. Electron에는 이 명령도 장치도 없다.
-#[tauri::command]
-pub fn webview_dim(window: tauri::Window, label: String, amount: f64) -> Result<(), String> {
-    if !amount.is_finite() || !(0.0..=1.0).contains(&amount) {
-        return Err("amount는 0..1 유한수여야 한다".into());
-    }
-    let prefix = format!("b-{}-", window.label());
-    if !label.starts_with(&prefix) {
-        return Err(format!("이 창의 surface가 아니다: {label}"));
-    }
-    #[cfg(target_os = "macos")]
-    layer::set_surface_dim(&label, amount);
-    #[cfg(not(target_os = "macos"))]
-    let _ = (&label, amount);
-    Ok(())
 }
 
 // 패널 디바이더 드래그 제스처 릴레이 — 프론트(GroupArea)가 드래그 시작/끝에 호출한다.
@@ -832,6 +879,7 @@ pub fn webview_open(
     y: f64,
     w: f64,
     h: f64,
+    transparent: Option<bool>,
 ) -> Result<(), String> {
     #[cfg(debug_assertions)]
     eprintln!("[open-trace] webview_open {label} 진입 (url={url})");
@@ -862,12 +910,19 @@ pub fn webview_open(
     let nav_label = label.clone();
     let pl_app = app.clone();
     let pl_label = label.clone();
+    let pl_window = window.label().to_owned();
+    record_page_load(&label, &pl_window, "about:blank", false);
     // 상태표시줄용 hover 스크립트를 함께 주입(macOS — 메시지 핸들러가 받는다). 비-macOS 는 생략.
     #[cfg(target_os = "macos")]
     let init_script = format!("{NEW_WINDOW_NAV}\n{MEDIA_SNIFF}\n{}", status::HOVER_SCRIPT);
     #[cfg(not(target_os = "macos"))]
     let init_script = format!("{NEW_WINDOW_NAV}\n{MEDIA_SNIFF}");
+    // Pane UI renderer만 생성 전부터 투명하다. 생성 뒤 WKWebView에 KVC를 쓰면 이미 만들어진
+    // backing store의 흰 배경이 남는다. 일반 브라우저 surface는 기본 false라 페이지가
+    // 불투명한 문서 표면이라는 기존 계약을 유지한다.
+    let transparent = transparent.unwrap_or(false);
     let builder = tauri::webview::WebviewBuilder::new(&label, WebviewUrl::External(parsed))
+        .transparent(transparent)
         .initialization_script(init_script)
         // 새 창 마커(_blank 등)는 차단하고 내장 브라우저 새 창으로. URL 동기화는 여기서 하지 않는다 —
         // on_navigation 은 iframe 등 서브프레임 내비게이션에도 발화하고(wry 가 프레임 정보를 주지 않아
@@ -892,6 +947,8 @@ pub fn webview_open(
         // about:blank 는 WKWebView 초기화 중간 단계라 제외. 완료 시 문서 <title> 도 함께 emit.
         .on_page_load(move |webview, payload| {
             let u = payload.url().as_str();
+            let finished = payload.event() == tauri::webview::PageLoadEvent::Finished;
+            record_page_load(&pl_label, &pl_window, u, finished);
             if u != "about:blank" {
                 let _ = pl_app.emit(
                     soksak_spec_content_view::NAV,
@@ -902,7 +959,6 @@ pub fn webview_open(
                     },
                 );
             }
-            let finished = payload.event() == tauri::webview::PageLoadEvent::Finished;
             if finished {
                 emit_page_title(&webview, webview.label());
             }
@@ -958,7 +1014,7 @@ pub fn webview_open(
     {
         // WKWebView를 직접 화면 배치하지 않는다. 전용 layer-backed host가 z-order·frame·motion·
         // hit-test surface를 소유하고, WKWebView는 그 안의 고정 로컬 child다.
-        layer::adopt_surface_host(&webview, &label, window.label());
+        layer::adopt_surface_host(&webview, &label, window.label(), transparent);
         // 상태표시줄: 링크 hover → browser-status emit. 메시지 핸들러를 이 webview 에 등록.
         let st_app = app.clone();
         let st_label = label.clone();
@@ -1105,7 +1161,6 @@ fn set_child_frame(
                 host.setFrame(frame);
                 view.setFrame(NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(w, h)));
                 layer::settle_surface_frame(view);
-                layer::set_surface_dim(&label, layer::surface_dim(&label));
             } else {
                 view.setFrame(frame);
                 layer::settle_surface_frame(view);
@@ -1517,6 +1572,77 @@ pub fn webview_alive(app: AppHandle, label: String) -> bool {
     alive
 }
 
+#[tauri::command]
+pub fn webview_pane_group(
+    app: AppHandle,
+    window: tauri::Window,
+    pane: String,
+    renderer: String,
+    members: Vec<String>,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+) -> Result<(), String> {
+    if app.get_webview(&renderer).is_none() {
+        return Err(format!("pane renderer webview가 없습니다: {renderer}"));
+    }
+    for label in &members {
+        if app.get_webview(label).is_none() {
+            return Err(format!("pane member webview가 없습니다: {label}"));
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        layer::group_pane_surface_host(
+            &pane,
+            window.label(),
+            &renderer,
+            &members,
+            (x, y, w, h),
+        )?;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (window, pane, renderer, members, x, y, w, h);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn webview_pane_transition_prepare(
+    pane: String,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    start_at_unix_ms: f64,
+    duration_ms: f64,
+) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        return layer::prepare_pane_surface_host_translation(
+            &pane,
+            (x, y, w, h),
+            start_at_unix_ms,
+            duration_ms,
+        );
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (pane, x, y, w, h, start_at_unix_ms, duration_ms);
+        Ok(())
+    }
+}
+
+#[tauri::command]
+pub fn webview_pane_hosts() -> serde_json::Value {
+    #[cfg(target_os = "macos")]
+    { layer::pane_surface_host_state() }
+    #[cfg(not(target_os = "macos"))]
+    { serde_json::json!([]) }
+}
+
 // hide 를 거친 child 라벨 — show 시 재부착(뷰어빌리티 기상)이 필요한 대상. webview_close 가 지운다.
 // 숨김의 단일 경로는 webview_visible이다. 좌표 명령은 이 장부를 건드리지 않는다.
 #[cfg(target_os = "macos")]
@@ -1649,6 +1775,9 @@ pub fn webview_close(app: AppHandle, label: String) -> Result<(), String> {
     }
     if let Ok(mut m) = CHILD_BORN_AT.lock() {
         m.remove(&label);
+    }
+    if let Ok(mut states) = PAGE_LOAD_STATES.lock() {
+        states.remove(&label);
     }
     Ok(())
 }

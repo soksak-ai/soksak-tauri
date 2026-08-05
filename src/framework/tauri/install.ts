@@ -34,7 +34,6 @@ import {
   installTauriHoleMarkers,
   isTauriRectMotionExcluded,
 } from "./holeMarkers";
-import { installNativeLighting } from "./nativeLighting";
 import { useUi } from "../../state/ui";
 import { useGutterHover } from "../../state/gutterHover";
 import { bindPaneUnder } from "../../lib/bindPaneUnder";
@@ -42,6 +41,7 @@ import { onLayoutMotion } from "../../lib/layoutMotion";
 import { registerRectMotionExclusion } from "../../lib/layoutRectMotion";
 import { listenThisWindow } from "../../lib/windowEvents";
 import { register } from "../../commands/registry";
+import { recordWindowFrames } from "../../commands/windowRecorder";
 import { tmsg } from "../../i18n";
 
 /**
@@ -268,6 +268,138 @@ function installHoleAuditCommand(): void {
   });
 }
 
+/** 공통 PaneSurfaceHost를 실제 child webview로 구동·관측하는 Tauri 전용 공개 표면. */
+function installPaneSurfaceHostCommands(): void {
+  register("webview.pane.surface-open", {
+    description:
+      "Open one Tauri child webview at an explicit viewport rect for PaneSurfaceHost composition. This is the reusable low-level surface constructor used by renderer/surface integration tests and adapters; it never focuses the window.",
+    params: {
+      label: { type: "string", description: "globally unique child webview label", required: true },
+      url: { type: "string", description: "URL loaded by the child", required: true },
+      x: { type: "number", description: "viewport x", required: true },
+      y: { type: "number", description: "viewport y", required: true },
+      w: { type: "number", description: "width", required: true },
+      h: { type: "number", description: "height", required: true },
+      transparent: {
+        type: "boolean",
+        description: "true only for a pane UI renderer; document surfaces remain opaque",
+        default: false,
+      },
+    },
+    danger: "inject",
+    returns: "{ label, opened:true }",
+    message: (d) => `Tauri child surface ${String(d.label)}를 열었습니다`,
+    handler: async (p) => {
+      await invoke("webview_open", p);
+      await invoke("webview_visible", { label: p.label, visible: true, focus: false });
+      const page = await invoke<Record<string, unknown>>("webview_wait_loaded", {
+        label: p.label,
+        timeoutMs: 15_000,
+      });
+      return { label: p.label, opened: true, page };
+    },
+  });
+  register("webview.pane.surface-close", {
+    description:
+      "Close one explicitly named Tauri child and release its surface, pane membership, lighting, and page-load state. Closing an absent label is idempotent.",
+    params: {
+      label: { type: "string", description: "child webview label", required: true },
+    },
+    danger: "destructive",
+    returns: "{ label, closed:true }",
+    message: (d) => `Tauri child surface ${String(d.label)}를 닫았습니다`,
+    handler: async (p) => {
+      await invoke("webview_close", { label: p.label });
+      return { label: p.label, closed: true };
+    },
+  });
+  register("webview.pane.group", {
+    description:
+      "Put an existing pane UI renderer and one or more document-outside child surfaces under one native PaneSurfaceHost. The host becomes the sole movement owner; renderer and members keep only pane-local frames.",
+    params: {
+      pane: { type: "string", description: "stable pane host identity", required: true },
+      renderer: { type: "string", description: "child webview that renders pane UI/chrome", required: true },
+      members: { type: "string[]", description: "document-outside child webview labels", required: true },
+      x: { type: "number", description: "pane viewport x", required: true },
+      y: { type: "number", description: "pane viewport y", required: true },
+      w: { type: "number", description: "pane width", required: true },
+      h: { type: "number", description: "pane height", required: true },
+    },
+    danger: "inject",
+    returns: "{ pane, renderer, members, grouped:true }",
+    message: (d) => `PaneSurfaceHost ${String(d.pane)}를 구성했습니다`,
+    handler: async (p) => {
+      await invoke("webview_pane_group", p);
+      return { pane: p.pane, renderer: p.renderer, members: p.members, grouped: true };
+    },
+  });
+  register("webview.pane.move", {
+    description:
+      "Move one PaneSurfaceHost as a single CoreAnimation transaction. All renderer and native member pixels inherit this one parent presentation frame.",
+    params: {
+      pane: { type: "string", description: "pane host identity", required: true },
+      x: { type: "number", description: "target viewport x", required: true },
+      y: { type: "number", description: "target viewport y", required: true },
+      w: { type: "number", description: "unchanged pane width", required: true },
+      h: { type: "number", description: "unchanged pane height", required: true },
+      startAtUnixMs: { type: "number", description: "absolute start epoch in milliseconds", required: true },
+      durationMs: { type: "number", description: "finite duration in milliseconds", required: true },
+      recordDir: { type: "string", description: "optional transition PNG directory" },
+      recordFrames: { type: "number", description: "frames when recordDir is set (default 48)" },
+      recordIntervalMs: { type: "number", description: "recording interval in milliseconds (default 16)" },
+    },
+    danger: "inject",
+    returns: "{ pane, prepared:true }",
+    message: (d) => `PaneSurfaceHost ${String(d.pane)} 이동을 준비했습니다`,
+    handler: async (p) => {
+      const recordDir = p.recordDir as string | undefined;
+      const recording = recordDir
+        ? recordWindowFrames({
+            dir: recordDir,
+            frames: Math.max(1, Math.min(600, Number(p.recordFrames ?? 48))),
+            intervalMs: Math.max(0, Number(p.recordIntervalMs ?? 16)),
+          })
+        : null;
+      await (recording?.ready ?? Promise.resolve());
+      await invoke("webview_pane_transition_prepare", {
+        pane: p.pane, x: p.x, y: p.y, w: p.w, h: p.h,
+        startAtUnixMs: p.startAtUnixMs, durationMs: p.durationMs,
+      });
+      return {
+        pane: p.pane,
+        prepared: true,
+        ...(recording ? { recording: { dir: recordDir, frames: await recording } } : {}),
+      };
+    },
+  });
+  register("webview.pane.hosts", {
+    description:
+      "Expose every live Tauri PaneSurfaceHost with its renderer, member surfaces, native frame, and renderer/member ancestry verdict.",
+    params: {},
+    returns: "{ hosts:[{pane,window,renderer,members,frame,rendererTopology}] }",
+    message: (d) => `PaneSurfaceHost ${Number(d.count ?? 0)}개`,
+    handler: async () => {
+      const hosts = await invoke<Record<string, unknown>[]>("webview_pane_hosts");
+      return { count: hosts.length, hosts };
+    },
+  });
+  register("webview.pane.eval", {
+    description:
+      "Evaluate a JSON-stringifying diagnostic expression in an explicitly named Tauri child webview. This exposes renderer URL, ready state, computed style, and fixture markers without reaching into private DOM from core code.",
+    params: {
+      label: { type: "string", description: "child webview label", required: true },
+      js: { type: "string", description: "async function body returning a string", required: true },
+    },
+    danger: "inject",
+    returns: "{ label, result }",
+    message: (d) => `Tauri child ${String(d.label)} 진단을 읽었습니다`,
+    handler: async (p) => ({
+      label: p.label,
+      result: await invoke<string>("webview_eval", { label: p.label, js: p.js }),
+    }),
+  });
+}
+
 /** 이 프레임워크가 코어 표면에 거는 것 전부. 고른 어댑터만 불린다(contract.install). */
 export function installTauri(): void {
   // 콘텐츠 뷰 구현 — 이 프레임워크가 줄 수 있는 것은 OS 자식 뷰다.
@@ -280,8 +412,6 @@ export function installTauri(): void {
   adoptFrameworkStyles("tauri", styles);
   // 공개 슬롯을 Tauri 전용 합성 표식으로 투영한다. 공통 DOM 은 hole 개념을 갖지 않는다.
   installTauriHoleMarkers();
-  // native child는 DOM 조명 평면보다 앞에 있으므로 같은 dim 사실을 native 합성면에 투영한다.
-  installNativeLighting();
   // 사이드바는 홀 위에 칠하지 않는다 — 문서 밖 표면은 DOM 전체 뒤라 클립 제외만이 유일한 길이다.
   installRailHoleClip();
   // 표면 정합 상시 감사 — 문서 밖 표면은 상태와 따로 살 수 있어(유령) 그 어긋남을 계속 본다.
@@ -300,6 +430,7 @@ export function installTauri(): void {
   installNativeBridgeCommand();
   installCompositionCommand();
   installHoleAuditCommand();
+  installPaneSurfaceHostCommands();
   // 실제 FLIP 추적 프레임(pane·tab-body) 중 native child를 품은 것만 뺀다. bounds 원천인
   // content-view body는 그 자식이라 검사 대상이 아니다. 문서 안 게스트에는 이 표식도 등록도
   // 없으므로 Electron의 DOM 보간은 그대로다.

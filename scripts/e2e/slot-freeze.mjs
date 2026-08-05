@@ -124,20 +124,15 @@ async function assertActivePane(rpc, win, expectedPaneId, stage) {
   return state;
 }
 
-function assertNativeLighting(data, activeLabel, labels) {
+function assertNativeLighting(data, _activeLabel, labels) {
   const surfaces = new Map((data.engine?.surfaces ?? []).map((surface) => [surface.label, surface]));
   const errors = [];
   for (const label of labels) {
     const surface = surfaces.get(label);
-    const expected = label === activeLabel ? 0 : 0.5;
     if (!surface) { errors.push(`${label}:missing`); continue; }
-    if (surface.dim !== expected) errors.push(`${label}:requested=${surface.dim}/${expected}`);
-    const lighting = surface.lighting ?? {};
-    if (lighting.appliedAlpha !== expected) errors.push(`${label}:applied=${lighting.appliedAlpha}/${expected}`);
-    if (!lighting.frameMatchesSurface) errors.push(`${label}:frame`);
-    if (!lighting.siblingOrder?.veilAboveSurface) errors.push(`${label}:stack`);
+    if ("dim" in surface || "lighting" in surface) errors.push(`${label}:per-surface-lighting-present`);
   }
-  if (errors.length) throw new Error(`native lighting 불일치 — ${errors.join(", ")}`);
+  if (errors.length) throw new Error(`single lighting plane 불일치 — ${errors.join(", ")}`);
 }
 
 function assertNativeComposition(data, labels, beforeWrites) {
@@ -146,6 +141,9 @@ function assertNativeComposition(data, labels, beforeWrites) {
   );
   if (data.engine?.preservesContentDuringLiveResize !== false) {
     errors.push(`window:preservesContentDuringLiveResize=${data.engine?.preservesContentDuringLiveResize}`);
+  }
+  if (data.engine?.rendererTopology?.panelAtomicMotion !== true) {
+    errors.push(`renderer-topology:${data.engine?.rendererTopology?.verdict ?? "missing"}`);
   }
   const placements = new Map((data.placement ?? []).map((item) => [item.label, item]));
   for (const label of labels) {

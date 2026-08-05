@@ -8,7 +8,6 @@ import { describe, expect, it } from "vitest";
 const ROOT = resolve(import.meta.dirname, "../..");
 const SRC = resolve(ROOT, "src");
 const TAURI_FIXES = [
-  "nativeLighting.ts",
   "railHoleClip.ts",
   "railHoleClipHost.ts",
   "surfaceAudit.ts",
@@ -42,17 +41,13 @@ describe("Tauri native-composition ownership", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("native 조명 observer와 IPC는 Tauri 어댑터 밖으로 새지 않는다", () => {
+  it("조명은 공통 단일 평면이며 프레임워크별 surface 조명을 중복하지 않는다", () => {
     const offenders = productionFiles(SRC)
-      .filter((file) => !relative(SRC, file).startsWith("framework/tauri/"))
       .filter((file) => /webview_dim|nativeLighting|NativeDimVeil/.test(readFileSync(file, "utf8")))
       .map((file) => relative(SRC, file));
     expect(offenders).toEqual([]);
-
-    const electron = productionFiles(resolve(SRC, "framework/electron"))
-      .map((file) => readFileSync(file, "utf8"))
-      .join("\n");
-    expect(electron).not.toMatch(/MutationObserver|webview_dim|nativeLighting/);
+    const nativeLayer = readFileSync(resolve(ROOT, "frameworks/tauri/src/webview/layer.rs"), "utf8");
+    expect(nativeLayer).not.toMatch(/SURFACE_DIMS|DIM_VEILS|NativeDimVeil/);
   });
 
   it("공통 DOM과 스타일은 Tauri hole 표식을 만들거나 해석하지 않는다", () => {
@@ -132,6 +127,23 @@ describe("Tauri native-composition ownership", () => {
     expect(source).toMatch(/if hit == this \{ std::ptr::null_mut\(\) \}/);
     expect(source).toMatch(/host_view,[\s\S]*NSWindowOrderingMode::Below,[\s\S]*Some\(main_view\)/);
     expect(source).not.toMatch(/place_window_surface_hosts\(label, !active\)/);
+  });
+
+  it("pane renderer와 native member 이동은 하나의 PaneSurfaceHost가 소유한다", () => {
+    const layer = readFileSync(resolve(ROOT, "frameworks/tauri/src/webview/layer.rs"), "utf8");
+    const tauriInstall = readFileSync(resolve(SRC, "framework/tauri/install.ts"), "utf8");
+    const electron = productionFiles(resolve(SRC, "framework/electron"))
+      .map((file) => readFileSync(file, "utf8")).join("\n");
+    expect(layer).toMatch(/struct PaneSurfaceHost/);
+    expect(layer).toMatch(/pane_view\.addSubview\(renderer_host\)/);
+    const move = layer.split("pub fn prepare_pane_surface_host_translation")[1]
+      ?.split("pub fn ")[0] ?? "";
+    expect(move).toMatch(/host\.setFrame\(target\)/);
+    expect(move).toMatch(/add_layout_position\(host,/);
+    expect(move).not.toMatch(/renderer|member/);
+    expect(tauriInstall).toMatch(/webview\.pane\.group/);
+    expect(tauriInstall).toMatch(/webview\.pane\.hosts/);
+    expect(electron).not.toMatch(/PaneSurfaceHost|webview\.pane\./);
   });
 
   it("native bounds command는 main-thread frame 설치 ACK 뒤에만 반환한다", () => {

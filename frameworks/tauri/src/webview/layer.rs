@@ -7,8 +7,8 @@ use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, Sel};
 use objc2::sel;
 use objc2_app_kit::{
-    NSAutoresizingMaskOptions, NSBox, NSBoxType, NSColor, NSTitlePosition, NSView,
-    NSViewLayerContentsPlacement, NSViewLayerContentsRedrawPolicy, NSWindowOrderingMode,
+    NSAutoresizingMaskOptions, NSView, NSViewLayerContentsPlacement,
+    NSViewLayerContentsRedrawPolicy, NSWindowOrderingMode,
 };
 use objc2_foundation::{NSNumber, NSPoint, NSString};
 use objc2_quartz_core::{
@@ -37,39 +37,15 @@ static LAYERS: LazyLock<Mutex<HashMap<String, WinLayer>>> =
 // child frame" 불변식 보존(별도 rect 레지스트리 없음).
 static SURFACES: LazyLock<NativeSurfaceLedger> = LazyLock::new(NativeSurfaceLedger::default);
 static SURFACE_HOSTS: LazyLock<NativeSurfaceHosts> = LazyLock::new(NativeSurfaceHosts::default);
-static SURFACE_DIMS: LazyLock<Mutex<HashMap<String, f64>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
 // 교체 전 원본 hitTest IMP. 클래스(WryWebView) 단위 스위즐이라 앱 전역 1회면 충분.
 static ORIG_HIT_TEST: AtomicUsize = AtomicUsize::new(0);
-
-// native surface host 바로 위(contentView의 같은 자식 축)에 서는 순수 시각 조명 평면.
-// Chromium의 remote CALayer는 host 내부의 일반 AppKit 자식보다 앞에서 합성될 수 있으므로
-// veil을 host 안에 넣지 않는다. host frame 커밋과 같은 경로에서 frame을 복사하고,
-// hitTest=nil이라 브라우저 입력을 가로채지 않는다.
-objc2::define_class!(
-    #[unsafe(super(NSBox))]
-    #[thread_kind = objc2::MainThreadOnly]
-    struct NativeDimVeilBox;
-
-    impl NativeDimVeilBox {
-        #[unsafe(method(hitTest:))]
-        fn hit_test(&self, _point: NSPoint) -> *mut NSView {
-            std::ptr::null_mut()
-        }
-    }
-);
-
-thread_local! {
-    static DIM_VEILS: std::cell::RefCell<HashMap<String, Retained<NativeDimVeilBox>>> =
-        std::cell::RefCell::new(HashMap::new());
-}
 
 // 엔진 표면 컨테이너는 메인 webview 위에 서지만, 자식 표면 밖의 빈 영역은 DOM 입력을
 // 가로채지 않는다. 자식이 nil을 돌려주는 입력-투과 표면(OSR)도 그대로 DOM으로 통과한다.
 objc2::define_class!(
     #[unsafe(super(NSView))]
     #[thread_kind = objc2::MainThreadOnly]
-    struct EngineSurfaceHost;
+struct EngineSurfaceHost;
 
     impl EngineSurfaceHost {
         #[unsafe(method(hitTest:))]
@@ -81,108 +57,40 @@ objc2::define_class!(
     }
 );
 
-fn apply_surface_dim(label: &str) {
-    let Some(host_ptr) = SURFACE_HOSTS.ptr(label) else {
-        return;
-    };
-    let amount = SURFACE_DIMS
-        .lock()
-        .ok()
-        .and_then(|dims| dims.get(label).copied())
-        .unwrap_or(0.0);
-    let Some(mtm) = objc2::MainThreadMarker::new() else {
-        return;
-    };
-    let host = unsafe { &*(host_ptr as *const NSView) };
-    let Some(parent) = (unsafe { host.superview() }) else {
-        return;
-    };
-    DIM_VEILS.with(|cell| {
-        let mut veils = cell.borrow_mut();
-        let veil = veils.entry(label.to_owned()).or_insert_with(|| {
-            let box_view: Retained<NativeDimVeilBox> =
-                unsafe { msg_send![mtm.alloc::<NativeDimVeilBox>(), init] };
-            box_view.setBoxType(NSBoxType::Custom);
-            box_view.setTitlePosition(NSTitlePosition::NoTitle);
-            box_view.setBorderWidth(0.0);
-            box_view.setFillColor(&NSColor::blackColor());
-            box_view.setTransparent(false);
-            let view: &NSView = &box_view;
-            view.setWantsLayer(true);
-            view.setAutoresizingMask(
-                NSAutoresizingMaskOptions::ViewWidthSizable
-                    | NSAutoresizingMaskOptions::ViewHeightSizable,
-            );
-            box_view
-        });
-        let view: &NSView = veil;
-        view.setFrame(host.frame());
-        view.setAlphaValue(amount);
-        view.removeFromSuperview();
-        parent.addSubview_positioned_relativeTo(view, NSWindowOrderingMode::Above, Some(host));
-        view.setHidden(amount <= 0.0 || host.isHidden());
-    });
-}
+// 한 패널의 UI renderer와 문서 밖 표면이 함께 사는 유일한 이동 단위. 두 renderer를
+// Window content root의 서로 다른 가지에 둔 채 시각 epoch를 맞추지 않는다. 이 host의
+// model/presentation frame 하나가 패널 이동의 단일 진실이다.
+objc2::define_class!(
+    #[unsafe(super(NSView))]
+    #[thread_kind = objc2::MainThreadOnly]
+    struct PaneSurfaceHost;
 
-pub fn set_surface_dim(label: &str, amount: f64) {
-    if let Ok(mut dims) = SURFACE_DIMS.lock() {
-        dims.insert(label.to_owned(), amount);
+    impl PaneSurfaceHost {
+        #[unsafe(method(hitTest:))]
+        fn hit_test(&self, point: NSPoint) -> *mut NSView {
+            let hit: *mut NSView = unsafe { msg_send![super(self), hitTest: point] };
+            let this = self as *const Self as *mut NSView;
+            if hit == this { std::ptr::null_mut() } else { hit }
+        }
     }
-    apply_surface_dim(label);
+);
+
+#[derive(Clone)]
+struct PaneSurfaceRecord {
+    ptr: usize,
+    window: String,
+    renderer: String,
+    members: Vec<String>,
 }
 
-pub fn surface_dim(label: &str) -> f64 {
-    SURFACE_DIMS
-        .lock()
-        .ok()
-        .and_then(|dims| dims.get(label).copied())
-        .unwrap_or(0.0)
-}
-
-// 요청값뿐 아니라 실제 AppKit 합성면의 존재·alpha·frame 정합을 공개 상태로 반환한다.
-// 반드시 메인 스레드에서 호출한다.
-pub fn surface_dim_state(label: &str) -> serde_json::Value {
-    let requested = surface_dim(label);
-    let Some(host_ptr) = SURFACE_HOSTS.ptr(label) else {
-        return serde_json::json!({ "requested": requested, "veilPresent": false });
-    };
-    let host = unsafe { &*(host_ptr as *const NSView) };
-    DIM_VEILS.with(|cell| {
-        let veils = cell.borrow();
-        let Some(veil) = veils.get(label) else {
-            return serde_json::json!({ "requested": requested, "veilPresent": false });
-        };
-        let view: &NSView = veil;
-        let vf = view.frame();
-        let hf = host.frame();
-        let sibling_order = unsafe { host.superview() }.map(|parent| {
-            let siblings = parent.subviews();
-            let host_index = siblings
-                .iter()
-                .position(|s| Retained::as_ptr(&s) as usize == host_ptr);
-            let veil_ptr = view as *const NSView as usize;
-            let veil_index = siblings
-                .iter()
-                .position(|s| Retained::as_ptr(&s) as usize == veil_ptr);
-            serde_json::json!({
-                "surface": host_index,
-                "veil": veil_index,
-                "veilAboveSurface": matches!((host_index, veil_index), (Some(h), Some(v)) if v > h),
-            })
-        });
-        serde_json::json!({
-            "requested": requested,
-            "veilPresent": true,
-            "appliedAlpha": view.alphaValue(),
-            "veilHidden": view.isHidden(),
-            "veilTransparent": veil.isTransparent(),
-            "veilLayerBacked": view.wantsLayer(),
-            "siblingOrder": sibling_order,
-            "frameMatchesSurface": vf == hf,
-            "frame": { "x": vf.origin.x, "y": vf.origin.y, "w": vf.size.width, "h": vf.size.height },
-        })
-    })
-}
+static PANE_SURFACE_HOSTS: LazyLock<Mutex<HashMap<String, PaneSurfaceRecord>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+static SURFACE_PANES: LazyLock<Mutex<HashMap<String, String>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+static SURFACE_VIEWS: LazyLock<Mutex<HashMap<String, usize>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+static SURFACE_TRANSPARENCY: LazyLock<Mutex<HashMap<String, bool>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 // 창의 오버레이 게이트 갱신(프론트 ui 카운터 0↔1 전이 시 webview_overlay_active 가 호출).
 pub fn set_overlay(label: &str, active: bool) {
@@ -246,6 +154,15 @@ pub fn surface_host_ptr(label: &str) -> usize {
 // 조상이 창 content root뿐이면 패널 하나를 원자적으로 움직일 공통 소유자가 없는 구조다.
 // 같은 CATransaction/시각 epoch는 이 구조 사실을 바꾸지 못한다.
 pub fn renderer_topology(window_label: &str, surface_ptr: usize) -> serde_json::Value {
+    let main_ptr = LAYERS
+        .lock()
+        .ok()
+        .and_then(|layers| layers.get(window_label).map(|layer| layer.main_ptr))
+        .unwrap_or(0);
+    renderer_pair_topology(main_ptr, surface_ptr)
+}
+
+fn renderer_pair_topology(renderer_ptr: usize, surface_ptr: usize) -> serde_json::Value {
     fn ancestry(mut ptr: *mut NSView) -> Vec<(usize, String)> {
         let mut out = Vec::new();
         while !ptr.is_null() {
@@ -257,15 +174,10 @@ pub fn renderer_topology(window_label: &str, surface_ptr: usize) -> serde_json::
         out
     }
 
-    let main_ptr = LAYERS
-        .lock()
-        .ok()
-        .and_then(|layers| layers.get(window_label).map(|layer| layer.main_ptr))
-        .unwrap_or(0);
-    if main_ptr == 0 || surface_ptr == 0 {
+    if renderer_ptr == 0 || surface_ptr == 0 {
         return serde_json::json!(null);
     }
-    let dom = ancestry(main_ptr as *mut NSView);
+    let dom = ancestry(renderer_ptr as *mut NSView);
     let native = ancestry(surface_ptr as *mut NSView);
     let mut common_depth: i64 = -1;
     let mut common_ptr = 0usize;
@@ -277,10 +189,13 @@ pub fn renderer_topology(window_label: &str, surface_ptr: usize) -> serde_json::
             break;
         }
     }
-    let window_content_root = unsafe { (&*(main_ptr as *const NSView)).superview() }
+    let window_content_root = unsafe { (&*(renderer_ptr as *const NSView)).superview() }
         .map(|view| Retained::as_ptr(&view) as usize)
         .unwrap_or(0);
     serde_json::json!({
+        "domRendererPtr": renderer_ptr,
+        "nativeSurfacePtr": surface_ptr,
+        "sameView": renderer_ptr == surface_ptr,
         "domRendererPath": dom.into_iter().map(|(_, class)| class).collect::<Vec<_>>(),
         "nativeSurfacePath": native.into_iter().map(|(_, class)| class).collect::<Vec<_>>(),
         "lowestCommonAncestorDepth": common_depth,
@@ -369,16 +284,7 @@ pub fn prepare_surface_host_translation(
         target.size,
     ));
     settle_surface_frame(child);
-    apply_surface_dim(label);
     let animation_result = add_layout_position(host, dx, start_delay, duration);
-    DIM_VEILS.with(|cell| {
-        if let Some(veil) = cell.borrow().get(label) {
-            let view: &NSView = veil;
-            if !view.isHidden() {
-                let _ = add_layout_position(view, dx, start_delay, duration);
-            }
-        }
-    });
     CATransaction::commit();
     animation_result
 }
@@ -389,12 +295,6 @@ pub fn cancel_surface_host_translation(label: &str) {
         let host = unsafe { &*(host_ptr as *const NSView) };
         if let Some(layer) = host.layer() { layer.removeAnimationForKey(&key); }
     }
-    DIM_VEILS.with(|cell| {
-        if let Some(veil) = cell.borrow().get(label) {
-            let view: &NSView = veil;
-            if let Some(layer) = view.layer() { layer.removeAnimationForKey(&key); }
-        }
-    });
 }
 
 // child WKWebView를 전용 layer-backed NSView에 넣는다. host frame이 화면 좌표의 단일 진실이고
@@ -403,6 +303,7 @@ pub fn adopt_surface_host<R: tauri::Runtime>(
     webview: &tauri::Webview<R>,
     surface_label: &str,
     window_label: &str,
+    transparent: bool,
 ) {
     let surface_label = surface_label.to_string();
     let window_label = window_label.to_string();
@@ -422,6 +323,12 @@ pub fn adopt_surface_host<R: tauri::Runtime>(
             return;
         };
         let child = &*(pw.inner() as *const NSView);
+        if let Ok(mut views) = SURFACE_VIEWS.lock() {
+            views.insert(surface_label.clone(), child as *const NSView as usize);
+        }
+        if let Ok(mut transparency) = SURFACE_TRANSPARENCY.lock() {
+            transparency.insert(surface_label.clone(), transparent);
+        }
         let main_view = &*(main_ptr as *const NSView);
         let (Some(parent), Some(main_parent)) = (child.superview(), main_view.superview()) else {
             return;
@@ -445,8 +352,154 @@ pub fn adopt_surface_host<R: tauri::Runtime>(
         let ptr = Retained::as_ptr(&host) as usize;
         SURFACES.register(ptr, Some(&surface_label));
         SURFACE_HOSTS.register(&surface_label, ptr, &window_label);
-        apply_surface_dim(&surface_label);
     });
+}
+
+fn css_rect_in_parent(parent: &NSView, x: f64, y: f64, w: f64, h: f64) -> objc2_foundation::NSRect {
+    use objc2_foundation::{NSRect, NSSize};
+    let py = if parent.isFlipped() { y } else { parent.bounds().size.height - y - h };
+    NSRect::new(NSPoint::new(x, py), NSSize::new(w, h))
+}
+
+/// 이미 생성된 child webview host들을 한 패널 이동 단위로 묶는다. renderer는 같은 패널의
+/// DOM/chrome를 그리는 child이고 members는 그 아래의 문서 밖 표면이다. 멤버의 기존 전역
+/// frame은 pane-local frame으로 보존되며, 이후 패널 이동은 이 부모 하나만 바꾼다.
+pub fn group_pane_surface_host(
+    pane: &str,
+    window: &str,
+    renderer: &str,
+    members: &[String],
+    rect: (f64, f64, f64, f64),
+) -> Result<(), String> {
+    use objc2_foundation::{NSRect, NSSize};
+
+    if members.is_empty() { return Err("pane surface member가 비었습니다".into()); }
+    if members.iter().any(|label| label == renderer) {
+        return Err("pane renderer와 문서 밖 surface는 같은 label일 수 없습니다".into());
+    }
+    if PANE_SURFACE_HOSTS.lock().map_err(|_| "pane host 잠금 실패")?.contains_key(pane) {
+        return Err(format!("pane surface host가 이미 있습니다: {pane}"));
+    }
+    let renderer_host_ptr = surface_host_ptr(renderer);
+    if renderer_host_ptr == 0 { return Err(format!("pane renderer host가 없습니다: {renderer}")); }
+    let mut labels = Vec::with_capacity(members.len() + 1);
+    labels.push(renderer.to_owned());
+    labels.extend(members.iter().cloned());
+    let host_ptrs = labels.iter().map(|label| {
+        let ptr = surface_host_ptr(label);
+        if ptr == 0 { Err(format!("surface host가 없습니다: {label}")) } else { Ok((label.clone(), ptr)) }
+    }).collect::<Result<Vec<_>, _>>()?;
+
+    let renderer_host = unsafe { &*(renderer_host_ptr as *const NSView) };
+    let parent = unsafe { renderer_host.superview() }
+        .ok_or_else(|| format!("pane renderer 부모가 없습니다: {renderer}"))?;
+    for (label, ptr) in &host_ptrs {
+        let host = unsafe { &*(*ptr as *const NSView) };
+        let same_parent = unsafe { host.superview() }
+            .map(|candidate| Retained::as_ptr(&candidate) == Retained::as_ptr(&parent))
+            .unwrap_or(false);
+        if !same_parent { return Err(format!("pane member의 부모가 다릅니다: {label}")); }
+    }
+
+    let mtm = objc2::MainThreadMarker::new().ok_or("pane host는 main thread에서만 생성합니다")?;
+    let frame = css_rect_in_parent(&parent, rect.0, rect.1, rect.2, rect.3);
+    let pane_host: Retained<PaneSurfaceHost> =
+        unsafe { msg_send![mtm.alloc::<PaneSurfaceHost>(), initWithFrame: frame] };
+    let pane_view: &NSView = &pane_host;
+    pane_view.setWantsLayer(true);
+    configure_surface_resize(pane_view);
+    // parent는 창별 EngineSurfaceHost다. 그 host 자체가 main UI renderer 아래에 있으므로
+    // 여기서는 pane끼리의 자식 순서만 소유한다.
+    parent.addSubview(pane_view);
+
+    for (label, ptr) in &host_ptrs {
+        let host = unsafe { &*(*ptr as *const NSView) };
+        let old = host.frame();
+        let local = NSRect::new(
+            NSPoint::new(old.origin.x - frame.origin.x, old.origin.y - frame.origin.y),
+            NSSize::new(old.size.width, old.size.height),
+        );
+        host.removeFromSuperview();
+        host.setFrame(local);
+        pane_view.addSubview(host);
+        SURFACE_PANES.lock().map_err(|_| "surface pane 잠금 실패")?
+            .insert(label.clone(), pane.to_owned());
+    }
+    // addSubview 순서상 마지막이 위다. renderer를 마지막으로 다시 붙여 chrome/input을 소유시킨다.
+    renderer_host.removeFromSuperview();
+    pane_view.addSubview(renderer_host);
+    settle_surface_frame(pane_view);
+
+    let ptr = Retained::as_ptr(&pane_host) as usize;
+    PANE_SURFACE_HOSTS.lock().map_err(|_| "pane host 잠금 실패")?.insert(
+        pane.to_owned(),
+        PaneSurfaceRecord {
+            ptr,
+            window: window.to_owned(),
+            renderer: renderer.to_owned(),
+            members: members.to_vec(),
+        },
+    );
+    std::mem::forget(pane_host);
+    Ok(())
+}
+
+pub fn pane_surface_host_state() -> serde_json::Value {
+    let Ok(hosts) = PANE_SURFACE_HOSTS.lock() else { return serde_json::json!([]); };
+    let views = SURFACE_VIEWS.lock().ok();
+    let transparency = SURFACE_TRANSPARENCY.lock().ok();
+    serde_json::Value::Array(hosts.iter().map(|(pane, record)| {
+        let host = unsafe { &*(record.ptr as *const NSView) };
+        let frame = host.frame();
+        let renderer_ptr = views.as_ref().and_then(|map| map.get(&record.renderer)).copied().unwrap_or(0);
+        let topology = record.members.first()
+            .and_then(|label| views.as_ref().and_then(|map| map.get(label)).copied())
+            .map(|surface_ptr| renderer_pair_topology(renderer_ptr, surface_ptr));
+        serde_json::json!({
+            "pane": pane,
+            "window": record.window,
+            "renderer": record.renderer,
+            "rendererTransparent": transparency.as_ref()
+                .and_then(|map| map.get(&record.renderer)).copied().unwrap_or(false),
+            "members": record.members,
+            "frame": { "x": frame.origin.x, "y": frame.origin.y, "w": frame.size.width, "h": frame.size.height },
+            "rendererTopology": topology,
+        })
+    }).collect())
+}
+
+pub fn prepare_pane_surface_host_translation(
+    pane: &str,
+    rect: (f64, f64, f64, f64),
+    start_at_unix_ms: f64,
+    duration_ms: f64,
+) -> Result<(), String> {
+    let record = PANE_SURFACE_HOSTS.lock().map_err(|_| "pane host 잠금 실패")?
+        .get(pane).cloned().ok_or_else(|| format!("pane surface host가 없습니다: {pane}"))?;
+    let host = unsafe { &*(record.ptr as *const NSView) };
+    let parent = unsafe { host.superview() }.ok_or_else(|| format!("pane host 부모가 없습니다: {pane}"))?;
+    let target = css_rect_in_parent(&parent, rect.0, rect.1, rect.2, rect.3);
+    let before = host.frame();
+    if (before.size.width - target.size.width).abs() > 0.5
+        || (before.size.height - target.size.height).abs() > 0.5
+    {
+        return Err(format!(
+            "pane 위치 전용 거래에 크기 변화가 들어왔습니다: {}x{} -> {}x{}",
+            before.size.width, before.size.height, target.size.width, target.size.height,
+        ));
+    }
+    let dx = before.origin.x - target.origin.x;
+    let now_unix_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs_f64() * 1000.0)
+        .unwrap_or(start_at_unix_ms);
+    let delay = (start_at_unix_ms - now_unix_ms).max(0.0) / 1000.0;
+    CATransaction::begin();
+    CATransaction::setDisableActions(true);
+    host.setFrame(target);
+    let result = add_layout_position(host, dx, delay, duration_ms.max(1.0) / 1000.0);
+    CATransaction::commit();
+    result
 }
 
 pub fn set_surface_host_hidden(label: &str, hidden: bool) {
@@ -454,24 +507,69 @@ pub fn set_surface_host_hidden(label: &str, hidden: bool) {
         let host = unsafe { &*(ptr as *const NSView) };
         host.setHidden(hidden);
     }
-    apply_surface_dim(label);
 }
 
 pub fn remove_surface_host(label: &str) {
+    detach_surface_from_pane(label);
     let host = SURFACE_HOSTS.remove(label);
     let Some(host) = host else { return };
     SURFACES.unregister(host.ptr);
     let host = unsafe { &*(host.ptr as *const NSView) };
     host.removeFromSuperview();
-    if let Ok(mut dims) = SURFACE_DIMS.lock() {
-        dims.remove(label);
+    if let Ok(mut views) = SURFACE_VIEWS.lock() {
+        views.remove(label);
     }
-    DIM_VEILS.with(|cell| {
-        if let Some(veil) = cell.borrow_mut().remove(label) {
-            let view: &NSView = &veil;
-            view.removeFromSuperview();
+    if let Ok(mut transparency) = SURFACE_TRANSPARENCY.lock() {
+        transparency.remove(label);
+    }
+}
+
+/// WindowEvent::Destroyed 뒤에는 NSView를 만지지 않는다. 창 소유 장부에서 identity만
+/// 원자적으로 걷어 다음 창/다음 E2E가 해제된 포인터를 보지 않게 한다.
+pub fn forget_window(window: &str) {
+    let removed = SURFACE_HOSTS.remove_window(window);
+    let labels = removed.iter().map(|(label, _)| label.clone()).collect::<std::collections::HashSet<_>>();
+    for (_, host) in &removed { SURFACES.unregister(host.ptr); }
+    if let Ok(mut views) = SURFACE_VIEWS.lock() { views.retain(|label, _| !labels.contains(label)); }
+    if let Ok(mut transparency) = SURFACE_TRANSPARENCY.lock() {
+        transparency.retain(|label, _| !labels.contains(label));
+    }
+    if let Ok(mut panes) = SURFACE_PANES.lock() { panes.retain(|label, _| !labels.contains(label)); }
+    if let Ok(mut hosts) = PANE_SURFACE_HOSTS.lock() { hosts.retain(|_, record| record.window != window); }
+    if let Ok(mut layers) = LAYERS.lock() { layers.remove(window); }
+}
+
+fn detach_surface_from_pane(label: &str) {
+    let pane = SURFACE_PANES.lock().ok().and_then(|mut map| map.remove(label));
+    let Some(pane) = pane else { return };
+    let mut hosts = match PANE_SURFACE_HOSTS.lock() { Ok(hosts) => hosts, Err(_) => return };
+    let Some(record) = hosts.get_mut(&pane) else { return };
+    record.members.retain(|member| member != label);
+    if record.renderer != label && !record.members.is_empty() { return; }
+
+    let record = hosts.remove(&pane).expect("pane record existed");
+    let pane_host = unsafe { &*(record.ptr as *const NSView) };
+    let Some(parent) = (unsafe { pane_host.superview() }) else { return };
+    let pane_frame = pane_host.frame();
+    let mut labels = vec![record.renderer];
+    labels.extend(record.members);
+    for member in labels {
+        if member == label { continue; }
+        let ptr = surface_host_ptr(&member);
+        if ptr == 0 { continue; }
+        let host = unsafe { &*(ptr as *const NSView) };
+        let local = host.frame();
+        host.removeFromSuperview();
+        host.setFrameOrigin(NSPoint::new(
+            pane_frame.origin.x + local.origin.x,
+            pane_frame.origin.y + local.origin.y,
+        ));
+        parent.addSubview(host);
+        if let Ok(mut surface_panes) = SURFACE_PANES.lock() {
+            surface_panes.remove(&member);
         }
-    });
+    }
+    pane_host.removeFromSuperview();
 }
 
 // 등록된 엔진 서피스 수 — 관측면(webview.surfaces 의 engine 축)이 읽는다.

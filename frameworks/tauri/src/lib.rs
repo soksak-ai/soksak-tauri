@@ -541,6 +541,7 @@ pub fn run() {
                 }
                 tauri::WindowEvent::Destroyed => {
                     ipc::note_closed(window.label()); // 포커스 기록이 죽은 창을 놓는다(다음 명령의 오배송 차단)
+                    webview::forget_window(window.label()); // child/pane/page-load identity를 해제된 NSView와 함께 회수
                     // cored 도 그 창을 놓아야 한다 — **살아 있는 목록**을 보내면 장부가 스스로
                     // 맞춘다(멱등). 방금 죽은 라벨은 빼고 보고한다: 이 사건 시점에 프레임워크의
                     // 창 목록이 그것을 이미 놓았는지는 보장되지 않는다.
@@ -747,6 +748,10 @@ pub fn run() {
             webview::webview_stop,
             webview::webview_visible,
             webview::webview_alive,
+            webview::webview_wait_loaded,
+            webview::webview_pane_group,
+            webview::webview_pane_transition_prepare,
+            webview::webview_pane_hosts,
             webview::webview_close,
             webview::webview_divider_highlight,
             webview::webview_emit_native,
@@ -764,7 +769,6 @@ pub fn run() {
             webview::webview_inject_script,
             webview::webview_media_extract,
             webview::webview_overlay_active,
-            webview::webview_dim,
             webview::webview_resize_gesture,
             webview::webview_dom_holes,
             webview::webview_debug_hierarchy,
