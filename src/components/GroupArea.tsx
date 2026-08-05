@@ -139,6 +139,16 @@ function emitResizeGesture(active: boolean): void {
 
 // memo 경계 = content 데이터 경계(원칙 2): content X 의 store 쓰기는 content Y 의
 // 객체 정체성을 보존(mapContent)하므로 다른 컨텐츠/프로젝트의 GroupArea 는 건너뛴다.
+export function isViewSurfaceVisible(
+  surfaceActive: boolean,
+  maximizedId: string | null,
+  viewId: string,
+  activeTabId: string,
+): boolean {
+  const tabActive = maximizedId ? viewId === maximizedId : viewId === activeTabId;
+  return surfaceShown(surfaceActive, true, tabActive);
+}
+
 export const GroupArea = memo(function GroupArea({
   content,
   projectId,
@@ -785,9 +795,12 @@ export const GroupArea = memo(function GroupArea({
       {cells.flatMap(({ group, rect }) =>
         group.tabs.map((view) => {
           // 최대화 중엔 최대화 뷰만 보인다(전체 rect) — 나머지는 숨김 유지.
-          const shown = maxCell
-            ? view.id === maximizedId
-            : view.id === group.activeTabId;
+          const shown = isViewSurfaceVisible(
+            surfaceActive,
+            maxCell ? maximizedId : null,
+            view.id,
+            group.activeTabId,
+          );
           const slotRect = maxCell && shown ? FULL_RECT : rect;
           // B4 복원 hydration 게이트 — cold(복원됐지만 아직 안 보인) 뷰는 본문 마운트를
           // 미룬다(PTY 동시 spawn 분산). 보이는 순간·idle 체인이 승격한다. 평상시 cold 는
