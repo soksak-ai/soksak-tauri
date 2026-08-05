@@ -657,7 +657,7 @@ async function runEngine(client, page, engine) {
       sentinelTabId = sentinelTab.tabId;
       must(await rpc(`plugin.${plugin}.navigate`, { viewId: sentinelTabId, url: `${page.url}?slot=0` }, sentinelWin), "sentinel navigate");
       must(await rpc(`plugin.${plugin}.dom.wait-for`, {
-        selector: "#ime", timeoutMs: 8_000, viewId: sentinelTabId,
+        selector: 'html[data-slot="0"] #ime', timeoutMs: 8_000, viewId: sentinelTabId,
       }, sentinelWin, { timeoutMs: 30_000 }), "sentinel ready");
       await verifyIme(rpc, sentinelWin, plugin, sentinelTabId, IME_TEXTS[0]);
       const sentinelVerdict = await assertEngineSurfaceLedger(
@@ -692,6 +692,9 @@ async function runEngine(client, page, engine) {
     if (!panes.length) must(await rpc("space.create", {}, win), "space.create");
     const left = must(await rpc("tab.open", { program: engine }, win), "left tab.open");
     const right = must(await rpc("pane.split", { side: "right", program: engine }, win), "right pane.split");
+    if (left.mounted !== true || right.mounted !== true) {
+      throw new Error(`브라우저 뷰 준비 계약 위반: ${JSON.stringify({ left, right })}`);
+    }
     const tabIds = [left.tabId, right.tabId];
     const paneIds = [left.paneId, right.paneId];
     if (tabIds.some((id) => typeof id !== "string")) throw new Error(`브라우저 탭 id 누락: ${JSON.stringify(tabIds)}`);
@@ -707,7 +710,7 @@ async function runEngine(client, page, engine) {
       must(
         await rpc(
           `plugin.${plugin}.dom.wait-for`,
-          { selector: "#ime", timeoutMs: 8_000, viewId: tabId },
+          { selector: `html[data-slot="${index}"] #ime`, timeoutMs: 8_000, viewId: tabId },
           win,
           { timeoutMs: 30_000 },
         ),

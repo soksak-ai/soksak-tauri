@@ -674,6 +674,7 @@ export function fixtureHtml() {
     <script>
       window.__browserFixture = { beforeInput: 0, inputEvents: 0, values: [] };
       const slot = Number(new URLSearchParams(location.search).get("slot") || 0);
+      document.documentElement.dataset.slot = String(slot);
       document.documentElement.style.setProperty("--marker", ${JSON.stringify(fixtureMarkers)}[slot] || ${JSON.stringify(fixtureMarkers)}[0]);
       document.documentElement.style.setProperty("--motion-marker", ${JSON.stringify(fixtureMotionMarkers)}[slot] || ${JSON.stringify(fixtureMotionMarkers)}[0]);
       const ime = document.getElementById("ime");

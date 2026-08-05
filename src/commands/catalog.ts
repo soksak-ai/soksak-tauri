@@ -1506,6 +1506,11 @@ export function registerCatalog(): void {
       pane: P.pane,
       side: { ...P.side, required: true },
       program: P.program,
+      mountTimeoutMs: {
+        type: "number",
+        description:
+          "When program is provided, wait until its view is actionable (default 5000). 0 only creates state and returns mounted:false.",
+      },
     },
     returns:
       "{ projectId, paneId(new pane), tabId?, arrangement:{station,switched,cleanLines[],cells[]} }",
@@ -1525,7 +1530,7 @@ export function registerCatalog(): void {
       return out;
     },
     examples: ['pane.split \'{"side":"right"}\'', 'pane.split \'{"side":"bottom","program":"browser"}\''],
-    handler: (p, ctx) => {
+    handler: async (p, ctx) => {
       const loc = resolvePane(p, ctx);
       if (!loc) return notFound("대상 pane 없음");
       const r = S().splitWithNewView(
@@ -1535,10 +1540,19 @@ export function registerCatalog(): void {
         p.program as Program,
       );
       if (!r.ok) return r;
+      const openedViewId = r.viewId;
+      let ready: boolean | undefined;
+      if (openedViewId) {
+        const timeout = typeof p.mountTimeoutMs === "number"
+          ? Math.max(0, p.mountTimeoutMs)
+          : 5000;
+        ready = timeout > 0 ? await awaitViewMounted(openedViewId, timeout) : false;
+      }
       return withArrangement(loc.project.id, {
         projectId: loc.project.id,
         paneId: r.groupId,
         tabId: r.viewId,
+        ...(ready === undefined ? {} : { mounted: ready }),
       });
     },
   });

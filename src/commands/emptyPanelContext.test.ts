@@ -107,11 +107,14 @@ describe("pane.split 기본 program 없음", () => {
   });
 
   it("program 을 명시하면 그 탭으로 채운다(블랭크 아님)", async () => {
-    const r = await execute("pane.split", { side: "right", program: "terminal" }, {});
+    const r = await execute("pane.split", {
+      side: "right", program: "terminal", mountTimeoutMs: 0,
+    }, {});
     expect(r.ok).toBe(true);
     expect(r.data).toMatchObject({
       paneId: expect.any(String),
       tabId: expect.any(String),
+      mounted: false,
     });
   });
 });
