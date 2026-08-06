@@ -1,8 +1,8 @@
 // ui.* DOM 주소 명령 — 구조적 path 주소로 DOM 을 조회/측정/조작한다(임의 selector 금지).
 //
 // 단일 진실: 주소 문법은 address.ts, 노드 수집은 nodeScan.ts. 여기는 그 둘을 소켓 명령으로 노출.
-//  - ui.tree:        노출된 DOM 주소 트리(뷰 컨테이너 [data-node] + 호스트 크롬 [data-node]).
-//  - ui.measure:     주소 → 요소 rect + computed style(레이아웃 진단). selector 거부(주소만).
+//  - ui.tree:        노출된 DOM 주소 트리 + live Element 의 opaque nodeIdentity.
+//  - ui.measure:     주소 → 같은 nodeIdentity + rect + computed style. selector 거부(주소만).
 //  - ui.input.click: 주소 → 요소 click 디스패치(danger:inject). 불일치 = NOT_EXPOSED.
 // 노출(data-node)되지 않은 요소는 주소 트리에 없어 접근 불가 → 명확한 에러(추측 0).
 
@@ -42,6 +42,21 @@ const focusTrace = moduleState("commands/catalogDom#focusTrace", () => ({
   focusTrace: null as { events: FocusTraceEntry[]; recording: boolean } | null,
   focusTraceStop: null as (() => void) | null,
 }));
+
+// 구조 주소는 논리 위치의 식별자라 같은 자리에 새 Element 가 마운트돼도 그대로다. 인스턴스
+// 교체를 관측하는 축은 Element 자신을 키로 삼는다. WeakMap 이므로 이 식별자는 DOM 생명주기를
+// 늘리지 않고, 값에는 주소·태그·dataset 같은 내부 구조를 싣지 않는다.
+const domNodeIdentity = moduleState("commands/catalogDom#domNodeIdentity", () => ({
+  byElement: new WeakMap<Element, string>(),
+}));
+
+function nodeIdentityOf(el: Element): string {
+  const existing = domNodeIdentity.byElement.get(el);
+  if (existing) return existing;
+  const identity = crypto.randomUUID();
+  domNodeIdentity.byElement.set(el, identity);
+  return identity;
+}
 
 const notExposed = (addr: string) => ({
   ok: false as const,
@@ -189,8 +204,8 @@ export function viewContainerOf(el: Element | null): HTMLElement | null {
 export function registerDomCatalog(): void {
   register("ui.tree", {
     description:
-      "Return the exposed DOM address tree — absolute addresses of nodes declared via data-node by plugin views and host-chrome elements. Use to discover addressable targets before calling ui.measure or ui.input.click; unexposed elements are absent and unreachable. Pass rects:true to include each node's viewport rect for coordinate work (drags, precision clicks).",
-    triggers: { ko: "DOM 트리 주소목록 노드목록 ui트리" },
+      "Return the exposed DOM address tree — absolute addresses of nodes declared via data-node by plugin views and host-chrome elements. Every node includes nodeIdentity, an opaque token stable for that live Element instance and changed when a different Element is mounted at the same address; compare it across observations to detect remounts. Use to discover addressable targets before calling ui.measure or ui.input.click; unexposed elements are absent and unreachable. Pass rects:true to include each node's viewport rect for coordinate work (drags, precision clicks).",
+    triggers: { ko: "DOM 트리 주소목록 노드목록 ui트리 노드식별자 재마운트 인스턴스" },
     params: {
       rects: {
         type: "boolean",
@@ -198,7 +213,7 @@ export function registerDomCatalog(): void {
         default: false,
       },
     },
-    returns: "{ window, count, duplicates, nodes: [{ address, nodePath, rect? }] }",
+    returns: "{ window, count, duplicates, nodes: [{ address, nodePath, nodeIdentity, rect? }] }",
     message: (d) => tmsg("msg.ui.tree", { n: Number(d.count ?? 0) }),
     examples: ["ui.tree", 'ui.tree \'{"rects":true}\''],
     handler: (p) => {
@@ -211,11 +226,15 @@ export function registerDomCatalog(): void {
         .filter(([, c]) => c > 1)
         .map(([address, count]) => ({ address, count }));
       const nodes = scanned.map((n) => {
-        if (!withRects) return { address: n.address, nodePath: n.nodePath };
-        const r = n.el.getBoundingClientRect();
-        return {
+        const exposed = {
           address: n.address,
           nodePath: n.nodePath,
+          nodeIdentity: nodeIdentityOf(n.el),
+        };
+        if (!withRects) return exposed;
+        const r = n.el.getBoundingClientRect();
+        return {
+          ...exposed,
           rect: { x: +r.x.toFixed(2), y: +r.y.toFixed(2), w: +r.width.toFixed(2), h: +r.height.toFixed(2) },
         };
       });
@@ -225,8 +244,8 @@ export function registerDomCatalog(): void {
 
   register("ui.measure", {
     description:
-      "Measure an exposed node — its viewport rect (px) and computed style. style always includes the layout fields plus the interaction/visibility axis (pointerEvents, opacity, visibility) so you can tell whether a node is actually visible and clickable, not just where it sits. Pass props to read any extra computed properties by name (e.g. zIndex, transform, backgroundColor). Pass occlusion:true to also hit-test the node's center (through Shadow DOM) and report what covers it and whether it is reachable. Pass screen:true to also get the node's GLOBAL logical screen coordinates (screen.x/y = rect origin, screen.cx/cy = center) — feed cx/cy straight to an OS pointer tool (e.g. cliclick c:cx,cy) when a real hit-tested click is required; synthetic ui.input.click bypasses hit-testing and default actions, so it cannot verify pointer-events or focus-on-mouseup behavior. Accepts structural addresses from ui.tree only; CSS selectors are rejected.",
-    triggers: { ko: "DOM 측정 레이아웃 rect 크기 스타일 포인터이벤트 가시성 가림 도달성 스크린 전역좌표 실클릭" },
+      "Measure an exposed node — its nodeIdentity, viewport rect (px), and computed style. nodeIdentity is the same opaque live-Element token exposed by ui.tree: stable for the same Element and changed on remount at the same address. style always includes the layout fields plus the interaction/visibility axis (pointerEvents, opacity, visibility) so you can tell whether a node is actually visible and clickable, not just where it sits. Pass props to read any extra computed properties by name (e.g. zIndex, transform, backgroundColor). Pass occlusion:true to also hit-test the node's center (through Shadow DOM) and report what covers it and whether it is reachable. Pass screen:true to also get the node's GLOBAL logical screen coordinates (screen.x/y = rect origin, screen.cx/cy = center) — feed cx/cy straight to an OS pointer tool (e.g. cliclick c:cx,cy) when a real hit-tested click is required; synthetic ui.input.click bypasses hit-testing and default actions, so it cannot verify pointer-events or focus-on-mouseup behavior. Accepts structural addresses from ui.tree only; CSS selectors are rejected.",
+    triggers: { ko: "DOM 측정 레이아웃 rect 크기 스타일 포인터이벤트 가시성 가림 도달성 스크린 전역좌표 실클릭 노드식별자 재마운트 인스턴스" },
     params: {
       address: { type: "string", description: "Exposed node address from ui.tree", required: true },
       props: {
@@ -255,7 +274,7 @@ export function registerDomCatalog(): void {
       },
     },
     returns:
-      "{ address, dataset, rect:{x,y,w,h}, style, occlusion?:{ reachable, topTag, topNode }, screen?:{ x, y, cx, cy } } — dataset contains every declared data-* field on the exposed node",
+      "{ address, nodeIdentity, dataset, rect:{x,y,w,h}, style, occlusion?:{ reachable, topTag, topNode }, screen?:{ x, y, cx, cy } } — nodeIdentity is the opaque live Element identity shared with ui.tree; dataset contains every declared data-* field on the exposed node",
     message: (d) =>
       tmsg("msg.ui.measure", {
         w: Number((d.rect as { w?: number })?.w ?? 0),
@@ -307,6 +326,7 @@ export function registerDomCatalog(): void {
       if (pseudo) style.content = readComputed(cs, "content");
       const out: Record<string, unknown> = {
         address: addr,
+        nodeIdentity: nodeIdentityOf(el),
         ...(pseudo ? { pseudo } : {}),
         // 모든 data-* 선언은 공개 상태다. 자동화/플러그인은 private DOM 속성명을
         // 다시 추측하지 않고 ui.tree → ui.measure 한 경로로 읽는다.

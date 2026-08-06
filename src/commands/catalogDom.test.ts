@@ -117,6 +117,59 @@ function mountNode(html: string): void {
 }
 const ADDR = "win/main/content/view/test.v/node/btn";
 
+type NodeIdentityData = {
+  nodeIdentity?: string;
+};
+
+async function treeNodeIdentity(): Promise<string | undefined> {
+  const result = await execute("ui.tree", {}, {});
+  const node = (result.data as {
+    nodes: ({ address: string } & NodeIdentityData)[];
+  }).nodes.find(({ address }) => address === ADDR);
+  return node?.nodeIdentity;
+}
+
+describe("ui.tree/ui.measure — 공개 DOM 노드 인스턴스 식별자", () => {
+  it("같은 live Element 는 두 명령과 반복 조회에서 같은 opaque 식별자를 가진다", async () => {
+    mountNode(`<button data-node="btn">x</button>`);
+
+    const treeFirst = await treeNodeIdentity();
+    const measuredFirst = await execute("ui.measure", { address: ADDR }, {});
+    const treeSecond = await treeNodeIdentity();
+    const measuredSecond = await execute("ui.measure", { address: ADDR }, {});
+
+    expect(treeFirst).toEqual(expect.any(String));
+    expect(treeFirst).not.toBe(ADDR);
+    expect((measuredFirst.data as NodeIdentityData).nodeIdentity).toBe(treeFirst);
+    expect(treeSecond).toBe(treeFirst);
+    expect((measuredSecond.data as NodeIdentityData).nodeIdentity).toBe(treeFirst);
+  });
+
+  it("같은 주소에 새 Element 가 remount 되면 식별자가 바뀐다", async () => {
+    mountNode(`<button data-node="btn">x</button>`);
+    const mounted = document.querySelector<HTMLElement>("[data-node=btn]")!;
+    const before = await treeNodeIdentity();
+
+    const remounted = mounted.cloneNode(true) as HTMLElement;
+    mounted.replaceWith(remounted);
+    const afterTree = await treeNodeIdentity();
+    const afterMeasure = await execute("ui.measure", { address: ADDR }, {});
+
+    expect(remounted).not.toBe(mounted);
+    expect(afterTree).toEqual(expect.any(String));
+    expect(afterTree).not.toBe(before);
+    expect((afterMeasure.data as NodeIdentityData).nodeIdentity).toBe(afterTree);
+  });
+
+  it("두 명령의 발견 가능한 스펙이 nodeIdentity 계약을 선언한다", () => {
+    for (const name of ["ui.tree", "ui.measure"] as const) {
+      const spec = getSpec(name)!;
+      expect(spec.description).toContain("nodeIdentity");
+      expect(spec.returns).toContain("nodeIdentity");
+    }
+  });
+});
+
 describe("ui.measure — 상호작용/가시성 축", () => {
   it("노출 노드의 data-* 상태를 함께 반환해 private DOM 추측을 없앤다", async () => {
     mountNode(`<div data-node="btn" data-projection="focus-near" data-traveling="true">x</div>`);
