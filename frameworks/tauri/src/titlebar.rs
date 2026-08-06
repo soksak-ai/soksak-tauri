@@ -8,8 +8,9 @@
 //   자식 webview attributes 로 전파되지 않아 그 루프가 설치되지 않는다 → 키 상태
 //   전환/리사이즈/전체화면 해제 때 AppKit 표준 재배치를 덮어쓸 주체가 없다.
 //   치료: 표준 버튼과 같은 AppKit titlebar hierarchy에 입력 투과 NSView draw owner를
-//   정확히 하나 둔다. 부모 AppKit layout 뒤·버튼 draw 전에 공개 DOM 목표를 멱등 적용하므로
-//   focus/blur/resize 통지와 후속 layout 사이의 경쟁이 없다. 업스트림이 #14072 를 고치면
+//   정확히 하나 두고, 버튼과 그 두 단계 native container의 동기 frame-change 사건에서 같은
+//   목표를 즉시 적용한다. window update 이후의 보정은 잘못된 중간 프레임을 노출하므로 쓰지 않는다.
+//   업스트림이 #14072 를 고치면
 //   이 draw owner를 삭제하고 Tauri runtime setter로 목표만 전달한다.
 //
 // 문제 2 — 비활성 유령(Apple 동작, 고칠 주체 없음):
@@ -30,14 +31,19 @@
 // 판정 근거로 쓰지 않는다.
 
 #[cfg(target_os = "macos")]
-use objc2::{define_class, msg_send, rc::Retained, DefinedClass, MainThreadMarker};
+use objc2::{
+    define_class, msg_send,
+    rc::Retained,
+    runtime::{NSObjectProtocol, ProtocolObject},
+    DefinedClass, MainThreadMarker,
+};
 #[cfg(target_os = "macos")]
 use objc2_app_kit::{
     NSAutoresizingMaskOptions, NSButton, NSGraphicsContext, NSView, NSWindow, NSWindowButton,
     NSWindowOrderingMode,
 };
 #[cfg(target_os = "macos")]
-use objc2_foundation::{NSPoint, NSRect};
+use objc2_foundation::{NSNotification, NSNotificationCenter, NSPoint, NSRect};
 #[cfg(target_os = "macos")]
 use serde::{Deserialize, Serialize};
 
@@ -129,8 +135,14 @@ thread_local! {
     // AppKit 객체와 같은 메인스레드 수명. 목표·색·영수증은 창당 draw owner 자신이 소유한다.
     // 관측은 이 맵에서 기존 owner만 읽으며 만들거나 합성하지 않는다.
     static COMPOSITION_DRAW_OWNERS: std::cell::RefCell<
-        std::collections::HashMap<String, Retained<TitlebarCompositionDrawOwner>>,
+        std::collections::HashMap<String, TitlebarCompositionOwnerEntry>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+#[cfg(target_os = "macos")]
+struct TitlebarCompositionOwnerEntry {
+    owner: Retained<TitlebarCompositionDrawOwner>,
+    native_layout_observers: Vec<Retained<ProtocolObject<dyn NSObjectProtocol>>>,
 }
 
 #[cfg(target_os = "macos")]
@@ -364,20 +376,79 @@ pub(crate) fn forget_window<R: tauri::Runtime>(window: &tauri::Window<R>) {
         let matches_window = owners
             .borrow()
             .get(label)
-            .and_then(|owner| owner.window())
+            .and_then(|entry| entry.owner.window())
             .is_some_and(|owner_window| std::ptr::eq(&*owner_window, pointer as *const NSWindow));
         matches_window
             .then(|| owners.borrow_mut().remove(label))
             .flatten()
     });
-    if let Some(owner) = owner {
-        owner.removeFromSuperview();
+    if let Some(entry) = owner {
+        let center = NSNotificationCenter::defaultCenter();
+        for observer in entry.native_layout_observers {
+            let observer: &ProtocolObject<dyn NSObjectProtocol> = &observer;
+            unsafe { center.removeObserver(observer.as_ref()) };
+        }
+        entry.owner.removeFromSuperview();
     }
 }
 
 #[cfg(target_os = "macos")]
 fn existing_draw_owner(label: &str) -> Option<Retained<TitlebarCompositionDrawOwner>> {
-    COMPOSITION_DRAW_OWNERS.with(|owners| owners.borrow().get(label).cloned())
+    COMPOSITION_DRAW_OWNERS.with(|owners| owners.borrow().get(label).map(|entry| entry.owner.clone()))
+}
+
+#[cfg(target_os = "macos")]
+unsafe fn apply_registered_owner_from_native_layout(label: &str) {
+    let Some(owner) = existing_draw_owner(label) else {
+        return;
+    };
+    if owner.ivars().applying.get() {
+        return;
+    }
+    let target = owner
+        .ivars()
+        .target
+        .get()
+        .map(|target| (target, owner.ivars().target_sequence.get()));
+    let _ = apply_owner_now(&owner, target, true);
+}
+
+#[cfg(target_os = "macos")]
+unsafe fn install_native_layout_observers(
+    label: &str,
+    buttons: &[Retained<NSButton>; 3],
+) -> Vec<Retained<ProtocolObject<dyn NSObjectProtocol>>> {
+    let mut views: Vec<Retained<NSView>> = buttons
+        .iter()
+        .map(|button| button.clone().into_super().into_super())
+        .collect();
+    for button in buttons {
+        let mut ancestor = button.superview();
+        for _ in 0..2 {
+            let Some(view) = ancestor else { break };
+            if !views.iter().any(|known| std::ptr::eq(&**known, &*view)) {
+                views.push(view.clone());
+            }
+            ancestor = view.superview();
+        }
+    }
+    let center = NSNotificationCenter::defaultCenter();
+    views
+        .into_iter()
+        .map(|view| {
+            view.setPostsFrameChangedNotifications(true);
+            let label = label.to_string();
+            let block = block2::RcBlock::new(move |_note: std::ptr::NonNull<NSNotification>| {
+                unsafe { apply_registered_owner_from_native_layout(&label) };
+            });
+            center.addObserverForName_object_queue_usingBlock(
+                Some(objc2_app_kit::NSViewFrameDidChangeNotification),
+                Some(&view),
+                None,
+                &block,
+            )
+        })
+        .collect()
 }
 
 #[cfg(target_os = "macos")]
@@ -486,8 +557,9 @@ unsafe fn apply_owner_now(
     let _guard = ApplyingGuard(&ivars.applying);
     let result = apply_owner_body(owner, target, allow_hierarchy_repair);
     record_apply_result(owner, target.map(|(_, sequence)| sequence), &result);
-    result?;
-    owner.setNeedsDisplay(true);
+    if result? {
+        owner.setNeedsDisplay(true);
+    }
     Ok(())
 }
 
@@ -839,7 +911,6 @@ unsafe fn align_buttons_x(buttons: [&NSView; 3], target_x: [f64; 3], backing_sca
     changed
 }
 
-#[cfg(target_os = "macos")]
 unsafe fn align_buttons_to_target(
     buttons: [&NSView; 3],
     viewport: &NSView,
@@ -864,8 +935,7 @@ unsafe fn align_buttons_to_target(
             );
         };
         let mut frame = NSView::frame(button);
-        let y_changed = (delta_y * backing_scale).abs() > 0.5;
-        if y_changed {
+        if (delta_y * backing_scale).abs() > 0.5 {
             frame.origin.y += delta_y;
             button.setFrameOrigin(frame.origin);
             changed = true;
@@ -1029,7 +1099,19 @@ unsafe fn install_draw_owner(
         return Err(error);
     }
     COMPOSITION_DRAW_OWNERS.with(|owners| {
-        owners.borrow_mut().insert(label.to_string(), owner.clone());
+        owners.borrow_mut().insert(
+            label.to_string(),
+            TitlebarCompositionOwnerEntry {
+                owner: owner.clone(),
+                native_layout_observers: Vec::new(),
+            },
+        );
+    });
+    let native_layout_observers = install_native_layout_observers(label, &buttons);
+    COMPOSITION_DRAW_OWNERS.with(|owners| {
+        if let Some(entry) = owners.borrow_mut().get_mut(label) {
+            entry.native_layout_observers = native_layout_observers;
+        }
     });
     Ok(())
 }
@@ -1602,22 +1684,29 @@ mod tests {
     }
 
     #[test]
-    fn native_layout_has_one_draw_owner_and_no_lifecycle_retry_owner() {
+    fn native_layout_has_one_owner_and_synchronously_tracks_the_native_layout_graph() {
         let source = production_source();
 
         assert!(source.contains("struct TitlebarCompositionDrawOwner"));
         assert!(source.contains("method(drawRect:)"));
-        for forbidden in [
-            concat!("install_global_", "observers"),
-            concat!("NS", "NotificationCenter"),
-            concat!("NSWindowDidBecomeKey", "Notification"),
-            concat!("NSWindowDidResignKey", "Notification"),
+        for required in [
+            "NSViewFrameDidChangeNotification",
+            "setPostsFrameChangedNotifications(true)",
+            "install_native_layout_observers",
+            "apply_registered_owner_from_native_layout",
+            "native_layout_observers",
+            "removeObserver",
         ] {
-            assert!(
-                !source.contains(forbidden),
-                "forbidden lifecycle owner: {forbidden}"
-            );
+            assert!(source.contains(required), "missing native layout contract: {required}");
         }
+        assert!(
+            !source.contains("tokio::time::sleep"),
+            "native titlebar correction must be event driven, never delayed polling",
+        );
+        assert!(
+            !source.contains("NSWindowDidUpdateNotification"),
+            "post-update correction exposes an intermediate wrong frame",
+        );
         let draw = source
             .split_once("fn draw(&self")
             .expect("draw owner callback")
