@@ -401,14 +401,21 @@ describe("브라우저 구현 행렬", () => {
       "initial", "layout-dom-commit", "presentation-frame",
     ]);
     expect(trace.joins.map(({ gapMs }) => gapMs)).toEqual([101, 89, 1]);
-    expect(trace.samples).toHaveLength(3);
-    expect(trace.samples.map(({ phase }) => phase)).toEqual(["prepared", "presenting", "committed"]);
-    expect(trace.samples[2]).toMatchObject({
+    expect(trace.samples).toHaveLength(2);
+    expect(trace.samples.map(({ phase }) => phase)).toEqual(["prepared", "committed"]);
+    expect(trace.samples[1]).toMatchObject({
       rail: { id: "rail", frame: { x: 777, y: 0, w: 60, h: 500 } },
       pane: { id: "pane", frame: { x: 333, y: 0, w: 500, h: 500 } },
       slot: { id: "slot", frame: { x: 430, y: 60, w: 460, h: 420 } },
       renderer: { id: "renderer", frame: { x: 430, y: 60, w: 460, h: 420 } },
       surface: { id: "surface", frame: { x: 430, y: 60, w: 460, h: 420 } },
+    });
+    expect(trace.timeline).toMatchObject({
+      startAtUnixMs: 1_100,
+      timingFunction: [0.4, 0, 0.2, 1],
+      slot: [{ sequence: 0, sampledAtUnixMs: 1_100, frame: { x: 430 } }],
+      renderer: expect.any(Array),
+      surface: expect.any(Array),
     });
   });
 

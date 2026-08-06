@@ -199,6 +199,13 @@ function b04Evidence(engine = "browser") {
         surface: participant(`surface-${target}`, { x: x + 8, y: 96, w: 304, h: 456 }),
       };
     };
+    const baseAt = 1_000 + sequence * 100;
+    const timelineSample = (x, sampledAtUnixMs, index) => ({
+      sequence: index,
+      sampledAtUnixMs,
+      frame: { x: x + 8, y: 96, w: 304, h: 456 },
+    });
+    const nativePositions = mode === "glide" ? [100, 180, 260, 340, 420] : [];
     return {
       direction,
       targetViewId: target,
@@ -218,6 +225,16 @@ function b04Evidence(engine = "browser") {
         }],
       },
       samples: positions.map(sample),
+      timeline: mode === "glide" ? {
+        startAtUnixMs: baseAt,
+        durationMs: 32,
+        timingFunction: [0, 0, 1, 1],
+        from: { x: 108, y: 96, w: 304, h: 456 },
+        to: { x: 428, y: 96, w: 304, h: 456 },
+        slot: positions.map((x, index) => timelineSample(x, baseAt + index * 16, index)),
+        renderer: nativePositions.map((x, index) => timelineSample(x, baseAt + index * 8, index)),
+        surface: nativePositions.map((x, index) => timelineSample(x, baseAt + index * 8, index)),
+      } : null,
     };
   };
   return {
