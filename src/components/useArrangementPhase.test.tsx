@@ -211,6 +211,42 @@ describe("useArrangementPhase", () => {
     expect(cancel).not.toHaveBeenCalled();
   });
 
+  it("layout revision은 목표 DOM 뒤 surface commit ACK까지 끝난 뒤에만 정착한다", async () => {
+    const at = solve(twoColumns, "a");
+    const to = solve(twoColumns, "b");
+    let releaseCommit!: () => void;
+    const commit = vi.fn(() => new Promise<void>((resolve) => { releaseCommit = resolve; }));
+    const prepareTravel = vi.fn(async (): Promise<PreparedLayoutTransition> => ({
+      mode: "snap",
+      commit,
+      cancel: vi.fn(),
+    }));
+    act(() => root.render(
+      <Probe
+        arrangement={at}
+        scopeId={scopeOf(at)}
+        prepareTravel={prepareTravel}
+        settlementKey="project-commit"
+      />,
+    ));
+
+    invalidateLayout("project-commit");
+    act(() => root.render(
+      <Probe
+        arrangement={to}
+        scopeId={scopeOf(to)}
+        prepareTravel={prepareTravel}
+        settlementKey="project-commit"
+      />,
+    ));
+    await act(async () => {});
+
+    expect(commit).toHaveBeenCalledTimes(1);
+    expect(layoutSettlementFacts("project-commit").active).toBe(true);
+    await act(async () => releaseCommit());
+    expect(layoutSettlementFacts("project-commit")).toEqual({ active: false, pending: [] });
+  });
+
   it("glide는 prepare 완료 뒤 DOM을 공개하고 commit은 그 DOM의 layout effect에서 실행한다", async () => {
     const at = solve(twoColumns, "a");
     const to = solve(twoColumns, "b");
