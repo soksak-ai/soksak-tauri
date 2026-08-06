@@ -21,6 +21,7 @@ import {
   observeFullCapture as inspectFullCapture,
   snapshotScaleForVisualEvidence,
 } from "./lib/browser-visual-evidence.mjs";
+import { reviewVisualRecordingSafely } from "./lib/visual-recording-review.mjs";
 import {
   browserImplementations,
   browserSurfaceInvariant,
@@ -84,6 +85,24 @@ function writeVisualReport(file, report) {
     console.error(`시각 진단 보고서 저장 실패(기계 판정과 분리): ${error instanceof Error ? error.message : String(error)}`);
   }
   return report;
+}
+
+function reviewRecordingArtifacts({ directory, recording, expectedFrames, name }) {
+  let artifacts = [];
+  let artifactReadError = null;
+  try {
+    artifacts = fs.readdirSync(directory)
+      .filter((file) => /^f\d{4}\.png$/.test(file))
+      .sort()
+      .map((file) => path.join(directory, file));
+  } catch (error) {
+    artifactReadError = error instanceof Error ? error.message : String(error);
+  }
+  const report = reviewVisualRecordingSafely({ recording, expectedFrames, artifacts, artifactReadError });
+  writeVisualReport(`${directory}.visual-recording.json`, report);
+  const summary = report.status === "failed" ? `FAILED ${report.failures.join(" · ")}` : report.status;
+  console.log(`◉ ${name}: recording visual review ${summary} (제품 machine 판정과 분리)`);
+  return { artifacts, report };
 }
 
 function observeFrameSequence(files, name, scale, options = {}) {
@@ -822,10 +841,13 @@ async function runEngine(client, page, engine) {
           address: activationAddresses[side], recordDir: dir, recordFrames: FRAMES_PER_CLICK,
           recordIntervalMs: 16, recordLeadMs: 32,
         }, win, { timeoutMs: 60_000 }), `교차 클릭 ${name}`);
-        const captured = Number(clicked.recording?.frames ?? 0);
-        if (captured !== FRAMES_PER_CLICK) throw new Error(`${name}: 캡처 ${captured}/${FRAMES_PER_CLICK}`);
-        const files = fs.readdirSync(dir).filter((file) => /^f\d{4}\.png$/.test(file)).sort();
-        if (files.length !== FRAMES_PER_CLICK) throw new Error(`${name}: PNG ${files.length}/${FRAMES_PER_CLICK}`);
+        const recordingEvidence = reviewRecordingArtifacts({
+          directory: dir,
+          recording: clicked.recording,
+          expectedFrames: FRAMES_PER_CLICK,
+          name: `${engine}/${name}`,
+        });
+        const files = recordingEvidence.artifacts;
         await assertActivePane(rpc, win, paneIds[side], name);
         must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }), `${name} layout settled`);
         const journalAfter = must(await rpc("layout.transactions", {}, win), `layout journal verdict ${name}`);
@@ -863,7 +885,7 @@ async function runEngine(client, page, engine) {
           }
         }
         observeFrameSequence(
-          files.map((file) => path.join(dir, file)),
+          files,
           `${engine}/${name}`,
           scale,
           {
@@ -931,10 +953,13 @@ async function runEngine(client, page, engine) {
         recordIntervalMs: 16,
         recordLeadMs: 32,
       }, win, { timeoutMs: 60_000 }), `${pinCase.name} click`);
-      const files = fs.readdirSync(dir).filter((file) => /^f\d{4}\.png$/.test(file)).sort();
-      if (Number(clicked.recording?.frames ?? 0) !== PIN_FRAMES_PER_CLICK || files.length !== PIN_FRAMES_PER_CLICK) {
-        throw new Error(`${pinCase.name}: 캡처 ${files.length}/${PIN_FRAMES_PER_CLICK}`);
-      }
+      const recordingEvidence = reviewRecordingArtifacts({
+        directory: dir,
+        recording: clicked.recording,
+        expectedFrames: PIN_FRAMES_PER_CLICK,
+        name: `${engine}/${pinCase.name}`,
+      });
+      const files = recordingEvidence.artifacts;
       const rectsAfter = await Promise.all([railAddress, ...paneAddresses].map(async (address) => ({
         address,
         rect: must(await rpc("ui.measure", { address }, win), `${pinCase.name} rect after`).rect,
@@ -981,7 +1006,7 @@ async function runEngine(client, page, engine) {
         placement: "pin",
       });
       observeFrameSequence(
-        files.map((file) => path.join(dir, file)),
+        files,
         `${engine}/${pinCase.name}`,
         scale,
         { motion: false, chromeAnchors: [CHROME_MARKERS.railAdd] },
@@ -1076,9 +1101,15 @@ async function runEngine(client, page, engine) {
       recordFrames: FAST_RESIZE_FRAMES,
       recordIntervalMs: 16,
     }, win, { timeoutMs: 60_000 }), "rapid window resize");
-    const fastFiles = fs.readdirSync(fastResizeDir).filter((file) => /^f\d{4}\.png$/.test(file)).sort();
-    if (Number(fastResize.steps) !== fastSizes.length || Number(fastResize.frames) !== FAST_RESIZE_FRAMES || fastFiles.length !== FAST_RESIZE_FRAMES) {
-      throw new Error(`rapid window resize 거래 누락: ${JSON.stringify(fastResize)} PNG=${fastFiles.length}`);
+    const fastRecordingEvidence = reviewRecordingArtifacts({
+      directory: fastResizeDir,
+      recording: fastResize.recording,
+      expectedFrames: FAST_RESIZE_FRAMES,
+      name: `${engine}/window-fast`,
+    });
+    const fastFiles = fastRecordingEvidence.artifacts;
+    if (Number(fastResize.steps) !== fastSizes.length) {
+      throw new Error(`rapid window resize 단계 누락: ${JSON.stringify(fastResize)}`);
     }
     if (Number(fastResize.resizeElapsedMs) > 4_000) {
       throw new Error(`rapid window resize 응답 정지: ${fastResize.resizeElapsedMs}ms/${fastSizes.length}단계`);
@@ -1111,7 +1142,7 @@ async function runEngine(client, page, engine) {
     // 최소 높이에서는 입력 아래의 상태 marker가 정상적으로 viewport 밖에 놓일 수 있다. 전이 중에는
     // 상단의 고정 ruler로 live frame을 판정하고, 원복 직후 실제 input 값·event ledger를 다시 읽는다.
     observeFrameSequence(
-      fastFiles.map((file) => path.join(fastResizeDir, file)),
+      fastFiles,
       `${engine}/window-fast`,
       scale,
       { requireInput: false, compareDomEpoch: true, chromeAnchors: [CHROME_MARKERS.railAdd] },
@@ -1143,12 +1174,15 @@ async function runEngine(client, page, engine) {
         from: gutter.address, dx, steps: 12, durationMs: 240,
         recordDir: dir, recordFrames: FRAMES_PER_CLICK, recordIntervalMs: 16,
       }, win, { timeoutMs: 60_000 }), `pane resize ${direction}`);
-      const files = fs.readdirSync(dir).filter((file) => /^f\d{4}\.png$/.test(file)).sort();
-      if (Number(dragged.recording?.frames ?? 0) !== FRAMES_PER_CLICK || files.length !== FRAMES_PER_CLICK) {
-        throw new Error(`pane resize ${direction}: 캡처 ${files.length}/${FRAMES_PER_CLICK}`);
-      }
+      const recordingEvidence = reviewRecordingArtifacts({
+        directory: dir,
+        recording: dragged.recording,
+        expectedFrames: FRAMES_PER_CLICK,
+        name: `${engine}/pane-${direction}`,
+      });
+      const files = recordingEvidence.artifacts;
       observeFrameSequence(
-        files.map((file) => path.join(dir, file)),
+        files,
         `${engine}/pane-${direction}`,
         scale,
         { chromeAnchors: [CHROME_MARKERS.railAdd] },

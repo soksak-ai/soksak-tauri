@@ -12,14 +12,21 @@ describe("slot-freeze instrumentation lifecycle", () => {
   it("녹화는 시각 진단을 남기지만 E2E 성공/실패를 판정하지 않는다", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
     const visual = readFileSync(new URL("./lib/browser-visual-evidence.mjs", import.meta.url), "utf8");
+    const recordingReview = readFileSync(new URL("./lib/visual-recording-review.mjs", import.meta.url), "utf8");
     expect(visual).toContain('kind: "human-visual-evidence"');
     expect(visual).toContain("automatedVerdict: false");
+    expect(recordingReview).toContain('kind: "human-visual-evidence"');
+    expect(recordingReview).toContain("automatedVerdict: false");
+    expect(source).toContain("reviewVisualRecording");
     expect(source).toContain("observeFrameSequence");
     expect(source).not.toContain("decodePng");
     expect(source).not.toContain("markerEvidence");
     expect(source).not.toContain("fixtureMarkerRowVerdict");
     expect(source).not.toContain("assertFrameMarkers");
     expect(source).not.toContain("assertChromeAnchorWithin");
+    expect(source).not.toMatch(/Number\([^\n]*recording\?\.frames[^\n]*\)\s*!==/);
+    expect(source).not.toMatch(/files\.length\s*!==/);
+    expect(source).not.toContain("Number(fastResize.frames) !== FAST_RESIZE_FRAMES");
   });
 
   it("activates pane through exposed tab chrome and verifies the resulting pane state", () => {
