@@ -404,7 +404,23 @@ export function mapB04PresentationSamples({
     { ...first, sequence: 0, phase: "prepared" },
     { ...last, sequence: 1, phase: "committed" },
   ];
-  const slotTimeline = presentationSamples.map((domSample, sequence) => {
+  const endAtUnixMs = presentationStartAt + durationMs;
+  const transactionWindow = (values, at) => {
+    const before = values.filter((value) => at(value) <= presentationStartAt).at(-1);
+    const during = values.filter((value) => (
+      at(value) > presentationStartAt && at(value) < endAtUnixMs
+    ));
+    const after = values.find((value) => at(value) >= endAtUnixMs);
+    return [before, ...during, after].filter((value, index, all) => (
+      value !== undefined && all.indexOf(value) === index
+    ));
+  };
+  const transactionDomSamples = transactionWindow(
+    presentationSamples,
+    (sample) => sample.sampledAtUnixMs,
+  );
+  const transactionNativeEvents = transactionWindow(events, (event) => event.sampledAtUnixMs);
+  const slotTimeline = transactionDomSamples.map((domSample, sequence) => {
     const matches = (domSample.nodes ?? []).filter((node) => node?.address === slotAddress);
     if (matches.length !== 1 || matches[0].connected !== true) {
       throw new Error(`${targetViewId}: timeline slot[${sequence}]=${matches.length}/1 connected`);
@@ -421,7 +437,7 @@ export function mapB04PresentationSamples({
   if (!fromSample) throw new Error(`${targetViewId}: timeline start coverage가 없다`);
   const from = fromSample.frame;
   const to = { ...from, x: from.x - moveDx };
-  const nativeTimeline = (field) => events.map((event, sequence) => ({
+  const nativeTimeline = (field) => transactionNativeEvents.map((event, sequence) => ({
     sequence,
     sampledAtUnixMs: event.sampledAtUnixMs,
     frame: finiteB04Rect(event[field], `${targetViewId}:timeline-${field}[${sequence}]`),
