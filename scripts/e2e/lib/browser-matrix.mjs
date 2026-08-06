@@ -31,6 +31,19 @@ export const compositorCalibrationSize = Object.freeze({ width: 40, height: 40 }
 export const fixtureMarkerSize = Object.freeze({ width: 64, height: 40 });
 export const fixtureMarkerGap = 8;
 
+/** 플러그인 DOM의 단일 소유권 판정. Tauri native surface는 별도 OS renderer지만
+ * plugin chrome/slot DOM은 Electron과 동일하게 메인 문서에만 존재해야 한다. */
+export function rendererTopologyOwnershipVerdict(topology) {
+  const errors = [];
+  if (!topology) errors.push("missing");
+  else {
+    if (topology.verdict !== "independent-renderer-roots") errors.push(`verdict=${topology.verdict}`);
+    if (topology.panelAtomicMotion !== false) errors.push(`panelAtomicMotion=${topology.panelAtomicMotion}`);
+    if (topology.sharedPaneHost != null) errors.push(`sharedPaneHost=${topology.sharedPaneHost}`);
+  }
+  return { ok: errors.length === 0, errors };
+}
+
 /** 전체 문서 identity는 같은 색의 독립 표식 3개로 이루어진 한 행이다.
  * 단순 색상 개수 대신 선언된 크기·정렬·간격을 함께 판정해 중복 캡처와 찢어진 캡처를 구분한다. */
 export function fixtureMarkerRowVerdict(components, { scale = 1 } = {}) {

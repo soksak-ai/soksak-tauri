@@ -20,6 +20,7 @@ import {
   snapshotCssScale,
   selectFixtureMarkerComponent,
   fixtureMarkerRowVerdict,
+  rendererTopologyOwnershipVerdict,
   hostileWindowResizeSizes,
   summarizeFrameSequence,
   unwrapEvalValue,
@@ -31,6 +32,20 @@ import {
 import { encodePng } from "./png.mjs";
 
 describe("브라우저 구현 행렬", () => {
+  it("Tauri plugin DOM은 메인 renderer에 남고 native surface만 독립 root로 합성한다", () => {
+    expect(rendererTopologyOwnershipVerdict({
+      verdict: "independent-renderer-roots",
+      panelAtomicMotion: false,
+      sharedPaneHost: null,
+    })).toEqual({ ok: true, errors: [] });
+    expect(rendererTopologyOwnershipVerdict({
+      verdict: "shared-pane-host",
+      panelAtomicMotion: true,
+      sharedPaneHost: "PaneSurfaceHost",
+    })).toMatchObject({ ok: false });
+    expect(rendererTopologyOwnershipVerdict(null)).toMatchObject({ ok: false });
+  });
+
   it("화면 경계에서 전체 창이 축소된 프레임은 DOM 기준자로 실제 pixel 배율을 복원한다", () => {
     expect(calibrationFrameScale([
       { width: 60, height: 60 },

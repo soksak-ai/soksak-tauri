@@ -27,6 +27,7 @@ import {
   domTransitionTraceVerdict,
   fixtureMarkerSize,
   fixtureMarkerRowVerdict,
+  rendererTopologyOwnershipVerdict,
   fixtureMarkers,
   hostileWindowResizeSizes,
   markerEvidence,
@@ -144,9 +145,8 @@ function assertNativeComposition(data, labels, beforeWrites) {
   if (data.engine?.preservesContentDuringLiveResize !== false) {
     errors.push(`window:preservesContentDuringLiveResize=${data.engine?.preservesContentDuringLiveResize}`);
   }
-  if (data.engine?.rendererTopology?.panelAtomicMotion !== true) {
-    errors.push(`renderer-topology:${data.engine?.rendererTopology?.verdict ?? "missing"}`);
-  }
+  const topology = rendererTopologyOwnershipVerdict(data.engine?.rendererTopology ?? null);
+  if (!topology.ok) errors.push(`renderer-topology:${topology.errors.join("/")}`);
   const placements = new Map((data.placement ?? []).map((item) => [item.label, item]));
   for (const label of labels) {
     const placement = placements.get(label);
