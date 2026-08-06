@@ -10,6 +10,7 @@
     "build:platform": "pnpm --filter @soksak-ai/plugin-spec build && pnpm --filter @soksak-ai/plugin-api build",
     "prebuild": "pnpm run build:platform",
     "build": "tsc && SOKSAK_FRAMEWORK=tauri vite build && SOKSAK_FRAMEWORK=electron vite build",
+    "typecheck": "tsc --noEmit",
     "build:tauri": "pnpm stage:cored && pnpm run build:platform && tsc && SOKSAK_FRAMEWORK=tauri vite build",
     "build:electron": "pnpm run build:platform && tsc && SOKSAK_FRAMEWORK=electron vite build",
     "check:framework-artifacts": "node scripts/gates/framework-artifact-isolation.mjs",
