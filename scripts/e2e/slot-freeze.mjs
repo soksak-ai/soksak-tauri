@@ -16,6 +16,7 @@ import { openClient, requireSocket, must } from "./lib/client.mjs";
 import { acquireFixtureWindow, releaseFixtureWindow } from "./lib/fixtureWindow.mjs";
 import { closeHtmlFixture, startHtmlFixture } from "./lib/http-fixture.mjs";
 import { decodePng } from "./lib/png.mjs";
+import { tauriSurfaceResizePolicyVerdict } from "./lib/tauri-surface-resize-policy.mjs";
 import {
   browserImplementations,
   browserSurfaceInvariant,
@@ -169,18 +170,10 @@ function assertPaneComposition(data, labels) {
 }
 
 function assertTauriSurfaceResizePolicy(data, stage) {
-  const errors = [];
-  const surfaces = data.surfaces ?? [];
-  if (!surfaces.length) errors.push("surface:none");
-  for (const surface of surfaces) {
-    if (surface.layerContentsRedrawPolicy !== 2)
-      errors.push(`${surface.label ?? surface.ptr}:redraw=${surface.layerContentsRedrawPolicy}/2`);
-    if (surface.layerContentsPlacement !== 11)
-      errors.push(`${surface.label ?? surface.ptr}:placement=${surface.layerContentsPlacement}/11`);
-    if (surface.autoresizingMask !== 0)
-      errors.push(`${surface.label ?? surface.ptr}:autoresizing=${surface.autoresizingMask}/0`);
+  const verdict = tauriSurfaceResizePolicyVerdict(data.surfaces ?? []);
+  if (!verdict.ok) {
+    throw new Error(`${stage}: Tauri surface resize policy 불일치 — ${verdict.errors.join(", ")}`);
   }
-  if (errors.length) throw new Error(`${stage}: Tauri surface resize policy 불일치 — ${errors.join(", ")}`);
 }
 
 async function assertWindowedComposition(rpc, win, plugin, tabIds, addresses) {
