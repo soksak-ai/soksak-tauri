@@ -332,6 +332,23 @@ describe("slot-freeze instrumentation lifecycle", () => {
   it("B04는 세 엔진 FLOW 양방향의 공개 presentation producer와 layout journal만 canonical receipt로 기록한다", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
     expect(source).toContain('rpc("ui.trace.multi"');
+    const domTraceCalls = callFacts(source, (node) => (
+      node.expression.getText() === "rpc"
+      && ts.isStringLiteral(node.arguments[0])
+      && node.arguments[0].text === "ui.trace.multi"
+    ));
+    expect(domTraceCalls).toHaveLength(1);
+    expect(domTraceCalls[0].text).toContain("railAddress");
+    expect(domTraceCalls[0].text).toContain("paneAddresses[0]");
+    expect(domTraceCalls[0].text).toContain("addresses[0]");
+    expect(domTraceCalls[0].text).toContain("paneAddresses[1]");
+    expect(domTraceCalls[0].text).toContain("addresses[1]");
+    expect(source.indexOf('rpc("ui.trace.multi"'))
+      .toBeLessThan(source.indexOf("runPlannedRecordingAction({"));
+    expect(source).toContain("resolveB04MovedParticipant({");
+    expect(source).toContain("transactions: layoutVerdict.transactions");
+    expect(source).toContain("owners: presentationOwners");
+    expect(source).toContain("normalizeB04JournalEntries(layoutVerdict.transactions)");
     expect(source).toContain("domSamples: domTraceReceipt.samples");
     expect(source).toContain("preparedAtUnixMs: layoutVerdict.transaction.preparedAtUnixMs");
     expect(source).toContain("closedAtUnixMs: layoutVerdict.transaction.closedAtUnixMs");
@@ -382,9 +399,10 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(transition.guards.some((guard) =>
       /implementation\.surface|engine\s*===|\bnative\b|\bwindowed\b|paneOwned|presentation.*trace/i.test(guard))).toBe(false);
     expect(transition.text).toMatch(/direction\s*:\s*side\s*===?\s*0\s*\?\s*"to-left"\s*:\s*"to-right"/);
-    expect(transition.text).toMatch(/targetViewId\s*:\s*tabIds\[side\]/);
+    expect(transition.text).toMatch(/\btargetViewId\s*,/);
+    expect(transition.text).not.toMatch(/targetViewId\s*:\s*tabIds\[side\]/);
     expect(transition.text).toContain("motionMode:");
-    expect(transition.text).toMatch(/journal\s*:\s*\{[\s\S]*afterSequence[\s\S]*entries\s*:\s*layoutVerdict\.transactions/);
+    expect(transition.text).toMatch(/journal\s*:\s*\{[\s\S]*afterSequence[\s\S]*entries\s*:\s*b04JournalEntries/);
     expect(transition.text).toMatch(/samples\s*:\s*[\w$]*presentation[\w$]*\.samples/i);
     expect(transition.text).not.toMatch(/recording|artifact|files|clicked|png|snapshot/i);
     expect(receipt.start).toBeGreaterThan(transition.start);
