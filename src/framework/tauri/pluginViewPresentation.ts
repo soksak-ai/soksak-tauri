@@ -171,6 +171,11 @@ export function comparePanePresentation(
   windowLabel: string,
   tolerancePx = 1,
 ) {
+  const windowCoordinateSpace = {
+    logical: "css-px" as const,
+    origin: "window-absolute" as const,
+    referenceId: windowLabel,
+  };
   const scoped = native.filter((fact) => fact.window === windowLabel);
   const foreignNative = native.filter((fact) => fact.window !== windowLabel).map((fact) => fact.pane);
   const matches = dom.map((domFact) => {
@@ -185,6 +190,11 @@ export function comparePanePresentation(
         : null;
       return {
         label: domMember.label,
+        coordinateSpace: {
+          logical: "css-px" as const,
+          origin: "presenter-local" as const,
+          referenceId: domMember.label,
+        },
         domFrame: domMember.frame,
         nativeFrame: nativeMember?.cssFrame ?? null,
         nativeCount: nativeMembers.length,
@@ -206,6 +216,7 @@ export function comparePanePresentation(
       && memberMatches.every((match) => match.ok);
     return {
       pane: domFact.pane,
+      coordinateSpace: windowCoordinateSpace,
       domFrame: domFact.frame,
       nativeFrame: nativeFact?.cssFrame ?? null,
       nativeCount: candidates.length,
