@@ -57,6 +57,7 @@ import { mapBrowserSurfaceRects } from "./lib/browser-surface-rects.mjs";
 import { mapB03LiveEvidence } from "./lib/browser-gate-b03-evidence.mjs";
 import { mapB05LiveEvidence } from "./lib/browser-gate-b05-evidence.mjs";
 import { mapB06LiveEvidence } from "./lib/browser-gate-b06-evidence.mjs";
+import { mapB10LiveEvidence } from "./lib/browser-gate-b10-evidence.mjs";
 import {
   mapB01TabEvidence,
   mapB11TabEvidence,
@@ -1841,11 +1842,11 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
         framework: frameworkName,
         engine,
         gate: "B10",
-        evidence: {
+        evidence: mapB10LiveEvidence({
           engine,
-          requestedSizes: fastSizes,
+          scaleFactor: Number(originalWindow.scale),
           resizeSequence: fastResize,
-        },
+        }),
       });
       await gateReportStore.persist();
       console.log(`◉ ${engine}/B10 canonical machine verdict: ${b10Receipt.status}`);

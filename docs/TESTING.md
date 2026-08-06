@@ -56,6 +56,9 @@ hold from recorded frames.
 The B06 mapper independently requires each pane's public `--dim`/level, adapter alpha, the single
 plane's base/aperture ledger, and both rail/sidebar exemption and plane-exclusion facts. One exempt
 attribute cannot stand in for the other observations.
+The B10 mapper closes only the baseline and each resize ACK's observed window/frame/generation/
+presentation/continuity snapshot into transactions. It never copies a requested `size` into the
+observed window geometry.
 
 | ID | Fixed rule | Machine evidence |
 |---|---|---|

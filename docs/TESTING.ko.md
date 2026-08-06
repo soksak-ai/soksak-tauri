@@ -47,6 +47,8 @@ B05 mapper는 click ACK의 주소·시각, layout 거래의 trace 인과관계, 
 settled 및 유한 hold 영수증을 닫힌 schema로 결합한다. 빠진 시각이나 hold를 녹화 프레임에서 추정하지 않는다.
 B06 mapper는 pane별 공개 `--dim`/level, adapter alpha, 단일 plane의 base/aperture 원장,
 rail·sidebar 면제와 plane 비포함 사실을 각각 요구한다. 면제 속성 하나로 다른 값을 대신하지 않는다.
+B10 mapper는 baseline과 각 resize ACK가 낸 window/frame/generation/presentation/continuity snapshot만
+닫힌 transaction으로 변환한다. 요청한 `size`를 관측된 window geometry로 복사하지 않는다.
 
 | ID | 고정 기준 | 기계 판정 근거 |
 |---|---|---|
