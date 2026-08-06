@@ -100,8 +100,14 @@ export class PluginViewSlotRegistry {
         reject,
         timer: setTimeout(() => {
           this.#commitWaiters.get(label)?.delete(waiter);
+          const reported = this.#frames.get(label);
+          const committed = this.#committed.get(label);
+          const facts = (value: PluginViewSlotFrame | undefined) => value
+            ? JSON.stringify({ rootW: value.rootW, rootH: value.rootH, revision: value.revision })
+            : "null";
           reject(new Error(
-            `plugin renderer native commit 시간 초과: ${label} root=${rootW}x${rootH} (${timeoutMs}ms)`,
+            `plugin renderer native commit 시간 초과: ${label} root=${rootW}x${rootH}`
+            + ` reported=${facts(reported)} committed=${facts(committed)} (${timeoutMs}ms)`,
           ));
         }, timeoutMs),
       };

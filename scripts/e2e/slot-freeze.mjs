@@ -1234,7 +1234,7 @@ async function runEngine(client, page, engine) {
     must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }), "window resize final layout settled");
     if (native) {
       assertPaneComposition(
-        must(await rpc("webview.pane.composition.wait", { timeoutMs: 10_000 }, win, { timeoutMs: 12_000 }),
+        must(await rpc("webview.pane.composition.wait", { settleTimeoutMs: 8_000 }, win, { timeoutMs: 12_000 }),
           "window resize final pane composition"),
         labels,
       );

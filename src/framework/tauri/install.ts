@@ -308,11 +308,11 @@ function installPaneSurfaceHostCommands(): void {
   register("webview.pane.composition.wait", {
     description: "Wait for child slot events to be committed to native pane members, then compare live frames.",
     params: {
-      timeoutMs: { type: "number", description: "finite event barrier timeout (default 10000)" },
+      settleTimeoutMs: { type: "number", description: "finite event barrier timeout (default 8000)" },
     },
     returns: "{ window,tolerancePx,matches,orphanNative,foreignNative,matched,verdict }",
     message: (data) => `pane composition committed ${String(data.verdict)}`,
-    handler: async (params) => awaitPluginViewComposition(Number(params.timeoutMs ?? 10_000)),
+    handler: async (params) => awaitPluginViewComposition(Number(params.settleTimeoutMs ?? 8_000)),
   });
   register("webview.pane.group", {
     description: "Group one pane renderer and its native members under one PaneSurfaceHost.",

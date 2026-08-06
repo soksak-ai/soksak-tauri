@@ -35,7 +35,7 @@ describe("plugin renderer slot event barrier", () => {
     const slots = new PluginViewSlotRegistry();
     slots.report(frame);
     await expect(slots.waitCommittedRoot(frame.label, 500, 400, 5))
-      .rejects.toThrow("native commit 시간 초과");
+      .rejects.toThrow('native commit 시간 초과: b-main-v1 root=500x400 reported={"rootW":500');
   });
 
   it("현재 viewport에 적용된 native commit 사건으로 배리어를 해제한다", async () => {
