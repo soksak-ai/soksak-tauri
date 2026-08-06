@@ -53,4 +53,15 @@ export interface PluginViewSlotFrame {
 
 export interface PluginViewNodeFrame extends PluginViewSlotFrame {
   node: string;
+  /** 노출된 form node의 실제 child-renderer 현재 상태. 좌표 projection이 값을 지어내지 않는다. */
+  control: { kind: "input" | "textarea" | "select"; value: string } | null;
+}
+
+export function nodeControlState(
+  element: Element,
+): PluginViewNodeFrame["control"] {
+  const kind = element.localName;
+  if (kind !== "input" && kind !== "textarea" && kind !== "select") return null;
+  const value = Reflect.get(element, "value");
+  return { kind, value: typeof value === "string" ? value : String(value ?? "") };
 }

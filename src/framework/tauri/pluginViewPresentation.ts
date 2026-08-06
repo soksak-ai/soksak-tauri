@@ -264,6 +264,13 @@ export function projectPluginViewNode(
 ): HTMLElement {
   const element = existing ?? document.createElement("div");
   element.dataset.node = `tauri/plugin-view/${frame.label}/${frame.node}`;
+  if (frame.control) {
+    element.dataset.formControl = frame.control.kind;
+    element.dataset.formValue = frame.control.value;
+  } else {
+    delete element.dataset.formControl;
+    delete element.dataset.formValue;
+  }
   element.setAttribute("aria-hidden", "true");
   Object.assign(element.style, {
     position: "absolute", left: `${frame.x}px`, top: `${frame.y}px`,

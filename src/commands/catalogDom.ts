@@ -419,15 +419,22 @@ export function registerDomCatalog(): void {
       }
       // pseudo 는 "없음"도 답이어야 한다 — content:none 이면 그 베일은 애초에 안 그려진다.
       if (pseudo) style.content = readComputed(cs, "content");
+      const formElement = ["input", "textarea", "select"].includes(el.localName);
+      const projectedForm = ["input", "textarea", "select"].includes(el.dataset.formControl ?? "")
+        && Object.prototype.hasOwnProperty.call(el.dataset, "formValue");
+      const publicValue = formElement
+        ? (el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).value
+        : projectedForm ? el.dataset.formValue : undefined;
       const out: Record<string, unknown> = {
         address: addr,
         nodeIdentity: nodeIdentityOf(el),
         ...(pseudo ? { pseudo } : {}),
-        ...(["input", "textarea", "select"].includes(el.localName)
+        ...(publicValue !== undefined
           // PluginView 노드는 host Window와 다른 realm에서 올 수 있으므로 host constructor의
           // instanceof는 같은 HTML 태그도 거짓이다. localName은 DOM 표준 form 의미이며
-          // realm과 무관하다. 노출된 실제 Element의 현재 value만 읽는다.
-          ? { value: (el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).value }
+          // realm과 무관하다. child renderer projection은 같은 공개 node frame이 실어 온
+          // data-form-* 영수증만 사용하며 host가 값을 추측하지 않는다.
+          ? { value: publicValue }
           : {}),
         // 모든 data-* 선언은 공개 상태다. 자동화/플러그인은 private DOM 속성명을
         // 다시 추측하지 않고 ui.tree → ui.measure 한 경로로 읽는다.

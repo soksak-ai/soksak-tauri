@@ -158,7 +158,7 @@ describe("Tauri plugin renderer RPC surface", () => {
     const container = document.createElement("div");
     const projected = projectPluginViewNode(container, {
       label: "b-main-tab-1", node: "toolbar", x: 4, y: 8, w: 300, h: 40, rootW: 400, rootH: 260,
-      revision: 1, reportedAtUnixMs: 1,
+      revision: 1, reportedAtUnixMs: 1, control: null,
     });
     expect(projected.dataset.node).toBe("tauri/plugin-view/b-main-tab-1/toolbar");
     expect(projected.style.top).toBe("8px");
@@ -177,8 +177,9 @@ describe("Tauri plugin renderer RPC surface", () => {
 
   it("child renderer가 form value를 node frame의 공개 상태로 보고한다", () => {
     const source = readFileSync(resolve(import.meta.dirname, "pluginViewRenderer.ts"), "utf8");
+    const protocol = readFileSync(resolve(import.meta.dirname, "pluginViewProtocol.ts"), "utf8");
     expect(source).toContain("control: nodeControlState(element)");
-    expect(source).toContain("element.localName");
+    expect(protocol).toContain("element.localName");
   });
 
   it("호출 창의 DOM pane과 native host를 1:1·반올림 오차만으로 판정한다", () => {

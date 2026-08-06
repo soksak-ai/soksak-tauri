@@ -6,6 +6,7 @@ import type {
   PluginViewRpcResponse,
   PluginViewSlotFrame,
 } from "./pluginViewProtocol";
+import { nodeControlState } from "./pluginViewProtocol";
 
 const params = new URLSearchParams(location.search);
 const parent = params.get("parent");
@@ -75,6 +76,7 @@ function reportSlots(): void {
       const rect = element.getBoundingClientRect();
       const frame: PluginViewNodeFrame = {
         label: activeLabel, node,
+        control: nodeControlState(element),
         x: Math.round(rect.left), y: Math.round(rect.top),
         w: Math.max(1, Math.round(rect.right) - Math.round(rect.left)),
         h: Math.max(1, Math.round(rect.bottom) - Math.round(rect.top)),
@@ -104,6 +106,10 @@ function observeSlots(): void {
 }
 new MutationObserver(observeSlots).observe(document.documentElement, { childList: true, subtree: true });
 window.addEventListener("resize", reportSlots);
+// 사용자 입력은 layout을 바꾸지 않아 ResizeObserver가 발행하지 않는다. 공개 node 상태는
+// 실제 input/change 사건에서 같은 reporter로 즉시 갱신한다(폴링 없음).
+document.addEventListener("input", reportSlots, true);
+document.addEventListener("change", reportSlots, true);
 
 await listen<PluginViewInit>(event("init"), async ({ payload: init }) => {
   activeLabel = init.label;
