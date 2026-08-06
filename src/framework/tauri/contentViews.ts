@@ -18,8 +18,8 @@ import {
   EXTERNAL_SURFACE_TRANSITION_EVENT,
   type ExternalSurfaceTransitionDetail,
   type ExternalSurfaceTransitionParticipant,
+  type ExternalSurfaceTransitionTiming,
 } from "../../lib/externalSurfaceTransition";
-import { railTravelDeclaredMs } from "../../lib/railMotion";
 import { surfaceLayoutContractOf } from "./surfaceLayoutContract";
 import { claimDirectSurface, releaseDirectSurface } from "./surfaceOwnership";
 
@@ -255,6 +255,7 @@ function slotViewId(slot: HTMLElement): string | null {
  */
 export async function prepareNativeContentViewMove(
   moves: readonly LayoutMove[],
+  timing: ExternalSurfaceTransitionTiming,
 ): Promise<PreparedLayoutTransition> {
   const byView = new Map(moves.map((move) => [move.viewId, move]));
   const targets = [...composition.surfaces.values()].flatMap((state) => {
@@ -380,8 +381,7 @@ export async function prepareNativeContentViewMove(
     };
   }
 
-  const startAtUnixMs = Date.now() + 100;
-  const durationMs = railTravelDeclaredMs();
+  const { startAtUnixMs, durationMs } = timing;
   for (const { state, target } of targets) {
     if (state.draining) await state.draining;
     state.precommitting = true;

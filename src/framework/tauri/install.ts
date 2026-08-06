@@ -23,6 +23,7 @@ import {
 import { adoptFrameworkStyles } from "../styles";
 import { registerContentViewHost } from "../../lib/contentViews";
 import { registerLayoutTransitionHost } from "../../lib/layoutTransitionHost";
+import { railTravelDeclaredMs } from "../../lib/railMotion";
 import {
   awaitPluginViewComposition,
   awaitPluginViewPresentation,
@@ -575,13 +576,20 @@ export async function installTauri(): Promise<void> {
   // DOM 밖 표면이 포함된 배치만 목표 bounds 선확정 + DOM snap 거래로 바꾼다.
   registerLayoutTransitionHost({
     prepareMove: async (moves) => {
+      const timing = {
+        startAtUnixMs: Date.now() + 100,
+        durationMs: railTravelDeclaredMs(),
+      };
       const [direct, presented] = await Promise.all([
-        prepareNativeContentViewMove(moves),
-        preparePresentedPluginViewMove(moves),
+        prepareNativeContentViewMove(moves, timing),
+        preparePresentedPluginViewMove(moves, timing),
       ]);
+      const mode = direct.mode === "snap" || presented.mode === "snap" ? "snap" : "glide";
+      const hasExternalGlide = mode === "glide"
+        && (direct.startAtUnixMs !== undefined || presented.startAtUnixMs !== undefined);
       return {
-        mode: direct.mode === "snap" || presented.mode === "snap" ? "snap" : "glide",
-        startAtUnixMs: direct.startAtUnixMs ?? presented.startAtUnixMs,
+        mode,
+        ...(hasExternalGlide ? timing : {}),
         commit: async () => { await Promise.all([direct.commit(), presented.commit()]); },
         cancel: () => { direct.cancel(); presented.cancel(); },
       };

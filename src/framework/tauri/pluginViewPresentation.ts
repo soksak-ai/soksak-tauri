@@ -1,7 +1,7 @@
 import { emitTo, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { moduleState } from "../../lib/moduleState";
-import { railTravelDeclaredMs } from "../../lib/railMotion";
+import type { ExternalSurfaceTransitionTiming } from "../../lib/externalSurfaceTransition";
 import { currentWindowLabel } from "../../lib/webviewLabels";
 import type { LayoutMove, PreparedLayoutTransition } from "../../lib/layoutTransitionHost";
 import { surfaceRectOf } from "../../lib/surfaceRect";
@@ -813,6 +813,7 @@ export const presentedTransitionMode = (): "glide" => "glide";
 
 export async function preparePresentedPluginViewMove(
   moves: readonly LayoutMove[],
+  timing: ExternalSurfaceTransitionTiming,
 ): Promise<PreparedLayoutTransition> {
   const byView = new Map(moves.map((move) => [move.viewId, move]));
   const targets = [...state.views.values()].flatMap((view) => {
@@ -827,8 +828,7 @@ export async function preparePresentedPluginViewMove(
   // 같은 절대 epoch·duration을 사용한다. 포커스 여부로 거래 방식을 바꾸지 않으며 host의
   // 자식 frame은 전환 중 한 번도 쓰지 않는다.
   presentedTransitionMode();
-  const startAtUnixMs = Date.now() + 100;
-  const durationMs = railTravelDeclaredMs();
+  const { startAtUnixMs, durationMs } = timing;
   await Promise.all(targets.map(({ view, target }) => invoke("webview_pane_transition_prepare", {
     pane: view.nativeHostId, ...target, startAtUnixMs, durationMs,
   })));

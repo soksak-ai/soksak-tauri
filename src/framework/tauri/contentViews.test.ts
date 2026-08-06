@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const invoke = vi.fn(async (_cmd: string, _args?: unknown) => undefined as unknown);
 const isWindowFocused = vi.fn(async () => true);
+const timing = () => ({ startAtUnixMs: Date.now() + 100, durationMs: 340 });
 const listeners = new Map<string, (payload: Record<string, unknown>) => void>();
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (cmd: string, args?: unknown) => invoke(cmd, args),
@@ -330,7 +331,7 @@ describe("네이티브 자식 뷰 구현", () => {
     await nativeHost.open("browser--v1", { url: "https://x" });
     invoke.mockClear();
 
-    const prepared = await prepareNativeContentViewMove([{ viewId: "v1", dx: 410 }]);
+    const prepared = await prepareNativeContentViewMove([{ viewId: "v1", dx: 410 }], timing());
     expect(prepared.mode).toBe("glide");
     expect(prepared.startAtUnixMs).toEqual(expect.any(Number));
     expect(invoke).toHaveBeenCalledWith("webview_transition_prepare", {
@@ -369,7 +370,7 @@ describe("네이티브 자식 뷰 구현", () => {
     await nativeHost.open("browser--v-background", { url: "https://x" });
     invoke.mockClear();
 
-    const prepared = await prepareNativeContentViewMove([{ viewId: "v-background", dx: 410 }]);
+    const prepared = await prepareNativeContentViewMove([{ viewId: "v-background", dx: 410 }], timing());
     expect(prepared.mode).toBe("snap");
     expect(invoke).not.toHaveBeenCalledWith("webview_bounds", expect.anything());
     expect(invoke).not.toHaveBeenCalledWith("webview_transition_prepare", expect.anything());
@@ -403,7 +404,10 @@ describe("네이티브 자식 뷰 구현", () => {
     }) as EventListener);
 
     const { prepareNativeContentViewMove } = await load();
-    const prepared = await prepareNativeContentViewMove([{ viewId: "v-external-background", dx: 410 }]);
+    const prepared = await prepareNativeContentViewMove(
+      [{ viewId: "v-external-background", dx: 410 }],
+      timing(),
+    );
     expect(prepared.mode).toBe("snap");
     expect(snap).not.toHaveBeenCalled();
     expect(prepare).not.toHaveBeenCalled();
@@ -435,7 +439,7 @@ describe("네이티브 자식 뷰 구현", () => {
     }) as EventListener);
 
     const { prepareNativeContentViewMove } = await load();
-    const prepared = await prepareNativeContentViewMove([{ viewId: "v-external", dx: 410 }]);
+    const prepared = await prepareNativeContentViewMove([{ viewId: "v-external", dx: 410 }], timing());
     expect(prepared.mode).toBe("glide");
     expect(prepared.startAtUnixMs).toEqual(expect.any(Number));
     expect(prepare).toHaveBeenCalledWith(
@@ -472,7 +476,7 @@ describe("네이티브 자식 뷰 구현", () => {
     }) as EventListener);
 
     const { prepareNativeContentViewMove } = await load();
-    const prepared = await prepareNativeContentViewMove([{ viewId: "v-external", dx: 410 }]);
+    const prepared = await prepareNativeContentViewMove([{ viewId: "v-external", dx: 410 }], timing());
     prepared.cancel();
     prepared.cancel();
     expect(cancel).toHaveBeenCalledTimes(1);
@@ -496,7 +500,7 @@ describe("네이티브 자식 뷰 구현", () => {
     await nativeHost.bounds("browser--v1", 800, 112, 212, 458);
     invoke.mockClear();
 
-    const prepared = await prepareNativeContentViewMove([{ viewId: "v1", dx: 410 }]);
+    const prepared = await prepareNativeContentViewMove([{ viewId: "v1", dx: 410 }], timing());
     x = 210;
     await prepared.commit();
     expect(invoke).toHaveBeenCalledWith("webview_transition_prepare", expect.objectContaining({
@@ -551,7 +555,7 @@ describe("네이티브 자식 뷰 구현", () => {
     } = await load();
     installNativeContentViewComposition();
     await nativeHost.open("browser--v1", { url: "https://x" });
-    const prepared = await prepareNativeContentViewMove([{ viewId: "v1", dx: 410 }]);
+    const prepared = await prepareNativeContentViewMove([{ viewId: "v1", dx: 410 }], timing());
     invoke.mockClear();
 
     // 커밋 전 중간 좌표는 잠금이 막는다.
@@ -591,7 +595,7 @@ describe("네이티브 자식 뷰 구현", () => {
 
     const { nativeHost, prepareNativeContentViewMove } = await load();
     await nativeHost.open("browser--v1", { url: "https://x" });
-    const prepared = await prepareNativeContentViewMove([{ viewId: "v1", dx: 410 }]);
+    const prepared = await prepareNativeContentViewMove([{ viewId: "v1", dx: 410 }], timing());
     x = 50;
     invoke.mockClear();
     await nativeHost.bounds("browser--v1", 50, 112, 212, 458);
