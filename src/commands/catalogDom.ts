@@ -369,7 +369,7 @@ export function registerDomCatalog(): void {
       },
     },
     returns:
-      "{ address, nodeIdentity, dataset, rect:{x,y,w,h}, inlineStyle:{height,flexBasis}, style, occlusion?:{ reachable, topTag, topNode }, screen?:{ x, y, cx, cy } } — nodeIdentity is the opaque live Element identity shared with ui.tree; dataset contains every declared data-* field on the exposed node",
+      "{ address, nodeIdentity, dataset, value?:string, rect:{x,y,w,h}, inlineStyle:{height,flexBasis}, style, occlusion?:{ reachable, topTag, topNode }, screen?:{ x, y, cx, cy } } — nodeIdentity is the opaque live Element identity shared with ui.tree; dataset contains every declared data-* field on the exposed node; value is the current public value of an exposed input, textarea, or select",
     message: (d) =>
       tmsg("msg.ui.measure", {
         w: Number((d.rect as { w?: number })?.w ?? 0),
@@ -423,6 +423,11 @@ export function registerDomCatalog(): void {
         address: addr,
         nodeIdentity: nodeIdentityOf(el),
         ...(pseudo ? { pseudo } : {}),
+        ...(el instanceof HTMLInputElement
+          || el instanceof HTMLTextAreaElement
+          || el instanceof HTMLSelectElement
+          ? { value: el.value }
+          : {}),
         // 모든 data-* 선언은 공개 상태다. 자동화/플러그인은 private DOM 속성명을
         // 다시 추측하지 않고 ui.tree → ui.measure 한 경로로 읽는다.
         dataset: Object.fromEntries(Object.entries(el.dataset)),

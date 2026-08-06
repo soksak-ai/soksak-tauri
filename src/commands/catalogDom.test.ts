@@ -187,6 +187,21 @@ describe("ui.tree/ui.measure — 공개 DOM 노드 인스턴스 식별자", () =
   });
 });
 
+describe("ui.measure — 공개 form control 값", () => {
+  it("주소로 노출된 input의 현재 value를 private DOM 조회 없이 반환한다", async () => {
+    mountNode(`<input data-node="btn" value="https://example.com/">`);
+
+    const measured = await execute("ui.measure", { address: ADDR }, {});
+
+    expect(measured.ok).toBe(true);
+    expect((measured.data as { value?: unknown }).value).toBe("https://example.com/");
+  });
+
+  it("발견 가능한 반환 계약에 value를 선언한다", () => {
+    expect(getSpec("ui.measure")?.returns).toContain("value");
+  });
+});
+
 describe("ui.trace.multi — 같은 tick의 공개 DOM 참가자 원장", () => {
   it("initial과 layout DOM-commit 사건에서만 raw 참가자를 동기 기록한다", async () => {
     try {
