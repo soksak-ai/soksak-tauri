@@ -5,8 +5,8 @@ import { judgeB06MachineEvidence } from "./browser-gate-b06.mjs";
 import { judgeBrowserMachineGateEvidence } from "./browser-gates.mjs";
 
 function evidence(engine = "browser") {
-  const pane = (viewId, active) => ({
-    viewId,
+  const pane = (paneId, active) => ({
+    paneId,
     active,
     level: active ? "clear" : "dimmed",
     styleDim: active ? 0 : 0.7,
@@ -18,17 +18,17 @@ function evidence(engine = "browser") {
     checkpoints: [
       {
         phase: "active-left",
-        activeViewId: "left",
+        activePaneId: "left",
         panes: [pane("left", true), pane("right", false)],
-        lightingPlane: { count: 1, baseAmount: 0.7, apertureViewId: "left", apertureCount: 1 },
+        lightingPlane: { count: 1, baseAmount: 0.7, aperturePaneId: "left", apertureCount: 1 },
         rail: exempt("rail"),
         sidebar: exempt("sidebar"),
       },
       {
         phase: "active-right",
-        activeViewId: "right",
+        activePaneId: "right",
         panes: [pane("left", false), pane("right", true)],
-        lightingPlane: { count: 1, baseAmount: 0.7, apertureViewId: "right", apertureCount: 1 },
+        lightingPlane: { count: 1, baseAmount: 0.7, aperturePaneId: "right", apertureCount: 1 },
         rail: exempt("rail"),
         sidebar: exempt("sidebar"),
       },
@@ -59,10 +59,10 @@ describe("B06 focus lighting judge", () => {
       (value) => { value.checkpoints[0].panes[1].styleDim = 0; },
       (value) => { value.checkpoints[0].panes[1].adapterAlpha = 0.3; },
       (value) => { value.checkpoints[0].lightingPlane.count = 2; },
-      (value) => { value.checkpoints[0].lightingPlane.apertureViewId = "right"; },
+      (value) => { value.checkpoints[0].lightingPlane.aperturePaneId = "right"; },
       (value) => { value.checkpoints[0].rail.styleDim = 0.4; },
       (value) => { value.checkpoints[1].sidebar.coveredByPlane = true; },
-      (value) => { value.checkpoints[1].activeViewId = "left"; value.checkpoints[1].panes[0] = value.checkpoints[0].panes[0]; },
+      (value) => { value.checkpoints[1].activePaneId = "left"; value.checkpoints[1].panes[0] = value.checkpoints[0].panes[0]; },
     ];
     for (const mutate of cases) {
       const value = evidence();

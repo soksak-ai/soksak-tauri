@@ -9,7 +9,7 @@ import {
 
 const EPSILON = 0.001;
 const PANE_KEYS = Object.freeze([
-  "viewId",
+  "paneId",
   "active",
   "level",
   "styleDim",
@@ -18,7 +18,7 @@ const PANE_KEYS = Object.freeze([
 const PLANE_KEYS = Object.freeze([
   "count",
   "baseAmount",
-  "apertureViewId",
+  "aperturePaneId",
   "apertureCount",
 ]);
 const EXEMPT_KEYS = Object.freeze(["node", "exempt", "styleDim", "coveredByPlane"]);
@@ -31,12 +31,12 @@ function near(actual, expected) {
   return Number.isFinite(actual) && Math.abs(actual - expected) <= EPSILON;
 }
 
-function inspectPane(pane, path, activeViewId, seen, failures) {
+function inspectPane(pane, path, activePaneId, seen, failures) {
   if (!requireExactKeys(pane, PANE_KEYS, path, failures)) return;
-  if (!hasText(pane.viewId) || seen.has(pane.viewId)) {
-    failures.push(`${path}.viewId=unique-non-empty/${displayValue(pane.viewId)}`);
+  if (!hasText(pane.paneId) || seen.has(pane.paneId)) {
+    failures.push(`${path}.paneId=unique-non-empty/${displayValue(pane.paneId)}`);
   } else {
-    seen.add(pane.viewId);
+    seen.add(pane.paneId);
   }
   if (typeof pane.active !== "boolean") {
     failures.push(`${path}.active=boolean/${displayValue(pane.active)}`);
@@ -51,13 +51,13 @@ function inspectPane(pane, path, activeViewId, seen, failures) {
     failures.push(`${path}.adapterAlpha=1-no-duplicate-lighting/${displayValue(pane.adapterAlpha)}`);
   }
   if (pane.active === true) {
-    if (pane.viewId !== activeViewId) {
-      failures.push(`${path}.viewId=activeViewId/${displayValue(pane.viewId)}/${displayValue(activeViewId)}`);
+    if (pane.paneId !== activePaneId) {
+      failures.push(`${path}.paneId=activePaneId/${displayValue(pane.paneId)}/${displayValue(activePaneId)}`);
     }
     if (pane.level !== "clear") failures.push(`${path}.level=clear/${displayValue(pane.level)}`);
     if (!near(pane.styleDim, 0)) failures.push(`${path}.styleDim=0/${displayValue(pane.styleDim)}`);
   } else if (pane.active === false) {
-    if (pane.viewId === activeViewId) failures.push(`${path}.active=true-for-activeViewId`);
+    if (pane.paneId === activePaneId) failures.push(`${path}.active=true-for-activePaneId`);
     if (pane.level === "clear") failures.push(`${path}.level=dimmed/${displayValue(pane.level)}`);
     if (!(pane.styleDim > EPSILON && pane.styleDim < 1)) {
       failures.push(`${path}.styleDim=0<dim<1/${displayValue(pane.styleDim)}`);
@@ -65,7 +65,7 @@ function inspectPane(pane, path, activeViewId, seen, failures) {
   }
 }
 
-function inspectLightingPlane(value, activeViewId, path, failures) {
+function inspectLightingPlane(value, activePaneId, path, failures) {
   if (!requireExactKeys(value, PLANE_KEYS, path, failures)) return null;
   if (value.count !== 1) failures.push(`${path}.count=1/${displayValue(value.count)}`);
   if (!(Number.isFinite(value.baseAmount) && value.baseAmount > 0 && value.baseAmount < 1)) {
@@ -74,9 +74,9 @@ function inspectLightingPlane(value, activeViewId, path, failures) {
   if (value.apertureCount !== 1) {
     failures.push(`${path}.apertureCount=1/${displayValue(value.apertureCount)}`);
   }
-  if (value.apertureViewId !== activeViewId) {
+  if (value.aperturePaneId !== activePaneId) {
     failures.push(
-      `${path}.apertureViewId=activeViewId/${displayValue(value.apertureViewId)}/${displayValue(activeViewId)}`,
+      `${path}.aperturePaneId=activePaneId/${displayValue(value.aperturePaneId)}/${displayValue(activePaneId)}`,
     );
   }
   return value.baseAmount;
@@ -110,7 +110,7 @@ export function judgeB06MachineEvidence(value) {
       const path = `checkpoints[${index}]`;
       if (!requireExactKeys(
         checkpoint,
-        ["phase", "activeViewId", "panes", "lightingPlane", "rail", "sidebar"],
+        ["phase", "activePaneId", "panes", "lightingPlane", "rail", "sidebar"],
         path,
         failures,
       )) return;
@@ -119,14 +119,14 @@ export function judgeB06MachineEvidence(value) {
       } else {
         phases.add(checkpoint.phase);
       }
-      if (!hasText(checkpoint.activeViewId)) {
-        failures.push(`${path}.activeViewId=non-empty/${displayValue(checkpoint.activeViewId)}`);
+      if (!hasText(checkpoint.activePaneId)) {
+        failures.push(`${path}.activePaneId=non-empty/${displayValue(checkpoint.activePaneId)}`);
       } else {
-        activated.add(checkpoint.activeViewId);
+        activated.add(checkpoint.activePaneId);
       }
       const baseAmount = inspectLightingPlane(
         checkpoint.lightingPlane,
-        checkpoint.activeViewId,
+        checkpoint.activePaneId,
         `${path}.lightingPlane`,
         failures,
       );
@@ -135,7 +135,7 @@ export function judgeB06MachineEvidence(value) {
       } else {
         const seen = new Set();
         checkpoint.panes.forEach((pane, paneIndex) => (
-          inspectPane(pane, `${path}.panes[${paneIndex}]`, checkpoint.activeViewId, seen, failures)
+          inspectPane(pane, `${path}.panes[${paneIndex}]`, checkpoint.activePaneId, seen, failures)
         ));
         const activeCount = checkpoint.panes.filter((pane) => pane?.active === true).length;
         if (activeCount !== 1) failures.push(`${path}.panes.active-count=1/${activeCount}`);
@@ -161,9 +161,9 @@ export function judgeB06MachineEvidence(value) {
     if (ownerSet && activated.size !== ownerSet.length) {
       failures.push(`activated-owners=all/${ownerSet.join(",")}/${[...activated].sort().join(",")}`);
     }
-    for (const activeViewId of activated) {
-      if (ownerSet && !ownerSet.includes(activeViewId)) {
-        failures.push(`activeViewId=known-owner/${displayValue(activeViewId)}`);
+    for (const activePaneId of activated) {
+      if (ownerSet && !ownerSet.includes(activePaneId)) {
+        failures.push(`activePaneId=known-owner/${displayValue(activePaneId)}`);
       }
     }
   }
