@@ -1221,6 +1221,10 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
             presentationReceipt,
             { targetViewId, owner },
           );
+          await Promise.all([
+            writeMachineReport(path.join(dir, "dom-presentation-raw.json"), domTraceReceipt),
+            writeMachineReport(path.join(dir, "native-presentation-raw.json"), presentationReceipt),
+          ]);
           const flowPresentationTrace = mapB04PresentationSamples({
             events: presentationEvents,
             domSamples: domTraceReceipt.samples,

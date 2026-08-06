@@ -333,7 +333,10 @@ export function mapB04PresentationSamples({
     const gapMs = Math.abs(domAt - presentationAt);
     if (!beforePresentationStart && gapMs > maxJoinGapMs) {
       throw new Error(
-        `${targetViewId}: DOM/native presentation join gap=${gapMs.toFixed(3)}/${maxJoinGapMs.toFixed(3)}ms`,
+        `${targetViewId}: DOM/native presentation join gap=${gapMs.toFixed(3)}/${maxJoinGapMs.toFixed(3)}ms`
+          + ` event=${presentationAt.toFixed(3)} dom=${domAt.toFixed(3)}`
+          + ` trigger=${domSample.trigger} start=${presentationStartAt.toFixed(3)}`
+          + ` cadence=${cadenceMs.toFixed(3)}/${domCadenceMs.toFixed(3)}`,
       );
     }
     const domSequence = domSample?.sequence;

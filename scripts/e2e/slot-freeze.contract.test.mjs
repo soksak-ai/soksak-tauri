@@ -420,6 +420,8 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(source).toContain(
       "presentationStartAtUnixMs: layoutVerdict.transaction.startAtUnixMs",
     );
+    expect(source).toContain('"dom-presentation-raw.json"');
+    expect(source).toContain('"native-presentation-raw.json"');
     expect(source).not.toMatch(/expectedMode:\s*frameworkName\s*===\s*["']tauri["']/);
     expect(source).toContain('expectedMode: "glide"');
     expect(transition.text).toMatch(/journal\s*:\s*\{[\s\S]*afterSequence[\s\S]*entries\s*:\s*b04JournalEntries/);
