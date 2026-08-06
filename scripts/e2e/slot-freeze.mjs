@@ -54,6 +54,7 @@ import {
   browserTabNodeAddress,
 } from "./lib/browser-ui-addresses.mjs";
 import { mapBrowserSurfaceRects } from "./lib/browser-surface-rects.mjs";
+import { windowedSurfaceCompositionVerdict } from "./lib/windowed-surface-composition.mjs";
 import { mapB03LiveEvidence } from "./lib/browser-gate-b03-evidence.mjs";
 import { mapB05LiveEvidence } from "./lib/browser-gate-b05-evidence.mjs";
 import { mapB06LiveEvidence } from "./lib/browser-gate-b06-evidence.mjs";
@@ -290,29 +291,20 @@ function assertTauriSurfaceResizePolicy(data, stage) {
   }
 }
 
-async function assertWindowedComposition(rpc, win, plugin, tabIds, addresses) {
+async function assertWindowedComposition(rpc, win, plugin, tabIds, labels, scaleFactor) {
   const stats = must(await rpc(`plugin.${plugin}.stats`, {}, win), "windowed stats");
-  const surfaces = new Map((stats.surfaces ?? []).map((surface) => [surface.id, surface]));
-  const errors = [];
-  const mappedIds = Object.values(stats.idMap ?? {}).filter(Number.isFinite).sort((a, b) => a - b);
-  const liveLedger = (stats.ledger ?? []).filter((id) => surfaces.has(id)).sort((a, b) => a - b);
-  if (JSON.stringify(liveLedger) !== JSON.stringify(mappedIds)) {
-    errors.push(`surface ownership mapped=${JSON.stringify(mappedIds)} liveLedger=${JSON.stringify(liveLedger)}`);
-  }
-  for (let index = 0; index < tabIds.length; index += 1) {
-    const id = stats.idMap?.[`chromium-${tabIds[index]}`];
-    const surface = surfaces.get(id);
-    const measured = must(await rpc("ui.measure", { address: addresses[index] }, win), `measure ${tabIds[index]}`);
-    const expected = measured.rect;
-    const actual = surface?.bounds;
-    if (!actual) { errors.push(`${tabIds[index]}:surface/bounds missing`); continue; }
-    for (const key of ["x", "y", "w", "h"]) {
-      if (Math.abs(Number(actual[key]) - Math.round(Number(expected[key]))) > 1) {
-        errors.push(`${tabIds[index]}:${key}=${actual[key]}/${expected[key]}`);
-      }
-    }
-  }
-  if (errors.length) throw new Error(`windowed composition 불일치 — ${errors.join(", ")}`);
+  const paneComposition = must(
+    await rpc("webview.pane.composition", {}, win),
+    "windowed pane composition",
+  );
+  const verdict = windowedSurfaceCompositionVerdict({
+    stats,
+    paneComposition,
+    viewIds: tabIds,
+    labels,
+    scaleFactor,
+  });
+  if (!verdict.ok) throw new Error(`windowed composition 불일치 — ${verdict.errors.join(", ")}`);
 }
 
 async function assertEngineSurfaceLedger(rpc, win, implementation, tabIds, stage) {
@@ -1315,7 +1307,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
             assertNativeLighting(must(await rpc("webview.surfaces", {}, win), `surfaces ${name}`), labels[side], labels);
           }
           if (windowed) {
-            await assertWindowedComposition(rpc, win, plugin, tabIds, addresses);
+            await assertWindowedComposition(rpc, win, plugin, tabIds, labels, scale);
           }
           await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, `cross-click-${name}`);
           if (cycle === 0) {
