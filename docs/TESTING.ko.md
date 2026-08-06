@@ -26,31 +26,41 @@
 - **결정적 단언과 LLM 의존 단계를 분리.** 결정적 검사는 정확한 결과를 단언하고, LLM 호출 단계
   (에이전트 턴)는 관용 재시도하며 특정 모델 출력에 게이트하지 않는다.
 - **실제 신호를 측정.** 런타임 사실을 직접 읽는다(터미널 출력=`term.read`, 실 winsize=`stty size`,
-  렌더=픽셀 밝기) — 정적/추론값이 아니라.
-- **브라우저 구현은 한 acceptance matrix를 공유.** `slot-freeze.mjs`는 시스템 웹뷰·windowed
-  Chromium·offscreen Chromium에 같은 로컬 문서를 제공한다. 각 구현은 주소표시줄과 페이지 신원을
-  노출하고, `beforeinput`·`input`을 동반한 한글을 커밋하며, 양 탭을 6회 교차 이동하는 동안 전이당
-  무포커스 48프레임 모두에서 두 live page marker를 유지해야 한다. 이어서 `window.resizeSequence`가
-  큰 폭의 축소·확대를 짧은 간격으로 반복하면서 64프레임을 기록한다. 모든 프레임에서 두 marker가
-  살아 있고, resize 거래가 정해진 시간 안에 끝나며, 마지막 DOM 슬롯·페이지 viewport·고정 marker
-  크기가 rounding-only로 일치해야 한다. 구현별 status는 실패를 설명할 수 있지만 제품 기준을 낮출
-  수 없다. 생성·첫 페인트·매 교차 클릭·창 resize 정착·패널 resize 양 끝·최종 캡처마다 엔진 기반
-  구현은 `viewId -> surfaceId -> 실제 live engine surface`, 정확한 `plugin@window` 소유권,
-  visibility, ledger 동일성, viewport 정착도 함께 증명한다. 별도 무포커스 fixture 창이 공개된
-  owner-scope `gc`를 실행해도 첫 창의 surface id·DOM 신원·한글 입력 상태·픽셀이 그대로여야 한다.
-  이것이 교차 창 surface 오회수의 회귀 게이트다.
-  PIN 모드에서는 같은 행렬이 좌측 인접·우측 인접·분리 포커스 변경을 DOM rect 불변으로 녹화한
-  뒤 양쪽 판을 각각 최대화한다. 최대화는 저장 station을 쓰지 않고 판/레일 방향을 보존해야 하며,
-  복원은 최대화 전 분할을 정확히 재현해야 한다.
-  SCROLL 모드는 각 탭에 실제 엔진 wheel 입력을 보내고 폴링 없이 페이지 `scroll` 사건을 기다린다.
-  모든 구현은 정확히 `0→480→0`을 보고해야 한다. 이어서 명시한 `viewId`의 viewport PNG와 문서
-  전체 PNG를 저장한다. 문서 전체 primitive가 없는 Electron guest는 유한한 viewport 집합을 실제
-  scroll 사건과 두 presentation frame으로 확정해 합성한다. 합성 중 기본 오버레이 scrollbar는
-  문서의 두 루트에서만 일시 비표시하고, 원래 inline overflow 값·우선순위와 정확한 scroll 위치를
-  모두 복원한 뒤에만 성공한다. 라이브 RED는 전체 PNG 우측의 scrollbar 색 픽셀을 0으로 고정한다.
-  폴링이나 고정 지연은 허용하지 않는다. 모든 경로에서 문서 기하와 CSS/PNG 배율이 일치하고 상단 신원 marker가
-  정확히 한 번, 하단 tail marker가 정확히 한 번 존재해야 한다. 다른 탭의 활성 상태나 캡처 전
-  scroll 위치에 기대는 구현은 실패다.
+  렌더=공개 presentation 상태·사건 trace) — 정적/추론값이나 이미지 픽셀 자동 판정이 아니라.
+
+## 브라우저 acceptance 정본: B01–B12
+
+`browser`, `browser-chromium`, `browser-chromium-offscreen`은 아래 12개 기준을 같은 fixture와
+같은 단언으로 통과한다. 프레임워크별 상태는 실패 원인을 설명할 수 있을 뿐 기준을 면제하거나
+완화하지 않는다. 코드 정본은 `scripts/e2e/lib/browser-gates.mjs`이며, 보고서는 항상 3개 엔진 ×
+12개 게이트의 36칸을 전부 포함한다.
+
+| ID | 고정 기준 | 기계 판정 근거 |
+|---|---|---|
+| B01 | 3종 최초 mount + 주소표시줄 + 페이지 신원 | 공개 DOM/status의 mount, address, page identity가 모두 요청값과 일치한다. |
+| B02 | 한글 IME `beforeinput`/`input` 및 전환·resize 값 유지 | 두 입력 사건과 최종 value를 읽고 모든 전환·resize checkpoint에서 같은 값을 단언한다. |
+| B03 | DOM slot ↔ live surface 1:1 rounding-only frame/shared topology | 공개 DOM rect·native/engine rect·identity ledger의 개수, 소유권, 좌표 차이를 단언한다. |
+| B04 | FLOW rail·pane·native 단일 원자 이동 | 한 transaction/animation epoch의 유한 trace에서 세 대상의 연결·좌표·정착 상태를 단언한다. |
+| B05 | flicker/black/잔상/착지 후 소실 0 | 공개 presentation trace에서 live·visible·painted 연속성과 replacement/gap/disappearance 0을 단언한다. |
+| B06 | active만 밝음/inactive 감광/rail·sidebar 비감광 | 공개 presentation/style 상태에서 active, inactive, rail, sidebar 각각의 alpha 계약을 단언한다. |
+| B07 | PIN 좌·우 인접·분리 border/레이아웃 불변 | 세 focus 상태의 border 관계와 rail/pane DOM identity·rect·split tree 불변을 단언한다. |
+| B08 | PIN 양방향 maximize/restore/station 불변 | 좌·우 각각 maximize/restore 전후 방향·split·station의 완전 동일성을 단언한다. |
+| B09 | rail `+`/우측 sidebar/modal이 native 위 | 실제 교집합의 공개 hit/layer 상태가 chrome을 최상단 소유자로 보고하는지 단언한다. |
+| B10 | hostile 전체창 빠른 resize affine + 원복 | 유한 resize transaction마다 DOM/native 좌표 정합과 최종 원래 기하 복원을 단언한다. |
+| B11 | pane resize 왕복 + wheel `0→480→0` + 탭 지정 full capture | 명시한 view의 resize 정착, 실제 scroll 사건, capture 범위·문서 기하·scroll 복원을 단언한다. |
+| B12 | traffic lights 3:3 hole/backing/center/hostile resize | 공개 AppKit button rect와 DOM hole/backing rect의 3:3 대응·포함·상하 중심·resize 정합을 단언한다. |
+
+각 engine×gate의 machine 상태는 `not-run`, `blocked`, `red`, `green` 중 하나다. `green`과 `red`는
+기계가 재현한 근거가 필수이고, `blocked`는 누락된 공개 측정면 같은 구체적 이유가 필수다. `blocked`나
+`not-run`을 성공으로 세지 않는다. machine 전체는 36칸이 모두 `green`일 때만 `green`이며, 그 외에는
+`red` → `blocked` → `not-run` 우선순위로 미완료 원인을 보존한다.
+
+스크린샷과 녹화는 개발 중 반드시 직접 보고 결함을 발견하는 자료지만 자동 machine gate의 입력이나
+성공 근거가 아니다. 관측한 결함은 공개 좌표·상태·사건 trace로 수치화해 같은 gate의 RED로 만든다.
+이미지·녹화의 사람 검토는 별도 `visualReview`에 `pending`, `passed`, `failed`로 기록하며 machine
+상태를 바꾸지 않는다. 반대로 machine `green`도 `visualReview`를 자동 `passed`로 만들지 않는다.
+`createBrowserGateReport`, `setMachineGateStatus`, `setVisualReviewStatus`,
+`serializeBrowserGateReport`는 이 두 판정을 섞지 않고 고정 순서로 전체 결과를 직렬화한다.
 
 ## 하니스 규칙 (실측으로 얻은)
 

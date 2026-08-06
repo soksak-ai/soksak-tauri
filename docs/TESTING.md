@@ -30,36 +30,45 @@ Two standard targets across every repo — core, plugins, sidecars. A repo expos
   exact outcomes; steps that call an LLM (agent turns) retry with tolerance, never gate on a
   specific model output.
 - **Measure the real signal.** Read the actual runtime fact (`term.read` for terminal output,
-  `stty size` for the live winsize, pixel brightness for render) — not a static or inferred
-  value.
-- **Browser implementations share one acceptance matrix.** `slot-freeze.mjs` serves one local
-  document to the system webview, windowed Chromium, and offscreen Chromium. Each must expose its
-  address bar and page identity, commit Korean text with `beforeinput` and `input`, survive six
-  alternating tab moves, and retain both live page markers in every one of 48 no-focus frames per
-  move. It then uses `window.resizeSequence` to alternate large shrink/grow steps at a short cadence
-  while recording 64 frames. Both markers must survive every frame, the finite resize transaction
-  must complete within its deadline, and the final DOM slot, page viewport, and fixed marker size
-  must match with rounding-only tolerance. An implementation-specific status may explain a failure;
-  it cannot lower the product rule. At creation, first paint, every cross-click, window-resize
-  settlement, both pane-resize endpoints, and final capture, engine-backed implementations must
-  also prove `viewId -> surfaceId -> live engine surface`, exact `plugin@window` ownership,
-  visibility, ledger equality, and settled viewport state. A second no-focus fixture window runs
-  the public owner-scoped `gc`; the first window must keep the same live surface id, DOM identity,
-  Korean input state, and pixels. This is the regression gate for cross-window surface reaping.
-  In PIN mode the same matrix also records left-adjacent, right-adjacent, and detached focus
-  changes with invariant DOM rects, then maximizes one pane on each side. Maximize must preserve
-  the pane/rail direction without writing the stored station, and restore must reproduce the exact
-  pre-maximize split.
-  SCROLL mode sends real engine wheel input to each tab and waits for the page's `scroll` event,
-  without polling. Every implementation must report exactly `0→480→0`. It then writes a viewport
-  PNG and a full-document PNG for the explicit `viewId`. An Electron guest, which has no
-  full-document surface primitive, composes a finite viewport set whose positions are confirmed by
-  real scroll events and two presentation frames. During that transaction only, the two document roots
-  hide their default overlay scrollbars; success requires restoring their exact inline overflow values,
-  priorities, and original scroll position. The live RED fixes scrollbar-colored pixels at the PNG edge to zero.
-  Polling and fixed delays are forbidden. Every path must preserve document geometry and CSS/PNG scale,
-  with exactly one top identity marker and one bottom tail marker. Depending on the active tab or
-  the pre-capture scroll position is a failure.
+  `stty size` for the live winsize, public presentation state and event traces for render) —
+  not a static/inferred value or an automated verdict from image pixels.
+
+## Canonical browser acceptance: B01–B12
+
+`browser`, `browser-chromium`, and `browser-chromium-offscreen` pass the same twelve rules with
+the same fixture and assertions. Framework-specific state may explain a failure; it never waives
+or weakens a rule. The code source of truth is `scripts/e2e/lib/browser-gates.mjs`, and every report
+contains the full 3-engine × 12-gate matrix of 36 cells.
+
+| ID | Fixed rule | Machine evidence |
+|---|---|---|
+| B01 | Initial mount + address bar + page identity in all three engines | Public DOM/status mount, address, and page identity all equal the requested values. |
+| B02 | Korean IME `beforeinput`/`input`, with value retention across transitions and resize | Read both input events and the final value, then assert the same value at every transition and resize checkpoint. |
+| B03 | DOM slot ↔ live surface 1:1, rounding-only frame, shared topology | Assert count, ownership, and coordinate deltas from public DOM rects, native/engine rects, and the identity ledger. |
+| B04 | One atomic FLOW move for rail, pane, and native surface | A finite trace for one transaction/animation epoch asserts connectivity, coordinates, and settlement for all three. |
+| B05 | Zero flicker, black frames, ghosts, or post-landing disappearance | The public presentation trace asserts continuous live/visible/painted state and zero replacements, gaps, or disappearances. |
+| B06 | Only active is bright; inactive is dim; rail/sidebar are not dimmed | Public presentation/style state asserts the alpha contract for active, inactive, rail, and sidebar. |
+| B07 | PIN left-adjacent, right-adjacent, and detached border/layout invariance | Assert border relations and invariant rail/pane DOM identity, rects, and split tree across all three focus states. |
+| B08 | PIN maximize/restore in both directions with invariant station | For left and right, assert exact direction, split, and station equality before maximize and after restore. |
+| B09 | Rail `+`, right sidebar, and modal above native surfaces | Public hit/layer state at a real overlap reports chrome as the topmost owner. |
+| B10 | Hostile rapid whole-window resize is affine and restores | Every finite resize transaction asserts DOM/native coordinate agreement and restoration of the original final geometry. |
+| B11 | Pane resize round trip + wheel `0→480→0` + tab-targeted full capture | Assert settlement for the explicit view, real scroll events, capture extent/document geometry, and restored scroll state. |
+| B12 | Traffic lights 3:3 hole/backing/center agreement under hostile resize | Public AppKit button rects and DOM hole/backing rects assert 3:3 mapping, containment, vertical centers, and resize agreement. |
+
+Each engine×gate machine state is one of `not-run`, `blocked`, `red`, or `green`. `green` and
+`red` require machine-reproduced evidence; `blocked` requires a concrete reason such as a missing
+public measurement surface. Neither `blocked` nor `not-run` counts as success. The machine summary
+is `green` only when all 36 cells are `green`; otherwise it preserves the outstanding state with
+`red` → `blocked` → `not-run` precedence.
+
+Screenshots and recordings must be inspected during development to discover defects, but they are
+never an input to, or success evidence for, an automated machine gate. Convert every visual finding
+into numeric public coordinates, state, or event traces and reproduce it as RED in the same gate.
+Human review of images and recordings is recorded separately as `visualReview` with `pending`,
+`passed`, or `failed`; it never changes machine state. Conversely, machine `green` never changes
+`visualReview` to `passed`. `createBrowserGateReport`, `setMachineGateStatus`,
+`setVisualReviewStatus`, and `serializeBrowserGateReport` serialize the complete result in fixed
+order without mixing the two verdicts.
 
 ## Harness rules (learned the hard way)
 
