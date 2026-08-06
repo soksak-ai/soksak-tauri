@@ -35,6 +35,8 @@ export interface SurfaceAnchorFact {
 export interface NativeSurfaceFact {
   ptr: number;
   label: string | null;
+  /** PaneSurfaceHost owner. null means the direct DOM-slot compositor owns this surface. */
+  pane: string | null;
   hidden: boolean;
   effectivelyHidden: boolean;
   autoresizingMask: number | null;
@@ -210,6 +212,7 @@ interface EngineStats {
   surfaces?: {
     ptr: number;
     label?: string | null;
+    pane?: string | null;
     hidden: boolean;
     effectivelyHidden: boolean;
     autoresizingMask?: number;
@@ -228,6 +231,7 @@ export function normalizeNativeSurfaces(
   return (stats.surfaces ?? []).map((surface) => ({
     ptr: surface.ptr,
     label: surface.label ?? null,
+    pane: surface.pane ?? null,
     hidden: surface.hidden,
     effectivelyHidden: surface.effectivelyHidden,
     autoresizingMask: Number.isFinite(surface.autoresizingMask)
@@ -250,12 +254,20 @@ export function normalizeNativeSurfaces(
   }));
 }
 
+/** A native surface has exactly one geometry auditor. Pane-owned surfaces are audited as
+ * PaneSurfaceHost members; only unowned surfaces participate in direct DOM-hole matching. */
+export function directNativeSurfaces(
+  surfaces: readonly NativeSurfaceFact[],
+): NativeSurfaceFact[] {
+  return surfaces.filter((surface) => surface.pane === null);
+}
+
 /** Tauri 합성의 공개 상태 — DOM 앵커와 실제 NSView frame을 같은 답에서 일대일 대조한다. */
 export async function surfaceCompositionSnapshot(): Promise<SurfaceCompositionSnapshot> {
   const stats = await invoke<EngineStats>("engine_surface_stats");
   const anchors = visibleAnchorFacts();
   const surfaces = normalizeNativeSurfaces(stats, window.innerHeight);
-  const visible = surfaces.filter((surface) => !surface.effectivelyHidden);
+  const visible = directNativeSurfaces(surfaces).filter((surface) => !surface.effectivelyHidden);
   const verdict = judgeSurfaces(
     visible.map((surface) => surface.domFrame),
     anchors.map((anchor) => anchor.rect),

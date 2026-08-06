@@ -683,9 +683,11 @@ pub async fn engine_surface_stats(app: AppHandle, window: tauri::Window) -> serd
                 let _ = ns_win; // 소속은 live 순회(이 창 트리)가 이미 보장한다
                 let f = v.frame();
                 let surface_label = layer::surface_label(ptr);
+                let surface_pane = layer::surface_pane(surface_label.as_deref());
                 surfaces.push(serde_json::json!({
                     "ptr": ptr,
                     "label": surface_label,
+                    "pane": surface_pane,
                     "hidden": v.isHidden(),
                     "effectivelyHidden": unsafe { v.isHiddenOrHasHiddenAncestor() },
                     "autoresizingMask": v.autoresizingMask().0,
@@ -1725,6 +1727,14 @@ pub fn webview_pane_hosts() -> serde_json::Value {
     { layer::pane_surface_host_state() }
     #[cfg(not(target_os = "macos"))]
     { serde_json::json!([]) }
+}
+
+#[tauri::command]
+pub fn webview_pane_lighting(pane: String, alpha: f64) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    { layer::set_pane_surface_host_lighting(&pane, alpha) }
+    #[cfg(not(target_os = "macos"))]
+    { let _ = (pane, alpha); Ok(()) }
 }
 
 // hide 를 거친 child 라벨 — show 시 재부착(뷰어빌리티 기상)이 필요한 대상. webview_close 가 지운다.

@@ -1,6 +1,11 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from "vitest";
-import { classifyRendererTopology, visibleAnchorFacts } from "./surfaceAudit";
+import {
+  classifyRendererTopology,
+  directNativeSurfaces,
+  normalizeNativeSurfaces,
+  visibleAnchorFacts,
+} from "./surfaceAudit";
 
 describe("Tauri 표면 감사의 DOM 정본", () => {
   beforeEach(() => {
@@ -62,5 +67,26 @@ describe("Tauri 표면 감사의 DOM 정본", () => {
       panelAtomicMotion: true,
       sharedPaneHost: "PaneSurfaceHost",
     });
+  });
+
+  it("PaneSurfaceHost 소유 표면을 직접 DOM 홀 감사에서 다시 판정하지 않는다", () => {
+    const surfaces = normalizeNativeSurfaces({
+      surfaces: [
+        {
+          ptr: 1, label: "direct", pane: null, hidden: false, effectivelyHidden: false,
+          frame: { x: 10, y: 20, w: 100, h: 80 },
+        },
+        {
+          ptr: 2, label: "browser", pane: "pane-a", hidden: false, effectivelyHidden: false,
+          frame: { x: 0, y: 0, w: 300, h: 200 },
+        },
+      ],
+    }, 500);
+
+    expect(surfaces.map((surface) => [surface.label, surface.pane])).toEqual([
+      ["direct", null],
+      ["browser", "pane-a"],
+    ]);
+    expect(directNativeSurfaces(surfaces).map((surface) => surface.label)).toEqual(["direct"]);
   });
 });

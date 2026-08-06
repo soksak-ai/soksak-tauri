@@ -1,10 +1,14 @@
 import { emitTo, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { motionModeForClocks } from "../../../packages/dom-webview-compositor/src/index";
 import { moduleState } from "../../lib/moduleState";
+import { railTravelDeclaredMs } from "../../lib/railMotion";
 import { currentWindowLabel } from "../../lib/webviewLabels";
 import type { LayoutMove, PreparedLayoutTransition } from "../../lib/layoutTransitionHost";
 import { surfaceRectOf } from "../../lib/surfaceRect";
 import { surfaceLayoutContractOf } from "./surfaceLayoutContract";
+import { classifyRendererTopology, type RendererTopologyFact } from "./surfaceAudit";
 import {
   registerPluginViewPresentationHost,
   type PresentedPluginView,
@@ -38,6 +42,8 @@ interface PresentedState {
   subscriptions: Map<string, DisposableLike>;
   unlisten: UnlistenFn[];
   observer: ResizeObserver;
+  lightingObserver: MutationObserver;
+  lightingAlpha: number;
   grouped: boolean;
   disposed: boolean;
   visible: boolean;
@@ -70,6 +76,8 @@ type NativePaneFact = {
   window: string;
   cssFrame: PaneRect;
   memberFrames?: { label: string; cssFrame: PaneRect | null }[];
+  rendererTopology?: RendererTopologyFact | null;
+  alpha?: number;
   [key: string]: unknown;
 };
 
@@ -129,6 +137,10 @@ export function comparePanePresentation(
       nativeCount: candidates.length,
       delta,
       memberMatches,
+      rendererTopology: nativeFact?.rendererTopology
+        ? classifyRendererTopology(nativeFact.rendererTopology)
+        : null,
+      alpha: nativeFact?.alpha ?? null,
       ok,
     };
   });
@@ -255,6 +267,19 @@ async function syncMemberFrame(view: PresentedState, frame: PluginViewSlotFrame)
   });
 }
 
+function paneDimOwner(view: PresentedState): HTMLElement | null {
+  return view.container.closest<HTMLElement>("[data-dim]");
+}
+
+async function syncPaneLighting(view: PresentedState): Promise<void> {
+  const owner = paneDimOwner(view);
+  const dim = owner ? Number.parseFloat(getComputedStyle(owner).getPropertyValue("--dim")) : 0;
+  const alpha = 1 - Math.max(0, Math.min(1, Number.isFinite(dim) ? dim : 0));
+  if (alpha === view.lightingAlpha) return;
+  view.lightingAlpha = alpha;
+  if (view.grouped) await invoke("webview_pane_lighting", { pane: view.pane, alpha });
+}
+
 async function openAndGroup(
   view: PresentedState,
   label: string,
@@ -286,6 +311,8 @@ async function openAndGroup(
     view.grouped = true;
     state.readiness.set(view.pane, true);
     await syncPaneFrame(view);
+    view.lightingAlpha = -1;
+    await syncPaneLighting(view);
   }
   await syncMemberFrame(view, slot);
   await invoke("webview_visible", { label, visible: view.visible, focus: false });
@@ -345,7 +372,7 @@ async function createPresentedView(
     pane, renderer, viewId: input.context.viewId, container: input.container,
     context: input.context, app, members: new Set(), slots: new PluginViewSlotRegistry(),
     projections: new Map(),
-    subscriptions: new Map(), unlisten: [], observer: null!, grouped: false,
+    subscriptions: new Map(), unlisten: [], observer: null!, lightingObserver: null!, lightingAlpha: -1, grouped: false,
     disposed: false, visible: input.context.isVisible(), markReady,
   };
   input.container.setAttribute(TAURI_PANE_RENDERER_ATTR, renderer);
@@ -409,6 +436,13 @@ async function createPresentedView(
     void syncPaneFrame(view).catch((error) => console.error("pane host bounds 실패", error));
   });
   view.observer.observe(input.container);
+  view.lightingObserver = new MutationObserver(() => {
+    void syncPaneLighting(view).catch((error) => console.error("pane lighting 실패", error));
+  });
+  const dimOwner = paneDimOwner(view);
+  if (dimOwner) view.lightingObserver.observe(dimOwner, {
+    attributes: true, attributeFilter: ["style", "data-dim"],
+  });
   const rect = rectOf(input.container);
   const url = new URL("/plugin-view.html", window.location.href);
   url.searchParams.set("parent", windowLabel);
@@ -424,6 +458,7 @@ function disposeView(view: PresentedState): void {
   if (view.disposed) return;
   view.disposed = true;
   view.observer.disconnect();
+  view.lightingObserver.disconnect();
   view.slots.dispose();
   for (const subscription of view.subscriptions.values()) subscription.dispose();
   view.subscriptions.clear();
@@ -463,10 +498,12 @@ export async function pluginViewCompositionStatus() {
     }));
   const native = await invoke<NativePaneFact[]>("webview_pane_hosts");
   const result = comparePanePresentation(dom, native, windowLabel);
+  const { ok, ...facts } = result;
   return {
-    ...result,
+    ...facts,
+    matched: ok,
     sampledAtUnixMs,
-    verdict: result.ok ? "green" as const : "red" as const,
+    verdict: ok ? "green" as const : "red" as const,
   };
 }
 
@@ -560,6 +597,9 @@ export function installPluginViewPresentation(): void {
   registerPluginViewPresentationHost(host);
 }
 
+export const presentedTransitionMode = (windowFocused: boolean): "glide" | "snap" =>
+  motionModeForClocks(windowFocused);
+
 export async function preparePresentedPluginViewMove(
   moves: readonly LayoutMove[],
 ): Promise<PreparedLayoutTransition> {
@@ -572,10 +612,31 @@ export async function preparePresentedPluginViewMove(
     return [{ view, target: { ...before, x: before.x - Math.round(move.dx) } }];
   });
   if (!targets.length) return { mode: "glide", commit: async () => {}, cancel: () => {} };
-  const startAtUnixMs = Date.now() + 32;
-  const durationMs = 180;
+  // WebKit은 비전면 window의 document timeline을 멈출 수 있지만 AppKit의 media clock은
+  // 계속 흐른다. 두 시계를 같은 epoch로 묶으면 native pane만 먼저 이동한다. 비전면에서는
+  // prepare가 화면을 바꾸지 않고, 목표 React DOM이 커밋된 뒤 공통 host 하나를 snap한다.
+  if (presentedTransitionMode(await getCurrentWindow().isFocused()) === "snap") {
+    let closed = false;
+    return {
+      mode: "snap",
+      commit: async () => {
+        if (closed) return;
+        closed = true;
+        await Promise.all(targets.map(({ view, target }) => invoke("webview_pane_bounds", {
+          pane: view.pane,
+          ...target,
+          layout: paneLayoutContractOf(view.container, target),
+        })));
+      },
+      cancel: () => { closed = true; },
+    };
+  }
+  // PaneSurfaceHost는 renderer/member의 공통 presentation owner다. 메인 projection의 FLIP과
+  // 같은 절대 epoch·duration을 사용하고, host의 자식 frame은 전환 중 한 번도 쓰지 않는다.
+  const startAtUnixMs = Date.now() + 100;
+  const durationMs = railTravelDeclaredMs();
   await Promise.all(targets.map(({ view, target }) => invoke("webview_pane_transition_prepare", {
     pane: view.pane, ...target, startAtUnixMs, durationMs,
   })));
-  return { mode: "glide", commit: async () => {}, cancel: () => {} };
+  return { mode: "glide", startAtUnixMs, commit: async () => {}, cancel: () => {} };
 }

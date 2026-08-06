@@ -736,10 +736,12 @@ This distinguishes a chrome epoch tear from a browser-only blank/stretch without
 scale. Settled frames still have to pass the original absolute pixel size and DOM-slot-to-viewport
 alignment checks.
 
-Rail relocation must not move plugin DOM into a second renderer. Both frameworks use the same main-DOM
-plugin UI; only the Tauri adapter prepares the native target frame before the DOM commit and compares
-it with the public slot after commit. Electron retains ordinary DOM-child placement and installs no
-native transaction.
+Rail relocation uses the optional public plugin-view presentation host. Electron keeps direct
+main-DOM plugin UI and ordinary DOM-child placement. Tauri registers the host, mounts the same plugin
+provider source once in a pane renderer, and groups that renderer with its native members under one
+`PaneSurfaceHost`. The main document projects the renderer's declared node addresses and frames for
+discovery; it does not render a duplicate plugin instance. One parent frame transaction therefore
+moves the visible plugin chrome and document surface together.
 
 `webview.composition` exposes not only DOM anchors and actual native frames, but also each label's slot
 rect, last applied rect, visibility and pending-sync state. The browser product plugin does not

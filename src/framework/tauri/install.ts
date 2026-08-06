@@ -22,7 +22,15 @@ import {
 import { adoptFrameworkStyles } from "../styles";
 import { registerContentViewHost } from "../../lib/contentViews";
 import { registerLayoutTransitionHost } from "../../lib/layoutTransitionHost";
+import {
+  awaitPluginViewPresentation,
+  installPluginViewPresentation,
+  pluginViewCompositionStatus,
+  pluginViewPresentationStatus,
+  preparePresentedPluginViewMove,
+} from "./pluginViewPresentation";
 import { registerWindowResizeProbe } from "../../lib/windowResizeProbe";
+import { combineTauriCompositionProbe } from "./compositionProbe";
 import { installRailHoleClip } from "./railHoleClipHost";
 import { installSurfaceAudit, surfaceCompositionSnapshot } from "./surfaceAudit";
 import {
@@ -268,19 +276,120 @@ function installHoleAuditCommand(): void {
   });
 }
 
+/** PaneSurfaceHost 수명·기하·진단을 공개 커맨드로 노출한다. 자동화가 private DOM이나
+ * Rust registry를 우회 조회하지 않고 같은 인터페이스로 준비와 판정을 수행하는 경계다. */
+function installPaneSurfaceHostCommands(): void {
+  register("webview.pane.presentation", {
+    description: "Read Tauri pane presentation lifecycle status.",
+    params: {}, returns: "{ total, grouped, pending }",
+    message: (data) => `plugin presentation ${String(data.grouped)}/${String(data.total)}`,
+    handler: async () => pluginViewPresentationStatus(),
+  });
+  register("webview.pane.wait", {
+    description: "Wait on lifecycle events until the requested PaneSurfaceHosts are grouped.",
+    params: {
+      minGrouped: { type: "number", description: "required grouped count", required: true },
+      timeoutMs: { type: "number", description: "finite timeout (default 30000)" },
+    },
+    returns: "{ total, grouped, pending }",
+    message: (data) => `plugin presentation ready ${String(data.grouped)}/${String(data.total)}`,
+    handler: async (params) => awaitPluginViewPresentation(
+      Number(params.minGrouped), Number(params.timeoutMs ?? 30_000),
+    ),
+  });
+  register("webview.pane.composition", {
+    description: "Compare every public pane projection with its native PaneSurfaceHost and member frames.",
+    params: {}, returns: "{ window,tolerancePx,matches,orphanNative,foreignNative,matched,verdict }",
+    message: (data) => `pane composition ${String(data.verdict)}`,
+    handler: async () => pluginViewCompositionStatus(),
+  });
+  register("webview.pane.group", {
+    description: "Group one pane renderer and its native members under one PaneSurfaceHost.",
+    params: {
+      pane: { type: "string", description: "pane identity", required: true },
+      renderer: { type: "string", description: "pane renderer label", required: true },
+      members: { type: "string[]", description: "native member labels", required: true },
+      x: { type: "number", description: "viewport x", required: true },
+      y: { type: "number", description: "viewport y", required: true },
+      w: { type: "number", description: "pane width", required: true },
+      h: { type: "number", description: "pane height", required: true },
+    },
+    danger: "inject", returns: "{ pane,renderer,members,grouped:true }",
+    message: (data) => `PaneSurfaceHost ${String(data.pane)}를 구성했습니다`,
+    handler: async (params) => {
+      await invoke("webview_pane_group", params);
+      return { ...params, grouped: true };
+    },
+  });
+  register("webview.pane.move", {
+    description: "Prepare one atomic PaneSurfaceHost transition at an explicit epoch.",
+    params: {
+      pane: { type: "string", description: "pane identity", required: true },
+      x: { type: "number", description: "target x", required: true },
+      y: { type: "number", description: "target y", required: true },
+      w: { type: "number", description: "target width", required: true },
+      h: { type: "number", description: "target height", required: true },
+      startAtUnixMs: { type: "number", description: "absolute start epoch", required: true },
+      durationMs: { type: "number", description: "finite duration", required: true },
+    },
+    danger: "inject", returns: "{ pane,prepared:true }",
+    message: (data) => `PaneSurfaceHost ${String(data.pane)} 이동을 준비했습니다`,
+    handler: async (params) => {
+      await invoke("webview_pane_transition_prepare", params);
+      return { pane: params.pane, prepared: true };
+    },
+  });
+  register("webview.pane.hosts", {
+    description: "Expose every live PaneSurfaceHost, renderer, member, frame, and renderer topology.",
+    params: {}, returns: "{ count,hosts:[{pane,window,renderer,members,cssFrame,rendererTopology}] }",
+    message: (data) => `PaneSurfaceHost ${String(data.count)}개`,
+    handler: async () => {
+      const hosts = await invoke<Record<string, unknown>[]>("webview_pane_hosts");
+      return { count: hosts.length, hosts };
+    },
+  });
+  register("webview.pane.eval", {
+    description: "Evaluate a diagnostic expression in an explicitly named pane renderer.",
+    params: {
+      label: { type: "string", description: "renderer label", required: true },
+      js: { type: "string", description: "async function body returning a string", required: true },
+    },
+    danger: "inject", returns: "{ label,result }",
+    message: (data) => `Tauri child ${String(data.label)} 진단을 읽었습니다`,
+    handler: async (params) => ({
+      label: params.label,
+      result: await invoke<string>("webview_eval", { label: params.label, js: params.js }),
+    }),
+  });
+}
+
 /** 이 프레임워크가 코어 표면에 거는 것 전부. 고른 어댑터만 불린다(contract.install). */
 export function installTauri(): void {
   registerWindowResizeProbe(async () => {
-    const snapshot = await surfaceCompositionSnapshot();
-    const red = snapshot.verdict.misplaced.length
-      + snapshot.verdict.stacked.length
-      + snapshot.verdict.missing.length;
-    return { ...snapshot, verdict: red === 0 ? "green" : "red" };
+    const [direct, pane] = await Promise.all([
+      surfaceCompositionSnapshot(),
+      pluginViewCompositionStatus(),
+    ]);
+    return combineTauriCompositionProbe(direct, pane);
   });
   // 콘텐츠 뷰 구현 — 이 프레임워크가 줄 수 있는 것은 OS 자식 뷰다.
   registerContentViewHost(nativeHost);
   // DOM 밖 표면이 포함된 배치만 목표 bounds 선확정 + DOM snap 거래로 바꾼다.
-  registerLayoutTransitionHost({ prepareMove: prepareNativeContentViewMove });
+  registerLayoutTransitionHost({
+    prepareMove: async (moves) => {
+      const [direct, presented] = await Promise.all([
+        prepareNativeContentViewMove(moves),
+        preparePresentedPluginViewMove(moves),
+      ]);
+      return {
+        mode: direct.mode === "snap" || presented.mode === "snap" ? "snap" : "glide",
+        startAtUnixMs: direct.startAtUnixMs ?? presented.startAtUnixMs,
+        commit: async () => { await Promise.all([direct.commit(), presented.commit()]); },
+        cancel: () => { direct.cancel(); presented.cancel(); },
+      };
+    },
+  });
+  installPluginViewPresentation();
   // 공개 슬롯 → OS 자식 bounds/가시성/AppKit frame 전환. 플러그인은 슬롯만 선언한다.
   installNativeContentViewComposition();
   // 홀 CSS — 셀렉터에 프레임워크 이름이 없다. 안 걸리면 그 규칙은 애초에 문서에 없다.
@@ -305,6 +414,7 @@ export function installTauri(): void {
   installNativeBridgeCommand();
   installCompositionCommand();
   installHoleAuditCommand();
+  installPaneSurfaceHostCommands();
   // 실제 FLIP 추적 프레임(pane·tab-body) 중 native child를 품은 것만 뺀다. bounds 원천인
   // content-view body는 그 자식이라 검사 대상이 아니다. 문서 안 게스트에는 이 표식도 등록도
   // 없으므로 Electron의 DOM 보간은 그대로다.

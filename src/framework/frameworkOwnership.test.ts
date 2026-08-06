@@ -141,6 +141,8 @@ describe("Tauri native-composition ownership", () => {
     expect(move).toMatch(/host\.setFrame\(target\)/);
     expect(move).toMatch(/add_layout_position\(host,/);
     expect(move).not.toMatch(/renderer|member/);
+    expect(layer).toMatch(/set_pane_surface_host_lighting/);
+    expect(layer).toMatch(/host\.setAlphaValue\(alpha\)/);
     expect(tauriInstall).toMatch(/webview\.pane\.group/);
     expect(tauriInstall).toMatch(/webview\.pane\.hosts/);
     expect(electron).not.toMatch(/PaneSurfaceHost|webview\.pane\./);

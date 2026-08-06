@@ -1,13 +1,35 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   comparePanePresentation,
   isPluginViewCallExposed,
   paneLayoutContractOf,
+  presentedTransitionMode,
   projectPluginViewNode,
   projectPluginViewSlot,
 } from "./pluginViewPresentation";
 
 describe("Tauri plugin renderer RPC surface", () => {
+  it("전면 pane은 같은 절대 epoch의 glide, 비전면 pane은 DOM commit 뒤 snap을 쓴다", () => {
+    expect(presentedTransitionMode(true)).toBe("glide");
+    expect(presentedTransitionMode(false)).toBe("snap");
+    const source = readFileSync(resolve(import.meta.dirname, "pluginViewPresentation.ts"), "utf8");
+    const move = source.split("export async function preparePresentedPluginViewMove")[1] ?? "";
+    expect(move).toContain("startAtUnixMs");
+    expect(move).toContain('mode: "glide"');
+    expect(move).toContain('invoke("webview_pane_transition_prepare"');
+    expect(move).toContain('mode: "snap"');
+    expect(move).toContain('invoke("webview_pane_bounds"');
+  });
+
+  it("공개 --dim은 member별 veil이 아니라 PaneSurfaceHost 부모 alpha 한 번으로 투영한다", () => {
+    const source = readFileSync(resolve(import.meta.dirname, "pluginViewPresentation.ts"), "utf8");
+    expect(source).toContain('getPropertyValue("--dim")');
+    expect(source).toContain('invoke("webview_pane_lighting"');
+    expect(source).not.toContain('invoke("webview_surface_lighting"');
+  });
+
   it("공개 content surface 생성 거래인 webview.open을 노출한다", () => {
     expect(isPluginViewCallExposed("webview.open")).toBe(true);
   });
@@ -63,6 +85,27 @@ describe("Tauri plugin renderer RPC surface", () => {
     expect(verdict.matches[1]).toMatchObject({ pane: "pane-b", ok: false });
     expect(verdict.foreignNative).toEqual(["foreign"]);
     expect(verdict.ok).toBe(false);
+  });
+
+  it("pane 감사 결과에 shared topology와 부모 alpha를 보존한다", () => {
+    const verdict = comparePanePresentation(
+      [{ pane: "pane-a", frame: { x: 10, y: 20, w: 300, h: 200 } }],
+      [{
+        pane: "pane-a", window: "w-1", cssFrame: { x: 10, y: 20, w: 300, h: 200 },
+        alpha: 0.5,
+        rendererTopology: {
+          domRendererPath: ["TaoView", "PaneSurfaceHost", "WryWebView"],
+          nativeSurfacePath: ["TaoView", "PaneSurfaceHost", "BrowserSurface"],
+          lowestCommonAncestorDepth: 1,
+          lowestCommonAncestorIsWindowContentRoot: false,
+        },
+      }],
+      "w-1",
+    );
+    expect(verdict.matches[0]).toMatchObject({
+      alpha: 0.5,
+      rendererTopology: { verdict: "shared-pane-host", panelAtomicMotion: true },
+    });
   });
 
   it("셀 비율과 고정 chrome을 native resize가 재실행할 affine 계약으로 노출한다", () => {

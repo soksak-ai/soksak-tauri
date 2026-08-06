@@ -69,10 +69,14 @@ describe("PluginViewHost — 인스턴스 수명과 DOM 수명 분리", () => {
     expect(disconnect).toHaveBeenCalledOnce();
   });
 
-  it("nativeSurface 선언도 플러그인 DOM mount를 다른 renderer에 위임하지 않는다", () => {
+  it("nativeSurface 선언은 등록된 presentation owner에 plugin DOM과 native member를 함께 위임한다", async () => {
     const mount = vi.fn((el: HTMLElement) => { el.textContent = "browser chrome"; });
+    const dispose = vi.fn();
+    const presentationMount = vi.fn(() => ({
+      ready: Promise.resolve(), update: vi.fn(), setVisible: vi.fn(), dispose,
+    }));
     registerPluginViewPresentationHost({
-      mount: vi.fn(() => { throw new Error("presentation host must not own plugin DOM"); }),
+      mount: presentationMount,
     });
     act(() => {
       useViewRegistry.getState().register("browser", DECL, { mount } as never);
@@ -81,7 +85,11 @@ describe("PluginViewHost — 인스턴스 수명과 DOM 수명 분리", () => {
         <PluginViewHost viewKey="browser.content" projectId="p1" root="/project" region="content" viewId="tab-1" />,
       );
     });
-    expect(mount).toHaveBeenCalledOnce();
-    expect(host.textContent).toContain("browser chrome");
+    expect(presentationMount).toHaveBeenCalledOnce();
+    expect(mount).not.toHaveBeenCalled();
+    await act(async () => Promise.resolve());
+    act(() => root!.unmount());
+    root = null;
+    expect(dispose).toHaveBeenCalledOnce();
   });
 });

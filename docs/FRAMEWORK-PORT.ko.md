@@ -725,9 +725,12 @@ Cocoa 부모 추종과 슬롯 거래가 같은 frame을 함께 소유하는 구�
 않으면서 chrome epoch tear와 브라우저만의 blank/stretch를 분리한다. 정착 프레임은 기존 절대 픽셀
 크기와 DOM-slot↔viewport 정합도 함께 통과해야 한다.
 
-레일 재배치 때문에 플러그인 DOM을 별도 renderer로 옮기지 않는다. 두 프레임워크 모두 같은 메인 DOM
-플러그인 UI를 쓰며, Tauri 어댑터만 DOM 커밋 전에 native 목표 frame을 준비하고 커밋 뒤 공개 슬롯과
-대조한다. Electron은 일반 DOM 자식 배치를 유지하며 이 native 거래를 설치하지 않는다.
+레일 재배치는 선택적 공개 plugin-view presentation host를 쓴다. Electron은 직접 메인 DOM
+플러그인 UI와 일반 DOM 자식 배치를 유지한다. Tauri는 host를 등록하고 같은 plugin provider
+source를 pane renderer에 한 번 마운트한 뒤 native member와 하나의 `PaneSurfaceHost` 아래에 둔다.
+메인 문서는 renderer가 선언한 node 주소와 frame을 발견용으로 투영할 뿐 플러그인 인스턴스를
+복제하지 않는다. 따라서 부모 frame 거래 하나가 보이는 plugin chrome과 document surface를 함께
+움직인다.
 
 `webview.composition`은 DOM 앵커·실제 네이티브 frame뿐 아니라 label별 슬롯 rect, 마지막 적용
 rect, 가시성, 동기화 대기 상태를 공개한다. 합성 상태를 브라우저 제품 플러그인이
