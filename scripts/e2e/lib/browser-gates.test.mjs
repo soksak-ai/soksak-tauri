@@ -212,6 +212,7 @@ function b04Evidence(engine = "browser") {
           mode,
           startAtUnixMs: mode === "glide" ? 1_000 + sequence * 100 : null,
           preparedAtUnixMs: 1_000 + sequence * 100,
+          domCommittedAtUnixMs: 1_000 + sequence * 100 + 24,
           closedAtUnixMs: 1_000 + sequence * 100 + 48,
           moves: [{ viewId: target, dx: positions[0] - positions.at(-1) }],
         }],
@@ -392,6 +393,10 @@ describe("브라우저 12-gate 정본", () => {
     const wrongMove = b04Evidence();
     wrongMove.transitions[0].journal.entries[0].moves[0].dx += 10;
     expect(judgeB04MachineEvidence(wrongMove).status).toBe("red");
+
+    const missingDomCommit = b04Evidence();
+    delete missingDomCommit.transitions[0].journal.entries[0].domCommittedAtUnixMs;
+    expect(judgeB04MachineEvidence(missingDomCommit).status).toBe("red");
 
     const pixelContamination = b04Evidence();
     pixelContamination.transitions[0].samples[0].framePixels = [0, 0, 0];

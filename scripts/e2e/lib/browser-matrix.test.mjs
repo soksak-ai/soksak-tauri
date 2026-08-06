@@ -335,10 +335,22 @@ describe("브라우저 구현 행렬", () => {
       .toThrow("owner=2/1");
   });
 
-  it("B04는 같은 tick의 raw DOM rail/pane/slot과 actual surface frame만 결합한다", () => {
-    const domSample = (sequence, sampledAtUnixMs, railX, paneX, slotX) => ({
+  it("B04는 initial·공개 DOM-commit raw rect를 transaction으로 actual surface에 결합한다", () => {
+    const domSample = (
       sequence,
       sampledAtUnixMs,
+      trigger,
+      sampleTransactionId,
+      domCommittedAtUnixMs,
+      railX,
+      paneX,
+      slotX,
+    ) => ({
+      sequence,
+      sampledAtUnixMs,
+      trigger,
+      transactionId: sampleTransactionId,
+      domCommittedAtUnixMs,
       nodes: [
         { address: "rail", connected: true, rect: { x: railX, y: 0, w: 60, h: 500 } },
         { address: "pane", connected: true, rect: { x: paneX, y: 0, w: 500, h: 500 } },
@@ -354,25 +366,25 @@ describe("브라우저 구현 행렬", () => {
     const trace = mapB04PresentationSamples({
       events: [event(1_001, 110), event(1_019, 430)],
       domSamples: [
-        domSample(0, 990, 10, 80, 110),
-        domSample(1, 1_000, 10, 80, 110),
+        // sample 시각은 presentation과 일부러 한 frame보다 멀리 둔다. 결합 정본은 timer
+        // 근접도가 아니라 transaction이 붙은 공개 DOM-commit 사건이다.
+        domSample(0, 900, "initial", null, null, 10, 80, 110),
         // rail/pane의 실제 좌표를 의도적으로 slot 이동량과 다르게 둔다. mapper가 이를
         // 투영해 바꾸면 이 단언이 바로 RED가 된다.
-        domSample(2, 1_020, 777, 333, 430),
-        domSample(3, 1_030, 777, 333, 430),
+        domSample(1, 1_100, "layout-dom-commit", "tx", 1_010, 777, 333, 430),
       ],
       owner: { rendererId: "renderer", surfaceId: "surface" },
       targetViewId: "view",
       transactionId: "tx",
-      preparedAtUnixMs: 995,
-      closedAtUnixMs: 1_025,
+      domCommittedAtUnixMs: 1_010,
       railAddress: "rail",
       paneAddress: "pane",
       slotAddress: "slot",
     });
-    expect(trace.maxPairGapMs).toBe(17);
-    expect(trace.pairs.map(({ gapMs }) => gapMs)).toEqual([1, 1]);
+    expect(trace.joins.map(({ trigger }) => trigger)).toEqual(["initial", "layout-dom-commit"]);
+    expect(trace.joins.every((join) => !("gapMs" in join))).toBe(true);
     expect(trace.samples).toHaveLength(2);
+    expect(trace.samples.map(({ phase }) => phase)).toEqual(["prepared", "committed"]);
     expect(trace.samples[1]).toMatchObject({
       rail: { id: "rail", frame: { x: 777, y: 0, w: 60, h: 500 } },
       pane: { id: "pane", frame: { x: 333, y: 0, w: 500, h: 500 } },
@@ -419,9 +431,20 @@ describe("브라우저 구현 행렬", () => {
   });
 
   it("B04 mapper는 양쪽 pane/slot을 함께 관측해도 moved owner의 raw 참가자만 1:1 선택한다", () => {
-    const rawSample = (sequence, sampledAtUnixMs, leftX, rightX) => ({
+    const rawSample = (
       sequence,
       sampledAtUnixMs,
+      trigger,
+      sampleTransactionId,
+      domCommittedAtUnixMs,
+      leftX,
+      rightX,
+    ) => ({
+      sequence,
+      sampledAtUnixMs,
+      trigger,
+      transactionId: sampleTransactionId,
+      domCommittedAtUnixMs,
       nodes: [
         { address: "rail", connected: true, rect: { x: 10, y: 0, w: 60, h: 500 } },
         { address: "pane-left", connected: true, rect: { x: leftX, y: 0, w: 500, h: 500 } },
@@ -436,16 +459,13 @@ describe("브라우저 구현 행렬", () => {
         { sampledAtUnixMs: 1_019, connected: true, rendererFrame: { x: 290, y: 60, w: 460, h: 420 }, surfaceFrame: { x: 290, y: 60, w: 460, h: 420 } },
       ],
       domSamples: [
-        rawSample(0, 990, 100, 700),
-        rawSample(1, 1_000, 100, 700),
-        rawSample(2, 1_020, 260, 700),
-        rawSample(3, 1_030, 260, 700),
+        rawSample(0, 990, "initial", null, null, 100, 700),
+        rawSample(1, 1_020, "layout-dom-commit", "tx", 1_010, 260, 700),
       ],
       owner: { rendererId: "renderer-left", surfaceId: "surface-left" },
       targetViewId: "view-left",
       transactionId: "tx",
-      preparedAtUnixMs: 995,
-      closedAtUnixMs: 1_025,
+      domCommittedAtUnixMs: 1_010,
       railAddress: "rail",
       paneAddress: "pane-left",
       slotAddress: "slot-left",
@@ -465,6 +485,7 @@ describe("브라우저 구현 행렬", () => {
       phase: "committed",
       mode: "snap",
       preparedAtUnixMs: 1_000,
+      domCommittedAtUnixMs: 1_001,
       closedAtUnixMs: 1_001,
       moves: [{ viewId: "view-left", dx: 160 }],
     };
@@ -477,36 +498,47 @@ describe("브라우저 구현 행렬", () => {
     expect(canonical[0]).not.toBe(rawSnap);
   });
 
-  it("B04 raw DOM trace가 거래를 감싸지 않거나 actual event와 한 frame 넘게 벌어지면 RED다", () => {
+  it("B04 raw DOM trace에 initial 또는 같은 transaction DOM-commit 사건이 없으면 RED다", () => {
     const input = {
       events: [
-        { sampledAtUnixMs: 1_000, connected: true, rendererFrame: { x: 1, y: 2, w: 3, h: 4 }, surfaceFrame: { x: 1, y: 2, w: 3, h: 4 } },
+        { sampledAtUnixMs: 999, connected: true, rendererFrame: { x: 1, y: 2, w: 3, h: 4 }, surfaceFrame: { x: 1, y: 2, w: 3, h: 4 } },
         { sampledAtUnixMs: 1_020, connected: true, rendererFrame: { x: 2, y: 2, w: 3, h: 4 }, surfaceFrame: { x: 2, y: 2, w: 3, h: 4 } },
       ],
-      domSamples: [900, 1_100].map((sampledAtUnixMs, sequence) => ({
-        sequence,
-        sampledAtUnixMs,
-        nodes: ["rail", "pane", "slot"].map((address) => ({
-          address, connected: true, rect: { x: 1, y: 2, w: 3, h: 4 },
-        })),
-      })),
+      domSamples: [
+        {
+          sequence: 0,
+          sampledAtUnixMs: 900,
+          trigger: "initial",
+          transactionId: null,
+          domCommittedAtUnixMs: null,
+          nodes: ["rail", "pane", "slot"].map((address) => ({
+            address, connected: true, rect: { x: 1, y: 2, w: 3, h: 4 },
+          })),
+        },
+        {
+          sequence: 1,
+          sampledAtUnixMs: 1_100,
+          trigger: "layout-dom-commit",
+          transactionId: "wrong-tx",
+          domCommittedAtUnixMs: 1_000,
+          nodes: ["rail", "pane", "slot"].map((address) => ({
+            address, connected: true, rect: { x: 2, y: 2, w: 3, h: 4 },
+          })),
+        },
+      ],
       owner: { rendererId: "renderer", surfaceId: "surface" },
       targetViewId: "view",
       transactionId: "tx",
-      preparedAtUnixMs: 950,
-      closedAtUnixMs: 1_050,
+      domCommittedAtUnixMs: 1_000,
       railAddress: "rail",
       paneAddress: "pane",
       slotAddress: "slot",
     };
-    expect(() => mapB04PresentationSamples(input)).toThrow("pair gap");
+    expect(() => mapB04PresentationSamples(input)).toThrow("DOM-commit sample=0/1");
     expect(() => mapB04PresentationSamples({
       ...input,
-      domSamples: input.domSamples.map((sample) => ({
-        ...sample,
-        sampledAtUnixMs: sample.sampledAtUnixMs + 100,
-      })),
-    })).toThrow("layout 거래를 감싸지 못했다");
+      domSamples: input.domSamples.filter((sample) => sample.trigger !== "initial"),
+    })).toThrow("initial sample=0/1");
   });
 
   it("전체 창 resize는 큰 폭의 양방향 교차를 반복하고 정확히 원복한다", () => {

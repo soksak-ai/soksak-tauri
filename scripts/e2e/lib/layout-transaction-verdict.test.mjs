@@ -6,10 +6,24 @@ describe("layout transition machine verdict", () => {
   it("녹화가 없어도 닫힌 layout 거래 하나를 GREEN으로 판정한다", () => {
     const verdict = layoutTransactionVerdict([{
       transactionId: "layout-4", sequence: 4, phase: "committed", mode: "snap",
-      preparedAtUnixMs: 100, closedAtUnixMs: 101,
+      preparedAtUnixMs: 100, domCommittedAtUnixMs: 100.5, closedAtUnixMs: 101,
       moves: [{ viewId: "iana", dx: 322 }],
     }], { afterSequence: 3, expectedMode: "snap", candidateViewIds: ["iana", "other"] });
     expect(verdict).toMatchObject({ ok: true, transaction: { transactionId: "layout-4" } });
+  });
+
+  it("committed 거래의 공개 DOM commit 시각 누락·역전을 RED로 만든다", () => {
+    const entry = {
+      transactionId: "layout-4", sequence: 4, phase: "committed", mode: "snap",
+      preparedAtUnixMs: 100, closedAtUnixMs: 103,
+      moves: [{ viewId: "iana", dx: 322 }],
+    };
+    expect(layoutTransactionVerdict([entry], { afterSequence: 3 }).errors)
+      .toContain("dom-commit-time-missing");
+    expect(layoutTransactionVerdict([{
+      ...entry,
+      domCommittedAtUnixMs: 104,
+    }], { afterSequence: 3 }).errors).toContain("dom-commit-time-reversed");
   });
 
   it("안 닫힌 거래·중복 거래·빈 이동을 RED로 만든다", () => {

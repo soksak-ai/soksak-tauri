@@ -354,8 +354,10 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(source).toContain("owners: presentationOwners");
     expect(source).toContain("normalizeB04JournalEntries(layoutVerdict.transactions)");
     expect(source).toContain("domSamples: domTraceReceipt.samples");
-    expect(source).toContain("preparedAtUnixMs: layoutVerdict.transaction.preparedAtUnixMs");
-    expect(source).toContain("closedAtUnixMs: layoutVerdict.transaction.closedAtUnixMs");
+    expect(source).toContain("domCommittedAtUnixMs: layoutVerdict.transaction.domCommittedAtUnixMs");
+    expect(source).toContain("joins: flowPresentationTrace.joins");
+    expect(source).not.toContain("maxPairGapMs: flowPresentationTrace.maxPairGapMs");
+    expect(source).not.toContain("pairs: flowPresentationTrace.pairs");
     expect(source).not.toMatch(/translatedB04Rect|railBaseline|paneBaseline/);
     const paneArm = "webview.pane.presentation.trace.arm";
     const paneRead = "webview.pane.presentation.trace.close";

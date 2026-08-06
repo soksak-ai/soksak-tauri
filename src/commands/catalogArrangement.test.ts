@@ -78,10 +78,12 @@ describe("layout.arrangement", () => {
         entries: [{
           transactionId: "layout-1",
           phase: "committed",
+          domCommittedAtUnixMs: expect.any(Number),
           moves: [{ viewId: "v-g1", dx: 120 }],
         }],
       },
     });
+    expect(getSpec("layout.transactions")?.returns).toContain("domCommittedAtUnixMs");
   });
 
   it("해결기의 답을 그대로 노출한다 — 명령과 화면이 같은 계산을 쓴다", async () => {
