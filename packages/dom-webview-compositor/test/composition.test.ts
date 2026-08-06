@@ -224,5 +224,20 @@ describe("DOM ↔ native webview composition contract", () => {
       ok: false,
       errors: expect.arrayContaining([expect.stringContaining("surface[2]")]),
     });
+
+    const roundingOnly = structuredClone(input);
+    roundingOnly.from.x = 0.24;
+    roundingOnly.to.x = 32.24;
+    for (const samples of [roundingOnly.slot, roundingOnly.renderer, roundingOnly.surface]) {
+      for (const sample of samples) sample.frame.x += 0.24;
+    }
+    roundingOnly.slot[1].frame.x += 0.24; // 0.48 physical px: quantization-only
+    expect(compositionTimelineVerdict(roundingOnly)).toMatchObject({ ok: true, errors: [] });
+
+    roundingOnly.slot[1].frame.x += 0.02; // 0.52 physical px: rounding으로 설명 불가
+    expect(compositionTimelineVerdict(roundingOnly)).toMatchObject({
+      ok: false,
+      errors: expect.arrayContaining([expect.stringContaining("slot[1]")]),
+    });
   });
 });
