@@ -652,7 +652,12 @@ export function browserSurfaceInvariant({
     if (!offscreen && stats?.visibility?.[key] !== visible) {
       errors.push(`${viewId}:plugin-visible=${stats?.visibility?.[key]}/${visible}`);
     }
-    if (!offscreen && visible && !actual.bounds) errors.push(`${viewId}:bounds-missing`);
+    // windowed surface가 PaneSurfaceHost에 결합되면 독립 창 bounds 소유권은 사라지고
+    // composition이 실제 배치 정본이 된다. 여기서는 live 결합 존재를 판정하고, 정확한 DOM↔member
+    // 기하는 webview.composition의 1px 계약이 별도로 판정한다.
+    if (!offscreen && visible && !actual.bounds && !actual.composition) {
+      errors.push(`${viewId}:presentation-missing`);
+    }
     if (offscreen && actual.resize?.pending === true) errors.push(`${viewId}:resize-pending`);
     if (offscreen && actual.viewport?.matches !== true) errors.push(`${viewId}:viewport-mismatch`);
   }

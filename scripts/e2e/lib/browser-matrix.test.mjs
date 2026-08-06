@@ -251,7 +251,7 @@ describe("브라우저 구현 행렬", () => {
     expect(new Set(dh)).toEqual(new Set([-1, 0, 1]));
   });
 
-  it("windowed view→surface→engine 장부가 창 owner·가시성·bounds까지 일치해야 한다", () => {
+  it("windowed view→surface→engine 장부가 창 owner·가시성·presentation까지 일치해야 한다", () => {
     expect(browserSurfaceInvariant({
       surface: "engine-windowed",
       plugin: "soksak-plugin-browser-chromium",
@@ -270,6 +270,21 @@ describe("브라우저 구현 행렬", () => {
         ],
       },
     })).toEqual({ ok: true, errors: [], mappedIds: [11, 12] });
+  });
+
+  it("PaneSurfaceHost에 결합된 windowed surface는 composition을 배치 정본으로 인정한다", () => {
+    expect(browserSurfaceInvariant({
+      surface: "engine-windowed",
+      plugin: "soksak-plugin-browser-chromium",
+      windowLabel: "w-a",
+      viewIds: ["tab-left"],
+      expectedVisible: [true],
+      stats: {
+        ids: [11], idMap: { "chromium-tab-left": 11 }, ledger: [11],
+        visibility: { "chromium-tab-left": true },
+        surfaces: [{ id: 11, owner: "soksak-plugin-browser-chromium@w-a", hidden: false, bounds: null, composition: { host: {} } }],
+      },
+    }).ok).toBe(true);
   });
 
   it("offscreen의 죽은 surface 매핑·타 창 owner·pending resize를 모두 RED로 만든다", () => {
