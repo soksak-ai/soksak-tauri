@@ -331,24 +331,34 @@ describe("slot-freeze instrumentation lifecycle", () => {
 
   it("B04는 세 엔진 FLOW 양방향의 공개 presentation producer와 layout journal만 canonical receipt로 기록한다", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
-    expect(source).toContain('rpc("ui.trace.multi"');
-    const domTraceCalls = callFacts(source, (node) => (
+    expect(source).toContain('rpc("ui.trace.multi.start"');
+    expect(source).toContain('rpc("ui.trace.multi.close"');
+    const domTraceStartCalls = callFacts(source, (node) => (
       node.expression.getText() === "rpc"
       && ts.isStringLiteral(node.arguments[0])
-      && node.arguments[0].text === "ui.trace.multi"
+      && node.arguments[0].text === "ui.trace.multi.start"
     ));
-    expect(domTraceCalls).toHaveLength(1);
-    expect(domTraceCalls[0].text).toContain("railAddress");
-    expect(domTraceCalls[0].text).toContain("paneAddresses[0]");
-    expect(domTraceCalls[0].text).toContain("addresses[0]");
-    expect(domTraceCalls[0].text).toContain("paneAddresses[1]");
-    expect(domTraceCalls[0].text).toContain("addresses[1]");
+    const domTraceCloseCalls = callFacts(source, (node) => (
+      node.expression.getText() === "rpc"
+      && ts.isStringLiteral(node.arguments[0])
+      && node.arguments[0].text === "ui.trace.multi.close"
+    ));
+    expect(domTraceStartCalls).toHaveLength(1);
+    expect(domTraceCloseCalls.length).toBeGreaterThanOrEqual(2);
+    expect(domTraceStartCalls[0].text).toContain("railAddress");
+    expect(domTraceStartCalls[0].text).toContain("paneAddresses[0]");
+    expect(domTraceStartCalls[0].text).toContain("addresses[0]");
+    expect(domTraceStartCalls[0].text).toContain("paneAddresses[1]");
+    expect(domTraceStartCalls[0].text).toContain("addresses[1]");
+    expect(source).toMatch(/domTraceSession\s*=\s*must\(await rpc\("ui\.trace\.multi\.start"/);
+    expect(source).not.toContain("domTracePromise");
     const flowRecordingCalls = callFacts(source, (node, file) => (
       node.expression.getText(file) === "runPlannedRecordingAction"
     )).filter((call) => call.functionName === "runEngine"
       && call.loops.some((loop) => /\bside\b/.test(loop)));
     expect(flowRecordingCalls).toHaveLength(1);
-    expect(domTraceCalls[0].start).toBeLessThan(flowRecordingCalls[0].start);
+    expect(domTraceStartCalls[0].start).toBeLessThan(flowRecordingCalls[0].start);
+    expect(domTraceCloseCalls.some((call) => call.start > flowRecordingCalls[0].start)).toBe(true);
     expect(source).toContain("resolveB04MovedParticipant({");
     expect(source).toContain("transactions: layoutVerdict.transactions");
     expect(source).toContain("owners: presentationOwners");
