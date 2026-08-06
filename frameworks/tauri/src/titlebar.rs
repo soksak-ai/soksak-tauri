@@ -1621,6 +1621,30 @@ mod tests {
     }
 
     #[test]
+    fn every_supported_titlebar_height_centers_the_button_in_the_same_coordinate_contract() {
+        let current_button = PhysicalRect::new(14.0, 12.0, 28.0, 32.0);
+        for (height_css, css_to_physical_scale, backing_scale) in [
+            (32.0, 1.0, 1.0),
+            (45.0, 2.0, 2.0),
+            (60.0, 1.5, 2.0),
+            (90.0, 2.0, 2.0),
+        ] {
+            let titlebar = PhysicalRect::new(0.0, 0.0, 900.0, height_css);
+            let delta = appkit_origin_y_delta(
+                current_button,
+                titlebar,
+                backing_scale,
+                css_to_physical_scale,
+            )
+            .unwrap();
+            let moved_center = current_button.y - (delta * backing_scale)
+                + (current_button.h / 2.0);
+            let dom_center = height_css * css_to_physical_scale / 2.0;
+            assert_eq!(moved_center, dom_center, "height={height_css}");
+        }
+    }
+
+    #[test]
     fn invalid_composition_scales_are_rejected_instead_of_guessing() {
         let button = PhysicalRect::new(14.0, 12.0, 28.0, 32.0);
         let titlebar = PhysicalRect::new(0.0, 0.0, 900.0, 45.0);
