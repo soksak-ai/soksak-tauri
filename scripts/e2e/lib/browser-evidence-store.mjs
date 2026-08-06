@@ -4,6 +4,7 @@ import {
   machineGateSummary,
   serializeBrowserGateReport,
   setMachineGateStatus,
+  setVisualReviewStatus,
 } from "./browser-gates.mjs";
 import { writeEvidenceFile } from "./evidence-store.mjs";
 
@@ -237,10 +238,23 @@ export function createBrowserGateReportStore({
     return judgeReceipt;
   };
 
+  const recordVisualReview = ({ framework, engine, gate, status, artifacts, notes }) => {
+    const report = bindFramework(framework);
+    currentReport = setVisualReviewStatus(report, {
+      engine,
+      gate,
+      status,
+      artifacts,
+      notes,
+    });
+    return currentReport.engines[engine][gate].visualReview;
+  };
+
   return Object.freeze({
     hasReport: () => currentReport !== null,
     bindFramework,
     recordMachineEvidence,
+    recordVisualReview,
     report: () => requireReport(),
     machineSummary: () => machineGateSummary(requireReport()),
     serialize: () => serializeBrowserGateReport(requireReport()),

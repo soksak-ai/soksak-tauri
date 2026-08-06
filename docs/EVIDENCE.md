@@ -20,3 +20,11 @@ E2E 실행 증거는 선언된 절대 root 아래 세 역할로 저장한다.
 
 `scripts/e2e/lib/evidence-store.test.mjs`가 연속 RED, GREEN 보존, 최신 RED 별칭, 경계,
 quota와 동시 거래를 검증한다.
+
+## 브라우저 시각 검토
+
+브라우저 canonical report의 `visualReview`는 기본적으로 `pending`이다. 녹화·snapshot 생성이나
+machine gate 통과는 이 상태를 자동으로 바꾸지 않는다. 사람이 artifact를 직접 확인한 뒤
+`createBrowserGateReportStore(...).recordVisualReview(...)`에 framework, engine, gate,
+`passed|failed`, 검토한 artifact 상대경로와 메모를 명시해야만 판정이 기록된다. 이 경로는
+`setVisualReviewStatus`의 닫힌 schema를 사용하며 machine evidence와 독립적이다.

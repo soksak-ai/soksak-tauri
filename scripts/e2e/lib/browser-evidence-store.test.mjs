@@ -329,4 +329,40 @@ describe("canonical browser gate report store", () => {
       expect(persisted.summary.visualReview.status).toBe("pending");
     });
   });
+
+  it("records visual review only through an explicit human verdict and never from artifact creation", async () => {
+    await inTemporaryStore(async (root) => {
+      await beginEvidenceRun(root, { runId: "run-review" });
+      const store = createBrowserGateReportStore({
+        root,
+        buildId: "build-review",
+        runId: "run-review",
+        platform: "darwin",
+      });
+      store.bindFramework("tauri");
+      expect(store.report().engines.browser.B04.visualReview.status).toBe("pending");
+
+      const reviewed = store.recordVisualReview({
+        framework: "tauri",
+        engine: "browser",
+        gate: "B04",
+        status: "passed",
+        artifacts: ["browser/01-left/f0001.png", "browser/02-right/f0048.png"],
+        notes: "사람이 양방향 전 프레임을 검토함",
+      });
+      expect(reviewed).toEqual({
+        status: "passed",
+        artifacts: ["browser/01-left/f0001.png", "browser/02-right/f0048.png"],
+        notes: "사람이 양방향 전 프레임을 검토함",
+      });
+      await store.persist();
+      const persisted = JSON.parse(await readFile(
+        path.join(root, "current", BROWSER_GATE_REPORT_FILE),
+        "utf8",
+      ));
+      expect(persisted.engines.browser.B04.visualReview).toEqual(reviewed);
+      expect(persisted.summary.visualReview.counts.passed).toBe(1);
+      expect(persisted.summary.visualReview.counts.pending).toBe(35);
+    });
+  });
 });
