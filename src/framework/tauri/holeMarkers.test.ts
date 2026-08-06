@@ -90,6 +90,20 @@ describe("Tauri private hole projection", () => {
     expect(p.dataset.tauriHole).toBeUndefined();
   });
 
+  it("공개 external-surface 선언은 외부 소유 hole로 투영하고 direct 감사와 분리한다", () => {
+    const p = pane("g1");
+    const external = body(p, "g1", "offscreen-tab-1");
+    const slot = external.querySelector<HTMLElement>("[data-content-view-body]")!;
+    slot.dataset.externalSurface = "offscreen-tab-1";
+
+    syncTauriHoleMarkers();
+
+    expect(slot.dataset.tauriHole).toBe("content");
+    expect(slot.dataset.tauriSurfaceOwner).toBe("external");
+    expect(external.dataset.tauriHoleFrame).toBe("");
+    expect(p.dataset.tauriHole).toBe("pane");
+  });
+
   it("PaneSurfaceHost renderer 안의 content 슬롯을 direct 소유로 중복 선언하지 않는다", () => {
     const p = pane("g1");
     const remote = body(p, "g1", "b-pane-member");
@@ -175,5 +189,26 @@ describe("Tauri private hole projection", () => {
     expect(placeholder.dataset.tauriHole).toBe("content");
     expect(remote.dataset.tauriHoleFrame).toBe("");
     expect(p.dataset.tauriHole).toBe("pane");
+  });
+
+  it("설치는 external surface 소유권의 선언과 해제를 같은 DOM 사건으로 반영한다", async () => {
+    const p = pane("g1");
+    const external = body(p, "g1", "offscreen-tab-1");
+    const slot = external.querySelector<HTMLElement>("[data-content-view-body]")!;
+    installTauriHoleMarkers();
+
+    slot.dataset.externalSurface = "offscreen-tab-1";
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    await Promise.resolve();
+    expect(slot.dataset.tauriSurfaceOwner).toBe("external");
+    expect(p.dataset.tauriHole).toBe("pane");
+
+    delete slot.dataset.externalSurface;
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    await Promise.resolve();
+    expect(slot.dataset.tauriHole).toBeUndefined();
+    expect(slot.dataset.tauriSurfaceOwner).toBeUndefined();
+    expect(external.dataset.tauriHoleFrame).toBeUndefined();
+    expect(p.dataset.tauriHole).toBeUndefined();
   });
 });

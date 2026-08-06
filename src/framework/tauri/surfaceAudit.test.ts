@@ -106,12 +106,19 @@ describe("Tauri 표면 감사의 DOM 정본", () => {
     pane.dataset.contentViewBody = "b-pane";
     pane.getBoundingClientRect = () =>
       ({ x: 400, y: 20, width: 300, height: 200 }) as DOMRect;
-    document.body.append(direct, pane);
+    const external = document.createElement("div");
+    external.dataset.tauriHole = "content";
+    external.dataset.tauriSurfaceOwner = "external";
+    external.dataset.contentViewBody = "b-external";
+    external.getBoundingClientRect = () =>
+      ({ x: 800, y: 20, width: 300, height: 200 }) as DOMRect;
+    document.body.append(direct, pane, external);
 
     const anchors = visibleAnchorFacts();
     expect(anchors.map((anchor) => [anchor.label, anchor.owner])).toEqual([
       ["b-direct", "direct"],
       ["b-pane", "pane"],
+      ["b-external", "external"],
     ]);
     expect(directSurfaceAnchors(anchors).map((anchor) => anchor.label)).toEqual(["b-direct"]);
   });

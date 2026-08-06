@@ -40,7 +40,7 @@
 |---|---|---|
 | B01 | 3종 최초 mount + 주소표시줄 + 페이지 신원 | 공개 DOM/status의 mount, address, page identity가 모두 요청값과 일치한다. |
 | B02 | 한글 IME `beforeinput`/`input` 및 전환·resize 값 유지 | 두 입력 사건과 최종 value를 읽고 모든 전환·resize checkpoint에서 같은 값을 단언한다. |
-| B03 | DOM slot ↔ live surface 1:1 rounding-only frame/shared topology | 공개 DOM rect·native/engine rect·identity ledger의 개수, 소유권, 좌표 차이를 단언한다. Tauri에서는 어댑터 수명주기 claim이 있는 content 슬롯만 native hole이 된다. 열리지 않은 DOM/offscreen 슬롯을 hole로 추측하지 않으며 `direct`와 `PaneSurfaceHost` 소유권은 각 판정면에서 정확히 한 번만 감사한다. |
+| B03 | DOM slot ↔ live surface 1:1 rounding-only frame/shared topology | 공개 DOM rect·native/engine rect·identity ledger의 개수, 소유권, 좌표 차이를 단언한다. Tauri에서는 어댑터 수명주기 claim(`direct`/`pane`) 또는 중립 공개 선언 `data-external-surface=<안정적 identity>`가 있는 content 슬롯만 native hole이 된다. 선언 없는 DOM 슬롯을 hole로 추측하지 않는다. `direct`, `PaneSurfaceHost`, 외부 제공자 기하는 각 소유 판정면에서 정확히 한 번만 감사한다. Electron은 브라우저 본문이 DOM 자식이므로 이 선언을 hole로 투영하지 않는다. |
 | B04 | FLOW rail·pane·native 단일 원자 이동 | 한 transaction/animation epoch의 유한 trace에서 세 대상의 연결·좌표·정착 상태를 단언한다. |
 | B05 | flicker/black/잔상/착지 후 소실 0 | 공개 presentation trace에서 live·visible·painted 연속성과 replacement/gap/disappearance 0을 단언한다. |
 | B06 | active만 밝음/inactive 감광/rail·sidebar 비감광 | 공개 style 상태에서 단일 lighting plane의 base·active aperture, pane별 dim, rail·sidebar의 plane 비포함, 프레임워크 adapter alpha 1(중복 감광 없음)을 단언한다. |

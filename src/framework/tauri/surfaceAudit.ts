@@ -30,7 +30,7 @@ export interface SurfaceAnchorFact {
   label: string | null;
   viewId: string | null;
   projectId: string | null;
-  owner: "direct" | "pane" | "undeclared";
+  owner: "direct" | "pane" | "external" | "undeclared";
   rect: AuditRect;
 }
 
@@ -57,6 +57,7 @@ export interface SurfaceCompositionSnapshot {
   anchors: SurfaceAnchorFact[];
   directAnchors: SurfaceAnchorFact[];
   paneAnchors: SurfaceAnchorFact[];
+  externalAnchors: SurfaceAnchorFact[];
   ownership: ReturnType<typeof tauriSurfaceOwnershipFacts>;
   surfaces: NativeSurfaceFact[];
   matches: {
@@ -172,7 +173,9 @@ export function visibleAnchorFacts(doc: Document = document): SurfaceAnchorFact[
           ? "direct"
           : el.getAttribute(TAURI_SURFACE_OWNER_ATTR) === "pane"
             ? "pane"
-            : "undeclared",
+            : el.getAttribute(TAURI_SURFACE_OWNER_ATTR) === "external"
+              ? "external"
+              : "undeclared",
         rect: { x: r.x, y: r.y, w: r.width, h: r.height },
       });
     }
@@ -286,6 +289,7 @@ export async function surfaceCompositionSnapshot(): Promise<SurfaceCompositionSn
   const anchors = visibleAnchorFacts();
   const directAnchors = directSurfaceAnchors(anchors);
   const paneAnchors = anchors.filter((anchor) => anchor.owner === "pane");
+  const externalAnchors = anchors.filter((anchor) => anchor.owner === "external");
   const unowned = anchors.filter((anchor) => anchor.owner === "undeclared");
   const surfaces = normalizeNativeSurfaces(stats, window.innerHeight);
   const visible = directNativeSurfaces(surfaces).filter((surface) => !surface.effectivelyHidden);
@@ -328,6 +332,7 @@ export async function surfaceCompositionSnapshot(): Promise<SurfaceCompositionSn
     anchors,
     directAnchors,
     paneAnchors,
+    externalAnchors,
     ownership: tauriSurfaceOwnershipFacts(),
     surfaces,
     matches,

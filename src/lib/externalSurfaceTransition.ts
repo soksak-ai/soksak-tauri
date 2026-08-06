@@ -9,6 +9,15 @@
 export const EXTERNAL_SURFACE_TRANSITION_EVENT =
   "soksak:external-surface-layout-transition" as const;
 
+/**
+ * 문서 밖 가시 표면 제공자가 소유하는 공개 DOM 슬롯 선언.
+ *
+ * 값은 제공자 내부의 안정적인 표면 identity다. 코어는 값의 문법이나 엔진을 해석하지 않고,
+ * 프레임워크 어댑터가 자기 합성 방식에 필요한 투영만 수행한다. 순수 DOM 프레임워크는 이
+ * 선언을 읽을 이유가 없다.
+ */
+export const EXTERNAL_SURFACE_ATTR = "data-external-surface" as const;
+
 export interface ExternalSurfaceRect {
   x: number;
   y: number;

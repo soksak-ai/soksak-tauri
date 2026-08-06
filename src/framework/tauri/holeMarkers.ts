@@ -3,6 +3,7 @@
 // (`data-content-view-body`)이고, pane 연결은 공개 identity(`data-pane`)로 해소한다.
 import { moduleState } from "../../lib/moduleState";
 import { CONTENT_VIEW_BODY } from "../../lib/contentViews";
+import { EXTERNAL_SURFACE_ATTR } from "../../lib/externalSurfaceTransition";
 import { onPluginEvent } from "../../plugins/hooks";
 import { onTauriSurfaceOwnershipChanged, tauriSurfaceOwner } from "./surfaceOwnership";
 
@@ -46,7 +47,7 @@ export function syncTauriHoleMarkers(doc: Document = document): void {
     el.removeAttribute(TAURI_SURFACE_OWNER_ATTR);
   }
 
-  const project = (hole: HTMLElement, owner: "direct" | "pane"): void => {
+  const project = (hole: HTMLElement, owner: "direct" | "pane" | "external"): void => {
     const body = hole.closest<HTMLElement>(".tab-body");
     if (!body) return;
     // 네이티브 자식 표면의 bounds 원천은 공개 content-view body 자체다. tab-body 전체를 hole로
@@ -64,9 +65,14 @@ export function syncTauriHoleMarkers(doc: Document = document): void {
   for (const slot of doc.querySelectorAll<HTMLElement>(`[${CONTENT_VIEW_BODY}]`)) {
     const label = slot.getAttribute(CONTENT_VIEW_BODY);
     if (!label) continue;
+    // 한 슬롯의 기하 소유자는 하나다. pane renderer가 실제 child 전체를 소유하면 pane이
+    // 우선하며, 그 밖의 문서 밖 제공자는 공개 선언으로만 식별한다. 프레임워크/플러그인
+    // 이름이나 DOM 구조를 추측하지 않는다.
     const owner = slot.closest(`[${TAURI_PANE_RENDERER_ATTR}]`)
       ? "pane"
-      : tauriSurfaceOwner(label);
+      : slot.getAttribute(EXTERNAL_SURFACE_ATTR)
+        ? "external"
+        : tauriSurfaceOwner(label);
     if (owner) project(slot, owner);
   }
   for (const renderer of doc.querySelectorAll<HTMLElement>(`[${TAURI_PANE_RENDERER_ATTR}]`)) {
@@ -95,7 +101,7 @@ export function installTauriHoleMarkers(): void {
     childList: true,
     subtree: true,
     attributes: true,
-    attributeFilter: [CONTENT_VIEW_BODY, TAURI_PANE_RENDERER_ATTR, "data-pane"],
+    attributeFilter: [CONTENT_VIEW_BODY, EXTERNAL_SURFACE_ATTR, TAURI_PANE_RENDERER_ATTR, "data-pane"],
   });
   schedule();
 }
