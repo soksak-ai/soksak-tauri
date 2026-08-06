@@ -224,7 +224,7 @@ describe("ui.trace.multi — 같은 tick의 공개 DOM 참가자 원장", () => 
           { address: addresses[2], connected: true, rect: { x: 110, y: 80, w: 560, h: 420 } },
         ]);
       }
-      expect(data.samples.at(-1)!.sampledAtUnixMs)
+      expect(data.samples[data.samples.length - 1]!.sampledAtUnixMs)
         .toBeGreaterThan(data.samples[0].sampledAtUnixMs);
       expect(getSpec("ui.trace.multi")?.returns).toContain("sampledAtUnixMs");
     } finally {
