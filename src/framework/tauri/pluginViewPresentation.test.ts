@@ -133,6 +133,7 @@ describe("Tauri plugin renderer RPC surface", () => {
       [{
         pane: "pane-a", window: "w-1", cssFrame: { x: 10, y: 20, w: 300, h: 200 },
         alpha: 1,
+        chromeAboveHost: true,
         rendererTopology: {
           domRendererPath: ["TaoView", "PaneSurfaceHost", "WryWebView"],
           nativeSurfacePath: ["TaoView", "PaneSurfaceHost", "BrowserSurface"],
@@ -144,6 +145,7 @@ describe("Tauri plugin renderer RPC surface", () => {
     );
     expect(verdict.matches[0]).toMatchObject({
       alpha: 1,
+      chromeAboveHost: true,
       rendererTopology: { verdict: "shared-pane-host", panelAtomicMotion: true },
     });
   });

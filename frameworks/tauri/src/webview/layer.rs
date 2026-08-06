@@ -589,7 +589,32 @@ pub fn group_pane_surface_host(
     Ok(())
 }
 
+fn view_is_above(upper: &NSView, lower: &NSView) -> bool {
+    let (Some(upper_parent), Some(lower_parent)) = (unsafe {
+        (upper.superview(), lower.superview())
+    }) else {
+        return false;
+    };
+    if Retained::as_ptr(&upper_parent) != Retained::as_ptr(&lower_parent) {
+        return false;
+    }
+    let upper_ptr = upper as *const NSView as usize;
+    let lower_ptr = lower as *const NSView as usize;
+    let mut upper_index = None;
+    let mut lower_index = None;
+    for (index, sibling) in upper_parent.subviews().iter().enumerate() {
+        let ptr = Retained::as_ptr(&sibling) as usize;
+        if ptr == upper_ptr { upper_index = Some(index); }
+        if ptr == lower_ptr { lower_index = Some(index); }
+    }
+    matches!((upper_index, lower_index), (Some(upper), Some(lower)) if upper > lower)
+}
+
 pub fn pane_surface_host_state() -> serde_json::Value {
+    let main_views = LAYERS.lock().ok().map(|layers| {
+        layers.iter().map(|(window, layer)| (window.clone(), layer.main_ptr))
+            .collect::<HashMap<_, _>>()
+    }).unwrap_or_default();
     let Ok(hosts) = PANE_SURFACE_HOSTS.lock() else { return serde_json::json!([]); };
     let views = SURFACE_VIEWS.lock().ok();
     let transparency = SURFACE_TRANSPARENCY.lock().ok();
@@ -615,6 +640,13 @@ pub fn pane_surface_host_state() -> serde_json::Value {
             })
         });
         let clips_to_bounds = host.layer().map(|layer| layer.masksToBounds()).unwrap_or(false);
+        let chrome_above_host = main_views.get(&record.window).copied()
+            .filter(|ptr| *ptr != 0)
+            .map(|ptr| {
+                let main_view = unsafe { &*(ptr as *const NSView) };
+                view_is_above(main_view, host)
+            })
+            .unwrap_or(false);
         let renderer_ptr = views.as_ref().and_then(|map| map.get(&record.renderer)).copied().unwrap_or(0);
         let topology = record.members.first()
             .and_then(|label| {
@@ -657,6 +689,7 @@ pub fn pane_surface_host_state() -> serde_json::Value {
             "cssFrame": css_frame,
             "contractFrame": contract_frame,
             "clipsToBounds": clips_to_bounds,
+            "chromeAboveHost": chrome_above_host,
             "alpha": host.alphaValue(),
             "rendererTopology": topology,
         })

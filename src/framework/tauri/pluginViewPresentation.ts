@@ -79,6 +79,7 @@ type NativePaneFact = {
   contractFrame?: PaneRect | null;
   memberFrames?: { label: string; cssFrame: PaneRect | null; contractFrame?: PaneRect | null }[];
   rendererTopology?: RendererTopologyFact | null;
+  chromeAboveHost?: boolean;
   alpha?: number;
   [key: string]: unknown;
 };
@@ -182,6 +183,7 @@ export function comparePanePresentation(
       rendererTopology: nativeFact?.rendererTopology
         ? classifyRendererTopology(nativeFact.rendererTopology)
         : null,
+      chromeAboveHost: nativeFact?.chromeAboveHost === true,
       alpha: nativeFact?.alpha ?? null,
       ok,
     };

@@ -52,6 +52,8 @@ fn pane_topology_observes_external_hosts_from_the_public_host_registry() {
         .expect("pane state boundary")
         .0;
     assert!(state.contains("(host_ptr != 0).then_some(host_ptr)"));
+    assert!(state.contains("\"chromeAboveHost\""));
+    assert!(state.contains("view_is_above(main_view, host)"));
 }
 
 #[test]
