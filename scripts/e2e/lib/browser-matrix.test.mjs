@@ -279,7 +279,7 @@ describe("브라우저 구현 행렬", () => {
     }]);
   });
 
-  it("offscreen은 pane trace로 가장하지 않고 sidecar render-tick producer를 정규화한다", () => {
+  it("offscreen은 보간 DOM 진단을 renderer 사실로 가장하지 않고 단일 native presenter를 정규화한다", () => {
     const adapter = browserImplementations["browser-chromium-offscreen"].presentationTrace;
     expect(adapter).toMatchObject({
       ownerCommand: "plugin.soksak-plugin-browser-chromium-offscreen.stats",
@@ -304,14 +304,16 @@ describe("브라우저 구현 행렬", () => {
         atUnixMs: 2_000,
         surfaces: [{
           viewId: "view-right",
-          domRect: { x: 400, y: 20, w: 300, h: 200 },
+          // 이 값은 plugin의 rAF 두 표본 사이를 보간한 진단값일 수 있다. 실제 display
+          // callback이 읽은 presenter frame과 일부러 다르게 두어 판정면 유입을 막는다.
+          domRect: { x: 437, y: 20, w: 300, h: 200 },
           presentationRect: { x: 400, y: 20, w: 300, h: 200 },
         }],
       }],
     }, { targetViewId: "view-right" })).toEqual([{
       sampledAtUnixMs: 2_000,
       connected: true,
-      slotFrame: { x: 400, y: 20, w: 300, h: 200 },
+      slotFrame: { x: 437, y: 20, w: 300, h: 200 },
       rendererFrame: { x: 400, y: 20, w: 300, h: 200 },
       surfaceFrame: { x: 400, y: 20, w: 300, h: 200 },
     }]);
