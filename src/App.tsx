@@ -610,6 +610,7 @@ const ProjectPlane = memo(function ProjectPlane({
       <div
         className={`sidebar-right${project.rightOpen ? " open" : ""}${rightMode === "push" ? " push" : ""}`}
         data-node="sidebar/right"
+        data-focus-lighting="exempt"
         style={{
           width: project.rightOpen ? rightW : 0,
           borderLeftWidth: project.rightOpen ? 1 : 0,

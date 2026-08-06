@@ -17,6 +17,21 @@ describe("shell overlay contract", () => {
     expect(modal).toContain('data-node="modal/project-new/close"');
   });
 
+  it("keeps both side chrome surfaces outside the focus-lighting plane", () => {
+    const app = readFileSync(resolve(ROOT, "src/App.tsx"), "utf8");
+    const openingTag = (node: string) =>
+      app.match(
+        new RegExp(`<div\\s+[^>]*data-node="${node}"[^>]*>`),
+      )?.[0] ?? "";
+
+    expect(openingTag("rail/left")).toContain(
+      'data-focus-lighting="exempt"',
+    );
+    expect(openingTag("sidebar/right")).toContain(
+      'data-focus-lighting="exempt"',
+    );
+  });
+
   it("declares modal activation as a native-surface occlusion transaction", () => {
     const modal = readFileSync(resolve(ROOT, "src/components/NewProjectModal.tsx"), "utf8");
     const tauri = readFileSync(resolve(ROOT, "src/framework/tauri/install.ts"), "utf8");
