@@ -10,6 +10,14 @@
 //     props[] 로 임의 computed prop 요청(하드코딩 필드 한계 제거), occlusion 도달성 판정.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { startPointerOrderRepair } from "../lib/pointerOrderRepair";
+import {
+  __resetLayoutTransitionHostForTest,
+  prepareLayoutMove,
+} from "../lib/layoutTransitionHost";
+import {
+  __resetLayoutTransitionJournalForTest,
+  layoutTransitionJournal,
+} from "../lib/layoutTransitionJournal";
 import { invoke as frameworkInvoke } from "../framework";
 import { recordWindowFrames } from "./windowRecorder";
 
@@ -50,6 +58,8 @@ import { catalogJson, execute, getSpec, unregister } from "./registry";
 
 beforeEach(() => {
   sentInput.length = 0;
+  __resetLayoutTransitionHostForTest();
+  __resetLayoutTransitionJournalForTest();
   vi.mocked(recordWindowFrames).mockReset();
   registerDomCatalog();
 });
@@ -171,7 +181,7 @@ describe("ui.tree/ui.measure — 공개 DOM 노드 인스턴스 식별자", () =
 });
 
 describe("ui.trace.multi — 같은 tick의 공개 DOM 참가자 원장", () => {
-  it("rail/pane/slot의 raw rect와 절대 시각을 한 bounded timer tick에 기록한다", async () => {
+  it("initial과 layout DOM-commit 사건에서만 raw 참가자를 동기 기록한다", async () => {
     vi.useFakeTimers();
     try {
       mountNode(`
@@ -179,7 +189,7 @@ describe("ui.trace.multi — 같은 tick의 공개 DOM 참가자 원장", () => 
         <div data-node="pane"></div>
         <div data-node="slot"></div>
       `);
-      const rects = {
+      const rects: Record<string, { x: number; y: number; width: number; height: number }> = {
         rail: { x: 10, y: 20, width: 80, height: 500 },
         pane: { x: 90, y: 20, width: 600, height: 500 },
         slot: { x: 110, y: 80, width: 560, height: 420 },
@@ -198,6 +208,12 @@ describe("ui.trace.multi — 같은 tick의 공개 DOM 참가자 원장", () => 
       const addresses = ["rail", "pane", "slot"]
         .map((node) => `win/main/content/view/test.v/node/${node}`);
       const pending = execute("ui.trace.multi", { addresses, ms: 50 }, {});
+      await vi.advanceTimersByTimeAsync(0);
+      rects.rail.x = 170;
+      rects.pane.x = 250;
+      rects.slot.x = 270;
+      const prepared = await prepareLayoutMove([{ viewId: "test.v", dx: -160 }]);
+      await prepared.commit();
       await vi.advanceTimersByTimeAsync(80);
       const result = await pending;
       expect(result.ok).toBe(true);
@@ -206,6 +222,9 @@ describe("ui.trace.multi — 같은 tick의 공개 DOM 참가자 원장", () => 
         samples: Array<{
           sequence: number;
           sampledAtUnixMs: number;
+          trigger: "initial" | "layout-dom-commit";
+          transactionId: string | null;
+          domCommittedAtUnixMs: number | null;
           nodes: Array<{
             address: string;
             connected: boolean;
@@ -214,19 +233,33 @@ describe("ui.trace.multi — 같은 tick의 공개 DOM 참가자 원장", () => 
         }>;
       };
       expect(data.addresses).toEqual(addresses);
-      expect(data.samples.length).toBeGreaterThanOrEqual(3);
-      for (const [sequence, sample] of data.samples.entries()) {
-        expect(sample.sequence).toBe(sequence);
-        expect(Number.isFinite(sample.sampledAtUnixMs)).toBe(true);
-        expect(sample.nodes).toEqual([
+      expect(data.samples).toHaveLength(2);
+      expect(data.samples[0]).toMatchObject({
+        sequence: 0,
+        trigger: "initial",
+        transactionId: null,
+        domCommittedAtUnixMs: null,
+        nodes: [
           { address: addresses[0], connected: true, rect: { x: 10, y: 20, w: 80, h: 500 } },
           { address: addresses[1], connected: true, rect: { x: 90, y: 20, w: 600, h: 500 } },
           { address: addresses[2], connected: true, rect: { x: 110, y: 80, w: 560, h: 420 } },
-        ]);
-      }
-      expect(data.samples[data.samples.length - 1]!.sampledAtUnixMs)
-        .toBeGreaterThan(data.samples[0].sampledAtUnixMs);
+        ],
+      });
+      expect(data.samples[1]).toMatchObject({
+        sequence: 1,
+        trigger: "layout-dom-commit",
+        transactionId: "layout-1",
+        domCommittedAtUnixMs: layoutTransitionJournal()[0]?.domCommittedAtUnixMs,
+        nodes: [
+          { address: addresses[0], connected: true, rect: { x: 170, y: 20, w: 80, h: 500 } },
+          { address: addresses[1], connected: true, rect: { x: 250, y: 20, w: 600, h: 500 } },
+          { address: addresses[2], connected: true, rect: { x: 270, y: 80, w: 560, h: 420 } },
+        ],
+      });
+      expect(data.samples.every((sample) => Number.isFinite(sample.sampledAtUnixMs))).toBe(true);
       expect(getSpec("ui.trace.multi")?.returns).toContain("sampledAtUnixMs");
+      expect(getSpec("ui.trace.multi")?.returns).toContain("transactionId");
+      expect(getSpec("ui.trace.multi")?.returns).toContain("domCommittedAtUnixMs");
     } finally {
       vi.useRealTimers();
     }

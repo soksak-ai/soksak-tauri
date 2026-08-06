@@ -7,6 +7,7 @@ import {
 import {
   __resetLayoutTransitionJournalForTest,
   layoutTransitionJournal,
+  onLayoutTransitionJournal,
 } from "./layoutTransitionJournal";
 
 describe("layout transition public journal", () => {
@@ -45,5 +46,42 @@ describe("layout transition public journal", () => {
     expect(commit).toHaveBeenCalledTimes(1);
     expect(cancel).toHaveBeenCalledTimes(1);
     expect(layoutTransitionJournal().map((row) => row.phase)).toEqual(["committed", "cancelled"]);
+  });
+
+  it("DOM commit 사건을 transaction과 함께 surface ACK보다 먼저 동기 발행한다", async () => {
+    let releaseSurfaceAck!: () => void;
+    const surfaceAck = new Promise<void>((resolve) => { releaseSurfaceAck = resolve; });
+    const commit = vi.fn(() => surfaceAck);
+    registerLayoutTransitionHost({
+      prepareMove: async () => ({ mode: "snap", commit, cancel: vi.fn() }),
+    });
+    const events: unknown[] = [];
+    const unsubscribe = onLayoutTransitionJournal((event) => events.push(event));
+    try {
+      const prepared = await prepareLayoutMove([{ viewId: "v1", dx: 160 }]);
+      const committing = prepared.commit();
+
+      expect(commit).toHaveBeenCalledOnce();
+      expect(events).toEqual([expect.objectContaining({
+        type: "dom-committed",
+        transactionId: "layout-1",
+        sequence: 1,
+        domCommittedAtUnixMs: expect.any(Number),
+      })]);
+      expect(layoutTransitionJournal()[0]).toEqual(expect.objectContaining({
+        phase: "prepared",
+        domCommittedAtUnixMs: (events[0] as { domCommittedAtUnixMs: number }).domCommittedAtUnixMs,
+      }));
+
+      releaseSurfaceAck();
+      await committing;
+      expect(layoutTransitionJournal()[0]).toEqual(expect.objectContaining({
+        phase: "committed",
+        domCommittedAtUnixMs: expect.any(Number),
+        closedAtUnixMs: expect.any(Number),
+      }));
+    } finally {
+      unsubscribe();
+    }
   });
 });
