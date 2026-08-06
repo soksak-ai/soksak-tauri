@@ -26,6 +26,7 @@ import {
 } from "./windowRecorder";
 import { createFiniteDomTraceSampler } from "./finiteDomTrace";
 import { layoutSettlementStatus, waitLayoutSettled } from "./waitLayoutSettled";
+import { onLayoutTransitionJournal } from "../lib/layoutTransitionJournal";
 
 type FocusTraceEntry = {
   t: number;
@@ -1124,7 +1125,7 @@ export function registerDomCatalog(): void {
 
   register("ui.trace.multi", {
     description:
-      "Sample multiple exposed DOM nodes in one bounded timer tick and return raw rects with one absolute timestamp per sample. This is the drift-free DOM side of cross-renderer composition evidence: every node in a sample is read by the same callback, without screenshot or recorder coupling.",
+      "Read multiple exposed DOM nodes synchronously at trace start and on each public layout DOM-commit event, then finish at one bounded timeout. Every event sample carries its layout transaction id; repeated timer samples are not composition authority.",
     triggers: { ko: "다중 노드 동시 추적 절대시각 합성 원장" },
     params: {
       addresses: {
@@ -1135,7 +1136,7 @@ export function registerDomCatalog(): void {
       ms: { type: "number", description: "Bounded sampling window in ms (default 1000, max 5000)" },
     },
     returns:
-      "{ addresses, startedAtUnixMs, endedAtUnixMs, samples:[{sequence,sampledAtUnixMs,nodes:[{address,connected,rect:{x,y,w,h}}]}] }",
+      "{ addresses, startedAtUnixMs, endedAtUnixMs, samples:[{sequence,sampledAtUnixMs,trigger:'initial'|'layout-dom-commit',transactionId:string|null,domCommittedAtUnixMs:number|null,nodes:[{address,connected,rect:{x,y,w,h}}]}] }",
     message: (d) => tmsg("msg.ui.trace", { n: String((d.samples as unknown[])?.length ?? 0) }),
     errors: ["NOT_EXPOSED", "AMBIGUOUS", "INVALID_PARAMS"],
     handler: async (p) => {
@@ -1165,43 +1166,58 @@ export function registerDomCatalog(): void {
       const samples: {
         sequence: number;
         sampledAtUnixMs: number;
+        trigger: "initial" | "layout-dom-commit";
+        transactionId: string | null;
+        domCommittedAtUnixMs: number | null;
         nodes: {
           address: string;
           connected: boolean;
           rect: { x: number; y: number; w: number; h: number };
         }[];
       }[] = [];
-      // 한 callback 안에서 전 참가자를 읽는다. rAF는 가려진 창에서 정지하므로 기존 ui.trace와
-      // 같은 유한 timer 정책을 사용하되, 절대시각을 붙여 native presentation 사건과 결합한다.
-      await new Promise<void>((done) => {
-        const tick = () => {
-          const sampledAtUnixMs = unixFromPerformance + performance.now();
-          samples.push({
-            sequence: samples.length,
-            sampledAtUnixMs,
-            nodes: targets.map(({ address, el }) => {
-              const rect = el.getBoundingClientRect();
-              return {
-                address,
-                connected: el.isConnected,
-                rect: {
-                  x: Math.round(rect.x * 10) / 10,
-                  y: Math.round(rect.y * 10) / 10,
-                  w: Math.round(rect.width * 10) / 10,
-                  h: Math.round(rect.height * 10) / 10,
-                },
-              };
-            }),
-          });
-          if (performance.now() - t0 >= ms) done();
-          else setTimeout(tick, 16);
-        };
-        tick();
+      const sample = (
+        trigger: "initial" | "layout-dom-commit",
+        transactionId: string | null,
+        domCommittedAtUnixMs: number | null,
+      ) => {
+        const sampledAtUnixMs = unixFromPerformance + performance.now();
+        samples.push({
+          sequence: samples.length,
+          sampledAtUnixMs,
+          trigger,
+          transactionId,
+          domCommittedAtUnixMs,
+          // 사건 callback 안에서 전 참가자를 읽는다. 각 rect는 raw DOM 사실이며 보간·투영하지 않는다.
+          nodes: targets.map(({ address, el }) => {
+            const rect = el.getBoundingClientRect();
+            return {
+              address,
+              connected: el.isConnected,
+              rect: {
+                x: Math.round(rect.x * 10) / 10,
+                y: Math.round(rect.y * 10) / 10,
+                w: Math.round(rect.width * 10) / 10,
+                h: Math.round(rect.height * 10) / 10,
+              },
+            };
+          }),
+        });
+      };
+      sample("initial", null, null);
+      const unsubscribe = onLayoutTransitionJournal((event) => {
+        if (event.type !== "dom-committed") return;
+        sample("layout-dom-commit", event.transactionId, event.domCommittedAtUnixMs);
       });
+      try {
+        // 가려진 창에서도 반드시 끝나는 단일 종료 장벽이다. 좌표를 반복 채집하는 polling이 아니다.
+        await new Promise<void>((done) => setTimeout(done, ms));
+      } finally {
+        unsubscribe();
+      }
       return {
         addresses: [...addresses] as string[],
         startedAtUnixMs: samples[0].sampledAtUnixMs,
-        endedAtUnixMs: samples[samples.length - 1].sampledAtUnixMs,
+        endedAtUnixMs: unixFromPerformance + performance.now(),
         samples,
       };
     },
