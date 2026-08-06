@@ -131,4 +131,15 @@ describe("Tauri resize composition probe", () => {
     expect(inspection).not.toContain("composeTitlebarComposition()");
     expect(mutation).toContain("composeTitlebarComposition()");
   });
+
+  it("exposes a bounded height probe that restores the exact inline geometry", () => {
+    const source = installSource();
+    expect(source).toContain('register("titlebar.height.set", {');
+    expect(source).toContain('register("titlebar.height.reset", {');
+    expect(source).toContain("height <= 0 || height > window.innerHeight");
+    expect(source).toContain("titlebarHeightProbe.height = element.style.height");
+    expect(source).toContain("titlebarHeightProbe.flexBasis = element.style.flexBasis");
+    expect(source).toContain("requestAnimationFrame(() => requestAnimationFrame");
+    expect(source).toContain("return composeTitlebarComposition()");
+  });
 });

@@ -69,6 +69,36 @@ const startupPresentation = moduleState("framework/tauri/install#startupPresenta
   presented: false,
 }));
 
+const titlebarHeightProbe = moduleState("framework/tauri/install#titlebarHeightProbe", () => ({
+  element: null as HTMLElement | null,
+  height: "",
+  flexBasis: "",
+}));
+
+const nextPaint = (): Promise<void> => new Promise((resolve) => {
+  requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+});
+
+async function setTitlebarProbeHeight(height: number | null) {
+  const element = document.querySelector<HTMLElement>('[data-node="titlebar"]');
+  if (!element) throw new Error("public titlebar DOM is absent");
+  if (height !== null && (!Number.isFinite(height) || height <= 0 || height > window.innerHeight)) {
+    throw new Error("height must be finite, positive, and contained by the viewport");
+  }
+  if (!titlebarHeightProbe.element) {
+    titlebarHeightProbe.element = element;
+    titlebarHeightProbe.height = element.style.height;
+    titlebarHeightProbe.flexBasis = element.style.flexBasis;
+  } else if (titlebarHeightProbe.element !== element) {
+    throw new Error("public titlebar DOM remounted during a height probe");
+  }
+  element.style.height = height === null ? titlebarHeightProbe.height : `${height}px`;
+  element.style.flexBasis = height === null ? titlebarHeightProbe.flexBasis : `${height}px`;
+  if (height === null) titlebarHeightProbe.element = null;
+  await nextPaint();
+  return composeTitlebarComposition();
+}
+
 function waitForPublicTitlebar(): Promise<void> {
   const selector = '[data-node="titlebar"]';
   if (document.querySelector(selector)) return Promise.resolve();
@@ -466,6 +496,20 @@ function installTitlebarCompositionCommands(): void {
       ? "Tauri 신호등 DOM/AppKit 합성 거래를 완료했습니다"
       : `Tauri 신호등 합성 뒤 불일치 ${String((data.issues as unknown[] | undefined)?.length ?? 0)}건`,
     handler: async () => composeTitlebarComposition(),
+  });
+  register("titlebar.height.set", {
+    description: "Set the public DOM titlebar height for an exact Tauri composition probe and return its native receipt.",
+    params: { height: { type: "number", description: "probe height in CSS px", required: true } },
+    danger: "inject",
+    returns: "titlebar composition receipt",
+    message: (data) => `Tauri titlebar height probe: ${String(data.verdict)}`,
+    handler: async (params) => setTitlebarProbeHeight(Number(params.height)),
+  });
+  register("titlebar.height.reset", {
+    description: "Restore the exact inline titlebar geometry captured by titlebar.height.set and return its native receipt.",
+    params: {}, danger: "inject", returns: "titlebar composition receipt",
+    message: (data) => `Tauri titlebar height restored: ${String(data.verdict)}`,
+    handler: async () => setTitlebarProbeHeight(null),
   });
 }
 
