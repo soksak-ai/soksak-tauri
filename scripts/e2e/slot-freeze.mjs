@@ -32,6 +32,7 @@ import {
   evidenceStorePaths,
   finishEvidenceRun,
   resolveEvidenceFile,
+  writeEvidenceFile,
 } from "./lib/evidence-store.mjs";
 import { runRecordingEvidenceAction } from "./lib/recording-evidence-action.mjs";
 import {
@@ -98,7 +99,7 @@ async function runPlannedRecordingAction({ recordingLedger, engine, scenario, na
   });
 }
 
-function reviewRecordingOutcome({ outcome, expectedFrames, name }) {
+async function reviewRecordingOutcome({ outcome, expectedFrames, name }) {
   const relativePath = outcome.visualEvidence.artifact?.relativePath;
   if (!relativePath) {
     const report = outcome.visualEvidence;
@@ -113,16 +114,35 @@ function reviewRecordingOutcome({ outcome, expectedFrames, name }) {
   });
 }
 
-function writeVisualReport(file, report) {
+function evidenceRelativePath(file) {
+  const absolute = path.resolve(file);
+  const relative = path.relative(EVIDENCE_ROOT, absolute);
+  if (resolveEvidenceFile(EVIDENCE_STORE_ROOT, "current", relative) !== absolute) {
+    throw new Error(`evidence report 경계 불일치: ${file}`);
+  }
+  return relative;
+}
+
+async function writeMachineReport(file, report) {
+  await writeEvidenceFile(
+    EVIDENCE_STORE_ROOT,
+    evidenceRelativePath(file),
+    `${JSON.stringify(report, null, 2)}\n`,
+    { keep: process.env.KEEP === "1" },
+  );
+  return report;
+}
+
+async function writeVisualReport(file, report) {
   try {
-    fs.writeFileSync(file, `${JSON.stringify(report, null, 2)}\n`);
+    await writeMachineReport(file, report);
   } catch (error) {
     console.error(`시각 진단 보고서 저장 실패(기계 판정과 분리): ${error instanceof Error ? error.message : String(error)}`);
   }
   return report;
 }
 
-function reviewRecordingArtifacts({ directory, recording, expectedFrames, name }) {
+async function reviewRecordingArtifacts({ directory, recording, expectedFrames, name }) {
   let artifacts = [];
   let artifactReadError = null;
   try {
@@ -134,16 +154,16 @@ function reviewRecordingArtifacts({ directory, recording, expectedFrames, name }
     artifactReadError = error instanceof Error ? error.message : String(error);
   }
   const report = reviewVisualRecordingSafely({ recording, expectedFrames, artifacts, artifactReadError });
-  writeVisualReport(`${directory}.visual-recording.json`, report);
+  await writeVisualReport(`${directory}.visual-recording.json`, report);
   const summary = report.status === "failed" ? `FAILED ${report.failures.join(" · ")}` : report.status;
   console.log(`◉ ${name}: recording visual review ${summary} (제품 machine 판정과 분리)`);
   return { artifacts, report };
 }
 
-function observeFrameSequence(files, name, scale, options = {}) {
+async function observeFrameSequence(files, name, scale, options = {}) {
   const report = inspectFrameSequence(files, name, scale, options);
-  if (files.length === 1) writeVisualReport(`${files[0]}.visual.json`, report);
-  else if (files[0]) writeVisualReport(path.join(path.dirname(files[0]), "visual-diagnostics.json"), report);
+  if (files.length === 1) await writeVisualReport(`${files[0]}.visual.json`, report);
+  else if (files[0]) await writeVisualReport(path.join(path.dirname(files[0]), "visual-diagnostics.json"), report);
   console.log(`◉ ${name}: ${files.length}장 human visual evidence 저장(자동 판정 안 함)`);
   return report;
 }
@@ -436,15 +456,15 @@ async function assertChromeOverlayContract(rpc, win, engineEvidence, scale) {
       },
     ],
   }, win), "chrome overlay anchors");
-  fs.writeFileSync(path.join(engineEvidence, "chrome-overlay-contract.json"), `${JSON.stringify({
+  await writeMachineReport(path.join(engineEvidence, "chrome-overlay-contract.json"), {
     sidebarRect,
     overlappingSurface,
     sidebarProbePoint,
     anchors: anchorState.anchors,
-  }, null, 2)}\n`);
+  });
   const before = path.join(engineEvidence, "chrome-overlay.png");
   must(await rpc("window.snapshot", { path: before }, win), "chrome overlay snapshot");
-  observeFrameSequence([before], `${path.basename(engineEvidence)}/chrome-overlay`, scale, {
+  await observeFrameSequence([before], `${path.basename(engineEvidence)}/chrome-overlay`, scale, {
     requireFixture: false,
     chromeAnchors: [CHROME_MARKERS.railAdd],
     pointAnchors: [{ color: CHROME_MARKERS.rightSidebar, point: sidebarProbePoint }],
@@ -499,16 +519,16 @@ async function assertChromeOverlayContract(rpc, win, engineEvidence, scale) {
       y: probePoint.y - measuredModalCard.rect.y,
     }],
   }, win), "modal overlay probe");
-  fs.writeFileSync(path.join(engineEvidence, "chrome-project-modal-contract.json"), `${JSON.stringify({
+  await writeMachineReport(path.join(engineEvidence, "chrome-project-modal-contract.json"), {
     modalRect: measuredModal.rect,
     modalCardRect: measuredModalCard.rect,
     surfaceRect,
     probePoint,
     anchors: modalAnchorState.anchors,
-  }, null, 2)}\n`);
+  });
   const modalPath = path.join(engineEvidence, "chrome-project-modal.png");
   must(await rpc("window.snapshot", { path: modalPath }, win), "project modal snapshot");
-  observeFrameSequence([modalPath], `${path.basename(engineEvidence)}/chrome-project-modal`, scale, {
+  await observeFrameSequence([modalPath], `${path.basename(engineEvidence)}/chrome-project-modal`, scale, {
     requireFixture: false,
     pointAnchors: [{ color: CHROME_MARKERS.modalOverlayProbe, point: probePoint }],
   });
@@ -539,7 +559,7 @@ async function assertViewportComposition(rpc, win, plugin, tabIds, addresses, sc
     if (!verdict.ok) errors.push(`${tabIds[index]}:${verdict.errors.join("|")}`);
   }
   if (errors.length) throw new Error(`${name}: resize composition 불일치 — ${errors.join(", ")}`);
-  observeFrameSequence([file], name, scale);
+  await observeFrameSequence([file], name, scale);
 }
 
 async function verifyIme(rpc, win, plugin, tabId, text) {
@@ -645,7 +665,7 @@ async function verifyFullCapture(rpc, win, plugin, tabId, outputPath, identityMa
     throw new Error(`${tabId}: full capture 명시 view/영수증/문서 상태 불일치 — ${verdict.errors.join(", ")}`);
   }
   const visual = inspectFullCapture(outputPath, `${tabId}/full`, { identityMarker, receipt: result });
-  writeVisualReport(`${outputPath}.visual.json`, visual);
+  await writeVisualReport(`${outputPath}.visual.json`, visual);
   return {
     path: outputPath,
     bytes: result.bytes,
@@ -769,16 +789,16 @@ async function runEngine(client, page, engine, recordingLedger) {
         const scroll = await verifyScrollInput(
           rpc, win, plugin, tabId, path.join(engineEvidence, `scroll-${index}.png`),
         );
-        fs.writeFileSync(
+        await writeMachineReport(
           path.join(engineEvidence, `scroll-${index}.json`),
-          `${JSON.stringify(scroll, null, 2)}\n`,
+          scroll,
         );
         const full = await verifyFullCapture(
           rpc, win, plugin, tabId, path.join(engineEvidence, `full-${index}.png`), fixtureMarkers[index],
         );
-        fs.writeFileSync(
+        await writeMachineReport(
           path.join(engineEvidence, `full-${index}.json`),
-          `${JSON.stringify(full, null, 2)}\n`,
+          full,
         );
       }
       // tab.open + pane.split은 두 view를 먼저 선언하므로 엔진도 둘을 병렬 생성할 수 있다.
@@ -828,9 +848,9 @@ async function runEngine(client, page, engine, recordingLedger) {
     const firstPaintPath = path.join(engineEvidence, "first-paint.png");
     must(await rpc("window.snapshot", { path: firstPaintPath }, win), "first paint snapshot");
     const scaleEvidence = snapshotScaleForVisualEvidence(firstPaintPath, originalWindow);
-    writeVisualReport(`${firstPaintPath}.scale.visual.json`, scaleEvidence);
+    await writeVisualReport(`${firstPaintPath}.scale.visual.json`, scaleEvidence);
     const scale = scaleEvidence.scale;
-    observeFrameSequence([firstPaintPath], `${engine}/first-paint`, scale);
+    await observeFrameSequence([firstPaintPath], `${engine}/first-paint`, scale);
     must(await rpc("capture.calibration", { visible: false }, win), "first paint calibration hide");
 
     if (sentinelWin && sentinelTabId) {
@@ -849,8 +869,8 @@ async function runEngine(client, page, engine, recordingLedger) {
       must(await rpc("window.snapshot", { path: sentinelPath }, sentinelWin), "cross-window sentinel snapshot");
       const sentinelInfo = must(await rpc("window.info", {}, sentinelWin), "cross-window sentinel info");
       const sentinelScaleEvidence = snapshotScaleForVisualEvidence(sentinelPath, sentinelInfo);
-      writeVisualReport(`${sentinelPath}.scale.visual.json`, sentinelScaleEvidence);
-      observeFrameSequence(
+      await writeVisualReport(`${sentinelPath}.scale.visual.json`, sentinelScaleEvidence);
+      await observeFrameSequence(
         [sentinelPath], `${engine}/cross-window-sentinel`, sentinelScaleEvidence.scale, { slots: [0] },
       );
     }
@@ -889,7 +909,7 @@ async function runEngine(client, page, engine, recordingLedger) {
           }, win, { timeoutMs: 60_000 }),
         });
         const clicked = must(recordingOutcome.actionResult, `교차 클릭 ${name}`);
-        const recordingEvidence = reviewRecordingOutcome({
+        const recordingEvidence = await reviewRecordingOutcome({
           outcome: recordingOutcome,
           expectedFrames: FRAMES_PER_CLICK,
           name: `${engine}/${name}`,
@@ -905,9 +925,9 @@ async function runEngine(client, page, engine, recordingLedger) {
           // 다른 구현/전면 창은 glide이며, 판정기는 실제 trace의 유한 motion 유무를 분류한다.
           expectedMode: frameworkName === "tauri" ? "snap" : "glide",
         });
-        fs.writeFileSync(
+        await writeMachineReport(
           path.join(dir, "layout-transaction.json"),
-          `${JSON.stringify({ afterSequence, entries: layoutVerdict.transactions, verdict: layoutVerdict }, null, 2)}\n`,
+          { afterSequence, entries: layoutVerdict.transactions, verdict: layoutVerdict },
         );
         if (!layoutVerdict.ok) {
           throw new Error(`${engine}/${name}: sidebar/tab layout transaction mismatch — ${layoutVerdict.errors.join(", ")}`);
@@ -920,9 +940,9 @@ async function runEngine(client, page, engine, recordingLedger) {
             { timeoutMs: 10_000 },
           ), `합성 수치 trace 판독 ${name}`);
           const verdict = numericCompositionTraceVerdict(observed.samples);
-          fs.writeFileSync(
+          await writeMachineReport(
             path.join(dir, "composition-trace.json"),
-            `${JSON.stringify({ traceId: trace.traceId, samples: observed.samples, verdict }, null, 2)}\n`,
+            { traceId: trace.traceId, samples: observed.samples, verdict },
           );
           if (!verdict.ok) {
             const failure = `${engine}/${name}: DOM/native presentation trace 불일치 `
@@ -931,7 +951,7 @@ async function runEngine(client, page, engine, recordingLedger) {
             console.error(`RED ${failure}`);
           }
         }
-        observeFrameSequence(
+        await observeFrameSequence(
           files,
           `${engine}/${name}`,
           scale,
@@ -1009,7 +1029,7 @@ async function runEngine(client, page, engine, recordingLedger) {
         }, win, { timeoutMs: 60_000 }),
       });
       const clicked = must(recordingOutcome.actionResult, `${pinCase.name} click`);
-      const recordingEvidence = reviewRecordingOutcome({
+      const recordingEvidence = await reviewRecordingOutcome({
         outcome: recordingOutcome,
         expectedFrames: PIN_FRAMES_PER_CLICK,
         name: `${engine}/${pinCase.name}`,
@@ -1032,9 +1052,9 @@ async function runEngine(client, page, engine, recordingLedger) {
       const unexpected = (journalAfter.entries ?? []).filter((entry) => Number(entry.sequence) > afterSequence);
       if (unexpected.length) pinErrors.push(`layout-transactions=${unexpected.length}/0`);
       const pinTrace = { ok: pinErrors.length === 0, errors: pinErrors, before: rectsBefore, after: rectsAfter };
-      fs.writeFileSync(
+      await writeMachineReport(
         path.join(dir, "pin-layout-transaction.json"),
-        `${JSON.stringify({ afterSequence, unexpected, verdict: pinTrace }, null, 2)}\n`,
+        { afterSequence, unexpected, verdict: pinTrace },
       );
       if (!pinTrace.ok) {
         throw new Error(`${engine}/${pinCase.name}: PIN DOM 고정 불일치 — ${pinTrace.errors.join(", ")}`);
@@ -1060,7 +1080,7 @@ async function runEngine(client, page, engine, recordingLedger) {
         side: pinCase.relationSide,
         placement: "pin",
       });
-      observeFrameSequence(
+      await observeFrameSequence(
         files,
         `${engine}/${pinCase.name}`,
         scale,
@@ -1111,7 +1131,7 @@ async function runEngine(client, page, engine, recordingLedger) {
         });
         const screenshot = path.join(engineEvidence, `${maximizeCase.name}.png`);
         must(await rpc("window.snapshot", { path: screenshot }, win), `${maximizeCase.name} snapshot`);
-        observeFrameSequence(
+        await observeFrameSequence(
           [screenshot], `${engine}/${maximizeCase.name}`, scale, { slots: [maximizeCase.side] },
         );
         must(await rpc("tab.restore", {}, win), `${maximizeCase.name} restore`);
@@ -1152,7 +1172,7 @@ async function runEngine(client, page, engine, recordingLedger) {
         }, win, { timeoutMs: 60_000 }),
       });
       const fastResize = must(fastRecordingOutcome.actionResult, "rapid window resize");
-      const fastRecordingEvidence = reviewRecordingOutcome({
+      const fastRecordingEvidence = await reviewRecordingOutcome({
         outcome: fastRecordingOutcome,
         expectedFrames: FAST_RESIZE_FRAMES,
         name: `${engine}/window-fast`,
@@ -1164,9 +1184,9 @@ async function runEngine(client, page, engine, recordingLedger) {
       if (Number(fastResize.resizeElapsedMs) > 4_000) {
         throw new Error(`rapid window resize 응답 정지: ${fastResize.resizeElapsedMs}ms/${fastSizes.length}단계`);
       }
-      fs.writeFileSync(
+      await writeMachineReport(
         path.join(fastResizeDir, "composition-samples.json"),
-        `${JSON.stringify(fastResize.samples ?? [], null, 2)}\n`,
+        fastResize.samples ?? [],
       );
       if (frameworkName === "tauri") {
         const redSamples = (fastResize.samples ?? []).filter((sample) => sample.observation?.verdict !== "green");
@@ -1191,7 +1211,7 @@ async function runEngine(client, page, engine, recordingLedger) {
       }
       // 최소 높이에서는 입력 아래의 상태 marker가 정상적으로 viewport 밖에 놓일 수 있다. 전이 중에는
       // 상단의 고정 ruler로 live frame을 판정하고, 원복 직후 실제 input 값·event ledger를 다시 읽는다.
-      observeFrameSequence(
+      await observeFrameSequence(
         fastFiles,
         `${engine}/window-fast`,
         scale,
@@ -1238,13 +1258,13 @@ async function runEngine(client, page, engine, recordingLedger) {
           }, win, { timeoutMs: 60_000 }),
         });
         const dragged = must(recordingOutcome.actionResult, `pane resize ${direction}`);
-        const recordingEvidence = reviewRecordingOutcome({
+        const recordingEvidence = await reviewRecordingOutcome({
           outcome: recordingOutcome,
           expectedFrames: FRAMES_PER_CLICK,
           name: `${engine}/pane-${direction}`,
         });
         const files = recordingEvidence.artifacts;
-        observeFrameSequence(
+        await observeFrameSequence(
           files,
           `${engine}/pane-${direction}`,
           scale,
@@ -1260,9 +1280,9 @@ async function runEngine(client, page, engine, recordingLedger) {
             { timeoutMs: 12_000 },
           ), `pane resize ${direction} composition settled`);
           assertPaneComposition(composition, labels);
-          fs.writeFileSync(
+          await writeMachineReport(
             path.join(engineEvidence, `resize-pane-${direction}-composition.json`),
-            `${JSON.stringify(composition, null, 2)}\n`,
+            composition,
           );
         }
         await assertViewportComposition(rpc, win, plugin, tabIds, addresses, scale,
@@ -1279,7 +1299,7 @@ async function runEngine(client, page, engine, recordingLedger) {
 
     const finalPath = path.join(engineEvidence, "final.png");
     must(await rpc("window.snapshot", { path: finalPath }, win), "final snapshot");
-    observeFrameSequence([finalPath], `${engine}/final`, scale);
+    await observeFrameSequence([finalPath], `${engine}/final`, scale);
     await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, "final-ledger");
     const crossClicks = SCENARIOS.has("flow") ? CYCLES * 2 : 0;
     console.log(`✓ ${engine} GREEN — 시나리오 ${[...SCENARIOS].join(",")} · 한글 IME 2개 · 교차 클릭 ${crossClicks}회 · ${resizeSummary} · 연속 프레임 ${frameCount}장`);

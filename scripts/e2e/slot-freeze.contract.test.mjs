@@ -139,6 +139,14 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(source.match(/\.\.\.recordFields/g)).toHaveLength(4);
   });
 
+  it("모든 JSON evidence를 공통 quota store로 기록한다", () => {
+    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    expect(source).toContain("writeEvidenceFile");
+    expect(source).toContain("writeMachineReport");
+    expect(source).toContain("writeVisualReport");
+    expect(source).not.toContain("fs.writeFileSync");
+  });
+
   it("교차 이동의 자동 판정은 recorder callback이 아닌 공개 layout 거래 장부를 소비한다", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
     expect(source).toContain("layoutTransactionVerdict");
