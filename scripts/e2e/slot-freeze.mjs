@@ -1033,10 +1033,9 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
       for (let side = 0; side < addresses.length; side += 1) {
         const name = `${String(cycle * 2 + side + 1).padStart(2, "0")}-${side ? "right" : "left"}`;
         const dir = path.join(engineEvidence, name);
-        // 이 Promise의 handler는 첫 raw DOM 표본을 동기 기록한 뒤 유한 timer 구간에 들어간다.
-        // 다음 RPC인 presentation arm보다 먼저 발행하고, 아래 mapper가 첫 DOM 시각이 layout
-        // prepared 시각보다 앞인지 다시 검사하므로 선관측 실패는 기다림으로 숨지 않고 RED다.
-        const domTracePromise = rpc("ui.trace.multi", {
+        // start ACK는 initial raw read와 layout DOM-commit 구독 설치를 모두 끝낸 뒤에만 온다.
+        // 따라서 그 다음 presentation arm/click은 관측보다 먼저 끼어들 수 없다.
+        const domTraceSession = must(await rpc("ui.trace.multi.start", {
           addresses: [
             railAddress,
             paneAddresses[0],
@@ -1044,8 +1043,9 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
             paneAddresses[1],
             addresses[1],
           ],
-          ms: 1_200,
-        }, win, { timeoutMs: 5_000 });
+          maxMs: 15_000,
+        }, win, { timeoutMs: 5_000 }), `B04 raw DOM trace arm ${name}`);
+        let domTraceOpen = true;
         let armedPresentation = null;
         let presentationOpen = false;
         try {
@@ -1115,6 +1115,16 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
             slotAddress,
           } = movedParticipant;
           const b04JournalEntries = normalizeB04JournalEntries(layoutVerdict.transactions);
+          const domTraceReceipt = must(await rpc(
+            "ui.trace.multi.close",
+            { traceId: domTraceSession.traceId },
+            win,
+            { timeoutMs: 5_000 },
+          ), `B04 raw DOM trace close ${name}`);
+          domTraceOpen = false;
+          if (domTraceReceipt.timedOut === true) {
+            throw new Error(`${engine}/${name}: raw DOM trace가 explicit close 전에 만료됐다`);
+          }
           const presentationReceipt = must(await rpc(
             implementation.presentationTrace.readCommand,
             implementation.presentationTrace.readParams({ traceId: armedPresentation.traceId }),
@@ -1126,15 +1136,13 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
             presentationReceipt,
             { targetViewId, owner },
           );
-          const domTraceReceipt = must(await domTracePromise, `B04 raw DOM trace ${name}`);
           const flowPresentationTrace = mapB04PresentationSamples({
             events: presentationEvents,
             domSamples: domTraceReceipt.samples,
             owner,
             targetViewId,
             transactionId: layoutVerdict.transaction.transactionId,
-            preparedAtUnixMs: layoutVerdict.transaction.preparedAtUnixMs,
-            closedAtUnixMs: layoutVerdict.transaction.closedAtUnixMs,
+            domCommittedAtUnixMs: layoutVerdict.transaction.domCommittedAtUnixMs,
             railAddress,
             paneAddress,
             slotAddress,
@@ -1155,8 +1163,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
               traceId: armedPresentation.traceId,
               targetViewId,
               owner,
-              maxPairGapMs: flowPresentationTrace.maxPairGapMs,
-              pairs: flowPresentationTrace.pairs,
+              joins: flowPresentationTrace.joins,
               domSamples: domTraceReceipt.samples,
               presentationEvents,
               samples: flowPresentationTrace.samples,
@@ -1198,10 +1205,18 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
           await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, `cross-click-${name}`);
           console.log(`✓ ${name}: ${FRAMES_PER_CLICK} frames · 두 live marker · focus dim ${lighting.dims.join("/")} · ${native ? "DOM/native exact" : windowed ? "DOM/CEF exact" : "DOM/native-offscreen exact"}`);
         } catch (flowError) {
-          try {
-            await domTracePromise;
-          } catch (error) {
-            console.error(`${engine}/${name}: raw DOM trace cleanup 실패`, error);
+          if (domTraceOpen) {
+            domTraceOpen = false;
+            try {
+              await rpc(
+                "ui.trace.multi.close",
+                { traceId: domTraceSession.traceId },
+                win,
+                { timeoutMs: 5_000 },
+              );
+            } catch (error) {
+              console.error(`${engine}/${name}: raw DOM trace cleanup 실패`, error);
+            }
           }
           if (presentationOpen) {
             presentationOpen = false;

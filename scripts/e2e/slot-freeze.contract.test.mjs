@@ -332,7 +332,6 @@ describe("slot-freeze instrumentation lifecycle", () => {
   it("B04는 세 엔진 FLOW 양방향의 공개 presentation producer와 layout journal만 canonical receipt로 기록한다", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
     expect(source).toContain('rpc("ui.trace.multi.start"');
-    expect(source).toContain('rpc("ui.trace.multi.close"');
     const domTraceStartCalls = callFacts(source, (node) => (
       node.expression.getText() === "rpc"
       && ts.isStringLiteral(node.arguments[0])

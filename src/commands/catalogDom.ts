@@ -1288,6 +1288,8 @@ export function registerDomCatalog(): void {
         expiryTimer: null,
         evictionTimer: null,
       };
+      // initial read와 listener 설치 사이에는 await·timer·callback 경계가 없다. 같은 JS stack을
+      // 끝낸 뒤에만 start ACK를 내므로, ACK를 받은 자극은 이 구독보다 먼저 끼어들 수 없다.
       appendMultiDomTraceSample(session, "initial", null, null);
       session.unsubscribe = onLayoutTransitionJournal((event) => {
         if (event.type !== "dom-committed") return;
