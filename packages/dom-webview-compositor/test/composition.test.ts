@@ -55,6 +55,7 @@ describe("DOM ↔ native webview composition contract", () => {
     });
     const inventory: CompositionInventory = {
       coordinateSpace: { logical: "css-px", physical: "device-px", scaleFactor: 2 },
+      visibleViewIds: ["left", "right"],
       slots: [observed("slot", "left", 100.25), observed("slot", "right", 420.25)],
       renderers: [observed("renderer", "left", 100.25), observed("renderer", "right", 420.25)],
       surfaces: [observed("surface", "left", 100.25), observed("surface", "right", 420.25)],
@@ -84,6 +85,13 @@ describe("DOM ↔ native webview composition contract", () => {
     expect(compositionInventoryVerdict(physicalDrift)).toMatchObject({
       ok: false,
       errors: expect.arrayContaining([expect.stringContaining("physical-rounding=")]),
+    });
+
+    const hiddenOmission = structuredClone(inventory);
+    hiddenOmission.visibleViewIds.push("omitted-visible-view");
+    expect(compositionInventoryVerdict(hiddenOmission)).toMatchObject({
+      ok: false,
+      errors: expect.arrayContaining([expect.stringContaining("visible-owners=")]),
     });
   });
 

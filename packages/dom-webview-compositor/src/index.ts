@@ -29,6 +29,8 @@ export interface CompositionObservedFrame {
  */
 export interface CompositionInventory {
   coordinateSpace: CompositionCoordinateSpace & { physical: "device-px" };
+  /** UI가 공개한 visible browser owner의 완전한 집합. */
+  visibleViewIds: string[];
   slots: CompositionObservedFrame[];
   renderers: CompositionObservedFrame[];
   surfaces: CompositionObservedFrame[];
@@ -167,12 +169,22 @@ export function compositionInventoryVerdict(inventory: CompositionInventory) {
   const slots = observedFrames("slot", inventory?.slots, scaleFactor, errors);
   const renderers = observedFrames("renderer", inventory?.renderers, scaleFactor, errors);
   const surfaces = observedFrames("surface", inventory?.surfaces, scaleFactor, errors);
+  const visibleViewIds = Array.isArray(inventory?.visibleViewIds)
+    ? inventory.visibleViewIds
+    : [];
+  if (visibleViewIds.length === 0
+      || visibleViewIds.some((viewId) => typeof viewId !== "string" || viewId.length === 0)
+      || new Set(visibleViewIds).size !== visibleViewIds.length) {
+    errors.push("visibleViewIds=unique-non-empty");
+  }
+  const visibleOwners = [...visibleViewIds].sort();
   const slotOwners = [...slots.keys()].sort();
   const rendererOwners = [...renderers.keys()].sort();
   const surfaceOwners = [...surfaces.keys()].sort();
-  if (slotOwners.join("\u0000") !== rendererOwners.join("\u0000")
+  if (visibleOwners.join("\u0000") !== slotOwners.join("\u0000")
+      || slotOwners.join("\u0000") !== rendererOwners.join("\u0000")
       || slotOwners.join("\u0000") !== surfaceOwners.join("\u0000")) {
-    errors.push(`owners=${slotOwners.join(",")}/${rendererOwners.join(",")}/${surfaceOwners.join(",")}`);
+    errors.push(`visible-owners=${visibleOwners.join(",")}/${slotOwners.join(",")}/${rendererOwners.join(",")}/${surfaceOwners.join(",")}`);
   }
 
   let matched = 0;
