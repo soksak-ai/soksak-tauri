@@ -52,16 +52,15 @@ describe("Tauri plugin renderer RPC surface", () => {
     expect(host).not.toHaveProperty("pane");
   });
 
-  it("전면 pane은 같은 절대 epoch의 glide, 비전면 pane은 DOM commit 뒤 snap을 쓴다", () => {
-    expect(presentedTransitionMode(true)).toBe("glide");
-    expect(presentedTransitionMode(false)).toBe("snap");
+  it("포커스는 합성 시계 capability가 아니며 pane은 같은 절대 epoch 거래만 쓴다", () => {
+    expect(presentedTransitionMode()).toBe("glide");
     const source = readFileSync(resolve(import.meta.dirname, "pluginViewPresentation.ts"), "utf8");
     const move = source.split("export async function preparePresentedPluginViewMove")[1] ?? "";
     expect(move).toContain("startAtUnixMs");
     expect(move).toContain('mode: "glide"');
     expect(move).toContain('invoke("webview_pane_transition_prepare"');
-    expect(move).toContain('mode: "snap"');
-    expect(move).toContain('invoke("webview_pane_bounds"');
+    expect(move).not.toContain("isFocused");
+    expect(move).not.toContain('mode: "snap"');
   });
 
   it("포커스 조명은 단일 SVG 평면만 소유하고 Tauri adapter는 alpha·observer·IPC로 개입하지 않는다", () => {
