@@ -56,6 +56,7 @@ import {
 import { mapBrowserSurfaceRects } from "./lib/browser-surface-rects.mjs";
 import { mapB03LiveEvidence } from "./lib/browser-gate-b03-evidence.mjs";
 import { mapB05LiveEvidence } from "./lib/browser-gate-b05-evidence.mjs";
+import { mapB06LiveEvidence } from "./lib/browser-gate-b06-evidence.mjs";
 import {
   mapB01TabEvidence,
   mapB11TabEvidence,
@@ -400,6 +401,7 @@ const nodeAddress = (tree, nodePath) => {
 async function assertFocusLighting(rpc, win, addresses, labels, activeIndex, paneOwned, stage) {
   const dims = [];
   const levels = [];
+  const adapterAlphas = labels.map(() => paneOwned ? null : 1);
   for (let index = 0; index < addresses.length; index += 1) {
     const measured = must(await rpc("ui.measure", {
       address: addresses[index], props: ["--dim"],
@@ -427,10 +429,11 @@ async function assertFocusLighting(rpc, win, addresses, labels, activeIndex, pan
           || Math.abs(Number(match.alpha) - 1) > 0.001) {
         errors.push(`${labels[index]}:adapter-alpha=${match?.alpha}/1`);
       }
+      adapterAlphas[index] = match?.alpha ?? null;
     }
   }
   if (errors.length) throw new Error(`${stage}: focus lighting 수치 계약 불일치 — ${errors.join(", ")}`);
-  return { dims, levels };
+  return { dims, levels, adapterAlphas };
 }
 
 async function assertRailCompositionContract(
@@ -1367,7 +1370,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
         framework: frameworkName,
         engine,
         gate: "B06",
-        evidence: { engine, checkpoints: b06Checkpoints },
+        evidence: mapB06LiveEvidence({ engine, checkpoints: b06Checkpoints }),
       });
       await gateReportStore.persist();
       console.log(`◉ ${engine}/B05 canonical machine verdict: ${b05Receipt.status}`);

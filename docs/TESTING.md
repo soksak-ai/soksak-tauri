@@ -53,6 +53,9 @@ nodes, and the surface receipt's shared `topologyPath`; it never derives one led
 The B05 mapper joins the click ACK address/time, the layout transaction's trace causality, actual
 presentation events, settlement, and the finite hold receipt. It never estimates a missing time or
 hold from recorded frames.
+The B06 mapper independently requires each pane's public `--dim`/level, adapter alpha, the single
+plane's base/aperture ledger, and both rail/sidebar exemption and plane-exclusion facts. One exempt
+attribute cannot stand in for the other observations.
 
 | ID | Fixed rule | Machine evidence |
 |---|---|---|
