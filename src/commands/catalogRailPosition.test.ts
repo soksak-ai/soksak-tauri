@@ -248,10 +248,142 @@ describe("state.tree — 해가 공개 사실이다", () => {
     expect(relation).toEqual({
       boundTabId: "v-g2",
       boundPaneId: "g2",
+      relationId: "rail-relation/c1/g2/v-g2",
       placement: "pin",
       connected: false,
       side: "detached",
+      borderMode: "independent",
+      pathCount: 2,
     });
+  });
+
+  it("명시 결부가 없어도 화면과 같이 활성 판의 활성 탭을 유효 결부로 노출한다", async () => {
+    const withoutLock = project({ mode: "pin", station: 0 });
+    withoutLock.spaces[0] = {
+      ...withoutLock.spaces[0],
+      activePaneId: "g1",
+      layout: {
+        type: "split",
+        id: "s1",
+        dir: "row",
+        sizes: [0.5, 0.5],
+        children: [
+          { type: "leaf", value: group("g1", "v-g1") },
+          { type: "leaf", value: group("g2", "v-g2") },
+        ],
+      },
+    };
+    useSessions.setState({ projects: [withoutLock], activeId: "t1" });
+
+    const tree = await execute("state.tree", {}, {});
+    const treeRelation = (tree.data as {
+      projects: Array<{ spaces: Array<{ railRelation: unknown }> }>;
+    }).projects[0].spaces[0].railRelation;
+    const panes = await execute("pane.list", {}, {});
+    const paneRelation = (panes.data as { railRelation: unknown }).railRelation;
+
+    expect(treeRelation).toEqual({
+      boundTabId: "v-g1",
+      boundPaneId: "g1",
+      relationId: "rail-relation/c1/g1/v-g1",
+      placement: "pin",
+      connected: true,
+      side: "right",
+      borderMode: "union",
+      pathCount: 1,
+    });
+    expect(paneRelation).toEqual(treeRelation);
+  });
+
+  it("사이드바가 닫히면 결부와 그림이 없는 none/0 상태를 명시한다", async () => {
+    const closed = project({ mode: "pin", station: 0 });
+    closed.sidebarOpen = false;
+    closed.spaces[0] = {
+      ...closed.spaces[0],
+      activePaneId: "g1",
+      layout: {
+        type: "leaf",
+        value: group("g1", "v-g1"),
+      },
+    };
+    useSessions.setState({ projects: [closed], activeId: "t1" });
+
+    const tree = await execute("state.tree", {}, {});
+    const relation = (tree.data as {
+      projects: Array<{ spaces: Array<{ railRelation: unknown }> }>;
+    }).projects[0].spaces[0].railRelation;
+    expect(relation).toEqual({
+      boundTabId: null,
+      boundPaneId: null,
+      relationId: "rail-relation/c1/none",
+      placement: "pin",
+      connected: false,
+      side: "detached",
+      borderMode: "none",
+      pathCount: 0,
+    });
+  });
+
+  it("PIN 양방향 maximize/restore 뒤 station·split·관계 방향이 정확히 복원된다", async () => {
+    for (const [paneId, tabId, side] of [
+      ["g1", "v-g1", "left"],
+      ["g2", "v-g2", "right"],
+    ] as const) {
+      const pinned = project({ mode: "pin", station: 50 });
+      pinned.spaces[0] = {
+        ...pinned.spaces[0],
+        activePaneId: paneId,
+        layout: {
+          type: "split",
+          id: "s1",
+          dir: "row",
+          sizes: [0.5, 0.5],
+          children: [
+            { type: "leaf", value: group("g1", "v-g1") },
+            { type: "leaf", value: group("g2", "v-g2") },
+          ],
+        },
+      };
+      useSessions.setState({ projects: [pinned], activeId: "t1" });
+
+      const read = async () => {
+        const result = await execute("state.tree", {}, {});
+        return (result.data as {
+          projects: Array<{
+            leftRailPosition: Position;
+            spaces: Array<{
+              layout: unknown;
+              canonicalLayout: unknown;
+              railRelation: { side: string; relationId: string };
+            }>;
+          }>;
+        }).projects[0];
+      };
+
+      const before = await read();
+      expect(before.leftRailPosition).toMatchObject({
+        mode: "pin",
+        station: 50,
+        effectiveStation: 50,
+      });
+      expect(before.spaces[0].railRelation.side).toBe(side);
+
+      expect(useSessions.getState().maximizeView("t1", tabId)).toMatchObject({ ok: true });
+      const maximized = await read();
+      expect(maximized.spaces[0].railRelation.side).toBe(side);
+      expect(maximized.leftRailPosition.station).toBe(50);
+
+      expect(useSessions.getState().restoreView("t1")).toMatchObject({ ok: true });
+      const restored = await read();
+      expect(restored.leftRailPosition).toEqual(before.leftRailPosition);
+      expect(restored.spaces[0].layout).toEqual(before.spaces[0].layout);
+      expect(restored.spaces[0].canonicalLayout).toEqual(
+        before.spaces[0].canonicalLayout,
+      );
+      expect(restored.spaces[0].railRelation).toEqual(
+        before.spaces[0].railRelation,
+      );
+    }
   });
   it("명령 조회와 동일한 계산으로 위치를 노출한다", async () => {
     useSessions.setState({

@@ -53,6 +53,9 @@ const ALLOWED = new Set([
   "data-bound-tab", // 레일 결부 대상 탭 id(RailLinkOverlay 진단 — 값=탭)
   "data-bound-pane", // 레일 결부 대상 칸 id(진단)
   "data-connected", // 레일 결부 경로 존재 여부(진단)
+  "data-relation-id", // 유효 레일-탭 관계의 결정적 정체성(state.tree와 DOM 대조 축)
+  "data-border-mode", // 실제 관계 보더 분기(union|independent|none)
+  "data-path-count", // 실제 관계 보더 경로 수(1|2|0)
   "data-focused-pane", // 스페이스의 활성 칸 id(값=칸)
   "data-maximized-tab", // 최대화 탭 id(값=탭)
   "data-project-active", // 활성 프로젝트 표식

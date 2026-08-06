@@ -12,7 +12,7 @@ vi.stubGlobal("localStorage", {
 vi.mock("../framework", () => ({ invoke: vi.fn(async () => undefined) }));
 
 import { registerCatalog } from "./catalog";
-import { execute } from "./registry";
+import { execute, getSpec } from "./registry";
 import { projectArrangement, useSessions, type Project, type Pane } from "../state/sessions";
 import { initialSidebarLayout } from "../state/sidebarLayout";
 import { splitLeaf } from "../state/splitTree";
@@ -63,6 +63,11 @@ beforeEach(() => {
 });
 
 describe("layout.arrangement", () => {
+  it("returns 계약은 실제 응답에 없는 movesFrom을 약속하지 않는다", () => {
+    expect(getSpec("layout.arrangement")?.returns).not.toContain("movesFrom");
+    expect(getSpec("layout.arrangement")?.description).not.toMatch(/move list/i);
+  });
+
   it("녹화와 독립된 유한 layout 거래 장부를 명령으로 노출한다", async () => {
     const prepared = await prepareLayoutMove([{ viewId: "v-g1", dx: 120 }]);
     await prepared.commit();

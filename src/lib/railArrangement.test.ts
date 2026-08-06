@@ -6,12 +6,16 @@ import { isCleanRailStation } from "./railPlacement";
 import {
   arrangementMoves,
   moveOffsetPx,
+  resolveEffectiveRailRelation,
   solveArrangement,
   spanMoveAcross,
 } from "./railArrangement";
 
-type Pane = { id: string };
-const leaf = (id: string): SplitTree<Pane> => ({ type: "leaf", value: { id } });
+type Pane = { id: string; activeTabId: string; tabs: Array<{ id: string }> };
+const leaf = (id: string): SplitTree<Pane> => ({
+  type: "leaf",
+  value: { id, activeTabId: `v-${id}`, tabs: [{ id: `v-${id}` }] },
+});
 const order = (tree: SplitTree<Pane>): string[] =>
   leavesOf(tree).map((p) => p.id);
 
@@ -126,6 +130,87 @@ describe("배치 해결기 — station 은 그리드와 포커스의 함수다",
     const restored = solve(canonical, "a", { placement });
     expect(restored.station).toBeCloseTo(100 / 3, 6);
     expect(restored.displayLayout).toBe(canonical);
+  });
+});
+
+describe("유효 레일 관계 — renderer와 공개 상태의 단일 규칙", () => {
+  const relation = (
+    arrangement: ReturnType<typeof solve>,
+    placement: "flow" | "pin",
+    railOpen = true,
+  ) => resolveEffectiveRailRelation({
+    contentId: "c1",
+    arrangement,
+    placement,
+    railOpen,
+  });
+
+  it("PIN 좌 인접·우 인접·분리는 union/1·union/1·independent/2로 해소한다", () => {
+    const layout = threeColumns();
+    const extra = { placement: { mode: "pin" as const, station: 100 / 3 } };
+
+    expect(relation(solve(layout, "a", extra), "pin").state).toMatchObject({
+      boundTabId: "v-a",
+      boundPaneId: "a",
+      relationId: "rail-relation/c1/a/v-a",
+      connected: true,
+      side: "left",
+      borderMode: "union",
+      pathCount: 1,
+    });
+    expect(relation(solve(layout, "b", extra), "pin").state).toMatchObject({
+      boundTabId: "v-b",
+      boundPaneId: "b",
+      connected: true,
+      side: "right",
+      borderMode: "union",
+      pathCount: 1,
+    });
+    expect(relation(solve(layout, "c", extra), "pin").state).toMatchObject({
+      boundTabId: "v-c",
+      boundPaneId: "c",
+      connected: false,
+      side: "detached",
+      borderMode: "independent",
+      pathCount: 2,
+    });
+  });
+
+  it("PIN 양방향 maximize/restore는 관계 방향과 저장 station의 복원을 보존한다", () => {
+    const layout = threeColumns();
+    const placement = { mode: "pin" as const, station: 100 / 3 };
+    for (const [focusId, side] of [["a", "left"], ["b", "right"]] as const) {
+      const before = solve(layout, focusId, { placement });
+      const maximized = solve(layout, focusId, { placement, maximizedId: focusId });
+      const restored = solve(layout, focusId, { placement });
+
+      expect(relation(before, "pin").state.side).toBe(side);
+      expect(relation(maximized, "pin").state.side).toBe(side);
+      expect(relation(restored, "pin").state.side).toBe(side);
+      expect(restored.station).toBe(before.station);
+      expect(restored.displayLayout).toBe(layout);
+    }
+  });
+
+  it("닫힌 레일은 유효 후보가 있어도 결정적인 none/0 상태다", () => {
+    const resolved = relation(
+      solve(threeColumns(), "b", {
+        placement: { mode: "pin", station: 100 / 3 },
+      }),
+      "pin",
+      false,
+    );
+    expect(resolved.state).toEqual({
+      boundTabId: null,
+      boundPaneId: null,
+      relationId: "rail-relation/c1/none",
+      placement: "pin",
+      connected: false,
+      side: "detached",
+      borderMode: "none",
+      pathCount: 0,
+    });
+    expect(resolved.targetRect).toBeNull();
   });
 });
 

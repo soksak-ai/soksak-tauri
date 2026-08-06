@@ -54,8 +54,10 @@ import { useBookmarks } from "../state/bookmarks";
 import { hasPtyObservation } from "../terminal/ptyObservationStore";
 import { resolveTermTab } from "./termResolve";
 import { computeLayout } from "../components/GroupArea";
-import type { Arrangement } from "../lib/railArrangement";
-import { classifyRailRelation } from "../lib/railLinkShape";
+import {
+  resolveEffectiveRailRelation,
+  type Arrangement,
+} from "../lib/railArrangement";
 import { catalogJson, register, type CommandContext, type CommandHint } from "./registry";
 import { notFound } from "./refuse";
 import { registerFsWatchCatalog } from "./catalogFsWatch";
@@ -363,7 +365,6 @@ function serializeSpace(
   activeSpaceId: string,
   /** 이 스페이스의 해(배치 해결기). 레일이 없는 비활성 스페이스는 null — 정본 배열 그대로. */
   arrangement: Arrangement<Pane> | null,
-  railStation?: number,
   railOpen = true,
   railPlacement: RailPlacement["mode"] = "flow",
 ) {
@@ -405,23 +406,15 @@ function serializeSpace(
           focusedPaneId: c.activePaneId,
           swappedPanes: [] as string[],
         };
-  const boundPane = c.railBindingTabId
-    ? cells.find(({ group }) =>
-        group.tabs.some((tab) => tab.id === c.railBindingTabId),
-      )
-    : undefined;
-  const relationSide = boundPane && railStation !== undefined
-    ? classifyRailRelation(railStation, boundPane.rect)
-    : "detached";
-  const railRelation = c.railBindingTabId
-    ? {
-        boundTabId: c.railBindingTabId,
-        boundPaneId: boundPane?.group.id ?? null,
-        placement: railPlacement,
-        connected: railOpen && relationSide !== "detached",
-        side: relationSide,
-      }
-    : null;
+  // 화면과 같은 해결기를 소비한다. 명시 결부 부재는 활성 판의 활성 탭으로 해소하고,
+  // 레일 닫힘·빈 판도 nullable로 숨기지 않고 none/0 상태로 발행한다.
+  const railRelation = resolveEffectiveRailRelation({
+    contentId: c.id,
+    arrangement,
+    bindingTabId: c.railBindingTabId,
+    placement: railPlacement,
+    railOpen,
+  }).state;
   return {
     id: c.id,
     title: c.title,
@@ -490,7 +483,6 @@ function serializeTree() {
             c,
             t.activeSpaceId,
             c.id === t.activeSpaceId ? arrangement : null,
-            leftRailPosition.effectiveStation,
             t.sidebarOpen,
             leftRailPosition.mode,
           ),
@@ -578,10 +570,10 @@ export function registerCatalog(): void {
 
   register("state.tree", {
     description:
-      "Full layout snapshot (address book): all ids and active state across project → space → pane (display rect %) → tab. Each space exposes displayed and canonical stored layouts plus projection provenance; each project exposes its effective left-rail position and clean grid lines.",
+      "Full layout snapshot (address book): all ids and active state across project → space → pane (display rect %) → tab. Each space exposes displayed and canonical stored layouts, projection provenance, and the effective rail relation; each project exposes its effective left-rail position and clean grid lines.",
     params: {},
     returns:
-      "{ activeProjectId, projects[].{ leftRailPosition, spaces[].{ layout, canonicalLayout, projection, railRelation:{boundTabId,boundPaneId,placement,connected,side:left|right|detached}?, panes[] } } } — layout/panes are displayed state; canonicalLayout is the stored SplitTree",
+      "{ activeProjectId, projects[].{ leftRailPosition, spaces[].{ layout, canonicalLayout, projection, railRelation:{boundTabId,boundPaneId,relationId,placement,connected,side:left|right|detached,borderMode:union|independent|none,pathCount:1|2|0}, panes[] } } } — layout/panes are displayed state; canonicalLayout is the stored SplitTree",
     message: (d) => tmsg("msg.state.tree", { n: ((d.projects as unknown[]) ?? []).length }),
     examples: ["state.tree"],
     handler: () => serializeTree(),
@@ -593,13 +585,13 @@ export function registerCatalog(): void {
   // 쓰는 표면은 두 번째 진실이 된다(위치는 sidebar.left.position, 구조는 pane.* 이 소유).
   register("layout.arrangement", {
     description:
-      "The solved arrangement of the active space: the rail station, whether the focused pane was switched to the front (row-mismatch rule), the displayed cell rects, and the move list a focus change would produce. Read-only — the arrangement is a function of the split tree and the focus, so pane.*/sidebar.left.position are the ways to change it.",
+      "The solved arrangement of the active space: the rail station, whether the focused pane was switched to the front (row-mismatch rule), and the displayed cell rects. Read-only — the arrangement is a function of the split tree and the focus, so pane.*/sidebar.left.position are the ways to change it.",
     triggers: {
       ko: "배치 해 레일 스테이션 이동량 스위칭 정렬 계산 확인",
     },
     params: { project: P.project },
     returns:
-      "{ projectId, spaceId, station, cleanLines[], switched, betweenIds[] (panes stranded between the rail and the focused pane when the rail could not reach it — they do not move, they dim), cells[].{id,rect,railSide}, movesFrom:{focusId, moves[].{id,dLeftPct,dRailUnits}} }",
+      "{ projectId, spaceId, station, cleanLines[], switched, betweenIds[] (panes stranded between the rail and the focused pane when the rail could not reach it — they do not move, they dim), cells[].{id,rect,railSide} }",
     message: (d) => tmsg("msg.layout.arrangement", { n: Number(d.station) }),
     errors: ["TARGET_NOT_FOUND"],
     examples: ["layout.arrangement"],
@@ -1484,10 +1476,10 @@ export function registerCatalog(): void {
   // ----- pane -----
   register("pane.list", {
     description:
-      "List displayed panes in a space, including rect (%), displayed layout, immutable canonical layout, and projection provenance.",
+      "List displayed panes in a space, including rect (%), displayed layout, immutable canonical layout, projection provenance, and the effective rail relation.",
     params: { project: P.project, space: P.space },
     returns:
-      "{ projectId, spaceId, activePaneId, layout, canonicalLayout, projection, railRelation:{boundTabId,boundPaneId,placement,connected,side:left|right|detached}?, panes[] }",
+      "{ projectId, spaceId, activePaneId, layout, canonicalLayout, projection, railRelation:{boundTabId,boundPaneId,relationId,placement,connected,side:left|right|detached,borderMode:union|independent|none,pathCount:1|2|0}, panes[] }",
     message: (d) => tmsg("msg.pane.list", { n: ((d.panes as unknown[]) ?? []).length }),
     errors: ["TARGET_NOT_FOUND"],
     examples: ["pane.list"],
@@ -1505,7 +1497,6 @@ export function registerCatalog(): void {
         c,
         t.activeSpaceId,
         arrangement,
-        serializeLeftRailPosition(t).effectiveStation,
         t.sidebarOpen,
         (t.leftRailPlacement ?? DEFAULT_RAIL_PLACEMENT).mode,
       );

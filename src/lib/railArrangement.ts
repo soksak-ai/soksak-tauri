@@ -8,6 +8,11 @@
 // 그래서 소비자는 projectRailCssRect 를 안전하게 쓸 수 있다.
 
 import { leavesOf, type SplitTree } from "../state/splitTree";
+import { flowRailBoundBox } from "./railBoundBox";
+import {
+  classifyRailRelation,
+  type RailRelationSide,
+} from "./railLinkShape";
 import { computeSplitLayout, type Rect } from "./splitLayout";
 import {
   RAIL_EPSILON,
@@ -69,6 +74,133 @@ export interface ArrangementMove {
   dLeftPct: number;
   /** 레일 폭 배수 이동(삽입 지점 변화). */
   dRailUnits: number;
+}
+
+export type RailRelationBorderMode = "union" | "independent" | "none";
+
+/**
+ * 레일과 탭 사이에 화면이 실제로 적용한 관계 상태.
+ *
+ * nullable 객체를 쓰지 않는다. 관계가 없다는 사실도 none/0 정체성으로 발행해야 DOM 미계측과
+ * 구분된다. relationId는 스페이스 안의 유효 결부 정체성만 싣는다. 기하와 보더 분기는 side와
+ * borderMode가 따로 지므로 maximize/restore나 resize가 탭 정체성을 바꾸는 것으로 오인되지 않는다.
+ */
+export interface RailRelationState {
+  boundTabId: string | null;
+  boundPaneId: string | null;
+  relationId: string;
+  placement: RailPlacement["mode"];
+  connected: boolean;
+  side: RailRelationSide;
+  borderMode: RailRelationBorderMode;
+  pathCount: 0 | 1 | 2;
+}
+
+/** 렌더러가 상태와 같은 판·탭·상자를 소비하도록 공개 상태와 해소 대상을 함께 돌려준다. */
+export interface EffectiveRailRelation<
+  L,
+  T,
+> {
+  state: RailRelationState;
+  boundPane: L | null;
+  boundTab: T | null;
+  targetRect: Rect | null;
+}
+
+const relationPart = (value: string): string => encodeURIComponent(value);
+
+function noneRailRelation<L, T>(
+  contentId: string,
+  placement: RailPlacement["mode"],
+): EffectiveRailRelation<L, T> {
+  return {
+    state: {
+      boundTabId: null,
+      boundPaneId: null,
+      relationId: `rail-relation/${relationPart(contentId)}/none`,
+      placement,
+      connected: false,
+      side: "detached",
+      borderMode: "none",
+      pathCount: 0,
+    },
+    boundPane: null,
+    boundTab: null,
+    targetRect: null,
+  };
+}
+
+/**
+ * 유효 레일 관계의 단일 해결기.
+ *
+ * 명시 결부가 현재 표시 셀에 있으면 그것을 쓰고, 아니면 화면 해의 포커스 판 활성 탭으로
+ * 물러난다. FLOW의 관계 상자는 렌더러가 실제 그리는 레일-판 투영이고 PIN은 실제 판 rect다.
+ * 따라서 renderer와 state.tree/pane.list가 별도로 인접·보더 분기를 재계산할 이유가 없다.
+ */
+export function resolveEffectiveRailRelation<
+  T extends { id: string },
+  L extends { id: string; activeTabId: string; tabs: ReadonlyArray<T> },
+>(input: {
+  contentId: string;
+  arrangement: Arrangement<L> | null | undefined;
+  bindingTabId?: string | null;
+  placement: RailPlacement["mode"];
+  railOpen: boolean;
+  /** 드래그처럼 표시 station이 해의 확정 station과 잠시 다를 때 렌더러가 넘기는 실제 값. */
+  station?: number;
+}): EffectiveRailRelation<L, T> {
+  const none = (): EffectiveRailRelation<L, T> =>
+    noneRailRelation(input.contentId, input.placement);
+  const arrangement = input.arrangement;
+  if (!input.railOpen || !arrangement) return none();
+
+  const panes = leavesOf(arrangement.displayLayout);
+  const visibleIds = new Set(arrangement.cells.map((cell) => cell.id));
+  const explicitPane = input.bindingTabId
+    ? panes.find(
+        (pane) =>
+          visibleIds.has(pane.id) &&
+          pane.tabs.some((tab) => tab.id === input.bindingTabId),
+      )
+    : undefined;
+  const focusedPane = panes.find(
+    (pane) => visibleIds.has(pane.id) && pane.id === arrangement.focusId,
+  );
+  const boundPane =
+    explicitPane ?? focusedPane ?? panes.find((pane) => visibleIds.has(pane.id));
+  if (!boundPane) return none();
+
+  const boundTab = explicitPane
+    ? explicitPane.tabs.find((tab) => tab.id === input.bindingTabId)
+    : (boundPane.tabs.find((tab) => tab.id === boundPane.activeTabId) ??
+      boundPane.tabs[0]);
+  const cell = arrangement.cells.find((candidate) => candidate.id === boundPane.id);
+  if (!boundTab || !cell) return none();
+
+  const station = input.station ?? arrangement.station;
+  const targetRect =
+    input.placement === "pin"
+      ? cell.rect
+      : flowRailBoundBox(station, cell.rect);
+  const side = classifyRailRelation(station, targetRect);
+  const connected = side !== "detached";
+  const borderMode: RailRelationBorderMode = connected ? "union" : "independent";
+  const pathCount = connected ? 1 : 2;
+  return {
+    state: {
+      boundTabId: boundTab.id,
+      boundPaneId: boundPane.id,
+      relationId: `rail-relation/${relationPart(input.contentId)}/${relationPart(boundPane.id)}/${relationPart(boundTab.id)}`,
+      placement: input.placement,
+      connected,
+      side,
+      borderMode,
+      pathCount,
+    },
+    boundPane,
+    boundTab,
+    targetRect,
+  };
 }
 
 /** 포커스 패널의 왼쪽 선이 이미 전 높이 깨끗한 선인가. 없는 포커스는 배열을 흔들 근거가 아니다. */
