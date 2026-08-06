@@ -743,6 +743,11 @@ provider source once in a pane renderer, and groups that renderer with its nativ
 discovery; it does not render a duplicate plugin instance. One parent frame transaction therefore
 moves the visible plugin chrome and document surface together.
 
+The `app` address provided to the pane renderer retains the same identity as the main renderer's
+public plugin API. In particular, `windowLabel()` returns the parent workspace window label. Public
+bus events emitted by the child therefore join the main command registry in the same window scope.
+Per-renderer module globals are not a view-lifetime or command-target discovery boundary.
+
 `webview.composition` exposes not only DOM anchors and actual native frames, but also each label's slot
 rect, last applied rect, visibility and pending-sync state. The browser product plugin does not
 redeclare composition state as `surface.stats`.

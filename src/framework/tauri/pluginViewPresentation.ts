@@ -431,6 +431,7 @@ async function createPresentedView(
     const init: PluginViewInit = {
       source: runtime.source,
       pluginId: runtime.pluginId,
+      windowLabel,
       viewId: input.context.viewId,
       label: input.context.viewId ? app.webview?.label(input.context.viewId) ?? null : null,
       locale: app.locale(),

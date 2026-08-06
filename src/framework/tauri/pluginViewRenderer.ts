@@ -122,6 +122,7 @@ await listen<PluginViewInit>(event("init"), async ({ payload: init }) => {
   const noRegistration = () => ({ dispose() {} });
   const app: Record<string, any> = {
     pluginId: init.pluginId,
+    windowLabel: () => init.windowLabel,
     locale: () => init.locale,
     settings: {
       get: (key: string) => init.settings[key],

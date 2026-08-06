@@ -732,6 +732,11 @@ source를 pane renderer에 한 번 마운트한 뒤 native member와 하나의 `
 복제하지 않는다. 따라서 부모 frame 거래 하나가 보이는 plugin chrome과 document surface를 함께
 움직인다.
 
+Pane renderer가 받는 `app` 주소는 메인 renderer의 공개 플러그인 API와 같은 정체성을 유지한다.
+특히 `windowLabel()`은 부모 workspace window label을 그대로 답한다. child가 발행한 공개 bus
+사건은 그 주소로 main의 command registry와 같은 창 범위에서 합류한다. renderer마다 생기는
+모듈 전역은 view 수명이나 command 대상 발견의 경계로 사용할 수 없다.
+
 `webview.composition`은 DOM 앵커·실제 네이티브 frame뿐 아니라 label별 슬롯 rect, 마지막 적용
 rect, 가시성, 동기화 대기 상태를 공개한다. 합성 상태를 브라우저 제품 플러그인이
 `surface.stats`로 재선언하지 않는다.

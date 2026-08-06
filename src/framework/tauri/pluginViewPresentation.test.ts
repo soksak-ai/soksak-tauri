@@ -47,6 +47,13 @@ describe("Tauri plugin renderer RPC surface", () => {
     expect(source).toContain('listen(event("measure"), reportSlots)');
   });
 
+  it("child renderer에도 main과 같은 공개 workspace window 주소를 제공한다", () => {
+    const presenter = readFileSync(resolve(import.meta.dirname, "pluginViewPresentation.ts"), "utf8");
+    const renderer = readFileSync(resolve(import.meta.dirname, "pluginViewRenderer.ts"), "utf8");
+    expect(presenter).toContain("windowLabel,");
+    expect(renderer).toContain("windowLabel: () => init.windowLabel");
+  });
+
   it("임의의 app 내부 경로는 노출하지 않는다", () => {
     expect(isPluginViewCallExposed("internal.anything")).toBe(false);
   });

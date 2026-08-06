@@ -15,6 +15,8 @@ export interface PluginViewRpcResponse {
 export interface PluginViewInit {
   source: string;
   pluginId: string;
+  /** main renderer와 동일한 공개 workspace window 주소. */
+  windowLabel: string;
   viewId: string | null;
   label: string | null;
   locale: string;
