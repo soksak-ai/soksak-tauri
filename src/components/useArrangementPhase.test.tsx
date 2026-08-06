@@ -236,6 +236,31 @@ describe("useArrangementPhase", () => {
     expect(committedContent).toEqual(["live"]);
   });
 
+  it("glide phase closes at the shared absolute epoch plus the declared duration", async () => {
+    const at = solve(twoColumns, "a");
+    const to = solve(twoColumns, "b");
+    const startAtUnixMs = Date.now() + 100;
+    const prepareTravel = vi.fn(async (): Promise<PreparedLayoutTransition> => ({
+      mode: "glide",
+      startAtUnixMs,
+      commit: async () => {},
+      cancel: vi.fn(),
+    }));
+    act(() => root.render(
+      <Probe arrangement={at} scopeId={scopeOf(at)} prepareTravel={prepareTravel} />,
+    ));
+    act(() => root.render(
+      <Probe arrangement={to} scopeId={scopeOf(to)} prepareTravel={prepareTravel} />,
+    ));
+    await act(async () => {});
+    expect(el().dataset.traveling).toBe("1");
+
+    act(() => vi.advanceTimersByTime(RAIL_TRAVEL_MS));
+    expect(el().dataset.traveling).toBe("1");
+    act(() => vi.advanceTimersByTime(100));
+    expect(el().dataset.traveling).toBe("0");
+  });
+
   it("여정 모드(활강 가능)는 시작에 한 번 정해지고 위상 중에 바뀌지 않는다", () => {
     // 모드가 위상 한복판에 바뀌면 레일 표상이 1장(도착선)↔2장(빠질·생길 자리)으로 형태를
     // 바꾼다. 1장 렌더에서 서 있던 사이드바가 새 투영으로 커밋되고, 다음 프레임에 그것이

@@ -5,7 +5,12 @@
 // 세고 있었다. 화면은 얼었지만 타이머는 계속 세다가 착지를 선언해, 멈춰 보려던 그 순간을
 // 관측 도구가 지웠다. 예약이 같은 타임라인에 얹히는지를 여기서 못 박는다.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { __resetMotionDebugForTest, scheduleMotion, setMotionDebug } from "./motionDebug";
+import {
+  __resetMotionDebugForTest,
+  scheduleMotion,
+  scheduleMotionAt,
+  setMotionDebug,
+} from "./motionDebug";
 
 class FakeEffect {
   constructor(
@@ -61,6 +66,17 @@ afterEach(() => {
 });
 
 describe("scheduleMotion — 예약은 화면과 같은 시계를 탄다", () => {
+  it("an absolute shared epoch delays arming without shortening the motion", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    const done = vi.fn();
+    scheduleMotionAt(Date.now() + 100, 340, done);
+    vi.advanceTimersByTime(340);
+    expect(done).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(100);
+    expect(done).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
   it("선언 길이를 그대로 싣는다 — 배수를 호출자가 곱하면 이중이 된다", () => {
     setMotionDebug({ scale: 20 });
     scheduleMotion(340, () => {});

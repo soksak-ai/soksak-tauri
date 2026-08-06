@@ -641,6 +641,38 @@ export function scheduleMotion(ms: number, cb: () => void): () => void {
   return () => slot.stop();
 }
 
+/**
+ * Close a motion phase from the same absolute epoch used by DOM and native adapters.
+ * The lead-in is wall-clock scheduling, not part of the animation duration: playback-rate
+ * debugging may stretch the motion itself, but must never multiply the agreed future epoch.
+ */
+export function scheduleMotionAt(
+  startAtUnixMs: number,
+  durationMs: number,
+  cb: () => void,
+): () => void {
+  let cancelled = false;
+  let cancelMotion: (() => void) | null = null;
+  const begin = () => {
+    if (cancelled) return;
+    cancelMotion = scheduleMotion(durationMs, cb);
+  };
+  const leadMs = Math.max(0, startAtUnixMs - Date.now());
+  if (leadMs === 0) {
+    begin();
+    return () => {
+      cancelled = true;
+      cancelMotion?.();
+    };
+  }
+  const timer = setTimeout(begin, leadMs);
+  return () => {
+    cancelled = true;
+    clearTimeout(timer);
+    cancelMotion?.();
+  };
+}
+
 /** 관측 중인가 — 기본값이면 아무것도 관측하지 않는다. */
 function observing(): boolean {
   return knob.scale !== 1 || knob.hold;
