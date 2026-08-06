@@ -261,6 +261,7 @@ function resolvePath(root: Record<string, any>, path: string): { owner: any; fn:
 const CALL_PATHS = new Set([
   "commands.execute",
   "webview.open", "webview.navigate", "webview.zoom", "webview.openWindow", "webview.history",
+  "webview.present",
   "webview.stop", "webview.devtools", "webview.eval", "webview.sendInput",
   "webview.wheel", "webview.captureFull", "webview.typeText", "webview.list", "webview.close",
   "data.kv.get", "data.kv.set", "data.kv.delete", "data.kv.keys",
@@ -367,6 +368,29 @@ async function openAndGroup(
   view.markReady();
 }
 
+async function presentExisting(view: PresentedState, label: string): Promise<void> {
+  const slot = await view.slots.wait(label);
+  const paneRect = rectOf(view.container);
+  state.memberOwnership.claim(label, view.renderer);
+  view.members.add(label);
+  if (!view.grouped) {
+    await invoke("webview_pane_group", {
+      pane: view.pane,
+      renderer: view.renderer,
+      members: [...view.members],
+      ...paneRect,
+    });
+    view.grouped = true;
+    state.readiness.set(view.pane, true);
+    await syncPaneFrame(view);
+    view.lightingAlpha = -1;
+    await syncPaneLighting(view);
+  }
+  if (await syncMemberFrame(view, slot)) view.slots.commit(slot);
+  await invoke("webview_visible", { label, visible: view.visible, focus: false });
+  view.markReady();
+}
+
 async function handleCall(view: PresentedState, request: PluginViewRpcRequest): Promise<unknown> {
   if (request.kind === "unsubscribe") {
     view.subscriptions.get(request.subscription)?.dispose();
@@ -402,6 +426,10 @@ async function handleCall(view: PresentedState, request: PluginViewRpcRequest): 
   if (request.path === "webview.open") {
     const [label, options] = request.args as [string, Record<string, unknown>];
     await openAndGroup(view, label, options);
+    return null;
+  }
+  if (request.path === "webview.present") {
+    await presentExisting(view, String(request.args[0] ?? ""));
     return null;
   }
   if (request.path === "context.setReady") {

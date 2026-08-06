@@ -174,6 +174,7 @@ await listen<PluginViewInit>(event("init"), async ({ payload: init }) => {
     app.webview = {
       capabilities: init.webviewCapabilities,
       label: (_viewId: string) => init.label,
+      present: asyncMethod("present"),
       open: asyncMethod("open"), navigate: asyncMethod("navigate"), zoom: asyncMethod("zoom"),
       openWindow: asyncMethod("openWindow"), history: asyncMethod("history"), stop: asyncMethod("stop"),
       devtools: asyncMethod("devtools"), eval: asyncMethod("eval"), sendInput: asyncMethod("sendInput"),

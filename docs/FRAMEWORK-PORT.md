@@ -757,6 +757,10 @@ After provider `activate` returns, the pane renderer completes a `context.setRea
 its parent. Thus `mounted:true` from `tab.open` or `pane.split` is an explicit boundary after the
 provider installed its public API and view-lifetime events, not a timer guess.
 
+A windowed native surface created by a sidecar joins the pane renderer's declared content slot through
+`webview.present(label)`. It creates no second webview: it registers the existing surface as a
+`PaneSurfaceHost` member and completes presentation readiness only after the first slot frame commits.
+
 `webview.composition` exposes not only DOM anchors and actual native frames, but also each label's slot
 rect, last applied rect, visibility and pending-sync state. The browser product plugin does not
 redeclare composition state as `surface.stats`.

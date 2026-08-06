@@ -33,6 +33,7 @@ describe("Tauri plugin renderer RPC surface", () => {
 
   it("공개 content surface 생성 거래인 webview.open을 노출한다", () => {
     expect(isPluginViewCallExposed("webview.open")).toBe(true);
+    expect(isPluginViewCallExposed("webview.present")).toBe(true);
   });
 
   it("선언된 sidecar handle의 open/send/close만 child RPC로 노출한다", () => {
