@@ -44,6 +44,7 @@ export interface CommandHint {
 export type CommandMachineSchema =
   | { readonly type: "null" }
   | { readonly type: "boolean" }
+  | { readonly type: "json" }
   | {
       readonly type: "number" | "integer";
       readonly minimum?: number;
@@ -366,6 +367,7 @@ function machineSchemaDefinitionErrors(raw: unknown): string[] {
     switch (value.type) {
       case "null":
       case "boolean":
+      case "json":
         break;
       case "number":
       case "integer": {
@@ -451,6 +453,97 @@ function machineSchemaDefinitionErrors(raw: unknown): string[] {
   return errors;
 }
 
+function pushMachineResultError(errors: string[], message: string): void {
+  if (errors.length < MAX_MACHINE_RESULT_ERRORS) errors.push(message);
+}
+
+/** Validate the exact in-memory domain representable by JSON, without invoking getters. */
+function validateJsonMachineValue(
+  value: unknown,
+  path: string,
+  errors: string[],
+  depth: number,
+  ancestors: WeakSet<object>,
+): void {
+  if (errors.length >= MAX_MACHINE_RESULT_ERRORS) return;
+  if (depth > MAX_MACHINE_SCHEMA_DEPTH) {
+    pushMachineResultError(errors, `${path}: result depth exceeds ${MAX_MACHINE_SCHEMA_DEPTH}`);
+    return;
+  }
+  if (value === null || typeof value === "boolean" || typeof value === "string") return;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) pushMachineResultError(errors, `${path}: finite JSON number required`);
+    return;
+  }
+  if (typeof value !== "object") {
+    pushMachineResultError(errors, `${path}: JSON value required`);
+    return;
+  }
+  if (ancestors.has(value)) {
+    pushMachineResultError(errors, `${path}: cyclic result forbidden`);
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    if (Object.getPrototypeOf(value) !== Array.prototype) {
+      pushMachineResultError(errors, `${path}: safe JSON array prototype required`);
+      return;
+    }
+    ancestors.add(value);
+    const keys = Reflect.ownKeys(value);
+    let itemCount = 0;
+    for (const key of keys) {
+      if (errors.length >= MAX_MACHINE_RESULT_ERRORS) break;
+      if (key === "length") continue;
+      if (typeof key !== "string" || !/^(0|[1-9]\d*)$/.test(key)) {
+        pushMachineResultError(errors, `${path}: JSON array has a non-index property`);
+        continue;
+      }
+      const index = Number(key);
+      if (!Number.isSafeInteger(index) || index < 0 || index >= value.length) {
+        pushMachineResultError(errors, `${path}.${key}: safe JSON array index required`);
+        continue;
+      }
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor?.enumerable || !("value" in descriptor)) {
+        pushMachineResultError(errors, `${path}[${key}]: JSON data property required`);
+        continue;
+      }
+      itemCount += 1;
+      validateJsonMachineValue(descriptor.value, `${path}[${key}]`, errors, depth + 1, ancestors);
+    }
+    if (itemCount !== value.length) {
+      pushMachineResultError(errors, `${path}: sparse JSON array forbidden`);
+    }
+    ancestors.delete(value);
+    return;
+  }
+
+  if (!isPlainRecord(value)) {
+    pushMachineResultError(errors, `${path}: safe plain JSON object required`);
+    return;
+  }
+  ancestors.add(value);
+  for (const key of Reflect.ownKeys(value)) {
+    if (errors.length >= MAX_MACHINE_RESULT_ERRORS) break;
+    if (typeof key !== "string") {
+      pushMachineResultError(errors, `${path}: symbol JSON key forbidden`);
+      continue;
+    }
+    if (UNSAFE_RECORD_KEYS.has(key)) {
+      pushMachineResultError(errors, `${path}: unsafe JSON key "${key}"`);
+      continue;
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor?.enumerable || !("value" in descriptor)) {
+      pushMachineResultError(errors, `${path}.${key}: JSON data property required`);
+      continue;
+    }
+    validateJsonMachineValue(descriptor.value, `${path}.${key}`, errors, depth + 1, ancestors);
+  }
+  ancestors.delete(value);
+}
+
 function validateMachineValue(
   schema: CommandMachineSchema,
   value: unknown,
@@ -470,6 +563,9 @@ function validateMachineValue(
       return;
     case "boolean":
       if (typeof value !== "boolean") errors.push(`${path}: boolean required`);
+      return;
+    case "json":
+      validateJsonMachineValue(value, path, errors, depth, ancestors);
       return;
     case "number":
     case "integer":

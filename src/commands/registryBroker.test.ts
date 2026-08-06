@@ -10,6 +10,7 @@ import {
   unregister,
   type CommandBrokerSpec,
   type CommandContext,
+  type CommandMachineSchema,
   type CommandMachineObjectSchema,
   type CommandSpec,
   type PluginCommandContext,
@@ -25,6 +26,25 @@ const EMPTY_RESULT: CommandMachineObjectSchema = {
   required: [],
   additionalProperties: false,
 };
+
+const JSON_VALUE_SCHEMA: CommandMachineSchema = { type: "json" };
+
+function jsonResultSchema(schema: CommandMachineSchema = JSON_VALUE_SCHEMA): CommandMachineObjectSchema {
+  return {
+    type: "object",
+    properties: { value: schema },
+    required: ["value"],
+    additionalProperties: false,
+  };
+}
+
+async function executeJsonFixture(name: string, value: unknown) {
+  reg(name, {
+    broker: basicBroker({ result: jsonResultSchema() }),
+    handler: () => ({ value }),
+  });
+  return await executeFromPlugin(name, {}, pluginContext());
+}
 
 function basicBroker(overrides: Partial<CommandBrokerSpec> = {}): CommandBrokerSpec {
   return {
@@ -250,6 +270,92 @@ describe("Command Registry plugin broker — fail closed", () => {
       ok: false,
       code: "PLUGIN_RESULT_INVALID",
     });
+  });
+
+  it.each([
+    ["null", null],
+    ["boolean", true],
+    ["string", "한글 JSON"],
+    ["finite number", -12.5],
+    ["array", [null, false, "nested", 3.25, { ok: true }]],
+    ["plain object", { "": "empty keys are JSON", nested: { list: [1, 2, 3], empty: {} } }],
+  ])("json machine schema는 %s 값을 중첩 구조 그대로 허용한다", async (label, value) => {
+    const outcome = await executeJsonFixture(`broker.json.valid.${label}`, value);
+    expect(outcome).toMatchObject({ ok: true, data: { value } });
+  });
+
+  it.each([
+    ["undefined", undefined],
+    ["function", () => "not json"],
+    ["symbol", Symbol("not-json")],
+    ["bigint", 1n],
+    ["NaN", Number.NaN],
+    ["Infinity", Number.POSITIVE_INFINITY],
+  ])("json machine schema는 %s 값을 fail closed 한다", async (label, value) => {
+    const outcome = await executeJsonFixture(`broker.json.invalid.${label}`, value);
+    expect(outcome).toMatchObject({ ok: false, code: "PLUGIN_RESULT_INVALID" });
+  });
+
+  it("json machine schema는 cycle과 안전하지 않은 prototype을 거부한다", async () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    const inherited = Object.create({ inherited: true }) as Record<string, unknown>;
+    inherited.own = "value";
+    const inheritedArray: unknown[] = [];
+    Object.setPrototypeOf(inheritedArray, { inherited: true });
+
+    for (const [label, value] of [
+      ["cycle", cyclic],
+      ["date", new Date(0)],
+      ["custom-prototype", inherited],
+      ["custom-array-prototype", inheritedArray],
+    ] as const) {
+      const outcome = await executeJsonFixture(`broker.json.unsafe.${label}`, value);
+      expect(outcome).toMatchObject({ ok: false, code: "PLUGIN_RESULT_INVALID" });
+    }
+  });
+
+  it.each(["__proto__", "constructor", "prototype"])(
+    "json machine schema는 중첩된 unsafe key %s를 거부한다",
+    async (key) => {
+      const unsafe = Object.create(null) as Record<string, unknown>;
+      Object.defineProperty(unsafe, key, {
+        value: { nested: true },
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
+      const outcome = await executeJsonFixture(`broker.json.unsafe-key.${key}`, { unsafe });
+      expect(outcome).toMatchObject({ ok: false, code: "PLUGIN_RESULT_INVALID" });
+    },
+  );
+
+  it("json 값도 기존 16단계 깊이 상한과 16개 오류 상한을 유지한다", async () => {
+    const nested = (levels: number): unknown => {
+      let value: unknown = "leaf";
+      for (let index = 0; index < levels; index += 1) value = [value];
+      return value;
+    };
+
+    expect(await executeJsonFixture("broker.json.depth.allowed", nested(15)))
+      .toMatchObject({ ok: true });
+    expect(await executeJsonFixture("broker.json.depth.rejected", nested(16)))
+      .toMatchObject({ ok: false, code: "PLUGIN_RESULT_INVALID" });
+
+    const capped = await executeJsonFixture(
+      "broker.json.error-cap",
+      Array.from({ length: 40 }, () => undefined),
+    );
+    expect(capped).toMatchObject({ ok: false, code: "PLUGIN_RESULT_INVALID" });
+    expect((capped.data?.violations as unknown[])).toHaveLength(16);
+  });
+
+  it("json schema 정의는 type 이외 keyword를 허용하지 않는다", () => {
+    expect(() => reg("broker.json.bad-definition", {
+      broker: basicBroker({
+        result: jsonResultSchema({ type: "json", maxLength: 3 } as unknown as CommandMachineSchema),
+      }),
+    })).toThrow(/unknown schema keyword/);
   });
 
   it("발급 시 principal/grants/authority를 복제·동결해 이후 입력 변조가 권한을 바꾸지 못한다", () => {
