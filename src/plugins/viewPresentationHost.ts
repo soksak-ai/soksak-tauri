@@ -5,6 +5,8 @@ export interface PresentedPluginView {
   /** renderer와 최초 native member가 실제 명령 가능한 시점에만 완료된다. */
   readonly ready: Promise<void>;
   update(context: PluginViewContext): void;
+  /** Update the workspace pane owner without recreating the plugin or its native surface. */
+  setLogicalPaneId(logicalPaneId: string | null): void;
   setVisible(visible: boolean): void;
   dispose(): void;
 }
@@ -20,6 +22,8 @@ export interface PluginViewPresentationHost {
     registration: RegisteredView;
     provider: PluginViewProvider;
     context: PluginViewContext;
+    /** Workspace layout pane (`pan-*`), distinct from context.paneId's caller-tab axis. */
+    logicalPaneId: string | null;
   }): PresentedPluginView;
   /** 현재 장착된 외부 presentation owner가 geometry·visibility·paint를 모두 확정한 뒤 완료된다. */
   presentationSettled(): Promise<void>;

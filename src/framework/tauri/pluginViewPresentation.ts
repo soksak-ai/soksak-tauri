@@ -33,7 +33,8 @@ import { claimPaneSurface, releasePaneSurface } from "./surfaceOwnership";
 interface DisposableLike { dispose(): void }
 
 interface PresentedState {
-  pane: string;
+  nativeHostId: string;
+  logicalPaneId: string | null;
   renderer: string;
   viewId: string | null;
   container: HTMLElement;
@@ -85,6 +86,34 @@ type NativePaneFact = {
   alpha?: number;
   [key: string]: unknown;
 };
+
+type PaneHostIdentityBinding = {
+  nativeHostId: string;
+  logicalPaneId: string | null;
+  viewId: string | null;
+};
+
+/**
+ * AppKit registry keys and workspace pane ids are independent identities. The native command owns
+ * only the former; the presentation registry is the authoritative join to the latter. Unbound
+ * native hosts remain visible with null logical fields so diagnostics never infer an identity from
+ * a framework label.
+ */
+export function exposePaneHostIdentities(
+  native: readonly NativePaneFact[],
+  bindings: readonly PaneHostIdentityBinding[],
+) {
+  const byNativeHost = new Map(bindings.map((binding) => [binding.nativeHostId, binding]));
+  return native.map(({ pane, ...fact }) => {
+    const binding = byNativeHost.get(pane);
+    return {
+      ...fact,
+      nativeHostId: pane,
+      logicalPaneId: binding?.logicalPaneId ?? null,
+      viewId: binding?.viewId ?? null,
+    };
+  });
+}
 
 const rectDelta = (a: PaneRect, b: PaneRect) => ({
   x: Math.abs(a.x - b.x), y: Math.abs(a.y - b.y),
@@ -287,7 +316,7 @@ async function syncPaneFrame(view: PresentedState): Promise<void> {
   const rect = rectOf(view.container);
   if (view.grouped) {
     await invoke("webview_pane_bounds", {
-      pane: view.pane,
+      pane: view.nativeHostId,
       ...rect,
       layout: paneLayoutContractOf(view.container),
     });
@@ -299,7 +328,7 @@ async function syncPaneFrame(view: PresentedState): Promise<void> {
 async function syncMemberFrame(view: PresentedState, frame: PluginViewSlotFrame): Promise<boolean> {
   if (!view.grouped || !view.members.has(frame.label) || view.disposed) return false;
   await invoke("webview_pane_member_bounds", {
-    pane: view.pane,
+    pane: view.nativeHostId,
     label: frame.label,
     x: frame.x,
     y: frame.y,
@@ -324,7 +353,7 @@ async function openAndGroup(
 ): Promise<void> {
   const slot = await view.slots.wait(label);
   const paneRect = rectOf(view.container);
-  claimPaneSurface(label, view.pane);
+  claimPaneSurface(label, view.nativeHostId);
   state.memberOwnership.claim(label, view.renderer);
   let opened = false;
   try {
@@ -339,13 +368,13 @@ async function openAndGroup(
     view.members.add(label);
     if (!view.grouped) {
       await invoke("webview_pane_group", {
-        pane: view.pane,
+        pane: view.nativeHostId,
         renderer: view.renderer,
         members: [...view.members],
         ...paneRect,
       });
       view.grouped = true;
-      state.readiness.set(view.pane, true);
+      state.readiness.set(view.nativeHostId, true);
       await syncPaneFrame(view);
     }
     if (await syncMemberFrame(view, slot)) view.slots.commit(slot);
@@ -355,7 +384,7 @@ async function openAndGroup(
     view.members.delete(label);
     state.memberOwnership.release(label, view.renderer);
     if (opened) await view.app.webview.close(label).catch(() => {});
-    releasePaneSurface(label, view.pane);
+    releasePaneSurface(label, view.nativeHostId);
     throw error;
   }
 }
@@ -363,19 +392,19 @@ async function openAndGroup(
 async function presentExisting(view: PresentedState, label: string): Promise<void> {
   const slot = await view.slots.wait(label);
   const paneRect = rectOf(view.container);
-  claimPaneSurface(label, view.pane);
+  claimPaneSurface(label, view.nativeHostId);
   state.memberOwnership.claim(label, view.renderer);
   try {
     view.members.add(label);
     if (!view.grouped) {
       await invoke("webview_pane_group", {
-        pane: view.pane,
+        pane: view.nativeHostId,
         renderer: view.renderer,
         members: [...view.members],
         ...paneRect,
       });
       view.grouped = true;
-      state.readiness.set(view.pane, true);
+      state.readiness.set(view.nativeHostId, true);
       await syncPaneFrame(view);
     }
     if (await syncMemberFrame(view, slot)) view.slots.commit(slot);
@@ -384,7 +413,7 @@ async function presentExisting(view: PresentedState, label: string): Promise<voi
   } catch (error) {
     view.members.delete(label);
     state.memberOwnership.release(label, view.renderer);
-    releasePaneSurface(label, view.pane);
+    releasePaneSurface(label, view.nativeHostId);
     throw error;
   }
 }
@@ -458,10 +487,11 @@ async function createPresentedView(
   const suffix = (++state.sequence).toString(36);
   const windowLabel = currentWindowLabel();
   const renderer = `pv-${windowLabel}-${suffix}`;
-  const pane = `pane-${windowLabel}-${input.context.viewId ?? suffix}`;
+  const nativeHostId = `pane-${windowLabel}-${input.context.viewId ?? suffix}`;
   const app = runtime.app() as Record<string, any>;
   const view: PresentedState = {
-    pane, renderer, viewId: input.context.viewId, container: input.container,
+    nativeHostId, logicalPaneId: input.logicalPaneId,
+    renderer, viewId: input.context.viewId, container: input.container,
     context: input.context, app, members: new Set(), slots: new PluginViewSlotRegistry(),
     projections: new Map(),
     subscriptions: new Map(), unlisten: [], observer: null!, grouped: false,
@@ -480,8 +510,8 @@ async function createPresentedView(
     await emitTo(view.renderer, event(view.renderer, "visibility"), { visible });
   });
   input.container.setAttribute(TAURI_PANE_RENDERER_ATTR, renderer);
-  state.views.set(pane, view);
-  state.readiness.set(pane, false);
+  state.views.set(nativeHostId, view);
+  state.readiness.set(nativeHostId, false);
 
   const ready = event(renderer, "ready");
   const rpc = event(renderer, "rpc");
@@ -569,17 +599,27 @@ function disposeView(view: PresentedState): void {
     if (state.memberOwnership.release(label, view.renderer)) {
       void view.app.webview.close(label)
         .catch(() => {})
-        .finally(() => releasePaneSurface(label, view.pane));
+        .finally(() => releasePaneSurface(label, view.nativeHostId));
     }
   }
   void invoke("webview_close", { label: view.renderer }).catch(() => {});
   view.container.removeAttribute(TAURI_PANE_RENDERER_ATTR);
-  state.views.delete(view.pane);
-  state.readiness.delete(view.pane);
+  state.views.delete(view.nativeHostId);
+  state.readiness.delete(view.nativeHostId);
 }
 
 export function pluginViewPresentationStatus() {
   return state.readiness.status();
+}
+
+export async function pluginViewPaneHostsStatus() {
+  const native = await invoke<NativePaneFact[]>("webview_pane_hosts");
+  const bindings = [...state.views.values()].map((view) => ({
+    nativeHostId: view.nativeHostId,
+    logicalPaneId: view.logicalPaneId,
+    viewId: view.viewId,
+  }));
+  return exposePaneHostIdentities(native, bindings);
 }
 
 export async function pluginViewCompositionStatus() {
@@ -588,7 +628,7 @@ export async function pluginViewCompositionStatus() {
   const dom = [...state.views.values()]
     .filter((view) => view.grouped && !view.disposed)
     .map((view) => ({
-      pane: view.pane,
+      pane: view.nativeHostId,
       frame: rectOf(view.container),
       members: view.slots.frames().map((slot) => ({
         label: slot.label,
@@ -653,6 +693,7 @@ const host: PluginViewPresentationHost = {
     let view: PresentedState | null = null;
     let disposed = false;
     let desiredContext = input.context;
+    let desiredLogicalPaneId = input.logicalPaneId;
     let desiredVisible = input.context.isVisible();
     let resolveReady!: () => void;
     let rejectReady!: (error: unknown) => void;
@@ -674,6 +715,7 @@ const host: PluginViewPresentationHost = {
       }
       view = created;
       view.context = desiredContext;
+      view.logicalPaneId = desiredLogicalPaneId;
       view.visible = desiredVisible;
       void view.visibility.request(desiredVisible).catch((error) => {
         console.error("pane presentation visibility 실패", error);
@@ -704,6 +746,10 @@ const host: PluginViewPresentationHost = {
           viewId: context.viewId, boundViewId: context.boundViewId, command: context.command,
           restore: context.restore, visible: context.isVisible(),
         });
+      },
+      setLogicalPaneId(logicalPaneId) {
+        desiredLogicalPaneId = logicalPaneId;
+        if (view) view.logicalPaneId = logicalPaneId;
       },
       setVisible(visible) {
         desiredVisible = visible;
@@ -765,7 +811,7 @@ export async function preparePresentedPluginViewMove(
         if (closed) return;
         closed = true;
         await Promise.all(targets.map(({ view, target }) => invoke("webview_pane_bounds", {
-          pane: view.pane,
+          pane: view.nativeHostId,
           ...target,
           layout: paneLayoutContractOf(view.container, target),
         })));
@@ -778,7 +824,7 @@ export async function preparePresentedPluginViewMove(
   const startAtUnixMs = Date.now() + 100;
   const durationMs = railTravelDeclaredMs();
   await Promise.all(targets.map(({ view, target }) => invoke("webview_pane_transition_prepare", {
-    pane: view.pane, ...target, startAtUnixMs, durationMs,
+    pane: view.nativeHostId, ...target, startAtUnixMs, durationMs,
   })));
   return { mode: "glide", startAtUnixMs, commit: async () => {}, cancel: () => {} };
 }

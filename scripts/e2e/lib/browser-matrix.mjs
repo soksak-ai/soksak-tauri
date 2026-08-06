@@ -11,7 +11,8 @@ const PANE_PRESENTATION_TRACE = Object.freeze({
       const surfaceId = surfaceIds[index];
       const candidates = (facts?.hosts ?? []).filter((host) =>
         host?.window === windowLabel
-        && host?.pane === paneIds[index]
+        && host?.logicalPaneId === paneIds[index]
+        && host?.viewId === viewId
         && Array.isArray(host?.members)
         && host.members.includes(surfaceId));
       if (candidates.length !== 1) {
@@ -21,12 +22,16 @@ const PANE_PRESENTATION_TRACE = Object.freeze({
         );
       }
       const host = candidates[0];
+      if (typeof host.nativeHostId !== "string" || host.nativeHostId.length === 0) {
+        throw new Error(`${viewId}: pane presentation nativeHostId가 비었습니다`);
+      }
       if (typeof host.renderer !== "string" || host.renderer.length === 0) {
         throw new Error(`${viewId}: pane presentation renderer identity가 비었습니다`);
       }
       return Object.freeze({
         viewId,
-        pane: host.pane,
+        logicalPaneId: host.logicalPaneId,
+        nativeHostId: host.nativeHostId,
         rendererId: host.renderer,
         surfaceId,
       });
@@ -35,7 +40,9 @@ const PANE_PRESENTATION_TRACE = Object.freeze({
   armParams({ traceId, owners }) {
     return {
       traceId,
-      owners: owners.map(({ viewId, pane, surfaceId }) => ({ viewId, pane, surfaceId })),
+      owners: owners.map(({ viewId, nativeHostId, surfaceId }) => ({
+        viewId, nativeHostId, surfaceId,
+      })),
       maxEvents: 512,
     };
   },
@@ -87,7 +94,7 @@ const OFFSCREEN_PRESENTATION_TRACE = Object.freeze({
       const surfaceId = String(candidates[0].surfaceId);
       return Object.freeze({
         viewId,
-        pane: paneIds[index],
+        logicalPaneId: paneIds[index],
         rendererId: `offscreen-renderer:${surfaceId}`,
         surfaceId,
       });

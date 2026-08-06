@@ -29,6 +29,7 @@ import {
   installPluginViewPresentation,
   pluginViewCompositionStatus,
   pluginViewNativeContractStatus,
+  pluginViewPaneHostsStatus,
   pluginViewPresentationStatus,
   preparePresentedPluginViewMove,
 } from "./pluginViewPresentation";
@@ -414,12 +415,12 @@ function installPaneSurfaceHostCommands(): void {
   });
   register("webview.pane.presentation.trace.arm", {
     description:
-      "Arm a finite Tauri pane-surface presentation trace and return only after the first real display-link event. Owners are explicit public view/pane/surface identities; the adapter never parses framework names or DOM paths.",
+      "Arm a finite Tauri pane-surface presentation trace and return only after the first real display-link event. Owners are explicit public view/native-host/surface identities; the adapter never parses framework names or DOM paths.",
     params: {
       traceId: { type: "string", description: "caller-owned finite trace identity", required: true },
       owners: {
         type: "json",
-        description: "array of {viewId,pane,surfaceId} owner bindings",
+        description: "array of {viewId,nativeHostId,surfaceId} owner bindings",
         required: true,
       },
       maxEvents: { type: "number", description: "finite event capacity (2..4096, default 256)" },
@@ -486,11 +487,14 @@ function installPaneSurfaceHostCommands(): void {
     },
   });
   register("webview.pane.hosts", {
-    description: "Expose every live PaneSurfaceHost, renderer, member, frame, and renderer topology.",
-    params: {}, returns: "{ count,hosts:[{pane,window,renderer,members,cssFrame,rendererTopology}] }",
+    description:
+      "Expose every live PaneSurfaceHost with separate logical pane and native host identities, renderer, members, frame, and renderer topology.",
+    params: {},
+    returns:
+      "{ count,hosts:[{logicalPaneId,nativeHostId,viewId,window,renderer,members,cssFrame,rendererTopology}] }",
     message: (data) => `PaneSurfaceHost ${String(data.count)}개`,
     handler: async () => {
-      const hosts = await invoke<Record<string, unknown>[]>("webview_pane_hosts");
+      const hosts = await pluginViewPaneHostsStatus();
       return { count: hosts.length, hosts };
     },
   });

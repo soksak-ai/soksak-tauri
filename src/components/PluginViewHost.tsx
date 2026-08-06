@@ -35,6 +35,7 @@ export const PluginViewHost = memo(function PluginViewHost({
   root,
   region,
   paneId = null,
+  logicalPaneId = null,
   viewId = null,
   boundViewId = null,
   command = null,
@@ -48,6 +49,8 @@ export const PluginViewHost = memo(function PluginViewHost({
   region: Region; // left|content|right — 컨테이너 절대 주소의 영역 세그먼트
   // 이 뷰가 추종할 터미널 pane(cwd 추종 대상). 미지정=null(계약 A13/S7). 사이드바 호스트가 cwdTabOf 전달.
   paneId?: string | null;
+  // Workspace layout pane identity. Host-only: this is not the plugin context's caller-tab paneId.
+  logicalPaneId?: string | null;
   // 콘텐츠 배치면 sessions view.id(status 보고 대상), 사이드바면 null(close guard 무관 → setStatus no-op).
   viewId?: string | null;
   // 레일 투영 마운트가 섬기는 결부 콘텐츠 뷰 id(§4.4-lite) — ProjectionSlots 만 전달.
@@ -157,6 +160,7 @@ export const PluginViewHost = memo(function PluginViewHost({
           registration: reg,
           provider: reg.provider,
           context: ctxRef.current!,
+          logicalPaneId,
         });
         presentedRef.current = presented;
         presented.setVisible(surfaceVisibleRef.current);
@@ -220,6 +224,12 @@ export const PluginViewHost = memo(function PluginViewHost({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reg, viewKey, supportsUpdate ? "" : binding]);
+
+  // Moving a persistent tab between layout panes updates only the host ownership ledger. The
+  // plugin instance and native surface keep their lifetime; identity repair must not reload them.
+  useEffect(() => {
+    presentedRef.current?.setLogicalPaneId(logicalPaneId);
+  }, [logicalPaneId]);
 
   // 결부 라이브 갱신 — 마운트된 뷰에 새 ctx 푸시(remount 없이). update 미구현이면 위 effect 가
   // 결부를 deps 에 포함해 remount 하므로 여기선 no-op. mount 직후에도 1회 도나 update 는 멱등.

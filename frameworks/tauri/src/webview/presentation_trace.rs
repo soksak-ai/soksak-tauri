@@ -1,14 +1,14 @@
 use serde::{Deserialize, Serialize};
 
-/// Public identity binding for one DOM content owner and its native pane surface.
+/// Public identity binding for one DOM content owner and its native pane surface host.
 ///
 /// All three identities are declared by the caller. The Tauri adapter does not recover a view id
-/// from a framework name, DOM selector, or pane-label convention.
+/// or logical workspace pane from a framework name, DOM selector, or native-host label convention.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PresentationTraceOwner {
     pub(crate) view_id: String,
-    pub(crate) pane: String,
+    pub(crate) native_host_id: String,
     pub(crate) surface_id: String,
 }
 
@@ -285,7 +285,7 @@ mod macos {
         let mut view_ids = HashSet::new();
         for owner in &owners {
             if owner.view_id.trim().is_empty()
-                || owner.pane.trim().is_empty()
+                || owner.native_host_id.trim().is_empty()
                 || owner.surface_id.trim().is_empty()
             {
                 return Err("presentation trace identity가 비었습니다".into());
@@ -472,12 +472,12 @@ mod macos {
             let owners = validated_owners(vec![
                 PresentationTraceOwner {
                     view_id: "right".into(),
-                    pane: "pane-b".into(),
+                    native_host_id: "pane-b".into(),
                     surface_id: "surface-b".into(),
                 },
                 PresentationTraceOwner {
                     view_id: "left".into(),
-                    pane: "pane-a".into(),
+                    native_host_id: "pane-a".into(),
                     surface_id: "surface-a".into(),
                 },
             ])

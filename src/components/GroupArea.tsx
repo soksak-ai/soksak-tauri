@@ -857,6 +857,7 @@ export const GroupArea = memo(function GroupArea({
                   projectId={projectId}
                   root={projectRoot}
                   region="content"
+                  logicalPaneId={group.id}
                   surfaceVisible={shown}
                   command={view.command ?? null}
                   // B3 복원 seam — 관찰됐던 런타임(cwd·플러그인 state). 터미널은 spawn 위치,

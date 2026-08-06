@@ -7,6 +7,7 @@ import type { ContributedView } from "../plugins/spec";
 import {
   __resetPluginViewPresentationHostForTest,
   registerPluginViewPresentationHost,
+  type PluginViewPresentationHost,
 } from "../plugins/viewPresentationHost";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -73,7 +74,7 @@ describe("PluginViewHost — 인스턴스 수명과 DOM 수명 분리", () => {
     const mount = vi.fn((el: HTMLElement) => { el.textContent = "browser chrome"; });
     const dispose = vi.fn();
     const setLogicalPaneId = vi.fn();
-    const presentationMount = vi.fn(() => ({
+    const presentationMount = vi.fn((_input: Parameters<PluginViewPresentationHost["mount"]>[0]) => ({
       ready: Promise.resolve(), update: vi.fn(), setVisible: vi.fn(), setLogicalPaneId, dispose,
     }));
     registerPluginViewPresentationHost({

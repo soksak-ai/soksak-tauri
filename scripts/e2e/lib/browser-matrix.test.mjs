@@ -295,7 +295,7 @@ describe("브라우저 구현 행렬", () => {
     });
     expect(owners).toEqual([{
       viewId: "view-right",
-      pane: "pane-right",
+      logicalPaneId: "pane-right",
       rendererId: "offscreen-renderer:17",
       surfaceId: "17",
     }]);

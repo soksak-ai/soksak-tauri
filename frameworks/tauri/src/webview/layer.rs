@@ -680,23 +680,23 @@ fn validated_presentation_records(
         .ok_or("pane presentation은 main thread에서만 관측합니다")?;
     let hosts = PANE_SURFACE_HOSTS.lock().map_err(|_| "pane host 잠금 실패")?;
     owners.iter().map(|owner| {
-        let record = hosts.get(&owner.pane).cloned()
-            .ok_or_else(|| format!("pane presentation owner가 없습니다: {}", owner.pane))?;
+        let record = hosts.get(&owner.native_host_id).cloned()
+            .ok_or_else(|| format!("pane presentation owner가 없습니다: {}", owner.native_host_id))?;
         if window.is_some_and(|expected| record.window != expected) {
             return Err(format!(
-                "pane presentation owner의 창이 다릅니다: {}/{}", owner.pane, record.window,
+                "pane presentation owner의 창이 다릅니다: {}/{}", owner.native_host_id, record.window,
             ));
         }
         if !record.members.iter().any(|member| member == &owner.surface_id) {
             return Err(format!(
                 "pane presentation surface가 owner에 속하지 않습니다: {}/{}",
-                owner.pane, owner.surface_id,
+                owner.native_host_id, owner.surface_id,
             ));
         }
         if !record.member_layouts.contains_key(&owner.surface_id) {
             return Err(format!(
                 "pane presentation DOM 계약이 없습니다: {}/{}",
-                owner.pane, owner.surface_id,
+                owner.native_host_id, owner.surface_id,
             ));
         }
         Ok((owner.clone(), record))
@@ -734,7 +734,7 @@ pub(super) fn capture_pane_presentations(
     records.into_iter().map(|(owner, record)| {
         let pane = unsafe { &*(record.ptr as *const NSView) };
         let parent = unsafe { pane.superview() }
-            .ok_or_else(|| format!("pane presentation 부모가 없습니다: {}", owner.pane))?;
+            .ok_or_else(|| format!("pane presentation 부모가 없습니다: {}", owner.native_host_id))?;
         let renderer_ptr = surface_host_ptr(&record.renderer);
         let surface_ptr = surface_host_ptr(&owner.surface_id);
         if renderer_ptr == 0 || surface_ptr == 0 {
@@ -757,7 +757,7 @@ pub(super) fn capture_pane_presentations(
             },
         ).unwrap_or(false);
 
-        let pane_frame = presentation_frame(pane, &owner.pane)?;
+        let pane_frame = presentation_frame(pane, &owner.native_host_id)?;
         let renderer_frame = presentation_frame(renderer, &record.renderer)?;
         let surface_frame = presentation_frame(surface, &owner.surface_id)?;
         let generation = surface_generation(&owner.surface_id, surface_ptr)
