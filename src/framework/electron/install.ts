@@ -8,8 +8,13 @@ import styles from "./styles.css?inline";
 import { domHost } from "./contentViews";
 import { adoptFrameworkStyles } from "../styles";
 import { registerContentViewHost } from "../../lib/contentViews";
+import { registerWindowResizeProbe } from "../../lib/windowResizeProbe";
+import { activeElectronResizeProbe } from "./resizeProbe";
 
 export function installElectron(): void {
   registerContentViewHost(domHost);
+  // window.resizeSequence의 수치 관측면. 요청 크기를 되풀이하지 않고 native presentation
+  // 영수증과 현재 DOM/guest viewport를 같은 Electron 거래로 공개한다.
+  registerWindowResizeProbe(() => activeElectronResizeProbe().sample());
   adoptFrameworkStyles("electron", styles);
 }

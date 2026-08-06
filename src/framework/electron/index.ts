@@ -19,6 +19,10 @@ import type {
   Stream,
   Unlisten,
 } from "../contract";
+import {
+  activeElectronResizeProbe,
+  type ElectronNativeResizeReceipt,
+} from "./resizeProbe";
 
 /** 창구가 돌려주는 봉투 — 실패는 값이 아니라 코드로 온다. */
 interface OpResult {
@@ -148,7 +152,19 @@ function windowOps(
     outerSize: () => windowOp(target, "outerSize"),
     scaleFactor: () => windowOp(target, "scaleFactor"),
     setPhysicalPosition: (x, y) => windowOp(target, "setPhysicalPosition", { x, y }),
-    setPhysicalSize: (width, height) => windowOp(target, "setPhysicalSize", { width, height }),
+    setPhysicalSize: async (width, height) => {
+      if (target !== null) {
+        // 다른 창의 DOM 표면 id는 이 renderer가 볼 수 없다. native main-surface settlement까지
+        // 기다리되, 그 창의 renderer probe는 그 창에서 실행해야 한다.
+        await windowOp(target, "setPhysicalSize", { width, height });
+        return;
+      }
+      await activeElectronResizeProbe().setPhysicalSize(
+        width,
+        height,
+        (args) => windowOp<ElectronNativeResizeReceipt>(null, "setPhysicalSize", args),
+      );
+    },
   };
 }
 
