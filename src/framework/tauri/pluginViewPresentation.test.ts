@@ -65,6 +65,14 @@ describe("Tauri plugin renderer RPC surface", () => {
     expect(renderer).toContain("windowLabel: () => init.windowLabel");
   });
 
+  it("child renderer는 command 실행만 소비하고 창 단위 command 등록 소유권은 갖지 않는다", () => {
+    const renderer = readFileSync(resolve(import.meta.dirname, "pluginViewRenderer.ts"), "utf8");
+    const commands = renderer.split("commands: {")[1]?.split("},\n    events:")[0] ?? "";
+    expect(commands).toContain("execute:");
+    expect(commands).not.toContain("register:");
+    expect(renderer).not.toContain("const noRegistration");
+  });
+
 
   it("임의의 app 내부 경로는 노출하지 않는다", () => {
     expect(isPluginViewCallExposed("internal.anything")).toBe(false);

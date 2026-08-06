@@ -119,7 +119,7 @@ await listen<PluginViewInit>(event("init"), async ({ payload: init }) => {
     setIcon: (value: string) => void call("context.setIcon", value),
     setRestoreState: (value: unknown) => void call("context.setRestoreState", value),
   };
-  const noRegistration = () => ({ dispose() {} });
+  const noViewRegistration = () => ({ dispose() {} });
   const app: Record<string, any> = {
     pluginId: init.pluginId,
     windowLabel: () => init.windowLabel,
@@ -131,7 +131,6 @@ await listen<PluginViewInit>(event("init"), async ({ payload: init }) => {
     },
     project: { current: () => init.project },
     commands: {
-      register: noRegistration,
       execute: (name: string, args?: unknown) => call("commands.execute", name, args),
     },
     events: { on: (name: string, cb: (value: unknown) => void) => subscribe("events.on", [name], cb) },
@@ -146,7 +145,7 @@ await listen<PluginViewInit>(event("init"), async ({ payload: init }) => {
         queueMicrotask(observeSlots);
         return subscriptions[subscriptions.length - 1]!;
       },
-      registerFileViewer: noRegistration,
+      registerFileViewer: noViewRegistration,
     },
     data: { kv: {
       get: (key: string) => call("data.kv.get", key),
