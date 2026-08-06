@@ -11,6 +11,12 @@ const FORBIDDEN = {
     ["__TAURI_INTERNALS__", "Tauri 런타임"],
     ["@tauri-apps", "Tauri SDK"],
     ["webview_dom_holes", "Tauri DOM-hole 명령"],
+    ["PaneSurfaceHost", "Tauri pane native owner"],
+    ["webview.pane.", "Tauri pane follow command"],
+    ["webview_transition_prepare", "Tauri native bounds transaction"],
+    ["data-tauri-hole", "Tauri DOM-hole projection"],
+    ["NSWindowOrderingMode", "AppKit native z-order"],
+    ["soksak:external-surface-layout-transition", "Tauri external surface transition"],
     ["Tauri 프레임워크 어댑터", "Tauri 어댑터 본문"],
   ],
   tauri: [
