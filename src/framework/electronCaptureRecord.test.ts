@@ -75,39 +75,34 @@ it("Electron도 공통 record 계약을 포커스 없이 유한 PNG로 구현한
     isEmpty: () => false,
     toPNG: () => Buffer.from("png-frame"),
   }));
-  const onReady = { __frameworkStream: "ready-1" };
+  const onFrame = { __frameworkStream: "frame-1" };
   const stream = vi.fn(() => {
     expect(readFileSync(join(dir, "f0000.png"), "utf8")).toBe("png-frame");
   });
 
   const frames = await capture[RECORD].answer(
     { window: { webContents: { capturePage } }, stream },
-    { dir, frames: 2, intervalMs: 0, onReady },
+    { dir, frames: 2, intervalMs: 0, onFrame },
   );
 
   expect(frames).toBe(2);
   expect(capturePage).toHaveBeenCalledTimes(2);
-  expect(stream).toHaveBeenCalledOnce();
-  expect(stream).toHaveBeenCalledWith(onReady, 1);
+  expect(stream).toHaveBeenCalledTimes(2);
+  expect(stream).toHaveBeenNthCalledWith(1, onFrame, 0);
+  expect(stream).toHaveBeenNthCalledWith(2, onFrame, 1);
   expect(readFileSync(join(dir, "f0000.png"), "utf8")).toBe("png-frame");
   expect(readFileSync(join(dir, "f0001.png"), "utf8")).toBe("png-frame");
 });
 
-it("maxBytes 정확한 경계는 허용하고 onReady/onFrame은 각 파일 저장 뒤에만 발행한다", async () => {
+it("maxBytes 정확한 경계는 허용하고 onFrame은 각 파일 저장 뒤에만 발행한다", async () => {
   const dir = mkdtempSync(join(tmpdir(), "soksak-electron-record-cap-"));
   owned.push(dir);
   const first = Buffer.from("abc");
   const second = Buffer.from("defgh");
   const host = frameWindow([first, second]);
-  const onReady = { __frameworkStream: "ready-cap" };
   const onFrame = { __frameworkStream: "frame-cap" };
   const events: string[] = [];
   const stream = vi.fn((target, value) => {
-    if (target === onReady) {
-      expect(existsSync(join(dir, "f0000.png"))).toBe(true);
-      events.push(`ready:${value}`);
-      return;
-    }
     expect(target).toBe(onFrame);
     expect(existsSync(join(dir, `f${String(value).padStart(4, "0")}.png`))).toBe(true);
     events.push(`frame:${value}`);
@@ -115,12 +110,12 @@ it("maxBytes 정확한 경계는 허용하고 onReady/onFrame은 각 파일 저�
 
   await expect(capture[RECORD].answer(
     { window: host.window, stream },
-    { dir, frames: 2, intervalMs: 0, maxBytes: first.length + second.length, onReady, onFrame },
+    { dir, frames: 2, intervalMs: 0, maxBytes: first.length + second.length, onFrame },
   )).resolves.toBe(2);
 
   expect(readFileSync(join(dir, "f0000.png"))).toEqual(first);
   expect(readFileSync(join(dir, "f0001.png"))).toEqual(second);
-  expect(events).toEqual(["ready:1", "frame:0", "frame:1"]);
+  expect(events).toEqual(["frame:0", "frame:1"]);
 });
 
 it("첫 프레임이 maxBytes를 넘으면 파일과 stream 사건 없이 quota error로 중단한다", async () => {
@@ -131,7 +126,7 @@ it("첫 프레임이 maxBytes를 넘으면 파일과 stream 사건 없이 quota 
 
   await expect(capture[RECORD].answer(
     { window: host.window, stream },
-    { dir, frames: 1, intervalMs: 0, maxBytes: 2, onReady: {}, onFrame: {} },
+    { dir, frames: 1, intervalMs: 0, maxBytes: 2, onFrame: {} },
   )).rejects.toMatchObject({ code: QUOTA_EXCEEDED });
 
   expect(host.capturePage).toHaveBeenCalledOnce();
@@ -145,25 +140,24 @@ it("둘째 프레임이 누적 maxBytes를 넘으면 첫 파일만 남고 초과
   const first = Buffer.from("abc");
   const second = Buffer.from("defgh");
   const host = frameWindow([first, second]);
-  const onReady = { __frameworkStream: "ready-second" };
   const onFrame = { __frameworkStream: "frame-second" };
   const events: Array<[unknown, unknown]> = [];
   const stream = vi.fn((target, value) => events.push([target, value]));
 
   await expect(capture[RECORD].answer(
     { window: host.window, stream },
-    { dir, frames: 2, intervalMs: 0, maxBytes: 7, onReady, onFrame },
+    { dir, frames: 2, intervalMs: 0, maxBytes: 7, onFrame },
   )).rejects.toMatchObject({ code: QUOTA_EXCEEDED });
 
   expect(readFileSync(join(dir, "f0000.png"))).toEqual(first);
   expect(first.length).toBeLessThanOrEqual(7);
   expect(existsSync(join(dir, "f0001.png"))).toBe(false);
   expect(host.capturePage).toHaveBeenCalledTimes(2);
-  expect(events).toEqual([[onReady, 1], [onFrame, 0]]);
+  expect(events).toEqual([[onFrame, 0]]);
 });
 
 it("maxBytes는 생략하거나 양의 safe integer만 허용한다", async () => {
-  const invalid = [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, Number.POSITIVE_INFINITY, Number.NaN, "8"];
+  const invalid = [0, -1, 1.5, 1_073_741_825, Number.MAX_SAFE_INTEGER + 1, Number.POSITIVE_INFINITY, Number.NaN, "8"];
   for (const [index, maxBytes] of invalid.entries()) {
     const root = mkdtempSync(join(tmpdir(), "soksak-electron-record-invalid-cap-"));
     const dir = join(root, String(index));
@@ -177,14 +171,42 @@ it("maxBytes는 생략하거나 양의 safe integer만 허용한다", async () =
   }
 });
 
+it("onFrame 사건 전달 실패는 해당 파일을 롤백해 파일과 사건을 1:1로 유지한다", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "soksak-electron-record-stream-failure-"));
+  owned.push(dir);
+  const host = frameWindow([Buffer.from("abc")]);
+  const stream = vi.fn(() => { throw new Error("stream closed"); });
+
+  await expect(capture[RECORD].answer(
+    { window: host.window, stream },
+    { dir, frames: 1, intervalMs: 0, onFrame: {} },
+  )).rejects.toThrow("stream closed");
+
+  expect(existsSync(join(dir, "f0000.png"))).toBe(false);
+});
+
+it("Electron record는 Tauri와 같은 필수 onFrame channel 계약을 캡처 전에 시행한다", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "soksak-electron-record-missing-stream-"));
+  owned.push(dir);
+  const host = frameWindow([Buffer.from("abc")]);
+
+  await expect(capture[RECORD].answer(
+    { window: host.window },
+    { dir, frames: 1, intervalMs: 0 },
+  )).rejects.toMatchObject({ code: "INVALID_PARAMS" });
+  expect(host.capturePage).not.toHaveBeenCalled();
+  expect(existsSync(join(dir, "f0000.png"))).toBe(false);
+});
+
 it("maxBytes 적용 record도 창을 포커스하지 않고 모든 프레임을 저장한다", async () => {
   const dir = mkdtempSync(join(tmpdir(), "soksak-electron-record-unfocused-"));
   owned.push(dir);
   const host = frameWindow([Buffer.from("a"), Buffer.from("bb")]);
 
+  const stream = vi.fn();
   await expect(capture[RECORD].answer(
-    { window: host.window },
-    { dir, frames: 2, intervalMs: 0, maxBytes: 3 },
+    { window: host.window, stream },
+    { dir, frames: 2, intervalMs: 0, maxBytes: 3, onFrame: {} },
   )).resolves.toBe(2);
 
   expect(host.focus).not.toHaveBeenCalled();

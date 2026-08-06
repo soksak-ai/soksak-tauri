@@ -51,6 +51,7 @@ const ROOT = join(__dirname, "..", "..");
 const ALLOWED: { file: string; mark: string; event: string; why: string }[] = [
   // ── ① 사용자 파라미터 대기 ──
   { file: "frameworks/electron/native/capture.cjs", mark: "await new Promise((resolve) => setTimeout(resolve, rest));", event: "caller-specified", why: "Electron 창 녹화 프레임 간격 — 무엇을 몇 fps 로 볼지는 부른 쪽이 intervalMs로 발화한다" },
+  { file: "frameworks/electron/native/capture.cjs", mark: "const MAX_INTERVAL_MS = 60_000;", event: "caller-specified", why: "창 녹화 intervalMs 공개 입력의 두 프레임워크 공통 상한 — Electron 타이머 범위를 넘어 입력이 변조되는 것을 막는다" },
   { file: "src/commands/catalog.ts", mark: "const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));", event: "caller-specified", why: "sleep 헬퍼 — 소비처는 전부 호출자 지정 ms" },
   { file: "src/commands/catalog.ts", mark: "await sleep(settleMs);", event: "caller-specified", why: "settleMs 파라미터 — 캡처 정착 시간을 호출자가 발화" },
   { file: "src/commands/catalog.ts", mark: "await sleep(applyAtMs);", event: "caller-specified", why: "applyAtMs 파라미터" },
@@ -66,6 +67,7 @@ const ALLOWED: { file: string; mark: string; event: string; why: string }[] = [
   { file: "src/commands/catalogDom.ts", mark: "else setTimeout(tick, 16);", event: "caller-specified", why: "ui.trace 표본 캐던스 — 호출자 지정 창(ms) 안의 계측 수집. rAF 는 가려진 창에서 멈춰 명령이 영영 안 끝난다(실측 TIMEOUT)" },
   { file: "src/commands/catalogRemote.ts", mark: "setTimeout(() => {", event: "caller-specified", why: "remote.confirm TTL(ttlSecs 파라미터) — 만료=Deny 가 계약(fail-closed)" },
   { file: "src/commands/catalogPlugins.ts", mark: "const timer = setTimeout(", event: "program-registered", why: "프로그램 등록 사건이 주 경로이고 timeoutMs는 호출자가 정한 유한 deadline — 부트 실패가 명령을 영원히 붙잡지 않게 한다" },
+  { file: "src/commands/waitForDomCommit.ts", mark: "const timeout = setTimeout(", event: "dom-commit-observed", why: "MutationObserver의 DOM commit 사건이 주 경로이고 timeoutMs는 공개 호출자가 정한 유한 deadline — 유실된 commit이 명령을 영원히 붙잡지 않게 한다" },
   // ── ② 프로토콜·OS 경계 유예(TS) ──
   { file: "src/commands/catalogDom.ts", mark: "new Promise((r) => setTimeout(r, 50))", event: "dnd-frame-pacing", why: "합성 DragEvent 시퀀스의 프레임 간격 — 브라우저 DnD 상태기계가 같은 틱의 연속 이벤트를 접는다" },
   // ── ② 프로토콜·OS 경계 유예 ──
@@ -97,6 +99,9 @@ const ALLOWED: { file: string; mark: string; event: string; why: string }[] = [
   { file: "frameworks/electron/control.cjs", mark: "retry = setTimeout(() => {", event: "control-plane-attached", why: "위 바닥을 거는 자리 — 끊김 사건이 부른다" },
   { file: "frameworks/electron/cored.cjs", mark: "const KILL_GRACE_MS = 2_000;", event: "child-exit", why: "SIGTERM 뒤 종료가 종결 사건 — 이 유예를 넘기면 SIGKILL. 유예가 없으면 정상 종료 경로를 못 밟는다" },
   { file: "frameworks/electron/cored.cjs", mark: "const hard = setTimeout(() => child.kill(\"SIGKILL\"), KILL_GRACE_MS);", event: "child-exit", why: "위 유예를 거는 자리" },
+  { file: "frameworks/electron/native/capture.cjs", mark: "const DEFAULT_FRAME_TIMEOUT_MS = 8_000;", event: "native-frame-completed", why: "capturePage 완료가 종결 사건이고 기본 deadline은 응답 없는 compositor가 녹화 거래를 영원히 붙잡지 않게 한다" },
+  { file: "frameworks/electron/native/capture.cjs", mark: "const MAX_FRAME_TIMEOUT_MS = 60_000;", event: "native-frame-completed", why: "공개 frameTimeoutMs의 두 프레임워크 공통 상한" },
+  { file: "frameworks/electron/native/capture.cjs", mark: "const timer = setTimeout(() => {", event: "native-frame-completed", why: "capturePage Promise가 주 종결 사건이고 이 단발 타이머는 사건 유실 시의 유한 안전망 — polling하지 않는다" },
   // ── ③ 유한 안전망 ──
   { file: "frameworks/tauri/src/activity.rs", mark: "wait_timeout(q, Duration::from_secs(1))", event: "condvar-safety-net", why: "cv 사건이 주 경로 — 1s 는 closed 플래그 재확인 안전망" },
   { file: "crates/soksak-service/src/lib.rs", mark: "wait_timeout(inner, Duration::from_millis(20))", event: "condvar-safety-net", why: "크래시 전이가 cv 를 울린다 — 20ms 는 유실 안전망" },

@@ -24,6 +24,8 @@ const BAD_RECT = "FRAMEWORK_BAD_RECT";
 const EMPTY_CAPTURE = "FRAMEWORK_EMPTY_CAPTURE";
 const CAPTURE_QUOTA_EXCEEDED = "FRAMEWORK_CAPTURE_QUOTA_EXCEEDED";
 const CAPTURE_TIMEOUT = "FRAMEWORK_CAPTURE_TIMEOUT";
+const MAX_RECORD_BYTES = 1_073_741_824;
+const MAX_INTERVAL_MS = 60_000;
 const DEFAULT_FRAME_TIMEOUT_MS = 8_000;
 const MAX_FRAME_TIMEOUT_MS = 60_000;
 // Electron 의 capturer 수명을 캡처 Promise 와 묶는다. 캡처 중 page를 visible로 취급하는 기본
@@ -133,11 +135,17 @@ module.exports = {
       if (!dir || !Number.isInteger(frames) || frames < 1 || frames > 600) {
         throw frameworkError("INVALID_PARAMS", "dir 및 frames(1..600) 필수");
       }
-      if (!Number.isFinite(intervalMs) || intervalMs < 0) {
-        throw frameworkError("INVALID_PARAMS", "intervalMs는 0 이상의 수");
+      if (!Number.isSafeInteger(intervalMs) || intervalMs < 0 || intervalMs > MAX_INTERVAL_MS) {
+        throw frameworkError("INVALID_PARAMS", `intervalMs는 0..${MAX_INTERVAL_MS} 범위의 정수라야 한다`);
       }
-      if (maxBytes !== undefined && (!Number.isSafeInteger(maxBytes) || maxBytes <= 0)) {
-        throw frameworkError("INVALID_PARAMS", "maxBytes는 생략하거나 양의 safe integer라야 한다");
+      if (
+        maxBytes !== undefined
+        && (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > MAX_RECORD_BYTES)
+      ) {
+        throw frameworkError(
+          "INVALID_PARAMS",
+          `maxBytes는 생략하거나 1..${MAX_RECORD_BYTES} 범위의 정수라야 한다`,
+        );
       }
       if (
         !Number.isSafeInteger(frameTimeoutMs)
@@ -148,6 +156,9 @@ module.exports = {
           "INVALID_PARAMS",
           `frameTimeoutMs는 1..${MAX_FRAME_TIMEOUT_MS} 범위의 정수라야 한다`,
         );
+      }
+      if (args?.onFrame === undefined || typeof ctx.stream !== "function") {
+        throw frameworkError("INVALID_PARAMS", "onFrame channel은 필수다");
       }
       fs.mkdirSync(dir, { recursive: true });
       let writtenBytes = 0;
@@ -166,11 +177,22 @@ module.exports = {
         }
         const output = path.join(dir, `f${String(i).padStart(4, "0")}.png`);
         fs.writeFileSync(output, png);
+        try {
+          // 파일 쓰기가 성공하기 전의 stream 사건은 존재하지 않는 프레임을 관측자에게 약속한다.
+          // Tauri와 같은 단일 onFrame 사건만 공개하며, 사건 실패 시 해당 파일을 롤백한다.
+          ctx.stream(args.onFrame, i);
+        } catch (error) {
+          try {
+            fs.unlinkSync(output);
+          } catch (rollbackError) {
+            throw frameworkError(
+              "FRAMEWORK_CAPTURE_ROLLBACK_FAILED",
+              `${String(error?.message || error)}; ${output} rollback 실패: ${String(rollbackError?.message || rollbackError)}`,
+            );
+          }
+          throw error;
+        }
         writtenBytes += png.length;
-        // 파일 쓰기가 성공하기 전의 stream 사건은 존재하지 않는 프레임을 관측자에게 약속한다.
-        // ready의 기존 payload(1)는 유지하고, 공통 recorder의 onFrame은 저장된 0-based 번호를 받는다.
-        if (i === 0 && args?.onReady !== undefined) ctx.stream?.(args.onReady, 1);
-        if (args?.onFrame !== undefined) ctx.stream?.(args.onFrame, i);
         const rest = intervalMs - (Date.now() - started);
         if (rest > 0 && i + 1 < frames) {
           await new Promise((resolve) => setTimeout(resolve, rest));

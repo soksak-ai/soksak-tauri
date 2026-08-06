@@ -153,3 +153,30 @@ describe("window.record producer deadline", () => {
     },
   );
 });
+
+describe("window.record strict sequence input", () => {
+  it.each([0, -1, 1.5, 601, Number.NaN, Number.POSITIVE_INFINITY])(
+    "frames %s를 몰래 clamp하지 않고 거부한다",
+    async (frames) => {
+      const result = await execute("window.record", {
+        dir: "/tmp/rejected-frames",
+        frames,
+      }, {});
+      expect(result).toMatchObject({ ok: false, code: "INVALID_PARAMS" });
+      expect(recordWindowFrames).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([-1, 1.5, 60_001, Number.NaN, Number.POSITIVE_INFINITY])(
+    "intervalMs %s를 몰래 clamp하지 않고 거부한다",
+    async (intervalMs) => {
+      const result = await execute("window.record", {
+        dir: "/tmp/rejected-interval",
+        frames: 1,
+        intervalMs,
+      }, {});
+      expect(result).toMatchObject({ ok: false, code: "INVALID_PARAMS" });
+      expect(recordWindowFrames).not.toHaveBeenCalled();
+    },
+  );
+});

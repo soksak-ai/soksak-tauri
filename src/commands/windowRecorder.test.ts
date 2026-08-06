@@ -6,7 +6,10 @@ import {
   recordWindowFrames,
   startWindowRecording,
   validWindowRecordFrameTimeoutMs,
+  validWindowRecordFrames,
+  validWindowRecordIntervalMs,
   WINDOW_RECORD_DEFAULT_FRAME_TIMEOUT_MS,
+  WINDOW_RECORD_MAX_INTERVAL_MS,
   WINDOW_RECORD_MAX_FRAME_TIMEOUT_MS,
 } from "./windowRecorder";
 import { readFileSync } from "node:fs";
@@ -21,6 +24,7 @@ const readyStream = { onmessage: (_message: number) => {} };
 
 beforeEach(() => {
   vi.mocked(invoke).mockReset();
+  vi.mocked(createStream).mockClear();
   vi.mocked(createStream).mockReturnValue(readyStream as never);
   vi.mocked(invoke).mockImplementation(async (command, args) => {
     if (command !== "plugin:webview-capture|record") return undefined;
@@ -104,6 +108,31 @@ it("공통 producer deadline을 모든 프레임워크 호출에 명시한다", 
     "plugin:webview-capture|record",
     expect.objectContaining({ frameTimeoutMs: 25 }),
   );
+});
+
+it("공통 recorder는 frames와 intervalMs를 변조하지 않고 producer 전에 엄격히 거부한다", () => {
+  expect(validWindowRecordFrames(1)).toBe(true);
+  expect(validWindowRecordFrames(600)).toBe(true);
+  expect(validWindowRecordIntervalMs(0)).toBe(true);
+  expect(validWindowRecordIntervalMs(WINDOW_RECORD_MAX_INTERVAL_MS)).toBe(true);
+  expect(validWindowRecordIntervalMs(WINDOW_RECORD_MAX_INTERVAL_MS + 1)).toBe(false);
+
+  for (const frames of [0, -1, 1.5, 601, Number.NaN, Number.POSITIVE_INFINITY]) {
+    expect(() => recordWindowFrames({
+      dir: "/tmp/rejected-frames",
+      frames,
+      intervalMs: 0,
+    })).toThrow("frames");
+  }
+  for (const intervalMs of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+    expect(() => recordWindowFrames({
+      dir: "/tmp/rejected-interval",
+      frames: 1,
+      intervalMs,
+    })).toThrow("intervalMs");
+  }
+  expect(createStream).not.toHaveBeenCalled();
+  expect(invoke).not.toHaveBeenCalled();
 });
 
 it("호출자는 공통 recorder만 사용하고 프레임워크 record를 직접 부르지 않는다", () => {

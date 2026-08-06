@@ -19,9 +19,13 @@ import { useSessions } from "../state/sessions";
 import {
   recordWindowFrames,
   validWindowRecordFrameTimeoutMs,
+  validWindowRecordFrames,
+  validWindowRecordIntervalMs,
   validWindowRecordMaxBytes,
   WINDOW_RECORD_DEFAULT_FRAME_TIMEOUT_MS,
+  WINDOW_RECORD_MAX_FRAMES,
   WINDOW_RECORD_MAX_FRAME_TIMEOUT_MS,
+  WINDOW_RECORD_MAX_INTERVAL_MS,
   WINDOW_RECORD_MAX_BYTES,
 } from "./windowRecorder";
 import { CAPTURE_CALIBRATION_ID, setCaptureCalibration } from "./captureCalibration";
@@ -475,8 +479,14 @@ export function registerCaptureCatalog(): void {
         description: "Output directory for frames",
         required: true,
       },
-      frames: { type: "number", description: "Number of frames (default 40, max 600)" },
-      intervalMs: { type: "number", description: "Interval between frames in ms (default 40)" },
+      frames: {
+        type: "number",
+        description: `Number of frames (default 40, range 1..${WINDOW_RECORD_MAX_FRAMES})`,
+      },
+      intervalMs: {
+        type: "number",
+        description: `Interval between frames in ms (default 40, range 0..${WINDOW_RECORD_MAX_INTERVAL_MS})`,
+      },
       maxBytes: {
         type: "number",
         description: `Optional total encoded PNG byte budget (positive safe integer, max ${WINDOW_RECORD_MAX_BYTES})`,
@@ -503,12 +513,26 @@ export function registerCaptureCatalog(): void {
     // 정착하지 않는다 — 녹화의 요점이 **전이 중**이다. 정착시키면 보려던 것이 그 순간 끝난다.
     handler: async (p) => {
       const dir = p.dir as string;
-      const frames = Math.max(1, Math.min(600, (p.frames as number | undefined) ?? 40));
+      const frames = p.frames ?? 40;
       // 간격은 부른 쪽이 발화한다 — 무엇을 몇 fps 로 봐야 하는지는 이 자리가 모른다.
-      const intervalMs = Math.max(0, (p.intervalMs as number | undefined) ?? 40);
+      const intervalMs = p.intervalMs ?? 40;
       const maxBytes = p.maxBytes;
       const frameTimeoutMs = p.frameTimeoutMs
         ?? WINDOW_RECORD_DEFAULT_FRAME_TIMEOUT_MS;
+      if (!validWindowRecordFrames(frames)) {
+        return {
+          ok: false as const,
+          code: "INVALID_PARAMS" as const,
+          message: `frames는 1..${WINDOW_RECORD_MAX_FRAMES} 범위의 정수여야 합니다`,
+        };
+      }
+      if (!validWindowRecordIntervalMs(intervalMs)) {
+        return {
+          ok: false as const,
+          code: "INVALID_PARAMS" as const,
+          message: `intervalMs는 0..${WINDOW_RECORD_MAX_INTERVAL_MS} 범위의 정수여야 합니다`,
+        };
+      }
       if (maxBytes !== undefined && !validWindowRecordMaxBytes(maxBytes)) {
         return {
           ok: false as const,

@@ -35,6 +35,8 @@ export type WindowRecordingReport =
 export type WindowRecorder = (request: WindowRecordRequest) => WindowRecording;
 
 export const WINDOW_RECORD_MAX_BYTES = 1_073_741_824;
+export const WINDOW_RECORD_MAX_FRAMES = 600;
+export const WINDOW_RECORD_MAX_INTERVAL_MS = 60_000;
 export const WINDOW_RECORD_DEFAULT_FRAME_TIMEOUT_MS = 8_000;
 export const WINDOW_RECORD_MAX_FRAME_TIMEOUT_MS = 60_000;
 
@@ -42,6 +44,18 @@ export function validWindowRecordMaxBytes(value: unknown): value is number {
   return Number.isSafeInteger(value)
     && (value as number) >= 1
     && (value as number) <= WINDOW_RECORD_MAX_BYTES;
+}
+
+export function validWindowRecordFrames(value: unknown): value is number {
+  return Number.isSafeInteger(value)
+    && (value as number) >= 1
+    && (value as number) <= WINDOW_RECORD_MAX_FRAMES;
+}
+
+export function validWindowRecordIntervalMs(value: unknown): value is number {
+  return Number.isSafeInteger(value)
+    && (value as number) >= 0
+    && (value as number) <= WINDOW_RECORD_MAX_INTERVAL_MS;
 }
 
 export function validWindowRecordFrameTimeoutMs(value: unknown): value is number {
@@ -148,6 +162,15 @@ export function recordWindowFrames({
   frameTimeoutMs = WINDOW_RECORD_DEFAULT_FRAME_TIMEOUT_MS,
   onFrame,
 }: WindowRecordRequest): WindowRecording {
+  if (!validWindowRecordFrames(frames)) {
+    throw new Error(`frames must be between 1 and ${WINDOW_RECORD_MAX_FRAMES}`);
+  }
+  if (!validWindowRecordIntervalMs(intervalMs)) {
+    throw new Error(`intervalMs must be between 0 and ${WINDOW_RECORD_MAX_INTERVAL_MS}`);
+  }
+  if (maxBytes !== undefined && !validWindowRecordMaxBytes(maxBytes)) {
+    throw new Error(`maxBytes must be between 1 and ${WINDOW_RECORD_MAX_BYTES}`);
+  }
   if (!validWindowRecordFrameTimeoutMs(frameTimeoutMs)) {
     throw new Error(
       `frameTimeoutMs must be between 1 and ${WINDOW_RECORD_MAX_FRAME_TIMEOUT_MS}`,
