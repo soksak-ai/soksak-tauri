@@ -414,6 +414,7 @@ export async function prepareNativeContentViewMove(
   return {
     mode: "glide",
     startAtUnixMs,
+    durationMs,
     commit: async () => {
       if (closed) return;
       closed = true;

@@ -212,6 +212,7 @@ export function normalizeB04JournalEntries(entries) {
     return {
       ...entry,
       startAtUnixMs: entry.startAtUnixMs ?? null,
+      durationMs: entry.durationMs ?? null,
     };
   });
 }
@@ -228,6 +229,8 @@ export function mapB04PresentationSamples({
   transactionId,
   domCommittedAtUnixMs,
   presentationStartAtUnixMs,
+  durationMs,
+  moveDx,
   railAddress,
   paneAddress,
   slotAddress,
@@ -250,6 +253,12 @@ export function mapB04PresentationSamples({
     throw new Error(
       `${targetViewId}: presentation start epoch=${presentationStartAtUnixMs}/${commitAt}`,
     );
+  }
+  if (!Number.isFinite(durationMs) || durationMs <= 0) {
+    throw new Error(`${targetViewId}: presentation duration=${durationMs}`);
+  }
+  if (!Number.isFinite(moveDx) || Math.abs(moveDx) < 0.5) {
+    throw new Error(`${targetViewId}: presentation move dx=${moveDx}`);
   }
   for (const [index, sample] of domSamples.entries()) {
     if (sample?.sequence !== index || !Number.isFinite(sample?.sampledAtUnixMs)) {
@@ -311,7 +320,7 @@ export function mapB04PresentationSamples({
   const joins = [];
   let priorDomSequence = -1;
   let priorPresentationAt = -Infinity;
-  const samples = events.map((event, index) => {
+  const allSamples = events.map((event, index) => {
     const presentationAt = event.sampledAtUnixMs;
     if (!Number.isFinite(presentationAt) || presentationAt <= priorPresentationAt) {
       throw new Error(`${targetViewId}: presentation timestamp[${index}]=${presentationAt}/${priorPresentationAt}`);
@@ -389,7 +398,48 @@ export function mapB04PresentationSamples({
       surface: participant(owner.surfaceId, event.connected === true, surfaceFrame),
     };
   });
-  return { samples, joins };
+  const first = allSamples[0];
+  const last = allSamples.at(-1);
+  const samples = [
+    { ...first, sequence: 0, phase: "prepared" },
+    { ...last, sequence: 1, phase: "committed" },
+  ];
+  const slotTimeline = presentationSamples.map((domSample, sequence) => {
+    const matches = (domSample.nodes ?? []).filter((node) => node?.address === slotAddress);
+    if (matches.length !== 1 || matches[0].connected !== true) {
+      throw new Error(`${targetViewId}: timeline slot[${sequence}]=${matches.length}/1 connected`);
+    }
+    return {
+      sequence,
+      sampledAtUnixMs: domSample.sampledAtUnixMs,
+      frame: finiteB04Rect(matches[0].rect, `${targetViewId}:timeline-slot[${sequence}]`),
+    };
+  });
+  const fromSample = slotTimeline.filter(({ sampledAtUnixMs }) => (
+    sampledAtUnixMs <= presentationStartAt
+  )).at(-1);
+  if (!fromSample) throw new Error(`${targetViewId}: timeline start coverage가 없다`);
+  const from = fromSample.frame;
+  const to = { ...from, x: from.x - moveDx };
+  const nativeTimeline = (field) => events.map((event, sequence) => ({
+    sequence,
+    sampledAtUnixMs: event.sampledAtUnixMs,
+    frame: finiteB04Rect(event[field], `${targetViewId}:timeline-${field}[${sequence}]`),
+  }));
+  return {
+    samples,
+    joins,
+    timeline: {
+      startAtUnixMs: presentationStartAt,
+      durationMs,
+      timingFunction: [0.4, 0, 0.2, 1],
+      from,
+      to,
+      slot: slotTimeline,
+      renderer: nativeTimeline("rendererFrame"),
+      surface: nativeTimeline("surfaceFrame"),
+    },
+  };
 }
 
 export const browserImplementations = Object.freeze({

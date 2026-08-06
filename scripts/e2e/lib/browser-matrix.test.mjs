@@ -393,6 +393,8 @@ describe("브라우저 구현 행렬", () => {
       transactionId: "tx",
       domCommittedAtUnixMs: 1_010,
       presentationStartAtUnixMs: 1_100,
+      durationMs: 340,
+      moveDx: -320,
       railAddress: "rail",
       paneAddress: "pane",
       slotAddress: "slot",
@@ -486,13 +488,15 @@ describe("브라우저 구현 행렬", () => {
       domSamples: [
         rawSample(0, 990, "initial", null, null, 100, 700),
         rawSample(1, 1_010, "layout-dom-commit", "tx", 1_010, 100, 700),
-        rawSample(2, 1_018, "presentation-frame", "tx", 1_010, 260, 700),
+        rawSample(2, 1_015, "presentation-frame", "tx", 1_010, 260, 700),
       ],
       owner: { rendererId: "renderer-left", surfaceId: "surface-left" },
       targetViewId: "view-left",
       transactionId: "tx",
       domCommittedAtUnixMs: 1_010,
       presentationStartAtUnixMs: 1_015,
+      durationMs: 340,
+      moveDx: -160,
       railAddress: "rail",
       paneAddress: "pane-left",
       slotAddress: "slot-left",
@@ -519,8 +523,8 @@ describe("브라우저 구현 행렬", () => {
     const rawGlide = { ...rawSnap, transactionId: "tx-glide", mode: "glide", startAtUnixMs: 999 };
     const canonical = normalizeB04JournalEntries([rawSnap, rawGlide]);
 
-    expect(canonical[0]).toEqual({ ...rawSnap, startAtUnixMs: null });
-    expect(canonical[1]).toEqual(rawGlide);
+    expect(canonical[0]).toEqual({ ...rawSnap, startAtUnixMs: null, durationMs: null });
+    expect(canonical[1]).toEqual({ ...rawGlide, durationMs: null });
     expect(Object.hasOwn(rawSnap, "startAtUnixMs")).toBe(false);
     expect(canonical[0]).not.toBe(rawSnap);
   });
@@ -558,6 +562,8 @@ describe("브라우저 구현 행렬", () => {
       transactionId: "tx",
       domCommittedAtUnixMs: 1_000,
       presentationStartAtUnixMs: 1_000,
+      durationMs: 340,
+      moveDx: -1,
       railAddress: "rail",
       paneAddress: "pane",
       slotAddress: "slot",
@@ -580,7 +586,7 @@ describe("브라우저 구현 행렬", () => {
           trigger: "presentation-frame",
           transactionId: "tx",
           domCommittedAtUnixMs: 1_000,
-          sampledAtUnixMs: 1_019,
+          sampledAtUnixMs: 1_000,
         },
       ],
     })).not.toThrow();

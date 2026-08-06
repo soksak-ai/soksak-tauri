@@ -218,6 +218,7 @@ function b04Evidence(engine = "browser") {
           phase: "committed",
           mode,
           startAtUnixMs: mode === "glide" ? 1_000 + sequence * 100 : null,
+          durationMs: mode === "glide" ? 32 : null,
           preparedAtUnixMs: 1_000 + sequence * 100,
           domCommittedAtUnixMs: 1_000 + sequence * 100 + 24,
           closedAtUnixMs: 1_000 + sequence * 100 + 48,

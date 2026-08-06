@@ -16,6 +16,8 @@ export interface PreparedLayoutTransition {
   mode: LayoutTransitionMode;
   /** DOM과 문서 밖 표면이 함께 출발할 절대 epoch. 외부 surface glide에서만 존재한다. */
   startAtUnixMs?: number;
+  /** 같은 표시 궤적을 재현·검증하는 선언 길이. 외부 surface glide에서만 존재한다. */
+  durationMs?: number;
   /** 목표 DOM이 실제로 커밋된 직후 외부 표면 장부를 최종 rect와 대조한다. */
   commit(): Promise<void>;
   /** 목표가 준비 중 바뀌거나 컴포넌트가 사라지면 옛 DOM rect로 되돌린다. */

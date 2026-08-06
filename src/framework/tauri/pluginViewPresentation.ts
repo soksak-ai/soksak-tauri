@@ -832,5 +832,5 @@ export async function preparePresentedPluginViewMove(
   await Promise.all(targets.map(({ view, target }) => invoke("webview_pane_transition_prepare", {
     pane: view.nativeHostId, ...target, startAtUnixMs, durationMs,
   })));
-  return { mode: "glide", startAtUnixMs, commit: async () => {}, cancel: () => {} };
+  return { mode: "glide", startAtUnixMs, durationMs, commit: async () => {}, cancel: () => {} };
 }

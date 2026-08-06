@@ -1,5 +1,6 @@
 import {
   compositionInventoryVerdict,
+  compositionTimelineVerdict,
   compositionTransactionVerdict,
   logicalRectToPhysical,
 } from "../../../packages/dom-webview-compositor/src/index.ts";
@@ -436,6 +437,7 @@ const B04_TRANSITION_KEYS = Object.freeze([
   "motionMode",
   "journal",
   "samples",
+  "timeline",
 ]);
 const B04_SAMPLE_KEYS = Object.freeze([
   "transactionId",
@@ -460,11 +462,23 @@ const B04_JOURNAL_ENTRY_KEYS = Object.freeze([
   "phase",
   "mode",
   "startAtUnixMs",
+  "durationMs",
   "preparedAtUnixMs",
   "domCommittedAtUnixMs",
   "closedAtUnixMs",
   "moves",
 ]);
+const B04_TIMELINE_KEYS = Object.freeze([
+  "startAtUnixMs",
+  "durationMs",
+  "timingFunction",
+  "from",
+  "to",
+  "slot",
+  "renderer",
+  "surface",
+]);
+const B04_TIMELINE_SAMPLE_KEYS = Object.freeze(["sequence", "sampledAtUnixMs", "frame"]);
 
 function inspectFiniteRect(rect, path, failures) {
   if (!requireExactKeys(rect, RECT_KEYS, path, failures)) return false;
@@ -611,6 +625,33 @@ function inspectB04Transition(transition, index, coordinateSpace, failures) {
     surface: { id: sample.surface.id, frame: sample.surface.frame },
   })), { motionMode: transition.motionMode });
   failures.push(...composition.errors.map((error) => `${path}.composition:${error}`));
+
+  if (transition.motionMode === "glide") {
+    if (!requireExactKeys(transition.timeline, B04_TIMELINE_KEYS, `${path}.timeline`, failures)) {
+      return;
+    }
+    for (const participant of ["slot", "renderer", "surface"]) {
+      const timelineSamples = transition.timeline[participant];
+      if (!Array.isArray(timelineSamples)) {
+        failures.push(`${path}.timeline.${participant}=array/${displayValue(timelineSamples)}`);
+        continue;
+      }
+      timelineSamples.forEach((sample, sampleIndex) => {
+        const samplePath = `${path}.timeline.${participant}[${sampleIndex}]`;
+        if (!requireExactKeys(sample, B04_TIMELINE_SAMPLE_KEYS, samplePath, failures)) return;
+        inspectFiniteRect(sample.frame, `${samplePath}.frame`, failures);
+      });
+    }
+    inspectFiniteRect(transition.timeline.from, `${path}.timeline.from`, failures);
+    inspectFiniteRect(transition.timeline.to, `${path}.timeline.to`, failures);
+    const timelineVerdict = compositionTimelineVerdict({
+      ...transition.timeline,
+      coordinateSpace,
+    });
+    failures.push(...timelineVerdict.errors.map((error) => `${path}.timeline:${error}`));
+  } else if (transition.timeline !== null) {
+    failures.push(`${path}.timeline=null/${displayValue(transition.timeline)}`);
+  }
 
   const firstRelative = b04RelativeSlotSignature(first, scaleFactor);
   transition.samples.forEach((sample, sampleIndex) => {

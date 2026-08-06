@@ -7,6 +7,7 @@ export type LayoutTransitionJournalEntry = {
   phase: "prepared" | "committed" | "cancelled" | "failed";
   mode: LayoutTransitionMode;
   startAtUnixMs?: number;
+  durationMs?: number;
   preparedAtUnixMs: number;
   domCommittedAtUnixMs?: number;
   closedAtUnixMs?: number;
@@ -66,6 +67,7 @@ export function journalPreparedLayoutTransition(
     phase: "prepared",
     mode: prepared.mode,
     ...(prepared.startAtUnixMs === undefined ? {} : { startAtUnixMs: prepared.startAtUnixMs }),
+    ...(prepared.durationMs === undefined ? {} : { durationMs: prepared.durationMs }),
     preparedAtUnixMs: Date.now(),
     moves: moves.map((move) => ({ ...move })),
   };
@@ -75,6 +77,7 @@ export function journalPreparedLayoutTransition(
   return {
     mode: prepared.mode,
     startAtUnixMs: prepared.startAtUnixMs,
+    durationMs: prepared.durationMs,
     commit: async () => {
       if (closed) return;
       closed = true;

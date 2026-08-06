@@ -1235,6 +1235,10 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
             transactionId: layoutVerdict.transaction.transactionId,
             domCommittedAtUnixMs: layoutVerdict.transaction.domCommittedAtUnixMs,
             presentationStartAtUnixMs: layoutVerdict.transaction.startAtUnixMs,
+            durationMs: layoutVerdict.transaction.durationMs,
+            moveDx: layoutVerdict.transaction.moves.find(({ viewId }) => (
+              viewId === targetViewId
+            ))?.dx,
             railAddress,
             paneAddress,
             slotAddress,
@@ -1248,6 +1252,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
               entries: b04JournalEntries,
             },
             samples: flowPresentationTrace.samples,
+            timeline: flowPresentationTrace.timeline,
           });
           b05Transitions.push({
             direction: side === 0 ? "to-left" : "to-right",
