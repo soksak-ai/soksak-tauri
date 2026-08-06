@@ -49,7 +49,7 @@ identity; a runtime, adapter, or test cannot claim it for itself.
 | B03 | DOM slot ↔ live surface 1:1, rounding-only frame, shared topology | Assert count, ownership, and coordinate deltas from public DOM rects, native/engine rects, and the identity ledger. |
 | B04 | One atomic FLOW move for rail, pane, and native surface | A finite trace for one transaction/animation epoch asserts connectivity, coordinates, and settlement for all three. |
 | B05 | Zero flicker, black frames, ghosts, or post-landing disappearance | The public presentation trace asserts continuous live/visible/painted state and zero replacements, gaps, or disappearances. |
-| B06 | Only active is bright; inactive is dim; rail/sidebar are not dimmed | Public presentation/style state asserts the alpha contract for active, inactive, rail, and sidebar. |
+| B06 | Only active is bright; inactive is dim; rail/sidebar are not dimmed | Public style state asserts one lighting plane and its active aperture, pane dim values, rail/sidebar exclusion from the plane, and adapter alpha 1 (no duplicate dimming). |
 | B07 | PIN left-adjacent, right-adjacent, and detached border/layout invariance | Assert border relations and invariant rail/pane DOM identity, rects, and split tree across all three focus states. |
 | B08 | PIN maximize/restore in both directions with invariant station | For left and right, assert exact direction, split, and station equality before maximize and after restore. |
 | B09 | Rail `+`, right sidebar, and modal above native surfaces | Public hit/layer state at a real overlap reports chrome as the topmost owner. |

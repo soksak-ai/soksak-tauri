@@ -10,9 +10,9 @@ function evidence(engine = "browser") {
     active,
     level: active ? "clear" : "dimmed",
     styleDim: active ? 0 : 0.7,
-    presentationAlpha: active ? 1 : 0.3,
+    adapterAlpha: 1,
   });
-  const exempt = (node) => ({ node, exempt: true, styleDim: 0, presentationAlpha: 1 });
+  const exempt = (node) => ({ node, exempt: true, styleDim: 0, coveredByPlane: false });
   return {
     engine,
     checkpoints: [
@@ -20,6 +20,7 @@ function evidence(engine = "browser") {
         phase: "active-left",
         activeViewId: "left",
         panes: [pane("left", true), pane("right", false)],
+        lightingPlane: { count: 1, baseAmount: 0.7, apertureViewId: "left", apertureCount: 1 },
         rail: exempt("rail"),
         sidebar: exempt("sidebar"),
       },
@@ -27,6 +28,7 @@ function evidence(engine = "browser") {
         phase: "active-right",
         activeViewId: "right",
         panes: [pane("left", false), pane("right", true)],
+        lightingPlane: { count: 1, baseAmount: 0.7, apertureViewId: "right", apertureCount: 1 },
         rail: exempt("rail"),
         sidebar: exempt("sidebar"),
       },
@@ -51,13 +53,15 @@ describe("B06 focus lighting judge", () => {
     expect(judgeB06MachineEvidence(null)).toEqual({ status: "not-run", evidence: [], reason: null });
   });
 
-  it("active 감광, inactive 무감광, alpha 불일치, rail/sidebar 감광, 단방향만 검증을 RED로 만든다", () => {
+  it("active 감광, inactive 무감광, adapter 이중감광, plane 중복, rail/sidebar 포함, 단방향만 검증을 RED로 만든다", () => {
     const cases = [
       (value) => { value.checkpoints[0].panes[0].styleDim = 0.2; },
       (value) => { value.checkpoints[0].panes[1].styleDim = 0; },
-      (value) => { value.checkpoints[0].panes[1].presentationAlpha = 0.7; },
+      (value) => { value.checkpoints[0].panes[1].adapterAlpha = 0.3; },
+      (value) => { value.checkpoints[0].lightingPlane.count = 2; },
+      (value) => { value.checkpoints[0].lightingPlane.apertureViewId = "right"; },
       (value) => { value.checkpoints[0].rail.styleDim = 0.4; },
-      (value) => { value.checkpoints[1].sidebar.exempt = false; },
+      (value) => { value.checkpoints[1].sidebar.coveredByPlane = true; },
       (value) => { value.checkpoints[1].activeViewId = "left"; value.checkpoints[1].panes[0] = value.checkpoints[0].panes[0]; },
     ];
     for (const mutate of cases) {

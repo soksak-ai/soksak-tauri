@@ -298,7 +298,7 @@
       "role": "lib",
       "class": "A",
       "surfaces": [],
-      "note": "픽셀 밝기 대신 공개 style dim과 presentation alpha로 pane 포커스 조명 및 rail·sidebar 면제를 판정하는 B06 순수 judge다."
+      "note": "픽셀 밝기 대신 공개 style dim·단일 lighting plane·adapter alpha 비개입으로 pane 포커스 조명 및 rail·sidebar 면제를 판정하는 B06 순수 judge다."
     },
     {
       "file": "lib/browser-gate-b06.test.mjs",
