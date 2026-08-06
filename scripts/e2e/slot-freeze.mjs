@@ -9,6 +9,7 @@
 // 포커스 금지: fixture window는 focus:false, 입력·캡처는 공개 command만 사용한다.
 
 import fs from "node:fs";
+import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -22,6 +23,17 @@ import {
   snapshotScaleForVisualEvidence,
 } from "./lib/browser-visual-evidence.mjs";
 import { reviewVisualRecordingSafely } from "./lib/visual-recording-review.mjs";
+import {
+  createBrowserRecordingEvidenceLedger,
+  planBrowserRecordingEvidence,
+} from "./lib/browser-evidence-plan.mjs";
+import {
+  beginEvidenceRun,
+  evidenceStorePaths,
+  finishEvidenceRun,
+  resolveEvidenceFile,
+} from "./lib/evidence-store.mjs";
+import { runRecordingEvidenceAction } from "./lib/recording-evidence-action.mjs";
 import {
   browserImplementations,
   browserSurfaceInvariant,
@@ -38,9 +50,9 @@ import {
   viewportGeometryVerdict,
 } from "./lib/browser-matrix.mjs";
 
-const SOCKET = requireSocket();
 const FIXTURE_ROOT = path.join(os.homedir(), ".soksak-e2e", "slot-freeze");
-const EVIDENCE_ROOT = path.join(os.homedir(), ".soksak-e2e", "evidence", "slot-freeze", "current");
+const EVIDENCE_STORE_ROOT = path.join(os.homedir(), ".soksak-e2e", "evidence", "slot-freeze");
+const EVIDENCE_ROOT = evidenceStorePaths(EVIDENCE_STORE_ROOT).current;
 const ENGINES = parseBrowserEngines(process.env.BROWSER_ENGINES ?? process.env.BROWSER_ENGINE);
 const SCENARIOS = (() => {
   const allowed = new Set(["flow", "pin", "resize", "overlay", "scroll"]);
@@ -59,6 +71,11 @@ const CYCLES = (() => {
   }
   return value;
 })();
+const RECORDING_PLAN = planBrowserRecordingEvidence({
+  engines: ENGINES,
+  scenarios: [...SCENARIOS],
+  cycles: CYCLES,
+});
 const FRAMES_PER_CLICK = 48;
 const PIN_FRAMES_PER_CLICK = 24;
 const FAST_RESIZE_FRAMES = 64;
@@ -70,12 +87,30 @@ const CHROME_MARKERS = Object.freeze({
 });
 const PRESENTATION_MARKERS = Object.freeze(["#00ff80", "#ff0080"]);
 
-function prepareEvidence() {
-  const boundary = path.join(os.homedir(), ".soksak-e2e", "evidence") + path.sep;
-  const resolved = path.resolve(EVIDENCE_ROOT);
-  if (!(`${resolved}${path.sep}`).startsWith(boundary)) throw new Error(`증거 경로 경계 위반: ${resolved}`);
-  fs.rmSync(resolved, { recursive: true, force: true });
-  fs.mkdirSync(resolved, { recursive: true });
+async function runPlannedRecordingAction({ recordingLedger, engine, scenario, name, action }) {
+  const recording = recordingLedger.take(engine, scenario, name);
+  return runRecordingEvidenceAction({
+    root: EVIDENCE_STORE_ROOT,
+    relativePath: recording.relativePath,
+    maxBytes: recording.maxBytes,
+    keep: process.env.KEEP === "1",
+    action,
+  });
+}
+
+function reviewRecordingOutcome({ outcome, expectedFrames, name }) {
+  const relativePath = outcome.visualEvidence.artifact?.relativePath;
+  if (!relativePath) {
+    const report = outcome.visualEvidence;
+    console.log(`◉ ${name}: recording visual review FAILED ${report.failures.join(" · ")} (제품 machine 판정과 분리)`);
+    return { artifacts: [], report };
+  }
+  return reviewRecordingArtifacts({
+    directory: resolveEvidenceFile(EVIDENCE_STORE_ROOT, "current", relativePath),
+    recording: outcome.actionResult.recording,
+    expectedFrames,
+    name,
+  });
 }
 
 function writeVisualReport(file, report) {
@@ -636,7 +671,7 @@ async function assertImePersisted(rpc, win, plugin, tabIds, stage) {
   }
 }
 
-async function runEngine(client, page, engine) {
+async function runEngine(client, page, engine, recordingLedger) {
   const implementation = browserImplementations[engine];
   const plugin = implementation.plugin;
   const engineEvidence = path.join(EVIDENCE_ROOT, engine);
@@ -838,13 +873,24 @@ async function runEngine(client, page, engine) {
         const journalBefore = must(await rpc("layout.transactions", {}, win), `layout journal baseline ${name}`);
         const priorEntries = journalBefore.entries ?? [];
         const afterSequence = Number(priorEntries[priorEntries.length - 1]?.sequence ?? 0);
-        const clicked = must(await rpc("ui.input.click", {
-          address: activationAddresses[side], recordDir: dir, recordFrames: FRAMES_PER_CLICK,
-          recordIntervalMs: 16, recordLeadMs: 32,
-        }, win, { timeoutMs: 60_000 }), `교차 클릭 ${name}`);
-        const recordingEvidence = reviewRecordingArtifacts({
-          directory: dir,
-          recording: clicked.recording,
+        const recordingOutcome = await runPlannedRecordingAction({
+          recordingLedger,
+          engine,
+          scenario: "flow",
+          name,
+          action: (recordFields) => rpc("ui.input.click", {
+            address: activationAddresses[side],
+            ...(recordFields.recordDir ? {
+              ...recordFields,
+              recordFrames: FRAMES_PER_CLICK,
+              recordIntervalMs: 16,
+              recordLeadMs: 32,
+            } : {}),
+          }, win, { timeoutMs: 60_000 }),
+        });
+        const clicked = must(recordingOutcome.actionResult, `교차 클릭 ${name}`);
+        const recordingEvidence = reviewRecordingOutcome({
+          outcome: recordingOutcome,
           expectedFrames: FRAMES_PER_CLICK,
           name: `${engine}/${name}`,
         });
@@ -947,16 +993,24 @@ async function runEngine(client, page, engine) {
         ? must(await rpc("webview.composition", {}, win), `${pinCase.name} native before`)
         : null;
       const dir = path.join(engineEvidence, pinCase.name);
-      const clicked = must(await rpc("ui.input.click", {
-        address: activationAddresses[pinCase.side],
-        recordDir: dir,
-        recordFrames: PIN_FRAMES_PER_CLICK,
-        recordIntervalMs: 16,
-        recordLeadMs: 32,
-      }, win, { timeoutMs: 60_000 }), `${pinCase.name} click`);
-      const recordingEvidence = reviewRecordingArtifacts({
-        directory: dir,
-        recording: clicked.recording,
+      const recordingOutcome = await runPlannedRecordingAction({
+        recordingLedger,
+        engine,
+        scenario: "pin",
+        name: pinCase.name,
+        action: (recordFields) => rpc("ui.input.click", {
+          address: activationAddresses[pinCase.side],
+          ...(recordFields.recordDir ? {
+            ...recordFields,
+            recordFrames: PIN_FRAMES_PER_CLICK,
+            recordIntervalMs: 16,
+            recordLeadMs: 32,
+          } : {}),
+        }, win, { timeoutMs: 60_000 }),
+      });
+      const clicked = must(recordingOutcome.actionResult, `${pinCase.name} click`);
+      const recordingEvidence = reviewRecordingOutcome({
+        outcome: recordingOutcome,
         expectedFrames: PIN_FRAMES_PER_CLICK,
         name: `${engine}/${pinCase.name}`,
       });
@@ -1082,16 +1136,24 @@ async function runEngine(client, page, engine) {
       const fastResizeDir = path.join(engineEvidence, "resize-window-fast");
       const fastSizes = hostileWindowResizeSizes(originalWindow);
       must(await rpc("capture.calibration", { visible: true }, win), "window resize calibration show");
-      const fastResize = must(await rpc("window.resizeSequence", {
-        sizes: fastSizes,
-        intervalMs: 8,
-        recordDir: fastResizeDir,
-        recordFrames: FAST_RESIZE_FRAMES,
-        recordIntervalMs: 16,
-      }, win, { timeoutMs: 60_000 }), "rapid window resize");
-      const fastRecordingEvidence = reviewRecordingArtifacts({
-        directory: fastResizeDir,
-        recording: fastResize.recording,
+      const fastRecordingOutcome = await runPlannedRecordingAction({
+        recordingLedger,
+        engine,
+        scenario: "resize",
+        name: "resize-window-fast",
+        action: (recordFields) => rpc("window.resizeSequence", {
+          sizes: fastSizes,
+          intervalMs: 8,
+          ...(recordFields.recordDir ? {
+            ...recordFields,
+            recordFrames: FAST_RESIZE_FRAMES,
+            recordIntervalMs: 16,
+          } : {}),
+        }, win, { timeoutMs: 60_000 }),
+      });
+      const fastResize = must(fastRecordingOutcome.actionResult, "rapid window resize");
+      const fastRecordingEvidence = reviewRecordingOutcome({
+        outcome: fastRecordingOutcome,
         expectedFrames: FAST_RESIZE_FRAMES,
         name: `${engine}/window-fast`,
       });
@@ -1158,13 +1220,26 @@ async function runEngine(client, page, engine) {
       if (!gutter?.address) throw new Error("세로 pane gutter가 노출되지 않았다");
       for (const [direction, dx] of [["wider", 80], ["restored", -80]]) {
         const dir = path.join(engineEvidence, `resize-pane-${direction}`);
-        const dragged = must(await rpc("ui.input.drag", {
-          from: gutter.address, dx, steps: 12, durationMs: 240,
-          recordDir: dir, recordFrames: FRAMES_PER_CLICK, recordIntervalMs: 16,
-        }, win, { timeoutMs: 60_000 }), `pane resize ${direction}`);
-        const recordingEvidence = reviewRecordingArtifacts({
-          directory: dir,
-          recording: dragged.recording,
+        const recordingOutcome = await runPlannedRecordingAction({
+          recordingLedger,
+          engine,
+          scenario: "resize",
+          name: `resize-pane-${direction}`,
+          action: (recordFields) => rpc("ui.input.drag", {
+            from: gutter.address,
+            dx,
+            steps: 12,
+            durationMs: 240,
+            ...(recordFields.recordDir ? {
+              ...recordFields,
+              recordFrames: FRAMES_PER_CLICK,
+              recordIntervalMs: 16,
+            } : {}),
+          }, win, { timeoutMs: 60_000 }),
+        });
+        const dragged = must(recordingOutcome.actionResult, `pane resize ${direction}`);
+        const recordingEvidence = reviewRecordingOutcome({
+          outcome: recordingOutcome,
           expectedFrames: FRAMES_PER_CLICK,
           name: `${engine}/pane-${direction}`,
         });
@@ -1245,18 +1320,55 @@ async function runEngine(client, page, engine) {
 }
 
 async function main() {
-  prepareEvidence();
-  const client = await openClient(SOCKET);
-  const page = await startHtmlFixture(() => fixtureHtml());
+  const runId = process.env.BROWSER_EVIDENCE_RUN_ID ?? `slot-freeze-${randomUUID()}`;
+  const recordingLedger = createBrowserRecordingEvidenceLedger(RECORDING_PLAN);
+  await beginEvidenceRun(EVIDENCE_STORE_ROOT, {
+    runId,
+    keep: process.env.KEEP === "1",
+  });
+
+  let client = null;
+  let page = null;
   let frames = 0;
+  let runError = null;
   try {
-    for (const engine of ENGINES) frames += await runEngine(client, page, engine);
-    console.log(`\n✓ browser-matrix GREEN — ${ENGINES.length}개 구현 · 한글 IME ${ENGINES.length * 2}개 · 프레임 ${frames}장`);
-    console.log(`증거: ${EVIDENCE_ROOT}`);
+    client = await openClient(requireSocket());
+    page = await startHtmlFixture(() => fixtureHtml());
+    for (const engine of ENGINES) {
+      frames += await runEngine(client, page, engine, recordingLedger);
+    }
+    recordingLedger.assertComplete();
+  } catch (error) {
+    runError = error;
   } finally {
-    client.close();
-    await closeHtmlFixture(page.server);
+    try {
+      client?.close();
+      if (page) await closeHtmlFixture(page.server);
+    } catch (cleanupError) {
+      runError = runError
+        ? new AggregateError(
+            [runError, cleanupError],
+            `${runError instanceof Error ? runError.message : String(runError)}; fixture cleanup: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`,
+          )
+        : cleanupError;
+    }
   }
+
+  const status = runError ? "red" : "machine-green";
+  try {
+    await finishEvidenceRun(EVIDENCE_STORE_ROOT, { runId, status });
+  } catch (finishError) {
+    runError = runError
+      ? new AggregateError(
+          [runError, finishError],
+          `${runError instanceof Error ? runError.message : String(runError)}; evidence finish: ${finishError instanceof Error ? finishError.message : String(finishError)}`,
+        )
+      : finishError;
+  }
+  if (runError) throw runError;
+
+  console.log(`\n✓ browser-matrix MACHINE GREEN — ${ENGINES.length}개 구현 · 한글 IME ${ENGINES.length * 2}개 · 프레임 ${frames}장`);
+  console.log(`사람 검토용 증거: ${EVIDENCE_ROOT}`);
 }
 
 await main().catch((error) => {

@@ -123,6 +123,22 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(source).not.toContain("SCENARIOS.size === 1");
   });
 
+  it("사전 계획한 녹화를 공통 evidence run에서 정확히 한 번씩 소비한다", () => {
+    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    expect(source).toContain("planBrowserRecordingEvidence");
+    expect(source).toContain("createBrowserRecordingEvidenceLedger");
+    expect(source).toContain("runRecordingEvidenceAction");
+    expect(source).toContain("recordingLedger.take");
+    expect(source).toContain("recordingLedger.assertComplete()");
+    expect(source).toContain("beginEvidenceRun");
+    expect(source).toContain('const status = runError ? "red" : "machine-green"');
+    expect(source).toContain("finishEvidenceRun(EVIDENCE_STORE_ROOT, { runId, status })");
+    expect(source).not.toContain("function prepareEvidence");
+    expect(source).not.toContain('"slot-freeze", "current"');
+    expect(source.match(/runPlannedRecordingAction\(/g)).toHaveLength(5);
+    expect(source.match(/\.\.\.recordFields/g)).toHaveLength(4);
+  });
+
   it("교차 이동의 자동 판정은 recorder callback이 아닌 공개 layout 거래 장부를 소비한다", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
     expect(source).toContain("layoutTransactionVerdict");
