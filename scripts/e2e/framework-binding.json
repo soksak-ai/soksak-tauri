@@ -468,7 +468,7 @@
       "role": "lib",
       "class": "A",
       "surfaces": [],
-      "note": "선언된 절대 root 아래 current·last-red 수명, quota, symlink 금지, 실행 상태를 소유한다. 프레임워크·앱 홈·네이티브 표면을 알지 않는다."
+      "note": "선언된 절대 root 아래 current 작업본·runId별 불변 정본·last-red 읽기 복사 수명, quota, symlink 금지, 실행 상태를 소유한다. 프레임워크·앱 홈·네이티브 표면을 알지 않는다."
     },
     {
       "file": "lib/evidence-store.test.mjs",

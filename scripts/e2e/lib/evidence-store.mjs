@@ -1,4 +1,5 @@
-import { lstat, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import path from "node:path";
 
 export const EVIDENCE_RUN_LIMIT_BYTES = 1024 ** 3;
@@ -6,6 +7,7 @@ export const EVIDENCE_STORE_LIMIT_BYTES = 2 * EVIDENCE_RUN_LIMIT_BYTES;
 
 const RUN_FILE = "run.json";
 const BUCKETS = Object.freeze(["current", "last-red"]);
+const STORE_ENTRIES = Object.freeze(["current", "last-red", "runs"]);
 const RUN_STATUSES = new Set(["empty", "running", "red", "machine-green"]);
 const STORE_TRANSACTIONS = new Map();
 const EMPTY_RUN = Object.freeze({
@@ -58,21 +60,15 @@ export function evidenceStorePaths(root) {
     root: resolved,
     current: path.join(resolved, "current"),
     lastRed: path.join(resolved, "last-red"),
+    runs: path.join(resolved, "runs"),
   };
 }
 
-/**
- * 실패 회전의 모든 파괴/rename 표적을 파일시스템 접근 없이 확정한다.
- * 실행기는 이 계획과 정확히 같은 current/last-red만 변경한다.
- */
-export function planFailedRunRotation(root) {
+export function evidenceRunPath(root, runId) {
   const paths = evidenceStorePaths(root);
-  return {
-    root: paths.root,
-    remove: paths.lastRed,
-    rename: { from: paths.current, to: paths.lastRed },
-    recreate: paths.current,
-  };
+  const id = validateRunId(runId);
+  const key = createHash("sha256").update(id, "utf8").digest("hex");
+  return path.join(paths.runs, key);
 }
 
 function bucketPath(paths, bucket) {
@@ -272,19 +268,42 @@ function runBytes(state) {
   return Buffer.from(`${JSON.stringify(state, null, 2)}\n`);
 }
 
+async function readRunStateFile(target) {
+  const stat = await checkedStat(target);
+  if (!stat?.isFile()) throw new Error(`${RUN_FILE}이 없다: ${target}`);
+  let parsed;
+  try {
+    parsed = JSON.parse(await readFile(target, "utf8"));
+  } catch (error) {
+    throw new Error(`읽을 수 없는 ${RUN_FILE}: ${target}`, { cause: error });
+  }
+  return validateRunState(parsed, target);
+}
+
 async function assertStoreLayout(paths) {
   const rootStat = await checkedStat(paths.root);
   if (!rootStat?.isDirectory()) throw new Error(`증거 저장 root가 디렉터리가 아니다: ${paths.root}`);
   const entries = (await readdir(paths.root)).sort();
   for (const entry of entries) {
-    if (!BUCKETS.includes(entry)) {
-      throw new Error(`timestamp archive/미등록 항목은 증거 저장 root에 허용되지 않는다: ${entry}`);
+    if (!STORE_ENTRIES.includes(entry)) {
+      throw new Error(`미등록 항목은 증거 저장 root에 허용되지 않는다: ${entry}`);
     }
   }
   for (const bucket of BUCKETS) {
     const target = bucketPath(paths, bucket);
     const stat = await checkedStat(target);
     if (!stat?.isDirectory()) throw new Error(`증거 bucket이 디렉터리가 아니다: ${target}`);
+  }
+  const runsStat = await checkedStat(paths.runs);
+  if (!runsStat?.isDirectory()) throw new Error(`증거 run 저장소가 디렉터리가 아니다: ${paths.runs}`);
+  for (const entry of await readdir(paths.runs, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !/^[a-f0-9]{64}$/.test(entry.name)) {
+      throw new Error(`runId 정본이 아닌 항목은 runs에 허용되지 않는다: ${entry.name}`);
+    }
+    const archived = await readRunStateFile(path.join(paths.runs, entry.name, RUN_FILE));
+    if (evidenceRunPath(paths.root, archived.runId) !== path.join(paths.runs, entry.name)) {
+      throw new Error(`runId와 정본 경로가 일치하지 않는다: ${entry.name}`);
+    }
   }
 }
 
@@ -341,14 +360,15 @@ async function assertParentChain(bucket, targetParent) {
 async function quotaBeforeWrite(paths, bucket, target, incomingBytes, options = {}) {
   const bucketRoot = bucketPath(paths, bucket);
   const otherRoot = bucketPath(paths, bucket === "current" ? "last-red" : "current");
-  const [bucketBytes, otherBucketBytes, existingFileBytes] = await Promise.all([
+  const [bucketBytes, otherBucketBytes, archivedBytes, existingFileBytes] = await Promise.all([
     measureDirectory(bucketRoot),
     measureDirectory(otherRoot),
+    measureDirectory(paths.runs),
     existingFileSize(target),
   ]);
   return projectEvidenceQuota({
     bucketBytes,
-    otherBucketBytes,
+    otherBucketBytes: otherBucketBytes + archivedBytes,
     existingFileBytes,
     incomingBytes,
     keep: options.keep,
@@ -358,13 +378,14 @@ async function quotaBeforeWrite(paths, bucket, target, incomingBytes, options = 
 
 async function quotaBeforeArtifact(paths, target, incomingBytes, options = {}) {
   const existing = await inspectArtifact(target);
-  const [bucketBytes, otherBucketBytes] = await Promise.all([
+  const [bucketBytes, otherBucketBytes, archivedBytes] = await Promise.all([
     measureDirectory(paths.current),
     measureDirectory(paths.lastRed),
+    measureDirectory(paths.runs),
   ]);
   const quota = projectEvidenceQuota({
     bucketBytes,
-    otherBucketBytes,
+    otherBucketBytes: otherBucketBytes + archivedBytes,
     existingFileBytes: existing.bytes,
     incomingBytes,
     keep: options.keep,
@@ -438,13 +459,14 @@ export async function ensureEvidenceStore(root) {
   await ensureDirectory(paths.root, "증거 저장 root");
   const entries = await readdir(paths.root);
   for (const entry of entries) {
-    if (!BUCKETS.includes(entry)) {
-      throw new Error(`timestamp archive/미등록 항목은 증거 저장 root에 허용되지 않는다: ${entry}`);
+    if (!STORE_ENTRIES.includes(entry)) {
+      throw new Error(`미등록 항목은 증거 저장 root에 허용되지 않는다: ${entry}`);
     }
   }
   for (const bucket of BUCKETS) {
     await ensureDirectory(bucketPath(paths, bucket), `증거 ${bucket} bucket`);
   }
+  await ensureDirectory(paths.runs, "증거 run 저장소");
   for (const bucket of BUCKETS) {
     const runFile = path.join(bucketPath(paths, bucket), RUN_FILE);
     const stat = await checkedStat(runFile);
@@ -452,6 +474,8 @@ export async function ensureEvidenceStore(root) {
     else if (!stat.isFile()) throw new Error(`${RUN_FILE}은 일반 파일이어야 한다: ${runFile}`);
     else await readEvidenceRun(paths.root, bucket);
   }
+  const lastRed = await readEvidenceRun(paths.root, "last-red");
+  if (lastRed.status === "red") await archiveRunBucket(paths, "last-red", lastRed);
   await assertStoreLayout(paths);
   return inspectEvidenceStore(paths.root);
 }
@@ -459,24 +483,20 @@ export async function ensureEvidenceStore(root) {
 export async function readEvidenceRun(root, bucket) {
   const paths = evidenceStorePaths(root);
   evidenceBucket(bucket);
-  const target = path.join(bucketPath(paths, bucket), RUN_FILE);
-  const stat = await checkedStat(target);
-  if (!stat?.isFile()) throw new Error(`${RUN_FILE}이 없다: ${target}`);
-  let parsed;
-  try {
-    parsed = JSON.parse(await readFile(target, "utf8"));
-  } catch (error) {
-    throw new Error(`읽을 수 없는 ${RUN_FILE}: ${target}`, { cause: error });
-  }
-  return validateRunState(parsed, target);
+  return readRunStateFile(path.join(bucketPath(paths, bucket), RUN_FILE));
+}
+
+export async function readArchivedEvidenceRun(root, runId) {
+  return readRunStateFile(path.join(evidenceRunPath(root, runId), RUN_FILE));
 }
 
 export async function inspectEvidenceStore(root) {
   const paths = evidenceStorePaths(root);
   await assertStoreLayout(paths);
-  const [currentBytes, lastRedBytes, currentRun, lastRedRun] = await Promise.all([
+  const [currentBytes, lastRedBytes, archivedBytes, currentRun, lastRedRun] = await Promise.all([
     measureDirectory(paths.current),
     measureDirectory(paths.lastRed),
+    measureDirectory(paths.runs),
     readEvidenceRun(paths.root, "current"),
     readEvidenceRun(paths.root, "last-red"),
   ]);
@@ -484,7 +504,8 @@ export async function inspectEvidenceStore(root) {
     root: paths.root,
     current: { path: paths.current, bytes: currentBytes, run: currentRun },
     lastRed: { path: paths.lastRed, bytes: lastRedBytes, run: lastRedRun },
-    totalBytes: currentBytes + lastRedBytes,
+    runs: { path: paths.runs, bytes: archivedBytes },
+    totalBytes: currentBytes + lastRedBytes + archivedBytes,
   };
 }
 
@@ -509,6 +530,13 @@ async function beginEvidenceRunTransaction(root, { runId, keep = false, limits }
 
   const lastRed = await readEvidenceRun(paths.root, "last-red");
   if (lastRed.runId === id && lastRed.status === "red") return lastRed;
+
+  const archivedPath = evidenceRunPath(paths.root, id);
+  const archivedStat = await checkedStat(archivedPath);
+  if (archivedStat) {
+    if (!archivedStat.isDirectory()) throw new Error(`run 정본이 디렉터리가 아니다: ${archivedPath}`);
+    return readRunStateFile(path.join(archivedPath, RUN_FILE));
+  }
 
   await resetBucket(paths, "current");
   const state = { schemaVersion: 1, runId: id, status: "running", keep };
@@ -614,14 +642,15 @@ async function produceEvidenceArtifactTransaction(
       producerFailed ? producerError : undefined,
     );
   } else {
-    const [bucketBytes, otherBucketBytes] = await Promise.all([
+    const [bucketBytes, otherBucketBytes, archivedBytes] = await Promise.all([
       measureDirectory(paths.current),
       measureDirectory(paths.lastRed),
+      measureDirectory(paths.runs),
     ]);
     try {
       projectEvidenceQuota({
         bucketBytes,
-        otherBucketBytes,
+        otherBucketBytes: otherBucketBytes + archivedBytes,
         existingFileBytes: actual.bytes,
         incomingBytes: actual.bytes,
         keep,
@@ -663,6 +692,75 @@ export function produceEvidenceArtifact(root, relativePath, options, producer) {
   );
 }
 
+async function archiveRunBucket(paths, bucket, state, limits) {
+  evidenceBucket(bucket);
+  const source = bucketPath(paths, bucket);
+  const target = evidenceRunPath(paths.root, state.runId);
+  const existing = await checkedStat(target);
+  if (existing) {
+    if (!existing.isDirectory()) throw new Error(`run 정본이 디렉터리가 아니다: ${target}`);
+    const archived = await readRunStateFile(path.join(target, RUN_FILE));
+    if (archived.runId !== state.runId || archived.status !== state.status) {
+      throw new Error(`기존 run 정본의 identity가 다르다: ${state.runId}`);
+    }
+    return { path: target, archived: false };
+  }
+
+  const [sourceBytes, totalBytes] = await Promise.all([
+    measureDirectory(source),
+    Promise.all([
+      measureDirectory(paths.current),
+      measureDirectory(paths.lastRed),
+      measureDirectory(paths.runs),
+    ]).then((values) => values.reduce((sum, value) => sum + value, 0)),
+  ]);
+  projectEvidenceQuota({
+    bucketBytes: 0,
+    otherBucketBytes: totalBytes,
+    existingFileBytes: 0,
+    incomingBytes: sourceBytes,
+    ...(limits ?? {}),
+  });
+  const staging = path.join(paths.root, ".run-staging");
+  if (await checkedStat(staging)) {
+    throw new Error(`완료되지 않은 run 정본 거래가 남아 있다: ${staging}`);
+  }
+  try {
+    await cp(source, staging, { recursive: true, errorOnExist: true, force: false });
+    const archived = await readRunStateFile(path.join(staging, RUN_FILE));
+    if (archived.runId !== state.runId || archived.status !== state.status) {
+      throw new Error(`복사된 run 정본의 identity가 다르다: ${state.runId}`);
+    }
+    await measureDirectory(staging);
+    await rename(staging, target);
+  } catch (error) {
+    const partial = await checkedStat(staging);
+    if (partial) {
+      if (!partial.isDirectory()) throw error;
+      await measureDirectory(staging);
+      await rm(staging, { recursive: true });
+    }
+    throw error;
+  }
+  return { path: target, archived: true };
+}
+
+async function replaceLastRed(paths, archivedPath) {
+  await removeBucket(paths, "last-red");
+  try {
+    await cp(archivedPath, paths.lastRed, { recursive: true, errorOnExist: true, force: false });
+  } catch (error) {
+    const partial = await checkedStat(paths.lastRed);
+    if (partial?.isDirectory()) {
+      await measureDirectory(paths.lastRed);
+      await rm(paths.lastRed, { recursive: true });
+    }
+    await mkdir(paths.lastRed);
+    await writeRunState(paths, "last-red", EMPTY_RUN);
+    throw error;
+  }
+}
+
 async function finishEvidenceRunTransaction(root, { runId, status, limits } = {}) {
   const id = validateRunId(runId);
   if (status !== "machine-green" && status !== "red") {
@@ -679,6 +777,15 @@ async function finishEvidenceRunTransaction(root, { runId, status, limits } = {}
     return { runId: id, status, rotated: false };
   }
   if (current.runId !== id) {
+    const archivedPath = evidenceRunPath(paths.root, id);
+    const archivedStat = await checkedStat(archivedPath);
+    if (status === "red" && archivedStat?.isDirectory()) {
+      const archived = await readRunStateFile(path.join(archivedPath, RUN_FILE));
+      if (archived.runId === id && archived.status === "red") {
+        await replaceLastRed(paths, archivedPath);
+        return { runId: id, status, rotated: false, archived: false, repairedLastRed: true };
+      }
+    }
     throw new Error(`완료할 current 실행을 찾지 못했다: ${id}`);
   }
   if (current.status !== "running" && current.status !== status) {
@@ -689,18 +796,15 @@ async function finishEvidenceRunTransaction(root, { runId, status, limits } = {}
   if (current.status !== status) {
     await writeRunState(paths, "current", finalState, { keep: current.keep, limits });
   }
-  if (status === "machine-green") return { runId: id, status, rotated: false };
+  const archived = await archiveRunBucket(paths, "current", finalState, limits);
+  if (status === "machine-green") {
+    return { runId: id, status, rotated: false, archived: archived.archived };
+  }
 
-  const plan = planFailedRunRotation(paths.root);
-  assertExactBucketPath(paths, "last-red", plan.remove);
-  assertExactBucketPath(paths, "current", plan.rename.from);
-  assertExactBucketPath(paths, "last-red", plan.rename.to);
-  assertExactBucketPath(paths, "current", plan.recreate);
-  await removeBucket(paths, "last-red");
-  await rename(plan.rename.from, plan.rename.to);
-  await mkdir(plan.recreate);
+  await resetBucket(paths, "current");
   await writeRunState(paths, "current", EMPTY_RUN, { limits });
-  return { runId: id, status, rotated: true };
+  await replaceLastRed(paths, archived.path);
+  return { runId: id, status, rotated: true, archived: archived.archived };
 }
 
 export function finishEvidenceRun(root, options = {}) {

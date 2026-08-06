@@ -10,10 +10,10 @@ import {
   EvidenceQuotaError,
   beginEvidenceRun,
   ensureEvidenceStore,
+  evidenceRunPath,
   evidenceStorePaths,
   finishEvidenceRun,
   inspectEvidenceStore,
-  planFailedRunRotation,
   produceEvidenceArtifact,
   projectEvidenceQuota,
   readEvidenceRun,
@@ -44,25 +44,21 @@ async function inTemporaryStore(run) {
 }
 
 describe("증거 저장 경계", () => {
-  it("current와 last-red 두 실제 디렉터리만 계획하며 timestamp archive를 만들지 않는다", async () => {
+  it("current·last-red와 runId 정본 저장소만 선언한다", async () => {
     await inTemporaryStore(async (root) => {
       const paths = evidenceStorePaths(root);
       expect(paths).toEqual({
         root: path.resolve(root),
         current: path.join(path.resolve(root), "current"),
         lastRed: path.join(path.resolve(root), "last-red"),
-      });
-      expect(planFailedRunRotation(root)).toEqual({
-        root: path.resolve(root),
-        remove: paths.lastRed,
-        rename: { from: paths.current, to: paths.lastRed },
-        recreate: paths.current,
+        runs: path.join(path.resolve(root), "runs"),
       });
 
       await ensureEvidenceStore(root);
-      expect((await readdir(root)).sort()).toEqual(["current", "last-red"]);
+      expect((await readdir(root)).sort()).toEqual(["current", "last-red", "runs"]);
       expect((await readdir(paths.current)).sort()).toEqual(["run.json"]);
       expect((await readdir(paths.lastRed)).sort()).toEqual(["run.json"]);
+      expect(await readdir(paths.runs)).toEqual([]);
     });
   });
 
@@ -77,6 +73,45 @@ describe("증거 저장 경계", () => {
 });
 
 describe("run.json 수명과 실패 회전", () => {
+  it("연속 RED의 run별 원본은 불변 보존하고 last-red만 최신 실패로 갱신한다", async () => {
+    await inTemporaryStore(async (root) => {
+      await beginEvidenceRun(root, { runId: "red-preserved-1" });
+      await writeEvidenceFile(root, "marker.txt", "first-red");
+      await finishEvidenceRun(root, { runId: "red-preserved-1", status: "red" });
+
+      await beginEvidenceRun(root, { runId: "red-preserved-2" });
+      await writeEvidenceFile(root, "marker.txt", "second-red");
+      await finishEvidenceRun(root, { runId: "red-preserved-2", status: "red" });
+
+      const archived = await readdir(path.join(root, "runs"));
+      expect(archived).toHaveLength(2);
+      const originals = await Promise.all(archived.map(async (entry) => ({
+        state: JSON.parse(await readFile(path.join(root, "runs", entry, "run.json"), "utf8")),
+        marker: await readFile(path.join(root, "runs", entry, "marker.txt"), "utf8"),
+      })));
+      expect(originals.map(({ state }) => state.runId).sort()).toEqual([
+        "red-preserved-1",
+        "red-preserved-2",
+      ]);
+      expect(originals.map(({ marker }) => marker).sort()).toEqual(["first-red", "second-red"]);
+      expect(await readEvidenceRun(root, "last-red")).toMatchObject({
+        runId: "red-preserved-2",
+        status: "red",
+      });
+      expect(await readFile(path.join(root, "last-red", "marker.txt"), "utf8"))
+        .toBe("second-red");
+      const firstAgain = await beginEvidenceRun(root, { runId: "red-preserved-1" });
+      expect(firstAgain).toMatchObject({ runId: "red-preserved-1", status: "red" });
+      await expect(writeEvidenceFile(root, "marker.txt", "mutated"))
+        .rejects.toThrow(/running 실행만/);
+      expect(await readFile(
+        path.join(evidenceRunPath(root, "red-preserved-1"), "marker.txt"),
+        "utf8",
+      ))
+        .toBe("first-red");
+    });
+  });
+
   it("실행 최종 상태를 machine-green/red로만 기록해 사람의 visualReview와 섞지 않는다", async () => {
     await inTemporaryStore(async (root) => {
       await beginEvidenceRun(root, { runId: "verdict-vocabulary" });
@@ -126,7 +161,7 @@ describe("run.json 수명과 실패 회전", () => {
 
       const repeated = await finishEvidenceRun(root, { runId: "browser-flow-1", status: "red" });
       expect(repeated).toMatchObject({ runId: "browser-flow-1", status: "red", rotated: false });
-      expect((await readdir(root)).sort()).toEqual(["current", "last-red"]);
+      expect((await readdir(root)).sort()).toEqual(["current", "last-red", "runs"]);
       expect(await readFile(path.join(root, "last-red", "frames", "001.png"), "utf8"))
         .toBe("visual-only");
     });
@@ -148,7 +183,47 @@ describe("run.json 수명과 실패 회전", () => {
       });
       expect(await readFile(path.join(root, "current", "green.txt"), "utf8")).toBe("green");
       expect(await readFile(path.join(root, "last-red", "red.txt"), "utf8")).toBe("red");
-      expect((await readdir(root)).sort()).toEqual(["current", "last-red"]);
+      expect((await readdir(root)).sort()).toEqual(["current", "last-red", "runs"]);
+    });
+  });
+
+  it("machine-green도 다음 current 시작과 무관한 run 정본으로 남긴다", async () => {
+    await inTemporaryStore(async (root) => {
+      await beginEvidenceRun(root, { runId: "green-preserved" });
+      await writeEvidenceFile(root, "green.txt", "machine evidence");
+      await finishEvidenceRun(root, { runId: "green-preserved", status: "machine-green" });
+      await beginEvidenceRun(root, { runId: "next-running" });
+
+      const archived = await readdir(path.join(root, "runs"));
+      expect(archived).toHaveLength(1);
+      expect(JSON.parse(await readFile(
+        path.join(root, "runs", archived[0], "run.json"),
+        "utf8",
+      ))).toMatchObject({ runId: "green-preserved", status: "machine-green" });
+      expect(await readFile(path.join(root, "runs", archived[0], "green.txt"), "utf8"))
+        .toBe("machine evidence");
+      expect(await readEvidenceRun(root, "current")).toMatchObject({
+        runId: "next-running",
+        status: "running",
+      });
+    });
+  });
+
+  it("기존 last-red만 있는 저장소도 최초 점검에서 run 정본으로 승격한다", async () => {
+    await inTemporaryStore(async (root) => {
+      await beginEvidenceRun(root, { runId: "legacy-last-red" });
+      await writeEvidenceFile(root, "legacy.txt", "preserve me");
+      await finishEvidenceRun(root, { runId: "legacy-last-red", status: "red" });
+
+      const paths = evidenceStorePaths(root);
+      await rm(paths.runs, { recursive: true });
+      await mkdir(paths.runs);
+      await ensureEvidenceStore(root);
+
+      expect(await readFile(
+        path.join(evidenceRunPath(root, "legacy-last-red"), "legacy.txt"),
+        "utf8",
+      )).toBe("preserve me");
     });
   });
 });
