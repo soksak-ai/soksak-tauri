@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 describe("titlebar composition live E2E contract", () => {
   const source = readFileSync(new URL("./titlebar-composition.mjs", import.meta.url), "utf8");
+  const makefile = readFileSync(new URL("../../Makefile", import.meta.url), "utf8");
 
   it("uses only public status/DOM commands and a finite height sequence", () => {
     for (const marker of [
@@ -44,5 +45,37 @@ describe("titlebar composition live E2E contract", () => {
     const resetAt = source.indexOf('rpc("titlebar.height.reset"', finallyAt);
     expect(finallyAt).toBeGreaterThan(0);
     expect(resetAt).toBeGreaterThan(finallyAt);
+  });
+
+  it("runs one finite hostile resize per live window without focus or polling", () => {
+    expect(source).toContain("hostileWindowResizeSizes");
+    expect(source.match(/rpc\("window\.resizeSequence"/g)).toHaveLength(1);
+    expect(source).toContain('rpc("window.info"');
+    expect(source).toContain('rpc("ui.layout.wait-settled"');
+    expect(source).toContain("hostileResize:");
+    expect(source).toContain("heldRestore");
+    expect(source).toContain("recordDir");
+    expect(source).not.toMatch(/setTimeout|setInterval|window\.focus/);
+  });
+
+  it("binds exactly three cold starts and their aggregate verdict to one executable", () => {
+    const target = makefile.split("e2e-titlebar-dev:")[1]?.split("\n\n")[0] ?? "";
+    expect(target).toContain("for cycle in 1 2 3");
+    expect(target).toContain('shasum -a 256 "$(DEV_EXECUTABLE)"');
+    expect(target).toContain('BROWSER_EVIDENCE_BUILD_ID="$$evidence_build_id"');
+    expect(target).toContain('B12_RUN_ID="$$evidence_run_id"');
+    expect(target).toContain('B12_CYCLE="$$cycle"');
+    expect(target).toContain("titlebar-composition-summary.mjs");
+  });
+
+  it("persists artifact and cold-run identity in every cycle and window receipt", () => {
+    for (const marker of [
+      "requireBrowserEvidenceBuildId",
+      "requireB12RunId",
+      "buildId,",
+      "runId,",
+      "cycle,",
+      '"cycle.json"',
+    ]) expect(source).toContain(marker);
   });
 });
