@@ -337,7 +337,7 @@ export function viewContainerOf(el: Element | null): HTMLElement | null {
 export function registerDomCatalog(): void {
   register("ui.tree", {
     description:
-      "Return the exposed DOM address tree — absolute addresses of nodes declared via data-node by plugin views and host-chrome elements. Every node includes nodeIdentity, an opaque token stable for that live Element instance and changed when a different Element is mounted at the same address; compare it across observations to detect remounts. Use to discover addressable targets before calling ui.measure or ui.input.click; unexposed elements are absent and unreachable. Pass rects:true to include each node's viewport rect for coordinate work (drags, precision clicks).",
+      "Return the exposed DOM address tree — absolute addresses of nodes declared via data-node by plugin views and host-chrome elements. Every node includes its complete declared data-* dataset and nodeIdentity, an opaque token stable for that live Element instance and changed when a different Element is mounted at the same address; compare it across observations to detect remounts. Use to discover addressable targets and their public roles before calling ui.measure or ui.input.click; unexposed elements are absent and unreachable. Pass rects:true to include each node's viewport rect for coordinate work (drags, precision clicks).",
     triggers: { ko: "DOM 트리 주소목록 노드목록 ui트리 노드식별자 재마운트 인스턴스" },
     params: {
       rects: {
@@ -346,7 +346,7 @@ export function registerDomCatalog(): void {
         default: false,
       },
     },
-    returns: "{ window, count, duplicates, nodes: [{ address, nodePath, nodeIdentity, rect? }] }",
+    returns: "{ window, count, duplicates, nodes: [{ address, nodePath, nodeIdentity, dataset, rect? }] }",
     message: (d) => tmsg("msg.ui.tree", { n: Number(d.count ?? 0) }),
     examples: ["ui.tree", 'ui.tree \'{"rects":true}\''],
     handler: (p) => {
@@ -363,6 +363,9 @@ export function registerDomCatalog(): void {
           address: n.address,
           nodePath: n.nodePath,
           nodeIdentity: nodeIdentityOf(n.el),
+          // data-node로 공개된 요소의 data-*는 이미 선언된 인터페이스다. tree가 이를 버리면
+          // 소비자는 발견한 주소마다 ui.measure를 호출하거나 private DOM을 다시 추측해야 한다.
+          dataset: Object.fromEntries(Object.entries(n.el.dataset)),
         };
         if (!withRects) return exposed;
         const r = n.el.getBoundingClientRect();

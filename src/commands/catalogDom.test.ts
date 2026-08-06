@@ -147,6 +147,27 @@ async function treeNodeIdentity(): Promise<string | undefined> {
 }
 
 describe("ui.tree/ui.measure — 공개 DOM 노드 인스턴스 식별자", () => {
+  it("ui.tree가 노드가 선언한 모든 data-*를 공개 dataset으로 반환한다", async () => {
+    mountNode(
+      `<button data-node="btn" data-composition-kind="slot" data-view-id="view-a" `
+      + `data-topology-path="project-a/pane-a/view-a" data-visible="true">x</button>`,
+    );
+
+    const result = await execute("ui.tree", {}, {});
+    const node = (result.data as {
+      nodes: Array<{ address: string; dataset?: Record<string, string> }>;
+    }).nodes.find(({ address }) => address === ADDR);
+
+    expect(node?.dataset).toEqual({
+      node: "btn",
+      compositionKind: "slot",
+      viewId: "view-a",
+      topologyPath: "project-a/pane-a/view-a",
+      visible: "true",
+    });
+    expect(getSpec("ui.tree")?.returns).toContain("dataset");
+  });
+
   it("같은 live Element 는 두 명령과 반복 조회에서 같은 opaque 식별자를 가진다", async () => {
     mountNode(`<button data-node="btn">x</button>`);
 
