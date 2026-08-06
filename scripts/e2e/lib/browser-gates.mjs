@@ -4,23 +4,28 @@ import {
   logicalRectToPhysical,
 } from "../../../packages/dom-webview-compositor/src/index.ts";
 import { layoutTransactionVerdict } from "./layout-transaction-verdict.mjs";
+import {
+  BROWSER_ACCEPTANCE_ENGINES,
+  BROWSER_ACCEPTANCE_FRAMEWORKS,
+  BROWSER_ACCEPTANCE_PLATFORMS,
+} from "./browser-gate-identity.mjs";
+import {
+  displayValue,
+  engineSet,
+  finishMachineVerdict,
+  hasText,
+  isRecord,
+  notRunVerdict,
+  requireEvidenceEnvelope,
+  requireExactKeys,
+  requireUniqueViewId,
+} from "./browser-machine-judge-support.mjs";
 
-export const BROWSER_ACCEPTANCE_FRAMEWORKS = Object.freeze([
-  "tauri",
-  "electron",
-]);
-
-export const BROWSER_ACCEPTANCE_PLATFORMS = Object.freeze([
-  "darwin",
-  "linux",
-  "win32",
-]);
-
-export const BROWSER_ACCEPTANCE_ENGINES = Object.freeze([
-  "browser",
-  "browser-chromium",
-  "browser-chromium-offscreen",
-]);
+export {
+  BROWSER_ACCEPTANCE_ENGINES,
+  BROWSER_ACCEPTANCE_FRAMEWORKS,
+  BROWSER_ACCEPTANCE_PLATFORMS,
+};
 
 export const MACHINE_GATE_STATUSES = Object.freeze([
   "not-applicable",
@@ -109,7 +114,6 @@ export const BROWSER_ACCEPTANCE_GATES = deepFreeze([
   },
 ]);
 
-const engineSet = new Set(BROWSER_ACCEPTANCE_ENGINES);
 const frameworkSet = new Set(BROWSER_ACCEPTANCE_FRAMEWORKS);
 const platformSet = new Set(BROWSER_ACCEPTANCE_PLATFORMS);
 const gateSet = new Set(BROWSER_ACCEPTANCE_GATES.map(({ id }) => id));
@@ -202,77 +206,6 @@ function requireOptionalText(value, field) {
     throw new TypeError(`${field} must be null or a non-empty string`);
   }
   return value;
-}
-
-function isRecord(value) {
-  return value != null && typeof value === "object" && !Array.isArray(value);
-}
-
-function hasText(value) {
-  return typeof value === "string" && value.trim() !== "";
-}
-
-function displayValue(value) {
-  if (typeof value === "string") return JSON.stringify(value);
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
-}
-
-function notRunVerdict() {
-  return { status: "not-run", evidence: [], reason: null };
-}
-
-function finishMachineVerdict(gate, failures, greenEvidence) {
-  if (failures.length > 0) {
-    const unique = [...new Set(failures)];
-    return {
-      status: "red",
-      evidence: unique.map((failure) => `${gate}:${failure}`),
-      reason: `${gate} machine contract failed (${unique.length})`,
-    };
-  }
-  return { status: "green", evidence: [greenEvidence], reason: null };
-}
-
-function requireEvidenceEnvelope(value, failures) {
-  if (!isRecord(value)) {
-    failures.push(`evidence=record/${displayValue(value)}`);
-    return false;
-  }
-  if (!engineSet.has(value.engine)) failures.push(`engine=known/${displayValue(value.engine)}`);
-  if (!Array.isArray(value.tabs) || value.tabs.length === 0) {
-    failures.push(`tabs=non-empty/${displayValue(value.tabs)}`);
-    return false;
-  }
-  return true;
-}
-
-function requireExactKeys(value, keys, path, failures) {
-  if (!isRecord(value)) {
-    failures.push(`${path}=record/${displayValue(value)}`);
-    return false;
-  }
-  const expected = new Set(keys);
-  for (const key of Object.keys(value)) {
-    if (!expected.has(key)) failures.push(`${path}.${key}=not-machine-schema`);
-  }
-  for (const key of keys) {
-    if (!Object.hasOwn(value, key)) failures.push(`${path}.${key}=missing`);
-  }
-  return true;
-}
-
-function requireUniqueViewId(tab, path, seen, failures) {
-  if (!hasText(tab?.viewId)) {
-    failures.push(`${path}.viewId=non-empty/${displayValue(tab?.viewId)}`);
-    return null;
-  }
-  if (seen.has(tab.viewId)) failures.push(`${path}.viewId=unique/${displayValue(tab.viewId)}`);
-  seen.add(tab.viewId);
-  return tab.viewId;
 }
 
 /**

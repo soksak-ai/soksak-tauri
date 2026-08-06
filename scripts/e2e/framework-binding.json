@@ -273,6 +273,20 @@
       "note": "공통 브라우저 gate 스키마·identity·judge receipt를 순수 증거 값으로 검증한다."
     },
     {
+      "file": "lib/browser-gate-identity.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "acceptance report가 허용하는 framework·platform·browser engine identity의 단일 목록이다."
+    },
+    {
+      "file": "lib/browser-machine-judge-support.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "gate별 순수 판정기가 공유하는 strict schema·engine identity·RED/GREEN 영수증 유틸리티다."
+    },
+    {
       "file": "lib/layout-transaction-verdict.mjs",
       "role": "lib",
       "class": "A",
