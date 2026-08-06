@@ -6,8 +6,7 @@
 // 2026-07-28). 이제 확보 자체가 멱등이라(lib/fixtureWindow.acquireFixtureWindow) 새로 쌓이지
 // 않지만, **이미 쌓인 것**과 손으로 만든 밭은 이 도구가 걷는다.
 //
-// 남의 창 불가침: 픽스처 밭(~/.soksak-e2e/*)과 픽스처 이름 규약(soksak-e2e-*)에 걸리는 창만
-// 닫는다. 사용자의 프로젝트 창은 어느 규칙에도 걸리지 않는다.
+// 남의 창 불가침: 선언된 픽스처 밭(~/.soksak-e2e/*) 아래의 창만 닫는다.
 //
 // 실행: SOKSAK_SOCKET=<앱 소켓> node scripts/e2e/reclaim.mjs
 
@@ -18,12 +17,11 @@ import {
   emptyWorkspaceWindows,
   forgetFixtureData,
   projectMap,
-  releaseFixtureWindowsNamed,
+  reclaimStoredWindowSnapshots,
   releaseFixtureWindowsUnder,
 } from "./lib/fixtureWindow.mjs";
 
 const FIELD = path.join(os.homedir(), ".soksak-e2e");
-const TMP_PREFIX = "soksak-e2e-";
 // 빈 창(프로젝트 0)은 기본 대상이 아니다 — 사용자도 프로젝트를 열기 전 빈 창을 띄운다.
 const SWEEP_EMPTY = process.argv.includes("--empty");
 
@@ -37,7 +35,6 @@ async function main() {
 
   const swept = [
     ...(await releaseFixtureWindowsUnder(rpc, FIELD, { ctrl })),
-    ...(await releaseFixtureWindowsNamed(rpc, TMP_PREFIX, { ctrl })),
   ];
   for (const w of swept) console.log(`  회수 ${w.label}  ${w.root}`);
 
@@ -74,35 +71,18 @@ async function main() {
  * 지금 열려 있는 프로젝트는 픽스처 밭에 있어도 남긴다 — 쓰고 있는 것을 목록에서 빼지 않는다.
  */
 async function sweepStoredResidue(rpc, ctrl, liveLabels) {
-  const field = FIELD.replace(/\/+$/, "") + "/";
-  const keep = new Set(liveLabels.map(String));
-  // 장부에 선 창은 살아날 창이다 — 지금 닫혀 있어도 남긴다.
-  const manifest = (await rpc("data.kv.get", { ns: "core", key: "windows" }, ctrl))?.data?.value;
-  for (const slot of manifest?.slots ?? []) keep.add(String(slot?.label ?? ""));
-
-  const keys = (await rpc("data.kv.keys", { ns: "core" }, ctrl))?.data ?? [];
-  const labels = [
-    ...new Set(
-      (Array.isArray(keys) ? keys : (keys.keys ?? []))
-        .map(String)
-        .filter((k) => k.startsWith("window/"))
-        .map((k) => k.replace(/#prev$/, "").slice("window/".length)),
-    ),
-  ].filter((label) => !keep.has(label));
-
-  let swept = 0;
-  for (const label of labels) {
-    // 무엇을 들고 있는지 보고 나서 지운다. 픽스처가 아닌 것이 하나라도 있으면 사용자의 것이다.
-    const snap = (await rpc("data.kv.get", { ns: "core", key: `window/${label}` }, ctrl))?.data?.value;
-    const roots = (snap?.projects ?? []).map((p) => String(p?.root ?? ""));
-    if (roots.some((r) => !r.startsWith(field))) {
-      console.log(`  남김 window/${label} — 픽스처가 아닌 프로젝트를 들고 있다`);
-      continue;
+  const snapshots = await reclaimStoredWindowSnapshots(rpc, ctrl, {
+    field: FIELD,
+    liveLabels,
+  });
+  for (const kept of snapshots.preserved) {
+    if (kept.reason === "not-proven-fixture-only") {
+      console.log(`  남김 window/${kept.label} — 모든 세대가 픽스처뿐임을 증명하지 못했다`);
     }
-    await forgetFixtureData(rpc, ctrl, { label });
-    swept += 1;
   }
-  console.log(`유령 스냅샷 ${swept} 개 회수`);
+  console.log(
+    `유령 스냅샷 ${snapshots.labels} 개 회수 — exact key ${snapshots.deleted} deleted, ${snapshots.absent} absent`,
+  );
 
   const openRoots = new Set((await projectMap(rpc, ctrl)).map((p) => String(p.root)));
   const recents = (await rpc("project.recent", {}, ctrl))?.data ?? [];

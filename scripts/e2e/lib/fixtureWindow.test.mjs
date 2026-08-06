@@ -1,16 +1,20 @@
+// @vitest-environment node
 // 픽스처 창 소유 규칙의 전수 대조 — 소켓 없이, 지도만으로.
 //
 // 이 규칙이 틀리면 증상은 "테스트 실패"가 아니라 **창이 쌓인다**로 나타난다. 아무도 그것을
 // 실패로 보고하지 않으므로 여기서 기계가 본다.
 
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   acquireFixtureWindow,
   emptyWorkspaceWindows,
+  forgetFixtureData,
+  reclaimStoredWindowSnapshots,
   releaseFixtureWindow,
   releaseFixtureWindowsUnder,
   windowForRoot,
-  windowsNamed,
+  windowsForExactRoots,
   windowsUnder,
 } from "./fixtureWindow.mjs";
 
@@ -189,16 +193,28 @@ describe("회수", () => {
   });
 });
 
-describe("windowsNamed", () => {
-  /** 공용 임시 밭은 디렉터리로 가를 수 없다 — 이름 규약만이 우리 것임을 말한다. */
-  it("루트 이름 접두사로만 고른다", () => {
+describe("windowsForExactRoots", () => {
+  it("이름이 아니라 선언된 exact root로만 소유 창을 고른다", () => {
     const map = [
-      { root: "/tmp/T/soksak-e2e-mw-a", window: "w-a" },
-      { root: "/tmp/T/soksak-e2e-p6", window: "w-b" },
-      { root: "/tmp/T/someone-else", window: "w-x" },
-      { root: "<machine-path>/soksak-e2e-lookalike/deep", window: "w-y" },
+      { root: "/fixtures/multiwindow/a", window: "w-a" },
+      { root: "/fixtures/multiwindow/p6", window: "w-b" },
+      { root: "/fixtures/multiwindow/unknown", window: "w-x" },
+      { root: "<machine-path>/work/soksak-e2e-user-project", window: "w-user" },
+      { root: "/fixtures/multiwindow/a", window: "w-mixed" },
+      { root: "<machine-path>/work/real", window: "w-mixed" },
     ];
-    expect(windowsNamed(map, "soksak-e2e-").map((w) => w.label)).toEqual(["w-a", "w-b"]);
+    expect(windowsForExactRoots(map, [
+      "/fixtures/multiwindow/a",
+      "/fixtures/multiwindow/p6",
+    ]).map((w) => w.label)).toEqual(["w-a", "w-b"]);
+  });
+
+  it("상대경로 선언은 소유권으로 받아들이지 않고 멀티윈도우 하니스도 임시 이름 규약을 쓰지 않는다", () => {
+    expect(() => windowsForExactRoots([], ["relative/fixture"])).toThrow(/절대경로/);
+    const source = readFileSync(new URL("../multiwindow.mjs", import.meta.url), "utf8");
+    expect(source).toContain('path.join(os.homedir(), ".soksak-e2e", "multiwindow")');
+    expect(source).not.toContain("os.tmpdir()");
+    expect(source).not.toContain("soksak-e2e-mw");
   });
 });
 
@@ -210,5 +226,110 @@ describe("emptyWorkspaceWindows", () => {
     expect(emptyWorkspaceWindows(labels, projects)).toEqual(["w-empty1", "w-empty2"]);
     // 지도가 비면 모든 워크스페이스 창이 빈 창이다.
     expect(emptyWorkspaceWindows(labels, [])).toEqual(["w-held", "w-empty1", "w-empty2"]);
+  });
+});
+
+describe("저장된 픽스처 snapshot batch 회수", () => {
+  const FIELD = "<machine-path>/.soksak-e2e";
+
+  it("N snapshots도 entries 1회 + deleteMany 1회이며 per-key get/delete는 0회다", async () => {
+    const entries = [
+      { key: "windows", value: { slots: [{ label: "w-manifest" }] } },
+      { key: "window/w-live", value: { projects: [{ root: `${FIELD}/live` }] } },
+      { key: "window/w-manifest", value: { projects: [{ root: `${FIELD}/manifest` }] } },
+      ...Array.from({ length: 200 }, (_, i) => ({
+        key: `window/w-stale-${i}`,
+        value: { projects: [{ root: `${FIELD}/case-${i}` }] },
+      })),
+      ...Array.from({ length: 200 }, (_, i) => ({
+        key: `window/w-stale-${i}#prev`,
+        value: { projects: [{ root: `${FIELD}/case-${i}` }] },
+      })),
+    ];
+    const calls = [];
+    const rpc = async (name, params, at) => {
+      calls.push({ name, params, at });
+      if (name === "data.kv.entries") return { ok: true, data: { ns: "core", entries } };
+      if (name === "data.kv.deleteMany") {
+        return { ok: true, data: { ns: "core", requested: params.keys.length, deleted: params.keys.length, absent: 0 } };
+      }
+      throw new Error(`unexpected ${name}`);
+    };
+
+    const out = await reclaimStoredWindowSnapshots(rpc, "main", {
+      field: FIELD,
+      liveLabels: ["w-live"],
+    });
+
+    expect(out).toMatchObject({ labels: 200, requested: 400, deleted: 400, absent: 0 });
+    expect(calls.filter((c) => c.name === "data.kv.entries")).toHaveLength(1);
+    expect(calls.filter((c) => c.name === "data.kv.deleteMany")).toHaveLength(1);
+    expect(calls.some((c) => c.name === "data.kv.get" || c.name === "data.kv.delete")).toBe(false);
+    const deleted = calls.find((c) => c.name === "data.kv.deleteMany").params.keys;
+    expect(deleted).not.toContain("window/w-live");
+    expect(deleted).not.toContain("window/w-manifest");
+  });
+
+  it("한 세대라도 사용자 프로젝트를 든 snapshot은 current와 prev 모두 불가침이다", async () => {
+    const calls = [];
+    const rpc = async (name, params) => {
+      calls.push({ name, params });
+      if (name === "data.kv.entries") return {
+        ok: true,
+        data: {
+          ns: "core",
+          entries: [
+            { key: "windows", value: { slots: [] } },
+            { key: "window/w-user", value: { projects: [{ root: "<machine-path>/work" }] } },
+            { key: "window/w-user#prev", value: { projects: [{ root: `${FIELD}/old-fixture` }] } },
+            { key: "window/w-empty", value: { projects: [] } },
+            { key: "window/w-unproven", value: { projects: [{ root: `${FIELD}/ok` }] } },
+            { key: "window/w-unproven#prev", value: { projects: [] } },
+            { key: "window/w-fixture", value: { projects: [{ root: `${FIELD}/ok` }] } },
+            { key: "window/w-fixture#prev", value: { projects: [{ root: `${FIELD}/ok` }] } },
+            { key: "window/w-user-named", value: { projects: [{ root: "<machine-path>/work/soksak-e2e-important" }] } },
+          ],
+        },
+      };
+      if (name === "data.kv.deleteMany") return {
+        ok: true,
+        data: { ns: "core", requested: params.keys.length, deleted: params.keys.length, absent: 0 },
+      };
+      throw new Error(`unexpected ${name}`);
+    };
+
+    await reclaimStoredWindowSnapshots(rpc, "main", { field: FIELD, liveLabels: [] });
+    const keys = calls.find((c) => c.name === "data.kv.deleteMany").params.keys;
+    expect(keys).toEqual([
+      "window/w-fixture",
+      "window/w-fixture#prev",
+    ]);
+    expect(keys).not.toContain("window/w-user");
+    expect(keys).not.toContain("window/w-user#prev");
+    expect(keys).not.toContain("window/w-empty");
+    expect(keys).not.toContain("window/w-unproven");
+    expect(keys).not.toContain("window/w-unproven#prev");
+    expect(keys).not.toContain("window/w-user-named");
+  });
+
+  it("forgetFixtureData는 snapshot 두 key를 deleteMany 한 번으로 지운다", async () => {
+    const calls = [];
+    const rpc = async (name, params) => {
+      calls.push({ name, params });
+      if (name === "data.kv.deleteMany") {
+        return { ok: true, data: { ns: "core", requested: 2, deleted: 1, absent: 1 } };
+      }
+      if (name === "project.recent.remove") return { ok: true, data: {} };
+      throw new Error(`unexpected ${name}`);
+    };
+
+    const out = await forgetFixtureData(rpc, "main", { label: "w-fixture", root: `${FIELD}/x` });
+    expect(out).toEqual({ key: true, recent: true });
+    expect(calls.filter((c) => c.name === "data.kv.deleteMany")).toHaveLength(1);
+    expect(calls.find((c) => c.name === "data.kv.deleteMany").params.keys).toEqual([
+      "window/w-fixture",
+      "window/w-fixture#prev",
+    ]);
+    expect(calls.some((c) => c.name === "data.kv.delete")).toBe(false);
   });
 });

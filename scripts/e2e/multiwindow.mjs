@@ -17,8 +17,16 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { requireSocket, resolveControlWindow } from "./lib/client.mjs";
+import { windowsForExactRoots } from "./lib/fixtureWindow.mjs";
 
 const SOCKET = requireSocket();
+const FIXTURE_FIELD = path.join(os.homedir(), ".soksak-e2e", "multiwindow");
+const FIXTURE_ROOTS = Object.freeze({
+  home: path.join(FIXTURE_FIELD, "home"),
+  a: path.join(FIXTURE_FIELD, "a"),
+  b: path.join(FIXTURE_FIELD, "b"),
+  p6: path.join(FIXTURE_FIELD, "p6"),
+});
 
 let sock;
 let seq = 0;
@@ -120,23 +128,18 @@ async function main() {
 
   ok((await listLabels()).includes("main"), "초기 창 목록에 컨트롤 플레인(main) 포함");
 
-  // 잔재 청소(멱등) — 이전 실행이 남긴 이 하니스의 창을 먼저 닫는다.
-  for (const l of await listLabels()) {
-    if (!l.startsWith("w-")) continue;
-    try {
-      const tr = await rpc("state.tree", {}, l);
-      if ((tr.projects || []).some((p) => String(p.root || "").includes("soksak-e2e-mw") ||
-                                          String(p.root || "").includes("soksak-e2e-p6"))) {
-        await rpc("window.close", { label: l });
-        await sleep(400);
-      }
-    } catch { /* 응답 없는 창은 건드리지 않는다 */ }
+  // 잔재 청소(멱등) — 전역 장부와 이 하니스가 선언한 exact root만 본다.
+  const ctrl = await ctrlWindow();
+  const held = (await rpc("window.projects", {}, ctrl)).projects ?? [];
+  for (const fixture of windowsForExactRoots(held, Object.values(FIXTURE_ROOTS))) {
+    await rpc("window.close", { label: fixture.label }, ctrl);
+    await sleep(400);
   }
 
   // 워크스페이스 기준 창 — main 은 컨트롤 플레인(NAMING 4b)이라 워크스페이스 시나리오의
   // 기준은 전용 홈 창이다.
   const fs0 = await import("node:fs");
-  const home = path.join(os.tmpdir(), "soksak-e2e-mw-home");
+  const home = FIXTURE_ROOTS.home;
   fs0.mkdirSync(home, { recursive: true });
   const rHome = await rpc("window.open", { root: home });
   const base = rHome.label || rHome.existingWindow;
@@ -149,7 +152,7 @@ async function main() {
   const before = await listLabels();
 
   // 1) 새 창(빈 창은 없다 — root 필수)
-  const rootA = path.join(os.tmpdir(), "soksak-e2e-mw-a");
+  const rootA = FIXTURE_ROOTS.a;
   fs0.mkdirSync(rootA, { recursive: true });
   const created = await rpc("window.open", { root: rootA });
   const win = created.label;
@@ -200,10 +203,10 @@ async function main() {
   //    닫기/창 파괴는 점유를 해제한다(project_registry.rs 시행의 소켓 검증).
   {
     const fs = await import("node:fs");
-    const root = path.join(os.tmpdir(), "soksak-e2e-p6");
+    const root = FIXTURE_ROOTS.p6;
     fs.mkdirSync(root, { recursive: true });
 
-    const rootB = path.join(os.tmpdir(), "soksak-e2e-mw-b");
+    const rootB = FIXTURE_ROOTS.b;
     fs.mkdirSync(rootB, { recursive: true });
     const win2 = (await rpc("window.open", { root: rootB })).label;
     await waitFor(
@@ -239,9 +242,7 @@ async function main() {
   // 정리 — 홈 창과 recents 위생
   await rpc("window.close", { label: base });
   await sleep(400);
-  for (const r of [home, path.join(os.tmpdir(), "soksak-e2e-mw-a"),
-                   path.join(os.tmpdir(), "soksak-e2e-mw-b"),
-                   path.join(os.tmpdir(), "soksak-e2e-p6")]) {
+  for (const r of Object.values(FIXTURE_ROOTS)) {
     await rpc("project.recent.remove", { root: r }, await ctrlWindow());
   }
 

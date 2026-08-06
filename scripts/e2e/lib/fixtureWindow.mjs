@@ -13,6 +13,7 @@
 // 가르지 마라 — 그 기준은 앞 판이 두고 간 우리 창까지 남의 것으로 만들어 회수를 막는다
 // (그게 위 21 개를 만든 규칙이다).
 
+import path from "node:path";
 import { resolveControlWindow, sleep } from "./client.mjs";
 
 /** 봉투든 알맹이든 data 만 꺼낸다. */
@@ -54,26 +55,20 @@ export function windowsUnder(projects, dir) {
     .map((w) => ({ label: w.label, root: w.root }));
 }
 
-/**
- * 지도에서 루트 **이름**이 이 접두사로 시작하는 창 전부.
- *
- * 임시 디렉터리에 난 픽스처는 밭이 공용이라(os.tmpdir) 디렉터리로 가를 수 없다 — 그 밭째
- * 걷으면 남의 것을 닫는다. 이름 규약(`soksak-e2e-*`)이 우리 것임을 말하는 유일한 표식이다.
- */
-export function windowsNamed(projects, prefix) {
-  // windowsUnder 와 같은 판정이다: 이 창이 **픽스처뿐일 때만** 고른다. 하나라도 밖에 있으면
-  // 사용자의 창이고, 닫으면 같은 창에 있던 사용자 프로젝트가 함께 닫힌다.
-  const named = (root) => {
-    const base = root.slice(root.replace(/\/+$/, "").lastIndexOf("/") + 1);
-    return base.startsWith(prefix);
-  };
+/** 지도에서 선언된 exact root만 든 창 전부. 이름·접두사·상대 위치로 소유권을 추측하지 않는다. */
+export function windowsForExactRoots(projects, roots) {
+  const declared = (roots ?? []).map(String);
+  if (declared.some((root) => !path.isAbsolute(root))) {
+    throw new Error("픽스처 소유 root는 절대경로로 선언해야 한다");
+  }
+  const owned = new Set(declared.map((root) => path.resolve(root)));
   const byWindow = new Map();
   for (const p of projects ?? []) {
     const label = String(p?.window ?? "");
     const root = String(p?.root ?? "");
     const seen = byWindow.get(label) ?? { label, root, all: true };
-    if (!named(root)) seen.all = false;
-    else if (!named(seen.root)) seen.root = root;
+    if (!path.isAbsolute(root) || !owned.has(path.resolve(root))) seen.all = false;
+    else if (!seen.root || !owned.has(path.resolve(seen.root))) seen.root = root;
     byWindow.set(label, seen);
   }
   return [...byWindow.values()]
@@ -150,12 +145,6 @@ export async function releaseFixtureWindowsUnder(rpc, dir, opts = {}) {
   return closeAll(rpc, ctrl, windowsUnder(await projectMap(rpc, ctrl), dir), opts);
 }
 
-/** 루트 이름이 이 접두사인 픽스처 창을 전부 회수한다(공용 임시 밭용). 멱등. */
-export async function releaseFixtureWindowsNamed(rpc, prefix, opts = {}) {
-  const ctrl = opts.ctrl ?? (await resolveControlWindow(rpc));
-  return closeAll(rpc, ctrl, windowsNamed(await projectMap(rpc, ctrl), prefix), opts);
-}
-
 async function closeAll(rpc, ctrl, found, opts) {
   for (const w of found) {
     await rpc("window.close", { label: w.label }, ctrl).catch(() => {});
@@ -179,14 +168,111 @@ async function closeAll(rpc, ctrl, found, opts) {
 export async function forgetFixtureData(rpc, ctrl, w) {
   const gone = { key: false, recent: false };
   if (w.label) {
-    const r = await rpc("data.kv.delete", { ns: "core", key: `window/${w.label}` }, ctrl).catch(() => null);
-    gone.key = r?.ok !== false;
-    // 직전 세대도 이 창의 것이다 — 남기면 되돌릴 대상 없는 세대만 쌓인다.
-    await rpc("data.kv.delete", { ns: "core", key: `window/${w.label}#prev` }, ctrl).catch(() => {});
+    // 현재·직전 세대는 한 transaction이다. 첫 key만 지워진 반쪽 회수와 key별 활동 로그 폭주가
+    // 생기지 않는다. exact key 둘을 열거할 뿐 prefix delete는 없다.
+    const r = await rpc(
+      "data.kv.deleteMany",
+      { ns: "core", keys: [`window/${w.label}`, `window/${w.label}#prev`] },
+      ctrl,
+    );
+    if (r?.ok === false) throw new Error(r.message ?? `window/${w.label} snapshot 회수 실패`);
+    gone.key = true;
   }
   if (w.root) {
-    const r = await rpc("project.recent.remove", { root: w.root }, ctrl).catch(() => null);
-    gone.recent = r?.ok !== false;
+    const r = await rpc("project.recent.remove", { root: w.root }, ctrl);
+    if (r?.ok === false) throw new Error(r.message ?? `${w.root} 최근 프로젝트 회수 실패`);
+    gone.recent = true;
   }
   return gone;
+}
+
+const storedWindowLabel = (key) => {
+  if (!key.startsWith("window/")) return null;
+  const withoutGeneration = key.endsWith("#prev") ? key.slice(0, -"#prev".length) : key;
+  const label = withoutGeneration.slice("window/".length);
+  return label || null;
+};
+
+const underDirectory = (root, dir) => {
+  if (!path.isAbsolute(String(root)) || !path.isAbsolute(String(dir))) return false;
+  const relative = path.relative(path.resolve(String(dir)), path.resolve(String(root)));
+  return relative.length > 0 && relative !== ".." && !relative.startsWith(`..${path.sep}`)
+    && !path.isAbsolute(relative);
+};
+
+/**
+ * 저장된 window snapshot을 한 snapshot read + 한 exact-key transaction으로 회수한다.
+ *
+ * 삭제 자격은 label이 아니라 **모든 저장 세대가 픽스처 프로젝트만 드는가**다. current와 prev 중
+ * 하나라도 사용자 프로젝트를 들면 둘 다 보존한다. 프로젝트가 0개인 snapshot도 픽스처임을
+ * 증명하지 못하므로 보존한다. 지금 열린 label과 복원 manifest의 label은 내용과 무관하게 보존한다.
+ */
+export async function reclaimStoredWindowSnapshots(rpc, ctrl, opts) {
+  const field = String(opts?.field ?? "");
+  if (!field) throw new Error("snapshot 회수에는 선언된 fixture field가 필요하다");
+  const live = new Set((opts?.liveLabels ?? []).map(String));
+
+  // `window` literal prefix는 `window/<label>`과 manifest key `windows`를 한 snapshot에 담는다.
+  const read = body(await rpc("data.kv.entries", { ns: "core", prefix: "window" }, ctrl));
+  if (read.ns !== "core" || !Array.isArray(read.entries)) {
+    throw new Error("data.kv.entries가 {ns:'core',entries:[...]} 계약을 답하지 않았다");
+  }
+
+  const manifest = read.entries.find((entry) => entry?.key === "windows")?.value;
+  for (const slot of manifest?.slots ?? []) {
+    const label = String(slot?.label ?? "");
+    if (label) live.add(label);
+  }
+
+  const generations = new Map();
+  for (const entry of read.entries) {
+    const key = String(entry?.key ?? "");
+    const label = storedWindowLabel(key);
+    if (!label) continue;
+    const list = generations.get(label) ?? [];
+    list.push({ key, value: entry?.value });
+    generations.set(label, list);
+  }
+
+  const keys = [];
+  const reclaimedLabels = [];
+  const preserved = [];
+  for (const [label, saved] of generations) {
+    if (live.has(label)) {
+      preserved.push({ label, reason: "live-or-manifest" });
+      continue;
+    }
+    const fixtureOnly = saved.length > 0 && saved.every(({ value }) =>
+      Array.isArray(value?.projects) &&
+      value.projects.length > 0 &&
+      value.projects.every((project) => {
+        const root = String(project?.root ?? "");
+        return root && underDirectory(root, field);
+      }));
+    if (!fixtureOnly) {
+      preserved.push({ label, reason: "not-proven-fixture-only" });
+      continue;
+    }
+    reclaimedLabels.push(label);
+    keys.push(`window/${label}`, `window/${label}#prev`);
+  }
+
+  if (keys.length === 0) {
+    return { labels: 0, requested: 0, deleted: 0, absent: 0, preserved };
+  }
+  // 공개 transaction 상한을 넘으면 일부만 지우지 않는다. 다음 구조 변경 없이 chunking하면
+  // 여러 transaction/활동 사건이 되어 이 함수의 계약 자체를 깨므로 이름을 달고 중단한다.
+  if (keys.length > 4_096) {
+    throw new Error(`회수 exact key ${keys.length}개가 단일 batch 상한 4096을 넘었다`);
+  }
+  const removed = body(await rpc("data.kv.deleteMany", { ns: "core", keys }, ctrl));
+  if (
+    removed.ns !== "core" ||
+    !Number.isInteger(removed.requested) ||
+    !Number.isInteger(removed.deleted) ||
+    !Number.isInteger(removed.absent)
+  ) {
+    throw new Error("data.kv.deleteMany가 {ns,requested,deleted,absent} 계약을 답하지 않았다");
+  }
+  return { labels: reclaimedLabels.length, ...removed, preserved };
 }
