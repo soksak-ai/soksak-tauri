@@ -67,6 +67,19 @@
   `captureSteps:true`는 전면 paint 뒤에는 rAF를 쓰지만, 비전면 WebKit은 rAF가 없고 짧은 timer도
   throttle한다. 포커스 없는 경로는 `MessageChannel` task를 한 번 기다려 DOM layout을 확정하고,
   이 경계를 쓴 횟수를 `recording.frameFallbacks`로 보고한다.
+- **DOM/native 레이어 판정점은 실제 교집합에 둔다.** 사이드바나 모달의 임의 위치에 색을
+  칠해 존재만 확인하지 않는다. 공개 `ui.tree`/`ui.measure`로 크롬과 native 슬롯의 교집합을
+  계산하고, 그 안의 기준점 좌표와 PNG를 함께 저장한다. React 커밋이 검증용 선언을 제거할 수
+  있으므로 유한한 검증 수명 동안에는 속성 `MutationObserver`가 선언을 복구하고, 빈 선언으로
+  종료할 때 반드시 disconnect한다. 이는 제품 추종 루프가 아니라 테스트 계측의 시작/종료가
+  명시된 사건 구독이다. 선언 명령의 ACK는 DOM mutation에서 끝나지 않고 공통
+  `ContentViewHost.chromePresentationSettled()`까지 기다린다. Tauri는 메인 WKWebView의
+  `afterScreenUpdates=true` snapshot 완료 에지로 답하며, 고정 지연을 표시 완료의 대리값으로
+  사용하지 않는다.
+- **UI 변경 command의 ACK는 상태 저장이 아니라 공개 DOM 커밋까지다.** 예를 들어
+  `project.rightbar.toggle`은 Zustand 값만 바꾼 직후 성공하지 않는다. 해당 프로젝트의 공개
+  `sidebar/right`가 요청한 open/width를 그린 mutation 사건과 크롬 표시 완료를 확인한 뒤
+  응답한다. 검사는 `MutationObserver` 하나와 유한 timeout을 쓰며 interval/rAF 폴링은 없다.
 - **실제 프로세스를 소유하는 측정은 격리 레인에서 돈다.** `pnpm test`는 일반 Vitest 파일을
   병렬 실행한 뒤 `scripts/electron/content-view-live.test.mjs`를 단독 실행한다. 이 검사는 실제
   Chromium 게스트를 띄워 전체 worker 경쟁에서는 45초 동안 굶지만 단독으로는 2초 안에 끝난다.

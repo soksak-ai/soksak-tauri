@@ -109,6 +109,7 @@ export function NewProjectModal({
       <div
         ref={cardRef}
         className="dmodal-card dmodal-project"
+        data-node="modal/project-new/card"
         style={cardStyle}
         onMouseDown={(e) => e.stopPropagation()}
       >

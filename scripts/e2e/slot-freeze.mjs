@@ -420,28 +420,62 @@ async function assertChromeOverlayContract(rpc, win, engineEvidence, scale) {
   const tree = must(await rpc("ui.tree", { rects: true }, win), "chrome ui.tree");
   const railAdd = nodeAddress(tree, "rail/add");
   const rightSidebar = nodeAddress(tree, "sidebar/right");
+  const chromeMeasures = new Map();
   for (const [name, address] of [["rail/add", railAdd], ["sidebar/right", rightSidebar]]) {
     const measured = must(await rpc("ui.measure", {
       address, occlusion: true, props: ["zIndex", "position"],
     }, win), `chrome measure ${name}`);
+    chromeMeasures.set(name, measured);
     if (!measured.occlusion?.reachable || measured.rect.w <= 0 || measured.rect.h <= 0) {
       throw new Error(`${name}: DOM 크롬 조작면이 도달 불가 ${JSON.stringify(measured)}`);
     }
   }
-  must(await rpc("capture.motion-anchors", {
+  const sidebarRect = chromeMeasures.get("sidebar/right").rect;
+  const overlappingSurface = (tree.nodes ?? [])
+    .filter((node) => node.nodePath === "surface" && node.rect)
+    .map((node) => node.rect)
+    .find((rect) =>
+      Math.min(sidebarRect.x + sidebarRect.w, rect.x + rect.w) - Math.max(sidebarRect.x, rect.x) > 48
+      && Math.min(sidebarRect.y + sidebarRect.h, rect.y + rect.h) - Math.max(sidebarRect.y, rect.y) > 48);
+  if (!overlappingSurface) {
+    throw new Error(`오른쪽 overlay sidebar와 겹치는 browser surface가 없다: ${JSON.stringify(sidebarRect)}`);
+  }
+  const sidebarProbePoint = {
+    x: Math.max(sidebarRect.x, overlappingSurface.x) + 24,
+    y: Math.max(sidebarRect.y, overlappingSurface.y) + 24,
+  };
+  const anchorState = must(await rpc("capture.motion-anchors", {
     anchors: [
       { address: railAdd, color: CHROME_MARKERS.railAdd },
-      { address: rightSidebar, color: CHROME_MARKERS.rightSidebar },
+      {
+        address: rightSidebar,
+        color: CHROME_MARKERS.rightSidebar,
+        x: sidebarProbePoint.x - sidebarRect.x,
+        y: sidebarProbePoint.y - sidebarRect.y,
+      },
     ],
   }, win), "chrome overlay anchors");
+  fs.writeFileSync(path.join(engineEvidence, "chrome-overlay-contract.json"), `${JSON.stringify({
+    sidebarRect,
+    overlappingSurface,
+    sidebarProbePoint,
+    anchors: anchorState.anchors,
+  }, null, 2)}\n`);
   const before = path.join(engineEvidence, "chrome-overlay.png");
   must(await rpc("window.snapshot", { path: before }, win), "chrome overlay snapshot");
   assertChromeAnchor(before, `${path.basename(engineEvidence)}/chrome-overlay`, CHROME_MARKERS.railAdd, scale);
-  assertChromeAnchor(before, `${path.basename(engineEvidence)}/chrome-overlay`, CHROME_MARKERS.rightSidebar, scale);
+  assertChromeAnchorWithin(
+    before,
+    `${path.basename(engineEvidence)}/chrome-overlay`,
+    CHROME_MARKERS.rightSidebar,
+    scale,
+    sidebarProbePoint,
+  );
 
   must(await rpc("ui.input.click", { address: railAdd }, win), "rail add click");
   const modalTree = must(await rpc("ui.tree", { rects: true }, win), "project modal ui.tree");
   const modal = nodeAddress(modalTree, "modal/project-new");
+  const modalCard = nodeAddress(modalTree, "modal/project-new/card");
   const close = nodeAddress(modalTree, "modal/project-new/close");
   const measuredModal = must(await rpc("ui.measure", {
     address: modal, occlusion: true, props: ["zIndex", "position"],
@@ -449,27 +483,51 @@ async function assertChromeOverlayContract(rpc, win, engineEvidence, scale) {
   if (!measuredModal.occlusion?.reachable || Number(measuredModal.style.zIndex) < 300) {
     throw new Error(`project modal이 브라우저 위 크롬 평면에 없다: ${JSON.stringify(measuredModal)}`);
   }
+  const measuredModalCard = must(await rpc("ui.measure", {
+    address: modalCard, occlusion: true, props: ["zIndex", "position"],
+  }, win), "project modal card measure");
+  if (!measuredModalCard.occlusion?.reachable) {
+    throw new Error(`project modal card가 브라우저 위에서 도달 불가: ${JSON.stringify(measuredModalCard)}`);
+  }
   const surfaceAddresses = (modalTree.nodes ?? [])
     .filter((node) => node.nodePath === "surface" && typeof node.address === "string")
     .map((node) => node.address);
   let surfaceRect;
   for (const address of surfaceAddresses) {
     const measured = must(await rpc("ui.measure", { address }, win), "modal overlap surface measure");
-    if (measured.rect.w > 100 && measured.rect.h > 100) {
+    const overlapW = Math.min(
+      measuredModalCard.rect.x + measuredModalCard.rect.w,
+      measured.rect.x + measured.rect.w,
+    ) - Math.max(measuredModalCard.rect.x, measured.rect.x);
+    const overlapH = Math.min(
+      measuredModalCard.rect.y + measuredModalCard.rect.h,
+      measured.rect.y + measured.rect.h,
+    ) - Math.max(measuredModalCard.rect.y, measured.rect.y);
+    if (overlapW > 48 && overlapH > 48) {
       surfaceRect = measured.rect;
       break;
     }
   }
   if (!surfaceRect) throw new Error("모달과 겹칠 browser surface가 공개 DOM에서 발견되지 않았다");
-  const probePoint = { x: surfaceRect.x + 24, y: surfaceRect.y + 24 };
-  must(await rpc("capture.motion-anchors", {
+  const probePoint = {
+    x: Math.max(surfaceRect.x, measuredModalCard.rect.x) + 24,
+    y: Math.max(surfaceRect.y, measuredModalCard.rect.y) + 24,
+  };
+  const modalAnchorState = must(await rpc("capture.motion-anchors", {
     anchors: [{
-      address: modal,
+      address: modalCard,
       color: CHROME_MARKERS.modalOverlayProbe,
-      x: probePoint.x - measuredModal.rect.x,
-      y: probePoint.y - measuredModal.rect.y,
+      x: probePoint.x - measuredModalCard.rect.x,
+      y: probePoint.y - measuredModalCard.rect.y,
     }],
   }, win), "modal overlay probe");
+  fs.writeFileSync(path.join(engineEvidence, "chrome-project-modal-contract.json"), `${JSON.stringify({
+    modalRect: measuredModal.rect,
+    modalCardRect: measuredModalCard.rect,
+    surfaceRect,
+    probePoint,
+    anchors: modalAnchorState.anchors,
+  }, null, 2)}\n`);
   const modalPath = path.join(engineEvidence, "chrome-project-modal.png");
   must(await rpc("window.snapshot", { path: modalPath }, win), "project modal snapshot");
   assertChromeAnchorWithin(
@@ -481,6 +539,10 @@ async function assertChromeOverlayContract(rpc, win, engineEvidence, scale) {
   );
   must(await rpc("ui.input.click", { address: close }, win), "project modal close");
   must(await rpc("project.rightbar.toggle", { open: false }, win), "right sidebar close");
+  must(
+    await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }),
+    "chrome overlay cleanup settled",
+  );
   return { railAdd, rightSidebar, modalPath };
 }
 

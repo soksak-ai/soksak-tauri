@@ -2,14 +2,13 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   CAPTURE_MOTION_ANCHOR_ATTR,
-  CAPTURE_MOTION_ANCHOR_SIZE,
   setCaptureMotionAnchors,
 } from "./captureMotionAnchors";
 
 describe("capture motion anchors", () => {
   afterEach(() => setCaptureMotionAnchors(document, []));
 
-  it("attaches one fixed-size pixel oracle to each declared DOM slot", () => {
+  it("marks each declared host without adding a React-owned child", () => {
     const left = document.createElement("div");
     const right = document.createElement("div");
     document.body.append(left, right);
@@ -21,10 +20,9 @@ describe("capture motion anchors", () => {
     expect(result).toMatchObject({ visible: true, count: 2 });
     const anchors = document.querySelectorAll<HTMLElement>(`[${CAPTURE_MOTION_ANCHOR_ATTR}]`);
     expect(anchors).toHaveLength(2);
-    expect([...anchors].map((anchor) => anchor.parentElement)).toEqual([left, right]);
-    expect([...anchors].every((anchor) =>
-      anchor.style.width === `${CAPTURE_MOTION_ANCHOR_SIZE}px`
-      && anchor.style.height === `${CAPTURE_MOTION_ANCHOR_SIZE}px`)).toBe(true);
+    expect([...anchors]).toEqual([left, right]);
+    expect(left.children).toHaveLength(0);
+    expect(right.children).toHaveLength(0);
   });
 
   it("reapplication replaces the declaration and empty declaration removes it idempotently", () => {
@@ -49,8 +47,23 @@ describe("capture motion anchors", () => {
     ]);
 
     const anchor = document.querySelector<HTMLElement>(`[${CAPTURE_MOTION_ANCHOR_ATTR}]`);
-    expect(anchor?.style.left).toBe("24px");
-    expect(anchor?.style.top).toBe("80px");
+    expect(anchor?.style.getPropertyValue("--capture-motion-anchor-x")).toBe("24px");
+    expect(anchor?.style.getPropertyValue("--capture-motion-anchor-y")).toBe("80px");
+  });
+
+  it("restores the finite instrumentation declaration when a React render removes it", async () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    setCaptureMotionAnchors(document, [
+      { address: "sidebar/right", color: "#00ff00", host, x: 24, y: 80 },
+    ]);
+
+    host.removeAttribute(CAPTURE_MOTION_ANCHOR_ATTR);
+    host.removeAttribute("style");
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+    expect(host.getAttribute(CAPTURE_MOTION_ANCHOR_ATTR)).toBe("sidebar/right");
+    expect(host.style.getPropertyValue("--capture-motion-anchor-color")).toBe("#00ff00");
   });
 
   it("anchors static hosts locally and restores their inline positioning on cleanup", () => {

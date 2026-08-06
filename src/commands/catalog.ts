@@ -86,6 +86,8 @@ import {
   FOLDER_NAME_RE,
   validateProjectRoot,
 } from "../lib/projectRoot";
+import { contentViewHost, hasContentViewHost } from "../lib/contentViews";
+import { waitForDomCommit } from "./waitForDomCommit";
 
 // ── 공통 에러/헬퍼 ───────────────────────────────────────────────────────────
 
@@ -961,10 +963,20 @@ export function registerCatalog(): void {
         : tmsg("msg.project.rightbar.toggle.closed"),
     errors: ["TARGET_NOT_FOUND"],
     examples: ["project.rightbar.toggle", 'project.rightbar.toggle \'{"open":true}\''],
-    handler: (p, ctx) => {
+    handler: async (p, ctx) => {
       const t = resolveProject(p, ctx);
       if (!t) return notFound("프로젝트 없음");
-      return withTargets(S().toggleRightSidebar(t.id, p.open as boolean | undefined), {
+      const result = S().toggleRightSidebar(t.id, p.open as boolean | undefined);
+      if (!result.ok) return result;
+      await waitForDomCommit(() => {
+        const sidebar = [...document.querySelectorAll<HTMLElement>('[data-node="sidebar/right"]')]
+          .find((element) => element.closest<HTMLElement>("[data-project-plane]")?.dataset.projectPlane === t.id);
+        if (!sidebar) return false;
+        return sidebar.classList.contains("open") === result.rightOpen
+          && (sidebar.getBoundingClientRect().width > 0) === result.rightOpen;
+      });
+      if (hasContentViewHost()) await contentViewHost().chromePresentationSettled();
+      return withTargets(result, {
         projectId: t.id,
       });
     },

@@ -13,6 +13,7 @@ describe("shell overlay contract", () => {
     expect(app).toContain('data-node="sidebar/right"');
     expect(app).toContain('data-node="sidebar/right/resizer"');
     expect(modal).toContain('data-node="modal/project-new"');
+    expect(modal).toContain('data-node="modal/project-new/card"');
     expect(modal).toContain('data-node="modal/project-new/close"');
   });
 
