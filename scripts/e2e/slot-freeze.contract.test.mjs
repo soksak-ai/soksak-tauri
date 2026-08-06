@@ -50,6 +50,12 @@ function frameworkGuardedRpcCalls(source, command) {
 }
 
 describe("slot-freeze instrumentation lifecycle", () => {
+  it("installs PaneSurfaceHost presentation probes only for pane-owned surfaces", () => {
+    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    expect(source).toContain('frameworkName === "tauri" && (native || windowed)');
+    expect(source).not.toContain('if (frameworkName === "tauri") await installPanePresentationMarkers');
+  });
+
   it("keeps Node alive until the whole scenario and finally cleanup have completed", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
     expect(source).toContain("await main()");

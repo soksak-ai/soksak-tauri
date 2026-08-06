@@ -945,8 +945,8 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
     const native = implementation.surface === "framework-native";
     const windowed = implementation.surface === "engine-windowed";
     const labels = tabIds.map((id) => implementation.label(win, id));
-    if (frameworkName === "tauri") await installPanePresentationMarkers(rpc, win, labels);
     if (frameworkName === "tauri" && (native || windowed)) {
+      await installPanePresentationMarkers(rpc, win, labels);
       const initial = must(await rpc("webview.composition", {}, win), "initial composition");
       assertTauriSurfaceResizePolicy(initial, "initial native composition");
     }
