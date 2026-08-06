@@ -1774,14 +1774,6 @@ pub fn webview_pane_hosts() -> serde_json::Value {
     { serde_json::json!([]) }
 }
 
-#[tauri::command]
-pub fn webview_pane_lighting(pane: String, alpha: f64) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    { layer::set_pane_surface_host_lighting(&pane, alpha) }
-    #[cfg(not(target_os = "macos"))]
-    { let _ = (pane, alpha); Ok(()) }
-}
-
 // hide 를 거친 child 라벨 — show 시 재부착(뷰어빌리티 기상)이 필요한 대상. webview_close 가 지운다.
 // 숨김의 단일 경로는 webview_visible이다. 좌표 명령은 이 장부를 건드리지 않는다.
 #[cfg(target_os = "macos")]

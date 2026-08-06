@@ -663,23 +663,6 @@ pub fn pane_surface_host_state() -> serde_json::Value {
     }).collect())
 }
 
-/// 공개 pane `--dim` 사실을 renderer/member 공통 부모에 정확히 한 번 적용한다.
-/// 개별 child에 alpha/veil을 중복 적용하지 않아 전체 pane의 상대 밝기를 보존한다.
-pub fn set_pane_surface_host_lighting(pane: &str, alpha: f64) -> Result<(), String> {
-    if !alpha.is_finite() || !(0.0..=1.0).contains(&alpha) {
-        return Err(format!("pane alpha가 유효하지 않습니다: {alpha}"));
-    }
-    let ptr = PANE_SURFACE_HOSTS.lock().map_err(|_| "pane host 잠금 실패")?
-        .get(pane).map(|record| record.ptr)
-        .ok_or_else(|| format!("pane surface host가 없습니다: {pane}"))?;
-    let host = unsafe { &*(ptr as *const NSView) };
-    CATransaction::begin();
-    CATransaction::setDisableActions(true);
-    host.setAlphaValue(alpha);
-    CATransaction::commit();
-    Ok(())
-}
-
 /// 일반 레이아웃/창 리사이즈의 정착 경로. 위치 전용 transition과 달리 크기 변화도 허용하고,
 /// renderer/member는 PaneSurfaceHost의 자식으로 남긴 채 부모 frame 하나만 바꾼다.
 pub fn set_pane_surface_host_bounds(

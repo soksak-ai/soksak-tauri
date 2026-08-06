@@ -24,11 +24,13 @@ describe("Tauri plugin renderer RPC surface", () => {
     expect(move).toContain('invoke("webview_pane_bounds"');
   });
 
-  it("공개 --dim은 member별 veil이 아니라 PaneSurfaceHost 부모 alpha 한 번으로 투영한다", () => {
+  it("포커스 조명은 단일 SVG 평면만 소유하고 Tauri adapter는 alpha·observer·IPC로 개입하지 않는다", () => {
     const source = readFileSync(resolve(import.meta.dirname, "pluginViewPresentation.ts"), "utf8");
-    expect(source).toContain('getPropertyValue("--dim")');
-    expect(source).toContain('invoke("webview_pane_lighting"');
-    expect(source).not.toContain('invoke("webview_surface_lighting"');
+    expect(source).not.toContain("webview_pane_lighting");
+    expect(source).not.toContain("webview_surface_lighting");
+    expect(source).not.toContain('getPropertyValue("--dim")');
+    expect(source).not.toContain("lightingObserver");
+    expect(source).not.toContain("lightingAlpha");
   });
 
   it("공개 content surface 생성 거래인 webview.open을 노출한다", () => {
@@ -125,12 +127,12 @@ describe("Tauri plugin renderer RPC surface", () => {
     expect(verdict.ok).toBe(false);
   });
 
-  it("pane 감사 결과에 shared topology와 부모 alpha를 보존한다", () => {
+  it("pane 감사 결과에 shared topology와 adapter 비개입 alpha=1을 보존한다", () => {
     const verdict = comparePanePresentation(
       [{ pane: "pane-a", frame: { x: 10, y: 20, w: 300, h: 200 } }],
       [{
         pane: "pane-a", window: "w-1", cssFrame: { x: 10, y: 20, w: 300, h: 200 },
-        alpha: 0.5,
+        alpha: 1,
         rendererTopology: {
           domRendererPath: ["TaoView", "PaneSurfaceHost", "WryWebView"],
           nativeSurfacePath: ["TaoView", "PaneSurfaceHost", "BrowserSurface"],
@@ -141,7 +143,7 @@ describe("Tauri plugin renderer RPC surface", () => {
       "w-1",
     );
     expect(verdict.matches[0]).toMatchObject({
-      alpha: 0.5,
+      alpha: 1,
       rendererTopology: { verdict: "shared-pane-host", panelAtomicMotion: true },
     });
   });

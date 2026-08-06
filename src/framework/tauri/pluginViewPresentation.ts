@@ -44,8 +44,6 @@ interface PresentedState {
   subscriptions: Map<string, DisposableLike>;
   unlisten: UnlistenFn[];
   observer: ResizeObserver;
-  lightingObserver: MutationObserver;
-  lightingAlpha: number;
   grouped: boolean;
   disposed: boolean;
   visible: boolean;
@@ -315,19 +313,6 @@ async function syncMemberFrame(view: PresentedState, frame: PluginViewSlotFrame)
   return true;
 }
 
-function paneDimOwner(view: PresentedState): HTMLElement | null {
-  return view.container.closest<HTMLElement>("[data-dim]");
-}
-
-async function syncPaneLighting(view: PresentedState): Promise<void> {
-  const owner = paneDimOwner(view);
-  const dim = owner ? Number.parseFloat(getComputedStyle(owner).getPropertyValue("--dim")) : 0;
-  const alpha = 1 - Math.max(0, Math.min(1, Number.isFinite(dim) ? dim : 0));
-  if (alpha === view.lightingAlpha) return;
-  view.lightingAlpha = alpha;
-  if (view.grouped) await invoke("webview_pane_lighting", { pane: view.pane, alpha });
-}
-
 async function openAndGroup(
   view: PresentedState,
   label: string,
@@ -358,8 +343,6 @@ async function openAndGroup(
       view.grouped = true;
       state.readiness.set(view.pane, true);
       await syncPaneFrame(view);
-      view.lightingAlpha = -1;
-      await syncPaneLighting(view);
     }
     if (await syncMemberFrame(view, slot)) view.slots.commit(slot);
     await invoke("webview_visible", { label, visible: view.visible, focus: false });
@@ -390,8 +373,6 @@ async function presentExisting(view: PresentedState, label: string): Promise<voi
       view.grouped = true;
       state.readiness.set(view.pane, true);
       await syncPaneFrame(view);
-      view.lightingAlpha = -1;
-      await syncPaneLighting(view);
     }
     if (await syncMemberFrame(view, slot)) view.slots.commit(slot);
     await invoke("webview_visible", { label, visible: view.visible, focus: false });
@@ -479,7 +460,7 @@ async function createPresentedView(
     pane, renderer, viewId: input.context.viewId, container: input.container,
     context: input.context, app, members: new Set(), slots: new PluginViewSlotRegistry(),
     projections: new Map(),
-    subscriptions: new Map(), unlisten: [], observer: null!, lightingObserver: null!, lightingAlpha: -1, grouped: false,
+    subscriptions: new Map(), unlisten: [], observer: null!, grouped: false,
     disposed: false, visible: input.context.isVisible(), markReady,
     sidecars: new PluginViewSidecars(),
   };
@@ -548,13 +529,6 @@ async function createPresentedView(
     void syncPaneFrame(view).catch((error) => console.error("pane host bounds 실패", error));
   });
   view.observer.observe(input.container);
-  view.lightingObserver = new MutationObserver(() => {
-    void syncPaneLighting(view).catch((error) => console.error("pane lighting 실패", error));
-  });
-  const dimOwner = paneDimOwner(view);
-  if (dimOwner) view.lightingObserver.observe(dimOwner, {
-    attributes: true, attributeFilter: ["style", "data-dim"],
-  });
   const rect = rectOf(input.container);
   const url = new URL("/plugin-view.html", window.location.href);
   url.searchParams.set("parent", windowLabel);
@@ -570,7 +544,6 @@ function disposeView(view: PresentedState): void {
   if (view.disposed) return;
   view.disposed = true;
   view.observer.disconnect();
-  view.lightingObserver.disconnect();
   view.slots.dispose();
   for (const subscription of view.subscriptions.values()) subscription.dispose();
   view.subscriptions.clear();

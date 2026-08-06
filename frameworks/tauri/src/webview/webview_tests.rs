@@ -48,7 +48,7 @@ fn pane_topology_observes_external_hosts_from_the_public_host_registry() {
         .split_once("pub fn pane_surface_host_state")
         .expect("pane state exists")
         .1
-        .split_once("pub fn set_pane_surface_host_lighting")
+        .split_once("pub fn set_pane_surface_host_bounds")
         .expect("pane state boundary")
         .0;
     assert!(state.contains("(host_ptr != 0).then_some(host_ptr)"));
