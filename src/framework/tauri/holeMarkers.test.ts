@@ -6,6 +6,10 @@ import {
   syncTauriHoleMarkers,
   TAURI_PANE_RENDERER_ATTR,
 } from "./holeMarkers";
+import {
+  __resetTauriSurfaceOwnershipForTest,
+  claimDirectSurface,
+} from "./surfaceOwnership";
 
 function pane(id: string): HTMLElement {
   const el = document.createElement("section");
@@ -31,6 +35,7 @@ function body(parent: HTMLElement, paneId: string, label?: string): HTMLElement 
 describe("Tauri private hole projection", () => {
   beforeEach(() => {
     __resetTauriHoleMarkersForTest();
+    __resetTauriSurfaceOwnershipForTest();
     document.body.innerHTML = "";
   });
   afterEach(__resetTauriHoleMarkersForTest);
@@ -41,10 +46,12 @@ describe("Tauri private hole projection", () => {
     const native = body(p1, "g1", "b-main-v1");
     const dom = body(p2, "g2");
 
+    claimDirectSurface("b-main-v1");
     syncTauriHoleMarkers();
 
     const slot = native.querySelector<HTMLElement>("[data-content-view-body]")!;
     expect(slot.dataset.tauriHole).toBe("content");
+    expect(slot.dataset.tauriSurfaceOwner).toBe("direct");
     expect(native.dataset.tauriHole).toBeUndefined();
     expect(native.dataset.tauriHoleFrame).toBe("");
     expect(p1.dataset.tauriHole).toBe("pane");
@@ -64,10 +71,36 @@ describe("Tauri private hole projection", () => {
     syncTauriHoleMarkers();
 
     expect(placeholder.dataset.tauriHole).toBe("content");
+    expect(placeholder.dataset.tauriSurfaceOwner).toBe("pane");
     expect(remote.dataset.tauriHoleFrame).toBe("");
     expect(p1.dataset.tauriHole).toBe("pane");
     expect(ordinary.dataset.tauriHoleFrame).toBeUndefined();
     expect(p2.dataset.tauriHole).toBeUndefined();
+  });
+
+  it("native open 장부가 없는 DOM/offscreen content 슬롯은 Tauri hole로 추측하지 않는다", () => {
+    const p = pane("g1");
+    const offscreen = body(p, "g1", "offscreen-tab-1");
+
+    syncTauriHoleMarkers();
+
+    const slot = offscreen.querySelector<HTMLElement>("[data-content-view-body]")!;
+    expect(slot.dataset.tauriHole).toBeUndefined();
+    expect(slot.dataset.tauriSurfaceOwner).toBeUndefined();
+    expect(p.dataset.tauriHole).toBeUndefined();
+  });
+
+  it("PaneSurfaceHost renderer 안의 content 슬롯을 direct 소유로 중복 선언하지 않는다", () => {
+    const p = pane("g1");
+    const remote = body(p, "g1", "b-pane-member");
+    remote.setAttribute(TAURI_PANE_RENDERER_ATTR, "pv-main-1");
+
+    syncTauriHoleMarkers();
+
+    const slot = remote.querySelector<HTMLElement>("[data-content-view-body]")!;
+    expect(slot.dataset.tauriHole).toBe("content");
+    expect(slot.dataset.tauriSurfaceOwner).toBe("pane");
+    expect(remote.dataset.tauriSurfaceOwner).toBe("pane");
   });
 
   it("plugin renderer source 제거 뒤 stale hole을 남기지 않는다", () => {
@@ -89,6 +122,7 @@ describe("Tauri private hole projection", () => {
   it("문서 밖 표면의 실제 FLIP 추적 프레임만 보간에서 제외한다", () => {
     const p = pane("g1");
     const native = body(p, "g1", "b-main-v1");
+    claimDirectSurface("b-main-v1");
     syncTauriHoleMarkers();
 
     const slot = native.querySelector<HTMLElement>("[data-content-view-body]")!;
@@ -105,6 +139,7 @@ describe("Tauri private hole projection", () => {
   it("슬롯 제거 뒤 stale 표식을 남기지 않는다", () => {
     const p = pane("g1");
     const native = body(p, "g1", "b-main-v1");
+    claimDirectSurface("b-main-v1");
     syncTauriHoleMarkers();
     native.replaceChildren();
     syncTauriHoleMarkers();
@@ -118,6 +153,7 @@ describe("Tauri private hole projection", () => {
     installTauriHoleMarkers();
     const slot = document.createElement("div");
     slot.dataset.contentViewBody = "b-main-v1";
+    claimDirectSurface("b-main-v1");
     native.appendChild(slot);
     await new Promise<void>((resolve) => queueMicrotask(resolve));
     await Promise.resolve();

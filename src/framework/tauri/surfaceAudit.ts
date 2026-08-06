@@ -16,7 +16,8 @@ import { moduleState } from "../../lib/moduleState";
 import { invoke } from "../index";
 import { onPluginEvent } from "../../plugins/hooks";
 import { useBootPhase } from "../../state/bootPhase";
-import { TAURI_CONTENT_HOLE } from "./holeMarkers";
+import { TAURI_CONTENT_HOLE, TAURI_SURFACE_OWNER_ATTR } from "./holeMarkers";
+import { tauriSurfaceOwnershipFacts } from "./surfaceOwnership";
 
 export interface AuditRect {
   x: number;
@@ -29,6 +30,7 @@ export interface SurfaceAnchorFact {
   label: string | null;
   viewId: string | null;
   projectId: string | null;
+  owner: "direct" | "pane" | "undeclared";
   rect: AuditRect;
 }
 
@@ -53,6 +55,9 @@ export interface SurfaceCompositionSnapshot {
     rendererTopology: RendererTopologyVerdict | null;
   };
   anchors: SurfaceAnchorFact[];
+  directAnchors: SurfaceAnchorFact[];
+  paneAnchors: SurfaceAnchorFact[];
+  ownership: ReturnType<typeof tauriSurfaceOwnershipFacts>;
   surfaces: NativeSurfaceFact[];
   matches: {
     surfaceLabel: string | null;
@@ -97,6 +102,7 @@ export interface SurfaceVerdict {
   misplaced: AuditRect[]; // 어느 홀과도 안 맞는 가시 서피스
   stacked: AuditRect[][]; // 같은 홀을 차지한 서피스 묶음(겹침)
   missing: AuditRect[]; // 가시 서피스가 하나도 안 맞는 보이는 홀 — "보여야 하는데 안 보임"
+  unowned: AuditRect[]; // geometry auditor가 선언되지 않은 DOM hole
   surfaces: number;
   holes: number;
 }
@@ -128,7 +134,7 @@ export function judgeSurfaces(
   }
   const stacked = [...byHole.values()].filter((l) => l.length > 1);
   const missing = holes.filter((_, i) => !byHole.has(i));
-  return { misplaced, stacked, missing, surfaces: surfaces.length, holes: holes.length };
+  return { misplaced, stacked, missing, unowned: [], surfaces: surfaces.length, holes: holes.length };
 }
 
 /** 보이는 네이티브 앵커 rect 수집. 실제 content-view 슬롯에서 Tauri가 투영한 marker만
@@ -162,12 +168,24 @@ export function visibleAnchorFacts(doc: Document = document): SurfaceAnchorFact[
         label: slot.getAttribute("data-content-view-body") ?? null,
         viewId: node.startsWith("layout/tab/") ? node.slice("layout/tab/".length) : null,
         projectId: frame?.dataset.projectId ?? null,
+        owner: el.getAttribute(TAURI_SURFACE_OWNER_ATTR) === "direct"
+          ? "direct"
+          : el.getAttribute(TAURI_SURFACE_OWNER_ATTR) === "pane"
+            ? "pane"
+            : "undeclared",
         rect: { x: r.x, y: r.y, w: r.width, h: r.height },
       });
     }
   };
   collect(doc.querySelectorAll<HTMLElement>(TAURI_CONTENT_HOLE));
   return out;
+}
+
+/** direct compositor의 DOM 장부. PaneSurfaceHost 소유 hole은 pane 감사기가 판정한다. */
+export function directSurfaceAnchors(
+  anchors: readonly SurfaceAnchorFact[],
+): SurfaceAnchorFact[] {
+  return anchors.filter((anchor) => anchor.owner === "direct");
 }
 
 /** 기존 감사 소비면 — 상세 identity를 버리지 않고 rect 보기만 제공한다. */
@@ -266,14 +284,20 @@ export function directNativeSurfaces(
 export async function surfaceCompositionSnapshot(): Promise<SurfaceCompositionSnapshot> {
   const stats = await invoke<EngineStats>("engine_surface_stats");
   const anchors = visibleAnchorFacts();
+  const directAnchors = directSurfaceAnchors(anchors);
+  const paneAnchors = anchors.filter((anchor) => anchor.owner === "pane");
+  const unowned = anchors.filter((anchor) => anchor.owner === "undeclared");
   const surfaces = normalizeNativeSurfaces(stats, window.innerHeight);
   const visible = directNativeSurfaces(surfaces).filter((surface) => !surface.effectivelyHidden);
-  const verdict = judgeSurfaces(
-    visible.map((surface) => surface.domFrame),
-    anchors.map((anchor) => anchor.rect),
-  );
+  const verdict = {
+    ...judgeSurfaces(
+      visible.map((surface) => surface.domFrame),
+      directAnchors.map((anchor) => anchor.rect),
+    ),
+    unowned: unowned.map((anchor) => anchor.rect),
+  };
   const matches = visible.map((surface) => {
-    const anchor = anchors.find((candidate) =>
+    const anchor = directAnchors.find((candidate) =>
       rectMatches(surface.domFrame, candidate.rect, SURFACE_RECT_TOLERANCE_PX),
     );
     return {
@@ -302,6 +326,9 @@ export async function surfaceCompositionSnapshot(): Promise<SurfaceCompositionSn
         : null,
     },
     anchors,
+    directAnchors,
+    paneAnchors,
+    ownership: tauriSurfaceOwnershipFacts(),
     surfaces,
     matches,
     verdict,
@@ -335,7 +362,7 @@ const settleTimer = moduleState("framework/tauri/surfaceAudit#settleTimer", () =
 async function runAudit(): Promise<void> {
   const composition = await surfaceCompositionSnapshot().catch(() => null);
   if (!composition) return;
-  const anchors = { rects: composition.anchors.map((anchor) => anchor.rect), source: "content-view-slot" };
+  const anchors = { rects: composition.directAnchors.map((anchor) => anchor.rect), source: "content-view-slot" };
   const verdict = composition.verdict;
   // missing("보여야 하는데 안 보임" — 실사고: 활성 구글 페인이 검게 안뜸)은 로딩 과도기
   // (open 전·재페인트 전)가 정상적으로 스치는 상태라, 두 번 연속 같은 판정일 때만 위반으로
@@ -352,10 +379,11 @@ async function runAudit(): Promise<void> {
   const bad =
     verdict.misplaced.length > 0 ||
     verdict.stacked.length > 0 ||
+    verdict.unowned.length > 0 ||
     missingPersists ||
     darkPersists;
   const signature = bad
-    ? JSON.stringify([verdict.misplaced, verdict.stacked.map((l) => l.length), missingPersists ? verdict.missing : [], darkPersists ? dark : []])
+    ? JSON.stringify([verdict.misplaced, verdict.stacked.map((l) => l.length), verdict.unowned, missingPersists ? verdict.missing : [], darkPersists ? dark : []])
     : "clean";
   if (signature === lastSeen.lastSignature) return; // 같은 사실의 반복 발행 금지(원장 소음 절제)
   const wasBad = lastSeen.lastSignature !== "" && lastSeen.lastSignature !== "clean";
@@ -367,6 +395,7 @@ async function runAudit(): Promise<void> {
     payload: {
       misplaced: verdict.misplaced,
       stacked: verdict.stacked,
+      unowned: verdict.unowned,
       missing: missingPersists ? verdict.missing : [],
       dark: darkPersists ? dark : [],
       surfaces: verdict.surfaces,
@@ -374,7 +403,7 @@ async function runAudit(): Promise<void> {
       anchorSource: anchors.source,
       origin: "internal",
       message: bad
-        ? `· surface misplaced ×${verdict.misplaced.length} stacked ×${verdict.stacked.length} missing ×${missingPersists ? verdict.missing.length : 0} dark ×${darkPersists ? dark.length : 0} (surfaces ${verdict.surfaces}/holes ${verdict.holes})`
+        ? `· surface misplaced ×${verdict.misplaced.length} stacked ×${verdict.stacked.length} unowned ×${verdict.unowned.length} missing ×${missingPersists ? verdict.missing.length : 0} dark ×${darkPersists ? dark.length : 0} (surfaces ${verdict.surfaces}/holes ${verdict.holes})`
         : "· surfaces realigned — audit clean",
     },
   }).catch(() => {});

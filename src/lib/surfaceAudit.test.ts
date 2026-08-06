@@ -73,6 +73,7 @@ describe("visibleAnchorRects — Tauri가 공개 content-view 슬롯에서 투�
     document.body.innerHTML = "";
     const body = div("tab-body", { x: 906, y: 120, w: 554, h: 370 });
     body.dataset.tauriHole = "content";
+    body.dataset.tauriSurfaceOwner = "direct";
     const slot = div("", { x: 906, y: 149, w: 554, h: 341 });
     slot.dataset.contentViewBody = "b-window-tab";
     body.appendChild(slot);
@@ -87,6 +88,7 @@ describe("visibleAnchorRects — Tauri가 공개 content-view 슬롯에서 투�
     document.body.innerHTML = "";
     const body = div("tab-body", { x: 20, y: 30, w: 400, h: 300 });
     body.dataset.tauriHole = "content";
+    body.dataset.tauriSurfaceOwner = "direct";
     body.dataset.node = "layout/tab/tab-7";
     body.dataset.projectId = "pjt-2";
     const slot = document.createElement("div");
@@ -99,6 +101,7 @@ describe("visibleAnchorRects — Tauri가 공개 content-view 슬롯에서 투�
         label: "b-window-tab-7",
         viewId: "tab-7",
         projectId: "pjt-2",
+        owner: "direct",
         rect: { x: 20, y: 58, w: 400, h: 272 },
       },
     ]);
@@ -127,6 +130,7 @@ describe("visibleAnchorRects — Tauri가 공개 content-view 슬롯에서 투�
     project.style.visibility = "hidden";
     const slot = div("tab-body", { x: 906, y: 149, w: 554, h: 341 });
     slot.dataset.tauriHole = "content";
+    slot.dataset.tauriSurfaceOwner = "direct";
     slot.style.visibility = "visible";
     project.appendChild(slot);
     document.body.appendChild(project);
@@ -155,6 +159,7 @@ describe("native frame 좌표 공개", () => {
       {
         ptr: 7,
         label: "b-7",
+        pane: null,
         hidden: false,
         effectivelyHidden: false,
         autoresizingMask: null,

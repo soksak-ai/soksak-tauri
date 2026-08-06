@@ -5,6 +5,7 @@ export interface DirectCompositionProbe {
     misplaced: readonly unknown[];
     stacked: readonly unknown[];
     missing: readonly unknown[];
+    unowned: readonly unknown[];
   };
 }
 
@@ -85,7 +86,8 @@ export function combineTauriCompositionProbe<
   const directGreen = direct !== null
     && direct.verdict.misplaced.length === 0
     && direct.verdict.stacked.length === 0
-    && direct.verdict.missing.length === 0;
+    && direct.verdict.missing.length === 0
+    && direct.verdict.unowned.length === 0;
   if (direct === null) issues.push("direct-missing");
   else if (!directGreen) issues.push("direct-red");
 

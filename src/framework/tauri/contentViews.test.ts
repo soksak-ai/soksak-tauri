@@ -39,7 +39,9 @@ async function load() {
   invoke.mockReset();
     invoke.mockResolvedValue(undefined);
   const module = await import("./contentViews");
+  const ownership = await import("./surfaceOwnership");
   module.__resetNativeContentViewCompositionForTest();
+  ownership.__resetTauriSurfaceOwnershipForTest();
   return module;
 }
 
@@ -65,6 +67,16 @@ describe("네이티브 자식 뷰 구현", () => {
     });
     await nativeHost.bounds("b-1", 1, 2, 3, 4);
     expect(invoke).toHaveBeenCalledWith("webview_bounds", { label: "b-1", x: 1, y: 2, w: 3, h: 4 });
+  });
+
+  it("실제 native open/close 수명주기만 direct geometry ownership을 선언한다", async () => {
+    const { nativeHost } = await load();
+    const { tauriSurfaceOwner } = await import("./surfaceOwnership");
+    expect(tauriSurfaceOwner("b-1")).toBeNull();
+    await nativeHost.open("b-1", { url: "https://x", x: 0, y: 0, w: 100, h: 80 });
+    expect(tauriSurfaceOwner("b-1")).toBe("direct");
+    await nativeHost.close("b-1");
+    expect(tauriSurfaceOwner("b-1")).toBeNull();
   });
 
   it("메인 DOM 크롬의 WebKit 표시 ACK를 공개 장벽으로 기다린다", async () => {

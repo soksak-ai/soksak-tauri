@@ -21,6 +21,7 @@ import {
 } from "../../lib/externalSurfaceTransition";
 import { railTravelDeclaredMs } from "../../lib/railMotion";
 import { surfaceLayoutContractOf } from "./surfaceLayoutContract";
+import { claimDirectSurface, releaseDirectSurface } from "./surfaceOwnership";
 
 const call = <T>(cmd: string, args?: Record<string, unknown>): Promise<T> =>
   invoke(cmd, args) as Promise<T>;
@@ -132,6 +133,7 @@ async function openTrackedSurface(
     ...(rect ?? {}),
     ...(layout ? { layout } : {}),
   });
+  claimDirectSurface(state.label);
   state.opened = true;
   state.desiredVisible = desired;
   state.lastRect = rect ? rectKey(rect) : "";
@@ -568,6 +570,7 @@ export const nativeHost: ContentViewHost = {
       state.observer?.disconnect();
       composition.surfaces.delete(label);
     }
+    releaseDirectSurface(label);
     await call("webview_close", { label });
   },
   list: () => call("webview_list"),

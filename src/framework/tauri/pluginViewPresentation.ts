@@ -27,6 +27,7 @@ import { PluginViewSlotRegistry } from "./pluginViewSlots";
 import { PluginViewReadiness } from "./pluginViewReadiness";
 import { PluginViewMemberOwnership } from "./pluginViewMemberOwnership";
 import { PluginViewSidecars } from "./pluginViewSidecars";
+import { claimPaneSurface, releasePaneSurface } from "./surfaceOwnership";
 
 interface DisposableLike { dispose(): void }
 
@@ -334,7 +335,9 @@ async function openAndGroup(
 ): Promise<void> {
   const slot = await view.slots.wait(label);
   const paneRect = rectOf(view.container);
+  claimPaneSurface(label, view.pane);
   state.memberOwnership.claim(label, view.renderer);
+  let opened = false;
   try {
     await view.app.webview.open(label, {
       ...options,
@@ -343,50 +346,62 @@ async function openAndGroup(
       w: slot.w,
       h: slot.h,
     });
+    opened = true;
+    view.members.add(label);
+    if (!view.grouped) {
+      await invoke("webview_pane_group", {
+        pane: view.pane,
+        renderer: view.renderer,
+        members: [...view.members],
+        ...paneRect,
+      });
+      view.grouped = true;
+      state.readiness.set(view.pane, true);
+      await syncPaneFrame(view);
+      view.lightingAlpha = -1;
+      await syncPaneLighting(view);
+    }
+    if (await syncMemberFrame(view, slot)) view.slots.commit(slot);
+    await invoke("webview_visible", { label, visible: view.visible, focus: false });
+    view.markReady();
   } catch (error) {
+    view.members.delete(label);
     state.memberOwnership.release(label, view.renderer);
+    if (opened) await view.app.webview.close(label).catch(() => {});
+    releasePaneSurface(label, view.pane);
     throw error;
   }
-  view.members.add(label);
-  if (!view.grouped) {
-    await invoke("webview_pane_group", {
-      pane: view.pane,
-      renderer: view.renderer,
-      members: [...view.members],
-      ...paneRect,
-    });
-    view.grouped = true;
-    state.readiness.set(view.pane, true);
-    await syncPaneFrame(view);
-    view.lightingAlpha = -1;
-    await syncPaneLighting(view);
-  }
-  if (await syncMemberFrame(view, slot)) view.slots.commit(slot);
-  await invoke("webview_visible", { label, visible: view.visible, focus: false });
-  view.markReady();
 }
 
 async function presentExisting(view: PresentedState, label: string): Promise<void> {
   const slot = await view.slots.wait(label);
   const paneRect = rectOf(view.container);
+  claimPaneSurface(label, view.pane);
   state.memberOwnership.claim(label, view.renderer);
-  view.members.add(label);
-  if (!view.grouped) {
-    await invoke("webview_pane_group", {
-      pane: view.pane,
-      renderer: view.renderer,
-      members: [...view.members],
-      ...paneRect,
-    });
-    view.grouped = true;
-    state.readiness.set(view.pane, true);
-    await syncPaneFrame(view);
-    view.lightingAlpha = -1;
-    await syncPaneLighting(view);
+  try {
+    view.members.add(label);
+    if (!view.grouped) {
+      await invoke("webview_pane_group", {
+        pane: view.pane,
+        renderer: view.renderer,
+        members: [...view.members],
+        ...paneRect,
+      });
+      view.grouped = true;
+      state.readiness.set(view.pane, true);
+      await syncPaneFrame(view);
+      view.lightingAlpha = -1;
+      await syncPaneLighting(view);
+    }
+    if (await syncMemberFrame(view, slot)) view.slots.commit(slot);
+    await invoke("webview_visible", { label, visible: view.visible, focus: false });
+    view.markReady();
+  } catch (error) {
+    view.members.delete(label);
+    state.memberOwnership.release(label, view.renderer);
+    releasePaneSurface(label, view.pane);
+    throw error;
   }
-  if (await syncMemberFrame(view, slot)) view.slots.commit(slot);
-  await invoke("webview_visible", { label, visible: view.visible, focus: false });
-  view.markReady();
 }
 
 async function handleCall(view: PresentedState, request: PluginViewRpcRequest): Promise<unknown> {
@@ -563,8 +578,11 @@ function disposeView(view: PresentedState): void {
   void view.sidecars.dispose().catch(() => {});
   void emitTo(view.renderer, event(view.renderer, "shutdown"), null).catch(() => {});
   for (const label of view.members) {
-    if (state.memberOwnership.release(label, view.renderer))
-      void view.app.webview.close(label).catch(() => {});
+    if (state.memberOwnership.release(label, view.renderer)) {
+      void view.app.webview.close(label)
+        .catch(() => {})
+        .finally(() => releasePaneSurface(label, view.pane));
+    }
   }
   void invoke("webview_close", { label: view.renderer }).catch(() => {});
   view.container.removeAttribute(TAURI_PANE_RENDERER_ATTR);

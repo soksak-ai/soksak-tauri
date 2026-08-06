@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   classifyRendererTopology,
+  directSurfaceAnchors,
   directNativeSurfaces,
   normalizeNativeSurfaces,
   visibleAnchorFacts,
@@ -18,6 +19,7 @@ describe("Tauri 표면 감사의 DOM 정본", () => {
     frame.dataset.projectId = "t1";
     const slot = document.createElement("div");
     slot.dataset.tauriHole = "content";
+    slot.dataset.tauriSurfaceOwner = "direct";
     slot.dataset.contentViewBody = "b-v1";
     slot.getBoundingClientRect = () =>
       ({ x: 10, y: 20, left: 10, top: 20, right: 310, bottom: 220, width: 300, height: 200 }) as DOMRect;
@@ -29,6 +31,7 @@ describe("Tauri 표면 감사의 DOM 정본", () => {
         label: "b-v1",
         viewId: "v1",
         projectId: "t1",
+        owner: "direct",
         rect: { x: 10, y: 20, w: 300, h: 200 },
       },
     ]);
@@ -88,5 +91,28 @@ describe("Tauri 표면 감사의 DOM 정본", () => {
       ["browser", "pane-a"],
     ]);
     expect(directNativeSurfaces(surfaces).map((surface) => surface.label)).toEqual(["direct"]);
+  });
+
+  it("PaneSurfaceHost 소유 DOM 홀도 직접 감사에서 다시 판정하지 않는다", () => {
+    const direct = document.createElement("div");
+    direct.dataset.tauriHole = "content";
+    direct.dataset.tauriSurfaceOwner = "direct";
+    direct.dataset.contentViewBody = "b-direct";
+    direct.getBoundingClientRect = () =>
+      ({ x: 10, y: 20, width: 300, height: 200 }) as DOMRect;
+    const pane = document.createElement("div");
+    pane.dataset.tauriHole = "content";
+    pane.dataset.tauriSurfaceOwner = "pane";
+    pane.dataset.contentViewBody = "b-pane";
+    pane.getBoundingClientRect = () =>
+      ({ x: 400, y: 20, width: 300, height: 200 }) as DOMRect;
+    document.body.append(direct, pane);
+
+    const anchors = visibleAnchorFacts();
+    expect(anchors.map((anchor) => [anchor.label, anchor.owner])).toEqual([
+      ["b-direct", "direct"],
+      ["b-pane", "pane"],
+    ]);
+    expect(directSurfaceAnchors(anchors).map((anchor) => anchor.label)).toEqual(["b-direct"]);
   });
 });

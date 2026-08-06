@@ -3,10 +3,12 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { combineTauriCompositionProbe } from "./compositionProbe";
 
-const direct = (bad = false) => ({
+const direct = (bad = false, unowned = false) => ({
   verdict: {
     misplaced: bad ? [{ x: 1, y: 2, w: 3, h: 4 }] : [],
-    stacked: [], missing: [], surfaces: bad ? 1 : 0, holes: 0,
+    stacked: [], missing: [],
+    unowned: unowned ? [{ x: 1, y: 2, w: 3, h: 4 }] : [],
+    surfaces: bad ? 1 : 0, holes: 0,
   },
 });
 const pane = (matched = true) => ({
@@ -52,6 +54,14 @@ describe("Tauri resize composition probe", () => {
     expect(combineTauriCompositionProbe(probe({ direct: direct(true) })).verdict).toBe("red");
     expect(combineTauriCompositionProbe(probe({ pane: pane(false) })).verdict).toBe("red");
     expect(combineTauriCompositionProbe(probe({ titlebar: titlebar("red") })).verdict).toBe("red");
+  });
+
+  it("geometry owner가 선언되지 않은 DOM hole을 direct GREEN으로 숨기지 않는다", () => {
+    const invalid = direct(false, true);
+    const result = combineTauriCompositionProbe(probe({ direct: invalid }));
+    expect(result.checks.direct).toBe(false);
+    expect(result.issues).toContain("direct-red");
+    expect(result.verdict).toBe("red");
   });
 
   it("preserves all public facts under one exact sample generation", () => {

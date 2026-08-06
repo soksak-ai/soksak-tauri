@@ -4,9 +4,12 @@
 import { moduleState } from "../../lib/moduleState";
 import { CONTENT_VIEW_BODY } from "../../lib/contentViews";
 import { onPluginEvent } from "../../plugins/hooks";
+import { onTauriSurfaceOwnershipChanged, tauriSurfaceOwner } from "./surfaceOwnership";
 
 export const TAURI_HOLE_ATTR = "data-tauri-hole";
 export const TAURI_HOLE_FRAME_ATTR = "data-tauri-hole-frame";
+/** DOM hole geometry has exactly one auditor. This is projected by the Tauri adapter. */
+export const TAURI_SURFACE_OWNER_ATTR = "data-tauri-surface-owner";
 /** Tauri가 플러그인 DOM을 별도 child renderer로 소유하는 메인 문서의 자리. */
 export const TAURI_PANE_RENDERER_ATTR = "data-tauri-pane-renderer";
 export const TAURI_CONTENT_HOLE = `[${TAURI_HOLE_ATTR}="content"]`;
@@ -28,6 +31,7 @@ const installed = moduleState("framework/tauri/holeMarkers#installed", () => ({
   on: false,
   observer: null as MutationObserver | null,
   offReflow: null as (() => void) | null,
+  offOwnership: null as (() => void) | null,
 }));
 
 /** 현재 DOM 사실을 Tauri private marker로 투영한다. 같은 결과의 재적용은 멱등이다. */
@@ -38,13 +42,17 @@ export function syncTauriHoleMarkers(doc: Document = document): void {
   for (const el of doc.querySelectorAll<HTMLElement>(`[${TAURI_HOLE_FRAME_ATTR}]`)) {
     el.removeAttribute(TAURI_HOLE_FRAME_ATTR);
   }
+  for (const el of doc.querySelectorAll<HTMLElement>(`[${TAURI_SURFACE_OWNER_ATTR}]`)) {
+    el.removeAttribute(TAURI_SURFACE_OWNER_ATTR);
+  }
 
-  const project = (hole: HTMLElement): void => {
+  const project = (hole: HTMLElement, owner: "direct" | "pane"): void => {
     const body = hole.closest<HTMLElement>(".tab-body");
     if (!body) return;
     // 네이티브 자식 표면의 bounds 원천은 공개 content-view body 자체다. tab-body 전체를 hole로
     // 잡으면 플러그인 toolbar와 DOM dim까지 창 crop에 섞여 실제 표면과 다른 직사각형이 된다.
     hole.setAttribute(TAURI_HOLE_ATTR, "content");
+    hole.setAttribute(TAURI_SURFACE_OWNER_ATTR, owner);
     body.setAttribute(TAURI_HOLE_FRAME_ATTR, "");
     const paneId = body.dataset.pane;
     if (!paneId) return;
@@ -54,12 +62,16 @@ export function syncTauriHoleMarkers(doc: Document = document): void {
   };
 
   for (const slot of doc.querySelectorAll<HTMLElement>(`[${CONTENT_VIEW_BODY}]`)) {
-    if (!slot.getAttribute(CONTENT_VIEW_BODY)) continue;
-    project(slot);
+    const label = slot.getAttribute(CONTENT_VIEW_BODY);
+    if (!label) continue;
+    const owner = slot.closest(`[${TAURI_PANE_RENDERER_ATTR}]`)
+      ? "pane"
+      : tauriSurfaceOwner(label);
+    if (owner) project(slot, owner);
   }
   for (const renderer of doc.querySelectorAll<HTMLElement>(`[${TAURI_PANE_RENDERER_ATTR}]`)) {
     if (!renderer.getAttribute(TAURI_PANE_RENDERER_ATTR)) continue;
-    project(renderer);
+    project(renderer, "pane");
   }
 }
 
@@ -77,6 +89,7 @@ export function installTauriHoleMarkers(): void {
     });
   };
   installed.offReflow = onPluginEvent("layout.reflow", schedule).dispose;
+  installed.offOwnership = onTauriSurfaceOwnershipChanged(schedule);
   installed.observer = new MutationObserver(schedule);
   installed.observer.observe(document.documentElement, {
     childList: true,
@@ -92,5 +105,7 @@ export function __resetTauriHoleMarkersForTest(): void {
   installed.observer = null;
   installed.offReflow?.();
   installed.offReflow = null;
+  installed.offOwnership?.();
+  installed.offOwnership = null;
   installed.on = false;
 }
