@@ -328,29 +328,9 @@ export async function prepareNativeContentViewMove(
       state.precommitting = true;
       state.precommitTarget = rectKey(target);
     }
-    try {
-      await Promise.all([
-        ...targets.map(async ({ state, target }) => {
-          const slot = findContentViewSlot(state.label, document);
-          const layout = slot ? surfaceLayoutContractOf(slot, target) : null;
-          await call<boolean>("webview_bounds", {
-            label: state.label,
-            ...target,
-            ...(layout ? { layout } : {}),
-          });
-          state.boundsWrites += 1;
-          state.lastRect = rectKey(target);
-        }),
-        ...externalTargets.map(({ participant, target }) => participant.snap(target)),
-      ]);
-    } catch (error) {
-      for (const { state } of targets) {
-        state.precommitting = false;
-        state.precommitTarget = "";
-      }
-      for (const { participant } of externalTargets) participant.cancel();
-      throw error;
-    }
+    // snap은 prepare에서 화면을 바꾸지 않는다. 목표 DOM이 커밋되기 전에 외부 표면을 먼저
+    // 옮기면 model ACK가 빨라도 실제 presentation은 옛 슬롯과 새 슬롯 사이를 찢는다.
+    // 이 단계는 observer 경쟁만 잠그고, 실제 bounds 쓰기는 아래 commit 한 곳이 소유한다.
     let closed = false;
     return {
       mode: "snap",
@@ -359,25 +339,23 @@ export async function prepareNativeContentViewMove(
         closed = true;
         try {
           await Promise.all([
-            ...targets.map(async ({ state, target }) => {
+            ...targets.map(async ({ state }) => {
               const slot = findContentViewSlot(state.label, document);
               if (!slot) throw new Error(`콘텐츠 뷰 자리가 커밋에서 사라졌습니다: ${state.label}`);
               const rect = slotRect(slot);
               state.precommitTarget = rectKey(rect);
-              if (rectKey(rect) !== rectKey(target)) {
-                state.lastRect = rectKey(rect);
-                state.boundsWrites += 1;
-                const layout = surfaceLayoutContractOf(slot);
-                await call<boolean>("webview_bounds", {
-                  label: state.label,
-                  ...rect,
-                  ...(layout ? { layout } : {}),
-                });
-              }
+              const layout = surfaceLayoutContractOf(slot);
+              await call<boolean>("webview_bounds", {
+                label: state.label,
+                ...rect,
+                ...(layout ? { layout } : {}),
+              });
+              state.lastRect = rectKey(rect);
+              state.boundsWrites += 1;
             }),
-            ...externalTargets.map(({ slot, participant, target }) => {
+            ...externalTargets.map(({ slot, participant }) => {
               const rect = slotRect(slot);
-              return rectKey(rect) === rectKey(target) ? Promise.resolve() : participant.snap(rect);
+              return participant.snap(rect);
             }),
           ]);
           for (const { state } of targets) settlePreparedFrame(state);
@@ -396,10 +374,6 @@ export async function prepareNativeContentViewMove(
         for (const { state } of targets) {
           state.precommitting = false;
           state.precommitTarget = "";
-        }
-        for (const { state, before } of targets) {
-          state.lastRect = rectKey(before);
-          void call("webview_bounds", { label: state.label, ...before }).catch(() => {});
         }
         for (const { participant } of externalTargets) participant.cancel();
       },
