@@ -42,6 +42,13 @@ every report contains the full 3-engine × 12-gate matrix of 36 cells. A rule ma
 `not-applicable` only when the catalog derives that state from the report's framework/platform
 identity; a runtime, adapter, or test cannot claim it for itself.
 
+`slot-freeze.mjs` records each owned B01–B11 gate exactly once per engine run in the canonical
+judge; B12 belongs to the separate cold-start titlebar runner. The address-bar value is read through
+the discovered public address and `ui.measure.value`. IME, wheel, and full-capture facts likewise
+feed their event ledgers and explicit view/path receipts directly into mappers. If a public response
+lacks a required field, the mapper preserves `null` and the gate remains RED; it never fills the gap
+from requested values or PNG pixels.
+
 | ID | Fixed rule | Machine evidence |
 |---|---|---|
 | B01 | Initial mount + address bar + page identity in all three engines | Public DOM/status mount, address, and page identity all equal the requested values. |

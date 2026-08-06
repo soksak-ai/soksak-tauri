@@ -36,6 +36,12 @@
 3개 엔진 × 12개 게이트의 36칸을 전부 포함한다. `not-applicable`은 보고서의 framework/platform
 신원에서 정본 catalog가 정적으로 도출할 때만 가능하며 runtime, adapter, test가 스스로 선언할 수 없다.
 
+`slot-freeze.mjs`는 자신이 소유한 B01–B11을 engine 실행당 각각 정확히 한 번 canonical judge에
+기록한다(B12는 별도 냉시작 titlebar 실행기 소유). 주소표시줄의 현재 값은 공개 주소를 찾은 뒤
+`ui.measure.value`로 읽는다. IME·wheel·full-capture도 각각 사건 원장과 명시 view/path 영수증을
+그대로 mapper에 전달한다. 공개 응답에 필드가 없으면 mapper는 `null`을 보존해 RED로 판정하며,
+요청값이나 PNG 픽셀에서 값을 만들어 채우지 않는다.
+
 | ID | 고정 기준 | 기계 판정 근거 |
 |---|---|---|
 | B01 | 3종 최초 mount + 주소표시줄 + 페이지 신원 | 공개 DOM/status의 mount, address, page identity가 모두 요청값과 일치한다. |

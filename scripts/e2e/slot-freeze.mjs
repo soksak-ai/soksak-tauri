@@ -55,6 +55,11 @@ import {
 } from "./lib/browser-ui-addresses.mjs";
 import { mapBrowserSurfaceRects } from "./lib/browser-surface-rects.mjs";
 import {
+  mapB01TabEvidence,
+  mapB11TabEvidence,
+  mapImeObservation,
+} from "./lib/browser-live-evidence.mjs";
+import {
   browserImplementations,
   browserSurfaceInvariant,
   fixtureHtml,
@@ -733,6 +738,7 @@ async function verifyIme(rpc, win, plugin, tabId, text) {
   if (value.ledger?.values?.at?.(-1) !== text) {
     throw new Error(`${tabId}: input 사건 값 불일치 ${JSON.stringify(value.ledger?.values)}`);
   }
+  return mapImeObservation(value);
 }
 
 async function verifyScrollInput(rpc, win, plugin, tabId, evidencePath) {
@@ -817,11 +823,13 @@ async function verifyFullCapture(rpc, win, plugin, tabId, outputPath, identityMa
   const visual = inspectFullCapture(outputPath, `${tabId}/full`, { identityMarker, receipt: result });
   await writeVisualReport(`${outputPath}.visual.json`, visual);
   return {
-    path: outputPath,
-    bytes: result.bytes,
+    requestedPath: outputPath,
+    returnedPath: result.path,
+    reportedBytes: result.bytes,
     width: result.width,
     height: result.height,
     viewId: result.viewId,
+    fileBytes,
     before,
     after,
     visualReview: "pending",
@@ -829,6 +837,7 @@ async function verifyFullCapture(rpc, win, plugin, tabId, outputPath, identityMa
 }
 
 async function assertImePersisted(rpc, win, plugin, tabIds, stage) {
+  const observations = [];
   for (let index = 0; index < tabIds.length; index += 1) {
     const result = must(await rpc(`plugin.${plugin}.eval`, {
       viewId: tabIds[index],
@@ -838,7 +847,9 @@ async function assertImePersisted(rpc, win, plugin, tabIds, stage) {
     if (value?.value !== IME_TEXTS[index] || value?.ledger?.values?.at?.(-1) !== IME_TEXTS[index]) {
       throw new Error(`${stage}: ${tabIds[index]} IME 상태 소실 ${JSON.stringify(value)}`);
     }
+    observations.push(mapImeObservation(value));
   }
+  return observations;
 }
 
 async function runEngine(client, page, engine, recordingLedger, gateReportStore) {
@@ -914,6 +925,16 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
     }
     const tabIds = [left.tabId, right.tabId];
     const paneIds = [left.paneId, right.paneId];
+    const mountReceipts = [left, right];
+    const expectedUrls = tabIds.map((_, index) => `${page.url}?slot=${index}`);
+    const navigateReceipts = [];
+    const pageIdentities = [];
+    const imeEvidence = tabIds.map((viewId, index) => ({
+      viewId,
+      expectedText: IME_TEXTS[index],
+      phases: {},
+    }));
+    const b11Tabs = [];
     if (tabIds.some((id) => typeof id !== "string")) throw new Error(`브라우저 탭 id 누락: ${JSON.stringify(tabIds)}`);
     if (paneIds.some((id) => typeof id !== "string")) throw new Error(`브라우저 pane id 누락: ${JSON.stringify(paneIds)}`);
     must(await rpc("sidebar.left.position", { mode: "flow" }, win), "sidebar flow");
@@ -921,7 +942,10 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
     for (let index = 0; index < tabIds.length; index += 1) {
       const tabId = tabIds[index];
       must(await rpc("tab.activate", { tab: tabId }, win), `tab.activate ${tabId}`);
-      must(await rpc(`plugin.${plugin}.navigate`, { viewId: tabId, url: `${page.url}?slot=${index}` }, win), `navigate ${tabId}`);
+      navigateReceipts[index] = must(
+        await rpc(`plugin.${plugin}.navigate`, { viewId: tabId, url: expectedUrls[index] }, win),
+        `navigate ${tabId}`,
+      );
       // 최초 CEF 표면은 child readiness(유한 8s) 뒤 페이지 MutationObserver(유한 8s)가 이어진다.
       // 라우터 기본 10s로 거래를 중간 절단하지 않고 이 장기 명령이 자기 상한을 명시한다.
       must(
@@ -935,7 +959,12 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
       );
       const identity = must(await rpc(`plugin.${plugin}.dom.text`, { selector: "h1", viewId: tabId }, win), `browser identity ${tabId}`);
       if (identity.text !== "Browser Boundary") throw new Error(`${tabId}: 페이지 신원 불일치(${JSON.stringify(identity.text)})`);
-      await verifyIme(rpc, win, plugin, tabId, IME_TEXTS[index]);
+      const pageIdentityResult = must(await rpc(`plugin.${plugin}.eval`, {
+        viewId: tabId,
+        js: "return { url: location.href };",
+      }, win), `page identity ${tabId}`);
+      pageIdentities[index] = { viewId: tabId, ...unwrapEvalValue(pageIdentityResult) };
+      imeEvidence[index].phases.initial = await verifyIme(rpc, win, plugin, tabId, IME_TEXTS[index]);
       if (SCENARIOS.has("scroll")) {
         const scroll = await verifyScrollInput(
           rpc, win, plugin, tabId, path.join(engineEvidence, `scroll-${index}.png`),
@@ -951,16 +980,42 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
           path.join(engineEvidence, `full-${index}.json`),
           full,
         );
+        b11Tabs.push(mapB11TabEvidence({ viewId: tabId, scroll, fullCapture: full }));
       }
       // tab.open + pane.split은 두 view를 먼저 선언하므로 엔진도 둘을 병렬 생성할 수 있다.
       // 부분 prefix를 기대하지 않고 선언된 전체 view 집합과 엔진 장부의 일대일성을 검사한다.
       await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, `create-${index}`);
     }
 
-    const tree = must(await rpc("ui.tree", {}, win), "ui.tree");
+    const tree = must(await rpc("ui.tree", { rects: true }, win), "ui.tree");
     const addresses = tabIds.map((id) => addressForTab(tree, id));
     const lightingAddresses = tabIds.map((id) => lightingAddressForTab(tree, id));
     const activationAddresses = tabIds.map((id) => activationAddressForTab(tree, id));
+    const urlbarAddresses = tabIds.map((id) => browserTabNodeAddress(tree, id, "urlbar"));
+    const urlbarMeasures = await Promise.all(urlbarAddresses.map(async (address, index) => must(
+      await rpc("ui.measure", { address }, win),
+      `urlbar measure ${tabIds[index]}`,
+    )));
+    const b01Receipt = gateReportStore.recordMachineEvidence({
+      framework: frameworkName,
+      engine,
+      gate: "B01",
+      evidence: {
+        engine,
+        tabs: tabIds.map((viewId, index) => mapB01TabEvidence({
+          viewId,
+          expectedUrl: expectedUrls[index],
+          mountReceipt: mountReceipts[index],
+          urlbarMeasure: urlbarMeasures[index],
+          pageIdentity: pageIdentities[index],
+          navigateReceipt: navigateReceipts[index],
+        })),
+      },
+    });
+    await gateReportStore.persist();
+    if (b01Receipt.status !== "green") {
+      throw new Error(`${engine}/B01 machine RED — ${b01Receipt.evidence.join(", ")}`);
+    }
     // 플러그인 인스턴스와 함께 영속하고 surface와 같은 x축을 소유하는 공개 toolbar가
     // 브라우저 표면 궤적의 기준이다. 앱 크롬 합성은 별도로 persistent rail root와 pane root를
     // 같은 rAF에서 측정한다 — 콘텐츠 표면 검증과 크롬 DOM 검증을 한 값으로 뭉개지 않는다.
@@ -981,16 +1036,20 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
     const windowed = implementation.surface === "engine-windowed";
     const paneOwned = frameworkName === "tauri" && (native || windowed);
     const labels = tabIds.map((id) => implementation.label(win, id));
+    let initialPaneComposition = null;
     if (paneOwned) {
       await installPanePresentationMarkers(rpc, win, labels);
       const initial = must(await rpc("webview.composition", {}, win), "initial composition");
       assertTauriSurfaceResizePolicy(initial, "initial native composition");
-      assertPaneComposition(
-        must(await rpc("webview.pane.composition", {}, win), "initial pane composition"),
-        labels,
+      initialPaneComposition = must(
+        await rpc("webview.pane.composition", {}, win),
+        "initial pane composition",
       );
+      assertPaneComposition(initialPaneComposition, labels);
     }
-    await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, "first-paint-ledger");
+    const initialSurfaceLedger = await assertEngineSurfaceLedger(
+      rpc, win, implementation, tabIds, "first-paint-ledger",
+    );
     must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }), "first paint layout settled");
     const firstPaintPath = path.join(engineEvidence, "first-paint.png");
     await captureWindowSnapshot(rpc, win, firstPaintPath, "first paint snapshot");
@@ -999,6 +1058,20 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
     const scale = scaleEvidence.scale;
     await observeFrameSequence([firstPaintPath], `${engine}/first-paint`, scale);
     must(await rpc("capture.calibration", { visible: false }, win), "first paint calibration hide");
+    const b03Receipt = gateReportStore.recordMachineEvidence({
+      framework: frameworkName,
+      engine,
+      gate: "B03",
+      evidence: {
+        engine,
+        scaleFactor: Number(originalWindow.scale),
+        uiTree: tree,
+        surfaceLedger: initialSurfaceLedger,
+        paneComposition: initialPaneComposition,
+      },
+    });
+    await gateReportStore.persist();
+    console.log(`◉ ${engine}/B03 canonical machine verdict: ${b03Receipt.status}`);
 
     if (sentinelWin && sentinelTabId) {
       must(await rpc(`plugin.${plugin}.gc`, {}, win, { timeoutMs: 20_000 }), "challenger owner-scoped gc");
@@ -1024,6 +1097,8 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
 
     let frameCount = 0;
     const b04Transitions = [];
+    const b05Transitions = [];
+    const b06Checkpoints = [];
     const presentationOwners = SCENARIOS.has("flow")
       ? await resolvePresentationTraceOwners(rpc, win, implementation, tabIds, paneIds, labels)
       : [];
@@ -1077,7 +1152,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
               } : {}),
             }, win, { timeoutMs: 60_000 }),
           });
-          must(recordingOutcome.actionResult, `교차 클릭 ${name}`);
+          const clickReceipt = must(recordingOutcome.actionResult, `교차 클릭 ${name}`);
           const recordingEvidence = await reviewRecordingOutcome({
             outcome: recordingOutcome,
             expectedFrames: FRAMES_PER_CLICK,
@@ -1157,6 +1232,13 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
             },
             samples: flowPresentationTrace.samples,
           });
+          b05Transitions.push({
+            direction: side === 0 ? "to-left" : "to-right",
+            targetViewId,
+            clickReceipt,
+            layout: layoutVerdict.transaction,
+            presentation: presentationReceipt,
+          });
           await writeMachineReport(
             path.join(dir, "composition-trace.json"),
             {
@@ -1184,13 +1266,20 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
           const lighting = await assertFocusLighting(
             rpc, win, lightingAddresses, labels, side, paneOwned, `${engine}/${name}`,
           );
-          await assertRailCompositionContract(
+          const railComposition = await assertRailCompositionContract(
             rpc,
             win,
             railAddress,
             paneIds[side],
             `${engine}/${name}`,
           );
+          b06Checkpoints.push({
+            phase: name,
+            activePaneId: paneIds[side],
+            paneIds,
+            lighting,
+            railComposition,
+          });
 
           if (paneOwned) {
             assertPaneComposition(
@@ -1203,6 +1292,13 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
             await assertWindowedComposition(rpc, win, plugin, tabIds, addresses);
           }
           await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, `cross-click-${name}`);
+          if (cycle === 0) {
+            const phase = side === 0 ? "flow-left" : "flow-right";
+            const observations = await assertImePersisted(rpc, win, plugin, tabIds, phase);
+            observations.forEach((observation, index) => {
+              imeEvidence[index].phases[phase] = observation;
+            });
+          }
           console.log(`✓ ${name}: ${FRAMES_PER_CLICK} frames · 두 live marker · focus dim ${lighting.dims.join("/")} · ${native ? "DOM/native exact" : windowed ? "DOM/CEF exact" : "DOM/native-offscreen exact"}`);
         } catch (flowError) {
           if (domTraceOpen) {
@@ -1251,6 +1347,21 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
         throw new Error(`${engine}/B04 machine RED — ${b04Receipt.evidence.join(", ")}`);
       }
       console.log(`◉ ${engine}/B04 canonical machine verdict: ${b04Receipt.status}`);
+      const b05Receipt = gateReportStore.recordMachineEvidence({
+        framework: frameworkName,
+        engine,
+        gate: "B05",
+        evidence: { engine, transitions: b05Transitions },
+      });
+      const b06Receipt = gateReportStore.recordMachineEvidence({
+        framework: frameworkName,
+        engine,
+        gate: "B06",
+        evidence: { engine, checkpoints: b06Checkpoints },
+      });
+      await gateReportStore.persist();
+      console.log(`◉ ${engine}/B05 canonical machine verdict: ${b05Receipt.status}`);
+      console.log(`◉ ${engine}/B06 canonical machine verdict: ${b06Receipt.status}`);
     }
 
     // PIN 계약 — 사이드바와 분할 rect는 포커스 클릭의 입력이 아니다. station 0에서 오른쪽
@@ -1621,7 +1732,12 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
       await assertViewportComposition(rpc, win, plugin, tabIds, addresses, scale,
         path.join(engineEvidence, "resize-window-restored.png"), `${engine}/window-restored`);
       await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, "window-resize-restored");
-      await assertImePersisted(rpc, win, plugin, tabIds, "window-resize-restored");
+      const hostileIme = await assertImePersisted(
+        rpc, win, plugin, tabIds, "window-resize-restored",
+      );
+      hostileIme.forEach((observation, index) => {
+        imeEvidence[index].phases["hostile-window-resize"] = observation;
+      });
 
       // 탭 패널 경계 resize — 실제 gutter pointer path를 양방향으로 움직이고 전 구간을 캡처한다.
       const resizeTree = must(await rpc("ui.tree", { rects: true }, win), "resize ui.tree");
@@ -1679,8 +1795,47 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
         await assertViewportComposition(rpc, win, plugin, tabIds, addresses, scale,
           path.join(engineEvidence, `resize-pane-${direction}.png`), `${engine}/pane-${direction}`);
         await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, `pane-resize-${direction}`);
+        const phase = direction === "wider" ? "pane-wider" : "pane-restored";
+        const paneIme = await assertImePersisted(rpc, win, plugin, tabIds, phase);
+        paneIme.forEach((observation, index) => {
+          imeEvidence[index].phases[phase] = observation;
+        });
         frameCount += files.length;
       }
+      const b02Receipt = gateReportStore.recordMachineEvidence({
+        framework: frameworkName,
+        engine,
+        gate: "B02",
+        evidence: { engine, tabs: imeEvidence },
+      });
+      await gateReportStore.persist();
+      if (b02Receipt.status !== "green") {
+        throw new Error(`${engine}/B02 machine RED — ${b02Receipt.evidence.join(", ")}`);
+      }
+      if (SCENARIOS.has("scroll")) {
+        const b11Receipt = gateReportStore.recordMachineEvidence({
+          framework: frameworkName,
+          engine,
+          gate: "B11",
+          evidence: { engine, tabs: b11Tabs },
+        });
+        await gateReportStore.persist();
+        if (b11Receipt.status !== "green") {
+          throw new Error(`${engine}/B11 machine RED — ${b11Receipt.evidence.join(", ")}`);
+        }
+      }
+      const b10Receipt = gateReportStore.recordMachineEvidence({
+        framework: frameworkName,
+        engine,
+        gate: "B10",
+        evidence: {
+          engine,
+          requestedSizes: fastSizes,
+          resizeSequence: fastResize,
+        },
+      });
+      await gateReportStore.persist();
+      console.log(`◉ ${engine}/B10 canonical machine verdict: ${b10Receipt.status}`);
       resizeSummary = `급격한 창 resize ${fastSizes.length}단계/${fastResize.resizeElapsedMs}ms · 패널 resize 왕복`;
     }
 
