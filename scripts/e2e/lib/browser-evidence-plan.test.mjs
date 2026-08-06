@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { EVIDENCE_RUN_LIMIT_BYTES } from "./evidence-store.mjs";
 import {
   RECORDING_BYTES_PER_FRAME,
+  createBrowserRecordingEvidenceLedger,
   planBrowserRecordingEvidence,
 } from "./browser-evidence-plan.mjs";
 
@@ -58,5 +59,25 @@ describe("browser recording evidence plan", () => {
     expect(() => planBrowserRecordingEvidence({
       engines: ["browser"], scenarios: ["flow"], cycles: -1,
     })).toThrow(/cycles/);
+  });
+
+  it("계획한 녹화를 정확히 한 번씩만 소비하고 누락을 최종 거부한다", () => {
+    const plan = planBrowserRecordingEvidence({
+      engines: ["browser"],
+      scenarios: ["flow", "pin"],
+      cycles: 1,
+    });
+    const ledger = createBrowserRecordingEvidenceLedger(plan);
+
+    const first = ledger.take("browser", "flow", "01-left");
+    expect(first).toMatchObject({ frames: 48, relativePath: "browser/01-left/frames" });
+    expect(() => ledger.take("browser", "flow", "01-left")).toThrow(/이미 소비/);
+    expect(() => ledger.take("browser", "resize", "resize-window-fast")).toThrow(/계획되지 않은/);
+    expect(() => ledger.assertComplete()).toThrow(/미소비.*4/);
+
+    for (const item of plan.recordings.slice(1)) {
+      expect(ledger.take(item.engine, item.scenario, item.name)).toBe(item);
+    }
+    expect(ledger.assertComplete()).toEqual({ planned: 5, consumed: 5, pending: [] });
   });
 });

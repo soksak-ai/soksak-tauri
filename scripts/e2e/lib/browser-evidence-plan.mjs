@@ -51,6 +51,53 @@ function recording(engine, scenario, name, frames) {
   });
 }
 
+function recordingIdentity(engine, scenario, name) {
+  if (typeof engine !== "string" || typeof scenario !== "string" || typeof name !== "string"
+      || engine.length === 0 || scenario.length === 0 || name.length === 0) {
+    throw new TypeError("recording identity는 비어 있지 않은 engine/scenario/name 문자열이어야 한다");
+  }
+  return JSON.stringify([engine, scenario, name]);
+}
+
+/**
+ * 사전 계획과 실제 producer 호출 사이의 일대일 계약을 소유한다.
+ * 계획 밖 녹화, 중복 녹화, 실행 종료 시 누락 녹화를 모두 같은 장부에서 거부한다.
+ */
+export function createBrowserRecordingEvidenceLedger(plan) {
+  if (!plan || !Array.isArray(plan.recordings)) {
+    throw new TypeError("browser recording evidence plan이 필요하다");
+  }
+  const declared = new Map();
+  for (const item of plan.recordings) {
+    const key = recordingIdentity(item?.engine, item?.scenario, item?.name);
+    if (declared.has(key)) {
+      throw new TypeError(`중복 recording 계획: ${item.engine}/${item.scenario}/${item.name}`);
+    }
+    declared.set(key, item);
+  }
+  const consumed = new Set();
+
+  return Object.freeze({
+    take(engine, scenario, name) {
+      const key = recordingIdentity(engine, scenario, name);
+      const item = declared.get(key);
+      if (!item) throw new Error(`계획되지 않은 recording: ${engine}/${scenario}/${name}`);
+      if (consumed.has(key)) throw new Error(`이미 소비한 recording: ${engine}/${scenario}/${name}`);
+      consumed.add(key);
+      return item;
+    },
+    assertComplete() {
+      const pending = [...declared]
+        .filter(([key]) => !consumed.has(key))
+        .map(([, item]) => `${item.engine}/${item.scenario}/${item.name}`);
+      if (pending.length) {
+        throw new Error(`미소비 recording ${pending.length}개: ${pending.join(", ")}`);
+      }
+      return { planned: declared.size, consumed: consumed.size, pending };
+    },
+  });
+}
+
 /**
  * 실행 전에 선택된 모든 유한 녹화의 최악 용량을 확정한다.
  *
