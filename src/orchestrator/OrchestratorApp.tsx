@@ -424,7 +424,7 @@ export function OrchestratorApp() {
 
   return (
     <div className="orch-root" data-node="orch">
-      <header className="orch-header" {...dragRegion}>
+      <header className="orch-header" data-node="titlebar" {...dragRegion}>
         <span className="orch-title">{t("orch.title")}</span>
         <button
           type="button"
