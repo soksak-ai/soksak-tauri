@@ -139,6 +139,9 @@ export function useArrangementPhase<L extends { id: string }>(
   const queued = useRef<Arrangement<L> | null>(null);
   const preparation = useRef({ serial: 0, key: "" });
   const pendingCommit = useRef<PreparedLayoutTransition | null>(null);
+  const presentationCommits = useRef(0);
+  const mounted = useRef(true);
+  const [, publishPresentationCommit] = useState(0);
   /** 다음 해를 여정 없이 받는다 — 손 드래그가 이미 그 자리로 옮겨 놓은 경우. */
   const acceptWithoutTravel = useRef(false);
 
@@ -272,12 +275,19 @@ export function useArrangementPhase<L extends { id: string }>(
     const prepared = pendingCommit.current;
     if (!prepared) return;
     pendingCommit.current = null;
-    void prepared.commit().catch((error) => {
-      console.error("[layout] 목표 배치 커밋 확인 실패", error);
-    });
+    presentationCommits.current += 1;
+    void prepared.commit()
+      .catch((error) => {
+        console.error("[layout] 목표 배치 커밋 확인 실패", error);
+      })
+      .finally(() => {
+        presentationCommits.current = Math.max(0, presentationCommits.current - 1);
+        if (mounted.current) publishPresentationCommit((revision) => revision + 1);
+      });
   }, [phase.displayed]);
 
   useEffect(() => () => {
+    mounted.current = false;
     pendingCommit.current?.cancel();
     pendingCommit.current = null;
   }, []);
@@ -315,7 +325,13 @@ export function useArrangementPhase<L extends { id: string }>(
 
   // 상태 변이의 공개 ACK는 최종 해가 실제 표시 해가 되고 준비·이동이 모두 닫힌 뒤에만 낸다.
   useLayoutEffect(() => {
-    if (!settlementKey || phase.preparing || traveling || currentKey !== displayedKey) return;
+    if (
+      !settlementKey
+      || phase.preparing
+      || traveling
+      || presentationCommits.current > 0
+      || currentKey !== displayedKey
+    ) return;
     settleLayout(settlementKey);
   });
 
