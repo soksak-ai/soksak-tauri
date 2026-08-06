@@ -153,6 +153,44 @@ fn registered_native_surfaces_never_scale_cached_layer_pixels() {
 }
 
 #[test]
+fn grouped_pane_members_inherit_parent_resize_in_the_same_appkit_epoch() {
+    let src = std::fs::read_to_string("src/webview/layer.rs").expect("layer source");
+    let policy = src
+        .split_once("fn configure_pane_member_resize(")
+        .expect("pane member resize policy")
+        .1
+        .split_once("\n}")
+        .expect("policy boundary")
+        .0;
+    assert!(
+        policy.contains("ViewWidthSizable") && policy.contains("ViewHeightSizable"),
+        "PaneSurfaceHost의 자식은 부모 frame 거래와 같은 epoch에 폭·높이를 상속해야 한다"
+    );
+    let grouping = src
+        .split_once("pub fn group_pane_surface_host(")
+        .expect("pane grouping")
+        .1
+        .split_once("pub fn pane_surface_host_state")
+        .expect("grouping boundary")
+        .0;
+    assert!(
+        grouping.contains("configure_pane_member_resize(host)"),
+        "grouping 시 모든 renderer/native member에 동기 resize 정책을 설치해야 한다"
+    );
+    let detach = src
+        .split_once("fn detach_surface_from_pane(")
+        .expect("pane detach")
+        .1
+        .split_once("pub fn surface_count")
+        .expect("detach boundary")
+        .0;
+    assert!(
+        detach.contains("configure_surface_resize(host)"),
+        "pane에서 분리된 surface는 standalone 명시 bounds 소유권으로 복귀해야 한다"
+    );
+}
+
+#[test]
 fn stale_renderer_resize_ipc_cannot_overwrite_the_current_native_epoch() {
     let src = std::fs::read_to_string("src/webview/layer.rs").expect("layer source");
     let pane = src

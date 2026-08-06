@@ -168,6 +168,17 @@ fn configure_surface_resize(view: &NSView) {
     view.setLayerContentsPlacement(NSViewLayerContentsPlacement::TopLeft);
 }
 
+// PaneSurfaceHost 아래에서는 부모 frame이 패널의 단일 resize 거래다. 자식 host와 그 실제
+// renderer가 폭·높이를 같은 AppKit epoch에 상속해야 하며, 뒤늦은 DOM/engine bounds는 같은
+// 값의 최종 ACK일 뿐 두 번째 resize 주인이 아니다. pane 밖으로 분리될 때는 위 standalone
+// 정책(mask=0)으로 반드시 되돌린다.
+fn configure_pane_member_resize(view: &NSView) {
+    view.setAutoresizingMask(
+        NSAutoresizingMaskOptions::ViewWidthSizable
+            | NSAutoresizingMaskOptions::ViewHeightSizable,
+    );
+}
+
 fn clip_surface_children(view: &NSView) -> Result<(), String> {
     let layer = view.layer().ok_or_else(|| "surface host layer가 없습니다".to_string())?;
     layer.setMasksToBounds(true);
@@ -530,6 +541,7 @@ pub fn group_pane_surface_host(
     let pane_view: &NSView = &pane_host;
     pane_view.setWantsLayer(true);
     configure_surface_resize(pane_view);
+    pane_view.setAutoresizesSubviews(true);
     clip_surface_children(pane_view)?;
     // PaneSurfaceHost도 최초 개별 surface와 동일하게 main DOM WKWebView 바로 아래에 둔다.
     // addSubview(맨 끝)는 pane을 DOM 위로 올려 sidebar/+버튼/modal을 덮는다.
@@ -547,6 +559,11 @@ pub fn group_pane_surface_host(
         );
         host.removeFromSuperview();
         host.setFrame(local);
+        configure_pane_member_resize(host);
+        if let Some(child_ptr) = SURFACE_VIEWS.lock().ok().and_then(|views| views.get(label).copied()) {
+            let child = unsafe { &*(child_ptr as *const NSView) };
+            configure_pane_member_resize(child);
+        }
         pane_view.addSubview(host);
         SURFACE_PANES.lock().map_err(|_| "surface pane 잠금 실패")?
             .insert(label.clone(), pane.to_owned());
@@ -1001,6 +1018,11 @@ fn detach_surface_from_pane(label: &str) {
         let host = unsafe { &*(ptr as *const NSView) };
         let local = host.frame();
         host.removeFromSuperview();
+        configure_surface_resize(host);
+        if let Some(child_ptr) = SURFACE_VIEWS.lock().ok().and_then(|views| views.get(&member).copied()) {
+            let child = unsafe { &*(child_ptr as *const NSView) };
+            configure_surface_resize(child);
+        }
         host.setFrameOrigin(NSPoint::new(
             pane_frame.origin.x + local.origin.x,
             pane_frame.origin.y + local.origin.y,
