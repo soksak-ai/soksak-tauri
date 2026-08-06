@@ -41,6 +41,8 @@
 `ui.measure.value`로 읽는다. IME·wheel·full-capture도 각각 사건 원장과 명시 view/path 영수증을
 그대로 mapper에 전달한다. 공개 응답에 필드가 없으면 mapper는 `null`을 보존해 RED로 판정하며,
 요청값이나 PNG 픽셀에서 값을 만들어 채우지 않는다.
+B03 mapper는 독립 owner 원장, `compositionKind=slot|renderer` 공개 노드, surface 영수증의
+공유 `topologyPath`를 요구한다. 어느 원장도 다른 원장에서 역산하지 않는다.
 
 | ID | 고정 기준 | 기계 판정 근거 |
 |---|---|---|

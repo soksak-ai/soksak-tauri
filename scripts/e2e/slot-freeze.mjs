@@ -54,6 +54,7 @@ import {
   browserTabNodeAddress,
 } from "./lib/browser-ui-addresses.mjs";
 import { mapBrowserSurfaceRects } from "./lib/browser-surface-rects.mjs";
+import { mapB03LiveEvidence } from "./lib/browser-gate-b03-evidence.mjs";
 import {
   mapB01TabEvidence,
   mapB11TabEvidence,
@@ -1058,17 +1059,25 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
     const scale = scaleEvidence.scale;
     await observeFrameSequence([firstPaintPath], `${engine}/first-paint`, scale);
     must(await rpc("capture.calibration", { visible: false }, win), "first paint calibration hide");
+    const initialSurfaceReceipts = await readBrowserSurfaceEvidence(rpc, win, {
+      frameworkName,
+      implementation,
+      plugin,
+      tabIds,
+      labels,
+      uiNodes: tree.nodes ?? [],
+    });
     const b03Receipt = gateReportStore.recordMachineEvidence({
       framework: frameworkName,
       engine,
       gate: "B03",
-      evidence: {
+      evidence: mapB03LiveEvidence({
         engine,
         scaleFactor: Number(originalWindow.scale),
+        visibleViewIds: tabIds,
         uiTree: tree,
-        surfaceLedger: initialSurfaceLedger,
-        paneComposition: initialPaneComposition,
-      },
+        surfaceReceipts: initialSurfaceReceipts,
+      }),
     });
     await gateReportStore.persist();
     console.log(`◉ ${engine}/B03 canonical machine verdict: ${b03Receipt.status}`);

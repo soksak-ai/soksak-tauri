@@ -48,6 +48,8 @@ the discovered public address and `ui.measure.value`. IME, wheel, and full-captu
 feed their event ledgers and explicit view/path receipts directly into mappers. If a public response
 lacks a required field, the mapper preserves `null` and the gate remains RED; it never fills the gap
 from requested values or PNG pixels.
+The B03 mapper requires an independent owner ledger, exposed `compositionKind=slot|renderer`
+nodes, and the surface receipt's shared `topologyPath`; it never derives one ledger from another.
 
 | ID | Fixed rule | Machine evidence |
 |---|---|---|
