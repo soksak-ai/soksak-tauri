@@ -104,7 +104,8 @@ describe("slot-freeze instrumentation lifecycle", () => {
     const lighting = source.split("async function assertFocusLighting")[1]?.split("async function assertRailCompositionContract")[0] ?? "";
     expect(lighting).toContain('props: ["--dim"]');
     expect(lighting).toContain("dataset?.dim");
-    expect(lighting).toContain("1 - dims[index]");
+    expect(lighting).toContain("Math.abs(Number(match.alpha) - 1)");
+    expect(lighting).not.toContain("1 - dims[index]");
     expect(lighting).not.toContain('rpc("window.pixels"');
     expect(source).toContain("lightingAddressForTab");
     expect(source).toContain('item.nodePath === `layout/tab/${tabId}`');

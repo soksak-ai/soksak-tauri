@@ -380,10 +380,9 @@ async function assertFocusLighting(rpc, win, addresses, labels, activeIndex, fra
     for (let index = 0; index < labels.length; index += 1) {
       const match = (composition.matches ?? []).find((candidate) =>
         (candidate.memberMatches ?? []).some((member) => member.label === labels[index]));
-      const expectedAlpha = 1 - dims[index];
       if (!match || !Number.isFinite(Number(match.alpha))
-          || Math.abs(Number(match.alpha) - expectedAlpha) > 0.001) {
-        errors.push(`${labels[index]}:alpha=${match?.alpha}/${expectedAlpha}`);
+          || Math.abs(Number(match.alpha) - 1) > 0.001) {
+        errors.push(`${labels[index]}:adapter-alpha=${match?.alpha}/1`);
       }
     }
   }
