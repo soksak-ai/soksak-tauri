@@ -22,6 +22,7 @@ const SET_OCCLUSION = "plugin:webview-capture|set_occlusion";
 const NO_WINDOW = "FRAMEWORK_NO_WINDOW";
 const BAD_RECT = "FRAMEWORK_BAD_RECT";
 const EMPTY_CAPTURE = "FRAMEWORK_EMPTY_CAPTURE";
+const CAPTURE_QUOTA_EXCEEDED = "FRAMEWORK_CAPTURE_QUOTA_EXCEEDED";
 // Electron 의 capturer 수명을 캡처 Promise 와 묶는다. 캡처 중 page를 visible로 취급하는 기본
 // 동작은 창 포커스/전면화가 아니다. 이 동작을 `stayHidden:true`로 막으면 부모와 별도 compositor
 // surface인 <webview> guest가 PNG에서 검게 빠지고 Viz 전이가 실패할 수 있다. 시스템 sleep만
@@ -94,18 +95,34 @@ module.exports = {
       const dir = String(args?.dir || "");
       const frames = Number(args?.frames);
       const intervalMs = Number(args?.intervalMs ?? 0);
+      const maxBytes = args?.maxBytes;
       if (!dir || !Number.isInteger(frames) || frames < 1 || frames > 600) {
         throw frameworkError("INVALID_PARAMS", "dir 및 frames(1..600) 필수");
       }
       if (!Number.isFinite(intervalMs) || intervalMs < 0) {
         throw frameworkError("INVALID_PARAMS", "intervalMs는 0 이상의 수");
       }
+      if (maxBytes !== undefined && (!Number.isSafeInteger(maxBytes) || maxBytes <= 0)) {
+        throw frameworkError("INVALID_PARAMS", "maxBytes는 생략하거나 양의 safe integer라야 한다");
+      }
       fs.mkdirSync(dir, { recursive: true });
+      let writtenBytes = 0;
       for (let i = 0; i < frames; i += 1) {
         const started = Date.now();
         const png = pngOf(await contents(ctx).capturePage(undefined, BACKGROUND_CAPTURE));
-        fs.writeFileSync(path.join(dir, `f${String(i).padStart(4, "0")}.png`), png);
-        if (i === 0) ctx.stream?.(args?.onReady, 1);
+        if (maxBytes !== undefined && png.length > maxBytes - writtenBytes) {
+          throw frameworkError(
+            CAPTURE_QUOTA_EXCEEDED,
+            `record PNG 누적 용량이 maxBytes를 넘는다: frame=${i} written=${writtenBytes} frameBytes=${png.length} maxBytes=${maxBytes}`,
+          );
+        }
+        const output = path.join(dir, `f${String(i).padStart(4, "0")}.png`);
+        fs.writeFileSync(output, png);
+        writtenBytes += png.length;
+        // 파일 쓰기가 성공하기 전의 stream 사건은 존재하지 않는 프레임을 관측자에게 약속한다.
+        // ready의 기존 payload(1)는 유지하고, 공통 recorder의 onFrame은 저장된 0-based 번호를 받는다.
+        if (i === 0 && args?.onReady !== undefined) ctx.stream?.(args.onReady, 1);
+        if (args?.onFrame !== undefined) ctx.stream?.(args.onFrame, i);
         const rest = intervalMs - (Date.now() - started);
         if (rest > 0 && i + 1 < frames) {
           await new Promise((resolve) => setTimeout(resolve, rest));
