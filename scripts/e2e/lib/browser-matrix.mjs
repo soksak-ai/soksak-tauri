@@ -138,6 +138,77 @@ function finiteB04Rect(value, name) {
 export const b04PresentationPairGapMs = 17;
 
 /**
+ * 클릭 대상은 layout 거래의 이동 owner와 같다는 보장이 없다. B04는 닫힌 공개 장부가
+ * 유일하게 이동했다고 기록한 view를 presentation/DOM 참가자 identity의 정본으로 삼는다.
+ */
+export function resolveB04MovedParticipant({
+  transactions,
+  owners,
+  viewIds,
+  paneAddresses,
+  slotAddresses,
+}) {
+  if (!Array.isArray(transactions) || transactions.length !== 1) {
+    throw new Error(`B04 transactions=${transactions?.length ?? 0}/1`);
+  }
+  const moves = Array.isArray(transactions[0]?.moves) ? transactions[0].moves : [];
+  if (moves.length !== 1) throw new Error(`B04 moved views=${moves.length}/1`);
+  if (!Array.isArray(viewIds)
+      || !Array.isArray(paneAddresses)
+      || !Array.isArray(slotAddresses)
+      || viewIds.length === 0
+      || paneAddresses.length !== viewIds.length
+      || slotAddresses.length !== viewIds.length) {
+    throw new Error(
+      `B04 participant inventory=${viewIds?.length ?? 0}`
+      + `/${paneAddresses?.length ?? 0}/${slotAddresses?.length ?? 0}`,
+    );
+  }
+  const targetViewId = moves[0]?.viewId;
+  const matchingIndexes = viewIds
+    .map((viewId, index) => (viewId === targetViewId ? index : -1))
+    .filter((index) => index >= 0);
+  if (typeof targetViewId !== "string" || !targetViewId || matchingIndexes.length !== 1) {
+    throw new Error(`${String(targetViewId)}: B04 moved view mapping=${matchingIndexes.length}/1`);
+  }
+  const ownerMatches = (Array.isArray(owners) ? owners : [])
+    .filter((owner) => owner?.viewId === targetViewId);
+  if (ownerMatches.length !== 1) {
+    throw new Error(`${targetViewId}: B04 presentation owner=${ownerMatches.length}/1`);
+  }
+  const index = matchingIndexes[0];
+  const paneAddress = paneAddresses[index];
+  const slotAddress = slotAddresses[index];
+  if (typeof paneAddress !== "string" || !paneAddress
+      || typeof slotAddress !== "string" || !slotAddress) {
+    throw new Error(`${targetViewId}: B04 DOM address가 비었습니다`);
+  }
+  return {
+    targetViewId,
+    owner: ownerMatches[0],
+    paneAddress,
+    slotAddress,
+  };
+}
+
+/**
+ * raw layout journal의 optional field 계약은 바꾸지 않는다. 다만 B04 canonical receipt는
+ * snap 거래도 동일한 exact-key schema를 가져야 하므로 누락 epoch를 null로 표현한다.
+ */
+export function normalizeB04JournalEntries(entries) {
+  if (!Array.isArray(entries)) throw new Error("B04 journal entries는 배열이어야 한다");
+  return entries.map((entry, index) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new Error(`B04 journal entry[${index}]가 객체가 아니다`);
+    }
+    return {
+      ...entry,
+      startAtUnixMs: entry.startAtUnixMs ?? null,
+    };
+  });
+}
+
+/**
  * 같은 timer callback에서 직접 읽은 rail/pane/slot raw DOM rect와 actual presentation
  * producer의 renderer/surface frame을 절대시각으로 결합한다. 보간·이동량 투영·픽셀 판정은 없다.
  */
@@ -204,13 +275,22 @@ export function mapB04PresentationSamples({
       throw new Error(`${targetViewId}: DOM pair sequence[${index}]=${domSequence}/${priorDomSequence}`);
     }
     priorDomSequence = domSequence;
-    const nodes = new Map((domSample?.nodes ?? []).map((node) => [node.address, node]));
-    const rail = nodes.get(railAddress);
-    const pane = nodes.get(paneAddress);
-    const slot = nodes.get(slotAddress);
-    if (!rail || !pane || !slot || nodes.size !== 3) {
+    const rawNodes = Array.isArray(domSample?.nodes) ? domSample.nodes : [];
+    const distinctAddresses = new Set(rawNodes.map((node) => node?.address));
+    const requiredNode = (address) => rawNodes.filter((node) => node?.address === address);
+    const railMatches = requiredNode(railAddress);
+    const paneMatches = requiredNode(paneAddress);
+    const slotMatches = requiredNode(slotAddress);
+    if (new Set([railAddress, paneAddress, slotAddress]).size !== 3
+        || distinctAddresses.size !== rawNodes.length
+        || railMatches.length !== 1
+        || paneMatches.length !== 1
+        || slotMatches.length !== 1) {
       throw new Error(`${targetViewId}: raw DOM participant inventory가 1:1이 아니다`);
     }
+    const [rail] = railMatches;
+    const [pane] = paneMatches;
+    const [slot] = slotMatches;
     const railFrame = finiteB04Rect(rail.rect, `${targetViewId}:rail[${index}]`);
     const paneFrame = finiteB04Rect(pane.rect, `${targetViewId}:pane[${index}]`);
     const slotFrame = finiteB04Rect(slot.rect, `${targetViewId}:slot[${index}]`);
