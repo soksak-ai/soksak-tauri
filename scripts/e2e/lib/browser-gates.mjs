@@ -5,6 +5,7 @@ import {
 } from "../../../packages/dom-webview-compositor/src/index.ts";
 import { layoutTransactionVerdict } from "./layout-transaction-verdict.mjs";
 import { judgeB05MachineEvidence } from "./browser-gate-b05.mjs";
+import { judgeB06MachineEvidence } from "./browser-gate-b06.mjs";
 import {
   BROWSER_ACCEPTANCE_ENGINES,
   BROWSER_ACCEPTANCE_FRAMEWORKS,
@@ -28,6 +29,7 @@ export {
   BROWSER_ACCEPTANCE_PLATFORMS,
 };
 export { judgeB05MachineEvidence };
+export { judgeB06MachineEvidence };
 
 export const MACHINE_GATE_STATUSES = Object.freeze([
   "not-applicable",
@@ -790,6 +792,7 @@ const machineEvidenceJudges = new Map([
   ["B03", { judgeId: "B03-machine-v1", judge: judgeB03MachineEvidence }],
   ["B04", { judgeId: "B04-machine-v1", judge: judgeB04MachineEvidence }],
   ["B05", { judgeId: "B05-machine-v1", judge: judgeB05MachineEvidence }],
+  ["B06", { judgeId: "B06-machine-v1", judge: judgeB06MachineEvidence }],
   ["B11", { judgeId: "B11-machine-v1", judge: judgeB11MachineEvidence }],
 ]);
 

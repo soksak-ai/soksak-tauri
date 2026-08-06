@@ -294,6 +294,20 @@
       "note": "B05의 gap·교체·미표시·미정착 RED와 세 engine receipt GREEN을 값으로 고정한다."
     },
     {
+      "file": "lib/browser-gate-b06.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "픽셀 밝기 대신 공개 style dim과 presentation alpha로 pane 포커스 조명 및 rail·sidebar 면제를 판정하는 B06 순수 judge다."
+    },
+    {
+      "file": "lib/browser-gate-b06.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "B06의 active·inactive·면제·양방향 owner coverage RED와 세 engine GREEN을 값으로 고정한다."
+    },
+    {
       "file": "lib/browser-machine-judge-support.mjs",
       "role": "lib",
       "class": "A",
