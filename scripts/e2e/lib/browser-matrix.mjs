@@ -705,22 +705,85 @@ export function unwrapEvalValue(result) {
     : result;
 }
 
-/** 브라우저 구현 공통 resize 판정. DOM 슬롯과 페이지 viewport는 rounding 외 차이가 없어야 하고,
- * fixed-size marker는 캡처 픽셀에서도 같은 크기여야 한다(옛 프레임 확대/압축 금지). */
-export function viewportAlignment({ slot, viewport, marker, markerPixels, scale }) {
+/**
+ * 브라우저 구현 공통 resize 기계 판정.
+ *
+ * 공개 DOM 슬롯과 페이지가 스스로 보고한 viewport/CSS marker만 비교한다. PNG는 사람이 보는
+ * visual evidence이고 이 판정의 입력이 아니다. 슬롯↔viewport는 좌표계 반올림 1px만, fixture의
+ * fixed CSS marker는 선언값 그대로여야 한다.
+ */
+export function viewportGeometryVerdict({ slot, viewport, marker }) {
   const errors = [];
   for (const key of ["w", "h"]) {
-    if (Math.abs(Number(slot[key]) - Number(viewport[key])) > 1) {
+    const slotValue = Number(slot?.[key]);
+    const viewportValue = Number(viewport?.[key]);
+    if (!Number.isFinite(slotValue) || !Number.isFinite(viewportValue)) {
+      errors.push(`viewport.${key}=${viewport?.[key]}/slot.${key}=${slot?.[key]}`);
+    } else if (Math.abs(slotValue - viewportValue) > 1) {
       errors.push(`viewport.${key}=${viewport[key]}/slot.${key}=${slot[key]}`);
     }
   }
+  for (const key of ["width", "height"]) {
+    const actual = Number(marker?.[key]);
+    const expected = Number(fixtureMarkerSize[key]);
+    if (!Number.isFinite(actual) || Math.abs(actual - expected) > 0.01) {
+      errors.push(`marker.${key}=${marker?.[key]}/${expected}`);
+    }
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+/** PNG marker 크기는 개발자가 보는 진단값이다. machine gate에 넣지 않는다. */
+export function viewportPixelDiagnostic({ markerPixels, marker = fixtureMarkerSize, scale }) {
+  const errors = [];
   const expectedWidth = Number(marker.width) * Number(scale);
   const expectedHeight = Number(marker.height) * Number(scale);
-  if (Math.abs(Number(markerPixels.width) - expectedWidth) > 4) {
-    errors.push(`marker.width=${markerPixels.width}/${expectedWidth}`);
+  if (!Number.isFinite(Number(markerPixels?.width))
+      || Math.abs(Number(markerPixels.width) - expectedWidth) > 4) {
+    errors.push(`marker.width=${markerPixels?.width}/${expectedWidth}`);
   }
-  if (Math.abs(Number(markerPixels.height) - expectedHeight) > 4) {
-    errors.push(`marker.height=${markerPixels.height}/${expectedHeight}`);
+  if (!Number.isFinite(Number(markerPixels?.height))
+      || Math.abs(Number(markerPixels.height) - expectedHeight) > 4) {
+    errors.push(`marker.height=${markerPixels?.height}/${expectedHeight}`);
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+/**
+ * explicit-view full capture의 기계 판정. 파일 내용의 픽셀은 여기서 읽지 않는다.
+ */
+export function fullCaptureReceiptVerdict({
+  requestedViewId,
+  outputPath,
+  fileBytes,
+  before,
+  after,
+  result,
+}) {
+  const errors = [];
+  if (result?.viewId !== requestedViewId) errors.push(`viewId=${result?.viewId}/${requestedViewId}`);
+  if (result?.path !== outputPath) errors.push(`path=${result?.path}/${outputPath}`);
+  const receiptBytes = Number(result?.bytes);
+  if (!Number.isSafeInteger(receiptBytes) || receiptBytes <= 0 || receiptBytes !== Number(fileBytes)) {
+    errors.push(`bytes=${result?.bytes}/${fileBytes}`);
+  }
+  const compare = (name, actual, expected, tolerance = 0) => {
+    const a = Number(actual);
+    const e = Number(expected);
+    if (!Number.isFinite(a) || !Number.isFinite(e) || Math.abs(a - e) > tolerance) {
+      errors.push(`${name}=${actual}/${expected}`);
+    }
+  };
+  compare("width", result?.width, before?.document?.w, 1);
+  compare("height", result?.height, before?.document?.h, 1);
+  compare("scroll", after?.y, before?.y);
+  for (const key of ["w", "h"]) {
+    compare(`viewport.${key}`, after?.viewport?.[key], before?.viewport?.[key], 1);
+    compare(`document.${key}`, after?.document?.[key], before?.document?.[key], 1);
+  }
+  if (Number(before?.y) !== 0) errors.push(`before.scroll=${before?.y}/0`);
+  if (!(Number(before?.document?.h) > Number(before?.viewport?.h) + 960)) {
+    errors.push(`document.scrollable=${before?.document?.h}/${before?.viewport?.h}`);
   }
   return { ok: errors.length === 0, errors };
 }

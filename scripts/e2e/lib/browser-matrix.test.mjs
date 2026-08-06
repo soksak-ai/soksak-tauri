@@ -25,7 +25,8 @@ import {
   hostileWindowResizeSizes,
   summarizeFrameSequence,
   unwrapEvalValue,
-  viewportAlignment,
+  fullCaptureReceiptVerdict,
+  viewportGeometryVerdict,
   transitionFrameAlignment,
   completeCalibrationComponents,
   calibrationFrameScale,
@@ -349,21 +350,59 @@ describe("공통 브라우저 fixture", () => {
     expect(snapshotCssScale(retinaPng, { w: 1600, h: 1200, scale: 2 })).toBe(2);
   });
 
-  it("DOM viewport와 fixed marker가 슬롯·캡처에 rounding-only로 착지해야 한다", () => {
-    expect(viewportAlignment({
+  it("DOM viewport와 CSS fixed marker를 PNG와 무관한 수치로 판정한다", () => {
+    expect(viewportGeometryVerdict({
       slot: { w: 608, h: 262 },
       viewport: { w: 608, h: 262 },
       marker: fixtureMarkerSize,
-      markerPixels: { width: 128, height: 80 },
-      scale: 2,
     })).toEqual({ ok: true, errors: [] });
-    expect(viewportAlignment({
+    expect(viewportGeometryVerdict({
       slot: { w: 900, h: 400 },
       viewport: { w: 608, h: 262 },
-      marker: fixtureMarkerSize,
-      markerPixels: { width: 474, height: 122 },
-      scale: 2,
+      marker: { width: 63, height: 40 },
     }).ok).toBe(false);
+    // PNG pixel 정보는 이 판정의 입력이 아니다. 사람이 보는 visual report에서만 다룬다.
+    expect(viewportGeometryVerdict({
+      slot: { w: 608, h: 262 },
+      viewport: { w: 608, h: 262 },
+      marker: fixtureMarkerSize,
+      markerPixels: { width: 1, height: 1 },
+      scale: 99,
+    })).toEqual({ ok: true, errors: [] });
+  });
+
+  it("full capture는 명시 view·영수증·문서 수치·scroll 보존만 기계 판정한다", () => {
+    const input = {
+      requestedViewId: "tab-left",
+      outputPath: "/evidence/full.png",
+      fileBytes: 4096,
+      before: {
+        y: 0,
+        viewport: { w: 608, h: 262 },
+        document: { w: 608, h: 2140 },
+      },
+      after: {
+        y: 0,
+        viewport: { w: 608, h: 262 },
+        document: { w: 608, h: 2140 },
+      },
+      result: {
+        viewId: "tab-left",
+        path: "/evidence/full.png",
+        bytes: 4096,
+        width: 608,
+        height: 2140,
+      },
+    };
+    expect(fullCaptureReceiptVerdict(input)).toEqual({ ok: true, errors: [] });
+    expect(fullCaptureReceiptVerdict({
+      ...input,
+      result: { ...input.result, viewId: "tab-right" },
+      after: { ...input.after, y: 480 },
+    })).toMatchObject({
+      ok: false,
+      errors: expect.arrayContaining(["viewId=tab-right/tab-left", "scroll=480/0"]),
+    });
   });
 
   it("창 합성 epoch의 전역 배율과 브라우저 고유 stretch를 구분한다", () => {

@@ -15,34 +15,26 @@ import process from "node:process";
 import { openClient, requireSocket, must } from "./lib/client.mjs";
 import { acquireFixtureWindow, releaseFixtureWindow } from "./lib/fixtureWindow.mjs";
 import { closeHtmlFixture, startHtmlFixture } from "./lib/http-fixture.mjs";
-import { decodePng } from "./lib/png.mjs";
 import { tauriSurfaceResizePolicyVerdict } from "./lib/tauri-surface-resize-policy.mjs";
+import {
+  observeFrameSequence as inspectFrameSequence,
+  observeFullCapture as inspectFullCapture,
+  snapshotScaleForVisualEvidence,
+} from "./lib/browser-visual-evidence.mjs";
 import {
   browserImplementations,
   browserSurfaceInvariant,
   fixtureHtml,
-  fixtureInputMarkers,
-  fixtureInputMarkerSize,
   fixtureMotionMarkers,
-  compositorCalibrationMarker,
-  fixtureMarkerSize,
-  fixtureMarkerRowVerdict,
   rendererTopologyOwnershipVerdict,
   fixtureMarkers,
+  fullCaptureReceiptVerdict,
   hostileWindowResizeSizes,
-  markerEvidence,
-  motionMarkerAlignment,
   numericCompositionTraceVerdict,
   layoutTransactionVerdict,
   parseBrowserEngines,
-  snapshotCssScale,
-  selectFixtureMarkerComponent,
   unwrapEvalValue,
-  viewportAlignment,
-  transitionFrameAlignment,
-  completeCalibrationComponents,
-  calibrationFrameScale,
-  summarizeFrameSequence,
+  viewportGeometryVerdict,
 } from "./lib/browser-matrix.mjs";
 
 const SOCKET = requireSocket();
@@ -69,11 +61,6 @@ const CYCLES = (() => {
 const FRAMES_PER_CLICK = 48;
 const PIN_FRAMES_PER_CLICK = 24;
 const FAST_RESIZE_FRAMES = 64;
-const MARKER_SAMPLE_STEP = 2;
-// 장식의 동색 픽셀 합계가 아니라 넓고 이어진 fixture 직사각형 하나를 요구한다.
-const MIN_MARKER_WIDTH = 100;
-const MIN_MARKER_HEIGHT = 16;
-const MIN_MARKER_COMPONENT = 200;
 const IME_TEXTS = ["한글 입력 왼쪽", "한글 입력 오른쪽"];
 const CHROME_MARKERS = Object.freeze({
   railAdd: "#ff0000",
@@ -88,6 +75,23 @@ function prepareEvidence() {
   if (!(`${resolved}${path.sep}`).startsWith(boundary)) throw new Error(`증거 경로 경계 위반: ${resolved}`);
   fs.rmSync(resolved, { recursive: true, force: true });
   fs.mkdirSync(resolved, { recursive: true });
+}
+
+function writeVisualReport(file, report) {
+  try {
+    fs.writeFileSync(file, `${JSON.stringify(report, null, 2)}\n`);
+  } catch (error) {
+    console.error(`시각 진단 보고서 저장 실패(기계 판정과 분리): ${error instanceof Error ? error.message : String(error)}`);
+  }
+  return report;
+}
+
+function observeFrameSequence(files, name, scale, options = {}) {
+  const report = inspectFrameSequence(files, name, scale, options);
+  if (files.length === 1) writeVisualReport(`${files[0]}.visual.json`, report);
+  else if (files[0]) writeVisualReport(path.join(path.dirname(files[0]), "visual-diagnostics.json"), report);
+  console.log(`◉ ${name}: ${files.length}장 human visual evidence 저장(자동 판정 안 함)`);
+  return report;
 }
 
 const addressForTab = (tree, tabId) => {
@@ -226,80 +230,6 @@ async function assertEngineSurfaceLedger(rpc, win, implementation, tabIds, stage
   return verdict;
 }
 
-function assertFrameMarkers(file, name, scale, {
-  requireInput = true,
-  compareDomEpoch = false,
-  slots = [0, 1],
-} = {}) {
-  const bytes = fs.readFileSync(file);
-  const domEvidence = compareDomEpoch
-    ? completeCalibrationComponents(markerEvidence(bytes, compositorCalibrationMarker, 24, MARKER_SAMPLE_STEP)
-      .components.filter((component) => component.count >= MIN_MARKER_COMPONENT && component.width >= 40 && component.height >= MIN_MARKER_HEIGHT))
-    : null;
-  if (compareDomEpoch && !domEvidence.length) {
-    throw new Error(`${name}: DOM compositor calibration 소실(${JSON.stringify(domEvidence)})`);
-  }
-  const frameScale = compareDomEpoch
-    ? calibrationFrameScale(domEvidence) ?? scale
-    : scale;
-  const kinds = [["page", fixtureMarkers]];
-  if (requireInput) kinds.push(["input", fixtureInputMarkers]);
-  for (const [kind, markers] of kinds) {
-    for (const slot of slots) {
-      const expectedWidth = (kind === "input" ? fixtureInputMarkerSize.minWidth : fixtureMarkerSize.width) * frameScale;
-      const expectedHeight = (kind === "input" ? fixtureInputMarkerSize.height : fixtureMarkerSize.height) * frameScale;
-      const raw = markerEvidence(bytes, markers[slot], 24, MARKER_SAMPLE_STEP);
-      const selected = selectFixtureMarkerComponent(raw.components, {
-        expectedWidth,
-        expectedHeight,
-        minWidth: kind === "input",
-        tolerance: 4,
-        minCount: MIN_MARKER_COMPONENT,
-      });
-      if (!selected) {
-        throw new Error(`${name}: slot ${slot} ${kind} marker 소실(${JSON.stringify(raw.largest)})`);
-      }
-      const evidence = { ...selected, width: selected.bodyWidth, height: selected.bodyHeight };
-      if (kind === "page" && compareDomEpoch) {
-        const aligned = transitionFrameAlignment({ browser: evidence, dom: domEvidence });
-        if (!aligned.ok) throw new Error(`${name}: compositor epoch 불일치 — ${aligned.errors.join(", ")}`);
-      } else if (kind === "page" && scale) {
-        const aligned = viewportAlignment({
-          slot: { w: 1, h: 1 }, viewport: { w: 1, h: 1 },
-          marker: fixtureMarkerSize, markerPixels: evidence, scale,
-        });
-        if (!aligned.ok) throw new Error(`${name}: slot ${slot} stale-frame stretch — ${aligned.errors.join(", ")}`);
-      }
-    }
-  }
-}
-
-function assertFrameMotion(file, name, scale) {
-  const bytes = fs.readFileSync(file);
-  for (let slot = 0; slot < fixtureMotionMarkers.length; slot += 1) {
-    const verdict = motionMarkerAlignment(bytes, fixtureMotionMarkers[slot], scale);
-    if (!verdict.ok) {
-      throw new Error(`${name}: slot ${slot} DOM/surface 궤적 불일치 — ${verdict.errors.join(", ")}`);
-    }
-    const expected = 12 * scale;
-    const motion = markerEvidence(bytes, fixtureMotionMarkers[slot], 16, 1).components.filter((component) =>
-      Math.abs(component.width - expected) <= 4 && Math.abs(component.height - expected) <= 4);
-    const renderer = markerEvidence(bytes, PRESENTATION_MARKERS[slot], 16, 1).components.filter((component) =>
-      Math.abs(component.width - expected) <= 4 && Math.abs(component.height - expected) <= 4);
-    if (renderer.length !== 1) {
-      throw new Error(`${name}: slot ${slot} plugin renderer 기준자 ${renderer.length}/1`);
-    }
-    // renderer probe는 toolbar controls와 겹치지 않도록 local x=16에 둔다. pane 원점 비교로 환산한다.
-    const rendererX = renderer[0].x - 16 * scale;
-    const split = motion.filter((component) => Math.abs(component.x - rendererX) > 4);
-    if (split.length) {
-      throw new Error(
-        `${name}: slot ${slot} projection/renderer/page 삼자 불일치 — renderer-x=${rendererX} motion-x=${motion.map((item) => item.x).join("/")}`,
-      );
-    }
-  }
-}
-
 async function installPanePresentationMarkers(rpc, win, labels) {
   const exposed = must(await rpc("webview.pane.hosts", {}, win), "pane presentation hosts");
   for (let index = 0; index < labels.length; index += 1) {
@@ -315,74 +245,12 @@ async function installPanePresentationMarkers(rpc, win, labels) {
   }
 }
 
-function assertChromeAnchor(file, name, color, scale) {
-  const expected = 12 * scale;
-  const components = markerEvidence(fs.readFileSync(file), color, 16, 1).components.filter((component) =>
-    Math.abs(component.width - expected) <= 4 && Math.abs(component.height - expected) <= 4);
-  if (!components.length) throw new Error(`${name}: chrome anchor ${color} 소실`);
-}
-
-function assertChromeAnchorWithin(file, name, color, scale, point) {
-  const expected = 12 * scale;
-  const expectedX = point.x * scale;
-  const expectedY = point.y * scale;
-  const components = markerEvidence(fs.readFileSync(file), color, 16, 1).components.filter((component) =>
-    Math.abs(component.width - expected) <= 4
-    && Math.abs(component.height - expected) <= 4
-    && Math.abs(component.x - expectedX) <= 4
-    && Math.abs(component.y - expectedY) <= 4);
-  if (!components.length) {
-    throw new Error(`${name}: DOM overlay anchor ${color}가 native surface 위에서 소실`);
-  }
-}
-
 async function assertCaptureInstrumentationCleared(rpc, win) {
   const anchors = must(await rpc("capture.motion-anchors", { anchors: [] }, win), "capture anchors cleanup");
   const calibration = must(await rpc("capture.calibration", { visible: false }, win), "capture calibration cleanup");
   if (anchors.count !== 0 || anchors.visible || calibration.visible) {
     throw new Error(`capture instrumentation 잔류: ${JSON.stringify({ anchors, calibration })}`);
   }
-}
-
-/**
- * 녹화는 사람이 보는 개발 증거다. 프레임을 분석해 진단 JSON을 남기지만, 이 결과로
- * E2E를 GREEN/RED 판정하지 않는다. 발견한 결함은 별도 공개 좌표/거래 불변식으로 옮겨야 한다.
- */
-function observeFrameSequence(files, name, scale, options = {}) {
-  const observations = files.map((file) => {
-    const errors = [];
-    try { assertFrameMarkers(file, path.join(name, path.basename(file)), scale, options); }
-    catch (error) { errors.push(error instanceof Error ? error.message : String(error)); }
-    let motionDx = 0;
-    if (options.motion) {
-      try { assertFrameMotion(file, path.join(name, path.basename(file)), scale); }
-      catch (error) { errors.push(error instanceof Error ? error.message : String(error)); }
-      const bytes = fs.readFileSync(file);
-      for (const color of fixtureMotionMarkers) {
-        const verdict = motionMarkerAlignment(bytes, color, scale);
-        if (Number.isFinite(verdict.dx)) motionDx = Math.max(motionDx, verdict.dx);
-      }
-    }
-    const bytes = fs.readFileSync(file);
-    const frameScale = options.compareDomEpoch
-      ? calibrationFrameScale(markerEvidence(bytes, compositorCalibrationMarker, 24, MARKER_SAMPLE_STEP).components) ?? scale
-      : scale;
-    for (const chrome of options.chromeAnchors ?? []) {
-      try { assertChromeAnchor(file, path.join(name, path.basename(file)), chrome, frameScale); }
-      catch (error) { errors.push(error instanceof Error ? error.message : String(error)); }
-    }
-    return { frame: path.basename(file), errors, motionDx };
-  });
-  const verdict = summarizeFrameSequence(observations);
-  const report = { kind: "human-visual-evidence", automatedVerdict: false, name, ...verdict };
-  if (files[0]) {
-    fs.writeFileSync(
-      path.join(path.dirname(files[0]), "visual-diagnostics.json"),
-      `${JSON.stringify(report, null, 2)}\n`,
-    );
-  }
-  console.log(`◉ ${name}: 녹화 ${files.length}장 시각 증거 저장(자동 판정 안 함)`);
-  return verdict;
 }
 
 const nodeAddress = (tree, nodePath) => {
@@ -522,14 +390,11 @@ async function assertChromeOverlayContract(rpc, win, engineEvidence, scale) {
   }, null, 2)}\n`);
   const before = path.join(engineEvidence, "chrome-overlay.png");
   must(await rpc("window.snapshot", { path: before }, win), "chrome overlay snapshot");
-  assertChromeAnchor(before, `${path.basename(engineEvidence)}/chrome-overlay`, CHROME_MARKERS.railAdd, scale);
-  assertChromeAnchorWithin(
-    before,
-    `${path.basename(engineEvidence)}/chrome-overlay`,
-    CHROME_MARKERS.rightSidebar,
-    scale,
-    sidebarProbePoint,
-  );
+  observeFrameSequence([before], `${path.basename(engineEvidence)}/chrome-overlay`, scale, {
+    requireFixture: false,
+    chromeAnchors: [CHROME_MARKERS.railAdd],
+    pointAnchors: [{ color: CHROME_MARKERS.rightSidebar, point: sidebarProbePoint }],
+  });
 
   must(await rpc("ui.input.click", { address: railAdd }, win), "rail add click");
   const modalTree = must(await rpc("ui.tree", { rects: true }, win), "project modal ui.tree");
@@ -589,13 +454,10 @@ async function assertChromeOverlayContract(rpc, win, engineEvidence, scale) {
   }, null, 2)}\n`);
   const modalPath = path.join(engineEvidence, "chrome-project-modal.png");
   must(await rpc("window.snapshot", { path: modalPath }, win), "project modal snapshot");
-  assertChromeAnchorWithin(
-    modalPath,
-    `${path.basename(engineEvidence)}/chrome-project-modal`,
-    CHROME_MARKERS.modalOverlayProbe,
-    scale,
-    probePoint,
-  );
+  observeFrameSequence([modalPath], `${path.basename(engineEvidence)}/chrome-project-modal`, scale, {
+    requireFixture: false,
+    pointAnchors: [{ color: CHROME_MARKERS.modalOverlayProbe, point: probePoint }],
+  });
   must(await rpc("ui.input.click", { address: close }, win), "project modal close");
   must(await rpc("project.rightbar.toggle", { open: false }, win), "right sidebar close");
   must(
@@ -605,23 +467,8 @@ async function assertChromeOverlayContract(rpc, win, engineEvidence, scale) {
   return { railAdd, rightSidebar, modalPath };
 }
 
-function assertSentinelMarkers(file, name, scale) {
-  const bytes = fs.readFileSync(file);
-  for (const [kind, marker] of [["page", fixtureMarkers[0]], ["input", fixtureInputMarkers[0]]]) {
-    const evidence = markerEvidence(bytes, marker, 24, MARKER_SAMPLE_STEP).largest;
-    const expectedWidth = (kind === "input" ? fixtureInputMarkerSize.minWidth : fixtureMarkerSize.width) * scale;
-    const expectedHeight = (kind === "input" ? fixtureInputMarkerSize.height : fixtureMarkerSize.height) * scale;
-    if (evidence.count < MIN_MARKER_COMPONENT
-        || evidence.width < expectedWidth - 4
-        || evidence.height < expectedHeight - 4) {
-      throw new Error(`${name}: sentinel ${kind} marker 소실(${JSON.stringify(evidence)})`);
-    }
-  }
-}
-
 async function assertViewportComposition(rpc, win, plugin, tabIds, addresses, scale, file, name) {
   must(await rpc("window.snapshot", { path: file }, win), `${name} snapshot`);
-  const bytes = fs.readFileSync(file);
   const errors = [];
   for (let index = 0; index < tabIds.length; index += 1) {
     const measured = must(await rpc("ui.measure", { address: addresses[index] }, win), `${name} slot ${index}`);
@@ -630,22 +477,15 @@ async function assertViewportComposition(rpc, win, plugin, tabIds, addresses, sc
       js: "const r=document.querySelector('#marker')?.getBoundingClientRect(); return { viewport:{w:innerWidth,h:innerHeight}, marker:r&&{width:r.width,height:r.height} };",
     }, win), `${name} viewport ${index}`);
     const page = unwrapEvalValue(result);
-    const rawMarkerPixels = markerEvidence(bytes, fixtureMarkers[index], 24, MARKER_SAMPLE_STEP).largest;
-    const markerPixels = {
-      ...rawMarkerPixels,
-      width: rawMarkerPixels.bodyWidth,
-      height: rawMarkerPixels.bodyHeight,
-    };
-    const verdict = viewportAlignment({
+    const verdict = viewportGeometryVerdict({
       slot: measured.rect,
       viewport: page?.viewport ?? {},
       marker: page?.marker ?? {},
-      markerPixels,
-      scale,
     });
     if (!verdict.ok) errors.push(`${tabIds[index]}:${verdict.errors.join("|")}`);
   }
   if (errors.length) throw new Error(`${name}: resize composition 불일치 — ${errors.join(", ")}`);
+  observeFrameSequence([file], name, scale);
 }
 
 async function verifyIme(rpc, win, plugin, tabId, text) {
@@ -704,7 +544,7 @@ async function verifyScrollInput(rpc, win, plugin, tabId, evidencePath) {
   }
   const after = await readScroll("after");
   const afterY = Number(after?.y);
-  if (afterY < 479 || afterY > 481) {
+  if (afterY !== 480) {
     throw new Error(`${tabId}: 실제 wheel 전진량 불일치 ${JSON.stringify({ before, afterY })}`);
   }
   must(await rpc("window.snapshot", { tab: tabId, path: evidencePath }, win), `scroll snapshot ${tabId}`);
@@ -726,27 +566,42 @@ async function verifyScrollInput(rpc, win, plugin, tabId, evidencePath) {
 }
 
 async function verifyFullCapture(rpc, win, plugin, tabId, outputPath, identityMarker) {
+  const readDocument = async (stage) => {
+    const value = must(await rpc(`plugin.${plugin}.eval`, {
+      viewId: tabId,
+      js: "return { y:scrollY, viewport:{w:innerWidth,h:innerHeight}, document:{w:Math.max(innerWidth,document.documentElement.scrollWidth),h:Math.max(innerHeight,document.documentElement.scrollHeight)} };",
+    }, win), `${stage} full capture document ${tabId}`);
+    return unwrapEvalValue(value);
+  };
+  const before = await readDocument("before");
   const result = must(await rpc(`plugin.${plugin}.capture.full`, {
     viewId: tabId, path: outputPath,
   }, win, { timeoutMs: 40_000 }), `capture.full ${tabId}`);
-  if (!fs.existsSync(outputPath) || Number(result.bytes) !== fs.statSync(outputPath).size) {
-    throw new Error(`${tabId}: full capture 파일/바이트 불일치 ${JSON.stringify(result)}`);
-  }
-  const bytes = fs.readFileSync(outputPath);
-  const image = decodePng(bytes);
-  const width = Number(result.width);
-  const height = Number(result.height);
-  const xScale = image.w / width;
-  const yScale = image.h / height;
-  const tail = markerEvidence(bytes, "#ff8000", 24, 2).components
-    .find((component) => component.width >= 100 && component.height >= 40 && component.y >= image.h * 0.75);
-  const identity = fixtureMarkerRowVerdict(markerEvidence(bytes, identityMarker, 24, 1).components, {
-    scale: (xScale + yScale) / 2,
+  const fileBytes = fs.existsSync(outputPath) ? fs.statSync(outputPath).size : 0;
+  const after = await readDocument("after");
+  const verdict = fullCaptureReceiptVerdict({
+    requestedViewId: tabId,
+    outputPath,
+    fileBytes,
+    before,
+    after,
+    result,
   });
-  if (!(height > 1400 && image.h > image.w && Math.abs(xScale - yScale) <= 0.03 && tail && identity.ok)) {
-    throw new Error(`${tabId}: full capture 문서 기하/단일성 불일치 ${JSON.stringify({ result, image: { w: image.w, h: image.h }, xScale, yScale, identity })}`);
+  if (!verdict.ok) {
+    throw new Error(`${tabId}: full capture 명시 view/영수증/문서 상태 불일치 — ${verdict.errors.join(", ")}`);
   }
-  return { path: outputPath, bytes: result.bytes, width, height, pngWidth: image.w, pngHeight: image.h };
+  const visual = inspectFullCapture(outputPath, `${tabId}/full`, { identityMarker, receipt: result });
+  writeVisualReport(`${outputPath}.visual.json`, visual);
+  return {
+    path: outputPath,
+    bytes: result.bytes,
+    width: result.width,
+    height: result.height,
+    viewId: result.viewId,
+    before,
+    after,
+    visualReview: "pending",
+  };
 }
 
 async function assertImePersisted(rpc, win, plugin, tabIds, stage) {
@@ -918,8 +773,10 @@ async function runEngine(client, page, engine) {
     must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }), "first paint layout settled");
     const firstPaintPath = path.join(engineEvidence, "first-paint.png");
     must(await rpc("window.snapshot", { path: firstPaintPath }, win), "first paint snapshot");
-    const scale = snapshotCssScale(fs.readFileSync(firstPaintPath), originalWindow);
-    assertFrameMarkers(firstPaintPath, `${engine}/first-paint`, scale);
+    const scaleEvidence = snapshotScaleForVisualEvidence(firstPaintPath, originalWindow);
+    writeVisualReport(`${firstPaintPath}.scale.visual.json`, scaleEvidence);
+    const scale = scaleEvidence.scale;
+    observeFrameSequence([firstPaintPath], `${engine}/first-paint`, scale);
 
     if (sentinelWin && sentinelTabId) {
       must(await rpc(`plugin.${plugin}.gc`, {}, win, { timeoutMs: 20_000 }), "challenger owner-scoped gc");
@@ -936,8 +793,11 @@ async function runEngine(client, page, engine) {
       const sentinelPath = path.join(engineEvidence, "cross-window-sentinel.png");
       must(await rpc("window.snapshot", { path: sentinelPath }, sentinelWin), "cross-window sentinel snapshot");
       const sentinelInfo = must(await rpc("window.info", {}, sentinelWin), "cross-window sentinel info");
-      const sentinelScale = snapshotCssScale(fs.readFileSync(sentinelPath), sentinelInfo);
-      assertSentinelMarkers(sentinelPath, `${engine}/cross-window-sentinel`, sentinelScale);
+      const sentinelScaleEvidence = snapshotScaleForVisualEvidence(sentinelPath, sentinelInfo);
+      writeVisualReport(`${sentinelPath}.scale.visual.json`, sentinelScaleEvidence);
+      observeFrameSequence(
+        [sentinelPath], `${engine}/cross-window-sentinel`, sentinelScaleEvidence.scale, { slots: [0] },
+      );
     }
 
     let frameCount = 0;
@@ -1006,7 +866,11 @@ async function runEngine(client, page, engine) {
           files.map((file) => path.join(dir, file)),
           `${engine}/${name}`,
           scale,
-          { motion: true, chromeAnchors: [CHROME_MARKERS.railAdd] },
+          {
+            motion: true,
+            presentationMarkers: PRESENTATION_MARKERS,
+            chromeAnchors: [CHROME_MARKERS.railAdd],
+          },
         );
         frameCount += files.length;
 
@@ -1167,7 +1031,9 @@ async function runEngine(client, page, engine) {
         });
         const screenshot = path.join(engineEvidence, `${maximizeCase.name}.png`);
         must(await rpc("window.snapshot", { path: screenshot }, win), `${maximizeCase.name} snapshot`);
-        assertFrameMarkers(screenshot, `${engine}/${maximizeCase.name}`, scale, { slots: [maximizeCase.side] });
+        observeFrameSequence(
+          [screenshot], `${engine}/${maximizeCase.name}`, scale, { slots: [maximizeCase.side] },
+        );
         must(await rpc("tab.restore", {}, win), `${maximizeCase.name} restore`);
         must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }), `${maximizeCase.name} restore settled`);
         const restored = must(await rpc("layout.arrangement", {}, win), `${maximizeCase.name} restored arrangement`);
@@ -1190,7 +1056,7 @@ async function runEngine(client, page, engine) {
           `${JSON.stringify(finalComposition, null, 2)}\n`,
         );
       }
-      assertFrameMarkers(finalPath, `${engine}/pin-final`, scale);
+      observeFrameSequence([finalPath], `${engine}/pin-final`, scale);
       await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, "pin-final-ledger");
       console.log(SCENARIOS.has("pin")
         ? `✓ ${engine} PIN GREEN — 좌·우 결합 + 비인접 독립 보더 · 연속 프레임 ${frameCount}장`
@@ -1312,7 +1178,7 @@ async function runEngine(client, page, engine) {
 
     const finalPath = path.join(engineEvidence, "final.png");
     must(await rpc("window.snapshot", { path: finalPath }, win), "final snapshot");
-    assertFrameMarkers(finalPath, `${engine}/final`, scale);
+    observeFrameSequence([finalPath], `${engine}/final`, scale);
     await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, "final-ledger");
     console.log(`✓ ${engine} GREEN — 한글 IME 2개 · 교차 클릭 ${CYCLES * 2}회 · 급격한 창 resize ${fastSizes.length}단계/${fastResize.resizeElapsedMs}ms · 패널 resize 왕복 · 연속 프레임 ${frameCount}장`);
     return frameCount;

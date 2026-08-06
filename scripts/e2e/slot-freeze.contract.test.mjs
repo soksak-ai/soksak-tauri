@@ -11,11 +11,15 @@ describe("slot-freeze instrumentation lifecycle", () => {
 
   it("녹화는 시각 진단을 남기지만 E2E 성공/실패를 판정하지 않는다", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
-    const observer = source.split("function observeFrameSequence")[1]?.split("\n}\n")[0] ?? "";
-    expect(observer).toContain('kind: "human-visual-evidence"');
-    expect(observer).toContain("automatedVerdict: false");
-    expect(observer).not.toContain("throw new Error");
-    expect(source).not.toContain("assertFrameSequence(");
+    const visual = readFileSync(new URL("./lib/browser-visual-evidence.mjs", import.meta.url), "utf8");
+    expect(visual).toContain('kind: "human-visual-evidence"');
+    expect(visual).toContain("automatedVerdict: false");
+    expect(source).toContain("observeFrameSequence");
+    expect(source).not.toContain("decodePng");
+    expect(source).not.toContain("markerEvidence");
+    expect(source).not.toContain("fixtureMarkerRowVerdict");
+    expect(source).not.toContain("assertFrameMarkers");
+    expect(source).not.toContain("assertChromeAnchorWithin");
   });
 
   it("activates pane through exposed tab chrome and verifies the resulting pane state", () => {
@@ -34,9 +38,9 @@ describe("slot-freeze instrumentation lifecycle", () => {
       .toBeLessThan(cleanup.indexOf("releaseFixtureWindow"));
   });
 
-  it("proves modal pixels over a browser surface and verifies instrumentation cleanup", () => {
+  it("모달은 공개 occlusion 수치로 판정하고 픽셀은 별도 visual report로만 남긴다", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
-    expect(source).toContain("assertChromeAnchorWithin");
+    expect(source).toContain("observeFrameSequence");
     expect(source).toContain("modalOverlayProbe");
     expect(source).toContain("assertCaptureInstrumentationCleared");
   });
@@ -121,14 +125,18 @@ describe("slot-freeze instrumentation lifecycle", () => {
 
   it("drives and measures real wheel scrolling for every browser implementation", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    const matrix = readFileSync(new URL("./lib/browser-matrix.mjs", import.meta.url), "utf8");
     expect(source).toContain("verifyScrollInput");
     expect(source).toContain(".input.scroll`");
     expect(source).toContain("afterY");
     expect(source).toContain("restoredY");
     expect(source).toContain("verifyFullCapture");
     expect(source).toContain(".capture.full`");
-    expect(source).toContain("pngHeight");
-    expect(source).toContain("fixtureMarkerRowVerdict");
-    expect(source).toContain("identity.ok");
+    expect(source).toContain("afterY !== 480");
+    expect(source).toContain("fullCaptureReceiptVerdict");
+    expect(source).toContain("result.viewId");
+    expect(matrix).toContain("before?.document");
+    expect(matrix).toContain("after?.document");
+    expect(source).not.toContain("pngHeight");
   });
 });
