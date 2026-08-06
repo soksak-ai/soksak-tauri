@@ -153,6 +153,23 @@ fn registered_native_surfaces_never_scale_cached_layer_pixels() {
 }
 
 #[test]
+fn stale_renderer_resize_ipc_cannot_overwrite_the_current_native_epoch() {
+    let src = std::fs::read_to_string("src/webview/layer.rs").expect("layer source");
+    let pane = src
+        .split_once("pub fn set_pane_surface_host_bounds(")
+        .expect("pane bounds setter").1
+        .split_once("/// 공개 DOM 슬롯")
+        .expect("pane bounds boundary").0;
+    assert!(pane.contains("belongs_to_viewport"), "pane host는 이전 viewport IPC를 거부해야 한다");
+    let member = src
+        .split_once("pub fn set_pane_surface_member_bounds(")
+        .expect("pane member setter").1
+        .split_once("pub fn forget_window")
+        .expect("member bounds boundary").0;
+    assert!(member.contains("belongs_to_host"), "pane member는 이전 host 크기 IPC를 거부해야 한다");
+}
+
+#[test]
 fn prune_window_persistence_removes_only_that_window() {
     let c = rusqlite::Connection::open_in_memory().unwrap();
     c.execute_batch("PRAGMA foreign_keys=ON;").unwrap();

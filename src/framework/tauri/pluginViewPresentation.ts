@@ -300,6 +300,8 @@ async function syncMemberFrame(view: PresentedState, frame: PluginViewSlotFrame)
     w: frame.w,
     h: frame.h,
     layout: {
+      hostW: frame.rootW,
+      hostH: frame.rootH,
       left: frame.x,
       top: frame.y,
       right: Math.max(0, frame.rootW - frame.x - frame.w),

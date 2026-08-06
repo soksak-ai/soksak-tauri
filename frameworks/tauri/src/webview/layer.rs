@@ -102,6 +102,10 @@ impl super::PaneMemberLayoutContract {
             (height - self.top - self.bottom).max(0.0),
         )
     }
+
+    fn belongs_to_host(&self, width: f64, height: f64) -> bool {
+        (self.host_w - width).abs() <= 1.0 && (self.host_h - height).abs() <= 1.0
+    }
 }
 
 #[derive(Clone)]
@@ -588,14 +592,20 @@ pub fn set_pane_surface_host_bounds(
     rect: (f64, f64, f64, f64),
     layout: Option<super::SurfaceLayoutContract>,
 ) -> Result<(), String> {
-    let record = {
-        let mut hosts = PANE_SURFACE_HOSTS.lock().map_err(|_| "pane host 잠금 실패")?;
-        let record = hosts.get_mut(pane).ok_or_else(|| format!("pane surface host가 없습니다: {pane}"))?;
-        if let Some(layout) = layout { record.layout = Some(layout); }
-        record.clone()
-    };
+    let mut record = PANE_SURFACE_HOSTS.lock().map_err(|_| "pane host 잠금 실패")?
+        .get(pane).cloned().ok_or_else(|| format!("pane surface host가 없습니다: {pane}"))?;
     let host = unsafe { &*(record.ptr as *const NSView) };
     let parent = unsafe { host.superview() }.ok_or_else(|| format!("pane host 부모가 없습니다: {pane}"))?;
+    if let Some(ref candidate) = layout {
+        let bounds = parent.bounds();
+        // AppKit resize transaction이 새 viewport를 이미 반영한 뒤 도착한 이전 renderer IPC는
+        // model frame을 과거 크기로 되돌릴 수 없다. 현재 세대가 아니면 no-op ACK한다.
+        if !candidate.belongs_to_viewport(bounds.size.width, bounds.size.height) { return Ok(()); }
+        record.layout = Some(candidate.clone());
+        PANE_SURFACE_HOSTS.lock().map_err(|_| "pane host 잠금 실패")?
+            .get_mut(pane).ok_or_else(|| format!("pane surface host가 없습니다: {pane}"))?
+            .layout = Some(candidate.clone());
+    }
     CATransaction::begin();
     CATransaction::setDisableActions(true);
     let target = css_rect_in_parent(&parent, rect.0, rect.1, rect.2, rect.3);
@@ -756,9 +766,12 @@ mod pane_layout_tests {
     #[test]
     fn keeps_member_insets_while_the_pane_host_resizes() {
         let contract = PaneMemberLayoutContract {
+            host_w: 320.0, host_h: 240.0,
             left: 0.0, top: 56.0, right: 0.0, bottom: 0.0,
         };
         assert_eq!(contract.rect_for_host(320.0, 240.0), (0.0, 56.0, 320.0, 184.0));
+        assert!(contract.belongs_to_host(320.5, 239.5));
+        assert!(!contract.belongs_to_host(400.0, 300.0));
     }
 }
 
@@ -770,16 +783,20 @@ pub fn set_pane_surface_member_bounds(
     rect: (f64, f64, f64, f64),
     layout: Option<super::PaneMemberLayoutContract>,
 ) -> Result<(), String> {
-    let record = {
-        let mut hosts = PANE_SURFACE_HOSTS.lock().map_err(|_| "pane host 잠금 실패")?;
-        let record = hosts.get_mut(pane).ok_or_else(|| format!("pane surface host가 없습니다: {pane}"))?;
-        if let Some(layout) = layout { record.member_layouts.insert(label.to_owned(), layout); }
-        record.clone()
-    };
+    let mut record = PANE_SURFACE_HOSTS.lock().map_err(|_| "pane host 잠금 실패")?
+        .get(pane).cloned().ok_or_else(|| format!("pane surface host가 없습니다: {pane}"))?;
     if !record.members.iter().any(|member| member == label) {
         return Err(format!("pane member가 아닙니다: {pane}/{label}"));
     }
     let host = unsafe { &*(record.ptr as *const NSView) };
+    if let Some(ref candidate) = layout {
+        let bounds = host.bounds();
+        if !candidate.belongs_to_host(bounds.size.width, bounds.size.height) { return Ok(()); }
+        record.member_layouts.insert(label.to_owned(), candidate.clone());
+        PANE_SURFACE_HOSTS.lock().map_err(|_| "pane host 잠금 실패")?
+            .get_mut(pane).ok_or_else(|| format!("pane surface host가 없습니다: {pane}"))?
+            .member_layouts.insert(label.to_owned(), candidate.clone());
+    }
     let surface_ptr = surface_host_ptr(label);
     if surface_ptr == 0 { return Err(format!("pane member host가 없습니다: {label}")); }
     let surface = unsafe { &*(surface_ptr as *const NSView) };

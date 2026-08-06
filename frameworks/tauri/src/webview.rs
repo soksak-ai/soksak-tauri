@@ -48,6 +48,8 @@ pub(crate) struct SurfaceLayoutContract {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct PaneMemberLayoutContract {
+    host_w: f64,
+    host_h: f64,
     left: f64,
     top: f64,
     right: f64,
