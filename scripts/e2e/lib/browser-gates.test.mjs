@@ -13,6 +13,7 @@ import {
   judgeB01MachineEvidence,
   judgeB02MachineEvidence,
   judgeB03MachineEvidence,
+  judgeB04MachineEvidence,
   judgeB11MachineEvidence,
   judgeBrowserMachineGateEvidence,
   machineGateSummary,
@@ -57,7 +58,8 @@ function judgeReceipt(options = {}) {
     : gate === "B01" ? b01Evidence(engine)
       : gate === "B02" ? b02Evidence(engine)
         : gate === "B03" ? b03Evidence(engine)
-          : b11Evidence(engine);
+          : gate === "B04" ? b04Evidence(engine)
+            : b11Evidence(engine);
   return judgeBrowserMachineGateEvidence({
     ...identity,
     engine,
@@ -172,6 +174,70 @@ function b03Evidence(engine = "browser") {
     slots: viewFrames.map(([viewId, frame]) => participant("slot", viewId, frame)),
     renderers: viewFrames.map(([viewId, frame]) => participant("renderer", viewId, frame)),
     surfaces: viewFrames.map(([viewId, frame]) => participant("surface", viewId, frame)),
+  };
+}
+
+function b04Evidence(engine = "browser") {
+  const transition = ({ direction, target, mode, sequence, positions }) => {
+    const transactionId = `${engine}-${direction}-${sequence}`;
+    const sample = (x, index) => {
+      const participant = (id, frame) => ({
+        id,
+        ownerViewId: target,
+        connected: true,
+        frame,
+      });
+      return {
+        transactionId,
+        sequence: index,
+        phase: index === 0 ? "prepared" : index === positions.length - 1 ? "committed" : "presenting",
+        sampledAtUnixMs: 1_000 + sequence * 100 + index * 16,
+        rail: participant("rail-left", { x: x - 100, y: 40, w: 80, h: 520 }),
+        pane: participant(`pane-${target}`, { x, y: 40, w: 320, h: 520 }),
+        slot: participant(`slot-${target}`, { x: x + 8, y: 96, w: 304, h: 456 }),
+        renderer: participant(`renderer-${target}`, { x: x + 8, y: 96, w: 304, h: 456 }),
+        surface: participant(`surface-${target}`, { x: x + 8, y: 96, w: 304, h: 456 }),
+      };
+    };
+    return {
+      direction,
+      targetViewId: target,
+      motionMode: mode,
+      journal: {
+        afterSequence: sequence - 1,
+        entries: [{
+          transactionId,
+          sequence,
+          phase: "committed",
+          mode,
+          startAtUnixMs: mode === "glide" ? 1_000 + sequence * 100 : null,
+          preparedAtUnixMs: 1_000 + sequence * 100,
+          closedAtUnixMs: 1_000 + sequence * 100 + 48,
+          moves: [{ viewId: target, dx: positions[0] - positions.at(-1) }],
+        }],
+      },
+      samples: positions.map(sample),
+    };
+  };
+  return {
+    engine,
+    coordinateSpace: { logical: "css-px", scaleFactor: 2 },
+    transitions: [
+      transition({
+        direction: "to-right",
+        target: `${engine}-right`,
+        mode: "glide",
+        sequence: 4,
+        positions: [100, 260, 420],
+      }),
+      transition({
+        direction: "to-left",
+        target: `${engine}-left`,
+        mode: "snap",
+        sequence: 5,
+        positions: [420, 100],
+      }),
+    ],
   };
 }
 
@@ -297,6 +363,45 @@ describe("브라우저 12-gate 정본", () => {
     expect(judgeB03MachineEvidence(pixelContamination).status).toBe("red");
   });
 
+  it("B04는 FLOW 양방향에서 한 layout 거래와 같은 유한 tick의 rail·pane·surface 원자 이동만 green이다", () => {
+    for (const engine of BROWSER_ACCEPTANCE_ENGINES) {
+      expect(judgeB04MachineEvidence(b04Evidence(engine))).toMatchObject({ status: "green", reason: null });
+    }
+    expect(judgeB04MachineEvidence(null)).toEqual({ status: "not-run", evidence: [], reason: null });
+
+    const missingDirection = b04Evidence();
+    missingDirection.transitions.pop();
+    expect(judgeB04MachineEvidence(missingDirection).status).toBe("red");
+
+    const lateSurface = b04Evidence();
+    lateSurface.transitions[0].samples[1].surface.frame.x -= 160;
+    expect(judgeB04MachineEvidence(lateSurface).status).toBe("red");
+
+    const replacedPane = b04Evidence();
+    replacedPane.transitions[1].samples[1].pane.id = "replacement-pane";
+    expect(judgeB04MachineEvidence(replacedPane).status).toBe("red");
+
+    const duplicateTransaction = b04Evidence();
+    duplicateTransaction.transitions[0].journal.entries.push({
+      ...duplicateTransaction.transitions[0].journal.entries[0],
+      transactionId: "unexpected-second-transaction",
+      sequence: 5,
+    });
+    expect(judgeB04MachineEvidence(duplicateTransaction).status).toBe("red");
+
+    const wrongMove = b04Evidence();
+    wrongMove.transitions[0].journal.entries[0].moves[0].dx += 10;
+    expect(judgeB04MachineEvidence(wrongMove).status).toBe("red");
+
+    const pixelContamination = b04Evidence();
+    pixelContamination.transitions[0].samples[0].framePixels = [0, 0, 0];
+    expect(judgeB04MachineEvidence(pixelContamination).status).toBe("red");
+
+    const malformedParticipant = b04Evidence();
+    malformedParticipant.transitions[0].samples[1].pane = null;
+    expect(judgeB04MachineEvidence(malformedParticipant).status).toBe("red");
+  });
+
   it("B11은 두 탭 모두 exact wheel 왕복과 explicit-view full capture 영수증·전후 페이지 불변성을 증명해야 green이다", () => {
     for (const engine of BROWSER_ACCEPTANCE_ENGINES) {
       expect(judgeB11MachineEvidence(b11Evidence(engine)).status).toBe("green");
@@ -344,6 +449,7 @@ describe("브라우저 12-gate 정본", () => {
     expect(judgeReceipt({ gate: "B02", evidence: { engine: "browser" } }).status).toBe("red");
     expect(judgeReceipt({ gate: "B11" }).status).toBe("green");
     expect(judgeReceipt({ gate: "B03" }).status).toBe("green");
+    expect(judgeReceipt({ gate: "B04" }).status).toBe("green");
 
     const receipt = judgeReceipt({ gate: "B11" });
     let report = setMachineGateStatus(createReport(), {

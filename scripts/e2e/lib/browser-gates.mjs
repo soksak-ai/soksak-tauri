@@ -1,4 +1,9 @@
-import { compositionInventoryVerdict } from "../../../packages/dom-webview-compositor/src/index.ts";
+import {
+  compositionInventoryVerdict,
+  compositionTransactionVerdict,
+  logicalRectToPhysical,
+} from "../../../packages/dom-webview-compositor/src/index.ts";
+import { layoutTransactionVerdict } from "./layout-transaction-verdict.mjs";
 
 export const BROWSER_ACCEPTANCE_FRAMEWORKS = Object.freeze([
   "tauri",
@@ -477,6 +482,245 @@ export function judgeB03MachineEvidence(value) {
   );
 }
 
+const B04_DIRECTIONS = Object.freeze(["to-left", "to-right"]);
+const B04_TRANSITION_KEYS = Object.freeze([
+  "direction",
+  "targetViewId",
+  "motionMode",
+  "journal",
+  "samples",
+]);
+const B04_SAMPLE_KEYS = Object.freeze([
+  "transactionId",
+  "sequence",
+  "phase",
+  "sampledAtUnixMs",
+  "rail",
+  "pane",
+  "slot",
+  "renderer",
+  "surface",
+]);
+const B04_PARTICIPANT_KEYS = Object.freeze([
+  "id",
+  "ownerViewId",
+  "connected",
+  "frame",
+]);
+const B04_JOURNAL_ENTRY_KEYS = Object.freeze([
+  "transactionId",
+  "sequence",
+  "phase",
+  "mode",
+  "startAtUnixMs",
+  "preparedAtUnixMs",
+  "closedAtUnixMs",
+  "moves",
+]);
+
+function inspectFiniteRect(rect, path, failures) {
+  if (!requireExactKeys(rect, RECT_KEYS, path, failures)) return false;
+  let valid = true;
+  for (const key of RECT_KEYS) {
+    if (!Number.isFinite(rect[key]) || ((key === "w" || key === "h") && rect[key] <= 0)) {
+      failures.push(`${path}.${key}=finite${key === "w" || key === "h" ? ">0" : ""}/${displayValue(rect[key])}`);
+      valid = false;
+    }
+  }
+  return valid;
+}
+
+function inspectB04Participant(participant, path, targetViewId, failures) {
+  if (!requireExactKeys(participant, B04_PARTICIPANT_KEYS, path, failures)) return false;
+  let valid = true;
+  if (!hasText(participant.id)) {
+    failures.push(`${path}.id=non-empty/${displayValue(participant.id)}`);
+    valid = false;
+  }
+  if (participant.ownerViewId !== targetViewId) {
+    failures.push(`${path}.ownerViewId=${displayValue(targetViewId)}/${displayValue(participant.ownerViewId)}`);
+    valid = false;
+  }
+  if (participant.connected !== true) {
+    failures.push(`${path}.connected=true/${displayValue(participant.connected)}`);
+    valid = false;
+  }
+  return inspectFiniteRect(participant.frame, `${path}.frame`, failures) && valid;
+}
+
+function b04PhysicalFrame(participant, scaleFactor) {
+  return logicalRectToPhysical(participant.frame, scaleFactor);
+}
+
+function b04RelativeSlotSignature(sample, scaleFactor) {
+  const pane = b04PhysicalFrame(sample.pane, scaleFactor);
+  const slot = b04PhysicalFrame(sample.slot, scaleFactor);
+  return [slot.x - pane.x, slot.y - pane.y, slot.w, slot.h, pane.w, pane.h].join("/");
+}
+
+function distinctB04Frames(samples, participant, scaleFactor) {
+  return new Set(samples.map((sample) => {
+    const frame = b04PhysicalFrame(sample[participant], scaleFactor);
+    return `${frame.x}/${frame.y}/${frame.w}/${frame.h}`;
+  })).size;
+}
+
+function inspectB04Transition(transition, index, coordinateSpace, failures) {
+  const path = `transitions[${index}]`;
+  if (!requireExactKeys(transition, B04_TRANSITION_KEYS, path, failures)) return;
+  if (!B04_DIRECTIONS.includes(transition.direction)) {
+    failures.push(`${path}.direction=known/${displayValue(transition.direction)}`);
+  }
+  if (!hasText(transition.targetViewId)) {
+    failures.push(`${path}.targetViewId=non-empty/${displayValue(transition.targetViewId)}`);
+  }
+  if (transition.motionMode !== "snap" && transition.motionMode !== "glide") {
+    failures.push(`${path}.motionMode=snap|glide/${displayValue(transition.motionMode)}`);
+  }
+
+  let journalVerdict = { ok: false, errors: ["journal=invalid"], transaction: null };
+  if (requireExactKeys(transition.journal, ["afterSequence", "entries"], `${path}.journal`, failures)) {
+    if (!Number.isInteger(transition.journal.afterSequence) || transition.journal.afterSequence < 0) {
+      failures.push(`${path}.journal.afterSequence=integer>=0/${displayValue(transition.journal.afterSequence)}`);
+    }
+    if (!Array.isArray(transition.journal.entries)) {
+      failures.push(`${path}.journal.entries=array/${displayValue(transition.journal.entries)}`);
+    } else {
+      transition.journal.entries.forEach((entry, entryIndex) => {
+        const entryPath = `${path}.journal.entries[${entryIndex}]`;
+        if (!requireExactKeys(entry, B04_JOURNAL_ENTRY_KEYS, entryPath, failures)) return;
+        if (!Array.isArray(entry.moves)) {
+          failures.push(`${entryPath}.moves=array/${displayValue(entry.moves)}`);
+        } else {
+          entry.moves.forEach((move, moveIndex) => {
+            requireExactKeys(move, ["viewId", "dx"], `${entryPath}.moves[${moveIndex}]`, failures);
+          });
+        }
+      });
+    }
+    journalVerdict = layoutTransactionVerdict(transition.journal.entries, {
+      afterSequence: transition.journal.afterSequence,
+      expectedMode: transition.motionMode,
+      candidateViewIds: [transition.targetViewId],
+    });
+    failures.push(...journalVerdict.errors.map((error) => `${path}.journal:${error}`));
+  }
+
+  if (!Array.isArray(transition.samples) || transition.samples.length < 2) {
+    failures.push(`${path}.samples=at-least-2/${displayValue(transition.samples?.length)}`);
+    return;
+  }
+  let traceStructurallyValid = true;
+  transition.samples.forEach((sample, sampleIndex) => {
+    const samplePath = `${path}.samples[${sampleIndex}]`;
+    if (!requireExactKeys(sample, B04_SAMPLE_KEYS, samplePath, failures)) {
+      traceStructurallyValid = false;
+      return;
+    }
+    for (const participant of ["rail", "pane", "slot", "renderer", "surface"]) {
+      if (!inspectB04Participant(
+        sample[participant], `${samplePath}.${participant}`, transition.targetViewId, failures,
+      )) traceStructurallyValid = false;
+    }
+    if (!Number.isInteger(sample.sequence) || sample.sequence !== sampleIndex) {
+      failures.push(`${samplePath}.sequence=${sampleIndex}/${displayValue(sample.sequence)}`);
+    }
+    if (!Number.isFinite(sample.sampledAtUnixMs)) {
+      failures.push(`${samplePath}.sampledAtUnixMs=finite/${displayValue(sample.sampledAtUnixMs)}`);
+    }
+    if (sampleIndex > 0
+        && !(sample.sampledAtUnixMs > transition.samples[sampleIndex - 1]?.sampledAtUnixMs)) {
+      failures.push(`${samplePath}.sampledAtUnixMs=monotonic/${displayValue(sample.sampledAtUnixMs)}`);
+    }
+  });
+  if (!traceStructurallyValid) return;
+
+  const first = transition.samples[0];
+  const last = transition.samples.at(-1);
+  if (first.phase !== "prepared") failures.push(`${path}.samples[0].phase=prepared/${displayValue(first.phase)}`);
+  const journalTransactionId = journalVerdict.transaction?.transactionId;
+  for (const [sampleIndex, sample] of transition.samples.entries()) {
+    if (sample.transactionId !== journalTransactionId) {
+      failures.push(`${path}.samples[${sampleIndex}].transactionId=${displayValue(journalTransactionId)}/${displayValue(sample.transactionId)}`);
+    }
+    for (const participant of ["rail", "pane", "slot", "renderer", "surface"]) {
+      if (sample[participant]?.id !== first[participant]?.id) {
+        failures.push(`${path}.samples[${sampleIndex}].${participant}.id=stable/${displayValue(sample[participant]?.id)}`);
+      }
+    }
+  }
+
+  const scaleFactor = Number(coordinateSpace?.scaleFactor);
+  if (!Number.isFinite(scaleFactor) || scaleFactor <= 0) return;
+  const composition = compositionTransactionVerdict(transition.samples.map((sample) => ({
+    transactionId: sample.transactionId,
+    sequence: sample.sequence,
+    phase: sample.phase,
+    sampledAtUnixMs: sample.sampledAtUnixMs,
+    coordinateSpace,
+    slot: { id: sample.slot.id, frame: sample.slot.frame },
+    renderer: { id: sample.renderer.id, frame: sample.renderer.frame },
+    surface: { id: sample.surface.id, frame: sample.surface.frame },
+  })), { motionMode: transition.motionMode });
+  failures.push(...composition.errors.map((error) => `${path}.composition:${error}`));
+
+  const firstRelative = b04RelativeSlotSignature(first, scaleFactor);
+  transition.samples.forEach((sample, sampleIndex) => {
+    const relative = b04RelativeSlotSignature(sample, scaleFactor);
+    if (relative !== firstRelative) {
+      failures.push(`${path}.samples[${sampleIndex}].pane-slot-relative=${firstRelative}/${relative}`);
+    }
+  });
+  if (transition.motionMode === "snap") {
+    for (const participant of ["rail", "pane"]) {
+      const distinct = distinctB04Frames(transition.samples, participant, scaleFactor);
+      if (distinct > 2) failures.push(`${path}.${participant}.snap-distinct=${distinct}/2`);
+    }
+  }
+  const move = journalVerdict.transaction?.moves?.find(({ viewId }) => viewId === transition.targetViewId);
+  if (move && first?.pane?.frame && last?.pane?.frame) {
+    const observedDx = first.pane.frame.x - last.pane.frame.x;
+    if (Math.abs(Number(move.dx) - observedDx) > 1e-6) {
+      failures.push(`${path}.pane-dx=${displayValue(move.dx)}/${displayValue(observedDx)}`);
+    }
+    if (Math.abs(observedDx) < 0.5) failures.push(`${path}.pane-dx=non-zero/${displayValue(observedDx)}`);
+  }
+}
+
+/** FLOW는 화면 녹화가 아니라 공개 거래 장부와 같은 tick의 유한 DOM/surface trace로 판정한다. */
+export function judgeB04MachineEvidence(value) {
+  if (value == null) return notRunVerdict();
+  const failures = [];
+  if (!requireExactKeys(value, ["engine", "coordinateSpace", "transitions"], "evidence", failures)) {
+    return finishMachineVerdict("B04", failures, "B04:unreachable");
+  }
+  if (!engineSet.has(value.engine)) failures.push(`engine=known/${displayValue(value.engine)}`);
+  if (requireExactKeys(value.coordinateSpace, ["logical", "scaleFactor"], "coordinateSpace", failures)) {
+    if (value.coordinateSpace.logical !== "css-px") {
+      failures.push(`coordinateSpace.logical=css-px/${displayValue(value.coordinateSpace.logical)}`);
+    }
+    if (!Number.isFinite(value.coordinateSpace.scaleFactor) || value.coordinateSpace.scaleFactor <= 0) {
+      failures.push(`coordinateSpace.scaleFactor=finite>0/${displayValue(value.coordinateSpace.scaleFactor)}`);
+    }
+  }
+  if (!Array.isArray(value.transitions) || value.transitions.length < 2) {
+    failures.push(`transitions=at-least-2/${displayValue(value.transitions?.length)}`);
+  } else {
+    value.transitions.forEach((transition, index) => {
+      inspectB04Transition(transition, index, value.coordinateSpace, failures);
+    });
+    const directions = new Set(value.transitions.map((transition) => transition?.direction));
+    for (const direction of B04_DIRECTIONS) {
+      if (!directions.has(direction)) failures.push(`direction=${direction}=missing`);
+    }
+  }
+  return finishMachineVerdict(
+    "B04",
+    failures,
+    `${value.engine}/B04:directions=2;layout-transaction+finite-composition-trace=atomic`,
+  );
+}
+
 const B11_PAGE_KEYS = Object.freeze([
   "scrollX",
   "scrollY",
@@ -609,6 +853,7 @@ const machineEvidenceJudges = new Map([
   ["B01", { judgeId: "B01-machine-v1", judge: judgeB01MachineEvidence }],
   ["B02", { judgeId: "B02-machine-v1", judge: judgeB02MachineEvidence }],
   ["B03", { judgeId: "B03-machine-v1", judge: judgeB03MachineEvidence }],
+  ["B04", { judgeId: "B04-machine-v1", judge: judgeB04MachineEvidence }],
   ["B11", { judgeId: "B11-machine-v1", judge: judgeB11MachineEvidence }],
 ]);
 
