@@ -345,42 +345,42 @@
       "role": "lib",
       "class": "A",
       "surfaces": [],
-      "note": "공개 overlay identity·교차 영역·hit owner로 rail과 + overlay가 browser surface보다 위라는 B08 계약을 값으로 판정한다."
+      "note": "PIN 좌·우 maximize/restore 전후의 rail 방향·station·split tree·pane identity와 배치 완전 복원을 판정하는 B08 순수 judge다."
     },
     {
       "file": "lib/browser-gate-b08.test.mjs",
       "role": "test",
       "class": "A",
       "surfaces": [],
-      "note": "B08의 overlay 누락·교차 실패·잘못된 hit owner RED와 세 engine GREEN을 순수 증거로 고정한다."
+      "note": "B08의 좌·우 case 누락, maximize 방향·station·split·identity drift RED와 세 engine GREEN을 값으로 고정한다."
     },
     {
       "file": "lib/browser-gate-b09.mjs",
       "role": "lib",
       "class": "A",
       "surfaces": [],
-      "note": "주소표시줄·내비게이션·실페이지·IME·스크롤·full capture의 브라우저 제품 계약을 프레임워크 이름 없이 판정한다."
+      "note": "공개 overlay identity·교차 영역·hit owner로 rail +·우측 sidebar·modal이 browser surface보다 위라는 B09 계약을 판정한다."
     },
     {
       "file": "lib/browser-gate-b09.test.mjs",
       "role": "test",
       "class": "A",
       "surfaces": [],
-      "note": "B09 제품 기능의 누락과 부분 성공을 거부하고 세 engine이 같은 공개 계약을 충족해야 GREEN임을 고정한다."
+      "note": "B09의 overlay 누락·비교차·잘못된 hit owner와 실제 surface inventory 누락을 RED로 고정한다."
     },
     {
       "file": "lib/browser-gate-b10.mjs",
       "role": "lib",
       "class": "A",
       "surfaces": [],
-      "note": "캡처와 수치 trace의 1:1 대응·유한성·RED/GREEN 영수증 누적을 판정하고 녹화 픽셀을 machine PASS로 사용하지 않는다."
+      "note": "hostile 전체창 resize 각 phase의 DOM/native 정합·surface generation 연속성·viewport 적용·최종 기하 복원을 판정하는 B10 순수 judge다."
     },
     {
       "file": "lib/browser-gate-b10.test.mjs",
       "role": "test",
       "class": "A",
       "surfaces": [],
-      "note": "B10 증거 누락·프레임 불일치·시각 증거의 machine 판정 오용을 RED로 고정한다."
+      "note": "B10의 phase 누락·좌표 drift·generation 교체·viewport 불일치·복원 실패를 RED로 고정한다."
     },
     {
       "file": "lib/browser-gate-b12.mjs",
