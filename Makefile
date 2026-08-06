@@ -276,7 +276,10 @@ e2e-framework-binding: ## e2e 하니스의 프레임워크 결속 분류(A 프�
 	@node scripts/e2e/framework-binding.mjs $(ARGS)
 
 e2e-slot-freeze-dev: build-dev restart-dev ## 현재 소스로 dev 앱 빌드·재시작→실제 탭 교차 클릭·연속 캡처
-	@SOKSAK_SOCKET="$(DEV_CORED_SOCKET)" node scripts/e2e/slot-freeze.mjs
+	@test -x "$(DEV_EXECUTABLE)" || { echo "빌드된 dev 앱 실행 파일이 없다: $(DEV_EXECUTABLE)"; exit 1; }; \
+		evidence_build_id="$$(shasum -a 256 "$(DEV_EXECUTABLE)" | awk '{print $$1}')"; \
+		test -n "$$evidence_build_id" || { echo "dev 앱 SHA-256을 계산하지 못했다"; exit 1; }; \
+		SOKSAK_SOCKET="$(DEV_CORED_SOCKET)" BROWSER_EVIDENCE_BUILD_ID="$$evidence_build_id" node scripts/e2e/slot-freeze.mjs
 
 e2e-titlebar-dev: build-dev ## 현재 소스를 한 번 빌드하고 냉재시작 3회×모든 창×높이 3종의 B12를 기계 판정·캡처
 	@for cycle in 1 2 3; do \

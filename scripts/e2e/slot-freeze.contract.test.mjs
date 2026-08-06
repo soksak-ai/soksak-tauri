@@ -75,6 +75,14 @@ function ownerGuardedFunctionCalls(source, functionName) {
 }
 
 describe("slot-freeze instrumentation lifecycle", () => {
+  it("the versioned dev entrypoint binds evidence to the built application binary", () => {
+    const makefile = readFileSync(new URL("../../Makefile", import.meta.url), "utf8");
+    const target = makefile.split("e2e-slot-freeze-dev:")[1]?.split("\n\n")[0] ?? "";
+    expect(target).toContain("BROWSER_EVIDENCE_BUILD_ID=");
+    expect(target).toContain("$(DEV_EXECUTABLE)");
+    expect(target).toContain("shasum -a 256");
+  });
+
   it("installs PaneSurfaceHost presentation probes only for pane-owned surfaces", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
     expect(source).toContain('frameworkName === "tauri" && (native || windowed)');
