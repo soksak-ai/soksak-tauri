@@ -9,11 +9,129 @@
 
 use rusqlite::{Connection, OptionalExtension, ToSql};
 use serde_json::{json, Value};
+use std::collections::HashSet;
 
 pub use crate::ids::{gen_id, now_millis, validate_coll, validate_field};
 // KV 는 형제 파일이 진다. 이름은 여기 그대로 둔다 — 부르는 자리가 30곳이고, 그 자리를 옮기는
 // 것은 이 분할과 다른 일이다(한 커밋에 섞으면 무엇이 무엇을 깼는지 못 가른다).
 pub use crate::kv_conn::{kv_delete, kv_get, kv_history, kv_keys, kv_raw, kv_set, kv_undo, ConnKv};
+
+#[cfg(test)]
+#[path = "kv_batch_tests.rs"]
+mod kv_batch_tests;
+
+/// 한 번의 공개 KV batch가 받을 수 있는 exact key 수.
+///
+/// 목록 자체가 입력 자원이므로 저장소 경계에서도 제한한다. 카탈로그 검증만 믿으면 cored 내부
+/// 호출이나 다른 프레임워크가 그 경계를 건너뛸 수 있다.
+pub const MAX_KV_BATCH_KEYS: usize = 4096;
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KvEntry {
+    pub key: String,
+    pub value: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KvEntriesOutcome {
+    pub ns: String,
+    pub entries: Vec<KvEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KvDeleteManyOutcome {
+    pub ns: String,
+    /// 중복을 제거한 exact key 수.
+    pub requested: usize,
+    pub deleted: usize,
+    pub absent: usize,
+}
+
+/// namespace의 key/value를 한 SQLite snapshot에서 읽는다.
+///
+/// `prefix`는 SQL LIKE 패턴이 아니라 **문자 그대로의 접두사**다. `_`나 `%`가 들어간 key도
+/// 다른 key를 끌어들이지 않는다. 행을 먼저 한 질의로 확보한 다음 JSON을 해독하므로 중간에
+/// 다른 쓰기가 와도 한 호출 안에서 세대가 섞이지 않는다.
+pub fn kv_entries(
+    conn: &Connection,
+    ns: &str,
+    prefix: Option<&str>,
+) -> Result<KvEntriesOutcome, String> {
+    soksak_core::kv::validate_ns(ns)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT k, v FROM kv WHERE ns=?1 \
+             AND (?2 IS NULL OR substr(k, 1, length(?2))=?2) ORDER BY k",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map((ns, prefix), |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })
+        .map_err(|e| e.to_string())?;
+    let raw = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    let mut entries = Vec::with_capacity(raw.len());
+    for (key, value) in raw {
+        let value = soksak_core::kv::decode(Some(value))?
+            .ok_or_else(|| format!("존재하는 kv 행 {ns}:{key}의 값이 없다"))?;
+        entries.push(KvEntry { key, value });
+    }
+    Ok(KvEntriesOutcome {
+        ns: ns.to_string(),
+        entries,
+    })
+}
+
+/// 명시된 exact key만 단일 트랜잭션에서 지운다.
+///
+/// prefix delete는 없다. 모든 key를 먼저 검증·중복 제거한 뒤 트랜잭션을 열어, 잘못된 입력이나
+/// 중간 SQLite 실패가 앞 key만 지운 반쪽 batch를 남길 수 없다. 한 칸 삭제와 같은 과거 보존
+/// 규칙을 transaction 안에서 사용한다.
+pub fn kv_delete_many(
+    conn: &Connection,
+    ns: &str,
+    keys: &[String],
+) -> Result<KvDeleteManyOutcome, String> {
+    soksak_core::kv::validate_ns(ns)?;
+    if keys.is_empty() {
+        return Err("keys는 비어 있을 수 없다".to_string());
+    }
+    if keys.len() > MAX_KV_BATCH_KEYS {
+        return Err(format!("keys는 최대 {MAX_KV_BATCH_KEYS}개다"));
+    }
+    let mut seen = HashSet::with_capacity(keys.len());
+    let mut unique = Vec::with_capacity(keys.len());
+    for key in keys {
+        if key.is_empty() {
+            return Err("key는 비어 있을 수 없다".to_string());
+        }
+        if seen.insert(key.as_str()) {
+            unique.push(key.as_str());
+        }
+    }
+
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let store = ConnKv(&tx);
+    let at = now_millis() as u64;
+    let mut deleted = 0usize;
+    for key in &unique {
+        if soksak_core::kv::delete_keeping_past(&store, ns, key, at)? {
+            deleted += 1;
+        }
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(KvDeleteManyOutcome {
+        ns: ns.to_string(),
+        requested: unique.len(),
+        deleted,
+        absent: unique.len() - deleted,
+    })
+}
 
 // ── 컬렉션 메타 ────────────────────────────────────────────────────────────────
 

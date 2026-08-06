@@ -988,6 +988,24 @@ pub const COMMANDS: &[Command] = &[
         returns: "{ ns, keys }",
         run: run_kv_keys_surface,
     },
+    Command {
+        name: "data.kv.entries",
+        args: &[
+            Arg { name: "ns", ty: "string", required: REQ },
+            Arg { name: "prefix", ty: "string", required: OPT },
+        ],
+        returns: "{ ns, entries: { key, value }[] }",
+        run: run_kv_entries_surface,
+    },
+    Command {
+        name: "data.kv.deleteMany",
+        args: &[
+            Arg { name: "ns", ty: "string", required: REQ },
+            Arg { name: "keys", ty: "string[] (1..4096 exact keys)", required: REQ },
+        ],
+        returns: "{ ns, requested, deleted, absent }",
+        run: run_kv_delete_many_surface,
+    },
     // 되돌릴 자리는 **물어서 알 수 있어야 한다**. 저장소가 과거를 간직해도 꺼낼 길이 없으면
     // 그 과거는 없는 것과 같다 — 사고가 난 순간 사람이 볼 수 있어야 한다.
     Command {
@@ -1215,6 +1233,24 @@ pub const COMMANDS: &[Command] = &[
         run: run_data_kv_delete,
     },
     Command {
+        name: "data_kv_entries",
+        args: &[
+            Arg { name: "ns", ty: "string", required: REQ },
+            Arg { name: "prefix", ty: "string?", required: OPT },
+        ],
+        returns: "{ ns, entries: { key, value }[] }",
+        run: run_data_kv_entries,
+    },
+    Command {
+        name: "data_kv_delete_many",
+        args: &[
+            Arg { name: "ns", ty: "string", required: REQ },
+            Arg { name: "keys", ty: "string[] (1..4096 exact keys)", required: REQ },
+        ],
+        returns: "{ ns, requested, deleted, absent }",
+        run: run_data_kv_delete_many,
+    },
+    Command {
         name: "data_kv_keys",
         args: &[
             Arg { name: "ns", ty: "string", required: REQ },
@@ -1384,3 +1420,32 @@ pub const COMMANDS: &[Command] = &[
         run: run_skill_refresh_spawn,
     },
 ];
+
+#[cfg(test)]
+mod kv_batch_surface_tests {
+    use super::COMMANDS;
+
+    #[test]
+    fn cored_declares_internal_and_public_batch_kv_surfaces() {
+        for name in [
+            "data_kv_entries",
+            "data_kv_delete_many",
+            "data.kv.entries",
+            "data.kv.deleteMany",
+        ] {
+            assert!(COMMANDS.iter().any(|c| c.name == name), "missing {name}");
+        }
+        let args = |name| {
+            COMMANDS
+                .iter()
+                .find(|c| c.name == name)
+                .unwrap()
+                .args
+                .iter()
+                .map(|a| a.name)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(args("data_kv_entries"), args("data.kv.entries"));
+        assert_eq!(args("data_kv_delete_many"), args("data.kv.deleteMany"));
+    }
+}

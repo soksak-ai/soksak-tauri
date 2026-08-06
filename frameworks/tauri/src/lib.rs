@@ -695,6 +695,8 @@ pub fn run() {
             data::commands::data_kv_set,
             data::commands::data_kv_delete,
             data::commands::data_kv_keys,
+            data::commands::data_kv_entries,
+            data::commands::data_kv_delete_many,
             data::commands::data_kv_history,
             data::commands::data_kv_undo,
             data::commands::data_define,
@@ -922,6 +924,13 @@ mod handler_registration_tests {
             }
         }
         out
+    }
+
+    #[test]
+    fn kv_batch_commands_are_registered() {
+        let source = lib_src();
+        assert!(source.contains("data::commands::data_kv_entries,"));
+        assert!(source.contains("data::commands::data_kv_delete_many,"));
     }
 
     /// 이 fn 의 정의들이 덮는 플랫폼: (macos 덮음, 비-macos 덮음).

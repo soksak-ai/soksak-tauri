@@ -32,8 +32,10 @@ const COLL_PARAM = {
   required: true,
 } as const;
 
+const KV_BATCH_MAX = 4_096;
+
 export function registerDataCatalog(): void {
-  // kv 4종 — native 런타임 플러그인의 유일한 영속 통로(파일 머리말 참조). ns 명시 필수.
+  // kv 공개 표면 — native 런타임 플러그인의 유일한 영속 통로(파일 머리말 참조). ns 명시 필수.
   register("data.kv.get", {
     description: "Read one kv value from a namespace. Returns null when absent.",
     triggers: { ko: "키값 조회" },
@@ -157,6 +159,98 @@ export function registerDataCatalog(): void {
         prefix: typeof p.prefix === "string" ? p.prefix : null,
       })) as string[];
       return { ns: p.ns, keys };
+    },
+  });
+
+  register("data.kv.entries", {
+    description:
+      "Read a namespace key/value snapshot in one store call, optionally filtered by a literal prefix. Use this instead of keys followed by N gets when values must belong to one observed generation.",
+    triggers: { ko: "키 값 일괄 조회 스냅샷" },
+    params: {
+      ns: NS_PARAM,
+      prefix: { type: "string", required: false, description: "Literal key prefix" },
+    },
+    broker: kvBroker(["commands"], {
+      type: "object",
+      properties: {
+        ns: { type: "string" },
+        entries: {
+          type: "array",
+          items: {
+            type: "object",
+            // value는 임의 JSON이라 개방 필드다. key는 기계가 반드시 확인한다.
+            properties: { key: { type: "string" }, value: { type: "json" } },
+            required: ["key", "value"],
+            additionalProperties: true,
+          },
+        },
+      },
+      required: ["ns", "entries"],
+      additionalProperties: false,
+    }),
+    windowScoped: false,
+    returns: "{ ns, entries: { key, value }[] }",
+    message: (d) => `${(d.entries as unknown[]).length} kv entr${(d.entries as unknown[]).length === 1 ? "y" : "ies"} in ${d.ns}`,
+    errors: ["INVALID_PARAMS", "INTERNAL"],
+    examples: ['data.kv.entries \'{"ns":"core","prefix":"window"}\''],
+    handler: async (p) => {
+      if (
+        typeof p.ns !== "string" || !p.ns ||
+        (p.prefix !== undefined && typeof p.prefix !== "string")
+      ) {
+        return { ok: false as const, code: "INVALID_PARAMS" as const, message: "ns와 선택적 prefix 문자열 필요" };
+      }
+      return invoke<{ ns: string; entries: { key: string; value: unknown }[] }>(
+        "data_kv_entries",
+        { ns: p.ns, prefix: p.prefix ?? null },
+      );
+    },
+  });
+
+  register("data.kv.deleteMany", {
+    description:
+      "Delete 1..4096 explicitly named exact kv keys in one store transaction. Duplicate keys are collapsed; this command never performs prefix deletion.",
+    triggers: { ko: "키값 일괄 exact 삭제" },
+    params: {
+      ns: NS_PARAM,
+      keys: { type: "string[]", required: true, description: "1..4096 exact non-empty keys" },
+    },
+    danger: "destructive",
+    broker: kvBroker(["commands", "commands:destructive"], {
+      type: "object",
+      properties: {
+        ns: { type: "string" },
+        requested: { type: "integer", minimum: 1, maximum: KV_BATCH_MAX },
+        deleted: { type: "integer", minimum: 0, maximum: KV_BATCH_MAX },
+        absent: { type: "integer", minimum: 0, maximum: KV_BATCH_MAX },
+      },
+      required: ["ns", "requested", "deleted", "absent"],
+      additionalProperties: false,
+    }),
+    windowScoped: false,
+    returns: "{ ns, requested, deleted, absent }",
+    // 명령 실행 한 번에 활동 메시지도 한 번이다. key별 메시지를 만들지 않는다.
+    message: (d) =>
+      `kv ${d.ns}: ${d.requested} requested, ${d.deleted} deleted, ${d.absent} absent`,
+    errors: ["INVALID_PARAMS", "INTERNAL"],
+    examples: ['data.kv.deleteMany \'{"ns":"core","keys":["window/w-1","window/w-1#prev"]}\''],
+    handler: async (p) => {
+      if (
+        typeof p.ns !== "string" || !p.ns ||
+        !Array.isArray(p.keys) || p.keys.length === 0 || p.keys.length > KV_BATCH_MAX ||
+        p.keys.some((key) => typeof key !== "string" || key.length === 0)
+      ) {
+        return {
+          ok: false as const,
+          code: "INVALID_PARAMS" as const,
+          message: `ns와 1..${KV_BATCH_MAX}개의 비어있지 않은 exact key 필요`,
+        };
+      }
+      const keys = [...new Set(p.keys as string[])];
+      return invoke<{ ns: string; requested: number; deleted: number; absent: number }>(
+        "data_kv_delete_many",
+        { ns: p.ns, keys },
+      );
     },
   });
 

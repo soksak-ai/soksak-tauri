@@ -27,6 +27,10 @@ fn emit_change(
     // 진실로 알지 않는다(A22 알림 축). 없으면 창 가진 프로세스는 이쪽뿐이라 직접 뿌린다.
     // 두 길을 함께 타지 않는다: 방송은 이쪽에도 돌아온다.
     let fact = soksak_core::data_change::payload(ns, coll, scope, op, id);
+    emit_change_fact(app, fact);
+}
+
+fn emit_change_fact(app: &AppHandle, fact: Value) {
     let hub = crate::cored_host::current()
         .is_some_and(|h| h.tell("data_change_notify", &fact).is_ok());
     if !hub {
@@ -38,6 +42,24 @@ fn emit_change(
     if let Ok(db) = db_path() {
         super::ring::on_write(db);
     }
+}
+
+/// batch 변경 사실의 발행 소유자. 원격 owner는 cored의 `with_write`가 이미 한 번 발행한다.
+/// 그 응답을 받은 프레임워크가 또 발행하면 watcher가 같은 transaction을 두 번 재질의한다.
+fn local_kv_delete_many_change(
+    route: super::StoreRoute,
+    out: &store::KvDeleteManyOutcome,
+) -> Option<Value> {
+    if route == super::StoreRoute::AskOwner || out.deleted == 0 {
+        return None;
+    }
+    Some(soksak_core::data_change::payload(
+        &out.ns,
+        None,
+        None,
+        soksak_core::data_change::op::KV_DELETE,
+        None,
+    ))
 }
 
 /// 저장소 하나를 만지는 유일한 통로.
@@ -222,6 +244,45 @@ pub fn data_kv_keys(
         "data_kv_keys",
         serde_json::json!({ "ns": ns, "prefix": prefix }),
         |c| store::kv_keys(c, &ns, prefix.as_deref()))
+}
+
+/// key와 value를 한 storage snapshot으로 읽는다. keys→N×get 조립 경로는 제공하지 않는다.
+#[tauri::command]
+pub fn data_kv_entries(
+    ns: String,
+    prefix: Option<String>,
+    state: State<'_, DbState>,
+) -> Result<store::KvEntriesOutcome, String> {
+    validate_ns(&ns)?;
+    store_op(
+        &state,
+        "data_kv_entries",
+        serde_json::json!({ "ns": ns, "prefix": prefix }),
+        |c| store::kv_entries(c, &ns, prefix.as_deref()),
+    )
+}
+
+/// 명시된 exact keys를 owner의 단일 transaction에서 지운다. 변경 사건은 batch당 한 번이고
+/// `id:null`이라 watcher가 폴링 없이 자기 관심 key를 재질의할 수 있다.
+#[tauri::command]
+pub fn data_kv_delete_many(
+    app: AppHandle,
+    ns: String,
+    keys: Vec<String>,
+    state: State<'_, DbState>,
+) -> Result<store::KvDeleteManyOutcome, String> {
+    validate_ns(&ns)?;
+    let route = super::route();
+    let out = store_op(
+        &state,
+        "data_kv_delete_many",
+        serde_json::json!({ "ns": ns, "keys": keys }),
+        |c| store::kv_delete_many(c, &ns, &keys),
+    )?;
+    if let Some(fact) = local_kv_delete_many_change(route, &out) {
+        emit_change_fact(&app, fact);
+    }
+    Ok(out)
 }
 
 // ── 컬렉션 ──────────────────────────────────────────────────────────────────────
@@ -733,6 +794,7 @@ pub fn data_migrate_ns(
 
 #[cfg(test)]
 mod tests {
+    use super::{from_owner, local_kv_delete_many_change};
     use crate::secrets::{FailingKekSource, SecretsState};
     use rusqlite::Connection;
     use soksak_store::store::init_base;
@@ -768,5 +830,56 @@ mod tests {
             "P 미등록 — orphan 봉인 트리거 0"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn delegated_batch_replies_keep_the_storage_owner_shape() {
+        let entries: soksak_store::store::KvEntriesOutcome = from_owner(serde_json::json!({
+            "ns": "core",
+            "entries": [{ "key": "window/w-1", "value": { "projects": [] } }]
+        }))
+        .unwrap();
+        assert_eq!(entries.ns, "core");
+        assert_eq!(entries.entries[0].key, "window/w-1");
+
+        let deleted: soksak_store::store::KvDeleteManyOutcome = from_owner(serde_json::json!({
+            "ns": "core",
+            "requested": 2,
+            "deleted": 1,
+            "absent": 1
+        }))
+        .unwrap();
+        assert_eq!(deleted.requested, 2);
+        assert_eq!(deleted.deleted, 1);
+        assert_eq!(deleted.absent, 1);
+    }
+
+    #[test]
+    fn batch_change_is_emitted_once_by_the_storage_owner_with_null_id() {
+        let changed = soksak_store::store::KvDeleteManyOutcome {
+            ns: "core".into(),
+            requested: 2,
+            deleted: 1,
+            absent: 1,
+        };
+        let local = local_kv_delete_many_change(super::super::StoreRoute::OwnConnection, &changed)
+            .expect("local owner가 한 번 발행");
+        assert_eq!(local["ns"], "core");
+        assert_eq!(local["op"], soksak_core::data_change::op::KV_DELETE);
+        assert!(local["id"].is_null(), "batch는 여러 key라 id=null");
+
+        assert!(
+            local_kv_delete_many_change(super::super::StoreRoute::AskOwner, &changed).is_none(),
+            "delegated owner는 cored가 이미 발행하므로 Tauri가 중복 발행하지 않는다"
+        );
+        let unchanged = soksak_store::store::KvDeleteManyOutcome {
+            deleted: 0,
+            ..changed
+        };
+        assert!(
+            local_kv_delete_many_change(super::super::StoreRoute::OwnConnection, &unchanged)
+                .is_none(),
+            "실제 삭제 0이면 변경 사실도 없다"
+        );
     }
 }

@@ -448,6 +448,51 @@ pub(crate) fn run_data_kv_keys(ctx: &Ctx, params: &Value) -> Outcome {
     })
 }
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KvEntriesArg {
+    ns: String,
+    prefix: Option<String>,
+}
+
+/// owner/delegated 어느 경로에서도 같은 `{ns,entries}` snapshot을 답한다.
+pub(crate) fn run_data_kv_entries(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: KvEntriesArg| {
+        ctx.with_db(|conn| soksak_store::store::kv_entries(conn, &a.ns, a.prefix.as_deref()))
+    })
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KvDeleteManyArg {
+    ns: String,
+    keys: Vec<String>,
+}
+
+/// exact keys 한 batch를 storage owner의 단일 트랜잭션으로 지우고 변경 사실도 한 번만 발행한다.
+pub(crate) fn run_data_kv_delete_many(ctx: &Ctx, params: &Value) -> Outcome {
+    dispatch(params, |a: KvDeleteManyArg| {
+        deny_without_write_ownership(ctx)?;
+        ctx.with_write(|conn| {
+            let out = soksak_store::store::kv_delete_many(conn, &a.ns, &a.keys)?;
+            let changed = if out.deleted > 0 {
+                // id=null = 같은 namespace의 여러 exact key가 한 transaction에서 바뀐 사실.
+                // watcher는 폴링하지 않고 자기 관심 key를 재질의한다.
+                Changed::one(
+                    &a.ns,
+                    None,
+                    None,
+                    soksak_core::data_change::op::KV_DELETE,
+                    None,
+                )
+            } else {
+                Changed::none()
+            };
+            Ok((out, changed))
+        })
+    })
+}
+
 pub(crate) fn run_data_kv_set(ctx: &Ctx, params: &Value) -> Outcome {
     dispatch(params, |a: KvSetArg| {
         // 소유권 먼저 — 열기 전에 거절한다. 열고 나서 판단하면 그 사이가 곧 이중 쓰기 창이다.
@@ -499,6 +544,16 @@ pub(crate) fn run_kv_keys_surface(ctx: &Ctx, params: &Value) -> Outcome {
         let keys = soksak_store::store::kv_keys(&conn, &a.ns, a.prefix.as_deref())?;
         Ok(serde_json::json!({ "ns": a.ns, "keys": keys }))
     })
+}
+
+/// `data.kv.entries` — 내부 위임 이름과 같은 응답 shape를 그대로 쓴다.
+pub(crate) fn run_kv_entries_surface(ctx: &Ctx, params: &Value) -> Outcome {
+    run_data_kv_entries(ctx, params)
+}
+
+/// `data.kv.deleteMany` — 내부 위임 이름과 같은 응답 shape를 그대로 쓴다.
+pub(crate) fn run_kv_delete_many_surface(ctx: &Ctx, params: &Value) -> Outcome {
+    run_data_kv_delete_many(ctx, params)
 }
 
 #[derive(serde::Deserialize)]
