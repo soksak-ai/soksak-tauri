@@ -241,6 +241,12 @@ describe("브라우저 구현 행렬", () => {
     expect(() => parseBrowserEngines("browser,unknown")).toThrow("지원하지 않는 브라우저 구현");
   });
 
+  it("각 구현의 공개 native surface 주소를 선언적으로 만든다", () => {
+    expect(browserImplementations.browser.label("w-a", "tab-1")).toBe("b-w-a-tab-1");
+    expect(browserImplementations["browser-chromium"].label("w-a", "tab-1")).toBe("chromium-tab-1");
+    expect(browserImplementations["browser-chromium-offscreen"].label("w-a", "tab-1")).toBe("offscreen-tab-1");
+  });
+
   it("전체 창 resize는 큰 폭의 양방향 교차를 반복하고 정확히 원복한다", () => {
     const sizes = hostileWindowResizeSizes({ w: 2400, h: 1600 });
     expect(sizes.length).toBeGreaterThanOrEqual(12);

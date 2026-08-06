@@ -4,14 +4,17 @@ export const browserImplementations = Object.freeze({
   browser: Object.freeze({
     plugin: "soksak-plugin-browser-native",
     surface: "framework-native",
+    label: (windowLabel, viewId) => `b-${windowLabel}-${viewId}`,
   }),
   "browser-chromium": Object.freeze({
     plugin: "soksak-plugin-browser-chromium",
     surface: "engine-windowed",
+    label: (_windowLabel, viewId) => `chromium-${viewId}`,
   }),
   "browser-chromium-offscreen": Object.freeze({
     plugin: "soksak-plugin-browser-chromium-offscreen",
     surface: "engine-offscreen",
+    label: (_windowLabel, viewId) => `offscreen-${viewId}`,
   }),
 });
 

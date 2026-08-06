@@ -906,7 +906,7 @@ async function runEngine(client, page, engine) {
     }, win), "motion anchors");
     const native = implementation.surface === "framework-native";
     const windowed = implementation.surface === "engine-windowed";
-    const labels = tabIds.map((id) => `b-${win}-${id}`);
+    const labels = tabIds.map((id) => implementation.label(win, id));
     if (frameworkName === "tauri") await installPanePresentationMarkers(rpc, win, labels);
     if (native) {
       const initial = must(await rpc("webview.composition", {}, win), "initial composition");
