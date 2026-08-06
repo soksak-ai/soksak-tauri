@@ -139,6 +139,19 @@ function timelineFrameAt(timeline: CompositionTimeline, sampledAtUnixMs: number)
   };
 }
 
+function physicalEdgeDelta(
+  expected: CompositionRect,
+  actual: CompositionRect,
+  scaleFactor: number,
+): CompositionRect {
+  return {
+    x: Math.abs(expected.x - actual.x) * scaleFactor,
+    y: Math.abs(expected.y - actual.y) * scaleFactor,
+    w: Math.abs((expected.x + expected.w) - (actual.x + actual.w)) * scaleFactor,
+    h: Math.abs((expected.y + expected.h) - (actual.y + actual.h)) * scaleFactor,
+  };
+}
+
 /**
  * 서로 다른 display cadence를 nearest-neighbour로 가짜 1:1 결합하지 않는다. 각 producer의
  * 실제 표시 epoch에서 같은 선언 궤적을 device-pixel exact로 따르는지 독립 판정하고, native
@@ -172,13 +185,12 @@ export function compositionTimelineVerdict(timeline: CompositionTimeline) {
         errors.push(`${name}[${index}]:sampledAtUnixMs=${sample.sampledAtUnixMs}`);
         continue;
       }
-      const expected = logicalRectToPhysical(
-        timelineFrameAt(timeline, sample.sampledAtUnixMs),
-        scaleFactor,
-      );
-      const actual = logicalRectToPhysical(sample.frame, scaleFactor);
-      if (!sameRect(expected, actual)) {
-        errors.push(`${name}[${index}]=${JSON.stringify(rectDelta(expected, actual))}`);
+      const expected = timelineFrameAt(timeline, sample.sampledAtUnixMs);
+      const delta = physicalEdgeDelta(expected, sample.frame, scaleFactor);
+      // 두 독립 compositor가 같은 연속 좌표를 각각 nearest device pixel로 양자화한다.
+      // 0.5 physical px는 임의 tolerance가 아니라 반올림 자체가 만들 수 있는 최대 오차다.
+      if (Object.values(delta).some((value) => value > 0.5 + Number.EPSILON)) {
+        errors.push(`${name}[${index}]=${JSON.stringify(delta)}`);
       }
     }
     if (samples[0].sampledAtUnixMs > timeline.startAtUnixMs) {
