@@ -23,6 +23,7 @@ import { adoptFrameworkStyles } from "../styles";
 import { registerContentViewHost } from "../../lib/contentViews";
 import { registerLayoutTransitionHost } from "../../lib/layoutTransitionHost";
 import {
+  awaitPluginViewComposition,
   awaitPluginViewPresentation,
   installPluginViewPresentation,
   pluginViewCompositionStatus,
@@ -303,6 +304,15 @@ function installPaneSurfaceHostCommands(): void {
     params: {}, returns: "{ window,tolerancePx,matches,orphanNative,foreignNative,matched,verdict }",
     message: (data) => `pane composition ${String(data.verdict)}`,
     handler: async () => pluginViewCompositionStatus(),
+  });
+  register("webview.pane.composition.wait", {
+    description: "Wait for child slot events to be committed to native pane members, then compare live frames.",
+    params: {
+      timeoutMs: { type: "number", description: "finite event barrier timeout (default 10000)" },
+    },
+    returns: "{ window,tolerancePx,matches,orphanNative,foreignNative,matched,verdict }",
+    message: (data) => `pane composition committed ${String(data.verdict)}`,
+    handler: async (params) => awaitPluginViewComposition(Number(params.timeoutMs ?? 10_000)),
   });
   register("webview.pane.group", {
     description: "Group one pane renderer and its native members under one PaneSurfaceHost.",

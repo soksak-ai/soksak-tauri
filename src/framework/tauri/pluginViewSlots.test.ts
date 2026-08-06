@@ -30,4 +30,27 @@ describe("plugin renderer slot event barrier", () => {
     const slots = new PluginViewSlotRegistry();
     await expect(slots.wait(frame.label, 5)).rejects.toThrow("content slot 시간 초과");
   });
+
+  it("보고만 된 slot은 native commit 배리어를 통과하지 않는다", async () => {
+    const slots = new PluginViewSlotRegistry();
+    slots.report(frame);
+    await expect(slots.waitCommittedRoot(frame.label, 500, 400, 5))
+      .rejects.toThrow("native commit 시간 초과");
+  });
+
+  it("현재 viewport에 적용된 native commit 사건으로 배리어를 해제한다", async () => {
+    const slots = new PluginViewSlotRegistry();
+    const waiting = slots.waitCommittedRoot(frame.label, 500, 400, 100);
+    queueMicrotask(() => slots.commit(frame));
+    await expect(waiting).resolves.toEqual(frame);
+  });
+
+  it("이전 viewport의 늦은 commit은 현재 viewport 배리어를 해제하지 않는다", async () => {
+    const slots = new PluginViewSlotRegistry();
+    const current = { ...frame, rootW: 740, rootH: 520, revision: 3 };
+    const waiting = slots.waitCommittedRoot(frame.label, 740, 520, 100);
+    slots.commit({ ...frame, revision: 2 });
+    queueMicrotask(() => slots.commit(current));
+    await expect(waiting).resolves.toEqual(current);
+  });
 });

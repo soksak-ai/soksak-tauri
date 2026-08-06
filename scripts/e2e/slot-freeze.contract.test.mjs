@@ -89,6 +89,13 @@ describe("slot-freeze instrumentation lifecycle", () => {
       .toBeLessThan(source.indexOf('const firstPaintPath'));
   });
 
+  it("hostile resize waits for child slot native commits before final composition judgment", () => {
+    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    expect(source).toContain('rpc("webview.pane.composition.wait"');
+    expect(source.indexOf('"window resize final layout settled"'))
+      .toBeLessThan(source.indexOf('rpc("webview.pane.composition.wait"'));
+  });
+
   it("requires one shared pane presentation owner for plugin chrome and native members", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
     expect(source).toContain("rendererTopologyOwnershipVerdict");

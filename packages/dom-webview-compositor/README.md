@@ -20,3 +20,13 @@ after its adapter passes the same conformance suite on that OS and display scale
 The package deliberately contains no transport. An in-process command adapter, Unix-domain
 socket, Windows named pipe, or another transport may carry the same values without changing
 the contract or verdict.
+
+## Test ownership when extracted
+
+- This package moves with its coordinate, rounding, transaction, stale-epoch, snap/glide, and
+  conformance tests. Those tests accept adapter facts and never launch the soksak product.
+- Each OS adapter owns integration tests for its native child-view API (AppKit/WKWebView,
+  WebView2, or WebKitGTK) and must pass the shared conformance suite on every supported scale.
+- The soksak repository keeps product E2E: the three browser implementations, sidebar/PIN and
+  overlay layering, focus lighting, Korean IME, scrolling/full capture, and the Electron pure-DOM
+  non-interference contract. Product policy therefore does not leak into the reusable compositor.

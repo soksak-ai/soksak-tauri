@@ -290,8 +290,8 @@ async function syncPaneFrame(view: PresentedState): Promise<void> {
   }
 }
 
-async function syncMemberFrame(view: PresentedState, frame: PluginViewSlotFrame): Promise<void> {
-  if (!view.grouped || !view.members.has(frame.label) || view.disposed) return;
+async function syncMemberFrame(view: PresentedState, frame: PluginViewSlotFrame): Promise<boolean> {
+  if (!view.grouped || !view.members.has(frame.label) || view.disposed) return false;
   await invoke("webview_pane_member_bounds", {
     pane: view.pane,
     label: frame.label,
@@ -308,6 +308,7 @@ async function syncMemberFrame(view: PresentedState, frame: PluginViewSlotFrame)
       bottom: Math.max(0, frame.rootH - frame.y - frame.h),
     },
   });
+  return true;
 }
 
 function paneDimOwner(view: PresentedState): HTMLElement | null {
@@ -357,7 +358,7 @@ async function openAndGroup(
     view.lightingAlpha = -1;
     await syncPaneLighting(view);
   }
-  await syncMemberFrame(view, slot);
+  if (await syncMemberFrame(view, slot)) view.slots.commit(slot);
   await invoke("webview_visible", { label, visible: view.visible, focus: false });
   view.markReady();
 }
@@ -453,7 +454,9 @@ async function createPresentedView(
       view.projections.get(payload.label),
     );
     view.projections.set(payload.label, projected);
-    void syncMemberFrame(view, payload).catch((error) => console.error("pane member bounds 실패", error));
+    void syncMemberFrame(view, payload).then((committed) => {
+      if (committed) view.slots.commit(payload);
+    }).catch((error) => console.error("pane member bounds 실패", error));
   }));
   view.unlisten.push(await listen<PluginViewNodeFrame>(node, ({ payload }) => {
     const key = `${payload.node}\u0000${payload.label}`;
@@ -548,6 +551,26 @@ export async function pluginViewCompositionStatus() {
     sampledAtUnixMs,
     verdict: ok ? "green" as const : "red" as const,
   };
+}
+
+/**
+ * 메인 DOM settle과 별개인 child renderer→native member 거래가 현재 pane viewport에
+ * 커밋될 때까지 사건으로 기다린다. timeout은 실패를 유한하게 만들 뿐 상태를 폴링하지 않는다.
+ */
+export async function awaitPluginViewComposition(timeoutMs = 10_000) {
+  const views = [...state.views.values()].filter((view) => view.grouped && !view.disposed);
+  await Promise.all(views.map(async (view) => {
+    // Main renderer가 소유한 host frame을 현재 공개 DOM에 먼저 확정한다.
+    await syncPaneFrame(view);
+    const root = rectOf(view.container);
+    await Promise.all([...view.members].map((label) =>
+      view.slots.waitCommittedRoot(label, root.w, root.h, timeoutMs)));
+  }));
+  const result = await pluginViewCompositionStatus();
+  if (result.verdict !== "green") {
+    throw new Error(`pane composition commit 불일치: ${JSON.stringify(result)}`);
+  }
+  return result;
 }
 
 export async function pluginViewNativeContractStatus() {
