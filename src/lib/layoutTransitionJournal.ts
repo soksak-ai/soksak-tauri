@@ -4,12 +4,13 @@ import type { LayoutMove, LayoutTransitionMode, PreparedLayoutTransition } from 
 export type LayoutTransitionJournalEntry = {
   transactionId: string;
   sequence: number;
-  phase: "prepared" | "committed" | "cancelled";
+  phase: "prepared" | "committed" | "cancelled" | "failed";
   mode: LayoutTransitionMode;
   startAtUnixMs?: number;
   preparedAtUnixMs: number;
   domCommittedAtUnixMs?: number;
   closedAtUnixMs?: number;
+  failure?: string;
   moves: LayoutMove[];
 };
 
@@ -87,9 +88,17 @@ export function journalPreparedLayoutTransition(
         sequence: entry.sequence,
         domCommittedAtUnixMs: entry.domCommittedAtUnixMs,
       }));
-      await prepared.commit();
-      entry.phase = "committed";
-      entry.closedAtUnixMs = Date.now();
+      try {
+        await prepared.commit();
+        entry.phase = "committed";
+        entry.closedAtUnixMs = Date.now();
+      } catch (error) {
+        entry.phase = "failed";
+        entry.closedAtUnixMs = Date.now();
+        const message = error instanceof Error ? error.message : String(error);
+        entry.failure = message || "layout surface commit failed";
+        throw error;
+      }
     },
     cancel: () => {
       if (closed) return;

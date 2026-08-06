@@ -632,7 +632,7 @@ export function registerCatalog(): void {
     triggers: { ko: "레이아웃 거래 장부 이동 위상 수치 추적" },
     params: {},
     returns:
-      "{ entries:[{transactionId,sequence,phase,mode,startAtUnixMs?,preparedAtUnixMs,domCommittedAtUnixMs?,closedAtUnixMs?,moves:[{viewId,dx}]}] }",
+      "{ entries:[{transactionId,sequence,phase,mode,startAtUnixMs?,preparedAtUnixMs,domCommittedAtUnixMs?,closedAtUnixMs?,failure?,moves:[{viewId,dx}]}] }",
     message: (data) => `layout transactions ${String((data.entries as unknown[])?.length ?? 0)}`,
     examples: ["layout.transactions"],
     handler: () => ({ entries: layoutTransitionJournal() }),
