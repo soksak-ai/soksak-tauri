@@ -24,6 +24,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 
 export const E2E_DIR = resolve(dirname(fileURLToPath(import.meta.url)));
 export const LEDGER_PATH = join(E2E_DIR, "framework-binding.json");
@@ -47,7 +48,16 @@ export const SURFACE_PATTERNS = [
   {
     name: "pixel-oracle",
     kind: "native",
-    re: /\bdecodePng\b|\bframeColors\b|\bjudgeFrame\b|\bcompareFrames\b|\bPIL\b|\bImage\.open\b/,
+    re: /\bdecodePng\b|\bframeColors\b|\bjudgeFrame\b|\bcompareFrames\b|\bobserveFrameSequence\b|\bobserveFullCapture\b|\bsnapshotScaleForVisualEvidence\b|\bPIL\b|\bImage\.open\b/,
+    jsIdentifiers: [
+      "decodePng",
+      "frameColors",
+      "judgeFrame",
+      "compareFrames",
+      "observeFrameSequence",
+      "observeFullCapture",
+      "snapshotScaleForVisualEvidence",
+    ],
   },
   // ── 네이티브: 네이티브 자식 표면(홀·스위즐·레이어) ────────────────────────
   { name: "window.layers", kind: "native", re: /\bwindow\.layers\b/ },
@@ -61,6 +71,16 @@ export const SURFACE_PATTERNS = [
   { name: "synthetic-input", kind: "native", re: /synth-input|CGEvent|\bswiftc\b/ },
   { name: "screen-record", kind: "native", re: /\bscreencapture\b/ },
   { name: "frame-decode", kind: "native", re: /\bffmpeg\b/ },
+  {
+    name: "tauri-appkit-surface-policy",
+    kind: "native",
+    re: /\btauriSurfaceResizePolicyVerdict\b|\bAPPKIT_(?:EXPLICIT_BOUNDS|PARENT_WIDTH_HEIGHT)_MASK\b/,
+    jsIdentifiers: [
+      "tauriSurfaceResizePolicyVerdict",
+      "APPKIT_EXPLICIT_BOUNDS_MASK",
+      "APPKIT_PARENT_WIDTH_HEIGHT_MASK",
+    ],
+  },
   // ── 줄일 수 있는 결속: 프로세스·빌드 산출물·앱 홈을 직접 안다 ─────────────
   { name: "socket-name", kind: "reducible", re: /com\.soksak\.[A-Za-z$${}_]+\.sock/ },
   { name: "app-home-path", kind: "reducible", re: /homedir\(\),\s*"\.soksak(?!-e2e)|\$HOME\/\.soksak(?!-e2e)/ },
@@ -105,14 +125,43 @@ function listFiles(dir, out = []) {
   return out;
 }
 
+/** JavaScript에서 실제 코드 토큰인 identifier의 첫 줄만 읽는다.
+ * 문자열·정규식·주석에 API 이름을 적은 계약 테스트는 그 API를 호출한 것이 아니다. */
+function javascriptIdentifierLines(source) {
+  const parsed = ts.createSourceFile(
+    "framework-binding-source.mjs",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  const lines = new Map();
+  const visit = (node) => {
+    if (ts.isIdentifier(node) && !lines.has(node.text)) {
+      lines.set(node.text, parsed.getLineAndCharacterOfPosition(node.getStart(parsed)).line + 1);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(parsed);
+  return lines;
+}
+
 /** 소스 실측 — 파일마다 발견된 표면과 첫 등장 줄. */
 export function scanFiles(root = E2E_DIR) {
   return listFiles(root).map((full) => {
     const src = readFileSync(full, "utf8");
     const lines = src.split("\n");
+    const identifierLines = full.endsWith(".mjs") ? javascriptIdentifierLines(src) : null;
     const surfaces = [];
-    for (const { name, kind, re } of SURFACE_PATTERNS) {
-      const at = lines.findIndex((l) => re.test(l));
+    for (const { name, kind, re, jsIdentifiers } of SURFACE_PATTERNS) {
+      const identifierAt = identifierLines && jsIdentifiers
+        ? Math.min(...jsIdentifiers.map((identifier) => identifierLines.get(identifier) ?? Infinity))
+        : Infinity;
+      const at = Number.isFinite(identifierAt)
+        ? identifierAt - 1
+        : identifierLines && jsIdentifiers
+          ? -1
+          : lines.findIndex((l) => re.test(l));
       if (at >= 0) surfaces.push({ name, kind, line: at + 1 });
     }
     const banned = [];

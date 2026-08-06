@@ -69,6 +69,35 @@ describe("표면 실측", () => {
     expect(row.surfaces.map((s) => s.name)).toEqual(["pixel-oracle"]);
   });
 
+  it("문자열과 주석으로 픽셀 오라클 부재를 검사하는 계약 테스트는 C로 오인하지 않는다", () => {
+    write("contract.test.mjs", [
+      '// 하니스가 compareFrames 를 직접 부르면 안 된다.',
+      'expect(source).not.toContain("decodePng");',
+      "expect(source).not.toContain('judgeFrame');",
+      'expect(source).toContain("observeFrameSequence");',
+    ].join("\n"));
+    const [row] = scanFiles(root);
+    expect(row.class).toBe("A");
+    expect(row.surfaces).toEqual([]);
+  });
+
+  it("Tauri AppKit surface resize 정책을 판정하는 코드는 C", () => {
+    write("policy.mjs", "const verdict = tauriSurfaceResizePolicyVerdict(surfaces);\n");
+    const [row] = scanFiles(root);
+    expect(row.class).toBe("C");
+    expect(row.surfaces.map((s) => s.name)).toEqual(["tauri-appkit-surface-policy"]);
+  });
+
+  it("픽셀 관측 공개 진입점을 쓰는 소비자도 pixel-oracle 로 잡힌다", () => {
+    write("visual.mjs", [
+      'import { observeFrameSequence as inspect } from "./visual.mjs";',
+      "inspect(frames, name, scale);",
+    ].join("\n"));
+    const [row] = scanFiles(root);
+    expect(row.class).toBe("C");
+    expect(row.surfaces.map((s) => s.name)).toEqual(["pixel-oracle"]);
+  });
+
   it("산문에 적힌 엔진 이름은 결속이 아니다", () => {
     write("prose.mjs", "// 백그라운드 WKWebView 는 스로틀된다\n");
     const [row] = scanFiles(root);

@@ -66,6 +66,11 @@
       "why": "녹화 영상을 프레임으로 푼다 — 픽셀 오라클의 뒷단이다.",
       "frameworkAnswers": "픽셀 오라클과 함께 간다"
     },
+    "tauri-appkit-surface-policy": {
+      "kind": "native",
+      "why": "Tauri의 AppKit 자식 웹뷰가 standalone explicit bounds와 PaneSurfaceHost 상속 중 정확히 한 bounds 소유자를 갖는지 판정한다. autoresizing mask와 CALayer 정책은 Tauri macOS 어댑터의 네이티브 사실이다.",
+      "frameworkAnswers": "Tauri macOS 어댑터가 AppKit surface 정책 측정값을 답한다"
+    },
     "socket-name": {
       "kind": "reducible",
       "why": "identity 이름에서 소켓 파일 이름을 짓는다. 소켓 경로를 통째로 받으면 없어진다.",
@@ -238,6 +243,112 @@
       "class": "A",
       "surfaces": [],
       "note": "컨트롤 창 해소의 기준. 굳은 잔재 창이 포커스 폴백을 점유해도 해소가 결정적이어야 한다는 법을 고정한다."
+    },
+    {
+      "file": "lib/browser-evidence-plan.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "선택한 엔진·시나리오의 유한 녹화 목록과 frame·byte 예산, 정확히 한 번 소비 원장을 순수 값으로 만든다. 프레임워크 경로와 네이티브 캡처 구현은 알지 않는다."
+    },
+    {
+      "file": "lib/browser-evidence-plan.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "녹화 계획의 유일성·용량 상한·정확히 한 번 소비를 값만으로 검증한다."
+    },
+    {
+      "file": "lib/browser-gates.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "framework·platform을 명시적 실행 identity로 받는 공통 acceptance 스키마와 판정 계약이다. 네이티브 표면을 직접 조회하거나 프레임워크 경로를 추측하지 않는다."
+    },
+    {
+      "file": "lib/browser-gates.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "공통 브라우저 gate 스키마·identity·judge receipt를 순수 증거 값으로 검증한다."
+    },
+    {
+      "file": "lib/browser-visual-evidence.mjs",
+      "role": "lib",
+      "class": "C",
+      "surfaces": [
+        "pixel-oracle"
+      ],
+      "note": "네이티브 창에서 얻은 PNG의 marker·motion·full-capture 픽셀을 사람 검토용 진단으로 해석한다. 자동 machine verdict는 만들지 않아도 입력 바이트는 프레임워크 합성 결과다."
+    },
+    {
+      "file": "lib/browser-visual-evidence.test.mjs",
+      "role": "test",
+      "class": "C",
+      "surfaces": [
+        "pixel-oracle"
+      ],
+      "note": "픽셀 관측 공개 진입점에서 읽을 수 없는 artifact가 machine verdict로 승격되지 않고 명시적 human visual 진단으로 남는 오류 경계를 검증한다."
+    },
+    {
+      "file": "lib/evidence-store.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "선언된 절대 root 아래 current·last-red 수명, quota, symlink 금지, 실행 상태를 소유한다. 프레임워크·앱 홈·네이티브 표면을 알지 않는다."
+    },
+    {
+      "file": "lib/evidence-store.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "격리된 OS 임시 디렉터리에서 증거 저장 경계·회전·quota·동시 거래를 검증한다. 앱이나 프레임워크를 실행하지 않는다."
+    },
+    {
+      "file": "lib/recording-evidence-action.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "제품 action callback과 증거 저장 거래를 정확히 한 번 결합한다. 실제 window.record 호출은 소비자가 주입하며 이 모듈은 프레임워크 명령을 알지 않는다."
+    },
+    {
+      "file": "lib/recording-evidence-action.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "저장 preflight·callback 이후 실패에서도 제품 action이 한 번만 실행되고 artifact identity가 상대경로로 남는지 검증한다."
+    },
+    {
+      "file": "lib/tauri-surface-resize-policy.mjs",
+      "role": "lib",
+      "class": "C",
+      "surfaces": [
+        "tauri-appkit-surface-policy"
+      ],
+      "note": "Tauri macOS 자식 웹뷰의 bounds 소유권과 AppKit autoresizing·CALayer 정책을 판정한다. Electron이나 다른 OS에 적용할 공통 DOM 규칙이 아니다."
+    },
+    {
+      "file": "lib/tauri-surface-resize-policy.test.mjs",
+      "role": "test",
+      "class": "C",
+      "surfaces": [
+        "tauri-appkit-surface-policy"
+      ],
+      "note": "standalone과 PaneSurfaceHost 상태별 AppKit bounds 소유권 및 layer telemetry 기준을 고정한다."
+    },
+    {
+      "file": "lib/visual-recording-review.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "주입된 recording 영수증과 PNG artifact 목록의 검토 가능성만 보고하며 제품의 machine verdict나 프레임워크 캡처를 소유하지 않는다."
+    },
+    {
+      "file": "lib/visual-recording-review.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "녹화 완결성 오류가 명시적 human visual 상태로 남고 자동 제품 판정으로 오용되지 않는 계약을 값으로 검증한다."
     },
     {
       "file": "lib/browser-matrix.mjs",
@@ -518,7 +629,8 @@
       "surfaces": [
         "window.snapshot",
         "pixel-oracle",
-        "webview.surfaces"
+        "webview.surfaces",
+        "tauri-appkit-surface-policy"
       ],
       "note": "실제 content surface 교차 클릭을 내장 연속 캡처와 공개 webview.composition 상태로 검증하고, 네이티브 표면에서는 조명의 요청값·적용값·frame·stack도 대조한다."
     },
