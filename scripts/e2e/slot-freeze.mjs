@@ -117,6 +117,12 @@ const paneAddress = (tree, paneId) => {
   return node.address;
 };
 
+const lightingAddressForTab = (tree, tabId) => {
+  const node = (tree.nodes ?? []).find((item) => item.nodePath === `layout/tab/${tabId}`);
+  if (!node?.address) throw new Error(`탭 focus lighting 소유자 주소가 노출되지 않았다: ${tabId}`);
+  return node.address;
+};
+
 async function assertActivePane(rpc, win, expectedPaneId, stage) {
   const state = must(await rpc("pane.list", {}, win), `${stage} pane.list`);
   if (state.activePaneId !== expectedPaneId) {
@@ -880,6 +886,7 @@ async function runEngine(client, page, engine) {
 
     const tree = must(await rpc("ui.tree", {}, win), "ui.tree");
     const addresses = tabIds.map((id) => addressForTab(tree, id));
+    const lightingAddresses = tabIds.map((id) => lightingAddressForTab(tree, id));
     const activationAddresses = tabIds.map((id) => activationAddressForTab(tree, id));
     // 플러그인 인스턴스와 함께 영속하고 surface와 같은 x축을 소유하는 공개 toolbar가
     // 브라우저 표면 궤적의 기준이다. 앱 크롬 합성은 별도로 persistent rail root와 pane root를
@@ -1011,7 +1018,7 @@ async function runEngine(client, page, engine) {
         frameCount += files.length;
 
         const lighting = await assertFocusLighting(
-          rpc, win, addresses, labels, side, frameworkName, `${engine}/${name}`,
+          rpc, win, lightingAddresses, labels, side, frameworkName, `${engine}/${name}`,
         );
         await assertRailCompositionContract(
           rpc,

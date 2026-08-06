@@ -48,6 +48,8 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(lighting).toContain("dataset?.dim");
     expect(lighting).toContain("1 - dims[index]");
     expect(lighting).not.toContain('rpc("window.pixels"');
+    expect(source).toContain("lightingAddressForTab");
+    expect(source).toContain('item.nodePath === `layout/tab/${tabId}`');
     expect(source).toContain("assertRailCompositionContract");
     expect(source).toContain("relation-connected=");
     expect(source).toContain("rail-not-lighting-exempt");
