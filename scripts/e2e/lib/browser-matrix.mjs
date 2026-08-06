@@ -110,7 +110,11 @@ const OFFSCREEN_PRESENTATION_TRACE = Object.freeze({
         sampledAtUnixMs: Number(sample.atUnixMs),
         connected: surface.domRect != null && surface.presentationRect != null,
         slotFrame: surface.domRect,
-        rendererFrame: surface.domRect,
+        // Offscreen has exactly one product pixel presenter: the sidecar-owned native layer.
+        // `domRect` is a separately declared rAF/interpolation diagnostic and is not a renderer
+        // presentation fact. The logical renderer and its surface therefore share the actual
+        // display-link presentation frame while the core trace supplies the authoritative slot.
+        rendererFrame: surface.presentationRect,
         surfaceFrame: surface.presentationRect,
       };
     });
