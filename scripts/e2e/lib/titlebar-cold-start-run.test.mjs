@@ -39,6 +39,21 @@ function run(cycles = [cycle(1), cycle(2), cycle(3)]) {
   return { buildId: BUILD_ID, runId: RUN_ID, cycles };
 }
 
+function terminalCycle(value, status, framework, reason) {
+  return {
+    schemaVersion: 1,
+    status,
+    buildId: BUILD_ID,
+    runId: RUN_ID,
+    cycle: String(value),
+    framework,
+    platform: framework === "electron" ? "darwin" : "linux",
+    windows: [],
+    machines: [],
+    reason,
+  };
+}
+
 describe("B12 three-cold-start aggregate verdict", () => {
   it("is GREEN only for exact cycles 1/2/3 from one build/run and one window population", () => {
     expect(judgeTitlebarColdStartRun(run())).toEqual({ status: "green", evidence: [] });
@@ -68,21 +83,37 @@ describe("B12 three-cold-start aggregate verdict", () => {
     expect(judgeTitlebarColdStartRun(makeRun()).status).toBe("red");
   });
 
-  it("keeps Electron explicitly blocked when its native button-position adapter is absent", () => {
-    expect(judgeTitlebarColdStartRun(run([{
-      schemaVersion: 1,
-      status: "blocked",
-      buildId: BUILD_ID,
-      runId: RUN_ID,
-      cycle: "1",
-      framework: "electron",
-      platform: "darwin",
-      windows: [],
-      machines: [],
-      reason: "Electron native traffic-light position adapter is absent",
-    }]))).toMatchObject({
+  it("keeps Electron explicitly blocked only after all three cold starts report the adapter absence", () => {
+    const cycles = [1, 2, 3].map((value) => terminalCycle(
+      value,
+      "blocked",
+      "electron",
+      "Electron native traffic-light position adapter is absent",
+    ));
+    expect(judgeTitlebarColdStartRun(run(cycles))).toMatchObject({
       status: "blocked",
       evidence: [expect.stringContaining("adapter is absent")],
     });
+  });
+
+  it("treats an incomplete blocked run as RED instead of hiding missing cold starts", () => {
+    expect(judgeTitlebarColdStartRun(run([
+      terminalCycle(1, "blocked", "electron", "adapter is absent"),
+    ])).status).toBe("red");
+  });
+
+  it("accepts not-applicable only after all three identity-bound cold starts", () => {
+    const cycles = [1, 2, 3].map((value) => terminalCycle(
+      value,
+      "not-applicable",
+      "tauri",
+      "macOS traffic lights are absent",
+    ));
+    expect(judgeTitlebarColdStartRun(run(cycles))).toEqual({
+      status: "not-applicable",
+      evidence: [],
+    });
+    cycles[2].runId = "stale-run";
+    expect(judgeTitlebarColdStartRun(run(cycles)).status).toBe("red");
   });
 });

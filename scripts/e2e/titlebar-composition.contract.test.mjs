@@ -52,9 +52,12 @@ describe("titlebar composition live E2E contract", () => {
     expect(source.match(/rpc\("window\.resizeSequence"/g)).toHaveLength(1);
     expect(source).toContain('rpc("window.info"');
     expect(source).toContain('rpc("ui.layout.wait-settled"');
-    expect(source).toContain("hostileResize:");
+    expect(source).toMatch(/hostileResize[:,]/);
     expect(source).toContain("heldRestore");
     expect(source).toContain("recordDir");
+    expect(source).toContain("entry?.observation?.generation");
+    expect(source).toContain("entry?.observation?.titlebar");
+    expect(source).not.toContain("entry?.observation?.verdict");
     expect(source).not.toMatch(/setTimeout|setInterval|window\.focus/);
   });
 
@@ -66,6 +69,7 @@ describe("titlebar composition live E2E contract", () => {
     expect(target).toContain('B12_RUN_ID="$$evidence_run_id"');
     expect(target).toContain('B12_CYCLE="$$cycle"');
     expect(target).toContain("titlebar-composition-summary.mjs");
+    expect(target).not.toContain("break;");
   });
 
   it("persists artifact and cold-run identity in every cycle and window receipt", () => {

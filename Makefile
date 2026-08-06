@@ -282,10 +282,20 @@ e2e-slot-freeze-dev: build-dev restart-dev ## 현재 소스로 dev 앱 빌드·�
 		SOKSAK_SOCKET="$(DEV_CORED_SOCKET)" BROWSER_EVIDENCE_BUILD_ID="$$evidence_build_id" node scripts/e2e/slot-freeze.mjs
 
 e2e-titlebar-dev: build-dev ## 현재 소스를 한 번 빌드하고 냉재시작 3회×모든 창×높이 3종의 B12를 기계 판정·캡처
-	@for cycle in 1 2 3; do \
-		$(MAKE) --no-print-directory restart-dev || exit 1; \
-		SOKSAK_SOCKET="$(DEV_CORED_SOCKET)" B12_CYCLE="$$cycle" node scripts/e2e/titlebar-composition.mjs || exit 1; \
-	done
+	@test -x "$(DEV_EXECUTABLE)" || { echo "빌드된 dev 앱 실행 파일이 없다: $(DEV_EXECUTABLE)"; exit 1; }; \
+		evidence_build_id="$$(shasum -a 256 "$(DEV_EXECUTABLE)" | awk '{print $$1}')"; \
+		evidence_run_id="$$(node -e 'process.stdout.write(require("node:crypto").randomUUID())')"; \
+		test -n "$$evidence_build_id" -a -n "$$evidence_run_id" || { echo "B12 실행 identity를 만들지 못했다"; exit 1; }; \
+		run_status=0; \
+		for cycle in 1 2 3; do \
+			if ! $(MAKE) --no-print-directory restart-dev; then \
+				run_status=1; \
+				continue; \
+			fi; \
+			SOKSAK_SOCKET="$(DEV_CORED_SOCKET)" BROWSER_EVIDENCE_BUILD_ID="$$evidence_build_id" B12_RUN_ID="$$evidence_run_id" B12_CYCLE="$$cycle" node scripts/e2e/titlebar-composition.mjs || run_status=1; \
+		done; \
+		BROWSER_EVIDENCE_BUILD_ID="$$evidence_build_id" B12_RUN_ID="$$evidence_run_id" node scripts/e2e/titlebar-composition-summary.mjs || run_status=1; \
+		exit "$$run_status"
 
 gates-registry: ## 배포 카탈로그 권위 게이트(네트워크) — 라이브 registry.json 의 GitHub 매니페스트 실측. C2 승격 소용돌이(시행 모집단=측정 모집단) + 의존 그래프 충족(의존 대상이 카탈로그에 함께 배포되는가) + 계약 동기(doctor 발행본 ≡ 코어 contract). 발행 전 GREEN 필수. 로컬(make gates)은 개발 사전점검일 뿐.
 	@node scripts/gates/c2-transparency-scan.mjs --registry

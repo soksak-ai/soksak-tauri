@@ -13,18 +13,40 @@ export const TITLEBAR_CENTER_TOLERANCE_PHYSICAL_PX = 0.5;
 const FRAMEWORKS = new Set(["tauri", "electron"]);
 const ROLES = Object.freeze(["close", "minimize", "zoom"]);
 const RECT_KEYS = Object.freeze(["x", "y", "w", "h"]);
+const SIZE_KEYS = Object.freeze(["w", "h"]);
+const REQUIRED_HEIGHTS = Object.freeze([30, 60, 72]);
 const SAMPLE_KEYS = Object.freeze([
   "stage",
   "presentationRevision",
   "presented",
   "requestedHeightCssPx",
   "dom",
+  "viewportPhysical",
   "titlebarPhysical",
   "reservations",
   "buttons",
   "backings",
 ]);
 const HELD_KEYS = Object.freeze(["baseline", "heights", "reset", "final"]);
+const HOSTILE_KEYS = Object.freeze([
+  "baselineOuterPhysical",
+  "transactions",
+  "restoredOuterPhysical",
+  "settledRestore",
+  "heldOuterPhysical",
+  "heldRestore",
+]);
+const HOSTILE_TRANSACTION_KEYS = Object.freeze([
+  "step", "requestedOuterPhysical", "probeGeneration", "titlebar",
+]);
+const HOSTILE_TITLEBAR_KEYS = Object.freeze([
+  "presentationRevision",
+  "viewportPhysical",
+  "titlebarPhysical",
+  "reservations",
+  "buttons",
+  "backings",
+]);
 
 function inspectRect(value, path, failures) {
   if (!requireExactKeys(value, RECT_KEYS, path, failures)) return null;
@@ -35,6 +57,18 @@ function inspectRect(value, path, failures) {
       failures.push(
         `${path}.${key}=finite${key === "w" || key === "h" ? ">0" : ""}/${displayValue(number)}`,
       );
+      valid = false;
+    }
+  }
+  return valid ? value : null;
+}
+
+function inspectSize(value, path, failures) {
+  if (!requireExactKeys(value, SIZE_KEYS, path, failures)) return null;
+  let valid = true;
+  for (const key of SIZE_KEYS) {
+    if (!Number.isFinite(value[key]) || value[key] <= 0) {
+      failures.push(`${path}.${key}=finite>0/${displayValue(value[key])}`);
       valid = false;
     }
   }
@@ -67,6 +101,12 @@ function contained(outer, inner) {
 
 function matchingRect(left, rightValue) {
   return RECT_KEYS.every((key) => withinTolerance(left[key] - rightValue[key]));
+}
+
+function sameList(left, rightValue) {
+  return Array.isArray(left) && Array.isArray(rightValue)
+    && left.length === rightValue.length
+    && left.every((value, index) => value === rightValue[index]);
 }
 
 function inspectElements(value, path, failures) {
@@ -178,6 +218,7 @@ function inspectSample(
   }
 
   const dom = inspectDom(value.dom, `${path}.dom`, failures);
+  const viewport = inspectSize(value.viewportPhysical, `${path}.viewportPhysical`, failures);
   const titlebar = inspectRect(value.titlebarPhysical, `${path}.titlebarPhysical`, failures);
   const reservations = inspectElements(value.reservations, `${path}.reservations`, failures);
   const buttons = inspectElements(value.buttons, `${path}.buttons`, failures);
@@ -223,6 +264,7 @@ function inspectSample(
     presented: value.presented === true,
     requestedHeightCssPx: requestedValid ? requestedHeight : null,
     dom,
+    viewport,
     titlebar,
     planes: { reservations, buttons, backings },
   };
@@ -272,6 +314,10 @@ function compareRestoredSample(baseline, restored, path, framework, failures) {
       && !matchingRect(baseline.titlebar, restored.titlebar)) {
     failures.push(`${path}.titlebarPhysical=baseline`);
   }
+  if (baseline.viewport && restored.viewport
+      && (baseline.viewport.w !== restored.viewport.w || baseline.viewport.h !== restored.viewport.h)) {
+    failures.push(`${path}.viewportPhysical=baseline`);
+  }
   for (const plane of ["reservations", "buttons", ...(framework === "tauri" ? ["backings"] : [])]) {
     inspectMatchingPlanes(
       baseline.planes[plane],
@@ -301,6 +347,10 @@ function compareHeldSample(applied, held, path, framework, failures) {
   if (applied.titlebar && held.titlebar && !matchingRect(applied.titlebar, held.titlebar)) {
     failures.push(`${path}.titlebarPhysical=applied`);
   }
+  if (applied.viewport && held.viewport
+      && (applied.viewport.w !== held.viewport.w || applied.viewport.h !== held.viewport.h)) {
+    failures.push(`${path}.viewportPhysical=applied`);
+  }
   for (const plane of ["reservations", "buttons", ...(framework === "tauri" ? ["backings"] : [])]) {
     inspectMatchingPlanes(
       applied.planes[plane],
@@ -309,6 +359,144 @@ function compareHeldSample(applied, held, path, framework, failures) {
       failures,
     );
   }
+}
+
+function inspectHostileTitlebar(value, path, framework, failures) {
+  if (!requireExactKeys(value, HOSTILE_TITLEBAR_KEYS, path, failures)) return null;
+  const revision = Number.isInteger(value.presentationRevision) && value.presentationRevision >= 1
+    ? value.presentationRevision
+    : null;
+  if (revision === null) {
+    failures.push(`${path}.presentationRevision=integer>=1/${displayValue(value.presentationRevision)}`);
+  }
+  const viewport = inspectSize(value.viewportPhysical, `${path}.viewportPhysical`, failures);
+  const titlebar = inspectRect(value.titlebarPhysical, `${path}.titlebarPhysical`, failures);
+  const reservations = inspectElements(value.reservations, `${path}.reservations`, failures);
+  const buttons = inspectElements(value.buttons, `${path}.buttons`, failures);
+  let backings = null;
+  if (framework === "tauri") {
+    backings = inspectElements(value.backings, `${path}.backings`, failures);
+  } else if (value.backings !== null) {
+    failures.push(`${path}.backings=null-for-electron/${displayValue(value.backings)}`);
+  }
+  inspectPlaneAgainstTitlebar(reservations, titlebar, `${path}.reservations`, failures);
+  inspectPlaneAgainstTitlebar(buttons, titlebar, `${path}.buttons`, failures);
+  inspectMatchingPlanes(reservations, buttons, `${path}.reservationButton`, failures);
+  if (framework === "tauri") {
+    inspectPlaneAgainstTitlebar(backings, titlebar, `${path}.backings`, failures);
+    inspectMatchingPlanes(backings, buttons, `${path}.backingButton`, failures);
+  }
+  return { revision, viewport, titlebar, planes: { reservations, buttons, backings } };
+}
+
+function sameSize(left, rightValue) {
+  return !!left && !!rightValue && left.w === rightValue.w && left.h === rightValue.h;
+}
+
+function inspectHostileResize(value, baseline, context, failures) {
+  if (!requireExactKeys(value, HOSTILE_KEYS, "hostileResize", failures)) return null;
+  const baselineOuter = inspectSize(
+    value.baselineOuterPhysical,
+    "hostileResize.baselineOuterPhysical",
+    failures,
+  );
+  const restoredOuter = inspectSize(
+    value.restoredOuterPhysical,
+    "hostileResize.restoredOuterPhysical",
+    failures,
+  );
+  const heldOuter = inspectSize(
+    value.heldOuterPhysical,
+    "hostileResize.heldOuterPhysical",
+    failures,
+  );
+  if (baselineOuter && restoredOuter && !sameSize(baselineOuter, restoredOuter)) {
+    failures.push("hostileResize.restoredOuterPhysical=baseline");
+  }
+  if (baselineOuter && heldOuter && !sameSize(baselineOuter, heldOuter)) {
+    failures.push("hostileResize.heldOuterPhysical=baseline");
+  }
+
+  const transactions = [];
+  if (!Array.isArray(value.transactions) || value.transactions.length < 12) {
+    failures.push(`hostileResize.transactions=at-least-12/${displayValue(value.transactions?.length)}`);
+  } else {
+    let previousGeneration = 0;
+    value.transactions.forEach((transaction, index) => {
+      const path = `hostileResize.transactions[${index}]`;
+      if (!requireExactKeys(transaction, HOSTILE_TRANSACTION_KEYS, path, failures)) return;
+      if (transaction.step !== index) {
+        failures.push(`${path}.step=${index}/${displayValue(transaction.step)}`);
+      }
+      const requested = inspectSize(
+        transaction.requestedOuterPhysical,
+        `${path}.requestedOuterPhysical`,
+        failures,
+      );
+      const generation = Number.isSafeInteger(transaction.probeGeneration)
+        && transaction.probeGeneration > previousGeneration
+        ? transaction.probeGeneration
+        : null;
+      if (generation === null) {
+        failures.push(`${path}.probeGeneration=>${previousGeneration}/${displayValue(transaction.probeGeneration)}`);
+      } else {
+        previousGeneration = generation;
+      }
+      const titlebar = inspectHostileTitlebar(
+        transaction.titlebar,
+        `${path}.titlebar`,
+        context.framework,
+        failures,
+      );
+      if (baselineOuter && baseline?.viewport && requested && titlebar?.viewport) {
+        const expected = {
+          w: baseline.viewport.w + requested.w - baselineOuter.w,
+          h: baseline.viewport.h + requested.h - baselineOuter.h,
+        };
+        if (!withinTolerance(titlebar.viewport.w - expected.w)) {
+          failures.push(`${path}.titlebar.viewportPhysical.w=baseline+outer-delta`);
+        }
+        if (!withinTolerance(titlebar.viewport.h - expected.h)) {
+          failures.push(`${path}.titlebar.viewportPhysical.h=baseline+outer-delta`);
+        }
+      }
+      transactions.push({ requested, generation, titlebar });
+    });
+  }
+  const requestedSizes = transactions.map(({ requested }) => requested).filter(Boolean);
+  if (baselineOuter && requestedSizes.length > 0
+      && !sameSize(requestedSizes.at(-1), baselineOuter)) {
+    failures.push("hostileResize.transactions.last.requestedOuterPhysical=baseline");
+  }
+  const widthDirections = new Set();
+  const heightDirections = new Set();
+  requestedSizes.slice(1).forEach((size, index) => {
+    widthDirections.add(Math.sign(size.w - requestedSizes[index].w));
+    heightDirections.add(Math.sign(size.h - requestedSizes[index].h));
+  });
+  if (!(widthDirections.has(-1) && widthDirections.has(1))) {
+    failures.push("hostileResize.transactions.width=bidirectional");
+  }
+  if (!(heightDirections.has(-1) && heightDirections.has(1))) {
+    failures.push("hostileResize.transactions.height=bidirectional");
+  }
+
+  const settled = inspectSample(
+    value.settledRestore,
+    "hostileResize.settledRestore",
+    { ...context, expectedStage: "resize-restored" },
+    failures,
+  );
+  const held = inspectSample(
+    value.heldRestore,
+    "hostileResize.heldRestore",
+    { ...context, expectedStage: "resize-restored" },
+    failures,
+  );
+  compareRestoredSample(baseline, settled, "hostileResize.settledRestore", context.framework, failures);
+  compareRestoredSample(baseline, held, "hostileResize.heldRestore", context.framework, failures);
+  compareHeldSample(settled, held, "hostileResize.heldRestore", context.framework, failures);
+  return { baselineOuter, restoredOuter, heldOuter, transactions, settled, held };
 }
 
 /**
@@ -320,7 +508,7 @@ export function judgeB12MachineEvidence(value, identity = null) {
   const failures = [];
   if (!requireExactKeys(
     value,
-    ["engine", "coordinateSpace", "baseline", "heights", "reset", "final", "held"],
+    ["engine", "coordinateSpace", "baseline", "heights", "reset", "hostileResize", "final", "held"],
     "evidence",
     failures,
   )) return finishMachineVerdict("B12", failures, "B12:unreachable");
@@ -331,6 +519,9 @@ export function judgeB12MachineEvidence(value, identity = null) {
   const framework = identity?.framework;
   if (!FRAMEWORKS.has(framework)) {
     failures.push(`framework=tauri|electron/${displayValue(framework)}`);
+  }
+  if (framework === "electron") {
+    failures.push("electron-native-button-position-adapter=missing");
   }
   const coordinateSpace = inspectCoordinateSpace(value.coordinateSpace, failures);
   const context = {
@@ -345,8 +536,8 @@ export function judgeB12MachineEvidence(value, identity = null) {
   );
 
   const heights = [];
-  if (!Array.isArray(value.heights) || value.heights.length < 2) {
-    failures.push(`heights=at-least-2/${displayValue(value.heights?.length)}`);
+  if (!Array.isArray(value.heights) || value.heights.length !== REQUIRED_HEIGHTS.length) {
+    failures.push(`heights=exactly-30,60,72/${displayValue(value.heights?.length)}`);
   } else {
     value.heights.forEach((height, index) => {
       const inspected = inspectSample(
@@ -364,6 +555,7 @@ export function judgeB12MachineEvidence(value, identity = null) {
     { ...context, expectedStage: "reset" },
     failures,
   );
+  inspectHostileResize(value.hostileResize, baseline, context, failures);
   const final = inspectSample(
     value.final,
     "final",
@@ -382,7 +574,8 @@ export function judgeB12MachineEvidence(value, identity = null) {
       { ...context, expectedStage: "baseline" },
       failures,
     );
-    if (!Array.isArray(value.held.heights) || value.held.heights.length !== value.heights.length) {
+    const heightCount = Array.isArray(value.heights) ? value.heights.length : -1;
+    if (!Array.isArray(value.held.heights) || value.held.heights.length !== heightCount) {
       failures.push(`held.heights=heights.length/${displayValue(value.held.heights?.length)}`);
     } else {
       value.held.heights.forEach((height, index) => {
@@ -410,9 +603,8 @@ export function judgeB12MachineEvidence(value, identity = null) {
   }
 
   const requestedHeights = heights.map((sample) => sample.requestedHeightCssPx);
-  if (requestedHeights.some((height) => height === null)
-      || new Set(requestedHeights).size !== requestedHeights.length) {
-    failures.push(`heights.requestedHeightCssPx=unique/${displayValue(requestedHeights)}`);
+  if (!sameList(requestedHeights, REQUIRED_HEIGHTS)) {
+    failures.push(`heights.requestedHeightCssPx=30,60,72/${displayValue(requestedHeights)}`);
   }
 
   const ordered = [baseline, ...heights, reset, final].filter(Boolean);
@@ -453,6 +645,7 @@ export function judgeB12MachineEvidence(value, identity = null) {
     "B12",
     failures,
     `${value.engine}/B12:${framework};baseline+height>=2+reset+final=presented+held;`
+      + `height=30,60,72;hostile-resize>=12+exact-restore;`
       + `center<=${TITLEBAR_CENTER_TOLERANCE_PHYSICAL_PX}px;dom-identity+inline-style=restored`,
   );
 }

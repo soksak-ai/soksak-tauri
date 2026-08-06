@@ -8,23 +8,65 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { openClient, requireSocket, must, resolveControlWindow } from "./lib/client.mjs";
+import { requireBrowserEvidenceBuildId } from "./lib/browser-evidence-store.mjs";
 import { BROWSER_ACCEPTANCE_ENGINES } from "./lib/browser-gate-identity.mjs";
 import { judgeB12MachineEvidence } from "./lib/browser-gate-b12.mjs";
+import { hostileWindowResizeSizes } from "./lib/browser-matrix.mjs";
+import {
+  requireB12Cycle,
+  requireB12RunId,
+  titlebarEvidenceRunRoot,
+} from "./lib/titlebar-cold-start-run.mjs";
 
 const HEIGHTS = Object.freeze([30, 60, 72]);
 const HOLD_FRAMES = 6;
 const HOLD_INTERVAL_MS = 180;
-const cycle = String(process.env.B12_CYCLE ?? "single");
-const evidenceRoot = path.join(
-  os.homedir(),
-  ".soksak-e2e",
-  "evidence",
-  "titlebar-composition",
-  cycle,
-);
+const HOSTILE_RECORD_FRAMES = 64;
+const buildId = requireBrowserEvidenceBuildId(process.env.BROWSER_EVIDENCE_BUILD_ID);
+const runId = requireB12RunId(process.env.B12_RUN_ID);
+const cycle = requireB12Cycle(process.env.B12_CYCLE);
+const runRoot = titlebarEvidenceRunRoot(os.homedir(), runId);
+const evidenceRoot = path.join(runRoot, cycle);
+const cycleFile = path.join(evidenceRoot, "cycle.json");
 
 function publicElements(items) {
-  return items.map(({ role, rect }) => ({ role, rect: { ...rect } }));
+  if (!Array.isArray(items)) return null;
+  return items.map((item) => item && typeof item === "object"
+    ? { role: item.role, rect: item.rect && typeof item.rect === "object" ? { ...item.rect } : null }
+    : null);
+}
+
+function publicSize(value) {
+  return value && typeof value === "object" ? { w: value.w, h: value.h } : null;
+}
+
+function writeCycle(value) {
+  fs.mkdirSync(evidenceRoot, { recursive: true });
+  fs.writeFileSync(cycleFile, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function cycleIdentity(framework) {
+  return {
+    schemaVersion: 1,
+    buildId,
+    runId,
+    cycle,
+    framework,
+    platform: process.platform,
+  };
+}
+
+function machineSummary(report) {
+  return {
+    schemaVersion: 1,
+    status: report.status,
+    buildId,
+    runId,
+    cycle,
+    window: report.window,
+    framework: report.framework,
+    verdicts: report.verdicts.map(({ engine, verdict }) => ({ engine, status: verdict.status })),
+  };
 }
 
 function sample(stage, requestedHeightCssPx, composition, measured, startup) {
@@ -40,7 +82,22 @@ function sample(stage, requestedHeightCssPx, composition, measured, startup) {
         flexBasis: measured.inlineStyle.flexBasis,
       },
     },
+    viewportPhysical: publicSize(composition.viewportPhysical),
     titlebarPhysical: { ...composition.titlebarPhysical },
+    reservations: publicElements(composition.reservations),
+    buttons: publicElements(composition.buttons),
+    backings: publicElements(composition.backings),
+  };
+}
+
+function hostileTitlebar(composition) {
+  if (!composition || typeof composition !== "object") return null;
+  return {
+    presentationRevision: composition.nativeSequence,
+    viewportPhysical: publicSize(composition.viewportPhysical),
+    titlebarPhysical: composition.titlebarPhysical && typeof composition.titlebarPhysical === "object"
+      ? { ...composition.titlebarPhysical }
+      : null,
     reservations: publicElements(composition.reservations),
     buttons: publicElements(composition.buttons),
     backings: publicElements(composition.backings),
@@ -88,7 +145,10 @@ async function inspectWindow(rpc, windowLabel, framework) {
   const machineFile = path.join(directory, "machine.json");
   fs.mkdirSync(directory, { recursive: true });
   fs.writeFileSync(machineFile, `${JSON.stringify({
+    schemaVersion: 1,
     status: "running",
+    buildId,
+    runId,
     cycle,
     window: windowLabel,
     framework,
@@ -99,7 +159,11 @@ async function inspectWindow(rpc, windowLabel, framework) {
   if (!titlebar?.address) throw new Error(`${windowLabel}: public titlebar address is absent`);
 
   let needsReset = false;
+  let originalOuter = null;
+  let needsWindowRestore = false;
   try {
+    const initialWindow = must(await rpc("window.info", {}, windowLabel), `${windowLabel} window.info`);
+    originalOuter = { w: initialWindow.w, h: initialWindow.h };
     const baseline = await readSample(rpc, windowLabel, titlebar.address, "baseline", null);
     await hold(rpc, windowLabel, "baseline");
     const heldBaseline = await readSample(
@@ -151,6 +215,66 @@ async function inspectWindow(rpc, windowLabel, framework) {
     );
     await hold(rpc, windowLabel, "reset");
     const heldReset = await readSample(rpc, windowLabel, titlebar.address, "reset", null);
+
+    const hostileSizes = hostileWindowResizeSizes(originalOuter);
+    needsWindowRestore = true;
+    const hostileResult = must(await rpc("window.resizeSequence", {
+      sizes: hostileSizes,
+      intervalMs: 8,
+      recordDir: path.join(directory, "hostile-resize"),
+      recordFrames: HOSTILE_RECORD_FRAMES,
+      recordIntervalMs: 16,
+    }, windowLabel, { timeoutMs: 60_000 }), `${windowLabel} hostile window resize`);
+    if (hostileResult.recording?.status !== "complete"
+        || hostileResult.recording?.frames !== HOSTILE_RECORD_FRAMES) {
+      throw new Error(
+        `${windowLabel}: hostile resize recording incomplete ${JSON.stringify(hostileResult.recording)}`,
+      );
+    }
+    must(
+      await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, windowLabel, { timeoutMs: 10_000 }),
+      `${windowLabel} hostile resize final layout settled`,
+    );
+    const restoredInfo = must(
+      await rpc("window.info", {}, windowLabel),
+      `${windowLabel} hostile resize restored window.info`,
+    );
+    const settledRestore = await readSample(
+      rpc,
+      windowLabel,
+      titlebar.address,
+      "resize-restored",
+      null,
+    );
+    await hold(rpc, windowLabel, "hostile-resize-restored");
+    const heldRestore = await readSample(
+      rpc,
+      windowLabel,
+      titlebar.address,
+      "resize-restored",
+      null,
+    );
+    const heldInfo = must(
+      await rpc("window.info", {}, windowLabel),
+      `${windowLabel} hostile resize held window.info`,
+    );
+    await capture(rpc, windowLabel, "hostile-resize-restored-held");
+    const hostileResize = {
+      baselineOuterPhysical: { ...originalOuter },
+      transactions: Array.isArray(hostileResult.samples)
+        ? hostileResult.samples.map((entry) => ({
+            step: entry?.step,
+            requestedOuterPhysical: publicSize(entry?.size),
+            probeGeneration: entry?.observation?.generation,
+            titlebar: hostileTitlebar(entry?.observation?.titlebar),
+          }))
+        : null,
+      restoredOuterPhysical: { w: restoredInfo.w, h: restoredInfo.h },
+      settledRestore,
+      heldOuterPhysical: { w: heldInfo.w, h: heldInfo.h },
+      heldRestore,
+    };
+    needsWindowRestore = heldInfo.w !== originalOuter.w || heldInfo.h !== originalOuter.h;
     const final = await readSample(rpc, windowLabel, titlebar.address, "final", null);
     await hold(rpc, windowLabel, "final");
     const heldFinal = await readSample(rpc, windowLabel, titlebar.address, "final", null);
@@ -168,6 +292,7 @@ async function inspectWindow(rpc, windowLabel, framework) {
         baseline,
         heights,
         reset,
+        hostileResize,
         final,
         held: {
           baseline: heldBaseline,
@@ -181,7 +306,10 @@ async function inspectWindow(rpc, windowLabel, framework) {
     }
     const failed = verdicts.find(({ verdict }) => verdict.status !== "green");
     const report = {
+      schemaVersion: 1,
       status: failed ? "red" : "green",
+      buildId,
+      runId,
       cycle,
       window: windowLabel,
       framework,
@@ -202,7 +330,10 @@ async function inspectWindow(rpc, windowLabel, framework) {
   } catch (error) {
     if (!reportWritten) {
       fs.writeFileSync(machineFile, `${JSON.stringify({
+        schemaVersion: 1,
         status: "red",
+        buildId,
+        runId,
         cycle,
         window: windowLabel,
         framework,
@@ -217,30 +348,85 @@ async function inspectWindow(rpc, windowLabel, framework) {
         `${windowLabel} emergency titlebar.height.reset`,
       );
     }
+    if (needsWindowRestore && originalOuter) {
+      must(
+        await rpc("window.resize", originalOuter, windowLabel),
+        `${windowLabel} emergency window size restore`,
+      );
+    }
   }
 }
 
 async function main() {
   fs.mkdirSync(evidenceRoot, { recursive: true });
-  const client = await openClient(requireSocket());
+  writeCycle({
+    ...cycleIdentity("unknown"),
+    status: "running",
+    windows: [],
+    machines: [],
+  });
+  let client = null;
+  let framework = "unknown";
+  let labels = [];
+  const reports = [];
   try {
+    client = await openClient(requireSocket());
     const rpc = client.rpc;
     const control = await resolveControlWindow(rpc);
-    const labels = must(await rpc("window.list", {}, control), "window.list").labels;
+    labels = must(await rpc("window.list", {}, control), "window.list").labels;
     if (!Array.isArray(labels) || labels.length === 0) throw new Error("live window list is empty");
-    const framework = must(await rpc("framework.info", {}, control), "framework.info").framework;
+    labels = [...labels].sort();
+    framework = must(await rpc("framework.info", {}, control), "framework.info").framework;
+    if (framework === "electron") {
+      const reason = "Electron native traffic-light position adapter is absent";
+      writeCycle({
+        ...cycleIdentity(framework),
+        status: "blocked",
+        windows: [],
+        machines: [],
+        reason,
+      });
+      const error = new Error(reason);
+      error.b12Status = "blocked";
+      throw error;
+    }
     if (framework !== "tauri") throw new Error(`B12 live harness requires tauri, got ${framework}`);
     if (process.platform !== "darwin") {
+      writeCycle({
+        ...cycleIdentity(framework),
+        status: "not-applicable",
+        windows: [],
+        machines: [],
+        reason: "macOS traffic lights are absent",
+      });
       console.log("B12 not-applicable: macOS traffic lights are absent");
       return;
     }
     for (const windowLabel of labels) {
       const report = await inspectWindow(rpc, windowLabel, framework);
+      reports.push(report);
       console.log(`✓ ${windowLabel}: ${report.verdicts.length}/3 B12 machine GREEN`);
     }
+    writeCycle({
+      ...cycleIdentity(framework),
+      status: "green",
+      windows: labels,
+      machines: reports.map(machineSummary),
+    });
     console.log(`✓ B12 live cycle ${cycle} GREEN — evidence ${evidenceRoot}`);
+  } catch (error) {
+    if (error?.b12Status !== "blocked") {
+      writeCycle({
+        ...cycleIdentity(framework),
+        status: "red",
+        windows: labels,
+        machines: reports.map(machineSummary),
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
+    throw error;
   } finally {
-    client.close();
+    client?.close();
   }
 }
 
