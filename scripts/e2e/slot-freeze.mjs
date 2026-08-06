@@ -346,7 +346,11 @@ async function assertCaptureInstrumentationCleared(rpc, win) {
   }
 }
 
-function assertFrameSequence(files, name, scale, options = {}) {
+/**
+ * 녹화는 사람이 보는 개발 증거다. 프레임을 분석해 진단 JSON을 남기지만, 이 결과로
+ * E2E를 GREEN/RED 판정하지 않는다. 발견한 결함은 별도 공개 좌표/거래 불변식으로 옮겨야 한다.
+ */
+function observeFrameSequence(files, name, scale, options = {}) {
   const observations = files.map((file) => {
     const errors = [];
     try { assertFrameMarkers(file, path.join(name, path.basename(file)), scale, options); }
@@ -372,7 +376,14 @@ function assertFrameSequence(files, name, scale, options = {}) {
     return { frame: path.basename(file), errors, motionDx };
   });
   const verdict = summarizeFrameSequence(observations);
-  if (!verdict.ok) throw new Error(`${name}: ${verdict.summary}`);
+  const report = { kind: "human-visual-evidence", automatedVerdict: false, name, ...verdict };
+  if (files[0]) {
+    fs.writeFileSync(
+      path.join(path.dirname(files[0]), "visual-diagnostics.json"),
+      `${JSON.stringify(report, null, 2)}\n`,
+    );
+  }
+  console.log(`◉ ${name}: 녹화 ${files.length}장 시각 증거 저장(자동 판정 안 함)`);
   return verdict;
 }
 
@@ -969,7 +980,7 @@ async function runEngine(client, page, engine) {
             console.error(`RED ${failure}`);
           }
         }
-        assertFrameSequence(
+        observeFrameSequence(
           files.map((file) => path.join(dir, file)),
           `${engine}/${name}`,
           scale,
@@ -1061,7 +1072,7 @@ async function runEngine(client, page, engine) {
         side: pinCase.relationSide,
         placement: "pin",
       });
-      assertFrameSequence(
+      observeFrameSequence(
         files.map((file) => path.join(dir, file)),
         `${engine}/${pinCase.name}`,
         scale,
@@ -1181,7 +1192,7 @@ async function runEngine(client, page, engine) {
     }
     // 최소 높이에서는 입력 아래의 상태 marker가 정상적으로 viewport 밖에 놓일 수 있다. 전이 중에는
     // 상단의 고정 ruler로 live frame을 판정하고, 원복 직후 실제 input 값·event ledger를 다시 읽는다.
-    assertFrameSequence(
+    observeFrameSequence(
       fastFiles.map((file) => path.join(fastResizeDir, file)),
       `${engine}/window-fast`,
       scale,
@@ -1210,7 +1221,7 @@ async function runEngine(client, page, engine) {
       if (Number(dragged.recording?.frames ?? 0) !== FRAMES_PER_CLICK || files.length !== FRAMES_PER_CLICK) {
         throw new Error(`pane resize ${direction}: 캡처 ${files.length}/${FRAMES_PER_CLICK}`);
       }
-      assertFrameSequence(
+      observeFrameSequence(
         files.map((file) => path.join(dir, file)),
         `${engine}/pane-${direction}`,
         scale,

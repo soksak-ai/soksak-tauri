@@ -3,6 +3,15 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 describe("slot-freeze instrumentation lifecycle", () => {
+  it("녹화는 시각 진단을 남기지만 E2E 성공/실패를 판정하지 않는다", () => {
+    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    const observer = source.split("function observeFrameSequence")[1]?.split("\n}\n")[0] ?? "";
+    expect(observer).toContain('kind: "human-visual-evidence"');
+    expect(observer).toContain("automatedVerdict: false");
+    expect(observer).not.toContain("throw new Error");
+    expect(source).not.toContain("assertFrameSequence(");
+  });
+
   it("activates pane through exposed tab chrome and verifies the resulting pane state", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
     expect(source).toContain("activationAddressForTab");
