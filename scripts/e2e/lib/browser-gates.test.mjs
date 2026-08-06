@@ -12,6 +12,7 @@ import {
   createBrowserGateReport,
   judgeB01MachineEvidence,
   judgeB02MachineEvidence,
+  judgeB03MachineEvidence,
   judgeB11MachineEvidence,
   judgeBrowserMachineGateEvidence,
   machineGateSummary,
@@ -55,7 +56,8 @@ function judgeReceipt(options = {}) {
   const evidence = Object.hasOwn(options, "evidence") ? options.evidence
     : gate === "B01" ? b01Evidence(engine)
       : gate === "B02" ? b02Evidence(engine)
-        : b11Evidence(engine);
+        : gate === "B03" ? b03Evidence(engine)
+          : b11Evidence(engine);
   return judgeBrowserMachineGateEvidence({
     ...identity,
     engine,
@@ -139,6 +141,37 @@ function b11Evidence(engine = "browser") {
         },
       };
     }),
+  };
+}
+
+function b03Evidence(engine = "browser") {
+  const scaleFactor = 2;
+  const physicalFrame = ({ x, y, w, h }) => {
+    const left = Math.round(x * scaleFactor);
+    const top = Math.round(y * scaleFactor);
+    const right = Math.round((x + w) * scaleFactor);
+    const bottom = Math.round((y + h) * scaleFactor);
+    return { x: left, y: top, w: right - left, h: bottom - top };
+  };
+  const viewFrames = [
+    ["left", { x: 100.25, y: 80.25, w: 320.5, h: 480.25 }],
+    ["right", { x: 440.25, y: 80.25, w: 360.5, h: 480.25 }],
+  ];
+  const participant = (kind, viewId, logicalFrame) => ({
+    id: `${kind}-${engine}-${viewId}`,
+    viewId: `${engine}-${viewId}`,
+    topologyPath: `workspace/pane/${viewId}/content`,
+    visible: true,
+    logicalFrame: { ...logicalFrame },
+    physicalFrame: physicalFrame(logicalFrame),
+  });
+  return {
+    engine,
+    coordinateSpace: { logical: "css-px", physical: "device-px", scaleFactor },
+    visibleViewIds: viewFrames.map(([viewId]) => `${engine}-${viewId}`),
+    slots: viewFrames.map(([viewId, frame]) => participant("slot", viewId, frame)),
+    renderers: viewFrames.map(([viewId, frame]) => participant("renderer", viewId, frame)),
+    surfaces: viewFrames.map(([viewId, frame]) => participant("surface", viewId, frame)),
   };
 }
 
@@ -237,6 +270,33 @@ describe("브라우저 12-gate 정본", () => {
     expect(judgeB02MachineEvidence(wrongLedgerTail).status).toBe("red");
   });
 
+  it("B03은 visible owner와 독립 slot·renderer·surface inventory가 양 좌표계에서 rounding-only 1:1이어야 green이다", () => {
+    for (const engine of BROWSER_ACCEPTANCE_ENGINES) {
+      expect(judgeB03MachineEvidence(b03Evidence(engine))).toMatchObject({ status: "green", reason: null });
+    }
+    expect(judgeB03MachineEvidence(null)).toEqual({ status: "not-run", evidence: [], reason: null });
+
+    const missingSurface = b03Evidence();
+    missingSurface.surfaces.pop();
+    expect(judgeB03MachineEvidence(missingSurface).status).toBe("red");
+
+    const omittedVisibleOwner = b03Evidence();
+    omittedVisibleOwner.visibleViewIds.push("browser-omitted");
+    expect(judgeB03MachineEvidence(omittedVisibleOwner).status).toBe("red");
+
+    const wrongTopology = b03Evidence();
+    wrongTopology.renderers[0].topologyPath = "workspace/pane/wrong/content";
+    expect(judgeB03MachineEvidence(wrongTopology).status).toBe("red");
+
+    const onePhysicalPixel = b03Evidence();
+    onePhysicalPixel.surfaces[0].physicalFrame.x += 1;
+    expect(judgeB03MachineEvidence(onePhysicalPixel).status).toBe("red");
+
+    const pixelContamination = b03Evidence();
+    pixelContamination.surfaces[0].markerPixels = { cyan: 64 };
+    expect(judgeB03MachineEvidence(pixelContamination).status).toBe("red");
+  });
+
   it("B11은 두 탭 모두 exact wheel 왕복과 explicit-view full capture 영수증·전후 페이지 불변성을 증명해야 green이다", () => {
     for (const engine of BROWSER_ACCEPTANCE_ENGINES) {
       expect(judgeB11MachineEvidence(b11Evidence(engine)).status).toBe("green");
@@ -283,7 +343,7 @@ describe("브라우저 12-gate 정본", () => {
     expect(judgeReceipt({ gate: "B01", evidence: undefined }).status).toBe("not-run");
     expect(judgeReceipt({ gate: "B02", evidence: { engine: "browser" } }).status).toBe("red");
     expect(judgeReceipt({ gate: "B11" }).status).toBe("green");
-    expect(() => judgeReceipt({ gate: "B03", evidence: {} })).toThrow(/B01, B02, B11/);
+    expect(judgeReceipt({ gate: "B03" }).status).toBe("green");
 
     const receipt = judgeReceipt({ gate: "B11" });
     let report = setMachineGateStatus(createReport(), {

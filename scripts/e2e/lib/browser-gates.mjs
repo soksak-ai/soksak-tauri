@@ -1,3 +1,5 @@
+import { compositionInventoryVerdict } from "../../../packages/dom-webview-compositor/src/index.ts";
+
 export const BROWSER_ACCEPTANCE_FRAMEWORKS = Object.freeze([
   "tauri",
   "electron",
@@ -405,6 +407,76 @@ export function judgeB02MachineEvidence(value) {
   );
 }
 
+const B03_EVIDENCE_KEYS = Object.freeze([
+  "engine",
+  "coordinateSpace",
+  "visibleViewIds",
+  "slots",
+  "renderers",
+  "surfaces",
+]);
+const B03_PARTICIPANT_KEYS = Object.freeze([
+  "id",
+  "viewId",
+  "topologyPath",
+  "visible",
+  "logicalFrame",
+  "physicalFrame",
+]);
+const RECT_KEYS = Object.freeze(["x", "y", "w", "h"]);
+
+function inspectB03Participants(values, kind, failures) {
+  if (!Array.isArray(values) || values.length === 0) {
+    failures.push(`${kind}s=non-empty/${displayValue(values)}`);
+    return;
+  }
+  values.forEach((participant, index) => {
+    const path = `${kind}s[${index}]`;
+    if (!requireExactKeys(participant, B03_PARTICIPANT_KEYS, path, failures)) return;
+    requireExactKeys(participant.logicalFrame, RECT_KEYS, `${path}.logicalFrame`, failures);
+    requireExactKeys(participant.physicalFrame, RECT_KEYS, `${path}.physicalFrame`, failures);
+  });
+}
+
+/**
+ * B03은 independently enumerated inventory만 받는다. paired 결과만 받으면 producer가
+ * 누락 surface를 숨길 수 있으므로 visible owner ledger와 세 집합을 따로 요구한다.
+ */
+export function judgeB03MachineEvidence(value) {
+  if (value == null) return notRunVerdict();
+  const failures = [];
+  if (!requireExactKeys(value, B03_EVIDENCE_KEYS, "evidence", failures)) {
+    return finishMachineVerdict("B03", failures, "B03:unreachable");
+  }
+  if (!engineSet.has(value.engine)) failures.push(`engine=known/${displayValue(value.engine)}`);
+  if (requireExactKeys(value.coordinateSpace, [
+    "logical", "physical", "scaleFactor",
+  ], "coordinateSpace", failures)) {
+    if (value.coordinateSpace.logical !== "css-px") {
+      failures.push(`coordinateSpace.logical=css-px/${displayValue(value.coordinateSpace.logical)}`);
+    }
+    if (value.coordinateSpace.physical !== "device-px") {
+      failures.push(`coordinateSpace.physical=device-px/${displayValue(value.coordinateSpace.physical)}`);
+    }
+  }
+  if (!Array.isArray(value.visibleViewIds)
+      || value.visibleViewIds.length === 0
+      || value.visibleViewIds.some((viewId) => !hasText(viewId))) {
+    failures.push(`visibleViewIds=non-empty-strings/${displayValue(value.visibleViewIds)}`);
+  }
+  inspectB03Participants(value.slots, "slot", failures);
+  inspectB03Participants(value.renderers, "renderer", failures);
+  inspectB03Participants(value.surfaces, "surface", failures);
+
+  const inventoryVerdict = compositionInventoryVerdict(value);
+  failures.push(...inventoryVerdict.errors.map((error) => `inventory:${error}`));
+  return finishMachineVerdict(
+    "B03",
+    failures,
+    `${value.engine}/B03:visible=${inventoryVerdict.matched};slot+renderer+surface=1:1-rounding-only`,
+  );
+}
+
 const B11_PAGE_KEYS = Object.freeze([
   "scrollX",
   "scrollY",
@@ -536,6 +608,7 @@ export function judgeB11MachineEvidence(value) {
 const machineEvidenceJudges = new Map([
   ["B01", { judgeId: "B01-machine-v1", judge: judgeB01MachineEvidence }],
   ["B02", { judgeId: "B02-machine-v1", judge: judgeB02MachineEvidence }],
+  ["B03", { judgeId: "B03-machine-v1", judge: judgeB03MachineEvidence }],
   ["B11", { judgeId: "B11-machine-v1", judge: judgeB11MachineEvidence }],
 ]);
 
@@ -580,7 +653,7 @@ export function judgeBrowserMachineGateEvidence(request) {
   requireEngine(request.engine);
   requireGate(request.gate);
   const entry = machineEvidenceJudges.get(request.gate);
-  if (!entry) throw new TypeError("machine evidence judge is available for B01, B02, B11");
+  if (!entry) throw new TypeError(`machine evidence judge is unavailable for ${request.gate}`);
 
   const machineEvidence = copyMachineEvidence(request.evidence);
   const verdict = judgeMachineEvidence(entry, request.gate, request.engine, machineEvidence);
