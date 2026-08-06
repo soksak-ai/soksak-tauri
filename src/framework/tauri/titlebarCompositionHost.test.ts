@@ -20,7 +20,7 @@ const physicalButtons = [
 ] as const;
 
 const nativeState = (sequence = 7): NativeTitlebarState => ({
-  schemaVersion: 2,
+  schemaVersion: 3,
   kind: "tauri-titlebar-native-state",
   window: "w-test",
   sequence,
@@ -32,10 +32,9 @@ const nativeState = (sequence = 7): NativeTitlebarState => ({
   backings: physicalButtons.map((button) => ({
     ...button,
     hidden: true,
-    directHidden: true,
     expectedHidden: true,
-    count: 1,
-    immediateBelowButton: true,
+    paintedByOwner: true,
+    ownerBelowButtons: true,
     hiddenMatchesWindowKey: true,
   })),
   windowKey: true,
@@ -50,6 +49,7 @@ const nativeState = (sequence = 7): NativeTitlebarState => ({
     mutationSequence: 3,
     applying: false,
     lastApplyOk: true,
+    lastApplyError: null,
     windowVisible: true,
   },
 });

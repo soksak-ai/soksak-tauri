@@ -15,7 +15,7 @@ export const TITLEBAR_NODE_ADDRESS = "titlebar";
 export const TITLEBAR_COMPOSITION_EVENT = "soksak:tauri-titlebar-composition";
 
 export interface NativeTitlebarState {
-  schemaVersion: 2;
+  schemaVersion: 3;
   kind: "tauri-titlebar-native-state";
   window: string;
   sequence: number;
@@ -37,20 +37,20 @@ export interface NativeTitlebarState {
     mutationSequence: number;
     applying: boolean;
     lastApplyOk: boolean;
+    lastApplyError: string | null;
     windowVisible: boolean;
   };
 }
 
 export interface NativeTitlebarBackingElement extends TitlebarElement {
-  directHidden: boolean | null;
   expectedHidden: boolean;
-  count: number;
-  immediateBelowButton: boolean;
+  paintedByOwner: boolean;
+  ownerBelowButtons: boolean;
   hiddenMatchesWindowKey: boolean;
 }
 
 export type TitlebarCompositionStatus = Omit<TitlebarCompositionVerdict, "checks" | "issues" | "verdict"> & {
-  schemaVersion: 2;
+  schemaVersion: 3;
   kind: "tauri-titlebar-composition";
   window: string;
   nativeSequence: number;
@@ -169,12 +169,9 @@ function isBackingElement(value: unknown): value is NativeTitlebarBackingElement
   if (value === null) return true;
   if (!isElement(value)) return false;
   const backing = value as Partial<NativeTitlebarBackingElement>;
-  return (backing.directHidden === null || typeof backing.directHidden === "boolean")
-    && typeof backing.expectedHidden === "boolean"
-    && typeof backing.count === "number"
-    && Number.isSafeInteger(backing.count)
-    && backing.count >= 0
-    && typeof backing.immediateBelowButton === "boolean"
+  return typeof backing.expectedHidden === "boolean"
+    && typeof backing.paintedByOwner === "boolean"
+    && typeof backing.ownerBelowButtons === "boolean"
     && typeof backing.hiddenMatchesWindowKey === "boolean";
 }
 
@@ -185,7 +182,7 @@ export function isNativeTitlebarState(value: unknown): value is NativeTitlebarSt
   const owner = state.owner;
   const ownerSequence = (part: unknown): part is number => typeof part === "number"
     && Number.isSafeInteger(part) && part >= 0;
-  return state.schemaVersion === 2
+  return state.schemaVersion === 3
     && state.kind === "tauri-titlebar-native-state"
     && typeof state.window === "string"
     && state.window.length > 0
@@ -216,6 +213,7 @@ export function isNativeTitlebarState(value: unknown): value is NativeTitlebarSt
     && ownerSequence(owner.mutationSequence)
     && typeof owner.applying === "boolean"
     && typeof owner.lastApplyOk === "boolean"
+    && (owner.lastApplyError === null || typeof owner.lastApplyError === "string")
     && typeof owner.windowVisible === "boolean"
     && owner.targetSequence === state.sequence
     && owner.appliedTargetSequence <= owner.targetSequence;
@@ -406,20 +404,20 @@ export function readTitlebarComposition(
     && state.owner.lastApplyOk;
   const backingHierarchy = state.backings.length === TRAFFIC_LIGHT_ROLES.length
     && state.backings.every((backing) => backing !== null
-      && backing.count === 1
-      && backing.immediateBelowButton);
+      && backing.paintedByOwner
+      && backing.ownerBelowButtons);
   const backingVisibility = state.backingHiddenContract
     && state.backings.length === TRAFFIC_LIGHT_ROLES.length
     && state.backings.every((backing) => backing !== null
       && backing.hiddenMatchesWindowKey
-      && backing.directHidden === backing.expectedHidden);
+      && backing.hidden === backing.expectedHidden);
   const checks = { ...verdict.checks, nativeOwner, backingHierarchy, backingVisibility };
   const issues: TitlebarCompositionStatus["issues"] = [...verdict.issues];
   if (!nativeOwner) issues.push("native-owner");
   if (!backingHierarchy) issues.push("backing-hierarchy");
   if (!backingVisibility) issues.push("backing-visibility");
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     kind: "tauri-titlebar-composition",
     window: state.window,
     nativeSequence: state.sequence,

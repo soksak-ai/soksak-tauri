@@ -10,6 +10,7 @@ import { judgeB07MachineEvidence } from "./browser-gate-b07.mjs";
 import { judgeB08MachineEvidence } from "./browser-gate-b08.mjs";
 import { judgeB09MachineEvidence } from "./browser-gate-b09.mjs";
 import { judgeB10MachineEvidence } from "./browser-gate-b10.mjs";
+import { judgeB12MachineEvidence } from "./browser-gate-b12.mjs";
 import {
   BROWSER_ACCEPTANCE_ENGINES,
   BROWSER_ACCEPTANCE_FRAMEWORKS,
@@ -38,6 +39,7 @@ export { judgeB07MachineEvidence };
 export { judgeB08MachineEvidence };
 export { judgeB09MachineEvidence };
 export { judgeB10MachineEvidence };
+export { judgeB12MachineEvidence };
 
 export const MACHINE_GATE_STATUSES = Object.freeze([
   "not-applicable",
@@ -806,6 +808,7 @@ const machineEvidenceJudges = new Map([
   ["B09", { judgeId: "B09-machine-v1", judge: judgeB09MachineEvidence }],
   ["B10", { judgeId: "B10-machine-v1", judge: judgeB10MachineEvidence }],
   ["B11", { judgeId: "B11-machine-v1", judge: judgeB11MachineEvidence }],
+  ["B12", { judgeId: "B12-machine-v1", judge: judgeB12MachineEvidence }],
 ]);
 
 function mismatchedEngineVerdict(gate, expected, actual) {
@@ -828,10 +831,10 @@ function copyMachineEvidence(value) {
   return JSON.parse(encoded);
 }
 
-function judgeMachineEvidence(entry, gate, engine, evidence) {
+function judgeMachineEvidence(entry, gate, engine, evidence, identity) {
   return evidence != null && evidence?.engine !== engine
     ? mismatchedEngineVerdict(gate, engine, evidence?.engine)
-    : entry.judge(evidence);
+    : entry.judge(evidence, identity);
 }
 
 export function judgeBrowserMachineGateEvidence(request) {
@@ -852,7 +855,13 @@ export function judgeBrowserMachineGateEvidence(request) {
   if (!entry) throw new TypeError(`machine evidence judge is unavailable for ${request.gate}`);
 
   const machineEvidence = copyMachineEvidence(request.evidence);
-  const verdict = judgeMachineEvidence(entry, request.gate, request.engine, machineEvidence);
+  const verdict = judgeMachineEvidence(
+    entry,
+    request.gate,
+    request.engine,
+    machineEvidence,
+    identity,
+  );
   const receipt = deepFreeze({
     schemaVersion: JUDGE_RECEIPT_SCHEMA_VERSION,
     kind: "browser-machine-judge-receipt",
@@ -903,7 +912,13 @@ function requireMatchingJudgeReceipt(receipt, report, engine, gate) {
   if (!entry || receipt.judgeId !== entry.judgeId) {
     throw new TypeError("judgeReceipt judgeId does not match the gate judge");
   }
-  const verdict = judgeMachineEvidence(entry, gate, engine, receipt.machineEvidence);
+  const verdict = judgeMachineEvidence(
+    entry,
+    gate,
+    engine,
+    receipt.machineEvidence,
+    report.identity,
+  );
   const receiptEvidence = requireStringList(receipt.evidence, "judgeReceipt.evidence");
   const receiptReason = requireOptionalText(receipt.reason, "judgeReceipt.reason");
   if (receipt.status !== verdict.status
