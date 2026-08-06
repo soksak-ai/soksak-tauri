@@ -26,6 +26,7 @@ function evidence(engine = "browser") {
       const offset = index * 200;
       return {
         target,
+        relation: target === "rail/add" ? "global-layer-order" : "point-overlap",
         chromeRect: { x: 100 + offset, y: 100, w: 40, h: 40 },
         nativeSurface: {
           viewId,
@@ -74,10 +75,10 @@ describe("B09 chrome-over-native public hit judge", () => {
     });
   });
 
-  it("양의 교집합·그 안의 hit point·chrome 최상단·native 하단을 모두 요구한다", () => {
+  it("rail은 전역 sibling 순서를, 실제 overlay는 양의 교집합 내부 hit를 요구한다", () => {
     const cases = [
-      (value) => { value.samples[0].nativeSurface.rect.x = 140; },
-      (value) => { value.samples[0].hit.point.x = 110; },
+      (value) => { value.samples[0].relation = "point-overlap"; value.samples[0].nativeSurface.rect.x = 140; },
+      (value) => { value.samples[0].hit.point.x = 90; },
       (value) => { value.samples[1].hit.topmostOwner = "rail/add"; },
       (value) => { value.samples[1].hit.stack[0].owner = "modal/project-new"; },
       (value) => { value.samples[2].hit.stack.reverse(); },
@@ -87,6 +88,7 @@ describe("B09 chrome-over-native public hit judge", () => {
       (value) => { value.samples[2].nativeSurface.presented = false; },
       (value) => { value.samples[2].target = "sidebar/right"; },
       (value) => { value.samples.pop(); },
+      (value) => { value.samples[2].relation = "global-layer-order"; },
     ];
     for (const mutate of cases) {
       const value = evidence();

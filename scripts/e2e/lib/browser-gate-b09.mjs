@@ -16,10 +16,16 @@ const RECT_KEYS = Object.freeze(["x", "y", "w", "h"]);
 const POINT_KEYS = Object.freeze(["x", "y"]);
 const SAMPLE_KEYS = Object.freeze([
   "target",
+  "relation",
   "chromeRect",
   "nativeSurface",
   "hit",
 ]);
+const TARGET_RELATIONS = Object.freeze({
+  "rail/add": "global-layer-order",
+  "sidebar/right": "point-overlap",
+  "modal/project-new": "point-overlap",
+});
 const NATIVE_SURFACE_KEYS = Object.freeze([
   "viewId",
   "surfaceId",
@@ -157,6 +163,10 @@ function inspectSample(value, index, seenTargets, failures) {
   } else {
     seenTargets.add(target);
   }
+  const expectedRelation = TARGET_RELATIONS[target];
+  if (value.relation !== expectedRelation) {
+    failures.push(`${path}.relation=${displayValue(expectedRelation)}/${displayValue(value.relation)}`);
+  }
 
   const chromeRectValid = inspectRect(value.chromeRect, `${path}.chromeRect`, failures);
   const nativeSurface = inspectNativeSurface(
@@ -183,7 +193,7 @@ function inspectSample(value, index, seenTargets, failures) {
     failures,
   );
 
-  if (chromeRectValid && nativeSurface) {
+  if (chromeRectValid && nativeSurface && value.relation === "point-overlap") {
     const overlap = overlapRect(value.chromeRect, nativeSurface.rect);
     if (!(overlap.w > 0 && overlap.h > 0)) {
       failures.push(`${path}.overlap=positive-area/${displayValue(overlap)}`);
@@ -193,6 +203,12 @@ function inspectSample(value, index, seenTargets, failures) {
           + `${displayValue(hit.point)}/${displayValue(overlap)}`,
       );
     }
+  } else if (chromeRectValid && pointValid && value.relation === "global-layer-order"
+      && !pointInside(hit.point, value.chromeRect)) {
+    failures.push(
+      `${path}.hit.point=inside-chrome/`
+        + `${displayValue(hit.point)}/${displayValue(value.chromeRect)}`,
+    );
   }
 }
 
@@ -220,6 +236,6 @@ export function judgeB09MachineEvidence(value) {
   return finishMachineVerdict(
     "B09",
     failures,
-    `${value.engine}/B09:rail-add+right-sidebar+modal=chrome-topmost;native-below;overlap>0`,
+    `${value.engine}/B09:rail-add=global-chrome-above-native;right-sidebar+modal=overlap-hit-topmost`,
   );
 }

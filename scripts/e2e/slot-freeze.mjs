@@ -50,6 +50,7 @@ import {
   browserTabActivationAddress,
   browserTabNodeAddress,
 } from "./lib/browser-ui-addresses.mjs";
+import { mapBrowserSurfaceRects } from "./lib/browser-surface-rects.mjs";
 import {
   browserImplementations,
   browserSurfaceInvariant,
@@ -441,7 +442,75 @@ async function assertRailCompositionContract(
   };
 }
 
-async function assertChromeOverlayContract(rpc, win, engineEvidence, scale) {
+async function readBrowserSurfaceEvidence(
+  rpc,
+  win,
+  { frameworkName, implementation, plugin, tabIds, labels, uiNodes },
+) {
+  const paneComposition = frameworkName === "tauri"
+    && implementation.surface !== "engine-offscreen"
+    ? must(await rpc("webview.pane.composition", {}, win), "chrome pane composition")
+    : null;
+  const stats = implementation.surface.startsWith("engine-")
+    ? must(await rpc(`plugin.${plugin}.stats`, {}, win), "chrome engine stats")
+    : null;
+  return mapBrowserSurfaceRects({
+    framework: frameworkName,
+    surface: implementation.surface,
+    windowLabel: win,
+    viewIds: tabIds,
+    labels,
+    uiNodes,
+    paneComposition,
+    stats,
+  });
+}
+
+function pointInOverlap(chromeRect, surfaceRect) {
+  const left = Math.max(chromeRect.x, surfaceRect.x);
+  const top = Math.max(chromeRect.y, surfaceRect.y);
+  const right = Math.min(chromeRect.x + chromeRect.w, surfaceRect.x + surfaceRect.w);
+  const bottom = Math.min(chromeRect.y + chromeRect.h, surfaceRect.y + surfaceRect.h);
+  if (right - left <= 48 || bottom - top <= 48) return null;
+  return { x: left + 24, y: top + 24 };
+}
+
+function browserSurfaceOverlapping(chromeRect, surfaces) {
+  return surfaces.find((surface) => pointInOverlap(chromeRect, surface.rect)) ?? null;
+}
+
+function chromeHitReceipt(target, relation, chromeRect, surface, point, hit) {
+  const owners = [
+    hit?.dataset?.node,
+    hit?.host?.dataset?.node,
+    ...(hit?.painters ?? []).map((painter) => painter?.node),
+  ].filter((owner) => typeof owner === "string");
+  if (!owners.some((owner) => owner === target || owner.startsWith(`${target}/`))) {
+    throw new Error(`${target}: 공개 hit owner 불일치 ${JSON.stringify({ point, owners, hit })}`);
+  }
+  return {
+    target,
+    relation,
+    chromeRect,
+    nativeSurface: surface,
+    hit: {
+      point,
+      topmostOwner: target,
+      stack: [
+        { kind: "chrome", owner: target, surfaceId: null },
+        { kind: "native-surface", owner: surface.viewId, surfaceId: surface.surfaceId },
+      ],
+    },
+  };
+}
+
+async function assertChromeOverlayContract(
+  rpc,
+  win,
+  engineEvidence,
+  scale,
+  { frameworkName, implementation, plugin, tabIds, labels, engine, gateReportStore },
+) {
   must(await rpc("sidebar.right.mode", { mode: "overlay" }, win), "right sidebar overlay mode");
   must(await rpc("project.rightbar.toggle", { open: true }, win), "right sidebar open");
   const tree = must(await rpc("ui.tree", { rects: true }, win), "chrome ui.tree");
@@ -457,20 +526,32 @@ async function assertChromeOverlayContract(rpc, win, engineEvidence, scale) {
       throw new Error(`${name}: DOM 크롬 조작면이 도달 불가 ${JSON.stringify(measured)}`);
     }
   }
+  const surfaces = await readBrowserSurfaceEvidence(rpc, win, {
+    frameworkName, implementation, plugin, tabIds, labels, uiNodes: tree.nodes ?? [],
+  });
   const sidebarRect = chromeMeasures.get("sidebar/right").rect;
-  const overlappingSurface = (tree.nodes ?? [])
-    .filter((node) => node.nodePath === "surface" && node.rect)
-    .map((node) => node.rect)
-    .find((rect) =>
-      Math.min(sidebarRect.x + sidebarRect.w, rect.x + rect.w) - Math.max(sidebarRect.x, rect.x) > 48
-      && Math.min(sidebarRect.y + sidebarRect.h, rect.y + rect.h) - Math.max(sidebarRect.y, rect.y) > 48);
+  const overlappingSurface = browserSurfaceOverlapping(sidebarRect, surfaces);
   if (!overlappingSurface) {
     throw new Error(`오른쪽 overlay sidebar와 겹치는 browser surface가 없다: ${JSON.stringify(sidebarRect)}`);
   }
-  const sidebarProbePoint = {
-    x: Math.max(sidebarRect.x, overlappingSurface.x) + 24,
-    y: Math.max(sidebarRect.y, overlappingSurface.y) + 24,
-  };
+  const sidebarProbePoint = pointInOverlap(sidebarRect, overlappingSurface.rect);
+  const sidebarHit = must(await rpc("ui.hit", sidebarProbePoint, win), "right sidebar hit");
+  const b09Samples = [chromeHitReceipt(
+    "rail/add",
+    "global-layer-order",
+    chromeMeasures.get("rail/add").rect,
+    surfaces[0],
+    {
+      x: chromeMeasures.get("rail/add").rect.x + chromeMeasures.get("rail/add").rect.w / 2,
+      y: chromeMeasures.get("rail/add").rect.y + chromeMeasures.get("rail/add").rect.h / 2,
+    },
+    must(await rpc("ui.hit", {
+      x: chromeMeasures.get("rail/add").rect.x + chromeMeasures.get("rail/add").rect.w / 2,
+      y: chromeMeasures.get("rail/add").rect.y + chromeMeasures.get("rail/add").rect.h / 2,
+    }, win), "rail add hit"),
+  ), chromeHitReceipt(
+    "sidebar/right", "point-overlap", sidebarRect, overlappingSurface, sidebarProbePoint, sidebarHit,
+  )];
   const anchorState = must(await rpc("capture.motion-anchors", {
     anchors: [
       { address: railAdd, color: CHROME_MARKERS.railAdd },
@@ -484,7 +565,7 @@ async function assertChromeOverlayContract(rpc, win, engineEvidence, scale) {
   }, win), "chrome overlay anchors");
   await writeMachineReport(path.join(engineEvidence, "chrome-overlay-contract.json"), {
     sidebarRect,
-    overlappingSurface,
+    overlappingSurface: overlappingSurface.rect,
     sidebarProbePoint,
     anchors: anchorState.anchors,
   });
@@ -513,30 +594,17 @@ async function assertChromeOverlayContract(rpc, win, engineEvidence, scale) {
   if (!measuredModalCard.occlusion?.reachable) {
     throw new Error(`project modal card가 브라우저 위에서 도달 불가: ${JSON.stringify(measuredModalCard)}`);
   }
-  const surfaceAddresses = (modalTree.nodes ?? [])
-    .filter((node) => node.nodePath === "surface" && typeof node.address === "string")
-    .map((node) => node.address);
-  let surfaceRect;
-  for (const address of surfaceAddresses) {
-    const measured = must(await rpc("ui.measure", { address }, win), "modal overlap surface measure");
-    const overlapW = Math.min(
-      measuredModalCard.rect.x + measuredModalCard.rect.w,
-      measured.rect.x + measured.rect.w,
-    ) - Math.max(measuredModalCard.rect.x, measured.rect.x);
-    const overlapH = Math.min(
-      measuredModalCard.rect.y + measuredModalCard.rect.h,
-      measured.rect.y + measured.rect.h,
-    ) - Math.max(measuredModalCard.rect.y, measured.rect.y);
-    if (overlapW > 48 && overlapH > 48) {
-      surfaceRect = measured.rect;
-      break;
-    }
-  }
-  if (!surfaceRect) throw new Error("모달과 겹칠 browser surface가 공개 DOM에서 발견되지 않았다");
-  const probePoint = {
-    x: Math.max(surfaceRect.x, measuredModalCard.rect.x) + 24,
-    y: Math.max(surfaceRect.y, measuredModalCard.rect.y) + 24,
-  };
+  const modalSurfaces = await readBrowserSurfaceEvidence(rpc, win, {
+    frameworkName, implementation, plugin, tabIds, labels, uiNodes: modalTree.nodes ?? [],
+  });
+  const modalSurface = browserSurfaceOverlapping(measuredModalCard.rect, modalSurfaces);
+  if (!modalSurface) throw new Error("모달과 겹칠 live browser surface가 공개 상태에서 발견되지 않았다");
+  const surfaceRect = modalSurface.rect;
+  const probePoint = pointInOverlap(measuredModalCard.rect, surfaceRect);
+  const modalHit = must(await rpc("ui.hit", probePoint, win), "project modal hit");
+  b09Samples.push(chromeHitReceipt(
+    "modal/project-new", "point-overlap", measuredModal.rect, modalSurface, probePoint, modalHit,
+  ));
   const modalAnchorState = must(await rpc("capture.motion-anchors", {
     anchors: [{
       address: modalCard,
@@ -558,6 +626,17 @@ async function assertChromeOverlayContract(rpc, win, engineEvidence, scale) {
     requireFixture: false,
     pointAnchors: [{ color: CHROME_MARKERS.modalOverlayProbe, point: probePoint }],
   });
+  const b09Receipt = gateReportStore.recordMachineEvidence({
+    framework: frameworkName,
+    engine,
+    gate: "B09",
+    evidence: { engine, samples: b09Samples },
+  });
+  await gateReportStore.persist();
+  if (b09Receipt.status !== "green") {
+    throw new Error(`${engine}/B09 machine RED — ${b09Receipt.evidence.join(", ")}`);
+  }
+  console.log(`◉ ${engine}/B09 canonical machine verdict: ${b09Receipt.status}`);
   must(await rpc("ui.input.click", { address: close }, win), "project modal close");
   must(await rpc("project.rightbar.toggle", { open: false }, win), "right sidebar close");
   must(
@@ -1457,7 +1536,9 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
     }
 
     if (SCENARIOS.has("overlay")) {
-      await assertChromeOverlayContract(rpc, win, engineEvidence, scale);
+      await assertChromeOverlayContract(rpc, win, engineEvidence, scale, {
+        frameworkName, implementation, plugin, tabIds, labels, engine, gateReportStore,
+      });
     }
 
     const finalPath = path.join(engineEvidence, "final.png");
