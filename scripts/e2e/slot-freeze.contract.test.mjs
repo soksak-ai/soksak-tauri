@@ -525,6 +525,14 @@ describe("slot-freeze instrumentation lifecycle", () => {
       .toBeLessThan(source.indexOf('rpc("webview.pane.composition.wait"'));
   });
 
+  it("B04 preserves raw producer receipts before adapter validation can reject them", () => {
+    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    const rawWrite = source.indexOf('path.join(dir, "native-presentation-raw.json")');
+    const adapterRead = source.indexOf("implementation.presentationTrace.events(");
+    expect(rawWrite).toBeGreaterThan(-1);
+    expect(adapterRead).toBeGreaterThan(rawWrite);
+  });
+
   it("pane gutter resize settles main layout and child native commits before viewport judgment", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
     const gutter = source.split("// 탭 패널 경계 resize")[1]?.split("await assertChromeOverlayContract")[0] ?? "";
