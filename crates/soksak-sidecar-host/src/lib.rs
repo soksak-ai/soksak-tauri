@@ -80,7 +80,31 @@ pub trait Framework: Send + Sync + 'static {
 
     /// windowed 엔진 서피스의 편입/해제 — hitTest 위임 대상 등록이다.
     /// 네이티브 자식 표면이 없는 프레임워크는 할 일이 없다.
-    fn surface_alive(&self, _ptr: usize, _alive: bool) {}
+    fn surface_alive(&self, _ptr: usize, _key: Option<&str>, _alive: bool) {}
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct NativeSurfaceEvent<'a> {
+    ptr: usize,
+    key: Option<&'a str>,
+    alive: bool,
+}
+
+fn native_surface_event(value: &serde_json::Value) -> Option<NativeSurfaceEvent<'_>> {
+    let ptr = usize::try_from(value.get("view")?.as_u64()?).ok()?;
+    if ptr == 0 {
+        return None;
+    }
+    let alive = match value.get("event")?.as_str()? {
+        "surface-created" => true,
+        "surface-destroyed" => false,
+        _ => return None,
+    };
+    Some(NativeSurfaceEvent {
+        ptr,
+        key: value.get("surfaceKey").and_then(|key| key.as_str()).filter(|key| !key.is_empty()),
+        alive,
+    })
 }
 
 static FRAMEWORK: OnceLock<Arc<dyn Framework>> = OnceLock::new();
@@ -147,19 +171,9 @@ extern "C" fn host_emit(ctx: *mut c_void, json: *const u8, len: usize) {
         };
         // 호스트 사실 가로채기 — 엔진 네이티브 서피스의 편입/해제(hitTest 위임 대상).
         // 클라이언트 relay 는 그대로 간다(플러그인이 알 필요는 없지만 막을 이유도 없다).
-        if let Some(ptr) = value.get("view").and_then(|v| v.as_u64()) {
-            match value.get("event").and_then(|e| e.as_str()) {
-                Some("surface-created") => {
-                    if let Some(s) = framework() {
-                        s.surface_alive(ptr as usize, true);
-                    }
-                }
-                Some("surface-destroyed") => {
-                    if let Some(s) = framework() {
-                        s.surface_alive(ptr as usize, false);
-                    }
-                }
-                _ => {}
+        if let Some(event) = native_surface_event(&value) {
+            if let Some(s) = framework() {
+                s.surface_alive(event.ptr, event.key, event.alive);
             }
         }
         let handles: Vec<u64> = MODULES

@@ -572,8 +572,8 @@ pub(crate) fn resize_pane_surface_hosts(window: &str) {
 // 엔진이 surface-created/destroyed 호스트 사실을 emit 하면 sidecar.rs 가 여기로 relay 한다.
 // 코어는 의미를 모른다 — 포인터 멤버십만 관리(엔진 중립: WKWebView·Chromium 동일 취급).
 #[cfg(target_os = "macos")]
-pub(crate) fn register_engine_surface(ptr: usize) {
-    layer::register_surface(ptr, None);
+pub(crate) fn register_engine_surface(ptr: usize, label: Option<&str>) {
+    layer::register_surface(ptr, label);
 }
 #[cfg(target_os = "macos")]
 pub(crate) fn unregister_engine_surface(ptr: usize) {

@@ -71,3 +71,27 @@ fn engine_abi_v1_carries_provider_id_and_version_as_distinct_fields() {
         first_pointer + std::mem::size_of::<*const c_char>()
     );
 }
+
+#[test]
+fn native_surface_events_preserve_the_declared_surface_identity() {
+    let created = serde_json::json!({
+        "event": "surface-created",
+        "view": 41,
+        "surfaceKey": "chromium-tab-a",
+    });
+    let destroyed = serde_json::json!({
+        "event": "surface-destroyed",
+        "view": 41,
+        "surfaceKey": "chromium-tab-a",
+    });
+
+    assert_eq!(
+        native_surface_event(&created),
+        Some(NativeSurfaceEvent { ptr: 41, key: Some("chromium-tab-a"), alive: true }),
+    );
+    assert_eq!(
+        native_surface_event(&destroyed),
+        Some(NativeSurfaceEvent { ptr: 41, key: Some("chromium-tab-a"), alive: false }),
+    );
+    assert_eq!(native_surface_event(&serde_json::json!({ "event": "surface-created", "view": 0 })), None);
+}

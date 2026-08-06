@@ -43,9 +43,9 @@ impl host::Framework for TauriFramework {
     }
 
     #[cfg(target_os = "macos")]
-    fn surface_alive(&self, ptr: usize, alive: bool) {
+    fn surface_alive(&self, ptr: usize, key: Option<&str>, alive: bool) {
         if alive {
-            crate::webview::register_engine_surface(ptr);
+            crate::webview::register_engine_surface(ptr, key);
         } else {
             crate::webview::unregister_engine_surface(ptr);
         }
