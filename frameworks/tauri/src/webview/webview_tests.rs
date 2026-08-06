@@ -94,6 +94,23 @@ fn pane_presentation_trace_is_a_finite_native_display_link_contract() {
 }
 
 #[test]
+fn presentation_generation_belongs_to_surface_identity_not_pane_grouping() {
+    let layer = include_str!("layer.rs");
+    let capture = layer
+        .split_once("pub(super) fn capture_pane_presentations")
+        .expect("presentation capture exists")
+        .1
+        .split_once("pub fn pane_surface_host_state")
+        .expect("presentation capture boundary")
+        .0;
+
+    assert!(layer.contains("fn register_surface_generation"));
+    assert!(layer.contains("fn remove_surface_generation"));
+    assert!(capture.contains("surface_generation(&owner.surface_id, surface_ptr)"));
+    assert!(!capture.contains("generation: record.generation"));
+}
+
+#[test]
 fn bounds_command_is_geometry_only() {
     let source = include_str!("../webview.rs");
     let body = source
