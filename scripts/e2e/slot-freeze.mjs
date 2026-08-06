@@ -862,12 +862,9 @@ async function runEngine(client, page, engine, recordingLedger) {
     const windowed = implementation.surface === "engine-windowed";
     const labels = tabIds.map((id) => implementation.label(win, id));
     if (frameworkName === "tauri") await installPanePresentationMarkers(rpc, win, labels);
-    if (native) {
+    if (frameworkName === "tauri" && (native || windowed)) {
       const initial = must(await rpc("webview.composition", {}, win), "initial composition");
       assertTauriSurfaceResizePolicy(initial, "initial native composition");
-    } else if (windowed) {
-      const initial = must(await rpc("webview.composition", {}, win), "initial windowed composition");
-      assertTauriSurfaceResizePolicy(initial, "initial windowed composition");
     }
     if (frameworkName === "tauri") {
       assertPaneComposition(
@@ -1041,9 +1038,13 @@ async function runEngine(client, page, engine, recordingLedger) {
         address,
         rect: must(await rpc("ui.measure", { address }, win), `${pinCase.name} rect before`).rect,
       })));
-      const nativeBefore = native
-        ? must(await rpc("webview.composition", {}, win), `${pinCase.name} native before`)
-        : null;
+      let nativeBefore = null;
+      if (frameworkName === "tauri" && native) {
+        nativeBefore = must(
+          await rpc("webview.composition", {}, win),
+          `${pinCase.name} native before`,
+        );
+      }
       const dir = path.join(engineEvidence, pinCase.name);
       const recordingOutcome = await runPlannedRecordingAction({
         recordingLedger,
@@ -1118,7 +1119,7 @@ async function runEngine(client, page, engine, recordingLedger) {
         scale,
         { motion: false, chromeAnchors: [CHROME_MARKERS.railAdd] },
       );
-      if (native && nativeBefore) {
+      if (frameworkName === "tauri" && native && nativeBefore) {
         const nativeAfter = must(await rpc("webview.composition", {}, win), `${pinCase.name} native after`);
         const beforeWrites = new Map((nativeBefore.placement ?? []).map((item) => [item.label, Number(item.boundsWrites ?? 0)]));
         for (const item of nativeAfter.placement ?? []) {

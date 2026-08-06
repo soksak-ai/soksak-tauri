@@ -23,6 +23,32 @@ function scenarioGateBodies(source, scenario) {
   return bodies;
 }
 
+function frameworkGuardedRpcCalls(source, command) {
+  const file = ts.createSourceFile("slot-freeze.mjs", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  const calls = [];
+  const visit = (node) => {
+    if (ts.isCallExpression(node)
+        && node.expression.getText(file) === "rpc"
+        && ts.isStringLiteral(node.arguments[0])
+        && node.arguments[0].text === command) {
+      let cursor = node.parent;
+      let tauriOnly = false;
+      while (cursor) {
+        if (ts.isIfStatement(cursor)
+            && cursor.expression.getText(file).includes('frameworkName === "tauri"')) {
+          tauriOnly = true;
+          break;
+        }
+        cursor = cursor.parent;
+      }
+      calls.push({ text: node.getText(file), tauriOnly });
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return calls;
+}
+
 describe("slot-freeze instrumentation lifecycle", () => {
   it("keeps Node alive until the whole scenario and finally cleanup have completed", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
@@ -154,6 +180,13 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(source.match(/captureWindowSnapshot\(/g)).toHaveLength(9);
     expect(source.match(/rpc\("window\.snapshot"/g)).toHaveLength(1);
     expect(source).not.toContain("fs.mkdirSync(engineEvidence");
+  });
+
+  it("Tauri composition 진단을 Electron DOM 기준에 호출하지 않는다", () => {
+    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    const calls = frameworkGuardedRpcCalls(source, "webview.composition");
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls.every((call) => call.tauriOnly)).toBe(true);
   });
 
   it("교차 이동의 자동 판정은 recorder callback이 아닌 공개 layout 거래 장부를 소비한다", () => {
