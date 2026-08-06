@@ -352,7 +352,7 @@ describe("네이티브 자식 뷰 구현", () => {
     expect(vi.isMockFunction(globalThis.requestAnimationFrame)).toBe(false);
   });
 
-  it("비전면 문서는 정지한 DOM 시계와 native 시계를 섞지 않고 최종 rect를 snap한다", async () => {
+  it("비전면 문서는 목표 DOM 커밋 전 native presentation을 바꾸지 않고 commit에서 snap한다", async () => {
     isWindowFocused.mockResolvedValue(false);
     let x = 620;
     const frame = document.createElement("div");
@@ -371,17 +371,18 @@ describe("네이티브 자식 뷰 구현", () => {
 
     const prepared = await prepareNativeContentViewMove([{ viewId: "v-background", dx: 410 }]);
     expect(prepared.mode).toBe("snap");
-    expect(invoke).toHaveBeenCalledWith("webview_bounds", {
-      label: "browser--v-background", x: 210, y: 112, w: 212, h: 458,
-    });
+    expect(invoke).not.toHaveBeenCalledWith("webview_bounds", expect.anything());
     expect(invoke).not.toHaveBeenCalledWith("webview_transition_prepare", expect.anything());
 
     x = 210;
     await prepared.commit();
     expect(invoke.mock.calls.filter(([command]) => command === "webview_bounds")).toHaveLength(1);
+    expect(invoke).toHaveBeenCalledWith("webview_bounds", {
+      label: "browser--v-background", x: 210, y: 112, w: 212, h: 458,
+    });
   });
 
-  it("비전면 외부 표면은 prepare/commit 애니메이션 대신 최종 DOM rect snap ACK를 기다린다", async () => {
+  it("비전면 외부 표면은 목표 DOM 커밋 전 움직이지 않고 commit에서 실제 snap ACK를 기다린다", async () => {
     isWindowFocused.mockResolvedValue(false);
     let x = 620;
     const frame = document.createElement("div");
@@ -404,11 +405,12 @@ describe("네이티브 자식 뷰 구현", () => {
     const { prepareNativeContentViewMove } = await load();
     const prepared = await prepareNativeContentViewMove([{ viewId: "v-external-background", dx: 410 }]);
     expect(prepared.mode).toBe("snap");
-    expect(snap).toHaveBeenCalledWith({ x: 210, y: 112, w: 212, h: 458 });
+    expect(snap).not.toHaveBeenCalled();
     expect(prepare).not.toHaveBeenCalled();
 
     x = 210;
     await prepared.commit();
+    expect(snap).toHaveBeenCalledWith({ x: 210, y: 112, w: 212, h: 458 });
     expect(commit).not.toHaveBeenCalled();
   });
 
