@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{LazyLock, Mutex};
 
 use objc2::msg_send;
@@ -111,6 +111,7 @@ impl super::PaneMemberLayoutContract {
 #[derive(Clone)]
 struct PaneSurfaceRecord {
     ptr: usize,
+    generation: u64,
     window: String,
     renderer: String,
     members: Vec<String>,
@@ -120,6 +121,7 @@ struct PaneSurfaceRecord {
 
 static PANE_SURFACE_HOSTS: LazyLock<Mutex<HashMap<String, PaneSurfaceRecord>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
+static NEXT_PANE_SURFACE_GENERATION: AtomicU64 = AtomicU64::new(1);
 static SURFACE_PANES: LazyLock<Mutex<HashMap<String, String>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 static SURFACE_VIEWS: LazyLock<Mutex<HashMap<String, usize>>> =
@@ -578,6 +580,7 @@ pub fn group_pane_surface_host(
         pane.to_owned(),
         PaneSurfaceRecord {
             ptr,
+            generation: NEXT_PANE_SURFACE_GENERATION.fetch_add(1, Ordering::Relaxed).max(1),
             window: window.to_owned(),
             renderer: renderer.to_owned(),
             members: members.to_vec(),
@@ -608,6 +611,171 @@ fn view_is_above(upper: &NSView, lower: &NSView) -> bool {
         if ptr == lower_ptr { lower_index = Some(index); }
     }
     matches!((upper_index, lower_index), (Some(upper), Some(lower)) if upper > lower)
+}
+
+fn presentation_frame(view: &NSView, identity: &str) -> Result<objc2_foundation::NSRect, String> {
+    let layer = view
+        .layer()
+        .ok_or_else(|| format!("presentation layer model이 없습니다: {identity}"))?;
+    let presented = unsafe { layer.presentationLayer() }
+        .ok_or_else(|| format!("아직 표시된 presentation layer가 없습니다: {identity}"))?;
+    Ok(presented.frame())
+}
+
+fn css_rect_from_bottom_left(
+    parent: &NSView,
+    x: f64,
+    bottom_y: f64,
+    w: f64,
+    h: f64,
+) -> super::presentation_trace::PresentationRect {
+    let y = if parent.isFlipped() {
+        bottom_y
+    } else {
+        parent.bounds().size.height - bottom_y - h
+    };
+    super::presentation_trace::PresentationRect::new(x, y, w, h)
+}
+
+fn validated_presentation_records(
+    window: Option<&str>,
+    owners: &[super::presentation_trace::PresentationTraceOwner],
+) -> Result<Vec<(super::presentation_trace::PresentationTraceOwner, PaneSurfaceRecord)>, String> {
+    objc2::MainThreadMarker::new()
+        .ok_or("pane presentation은 main thread에서만 관측합니다")?;
+    let hosts = PANE_SURFACE_HOSTS.lock().map_err(|_| "pane host 잠금 실패")?;
+    owners.iter().map(|owner| {
+        let record = hosts.get(&owner.pane).cloned()
+            .ok_or_else(|| format!("pane presentation owner가 없습니다: {}", owner.pane))?;
+        if window.is_some_and(|expected| record.window != expected) {
+            return Err(format!(
+                "pane presentation owner의 창이 다릅니다: {}/{}", owner.pane, record.window,
+            ));
+        }
+        if !record.members.iter().any(|member| member == &owner.surface_id) {
+            return Err(format!(
+                "pane presentation surface가 owner에 속하지 않습니다: {}/{}",
+                owner.pane, owner.surface_id,
+            ));
+        }
+        if !record.member_layouts.contains_key(&owner.surface_id) {
+            return Err(format!(
+                "pane presentation DOM 계약이 없습니다: {}/{}",
+                owner.pane, owner.surface_id,
+            ));
+        }
+        Ok((owner.clone(), record))
+    }).collect()
+}
+
+/// Returns the stable visible renderer NSView for the requested workspace window. The display link
+/// must outlive individual pane visibility changes so a pane disappearance is observed as a failed
+/// inventory rather than silencing the evidence producer itself.
+pub(super) fn presentation_trace_anchor(
+    window: &str,
+    owners: &[super::presentation_trace::PresentationTraceOwner],
+) -> Result<usize, String> {
+    validated_presentation_records(Some(window), owners)?;
+    let anchor_ptr = LAYERS.lock().map_err(|_| "window layer 잠금 실패")?
+        .get(window).map(|layer| layer.main_ptr).unwrap_or(0);
+    if anchor_ptr == 0 {
+        return Err(format!("presentation trace window renderer가 없습니다: {window}"));
+    }
+    let anchor = unsafe { &*(anchor_ptr as *const NSView) };
+    if anchor.isHiddenOrHasHiddenAncestor() || anchor.window().is_none() {
+        return Err(format!("presentation trace window renderer가 표시 중이 아닙니다: {window}"));
+    }
+    Ok(anchor_ptr)
+}
+
+/// Samples the renderer DOM contract and the native member from their Core Animation
+/// presentation layers in the same parent coordinate system. Model frames are deliberately not a
+/// substitute: this function runs only from the NSView display-link callback for a displayed frame.
+pub(super) fn capture_pane_presentations(
+    owners: &[super::presentation_trace::PresentationTraceOwner],
+) -> Result<Vec<super::presentation_trace::PresentationSurface>, String> {
+    let records = validated_presentation_records(None, owners)?;
+    let views = SURFACE_VIEWS.lock().map_err(|_| "surface view 잠금 실패")?.clone();
+    records.into_iter().map(|(owner, record)| {
+        let pane = unsafe { &*(record.ptr as *const NSView) };
+        let parent = unsafe { pane.superview() }
+            .ok_or_else(|| format!("pane presentation 부모가 없습니다: {}", owner.pane))?;
+        let renderer_ptr = surface_host_ptr(&record.renderer);
+        let surface_ptr = surface_host_ptr(&owner.surface_id);
+        if renderer_ptr == 0 || surface_ptr == 0 {
+            return Err(format!(
+                "pane presentation native identity가 없습니다: {}/{}",
+                record.renderer, owner.surface_id,
+            ));
+        }
+        let renderer = unsafe { &*(renderer_ptr as *const NSView) };
+        let surface = unsafe { &*(surface_ptr as *const NSView) };
+        let renderer_parent = unsafe { renderer.superview() };
+        let surface_parent = unsafe { surface.superview() };
+        let live = renderer_parent.as_ref().zip(surface_parent.as_ref()).map(
+            |(renderer_parent, surface_parent)| {
+                std::ptr::eq(&**renderer_parent, pane)
+                    && std::ptr::eq(&**surface_parent, pane)
+                    && pane.window().is_some()
+                    && renderer.window().is_some()
+                    && surface.window().is_some()
+            },
+        ).unwrap_or(false);
+
+        let pane_frame = presentation_frame(pane, &owner.pane)?;
+        let renderer_frame = presentation_frame(renderer, &record.renderer)?;
+        let surface_frame = presentation_frame(surface, &owner.surface_id)?;
+        let contract = record.member_layouts.get(&owner.surface_id)
+            .ok_or_else(|| format!("pane member DOM 계약이 없습니다: {}", owner.surface_id))?;
+        let (dom_x, dom_top, dom_w, dom_h) = contract.rect_for_host(
+            renderer_frame.size.width,
+            renderer_frame.size.height,
+        );
+        let dom_bottom = if renderer.isFlipped() {
+            dom_top
+        } else {
+            renderer_frame.size.height - dom_top - dom_h
+        };
+        let dom_frame = css_rect_from_bottom_left(
+            &parent,
+            pane_frame.origin.x + renderer_frame.origin.x + dom_x,
+            pane_frame.origin.y + renderer_frame.origin.y + dom_bottom,
+            dom_w,
+            dom_h,
+        );
+        let native_frame = css_rect_from_bottom_left(
+            &parent,
+            pane_frame.origin.x + surface_frame.origin.x,
+            pane_frame.origin.y + surface_frame.origin.y,
+            surface_frame.size.width,
+            surface_frame.size.height,
+        );
+
+        let painted_view_ptr = views.get(&owner.surface_id).copied().unwrap_or(surface_ptr);
+        let painted_view = unsafe { &*(painted_view_ptr as *const NSView) };
+        let painted = painted_view.layer()
+            .and_then(|layer| unsafe { layer.presentationLayer() })
+            .is_some()
+            && painted_view.bounds().size.width > 0.0
+            && painted_view.bounds().size.height > 0.0;
+        let visible = live
+            && !pane.isHiddenOrHasHiddenAncestor()
+            && !renderer.isHiddenOrHasHiddenAncestor()
+            && !surface.isHiddenOrHasHiddenAncestor()
+            && pane.alphaValue() > 0.0
+            && renderer.alphaValue() > 0.0
+            && surface.alphaValue() > 0.0;
+        Ok(super::presentation_trace::PresentationSurface {
+            view_id: owner.view_id,
+            surface_id: owner.surface_id,
+            generation: record.generation,
+            live,
+            visible,
+            painted: painted && visible,
+            dom_frame,
+            surface_frame: native_frame,
+        })
+    }).collect()
 }
 
 pub fn pane_surface_host_state() -> serde_json::Value {
@@ -679,6 +847,7 @@ pub fn pane_surface_host_state() -> serde_json::Value {
         }).collect::<Vec<_>>();
         serde_json::json!({
             "pane": pane,
+            "generation": record.generation,
             "window": record.window,
             "renderer": record.renderer,
             "rendererTransparent": transparency.as_ref()

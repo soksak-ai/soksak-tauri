@@ -94,7 +94,12 @@ fn record_page_load(label: &str, window: &str, url: &str, finished: bool) {
 pub fn forget_window(window: &str) {
     if let Ok(mut states) = PAGE_LOAD_STATES.lock() { states.retain(|_, state| state.window != window); }
     #[cfg(target_os = "macos")]
-    layer::forget_window(window);
+    {
+        // Display links retain their targets. Invalidate them while their pane NSViews are still
+        // alive, then clear the native surface registries.
+        presentation_trace::forget_window(window);
+        layer::forget_window(window);
+    }
 }
 
 fn loaded_page(label: &str) -> Option<PageLoadState> {
@@ -564,6 +569,7 @@ mod status {
 // rect 레지스트리가 없다(set_position/set_size/hide 가 곧 홀 갱신).
 #[cfg(target_os = "macos")]
 mod layer;
+mod presentation_trace;
 
 #[cfg(target_os = "macos")]
 pub(crate) fn resize_registered_surface_hosts(window: &str) {
