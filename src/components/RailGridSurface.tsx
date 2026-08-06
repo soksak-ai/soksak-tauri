@@ -24,8 +24,11 @@ export function RailGridSurface({
   useLayoutEffect(() => {
     const surface = surfaceRef.current;
     if (!startAtUnixMs || !surface) return;
-    const timelineNow = Number(document.timeline?.currentTime ?? performance.now());
-    const startTime = timelineNow + (startAtUnixMs - Date.now());
+    // Web Animations startTime은 document timeline 좌표다. Unix epoch를 매번 Date.now()와
+    // timelineNow의 두 호출로 빼면 정수 wall clock과 호출 간격이 섞여 거래마다 1~2ms씩
+    // 달라진다. performance.timeOrigin은 이 document timeline의 고정 Unix 원점이므로
+    // 절대 epoch를 한 번의 선언적 좌표 변환으로 옮긴다.
+    const startTime = startAtUnixMs - performance.timeOrigin;
     for (const animation of surface.getAnimations({ subtree: true })) {
       const css = animation as CSSAnimation;
       if (css.animationName === "rail-flip-x") animation.startTime = startTime;

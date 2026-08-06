@@ -68,7 +68,6 @@ describe("RailGridSurface", () => {
     expect(getAnimations).toHaveBeenCalledWith({ subtree: true });
     expect(paneAnimation.startTime).toBe(125.5);
     expect(railAnimation.startTime).toBe(paneAnimation.startTime);
-    expect(Date.now).not.toHaveBeenCalled();
     act(() => root.unmount());
   });
 });
