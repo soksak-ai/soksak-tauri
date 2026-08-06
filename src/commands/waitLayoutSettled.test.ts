@@ -12,12 +12,18 @@ import {
   registerContentViewHost,
   type ContentViewHost,
 } from "../lib/contentViews";
+import {
+  __resetPluginViewPresentationHostForTest,
+  registerPluginViewPresentationHost,
+  type PluginViewPresentationHost,
+} from "../plugins/viewPresentationHost";
 
 describe("waitLayoutSettled — 이벤트 기반 레이아웃 거래 장벽", () => {
   afterEach(() => {
     __resetLayoutMotionForTest();
     __resetLayoutSettlementForTest();
     __resetContentViewHostForTest();
+    __resetPluginViewPresentationHostForTest();
     vi.restoreAllMocks();
     Reflect.deleteProperty(document, "getAnimations");
   });
@@ -95,6 +101,42 @@ describe("waitLayoutSettled — 이벤트 기반 레이아웃 거래 장벽", ()
     expect(presentationSettled).toHaveBeenCalledWith(["b-current"]);
     present();
     await waiting;
+    expect(done).toBe(true);
+  });
+
+  it("콘텐츠 표면과 플러그인 view presentation 장벽을 함께 닫기 전에는 답하지 않는다", async () => {
+    animations([]);
+    document.body.innerHTML = '<div data-content-view-body="b-current"></div>';
+    let settleContent!: () => void;
+    let settlePluginView!: () => void;
+    const contentBarrier = new Promise<void>((resolve) => { settleContent = resolve; });
+    const pluginViewBarrier = new Promise<void>((resolve) => { settlePluginView = resolve; });
+    const contentPresentationSettled = vi.fn(() => contentBarrier);
+    const pluginViewPresentationSettled = vi.fn(() => pluginViewBarrier);
+    registerContentViewHost({
+      presentationSettled: contentPresentationSettled,
+    } as unknown as ContentViewHost);
+    registerPluginViewPresentationHost({
+      mount: vi.fn(),
+      presentationSettled: pluginViewPresentationSettled,
+    } as unknown as PluginViewPresentationHost);
+
+    let done = false;
+    const waiting = waitLayoutSettled().then(() => { done = true; });
+    await Promise.resolve();
+    const bothArmedBeforeSettlement = contentPresentationSettled.mock.calls.length === 1
+      && pluginViewPresentationSettled.mock.calls.length === 1;
+
+    settleContent();
+    for (let index = 0; index < 6; index += 1) await Promise.resolve();
+    const doneWithPluginViewPending = done;
+
+    settlePluginView();
+    await waiting;
+    expect(contentPresentationSettled).toHaveBeenCalledWith(["b-current"]);
+    expect(pluginViewPresentationSettled).toHaveBeenCalledWith();
+    expect(bothArmedBeforeSettlement).toBe(true);
+    expect(doneWithPluginViewPending).toBe(false);
     expect(done).toBe(true);
   });
 });
