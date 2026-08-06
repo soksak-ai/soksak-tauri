@@ -12,6 +12,18 @@ fn external_surface_hosts_are_always_below_the_dom_hole_plane() {
         .expect("WKWebView host constructor exists")
         .1;
     assert!(adopted_host.contains("NSWindowOrderingMode::Below"));
+
+    let pane_host = source
+        .split_once("pub fn group_pane_surface_host")
+        .expect("pane host constructor exists")
+        .1
+        .split_once("pub fn pane_surface_host_state")
+        .expect("pane host constructor boundary")
+        .0;
+    assert!(pane_host.contains("addSubview_positioned_relativeTo"));
+    assert!(pane_host.contains("NSWindowOrderingMode::Below"));
+    assert!(pane_host.contains("Some(main_view)"));
+    assert!(!pane_host.contains("parent.addSubview(pane_view)"));
 }
 
 #[test]

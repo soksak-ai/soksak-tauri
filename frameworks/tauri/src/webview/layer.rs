@@ -444,6 +444,15 @@ pub fn group_pane_surface_host(
     let renderer_host = unsafe { &*(renderer_host_ptr as *const NSView) };
     let parent = unsafe { renderer_host.superview() }
         .ok_or_else(|| format!("pane renderer 부모가 없습니다: {renderer}"))?;
+    let main_ptr = LAYERS.lock().map_err(|_| "창 layer 잠금 실패")?
+        .get(window).map(|layer| layer.main_ptr).unwrap_or(0);
+    if main_ptr == 0 { return Err(format!("main DOM view가 없습니다: {window}")); }
+    let main_view = unsafe { &*(main_ptr as *const NSView) };
+    let main_parent = unsafe { main_view.superview() }
+        .ok_or_else(|| format!("main DOM view 부모가 없습니다: {window}"))?;
+    if Retained::as_ptr(&parent) != Retained::as_ptr(&main_parent) {
+        return Err(format!("pane renderer와 main DOM view의 부모가 다릅니다: {renderer}"));
+    }
     for (label, ptr) in &host_ptrs {
         let host = unsafe { &*(*ptr as *const NSView) };
         let same_parent = unsafe { host.superview() }
@@ -460,9 +469,13 @@ pub fn group_pane_surface_host(
     pane_view.setWantsLayer(true);
     configure_surface_resize(pane_view);
     clip_surface_children(pane_view)?;
-    // parent는 창별 EngineSurfaceHost다. 그 host 자체가 main UI renderer 아래에 있으므로
-    // 여기서는 pane끼리의 자식 순서만 소유한다.
-    parent.addSubview(pane_view);
+    // PaneSurfaceHost도 최초 개별 surface와 동일하게 main DOM WKWebView 바로 아래에 둔다.
+    // addSubview(맨 끝)는 pane을 DOM 위로 올려 sidebar/+버튼/modal을 덮는다.
+    parent.addSubview_positioned_relativeTo(
+        pane_view,
+        NSWindowOrderingMode::Below,
+        Some(main_view),
+    );
 
     for (label, ptr) in &host_ptrs {
         let host = unsafe { &*(*ptr as *const NSView) };
@@ -910,6 +923,10 @@ fn detach_surface_from_pane(label: &str) {
     let pane_host = unsafe { &*(record.ptr as *const NSView) };
     let Some(parent) = (unsafe { pane_host.superview() }) else { return };
     let pane_frame = pane_host.frame();
+    let main_ptr = LAYERS.lock().ok().and_then(|layers| {
+        layers.get(&record.window).map(|layer| layer.main_ptr)
+    }).unwrap_or(0);
+    let main_view = (main_ptr != 0).then(|| unsafe { &*(main_ptr as *const NSView) });
     let mut labels = vec![record.renderer];
     labels.extend(record.members);
     for member in labels {
@@ -923,7 +940,16 @@ fn detach_surface_from_pane(label: &str) {
             pane_frame.origin.x + local.origin.x,
             pane_frame.origin.y + local.origin.y,
         ));
-        parent.addSubview(host);
+        if let Some(main_view) = main_view {
+            parent.addSubview_positioned_relativeTo(
+                host,
+                NSWindowOrderingMode::Below,
+                Some(main_view),
+            );
+        } else {
+            // 창 파괴와 detach가 경주할 때만 가능한 수명 종료 경로다.
+            parent.addSubview(host);
+        }
         if let Ok(mut surface_panes) = SURFACE_PANES.lock() {
             surface_panes.remove(&member);
         }
