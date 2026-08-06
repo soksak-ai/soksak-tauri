@@ -1,7 +1,5 @@
 import { emitTo, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { motionModeForClocks } from "../../../packages/dom-webview-compositor/src/index";
 import { moduleState } from "../../lib/moduleState";
 import { railTravelDeclaredMs } from "../../lib/railMotion";
 import { currentWindowLabel } from "../../lib/webviewLabels";
@@ -805,8 +803,13 @@ export function installPluginViewPresentation(): void {
   registerPluginViewPresentationHost(host);
 }
 
-export const presentedTransitionMode = (windowFocused: boolean): "glide" | "snap" =>
-  motionModeForClocks(windowFocused);
+/**
+ * PaneSurfaceHost와 메인 WebKit 합성기는 포커스와 무관하게 같은 절대 epoch를 소비한다.
+ * 포커스는 입력·조명 상태일 뿐 presentation clock capability가 아니다. 포커스를 잃었다는
+ * 이유로 React commit 뒤 native snap으로 바꾸면 두 별도 compositor 사이에 실제 한 표시
+ * 프레임이 생긴다.
+ */
+export const presentedTransitionMode = (): "glide" => "glide";
 
 export async function preparePresentedPluginViewMove(
   moves: readonly LayoutMove[],
@@ -820,27 +823,10 @@ export async function preparePresentedPluginViewMove(
     return [{ view, target: { ...before, x: before.x - Math.round(move.dx) } }];
   });
   if (!targets.length) return { mode: "glide", commit: async () => {}, cancel: () => {} };
-  // WebKit은 비전면 window의 document timeline을 멈출 수 있지만 AppKit의 media clock은
-  // 계속 흐른다. 두 시계를 같은 epoch로 묶으면 native pane만 먼저 이동한다. 비전면에서는
-  // prepare가 화면을 바꾸지 않고, 목표 React DOM이 커밋된 뒤 공통 host 하나를 snap한다.
-  if (presentedTransitionMode(await getCurrentWindow().isFocused()) === "snap") {
-    let closed = false;
-    return {
-      mode: "snap",
-      commit: async () => {
-        if (closed) return;
-        closed = true;
-        await Promise.all(targets.map(({ view, target }) => invoke("webview_pane_bounds", {
-          pane: view.nativeHostId,
-          ...target,
-          layout: paneLayoutContractOf(view.container, target),
-        })));
-      },
-      cancel: () => { closed = true; },
-    };
-  }
   // PaneSurfaceHost는 renderer/member의 공통 presentation owner다. 메인 projection의 FLIP과
-  // 같은 절대 epoch·duration을 사용하고, host의 자식 frame은 전환 중 한 번도 쓰지 않는다.
+  // 같은 절대 epoch·duration을 사용한다. 포커스 여부로 거래 방식을 바꾸지 않으며 host의
+  // 자식 frame은 전환 중 한 번도 쓰지 않는다.
+  presentedTransitionMode();
   const startAtUnixMs = Date.now() + 100;
   const durationMs = railTravelDeclaredMs();
   await Promise.all(targets.map(({ view, target }) => invoke("webview_pane_transition_prepare", {
