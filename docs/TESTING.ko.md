@@ -49,7 +49,7 @@
 | B09 | rail `+`/우측 sidebar/modal이 native 위 | 실제 교집합의 공개 hit/layer 상태가 chrome을 최상단 소유자로 보고하는지 단언한다. |
 | B10 | hostile 전체창 빠른 resize affine + 원복 | 유한 resize transaction마다 DOM/native 좌표 정합과 최종 원래 기하 복원을 단언한다. |
 | B11 | pane resize 왕복 + wheel `0→480→0` + 탭 지정 full capture | 명시한 view의 resize 정착, 실제 scroll 사건, capture 범위·문서 기하·scroll 복원을 단언한다. |
-| B12 | macOS traffic lights 상하 중심/composition/hostile resize | Tauri는 공개 AppKit button/backing rect와 DOM reservation의 3:3 대응·포함·상하 중심·resize 정합을 단언한다. Electron은 Tauri backing view를 지어내지 않고 공개 traffic-light position과 DOM reservation으로 같은 가시적 중심/resize 계약을 단언한다. macOS가 아니면 정적으로 `not-applicable`이다. |
+| B12 | macOS traffic lights 상하 중심/composition/hostile resize/titlebar 높이 변화 | Tauri는 공개 AppKit button/backing rect와 DOM reservation의 3:3 대응·포함·상하 중심·resize 정합을 단언한다. `titlebar.height.set {height}`은 공개 DOM 높이를 바꾸고 완전한 paint 경계를 지난 뒤 같은 엄격 native 영수증을 반환하며, `titlebar.height.reset`은 직전 inline height/flex-basis를 정확히 복원한다. 모든 표본에서 button/backing 중심 차이는 반올림 허용치 안의 0이어야 한다. Electron은 Tauri backing view를 지어내지 않고 공개 traffic-light position과 DOM reservation으로 같은 가시적 중심/resize 계약을 단언한다. macOS가 아니면 정적으로 `not-applicable`이다. |
 
 각 engine×gate의 machine 상태는 `not-applicable`, `not-run`, `blocked`, `red`, `green` 중 하나다. `green`과 `red`는
 기계가 재현한 근거가 필수이고, `blocked`는 누락된 공개 측정면 같은 구체적 이유가 필수다. `blocked`나
