@@ -412,6 +412,43 @@ function installPaneSurfaceHostCommands(): void {
     message: (data) => `pane composition committed ${String(data.verdict)}`,
     handler: async (params) => awaitPluginViewComposition(Number(params.settleTimeoutMs ?? 8_000)),
   });
+  register("webview.pane.presentation.trace.arm", {
+    description:
+      "Arm a finite Tauri pane-surface presentation trace and return only after the first real display-link event. Owners are explicit public view/pane/surface identities; the adapter never parses framework names or DOM paths.",
+    params: {
+      traceId: { type: "string", description: "caller-owned finite trace identity", required: true },
+      owners: {
+        type: "json",
+        description: "array of {viewId,pane,surfaceId} owner bindings",
+        required: true,
+      },
+      maxEvents: { type: "number", description: "finite event capacity (2..4096, default 256)" },
+    },
+    returns:
+      "{ traceId,ownerViewIds,armedAtUnixMs,baselineFrameSequence,sourceGeneration }",
+    message: (data) => `pane presentation trace ${String(data.traceId)}를 무장했습니다`,
+    handler: async (params) => {
+      if (!Array.isArray(params.owners)) throw new Error("owners는 공개 owner binding 배열이어야 합니다");
+      return invoke("webview_presentation_trace_arm", {
+        traceId: params.traceId,
+        owners: params.owners,
+        ...(params.maxEvents === undefined ? {} : { maxEvents: params.maxEvents }),
+      });
+    },
+  });
+  register("webview.pane.presentation.trace.close", {
+    description:
+      "Close one finite Tauri pane-surface display trace, invalidate its display link, and return the immutable actual-presentation event ledger.",
+    params: {
+      traceId: { type: "string", description: "trace identity returned by arm", required: true },
+    },
+    returns:
+      "{ traceId,closed,ownerViewIds,armedAtUnixMs,baselineFrameSequence,presentationEvents,violations }",
+    message: (data) => `pane presentation trace ${String(data.traceId)}를 닫았습니다`,
+    handler: async (params) => invoke("webview_presentation_trace_close", {
+      traceId: params.traceId,
+    }),
+  });
   register("webview.pane.group", {
     description: "Group one pane renderer and its native members under one PaneSurfaceHost.",
     params: {
