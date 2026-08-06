@@ -227,6 +227,7 @@ export function mapB04PresentationSamples({
   targetViewId,
   transactionId,
   domCommittedAtUnixMs,
+  presentationStartAtUnixMs,
   railAddress,
   paneAddress,
   slotAddress,
@@ -243,6 +244,12 @@ export function mapB04PresentationSamples({
   const commitAt = domCommittedAtUnixMs;
   if (!Number.isFinite(commitAt)) {
     throw new Error(`${targetViewId}: DOM commit epoch가 유한하지 않다 ${domCommittedAtUnixMs}`);
+  }
+  const presentationStartAt = presentationStartAtUnixMs;
+  if (!Number.isFinite(presentationStartAt) || presentationStartAt < commitAt) {
+    throw new Error(
+      `${targetViewId}: presentation start epoch=${presentationStartAtUnixMs}/${commitAt}`,
+    );
   }
   for (const [index, sample] of domSamples.entries()) {
     if (sample?.sequence !== index || !Number.isFinite(sample?.sampledAtUnixMs)) {
@@ -277,7 +284,6 @@ export function mapB04PresentationSamples({
   if (presentationSamples.length === 0) {
     throw new Error(`${targetViewId}: presentation-frame sample=0`);
   }
-  const committedPresentationSamples = [commitSample, ...presentationSamples];
   const presentationGaps = events.slice(1)
     .map((event, index) => event.sampledAtUnixMs - events[index].sampledAtUnixMs)
     .filter((gap) => Number.isFinite(gap) && gap > 0)
@@ -312,9 +318,12 @@ export function mapB04PresentationSamples({
     }
     priorPresentationAt = presentationAt;
     const beforeDomCommit = presentationAt < commitAt;
+    const beforePresentationStart = presentationAt < presentationStartAt;
     const domSample = beforeDomCommit
       ? initialSample
-      : committedPresentationSamples.reduce((nearest, candidate) => (
+      : beforePresentationStart
+        ? commitSample
+        : presentationSamples.reduce((nearest, candidate) => (
           Math.abs(candidate.sampledAtUnixMs - presentationAt)
             < Math.abs(nearest.sampledAtUnixMs - presentationAt)
             ? candidate
@@ -322,7 +331,7 @@ export function mapB04PresentationSamples({
         ));
     const domAt = domSample?.sampledAtUnixMs;
     const gapMs = Math.abs(domAt - presentationAt);
-    if (!beforeDomCommit && gapMs > maxJoinGapMs) {
+    if (!beforePresentationStart && gapMs > maxJoinGapMs) {
       throw new Error(
         `${targetViewId}: DOM/native presentation join gap=${gapMs.toFixed(3)}/${maxJoinGapMs.toFixed(3)}ms`,
       );

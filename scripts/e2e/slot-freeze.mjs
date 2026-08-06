@@ -1228,6 +1228,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
             targetViewId,
             transactionId: layoutVerdict.transaction.transactionId,
             domCommittedAtUnixMs: layoutVerdict.transaction.domCommittedAtUnixMs,
+            presentationStartAtUnixMs: layoutVerdict.transaction.startAtUnixMs,
             railAddress,
             paneAddress,
             slotAddress,
