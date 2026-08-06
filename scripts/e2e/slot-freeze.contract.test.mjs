@@ -79,7 +79,7 @@ describe("slot-freeze instrumentation lifecycle", () => {
   it("activates pane through exposed tab chrome and verifies the resulting pane state", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
     expect(source).toContain("activationAddressForTab");
-    expect(source).toContain('item.nodePath === `tab/view/${tabId}`');
+    expect(source).toContain("browserTabActivationAddress(tree, tabId)");
     expect(source).toContain("assertActivePane(rpc, win, paneIds[side], name)");
     expect(source).toContain("address: activationAddresses[side]");
   });
@@ -157,7 +157,12 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(source).toContain("recordingLedger.take");
     expect(source).toContain("recordingLedger.assertComplete()");
     expect(source).toContain("beginEvidenceRun");
-    expect(source).toContain('const status = runError ? "red" : "machine-green"');
+    const mainBody = source.split("async function main()")[1] ?? "";
+    expect(mainBody).toContain(
+      "requireBrowserEvidenceBuildId(process.env.BROWSER_EVIDENCE_BUILD_ID)",
+    );
+    expect(mainBody.indexOf("requireBrowserEvidenceBuildId"))
+      .toBeLessThan(mainBody.indexOf("await beginEvidenceRun"));
     expect(source).toContain("finishEvidenceRun(EVIDENCE_STORE_ROOT, { runId, status })");
     expect(source).not.toContain("function prepareEvidence");
     expect(source).not.toContain('"slot-freeze", "current"');
@@ -205,6 +210,28 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(source).toContain('persisted.leftRailPosition?.station !== 50');
     expect(source).toContain('rpc("tab.restore"');
     expect(source).toContain('JSON.stringify(restored.cells) !== JSON.stringify(restoredBaseline.cells)');
+  });
+
+  it("B07/B08 live evidence is judged into one canonical 3x12 report without ad-hoc green", () => {
+    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    const reportStore = readFileSync(new URL("./lib/browser-evidence-store.mjs", import.meta.url), "utf8");
+
+    for (const symbol of [
+      "createBrowserGateReport",
+      "judgeBrowserMachineGateEvidence",
+      "setMachineGateStatus",
+      "serializeBrowserGateReport",
+      "machineGateSummary",
+    ]) expect(reportStore).toContain(symbol);
+    expect(source).toContain("createBrowserGateReportStore");
+    expect(source).toContain("mapB07PinCaseEvidence");
+    expect(source).toContain("mapB08BaselineEvidence");
+    expect(source).toContain("mapB08MaximizeCaseEvidence");
+    expect(source).toContain('gate: "B07"');
+    expect(source).toContain('gate: "B08"');
+    expect(source).toContain("nodeIdentity");
+    expect(source).toContain("machineSummary()");
+    expect(source).not.toContain("MACHINE GREEN");
   });
 
   it("waits on the exposed event-driven layout barrier before first-paint judgment", () => {

@@ -11,6 +11,7 @@ import {
   emptyWorkspaceWindows,
   forgetFixtureData,
   reclaimStoredWindowSnapshots,
+  replaceFixtureWindow,
   releaseFixtureWindow,
   releaseFixtureWindowsUnder,
   windowForRoot,
@@ -41,6 +42,13 @@ function fakeApp({ projects = [], dead = new Set(), openLabel = "w-new" } = {}) 
       map.push({ root: params.root, window: openLabel });
       return { ok: true, data: { label: openLabel } };
     }
+    if (name === "data.kv.deleteMany") {
+      return {
+        ok: true,
+        data: { ns: "core", requested: params.keys.length, deleted: 0, absent: params.keys.length },
+      };
+    }
+    if (name === "project.recent.remove") return { ok: true, data: {} };
     // 컨트롤 창 해소는 client.mjs 가 window.list 로 한다.
     if (name === "window.list") return { ok: true, data: { labels: map.map((p) => p.window) } };
     return { ok: true, data: {} };
@@ -162,6 +170,33 @@ describe("acquireFixtureWindow", () => {
     await expect(
       acquireFixtureWindow(app.rpc, ROOT, { ctrl: "main", settleMs: 0, confirmTries: 2 }),
     ).rejects.toThrow(/장부가 말하지 않는다/);
+  });
+});
+
+describe("replaceFixtureWindow", () => {
+  it("앞 실행의 exact fixture-only 창과 저장 상태를 회수한 뒤 새 창을 연다", async () => {
+    const app = fakeApp({
+      projects: [{ root: ROOT, window: "w-old" }],
+      openLabel: "w-fresh",
+    });
+    const got = await replaceFixtureWindow(app.rpc, ROOT, app.opts);
+    expect(got).toEqual({ label: "w-fresh", adopted: false });
+    expect(app.calls.filter((call) => call.name === "window.close").map((call) => call.params.label))
+      .toEqual(["w-old"]);
+    expect(app.calls.filter((call) => call.name === "data.kv.deleteMany")).toHaveLength(1);
+    expect(app.calls.filter((call) => call.name === "project.recent.remove")).toHaveLength(1);
+  });
+
+  it("fixture root가 사용자 프로젝트와 같은 창에 있으면 닫거나 재사용하지 않는다", async () => {
+    const app = fakeApp({
+      projects: [
+        { root: ROOT, window: "w-mixed" },
+        { root: "<machine-path>/real-project", window: "w-mixed" },
+      ],
+    });
+    await expect(replaceFixtureWindow(app.rpc, ROOT, app.opts)).rejects.toThrow(/함께 든 창/);
+    expect(app.calls.some((call) => call.name === "window.close")).toBe(false);
+    expect(app.calls.some((call) => call.name === "window.open")).toBe(false);
   });
 });
 

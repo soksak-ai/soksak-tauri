@@ -131,6 +131,26 @@ export async function acquireFixtureWindow(rpc, root, opts = {}) {
   throw new Error(`창 ${label} 이 ${root} 를 든다고 장부가 말하지 않는다 — 오염 방지로 중단`);
 }
 
+/**
+ * 이전 실행의 상태를 물려받지 않는 픽스처 창을 확보한다.
+ * exact root만 든 창만 회수하며, 사용자 프로젝트와 섞인 창은 닫지도 재사용하지도 않는다.
+ */
+export async function replaceFixtureWindow(rpc, root, opts = {}) {
+  const ctrl = opts.ctrl ?? (await resolveControlWindow(rpc));
+  const projects = await projectMap(rpc, ctrl);
+  const holders = projects.filter((project) => String(project?.root ?? "") === String(root));
+  if (holders.length) {
+    const owned = windowsForExactRoots(projects, [root]);
+    const ownedLabels = new Set(owned.map(({ label }) => label));
+    const mixed = holders.find(({ window }) => !ownedLabels.has(String(window)));
+    if (mixed) {
+      throw new Error(`픽스처 root를 사용자 프로젝트와 함께 든 창은 교체할 수 없다: ${mixed.window}`);
+    }
+    await closeAll(rpc, ctrl, owned, opts);
+  }
+  return acquireFixtureWindow(rpc, root, { ...opts, ctrl });
+}
+
 /** 이 루트의 픽스처 창을 회수한다. 없으면 아무 일도 하지 않는다(멱등). */
 export async function releaseFixtureWindow(rpc, root, opts = {}) {
   const ctrl = opts.ctrl ?? (await resolveControlWindow(rpc));

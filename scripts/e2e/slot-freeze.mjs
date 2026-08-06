@@ -14,7 +14,10 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { openClient, requireSocket, must } from "./lib/client.mjs";
-import { acquireFixtureWindow, releaseFixtureWindow } from "./lib/fixtureWindow.mjs";
+import {
+  releaseFixtureWindow,
+  replaceFixtureWindow,
+} from "./lib/fixtureWindow.mjs";
 import { closeHtmlFixture, startHtmlFixture } from "./lib/http-fixture.mjs";
 import { tauriSurfaceResizePolicyVerdict } from "./lib/tauri-surface-resize-policy.mjs";
 import {
@@ -28,6 +31,13 @@ import {
   planBrowserRecordingEvidence,
 } from "./lib/browser-evidence-plan.mjs";
 import {
+  createBrowserGateReportStore,
+  mapB07PinCaseEvidence,
+  mapB08BaselineEvidence,
+  mapB08MaximizeCaseEvidence,
+  requireBrowserEvidenceBuildId,
+} from "./lib/browser-evidence-store.mjs";
+import {
   beginEvidenceRun,
   evidenceStorePaths,
   finishEvidenceRun,
@@ -36,6 +46,10 @@ import {
   writeEvidenceFile,
 } from "./lib/evidence-store.mjs";
 import { runRecordingEvidenceAction } from "./lib/recording-evidence-action.mjs";
+import {
+  browserTabActivationAddress,
+  browserTabNodeAddress,
+} from "./lib/browser-ui-addresses.mjs";
 import {
   browserImplementations,
   browserSurfaceInvariant,
@@ -191,27 +205,11 @@ async function observeFrameSequence(files, name, scale, options = {}) {
   return report;
 }
 
-const addressForTab = (tree, tabId) => {
-  const token = `/tab/${tabId}/`;
-  const node = (tree.nodes ?? []).find((item) => item.nodePath === "surface" && item.address.includes(token));
-  if (!node?.address) throw new Error(`탭 content surface 주소가 노출되지 않았다: ${tabId}`);
-  return node.address;
-};
+const addressForTab = (tree, tabId) => browserTabNodeAddress(tree, tabId, "surface");
 
-const motionAddressForTab = (tree, tabId) => {
-  const token = `/tab/${tabId}/`;
-  const node = (tree.nodes ?? []).find((item) => item.nodePath === "toolbar" && item.address.includes(token));
-  if (!node?.address) throw new Error(`탭의 영속 content toolbar 주소가 노출되지 않았다: ${tabId}`);
-  return node.address;
-};
+const motionAddressForTab = (tree, tabId) => browserTabNodeAddress(tree, tabId, "toolbar");
 
-const activationAddressForTab = (tree, tabId) => {
-  const node = (tree.nodes ?? []).find(
-    (item) => item.nodePath === `tab/view/${tabId}`,
-  );
-  if (!node?.address) throw new Error(`탭 활성화 주소가 노출되지 않았다: ${tabId}`);
-  return node.address;
-};
+const activationAddressForTab = (tree, tabId) => browserTabActivationAddress(tree, tabId);
 
 const paneAddress = (tree, paneId) => {
   const node = (tree.nodes ?? []).find((item) => item.nodePath === `layout/pane/${paneId}`);
@@ -435,7 +433,13 @@ async function assertRailCompositionContract(
   }
   if (!relation.dataset?.rail || !relation.dataset?.box) errors.push("relation-geometry-missing");
   if (errors.length) throw new Error(`${stage}: rail composition 불일치 — ${errors.join(", ")}`);
-  return { railZ, lightingZ, relationZ, relation: relation.dataset };
+  return {
+    railZ,
+    lightingZ,
+    relationZ,
+    relation: relation.dataset,
+    relationMeasure: relation,
+  };
 }
 
 async function assertChromeOverlayContract(rpc, win, engineEvidence, scale) {
@@ -724,7 +728,7 @@ async function assertImePersisted(rpc, win, plugin, tabIds, stage) {
   }
 }
 
-async function runEngine(client, page, engine, recordingLedger) {
+async function runEngine(client, page, engine, recordingLedger, gateReportStore) {
   const implementation = browserImplementations[engine];
   const plugin = implementation.plugin;
   const engineEvidence = path.join(EVIDENCE_ROOT, engine);
@@ -743,7 +747,7 @@ async function runEngine(client, page, engine, recordingLedger) {
     if (implementation.surface !== "framework-native") {
       const sentinelRoot = path.join(FIXTURE_ROOT, "owner-sentinel", engine);
       fs.mkdirSync(sentinelRoot, { recursive: true });
-      sentinelWin = (await acquireFixtureWindow(rpc, sentinelRoot)).label;
+      sentinelWin = (await replaceFixtureWindow(rpc, sentinelRoot)).label;
       must(await rpc("program.wait", { id: engine, timeoutMs: 20_000 }, sentinelWin), `sentinel program.wait ${engine}`);
       must(await rpc("plugin.settings.set", { id: plugin, key: "homeUrl", value: page.url, scope: "project" }, sentinelWin), "sentinel homeUrl");
       sentinelHomeOverride = true;
@@ -761,13 +765,15 @@ async function runEngine(client, page, engine, recordingLedger) {
     }
 
     fs.mkdirSync(FIXTURE_ROOT, { recursive: true });
-    const acquired = await acquireFixtureWindow(rpc, FIXTURE_ROOT);
+    const acquired = await replaceFixtureWindow(rpc, FIXTURE_ROOT);
     win = acquired.label;
     console.log(`\n[${engine}] 픽스처 창: ${win}${acquired.adopted ? " (재사용)" : " (생성)"}`);
     frameworkName = String(must(await rpc("framework.info", {}, win), "framework.info").framework ?? "");
     if (frameworkName !== "tauri" && frameworkName !== "electron") {
       throw new Error(`검증하지 않은 framework adapter: ${frameworkName}`);
     }
+    gateReportStore.bindFramework(frameworkName);
+    await gateReportStore.persist();
     must(await rpc("program.wait", { id: engine, timeoutMs: 20_000 }, win), `program.wait ${engine}`);
     const calibration = must(
       await rpc("capture.calibration", { visible: true }, win),
@@ -1022,22 +1028,49 @@ async function runEngine(client, page, engine, recordingLedger) {
 
     // PIN 계약 — 사이드바와 분할 rect는 포커스 클릭의 입력이 아니다. station 0에서 오른쪽
     // 인접/비인접을, station 50에서 왼쪽 인접을 각각 실제 클릭·동일 tick trace·PNG로 검증한다.
+    const b07Cases = [];
     const pinCases = SCENARIOS.has("pin") ? [
-      { station: 0, side: 0, relationSide: "right", connected: true, name: "pin-right-adjacent" },
-      { station: 0, side: 1, relationSide: "detached", connected: false, name: "pin-detached" },
-      { station: 50, side: 0, relationSide: "left", connected: true, name: "pin-left-adjacent" },
+      {
+        position: "right-adjacent",
+        station: 0,
+        side: 0,
+        relationSide: "right",
+        connected: true,
+        name: "pin-right-adjacent",
+      },
+      {
+        position: "detached",
+        station: 0,
+        side: 1,
+        relationSide: "detached",
+        connected: false,
+        name: "pin-detached",
+      },
+      {
+        position: "left-adjacent",
+        station: 50,
+        side: 0,
+        relationSide: "left",
+        connected: true,
+        name: "pin-left-adjacent",
+      },
     ] : [];
     for (const pinCase of pinCases) {
       must(await rpc("sidebar.left.position", { mode: "pin", station: pinCase.station }, win), `${pinCase.name} set pin`);
       must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }), `${pinCase.name} pin settled`);
+      const stateTreeBefore = must(await rpc("state.tree", {}, win), `${pinCase.name} state.tree before`);
       const before = must(await rpc("layout.arrangement", {}, win), `${pinCase.name} arrangement before`);
       const journalBefore = must(await rpc("layout.transactions", {}, win), `${pinCase.name} transaction baseline`);
       const priorEntries = journalBefore.entries ?? [];
       const afterSequence = Number(priorEntries[priorEntries.length - 1]?.sequence ?? 0);
-      const rectsBefore = await Promise.all([railAddress, ...paneAddresses].map(async (address) => ({
-        address,
-        rect: must(await rpc("ui.measure", { address }, win), `${pinCase.name} rect before`).rect,
-      })));
+      const rectsBefore = await Promise.all([railAddress, ...paneAddresses].map(async (address) => {
+        const measured = must(await rpc("ui.measure", { address }, win), `${pinCase.name} rect before`);
+        return {
+          address,
+          nodeIdentity: measured.nodeIdentity ?? null,
+          rect: measured.rect,
+        };
+      }));
       let nativeBefore = null;
       if (frameworkName === "tauri" && native) {
         nativeBefore = must(
@@ -1068,10 +1101,14 @@ async function runEngine(client, page, engine, recordingLedger) {
         name: `${engine}/${pinCase.name}`,
       });
       const files = recordingEvidence.artifacts;
-      const rectsAfter = await Promise.all([railAddress, ...paneAddresses].map(async (address) => ({
-        address,
-        rect: must(await rpc("ui.measure", { address }, win), `${pinCase.name} rect after`).rect,
-      })));
+      const rectsAfter = await Promise.all([railAddress, ...paneAddresses].map(async (address) => {
+        const measured = must(await rpc("ui.measure", { address }, win), `${pinCase.name} rect after`);
+        return {
+          address,
+          nodeIdentity: measured.nodeIdentity ?? null,
+          rect: measured.rect,
+        };
+      }));
       const pinErrors = [];
       for (const [index, beforeRect] of rectsBefore.entries()) {
         const afterRect = rectsAfter[index];
@@ -1101,6 +1138,7 @@ async function runEngine(client, page, engine, recordingLedger) {
       }
       await assertActivePane(rpc, win, paneIds[pinCase.side], pinCase.name);
       const paneState = must(await rpc("pane.list", {}, win), `${pinCase.name} pane.list`);
+      const stateTreeAfter = must(await rpc("state.tree", {}, win), `${pinCase.name} state.tree after`);
       const stateRelation = paneState.railRelation;
       if (!stateRelation
           || stateRelation.placement !== "pin"
@@ -1108,11 +1146,42 @@ async function runEngine(client, page, engine, recordingLedger) {
           || stateRelation.side !== pinCase.relationSide) {
         throw new Error(`${pinCase.name}: 공개 relation 판정 불일치 ${JSON.stringify(stateRelation)}`);
       }
-      await assertRailCompositionContract(rpc, win, railAddress, paneIds[pinCase.side], pinCase.name, {
-        connected: pinCase.connected,
-        side: pinCase.relationSide,
-        placement: "pin",
-      });
+      const railContract = await assertRailCompositionContract(
+        rpc,
+        win,
+        railAddress,
+        paneIds[pinCase.side],
+        pinCase.name,
+        {
+          connected: pinCase.connected,
+          side: pinCase.relationSide,
+          placement: "pin",
+        },
+      );
+      b07Cases.push(mapB07PinCaseEvidence({
+        position: pinCase.position,
+        stateTreeAfter,
+        paneListAfter: paneState,
+        relationMeasureAfter: railContract.relationMeasure,
+        before: {
+          stateTree: stateTreeBefore,
+          arrangement: before,
+          railMeasure: rectsBefore[0],
+          paneMeasures: rectsBefore.slice(1).map((measure, index) => ({
+            paneId: paneIds[index],
+            ...measure,
+          })),
+        },
+        after: {
+          stateTree: stateTreeAfter,
+          arrangement: after,
+          railMeasure: rectsAfter[0],
+          paneMeasures: rectsAfter.slice(1).map((measure, index) => ({
+            paneId: paneIds[index],
+            ...measure,
+          })),
+        },
+      }));
       await observeFrameSequence(
         files,
         `${engine}/${pinCase.name}`,
@@ -1132,12 +1201,46 @@ async function runEngine(client, page, engine, recordingLedger) {
       console.log(`✓ ${pinCase.name}: station=${pinCase.station} side=${pinCase.relationSide} connected=${pinCase.connected} · rect 고정 · ${PIN_FRAMES_PER_CLICK} frames`);
     }
     if (SCENARIOS.has("pin")) {
+      const b07Receipt = gateReportStore.recordMachineEvidence({
+        framework: frameworkName,
+        engine,
+        gate: "B07",
+        evidence: { engine, cases: b07Cases },
+      });
+      await gateReportStore.persist();
+      console.log(`◉ ${engine}/B07 canonical machine verdict: ${b07Receipt.status}`);
+    }
+    if (SCENARIOS.has("pin")) {
       must(await rpc("sidebar.left.position", { mode: "pin", station: 50 }, win), "pin maximize station");
       must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }), "pin maximize station settled");
       const restoredBaseline = must(await rpc("layout.arrangement", {}, win), "pin maximize baseline");
+      const restoredBaselinePosition = must(
+        await rpc("sidebar.left.position", {}, win),
+        "pin maximize baseline persisted pin",
+      );
+      const restoredBaselinePanes = must(await rpc("pane.list", {}, win), "pin maximize baseline panes");
+      const b08BaselineRaw = {
+        railPosition: restoredBaselinePosition,
+        arrangement: restoredBaseline,
+        paneList: restoredBaselinePanes,
+      };
+      const b08Baseline = mapB08BaselineEvidence(b08BaselineRaw);
+      const b08Cases = [];
       const maximizeCases = [
-        { side: 0, station: 100, relationSide: "left", name: "pin-maximize-left" },
-        { side: 1, station: 0, relationSide: "right", name: "pin-maximize-right" },
+        {
+          side: 0,
+          station: 100,
+          relationSide: "left",
+          targetPaneId: paneIds[0],
+          name: "pin-maximize-left",
+        },
+        {
+          side: 1,
+          station: 0,
+          relationSide: "right",
+          targetPaneId: paneIds[1],
+          name: "pin-maximize-right",
+        },
       ];
       for (const maximizeCase of maximizeCases) {
         must(await rpc("tab.maximize", { tab: tabIds[maximizeCase.side] }, win), `${maximizeCase.name} maximize`);
@@ -1154,6 +1257,7 @@ async function runEngine(client, page, engine, recordingLedger) {
           throw new Error(`${maximizeCase.name}: PIN 방향 최대화 불일치 expectedPane=${paneIds[maximizeCase.side]} actual=${JSON.stringify(maximized)}`);
         }
         const persisted = must(await rpc("sidebar.left.position", {}, win), `${maximizeCase.name} persisted pin`);
+        const maximizedPanes = must(await rpc("pane.list", {}, win), `${maximizeCase.name} pane.list`);
         if (persisted.leftRailPosition?.mode !== "pin" || persisted.leftRailPosition?.station !== 50) {
           throw new Error(`${maximizeCase.name}: 최대화가 저장 PIN을 변경 ${JSON.stringify(persisted.leftRailPosition)}`);
         }
@@ -1170,11 +1274,38 @@ async function runEngine(client, page, engine, recordingLedger) {
         must(await rpc("tab.restore", {}, win), `${maximizeCase.name} restore`);
         must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }), `${maximizeCase.name} restore settled`);
         const restored = must(await rpc("layout.arrangement", {}, win), `${maximizeCase.name} restored arrangement`);
+        const restoredPosition = must(
+          await rpc("sidebar.left.position", {}, win),
+          `${maximizeCase.name} restored pin`,
+        );
+        const restoredPanes = must(await rpc("pane.list", {}, win), `${maximizeCase.name} restored pane.list`);
         if (restored.station !== 50 || JSON.stringify(restored.cells) !== JSON.stringify(restoredBaseline.cells)) {
           throw new Error(`${maximizeCase.name}: 복원이 PIN/분할을 바꿈 ${JSON.stringify({ baseline: restoredBaseline, restored })}`);
         }
+        b08Cases.push(mapB08MaximizeCaseEvidence({
+          direction: maximizeCase.relationSide,
+          targetPaneId: maximizeCase.targetPaneId,
+          maximized: {
+            railPosition: persisted,
+            arrangement: maximized,
+            paneList: maximizedPanes,
+          },
+          restored: {
+            railPosition: restoredPosition,
+            arrangement: restored,
+            paneList: restoredPanes,
+          },
+        }));
         console.log(`✓ ${maximizeCase.name}: station=${maximizeCase.station} · 저장 PIN=50 · 복원 동일`);
       }
+      const b08Receipt = gateReportStore.recordMachineEvidence({
+        framework: frameworkName,
+        engine,
+        gate: "B08",
+        evidence: { engine, baseline: b08Baseline, cases: b08Cases },
+      });
+      await gateReportStore.persist();
+      console.log(`◉ ${engine}/B08 canonical machine verdict: ${b08Receipt.status}`);
     }
     if (SCENARIOS.has("pin")) {
       must(await rpc("sidebar.left.position", { mode: "flow" }, win), "restore sidebar flow after pin contract");
@@ -1335,7 +1466,7 @@ async function runEngine(client, page, engine, recordingLedger) {
     await observeFrameSequence([finalPath], `${engine}/final`, scale);
     await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, "final-ledger");
     const crossClicks = SCENARIOS.has("flow") ? CYCLES * 2 : 0;
-    console.log(`✓ ${engine} GREEN — 시나리오 ${[...SCENARIOS].join(",")} · 한글 IME 2개 · 교차 클릭 ${crossClicks}회 · ${resizeSummary} · 연속 프레임 ${frameCount}장`);
+    console.log(`✓ ${engine} evidence collected — 시나리오 ${[...SCENARIOS].join(",")} · 한글 IME 2개 · 교차 클릭 ${crossClicks}회 · ${resizeSummary} · 연속 프레임 ${frameCount}장`);
     return frameCount;
   } catch (error) {
     runFailure = error;
@@ -1373,8 +1504,18 @@ async function runEngine(client, page, engine, recordingLedger) {
 }
 
 async function main() {
+  // Artifact identity is supplied by the build owner. Validate it before the evidence store,
+  // fixture filesystem, socket, or app can be mutated.
+  const buildId = requireBrowserEvidenceBuildId(process.env.BROWSER_EVIDENCE_BUILD_ID);
   const runId = process.env.BROWSER_EVIDENCE_RUN_ID ?? `slot-freeze-${randomUUID()}`;
   const recordingLedger = createBrowserRecordingEvidenceLedger(RECORDING_PLAN);
+  const gateReportStore = createBrowserGateReportStore({
+    root: EVIDENCE_STORE_ROOT,
+    buildId,
+    runId,
+    platform: process.platform,
+    keep: process.env.KEEP === "1",
+  });
   await beginEvidenceRun(EVIDENCE_STORE_ROOT, {
     runId,
     keep: process.env.KEEP === "1",
@@ -1388,7 +1529,7 @@ async function main() {
     client = await openClient(requireSocket());
     page = await startHtmlFixture(() => fixtureHtml());
     for (const engine of ENGINES) {
-      frames += await runEngine(client, page, engine, recordingLedger);
+      frames += await runEngine(client, page, engine, recordingLedger, gateReportStore);
     }
     recordingLedger.assertComplete();
   } catch (error) {
@@ -1407,7 +1548,32 @@ async function main() {
     }
   }
 
-  const status = runError ? "red" : "machine-green";
+  let machineSummary = null;
+  if (gateReportStore.hasReport()) {
+    try {
+      await gateReportStore.persist();
+      machineSummary = gateReportStore.machineSummary();
+    } catch (reportError) {
+      runError = runError
+        ? new AggregateError(
+            [runError, reportError],
+            `${runError instanceof Error ? runError.message : String(runError)}; browser gate report: ${reportError instanceof Error ? reportError.message : String(reportError)}`,
+          )
+        : reportError;
+    }
+  }
+  if (!runError && !machineSummary) {
+    runError = new Error("canonical browser gate report was not initialized from live framework.info");
+  }
+  if (!runError && machineSummary?.status !== "green") {
+    const counts = machineSummary.counts;
+    runError = new Error(
+      `canonical browser gate summary ${machineSummary.status} — green=${counts.green}/${machineSummary.required}`
+      + ` red=${counts.red} blocked=${counts.blocked} not-run=${counts["not-run"]}`,
+    );
+  }
+
+  const status = !runError && machineSummary?.status === "green" ? "machine-green" : "red";
   try {
     await finishEvidenceRun(EVIDENCE_STORE_ROOT, { runId, status });
   } catch (finishError) {
@@ -1420,7 +1586,7 @@ async function main() {
   }
   if (runError) throw runError;
 
-  console.log(`\n✓ browser-matrix MACHINE GREEN — ${ENGINES.length}개 구현 · 한글 IME ${ENGINES.length * 2}개 · 프레임 ${frames}장`);
+  console.log(`\n✓ canonical browser gates GREEN — ${machineSummary.counts.green}/${machineSummary.required} required cells · 프레임 ${frames}장`);
   console.log(`사람 검토용 증거: ${EVIDENCE_ROOT}`);
 }
 
