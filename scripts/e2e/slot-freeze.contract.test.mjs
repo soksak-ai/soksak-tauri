@@ -147,6 +147,15 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(source).not.toContain("fs.writeFileSync");
   });
 
+  it("snapshot과 full capture 파일도 공통 artifact quota 거래로 만든다", () => {
+    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    expect(source).toContain("produceEvidenceArtifact");
+    expect(source).toContain("produceEvidenceFile");
+    expect(source.match(/captureWindowSnapshot\(/g)).toHaveLength(9);
+    expect(source.match(/rpc\("window\.snapshot"/g)).toHaveLength(1);
+    expect(source).not.toContain("fs.mkdirSync(engineEvidence");
+  });
+
   it("교차 이동의 자동 판정은 recorder callback이 아닌 공개 layout 거래 장부를 소비한다", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
     expect(source).toContain("layoutTransactionVerdict");

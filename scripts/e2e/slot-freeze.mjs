@@ -31,6 +31,7 @@ import {
   beginEvidenceRun,
   evidenceStorePaths,
   finishEvidenceRun,
+  produceEvidenceArtifact,
   resolveEvidenceFile,
   writeEvidenceFile,
 } from "./lib/evidence-store.mjs";
@@ -80,6 +81,7 @@ const RECORDING_PLAN = planBrowserRecordingEvidence({
 const FRAMES_PER_CLICK = 48;
 const PIN_FRAMES_PER_CLICK = 24;
 const FAST_RESIZE_FRAMES = 64;
+const EVIDENCE_PNG_MAX_BYTES = 128 * 1024 ** 2;
 const IME_TEXTS = ["한글 입력 왼쪽", "한글 입력 오른쪽"];
 const CHROME_MARKERS = Object.freeze({
   railAdd: "#ff0000",
@@ -121,6 +123,27 @@ function evidenceRelativePath(file) {
     throw new Error(`evidence report 경계 불일치: ${file}`);
   }
   return relative;
+}
+
+async function produceEvidenceFile(file, producer) {
+  const stored = await produceEvidenceArtifact(
+    EVIDENCE_STORE_ROOT,
+    evidenceRelativePath(file),
+    {
+      kind: "file",
+      maxBytes: EVIDENCE_PNG_MAX_BYTES,
+      keep: process.env.KEEP === "1",
+    },
+    producer,
+  );
+  return stored.result;
+}
+
+async function captureWindowSnapshot(rpc, win, file, label, params = {}) {
+  return produceEvidenceFile(file, async ({ path: outputPath }) => must(
+    await rpc("window.snapshot", { ...params, path: outputPath }, win),
+    label,
+  ));
 }
 
 async function writeMachineReport(file, report) {
@@ -463,7 +486,7 @@ async function assertChromeOverlayContract(rpc, win, engineEvidence, scale) {
     anchors: anchorState.anchors,
   });
   const before = path.join(engineEvidence, "chrome-overlay.png");
-  must(await rpc("window.snapshot", { path: before }, win), "chrome overlay snapshot");
+  await captureWindowSnapshot(rpc, win, before, "chrome overlay snapshot");
   await observeFrameSequence([before], `${path.basename(engineEvidence)}/chrome-overlay`, scale, {
     requireFixture: false,
     chromeAnchors: [CHROME_MARKERS.railAdd],
@@ -527,7 +550,7 @@ async function assertChromeOverlayContract(rpc, win, engineEvidence, scale) {
     anchors: modalAnchorState.anchors,
   });
   const modalPath = path.join(engineEvidence, "chrome-project-modal.png");
-  must(await rpc("window.snapshot", { path: modalPath }, win), "project modal snapshot");
+  await captureWindowSnapshot(rpc, win, modalPath, "project modal snapshot");
   await observeFrameSequence([modalPath], `${path.basename(engineEvidence)}/chrome-project-modal`, scale, {
     requireFixture: false,
     pointAnchors: [{ color: CHROME_MARKERS.modalOverlayProbe, point: probePoint }],
@@ -542,7 +565,7 @@ async function assertChromeOverlayContract(rpc, win, engineEvidence, scale) {
 }
 
 async function assertViewportComposition(rpc, win, plugin, tabIds, addresses, scale, file, name) {
-  must(await rpc("window.snapshot", { path: file }, win), `${name} snapshot`);
+  await captureWindowSnapshot(rpc, win, file, `${name} snapshot`);
   const errors = [];
   for (let index = 0; index < tabIds.length; index += 1) {
     const measured = must(await rpc("ui.measure", { address: addresses[index] }, win), `${name} slot ${index}`);
@@ -621,7 +644,13 @@ async function verifyScrollInput(rpc, win, plugin, tabId, evidencePath) {
   if (afterY !== 480) {
     throw new Error(`${tabId}: 실제 wheel 전진량 불일치 ${JSON.stringify({ before, afterY })}`);
   }
-  must(await rpc("window.snapshot", { tab: tabId, path: evidencePath }, win), `scroll snapshot ${tabId}`);
+  await captureWindowSnapshot(
+    rpc,
+    win,
+    evidencePath,
+    `scroll snapshot ${tabId}`,
+    { tab: tabId },
+  );
   must(await rpc(`plugin.${plugin}.input.scroll`, {
     viewId: tabId, selector: "body", dx: 0, dy: -480,
   }, win), `input.scroll restore ${tabId}`);
@@ -648,9 +677,13 @@ async function verifyFullCapture(rpc, win, plugin, tabId, outputPath, identityMa
     return unwrapEvalValue(value);
   };
   const before = await readDocument("before");
-  const result = must(await rpc(`plugin.${plugin}.capture.full`, {
-    viewId: tabId, path: outputPath,
-  }, win, { timeoutMs: 40_000 }), `capture.full ${tabId}`);
+  const result = await produceEvidenceFile(outputPath, async ({ path: capturePath }) => must(
+    await rpc(`plugin.${plugin}.capture.full`, {
+      viewId: tabId,
+      path: capturePath,
+    }, win, { timeoutMs: 40_000 }),
+    `capture.full ${tabId}`,
+  ));
   const fileBytes = fs.existsSync(outputPath) ? fs.statSync(outputPath).size : 0;
   const after = await readDocument("after");
   const verdict = fullCaptureReceiptVerdict({
@@ -695,7 +728,6 @@ async function runEngine(client, page, engine, recordingLedger) {
   const implementation = browserImplementations[engine];
   const plugin = implementation.plugin;
   const engineEvidence = path.join(EVIDENCE_ROOT, engine);
-  fs.mkdirSync(engineEvidence, { recursive: true });
   const rpc = (method, params = {}, window, options) => client.rpc(method, params, window, options);
   let win;
   let homeOverride = false;
@@ -846,7 +878,7 @@ async function runEngine(client, page, engine, recordingLedger) {
     await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, "first-paint-ledger");
     must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }), "first paint layout settled");
     const firstPaintPath = path.join(engineEvidence, "first-paint.png");
-    must(await rpc("window.snapshot", { path: firstPaintPath }, win), "first paint snapshot");
+    await captureWindowSnapshot(rpc, win, firstPaintPath, "first paint snapshot");
     const scaleEvidence = snapshotScaleForVisualEvidence(firstPaintPath, originalWindow);
     await writeVisualReport(`${firstPaintPath}.scale.visual.json`, scaleEvidence);
     const scale = scaleEvidence.scale;
@@ -866,7 +898,7 @@ async function runEngine(client, page, engine, recordingLedger) {
       }, sentinelWin), "cross-window sentinel identity");
       if (identity.text !== "Browser Boundary") throw new Error(`cross-window sentinel DOM 소실: ${JSON.stringify(identity)}`);
       const sentinelPath = path.join(engineEvidence, "cross-window-sentinel.png");
-      must(await rpc("window.snapshot", { path: sentinelPath }, sentinelWin), "cross-window sentinel snapshot");
+      await captureWindowSnapshot(rpc, sentinelWin, sentinelPath, "cross-window sentinel snapshot");
       const sentinelInfo = must(await rpc("window.info", {}, sentinelWin), "cross-window sentinel info");
       const sentinelScaleEvidence = snapshotScaleForVisualEvidence(sentinelPath, sentinelInfo);
       await writeVisualReport(`${sentinelPath}.scale.visual.json`, sentinelScaleEvidence);
@@ -1130,7 +1162,7 @@ async function runEngine(client, page, engine, recordingLedger) {
           placement: "pin",
         });
         const screenshot = path.join(engineEvidence, `${maximizeCase.name}.png`);
-        must(await rpc("window.snapshot", { path: screenshot }, win), `${maximizeCase.name} snapshot`);
+        await captureWindowSnapshot(rpc, win, screenshot, `${maximizeCase.name} snapshot`);
         await observeFrameSequence(
           [screenshot], `${engine}/${maximizeCase.name}`, scale, { slots: [maximizeCase.side] },
         );
@@ -1298,7 +1330,7 @@ async function runEngine(client, page, engine, recordingLedger) {
     }
 
     const finalPath = path.join(engineEvidence, "final.png");
-    must(await rpc("window.snapshot", { path: finalPath }, win), "final snapshot");
+    await captureWindowSnapshot(rpc, win, finalPath, "final snapshot");
     await observeFrameSequence([finalPath], `${engine}/final`, scale);
     await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, "final-ledger");
     const crossClicks = SCENARIOS.has("flow") ? CYCLES * 2 : 0;
