@@ -9,7 +9,7 @@ describe("titlebar composition live E2E contract", () => {
     for (const marker of [
       'rpc("window.list"',
       'rpc("window.startup"',
-      'rpc("debug.sleep"',
+      'rpc("window.record"',
       'rpc("titlebar.composition"',
       'rpc("titlebar.height.set"',
       'rpc("titlebar.height.reset"',

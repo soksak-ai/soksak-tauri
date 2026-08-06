@@ -12,7 +12,8 @@ import { BROWSER_ACCEPTANCE_ENGINES } from "./lib/browser-gate-identity.mjs";
 import { judgeB12MachineEvidence } from "./lib/browser-gate-b12.mjs";
 
 const HEIGHTS = Object.freeze([30, 60, 72]);
-const HOLD_MS = 900;
+const HOLD_FRAMES = 6;
+const HOLD_INTERVAL_MS = 180;
 const cycle = String(process.env.B12_CYCLE ?? "single");
 const evidenceRoot = path.join(
   os.homedir(),
@@ -71,8 +72,13 @@ async function capture(rpc, windowLabel, name) {
 }
 
 async function hold(rpc, windowLabel, stage) {
+  const dir = path.join(evidenceRoot, windowLabel, "holds", stage);
   must(
-    await rpc("debug.sleep", { ms: HOLD_MS }, windowLabel),
+    await rpc("window.record", {
+      dir,
+      frames: HOLD_FRAMES,
+      intervalMs: HOLD_INTERVAL_MS,
+    }, windowLabel),
     `${windowLabel} ${stage} hold`,
   );
 }
