@@ -146,9 +146,26 @@ describe("Tauri plugin renderer RPC surface", () => {
     const projected = projectPluginViewSlot(container, {
       label: "b-main-tab-1", x: 11, y: 47, w: 320, h: 180, rootW: 400, rootH: 260,
       revision: 1, reportedAtUnixMs: 1,
+    }, {
+      viewId: "tab-1",
+      topologyPath: "window/w-1/view/tab-1/content/b-main-tab-1",
+      visible: true,
     });
     expect(projected.dataset.node).toBe("tauri/plugin-view/b-main-tab-1/surface");
     expect(projected.hasAttribute("data-content-view-body")).toBe(false);
+    expect(projected.dataset).toMatchObject({
+      compositionKind: "slot",
+      viewId: "tab-1",
+      topologyPath: "window/w-1/view/tab-1/content/b-main-tab-1",
+      visible: "true",
+    });
+    const renderer = projected.querySelector<HTMLElement>("[data-composition-kind=renderer]");
+    expect(renderer?.dataset).toMatchObject({
+      viewId: "tab-1",
+      topologyPath: "window/w-1/view/tab-1/content/b-main-tab-1",
+      visible: "true",
+    });
+    expect(renderer?.dataset.node).toBe("tauri/plugin-view/b-main-tab-1/renderer");
     expect(projected.style.cssText).toContain("left: 11px");
     expect(projected.style.cssText).toContain("height: 180px");
   });
@@ -185,7 +202,11 @@ describe("Tauri plugin renderer RPC surface", () => {
     const verdict = comparePanePresentation(
       [
         { pane: "pane-a", frame: { x: 60.2, y: 121, w: 481.2, h: 929 }, members: [
-          { label: "browser-a", frame: { x: 0, y: 56, w: 481, h: 873 } },
+          {
+            label: "browser-a",
+            frame: { x: 0, y: 56, w: 481, h: 873 },
+            topologyPath: "window/w-1/view/tab-a/content/browser-a",
+          },
         ] },
         { pane: "pane-b", frame: { x: 713.2, y: 121, w: 180.8, h: 929 } },
       ],
@@ -210,6 +231,7 @@ describe("Tauri plugin renderer RPC surface", () => {
     });
     expect(verdict.matches[0].memberMatches).toMatchObject([{
       label: "browser-a",
+      topologyPath: "window/w-1/view/tab-a/content/browser-a",
       ok: true,
       coordinateSpace: {
         logical: "css-px",

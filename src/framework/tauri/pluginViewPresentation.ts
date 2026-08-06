@@ -66,10 +66,12 @@ export const paneLayoutContractOf = surfaceLayoutContractOf;
 type PaneRect = { x: number; y: number; w: number; h: number };
 type DomPaneFact = {
   pane: string;
+  viewId?: string | null;
   frame: PaneRect;
   members?: {
     label: string;
     frame: PaneRect;
+    topologyPath?: string | null;
     viewport?: { w: number; h: number; revision: number; reportedAtUnixMs: number; receivedAtUnixMs: number };
   }[];
 };
@@ -188,6 +190,7 @@ export function comparePanePresentation(
         : null;
       return {
         label: domMember.label,
+        topologyPath: domMember.topologyPath ?? null,
         coordinateSpace: {
           logical: "css-px" as const,
           origin: "presenter-local" as const,
@@ -214,6 +217,7 @@ export function comparePanePresentation(
       && memberMatches.every((match) => match.ok);
     return {
       pane: domFact.pane,
+      viewId: domFact.viewId ?? null,
       coordinateSpace: windowCoordinateSpace,
       domFrame: domFact.frame,
       nativeFrame: nativeFact?.cssFrame ?? null,
@@ -248,10 +252,35 @@ export function comparePanePresentation(
 export function projectPluginViewSlot(
   container: HTMLElement,
   frame: PluginViewSlotFrame,
+  composition?: {
+    viewId: string;
+    topologyPath: string;
+    visible: boolean;
+  },
   existing?: HTMLElement,
 ): HTMLElement {
   const element = existing ?? document.createElement("div");
   element.dataset.node = `tauri/plugin-view/${frame.label}/surface`;
+  if (composition) {
+    element.dataset.compositionKind = "slot";
+    element.dataset.viewId = composition.viewId;
+    element.dataset.topologyPath = composition.topologyPath;
+    element.dataset.visible = String(composition.visible);
+    let renderer = element.querySelector<HTMLElement>(":scope > [data-composition-kind=renderer]");
+    if (!renderer) {
+      renderer = document.createElement("div");
+      element.appendChild(renderer);
+    }
+    renderer.dataset.node = `tauri/plugin-view/${frame.label}/renderer`;
+    renderer.dataset.compositionKind = "renderer";
+    renderer.dataset.viewId = composition.viewId;
+    renderer.dataset.topologyPath = composition.topologyPath;
+    renderer.dataset.visible = String(composition.visible);
+    renderer.setAttribute("aria-hidden", "true");
+    Object.assign(renderer.style, {
+      position: "absolute", inset: "0", pointerEvents: "none", background: "transparent",
+    });
+  }
   element.setAttribute("aria-hidden", "true");
   Object.assign(element.style, {
     position: "absolute",
@@ -264,6 +293,19 @@ export function projectPluginViewSlot(
   });
   if (!existing) container.appendChild(element);
   return element;
+}
+
+function contentSurfaceTopologyPath(windowLabel: string, viewId: string, label: string): string {
+  return `window/${encodeURIComponent(windowLabel)}/view/${encodeURIComponent(viewId)}/content/${encodeURIComponent(label)}`;
+}
+
+function setProjectedCompositionVisibility(view: PresentedState, visible: boolean): void {
+  for (const projection of view.projections.values()) {
+    if (projection.dataset.compositionKind) projection.dataset.visible = String(visible);
+    for (const child of projection.querySelectorAll<HTMLElement>("[data-composition-kind]")) {
+      child.dataset.visible = String(visible);
+    }
+  }
 }
 
 export function projectPluginViewNode(
@@ -526,6 +568,7 @@ async function createPresentedView(
       focus: false,
     })));
     await emitTo(view.renderer, event(view.renderer, "visibility"), { visible });
+    setProjectedCompositionVisibility(view, visible);
   });
   input.container.setAttribute(TAURI_PANE_RENDERER_ATTR, renderer);
   state.views.set(nativeHostId, view);
@@ -561,6 +604,11 @@ async function createPresentedView(
     const projected = projectPluginViewSlot(
       view.container,
       payload,
+      view.viewId ? {
+        viewId: view.viewId,
+        topologyPath: contentSurfaceTopologyPath(windowLabel, view.viewId, payload.label),
+        visible: view.visible,
+      } : undefined,
       view.projections.get(payload.label),
     );
     view.projections.set(payload.label, projected);
@@ -647,9 +695,13 @@ export async function pluginViewCompositionStatus() {
     .filter((view) => view.grouped && !view.disposed)
     .map((view) => ({
       pane: view.nativeHostId,
+      viewId: view.viewId,
       frame: rectOf(view.container),
       members: view.slots.frames().map((slot) => ({
         label: slot.label,
+        topologyPath: view.viewId
+          ? contentSurfaceTopologyPath(windowLabel, view.viewId, slot.label)
+          : null,
         frame: { x: slot.x, y: slot.y, w: slot.w, h: slot.h },
         viewport: {
           w: slot.rootW, h: slot.rootH, revision: slot.revision,

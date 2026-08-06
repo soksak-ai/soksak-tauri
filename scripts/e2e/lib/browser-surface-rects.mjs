@@ -21,6 +21,12 @@ const paneSurface = ({ viewId, label, paneComposition }) => {
       .map((member) => ({ pane, member })));
   if (candidates.length !== 1) fail(viewId, `must have exactly one PaneSurfaceHost owner (${candidates.length})`);
   const { pane, member } = candidates[0];
+  if (pane.viewId !== viewId) {
+    fail(viewId, `PaneSurfaceHost owner view mismatch (${String(pane.viewId)})`);
+  }
+  if (typeof member.topologyPath !== "string" || member.topologyPath.length === 0) {
+    fail(viewId, "has no public topology path");
+  }
   if (pane.chromeAboveHost !== true) {
     fail(viewId, "chrome is not above its PaneSurfaceHost");
   }
@@ -30,10 +36,13 @@ const paneSurface = ({ viewId, label, paneComposition }) => {
     fail(viewId, "has no live, exact PaneSurfaceHost member");
   }
   return {
-    x: paneRect.x + memberRect.x,
-    y: paneRect.y + memberRect.y,
-    w: memberRect.w,
-    h: memberRect.h,
+    rect: {
+      x: paneRect.x + memberRect.x,
+      y: paneRect.y + memberRect.y,
+      w: memberRect.w,
+      h: memberRect.h,
+    },
+    topologyPath: member.topologyPath,
   };
 };
 
@@ -85,26 +94,30 @@ export function mapBrowserSurfaceRects({
 
     if (framework !== "tauri") fail(viewId, `uses unsupported framework ${framework}`);
     if (surface === "framework-native") {
+      const owner = paneSurface({ viewId, label, paneComposition });
       return {
         viewId,
         surfaceId: label,
+        topologyPath: owner.topologyPath,
         live: true,
         visible: true,
         presented: true,
-        rect: paneSurface({ viewId, label, paneComposition }),
+        rect: owner.rect,
       };
     }
 
     const owned = engineSurface({ viewId, surface, stats });
     if (owned.actual.hidden === true) fail(viewId, "owner is hidden");
     if (surface === "engine-windowed") {
+      const owner = paneSurface({ viewId, label, paneComposition });
       return {
         viewId,
         surfaceId: String(owned.id),
+        topologyPath: owner.topologyPath,
         live: true,
         visible: true,
         presented: owned.actual.composition != null,
-        rect: paneSurface({ viewId, label, paneComposition }),
+        rect: owner.rect,
       };
     }
     if (surface === "engine-offscreen") {

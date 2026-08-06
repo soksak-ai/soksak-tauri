@@ -14,10 +14,12 @@ describe("browser surface rect evidence", () => {
       labels,
       paneComposition: {
         matches: labels.map((label, index) => ({
+          viewId: views[index],
           chromeAboveHost: true,
           domFrame: { x: index ? 513 : 60, y: 121, w: 281, h: 449 },
           memberMatches: [{
             label,
+            topologyPath: `window/w-test/view/${views[index]}/content/${label}`,
             nativeCount: 1,
             ok: true,
             domFrame: { x: 0, y: 28, w: 281, h: 421 },
@@ -29,10 +31,12 @@ describe("browser surface rect evidence", () => {
     expect(result).toEqual([
       {
         viewId: "tab-left", surfaceId: "native-tab-left", live: true,
+        topologyPath: "window/w-test/view/tab-left/content/native-tab-left",
         visible: true, presented: true, rect: { x: 60, y: 149, w: 281, h: 421 },
       },
       {
         viewId: "tab-right", surfaceId: "native-tab-right", live: true,
+        topologyPath: "window/w-test/view/tab-right/content/native-tab-right",
         visible: true, presented: true, rect: { x: 513, y: 149, w: 281, h: 421 },
       },
     ]);
@@ -108,10 +112,13 @@ describe("browser surface rect evidence", () => {
       viewIds: ["tab-right"],
       labels: ["native-tab-right"],
       paneComposition: { matches: [{
+        viewId: "tab-right",
         chromeAboveHost: false,
         domFrame: { x: 513, y: 121, w: 281, h: 449 },
         memberMatches: [{
-          label: "native-tab-right", nativeCount: 1, ok: true,
+          label: "native-tab-right",
+          topologyPath: "window/w-test/view/tab-right/content/native-tab-right",
+          nativeCount: 1, ok: true,
           domFrame: { x: 0, y: 28, w: 281, h: 421 },
         }],
       }] },
