@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { lstat, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { access, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -14,6 +14,7 @@ import {
   finishEvidenceRun,
   inspectEvidenceStore,
   planFailedRunRotation,
+  produceEvidenceArtifact,
   projectEvidenceQuota,
   readEvidenceRun,
   resolveEvidenceFile,
@@ -238,6 +239,204 @@ describe("쓰기 전 hard quota", () => {
       expect(results.find((result) => result.status === "rejected")?.reason)
         .toBeInstanceOf(EvidenceQuotaError);
       expect((await inspectEvidenceStore(root)).current.bytes).toBe(initial.current.bytes + 4);
+    });
+  });
+});
+
+describe("외부 snapshot/record/full producer quota 거래", () => {
+  it("예약이 한도를 넘으면 producer를 호출하지 않고 기존 artifact도 보존한다", async () => {
+    await inTemporaryStore(async (root) => {
+      await beginEvidenceRun(root, { runId: "producer-preflight" });
+      await writeEvidenceFile(root, "capture.bin", "keep");
+      const initial = await inspectEvidenceStore(root);
+      const limits = {
+        runLimitBytes: initial.current.bytes + 4,
+        storeLimitBytes: initial.totalBytes + 8,
+      };
+      let calls = 0;
+      await expect(produceEvidenceArtifact(
+        root,
+        "capture.bin",
+        { kind: "file", maxBytes: 9, limits, keep: true },
+        async () => { calls += 1; },
+      )).rejects.toThrow(EvidenceQuotaError);
+      expect(calls).toBe(0);
+      expect(await readFile(path.join(root, "current", "capture.bin"), "utf8")).toBe("keep");
+    });
+  });
+
+  it("기존 directory를 빈 경계로 안전 교체하고 중첩 파일 전체 byte를 합산한다", async () => {
+    await inTemporaryStore(async (root) => {
+      await beginEvidenceRun(root, { runId: "producer-directory" });
+      const target = path.join(root, "current", "recording");
+      await mkdir(path.join(target, "old"), { recursive: true });
+      await writeFile(path.join(target, "old", "stale.bin"), "stale");
+
+      const result = await produceEvidenceArtifact(
+        root,
+        "recording",
+        { kind: "directory", maxBytes: 12 },
+        async ({ path: outputPath, maxBytes }) => {
+          expect(path.isAbsolute(outputPath)).toBe(true);
+          expect(outputPath).toBe(target);
+          expect(maxBytes).toBe(12);
+          expect(await readdir(outputPath)).toEqual([]);
+          await writeFile(path.join(outputPath, "a.bin"), "123");
+          await mkdir(path.join(outputPath, "nested"));
+          await writeFile(path.join(outputPath, "nested", "b.bin"), "4567");
+          return "recorded";
+        },
+      );
+
+      expect(result).toEqual({
+        path: target,
+        kind: "directory",
+        maxBytes: 12,
+        bytes: 7,
+        result: "recorded",
+      });
+      await expect(access(path.join(target, "old", "stale.bin"))).rejects.toMatchObject({ code: "ENOENT" });
+    });
+  });
+
+  it("동시 producer를 직렬화해 첫 예약 이후 두 번째를 callback 전에 거부한다", async () => {
+    await inTemporaryStore(async (root) => {
+      await beginEvidenceRun(root, { runId: "producer-concurrent" });
+      const initial = await inspectEvidenceStore(root);
+      const limits = {
+        runLimitBytes: initial.current.bytes + 4,
+        storeLimitBytes: initial.totalBytes + 8,
+      };
+      let calls = 0;
+      let releaseFirst;
+      let signalFirst;
+      const firstStarted = new Promise((resolve) => { signalFirst = resolve; });
+      const holdFirst = new Promise((resolve) => { releaseFirst = resolve; });
+      const first = produceEvidenceArtifact(
+        root,
+        "a.bin",
+        { kind: "file", maxBytes: 4, limits },
+        async ({ path: outputPath }) => {
+          calls += 1;
+          signalFirst();
+          await holdFirst;
+          await writeFile(outputPath, "1234");
+        },
+      );
+      await firstStarted;
+      const second = produceEvidenceArtifact(
+        root,
+        "b.bin",
+        { kind: "file", maxBytes: 4, limits },
+        async ({ path: outputPath }) => {
+          calls += 1;
+          await writeFile(outputPath, "5678");
+        },
+      );
+      releaseFirst();
+      const results = await Promise.allSettled([first, second]);
+
+      expect(calls).toBe(1);
+      expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+      expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+      expect(results.find((result) => result.status === "rejected")?.reason)
+        .toBeInstanceOf(EvidenceQuotaError);
+      expect(await readFile(path.join(root, "current", "a.bin"), "utf8")).toBe("1234");
+      await expect(access(path.join(root, "current", "b.bin"))).rejects.toMatchObject({ code: "ENOENT" });
+    });
+  });
+
+  it("maxBytes를 넘긴 producer artifact만 제거하고 quota 오류를 반환한다", async () => {
+    await inTemporaryStore(async (root) => {
+      await beginEvidenceRun(root, { runId: "producer-rollback" });
+      await writeEvidenceFile(root, "sibling.bin", "safe");
+      let error;
+      try {
+        await produceEvidenceArtifact(
+          root,
+          "oversized/frame.bin",
+          { kind: "file", maxBytes: 4 },
+          async ({ path: outputPath }) => writeFile(outputPath, "12345"),
+        );
+      } catch (caught) {
+        error = caught;
+      }
+      expect(error).toBeInstanceOf(EvidenceQuotaError);
+      expect(error?.code).toBe("EVIDENCE_QUOTA_EXCEEDED");
+      await expect(access(path.join(root, "current", "oversized", "frame.bin")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+      expect(await readFile(path.join(root, "current", "sibling.bin"), "utf8")).toBe("safe");
+    });
+  });
+
+  it("producer 오류의 cap 이내 partial은 보존하고 cap 초과 partial은 제거하며 cause를 보존한다", async () => {
+    await inTemporaryStore(async (root) => {
+      await beginEvidenceRun(root, { runId: "producer-partial" });
+      const withinCause = new Error("snapshot interrupted");
+      let withinError;
+      try {
+        await produceEvidenceArtifact(
+          root,
+          "partial.bin",
+          { kind: "file", maxBytes: 8 },
+          async ({ path: outputPath }) => {
+            await writeFile(outputPath, "1234");
+            throw withinCause;
+          },
+        );
+      } catch (caught) {
+        withinError = caught;
+      }
+      expect(withinError).toBe(withinCause);
+      expect(await readFile(path.join(root, "current", "partial.bin"), "utf8")).toBe("1234");
+
+      const overCause = new Error("recording interrupted");
+      let overError;
+      try {
+        await produceEvidenceArtifact(
+          root,
+          "partial-recording",
+          { kind: "directory", maxBytes: 4 },
+          async ({ path: outputPath }) => {
+            await writeFile(path.join(outputPath, "frame.bin"), "12345");
+            throw overCause;
+          },
+        );
+      } catch (caught) {
+        overError = caught;
+      }
+      expect(overError).toBeInstanceOf(EvidenceQuotaError);
+      expect(overError?.cause).toBe(overCause);
+      await expect(access(path.join(root, "current", "partial-recording")))
+        .rejects.toMatchObject({ code: "ENOENT" });
+    });
+  });
+
+  it("running이 아니거나 경계를 벗어난 요청은 producer 전에 거부한다", async () => {
+    await inTemporaryStore(async (root) => {
+      await ensureEvidenceStore(root);
+      let calls = 0;
+      const producer = async () => { calls += 1; };
+      await expect(produceEvidenceArtifact(
+        root,
+        "idle.bin",
+        { kind: "file", maxBytes: 1 },
+        producer,
+      )).rejects.toThrow(/running/);
+      await beginEvidenceRun(root, { runId: "producer-boundary" });
+      await expect(produceEvidenceArtifact(
+        root,
+        "../escape.bin",
+        { kind: "file", maxBytes: 1 },
+        producer,
+      )).rejects.toThrow(/경계/);
+      await expect(produceEvidenceArtifact(
+        root,
+        path.join(root, "absolute.bin"),
+        { kind: "file", maxBytes: 1 },
+        producer,
+      )).rejects.toThrow(/상대/);
+      expect(calls).toBe(0);
     });
   });
 });

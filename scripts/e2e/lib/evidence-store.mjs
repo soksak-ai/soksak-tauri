@@ -16,8 +16,8 @@ const EMPTY_RUN = Object.freeze({
 });
 
 export class EvidenceQuotaError extends Error {
-  constructor(message, details) {
-    super(message);
+  constructor(message, details, options = {}) {
+    super(message, options);
     this.name = "EvidenceQuotaError";
     this.code = "EVIDENCE_QUOTA_EXCEEDED";
     this.details = details;
@@ -295,6 +295,34 @@ async function existingFileSize(target) {
   return stat.size;
 }
 
+async function inspectArtifact(target, expectedKind) {
+  const stat = await checkedStat(target);
+  if (!stat) return { exists: false, kind: null, bytes: 0, identity: null };
+  const kind = stat.isFile() ? "file" : stat.isDirectory() ? "directory" : null;
+  if (!kind) throw new Error(`일반 파일/디렉터리가 아닌 증거 artifact는 허용되지 않는다: ${target}`);
+  if (expectedKind && kind !== expectedKind) {
+    throw new Error(`증거 artifact 종류 불일치: ${target}=${kind}/${expectedKind}`);
+  }
+  return {
+    exists: true,
+    kind,
+    bytes: kind === "file" ? stat.size : await measureDirectory(target),
+    identity: {
+      dev: stat.dev,
+      ino: stat.ino,
+      mtimeMs: stat.mtimeMs,
+    },
+  };
+}
+
+function sameArtifact(left, right) {
+  if (left.exists !== right.exists || left.kind !== right.kind || left.bytes !== right.bytes) return false;
+  if (!left.exists) return true;
+  return left.identity?.dev === right.identity?.dev
+    && left.identity?.ino === right.identity?.ino
+    && left.identity?.mtimeMs === right.identity?.mtimeMs;
+}
+
 async function assertParentChain(bucket, targetParent) {
   const relative = path.relative(bucket, targetParent);
   if (relative === "" || relative === ".") return;
@@ -326,6 +354,60 @@ async function quotaBeforeWrite(paths, bucket, target, incomingBytes, options = 
     keep: options.keep,
     ...(options.limits ?? {}),
   });
+}
+
+async function quotaBeforeArtifact(paths, target, incomingBytes, options = {}) {
+  const existing = await inspectArtifact(target);
+  const [bucketBytes, otherBucketBytes] = await Promise.all([
+    measureDirectory(paths.current),
+    measureDirectory(paths.lastRed),
+  ]);
+  const quota = projectEvidenceQuota({
+    bucketBytes,
+    otherBucketBytes,
+    existingFileBytes: existing.bytes,
+    incomingBytes,
+    keep: options.keep,
+    ...(options.limits ?? {}),
+  });
+  return { existing, quota };
+}
+
+function assertArtifactBoundary(paths, target) {
+  if (target === paths.current || !target.startsWith(`${paths.current}${path.sep}`)) {
+    throw new Error(`증거 artifact 경계 밖 변경 거부: ${target}`);
+  }
+  return target;
+}
+
+async function removeExactArtifact(paths, target) {
+  assertArtifactBoundary(paths, target);
+  await assertParentChain(paths.current, path.dirname(target));
+  let stat;
+  try {
+    stat = await lstat(target);
+  } catch (error) {
+    if (isMissing(error)) return false;
+    throw error;
+  }
+  await rm(target, { recursive: stat.isDirectory() });
+  return true;
+}
+
+async function replaceExistingArtifact(paths, target, expected) {
+  const current = await inspectArtifact(target);
+  if (!sameArtifact(current, expected)) {
+    throw new Error(`증거 artifact가 quota 예약 뒤 변경되었다: ${target}`);
+  }
+  if (current.exists) await removeExactArtifact(paths, target);
+}
+
+function artifactQuotaError(target, maxBytes, actualBytes, details, cause) {
+  return new EvidenceQuotaError(
+    `외부 증거 artifact가 예약 ${maxBytes} bytes를 초과했다: ${target}=${actualBytes}`,
+    { ...details, target, maxBytes, actualBytes },
+    cause === undefined ? {} : { cause },
+  );
 }
 
 async function writeManagedFile(paths, bucket, target, bytes, options = {}) {
@@ -460,6 +542,124 @@ export function writeEvidenceFile(root, relativePath, data, options = {}) {
   return inStoreTransaction(
     root,
     () => writeEvidenceFileTransaction(root, relativePath, data, options),
+  );
+}
+
+async function produceEvidenceArtifactTransaction(
+  root,
+  relativePath,
+  { kind, maxBytes, keep = false, limits } = {},
+  producer,
+) {
+  if (kind !== "file" && kind !== "directory") {
+    throw new TypeError("외부 증거 artifact kind는 file 또는 directory여야 한다");
+  }
+  const reservedBytes = byteCount("maxBytes", maxBytes);
+  if (typeof keep !== "boolean") throw new TypeError("keep은 boolean이어야 한다");
+  if (typeof producer !== "function") throw new TypeError("외부 증거 producer callback이 필요하다");
+
+  const paths = evidenceStorePaths(root);
+  await ensureEvidenceStore(paths.root);
+  const current = await readEvidenceRun(paths.root, "current");
+  if (current.status !== "running") {
+    throw new Error(`running 실행만 외부 증거를 만들 수 있다: current=${current.status}`);
+  }
+  const target = resolveEvidenceFile(paths.root, "current", relativePath);
+  assertArtifactBoundary(paths, target);
+  await assertParentChain(paths.current, path.dirname(target));
+
+  // maxBytes 전체를 먼저 예약한다. 이 판정이 실패하면 target과 producer는 건드리지 않는다.
+  const reservation = await quotaBeforeArtifact(paths, target, reservedBytes, { keep, limits });
+  await replaceExistingArtifact(paths, target, reservation.existing);
+  await mkdir(path.dirname(target), { recursive: true });
+  await assertParentChain(paths.current, path.dirname(target));
+  if (kind === "directory") await mkdir(target);
+
+  let producerFailed = false;
+  let producerError;
+  let producerResult;
+  try {
+    producerResult = await producer(Object.freeze({ path: target, maxBytes: reservedBytes }));
+  } catch (error) {
+    producerFailed = true;
+    producerError = error;
+  }
+
+  let actual;
+  try {
+    await assertParentChain(paths.current, path.dirname(target));
+    actual = await inspectArtifact(target, kind);
+  } catch (artifactError) {
+    // producer가 symlink/특수파일/잘못된 종류를 만들었으면 store에 남기지 않는다.
+    await removeExactArtifact(paths, target);
+    if (!producerFailed) throw artifactError;
+    throw new Error(
+      `producer 오류 뒤 허용되지 않는 증거 artifact가 남았다: ${target}`,
+      { cause: producerError },
+    );
+  }
+
+  if (!actual.exists) {
+    if (producerFailed) throw producerError;
+    throw new Error(`외부 증거 producer가 ${kind} artifact를 만들지 않았다: ${target}`);
+  }
+
+  let quotaFailure = null;
+  if (actual.bytes > reservedBytes) {
+    quotaFailure = artifactQuotaError(
+      target,
+      reservedBytes,
+      actual.bytes,
+      reservation.quota,
+      producerFailed ? producerError : undefined,
+    );
+  } else {
+    const [bucketBytes, otherBucketBytes] = await Promise.all([
+      measureDirectory(paths.current),
+      measureDirectory(paths.lastRed),
+    ]);
+    try {
+      projectEvidenceQuota({
+        bucketBytes,
+        otherBucketBytes,
+        existingFileBytes: actual.bytes,
+        incomingBytes: actual.bytes,
+        keep,
+        ...(limits ?? {}),
+      });
+    } catch (error) {
+      if (!(error instanceof EvidenceQuotaError)) throw error;
+      quotaFailure = new EvidenceQuotaError(
+        error.message,
+        { ...error.details, target, maxBytes: reservedBytes, actualBytes: actual.bytes },
+        producerFailed ? { cause: producerError } : {},
+      );
+    }
+  }
+
+  if (quotaFailure) {
+    // 계측 뒤 다른 artifact로 바뀌었다면 그것을 초과 산출물로 오인해 지우지 않는다.
+    await replaceExistingArtifact(paths, target, actual);
+    throw quotaFailure;
+  }
+  if (producerFailed) throw producerError;
+
+  return {
+    path: target,
+    kind,
+    maxBytes: reservedBytes,
+    bytes: actual.bytes,
+    result: producerResult,
+  };
+}
+
+/**
+ * path 기반 snapshot/record/full 생산자를 store의 단일 quota 거래 안에서 실행한다.
+ */
+export function produceEvidenceArtifact(root, relativePath, options, producer) {
+  return inStoreTransaction(
+    root,
+    () => produceEvidenceArtifactTransaction(root, relativePath, options, producer),
   );
 }
 
