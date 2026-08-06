@@ -14,6 +14,20 @@ export interface CompositionCoordinateSpace {
   scaleFactor: number;
 }
 
+/**
+ * A frame is comparable only inside one declared origin and one concrete reference owner.
+ * Unit/scale alone cannot distinguish a presenter-local rect from a window rect.
+ */
+export interface CompositionReferencedCoordinateSpace extends CompositionCoordinateSpace {
+  origin: "presenter-local" | "window-absolute";
+  referenceId: string;
+}
+
+export interface CompositionReferencedFrame {
+  frame: CompositionRect;
+  coordinateSpace: CompositionReferencedCoordinateSpace;
+}
+
 export interface CompositionObservedFrame {
   id: string;
   viewId: string;
@@ -66,6 +80,49 @@ export function rectDelta(a: CompositionRect, b: CompositionRect): CompositionRe
 
 export function sameRect(a: CompositionRect, b: CompositionRect): boolean {
   return Object.values(rectDelta(a, b)).every((value) => value === 0);
+}
+
+/**
+ * Compare frames only after their adapters have projected them into the same declared space.
+ * The verdict permits nearest-device-pixel edge rounding and no arbitrary tolerance.
+ */
+export function compositionFrameComparisonVerdict({
+  expected,
+  actual,
+}: {
+  expected: CompositionReferencedFrame;
+  actual: CompositionReferencedFrame;
+}) {
+  const errors: string[] = [];
+  const expectedSpace = expected?.coordinateSpace;
+  const actualSpace = actual?.coordinateSpace;
+  if (expectedSpace?.logical !== "css-px" || actualSpace?.logical !== "css-px") {
+    errors.push(`coordinate-logical=${expectedSpace?.logical}/${actualSpace?.logical}`);
+  }
+  if (expectedSpace?.origin !== actualSpace?.origin) {
+    errors.push(`coordinate-origin=${expectedSpace?.origin}/${actualSpace?.origin}`);
+  }
+  if (expectedSpace?.referenceId !== actualSpace?.referenceId) {
+    errors.push(`coordinate-reference=${expectedSpace?.referenceId}/${actualSpace?.referenceId}`);
+  }
+  const expectedScale = Number(expectedSpace?.scaleFactor);
+  const actualScale = Number(actualSpace?.scaleFactor);
+  if (!Number.isFinite(expectedScale) || expectedScale <= 0
+      || !Number.isFinite(actualScale) || actualScale <= 0
+      || expectedScale !== actualScale) {
+    errors.push(`coordinate-scale=${expectedSpace?.scaleFactor}/${actualSpace?.scaleFactor}`);
+  }
+  if (!validLogicalRect(expected?.frame)) errors.push("expected-frame=finite-positive");
+  if (!validLogicalRect(actual?.frame)) errors.push("actual-frame=finite-positive");
+  if (errors.length > 0) return { ok: false, errors, delta: null };
+
+  const expectedPhysical = logicalRectToPhysical(expected.frame, expectedScale);
+  const actualPhysical = logicalRectToPhysical(actual.frame, actualScale);
+  const delta = rectDelta(expectedPhysical, actualPhysical);
+  if (!sameRect(expectedPhysical, actualPhysical)) {
+    errors.push(`frame=${displayRect(expectedPhysical)}/${displayRect(actualPhysical)}`);
+  }
+  return { ok: errors.length === 0, errors, delta };
 }
 
 /**
