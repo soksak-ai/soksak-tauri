@@ -110,11 +110,13 @@ fn physical_resize_replies_after_appkit_applied_and_displayed_the_size() {
         .expect("새 content viewport를 affine 투영 전에 확정해야 한다");
     let project = command.find("resize_registered_surface_hosts")
         .expect("공개 DOM affine 계약을 같은 명령 transaction에서 투영해야 한다");
+    let project_panes = command.find("resize_pane_surface_hosts")
+        .expect("PaneSurfaceHost affine 계약도 같은 명령 transaction에서 투영해야 한다");
     let commit = command.find("commit_resize_composition")
         .expect("resize composition commit");
     assert!(
-        layout < project && project < commit,
-        "content layout → native surface 투영 → 전체 창 display commit 순서여야 한다"
+        layout < project && project < project_panes && project_panes < commit,
+        "content layout → direct surface → pane host 투영 → 전체 창 display commit 순서여야 한다"
     );
     assert!(
         command.contains("recv_timeout"),

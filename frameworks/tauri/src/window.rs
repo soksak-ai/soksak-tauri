@@ -44,6 +44,7 @@ pub async fn window_set_physical_size(
             // layout에서 끝낸다. affine 투영이 이전 parent bounds를 읽지 않게 순서를 고정한다.
             native.layoutIfNeeded();
             crate::webview::resize_registered_surface_hosts(&resize_label);
+            crate::webview::resize_pane_surface_hosts(&resize_label);
             crate::webview::appkit_events::commit_resize_composition(native);
             let _ = tx.send(Ok(()));
         })

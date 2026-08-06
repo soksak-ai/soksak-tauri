@@ -561,6 +561,11 @@ pub(crate) fn resize_registered_surface_hosts(window: &str) {
     layer::resize_registered_surface_hosts(window);
 }
 
+#[cfg(target_os = "macos")]
+pub(crate) fn resize_pane_surface_hosts(window: &str) {
+    layer::resize_pane_surface_hosts(window);
+}
+
 // 엔진 사이드카의 native surface 를 레이어 시스템(SURFACES — hitTest 위임)에 편입/해제.
 // 엔진이 surface-created/destroyed 호스트 사실을 emit 하면 sidecar.rs 가 여기로 relay 한다.
 // 코어는 의미를 모른다 — 포인터 멤버십만 관리(엔진 중립: WKWebView·Chromium 동일 취급).
