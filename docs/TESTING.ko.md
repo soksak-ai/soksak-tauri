@@ -61,6 +61,11 @@ DOM-commit 1개만 가져야 한다. 누락·중복·다른 transaction 오염�
 commit epoch 전이면 initial rect, 이후면 commit rect에만 결합한다. 16ms timer 근접도, 허용 간격 확대,
 보간·이동량 투영은 합성 판정 근거가 아니다. 종료 timeout은 구독 회수 장벽일 뿐 좌표 polling이 아니다.
 
+Tauri pane surface의 owner 원장도 정확해야 한다. `webview.pane.hosts`에서 요청한 window, `viewId`,
+workspace `logicalPaneId`, surface member에 해당하는 host가 정확히 하나여야 하고, trace는 그 사실의
+별도 `nativeHostId`로 무장한다. 결합 누락·중복, null logical identity, 모호한 `pane` 필드,
+host label에서 logical id를 추론하는 구현은 RED다.
+
 이 거래 사건은 FLOW 재배치만 나타낸다. 최초 mount에는 layout transaction이 없으므로 새 앱 첫 화면의
 DOM/surface 정합은 B01 mount와 B03 1:1 inventory/frame 계약으로 별도 증명한다.
 

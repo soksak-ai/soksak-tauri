@@ -70,6 +70,11 @@ the initial rect, and an event at or after it uses only the commit rect. A neare
 a wider time tolerance, interpolation, or movement projection is never composition authority. The
 expiry timeout only reclaims the finite subscription; it does not poll coordinates.
 
+For Tauri pane surfaces, the owner inventory is also exact: `webview.pane.hosts` must yield one host
+for the requested window, `viewId`, workspace `logicalPaneId`, and surface member. The trace is armed
+with that fact's separate `nativeHostId`. A missing/duplicate join, a null logical identity, an
+ambiguous `pane` field, or a host-label-derived logical id is RED.
+
 This event represents a FLOW relocation, not initial mount. A cold application's first DOM/surface
 composition has no layout transaction and remains independently covered by B01 mount and B03
 one-to-one inventory/frame contracts.
