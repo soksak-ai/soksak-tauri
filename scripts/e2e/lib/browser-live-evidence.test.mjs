@@ -27,22 +27,24 @@ describe("live browser evidence mappers", () => {
   });
 
   it("maps a discovered namespaced public node path to its exact urlbar role", () => {
-    const viewId = "view-0";
-    const expectedUrl = "https://fixture.invalid/?slot=0";
-    const tab = mapB01TabEvidence({
-      viewId,
-      expectedUrl,
-      mountReceipt: { mounted: true },
-      urlbarMeasure: {
-        dataset: { node: `tauri/plugin-view/b-window-${viewId}/urlbar` },
-        value: expectedUrl,
-      },
-      pageIdentity: { viewId, url: expectedUrl },
-      navigateReceipt: { viewId },
+    const tabs = [0, 1].map((index) => {
+      const viewId = `view-${index}`;
+      const expectedUrl = `https://fixture.invalid/?slot=${index}`;
+      return mapB01TabEvidence({
+        viewId,
+        expectedUrl,
+        mountReceipt: { mounted: true },
+        urlbarMeasure: {
+          dataset: { node: `tauri/plugin-view/b-window-${viewId}/urlbar` },
+          value: expectedUrl,
+        },
+        pageIdentity: { viewId, url: expectedUrl },
+        navigateReceipt: { viewId },
+      });
     });
 
-    expect(tab.toolbarAddress.dataNode).toBe("urlbar");
-    expect(judgeB01MachineEvidence({ engine, tabs: [tab, tab] }).status).toBe("green");
+    expect(tabs.map((tab) => tab.toolbarAddress.dataNode)).toEqual(["urlbar", "urlbar"]);
+    expect(judgeB01MachineEvidence({ engine, tabs }).status).toBe("green");
   });
 
   it("keeps missing public B01 receipt facts null so the judge stays RED", () => {

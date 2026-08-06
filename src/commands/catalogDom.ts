@@ -423,10 +423,11 @@ export function registerDomCatalog(): void {
         address: addr,
         nodeIdentity: nodeIdentityOf(el),
         ...(pseudo ? { pseudo } : {}),
-        ...(el instanceof HTMLInputElement
-          || el instanceof HTMLTextAreaElement
-          || el instanceof HTMLSelectElement
-          ? { value: el.value }
+        ...(["input", "textarea", "select"].includes(el.localName)
+          // PluginView 노드는 host Window와 다른 realm에서 올 수 있으므로 host constructor의
+          // instanceof는 같은 HTML 태그도 거짓이다. localName은 DOM 표준 form 의미이며
+          // realm과 무관하다. 노출된 실제 Element의 현재 value만 읽는다.
+          ? { value: (el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).value }
           : {}),
         // 모든 data-* 선언은 공개 상태다. 자동화/플러그인은 private DOM 속성명을
         // 다시 추측하지 않고 ui.tree → ui.measure 한 경로로 읽는다.

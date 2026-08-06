@@ -10,6 +10,12 @@ export function mapImeObservation(value) {
   };
 }
 
+function publicNodeRole(nodePath) {
+  if (typeof nodePath !== "string" || nodePath.length === 0) return null;
+  const parts = nodePath.split("/").filter(Boolean);
+  return parts.at(-1) ?? null;
+}
+
 export function mapB01TabEvidence({
   viewId,
   expectedUrl,
@@ -23,7 +29,10 @@ export function mapB01TabEvidence({
     expectedUrl,
     mounted: mountReceipt?.mounted ?? null,
     toolbarAddress: {
-      dataNode: urlbarMeasure?.dataset?.node ?? null,
+      // data-node는 plugin-view namespace를 포함한 발견 경로다. B01은 그 공개 경로의
+      // 마지막 semantic segment가 정확히 urlbar인지 판정한다; private selector나
+      // 요청 URL에서 역할을 지어내지 않는다.
+      dataNode: publicNodeRole(urlbarMeasure?.dataset?.node),
       value: urlbarMeasure?.value ?? null,
     },
     pageIdentity: {
