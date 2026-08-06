@@ -1314,7 +1314,7 @@ async function main() {
   }
 }
 
-main().catch((error) => {
+await main().catch((error) => {
   console.error(`✗ browser-matrix RED — ${error instanceof Error ? error.message : String(error)}`);
   process.exitCode = 1;
 });

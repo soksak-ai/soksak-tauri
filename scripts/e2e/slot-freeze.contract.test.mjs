@@ -3,6 +3,12 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 describe("slot-freeze instrumentation lifecycle", () => {
+  it("keeps Node alive until the whole scenario and finally cleanup have completed", () => {
+    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    expect(source).toContain("await main()");
+    expect(source).not.toMatch(/\nmain\(\)\.catch\(/);
+  });
+
   it("녹화는 시각 진단을 남기지만 E2E 성공/실패를 판정하지 않는다", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
     const observer = source.split("function observeFrameSequence")[1]?.split("\n}\n")[0] ?? "";
