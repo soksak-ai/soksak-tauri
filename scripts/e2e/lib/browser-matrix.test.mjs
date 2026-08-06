@@ -307,16 +307,28 @@ describe("브라우저 구현 행렬", () => {
           // 이 값은 plugin의 rAF 두 표본 사이를 보간한 진단값일 수 있다. 실제 display
           // callback이 읽은 presenter frame과 일부러 다르게 두어 판정면 유입을 막는다.
           domRect: { x: 437, y: 20, w: 300, h: 200 },
-          presentationRect: { x: 400, y: 20, w: 300, h: 200 },
+          rendererFrame: { x: 401, y: 20, w: 299, h: 200 },
+          surfaceFrame: { x: 400, y: 20, w: 300, h: 200 },
         }],
       }],
     }, { targetViewId: "view-right" })).toEqual([{
       sampledAtUnixMs: 2_000,
       connected: true,
       slotFrame: { x: 437, y: 20, w: 300, h: 200 },
-      rendererFrame: { x: 400, y: 20, w: 300, h: 200 },
+      rendererFrame: { x: 401, y: 20, w: 299, h: 200 },
       surfaceFrame: { x: 400, y: 20, w: 300, h: 200 },
     }]);
+    expect(() => adapter.events({
+      samples: [{
+        atUnixMs: 2_001,
+        surfaces: [{
+          viewId: "view-right",
+          domRect: { x: 400, y: 20, w: 300, h: 200 },
+          rendererFrame: null,
+          surfaceFrame: { x: 400, y: 20, w: 300, h: 200 },
+        }],
+      }],
+    }, { targetViewId: "view-right" })).toThrow("native renderer/surface frame");
   });
 
   it("presentation owner가 누락·중복되면 추측하지 않고 실패한다", () => {
