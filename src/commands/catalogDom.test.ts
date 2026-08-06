@@ -171,6 +171,17 @@ describe("ui.tree/ui.measure — 공개 DOM 노드 인스턴스 식별자", () =
 });
 
 describe("ui.measure — 상호작용/가시성 축", () => {
+  it("계산 스타일과 별개로 exact inline geometry를 노출한다", async () => {
+    mountNode(`<div data-node="btn" style="height:36px;flex-basis:36px">x</div>`);
+    const r = await execute("ui.measure", { address: ADDR }, {});
+    expect(r.ok).toBe(true);
+    expect((r.data as { inlineStyle: Record<string, string> }).inlineStyle).toEqual({
+      height: "36px",
+      flexBasis: "36px",
+    });
+    expect(getSpec("ui.measure")?.returns).toContain("inlineStyle");
+  });
+
   it("노출 노드의 data-* 상태를 함께 반환해 private DOM 추측을 없앤다", async () => {
     mountNode(`<div data-node="btn" data-projection="focus-near" data-traveling="true">x</div>`);
     const r = await execute("ui.measure", { address: ADDR }, {});

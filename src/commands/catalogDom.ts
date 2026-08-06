@@ -244,7 +244,7 @@ export function registerDomCatalog(): void {
 
   register("ui.measure", {
     description:
-      "Measure an exposed node — its nodeIdentity, viewport rect (px), and computed style. nodeIdentity is the same opaque live-Element token exposed by ui.tree: stable for the same Element and changed on remount at the same address. style always includes the layout fields plus the interaction/visibility axis (pointerEvents, opacity, visibility) so you can tell whether a node is actually visible and clickable, not just where it sits. Pass props to read any extra computed properties by name (e.g. zIndex, transform, backgroundColor). Pass occlusion:true to also hit-test the node's center (through Shadow DOM) and report what covers it and whether it is reachable. Pass screen:true to also get the node's GLOBAL logical screen coordinates (screen.x/y = rect origin, screen.cx/cy = center) — feed cx/cy straight to an OS pointer tool (e.g. cliclick c:cx,cy) when a real hit-tested click is required; synthetic ui.input.click bypasses hit-testing and default actions, so it cannot verify pointer-events or focus-on-mouseup behavior. Accepts structural addresses from ui.tree only; CSS selectors are rejected.",
+      "Measure an exposed node — its nodeIdentity, viewport rect (px), exact inline height/flexBasis, and computed style. nodeIdentity is the same opaque live-Element token exposed by ui.tree: stable for the same Element and changed on remount at the same address. style always includes the layout fields plus the interaction/visibility axis (pointerEvents, opacity, visibility) so you can tell whether a node is actually visible and clickable, not just where it sits. Pass props to read any extra computed properties by name (e.g. zIndex, transform, backgroundColor). Pass occlusion:true to also hit-test the node's center (through Shadow DOM) and report what covers it and whether it is reachable. Pass screen:true to also get the node's GLOBAL logical screen coordinates (screen.x/y = rect origin, screen.cx/cy = center) — feed cx/cy straight to an OS pointer tool (e.g. cliclick c:cx,cy) when a real hit-tested click is required; synthetic ui.input.click bypasses hit-testing and default actions, so it cannot verify pointer-events or focus-on-mouseup behavior. Accepts structural addresses from ui.tree only; CSS selectors are rejected.",
     triggers: { ko: "DOM 측정 레이아웃 rect 크기 스타일 포인터이벤트 가시성 가림 도달성 스크린 전역좌표 실클릭 노드식별자 재마운트 인스턴스" },
     params: {
       address: { type: "string", description: "Exposed node address from ui.tree", required: true },
@@ -274,7 +274,7 @@ export function registerDomCatalog(): void {
       },
     },
     returns:
-      "{ address, nodeIdentity, dataset, rect:{x,y,w,h}, style, occlusion?:{ reachable, topTag, topNode }, screen?:{ x, y, cx, cy } } — nodeIdentity is the opaque live Element identity shared with ui.tree; dataset contains every declared data-* field on the exposed node",
+      "{ address, nodeIdentity, dataset, rect:{x,y,w,h}, inlineStyle:{height,flexBasis}, style, occlusion?:{ reachable, topTag, topNode }, screen?:{ x, y, cx, cy } } — nodeIdentity is the opaque live Element identity shared with ui.tree; dataset contains every declared data-* field on the exposed node",
     message: (d) =>
       tmsg("msg.ui.measure", {
         w: Number((d.rect as { w?: number })?.w ?? 0),
@@ -336,6 +336,10 @@ export function registerDomCatalog(): void {
           y: +r.y.toFixed(2),
           w: +r.width.toFixed(2),
           h: +r.height.toFixed(2),
+        },
+        inlineStyle: {
+          height: (el as HTMLElement).style?.height ?? "",
+          flexBasis: (el as HTMLElement).style?.flexBasis ?? "",
         },
         style,
       };
