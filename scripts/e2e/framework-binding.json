@@ -16,6 +16,11 @@
       "why": "창 내용을 네이티브로 합성해 PNG 로 굽는다. 네이티브 자식 웹뷰까지 한 장에 담기는 것이 판정 근거라, 페이지만 찍는 캡처로는 같은 답이 나오지 않는다.",
       "frameworkAnswers": "프레임워크가 자기 창 캡처를 제공한다"
     },
+    "window.record": {
+      "kind": "native",
+      "why": "포커스를 바꾸지 않고 네이티브 창의 연속 합성 프레임을 유한 구간 기록한다. DOM 밖 자식 surface를 포함하는 프레임 원천은 프레임워크가 제공한다.",
+      "frameworkAnswers": "프레임워크가 자기 창의 유한 무포커스 녹화를 제공한다"
+    },
     "window.layers": {
       "kind": "native",
       "why": "네이티브 뷰 계층(클래스·frame·hidden)을 그대로 덤프한다. 계층의 모양 자체가 프레임워크마다 다르다.",
@@ -259,6 +264,20 @@
       "note": "녹화 계획의 유일성·용량 상한·정확히 한 번 소비를 값만으로 검증한다."
     },
     {
+      "file": "lib/browser-evidence-store.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "브라우저 gate 영수증을 실행 identity와 12칸 행렬에 맞춰 저장·병합한다. 프레임워크 표면을 직접 읽지 않고 전달받은 증거 값만 소유한다."
+    },
+    {
+      "file": "lib/browser-evidence-store.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "부분 실행이 나머지 gate를 GREEN으로 꾸미지 않고 저장·재로딩 뒤에도 정확한 not-run 행렬을 유지하는지 검증한다."
+    },
+    {
       "file": "lib/browser-gates.mjs",
       "role": "lib",
       "class": "A",
@@ -322,11 +341,95 @@
       "note": "B07의 relation drift·border/path 오류·layout 변경·case 누락 RED와 세 engine GREEN을 값으로 고정한다."
     },
     {
+      "file": "lib/browser-gate-b08.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "공개 overlay identity·교차 영역·hit owner로 rail과 + overlay가 browser surface보다 위라는 B08 계약을 값으로 판정한다."
+    },
+    {
+      "file": "lib/browser-gate-b08.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "B08의 overlay 누락·교차 실패·잘못된 hit owner RED와 세 engine GREEN을 순수 증거로 고정한다."
+    },
+    {
+      "file": "lib/browser-gate-b09.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "주소표시줄·내비게이션·실페이지·IME·스크롤·full capture의 브라우저 제품 계약을 프레임워크 이름 없이 판정한다."
+    },
+    {
+      "file": "lib/browser-gate-b09.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "B09 제품 기능의 누락과 부분 성공을 거부하고 세 engine이 같은 공개 계약을 충족해야 GREEN임을 고정한다."
+    },
+    {
+      "file": "lib/browser-gate-b10.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "캡처와 수치 trace의 1:1 대응·유한성·RED/GREEN 영수증 누적을 판정하고 녹화 픽셀을 machine PASS로 사용하지 않는다."
+    },
+    {
+      "file": "lib/browser-gate-b10.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "B10 증거 누락·프레임 불일치·시각 증거의 machine 판정 오용을 RED로 고정한다."
+    },
+    {
+      "file": "lib/browser-gate-b12.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "신호등 DOM owner와 native hole의 cold-start·hold·resize 정합성을 전달받은 수치 원장으로 판정하는 B12 순수 judge다."
+    },
+    {
+      "file": "lib/browser-gate-b12.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "B12의 시작 지연·후기 drift·중앙선·hole 불일치 RED와 완전한 원장 GREEN을 값으로 고정한다."
+    },
+    {
       "file": "lib/browser-machine-judge-support.mjs",
       "role": "lib",
       "class": "A",
       "surfaces": [],
       "note": "gate별 순수 판정기가 공유하는 strict schema·engine identity·RED/GREEN 영수증 유틸리티다."
+    },
+    {
+      "file": "lib/browser-surface-rects.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "공개 DOM과 surface 상태에서 동일 좌표계의 strict rect를 추출한다. 네이티브 표면을 직접 조회하지 않는다."
+    },
+    {
+      "file": "lib/browser-surface-rects.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "좌표 누락·비유한 값·암묵적 보정을 거부하고 반올림 전 rect 계약을 고정한다."
+    },
+    {
+      "file": "lib/browser-ui-addresses.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "ui.tree가 공개한 주소에서 브라우저 탭·표면·overlay를 발견한다. private DOM이나 프레임워크별 이름을 추측하지 않는다."
+    },
+    {
+      "file": "lib/browser-ui-addresses.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "공개 주소의 누락·중복·잘못된 owner 결부를 RED로 고정한다."
     },
     {
       "file": "lib/layout-transaction-verdict.mjs",
@@ -748,6 +851,26 @@
         "app-home-path"
       ],
       "note": "한 identity 홈의 터미널 엔진 유닛을 정합시킨다. 파일 배치 작업이고, 홈 경로만 밖에서 오면 프레임워크를 모른다."
+    },
+    {
+      "file": "titlebar-composition.contract.test.mjs",
+      "role": "test",
+      "class": "C",
+      "surfaces": [
+        "window.snapshot",
+        "window.record"
+      ],
+      "note": "실제 창의 cold-start·hold·resize 기록과 스냅샷을 수집해 B12 수치 원장이 화면 증거와 같은 실행을 가리키는지 검증한다."
+    },
+    {
+      "file": "titlebar-composition.mjs",
+      "role": "harness",
+      "class": "C",
+      "surfaces": [
+        "window.snapshot",
+        "window.record"
+      ],
+      "note": "포커스를 주지 않고 실제 Tauri 창의 신호등 합성을 유한 녹화·스냅샷으로 관측한다. 창 캡처가 필요하므로 프레임워크 네이티브 무리다."
     },
     {
       "file": "transition-blank-scan.mjs",
