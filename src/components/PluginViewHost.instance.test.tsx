@@ -83,10 +83,20 @@ describe("PluginViewHost — 인스턴스 수명과 DOM 수명 분리", () => {
       useViewRegistry.getState().register("browser", DECL, { mount } as never);
       root = createRoot(host);
       root.render(
-        <PluginViewHost viewKey="browser.content" projectId="p1" root="/project" region="content" viewId="tab-1" />,
+        <PluginViewHost
+          viewKey="browser.content"
+          projectId="p1"
+          root="/project"
+          region="content"
+          viewId="tab-1"
+          logicalPaneId="pan-left"
+        />,
       );
     });
     expect(presentationMount).toHaveBeenCalledOnce();
+    expect(presentationMount.mock.calls[0]?.[0]).toMatchObject({
+      logicalPaneId: "pan-left",
+    });
     expect(mount).not.toHaveBeenCalled();
     await act(async () => Promise.resolve());
     act(() => root!.unmount());
