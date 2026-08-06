@@ -26,6 +26,7 @@ import {
   awaitPluginViewPresentation,
   installPluginViewPresentation,
   pluginViewCompositionStatus,
+  pluginViewNativeContractStatus,
   pluginViewPresentationStatus,
   preparePresentedPluginViewMove,
 } from "./pluginViewPresentation";
@@ -368,7 +369,7 @@ export function installTauri(): void {
   registerWindowResizeProbe(async () => {
     const [direct, pane] = await Promise.all([
       surfaceCompositionSnapshot(),
-      pluginViewCompositionStatus(),
+      pluginViewNativeContractStatus(),
     ]);
     return combineTauriCompositionProbe(direct, pane);
   });

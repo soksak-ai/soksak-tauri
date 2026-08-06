@@ -512,6 +512,13 @@ pub fn pane_surface_host_state() -> serde_json::Value {
                 "w": frame.size.width, "h": frame.size.height,
             })
         });
+        let contract_frame = unsafe { host.superview() }.and_then(|parent| {
+            let bounds = parent.bounds();
+            record.layout.as_ref().map(|layout| {
+                let (x, y, w, h) = layout.rect_for_viewport(bounds.size.width, bounds.size.height);
+                serde_json::json!({ "x": x, "y": y, "w": w, "h": h })
+            })
+        });
         let clips_to_bounds = host.layer().map(|layer| layer.masksToBounds()).unwrap_or(false);
         let renderer_ptr = views.as_ref().and_then(|map| map.get(&record.renderer)).copied().unwrap_or(0);
         let topology = record.members.first()
@@ -532,7 +539,12 @@ pub fn pane_surface_host_state() -> serde_json::Value {
                     "w": raw.size.width, "h": raw.size.height,
                 }))
             };
-            serde_json::json!({ "label": label, "cssFrame": frame })
+            let contract_frame = record.member_layouts.get(label).map(|layout| {
+                let bounds = host.bounds();
+                let (x, y, w, h) = layout.rect_for_host(bounds.size.width, bounds.size.height);
+                serde_json::json!({ "x": x, "y": y, "w": w, "h": h })
+            });
+            serde_json::json!({ "label": label, "cssFrame": frame, "contractFrame": contract_frame })
         }).collect::<Vec<_>>();
         serde_json::json!({
             "pane": pane,
@@ -544,6 +556,7 @@ pub fn pane_surface_host_state() -> serde_json::Value {
             "memberFrames": member_frames,
             "frame": { "x": frame.origin.x, "y": frame.origin.y, "w": frame.size.width, "h": frame.size.height },
             "cssFrame": css_frame,
+            "contractFrame": contract_frame,
             "clipsToBounds": clips_to_bounds,
             "alpha": host.alphaValue(),
             "rendererTopology": topology,

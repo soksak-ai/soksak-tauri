@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  comparePaneNativeContracts,
   comparePanePresentation,
   isPluginViewCallExposed,
   paneLayoutContractOf,
@@ -106,6 +107,28 @@ describe("Tauri plugin renderer RPC surface", () => {
       alpha: 0.5,
       rendererTopology: { verdict: "shared-pane-host", panelAtomicMotion: true },
     });
+  });
+
+  it("hostile resize 단계는 DOM 이벤트가 아니라 선언된 native affine 계약으로 판정한다", () => {
+    const verdict = comparePaneNativeContracts([{
+      pane: "pane-a", window: "w-1",
+      cssFrame: { x: 10, y: 20, w: 300, h: 200 },
+      contractFrame: { x: 10, y: 20, w: 300, h: 200 },
+      memberFrames: [{
+        label: "browser-a",
+        cssFrame: { x: 0, y: 56, w: 300, h: 144 },
+        contractFrame: { x: 0, y: 56, w: 300, h: 144 },
+      }],
+    }], "w-1");
+    expect(verdict).toMatchObject({ matched: true, verdict: "green" });
+
+    const red = comparePaneNativeContracts([{
+      pane: "pane-a", window: "w-1",
+      cssFrame: { x: 10, y: 20, w: 280, h: 200 },
+      contractFrame: { x: 10, y: 20, w: 300, h: 200 },
+      memberFrames: [],
+    }], "w-1");
+    expect(red).toMatchObject({ matched: false, verdict: "red" });
   });
 
   it("셀 비율과 고정 chrome을 native resize가 재실행할 affine 계약으로 노출한다", () => {

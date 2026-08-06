@@ -75,7 +75,8 @@ type NativePaneFact = {
   pane: string;
   window: string;
   cssFrame: PaneRect;
-  memberFrames?: { label: string; cssFrame: PaneRect | null }[];
+  contractFrame?: PaneRect | null;
+  memberFrames?: { label: string; cssFrame: PaneRect | null; contractFrame?: PaneRect | null }[];
   rendererTopology?: RendererTopologyFact | null;
   alpha?: number;
   [key: string]: unknown;
@@ -85,6 +86,46 @@ const rectDelta = (a: PaneRect, b: PaneRect) => ({
   x: Math.abs(a.x - b.x), y: Math.abs(a.y - b.y),
   w: Math.abs(a.w - b.w), h: Math.abs(a.h - b.h),
 });
+
+/** Immediate native-resize phase. The main and child renderer event loops may legitimately
+ * coalesce intermediate sizes, so each AppKit frame is compared with the affine contract that
+ * produced it. Final live DOM↔native equality remains comparePanePresentation's responsibility. */
+export function comparePaneNativeContracts(
+  native: readonly NativePaneFact[],
+  windowLabel: string,
+  tolerancePx = 1,
+) {
+  const scoped = native.filter((fact) => fact.window === windowLabel);
+  const matches = scoped.map((fact) => {
+    const delta = fact.contractFrame ? rectDelta(fact.cssFrame, fact.contractFrame) : null;
+    const members = (fact.memberFrames ?? []).map((member) => {
+      const memberDelta = member.cssFrame && member.contractFrame
+        ? rectDelta(member.cssFrame, member.contractFrame)
+        : null;
+      return {
+        label: member.label,
+        actual: member.cssFrame,
+        expected: member.contractFrame ?? null,
+        delta: memberDelta,
+        ok: memberDelta !== null
+          && Object.values(memberDelta).every((value) => value <= tolerancePx),
+      };
+    });
+    return {
+      pane: fact.pane,
+      actual: fact.cssFrame,
+      expected: fact.contractFrame ?? null,
+      delta,
+      members,
+      ok: delta !== null
+        && Object.values(delta).every((value) => value <= tolerancePx)
+        && members.length > 0
+        && members.every((member) => member.ok),
+    };
+  });
+  const matched = matches.length > 0 && matches.every((match) => match.ok);
+  return { window: windowLabel, tolerancePx, matches, matched, verdict: matched ? "green" as const : "red" as const };
+}
 
 /**
  * 한 창의 공개 DOM pane과 AppKit PaneSurfaceHost를 동일한 CSS 좌표계에서 판정한다.
@@ -505,6 +546,12 @@ export async function pluginViewCompositionStatus() {
     sampledAtUnixMs,
     verdict: ok ? "green" as const : "red" as const,
   };
+}
+
+export async function pluginViewNativeContractStatus() {
+  const windowLabel = currentWindowLabel();
+  const native = await invoke<NativePaneFact[]>("webview_pane_hosts");
+  return comparePaneNativeContracts(native, windowLabel);
 }
 
 export function awaitPluginViewPresentation(

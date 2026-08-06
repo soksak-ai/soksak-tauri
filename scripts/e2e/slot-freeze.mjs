@@ -1178,7 +1178,8 @@ async function runEngine(client, page, engine) {
     }
 
     // 전체 창 경계 resize — 녹화를 먼저 열고 큰 폭의 축소/확대를 짧은 간격으로 반복한다.
-    // 최종 정합만 맞고 도중에 blank/stale/hang이면 프레임 생존 또는 거래 시간에서 RED다.
+    // 요청 단계는 native affine 계약을 수치 판정하고, 유한 시퀀스 정착 뒤 live DOM/native를
+    // 판정한다. 브라우저가 병합할 수 있는 중간 DOM paint를 요청마다 강제하지 않는다.
     const fastResizeDir = path.join(engineEvidence, "resize-window-fast");
     const fastSizes = hostileWindowResizeSizes(originalWindow);
     const fastResize = must(await rpc("window.resizeSequence", {
@@ -1203,14 +1204,21 @@ async function runEngine(client, page, engine) {
       const redSamples = (fastResize.samples ?? []).filter((sample) => sample.observation?.verdict !== "green");
       if (redSamples.length) {
         const summary = redSamples.map((sample) => {
-          const failed = (sample.observation?.matches ?? []).filter((match) => !match.ok);
-          return `s${sample.step}:${failed.map((match) => {
-            const member = (match.memberMatches ?? []).filter((item) => !item.ok)
+          const direct = sample.observation?.direct?.verdict;
+          const directErrors = [
+            ...(direct?.misplaced ?? []).map((item) => `direct-misplaced:${JSON.stringify(item)}`),
+            ...(direct?.stacked ?? []).map((item) => `direct-stacked:${JSON.stringify(item)}`),
+            ...(direct?.missing ?? []).map((item) => `direct-missing:${JSON.stringify(item)}`),
+          ];
+          const failed = (sample.observation?.pane?.matches ?? []).filter((match) => !match.ok);
+          const paneErrors = failed.map((match) => {
+            const member = (match.members ?? []).filter((item) => !item.ok)
               .map((item) => `${item.label}:${JSON.stringify(item.delta)}`).join("|");
             return `${match.pane}:${JSON.stringify(match.delta)}${member ? ` member=${member}` : ""}`;
-          }).join(",")}`;
+          });
+          return `s${sample.step}:${[...directErrors, ...paneErrors].join(",")}`;
         });
-        throw new Error(`rapid window resize DOM/native 수치 RED — ${summary.join("; ")}`);
+        throw new Error(`rapid window resize affine 거래 RED — ${summary.join("; ")}`);
       }
     }
     // 최소 높이에서는 입력 아래의 상태 marker가 정상적으로 viewport 밖에 놓일 수 있다. 전이 중에는
@@ -1223,6 +1231,13 @@ async function runEngine(client, page, engine) {
     );
     must(await rpc("capture.calibration", { visible: false }, win), "DOM compositor calibration hide");
     frameCount += fastFiles.length;
+    must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }), "window resize final layout settled");
+    if (native) {
+      assertPaneComposition(
+        must(await rpc("webview.pane.composition", {}, win), "window resize final pane composition"),
+        labels,
+      );
+    }
     await assertViewportComposition(rpc, win, plugin, tabIds, addresses, scale,
       path.join(engineEvidence, "resize-window-restored.png"), `${engine}/window-restored`);
     await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, "window-resize-restored");
