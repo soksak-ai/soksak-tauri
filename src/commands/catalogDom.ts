@@ -51,6 +51,100 @@ const domNodeIdentity = moduleState("commands/catalogDom#domNodeIdentity", () =>
   byElement: new WeakMap<Element, string>(),
 }));
 
+type MultiDomTraceNode = {
+  address: string;
+  connected: boolean;
+  rect: { x: number; y: number; w: number; h: number };
+};
+type MultiDomTraceSample = {
+  sequence: number;
+  sampledAtUnixMs: number;
+  trigger: "initial" | "layout-dom-commit";
+  transactionId: string | null;
+  domCommittedAtUnixMs: number | null;
+  nodes: MultiDomTraceNode[];
+};
+type MultiDomTraceSession = {
+  traceId: string;
+  addresses: string[];
+  targets: { address: string; el: HTMLElement }[];
+  unixFromPerformance: number;
+  startedAtUnixMs: number;
+  expiresAtUnixMs: number;
+  endedAtUnixMs: number | null;
+  timedOut: boolean;
+  samples: MultiDomTraceSample[];
+  unsubscribe: () => void;
+  expiryTimer: ReturnType<typeof setTimeout> | null;
+  evictionTimer: ReturnType<typeof setTimeout> | null;
+};
+const multiDomTraceSessions = moduleState(
+  "commands/catalogDom#multiDomTraceSessions",
+  () => new Map<string, MultiDomTraceSession>(),
+);
+const MULTI_DOM_TRACE_MAX_SESSIONS = 8;
+const MULTI_DOM_TRACE_MAX_MS = 15_000;
+const MULTI_DOM_TRACE_RECEIPT_RETENTION_MS = 30_000;
+
+function multiDomTraceNow(session: MultiDomTraceSession): number {
+  return session.unixFromPerformance + performance.now();
+}
+
+function appendMultiDomTraceSample(
+  session: MultiDomTraceSession,
+  trigger: MultiDomTraceSample["trigger"],
+  transactionId: string | null,
+  domCommittedAtUnixMs: number | null,
+): void {
+  session.samples.push({
+    sequence: session.samples.length,
+    sampledAtUnixMs: multiDomTraceNow(session),
+    trigger,
+    transactionId,
+    domCommittedAtUnixMs,
+    // 같은 사건 callback 안에서 전 참가자를 읽는다. 보간·이동량 투영은 하지 않는다.
+    nodes: session.targets.map(({ address, el }) => {
+      const rect = el.getBoundingClientRect();
+      return {
+        address,
+        connected: el.isConnected,
+        rect: {
+          x: Math.round(rect.x * 10) / 10,
+          y: Math.round(rect.y * 10) / 10,
+          w: Math.round(rect.width * 10) / 10,
+          h: Math.round(rect.height * 10) / 10,
+        },
+      };
+    }),
+  });
+}
+
+function finishMultiDomTrace(session: MultiDomTraceSession, timedOut: boolean): void {
+  if (session.endedAtUnixMs !== null) return;
+  session.endedAtUnixMs = multiDomTraceNow(session);
+  session.timedOut = timedOut;
+  session.unsubscribe();
+  session.unsubscribe = () => {};
+  if (session.expiryTimer !== null) clearTimeout(session.expiryTimer);
+  session.expiryTimer = null;
+  if (timedOut) {
+    // close 영수증을 읽을 유한 유예 뒤 회수한다. 주기 감시가 아니라 세션별 단발 제거다.
+    session.evictionTimer = setTimeout(() => {
+      if (multiDomTraceSessions.get(session.traceId) === session) {
+        multiDomTraceSessions.delete(session.traceId);
+      }
+    }, MULTI_DOM_TRACE_RECEIPT_RETENTION_MS);
+  }
+}
+
+export function __resetMultiDomTraceForTest(): void {
+  for (const session of multiDomTraceSessions.values()) {
+    finishMultiDomTrace(session, false);
+    if (session.evictionTimer !== null) clearTimeout(session.evictionTimer);
+  }
+  multiDomTraceSessions.clear();
+}
+
 function nodeIdentityOf(el: Element): string {
   const existing = domNodeIdentity.byElement.get(el);
   if (existing) return existing;
@@ -1123,29 +1217,34 @@ export function registerDomCatalog(): void {
     },
   });
 
-  register("ui.trace.multi", {
+  register("ui.trace.multi.start", {
     description:
-      "Read multiple exposed DOM nodes synchronously at trace start and on each public layout DOM-commit event, then finish at one bounded timeout. Every event sample carries its layout transaction id; repeated timer samples are not composition authority.",
-    triggers: { ko: "다중 노드 동시 추적 절대시각 합성 원장" },
+      "Resolve multiple exposed DOM nodes, record the initial raw rects, install the public layout DOM-commit subscription, and return its trace id only after arming is complete.",
+    triggers: { ko: "다중 DOM 거래 추적 시작 구독 무장" },
     params: {
       addresses: {
         type: "json",
         description: "Unique exposed node addresses (1..16, from ui.tree)",
         required: true,
       },
-      ms: { type: "number", description: "Bounded sampling window in ms (default 1000, max 5000)" },
+      maxMs: {
+        type: "number",
+        description: `Bounded subscription lifetime in ms (default 5000, max ${MULTI_DOM_TRACE_MAX_MS})`,
+      },
     },
     returns:
-      "{ addresses, startedAtUnixMs, endedAtUnixMs, samples:[{sequence,sampledAtUnixMs,trigger:'initial'|'layout-dom-commit',transactionId:string|null,domCommittedAtUnixMs:number|null,nodes:[{address,connected,rect:{x,y,w,h}}]}] }",
-    message: (d) => tmsg("msg.ui.trace", { n: String((d.samples as unknown[])?.length ?? 0) }),
+      "{ traceId, addresses, startedAtUnixMs, expiresAtUnixMs } — the subscription is installed before this ACK",
+    message: () => tmsg("msg.ui.trace", { n: "1" }),
     errors: ["NOT_EXPOSED", "AMBIGUOUS", "INVALID_PARAMS"],
-    handler: async (p) => {
+    handler: (p) => {
       const addresses = p.addresses;
       if (!Array.isArray(addresses)
           || addresses.length < 1
           || addresses.length > 16
           || addresses.some((address) => typeof address !== "string" || address.length === 0)
-          || new Set(addresses).size !== addresses.length) {
+          || new Set(addresses).size !== addresses.length
+          || (p.maxMs !== undefined
+            && (typeof p.maxMs !== "number" || !Number.isFinite(p.maxMs) || p.maxMs <= 0))) {
         return {
           ok: false as const,
           code: "INVALID_PARAMS" as const,
@@ -1158,67 +1257,97 @@ export function registerDomCatalog(): void {
         if ("ok" in found) return found;
         targets.push({ address, el: found.el });
       }
-      const ms = Math.min(Math.max(typeof p.ms === "number" ? p.ms : 1000, 50), 5000);
+      if (multiDomTraceSessions.size >= MULTI_DOM_TRACE_MAX_SESSIONS) {
+        return {
+          ok: false as const,
+          code: "INVALID_PARAMS" as const,
+          message: `동시 DOM trace는 ${MULTI_DOM_TRACE_MAX_SESSIONS}개 이하여야 합니다`,
+        };
+      }
+      const maxMs = Math.min(
+        Math.max(typeof p.maxMs === "number" ? p.maxMs : 5_000, 50),
+        MULTI_DOM_TRACE_MAX_MS,
+      );
       const t0 = performance.now();
       const unixFromPerformance = Number.isFinite(performance.timeOrigin)
         ? performance.timeOrigin
         : Date.now() - t0;
-      const samples: {
-        sequence: number;
-        sampledAtUnixMs: number;
-        trigger: "initial" | "layout-dom-commit";
-        transactionId: string | null;
-        domCommittedAtUnixMs: number | null;
-        nodes: {
-          address: string;
-          connected: boolean;
-          rect: { x: number; y: number; w: number; h: number };
-        }[];
-      }[] = [];
-      const sample = (
-        trigger: "initial" | "layout-dom-commit",
-        transactionId: string | null,
-        domCommittedAtUnixMs: number | null,
-      ) => {
-        const sampledAtUnixMs = unixFromPerformance + performance.now();
-        samples.push({
-          sequence: samples.length,
-          sampledAtUnixMs,
-          trigger,
-          transactionId,
-          domCommittedAtUnixMs,
-          // 사건 callback 안에서 전 참가자를 읽는다. 각 rect는 raw DOM 사실이며 보간·투영하지 않는다.
-          nodes: targets.map(({ address, el }) => {
-            const rect = el.getBoundingClientRect();
-            return {
-              address,
-              connected: el.isConnected,
-              rect: {
-                x: Math.round(rect.x * 10) / 10,
-                y: Math.round(rect.y * 10) / 10,
-                w: Math.round(rect.width * 10) / 10,
-                h: Math.round(rect.height * 10) / 10,
-              },
-            };
-          }),
-        });
-      };
-      sample("initial", null, null);
-      const unsubscribe = onLayoutTransitionJournal((event) => {
-        if (event.type !== "dom-committed") return;
-        sample("layout-dom-commit", event.transactionId, event.domCommittedAtUnixMs);
-      });
-      try {
-        // 가려진 창에서도 반드시 끝나는 단일 종료 장벽이다. 좌표를 반복 채집하는 polling이 아니다.
-        await new Promise<void>((done) => setTimeout(done, ms));
-      } finally {
-        unsubscribe();
-      }
-      return {
+      const traceId = crypto.randomUUID();
+      const startedAtUnixMs = unixFromPerformance + performance.now();
+      const session: MultiDomTraceSession = {
+        traceId,
         addresses: [...addresses] as string[],
-        startedAtUnixMs: samples[0].sampledAtUnixMs,
-        endedAtUnixMs: unixFromPerformance + performance.now(),
-        samples,
+        targets,
+        unixFromPerformance,
+        startedAtUnixMs,
+        expiresAtUnixMs: startedAtUnixMs + maxMs,
+        endedAtUnixMs: null,
+        timedOut: false,
+        samples: [],
+        unsubscribe: () => {},
+        expiryTimer: null,
+        evictionTimer: null,
+      };
+      appendMultiDomTraceSample(session, "initial", null, null);
+      session.unsubscribe = onLayoutTransitionJournal((event) => {
+        if (event.type !== "dom-committed") return;
+        appendMultiDomTraceSample(
+          session,
+          "layout-dom-commit",
+          event.transactionId,
+          event.domCommittedAtUnixMs,
+        );
+      });
+      multiDomTraceSessions.set(traceId, session);
+      // 가려진 창에서도 반드시 회수되는 단일 종료 장벽이다. 좌표 polling이 아니다.
+      session.expiryTimer = setTimeout(() => finishMultiDomTrace(session, true), maxMs);
+      return {
+        traceId,
+        addresses: [...session.addresses],
+        startedAtUnixMs: session.startedAtUnixMs,
+        expiresAtUnixMs: session.expiresAtUnixMs,
+      };
+    },
+  });
+
+  register("ui.trace.multi.close", {
+    description:
+      "Close one armed multi-DOM trace, unsubscribe synchronously, and return its initial plus exact transaction-correlated layout DOM-commit raw samples.",
+    triggers: { ko: "다중 DOM 거래 추적 닫기 원장 조회" },
+    params: {
+      traceId: { type: "string", description: "Trace id returned by ui.trace.multi.start", required: true },
+    },
+    returns:
+      "{ traceId, addresses, startedAtUnixMs, endedAtUnixMs, timedOut, samples:[{sequence,sampledAtUnixMs,trigger:'initial'|'layout-dom-commit',transactionId:string|null,domCommittedAtUnixMs:number|null,nodes:[{address,connected,rect:{x,y,w,h}}]}] }",
+    message: (d) => tmsg("msg.ui.trace", { n: String((d.samples as unknown[])?.length ?? 0) }),
+    errors: ["TARGET_NOT_FOUND", "INVALID_PARAMS"],
+    handler: (p) => {
+      const traceId = typeof p.traceId === "string" ? p.traceId : "";
+      if (!traceId) {
+        return {
+          ok: false as const,
+          code: "INVALID_PARAMS" as const,
+          message: "traceId가 필요합니다",
+        };
+      }
+      const session = multiDomTraceSessions.get(traceId);
+      if (!session) {
+        return {
+          ok: false as const,
+          code: "TARGET_NOT_FOUND" as const,
+          message: `DOM trace를 찾을 수 없습니다: ${traceId}`,
+        };
+      }
+      finishMultiDomTrace(session, false);
+      multiDomTraceSessions.delete(traceId);
+      if (session.evictionTimer !== null) clearTimeout(session.evictionTimer);
+      return {
+        traceId,
+        addresses: [...session.addresses],
+        startedAtUnixMs: session.startedAtUnixMs,
+        endedAtUnixMs: session.endedAtUnixMs,
+        timedOut: session.timedOut,
+        samples: session.samples,
       };
     },
   });

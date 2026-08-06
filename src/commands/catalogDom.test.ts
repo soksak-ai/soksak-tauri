@@ -53,13 +53,20 @@ vi.mock("./windowRecorder", async (importOriginal) => ({
   recordWindowFrames: vi.fn(),
 }));
 
-import { registerDomCatalog, deepElementFromPoint, deepActiveElement, viewContainerOf } from "./catalogDom";
+import {
+  __resetMultiDomTraceForTest,
+  registerDomCatalog,
+  deepElementFromPoint,
+  deepActiveElement,
+  viewContainerOf,
+} from "./catalogDom";
 import { catalogJson, execute, getSpec, unregister } from "./registry";
 
 beforeEach(() => {
   sentInput.length = 0;
   __resetLayoutTransitionHostForTest();
   __resetLayoutTransitionJournalForTest();
+  __resetMultiDomTraceForTest();
   vi.mocked(recordWindowFrames).mockReset();
   registerDomCatalog();
 });
@@ -277,10 +284,16 @@ describe("ui.trace.multi — 같은 tick의 공개 DOM 참가자 원장", () => 
   });
 
   it("주소 누락·중복을 추측하지 않고 INVALID_PARAMS로 거부한다", async () => {
-    const empty = await execute("ui.trace.multi", { addresses: [] }, {});
+    const empty = await execute("ui.trace.multi.start", { addresses: [] }, {});
     expect(empty).toMatchObject({ ok: false, code: "INVALID_PARAMS" });
-    const duplicate = await execute("ui.trace.multi", { addresses: [ADDR, ADDR] }, {});
+    const duplicate = await execute("ui.trace.multi.start", { addresses: [ADDR, ADDR] }, {});
     expect(duplicate).toMatchObject({ ok: false, code: "INVALID_PARAMS" });
+    const invalidLifetime = await execute(
+      "ui.trace.multi.start",
+      { addresses: [ADDR], maxMs: Number.NaN },
+      {},
+    );
+    expect(invalidLifetime).toMatchObject({ ok: false, code: "INVALID_PARAMS" });
   });
 });
 
