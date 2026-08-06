@@ -308,6 +308,20 @@
       "note": "B06의 active·inactive·면제·양방향 owner coverage RED와 세 engine GREEN을 값으로 고정한다."
     },
     {
+      "file": "lib/browser-gate-b07.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "PIN 좌·우 인접·분리의 공개 relation 3면 일치와 rail·pane identity·rect·split tree·station 불변을 판정하는 B07 순수 judge다."
+    },
+    {
+      "file": "lib/browser-gate-b07.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "B07의 relation drift·border/path 오류·layout 변경·case 누락 RED와 세 engine GREEN을 값으로 고정한다."
+    },
+    {
       "file": "lib/browser-machine-judge-support.mjs",
       "role": "lib",
       "class": "A",
