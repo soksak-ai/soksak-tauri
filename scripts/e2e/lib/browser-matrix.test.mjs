@@ -553,18 +553,22 @@ describe("브라우저 구현 행렬", () => {
     expect(() => mapB04PresentationSamples(input)).toThrow("DOM-commit sample=0/1");
     expect(() => mapB04PresentationSamples({
       ...input,
-      domSamples: input.domSamples.filter((sample) => sample.trigger !== "initial"),
+      domSamples: input.domSamples
+        .filter((sample) => sample.trigger !== "initial")
+        .map((sample, sequence) => ({ ...sample, sequence })),
     })).toThrow("initial sample=0/1");
     expect(() => mapB04PresentationSamples({
       ...input,
       domSamples: [
-        ...input.domSamples,
+        input.domSamples[0],
+        { ...input.domSamples[1], transactionId: "tx" },
         {
           ...input.domSamples[1],
           sequence: 2,
           trigger: "presentation-frame",
           transactionId: "tx",
           domCommittedAtUnixMs: 1_000,
+          sampledAtUnixMs: 1_019,
         },
       ],
     })).not.toThrow();

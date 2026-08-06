@@ -59,7 +59,7 @@ type MultiDomTraceNode = {
 type MultiDomTraceSample = {
   sequence: number;
   sampledAtUnixMs: number;
-  trigger: "initial" | "layout-dom-commit";
+  trigger: "initial" | "layout-dom-commit" | "presentation-frame";
   transactionId: string | null;
   domCommittedAtUnixMs: number | null;
   nodes: MultiDomTraceNode[];
@@ -74,6 +74,9 @@ type MultiDomTraceSession = {
   endedAtUnixMs: number | null;
   timedOut: boolean;
   samples: MultiDomTraceSample[];
+  presentationFrame: number | null;
+  presentationTransactionId: string | null;
+  presentationDomCommittedAtUnixMs: number | null;
   unsubscribe: () => void;
   expiryTimer: ReturnType<typeof setTimeout> | null;
   evictionTimer: ReturnType<typeof setTimeout> | null;
@@ -95,10 +98,13 @@ function appendMultiDomTraceSample(
   trigger: MultiDomTraceSample["trigger"],
   transactionId: string | null,
   domCommittedAtUnixMs: number | null,
+  frameTime?: number,
 ): void {
   session.samples.push({
     sequence: session.samples.length,
-    sampledAtUnixMs: multiDomTraceNow(session),
+    sampledAtUnixMs: frameTime === undefined
+      ? multiDomTraceNow(session)
+      : session.unixFromPerformance + frameTime,
     trigger,
     transactionId,
     domCommittedAtUnixMs,
@@ -119,12 +125,44 @@ function appendMultiDomTraceSample(
   });
 }
 
+/**
+ * Layout commit이 연 실제 document presentation 원장. `requestAnimationFrame`은 타이머로
+ * 위치를 재조회하는 폴링이 아니라 WebKit이 다음 표시 frame을 만들 때 발행하는 callback이다.
+ * 세션 close/timeout이 명시적 상한이며, 새 거래는 이전 callback 소유권을 교체한다.
+ */
+function startMultiDomPresentationFrames(
+  session: MultiDomTraceSession,
+  transactionId: string,
+  domCommittedAtUnixMs: number,
+): void {
+  if (session.presentationFrame !== null) cancelAnimationFrame(session.presentationFrame);
+  session.presentationTransactionId = transactionId;
+  session.presentationDomCommittedAtUnixMs = domCommittedAtUnixMs;
+  const sample = (frameTime: number) => {
+    if (session.endedAtUnixMs !== null
+        || session.presentationTransactionId !== transactionId) return;
+    appendMultiDomTraceSample(
+      session,
+      "presentation-frame",
+      transactionId,
+      domCommittedAtUnixMs,
+      frameTime,
+    );
+    session.presentationFrame = requestAnimationFrame(sample);
+  };
+  session.presentationFrame = requestAnimationFrame(sample);
+}
+
 function finishMultiDomTrace(session: MultiDomTraceSession, timedOut: boolean): void {
   if (session.endedAtUnixMs !== null) return;
   session.endedAtUnixMs = multiDomTraceNow(session);
   session.timedOut = timedOut;
   session.unsubscribe();
   session.unsubscribe = () => {};
+  if (session.presentationFrame !== null) cancelAnimationFrame(session.presentationFrame);
+  session.presentationFrame = null;
+  session.presentationTransactionId = null;
+  session.presentationDomCommittedAtUnixMs = null;
   if (session.expiryTimer !== null) clearTimeout(session.expiryTimer);
   session.expiryTimer = null;
   if (timedOut) {
@@ -1297,6 +1335,9 @@ export function registerDomCatalog(): void {
         endedAtUnixMs: null,
         timedOut: false,
         samples: [],
+        presentationFrame: null,
+        presentationTransactionId: null,
+        presentationDomCommittedAtUnixMs: null,
         unsubscribe: () => {},
         expiryTimer: null,
         evictionTimer: null,
@@ -1309,6 +1350,11 @@ export function registerDomCatalog(): void {
         appendMultiDomTraceSample(
           session,
           "layout-dom-commit",
+          event.transactionId,
+          event.domCommittedAtUnixMs,
+        );
+        startMultiDomPresentationFrames(
+          session,
           event.transactionId,
           event.domCommittedAtUnixMs,
         );
@@ -1327,13 +1373,13 @@ export function registerDomCatalog(): void {
 
   register("ui.trace.multi.close", {
     description:
-      "Close one armed multi-DOM trace, unsubscribe synchronously, and return its initial plus exact transaction-correlated layout DOM-commit raw samples.",
+      "Close one armed multi-DOM trace, unsubscribe synchronously, and return initial, layout DOM-commit, and WebKit presentation-frame raw samples.",
     triggers: { ko: "다중 DOM 거래 추적 닫기 원장 조회" },
     params: {
       traceId: { type: "string", description: "Trace id returned by ui.trace.multi.start", required: true },
     },
     returns:
-      "{ traceId, addresses, startedAtUnixMs, endedAtUnixMs, timedOut, samples:[{sequence,sampledAtUnixMs,trigger:'initial'|'layout-dom-commit',transactionId:string|null,domCommittedAtUnixMs:number|null,nodes:[{address,connected,rect:{x,y,w,h}}]}] }",
+      "{ traceId, addresses, startedAtUnixMs, endedAtUnixMs, timedOut, samples:[{sequence,sampledAtUnixMs,trigger:'initial'|'layout-dom-commit'|'presentation-frame',transactionId:string|null,domCommittedAtUnixMs:number|null,nodes:[{address,connected,rect:{x,y,w,h}}]}] }",
     message: (d) => tmsg("msg.ui.trace", { n: String((d.samples as unknown[])?.length ?? 0) }),
     errors: ["TARGET_NOT_FOUND", "INVALID_PARAMS"],
     handler: (p) => {

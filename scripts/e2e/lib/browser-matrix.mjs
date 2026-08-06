@@ -217,8 +217,8 @@ export function normalizeB04JournalEntries(entries) {
 }
 
 /**
- * 공개 layout DOM-commit 사건에서 직접 읽은 rail/pane/slot raw rect와 actual presentation
- * producer를 transaction id와 commit epoch로 결합한다. timer 근접·보간·투영·픽셀 판정은 없다.
+ * 공개 layout DOM-commit 사건이 연 실제 WebKit presentation-frame raw rect와 native display
+ * producer를 transaction id·commit epoch·표시 시각으로 결합한다. 보간·투영은 하지 않는다.
  */
 export function mapB04PresentationSamples({
   events,
@@ -236,9 +236,6 @@ export function mapB04PresentationSamples({
   }
   if (!Array.isArray(domSamples)) {
     throw new Error(`${targetViewId}: raw DOM samples=0/2`);
-  }
-  if (domSamples.length !== 2) {
-    throw new Error(`${targetViewId}: raw DOM samples=${domSamples.length}/2`);
   }
   if (typeof transactionId !== "string" || !transactionId) {
     throw new Error(`${targetViewId}: transaction id가 비었습니다`);
@@ -272,6 +269,22 @@ export function mapB04PresentationSamples({
       `${targetViewId}: DOM-commit epoch=${commitSample.domCommittedAtUnixMs}/${commitAt}`,
     );
   }
+  const presentationSamples = domSamples.filter((sample) => (
+    sample?.trigger === "presentation-frame"
+      && sample?.transactionId === transactionId
+      && sample?.domCommittedAtUnixMs === commitAt
+  ));
+  if (presentationSamples.length === 0) {
+    throw new Error(`${targetViewId}: presentation-frame sample=0`);
+  }
+  const presentationGaps = events.slice(1)
+    .map((event, index) => event.sampledAtUnixMs - events[index].sampledAtUnixMs)
+    .filter((gap) => Number.isFinite(gap) && gap > 0)
+    .sort((a, b) => a - b);
+  const cadenceMs = presentationGaps.length
+    ? presentationGaps[Math.floor(presentationGaps.length / 2)]
+    : Infinity;
+  const maxJoinGapMs = cadenceMs * 2.5;
   const participant = (id, connected, frame) => ({
     id,
     ownerViewId: targetViewId,
@@ -288,8 +301,21 @@ export function mapB04PresentationSamples({
     }
     priorPresentationAt = presentationAt;
     const beforeDomCommit = presentationAt < commitAt;
-    const domSample = beforeDomCommit ? initialSample : commitSample;
+    const domSample = beforeDomCommit
+      ? initialSample
+      : presentationSamples.reduce((nearest, candidate) => (
+          Math.abs(candidate.sampledAtUnixMs - presentationAt)
+            < Math.abs(nearest.sampledAtUnixMs - presentationAt)
+            ? candidate
+            : nearest
+        ));
     const domAt = domSample?.sampledAtUnixMs;
+    const gapMs = Math.abs(domAt - presentationAt);
+    if (!beforeDomCommit && gapMs > maxJoinGapMs) {
+      throw new Error(
+        `${targetViewId}: DOM/native presentation join gap=${gapMs.toFixed(3)}/${maxJoinGapMs.toFixed(3)}ms`,
+      );
+    }
     const domSequence = domSample?.sequence;
     if (!Number.isInteger(domSequence) || domSequence < priorDomSequence) {
       throw new Error(`${targetViewId}: DOM pair sequence[${index}]=${domSequence}/${priorDomSequence}`);
@@ -324,6 +350,7 @@ export function mapB04PresentationSamples({
       domSampledAtUnixMs: domAt,
       domCommittedAtUnixMs: domSample.domCommittedAtUnixMs,
       presentationSampledAtUnixMs: presentationAt,
+      gapMs,
     });
     return {
       transactionId,
