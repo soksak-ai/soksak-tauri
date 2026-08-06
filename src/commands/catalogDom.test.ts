@@ -226,8 +226,14 @@ describe("ui.measure — 공개 form control 값", () => {
 });
 
 describe("ui.trace.multi — 같은 tick의 공개 DOM 참가자 원장", () => {
-  it("initial과 layout DOM-commit 사건에서만 raw 참가자를 동기 기록한다", async () => {
+  it("layout DOM-commit 뒤 실제 presentation frame마다 raw 참가자를 기록한다", async () => {
     try {
+      const frameCallbacks: FrameRequestCallback[] = [];
+      vi.stubGlobal("requestAnimationFrame", vi.fn((callback: FrameRequestCallback) => {
+        frameCallbacks.push(callback);
+        return frameCallbacks.length;
+      }));
+      vi.stubGlobal("cancelAnimationFrame", vi.fn());
       mountNode(`
         <div data-node="rail"></div>
         <div data-node="pane"></div>
@@ -267,6 +273,11 @@ describe("ui.trace.multi — 같은 tick의 공개 DOM 참가자 원장", () => 
       rects.slot.x = 270;
       const prepared = await prepareLayoutMove([{ viewId: "test.v", dx: -160 }]);
       await prepared.commit();
+      expect(frameCallbacks).toHaveLength(1);
+      rects.rail.x = 190;
+      rects.pane.x = 270;
+      rects.slot.x = 290;
+      frameCallbacks.shift()!(performance.now());
       const result = await execute("ui.trace.multi.close", { traceId }, {});
       expect(result.ok).toBe(true);
       const data = result.data as {
@@ -274,7 +285,7 @@ describe("ui.trace.multi — 같은 tick의 공개 DOM 참가자 원장", () => 
         samples: Array<{
           sequence: number;
           sampledAtUnixMs: number;
-          trigger: "initial" | "layout-dom-commit";
+          trigger: "initial" | "layout-dom-commit" | "presentation-frame";
           transactionId: string | null;
           domCommittedAtUnixMs: number | null;
           nodes: Array<{
@@ -285,7 +296,7 @@ describe("ui.trace.multi — 같은 tick의 공개 DOM 참가자 원장", () => 
         }>;
       };
       expect(data.addresses).toEqual(addresses);
-      expect(data.samples).toHaveLength(2);
+      expect(data.samples).toHaveLength(3);
       expect(data.samples[0]).toMatchObject({
         sequence: 0,
         trigger: "initial",
@@ -308,6 +319,17 @@ describe("ui.trace.multi — 같은 tick의 공개 DOM 참가자 원장", () => 
           { address: addresses[2], connected: true, rect: { x: 270, y: 80, w: 560, h: 420 } },
         ],
       });
+      expect(data.samples[2]).toMatchObject({
+        sequence: 2,
+        trigger: "presentation-frame",
+        transactionId: "layout-1",
+        domCommittedAtUnixMs: layoutTransitionJournal()[0]?.domCommittedAtUnixMs,
+        nodes: [
+          { address: addresses[0], connected: true, rect: { x: 190, y: 20, w: 80, h: 500 } },
+          { address: addresses[1], connected: true, rect: { x: 270, y: 20, w: 600, h: 500 } },
+          { address: addresses[2], connected: true, rect: { x: 290, y: 80, w: 560, h: 420 } },
+        ],
+      });
       expect(data.samples.every((sample) => Number.isFinite(sample.sampledAtUnixMs))).toBe(true);
       expect(getSpec("ui.trace.multi.start")?.returns).toContain("traceId");
       expect(getSpec("ui.trace.multi.close")?.returns).toContain("sampledAtUnixMs");
@@ -317,6 +339,7 @@ describe("ui.trace.multi — 같은 tick의 공개 DOM 참가자 원장", () => 
       expect(await execute("ui.trace.multi.close", { traceId }, {}))
         .toMatchObject({ ok: false, code: "TARGET_NOT_FOUND" });
     } finally {
+      vi.unstubAllGlobals();
       vi.useRealTimers();
     }
   });
