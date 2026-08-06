@@ -277,6 +277,7 @@ export function mapB04PresentationSamples({
   if (presentationSamples.length === 0) {
     throw new Error(`${targetViewId}: presentation-frame sample=0`);
   }
+  const committedPresentationSamples = [commitSample, ...presentationSamples];
   const presentationGaps = events.slice(1)
     .map((event, index) => event.sampledAtUnixMs - events[index].sampledAtUnixMs)
     .filter((gap) => Number.isFinite(gap) && gap > 0)
@@ -303,7 +304,7 @@ export function mapB04PresentationSamples({
     const beforeDomCommit = presentationAt < commitAt;
     const domSample = beforeDomCommit
       ? initialSample
-      : presentationSamples.reduce((nearest, candidate) => (
+      : committedPresentationSamples.reduce((nearest, candidate) => (
           Math.abs(candidate.sampledAtUnixMs - presentationAt)
             < Math.abs(nearest.sampledAtUnixMs - presentationAt)
             ? candidate

@@ -381,7 +381,7 @@ describe("브라우저 구현 행렬", () => {
       surfaceFrame: { x, y: 60, w: 460, h: 420 },
     });
     const trace = mapB04PresentationSamples({
-      events: [event(1_001, 110), event(1_019, 430)],
+      events: [event(1_001, 110), event(1_011, 270), event(1_019, 430)],
       domSamples: [
         domSample(0, 900, "initial", null, null, 10, 80, 110),
         domSample(1, 1_010, "layout-dom-commit", "tx", 1_010, 700, 250, 270),
@@ -396,11 +396,13 @@ describe("브라우저 구현 행렬", () => {
       paneAddress: "pane",
       slotAddress: "slot",
     });
-    expect(trace.joins.map(({ trigger }) => trigger)).toEqual(["initial", "presentation-frame"]);
-    expect(trace.joins.map(({ gapMs }) => gapMs)).toEqual([101, 1]);
-    expect(trace.samples).toHaveLength(2);
-    expect(trace.samples.map(({ phase }) => phase)).toEqual(["prepared", "committed"]);
-    expect(trace.samples[1]).toMatchObject({
+    expect(trace.joins.map(({ trigger }) => trigger)).toEqual([
+      "initial", "layout-dom-commit", "presentation-frame",
+    ]);
+    expect(trace.joins.map(({ gapMs }) => gapMs)).toEqual([101, 1, 1]);
+    expect(trace.samples).toHaveLength(3);
+    expect(trace.samples.map(({ phase }) => phase)).toEqual(["prepared", "presenting", "committed"]);
+    expect(trace.samples[2]).toMatchObject({
       rail: { id: "rail", frame: { x: 777, y: 0, w: 60, h: 500 } },
       pane: { id: "pane", frame: { x: 333, y: 0, w: 500, h: 500 } },
       slot: { id: "slot", frame: { x: 430, y: 60, w: 460, h: 420 } },
