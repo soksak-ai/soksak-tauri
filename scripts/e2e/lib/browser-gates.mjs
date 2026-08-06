@@ -17,6 +17,15 @@ export const VISUAL_REVIEW_STATUSES = Object.freeze([
   "failed",
 ]);
 
+export const B02_RETENTION_PHASES = Object.freeze([
+  "initial",
+  "flow-left",
+  "flow-right",
+  "hostile-window-resize",
+  "pane-wider",
+  "pane-restored",
+]);
+
 export const BROWSER_ACCEPTANCE_GATES = deepFreeze([
   {
     id: "B01",
@@ -121,6 +130,349 @@ function requireOptionalText(value, field) {
     throw new TypeError(`${field} must be null or a non-empty string`);
   }
   return value;
+}
+
+function isRecord(value) {
+  return value != null && typeof value === "object" && !Array.isArray(value);
+}
+
+function hasText(value) {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+function displayValue(value) {
+  if (typeof value === "string") return JSON.stringify(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function notRunVerdict() {
+  return { status: "not-run", evidence: [], reason: null };
+}
+
+function finishMachineVerdict(gate, failures, greenEvidence) {
+  if (failures.length > 0) {
+    const unique = [...new Set(failures)];
+    return {
+      status: "red",
+      evidence: unique.map((failure) => `${gate}:${failure}`),
+      reason: `${gate} machine contract failed (${unique.length})`,
+    };
+  }
+  return { status: "green", evidence: [greenEvidence], reason: null };
+}
+
+function requireEvidenceEnvelope(value, failures) {
+  if (!isRecord(value)) {
+    failures.push(`evidence=record/${displayValue(value)}`);
+    return false;
+  }
+  if (!engineSet.has(value.engine)) failures.push(`engine=known/${displayValue(value.engine)}`);
+  if (!Array.isArray(value.tabs) || value.tabs.length === 0) {
+    failures.push(`tabs=non-empty/${displayValue(value.tabs)}`);
+    return false;
+  }
+  return true;
+}
+
+function requireExactKeys(value, keys, path, failures) {
+  if (!isRecord(value)) {
+    failures.push(`${path}=record/${displayValue(value)}`);
+    return false;
+  }
+  const expected = new Set(keys);
+  for (const key of Object.keys(value)) {
+    if (!expected.has(key)) failures.push(`${path}.${key}=not-machine-schema`);
+  }
+  for (const key of keys) {
+    if (!Object.hasOwn(value, key)) failures.push(`${path}.${key}=missing`);
+  }
+  return true;
+}
+
+function requireUniqueViewId(tab, path, seen, failures) {
+  if (!hasText(tab?.viewId)) {
+    failures.push(`${path}.viewId=non-empty/${displayValue(tab?.viewId)}`);
+    return null;
+  }
+  if (seen.has(tab.viewId)) failures.push(`${path}.viewId=unique/${displayValue(tab.viewId)}`);
+  seen.add(tab.viewId);
+  return tab.viewId;
+}
+
+/**
+ * B01 machine evidence is deliberately DOM/API based. A screenshot may accompany the
+ * report through visualReview, but it cannot substitute for any value checked here.
+ */
+export function judgeB01MachineEvidence(value) {
+  if (value == null) return notRunVerdict();
+  const failures = [];
+  if (!requireEvidenceEnvelope(value, failures)) {
+    return finishMachineVerdict("B01", failures, "B01:unreachable");
+  }
+  if (value.tabs.length !== 2) failures.push(`tabs.length=2/${value.tabs.length}`);
+  const seen = new Set();
+  value.tabs.forEach((tab, index) => {
+    const path = `tabs[${index}]`;
+    if (!isRecord(tab)) {
+      failures.push(`${path}=record/${displayValue(tab)}`);
+      return;
+    }
+    const viewId = requireUniqueViewId(tab, path, seen, failures);
+    if (!hasText(tab.expectedUrl)) failures.push(`${path}.expectedUrl=non-empty/${displayValue(tab.expectedUrl)}`);
+    if (tab.mounted !== true) failures.push(`${path}.mounted=true/${displayValue(tab.mounted)}`);
+
+    if (!isRecord(tab.toolbarAddress)) {
+      failures.push(`${path}.toolbarAddress=record/${displayValue(tab.toolbarAddress)}`);
+    } else {
+      if (tab.toolbarAddress.dataNode !== "urlbar") {
+        failures.push(`${path}.toolbarAddress.dataNode=urlbar/${displayValue(tab.toolbarAddress.dataNode)}`);
+      }
+      if (tab.toolbarAddress.value !== tab.expectedUrl) {
+        failures.push(`${path}.toolbarAddress.value=expectedUrl/${displayValue(tab.toolbarAddress.value)}`);
+      }
+    }
+
+    if (!isRecord(tab.pageIdentity)) {
+      failures.push(`${path}.pageIdentity=record/${displayValue(tab.pageIdentity)}`);
+    } else {
+      if (tab.pageIdentity.viewId !== viewId) {
+        failures.push(`${path}.pageIdentity.viewId=${displayValue(viewId)}/${displayValue(tab.pageIdentity.viewId)}`);
+      }
+      if (tab.pageIdentity.url !== tab.expectedUrl) {
+        failures.push(`${path}.pageIdentity.url=expectedUrl/${displayValue(tab.pageIdentity.url)}`);
+      }
+    }
+
+    if (!isRecord(tab.commandReceipt)) {
+      failures.push(`${path}.commandReceipt=record/${displayValue(tab.commandReceipt)}`);
+    } else if (tab.commandReceipt.requestedViewId !== viewId
+      || tab.commandReceipt.returnedViewId !== viewId) {
+      failures.push(`${path}.commandReceipt.viewId=${displayValue(viewId)}/${displayValue({
+        requested: tab.commandReceipt.requestedViewId,
+        returned: tab.commandReceipt.returnedViewId,
+      })}`);
+    }
+  });
+  return finishMachineVerdict(
+    "B01",
+    failures,
+    `${value.engine}/B01:tabs=${value.tabs.length};mounted+urlbar+page+explicit-view=exact`,
+  );
+}
+
+/** Every retained sample is an event-ledger observation, never a pixel observation. */
+export function judgeB02MachineEvidence(value) {
+  if (value == null) return notRunVerdict();
+  const failures = [];
+  if (!requireEvidenceEnvelope(value, failures)) {
+    return finishMachineVerdict("B02", failures, "B02:unreachable");
+  }
+  if (value.tabs.length !== 2) failures.push(`tabs.length=2/${value.tabs.length}`);
+  const seen = new Set();
+  const expectedTexts = new Set();
+  value.tabs.forEach((tab, index) => {
+    const path = `tabs[${index}]`;
+    if (!isRecord(tab)) {
+      failures.push(`${path}=record/${displayValue(tab)}`);
+      return;
+    }
+    requireUniqueViewId(tab, path, seen, failures);
+    if (!hasText(tab.expectedText) || !/[\u3131-\uD79D]/u.test(tab.expectedText)) {
+      failures.push(`${path}.expectedText=hangul/${displayValue(tab.expectedText)}`);
+    } else if (expectedTexts.has(tab.expectedText)) {
+      failures.push(`${path}.expectedText=unique/${displayValue(tab.expectedText)}`);
+    } else {
+      expectedTexts.add(tab.expectedText);
+    }
+    if (!isRecord(tab.phases)) {
+      failures.push(`${path}.phases=record/${displayValue(tab.phases)}`);
+      return;
+    }
+    const initial = tab.phases.initial;
+    if (!isRecord(initial) || initial.active !== true) {
+      failures.push(`${path}.phases.initial.active=true/${displayValue(initial?.active)}`);
+    }
+    const initialBeforeInput = initial?.ledger?.beforeInput;
+    const initialInputEvents = initial?.ledger?.inputEvents;
+    if (!Number.isInteger(initialBeforeInput) || initialBeforeInput < 1) {
+      failures.push(`${path}.phases.initial.ledger.beforeInput=integer>=1/${displayValue(initial?.ledger?.beforeInput)}`);
+    }
+    if (!Number.isInteger(initialInputEvents) || initialInputEvents < 1) {
+      failures.push(`${path}.phases.initial.ledger.inputEvents=integer>=1/${displayValue(initial?.ledger?.inputEvents)}`);
+    }
+
+    for (const phase of B02_RETENTION_PHASES) {
+      const sample = tab.phases[phase];
+      const phasePath = `${path}.phases.${phase}`;
+      if (!isRecord(sample)) {
+        failures.push(`${phasePath}=record/${displayValue(sample)}`);
+        continue;
+      }
+      if (sample.value !== tab.expectedText) {
+        failures.push(`${phasePath}.value=expectedText/${displayValue(sample.value)}`);
+      }
+      if (!isRecord(sample.ledger)) {
+        failures.push(`${phasePath}.ledger=record/${displayValue(sample.ledger)}`);
+        continue;
+      }
+      const beforeInput = sample.ledger.beforeInput;
+      const inputEvents = sample.ledger.inputEvents;
+      if (!Number.isInteger(beforeInput) || beforeInput < initialBeforeInput) {
+        failures.push(`${phasePath}.ledger.beforeInput>=initial/${displayValue(sample.ledger.beforeInput)}`);
+      }
+      if (!Number.isInteger(inputEvents) || inputEvents < initialInputEvents) {
+        failures.push(`${phasePath}.ledger.inputEvents>=initial/${displayValue(sample.ledger.inputEvents)}`);
+      }
+      if (!Array.isArray(sample.ledger.values) || sample.ledger.values.length === 0
+        || sample.ledger.values.at(-1) !== tab.expectedText) {
+        failures.push(`${phasePath}.ledger.values.last=expectedText/${displayValue(sample.ledger.values?.at?.(-1))}`);
+      }
+    }
+  });
+  return finishMachineVerdict(
+    "B02",
+    failures,
+    `${value.engine}/B02:tabs=${value.tabs.length};phases=${B02_RETENTION_PHASES.length};IME-ledger=retained`,
+  );
+}
+
+const B11_PAGE_KEYS = Object.freeze([
+  "scrollX",
+  "scrollY",
+  "viewportWidth",
+  "viewportHeight",
+  "documentWidth",
+  "documentHeight",
+]);
+
+function inspectB11Page(page, path, failures) {
+  if (!requireExactKeys(page, B11_PAGE_KEYS, path, failures)) return;
+  for (const field of B11_PAGE_KEYS) {
+    const value = page[field];
+    const positive = !field.startsWith("scroll");
+    if (!Number.isFinite(value) || (positive ? value <= 0 : value < 0)) {
+      failures.push(`${path}.${field}=${positive ? "finite>0" : "finite>=0"}/${displayValue(value)}`);
+    }
+  }
+}
+
+/**
+ * B11 accepts only structured page/receipt numbers. Strict keys keep PNG-derived
+ * markers, decoded image dimensions and human visual verdicts out of machine input.
+ */
+export function judgeB11MachineEvidence(value) {
+  if (value == null) return notRunVerdict();
+  const failures = [];
+  if (!requireExactKeys(value, ["engine", "tabs"], "evidence", failures)) {
+    return finishMachineVerdict("B11", failures, "B11:unreachable");
+  }
+  if (!requireEvidenceEnvelope(value, failures)) {
+    return finishMachineVerdict("B11", failures, "B11:unreachable");
+  }
+  if (value.tabs.length !== 2) failures.push(`tabs.length=2/${value.tabs.length}`);
+  const seen = new Set();
+  value.tabs.forEach((tab, index) => {
+    const path = `tabs[${index}]`;
+    if (!requireExactKeys(tab, ["viewId", "wheel", "capture"], path, failures)) return;
+    const viewId = requireUniqueViewId(tab, path, seen, failures);
+
+    if (requireExactKeys(tab.wheel, ["positions"], `${path}.wheel`, failures)) {
+      const positions = tab.wheel.positions;
+      if (!Array.isArray(positions) || positions.length !== 3
+        || positions[0] !== 0 || positions[1] !== 480 || positions[2] !== 0) {
+        failures.push(`${path}.wheel.positions=0,480,0/${displayValue(positions)}`);
+      }
+    }
+
+    if (!requireExactKeys(tab.capture, ["before", "receipt", "after"], `${path}.capture`, failures)) return;
+    inspectB11Page(tab.capture.before, `${path}.capture.before`, failures);
+    inspectB11Page(tab.capture.after, `${path}.capture.after`, failures);
+    if (isRecord(tab.capture.before) && isRecord(tab.capture.after)) {
+      for (const field of B11_PAGE_KEYS) {
+        if (tab.capture.before[field] !== tab.capture.after[field]) {
+          failures.push(`${path}.capture.${field}=preserved/${displayValue({
+            before: tab.capture.before[field],
+            after: tab.capture.after[field],
+          })}`);
+        }
+      }
+      if (tab.capture.before.scrollY !== 0) {
+        failures.push(`${path}.capture.before.scrollY=0/${displayValue(tab.capture.before.scrollY)}`);
+      }
+    }
+
+    const receiptPath = `${path}.capture.receipt`;
+    const receipt = tab.capture.receipt;
+    if (!requireExactKeys(receipt, [
+      "requestedViewId",
+      "returnedViewId",
+      "requestedPath",
+      "returnedPath",
+      "reportedBytes",
+      "fileBytes",
+      "width",
+      "docHeight",
+    ], receiptPath, failures)) return;
+    if (receipt.requestedViewId !== viewId || receipt.returnedViewId !== viewId) {
+      failures.push(`${receiptPath}.viewId=${displayValue(viewId)}/${displayValue({
+        requested: receipt.requestedViewId,
+        returned: receipt.returnedViewId,
+      })}`);
+    }
+    if (!hasText(receipt.requestedPath) || receipt.returnedPath !== receipt.requestedPath) {
+      failures.push(`${receiptPath}.path=exact/${displayValue({
+        requested: receipt.requestedPath,
+        returned: receipt.returnedPath,
+      })}`);
+    }
+    for (const field of ["reportedBytes", "fileBytes", "width", "docHeight"]) {
+      if (!Number.isInteger(receipt[field]) || receipt[field] <= 0) {
+        failures.push(`${receiptPath}.${field}=integer>0/${displayValue(receipt[field])}`);
+      }
+    }
+    if (receipt.reportedBytes !== receipt.fileBytes) {
+      failures.push(`${receiptPath}.bytes=exact/${displayValue({
+        reported: receipt.reportedBytes,
+        file: receipt.fileBytes,
+      })}`);
+    }
+    if (isRecord(tab.capture.before)) {
+      if (receipt.width !== tab.capture.before.documentWidth) {
+        failures.push(`${receiptPath}.width=documentWidth/${displayValue({
+          receipt: receipt.width,
+          document: tab.capture.before.documentWidth,
+        })}`);
+      }
+      if (receipt.docHeight !== tab.capture.before.documentHeight) {
+        failures.push(`${receiptPath}.docHeight=documentHeight/${displayValue({
+          receipt: receipt.docHeight,
+          document: tab.capture.before.documentHeight,
+        })}`);
+      }
+      if (!(tab.capture.before.documentHeight > tab.capture.before.viewportHeight + 960)) {
+        failures.push(`${path}.capture.document=scrollable/${displayValue({
+          documentHeight: tab.capture.before.documentHeight,
+          viewportHeight: tab.capture.before.viewportHeight,
+        })}`);
+      }
+    }
+  });
+  return finishMachineVerdict(
+    "B11",
+    failures,
+    `${value.engine}/B11:tabs=2;wheel=0,480,0;explicit-full-capture+page-state=exact`,
+  );
+}
+
+export function judgeBrowserMachineGateEvidence(gate, value) {
+  if (gate === "B01") return judgeB01MachineEvidence(value);
+  if (gate === "B02") return judgeB02MachineEvidence(value);
+  if (gate === "B11") return judgeB11MachineEvidence(value);
+  throw new TypeError("machine evidence judge is available for B01, B02, B11");
 }
 
 function requireReport(report) {

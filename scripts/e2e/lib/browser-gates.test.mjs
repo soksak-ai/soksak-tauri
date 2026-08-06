@@ -4,15 +4,98 @@ import { describe, expect, it } from "vitest";
 import {
   BROWSER_ACCEPTANCE_ENGINES,
   BROWSER_ACCEPTANCE_GATES,
+  B02_RETENTION_PHASES,
   MACHINE_GATE_STATUSES,
   VISUAL_REVIEW_STATUSES,
   createBrowserGateReport,
+  judgeB01MachineEvidence,
+  judgeB02MachineEvidence,
+  judgeB11MachineEvidence,
+  judgeBrowserMachineGateEvidence,
   machineGateSummary,
   serializeBrowserGateReport,
   setMachineGateStatus,
   setVisualReviewStatus,
   visualReviewSummary,
 } from "./browser-gates.mjs";
+
+function b01Evidence(engine = "browser") {
+  return {
+    engine,
+    tabs: ["left", "right"].map((side) => {
+      const viewId = `${engine}-${side}`;
+      const expectedUrl = `https://fixture.invalid/${engine}/${side}`;
+      return {
+        viewId,
+        expectedUrl,
+        mounted: true,
+        toolbarAddress: { dataNode: "urlbar", value: expectedUrl },
+        pageIdentity: { viewId, url: expectedUrl },
+        commandReceipt: { requestedViewId: viewId, returnedViewId: viewId },
+      };
+    }),
+  };
+}
+
+function b02Evidence(engine = "browser") {
+  return {
+    engine,
+    tabs: ["left", "right"].map((side) => {
+      const expectedText = `한글 입력 ${side === "left" ? "왼쪽" : "오른쪽"}`;
+      return {
+        viewId: `${engine}-${side}`,
+        expectedText,
+        phases: Object.fromEntries(B02_RETENTION_PHASES.map((phase, index) => [
+          phase,
+          {
+            value: expectedText,
+            active: phase === "initial" ? true : index % 2 === 0,
+            ledger: {
+              beforeInput: 1 + index,
+              inputEvents: 1 + index,
+              values: [expectedText, expectedText],
+            },
+          },
+        ])),
+      };
+    }),
+  };
+}
+
+function b11Evidence(engine = "browser") {
+  return {
+    engine,
+    tabs: ["left", "right"].map((side, index) => {
+      const viewId = `${engine}-${side}`;
+      const page = {
+        scrollX: 0,
+        scrollY: 0,
+        viewportWidth: 640 + index * 40,
+        viewportHeight: 480,
+        documentWidth: 640 + index * 40,
+        documentHeight: 1600 + index * 100,
+      };
+      return {
+        viewId,
+        wheel: { positions: [0, 480, 0] },
+        capture: {
+          before: page,
+          receipt: {
+            requestedViewId: viewId,
+            returnedViewId: viewId,
+            requestedPath: `/evidence/${engine}/${side}-full.png`,
+            returnedPath: `/evidence/${engine}/${side}-full.png`,
+            reportedBytes: 4096 + index,
+            fileBytes: 4096 + index,
+            width: page.documentWidth,
+            docHeight: page.documentHeight,
+          },
+          after: { ...page },
+        },
+      };
+    }),
+  };
+}
 
 const expectedGateNames = [
   ["B01", "initial-mount-address-page-identity"],
@@ -39,6 +122,135 @@ describe("브라우저 12-gate 정본", () => {
     expect(BROWSER_ACCEPTANCE_GATES.map(({ id, name }) => [id, name])).toEqual(expectedGateNames);
     expect(MACHINE_GATE_STATUSES).toEqual(["not-run", "blocked", "red", "green"]);
     expect(VISUAL_REVIEW_STATUSES).toEqual(["pending", "passed", "failed"]);
+  });
+
+  it("B01은 각 engine/tab의 mount·공개 주소 input·페이지 신원·명시 view 영수증이 모두 맞아야 green이다", () => {
+    for (const engine of BROWSER_ACCEPTANCE_ENGINES) {
+      expect(judgeB01MachineEvidence(b01Evidence(engine))).toMatchObject({ status: "green", reason: null });
+    }
+
+    expect(judgeB01MachineEvidence(null)).toEqual({ status: "not-run", evidence: [], reason: null });
+    expect(judgeB01MachineEvidence({ engine: "browser", tabs: [] }).status).toBe("red");
+
+    const cases = [
+      (evidence) => { evidence.tabs[0].mounted = false; },
+      (evidence) => { evidence.tabs[0].toolbarAddress.value = "about:blank"; },
+      (evidence) => { evidence.tabs[0].toolbarAddress.dataNode = "private-urlbar"; },
+      (evidence) => { evidence.tabs[0].pageIdentity.url = "about:blank"; },
+      (evidence) => { evidence.tabs[0].pageIdentity.viewId = evidence.tabs[1].viewId; },
+      (evidence) => { evidence.tabs[0].commandReceipt.returnedViewId = evidence.tabs[1].viewId; },
+      (evidence) => { delete evidence.tabs[0].commandReceipt.requestedViewId; },
+    ];
+    for (const mutate of cases) {
+      const evidence = b01Evidence();
+      mutate(evidence);
+      expect(judgeB01MachineEvidence(evidence).status).toBe("red");
+    }
+  });
+
+  it("B02는 두 탭의 최초·FLOW 양방향·window resize·pane 왕복 전 단계에서 IME ledger를 보존해야 green이다", () => {
+    expect(B02_RETENTION_PHASES).toEqual([
+      "initial",
+      "flow-left",
+      "flow-right",
+      "hostile-window-resize",
+      "pane-wider",
+      "pane-restored",
+    ]);
+    for (const engine of BROWSER_ACCEPTANCE_ENGINES) {
+      expect(judgeB02MachineEvidence(b02Evidence(engine)).status).toBe("green");
+    }
+
+    expect(judgeB02MachineEvidence(undefined)).toEqual({ status: "not-run", evidence: [], reason: null });
+    const missingPhase = b02Evidence();
+    delete missingPhase.tabs[0].phases["flow-right"];
+    expect(judgeB02MachineEvidence(missingPhase).status).toBe("red");
+
+    const inactiveInitial = b02Evidence();
+    inactiveInitial.tabs[0].phases.initial.active = false;
+    expect(judgeB02MachineEvidence(inactiveInitial).status).toBe("red");
+
+    const changedValue = b02Evidence();
+    changedValue.tabs[1].phases["pane-restored"].value = "한글 유실";
+    expect(judgeB02MachineEvidence(changedValue).status).toBe("red");
+
+    const regressedCounts = b02Evidence();
+    regressedCounts.tabs[0].phases.initial.ledger.beforeInput = 9;
+    regressedCounts.tabs[0].phases["flow-left"].ledger.beforeInput = 8;
+    expect(judgeB02MachineEvidence(regressedCounts).status).toBe("red");
+
+    const stringCount = b02Evidence();
+    stringCount.tabs[0].phases["pane-wider"].ledger.inputEvents = "5";
+    expect(judgeB02MachineEvidence(stringCount).status).toBe("red");
+
+    const wrongLedgerTail = b02Evidence();
+    wrongLedgerTail.tabs[0].phases["hostile-window-resize"].ledger.values.push("깨짐");
+    expect(judgeB02MachineEvidence(wrongLedgerTail).status).toBe("red");
+  });
+
+  it("B11은 두 탭 모두 exact wheel 왕복과 explicit-view full capture 영수증·전후 페이지 불변성을 증명해야 green이다", () => {
+    for (const engine of BROWSER_ACCEPTANCE_ENGINES) {
+      expect(judgeB11MachineEvidence(b11Evidence(engine)).status).toBe("green");
+    }
+
+    expect(judgeB11MachineEvidence(null)).toEqual({ status: "not-run", evidence: [], reason: null });
+    expect(judgeB11MachineEvidence({ engine: "browser", tabs: [] }).status).toBe("red");
+
+    const wrongWheel = b11Evidence();
+    wrongWheel.tabs[0].wheel.positions = [0, 479, 0];
+    expect(judgeB11MachineEvidence(wrongWheel).status).toBe("red");
+
+    const wrongView = b11Evidence();
+    wrongView.tabs[0].capture.receipt.returnedViewId = wrongView.tabs[1].viewId;
+    expect(judgeB11MachineEvidence(wrongView).status).toBe("red");
+
+    for (const field of [
+      "requestedPath", "returnedPath", "reportedBytes", "fileBytes", "width", "docHeight",
+    ]) {
+      const missingReceipt = b11Evidence();
+      delete missingReceipt.tabs[0].capture.receipt[field];
+      expect(judgeB11MachineEvidence(missingReceipt).status).toBe("red");
+    }
+
+    const wrongPathAndBytes = b11Evidence();
+    wrongPathAndBytes.tabs[0].capture.receipt.returnedPath = "/evidence/wrong.png";
+    wrongPathAndBytes.tabs[0].capture.receipt.fileBytes += 1;
+    expect(judgeB11MachineEvidence(wrongPathAndBytes).status).toBe("red");
+
+    const changedScroll = b11Evidence();
+    changedScroll.tabs[0].capture.after.scrollY = 480;
+    expect(judgeB11MachineEvidence(changedScroll).status).toBe("red");
+
+    const changedDimensions = b11Evidence();
+    changedDimensions.tabs[1].capture.after.documentHeight += 1;
+    expect(judgeB11MachineEvidence(changedDimensions).status).toBe("red");
+
+    const pixelInput = b11Evidence();
+    pixelInput.tabs[0].capture.receipt.markerPixels = { red: 64 };
+    expect(judgeB11MachineEvidence(pixelInput).status).toBe("red");
+  });
+
+  it("gate별 순수 판정은 evidence가 없으면 not-run, 불완전하면 red이며 visualReview와 PNG를 입력으로 받지 않는다", () => {
+    expect(judgeBrowserMachineGateEvidence("B01", undefined).status).toBe("not-run");
+    expect(judgeBrowserMachineGateEvidence("B02", { engine: "browser" }).status).toBe("red");
+    expect(judgeBrowserMachineGateEvidence("B11", b11Evidence()).status).toBe("green");
+    expect(() => judgeBrowserMachineGateEvidence("B03", {})).toThrow(/B01, B02, B11/);
+
+    const machine = judgeB11MachineEvidence(b11Evidence());
+    let report = setMachineGateStatus(createBrowserGateReport(), {
+      engine: "browser",
+      gate: "B11",
+      ...machine,
+    });
+    report = setVisualReviewStatus(report, {
+      engine: "browser",
+      gate: "B11",
+      status: "failed",
+      artifacts: ["evidence/browser/full.png"],
+      notes: "사람의 PNG 검토 실패는 별도 시각 판정이다",
+    });
+    expect(report.engines.browser.B11.machine.status).toBe("green");
+    expect(report.engines.browser.B11.visualReview.status).toBe("failed");
   });
 
   it("새 보고서는 빠짐없는 3×12 not-run과 별도 pending 시각 검토로 시작한다", () => {
