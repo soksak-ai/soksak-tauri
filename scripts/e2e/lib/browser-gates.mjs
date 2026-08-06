@@ -7,6 +7,7 @@ import { layoutTransactionVerdict } from "./layout-transaction-verdict.mjs";
 import { judgeB05MachineEvidence } from "./browser-gate-b05.mjs";
 import { judgeB06MachineEvidence } from "./browser-gate-b06.mjs";
 import { judgeB07MachineEvidence } from "./browser-gate-b07.mjs";
+import { judgeB08MachineEvidence } from "./browser-gate-b08.mjs";
 import {
   BROWSER_ACCEPTANCE_ENGINES,
   BROWSER_ACCEPTANCE_FRAMEWORKS,
@@ -32,6 +33,7 @@ export {
 export { judgeB05MachineEvidence };
 export { judgeB06MachineEvidence };
 export { judgeB07MachineEvidence };
+export { judgeB08MachineEvidence };
 
 export const MACHINE_GATE_STATUSES = Object.freeze([
   "not-applicable",
@@ -796,6 +798,7 @@ const machineEvidenceJudges = new Map([
   ["B05", { judgeId: "B05-machine-v1", judge: judgeB05MachineEvidence }],
   ["B06", { judgeId: "B06-machine-v1", judge: judgeB06MachineEvidence }],
   ["B07", { judgeId: "B07-machine-v1", judge: judgeB07MachineEvidence }],
+  ["B08", { judgeId: "B08-machine-v1", judge: judgeB08MachineEvidence }],
   ["B11", { judgeId: "B11-machine-v1", judge: judgeB11MachineEvidence }],
 ]);
 
