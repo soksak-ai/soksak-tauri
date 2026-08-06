@@ -8,6 +8,8 @@ import {
 } from "./browser-machine-judge-support.mjs";
 
 const DIRECTIONS = Object.freeze(["to-left", "to-right"]);
+const MAX_SETTLE_LATENCY_MS = 500;
+const MIN_STABLE_HOLD_MS = 250;
 const COUNTER_KEYS = Object.freeze([
   "replacements",
   "gaps",
@@ -22,6 +24,7 @@ const SURFACE_KEYS = Object.freeze([
   "visible",
   "presented",
   "presentationRevision",
+  "presentedAtUnixMs",
 ]);
 
 function inspectCounters(value, path, failures) {
@@ -60,6 +63,9 @@ function inspectSurfaceInventory(surfaces, owners, path, failures) {
     if (!Number.isInteger(surface.presentationRevision) || surface.presentationRevision < 1) {
       failures.push(`${at}.presentationRevision=integer>=1/${displayValue(surface.presentationRevision)}`);
     }
+    if (!Number.isFinite(surface.presentedAtUnixMs)) {
+      failures.push(`${at}.presentedAtUnixMs=finite/${displayValue(surface.presentedAtUnixMs)}`);
+    }
   });
   const actualOwners = [...byOwner.keys()].sort();
   if (actualOwners.join("\u0000") !== owners.join("\u0000")) {
@@ -92,6 +98,9 @@ function inspectTransition(transition, index, failures, traceIds) {
     "startedAtUnixMs",
     "stimulusAtUnixMs",
     "settledAtUnixMs",
+    "heldAtUnixMs",
+    "latencyBudgetMs",
+    "minimumHoldMs",
     "ownerViewIds",
     "countersBefore",
     "countersAfter",
@@ -104,9 +113,24 @@ function inspectTransition(transition, index, failures, traceIds) {
     traceIds.add(trace.traceId);
   }
   if (trace.closed !== true) failures.push(`${path}.trace.closed=true/${displayValue(trace.closed)}`);
-  const times = [trace.startedAtUnixMs, trace.stimulusAtUnixMs, trace.settledAtUnixMs];
-  if (times.some((time) => !Number.isFinite(time)) || !(times[0] <= times[1] && times[1] <= times[2])) {
-    failures.push(`${path}.trace.times=started<=stimulus<=settled/${displayValue(times)}`);
+  const times = [trace.startedAtUnixMs, trace.stimulusAtUnixMs, trace.settledAtUnixMs, trace.heldAtUnixMs];
+  if (times.some((time) => !Number.isFinite(time))
+      || !(times[0] <= times[1] && times[1] <= times[2] && times[2] <= times[3])) {
+    failures.push(`${path}.trace.times=started<=stimulus<=settled<=held/${displayValue(times)}`);
+  }
+  if (!Number.isFinite(trace.latencyBudgetMs)
+      || trace.latencyBudgetMs <= 0
+      || trace.latencyBudgetMs > MAX_SETTLE_LATENCY_MS) {
+    failures.push(`${path}.trace.latencyBudgetMs=0<value<=${MAX_SETTLE_LATENCY_MS}/${displayValue(trace.latencyBudgetMs)}`);
+  } else if (Number.isFinite(trace.stimulusAtUnixMs) && Number.isFinite(trace.settledAtUnixMs)
+      && trace.settledAtUnixMs - trace.stimulusAtUnixMs > trace.latencyBudgetMs) {
+    failures.push(`${path}.trace.settleLatency<=budget/${trace.settledAtUnixMs - trace.stimulusAtUnixMs}/${trace.latencyBudgetMs}`);
+  }
+  if (!Number.isFinite(trace.minimumHoldMs) || trace.minimumHoldMs < MIN_STABLE_HOLD_MS) {
+    failures.push(`${path}.trace.minimumHoldMs=>=${MIN_STABLE_HOLD_MS}/${displayValue(trace.minimumHoldMs)}`);
+  } else if (Number.isFinite(trace.settledAtUnixMs) && Number.isFinite(trace.heldAtUnixMs)
+      && trace.heldAtUnixMs - trace.settledAtUnixMs < trace.minimumHoldMs) {
+    failures.push(`${path}.trace.holdDuration>=minimum/${trace.heldAtUnixMs - trace.settledAtUnixMs}/${trace.minimumHoldMs}`);
   }
   const ownerViewIds = Array.isArray(trace.ownerViewIds) ? trace.ownerViewIds : [];
   const owners = [...ownerViewIds].sort();
@@ -134,6 +158,7 @@ function inspectTransition(transition, index, failures, traceIds) {
 
   const identityByOwner = new Map();
   const revisionByOwner = new Map();
+  const firstRevisionByOwner = new Map();
   let lastInventory = null;
   trace.samples.forEach((sample, sampleIndex) => {
     const samplePath = `${path}.trace.samples[${sampleIndex}]`;
@@ -164,10 +189,27 @@ function inspectTransition(transition, index, failures, traceIds) {
         failures.push(`${samplePath}.${owner}.presentationRevision=monotonic/${previousRevision}/${surface.presentationRevision}`);
       }
       revisionByOwner.set(owner, surface.presentationRevision);
+      if (!firstRevisionByOwner.has(owner)) firstRevisionByOwner.set(owner, surface.presentationRevision);
+      if (Number.isFinite(surface.presentedAtUnixMs)
+          && surface.presentedAtUnixMs > sample.sampledAtUnixMs) {
+        failures.push(`${samplePath}.${owner}.presentedAtUnixMs<=sample/${surface.presentedAtUnixMs}/${sample.sampledAtUnixMs}`);
+      }
     }
   });
 
-  if (requireExactKeys(trace.final, ["settled", "syncPending", "surfaces"], `${path}.trace.final`, failures)) {
+  if (Number.isFinite(trace.stimulusAtUnixMs)) {
+    const firstSampleAt = trace.samples[0]?.sampledAtUnixMs;
+    const lastSampleAt = trace.samples.at(-1)?.sampledAtUnixMs;
+    if (!(firstSampleAt <= trace.stimulusAtUnixMs && lastSampleAt >= trace.stimulusAtUnixMs)) {
+      failures.push(`${path}.trace.samples=bracket-stimulus/${displayValue([firstSampleAt, trace.stimulusAtUnixMs, lastSampleAt])}`);
+    }
+  }
+
+  if (requireExactKeys(trace.final, ["sampledAtUnixMs", "settled", "syncPending", "surfaces"], `${path}.trace.final`, failures)) {
+    if (!Number.isFinite(trace.final.sampledAtUnixMs)
+        || trace.final.sampledAtUnixMs < trace.heldAtUnixMs) {
+      failures.push(`${path}.trace.final.sampledAtUnixMs>=held/${displayValue(trace.final.sampledAtUnixMs)}/${displayValue(trace.heldAtUnixMs)}`);
+    }
     if (trace.final.settled !== true) failures.push(`${path}.trace.final.settled=true/${displayValue(trace.final.settled)}`);
     if (trace.final.syncPending !== false) {
       failures.push(`${path}.trace.final.syncPending=false/${displayValue(trace.final.syncPending)}`);
@@ -178,6 +220,20 @@ function inspectTransition(transition, index, failures, traceIds) {
     if (finalInventory && lastInventory
         && !inventoriesMatchByOwner(trace.final.surfaces, lastInventory, owners)) {
       failures.push(`${path}.trace.final.surfaces=last-sample`);
+    }
+    const target = finalInventory?.get(transition.targetViewId);
+    const firstRevision = firstRevisionByOwner.get(transition.targetViewId);
+    if (target && Number.isInteger(firstRevision)
+        && target.presentationRevision <= firstRevision) {
+      failures.push(`${path}.trace.target.presentationRevision=>baseline/${target.presentationRevision}/${firstRevision}`);
+    }
+    if (target && Number.isFinite(trace.stimulusAtUnixMs)) {
+      if (!(target.presentedAtUnixMs >= trace.stimulusAtUnixMs
+          && target.presentedAtUnixMs <= trace.settledAtUnixMs)) {
+        failures.push(`${path}.trace.target.presentedAtUnixMs=within-stimulus-settle/${target.presentedAtUnixMs}`);
+      } else if (target.presentedAtUnixMs - trace.stimulusAtUnixMs > trace.latencyBudgetMs) {
+        failures.push(`${path}.trace.target.presentationLatency<=budget/${target.presentedAtUnixMs - trace.stimulusAtUnixMs}/${trace.latencyBudgetMs}`);
+      }
     }
   }
 }

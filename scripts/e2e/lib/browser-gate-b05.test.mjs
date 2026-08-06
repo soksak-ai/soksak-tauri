@@ -22,6 +22,7 @@ function evidence(engine = "browser") {
       visible: true,
       presented: true,
       presentationRevision: revision,
+      presentedAtUnixMs: 1_000 + offset + (revision - 10) * 16,
     }));
     const samples = [0, 1, 2].map((sequence) => ({
       sequence,
@@ -38,11 +39,19 @@ function evidence(engine = "browser") {
         startedAtUnixMs: 1_000 + offset,
         stimulusAtUnixMs: 1_008 + offset,
         settledAtUnixMs: 1_040 + offset,
+        heldAtUnixMs: 1_290 + offset,
+        latencyBudgetMs: 500,
+        minimumHoldMs: 250,
         ownerViewIds: owners,
         countersBefore: { ...counters },
         countersAfter: { ...counters },
         samples,
-        final: { settled: true, syncPending: false, surfaces: structuredClone(samples.at(-1).surfaces) },
+        final: {
+          sampledAtUnixMs: 1_290 + offset,
+          settled: true,
+          syncPending: false,
+          surfaces: structuredClone(samples.at(-1).surfaces),
+        },
       },
     };
   };
@@ -80,6 +89,52 @@ describe("B05 continuous visible presentation judge", () => {
       (value) => { value.transitions[0].trace.samples[1].surfaces[0].presented = false; },
       (value) => { value.transitions[0].trace.final.syncPending = true; },
       (value) => { value.transitions[0].trace.samples[0].blackPixels = 42; },
+    ];
+    for (const mutate of cases) {
+      const value = evidence();
+      mutate(value);
+      expect(judgeB05MachineEvidence(value).status).toBe("red");
+    }
+  });
+
+  it("늦은 착지와 클릭 뒤 presentation revision 정지를 RED로 만든다", () => {
+    const cases = [
+      (value) => {
+        value.transitions[0].trace.settledAtUnixMs = value.transitions[0].trace.stimulusAtUnixMs + 501;
+        value.transitions[0].trace.heldAtUnixMs = value.transitions[0].trace.settledAtUnixMs + 250;
+        value.transitions[0].trace.final.sampledAtUnixMs = value.transitions[0].trace.heldAtUnixMs;
+      },
+      (value) => {
+        const trace = value.transitions[0].trace;
+        const target = trace.ownerViewIds.indexOf(value.transitions[0].targetViewId);
+        for (const sample of trace.samples) sample.surfaces[target].presentationRevision = 10;
+        trace.final.surfaces[target].presentationRevision = 10;
+      },
+    ];
+    for (const mutate of cases) {
+      const value = evidence();
+      mutate(value);
+      expect(judgeB05MachineEvidence(value).status).toBe("red");
+    }
+  });
+
+  it("클릭 전 ACK·짧은 hold·hold 뒤 소실을 각각 RED로 만든다", () => {
+    const cases = [
+      (value) => {
+        const trace = value.transitions[0].trace;
+        const target = trace.ownerViewIds.indexOf(value.transitions[0].targetViewId);
+        for (const sample of trace.samples.slice(1)) {
+          sample.surfaces[target].presentedAtUnixMs = trace.stimulusAtUnixMs - 1;
+        }
+        trace.final.surfaces[target].presentedAtUnixMs = trace.stimulusAtUnixMs - 1;
+      },
+      (value) => {
+        const trace = value.transitions[0].trace;
+        trace.heldAtUnixMs = trace.settledAtUnixMs + trace.minimumHoldMs - 1;
+        trace.final.sampledAtUnixMs = trace.heldAtUnixMs;
+      },
+      (value) => { value.transitions[0].trace.final.surfaces[0].visible = false; },
+      (value) => { value.transitions[0].trace.final.sampledAtUnixMs -= 1; },
     ];
     for (const mutate of cases) {
       const value = evidence();
