@@ -84,6 +84,16 @@ async function hold(rpc, windowLabel, stage) {
 }
 
 async function inspectWindow(rpc, windowLabel, framework) {
+  const directory = path.join(evidenceRoot, windowLabel);
+  const machineFile = path.join(directory, "machine.json");
+  fs.mkdirSync(directory, { recursive: true });
+  fs.writeFileSync(machineFile, `${JSON.stringify({
+    status: "running",
+    cycle,
+    window: windowLabel,
+    framework,
+  }, null, 2)}\n`);
+  let reportWritten = false;
   const tree = must(await rpc("ui.tree", {}, windowLabel), `${windowLabel} ui.tree`);
   const titlebar = tree.nodes.find((node) => node.nodePath === "titlebar");
   if (!titlebar?.address) throw new Error(`${windowLabel}: public titlebar address is absent`);
@@ -168,16 +178,38 @@ async function inspectWindow(rpc, windowLabel, framework) {
       };
       const verdict = judgeB12MachineEvidence(evidence, { framework });
       verdicts.push({ engine, verdict, evidence });
-      if (verdict.status !== "green") {
-        throw new Error(`${windowLabel}/${engine}/B12 RED: ${verdict.reason}`);
-      }
     }
-    const report = { cycle, window: windowLabel, framework, verdicts };
+    const failed = verdicts.find(({ verdict }) => verdict.status !== "green");
+    const report = {
+      status: failed ? "red" : "green",
+      cycle,
+      window: windowLabel,
+      framework,
+      verdicts,
+    };
     fs.writeFileSync(
-      path.join(evidenceRoot, windowLabel, "machine.json"),
+      machineFile,
       `${JSON.stringify(report, null, 2)}\n`,
     );
+    reportWritten = true;
+    if (failed) {
+      throw new Error(
+        `${windowLabel}/${failed.engine}/B12 RED: ${failed.verdict.reason}; `
+          + failed.verdict.evidence.join("; "),
+      );
+    }
     return report;
+  } catch (error) {
+    if (!reportWritten) {
+      fs.writeFileSync(machineFile, `${JSON.stringify({
+        status: "red",
+        cycle,
+        window: windowLabel,
+        framework,
+        error: error instanceof Error ? error.message : String(error),
+      }, null, 2)}\n`);
+    }
+    throw error;
   } finally {
     if (needsReset) {
       must(

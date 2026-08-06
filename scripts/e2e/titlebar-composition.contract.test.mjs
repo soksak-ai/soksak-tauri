@@ -30,6 +30,15 @@ describe("titlebar composition live E2E contract", () => {
     expect(source).toContain('verdict.status !== "green"');
   });
 
+  it("overwrites stale machine evidence and persists RED details before failing", () => {
+    expect(source).toContain('status: "running"');
+    const reportWrite = source.indexOf('JSON.stringify(report, null, 2)');
+    const failedVerdict = source.indexOf("if (failed)");
+    expect(reportWrite).toBeGreaterThan(0);
+    expect(failedVerdict).toBeGreaterThan(reportWrite);
+    expect(source).toContain('failed.verdict.evidence.join("; ")');
+  });
+
   it("always restores exact titlebar inline geometry", () => {
     const finallyAt = source.indexOf("finally {");
     const resetAt = source.indexOf('rpc("titlebar.height.reset"', finallyAt);
