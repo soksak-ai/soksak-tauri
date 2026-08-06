@@ -111,7 +111,6 @@ impl super::PaneMemberLayoutContract {
 #[derive(Clone)]
 struct PaneSurfaceRecord {
     ptr: usize,
-    generation: u64,
     window: String,
     renderer: String,
     members: Vec<String>,
@@ -121,7 +120,9 @@ struct PaneSurfaceRecord {
 
 static PANE_SURFACE_HOSTS: LazyLock<Mutex<HashMap<String, PaneSurfaceRecord>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
-static NEXT_PANE_SURFACE_GENERATION: AtomicU64 = AtomicU64::new(1);
+static NEXT_SURFACE_GENERATION: AtomicU64 = AtomicU64::new(1);
+static SURFACE_GENERATIONS: LazyLock<Mutex<HashMap<String, (usize, u64)>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 static SURFACE_PANES: LazyLock<Mutex<HashMap<String, String>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 static SURFACE_VIEWS: LazyLock<Mutex<HashMap<String, usize>>> =
@@ -130,6 +131,29 @@ static SURFACE_TRANSPARENCY: LazyLock<Mutex<HashMap<String, bool>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 static SURFACE_LAYOUTS: LazyLock<Mutex<HashMap<String, super::SurfaceLayoutContract>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn register_surface_generation(label: &str, ptr: usize) -> Result<u64, String> {
+    let mut generations = SURFACE_GENERATIONS.lock()
+        .map_err(|_| "surface generation 잠금 실패")?;
+    if let Some((known_ptr, generation)) = generations.get(label) {
+        if *known_ptr == ptr { return Ok(*generation); }
+    }
+    let generation = NEXT_SURFACE_GENERATION.fetch_add(1, Ordering::Relaxed).max(1);
+    generations.insert(label.to_owned(), (ptr, generation));
+    Ok(generation)
+}
+
+fn surface_generation(label: &str, ptr: usize) -> Option<u64> {
+    SURFACE_GENERATIONS.lock().ok()?.get(label)
+        .filter(|(known_ptr, _)| *known_ptr == ptr)
+        .map(|(_, generation)| *generation)
+}
+
+fn remove_surface_generation(label: &str) {
+    if let Ok(mut generations) = SURFACE_GENERATIONS.lock() {
+        generations.remove(label);
+    }
+}
 
 // 창의 오버레이 게이트 갱신(프론트 ui 카운터 0↔1 전이 시 webview_overlay_active 가 호출).
 pub fn set_overlay(label: &str, active: bool) {
@@ -233,12 +257,20 @@ pub fn register_external_surface_host(ptr: usize, label: &str) -> Result<(), Str
         .ok_or_else(|| format!("external native surface의 소유 창을 찾을 수 없습니다: {label}"))?;
     configure_surface_resize(view);
     clip_surface_children(view)?;
+    register_surface_generation(label, ptr)?;
     SURFACES.register(ptr, Some(label));
     SURFACE_HOSTS.register(label, ptr, &window);
     Ok(())
 }
 pub fn unregister_surface(ptr: usize) {
+    let label = SURFACES.label(ptr);
     SURFACES.unregister(ptr);
+    if let Some(label) = label {
+        if SURFACE_HOSTS.ptr(&label) == Some(ptr) {
+            SURFACE_HOSTS.remove(&label);
+            remove_surface_generation(&label);
+        }
+    }
 }
 pub fn surface_label(ptr: usize) -> Option<String> {
     SURFACES.label(ptr)
@@ -451,6 +483,11 @@ pub fn adopt_surface_host<R: tauri::Runtime>(
             return;
         }
         configure_surface_resize(child);
+        let ptr = Retained::as_ptr(&host) as usize;
+        if let Err(error) = register_surface_generation(&surface_label, ptr) {
+            eprintln!("[layer] surface generation 등록 실패: {surface_label}: {error}");
+            return;
+        }
         parent.addSubview_positioned_relativeTo(
             &host,
             NSWindowOrderingMode::Below,
@@ -458,7 +495,6 @@ pub fn adopt_surface_host<R: tauri::Runtime>(
         );
         child.setFrame(NSRect::new(NSPoint::new(0.0, 0.0), frame.size));
         host.addSubview(child);
-        let ptr = Retained::as_ptr(&host) as usize;
         SURFACES.register(ptr, Some(&surface_label));
         SURFACE_HOSTS.register(&surface_label, ptr, &window_label);
     });
@@ -580,7 +616,6 @@ pub fn group_pane_surface_host(
         pane.to_owned(),
         PaneSurfaceRecord {
             ptr,
-            generation: NEXT_PANE_SURFACE_GENERATION.fetch_add(1, Ordering::Relaxed).max(1),
             window: window.to_owned(),
             renderer: renderer.to_owned(),
             members: members.to_vec(),
@@ -725,6 +760,8 @@ pub(super) fn capture_pane_presentations(
         let pane_frame = presentation_frame(pane, &owner.pane)?;
         let renderer_frame = presentation_frame(renderer, &record.renderer)?;
         let surface_frame = presentation_frame(surface, &owner.surface_id)?;
+        let generation = surface_generation(&owner.surface_id, surface_ptr)
+            .ok_or_else(|| format!("pane surface generation이 없습니다: {}", owner.surface_id))?;
         let contract = record.member_layouts.get(&owner.surface_id)
             .ok_or_else(|| format!("pane member DOM 계약이 없습니다: {}", owner.surface_id))?;
         let (dom_x, dom_top, dom_w, dom_h) = contract.rect_for_host(
@@ -768,7 +805,7 @@ pub(super) fn capture_pane_presentations(
         Ok(super::presentation_trace::PresentationSurface {
             view_id: owner.view_id,
             surface_id: owner.surface_id,
-            generation: record.generation,
+            generation,
             live,
             visible,
             painted: painted && visible,
@@ -847,7 +884,6 @@ pub fn pane_surface_host_state() -> serde_json::Value {
         }).collect::<Vec<_>>();
         serde_json::json!({
             "pane": pane,
-            "generation": record.generation,
             "window": record.window,
             "renderer": record.renderer,
             "rendererTransparent": transparency.as_ref()
@@ -1144,6 +1180,7 @@ pub fn set_surface_host_hidden(label: &str, hidden: bool) {
 
 pub fn remove_surface_host(label: &str) {
     detach_surface_from_pane(label);
+    remove_surface_generation(label);
     let host = SURFACE_HOSTS.remove(label);
     let Some(host) = host else { return };
     SURFACES.unregister(host.ptr);
@@ -1166,6 +1203,9 @@ pub fn forget_window(window: &str) {
     let removed = SURFACE_HOSTS.remove_window(window);
     let labels = removed.iter().map(|(label, _)| label.clone()).collect::<std::collections::HashSet<_>>();
     for (_, host) in &removed { SURFACES.unregister(host.ptr); }
+    if let Ok(mut generations) = SURFACE_GENERATIONS.lock() {
+        generations.retain(|label, _| !labels.contains(label));
+    }
     if let Ok(mut views) = SURFACE_VIEWS.lock() { views.retain(|label, _| !labels.contains(label)); }
     if let Ok(mut transparency) = SURFACE_TRANSPARENCY.lock() {
         transparency.retain(|label, _| !labels.contains(label));
