@@ -200,8 +200,24 @@ describe("Tauri plugin renderer RPC surface", () => {
       "w-1",
     );
     expect(verdict.matches).toHaveLength(2);
-    expect(verdict.matches[0]).toMatchObject({ pane: "pane-a", ok: true });
-    expect(verdict.matches[0].memberMatches).toMatchObject([{ label: "browser-a", ok: true }]);
+    expect(verdict.matches[0]).toMatchObject({
+      pane: "pane-a",
+      ok: true,
+      coordinateSpace: {
+        logical: "css-px",
+        origin: "window-absolute",
+        referenceId: "w-1",
+      },
+    });
+    expect(verdict.matches[0].memberMatches).toMatchObject([{
+      label: "browser-a",
+      ok: true,
+      coordinateSpace: {
+        logical: "css-px",
+        origin: "presenter-local",
+        referenceId: "browser-a",
+      },
+    }]);
     expect(verdict.matches[1]).toMatchObject({ pane: "pane-b", ok: false });
     expect(verdict.foreignNative).toEqual(["foreign"]);
     expect(verdict.ok).toBe(false);
