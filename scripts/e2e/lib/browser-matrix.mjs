@@ -29,6 +29,37 @@ export const compositorCalibrationSize = Object.freeze({ width: 40, height: 40 }
 // hostile resize의 최소 2-pane viewport에도 잘리지 않는 고정 ruler. 작아지는 반응형 marker가
 // 아니라 언제나 같은 64 CSS px이므로 캡처에서 확대/압축된 옛 프레임을 엄격히 검출할 수 있다.
 export const fixtureMarkerSize = Object.freeze({ width: 64, height: 40 });
+export const fixtureMarkerGap = 8;
+
+/** 전체 문서 identity는 같은 색의 독립 표식 3개로 이루어진 한 행이다.
+ * 단순 색상 개수 대신 선언된 크기·정렬·간격을 함께 판정해 중복 캡처와 찢어진 캡처를 구분한다. */
+export function fixtureMarkerRowVerdict(components, { scale = 1 } = {}) {
+  const expectedWidth = fixtureMarkerSize.width * scale;
+  const expectedHeight = fixtureMarkerSize.height * scale;
+  const expectedGap = fixtureMarkerGap * scale;
+  const tolerance = Math.max(2, 2 * scale);
+  const candidates = components
+    .filter((component) => component.width >= expectedWidth * 0.7 && component.height >= expectedHeight * 0.7)
+    .sort((left, right) => left.y - right.y || left.x - right.x);
+  const errors = [];
+  if (candidates.length !== 3) errors.push(`count=${candidates.length}`);
+  if (candidates.length === 3) {
+    for (const [index, component] of candidates.entries()) {
+      if (Math.abs(component.width - expectedWidth) > tolerance
+          || Math.abs(component.height - expectedHeight) > tolerance) {
+        errors.push(`size-${index}=${component.width}x${component.height}`);
+      }
+      if (Math.abs(component.y - candidates[0].y) > tolerance) {
+        errors.push(`row-${index}=${component.y - candidates[0].y}`);
+      }
+      if (index > 0) {
+        const gap = component.x - (candidates[index - 1].x + candidates[index - 1].width);
+        if (Math.abs(gap - expectedGap) > tolerance) errors.push(`gap-${index}=${gap}`);
+      }
+    }
+  }
+  return { ok: errors.length === 0, errors, components: candidates };
+}
 
 /** window.info는 물리 픽셀, window.snapshot은 구현이 선택한 PNG 픽셀을 반환한다.
  * 두 값을 섞어 deviceScale을 추측하지 않고 실제 산출물의 CSS-px당 PNG-px 배율을 계산한다. */

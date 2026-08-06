@@ -72,6 +72,7 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(source).toContain("verifyFullCapture");
     expect(source).toContain(".capture.full`");
     expect(source).toContain("pngHeight");
-    expect(source).toContain("identityMarkers.length === 1");
+    expect(source).toContain("fixtureMarkerRowVerdict");
+    expect(source).toContain("identity.ok");
   });
 });

@@ -19,6 +19,7 @@ import {
   pinnedDomTraceVerdict,
   snapshotCssScale,
   selectFixtureMarkerComponent,
+  fixtureMarkerRowVerdict,
   hostileWindowResizeSizes,
   summarizeFrameSequence,
   unwrapEvalValue,
@@ -266,6 +267,21 @@ describe("브라우저 구현 행렬", () => {
 });
 
 describe("공통 브라우저 fixture", () => {
+  it("전체 캡처의 identity는 선언된 3개 표식 행이 정확히 한 번 있어야 한다", () => {
+    const valid = [
+      { count: 2_560, x: 24, y: 195, width: 64, height: 40, bodyWidth: 64, bodyHeight: 40 },
+      { count: 2_560, x: 96, y: 195, width: 64, height: 40, bodyWidth: 64, bodyHeight: 40 },
+      { count: 2_560, x: 168, y: 195, width: 64, height: 40, bodyWidth: 64, bodyHeight: 40 },
+    ];
+    expect(fixtureMarkerRowVerdict(valid, { scale: 1 })).toMatchObject({ ok: true });
+    expect(fixtureMarkerRowVerdict(valid.slice(0, 2), { scale: 1 })).toMatchObject({ ok: false });
+    expect(fixtureMarkerRowVerdict([...valid, { ...valid[2], x: 240 }], { scale: 1 })).toMatchObject({ ok: false });
+    expect(fixtureMarkerRowVerdict(valid.map((component, index) => ({
+      ...component,
+      x: component.x + index * 5,
+    })), { scale: 1 })).toMatchObject({ ok: false });
+  });
+
   it("window.snapshot의 실제 PNG 좌표계를 물리 창 크기와 scale에서 산출한다", () => {
     const png = encodePng({ w: 800, h: 600, ch: 3, px: Buffer.alloc(800 * 600 * 3) });
     expect(snapshotCssScale(png, { w: 1600, h: 1200, scale: 2 })).toBe(1);

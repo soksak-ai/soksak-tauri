@@ -26,6 +26,7 @@ import {
   compositorCalibrationMarker,
   domTransitionTraceVerdict,
   fixtureMarkerSize,
+  fixtureMarkerRowVerdict,
   fixtureMarkers,
   hostileWindowResizeSizes,
   markerEvidence,
@@ -673,17 +674,19 @@ async function verifyFullCapture(rpc, win, plugin, tabId, outputPath, identityMa
   if (!fs.existsSync(outputPath) || Number(result.bytes) !== fs.statSync(outputPath).size) {
     throw new Error(`${tabId}: full capture 파일/바이트 불일치 ${JSON.stringify(result)}`);
   }
-  const image = decodePng(fs.readFileSync(outputPath));
+  const bytes = fs.readFileSync(outputPath);
+  const image = decodePng(bytes);
   const width = Number(result.width);
   const height = Number(result.height);
   const xScale = image.w / width;
   const yScale = image.h / height;
-  const tail = markerEvidence(fs.readFileSync(outputPath), "#ff8000", 24, 2).components
+  const tail = markerEvidence(bytes, "#ff8000", 24, 2).components
     .find((component) => component.width >= 100 && component.height >= 40 && component.y >= image.h * 0.75);
-  const identityMarkers = markerEvidence(fs.readFileSync(outputPath), identityMarker, 24, 1).components
-    .filter((component) => component.width >= 50 && component.height >= 30);
-  if (!(height > 1400 && image.h > image.w && Math.abs(xScale - yScale) <= 0.03 && tail && identityMarkers.length === 1)) {
-    throw new Error(`${tabId}: full capture 문서 기하/단일성 불일치 ${JSON.stringify({ result, image: { w: image.w, h: image.h }, xScale, yScale, identityMarkers })}`);
+  const identity = fixtureMarkerRowVerdict(markerEvidence(bytes, identityMarker, 24, 1).components, {
+    scale: (xScale + yScale) / 2,
+  });
+  if (!(height > 1400 && image.h > image.w && Math.abs(xScale - yScale) <= 0.03 && tail && identity.ok)) {
+    throw new Error(`${tabId}: full capture 문서 기하/단일성 불일치 ${JSON.stringify({ result, image: { w: image.w, h: image.h }, xScale, yScale, identity })}`);
   }
   return { path: outputPath, bytes: result.bytes, width, height, pngWidth: image.w, pngHeight: image.h };
 }
