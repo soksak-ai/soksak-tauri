@@ -96,6 +96,17 @@ describe("slot-freeze instrumentation lifecycle", () => {
       .toBeLessThan(source.indexOf('rpc("webview.pane.composition.wait"'));
   });
 
+  it("pane gutter resize settles main layout and child native commits before viewport judgment", () => {
+    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    const gutter = source.split("// 탭 패널 경계 resize")[1]?.split("await assertChromeOverlayContract")[0] ?? "";
+    expect(gutter).toContain('rpc("ui.layout.wait-settled"');
+    expect(gutter).toContain('"webview.pane.composition.wait"');
+    expect(gutter.indexOf('rpc("ui.layout.wait-settled"'))
+      .toBeLessThan(gutter.indexOf('"webview.pane.composition.wait"'));
+    expect(gutter.indexOf('"webview.pane.composition.wait"'))
+      .toBeLessThan(gutter.indexOf("assertViewportComposition"));
+  });
+
   it("requires one shared pane presentation owner for plugin chrome and native members", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
     expect(source).toContain("rendererTopologyOwnershipVerdict");

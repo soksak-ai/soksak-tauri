@@ -1266,6 +1266,21 @@ async function runEngine(client, page, engine) {
         scale,
         { chromeAnchors: [CHROME_MARKERS.railAdd] },
       );
+      must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }),
+        `pane resize ${direction} layout settled`);
+      if (native) {
+        const composition = must(await rpc(
+          "webview.pane.composition.wait",
+          { settleTimeoutMs: 8_000 },
+          win,
+          { timeoutMs: 12_000 },
+        ), `pane resize ${direction} composition settled`);
+        assertPaneComposition(composition, labels);
+        fs.writeFileSync(
+          path.join(engineEvidence, `resize-pane-${direction}-composition.json`),
+          `${JSON.stringify(composition, null, 2)}\n`,
+        );
+      }
       await assertViewportComposition(rpc, win, plugin, tabIds, addresses, scale,
         path.join(engineEvidence, `resize-pane-${direction}.png`), `${engine}/pane-${direction}`);
       await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, `pane-resize-${direction}`);
