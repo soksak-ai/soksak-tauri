@@ -280,6 +280,20 @@
       "note": "acceptance report가 허용하는 framework·platform·browser engine identity의 단일 목록이다."
     },
     {
+      "file": "lib/browser-gate-b05.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "공개 presentation 원장의 visible owner·surface identity·revision 연속성을 판정하며 픽셀을 입력으로 받지 않는 B05 순수 judge다."
+    },
+    {
+      "file": "lib/browser-gate-b05.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "B05의 gap·교체·미표시·미정착 RED와 세 engine receipt GREEN을 값으로 고정한다."
+    },
+    {
       "file": "lib/browser-machine-judge-support.mjs",
       "role": "lib",
       "class": "A",
