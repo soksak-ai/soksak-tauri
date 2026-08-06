@@ -358,6 +358,8 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(flowRecordingCalls).toHaveLength(1);
     expect(domTraceStartCalls[0].start).toBeLessThan(flowRecordingCalls[0].start);
     expect(domTraceCloseCalls.some((call) => call.start > flowRecordingCalls[0].start)).toBe(true);
+    expect(source.indexOf("const presentationReceipt = must(await rpc("))
+      .toBeLessThan(source.indexOf("const domTraceReceipt = must(await rpc("));
     expect(source).toContain("resolveB04MovedParticipant({");
     expect(source).toContain("transactions: layoutVerdict.transactions");
     expect(source).toContain("owners: presentationOwners");
