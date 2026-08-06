@@ -19,7 +19,15 @@ import { useGutterHover } from "../state/gutterHover";
 import { useSessions } from "../state/sessions";
 import { motionLiveList, motionLiveRates, setMotionDebug, motionRecentBirths, motionJourneys, motionSwaps, motionTriggers } from "../lib/motionDebug";
 import { railTravelMs, railTravelWallMs } from "../lib/railMotion";
-import { recordWindowFrames } from "./windowRecorder";
+import {
+  decodedBase64ByteLength,
+  recordWindowFrames,
+  recordingFailureReason,
+  startWindowRecording,
+  validWindowRecordMaxBytes,
+  type RecordingReport,
+  type WindowRecordingReport,
+} from "./windowRecorder";
 import { createFiniteDomTraceSampler } from "./finiteDomTrace";
 import { layoutSettlementStatus, waitLayoutSettled } from "./waitLayoutSettled";
 
@@ -31,6 +39,12 @@ type FocusTraceEntry = {
   dataNode: string | null;
   hasFocus: boolean;
 };
+
+type StepRecordingReport = Exclude<
+  RecordingReport<"steps", { frameFallbacks: number }>,
+  { status: "not-requested" }
+>;
+type InputRecordingReport = WindowRecordingReport | StepRecordingReport;
 // 서로 다른 것은 따로 선다 — 한 가방에 넣으면 그것은 상태가 아니라 가방이다.
 /** 포커스 추적 — 기록 중인 사건과 그 종료 손잡이는 한 몸이다. */
 const focusTrace = moduleState("commands/catalogDom#focusTrace", () => ({
@@ -513,7 +527,7 @@ export function registerDomCatalog(): void {
 
   register("ui.input.click", {
     description:
-      "Dispatch a real-click sequence (mousedown → mouseup → click) to an exposed node (E2E injection). Use to drive UI flows programmatically or in tests. Pass phase:'down' to send only the mousedown, then observe the mid-gesture state (ui.hit / ui.measure), then phase:'up' to finish with mouseup+click — the only way to verify contracts that live BETWEEN down and up. recordDir starts the finite framework-neutral recorder in this same serialized request before the click, so tab/sidebar transitions can be inspected without focusing the window or racing a second command. Unexposed addresses return NOT_EXPOSED — no guessing.",
+      "Dispatch a real-click sequence (mousedown → mouseup → click) to an exposed node (E2E injection). Use to drive UI flows programmatically or in tests. Pass phase:'down' to send only the mousedown, then observe the mid-gesture state (ui.hit / ui.measure), then phase:'up' to finish with mouseup+click — the only way to verify contracts that live BETWEEN down and up. recordDir starts finite framework-neutral visual evidence before the click without focusing the window; recording.status reports its independent outcome, and capture/storage failure never cancels the click transaction. Unexposed addresses return NOT_EXPOSED — no guessing.",
     triggers: { ko: "클릭 주입 ui클릭 버튼클릭 E2E 게스처 다운 업 분해" },
     params: {
       address: { type: "string", description: "Exposed node address from ui.tree", required: true },
@@ -550,6 +564,11 @@ export function registerDomCatalog(): void {
         description: "Finite pre-click recording lead in milliseconds (0..2000, default 0).",
         default: 0,
       },
+      recordMaxBytes: {
+        type: "number",
+        description: "Maximum total stored PNG bytes for this finite recording (1..1073741824).",
+        required: false,
+      },
       traceAddresses: {
         type: "json",
         description:
@@ -557,7 +576,7 @@ export function registerDomCatalog(): void {
         required: false,
       },
     },
-    returns: "{ clicked, address, phase?, recording?:{dir,frames,mode:'realtime'}, trace?:{frames,samples} }",
+    returns: "{ clicked, address, phase?, recording:{status:'not-requested'|'complete'|'failed',mode:'realtime',dir?,requestedFrames?,frames?,reason?}, trace?:{frames,samples} }",
     message: () => tmsg("msg.ui.input.click"),
     errors: ["NOT_EXPOSED", "AMBIGUOUS", "INVALID_PARAMS"],
     danger: "inject",
@@ -583,6 +602,7 @@ export function registerDomCatalog(): void {
       const recordFrames = p.recordFrames === undefined ? 40 : Number(p.recordFrames);
       const recordIntervalMs = p.recordIntervalMs === undefined ? 16 : Number(p.recordIntervalMs);
       const recordLeadMs = p.recordLeadMs === undefined ? 0 : Number(p.recordLeadMs);
+      const recordMaxBytes = p.recordMaxBytes;
       const traceAddresses = p.traceAddresses === undefined ? [] : p.traceAddresses;
       if (
         recordDir &&
@@ -591,6 +611,16 @@ export function registerDomCatalog(): void {
           !Number.isFinite(recordLeadMs) || recordLeadMs < 0 || recordLeadMs > 2_000)
       ) {
         return { ok: false as const, code: "INVALID_PARAMS", message: "녹화 인자가 범위를 벗어났다" };
+      }
+      if (
+        recordMaxBytes !== undefined &&
+        (!recordDir || !validWindowRecordMaxBytes(recordMaxBytes))
+      ) {
+        return {
+          ok: false as const,
+          code: "INVALID_PARAMS",
+          message: "recordMaxBytes는 recordDir과 함께 쓰는 1..1073741824 정수여야 한다",
+        };
       }
       if (
         !Array.isArray(traceAddresses) ||
@@ -614,27 +644,28 @@ export function registerDomCatalog(): void {
         ? createFiniteDomTraceSampler(traceTargets)
         : null;
       const recording = recordDir
-        ? recordWindowFrames({
+        ? startWindowRecording({
             dir: recordDir,
             frames: recordFrames,
             intervalMs: recordIntervalMs,
+            ...(recordMaxBytes === undefined ? {} : { maxBytes: recordMaxBytes }),
             onFrame: (frame) => trace?.sample(frame),
-          })
+          }, recordWindowFrames)
         : null;
-      await (recording?.ready ?? Promise.resolve());
-      if (recording && recordLeadMs > 0) {
+      const recordingReady = await (recording?.ready ?? Promise.resolve(false));
+      if (recordingReady && recordLeadMs > 0) {
         await new Promise((resolve) => window.setTimeout(resolve, recordLeadMs));
       }
       const observationResult = async () => {
         // trace.samples()는 현재 배열의 snapshot이다. 녹화와 Promise.all 인자에서 동시에
         // 평가하면 첫 ready 사건 직후의 1장만 복사하고 나머지 onFrame 사건을 잃는다.
         // 녹화 완료가 모든 frame 사건의 상한이므로 먼저 그 경계를 지난 뒤 snapshot한다.
-        const recordedFrames = await (recording ?? Promise.resolve(null));
+        const recordingReport = recording
+          ? await recording.report
+          : { status: "not-requested" as const, mode: "realtime" as const };
         const traceSamples = trace?.samples() ?? null;
         return {
-          ...(recordedFrames == null
-            ? {}
-            : { recording: { dir: recordDir, frames: recordedFrames, mode: "realtime" as const } }),
+          recording: recordingReport,
           ...(traceSamples == null
             ? {}
             : { trace: { frames: traceSamples.length, samples: traceSamples } }),
@@ -1233,7 +1264,7 @@ export function registerDomCatalog(): void {
 
   register("ui.input.drag", {
     description:
-      "Drive a pointer drag (mousedown on `from` -> mousemove -> mouseup). Two modes: (1) drop onto a target — give `to` (+ optional zone); (2) drag by dx/dy for resize handles. steps and durationMs expose a finite real-time sequence for animation/layout verification; defaults preserve the immediate two-move behavior. recordDir starts the framework-neutral window recorder in the same request before the drag, so transition frames are observable even when control requests are serialized. mousemove+mouseup dispatch on window so window-level drag listeners receive them.",
+      "Drive a pointer drag (mousedown on `from` -> mousemove -> mouseup). Two modes: (1) drop onto a target — give `to` (+ optional zone); (2) drag by dx/dy for resize handles. steps and durationMs expose a finite real-time sequence for animation/layout verification; defaults preserve the immediate two-move behavior. recordDir starts independent visual evidence before the drag without focusing the window; recording.status reports capture/storage failure without cancelling the finite pointer transaction. mousemove+mouseup dispatch on window so window-level drag listeners receive them.",
     triggers: { ko: "드래그 주입 드롭 탭이동 분할 합치기 리사이즈 디바이더 E2E 포인터드래그" },
     params: {
       from: { type: "string", description: "Source node address (the tab / gutter / element to grab)", required: true },
@@ -1272,8 +1303,13 @@ export function registerDomCatalog(): void {
       },
       recordLeadMs: {
         type: "number",
-        description: "Finite pre-drag recording lead in milliseconds (0..2000, default 0).",
+        description: "Finite pre-drag realtime-recording lead in milliseconds (0..2000, default 0).",
         default: 0,
+      },
+      recordMaxBytes: {
+        type: "number",
+        description: "Maximum cumulative stored PNG bytes for this finite recording (1..1073741824).",
+        required: false,
       },
       captureSteps: {
         type: "boolean",
@@ -1281,7 +1317,7 @@ export function registerDomCatalog(): void {
         default: false,
       },
     },
-    returns: "{ dragged, from, to?, zone?, dx?, dy?, steps, durationMs, recording?:{dir,frames,mode,frameFallbacks?} }",
+    returns: "{ dragged, from, to?, zone?, dx?, dy?, steps, durationMs, recording:{status:'not-requested'|'complete'|'failed',dir?,requestedFrames?,frames?,mode:'realtime'|'steps',frameFallbacks?,reason?} }",
     message: (d) => (d.dragged ? tmsg("msg.ui.input.drag.dragged") : tmsg("msg.ui.input.drag.tap")),
     errors: ["NOT_EXPOSED", "AMBIGUOUS", "INVALID_PARAMS"],
     danger: "inject",
@@ -1303,6 +1339,7 @@ export function registerDomCatalog(): void {
       const recordFrames = p.recordFrames === undefined ? 120 : Number(p.recordFrames);
       const recordIntervalMs = p.recordIntervalMs === undefined ? 33 : Number(p.recordIntervalMs);
       const recordLeadMs = p.recordLeadMs === undefined ? 0 : Number(p.recordLeadMs);
+      const recordMaxBytes = p.recordMaxBytes;
       if (
         recordDir &&
         (!Number.isInteger(recordFrames) || recordFrames < 1 || recordFrames > 600 ||
@@ -1311,8 +1348,22 @@ export function registerDomCatalog(): void {
       ) {
         return { ok: false as const, code: "INVALID_PARAMS", message: "녹화 인자가 범위를 벗어났다" };
       }
-      if (captureSteps && !recordDir) {
-        return { ok: false as const, code: "INVALID_PARAMS", message: "captureSteps에는 recordDir가 필요하다" };
+      if (
+        recordMaxBytes !== undefined &&
+        (!recordDir || !validWindowRecordMaxBytes(recordMaxBytes))
+      ) {
+        return {
+          ok: false as const,
+          code: "INVALID_PARAMS",
+          message: "recordMaxBytes는 recordDir과 함께 쓰는 1..1073741824 정수여야 한다",
+        };
+      }
+      let stepRecording: { dir: string } | null = null;
+      if (captureSteps) {
+        if (!recordDir) {
+          return { ok: false as const, code: "INVALID_PARAMS", message: "captureSteps에는 recordDir가 필요하다" };
+        }
+        stepRecording = { dir: recordDir };
       }
       const fromR = resolveExposed(p.from as string);
       if (!("el" in fromR)) return fromR;
@@ -1350,8 +1401,11 @@ export function registerDomCatalog(): void {
           }),
         );
       const dist = Math.hypot(toPt.x - fromPt.x, toPt.y - fromPt.y);
+      const requestedStepFrames = (dist >= 5 ? steps : 0) + 2;
       let capturedSteps = 0;
+      let capturedBytes = 0;
       let frameFallbacks = 0;
+      let stepCaptureFailure: string | null = null;
       const waitForPaintCommit = async (): Promise<void> => {
         // 전면 창은 compositor의 실제 paint 경계를 따른다. 비전면 WebKit은 rAF뿐 아니라 짧은
         // timer도 수 초 단위로 throttle한다(실측: 50ms×10단계가 120초). 포커스를 빼앗지 않는
@@ -1374,27 +1428,45 @@ export function registerDomCatalog(): void {
         void document.documentElement.getBoundingClientRect();
       };
       const captureStep = async (): Promise<void> => {
-        if (!recordDir || !captureSteps) return;
-        // 전면은 rAF paint 뒤, 비전면은 다음 DOM task의 강제 layout 뒤에 읽는다. 어느 경계를
-        // 썼는지는 frameFallbacks로 공개한다 — 포커스 없는 캡처를 성공처럼 위장하지 않는다.
-        await waitForPaintCommit();
-        const png = await invoke<string>("plugin:webview-capture|snapshot_region", {});
-        await invoke("write_file_base64", {
-          path: `${recordDir}/f${String(capturedSteps).padStart(4, "0")}.png`,
-          base64: png,
-        });
-        capturedSteps += 1;
+        if (!stepRecording || stepCaptureFailure) return;
+        try {
+          // 전면은 rAF paint 뒤, 비전면은 다음 DOM task의 강제 layout 뒤에 읽는다. 어느 경계를
+          // 썼는지는 frameFallbacks로 공개한다 — 포커스 없는 캡처를 성공처럼 위장하지 않는다.
+          await waitForPaintCommit();
+          const png = await invoke<string>("plugin:webview-capture|snapshot_region", {});
+          const frameBytes = decodedBase64ByteLength(png);
+          if (
+            recordMaxBytes !== undefined &&
+            capturedBytes + frameBytes > recordMaxBytes
+          ) {
+            throw new Error(
+              `recordMaxBytes 초과: ${capturedBytes + frameBytes} > ${recordMaxBytes}`,
+            );
+          }
+          // 예산 판정은 쓰기 전, 누적은 저장 성공 뒤다. frames와 파일은 항상 1:1이다.
+          await invoke("write_file_base64", {
+            path: `${stepRecording.dir}/f${String(capturedSteps).padStart(4, "0")}.png`,
+            base64: png,
+          });
+          capturedBytes += frameBytes;
+          capturedSteps += 1;
+        } catch (error) {
+          // 시각 증거 실패는 여기서 닫고 이후 캡처만 중지한다. pointer 거래는 계속되어
+          // mouseup까지 반드시 도달한다.
+          stepCaptureFailure = recordingFailureReason(error);
+        }
       };
-      const recording = recordDir && !captureSteps
-        ? recordWindowFrames({
+      const recording = recordDir && !stepRecording
+        ? startWindowRecording({
             dir: recordDir,
             frames: recordFrames,
             intervalMs: recordIntervalMs,
-          })
+            ...(recordMaxBytes === undefined ? {} : { maxBytes: recordMaxBytes }),
+          }, recordWindowFrames)
         : null;
-      if (recording) await recording.ready;
+      const recordingReady = await (recording?.ready ?? Promise.resolve(false));
       await captureStep();
-      if (recording && recordLeadMs > 0) {
+      if (recordingReady && recordLeadMs > 0) {
         await new Promise((resolve) => window.setTimeout(resolve, recordLeadMs));
       }
       // mousedown 은 잡는 요소(골/탭)에, move/up 은 window 에 — 골 리사이즈는 window 레벨
@@ -1419,14 +1491,31 @@ export function registerDomCatalog(): void {
       }
       fire("mouseup", toPt.x, toPt.y, window);
       await captureStep();
-      const recordingResult = captureSteps
-        ? { recording: { dir: recordDir, frames: capturedSteps, mode: "steps", frameFallbacks } }
+      const recordingResult: InputRecordingReport = stepRecording
+        ? stepCaptureFailure
+          ? {
+              status: "failed",
+              dir: stepRecording.dir,
+              requestedFrames: requestedStepFrames,
+              frames: capturedSteps,
+              mode: "steps",
+              frameFallbacks,
+              reason: stepCaptureFailure,
+            }
+          : {
+              status: "complete",
+              dir: stepRecording.dir,
+              requestedFrames: requestedStepFrames,
+              frames: capturedSteps,
+              mode: "steps",
+              frameFallbacks,
+            }
         : recording
-          ? { recording: { dir: recordDir, frames: await recording, mode: "realtime" } }
-          : {};
+          ? await recording.report
+          : { status: "not-requested", mode: "realtime" };
       return byDelta
-        ? { dragged: dist >= 5, from: p.from, dx: p.dx ?? 0, dy: p.dy ?? 0, steps, durationMs, ...recordingResult }
-        : { dragged: dist >= 5, click: dist < 5, from: p.from, to: p.to, zone: p.zone ?? "center", steps, durationMs, ...recordingResult };
+        ? { dragged: dist >= 5, from: p.from, dx: p.dx ?? 0, dy: p.dy ?? 0, steps, durationMs, recording: recordingResult }
+        : { dragged: dist >= 5, click: dist < 5, from: p.from, to: p.to, zone: p.zone ?? "center", steps, durationMs, recording: recordingResult };
     },
   });
 

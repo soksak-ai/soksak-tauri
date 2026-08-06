@@ -40,7 +40,8 @@ vi.mock("../framework", () => ({
   invoke: vi.fn(async () => ({})),
   currentWindow: () => shellWin,
 }));
-vi.mock("./windowRecorder", () => ({
+vi.mock("./windowRecorder", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./windowRecorder")>()),
   recordWindowFrames: vi.fn(),
 }));
 
@@ -198,7 +199,24 @@ describe("ui.input.drag — 실시간 재현 표면", () => {
     expect(spec?.params.recordDir).toBeDefined();
     expect(spec?.params.recordFrames).toBeDefined();
     expect(spec?.params.recordIntervalMs).toBeDefined();
+    expect(spec?.params.recordMaxBytes).toBeDefined();
     expect(spec?.params.captureSteps).toBeDefined();
+  });
+
+  it("녹화를 요청하지 않아도 관측 상태를 명시한다", async () => {
+    mountNode(`<div data-node="btn">drag</div>`);
+    const node = document.querySelector<HTMLElement>("[data-node=btn]")!;
+    vi.spyOn(node, "getBoundingClientRect").mockReturnValue({
+      x: 10, y: 10, left: 10, top: 10, right: 30, bottom: 30,
+      width: 20, height: 20, toJSON: () => ({}),
+    });
+
+    const result = await execute("ui.input.drag", { from: ADDR, dx: 100 }, {});
+
+    expect(result.data).toMatchObject({
+      dragged: true,
+      recording: { status: "not-requested", mode: "realtime" },
+    });
   });
 
   it("선택한 녹화를 드래그 전에 시작하고 같은 응답에서 완료 프레임을 보고한다", async () => {
@@ -208,7 +226,9 @@ describe("ui.input.drag — 실시간 재현 표면", () => {
       x: 10, y: 10, left: 10, top: 10, right: 30, bottom: 30,
       width: 20, height: 20, toJSON: () => ({}),
     });
-    vi.mocked(recordWindowFrames).mockResolvedValueOnce(7);
+    vi.mocked(recordWindowFrames).mockImplementationOnce(() =>
+      Object.assign(Promise.resolve(7), { ready: Promise.resolve() })
+    );
     const result = await execute(
       "ui.input.drag",
       {
@@ -220,6 +240,7 @@ describe("ui.input.drag — 실시간 재현 표면", () => {
         recordFrames: 7,
         recordIntervalMs: 0,
         recordLeadMs: 0,
+        recordMaxBytes: 4096,
       },
       {},
     );
@@ -227,11 +248,87 @@ describe("ui.input.drag — 실시간 재현 표면", () => {
       dir: "/tmp/drag-scan",
       frames: 7,
       intervalMs: 0,
+      maxBytes: 4096,
+      onFrame: expect.any(Function),
     });
     expect(result.data).toMatchObject({
       dragged: true,
-      recording: { dir: "/tmp/drag-scan", frames: 7 },
+      recording: {
+        status: "complete",
+        dir: "/tmp/drag-scan",
+        requestedFrames: 7,
+        frames: 7,
+        mode: "realtime",
+      },
     });
+  });
+
+  it("첫 저장 프레임 준비 전에는 mousedown 자극을 보내지 않는다", async () => {
+    mountNode(`<div data-node="btn">drag</div>`);
+    const node = document.querySelector<HTMLElement>("[data-node=btn]")!;
+    vi.spyOn(node, "getBoundingClientRect").mockReturnValue({
+      x: 10, y: 10, left: 10, top: 10, right: 30, bottom: 30,
+      width: 20, height: 20, toJSON: () => ({}),
+    });
+    const downs: string[] = [];
+    node.addEventListener("mousedown", () => downs.push("down"));
+    let releaseReady!: () => void;
+    vi.mocked(recordWindowFrames).mockImplementationOnce(() =>
+      Object.assign(Promise.resolve(1), {
+        ready: new Promise<void>((resolve) => { releaseReady = resolve; }),
+      })
+    );
+
+    const executing = execute("ui.input.drag", {
+      from: ADDR,
+      dx: 100,
+      recordDir: "/tmp/drag-baseline",
+    }, {});
+    await Promise.resolve();
+    expect(downs).toEqual([]);
+    releaseReady();
+    const result = await executing;
+
+    expect(downs).toEqual(["down"]);
+    expect(result.data).toMatchObject({ dragged: true, recording: { status: "complete" } });
+  });
+
+  it.each(["ready", "final"] as const)("실시간 녹화 %s 실패가 드래그와 mouseup을 막지 않는다", async (phase) => {
+    mountNode(`<div data-node="btn">drag</div>`);
+    const node = document.querySelector<HTMLElement>("[data-node=btn]")!;
+    vi.spyOn(node, "getBoundingClientRect").mockReturnValue({
+      x: 10, y: 10, left: 10, top: 10, right: 30, bottom: 30,
+      width: 20, height: 20, toJSON: () => ({}),
+    });
+    const ups: number[] = [];
+    const onUp = (event: MouseEvent) => ups.push(event.clientX);
+    window.addEventListener("mouseup", onUp);
+    vi.mocked(recordWindowFrames).mockImplementationOnce(() =>
+      phase === "ready"
+        ? Object.assign(Promise.resolve(0), { ready: Promise.reject(new Error("ready failed")) })
+        : Object.assign(Promise.reject(new Error("final failed")), { ready: Promise.resolve() })
+    );
+
+    try {
+      const result = await execute("ui.input.drag", {
+        from: ADDR,
+        dx: 100,
+        recordDir: "/tmp/drag-failed-recording",
+      }, {});
+      expect(result.data).toMatchObject({
+        dragged: true,
+        recording: {
+          status: "failed",
+          dir: "/tmp/drag-failed-recording",
+          requestedFrames: 120,
+          mode: "realtime",
+        },
+      });
+      expect((result.data as { recording: { reason?: string } }).recording.reason).toContain("failed");
+      expect(ups).toEqual([120]);
+    } finally {
+      window.removeEventListener("mouseup", onUp);
+    }
   });
 
   it("단계 캡처는 기준·각 이동·놓은 뒤를 외부 타이머 없이 순서대로 저장한다", async () => {
@@ -269,7 +366,13 @@ describe("ui.input.drag — 실시간 재현 표면", () => {
       "/tmp/drag-steps/f0004.png",
     ]);
     expect(result.data).toMatchObject({
-      recording: { dir: "/tmp/drag-steps", frames: 5, mode: "steps" },
+      recording: {
+        status: "complete",
+        dir: "/tmp/drag-steps",
+        requestedFrames: 5,
+        frames: 5,
+        mode: "steps",
+      },
     });
     mockedInvoke.mockReset();
     mockedInvoke.mockResolvedValue({});
@@ -313,6 +416,108 @@ describe("ui.input.drag — 실시간 재현 표면", () => {
     expect(seenBySnapshot).toEqual([0, 1, 2, 2]);
     mockedInvoke.mockReset();
     mockedInvoke.mockResolvedValue({});
+  });
+
+  it.each(["snapshot", "write"] as const)("단계 %s 실패 뒤에도 pointer sequence와 mouseup을 완결한다", async (failure) => {
+    mountNode(`<div data-node="btn">drag</div>`);
+    const node = document.querySelector<HTMLElement>("[data-node=btn]")!;
+    vi.spyOn(node, "getBoundingClientRect").mockReturnValue({
+      x: 10, y: 10, left: 10, top: 10, right: 30, bottom: 30,
+      width: 20, height: 20, toJSON: () => ({}),
+    });
+    const mockedInvoke = vi.mocked(frameworkInvoke);
+    mockedInvoke.mockImplementation(async (command) => {
+      if (command === "plugin:webview-capture|snapshot_region") {
+        if (failure === "snapshot") throw new Error("snapshot failed");
+        return "cG5n";
+      }
+      if (command === "write_file_base64" && failure === "write") {
+        throw new Error("write failed");
+      }
+      return undefined;
+    });
+    const ups: number[] = [];
+    const onUp = (event: MouseEvent) => ups.push(event.clientX);
+    window.addEventListener("mouseup", onUp);
+
+    try {
+      const result = await execute("ui.input.drag", {
+        from: ADDR,
+        dx: 100,
+        recordDir: `/tmp/drag-${failure}-failure`,
+        captureSteps: true,
+      }, {});
+      expect(result.data).toMatchObject({
+        dragged: true,
+        recording: {
+          status: "failed",
+          frames: 0,
+          requestedFrames: 4,
+          mode: "steps",
+        },
+      });
+      expect(ups).toEqual([120]);
+    } finally {
+      window.removeEventListener("mouseup", onUp);
+      mockedInvoke.mockReset();
+      mockedInvoke.mockResolvedValue({});
+    }
+  });
+
+  it("단계 캡처는 decoded PNG 누적 상한을 write 전에 판정하고 드래그는 완결한다", async () => {
+    mountNode(`<div data-node="btn">drag</div>`);
+    const node = document.querySelector<HTMLElement>("[data-node=btn]")!;
+    vi.spyOn(node, "getBoundingClientRect").mockReturnValue({
+      x: 10, y: 10, left: 10, top: 10, right: 30, bottom: 30,
+      width: 20, height: 20, toJSON: () => ({}),
+    });
+    const mockedInvoke = vi.mocked(frameworkInvoke);
+    mockedInvoke.mockImplementation(async (command) =>
+      command === "plugin:webview-capture|snapshot_region" ? "cG5n" : undefined
+    );
+    const ups: number[] = [];
+    const onUp = (event: MouseEvent) => ups.push(event.clientX);
+    window.addEventListener("mouseup", onUp);
+
+    try {
+      const result = await execute("ui.input.drag", {
+        from: ADDR,
+        dx: 100,
+        recordDir: "/tmp/drag-budget-failure",
+        captureSteps: true,
+        recordMaxBytes: 4,
+      }, {});
+      const writes = mockedInvoke.mock.calls.filter(([command]) => command === "write_file_base64");
+      expect(writes).toHaveLength(1);
+      expect((writes[0][1] as { path: string }).path).toBe("/tmp/drag-budget-failure/f0000.png");
+      expect(result.data).toMatchObject({
+        dragged: true,
+        recording: {
+          status: "failed",
+          frames: 1,
+          requestedFrames: 4,
+          mode: "steps",
+        },
+      });
+      expect((result.data as { recording: { reason?: string } }).recording.reason).toContain("recordMaxBytes");
+      expect(ups).toEqual([120]);
+    } finally {
+      window.removeEventListener("mouseup", onUp);
+      mockedInvoke.mockReset();
+      mockedInvoke.mockResolvedValue({});
+    }
+  });
+
+  it.each([0, 1.5, 1_073_741_825])("유효하지 않은 recordMaxBytes=%s를 거절한다", async (recordMaxBytes) => {
+    mountNode(`<div data-node="btn">drag</div>`);
+    const result = await execute("ui.input.drag", {
+      from: ADDR,
+      dx: 100,
+      recordDir: "/tmp/drag-invalid-budget",
+      recordMaxBytes,
+    }, {});
+    expect(result).toMatchObject({ ok: false, code: "INVALID_PARAMS" });
+    expect(recordWindowFrames).not.toHaveBeenCalled();
   });
 
   it("비전면에서 rAF가 멈춰도 throttle되는 timer 없이 단계 캡처를 끝낸다", async () => {
@@ -488,6 +693,7 @@ describe("ui.input.click — 합성 이벤트가 Shadow DOM 경계를 넘는다(
     expect(spec?.params.recordFrames).toBeDefined();
     expect(spec?.params.recordIntervalMs).toBeDefined();
     expect(spec?.params.recordLeadMs).toBeDefined();
+    expect(spec?.params.recordMaxBytes).toBeDefined();
     expect(spec?.params.traceAddresses).toBeDefined();
     expect(spec?.params.traceFrames).toBeUndefined();
   });
@@ -510,6 +716,7 @@ describe("ui.input.click — 합성 이벤트가 Shadow DOM 경계를 넘는다(
       recordFrames: 9,
       recordIntervalMs: 16,
       recordLeadMs: 0,
+      recordMaxBytes: 4096,
     }, {});
 
     expect(order).toEqual(["record", "click"]);
@@ -517,14 +724,95 @@ describe("ui.input.click — 합성 이벤트가 Shadow DOM 경계를 넘는다(
       dir: "/tmp/click-transition",
       frames: 9,
       intervalMs: 16,
+      maxBytes: 4096,
       onFrame: expect.any(Function),
     });
     expect(result.data).toMatchObject({
       clicked: true,
-      recording: { dir: "/tmp/click-transition", frames: 9, mode: "realtime" },
+      recording: {
+        status: "complete",
+        dir: "/tmp/click-transition",
+        requestedFrames: 9,
+        frames: 9,
+        mode: "realtime",
+      },
     });
     mockedInvoke.mockReset();
     mockedInvoke.mockResolvedValue({});
+  });
+
+  it("첫 저장 프레임 준비 전에는 click 자극을 보내지 않는다", async () => {
+    mountNode(`<button data-node="btn">tab</button>`);
+    const node = document.querySelector<HTMLElement>("[data-node=btn]")!;
+    const clicks: string[] = [];
+    node.addEventListener("click", () => clicks.push("click"));
+    let releaseReady!: () => void;
+    vi.mocked(recordWindowFrames).mockImplementationOnce(() =>
+      Object.assign(Promise.resolve(1), {
+        ready: new Promise<void>((resolve) => { releaseReady = resolve; }),
+      })
+    );
+
+    const executing = execute("ui.input.click", {
+      address: ADDR,
+      recordDir: "/tmp/click-baseline",
+    }, {});
+    await Promise.resolve();
+    expect(clicks).toEqual([]);
+    releaseReady();
+    const result = await executing;
+
+    expect(clicks).toEqual(["click"]);
+    expect(result.data).toMatchObject({ clicked: true, recording: { status: "complete" } });
+  });
+
+  it("녹화를 요청하지 않아도 관측 상태를 명시한다", async () => {
+    mountNode(`<button data-node="btn">tab</button>`);
+    const result = await execute("ui.input.click", { address: ADDR }, {});
+    expect(result.data).toMatchObject({
+      clicked: true,
+      recording: { status: "not-requested", mode: "realtime" },
+    });
+  });
+
+  it.each(["ready", "final"] as const)("녹화 %s 실패가 실제 click sequence를 막지 않는다", async (phase) => {
+    mountNode(`<button data-node="btn">tab</button>`);
+    const node = document.querySelector<HTMLElement>("[data-node=btn]")!;
+    const clicks: string[] = [];
+    node.addEventListener("click", () => clicks.push("click"));
+    vi.mocked(recordWindowFrames).mockImplementationOnce(() =>
+      phase === "ready"
+        ? Object.assign(Promise.resolve(0), { ready: Promise.reject(new Error("ready failed")) })
+        : Object.assign(Promise.reject(new Error("final failed")), { ready: Promise.resolve() })
+    );
+
+    const result = await execute("ui.input.click", {
+      address: ADDR,
+      recordDir: "/tmp/click-failed-recording",
+    }, {});
+
+    expect(clicks).toEqual(["click"]);
+    expect(result.data).toMatchObject({
+      clicked: true,
+      recording: {
+        status: "failed",
+        dir: "/tmp/click-failed-recording",
+        requestedFrames: 40,
+        mode: "realtime",
+      },
+    });
+    expect((result.data as { recording: { reason?: string } }).recording.reason).toContain("failed");
+  });
+
+  it.each([0, 1.5, 1_073_741_825])("유효하지 않은 recordMaxBytes=%s를 거절한다", async (recordMaxBytes) => {
+    mountNode(`<button data-node="btn">tab</button>`);
+    const result = await execute("ui.input.click", {
+      address: ADDR,
+      recordDir: "/tmp/click-invalid-budget",
+      recordMaxBytes,
+    }, {});
+    expect(result).toMatchObject({ ok: false, code: "INVALID_PARAMS" });
+    expect(recordWindowFrames).not.toHaveBeenCalled();
   });
 
   it("녹화 프레임 사건과 같은 시계에서 공개 DOM 좌표·animation clock의 유한 trace를 반환한다", async () => {
@@ -550,6 +838,37 @@ describe("ui.input.click — 합성 이벤트가 Shadow DOM 경계를 넘는다(
     const result = await executing;
     expect(result.data).toMatchObject({
       clicked: true,
+      recording: { status: "complete", frames: 2 },
+      trace: {
+        frames: 2,
+        samples: [
+          { captureFrame: 0, nodes: [{ address: ADDR }] },
+          { captureFrame: 1, nodes: [{ address: ADDR }] },
+        ],
+      },
+    });
+  });
+
+  it("최종 녹화 실패에도 저장 성공 frame과 DOM trace 표본은 1:1로 남긴다", async () => {
+    mountNode(`<button data-node="btn">tab</button>`);
+    vi.mocked(recordWindowFrames).mockImplementationOnce((request) => {
+      request.onFrame?.(0);
+      request.onFrame?.(1);
+      return Object.assign(Promise.reject(new Error("record tail failed")), {
+        ready: Promise.resolve(),
+      });
+    });
+
+    const result = await execute("ui.input.click", {
+      address: ADDR,
+      recordDir: "/tmp/click-trace-failed-tail",
+      recordFrames: 3,
+      traceAddresses: [ADDR],
+    }, {});
+
+    expect(result.data).toMatchObject({
+      clicked: true,
+      recording: { status: "failed", requestedFrames: 3, frames: 2 },
       trace: {
         frames: 2,
         samples: [
