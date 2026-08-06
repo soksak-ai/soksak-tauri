@@ -89,6 +89,21 @@ impl PhysicalRect {
 }
 
 #[cfg(target_os = "macos")]
+const PHYSICAL_ROUNDING_TOLERANCE: f64 = 0.5;
+
+#[cfg(target_os = "macos")]
+fn physical_rect_matches_rounding(actual: PhysicalRect, expected: PhysicalRect) -> bool {
+    [
+        actual.x - expected.x,
+        actual.y - expected.y,
+        actual.w - expected.w,
+        actual.h - expected.h,
+    ]
+    .into_iter()
+    .all(|delta| delta.is_finite() && delta.abs() <= PHYSICAL_ROUNDING_TOLERANCE)
+}
+
+#[cfg(target_os = "macos")]
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct CompositionTarget {
     titlebar_css: PhysicalRect,
@@ -1044,6 +1059,49 @@ unsafe fn apply_registered_owner(label: &str) -> Result<(), String> {
     apply_owner_now(&owner, target, true)
 }
 
+/// Read the AppKit geometry that survived the completed display transaction. This is deliberately
+/// observation-only: a stale `last_apply_ok` proves a past mutation, while startup presentation
+/// requires the live buttons and owner hierarchy to still hold the declared target.
+#[cfg(target_os = "macos")]
+unsafe fn verify_owner_target_hold(
+    owner: &TitlebarCompositionDrawOwner,
+    target: CompositionTarget,
+) -> Result<(), String> {
+    let window = owner
+        .window()
+        .ok_or_else(|| format!("titlebar draw owner is detached: {}", owner.ivars().label))?;
+    let viewport = window
+        .contentView()
+        .ok_or_else(|| "native window does not expose a content viewport".to_string())?;
+    let buttons = traffic_light_buttons(&window)?;
+    let parent = traffic_light_parent(&buttons)?;
+    let button_views: [&NSView; 3] = [&buttons[0], &buttons[1], &buttons[2]];
+    if draw_owner_count(&parent) != 1 || !owner_below_all_buttons(&parent, owner, button_views) {
+        return Err(
+            "startup titlebar paint-owner hierarchy did not hold display commit".to_string(),
+        );
+    }
+    let css_to_physical_scale = window.backingScaleFactor() * target.window_zoom;
+    for (index, button) in button_views.into_iter().enumerate() {
+        let actual = physical_rect_in_viewport(button, &viewport);
+        let expected =
+            declared_button_target_rect(button, &viewport, target, index, css_to_physical_scale)
+                .ok_or_else(|| {
+                    format!(
+                        "startup titlebar declared button geometry is invalid: {}[{index}]",
+                        owner.ivars().label,
+                    )
+                })?;
+        if !physical_rect_matches_rounding(actual, expected) {
+            return Err(format!(
+                "startup titlebar button geometry did not hold display commit: {}[{index}] actual={actual:?} expected={expected:?}",
+                owner.ivars().label,
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Validate the renderer's exact owner/sequence receipt, restore the committed target, and flush
 /// AppKit layout/display before the startup gate is allowed to reveal the window.
 #[cfg(target_os = "macos")]
@@ -1088,6 +1146,7 @@ pub(crate) unsafe fn prepare_startup_presentation(
         viewport.setNeedsDisplay(true);
     }
     window.displayIfNeeded();
+    verify_owner_target_hold(&owner, target)?;
     if ivars.target_sequence.get() != actual_sequence
         || ivars.applied_target_sequence.get() != actual_sequence
         || ivars.applying.get()
@@ -1402,6 +1461,19 @@ mod tests {
             center_rect_on_declared_titlebar(horizontal_projection, titlebar_css, 0.0),
             None,
         );
+    }
+
+    #[test]
+    fn held_geometry_accepts_only_physical_pixel_rounding() {
+        let expected = PhysicalRect::new(24.0, 31.0, 28.0, 28.0);
+        assert!(physical_rect_matches_rounding(
+            PhysicalRect::new(24.5, 30.5, 28.5, 27.5),
+            expected,
+        ));
+        assert!(!physical_rect_matches_rounding(
+            PhysicalRect::new(24.0, 31.501, 28.0, 28.0),
+            expected,
+        ));
     }
 
     #[test]
@@ -1757,6 +1829,46 @@ mod tests {
             resize.contains("apply_owner_now(&owner, target, true)"),
             "the ordered AppKit resize transaction must repair the same paint-owner hierarchy",
         );
+    }
+
+    #[test]
+    fn startup_display_commit_requires_a_read_only_held_geometry_sample() {
+        let source = production_source();
+        let startup = source_between(
+            source,
+            "pub(crate) unsafe fn prepare_startup_presentation(",
+            "unsafe fn install_draw_owner(",
+        );
+        let held_read = source_between(
+            source,
+            "unsafe fn verify_owner_target_hold(",
+            "pub(crate) unsafe fn prepare_startup_presentation(",
+        );
+
+        let display = startup
+            .find("window.displayIfNeeded()")
+            .expect("startup display commit");
+        let verify = startup
+            .find("verify_owner_target_hold(&owner, target)?")
+            .expect("read-only held geometry sample");
+        assert!(
+            display < verify,
+            "the startup receipt must sample the actual AppKit geometry after the display commit",
+        );
+        for forbidden in [
+            "setFrame",
+            "setFrameOrigin",
+            "setNeedsDisplay",
+            "addSubview",
+            "removeFromSuperview",
+            "apply_owner_now",
+            "apply_owner_body",
+        ] {
+            assert!(
+                !held_read.contains(forbidden),
+                "the held sample repaired instead of observing native state: {forbidden}",
+            );
+        }
     }
 
     #[test]
