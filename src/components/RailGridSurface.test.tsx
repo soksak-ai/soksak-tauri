@@ -39,7 +39,7 @@ describe("RailGridSurface", () => {
     act(() => root.unmount());
   });
 
-  it("retimes pane and persistent rail animations from one transaction epoch", () => {
+  it("retimes pane and persistent rail animations from the document time origin", () => {
     const host = document.createElement("div");
     document.body.appendChild(host);
     const root = createRoot(host);
@@ -50,13 +50,14 @@ describe("RailGridSurface", () => {
       configurable: true,
       value: getAnimations,
     });
-    vi.spyOn(Date, "now").mockReturnValue(1_000);
+    vi.spyOn(performance, "timeOrigin", "get").mockReturnValue(1_000);
+    vi.spyOn(Date, "now").mockReturnValue(9_999);
 
     act(() => {
       root.render(
         <RailGridSurface
           traveling
-          startAtUnixMs={1_100}
+          startAtUnixMs={1_125.5}
           railPlane={<div className="sidebar flip-move" />}
         >
           <div className="pane flip-move" />
@@ -65,8 +66,9 @@ describe("RailGridSurface", () => {
     });
 
     expect(getAnimations).toHaveBeenCalledWith({ subtree: true });
-    expect(paneAnimation.startTime).toEqual(expect.any(Number));
+    expect(paneAnimation.startTime).toBe(125.5);
     expect(railAnimation.startTime).toBe(paneAnimation.startTime);
+    expect(Date.now).not.toHaveBeenCalled();
     act(() => root.unmount());
   });
 });
