@@ -499,6 +499,16 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(firstBarrier).toBeLessThan(urlbarRead);
   });
 
+  it("closes the finite native presentation trace before human PNG review", () => {
+    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    const flow = source.split("const recordingOutcome = await runPlannedRecordingAction")[1]
+      ?.split("frameCount += files.length")[0] ?? "";
+    expect(flow.indexOf("implementation.presentationTrace.readCommand")).toBeGreaterThan(-1);
+    expect(flow.indexOf("reviewRecordingOutcome")).toBeGreaterThan(-1);
+    expect(flow.indexOf("implementation.presentationTrace.readCommand"))
+      .toBeLessThan(flow.indexOf("reviewRecordingOutcome"));
+  });
+
   it("hostile resize waits for child slot native commits before final composition judgment", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
     expect(source).toContain('rpc("webview.pane.composition.wait"');
