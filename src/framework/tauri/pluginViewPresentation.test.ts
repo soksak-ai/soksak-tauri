@@ -35,6 +35,16 @@ describe("Tauri plugin renderer RPC surface", () => {
     expect(isPluginViewCallExposed("webview.open")).toBe(true);
   });
 
+  it("선언된 sidecar handle의 open/send/close만 child RPC로 노출한다", () => {
+    expect(isPluginViewCallExposed("sidecar.open")).toBe(true);
+    expect(isPluginViewCallExposed("sidecar.send")).toBe(true);
+    expect(isPluginViewCallExposed("sidecar.close")).toBe(true);
+    expect(isPluginViewCallExposed("sidecar.internal")).toBe(false);
+    const renderer = readFileSync(resolve(import.meta.dirname, "pluginViewRenderer.ts"), "utf8");
+    expect(renderer).toContain("if (init.sidecarAvailable)");
+    expect(renderer).toContain('subscribe("sidecar.on"');
+  });
+
   it("최종 합성 배리어는 child 측정을 사건으로 요청한 뒤 native commit을 기다린다", () => {
     const source = readFileSync(resolve(import.meta.dirname, "pluginViewPresentation.ts"), "utf8");
     const barrier = source.split("export async function awaitPluginViewComposition")[1] ?? "";

@@ -26,6 +26,7 @@ import {
 import { PluginViewSlotRegistry } from "./pluginViewSlots";
 import { PluginViewReadiness } from "./pluginViewReadiness";
 import { PluginViewMemberOwnership } from "./pluginViewMemberOwnership";
+import { PluginViewSidecars } from "./pluginViewSidecars";
 
 interface DisposableLike { dispose(): void }
 
@@ -48,6 +49,7 @@ interface PresentedState {
   disposed: boolean;
   visible: boolean;
   markReady(): void;
+  sidecars: PluginViewSidecars;
 }
 
 const state = moduleState("framework/tauri#pluginViewPresentation", () => ({
@@ -262,6 +264,7 @@ const CALL_PATHS = new Set([
   "webview.stop", "webview.devtools", "webview.eval", "webview.sendInput",
   "webview.wheel", "webview.captureFull", "webview.typeText", "webview.list", "webview.close",
   "data.kv.get", "data.kv.set", "data.kv.delete", "data.kv.keys",
+  "sidecar.open", "sidecar.send", "sidecar.close",
   "bus.emit",
   "context.setBadge", "context.setStatus", "context.setTitle", "context.setIcon",
   "context.setRestoreState",
@@ -273,6 +276,7 @@ export function isPluginViewCallExposed(path: string): boolean {
 
 const SUBSCRIBE_PATHS = new Set([
   "events.on", "webview.on", "data.kv.watch", "bus.on", "settings.onChange",
+  "sidecar.on",
   "context.onVisibilityChange",
 ]);
 
@@ -377,6 +381,12 @@ async function handleCall(view: PresentedState, request: PluginViewRpcRequest): 
         payload,
       });
     };
+    if (request.path === "sidecar.on") {
+      const [handle, eventName] = request.args as [string, string];
+      const disposable = view.sidecars.subscribe(handle, eventName, callback);
+      view.subscriptions.set(request.subscription, disposable);
+      return null;
+    }
     const root = request.path.startsWith("context.")
       ? { context: view.context }
       : view.app;
@@ -392,6 +402,18 @@ async function handleCall(view: PresentedState, request: PluginViewRpcRequest): 
   if (request.path === "webview.open") {
     const [label, options] = request.args as [string, Record<string, unknown>];
     await openAndGroup(view, label, options);
+    return null;
+  }
+  if (request.path === "sidecar.open") {
+    if (!view.app.sidecar) throw new Error("sidecar capability가 없습니다");
+    return await view.sidecars.open(view.app.sidecar, String(request.args[0] ?? ""));
+  }
+  if (request.path === "sidecar.send") {
+    const [handle, message] = request.args as [string, Record<string, unknown>];
+    return await view.sidecars.send(handle, message);
+  }
+  if (request.path === "sidecar.close") {
+    await view.sidecars.close(String(request.args[0] ?? ""));
     return null;
   }
   const root = request.path.startsWith("context.")
@@ -418,6 +440,7 @@ async function createPresentedView(
     projections: new Map(),
     subscriptions: new Map(), unlisten: [], observer: null!, lightingObserver: null!, lightingAlpha: -1, grouped: false,
     disposed: false, visible: input.context.isVisible(), markReady,
+    sidecars: new PluginViewSidecars(),
   };
   input.container.setAttribute(TAURI_PANE_RENDERER_ATTR, renderer);
   state.views.set(pane, view);
@@ -437,6 +460,7 @@ async function createPresentedView(
       locale: app.locale(),
       settings: app.settings.all(),
       project: app.project.current(),
+      sidecarAvailable: !!app.sidecar,
       webviewCapabilities: app.webview?.capabilities ?? null,
       context: {
         projectId: input.context.projectId, root: input.context.root,
@@ -510,6 +534,7 @@ function disposeView(view: PresentedState): void {
   for (const subscription of view.subscriptions.values()) subscription.dispose();
   view.subscriptions.clear();
   for (const off of view.unlisten.splice(0)) void off();
+  void view.sidecars.dispose().catch(() => {});
   void emitTo(view.renderer, event(view.renderer, "shutdown"), null).catch(() => {});
   for (const label of view.members) {
     if (state.memberOwnership.release(label, view.renderer))

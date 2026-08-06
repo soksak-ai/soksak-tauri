@@ -156,6 +156,19 @@ await listen<PluginViewInit>(event("init"), async ({ payload: init }) => {
       watch: (cb: (value: unknown) => void) => subscribe("data.kv.watch", [], cb),
     } },
   };
+  if (init.sidecarAvailable) {
+    app.sidecar = {
+      open: async (name: string) => {
+        const handle = await call("sidecar.open", name) as string;
+        return {
+          send: (message: Record<string, unknown>) => call("sidecar.send", handle, message),
+          on: (eventName: string, cb: (value: unknown) => void) =>
+            subscribe("sidecar.on", [handle, eventName], cb),
+          close: () => call("sidecar.close", handle),
+        };
+      },
+    };
+  }
   if (init.webviewCapabilities && init.label) {
     const asyncMethod = (name: string) => (...args: unknown[]) => call(`webview.${name}`, ...args);
     app.webview = {

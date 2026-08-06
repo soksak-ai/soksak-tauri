@@ -748,6 +748,11 @@ public plugin API. In particular, `windowLabel()` returns the parent workspace w
 bus events emitted by the child therefore join the main command registry in the same window scope.
 Per-renderer module globals are not a view-lifetime or command-target discovery boundary.
 
+The same rule applies to a manifest-declared `sidecar` capability. A pane renderer receives only an
+opaque parent-owned handle address and uses `open`, `send`, `on`, and `close` over RPC. Handles and
+event subscriptions belong to the presentation lifetime and are reclaimed when the pane ends; the
+child never loads an arbitrary module itself.
+
 `webview.composition` exposes not only DOM anchors and actual native frames, but also each label's slot
 rect, last applied rect, visibility and pending-sync state. The browser product plugin does not
 redeclare composition state as `surface.stats`.

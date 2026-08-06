@@ -22,6 +22,7 @@ export interface PluginViewInit {
   locale: string;
   settings: Record<string, unknown>;
   project: { id: string; root: string | null } | null;
+  sidecarAvailable: boolean;
   webviewCapabilities: Record<string, boolean> | null;
   context: {
     projectId: string;
