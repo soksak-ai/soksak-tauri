@@ -764,6 +764,8 @@ pub fn run() {
             webview::webview_pane_member_bounds,
             webview::webview_pane_transition_prepare,
             webview::webview_pane_hosts,
+            webview::webview_presentation_trace_arm,
+            webview::webview_presentation_trace_close,
             webview::webview_close,
             webview::webview_divider_highlight,
             webview::webview_emit_native,

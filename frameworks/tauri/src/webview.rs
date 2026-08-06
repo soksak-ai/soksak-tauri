@@ -1780,6 +1780,30 @@ pub fn webview_pane_hosts() -> serde_json::Value {
     { serde_json::json!([]) }
 }
 
+/// Arms one finite, display-synchronized observation transaction for pane-owned native surfaces.
+/// The explicit owner map is the public identity boundary; the adapter never parses pane names to
+/// recover application view ids.
+#[tauri::command]
+pub async fn webview_presentation_trace_arm(
+    app: AppHandle,
+    window: tauri::Window,
+    trace_id: String,
+    owners: Vec<presentation_trace::PresentationTraceOwner>,
+    max_events: Option<usize>,
+) -> Result<serde_json::Value, String> {
+    presentation_trace::arm(app, window.label().to_owned(), trace_id, owners, max_events).await
+}
+
+/// Closes the finite display trace, invalidates its native display link, and returns the immutable
+/// presentation-event ledger. Reading never keeps the producer alive.
+#[tauri::command]
+pub async fn webview_presentation_trace_close(
+    app: AppHandle,
+    trace_id: String,
+) -> Result<serde_json::Value, String> {
+    presentation_trace::close(app, trace_id).await
+}
+
 // hide 를 거친 child 라벨 — show 시 재부착(뷰어빌리티 기상)이 필요한 대상. webview_close 가 지운다.
 // 숨김의 단일 경로는 webview_visible이다. 좌표 명령은 이 장부를 건드리지 않는다.
 #[cfg(target_os = "macos")]

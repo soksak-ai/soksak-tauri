@@ -75,6 +75,7 @@ fn pane_presentation_trace_is_a_finite_native_display_link_contract() {
     let webview = include_str!("../webview.rs");
     let commands = include_str!("../lib.rs");
     let layer = include_str!("layer.rs");
+    let trace = include_str!("presentation_trace.rs");
 
     assert!(webview.contains("mod presentation_trace;"));
     assert!(webview.contains("pub async fn webview_presentation_trace_arm"));
@@ -82,13 +83,13 @@ fn pane_presentation_trace_is_a_finite_native_display_link_contract() {
     assert!(commands.contains("webview::webview_presentation_trace_arm"));
     assert!(commands.contains("webview::webview_presentation_trace_close"));
 
-    let producer = webview
-        .split_once("mod presentation_trace;")
-        .expect("native presentation producer module is declared")
-        .1;
-    assert!(!producer.contains("requestAnimationFrame"));
-    assert!(!producer.contains("setInterval"));
-    assert!(!producer.contains("window.capture"));
+    assert!(trace.contains("displayLinkWithTarget_selector"));
+    assert!(trace.contains("addToRunLoop_forMode"));
+    assert!(trace.contains("link.timestamp()"));
+    assert!(trace.contains("link.invalidate()"));
+    assert!(!trace.contains("requestAnimationFrame"));
+    assert!(!trace.contains("setInterval"));
+    assert!(!trace.contains("window.capture"));
     assert!(layer.contains("presentationLayer"));
 }
 
