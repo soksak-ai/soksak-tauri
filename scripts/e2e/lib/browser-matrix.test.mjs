@@ -381,17 +381,18 @@ describe("브라우저 구현 행렬", () => {
       surfaceFrame: { x, y: 60, w: 460, h: 420 },
     });
     const trace = mapB04PresentationSamples({
-      events: [event(1_001, 110), event(1_011, 270), event(1_019, 430)],
+      events: [event(1_001, 110), event(1_099, 270), event(1_101, 430)],
       domSamples: [
         domSample(0, 900, "initial", null, null, 10, 80, 110),
         domSample(1, 1_010, "layout-dom-commit", "tx", 1_010, 700, 250, 270),
         // 실제 rAF callback에서 읽은 raw rect. rail/pane을 slot 이동량으로 투영하면 안 된다.
-        domSample(2, 1_018, "presentation-frame", "tx", 1_010, 777, 333, 430),
+        domSample(2, 1_100, "presentation-frame", "tx", 1_010, 777, 333, 430),
       ],
       owner: { rendererId: "renderer", surfaceId: "surface" },
       targetViewId: "view",
       transactionId: "tx",
       domCommittedAtUnixMs: 1_010,
+      presentationStartAtUnixMs: 1_100,
       railAddress: "rail",
       paneAddress: "pane",
       slotAddress: "slot",
@@ -399,7 +400,7 @@ describe("브라우저 구현 행렬", () => {
     expect(trace.joins.map(({ trigger }) => trigger)).toEqual([
       "initial", "layout-dom-commit", "presentation-frame",
     ]);
-    expect(trace.joins.map(({ gapMs }) => gapMs)).toEqual([101, 1, 1]);
+    expect(trace.joins.map(({ gapMs }) => gapMs)).toEqual([101, 89, 1]);
     expect(trace.samples).toHaveLength(3);
     expect(trace.samples.map(({ phase }) => phase)).toEqual(["prepared", "presenting", "committed"]);
     expect(trace.samples[2]).toMatchObject({
@@ -484,6 +485,7 @@ describe("브라우저 구현 행렬", () => {
       targetViewId: "view-left",
       transactionId: "tx",
       domCommittedAtUnixMs: 1_010,
+      presentationStartAtUnixMs: 1_015,
       railAddress: "rail",
       paneAddress: "pane-left",
       slotAddress: "slot-left",
@@ -548,6 +550,7 @@ describe("브라우저 구현 행렬", () => {
       targetViewId: "view",
       transactionId: "tx",
       domCommittedAtUnixMs: 1_000,
+      presentationStartAtUnixMs: 1_000,
       railAddress: "rail",
       paneAddress: "pane",
       slotAddress: "slot",
