@@ -18,7 +18,7 @@ import { parkedStyle } from "./lib/layerPark";
 import { emitPluginEvent } from "./plugins/hooks";
 import { resolveTerminalProgram } from "./plugins/terminalEngine";
 import { startPointerOrderRepair } from "./lib/pointerOrderRepair";
-import { applyWindowZoom, isPrimaryModifier, routeZoom } from "./lib/zoomIntent";
+import { isPrimaryModifier, routeZoom } from "./lib/zoomIntent";
 import { beginLayoutMotion, endLayoutMotion } from "./lib/layoutMotion";
 import { startViewFocusSync } from "./plugins/viewFocus";
 import { bindPaneUnder } from "./lib/bindPaneUnder";
@@ -776,12 +776,6 @@ function App() {
   useEffect(() => {
     document.documentElement.style.setProperty("--app-font", appFontFamily);
   }, [appFontFamily]);
-  // 창 줌 복원 — 저장된 배율을 부팅 시 1회 적용(값 하나, 소비 전원).
-  const windowZoom = useSettings((s) => s.windowZoom);
-  useEffect(() => {
-    if (windowZoom !== 1) applyWindowZoom(windowZoom);
-  }, [windowZoom]);
-
   // 콘텐츠 뷰가 포커스를 받았다는 사실 → 그 아래 칸을 짚는다.
   //
   // **guest 안의 클릭은 호스트에 안 온다.** 콘텐츠 뷰는 별도 프로세스라 그 안의 mousedown 이

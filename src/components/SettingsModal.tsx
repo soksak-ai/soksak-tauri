@@ -223,7 +223,9 @@ export function SettingsModal({
               value={s.windowZoom}
               onChange={(e) => {
                 s.setWindowZoom(Number(e.target.value));
-                applyWindowZoom(useSettings.getState().windowZoom);
+                void applyWindowZoom(useSettings.getState().windowZoom).catch((error) => {
+                  console.error("창 줌 적용 실패:", error);
+                });
               }}
             />
           </div>

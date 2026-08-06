@@ -91,7 +91,7 @@ export function registerSettingsCatalog(): void {
       'settings.set \'{"key":"contentTabPosition","value":"left"}\'',
       'settings.set \'{"key":"iconBox","value":true}\'',
     ],
-    handler: (p) => {
+    handler: async (p) => {
       const s = useSettings.getState();
       const key = p.key as (typeof SETTING_KEYS)[number];
       const v = p.value;
@@ -167,7 +167,7 @@ export function registerSettingsCatalog(): void {
           if (typeof v !== "number" || !Number.isFinite(v))
             return bad("number(0.5~2.0 클램프)");
           s.setWindowZoom(v);
-          applyWindowZoom(useSettings.getState().windowZoom);
+          await applyWindowZoom(useSettings.getState().windowZoom);
           break;
         case "orchestratorAgent":
           if (typeof v !== "string" || !v.trim())

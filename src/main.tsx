@@ -55,6 +55,7 @@ import { startTerminalStatusBridge } from "./terminal/terminalStatus";
 import { startActivityFeed } from "./state/activityFeed";
 import { OrchestratorApp } from "./orchestrator/OrchestratorApp";
 import "./assets/fonts.css";
+import { applySavedWindowZoom } from "./lib/zoomIntent";
 
 // 터미널 spawn 옵션(cwd/셸/자동실행 명령)은 코어가 아니라 터미널 플러그인이 소유한다 —
 // 플러그인 뷰가 마운트 시 PluginViewContext(root/command)와 자기 설정(shell)으로 직접 spawn 한다.
@@ -143,6 +144,7 @@ async function boot(): Promise<void> {
     ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
       <OrchestratorApp />,
     );
+    await applySavedWindowZoom();
     await presentWindow();
     bootDone();
     return;
@@ -184,6 +186,7 @@ async function boot(): Promise<void> {
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <App />,
   );
+  await applySavedWindowZoom();
   await presentWindow();
   bootStamp("render");
   installSwapObserver(); // 교체(파킹↔등장) 관측 — 렌더 이후 문서 전체 1회

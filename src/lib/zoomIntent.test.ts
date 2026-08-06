@@ -2,8 +2,28 @@
 // 줌 인텐트 라우팅(플랜 golden-swinging-lynx §1단계) — "포커스가 범위를 정한다".
 // 뷰에 DOM 포커스가 있으면 그 뷰의 줌(뷰가 자기 관례로 응답), 없으면(프레임 선택 =
 // 크롬 클릭으로 포커스가 body) 창 전체 줌. 새 상태 없이 DOM 포커스가 곧 범위다.
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { isPrimaryModifier, routeZoom, ZOOM_STEP, clampWindowZoom } from "./zoomIntent";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const zoomNative = vi.hoisted(() => ({
+  invoke: vi.fn(),
+  emitPluginEvent: vi.fn(),
+}));
+
+vi.mock("../framework", () => ({ invoke: zoomNative.invoke }));
+vi.mock("../plugins/hooks", () => ({ emitPluginEvent: zoomNative.emitPluginEvent }));
+
+import {
+  applyWindowZoom,
+  isPrimaryModifier,
+  routeZoom,
+  ZOOM_STEP,
+  clampWindowZoom,
+} from "./zoomIntent";
+
+beforeEach(() => {
+  zoomNative.invoke.mockReset();
+  zoomNative.emitPluginEvent.mockReset();
+});
 
 afterEach(() => {
   document.body.innerHTML = "";
@@ -86,5 +106,25 @@ describe("창 줌 수치 계약", () => {
     expect(isPrimaryModifier({ metaKey: false, ctrlKey: true }, "Win32")).toBe(true);
     expect(isPrimaryModifier({ metaKey: false, ctrlKey: true }, "Linux x86_64")).toBe(true);
     expect(isPrimaryModifier({ metaKey: true, ctrlKey: false }, "Win32")).toBe(false);
+  });
+});
+
+describe("창 줌 적용 transaction", () => {
+  it("native zoom ACK 전에는 geometry 소비자에게 window.zoom을 발행하거나 완료하지 않는다", async () => {
+    let acknowledge!: () => void;
+    zoomNative.invoke.mockReturnValue(new Promise<void>((resolve) => { acknowledge = resolve; }));
+
+    const applied = applyWindowZoom(1.2) as unknown as Promise<void>;
+
+    expect(zoomNative.invoke).toHaveBeenCalledWith("webview_zoom", { factor: 1.2 });
+    expect(
+      zoomNative.emitPluginEvent,
+      "window.zoom was emitted from intent time, before the native zoom/scale truth was applied",
+    ).not.toHaveBeenCalled();
+    expect(applied, "startup cannot await a void/fire-and-forget zoom application").toBeInstanceOf(Promise);
+
+    acknowledge();
+    await applied;
+    expect(zoomNative.emitPluginEvent).toHaveBeenCalledWith("window.zoom", { factor: 1.2 });
   });
 });

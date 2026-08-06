@@ -40,15 +40,20 @@ export function stepWindowZoom(action: ZoomAction): void {
       ? 1
       : clampWindowZoom(s.windowZoom + (action === "in" ? ZOOM_STEP : -ZOOM_STEP));
   s.setWindowZoom(next);
-  applyWindowZoom(next);
+  void applyWindowZoom(next).catch((error) => {
+    console.error("창 줌 적용 실패:", error);
+  });
 }
 
-export function applyWindowZoom(factor: number): void {
-  void invoke("webview_zoom", { factor }).catch((e) =>
-    console.error("창 줌 적용 실패:", e),
-  );
+export async function applyWindowZoom(factor: number): Promise<void> {
+  await invoke("webview_zoom", { factor });
   // 웹뷰 밖 표면(CEF 엔진 등)에 방송 — 각 엔진 플러그인이 창×뷰 합성 배율을 자기 표면에 적용.
   emitPluginEvent("window.zoom", { factor });
+}
+
+/** 부트의 first-frame barrier가 저장된 단일 zoom 진실을 native에 적용 완료할 때까지 기다린다. */
+export function applySavedWindowZoom(): Promise<void> {
+  return applyWindowZoom(useSettings.getState().windowZoom);
 }
 
 const defaultDeps: ZoomDeps = {
