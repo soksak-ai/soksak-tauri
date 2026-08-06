@@ -8,38 +8,57 @@ import {
 } from "./browser-machine-judge-support.mjs";
 
 const DIRECTIONS = Object.freeze(["to-left", "to-right"]);
-const MAX_SETTLE_LATENCY_MS = 500;
-const MIN_STABLE_HOLD_MS = 250;
-const COUNTER_KEYS = Object.freeze([
+const MAX_FIRST_PRESENTED_MS = 50;
+const MAX_ACTIVE_FRAME_GAP_MS = 50;
+const MAX_CLICK_TO_SETTLED_MS = 550;
+const POST_SETTLE_HOLD_MS = 250;
+const ROUNDING_TOLERANCE_PX = 1;
+const VIOLATION_KEYS = Object.freeze([
   "replacements",
   "gaps",
   "disappearances",
   "unpresented",
-]);
-const SURFACE_KEYS = Object.freeze([
-  "viewId",
-  "surfaceId",
-  "generation",
-  "live",
-  "visible",
-  "presented",
-  "presentationRevision",
-  "presentedAtUnixMs",
+  "droppedEvents",
 ]);
 
-function inspectCounters(value, path, failures) {
-  if (!requireExactKeys(value, COUNTER_KEYS, path, failures)) return false;
+function inspectRect(value, path, failures) {
+  if (!requireExactKeys(value, ["x", "y", "w", "h"], path, failures)) return false;
   let valid = true;
-  for (const key of COUNTER_KEYS) {
-    if (!Number.isInteger(value[key]) || value[key] < 0) {
-      failures.push(`${path}.${key}=integer>=0/${displayValue(value[key])}`);
+  for (const field of ["x", "y", "w", "h"]) {
+    if (!Number.isFinite(value[field]) || ((field === "w" || field === "h") && value[field] <= 0)) {
+      failures.push(`${path}.${field}=finite${field === "w" || field === "h" ? ">0" : ""}/${displayValue(value[field])}`);
       valid = false;
     }
   }
   return valid;
 }
 
-function inspectSurfaceInventory(surfaces, owners, path, failures) {
+function inspectSurface(surface, path, failures) {
+  if (!requireExactKeys(surface, [
+    "viewId", "surfaceId", "generation", "live", "visible", "painted", "domFrame", "surfaceFrame",
+  ], path, failures)) return false;
+  if (!hasText(surface.viewId)) failures.push(`${path}.viewId=non-empty/${displayValue(surface.viewId)}`);
+  if (!hasText(surface.surfaceId)) failures.push(`${path}.surfaceId=non-empty/${displayValue(surface.surfaceId)}`);
+  if (!Number.isInteger(surface.generation) || surface.generation < 1) {
+    failures.push(`${path}.generation=integer>=1/${displayValue(surface.generation)}`);
+  }
+  for (const field of ["live", "visible", "painted"]) {
+    if (surface[field] !== true) failures.push(`${path}.${field}=true/${displayValue(surface[field])}`);
+  }
+  const domValid = inspectRect(surface.domFrame, `${path}.domFrame`, failures);
+  const surfaceValid = inspectRect(surface.surfaceFrame, `${path}.surfaceFrame`, failures);
+  if (domValid && surfaceValid) {
+    for (const field of ["x", "y", "w", "h"]) {
+      const delta = Math.abs(surface.domFrame[field] - surface.surfaceFrame[field]);
+      if (delta > ROUNDING_TOLERANCE_PX) {
+        failures.push(`${path}.${field}.delta<=${ROUNDING_TOLERANCE_PX}/${delta}`);
+      }
+    }
+  }
+  return true;
+}
+
+function inspectInventory(surfaces, owners, path, failures) {
   if (!Array.isArray(surfaces)) {
     failures.push(`${path}=array/${displayValue(surfaces)}`);
     return null;
@@ -47,198 +66,189 @@ function inspectSurfaceInventory(surfaces, owners, path, failures) {
   const byOwner = new Map();
   surfaces.forEach((surface, index) => {
     const at = `${path}[${index}]`;
-    if (!requireExactKeys(surface, SURFACE_KEYS, at, failures)) return;
-    if (!hasText(surface.viewId) || byOwner.has(surface.viewId)) {
-      failures.push(`${at}.viewId=unique-non-empty/${displayValue(surface.viewId)}`);
-    } else {
-      byOwner.set(surface.viewId, surface);
-    }
-    if (!hasText(surface.surfaceId)) failures.push(`${at}.surfaceId=non-empty/${displayValue(surface.surfaceId)}`);
-    if (!Number.isInteger(surface.generation) || surface.generation < 1) {
-      failures.push(`${at}.generation=integer>=1/${displayValue(surface.generation)}`);
-    }
-    for (const field of ["live", "visible", "presented"]) {
-      if (surface[field] !== true) failures.push(`${at}.${field}=true/${displayValue(surface[field])}`);
-    }
-    if (!Number.isInteger(surface.presentationRevision) || surface.presentationRevision < 1) {
-      failures.push(`${at}.presentationRevision=integer>=1/${displayValue(surface.presentationRevision)}`);
-    }
-    if (!Number.isFinite(surface.presentedAtUnixMs)) {
-      failures.push(`${at}.presentedAtUnixMs=finite/${displayValue(surface.presentedAtUnixMs)}`);
-    }
+    if (!inspectSurface(surface, at, failures)) return;
+    if (byOwner.has(surface.viewId)) failures.push(`${at}.viewId=unique/${surface.viewId}`);
+    else byOwner.set(surface.viewId, surface);
   });
-  const actualOwners = [...byOwner.keys()].sort();
-  if (actualOwners.join("\u0000") !== owners.join("\u0000")) {
-    failures.push(`${path}.owners=${owners.join(",")}/${actualOwners.join(",")}`);
+  const actual = [...byOwner.keys()].sort();
+  if (actual.join("\u0000") !== owners.join("\u0000")) {
+    failures.push(`${path}.owners=${owners.join(",")}/${actual.join(",")}`);
   }
   return byOwner;
 }
 
-function inventoriesMatchByOwner(actual, expected, owners) {
-  const actualByOwner = new Map(actual.map((surface) => [surface.viewId, surface]));
-  const expectedByOwner = new Map(expected.map((surface) => [surface.viewId, surface]));
-  return owners.every((owner) => (
-    JSON.stringify(actualByOwner.get(owner)) === JSON.stringify(expectedByOwner.get(owner))
-  ));
+function sameSurfaceIdentity(actual, expected, owners) {
+  return owners.every((owner) => {
+    const left = actual.get(owner);
+    const right = expected.get(owner);
+    return left && right
+      && left.surfaceId === right.surfaceId
+      && left.generation === right.generation;
+  });
+}
+
+function sameInventory(actual, expected, owners) {
+  return owners.every((owner) => JSON.stringify(actual.get(owner)) === JSON.stringify(expected.get(owner)));
 }
 
 function inspectTransition(transition, index, failures, traceIds) {
   const path = `transitions[${index}]`;
   if (!requireExactKeys(transition, ["direction", "targetViewId", "trace"], path, failures)) return;
-  if (!DIRECTIONS.includes(transition.direction)) {
-    failures.push(`${path}.direction=known/${displayValue(transition.direction)}`);
-  }
-  if (!hasText(transition.targetViewId)) {
-    failures.push(`${path}.targetViewId=non-empty/${displayValue(transition.targetViewId)}`);
-  }
+  if (!DIRECTIONS.includes(transition.direction)) failures.push(`${path}.direction=known/${displayValue(transition.direction)}`);
+  if (!hasText(transition.targetViewId)) failures.push(`${path}.targetViewId=non-empty/${displayValue(transition.targetViewId)}`);
+
   const trace = transition.trace;
   if (!requireExactKeys(trace, [
-    "traceId",
-    "closed",
-    "startedAtUnixMs",
-    "stimulusAtUnixMs",
-    "settledAtUnixMs",
-    "heldAtUnixMs",
-    "latencyBudgetMs",
-    "minimumHoldMs",
-    "ownerViewIds",
-    "countersBefore",
-    "countersAfter",
-    "samples",
-    "final",
+    "traceId", "closed", "ownerViewIds", "armedAtUnixMs", "stimulus", "layout",
+    "baselineFrameSequence", "presentationEvents", "settled", "hold", "violations",
   ], `${path}.trace`, failures)) return;
   if (!hasText(trace.traceId) || traceIds.has(trace.traceId)) {
     failures.push(`${path}.trace.traceId=unique-non-empty/${displayValue(trace.traceId)}`);
-  } else {
-    traceIds.add(trace.traceId);
-  }
+  } else traceIds.add(trace.traceId);
   if (trace.closed !== true) failures.push(`${path}.trace.closed=true/${displayValue(trace.closed)}`);
-  const times = [trace.startedAtUnixMs, trace.stimulusAtUnixMs, trace.settledAtUnixMs, trace.heldAtUnixMs];
-  if (times.some((time) => !Number.isFinite(time))
-      || !(times[0] <= times[1] && times[1] <= times[2] && times[2] <= times[3])) {
-    failures.push(`${path}.trace.times=started<=stimulus<=settled<=held/${displayValue(times)}`);
-  }
-  if (!Number.isFinite(trace.latencyBudgetMs)
-      || trace.latencyBudgetMs <= 0
-      || trace.latencyBudgetMs > MAX_SETTLE_LATENCY_MS) {
-    failures.push(`${path}.trace.latencyBudgetMs=0<value<=${MAX_SETTLE_LATENCY_MS}/${displayValue(trace.latencyBudgetMs)}`);
-  } else if (Number.isFinite(trace.stimulusAtUnixMs) && Number.isFinite(trace.settledAtUnixMs)
-      && trace.settledAtUnixMs - trace.stimulusAtUnixMs > trace.latencyBudgetMs) {
-    failures.push(`${path}.trace.settleLatency<=budget/${trace.settledAtUnixMs - trace.stimulusAtUnixMs}/${trace.latencyBudgetMs}`);
-  }
-  if (!Number.isFinite(trace.minimumHoldMs) || trace.minimumHoldMs < MIN_STABLE_HOLD_MS) {
-    failures.push(`${path}.trace.minimumHoldMs=>=${MIN_STABLE_HOLD_MS}/${displayValue(trace.minimumHoldMs)}`);
-  } else if (Number.isFinite(trace.settledAtUnixMs) && Number.isFinite(trace.heldAtUnixMs)
-      && trace.heldAtUnixMs - trace.settledAtUnixMs < trace.minimumHoldMs) {
-    failures.push(`${path}.trace.holdDuration>=minimum/${trace.heldAtUnixMs - trace.settledAtUnixMs}/${trace.minimumHoldMs}`);
-  }
-  const ownerViewIds = Array.isArray(trace.ownerViewIds) ? trace.ownerViewIds : [];
-  const owners = [...ownerViewIds].sort();
-  if (owners.length === 0
-      || owners.some((owner) => !hasText(owner))
-      || new Set(owners).size !== owners.length) {
+  if (!Number.isFinite(trace.armedAtUnixMs)) failures.push(`${path}.trace.armedAtUnixMs=finite/${displayValue(trace.armedAtUnixMs)}`);
+
+  const owners = Array.isArray(trace.ownerViewIds) ? [...trace.ownerViewIds].sort() : [];
+  if (owners.length === 0 || owners.some((owner) => !hasText(owner)) || new Set(owners).size !== owners.length) {
     failures.push(`${path}.trace.ownerViewIds=unique-non-empty/${displayValue(trace.ownerViewIds)}`);
   }
-  if (!owners.includes(transition.targetViewId)) {
-    failures.push(`${path}.targetViewId=visible-owner/${displayValue(transition.targetViewId)}`);
+  if (!owners.includes(transition.targetViewId)) failures.push(`${path}.targetViewId=owner/${displayValue(transition.targetViewId)}`);
+
+  if (requireExactKeys(trace.stimulus, ["address", "atUnixMs"], `${path}.trace.stimulus`, failures)) {
+    if (!hasText(trace.stimulus.address)) failures.push(`${path}.trace.stimulus.address=non-empty`);
+    if (!Number.isFinite(trace.stimulus.atUnixMs)) failures.push(`${path}.trace.stimulus.atUnixMs=finite/${displayValue(trace.stimulus.atUnixMs)}`);
   }
-  const beforeValid = inspectCounters(trace.countersBefore, `${path}.trace.countersBefore`, failures);
-  const afterValid = inspectCounters(trace.countersAfter, `${path}.trace.countersAfter`, failures);
-  if (beforeValid && afterValid) {
-    for (const key of COUNTER_KEYS) {
-      if (trace.countersAfter[key] !== trace.countersBefore[key]) {
-        failures.push(`${path}.trace.${key}=no-increase/${trace.countersBefore[key]}/${trace.countersAfter[key]}`);
-      }
+
+  if (requireExactKeys(trace.layout, [
+    "transactionId", "causeTraceId", "phase", "mode", "startAtUnixMs",
+    "preparedAtUnixMs", "closedAtUnixMs", "moves",
+  ], `${path}.trace.layout`, failures)) {
+    if (!hasText(trace.layout.transactionId)) failures.push(`${path}.trace.layout.transactionId=non-empty`);
+    if (trace.layout.causeTraceId !== trace.traceId) failures.push(`${path}.trace.layout.causeTraceId=traceId`);
+    if (trace.layout.phase !== "committed") failures.push(`${path}.trace.layout.phase=committed/${displayValue(trace.layout.phase)}`);
+    if (!new Set(["glide", "snap"]).has(trace.layout.mode)) failures.push(`${path}.trace.layout.mode=glide|snap/${displayValue(trace.layout.mode)}`);
+    if (!Number.isFinite(trace.layout.preparedAtUnixMs) || !Number.isFinite(trace.layout.closedAtUnixMs)
+        || trace.layout.preparedAtUnixMs > trace.layout.closedAtUnixMs) {
+      failures.push(`${path}.trace.layout.times=prepared<=closed`);
     }
+    if (trace.layout.mode === "snap" && trace.layout.startAtUnixMs !== null) {
+      failures.push(`${path}.trace.layout.startAtUnixMs=null-for-snap`);
+    }
+    if (trace.layout.mode === "glide" && (!Number.isFinite(trace.layout.startAtUnixMs)
+        || trace.layout.startAtUnixMs < trace.layout.preparedAtUnixMs
+        || trace.layout.startAtUnixMs > trace.layout.closedAtUnixMs)) {
+      failures.push(`${path}.trace.layout.startAtUnixMs=within-transaction`);
+    }
+    if (!Array.isArray(trace.layout.moves) || !trace.layout.moves.some((move) => (
+      requireExactKeys(move, ["viewId", "dx"], `${path}.trace.layout.moves[]`, failures)
+      && move.viewId === transition.targetViewId && Number.isFinite(move.dx) && Math.abs(move.dx) >= 0.5
+    ))) failures.push(`${path}.trace.layout.moves=target-non-zero`);
   }
-  if (!Array.isArray(trace.samples) || trace.samples.length < 2) {
-    failures.push(`${path}.trace.samples=at-least-2/${displayValue(trace.samples?.length)}`);
+
+  if (!Array.isArray(trace.presentationEvents) || trace.presentationEvents.length < 2) {
+    failures.push(`${path}.trace.presentationEvents=at-least-2/${displayValue(trace.presentationEvents?.length)}`);
     return;
   }
-
-  const identityByOwner = new Map();
-  const revisionByOwner = new Map();
-  const firstRevisionByOwner = new Map();
-  let lastInventory = null;
-  trace.samples.forEach((sample, sampleIndex) => {
-    const samplePath = `${path}.trace.samples[${sampleIndex}]`;
-    if (!requireExactKeys(sample, ["sequence", "sampledAtUnixMs", "surfaces"], samplePath, failures)) return;
-    if (!Number.isInteger(sample.sequence) || sample.sequence !== sampleIndex) {
-      failures.push(`${samplePath}.sequence=${sampleIndex}/${displayValue(sample.sequence)}`);
+  const eventBySequence = new Map();
+  const firstIdentity = new Map();
+  let firstGeneration = null;
+  let previousRevision = 0;
+  let previousAt = -Infinity;
+  trace.presentationEvents.forEach((event, eventIndex) => {
+    const at = `${path}.trace.presentationEvents[${eventIndex}]`;
+    if (!requireExactKeys(event, [
+      "sequence", "sourceGeneration", "presentationRevision", "presentedAtUnixMs", "surfaces",
+    ], at, failures)) return;
+    if (!Number.isInteger(event.sequence) || event.sequence !== eventIndex) failures.push(`${at}.sequence=${eventIndex}/${displayValue(event.sequence)}`);
+    if (!Number.isInteger(event.sourceGeneration) || event.sourceGeneration < 1) failures.push(`${at}.sourceGeneration=integer>=1`);
+    if (firstGeneration === null) firstGeneration = event.sourceGeneration;
+    else if (event.sourceGeneration !== firstGeneration) failures.push(`${at}.sourceGeneration=stable/${firstGeneration}/${event.sourceGeneration}`);
+    if (!Number.isInteger(event.presentationRevision) || event.presentationRevision <= previousRevision) {
+      failures.push(`${at}.presentationRevision=strict-increase/${previousRevision}/${displayValue(event.presentationRevision)}`);
     }
-    const previousTime = trace.samples[sampleIndex - 1]?.sampledAtUnixMs;
-    if (!Number.isFinite(sample.sampledAtUnixMs)
-        || sample.sampledAtUnixMs < trace.startedAtUnixMs
-        || sample.sampledAtUnixMs > trace.settledAtUnixMs
-        || (sampleIndex > 0 && !(sample.sampledAtUnixMs > previousTime))) {
-      failures.push(`${samplePath}.sampledAtUnixMs=ordered-within-trace/${displayValue(sample.sampledAtUnixMs)}`);
+    if (!Number.isFinite(event.presentedAtUnixMs) || event.presentedAtUnixMs <= previousAt) {
+      failures.push(`${at}.presentedAtUnixMs=strict-increase/${previousAt}/${displayValue(event.presentedAtUnixMs)}`);
     }
-    const inventory = inspectSurfaceInventory(sample.surfaces, owners, `${samplePath}.surfaces`, failures);
-    if (!inventory) return;
-    lastInventory = sample.surfaces;
-    for (const owner of owners) {
-      const surface = inventory.get(owner);
-      if (!surface) continue;
-      const identity = `${surface.surfaceId}/${surface.generation}`;
-      if (!identityByOwner.has(owner)) identityByOwner.set(owner, identity);
-      else if (identityByOwner.get(owner) !== identity) {
-        failures.push(`${samplePath}.${owner}.surface-identity=stable/${identityByOwner.get(owner)}/${identity}`);
-      }
-      const previousRevision = revisionByOwner.get(owner) ?? 0;
-      if (surface.presentationRevision < previousRevision) {
-        failures.push(`${samplePath}.${owner}.presentationRevision=monotonic/${previousRevision}/${surface.presentationRevision}`);
-      }
-      revisionByOwner.set(owner, surface.presentationRevision);
-      if (!firstRevisionByOwner.has(owner)) firstRevisionByOwner.set(owner, surface.presentationRevision);
-      if (Number.isFinite(surface.presentedAtUnixMs)
-          && surface.presentedAtUnixMs > sample.sampledAtUnixMs) {
-        failures.push(`${samplePath}.${owner}.presentedAtUnixMs<=sample/${surface.presentedAtUnixMs}/${sample.sampledAtUnixMs}`);
-      }
+    previousRevision = event.presentationRevision;
+    previousAt = event.presentedAtUnixMs;
+    const inventory = inspectInventory(event.surfaces, owners, `${at}.surfaces`, failures);
+    if (inventory) {
+      if (firstIdentity.size === 0) for (const [owner, surface] of inventory) firstIdentity.set(owner, surface);
+      else if (!sameSurfaceIdentity(inventory, firstIdentity, owners)) failures.push(`${at}.surface-identity=stable`);
     }
+    eventBySequence.set(event.sequence, { event, inventory });
   });
 
-  if (Number.isFinite(trace.stimulusAtUnixMs)) {
-    const firstSampleAt = trace.samples[0]?.sampledAtUnixMs;
-    const lastSampleAt = trace.samples.at(-1)?.sampledAtUnixMs;
-    if (!(firstSampleAt <= trace.stimulusAtUnixMs && lastSampleAt >= trace.stimulusAtUnixMs)) {
-      failures.push(`${path}.trace.samples=bracket-stimulus/${displayValue([firstSampleAt, trace.stimulusAtUnixMs, lastSampleAt])}`);
+  if (!Number.isInteger(trace.baselineFrameSequence) || !eventBySequence.has(trace.baselineFrameSequence)) {
+    failures.push(`${path}.trace.baselineFrameSequence=event/${displayValue(trace.baselineFrameSequence)}`);
+  }
+  const baseline = eventBySequence.get(trace.baselineFrameSequence)?.event;
+  const postClickEvents = trace.presentationEvents.filter((event) => event.presentedAtUnixMs >= trace.stimulus.atUnixMs);
+  if (!baseline || !(trace.armedAtUnixMs <= baseline.presentedAtUnixMs
+      && baseline.presentedAtUnixMs <= trace.stimulus.atUnixMs)) {
+    failures.push(`${path}.trace.baseline=armed<=baseline<=stimulus`);
+  }
+  if (postClickEvents.length === 0
+      || postClickEvents[0].presentedAtUnixMs - trace.stimulus.atUnixMs > MAX_FIRST_PRESENTED_MS) {
+    failures.push(`${path}.trace.firstPresentedLatency<=${MAX_FIRST_PRESENTED_MS}`);
+  }
+
+  if (requireExactKeys(trace.settled, ["atUnixMs", "frameSequence", "syncPending"], `${path}.trace.settled`, failures)) {
+    if (trace.settled.syncPending !== false) failures.push(`${path}.trace.settled.syncPending=false`);
+    if (!Number.isFinite(trace.settled.atUnixMs)
+        || trace.settled.atUnixMs - trace.stimulus.atUnixMs > MAX_CLICK_TO_SETTLED_MS) {
+      failures.push(`${path}.trace.settleLatency<=${MAX_CLICK_TO_SETTLED_MS}`);
+    }
+    const settledEvent = eventBySequence.get(trace.settled.frameSequence)?.event;
+    if (!settledEvent || settledEvent.presentedAtUnixMs > trace.settled.atUnixMs
+        || trace.settled.atUnixMs - settledEvent.presentedAtUnixMs > MAX_ACTIVE_FRAME_GAP_MS) {
+      failures.push(`${path}.trace.settled.frameSequence=recent-event`);
+    }
+    const active = trace.presentationEvents.filter((event) => (
+      event.presentedAtUnixMs >= trace.stimulus.atUnixMs && event.presentedAtUnixMs <= trace.settled.atUnixMs
+    ));
+    for (let activeIndex = 1; activeIndex < active.length; activeIndex += 1) {
+      const gap = active[activeIndex].presentedAtUnixMs - active[activeIndex - 1].presentedAtUnixMs;
+      if (gap > MAX_ACTIVE_FRAME_GAP_MS) failures.push(`${path}.trace.activeFrameGap<=${MAX_ACTIVE_FRAME_GAP_MS}/${gap}`);
     }
   }
 
-  if (requireExactKeys(trace.final, ["sampledAtUnixMs", "settled", "syncPending", "surfaces"], `${path}.trace.final`, failures)) {
-    if (!Number.isFinite(trace.final.sampledAtUnixMs)
-        || trace.final.sampledAtUnixMs < trace.heldAtUnixMs) {
-      failures.push(`${path}.trace.final.sampledAtUnixMs>=held/${displayValue(trace.final.sampledAtUnixMs)}/${displayValue(trace.heldAtUnixMs)}`);
+  if (requireExactKeys(trace.hold, ["startedAtUnixMs", "endedAtUnixMs", "surfaces"], `${path}.trace.hold`, failures)) {
+    if (!Number.isFinite(trace.hold.startedAtUnixMs) || !Number.isFinite(trace.hold.endedAtUnixMs)
+        || trace.hold.startedAtUnixMs < trace.settled.atUnixMs
+        || trace.hold.endedAtUnixMs - trace.hold.startedAtUnixMs < POST_SETTLE_HOLD_MS) {
+      failures.push(`${path}.trace.hold=after-settle-and>=${POST_SETTLE_HOLD_MS}ms`);
     }
-    if (trace.final.settled !== true) failures.push(`${path}.trace.final.settled=true/${displayValue(trace.final.settled)}`);
-    if (trace.final.syncPending !== false) {
-      failures.push(`${path}.trace.final.syncPending=false/${displayValue(trace.final.syncPending)}`);
+    const held = inspectInventory(trace.hold.surfaces, owners, `${path}.trace.hold.surfaces`, failures);
+    const settledInventory = eventBySequence.get(trace.settled.frameSequence)?.inventory;
+    if (held && settledInventory && !sameInventory(held, settledInventory, owners)) {
+      failures.push(`${path}.trace.hold.surfaces=settled-inventory`);
     }
-    const finalInventory = inspectSurfaceInventory(
-      trace.final.surfaces, owners, `${path}.trace.final.surfaces`, failures,
-    );
-    if (finalInventory && lastInventory
-        && !inventoriesMatchByOwner(trace.final.surfaces, lastInventory, owners)) {
-      failures.push(`${path}.trace.final.surfaces=last-sample`);
+  }
+
+  if (requireExactKeys(trace.violations, VIOLATION_KEYS, `${path}.trace.violations`, failures)) {
+    for (const key of VIOLATION_KEYS) {
+      if (trace.violations[key] !== 0) failures.push(`${path}.trace.violations.${key}=0/${displayValue(trace.violations[key])}`);
     }
-    const target = finalInventory?.get(transition.targetViewId);
-    const firstRevision = firstRevisionByOwner.get(transition.targetViewId);
-    if (target && Number.isInteger(firstRevision)
-        && target.presentationRevision <= firstRevision) {
-      failures.push(`${path}.trace.target.presentationRevision=>baseline/${target.presentationRevision}/${firstRevision}`);
-    }
-    if (target && Number.isFinite(trace.stimulusAtUnixMs)) {
-      if (!(target.presentedAtUnixMs >= trace.stimulusAtUnixMs
-          && target.presentedAtUnixMs <= trace.settledAtUnixMs)) {
-        failures.push(`${path}.trace.target.presentedAtUnixMs=within-stimulus-settle/${target.presentedAtUnixMs}`);
-      } else if (target.presentedAtUnixMs - trace.stimulusAtUnixMs > trace.latencyBudgetMs) {
-        failures.push(`${path}.trace.target.presentationLatency<=budget/${target.presentedAtUnixMs - trace.stimulusAtUnixMs}/${trace.latencyBudgetMs}`);
-      }
-    }
+  }
+
+  const ordered = [
+    trace.armedAtUnixMs,
+    baseline?.presentedAtUnixMs,
+    trace.stimulus.atUnixMs,
+    trace.layout.preparedAtUnixMs,
+    trace.layout.closedAtUnixMs,
+    trace.settled.atUnixMs,
+    trace.hold.startedAtUnixMs,
+    trace.hold.endedAtUnixMs,
+  ];
+  if (ordered.some((value) => !Number.isFinite(value))
+      || ordered.some((value, orderedIndex) => orderedIndex > 0 && value < ordered[orderedIndex - 1])) {
+    failures.push(`${path}.trace.causal-times=armed<=baseline<=stimulus<=prepared<=closed<=settled<=hold`);
   }
 }
 
-/** 녹화와 독립된 유한 presentation 원장 판정. 픽셀의 시각 품질은 visualReview가 별도로 답한다. */
+/** 실제 presentation 사건 원장만 판정한다. 녹화·PNG·stats 시점 추론은 이 입력에 들어올 수 없다. */
 export function judgeB05MachineEvidence(value) {
   if (value == null) return notRunVerdict();
   const failures = [];
@@ -252,13 +262,11 @@ export function judgeB05MachineEvidence(value) {
     const traceIds = new Set();
     value.transitions.forEach((transition, index) => inspectTransition(transition, index, failures, traceIds));
     const directions = new Set(value.transitions.map((transition) => transition?.direction));
-    for (const direction of DIRECTIONS) {
-      if (!directions.has(direction)) failures.push(`direction=${direction}=missing`);
-    }
+    for (const direction of DIRECTIONS) if (!directions.has(direction)) failures.push(`direction=${direction}=missing`);
   }
   return finishMachineVerdict(
     "B05",
     failures,
-    `${value.engine}/B05:directions=2;continuous-live-visible-presented;violations=0`,
+    `${value.engine}/B05:actual-presentation-events;stable-surface;rounding-only;hold=${POST_SETTLE_HOLD_MS}ms`,
   );
 }

@@ -5,53 +5,65 @@ import { judgeB05MachineEvidence } from "./browser-gate-b05.mjs";
 import { judgeBrowserMachineGateEvidence } from "./browser-gates.mjs";
 
 const IDENTITY = Object.freeze({
-  framework: "tauri",
-  platform: "darwin",
-  buildId: "b05-build",
-  runId: "b05-run",
+  framework: "tauri", platform: "darwin", buildId: "b05-build", runId: "b05-run",
 });
+
+const rect = (x) => ({ x, y: 120, w: 320, h: 480 });
 
 function evidence(engine = "browser") {
   const owners = [`${engine}-left`, `${engine}-right`];
-  const transition = (direction, target, offset) => {
-    const surfaces = (revision) => owners.map((viewId, index) => ({
-      viewId,
-      surfaceId: `${engine}-surface-${index}`,
-      generation: 1,
-      live: true,
-      visible: true,
-      presented: true,
-      presentationRevision: revision,
-      presentedAtUnixMs: 1_000 + offset + (revision - 10) * 16,
-    }));
-    const samples = [0, 1, 2].map((sequence) => ({
+  const transition = (direction, targetViewId, offset) => {
+    const traceId = `${engine}-${direction}`;
+    const times = [1_004, 1_030, 1_070, 1_110, 1_150, 1_190, 1_230, 1_270, 1_310, 1_350]
+      .map((time) => time + offset);
+    const surfaces = (step) => owners.map((viewId, ownerIndex) => {
+      const frame = rect(100 + ownerIndex * 400 - Math.min(step, 8) * 10);
+      return {
+        viewId,
+        surfaceId: `${engine}-surface-${ownerIndex}`,
+        generation: 1,
+        live: true,
+        visible: true,
+        painted: true,
+        domFrame: frame,
+        surfaceFrame: { ...frame },
+      };
+    });
+    const presentationEvents = times.map((presentedAtUnixMs, sequence) => ({
       sequence,
-      sampledAtUnixMs: 1_000 + offset + sequence * 16,
-      surfaces: surfaces(10 + sequence),
+      sourceGeneration: 3,
+      presentationRevision: 20 + sequence,
+      presentedAtUnixMs,
+      surfaces: surfaces(sequence),
     }));
-    const counters = { replacements: 0, gaps: 0, disappearances: 0, unpresented: 0 };
     return {
       direction,
-      targetViewId: target,
+      targetViewId,
       trace: {
-        traceId: `${engine}-${direction}`,
+        traceId,
         closed: true,
-        startedAtUnixMs: 1_000 + offset,
-        stimulusAtUnixMs: 1_008 + offset,
-        settledAtUnixMs: 1_040 + offset,
-        heldAtUnixMs: 1_290 + offset,
-        latencyBudgetMs: 500,
-        minimumHoldMs: 250,
         ownerViewIds: owners,
-        countersBefore: { ...counters },
-        countersAfter: { ...counters },
-        samples,
-        final: {
-          sampledAtUnixMs: 1_290 + offset,
-          settled: true,
-          syncPending: false,
-          surfaces: structuredClone(samples.at(-1).surfaces),
+        armedAtUnixMs: 1_000 + offset,
+        stimulus: { address: `win/w/node/${targetViewId}`, atUnixMs: 1_010 + offset },
+        layout: {
+          transactionId: `${traceId}-layout`,
+          causeTraceId: traceId,
+          phase: "committed",
+          mode: "glide",
+          startAtUnixMs: 1_020 + offset,
+          preparedAtUnixMs: 1_012 + offset,
+          closedAtUnixMs: 1_360 + offset,
+          moves: [{ viewId: targetViewId, dx: 410 }],
         },
+        baselineFrameSequence: 0,
+        presentationEvents,
+        settled: { atUnixMs: 1_365 + offset, frameSequence: 9, syncPending: false },
+        hold: {
+          startedAtUnixMs: 1_365 + offset,
+          endedAtUnixMs: 1_615 + offset,
+          surfaces: structuredClone(presentationEvents.at(-1).surfaces),
+        },
+        violations: { replacements: 0, gaps: 0, disappearances: 0, unpresented: 0, droppedEvents: 0 },
       },
     };
   };
@@ -59,86 +71,61 @@ function evidence(engine = "browser") {
     engine,
     transitions: [
       transition("to-right", owners[1], 0),
-      transition("to-left", owners[0], 100),
+      transition("to-left", owners[0], 1_000),
     ],
   };
 }
 
-describe("B05 continuous visible presentation judge", () => {
-  it("세 engine의 양방향 닫힌 presentation 원장만 green receipt가 된다", () => {
+describe("B05 actual presentation continuity judge", () => {
+  it("세 engine의 양방향 실제 presentation 사건 원장만 GREEN receipt가 된다", () => {
     for (const engine of BROWSER_ACCEPTANCE_ENGINES) {
       expect(judgeB05MachineEvidence(evidence(engine))).toMatchObject({ status: "green", reason: null });
       expect(judgeBrowserMachineGateEvidence({
-        ...IDENTITY,
-        engine,
-        gate: "B05",
-        evidence: evidence(engine),
+        ...IDENTITY, engine, gate: "B05", evidence: evidence(engine),
       })).toMatchObject({ gate: "B05", engine, status: "green", judgeId: "B05-machine-v1" });
     }
-    const reordered = evidence();
-    reordered.transitions[0].trace.final.surfaces.reverse();
-    expect(judgeB05MachineEvidence(reordered).status).toBe("green");
     expect(judgeB05MachineEvidence(null)).toEqual({ status: "not-run", evidence: [], reason: null });
   });
 
-  it("gap·교체·미표시·미정착·픽셀 입력을 각각 RED로 만든다", () => {
+  it("지연·프레임 공백·revision 정지·source 교체를 RED로 만든다", () => {
     const cases = [
-      (value) => { value.transitions[0].trace.countersAfter.gaps = 1; },
-      (value) => { value.transitions[0].trace.samples[1].surfaces.pop(); },
-      (value) => { value.transitions[0].trace.samples[1].surfaces[0].generation = 2; },
-      (value) => { value.transitions[0].trace.samples[1].surfaces[0].presented = false; },
-      (value) => { value.transitions[0].trace.final.syncPending = true; },
-      (value) => { value.transitions[0].trace.samples[0].blackPixels = 42; },
+      (value) => { value.transitions[0].trace.presentationEvents[1].presentedAtUnixMs += 31; },
+      (value) => { value.transitions[0].trace.presentationEvents[3].presentedAtUnixMs += 11; },
+      (value) => { value.transitions[0].trace.presentationEvents[2].presentationRevision -= 1; },
+      (value) => { value.transitions[0].trace.presentationEvents[2].sourceGeneration += 1; },
+      (value) => { value.transitions[0].trace.settled.atUnixMs += 196; },
     ];
     for (const mutate of cases) {
-      const value = evidence();
-      mutate(value);
+      const value = evidence(); mutate(value);
       expect(judgeB05MachineEvidence(value).status).toBe("red");
     }
   });
 
-  it("늦은 착지와 클릭 뒤 presentation revision 정지를 RED로 만든다", () => {
+  it("표면 교체·소실·미표시·DOM 불일치·hold 회귀를 RED로 만든다", () => {
     const cases = [
-      (value) => {
-        value.transitions[0].trace.settledAtUnixMs = value.transitions[0].trace.stimulusAtUnixMs + 501;
-        value.transitions[0].trace.heldAtUnixMs = value.transitions[0].trace.settledAtUnixMs + 250;
-        value.transitions[0].trace.final.sampledAtUnixMs = value.transitions[0].trace.heldAtUnixMs;
-      },
-      (value) => {
-        const trace = value.transitions[0].trace;
-        const target = trace.ownerViewIds.indexOf(value.transitions[0].targetViewId);
-        for (const sample of trace.samples) sample.surfaces[target].presentationRevision = 10;
-        trace.final.surfaces[target].presentationRevision = 10;
-      },
+      (value) => { value.transitions[0].trace.presentationEvents[3].surfaces[0].generation = 2; },
+      (value) => { value.transitions[0].trace.presentationEvents[3].surfaces.pop(); },
+      (value) => { value.transitions[0].trace.presentationEvents[3].surfaces[0].visible = false; },
+      (value) => { value.transitions[0].trace.presentationEvents[3].surfaces[0].painted = false; },
+      (value) => { value.transitions[0].trace.presentationEvents[3].surfaces[0].surfaceFrame.x += 2; },
+      (value) => { value.transitions[0].trace.hold.endedAtUnixMs -= 1; },
+      (value) => { value.transitions[0].trace.hold.surfaces[0].visible = false; },
+      (value) => { value.transitions[0].trace.violations.droppedEvents = 1; },
     ];
     for (const mutate of cases) {
-      const value = evidence();
-      mutate(value);
+      const value = evidence(); mutate(value);
       expect(judgeB05MachineEvidence(value).status).toBe("red");
     }
   });
 
-  it("클릭 전 ACK·짧은 hold·hold 뒤 소실을 각각 RED로 만든다", () => {
+  it("증거가 예산·픽셀·누적 counter를 끼워 기준을 바꾸지 못한다", () => {
     const cases = [
-      (value) => {
-        const trace = value.transitions[0].trace;
-        const target = trace.ownerViewIds.indexOf(value.transitions[0].targetViewId);
-        for (const sample of trace.samples.slice(1)) {
-          sample.surfaces[target].presentedAtUnixMs = trace.stimulusAtUnixMs - 1;
-        }
-        trace.final.surfaces[target].presentedAtUnixMs = trace.stimulusAtUnixMs - 1;
-      },
-      (value) => {
-        const trace = value.transitions[0].trace;
-        trace.heldAtUnixMs = trace.settledAtUnixMs + trace.minimumHoldMs - 1;
-        trace.final.sampledAtUnixMs = trace.heldAtUnixMs;
-      },
-      (value) => { value.transitions[0].trace.final.surfaces[0].visible = false; },
-      (value) => { value.transitions[0].trace.final.sampledAtUnixMs -= 1; },
+      (value) => { value.transitions[0].trace.latencyBudgetMs = 10_000; },
+      (value) => { value.transitions[0].trace.presentationEvents[0].blackPixels = 0; },
+      (value) => { value.transitions[0].trace.countersBefore = { gaps: 0 }; },
     ];
     for (const mutate of cases) {
-      const value = evidence();
-      mutate(value);
+      const value = evidence(); mutate(value);
       expect(judgeB05MachineEvidence(value).status).toBe("red");
     }
   });
