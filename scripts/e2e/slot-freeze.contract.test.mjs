@@ -63,10 +63,9 @@ describe("slot-freeze instrumentation lifecycle", () => {
       .toBeLessThan(source.indexOf('const firstPaintPath'));
   });
 
-  it("requires main-DOM ownership instead of reviving the abandoned child plugin renderer", () => {
+  it("requires one shared pane presentation owner for plugin chrome and native members", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
     expect(source).toContain("rendererTopologyOwnershipVerdict");
-    expect(source).not.toContain("rendererTopology?.panelAtomicMotion !== true");
   });
 
   it("drives and measures real wheel scrolling for every browser implementation", () => {

@@ -80,6 +80,7 @@ const CHROME_MARKERS = Object.freeze({
   rightSidebar: "#00ff00",
   modalOverlayProbe: "#ff00ff",
 });
+const PRESENTATION_MARKERS = Object.freeze(["#00ff80", "#ff0080"]);
 
 function prepareEvidence() {
   const boundary = path.join(os.homedir(), ".soksak-e2e", "evidence") + path.sep;
@@ -138,28 +139,28 @@ function assertNativeLighting(data, _activeLabel, labels) {
   if (errors.length) throw new Error(`single lighting plane 불일치 — ${errors.join(", ")}`);
 }
 
-function assertNativeComposition(data, labels, beforeWrites) {
-  const errors = ["missing", "misplaced", "stacked"].flatMap((key) =>
-    (data.verdict?.[key] ?? []).map((item) => `${key}:${JSON.stringify(item)}`),
-  );
-  if (data.engine?.preservesContentDuringLiveResize !== false) {
-    errors.push(`window:preservesContentDuringLiveResize=${data.engine?.preservesContentDuringLiveResize}`);
+function assertPaneComposition(data, labels) {
+  const errors = [];
+  if (data.verdict !== "green" || data.matched !== true) {
+    errors.push(`verdict=${data.verdict}/matched=${data.matched}`);
   }
-  const topology = rendererTopologyOwnershipVerdict(data.engine?.rendererTopology ?? null);
-  if (!topology.ok) errors.push(`renderer-topology:${topology.errors.join("/")}`);
-  const placements = new Map((data.placement ?? []).map((item) => [item.label, item]));
-  for (const label of labels) {
-    const placement = placements.get(label);
-    if (!placement?.opened || !placement.slotPresent) errors.push(`placement:${label}:not-open-or-no-slot`);
-    if (placement?.syncPending || placement?.precommitPending) errors.push(`placement:${label}:pending`);
-    if (placement?.desiredVisible !== placement?.appliedVisible) errors.push(`placement:${label}:visibility`);
-    if (beforeWrites.has(label)) {
-      const delta = Number(placement?.boundsWrites ?? 0) - Number(beforeWrites.get(label));
-      if (delta < 0 || delta > 1) errors.push(`placement:${label}:boundsWrites+${delta}`);
+  if ((data.orphanNative ?? []).length) errors.push(`orphan=${JSON.stringify(data.orphanNative)}`);
+  const members = new Map();
+  for (const match of data.matches ?? []) {
+    if (!match.ok) errors.push(`pane:${match.pane}:geometry`);
+    const topology = rendererTopologyOwnershipVerdict(match.rendererTopology ?? null);
+    if (!topology.ok) errors.push(`pane:${match.pane}:topology:${topology.errors.join("/")}`);
+    if (!(Number(match.alpha) > 0 && Number(match.alpha) <= 1)) {
+      errors.push(`pane:${match.pane}:alpha=${match.alpha}`);
     }
+    for (const member of match.memberMatches ?? []) members.set(member.label, member);
   }
-  if (errors.length) throw new Error(`native composition 불일치 — ${errors.join(", ")}`);
-  return new Map((data.placement ?? []).map((item) => [item.label, Number(item.boundsWrites ?? 0)]));
+  for (const label of labels) {
+    const member = members.get(label);
+    if (!member?.ok) errors.push(`member:${label}:missing-or-misaligned`);
+  }
+  if (members.size !== labels.length) errors.push(`members=${members.size}/${labels.length}`);
+  if (errors.length) throw new Error(`pane composition 불일치 — ${errors.join(", ")}`);
 }
 
 function assertTauriSurfaceResizePolicy(data, stage) {
@@ -282,6 +283,37 @@ function assertFrameMotion(file, name, scale) {
     if (!verdict.ok) {
       throw new Error(`${name}: slot ${slot} DOM/surface 궤적 불일치 — ${verdict.errors.join(", ")}`);
     }
+    const expected = 12 * scale;
+    const motion = markerEvidence(bytes, fixtureMotionMarkers[slot], 16, 1).components.filter((component) =>
+      Math.abs(component.width - expected) <= 4 && Math.abs(component.height - expected) <= 4);
+    const renderer = markerEvidence(bytes, PRESENTATION_MARKERS[slot], 16, 1).components.filter((component) =>
+      Math.abs(component.width - expected) <= 4 && Math.abs(component.height - expected) <= 4);
+    if (renderer.length !== 1) {
+      throw new Error(`${name}: slot ${slot} plugin renderer 기준자 ${renderer.length}/1`);
+    }
+    // renderer probe는 toolbar controls와 겹치지 않도록 local x=16에 둔다. pane 원점 비교로 환산한다.
+    const rendererX = renderer[0].x - 16 * scale;
+    const split = motion.filter((component) => Math.abs(component.x - rendererX) > 4);
+    if (split.length) {
+      throw new Error(
+        `${name}: slot ${slot} projection/renderer/page 삼자 불일치 — renderer-x=${rendererX} motion-x=${motion.map((item) => item.x).join("/")}`,
+      );
+    }
+  }
+}
+
+async function installPanePresentationMarkers(rpc, win, labels) {
+  const exposed = must(await rpc("webview.pane.hosts", {}, win), "pane presentation hosts");
+  for (let index = 0; index < labels.length; index += 1) {
+    const host = (exposed.hosts ?? []).find((item) =>
+      item.window === win && Array.isArray(item.members) && item.members.includes(labels[index]));
+    if (!host?.renderer) throw new Error(`slot ${index} pane renderer가 노출되지 않았다: ${labels[index]}`);
+    must(await rpc("webview.pane.eval", {
+      label: host.renderer,
+      js: `let el=document.getElementById("soksak-presentation-motion-probe");`
+        + `if(!el){el=document.createElement("div");el.id="soksak-presentation-motion-probe";document.body.append(el)}`
+        + `Object.assign(el.style,{position:"fixed",left:"16px",top:"0",width:"12px",height:"12px",background:${JSON.stringify(PRESENTATION_MARKERS[index])},zIndex:"2147483647",pointerEvents:"none"});return "ok";`,
+    }, win), `slot ${index} pane renderer marker`);
   }
 }
 
@@ -718,6 +750,8 @@ async function runEngine(client, page, engine) {
   let sentinelSurfaceId;
   let originalSettings;
   let originalRightMode;
+  let frameworkName = "";
+  let runFailure = null;
   try {
     if (implementation.surface !== "framework-native") {
       const sentinelRoot = path.join(FIXTURE_ROOT, "owner-sentinel", engine);
@@ -743,6 +777,10 @@ async function runEngine(client, page, engine) {
     const acquired = await acquireFixtureWindow(rpc, FIXTURE_ROOT);
     win = acquired.label;
     console.log(`\n[${engine}] 픽스처 창: ${win}${acquired.adopted ? " (재사용)" : " (생성)"}`);
+    frameworkName = String(must(await rpc("framework.info", {}, win), "framework.info").framework ?? "");
+    if (frameworkName !== "tauri" && frameworkName !== "electron") {
+      throw new Error(`검증하지 않은 framework adapter: ${frameworkName}`);
+    }
     must(await rpc("program.wait", { id: engine, timeoutMs: 20_000 }, win), `program.wait ${engine}`);
     const calibration = must(
       await rpc("capture.calibration", { visible: true }, win),
@@ -835,12 +873,14 @@ async function runEngine(client, page, engine) {
     const native = implementation.surface === "framework-native";
     const windowed = implementation.surface === "engine-windowed";
     const labels = tabIds.map((id) => `b-${win}-${id}`);
-    let writes = new Map();
-    let baselineReady = false;
+    if (frameworkName === "tauri") await installPanePresentationMarkers(rpc, win, labels);
     if (native) {
       const initial = must(await rpc("webview.composition", {}, win), "initial composition");
-      writes = new Map((initial.placement ?? []).map((item) => [item.label, Number(item.boundsWrites ?? 0)]));
       assertTauriSurfaceResizePolicy(initial, "initial native composition");
+      assertPaneComposition(
+        must(await rpc("webview.pane.composition", {}, win), "initial pane composition"),
+        labels,
+      );
     } else if (windowed) {
       const initial = must(await rpc("webview.composition", {}, win), "initial windowed composition");
       assertTauriSurfaceResizePolicy(initial, "initial windowed composition");
@@ -899,9 +939,9 @@ async function runEngine(client, page, engine) {
         const domVerdict = domTransitionTraceVerdict(clicked.trace?.samples, {
           railAddress,
           paneAddresses,
-          // 이 E2E는 사용자 창을 빼앗지 않는 비전면 캡처다. WebKit document timeline이
-          // 정지할 수 있으므로 중간 좌표 없는 단일-frame 거래를 요구한다.
-          motionMode: "snap",
+          // 비전면 Tauri의 WebKit timeline은 정지할 수 있으므로 그 경우 공개 거래는 snap이다.
+          // 다른 구현/전면 창은 glide이며, 판정기는 실제 trace의 유한 motion 유무를 분류한다.
+          motionMode: frameworkName === "tauri" ? "snap" : "glide",
         });
         fs.writeFileSync(
           path.join(dir, "dom-transition-trace.json"),
@@ -947,9 +987,10 @@ async function runEngine(client, page, engine) {
         );
 
         if (native) {
-          const current = must(await rpc("webview.composition", {}, win), `composition ${name}`);
-          writes = assertNativeComposition(current, labels, baselineReady ? writes : new Map());
-          baselineReady = true;
+          assertPaneComposition(
+            must(await rpc("webview.pane.composition", {}, win), `pane composition ${name}`),
+            labels,
+          );
           assertNativeLighting(must(await rpc("webview.surfaces", {}, win), `surfaces ${name}`), labels[side], labels);
         } else if (windowed) {
           await assertWindowedComposition(rpc, win, plugin, tabIds, addresses);
@@ -1189,10 +1230,20 @@ async function runEngine(client, page, engine) {
     await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, "final-ledger");
     console.log(`✓ ${engine} GREEN — 한글 IME 2개 · 교차 클릭 ${CYCLES * 2}회 · 급격한 창 resize ${fastSizes.length}단계/${fastResize.resizeElapsedMs}ms · 패널 resize 왕복 · 연속 프레임 ${frameCount}장`);
     return frameCount;
+  } catch (error) {
+    runFailure = error;
+    throw error;
   } finally {
     // 계측은 제품 UI가 아니다. 성공·RED·KEEP 어느 경로에서도 제거 ACK와 0개 상태를
     // 확인한 뒤에만 창을 사용자에게 돌려준다.
-    if (win) await assertCaptureInstrumentationCleared(rpc, win);
+    if (win) {
+      try {
+        await assertCaptureInstrumentationCleared(rpc, win);
+      } catch (cleanupError) {
+        if (!runFailure) throw cleanupError;
+        console.error(`RED cleanup 보조 실패(최초 오류 보존): ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`);
+      }
+    }
     if (win && homeOverride) {
       await rpc("plugin.settings.reset", { id: plugin, key: "homeUrl", scope: "project" }, win).catch(() => {});
     }

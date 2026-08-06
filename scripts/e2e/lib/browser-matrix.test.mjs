@@ -32,16 +32,16 @@ import {
 import { encodePng } from "./png.mjs";
 
 describe("브라우저 구현 행렬", () => {
-  it("Tauri plugin DOM은 메인 renderer에 남고 native surface만 독립 root로 합성한다", () => {
-    expect(rendererTopologyOwnershipVerdict({
-      verdict: "independent-renderer-roots",
-      panelAtomicMotion: false,
-      sharedPaneHost: null,
-    })).toEqual({ ok: true, errors: [] });
+  it("Tauri plugin chrome와 native surface는 같은 pane presentation root를 공유한다", () => {
     expect(rendererTopologyOwnershipVerdict({
       verdict: "shared-pane-host",
       panelAtomicMotion: true,
       sharedPaneHost: "PaneSurfaceHost",
+    })).toEqual({ ok: true, errors: [] });
+    expect(rendererTopologyOwnershipVerdict({
+      verdict: "independent-renderer-roots",
+      panelAtomicMotion: false,
+      sharedPaneHost: null,
     })).toMatchObject({ ok: false });
     expect(rendererTopologyOwnershipVerdict(null)).toMatchObject({ ok: false });
   });

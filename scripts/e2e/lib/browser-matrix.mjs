@@ -37,9 +37,11 @@ export function rendererTopologyOwnershipVerdict(topology) {
   const errors = [];
   if (!topology) errors.push("missing");
   else {
-    if (topology.verdict !== "independent-renderer-roots") errors.push(`verdict=${topology.verdict}`);
-    if (topology.panelAtomicMotion !== false) errors.push(`panelAtomicMotion=${topology.panelAtomicMotion}`);
-    if (topology.sharedPaneHost != null) errors.push(`sharedPaneHost=${topology.sharedPaneHost}`);
+    if (topology.verdict !== "shared-pane-host") errors.push(`verdict=${topology.verdict}`);
+    if (topology.panelAtomicMotion !== true) errors.push(`panelAtomicMotion=${topology.panelAtomicMotion}`);
+    if (typeof topology.sharedPaneHost !== "string" || topology.sharedPaneHost.length === 0) {
+      errors.push(`sharedPaneHost=${topology.sharedPaneHost}`);
+    }
   }
   return { ok: errors.length === 0, errors };
 }
