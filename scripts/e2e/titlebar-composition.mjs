@@ -12,6 +12,7 @@ import { BROWSER_ACCEPTANCE_ENGINES } from "./lib/browser-gate-identity.mjs";
 import { judgeB12MachineEvidence } from "./lib/browser-gate-b12.mjs";
 
 const HEIGHTS = Object.freeze([30, 60, 72]);
+const HOLD_MS = 900;
 const cycle = String(process.env.B12_CYCLE ?? "single");
 const evidenceRoot = path.join(
   os.homedir(),
@@ -69,6 +70,13 @@ async function capture(rpc, windowLabel, name) {
   return file;
 }
 
+async function hold(rpc, windowLabel, stage) {
+  must(
+    await rpc("debug.sleep", { ms: HOLD_MS }, windowLabel),
+    `${windowLabel} ${stage} hold`,
+  );
+}
+
 async function inspectWindow(rpc, windowLabel, framework) {
   const tree = must(await rpc("ui.tree", {}, windowLabel), `${windowLabel} ui.tree`);
   const titlebar = tree.nodes.find((node) => node.nodePath === "titlebar");
@@ -77,8 +85,17 @@ async function inspectWindow(rpc, windowLabel, framework) {
   let needsReset = false;
   try {
     const baseline = await readSample(rpc, windowLabel, titlebar.address, "baseline", null);
-    await capture(rpc, windowLabel, "baseline");
+    await hold(rpc, windowLabel, "baseline");
+    const heldBaseline = await readSample(
+      rpc,
+      windowLabel,
+      titlebar.address,
+      "baseline",
+      null,
+    );
+    await capture(rpc, windowLabel, "baseline-held");
     const heights = [];
+    const heldHeights = [];
     for (const height of HEIGHTS) {
       needsReset = true;
       const receipt = must(
@@ -93,7 +110,15 @@ async function inspectWindow(rpc, windowLabel, framework) {
         height,
         receipt,
       ));
-      await capture(rpc, windowLabel, `height-${height}`);
+      await hold(rpc, windowLabel, `height-${height}`);
+      heldHeights.push(await readSample(
+        rpc,
+        windowLabel,
+        titlebar.address,
+        "height",
+        height,
+      ));
+      await capture(rpc, windowLabel, `height-${height}-held`);
     }
     const resetReceipt = must(
       await rpc("titlebar.height.reset", {}, windowLabel),
@@ -108,8 +133,12 @@ async function inspectWindow(rpc, windowLabel, framework) {
       null,
       resetReceipt,
     );
+    await hold(rpc, windowLabel, "reset");
+    const heldReset = await readSample(rpc, windowLabel, titlebar.address, "reset", null);
     const final = await readSample(rpc, windowLabel, titlebar.address, "final", null);
-    await capture(rpc, windowLabel, "final");
+    await hold(rpc, windowLabel, "final");
+    const heldFinal = await readSample(rpc, windowLabel, titlebar.address, "final", null);
+    await capture(rpc, windowLabel, "final-held");
 
     const verdicts = [];
     for (const engine of BROWSER_ACCEPTANCE_ENGINES) {
@@ -124,6 +153,12 @@ async function inspectWindow(rpc, windowLabel, framework) {
         heights,
         reset,
         final,
+        held: {
+          baseline: heldBaseline,
+          heights: heldHeights,
+          reset: heldReset,
+          final: heldFinal,
+        },
       };
       const verdict = judgeB12MachineEvidence(evidence, { framework });
       verdicts.push({ engine, verdict, evidence });

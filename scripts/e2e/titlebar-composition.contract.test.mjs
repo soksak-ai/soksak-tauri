@@ -9,12 +9,14 @@ describe("titlebar composition live E2E contract", () => {
     for (const marker of [
       'rpc("window.list"',
       'rpc("window.startup"',
+      'rpc("debug.sleep"',
       'rpc("titlebar.composition"',
       'rpc("titlebar.height.set"',
       'rpc("titlebar.height.reset"',
       'rpc("ui.measure"',
       'rpc("window.snapshot"',
       "[30, 60, 72]",
+      "held:",
     ]) expect(source).toContain(marker);
     expect(source).not.toContain("setTimeout");
     expect(source).not.toContain("window.focus");

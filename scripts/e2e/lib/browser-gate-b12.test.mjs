@@ -62,7 +62,7 @@ function sample({
 
 function evidence(engine = "browser", framework = "tauri") {
   const baselineStyle = { height: "", flexBasis: "" };
-  return {
+  const value = {
     engine,
     coordinateSpace: {
       logical: "css-px",
@@ -109,10 +109,26 @@ function evidence(engine = "browser", framework = "tauri") {
       inlineStyle: baselineStyle,
     }),
   };
+  value.held = {
+    baseline: structuredClone(value.baseline),
+    heights: structuredClone(value.heights),
+    reset: structuredClone(value.reset),
+    final: structuredClone(value.final),
+  };
+  return value;
 }
 
 function allSamples(value) {
-  return [value.baseline, ...value.heights, value.reset, value.final];
+  return [
+    value.baseline,
+    ...value.heights,
+    value.reset,
+    value.final,
+    value.held.baseline,
+    ...value.held.heights,
+    value.held.reset,
+    value.held.final,
+  ];
 }
 
 describe("B12 macOS traffic-light composition machine judge", () => {
@@ -161,6 +177,25 @@ describe("B12 macOS traffic-light composition machine judge", () => {
       (value) => { value.heights[1].presentationRevision = value.heights[0].presentationRevision; },
       (value) => { value.reset.presentationRevision = value.heights[1].presentationRevision; },
       (value) => { value.final.presentationRevision = value.reset.presentationRevision - 1; },
+      (value) => { delete value.held; },
+      (value) => { value.held.heights.pop(); },
+      (value) => { value.held.heights[0].stage = "reset"; },
+    ];
+    for (const mutate of cases) {
+      const value = evidence();
+      mutate(value);
+      expect(judgeB12MachineEvidence(value, identity("tauri")).status).toBe("red");
+    }
+  });
+
+  it("각 단계가 끝난 뒤 유지 표본까지 동일한 DOM/native 합성을 보존해야 한다", () => {
+    const cases = [
+      (value) => { value.held.baseline.buttons[0].rect.y += 1; },
+      (value) => { value.held.heights[0].reservations[1].rect.y += 1; },
+      (value) => { value.held.heights[1].backings[2].rect.y += 1; },
+      (value) => { value.held.reset.presentationRevision += 1; },
+      (value) => { value.held.final.dom.nodeIdentity = "late-remount"; },
+      (value) => { value.held.final.dom.inlineStyle.height = "45px"; },
     ];
     for (const mutate of cases) {
       const value = evidence();

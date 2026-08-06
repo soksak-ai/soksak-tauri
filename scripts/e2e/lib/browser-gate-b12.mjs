@@ -24,6 +24,7 @@ const SAMPLE_KEYS = Object.freeze([
   "buttons",
   "backings",
 ]);
+const HELD_KEYS = Object.freeze(["baseline", "heights", "reset", "final"]);
 
 function inspectRect(value, path, failures) {
   if (!requireExactKeys(value, RECT_KEYS, path, failures)) return null;
@@ -281,6 +282,35 @@ function compareRestoredSample(baseline, restored, path, framework, failures) {
   }
 }
 
+function compareHeldSample(applied, held, path, framework, failures) {
+  if (!(applied && held)) return;
+  if (held.presentationRevision !== applied.presentationRevision) {
+    failures.push(`${path}.presentationRevision=applied`);
+  }
+  if (held.requestedHeightCssPx !== applied.requestedHeightCssPx) {
+    failures.push(`${path}.requestedHeightCssPx=applied`);
+  }
+  if (applied.dom && held.dom) {
+    if (held.dom.nodeIdentity !== applied.dom.nodeIdentity) {
+      failures.push(`${path}.dom.nodeIdentity=applied`);
+    }
+    if (!sameInlineStyle(held.dom.inlineStyle, applied.dom.inlineStyle)) {
+      failures.push(`${path}.dom.inlineStyle=exact-applied`);
+    }
+  }
+  if (applied.titlebar && held.titlebar && !matchingRect(applied.titlebar, held.titlebar)) {
+    failures.push(`${path}.titlebarPhysical=applied`);
+  }
+  for (const plane of ["reservations", "buttons", ...(framework === "tauri" ? ["backings"] : [])]) {
+    inspectMatchingPlanes(
+      applied.planes[plane],
+      held.planes[plane],
+      `${path}.${plane}`,
+      failures,
+    );
+  }
+}
+
 /**
  * macOS titlebar의 raw DOM/native rect와 명시적 presentation 원장만 판정한다.
  * 이미지, adapter 자체 verdict, 지연 시간은 machine evidence가 아니다.
@@ -290,7 +320,7 @@ export function judgeB12MachineEvidence(value, identity = null) {
   const failures = [];
   if (!requireExactKeys(
     value,
-    ["engine", "coordinateSpace", "baseline", "heights", "reset", "final"],
+    ["engine", "coordinateSpace", "baseline", "heights", "reset", "final", "held"],
     "evidence",
     failures,
   )) return finishMachineVerdict("B12", failures, "B12:unreachable");
@@ -341,6 +371,44 @@ export function judgeB12MachineEvidence(value, identity = null) {
     failures,
   );
 
+  let heldBaseline = null;
+  const heldHeights = [];
+  let heldReset = null;
+  let heldFinal = null;
+  if (requireExactKeys(value.held, HELD_KEYS, "held", failures)) {
+    heldBaseline = inspectSample(
+      value.held.baseline,
+      "held.baseline",
+      { ...context, expectedStage: "baseline" },
+      failures,
+    );
+    if (!Array.isArray(value.held.heights) || value.held.heights.length !== value.heights.length) {
+      failures.push(`held.heights=heights.length/${displayValue(value.held.heights?.length)}`);
+    } else {
+      value.held.heights.forEach((height, index) => {
+        const inspected = inspectSample(
+          height,
+          `held.heights[${index}]`,
+          { ...context, expectedStage: "height" },
+          failures,
+        );
+        if (inspected) heldHeights.push(inspected);
+      });
+    }
+    heldReset = inspectSample(
+      value.held.reset,
+      "held.reset",
+      { ...context, expectedStage: "reset" },
+      failures,
+    );
+    heldFinal = inspectSample(
+      value.held.final,
+      "held.final",
+      { ...context, expectedStage: "final" },
+      failures,
+    );
+  }
+
   const requestedHeights = heights.map((sample) => sample.requestedHeightCssPx);
   if (requestedHeights.some((height) => height === null)
       || new Set(requestedHeights).size !== requestedHeights.length) {
@@ -374,11 +442,17 @@ export function judgeB12MachineEvidence(value, identity = null) {
 
   compareRestoredSample(baseline, reset, "reset", framework, failures);
   compareRestoredSample(baseline, final, "final", framework, failures);
+  compareHeldSample(baseline, heldBaseline, "held.baseline", framework, failures);
+  heights.forEach((height, index) => {
+    compareHeldSample(height, heldHeights[index], `held.heights[${index}]`, framework, failures);
+  });
+  compareHeldSample(reset, heldReset, "held.reset", framework, failures);
+  compareHeldSample(final, heldFinal, "held.final", framework, failures);
 
   return finishMachineVerdict(
     "B12",
     failures,
-    `${value.engine}/B12:${framework};baseline+height>=2+reset+final=presented;`
+    `${value.engine}/B12:${framework};baseline+height>=2+reset+final=presented+held;`
       + `center<=${TITLEBAR_CENTER_TOLERANCE_PHYSICAL_PX}px;dom-identity+inline-style=restored`,
   );
 }
