@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  compositionFrameComparisonVerdict,
   compositionInventoryVerdict,
   compositionSampleVerdict,
   compositionTransactionVerdict,
@@ -27,6 +28,57 @@ const sample = (
 });
 
 describe("DOM ↔ native webview composition contract", () => {
+  it("좌표 원점과 reference가 다른 frame의 직접 비교를 거부한다", () => {
+    const frame = { x: 0, y: 28, w: 300, h: 200 };
+    expect(compositionFrameComparisonVerdict({
+      expected: {
+        frame,
+        coordinateSpace: {
+          logical: "css-px",
+          scaleFactor: 2,
+          origin: "presenter-local",
+          referenceId: "pane-host-a",
+        },
+      },
+      actual: {
+        frame,
+        coordinateSpace: {
+          logical: "css-px",
+          scaleFactor: 2,
+          origin: "window-absolute",
+          referenceId: "window-a",
+        },
+      },
+    })).toMatchObject({
+      ok: false,
+      errors: expect.arrayContaining([
+        "coordinate-origin=presenter-local/window-absolute",
+        "coordinate-reference=pane-host-a/window-a",
+      ]),
+    });
+
+    expect(compositionFrameComparisonVerdict({
+      expected: {
+        frame,
+        coordinateSpace: {
+          logical: "css-px",
+          scaleFactor: 2,
+          origin: "presenter-local",
+          referenceId: "pane-host-a",
+        },
+      },
+      actual: {
+        frame,
+        coordinateSpace: {
+          logical: "css-px",
+          scaleFactor: 2,
+          origin: "presenter-local",
+          referenceId: "pane-host-a",
+        },
+      },
+    })).toMatchObject({ ok: true, errors: [] });
+  });
+
   it("CSS 모서리를 물리 픽셀로 한 번만 반올림하고 임의 tolerance를 두지 않는다", () => {
     expect(logicalRectToPhysical({ x: 10.25, y: 20.5, w: 100.5, h: 40.25 }, 2)).toEqual({
       x: 21,
