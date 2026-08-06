@@ -88,6 +88,10 @@ function reportSlots(): void {
   }
 }
 
+// ResizeObserver/window.resize는 비전면 WKWebView에서 지연될 수 있다. 부모의 최종 합성
+// 거래는 같은 측정 함수를 사건으로 호출하며, 별도 좌표 경로나 타이머를 만들지 않는다.
+await listen(event("measure"), reportSlots);
+
 let slotResize: ResizeObserver | null = null;
 function observeSlots(): void {
   slotResize?.disconnect();

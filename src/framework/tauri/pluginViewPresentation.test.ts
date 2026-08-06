@@ -35,6 +35,18 @@ describe("Tauri plugin renderer RPC surface", () => {
     expect(isPluginViewCallExposed("webview.open")).toBe(true);
   });
 
+  it("최종 합성 배리어는 child 측정을 사건으로 요청한 뒤 native commit을 기다린다", () => {
+    const source = readFileSync(resolve(import.meta.dirname, "pluginViewPresentation.ts"), "utf8");
+    const barrier = source.split("export async function awaitPluginViewComposition")[1] ?? "";
+    expect(barrier).toContain('emitTo(view.renderer, event(view.renderer, "measure")');
+    expect(barrier.indexOf("waitCommittedRoot")).toBeLessThan(barrier.indexOf("emitTo(view.renderer"));
+  });
+
+  it("child renderer의 명시적 측정 사건도 기존 slot reporter 하나를 사용한다", () => {
+    const source = readFileSync(resolve(import.meta.dirname, "pluginViewRenderer.ts"), "utf8");
+    expect(source).toContain('listen(event("measure"), reportSlots)');
+  });
+
   it("임의의 app 내부 경로는 노출하지 않는다", () => {
     expect(isPluginViewCallExposed("internal.anything")).toBe(false);
   });

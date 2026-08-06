@@ -563,8 +563,12 @@ export async function awaitPluginViewComposition(timeoutMs = 10_000) {
     // Main renderer가 소유한 host frame을 현재 공개 DOM에 먼저 확정한다.
     await syncPaneFrame(view);
     const root = rectOf(view.container);
-    await Promise.all([...view.members].map((label) =>
-      view.slots.waitCommittedRoot(label, root.w, root.h, timeoutMs)));
+    // waiter를 먼저 등록해 즉시 돌아오는 child report와의 경쟁을 닫는다. 비전면 WebKit의
+    // ResizeObserver에 기대지 않고 동일 reporter를 명시적 사건으로 한 번 실행한다.
+    const committed = [...view.members].map((label) =>
+      view.slots.waitCommittedRoot(label, root.w, root.h, timeoutMs));
+    await emitTo(view.renderer, event(view.renderer, "measure"), null);
+    await Promise.all(committed);
   }));
   const result = await pluginViewCompositionStatus();
   if (result.verdict !== "green") {
