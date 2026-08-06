@@ -1,9 +1,9 @@
 import { useCallback, memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import type { RailRect } from "../lib/railPlacement";
+import type { RailRelationState } from "../lib/railArrangement";
 import { moduleState } from "../lib/moduleState";
 import {
   insetClippedEdges,
-  classifyRailRelation,
   splitRightEdgeRounded,
   railLinkBoxes,
   railLinkPolygon,
@@ -57,29 +57,25 @@ export const RELATION_MOMENT_MS = 600;
  * 않으며, ResizeObserver 이벤트와 공개 레이아웃 rect만 소비한다.
  *
  * 표현은 railRelation 설정(tint|moment|stroke)의 모드 클래스로 CSS 가 갈래를 나눈다.
- * FLOW 비인접은 이동 중간 상태라 렌더하지 않는다. PIN 비인접은 기하적으로 정상이며 레일과
- * 선택 판 각각의 독립 활성 보더로 표시한다.
+ * 해결기가 union이면 합성 외곽선 하나, independent이면 두 실제 상자의 독립 보더, none이면
+ * 경로 없는 상태 루트만 남긴다. 이 컴포넌트가 관계 분기를 재판정하지 않는다.
  */
 export const RailLinkOverlay = memo(function RailLinkOverlay({
   contentId,
-  boundViewId,
-  boundPaneId,
+  relation,
   railWidth,
   railStation,
   targetRect,
-  placementMode = "flow",
   projected = false,
 }: {
   contentId: string;
-  boundViewId: string;
-  boundPaneId: string;
+  /** 배치 해결기가 낸 공개 상태 — 이 컴포넌트는 관계·보더 분기를 다시 판정하지 않는다. */
+  relation: RailRelationState;
   railWidth: number;
   /** 오른쪽에서 판을 밀고 들어온 폭 — 밀기 사이드바가 서면 판이 그만큼 좁다. 안 넘기면
    *  투영이 늘어나 칸이 호스트 밖으로 나가고 경로가 사선이 된다. */
   railStation: number;
-  targetRect: RailRect;
-  /** pin은 기하를 고정하고, 비인접이면 레일과 선택 판에 독립 보더를 그린다. */
-  placementMode?: "flow" | "pin";
+  targetRect: RailRect | null;
   /** 이 인접이 focus-near 투영(교체)으로 성립했는가 — 봉합선 표시의 유일 입력. */
   projected?: boolean;
 }) {
@@ -121,9 +117,6 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
       cur.width === r.width && cur.height === r.height ? cur : { width: r.width, height: r.height },
     );
   }, []);
-  const relationSide = classifyRailRelation(railStation, targetRect);
-  const adjacent = relationSide !== "detached";
-
   const commitSize = useCallback((width: number, height: number) => {
     setSize((current) =>
       current.width === width && current.height === height ? current : { width, height },
@@ -147,7 +140,6 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
   });
 
   useLayoutEffect(() => {
-    // 비인접 렌더 억제 중엔 host 가 없다 — 인접 복귀 때 이 effect 가 다시 붙는다.
     const host = hostRef.current;
     if (!host) return;
     const observer = new ResizeObserver((entries) => {
@@ -156,10 +148,12 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
     });
     observer.observe(host);
     return () => observer.disconnect();
-  }, [adjacent, commitSize]);
+  }, [commitSize]);
 
-  // moment: 결부 정체성(boundViewId/targetRect)이 바뀐 순간만 잠깐 관계 토큰을 노출.
-  const identity = `${boundViewId}|${targetRect.left}|${targetRect.top}|${targetRect.width}|${targetRect.height}`;
+  // moment: 유효 결부 정체성/기하가 바뀐 순간만 잠깐 관계 토큰을 노출.
+  const identity = targetRect
+    ? `${relation.relationId}|${targetRect.left}|${targetRect.top}|${targetRect.width}|${targetRect.height}`
+    : relation.relationId;
   const [flash, setFlash] = useState(false);
   useEffect(() => {
     if (railRelation !== "moment") {
@@ -171,17 +165,20 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
     return () => clearTimeout(timer);
   }, [railRelation, identity]);
 
-  const detached = placementMode === "pin" && !adjacent;
-  if (!adjacent && !detached) return null;
+  const independent = relation.borderMode === "independent";
 
-  const boxes = railLinkBoxes(
-    size.width,
-    size.height,
-    railWidth,
-    railStation,
-    targetRect,
-  );
-  const polygon = boxes ? railLinkPolygon(boxes.rail, boxes.panel) : null;
+  const boxes = targetRect && relation.borderMode !== "none"
+    ? railLinkBoxes(
+        size.width,
+        size.height,
+        railWidth,
+        railStation,
+        targetRect,
+      )
+    : null;
+  const polygon = boxes && relation.borderMode === "union"
+    ? railLinkPolygon(boxes.rail, boxes.panel)
+    : null;
   const path = polygon
     ? roundedOrthogonalPath(
         insetClippedEdges(
@@ -193,10 +190,10 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
         radius,
       )
     : "";
-  const independentRailPath = detached && boxes
+  const independentRailPath = independent && boxes
     ? independentBoxPath(boxes.rail, size.width, size.height, strokeWidth, radius)
     : "";
-  const independentPanelPath = detached && boxes
+  const independentPanelPath = independent && boxes
     ? independentBoxPath(boxes.panel, size.width, size.height, strokeWidth, radius)
     : "";
 
@@ -205,11 +202,14 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
       ref={attach}
       className={`rail-link-overlay relation-${railRelation} fill-${railFill}`}
       data-node={`relation/rail/${contentId}`}
-      data-bound-tab={boundViewId}
-      data-bound-pane={boundPaneId}
-      data-connected={path ? "true" : "false"}
-      data-placement={placementMode}
-      data-side={relationSide}
+      data-bound-tab={relation.boundTabId ?? undefined}
+      data-bound-pane={relation.boundPaneId ?? undefined}
+      data-connected={String(relation.connected)}
+      data-placement={relation.placement}
+      data-side={relation.side}
+      data-relation-id={relation.relationId}
+      data-border-mode={relation.borderMode}
+      data-path-count={relation.pathCount}
       // 그린 상자를 밖에서 잰다 — 보더는 SVG path 안에만 있어 "어디에 그려졌나"를 물을 자리가
       // 없었다. 없으면 눈으로 때려맞히게 된다. 호스트 상대 px, "x,y,w,h" 한 사실 하나.
       // 레일 상자와 판 상자는 서로 다른 것이다 — 한 가방에 넣지 않는다. 이음매가 흔들리면
@@ -235,9 +235,9 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
           것이 정확히 그것이다(실측 2026-08-02: 밀 때 안으로, 접을 때 밖으로, 그리고 정확히 복귀).
           좌표는 이미 이 요소의 CSS px 이므로 viewBox 없이 그대로 그린다: 낡아도 틀린 자리에 그릴
           뿐 일그러지지는 않는다. */}
-      {boxes && (path || detached) && (
+      {boxes && (path || independent) && (
         <svg className="rail-link-canvas">
-          {detached ? (
+          {independent ? (
             <>
               <path className="rail-link-independent rail-link-independent-rail" d={independentRailPath} />
               <path className="rail-link-independent rail-link-independent-pane" d={independentPanelPath} />
@@ -269,7 +269,7 @@ export const RailLinkOverlay = memo(function RailLinkOverlay({
           })() : (
             <path className="rail-link-shape rail-link-union" d={path} />
           )}
-          {!detached && projected && railSeamStyle === "seam" && (() => {
+          {!independent && projected && railSeamStyle === "seam" && (() => {
             // 교체-인접 봉합선 — 합집합 외곽선의 내부 공유변. 자연 인접은 한 몸이라 봉합선이
             // 없고, 투영(교체)으로 성립한 인접만 같은 두께의 점선으로 "꿰맨 자국"을 남긴다.
             const eps = 1;

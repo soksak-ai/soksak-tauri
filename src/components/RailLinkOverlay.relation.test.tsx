@@ -28,6 +28,8 @@ vi.mock("../state/theme", () => ({
 vi.mock("../i18n", () => ({ useT: () => () => "LINKED" }));
 
 import { RailLinkOverlay } from "./RailLinkOverlay";
+import type { RailRelationState } from "../lib/railArrangement";
+import { classifyRailRelation } from "../lib/railLinkShape";
 import { useSettings } from "../state/settings";
 import { styleSurfaceRules } from "../ui/styleSurface";
 
@@ -41,17 +43,37 @@ const adjacentRect = { left: 50, top: 0, width: 25, height: 50 };
 function overlayProps(overrides: Partial<{
   boundViewId: string;
   railStation: number;
-  targetRect: typeof adjacentRect;
+  targetRect: typeof adjacentRect | null;
   placementMode: "flow" | "pin";
+  relation: Partial<RailRelationState>;
 }> = {}) {
+  const boundViewId = overrides.boundViewId ?? "v2";
+  const railStation = overrides.railStation ?? 50;
+  const targetRect = overrides.targetRect === undefined ? adjacentRect : overrides.targetRect;
+  const placement = overrides.placementMode ?? "flow";
+  const side = targetRect
+    ? classifyRailRelation(railStation, targetRect)
+    : "detached";
+  const connected = side !== "detached";
+  const relation: RailRelationState = {
+    boundTabId: targetRect ? boundViewId : null,
+    boundPaneId: targetRect ? "g2" : null,
+    relationId: targetRect
+      ? `rail-relation/c1/g2/${boundViewId}`
+      : "rail-relation/c1/none",
+    placement,
+    connected,
+    side,
+    borderMode: connected ? "union" : targetRect ? "independent" : "none",
+    pathCount: connected ? 1 : targetRect ? 2 : 0,
+    ...overrides.relation,
+  };
   return {
     contentId: "c1",
-    boundViewId: overrides.boundViewId ?? "v2",
-    boundPaneId: "g2",
+    relation,
     railWidth: 300,
-    railStation: overrides.railStation ?? 50,
-    targetRect: overrides.targetRect ?? adjacentRect,
-    placementMode: overrides.placementMode ?? "flow",
+    railStation,
+    targetRect,
   };
 }
 
@@ -104,18 +126,24 @@ describe("RailLinkOverlay — railRelation 3안 스위치", () => {
     expect(host.querySelectorAll(".rail-link-overlay")).toHaveLength(1);
   });
 
-  it("비인접(간격 1%p 초과)이면 모든 모드에서 관계면을 아예 렌더하지 않는다", () => {
+  it("결부가 없는 none/0도 모든 모드에서 공개 루트만 남기고 경로를 그리지 않는다", () => {
     for (const mode of ["tint", "moment", "stroke"] as const) {
       useSettings.setState({ railRelation: mode });
       act(() =>
         root.render(
           <RailLinkOverlay
-            {...overlayProps({ railStation: 0 })}
+            {...overlayProps({ targetRect: null })}
             key={mode}
           />,
         ),
       );
-      expect(host.querySelector(".rail-link-overlay")).toBeNull();
+      const relation = host.querySelector<HTMLElement>(".rail-link-overlay");
+      expect(relation?.dataset).toMatchObject({
+        borderMode: "none",
+        pathCount: "0",
+        relationId: "rail-relation/c1/none",
+      });
+      expect(relation?.querySelector("svg")).toBeNull();
     }
   });
 
@@ -178,8 +206,31 @@ describe("RailLinkOverlay — railRelation 3안 스위치", () => {
     expect(relation?.dataset.connected).toBe("false");
     expect(relation?.dataset.placement).toBe("pin");
     expect(relation?.dataset.side).toBe("detached");
+    expect(relation?.dataset.borderMode).toBe("independent");
+    expect(relation?.dataset.pathCount).toBe("2");
+    expect(relation?.dataset.relationId).toBe("rail-relation/c1/g2/v2");
     expect(relation?.querySelectorAll(".rail-link-independent")).toHaveLength(2);
     expect(relation?.querySelector(".rail-link-union")).toBeNull();
+  });
+
+  it("시각 경로가 없는 결부 부재도 공개 상태 루트 none/0은 남긴다", () => {
+    act(() =>
+      root.render(
+        <RailLinkOverlay
+          {...overlayProps({ targetRect: null })}
+        />,
+      ),
+    );
+    const relation = host.querySelector<HTMLElement>(".rail-link-overlay");
+    expect(relation).not.toBeNull();
+    expect(relation?.dataset).toMatchObject({
+      connected: "false",
+      side: "detached",
+      borderMode: "none",
+      pathCount: "0",
+      relationId: "rail-relation/c1/none",
+    });
+    expect(relation?.querySelector("svg")).toBeNull();
   });
 
   it("moment: 결부 정체성 변경 순간만 600ms 플래시 후 꺼진다(fake timer)", () => {

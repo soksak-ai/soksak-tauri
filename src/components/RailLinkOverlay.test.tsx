@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RailLinkOverlay } from "./RailLinkOverlay";
+import type { RailRelationState } from "../lib/railArrangement";
 import { useSettings } from "../state/settings";
 
 vi.mock("../state/theme", () => ({
@@ -21,6 +22,20 @@ class ResizeObserverMock {
 }
 
 let hostSize = { width: 1200, height: 800 };
+
+const relation = (
+  over: Partial<RailRelationState> = {},
+): RailRelationState => ({
+  boundTabId: "v2",
+  boundPaneId: "g2",
+  relationId: "rail-relation/c1/g2/v2",
+  placement: "flow",
+  connected: true,
+  side: "right",
+  borderMode: "union",
+  pathCount: 1,
+  ...over,
+});
 
 describe("RailLinkOverlay — 실시간 그리드 추종", () => {
   beforeEach(() => {
@@ -49,8 +64,7 @@ describe("RailLinkOverlay — 실시간 그리드 추종", () => {
     const render = (width: number) => (
       <RailLinkOverlay
         contentId="c1"
-        boundViewId="v2"
-        boundPaneId="g2"
+        relation={relation()}
         railWidth={300}
         railStation={50}
         targetRect={{ left: 50, top: 0, width, height: 50 }}
@@ -83,19 +97,29 @@ describe("RailLinkOverlay — 실시간 그리드 추종", () => {
     act(() => root.unmount());
   });
 
-  it("PIN 등으로 사이에 다른 패널이 끼면 관계면을 아예 렌더하지 않는다", () => {
+  it("결부가 없으면 none/0 공개 루트만 남기고 경로를 그리지 않는다", () => {
     const host = document.createElement("div");
     document.body.appendChild(host);
     const root = createRoot(host);
     act(() => root.render(
       <RailLinkOverlay
-        contentId="c1" boundViewId="v2" boundPaneId="g2"
+        contentId="c1"
+        relation={relation({
+          boundTabId: null,
+          boundPaneId: null,
+          relationId: "rail-relation/c1/none",
+          connected: false,
+          side: "detached",
+          borderMode: "none",
+          pathCount: 0,
+        })}
         railWidth={300} railStation={0}
-        targetRect={{ left: 50, top: 0, width: 50, height: 100 }}
+        targetRect={null}
       />,
     ));
-    // 비인접(간격 1%p 초과) 억제 — 억지 원거리 연결은 빈 오버레이 DOM 도 남기지 않는다.
-    expect(host.querySelector(".rail-link-overlay")).toBeNull();
+    const overlay = host.querySelector<HTMLElement>(".rail-link-overlay");
+    expect(overlay?.dataset).toMatchObject({ borderMode: "none", pathCount: "0" });
+    expect(overlay?.querySelector("svg")).toBeNull();
     act(() => root.unmount());
   });
 
@@ -104,8 +128,7 @@ describe("교체-인접 표시", () => {
   const renderProps = (projected: boolean) => (
     <RailLinkOverlay
       contentId="c1"
-      boundViewId="v2"
-      boundPaneId="g2"
+      relation={relation()}
       railWidth={300}
       railStation={50}
       targetRect={{ left: 50, top: 0, width: 25, height: 50 }}

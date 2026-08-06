@@ -1,4 +1,3 @@
-import { flowRailBoundBox } from "./lib/railBoundBox";
 import { currentWindow, appInfo, invoke, dragRegion } from "./framework";
 import { execute } from "./commands/registry";
 import {
@@ -82,7 +81,11 @@ import {
 } from "./lib/railMotion";
 import { useAppChromeLayoutReflow } from "./lib/appChromeLayoutReflow";
 import { useArrangementPhase } from "./components/useArrangementPhase";
-import { arrangementMoves, viewIdsOfMoves } from "./lib/railArrangement";
+import {
+  arrangementMoves,
+  resolveEffectiveRailRelation,
+  viewIdsOfMoves,
+} from "./lib/railArrangement";
 import { prepareLayoutMove, viewLayoutMoves } from "./lib/layoutTransitionHost";
 import "./App.css";
 
@@ -240,37 +243,22 @@ const ProjectPlane = memo(function ProjectPlane({
     project.id,
   );
   const arrangement = phase.displayed;
-  const railCells = arrangement?.cells ?? [];
   const railCleanLines = arrangement?.cleanLines ?? [0, 100];
   const effectiveStation = arrangement?.station ?? 0;
-  // **결합의 기본은 포커스다.** 명시 결합(railBindingTabId)은 그것을 덮어쓰는 락이지,
-  // 결합이 있으려면 반드시 있어야 하는 값이 아니다. 락만 볼 때는 아무도 그 값을 안 세우면
-  // 결합 자체가 없어 보더가 통째로 안 그려졌다(실측 2026-08-02).
-  //
-  // 같은 규칙이 이미 투영 배선에 있다(boundViewInContent: 락이 없으면 활성 판). 두 자리가
-  // 서로 다른 기본값을 쓰면 "관계가 있다고 보는 쪽"과 "그리는 쪽"이 갈린다.
-  // **결합은 화면이 그리는 해를 따른다.** 포커스는 클릭 즉시 바뀌지만 기하는 위상이 받아들일
-  // 때 바뀐다. 새 결합에 옛 기하를 붙이면 그 상자는 어느 해의 것도 아니다 — 한 프레임 동안
-  // 엉뚱한 폭이 그려지고 그것이 "움찔"로 보인다(실측 2026-08-02: pan-aecvk3 활성 직후 폭
-  // 1369 를 한 번 그리고 456 으로 돌아왔다. 사용자 녹화에서 보더가 좁은 상자와 넓은 상자를
-  // 몇 프레임 왕복). 해가 자기 포커스를 답하므로(focusId) 그것을 읽는다.
-  // 명시 잠금(railBindingTabId)은 다른 축이다 — 기하를 안 바꾸므로 지연이 없다.
-  const boundGroup = activeContent
-    ? (allGroups(activeContent.layout).find((group) =>
-        activeContent.railBindingTabId
-          ? group.tabs.some((view) => view.id === activeContent.railBindingTabId)
-          : group.id === (arrangement?.focusId ?? activeContent.activePaneId),
-      ) ?? allGroups(activeContent.layout)[0])
-    : undefined;
-  const boundView = activeContent?.railBindingTabId
-    ? boundGroup?.tabs.find((view) => view.id === activeContent.railBindingTabId)
-    : (boundGroup?.tabs.find((view) => view.id === boundGroup.activeTabId) ??
-      boundGroup?.tabs[0]);
-  const boundCell = boundGroup
-    ? railCells.find((cell) => cell.id === boundGroup.id)
-    : undefined;
   const [dragStation, setDragStation] = useState<number | null>(null);
   const renderedStation = dragStation ?? effectiveStation;
+  // renderer와 state.tree/pane.list가 같은 해결기를 소비한다. 명시 결부가 없으면 이 해의
+  // 포커스 활성 탭, 닫힘·빈 판이면 none/0이다. 여기서 그룹·인접·보더를 다시 판정하지 않는다.
+  const effectiveRailRelation = activeContent
+    ? resolveEffectiveRailRelation({
+        contentId: activeContent.id,
+        arrangement,
+        bindingTabId: activeContent.railBindingTabId,
+        placement: placement.mode,
+        railOpen: project.sidebarOpen,
+        station: renderedStation,
+      })
+    : null;
   // 레일 시각 모드(§12-⑤) — pane(분할창처럼) | ground(바닥 평면). 토글은 슬롯 프레임 헤더.
   const railLook = useSettings((s) => s.railLook);
   // 위상이 실제로 움직이는 뷰들 — 해가 지시한 패널(그룹)의 뷰만. 동결도 veil 도 이 집합으로만
@@ -439,22 +427,13 @@ const ProjectPlane = memo(function ProjectPlane({
           traveling={railTraveling}
           startAtUnixMs={railTraveling ? phase.startAtUnixMs : undefined}
           relationOverlay={
-            project.sidebarOpen && activeContent && boundGroup && boundView && boundCell ? (
+            activeContent && effectiveRailRelation ? (
               <RailLinkOverlay
                 contentId={activeContent.id}
-                boundViewId={boundView.id}
-                boundPaneId={boundGroup.id}
+                relation={effectiveRailRelation.state}
                 railWidth={sidebarW}
                 railStation={renderedStation}
-                placementMode={placement.mode}
-                // PIN은 실제 판 rect를 그대로 넘긴다. 인접 여부와 좌·우 방향을 관계면이
-                // 판정하며, 떨어진 판까지 사이 공간을 합성 보더로 오인하지 않는다.
-                // FLOW만 이동 중 결합 구간을 하나의 투영 상자로 표현한다.
-                targetRect={
-                  placement.mode === "pin"
-                    ? boundCell.rect
-                    : flowRailBoundBox(renderedStation, boundCell.rect)
-                }
+                targetRect={effectiveRailRelation.targetRect}
                 projected={arrangement?.swapped ?? false}
               />
             ) : undefined
@@ -564,7 +543,7 @@ const ProjectPlane = memo(function ProjectPlane({
                   // 배치는 해가 정한다 — 비활성 콘텐츠는 자기 정본 배열 그대로(레일 없음).
                   // 레일이 못 간 만큼 가려진 칸 — 움직이지 않지만 흐려야 어느 판이 활성인지 보인다.
                   //
-                  // 화면이 그리는 해에서 가져온다 — railCells·결부와 같은 자리다. 한 상자는
+                  // 화면이 그리는 해에서 가져온다 — 유효 결부와 같은 자리다. 한 상자는
                   // 한 해에서 나온다: 새 사실에 옛 기하를 붙이면 그 그림은 어느 해의 것도
                   // 아니다. 포커스만 바뀐 해도 위상이 즉시 받아들인다(arrangementKey 가 그
                   // 사실까지 서명한다 — 안 그러면 여기서 영영 옛 값을 읽는다).
