@@ -65,11 +65,6 @@ describe("Tauri plugin renderer RPC surface", () => {
     expect(renderer).toContain("windowLabel: () => init.windowLabel");
   });
 
-  it("provider activate가 끝난 뒤 presentation ready를 명시적으로 확정한다", () => {
-    expect(isPluginViewCallExposed("context.setReady")).toBe(true);
-    const renderer = readFileSync(resolve(import.meta.dirname, "pluginViewRenderer.ts"), "utf8");
-    expect(renderer).toContain('await call("context.setReady")');
-  });
 
   it("임의의 app 내부 경로는 노출하지 않는다", () => {
     expect(isPluginViewCallExposed("internal.anything")).toBe(false);

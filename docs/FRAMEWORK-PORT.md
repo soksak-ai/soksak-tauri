@@ -753,10 +753,6 @@ opaque parent-owned handle address and uses `open`, `send`, `on`, and `close` ov
 event subscriptions belong to the presentation lifetime and are reclaimed when the pane ends; the
 child never loads an arbitrary module itself.
 
-After provider `activate` returns, the pane renderer completes a `context.setReady` transaction with
-its parent. Thus `mounted:true` from `tab.open` or `pane.split` is an explicit boundary after the
-provider installed its public API and view-lifetime events, not a timer guess.
-
 A windowed native surface created by a sidecar joins the pane renderer's declared content slot through
 `webview.present(label)`. It creates no second webview: it registers the existing surface as a
 `PaneSurfaceHost` member and completes presentation readiness only after the first slot frame commits.

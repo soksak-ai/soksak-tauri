@@ -741,10 +741,6 @@ Pane renderer가 받는 `app` 주소는 메인 renderer의 공개 플러그인 A
 불투명 handle 주소만 받고 `open`·`send`·`on`·`close`를 RPC로 사용한다. handle과 이벤트 구독은
 presentation 수명에 묶여 pane 종료 시 함께 회수되며, child가 임의 모듈을 직접 적재하지 않는다.
 
-provider `activate`가 반환하면 pane renderer는 `context.setReady` 거래를 부모에 완료한다. 따라서
-`tab.open`/`pane.split`의 `mounted:true`는 타이머 추측이 아니라 provider가 공개 API와 view 수명
-사건을 설치한 뒤의 명시적 경계다.
-
 sidecar가 만든 windowed native surface는 `webview.present(label)`로 pane renderer의 선언된
 content slot에 결합한다. 새 웹뷰를 만들지 않고 기존 표면을 `PaneSurfaceHost` member로 등록하며,
 첫 slot frame이 native에 커밋된 뒤에만 presentation ready를 완료한다.
