@@ -8,7 +8,11 @@ import {
   inspectEvidenceStore,
   resolveEvidenceFile,
 } from "./evidence-store.mjs";
-import { runRecordingEvidenceAction } from "./recording-evidence-action.mjs";
+import {
+  recordingReportFromCommandResponse,
+  runRecordingEvidenceAction,
+} from "./recording-evidence-action.mjs";
+import { reviewVisualRecordingSafely } from "./visual-recording-review.mjs";
 
 const TEMP_PREFIX = "soksak-recording-evidence-action-test-";
 
@@ -24,6 +28,60 @@ async function inRunningStore(run) {
 }
 
 describe("recording evidence product action transaction", () => {
+  it("reads the recording receipt from the public command response envelope", async () => {
+    await inRunningStore(async (root) => {
+      const outcome = await runRecordingEvidenceAction({
+        root,
+        relativePath: "browser/enveloped-command",
+        maxBytes: 64,
+        action: async ({ recordDir }) => {
+          await writeFile(path.join(recordDir, "f0000.png"), "frame");
+          return {
+            ok: true,
+            data: {
+              clicked: true,
+              recording: {
+                status: "complete",
+                mode: "realtime",
+                requestedFrames: 1,
+                frames: 1,
+              },
+            },
+          };
+        },
+      });
+
+      const report = reviewVisualRecordingSafely({
+        recording: recordingReportFromCommandResponse(outcome.actionResult),
+        expectedFrames: 1,
+        artifacts: ["f0000.png"],
+      });
+
+      expect(report).toMatchObject({
+        status: "pending",
+        recordingStatus: "complete",
+        reportedFrames: 1,
+        artifactFrames: 1,
+        failures: [],
+      });
+    });
+  });
+
+  it("keeps a missing command recording receipt visibly failed", () => {
+    const report = reviewVisualRecordingSafely({
+      recording: recordingReportFromCommandResponse({ ok: true, data: { clicked: true } }),
+      expectedFrames: 1,
+      artifacts: ["f0000.png"],
+    });
+
+    expect(report).toMatchObject({
+      status: "failed",
+      recordingStatus: "invalid",
+      artifactFrames: 1,
+    });
+    expect(report.failures).toEqual(["contract:unknown recording status: undefined"]);
+  });
+
   it("stores one recording action and exposes only a relative rotation-safe identity", async () => {
     await inRunningStore(async (root) => {
       const calls = [];

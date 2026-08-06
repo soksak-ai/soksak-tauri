@@ -36,6 +36,20 @@ function failedVisualEvidence(error, phase) {
 }
 
 /**
+ * `ui.input.*`와 `window.resizeSequence`는 공개 소켓의 JSON-RPC 응답 봉투를 반환한다.
+ * 제품 동작 결과를 보존하는 recording transaction이 그 봉투를 임의로 벗기면 호출자가
+ * 받은 정확한 응답이라는 계약이 깨진다. 시각 검토 소비자가 공개 봉투의 유일한 결과 위치인
+ * `data.recording`을 읽는다. 계약이 없으면 undefined를 그대로 반환해 safe reviewer가
+ * 명시적인 visual-evidence failure를 만들게 한다(저장된 PNG로 성공을 꾸미지 않는다).
+ */
+export function recordingReportFromCommandResponse(response) {
+  if (!response || typeof response !== "object" || response.ok !== true) return undefined;
+  const data = response.data;
+  if (!data || typeof data !== "object") return undefined;
+  return data.recording;
+}
+
+/**
  * 증거 저장 실패와 제품 동작 실패는 서로 다른 거래다. 녹화 저장소가 callback 전에
  * 거부되면 제품 동작을 녹화 옵션 없이 정확히 한 번 실행한다. callback 뒤 저장/계측이
  * 실패하면 이미 끝난 제품 동작을 반복하지 않고 그 결과와 시각 증거 실패를 함께 돌려준다.

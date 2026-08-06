@@ -45,7 +45,10 @@ import {
   resolveEvidenceFile,
   writeEvidenceFile,
 } from "./lib/evidence-store.mjs";
-import { runRecordingEvidenceAction } from "./lib/recording-evidence-action.mjs";
+import {
+  recordingReportFromCommandResponse,
+  runRecordingEvidenceAction,
+} from "./lib/recording-evidence-action.mjs";
 import {
   browserTabActivationAddress,
   browserTabNodeAddress,
@@ -125,7 +128,7 @@ async function reviewRecordingOutcome({ outcome, expectedFrames, name }) {
   }
   return reviewRecordingArtifacts({
     directory: resolveEvidenceFile(EVIDENCE_STORE_ROOT, "current", relativePath),
-    recording: outcome.actionResult.recording,
+    recording: recordingReportFromCommandResponse(outcome.actionResult),
     expectedFrames,
     name,
   });
