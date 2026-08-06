@@ -490,6 +490,15 @@ describe("slot-freeze instrumentation lifecycle", () => {
       .toBeLessThan(source.indexOf('const firstPaintPath'));
   });
 
+  it("settles child presentation before reading B01 projected urlbar values", () => {
+    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    const b01Setup = source.split("const expectedUrls")[1]?.split("const b01Receipt")[0] ?? "";
+    const firstBarrier = b01Setup.indexOf('rpc("ui.layout.wait-settled"');
+    const urlbarRead = b01Setup.indexOf("const urlbarMeasures");
+    expect(firstBarrier).toBeGreaterThan(-1);
+    expect(firstBarrier).toBeLessThan(urlbarRead);
+  });
+
   it("hostile resize waits for child slot native commits before final composition judgment", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
     expect(source).toContain('rpc("webview.pane.composition.wait"');
