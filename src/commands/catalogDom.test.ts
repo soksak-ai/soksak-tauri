@@ -197,6 +197,20 @@ describe("ui.measure — 공개 form control 값", () => {
     expect((measured.data as { value?: unknown }).value).toBe("https://example.com/");
   });
 
+  it("다른 document realm에서 온 공개 input도 constructor identity와 무관하게 현재 value를 반환한다", async () => {
+    mountNode(`<input data-node="btn" value="https://fixture.invalid/">`);
+    // PluginView의 DOM은 host와 다른 Window realm일 수 있다. 그때 같은 태그도 host의
+    // HTMLInputElement instanceof 검사는 false다. 공개 form 의미는 realm이 아니라
+    // element의 localName으로 판정해야 한다.
+    vi.stubGlobal("HTMLInputElement", class ForeignInputElement {});
+
+    const measured = await execute("ui.measure", { address: ADDR }, {});
+
+    expect(measured.ok).toBe(true);
+    expect((measured.data as { value?: unknown }).value).toBe("https://fixture.invalid/");
+    vi.unstubAllGlobals();
+  });
+
   it("발견 가능한 반환 계약에 value를 선언한다", () => {
     expect(getSpec("ui.measure")?.returns).toContain("value");
   });

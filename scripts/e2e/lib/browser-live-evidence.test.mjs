@@ -26,6 +26,25 @@ describe("live browser evidence mappers", () => {
     expect(judgeB01MachineEvidence({ engine, tabs }).status).toBe("green");
   });
 
+  it("maps a discovered namespaced public node path to its exact urlbar role", () => {
+    const viewId = "view-0";
+    const expectedUrl = "https://fixture.invalid/?slot=0";
+    const tab = mapB01TabEvidence({
+      viewId,
+      expectedUrl,
+      mountReceipt: { mounted: true },
+      urlbarMeasure: {
+        dataset: { node: `tauri/plugin-view/b-window-${viewId}/urlbar` },
+        value: expectedUrl,
+      },
+      pageIdentity: { viewId, url: expectedUrl },
+      navigateReceipt: { viewId },
+    });
+
+    expect(tab.toolbarAddress.dataNode).toBe("urlbar");
+    expect(judgeB01MachineEvidence({ engine, tabs: [tab, tab] }).status).toBe("green");
+  });
+
   it("keeps missing public B01 receipt facts null so the judge stays RED", () => {
     const tab = mapB01TabEvidence({ viewId: "view-0", expectedUrl: "https://fixture.invalid/" });
     expect(tab.commandReceipt.returnedViewId).toBeNull();
