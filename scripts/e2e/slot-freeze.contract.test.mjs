@@ -35,7 +35,8 @@ function frameworkGuardedRpcCalls(source, command) {
       let tauriOnly = false;
       while (cursor) {
         if (ts.isIfStatement(cursor)
-            && cursor.expression.getText(file).includes('frameworkName === "tauri"')) {
+            && (cursor.expression.getText(file).includes('frameworkName === "tauri"')
+              || cursor.expression.getText(file) === "paneOwned")) {
           tauriOnly = true;
           break;
         }
@@ -49,11 +50,49 @@ function frameworkGuardedRpcCalls(source, command) {
   return calls;
 }
 
+function ownerGuardedFunctionCalls(source, functionName) {
+  const file = ts.createSourceFile("slot-freeze.mjs", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  const calls = [];
+  const visit = (node) => {
+    if (ts.isCallExpression(node) && node.expression.getText(file) === functionName) {
+      let cursor = node.parent;
+      let paneOwnedOnly = false;
+      while (cursor) {
+        if (ts.isIfStatement(cursor)
+            && (cursor.expression.getText(file).includes("native || windowed")
+              || cursor.expression.getText(file) === "paneOwned")) {
+          paneOwnedOnly = true;
+          break;
+        }
+        cursor = cursor.parent;
+      }
+      calls.push({ text: node.getText(file), paneOwnedOnly });
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return calls;
+}
+
 describe("slot-freeze instrumentation lifecycle", () => {
   it("installs PaneSurfaceHost presentation probes only for pane-owned surfaces", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
     expect(source).toContain('frameworkName === "tauri" && (native || windowed)');
     expect(source).not.toContain('if (frameworkName === "tauri") await installPanePresentationMarkers');
+  });
+
+  it("never judges external engine surfaces as PaneSurfaceHost members", () => {
+    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    expect(source).toContain(
+      'const paneOwned = frameworkName === "tauri" && (native || windowed);',
+    );
+    const calls = ownerGuardedFunctionCalls(source, "assertPaneComposition");
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls.every((call) => call.paneOwnedOnly)).toBe(true);
+    const lighting = source.split("async function assertFocusLighting")[1]
+      ?.split("async function assertRailCompositionContract")[0] ?? "";
+    expect(lighting).toContain("if (paneOwned)");
+    expect(lighting).not.toContain('if (frameworkName === "tauri")');
   });
 
   it("keeps Node alive until the whole scenario and finally cleanup have completed", () => {

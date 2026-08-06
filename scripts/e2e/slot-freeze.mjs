@@ -355,7 +355,7 @@ const nodeAddress = (tree, nodePath) => {
   return node.address;
 };
 
-async function assertFocusLighting(rpc, win, addresses, labels, activeIndex, frameworkName, stage) {
+async function assertFocusLighting(rpc, win, addresses, labels, activeIndex, paneOwned, stage) {
   const dims = [];
   const levels = [];
   for (let index = 0; index < addresses.length; index += 1) {
@@ -376,7 +376,7 @@ async function assertFocusLighting(rpc, win, addresses, labels, activeIndex, fra
       errors.push(`${index}:inactive level=${levels[index]} dim=${dims[index]}`);
     }
   }
-  if (frameworkName === "tauri") {
+  if (paneOwned) {
     const composition = must(await rpc("webview.pane.composition", {}, win), `${stage} lighting composition`);
     for (let index = 0; index < labels.length; index += 1) {
       const match = (composition.matches ?? []).find((candidate) =>
@@ -944,13 +944,12 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
     }, win), "motion anchors");
     const native = implementation.surface === "framework-native";
     const windowed = implementation.surface === "engine-windowed";
+    const paneOwned = frameworkName === "tauri" && (native || windowed);
     const labels = tabIds.map((id) => implementation.label(win, id));
-    if (frameworkName === "tauri" && (native || windowed)) {
+    if (paneOwned) {
       await installPanePresentationMarkers(rpc, win, labels);
       const initial = must(await rpc("webview.composition", {}, win), "initial composition");
       assertTauriSurfaceResizePolicy(initial, "initial native composition");
-    }
-    if (frameworkName === "tauri") {
       assertPaneComposition(
         must(await rpc("webview.pane.composition", {}, win), "initial pane composition"),
         labels,
@@ -1077,7 +1076,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
         frameCount += files.length;
 
         const lighting = await assertFocusLighting(
-          rpc, win, lightingAddresses, labels, side, frameworkName, `${engine}/${name}`,
+          rpc, win, lightingAddresses, labels, side, paneOwned, `${engine}/${name}`,
         );
         await assertRailCompositionContract(
           rpc,
@@ -1087,13 +1086,14 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
           `${engine}/${name}`,
         );
 
-        if (frameworkName === "tauri") {
+        if (paneOwned) {
           assertPaneComposition(
             must(await rpc("webview.pane.composition", {}, win), `pane composition ${name}`),
             labels,
           );
           assertNativeLighting(must(await rpc("webview.surfaces", {}, win), `surfaces ${name}`), labels[side], labels);
-        } else if (windowed) {
+        }
+        if (windowed) {
           await assertWindowedComposition(rpc, win, plugin, tabIds, addresses);
         }
         await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, `cross-click-${name}`);
@@ -1462,7 +1462,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
       must(await rpc("capture.calibration", { visible: false }, win), "DOM compositor calibration hide");
       frameCount += fastFiles.length;
       must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }), "window resize final layout settled");
-      if (frameworkName === "tauri") {
+      if (paneOwned) {
         assertPaneComposition(
           must(await rpc("webview.pane.composition.wait", { settleTimeoutMs: 8_000 }, win, { timeoutMs: 12_000 }),
             "window resize final pane composition"),
@@ -1514,7 +1514,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
         );
         must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }),
           `pane resize ${direction} layout settled`);
-        if (frameworkName === "tauri") {
+        if (paneOwned) {
           const composition = must(await rpc(
             "webview.pane.composition.wait",
             { settleTimeoutMs: 8_000 },
