@@ -69,6 +69,24 @@ export interface CompositionSample {
 
 export type CompositionMotionMode = "glide" | "snap";
 
+export interface CompositionTimelineSample {
+  sequence: number;
+  sampledAtUnixMs: number;
+  frame: CompositionRect;
+}
+
+export interface CompositionTimeline {
+  coordinateSpace: CompositionCoordinateSpace;
+  startAtUnixMs: number;
+  durationMs: number;
+  timingFunction: readonly [number, number, number, number];
+  from: CompositionRect;
+  to: CompositionRect;
+  slot: readonly CompositionTimelineSample[];
+  renderer: readonly CompositionTimelineSample[];
+  surface: readonly CompositionTimelineSample[];
+}
+
 export function rectDelta(a: CompositionRect, b: CompositionRect): CompositionRect {
   return {
     x: Math.abs(a.x - b.x),
@@ -80,6 +98,126 @@ export function rectDelta(a: CompositionRect, b: CompositionRect): CompositionRe
 
 export function sameRect(a: CompositionRect, b: CompositionRect): boolean {
   return Object.values(rectDelta(a, b)).every((value) => value === 0);
+}
+
+function cubicBezierCoordinate(t: number, first: number, second: number): number {
+  const inverse = 1 - t;
+  return 3 * inverse * inverse * t * first
+    + 3 * inverse * t * t * second
+    + t * t * t;
+}
+
+function cubicBezierProgress(
+  progress: number,
+  [x1, y1, x2, y2]: readonly [number, number, number, number],
+): number {
+  if (progress <= 0) return 0;
+  if (progress >= 1) return 1;
+  let low = 0;
+  let high = 1;
+  // CSS cubic-bezier의 x는 0..1 단조다. 고정 반복은 시간 tolerance가 아니라 동일 입력에
+  // 동일한 곡선 좌표를 내는 수치 해석이며, 최종 판정은 device-pixel exact다.
+  for (let index = 0; index < 48; index += 1) {
+    const candidate = (low + high) / 2;
+    if (cubicBezierCoordinate(candidate, x1, x2) < progress) low = candidate;
+    else high = candidate;
+  }
+  return cubicBezierCoordinate((low + high) / 2, y1, y2);
+}
+
+function timelineFrameAt(timeline: CompositionTimeline, sampledAtUnixMs: number): CompositionRect {
+  const linear = Math.max(0, Math.min(
+    1,
+    (sampledAtUnixMs - timeline.startAtUnixMs) / timeline.durationMs,
+  ));
+  const progress = cubicBezierProgress(linear, timeline.timingFunction);
+  return {
+    x: timeline.from.x + (timeline.to.x - timeline.from.x) * progress,
+    y: timeline.from.y + (timeline.to.y - timeline.from.y) * progress,
+    w: timeline.from.w + (timeline.to.w - timeline.from.w) * progress,
+    h: timeline.from.h + (timeline.to.h - timeline.from.h) * progress,
+  };
+}
+
+/**
+ * 서로 다른 display cadence를 nearest-neighbour로 가짜 1:1 결합하지 않는다. 각 producer의
+ * 실제 표시 epoch에서 같은 선언 궤적을 device-pixel exact로 따르는지 독립 판정하고, native
+ * renderer/surface producer끼리는 동일 사건을 1:1로 대조한다.
+ */
+export function compositionTimelineVerdict(timeline: CompositionTimeline) {
+  const errors: string[] = [];
+  const scaleFactor = Number(timeline.coordinateSpace?.scaleFactor);
+  if (!Number.isFinite(scaleFactor) || scaleFactor <= 0) errors.push(`scaleFactor=${scaleFactor}`);
+  if (!Number.isFinite(timeline.startAtUnixMs)) errors.push(`startAtUnixMs=${timeline.startAtUnixMs}`);
+  if (!Number.isFinite(timeline.durationMs) || timeline.durationMs <= 0) {
+    errors.push(`durationMs=${timeline.durationMs}`);
+  }
+  if (timeline.timingFunction.length !== 4
+      || timeline.timingFunction.some((value) => !Number.isFinite(value))) {
+    errors.push(`timingFunction=${timeline.timingFunction.join(",")}`);
+  }
+  if (errors.length) return { ok: false, errors };
+
+  const endAtUnixMs = timeline.startAtUnixMs + timeline.durationMs;
+  const inspect = (name: "slot" | "renderer" | "surface") => {
+    const samples = timeline[name];
+    if (samples.length < 3) {
+      errors.push(`${name}:samples=${samples.length}/3`);
+      return;
+    }
+    for (const [index, sample] of samples.entries()) {
+      if (sample.sequence !== index) errors.push(`${name}[${index}]:sequence=${sample.sequence}/${index}`);
+      if (!Number.isFinite(sample.sampledAtUnixMs)
+          || (index > 0 && sample.sampledAtUnixMs <= samples[index - 1].sampledAtUnixMs)) {
+        errors.push(`${name}[${index}]:sampledAtUnixMs=${sample.sampledAtUnixMs}`);
+        continue;
+      }
+      const expected = logicalRectToPhysical(
+        timelineFrameAt(timeline, sample.sampledAtUnixMs),
+        scaleFactor,
+      );
+      const actual = logicalRectToPhysical(sample.frame, scaleFactor);
+      if (!sameRect(expected, actual)) {
+        errors.push(`${name}[${index}]=${JSON.stringify(rectDelta(expected, actual))}`);
+      }
+    }
+    if (samples[0].sampledAtUnixMs > timeline.startAtUnixMs) {
+      errors.push(`${name}:start-coverage=${samples[0].sampledAtUnixMs}/${timeline.startAtUnixMs}`);
+    }
+    if (samples.at(-1)!.sampledAtUnixMs < endAtUnixMs) {
+      errors.push(`${name}:end-coverage=${samples.at(-1)!.sampledAtUnixMs}/${endAtUnixMs}`);
+    }
+    if (!samples.some(({ sampledAtUnixMs }) => (
+      sampledAtUnixMs > timeline.startAtUnixMs && sampledAtUnixMs < endAtUnixMs
+    ))) errors.push(`${name}:intermediate=0`);
+    const gaps = samples.slice(1).map((sample, index) => (
+      sample.sampledAtUnixMs - samples[index].sampledAtUnixMs
+    )).sort((left, right) => left - right);
+    const cadence = gaps[Math.floor(gaps.length / 2)];
+    if (gaps.at(-1)! > cadence * 1.75) {
+      errors.push(`${name}:display-gap=${gaps.at(-1)}/${cadence}`);
+    }
+  };
+  inspect("slot");
+  inspect("renderer");
+  inspect("surface");
+
+  if (timeline.renderer.length !== timeline.surface.length) {
+    errors.push(`native-pairs=${timeline.renderer.length}/${timeline.surface.length}`);
+  } else {
+    for (const [index, renderer] of timeline.renderer.entries()) {
+      const surface = timeline.surface[index];
+      if (renderer.sampledAtUnixMs !== surface.sampledAtUnixMs) {
+        errors.push(`native-pair[${index}]:epoch=${renderer.sampledAtUnixMs}/${surface.sampledAtUnixMs}`);
+      }
+      const rendererFrame = logicalRectToPhysical(renderer.frame, scaleFactor);
+      const surfaceFrame = logicalRectToPhysical(surface.frame, scaleFactor);
+      if (!sameRect(rendererFrame, surfaceFrame)) {
+        errors.push(`native-pair[${index}]:frame=${JSON.stringify(rectDelta(rendererFrame, surfaceFrame))}`);
+      }
+    }
+  }
+  return { ok: errors.length === 0, errors };
 }
 
 /**
