@@ -73,6 +73,7 @@ describe("window.record maxBytes", () => {
       frames: 3,
       intervalMs: 7,
       maxBytes: 4_096,
+      frameTimeoutMs: 8_000,
     });
   });
 
@@ -98,6 +99,7 @@ describe("window.record maxBytes", () => {
       dir: "/tmp/unbudgeted-record",
       frames: 1,
       intervalMs: 40,
+      frameTimeoutMs: 8_000,
     });
   });
 
@@ -119,4 +121,35 @@ describe("window.record maxBytes", () => {
     expect(result).toMatchObject({ ok: false, code: "INVALID_PARAMS" });
     expect(recordWindowFrames).not.toHaveBeenCalled();
   });
+});
+
+describe("window.record producer deadline", () => {
+  it("공개 스키마·응답·producer 호출에 frameTimeoutMs를 숨기지 않는다", async () => {
+    expect(getSpec("window.record")?.params.frameTimeoutMs).toMatchObject({ type: "number" });
+
+    const result = await execute("window.record", {
+      dir: "/tmp/deadline-record",
+      frames: 3,
+      frameTimeoutMs: 25,
+    }, {});
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: { frameTimeoutMs: 25 },
+    });
+    expect(recordWindowFrames).toHaveBeenCalledWith(expect.objectContaining({ frameTimeoutMs: 25 }));
+  });
+
+  it.each([0, -1, 1.5, 60_001, Number.NaN, Number.POSITIVE_INFINITY])(
+    "잘못된 frameTimeoutMs %s를 producer 전에 거부한다",
+    async (frameTimeoutMs) => {
+      const result = await execute("window.record", {
+        dir: "/tmp/rejected-deadline",
+        frames: 1,
+        frameTimeoutMs,
+      }, {});
+      expect(result).toMatchObject({ ok: false, code: "INVALID_PARAMS" });
+      expect(recordWindowFrames).not.toHaveBeenCalled();
+    },
+  );
 });

@@ -2,7 +2,13 @@
 
 import { beforeEach, expect, it, vi } from "vitest";
 import { createStream, invoke } from "../framework";
-import { recordWindowFrames, startWindowRecording } from "./windowRecorder";
+import {
+  recordWindowFrames,
+  startWindowRecording,
+  validWindowRecordFrameTimeoutMs,
+  WINDOW_RECORD_DEFAULT_FRAME_TIMEOUT_MS,
+  WINDOW_RECORD_MAX_FRAME_TIMEOUT_MS,
+} from "./windowRecorder";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -42,6 +48,7 @@ it("공통 record 계약 한 번으로 유한 프레임 시퀀스를 저장한�
     dir: "/tmp/framework-neutral-record",
     frames: 2,
     intervalMs: 0,
+    frameTimeoutMs: WINDOW_RECORD_DEFAULT_FRAME_TIMEOUT_MS,
     onFrame: readyStream,
   });
 });
@@ -62,8 +69,41 @@ it("저장 budget을 프레임워크 분기 없이 producer에 그대로 전달�
     frames: 1,
     intervalMs: 0,
     maxBytes: 1_048_576,
+    frameTimeoutMs: WINDOW_RECORD_DEFAULT_FRAME_TIMEOUT_MS,
     onFrame: readyStream,
   });
+});
+
+it("공통 producer deadline을 모든 프레임워크 호출에 명시한다", async () => {
+  expect(validWindowRecordFrameTimeoutMs(1)).toBe(true);
+  expect(validWindowRecordFrameTimeoutMs(WINDOW_RECORD_MAX_FRAME_TIMEOUT_MS)).toBe(true);
+  expect(validWindowRecordFrameTimeoutMs(0)).toBe(false);
+  expect(validWindowRecordFrameTimeoutMs(WINDOW_RECORD_MAX_FRAME_TIMEOUT_MS + 1)).toBe(false);
+
+  const defaultRecording = recordWindowFrames({
+    dir: "/tmp/framework-neutral-default-deadline",
+    frames: 1,
+    intervalMs: 0,
+  });
+  readyStream.onmessage(0);
+  await defaultRecording;
+  expect(vi.mocked(invoke)).toHaveBeenLastCalledWith(
+    "plugin:webview-capture|record",
+    expect.objectContaining({ frameTimeoutMs: WINDOW_RECORD_DEFAULT_FRAME_TIMEOUT_MS }),
+  );
+
+  const explicitRecording = recordWindowFrames({
+    dir: "/tmp/framework-neutral-explicit-deadline",
+    frames: 1,
+    intervalMs: 0,
+    frameTimeoutMs: 25,
+  });
+  readyStream.onmessage(0);
+  await explicitRecording;
+  expect(vi.mocked(invoke)).toHaveBeenLastCalledWith(
+    "plugin:webview-capture|record",
+    expect.objectContaining({ frameTimeoutMs: 25 }),
+  );
 });
 
 it("호출자는 공통 recorder만 사용하고 프레임워크 record를 직접 부르지 않는다", () => {

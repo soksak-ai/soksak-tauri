@@ -18,7 +18,10 @@ import { locateTab } from "./catalog";
 import { useSessions } from "../state/sessions";
 import {
   recordWindowFrames,
+  validWindowRecordFrameTimeoutMs,
   validWindowRecordMaxBytes,
+  WINDOW_RECORD_DEFAULT_FRAME_TIMEOUT_MS,
+  WINDOW_RECORD_MAX_FRAME_TIMEOUT_MS,
   WINDOW_RECORD_MAX_BYTES,
 } from "./windowRecorder";
 import { CAPTURE_CALIBRATION_ID, setCaptureCalibration } from "./captureCalibration";
@@ -478,8 +481,12 @@ export function registerCaptureCatalog(): void {
         type: "number",
         description: `Optional total encoded PNG byte budget (positive safe integer, max ${WINDOW_RECORD_MAX_BYTES})`,
       },
+      frameTimeoutMs: {
+        type: "number",
+        description: `Per-frame native completion deadline in ms (default ${WINDOW_RECORD_DEFAULT_FRAME_TIMEOUT_MS}, max ${WINDOW_RECORD_MAX_FRAME_TIMEOUT_MS})`,
+      },
     },
-    returns: "{ dir, frames, maxBytes:number|null }",
+    returns: "{ dir, frames, maxBytes:number|null, frameTimeoutMs }",
     message: (d) => tmsg("msg.window.record", { n: Number(d.frames) }),
     errors: ["INVALID_PARAMS"],
     examples: [
@@ -500,6 +507,8 @@ export function registerCaptureCatalog(): void {
       // 간격은 부른 쪽이 발화한다 — 무엇을 몇 fps 로 봐야 하는지는 이 자리가 모른다.
       const intervalMs = Math.max(0, (p.intervalMs as number | undefined) ?? 40);
       const maxBytes = p.maxBytes;
+      const frameTimeoutMs = p.frameTimeoutMs
+        ?? WINDOW_RECORD_DEFAULT_FRAME_TIMEOUT_MS;
       if (maxBytes !== undefined && !validWindowRecordMaxBytes(maxBytes)) {
         return {
           ok: false as const,
@@ -507,14 +516,23 @@ export function registerCaptureCatalog(): void {
           message: `maxBytes는 1..${WINDOW_RECORD_MAX_BYTES} 범위의 safe integer여야 합니다`,
         };
       }
+      if (!validWindowRecordFrameTimeoutMs(frameTimeoutMs)) {
+        return {
+          ok: false as const,
+          code: "INVALID_PARAMS" as const,
+          message: `frameTimeoutMs는 1..${WINDOW_RECORD_MAX_FRAME_TIMEOUT_MS} 범위의 정수여야 합니다`,
+        };
+      }
       return {
         dir,
         maxBytes: maxBytes ?? null,
+        frameTimeoutMs,
         frames: await recordWindowFrames({
           dir,
           frames,
           intervalMs,
           ...(maxBytes === undefined ? {} : { maxBytes }),
+          frameTimeoutMs,
         }),
       };
     },

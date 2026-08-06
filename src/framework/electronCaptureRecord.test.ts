@@ -28,8 +28,45 @@ function frameWindow(frames: readonly Buffer[]) {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   for (const dir of owned.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
+
+it("끝나지 않는 capturePage는 polling 없이 frameTimeoutMs에서 실패하고 늦은 완료를 격리한다", async () => {
+  vi.useFakeTimers();
+  const dir = mkdtempSync(join(tmpdir(), "soksak-electron-record-timeout-"));
+  owned.push(dir);
+  let resolveCapture!: (image: { isEmpty: () => boolean; toPNG: () => Buffer }) => void;
+  const capturePage = vi.fn(() => new Promise((resolve) => { resolveCapture = resolve; }));
+  const stream = vi.fn();
+
+  const recording = capture[RECORD].answer(
+    { window: { webContents: { capturePage } }, stream },
+    { dir, frames: 1, intervalMs: 0, frameTimeoutMs: 5, onFrame: {} },
+  );
+  const rejected = expect(recording).rejects.toMatchObject({ code: "FRAMEWORK_CAPTURE_TIMEOUT" });
+  await vi.advanceTimersByTimeAsync(5);
+  await rejected;
+
+  resolveCapture({ isEmpty: () => false, toPNG: () => Buffer.from("late") });
+  await Promise.resolve();
+  expect(existsSync(join(dir, "f0000.png"))).toBe(false);
+  expect(stream).not.toHaveBeenCalled();
+});
+
+it.each([0, -1, 1.5, 60_001, Number.NaN, Number.POSITIVE_INFINITY])(
+  "Electron도 잘못된 frameTimeoutMs %s를 캡처 전에 거부한다",
+  async (frameTimeoutMs) => {
+    const dir = mkdtempSync(join(tmpdir(), "soksak-electron-record-invalid-timeout-"));
+    owned.push(dir);
+    const host = frameWindow([Buffer.from("a")]);
+    await expect(capture[RECORD].answer(
+      { window: host.window },
+      { dir, frames: 1, intervalMs: 0, frameTimeoutMs },
+    )).rejects.toMatchObject({ code: "INVALID_PARAMS" });
+    expect(host.capturePage).not.toHaveBeenCalled();
+  },
+);
 
 it("Electron도 공통 record 계약을 포커스 없이 유한 PNG로 구현한다", async () => {
   const dir = mkdtempSync(join(tmpdir(), "soksak-electron-record-"));

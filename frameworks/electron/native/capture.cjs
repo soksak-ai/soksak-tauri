@@ -23,6 +23,9 @@ const NO_WINDOW = "FRAMEWORK_NO_WINDOW";
 const BAD_RECT = "FRAMEWORK_BAD_RECT";
 const EMPTY_CAPTURE = "FRAMEWORK_EMPTY_CAPTURE";
 const CAPTURE_QUOTA_EXCEEDED = "FRAMEWORK_CAPTURE_QUOTA_EXCEEDED";
+const CAPTURE_TIMEOUT = "FRAMEWORK_CAPTURE_TIMEOUT";
+const DEFAULT_FRAME_TIMEOUT_MS = 8_000;
+const MAX_FRAME_TIMEOUT_MS = 60_000;
 // Electron 의 capturer 수명을 캡처 Promise 와 묶는다. 캡처 중 page를 visible로 취급하는 기본
 // 동작은 창 포커스/전면화가 아니다. 이 동작을 `stayHidden:true`로 막으면 부모와 별도 compositor
 // surface인 <webview> guest가 PNG에서 검게 빠지고 Viz 전이가 실패할 수 있다. 시스템 sleep만
@@ -48,6 +51,36 @@ function pngOf(image) {
     throw frameworkError(EMPTY_CAPTURE, "캡처가 빈 PNG 를 냈다");
   }
   return png;
+}
+
+/** 한 네이티브 프레임의 완료권을 유한 기한에 묶는다. 타임아웃 뒤 늦은 Promise는 handler가
+ * 소비만 하고 파일·stream side effect에는 닿지 않는다. 타이머 한 번만 쓰며 상태를 폴링하지 않는다. */
+function captureBeforeDeadline(capture, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(frameworkError(
+        CAPTURE_TIMEOUT,
+        `record frame이 ${timeoutMs}ms 안에 완료되지 않았다`,
+      ));
+    }, timeoutMs);
+    Promise.resolve(capture).then(
+      (image) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(image);
+      },
+      (error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 }
 
 /** rect 는 CSS px 창 좌표다(ui.measure 와 같은 공간) — Electron 의 캡처 사각형과 같은 단위. */
@@ -96,6 +129,7 @@ module.exports = {
       const frames = Number(args?.frames);
       const intervalMs = Number(args?.intervalMs ?? 0);
       const maxBytes = args?.maxBytes;
+      const frameTimeoutMs = args?.frameTimeoutMs ?? DEFAULT_FRAME_TIMEOUT_MS;
       if (!dir || !Number.isInteger(frames) || frames < 1 || frames > 600) {
         throw frameworkError("INVALID_PARAMS", "dir 및 frames(1..600) 필수");
       }
@@ -105,11 +139,25 @@ module.exports = {
       if (maxBytes !== undefined && (!Number.isSafeInteger(maxBytes) || maxBytes <= 0)) {
         throw frameworkError("INVALID_PARAMS", "maxBytes는 생략하거나 양의 safe integer라야 한다");
       }
+      if (
+        !Number.isSafeInteger(frameTimeoutMs)
+        || frameTimeoutMs < 1
+        || frameTimeoutMs > MAX_FRAME_TIMEOUT_MS
+      ) {
+        throw frameworkError(
+          "INVALID_PARAMS",
+          `frameTimeoutMs는 1..${MAX_FRAME_TIMEOUT_MS} 범위의 정수라야 한다`,
+        );
+      }
       fs.mkdirSync(dir, { recursive: true });
       let writtenBytes = 0;
+      const webContents = contents(ctx);
       for (let i = 0; i < frames; i += 1) {
         const started = Date.now();
-        const png = pngOf(await contents(ctx).capturePage(undefined, BACKGROUND_CAPTURE));
+        const png = pngOf(await captureBeforeDeadline(
+          webContents.capturePage(undefined, BACKGROUND_CAPTURE),
+          frameTimeoutMs,
+        ));
         if (maxBytes !== undefined && png.length > maxBytes - writtenBytes) {
           throw frameworkError(
             CAPTURE_QUOTA_EXCEEDED,

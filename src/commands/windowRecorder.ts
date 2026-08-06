@@ -6,6 +6,8 @@ export type WindowRecordRequest = {
   intervalMs: number;
   /** producer가 기록할 수 있는 전체 encoded PNG bytes 상한. 생략은 제한 없음. */
   maxBytes?: number;
+  /** 각 네이티브 프레임 완료를 기다리는 유한 기한. */
+  frameTimeoutMs?: number;
   /** 저장이 끝난 각 캡처 프레임의 0-based 번호. 캡처와 수치 관측의 공통 시계다. */
   onFrame?: (frame: number) => void;
 };
@@ -33,11 +35,19 @@ export type WindowRecordingReport =
 export type WindowRecorder = (request: WindowRecordRequest) => WindowRecording;
 
 export const WINDOW_RECORD_MAX_BYTES = 1_073_741_824;
+export const WINDOW_RECORD_DEFAULT_FRAME_TIMEOUT_MS = 8_000;
+export const WINDOW_RECORD_MAX_FRAME_TIMEOUT_MS = 60_000;
 
 export function validWindowRecordMaxBytes(value: unknown): value is number {
   return Number.isSafeInteger(value)
     && (value as number) >= 1
     && (value as number) <= WINDOW_RECORD_MAX_BYTES;
+}
+
+export function validWindowRecordFrameTimeoutMs(value: unknown): value is number {
+  return Number.isSafeInteger(value)
+    && (value as number) >= 1
+    && (value as number) <= WINDOW_RECORD_MAX_FRAME_TIMEOUT_MS;
 }
 
 const recordingFailureReason = (error: unknown): string =>
@@ -135,8 +145,14 @@ export function recordWindowFrames({
   frames,
   intervalMs,
   maxBytes,
+  frameTimeoutMs = WINDOW_RECORD_DEFAULT_FRAME_TIMEOUT_MS,
   onFrame,
 }: WindowRecordRequest): WindowRecording {
+  if (!validWindowRecordFrameTimeoutMs(frameTimeoutMs)) {
+    throw new Error(
+      `frameTimeoutMs must be between 1 and ${WINDOW_RECORD_MAX_FRAME_TIMEOUT_MS}`,
+    );
+  }
   const frameEvents = createStream<number>();
   let settled = false;
   let resolveReady!: () => void;
@@ -160,6 +176,7 @@ export function recordWindowFrames({
     frames,
     intervalMs,
     ...(maxBytes === undefined ? {} : { maxBytes }),
+    frameTimeoutMs,
     onFrame: frameEvents,
   }).catch((error) => {
     if (!settled) {
