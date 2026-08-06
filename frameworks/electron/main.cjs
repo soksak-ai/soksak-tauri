@@ -20,6 +20,9 @@ const { frameworkIdentity, coredBinary, ensureCored, coreBuildOf } = require("./
 const activity = require("./activity.cjs");
 const { createControlHost, CMD_REQUEST } = require("./control.cjs");
 const { deliverEvent } = require("./windowEvents.cjs");
+const { createResizeSettlementLedger } = require("./resizeSettlement.cjs");
+const { createFrameSubscriptionBroker } = require("./frameSubscriptionBroker.cjs");
+const { createDisplayGeometry } = require("./displayGeometry.cjs");
 const native = require("./native/index.cjs");
 const { frameworkError } = native;
 const DEV_ENDPOINTS = require("../dev-endpoints.json");
@@ -53,6 +56,18 @@ fs.mkdirSync(SPIKE_HOME, { recursive: true });
 
 /** 창 라벨 ↔ BrowserWindow. 라벨은 앱의 정체성 축이므로 프레임워크가 부여하고 지킨다. */
 const windows = new Map();
+/** BrowserWindow별로 실제로 붙은 guest WebContents. renderer가 임의 id를 보내 다른 창의
+ *  표면을 resize 영수증에 섞지 못하게 did-attach-webview에서 소유권을 확정한다. */
+const guestsByWindow = new WeakMap();
+/** WebContents의 handle 없는 전역 frame subscription을 소유하는 Electron 어댑터 broker. */
+const frameSubscriptions = createFrameSubscriptionBroker({
+  onListenerError: (error, contents) =>
+    note(`[electron] frame listener 실패(${contents?.id ?? "?"}): ${error?.message ?? error}`),
+});
+/** OS별 screen 좌표 지원 범위를 숨기지 않는 Electron 전용 변환기. */
+const displayGeometry = createDisplayGeometry({ screen });
+/** native resize + Chromium presentation을 하나의 유한 거래로 묶는 Electron 전용 원장. */
+const resizeSettlements = createResizeSettlementLedger({ frameSubscriptions, displayGeometry });
 // 종료 중 표식 — before-quit 이 세운다(개별 닫기와 종료를 가른다).
 let quitting = false;
 
@@ -113,6 +128,10 @@ function createWindow(label, rect, bootQuery) {
     },
   });
   windows.set(label, win);
+  guestsByWindow.set(win, new Map());
+  // 부팅 창만이 아니라 window_create로 생긴 모든 워크스페이스 창이 같은 사건 계약을 갖는다.
+  // 이 호출이 boot()에만 있으면 복원 창의 onResized는 영원히 굶는다.
+  wireWindowEvents(label, win);
   win.once("ready-to-show", () =>
     process.env.SOKSAK_START_INACTIVE === "1" ? win.showInactive() : win.show(),
   );
@@ -172,6 +191,9 @@ function createWindow(label, rect, bootQuery) {
   // OS 를 빌리지 않는다(A27). guest 의 입력 사건을 그대로 듣고 **계약의 이름**으로 낸다
   // (spec-content-view ACTIVATED). 알아내는 방법은 프레임워크마다 달라도 이름은 하나다.
   win.webContents.on("did-attach-webview", (_e, guest) => {
+    const ownedGuests = guestsByWindow.get(win);
+    ownedGuests?.set(guest.id, guest);
+    guest.once?.("destroyed", () => ownedGuests?.delete(guest.id));
     // **새 창을 여는 요청은 이 프레임워크만 가로챌 수 있다.**
     //
     // 태그의 `new-window` 사건은 이 엔진에서 사라졌다(계측 2026-08-02: 새 탭 링크를 눌러도
@@ -533,8 +555,33 @@ ipcMain.handle("framework:window", async (e, { label, op, args, exact }) => {
         win.setPosition(Math.round(args.x), Math.round(args.y));
         return { ok: true };
       case "setPhysicalSize":
-        win.setSize(Math.round(args.width / scale), Math.round(args.height / scale));
-        return { ok: true };
+      {
+        const surfaceIds = Array.isArray(args?.surfaceIds)
+          ? [...new Set(args.surfaceIds.map(Number).filter(Number.isSafeInteger))]
+          : [];
+        const ownedGuests = guestsByWindow.get(win) ?? new Map();
+        const surfaces = surfaceIds.map((id) => {
+          const guest = ownedGuests.get(id);
+          if (!guest || guest.isDestroyed?.()) {
+            throw frameworkError(
+              "CONTENT_VIEW_NOT_ATTACHED",
+              `이 창에 붙지 않은 guest WebContents다: ${id}`,
+            );
+          }
+          return guest;
+        });
+        const requestedPhysical = {
+          width: Math.round(args.width),
+          height: Math.round(args.height),
+        };
+        const value = await resizeSettlements.resize({
+          label: [...windows.entries()].find(([, candidate]) => candidate === win)?.[0] ?? label,
+          win,
+          requestedPhysical,
+          surfaces,
+        });
+        return { ok: true, value };
+      }
       case "setPhysicalPosition":
         win.setPosition(Math.round(args.x / scale), Math.round(args.y / scale));
         return { ok: true };
@@ -575,16 +622,30 @@ ipcMain.handle("framework:window", async (e, { label, op, args, exact }) => {
         return { ok: false, code: "UNKNOWN_OP", message: `창 조작 미구현: ${op}` };
     }
   } catch (e) {
-    return { ok: false, code: "ERROR", message: String(e.message || e) };
+    return { ok: false, code: e.code || "ERROR", message: String(e.message || e) };
   }
 });
 
 /** 창 기하 변화는 프레임워크가 렌더러로 밀어 준다(계약의 onResized/onMoved). */
 function wireWindowEvents(label, win) {
+  // ledger listener를 먼저 붙인다. 그래야 같은 resize 사건을 renderer에 보낼 때 revision/source가
+  // 이미 확정돼 있고, 수동 사건을 가짜 transaction으로 만들 필요가 없다.
+  resizeSettlements.register(label, win);
   const send = (name) => () => {
     if (win.isDestroyed()) return;
     const b = win.getBounds();
-    win.webContents.send("framework:window-event", { label, name, bounds: b });
+    const observation = name === "resized" ? resizeSettlements.observation(label, win) : null;
+    win.webContents.send("framework:window-event", {
+      label,
+      name,
+      bounds: b,
+      ...(observation
+        ? {
+            resizeRevision: observation.resizeRevision,
+            resizeSource: observation.lastResize?.source ?? "external",
+          }
+        : {}),
+    });
   };
   win.on("resize", send("resized"));
   win.on("move", send("moved"));
@@ -679,7 +740,6 @@ function boot() {
   }
   const label = CONTROL_PLANE_LABEL;
   const win = createWindow(label);
-  wireWindowEvents(label, win);
   note(`[electron-spike] 창 ${label} → ${DEV_URL}`);
   note(`[electron-spike] 요구 원장: ${DEMAND_LOG}`);
   // 어느 정체성으로 어느 백엔드에 말을 거는지는 기동 시 드러낸다 — 붙지 않은 채 도는 것과

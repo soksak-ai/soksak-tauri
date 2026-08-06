@@ -478,7 +478,13 @@ function loadFramework({ socket, binary }) {
     },
     dialog: {},
     ipcMain: { handle: (channel, fn) => handlers.set(channel, fn) },
-    screen: {},
+    screen: {
+      getDisplayMatching: () => ({
+        id: 1,
+        scaleFactor: 1,
+        bounds: { x: 0, y: 0, width: 1920, height: 1080 },
+      }),
+    },
   };
   requireCjs.cache[ELECTRON] = { id: ELECTRON, filename: ELECTRON, loaded: true, exports: stub };
   if (socket) process.env.SOKSAK_SOCKET = socket;

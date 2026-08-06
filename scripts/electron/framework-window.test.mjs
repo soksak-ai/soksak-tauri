@@ -23,10 +23,30 @@ const MAIN = join(root, "frameworks/electron/main.cjs");
 const BACKEND = join(root, "frameworks/electron/backend.cjs");
 const ELECTRON = requireCjs.resolve("electron");
 const LABEL_FLAG = "--soksak-window-label=";
+let fakeContentsId = 0;
 
 /** 창 하나 — 프레임워크가 실제로 부르는 메서드만 갖는다. 없는 것을 부르면 여기서 터진다. */
 function fakeWindow(opts) {
-  const wc = { send: () => {}, on: () => {}, setWindowOpenHandler: () => {} };
+  const sent = [];
+  const listeners = new Map();
+  const wc = {
+    id: ++fakeContentsId,
+    send: (channel, payload) => sent.push([channel, payload]),
+    on: () => {},
+    setWindowOpenHandler: () => {},
+    beginFrameSubscription: (_onlyDirty, callback) => { wc.frameCallback = callback; },
+    endFrameSubscription: () => { wc.frameCallback = null; },
+    present: () => {
+      const b = wc.__win.getContentBounds();
+      wc.frameCallback?.(
+        { isEmpty: () => false, getSize: () => ({ width: b.width, height: b.height }) },
+        { x: 0, y: 0, width: b.width, height: b.height },
+      );
+    },
+    invalidate: () => {},
+    isDestroyed: () => false,
+    sent,
+  };
   const win = {
     opts,
     webContents: wc,
@@ -44,7 +64,11 @@ function fakeWindow(opts) {
     loadURL: () => {},
     loadFile: () => {},
     once: (_e, cb) => (_e === "ready-to-show" ? cb() : undefined),
-    on: () => {},
+    on: (event, cb) => {
+      if (!listeners.has(event)) listeners.set(event, new Set());
+      listeners.get(event).add(cb);
+    },
+    emit: (event) => listeners.get(event)?.forEach((cb) => cb()),
     show: () => {},
     focus() { win.focused = true; },
     close() { win.closed = true; },
@@ -53,6 +77,12 @@ function fakeWindow(opts) {
     isAlwaysOnTop: () => false,
     getTitle: () => win.title,
     getBounds: () => ({ ...win.bounds }),
+    getContentBounds: () => ({ ...win.bounds, y: win.bounds.y + 28, height: win.bounds.height - 28 }),
+    setSize(width, height) {
+      win.bounds.width = width;
+      win.bounds.height = height;
+      win.emit("resize");
+    },
     setBounds(b) { Object.assign(win.bounds, b); },
     setBackgroundColor: () => {},
   };
@@ -90,7 +120,11 @@ function loadFramework(created) {
     dialog: {},
     ipcMain: { handle: (c, fn) => handlers.set(c, fn) },
     screen: {
-      getDisplayMatching: () => ({ scaleFactor: 1 }),
+      getDisplayMatching: () => ({
+        id: 1,
+        scaleFactor: 1,
+        bounds: { x: 0, y: 0, width: 1920, height: 1080 },
+      }),
       getAllDisplays: () => [
         { id: 1, label: "built-in", bounds: { x: 0, y: 0, width: 1920, height: 1080 }, scaleFactor: 2 },
         { id: 2, label: "side", bounds: { x: 1920, y: 0, width: 1280, height: 720 }, scaleFactor: 1 },
@@ -118,6 +152,7 @@ function labelOf(win) {
 
 let created;
 let call;
+let windowCall;
 
 let fixtureHome;
 let realHomedir;
@@ -134,9 +169,12 @@ beforeEach(async () => {
   const handlers = loadFramework(created);
   await new Promise((r) => setImmediate(r)); // 부팅 창이 서기를 기다린다
   const invoke = handlers.get("framework:invoke");
+  const invokeWindow = handlers.get("framework:window");
   const boot = created[0];
   call = (cmd, args = {}) =>
     invoke({ sender: boot.webContents }, { cmd, args });
+  windowCall = (op, args = {}) =>
+    invokeWindow({ sender: boot.webContents }, { label: "main", op, args });
 });
 
 afterEach(() => {
@@ -168,6 +206,46 @@ describe("window_* — 프레임워크가 답한다", () => {
     const b = await call("window_create", { label: "w-2" });
     expect(b.value).toBe("w-2");
     expect(created.length).toBe(before);
+  });
+
+  it("window_create 로 만든 워크스페이스도 실제 resize 사건을 자기 renderer에 배달한다", async () => {
+    await call("window_create", { label: "w-resize" });
+    const w = created.find((c) => labelOf(c) === "w-resize");
+    w.bounds = { x: 7, y: 8, width: 913, height: 677 };
+    w.emit("resize");
+
+    expect(w.webContents.sent).toContainEqual([
+      "framework:window-event",
+      {
+        label: "w-resize",
+        name: "resized",
+        bounds: { x: 7, y: 8, width: 913, height: 677 },
+        resizeRevision: 1,
+        resizeSource: "external",
+      },
+    ]);
+  });
+
+  it("setPhysicalSize는 BrowserWindow resize와 renderer presentation 뒤 actual 영수증을 답한다", async () => {
+    const pending = windowCall("setPhysicalSize", { width: 913, height: 677, surfaceIds: [] });
+    await Promise.resolve();
+    created[0].webContents.present();
+    const result = await pending;
+
+    expect(result.ok).toBe(true);
+    expect(result.value).toMatchObject({
+      framework: "electron",
+      status: "settled",
+      changed: true,
+      requested: { physical: { width: 913, height: 677 } },
+      native: {
+        outerDip: { width: 913, height: 677 },
+        outerPhysical: { width: 913, height: 677 },
+        outerPhysicalSpace: "display-local-physical",
+        resizeRevision: 1,
+      },
+      renderer: { webContentsId: created[0].webContents.id, presentationRevision: 1 },
+    });
   });
 
   it("window_create 는 rect 를 그대로 놓는다", async () => {
