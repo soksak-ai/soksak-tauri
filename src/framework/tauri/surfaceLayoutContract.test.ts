@@ -49,4 +49,33 @@ describe("Tauri native surface resize contract", () => {
   it("공개 grid 계약이 없는 임의 element를 추측하지 않는다", () => {
     expect(surfaceLayoutContractOf(document.createElement("div"))).toBeNull();
   });
+
+  it("DOM 선커밋 목표 rect를 다음 resize epoch의 affine 계약으로 만든다", () => {
+    const root = document.createElement("div");
+    root.className = "space";
+    const body = document.createElement("div");
+    body.className = "tab-body";
+    body.style.cssText = "--l: 0%; --t: 0%; --w: 50%; --h: 50%";
+    const slot = document.createElement("div");
+    body.append(slot);
+    root.append(body);
+    document.body.append(root);
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 800 });
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 600 });
+    root.getBoundingClientRect = () => ({
+      x: 60, y: 90, width: 740, height: 510,
+      top: 90, left: 60, right: 800, bottom: 600, toJSON() {},
+    });
+    slot.getBoundingClientRect = () => ({
+      x: 220, y: 149, width: 201, height: 271,
+      top: 149, left: 220, right: 421, bottom: 420, toJSON() {},
+    });
+
+    expect(surfaceLayoutContractOf(slot, { x: 60, y: 149, w: 201, h: 271 })).toMatchObject({
+      fixedX: 0,
+      fixedY: 59,
+      fixedW: -169,
+      fixedH: 16,
+    });
+  });
 });

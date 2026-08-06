@@ -4,6 +4,7 @@
 // OS 자식 뷰의 bounds·가시성·배치 거래를 전담한다. 추종 입력은 공개 레이아웃 사건과
 // DOM mutation·ResizeObserver뿐이다. 프레임 루프나 포인터 추측은 없다.
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { moduleState } from "../../lib/moduleState";
 import { surfaceRectOf } from "../../lib/surfaceRect";
 import {
@@ -307,11 +308,13 @@ export async function prepareNativeContentViewMove(
 
   // 비전면 WebKit의 document timeline은 정지할 수 있다. 그 시계에 DOM FLIP을 걸고 AppKit의
   // 실시간 시계만 진행시키면 외부 표면이 DOM을 수백 px 앞선다. 공유 진행 시계가 없는 창은
-  // CSS animation을 만들지 않는다. 외부 표면은 1ms 위치 transaction을 먼저 무장하고,
-  // 목표 DOM은 다음 paint에 snap하여 같은 render-server 제출 epoch에 착지한다.
-  if (!document.hasFocus()) {
-    const startAtUnixMs = Date.now();
-    const durationMs = 1;
+  // CSS animation을 만들지 않는다. 목표 native frame의 즉시 ACK를 받은 뒤 DOM도 같은
+  // 목표로 snap한다. 1ms라도 Core
+  // Animation 거래를 만들면 비전면 창에서 model frame 커밋이 다음 AppKit layout까지
+  // 미뤄질 수 있으므로 snap 경로에는 애니메이션 명령을 사용하지 않는다.
+  // `document.hasFocus()`는 비전면 Tauri 창에서도 true일 수 있다. 배치 거래의 시계 선택은
+  // DOM 추정값이 아니라 이 어댑터가 소유한 실제 native window focus 상태로 결정한다.
+  if (!(await getCurrentWindow().isFocused())) {
     for (const { state, target } of targets) {
       if (state.draining) await state.draining;
       state.precommitting = true;
@@ -320,17 +323,17 @@ export async function prepareNativeContentViewMove(
     try {
       await Promise.all([
         ...targets.map(async ({ state, target }) => {
-          await call("webview_transition_prepare", {
+          const slot = findContentViewSlot(state.label, document);
+          const layout = slot ? surfaceLayoutContractOf(slot, target) : null;
+          await call<boolean>("webview_bounds", {
             label: state.label,
             ...target,
-            startAtUnixMs,
-            durationMs,
+            ...(layout ? { layout } : {}),
           });
           state.boundsWrites += 1;
           state.lastRect = rectKey(target);
         }),
-        ...externalTargets.map(({ participant, target }) =>
-          participant.prepare(target, { startAtUnixMs, durationMs })),
+        ...externalTargets.map(({ participant, target }) => participant.snap(target)),
       ]);
     } catch (error) {
       for (const { state } of targets) {
@@ -364,7 +367,10 @@ export async function prepareNativeContentViewMove(
                 });
               }
             }),
-            ...externalTargets.map(({ slot, participant }) => participant.commit(slotRect(slot))),
+            ...externalTargets.map(({ slot, participant, target }) => {
+              const rect = slotRect(slot);
+              return rectKey(rect) === rectKey(target) ? Promise.resolve() : participant.snap(rect);
+            }),
           ]);
           for (const { state } of targets) settlePreparedFrame(state);
         } catch (error) {
@@ -385,7 +391,7 @@ export async function prepareNativeContentViewMove(
         }
         for (const { state, before } of targets) {
           state.lastRect = rectKey(before);
-          void call("webview_transition_cancel", { label: state.label, ...before }).catch(() => {});
+          void call("webview_bounds", { label: state.label, ...before }).catch(() => {});
         }
         for (const { participant } of externalTargets) participant.cancel();
       },
@@ -625,6 +631,9 @@ export const nativeHost: ContentViewHost = {
       .filter((state) => state.opened && state.desiredVisible !== false)
       .map((state) => call("webview_presented", { label: state.label })));
   },
+  chromePresentationSettled: () => call("webview_presented", {
+    label: getCurrentWindow().label,
+  }),
   history: (label, delta) => call("webview_history", { label, delta }),
   stop: (label) => call("webview_stop", { label }),
   zoom: (label, factor) => call("webview_zoom_view", { label, factor }),

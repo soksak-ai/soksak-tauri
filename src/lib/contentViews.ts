@@ -29,6 +29,8 @@ export interface ContentViewHost {
   visible(label: string, visible: boolean, focus?: boolean): Promise<void>;
   /** 지정한 뷰의 좌표·가시성 변경이 실제 표시 프레임에 반영될 때 완료된다. */
   presentationSettled(labels: readonly string[]): Promise<void>;
+  /** 메인 DOM 크롬의 직전 커밋이 실제 표시 프레임에 반영될 때 완료된다. */
+  chromePresentationSettled(): Promise<void>;
   history(label: string, delta: number): Promise<void>;
   stop(label: string): Promise<void>;
   zoom(label: string, factor: number): Promise<number>;

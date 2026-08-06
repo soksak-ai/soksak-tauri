@@ -28,7 +28,10 @@ const percentageVariable = (style: CSSStyleDeclaration, name: string): number | 
  * GroupArea의 공개 grid 변수와 실제 surface slot 사이의 고정 chrome을 하나의 affine
  * 계약으로 만든다. Tauri AppKit 어댑터는 이 식만 재실행하며 DOM 구조나 플러그인을 해석하지 않는다.
  */
-export function surfaceLayoutContractOf(surface: HTMLElement): SurfaceLayoutContract | null {
+export function surfaceLayoutContractOf(
+  surface: HTMLElement,
+  target?: { x: number; y: number; w: number; h: number },
+): SurfaceLayoutContract | null {
   const tabBody = surface.closest<HTMLElement>(".tab-body");
   const root = tabBody?.closest<HTMLElement>(".space");
   if (!tabBody || !root) return null;
@@ -39,7 +42,7 @@ export function surfaceLayoutContractOf(surface: HTMLElement): SurfaceLayoutCont
   const heightRatio = percentageVariable(style, "--h");
   if ([leftRatio, topRatio, widthRatio, heightRatio].some((value) => value === null)) return null;
 
-  const frame = surfaceRectOf(surface.getBoundingClientRect());
+  const frame = target ?? surfaceRectOf(surface.getBoundingClientRect());
   const rootFrame = surfaceRectOf(root.getBoundingClientRect());
   const l = leftRatio!;
   const t = topRatio!;

@@ -5,9 +5,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const invoke = vi.fn(async (_cmd: string, _args?: unknown) => undefined as unknown);
+const isWindowFocused = vi.fn(async () => true);
 const listeners = new Map<string, (payload: Record<string, unknown>) => void>();
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (cmd: string, args?: unknown) => invoke(cmd, args),
+}));
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => ({ label: "fixture-window", isFocused: isWindowFocused }),
 }));
 vi.mock("../../plugins/hooks", () => ({
   onPluginEvent: (event: string, fn: (payload: Record<string, unknown>) => void) => {
@@ -33,7 +37,7 @@ class ResizeObserverMock {
 async function load() {
   vi.resetModules();
   invoke.mockReset();
-  invoke.mockResolvedValue(undefined);
+    invoke.mockResolvedValue(undefined);
   const module = await import("./contentViews");
   module.__resetNativeContentViewCompositionForTest();
   return module;
@@ -46,7 +50,8 @@ describe("네이티브 자식 뷰 구현", () => {
     listeners.clear();
     ResizeObserverMock.instances = [];
     vi.stubGlobal("ResizeObserver", ResizeObserverMock);
-    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    isWindowFocused.mockReset();
+    isWindowFocused.mockResolvedValue(true);
   });
 
   it("이름과 인자를 번역하지 않는다", async () => {
@@ -60,6 +65,12 @@ describe("네이티브 자식 뷰 구현", () => {
     });
     await nativeHost.bounds("b-1", 1, 2, 3, 4);
     expect(invoke).toHaveBeenCalledWith("webview_bounds", { label: "b-1", x: 1, y: 2, w: 3, h: 4 });
+  });
+
+  it("메인 DOM 크롬의 WebKit 표시 ACK를 공개 장벽으로 기다린다", async () => {
+    const { nativeHost } = await load();
+    await nativeHost.chromePresentationSettled();
+    expect(invoke).toHaveBeenCalledWith("webview_presented", { label: "fixture-window" });
   });
 
   it("확정 텍스트를 child 웹뷰의 네이티브 입력자로 보낸다", async () => {
@@ -287,7 +298,7 @@ describe("네이티브 자식 뷰 구현", () => {
   });
 
   it("비전면 문서는 정지한 DOM 시계와 native 시계를 섞지 않고 최종 rect를 snap한다", async () => {
-    vi.mocked(document.hasFocus).mockReturnValue(false);
+    isWindowFocused.mockResolvedValue(false);
     let x = 620;
     const frame = document.createElement("div");
     frame.dataset.node = "layout/tab/v-background";
@@ -305,19 +316,18 @@ describe("네이티브 자식 뷰 구현", () => {
 
     const prepared = await prepareNativeContentViewMove([{ viewId: "v-background", dx: 410 }]);
     expect(prepared.mode).toBe("snap");
-    expect(invoke).toHaveBeenCalledWith("webview_transition_prepare", {
+    expect(invoke).toHaveBeenCalledWith("webview_bounds", {
       label: "browser--v-background", x: 210, y: 112, w: 212, h: 458,
-      startAtUnixMs: expect.any(Number), durationMs: 1,
     });
-    expect(invoke).not.toHaveBeenCalledWith("webview_bounds", expect.anything());
+    expect(invoke).not.toHaveBeenCalledWith("webview_transition_prepare", expect.anything());
 
     x = 210;
     await prepared.commit();
-    expect(invoke.mock.calls.filter(([command]) => command === "webview_bounds")).toHaveLength(0);
+    expect(invoke.mock.calls.filter(([command]) => command === "webview_bounds")).toHaveLength(1);
   });
 
   it("비전면 외부 표면은 prepare/commit 애니메이션 대신 최종 DOM rect snap ACK를 기다린다", async () => {
-    vi.mocked(document.hasFocus).mockReturnValue(false);
+    isWindowFocused.mockResolvedValue(false);
     let x = 620;
     const frame = document.createElement("div");
     frame.dataset.node = "layout/tab/v-external-background";
@@ -339,15 +349,12 @@ describe("네이티브 자식 뷰 구현", () => {
     const { prepareNativeContentViewMove } = await load();
     const prepared = await prepareNativeContentViewMove([{ viewId: "v-external-background", dx: 410 }]);
     expect(prepared.mode).toBe("snap");
-    expect(prepare).toHaveBeenCalledWith(
-      { x: 210, y: 112, w: 212, h: 458 },
-      { startAtUnixMs: expect.any(Number), durationMs: 1 },
-    );
+    expect(snap).toHaveBeenCalledWith({ x: 210, y: 112, w: 212, h: 458 });
+    expect(prepare).not.toHaveBeenCalled();
 
     x = 210;
     await prepared.commit();
-    expect(snap).not.toHaveBeenCalled();
-    expect(commit).toHaveBeenCalledWith({ x: 210, y: 112, w: 212, h: 458 });
+    expect(commit).not.toHaveBeenCalled();
   });
 
   it("공개 DOM 슬롯의 외부 표면을 공통 epoch에 먼저 무장하고 DOM 커밋 뒤 rect ACK를 기다린다", async () => {

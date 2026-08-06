@@ -215,6 +215,7 @@ export const domHost: ContentViewHost = {
   },
   // Electron 표면은 슬롯의 DOM 자식이므로 DOM 커밋이 곧 표시 경계다.
   async presentationSettled(_labels) {},
+  async chromePresentationSettled() {},
   async history(label, delta) {
     if (delta < 0) (await onReady<() => void>(label, "goBack"))();
     else if (delta > 0) (await onReady<() => void>(label, "goForward"))();

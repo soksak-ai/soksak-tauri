@@ -7,6 +7,7 @@
 import { invoke, frameworkPath } from "../framework";
 import { tmsg } from "../i18n";
 import { settleAnimationsForCapture } from "./captureSettle";
+import { contentViewHost, hasContentViewHost } from "../lib/contentViews";
 import { isLayoutMotionActive, onLayoutMotion } from "../lib/layoutMotion";
 import { resolveExposed } from "./catalogDom";
 import { surfaceRectOf } from "../lib/surfaceRect";
@@ -286,7 +287,9 @@ export function registerCaptureCatalog(): void {
         if (!("el" in found)) return found;
         targets.push({ address: item.address, color: item.color, host: found.el, x: item.x, y: item.y });
       }
-      return setCaptureMotionAnchors(document, targets);
+      const result = setCaptureMotionAnchors(document, targets);
+      if (hasContentViewHost()) await contentViewHost().chromePresentationSettled();
+      return result;
     },
   });
 
