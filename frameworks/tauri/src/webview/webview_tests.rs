@@ -42,6 +42,19 @@ fn pane_group_converts_declared_members_from_their_adapter_parent() {
 }
 
 #[test]
+fn pane_topology_observes_external_hosts_from_the_public_host_registry() {
+    let source = include_str!("layer.rs");
+    let state = source
+        .split_once("pub fn pane_surface_host_state")
+        .expect("pane state exists")
+        .1
+        .split_once("pub fn set_pane_surface_host_lighting")
+        .expect("pane state boundary")
+        .0;
+    assert!(state.contains("(host_ptr != 0).then_some(host_ptr)"));
+}
+
+#[test]
 fn native_layout_motion_animates_model_position_without_stacking_a_transform() {
     let source = include_str!("layer.rs");
     let motion = source

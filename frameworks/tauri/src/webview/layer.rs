@@ -600,7 +600,11 @@ pub fn pane_surface_host_state() -> serde_json::Value {
         let clips_to_bounds = host.layer().map(|layer| layer.masksToBounds()).unwrap_or(false);
         let renderer_ptr = views.as_ref().and_then(|map| map.get(&record.renderer)).copied().unwrap_or(0);
         let topology = record.members.first()
-            .and_then(|label| views.as_ref().and_then(|map| map.get(label)).copied())
+            .and_then(|label| {
+                let host_ptr = surface_host_ptr(label);
+                views.as_ref().and_then(|map| map.get(label)).copied()
+                    .or_else(|| (host_ptr != 0).then_some(host_ptr))
+            })
             .map(|surface_ptr| renderer_pair_topology(renderer_ptr, surface_ptr));
         let member_frames = record.members.iter().map(|label| {
             let ptr = surface_host_ptr(label);
