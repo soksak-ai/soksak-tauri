@@ -741,6 +741,10 @@ Pane renderer가 받는 `app` 주소는 메인 renderer의 공개 플러그인 A
 불투명 handle 주소만 받고 `open`·`send`·`on`·`close`를 RPC로 사용한다. handle과 이벤트 구독은
 presentation 수명에 묶여 pane 종료 시 함께 회수되며, child가 임의 모듈을 직접 적재하지 않는다.
 
+provider `activate`가 반환하면 pane renderer는 `context.setReady` 거래를 부모에 완료한다. 따라서
+`tab.open`/`pane.split`의 `mounted:true`는 타이머 추측이 아니라 provider가 공개 API와 view 수명
+사건을 설치한 뒤의 명시적 경계다.
+
 `webview.composition`은 DOM 앵커·실제 네이티브 frame뿐 아니라 label별 슬롯 rect, 마지막 적용
 rect, 가시성, 동기화 대기 상태를 공개한다. 합성 상태를 브라우저 제품 플러그인이
 `surface.stats`로 재선언하지 않는다.

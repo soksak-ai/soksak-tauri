@@ -267,7 +267,7 @@ const CALL_PATHS = new Set([
   "sidecar.open", "sidecar.send", "sidecar.close",
   "bus.emit",
   "context.setBadge", "context.setStatus", "context.setTitle", "context.setIcon",
-  "context.setRestoreState",
+  "context.setRestoreState", "context.setReady",
 ]);
 
 export function isPluginViewCallExposed(path: string): boolean {
@@ -402,6 +402,10 @@ async function handleCall(view: PresentedState, request: PluginViewRpcRequest): 
   if (request.path === "webview.open") {
     const [label, options] = request.args as [string, Record<string, unknown>];
     await openAndGroup(view, label, options);
+    return null;
+  }
+  if (request.path === "context.setReady") {
+    view.markReady();
     return null;
   }
   if (request.path === "sidecar.open") {

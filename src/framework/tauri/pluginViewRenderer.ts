@@ -188,6 +188,7 @@ await listen<PluginViewInit>(event("init"), async ({ payload: init }) => {
     const mod = await import(/* @vite-ignore */ moduleUrl);
     const plugin = mod.default ?? mod;
     plugin.activate({ app, manifest: {}, dir: "", subscriptions });
+    await call("context.setReady");
   } finally {
     URL.revokeObjectURL(moduleUrl);
   }

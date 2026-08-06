@@ -753,6 +753,10 @@ opaque parent-owned handle address and uses `open`, `send`, `on`, and `close` ov
 event subscriptions belong to the presentation lifetime and are reclaimed when the pane ends; the
 child never loads an arbitrary module itself.
 
+After provider `activate` returns, the pane renderer completes a `context.setReady` transaction with
+its parent. Thus `mounted:true` from `tab.open` or `pane.split` is an explicit boundary after the
+provider installed its public API and view-lifetime events, not a timer guess.
+
 `webview.composition` exposes not only DOM anchors and actual native frames, but also each label's slot
 rect, last applied rect, visibility and pending-sync state. The browser product plugin does not
 redeclare composition state as `surface.stats`.
