@@ -12,28 +12,23 @@ export type WindowRecordRequest = {
 
 export type WindowRecording = Promise<number> & { ready: Promise<void> };
 
-export type RecordingReport<
-  Mode extends string = "realtime",
-  Extra extends object = object,
-> =
-  | { status: "not-requested"; mode: Mode }
+export type WindowRecordingReport =
+  | { status: "not-requested"; mode: "realtime" }
   | {
       status: "complete";
-      mode: Mode;
+      mode: "realtime";
       dir: string;
       requestedFrames: number;
       frames: number;
-    } & Extra
+    }
   | {
       status: "failed";
-      mode: Mode;
+      mode: "realtime";
       dir: string;
       requestedFrames: number;
       frames: number;
       reason: string;
-    } & Extra;
-
-export type WindowRecordingReport = RecordingReport<"realtime">;
+    };
 
 export type WindowRecorder = (request: WindowRecordRequest) => WindowRecording;
 
@@ -45,23 +40,8 @@ export function validWindowRecordMaxBytes(value: unknown): value is number {
     && (value as number) <= WINDOW_RECORD_MAX_BYTES;
 }
 
-export const recordingFailureReason = (error: unknown): string =>
+const recordingFailureReason = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
-
-/** raw base64가 디코딩될 정확한 byte 수. 파일을 쓰기 전에 예산을 판정한다. */
-export function decodedBase64ByteLength(base64: string): number {
-  const compact = base64.replace(/\s/g, "");
-  if (
-    compact.length === 0
-    || compact.length % 4 === 1
-    || !/^[A-Za-z0-9+/]*={0,2}$/.test(compact)
-    || (compact.includes("=") && compact.length % 4 !== 0)
-  ) {
-    throw new Error("snapshot_region이 유효한 base64 PNG를 반환하지 않았다");
-  }
-  const padding = compact.endsWith("==") ? 2 : compact.endsWith("=") ? 1 : 0;
-  return Math.floor((compact.length * 3) / 4) - padding;
-}
 
 /**
  * recorder의 시작·첫 저장·완료를 하나의 non-rejecting 상태 거래로 바꾼다.

@@ -7,7 +7,7 @@
 // 노출(data-node)되지 않은 요소는 주소 트리에 없어 접근 불가 → 명확한 에러(추측 0).
 
 import { moduleState } from "../lib/moduleState";
-import { currentWindow, invoke } from "../framework";
+import { currentWindow } from "../framework";
 import { browserLabel, currentWindowLabel } from "../lib/webviewLabels";
 import { contentViewHost } from "../lib/contentViews";
 import { parseAddress, isParseError } from "./address";
@@ -20,13 +20,9 @@ import { useSessions } from "../state/sessions";
 import { motionLiveList, motionLiveRates, setMotionDebug, motionRecentBirths, motionJourneys, motionSwaps, motionTriggers } from "../lib/motionDebug";
 import { railTravelMs, railTravelWallMs } from "../lib/railMotion";
 import {
-  decodedBase64ByteLength,
   recordWindowFrames,
-  recordingFailureReason,
   startWindowRecording,
   validWindowRecordMaxBytes,
-  type RecordingReport,
-  type WindowRecordingReport,
 } from "./windowRecorder";
 import { createFiniteDomTraceSampler } from "./finiteDomTrace";
 import { layoutSettlementStatus, waitLayoutSettled } from "./waitLayoutSettled";
@@ -40,11 +36,6 @@ type FocusTraceEntry = {
   hasFocus: boolean;
 };
 
-type StepRecordingReport = Exclude<
-  RecordingReport<"steps", { frameFallbacks: number }>,
-  { status: "not-requested" }
->;
-type InputRecordingReport = WindowRecordingReport | StepRecordingReport;
 // 서로 다른 것은 따로 선다 — 한 가방에 넣으면 그것은 상태가 아니라 가방이다.
 /** 포커스 추적 — 기록 중인 사건과 그 종료 손잡이는 한 몸이다. */
 const focusTrace = moduleState("commands/catalogDom#focusTrace", () => ({
@@ -1311,13 +1302,8 @@ export function registerDomCatalog(): void {
         description: "Maximum cumulative stored PNG bytes for this finite recording (1..1073741824).",
         required: false,
       },
-      captureSteps: {
-        type: "boolean",
-        description: "With recordDir, capture the baseline, every injected move, and the released frame. A focused window uses its animation-frame paint boundary; an unfocused window uses one next-task DOM layout boundary without taking focus. recording.frameFallbacks reports how many captures used that non-compositor boundary.",
-        default: false,
-      },
     },
-    returns: "{ dragged, from, to?, zone?, dx?, dy?, steps, durationMs, recording:{status:'not-requested'|'complete'|'failed',dir?,requestedFrames?,frames?,mode:'realtime'|'steps',frameFallbacks?,reason?} }",
+    returns: "{ dragged, from, to?, zone?, dx?, dy?, steps, durationMs, recording:{status:'not-requested'|'complete'|'failed',dir?,requestedFrames?,frames?,mode:'realtime',reason?} }",
     message: (d) => (d.dragged ? tmsg("msg.ui.input.drag.dragged") : tmsg("msg.ui.input.drag.tap")),
     errors: ["NOT_EXPOSED", "AMBIGUOUS", "INVALID_PARAMS"],
     danger: "inject",
@@ -1335,7 +1321,6 @@ export function registerDomCatalog(): void {
         return { ok: false as const, code: "INVALID_PARAMS", message: "durationMs는 0..10000이어야 함" };
       }
       const recordDir = p.recordDir as string | undefined;
-      const captureSteps = p.captureSteps === true;
       const recordFrames = p.recordFrames === undefined ? 120 : Number(p.recordFrames);
       const recordIntervalMs = p.recordIntervalMs === undefined ? 33 : Number(p.recordIntervalMs);
       const recordLeadMs = p.recordLeadMs === undefined ? 0 : Number(p.recordLeadMs);
@@ -1357,13 +1342,6 @@ export function registerDomCatalog(): void {
           code: "INVALID_PARAMS",
           message: "recordMaxBytes는 recordDir과 함께 쓰는 1..1073741824 정수여야 한다",
         };
-      }
-      let stepRecording: { dir: string } | null = null;
-      if (captureSteps) {
-        if (!recordDir) {
-          return { ok: false as const, code: "INVALID_PARAMS", message: "captureSteps에는 recordDir가 필요하다" };
-        }
-        stepRecording = { dir: recordDir };
       }
       const fromR = resolveExposed(p.from as string);
       if (!("el" in fromR)) return fromR;
@@ -1401,62 +1379,7 @@ export function registerDomCatalog(): void {
           }),
         );
       const dist = Math.hypot(toPt.x - fromPt.x, toPt.y - fromPt.y);
-      const requestedStepFrames = (dist >= 5 ? steps : 0) + 2;
-      let capturedSteps = 0;
-      let capturedBytes = 0;
-      let frameFallbacks = 0;
-      let stepCaptureFailure: string | null = null;
-      const waitForPaintCommit = async (): Promise<void> => {
-        // 전면 창은 compositor의 실제 paint 경계를 따른다. 비전면 WebKit은 rAF뿐 아니라 짧은
-        // timer도 수 초 단위로 throttle한다(실측: 50ms×10단계가 120초). 포커스를 빼앗지 않는
-        // 캡처에서는 이미 dispatch된 React 입력을 다음 task까지 보내고, 강제 layout read로 그
-        // task의 DOM 기하를 확정한다. MessageChannel은 1회성 사건이며 반복 감시가 아니다.
-        if (document.hasFocus() && document.visibilityState !== "hidden") {
-          await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
-          return;
-        }
-        frameFallbacks += 1;
-        await new Promise<void>((resolve) => {
-          const channel = new MessageChannel();
-          channel.port1.onmessage = () => {
-            channel.port1.close();
-            channel.port2.close();
-            resolve();
-          };
-          channel.port2.postMessage(null);
-        });
-        void document.documentElement.getBoundingClientRect();
-      };
-      const captureStep = async (): Promise<void> => {
-        if (!stepRecording || stepCaptureFailure) return;
-        try {
-          // 전면은 rAF paint 뒤, 비전면은 다음 DOM task의 강제 layout 뒤에 읽는다. 어느 경계를
-          // 썼는지는 frameFallbacks로 공개한다 — 포커스 없는 캡처를 성공처럼 위장하지 않는다.
-          await waitForPaintCommit();
-          const png = await invoke<string>("plugin:webview-capture|snapshot_region", {});
-          const frameBytes = decodedBase64ByteLength(png);
-          if (
-            recordMaxBytes !== undefined &&
-            capturedBytes + frameBytes > recordMaxBytes
-          ) {
-            throw new Error(
-              `recordMaxBytes 초과: ${capturedBytes + frameBytes} > ${recordMaxBytes}`,
-            );
-          }
-          // 예산 판정은 쓰기 전, 누적은 저장 성공 뒤다. frames와 파일은 항상 1:1이다.
-          await invoke("write_file_base64", {
-            path: `${stepRecording.dir}/f${String(capturedSteps).padStart(4, "0")}.png`,
-            base64: png,
-          });
-          capturedBytes += frameBytes;
-          capturedSteps += 1;
-        } catch (error) {
-          // 시각 증거 실패는 여기서 닫고 이후 캡처만 중지한다. pointer 거래는 계속되어
-          // mouseup까지 반드시 도달한다.
-          stepCaptureFailure = recordingFailureReason(error);
-        }
-      };
-      const recording = recordDir && !stepRecording
+      const recording = recordDir
         ? startWindowRecording({
             dir: recordDir,
             frames: recordFrames,
@@ -1465,7 +1388,6 @@ export function registerDomCatalog(): void {
           }, recordWindowFrames)
         : null;
       const recordingReady = await (recording?.ready ?? Promise.resolve(false));
-      await captureStep();
       if (recordingReady && recordLeadMs > 0) {
         await new Promise((resolve) => window.setTimeout(resolve, recordLeadMs));
       }
@@ -1481,7 +1403,6 @@ export function registerDomCatalog(): void {
             fromPt.y + (toPt.y - fromPt.y) * progress,
             window,
           );
-          await captureStep();
           if (durationMs > 0 && step < steps) {
             await new Promise((resolve) =>
               window.setTimeout(resolve, durationMs / steps),
@@ -1490,29 +1411,9 @@ export function registerDomCatalog(): void {
         }
       }
       fire("mouseup", toPt.x, toPt.y, window);
-      await captureStep();
-      const recordingResult: InputRecordingReport = stepRecording
-        ? stepCaptureFailure
-          ? {
-              status: "failed",
-              dir: stepRecording.dir,
-              requestedFrames: requestedStepFrames,
-              frames: capturedSteps,
-              mode: "steps",
-              frameFallbacks,
-              reason: stepCaptureFailure,
-            }
-          : {
-              status: "complete",
-              dir: stepRecording.dir,
-              requestedFrames: requestedStepFrames,
-              frames: capturedSteps,
-              mode: "steps",
-              frameFallbacks,
-            }
-        : recording
-          ? await recording.report
-          : { status: "not-requested", mode: "realtime" };
+      const recordingResult = recording
+        ? await recording.report
+        : { status: "not-requested" as const, mode: "realtime" as const };
       return byDelta
         ? { dragged: dist >= 5, from: p.from, dx: p.dx ?? 0, dy: p.dy ?? 0, steps, durationMs, recording: recordingResult }
         : { dragged: dist >= 5, click: dist < 5, from: p.from, to: p.to, zone: p.zone ?? "center", steps, durationMs, recording: recordingResult };
