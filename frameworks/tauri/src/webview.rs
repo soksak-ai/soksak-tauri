@@ -1650,8 +1650,13 @@ pub fn webview_pane_group(
         return Err(format!("pane renderer webview가 없습니다: {renderer}"));
     }
     for label in &members {
-        if registered_webview(&app, label).is_none() {
-            return Err(format!("pane member webview가 없습니다: {label}"));
+        let webview_registered = registered_webview(&app, label).is_some();
+        #[cfg(target_os = "macos")]
+        let native_surface_registered = layer::has_surface_host(label);
+        #[cfg(not(target_os = "macos"))]
+        let native_surface_registered = false;
+        if !pane_member_available(webview_registered, native_surface_registered) {
+            return Err(format!("pane member surface가 없습니다: {label}"));
         }
     }
     #[cfg(target_os = "macos")]
@@ -1669,6 +1674,22 @@ pub fn webview_pane_group(
         let _ = (window, pane, renderer, members, x, y, w, h);
     }
     Ok(())
+}
+
+fn pane_member_available(webview_registered: bool, native_surface_registered: bool) -> bool {
+    webview_registered || native_surface_registered
+}
+
+#[cfg(test)]
+mod pane_member_availability_tests {
+    use super::pane_member_available;
+
+    #[test]
+    fn accepts_tauri_webviews_and_registered_external_native_surfaces() {
+        assert!(pane_member_available(true, false));
+        assert!(pane_member_available(false, true));
+        assert!(!pane_member_available(false, false));
+    }
 }
 
 #[tauri::command]

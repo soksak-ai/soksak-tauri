@@ -756,6 +756,8 @@ child never loads an arbitrary module itself.
 A windowed native surface created by a sidecar joins the pane renderer's declared content slot through
 `webview.present(label)`. It creates no second webview: it registers the existing surface as a
 `PaneSurfaceHost` member and completes presentation readiness only after the first slot frame commits.
+Member admission requires an identity from one of the two declared registries: a Tauri child webview
+or an external native surface registered by the framework adapter. An arbitrary `NSView` is never a member.
 
 `webview.composition` exposes not only DOM anchors and actual native frames, but also each label's slot
 rect, last applied rect, visibility and pending-sync state. The browser product plugin does not

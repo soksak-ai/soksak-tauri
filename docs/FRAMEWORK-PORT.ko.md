@@ -744,6 +744,8 @@ presentation 수명에 묶여 pane 종료 시 함께 회수되며, child가 임�
 sidecar가 만든 windowed native surface는 `webview.present(label)`로 pane renderer의 선언된
 content slot에 결합한다. 새 웹뷰를 만들지 않고 기존 표면을 `PaneSurfaceHost` member로 등록하며,
 첫 slot frame이 native에 커밋된 뒤에만 presentation ready를 완료한다.
+member 수락 계약은 임의 `NSView`가 아니라 선언된 두 registry, 즉 Tauri child webview
+또는 프레임워크 어댑터에 등록된 external native surface 중 하나의 identity를 요구한다.
 
 `webview.composition`은 DOM 앵커·실제 네이티브 frame뿐 아니라 label별 슬롯 rect, 마지막 적용
 rect, 가시성, 동기화 대기 상태를 공개한다. 합성 상태를 브라우저 제품 플러그인이

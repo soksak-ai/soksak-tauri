@@ -197,6 +197,10 @@ pub fn surface_host_ptr(label: &str) -> usize {
     SURFACE_HOSTS.ptr(label).unwrap_or(0)
 }
 
+pub fn has_surface_host(label: &str) -> bool {
+    surface_host_ptr(label) != 0
+}
+
 // DOM renderer와 native surface의 실제 NSView 조상 경로를 공개한다. 둘의 최소 공통
 // 조상이 창 content root뿐이면 패널 하나를 원자적으로 움직일 공통 소유자가 없는 구조다.
 // 같은 CATransaction/시각 epoch는 이 구조 사실을 바꾸지 못한다.
