@@ -417,6 +417,8 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(transition.text).toMatch(/\btargetViewId\s*,/);
     expect(transition.text).not.toMatch(/targetViewId\s*:\s*tabIds\[side\]/);
     expect(transition.text).toContain("motionMode:");
+    expect(source).not.toMatch(/expectedMode:\s*frameworkName\s*===\s*["']tauri["']/);
+    expect(source).toContain('expectedMode: "glide"');
     expect(transition.text).toMatch(/journal\s*:\s*\{[\s\S]*afterSequence[\s\S]*entries\s*:\s*b04JournalEntries/);
     expect(transition.text).toMatch(/samples\s*:\s*[\w$]*presentation[\w$]*\.samples/i);
     expect(transition.text).not.toMatch(/recording|artifact|files|clicked|png|snapshot/i);
