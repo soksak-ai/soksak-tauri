@@ -628,11 +628,11 @@ export function registerCatalog(): void {
 
   register("layout.transactions", {
     description:
-      "Read the finite layout transition journal. Each entry exposes one transaction id, ordered sequence, moves, mode, absolute presentation epoch when present, and its prepared/committed/cancelled phase. This is the numeric automation surface; recordings are human visual evidence only.",
+      "Read the finite layout transition journal. Each entry exposes one transaction id, ordered sequence, moves, mode, the exact DOM-commit epoch emitted before surface ACK, optional presentation epoch, and its terminal phase. This is the numeric automation surface; recordings are human visual evidence only.",
     triggers: { ko: "레이아웃 거래 장부 이동 위상 수치 추적" },
     params: {},
     returns:
-      "{ entries:[{transactionId,sequence,phase,mode,startAtUnixMs?,preparedAtUnixMs,closedAtUnixMs?,moves:[{viewId,dx}]}] }",
+      "{ entries:[{transactionId,sequence,phase,mode,startAtUnixMs?,preparedAtUnixMs,domCommittedAtUnixMs?,closedAtUnixMs?,moves:[{viewId,dx}]}] }",
     message: (data) => `layout transactions ${String((data.entries as unknown[])?.length ?? 0)}`,
     examples: ["layout.transactions"],
     handler: () => ({ entries: layoutTransitionJournal() }),

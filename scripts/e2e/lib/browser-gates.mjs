@@ -461,6 +461,7 @@ const B04_JOURNAL_ENTRY_KEYS = Object.freeze([
   "mode",
   "startAtUnixMs",
   "preparedAtUnixMs",
+  "domCommittedAtUnixMs",
   "closedAtUnixMs",
   "moves",
 ]);

@@ -538,7 +538,18 @@ describe("브라우저 구현 행렬", () => {
     expect(() => mapB04PresentationSamples({
       ...input,
       domSamples: input.domSamples.filter((sample) => sample.trigger !== "initial"),
-    })).toThrow("initial sample=0/1");
+    })).toThrow("raw DOM samples=1/2");
+    expect(() => mapB04PresentationSamples({
+      ...input,
+      domSamples: [
+        ...input.domSamples,
+        {
+          ...input.domSamples[1],
+          sequence: 2,
+          transactionId: "unrelated-tx",
+        },
+      ],
+    })).toThrow("raw DOM samples=3/2");
   });
 
   it("전체 창 resize는 큰 폭의 양방향 교차를 반복하고 정확히 원복한다", () => {

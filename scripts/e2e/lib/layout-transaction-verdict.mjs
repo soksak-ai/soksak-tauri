@@ -29,8 +29,17 @@ export function layoutTransactionVerdict(
   if (candidateViewIds.length && !candidateViewIds.some((id) => ids.has(id))) {
     errors.push(`candidate-view-missing:${candidateViewIds.join("/")}`);
   }
-  if (!Number.isFinite(Number(entry.preparedAtUnixMs))) errors.push("prepared-time-missing");
-  if (!Number.isFinite(Number(entry.closedAtUnixMs))) errors.push("closed-time-missing");
-  if (Number(entry.closedAtUnixMs) < Number(entry.preparedAtUnixMs)) errors.push("time-reversed");
+  const preparedAt = entry.preparedAtUnixMs;
+  const domCommittedAt = entry.domCommittedAtUnixMs;
+  const closedAt = entry.closedAtUnixMs;
+  if (!Number.isFinite(preparedAt)) errors.push("prepared-time-missing");
+  if (!Number.isFinite(domCommittedAt)) errors.push("dom-commit-time-missing");
+  if (!Number.isFinite(closedAt)) errors.push("closed-time-missing");
+  if (Number.isFinite(preparedAt)
+      && Number.isFinite(domCommittedAt)
+      && Number.isFinite(closedAt)
+      && (domCommittedAt < preparedAt || closedAt < domCommittedAt)) {
+    errors.push("dom-commit-time-reversed");
+  }
   return { ok: errors.length === 0, errors, transactions: rows, transaction: entry };
 }

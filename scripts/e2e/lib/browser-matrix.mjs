@@ -132,12 +132,6 @@ function finiteB04Rect(value, name) {
 }
 
 /**
- * 한 60Hz frame보다 멀리 떨어진 DOM/native 사건은 같은 관측 tick으로 결합하지 않는다.
- * 120Hz/ProMotion에서도 DOM timer가 16ms라 nearest 표본은 최대 약 8ms 떨어질 수 있다.
- */
-export const b04PresentationPairGapMs = 17;
-
-/**
  * 클릭 대상은 layout 거래의 이동 owner와 같다는 보장이 없다. B04는 닫힌 공개 장부가
  * 유일하게 이동했다고 기록한 view를 presentation/DOM 참가자 identity의 정본으로 삼는다.
  */
@@ -209,8 +203,8 @@ export function normalizeB04JournalEntries(entries) {
 }
 
 /**
- * 같은 timer callback에서 직접 읽은 rail/pane/slot raw DOM rect와 actual presentation
- * producer의 renderer/surface frame을 절대시각으로 결합한다. 보간·이동량 투영·픽셀 판정은 없다.
+ * 공개 layout DOM-commit 사건에서 직접 읽은 rail/pane/slot raw rect와 actual presentation
+ * producer를 transaction id와 commit epoch로 결합한다. timer 근접·보간·투영·픽셀 판정은 없다.
  */
 export function mapB04PresentationSamples({
   events,
@@ -218,31 +212,50 @@ export function mapB04PresentationSamples({
   owner,
   targetViewId,
   transactionId,
-  preparedAtUnixMs,
-  closedAtUnixMs,
+  domCommittedAtUnixMs,
   railAddress,
   paneAddress,
   slotAddress,
-  maxPairGapMs = b04PresentationPairGapMs,
 }) {
   if (!Array.isArray(events) || events.length < 2) {
     throw new Error(`${targetViewId}: actual presentation samples=${events?.length ?? 0}/2`);
   }
-  if (!Array.isArray(domSamples) || domSamples.length < 2) {
-    throw new Error(`${targetViewId}: raw DOM samples=${domSamples?.length ?? 0}/2`);
+  if (!Array.isArray(domSamples)) {
+    throw new Error(`${targetViewId}: raw DOM samples=0/2`);
   }
-  if (!Number.isFinite(maxPairGapMs) || maxPairGapMs <= 0) {
-    throw new Error(`${targetViewId}: pair gap 상한이 유효하지 않다 ${maxPairGapMs}`);
+  if (domSamples.length !== 2) {
+    throw new Error(`${targetViewId}: raw DOM samples=${domSamples.length}/2`);
   }
-  const firstDomAt = Number(domSamples[0]?.sampledAtUnixMs);
-  const lastDomAt = Number(domSamples.at(-1)?.sampledAtUnixMs);
-  if (!Number.isFinite(firstDomAt)
-      || !Number.isFinite(lastDomAt)
-      || firstDomAt > Number(preparedAtUnixMs)
-      || lastDomAt < Number(closedAtUnixMs)) {
+  if (typeof transactionId !== "string" || !transactionId) {
+    throw new Error(`${targetViewId}: transaction id가 비었습니다`);
+  }
+  const commitAt = domCommittedAtUnixMs;
+  if (!Number.isFinite(commitAt)) {
+    throw new Error(`${targetViewId}: DOM commit epoch가 유한하지 않다 ${domCommittedAtUnixMs}`);
+  }
+  for (const [index, sample] of domSamples.entries()) {
+    if (sample?.sequence !== index || !Number.isFinite(sample?.sampledAtUnixMs)) {
+      throw new Error(`${targetViewId}: raw DOM sample sequence/time[${index}]가 유효하지 않다`);
+    }
+  }
+  const initialSamples = domSamples.filter((sample) => sample?.trigger === "initial");
+  if (initialSamples.length !== 1) {
+    throw new Error(`${targetViewId}: initial sample=${initialSamples.length}/1`);
+  }
+  const initialSample = initialSamples[0];
+  if (initialSample.transactionId !== null || initialSample.domCommittedAtUnixMs !== null) {
+    throw new Error(`${targetViewId}: initial sample에 layout transaction이 섞였다`);
+  }
+  const commitSamples = domSamples.filter((sample) => (
+    sample?.trigger === "layout-dom-commit" && sample?.transactionId === transactionId
+  ));
+  if (commitSamples.length !== 1) {
+    throw new Error(`${targetViewId}: DOM-commit sample=${commitSamples.length}/1 transaction=${transactionId}`);
+  }
+  const commitSample = commitSamples[0];
+  if (commitSample.domCommittedAtUnixMs !== commitAt) {
     throw new Error(
-      `${targetViewId}: DOM trace가 layout 거래를 감싸지 못했다 `
-      + `${firstDomAt}..${lastDomAt}/${preparedAtUnixMs}..${closedAtUnixMs}`,
+      `${targetViewId}: DOM-commit epoch=${commitSample.domCommittedAtUnixMs}/${commitAt}`,
     );
   }
   const participant = (id, connected, frame) => ({
@@ -251,26 +264,19 @@ export function mapB04PresentationSamples({
     connected,
     frame,
   });
-  const pairs = [];
+  const joins = [];
   let priorDomSequence = -1;
+  let priorPresentationAt = -Infinity;
   const samples = events.map((event, index) => {
-    const presentationAt = Number(event.sampledAtUnixMs);
-    if (!Number.isFinite(presentationAt)) {
-      throw new Error(`${targetViewId}: presentation timestamp[${index}]가 유한하지 않다`);
+    const presentationAt = event.sampledAtUnixMs;
+    if (!Number.isFinite(presentationAt) || presentationAt <= priorPresentationAt) {
+      throw new Error(`${targetViewId}: presentation timestamp[${index}]=${presentationAt}/${priorPresentationAt}`);
     }
-    const domSample = domSamples.reduce((nearest, sample) => {
-      const gap = Math.abs(Number(sample?.sampledAtUnixMs) - presentationAt);
-      const nearestGap = Math.abs(Number(nearest?.sampledAtUnixMs) - presentationAt);
-      return gap < nearestGap ? sample : nearest;
-    }, domSamples[0]);
-    const domAt = Number(domSample?.sampledAtUnixMs);
-    const gapMs = Math.abs(domAt - presentationAt);
-    if (!Number.isFinite(gapMs) || gapMs > maxPairGapMs) {
-      throw new Error(
-        `${targetViewId}: DOM/presentation pair gap[${index}]=${gapMs}/${maxPairGapMs}ms`,
-      );
-    }
-    const domSequence = Number(domSample?.sequence);
+    priorPresentationAt = presentationAt;
+    const beforeDomCommit = presentationAt < commitAt;
+    const domSample = beforeDomCommit ? initialSample : commitSample;
+    const domAt = domSample?.sampledAtUnixMs;
+    const domSequence = domSample?.sequence;
     if (!Number.isInteger(domSequence) || domSequence < priorDomSequence) {
       throw new Error(`${targetViewId}: DOM pair sequence[${index}]=${domSequence}/${priorDomSequence}`);
     }
@@ -296,17 +302,21 @@ export function mapB04PresentationSamples({
     const slotFrame = finiteB04Rect(slot.rect, `${targetViewId}:slot[${index}]`);
     const rendererFrame = finiteB04Rect(event.rendererFrame, `${targetViewId}:renderer[${index}]`);
     const surfaceFrame = finiteB04Rect(event.surfaceFrame, `${targetViewId}:surface[${index}]`);
-    pairs.push({
+    joins.push({
       sequence: index,
       domSequence,
+      trigger: domSample.trigger,
+      transactionId: domSample.transactionId,
       domSampledAtUnixMs: domAt,
+      domCommittedAtUnixMs: domSample.domCommittedAtUnixMs,
       presentationSampledAtUnixMs: presentationAt,
-      gapMs,
     });
     return {
       transactionId,
       sequence: index,
-      phase: index === 0 ? "prepared" : index === events.length - 1 ? "committed" : "presenting",
+      phase: beforeDomCommit
+        ? "prepared"
+        : index === events.length - 1 ? "committed" : "presenting",
       sampledAtUnixMs: presentationAt,
       rail: participant(railAddress, rail.connected === true, railFrame),
       pane: participant(paneAddress, pane.connected === true, paneFrame),
@@ -315,7 +325,7 @@ export function mapB04PresentationSamples({
       surface: participant(owner.surfaceId, event.connected === true, surfaceFrame),
     };
   });
-  return { samples, pairs, maxPairGapMs };
+  return { samples, joins };
 }
 
 export const browserImplementations = Object.freeze({
