@@ -16,6 +16,8 @@ import { execute } from "./registry";
 import { projectArrangement, useSessions, type Project, type Pane } from "../state/sessions";
 import { initialSidebarLayout } from "../state/sidebarLayout";
 import { splitLeaf } from "../state/splitTree";
+import { prepareLayoutMove } from "../lib/layoutTransitionHost";
+import { __resetLayoutTransitionJournalForTest } from "../lib/layoutTransitionJournal";
 
 const group = (id: string): Pane => ({
   id,
@@ -56,10 +58,27 @@ function project(activePaneId: string): Project {
 registerCatalog();
 
 beforeEach(() => {
+  __resetLayoutTransitionJournalForTest();
   useSessions.setState({ projects: [project("g2")], activeId: "t1" });
 });
 
 describe("layout.arrangement", () => {
+  it("녹화와 독립된 유한 layout 거래 장부를 명령으로 노출한다", async () => {
+    const prepared = await prepareLayoutMove([{ viewId: "v-g1", dx: 120 }]);
+    await prepared.commit();
+    const result = await execute("layout.transactions", {}, {});
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        entries: [{
+          transactionId: "layout-1",
+          phase: "committed",
+          moves: [{ viewId: "v-g1", dx: 120 }],
+        }],
+      },
+    });
+  });
+
   it("해결기의 답을 그대로 노출한다 — 명령과 화면이 같은 계산을 쓴다", async () => {
     const result = await execute("layout.arrangement", {}, {});
     expect(result.ok).toBe(true);

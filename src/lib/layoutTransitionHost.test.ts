@@ -5,9 +5,13 @@ import {
   registerLayoutTransitionHost,
   viewLayoutMoves,
 } from "./layoutTransitionHost";
+import { __resetLayoutTransitionJournalForTest } from "./layoutTransitionJournal";
 
 describe("layoutTransitionHost", () => {
-  beforeEach(__resetLayoutTransitionHostForTest);
+  beforeEach(() => {
+    __resetLayoutTransitionHostForTest();
+    __resetLayoutTransitionJournalForTest();
+  });
 
   it("미설치 프레임워크는 DOM glide이고 설치 어댑터의 준비 완료를 그대로 기다린다", async () => {
     const dom = await prepareLayoutMove([{ viewId: "v1", dx: 120 }]);
@@ -17,7 +21,10 @@ describe("layoutTransitionHost", () => {
     const prepareMove = vi.fn(async () => ({ mode: "snap" as const, commit, cancel }));
     registerLayoutTransitionHost({ prepareMove });
     const native = await prepareLayoutMove([{ viewId: "v1", dx: 120 }]);
-    expect(native).toEqual({ mode: "snap", commit, cancel });
+    expect(native.mode).toBe("snap");
+    await native.commit();
+    expect(commit).toHaveBeenCalledOnce();
+    expect(cancel).not.toHaveBeenCalled();
     expect(prepareMove).toHaveBeenCalledWith([{ viewId: "v1", dx: 120 }]);
   });
 

@@ -1,5 +1,6 @@
 import { moduleState } from "./moduleState";
 import { moveOffsetPx, type ArrangementMove } from "./railArrangement";
+import { journalPreparedLayoutTransition } from "./layoutTransitionJournal";
 
 export interface LayoutMove {
   /** 공개 view identity. 네이티브 label 문자열을 코어가 해석하지 않는다. */
@@ -59,14 +60,15 @@ export function registerLayoutTransitionHost(host: LayoutTransitionHost): void {
 }
 
 /** 미설치 = 콘텐츠가 DOM 배치를 그대로 따라가므로 기존 glide가 정답이다. */
-export function prepareLayoutMove(
+export async function prepareLayoutMove(
   moves: readonly LayoutMove[],
 ): Promise<PreparedLayoutTransition> {
-  return registered.host?.prepareMove(moves) ?? Promise.resolve({
+  const prepared = await (registered.host?.prepareMove(moves) ?? Promise.resolve({
     mode: "glide",
     commit: async () => {},
     cancel: () => {},
-  });
+  } as PreparedLayoutTransition));
+  return journalPreparedLayoutTransition(moves, prepared);
 }
 
 export function __resetLayoutTransitionHostForTest(): void {
