@@ -182,7 +182,6 @@ describe("ui.tree/ui.measure — 공개 DOM 노드 인스턴스 식별자", () =
 
 describe("ui.trace.multi — 같은 tick의 공개 DOM 참가자 원장", () => {
   it("initial과 layout DOM-commit 사건에서만 raw 참가자를 동기 기록한다", async () => {
-    vi.useFakeTimers();
     try {
       mountNode(`
         <div data-node="rail"></div>
@@ -207,15 +206,23 @@ describe("ui.trace.multi — 같은 tick의 공개 DOM 참가자 원장", () => 
       }
       const addresses = ["rail", "pane", "slot"]
         .map((node) => `win/main/content/view/test.v/node/${node}`);
-      const pending = execute("ui.trace.multi", { addresses, ms: 50 }, {});
-      await vi.advanceTimersByTimeAsync(0);
+      const armed = await execute("ui.trace.multi.start", { addresses, maxMs: 5_000 }, {});
+      expect(armed).toMatchObject({
+        ok: true,
+        data: {
+          traceId: expect.any(String),
+          addresses,
+          startedAtUnixMs: expect.any(Number),
+          expiresAtUnixMs: expect.any(Number),
+        },
+      });
+      const traceId = (armed.data as { traceId: string }).traceId;
       rects.rail.x = 170;
       rects.pane.x = 250;
       rects.slot.x = 270;
       const prepared = await prepareLayoutMove([{ viewId: "test.v", dx: -160 }]);
       await prepared.commit();
-      await vi.advanceTimersByTimeAsync(80);
-      const result = await pending;
+      const result = await execute("ui.trace.multi.close", { traceId }, {});
       expect(result.ok).toBe(true);
       const data = result.data as {
         addresses: string[];
@@ -257,9 +264,13 @@ describe("ui.trace.multi — 같은 tick의 공개 DOM 참가자 원장", () => 
         ],
       });
       expect(data.samples.every((sample) => Number.isFinite(sample.sampledAtUnixMs))).toBe(true);
-      expect(getSpec("ui.trace.multi")?.returns).toContain("sampledAtUnixMs");
-      expect(getSpec("ui.trace.multi")?.returns).toContain("transactionId");
-      expect(getSpec("ui.trace.multi")?.returns).toContain("domCommittedAtUnixMs");
+      expect(getSpec("ui.trace.multi.start")?.returns).toContain("traceId");
+      expect(getSpec("ui.trace.multi.close")?.returns).toContain("sampledAtUnixMs");
+      expect(getSpec("ui.trace.multi.close")?.returns).toContain("transactionId");
+      expect(getSpec("ui.trace.multi.close")?.returns).toContain("domCommittedAtUnixMs");
+      expect(getSpec("ui.trace.multi")).toBeUndefined();
+      expect(await execute("ui.trace.multi.close", { traceId }, {}))
+        .toMatchObject({ ok: false, code: "TARGET_NOT_FOUND" });
     } finally {
       vi.useRealTimers();
     }
