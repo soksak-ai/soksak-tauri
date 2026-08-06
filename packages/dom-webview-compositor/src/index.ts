@@ -10,7 +10,28 @@ export interface CompositionCoordinateSpace {
   /** DOM과 adapter 명령이 교환하는 논리 단위. */
   logical: "css-px";
   /** 화면 캡처와 실제 backing pixel의 배율. */
+  physical?: "device-px";
   scaleFactor: number;
+}
+
+export interface CompositionObservedFrame {
+  id: string;
+  viewId: string;
+  topologyPath: string;
+  visible: true;
+  logicalFrame: CompositionRect;
+  physicalFrame: CompositionRect;
+}
+
+/**
+ * 세 집합을 독립 열거해야 누락된 native surface를 matched pair에서 숨길 수 없다.
+ * 각 adapter는 같은 시점의 공개 상태를 이 중립 inventory로 정규화한다.
+ */
+export interface CompositionInventory {
+  coordinateSpace: CompositionCoordinateSpace & { physical: "device-px" };
+  slots: CompositionObservedFrame[];
+  renderers: CompositionObservedFrame[];
+  surfaces: CompositionObservedFrame[];
 }
 
 export interface CompositionParticipantFrame {
@@ -41,25 +62,165 @@ export function rectDelta(a: CompositionRect, b: CompositionRect): CompositionRe
   };
 }
 
-export function sameRect(a: CompositionRect, b: CompositionRect, tolerancePx = 1): boolean {
-  return Object.values(rectDelta(a, b)).every((value) => value <= tolerancePx);
+export function sameRect(a: CompositionRect, b: CompositionRect): boolean {
+  return Object.values(rectDelta(a, b)).every((value) => value === 0);
+}
+
+/**
+ * 논리 rect의 네 모서리를 가장 가까운 물리 픽셀에 한 번만 반올림한다.
+ * 폭/높이를 따로 반올림하지 않아 인접 rect가 같은 물리 경계를 공유한다.
+ */
+export function logicalRectToPhysical(frame: CompositionRect, scaleFactor: number): CompositionRect {
+  if (!Number.isFinite(scaleFactor) || scaleFactor <= 0) {
+    throw new RangeError(`scaleFactor must be finite and positive: ${scaleFactor}`);
+  }
+  const left = Math.round(frame.x * scaleFactor);
+  const top = Math.round(frame.y * scaleFactor);
+  const right = Math.round((frame.x + frame.w) * scaleFactor);
+  const bottom = Math.round((frame.y + frame.h) * scaleFactor);
+  return { x: left, y: top, w: right - left, h: bottom - top };
+}
+
+function validLogicalRect(value: unknown): value is CompositionRect {
+  const rect = value as CompositionRect | undefined;
+  return rect != null
+    && [rect.x, rect.y, rect.w, rect.h].every(Number.isFinite)
+    && rect.w > 0
+    && rect.h > 0;
+}
+
+function validPhysicalRect(value: unknown): value is CompositionRect {
+  const rect = value as CompositionRect | undefined;
+  return validLogicalRect(rect)
+    && [rect.x, rect.y, rect.w, rect.h].every(Number.isInteger);
+}
+
+function displayRect(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function observedFrames(
+  kind: "slot" | "renderer" | "surface",
+  values: unknown,
+  scaleFactor: number,
+  errors: string[],
+): Map<string, CompositionObservedFrame> {
+  const byView = new Map<string, CompositionObservedFrame>();
+  const ids = new Set<string>();
+  if (!Array.isArray(values) || values.length === 0) {
+    errors.push(`${kind}s=non-empty`);
+    return byView;
+  }
+  for (const [index, raw] of values.entries()) {
+    const value = raw as CompositionObservedFrame | undefined;
+    const at = `${kind}s[${index}]`;
+    if (value == null || typeof value !== "object") {
+      errors.push(`${at}=record`);
+      continue;
+    }
+    if (typeof value.id !== "string" || value.id.length === 0 || ids.has(value.id)) {
+      errors.push(`${at}.id=unique-non-empty`);
+    } else {
+      ids.add(value.id);
+    }
+    if (typeof value.viewId !== "string" || value.viewId.length === 0 || byView.has(value.viewId)) {
+      errors.push(`${at}.viewId=unique-non-empty`);
+    } else {
+      byView.set(value.viewId, value);
+    }
+    if (typeof value.topologyPath !== "string" || value.topologyPath.length === 0) {
+      errors.push(`${at}.topologyPath=non-empty`);
+    }
+    if (value.visible !== true) errors.push(`${at}.visible=true`);
+    if (!validLogicalRect(value.logicalFrame)) {
+      errors.push(`${at}.logicalFrame=finite-positive`);
+    }
+    if (!validPhysicalRect(value.physicalFrame)) {
+      errors.push(`${at}.physicalFrame=integer-positive`);
+    }
+    if (validLogicalRect(value.logicalFrame) && validPhysicalRect(value.physicalFrame)) {
+      const rounded = logicalRectToPhysical(value.logicalFrame, scaleFactor);
+      if (!sameRect(rounded, value.physicalFrame)) {
+        errors.push(`${at}:physical-rounding=${displayRect(rounded)}/${displayRect(value.physicalFrame)}`);
+      }
+    }
+  }
+  return byView;
+}
+
+/** 독립적으로 열거한 visible slot·renderer·surface의 1:1 소유권과 양 좌표계를 판정한다. */
+export function compositionInventoryVerdict(inventory: CompositionInventory) {
+  const errors: string[] = [];
+  const coordinateSpace = inventory?.coordinateSpace;
+  const scaleFactor = Number(coordinateSpace?.scaleFactor);
+  if (coordinateSpace?.logical !== "css-px") errors.push(`logical=${coordinateSpace?.logical}/css-px`);
+  if (coordinateSpace?.physical !== "device-px") errors.push(`physical=${coordinateSpace?.physical}/device-px`);
+  if (!Number.isFinite(scaleFactor) || scaleFactor <= 0) {
+    errors.push(`scaleFactor=${coordinateSpace?.scaleFactor}`);
+    return { ok: false, errors, matched: 0, scaleFactor };
+  }
+
+  const slots = observedFrames("slot", inventory?.slots, scaleFactor, errors);
+  const renderers = observedFrames("renderer", inventory?.renderers, scaleFactor, errors);
+  const surfaces = observedFrames("surface", inventory?.surfaces, scaleFactor, errors);
+  const slotOwners = [...slots.keys()].sort();
+  const rendererOwners = [...renderers.keys()].sort();
+  const surfaceOwners = [...surfaces.keys()].sort();
+  if (slotOwners.join("\u0000") !== rendererOwners.join("\u0000")
+      || slotOwners.join("\u0000") !== surfaceOwners.join("\u0000")) {
+    errors.push(`owners=${slotOwners.join(",")}/${rendererOwners.join(",")}/${surfaceOwners.join(",")}`);
+  }
+
+  let matched = 0;
+  for (const viewId of slotOwners) {
+    const slot = slots.get(viewId);
+    const renderer = renderers.get(viewId);
+    const surface = surfaces.get(viewId);
+    if (!slot || !renderer || !surface) continue;
+    matched += 1;
+    const topologies = [slot.topologyPath, renderer.topologyPath, surface.topologyPath];
+    if (new Set(topologies).size !== 1) {
+      errors.push(`${viewId}:topology=${topologies.join("/")}`);
+    }
+    if (!sameRect(slot.physicalFrame, renderer.physicalFrame)) {
+      errors.push(`${viewId}:renderer-frame=${displayRect(slot.physicalFrame)}/${displayRect(renderer.physicalFrame)}`);
+    }
+    if (!sameRect(slot.physicalFrame, surface.physicalFrame)) {
+      errors.push(`${viewId}:surface-frame=${displayRect(slot.physicalFrame)}/${displayRect(surface.physicalFrame)}`);
+    }
+  }
+  return { ok: errors.length === 0, errors, matched, scaleFactor };
 }
 
 /** 한 sample에서 공개 slot, plugin renderer, native surface가 반올림 외 차이 없이 같은지 판정한다. */
-export function compositionSampleVerdict(sample: CompositionSample, tolerancePx = 1) {
-  const rendererDelta = rectDelta(sample.slot.frame, sample.renderer.frame);
-  const surfaceDelta = rectDelta(sample.slot.frame, sample.surface.frame);
+export function compositionSampleVerdict(sample: CompositionSample) {
   const errors: string[] = [];
   if (!Number.isFinite(sample.coordinateSpace.scaleFactor) || sample.coordinateSpace.scaleFactor <= 0) {
     errors.push(`scaleFactor=${sample.coordinateSpace.scaleFactor}`);
+    return {
+      ok: false,
+      rounding: "nearest-device-pixel-edges",
+      rendererDelta: rectDelta(sample.slot.frame, sample.renderer.frame),
+      surfaceDelta: rectDelta(sample.slot.frame, sample.surface.frame),
+      errors,
+    };
   }
-  if (!sameRect(sample.slot.frame, sample.renderer.frame, tolerancePx)) {
+  const slotPhysical = logicalRectToPhysical(sample.slot.frame, sample.coordinateSpace.scaleFactor);
+  const rendererPhysical = logicalRectToPhysical(sample.renderer.frame, sample.coordinateSpace.scaleFactor);
+  const surfacePhysical = logicalRectToPhysical(sample.surface.frame, sample.coordinateSpace.scaleFactor);
+  const rendererDelta = rectDelta(slotPhysical, rendererPhysical);
+  const surfaceDelta = rectDelta(slotPhysical, surfacePhysical);
+  if (!sameRect(slotPhysical, rendererPhysical)) {
     errors.push(`renderer=${JSON.stringify(rendererDelta)}`);
   }
-  if (!sameRect(sample.slot.frame, sample.surface.frame, tolerancePx)) {
+  if (!sameRect(slotPhysical, surfacePhysical)) {
     errors.push(`surface=${JSON.stringify(surfaceDelta)}`);
   }
-  return { ok: errors.length === 0, tolerancePx, rendererDelta, surfaceDelta, errors };
+  return { ok: errors.length === 0, rounding: "nearest-device-pixel-edges", rendererDelta, surfaceDelta, errors };
 }
 
 /** 공유 진행 시계가 없으면 glide를 시도하지 않는다. OS adapter는 실제 시계 사실만 전달한다. */
@@ -73,7 +234,7 @@ export function motionModeForClocks(sharedPresentationClock: boolean): Compositi
  */
 export function compositionTransactionVerdict(
   samples: readonly CompositionSample[],
-  { motionMode, tolerancePx = 1 }: { motionMode: CompositionMotionMode; tolerancePx?: number },
+  { motionMode }: { motionMode: CompositionMotionMode },
 ) {
   const errors: string[] = [];
   if (samples.length < 2) errors.push(`samples=${samples.length}/2`);
@@ -89,7 +250,7 @@ export function compositionTransactionVerdict(
       || sample.renderer.id !== identities[1]
       || sample.surface.id !== identities[2]
     )) errors.push(`s${index}:participant-identity-changed`);
-    for (const error of compositionSampleVerdict(sample, tolerancePx).errors) {
+    for (const error of compositionSampleVerdict(sample).errors) {
       errors.push(`s${index}:${error}`);
     }
   }
@@ -97,9 +258,12 @@ export function compositionTransactionVerdict(
   if (!committed) errors.push("commit-missing");
   if (motionMode === "snap") {
     const distinct = samples.reduce<CompositionRect[]>((frames, sample) => (
-      frames.some((frame) => sameRect(frame, sample.slot.frame, tolerancePx))
+      frames.some((frame) => sameRect(
+        frame,
+        logicalRectToPhysical(sample.slot.frame, sample.coordinateSpace.scaleFactor),
+      ))
         ? frames
-        : [...frames, sample.slot.frame]
+        : [...frames, logicalRectToPhysical(sample.slot.frame, sample.coordinateSpace.scaleFactor)]
     ), []);
     if (distinct.length > 2) errors.push(`snap-intermediate-frames=${distinct.length}`);
   }

@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  compositionInventoryVerdict,
   compositionSampleVerdict,
   compositionTransactionVerdict,
+  logicalRectToPhysical,
   motionModeForClocks,
+  type CompositionInventory,
   type CompositionSample,
 } from "../src/index";
 
@@ -24,15 +27,63 @@ const sample = (
 });
 
 describe("DOM ↔ native webview composition contract", () => {
-  it("1px rounding만 허용하고 renderer 또는 surface 분리를 RED로 만든다", () => {
-    expect(compositionSampleVerdict(sample(101, 99)).ok).toBe(true);
-    expect(compositionSampleVerdict(sample(102, 100))).toMatchObject({
+  it("CSS 모서리를 물리 픽셀로 한 번만 반올림하고 임의 tolerance를 두지 않는다", () => {
+    expect(logicalRectToPhysical({ x: 10.25, y: 20.5, w: 100.5, h: 40.25 }, 2)).toEqual({
+      x: 21,
+      y: 41,
+      w: 201,
+      h: 81,
+    });
+    expect(compositionSampleVerdict(sample(100.5, 100))).toMatchObject({
       ok: false,
       errors: [expect.stringContaining("renderer=")],
     });
     expect(compositionSampleVerdict(sample(100, 420))).toMatchObject({
       ok: false,
       errors: [expect.stringContaining("surface=")],
+    });
+  });
+
+  it("독립 inventory의 slot·renderer·surface가 view/topology/양 좌표계에서 정확히 1:1이어야 한다", () => {
+    const observed = (kind: string, viewId: string, x: number) => ({
+      id: `${kind}-${viewId}`,
+      viewId,
+      topologyPath: `workspace/pane/${viewId}/content`,
+      visible: true as const,
+      logicalFrame: { x, y: 20.25, w: 300.5, h: 200.25 },
+      physicalFrame: logicalRectToPhysical({ x, y: 20.25, w: 300.5, h: 200.25 }, 2),
+    });
+    const inventory: CompositionInventory = {
+      coordinateSpace: { logical: "css-px", physical: "device-px", scaleFactor: 2 },
+      slots: [observed("slot", "left", 100.25), observed("slot", "right", 420.25)],
+      renderers: [observed("renderer", "left", 100.25), observed("renderer", "right", 420.25)],
+      surfaces: [observed("surface", "left", 100.25), observed("surface", "right", 420.25)],
+    };
+    expect(compositionInventoryVerdict(inventory)).toMatchObject({
+      ok: true,
+      matched: 2,
+      errors: [],
+    });
+
+    const missing = structuredClone(inventory);
+    missing.surfaces.pop();
+    expect(compositionInventoryVerdict(missing)).toMatchObject({
+      ok: false,
+      errors: expect.arrayContaining([expect.stringContaining("owners=")]),
+    });
+
+    const topologyDrift = structuredClone(inventory);
+    topologyDrift.renderers[0].topologyPath = "workspace/pane/wrong/content";
+    expect(compositionInventoryVerdict(topologyDrift)).toMatchObject({
+      ok: false,
+      errors: expect.arrayContaining([expect.stringContaining("topology=")]),
+    });
+
+    const physicalDrift = structuredClone(inventory);
+    physicalDrift.surfaces[0].physicalFrame.x += 1;
+    expect(compositionInventoryVerdict(physicalDrift)).toMatchObject({
+      ok: false,
+      errors: expect.arrayContaining([expect.stringContaining("physical-rounding=")]),
     });
   });
 

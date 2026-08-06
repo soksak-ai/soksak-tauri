@@ -6,7 +6,7 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "test": "vitest run test/composition.test.ts",
+    "test": "vitest --root ../.. run packages/dom-webview-compositor/test/composition.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "exports": {
