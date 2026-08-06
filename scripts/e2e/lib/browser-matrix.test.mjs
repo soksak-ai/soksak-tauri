@@ -16,12 +16,14 @@ import {
   markerPixels,
   mapB04PresentationSamples,
   motionMarkerAlignment,
+  normalizeB04JournalEntries,
   numericCompositionTraceVerdict,
   pinnedDomTraceVerdict,
   snapshotCssScale,
   selectFixtureMarkerComponent,
   fixtureMarkerRowVerdict,
   rendererTopologyOwnershipVerdict,
+  resolveB04MovedParticipant,
   hostileWindowResizeSizes,
   summarizeFrameSequence,
   unwrapEvalValue,
@@ -378,6 +380,101 @@ describe("브라우저 구현 행렬", () => {
       renderer: { id: "renderer", frame: { x: 430, y: 60, w: 460, h: 420 } },
       surface: { id: "surface", frame: { x: 430, y: 60, w: 460, h: 420 } },
     });
+  });
+
+  it("B04는 클릭된 target이 아니라 공개 장부의 유일한 moved view owner와 raw DOM 주소를 선택한다", () => {
+    const owners = [
+      { viewId: "view-left", rendererId: "renderer-left", surfaceId: "surface-left" },
+      { viewId: "view-right", rendererId: "renderer-right", surfaceId: "surface-right" },
+    ];
+    const moved = resolveB04MovedParticipant({
+      transactions: [{
+        transactionId: "tx-right-click",
+        phase: "committed",
+        moves: [{ viewId: "view-left", dx: 160 }],
+      }],
+      owners,
+      viewIds: ["view-left", "view-right"],
+      paneAddresses: ["pane-left", "pane-right"],
+      slotAddresses: ["slot-left", "slot-right"],
+    });
+
+    // 오른쪽 클릭이어도 장부가 실제로 이동했다고 밝힌 owner는 왼쪽이다.
+    expect(moved).toEqual({
+      targetViewId: "view-left",
+      owner: owners[0],
+      paneAddress: "pane-left",
+      slotAddress: "slot-left",
+    });
+    expect(() => resolveB04MovedParticipant({
+      transactions: [{ moves: [
+        { viewId: "view-left", dx: 160 },
+        { viewId: "view-right", dx: -160 },
+      ] }],
+      owners,
+      viewIds: ["view-left", "view-right"],
+      paneAddresses: ["pane-left", "pane-right"],
+      slotAddresses: ["slot-left", "slot-right"],
+    })).toThrow("moved views=2/1");
+  });
+
+  it("B04 mapper는 양쪽 pane/slot을 함께 관측해도 moved owner의 raw 참가자만 1:1 선택한다", () => {
+    const rawSample = (sequence, sampledAtUnixMs, leftX, rightX) => ({
+      sequence,
+      sampledAtUnixMs,
+      nodes: [
+        { address: "rail", connected: true, rect: { x: 10, y: 0, w: 60, h: 500 } },
+        { address: "pane-left", connected: true, rect: { x: leftX, y: 0, w: 500, h: 500 } },
+        { address: "slot-left", connected: true, rect: { x: leftX + 30, y: 60, w: 460, h: 420 } },
+        { address: "pane-right", connected: true, rect: { x: rightX, y: 0, w: 500, h: 500 } },
+        { address: "slot-right", connected: true, rect: { x: rightX + 30, y: 60, w: 460, h: 420 } },
+      ],
+    });
+    const trace = mapB04PresentationSamples({
+      events: [
+        { sampledAtUnixMs: 1_001, connected: true, rendererFrame: { x: 130, y: 60, w: 460, h: 420 }, surfaceFrame: { x: 130, y: 60, w: 460, h: 420 } },
+        { sampledAtUnixMs: 1_019, connected: true, rendererFrame: { x: 290, y: 60, w: 460, h: 420 }, surfaceFrame: { x: 290, y: 60, w: 460, h: 420 } },
+      ],
+      domSamples: [
+        rawSample(0, 990, 100, 700),
+        rawSample(1, 1_000, 100, 700),
+        rawSample(2, 1_020, 260, 700),
+        rawSample(3, 1_030, 260, 700),
+      ],
+      owner: { rendererId: "renderer-left", surfaceId: "surface-left" },
+      targetViewId: "view-left",
+      transactionId: "tx",
+      preparedAtUnixMs: 995,
+      closedAtUnixMs: 1_025,
+      railAddress: "rail",
+      paneAddress: "pane-left",
+      slotAddress: "slot-left",
+    });
+    expect(trace.samples.at(-1)).toMatchObject({
+      pane: { id: "pane-left", frame: { x: 260 } },
+      slot: { id: "slot-left", frame: { x: 290 } },
+      renderer: { id: "renderer-left", frame: { x: 290 } },
+      surface: { id: "surface-left", frame: { x: 290 } },
+    });
+  });
+
+  it("B04 canonical journal은 snap epoch 누락을 null로 정규화하고 raw 장부는 바꾸지 않는다", () => {
+    const rawSnap = {
+      sequence: 4,
+      transactionId: "tx-snap",
+      phase: "committed",
+      mode: "snap",
+      preparedAtUnixMs: 1_000,
+      closedAtUnixMs: 1_001,
+      moves: [{ viewId: "view-left", dx: 160 }],
+    };
+    const rawGlide = { ...rawSnap, transactionId: "tx-glide", mode: "glide", startAtUnixMs: 999 };
+    const canonical = normalizeB04JournalEntries([rawSnap, rawGlide]);
+
+    expect(canonical[0]).toEqual({ ...rawSnap, startAtUnixMs: null });
+    expect(canonical[1]).toEqual(rawGlide);
+    expect(Object.hasOwn(rawSnap, "startAtUnixMs")).toBe(false);
+    expect(canonical[0]).not.toBe(rawSnap);
   });
 
   it("B04 raw DOM trace가 거래를 감싸지 않거나 actual event와 한 frame 넘게 벌어지면 RED다", () => {
