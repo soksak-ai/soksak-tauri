@@ -796,6 +796,7 @@ async function runEngine(client, page, engine) {
     writeVisualReport(`${firstPaintPath}.scale.visual.json`, scaleEvidence);
     const scale = scaleEvidence.scale;
     observeFrameSequence([firstPaintPath], `${engine}/first-paint`, scale);
+    must(await rpc("capture.calibration", { visible: false }, win), "first paint calibration hide");
 
     if (sentinelWin && sentinelTabId) {
       must(await rpc(`plugin.${plugin}.gc`, {}, win, { timeoutMs: 20_000 }), "challenger owner-scoped gc");
@@ -1068,153 +1069,145 @@ async function runEngine(client, page, engine) {
         console.log(`✓ ${maximizeCase.name}: station=${maximizeCase.station} · 저장 PIN=50 · 복원 동일`);
       }
     }
-    must(await rpc("sidebar.left.position", { mode: "flow" }, win), "restore sidebar flow after pin contract");
-    must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }), "flow restore settled");
-
-    if (SCENARIOS.size === 1 && (SCENARIOS.has("pin") || SCENARIOS.has("scroll"))) {
-      const finalPath = path.join(engineEvidence, "pin-final.png");
-      must(await rpc("window.snapshot", { path: finalPath }, win), "pin final snapshot");
-      if (native) {
-        const finalComposition = must(await rpc("webview.composition", {}, win), "pin final composition");
-        fs.writeFileSync(
-          path.join(engineEvidence, "pin-final-composition.json"),
-          `${JSON.stringify(finalComposition, null, 2)}\n`,
-        );
-      }
-      observeFrameSequence([finalPath], `${engine}/pin-final`, scale);
-      await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, "pin-final-ledger");
-      console.log(SCENARIOS.has("pin")
-        ? `✓ ${engine} PIN GREEN — 좌·우 결합 + 비인접 독립 보더 · 연속 프레임 ${frameCount}장`
-        : `✓ ${engine} SCROLL GREEN — 실제 wheel 2개 탭 0→480→0 · 탭 지정 viewport/full 캡처 각 2장`);
-      return frameCount;
+    if (SCENARIOS.has("pin")) {
+      must(await rpc("sidebar.left.position", { mode: "flow" }, win), "restore sidebar flow after pin contract");
+      must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }), "flow restore settled");
     }
 
     // 전체 창 경계 resize — 녹화를 먼저 열고 큰 폭의 축소/확대를 짧은 간격으로 반복한다.
     // 요청 단계는 native affine 계약을 수치 판정하고, 유한 시퀀스 정착 뒤 live DOM/native를
     // 판정한다. 브라우저가 병합할 수 있는 중간 DOM paint를 요청마다 강제하지 않는다.
-    const fastResizeDir = path.join(engineEvidence, "resize-window-fast");
-    const fastSizes = hostileWindowResizeSizes(originalWindow);
-    const fastResize = must(await rpc("window.resizeSequence", {
-      sizes: fastSizes,
-      intervalMs: 8,
-      recordDir: fastResizeDir,
-      recordFrames: FAST_RESIZE_FRAMES,
-      recordIntervalMs: 16,
-    }, win, { timeoutMs: 60_000 }), "rapid window resize");
-    const fastRecordingEvidence = reviewRecordingArtifacts({
-      directory: fastResizeDir,
-      recording: fastResize.recording,
-      expectedFrames: FAST_RESIZE_FRAMES,
-      name: `${engine}/window-fast`,
-    });
-    const fastFiles = fastRecordingEvidence.artifacts;
-    if (Number(fastResize.steps) !== fastSizes.length) {
-      throw new Error(`rapid window resize 단계 누락: ${JSON.stringify(fastResize)}`);
-    }
-    if (Number(fastResize.resizeElapsedMs) > 4_000) {
-      throw new Error(`rapid window resize 응답 정지: ${fastResize.resizeElapsedMs}ms/${fastSizes.length}단계`);
-    }
-    fs.writeFileSync(
-      path.join(fastResizeDir, "composition-samples.json"),
-      `${JSON.stringify(fastResize.samples ?? [], null, 2)}\n`,
-    );
-    if (frameworkName === "tauri") {
-      const redSamples = (fastResize.samples ?? []).filter((sample) => sample.observation?.verdict !== "green");
-      if (redSamples.length) {
-        const summary = redSamples.map((sample) => {
-          const direct = sample.observation?.direct?.verdict;
-          const directErrors = [
-            ...(direct?.misplaced ?? []).map((item) => `direct-misplaced:${JSON.stringify(item)}`),
-            ...(direct?.stacked ?? []).map((item) => `direct-stacked:${JSON.stringify(item)}`),
-            ...(direct?.missing ?? []).map((item) => `direct-missing:${JSON.stringify(item)}`),
-          ];
-          const failed = (sample.observation?.pane?.matches ?? []).filter((match) => !match.ok);
-          const paneErrors = failed.map((match) => {
-            const member = (match.members ?? []).filter((item) => !item.ok)
-              .map((item) => `${item.label}:${JSON.stringify(item.delta)}`).join("|");
-            return `${match.pane}:${JSON.stringify(match.delta)}${member ? ` member=${member}` : ""}`;
-          });
-          return `s${sample.step}:${[...directErrors, ...paneErrors].join(",")}`;
-        });
-        throw new Error(`rapid window resize affine 거래 RED — ${summary.join("; ")}`);
-      }
-    }
-    // 최소 높이에서는 입력 아래의 상태 marker가 정상적으로 viewport 밖에 놓일 수 있다. 전이 중에는
-    // 상단의 고정 ruler로 live frame을 판정하고, 원복 직후 실제 input 값·event ledger를 다시 읽는다.
-    observeFrameSequence(
-      fastFiles,
-      `${engine}/window-fast`,
-      scale,
-      { requireInput: false, compareDomEpoch: true, chromeAnchors: [CHROME_MARKERS.railAdd] },
-    );
-    must(await rpc("capture.calibration", { visible: false }, win), "DOM compositor calibration hide");
-    frameCount += fastFiles.length;
-    must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }), "window resize final layout settled");
-    if (frameworkName === "tauri") {
-      assertPaneComposition(
-        must(await rpc("webview.pane.composition.wait", { settleTimeoutMs: 8_000 }, win, { timeoutMs: 12_000 }),
-          "window resize final pane composition"),
-        labels,
-      );
-    }
-    await assertViewportComposition(rpc, win, plugin, tabIds, addresses, scale,
-      path.join(engineEvidence, "resize-window-restored.png"), `${engine}/window-restored`);
-    await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, "window-resize-restored");
-    await assertImePersisted(rpc, win, plugin, tabIds, "window-resize-restored");
-
-    // 탭 패널 경계 resize — 실제 gutter pointer path를 양방향으로 움직이고 전 구간을 캡처한다.
-    const resizeTree = must(await rpc("ui.tree", { rects: true }, win), "resize ui.tree");
-    const gutter = (resizeTree.nodes ?? []).find((node) =>
-      String(node.nodePath ?? "").startsWith("gutter/") && Number(node.rect?.h) > Number(node.rect?.w) * 4,
-    );
-    if (!gutter?.address) throw new Error("세로 pane gutter가 노출되지 않았다");
-    for (const [direction, dx] of [["wider", 80], ["restored", -80]]) {
-      const dir = path.join(engineEvidence, `resize-pane-${direction}`);
-      const dragged = must(await rpc("ui.input.drag", {
-        from: gutter.address, dx, steps: 12, durationMs: 240,
-        recordDir: dir, recordFrames: FRAMES_PER_CLICK, recordIntervalMs: 16,
-      }, win, { timeoutMs: 60_000 }), `pane resize ${direction}`);
-      const recordingEvidence = reviewRecordingArtifacts({
-        directory: dir,
-        recording: dragged.recording,
-        expectedFrames: FRAMES_PER_CLICK,
-        name: `${engine}/pane-${direction}`,
+    let resizeSummary = "창/pane resize 미선택";
+    if (SCENARIOS.has("resize")) {
+      const fastResizeDir = path.join(engineEvidence, "resize-window-fast");
+      const fastSizes = hostileWindowResizeSizes(originalWindow);
+      must(await rpc("capture.calibration", { visible: true }, win), "window resize calibration show");
+      const fastResize = must(await rpc("window.resizeSequence", {
+        sizes: fastSizes,
+        intervalMs: 8,
+        recordDir: fastResizeDir,
+        recordFrames: FAST_RESIZE_FRAMES,
+        recordIntervalMs: 16,
+      }, win, { timeoutMs: 60_000 }), "rapid window resize");
+      const fastRecordingEvidence = reviewRecordingArtifacts({
+        directory: fastResizeDir,
+        recording: fastResize.recording,
+        expectedFrames: FAST_RESIZE_FRAMES,
+        name: `${engine}/window-fast`,
       });
-      const files = recordingEvidence.artifacts;
-      observeFrameSequence(
-        files,
-        `${engine}/pane-${direction}`,
-        scale,
-        { chromeAnchors: [CHROME_MARKERS.railAdd] },
+      const fastFiles = fastRecordingEvidence.artifacts;
+      if (Number(fastResize.steps) !== fastSizes.length) {
+        throw new Error(`rapid window resize 단계 누락: ${JSON.stringify(fastResize)}`);
+      }
+      if (Number(fastResize.resizeElapsedMs) > 4_000) {
+        throw new Error(`rapid window resize 응답 정지: ${fastResize.resizeElapsedMs}ms/${fastSizes.length}단계`);
+      }
+      fs.writeFileSync(
+        path.join(fastResizeDir, "composition-samples.json"),
+        `${JSON.stringify(fastResize.samples ?? [], null, 2)}\n`,
       );
-      must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }),
-        `pane resize ${direction} layout settled`);
       if (frameworkName === "tauri") {
-        const composition = must(await rpc(
-          "webview.pane.composition.wait",
-          { settleTimeoutMs: 8_000 },
-          win,
-          { timeoutMs: 12_000 },
-        ), `pane resize ${direction} composition settled`);
-        assertPaneComposition(composition, labels);
-        fs.writeFileSync(
-          path.join(engineEvidence, `resize-pane-${direction}-composition.json`),
-          `${JSON.stringify(composition, null, 2)}\n`,
+        const redSamples = (fastResize.samples ?? []).filter((sample) => sample.observation?.verdict !== "green");
+        if (redSamples.length) {
+          const summary = redSamples.map((sample) => {
+            const direct = sample.observation?.direct?.verdict;
+            const directErrors = [
+              ...(direct?.misplaced ?? []).map((item) => `direct-misplaced:${JSON.stringify(item)}`),
+              ...(direct?.stacked ?? []).map((item) => `direct-stacked:${JSON.stringify(item)}`),
+              ...(direct?.missing ?? []).map((item) => `direct-missing:${JSON.stringify(item)}`),
+            ];
+            const failed = (sample.observation?.pane?.matches ?? []).filter((match) => !match.ok);
+            const paneErrors = failed.map((match) => {
+              const member = (match.members ?? []).filter((item) => !item.ok)
+                .map((item) => `${item.label}:${JSON.stringify(item.delta)}`).join("|");
+              return `${match.pane}:${JSON.stringify(match.delta)}${member ? ` member=${member}` : ""}`;
+            });
+            return `s${sample.step}:${[...directErrors, ...paneErrors].join(",")}`;
+          });
+          throw new Error(`rapid window resize affine 거래 RED — ${summary.join("; ")}`);
+        }
+      }
+      // 최소 높이에서는 입력 아래의 상태 marker가 정상적으로 viewport 밖에 놓일 수 있다. 전이 중에는
+      // 상단의 고정 ruler로 live frame을 판정하고, 원복 직후 실제 input 값·event ledger를 다시 읽는다.
+      observeFrameSequence(
+        fastFiles,
+        `${engine}/window-fast`,
+        scale,
+        { requireInput: false, compareDomEpoch: true, chromeAnchors: [CHROME_MARKERS.railAdd] },
+      );
+      must(await rpc("capture.calibration", { visible: false }, win), "DOM compositor calibration hide");
+      frameCount += fastFiles.length;
+      must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }), "window resize final layout settled");
+      if (frameworkName === "tauri") {
+        assertPaneComposition(
+          must(await rpc("webview.pane.composition.wait", { settleTimeoutMs: 8_000 }, win, { timeoutMs: 12_000 }),
+            "window resize final pane composition"),
+          labels,
         );
       }
       await assertViewportComposition(rpc, win, plugin, tabIds, addresses, scale,
-        path.join(engineEvidence, `resize-pane-${direction}.png`), `${engine}/pane-${direction}`);
-      await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, `pane-resize-${direction}`);
-      frameCount += files.length;
+        path.join(engineEvidence, "resize-window-restored.png"), `${engine}/window-restored`);
+      await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, "window-resize-restored");
+      await assertImePersisted(rpc, win, plugin, tabIds, "window-resize-restored");
+
+      // 탭 패널 경계 resize — 실제 gutter pointer path를 양방향으로 움직이고 전 구간을 캡처한다.
+      const resizeTree = must(await rpc("ui.tree", { rects: true }, win), "resize ui.tree");
+      const gutter = (resizeTree.nodes ?? []).find((node) =>
+        String(node.nodePath ?? "").startsWith("gutter/") && Number(node.rect?.h) > Number(node.rect?.w) * 4,
+      );
+      if (!gutter?.address) throw new Error("세로 pane gutter가 노출되지 않았다");
+      for (const [direction, dx] of [["wider", 80], ["restored", -80]]) {
+        const dir = path.join(engineEvidence, `resize-pane-${direction}`);
+        const dragged = must(await rpc("ui.input.drag", {
+          from: gutter.address, dx, steps: 12, durationMs: 240,
+          recordDir: dir, recordFrames: FRAMES_PER_CLICK, recordIntervalMs: 16,
+        }, win, { timeoutMs: 60_000 }), `pane resize ${direction}`);
+        const recordingEvidence = reviewRecordingArtifacts({
+          directory: dir,
+          recording: dragged.recording,
+          expectedFrames: FRAMES_PER_CLICK,
+          name: `${engine}/pane-${direction}`,
+        });
+        const files = recordingEvidence.artifacts;
+        observeFrameSequence(
+          files,
+          `${engine}/pane-${direction}`,
+          scale,
+          { chromeAnchors: [CHROME_MARKERS.railAdd] },
+        );
+        must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }),
+          `pane resize ${direction} layout settled`);
+        if (frameworkName === "tauri") {
+          const composition = must(await rpc(
+            "webview.pane.composition.wait",
+            { settleTimeoutMs: 8_000 },
+            win,
+            { timeoutMs: 12_000 },
+          ), `pane resize ${direction} composition settled`);
+          assertPaneComposition(composition, labels);
+          fs.writeFileSync(
+            path.join(engineEvidence, `resize-pane-${direction}-composition.json`),
+            `${JSON.stringify(composition, null, 2)}\n`,
+          );
+        }
+        await assertViewportComposition(rpc, win, plugin, tabIds, addresses, scale,
+          path.join(engineEvidence, `resize-pane-${direction}.png`), `${engine}/pane-${direction}`);
+        await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, `pane-resize-${direction}`);
+        frameCount += files.length;
+      }
+      resizeSummary = `급격한 창 resize ${fastSizes.length}단계/${fastResize.resizeElapsedMs}ms · 패널 resize 왕복`;
     }
 
-    await assertChromeOverlayContract(rpc, win, engineEvidence, scale);
+    if (SCENARIOS.has("overlay")) {
+      await assertChromeOverlayContract(rpc, win, engineEvidence, scale);
+    }
 
     const finalPath = path.join(engineEvidence, "final.png");
     must(await rpc("window.snapshot", { path: finalPath }, win), "final snapshot");
     observeFrameSequence([finalPath], `${engine}/final`, scale);
     await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, "final-ledger");
-    console.log(`✓ ${engine} GREEN — 한글 IME 2개 · 교차 클릭 ${CYCLES * 2}회 · 급격한 창 resize ${fastSizes.length}단계/${fastResize.resizeElapsedMs}ms · 패널 resize 왕복 · 연속 프레임 ${frameCount}장`);
+    const crossClicks = SCENARIOS.has("flow") ? CYCLES * 2 : 0;
+    console.log(`✓ ${engine} GREEN — 시나리오 ${[...SCENARIOS].join(",")} · 한글 IME 2개 · 교차 클릭 ${crossClicks}회 · ${resizeSummary} · 연속 프레임 ${frameCount}장`);
     return frameCount;
   } catch (error) {
     runFailure = error;

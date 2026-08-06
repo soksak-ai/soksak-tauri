@@ -1,6 +1,27 @@
 // @vitest-environment node
 import { readFileSync } from "node:fs";
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
+
+function scenarioGateBodies(source, scenario) {
+  const file = ts.createSourceFile("slot-freeze.mjs", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  const bodies = [];
+  const visit = (node) => {
+    if (ts.isIfStatement(node)
+        && ts.isCallExpression(node.expression)
+        && ts.isPropertyAccessExpression(node.expression.expression)
+        && node.expression.expression.expression.getText(file) === "SCENARIOS"
+        && node.expression.expression.name.text === "has"
+        && node.expression.arguments.length === 1
+        && ts.isStringLiteral(node.expression.arguments[0])
+        && node.expression.arguments[0].text === scenario) {
+      bodies.push(node.thenStatement.getText(file));
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return bodies;
+}
 
 describe("slot-freeze instrumentation lifecycle", () => {
   it("keeps Node alive until the whole scenario and finally cleanup have completed", () => {
@@ -80,6 +101,26 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(source).toContain("PIN 클릭이 native bounds를 기록");
     expect(source).toContain("process.env.CROSS_CLICK_CYCLES ?? 3");
     expect(source).toContain('process.env.BROWSER_SCENARIOS ?? "flow,pin,resize,overlay,scroll"');
+  });
+
+  it("선택한 시나리오만 실행하며 resize와 overlay를 서로 독립시킨다", () => {
+    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    const resizeBodies = scenarioGateBodies(source, "resize");
+    const overlayBodies = scenarioGateBodies(source, "overlay");
+
+    expect(resizeBodies).toHaveLength(1);
+    expect(resizeBodies[0].match(/rpc\("window\.resizeSequence"/g)).toHaveLength(1);
+    expect(resizeBodies[0].match(/rpc\("ui\.input\.drag"/g)).toHaveLength(1);
+    expect(source.match(/rpc\("window\.resizeSequence"/g)).toHaveLength(1);
+    expect(source.match(/rpc\("ui\.input\.drag"/g)).toHaveLength(1);
+    expect(source.indexOf('"first paint calibration hide"'))
+      .toBeLessThan(source.indexOf('if (SCENARIOS.has("resize")) {'));
+    expect(resizeBodies[0]).toContain('"window resize calibration show"');
+    expect(resizeBodies[0]).toContain('"DOM compositor calibration hide"');
+    expect(overlayBodies).toHaveLength(1);
+    expect(overlayBodies[0].match(/await assertChromeOverlayContract/g)).toHaveLength(1);
+    expect(source.match(/await assertChromeOverlayContract/g)).toHaveLength(1);
+    expect(source).not.toContain("SCENARIOS.size === 1");
   });
 
   it("교차 이동의 자동 판정은 recorder callback이 아닌 공개 layout 거래 장부를 소비한다", () => {
