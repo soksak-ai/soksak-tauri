@@ -273,6 +273,20 @@
       "note": "공통 브라우저 gate 스키마·identity·judge receipt를 순수 증거 값으로 검증한다."
     },
     {
+      "file": "lib/layout-transaction-verdict.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "공개 layout 거래 장부에서 정확히 한 개의 닫힌 거래·유한 이동·대상 identity를 판정하는 순수 계약이다."
+    },
+    {
+      "file": "lib/layout-transaction-verdict.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "픽셀·프레임워크 없이 layout 거래의 RED/GREEN 기준을 고정한다."
+    },
+    {
       "file": "lib/browser-visual-evidence.mjs",
       "role": "lib",
       "class": "C",
