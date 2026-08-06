@@ -569,6 +569,8 @@ mod status {
 // rect 레지스트리가 없다(set_position/set_size/hide 가 곧 홀 갱신).
 #[cfg(target_os = "macos")]
 mod layer;
+#[cfg(target_os = "macos")]
+mod presentation_clock;
 mod presentation_trace;
 
 #[cfg(target_os = "macos")]

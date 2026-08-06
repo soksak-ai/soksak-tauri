@@ -12,7 +12,7 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{NSNumber, NSPoint, NSString};
 use objc2_quartz_core::{
-    CABasicAnimation, CACurrentMediaTime, CAMediaTiming, CAMediaTimingFunction, CATransaction,
+    CABasicAnimation, CAMediaTiming, CAMediaTimingFunction, CATransaction,
     kCAFillModeBackwards,
 };
 use soksak_core::native_surface_ledger::{NativeSurfaceHosts, NativeSurfaceLedger};
@@ -342,7 +342,7 @@ fn renderer_pair_topology(renderer_ptr: usize, surface_ptr: usize) -> serde_json
 
 const LAYOUT_POSITION_KEY: &str = "soksak-layout-position-x";
 
-fn add_layout_position(view: &NSView, dx: f64, start_delay: f64, duration: f64) -> Result<(), String> {
+fn add_layout_position(view: &NSView, dx: f64, start_at_media_time: f64, duration: f64) -> Result<(), String> {
     let layer = view.layer().ok_or_else(|| "native surface host layer가 없다".to_string())?;
     let key_path = NSString::from_str("position.x");
     let animation = CABasicAnimation::animationWithKeyPath(Some(&key_path));
@@ -357,8 +357,8 @@ fn add_layout_position(view: &NSView, dx: f64, start_delay: f64, duration: f64) 
     }
     // CAMediaTiming.beginTime은 대상 layer의 local time이다. 전역 media time을 그대로 넣으면
     // 부모 timing offset만큼 DOM epoch보다 먼저/늦게 출발한다.
-    let local_now = layer.convertTime_fromLayer(CACurrentMediaTime(), None);
-    animation.setBeginTime(local_now + start_delay);
+    let local_start = layer.convertTime_fromLayer(start_at_media_time, None);
+    animation.setBeginTime(local_start);
     animation.setDuration(duration);
     animation.setFillMode(unsafe { kCAFillModeBackwards });
     animation.setRemovedOnCompletion(true);
@@ -434,11 +434,7 @@ pub fn prepare_surface_host_translation(
         ));
     }
     let dx = before.origin.x - target.origin.x;
-    let now_unix_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_secs_f64() * 1000.0)
-        .unwrap_or(start_at_unix_ms);
-    let start_delay = (start_at_unix_ms - now_unix_ms).max(0.0) / 1000.0;
+    let start_at_media_time = super::presentation_clock::media_time_from_unix_ms(start_at_unix_ms);
     let duration = duration_ms.max(1.0) / 1000.0;
 
     CATransaction::begin();
@@ -449,7 +445,7 @@ pub fn prepare_surface_host_translation(
         target.size,
     ));
     settle_surface_frame(child);
-    let animation_result = add_layout_position(host, dx, start_delay, duration);
+    let animation_result = add_layout_position(host, dx, start_at_media_time, duration);
     CATransaction::commit();
     animation_result
 }
@@ -1186,15 +1182,11 @@ pub fn prepare_pane_surface_host_translation(
         ));
     }
     let dx = before.origin.x - target.origin.x;
-    let now_unix_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_secs_f64() * 1000.0)
-        .unwrap_or(start_at_unix_ms);
-    let delay = (start_at_unix_ms - now_unix_ms).max(0.0) / 1000.0;
+    let start_at_media_time = super::presentation_clock::media_time_from_unix_ms(start_at_unix_ms);
     CATransaction::begin();
     CATransaction::setDisableActions(true);
     host.setFrame(target);
-    let result = add_layout_position(host, dx, delay, duration_ms.max(1.0) / 1000.0);
+    let result = add_layout_position(host, dx, start_at_media_time, duration_ms.max(1.0) / 1000.0);
     CATransaction::commit();
     result
 }

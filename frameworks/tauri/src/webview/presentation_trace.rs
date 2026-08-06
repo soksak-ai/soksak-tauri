@@ -44,13 +44,13 @@ mod macos {
     use std::cell::{RefCell, RefMut};
     use std::collections::{HashMap, HashSet};
     use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use std::time::Duration;
 
     use objc2::rc::Retained;
     use objc2::runtime::{NSObject, NSObjectProtocol};
     use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadMarker, MainThreadOnly};
     use objc2_foundation::{NSRunLoop, NSRunLoopCommonModes};
-    use objc2_quartz_core::{CACurrentMediaTime, CADisplayLink};
+    use objc2_quartz_core::CADisplayLink;
     use serde::Serialize;
     use tokio::sync::oneshot;
 
@@ -112,7 +112,6 @@ mod macos {
         trace_id: String,
         owners: Vec<PresentationTraceOwner>,
         armed_at_unix_ms: f64,
-        unix_from_media_ms: f64,
         source_generation: u64,
         next_revision: u64,
         max_events: usize,
@@ -162,7 +161,8 @@ mod macos {
             // Apple's timestamp is the time the previous frame was actually displayed. A link can
             // first report the refresh immediately preceding installation; that frame is outside
             // this transaction and must not become its baseline.
-            let displayed_at_unix_ms = self.unix_from_media_ms + link.timestamp() * 1000.0;
+            let displayed_at_unix_ms =
+                super::super::presentation_clock::unix_ms_from_media_time(link.timestamp());
             if !displayed_at_unix_ms.is_finite()
                 || displayed_at_unix_ms + f64::EPSILON < self.armed_at_unix_ms
             {
@@ -269,13 +269,6 @@ mod macos {
         static ACTIVE_TRACES: RefCell<HashMap<String, TraceEntry>> = RefCell::new(HashMap::new());
     }
 
-    fn unix_ms() -> f64 {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|duration| duration.as_secs_f64() * 1000.0)
-            .unwrap_or(0.0)
-    }
-
     fn validated_owners(
         mut owners: Vec<PresentationTraceOwner>,
     ) -> Result<Vec<PresentationTraceOwner>, String> {
@@ -327,8 +320,7 @@ mod macos {
             ));
             return;
         };
-        let armed_at_unix_ms = unix_ms();
-        let unix_from_media_ms = armed_at_unix_ms - CACurrentMediaTime() * 1000.0;
+        let armed_at_unix_ms = super::super::presentation_clock::unix_now_ms();
         let source_generation = NEXT_SOURCE_GENERATION
             .fetch_add(1, Ordering::Relaxed)
             .max(1);
@@ -339,7 +331,6 @@ mod macos {
                         trace_id: trace_id.clone(),
                         owners,
                         armed_at_unix_ms,
-                        unix_from_media_ms,
                         source_generation,
                         next_revision: 1,
                         max_events,
