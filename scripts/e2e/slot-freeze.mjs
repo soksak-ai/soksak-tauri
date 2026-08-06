@@ -993,6 +993,14 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
       await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, `create-${index}`);
     }
 
+    // Child PluginView의 공개 node projection은 main DOM layout과 별도 renderer 사건이다.
+    // page readiness만으로는 programmatic urlbar value의 projection ACK가 보장되지 않는다.
+    // 공용 event-driven layout barrier가 child 측정을 요청하고 native presentation까지
+    // 정착시킨 뒤에만 B01 값을 읽는다(고정 대기·재시도·private DOM 조회 없음).
+    must(
+      await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }),
+      "B01 projected urlbar settled",
+    );
     const tree = must(await rpc("ui.tree", { rects: true }, win), "ui.tree");
     const addresses = tabIds.map((id) => addressForTab(tree, id));
     const lightingAddresses = tabIds.map((id) => lightingAddressForTab(tree, id));
