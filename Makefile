@@ -48,7 +48,7 @@ DEV_CORED_SOCKET := $(HOME)/.soksak-dev/cored.sock
 
 .DEFAULT_GOAL := help
 
-.PHONY: clean-orphan-target doctor doctor-fix help install icons dev build build-dev build-debug run run-dev rebuild-dev restart-dev run-debug typecheck check test test-front verify gates e2e-framework-binding e2e-slot-freeze-dev clean stop cli cli-dev cli-debug install-cli install-cli-dev install-cli-debug docs docs-dev registry
+.PHONY: clean-orphan-target doctor doctor-fix help install icons dev build build-dev build-debug run run-dev rebuild-dev restart-dev run-debug typecheck check test test-front verify gates e2e-framework-binding e2e-slot-freeze-dev e2e-titlebar-dev clean stop cli cli-dev cli-debug install-cli install-cli-dev install-cli-debug docs docs-dev registry
 
 help: ## 사용 가능한 명령 목록
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -277,6 +277,12 @@ e2e-framework-binding: ## e2e 하니스의 프레임워크 결속 분류(A 프�
 
 e2e-slot-freeze-dev: build-dev restart-dev ## 현재 소스로 dev 앱 빌드·재시작→실제 탭 교차 클릭·연속 캡처
 	@SOKSAK_SOCKET="$(DEV_CORED_SOCKET)" node scripts/e2e/slot-freeze.mjs
+
+e2e-titlebar-dev: build-dev ## 현재 소스를 한 번 빌드하고 냉재시작 3회×모든 창×높이 3종의 B12를 기계 판정·캡처
+	@for cycle in 1 2 3; do \
+		$(MAKE) --no-print-directory restart-dev || exit 1; \
+		SOKSAK_SOCKET="$(DEV_CORED_SOCKET)" B12_CYCLE="$$cycle" node scripts/e2e/titlebar-composition.mjs || exit 1; \
+	done
 
 gates-registry: ## 배포 카탈로그 권위 게이트(네트워크) — 라이브 registry.json 의 GitHub 매니페스트 실측. C2 승격 소용돌이(시행 모집단=측정 모집단) + 의존 그래프 충족(의존 대상이 카탈로그에 함께 배포되는가) + 계약 동기(doctor 발행본 ≡ 코어 contract). 발행 전 GREEN 필수. 로컬(make gates)은 개발 사전점검일 뿐.
 	@node scripts/gates/c2-transparency-scan.mjs --registry
