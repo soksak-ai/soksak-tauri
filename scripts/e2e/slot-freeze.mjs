@@ -1175,12 +1175,6 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
             }, win, { timeoutMs: 60_000 }),
           });
           const clickReceipt = must(recordingOutcome.actionResult, `교차 클릭 ${name}`);
-          const recordingEvidence = await reviewRecordingOutcome({
-            outcome: recordingOutcome,
-            expectedFrames: FRAMES_PER_CLICK,
-            name: `${engine}/${name}`,
-          });
-          const files = recordingEvidence.artifacts;
           await assertActivePane(rpc, win, paneIds[side], name);
           must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }), `${name} layout settled`);
           const journalAfter = must(await rpc("layout.transactions", {}, win), `layout journal verdict ${name}`);
@@ -1273,6 +1267,16 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
               samples: flowPresentationTrace.samples,
             },
           );
+          // PNG decode/visual diagnostics는 사람이 볼 증거를 준비하는 별도 후처리다. 실제
+          // display-link 원장은 위에서 이미 explicit close한 뒤에만 수행한다. 그렇지 않으면
+          // 이미지 처리 시간이 유한 native trace를 불필요하게 점유해 정상 프레임을 overflow로
+          // 오판한다. 용량을 키워 숨기지 않고 소유 구간 자체를 실제 거래로 한정한다.
+          const recordingEvidence = await reviewRecordingOutcome({
+            outcome: recordingOutcome,
+            expectedFrames: FRAMES_PER_CLICK,
+            name: `${engine}/${name}`,
+          });
+          const files = recordingEvidence.artifacts;
           await observeFrameSequence(
             files,
             `${engine}/${name}`,
