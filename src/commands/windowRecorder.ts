@@ -4,11 +4,21 @@ export type WindowRecordRequest = {
   dir: string;
   frames: number;
   intervalMs: number;
+  /** producer가 기록할 수 있는 전체 encoded PNG bytes 상한. 생략은 제한 없음. */
+  maxBytes?: number;
   /** 저장이 끝난 각 캡처 프레임의 0-based 번호. 캡처와 수치 관측의 공통 시계다. */
   onFrame?: (frame: number) => void;
 };
 
 export type WindowRecording = Promise<number> & { ready: Promise<void> };
+
+export const WINDOW_RECORD_MAX_BYTES = 1_073_741_824;
+
+export function validWindowRecordMaxBytes(value: unknown): value is number {
+  return Number.isSafeInteger(value)
+    && (value as number) >= 1
+    && (value as number) <= WINDOW_RECORD_MAX_BYTES;
+}
 
 /**
  * 프레임워크 중립 창 녹화 정책.
@@ -21,6 +31,7 @@ export function recordWindowFrames({
   dir,
   frames,
   intervalMs,
+  maxBytes,
   onFrame,
 }: WindowRecordRequest): WindowRecording {
   const frameEvents = createStream<number>();
@@ -45,6 +56,7 @@ export function recordWindowFrames({
     dir,
     frames,
     intervalMs,
+    ...(maxBytes === undefined ? {} : { maxBytes }),
     onFrame: frameEvents,
   }).catch((error) => {
     if (!settled) {

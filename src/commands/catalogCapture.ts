@@ -16,7 +16,11 @@ import { formatAddress } from "./address";
 import { currentWindowLabel } from "../lib/webviewLabels";
 import { locateTab } from "./catalog";
 import { useSessions } from "../state/sessions";
-import { recordWindowFrames } from "./windowRecorder";
+import {
+  recordWindowFrames,
+  validWindowRecordMaxBytes,
+  WINDOW_RECORD_MAX_BYTES,
+} from "./windowRecorder";
 import { CAPTURE_CALIBRATION_ID, setCaptureCalibration } from "./captureCalibration";
 import { setCaptureMotionAnchors } from "./captureMotionAnchors";
 
@@ -470,12 +474,18 @@ export function registerCaptureCatalog(): void {
       },
       frames: { type: "number", description: "Number of frames (default 40, max 600)" },
       intervalMs: { type: "number", description: "Interval between frames in ms (default 40)" },
+      maxBytes: {
+        type: "number",
+        description: `Optional total encoded PNG byte budget (positive safe integer, max ${WINDOW_RECORD_MAX_BYTES})`,
+      },
     },
-    returns: "{ dir, frames }",
+    returns: "{ dir, frames, maxBytes:number|null }",
     message: (d) => tmsg("msg.window.record", { n: Number(d.frames) }),
+    errors: ["INVALID_PARAMS"],
     examples: [
       'window.record \'{"dir":"/tmp/rec"}\'',
       'window.record \'{"dir":"/tmp/rec","frames":120,"intervalMs":33}\'',
+      'window.record \'{"dir":"/tmp/rec","frames":120,"maxBytes":536870912}\'',
     ],
     // **프레임 루프는 정책이지 표면이 아니다.** 프레임워크는 이미 "한 장 담기"를 답한다
     // (snapshot_region). 몇 장을 어떤 간격으로 어떤 이름에 쓸지는 이 앱이 정하는 일이고, 그것을
@@ -489,7 +499,24 @@ export function registerCaptureCatalog(): void {
       const frames = Math.max(1, Math.min(600, (p.frames as number | undefined) ?? 40));
       // 간격은 부른 쪽이 발화한다 — 무엇을 몇 fps 로 봐야 하는지는 이 자리가 모른다.
       const intervalMs = Math.max(0, (p.intervalMs as number | undefined) ?? 40);
-      return { dir, frames: await recordWindowFrames({ dir, frames, intervalMs }) };
+      const maxBytes = p.maxBytes;
+      if (maxBytes !== undefined && !validWindowRecordMaxBytes(maxBytes)) {
+        return {
+          ok: false as const,
+          code: "INVALID_PARAMS" as const,
+          message: `maxBytes는 1..${WINDOW_RECORD_MAX_BYTES} 범위의 safe integer여야 합니다`,
+        };
+      }
+      return {
+        dir,
+        maxBytes: maxBytes ?? null,
+        frames: await recordWindowFrames({
+          dir,
+          frames,
+          intervalMs,
+          ...(maxBytes === undefined ? {} : { maxBytes }),
+        }),
+      };
     },
   });
 }
