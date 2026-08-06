@@ -183,6 +183,47 @@ pub fn register_surface(ptr: usize, label: Option<&str>) {
     }
     SURFACES.register(ptr, label);
 }
+
+fn window_for_engine_ancestors(
+    ancestors: &[usize],
+    hosts: &[(String, usize)],
+) -> Option<String> {
+    hosts
+        .iter()
+        .find(|(_, host)| *host != 0 && ancestors.contains(host))
+        .map(|(window, _)| window.clone())
+}
+
+/// A sidecar-created slot host already is the clipping/movement unit, so it must not be wrapped in
+/// a second host. Bind that exact native identity to its declared surface key and owning workspace
+/// window before `webview.present` groups it with the pane renderer.
+pub fn register_external_surface_host(ptr: usize, label: &str) -> Result<(), String> {
+    if ptr == 0 || label.is_empty() {
+        return Err("external native surface identity가 비었습니다".into());
+    }
+    objc2_foundation::MainThreadMarker::new()
+        .ok_or("external native surface는 main thread에서만 등록합니다")?;
+    let view = unsafe { &*(ptr as *const NSView) };
+    let mut ancestors = vec![ptr];
+    let mut cursor = unsafe { view.superview() };
+    while let Some(node) = cursor {
+        ancestors.push(Retained::as_ptr(&node) as usize);
+        cursor = unsafe { node.superview() };
+    }
+    let hosts = LAYERS
+        .lock()
+        .map_err(|_| "window layer 잠금 실패")?
+        .iter()
+        .map(|(window, layer)| (window.clone(), layer.host_ptr))
+        .collect::<Vec<_>>();
+    let window = window_for_engine_ancestors(&ancestors, &hosts)
+        .ok_or_else(|| format!("external native surface의 소유 창을 찾을 수 없습니다: {label}"))?;
+    configure_surface_resize(view);
+    clip_surface_children(view)?;
+    SURFACES.register(ptr, Some(label));
+    SURFACE_HOSTS.register(label, ptr, &window);
+    Ok(())
+}
 pub fn unregister_surface(ptr: usize) {
     SURFACES.unregister(ptr);
 }
@@ -1238,5 +1279,17 @@ pub fn dump_view(view: &NSView, depth: usize, out: &mut String) {
     }
     for sub in view.subviews().iter() {
         dump_view(&sub, depth + 1, out);
+    }
+}
+
+#[cfg(test)]
+mod external_surface_identity_tests {
+    use super::window_for_engine_ancestors;
+
+    #[test]
+    fn resolves_the_owner_window_from_the_registered_engine_host_ancestor() {
+        let hosts = vec![("w-a".to_owned(), 11), ("w-b".to_owned(), 22)];
+        assert_eq!(window_for_engine_ancestors(&[40, 22, 3], &hosts).as_deref(), Some("w-b"));
+        assert_eq!(window_for_engine_ancestors(&[40, 33, 3], &hosts), None);
     }
 }

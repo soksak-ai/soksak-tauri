@@ -573,11 +573,21 @@ pub(crate) fn resize_pane_surface_hosts(window: &str) {
 // 코어는 의미를 모른다 — 포인터 멤버십만 관리(엔진 중립: WKWebView·Chromium 동일 취급).
 #[cfg(target_os = "macos")]
 pub(crate) fn register_engine_surface(ptr: usize, label: Option<&str>) {
-    layer::register_surface(ptr, label);
+    if let Some(label) = label {
+        if let Err(error) = layer::register_external_surface_host(ptr, label) {
+            eprintln!("[layer] external native surface 등록 실패: {error}");
+        }
+    } else {
+        layer::register_surface(ptr, None);
+    }
 }
 #[cfg(target_os = "macos")]
 pub(crate) fn unregister_engine_surface(ptr: usize) {
-    layer::unregister_surface(ptr);
+    if let Some(label) = layer::surface_label(ptr) {
+        layer::remove_surface_host(&label);
+    } else {
+        layer::unregister_surface(ptr);
+    }
 }
 // 엔진 호스트 컨테이너 취득(격리 계약) — sidecar content_view_of 가 모듈 surface 로 넘긴다.
 // 메인 스레드 전용(NSView 생성). 미설치 창·실패 시 None(호출부가 contentView 폴백).
