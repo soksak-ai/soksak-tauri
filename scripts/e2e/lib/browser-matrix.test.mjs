@@ -352,7 +352,7 @@ describe("브라우저 구현 행렬", () => {
       .toThrow("owner=2/1");
   });
 
-  it("B04는 initial·공개 DOM-commit raw rect를 transaction으로 actual surface에 결합한다", () => {
+  it("B04는 actual DOM presentation frame을 같은 시각의 native surface에 결합한다", () => {
     const domSample = (
       sequence,
       sampledAtUnixMs,
@@ -383,12 +383,10 @@ describe("브라우저 구현 행렬", () => {
     const trace = mapB04PresentationSamples({
       events: [event(1_001, 110), event(1_019, 430)],
       domSamples: [
-        // sample 시각은 presentation과 일부러 한 frame보다 멀리 둔다. 결합 정본은 timer
-        // 근접도가 아니라 transaction이 붙은 공개 DOM-commit 사건이다.
         domSample(0, 900, "initial", null, null, 10, 80, 110),
-        // rail/pane의 실제 좌표를 의도적으로 slot 이동량과 다르게 둔다. mapper가 이를
-        // 투영해 바꾸면 이 단언이 바로 RED가 된다.
-        domSample(1, 1_100, "layout-dom-commit", "tx", 1_010, 777, 333, 430),
+        domSample(1, 1_010, "layout-dom-commit", "tx", 1_010, 700, 250, 270),
+        // 실제 rAF callback에서 읽은 raw rect. rail/pane을 slot 이동량으로 투영하면 안 된다.
+        domSample(2, 1_018, "presentation-frame", "tx", 1_010, 777, 333, 430),
       ],
       owner: { rendererId: "renderer", surfaceId: "surface" },
       targetViewId: "view",
@@ -398,8 +396,8 @@ describe("브라우저 구현 행렬", () => {
       paneAddress: "pane",
       slotAddress: "slot",
     });
-    expect(trace.joins.map(({ trigger }) => trigger)).toEqual(["initial", "layout-dom-commit"]);
-    expect(trace.joins.every((join) => !("gapMs" in join))).toBe(true);
+    expect(trace.joins.map(({ trigger }) => trigger)).toEqual(["initial", "presentation-frame"]);
+    expect(trace.joins.map(({ gapMs }) => gapMs)).toEqual([101, 1]);
     expect(trace.samples).toHaveLength(2);
     expect(trace.samples.map(({ phase }) => phase)).toEqual(["prepared", "committed"]);
     expect(trace.samples[1]).toMatchObject({
@@ -477,7 +475,8 @@ describe("브라우저 구현 행렬", () => {
       ],
       domSamples: [
         rawSample(0, 990, "initial", null, null, 100, 700),
-        rawSample(1, 1_020, "layout-dom-commit", "tx", 1_010, 260, 700),
+        rawSample(1, 1_010, "layout-dom-commit", "tx", 1_010, 100, 700),
+        rawSample(2, 1_018, "presentation-frame", "tx", 1_010, 260, 700),
       ],
       owner: { rendererId: "renderer-left", surfaceId: "surface-left" },
       targetViewId: "view-left",
@@ -515,7 +514,7 @@ describe("브라우저 구현 행렬", () => {
     expect(canonical[0]).not.toBe(rawSnap);
   });
 
-  it("B04 raw DOM trace에 initial 또는 같은 transaction DOM-commit 사건이 없으면 RED다", () => {
+  it("B04 raw DOM trace에 initial·DOM-commit·presentation frame 중 하나라도 없으면 RED다", () => {
     const input = {
       events: [
         { sampledAtUnixMs: 999, connected: true, rendererFrame: { x: 1, y: 2, w: 3, h: 4 }, surfaceFrame: { x: 1, y: 2, w: 3, h: 4 } },
@@ -555,7 +554,7 @@ describe("브라우저 구현 행렬", () => {
     expect(() => mapB04PresentationSamples({
       ...input,
       domSamples: input.domSamples.filter((sample) => sample.trigger !== "initial"),
-    })).toThrow("raw DOM samples=1/2");
+    })).toThrow("initial sample=0/1");
     expect(() => mapB04PresentationSamples({
       ...input,
       domSamples: [
@@ -563,10 +562,19 @@ describe("브라우저 구현 행렬", () => {
         {
           ...input.domSamples[1],
           sequence: 2,
-          transactionId: "unrelated-tx",
+          trigger: "presentation-frame",
+          transactionId: "tx",
+          domCommittedAtUnixMs: 1_000,
         },
       ],
-    })).toThrow("raw DOM samples=3/2");
+    })).not.toThrow();
+    expect(() => mapB04PresentationSamples({
+      ...input,
+      domSamples: input.domSamples.map((sample) => ({
+        ...sample,
+        transactionId: sample.trigger === "initial" ? null : "tx",
+      })),
+    })).toThrow("presentation-frame sample=0");
   });
 
   it("전체 창 resize는 큰 폭의 양방향 교차를 반복하고 정확히 원복한다", () => {
