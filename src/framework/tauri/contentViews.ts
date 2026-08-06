@@ -48,7 +48,10 @@ interface SurfaceState {
   draining: Promise<void> | null;
   waiters: { resolve: () => void; reject: (reason: unknown) => void }[];
   openOptions: Record<string, unknown> | null;
-  visibilityPending: Promise<void> | null;
+  visibilityRequested: boolean;
+  visibilityFocus: boolean;
+  visibilityDraining: Promise<void> | null;
+  visibilityWaiters: { resolve: () => void; reject: (reason: unknown) => void }[];
 }
 
 export interface NativeContentViewCompositionFact {
@@ -89,7 +92,10 @@ function stateOf(label: string): SurfaceState {
       draining: null,
       waiters: [],
       openOptions: null,
-      visibilityPending: null,
+      visibilityRequested: false,
+      visibilityFocus: false,
+      visibilityDraining: null,
+      visibilityWaiters: [],
     };
     composition.surfaces.set(label, state);
   }
@@ -552,10 +558,63 @@ export function nativeContentViewCompositionStatus(): NativeContentViewCompositi
       slotPresent: slot !== null,
       slotRect: slot ? slotRect(slot) : null,
       appliedRect: state.lastRect || null,
-      syncPending: state.requested || state.draining !== null,
+      syncPending: state.requested
+        || state.draining !== null
+        || state.visibilityRequested
+        || state.visibilityDraining !== null,
       precommitPending: state.precommitting,
     };
   });
+}
+
+/**
+ * Visibility has one label-scoped owner. Rapid hide/show requests are coalesced to the latest
+ * desired value but applied in order, so an older hide can never finish after a newer show.
+ */
+function requestVisibilitySync(state: SurfaceState): Promise<void> {
+  state.visibilityRequested = true;
+  const done = new Promise<void>((resolve, reject) => {
+    state.visibilityWaiters.push({ resolve, reject });
+  });
+  if (state.visibilityDraining) return done;
+
+  state.visibilityDraining = (async () => {
+    while (state.visibilityRequested) {
+      state.visibilityRequested = false;
+      const desired = state.desiredVisible;
+      const focus = state.visibilityFocus;
+      if (!state.opened || desired === null) continue;
+      if (!desired) {
+        await call("webview_visible", { label: state.label, visible: false, focus });
+        state.appliedVisible = false;
+      } else {
+        const returningFromHidden = state.appliedVisible === false;
+        if (await restoreIfDetached(state)) continue;
+        if (state.draining) await state.draining;
+        await requestSlotSync(state, returningFromHidden);
+        // A hide requested while the geometry receipt was pending owns the next operation.
+        if (state.desiredVisible !== true) continue;
+        await call("webview_visible", { label: state.label, visible: true, focus });
+        state.appliedVisible = true;
+      }
+      if (state.appliedVisible !== state.desiredVisible) state.visibilityRequested = true;
+    }
+  })()
+    .then(() => {
+      state.visibilityDraining = null;
+      const waiters = state.visibilityWaiters.splice(0);
+      for (const waiter of waiters) waiter.resolve();
+      if (state.visibilityRequested) void requestVisibilitySync(state).catch(() => {});
+    })
+    .catch((error) => {
+      state.visibilityDraining = null;
+      const waiters = state.visibilityWaiters.splice(0);
+      for (const waiter of waiters) waiter.reject(error);
+      if (state.visibilityRequested) void requestVisibilitySync(state).catch(() => {});
+      throw error;
+    });
+  state.visibilityDraining.catch(() => {});
+  return done;
 }
 
 export const nativeHost: ContentViewHost = {
@@ -598,36 +657,15 @@ export const nativeHost: ContentViewHost = {
   },
   visible(label, visible, focus) {
     const state = stateOf(label);
-    const operation = (async () => {
-      const returningFromHidden = state.desiredVisible === false && visible;
-      state.desiredVisible = visible;
-      if (!state.opened) return;
-      if (!visible) {
-        await call("webview_visible", { label, visible: false, focus });
-        state.appliedVisible = false;
-        return;
-      }
-      if (await restoreIfDetached(state)) return;
-      // 숨김 동안 AppKit 부모가 child frame을 바꿔도 JS lastRect에는 보이지 않는다.
-      // 복귀 에지는 현재 DOM을 권위로 한 번 재적용한 뒤 표시한다.
-      if (state.draining) await state.draining;
-      await requestSlotSync(state, returningFromHidden);
-      await call("webview_visible", { label, visible: true, focus });
-      state.appliedVisible = true;
-    })();
-    state.visibilityPending = operation;
-    void operation.then(() => {
-      if (state.visibilityPending === operation) state.visibilityPending = null;
-    }, () => {
-      if (state.visibilityPending === operation) state.visibilityPending = null;
-    });
-    return operation;
+    state.desiredVisible = visible;
+    state.visibilityFocus = focus ?? false;
+    return requestVisibilitySync(state);
   },
   async presentationSettled(labels) {
     const requested = new Set(labels);
     const surfaces = [...composition.surfaces.values()].filter((state) => requested.has(state.label));
     await Promise.all(surfaces.map(async (state) => {
-      if (state.visibilityPending) await state.visibilityPending;
+      if (state.visibilityDraining) await state.visibilityDraining;
       if (state.draining) await state.draining;
     }));
     await Promise.all(surfaces

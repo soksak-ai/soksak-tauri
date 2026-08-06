@@ -271,6 +271,49 @@ describe("네이티브 자식 뷰 구현", () => {
     ]);
   });
 
+  it("rapid hide/show is serialized so a late hide can never overwrite the latest show", async () => {
+    const slot = document.createElement("div");
+    slot.setAttribute("data-content-view-body", "b-race");
+    slot.getBoundingClientRect = () => ({
+      x: 10, y: 20, left: 10, top: 20, right: 310, bottom: 220, width: 300, height: 200,
+    }) as DOMRect;
+    document.body.appendChild(slot);
+    const { nativeContentViewCompositionStatus, nativeHost } = await load();
+    await nativeHost.open("b-race", { url: "https://x" });
+    invoke.mockClear();
+
+    let finishHide!: () => void;
+    invoke.mockImplementation(async (cmd: string, args?: unknown) => {
+      if (cmd === "webview_visible"
+          && (args as { visible?: boolean } | undefined)?.visible === false) {
+        await new Promise<void>((resolve) => { finishHide = resolve; });
+      }
+      return cmd === "webview_alive" ? true : undefined;
+    });
+
+    const hide = nativeHost.visible("b-race", false, false);
+    await Promise.resolve();
+    const show = nativeHost.visible("b-race", true, false);
+    await Promise.resolve();
+    expect(invoke.mock.calls).toEqual([
+      ["webview_visible", { label: "b-race", visible: false, focus: false }],
+    ]);
+
+    finishHide();
+    await Promise.all([hide, show]);
+    expect(invoke.mock.calls[invoke.mock.calls.length - 1]).toEqual([
+      "webview_visible", { label: "b-race", visible: true, focus: false },
+    ]);
+    expect(nativeContentViewCompositionStatus()).toEqual([
+      expect.objectContaining({
+        label: "b-race",
+        desiredVisible: true,
+        appliedVisible: true,
+        syncPending: false,
+      }),
+    ]);
+  });
+
   it("native surface 위치는 Tauri compositor에 먼저 무장하고 DOM과 같은 epoch에 활강한다", async () => {
     const frame = document.createElement("div");
     frame.className = "tab-body";
