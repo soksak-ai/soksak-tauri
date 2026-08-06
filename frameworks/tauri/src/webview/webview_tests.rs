@@ -71,6 +71,28 @@ fn native_layout_motion_animates_model_position_without_stacking_a_transform() {
 }
 
 #[test]
+fn pane_presentation_trace_is_a_finite_native_display_link_contract() {
+    let webview = include_str!("../webview.rs");
+    let commands = include_str!("../lib.rs");
+    let layer = include_str!("layer.rs");
+
+    assert!(webview.contains("mod presentation_trace;"));
+    assert!(webview.contains("pub async fn webview_presentation_trace_arm"));
+    assert!(webview.contains("pub async fn webview_presentation_trace_close"));
+    assert!(commands.contains("webview::webview_presentation_trace_arm"));
+    assert!(commands.contains("webview::webview_presentation_trace_close"));
+
+    let producer = webview
+        .split_once("mod presentation_trace;")
+        .expect("native presentation producer module is declared")
+        .1;
+    assert!(!producer.contains("requestAnimationFrame"));
+    assert!(!producer.contains("setInterval"));
+    assert!(!producer.contains("window.capture"));
+    assert!(layer.contains("presentationLayer"));
+}
+
+#[test]
 fn bounds_command_is_geometry_only() {
     let source = include_str!("../webview.rs");
     let body = source
