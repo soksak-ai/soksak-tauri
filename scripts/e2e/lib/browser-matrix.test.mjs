@@ -224,6 +224,114 @@ describe("브라우저 구현 행렬", () => {
     expect(browserImplementations["browser-chromium-offscreen"].label("w-a", "tab-1")).toBe("offscreen-tab-1");
   });
 
+  it("native와 windowed는 PaneSurfaceHost의 실제 display-link producer를 공유한다", () => {
+    const native = browserImplementations.browser.presentationTrace;
+    const windowed = browserImplementations["browser-chromium"].presentationTrace;
+    expect(windowed).toBe(native);
+    expect(native).toMatchObject({
+      ownerCommand: "webview.pane.hosts",
+      armCommand: "webview.pane.presentation.trace.arm",
+      readCommand: "webview.pane.presentation.trace.close",
+    });
+    const owners = native.resolveOwners({
+      facts: {
+        hosts: [{
+          window: "w-a", pane: "pane-left", renderer: "renderer-left",
+          members: ["surface-left"],
+        }],
+      },
+      windowLabel: "w-a",
+      viewIds: ["view-left"],
+      paneIds: ["pane-left"],
+      surfaceIds: ["surface-left"],
+    });
+    expect(owners).toEqual([{
+      viewId: "view-left",
+      pane: "pane-left",
+      rendererId: "renderer-left",
+      surfaceId: "surface-left",
+    }]);
+    expect(native.armParams({ traceId: "trace-1", owners })).toEqual({
+      traceId: "trace-1",
+      owners: [{ viewId: "view-left", pane: "pane-left", surfaceId: "surface-left" }],
+      maxEvents: 512,
+    });
+    expect(native.events({
+      closed: true,
+      violations: { replacements: 0, gaps: 0, disappearances: 0, unpresented: 0, droppedEvents: 0 },
+      presentationEvents: [{
+        presentedAtUnixMs: 1_000,
+        surfaces: [{
+          viewId: "view-left", live: true, visible: true, painted: true,
+          domFrame: { x: 10, y: 20, w: 300, h: 200 },
+          surfaceFrame: { x: 10, y: 20, w: 300, h: 200 },
+        }],
+      }],
+    }, { targetViewId: "view-left" })).toEqual([{
+      sampledAtUnixMs: 1_000,
+      connected: true,
+      slotFrame: { x: 10, y: 20, w: 300, h: 200 },
+      rendererFrame: { x: 10, y: 20, w: 300, h: 200 },
+      surfaceFrame: { x: 10, y: 20, w: 300, h: 200 },
+    }]);
+  });
+
+  it("offscreen은 pane trace로 가장하지 않고 sidecar render-tick producer를 정규화한다", () => {
+    const adapter = browserImplementations["browser-chromium-offscreen"].presentationTrace;
+    expect(adapter).toMatchObject({
+      ownerCommand: "plugin.soksak-plugin-browser-chromium-offscreen.stats",
+      armCommand: "plugin.soksak-plugin-browser-chromium-offscreen.surface.trace.start",
+      readCommand: "plugin.soksak-plugin-browser-chromium-offscreen.surface.trace.read",
+    });
+    const owners = adapter.resolveOwners({
+      facts: { ids: [{ viewId: "view-right", surfaceId: 17 }] },
+      viewIds: ["view-right"],
+      paneIds: ["pane-right"],
+    });
+    expect(owners).toEqual([{
+      viewId: "view-right",
+      pane: "pane-right",
+      rendererId: "offscreen-renderer:17",
+      surfaceId: "17",
+    }]);
+    expect(adapter.armParams({ traceId: "ignored", owners })).toEqual({ durationMs: 800 });
+    expect(adapter.readParams({ traceId: 4 })).toEqual({ traceId: 4 });
+    expect(adapter.events({
+      samples: [{
+        atUnixMs: 2_000,
+        surfaces: [{
+          viewId: "view-right",
+          domRect: { x: 400, y: 20, w: 300, h: 200 },
+          presentationRect: { x: 400, y: 20, w: 300, h: 200 },
+        }],
+      }],
+    }, { targetViewId: "view-right" })).toEqual([{
+      sampledAtUnixMs: 2_000,
+      connected: true,
+      slotFrame: { x: 400, y: 20, w: 300, h: 200 },
+      rendererFrame: { x: 400, y: 20, w: 300, h: 200 },
+      surfaceFrame: { x: 400, y: 20, w: 300, h: 200 },
+    }]);
+  });
+
+  it("presentation owner가 누락·중복되면 추측하지 않고 실패한다", () => {
+    const adapter = browserImplementations.browser.presentationTrace;
+    const input = {
+      windowLabel: "w-a",
+      viewIds: ["view-left"],
+      paneIds: ["pane-left"],
+      surfaceIds: ["surface-left"],
+    };
+    expect(() => adapter.resolveOwners({ facts: { hosts: [] }, ...input }))
+      .toThrow("owner=0/1");
+    const host = {
+      window: "w-a", pane: "pane-left", renderer: "renderer-left",
+      members: ["surface-left"],
+    };
+    expect(() => adapter.resolveOwners({ facts: { hosts: [host, { ...host }] }, ...input }))
+      .toThrow("owner=2/1");
+  });
+
   it("전체 창 resize는 큰 폭의 양방향 교차를 반복하고 정확히 원복한다", () => {
     const sizes = hostileWindowResizeSizes({ w: 2400, h: 1600 });
     expect(sizes.length).toBeGreaterThanOrEqual(12);

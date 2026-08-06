@@ -1,21 +1,140 @@
 import { decodePng } from "./png.mjs";
 export { layoutTransactionVerdict } from "./layout-transaction-verdict.mjs";
 
+const PANE_PRESENTATION_TRACE = Object.freeze({
+  ownerCommand: "webview.pane.hosts",
+  ownerParams: () => ({}),
+  armCommand: "webview.pane.presentation.trace.arm",
+  readCommand: "webview.pane.presentation.trace.close",
+  resolveOwners({ facts, windowLabel, viewIds, paneIds, surfaceIds }) {
+    return viewIds.map((viewId, index) => {
+      const surfaceId = surfaceIds[index];
+      const candidates = (facts?.hosts ?? []).filter((host) =>
+        host?.window === windowLabel
+        && host?.pane === paneIds[index]
+        && Array.isArray(host?.members)
+        && host.members.includes(surfaceId));
+      if (candidates.length !== 1) {
+        throw new Error(
+          `${viewId}: pane presentation owner=${candidates.length}/1 `
+          + `pane=${paneIds[index]} surface=${surfaceId}`,
+        );
+      }
+      const host = candidates[0];
+      if (typeof host.renderer !== "string" || host.renderer.length === 0) {
+        throw new Error(`${viewId}: pane presentation renderer identity가 비었습니다`);
+      }
+      return Object.freeze({
+        viewId,
+        pane: host.pane,
+        rendererId: host.renderer,
+        surfaceId,
+      });
+    });
+  },
+  armParams({ traceId, owners }) {
+    return {
+      traceId,
+      owners: owners.map(({ viewId, pane, surfaceId }) => ({ viewId, pane, surfaceId })),
+      maxEvents: 512,
+    };
+  },
+  readParams({ traceId }) {
+    return { traceId };
+  },
+  events(receipt, { targetViewId }) {
+    const violations = receipt?.violations ?? {};
+    const violationTotal = Object.values(violations).reduce(
+      (sum, value) => sum + (Number.isFinite(Number(value)) ? Number(value) : 0),
+      0,
+    );
+    if (receipt?.closed !== true || violationTotal !== 0) {
+      throw new Error(
+        `${targetViewId}: pane presentation trace가 깨졌습니다 `
+        + `closed=${String(receipt?.closed)} violations=${JSON.stringify(violations)}`,
+      );
+    }
+    return (receipt.presentationEvents ?? []).map((event, index) => {
+      const surfaces = (event?.surfaces ?? []).filter((surface) => surface?.viewId === targetViewId);
+      if (surfaces.length !== 1) {
+        throw new Error(`${targetViewId}: presentation event ${index} surface=${surfaces.length}/1`);
+      }
+      const surface = surfaces[0];
+      return {
+        sampledAtUnixMs: Number(event.presentedAtUnixMs),
+        connected: surface.live === true && surface.visible === true && surface.painted === true,
+        slotFrame: surface.domFrame,
+        rendererFrame: surface.domFrame,
+        surfaceFrame: surface.surfaceFrame,
+      };
+    });
+  },
+});
+
+const OFFSCREEN_PRESENTATION_TRACE = Object.freeze({
+  ownerCommand: "plugin.soksak-plugin-browser-chromium-offscreen.stats",
+  ownerParams: () => ({}),
+  armCommand: "plugin.soksak-plugin-browser-chromium-offscreen.surface.trace.start",
+  readCommand: "plugin.soksak-plugin-browser-chromium-offscreen.surface.trace.read",
+  resolveOwners({ facts, viewIds, paneIds }) {
+    return viewIds.map((viewId, index) => {
+      const candidates = (facts?.ids ?? []).filter((entry) => entry?.viewId === viewId);
+      if (candidates.length !== 1
+          || typeof candidates[0]?.surfaceId !== "number"
+          || !Number.isFinite(candidates[0].surfaceId)) {
+        throw new Error(`${viewId}: offscreen presentation owner=${candidates.length}/1`);
+      }
+      const surfaceId = String(candidates[0].surfaceId);
+      return Object.freeze({
+        viewId,
+        pane: paneIds[index],
+        rendererId: `offscreen-renderer:${surfaceId}`,
+        surfaceId,
+      });
+    });
+  },
+  armParams() {
+    return { durationMs: 800 };
+  },
+  readParams({ traceId }) {
+    return { traceId };
+  },
+  events(receipt, { targetViewId }) {
+    return (receipt?.samples ?? []).map((sample, index) => {
+      const surfaces = (sample?.surfaces ?? []).filter((surface) => surface?.viewId === targetViewId);
+      if (surfaces.length !== 1) {
+        throw new Error(`${targetViewId}: offscreen presentation sample ${index} surface=${surfaces.length}/1`);
+      }
+      const surface = surfaces[0];
+      return {
+        sampledAtUnixMs: Number(sample.atUnixMs),
+        connected: surface.domRect != null && surface.presentationRect != null,
+        slotFrame: surface.domRect,
+        rendererFrame: surface.domRect,
+        surfaceFrame: surface.presentationRect,
+      };
+    });
+  },
+});
+
 export const browserImplementations = Object.freeze({
   browser: Object.freeze({
     plugin: "soksak-plugin-browser-native",
     surface: "framework-native",
     label: (windowLabel, viewId) => `b-${windowLabel}-${viewId}`,
+    presentationTrace: PANE_PRESENTATION_TRACE,
   }),
   "browser-chromium": Object.freeze({
     plugin: "soksak-plugin-browser-chromium",
     surface: "engine-windowed",
     label: (_windowLabel, viewId) => `chromium-${viewId}`,
+    presentationTrace: PANE_PRESENTATION_TRACE,
   }),
   "browser-chromium-offscreen": Object.freeze({
     plugin: "soksak-plugin-browser-chromium-offscreen",
     surface: "engine-offscreen",
     label: (_windowLabel, viewId) => `offscreen-${viewId}`,
+    presentationTrace: OFFSCREEN_PRESENTATION_TRACE,
   }),
 });
 
