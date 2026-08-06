@@ -94,6 +94,27 @@ fn pane_presentation_trace_is_a_finite_native_display_link_contract() {
 }
 
 #[test]
+fn pane_motion_and_trace_share_one_media_unix_clock_anchor() {
+    let webview = include_str!("../webview.rs");
+    let layer = include_str!("layer.rs");
+    let trace = include_str!("presentation_trace.rs");
+
+    assert!(webview.contains("mod presentation_clock;"));
+    assert!(layer.contains("presentation_clock::media_time_from_unix_ms"));
+    assert!(trace.contains("presentation_clock::unix_ms_from_media_time"));
+
+    let pane_motion = layer
+        .split_once("pub fn prepare_pane_surface_host_translation")
+        .expect("pane motion exists")
+        .1
+        .split_once("pub fn set_surface_host_hidden")
+        .expect("pane motion boundary exists")
+        .0;
+    assert!(!pane_motion.contains("SystemTime::now"));
+    assert!(!trace.contains("armed_at_unix_ms - CACurrentMediaTime()"));
+}
+
+#[test]
 fn presentation_generation_belongs_to_surface_identity_not_pane_grouping() {
     let layer = include_str!("layer.rs");
     let capture = layer
