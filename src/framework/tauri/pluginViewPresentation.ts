@@ -210,8 +210,7 @@ export function projectPluginViewSlot(
   existing?: HTMLElement,
 ): HTMLElement {
   const element = existing ?? document.createElement("div");
-  element.dataset.node = "surface";
-  element.dataset.tauriNativeSlot = frame.label;
+  element.dataset.node = `tauri/plugin-view/${frame.label}/surface`;
   element.setAttribute("aria-hidden", "true");
   Object.assign(element.style, {
     position: "absolute",
@@ -232,8 +231,7 @@ export function projectPluginViewNode(
   existing?: HTMLElement,
 ): HTMLElement {
   const element = existing ?? document.createElement("div");
-  element.dataset.node = frame.node;
-  element.dataset.tauriNativeNode = frame.label;
+  element.dataset.node = `tauri/plugin-view/${frame.label}/${frame.node}`;
   element.setAttribute("aria-hidden", "true");
   Object.assign(element.style, {
     position: "absolute", left: `${frame.x}px`, top: `${frame.y}px`,

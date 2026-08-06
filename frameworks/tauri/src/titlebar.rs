@@ -7,10 +7,10 @@
 //   재적용하지만, unstable(child webview) 경로에선 창의 trafficLightPosition 이
 //   자식 webview attributes 로 전파되지 않아 그 루프가 설치되지 않는다 → 키 상태
 //   전환/리사이즈/전체화면 해제 때 AppKit 표준 재배치를 덮어쓸 주체가 없다.
-//   치료: NSNotificationCenter 옵저버(becomeKey/resignKey/becomeMain/resignMain/
-//   resize/exitFullScreen)에서 tao-0.35.3 inset_traffic_lights 와 동일 산식을
-//   "동기" 재적용. (슬립 지연 재적용은 AppKit 후속 패스와 경쟁 — 폐기.)
-//   업스트림이 #14072 를 고치면 이 재적용은 삭제 가능.
+//   치료: 표준 버튼과 같은 AppKit titlebar hierarchy에 입력 투과 NSView draw owner를
+//   정확히 하나 둔다. 부모 AppKit layout 뒤·버튼 draw 전에 공개 DOM 목표를 멱등 적용하므로
+//   focus/blur/resize 통지와 후속 layout 사이의 경쟁이 없다. 업스트림이 #14072 를 고치면
+//   이 draw owner를 삭제하고 Tauri runtime setter로 목표만 전달한다.
 //
 // 문제 2 — 비활성 유령(Apple 동작, 고칠 주체 없음):
 //   비활성 회색 점은 backdrop 합성(뒤 픽셀 샘플링)으로 그려지는데, 뒤가
@@ -24,284 +24,1694 @@
 // 흰 캡슐은 재배열(자기 개입)이 노출시킨 것이었다. 이 모듈에 보정을 추가할 땐
 // 반드시 빼고도 실측(활성/비활성 캡처 + 디버그 덤프)으로 하중을 증명할 것.
 //
-// 계측(디버그 빌드): 각 전환의 전/후 상태를 /tmp/soksak-titlebar.log 에 기록 —
-// macOS 메이저 업데이트 후 회귀 진단의 1차 도구.
+// titlebar_native_state 는 읽기 전용 사실면이고, titlebar_compose 는 공개 DOM titlebar의
+// 물리 좌표를 받아 한 메인스레드 거래에서 배치·백킹 갱신·readback 영수증까지 끝낸다. DOM 예약
+// 3개와 AppKit 버튼/백킹 3개를 같은 물리 좌표계에서 대조하므로 파일 로그나 private view dump를
+// 판정 근거로 쓰지 않는다.
 
 #[cfg(target_os = "macos")]
-use objc2_app_kit::{NSView, NSWindow, NSWindowButton, NSWindowOrderingMode};
-
-// 백킹 색(문제 2 — 머리말 참조). 프런트 테마 엔진이 titlebar_backing 으로 동기화,
-// 미동기화 시 ensure_backing 이 시스템 windowBackgroundColor 로 폴백.
+use objc2::{define_class, msg_send, rc::Retained, DefinedClass, MainThreadMarker};
 #[cfg(target_os = "macos")]
-static BACKING_COLOR: std::sync::Mutex<Option<(f64, f64, f64)>> = std::sync::Mutex::new(None);
-
-// install 시 conf 좌표 보관 — titlebar_backing 명령의 즉시 재적용용.
+use objc2_app_kit::{
+    NSAutoresizingMaskOptions, NSButton, NSGraphicsContext, NSView, NSWindow, NSWindowButton,
+    NSWindowOrderingMode,
+};
 #[cfg(target_os = "macos")]
-static INSET: std::sync::Mutex<(f64, f64)> = std::sync::Mutex::new((12.0, 20.0));
+use objc2_foundation::{NSPoint, NSRect};
+#[cfg(target_os = "macos")]
+use serde::{Deserialize, Serialize};
 
-// 프런트 테마 적용 시 호출 — 백킹 색 동기화 + 즉시 재적용.
-#[tauri::command]
-pub fn titlebar_backing(window: tauri::Window, r: f64, g: f64, b: f64) {
-    #[cfg(target_os = "macos")]
-    {
-        *BACKING_COLOR.lock().unwrap() = Some((r, g, b));
-        let (x, y) = *INSET.lock().unwrap();
-        let win = window.clone();
-        let _ = window.run_on_main_thread(move || unsafe {
-            if let Ok(ptr) = win.ns_window() {
-                apply_inset(&*(ptr as *const NSWindow), x, y);
-            }
-        });
+#[cfg(target_os = "macos")]
+const BACKING_IDENTIFIERS: [&str; 3] = [
+    "soksak.titlebar.backing.close",
+    "soksak.titlebar.backing.minimize",
+    "soksak.titlebar.backing.zoom",
+];
+
+#[cfg(target_os = "macos")]
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
+pub struct PhysicalRect {
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+}
+
+#[cfg(target_os = "macos")]
+impl PhysicalRect {
+    const fn new(x: f64, y: f64, w: f64, h: f64) -> Self {
+        Self { x, y, w, h }
     }
-    #[cfg(not(target_os = "macos"))]
-    let _ = (window, r, g, b);
+
+    fn from_ns(rect: NSRect) -> Self {
+        Self::new(
+            rect.origin.x,
+            rect.origin.y,
+            rect.size.width,
+            rect.size.height,
+        )
+    }
+
+    fn is_finite_positive(self) -> bool {
+        self.x.is_finite()
+            && self.y.is_finite()
+            && self.w.is_finite()
+            && self.h.is_finite()
+            && self.w > 0.0
+            && self.h > 0.0
+    }
+
+    fn divided_by(self, scale: f64) -> Self {
+        Self::new(
+            self.x / scale,
+            self.y / scale,
+            self.w / scale,
+            self.h / scale,
+        )
+    }
 }
 
-// 창 생성 시 즉시 1회 신호등 inset 적용(이후 유지는 앱 전역 옵저버가 담당). 좌표는 conf 값.
 #[cfg(target_os = "macos")]
-pub fn install<R: tauri::Runtime>(window: &tauri::Window<R>, x: f64, y: f64) {
-    *INSET.lock().unwrap() = (x, y);
-    let win = window.clone();
-    let _ = window.run_on_main_thread(move || unsafe {
-        let Ok(ptr) = win.ns_window() else { return };
-        let ns = &*(ptr as *const NSWindow);
-        apply_inset(ns, x, y);
-        dump_state("install", ns);
-    });
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct CompositionTarget {
+    titlebar_css: PhysicalRect,
+    window_zoom: f64,
+    /// AppKit logical-point origins captured by the first explicit DOM transaction. AppKit may
+    /// reset them on later titlebar layouts; the draw owner reapplies the committed positions.
+    button_origin_x: [f64; 3],
 }
 
-// 신호등 유지 옵저버 — 앱 전역 1회 설치(lib.rs setup). object:None 으로 *모든 창*의 통지를 받아 그
-// 통지의 창에 inset 을 재적용한다(통지의 sender = 그 NSWindow). 과거엔 창마다 옵저버를 달고
-// std::mem::forget 했는데(단일 창 가정), 멀티 윈도우에선 창을 닫아도 옵저버가 안 빠져 창마다 누적
-// 누수였다. install_live_resize_monitor(webview.rs)와 동일 패턴 — 앱 전역 6개면 충분, 진짜 1회 leak.
 #[cfg(target_os = "macos")]
-pub fn install_global_observers(x: f64, y: f64) {
-    use objc2_app_kit::{
-        NSWindowDidBecomeKeyNotification, NSWindowDidBecomeMainNotification,
-        NSWindowDidExitFullScreenNotification, NSWindowDidResignKeyNotification,
-        NSWindowDidResignMainNotification, NSWindowDidResizeNotification,
-    };
-    use objc2_foundation::{NSNotification, NSNotificationCenter};
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct BackingColor {
+    r: f64,
+    g: f64,
+    b: f64,
+}
 
-    let center = NSNotificationCenter::defaultCenter();
-    // dump = 전/후 상태를 /tmp/soksak-titlebar.log 에 기록할지(디버그 빌드 한정). resize 는
-    // 끈다 — 드래그/최대화 애니메이션 중 60~120Hz 로 통지가 오는데, dump_state 는 NSView
-    // 서브트리 introspection + 매 호출 파일 open+write(메인 스레드 동기 I/O)라, 켜 두면
-    // 리사이즈가 그 자체로 마비된다(실측: /tmp/soksak-titlebar.log 가 resize:before/after 로
-    // 폭증, 내용·제스처 무관 버벅임의 원인). 신호등 inset 유지(apply_inset — 파일 I/O 없는
-    // 가벼운 재배치)는 resize 에도 계속 돈다. 진단(포커스 전환 유령)은 becomeKey/resignKey/
-    // becomeMain/resignMain 같은 저빈도 이벤트에서만 기록한다.
-    let events: [(
-        &'static str,
-        bool,
-        &'static objc2_foundation::NSNotificationName,
-    ); 6] = unsafe {
-        [
-            ("becomeKey", true, NSWindowDidBecomeKeyNotification),
-            ("resignKey", true, NSWindowDidResignKeyNotification),
-            ("becomeMain", true, NSWindowDidBecomeMainNotification),
-            ("resignMain", true, NSWindowDidResignMainNotification),
-            ("resize", false, NSWindowDidResizeNotification),
-            (
-                "exitFullScreen",
-                true,
-                NSWindowDidExitFullScreenNotification,
-            ),
-        ]
-    };
+#[cfg(target_os = "macos")]
+impl BackingColor {
+    fn new(r: f64, g: f64, b: f64) -> Result<Self, String> {
+        let values = [r, g, b];
+        if values
+            .into_iter()
+            .all(|value| value.is_finite() && (0.0..=1.0).contains(&value))
+        {
+            Ok(Self { r, g, b })
+        } else {
+            Err("titlebar backing color channels must be finite values from 0 to 1".to_string())
+        }
+    }
+}
 
-    for (label, dump, name) in events {
-        let block = block2::RcBlock::new(move |note: std::ptr::NonNull<NSNotification>| {
-            // 통지는 메인 스레드에서 게시된다(queue=None = 게시 스레드에서 실행).
-            let note = unsafe { note.as_ref() };
-            let Some(obj) = note.object() else { return };
-            let Ok(ns) = obj.downcast::<NSWindow>() else {
+#[cfg(target_os = "macos")]
+thread_local! {
+    // AppKit 객체와 같은 메인스레드 수명. 목표·색·영수증은 창당 draw owner 자신이 소유한다.
+    // 관측은 이 맵에서 기존 owner만 읽으며 만들거나 합성하지 않는다.
+    static COMPOSITION_DRAW_OWNERS: std::cell::RefCell<
+        std::collections::HashMap<String, Retained<TitlebarCompositionDrawOwner>>,
+    > = std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+#[cfg(target_os = "macos")]
+static NEXT_OWNER_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+#[cfg(target_os = "macos")]
+pub struct TitlebarCompositionDrawOwnerIvars {
+    label: String,
+    generation: u64,
+    declared_button_origin_x: std::cell::Cell<Option<[f64; 3]>>,
+    target: std::cell::Cell<Option<CompositionTarget>>,
+    target_sequence: std::cell::Cell<u64>,
+    applied_target_sequence: std::cell::Cell<u64>,
+    draw_sequence: std::cell::Cell<u64>,
+    mutation_sequence: std::cell::Cell<u64>,
+    applying: std::cell::Cell<bool>,
+    last_apply_ok: std::cell::Cell<bool>,
+    backing_color: std::cell::Cell<Option<BackingColor>>,
+}
+
+// Tauri unstable child-webview 경로에 빠진 WryWebViewParent.drawRect 역할을 어댑터가
+// content viewport에 복구한다. 투명하고 입력을 받지 않으며 위치를 그리지도 않는다.
+// 유일한 역할은 AppKit이 표준 버튼을 재배치한 같은 draw epoch에 선언된 DOM 목표를 다시 적용하는 것.
+#[cfg(target_os = "macos")]
+define_class!(
+    #[unsafe(super(NSView))]
+    #[thread_kind = objc2::MainThreadOnly]
+    #[ivars = TitlebarCompositionDrawOwnerIvars]
+    #[name = "SoksakTitlebarCompositionDrawOwner"]
+    struct TitlebarCompositionDrawOwner;
+
+    impl TitlebarCompositionDrawOwner {
+        #[unsafe(method(drawRect:))]
+        fn draw(&self, _dirty_rect: NSRect) {
+            if !NSGraphicsContext::currentContextDrawingToScreen() {
                 return;
-            };
-            unsafe {
-                if dump {
-                    dump_state(&format!("{label}:before"), &ns);
-                }
-                apply_inset(&ns, x, y);
-                if dump {
-                    dump_state(&format!("{label}:after"), &ns);
-                }
             }
-        });
-        let token = unsafe {
-            // object:None = 모든 창의 통지. 통지 sender 로 대상 창을 판정(브라우저 자식 webview 창은
-            // downcast::<NSWindow> 가 매칭되더라도 신호등 버튼이 없어 apply_inset 가 자연히 no-op).
-            center.addObserverForName_object_queue_usingBlock(Some(name), None, None, &block)
-        };
-        // 앱 전역 6개 — 앱 수명 동안 유지(진짜 1회 leak, 창 수와 무관).
-        std::mem::forget(token);
+            let ivars = self.ivars();
+            if ivars.applying.replace(true) {
+                return;
+            }
+            let _guard = ApplyingGuard(&ivars.applying);
+            ivars
+                .draw_sequence
+                .set(ivars.draw_sequence.get().saturating_add(1));
+            let target = ivars
+                .target
+                .get()
+                .map(|target| (target, ivars.target_sequence.get()));
+            let result = unsafe { apply_owner_body(self, target, false) };
+            record_apply_result(self, target.map(|(_, sequence)| sequence), &result);
+        }
+
+        #[unsafe(method(hitTest:))]
+        fn hit_test(&self, _point: NSPoint) -> *mut NSView {
+            std::ptr::null_mut()
+        }
+
+        #[unsafe(method(isOpaque))]
+        fn is_opaque(&self) -> bool {
+            false
+        }
+
+        #[unsafe(method(canDrawConcurrently))]
+        fn can_draw_concurrently(&self) -> bool {
+            false
+        }
+    }
+);
+
+#[cfg(target_os = "macos")]
+struct ApplyingGuard<'a>(&'a std::cell::Cell<bool>);
+
+#[cfg(target_os = "macos")]
+impl Drop for ApplyingGuard<'_> {
+    fn drop(&mut self) {
+        self.0.set(false);
     }
 }
 
-// 위치 재적용(문제 1) + 원형 백킹 갱신(문제 2) — 통지마다 멱등 실행되는 단일 진입점.
 #[cfg(target_os = "macos")]
-unsafe fn apply_inset(window: &NSWindow, x: f64, y: f64) {
-    let (Some(close), Some(miniaturize), Some(zoom)) = (
+#[derive(Clone, Copy, Debug, Serialize)]
+pub struct PhysicalSize {
+    w: f64,
+    h: f64,
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Clone, Debug, Serialize)]
+pub struct NativeTitlebarElement {
+    role: &'static str,
+    rect: Option<PhysicalRect>,
+    hidden: bool,
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Clone, Debug, Serialize)]
+pub struct NativeTitlebarDeclaredElement {
+    role: &'static str,
+    rect: Option<PhysicalRect>,
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeTitlebarBackingElement {
+    role: &'static str,
+    rect: Option<PhysicalRect>,
+    hidden: bool,
+    direct_hidden: Option<bool>,
+    expected_hidden: bool,
+    count: usize,
+    immediate_below_button: bool,
+    hidden_matches_window_key: bool,
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeTitlebarOwnerState {
+    installed: bool,
+    identity: Option<String>,
+    draw_owner_count: usize,
+    target_sequence: u64,
+    applied_target_sequence: u64,
+    draw_sequence: u64,
+    mutation_sequence: u64,
+    applying: bool,
+    last_apply_ok: bool,
+    window_visible: bool,
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeTitlebarState {
+    schema_version: u8,
+    kind: &'static str,
+    window: String,
+    sequence: u64,
+    coordinate_contract: &'static str,
+    css_to_physical_scale: f64,
+    viewport_physical: PhysicalSize,
+    buttons: Vec<NativeTitlebarElement>,
+    declared_buttons: Vec<NativeTitlebarDeclaredElement>,
+    backings: Vec<NativeTitlebarBackingElement>,
+    window_key: bool,
+    backing_hidden_contract: bool,
+    owner: NativeTitlebarOwnerState,
+}
+
+/// AppKit backing 좌표(좌하단 원점)를 DOM이 쓰는 viewport 좌상단 물리 좌표로 바꾼다.
+/// 입력 둘은 이미 같은 backing 좌표계여야 하며, 이 단계에는 반올림이나 보정값이 없다.
+#[cfg(target_os = "macos")]
+fn viewport_top_left_rect(rect: PhysicalRect, viewport: PhysicalRect) -> PhysicalRect {
+    PhysicalRect::new(
+        rect.x - viewport.x,
+        viewport.y + viewport.h - (rect.y + rect.h),
+        rect.w,
+        rect.h,
+    )
+}
+
+#[cfg(target_os = "macos")]
+unsafe fn physical_rect_in_viewport(view: &NSView, viewport: &NSView) -> PhysicalRect {
+    // frame 은 superview 좌표, bounds 는 자기 좌표다. 버튼의 bounds 를 자기 자신에서 viewport로
+    // 변환하면 AppKit hierarchy에 따라 frame origin이 한 번 빠져 창마다 x/y가 달라진다. 실제로
+    // 복원 workspace에서 버튼과 바로 뒤 backing이 10 physical px 벌어졌다. 공개 장부의 모든
+    // 요소는 frame을 그 frame의 소유 좌표계(superview)에서 viewport로 변환한다.
+    let in_viewport = match view.superview() {
+        Some(superview) => superview.convertRect_toView(view.frame(), Some(viewport)),
+        None => view.convertRect_toView(view.bounds(), Some(viewport)),
+    };
+    let backing = viewport.convertRectToBacking(in_viewport);
+    let viewport_backing = viewport.convertRectToBacking(viewport.bounds());
+    viewport_top_left_rect(
+        PhysicalRect::from_ns(backing),
+        PhysicalRect::from_ns(viewport_backing),
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn appkit_origin_y_delta(
+    current_button_physical: PhysicalRect,
+    titlebar_css: PhysicalRect,
+    backing_scale: f64,
+    css_to_physical_scale: f64,
+) -> Option<f64> {
+    if !current_button_physical.is_finite_positive()
+        || !titlebar_css.is_finite_positive()
+        || !backing_scale.is_finite()
+        || backing_scale <= 0.0
+        || !css_to_physical_scale.is_finite()
+        || css_to_physical_scale <= 0.0
+    {
+        return None;
+    }
+    let current_center = current_button_physical.y + (current_button_physical.h / 2.0);
+    let target_center = (titlebar_css.y + (titlebar_css.h / 2.0)) * css_to_physical_scale;
+    // 공개 좌표는 y-down physical px, AppKit frame origin은 y-up point다.
+    Some((current_center - target_center) / backing_scale)
+}
+
+#[cfg(target_os = "macos")]
+fn next_sequence(current: u64, label: &str) -> Result<u64, String> {
+    current
+        .checked_add(1)
+        .ok_or_else(|| format!("titlebar composition sequence exhausted: {label}"))
+}
+
+#[cfg(target_os = "macos")]
+fn next_owner_generation(label: &str) -> Result<u64, String> {
+    NEXT_OWNER_GENERATION
+        .fetch_update(
+            std::sync::atomic::Ordering::Relaxed,
+            std::sync::atomic::Ordering::Relaxed,
+            |current| current.checked_add(1),
+        )
+        .map_err(|_| format!("titlebar owner generation exhausted: {label}"))
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn forget_window<R: tauri::Runtime>(window: &tauri::Window<R>) {
+    let Ok(pointer) = window.ns_window() else {
+        return;
+    };
+    let label = window.label();
+    // Remove the registry borrow before calling AppKit. removeFromSuperview may synchronously
+    // enter drawing/layout callbacks, and those callbacks are allowed to inspect the registry.
+    let owner = COMPOSITION_DRAW_OWNERS.with(|owners| {
+        let matches_window = owners
+            .borrow()
+            .get(label)
+            .and_then(|owner| owner.window())
+            .is_some_and(|owner_window| std::ptr::eq(&*owner_window, pointer as *const NSWindow));
+        matches_window
+            .then(|| owners.borrow_mut().remove(label))
+            .flatten()
+    });
+    if let Some(owner) = owner {
+        owner.removeFromSuperview();
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn existing_draw_owner(label: &str) -> Option<Retained<TitlebarCompositionDrawOwner>> {
+    COMPOSITION_DRAW_OWNERS.with(|owners| owners.borrow().get(label).cloned())
+}
+
+#[cfg(target_os = "macos")]
+unsafe fn draw_owner_for_window(
+    window: &NSWindow,
+    label: &str,
+) -> Result<Retained<TitlebarCompositionDrawOwner>, String> {
+    let owner = existing_draw_owner(label)
+        .ok_or_else(|| format!("titlebar draw owner is not installed: {label}"))?;
+    let owner_window = owner
+        .window()
+        .ok_or_else(|| format!("titlebar draw owner is detached from its window: {label}"))?;
+    if !std::ptr::eq(&*owner_window, window) {
+        return Err(format!(
+            "titlebar draw owner belongs to another window: {label}"
+        ));
+    }
+    let viewport = window
+        .contentView()
+        .ok_or_else(|| "native window does not expose a content viewport".to_string())?;
+    let owner_viewport = owner
+        .superview()
+        .ok_or_else(|| format!("titlebar draw owner is detached from its viewport: {label}"))?;
+    if !std::ptr::eq(&*owner_viewport, &*viewport) {
+        return Err(format!(
+            "titlebar draw owner belongs to another viewport: {label}"
+        ));
+    }
+    Ok(owner)
+}
+
+#[cfg(target_os = "macos")]
+unsafe fn allocate_draw_owner(
+    window: &NSWindow,
+    label: &str,
+    declared_button_origin_x: [f64; 3],
+) -> Result<Retained<TitlebarCompositionDrawOwner>, String> {
+    let viewport = window
+        .contentView()
+        .ok_or_else(|| "native window does not expose a content viewport".to_string())?;
+    let mtm = MainThreadMarker::new()
+        .ok_or_else(|| "titlebar draw owner must be installed on the main thread".to_string())?;
+    let generation = next_owner_generation(label)?;
+    let allocated =
+        mtm.alloc::<TitlebarCompositionDrawOwner>()
+            .set_ivars(TitlebarCompositionDrawOwnerIvars {
+                label: label.to_string(),
+                generation,
+                declared_button_origin_x: std::cell::Cell::new(Some(declared_button_origin_x)),
+                target: std::cell::Cell::new(None),
+                target_sequence: std::cell::Cell::new(0),
+                applied_target_sequence: std::cell::Cell::new(0),
+                draw_sequence: std::cell::Cell::new(0),
+                mutation_sequence: std::cell::Cell::new(0),
+                applying: std::cell::Cell::new(false),
+                last_apply_ok: std::cell::Cell::new(false),
+                backing_color: std::cell::Cell::new(None),
+            });
+    let owner: Retained<TitlebarCompositionDrawOwner> =
+        msg_send![super(allocated), initWithFrame: viewport.bounds()];
+    owner.setAutoresizingMask(
+        NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewHeightSizable,
+    );
+    owner.setWantsLayer(false);
+    owner.setCanDrawConcurrently(false);
+    viewport.addSubview_positioned_relativeTo(&owner, NSWindowOrderingMode::Above, None);
+    Ok(owner)
+}
+
+#[cfg(target_os = "macos")]
+fn record_apply_result(
+    owner: &TitlebarCompositionDrawOwner,
+    target_sequence: Option<u64>,
+    result: &Result<bool, String>,
+) {
+    let ivars = owner.ivars();
+    match result {
+        Ok(changed) => {
+            if *changed {
+                ivars
+                    .mutation_sequence
+                    .set(ivars.mutation_sequence.get().saturating_add(1));
+            }
+            if let Some(sequence) = target_sequence {
+                ivars.applied_target_sequence.set(sequence);
+                ivars.last_apply_ok.set(true);
+            }
+        }
+        Err(_) => ivars.last_apply_ok.set(false),
+    }
+}
+
+#[cfg(target_os = "macos")]
+unsafe fn apply_owner_now(
+    owner: &TitlebarCompositionDrawOwner,
+    target: Option<(CompositionTarget, u64)>,
+    allow_hierarchy_repair: bool,
+) -> Result<(), String> {
+    let ivars = owner.ivars();
+    if ivars.applying.replace(true) {
+        return Err(format!(
+            "titlebar composition re-entered for {}",
+            ivars.label
+        ));
+    }
+    let _guard = ApplyingGuard(&ivars.applying);
+    let result = apply_owner_body(owner, target, allow_hierarchy_repair);
+    record_apply_result(owner, target.map(|(_, sequence)| sequence), &result);
+    result?;
+    owner.setNeedsDisplay(true);
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn owned_backings(
+    superview: &NSView,
+    identifier: &str,
+) -> Vec<objc2::rc::Retained<objc2_app_kit::NSBox>> {
+    use objc2_app_kit::{NSBox, NSUserInterfaceItemIdentification};
+
+    superview
+        .subviews()
+        .iter()
+        .filter_map(|view| {
+            let backing = view.downcast::<NSBox>().ok()?;
+            let matches = backing
+                .identifier()
+                .is_some_and(|value| value.to_string() == identifier);
+            matches.then_some(backing)
+        })
+        .collect()
+}
+
+#[cfg(target_os = "macos")]
+fn immediate_below_indices(backing_index: Option<usize>, button_index: Option<usize>) -> bool {
+    matches!(
+        (backing_index, button_index),
+        (Some(backing), Some(button)) if backing.checked_add(1) == Some(button)
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn immediate_below_button(superview: &NSView, backing: &NSView, button: &NSView) -> bool {
+    let subviews = superview.subviews();
+    let backing_index = subviews
+        .iter()
+        .position(|candidate| Retained::as_ptr(&candidate) == backing as *const NSView);
+    let button_index = subviews
+        .iter()
+        .position(|candidate| Retained::as_ptr(&candidate) == button as *const NSView);
+    immediate_below_indices(backing_index, button_index)
+}
+
+#[cfg(target_os = "macos")]
+fn draw_owner_count(viewport: &NSView) -> usize {
+    viewport
+        .subviews()
+        .iter()
+        .filter(|view| {
+            view.clone()
+                .downcast::<TitlebarCompositionDrawOwner>()
+                .is_ok()
+        })
+        .count()
+}
+
+#[cfg(target_os = "macos")]
+fn center_rect_on_declared_titlebar(
+    mut rect: PhysicalRect,
+    titlebar_css: PhysicalRect,
+    css_to_physical_scale: f64,
+) -> Option<PhysicalRect> {
+    if !rect.is_finite_positive()
+        || !titlebar_css.is_finite_positive()
+        || !css_to_physical_scale.is_finite()
+        || css_to_physical_scale <= 0.0
+    {
+        return None;
+    }
+    rect.y = (titlebar_css.y + (titlebar_css.h / 2.0)) * css_to_physical_scale - (rect.h / 2.0);
+    rect.is_finite_positive().then_some(rect)
+}
+
+#[cfg(target_os = "macos")]
+fn backing_hidden_matches_window_key(
+    count: usize,
+    direct_hidden: Option<bool>,
+    window_key: bool,
+) -> bool {
+    count == 1 && direct_hidden == Some(window_key)
+}
+
+#[cfg(target_os = "macos")]
+unsafe fn declared_button_target_rect(
+    button: &NSView,
+    viewport: &NSView,
+    target: CompositionTarget,
+    role_index: usize,
+    css_to_physical_scale: f64,
+) -> Option<PhysicalRect> {
+    if !css_to_physical_scale.is_finite() || css_to_physical_scale <= 0.0 {
+        return None;
+    }
+    let superview = button.superview()?;
+    let mut frame = NSView::frame(button);
+    frame.origin.x = target.button_origin_x[role_index];
+    let in_viewport = superview.convertRect_toView(frame, Some(viewport));
+    let backing = viewport.convertRectToBacking(in_viewport);
+    let viewport_backing = viewport.convertRectToBacking(viewport.bounds());
+    let rect = viewport_top_left_rect(
+        PhysicalRect::from_ns(backing),
+        PhysicalRect::from_ns(viewport_backing),
+    );
+    center_rect_on_declared_titlebar(rect, target.titlebar_css, css_to_physical_scale)
+}
+
+#[cfg(target_os = "macos")]
+unsafe fn native_element(
+    role: &'static str,
+    view: Option<&NSView>,
+    viewport: &NSView,
+) -> NativeTitlebarElement {
+    NativeTitlebarElement {
+        role,
+        rect: view.map(|view| physical_rect_in_viewport(view, viewport)),
+        hidden: view.is_none_or(|view| view.isHiddenOrHasHiddenAncestor()),
+    }
+}
+
+#[cfg(target_os = "macos")]
+unsafe fn native_backing_element(
+    role: &'static str,
+    button: Option<&NSView>,
+    viewport: &NSView,
+    identifier: &str,
+    window_key: bool,
+) -> NativeTitlebarBackingElement {
+    let superview = button.and_then(|button| button.superview());
+    let backings = superview
+        .as_ref()
+        .map(|superview| owned_backings(superview, identifier))
+        .unwrap_or_default();
+    let backing = backings.first();
+    let backing_view: Option<&NSView> = backing.map(|backing| {
+        let view: &NSView = backing;
+        view
+    });
+    let hidden = backing_view.is_none_or(NSView::isHiddenOrHasHiddenAncestor);
+    let direct_hidden = backing_view.map(NSView::isHidden);
+    let immediate_below_button = backings.len() == 1
+        && superview.as_ref().is_some_and(|superview| {
+            backing_view
+                .zip(button)
+                .is_some_and(|(backing, button)| immediate_below_button(superview, backing, button))
+        });
+    let hidden_matches_window_key =
+        backing_hidden_matches_window_key(backings.len(), direct_hidden, window_key);
+    NativeTitlebarBackingElement {
+        role,
+        rect: backing_view.map(|backing| physical_rect_in_viewport(backing, viewport)),
+        hidden,
+        direct_hidden,
+        expected_hidden: window_key,
+        count: backings.len(),
+        immediate_below_button,
+        hidden_matches_window_key,
+    }
+}
+
+#[cfg(target_os = "macos")]
+unsafe fn read_native_state(
+    window: &NSWindow,
+    viewport: &NSView,
+    label: String,
+    css_to_physical_scale: f64,
+) -> NativeTitlebarState {
+    let definitions = [
+        ("close", NSWindowButton::CloseButton, BACKING_IDENTIFIERS[0]),
+        (
+            "minimize",
+            NSWindowButton::MiniaturizeButton,
+            BACKING_IDENTIFIERS[1],
+        ),
+        ("zoom", NSWindowButton::ZoomButton, BACKING_IDENTIFIERS[2]),
+    ];
+    let mut buttons = Vec::with_capacity(definitions.len());
+    let mut declared_buttons = Vec::with_capacity(definitions.len());
+    let mut backings = Vec::with_capacity(definitions.len());
+    let owner_count = draw_owner_count(viewport);
+    let owner = existing_draw_owner(&label).filter(|owner| {
+        let same_window = owner
+            .window()
+            .is_some_and(|owner_window| std::ptr::eq(&*owner_window, window));
+        let same_viewport = owner
+            .superview()
+            .is_some_and(|superview| std::ptr::eq(&*superview, viewport));
+        same_window && same_viewport
+    });
+    let declared_target = owner.as_ref().and_then(|owner| owner.ivars().target.get());
+    let window_key = window.isKeyWindow();
+    for (index, (role, kind, identifier)) in definitions.into_iter().enumerate() {
+        let button = window.standardWindowButton(kind);
+        let button_view: Option<&NSView> = button.as_ref().map(|button| {
+            let view: &NSView = button;
+            view
+        });
+        buttons.push(native_element(role, button_view, viewport));
+        declared_buttons.push(NativeTitlebarDeclaredElement {
+            role,
+            rect: button_view
+                .zip(declared_target)
+                .and_then(|(button, target)| {
+                    declared_button_target_rect(
+                        button,
+                        viewport,
+                        target,
+                        index,
+                        css_to_physical_scale,
+                    )
+                }),
+        });
+        backings.push(native_backing_element(
+            role,
+            button_view,
+            viewport,
+            identifier,
+            window_key,
+        ));
+    }
+    let viewport_backing = viewport.convertRectToBacking(viewport.bounds());
+    let owner_state = owner.as_ref().map(|owner| {
+        let ivars = owner.ivars();
+        NativeTitlebarOwnerState {
+            installed: true,
+            identity: Some(format!("{}#{}", ivars.label, ivars.generation)),
+            draw_owner_count: owner_count,
+            target_sequence: ivars.target_sequence.get(),
+            applied_target_sequence: ivars.applied_target_sequence.get(),
+            draw_sequence: ivars.draw_sequence.get(),
+            mutation_sequence: ivars.mutation_sequence.get(),
+            applying: ivars.applying.get(),
+            last_apply_ok: ivars.last_apply_ok.get(),
+            window_visible: window.isVisible(),
+        }
+    });
+    NativeTitlebarState {
+        schema_version: 2,
+        kind: "tauri-titlebar-native-state",
+        window: label,
+        sequence: owner_state
+            .as_ref()
+            .map(|state| state.target_sequence)
+            .unwrap_or(0),
+        coordinate_contract: "physical px, viewport top-left",
+        css_to_physical_scale,
+        viewport_physical: PhysicalSize {
+            w: viewport_backing.size.width,
+            h: viewport_backing.size.height,
+        },
+        buttons,
+        declared_buttons,
+        backing_hidden_contract: backings
+            .iter()
+            .all(|backing| backing.count == 1 && backing.hidden_matches_window_key),
+        backings,
+        window_key,
+        owner: owner_state.unwrap_or(NativeTitlebarOwnerState {
+            installed: false,
+            identity: None,
+            draw_owner_count: owner_count,
+            target_sequence: 0,
+            applied_target_sequence: 0,
+            draw_sequence: 0,
+            mutation_sequence: 0,
+            applying: false,
+            last_apply_ok: false,
+            window_visible: window.isVisible(),
+        }),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn composition_target(
+    titlebar_physical: PhysicalRect,
+    expected_css_to_physical_scale: f64,
+    actual_css_to_physical_scale: f64,
+    backing_scale: f64,
+    viewport_physical: PhysicalRect,
+    button_origin_x: [f64; 3],
+) -> Result<CompositionTarget, String> {
+    if !titlebar_physical.is_finite_positive() {
+        return Err("titlebarPhysical must be a finite positive physical rect".to_string());
+    }
+    if !expected_css_to_physical_scale.is_finite()
+        || expected_css_to_physical_scale <= 0.0
+        || !actual_css_to_physical_scale.is_finite()
+        || actual_css_to_physical_scale <= 0.0
+        || !backing_scale.is_finite()
+        || backing_scale <= 0.0
+    {
+        return Err("titlebar composition scales must be finite and positive".to_string());
+    }
+    if (expected_css_to_physical_scale - actual_css_to_physical_scale).abs() > 0.000_001 {
+        return Err(format!(
+            "titlebar scale changed before composition: expected {expected_css_to_physical_scale}, actual {actual_css_to_physical_scale}"
+        ));
+    }
+    let rounding = 0.5;
+    if titlebar_physical.x < -rounding
+        || titlebar_physical.y < -rounding
+        || titlebar_physical.x + titlebar_physical.w > viewport_physical.w + rounding
+        || titlebar_physical.y + titlebar_physical.h > viewport_physical.h + rounding
+    {
+        return Err("titlebarPhysical must be contained by the native viewport".to_string());
+    }
+    let window_zoom = actual_css_to_physical_scale / backing_scale;
+    if !window_zoom.is_finite() || window_zoom <= 0.0 {
+        return Err("derived window zoom must be finite and positive".to_string());
+    }
+    if !button_origin_x.into_iter().all(f64::is_finite)
+        || button_origin_x[1] <= button_origin_x[0]
+        || button_origin_x[2] <= button_origin_x[1]
+    {
+        return Err("traffic-light horizontal origins must be finite and ordered".to_string());
+    }
+    Ok(CompositionTarget {
+        titlebar_css: titlebar_physical.divided_by(expected_css_to_physical_scale),
+        window_zoom,
+        button_origin_x,
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn traffic_light_buttons(window: &NSWindow) -> Result<[Retained<NSButton>; 3], String> {
+    let (Some(close), Some(minimize), Some(zoom)) = (
         window.standardWindowButton(NSWindowButton::CloseButton),
         window.standardWindowButton(NSWindowButton::MiniaturizeButton),
         window.standardWindowButton(NSWindowButton::ZoomButton),
     ) else {
-        return;
+        return Err(
+            "native window does not expose exactly three traffic-light buttons".to_string(),
+        );
     };
-    let Some(container) = close.superview().and_then(|sv| sv.superview()) else {
-        return;
-    };
-
-    // tao-0.35.3 inset_traffic_lights 산식 그대로(높이/세로 위치만) — 폭/순서/
-    // 가시성 조작은 절제 실험으로 하중이 없음이 확인돼 제거됨.
-    let close_rect = NSView::frame(&close);
-    let space = NSView::frame(&miniaturize).origin.x - close_rect.origin.x;
-    let bar_height = close_rect.size.height + y;
-    let mut bar_rect = NSView::frame(&container);
-    bar_rect.origin.y = window.frame().size.height - bar_height;
-    bar_rect.size.height = bar_height;
-    container.setFrame(bar_rect);
-
-    for (i, button) in [&close, &miniaturize, &zoom].into_iter().enumerate() {
-        let mut rect = NSView::frame(button);
-        rect.origin.x = x + (i as f64 * space);
-        button.setFrameOrigin(rect.origin);
-    }
-
-    // 비활성 위젯의 backdrop 합성 복원 — 점 모양 그대로의 원형 백킹 3개(§상단 주석).
-    // 활성 상태에선 숨김(점이 불투명 컬러라 불필요 + 테마 전환 이질감 제거).
-    // 반드시 버튼 "이동 뒤" — 백킹은 호출 시점의 버튼 프레임으로 깔리므로, 이동 전에 깔면
-    // 첫 적용에서 백킹은 옛 자리·버튼은 새 자리로 반쯤 어긋난 회색 원이 남는다
-    // (실측: 비활성 창 신호등이 반쪽 원 3개로 보인 사용자 스크린샷, 2026-07-27).
-    ensure_backing([&close, &miniaturize, &zoom], window.isKeyWindow());
+    Ok([close, minimize, zoom])
 }
 
-// 버튼마다 그 프레임과 동일한 원형 백킹(NSBox, cornerRadius=½)을 바로 아래에 깐다.
-// 점 밖으로 새는 픽셀이 없어 테마와의 색 차가 드러나지 않는다. 멱등: 버튼들의
-// superview 에 NSBox 를 넣는 건 우리뿐 — 기존 것을 수거해 재사용.
-// 색 미동기화 시 시스템 windowBackgroundColor(라이트/다크 자동) 폴백.
-// is_key=true(활성)면 숨김 — 백킹은 비활성 합성 복원 전용.
 #[cfg(target_os = "macos")]
-unsafe fn ensure_backing(buttons: [&NSView; 3], is_key: bool) {
-    use objc2::{rc::Retained, MainThreadMarker, MainThreadOnly};
-    use objc2_app_kit::{NSBox, NSBoxType, NSColor, NSTitlePosition};
+unsafe fn align_buttons_x(buttons: [&NSView; 3], target_x: [f64; 3], backing_scale: f64) -> bool {
+    let mut changed = false;
+    for (index, button) in buttons.into_iter().enumerate() {
+        let mut frame = NSView::frame(button);
+        if ((frame.origin.x - target_x[index]) * backing_scale).abs() <= 0.5 {
+            continue;
+        }
+        frame.origin.x = target_x[index];
+        button.setFrameOrigin(frame.origin);
+        changed = true;
+    }
+    changed
+}
 
-    let Some(sv) = buttons[0].superview() else {
+#[cfg(target_os = "macos")]
+unsafe fn align_buttons_to_target(
+    buttons: [&NSView; 3],
+    viewport: &NSView,
+    target: CompositionTarget,
+) -> Result<bool, String> {
+    let window = viewport
+        .window()
+        .ok_or_else(|| "native viewport is detached from its window".to_string())?;
+    let backing_scale = window.backingScaleFactor();
+    let css_to_physical_scale = backing_scale * target.window_zoom;
+    let mut changed = align_buttons_x(buttons, target.button_origin_x, backing_scale);
+    for button in buttons {
+        let current = physical_rect_in_viewport(button, viewport);
+        let Some(delta_y) = appkit_origin_y_delta(
+            current,
+            target.titlebar_css,
+            backing_scale,
+            css_to_physical_scale,
+        ) else {
+            return Err(
+                "traffic-light composition geometry is not finite and positive".to_string(),
+            );
+        };
+        let mut frame = NSView::frame(button);
+        let y_changed = (delta_y * backing_scale).abs() > 0.5;
+        if y_changed {
+            frame.origin.y += delta_y;
+            button.setFrameOrigin(frame.origin);
+            changed = true;
+        }
+    }
+    Ok(changed)
+}
+
+#[cfg(target_os = "macos")]
+unsafe fn apply_owner_body(
+    owner: &TitlebarCompositionDrawOwner,
+    target: Option<(CompositionTarget, u64)>,
+    allow_hierarchy_repair: bool,
+) -> Result<bool, String> {
+    let window = owner
+        .window()
+        .ok_or_else(|| format!("titlebar draw owner is detached: {}", owner.ivars().label))?;
+    let viewport = window
+        .contentView()
+        .ok_or_else(|| "native window does not expose a content viewport".to_string())?;
+    let buttons = traffic_light_buttons(&window)?;
+    let button_views: [&NSView; 3] = [&buttons[0], &buttons[1], &buttons[2]];
+    let mut changed = match target {
+        Some((target, _)) => align_buttons_to_target(button_views, &viewport, target)?,
+        None => {
+            let target_x = owner
+                .ivars()
+                .declared_button_origin_x
+                .get()
+                .ok_or_else(|| "titlebar horizontal target is not declared".to_string())?;
+            align_buttons_x(button_views, target_x, window.backingScaleFactor())
+        }
+    };
+    changed |= sync_owned_backings(
+        button_views,
+        window.backingScaleFactor(),
+        window.isKeyWindow(),
+        owner.ivars().backing_color.get(),
+        allow_hierarchy_repair,
+    )?;
+    Ok(changed)
+}
+
+#[cfg(target_os = "macos")]
+unsafe fn apply_registered_owner(label: &str) -> Result<(), String> {
+    let owner = existing_draw_owner(label)
+        .ok_or_else(|| format!("titlebar draw owner is not installed: {label}"))?;
+    let ivars = owner.ivars();
+    let target = ivars
+        .target
+        .get()
+        .map(|target| (target, ivars.target_sequence.get()));
+    apply_owner_now(&owner, target, false)
+}
+
+/// Validate the renderer's exact owner/sequence receipt, restore the committed target, and flush
+/// AppKit layout/display before the startup gate is allowed to reveal the window.
+#[cfg(target_os = "macos")]
+pub(crate) unsafe fn prepare_startup_presentation(
+    window: &NSWindow,
+    label: &str,
+    expected_owner_identity: &str,
+    expected_sequence: u64,
+) -> Result<u64, String> {
+    let owner = draw_owner_for_window(window, label)?;
+    let ivars = owner.ivars();
+    let actual_identity = format!("{}#{}", ivars.label, ivars.generation);
+    if actual_identity != expected_owner_identity {
+        return Err(format!(
+            "startup titlebar owner generation changed for {label}: expected {expected_owner_identity}, got {actual_identity}"
+        ));
+    }
+    let actual_sequence = ivars.target_sequence.get();
+    if expected_sequence == 0 || actual_sequence != expected_sequence {
+        return Err(format!(
+            "startup titlebar sequence is stale for {label}: expected {expected_sequence}, got {actual_sequence}"
+        ));
+    }
+    if ivars.applied_target_sequence.get() != actual_sequence
+        || ivars.applying.get()
+        || !ivars.last_apply_ok.get()
+    {
+        return Err(format!(
+            "startup titlebar owner has no committed GREEN target for {label}"
+        ));
+    }
+    let target = ivars
+        .target
+        .get()
+        .ok_or_else(|| format!("startup titlebar target is absent for {label}"))?;
+    apply_owner_now(&owner, Some((target, actual_sequence)), false)?;
+    window.layoutIfNeeded();
+    if let Some(viewport) = window.contentView() {
+        viewport.setNeedsDisplay(true);
+    }
+    window.displayIfNeeded();
+    if ivars.target_sequence.get() != actual_sequence
+        || ivars.applied_target_sequence.get() != actual_sequence
+        || ivars.applying.get()
+        || !ivars.last_apply_ok.get()
+    {
+        return Err(format!(
+            "startup titlebar target changed during presentation flush for {label}"
+        ));
+    }
+    Ok(actual_sequence)
+}
+
+#[cfg(target_os = "macos")]
+unsafe fn install_draw_owner(
+    window: &NSWindow,
+    label: &str,
+    declared_origin_x: Option<f64>,
+) -> Result<(), String> {
+    if existing_draw_owner(label).is_some() {
+        let owner = draw_owner_for_window(window, label)?;
+        if let Some(declared_x) = declared_origin_x {
+            if !declared_x.is_finite() || declared_x < 0.0 {
+                return Err("declared traffic-light horizontal geometry is invalid".to_string());
+            }
+            let installed_x = owner
+                .ivars()
+                .declared_button_origin_x
+                .get()
+                .ok_or_else(|| "titlebar horizontal target is not declared".to_string())?[0];
+            let tolerance = 0.5 / window.backingScaleFactor();
+            if (declared_x - installed_x).abs() > tolerance {
+                return Err(format!(
+                    "titlebar draw owner horizontal declaration changed for {label}"
+                ));
+            }
+        }
+        if owner.ivars().target.get().is_none() {
+            apply_owner_now(&owner, None, true)?;
+        }
+        return Ok(());
+    }
+
+    // Validate the complete immutable declaration before attaching or publishing an owner. A
+    // failed install must not leave a half-owner that a later read mistakes for a live generation.
+    let buttons = traffic_light_buttons(window)?;
+    let current_x = [
+        buttons[0].frame().origin.x,
+        buttons[1].frame().origin.x,
+        buttons[2].frame().origin.x,
+    ];
+    let first_x = declared_origin_x.unwrap_or(current_x[0]);
+    let spacing = current_x[1] - current_x[0];
+    let declared = [first_x, first_x + spacing, first_x + (spacing * 2.0)];
+    if !first_x.is_finite() || first_x < 0.0 || !spacing.is_finite() || spacing <= 0.0 {
+        return Err("declared traffic-light horizontal geometry is invalid".to_string());
+    }
+    let backing_scale = window.backingScaleFactor();
+    if !backing_scale.is_finite() || backing_scale <= 0.0 {
+        return Err("titlebar backing scale must be finite and positive".to_string());
+    }
+
+    let owner = allocate_draw_owner(window, label, declared)?;
+    if let Err(error) = apply_owner_now(&owner, None, true) {
+        owner.removeFromSuperview();
+        return Err(error);
+    }
+    COMPOSITION_DRAW_OWNERS.with(|owners| {
+        owners.borrow_mut().insert(label.to_string(), owner.clone());
+    });
+    Ok(())
+}
+
+/// DidResize transaction hook. The AppKit resize owner calls this before its single display commit,
+/// so traffic lights, DOM WKWebView and child native surfaces are painted from one geometry epoch.
+#[cfg(target_os = "macos")]
+pub(crate) fn recompose_from_appkit_resize(window: &NSWindow, label: &str) {
+    let Some(owner) = existing_draw_owner(label) else {
         return;
     };
-    let color = match *BACKING_COLOR.lock().unwrap() {
-        Some((r, g, b)) => NSColor::colorWithSRGBRed_green_blue_alpha(r, g, b, 1.0),
+    let Some(owner_window) = owner.window() else {
+        return;
+    };
+    if !std::ptr::eq(&*owner_window, window) {
+        return;
+    }
+    unsafe {
+        let _ = apply_registered_owner(label);
+    }
+}
+
+/// macOS에만 등록되는 AppKit 사실면. 비 macOS에는 명령 자체가 존재하지 않는다.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub async fn titlebar_native_state(window: tauri::Window) -> Result<NativeTitlebarState, String> {
+    let label = window.label().to_owned();
+    let window_zoom = crate::webview::window_zoom_for_adapter(&label);
+    let query_window = window.clone();
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    window
+        .run_on_main_thread(move || {
+            let result = (|| unsafe {
+                let ns_window = query_window
+                    .ns_window()
+                    .map(|pointer| &*(pointer as *const NSWindow))
+                    .map_err(|error| error.to_string())?;
+                let viewport = query_window
+                    .ns_view()
+                    .map(|pointer| &*(pointer as *const NSView))
+                    .map_err(|error| error.to_string())?;
+                let css_to_physical_scale = ns_window.backingScaleFactor() * window_zoom;
+                Ok(read_native_state(
+                    ns_window,
+                    viewport,
+                    label,
+                    css_to_physical_scale,
+                ))
+            })();
+            let _ = tx.send(result);
+        })
+        .map_err(|error| error.to_string())?;
+    tokio::time::timeout(std::time::Duration::from_secs(1), rx)
+        .await
+        .map_err(|_| "titlebar native state ACK timeout".to_string())?
+        .map_err(|error| format!("titlebar native state ACK 실패: {error}"))?
+}
+
+/// 공개 DOM titlebar 목표를 AppKit 버튼 3개에 한 번 합성하고 같은 메인스레드 거래의 readback을
+/// 영수증으로 돌려준다. 입력 scale은 직전 read-only 사실면과 같은 epoch인지 검증하는 낙관적 잠금이다.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub async fn titlebar_compose(
+    window: tauri::Window,
+    titlebar_physical: PhysicalRect,
+    css_to_physical_scale: f64,
+    expected_owner_identity: String,
+    expected_sequence: u64,
+) -> Result<NativeTitlebarState, String> {
+    let label = window.label().to_owned();
+    if label.is_empty() {
+        return Err("titlebar composition requires a non-empty window label".to_string());
+    }
+    let window_zoom = crate::webview::window_zoom_for_adapter(&label);
+    let compose_window = window.clone();
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    window
+        .run_on_main_thread(move || {
+            let result = (|| unsafe {
+                let ns_window = compose_window
+                    .ns_window()
+                    .map(|pointer| &*(pointer as *const NSWindow))
+                    .map_err(|error| error.to_string())?;
+                let viewport = compose_window
+                    .ns_view()
+                    .map(|pointer| &*(pointer as *const NSView))
+                    .map_err(|error| error.to_string())?;
+                let backing_scale = ns_window.backingScaleFactor();
+                let actual_scale = backing_scale * window_zoom;
+                let viewport_backing = viewport.convertRectToBacking(viewport.bounds());
+                let owner = draw_owner_for_window(ns_window, &label)?;
+                let actual_owner_identity = format!(
+                    "{}#{}",
+                    owner.ivars().label,
+                    owner.ivars().generation,
+                );
+                if actual_owner_identity != expected_owner_identity {
+                    return Err(format!(
+                        "titlebar compose owner generation changed for {label}: expected {expected_owner_identity}, got {actual_owner_identity}"
+                    ));
+                }
+                let actual_sequence = owner.ivars().target_sequence.get();
+                if actual_sequence != expected_sequence {
+                    return Err(format!(
+                        "titlebar compose sequence changed before mutation for {label}: expected {expected_sequence}, got {actual_sequence}"
+                    ));
+                }
+                let button_origin_x = owner
+                    .ivars()
+                    .declared_button_origin_x
+                    .get()
+                    .ok_or_else(|| "titlebar horizontal target is not declared".to_string())?;
+                let target = composition_target(
+                    titlebar_physical,
+                    css_to_physical_scale,
+                    actual_scale,
+                    backing_scale,
+                    PhysicalRect::from_ns(viewport_backing),
+                    button_origin_x,
+                )?;
+                let sequence = next_sequence(expected_sequence, &label)?;
+                apply_owner_now(&owner, Some((target, sequence)), true)?;
+                owner.ivars().target.set(Some(target));
+                owner.ivars().target_sequence.set(sequence);
+                Ok(read_native_state(
+                    ns_window,
+                    viewport,
+                    label,
+                    actual_scale,
+                ))
+            })();
+            let _ = tx.send(result);
+        })
+        .map_err(|error| error.to_string())?;
+    rx.await
+        .map_err(|error| format!("titlebar compose main-thread ACK failed: {error}"))?
+}
+
+// 프런트 테마 적용 시 호출 — 창별 owner의 백킹 색 동기화 + 즉시 재적용.
+#[tauri::command]
+pub async fn titlebar_backing(window: tauri::Window, r: f64, g: f64, b: f64) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let color = BackingColor::new(r, g, b)?;
+        let label = window.label().to_owned();
+        let win = window.clone();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        window
+            .run_on_main_thread(move || {
+                let result = (|| unsafe {
+                    let ptr = win.ns_window().map_err(|error| error.to_string())?;
+                    let ns = &*(ptr as *const NSWindow);
+                    let owner = draw_owner_for_window(ns, &label)?;
+                    owner.ivars().backing_color.set(Some(color));
+                    let target = owner
+                        .ivars()
+                        .target
+                        .get()
+                        .map(|target| (target, owner.ivars().target_sequence.get()));
+                    apply_owner_now(&owner, target, true)
+                })();
+                let _ = tx.send(result);
+            })
+            .map_err(|error| error.to_string())?;
+        return rx
+            .await
+            .map_err(|error| format!("titlebar backing main-thread ACK failed: {error}"))?;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (window, r, g, b);
+        Ok(())
+    }
+}
+
+// 창 생성 시 draw owner와 백킹을 한 번 설치한다. 목표는 renderer가 공개 DOM rect로 명시한다.
+#[cfg(target_os = "macos")]
+pub fn install<R: tauri::Runtime>(
+    window: &tauri::Window<R>,
+    declared_origin_x: Option<f64>,
+) -> Result<(), String> {
+    MainThreadMarker::new()
+        .ok_or_else(|| "titlebar draw owner installation requires the main thread".to_string())?;
+    let label = window.label().to_owned();
+    let ptr = window.ns_window().map_err(|error| error.to_string())?;
+    let ns = unsafe { &*(ptr as *const NSWindow) };
+    unsafe { install_draw_owner(ns, &label, declared_origin_x) }
+}
+
+// 버튼마다 그 프레임과 동일한 원형 백킹(NSBox, cornerRadius=½)을 바로 아래에 둔다.
+// draw 경계에서는 기존 세 개의 frame/hidden만 멱등 갱신한다. 생성·중복·z-order 정리는
+// install/compose/backing 같은 명시적 거래에서만 허용해 draw 중 hierarchy 변경과 재진입을
+// 금지한다.
+#[cfg(target_os = "macos")]
+unsafe fn sync_owned_backings(
+    buttons: [&NSView; 3],
+    backing_scale: f64,
+    is_key: bool,
+    backing_color: Option<BackingColor>,
+    allow_hierarchy_repair: bool,
+) -> Result<bool, String> {
+    use objc2::runtime::NSObjectProtocol;
+    use objc2::{rc::Retained, MainThreadMarker, MainThreadOnly};
+    use objc2_app_kit::{
+        NSBox, NSBoxType, NSColor, NSTitlePosition, NSUserInterfaceItemIdentification,
+    };
+    use objc2_foundation::NSString;
+
+    if !backing_scale.is_finite() || backing_scale <= 0.0 {
+        return Err("titlebar backing scale must be finite and positive".to_string());
+    }
+    let sv = buttons[0]
+        .superview()
+        .ok_or_else(|| "traffic-light button has no titlebar parent".to_string())?;
+    for button in &buttons[1..] {
+        let parent = button
+            .superview()
+            .ok_or_else(|| "traffic-light button has no titlebar parent".to_string())?;
+        if !std::ptr::eq(&*parent, &*sv) {
+            return Err("traffic-light buttons do not share one titlebar parent".to_string());
+        }
+    }
+    if !allow_hierarchy_repair {
+        validate_owned_backing_hierarchy(buttons)?;
+    }
+    let color = match backing_color {
+        Some(color) => NSColor::colorWithSRGBRed_green_blue_alpha(color.r, color.g, color.b, 1.0),
         None => NSColor::windowBackgroundColor(),
     };
+    let point_tolerance = 0.5 / backing_scale;
 
-    let mut existing: Vec<Retained<NSBox>> = sv
+    let existing: Vec<Retained<NSBox>> = sv
         .subviews()
         .iter()
         .filter_map(|s| s.downcast::<NSBox>().ok())
         .collect();
 
-    for button in buttons {
+    let mut changed = false;
+    for (index, button) in buttons.into_iter().enumerate() {
         let frame = NSView::frame(button);
-        let bx = match existing.pop() {
-            Some(b) => b,
-            None => {
-                let Some(mtm) = MainThreadMarker::new() else {
-                    return;
-                };
-                let b = NSBox::initWithFrame(NSBox::alloc(mtm), frame);
-                b.setBoxType(NSBoxType::Custom);
-                b.setBorderWidth(0.0);
-                b.setTitlePosition(NSTitlePosition::NoTitle);
-                sv.addSubview_positioned_relativeTo(&b, NSWindowOrderingMode::Below, None);
-                b
+        let identifier = BACKING_IDENTIFIERS[index];
+        let mut tagged: Vec<Retained<NSBox>> = existing
+            .iter()
+            .filter(|backing| {
+                backing
+                    .identifier()
+                    .is_some_and(|value| value.to_string() == identifier)
+            })
+            .cloned()
+            .collect();
+        let bx = if tagged.is_empty() {
+            if !allow_hierarchy_repair {
+                return Err(format!("owned titlebar backing is missing: {identifier}"));
             }
+            let mtm = MainThreadMarker::new()
+                .ok_or_else(|| "titlebar backing must be created on the main thread".to_string())?;
+            let backing = NSBox::initWithFrame(NSBox::alloc(mtm), frame);
+            backing.setBoxType(NSBoxType::Custom);
+            backing.setBorderWidth(0.0);
+            backing.setTitlePosition(NSTitlePosition::NoTitle);
+            backing.setIdentifier(Some(&NSString::from_str(identifier)));
+            backing.setCornerRadius(frame.size.width.min(frame.size.height) / 2.0);
+            backing.setFillColor(&color);
+            backing.setHidden(is_key);
+            sv.addSubview_positioned_relativeTo(
+                &backing,
+                NSWindowOrderingMode::Below,
+                Some(button),
+            );
+            changed = true;
+            backing
+        } else {
+            let first = tagged.remove(0);
+            if !tagged.is_empty() && !allow_hierarchy_repair {
+                return Err(format!(
+                    "owned titlebar backing is duplicated: {identifier}"
+                ));
+            }
+            for duplicate in tagged {
+                duplicate.removeFromSuperview();
+                changed = true;
+            }
+            first
         };
-        bx.setFrame(frame);
-        // 짧은 변 기준 ½ 반경 — 버튼 프레임(14×16)에서 사실상 원/캡슐.
-        bx.setCornerRadius(frame.size.width.min(frame.size.height) / 2.0);
-        bx.setFillColor(&color);
-        bx.setHidden(is_key);
-        // 버튼이 항상 백킹 위에 오도록 백킹은 최하단 유지.
-        if let Some(parent) = bx.superview() {
-            parent.addSubview_positioned_relativeTo(&bx, NSWindowOrderingMode::Below, None);
+
+        if !immediate_below_button(&sv, &bx, button) {
+            if !allow_hierarchy_repair {
+                return Err(format!(
+                    "owned titlebar backing is not immediately below its button: {identifier}"
+                ));
+            }
+            sv.addSubview_positioned_relativeTo(&bx, NSWindowOrderingMode::Below, Some(button));
+            changed = true;
+        }
+
+        if !frames_match(NSView::frame(&bx), frame, point_tolerance) {
+            bx.setFrame(frame);
+            changed = true;
+        }
+        let radius = frame.size.width.min(frame.size.height) / 2.0;
+        if (bx.cornerRadius() - radius).abs() > point_tolerance {
+            bx.setCornerRadius(radius);
+            changed = true;
+        }
+        if allow_hierarchy_repair && !bx.fillColor().isEqual(Some(&*color)) {
+            bx.setFillColor(&color);
+            changed = true;
+        }
+        if bx.isHidden() != is_key {
+            bx.setHidden(is_key);
+            changed = true;
         }
     }
+    validate_owned_backing_hierarchy(buttons)?;
+    Ok(changed)
 }
 
-// ── 계측(디버그 빌드 전용) ───────────────────────────────────────────────────
+#[cfg(target_os = "macos")]
+unsafe fn validate_owned_backing_hierarchy(buttons: [&NSView; 3]) -> Result<(), String> {
+    let superview = buttons[0]
+        .superview()
+        .ok_or_else(|| "traffic-light button has no titlebar parent".to_string())?;
+    for (index, button) in buttons.into_iter().enumerate() {
+        let parent = button
+            .superview()
+            .ok_or_else(|| "traffic-light button has no titlebar parent".to_string())?;
+        if !std::ptr::eq(&*parent, &*superview) {
+            return Err("traffic-light buttons do not share one titlebar parent".to_string());
+        }
+        let identifier = BACKING_IDENTIFIERS[index];
+        let backings = owned_backings(&superview, identifier);
+        if backings.len() != 1 {
+            return Err(format!(
+                "owned titlebar backing count must be exactly one: {identifier} (actual {})",
+                backings.len()
+            ));
+        }
+        let backing: &NSView = &backings[0];
+        if !immediate_below_button(&superview, backing, button) {
+            return Err(format!(
+                "owned titlebar backing is not immediately below its button: {identifier}"
+            ));
+        }
+    }
+    Ok(())
+}
 
-#[cfg(all(target_os = "macos", debug_assertions))]
-unsafe fn dump_state(label: &str, window: &NSWindow) {
-    use std::io::Write;
+#[cfg(target_os = "macos")]
+fn frames_match(a: NSRect, b: NSRect, tolerance: f64) -> bool {
+    [
+        a.origin.x - b.origin.x,
+        a.origin.y - b.origin.y,
+        a.size.width - b.size.width,
+        a.size.height - b.size.height,
+    ]
+    .into_iter()
+    .all(|delta| delta.abs() <= tolerance)
+}
 
-    fn line(name: &str, v: &NSView) -> String {
-        let f = NSView::frame(v);
-        format!(
-            "{name}[{:?} hid={} a={:.2} x={:.0} y={:.0} w={:.0} h={:.0}]",
-            v.class(),
-            v.isHidden(),
-            v.alphaValue(),
-            f.origin.x,
-            f.origin.y,
-            f.size.width,
-            f.size.height
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use super::*;
+
+    fn production_source() -> &'static str {
+        include_str!("titlebar.rs")
+            .split_once("#[cfg(all(test, target_os = \"macos\"))]")
+            .expect("production/test boundary")
+            .0
+    }
+
+    fn source_between<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
+        source
+            .split_once(start)
+            .unwrap_or_else(|| panic!("missing source start: {start}"))
+            .1
+            .split_once(end)
+            .unwrap_or_else(|| panic!("missing source end: {end}"))
+            .0
+    }
+
+    #[test]
+    fn appkit_bottom_left_rect_is_projected_to_viewport_top_left_physical_pixels() {
+        let viewport = PhysicalRect::new(10.0, 20.0, 1600.0, 1200.0);
+        let appkit = PhysicalRect::new(34.0, 1162.0, 28.0, 28.0);
+        assert_eq!(
+            viewport_top_left_rect(appkit, viewport),
+            PhysicalRect::new(24.0, 30.0, 28.0, 28.0),
+        );
+    }
+
+    #[test]
+    fn declared_button_rect_is_centered_in_the_declared_titlebar_coordinate_space() {
+        let horizontal_projection = PhysicalRect::new(24.0, 999.0, 28.0, 28.0);
+        let titlebar_css = PhysicalRect::new(0.0, 0.0, 800.0, 45.0);
+
+        assert_eq!(
+            center_rect_on_declared_titlebar(horizontal_projection, titlebar_css, 2.0),
+            Some(PhysicalRect::new(24.0, 31.0, 28.0, 28.0)),
+        );
+        assert_eq!(
+            center_rect_on_declared_titlebar(horizontal_projection, titlebar_css, 0.0),
+            None,
+        );
+    }
+
+    #[test]
+    fn backing_hierarchy_requires_the_immediate_back_to_front_predecessor() {
+        assert!(immediate_below_indices(Some(4), Some(5)));
+        assert!(!immediate_below_indices(Some(3), Some(5)));
+        assert!(!immediate_below_indices(Some(5), Some(4)));
+        assert!(!immediate_below_indices(None, Some(5)));
+    }
+
+    #[test]
+    fn backing_hidden_contract_is_exactly_one_and_mirrors_window_key_state() {
+        assert!(backing_hidden_matches_window_key(1, Some(true), true));
+        assert!(backing_hidden_matches_window_key(1, Some(false), false));
+        assert!(!backing_hidden_matches_window_key(0, None, false));
+        assert!(!backing_hidden_matches_window_key(2, Some(false), false));
+        assert!(!backing_hidden_matches_window_key(1, Some(false), true));
+    }
+
+    #[test]
+    fn native_observability_serializes_additive_machine_facts_in_camel_case() {
+        let rect = PhysicalRect::new(24.0, 31.0, 28.0, 28.0);
+        let state = NativeTitlebarState {
+            schema_version: 2,
+            kind: "tauri-titlebar-native-state",
+            window: "main".to_string(),
+            sequence: 1,
+            coordinate_contract: "physical px, viewport top-left",
+            css_to_physical_scale: 2.0,
+            viewport_physical: PhysicalSize {
+                w: 1600.0,
+                h: 1200.0,
+            },
+            buttons: vec![NativeTitlebarElement {
+                role: "close",
+                rect: Some(rect),
+                hidden: false,
+            }],
+            declared_buttons: vec![NativeTitlebarDeclaredElement {
+                role: "close",
+                rect: Some(rect),
+            }],
+            backings: vec![NativeTitlebarBackingElement {
+                role: "close",
+                rect: Some(rect),
+                hidden: false,
+                direct_hidden: Some(false),
+                expected_hidden: false,
+                count: 1,
+                immediate_below_button: true,
+                hidden_matches_window_key: true,
+            }],
+            window_key: false,
+            backing_hidden_contract: true,
+            owner: NativeTitlebarOwnerState {
+                installed: true,
+                identity: Some("main#1".to_string()),
+                draw_owner_count: 1,
+                target_sequence: 1,
+                applied_target_sequence: 1,
+                draw_sequence: 1,
+                mutation_sequence: 1,
+                applying: false,
+                last_apply_ok: true,
+                window_visible: false,
+            },
+        };
+
+        let value = serde_json::to_value(state).unwrap();
+        assert_eq!(value["declaredButtons"][0]["rect"]["x"], 24.0);
+        assert_eq!(value["owner"]["drawOwnerCount"], 1);
+        assert_eq!(value["windowKey"], false);
+        assert_eq!(value["backingHiddenContract"], true);
+        assert_eq!(value["backings"][0]["count"], 1);
+        assert_eq!(value["backings"][0]["directHidden"], false);
+        assert_eq!(value["backings"][0]["expectedHidden"], false);
+        assert_eq!(value["backings"][0]["immediateBelowButton"], true);
+        assert_eq!(value["backings"][0]["hiddenMatchesWindowKey"], true);
+    }
+
+    #[test]
+    fn each_owned_backing_has_one_stable_role_identifier() {
+        assert_eq!(
+            BACKING_IDENTIFIERS,
+            [
+                "soksak.titlebar.backing.close",
+                "soksak.titlebar.backing.minimize",
+                "soksak.titlebar.backing.zoom",
+            ],
+        );
+    }
+
+    #[test]
+    fn workspace_button_center_is_moved_to_the_dom_titlebar_center_without_tolerance() {
+        let current_button = PhysicalRect::new(14.0, 12.0, 28.0, 32.0);
+        let titlebar_css = PhysicalRect::new(0.0, 0.0, 900.0, 45.0);
+        let delta = appkit_origin_y_delta(current_button, titlebar_css, 2.0, 2.0).unwrap();
+
+        assert_eq!(delta, -8.5);
+        assert_eq!(
+            current_button.y - (delta * 2.0) + (current_button.h / 2.0),
+            45.0,
+        );
+    }
+
+    #[test]
+    fn invalid_composition_scales_are_rejected_instead_of_guessing() {
+        let button = PhysicalRect::new(14.0, 12.0, 28.0, 32.0);
+        let titlebar = PhysicalRect::new(0.0, 0.0, 900.0, 45.0);
+
+        assert_eq!(appkit_origin_y_delta(button, titlebar, 0.0, 2.0), None);
+        assert_eq!(appkit_origin_y_delta(button, titlebar, 2.0, 0.0), None);
+    }
+
+    #[test]
+    fn compose_input_is_a_viewport_physical_rect_guarded_by_its_read_scale() {
+        let target = composition_target(
+            PhysicalRect::new(0.0, 0.0, 1_600.0, 90.0),
+            2.0,
+            2.0,
+            2.0,
+            PhysicalRect::new(0.0, 0.0, 1_600.0, 1_200.0),
+            [12.0, 32.0, 52.0],
         )
+        .unwrap();
+
+        assert_eq!(
+            target.titlebar_css,
+            PhysicalRect::new(0.0, 0.0, 800.0, 45.0)
+        );
+        assert_eq!(target.window_zoom, 1.0);
+        assert_eq!(target.button_origin_x, [12.0, 32.0, 52.0]);
+        assert!(composition_target(
+            PhysicalRect::new(0.0, 0.0, 1_600.0, 90.0),
+            1.0,
+            2.0,
+            2.0,
+            PhysicalRect::new(0.0, 0.0, 1_600.0, 1_200.0),
+            [12.0, 32.0, 52.0],
+        )
+        .is_err());
+        assert!(composition_target(
+            PhysicalRect::new(0.0, 0.0, 1_601.0, 90.0),
+            2.0,
+            2.0,
+            2.0,
+            PhysicalRect::new(0.0, 0.0, 1_600.0, 1_200.0),
+            [12.0, 32.0, 52.0],
+        )
+        .is_err());
+        assert!(composition_target(
+            PhysicalRect::new(0.0, 0.0, 1_600.0, 90.0),
+            2.0,
+            2.0,
+            2.0,
+            PhysicalRect::new(0.0, 0.0, 1_600.0, 1_200.0),
+            [12.0, 12.0, 52.0],
+        )
+        .is_err());
     }
 
-    let mut parts: Vec<String> = Vec::new();
-    for (name, kind) in [
-        ("close", NSWindowButton::CloseButton),
-        ("zoom", NSWindowButton::ZoomButton),
-    ] {
-        match window.standardWindowButton(kind) {
-            Some(b) => parts.push(line(name, &b)),
-            None => parts.push(format!("{name}[None]")),
+    #[test]
+    fn explicit_target_sequence_uses_one_checked_step_and_never_wraps() {
+        assert_eq!(next_sequence(0, "main").unwrap(), 1);
+        assert_eq!(next_sequence(41, "workspace").unwrap(), 42);
+        assert!(next_sequence(u64::MAX, "main").is_err());
+    }
+
+    #[test]
+    fn native_layout_has_one_draw_owner_and_no_lifecycle_retry_owner() {
+        let source = production_source();
+
+        assert!(source.contains("struct TitlebarCompositionDrawOwner"));
+        assert!(source.contains("method(drawRect:)"));
+        for forbidden in [
+            concat!("install_global_", "observers"),
+            concat!("NS", "NotificationCenter"),
+            concat!("NSWindowDidBecomeKey", "Notification"),
+            concat!("NSWindowDidResignKey", "Notification"),
+        ] {
+            assert!(
+                !source.contains(forbidden),
+                "forbidden lifecycle owner: {forbidden}"
+            );
+        }
+        let draw = source
+            .split_once("fn draw(&self")
+            .expect("draw owner callback")
+            .1
+            .split_once("fn hit_test")
+            .expect("draw owner callback end")
+            .0;
+        assert!(!draw.contains("setNeedsDisplay"));
+        assert!(!draw.contains("draw_owner_for_window"));
+    }
+
+    #[test]
+    fn native_state_exposes_declared_geometry_and_exact_hierarchy_contract_facts() {
+        let source = production_source();
+
+        for required in [
+            "declared_buttons:",
+            "draw_owner_count:",
+            "window_key:",
+            "backing_hidden_contract:",
+            "direct_hidden:",
+            "expected_hidden:",
+            "count:",
+            "immediate_below_button:",
+            "hidden_matches_window_key:",
+        ] {
+            assert!(source.contains(required), "missing native fact: {required}");
         }
     }
-    if let Some(close) = window.standardWindowButton(NSWindowButton::CloseButton) {
-        if let Some(sv) = close.superview() {
-            parts.push(line("sv", &sv));
-            // sv(NSTitlebarView) 하위 전체 — 호버 캡슐/배경 뷰의 정체 추적.
-            for (i, sub) in sv.subviews().iter().enumerate() {
-                parts.push(line(&format!("sv.{i}"), &sub));
-            }
-            if let Some(container) = sv.superview() {
-                parts.push(line("ctr", &container));
-                for (i, sub) in container.subviews().iter().enumerate() {
-                    if !std::ptr::eq(&*sub as *const NSView, &*sv as *const NSView) {
-                        parts.push(line(&format!("ctr.{i}"), &sub));
-                    }
-                }
-                // 형제 중 컨테이너의 z 순서(인덱스가 클수록 위) — 합성 순서 추적.
-                if let Some(tf) = container.superview() {
-                    let subs = tf.subviews();
-                    let idx = subs.iter().position(|s| {
-                        std::ptr::eq(&*s as *const NSView, &*container as *const NSView)
-                    });
-                    parts.push(format!("z={:?}/{}", idx, subs.len()));
-                }
-            }
+
+    #[test]
+    fn native_state_read_is_observation_only_and_draw_cannot_repair_hierarchy() {
+        let source = production_source();
+        let read = source_between(
+            source,
+            "unsafe fn read_native_state(",
+            "fn composition_target(",
+        );
+        let backing_read = source_between(
+            source,
+            "unsafe fn native_backing_element(",
+            "unsafe fn read_native_state(",
+        );
+        for forbidden in [
+            "sync_owned_backings(",
+            "removeFromSuperview",
+            "addSubview_positioned_relativeTo",
+            "setFrame",
+            "setHidden",
+            "setFillColor",
+        ] {
+            assert!(
+                !read.contains(forbidden),
+                "read repaired native hierarchy: {forbidden}"
+            );
+            assert!(
+                !backing_read.contains(forbidden),
+                "backing observation repaired native hierarchy: {forbidden}"
+            );
         }
+
+        let draw = source_between(source, "fn draw(&self", "fn hit_test");
+        assert!(draw.contains("apply_owner_body(self, target, false)"));
     }
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() % 100_000_000)
-        .unwrap_or(0);
-    let text = format!(
-        "{ts:>8} {label:>16} | key={} main={} winH={:.0} | {}\n",
-        window.isKeyWindow(),
-        window.isMainWindow(),
-        window.frame().size.height,
-        parts.join(" ")
-    );
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open("/tmp/soksak-titlebar.log")
-    {
-        let _ = f.write_all(text.as_bytes());
+
+    #[test]
+    fn explicit_backing_apply_repairs_then_validates_one_fixed_hierarchy() {
+        let source = production_source();
+        let sync = source_between(source, "unsafe fn sync_owned_backings(", "fn frames_match(");
+
+        assert!(sync.contains("if !allow_hierarchy_repair"));
+        assert!(sync.contains("NSWindowOrderingMode::Below"));
+        assert!(sync.contains("Some(button)"));
+        assert_eq!(
+            sync.matches("validate_owned_backing_hierarchy(buttons)?;")
+                .count(),
+            2,
+            "draw must preflight and explicit repair must postvalidate the same hierarchy contract",
+        );
+    }
+
+    #[test]
+    fn mutating_titlebar_commands_never_time_out_before_their_main_thread_ack() {
+        let source = production_source();
+        let compose = source_between(source, "pub async fn titlebar_compose(", "// 프런트 테마 적용 시 호출");
+        let backing = source_between(source, "pub async fn titlebar_backing(", "// 창 생성 시 draw owner");
+
+        for (name, transaction) in [("compose", compose), ("backing", backing)] {
+            let compact: String = transaction.split_whitespace().collect();
+            assert!(compact.contains("rx.await"), "{name} must await its exact ACK");
+            assert!(
+                !transaction.contains("tokio::time::timeout"),
+                "{name} must not report failure while its queued mutation can still execute",
+            );
+        }
     }
 }
-
-#[cfg(all(target_os = "macos", not(debug_assertions)))]
-unsafe fn dump_state(_label: &str, _window: &NSWindow) {}

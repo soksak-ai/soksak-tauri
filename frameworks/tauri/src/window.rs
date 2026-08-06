@@ -7,6 +7,430 @@
 
 use tauri::{AppHandle, Manager, WebviewWindowBuilder};
 
+mod startup;
+
+use startup::{
+    CompositionProof, CurrentNativeSequence, PresentationOutcome, RendererGreenReceipt,
+    StartupGate, StartupStatus, WindowPlatform,
+};
+pub(crate) use startup::WindowIdentity;
+
+#[derive(Debug, Default)]
+struct WindowStartupRuntime {
+    gate: StartupGate,
+    native_windows: std::collections::HashMap<String, (u64, usize)>,
+    macos_owner_receipts: std::collections::HashMap<String, (u64, String)>,
+}
+
+/// Tauri-only first-frame authority. Electron does not install or read this state.
+#[derive(Debug, Default)]
+pub struct WindowStartupState(std::sync::Mutex<WindowStartupRuntime>);
+
+fn startup_state(app: &AppHandle) -> tauri::State<'_, WindowStartupState> {
+    app.state::<WindowStartupState>()
+}
+
+fn native_window_pointer(window: &tauri::Window) -> Result<usize, String> {
+    #[cfg(target_os = "macos")]
+    {
+        return window
+            .ns_window()
+            .map(|pointer| pointer as usize)
+            .map_err(|error| error.to_string());
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        // Tauri guarantees one active Window handle per label. Non-macOS has no AppKit owner to
+        // fence, so the startup generation is the native lifetime identity at this boundary.
+        let _ = window;
+        Ok(0)
+    }
+}
+
+pub(crate) fn register_startup_window(
+    app: &AppHandle,
+    label: &str,
+    requested_focus: bool,
+) -> Result<WindowIdentity, String> {
+    let state = startup_state(app);
+    let mut runtime = state.0.lock().map_err(|_| "startup gate lock poisoned".to_string())?;
+    runtime
+        .gate
+        .begin_hidden(
+            label,
+            WindowPlatform::current(),
+            requested_focus,
+            crate::headless::is_headless(),
+        )
+        .map_err(|error| error.to_string())
+}
+
+pub(crate) fn bind_startup_native_window(
+    app: &AppHandle,
+    identity: &WindowIdentity,
+) -> Result<(), String> {
+    let window = app
+        .get_window(&identity.label)
+        .ok_or_else(|| format!("startup window disappeared before native binding: {}", identity.label))?;
+    let pointer = native_window_pointer(&window)?;
+    let state = startup_state(app);
+    let mut runtime = state.0.lock().map_err(|_| "startup gate lock poisoned".to_string())?;
+    let active = runtime
+        .gate
+        .active_identity(&identity.label)
+        .ok_or_else(|| format!("startup window is not registered: {}", identity.label))?;
+    if active != *identity {
+        return Err(format!(
+            "startup window generation changed before native binding: {}",
+            identity.label
+        ));
+    }
+    runtime.native_windows.insert(
+        identity.label.clone(),
+        (identity.generation.get(), pointer),
+    );
+    Ok(())
+}
+
+fn active_startup_identity_for_window(window: &tauri::Window) -> Result<WindowIdentity, String> {
+    let pointer = native_window_pointer(window)?;
+    let state = startup_state(window.app_handle());
+    let runtime = state.0.lock().map_err(|_| "startup gate lock poisoned".to_string())?;
+    let identity = runtime
+        .gate
+        .active_identity(window.label())
+        .ok_or_else(|| format!("startup window is not registered: {}", window.label()))?;
+    let Some((generation, registered_pointer)) = runtime.native_windows.get(window.label()) else {
+        return Err(format!("startup native window is not bound: {}", window.label()));
+    };
+    if *generation != identity.generation.get() || *registered_pointer != pointer {
+        return Err(format!(
+            "startup command came from a stale native window lifetime: {}",
+            window.label()
+        ));
+    }
+    Ok(identity)
+}
+
+fn startup_status_json(status: &StartupStatus) -> serde_json::Value {
+    let composition = match status.composition {
+        Some(CompositionProof::MacOs { sequence }) => serde_json::json!({
+            "kind": "macos-titlebar",
+            "nativeSequence": sequence.get(),
+        }),
+        Some(CompositionProof::Other) => serde_json::json!({ "kind": "dom" }),
+        None => serde_json::Value::Null,
+    };
+    serde_json::json!({
+        "schemaVersion": 1,
+        "kind": "tauri-window-startup",
+        "window": status.identity.label,
+        "generation": status.identity.generation.get(),
+        "platform": match status.platform { WindowPlatform::MacOs => "macos", WindowPlatform::Other => "other" },
+        "requestedFocus": status.requested_focus,
+        "headless": status.headless,
+        "creationCommitted": status.creation_committed,
+        "rendererGreen": status.renderer_green,
+        "composition": composition,
+        "presentationInFlight": status.presentation_in_flight,
+        "presented": status.presented,
+    })
+}
+
+fn forget_startup_window(app: &AppHandle, identity: &WindowIdentity) {
+    let state = startup_state(app);
+    if let Ok(mut runtime) = state.0.lock() {
+        if runtime.gate.forget(identity).unwrap_or(false) {
+            runtime.native_windows.remove(&identity.label);
+            runtime.macos_owner_receipts.remove(&identity.label);
+        }
+    };
+}
+
+fn try_present_startup_window(
+    window: &tauri::Window,
+    identity: &WindowIdentity,
+) -> Result<serde_json::Value, String> {
+    let status = {
+        let state = startup_state(window.app_handle());
+        let runtime = state.0.lock().map_err(|_| "startup gate lock poisoned".to_string())?;
+        runtime.gate.status(identity).map_err(|error| error.to_string())?
+    };
+
+    if status.presented || !status.creation_committed || !status.renderer_green {
+        return Ok(startup_status_json(&status));
+    }
+
+    let current_native_sequence = if status.headless {
+        // Suppression is decided before the platform receipt branch and performs no AppKit work.
+        CurrentNativeSequence::NotApplicable
+    } else {
+        #[cfg(target_os = "macos")]
+        {
+            let (expected_sequence, expected_owner_identity) = {
+                let sequence = match status.composition {
+                    Some(CompositionProof::MacOs { sequence }) => sequence.get(),
+                    _ => return Err("macOS startup window has no titlebar composition proof".to_string()),
+                };
+                let state = startup_state(window.app_handle());
+                let runtime = state.0.lock().map_err(|_| "startup gate lock poisoned".to_string())?;
+                let (generation, owner_identity) = runtime
+                    .macos_owner_receipts
+                    .get(window.label())
+                    .ok_or_else(|| format!("startup titlebar owner receipt is absent: {}", window.label()))?;
+                if *generation != identity.generation.get() {
+                    return Err(format!("startup titlebar owner receipt is stale: {}", window.label()));
+                }
+                (sequence, owner_identity.clone())
+            };
+            let pointer = window.ns_window().map_err(|error| error.to_string())?;
+            let native = unsafe { &*(pointer as *const objc2_app_kit::NSWindow) };
+            let actual_sequence = unsafe {
+                crate::titlebar::prepare_startup_presentation(
+                    native,
+                    window.label(),
+                    &expected_owner_identity,
+                    expected_sequence,
+                )?
+            };
+            CurrentNativeSequence::MacOs(actual_sequence)
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            CurrentNativeSequence::NotApplicable
+        }
+    };
+
+    let outcome = {
+        let state = startup_state(window.app_handle());
+        let mut runtime = state.0.lock().map_err(|_| "startup gate lock poisoned".to_string())?;
+        runtime
+            .gate
+            .take_present_decision(identity, current_native_sequence)
+            .map_err(|error| error.to_string())?
+    };
+
+    match outcome {
+        PresentationOutcome::Present(decision) => {
+            let presentation = (|| -> Result<(), String> {
+                #[cfg(target_os = "macos")]
+                {
+                    let expected_sequence = match decision.composition {
+                        CompositionProof::MacOs { sequence } => sequence.get(),
+                        CompositionProof::Other => {
+                            return Err("macOS startup decision has a DOM-only proof".to_string())
+                        }
+                    };
+                    let expected_owner_identity = {
+                        let state = startup_state(window.app_handle());
+                        let runtime = state
+                            .0
+                            .lock()
+                            .map_err(|_| "startup gate lock poisoned".to_string())?;
+                        let (generation, owner_identity) = runtime
+                            .macos_owner_receipts
+                            .get(window.label())
+                            .ok_or_else(|| {
+                                format!(
+                                    "startup titlebar owner receipt is absent: {}",
+                                    window.label()
+                                )
+                            })?;
+                        if *generation != identity.generation.get() {
+                            return Err(format!(
+                                "startup titlebar owner receipt is stale: {}",
+                                window.label()
+                            ));
+                        }
+                        owner_identity.clone()
+                    };
+                    let pointer = window.ns_window().map_err(|error| error.to_string())?;
+                    let native = unsafe { &*(pointer as *const objc2_app_kit::NSWindow) };
+                    if decision.requested_focus {
+                        native.makeKeyAndOrderFront(None);
+                    } else {
+                        // Tauri Window::show() always makes the window key on macOS. Restored
+                        // windows explicitly keep the user's current focus, so use the AppKit
+                        // non-key path.
+                        native.orderFront(None);
+                    }
+                    // Ordering/key activation may synchronously run AppKit's standard titlebar
+                    // layout. Reapply the exact renderer receipt after that layout and flush it in
+                    // this same main-thread turn, before WindowServer can publish the first frame.
+                    if let Err(error) = unsafe {
+                        crate::titlebar::prepare_startup_presentation(
+                            native,
+                            window.label(),
+                            &expected_owner_identity,
+                            expected_sequence,
+                        )
+                    } {
+                        native.orderOut(None);
+                        return Err(error);
+                    }
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    let _ = decision;
+                    window.show().map_err(|error| error.to_string())?;
+                }
+                Ok(())
+            })();
+
+            if let Err(error) = presentation {
+                let state = startup_state(window.app_handle());
+                if let Ok(mut runtime) = state.0.lock() {
+                    let _ = runtime.gate.abort_presentation(identity);
+                }
+                return Err(error);
+            }
+
+            let commit = {
+                let state = startup_state(window.app_handle());
+                let mut runtime = state
+                    .0
+                    .lock()
+                    .map_err(|_| "startup gate lock poisoned".to_string())?;
+                runtime
+                    .gate
+                    .commit_presentation(identity)
+                    .map_err(|error| error.to_string())
+            };
+            if let Err(error) = commit {
+                #[cfg(target_os = "macos")]
+                if let Ok(pointer) = window.ns_window() {
+                    let native = unsafe { &*(pointer as *const objc2_app_kit::NSWindow) };
+                    native.orderOut(None);
+                }
+                #[cfg(not(target_os = "macos"))]
+                let _ = window.hide();
+                let state = startup_state(window.app_handle());
+                if let Ok(mut runtime) = state.0.lock() {
+                    let _ = runtime.gate.abort_presentation(identity);
+                }
+                return Err(error);
+            }
+        }
+        PresentationOutcome::Pending
+        | PresentationOutcome::SuppressedHeadless
+        | PresentationOutcome::AlreadyPresented => {}
+    }
+
+    let state = startup_state(window.app_handle());
+    let runtime = state.0.lock().map_err(|_| "startup gate lock poisoned".to_string())?;
+    let status = runtime.gate.status(identity).map_err(|error| error.to_string())?;
+    Ok(startup_status_json(&status))
+}
+
+pub(crate) fn commit_startup_window(app: &AppHandle, identity: &WindowIdentity) -> Result<(), String> {
+    {
+        let state = startup_state(app);
+        let mut runtime = state.0.lock().map_err(|_| "startup gate lock poisoned".to_string())?;
+        runtime
+            .gate
+            .commit_creation(identity)
+            .map_err(|error| error.to_string())?;
+    }
+    if let Some(window) = app.get_window(&identity.label) {
+        let _ = try_present_startup_window(&window, identity)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn forget_startup_native_window(window: &tauri::Window) {
+    if let Ok(identity) = active_startup_identity_for_window(window) {
+        forget_startup_window(window.app_handle(), &identity);
+    }
+}
+
+#[tauri::command]
+pub fn window_startup_state(window: tauri::Window) -> Result<serde_json::Value, String> {
+    let identity = active_startup_identity_for_window(&window)?;
+    let state = startup_state(window.app_handle());
+    let runtime = state.0.lock().map_err(|_| "startup gate lock poisoned".to_string())?;
+    runtime
+        .gate
+        .status(&identity)
+        .map(|status| startup_status_json(&status))
+        .map_err(|error| error.to_string())
+}
+
+fn window_startup_present_on_main(
+    window: tauri::Window,
+    owner_identity: Option<String>,
+    native_sequence: Option<u64>,
+) -> Result<serde_json::Value, String> {
+    let identity = active_startup_identity_for_window(&window)?;
+    {
+        let state = startup_state(window.app_handle());
+        let mut runtime = state.0.lock().map_err(|_| "startup gate lock poisoned".to_string())?;
+        #[cfg(target_os = "macos")]
+        {
+            let owner_identity = owner_identity
+                .filter(|identity| !identity.is_empty())
+                .ok_or_else(|| "macOS startup presentation requires an owner identity".to_string())?;
+            let native_sequence = native_sequence
+                .filter(|sequence| *sequence > 0)
+                .ok_or_else(|| "macOS startup presentation requires a nonzero native sequence".to_string())?;
+            let pointer = window.ns_window().map_err(|error| error.to_string())?;
+            let native = unsafe { &*(pointer as *const objc2_app_kit::NSWindow) };
+            let current = unsafe {
+                crate::titlebar::prepare_startup_presentation(
+                    native,
+                    window.label(),
+                    &owner_identity,
+                    native_sequence,
+                )?
+            };
+            runtime
+                .gate
+                .accept_renderer_green(
+                    &identity,
+                    RendererGreenReceipt::MacOs {
+                        sequence: native_sequence,
+                        current_native_sequence: current,
+                    },
+                )
+                .map_err(|error| error.to_string())?;
+            runtime.macos_owner_receipts.insert(
+                identity.label.clone(),
+                (identity.generation.get(), owner_identity),
+            );
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = (owner_identity, native_sequence);
+            runtime
+                .gate
+                .accept_renderer_green(&identity, RendererGreenReceipt::Other)
+                .map_err(|error| error.to_string())?;
+        }
+    }
+    try_present_startup_window(&window, &identity)
+}
+
+#[tauri::command]
+pub async fn window_startup_present(
+    window: tauri::Window,
+    owner_identity: Option<String>,
+    native_sequence: Option<u64>,
+) -> Result<serde_json::Value, String> {
+    let presentation_window = window.clone();
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    window
+        .run_on_main_thread(move || {
+            let result = window_startup_present_on_main(
+                presentation_window,
+                owner_identity,
+                native_sequence,
+            );
+            let _ = tx.send(result);
+        })
+        .map_err(|error| error.to_string())?;
+    rx.await
+        .map_err(|error| format!("startup presentation main-thread ACK failed: {error}"))?
+}
+
 /// 물리 픽셀 창 크기를 **적용 완료 후** 답하는 Tauri 경계.
 ///
 /// tao의 macOS `set_inner_size`는 `setContentSize:`를 메인 GCD 큐에 async dispatch하고 즉시
@@ -43,6 +467,7 @@ pub async fn window_set_physical_size(
             // setContentSize는 NSWindow frame을 먼저 바꾸고 content hierarchy의 bounds 정착은
             // layout에서 끝낸다. affine 투영이 이전 parent bounds를 읽지 않게 순서를 고정한다.
             native.layoutIfNeeded();
+            crate::titlebar::recompose_from_appkit_resize(native, &resize_label);
             crate::webview::resize_registered_surface_hosts(&resize_label);
             crate::webview::resize_pane_surface_hosts(&resize_label);
             crate::webview::appkit_events::commit_resize_composition(native);
@@ -63,23 +488,9 @@ pub async fn window_set_physical_size(
 }
 
 // 한 창의 네이티브를 설치하는 단일 진입점(MW1) — main(setup)·새 창(window_create)이 같은 함수를
-// 호출해 중복·누락을 막는다. 레이어 역전(hole-punch)과 신호등을 그 창에 건다. 앱 전역 모니터
-// (클릭·라이브리사이즈)는 창과 무관하게 1회만 설치되므로 여기 포함하지 않는다(lib.rs setup).
-// 신호등 inset 좌표(conf trafficLightPosition, 전 창 공통 정책·단일 진실). 미설정 시 (12,20).
-// 창별 즉시 적용(install_window_natives)과 앱 전역 유지 옵저버(titlebar::install_global_observers)가 공유.
+// 호출해 중복·누락을 막는다. 레이어 역전과 Tauri/macOS draw owner는 이 어댑터에만 존재한다.
 #[cfg(target_os = "macos")]
-pub fn traffic_light_inset(app: &AppHandle) -> (f64, f64) {
-    app.config()
-        .app
-        .windows
-        .first()
-        .and_then(|w| w.traffic_light_position.as_ref())
-        .map(|p| (p.x, p.y))
-        .unwrap_or((12.0, 20.0))
-}
-
-#[cfg(target_os = "macos")]
-pub fn install_window_natives(app: &AppHandle, label: &str) {
+pub fn install_window_natives(app: &AppHandle, label: &str) -> Result<(), String> {
     crate::webview::install_layer_inversion(app, label);
     if let Some(window) = app.get_window(label) {
         // 이 창의 가시 내용은 DOM WKWebView·child WKWebView·CEF remote layer처럼 각자
@@ -92,9 +503,16 @@ pub fn install_window_natives(app: &AppHandle, label: &str) {
         }
         // NSWindow↔label 캐시 등록 — AppKit 통지 블록이 wry 를 묻지 않고 역해소하게(webview.rs).
         crate::webview::appkit_events::note_nswindow_label(&window);
-        let (x, y) = traffic_light_inset(app);
-        crate::titlebar::install(&window, x, y);
+        let declared_traffic_light_x = app
+            .config()
+            .app
+            .windows
+            .first()
+            .and_then(|config| config.traffic_light_position.as_ref())
+            .map(|position| position.x);
+        crate::titlebar::install(&window, declared_traffic_light_x)?;
     }
+    Ok(())
 }
 
 // 새 창 생성(소켓 명령 window.new 의 핸들러). 본체는 create_window 가 소유 — Dock 메뉴 등 명령 밖
@@ -161,7 +579,7 @@ pub fn create_window_init(
         .and_then(|w| Some((w.outer_position().ok()?, w.scale_factor().ok()?)));
 
     let label = format!("w-{}", uuid::Uuid::new_v4());
-    create_window_core(app, &label, init, focus)?;
+    let startup = create_window_core(app, &label, init, focus)?;
 
     // 활성 창에서 가로·세로 ~1cm(28pt) 캐스케이드 — 정확히 겹치면 새 창이 떴는지 눈으로 알 수 없다.
     // 물리 좌표를 배율로 나눠 논리 좌표로 환산 → 어느 DPI 든 시각적 1cm. 소스 창이 없으면 OS 기본 위치.
@@ -172,6 +590,7 @@ pub fn create_window_init(
             pos.y as f64 / scale + CASCADE_PT,
         ));
     }
+    commit_startup_window(app, &startup)?;
     Ok(label)
 }
 
@@ -184,11 +603,12 @@ fn create_window_labeled(
     init: Option<&str>,
     focus: bool,
 ) -> Result<String, String> {
-    create_window_core(app, label, init, focus)?;
+    let startup = create_window_core(app, label, init, focus)?;
     if let (Some((x, y, w, h)), Some(win)) = (rect, app.get_window(label)) {
         let _ = win.set_position(tauri::LogicalPosition::new(x, y));
         let _ = win.set_size(tauri::LogicalSize::new(w, h));
     }
+    commit_startup_window(app, &startup)?;
     Ok(label.to_string())
 }
 
@@ -198,7 +618,8 @@ fn create_window_core(
     label: &str,
     init: Option<&str>,
     focus: bool,
-) -> Result<(), String> {
+) -> Result<WindowIdentity, String> {
+    let startup = register_startup_window(app, label, focus)?;
     // 메인 창 설정(tauri.conf.json windows[0])을 통째로 상속하고 label 만 교체한다 — 타이틀·
     // titleBarStyle·hiddenTitle·신호등·decorations·transparent 등 모든 속성이 메인과 정합한다.
     // 수동 빌더로 일부 속성만 옮기면 conf 와 어긋난다(타이틀 "soksak" 고정, 드래그영역/장식 손실).
@@ -211,6 +632,7 @@ fn create_window_core(
         .cloned()
         .ok_or_else(|| "창 설정 없음(tauri.conf.json windows[0])".to_string())?;
     cfg.label = label.to_string();
+    cfg.visible = false;
     // 포커스는 임의로 주지 않는다 — 리스폰(focus=false)은 백그라운드로 되살리고 현재 포커스를
     // 뺏지 않는다. 사용자가 연 새 창(focus=true)만 자연스럽게 앞으로 온다(conf 기본 상속 대신 명시).
     cfg.focus = focus;
@@ -235,14 +657,33 @@ fn create_window_core(
             other => other.clone(),
         };
     }
-    WebviewWindowBuilder::from_config(app, &cfg)
-        .map_err(|e| e.to_string())?
-        .build()
-        .map_err(|e| e.to_string())?;
+    let build = (|| {
+        WebviewWindowBuilder::from_config(app, &cfg)
+            .map_err(|error| error.to_string())?
+            .build()
+            .map_err(|error| error.to_string())
+    })();
+    if let Err(error) = build {
+        forget_startup_window(app, &startup);
+        return Err(error);
+    }
+    if let Err(error) = bind_startup_native_window(app, &startup) {
+        if let Some(window) = app.get_window(label) {
+            let _ = window.destroy();
+        }
+        forget_startup_window(app, &startup);
+        return Err(error);
+    }
 
     // 이 창에 네이티브 설치(레이어 역전·신호등) — main 과 동일한 단일 진입점.
     #[cfg(target_os = "macos")]
-    install_window_natives(app, label);
+    if let Err(error) = install_window_natives(app, label) {
+        if let Some(window) = app.get_window(label) {
+            let _ = window.destroy();
+        }
+        forget_startup_window(app, &startup);
+        return Err(error);
+    }
 
     // 창 생성의 완료 조건에는 명령 주소 등록이 포함된다. focus=false 복원 창은 Focused(true)
     // 사건을 내지 않으므로 포커스 콜백에 맡기면 window.list에는 보이지만 cored는 못 찾는 창이
@@ -260,11 +701,14 @@ fn create_window_core(
             .destroy()
             .map_err(|e| format!("새 창 주소 등록 실패({why}); 창 되돌리기도 실패했다: {e}"));
         return match rollback {
-            Ok(()) => Err(format!("새 창 주소 등록 실패로 생성을 되돌렸다: {why}")),
+            Ok(()) => {
+                forget_startup_window(app, &startup);
+                Err(format!("새 창 주소 등록 실패로 생성을 되돌렸다: {why}"))
+            }
             Err(e) => Err(e),
         };
     }
-    Ok(())
+    Ok(startup)
 }
 
 // ── 창 닫힘 의미론(B1) ───────────────────────────────────────────────────────

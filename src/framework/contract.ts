@@ -132,6 +132,16 @@ export interface AppFramework {
    */
   install(): Promise<void>;
 
+  /**
+   * Reveal the current framework window after its initial DOM has committed.
+   *
+   * Some native frameworks must create a window hidden and validate a native/DOM composition
+   * receipt before the first visible frame. DOM-native frameworks already have one compositor and
+   * complete this as an idempotent no-op. The application owns only the lifecycle boundary; each
+   * adapter owns its presentation mechanism.
+   */
+  presentWindow(): Promise<void>;
+
   /** 백엔드 명령 호출. 프레임워크가 프로세스 내부 호출이든 소켓이든 앱은 모른다. */
   invoke<T = unknown>(cmd: string, args?: Record<string, unknown>): Promise<T>;
 

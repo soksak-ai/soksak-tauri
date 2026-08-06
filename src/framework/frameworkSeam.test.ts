@@ -66,6 +66,8 @@ describe("프레임워크 경계 — 벤더 SDK 는 어댑터만 안다", () => 
     const { tauriFramework } = await import("./tauri");
     for (const key of [
       "name",
+      "install",
+      "presentWindow",
       "invoke",
       "createStream",
       "listen",

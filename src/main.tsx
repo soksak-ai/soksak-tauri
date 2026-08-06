@@ -1,5 +1,5 @@
 import ReactDOM from "react-dom/client";
-import { installFramework, invoke as bootInvoke } from "./framework";
+import { installFramework, presentWindow, invoke as bootInvoke } from "./framework";
 import { bootFactPayload } from "./lib/bootFact";
 // 부트 오류 관찰(P12 사각지대 커버) — 렌더/모듈 오류로 화면이 백지가 되면 스냅샷·DOM 으로는
 // 원인을 볼 수 없다. 전역 오류를 활동 허브(boot.error)로 발행해 소켓 activity.recent 만으로
@@ -136,11 +136,14 @@ async function boot(): Promise<void> {
     // 해제한다(잠긴 채 두면 이 창으로 온 미등록 명령이 타임아웃까지 대기).
     markCommandHostReady();
     bootStamp("main-ready");
-    void initControlPlaneFrame();
+    // 숨겨진 native 창의 최종 위치·크기를 먼저 확정한다. 첫 visible frame 뒤에 복원하면
+    // 신호등과 DOM이 맞아도 창 전체가 한 번 점프한다.
+    await initControlPlaneFrame();
     void respawnSavedWindows();
     ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
       <OrchestratorApp />,
     );
+    await presentWindow();
     bootDone();
     return;
   }
@@ -181,6 +184,7 @@ async function boot(): Promise<void> {
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <App />,
   );
+  await presentWindow();
   bootStamp("render");
   installSwapObserver(); // 교체(파킹↔등장) 관측 — 렌더 이후 문서 전체 1회
   // 표면 감사·DOM 홀은 여기서 걸지 않는다 — 둘 다 콘텐츠가 문서 밖일 때만 뜻이 있는 장치이고,

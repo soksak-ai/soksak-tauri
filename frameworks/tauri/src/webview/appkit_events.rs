@@ -354,6 +354,9 @@ pub fn install_live_resize_monitor(app: &AppHandle) {
         };
         let ns_ptr = Retained::as_ptr(&window) as usize;
         if let Some(label) = NSWINDOW_LABELS.label(ns_ptr) {
+            // One resize epoch, one ordered native transaction: titlebar alignment first, every
+            // embedded surface second, then the sole layout/display commit below.
+            crate::titlebar::recompose_from_appkit_resize(&window, &label);
             super::layer::resize_registered_surface_hosts(&label);
             super::layer::resize_pane_surface_hosts(&label);
             commit_resize_composition(&window);

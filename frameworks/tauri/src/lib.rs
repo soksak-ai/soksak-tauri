@@ -114,7 +114,8 @@ pub fn run() {
         .manage(ai_session::SessionTracker::default())
         .manage(schedule::ScheduleState::default())
         .manage(project_registry::ProjectRegistry::default())
-        .manage(id_registry::IdRegistry::default());
+        .manage(id_registry::IdRegistry::default())
+        .manage(window::WindowStartupState::default());
     // 렌더러 프로세스 종료(process-gone)를 명시 감지한다(macOS per-webview) — 이 핸들러를
     // 등록하지 않으면 핀 rev 의 tauri-runtime-wry 가 무조건·무한·무고지 자동 reload 기본
     // 핸들러를 설치한다(R1 위반). webview_health 서킷 브레이커가 그 자리를 대체한다.
@@ -169,6 +170,12 @@ pub fn run() {
     });
     builder
         .setup(|app| {
+            // Configured windows are born hidden. Register this exact native lifetime before any
+            // native/renderer work so no pre-composition frame can become externally visible.
+            let main_startup = window::register_startup_window(app.handle(), "main", true)
+                .map_err(std::io::Error::other)?;
+            window::bind_startup_native_window(app.handle(), &main_startup)
+                .map_err(std::io::Error::other)?;
             // 가려진 창도 계속 그린다 — 앞으로 내지 않고도 잴 수 있게 하는 자기 선언.
             app_nap::hold();
             // identity 홈 확정 — 모든 경로(데이터·플러그인·사이드카·테마·프로젝트·소켓·시크릿)가
@@ -438,26 +445,24 @@ pub fn run() {
             // 검증된 보안 하한선(remote::*)을 코어 밖 프로세스에서 구동하고, 인가된 명령을 SOKSAK_SOCKET
             // 으로 코어에 중계하며 destructive 는 코어 remote.confirm 사람 모달을 거친다. 코어는 모달
             // (RemoteConfirmModal + remote.confirm 커맨드)만 남긴다 — iroh/snow 트리는 코어에서 빠진다.
-            // 신호등: 좌표는 tauri.conf.json trafficLightPosition 이 소유, 유지는
-            // titlebar::install 의 NSNotification 옵저버가 담당(titlebar.rs 참조).
+            // 신호등: Tauri unstable 경계의 창별 draw owner가 공개 DOM 목표를 소유한다.
             #[cfg(target_os = "macos")]
             {
                 // main 창 네이티브(레이어 역전·신호등) — 새 창과 동일한 단일 진입점(window.rs).
-                window::install_window_natives(app.handle(), "main");
+                window::install_window_natives(app.handle(), "main")
+                    .map_err(std::io::Error::other)?;
                 // 앱 전역 모니터(클릭·라이브리사이즈) — 창 무관 1회 설치. 모든 창을 추적하고 어느
                 // 창인지 label 을 동반 emit 한다(MW4 — webview.rs 머리말). 프론트가 자기 창만 필터.
                 webview::appkit_events::install_click_monitor(app.handle());
                 webview::appkit_events::install_live_resize_monitor(app.handle());
-                // 신호등 유지 옵저버 — 앱 전역 1회(모든 창). 창마다 달면 창 닫아도 안 빠져 누수.
-                // 신호등/titlebar 는 macOS 전용 개념(창 데코 커스터마이즈) — 모듈이 macos-only 라 gate.
-                #[cfg(target_os = "macos")]
-                {
-                    let (tlx, tly) = window::traffic_light_inset(app.handle());
-                    titlebar::install_global_observers(tlx, tly);
-                }
                 // Dock 우클릭 "새 창"(Terminal.app 관례) — 앱 델리게이트 applicationDockMenu: 주입.
                 dockmenu::install(app.handle());
             }
+            // Renderer GREEN remains the independent second prerequisite. If it arrived early,
+            // this commit completes the same one-shot transaction; otherwise the renderer command
+            // completes it later.
+            window::commit_startup_window(app.handle(), &main_startup)
+                .map_err(std::io::Error::other)?;
             // 헤드리스 부팅(CI·cron·무-GUI): main(control-plane) 창을 숨긴 채 소켓·레지스트리만
             // 올린다(webview 유지). 프로젝트 창은 온디맨드라 여기서 아무것도 안 뜬다 — 오케스트라
             // vs 프로젝트 창 구분이 그대로. 크로스플랫폼(macOS/Linux/Windows 러너 모두).
@@ -540,6 +545,7 @@ pub fn run() {
                     }
                 }
                 tauri::WindowEvent::Destroyed => {
+                    window::forget_startup_native_window(window);
                     ipc::note_closed(window.label()); // 포커스 기록이 죽은 창을 놓는다(다음 명령의 오배송 차단)
                     webview::forget_window(window.label()); // child/pane/page-load identity를 해제된 NSView와 함께 회수
                     // cored 도 그 창을 놓아야 한다 — **살아 있는 목록**을 보내면 장부가 스스로
@@ -549,6 +555,8 @@ pub fn run() {
                     cored_host::announce_windows_without(window.app_handle(), window.label());
                     #[cfg(target_os = "macos")]
                     webview::appkit_events::forget_nswindow_label(window.label()); // NSWindow↔label 캐시 회수
+                    #[cfg(target_os = "macos")]
+                    titlebar::forget_window(window); // 정확히 이 native 창 generation의 titlebar owner만 회수
                     crate::sidecar::forget_window(window.label()); // 사이드카 surface 캐시 무효화(stale NSView 방지)
                     window::forget_teardown(window.label()); // 회수 마크 폐기(맵 무한 증가 차단)
                                                                    // 브레이커 엔트리 폐기 — 창 label 은 재사용 안 되므로 남기면 맵이 무한 증가(느린 누수).
@@ -799,6 +807,8 @@ pub fn run() {
             window::window_focus,
             window::window_close,
             window::window_reload,
+            window::window_startup_state,
+            window::window_startup_present,
             #[cfg(unix)]
             cored_host::control_owner_answered,
             ipc::cmd_result,
@@ -808,6 +818,10 @@ pub fn run() {
             ipc::ipc_hello_info,
             #[cfg(target_os = "macos")]
             titlebar::titlebar_backing,
+            #[cfg(target_os = "macos")]
+            titlebar::titlebar_native_state,
+            #[cfg(target_os = "macos")]
+            titlebar::titlebar_compose,
             window_activate,
             sidecar::sidecar_open,
             sidecar::sidecar_send,

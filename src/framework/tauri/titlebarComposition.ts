@@ -1,76 +1,88 @@
-/** DOM titlebar facts use CSS pixels with a top-left origin. */
-export interface CssRect {
+/** Tauri titlebar composition is compared only after both sides are projected into this space. */
+export interface PhysicalRect {
   x: number;
   y: number;
   w: number;
   h: number;
 }
 
-/** AppKit titlebar facts use points with a bottom-left origin. */
-export type NativeRect = CssRect;
-
 export type TrafficLightRole = "close" | "minimize" | "zoom";
 
-export interface NativeTitlebarElement {
+export interface TitlebarElement {
   role: TrafficLightRole;
-  rect: NativeRect | null;
+  rect: PhysicalRect | null;
+  hidden?: boolean;
 }
 
 export interface TitlebarCompositionInput {
-  /** DOM hole reserved for all three traffic-light buttons. */
-  reservation: CssRect | null;
-  /** Height of the AppKit coordinate space containing the native facts, in points. */
-  nativeViewportHeight: number | null;
-  buttons: readonly (NativeTitlebarElement | null)[] | null;
-  backings: readonly (NativeTitlebarElement | null)[] | null;
-  /** CSS px -> AppKit point scale used by whole-window zoom. */
-  zoom: number | null;
-  /** AppKit point -> physical pixel scale reported by the screen. */
-  backingScale: number | null;
+  /** The rendered DOM titlebar, projected to physical pixels with a viewport top-left origin. */
+  titlebar: PhysicalRect | null;
+  /** Three real DOM reservation elements, one per traffic-light role. */
+  reservations: readonly (TitlebarElement | null)[] | null;
+  /** Three AppKit standardWindowButton rects in the same physical coordinate space. */
+  buttons: readonly (TitlebarElement | null)[] | null;
+  /** Immutable native target derived from the committed DOM titlebar and configured X origins. */
+  declaredButtons: readonly (TitlebarElement | null)[] | null;
+  /** Three owned AppKit backing rects in the same physical coordinate space. */
+  backings: readonly (TitlebarElement | null)[] | null;
 }
 
 export const TITLEBAR_ROUNDING_TOLERANCE_PHYSICAL_PX = 0.5;
 
 export type TitlebarCompositionIssue =
-  | "missing-reservation"
-  | "invalid-reservation"
-  | "missing-native-viewport-height"
-  | "invalid-native-viewport-height"
-  | "missing-zoom"
-  | "invalid-zoom"
-  | "missing-backing-scale"
-  | "invalid-backing-scale"
+  | "missing-titlebar"
+  | "invalid-titlebar"
+  | "reservation-count"
   | "button-count"
+  | "declared-button-count"
   | "backing-count"
+  | "reservation-missing"
   | "button-missing"
+  | "declared-button-missing"
   | "backing-missing"
+  | "invalid-reservation-rect"
   | "invalid-button-rect"
+  | "invalid-declared-button-rect"
   | "invalid-backing-rect"
+  | "reservation-order"
   | "button-order"
+  | "declared-button-order"
   | "backing-order"
+  | "reservation-overlap"
   | "button-overlap"
+  | "declared-button-overlap"
   | "backing-overlap"
-  | "outside-reservation"
+  | "outside-titlebar"
   | "vertical-center"
+  | "reservation-button-mismatch"
+  | "declared-button-mismatch"
   | "backing-mismatch";
 
 export interface TitlebarCompositionMeasurement {
   role: TrafficLightRole;
-  buttonCss: CssRect | null;
-  backingCss: CssRect | null;
-  /** Signed button-center delta from the DOM reservation center. */
-  centerDeltaPhysicalPx: number | null;
-  /** Absolute button/backing deltas in physical pixels. */
-  backingDeltaPhysicalPx: CssRect | null;
+  reservationPhysical: PhysicalRect | null;
+  buttonPhysical: PhysicalRect | null;
+  declaredButtonPhysical: PhysicalRect | null;
+  backingPhysical: PhysicalRect | null;
+  /** Signed center deltas from the DOM titlebar center, already in physical pixels. */
+  centerDeltaPhysicalPx: {
+    reservation: number | null;
+    button: number | null;
+    declaredButton: number | null;
+    backing: number | null;
+  };
+  /** Absolute rect deltas, already in physical pixels. */
+  reservationButtonDeltaPhysicalPx: PhysicalRect | null;
+  declaredButtonDeltaPhysicalPx: PhysicalRect | null;
+  backingButtonDeltaPhysicalPx: PhysicalRect | null;
 }
 
 export interface TitlebarCompositionVerdict {
   coordinateContract: {
-    dom: "CSS px, viewport top-left";
-    native: "AppKit pt, viewport bottom-left";
+    shared: "physical px, viewport top-left";
+    domSource: "getBoundingClientRect × cssToPhysicalScale";
+    nativeSource: "AppKit view rect converted to contentView backing coordinates";
     roundingTolerancePhysicalPx: typeof TITLEBAR_ROUNDING_TOLERANCE_PHYSICAL_PX;
-    zoom: number | null;
-    backingScale: number | null;
   };
   measurements: TitlebarCompositionMeasurement[];
   checks: {
@@ -78,6 +90,8 @@ export interface TitlebarCompositionVerdict {
     order: boolean;
     nonOverlap: boolean;
     containment: boolean;
+    oneToOne: boolean;
+    declaredTarget: boolean;
     verticalCenter: boolean;
     backingMatch: boolean;
   };
@@ -85,11 +99,14 @@ export interface TitlebarCompositionVerdict {
   verdict: "green" | "red";
 }
 
-const EXPECTED_ROLES: readonly TrafficLightRole[] = ["close", "minimize", "zoom"];
+export const TRAFFIC_LIGHT_ROLES: readonly TrafficLightRole[] = Object.freeze([
+  "close",
+  "minimize",
+  "zoom",
+]);
 
 const finite = (value: number): boolean => Number.isFinite(value);
-const positive = (value: number | null): value is number => value !== null && finite(value) && value > 0;
-const validRect = (rect: CssRect | null): rect is CssRect => !!rect
+const validRect = (rect: PhysicalRect | null): rect is PhysicalRect => !!rect
   && finite(rect.x)
   && finite(rect.y)
   && finite(rect.w)
@@ -97,96 +114,81 @@ const validRect = (rect: CssRect | null): rect is CssRect => !!rect
   && rect.w > 0
   && rect.h > 0;
 
-/**
- * AppKit bottom-left -> DOM top-left conversion. Invalid coordinate facts remain null;
- * callers must not silently replace them with a scale or height default.
- */
-export function nativeBottomLeftRectToCssTopLeft(
-  rect: NativeRect | null,
-  nativeViewportHeight: number | null,
-  zoom: number | null,
-): CssRect | null {
-  if (!validRect(rect) || !positive(nativeViewportHeight) || !positive(zoom)) return null;
+/** The only geometry tolerance: at most one half of one physical backing pixel. */
+export function isRoundingOnlyPhysicalDelta(deltaPhysicalPx: number): boolean {
+  return finite(deltaPhysicalPx)
+    && Math.abs(deltaPhysicalPx) <= TITLEBAR_ROUNDING_TOLERANCE_PHYSICAL_PX;
+}
+
+export function cssRectToPhysical(rect: PhysicalRect, cssToPhysicalScale: number): PhysicalRect | null {
+  if (!validRect(rect) || !finite(cssToPhysicalScale) || cssToPhysicalScale <= 0) return null;
   return {
-    x: rect.x / zoom,
-    y: (nativeViewportHeight - rect.y - rect.h) / zoom,
-    w: rect.w / zoom,
-    h: rect.h / zoom,
+    x: rect.x * cssToPhysicalScale,
+    y: rect.y * cssToPhysicalScale,
+    w: rect.w * cssToPhysicalScale,
+    h: rect.h * cssToPhysicalScale,
   };
 }
 
-/** The only geometry tolerance: at most one half of one physical backing pixel. */
-export function isRoundingOnlyDelta(
-  deltaCss: number,
-  zoom: number | null,
-  backingScale: number | null,
-): boolean {
-  return finite(deltaCss)
-    && positive(zoom)
-    && positive(backingScale)
-    && Math.abs(deltaCss * zoom * backingScale) <= TITLEBAR_ROUNDING_TOLERANCE_PHYSICAL_PX;
-}
+const centerY = (rect: PhysicalRect): number => rect.y + rect.h / 2;
+const right = (rect: PhysicalRect): number => rect.x + rect.w;
+const bottom = (rect: PhysicalRect): number => rect.y + rect.h;
 
-const physical = (deltaCss: number, zoom: number, backingScale: number): number =>
-  deltaCss * zoom * backingScale;
-
-const centerY = (rect: CssRect): number => rect.y + rect.h / 2;
-const right = (rect: CssRect): number => rect.x + rect.w;
-const bottom = (rect: CssRect): number => rect.y + rect.h;
-
-const hasOneOfEachRole = (items: readonly (NativeTitlebarElement | null)[] | null): boolean => {
-  if (!items || items.length !== EXPECTED_ROLES.length || items.some((item) => !item)) return false;
-  return EXPECTED_ROLES.every((role) => items.filter((item) => item?.role === role).length === 1);
+const exactRoles = (items: readonly (TitlebarElement | null)[] | null): boolean => {
+  if (!items || items.length !== TRAFFIC_LIGHT_ROLES.length || items.some((item) => !item)) return false;
+  return TRAFFIC_LIGHT_ROLES.every((role) => items.filter((item) => item?.role === role).length === 1);
 };
 
-const ordered = (
-  items: readonly (NativeTitlebarElement | null)[] | null,
-  rects: readonly (CssRect | null)[],
-): boolean => {
-  if (!items || items.length !== EXPECTED_ROLES.length || rects.some((rect) => !rect)) return false;
-  return EXPECTED_ROLES.every((role, index) => items[index]?.role === role)
-    && rects.slice(1).every((rect, index) => rect!.x > rects[index]!.x);
+const ordered = (items: readonly (TitlebarElement | null)[] | null): boolean => {
+  if (!items || items.length !== TRAFFIC_LIGHT_ROLES.length) return false;
+  return TRAFFIC_LIGHT_ROLES.every((role, index) => items[index]?.role === role)
+    && items.slice(1).every((item, index) => {
+      const previous = items[index]?.rect ?? null;
+      return validRect(previous) && validRect(item?.rect ?? null) && item!.rect!.x > previous.x;
+    });
 };
 
-const disjoint = (
-  rects: readonly (CssRect | null)[],
-  zoom: number | null,
-  backingScale: number | null,
-): boolean => {
-  if (rects.length !== EXPECTED_ROLES.length || rects.some((rect) => !rect)) return false;
-  return rects.slice(1).every((rect, index) => {
-    const overlapCss = right(rects[index]!) - rect!.x;
-    return overlapCss <= 0 || isRoundingOnlyDelta(overlapCss, zoom, backingScale);
+const rects = (items: readonly (TitlebarElement | null)[] | null): (PhysicalRect | null)[] =>
+  TRAFFIC_LIGHT_ROLES.map((role) => {
+    const matches = items?.filter((item) => item?.role === role) ?? [];
+    return matches.length === 1 ? matches[0]?.rect ?? null : null;
+  });
+
+const disjoint = (values: readonly (PhysicalRect | null)[]): boolean => {
+  if (values.length !== TRAFFIC_LIGHT_ROLES.length || values.some((rect) => !validRect(rect))) return false;
+  return values.slice(1).every((rect, index) => {
+    const overlap = right(values[index]!) - rect!.x;
+    return overlap <= 0 || isRoundingOnlyPhysicalDelta(overlap);
   });
 };
 
-const contained = (
-  outer: CssRect,
-  inner: CssRect,
-  zoom: number,
-  backingScale: number,
-): boolean => {
-  const overflows = [
-    outer.x - inner.x,
-    outer.y - inner.y,
-    right(inner) - right(outer),
-    bottom(inner) - bottom(outer),
-  ];
-  return overflows.every((overflow) =>
-    overflow <= 0 || isRoundingOnlyDelta(overflow, zoom, backingScale));
-};
+const contained = (outer: PhysicalRect, inner: PhysicalRect): boolean => [
+  outer.x - inner.x,
+  outer.y - inner.y,
+  right(inner) - right(outer),
+  bottom(inner) - bottom(outer),
+].every((overflow) => overflow <= 0 || isRoundingOnlyPhysicalDelta(overflow));
 
-const matchingRect = (
-  a: CssRect,
-  b: CssRect,
-  zoom: number,
-  backingScale: number,
-): boolean => [a.x - b.x, a.y - b.y, a.w - b.w, a.h - b.h]
-  .every((delta) => isRoundingOnlyDelta(delta, zoom, backingScale));
+const matchingRect = (a: PhysicalRect, b: PhysicalRect): boolean =>
+  [a.x - b.x, a.y - b.y, a.w - b.w, a.h - b.h]
+    .every(isRoundingOnlyPhysicalDelta);
+
+const rectDelta = (a: PhysicalRect, b: PhysicalRect): PhysicalRect => ({
+  x: Math.abs(a.x - b.x),
+  y: Math.abs(a.y - b.y),
+  w: Math.abs(a.w - b.w),
+  h: Math.abs(a.h - b.h),
+});
+
+const missingRect = (items: readonly (TitlebarElement | null)[] | null): boolean =>
+  !!items?.some((item) => item === null || item.rect === null);
+
+const invalidPresentRect = (items: readonly (TitlebarElement | null)[] | null): boolean =>
+  !!items?.some((item) => item?.rect !== null && !validRect(item?.rect ?? null));
 
 /**
- * Pure verdict for the DOM reservation and the six native titlebar views. Every input fact is
- * mandatory. The verdict never guesses a scale, coordinate height, missing rect, or role.
+ * Pure 3:3:3 verdict. DOM reservations, AppKit buttons and owned AppKit backings must already be
+ * expressed in physical viewport pixels. Missing facts remain RED; no scale, rect or role is guessed.
  */
 export function judgeTitlebarComposition(input: TitlebarCompositionInput): TitlebarCompositionVerdict {
   const issues: TitlebarCompositionIssue[] = [];
@@ -194,120 +196,151 @@ export function judgeTitlebarComposition(input: TitlebarCompositionInput): Title
     if (!issues.includes(issue)) issues.push(issue);
   };
 
-  if (input.reservation === null) addIssue("missing-reservation");
-  else if (!validRect(input.reservation)) addIssue("invalid-reservation");
-  if (input.nativeViewportHeight === null) addIssue("missing-native-viewport-height");
-  else if (!positive(input.nativeViewportHeight)) addIssue("invalid-native-viewport-height");
-  if (input.zoom === null) addIssue("missing-zoom");
-  else if (!positive(input.zoom)) addIssue("invalid-zoom");
-  if (input.backingScale === null) addIssue("missing-backing-scale");
-  else if (!positive(input.backingScale)) addIssue("invalid-backing-scale");
+  if (input.titlebar === null) addIssue("missing-titlebar");
+  else if (!validRect(input.titlebar)) addIssue("invalid-titlebar");
 
-  const buttonCount = hasOneOfEachRole(input.buttons);
-  const backingCount = hasOneOfEachRole(input.backings);
+  const reservationCount = exactRoles(input.reservations);
+  const buttonCount = exactRoles(input.buttons);
+  const declaredButtonCount = exactRoles(input.declaredButtons);
+  const backingCount = exactRoles(input.backings);
+  if (!reservationCount) addIssue("reservation-count");
   if (!buttonCount) addIssue("button-count");
+  if (!declaredButtonCount) addIssue("declared-button-count");
   if (!backingCount) addIssue("backing-count");
-  if (input.buttons?.some((button) => button === null || button.rect === null)) addIssue("button-missing");
-  if (input.backings?.some((backing) => backing === null || backing.rect === null)) addIssue("backing-missing");
-  if (input.buttons?.some((button) => button?.rect !== null && !validRect(button?.rect ?? null))) {
-    addIssue("invalid-button-rect");
-  }
-  if (input.backings?.some((backing) => backing?.rect !== null && !validRect(backing?.rect ?? null))) {
-    addIssue("invalid-backing-rect");
-  }
+  if (missingRect(input.reservations)) addIssue("reservation-missing");
+  if (missingRect(input.buttons)) addIssue("button-missing");
+  if (missingRect(input.declaredButtons)) addIssue("declared-button-missing");
+  if (missingRect(input.backings)) addIssue("backing-missing");
+  if (invalidPresentRect(input.reservations)) addIssue("invalid-reservation-rect");
+  if (invalidPresentRect(input.buttons)) addIssue("invalid-button-rect");
+  if (invalidPresentRect(input.declaredButtons)) addIssue("invalid-declared-button-rect");
+  if (invalidPresentRect(input.backings)) addIssue("invalid-backing-rect");
 
-  const buttonCss = EXPECTED_ROLES.map((_, index) =>
-    nativeBottomLeftRectToCssTopLeft(
-      input.buttons?.[index]?.rect ?? null,
-      input.nativeViewportHeight,
-      input.zoom,
-    ));
-  const backingCss = EXPECTED_ROLES.map((_, index) =>
-    nativeBottomLeftRectToCssTopLeft(
-      input.backings?.[index]?.rect ?? null,
-      input.nativeViewportHeight,
-      input.zoom,
-    ));
+  const reservationRects = rects(input.reservations);
+  const buttonRects = rects(input.buttons);
+  const declaredButtonRects = rects(input.declaredButtons);
+  const backingRects = rects(input.backings);
 
-  const count = buttonCount && backingCount;
-  const buttonOrder = ordered(input.buttons, buttonCss);
-  const backingOrder = ordered(input.backings, backingCss);
-  const order = buttonOrder && backingOrder;
+  const reservationOrder = ordered(input.reservations);
+  const buttonOrder = ordered(input.buttons);
+  const declaredButtonOrder = ordered(input.declaredButtons);
+  const backingOrder = ordered(input.backings);
+  const order = reservationOrder && buttonOrder && declaredButtonOrder && backingOrder;
+  if (reservationCount && !reservationOrder) addIssue("reservation-order");
   if (buttonCount && !buttonOrder) addIssue("button-order");
+  if (declaredButtonCount && !declaredButtonOrder) addIssue("declared-button-order");
   if (backingCount && !backingOrder) addIssue("backing-order");
 
-  const buttonsDisjoint = disjoint(buttonCss, input.zoom, input.backingScale);
-  const backingsDisjoint = disjoint(backingCss, input.zoom, input.backingScale);
-  const nonOverlap = buttonsDisjoint && backingsDisjoint;
-  if (buttonCss.every(validRect) && !buttonsDisjoint) addIssue("button-overlap");
-  if (backingCss.every(validRect) && !backingsDisjoint) addIssue("backing-overlap");
+  const reservationsDisjoint = disjoint(reservationRects);
+  const buttonsDisjoint = disjoint(buttonRects);
+  const declaredButtonsDisjoint = disjoint(declaredButtonRects);
+  const backingsDisjoint = disjoint(backingRects);
+  const nonOverlap = reservationsDisjoint && buttonsDisjoint
+    && declaredButtonsDisjoint && backingsDisjoint;
+  if (reservationRects.every(validRect) && !reservationsDisjoint) addIssue("reservation-overlap");
+  if (buttonRects.every(validRect) && !buttonsDisjoint) addIssue("button-overlap");
+  if (declaredButtonRects.every(validRect) && !declaredButtonsDisjoint) {
+    addIssue("declared-button-overlap");
+  }
+  if (backingRects.every(validRect) && !backingsDisjoint) addIssue("backing-overlap");
 
-  const validGeometryBase = validRect(input.reservation)
-    && positive(input.zoom)
-    && positive(input.backingScale);
-  const allRects = [...buttonCss, ...backingCss];
-  const containment = validGeometryBase
-    && allRects.length === 6
-    && allRects.every((rect) => !!rect && contained(input.reservation!, rect, input.zoom!, input.backingScale!));
-  if (validGeometryBase && allRects.every(validRect) && !containment) addIssue("outside-reservation");
+  const allRects = [...reservationRects, ...buttonRects, ...declaredButtonRects, ...backingRects];
+  const containment = validRect(input.titlebar)
+    && allRects.length === TRAFFIC_LIGHT_ROLES.length * 4
+    && allRects.every((rect) => validRect(rect) && contained(input.titlebar!, rect));
+  if (validRect(input.titlebar) && allRects.every(validRect) && !containment) {
+    addIssue("outside-titlebar");
+  }
 
-  const verticalCenter = validGeometryBase
-    && allRects.length === 6
-    && allRects.every((rect) => !!rect && isRoundingOnlyDelta(
-      centerY(rect) - centerY(input.reservation!),
-      input.zoom,
-      input.backingScale,
-    ));
-  if (validGeometryBase && allRects.every(validRect) && !verticalCenter) addIssue("vertical-center");
-
-  const backingMatch = validGeometryBase
-    && EXPECTED_ROLES.every((role, index) => {
-      const button = buttonCss[index];
-      const backing = backingCss[index];
-      return input.buttons?.[index]?.role === role
-        && input.backings?.[index]?.role === role
-        && !!button
-        && !!backing
-        && matchingRect(button, backing, input.zoom!, input.backingScale!);
+  const oneToOne = reservationCount && buttonCount
+    && TRAFFIC_LIGHT_ROLES.every((_, index) => {
+      const reservation = reservationRects[index];
+      const button = buttonRects[index];
+      return validRect(reservation) && validRect(button) && matchingRect(reservation, button);
     });
-  if (validGeometryBase && buttonCss.every(validRect) && backingCss.every(validRect) && !backingMatch) {
+  if (reservationRects.every(validRect) && buttonRects.every(validRect) && !oneToOne) {
+    addIssue("reservation-button-mismatch");
+  }
+
+  const declaredTarget = buttonCount && declaredButtonCount
+    && TRAFFIC_LIGHT_ROLES.every((_, index) => {
+      const button = buttonRects[index];
+      const declared = declaredButtonRects[index];
+      return validRect(button) && validRect(declared) && matchingRect(button, declared);
+    });
+  if (buttonRects.every(validRect) && declaredButtonRects.every(validRect) && !declaredTarget) {
+    addIssue("declared-button-mismatch");
+  }
+
+  const verticalCenter = validRect(input.titlebar)
+    && allRects.length === TRAFFIC_LIGHT_ROLES.length * 4
+    && allRects.every((rect) => validRect(rect)
+      && isRoundingOnlyPhysicalDelta(centerY(rect) - centerY(input.titlebar!)));
+  if (validRect(input.titlebar) && allRects.every(validRect) && !verticalCenter) {
+    addIssue("vertical-center");
+  }
+
+  const backingMatch = buttonCount && backingCount
+    && TRAFFIC_LIGHT_ROLES.every((_, index) => {
+      const button = buttonRects[index];
+      const backing = backingRects[index];
+      return validRect(button) && validRect(backing) && matchingRect(button, backing);
+    });
+  if (buttonRects.every(validRect) && backingRects.every(validRect) && !backingMatch) {
     addIssue("backing-mismatch");
   }
 
-  const measurements = EXPECTED_ROLES.map<TitlebarCompositionMeasurement>((role, index) => {
-    const button = buttonCss[index] ?? null;
-    const backing = backingCss[index] ?? null;
+  const measurements = TRAFFIC_LIGHT_ROLES.map<TitlebarCompositionMeasurement>((role, index) => {
+    const reservation = reservationRects[index] ?? null;
+    const button = buttonRects[index] ?? null;
+    const declaredButton = declaredButtonRects[index] ?? null;
+    const backing = backingRects[index] ?? null;
+    const titlebarCenter = validRect(input.titlebar) ? centerY(input.titlebar) : null;
     return {
       role,
-      buttonCss: button,
-      backingCss: backing,
-      centerDeltaPhysicalPx: validGeometryBase && button
-        ? physical(centerY(button) - centerY(input.reservation!), input.zoom!, input.backingScale!)
-        : null,
-      backingDeltaPhysicalPx: validGeometryBase && button && backing
-        ? {
-            x: Math.abs(physical(button.x - backing.x, input.zoom!, input.backingScale!)),
-            y: Math.abs(physical(button.y - backing.y, input.zoom!, input.backingScale!)),
-            w: Math.abs(physical(button.w - backing.w, input.zoom!, input.backingScale!)),
-            h: Math.abs(physical(button.h - backing.h, input.zoom!, input.backingScale!)),
-          }
-        : null,
+      reservationPhysical: reservation,
+      buttonPhysical: button,
+      declaredButtonPhysical: declaredButton,
+      backingPhysical: backing,
+      centerDeltaPhysicalPx: {
+        reservation: titlebarCenter !== null && validRect(reservation)
+          ? centerY(reservation) - titlebarCenter : null,
+        button: titlebarCenter !== null && validRect(button)
+          ? centerY(button) - titlebarCenter : null,
+        declaredButton: titlebarCenter !== null && validRect(declaredButton)
+          ? centerY(declaredButton) - titlebarCenter : null,
+        backing: titlebarCenter !== null && validRect(backing)
+          ? centerY(backing) - titlebarCenter : null,
+      },
+      reservationButtonDeltaPhysicalPx: validRect(reservation) && validRect(button)
+        ? rectDelta(reservation, button) : null,
+      declaredButtonDeltaPhysicalPx: validRect(declaredButton) && validRect(button)
+        ? rectDelta(declaredButton, button) : null,
+      backingButtonDeltaPhysicalPx: validRect(backing) && validRect(button)
+        ? rectDelta(backing, button) : null,
     };
   });
 
-  const checks = { count, order, nonOverlap, containment, verticalCenter, backingMatch };
-  const verdict = issues.length === 0 && Object.values(checks).every(Boolean) ? "green" : "red";
+  const checks = {
+    count: reservationCount && buttonCount && declaredButtonCount && backingCount,
+    order,
+    nonOverlap,
+    containment,
+    oneToOne,
+    declaredTarget,
+    verticalCenter,
+    backingMatch,
+  };
   return {
     coordinateContract: {
-      dom: "CSS px, viewport top-left",
-      native: "AppKit pt, viewport bottom-left",
+      shared: "physical px, viewport top-left",
+      domSource: "getBoundingClientRect × cssToPhysicalScale",
+      nativeSource: "AppKit view rect converted to contentView backing coordinates",
       roundingTolerancePhysicalPx: TITLEBAR_ROUNDING_TOLERANCE_PHYSICAL_PX,
-      zoom: input.zoom,
-      backingScale: input.backingScale,
     },
     measurements,
     checks,
     issues,
-    verdict,
+    verdict: issues.length === 0 && Object.values(checks).every(Boolean) ? "green" : "red",
   };
 }

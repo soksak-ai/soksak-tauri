@@ -12,6 +12,7 @@
 // 프레임워크다.** 코어는 무엇이 걸렸는지 묻지 않는다 — 안 걸리면 아무 일도 안 일어난다.
 // 새 프레임워크가 오면 자기 파일에 자기 것을 적는다. 남의 fix 를 물려받지 않는다.
 import { invoke } from "@tauri-apps/api/core";
+import { moduleState } from "../../lib/moduleState";
 import styles from "./styles.css?inline";
 import {
   installNativeContentViewComposition,
@@ -32,7 +33,10 @@ import {
   preparePresentedPluginViewMove,
 } from "./pluginViewPresentation";
 import { registerWindowResizeProbe } from "../../lib/windowResizeProbe";
-import { combineTauriCompositionProbe } from "./compositionProbe";
+import {
+  combineTauriCompositionProbe,
+  nextTauriCompositionProbeGeneration,
+} from "./compositionProbe";
 import { installRailHoleClip } from "./railHoleClipHost";
 import { installSurfaceAudit, surfaceCompositionSnapshot } from "./surfaceAudit";
 import {
@@ -53,6 +57,70 @@ import { registerRectMotionExclusion } from "../../lib/layoutRectMotion";
 import { listenThisWindow } from "../../lib/windowEvents";
 import { register } from "../../commands/registry";
 import { tmsg } from "../../i18n";
+import {
+  composeTitlebarComposition,
+  inspectTitlebarComposition,
+  installTitlebarCompositionHost,
+} from "./titlebarCompositionHost";
+
+const startupPresentation = moduleState("framework/tauri/install#startupPresentation", () => ({
+  titlebarCompositionInstalled: false,
+  presentPromise: null as Promise<void> | null,
+  presented: false,
+}));
+
+function waitForPublicTitlebar(): Promise<void> {
+  const selector = '[data-node="titlebar"]';
+  if (document.querySelector(selector)) return Promise.resolve();
+  return new Promise((resolve) => {
+    const observer = new MutationObserver(() => {
+      if (!document.querySelector(selector)) return;
+      observer.disconnect();
+      resolve();
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+  });
+}
+
+/**
+ * Reveal this Tauri window exactly once after the public DOM and native titlebar share one GREEN
+ * receipt. This adapter owns the hidden-window workaround; Electron never imports or runs it.
+ */
+export function presentTauriWindow(): Promise<void> {
+  if (startupPresentation.presented) return Promise.resolve();
+  if (startupPresentation.presentPromise) return startupPresentation.presentPromise;
+  const presentation = (async () => {
+    await waitForPublicTitlebar();
+    if (startupPresentation.titlebarCompositionInstalled) {
+      const status = await composeTitlebarComposition();
+      if (status.verdict !== "green" || !status.owner.identity || status.nativeSequence <= 0) {
+        throw new Error(`Tauri window remains hidden: titlebar composition is ${status.verdict}`);
+      }
+      const startup = await invoke<{ presented: boolean; headless?: boolean }>("window_startup_present", {
+        ownerIdentity: status.owner.identity,
+        nativeSequence: status.nativeSequence,
+      });
+      if (!startup.presented && !startup.headless) {
+        throw new Error("Tauri window startup transaction did not present after a GREEN receipt");
+      }
+    } else {
+      const startup = await invoke<{ presented: boolean; headless?: boolean }>(
+        "window_startup_present",
+      );
+      if (!startup.presented && !startup.headless) {
+        throw new Error("Tauri window startup transaction remained pending after DOM readiness");
+      }
+    }
+    startupPresentation.presented = true;
+  })();
+  startupPresentation.presentPromise = presentation;
+  void presentation.finally(() => {
+    if (startupPresentation.presentPromise === presentation) {
+      startupPresentation.presentPromise = null;
+    }
+  }).catch(() => {});
+  return presentation;
+}
 
 /**
  * 오버레이 히트테스트 게이트 — 모달·메뉴가 떠 있는 동안 아래 표면이 마우스를 못 가져가게 한다.
@@ -374,15 +442,49 @@ function installPaneSurfaceHostCommands(): void {
   });
 }
 
-/** 이 프레임워크가 코어 표면에 거는 것 전부. 고른 어댑터만 불린다(contract.install). */
-export function installTauri(): void {
-  registerWindowResizeProbe(async () => {
-    const [direct, pane] = await Promise.all([
-      surfaceCompositionSnapshot(),
-      pluginViewNativeContractStatus(),
-    ]);
-    return combineTauriCompositionProbe(direct, pane);
+/** macOS AppKit 경계가 실제로 존재할 때만 설치되는 read gate와 explicit mutation. */
+function installTitlebarCompositionCommands(): void {
+  register("titlebar.composition", {
+    description:
+      "Read-only inspection of the current DOM reservations, AppKit traffic-light buttons, and owned backing views. Never composes or repairs evidence.",
+    params: {},
+    returns:
+      "{ kind,window,nativeSequence,coordinateContract,titlebarPhysical,reservations,buttons,backings,measurements,checks,issues,verdict }",
+    message: (data) => data.verdict === "green"
+      ? "Tauri 신호등 DOM/AppKit 3:3 합성이 일치합니다"
+      : `Tauri 신호등 합성 불일치 ${String((data.issues as unknown[] | undefined)?.length ?? 0)}건`,
+    handler: async () => inspectTitlebarComposition(),
   });
+  register("titlebar.compose", {
+    description:
+      "Explicitly compose AppKit traffic lights from the public DOM titlebar and return that mutation transaction's strict physical receipt.",
+    params: {},
+    danger: "inject",
+    returns:
+      "{ kind,window,nativeSequence,coordinateContract,titlebarPhysical,reservations,buttons,backings,measurements,checks,issues,verdict }",
+    message: (data) => data.verdict === "green"
+      ? "Tauri 신호등 DOM/AppKit 합성 거래를 완료했습니다"
+      : `Tauri 신호등 합성 뒤 불일치 ${String((data.issues as unknown[] | undefined)?.length ?? 0)}건`,
+    handler: async () => composeTitlebarComposition(),
+  });
+}
+
+function installStartupPresentationCommand(): void {
+  register("window.startup", {
+    description:
+      "Read the current Tauri hidden-to-GREEN first-frame gate. This inspection never composes or reveals the window.",
+    params: {},
+    returns:
+      "{ kind,window,generation,platform,requestedFocus,headless,creationCommitted,rendererGreen,composition,presented }",
+    message: (data) => data.presented
+      ? "Tauri 창의 첫 GREEN 프레임이 표시되었습니다"
+      : "Tauri 창은 첫 GREEN 프레임을 기다리고 있습니다",
+    handler: async () => invoke("window_startup_state"),
+  });
+}
+
+/** 이 프레임워크가 코어 표면에 거는 것 전부. 고른 어댑터만 불린다(contract.install). */
+export async function installTauri(): Promise<void> {
   // 콘텐츠 뷰 구현 — 이 프레임워크가 줄 수 있는 것은 OS 자식 뷰다.
   registerContentViewHost(nativeHost);
   // DOM 밖 표면이 포함된 배치만 목표 bounds 선확정 + DOM snap 거래로 바꾼다.
@@ -426,6 +528,46 @@ export function installTauri(): void {
   installCompositionCommand();
   installHoleAuditCommand();
   installPaneSurfaceHostCommands();
+  installStartupPresentationCommand();
+  // Rust 명령은 macOS에서만 등록된다. 최초 조회 성공이 적용 가능성의 유일한 경계이며,
+  // 비 macOS에는 unsupported 상태나 빈 명령을 만들지 않는다.
+  const titlebarCompositionInstalled = await installTitlebarCompositionHost({
+    readNative: () => invoke("titlebar_native_state"),
+    composeNative: ({
+      titlebarPhysical,
+      cssToPhysicalScale,
+      expectedOwnerIdentity,
+      expectedSequence,
+    }) => invoke("titlebar_compose", {
+      titlebarPhysical,
+      cssToPhysicalScale,
+      expectedOwnerIdentity,
+      expectedSequence,
+    }),
+  });
+  startupPresentation.titlebarCompositionInstalled = titlebarCompositionInstalled;
+  if (titlebarCompositionInstalled) {
+    installTitlebarCompositionCommands();
+  }
+  // Every window.resizeSequence step receives one generation containing every applicable native
+  // plane. Query failure is retained as null and therefore RED; it never drops the hostile sample.
+  registerWindowResizeProbe(async () => {
+    const generation = nextTauriCompositionProbeGeneration();
+    const [direct, pane, titlebar] = await Promise.all([
+      surfaceCompositionSnapshot().catch(() => null),
+      pluginViewNativeContractStatus().catch(() => null),
+      titlebarCompositionInstalled
+        ? inspectTitlebarComposition().catch(() => null)
+        : Promise.resolve(undefined),
+    ]);
+    return combineTauriCompositionProbe({
+      generation,
+      sampledAtUnixMs: Date.now(),
+      direct,
+      pane,
+      ...(titlebarCompositionInstalled ? { titlebar: titlebar ?? null } : {}),
+    });
+  });
   // 실제 FLIP 추적 프레임(pane·tab-body) 중 native child를 품은 것만 뺀다. bounds 원천인
   // content-view body는 그 자식이라 검사 대상이 아니다. 문서 안 게스트에는 이 표식도 등록도
   // 없으므로 Electron의 DOM 보간은 그대로다.

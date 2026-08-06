@@ -121,6 +121,7 @@ export const tauriFramework: AppFramework = {
   name: "tauri",
   // 거는 코드는 그때 가져온다 — 이 파일은 벤더를 번역하는 잎으로 남는다(contract.install).
   install: () => import("./install").then((m) => m.installTauri()),
+  presentWindow: () => import("./install").then((m) => m.presentTauriWindow()),
 
   invoke: <T,>(cmd: string, args?: Record<string, unknown>) => tauriInvoke<T>(cmd, args),
 

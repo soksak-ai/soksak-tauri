@@ -84,8 +84,7 @@ describe("Tauri plugin renderer RPC surface", () => {
       label: "b-main-tab-1", x: 11, y: 47, w: 320, h: 180, rootW: 400, rootH: 260,
       revision: 1, reportedAtUnixMs: 1,
     });
-    expect(projected.dataset.node).toBe("surface");
-    expect(projected.dataset.tauriNativeSlot).toBe("b-main-tab-1");
+    expect(projected.dataset.node).toBe("tauri/plugin-view/b-main-tab-1/surface");
     expect(projected.hasAttribute("data-content-view-body")).toBe(false);
     expect(projected.style.cssText).toContain("left: 11px");
     expect(projected.style.cssText).toContain("height: 180px");
@@ -97,8 +96,7 @@ describe("Tauri plugin renderer RPC surface", () => {
       label: "b-main-tab-1", node: "toolbar", x: 4, y: 8, w: 300, h: 40, rootW: 400, rootH: 260,
       revision: 1, reportedAtUnixMs: 1,
     });
-    expect(projected.dataset.node).toBe("toolbar");
-    expect(projected.dataset.tauriNativeNode).toBe("b-main-tab-1");
+    expect(projected.dataset.node).toBe("tauri/plugin-view/b-main-tab-1/toolbar");
     expect(projected.style.top).toBe("8px");
   });
 

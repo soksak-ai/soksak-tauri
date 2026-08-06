@@ -39,6 +39,11 @@ export function installFramework(): Promise<void> {
   return framework.install();
 }
 
+/** Commit the selected framework's first visible window frame after the initial DOM render. */
+export function presentWindow(): Promise<void> {
+  return framework.presentWindow();
+}
+
 // ── 이름 있는 재수출 — 호출부는 프레임워크를 모른 채 이것만 쓴다 ─────────────
 export const invoke: AppFramework["invoke"] = (cmd, args) => framework.invoke(cmd, args);
 export const createStream: AppFramework["createStream"] = () => framework.createStream();

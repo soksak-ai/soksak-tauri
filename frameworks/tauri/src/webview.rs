@@ -15,6 +15,13 @@ use soksak_core::geometry::{rect_delta, scale_rect, top_left_rect_to_parent_fram
 use soksak_core::native_surface_ledger::{NativeSurfaceLayout, SurfaceHole as Hole};
 
 static SURFACE_LAYOUT: std::sync::LazyLock<NativeSurfaceLayout> = std::sync::LazyLock::new(NativeSurfaceLayout::default);
+
+/// Tauri/macOS 어댑터가 DOM CSS 좌표를 AppKit backing 좌표로 투영할 때 소비하는 창 줌.
+/// 장부의 소유권은 이 모듈에 남고, titlebar는 공개된 값만 읽는다.
+#[cfg(target_os = "macos")]
+pub(crate) fn window_zoom_for_adapter(window_label: &str) -> f64 {
+    SURFACE_LAYOUT.window_zoom(window_label)
+}
 use tauri::{
     AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Url, WebviewUrl,
     WebviewWindowBuilder,

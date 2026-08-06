@@ -43,6 +43,7 @@ export const selectedFramework: AppFramework = {
   },
   emitLocal: () => {},
   install: async () => {},
+  presentWindow: async () => {},
   invoke: unsupported,
   createStream: () => ({ onmessage: () => {} }),
   listen: unsupported,

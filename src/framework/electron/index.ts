@@ -247,6 +247,9 @@ export const electronFramework: AppFramework = {
   name: "electron",
   // 거는 코드는 그때 가져온다 — 이 파일은 창구를 번역하는 잎으로 남는다(contract.install).
   install: () => import("./install").then((m) => m.installElectron()),
+  // Electron은 UI와 콘텐츠가 한 Chromium DOM 합성기에 있고 창도 이미 표시돼 있다. Tauri의
+  // hidden→native receipt gate를 물려받지 않는다; 공통 생명주기 경계를 멱등 완료할 뿐이다.
+  presentWindow: async () => {},
 
   invoke: async <T,>(cmd: string, args?: Record<string, unknown>): Promise<T> => {
     const r = await bridge().invoke(cmd, args);

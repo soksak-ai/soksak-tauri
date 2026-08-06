@@ -16,6 +16,8 @@
         "title": "soksak-tauri-dev",
         "width": 800,
         "height": 600,
+        "visible": false,
+        "focus": true,
         "titleBarStyle": "Overlay",
         "acceptFirstMouse": true,
         "hiddenTitle": true,
