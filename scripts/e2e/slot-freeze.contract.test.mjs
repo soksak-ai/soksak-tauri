@@ -473,6 +473,16 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(source).not.toContain("MACHINE GREEN");
   });
 
+  it("records every slot-freeze-owned B01-B11 live gate exactly once", () => {
+    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    for (let number = 1; number <= 11; number += 1) {
+      const gate = `B${String(number).padStart(2, "0")}`;
+      expect(machineGateRecordCalls(source, gate), gate).toHaveLength(1);
+    }
+    // B12 is a cold-start/titlebar transaction and is owned by titlebar-composition.mjs.
+    expect(machineGateRecordCalls(source, "B12"), "B12").toHaveLength(0);
+  });
+
   it("waits on the exposed event-driven layout barrier before first-paint judgment", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
     expect(source).toContain('rpc("ui.layout.wait-settled"');
