@@ -755,7 +755,9 @@ child never loads an arbitrary module itself.
 
 A windowed native surface created by a sidecar joins the pane renderer's declared content slot through
 `webview.present(label)`. It creates no second webview: it registers the existing surface as a
-`PaneSurfaceHost` member and completes presentation readiness only after the first slot frame commits.
+`PaneSurfaceHost` member and completes presentation readiness only after pane grouping, the first
+member slot frame, and effective visibility have each acknowledged. Readiness is false for the whole
+transaction; neither engine creation nor grouping alone is a public ready fact.
 Member admission requires an identity from one of the two declared registries: a Tauri child webview
 or an external native surface registered by the framework adapter. An arbitrary `NSView` is never a member.
 An external surface's dedicated slot host already is its clipping and movement unit. The adapter binds
@@ -763,6 +765,12 @@ that identity to its workspace window and reparents it directly; it never adds a
 Renderer and external slots may begin under different adapter parents. Membership requires the same
 workspace native window, and AppKit `convertRect:toView:` normalizes their content-root coordinates
 before reparenting.
+
+The final layout presentation barrier is owner-aware. A Tauri child webview acknowledges through its
+`WKWebView` after-screen-updates snapshot edge. A registered external surface has no Tauri `Webview`
+handle, so the Tauri adapter settles that exact registered AppKit host subtree and window on the main
+thread and returns a one-shot acknowledgement. Missing or replaced identities fail; the barrier never
+retries, polls, or treats an external surface as a missing `WKWebView`.
 
 `webview.composition` exposes not only DOM anchors and actual native frames, but also each label's slot
 rect, last applied rect, visibility and pending-sync state. The browser product plugin does not

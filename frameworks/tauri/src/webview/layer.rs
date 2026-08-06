@@ -382,6 +382,34 @@ pub fn settle_surface_frame(view: &NSView) {
     }
 }
 
+/// A framework adapter-owned external surface has no Tauri `Webview` handle and therefore cannot
+/// use the WKSnapshot presentation barrier. Its registered slot host is the native ownership
+/// boundary: settle that exact AppKit subtree and its window in one main-thread transaction, then
+/// verify that the same registered identity is still attached before acknowledging presentation.
+pub fn settle_external_surface_presentation(label: &str) -> Result<(), String> {
+    objc2::MainThreadMarker::new()
+        .ok_or("external surface presentation은 main thread에서만 정착합니다")?;
+    let registered = SURFACE_HOSTS
+        .host(label)
+        .ok_or_else(|| format!("external surface host가 없습니다: {label}"))?;
+    if registered.ptr == 0 {
+        return Err(format!("external surface host identity가 비었습니다: {label}"));
+    }
+    let host = unsafe { &*(registered.ptr as *const NSView) };
+    let window = host
+        .window()
+        .ok_or_else(|| format!("external surface가 native window에 붙지 않았습니다: {label}"))?;
+    settle_surface_frame(host);
+    window.displayIfNeeded();
+    let current = SURFACE_HOSTS
+        .host(label)
+        .ok_or_else(|| format!("external surface host가 정착 중 해제됐습니다: {label}"))?;
+    if current != registered || host.window().is_none() {
+        return Err(format!("external surface host identity가 정착 중 바뀌었습니다: {label}"));
+    }
+    Ok(())
+}
+
 /**
  * 목표 model frame을 먼저 세우고 위치 transform만 공통 epoch에 표시한다.
  * 크기 보간은 WKWebView raster를 늘이므로 거절한다. 호출자는 크기 변화 거래를 별도로 정착시킨다.

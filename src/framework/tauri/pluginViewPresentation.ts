@@ -351,6 +351,7 @@ async function openAndGroup(
   label: string,
   options: Record<string, unknown>,
 ): Promise<void> {
+  state.readiness.set(view.nativeHostId, false);
   const slot = await view.slots.wait(label);
   const paneRect = rectOf(view.container);
   claimPaneSurface(label, view.nativeHostId);
@@ -374,11 +375,11 @@ async function openAndGroup(
         ...paneRect,
       });
       view.grouped = true;
-      state.readiness.set(view.nativeHostId, true);
       await syncPaneFrame(view);
     }
     if (await syncMemberFrame(view, slot)) view.slots.commit(slot);
     await view.visibility.request(view.visible);
+    state.readiness.set(view.nativeHostId, true);
     view.markReady();
   } catch (error) {
     view.members.delete(label);
@@ -390,6 +391,7 @@ async function openAndGroup(
 }
 
 async function presentExisting(view: PresentedState, label: string): Promise<void> {
+  state.readiness.set(view.nativeHostId, false);
   const slot = await view.slots.wait(label);
   const paneRect = rectOf(view.container);
   claimPaneSurface(label, view.nativeHostId);
@@ -404,11 +406,11 @@ async function presentExisting(view: PresentedState, label: string): Promise<voi
         ...paneRect,
       });
       view.grouped = true;
-      state.readiness.set(view.nativeHostId, true);
       await syncPaneFrame(view);
     }
     if (await syncMemberFrame(view, slot)) view.slots.commit(slot);
     await view.visibility.request(view.visible);
+    state.readiness.set(view.nativeHostId, true);
     view.markReady();
   } catch (error) {
     view.members.delete(label);

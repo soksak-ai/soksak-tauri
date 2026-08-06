@@ -95,6 +95,28 @@ describe("Tauri plugin renderer RPC surface", () => {
     expect(barrier.indexOf("waitCommittedRoot")).toBeLessThan(barrier.indexOf("emitTo(view.renderer"));
   });
 
+  it("pane presentation ready는 group·member frame·visibility ACK 뒤에만 공개한다", () => {
+    const source = readFileSync(resolve(import.meta.dirname, "pluginViewPresentation.ts"), "utf8");
+    const bodies = [
+      source.split("async function openAndGroup")[1]?.split("async function presentExisting")[0] ?? "",
+      source.split("async function presentExisting")[1]?.split("async function handleCall")[0] ?? "",
+    ];
+    for (const body of bodies) {
+      const begin = body.indexOf("state.readiness.set(view.nativeHostId, false)");
+      const group = body.indexOf('invoke("webview_pane_group"');
+      const member = body.indexOf("await syncMemberFrame(view, slot)");
+      const visibility = body.indexOf("await view.visibility.request(view.visible)");
+      const readyFact = body.indexOf("state.readiness.set(view.nativeHostId, true)");
+      const readyPromise = body.indexOf("view.markReady()");
+      expect(begin).toBeGreaterThanOrEqual(0);
+      expect(begin).toBeLessThan(group);
+      expect(group).toBeLessThan(member);
+      expect(member).toBeLessThan(visibility);
+      expect(visibility).toBeLessThan(readyFact);
+      expect(readyFact).toBeLessThan(readyPromise);
+    }
+  });
+
   it("child renderer의 명시적 측정 사건도 기존 slot reporter 하나를 사용한다", () => {
     const source = readFileSync(resolve(import.meta.dirname, "pluginViewRenderer.ts"), "utf8");
     expect(source).toContain('listen(event("measure"), reportSlots)');

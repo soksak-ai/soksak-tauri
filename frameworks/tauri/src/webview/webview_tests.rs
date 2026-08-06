@@ -169,3 +169,33 @@ fn every_native_frame_commit_settles_child_layout_and_display() {
         .0;
     assert!(transition.contains("settle_surface_frame(child)"));
 }
+
+#[test]
+fn presented_barrier_routes_external_surfaces_through_the_registered_owner() {
+    let webview = include_str!("../webview.rs");
+    let presented = webview
+        .split_once("pub async fn webview_presented(app: AppHandle, label: String)")
+        .expect("macOS presentation barrier exists")
+        .1
+        .split_once("#[cfg(not(target_os = \"macos\"))]")
+        .expect("macOS presentation barrier boundary")
+        .0;
+    assert!(presented.contains("layer::has_surface_host(&label)"));
+    assert!(presented.contains("layer::settle_external_surface_presentation(&label)"));
+    assert!(presented.contains("tokio::sync::oneshot::channel"));
+    assert!(presented.contains("run_on_main_thread"));
+    let compact = presented.split_whitespace().collect::<String>();
+    assert!(compact.contains("returnrx.await"));
+
+    let layer = include_str!("layer.rs");
+    let settle = layer
+        .split_once("pub fn settle_external_surface_presentation")
+        .expect("external surface owner presentation ACK exists")
+        .1
+        .split_once("pub fn prepare_surface_host_translation")
+        .expect("external presentation ACK boundary")
+        .0;
+    assert!(settle.contains("settle_surface_frame"));
+    assert!(!settle.contains("sleep"));
+    assert!(!settle.contains("retry"));
+}

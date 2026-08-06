@@ -743,13 +743,21 @@ presentation 수명에 묶여 pane 종료 시 함께 회수되며, child가 임�
 
 sidecar가 만든 windowed native surface는 `webview.present(label)`로 pane renderer의 선언된
 content slot에 결합한다. 새 웹뷰를 만들지 않고 기존 표면을 `PaneSurfaceHost` member로 등록하며,
-첫 slot frame이 native에 커밋된 뒤에만 presentation ready를 완료한다.
+pane grouping, 첫 member slot frame, 유효 visibility가 각각 ACK된 뒤에만 presentation ready를
+완료한다. 거래 전체에서 readiness는 false이며, 엔진 생성이나 grouping 하나만으로 ready 사실을
+공개하지 않는다.
 member 수락 계약은 임의 `NSView`가 아니라 선언된 두 registry, 즉 Tauri child webview
 또는 프레임워크 어댑터에 등록된 external native surface 중 하나의 identity를 요구한다.
 external surface의 전용 slot host 자체가 clip·이동 단위이며, 어댑터는 그 identity를 두 번 감싸지
 않고 소유 workspace window와 결속한 뒤 그대로 `PaneSurfaceHost`에 재부착한다.
 renderer와 external slot이 서로 다른 어댑터 부모에서 시작해도 같은 workspace native window면
 수락하고, 재부착 전 AppKit `convertRect:toView:`로 content-root 좌표를 정규화한다.
+
+최종 layout presentation 배리어는 owner를 구분한다. Tauri child webview는 `WKWebView`의
+after-screen-updates snapshot 완료 에지로 ACK한다. 등록된 external surface에는 Tauri
+`Webview` handle이 없으므로 Tauri adapter가 그 등록 identity의 AppKit host subtree와 window를
+main thread에서 정착시키고 one-shot ACK를 반환한다. identity가 없거나 교체됐으면 실패하며,
+external surface를 없는 `WKWebView`로 오판하거나 재시도·폴링하지 않는다.
 
 `webview.composition`은 DOM 앵커·실제 네이티브 frame뿐 아니라 label별 슬롯 rect, 마지막 적용
 rect, 가시성, 동기화 대기 상태를 공개한다. 합성 상태를 브라우저 제품 플러그인이

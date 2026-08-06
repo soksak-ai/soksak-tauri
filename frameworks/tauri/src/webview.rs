@@ -1379,8 +1379,23 @@ pub async fn webview_presented(app: AppHandle, label: String) -> Result<(), Stri
     use std::sync::mpsc;
     use std::time::Duration;
 
-    let wv = registered_webview(&app, &label)
-        .ok_or_else(|| format!("webview 없음: {label}"))?;
+    let Some(wv) = registered_webview(&app, &label) else {
+        if !layer::has_surface_host(&label) {
+            return Err(format!("webview 또는 external surface 없음: {label}"));
+        }
+        let scheduler = app.clone();
+        let failure_label = label.clone();
+        let (tx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
+        scheduler
+            .run_on_main_thread(move || {
+                let result = layer::settle_external_surface_presentation(&label);
+                let _ = tx.send(result);
+            })
+            .map_err(|error| error.to_string())?;
+        return rx
+            .await
+            .map_err(|_| format!("external surface presentation ACK 단절: {failure_label}"))?;
+    };
     let (tx, rx) = mpsc::sync_channel::<Result<(), String>>(1);
     wv.with_webview(move |pw| unsafe {
         use block2::RcBlock;
