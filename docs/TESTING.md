@@ -47,7 +47,7 @@ identity; a runtime, adapter, or test cannot claim it for itself.
 | B01 | Initial mount + address bar + page identity in all three engines | Public DOM/status mount, address, and page identity all equal the requested values. |
 | B02 | Korean IME `beforeinput`/`input`, with value retention across transitions and resize | Read both input events and the final value, then assert the same value at every transition and resize checkpoint. |
 | B03 | DOM slot ↔ live surface 1:1, rounding-only frame, shared topology | Assert count, ownership, and coordinate deltas from public DOM rects, native/engine rects, and the identity ledger. On Tauri, a content slot becomes a native hole only through an adapter lifecycle claim (`direct`/`pane`) or the neutral `data-external-surface=<stable identity>` declaration. Undeclared DOM slots are never guessed to be holes. `direct`, `PaneSurfaceHost`, and external-provider geometry are each audited exactly once by their owning plane. Electron does not project this declaration because its browser body remains a DOM child. |
-| B04 | One atomic FLOW move for rail, pane, and native surface | A finite trace for one transaction/animation epoch asserts connectivity, coordinates, and settlement for all three. |
+| B04 | One atomic FLOW move for rail, pane, and native surface | An acknowledged finite trace joins the initial raw rect and the exact same-transaction DOM-commit raw rect to actual presentation events, then asserts connectivity, coordinates, and settlement for all three. |
 | B05 | Zero flicker, black frames, ghosts, or post-landing disappearance | The public presentation trace asserts continuous live/visible/painted state and zero replacements, gaps, or disappearances. |
 | B06 | Only active is bright; inactive is dim; rail/sidebar are not dimmed | Public style state asserts one lighting plane and its active aperture, pane dim values, rail/sidebar exclusion from the plane, and adapter alpha 1 (no duplicate dimming). |
 | B07 | PIN left-adjacent, right-adjacent, and detached border/layout invariance | Assert border relations and invariant rail/pane DOM identity, rects, and split tree across all three focus states. |
@@ -56,6 +56,23 @@ identity; a runtime, adapter, or test cannot claim it for itself.
 | B10 | Hostile rapid whole-window resize is affine and restores | Every finite resize transaction asserts DOM/native coordinate agreement and restoration of the original final geometry. |
 | B11 | Pane resize round trip + wheel `0→480→0` + tab-targeted full capture | Assert settlement for the explicit view, real scroll events, capture extent/document geometry, and restored scroll state. |
 | B12 | macOS traffic-light center/composition agreement under cold start, hostile resize, and titlebar-height changes | A window may be presented only after restored logical size and saved zoom have received their native applied ACK, then the post-zoom public titlebar has composed GREEN. Tauri uses one AppKit main-thread transaction and one paint owner: the three derived backing regions, three live AppKit buttons, and three DOM reservations assert mapping, containment, vertical centers, and resize agreement. `trafficLightPosition` is forbidden in Tauri configuration while this dynamic composer is installed because it installs Tao's competing fixed-y draw owner and also feeds non-child Wry paths; the adapter preserves the initial AppKit horizontal spacing and derives vertical position only from the public DOM titlebar. Public async resize owns its `Window` through an awaited oneshot ACK; timeout-then-late mutation and queued bare `NSWindow` pointers are forbidden. `titlebar.height.set {height}` changes the public DOM geometry, waits for a complete paint boundary, and returns the same strict native receipt; `titlebar.height.reset` restores the exact prior inline height/flex basis. Every cold-start and height sample must have zero button/backing center delta (rounding-only tolerance). Electron asserts the same visible center/resize contract from its public traffic-light position and DOM reservations without inventing the Tauri paint owner. Non-macOS reports mark this gate statically `not-applicable`. |
+
+### B04 exact DOM-commit ledger
+
+Before the stimulus, B04 waits for the `ui.trace.multi.start` ACK, which proves that the initial raw
+rects were read and the layout-journal subscription was installed. When React commits the target DOM
+in its layout effect, the journal wrapper synchronously emits `transactionId` and
+`domCommittedAtUnixMs` before awaiting the surface ACK. The subscriber reads the rail and both
+pane/slot rect pairs in that same callback. The `ui.trace.multi.close` receipt must contain exactly
+one initial sample and one DOM-commit sample for the judged transaction; missing, duplicate, or
+foreign-transaction samples are RED. An actual presentation event before the commit epoch uses only
+the initial rect, and an event at or after it uses only the commit rect. A nearest 16ms timer sample,
+a wider time tolerance, interpolation, or movement projection is never composition authority. The
+expiry timeout only reclaims the finite subscription; it does not poll coordinates.
+
+This event represents a FLOW relocation, not initial mount. A cold application's first DOM/surface
+composition has no layout transaction and remains independently covered by B01 mount and B03
+one-to-one inventory/frame contracts.
 
 ### B05 actual presentation-event ledger
 
