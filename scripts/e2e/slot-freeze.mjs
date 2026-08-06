@@ -412,10 +412,10 @@ async function assertFocusLighting(rpc, win, addresses, labels, activeIndex, fra
   for (let index = 0; index < addresses.length; index += 1) {
     const active = index === activeIndex;
     if (!Number.isFinite(dims[index])) errors.push(`${index}:dim=${dims[index]}`);
-    if (active && (levels[index] !== "active" || Math.abs(dims[index]) > 0.001)) {
+    if (active && (levels[index] !== "clear" || Math.abs(dims[index]) > 0.001)) {
       errors.push(`${index}:active level=${levels[index]} dim=${dims[index]}`);
     }
-    if (!active && (levels[index] === "active" || !(dims[index] > 0 && dims[index] < 1))) {
+    if (!active && (levels[index] === "clear" || !(dims[index] > 0 && dims[index] < 1))) {
       errors.push(`${index}:inactive level=${levels[index]} dim=${dims[index]}`);
     }
   }
