@@ -72,8 +72,9 @@ describe("PluginViewHost — 인스턴스 수명과 DOM 수명 분리", () => {
   it("nativeSurface 선언은 등록된 presentation owner에 plugin DOM과 native member를 함께 위임한다", async () => {
     const mount = vi.fn((el: HTMLElement) => { el.textContent = "browser chrome"; });
     const dispose = vi.fn();
+    const setLogicalPaneId = vi.fn();
     const presentationMount = vi.fn(() => ({
-      ready: Promise.resolve(), update: vi.fn(), setVisible: vi.fn(), dispose,
+      ready: Promise.resolve(), update: vi.fn(), setVisible: vi.fn(), setLogicalPaneId, dispose,
     }));
     registerPluginViewPresentationHost({
       presentationSettled: vi.fn(async () => {}),
@@ -97,6 +98,20 @@ describe("PluginViewHost — 인스턴스 수명과 DOM 수명 분리", () => {
     expect(presentationMount.mock.calls[0]?.[0]).toMatchObject({
       logicalPaneId: "pan-left",
     });
+    act(() => {
+      root!.render(
+        <PluginViewHost
+          viewKey="browser.content"
+          projectId="p1"
+          root="/project"
+          region="content"
+          viewId="tab-1"
+          logicalPaneId="pan-right"
+        />,
+      );
+    });
+    expect(presentationMount).toHaveBeenCalledOnce();
+    expect(setLogicalPaneId).toHaveBeenLastCalledWith("pan-right");
     expect(mount).not.toHaveBeenCalled();
     await act(async () => Promise.resolve());
     act(() => root!.unmount());
