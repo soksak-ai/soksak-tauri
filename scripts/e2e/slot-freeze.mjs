@@ -65,7 +65,9 @@ import {
   hostileWindowResizeSizes,
   layoutTransactionVerdict,
   mapB04PresentationSamples,
+  normalizeB04JournalEntries,
   parseBrowserEngines,
+  resolveB04MovedParticipant,
   unwrapEvalValue,
   viewportGeometryVerdict,
 } from "./lib/browser-matrix.mjs";
@@ -1031,13 +1033,17 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
       for (let side = 0; side < addresses.length; side += 1) {
         const name = `${String(cycle * 2 + side + 1).padStart(2, "0")}-${side ? "right" : "left"}`;
         const dir = path.join(engineEvidence, name);
-        const owner = presentationOwners.find(({ viewId }) => viewId === tabIds[side]);
-        if (!owner) throw new Error(`${tabIds[side]}: presentation owner가 없다`);
         // 이 Promise의 handler는 첫 raw DOM 표본을 동기 기록한 뒤 유한 timer 구간에 들어간다.
         // 다음 RPC인 presentation arm보다 먼저 발행하고, 아래 mapper가 첫 DOM 시각이 layout
         // prepared 시각보다 앞인지 다시 검사하므로 선관측 실패는 기다림으로 숨지 않고 RED다.
         const domTracePromise = rpc("ui.trace.multi", {
-          addresses: [railAddress, paneAddresses[side], addresses[side]],
+          addresses: [
+            railAddress,
+            paneAddresses[0],
+            addresses[0],
+            paneAddresses[1],
+            addresses[1],
+          ],
           ms: 1_200,
         }, win, { timeoutMs: 5_000 });
         let armedPresentation = null;
@@ -1048,7 +1054,6 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
             implementation.presentationTrace.armParams({
               traceId: `${engine}-${name}-${randomUUID()}`,
               owners: presentationOwners,
-              targetViewId: tabIds[side],
             }),
             win,
             { timeoutMs: 10_000 },
@@ -1096,6 +1101,20 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
           if (!layoutVerdict.ok) {
             throw new Error(`${engine}/${name}: sidebar/tab layout transaction mismatch — ${layoutVerdict.errors.join(", ")}`);
           }
+          const movedParticipant = resolveB04MovedParticipant({
+            transactions: layoutVerdict.transactions,
+            owners: presentationOwners,
+            viewIds: tabIds,
+            paneAddresses,
+            slotAddresses: addresses,
+          });
+          const {
+            targetViewId,
+            owner,
+            paneAddress,
+            slotAddress,
+          } = movedParticipant;
+          const b04JournalEntries = normalizeB04JournalEntries(layoutVerdict.transactions);
           const presentationReceipt = must(await rpc(
             implementation.presentationTrace.readCommand,
             implementation.presentationTrace.readParams({ traceId: armedPresentation.traceId }),
@@ -1105,28 +1124,28 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
           presentationOpen = false;
           const presentationEvents = implementation.presentationTrace.events(
             presentationReceipt,
-            { targetViewId: tabIds[side], owner },
+            { targetViewId, owner },
           );
           const domTraceReceipt = must(await domTracePromise, `B04 raw DOM trace ${name}`);
           const flowPresentationTrace = mapB04PresentationSamples({
             events: presentationEvents,
             domSamples: domTraceReceipt.samples,
             owner,
-            targetViewId: tabIds[side],
+            targetViewId,
             transactionId: layoutVerdict.transaction.transactionId,
             preparedAtUnixMs: layoutVerdict.transaction.preparedAtUnixMs,
             closedAtUnixMs: layoutVerdict.transaction.closedAtUnixMs,
             railAddress,
-            paneAddress: paneAddresses[side],
-            slotAddress: addresses[side],
+            paneAddress,
+            slotAddress,
           });
           b04Transitions.push({
             direction: side === 0 ? "to-left" : "to-right",
-            targetViewId: tabIds[side],
+            targetViewId,
             motionMode: layoutVerdict.transaction.mode,
             journal: {
               afterSequence,
-              entries: layoutVerdict.transactions,
+              entries: b04JournalEntries,
             },
             samples: flowPresentationTrace.samples,
           });
@@ -1134,6 +1153,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
             path.join(dir, "composition-trace.json"),
             {
               traceId: armedPresentation.traceId,
+              targetViewId,
               owner,
               maxPairGapMs: flowPresentationTrace.maxPairGapMs,
               pairs: flowPresentationTrace.pairs,

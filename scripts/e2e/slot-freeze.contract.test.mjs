@@ -343,8 +343,12 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(domTraceCalls[0].text).toContain("addresses[0]");
     expect(domTraceCalls[0].text).toContain("paneAddresses[1]");
     expect(domTraceCalls[0].text).toContain("addresses[1]");
-    expect(source.indexOf('rpc("ui.trace.multi"'))
-      .toBeLessThan(source.indexOf("runPlannedRecordingAction({"));
+    const flowRecordingCalls = callFacts(source, (node, file) => (
+      node.expression.getText(file) === "runPlannedRecordingAction"
+    )).filter((call) => call.functionName === "runEngine"
+      && call.loops.some((loop) => /\bside\b/.test(loop)));
+    expect(flowRecordingCalls).toHaveLength(1);
+    expect(domTraceCalls[0].start).toBeLessThan(flowRecordingCalls[0].start);
     expect(source).toContain("resolveB04MovedParticipant({");
     expect(source).toContain("transactions: layoutVerdict.transactions");
     expect(source).toContain("owners: presentationOwners");
