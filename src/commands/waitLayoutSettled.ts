@@ -9,6 +9,7 @@ import {
   contentViewSlotVisible,
   hasContentViewHost,
 } from "../lib/contentViews";
+import { pluginViewPresentationHost } from "../plugins/viewPresentationHost";
 
 type NamedAnimation = Animation & { animationName?: string };
 
@@ -88,9 +89,16 @@ export function waitLayoutSettled(timeoutMs = 4_000, settlementKey?: string): Pr
       generation = Math.max(generation, animations.length);
       if (animations.length > 0) presentationSettled = false;
       if (animations.length === 0) {
-        if (!presentationSettled && hasContentViewHost()) {
+        const pluginPresentation = pluginViewPresentationHost();
+        if (!presentationSettled && (hasContentViewHost() || pluginPresentation)) {
           if (!presentationPending) {
-            presentationPending = contentViewHost().presentationSettled(visibleContentViewLabels())
+            const barriers = [
+              ...(hasContentViewHost()
+                ? [contentViewHost().presentationSettled(visibleContentViewLabels())]
+                : []),
+              ...(pluginPresentation ? [pluginPresentation.presentationSettled()] : []),
+            ];
+            presentationPending = Promise.all(barriers)
               .then(() => { presentationSettled = true; })
               .then(inspect, (error) => close(error instanceof Error ? error : new Error(String(error))))
               .finally(() => { presentationPending = null; });

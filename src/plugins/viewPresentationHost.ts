@@ -21,6 +21,8 @@ export interface PluginViewPresentationHost {
     provider: PluginViewProvider;
     context: PluginViewContext;
   }): PresentedPluginView;
+  /** 현재 장착된 외부 presentation owner가 geometry·visibility·paint를 모두 확정한 뒤 완료된다. */
+  presentationSettled(): Promise<void>;
 }
 
 const state = moduleState("plugins/viewPresentationHost#registered", () => ({

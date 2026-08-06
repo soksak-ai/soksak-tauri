@@ -76,6 +76,7 @@ describe("PluginViewHost — 인스턴스 수명과 DOM 수명 분리", () => {
       ready: Promise.resolve(), update: vi.fn(), setVisible: vi.fn(), dispose,
     }));
     registerPluginViewPresentationHost({
+      presentationSettled: vi.fn(async () => {}),
       mount: presentationMount,
     });
     act(() => {

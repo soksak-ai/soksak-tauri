@@ -712,6 +712,14 @@ const host: PluginViewPresentationHost = {
       },
     };
   },
+  async presentationSettled() {
+    const views = [...state.views.values()].filter((view) => !view.disposed);
+    await awaitPluginViewComposition();
+    await Promise.all(views
+      .filter((view) => view.visible)
+      .flatMap((view) => [view.renderer, ...view.members])
+      .map((label) => invoke("webview_presented", { label })));
+  },
 };
 
 export function installPluginViewPresentation(): void {
