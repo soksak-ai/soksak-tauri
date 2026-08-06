@@ -431,12 +431,114 @@ pub async fn window_startup_present(
         .map_err(|error| format!("startup presentation main-thread ACK failed: {error}"))?
 }
 
+fn validate_logical_size(width: f64, height: f64) -> Result<(), String> {
+    if !width.is_finite() || !height.is_finite() || width <= 0.0 || height <= 0.0 {
+        return Err("창 크기는 0보다 커야 한다".into());
+    }
+    Ok(())
+}
+
+/// AppKit 메인 스레드 안에서만 실행되는 실제 resize transaction. `Window` handle을 빌려
+/// NSWindow lifetime을 transaction 끝까지 소유한다.
+#[cfg(target_os = "macos")]
+fn apply_logical_size_on_main(
+    window: &tauri::Window,
+    width: f64,
+    height: f64,
+    _main_thread: objc2::MainThreadMarker,
+) -> Result<(), String> {
+    use objc2_foundation::NSSize;
+    let label = window.label();
+    let ptr = window.ns_window().map_err(|error| error.to_string())?;
+    if ptr.is_null() {
+        return Err(format!("창의 NSWindow를 찾지 못했다: {label}"));
+    }
+    let native = unsafe { &*(ptr as *const objc2_app_kit::NSWindow) };
+    native.setContentSize(NSSize::new(width, height));
+    native.layoutIfNeeded();
+    crate::titlebar::recompose_from_appkit_resize(native, label);
+    crate::webview::resize_registered_surface_hosts(label);
+    crate::webview::resize_pane_surface_hosts(label);
+    crate::webview::appkit_events::commit_resize_composition(native);
+    Ok(())
+}
+
+/// 동기 창 생성은 Tauri/Wry의 메인 스레드에서 실행된다. 큐나 채널 없이 같은 transaction을
+/// 직접 호출하며 marker로 그 전제를 검증한다.
+fn apply_logical_size_during_creation(
+    app: &AppHandle,
+    label: &str,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
+    validate_logical_size(width, height)?;
+    let window = app
+        .get_window(label)
+        .ok_or_else(|| format!("창 없음: {label}"))?;
+    #[cfg(target_os = "macos")]
+    {
+        let main_thread = objc2::MainThreadMarker::new()
+            .ok_or_else(|| "창 생성 크기 적용은 AppKit 메인 스레드여야 한다".to_string())?;
+        apply_logical_size_on_main(&window, width, height, main_thread)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        window
+            .set_size(tauri::LogicalSize::new(width, height))
+            .map_err(|error| error.to_string())
+    }
+}
+
+/// 공개 async resize는 `Window`를 메인 큐 closure까지 소유시킨 뒤 oneshot ACK를 기다린다.
+/// timeout 뒤 지연 mutation이라는 모순 상태를 만들지 않는다.
+async fn apply_logical_size_transaction(
+    app: &AppHandle,
+    label: &str,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
+    validate_logical_size(width, height)?;
+    let window = app
+        .get_window(label)
+        .ok_or_else(|| format!("창 없음: {label}"))?;
+    #[cfg(target_os = "macos")]
+    {
+        let scheduler = app.clone();
+        let (tx, rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
+        scheduler
+            .run_on_main_thread(move || {
+                let result = objc2::MainThreadMarker::new()
+                    .ok_or_else(|| {
+                        "창 resize transaction이 AppKit 메인 스레드 밖에서 실행됐다".to_string()
+                    })
+                    .and_then(|main_thread| {
+                        apply_logical_size_on_main(&window, width, height, main_thread)
+                    });
+                let _ = tx.send(result);
+            })
+            .map_err(|error| error.to_string())?;
+        rx.await
+            .map_err(|_| format!("창 resize transaction ACK 단절: {label}"))?
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        window
+            .set_size(tauri::LogicalSize::new(width, height))
+            .map_err(|error| error.to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn window_set_logical_size(
+    app: AppHandle,
+    label: String,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
+    apply_logical_size_transaction(&app, &label, width, height).await
+}
+
 /// 물리 픽셀 창 크기를 **적용 완료 후** 답하는 Tauri 경계.
-///
-/// tao의 macOS `set_inner_size`는 `setContentSize:`를 메인 GCD 큐에 async dispatch하고 즉시
-/// 반환한다. 그 SDK Promise를 완료 계약으로 노출하면 다음 크기·캡처가 이전 resize와 겹쳐
-/// WindowServer의 확대/축소 중간 합성물이 실제 프레임으로 보인다. 이 명령은 메인 스레드에서
-/// 크기와 AppKit layout/display를 한 transaction으로 적용하고, 그 closure의 완료를 기다린다.
 #[tauri::command]
 pub async fn window_set_physical_size(
     app: AppHandle,
@@ -450,41 +552,14 @@ pub async fn window_set_physical_size(
     let window = app
         .get_window(&label)
         .ok_or_else(|| format!("창 없음: {label}"))?;
-
-    #[cfg(target_os = "macos")]
-    {
-        let scale = window.scale_factor().map_err(|e| e.to_string())?;
-        let ptr = window.ns_window().map_err(|e| e.to_string())? as usize;
-        if ptr == 0 {
-            return Err(format!("창의 NSWindow를 찾지 못했다: {label}"));
-        }
-        let resize_label = label.clone();
-        let (tx, rx) = std::sync::mpsc::sync_channel::<Result<(), String>>(1);
-        app.run_on_main_thread(move || {
-            use objc2_foundation::NSSize;
-            let native = unsafe { &*(ptr as *const objc2_app_kit::NSWindow) };
-            native.setContentSize(NSSize::new(width as f64 / scale, height as f64 / scale));
-            // setContentSize는 NSWindow frame을 먼저 바꾸고 content hierarchy의 bounds 정착은
-            // layout에서 끝낸다. affine 투영이 이전 parent bounds를 읽지 않게 순서를 고정한다.
-            native.layoutIfNeeded();
-            crate::titlebar::recompose_from_appkit_resize(native, &resize_label);
-            crate::webview::resize_registered_surface_hosts(&resize_label);
-            crate::webview::resize_pane_surface_hosts(&resize_label);
-            crate::webview::appkit_events::commit_resize_composition(native);
-            let _ = tx.send(Ok(()));
-        })
-        .map_err(|e| e.to_string())?;
-        return rx
-            .recv_timeout(std::time::Duration::from_secs(2))
-            .map_err(|_| format!("창 resize transaction 시간 초과: {label}"))?;
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        window
-            .set_size(tauri::PhysicalSize::new(width, height))
-            .map_err(|e| e.to_string())
-    }
+    let scale = window.scale_factor().map_err(|error| error.to_string())?;
+    apply_logical_size_transaction(
+        &app,
+        &label,
+        width as f64 / scale,
+        height as f64 / scale,
+    )
+    .await
 }
 
 // 한 창의 네이티브를 설치하는 단일 진입점(MW1) — main(setup)·새 창(window_create)이 같은 함수를
@@ -606,10 +681,28 @@ fn create_window_labeled(
     let startup = create_window_core(app, label, init, focus)?;
     if let (Some((x, y, w, h)), Some(win)) = (rect, app.get_window(label)) {
         let _ = win.set_position(tauri::LogicalPosition::new(x, y));
-        let _ = win.set_size(tauri::LogicalSize::new(w, h));
+        if let Err(error) = apply_logical_size_during_creation(app, label, w, h) {
+            return rollback_startup_window(app, &startup, &error);
+        }
     }
     commit_startup_window(app, &startup)?;
     Ok(label.to_string())
+}
+
+fn rollback_startup_window(
+    app: &AppHandle,
+    startup: &WindowIdentity,
+    cause: &str,
+) -> Result<String, String> {
+    let label = &startup.label;
+    let window = app
+        .get_window(label)
+        .ok_or_else(|| format!("창 생성 거래 실패({cause}); 되돌릴 창도 없다: {label}"))?;
+    window
+        .destroy()
+        .map_err(|error| format!("창 생성 거래 실패({cause}); 창 되돌리기도 실패했다: {error}"))?;
+    forget_startup_window(app, startup);
+    Err(format!("창 생성 거래 실패로 생성을 되돌렸다: {cause}"))
 }
 
 // 창 생성 공용 골격 — conf windows[0] 상속 + label 교체 + init 쿼리 + 네이티브 설치.

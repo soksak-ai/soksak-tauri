@@ -102,22 +102,84 @@ fn runtime_workspace_windows_stay_hidden_through_build_and_commit_after_final_ge
     )
     .expect("a fresh workspace must commit only after its cascade position is final");
 
+}
+
+#[test]
+fn restored_workspace_waits_for_applied_logical_size_before_startup_commit() {
+    let source = crate_source("src/window.rs");
     let restored = source_region(
         &source,
         "fn create_window_labeled(",
         "fn create_window_core(",
     );
+    assert!(
+        !restored.contains("win.set_size("),
+        "RED: tao/Tauri set_size returns before macOS AppKit applies the restored content size; startup must not commit from that SDK promise",
+    );
     ordered_positions(
         restored,
         &[
             "create_window_core(app, label, init, focus)",
-            "win.set_position(",
-            "win.set_size(",
+            "apply_logical_size_during_creation(app, label, w, h)",
             "commit_startup_window(app, &startup)",
             "Ok(label.to_string())",
         ],
     )
-    .expect("a restored workspace must commit only after position and size restoration are final");
+    .expect("restored geometry needs an AppKit-applied receipt before the creation commit");
+    assert!(
+        restored.contains("rollback_startup_window(app, &startup, &error)"),
+        "a failed restored-geometry transaction must not leave a hidden native window or startup generation behind",
+    );
+}
+
+#[test]
+fn logical_size_command_and_restore_share_one_appkit_ack_transaction() {
+    let source = crate_source("src/window.rs");
+    let main_transaction = source_region(
+        &source,
+        "fn apply_logical_size_on_main(",
+        "fn apply_logical_size_during_creation(",
+    );
+    for marker in [
+        "setContentSize",
+        "layoutIfNeeded",
+        "recompose_from_appkit_resize",
+        "commit_resize_composition",
+    ] {
+        assert!(
+            main_transaction.contains(marker),
+            "main-thread logical size transaction has no applied AppKit marker: {marker}",
+        );
+    }
+    let creation = source_region(
+        &source,
+        "fn apply_logical_size_during_creation(",
+        "async fn apply_logical_size_transaction(",
+    );
+    assert!(creation.contains("MainThreadMarker::new()"));
+    assert!(creation.contains("apply_logical_size_on_main"));
+    let transaction = source_region(
+        &source,
+        "async fn apply_logical_size_transaction(",
+        "#[tauri::command]\npub async fn window_set_logical_size(",
+    );
+    for marker in ["window", "tokio::sync::oneshot", "run_on_main_thread", "rx.await"] {
+        assert!(
+            transaction.contains(marker),
+            "async ACK transaction marker missing: {marker}",
+        );
+    }
+    assert!(!transaction.contains("recv_timeout"));
+    assert!(!transaction.contains("as usize"));
+    let command = source_region(
+        &source,
+        "pub async fn window_set_logical_size(",
+        "pub async fn window_set_physical_size(",
+    );
+    assert!(
+        command.contains("apply_logical_size_transaction"),
+        "the public logical setSize command must await the same transaction used by startup restore",
+    );
 }
 
 #[test]
@@ -387,13 +449,11 @@ fn appkit_resize_projects_titlebar_and_native_surfaces_before_the_single_display
 #[test]
 fn physical_resize_replies_after_appkit_applied_and_displayed_the_size() {
     let src = std::fs::read_to_string("src/window.rs").expect("window source");
-    let command = src
-        .split_once("fn window_set_physical_size(")
-        .expect("framework resize command")
-        .1
-        .split_once("\n}\n\n// 한 창의")
-        .expect("command boundary")
-        .0;
+    let command = source_region(
+        &src,
+        "fn apply_logical_size_on_main(",
+        "fn apply_logical_size_during_creation(",
+    );
     assert!(
         command.contains("setContentSize"),
         "tao의 비동기 setContentSize dispatch를 앱 창 계약으로 노출하면 안 된다"
@@ -424,9 +484,21 @@ fn physical_resize_replies_after_appkit_applied_and_displayed_the_size() {
             && project_panes < commit,
         "content layout → titlebar → direct surface → pane host 투영 → 전체 창 display commit 순서여야 한다"
     );
+    let async_transaction = source_region(
+        &src,
+        "async fn apply_logical_size_transaction(",
+        "#[tauri::command]\npub async fn window_set_logical_size(",
+    );
+    assert!(async_transaction.contains("rx.await"));
+    assert!(!async_transaction.contains("recv_timeout"));
+    let physical = source_region(
+        &src,
+        "pub async fn window_set_physical_size(",
+        "// 한 창의 네이티브를 설치하는 단일 진입점",
+    );
     assert!(
-        command.contains("recv_timeout"),
-        "명령 응답은 메인스레드 resize transaction 완료를 기다려야 한다"
+        physical.contains("apply_logical_size_transaction"),
+        "물리 크기 명령도 별도 조기 완료 경로 없이 같은 AppKit ACK transaction을 사용해야 한다",
     );
 }
 

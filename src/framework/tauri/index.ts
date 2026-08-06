@@ -14,7 +14,6 @@ import { listen as tauriListen } from "@tauri-apps/api/event";
 import {
   getCurrentWindow,
   LogicalPosition,
-  LogicalSize,
   PhysicalPosition,
   Window,
 } from "@tauri-apps/api/window";
@@ -50,7 +49,9 @@ function wrapWindow(win: Window, label: string): FrameworkWindowHandle {
   return {
     label,
     setTitle: (t) => win.setTitle(t),
-    setSize: (w, h) => win.setSize(new LogicalSize(w, h)),
+    setSize: (w, h) => tauriInvoke("window_set_logical_size", {
+      label, width: w, height: h,
+    }),
     setPosition: (x, y) => win.setPosition(new LogicalPosition(x, y)),
     setFocus: () => win.setFocus(),
     setTheme: (mode) => win.setTheme(mode),
