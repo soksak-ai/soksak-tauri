@@ -35,10 +35,12 @@ Two standard targets across every repo — core, plugins, sidecars. A repo expos
 
 ## Canonical browser acceptance: B01–B12
 
-`browser`, `browser-chromium`, and `browser-chromium-offscreen` pass the same twelve rules with
+`browser`, `browser-chromium`, and `browser-chromium-offscreen` pass every applicable rule with
 the same fixture and assertions. Framework-specific state may explain a failure; it never waives
-or weakens a rule. The code source of truth is `scripts/e2e/lib/browser-gates.mjs`, and every report
-contains the full 3-engine × 12-gate matrix of 36 cells.
+or weakens an applicable rule. The code source of truth is `scripts/e2e/lib/browser-gates.mjs`, and
+every report contains the full 3-engine × 12-gate matrix of 36 cells. A rule may be
+`not-applicable` only when the catalog derives that state from the report's framework/platform
+identity; a runtime, adapter, or test cannot claim it for itself.
 
 | ID | Fixed rule | Machine evidence |
 |---|---|---|
@@ -53,19 +55,21 @@ contains the full 3-engine × 12-gate matrix of 36 cells.
 | B09 | Rail `+`, right sidebar, and modal above native surfaces | Public hit/layer state at a real overlap reports chrome as the topmost owner. |
 | B10 | Hostile rapid whole-window resize is affine and restores | Every finite resize transaction asserts DOM/native coordinate agreement and restoration of the original final geometry. |
 | B11 | Pane resize round trip + wheel `0→480→0` + tab-targeted full capture | Assert settlement for the explicit view, real scroll events, capture extent/document geometry, and restored scroll state. |
-| B12 | Traffic lights 3:3 hole/backing/center agreement under hostile resize | Public AppKit button rects and DOM hole/backing rects assert 3:3 mapping, containment, vertical centers, and resize agreement. |
+| B12 | macOS traffic-light center/composition agreement under hostile resize | On Tauri, public AppKit button/backing rects and the DOM reservation assert 3:3 mapping, containment, vertical centers, and resize agreement. On Electron, the public traffic-light position and DOM reservation assert the same visible center/resize contract without inventing Tauri backing views. Non-macOS reports mark this gate statically `not-applicable`. |
 
-Each engine×gate machine state is one of `not-run`, `blocked`, `red`, or `green`. `green` and
+Each engine×gate machine state is one of `not-applicable`, `not-run`, `blocked`, `red`, or `green`. `green` and
 `red` require machine-reproduced evidence; `blocked` requires a concrete reason such as a missing
-public measurement surface. Neither `blocked` nor `not-run` counts as success. The machine summary
-is `green` only when all 36 cells are `green`; otherwise it preserves the outstanding state with
-`red` → `blocked` → `not-run` precedence.
+public measurement surface. Neither `blocked` nor `not-run` counts as success. `not-applicable`
+is excluded from the required count and is valid only for the static catalog condition above. The
+machine summary is `green` only when every required cell is `green`; otherwise it preserves the
+outstanding state with `red` → `blocked` → `not-run` precedence.
 
 Screenshots and recordings must be inspected during development to discover defects, but they are
 never an input to, or success evidence for, an automated machine gate. Convert every visual finding
 into numeric public coordinates, state, or event traces and reproduce it as RED in the same gate.
-Human review of images and recordings is recorded separately as `visualReview` with `pending`,
-`passed`, or `failed`; it never changes machine state. Conversely, machine `green` never changes
+Human review of images and recordings is recorded separately as `visualReview` with
+`not-applicable`, `pending`, `passed`, or `failed`; it never changes machine state. Conversely,
+machine `green` never changes
 `visualReview` to `passed`. `createBrowserGateReport`, `setMachineGateStatus`,
 `setVisualReviewStatus`, and `serializeBrowserGateReport` serialize the complete result in fixed
 order without mixing the two verdicts.

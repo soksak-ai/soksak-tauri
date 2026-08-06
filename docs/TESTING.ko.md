@@ -30,10 +30,11 @@
 
 ## 브라우저 acceptance 정본: B01–B12
 
-`browser`, `browser-chromium`, `browser-chromium-offscreen`은 아래 12개 기준을 같은 fixture와
-같은 단언으로 통과한다. 프레임워크별 상태는 실패 원인을 설명할 수 있을 뿐 기준을 면제하거나
-완화하지 않는다. 코드 정본은 `scripts/e2e/lib/browser-gates.mjs`이며, 보고서는 항상 3개 엔진 ×
-12개 게이트의 36칸을 전부 포함한다.
+`browser`, `browser-chromium`, `browser-chromium-offscreen`은 적용되는 모든 기준을 같은 fixture와
+같은 단언으로 통과한다. 프레임워크별 상태는 실패 원인을 설명할 수 있을 뿐 적용되는 기준을
+면제하거나 완화하지 않는다. 코드 정본은 `scripts/e2e/lib/browser-gates.mjs`이며, 보고서는 항상
+3개 엔진 × 12개 게이트의 36칸을 전부 포함한다. `not-applicable`은 보고서의 framework/platform
+신원에서 정본 catalog가 정적으로 도출할 때만 가능하며 runtime, adapter, test가 스스로 선언할 수 없다.
 
 | ID | 고정 기준 | 기계 판정 근거 |
 |---|---|---|
@@ -48,16 +49,17 @@
 | B09 | rail `+`/우측 sidebar/modal이 native 위 | 실제 교집합의 공개 hit/layer 상태가 chrome을 최상단 소유자로 보고하는지 단언한다. |
 | B10 | hostile 전체창 빠른 resize affine + 원복 | 유한 resize transaction마다 DOM/native 좌표 정합과 최종 원래 기하 복원을 단언한다. |
 | B11 | pane resize 왕복 + wheel `0→480→0` + 탭 지정 full capture | 명시한 view의 resize 정착, 실제 scroll 사건, capture 범위·문서 기하·scroll 복원을 단언한다. |
-| B12 | traffic lights 3:3 hole/backing/center/hostile resize | 공개 AppKit button rect와 DOM hole/backing rect의 3:3 대응·포함·상하 중심·resize 정합을 단언한다. |
+| B12 | macOS traffic lights 상하 중심/composition/hostile resize | Tauri는 공개 AppKit button/backing rect와 DOM reservation의 3:3 대응·포함·상하 중심·resize 정합을 단언한다. Electron은 Tauri backing view를 지어내지 않고 공개 traffic-light position과 DOM reservation으로 같은 가시적 중심/resize 계약을 단언한다. macOS가 아니면 정적으로 `not-applicable`이다. |
 
-각 engine×gate의 machine 상태는 `not-run`, `blocked`, `red`, `green` 중 하나다. `green`과 `red`는
+각 engine×gate의 machine 상태는 `not-applicable`, `not-run`, `blocked`, `red`, `green` 중 하나다. `green`과 `red`는
 기계가 재현한 근거가 필수이고, `blocked`는 누락된 공개 측정면 같은 구체적 이유가 필수다. `blocked`나
-`not-run`을 성공으로 세지 않는다. machine 전체는 36칸이 모두 `green`일 때만 `green`이며, 그 외에는
-`red` → `blocked` → `not-run` 우선순위로 미완료 원인을 보존한다.
+`not-run`을 성공으로 세지 않는다. `not-applicable`은 위의 정적 catalog 조건일 때만 required 개수에서
+제외한다. machine 전체는 적용되는 모든 칸이 `green`일 때만 `green`이며, 그 외에는 `red` → `blocked`
+→ `not-run` 우선순위로 미완료 원인을 보존한다.
 
 스크린샷과 녹화는 개발 중 반드시 직접 보고 결함을 발견하는 자료지만 자동 machine gate의 입력이나
 성공 근거가 아니다. 관측한 결함은 공개 좌표·상태·사건 trace로 수치화해 같은 gate의 RED로 만든다.
-이미지·녹화의 사람 검토는 별도 `visualReview`에 `pending`, `passed`, `failed`로 기록하며 machine
+이미지·녹화의 사람 검토는 별도 `visualReview`에 `not-applicable`, `pending`, `passed`, `failed`로 기록하며 machine
 상태를 바꾸지 않는다. 반대로 machine `green`도 `visualReview`를 자동 `passed`로 만들지 않는다.
 `createBrowserGateReport`, `setMachineGateStatus`, `setVisualReviewStatus`,
 `serializeBrowserGateReport`는 이 두 판정을 섞지 않고 고정 순서로 전체 결과를 직렬화한다.

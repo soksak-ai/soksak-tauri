@@ -16,6 +16,7 @@ export const BROWSER_ACCEPTANCE_ENGINES = Object.freeze([
 ]);
 
 export const MACHINE_GATE_STATUSES = Object.freeze([
+  "not-applicable",
   "not-run",
   "blocked",
   "red",
@@ -23,6 +24,7 @@ export const MACHINE_GATE_STATUSES = Object.freeze([
 ]);
 
 export const VISUAL_REVIEW_STATUSES = Object.freeze([
+  "not-applicable",
   "pending",
   "passed",
   "failed",
@@ -96,7 +98,7 @@ export const BROWSER_ACCEPTANCE_GATES = deepFreeze([
   {
     id: "B12",
     name: "traffic-light-composition",
-    contract: "traffic lights 3개와 hole/backing 3개가 1:1이고 상하 중앙 및 hostile resize 정합을 유지한다.",
+    contract: "macOS traffic lights는 상하 중앙 및 hostile resize 정합을 유지한다. Tauri는 DOM reservation과 AppKit button/backing 3:3을, Electron은 공개 traffic-light position과 DOM reservation 정합을 증명한다.",
   },
 ]);
 
@@ -106,7 +108,7 @@ const platformSet = new Set(BROWSER_ACCEPTANCE_PLATFORMS);
 const gateSet = new Set(BROWSER_ACCEPTANCE_GATES.map(({ id }) => id));
 const machineStatusSet = new Set(MACHINE_GATE_STATUSES);
 const visualStatusSet = new Set(VISUAL_REVIEW_STATUSES);
-const REPORT_SCHEMA_VERSION = 2;
+const REPORT_SCHEMA_VERSION = 3;
 const JUDGE_RECEIPT_SCHEMA_VERSION = 1;
 
 function deepFreeze(value) {
@@ -116,7 +118,28 @@ function deepFreeze(value) {
   return value;
 }
 
-function initialCell() {
+const B12_NOT_APPLICABLE_REASON = "B12 applies only to macOS traffic lights";
+
+function gateIsApplicable(identity, gate) {
+  return gate !== "B12" || identity.platform === "darwin";
+}
+
+function initialCell(identity, gate) {
+  if (!gateIsApplicable(identity, gate)) {
+    return {
+      machine: {
+        status: "not-applicable",
+        evidence: [],
+        reason: B12_NOT_APPLICABLE_REASON,
+        judgeReceipt: null,
+      },
+      visualReview: {
+        status: "not-applicable",
+        artifacts: [],
+        notes: B12_NOT_APPLICABLE_REASON,
+      },
+    };
+  }
   return {
     machine: { status: "not-run", evidence: [], reason: null, judgeReceipt: null },
     visualReview: { status: "pending", artifacts: [], notes: null },
@@ -638,6 +661,7 @@ function requireReport(report) {
     }
     for (const { id } of BROWSER_ACCEPTANCE_GATES) {
       const cell = gates[id];
+      const applicable = gateIsApplicable(identity, id);
       if (!cell || !machineStatusSet.has(cell.machine?.status)) {
         throw new TypeError(`${engine}/${id} has an invalid machine status`);
       }
@@ -647,7 +671,17 @@ function requireReport(report) {
       requireStringList(cell.machine.evidence, `${engine}/${id}.machine.evidence`);
       requireOptionalText(cell.machine.reason, `${engine}/${id}.machine.reason`);
       const receipt = cell.machine.judgeReceipt;
-      if (cell.machine.status === "green" && receipt == null) {
+      if (!applicable) {
+        if (cell.machine.status !== "not-applicable"
+            || cell.machine.evidence.length !== 0
+            || cell.machine.reason !== B12_NOT_APPLICABLE_REASON
+            || receipt !== null) {
+          throw new TypeError(`${engine}/${id}.machine must preserve static not-applicable status`);
+        }
+      } else if (cell.machine.status === "not-applicable") {
+        throw new TypeError(`${engine}/${id}.machine is applicable for this report identity`);
+      }
+      if (applicable && cell.machine.status === "green" && receipt == null) {
         throw new TypeError(`${engine}/${id}.machine green requires judgeReceipt`);
       }
       if (receipt != null) {
@@ -661,14 +695,14 @@ function requireReport(report) {
           throw new TypeError(`${engine}/${id}.machine verdict does not match judgeReceipt`);
         }
       }
-      if ((cell.machine.status === "green" || cell.machine.status === "red")
+      if (applicable && (cell.machine.status === "green" || cell.machine.status === "red")
           && cell.machine.evidence.length === 0) {
         throw new TypeError(`${engine}/${id}.machine.evidence must not be empty`);
       }
-      if (cell.machine.status === "blocked" && cell.machine.reason == null) {
+      if (applicable && cell.machine.status === "blocked" && cell.machine.reason == null) {
         throw new TypeError(`${engine}/${id}.machine.reason is required for blocked`);
       }
-      if (cell.machine.status === "not-run"
+      if (applicable && cell.machine.status === "not-run"
           && (cell.machine.evidence.length > 0 || cell.machine.reason != null)) {
         throw new TypeError(`${engine}/${id}.machine not-run cannot carry evidence or reason`);
       }
@@ -680,7 +714,16 @@ function requireReport(report) {
       }
       requireStringList(cell.visualReview.artifacts, `${engine}/${id}.visualReview.artifacts`);
       requireOptionalText(cell.visualReview.notes, `${engine}/${id}.visualReview.notes`);
-      if (cell.visualReview.status !== "pending" && cell.visualReview.artifacts.length === 0) {
+      if (!applicable) {
+        if (cell.visualReview.status !== "not-applicable"
+            || cell.visualReview.artifacts.length !== 0
+            || cell.visualReview.notes !== B12_NOT_APPLICABLE_REASON) {
+          throw new TypeError(`${engine}/${id}.visualReview must preserve static not-applicable status`);
+        }
+      } else if (cell.visualReview.status === "not-applicable") {
+        throw new TypeError(`${engine}/${id}.visualReview is applicable for this report identity`);
+      }
+      if (applicable && cell.visualReview.status !== "pending" && cell.visualReview.artifacts.length === 0) {
         throw new TypeError(`${engine}/${id}.visualReview.artifacts must not be empty`);
       }
     }
@@ -703,12 +746,16 @@ function replaceCell(report, engine, gate, replace) {
 }
 
 export function createBrowserGateReport(identity) {
+  const normalizedIdentity = normalizeReportIdentity(identity);
   return deepFreeze({
     schemaVersion: REPORT_SCHEMA_VERSION,
-    identity: normalizeReportIdentity(identity),
+    identity: normalizedIdentity,
     engines: Object.fromEntries(BROWSER_ACCEPTANCE_ENGINES.map((engine) => [
       engine,
-      Object.fromEntries(BROWSER_ACCEPTANCE_GATES.map(({ id }) => [id, initialCell()])),
+      Object.fromEntries(BROWSER_ACCEPTANCE_GATES.map(({ id }) => [
+        id,
+        initialCell(normalizedIdentity, id),
+      ])),
     ])),
   });
 }
@@ -728,6 +775,9 @@ export function setMachineGateStatus(report, update) {
   const { engine, gate } = update;
   requireEngine(engine);
   requireGate(gate);
+  if (!gateIsApplicable(report.identity, gate)) {
+    throw new TypeError(`${engine}/${gate} is not applicable for this report identity`);
+  }
   if (receiptUpdate) {
     if (Object.hasOwn(update, "status") || Object.hasOwn(update, "evidence") || Object.hasOwn(update, "reason")) {
       throw new TypeError("judgeReceipt supplies status, evidence, and reason");
@@ -761,6 +811,9 @@ export function setMachineGateStatus(report, update) {
 
   const status = update.status;
   if (!machineStatusSet.has(status)) throw new TypeError(`unknown machine gate status: ${status}`);
+  if (status === "not-applicable") {
+    throw new TypeError("not-applicable is derived from report identity");
+  }
   if (status === "green") throw new TypeError("green requires a matching judgeReceipt");
   const normalizedEvidence = requireStringList(update.evidence ?? [], "evidence", {
     nonEmpty: status === "red",
@@ -793,7 +846,13 @@ export function setVisualReviewStatus(report, {
   requireReport(report);
   requireEngine(engine);
   requireGate(gate);
+  if (!gateIsApplicable(report.identity, gate)) {
+    throw new TypeError(`${engine}/${gate} is not applicable for this report identity`);
+  }
   if (!visualStatusSet.has(status)) throw new TypeError(`unknown visualReview status: ${status}`);
+  if (status === "not-applicable") {
+    throw new TypeError("not-applicable is derived from report identity");
+  }
   const normalizedArtifacts = requireStringList(artifacts, "artifacts", {
     nonEmpty: status !== "pending",
   });
@@ -806,7 +865,7 @@ export function setVisualReviewStatus(report, {
 
 export function machineGateSummary(report) {
   requireReport(report);
-  const counts = { "not-run": 0, blocked: 0, red: 0, green: 0 };
+  const counts = { "not-applicable": 0, "not-run": 0, blocked: 0, red: 0, green: 0 };
   for (const engine of BROWSER_ACCEPTANCE_ENGINES) {
     for (const { id } of BROWSER_ACCEPTANCE_GATES) counts[report.engines[engine][id].machine.status] += 1;
   }
@@ -814,17 +873,19 @@ export function machineGateSummary(report) {
     : counts.blocked > 0 ? "blocked"
       : counts["not-run"] > 0 ? "not-run"
         : "green";
-  return { status, total: BROWSER_ACCEPTANCE_ENGINES.length * BROWSER_ACCEPTANCE_GATES.length, counts };
+  const total = BROWSER_ACCEPTANCE_ENGINES.length * BROWSER_ACCEPTANCE_GATES.length;
+  return { status, total, required: total - counts["not-applicable"], counts };
 }
 
 export function visualReviewSummary(report) {
   requireReport(report);
-  const counts = { pending: 0, passed: 0, failed: 0 };
+  const counts = { "not-applicable": 0, pending: 0, passed: 0, failed: 0 };
   for (const engine of BROWSER_ACCEPTANCE_ENGINES) {
     for (const { id } of BROWSER_ACCEPTANCE_GATES) counts[report.engines[engine][id].visualReview.status] += 1;
   }
   const status = counts.failed > 0 ? "failed" : counts.pending > 0 ? "pending" : "passed";
-  return { status, total: BROWSER_ACCEPTANCE_ENGINES.length * BROWSER_ACCEPTANCE_GATES.length, counts };
+  const total = BROWSER_ACCEPTANCE_ENGINES.length * BROWSER_ACCEPTANCE_GATES.length;
+  return { status, total, required: total - counts["not-applicable"], counts };
 }
 
 export function serializeBrowserGateReport(report) {

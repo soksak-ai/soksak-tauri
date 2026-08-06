@@ -35,6 +35,13 @@ const ELECTRON_RUN = Object.freeze({
   runId: "browser-gates-electron-run-1",
 });
 
+const LINUX_RUN = Object.freeze({
+  framework: "tauri",
+  platform: "linux",
+  buildId: "tauri-linux-build-c1",
+  runId: "browser-gates-linux-run-1",
+});
+
 function createReport(identity = TAURI_RUN) {
   return createBrowserGateReport(identity);
 }
@@ -160,8 +167,10 @@ describe("브라우저 12-gate 정본", () => {
       "browser-chromium-offscreen",
     ]);
     expect(BROWSER_ACCEPTANCE_GATES.map(({ id, name }) => [id, name])).toEqual(expectedGateNames);
-    expect(MACHINE_GATE_STATUSES).toEqual(["not-run", "blocked", "red", "green"]);
-    expect(VISUAL_REVIEW_STATUSES).toEqual(["pending", "passed", "failed"]);
+    expect(MACHINE_GATE_STATUSES).toEqual(["not-applicable", "not-run", "blocked", "red", "green"]);
+    expect(VISUAL_REVIEW_STATUSES).toEqual(["not-applicable", "pending", "passed", "failed"]);
+    expect(BROWSER_ACCEPTANCE_GATES.find(({ id }) => id === "B12")?.contract).toContain("Tauri");
+    expect(BROWSER_ACCEPTANCE_GATES.find(({ id }) => id === "B12")?.contract).toContain("Electron");
   });
 
   it("B01은 각 engine/tab의 mount·공개 주소 input·페이지 신원·명시 view 영수증이 모두 맞아야 green이다", () => {
@@ -296,7 +305,7 @@ describe("브라우저 12-gate 정본", () => {
   it("새 보고서는 빠짐없는 3×12 not-run과 별도 pending 시각 검토로 시작한다", () => {
     const report = createReport();
 
-    expect(report.schemaVersion).toBe(2);
+    expect(report.schemaVersion).toBe(3);
     expect(report.identity).toEqual(TAURI_RUN);
     expect(Object.keys(report.engines)).toEqual(BROWSER_ACCEPTANCE_ENGINES);
     for (const engine of BROWSER_ACCEPTANCE_ENGINES) {
@@ -311,13 +320,75 @@ describe("브라우저 12-gate 정본", () => {
     expect(machineGateSummary(report)).toEqual({
       status: "not-run",
       total: 36,
-      counts: { "not-run": 36, blocked: 0, red: 0, green: 0 },
+      required: 36,
+      counts: { "not-applicable": 0, "not-run": 36, blocked: 0, red: 0, green: 0 },
     });
     expect(visualReviewSummary(report)).toEqual({
       status: "pending",
       total: 36,
-      counts: { pending: 36, passed: 0, failed: 0 },
+      required: 36,
+      counts: { "not-applicable": 0, pending: 36, passed: 0, failed: 0 },
     });
+  });
+
+  it("macOS 전용 B12는 다른 플랫폼에서 숨기지 않고 정적 not-applicable로 기록한다", () => {
+    const report = createReport(LINUX_RUN);
+    for (const engine of BROWSER_ACCEPTANCE_ENGINES) {
+      expect(report.engines[engine].B12).toEqual({
+        machine: {
+          status: "not-applicable",
+          evidence: [],
+          reason: "B12 applies only to macOS traffic lights",
+          judgeReceipt: null,
+        },
+        visualReview: {
+          status: "not-applicable",
+          artifacts: [],
+          notes: "B12 applies only to macOS traffic lights",
+        },
+      });
+    }
+    expect(machineGateSummary(report)).toEqual({
+      status: "not-run",
+      total: 36,
+      required: 33,
+      counts: { "not-applicable": 3, "not-run": 33, blocked: 0, red: 0, green: 0 },
+    });
+    expect(visualReviewSummary(report)).toEqual({
+      status: "pending",
+      total: 36,
+      required: 33,
+      counts: { "not-applicable": 3, pending: 33, passed: 0, failed: 0 },
+    });
+    expect(() => setMachineGateStatus(report, {
+      engine: "browser",
+      gate: "B12",
+      status: "blocked",
+      reason: "override",
+    })).toThrow(/not applicable/);
+    expect(() => setVisualReviewStatus(report, {
+      engine: "browser",
+      gate: "B12",
+      status: "failed",
+      artifacts: ["fake.png"],
+    })).toThrow(/not applicable/);
+
+    const forgedApplicable = structuredClone(report);
+    forgedApplicable.engines.browser.B12.machine = {
+      status: "not-run", evidence: [], reason: null, judgeReceipt: null,
+    };
+    expect(() => serializeBrowserGateReport(forgedApplicable)).toThrow(/static not-applicable/);
+
+    const forgedAbsence = structuredClone(createReport());
+    forgedAbsence.engines.browser.B01.machine = {
+      status: "not-applicable", evidence: [], reason: "forged", judgeReceipt: null,
+    };
+    expect(() => serializeBrowserGateReport(forgedAbsence)).toThrow(/applicable/);
+    expect(() => setMachineGateStatus(createReport(), {
+      engine: "browser",
+      gate: "B01",
+      status: "not-applicable",
+    })).toThrow(/derived/);
   });
 
   it("framework/build/run identity가 없거나 모호하면 보고서와 judge를 만들지 않는다", () => {
@@ -491,7 +562,7 @@ describe("브라우저 12-gate 정본", () => {
     const serialized = serializeBrowserGateReport(report);
     const parsed = JSON.parse(serialized);
 
-    expect(parsed.schemaVersion).toBe(2);
+    expect(parsed.schemaVersion).toBe(3);
     expect(parsed.identity).toEqual(TAURI_RUN);
     expect(parsed.catalog.map(({ id, name }) => [id, name])).toEqual(expectedGateNames);
     expect(Object.keys(parsed.engines)).toEqual(BROWSER_ACCEPTANCE_ENGINES);
