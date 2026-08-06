@@ -27,6 +27,21 @@ fn external_surface_hosts_are_always_below_the_dom_hole_plane() {
 }
 
 #[test]
+fn pane_group_converts_declared_members_from_their_adapter_parent() {
+    let source = include_str!("layer.rs");
+    let group = source
+        .split_once("pub fn group_pane_surface_host")
+        .expect("pane host constructor exists")
+        .1
+        .split_once("pub fn pane_surface_host_state")
+        .expect("pane host constructor boundary")
+        .0;
+    assert!(group.contains("convertRect: member_bounds, toView: &*parent"));
+    assert!(group.contains("member_host.window == window"));
+    assert!(!group.contains("패인 member의 부모가 다릅니다"));
+}
+
+#[test]
 fn native_layout_motion_animates_model_position_without_stacking_a_transform() {
     let source = include_str!("layer.rs");
     let motion = source

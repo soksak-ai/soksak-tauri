@@ -760,6 +760,9 @@ Member admission requires an identity from one of the two declared registries: a
 or an external native surface registered by the framework adapter. An arbitrary `NSView` is never a member.
 An external surface's dedicated slot host already is its clipping and movement unit. The adapter binds
 that identity to its workspace window and reparents it directly; it never adds a second wrapper host.
+Renderer and external slots may begin under different adapter parents. Membership requires the same
+workspace native window, and AppKit `convertRect:toView:` normalizes their content-root coordinates
+before reparenting.
 
 `webview.composition` exposes not only DOM anchors and actual native frames, but also each label's slot
 rect, last applied rect, visibility and pending-sync state. The browser product plugin does not

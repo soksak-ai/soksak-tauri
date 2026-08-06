@@ -498,13 +498,30 @@ pub fn group_pane_surface_host(
     if Retained::as_ptr(&parent) != Retained::as_ptr(&main_parent) {
         return Err(format!("pane renderer와 main DOM view의 부모가 다릅니다: {renderer}"));
     }
-    for (label, ptr) in &host_ptrs {
+    for (label, ptr) in host_ptrs.iter().skip(1) {
+        let member_host = SURFACE_HOSTS.host(label)
+            .ok_or_else(|| format!("pane member host identity가 없습니다: {label}"))?;
+        let same_window = member_host.window == window;
+        if !same_window {
+            return Err(format!("pane member의 소유 창이 다릅니다: {label}"));
+        }
         let host = unsafe { &*(*ptr as *const NSView) };
-        let same_parent = unsafe { host.superview() }
-            .map(|candidate| Retained::as_ptr(&candidate) == Retained::as_ptr(&parent))
+        let same_native_window = host.window().zip(parent.window())
+            .map(|(candidate, expected)| Retained::as_ptr(&candidate) == Retained::as_ptr(&expected))
             .unwrap_or(false);
-        if !same_parent { return Err(format!("pane member의 부모가 다릅니다: {label}")); }
+        if !same_native_window {
+            return Err(format!("pane member의 native window가 다릅니다: {label}"));
+        }
     }
+
+    // Renderer and external members may start under different adapter-owned parents. Convert every
+    // existing host bounds into the target content-root coordinates before any reparenting.
+    let frames_in_parent = host_ptrs.iter().map(|(_, ptr)| {
+        let host = unsafe { &*(*ptr as *const NSView) };
+        let member_bounds = host.bounds();
+        let converted: NSRect = unsafe { msg_send![host, convertRect: member_bounds, toView: &*parent] };
+        converted
+    }).collect::<Vec<_>>();
 
     let mtm = objc2::MainThreadMarker::new().ok_or("pane host는 main thread에서만 생성합니다")?;
     let frame = css_rect_in_parent(&parent, rect.0, rect.1, rect.2, rect.3);
@@ -522,9 +539,8 @@ pub fn group_pane_surface_host(
         Some(main_view),
     );
 
-    for (label, ptr) in &host_ptrs {
+    for ((label, ptr), old) in host_ptrs.iter().zip(frames_in_parent) {
         let host = unsafe { &*(*ptr as *const NSView) };
-        let old = host.frame();
         let local = NSRect::new(
             NSPoint::new(old.origin.x - frame.origin.x, old.origin.y - frame.origin.y),
             NSSize::new(old.size.width, old.size.height),
