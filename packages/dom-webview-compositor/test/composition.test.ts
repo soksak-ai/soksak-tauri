@@ -3,6 +3,7 @@ import {
   compositionFrameComparisonVerdict,
   compositionInventoryVerdict,
   compositionSampleVerdict,
+  compositionTimelineVerdict,
   compositionTransactionVerdict,
   logicalRectToPhysical,
   motionModeForClocks,
@@ -194,5 +195,34 @@ describe("DOM ↔ native webview composition contract", () => {
       "s1:sequence=2/1",
       "commit-missing",
     ]));
+  });
+
+  it("서로 다른 display cadence는 각 실제 epoch의 한 궤적으로 판정하고 nearest sample로 붙이지 않는다", () => {
+    const frame = (x: number) => ({ x, y: 20, w: 300, h: 200 });
+    const timed = (times: number[], step: number) => times.map((sampledAtUnixMs, sequence) => ({
+      sequence,
+      sampledAtUnixMs,
+      frame: frame(sequence * step),
+    }));
+    const input = {
+      coordinateSpace: { logical: "css-px" as const, scaleFactor: 2 },
+      startAtUnixMs: 0,
+      durationMs: 32,
+      timingFunction: [0, 0, 1, 1] as const,
+      from: frame(0),
+      to: frame(32),
+      // DOM은 60Hz, native는 120Hz여도 한 샘플을 두 번 붙여 비교하지 않는다.
+      slot: timed([0, 16, 32], 16),
+      renderer: timed([0, 8, 16, 24, 32], 8),
+      surface: timed([0, 8, 16, 24, 32], 8),
+    };
+    expect(compositionTimelineVerdict(input)).toMatchObject({ ok: true, errors: [] });
+
+    const lagged = structuredClone(input);
+    lagged.surface[2].frame.x = 8;
+    expect(compositionTimelineVerdict(lagged)).toMatchObject({
+      ok: false,
+      errors: expect.arrayContaining([expect.stringContaining("surface[2]")]),
+    });
   });
 });
