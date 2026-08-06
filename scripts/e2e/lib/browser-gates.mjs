@@ -1,3 +1,14 @@
+export const BROWSER_ACCEPTANCE_FRAMEWORKS = Object.freeze([
+  "tauri",
+  "electron",
+]);
+
+export const BROWSER_ACCEPTANCE_PLATFORMS = Object.freeze([
+  "darwin",
+  "linux",
+  "win32",
+]);
+
 export const BROWSER_ACCEPTANCE_ENGINES = Object.freeze([
   "browser",
   "browser-chromium",
@@ -90,9 +101,13 @@ export const BROWSER_ACCEPTANCE_GATES = deepFreeze([
 ]);
 
 const engineSet = new Set(BROWSER_ACCEPTANCE_ENGINES);
+const frameworkSet = new Set(BROWSER_ACCEPTANCE_FRAMEWORKS);
+const platformSet = new Set(BROWSER_ACCEPTANCE_PLATFORMS);
 const gateSet = new Set(BROWSER_ACCEPTANCE_GATES.map(({ id }) => id));
 const machineStatusSet = new Set(MACHINE_GATE_STATUSES);
 const visualStatusSet = new Set(VISUAL_REVIEW_STATUSES);
+const REPORT_SCHEMA_VERSION = 2;
+const JUDGE_RECEIPT_SCHEMA_VERSION = 1;
 
 function deepFreeze(value) {
   if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
@@ -103,8 +118,35 @@ function deepFreeze(value) {
 
 function initialCell() {
   return {
-    machine: { status: "not-run", evidence: [], reason: null },
+    machine: { status: "not-run", evidence: [], reason: null, judgeReceipt: null },
     visualReview: { status: "pending", artifacts: [], notes: null },
+  };
+}
+
+function requireIdentityText(value, field) {
+  if (typeof value !== "string" || value.trim() !== value || value.length === 0 || value.length > 256) {
+    throw new TypeError(`${field} must be a trimmed 1..256 character string`);
+  }
+  return value;
+}
+
+function normalizeReportIdentity(value) {
+  if (!isRecord(value)) throw new TypeError("browser gate report identity is required");
+  const keys = Object.keys(value).sort();
+  if (keys.join(",") !== "buildId,framework,platform,runId") {
+    throw new TypeError("browser gate report identity must contain exactly framework, platform, buildId, runId");
+  }
+  if (!frameworkSet.has(value.framework)) {
+    throw new TypeError(`unknown browser framework: ${value.framework}`);
+  }
+  if (!platformSet.has(value.platform)) {
+    throw new TypeError(`unknown browser platform: ${value.platform}`);
+  }
+  return {
+    framework: value.framework,
+    platform: value.platform,
+    buildId: requireIdentityText(value.buildId, "buildId"),
+    runId: requireIdentityText(value.runId, "runId"),
   };
 }
 
@@ -468,17 +510,124 @@ export function judgeB11MachineEvidence(value) {
   );
 }
 
-export function judgeBrowserMachineGateEvidence(gate, value) {
-  if (gate === "B01") return judgeB01MachineEvidence(value);
-  if (gate === "B02") return judgeB02MachineEvidence(value);
-  if (gate === "B11") return judgeB11MachineEvidence(value);
-  throw new TypeError("machine evidence judge is available for B01, B02, B11");
+const machineEvidenceJudges = new Map([
+  ["B01", { judgeId: "B01-machine-v1", judge: judgeB01MachineEvidence }],
+  ["B02", { judgeId: "B02-machine-v1", judge: judgeB02MachineEvidence }],
+  ["B11", { judgeId: "B11-machine-v1", judge: judgeB11MachineEvidence }],
+]);
+
+function mismatchedEngineVerdict(gate, expected, actual) {
+  return {
+    status: "red",
+    evidence: [`${gate}:engine=${displayValue(expected)}/${displayValue(actual)}`],
+    reason: `${gate} machine evidence belongs to a different engine`,
+  };
+}
+
+function copyMachineEvidence(value) {
+  if (value == null) return null;
+  let encoded;
+  try {
+    encoded = JSON.stringify(value);
+  } catch (error) {
+    throw new TypeError(`machine evidence must be JSON data: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (encoded == null) throw new TypeError("machine evidence must be JSON data");
+  return JSON.parse(encoded);
+}
+
+function judgeMachineEvidence(entry, gate, engine, evidence) {
+  return evidence != null && evidence?.engine !== engine
+    ? mismatchedEngineVerdict(gate, engine, evidence?.engine)
+    : entry.judge(evidence);
+}
+
+export function judgeBrowserMachineGateEvidence(request) {
+  if (!isRecord(request)) throw new TypeError("machine judge request must be a record");
+  const allowedKeys = new Set(["framework", "platform", "buildId", "runId", "engine", "gate", "evidence"]);
+  if (Object.keys(request).some((key) => !allowedKeys.has(key))) {
+    throw new TypeError("machine judge request accepts only framework, platform, buildId, runId, engine, gate, evidence");
+  }
+  const identity = normalizeReportIdentity({
+    framework: request.framework,
+    platform: request.platform,
+    buildId: request.buildId,
+    runId: request.runId,
+  });
+  requireEngine(request.engine);
+  requireGate(request.gate);
+  const entry = machineEvidenceJudges.get(request.gate);
+  if (!entry) throw new TypeError("machine evidence judge is available for B01, B02, B11");
+
+  const machineEvidence = copyMachineEvidence(request.evidence);
+  const verdict = judgeMachineEvidence(entry, request.gate, request.engine, machineEvidence);
+  const receipt = deepFreeze({
+    schemaVersion: JUDGE_RECEIPT_SCHEMA_VERSION,
+    kind: "browser-machine-judge-receipt",
+    judgeId: entry.judgeId,
+    ...identity,
+    engine: request.engine,
+    gate: request.gate,
+    machineEvidence,
+    status: verdict.status,
+    evidence: [...verdict.evidence],
+    reason: verdict.reason,
+  });
+  return receipt;
+}
+
+function requireMatchingJudgeReceipt(receipt, report, engine, gate) {
+  if (!isRecord(receipt)) throw new TypeError("green requires a judgeReceipt record");
+  const receiptKeys = Object.keys(receipt).sort().join(",");
+  if (receiptKeys !== [
+    "buildId",
+    "engine",
+    "evidence",
+    "framework",
+    "gate",
+    "judgeId",
+    "kind",
+    "machineEvidence",
+    "platform",
+    "reason",
+    "runId",
+    "schemaVersion",
+    "status",
+  ].sort().join(",")) {
+    throw new TypeError("judgeReceipt has an invalid schema");
+  }
+  if (receipt.schemaVersion !== JUDGE_RECEIPT_SCHEMA_VERSION
+      || receipt.kind !== "browser-machine-judge-receipt") {
+    throw new TypeError("judgeReceipt has an invalid schema");
+  }
+  for (const field of ["framework", "platform", "buildId", "runId"]) {
+    if (receipt[field] !== report.identity[field]) {
+      throw new TypeError(`judgeReceipt ${field} does not match report identity`);
+    }
+  }
+  if (receipt.engine !== engine) throw new TypeError("judgeReceipt engine does not match target engine");
+  if (receipt.gate !== gate) throw new TypeError("judgeReceipt gate does not match target gate");
+  const entry = machineEvidenceJudges.get(gate);
+  if (!entry || receipt.judgeId !== entry.judgeId) {
+    throw new TypeError("judgeReceipt judgeId does not match the gate judge");
+  }
+  const verdict = judgeMachineEvidence(entry, gate, engine, receipt.machineEvidence);
+  const receiptEvidence = requireStringList(receipt.evidence, "judgeReceipt.evidence");
+  const receiptReason = requireOptionalText(receipt.reason, "judgeReceipt.reason");
+  if (receipt.status !== verdict.status
+      || receiptReason !== verdict.reason
+      || receiptEvidence.length !== verdict.evidence.length
+      || receiptEvidence.some((item, index) => item !== verdict.evidence[index])) {
+    throw new TypeError("judgeReceipt verdict does not match machine evidence");
+  }
+  return receipt;
 }
 
 function requireReport(report) {
-  if (!report || typeof report !== "object" || report.schemaVersion !== 1) {
-    throw new TypeError("browser gate report schemaVersion must be 1");
+  if (!report || typeof report !== "object" || report.schemaVersion !== REPORT_SCHEMA_VERSION) {
+    throw new TypeError(`browser gate report schemaVersion must be ${REPORT_SCHEMA_VERSION}`);
   }
+  const identity = normalizeReportIdentity(report.identity);
   if (!report.engines || Object.keys(report.engines).length !== BROWSER_ACCEPTANCE_ENGINES.length) {
     throw new TypeError("browser gate report must contain exactly three engines");
   }
@@ -492,8 +641,26 @@ function requireReport(report) {
       if (!cell || !machineStatusSet.has(cell.machine?.status)) {
         throw new TypeError(`${engine}/${id} has an invalid machine status`);
       }
+      if (Object.keys(cell.machine).sort().join(",") !== "evidence,judgeReceipt,reason,status") {
+        throw new TypeError(`${engine}/${id}.machine has an invalid schema`);
+      }
       requireStringList(cell.machine.evidence, `${engine}/${id}.machine.evidence`);
       requireOptionalText(cell.machine.reason, `${engine}/${id}.machine.reason`);
+      const receipt = cell.machine.judgeReceipt;
+      if (cell.machine.status === "green" && receipt == null) {
+        throw new TypeError(`${engine}/${id}.machine green requires judgeReceipt`);
+      }
+      if (receipt != null) {
+        requireMatchingJudgeReceipt(receipt, { identity }, engine, id);
+        if (receipt.status !== cell.machine.status) {
+          throw new TypeError(`${engine}/${id}.machine status does not match judgeReceipt`);
+        }
+        if (receipt.reason !== cell.machine.reason
+            || receipt.evidence.length !== cell.machine.evidence.length
+            || receipt.evidence.some((item, index) => item !== cell.machine.evidence[index])) {
+          throw new TypeError(`${engine}/${id}.machine verdict does not match judgeReceipt`);
+        }
+      }
       if ((cell.machine.status === "green" || cell.machine.status === "red")
           && cell.machine.evidence.length === 0) {
         throw new TypeError(`${engine}/${id}.machine.evidence must not be empty`);
@@ -508,6 +675,9 @@ function requireReport(report) {
       if (!visualStatusSet.has(cell.visualReview?.status)) {
         throw new TypeError(`${engine}/${id} has an invalid visualReview status`);
       }
+      if (Object.keys(cell.visualReview).sort().join(",") !== "artifacts,notes,status") {
+        throw new TypeError(`${engine}/${id}.visualReview has an invalid schema`);
+      }
       requireStringList(cell.visualReview.artifacts, `${engine}/${id}.visualReview.artifacts`);
       requireOptionalText(cell.visualReview.notes, `${engine}/${id}.visualReview.notes`);
       if (cell.visualReview.status !== "pending" && cell.visualReview.artifacts.length === 0) {
@@ -520,7 +690,8 @@ function requireReport(report) {
 
 function replaceCell(report, engine, gate, replace) {
   return deepFreeze({
-    schemaVersion: 1,
+    schemaVersion: REPORT_SCHEMA_VERSION,
+    identity: report.identity,
     engines: Object.fromEntries(BROWSER_ACCEPTANCE_ENGINES.map((engineName) => [
       engineName,
       Object.fromEntries(BROWSER_ACCEPTANCE_GATES.map(({ id }) => [
@@ -531,9 +702,10 @@ function replaceCell(report, engine, gate, replace) {
   });
 }
 
-export function createBrowserGateReport() {
+export function createBrowserGateReport(identity) {
   return deepFreeze({
-    schemaVersion: 1,
+    schemaVersion: REPORT_SCHEMA_VERSION,
+    identity: normalizeReportIdentity(identity),
     engines: Object.fromEntries(BROWSER_ACCEPTANCE_ENGINES.map((engine) => [
       engine,
       Object.fromEntries(BROWSER_ACCEPTANCE_GATES.map(({ id }) => [id, initialCell()])),
@@ -541,21 +713,59 @@ export function createBrowserGateReport() {
   });
 }
 
-export function setMachineGateStatus(report, {
-  engine,
-  gate,
-  status,
-  evidence = [],
-  reason = null,
-}) {
+export function setMachineGateStatus(report, update) {
   requireReport(report);
+  if (!isRecord(update)) throw new TypeError("machine gate update must be a record");
+  const receiptUpdate = Object.hasOwn(update, "judgeReceipt");
+  const allowedUpdateKeys = new Set(receiptUpdate
+    ? ["engine", "gate", "judgeReceipt"]
+    : ["engine", "gate", "status", "evidence", "reason"]);
+  if (Object.keys(update).some((key) => !allowedUpdateKeys.has(key))) {
+    throw new TypeError(receiptUpdate
+      ? "judge receipt update accepts only engine, gate, judgeReceipt"
+      : "machine status update accepts only engine, gate, status, evidence, reason");
+  }
+  const { engine, gate } = update;
   requireEngine(engine);
   requireGate(gate);
+  if (receiptUpdate) {
+    if (Object.hasOwn(update, "status") || Object.hasOwn(update, "evidence") || Object.hasOwn(update, "reason")) {
+      throw new TypeError("judgeReceipt supplies status, evidence, and reason");
+    }
+    const receipt = requireMatchingJudgeReceipt(update.judgeReceipt, report, engine, gate);
+    const storedReceipt = {
+      schemaVersion: receipt.schemaVersion,
+      kind: receipt.kind,
+      judgeId: receipt.judgeId,
+      framework: receipt.framework,
+      platform: receipt.platform,
+      buildId: receipt.buildId,
+      runId: receipt.runId,
+      engine: receipt.engine,
+      gate: receipt.gate,
+      machineEvidence: copyMachineEvidence(receipt.machineEvidence),
+      status: receipt.status,
+      evidence: [...receipt.evidence],
+      reason: receipt.reason,
+    };
+    return replaceCell(report, engine, gate, (cell) => ({
+      ...cell,
+      machine: {
+        status: receipt.status,
+        evidence: [...receipt.evidence],
+        reason: receipt.reason,
+        judgeReceipt: storedReceipt,
+      },
+    }));
+  }
+
+  const status = update.status;
   if (!machineStatusSet.has(status)) throw new TypeError(`unknown machine gate status: ${status}`);
-  const normalizedEvidence = requireStringList(evidence, "evidence", {
-    nonEmpty: status === "green" || status === "red",
+  if (status === "green") throw new TypeError("green requires a matching judgeReceipt");
+  const normalizedEvidence = requireStringList(update.evidence ?? [], "evidence", {
+    nonEmpty: status === "red",
   });
-  const normalizedReason = requireOptionalText(reason, "reason");
+  const normalizedReason = requireOptionalText(update.reason ?? null, "reason");
   if (status === "blocked" && normalizedReason == null) {
     throw new TypeError("reason is required for blocked");
   }
@@ -564,7 +774,12 @@ export function setMachineGateStatus(report, {
   }
   return replaceCell(report, engine, gate, (cell) => ({
     ...cell,
-    machine: { status, evidence: normalizedEvidence, reason: normalizedReason },
+    machine: {
+      status,
+      evidence: normalizedEvidence,
+      reason: normalizedReason,
+      judgeReceipt: null,
+    },
   }));
 }
 
@@ -615,7 +830,8 @@ export function visualReviewSummary(report) {
 export function serializeBrowserGateReport(report) {
   requireReport(report);
   return `${JSON.stringify({
-    schemaVersion: 1,
+    schemaVersion: REPORT_SCHEMA_VERSION,
+    identity: report.identity,
     catalog: BROWSER_ACCEPTANCE_GATES,
     engines: report.engines,
     summary: {

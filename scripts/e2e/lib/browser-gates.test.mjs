@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   BROWSER_ACCEPTANCE_ENGINES,
+  BROWSER_ACCEPTANCE_FRAMEWORKS,
+  BROWSER_ACCEPTANCE_PLATFORMS,
   BROWSER_ACCEPTANCE_GATES,
   B02_RETENTION_PHASES,
   MACHINE_GATE_STATUSES,
@@ -18,6 +20,42 @@ import {
   setVisualReviewStatus,
   visualReviewSummary,
 } from "./browser-gates.mjs";
+
+const TAURI_RUN = Object.freeze({
+  framework: "tauri",
+  platform: "darwin",
+  buildId: "tauri-dev-build-a1",
+  runId: "browser-gates-tauri-run-1",
+});
+
+const ELECTRON_RUN = Object.freeze({
+  framework: "electron",
+  platform: "darwin",
+  buildId: "electron-dev-build-b1",
+  runId: "browser-gates-electron-run-1",
+});
+
+function createReport(identity = TAURI_RUN) {
+  return createBrowserGateReport(identity);
+}
+
+function judgeReceipt(options = {}) {
+  const {
+    identity = TAURI_RUN,
+    engine = "browser",
+    gate = "B01",
+  } = options;
+  const evidence = Object.hasOwn(options, "evidence") ? options.evidence
+    : gate === "B01" ? b01Evidence(engine)
+      : gate === "B02" ? b02Evidence(engine)
+        : b11Evidence(engine);
+  return judgeBrowserMachineGateEvidence({
+    ...identity,
+    engine,
+    gate,
+    evidence,
+  });
+}
 
 function b01Evidence(engine = "browser") {
   return {
@@ -114,6 +152,8 @@ const expectedGateNames = [
 
 describe("브라우저 12-gate 정본", () => {
   it("B01..B12와 3개 브라우저 구현의 이름·순서를 고정한다", () => {
+    expect(BROWSER_ACCEPTANCE_FRAMEWORKS).toEqual(["tauri", "electron"]);
+    expect(BROWSER_ACCEPTANCE_PLATFORMS).toEqual(["darwin", "linux", "win32"]);
     expect(BROWSER_ACCEPTANCE_ENGINES).toEqual([
       "browser",
       "browser-chromium",
@@ -231,16 +271,16 @@ describe("브라우저 12-gate 정본", () => {
   });
 
   it("gate별 순수 판정은 evidence가 없으면 not-run, 불완전하면 red이며 visualReview와 PNG를 입력으로 받지 않는다", () => {
-    expect(judgeBrowserMachineGateEvidence("B01", undefined).status).toBe("not-run");
-    expect(judgeBrowserMachineGateEvidence("B02", { engine: "browser" }).status).toBe("red");
-    expect(judgeBrowserMachineGateEvidence("B11", b11Evidence()).status).toBe("green");
-    expect(() => judgeBrowserMachineGateEvidence("B03", {})).toThrow(/B01, B02, B11/);
+    expect(judgeReceipt({ gate: "B01", evidence: undefined }).status).toBe("not-run");
+    expect(judgeReceipt({ gate: "B02", evidence: { engine: "browser" } }).status).toBe("red");
+    expect(judgeReceipt({ gate: "B11" }).status).toBe("green");
+    expect(() => judgeReceipt({ gate: "B03", evidence: {} })).toThrow(/B01, B02, B11/);
 
-    const machine = judgeB11MachineEvidence(b11Evidence());
-    let report = setMachineGateStatus(createBrowserGateReport(), {
+    const receipt = judgeReceipt({ gate: "B11" });
+    let report = setMachineGateStatus(createReport(), {
       engine: "browser",
       gate: "B11",
-      ...machine,
+      judgeReceipt: receipt,
     });
     report = setVisualReviewStatus(report, {
       engine: "browser",
@@ -254,14 +294,16 @@ describe("브라우저 12-gate 정본", () => {
   });
 
   it("새 보고서는 빠짐없는 3×12 not-run과 별도 pending 시각 검토로 시작한다", () => {
-    const report = createBrowserGateReport();
+    const report = createReport();
 
+    expect(report.schemaVersion).toBe(2);
+    expect(report.identity).toEqual(TAURI_RUN);
     expect(Object.keys(report.engines)).toEqual(BROWSER_ACCEPTANCE_ENGINES);
     for (const engine of BROWSER_ACCEPTANCE_ENGINES) {
       expect(Object.keys(report.engines[engine])).toEqual(expectedGateNames.map(([id]) => id));
       for (const gate of BROWSER_ACCEPTANCE_GATES) {
         expect(report.engines[engine][gate.id]).toEqual({
-          machine: { status: "not-run", evidence: [], reason: null },
+          machine: { status: "not-run", evidence: [], reason: null, judgeReceipt: null },
           visualReview: { status: "pending", artifacts: [], notes: null },
         });
       }
@@ -278,19 +320,31 @@ describe("브라우저 12-gate 정본", () => {
     });
   });
 
-  it("36개 machine gate가 전부 green일 때만 machine 전체가 green이다", () => {
-    let report = createBrowserGateReport();
+  it("framework/build/run identity가 없거나 모호하면 보고서와 judge를 만들지 않는다", () => {
+    expect(() => createBrowserGateReport()).toThrow(/identity/);
+    expect(() => createBrowserGateReport({ ...TAURI_RUN, framework: "unknown" })).toThrow(/framework/);
+    expect(() => createBrowserGateReport({ ...TAURI_RUN, platform: "unknown" })).toThrow(/platform/);
+    expect(() => createBrowserGateReport({ ...TAURI_RUN, buildId: " build " })).toThrow(/buildId/);
+    expect(() => createBrowserGateReport({ ...TAURI_RUN, extra: "ignored" })).toThrow(/exactly/);
+    expect(() => judgeBrowserMachineGateEvidence({
+      ...TAURI_RUN,
+      engine: "browser",
+      gate: "B01",
+      evidence: b01Evidence(),
+      visualReview: "passed",
+    })).toThrow(/machine judge request/);
+  });
+
+  it("machine 전체는 미판정 cell을 숨기지 않고 red·blocked를 우선 집계한다", () => {
+    let report = createReport();
     for (const engine of BROWSER_ACCEPTANCE_ENGINES) {
-      for (const gate of BROWSER_ACCEPTANCE_GATES) {
-        report = setMachineGateStatus(report, {
-          engine,
-          gate: gate.id,
-          status: "green",
-          evidence: [`${engine}/${gate.id}:assertions=green`],
-        });
-      }
+      const receipt = judgeReceipt({ engine, gate: "B01" });
+      report = setMachineGateStatus(report, { engine, gate: "B01", judgeReceipt: receipt });
     }
-    expect(machineGateSummary(report).status).toBe("green");
+    expect(machineGateSummary(report)).toMatchObject({
+      status: "not-run",
+      counts: { "not-run": 33, green: 3 },
+    });
 
     const red = setMachineGateStatus(report, {
       engine: "browser-chromium",
@@ -301,7 +355,7 @@ describe("브라우저 12-gate 정본", () => {
     });
     expect(machineGateSummary(red)).toMatchObject({
       status: "red",
-      counts: { red: 1, green: 35 },
+      counts: { "not-run": 32, red: 1, green: 3 },
     });
 
     const blocked = setMachineGateStatus(report, {
@@ -312,15 +366,81 @@ describe("브라우저 12-gate 정본", () => {
     });
     expect(machineGateSummary(blocked)).toMatchObject({
       status: "blocked",
-      counts: { blocked: 1, green: 35 },
+      counts: { "not-run": 32, blocked: 1, green: 3 },
     });
   });
 
-  it("근거 없는 green/red와 이유 없는 blocked를 거부해 기준 약화를 막는다", () => {
-    const report = createBrowserGateReport();
+  it("green은 같은 framework/build/run/engine/gate에서 judge가 재검증한 receipt로만 기록한다", () => {
+    const report = createReport();
     expect(() => setMachineGateStatus(report, {
-      engine: "browser", gate: "B01", status: "green",
-    })).toThrow(/evidence/);
+      engine: "browser", gate: "B01", status: "green", evidence: ["arbitrary-green"],
+    })).toThrow(/judgeReceipt/);
+    expect(() => setMachineGateStatus(report, {
+      engine: "browser", gate: "B01", judgeReceipt: judgeB01MachineEvidence(b01Evidence()),
+    })).toThrow(/judgeReceipt/);
+
+    const valid = judgeReceipt();
+    const copied = setMachineGateStatus(report, {
+      engine: "browser", gate: "B01", judgeReceipt: { ...valid },
+    });
+    expect(copied.engines.browser.B01.machine.status).toBe("green");
+    const tampered = structuredClone(valid);
+    tampered.machineEvidence.tabs[0].mounted = false;
+    expect(() => setMachineGateStatus(report, {
+      engine: "browser", gate: "B01", judgeReceipt: tampered,
+    })).toThrow(/verdict/);
+    expect(() => setMachineGateStatus(createReport(ELECTRON_RUN), {
+      engine: "browser", gate: "B01", judgeReceipt: valid,
+    })).toThrow(/framework/);
+    expect(() => setMachineGateStatus(createReport({ ...TAURI_RUN, buildId: "tauri-dev-build-a2" }), {
+      engine: "browser", gate: "B01", judgeReceipt: valid,
+    })).toThrow(/buildId/);
+    expect(() => setMachineGateStatus(createReport({ ...TAURI_RUN, runId: "browser-gates-tauri-run-2" }), {
+      engine: "browser", gate: "B01", judgeReceipt: valid,
+    })).toThrow(/runId/);
+    expect(() => setMachineGateStatus(createReport({ ...TAURI_RUN, platform: "linux" }), {
+      engine: "browser", gate: "B01", judgeReceipt: valid,
+    })).toThrow(/platform/);
+    expect(() => setMachineGateStatus(report, {
+      engine: "browser-chromium", gate: "B01", judgeReceipt: valid,
+    })).toThrow(/engine/);
+    expect(() => setMachineGateStatus(report, {
+      engine: "browser", gate: "B02", judgeReceipt: valid,
+    })).toThrow(/gate/);
+    expect(() => setMachineGateStatus(report, {
+      engine: "browser", gate: "B01", judgeReceipt: valid, extra: "ignored",
+    })).toThrow(/only/);
+
+    const green = setMachineGateStatus(report, {
+      engine: "browser", gate: "B01", judgeReceipt: valid,
+    });
+    expect(green.engines.browser.B01.machine).toEqual({
+      status: "green",
+      evidence: valid.evidence,
+      reason: null,
+      judgeReceipt: valid,
+    });
+
+    const wrongEvidenceEngine = judgeReceipt({
+      engine: "browser",
+      evidence: b01Evidence("browser-chromium"),
+    });
+    expect(wrongEvidenceEngine.status).toBe("red");
+    const red = setMachineGateStatus(report, {
+      engine: "browser", gate: "B01", judgeReceipt: wrongEvidenceEngine,
+    });
+    expect(red.engines.browser.B01.machine.status).toBe("red");
+
+    const electronReceipt = judgeReceipt({ identity: ELECTRON_RUN });
+    const electron = setMachineGateStatus(createReport(ELECTRON_RUN), {
+      engine: "browser", gate: "B01", judgeReceipt: electronReceipt,
+    });
+    expect(electron.identity.framework).toBe("electron");
+    expect(electron.engines.browser.B01.machine.status).toBe("green");
+  });
+
+  it("근거 없는 red와 이유 없는 blocked를 거부해 기준 약화를 막는다", () => {
+    const report = createReport();
     expect(() => setMachineGateStatus(report, {
       engine: "browser", gate: "B01", status: "red",
     })).toThrow(/evidence/);
@@ -331,15 +451,18 @@ describe("브라우저 12-gate 정본", () => {
       engine: "browser", gate: "B01", status: "not-run", evidence: ["old-green"],
     })).toThrow(/not-run/);
     expect(() => setMachineGateStatus(report, {
-      engine: "unknown", gate: "B01", status: "green", evidence: ["x"],
+      engine: "unknown", gate: "B01", status: "red", evidence: ["x"],
     })).toThrow(/engine/);
     expect(() => setMachineGateStatus(report, {
-      engine: "browser", gate: "B13", status: "green", evidence: ["x"],
+      engine: "browser", gate: "B13", status: "red", evidence: ["x"],
     })).toThrow(/gate/);
+    expect(() => setMachineGateStatus(report, {
+      engine: "browser", gate: "B01", status: "red", evidence: ["x"], extra: "ignored",
+    })).toThrow(/only/);
   });
 
   it("시각 검토는 기록하되 machine gate 판정에는 영향을 주지 않는다", () => {
-    const initial = createBrowserGateReport();
+    const initial = createReport();
     const machineBefore = machineGateSummary(initial);
     const reviewed = setVisualReviewStatus(initial, {
       engine: "browser-chromium",
@@ -358,7 +481,7 @@ describe("브라우저 12-gate 정본", () => {
   });
 
   it("직렬화는 catalog와 36개 결과를 고정 순서로 보존하고 입력을 변경하지 않는다", () => {
-    const report = setMachineGateStatus(createBrowserGateReport(), {
+    const report = setMachineGateStatus(createReport(), {
       engine: "browser",
       gate: "B01",
       status: "red",
@@ -368,7 +491,8 @@ describe("브라우저 12-gate 정본", () => {
     const serialized = serializeBrowserGateReport(report);
     const parsed = JSON.parse(serialized);
 
-    expect(parsed.schemaVersion).toBe(1);
+    expect(parsed.schemaVersion).toBe(2);
+    expect(parsed.identity).toEqual(TAURI_RUN);
     expect(parsed.catalog.map(({ id, name }) => [id, name])).toEqual(expectedGateNames);
     expect(Object.keys(parsed.engines)).toEqual(BROWSER_ACCEPTANCE_ENGINES);
     expect(parsed.engines.browser.B01.machine).toEqual(report.engines.browser.B01.machine);
@@ -376,6 +500,23 @@ describe("브라우저 12-gate 정본", () => {
     expect(parsed.summary.visualReview.status).toBe("pending");
     expect(report.engines.browser.B01.machine.status).toBe("red");
     expect(serialized).toBe(serializeBrowserGateReport(report));
+  });
+
+  it("직렬화된 green receipt도 동일 judge로 재검증되어 집계 가능하다", () => {
+    const receipt = judgeReceipt();
+    const report = setMachineGateStatus(createReport(), {
+      engine: "browser",
+      gate: "B01",
+      judgeReceipt: receipt,
+    });
+    const parsed = JSON.parse(serializeBrowserGateReport(report));
+    delete parsed.catalog;
+    delete parsed.summary;
+
+    expect(machineGateSummary(parsed)).toMatchObject({
+      status: "not-run",
+      counts: { "not-run": 35, green: 1 },
+    });
   });
 
   it("한·영 테스트 정본이 같은 12-gate와 machine/visual 분리를 선언한다", () => {
