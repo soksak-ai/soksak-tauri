@@ -1173,9 +1173,11 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
           const layoutVerdict = layoutTransactionVerdict(journalAfter.entries, {
             afterSequence,
             candidateViewIds: tabIds,
-            // 비전면 Tauri의 WebKit timeline은 정지할 수 있으므로 그 경우 공개 거래는 snap이다.
-            // 다른 구현/전면 창은 glide이며, 판정기는 실제 trace의 유한 motion 유무를 분류한다.
-            expectedMode: frameworkName === "tauri" ? "snap" : "glide",
+            // 포커스는 입력·조명 사실이지 presentation clock capability가 아니다. 이 FLOW
+            // 픽스처는 화면에 보이는 창을 전면화하지 않고도 모든 구현이 같은 절대 epoch의
+            // glide 거래를 사용해야 한다. Tauri만 snap을 정답으로 삼으면 실제 한 프레임
+            // DOM/native 지연을 테스트가 승인한다.
+            expectedMode: "glide",
           });
           await writeMachineReport(
             path.join(dir, "layout-transaction.json"),
