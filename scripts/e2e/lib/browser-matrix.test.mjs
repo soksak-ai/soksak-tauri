@@ -239,7 +239,8 @@ describe("브라우저 구현 행렬", () => {
     const owners = native.resolveOwners({
       facts: {
         hosts: [{
-          window: "w-a", pane: "pane-left", renderer: "renderer-left",
+          window: "w-a", logicalPaneId: "pane-left",
+          nativeHostId: "pane-w-a-view-left", viewId: "view-left", renderer: "renderer-left",
           members: ["surface-left"],
         }],
       },
@@ -250,13 +251,14 @@ describe("브라우저 구현 행렬", () => {
     });
     expect(owners).toEqual([{
       viewId: "view-left",
-      pane: "pane-left",
+      logicalPaneId: "pane-left",
+      nativeHostId: "pane-w-a-view-left",
       rendererId: "renderer-left",
       surfaceId: "surface-left",
     }]);
     expect(native.armParams({ traceId: "trace-1", owners })).toEqual({
       traceId: "trace-1",
-      owners: [{ viewId: "view-left", pane: "pane-left", surfaceId: "surface-left" }],
+      owners: [{ viewId: "view-left", nativeHostId: "pane-w-a-view-left", surfaceId: "surface-left" }],
       maxEvents: 512,
     });
     expect(native.events({
@@ -342,7 +344,8 @@ describe("브라우저 구현 행렬", () => {
     expect(() => adapter.resolveOwners({ facts: { hosts: [] }, ...input }))
       .toThrow("owner=0/1");
     const host = {
-      window: "w-a", pane: "pane-left", renderer: "renderer-left",
+      window: "w-a", logicalPaneId: "pane-left",
+      nativeHostId: "pane-w-a-view-left", viewId: "view-left", renderer: "renderer-left",
       members: ["surface-left"],
     };
     expect(() => adapter.resolveOwners({ facts: { hosts: [host, { ...host }] }, ...input }))

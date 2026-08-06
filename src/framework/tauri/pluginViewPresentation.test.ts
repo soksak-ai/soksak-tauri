@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   comparePaneNativeContracts,
   comparePanePresentation,
+  exposePaneHostIdentities,
   isPluginViewCallExposed,
   paneLayoutContractOf,
   presentedTransitionMode,
@@ -12,6 +13,45 @@ import {
 } from "./pluginViewPresentation";
 
 describe("Tauri plugin renderer RPC surface", () => {
+  it("native host key와 논리 pane identity를 별도 공개 필드로 결합한다", () => {
+    const [host] = exposePaneHostIdentities(
+      [{
+        pane: "pane-w-4fe-view-browser",
+        window: "w-4fe",
+        renderer: "pv-w-4fe-1",
+        members: ["b-w-4fe-view-browser"],
+        cssFrame: { x: 100, y: 80, w: 640, h: 480 },
+      }],
+      [{
+        nativeHostId: "pane-w-4fe-view-browser",
+        logicalPaneId: "pan-lf7lhc",
+        viewId: "view-browser",
+      }],
+    );
+
+    expect(host).toMatchObject({
+      nativeHostId: "pane-w-4fe-view-browser",
+      logicalPaneId: "pan-lf7lhc",
+      viewId: "view-browser",
+      window: "w-4fe",
+      members: ["b-w-4fe-view-browser"],
+    });
+    expect(host).not.toHaveProperty("pane");
+  });
+
+  it("binding 없는 native host를 논리 pane으로 추측하지 않는다", () => {
+    const [host] = exposePaneHostIdentities(
+      [{ pane: "pane-orphan", window: "w-4fe", cssFrame: { x: 0, y: 0, w: 1, h: 1 } }],
+      [],
+    );
+    expect(host).toMatchObject({
+      nativeHostId: "pane-orphan",
+      logicalPaneId: null,
+      viewId: null,
+    });
+    expect(host).not.toHaveProperty("pane");
+  });
+
   it("전면 pane은 같은 절대 epoch의 glide, 비전면 pane은 DOM commit 뒤 snap을 쓴다", () => {
     expect(presentedTransitionMode(true)).toBe("glide");
     expect(presentedTransitionMode(false)).toBe("snap");
