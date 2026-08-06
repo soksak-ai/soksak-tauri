@@ -258,6 +258,7 @@ describe("B12 macOS traffic-light composition machine judge", () => {
       (value) => { value.hostileResize.transactions[4].titlebar.buttons[0].rect.y += 0.501; },
       (value) => { value.hostileResize.transactions[5].titlebar.reservations[1].rect.y += 0.501; },
       (value) => { value.hostileResize.transactions[6].titlebar.backings[2].rect.y += 0.501; },
+      (value) => { value.hostileResize.transactions[7].titlebar.titlebarPhysical.w -= 1; },
       (value) => { value.hostileResize.restoredOuterPhysical.w -= 1; },
       (value) => { value.hostileResize.heldOuterPhysical.h -= 1; },
       (value) => { value.hostileResize.heldRestore.buttons[0].rect.y += 1; },
@@ -267,6 +268,29 @@ describe("B12 macOS traffic-light composition machine judge", () => {
       mutate(value);
       expect(judgeB12MachineEvidence(value, identity("tauri")).status).toBe("red");
     }
+  });
+
+  it("서로 맞춰 이동한 세 plane도 viewport 절대좌표나 baseline traffic-light 위치를 벗어나면 RED다", () => {
+    const coherentShift = (titlebar) => {
+      titlebar.titlebarPhysical.y += 2;
+      for (const plane of [titlebar.reservations, titlebar.buttons, titlebar.backings]) {
+        for (const element of plane) element.rect.y += 2;
+      }
+    };
+    const baselineShifted = evidence();
+    coherentShift(baselineShifted.baseline);
+    expect(judgeB12MachineEvidence(baselineShifted, identity("tauri")).status).toBe("red");
+
+    const hostileShifted = evidence();
+    coherentShift(hostileShifted.hostileResize.transactions[8].titlebar);
+    expect(judgeB12MachineEvidence(hostileShifted, identity("tauri")).status).toBe("red");
+
+    const trafficLightsShifted = evidence();
+    const transaction = trafficLightsShifted.hostileResize.transactions[9].titlebar;
+    for (const plane of [transaction.reservations, transaction.buttons, transaction.backings]) {
+      for (const element of plane) element.rect.x += 2;
+    }
+    expect(judgeB12MachineEvidence(trafficLightsShifted, identity("tauri")).status).toBe("red");
   });
 
   it("각 단계가 끝난 뒤 유지 표본까지 동일한 DOM/native 합성을 보존해야 한다", () => {
