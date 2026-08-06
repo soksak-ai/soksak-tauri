@@ -392,24 +392,41 @@ const nodeAddress = (tree, nodePath) => {
   return node.address;
 };
 
-async function assertFocusLighting(rpc, win, addresses, activeIndex, stage) {
-  const luminance = [];
+async function assertFocusLighting(rpc, win, addresses, labels, activeIndex, frameworkName, stage) {
+  const dims = [];
+  const levels = [];
   for (let index = 0; index < addresses.length; index += 1) {
-    const measured = must(await rpc("ui.measure", { address: addresses[index] }, win), `${stage} lighting slot ${index}`);
-    const rect = measured.rect;
-    const pixels = must(await rpc("window.pixels", {
-      rect: { x: rect.x + rect.w - 36, y: rect.y + 12, w: 24, h: 24 },
-      settle: false,
-    }, win), `${stage} lighting pixels ${index}`);
-    luminance.push(Number(pixels.luminance));
+    const measured = must(await rpc("ui.measure", {
+      address: addresses[index], props: ["--dim"],
+    }, win), `${stage} lighting slot ${index}`);
+    dims.push(Number.parseFloat(measured.style?.["--dim"]));
+    levels.push(measured.dataset?.dim ?? "");
   }
-  const active = luminance[activeIndex];
-  const inactive = luminance[activeIndex === 0 ? 1 : 0];
-  const ratio = inactive / active;
-  if (![active, inactive, ratio].every(Number.isFinite) || active <= 0 || ratio < 0.35 || ratio > 0.65) {
-    throw new Error(`${stage}: focus lighting 픽셀 불일치 active=${active} inactive=${inactive} ratio=${ratio}`);
+  const errors = [];
+  for (let index = 0; index < addresses.length; index += 1) {
+    const active = index === activeIndex;
+    if (!Number.isFinite(dims[index])) errors.push(`${index}:dim=${dims[index]}`);
+    if (active && (levels[index] !== "active" || Math.abs(dims[index]) > 0.001)) {
+      errors.push(`${index}:active level=${levels[index]} dim=${dims[index]}`);
+    }
+    if (!active && (levels[index] === "active" || !(dims[index] > 0 && dims[index] < 1))) {
+      errors.push(`${index}:inactive level=${levels[index]} dim=${dims[index]}`);
+    }
   }
-  return { active, inactive, ratio };
+  if (frameworkName === "tauri") {
+    const composition = must(await rpc("webview.pane.composition", {}, win), `${stage} lighting composition`);
+    for (let index = 0; index < labels.length; index += 1) {
+      const match = (composition.matches ?? []).find((candidate) =>
+        (candidate.memberMatches ?? []).some((member) => member.label === labels[index]));
+      const expectedAlpha = 1 - dims[index];
+      if (!match || !Number.isFinite(Number(match.alpha))
+          || Math.abs(Number(match.alpha) - expectedAlpha) > 0.001) {
+        errors.push(`${labels[index]}:alpha=${match?.alpha}/${expectedAlpha}`);
+      }
+    }
+  }
+  if (errors.length) throw new Error(`${stage}: focus lighting 수치 계약 불일치 — ${errors.join(", ")}`);
+  return { dims, levels };
 }
 
 async function assertRailCompositionContract(
@@ -887,13 +904,15 @@ async function runEngine(client, page, engine) {
     if (native) {
       const initial = must(await rpc("webview.composition", {}, win), "initial composition");
       assertTauriSurfaceResizePolicy(initial, "initial native composition");
+    } else if (windowed) {
+      const initial = must(await rpc("webview.composition", {}, win), "initial windowed composition");
+      assertTauriSurfaceResizePolicy(initial, "initial windowed composition");
+    }
+    if (frameworkName === "tauri") {
       assertPaneComposition(
         must(await rpc("webview.pane.composition", {}, win), "initial pane composition"),
         labels,
       );
-    } else if (windowed) {
-      const initial = must(await rpc("webview.composition", {}, win), "initial windowed composition");
-      assertTauriSurfaceResizePolicy(initial, "initial windowed composition");
     }
     await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, "first-paint-ledger");
     must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }), "first paint layout settled");
@@ -991,7 +1010,9 @@ async function runEngine(client, page, engine) {
         );
         frameCount += files.length;
 
-        const lighting = await assertFocusLighting(rpc, win, addresses, side, `${engine}/${name}`);
+        const lighting = await assertFocusLighting(
+          rpc, win, addresses, labels, side, frameworkName, `${engine}/${name}`,
+        );
         await assertRailCompositionContract(
           rpc,
           win,
@@ -1000,7 +1021,7 @@ async function runEngine(client, page, engine) {
           `${engine}/${name}`,
         );
 
-        if (native) {
+        if (frameworkName === "tauri") {
           assertPaneComposition(
             must(await rpc("webview.pane.composition", {}, win), `pane composition ${name}`),
             labels,
@@ -1010,7 +1031,7 @@ async function runEngine(client, page, engine) {
           await assertWindowedComposition(rpc, win, plugin, tabIds, addresses);
         }
         await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, `cross-click-${name}`);
-        console.log(`✓ ${name}: ${FRAMES_PER_CLICK} frames · 두 live marker · focus ratio ${lighting.ratio.toFixed(3)} · ${native ? "DOM/native exact" : windowed ? "DOM/CEF exact" : "DOM/native-offscreen exact"}`);
+        console.log(`✓ ${name}: ${FRAMES_PER_CLICK} frames · 두 live marker · focus dim ${lighting.dims.join("/")} · ${native ? "DOM/native exact" : windowed ? "DOM/CEF exact" : "DOM/native-offscreen exact"}`);
       }
     }
     if (numericTraceFailures.length) {
@@ -1200,7 +1221,7 @@ async function runEngine(client, page, engine) {
       path.join(fastResizeDir, "composition-samples.json"),
       `${JSON.stringify(fastResize.samples ?? [], null, 2)}\n`,
     );
-    if (native) {
+    if (frameworkName === "tauri") {
       const redSamples = (fastResize.samples ?? []).filter((sample) => sample.observation?.verdict !== "green");
       if (redSamples.length) {
         const summary = redSamples.map((sample) => {
@@ -1232,7 +1253,7 @@ async function runEngine(client, page, engine) {
     must(await rpc("capture.calibration", { visible: false }, win), "DOM compositor calibration hide");
     frameCount += fastFiles.length;
     must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }), "window resize final layout settled");
-    if (native) {
+    if (frameworkName === "tauri") {
       assertPaneComposition(
         must(await rpc("webview.pane.composition.wait", { settleTimeoutMs: 8_000 }, win, { timeoutMs: 12_000 }),
           "window resize final pane composition"),
@@ -1268,7 +1289,7 @@ async function runEngine(client, page, engine) {
       );
       must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }),
         `pane resize ${direction} layout settled`);
-      if (native) {
+      if (frameworkName === "tauri") {
         const composition = must(await rpc(
           "webview.pane.composition.wait",
           { settleTimeoutMs: 8_000 },

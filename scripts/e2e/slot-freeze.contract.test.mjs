@@ -43,6 +43,11 @@ describe("slot-freeze instrumentation lifecycle", () => {
 
   it("checks the focused pane relation and exempts the rail from focus lighting after every cross-click", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    const lighting = source.split("async function assertFocusLighting")[1]?.split("async function assertRailCompositionContract")[0] ?? "";
+    expect(lighting).toContain('props: ["--dim"]');
+    expect(lighting).toContain("dataset?.dim");
+    expect(lighting).toContain("1 - dims[index]");
+    expect(lighting).not.toContain('rpc("window.pixels"');
     expect(source).toContain("assertRailCompositionContract");
     expect(source).toContain("relation-connected=");
     expect(source).toContain("rail-not-lighting-exempt");
