@@ -1,6 +1,8 @@
 // macOS 신호등(트래픽 라이트) — webview 앱이라는 경계 때문에 생기는, 누구의
-// 책임도 아닌 문제 두 가지에 대한 최소 보정. 위치의 단일 진실은 tauri.conf.json
-// trafficLightPosition 이고, 이 모듈은 그것을 "유지"시키는 역할만 한다.
+// 책임도 아닌 문제 두 가지에 대한 최소 보정. 위치의 단일 진실은 공개 DOM titlebar의
+// 상하 중심과 최초 AppKit 표준 버튼의 가로 배치이며, 이 모듈만 그 목표를 유지한다.
+// tauri.conf의 trafficLightPosition은 Tao와 Wry에 고정-y draw callback을 각각 설치해
+// DOM 높이 변경 뒤 이 거래와 경쟁하므로 함께 선언하지 않는다.
 //
 // 문제 1 — 위치 풀림(tauri#14072, 업스트림 버그):
 //   정상 경로에선 wry(WryWebViewParent.drawRect)가 매 redraw 마다 inset 을
@@ -1643,6 +1645,15 @@ mod tests {
                 "titlebar_parent.addSubview_positioned_relativeTo(\n        &owner,\n        NSWindowOrderingMode::Below,\n        Some(&buttons[0]),",
             ),
             "the single paint owner must live behind all three standard buttons",
+        );
+    }
+
+    #[test]
+    fn dynamic_dom_composition_has_no_competing_tao_or_wry_traffic_light_owner() {
+        let config = include_str!("../tauri.conf.json");
+        assert!(
+            !config.contains("trafficLightPosition"),
+            "trafficLightPosition installs Tao/Wry draw callbacks with a fixed y; the DOM-driven AppKit composer must be the only position owner",
         );
     }
 
