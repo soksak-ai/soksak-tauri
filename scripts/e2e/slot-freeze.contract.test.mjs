@@ -48,11 +48,22 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(source).toContain('relationSide: "right"');
     expect(source).toContain('relationSide: "left"');
     expect(source).toContain('relationSide: "detached"');
-    expect(source).toContain("pinnedDomTraceVerdict");
+    expect(source).toContain('rpc("layout.transactions"');
+    expect(source).toContain("layout-transactions=${unexpected.length}/0");
+    expect(source).toContain("rectsBefore");
+    expect(source).toContain("rectsAfter");
     expect(source).toContain("JSON.stringify(before.cells) !== JSON.stringify(after.cells)");
     expect(source).toContain("PIN 클릭이 native bounds를 기록");
     expect(source).toContain("process.env.CROSS_CLICK_CYCLES ?? 3");
     expect(source).toContain('process.env.BROWSER_SCENARIOS ?? "flow,pin,resize,overlay,scroll"');
+  });
+
+  it("교차 이동의 자동 판정은 recorder callback이 아닌 공개 layout 거래 장부를 소비한다", () => {
+    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    expect(source).toContain("layoutTransactionVerdict");
+    expect(source).toContain('path.join(dir, "layout-transaction.json")');
+    expect(source).not.toContain("traceAddresses:");
+    expect(source).not.toContain("clicked.trace?.samples");
   });
 
   it("maximizes both sides under PIN without rewriting the stored station and restores the split", () => {

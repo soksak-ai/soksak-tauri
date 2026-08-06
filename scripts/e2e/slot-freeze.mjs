@@ -24,7 +24,6 @@ import {
   fixtureInputMarkerSize,
   fixtureMotionMarkers,
   compositorCalibrationMarker,
-  domTransitionTraceVerdict,
   fixtureMarkerSize,
   fixtureMarkerRowVerdict,
   rendererTopologyOwnershipVerdict,
@@ -33,7 +32,7 @@ import {
   markerEvidence,
   motionMarkerAlignment,
   numericCompositionTraceVerdict,
-  pinnedDomTraceVerdict,
+  layoutTransactionVerdict,
   parseBrowserEngines,
   snapshotCssScale,
   selectFixtureMarkerComponent,
@@ -937,29 +936,33 @@ async function runEngine(client, page, engine) {
             win,
           ), `합성 수치 trace 무장 ${name}`)
           : null;
+        const journalBefore = must(await rpc("layout.transactions", {}, win), `layout journal baseline ${name}`);
+        const priorEntries = journalBefore.entries ?? [];
+        const afterSequence = Number(priorEntries[priorEntries.length - 1]?.sequence ?? 0);
         const clicked = must(await rpc("ui.input.click", {
           address: activationAddresses[side], recordDir: dir, recordFrames: FRAMES_PER_CLICK,
           recordIntervalMs: 16, recordLeadMs: 32,
-          traceAddresses: [railAddress, ...paneAddresses],
         }, win, { timeoutMs: 60_000 }), `교차 클릭 ${name}`);
         const captured = Number(clicked.recording?.frames ?? 0);
         if (captured !== FRAMES_PER_CLICK) throw new Error(`${name}: 캡처 ${captured}/${FRAMES_PER_CLICK}`);
         const files = fs.readdirSync(dir).filter((file) => /^f\d{4}\.png$/.test(file)).sort();
         if (files.length !== FRAMES_PER_CLICK) throw new Error(`${name}: PNG ${files.length}/${FRAMES_PER_CLICK}`);
         await assertActivePane(rpc, win, paneIds[side], name);
-        const domVerdict = domTransitionTraceVerdict(clicked.trace?.samples, {
-          railAddress,
-          paneAddresses,
+        must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }), `${name} layout settled`);
+        const journalAfter = must(await rpc("layout.transactions", {}, win), `layout journal verdict ${name}`);
+        const layoutVerdict = layoutTransactionVerdict(journalAfter.entries, {
+          afterSequence,
+          candidateViewIds: tabIds,
           // 비전면 Tauri의 WebKit timeline은 정지할 수 있으므로 그 경우 공개 거래는 snap이다.
           // 다른 구현/전면 창은 glide이며, 판정기는 실제 trace의 유한 motion 유무를 분류한다.
-          motionMode: frameworkName === "tauri" ? "snap" : "glide",
+          expectedMode: frameworkName === "tauri" ? "snap" : "glide",
         });
         fs.writeFileSync(
-          path.join(dir, "dom-transition-trace.json"),
-          `${JSON.stringify({ samples: clicked.trace?.samples ?? [], verdict: domVerdict }, null, 2)}\n`,
+          path.join(dir, "layout-transaction.json"),
+          `${JSON.stringify({ afterSequence, entries: layoutVerdict.transactions, verdict: layoutVerdict }, null, 2)}\n`,
         );
-        if (!domVerdict.ok) {
-          throw new Error(`${engine}/${name}: sidebar/tab DOM transaction 불일치 — ${domVerdict.errors.join(", ")}`);
+        if (!layoutVerdict.ok) {
+          throw new Error(`${engine}/${name}: sidebar/tab layout transaction mismatch — ${layoutVerdict.errors.join(", ")}`);
         }
         if (trace) {
           const observed = must(await rpc(
@@ -1025,6 +1028,13 @@ async function runEngine(client, page, engine) {
       must(await rpc("sidebar.left.position", { mode: "pin", station: pinCase.station }, win), `${pinCase.name} set pin`);
       must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }), `${pinCase.name} pin settled`);
       const before = must(await rpc("layout.arrangement", {}, win), `${pinCase.name} arrangement before`);
+      const journalBefore = must(await rpc("layout.transactions", {}, win), `${pinCase.name} transaction baseline`);
+      const priorEntries = journalBefore.entries ?? [];
+      const afterSequence = Number(priorEntries[priorEntries.length - 1]?.sequence ?? 0);
+      const rectsBefore = await Promise.all([railAddress, ...paneAddresses].map(async (address) => ({
+        address,
+        rect: must(await rpc("ui.measure", { address }, win), `${pinCase.name} rect before`).rect,
+      })));
       const nativeBefore = native
         ? must(await rpc("webview.composition", {}, win), `${pinCase.name} native before`)
         : null;
@@ -1035,18 +1045,31 @@ async function runEngine(client, page, engine) {
         recordFrames: PIN_FRAMES_PER_CLICK,
         recordIntervalMs: 16,
         recordLeadMs: 32,
-        traceAddresses: [railAddress, ...paneAddresses],
       }, win, { timeoutMs: 60_000 }), `${pinCase.name} click`);
       const files = fs.readdirSync(dir).filter((file) => /^f\d{4}\.png$/.test(file)).sort();
       if (Number(clicked.recording?.frames ?? 0) !== PIN_FRAMES_PER_CLICK || files.length !== PIN_FRAMES_PER_CLICK) {
         throw new Error(`${pinCase.name}: 캡처 ${files.length}/${PIN_FRAMES_PER_CLICK}`);
       }
-      const pinTrace = pinnedDomTraceVerdict(clicked.trace?.samples, {
-        addresses: [railAddress, ...paneAddresses],
-      });
+      const rectsAfter = await Promise.all([railAddress, ...paneAddresses].map(async (address) => ({
+        address,
+        rect: must(await rpc("ui.measure", { address }, win), `${pinCase.name} rect after`).rect,
+      })));
+      const pinErrors = [];
+      for (const [index, beforeRect] of rectsBefore.entries()) {
+        const afterRect = rectsAfter[index];
+        for (const key of ["x", "y", "w", "h"]) {
+          if (Math.abs(Number(beforeRect.rect[key]) - Number(afterRect.rect[key])) > 0.5) {
+            pinErrors.push(`${beforeRect.address}:${key}=${beforeRect.rect[key]}/${afterRect.rect[key]}`);
+          }
+        }
+      }
+      const journalAfter = must(await rpc("layout.transactions", {}, win), `${pinCase.name} transaction after`);
+      const unexpected = (journalAfter.entries ?? []).filter((entry) => Number(entry.sequence) > afterSequence);
+      if (unexpected.length) pinErrors.push(`layout-transactions=${unexpected.length}/0`);
+      const pinTrace = { ok: pinErrors.length === 0, errors: pinErrors, before: rectsBefore, after: rectsAfter };
       fs.writeFileSync(
-        path.join(dir, "pin-dom-trace.json"),
-        `${JSON.stringify({ samples: clicked.trace?.samples ?? [], verdict: pinTrace }, null, 2)}\n`,
+        path.join(dir, "pin-layout-transaction.json"),
+        `${JSON.stringify({ afterSequence, unexpected, verdict: pinTrace }, null, 2)}\n`,
       );
       if (!pinTrace.ok) {
         throw new Error(`${engine}/${pinCase.name}: PIN DOM 고정 불일치 — ${pinTrace.errors.join(", ")}`);
