@@ -60,8 +60,8 @@ import {
   fixtureMarkers,
   fullCaptureReceiptVerdict,
   hostileWindowResizeSizes,
-  numericCompositionTraceVerdict,
   layoutTransactionVerdict,
+  mapB04PresentationSamples,
   parseBrowserEngines,
   unwrapEvalValue,
   viewportGeometryVerdict,
@@ -324,6 +324,36 @@ async function assertEngineSurfaceLedger(rpc, win, implementation, tabIds, stage
   });
   if (!verdict.ok) throw new Error(`${stage}: view→surface→engine 불일치 — ${verdict.errors.join(", ")}`);
   return verdict;
+}
+
+async function resolvePresentationTraceOwners(
+  rpc,
+  win,
+  implementation,
+  viewIds,
+  paneIds,
+  surfaceIds,
+) {
+  const adapter = implementation.presentationTrace;
+  if (!adapter?.ownerCommand || typeof adapter.resolveOwners !== "function") {
+    throw new Error(`${implementation.plugin}: presentation trace adapter가 선언되지 않았다`);
+  }
+  const facts = must(await rpc(
+    adapter.ownerCommand,
+    adapter.ownerParams({ windowLabel: win, viewIds, paneIds, surfaceIds }),
+    win,
+  ), `${implementation.plugin} presentation owners`);
+  const owners = adapter.resolveOwners({
+    facts,
+    windowLabel: win,
+    viewIds,
+    paneIds,
+    surfaceIds,
+  });
+  if (!Array.isArray(owners) || owners.length !== viewIds.length) {
+    throw new Error(`${implementation.plugin}: presentation owners=${owners?.length ?? 0}/${viewIds.length}`);
+  }
+  return owners;
 }
 
 async function installPanePresentationMarkers(rpc, win, labels) {
@@ -988,120 +1018,201 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
     }
 
     let frameCount = 0;
-    const numericTraceFailures = [];
+    const b04Transitions = [];
+    const presentationOwners = SCENARIOS.has("flow")
+      ? await resolvePresentationTraceOwners(rpc, win, implementation, tabIds, paneIds, labels)
+      : [];
     await assertActivePane(rpc, win, paneIds[1], "교차 클릭 시작 상태");
     await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, "cross-click-initial-right");
     for (let cycle = 0; cycle < (SCENARIOS.has("flow") ? CYCLES : 0); cycle += 1) {
       for (let side = 0; side < addresses.length; side += 1) {
         const name = `${String(cycle * 2 + side + 1).padStart(2, "0")}-${side ? "right" : "left"}`;
         const dir = path.join(engineEvidence, name);
-        const trace = implementation.surface === "engine-offscreen"
-          ? must(await rpc(
-            `plugin.${plugin}.surface.trace.start`,
-            { durationMs: 800 },
-            win,
-          ), `합성 수치 trace 무장 ${name}`)
-          : null;
-        const journalBefore = must(await rpc("layout.transactions", {}, win), `layout journal baseline ${name}`);
-        const priorEntries = journalBefore.entries ?? [];
-        const afterSequence = Number(priorEntries[priorEntries.length - 1]?.sequence ?? 0);
-        const recordingOutcome = await runPlannedRecordingAction({
-          recordingLedger,
-          engine,
-          scenario: "flow",
-          name,
-          action: (recordFields) => rpc("ui.input.click", {
-            address: activationAddresses[side],
-            ...(recordFields.recordDir ? {
-              ...recordFields,
-              recordFrames: FRAMES_PER_CLICK,
-              recordIntervalMs: 16,
-              recordLeadMs: 32,
-            } : {}),
-          }, win, { timeoutMs: 60_000 }),
-        });
-        const clicked = must(recordingOutcome.actionResult, `교차 클릭 ${name}`);
-        const recordingEvidence = await reviewRecordingOutcome({
-          outcome: recordingOutcome,
-          expectedFrames: FRAMES_PER_CLICK,
-          name: `${engine}/${name}`,
-        });
-        const files = recordingEvidence.artifacts;
-        await assertActivePane(rpc, win, paneIds[side], name);
-        must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }), `${name} layout settled`);
-        const journalAfter = must(await rpc("layout.transactions", {}, win), `layout journal verdict ${name}`);
-        const layoutVerdict = layoutTransactionVerdict(journalAfter.entries, {
-          afterSequence,
-          candidateViewIds: tabIds,
-          // 비전면 Tauri의 WebKit timeline은 정지할 수 있으므로 그 경우 공개 거래는 snap이다.
-          // 다른 구현/전면 창은 glide이며, 판정기는 실제 trace의 유한 motion 유무를 분류한다.
-          expectedMode: frameworkName === "tauri" ? "snap" : "glide",
-        });
-        await writeMachineReport(
-          path.join(dir, "layout-transaction.json"),
-          { afterSequence, entries: layoutVerdict.transactions, verdict: layoutVerdict },
-        );
-        if (!layoutVerdict.ok) {
-          throw new Error(`${engine}/${name}: sidebar/tab layout transaction mismatch — ${layoutVerdict.errors.join(", ")}`);
-        }
-        if (trace) {
-          const observed = must(await rpc(
-            `plugin.${plugin}.surface.trace.read`,
-            { traceId: trace.traceId },
+        const owner = presentationOwners.find(({ viewId }) => viewId === tabIds[side]);
+        if (!owner) throw new Error(`${tabIds[side]}: presentation owner가 없다`);
+        // 이 Promise의 handler는 첫 raw DOM 표본을 동기 기록한 뒤 유한 timer 구간에 들어간다.
+        // 다음 RPC인 presentation arm보다 먼저 발행하고, 아래 mapper가 첫 DOM 시각이 layout
+        // prepared 시각보다 앞인지 다시 검사하므로 선관측 실패는 기다림으로 숨지 않고 RED다.
+        const domTracePromise = rpc("ui.trace.multi", {
+          addresses: [railAddress, paneAddresses[side], addresses[side]],
+          ms: 1_200,
+        }, win, { timeoutMs: 5_000 });
+        let armedPresentation = null;
+        let presentationOpen = false;
+        try {
+          armedPresentation = must(await rpc(
+            implementation.presentationTrace.armCommand,
+            implementation.presentationTrace.armParams({
+              traceId: `${engine}-${name}-${randomUUID()}`,
+              owners: presentationOwners,
+              targetViewId: tabIds[side],
+            }),
             win,
             { timeoutMs: 10_000 },
-          ), `합성 수치 trace 판독 ${name}`);
-          const verdict = numericCompositionTraceVerdict(observed.samples);
+          ), `B04 presentation trace arm ${name}`);
+          presentationOpen = true;
+          const journalBefore = must(await rpc("layout.transactions", {}, win), `layout journal baseline ${name}`);
+          const priorEntries = journalBefore.entries ?? [];
+          const afterSequence = Number(priorEntries[priorEntries.length - 1]?.sequence ?? 0);
+          const recordingOutcome = await runPlannedRecordingAction({
+            recordingLedger,
+            engine,
+            scenario: "flow",
+            name,
+            action: (recordFields) => rpc("ui.input.click", {
+              address: activationAddresses[side],
+              ...(recordFields.recordDir ? {
+                ...recordFields,
+                recordFrames: FRAMES_PER_CLICK,
+                recordIntervalMs: 16,
+                recordLeadMs: 32,
+              } : {}),
+            }, win, { timeoutMs: 60_000 }),
+          });
+          must(recordingOutcome.actionResult, `교차 클릭 ${name}`);
+          const recordingEvidence = await reviewRecordingOutcome({
+            outcome: recordingOutcome,
+            expectedFrames: FRAMES_PER_CLICK,
+            name: `${engine}/${name}`,
+          });
+          const files = recordingEvidence.artifacts;
+          await assertActivePane(rpc, win, paneIds[side], name);
+          must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }), `${name} layout settled`);
+          const journalAfter = must(await rpc("layout.transactions", {}, win), `layout journal verdict ${name}`);
+          const layoutVerdict = layoutTransactionVerdict(journalAfter.entries, {
+            afterSequence,
+            candidateViewIds: tabIds,
+            // 비전면 Tauri의 WebKit timeline은 정지할 수 있으므로 그 경우 공개 거래는 snap이다.
+            // 다른 구현/전면 창은 glide이며, 판정기는 실제 trace의 유한 motion 유무를 분류한다.
+            expectedMode: frameworkName === "tauri" ? "snap" : "glide",
+          });
+          await writeMachineReport(
+            path.join(dir, "layout-transaction.json"),
+            { afterSequence, entries: layoutVerdict.transactions, verdict: layoutVerdict },
+          );
+          if (!layoutVerdict.ok) {
+            throw new Error(`${engine}/${name}: sidebar/tab layout transaction mismatch — ${layoutVerdict.errors.join(", ")}`);
+          }
+          const presentationReceipt = must(await rpc(
+            implementation.presentationTrace.readCommand,
+            implementation.presentationTrace.readParams({ traceId: armedPresentation.traceId }),
+            win,
+            { timeoutMs: 10_000 },
+          ), `B04 presentation trace read ${name}`);
+          presentationOpen = false;
+          const presentationEvents = implementation.presentationTrace.events(
+            presentationReceipt,
+            { targetViewId: tabIds[side], owner },
+          );
+          const domTraceReceipt = must(await domTracePromise, `B04 raw DOM trace ${name}`);
+          const flowPresentationTrace = mapB04PresentationSamples({
+            events: presentationEvents,
+            domSamples: domTraceReceipt.samples,
+            owner,
+            targetViewId: tabIds[side],
+            transactionId: layoutVerdict.transaction.transactionId,
+            preparedAtUnixMs: layoutVerdict.transaction.preparedAtUnixMs,
+            closedAtUnixMs: layoutVerdict.transaction.closedAtUnixMs,
+            railAddress,
+            paneAddress: paneAddresses[side],
+            slotAddress: addresses[side],
+          });
+          b04Transitions.push({
+            direction: side === 0 ? "to-left" : "to-right",
+            targetViewId: tabIds[side],
+            motionMode: layoutVerdict.transaction.mode,
+            journal: {
+              afterSequence,
+              entries: layoutVerdict.transactions,
+            },
+            samples: flowPresentationTrace.samples,
+          });
           await writeMachineReport(
             path.join(dir, "composition-trace.json"),
-            { traceId: trace.traceId, samples: observed.samples, verdict },
+            {
+              traceId: armedPresentation.traceId,
+              owner,
+              maxPairGapMs: flowPresentationTrace.maxPairGapMs,
+              pairs: flowPresentationTrace.pairs,
+              domSamples: domTraceReceipt.samples,
+              presentationEvents,
+              samples: flowPresentationTrace.samples,
+            },
           );
-          if (!verdict.ok) {
-            const failure = `${engine}/${name}: DOM/native presentation trace 불일치 `
-              + `compared=${verdict.compared} maxDelta=${verdict.maxDelta} — ${verdict.errors.join(", ")}`;
-            numericTraceFailures.push(failure);
-            console.error(`RED ${failure}`);
+          await observeFrameSequence(
+            files,
+            `${engine}/${name}`,
+            scale,
+            {
+              motion: true,
+              presentationMarkers: PRESENTATION_MARKERS,
+              chromeAnchors: [CHROME_MARKERS.railAdd],
+            },
+          );
+          frameCount += files.length;
+
+          const lighting = await assertFocusLighting(
+            rpc, win, lightingAddresses, labels, side, paneOwned, `${engine}/${name}`,
+          );
+          await assertRailCompositionContract(
+            rpc,
+            win,
+            railAddress,
+            paneIds[side],
+            `${engine}/${name}`,
+          );
+
+          if (paneOwned) {
+            assertPaneComposition(
+              must(await rpc("webview.pane.composition", {}, win), `pane composition ${name}`),
+              labels,
+            );
+            assertNativeLighting(must(await rpc("webview.surfaces", {}, win), `surfaces ${name}`), labels[side], labels);
           }
+          if (windowed) {
+            await assertWindowedComposition(rpc, win, plugin, tabIds, addresses);
+          }
+          await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, `cross-click-${name}`);
+          console.log(`✓ ${name}: ${FRAMES_PER_CLICK} frames · 두 live marker · focus dim ${lighting.dims.join("/")} · ${native ? "DOM/native exact" : windowed ? "DOM/CEF exact" : "DOM/native-offscreen exact"}`);
+        } catch (flowError) {
+          try {
+            await domTracePromise;
+          } catch (error) {
+            console.error(`${engine}/${name}: raw DOM trace cleanup 실패`, error);
+          }
+          if (presentationOpen) {
+            presentationOpen = false;
+            try {
+              await rpc(
+                implementation.presentationTrace.readCommand,
+                implementation.presentationTrace.readParams({ traceId: armedPresentation.traceId }),
+                win,
+                { timeoutMs: 10_000 },
+              );
+            } catch (error) {
+              console.error(`${engine}/${name}: presentation trace cleanup 실패`, error);
+            }
+          }
+          throw flowError;
         }
-        await observeFrameSequence(
-          files,
-          `${engine}/${name}`,
-          scale,
-          {
-            motion: true,
-            presentationMarkers: PRESENTATION_MARKERS,
-            chromeAnchors: [CHROME_MARKERS.railAdd],
-          },
-        );
-        frameCount += files.length;
-
-        const lighting = await assertFocusLighting(
-          rpc, win, lightingAddresses, labels, side, paneOwned, `${engine}/${name}`,
-        );
-        await assertRailCompositionContract(
-          rpc,
-          win,
-          railAddress,
-          paneIds[side],
-          `${engine}/${name}`,
-        );
-
-        if (paneOwned) {
-          assertPaneComposition(
-            must(await rpc("webview.pane.composition", {}, win), `pane composition ${name}`),
-            labels,
-          );
-          assertNativeLighting(must(await rpc("webview.surfaces", {}, win), `surfaces ${name}`), labels[side], labels);
-        }
-        if (windowed) {
-          await assertWindowedComposition(rpc, win, plugin, tabIds, addresses);
-        }
-        await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, `cross-click-${name}`);
-        console.log(`✓ ${name}: ${FRAMES_PER_CLICK} frames · 두 live marker · focus dim ${lighting.dims.join("/")} · ${native ? "DOM/native exact" : windowed ? "DOM/CEF exact" : "DOM/native-offscreen exact"}`);
       }
     }
-    if (numericTraceFailures.length) {
-      throw new Error(`합성 수치 trace RED ${numericTraceFailures.length}건\n${numericTraceFailures.join("\n")}`);
+    if (SCENARIOS.has("flow")) {
+      const b04Receipt = gateReportStore.recordMachineEvidence({
+        framework: frameworkName,
+        engine,
+        gate: "B04",
+        evidence: {
+          engine,
+          coordinateSpace: { logical: "css-px", scaleFactor: Number(originalWindow.scale) },
+          transitions: b04Transitions,
+        },
+      });
+      await gateReportStore.persist();
+      if (b04Receipt.status !== "green") {
+        throw new Error(`${engine}/B04 machine RED — ${b04Receipt.evidence.join(", ")}`);
+      }
+      console.log(`◉ ${engine}/B04 canonical machine verdict: ${b04Receipt.status}`);
     }
 
     // PIN 계약 — 사이드바와 분할 rect는 포커스 클릭의 입력이 아니다. station 0에서 오른쪽

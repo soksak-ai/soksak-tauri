@@ -14,6 +14,7 @@ import {
   fixtureMarkerSize,
   markerEvidence,
   markerPixels,
+  mapB04PresentationSamples,
   motionMarkerAlignment,
   numericCompositionTraceVerdict,
   pinnedDomTraceVerdict,
@@ -330,6 +331,85 @@ describe("브라우저 구현 행렬", () => {
     };
     expect(() => adapter.resolveOwners({ facts: { hosts: [host, { ...host }] }, ...input }))
       .toThrow("owner=2/1");
+  });
+
+  it("B04는 같은 tick의 raw DOM rail/pane/slot과 actual surface frame만 결합한다", () => {
+    const domSample = (sequence, sampledAtUnixMs, railX, paneX, slotX) => ({
+      sequence,
+      sampledAtUnixMs,
+      nodes: [
+        { address: "rail", connected: true, rect: { x: railX, y: 0, w: 60, h: 500 } },
+        { address: "pane", connected: true, rect: { x: paneX, y: 0, w: 500, h: 500 } },
+        { address: "slot", connected: true, rect: { x: slotX, y: 60, w: 460, h: 420 } },
+      ],
+    });
+    const event = (sampledAtUnixMs, x) => ({
+      sampledAtUnixMs,
+      connected: true,
+      rendererFrame: { x, y: 60, w: 460, h: 420 },
+      surfaceFrame: { x, y: 60, w: 460, h: 420 },
+    });
+    const trace = mapB04PresentationSamples({
+      events: [event(1_001, 110), event(1_019, 430)],
+      domSamples: [
+        domSample(0, 990, 10, 80, 110),
+        domSample(1, 1_000, 10, 80, 110),
+        // rail/pane의 실제 좌표를 의도적으로 slot 이동량과 다르게 둔다. mapper가 이를
+        // 투영해 바꾸면 이 단언이 바로 RED가 된다.
+        domSample(2, 1_020, 777, 333, 430),
+        domSample(3, 1_030, 777, 333, 430),
+      ],
+      owner: { rendererId: "renderer", surfaceId: "surface" },
+      targetViewId: "view",
+      transactionId: "tx",
+      preparedAtUnixMs: 995,
+      closedAtUnixMs: 1_025,
+      railAddress: "rail",
+      paneAddress: "pane",
+      slotAddress: "slot",
+    });
+    expect(trace.maxPairGapMs).toBe(17);
+    expect(trace.pairs.map(({ gapMs }) => gapMs)).toEqual([1, 1]);
+    expect(trace.samples).toHaveLength(2);
+    expect(trace.samples[1]).toMatchObject({
+      rail: { id: "rail", frame: { x: 777, y: 0, w: 60, h: 500 } },
+      pane: { id: "pane", frame: { x: 333, y: 0, w: 500, h: 500 } },
+      slot: { id: "slot", frame: { x: 430, y: 60, w: 460, h: 420 } },
+      renderer: { id: "renderer", frame: { x: 430, y: 60, w: 460, h: 420 } },
+      surface: { id: "surface", frame: { x: 430, y: 60, w: 460, h: 420 } },
+    });
+  });
+
+  it("B04 raw DOM trace가 거래를 감싸지 않거나 actual event와 한 frame 넘게 벌어지면 RED다", () => {
+    const input = {
+      events: [
+        { sampledAtUnixMs: 1_000, connected: true, rendererFrame: { x: 1, y: 2, w: 3, h: 4 }, surfaceFrame: { x: 1, y: 2, w: 3, h: 4 } },
+        { sampledAtUnixMs: 1_020, connected: true, rendererFrame: { x: 2, y: 2, w: 3, h: 4 }, surfaceFrame: { x: 2, y: 2, w: 3, h: 4 } },
+      ],
+      domSamples: [900, 1_100].map((sampledAtUnixMs, sequence) => ({
+        sequence,
+        sampledAtUnixMs,
+        nodes: ["rail", "pane", "slot"].map((address) => ({
+          address, connected: true, rect: { x: 1, y: 2, w: 3, h: 4 },
+        })),
+      })),
+      owner: { rendererId: "renderer", surfaceId: "surface" },
+      targetViewId: "view",
+      transactionId: "tx",
+      preparedAtUnixMs: 950,
+      closedAtUnixMs: 1_050,
+      railAddress: "rail",
+      paneAddress: "pane",
+      slotAddress: "slot",
+    };
+    expect(() => mapB04PresentationSamples(input)).toThrow("pair gap");
+    expect(() => mapB04PresentationSamples({
+      ...input,
+      domSamples: input.domSamples.map((sample) => ({
+        ...sample,
+        sampledAtUnixMs: sample.sampledAtUnixMs + 100,
+      })),
+    })).toThrow("layout 거래를 감싸지 못했다");
   });
 
   it("전체 창 resize는 큰 폭의 양방향 교차를 반복하고 정확히 원복한다", () => {

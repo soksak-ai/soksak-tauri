@@ -117,6 +117,127 @@ const OFFSCREEN_PRESENTATION_TRACE = Object.freeze({
   },
 });
 
+function finiteB04Rect(value, name) {
+  const rect = {
+    x: Number(value?.x),
+    y: Number(value?.y),
+    w: Number(value?.w),
+    h: Number(value?.h),
+  };
+  if (![rect.x, rect.y, rect.w, rect.h].every(Number.isFinite)
+      || rect.w <= 0 || rect.h <= 0) {
+    throw new Error(`${name}: 유한한 양수 rect가 아니다 ${JSON.stringify(value)}`);
+  }
+  return rect;
+}
+
+/**
+ * 한 60Hz frame보다 멀리 떨어진 DOM/native 사건은 같은 관측 tick으로 결합하지 않는다.
+ * 120Hz/ProMotion에서도 DOM timer가 16ms라 nearest 표본은 최대 약 8ms 떨어질 수 있다.
+ */
+export const b04PresentationPairGapMs = 17;
+
+/**
+ * 같은 timer callback에서 직접 읽은 rail/pane/slot raw DOM rect와 actual presentation
+ * producer의 renderer/surface frame을 절대시각으로 결합한다. 보간·이동량 투영·픽셀 판정은 없다.
+ */
+export function mapB04PresentationSamples({
+  events,
+  domSamples,
+  owner,
+  targetViewId,
+  transactionId,
+  preparedAtUnixMs,
+  closedAtUnixMs,
+  railAddress,
+  paneAddress,
+  slotAddress,
+  maxPairGapMs = b04PresentationPairGapMs,
+}) {
+  if (!Array.isArray(events) || events.length < 2) {
+    throw new Error(`${targetViewId}: actual presentation samples=${events?.length ?? 0}/2`);
+  }
+  if (!Array.isArray(domSamples) || domSamples.length < 2) {
+    throw new Error(`${targetViewId}: raw DOM samples=${domSamples?.length ?? 0}/2`);
+  }
+  if (!Number.isFinite(maxPairGapMs) || maxPairGapMs <= 0) {
+    throw new Error(`${targetViewId}: pair gap 상한이 유효하지 않다 ${maxPairGapMs}`);
+  }
+  const firstDomAt = Number(domSamples[0]?.sampledAtUnixMs);
+  const lastDomAt = Number(domSamples.at(-1)?.sampledAtUnixMs);
+  if (!Number.isFinite(firstDomAt)
+      || !Number.isFinite(lastDomAt)
+      || firstDomAt > Number(preparedAtUnixMs)
+      || lastDomAt < Number(closedAtUnixMs)) {
+    throw new Error(
+      `${targetViewId}: DOM trace가 layout 거래를 감싸지 못했다 `
+      + `${firstDomAt}..${lastDomAt}/${preparedAtUnixMs}..${closedAtUnixMs}`,
+    );
+  }
+  const participant = (id, connected, frame) => ({
+    id,
+    ownerViewId: targetViewId,
+    connected,
+    frame,
+  });
+  const pairs = [];
+  let priorDomSequence = -1;
+  const samples = events.map((event, index) => {
+    const presentationAt = Number(event.sampledAtUnixMs);
+    if (!Number.isFinite(presentationAt)) {
+      throw new Error(`${targetViewId}: presentation timestamp[${index}]가 유한하지 않다`);
+    }
+    const domSample = domSamples.reduce((nearest, sample) => {
+      const gap = Math.abs(Number(sample?.sampledAtUnixMs) - presentationAt);
+      const nearestGap = Math.abs(Number(nearest?.sampledAtUnixMs) - presentationAt);
+      return gap < nearestGap ? sample : nearest;
+    }, domSamples[0]);
+    const domAt = Number(domSample?.sampledAtUnixMs);
+    const gapMs = Math.abs(domAt - presentationAt);
+    if (!Number.isFinite(gapMs) || gapMs > maxPairGapMs) {
+      throw new Error(
+        `${targetViewId}: DOM/presentation pair gap[${index}]=${gapMs}/${maxPairGapMs}ms`,
+      );
+    }
+    const domSequence = Number(domSample?.sequence);
+    if (!Number.isInteger(domSequence) || domSequence < priorDomSequence) {
+      throw new Error(`${targetViewId}: DOM pair sequence[${index}]=${domSequence}/${priorDomSequence}`);
+    }
+    priorDomSequence = domSequence;
+    const nodes = new Map((domSample?.nodes ?? []).map((node) => [node.address, node]));
+    const rail = nodes.get(railAddress);
+    const pane = nodes.get(paneAddress);
+    const slot = nodes.get(slotAddress);
+    if (!rail || !pane || !slot || nodes.size !== 3) {
+      throw new Error(`${targetViewId}: raw DOM participant inventory가 1:1이 아니다`);
+    }
+    const railFrame = finiteB04Rect(rail.rect, `${targetViewId}:rail[${index}]`);
+    const paneFrame = finiteB04Rect(pane.rect, `${targetViewId}:pane[${index}]`);
+    const slotFrame = finiteB04Rect(slot.rect, `${targetViewId}:slot[${index}]`);
+    const rendererFrame = finiteB04Rect(event.rendererFrame, `${targetViewId}:renderer[${index}]`);
+    const surfaceFrame = finiteB04Rect(event.surfaceFrame, `${targetViewId}:surface[${index}]`);
+    pairs.push({
+      sequence: index,
+      domSequence,
+      domSampledAtUnixMs: domAt,
+      presentationSampledAtUnixMs: presentationAt,
+      gapMs,
+    });
+    return {
+      transactionId,
+      sequence: index,
+      phase: index === 0 ? "prepared" : index === events.length - 1 ? "committed" : "presenting",
+      sampledAtUnixMs: presentationAt,
+      rail: participant(railAddress, rail.connected === true, railFrame),
+      pane: participant(paneAddress, pane.connected === true, paneFrame),
+      slot: participant(slotAddress, slot.connected === true, slotFrame),
+      renderer: participant(owner.rendererId, event.connected === true, rendererFrame),
+      surface: participant(owner.surfaceId, event.connected === true, surfaceFrame),
+    };
+  });
+  return { samples, pairs, maxPairGapMs };
+}
+
 export const browserImplementations = Object.freeze({
   browser: Object.freeze({
     plugin: "soksak-plugin-browser-native",
