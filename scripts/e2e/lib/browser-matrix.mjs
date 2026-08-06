@@ -285,7 +285,17 @@ export function mapB04PresentationSamples({
   const cadenceMs = presentationGaps.length
     ? presentationGaps[Math.floor(presentationGaps.length / 2)]
     : Infinity;
-  const maxJoinGapMs = cadenceMs * 2.5;
+  const domFrameGaps = presentationSamples.slice(1)
+    .map((sample, index) => sample.sampledAtUnixMs - presentationSamples[index].sampledAtUnixMs)
+    .filter((gap) => Number.isFinite(gap) && gap > 0)
+    .sort((a, b) => a - b);
+  const domCadenceMs = domFrameGaps.length
+    ? domFrameGaps[Math.floor(domFrameGaps.length / 2)]
+    : 0;
+  // CADisplayLink(예: 120Hz)와 WebKit rAF(예: 60Hz)는 같은 실제 표시를 서로 다른
+  // callback cadence로 보고한다. 결합 상한은 두 producer가 스스로 밝힌 cadence에서만
+  // 산출하며 고정 시간·좌표 tolerance를 두지 않는다.
+  const maxJoinGapMs = Math.max(cadenceMs * 2.5, domCadenceMs * 1.5);
   const participant = (id, connected, frame) => ({
     id,
     ownerViewId: targetViewId,
