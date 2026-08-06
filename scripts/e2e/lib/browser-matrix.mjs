@@ -106,16 +106,19 @@ const OFFSCREEN_PRESENTATION_TRACE = Object.freeze({
         throw new Error(`${targetViewId}: offscreen presentation sample ${index} surface=${surfaces.length}/1`);
       }
       const surface = surfaces[0];
+      if (surface.rendererFrame == null || surface.surfaceFrame == null) {
+        throw new Error(
+          `${targetViewId}: offscreen native renderer/surface frame[${index}]가 모두 필요하다`,
+        );
+      }
       return {
         sampledAtUnixMs: Number(sample.atUnixMs),
-        connected: surface.domRect != null && surface.presentationRect != null,
+        connected: surface.domRect != null,
         slotFrame: surface.domRect,
-        // Offscreen has exactly one product pixel presenter: the sidecar-owned native layer.
-        // `domRect` is a separately declared rAF/interpolation diagnostic and is not a renderer
-        // presentation fact. The logical renderer and its surface therefore share the actual
-        // display-link presentation frame while the core trace supplies the authoritative slot.
-        rendererFrame: surface.presentationRect,
-        surfaceFrame: surface.presentationRect,
+        // rAF/interpolation `domRect`는 진단일 뿐이다. renderer(content layer)와
+        // surface(clip host)는 각자의 실제 display-link presentation frame을 보존한다.
+        rendererFrame: surface.rendererFrame,
+        surfaceFrame: surface.surfaceFrame,
       };
     });
   },
