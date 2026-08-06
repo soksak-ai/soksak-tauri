@@ -1219,14 +1219,14 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
           if (domTraceReceipt.timedOut === true) {
             throw new Error(`${engine}/${name}: raw DOM trace가 explicit close 전에 만료됐다`);
           }
-          const presentationEvents = implementation.presentationTrace.events(
-            presentationReceipt,
-            { targetViewId, owner },
-          );
           await Promise.all([
             writeMachineReport(path.join(dir, "dom-presentation-raw.json"), domTraceReceipt),
             writeMachineReport(path.join(dir, "native-presentation-raw.json"), presentationReceipt),
           ]);
+          const presentationEvents = implementation.presentationTrace.events(
+            presentationReceipt,
+            { targetViewId, owner },
+          );
           const flowPresentationTrace = mapB04PresentationSamples({
             events: presentationEvents,
             domSamples: domTraceReceipt.samples,
