@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
+import { browserImplementations } from "./lib/browser-matrix.mjs";
 
 function scenarioGateBodies(source, scenario) {
   const file = ts.createSourceFile("slot-freeze.mjs", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
@@ -330,6 +331,31 @@ describe("slot-freeze instrumentation lifecycle", () => {
 
   it("B04는 세 엔진 FLOW 양방향의 공개 presentation producer와 layout journal만 canonical receipt로 기록한다", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    const paneArm = "webview.pane.presentation.trace.arm";
+    const paneRead = "webview.pane.presentation.trace.close";
+    const offscreenArm = "plugin.soksak-plugin-browser-chromium-offscreen.surface.trace.start";
+    const offscreenRead = "plugin.soksak-plugin-browser-chromium-offscreen.surface.trace.read";
+    for (const engine of ["browser", "browser-chromium", "browser-chromium-offscreen"]) {
+      const adapter = browserImplementations[engine]?.presentationTrace;
+      expect(adapter).toEqual(expect.objectContaining({
+        armCommand: expect.any(String),
+        readCommand: expect.any(String),
+        armParams: expect.any(Function),
+        readParams: expect.any(Function),
+        resolveOwners: expect.any(Function),
+        events: expect.any(Function),
+      }));
+    }
+    expect(browserImplementations.browser.presentationTrace).toMatchObject({
+      armCommand: paneArm, readCommand: paneRead,
+    });
+    expect(browserImplementations["browser-chromium"].presentationTrace).toMatchObject({
+      armCommand: paneArm, readCommand: paneRead,
+    });
+    expect(browserImplementations["browser-chromium-offscreen"].presentationTrace).toMatchObject({
+      armCommand: offscreenArm, readCommand: offscreenRead,
+    });
+
     const receipts = machineGateRecordCalls(source, "B04");
     expect(receipts).toHaveLength(1);
     const receipt = receipts[0];
@@ -368,7 +394,9 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(presentationCalls.some((call) => /arm|start/i.test(call.text))).toBe(true);
     expect(presentationCalls.some((call) => /close|read/i.test(call.text))).toBe(true);
     expect(presentationCalls.every((call) =>
-      !/\.surface\.trace\.(?:start|read)|recording|artifact|png|snapshot/i.test(call.text))).toBe(true);
+      !/recording|artifact|png|snapshot/i.test(call.text))).toBe(true);
+    expect(presentationCalls.every((call) =>
+      /implementation\.presentationTrace\.(?:armCommand|readCommand)/.test(call.text))).toBe(true);
 
     expect(source).toContain("for (const engine of ENGINES)");
     expect(source).not.toContain("clicked.trace?.samples");
