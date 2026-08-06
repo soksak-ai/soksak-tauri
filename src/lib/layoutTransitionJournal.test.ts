@@ -84,4 +84,23 @@ describe("layout transition public journal", () => {
       unsubscribe();
     }
   });
+
+  it("surface ACK reject를 prepared에 방치하지 않고 failed terminal 사실로 닫는다", async () => {
+    registerLayoutTransitionHost({
+      prepareMove: async () => ({
+        mode: "snap",
+        commit: async () => { throw new Error("surface ACK rejected"); },
+        cancel: vi.fn(),
+      }),
+    });
+    const prepared = await prepareLayoutMove([{ viewId: "v1", dx: 160 }]);
+
+    await expect(prepared.commit()).rejects.toThrow("surface ACK rejected");
+    expect(layoutTransitionJournal()[0]).toEqual(expect.objectContaining({
+      phase: "failed",
+      domCommittedAtUnixMs: expect.any(Number),
+      closedAtUnixMs: expect.any(Number),
+      failure: "surface ACK rejected",
+    }));
+  });
 });
