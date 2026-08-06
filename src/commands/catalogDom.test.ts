@@ -211,6 +211,15 @@ describe("ui.measure — 공개 form control 값", () => {
     vi.unstubAllGlobals();
   });
 
+  it("child renderer가 투영한 공개 form 상태도 실제 node 영수증의 현재 value를 반환한다", async () => {
+    mountNode(`<div data-node="btn" data-form-control="input" data-form-value="https://fixture.invalid/"></div>`);
+
+    const measured = await execute("ui.measure", { address: ADDR }, {});
+
+    expect(measured.ok).toBe(true);
+    expect((measured.data as { value?: unknown }).value).toBe("https://fixture.invalid/");
+  });
+
   it("발견 가능한 반환 계약에 value를 선언한다", () => {
     expect(getSpec("ui.measure")?.returns).toContain("value");
   });
