@@ -55,6 +55,7 @@ import {
 } from "./lib/browser-ui-addresses.mjs";
 import { mapBrowserSurfaceRects } from "./lib/browser-surface-rects.mjs";
 import { mapB03LiveEvidence } from "./lib/browser-gate-b03-evidence.mjs";
+import { mapB05LiveEvidence } from "./lib/browser-gate-b05-evidence.mjs";
 import {
   mapB01TabEvidence,
   mapB11TabEvidence,
@@ -1360,7 +1361,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
         framework: frameworkName,
         engine,
         gate: "B05",
-        evidence: { engine, transitions: b05Transitions },
+        evidence: mapB05LiveEvidence({ engine, transitions: b05Transitions }),
       });
       const b06Receipt = gateReportStore.recordMachineEvidence({
         framework: frameworkName,

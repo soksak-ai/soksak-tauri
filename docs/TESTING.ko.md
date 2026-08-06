@@ -43,6 +43,8 @@
 요청값이나 PNG 픽셀에서 값을 만들어 채우지 않는다.
 B03 mapper는 독립 owner 원장, `compositionKind=slot|renderer` 공개 노드, surface 영수증의
 공유 `topologyPath`를 요구한다. 어느 원장도 다른 원장에서 역산하지 않는다.
+B05 mapper는 click ACK의 주소·시각, layout 거래의 trace 인과관계, 실제 presentation 사건,
+settled 및 유한 hold 영수증을 닫힌 schema로 결합한다. 빠진 시각이나 hold를 녹화 프레임에서 추정하지 않는다.
 
 | ID | 고정 기준 | 기계 판정 근거 |
 |---|---|---|

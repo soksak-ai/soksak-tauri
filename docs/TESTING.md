@@ -50,6 +50,9 @@ lacks a required field, the mapper preserves `null` and the gate remains RED; it
 from requested values or PNG pixels.
 The B03 mapper requires an independent owner ledger, exposed `compositionKind=slot|renderer`
 nodes, and the surface receipt's shared `topologyPath`; it never derives one ledger from another.
+The B05 mapper joins the click ACK address/time, the layout transaction's trace causality, actual
+presentation events, settlement, and the finite hold receipt. It never estimates a missing time or
+hold from recorded frames.
 
 | ID | Fixed rule | Machine evidence |
 |---|---|---|
