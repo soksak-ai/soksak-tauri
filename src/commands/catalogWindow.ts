@@ -17,7 +17,11 @@ import {
   type WindowSnapshotLike,
 } from "../state/snapshotGeneration";
 import { windowTarget, P } from "./catalog";
-import { recordWindowFrames } from "./windowRecorder";
+import {
+  WINDOW_RECORD_MAX_BYTES,
+  recordWindowFrames,
+  validWindowRecordMaxBytes,
+} from "./windowRecorder";
 import {
   runWindowResizeSequence,
   type PhysicalWindowSize,
@@ -74,7 +78,7 @@ export function registerWindowCatalog(): void {
 
   register("window.resizeSequence", {
     description:
-      "Apply a finite sequence of native physical window sizes in order while optionally recording every transition frame. Recording writes a baseline frame and emits readiness before the first resize, so the stimulus never races capture startup. Used to reproduce live-resize stalls, blanks, stale frames, and surface drift without focusing the window.",
+      "Apply a finite sequence of native physical window sizes in order. Optional realtime recording is separate visual evidence: successful readiness places the baseline before the first resize, while recording startup/readiness/completion failures are reported in recording.status and never cancel the finite resize transaction. Used to reproduce live-resize stalls, blanks, stale frames, and surface drift without focusing the window.",
     params: {
       sizes: {
         type: "json",
@@ -87,10 +91,21 @@ export function registerWindowCatalog(): void {
       },
       recordDir: { type: "string", description: "Optional output directory for transition PNGs" },
       recordFrames: { type: "number", description: "Frames to record when recordDir is set (default 64, max 600)" },
-      recordIntervalMs: { type: "number", description: "Recording interval in ms (default 16)" },
+      recordIntervalMs: { type: "number", description: "Recording interval in ms (default 16, 0..1000)" },
+      recordMaxBytes: {
+        type: "number",
+        description: `Optional total encoded PNG byte budget (positive safe integer, max ${WINDOW_RECORD_MAX_BYTES})`,
+      },
     },
-    returns: "{ steps, frames, resizeElapsedMs, elapsedMs, final:{w,h}, samples:[{step,size,observation}] }",
-    message: (d) => tmsg("msg.window.resizeSequence", { steps: Number(d.steps), frames: Number(d.frames) }),
+    returns:
+      "{ steps, recording:{status:'not-requested'|'complete'|'failed',mode:'realtime',dir?,requestedFrames?,frames?,reason?}, resizeElapsedMs, elapsedMs, final:{w,h}, samples:[{step,size,observation}] }",
+    message: (d) => {
+      const recording = d.recording as Record<string, unknown> | undefined;
+      return tmsg("msg.window.resizeSequence", {
+        steps: Number(d.steps),
+        frames: Number(recording?.frames ?? 0),
+      });
+    },
     errors: ["INVALID_PARAMS"],
     examples: [
       'window.resizeSequence \'{"sizes":[{"w":900,"h":700},{"w":1500,"h":800},{"w":1200,"h":900}],"intervalMs":8}\'',
@@ -100,11 +115,40 @@ export function registerWindowCatalog(): void {
         const sizes = p.sizes as PhysicalWindowSize[];
         const intervalMs = (p.intervalMs as number | undefined) ?? 8;
         const recordDir = p.recordDir as string | undefined;
+        const requestedFrames = (p.recordFrames as number | undefined) ?? 64;
+        const requestedIntervalMs = (p.recordIntervalMs as number | undefined) ?? 16;
+        const requestedMaxBytes = p.recordMaxBytes;
+        if (recordDir !== undefined && recordDir.trim().length === 0) {
+          throw new Error("recordDir must not be empty");
+        }
+        if (recordDir !== undefined
+          && (!Number.isSafeInteger(requestedFrames) || requestedFrames < 1 || requestedFrames > 600)) {
+          throw new Error("recordFrames must be a safe integer between 1 and 600");
+        }
+        if (recordDir !== undefined
+          && (!Number.isFinite(requestedIntervalMs)
+            || requestedIntervalMs < 0
+            || requestedIntervalMs > 1_000)) {
+          throw new Error("recordIntervalMs must be between 0 and 1000");
+        }
+        if (requestedMaxBytes !== undefined && !validWindowRecordMaxBytes(requestedMaxBytes)) {
+          throw new Error(
+            `recordMaxBytes must be a safe integer between 1 and ${WINDOW_RECORD_MAX_BYTES}`,
+          );
+        }
+        if (recordDir === undefined && (
+          p.recordFrames !== undefined
+          || p.recordIntervalMs !== undefined
+          || requestedMaxBytes !== undefined
+        )) {
+          throw new Error("recordDir is required when recording options are provided");
+        }
         const record = recordDir
           ? {
               dir: recordDir,
-              frames: Math.max(1, Math.min(600, (p.recordFrames as number | undefined) ?? 64)),
-              intervalMs: Math.max(0, (p.recordIntervalMs as number | undefined) ?? 16),
+              frames: requestedFrames,
+              intervalMs: requestedIntervalMs,
+              ...(requestedMaxBytes === undefined ? {} : { maxBytes: requestedMaxBytes }),
             }
           : undefined;
         const win = currentWindow();

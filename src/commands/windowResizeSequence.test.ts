@@ -1,6 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import { runWindowResizeSequence } from "./windowResizeSequence";
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((onResolve, onReject) => {
+    resolve = onResolve;
+    reject = onReject;
+  });
+  return { promise, resolve, reject };
+}
+
 describe("window resize sequence", () => {
   it("녹화를 먼저 연 뒤 모든 물리 크기를 순서대로 적용하고 마지막 크기에 착지한다", async () => {
     const order: string[] = [];
@@ -41,11 +51,135 @@ describe("window resize sequence", () => {
     ]);
     expect(result).toMatchObject({
       steps: 3,
-      frames: 12,
       resizeElapsedMs: expect.any(Number),
       final: { w: 1200, h: 900 },
+      recording: {
+        status: "complete",
+        mode: "realtime",
+        dir: "/evidence/resize",
+        requestedFrames: 12,
+        frames: 12,
+      },
     });
   });
+
+  it("녹화를 요청하지 않은 거래도 명시적인 recording 상태를 공개한다", async () => {
+    const recordFrames = vi.fn();
+    const result = await runWindowResizeSequence({
+      sizes: [{ w: 800, h: 600 }],
+      intervalMs: 0,
+      setSize: vi.fn(async () => {}),
+      recordFrames: recordFrames as never,
+    });
+
+    expect(recordFrames).not.toHaveBeenCalled();
+    expect(result.recording).toEqual({ status: "not-requested", mode: "realtime" });
+    expect(result).not.toHaveProperty("frames");
+  });
+
+  it("녹화 readiness가 실패해도 즉시 모든 resize와 관측을 순서대로 완수한다", async () => {
+    const finished = deferred<number>();
+    const readinessError = new Error("baseline capture failed");
+    const recording = Object.assign(finished.promise, {
+      ready: Promise.reject(readinessError),
+    });
+    const order: string[] = [];
+
+    const result = await runWindowResizeSequence({
+      sizes: [{ w: 800, h: 600 }, { w: 1400, h: 900 }],
+      intervalMs: 0,
+      record: { dir: "/evidence/resize", frames: 20, intervalMs: 16 },
+      recordFrames: vi.fn(() => recording),
+      setSize: vi.fn(async (w, h) => { order.push(`size:${w}x${h}`); }),
+      observe: vi.fn(async (step) => {
+        order.push(`observe:${step}`);
+        return { step };
+      }),
+    });
+
+    expect(order).toEqual([
+      "size:800x600",
+      "observe:0",
+      "size:1400x900",
+      "observe:1",
+    ]);
+    expect(result.recording).toEqual({
+      status: "failed",
+      mode: "realtime",
+      dir: "/evidence/resize",
+      requestedFrames: 20,
+      frames: 0,
+      reason: "baseline capture failed",
+    });
+    finished.reject(readinessError);
+    await Promise.resolve();
+  });
+
+  it("baseline 뒤 final recording이 실패해도 모든 resize와 관측 결과를 반환한다", async () => {
+    const finished = deferred<number>();
+    const recording = Object.assign(finished.promise, { ready: Promise.resolve() });
+    const setSize = vi.fn(async (w: number) => {
+      if (w === 1200) finished.reject(new Error("disk budget exhausted"));
+    });
+
+    const result = await runWindowResizeSequence({
+      sizes: [{ w: 900, h: 700 }, { w: 1200, h: 800 }],
+      intervalMs: 0,
+      record: { dir: "/evidence/resize", frames: 30, intervalMs: 10 },
+      recordFrames: vi.fn(() => recording),
+      setSize,
+      observe: vi.fn(async (step) => ({ step })),
+    });
+
+    expect(setSize).toHaveBeenCalledTimes(2);
+    expect(result.samples).toHaveLength(2);
+    expect(result.recording).toEqual({
+      status: "failed",
+      mode: "realtime",
+      dir: "/evidence/resize",
+      requestedFrames: 30,
+      frames: 0,
+      reason: "disk budget exhausted",
+    });
+  });
+
+  it("recorder 시작 호출이 동기 실패해도 resize 거래를 취소하지 않는다", async () => {
+    const setSize = vi.fn(async () => {});
+    const result = await runWindowResizeSequence({
+      sizes: [{ w: 900, h: 700 }, { w: 1300, h: 800 }],
+      intervalMs: 0,
+      record: { dir: "/evidence/resize", frames: 10, intervalMs: 16 },
+      recordFrames: vi.fn(() => { throw new Error("recorder unavailable"); }),
+      setSize,
+    });
+
+    expect(setSize).toHaveBeenCalledTimes(2);
+    expect(result.recording).toEqual({
+      status: "failed",
+      mode: "realtime",
+      dir: "/evidence/resize",
+      requestedFrames: 10,
+      frames: 0,
+      reason: "recorder unavailable",
+    });
+  });
+
+  it.each([0, -1, 1.5, 1_073_741_825, Number.NaN, Number.POSITIVE_INFINITY])(
+    "잘못된 녹화 byte budget %s는 recorder와 resize 전에 거부한다",
+    async (maxBytes) => {
+      const recordFrames = vi.fn();
+      const setSize = vi.fn();
+      await expect(runWindowResizeSequence({
+        sizes: [{ w: 800, h: 600 }],
+        intervalMs: 0,
+        record: { dir: "/evidence/resize", frames: 10, intervalMs: 16, maxBytes },
+        setSize,
+        recordFrames: recordFrames as never,
+      })).rejects.toThrow("maxBytes");
+      expect(recordFrames).not.toHaveBeenCalled();
+      expect(setSize).not.toHaveBeenCalled();
+    },
+  );
 
   it("빈 시퀀스와 무한 반복을 허용하지 않는다", async () => {
     await expect(runWindowResizeSequence({

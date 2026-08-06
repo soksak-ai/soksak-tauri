@@ -2,7 +2,7 @@
 
 import { beforeEach, expect, it, vi } from "vitest";
 import { createStream, invoke } from "../framework";
-import { recordWindowFrames } from "./windowRecorder";
+import { recordWindowFrames, startWindowRecording } from "./windowRecorder";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -71,4 +71,132 @@ it("호출자는 공통 recorder만 사용하고 프레임워크 record를 직�
     const source = readFileSync(join(__dirname, file), "utf8");
     expect(source, file).not.toContain("plugin:webview-capture|record");
   }
+});
+
+it("ready 실패는 끝나지 않는 final을 기다리지 않고 실패 상태로 닫으며 final rejection도 즉시 소비한다", async () => {
+  let rejectFinal!: (reason: unknown) => void;
+  const final = new Promise<number>((_resolve, reject) => { rejectFinal = reject; });
+  const recorder = vi.fn(() => Object.assign(final, {
+    ready: Promise.reject(new Error("baseline failed")),
+  }));
+
+  const transaction = startWindowRecording({
+    dir: "/evidence/ready-failure",
+    frames: 8,
+    intervalMs: 16,
+  }, recorder);
+
+  await expect(transaction.ready).resolves.toBe(false);
+  await expect(transaction.report).resolves.toEqual({
+    status: "failed",
+    mode: "realtime",
+    dir: "/evidence/ready-failure",
+    requestedFrames: 8,
+    frames: 0,
+    reason: "baseline failed",
+  });
+  rejectFinal(new Error("late final failure"));
+  await Promise.resolve();
+});
+
+it("ready 성공 뒤 final 성공·실패를 같은 공개 상태 계약으로 닫는다", async () => {
+  const complete = startWindowRecording({
+    dir: "/evidence/complete",
+    frames: 2,
+    intervalMs: 0,
+  }, (request) => {
+    request.onFrame?.(0);
+    request.onFrame?.(1);
+    return Object.assign(Promise.resolve(2), { ready: Promise.resolve() });
+  });
+  await expect(complete.ready).resolves.toBe(true);
+  await expect(complete.report).resolves.toMatchObject({
+    status: "complete",
+    frames: 2,
+    requestedFrames: 2,
+  });
+
+  const failed = startWindowRecording({
+    dir: "/evidence/final-failure",
+    frames: 3,
+    intervalMs: 0,
+  }, (request) => {
+    request.onFrame?.(0);
+    return Object.assign(Promise.reject(new Error("disk failed")), { ready: Promise.resolve() });
+  });
+  await expect(failed.ready).resolves.toBe(true);
+  await expect(failed.report).resolves.toMatchObject({
+    status: "failed",
+    frames: 1,
+    reason: "disk failed",
+  });
+});
+
+it("recorder 동기 실패와 frame observer 실패도 throw 대신 녹화 상태로 공개한다", async () => {
+  const sync = startWindowRecording({
+    dir: "/evidence/sync-failure",
+    frames: 1,
+    intervalMs: 0,
+  }, () => { throw new Error("recorder unavailable"); });
+  await expect(sync.ready).resolves.toBe(false);
+  await expect(sync.report).resolves.toMatchObject({
+    status: "failed",
+    frames: 0,
+    reason: "recorder unavailable",
+  });
+
+  const observer = startWindowRecording({
+    dir: "/evidence/observer-failure",
+    frames: 1,
+    intervalMs: 0,
+    onFrame: () => { throw new Error("observer failed"); },
+  }, (request) => {
+    request.onFrame?.(0);
+    return Object.assign(Promise.resolve(1), { ready: Promise.resolve() });
+  });
+  await expect(observer.report).resolves.toMatchObject({
+    status: "failed",
+    frames: 1,
+    reason: "observer failed",
+  });
+});
+
+it("ready 계약이 없는 recorder를 baseline 성공으로 위장하지 않는다", async () => {
+  const incomplete = Promise.resolve(1) as ReturnType<typeof recordWindowFrames>;
+  const transaction = startWindowRecording({
+    dir: "/evidence/missing-ready",
+    frames: 1,
+    intervalMs: 0,
+  }, () => incomplete);
+
+  await expect(transaction.ready).resolves.toBe(false);
+  await expect(transaction.report).resolves.toMatchObject({
+    status: "failed",
+    mode: "realtime",
+    dir: "/evidence/missing-ready",
+    requestedFrames: 1,
+    frames: 0,
+    reason: expect.stringContaining("ready"),
+  });
+});
+
+it("raw recorder도 반환 전에 final rejection 소비자를 붙인다", async () => {
+  const source = Promise.reject(new Error("capture failed"));
+  const sourceCatch = source.catch.bind(source);
+  vi.spyOn(source, "catch").mockImplementation((onRejected) => {
+    const finished = sourceCatch(onRejected);
+    vi.spyOn(finished, "catch");
+    return finished;
+  });
+  vi.mocked(invoke).mockReturnValueOnce(source as never);
+
+  const recording = recordWindowFrames({
+    dir: "/evidence/raw-rejection",
+    frames: 1,
+    intervalMs: 0,
+  });
+
+  expect(vi.mocked(recording.catch)).toHaveBeenCalledOnce();
+  await expect(recording.ready).rejects.toThrow("capture failed");
+  await expect(recording).rejects.toThrow("capture failed");
 });

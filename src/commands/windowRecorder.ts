@@ -12,12 +12,135 @@ export type WindowRecordRequest = {
 
 export type WindowRecording = Promise<number> & { ready: Promise<void> };
 
+export type RecordingReport<
+  Mode extends string = "realtime",
+  Extra extends object = object,
+> =
+  | { status: "not-requested"; mode: Mode }
+  | {
+      status: "complete";
+      mode: Mode;
+      dir: string;
+      requestedFrames: number;
+      frames: number;
+    } & Extra
+  | {
+      status: "failed";
+      mode: Mode;
+      dir: string;
+      requestedFrames: number;
+      frames: number;
+      reason: string;
+    } & Extra;
+
+export type WindowRecordingReport = RecordingReport<"realtime">;
+
+export type WindowRecorder = (request: WindowRecordRequest) => WindowRecording;
+
 export const WINDOW_RECORD_MAX_BYTES = 1_073_741_824;
 
 export function validWindowRecordMaxBytes(value: unknown): value is number {
   return Number.isSafeInteger(value)
     && (value as number) >= 1
     && (value as number) <= WINDOW_RECORD_MAX_BYTES;
+}
+
+export const recordingFailureReason = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+/** raw base64가 디코딩될 정확한 byte 수. 파일을 쓰기 전에 예산을 판정한다. */
+export function decodedBase64ByteLength(base64: string): number {
+  const compact = base64.replace(/\s/g, "");
+  if (
+    compact.length === 0
+    || compact.length % 4 === 1
+    || !/^[A-Za-z0-9+/]*={0,2}$/.test(compact)
+    || (compact.includes("=") && compact.length % 4 !== 0)
+  ) {
+    throw new Error("snapshot_region이 유효한 base64 PNG를 반환하지 않았다");
+  }
+  const padding = compact.endsWith("==") ? 2 : compact.endsWith("=") ? 1 : 0;
+  return Math.floor((compact.length * 3) / 4) - padding;
+}
+
+/**
+ * recorder의 시작·첫 저장·완료를 하나의 non-rejecting 상태 거래로 바꾼다.
+ *
+ * 픽셀 녹화는 제품 자극의 증거이지 자극 자체가 아니다. ready 실패 시 완료 Promise가 끝나지
+ * 않아도 report를 즉시 닫되, 늦은 final rejection handler는 시작 시점에 이미 붙여 둔다.
+ */
+export function startWindowRecording(
+  request: WindowRecordRequest,
+  recorder: WindowRecorder = recordWindowFrames,
+): { ready: Promise<boolean>; report: Promise<WindowRecordingReport> } {
+  let savedFrames = 0;
+  let frameObservationFailure: string | null = null;
+  try {
+    const onFrame = request.onFrame;
+    const recording = recorder({
+      ...request,
+      onFrame: (frame) => {
+        savedFrames += 1;
+        if (!onFrame) return;
+        try {
+          onFrame(frame);
+        } catch (error) {
+          frameObservationFailure ??= recordingFailureReason(error);
+        }
+      },
+    });
+    // ready가 먼저 실패해 report가 일찍 끝나도 늦은 final rejection은 여기서 이미 소비된다.
+    const completion = Promise.resolve(recording).then(
+      (frames) => ({ ok: true as const, frames }),
+      (error) => ({ ok: false as const, reason: recordingFailureReason(error) }),
+    );
+    // final handler를 먼저 붙인다. 잘못된 recorder의 ready getter 자체가 throw하더라도 final
+    // rejection이 별도 unhandledrejection으로 새지 않는다.
+    const ready = recording.ready as unknown;
+    if (
+      (typeof ready !== "object" && typeof ready !== "function")
+      || ready === null
+      || typeof (ready as PromiseLike<void>).then !== "function"
+    ) {
+      throw new Error("recorder.ready must be a Promise");
+    }
+    const readiness = Promise.resolve(ready as PromiseLike<void>).then(
+      () => ({ ok: true as const }),
+      (error) => ({ ok: false as const, reason: recordingFailureReason(error) }),
+    );
+    const failed = (reason: string): WindowRecordingReport => ({
+      status: "failed",
+      mode: "realtime",
+      dir: request.dir,
+      requestedFrames: request.frames,
+      frames: savedFrames,
+      reason,
+    });
+    const report = readiness.then(async (ready): Promise<WindowRecordingReport> => {
+      if (!ready.ok) return failed(ready.reason);
+      const finished = await completion;
+      if (!finished.ok) return failed(finished.reason);
+      if (frameObservationFailure) return failed(frameObservationFailure);
+      return {
+        status: "complete",
+        mode: "realtime",
+        dir: request.dir,
+        requestedFrames: request.frames,
+        frames: finished.frames,
+      };
+    });
+    return { ready: readiness.then((result) => result.ok), report };
+  } catch (error) {
+    const result: WindowRecordingReport = {
+      status: "failed",
+      mode: "realtime",
+      dir: request.dir,
+      requestedFrames: request.frames,
+      frames: savedFrames,
+      reason: recordingFailureReason(error),
+    };
+    return { ready: Promise.resolve(false), report: Promise.resolve(result) };
+  }
 }
 
 /**
@@ -65,5 +188,9 @@ export function recordWindowFrames({
     }
     throw error;
   });
+  // 일부 진단 명령은 recorder를 시작한 뒤 자극 시각까지 기다렸다가 final을 await한다. 그
+  // 사이 producer가 먼저 실패해도 unhandledrejection이 되지 않도록 원본 final을 유지한 채
+  // rejection 소비자만 즉시 붙인다.
+  finished.catch(() => {});
   return Object.assign(finished, { ready });
 }

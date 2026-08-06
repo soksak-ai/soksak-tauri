@@ -1,20 +1,29 @@
+import {
+  startWindowRecording,
+  validWindowRecordMaxBytes,
+  type WindowRecordRequest,
+  type WindowRecorder,
+  type WindowRecordingReport,
+} from "./windowRecorder";
+
 export interface PhysicalWindowSize {
   w: number;
   h: number;
 }
 
-export interface WindowResizeRecording {
-  dir: string;
-  frames: number;
-  intervalMs: number;
-}
+export type WindowResizeRecording = Pick<
+  WindowRecordRequest,
+  "dir" | "frames" | "intervalMs" | "maxBytes"
+>;
+
+export type WindowResizeRecordingResult = WindowRecordingReport;
 
 interface ResizeSequenceRequest {
   sizes: PhysicalWindowSize[];
   intervalMs: number;
   record?: WindowResizeRecording;
   setSize: (w: number, h: number) => Promise<void>;
-  recordFrames: (request: WindowResizeRecording) => Promise<number> & { ready: Promise<void> };
+  recordFrames: WindowRecorder;
   observe?: (step: number, size: PhysicalWindowSize) => Promise<unknown>;
 }
 
@@ -23,12 +32,27 @@ const MAX_STEPS = 120;
 const delay = (ms: number): Promise<void> =>
   ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
 
+function validateRecording(record: WindowResizeRecording): void {
+  if (typeof record.dir !== "string" || record.dir.trim().length === 0) {
+    throw new Error("record.dir must not be empty");
+  }
+  if (!Number.isSafeInteger(record.frames) || record.frames < 1 || record.frames > 600) {
+    throw new Error("record.frames must be a safe integer between 1 and 600");
+  }
+  if (!Number.isFinite(record.intervalMs) || record.intervalMs < 0 || record.intervalMs > 1_000) {
+    throw new Error("record.intervalMs must be between 0 and 1000");
+  }
+  if (record.maxBytes !== undefined && !validWindowRecordMaxBytes(record.maxBytes)) {
+    throw new Error("record.maxBytes must be a valid window recording byte budget");
+  }
+}
+
 /**
  * 유한한 native window resize 거래.
  *
- * 녹화를 먼저 연 뒤 물리 크기를 입력 순서 그대로 적용한다. 상태를 기다리거나 재시도하지
- * 않으며, 호출자가 명시한 cadence만 사용한다. 이 순서가 있어야 자동화가 resize 도중의 blank,
- * stale frame, 응답 정지를 재현하면서도 다음 실행에서 같은 자극을 만들 수 있다.
+ * 녹화가 준비되면 첫 기준 프레임 뒤에 물리 크기를 입력 순서 그대로 적용한다. 녹화는 사람이
+ * 전이를 검토하기 위한 별도 증거이므로 시작·준비·완료 실패가 resize 거래를 취소하지 않는다.
+ * 상태를 폴링하거나 재시도하지 않으며, 호출자가 명시한 cadence만 사용한다.
  */
 export async function runWindowResizeSequence({
   sizes,
@@ -39,7 +63,7 @@ export async function runWindowResizeSequence({
   observe,
 }: ResizeSequenceRequest): Promise<{
   steps: number;
-  frames: number;
+  recording: WindowResizeRecordingResult;
   resizeElapsedMs: number;
   elapsedMs: number;
   final: PhysicalWindowSize;
@@ -55,12 +79,17 @@ export async function runWindowResizeSequence({
       throw new Error(`invalid physical window size: ${JSON.stringify(size)}`);
     }
   }
+  if (record) validateRecording(record);
 
   const startedAt = performance.now();
-  const recording = record ? recordFrames(record) : null;
-  // 녹화 명령이 첫 기준 프레임을 실제로 저장한 사건 뒤에만 자극을 시작한다. Promise를 호출한
-  // 사실은 네이티브 캡처가 준비됐다는 뜻이 아니며, 그 경쟁은 f0000의 의미를 실행마다 바꾼다.
-  if (recording) await recording.ready;
+  const recording = record
+    ? startWindowRecording(record, recordFrames)
+    : null;
+  // 성공한 readiness만 baseline 순서를 보장한다. 실패는 이미 녹화 상태로 닫혔으므로 native
+  // resize를 그대로 진행한다.
+  await (recording?.ready ?? Promise.resolve(false));
+
+  const resizeStartedAt = performance.now();
   const samples: { step: number; size: PhysicalWindowSize; observation: unknown }[] = [];
   for (let index = 0; index < sizes.length; index += 1) {
     const size = sizes[index];
@@ -68,11 +97,15 @@ export async function runWindowResizeSequence({
     if (observe) samples.push({ step: index, size, observation: await observe(index, size) });
     if (index + 1 < sizes.length) await delay(intervalMs);
   }
-  const resizeElapsedMs = Math.round(performance.now() - startedAt);
-  const frames = recording ? await recording : 0;
+  const resizeElapsedMs = Math.round(performance.now() - resizeStartedAt);
+
+  const recordingResult: WindowResizeRecordingResult = recording
+    ? await recording.report
+    : { status: "not-requested", mode: "realtime" };
+
   return {
     steps: sizes.length,
-    frames,
+    recording: recordingResult,
     resizeElapsedMs,
     elapsedMs: Math.round(performance.now() - startedAt),
     final: sizes[sizes.length - 1],
