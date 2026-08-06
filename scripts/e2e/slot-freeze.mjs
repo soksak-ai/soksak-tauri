@@ -1200,6 +1200,15 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
             slotAddress,
           } = movedParticipant;
           const b04JournalEntries = normalizeB04JournalEntries(layoutVerdict.transactions);
+          // Native producer를 먼저 닫는다. DOM을 먼저 닫으면 그 다음 native close ACK까지의
+          // CADisplayLink 꼬리에는 대응 DOM frame이 없어 서로 다른 관측 구간을 결합하게 된다.
+          const presentationReceipt = must(await rpc(
+            implementation.presentationTrace.readCommand,
+            implementation.presentationTrace.readParams({ traceId: armedPresentation.traceId }),
+            win,
+            { timeoutMs: 10_000 },
+          ), `B04 presentation trace read ${name}`);
+          presentationOpen = false;
           const domTraceReceipt = must(await rpc(
             "ui.trace.multi.close",
             { traceId: domTraceSession.traceId },
@@ -1210,13 +1219,6 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
           if (domTraceReceipt.timedOut === true) {
             throw new Error(`${engine}/${name}: raw DOM trace가 explicit close 전에 만료됐다`);
           }
-          const presentationReceipt = must(await rpc(
-            implementation.presentationTrace.readCommand,
-            implementation.presentationTrace.readParams({ traceId: armedPresentation.traceId }),
-            win,
-            { timeoutMs: 10_000 },
-          ), `B04 presentation trace read ${name}`);
-          presentationOpen = false;
           const presentationEvents = implementation.presentationTrace.events(
             presentationReceipt,
             { targetViewId, owner },
