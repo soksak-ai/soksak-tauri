@@ -4,7 +4,8 @@ import { PluginViewVisibility } from "./pluginViewVisibility";
 describe("PluginViewVisibility — pane visibility 단일 소유권", () => {
   it("진행 중 hide 뒤에 요청된 show를 직렬 적용하고 최종 적용까지 정착하지 않는다", async () => {
     const releases: (() => void)[] = [];
-    const apply = vi.fn(async () => new Promise<void>((resolve) => releases.push(resolve)));
+    const apply = vi.fn((_visible: boolean) =>
+      new Promise<void>((resolve) => releases.push(resolve)));
     const visibility = new PluginViewVisibility(apply);
 
     const hidden = visibility.request(false);

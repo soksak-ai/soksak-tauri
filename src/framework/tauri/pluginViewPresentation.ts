@@ -27,6 +27,7 @@ import { PluginViewSlotRegistry } from "./pluginViewSlots";
 import { PluginViewReadiness } from "./pluginViewReadiness";
 import { PluginViewMemberOwnership } from "./pluginViewMemberOwnership";
 import { PluginViewSidecars } from "./pluginViewSidecars";
+import { PluginViewVisibility } from "./pluginViewVisibility";
 import { claimPaneSurface, releasePaneSurface } from "./surfaceOwnership";
 
 interface DisposableLike { dispose(): void }
@@ -47,6 +48,7 @@ interface PresentedState {
   grouped: boolean;
   disposed: boolean;
   visible: boolean;
+  visibility: PluginViewVisibility;
   markReady(): void;
   sidecars: PluginViewSidecars;
 }
@@ -347,7 +349,7 @@ async function openAndGroup(
       await syncPaneFrame(view);
     }
     if (await syncMemberFrame(view, slot)) view.slots.commit(slot);
-    await invoke("webview_visible", { label, visible: view.visible, focus: false });
+    await view.visibility.request(view.visible);
     view.markReady();
   } catch (error) {
     view.members.delete(label);
@@ -377,7 +379,7 @@ async function presentExisting(view: PresentedState, label: string): Promise<voi
       await syncPaneFrame(view);
     }
     if (await syncMemberFrame(view, slot)) view.slots.commit(slot);
-    await invoke("webview_visible", { label, visible: view.visible, focus: false });
+    await view.visibility.request(view.visible);
     view.markReady();
   } catch (error) {
     view.members.delete(label);
@@ -464,8 +466,19 @@ async function createPresentedView(
     projections: new Map(),
     subscriptions: new Map(), unlisten: [], observer: null!, grouped: false,
     disposed: false, visible: input.context.isVisible(), markReady,
+    visibility: null!,
     sidecars: new PluginViewSidecars(),
   };
+  view.visibility = new PluginViewVisibility(async (visible) => {
+    if (view.disposed) return;
+    if (visible) await syncPaneFrame(view);
+    await Promise.all([view.renderer, ...view.members].map((label) => invoke("webview_visible", {
+      label,
+      visible,
+      focus: false,
+    })));
+    await emitTo(view.renderer, event(view.renderer, "visibility"), { visible });
+  });
   input.container.setAttribute(TAURI_PANE_RENDERER_ATTR, renderer);
   state.views.set(pane, view);
   state.readiness.set(pane, false);
@@ -538,7 +551,7 @@ async function createPresentedView(
   await invoke("webview_open", {
     label: renderer, url: url.toString(), ...rect, transparent: true,
   });
-  await invoke("webview_visible", { label: renderer, visible: view.visible, focus: false });
+  await view.visibility.request(view.visible);
   return view;
 }
 
@@ -662,8 +675,8 @@ const host: PluginViewPresentationHost = {
       view = created;
       view.context = desiredContext;
       view.visible = desiredVisible;
-      void invoke("webview_visible", {
-        label: view.renderer, visible: desiredVisible, focus: false,
+      void view.visibility.request(desiredVisible).catch((error) => {
+        console.error("pane presentation visibility 실패", error);
       });
       void emitTo(view.renderer, event(view.renderer, "context"), {
         projectId: desiredContext.projectId, root: desiredContext.root,
@@ -696,10 +709,9 @@ const host: PluginViewPresentationHost = {
         desiredVisible = visible;
         if (!view) return;
         view.visible = visible;
-        void invoke("webview_visible", { label: view.renderer, visible, focus: false });
-        for (const label of view.members)
-          void invoke("webview_visible", { label, visible, focus: false });
-        void emitTo(view.renderer, event(view.renderer, "visibility"), { visible });
+        void view.visibility.request(visible).catch((error) => {
+          console.error("pane presentation visibility 실패", error);
+        });
       },
       dispose() {
         disposed = true;
@@ -714,6 +726,7 @@ const host: PluginViewPresentationHost = {
   },
   async presentationSettled() {
     const views = [...state.views.values()].filter((view) => !view.disposed);
+    await Promise.all(views.map((view) => view.visibility.settled()));
     await awaitPluginViewComposition();
     await Promise.all(views
       .filter((view) => view.visible)
