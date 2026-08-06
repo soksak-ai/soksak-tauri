@@ -48,7 +48,7 @@ DEV_CORED_SOCKET := $(HOME)/.soksak-dev/cored.sock
 
 .DEFAULT_GOAL := help
 
-.PHONY: clean-orphan-target doctor doctor-fix help install icons dev build build-dev build-debug run run-dev restart-dev run-debug typecheck check test test-front verify gates e2e-framework-binding e2e-slot-freeze-dev clean stop cli cli-dev cli-debug install-cli install-cli-dev install-cli-debug docs docs-dev registry
+.PHONY: clean-orphan-target doctor doctor-fix help install icons dev build build-dev build-debug run run-dev rebuild-dev restart-dev run-debug typecheck check test test-front verify gates e2e-framework-binding e2e-slot-freeze-dev clean stop cli cli-dev cli-debug install-cli install-cli-dev install-cli-debug docs docs-dev registry
 
 help: ## 사용 가능한 명령 목록
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -126,7 +126,10 @@ run-dev: ## 개발 정체성 soksak-tauri-dev.app 실행(새 인스턴스)
 	  "$(DEV_APP)"
 	@echo "실행: $(DEV_APP) (로그: $(DEV_LOG_DIR)/tauri-app.log, tauri-app.error.log)"
 
-restart-dev: ## 실행 중 dev 앱을 app.quit으로 끝내고 같은 번들을 단일 인스턴스로 다시 실행
+rebuild-dev: build-dev ## 현재 소스를 dev 번들로 다시 만든 뒤 단일 인스턴스로 재실행
+	$(MAKE) --no-print-directory restart-dev
+
+restart-dev: ## 이미 빌드·검증된 동일 dev 번들을 빌드 없이 반복 재실행
 	@test -x "$(DEV_EXECUTABLE)" -a -x "$(DEV_CLI)" || { echo "먼저 'make build-dev' 를 실행하세요."; exit 1; }
 	@CLI="$(DEV_CLI)"; SOCKET="$(DEV_HOST_SOCKET)"; \
 	owner_pid() { lsof -t "$$SOCKET" 2>/dev/null | head -n 1; }; \

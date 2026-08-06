@@ -27,4 +27,15 @@ describe("dev 번들 수명 계약", () => {
     expect(target).toMatch(/new_pid.*old_pid|old_pid.*new_pid/);
     expect(target).toMatch(/kill -0/);
   });
+
+  it("rebuild-dev는 현재 소스를 빌드하고 restart-dev는 동일 번들만 재실행한다", () => {
+    const rebuild = makefile.match(/rebuild-dev:[\s\S]*?\n\nrestart-dev:/)?.[0] ?? "";
+    const repeat = makefile.match(/restart-dev:[\s\S]*?\n\nrun-debug:/)?.[0] ?? "";
+
+    expect(rebuild).toMatch(/^rebuild-dev:\s+build-dev\b/m);
+    expect(rebuild).toContain("restart-dev");
+    expect(repeat).not.toMatch(/^restart-dev:\s+build-dev\b/m);
+    expect(repeat).not.toMatch(/\$\(MAKE\).*\bbuild-dev\b/);
+    expect(repeat).toContain('SOCKET="$(DEV_HOST_SOCKET)"');
+  });
 });
