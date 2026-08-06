@@ -148,6 +148,26 @@ describe("Tauri native-composition ownership", () => {
     expect(electron).not.toMatch(/PaneSurfaceHost|webview\.pane\./);
   });
 
+  it("Tauri 실제 표시 원장은 display callback에서만 나오고 공개 adapter command로 노출된다", () => {
+    const trace = [
+      "frameworks/tauri/src/webview/presentation_trace.rs",
+      "frameworks/tauri/src/webview/layer.rs",
+    ].map((file) => readFileSync(resolve(ROOT, file), "utf8")).join("\n");
+    const tauriInstall = readFileSync(resolve(SRC, "framework/tauri/install.ts"), "utf8");
+    const electron = productionFiles(resolve(SRC, "framework/electron"))
+      .map((file) => readFileSync(file, "utf8")).join("\n");
+
+    expect(trace).toMatch(/displayLinkWithTarget_selector/);
+    expect(trace).toMatch(/recordPresentation:/);
+    expect(trace).toMatch(/presentationLayer/);
+    expect(trace).not.toMatch(/setInterval|requestAnimationFrame|thread::sleep/);
+    expect(tauriInstall).toMatch(/webview\.pane\.presentation\.trace\.arm/);
+    expect(tauriInstall).toMatch(/webview_presentation_trace_arm/);
+    expect(tauriInstall).toMatch(/webview\.pane\.presentation\.trace\.close/);
+    expect(tauriInstall).toMatch(/webview_presentation_trace_close/);
+    expect(electron).not.toMatch(/webview_presentation_trace|webview\.pane\.presentation\.trace/);
+  });
+
   it("native bounds command는 main-thread frame 설치 ACK 뒤에만 반환한다", () => {
     const source = readFileSync(resolve(ROOT, "frameworks/tauri/src/webview.rs"), "utf8");
     const body = source.split("fn set_child_frame(")[1]?.split("#[cfg(not(target_os = \"macos\"))]")[0] ?? "";
