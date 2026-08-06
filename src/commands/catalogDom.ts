@@ -1122,6 +1122,91 @@ export function registerDomCatalog(): void {
     },
   });
 
+  register("ui.trace.multi", {
+    description:
+      "Sample multiple exposed DOM nodes in one bounded timer tick and return raw rects with one absolute timestamp per sample. This is the drift-free DOM side of cross-renderer composition evidence: every node in a sample is read by the same callback, without screenshot or recorder coupling.",
+    triggers: { ko: "다중 노드 동시 추적 절대시각 합성 원장" },
+    params: {
+      addresses: {
+        type: "json",
+        description: "Unique exposed node addresses (1..16, from ui.tree)",
+        required: true,
+      },
+      ms: { type: "number", description: "Bounded sampling window in ms (default 1000, max 5000)" },
+    },
+    returns:
+      "{ addresses, startedAtUnixMs, endedAtUnixMs, samples:[{sequence,sampledAtUnixMs,nodes:[{address,connected,rect:{x,y,w,h}}]}] }",
+    message: (d) => tmsg("msg.ui.trace", { n: String((d.samples as unknown[])?.length ?? 0) }),
+    errors: ["NOT_EXPOSED", "AMBIGUOUS", "INVALID_PARAMS"],
+    handler: async (p) => {
+      const addresses = p.addresses;
+      if (!Array.isArray(addresses)
+          || addresses.length < 1
+          || addresses.length > 16
+          || addresses.some((address) => typeof address !== "string" || address.length === 0)
+          || new Set(addresses).size !== addresses.length) {
+        return {
+          ok: false as const,
+          code: "INVALID_PARAMS" as const,
+          message: "addresses는 중복 없는 공개 주소 1..16개여야 합니다",
+        };
+      }
+      const targets: { address: string; el: HTMLElement }[] = [];
+      for (const address of addresses as string[]) {
+        const found = resolveExposed(address);
+        if ("ok" in found) return found;
+        targets.push({ address, el: found.el });
+      }
+      const ms = Math.min(Math.max(typeof p.ms === "number" ? p.ms : 1000, 50), 5000);
+      const t0 = performance.now();
+      const unixFromPerformance = Number.isFinite(performance.timeOrigin)
+        ? performance.timeOrigin
+        : Date.now() - t0;
+      const samples: {
+        sequence: number;
+        sampledAtUnixMs: number;
+        nodes: {
+          address: string;
+          connected: boolean;
+          rect: { x: number; y: number; w: number; h: number };
+        }[];
+      }[] = [];
+      // 한 callback 안에서 전 참가자를 읽는다. rAF는 가려진 창에서 정지하므로 기존 ui.trace와
+      // 같은 유한 timer 정책을 사용하되, 절대시각을 붙여 native presentation 사건과 결합한다.
+      await new Promise<void>((done) => {
+        const tick = () => {
+          const sampledAtUnixMs = unixFromPerformance + performance.now();
+          samples.push({
+            sequence: samples.length,
+            sampledAtUnixMs,
+            nodes: targets.map(({ address, el }) => {
+              const rect = el.getBoundingClientRect();
+              return {
+                address,
+                connected: el.isConnected,
+                rect: {
+                  x: Math.round(rect.x * 10) / 10,
+                  y: Math.round(rect.y * 10) / 10,
+                  w: Math.round(rect.width * 10) / 10,
+                  h: Math.round(rect.height * 10) / 10,
+                },
+              };
+            }),
+          });
+          if (performance.now() - t0 >= ms) done();
+          else setTimeout(tick, 16);
+        };
+        tick();
+      });
+      return {
+        addresses: [...addresses] as string[],
+        startedAtUnixMs: samples[0].sampledAtUnixMs,
+        endedAtUnixMs: samples[samples.length - 1].sampledAtUnixMs,
+        samples,
+      };
+    },
+  });
+
   // 멈춘 자리에서 무엇이 어디에 얼마만큼 있는지 — 한 번에 훑는다.
   //
   // ui.measure 는 노드 하나를 잰다. 찰나를 판독하려면 그 순간의 여러 노드를 한꺼번에 봐야

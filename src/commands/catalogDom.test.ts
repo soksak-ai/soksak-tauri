@@ -170,6 +170,76 @@ describe("ui.tree/ui.measure — 공개 DOM 노드 인스턴스 식별자", () =
   });
 });
 
+describe("ui.trace.multi — 같은 tick의 공개 DOM 참가자 원장", () => {
+  it("rail/pane/slot의 raw rect와 절대 시각을 한 bounded timer tick에 기록한다", async () => {
+    vi.useFakeTimers();
+    try {
+      mountNode(`
+        <div data-node="rail"></div>
+        <div data-node="pane"></div>
+        <div data-node="slot"></div>
+      `);
+      const rects = {
+        rail: { x: 10, y: 20, width: 80, height: 500 },
+        pane: { x: 90, y: 20, width: 600, height: 500 },
+        slot: { x: 110, y: 80, width: 560, height: 420 },
+      };
+      for (const [node, rect] of Object.entries(rects)) {
+        const element = document.querySelector<HTMLElement>(`[data-node="${node}"]`)!;
+        element.getBoundingClientRect = vi.fn(() => ({
+          ...rect,
+          top: rect.y,
+          left: rect.x,
+          right: rect.x + rect.width,
+          bottom: rect.y + rect.height,
+          toJSON: () => ({}),
+        }));
+      }
+      const addresses = ["rail", "pane", "slot"]
+        .map((node) => `win/main/content/view/test.v/node/${node}`);
+      const pending = execute("ui.trace.multi", { addresses, ms: 50 }, {});
+      await vi.advanceTimersByTimeAsync(80);
+      const result = await pending;
+      expect(result.ok).toBe(true);
+      const data = result.data as {
+        addresses: string[];
+        samples: Array<{
+          sequence: number;
+          sampledAtUnixMs: number;
+          nodes: Array<{
+            address: string;
+            connected: boolean;
+            rect: { x: number; y: number; w: number; h: number };
+          }>;
+        }>;
+      };
+      expect(data.addresses).toEqual(addresses);
+      expect(data.samples.length).toBeGreaterThanOrEqual(3);
+      for (const [sequence, sample] of data.samples.entries()) {
+        expect(sample.sequence).toBe(sequence);
+        expect(Number.isFinite(sample.sampledAtUnixMs)).toBe(true);
+        expect(sample.nodes).toEqual([
+          { address: addresses[0], connected: true, rect: { x: 10, y: 20, w: 80, h: 500 } },
+          { address: addresses[1], connected: true, rect: { x: 90, y: 20, w: 600, h: 500 } },
+          { address: addresses[2], connected: true, rect: { x: 110, y: 80, w: 560, h: 420 } },
+        ]);
+      }
+      expect(data.samples.at(-1)!.sampledAtUnixMs)
+        .toBeGreaterThan(data.samples[0].sampledAtUnixMs);
+      expect(getSpec("ui.trace.multi")?.returns).toContain("sampledAtUnixMs");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("주소 누락·중복을 추측하지 않고 INVALID_PARAMS로 거부한다", async () => {
+    const empty = await execute("ui.trace.multi", { addresses: [] }, {});
+    expect(empty).toMatchObject({ ok: false, code: "INVALID_PARAMS" });
+    const duplicate = await execute("ui.trace.multi", { addresses: [ADDR, ADDR] }, {});
+    expect(duplicate).toMatchObject({ ok: false, code: "INVALID_PARAMS" });
+  });
+});
+
 describe("ui.measure — 상호작용/가시성 축", () => {
   it("계산 스타일과 별개로 exact inline geometry를 노출한다", async () => {
     mountNode(`<div data-node="btn" style="height:36px;flex-basis:36px">x</div>`);
