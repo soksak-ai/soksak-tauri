@@ -74,6 +74,78 @@ function ownerGuardedFunctionCalls(source, functionName) {
   return calls;
 }
 
+function callFacts(source, matches) {
+  const file = ts.createSourceFile("slot-freeze.mjs", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  const calls = [];
+  const visit = (node) => {
+    if (ts.isCallExpression(node) && matches(node, file)) {
+      const guards = [];
+      const loops = [];
+      let functionName = null;
+      let cursor = node.parent;
+      while (cursor) {
+        if (ts.isIfStatement(cursor)) guards.push(cursor.expression.getText(file));
+        if (ts.isForStatement(cursor)
+            || ts.isForInStatement(cursor)
+            || ts.isForOfStatement(cursor)
+            || ts.isWhileStatement(cursor)) {
+          loops.push(cursor.getText(file).split("{")[0].trim());
+        }
+        if (ts.isFunctionDeclaration(cursor)) {
+          functionName = cursor.name?.text ?? null;
+          break;
+        }
+        cursor = cursor.parent;
+      }
+      calls.push({
+        text: node.getText(file),
+        start: node.getStart(file),
+        guards,
+        loops,
+        functionName,
+      });
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return calls;
+}
+
+function objectStringProperty(node, name) {
+  if (!ts.isObjectLiteralExpression(node)) return null;
+  const property = node.properties.find((candidate) =>
+    ts.isPropertyAssignment(candidate)
+      && ((ts.isIdentifier(candidate.name) && candidate.name.text === name)
+        || (ts.isStringLiteral(candidate.name) && candidate.name.text === name)));
+  return property && ts.isPropertyAssignment(property) && ts.isStringLiteral(property.initializer)
+    ? property.initializer.text
+    : null;
+}
+
+function machineGateRecordCalls(source, gate) {
+  return callFacts(source, (node, file) => {
+    if (!ts.isPropertyAccessExpression(node.expression)
+        || node.expression.name.text !== "recordMachineEvidence"
+        || node.arguments.length !== 1) return false;
+    return objectStringProperty(node.arguments[0], "gate") === gate;
+  });
+}
+
+function memberCalls(source, owner, method) {
+  return callFacts(source, (node, file) => (
+    ts.isPropertyAccessExpression(node.expression)
+    && node.expression.expression.getText(file) === owner
+    && node.expression.name.text === method
+  ));
+}
+
+function presentationTraceRpcCalls(source) {
+  return callFacts(source, (node, file) => (
+    node.expression.getText(file) === "rpc"
+    && /presentation[\w.]*trace|trace[\w.]*presentation/i.test(node.getText(file))
+  ));
+}
+
 describe("slot-freeze instrumentation lifecycle", () => {
   it("the versioned dev entrypoint binds evidence to the built application binary", () => {
     const makefile = readFileSync(new URL("../../Makefile", import.meta.url), "utf8");
@@ -254,6 +326,53 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(source).toContain('path.join(dir, "layout-transaction.json")');
     expect(source).not.toContain("traceAddresses:");
     expect(source).not.toContain("clicked.trace?.samples");
+  });
+
+  it("B04는 세 엔진 FLOW 양방향의 공개 presentation producer와 layout journal만 canonical receipt로 기록한다", () => {
+    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    const receipts = machineGateRecordCalls(source, "B04");
+    expect(receipts).toHaveLength(1);
+    const receipt = receipts[0];
+    expect(receipt.functionName).toBe("runEngine");
+    expect(receipt.guards).toContain('SCENARIOS.has("flow")');
+    expect(receipt.guards.some((guard) =>
+      /implementation\.surface|engine\s*===|\bnative\b|\bwindowed\b|paneOwned/.test(guard))).toBe(false);
+    expect(receipt.text).toContain("engine");
+    expect(receipt.text).toContain('gate: "B04"');
+    expect(receipt.text).toContain("coordinateSpace");
+    expect(receipt.text).toContain("transitions: b04Transitions");
+    expect(receipt.text).not.toMatch(/recording|artifact|files|clicked|png|snapshot/i);
+
+    const transitionWrites = memberCalls(source, "b04Transitions", "push");
+    expect(transitionWrites).toHaveLength(1);
+    const transition = transitionWrites[0];
+    expect(transition.functionName).toBe("runEngine");
+    expect(transition.loops.some((loop) => /\bside\b/.test(loop))).toBe(true);
+    expect(transition.guards.some((guard) =>
+      /implementation\.surface|engine\s*===|\bnative\b|\bwindowed\b|paneOwned|presentation.*trace/i.test(guard))).toBe(false);
+    expect(transition.text).toMatch(/direction\s*:\s*side\s*===?\s*0\s*\?\s*"to-left"\s*:\s*"to-right"/);
+    expect(transition.text).toMatch(/targetViewId\s*:\s*tabIds\[side\]/);
+    expect(transition.text).toContain("motionMode:");
+    expect(transition.text).toMatch(/journal\s*:\s*\{[\s\S]*afterSequence[\s\S]*entries\s*:\s*layoutVerdict\.transactions/);
+    expect(transition.text).toMatch(/samples\s*:\s*[\w$]*presentation[\w$]*\.samples/i);
+    expect(transition.text).not.toMatch(/recording|artifact|files|clicked|png|snapshot/i);
+    expect(receipt.start).toBeGreaterThan(transition.start);
+
+    const presentationCalls = presentationTraceRpcCalls(source)
+      .filter((call) => call.functionName === "runEngine");
+    expect(presentationCalls.length).toBeGreaterThanOrEqual(2);
+    expect(presentationCalls.every((call) =>
+      call.loops.some((loop) => /\bside\b/.test(loop))
+      && !call.guards.some((guard) =>
+        /implementation\.surface|engine\s*===|\bnative\b|\bwindowed\b|paneOwned/.test(guard)))).toBe(true);
+    expect(presentationCalls.some((call) => /arm|start/i.test(call.text))).toBe(true);
+    expect(presentationCalls.some((call) => /close|read/i.test(call.text))).toBe(true);
+    expect(presentationCalls.every((call) =>
+      !/\.surface\.trace\.(?:start|read)|recording|artifact|png|snapshot/i.test(call.text))).toBe(true);
+
+    expect(source).toContain("for (const engine of ENGINES)");
+    expect(source).not.toContain("clicked.trace?.samples");
+    expect(source).not.toContain("traceAddresses:");
   });
 
   it("maximizes both sides under PIN without rewriting the stored station and restores the split", () => {
