@@ -11,6 +11,8 @@ runner had executed zero times.
 |---|---|---|
 | `make verify` (spec-gate, C1 scan, baseline, tsc, cargo, vitest) | green | mirrored by `verify.yml`, **0 runs** |
 | 3-OS `cargo check` (macOS / Ubuntu / Windows) | macOS only | `multiplatform-check.yml`, **0 runs** |
+| Browser B01–B12, 3 engines × 12 gates | partial local evidence; no 36-cell all-green report | not wired/running remotely |
+| macOS B12 traffic-light live gate | partial Tauri/macOS evidence; not product-complete | not wired/running remotely |
 
 `verify.yml` and `multiplatform-check.yml` are committed but have never
 executed. They run only after the branch is pushed and the

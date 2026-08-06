@@ -51,6 +51,17 @@
 | B11 | pane resize 왕복 + wheel `0→480→0` + 탭 지정 full capture | 명시한 view의 resize 정착, 실제 scroll 사건, capture 범위·문서 기하·scroll 복원을 단언한다. |
 | B12 | macOS traffic lights 냉시작·상하 중심·composition·hostile resize·titlebar 높이 변화 | 복원 논리 크기와 저장 zoom이 native 적용 ACK를 받고 post-zoom 공개 titlebar가 GREEN으로 합성된 뒤에만 창을 표시한다. Tauri는 하나의 AppKit 메인 스레드 transaction과 하나의 paint owner만 쓴다. 현재 버튼 프레임에서 그리는 backing 영역 3개, 공개 AppKit button 3개, DOM reservation 3개의 대응·포함·상하 중심·resize 정합을 단언한다. 동적 합성기가 설치된 동안 Tauri 설정의 `trafficLightPosition`은 금지한다. 그렇지 않으면 Tao의 고정-y draw owner가 DOM 합성기와 경쟁하고 non-child Wry 경로에도 같은 고정 목표가 전달된다. 어댑터는 최초 AppKit 가로 간격을 유지하고 세로 위치만 공개 DOM titlebar에서 도출한다. 공개 async resize는 `Window`를 awaited oneshot ACK까지 소유하며 timeout 뒤 지연 mutation과 큐에 넘긴 bare `NSWindow` pointer를 금지한다. `titlebar.height.set {height}`은 공개 DOM 높이를 바꾸고 완전한 paint 경계를 지난 뒤 같은 엄격 native 영수증을 반환하며, `titlebar.height.reset`은 직전 inline height/flex-basis를 정확히 복원한다. 모든 냉시작·높이 표본에서 button/backing 중심 차이는 반올림 허용치 안의 0이어야 한다. Electron은 Tauri paint owner를 지어내지 않고 공개 traffic-light position과 DOM reservation으로 같은 가시적 중심/resize 계약을 단언한다. macOS가 아니면 정적으로 `not-applicable`이다. |
 
+### B05 실제 presentation event 원장
+
+B05는 자극 전에 유한 trace를 무장하고 실제 compositor/display callback이 낸 사건만 받는다.
+DOM/status 표본, PNG·녹화, recorder frame 번호, 통계 조회를 표시 사건으로 합성하지 않는다.
+각 사건은 연속 sequence, 동일 surface identity/generation, 증가하는 presentation revision/시각,
+live·visible·painted, DOM frame과 실제 surface frame의 1px 이하 차이를 가진다. judge의 고정 상한은
+첫 표시 50ms, 활성 사건 간격 50ms, click→settled 550ms이며 settled 뒤 최소 250ms를 같은 owner
+inventory로 유지한다. replacement, gap, disappearance, unpresented, dropped event는 모두 0이어야
+한다. 어댑터가 실제 사건과 lifecycle을 발행하고 코어 하니스가 공개 trace를 소비한다. hold는
+유한 사건 구독으로 닫으며 interval/rAF 폴링으로 채우지 않는다.
+
 실제 Tauri/macOS B12 게이트는 `make e2e-titlebar-dev`로 실행한다. 한 번 빌드한 뒤 세 번 냉재시작하고, 모든 실제 창을 공개 커맨드로 30·60·72 CSS px에서 측정한다. 적용 직후의 모든 표본에는 나중에 읽기만 하는 유지 표본이 대응하며, 그 사이 기하·DOM 인스턴스/스타일·native presentation revision이 정확히 유지되어야 한다. 따라서 프레임워크가 늦게 다시 그려 초기 정위치만 맞는 상태는 통과하지 못한다. 기계 판정은 DOM/AppKit 사각형과 시작 영수증만 사용한다. 저장된 스크린샷은 필수 육안 검사 증거이며 PASS/FAIL 근거로 사용하지 않는다.
 
 각 engine×gate의 machine 상태는 `not-applicable`, `not-run`, `blocked`, `red`, `green` 중 하나다. `green`과 `red`는

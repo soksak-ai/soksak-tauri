@@ -57,6 +57,19 @@ identity; a runtime, adapter, or test cannot claim it for itself.
 | B11 | Pane resize round trip + wheel `0→480→0` + tab-targeted full capture | Assert settlement for the explicit view, real scroll events, capture extent/document geometry, and restored scroll state. |
 | B12 | macOS traffic-light center/composition agreement under cold start, hostile resize, and titlebar-height changes | A window may be presented only after restored logical size and saved zoom have received their native applied ACK, then the post-zoom public titlebar has composed GREEN. Tauri uses one AppKit main-thread transaction and one paint owner: the three derived backing regions, three live AppKit buttons, and three DOM reservations assert mapping, containment, vertical centers, and resize agreement. `trafficLightPosition` is forbidden in Tauri configuration while this dynamic composer is installed because it installs Tao's competing fixed-y draw owner and also feeds non-child Wry paths; the adapter preserves the initial AppKit horizontal spacing and derives vertical position only from the public DOM titlebar. Public async resize owns its `Window` through an awaited oneshot ACK; timeout-then-late mutation and queued bare `NSWindow` pointers are forbidden. `titlebar.height.set {height}` changes the public DOM geometry, waits for a complete paint boundary, and returns the same strict native receipt; `titlebar.height.reset` restores the exact prior inline height/flex basis. Every cold-start and height sample must have zero button/backing center delta (rounding-only tolerance). Electron asserts the same visible center/resize contract from its public traffic-light position and DOM reservations without inventing the Tauri paint owner. Non-macOS reports mark this gate statically `not-applicable`. |
 
+### B05 actual presentation-event ledger
+
+B05 arms a finite trace before the stimulus and accepts only events emitted by the actual
+compositor/display callback. DOM or status samples, PNG/video, recorder frame numbers, and stats
+queries cannot be synthesized into presentation events. Every event has a contiguous sequence,
+stable surface identity/generation, increasing presentation revision/time, live/visible/painted
+facts, and DOM-versus-surface frames within 1px. Fixed judge limits are 50ms to first presentation,
+50ms between active events, 550ms from click to settled, and a 250ms minimum post-settle hold with
+the identical owner inventory. Replacements, gaps, disappearances, unpresented surfaces, and dropped
+events are all exactly zero. The adapter emits actual display and lifecycle events; the core harness
+consumes the public trace. The finite hold closes through event subscription, never interval/rAF
+polling.
+
 Run the live Tauri/macOS B12 gate with `make e2e-titlebar-dev`. It builds once, cold-restarts three times, and measures every live window at 30, 60, and 72 CSS px through public commands. Every applied sample has a later read-only held sample; geometry, DOM identity/style, and native presentation revision must remain exact across that interval, so a late framework redraw cannot pass on its earlier correct frame. Machine verdicts use DOM/AppKit rectangles and startup receipts; the stored screenshots are mandatory human inspection evidence and never determine PASS/FAIL.
 
 Each engine×gate machine state is one of `not-applicable`, `not-run`, `blocked`, `red`, or `green`. `green` and

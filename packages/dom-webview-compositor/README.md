@@ -29,4 +29,6 @@ the contract or verdict.
   WebView2, or WebKitGTK) and must pass the shared conformance suite on every supported scale.
 - The soksak repository keeps product E2E: the three browser implementations, sidebar/PIN and
   overlay layering, focus lighting, Korean IME, scrolling/full capture, and the Electron pure-DOM
-  non-interference contract. Product policy therefore does not leak into the reusable compositor.
+  non-interference contract. macOS traffic-light cold-start, center, and titlebar-resize composition
+  also remains a soksak framework/product E2E rather than moving into this DOM/webview package.
+  Product policy therefore does not leak into the reusable compositor.
