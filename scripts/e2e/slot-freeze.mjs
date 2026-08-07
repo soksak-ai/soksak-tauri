@@ -88,6 +88,7 @@ import { assertSentinelMounted } from "./lib/browser-sentinel.mjs";
 import { windowedSurfaceCompositionVerdict } from "./lib/windowed-surface-composition.mjs";
 import { displayScaleFact } from "./lib/surface-scale.mjs";
 import { mapB03LiveEvidence } from "./lib/browser-gate-b03-evidence.mjs";
+import { assertPresentationOcclusionArmed } from "./lib/presentation-occlusion.mjs";
 import { mapB05LiveEvidence } from "./lib/browser-gate-b05-evidence.mjs";
 import { awaitPostSettleHold, resolveB05Settlement } from "./lib/browser-gate-b05-hold.mjs";
 import { mapB06LiveEvidence } from "./lib/browser-gate-b06-evidence.mjs";
@@ -1297,6 +1298,8 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
     // 궤적을 못 재는 창에서도 클릭·레이아웃 거래·조명·IME 는 그대로 잰다. 못 재는 것은 B04·B05
     // 두 칸이고, 그 두 칸은 아래에서 능력의 이름을 달고 닫힌다 — 나머지를 함께 묻지 않는다.
     const presentationTraceMeasurable = presentationTrace.capability?.status !== "absent";
+    /** 가려져도 그린다는 보장을 못 들었다는 사실 — 한 번만 이름을 남긴다. */
+    let occlusionAbsence = null;
     await assertActivePane(rpc, win, paneIds[1], "교차 클릭 시작 상태");
     await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, "cross-click-initial-right");
     for (let cycle = 0; cycle < (SCENARIOS.has("flow") ? CYCLES : 0); cycle += 1) {
@@ -1322,8 +1325,38 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
         // 원인 id 는 부르는 쪽이 소유한다 — 만들어 무장에 실어 보내고, 자극에도 같은 값을
         // 든다. 상대의 영수증에서 되읽으면 우리가 소유한 값이 상대의 답 모양에 매인다.
         const causeTraceId = `${engine}-${name}-${randomUUID()}`;
+        let occlusionOff = false;
+        // 표시 보장은 앱이 선언한다 — 가려진 창에서 표시 콜백이 멈추면 거래 창 안에 표본이
+        // 하나도 안 들어오고 그 자리는 못 잼이 된다. 낼 수 있는 보장을 안 내고 못 잼으로
+        // 넘기는 것은 기준 회피다. 이 명령은 창을 전면화하지 않으므로 포커스를 뺏지 않는다.
+        const restoreOcclusion = async () => {
+          if (!occlusionOff) return;
+          occlusionOff = false;
+          // 든 것은 반드시 놓는다 — 사용자 창에 우리 상태를 남기지 않는다.
+          must(await rpc("window.occlusion", { enabled: true }, win, { timeoutMs: 5_000 }),
+            `presentation occlusion restore ${name}`);
+        };
         try {
           if (presentationTraceMeasurable) {
+            // 이 보장을 못 내는 프레임워크에서는 그 부재를 이름으로 한 번 남기고 계속 잰다 —
+            // 없는 능력이 이웃 칸을 죽이면 안 된다. 답을 했는데 덜 무장된 것은 다른 사실이고,
+            // 그것은 그 자리에서 거절한다.
+            const occlusionReply = await rpc(
+              "window.occlusion", { enabled: false }, win, { timeoutMs: 5_000 },
+            ).catch((error) => ({ ok: false, message: String(error) }));
+            if (occlusionReply?.ok === true) {
+              assertPresentationOcclusionArmed(
+                occlusionReply.data ?? occlusionReply,
+                presentationOwners.length,
+              );
+              occlusionOff = true;
+            } else if (!occlusionAbsence) {
+              occlusionAbsence = JSON.stringify(occlusionReply)?.slice(0, 160) ?? "없음";
+              console.warn(
+                `${engine}: 가려져도 그린다는 보장을 못 들었다 — 표시 표본 부재는 못 잼으로 답한다`
+                + ` (${occlusionAbsence})`,
+              );
+            }
             armedPresentation = must(await rpc(
               implementation.presentationTrace.armCommand,
               implementation.presentationTrace.armParams({
@@ -1419,6 +1452,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
               { timeoutMs: 5_000 },
             ), `B04 raw DOM trace close ${name}`);
             domTraceOpen = false;
+            await restoreOcclusion();
             if (domTraceReceipt.timedOut === true) {
               throw new Error(`${engine}/${name}: raw DOM trace가 explicit close 전에 만료됐다`);
             }
@@ -1612,6 +1646,11 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
             } catch (error) {
               console.error(`${engine}/${name}: presentation trace cleanup 실패`, error);
             }
+          }
+          try {
+            await restoreOcclusion();
+          } catch (error) {
+            console.error(`${engine}/${name}: presentation occlusion 복구 실패`, error);
           }
           throw flowError;
         }
