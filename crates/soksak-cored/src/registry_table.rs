@@ -1092,6 +1092,15 @@ pub const COMMANDS: &[Command] = &[
         run: run_data_stats,
     },
     Command {
+        // 붙음은 기다릴 수 있어야 한다 — 등록부를 가진 이 프로세스가 그 사실을 아는데 기다릴
+        // 자리가 없어서, 부르는 쪽이 되묻는 폴링밖에 못 했다. 폴링이 아니다: 등록이 일어나는
+        // 그 순간 깨어난다.
+        name: "host_wait",
+        args: &[Arg { name: "timeoutMs", ty: "number", required: false }],
+        returns: "{ attached } — 창을 가진 쪽이 붙었는가",
+        run: run_host_wait,
+    },
+    Command {
         name: "data_verify",
         args: &[],
         returns: "string[] — 진단 소견",

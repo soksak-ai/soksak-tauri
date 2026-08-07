@@ -354,3 +354,65 @@ fn a_data_change_reaches_every_host() {
     }
     detach();
 }
+
+/// 규칙 — 붙음은 기다릴 수 있어야 한다.
+///
+/// cored 는 호스트 등록부를 갖고 있어 "붙었는가" 를 안다. 그런데 그 사실이 바뀔 때를 기다릴
+/// 자리가 없어서, 부르는 쪽이 0.1 초마다 되묻는 폴링밖에 못 했다 — 실측 2026-08-08: 재시작
+/// 대기가 활동 로그를 그 질문으로 도배했다.
+///
+/// 아는 쪽이 알려준다. 이 스위트는 대기 자체만 잰다 — 진짜 연결을 지어내면 등록부가 그 가짜를
+/// 배달 대상으로 들게 되므로, 등록은 실제 경로(attach_host)가 소유한다.
+mod 붙음_대기 {
+    use super::super::*;
+    use std::time::{Duration, Instant};
+
+    /// 이 스위트는 **대기 자체**만 잰다. 등록부는 프로세스 전역이라 다른 테스트가 호스트를
+    /// 붙여 두면 "안 붙음" 을 전제할 수 없다 — 그 전제를 쓰면 단독 실행과 전체 실행이 다른
+    /// 답을 낸다(실측 2026-08-08: 내가 그 전제를 써서 전체 실행에서만 두 건이 깨졌다).
+    /// 그래서 붙은 상태에서도 참인 사실만 단언한다.
+    #[test]
+    fn 이미_붙었으면_기다리지_않는다() {
+        if !has_host() {
+            return; // 붙은 게 없으면 이 사실은 이 실행에서 잴 수 없다.
+        }
+        let started = Instant::now();
+        assert!(wait_for_host(Duration::from_secs(5)));
+        assert!(started.elapsed() < Duration::from_millis(200), "이미 붙었으면 기다리지 않는다");
+    }
+
+    #[test]
+    fn 상한을_넘겨_기다리지_않는다() {
+        let started = Instant::now();
+        let attached = wait_for_host(Duration::from_millis(150));
+        // 붙었으면 즉시, 안 붙었으면 상한까지 — 어느 쪽이든 상한을 넘기지 않는다.
+        assert!(started.elapsed() < Duration::from_secs(2));
+        if !attached {
+            assert!(started.elapsed() >= Duration::from_millis(150), "상한 전에 포기하지 않는다");
+        }
+    }
+
+    #[test]
+    fn 상한이_0_이면_지금_사실만_답한다() {
+        let started = Instant::now();
+        let attached = wait_for_host(Duration::from_millis(0));
+        assert_eq!(attached, has_host(), "0 은 기다리지 않고 지금 사실을 답한다");
+        assert!(started.elapsed() < Duration::from_millis(100));
+    }
+}
+
+/// 붙음 대기는 명령으로 노출된다 — 부르는 쪽(하니스·Makefile)이 폴링 대신 그것을 기다린다.
+mod 붙음_대기_명령 {
+    use crate::registry;
+
+    #[test]
+    fn 이름이_서빙_목록에_있다() {
+        assert!(registry::find("host_wait").is_some(), "cored 가 host_wait 를 서빙한다");
+    }
+
+    #[test]
+    fn 상한을_인자로_받는다() {
+        let spec = registry::find("host_wait").expect("host_wait");
+        assert!(spec.args.iter().any(|a| a.name == "timeoutMs"), "상한은 부르는 쪽이 정한다");
+    }
+}

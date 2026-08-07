@@ -192,6 +192,20 @@ pub(crate) fn run_data_restore(ctx: &Ctx, params: &Value) -> Outcome {
     })
 }
 
+/// 창을 가진 쪽이 붙을 때까지 기다린다.
+///
+/// 폴링이 아니다 — 등록이 일어나는 그 순간 깨어난다. 상한은 부르는 쪽이 정하고(기본 30s),
+/// 넘기면 `attached: false` 를 답한다. 못 기다린 것과 안 붙은 것은 여기서 같은 답이다:
+/// 배달할 곳이 없다. 그 사실에 이름을 붙이는 것은 부르는 쪽의 일이다.
+pub(crate) fn run_host_wait(_ctx: &Ctx, params: &Value) -> Outcome {
+    let timeout_ms = params
+        .get("timeoutMs")
+        .and_then(Value::as_u64)
+        .unwrap_or(30_000);
+    let attached = crate::control::wait_for_host(std::time::Duration::from_millis(timeout_ms));
+    Outcome::Ok(serde_json::json!({ "attached": attached }))
+}
+
 pub(crate) fn run_data_verify(ctx: &Ctx, _params: &Value) -> Outcome {
     match ctx.with_db(|c| soksak_store::integrity::check(c)) {
         Ok(v) => Outcome::Ok(Value::Array(v.into_iter().map(Value::String).collect())),

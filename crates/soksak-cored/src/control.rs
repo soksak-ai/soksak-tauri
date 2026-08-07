@@ -20,7 +20,7 @@
 
 use std::collections::HashMap;
 use std::sync::mpsc::{channel, Receiver, Sender};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Condvar, Mutex, OnceLock};
 use std::time::Duration;
 
 use serde_json::{json, Value};
@@ -63,6 +63,42 @@ static SEQ: OnceLock<Mutex<u64>> = OnceLock::new();
 
 fn hosts() -> &'static Mutex<Vec<Host>> {
     HOSTS.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+/// 붙음이 바뀌었다는 알림. **아는 쪽이 알려준다** — 등록부를 가진 이 프로세스가 그 사실을 알고
+/// 있는데 기다릴 자리가 없어서, 부르는 쪽이 0.1 초마다 되묻는 폴링밖에 못 했다.
+static HOST_CHANGED: OnceLock<Condvar> = OnceLock::new();
+
+fn host_changed() -> &'static Condvar {
+    HOST_CHANGED.get_or_init(Condvar::new)
+}
+
+/// 창을 가진 쪽이 붙을 때까지 기다린다. 이미 붙었으면 즉시 답한다.
+///
+/// 폴링이 아니다 — 등록이 일어나는 그 순간 깨어난다. 상한을 넘기면 false 를 답하고, 부르는 쪽이
+/// 그 사실에 이름을 붙인다(못 기다린 것과 안 붙은 것은 같은 답이다: 배달할 곳이 없다).
+pub fn wait_for_host(timeout: std::time::Duration) -> bool {
+    let mut guard = hosts().lock().unwrap_or_else(|e| e.into_inner());
+    if !guard.is_empty() {
+        return true;
+    }
+    let (g, _) = host_changed()
+        .wait_timeout_while(guard, timeout, |hosts| hosts.is_empty())
+        .unwrap_or_else(|e| e.into_inner());
+    guard = g;
+    !guard.is_empty()
+}
+
+#[cfg(test)]
+pub(crate) fn clear_hosts_for_test() {
+    hosts().lock().unwrap_or_else(|e| e.into_inner()).clear();
+}
+
+/// 붙음이 바뀌었다고 알린다. 등록·회수 자리가 부르고, 기다리던 쪽이 깨어난다.
+///
+/// 테스트는 이 알림과 대기만 잰다 — 진짜 연결을 지어내면 등록부가 그 가짜를 배달 대상으로 든다.
+fn notify_host_changed() {
+    host_changed().notify_all();
 }
 /// 마지막으로 포커스했던 워크스페이스 창. 붙은 호스트가 자기 창 사실을 보고할 때 갱신된다.
 ///
@@ -167,6 +203,8 @@ pub fn attach_host(writer: std::sync::Arc<crate::wire::Conn>, live: Vec<String>,
         None => g.push(Host { conn_id: id, writer, live }),
     }
     let union = union_live(&g);
+    // 기다리던 쪽을 깨운다 — 아는 쪽이 알려준다.
+    notify_host_changed();
     let mut f = focus().lock().unwrap_or_else(|e| e.into_inner());
     f.note_focus(&focused);
     f.reconcile(&union);
