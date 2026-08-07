@@ -91,6 +91,31 @@ describe("콘텐츠 뷰 계약", () => {
       }),
     ]);
   });
+
+  // 표면 원장은 이 목록이다. 참가자 선언을 싣지 않으면 그것을 읽는 쪽이 label 에서 뷰를
+  // 추론하게 되고, 그 추론은 label 문법이 바뀌는 날 조용히 남의 뷰를 가리킨다.
+  it("콘텐츠 뷰 사실은 참가자 선언을 그대로 싣는다", async () => {
+    const m = await load();
+    const { contentCompositionTopologyPath, declareCompositionParticipant } =
+      await import("./compositionParticipants");
+    const slot = document.createElement("div");
+    slot.setAttribute(m.CONTENT_VIEW_BODY, "b-1");
+    const view = document.createElement("webview");
+    view.setAttribute("data-content-view", "b-1");
+    const topologyPath = contentCompositionTopologyPath("w-1", "v-7", "b-1");
+    declareCompositionParticipant(view, {
+      kind: "renderer", viewId: "v-7", topologyPath, visible: true,
+    });
+    slot.appendChild(view);
+    document.body.appendChild(slot);
+
+    expect(m.contentViewDomFacts(document)[0].composition).toEqual({
+      kind: "renderer", viewId: "v-7", topologyPath, visible: true,
+    });
+    // 선언이 없는 표면은 null 이다 — 없는 선언을 기본값으로 지어내지 않는다.
+    view.removeAttribute("data-composition-kind");
+    expect(m.contentViewDomFacts(document)[0].composition).toBeNull();
+  });
 });
 
 // 한쪽에만 있는 동작이 생기면 그 차이는 오류가 아니라 "이 프레임워크에서는 안 되는 기능"으로
