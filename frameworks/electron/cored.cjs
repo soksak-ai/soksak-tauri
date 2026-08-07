@@ -25,11 +25,28 @@ const DEFAULT_IDENTIFIER = "com.soksak.electron.dev";
 const CORED_BIN_ENV = "SOKSAK_CORED_BIN";
 const CORED_BIN_ARG = "--soksak-cored=";
 
-/** 이 저장소가 cored를 빌드해 두는 자리(cargo 관례). 개발 중에는 debug 가 방금 만든 것이다. */
-const BUILT_AT = ["debug", "release"].map((profile) =>
-  // 워크스페이스 루트가 최상위라 산출물도 한 자리다 — 프레임워크마다 target 이 나지 않는다.
-  path.join("target", profile, "soksak-cored"),
-);
+/**
+ * 이 저장소가 cored를 빌드해 두는 자리(cargo 관례). 개발 중에는 debug 가 방금 만든 것이다.
+ *
+ * 교차 빌드는 `target/<triple>/<profile>/` 에 난다(CARGO_BUILD_TARGET 이 설정되면 항상). 그
+ * 자리를 안 보면 바이너리가 있는데도 "못 찾았다" 가 된다 — 실측 2026-08-08: 아홉 건이 그 이유로
+ * 실패했고 앱은 정상이었다. 후보는 cargo 관례를 다 따르고, 목록은 여기 한 자리에만 산다.
+ */
+const CORED_PROFILES = ["debug", "release"];
+const builtAt = (root) => {
+  const direct = CORED_PROFILES.map((profile) => path.join("target", profile, "soksak-cored"));
+  let triples = [];
+  try {
+    triples = fs.readdirSync(path.join(root, "target"), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && entry.name.includes("-"))
+      .flatMap((entry) => CORED_PROFILES.map(
+        (profile) => path.join("target", entry.name, profile, "soksak-cored"),
+      ));
+  } catch {
+    // target 이 아직 없는 저장소 — 직접 자리만 답한다.
+  }
+  return [...direct, ...triples];
+};
 
 /**
  * cored 소켓 파일명. 앱 소켓(`<home>/<identifier>.sock`)과 **다른 이름**이어야 한다:
@@ -203,7 +220,7 @@ function coredBinary({ env = process.env, argv = process.argv, root } = {}) {
       `지목한 cored 바이너리가 없다: ${declared} (${CORED_BIN_ENV} 또는 ${CORED_BIN_ARG}<경로>)`,
     );
   }
-  const searched = BUILT_AT.map((rel) => path.join(root, rel));
+  const searched = builtAt(root).map((rel) => path.join(root, rel));
   const found = searched.find(isFile);
   if (found) return found;
   throw new CoredError(
