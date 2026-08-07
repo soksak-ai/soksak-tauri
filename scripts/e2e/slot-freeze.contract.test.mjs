@@ -900,3 +900,26 @@ describe("관측 자기보고 배선", () => {
     expect(source).toContain("slotObservation: b04SlotObservation(");
   });
 });
+
+// 규칙 — 같은 관측을 만드는 자리는 같은 사실을 싣는다.
+//
+// 실측 2026-08-08: IME 관측을 만드는 자리가 둘인데 한 곳만 창의 포커스 사실을 실었다. 나머지
+// phase 는 나란히 null 을 답했고 판정은 "아무도 안 밝혔다" 로 읽어 B02 가 red 였다. 자리가 늘면
+// 또 빠진다 — 기계가 센다.
+describe("IME 관측 자리", () => {
+  const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+
+  it("mapImeObservation 을 부르는 모든 자리가 창의 포커스 사실을 넘긴다", () => {
+    const calls = [...source.matchAll(/mapImeObservation\(([\s\S]{0,200}?)\)[,;)]/g)]
+      .map(([, args]) => args);
+    expect(calls.length).toBeGreaterThan(1);
+    for (const args of calls) {
+      expect(args).toContain("focus");
+      expect(args).toContain("tabId");
+    }
+  });
+
+  it("포커스는 인자 없이 묻는다 — 이 명령은 params 를 받지 않는다", () => {
+    expect(source).not.toMatch(/ui\.focus\.state",\s*\{\s*[A-Za-z]/);
+  });
+});

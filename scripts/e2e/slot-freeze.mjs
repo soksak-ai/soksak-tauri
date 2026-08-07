@@ -1025,7 +1025,13 @@ async function assertImePersisted(rpc, win, plugin, tabIds, stage) {
     if (value?.value !== IME_TEXTS[index] || value?.ledger?.values?.at?.(-1) !== IME_TEXTS[index]) {
       throw new Error(`${stage}: ${tabIds[index]} IME 상태 소실 ${JSON.stringify(value)}`);
     }
-    observations.push(mapImeObservation(value));
+    // 유지 단계에서도 창의 사실을 함께 싣는다 — 한 자리만 실으면 나머지 phase 가 나란히
+    // "아무도 안 밝혔다" 로 남아 판정이 그것을 red 로 읽는다.
+    const focus = await rpc("ui.focus.state", {}, win);
+    observations.push(mapImeObservation(
+      { ...value, tabId: tabIds[index] },
+      focus?.ok === true ? focus.data : null,
+    ));
   }
   return observations;
 }
