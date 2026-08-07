@@ -21,7 +21,10 @@ vi.mock("../lib/webviewLabels", () => ({
   currentWindowLabel: () => "main",
 }));
 vi.mock("../state/windowBoot", () => ({ forgetWindowSlot: vi.fn() }));
-vi.mock("../lib/windowResizeProbe", () => ({ sampleWindowResizeProbe }));
+vi.mock("../lib/windowResizeProbe", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/windowResizeProbe")>()),
+  sampleWindowResizeProbe,
+}));
 vi.mock("./windowRecorder", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./windowRecorder")>()),
   recordWindowFrames,
@@ -154,6 +157,33 @@ describe("window.resizeSequence recording contract", () => {
 
     expect(result).toMatchObject({ ok: false, code: "INVALID_PARAMS" });
     expect(recordWindowFrames).not.toHaveBeenCalled();
+    expect(setPhysicalSize).not.toHaveBeenCalled();
+  });
+
+  it("호출자가 선언한 단계 의도를 관측면에 그대로 넘긴다", async () => {
+    const result = await execute("window.resizeSequence", {
+      sizes: [{ w: 800, h: 600, phase: "shrink" }, { w: 1200, h: 800, phase: "restore" }],
+      intervalMs: 0,
+    }, {});
+
+    expect(result).toMatchObject({ ok: true });
+    expect(sampleWindowResizeProbe).toHaveBeenNthCalledWith(1, { kind: "baseline" });
+    expect(sampleWindowResizeProbe).toHaveBeenNthCalledWith(2, {
+      kind: "step", step: 0, size: { w: 800, h: 600 }, phase: "shrink",
+    });
+    expect(sampleWindowResizeProbe).toHaveBeenNthCalledWith(3, {
+      kind: "step", step: 1, size: { w: 1200, h: 800 }, phase: "restore",
+    });
+  });
+
+  it("모르는 단계 이름은 resize 전에 이름으로 거절한다", async () => {
+    const result = await execute("window.resizeSequence", {
+      sizes: [{ w: 800, h: 600, phase: "squish" }],
+      intervalMs: 0,
+    }, {});
+
+    expect(result).toMatchObject({ ok: false, code: "INVALID_PARAMS" });
+    expect(String((result as { message?: string }).message)).toContain("squish");
     expect(setPhysicalSize).not.toHaveBeenCalled();
   });
 });

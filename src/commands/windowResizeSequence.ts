@@ -1,4 +1,10 @@
 import {
+  RESIZE_TRANSACTION_PHASES,
+  type PhysicalWindowSize,
+  type ResizeObservationRequest,
+  type ResizeSequenceStep,
+} from "../lib/windowResizeProbe";
+import {
   startWindowRecording,
   validWindowRecordMaxBytes,
   type WindowRecordRequest,
@@ -6,18 +12,9 @@ import {
   type WindowRecordingReport,
 } from "./windowRecorder";
 
-export interface PhysicalWindowSize {
-  w: number;
-  h: number;
-}
-
-/**
- * 관측면에 넘기는 요청. baseline은 아직 어떤 크기도 요청되지 않은 순간이므로 크기를 싣지
- * 않는다 — 요청값이 관측값 자리에 복사될 통로 자체를 두지 않는다.
- */
-export type ResizeObservationRequest =
-  | { readonly kind: "baseline" }
-  | { readonly kind: "step"; readonly step: number; readonly size: PhysicalWindowSize };
+// 크기·요청·단계의 모양은 관측 봉투 계약이 소유한다. 여기서 다시 선언하면 관측자와 거래
+// 구동자가 같은 축을 서로 다른 모양으로 부르게 된다.
+export type { PhysicalWindowSize, ResizeObservationRequest, ResizeSequenceStep };
 
 /**
  * 첫 크기를 요청하기 전의 관측 자리. 안 물어본 것(not-observed)·물었는데 답이 없는 것
@@ -36,7 +33,7 @@ export type WindowResizeRecording = Pick<
 export type WindowResizeRecordingResult = WindowRecordingReport;
 
 interface ResizeSequenceRequest {
-  sizes: PhysicalWindowSize[];
+  sizes: ResizeSequenceStep[];
   intervalMs: number;
   record?: WindowResizeRecording;
   setSize: (w: number, h: number) => Promise<void>;
@@ -104,9 +101,9 @@ export async function runWindowResizeSequence({
   recording: WindowResizeRecordingResult;
   resizeElapsedMs: number;
   elapsedMs: number;
-  final: PhysicalWindowSize;
+  final: ResizeSequenceStep;
   baseline: ResizeBaselineReport;
-  samples: { step: number; size: PhysicalWindowSize; observation: unknown }[];
+  samples: { step: number; size: ResizeSequenceStep; observation: unknown }[];
 }> {
   if (!Array.isArray(sizes) || sizes.length === 0) throw new Error("sizes must not be empty");
   if (sizes.length > MAX_STEPS) throw new Error(`sizes supports at most ${MAX_STEPS} steps`);
@@ -116,6 +113,15 @@ export async function runWindowResizeSequence({
   for (const size of sizes) {
     if (!Number.isFinite(size?.w) || !Number.isFinite(size?.h) || size.w <= 0 || size.h <= 0) {
       throw new Error(`invalid physical window size: ${JSON.stringify(size)}`);
+    }
+    // 단계의 의도는 호출자가 선언한다. 이름을 모르는 선언은 관측이 대조할 수 없으므로
+    // 여기서 거절한다 — 관측 기하에서 역산하면 그 대조는 자기 자신과의 비교가 된다.
+    if (size.phase !== undefined
+      && !(RESIZE_TRANSACTION_PHASES as readonly string[]).includes(size.phase)) {
+      throw new Error(
+        `invalid resize phase: ${JSON.stringify(size.phase)}`
+          + ` (expected one of ${RESIZE_TRANSACTION_PHASES.join(", ")})`,
+      );
     }
   }
   if (record) validateRecording(record);
@@ -132,7 +138,7 @@ export async function runWindowResizeSequence({
   const baseline = await observeBaseline(observe);
 
   const resizeStartedAt = performance.now();
-  const samples: { step: number; size: PhysicalWindowSize; observation: unknown }[] = [];
+  const samples: { step: number; size: ResizeSequenceStep; observation: unknown }[] = [];
   for (let index = 0; index < sizes.length; index += 1) {
     const size = sizes[index];
     await setSize(size.w, size.h);
@@ -140,7 +146,12 @@ export async function runWindowResizeSequence({
       samples.push({
         step: index,
         size,
-        observation: await observe({ kind: "step", step: index, size }),
+        observation: await observe({
+          kind: "step",
+          step: index,
+          size: { w: size.w, h: size.h },
+          ...(size.phase === undefined ? {} : { phase: size.phase }),
+        }),
       });
     }
     if (index + 1 < sizes.length) await delay(intervalMs);

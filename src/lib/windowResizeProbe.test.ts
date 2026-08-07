@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 const outerPosition = vi.fn();
@@ -8,6 +10,7 @@ vi.mock("../framework", () => ({
 }));
 
 import {
+  RESIZE_COUNTER_KEYS,
   RESIZE_OBSERVATION_KEYS,
   RESIZE_PARTICIPANT_KEYS,
   RESIZE_PRESENTATION_KEYS,
@@ -128,6 +131,27 @@ describe("resize 관측 봉투 계약", () => {
       "transactionGeneration=integer>=0/-1",
       "eventGenerationAfter=>eventGenerationBefore/3/3",
     ]));
+  });
+});
+
+describe("계약을 읽는 판정면", () => {
+  // 봉투를 내는 쪽(코어)과 그것으로 판정하는 쪽(B10 게이트)이 같은 축을 다른 이름으로 부르면
+  // 게이트는 언제나 "없는 사실"을 보고 빨갛다. 이름이 갈리는 순간 여기서 갈린 이름이 뜬다.
+  const judge = readFileSync(resolve("scripts/e2e/lib/browser-gate-b10.mjs"), "utf8");
+  const frozenKeys = (name: string): string[] => {
+    const match = judge.match(new RegExp(`const ${name} = Object\\.freeze\\(\\[([^\\]]*)\\]`));
+    if (!match) throw new Error(`B10 판정면에 ${name} 이 없다`);
+    return [...match[1].matchAll(/"([^"]+)"/g)].map(([, key]) => key);
+  };
+
+  it.each([
+    ["SNAPSHOT_KEYS", RESIZE_SNAPSHOT_KEYS],
+    ["PARTICIPANT_KEYS", RESIZE_PARTICIPANT_KEYS],
+    ["PRESENTATION_KEYS", RESIZE_PRESENTATION_KEYS],
+    ["COUNTER_KEYS", RESIZE_COUNTER_KEYS],
+    ["PHASES", RESIZE_TRANSACTION_PHASES],
+  ])("%s 는 코어 계약과 같은 이름을 센다", (name, keys) => {
+    expect(frozenKeys(name)).toEqual([...keys]);
   });
 });
 
