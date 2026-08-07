@@ -54,6 +54,10 @@ const COUNTER_KEYS = Object.freeze([
   "disappearances",
   "unpresented",
 ]);
+const COMPOSITION_KEYS = Object.freeze(["observer", "steps"]);
+const COMPOSITION_STEP_KEYS = Object.freeze(["sequence", "acknowledged", "violations"]);
+/** 유한 resize 거래 전체의 응답 예산. 하니스가 던져서 닫던 같은 수치를 판정이 소유한다. */
+const RESIZE_BUDGET_MS = 4_000;
 
 function canonical(value) {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
@@ -421,6 +425,44 @@ function inspectTransaction(
 }
 
 /**
+ * 각 단계에서 관측면이 스스로 낸 합성 판정. 계약 위반은 하니스가 실행을 끊어 숨기는 사실이
+ * 아니라 이 자리에서 수치 이름으로 남는 red 다. 판정을 선언하지 않은 관측면은 green 이 아니라
+ * "선언 없음"으로 red 다 — 안 물어본 것과 통과한 것은 같은 사실이 아니다.
+ */
+function inspectAcknowledgedComposition(value, transactionCount, failures) {
+  if (!requireExactKeys(value, COMPOSITION_KEYS, "acknowledgedComposition", failures)) return;
+  if (!hasText(value.observer)) {
+    failures.push(`acknowledgedComposition.observer=declared/${displayValue(value.observer)}`);
+  }
+  if (!Array.isArray(value.steps) || value.steps.length === 0) {
+    failures.push(`acknowledgedComposition.steps=non-empty-array/${displayValue(value.steps)}`);
+    return;
+  }
+  if (transactionCount !== null && value.steps.length !== transactionCount) {
+    failures.push(
+      `acknowledgedComposition.steps.length=${transactionCount}/${value.steps.length}`,
+    );
+  }
+  value.steps.forEach((step, index) => {
+    const path = `acknowledgedComposition.steps[${index}]`;
+    if (!requireExactKeys(step, COMPOSITION_STEP_KEYS, path, failures)) return;
+    if (step.sequence !== index) {
+      failures.push(`${path}.sequence=${index}/${displayValue(step.sequence)}`);
+    }
+    if (step.acknowledged !== true) {
+      failures.push(`${path}.acknowledged=true/${displayValue(step.acknowledged)}`);
+    }
+    if (!Array.isArray(step.violations)) {
+      failures.push(`${path}.violations=array/${displayValue(step.violations)}`);
+      return;
+    }
+    for (const violation of step.violations) {
+      failures.push(`${path}:${hasText(violation) ? violation : displayValue(violation)}`);
+    }
+  });
+}
+
+/**
  * 픽셀 입력 없이 공개 slot/renderer/surface frame과 유한 generation 원장만으로
  * hostile window resize의 합성 정합·presentation 연속·baseline 복원을 판정한다.
  */
@@ -429,7 +471,14 @@ export function judgeB10MachineEvidence(value) {
   const failures = [];
   if (!requireExactKeys(
     value,
-    ["engine", "coordinateSpace", "baseline", "transactions"],
+    [
+      "engine",
+      "acknowledgedComposition",
+      "resizeElapsedMs",
+      "coordinateSpace",
+      "baseline",
+      "transactions",
+    ],
     "evidence",
     failures,
   )) return finishMachineVerdict("B10", failures, "B10:unreachable");
@@ -507,10 +556,21 @@ export function judgeB10MachineEvidence(value) {
       failures.push("transactions.final.post=exact-baseline-geometry");
     }
   }
+  inspectAcknowledgedComposition(
+    value.acknowledgedComposition,
+    Array.isArray(value.transactions) ? value.transactions.length : null,
+    failures,
+  );
+  if (!Number.isInteger(value.resizeElapsedMs) || value.resizeElapsedMs < 0) {
+    failures.push(`resizeElapsedMs=integer>=0/${displayValue(value.resizeElapsedMs)}`);
+  } else if (value.resizeElapsedMs > RESIZE_BUDGET_MS) {
+    failures.push(`resizeElapsedMs<=${RESIZE_BUDGET_MS}/${value.resizeElapsedMs}`);
+  }
   return finishMachineVerdict(
     "B10",
     failures,
     `${value.engine}/B10:hostile>=4;generation-ordered;slot+renderer+surface=rounding-only;`
-      + "presentation=continuous;replacements=0;restore=exact",
+      + "presentation=continuous;replacements=0;restore=exact;composition=acknowledged-green;"
+      + `resize<=${RESIZE_BUDGET_MS}ms`,
   );
 }

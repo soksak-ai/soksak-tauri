@@ -20,6 +20,7 @@ import {
 } from "./lib/fixtureWindow.mjs";
 import { closeHtmlFixture, startHtmlFixture } from "./lib/http-fixture.mjs";
 import { tauriSurfaceResizePolicyVerdict } from "./lib/tauri-surface-resize-policy.mjs";
+import { hostileResizeObservationGaps } from "./lib/hostile-resize-composition.mjs";
 import {
   observeFrameSequence as inspectFrameSequence,
   observeFullCapture as inspectFullCapture,
@@ -1756,36 +1757,18 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
         name: `${engine}/window-fast`,
       });
       const fastFiles = fastRecordingEvidence.artifacts;
-      if (Number(fastResize.steps) !== fastSizes.length) {
-        throw new Error(`rapid window resize 단계 누락: ${JSON.stringify(fastResize)}`);
-      }
-      if (Number(fastResize.resizeElapsedMs) > 4_000) {
-        throw new Error(`rapid window resize 응답 정지: ${fastResize.resizeElapsedMs}ms/${fastSizes.length}단계`);
-      }
       await writeMachineReport(
         path.join(fastResizeDir, "composition-samples.json"),
         { baseline: fastResize.baseline ?? null, samples: fastResize.samples ?? [] },
       );
-      if (frameworkName === "tauri") {
-        const redSamples = (fastResize.samples ?? []).filter((sample) => sample.observation?.verdict !== "green");
-        if (redSamples.length) {
-          const summary = redSamples.map((sample) => {
-            const direct = sample.observation?.direct?.verdict;
-            const directErrors = [
-              ...(direct?.misplaced ?? []).map((item) => `direct-misplaced:${JSON.stringify(item)}`),
-              ...(direct?.stacked ?? []).map((item) => `direct-stacked:${JSON.stringify(item)}`),
-              ...(direct?.missing ?? []).map((item) => `direct-missing:${JSON.stringify(item)}`),
-            ];
-            const failed = (sample.observation?.pane?.matches ?? []).filter((match) => !match.ok);
-            const paneErrors = failed.map((match) => {
-              const member = (match.members ?? []).filter((item) => !item.ok)
-                .map((item) => `${item.label}:${JSON.stringify(item.delta)}`).join("|");
-              return `${match.pane}:${JSON.stringify(match.delta)}${member ? ` member=${member}` : ""}`;
-            });
-            return `s${sample.step}:${[...directErrors, ...paneErrors].join(",")}`;
-          });
-          throw new Error(`rapid window resize affine 거래 RED — ${summary.join("; ")}`);
-        }
+      // 단계 원장이 없으면 판정할 것이 없다 — 그때만 멈춘다. 관측면이 답한 합성 판정은
+      // 계약 사실이므로 여기서 던지지 않고 B10 증거로 실려 red 로 남는다.
+      const resizeGaps = hostileResizeObservationGaps({
+        requestedSteps: fastSizes.length,
+        resizeSequence: fastResize,
+      });
+      if (resizeGaps.length) {
+        throw new Error(`rapid window resize 관측 불가 — ${resizeGaps.join("; ")}`);
       }
       // 최소 높이에서는 입력 아래의 상태 marker가 정상적으로 viewport 밖에 놓일 수 있다. 전이 중에는
       // 상단의 고정 ruler로 live frame을 판정하고, 원복 직후 실제 input 값·event ledger를 다시 읽는다.

@@ -1,3 +1,5 @@
+import { hostileResizeCompositionPlane } from "./hostile-resize-composition.mjs";
+
 const field = (value, key) => value && typeof value === "object" && Object.hasOwn(value, key)
   ? value[key]
   : null;
@@ -77,11 +79,17 @@ function transaction(sample) {
  * Maps one finite resize command's acknowledged observations without using requested sizes as facts.
  * The baseline is the same command's pre-resize observation, read from the same envelope and the
  * same `snapshot` plane as every step; a missing one stays null instead of being reconstructed.
+ *
+ * `acknowledgedComposition` is the observer's own per-step verdict, derived from the same samples.
+ * The harness never hands that verdict in, so the report cannot disagree with the observations it
+ * was made from.
  */
 export function mapB10LiveEvidence(raw = {}) {
   const sequence = field(raw, "resizeSequence");
   return {
     engine: field(raw, "engine"),
+    acknowledgedComposition: hostileResizeCompositionPlane(sequence),
+    resizeElapsedMs: field(sequence, "resizeElapsedMs"),
     coordinateSpace: {
       logical: "css-px",
       physical: "device-px",

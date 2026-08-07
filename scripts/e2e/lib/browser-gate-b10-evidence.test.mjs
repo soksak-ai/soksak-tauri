@@ -49,6 +49,17 @@ function snapshot(windowGeometry, eventGeneration, transactionGeneration, revisi
   };
 }
 
+/** 관측면이 한 단계에서 스스로 낸 합성 판정. 하니스가 아니라 앱이 선언하는 사실이다. */
+const acknowledged = (generation) => ({
+  schemaVersion: 1,
+  kind: "resize-composition-sample",
+  generation,
+  sampledAtUnixMs: 1_770_000_000_000 + generation,
+  checks: { generation: true },
+  issues: [],
+  verdict: "green",
+});
+
 function raw() {
   const baselineGeometry = { x: 0, y: 0, w: 800, h: 600 };
   const requests = [
@@ -63,6 +74,7 @@ function raw() {
     engine: "browser",
     scaleFactor,
     resizeSequence: {
+      resizeElapsedMs: 320,
       baseline: { status: "observed", observation: { snapshot: baseline } },
       samples: requests.map(([phase, requestedWindowGeometry], sequence) => {
         const eventGenerationBefore = generation;
@@ -72,6 +84,7 @@ function raw() {
           step: sequence,
           size: { w: requestedWindowGeometry.w, h: requestedWindowGeometry.h },
           observation: {
+            ...acknowledged(sequence + 1),
             phase,
             requestedWindowGeometry,
             eventGenerationBefore,
