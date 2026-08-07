@@ -235,7 +235,9 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(calls.every((call) => call.paneOwnedOnly)).toBe(true);
     const lighting = source.split("async function assertFocusLighting")[1]
       ?.split("async function assertRailCompositionContract")[0] ?? "";
-    expect(lighting).toContain("if (paneOwned)");
+    // pane composition 장부는 그 장부가 픽셀을 소유할 때만 읽는다. 옛 판은 그 갈래를
+    // paneOwned 로 적었고, 지금은 같은 사실을 근거 이름(adapterBasis)이 든다.
+    expect(lighting).toContain('adapterBasis === "pane-host"');
     expect(lighting).not.toContain('if (frameworkName === "tauri")');
   });
 
@@ -302,7 +304,10 @@ describe("slot-freeze instrumentation lifecycle", () => {
     const lighting = source.split("async function assertFocusLighting")[1]?.split("async function assertRailCompositionContract")[0] ?? "";
     expect(lighting).toContain('props: ["--dim"]');
     expect(lighting).toContain("dataset?.dim");
-    expect(lighting).toContain("Math.abs(Number(match.alpha) - 1)");
+    // 투과율의 문턱은 judge 가 든다(adapterAlpha≈1). 하니스는 장부에서 읽어 근거와 함께 싣는다 —
+    // 하니스가 문턱을 들면 못 읽은 자리를 통과값으로 메우고 싶은 자리가 생긴다.
+    expect(lighting).toContain("readAdapterAlpha");
+    expect(lighting).toContain("adapterBases");
     expect(lighting).not.toContain("1 - dims[index]");
     expect(lighting).not.toContain('rpc("window.pixels"');
     expect(source).toContain("lightingAddressForTab");

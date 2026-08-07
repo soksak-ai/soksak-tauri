@@ -716,12 +716,23 @@ pub async fn engine_surface_stats(app: AppHandle, window: tauri::Window) -> serd
                 let f = v.frame();
                 let surface_label = layer::surface_label(ptr);
                 let surface_pane = layer::surface_pane(surface_label.as_deref());
+                // 통과시키는 빛 — hidden 과 같은 두 축이다. alpha 는 이 표면 자신의 선언이고
+                // effectiveAlpha 는 조상까지 곱한 화면의 사실이다. 판정하는 쪽이 "어댑터가
+                // 이중으로 감광하지 않는다"를 물을 자리가 여기 말고 없다.
+                let mut effective_alpha = v.alphaValue();
+                let mut ancestor = unsafe { v.superview() };
+                while let Some(parent) = ancestor {
+                    effective_alpha *= parent.alphaValue();
+                    ancestor = unsafe { parent.superview() };
+                }
                 surfaces.push(serde_json::json!({
                     "ptr": ptr,
                     "label": surface_label,
                     "pane": surface_pane,
                     "hidden": v.isHidden(),
                     "effectivelyHidden": unsafe { v.isHiddenOrHasHiddenAncestor() },
+                    "alpha": v.alphaValue(),
+                    "effectiveAlpha": effective_alpha,
                     "autoresizingMask": v.autoresizingMask().0,
                     "layerContentsRedrawPolicy": v.layerContentsRedrawPolicy().0,
                     "layerContentsPlacement": v.layerContentsPlacement().0,

@@ -65,8 +65,16 @@ The B05 mapper joins the click ACK address/time, the layout transaction's trace 
 presentation events, settlement, and the finite hold receipt. It never estimates a missing time or
 hold from recorded frames.
 The B06 mapper independently requires each pane's public `--dim`/level, adapter alpha, the single
-plane's base/aperture ledger, and both rail/sidebar exemption and plane-exclusion facts. One exempt
-attribute cannot stand in for the other observations.
+presented plane's base/aperture ledger, and both rail/sidebar exemption and plane-exclusion facts.
+One exempt attribute cannot stand in for the other observations. Adapter alpha arrives with the
+name of the ledger that owns those pixels (`pane-host`, `engine-surface`, `content-view-dom`,
+selected from the declared `nativeChildWebview` provision and the engine's composition axis); an
+alpha with no ledger name is a declaration, not a measurement, and the judge names it RED. "One
+plane" counts the planes that stand on screen: a parked space's plane stays in the ledger as
+`parked`, and a plane whose visibility could not be read counts as `unreadable`, never as parked.
+Rail and sidebar coverage is decided by the public stacking chain (`ui.measure stacking:true`), not
+by subtracting two z-index values — the plane between them establishes its own stacking context, so
+the subtraction can answer the opposite of the screen.
 The B10 mapper closes only the baseline and each resize ACK's observed window/frame/generation/
 presentation/continuity snapshot into transactions. The baseline is the pre-resize observation the
 same command read from the same observer before requesting the first size, and `baseline.status`
@@ -84,7 +92,9 @@ The canonical harness is split across modules. `scripts/e2e/lib/browser-gate-cov
 measurement coverage and sequential engine execution, `browser-sentinel.mjs` owns the sentinel
 view's mount contract, `browser-page-state.mjs` owns the probe body for the page axes the judge
 requires, `browser-gate-b05-hold.mjs` owns the B05 post-settle hold, and
-`browser-gate-b06-collect.mjs` owns B06 checkpoint collection. The file inventory itself belongs to
+`browser-gate-b06-collect.mjs` owns B06 checkpoint collection, `browser-gate-b06-adapter.mjs` owns
+which ledger holds the adapter's transmitted light, and `browser-gate-b06-stacking.mjs` owns paint
+order from a public stacking chain. The file inventory itself belongs to
 `scripts/e2e/framework-binding.json`, which `framework-binding.mjs --check` reconciles against the
 sources in both directions — prose never counts them again.
 
@@ -95,7 +105,7 @@ sources in both directions — prose never counts them again.
 | B03 | DOM slot ↔ live surface 1:1, physical-pixel-rounding frame, topology anchored in the native ledger | Assert count, ownership, and coordinate deltas from public DOM rects and from the rect the surface ledger itself publishes (AppKit host+member frame, engine presentation, or the content view host's live list). The surface rect is never copied from the DOM projection, and a public topology string is accepted only when it ends at a natively registered member label. On Tauri, a content slot becomes a native hole only through an adapter lifecycle claim (`direct`/`pane`) or the neutral `data-external-surface=<stable identity>` declaration. Undeclared DOM slots are never guessed to be holes. `direct`, `PaneSurfaceHost`, and external-provider geometry are each audited exactly once by their owning plane. Electron does not project this declaration because its browser body remains a DOM child. For an in-document surface the participants are the declared slot and the tag inside it, and the third ledger is the content view host's live list. |
 | B04 | One atomic FLOW move for rail, pane, and native surface | An acknowledged finite trace joins the initial raw rect and the exact same-transaction DOM-commit raw rect to actual presentation events, then asserts connectivity, coordinates, and settlement for all three. |
 | B05 | Zero flicker, black frames, ghosts, or post-landing disappearance | The public presentation trace asserts continuous live/visible/painted state and zero replacements, gaps, or disappearances. |
-| B06 | Only active is bright; inactive is dim; rail/sidebar are not dimmed | Public style state asserts one lighting plane and its active aperture, pane dim values, rail/sidebar exclusion from the plane, and adapter alpha 1 (no duplicate dimming). |
+| B06 | Only active is bright; inactive is dim; rail/sidebar are not dimmed | Public style state asserts exactly one presented lighting plane and its active aperture, pane dim values, rail/sidebar exclusion decided by the public stacking chain, and adapter alpha 1 read from the named ledger that owns those pixels (no duplicate dimming, and no harness-supplied constant). |
 | B07 | PIN left-adjacent, right-adjacent, and detached border/layout invariance | Assert border relations and invariant rail/pane DOM identity, rects, and split tree across all three focus states. The drawn side is measured from the rail and pane boxes the relation node publishes, never read from the declared border mode. |
 | B08 | PIN maximize/restore in both directions with invariant station | For left and right, assert exact direction, split, and station equality before maximize and after restore, plus the target view's native surface rect at baseline, maximize, and restore: maximize must grow it and restore must return it to the baseline within one rounding pixel. |
 | B09 | Rail `+`, right sidebar, and modal above native surfaces | Public hit/layer state at a real overlap reports chrome as the topmost owner. |

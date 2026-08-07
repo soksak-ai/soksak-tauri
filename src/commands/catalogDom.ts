@@ -28,6 +28,7 @@ import { createFiniteDomTraceSampler } from "./finiteDomTrace";
 import { layoutSettlementStatus, waitLayoutSettled } from "./waitLayoutSettled";
 import { declareLayoutCause, onLayoutTransitionJournal } from "../lib/layoutTransitionJournal";
 import { presentationNowUnixMs } from "../lib/presentationClock";
+import { stackingPathOf, type StackingComputedStyle } from "../lib/stackingOrder";
 
 type FocusTraceEntry = {
   t: number;
@@ -551,9 +552,15 @@ export function registerDomCatalog(): void {
           "Also return global logical screen coordinates (window inner origin + viewport rect). cx/cy is the node center — pass it directly to an OS-level pointer tool for a real hit-tested click",
         default: false,
       },
+      stacking: {
+        type: "boolean",
+        description:
+          "Also return the ancestor chain that decides paint order: every stacking-context ancestor, every positioned ancestor, and the node itself, root first. Compare two nodes by their chains — subtracting two z-index values skips the stacking context between them and can answer the opposite of the screen",
+        default: false,
+      },
     },
     returns:
-      "{ address, nodeIdentity, dataset, value?:string, rect:{x,y,w,h}, inlineStyle:{height,flexBasis}, style, occlusion?:{ reachable, topTag, topNode }, screen?:{ x, y, cx, cy } } — nodeIdentity is the opaque live Element identity shared with ui.tree; dataset contains every declared data-* field on the exposed node; value is the current public value of an exposed input, textarea, or select",
+      "{ address, nodeIdentity, dataset, value?:string, rect:{x,y,w,h}, inlineStyle:{height,flexBasis}, style, occlusion?:{ reachable, topTag, topNode }, screen?:{ x, y, cx, cy }, stacking?:[{ identity, node, zIndex, positioned, order }] } — nodeIdentity is the opaque live Element identity shared with ui.tree; dataset contains every declared data-* field on the exposed node; value is the current public value of an exposed input, textarea, or select; stacking entries carry zIndex null for an undeclared layer",
     message: (d) =>
       tmsg("msg.ui.measure", {
         w: Number((d.rect as { w?: number })?.w ?? 0),
@@ -644,6 +651,16 @@ export function registerDomCatalog(): void {
           topTag: top ? top.tagName.toLowerCase() : null,
           topNode: top instanceof HTMLElement ? (top.dataset.node ?? null) : null,
         };
+      }
+      // stacking — 칠하는 순서를 정하는 조상 사슬. 두 노드의 z 를 직접 빼는 판정은 사이에
+      // 낀 stacking context 를 건너뛰어 화면과 반대되는 답을 낸다(실사고: 레일 7 > 베일 6 은
+      // 참인데, 둘을 실제로 가른 것은 그 사이 .space-plane 의 1 이었다). 비교는 이 사슬을 받은
+      // 쪽이 한다 — 코어는 순서의 근거만 낸다.
+      if (p.stacking === true) {
+        out.stacking = stackingPathOf(el, {
+          getStyle: (node) => getComputedStyle(node) as unknown as Partial<StackingComputedStyle>,
+          identify: nodeIdentityOf,
+        });
       }
       // screen — 전역 논리 좌표. 합성 dispatch 는 히트테스팅·기본동작을 재현하지 못하므로,
       // 실포인터 검증(OS 클릭 도구)이 소비할 좌표 환산을 코어가 한 경로로 제공한다.

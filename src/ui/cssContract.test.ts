@@ -9,6 +9,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { RAIL_TRAVEL_MS } from "../lib/railMotion";
+import { focusVeilStackingViolations } from "./focusVeilStacking";
 
 const css = readFileSync(join(process.cwd(), "src", "App.css"), "utf8");
 
@@ -122,13 +123,34 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
     expect(css).not.toMatch(/\.space-body\.rail-traveling \.left-rail-plane\s*\{/);
   });
 
+  // 옛 법은 z(.left-rail-plane) > z(.focus-lighting-plane), 즉 7 > 6 하나였다. 그 비교는 두
+  // 수가 같은 stacking context 에 있다고 전제하는데 실제 DOM 은 그렇지 않다: 베일은
+  // .space-plane(z:1) 안에 살고 그 판이 자기 문맥을 만들어 베일을 가둔다. 레일이 위에 오는
+  // 진짜 이유는 7>6 이 아니라 7>1 이고, 누가 .space-plane 을 8 로 올리면 옛 법은 그대로
+  // 통과하는데 화면에서는 베일이 레일을 덮는다.
   it("포커스 조명은 레일을 흐리지 않고 관계선은 둘 위에 남는다", () => {
-    const z = (selector: string) => {
-      const decls = rules().find((rule) => rule.selector === selector)?.decls ?? "";
-      return Number(decls.match(/z-index\s*:\s*(\d+)/)?.[1] ?? Number.NaN);
-    };
-    expect(z(".left-rail-plane")).toBeGreaterThan(z(".focus-lighting-plane"));
-    expect(z(".rail-link-overlay")).toBeGreaterThan(z(".left-rail-plane"));
+    expect(focusVeilStackingViolations(css)).toEqual([]);
+  });
+
+  it("법이 실제로 갈리는 자리를 잡는다 — 위반을 심어 자격을 확인한다", () => {
+    // 베일의 z 는 그대로 두고 그것을 품은 판만 올린다. 두 수(7,6)는 안 변한다.
+    const raisedContainer = css.replace(
+      /\.space-plane\s*\{[^}]*\}/,
+      ".space-plane { position: absolute; z-index: 9; }",
+    );
+    expect(focusVeilStackingViolations(raisedContainer))
+      .toContain(".space-plane: z-index 9 >= .left-rail-plane 7 — 그 판 안의 베일이 레일을 덮는다");
+
+    // 층만 선언하고 배치를 안 하면 자기 문맥을 못 만들어 내용이 판 밖으로 샌다.
+    const unpositioned = css.replace(
+      /\.space-plane\s*\{[^}]*\}/,
+      ".space-plane { z-index: 1; }",
+    );
+    expect(focusVeilStackingViolations(unpositioned))
+      .toContain(".space-plane: z-index 1 을 선언하고 배치는 안 했다 — 내용이 판 밖으로 샌다");
+
+    // 오라클이 죽으면(기준 평면이 사라지면) 그것도 위반이다.
+    expect(focusVeilStackingViolations("")).not.toEqual([]);
   });
 
   it("§12-④ 개정: 주행 중에도 입력은 열려 있다 — 셀·슬롯·디바이더 히트 차단 금지", () => {

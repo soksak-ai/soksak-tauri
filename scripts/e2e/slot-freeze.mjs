@@ -83,6 +83,8 @@ import { mapB05LiveEvidence } from "./lib/browser-gate-b05-evidence.mjs";
 import { awaitPostSettleHold, resolveB05Settlement } from "./lib/browser-gate-b05-hold.mjs";
 import { mapB06LiveEvidence } from "./lib/browser-gate-b06-evidence.mjs";
 import { collectB06Checkpoint } from "./lib/browser-gate-b06-collect.mjs";
+import { adapterAlphaBasis, readAdapterAlpha } from "./lib/browser-gate-b06-adapter.mjs";
+import { comparePaintOrder, stackingPathOf } from "./lib/browser-gate-b06-stacking.mjs";
 import { mapB10LiveEvidence } from "./lib/browser-gate-b10-evidence.mjs";
 import { measureCapturedImage } from "./lib/browser-gate-b11-capture.mjs";
 import { mapB11TabEvidence } from "./lib/browser-gate-b11-evidence.mjs";
@@ -441,10 +443,23 @@ const nodeAddress = (tree, nodePath) => {
   return node.address;
 };
 
-async function assertFocusLighting(rpc, win, addresses, labels, activeIndex, paneOwned, stage) {
+/**
+ * 포커스 조명의 수치 사실 — pane 별 흐림과 **어댑터가 통과시키는 빛**.
+ *
+ * 어댑터 투과율은 픽셀을 소유한 장부에서 온다(browser-gate-b06-adapter.mjs). 옛 판은 그 장부가
+ * 없는 경로에서 1 을 써 넣었다 — judge 가 1 을 요구하는데 하니스가 답을 대신 쓰니 offscreen·
+ * 문서 안 표면에 이중 감광이 걸려 있어도 이 축은 영원히 통과했다. 못 읽으면 null 이고, 그 이름
+ * (adapterBasis)과 함께 judge 로 간다. 여기서 던지지 않는다 — 판정은 B06 영수증이 소유한다.
+ *
+ * 장부의 이름은 **선언**이 정하고(adapterBasis), 그 장부를 이 창이 답하는지는 **능력**이 정한다
+ * (paneLedgerAnswered). 둘은 같은 사실이 아니다 — 선언만 보고 부르면 답하지 않는 창에서 실행이
+ * 통째로 끝나고, 능력만 보고 채우면 안 물어본 장부의 값이 측정으로 둔갑한다.
+ */
+async function assertFocusLighting(
+  rpc, win, addresses, labels, activeIndex, adapterBasis, paneLedgerAnswered, stage,
+) {
   const dims = [];
   const levels = [];
-  const adapterAlphas = labels.map(() => paneOwned ? null : 1);
   for (let index = 0; index < addresses.length; index += 1) {
     const measured = must(await rpc("ui.measure", {
       address: addresses[index], props: ["--dim"],
@@ -463,20 +478,18 @@ async function assertFocusLighting(rpc, win, addresses, labels, activeIndex, pan
       errors.push(`${index}:inactive level=${levels[index]} dim=${dims[index]}`);
     }
   }
-  if (paneOwned) {
-    const composition = must(await rpc("webview.pane.composition", {}, win), `${stage} lighting composition`);
-    for (let index = 0; index < labels.length; index += 1) {
-      const match = (composition.matches ?? []).find((candidate) =>
-        (candidate.memberMatches ?? []).some((member) => member.label === labels[index]));
-      if (!match || !Number.isFinite(Number(match.alpha))
-          || Math.abs(Number(match.alpha) - 1) > 0.001) {
-        errors.push(`${labels[index]}:adapter-alpha=${match?.alpha}/1`);
-      }
-      adapterAlphas[index] = match?.alpha ?? null;
-    }
-  }
+  const paneComposition = adapterBasis === "pane-host" && paneLedgerAnswered
+    ? must(await rpc("webview.pane.composition", {}, win), `${stage} lighting composition`)
+    : null;
+  const surfaces = adapterBasis === "engine-surface" || adapterBasis === "content-view-dom"
+    ? must(await rpc("webview.surfaces", {}, win), `${stage} lighting surfaces`)
+    : null;
+  const adapterAlphas = labels.map((label) => readAdapterAlpha({
+    basis: adapterBasis, label, paneComposition, surfaces,
+  }));
+  const adapterBases = labels.map(() => adapterBasis);
   if (errors.length) throw new Error(`${stage}: focus lighting 수치 계약 불일치 — ${errors.join(", ")}`);
-  return { dims, levels, adapterAlphas };
+  return { dims, levels, adapterAlphas, adapterBases };
 }
 
 async function assertRailCompositionContract(
@@ -498,8 +511,8 @@ async function assertRailCompositionContract(
   }
   const [rail, railPlane, lighting, relation] = await Promise.all([
     rpc("ui.measure", { address: railAddress }, win),
-    rpc("ui.measure", { address: railPlaneNode.address, props: ["zIndex"] }, win),
-    rpc("ui.measure", { address: lightingNode.address, props: ["zIndex"] }, win),
+    rpc("ui.measure", { address: railPlaneNode.address, props: ["zIndex"], stacking: true }, win),
+    rpc("ui.measure", { address: lightingNode.address, props: ["zIndex"], stacking: true }, win),
     rpc("ui.measure", { address: relationNode.address, props: ["zIndex"] }, win),
   ]).then((values) => values.map((value, index) => must(value, `${stage} rail layer ${index}`)));
   const railZ = Number(railPlane.style?.zIndex);
@@ -507,7 +520,12 @@ async function assertRailCompositionContract(
   const relationZ = Number(relation.style?.zIndex);
   const errors = [];
   if (rail.dataset?.focusLighting !== "exempt") errors.push("rail-not-lighting-exempt");
-  if (!(railZ > lightingZ)) errors.push(`rail-z=${railZ}<=lighting-z=${lightingZ}`);
+  // 레일이 조명 위인지는 두 z 의 뺄셈이 아니라 **칠하는 순서 사슬**이 답한다 — 둘 사이에는
+  // 자기 문맥을 만드는 판(.space-plane)이 끼어 있어 7>6 은 이유가 아니다.
+  const railAbove = comparePaintOrder(stackingPathOf(railPlane), stackingPathOf(lighting));
+  if (railAbove !== 1) {
+    errors.push(`rail-paint-order=${String(railAbove)} rail-z=${railZ} lighting-z=${lightingZ}`);
+  }
   if (!(relationZ > railZ)) errors.push(`relation-z=${relationZ}<=rail-z=${railZ}`);
   if (relation.dataset?.connected !== String(connected)) {
     errors.push(`relation-connected=${relation.dataset?.connected}/${connected}`);
@@ -1136,6 +1154,12 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
     const windowed = implementation.surface === "engine-windowed";
     // pane 표면 층을 이 창이 답하는가 — 그 층이 있어야 pane 소유 합성을 잴 수 있다.
     const paneOwned = capabilities.has(PANE_PRESENTATION_HOST.id) && (native || windowed);
+    // 어댑터 투과율의 근거 장부 — 선언된 능력 × 엔진의 합성 축에서 나온다. 이름으로 가르면
+    // 프레임워크가 하나 늘 때마다 이 자리가 또 갈라진다.
+    const adapterBasis = adapterAlphaBasis({
+      nativeChildWebview,
+      surface: implementation.surface,
+    });
     const labels = tabIds.map((id) => implementation.label(win, id));
     let initialPaneComposition = null;
     if (paneOwned) {
@@ -1454,7 +1478,8 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
           frameCount += files.length;
 
           const lighting = await assertFocusLighting(
-            rpc, win, lightingAddresses, labels, side, paneOwned, `${engine}/${name}`,
+            rpc, win, lightingAddresses, labels, side, adapterBasis, paneOwned,
+            `${engine}/${name}`,
           );
           await assertRailCompositionContract(
             rpc,

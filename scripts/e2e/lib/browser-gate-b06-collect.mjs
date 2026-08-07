@@ -1,20 +1,30 @@
 // B06 focus-lighting 체크포인트 수집.
 //
 // judge 가 부르는 이름(lightingPlane·rail·sidebar)을 하니스가 그대로 실어야 게이트가 선다.
-// 값은 전부 공개 표면에서 온다: ui.tree 가 data-node·dataset·rect 를 내고, ui.measure 가
-// 계산된 스타일을 낸다. private DOM 조회도, 픽셀 밝기 추정도 하지 않는다.
+// 값은 전부 공개 표면에서 온다: ui.tree 가 data-node·dataset·rect 를 내고, ui.snapshot.dom 이
+// 한 순간의 가시성을, ui.measure 가 계산된 스타일과 칠하는 순서 사슬을 낸다. private DOM
+// 조회도, 픽셀 밝기 추정도 하지 않는다.
 //
-// 덮임 판정 — 조명 평면은 space-body 전체를 덮으므로 rect 교차만 보면 레일은 언제나
-// "덮였다"가 된다. 레일이 안 흐린 사실은 기하가 아니라 **선언된 층**이 소유한다
-// (App.css: 레일 평면은 focus veil 보다 위). 그래서 덮임은 두 축의 곱이다:
-// 겹치는가(기하) × 베일 위에 서는가(선언된 z). 둘 중 하나라도 못 읽으면 null 이다 —
-// 못 읽음은 0 도 false 도 아니다.
+// ── 단일 평면의 뜻 ──────────────────────────────────────────────────────────
+// 조명 평면은 공간(space)마다 한 벌 있고, 창 하나가 공간을 여럿 들 수 있다. 비활성 공간은
+// 언마운트되지 않고 숨김으로만 파킹된다 — DOM 에는 남지만 픽셀은 한 점도 칠하지 않는다.
+// B06 이 지키는 사실은 "화면의 픽셀을 정확히 한 평면이 가라앉힌다"이므로 **세는 대상은
+// 화면에 선 평면**이다. 파킹된 평면은 세지 않되 장부에는 남긴다(parked) — 안 세는 것과 없는
+// 것은 다른 사실이다. 가시성을 못 읽은 평면은 셋 중 어느 쪽도 아니다(unreadable) — 못 읽음을
+// 파킹으로 적으면 두 번째 평면이 조용히 숨는다.
+//
+// ── 덮임 판정 ──────────────────────────────────────────────────────────────
+// 조명 평면은 space-body 전체를 덮으므로 rect 교차만 보면 레일은 언제나 "덮였다"가 된다.
+// 레일이 안 흐린 사실은 기하가 아니라 **칠하는 순서**가 소유한다. 그 순서는 z 두 개의 뺄셈이
+// 아니다: 레일 평면(7)과 베일(6) 사이에는 .space-plane(1)이 자기 stacking context 를 만들어
+// 베일을 가둔다 — 레일이 위인 진짜 이유는 7>6 이 아니라 7>1 이다. 그래서 덮임은 두 축의 곱이다:
+// 겹치는가(기하) × 사슬에서 누가 위인가(공개 stacking path). 둘 중 하나라도 못 읽으면 null 이다.
 
 import { must } from "./client.mjs";
+import { comparePaintOrder, stackingPathOf } from "./browser-gate-b06-stacking.mjs";
 
-const PLANE_RE = /^focus-lighting\/[^/]+$/;
-const BASE_RE = /^focus-lighting\/[^/]+\/base$/;
-const APERTURE_RE = /^focus-lighting\/[^/]+\/aperture\/.+$/;
+const PLANE_RE = /^focus-lighting\/([^/]+)$/;
+const LIGHTING_ADDRESS_FILTER = "/focus-lighting/";
 
 /**
  * 조명 면제 표면 — 이름은 judge 가 정한다(rail·sidebar).
@@ -62,19 +72,20 @@ export function resolveBaseAmount(measure) {
   return Number.isFinite(amount) ? amount : null;
 }
 
-/** 선언된 층. `auto` 는 층을 선언하지 않은 것이므로 숫자가 아니라 null 이다. */
-export function resolveLayerZ(measure) {
-  const raw = declaredValue(measure, "zIndex");
-  if (!raw || raw === "auto") return null;
-  const order = Number.parseInt(raw, 10);
-  return Number.isFinite(order) ? order : null;
-}
-
 /** data-focus-lighting 선언. dataset 을 못 받았으면 null — 없음을 false 로 적지 않는다. */
 export function resolveExempt(measure) {
   const dataset = measure && typeof measure === "object" ? measure.dataset : null;
   if (!dataset || typeof dataset !== "object") return null;
   return dataset.focusLighting === "exempt";
+}
+
+/** 화면에 서 있는가. 못 읽었으면 null — 못 읽음을 파킹으로 적지 않는다. */
+export function resolvePresented(style) {
+  if (!style || typeof style !== "object") return null;
+  const visibility = typeof style.visibility === "string" ? style.visibility.trim() : "";
+  const display = typeof style.display === "string" ? style.display.trim() : "";
+  if (visibility === "" || display === "") return null;
+  return visibility !== "hidden" && visibility !== "collapse" && display !== "none";
 }
 
 function finiteRect(rect) {
@@ -95,17 +106,15 @@ export function rectOverlapArea(a, b) {
   return width > 0 && height > 0 ? width * height : 0;
 }
 
-/** 베일이 이 표면의 픽셀에 닿는가 — 겹침(기하) × 층(선언). 못 읽은 축이 있으면 null. */
-export function resolveCoveredByPlane({ planeRect, targetRect, planeZ, layerZ }) {
+/** 베일이 이 표면의 픽셀에 닿는가 — 겹침(기하) × 사슬(칠하는 순서). 못 읽은 축이 있으면 null. */
+export function resolveCoveredByPlane({ planeRect, targetRect, veilStack, targetStack }) {
   const plane = finiteRect(planeRect);
   const target = finiteRect(targetRect);
   if (!plane || !target) return null;
   if (rectOverlapArea(plane, target) <= 0) return false;
-  // 겹치는데 평면의 층을 못 읽으면 어느 쪽이 위인지 말할 수 없다.
-  if (!Number.isFinite(planeZ)) return null;
-  // 층을 선언하지 않은 표면은 베일을 이길 근거가 없다.
-  if (!Number.isFinite(layerZ)) return true;
-  return !(layerZ > planeZ);
+  const order = comparePaintOrder(targetStack, veilStack);
+  if (order === null) return null;
+  return !(order > 0);
 }
 
 /** nodePath 로 공개 주소 하나를 집는다. 없거나 둘 이상이면 null — 아무거나 고르지 않는다. */
@@ -115,18 +124,15 @@ export function addressForNodePath(nodes, nodePath) {
   return found.length === 1 ? found[0].address : null;
 }
 
-/** 조명 평면 트리를 세 갈래로 가른다 — 평면, 베일, aperture. */
-export function selectLightingNodes(nodes) {
+/** 조명 평면 노드들을 공간별로 가른다 — 한 공간이 두 평면을 들면 여기서 드러난다. */
+export function selectLightingPlanes(nodes) {
   const planes = [];
-  const bases = [];
-  const apertures = [];
   for (const node of nodes) {
     const nodePath = typeof node?.nodePath === "string" ? node.nodePath : "";
-    if (PLANE_RE.test(nodePath)) planes.push(node);
-    else if (BASE_RE.test(nodePath)) bases.push(node);
-    else if (APERTURE_RE.test(nodePath)) apertures.push(node);
+    const scope = PLANE_RE.exec(nodePath)?.[1];
+    if (scope) planes.push({ scope, node });
   }
-  return { planes, bases, apertures };
+  return planes;
 }
 
 function apertureOwner(apertures) {
@@ -135,9 +141,9 @@ function apertureOwner(apertures) {
   return typeof owner === "string" && owner !== "" ? owner : null;
 }
 
-async function measureNode(rpc, win, address, props, what) {
+async function measureNode(rpc, win, address, params, what) {
   if (!address) return null;
-  return must(await rpc("ui.measure", { address, props }, win), what);
+  return must(await rpc("ui.measure", { address, ...params }, win), what);
 }
 
 /**
@@ -157,17 +163,50 @@ export async function collectB06Checkpoint({
 }) {
   const tree = must(await rpc("ui.tree", { rects: true }, win), `${stage} lighting plane tree`);
   const nodes = treeNodes(tree);
-  const { planes, bases, apertures } = selectLightingNodes(nodes);
-  const planeNode = planes.length === 1 ? planes[0] : null;
-  const baseNode = bases.length === 1 ? bases[0] : null;
+  const planes = selectLightingPlanes(nodes);
 
-  const [planeMeasure, baseMeasure] = await Promise.all([
-    measureNode(rpc, win, planeNode?.address ?? null, ["zIndex"], `${stage} lighting plane layer`),
-    measureNode(rpc, win, baseNode?.address ?? null, ["fillOpacity"], `${stage} lighting veil amount`),
-  ]);
-  const planeZ = resolveLayerZ(planeMeasure);
-  // 베일 상자는 농도와 같은 읽기에서 온다 — 상자와 값을 다른 읽기에서 가져오면 두 시각의
-  // 사실을 한 판정에 섞는다.
+  // 가시성은 한 순간에 한꺼번에 읽는다 — 평면마다 왕복하면 서로 다른 순간의 사실을 센다.
+  const presence = must(await rpc("ui.snapshot.dom", {
+    filter: LIGHTING_ADDRESS_FILTER,
+    props: ["visibility", "display"],
+  }, win), `${stage} lighting plane presence`);
+  const byAddress = new Map(
+    (Array.isArray(presence?.nodes) ? presence.nodes : [])
+      .filter((node) => typeof node?.address === "string")
+      .map((node) => [node.address, node.style]),
+  );
+
+  let presented = 0;
+  let parked = 0;
+  let unreadable = 0;
+  const presentedScopes = [];
+  for (const plane of planes) {
+    const state = resolvePresented(byAddress.get(plane.node.address));
+    if (state === null) unreadable += 1;
+    else if (state) {
+      presented += 1;
+      presentedScopes.push(plane.scope);
+    } else parked += 1;
+  }
+
+  // 화면에 선 평면이 정확히 하나일 때만 그 공간의 베일·aperture 를 읽는다. 둘이면 어느 것이
+  // 답인지 말할 수 없고, 아무거나 고르면 판정이 우연을 탄다.
+  const scope = presentedScopes.length === 1 ? presentedScopes[0] : null;
+  const baseAddress = scope === null
+    ? null
+    : addressForNodePath(nodes, `focus-lighting/${scope}/base`);
+  const aperturePrefix = scope === null ? null : `focus-lighting/${scope}/aperture/`;
+  const apertures = aperturePrefix === null
+    ? []
+    : nodes.filter((node) =>
+      typeof node?.nodePath === "string" && node.nodePath.startsWith(aperturePrefix));
+
+  // 베일 상자·농도·사슬은 같은 읽기에서 온다 — 나눠 가져오면 서로 다른 시각의 사실을 한
+  // 판정에 섞는다.
+  const baseMeasure = await measureNode(
+    rpc, win, baseAddress, { props: ["fillOpacity"], stacking: true }, `${stage} lighting veil`,
+  );
+  const veilStack = stackingPathOf(baseMeasure);
   const planeRect = baseMeasure?.rect ?? null;
 
   const exempt = {};
@@ -177,19 +216,23 @@ export async function collectB06Checkpoint({
       ? targetAddress
       : addressForNodePath(nodes, surface.layerNodePath);
     const targetMeasure = await measureNode(
-      rpc, win, targetAddress, ["--dim", "zIndex"], `${stage} ${surface.node} lighting exemption`,
+      rpc,
+      win,
+      targetAddress,
+      { props: ["--dim"], stacking: layerAddress === targetAddress },
+      `${stage} ${surface.node} lighting exemption`,
     );
     const layerMeasure = layerAddress === targetAddress
       ? targetMeasure
-      : await measureNode(rpc, win, layerAddress, ["zIndex"], `${stage} ${surface.node} layer`);
+      : await measureNode(rpc, win, layerAddress, { stacking: true }, `${stage} ${surface.node} layer`);
     exempt[surface.node] = {
       exempt: resolveExempt(targetMeasure),
       styleDim: resolveExemptDim(targetMeasure),
       coveredByPlane: resolveCoveredByPlane({
         planeRect,
         targetRect: targetMeasure?.rect ?? null,
-        planeZ,
-        layerZ: resolveLayerZ(layerMeasure),
+        veilStack,
+        targetStack: stackingPathOf(layerMeasure),
       }),
     };
   }
@@ -200,7 +243,9 @@ export async function collectB06Checkpoint({
     paneIds,
     lighting,
     lightingPlane: {
-      count: planes.length,
+      presented,
+      parked,
+      unreadable,
       baseAmount: resolveBaseAmount(baseMeasure),
       aperturePaneId: apertureOwner(apertures),
       apertureCount: apertures.length,

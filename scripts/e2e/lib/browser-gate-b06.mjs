@@ -6,17 +6,25 @@ import {
   notRunVerdict,
   requireExactKeys,
 } from "./browser-machine-judge-support.mjs";
+import { ADAPTER_ALPHA_BASES } from "./browser-gate-b06-adapter.mjs";
 
 const EPSILON = 0.001;
+const ADAPTER_BASES = new Set(ADAPTER_ALPHA_BASES);
 const PANE_KEYS = Object.freeze([
   "paneId",
   "active",
   "level",
   "styleDim",
   "adapterAlpha",
+  "adapterBasis",
 ]);
+// 단일 평면은 **화면에 선 것**을 센다. 파킹된 공간의 평면은 DOM 에 남지만 픽셀을 칠하지
+// 않으므로 이중 감광이 될 수 없다(browser-gate-b06-collect.mjs 의 근거 참조). 그 사실을 안 세되
+// 장부에는 남기고, 가시성을 못 읽은 평면은 셋 중 어느 쪽도 아니다 — 못 읽음은 0 이 아니다.
 const PLANE_KEYS = Object.freeze([
-  "count",
+  "presented",
+  "parked",
+  "unreadable",
   "baseAmount",
   "aperturePaneId",
   "apertureCount",
@@ -45,6 +53,10 @@ function inspectPane(pane, path, activePaneId, seen, failures) {
   if (!finiteUnit(pane.styleDim)) {
     failures.push(`${path}.styleDim=0..1/${displayValue(pane.styleDim)}`);
   }
+  // 값보다 먼저 근거를 묻는다 — 어느 장부에서 왔는지 말하지 못하는 1 은 측정이 아니다.
+  if (!ADAPTER_BASES.has(pane.adapterBasis)) {
+    failures.push(`${path}.adapterBasis=known/${displayValue(pane.adapterBasis)}`);
+  }
   if (!finiteUnit(pane.adapterAlpha)) {
     failures.push(`${path}.adapterAlpha=0..1/${displayValue(pane.adapterAlpha)}`);
   } else if (!near(pane.adapterAlpha, 1)) {
@@ -67,7 +79,13 @@ function inspectPane(pane, path, activePaneId, seen, failures) {
 
 function inspectLightingPlane(value, activePaneId, path, failures) {
   if (!requireExactKeys(value, PLANE_KEYS, path, failures)) return null;
-  if (value.count !== 1) failures.push(`${path}.count=1/${displayValue(value.count)}`);
+  if (value.presented !== 1) failures.push(`${path}.presented=1/${displayValue(value.presented)}`);
+  if (!(Number.isInteger(value.parked) && value.parked >= 0)) {
+    failures.push(`${path}.parked=0..n/${displayValue(value.parked)}`);
+  }
+  if (value.unreadable !== 0) {
+    failures.push(`${path}.unreadable=0/${displayValue(value.unreadable)}`);
+  }
   if (!(Number.isFinite(value.baseAmount) && value.baseAmount > 0 && value.baseAmount < 1)) {
     failures.push(`${path}.baseAmount=0<amount<1/${displayValue(value.baseAmount)}`);
   }
@@ -170,6 +188,7 @@ export function judgeB06MachineEvidence(value) {
   return finishMachineVerdict(
     "B06",
     failures,
-    `${value.engine}/B06:single-plane;all-panes-active-once;adapter-alpha=1;rail+sidebar=uncovered`,
+    `${value.engine}/B06:one-presented-plane;all-panes-active-once;`
+      + "adapter-alpha=1-from-named-ledger;rail+sidebar=uncovered-in-paint-order",
   );
 }
