@@ -10,8 +10,10 @@ export function mapImeObservation(value, focus = null) {
     active: value?.active ?? null,
     // 못 물어본 것과 "소유자가 없다" 는 다른 답이다 — 안 답했으면 이 자리를 비운다.
     inputFocus: focus == null ? undefined : {
-      owner: focus?.activeElement?.viewId ?? null,
-      self: focus?.activeElement?.viewId === (value?.viewId ?? focus?.viewId),
+      // 창이 답하는 이름은 activeTabId 다 — activeElement 는 그 안의 요소 모양만 답한다.
+      // 필드를 지어내면 두 탭이 나란히 null 을 답하고 판정은 "아무도 안 밝혔다" 로 읽는다.
+      owner: focus?.activeTabId ?? null,
+      self: focus?.activeTabId != null && focus.activeTabId === focus?.requestedTabId,
     },
     ledger: {
       beforeInput: value?.ledger?.beforeInput ?? null,

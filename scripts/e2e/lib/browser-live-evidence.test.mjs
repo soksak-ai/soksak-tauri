@@ -111,3 +111,34 @@ describe("live browser evidence mappers", () => {
     expect(judgeB02MachineEvidence(undefined).status).toBe("not-run");
   });
 });
+
+// 규칙 — 읽는 필드는 답하는 쪽이 내는 이름이어야 한다.
+//
+// 실측 2026-08-08: `ui.focus.state` 가 활성 뷰를 `activeTabId` 로 답하는데 소비처가
+// `activeElement.viewId` 를 읽었다. 없는 필드는 조용히 undefined 라 두 탭이 나란히 null 을
+// 답했고, 판정은 "아무도 안 밝혔다" 로 읽어 세 엔진의 B02 가 red 가 됐다. 오류는 없었고 답만
+// 틀렸다.
+describe("포커스 소유는 창이 답한 이름에서 읽는다", () => {
+  it("activeTabId 를 소유자로 읽는다", () => {
+    const mapped = mapImeObservation({ value: "가", active: true }, {
+      activeTabId: "tab-a",
+      requestedTabId: "tab-a",
+    });
+    expect(mapped.inputFocus).toEqual({ owner: "tab-a", self: true });
+  });
+
+  it("요청한 탭이 아니면 self 가 아니다 — 창의 소유자는 여전히 하나다", () => {
+    const mapped = mapImeObservation({}, { activeTabId: "tab-a", requestedTabId: "tab-b" });
+    expect(mapped.inputFocus).toEqual({ owner: "tab-a", self: false });
+  });
+
+  it("창이 아무도 안 쥐었다고 답하면 그 사실을 그대로 싣는다", () => {
+    expect(mapImeObservation({}, { activeTabId: null }).inputFocus)
+      .toEqual({ owner: null, self: false });
+  });
+
+  it("못 물어봤으면 그 자리를 비운다 — 없는 것과 다른 답이다", () => {
+    expect(mapImeObservation({}).inputFocus).toBeUndefined();
+    expect(mapImeObservation({}, null).inputFocus).toBeUndefined();
+  });
+});
