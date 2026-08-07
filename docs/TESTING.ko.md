@@ -93,7 +93,7 @@ window geometry로 복사하지 않는다. 각 단계의 의도(`phase`)는 시�
 | B09 | rail `+`/우측 sidebar/modal이 native 위 | 실제 교집합의 공개 hit/layer 상태가 chrome을 최상단 소유자로 보고하는지 단언한다. |
 | B10 | hostile 전체창 빠른 resize affine + 원복 | 유한 resize transaction마다 DOM/native 좌표 정합과 최종 원래 기하 복원을 단언한다. 거래는 4개 이상이고 매 거래가 직전에 관측한 크기와 다른 크기를 요청해야 한다. 각 거래는 자기 의도(`shrink`·`wide`·`tall`·`restore`)를 선언하고 그 선언이 baseline 대비 요청 크기에 대해 참이어야 하며, 네 의도가 각각 최소 한 번 나와야 한다. 마지막 거래는 `restore`이고 그 관측 기하가 baseline과 완전히 같아야 한다. 중간에 원본 크기로 돌아오는 거래는 왕복의 일부라 거절하지 않는다. |
 | B11 | pane resize 왕복 + wheel `0→480→0` + 탭 지정 full capture | 세 축을 각자 실측으로 단언한다. pane: gutter를 끈 요청 dx만큼 pane rect, 그 위 native surface rect, 그 안 문서 뷰포트 폭이 함께 움직이고 함께 되돌아온다(왼쪽 pane은 넓어지고 오른쪽 pane은 같은 만큼 좁아지며 x가 밀린다). wheel: 좌표 `0→480→0`과 함께 페이지가 센 wheel/scroll 사건 수가 구간마다 늘고 누적 델타 방향이 요청과 같다. 페이지는 자기가 센 wheel 수를 문서에도 적어, 하니스가 원장을 읽기 전에 휠이 페이지에 닿은 사실을 기다린다 — 스크롤이 옮겨진 사실과 휠이 닿은 사실은 다른 사건이고 어느 엔진이든 앞의 것을 먼저 내므로, 스크롤만 기다리면 아직 세지 않은 수를 읽는다. capture: 명시한 view·경로·바이트가 정확하고, 산출물 PNG의 IHDR 실측 크기가 두 축 같은 배율로 문서 전체를 담는다(영수증의 요청 문서 크기끼리 맞대는 순환을 인정하지 않는다). 네 측정은 서로 다른 layout settle epoch를 싣고, 도장은 pane resize까지 잰 뒤에 한 번 찍는다. |
-| B12 | macOS traffic lights 냉시작·상하 중심·composition·hostile resize·titlebar 높이 변화 | 복원 논리 크기와 저장 zoom이 native 적용 ACK를 받고 post-zoom 공개 titlebar가 GREEN으로 합성된 뒤에만 창을 표시한다. Tauri는 하나의 AppKit 메인 스레드 transaction과 하나의 paint owner만 쓴다. 현재 버튼 프레임에서 그리는 backing 영역 3개, 공개 AppKit button 3개, DOM reservation 3개의 대응·포함·상하 중심·resize 정합을 단언한다. 시작 게이트는 AppKit 표시 transaction을 flush한 다음 실제 프레임과 선언 프레임을 읽기 전용으로 다시 대조한다. 과거의 `lastApplyOk` 영수증만으로는 표시 뒤 button 프레임이나 owner 계층이 유지되지 않은 창의 노출을 승인할 수 없다. 동적 합성기가 설치된 동안 Tauri 설정의 `trafficLightPosition`은 금지한다. 그렇지 않으면 Tao의 고정-y draw owner가 DOM 합성기와 경쟁하고 non-child Wry 경로에도 같은 고정 목표가 전달된다. 어댑터는 최초 AppKit 가로 간격을 유지하고 세로 위치만 공개 DOM titlebar에서 도출한다. 공개 async resize는 `Window`를 awaited oneshot ACK까지 소유하며 timeout 뒤 지연 mutation과 큐에 넘긴 bare `NSWindow` pointer를 금지한다. `titlebar.height.set {height}`은 공개 DOM 높이를 바꾸고 완전한 paint 경계를 지난 뒤 같은 엄격 native 영수증을 반환하며, `titlebar.height.reset`은 직전 inline height/flex-basis를 정확히 복원한다. 모든 냉시작·높이 표본에서 button/backing 중심 차이는 반올림 허용치 안의 0이어야 한다. Electron은 앞으로 `BrowserWindow.getWindowButtonPosition`에 기반한 공개 어댑터에서 같은 계약을 단언해야 한다. 그 어댑터가 없는 현재 B12는 명시적 `blocked`이며, DOM 복제본이나 합성한 native frame으로 대신할 수 없다. macOS가 아니면 정적으로 `not-applicable`이다. |
+| B12 | macOS traffic lights 냉시작·상하 중심·composition·hostile resize·titlebar 높이 변화 | 복원 논리 크기와 저장 zoom이 native 적용 ACK를 받고 post-zoom 공개 titlebar가 GREEN으로 합성된 뒤에만 창을 표시한다. Tauri는 하나의 AppKit 메인 스레드 transaction과 하나의 paint owner만 쓴다. 현재 버튼 프레임에서 그리는 backing 영역 3개, 공개 AppKit button 3개, DOM reservation 3개의 대응·포함·상하 중심·resize 정합을 단언한다. 시작 게이트는 AppKit 표시 transaction을 flush한 다음 실제 프레임과 선언 프레임을 읽기 전용으로 다시 대조한다. 과거의 `lastApplyOk` 영수증만으로는 표시 뒤 button 프레임이나 owner 계층이 유지되지 않은 창의 노출을 승인할 수 없다. 동적 합성기가 설치된 동안 Tauri 설정의 `trafficLightPosition`은 금지한다. 그렇지 않으면 Tao의 고정-y draw owner가 DOM 합성기와 경쟁하고 non-child Wry 경로에도 같은 고정 목표가 전달된다. 어댑터는 최초 AppKit 가로 간격을 유지하고 세로 위치만 공개 DOM titlebar에서 도출한다. 공개 async resize는 `Window`를 awaited oneshot ACK까지 소유하며 timeout 뒤 지연 mutation과 큐에 넘긴 bare `NSWindow` pointer를 금지한다. `titlebar.height.set {height}`은 공개 DOM 높이를 바꾸고 완전한 paint 경계를 지난 뒤 같은 엄격 native 영수증을 반환하며, `titlebar.height.reset`은 직전 inline height/flex-basis를 정확히 복원한다. 모든 냉시작·높이 표본에서 button/backing 중심 차이는 반올림 허용치 안의 0이어야 한다. Electron은 자기 titlebar 합성 축을 선언하고(`titlebarComposition` — buttonPositions·backingPlane·paintOwner), 판정은 그 선언이 라이브에서 실제로 답하는지를 잰다. 선언이 없거나 답하지 않으면 그 사실을 이름으로 달아 `blocked`이며, DOM 복제본이나 합성한 native frame으로 대신할 수 없다. macOS가 아니면 정적으로 `not-applicable`이다. |
 
 ### B04 정확한 DOM commit 원장
 
@@ -152,8 +152,12 @@ ACK와 선언한 출발이 모두 지난 뒤에 닫는다. 그래서 glide의 `s
 
 각 engine×gate의 machine 상태는 `not-applicable`, `not-run`, `blocked`, `red`, `green` 중 하나다. `green`과 `red`는
 기계가 재현한 근거가 필수이고, `blocked`는 누락된 공개 측정면 같은 구체적 이유가 필수다. `blocked`나
-`not-run`을 성공으로 세지 않는다. `not-applicable`은 위의 정적 catalog 조건일 때만 required 개수에서
-제외한다. machine 전체는 적용되는 모든 칸이 `green`일 때만 `green`이며, 그 외에는 `red` → `blocked`
+`not-run`을 성공으로 세지 않는다. `not-applicable`은 정적 catalog 조건이거나, 그 칸이 선언한 요구를
+판정 대상이 채우지 못할 때만 required 개수에서 제외한다 — 칸이 자기 요구를 선언하고(`requires`)
+대상이 선언한 능력과 만난다. 예: B09는 native browser surface 위 합성을 요구하므로 네이티브 자식
+표면이 없는 프레임워크(`nativeChildWebview: false`)에는 그 사실 자체가 없다. red로 칠하면 달성
+불가능한 기준이 되고 green으로 세면 재지 않은 칸이 통과로 잡힌다. 프레임워크 이름으로 가르지
+않는다 — 이름으로 가르면 프레임워크가 하나 늘 때마다 갈래가 늘고 새 이름은 자기 자리를 못 찾는다. machine 전체는 적용되는 모든 칸이 `green`일 때만 `green`이며, 그 외에는 `red` → `blocked`
 → `not-run` 우선순위로 미완료 원인을 보존한다.
 
 판정 실패는 측정을 끊지 않는다. 판정과 측정은 다른 책임이다 — 한 칸이 `red`라는 사실은 다른 칸을
