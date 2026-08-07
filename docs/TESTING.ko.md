@@ -106,6 +106,12 @@ inventory로 유지한다. replacement, gap, disappearance, unpresented, dropped
 대기 시간 자체는 증거가 아니다 — 시작·끝·표면 재고를 전부 실제 표시 사건 epoch로 판정하므로
 창을 짧게 잡으면 GREEN이 아니라 RED가 된다. interval/rAF 표본으로 hold를 채우지 않는다.
 
+배치 거래는 자기가 선언한 출발 epoch보다 먼저 닫지 않는다. glide는 DOM과 문서 밖 표면이 함께
+출발하도록 절대 epoch `startAtUnixMs`를 미래에 선언하며 그 epoch는 표면 ACK보다 뒤다. ACK 시각을
+그대로 `closedAtUnixMs`로 찍으면 아직 시작도 안 한 움직임이 끝난 것으로 답해지므로, 거래는 표면
+ACK와 선언한 출발이 모두 지난 뒤에 닫는다. 그래서 glide의 `startAtUnixMs`는 언제나
+`preparedAtUnixMs`~`closedAtUnixMs` 안에 있다. snap은 출발을 선언하지 않고 ACK에서 닫는다.
+
 실제 Tauri/macOS B12 게이트는 `make e2e-titlebar-dev`로 실행한다. 앱을 한 번 빌드해 실행 파일 SHA를 고정하고 하나의 run id를 만든 뒤, 앞 cycle이 RED여도 정확히 세 번 냉재시작을 끝까지 수행한다. 모든 cycle은 같은 build id·run id·framework·platform·정렬된 실제 창 집합과 브라우저 acceptance 3종을 보고해야 한다. cycle 누락·중복, identity 변경, 창 집합 변경은 전체 RED이며 세 cycle의 모든 창이 GREEN일 때만 집계 GREEN이다.
 
 각 창은 재시작 직후 정렬과 로딩 완료 후 정렬을 각각 남긴다. 시작 게이트 영수증(`window.startup`의 platform·generation·creationCommitted·rendererGreen·presentationInFlight·presented와 표시된 합성 sequence)을 먼저 읽고, 아무것도 건드리지 않은 냉시작 합성을 표본으로 남긴 다음 `ui.layout.wait-settled`가 닫힌 뒤 baseline을 다시 잰다. 두 표본의 기하·DOM 인스턴스/스타일이 다르면 RED이며, 어댑터가 돌려주는 boolean 하나는 표시 사실을 대신하지 못한다. 모든 표본은 유일한 paint owner 원장(identity·drawOwnerCount·targetSequence·appliedTargetSequence·mutationSequence·drawSequence·applying·lastApplyOk·lastApplyError)을 함께 싣는다. 창 기하가 그대로인 구간에서 mutation이 compose 거래보다 더 늘면 AppKit이 옮긴 버튼을 다시 앉힌 것이므로 `정위치→오차→정위치` 중간 회귀로 RED다. cycle 요약은 냉시작 영수증을 들고, 앞 cycle의 마지막 합성 sequence를 넘겨받은 cycle은 같은 프로세스를 다시 훑은 warm 실행으로 거절한다.
