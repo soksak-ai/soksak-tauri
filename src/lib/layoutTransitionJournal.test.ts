@@ -108,7 +108,7 @@ describe("layout transition public journal", () => {
   // closedAtUnixMs로 찍으면 장부는 "닫혔다"고 답하면서 자기가 예약한 출발은 아직 미래에 둔다.
   // 그 사이 구간을 읽는 쪽은 이 재배치가 끝났는지 알 수 없다.
   it("선언한 출발 epoch 전에는 glide 거래를 닫지 않는다", async () => {
-    const startAtUnixMs = presentationNowUnixMs() + 250;
+    const startAtUnixMs = presentationNowUnixMs() + 500;
     let releaseSurfaceAck!: () => void;
     const surfaceAck = new Promise<void>((resolve) => { releaseSurfaceAck = resolve; });
     registerLayoutTransitionHost({
@@ -126,6 +126,9 @@ describe("layout transition public journal", () => {
     releaseSurfaceAck();
     await surfaceAck;
     await Promise.resolve();
+    // 관측이 예약 전에 일어났다는 사실을 먼저 못 박는다 — 스케줄러가 밀려 예약을 지나
+    // 관측했다면 그 사실이 이름으로 남아야지, 닫힘 판정을 대신하면 안 된다.
+    expect(presentationNowUnixMs()).toBeLessThan(startAtUnixMs);
     // ACK는 끝났지만 예약한 출발은 아직 오지 않았다 — 거래는 열려 있어야 한다.
     expect(layoutTransitionJournal()[0]).toEqual(expect.objectContaining({
       phase: "prepared",
@@ -156,7 +159,8 @@ describe("layout transition public journal", () => {
     const entry = layoutTransitionJournal()[0]!;
     expect(entry.phase).toBe("committed");
     expect(entry.closedAtUnixMs).toBeGreaterThanOrEqual(before);
-    expect(entry.closedAtUnixMs! - before).toBeLessThan(100);
+    // 1,000ms 뒤처진 예약을 기다렸다면 이 상한을 넘는다. 여유는 스케줄러 지연 몫이다.
+    expect(entry.closedAtUnixMs! - before).toBeLessThan(1_000);
   });
 
   it("surface ACK reject를 prepared에 방치하지 않고 failed terminal 사실로 닫는다", async () => {
@@ -194,6 +198,7 @@ describe("layout transition public journal", () => {
     await expect(prepared.commit()).rejects.toThrow("surface ACK rejected");
     const entry = layoutTransitionJournal()[0]!;
     expect(entry.phase).toBe("failed");
-    expect(entry.closedAtUnixMs! - before).toBeLessThan(100);
+    // 5,000ms 뒤의 예약을 기다렸다면 이 상한을 넘는다.
+    expect(entry.closedAtUnixMs! - before).toBeLessThan(1_000);
   });
 });

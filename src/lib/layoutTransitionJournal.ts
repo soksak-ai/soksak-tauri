@@ -12,6 +12,10 @@ export type LayoutTransitionJournalEntry = {
   durationMs?: number;
   preparedAtUnixMs: number;
   domCommittedAtUnixMs?: number;
+  /**
+   * 이 거래가 더 이상 대기하는 것이 없어진 시각. 표면 ACK 와 이 거래가 선언한 출발 epoch
+   * 둘 다 지나야 찍힌다 — 예약한 움직임보다 먼저 끝나는 거래는 없다.
+   */
   closedAtUnixMs?: number;
   failure?: string;
   moves: LayoutMove[];
@@ -71,6 +75,21 @@ export function layoutTransitionJournal(): LayoutTransitionJournalEntry[] {
   return journal.entries.map((entry) => ({ ...entry, moves: entry.moves.map((move) => ({ ...move })) }));
 }
 
+/**
+ * 선언한 출발 epoch 까지 남은 실시간 lead 하나. 이미 지난 예약과 출발이 없는 거래(snap)는
+ * 즉시 지나간다. 재생 배수 디버그는 움직임 자체만 늘리고 합의된 절대 epoch 는 곱하지 않으므로
+ * 이 대기는 문서 타임라인이 아니라 실시간이다(motionDebug.scheduleMotionAt 과 같은 기준).
+ * 감시 폴링이 아니라 유한한 예약 하나이며, 지나면 다시 걸리지 않는다.
+ */
+function declaredStartArrived(startAtUnixMs: number | undefined): Promise<void> {
+  if (startAtUnixMs === undefined) return Promise.resolve();
+  const leadMs = startAtUnixMs - presentationNowUnixMs();
+  if (!(leadMs > 0)) return Promise.resolve();
+  // 예약 지연은 정수 ms 로 잘린다. 내림으로 잘리면 깨어난 시각이 선언한 출발보다 1ms 이르고,
+  // 그러면 닫음이 다시 출발보다 앞선다. 시각을 손으로 올려 적는 대신 기다림을 올림한다.
+  return new Promise((resolve) => { setTimeout(resolve, Math.ceil(leadMs)); });
+}
+
 export function journalPreparedLayoutTransition(
   moves: readonly LayoutMove[],
   prepared: PreparedLayoutTransition,
@@ -111,6 +130,10 @@ export function journalPreparedLayoutTransition(
       }));
       try {
         await prepared.commit();
+        // 표면이 목표를 받았다는 것과 이 거래가 끝났다는 것은 다른 사실이다. glide 거래는
+        // 준비 왕복을 덮을 lead 를 두고 출발 epoch 를 미래에 선언하므로, ACK 시각을 그대로
+        // 닫음으로 찍으면 장부는 아직 시작도 안 한 움직임을 이미 끝난 것으로 답한다.
+        await declaredStartArrived(entry.startAtUnixMs);
         entry.phase = "committed";
         entry.closedAtUnixMs = presentationNowUnixMs();
       } catch (error) {
