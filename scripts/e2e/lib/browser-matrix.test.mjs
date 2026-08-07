@@ -594,9 +594,39 @@ describe("브라우저 구현 행렬", () => {
       ...input,
       domSamples: input.domSamples.map((sample) => ({
         ...sample,
-        transactionId: sample.trigger === "initial" ? null : "tx",
+        transactionId: sample.trigger === "initial" ? null : "wrong-tx",
       })),
-    })).toThrow("presentation-frame sample=0");
+    })).toThrow("DOM-commit sample=0/1");
+  });
+
+  it("B04는 가려진 창에서 rAF가 멈춰도 실제 DOM-commit 경계를 native 표시와 결합한다", () => {
+    const node = (address, x) => ({
+      address,
+      connected: true,
+      rect: { x, y: 0, w: 300, h: 200 },
+    });
+    const trace = mapB04PresentationSamples({
+      events: [
+        { sampledAtUnixMs: 1_001, connected: true, rendererFrame: { x: 100, y: 20, w: 280, h: 160 }, surfaceFrame: { x: 100, y: 20, w: 280, h: 160 } },
+        { sampledAtUnixMs: 1_020, connected: true, rendererFrame: { x: 260, y: 20, w: 280, h: 160 }, surfaceFrame: { x: 260, y: 20, w: 280, h: 160 } },
+      ],
+      domSamples: [
+        { sequence: 0, sampledAtUnixMs: 990, trigger: "initial", transactionId: null, domCommittedAtUnixMs: null, nodes: [node("rail", 10), node("pane", 80), node("slot", 100)] },
+        { sequence: 1, sampledAtUnixMs: 1_010, trigger: "layout-dom-commit", transactionId: "tx", domCommittedAtUnixMs: 1_010, nodes: [node("rail", 10), node("pane", 240), node("slot", 260)] },
+      ],
+      owner: { rendererId: "renderer", surfaceId: "surface" },
+      targetViewId: "view",
+      transactionId: "tx",
+      domCommittedAtUnixMs: 1_010,
+      presentationStartAtUnixMs: 1_010,
+      durationMs: 340,
+      moveDx: -160,
+      railAddress: "rail",
+      paneAddress: "pane",
+      slotAddress: "slot",
+    });
+    expect(trace.joins.map(({ trigger }) => trigger)).toEqual(["initial", "layout-dom-commit"]);
+    expect(trace.samples.at(-1)).toMatchObject({ pane: { frame: { x: 240 } }, slot: { frame: { x: 260 } } });
   });
 
   it("전체 창 resize는 큰 폭의 양방향 교차를 반복하고 정확히 원복한다", () => {

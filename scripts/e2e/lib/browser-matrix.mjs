@@ -285,13 +285,20 @@ export function mapB04PresentationSamples({
       `${targetViewId}: DOM-commit epoch=${commitSample.domCommittedAtUnixMs}/${commitAt}`,
     );
   }
-  const presentationSamples = domSamples.filter((sample) => (
+  const frameSamples = domSamples.filter((sample) => (
     sample?.trigger === "presentation-frame"
       && sample?.transactionId === transactionId
       && sample?.domCommittedAtUnixMs === commitAt
   ));
+  // WebKit may suspend rAF for an occluded, unfocused window. That is an
+  // observation limitation, not evidence that the DOM moved. The layout
+  // commit callback is the authoritative DOM boundary for this transaction:
+  // it reads the real DOM rect after the state commit, without interpolation
+  // or a timer. Prefer display-frame samples when available, otherwise join
+  // the native producer to this exact commit sample.
+  const presentationSamples = frameSamples.length > 0 ? frameSamples : commitSamples;
   if (presentationSamples.length === 0) {
-    throw new Error(`${targetViewId}: presentation-frame sample=0`);
+    throw new Error(`${targetViewId}: DOM presentation boundary sample=0`);
   }
   const presentationGaps = events.slice(1)
     .map((event, index) => event.sampledAtUnixMs - events[index].sampledAtUnixMs)
