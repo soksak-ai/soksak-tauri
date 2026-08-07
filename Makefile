@@ -140,15 +140,22 @@ run-dev: ## 개발 정체성 soksak-tauri-dev.app 실행(새 인스턴스)
 rebuild-dev: build-dev ## 현재 소스를 dev 번들로 다시 만든 뒤 단일 인스턴스로 재실행
 	$(MAKE) --no-print-directory restart-dev
 
+# 준비됐다는 것은 "누군가 답한다" 가 아니라 "내 앱이 답한다" 다. 두 프레임워크가 한 홈의 소켓을
+# 나누므로, 창이 답하는지만 보면 다른 앱이 답해도 통과한다 — 실측 2026-08-08: Electron 을 띄웠는데
+# Tauri 가 소켓을 쥔 채 인수 판정이 끝까지 돌았고 열 칸이 거짓 green 이었다.
+#
 # 한 홈에 한 인스턴스. 소켓 소유는 살아 있음의 증거이지 유일함의 증거가 아니다 — 소켓을 놓친
 # 인스턴스는 이 재시작을 빠져나가 계속 산다. 같은 번들의 다른 실행물(soksak-cored)은 유령이 아니라
 # 짝이므로 실행물 이름으로 가른다. 실측 2026-08-08: 이틀째 떠 있던 인스턴스 때문에
 # 하니스가 한 인스턴스의 창을 잡고 다른 인스턴스에 물어 WINDOW_NOT_FOUND 로 실행이 죽었다.
 restart-dev: ## 이미 빌드·검증된 동일 dev 번들을 빌드 없이 반복 재실행
 	@test -x "$(DEV_EXECUTABLE)" -a -x "$(DEV_CLI)" || { echo "먼저 'make build-dev' 를 실행하세요."; exit 1; }
-	@CLI="$(DEV_CLI)"; SOCKET="$(DEV_HOST_SOCKET)"; \
+	@CLI="$(DEV_CLI)"; SOCKET="$(DEV_HOST_SOCKET)"; RESTART_FRAMEWORK=tauri; \
 	owner_pid() { lsof -t "$$SOCKET" 2>/dev/null | head -n 1; }; \
-	host_ready() { "$$CLI" window.list >/dev/null 2>&1; }; \
+	host_ready() { \
+	  "$$CLI" window.list >/dev/null 2>&1 || return 1; \
+	  "$$CLI" framework.info 2>/dev/null | grep -q "\"framework\": \"$$RESTART_FRAMEWORK\""; \
+	}; \
 	old_pid="$$(owner_pid)"; \
 	if [ -n "$$old_pid" ] && host_ready; then \
 	  "$$CLI" app.quit >/dev/null || { echo "app.quit 실패"; exit 1; }; \
@@ -186,9 +193,12 @@ restart-dev: ## 이미 빌드·검증된 동일 dev 번들을 빌드 없이 반�
 restart-electron: ## 이미 만들어진 Electron 번들을 빌드 없이 반복 재실행
 	@test -x "$(ELECTRON_EXECUTABLE)" || { echo "먼저 'frameworks/electron/bundle.sh $(ELECTRON_IDENTIFIER)' 를 실행하세요: $(ELECTRON_EXECUTABLE)"; exit 1; }
 	@test -x "$(DEV_CLI)" || { echo "먼저 'make cli-dev' 를 실행하세요."; exit 1; }
-	@CLI="$(DEV_CLI)"; APP="$(ELECTRON_EXECUTABLE)"; \
+	@CLI="$(DEV_CLI)"; APP="$(ELECTRON_EXECUTABLE)"; RESTART_FRAMEWORK=electron; \
 	owner_pid() { pgrep -f "$$APP" 2>/dev/null | head -n 1; }; \
-	host_ready() { "$$CLI" window.list >/dev/null 2>&1; }; \
+	host_ready() { \
+	  "$$CLI" window.list >/dev/null 2>&1 || return 1; \
+	  "$$CLI" framework.info 2>/dev/null | grep -q "\"framework\": \"$$RESTART_FRAMEWORK\""; \
+	}; \
 	old_pid="$$(owner_pid)"; \
 	if [ -n "$$old_pid" ] && host_ready; then \
 	  "$$CLI" app.quit >/dev/null || true; \
