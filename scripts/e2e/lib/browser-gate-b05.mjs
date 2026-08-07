@@ -80,7 +80,9 @@ function inspectSurface(surface, path, failures, unmeasured) {
     if (surface[field] !== true) failures.push(`${path}.${field}=true/${displayValue(surface[field])}`);
   }
   // 안 답한 사각형은 못 잼이다 — 그 자리로 좌표를 맞대면 없는 사실이 어긋남으로 번진다.
-  const domUnanswered = surface.domFrame == null;
+  // 사각형이 있어도 그 안이 비어 있으면 안 답한 것이다 — 껍데기만 보면 null 필드가 red 로 샌다.
+  const domUnanswered = surface.domFrame == null
+    || ["x", "y", "w", "h"].every((axis) => surface.domFrame?.[axis] == null);
   if (domUnanswered) unmeasured.push(`${path}.domFrame-unanswered`);
   const domValid = !domUnanswered && inspectRect(surface.domFrame, `${path}.domFrame`, failures);
   const surfaceValid = inspectRect(surface.surfaceFrame, `${path}.surfaceFrame`, failures);

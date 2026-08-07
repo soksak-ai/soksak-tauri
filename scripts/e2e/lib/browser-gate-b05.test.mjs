@@ -350,3 +350,26 @@ describe("B05 사건이 안 답한 필드", () => {
     expect(judgeB05MachineEvidence(value).status).toBe("red");
   });
 });
+
+// 껍데기만 보면 안쪽의 null 이 red 로 샌다.
+//
+// 실측 2026-08-08: `domFrame` 객체는 있는데 x·y·w·h 가 전부 null 이라 네 축이 red 였다.
+// 사각형이 있어도 그 안이 비어 있으면 안 답한 것이다.
+describe("B05 빈 사각형", () => {
+  it("안이 전부 비어 있으면 못 잼이다", () => {
+    const value = evidence();
+    value.transitions[0].trace.presentationEvents[0].surfaces[0].domFrame = {
+      x: null, y: null, w: null, h: null,
+    };
+    const verdict = judgeB05MachineEvidence(value);
+    expect(verdict.status).toBe("blocked");
+    expect(verdict.reason).toContain("domFrame-unanswered");
+  });
+
+  // 일부만 빈 것은 안 답한 것이 아니라 잘못 답한 것이다.
+  it("일부만 비었으면 red 다", () => {
+    const value = evidence();
+    value.transitions[0].trace.presentationEvents[0].surfaces[0].domFrame.x = null;
+    expect(judgeB05MachineEvidence(value).status).toBe("red");
+  });
+});
