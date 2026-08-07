@@ -63,19 +63,26 @@ function inspectRect(value, path, failures) {
   return valid;
 }
 
-function inspectSurface(surface, path, failures) {
+function inspectSurface(surface, path, failures, unmeasured) {
   if (!requireExactKeys(surface, [
     "viewId", "surfaceId", "generation", "live", "visible", "painted", "domFrame", "surfaceFrame",
   ], path, failures)) return false;
-  if (!hasText(surface.viewId)) failures.push(`${path}.viewId=non-empty/${displayValue(surface.viewId)}`);
-  if (!hasText(surface.surfaceId)) failures.push(`${path}.surfaceId=non-empty/${displayValue(surface.surfaceId)}`);
+  // 안 답한 자리와 틀린 값은 다른 답이다 — 자기 궤적을 가진 구현은 이 자리를 다 채우지 못할
+  // 수 있고, 계약이 null 로 두는 것은 지어내지 않기 위해서다.
+  if (surface.viewId === null) unmeasured.push(`${path}.viewId-unanswered`);
+  else if (!hasText(surface.viewId)) failures.push(`${path}.viewId=non-empty/${displayValue(surface.viewId)}`);
+  if (surface.surfaceId === null) unmeasured.push(`${path}.surfaceId-unanswered`);
+  else if (!hasText(surface.surfaceId)) failures.push(`${path}.surfaceId=non-empty/${displayValue(surface.surfaceId)}`);
   if (!Number.isInteger(surface.generation) || surface.generation < 1) {
     failures.push(`${path}.generation=integer>=1/${displayValue(surface.generation)}`);
   }
   for (const field of ["live", "visible", "painted"]) {
     if (surface[field] !== true) failures.push(`${path}.${field}=true/${displayValue(surface[field])}`);
   }
-  const domValid = inspectRect(surface.domFrame, `${path}.domFrame`, failures);
+  // 안 답한 사각형은 못 잼이다 — 그 자리로 좌표를 맞대면 없는 사실이 어긋남으로 번진다.
+  const domUnanswered = surface.domFrame == null;
+  if (domUnanswered) unmeasured.push(`${path}.domFrame-unanswered`);
+  const domValid = !domUnanswered && inspectRect(surface.domFrame, `${path}.domFrame`, failures);
   const surfaceValid = inspectRect(surface.surfaceFrame, `${path}.surfaceFrame`, failures);
   if (domValid && surfaceValid) {
     for (const field of ["x", "y", "w", "h"]) {
@@ -88,7 +95,7 @@ function inspectSurface(surface, path, failures) {
   return true;
 }
 
-function inspectInventory(surfaces, owners, path, failures) {
+function inspectInventory(surfaces, owners, path, failures, unmeasured) {
   if (!Array.isArray(surfaces)) {
     failures.push(`${path}=array/${displayValue(surfaces)}`);
     return null;
@@ -96,7 +103,7 @@ function inspectInventory(surfaces, owners, path, failures) {
   const byOwner = new Map();
   surfaces.forEach((surface, index) => {
     const at = `${path}[${index}]`;
-    if (!inspectSurface(surface, at, failures)) return;
+    if (!inspectSurface(surface, at, failures, unmeasured)) return;
     if (byOwner.has(surface.viewId)) failures.push(`${at}.viewId=unique/${surface.viewId}`);
     else byOwner.set(surface.viewId, surface);
   });
@@ -236,7 +243,7 @@ function inspectTransition(transition, index, failures, unmeasured, traceIds) {
     }
     previousRevision = event.presentationRevision;
     previousAt = event.presentedAtUnixMs;
-    const inventory = inspectInventory(event.surfaces, owners, `${at}.surfaces`, failures);
+    const inventory = inspectInventory(event.surfaces, owners, `${at}.surfaces`, failures, unmeasured);
     if (inventory) {
       if (firstIdentity.size === 0) for (const [owner, surface] of inventory) firstIdentity.set(owner, surface);
       else if (!sameSurfaceIdentity(inventory, firstIdentity, owners)) failures.push(`${at}.surface-identity=stable`);
@@ -289,7 +296,7 @@ function inspectTransition(transition, index, failures, unmeasured, traceIds) {
         || trace.hold.endedAtUnixMs - trace.hold.startedAtUnixMs < POST_SETTLE_HOLD_MS) {
       failures.push(`${path}.trace.hold=after-settle-and>=${POST_SETTLE_HOLD_MS}ms`);
     }
-    const held = inspectInventory(trace.hold.surfaces, owners, `${path}.trace.hold.surfaces`, failures);
+    const held = inspectInventory(trace.hold.surfaces, owners, `${path}.trace.hold.surfaces`, failures, unmeasured);
     const settledInventory = eventBySequence.get(trace.settled.frameSequence)?.inventory;
     if (held && settledInventory && !sameInventory(held, settledInventory, owners)) {
       failures.push(`${path}.trace.hold.surfaces=settled-inventory`);

@@ -154,7 +154,21 @@ const OFFSCREEN_PRESENTATION_TRACE = Object.freeze({
       closed: native.closed ?? null,
       ownerViewIds: (owners ?? []).map((owner) => owner?.viewId).filter((id) => id != null),
       armedAtUnixMs: native.armedAtUnixMs ?? null,
-      presentationEvents: native.presentationEvents ?? null,
+      // 판정은 표면 정체를 이름으로 요구한다 — 이 사이드카는 숫자로 발급하므로 계약이 그 모양을
+      // 맞춘다. 안 답한 자리는 그대로 둔다(지어내지 않는다).
+      presentationEvents: Array.isArray(native.presentationEvents)
+        ? native.presentationEvents.map((event) => ({
+          ...event,
+          surfaces: Array.isArray(event?.surfaces)
+            ? event.surfaces.map((surface) => ({
+              ...surface,
+              surfaceId: typeof surface?.surfaceId === "number"
+                ? String(surface.surfaceId)
+                : (surface?.surfaceId ?? null),
+            }))
+            : event?.surfaces ?? null,
+        }))
+        : null,
       observation: receipt?.observation ?? null,
       violations: native.violations ?? null,
     };

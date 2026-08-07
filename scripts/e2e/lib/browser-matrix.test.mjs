@@ -1230,3 +1230,31 @@ describe("궤적 영수증 모양", () => {
     expect(mapped.closed).toBeNull();
   });
 });
+
+// 판정은 표면 정체를 이름으로 요구한다(non-empty 문자열). 자기 사이드카가 숫자로 발급하면
+// 계약이 그 모양을 맞춘다 — 판정 기준을 숫자까지 받도록 넓히면 "무엇이 정체인가" 가 흐려진다.
+//
+// 실측 2026-08-08: offscreen 이 `surfaceId=non-empty/6` 으로 red 였다.
+describe("궤적 사건의 표면 모양", () => {
+  it("offscreen 계약이 숫자 surfaceId 를 이름으로 옮긴다", () => {
+    const mapped = browserImplementations["browser-chromium-offscreen"].presentationTrace.b05Receipt(
+      {
+        traceId: 1,
+        nativeReceipt: {
+          closed: true,
+          presentationEvents: [{ surfaces: [{ surfaceId: 6, viewId: "tab-a" }] }],
+        },
+      },
+      { callerTraceId: "t", owners: [{ viewId: "tab-a" }] },
+    );
+    expect(mapped.presentationEvents[0].surfaces[0].surfaceId).toBe("6");
+  });
+
+  it("사이드카가 안 답한 자리는 그대로 둔다 — 지어내지 않는다", () => {
+    const mapped = browserImplementations["browser-chromium-offscreen"].presentationTrace.b05Receipt(
+      { traceId: 1, nativeReceipt: { presentationEvents: [{ surfaces: [{ surfaceId: null }] }] } },
+      { callerTraceId: "t", owners: [] },
+    );
+    expect(mapped.presentationEvents[0].surfaces[0].surfaceId).toBeNull();
+  });
+});
