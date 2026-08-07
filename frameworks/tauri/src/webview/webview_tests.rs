@@ -86,6 +86,9 @@ fn pane_presentation_trace_is_a_finite_native_display_link_contract() {
     assert!(trace.contains("displayLinkWithTarget_selector"));
     assert!(trace.contains("addToRunLoop_forMode"));
     assert!(trace.contains("link.timestamp()"));
+    assert!(trace.contains("link.targetTimestamp()"));
+    assert!(trace.contains("callback_observed_at_unix_ms"));
+    assert!(trace.contains("callback_intervals_skipped"));
     assert!(trace.contains("link.invalidate()"));
     assert!(!trace.contains("requestAnimationFrame"));
     assert!(!trace.contains("setInterval"));

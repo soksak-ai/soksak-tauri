@@ -62,7 +62,6 @@ mod macos {
     const MAX_MAX_EVENTS: usize = 4096;
     const FIRST_DISPLAY_TIMEOUT: Duration = Duration::from_secs(1);
     const MAIN_THREAD_TIMEOUT: Duration = Duration::from_secs(1);
-    const MAX_PRESENTATION_GAP_MS: f64 = 50.0;
 
     static NEXT_SOURCE_GENERATION: AtomicU64 = AtomicU64::new(1);
 
@@ -72,6 +71,10 @@ mod macos {
         sequence: usize,
         source_generation: u64,
         presentation_revision: u64,
+        display_timestamp_unix_ms: f64,
+        target_timestamp_unix_ms: f64,
+        callback_observed_at_unix_ms: f64,
+        refresh_interval_ms: f64,
         presented_at_unix_ms: f64,
         surfaces: Vec<PresentationSurface>,
     }
@@ -84,6 +87,13 @@ mod macos {
         disappearances: u64,
         unpresented: u64,
         dropped_events: u64,
+    }
+
+    #[derive(Clone, Debug, Default, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct PresentationObservation {
+        callback_intervals_skipped: u64,
+        max_callback_latency_ms: f64,
     }
 
     #[derive(Clone, Debug, Serialize)]
@@ -106,6 +116,7 @@ mod macos {
         baseline_frame_sequence: usize,
         presentation_events: Vec<PresentationEvent>,
         violations: PresentationViolations,
+        observation: PresentationObservation,
     }
 
     struct TraceState {
@@ -119,6 +130,8 @@ mod macos {
         baseline_sender: Option<oneshot::Sender<Result<ArmReceipt, String>>>,
         baseline_identity: Option<HashMap<String, (String, u64)>>,
         violations: PresentationViolations,
+        observation: PresentationObservation,
+        last_callback_observed_at_unix_ms: Option<f64>,
     }
 
     impl TraceState {
@@ -148,6 +161,7 @@ mod macos {
                 baseline_frame_sequence: 0,
                 presentation_events: self.events.clone(),
                 violations: self.violations.clone(),
+                observation: self.observation.clone(),
             }
         }
 
@@ -168,14 +182,30 @@ mod macos {
             {
                 return;
             }
+            let target_timestamp_unix_ms =
+                super::super::presentation_clock::unix_ms_from_media_time(link.targetTimestamp());
+            let callback_observed_at_unix_ms = super::super::presentation_clock::unix_now_ms();
+            let refresh_interval_ms = (target_timestamp_unix_ms - displayed_at_unix_ms).max(0.0);
+            if let Some(previous_callback) = self.last_callback_observed_at_unix_ms {
+                if refresh_interval_ms > f64::EPSILON {
+                    let callback_interval = callback_observed_at_unix_ms - previous_callback;
+                    let skipped = (callback_interval / refresh_interval_ms).floor() as u64;
+                    self.observation.callback_intervals_skipped = self
+                        .observation
+                        .callback_intervals_skipped
+                        .saturating_add(skipped.saturating_sub(1));
+                }
+            }
+            self.last_callback_observed_at_unix_ms = Some(callback_observed_at_unix_ms);
+            self.observation.max_callback_latency_ms = self
+                .observation
+                .max_callback_latency_ms
+                .max((callback_observed_at_unix_ms - target_timestamp_unix_ms).max(0.0));
             if let Some(previous) = self.events.last().map(|event| event.presented_at_unix_ms) {
                 if displayed_at_unix_ms <= previous {
                     self.violations.dropped_events =
                         self.violations.dropped_events.saturating_add(1);
                     return;
-                }
-                if displayed_at_unix_ms - previous > MAX_PRESENTATION_GAP_MS {
-                    self.violations.gaps = self.violations.gaps.saturating_add(1);
                 }
             }
             if self.events.len() >= self.max_events {
@@ -227,6 +257,10 @@ mod macos {
                 sequence,
                 source_generation: self.source_generation,
                 presentation_revision: revision,
+                display_timestamp_unix_ms: displayed_at_unix_ms,
+                target_timestamp_unix_ms,
+                callback_observed_at_unix_ms,
+                refresh_interval_ms,
                 presented_at_unix_ms: displayed_at_unix_ms,
                 surfaces,
             });
@@ -338,6 +372,8 @@ mod macos {
                         baseline_sender: Some(baseline_sender),
                         baseline_identity: None,
                         violations: PresentationViolations::default(),
+                        observation: PresentationObservation::default(),
+                        last_callback_observed_at_unix_ms: None,
                     }),
                 });
         let target: Retained<PresentationTraceTarget> = unsafe { msg_send![super(target), init] };

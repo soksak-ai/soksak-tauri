@@ -101,6 +101,7 @@ function inspectTransition(transition, index, failures, traceIds) {
   if (!requireExactKeys(trace, [
     "traceId", "closed", "ownerViewIds", "armedAtUnixMs", "stimulus", "layout",
     "baselineFrameSequence", "presentationEvents", "settled", "hold", "violations",
+    "observation",
   ], `${path}.trace`, failures)) return;
   if (!hasText(trace.traceId) || traceIds.has(trace.traceId)) {
     failures.push(`${path}.trace.traceId=unique-non-empty/${displayValue(trace.traceId)}`);
@@ -157,7 +158,9 @@ function inspectTransition(transition, index, failures, traceIds) {
   trace.presentationEvents.forEach((event, eventIndex) => {
     const at = `${path}.trace.presentationEvents[${eventIndex}]`;
     if (!requireExactKeys(event, [
-      "sequence", "sourceGeneration", "presentationRevision", "presentedAtUnixMs", "surfaces",
+      "sequence", "sourceGeneration", "presentationRevision", "displayTimestampUnixMs",
+      "targetTimestampUnixMs", "callbackObservedAtUnixMs", "refreshIntervalMs",
+      "presentedAtUnixMs", "surfaces",
     ], at, failures)) return;
     if (!Number.isInteger(event.sequence) || event.sequence !== eventIndex) failures.push(`${at}.sequence=${eventIndex}/${displayValue(event.sequence)}`);
     if (!Number.isInteger(event.sourceGeneration) || event.sourceGeneration < 1) failures.push(`${at}.sourceGeneration=integer>=1`);
@@ -168,6 +171,23 @@ function inspectTransition(transition, index, failures, traceIds) {
     }
     if (!Number.isFinite(event.presentedAtUnixMs) || event.presentedAtUnixMs <= previousAt) {
       failures.push(`${at}.presentedAtUnixMs=strict-increase/${previousAt}/${displayValue(event.presentedAtUnixMs)}`);
+    }
+    for (const field of [
+      "displayTimestampUnixMs", "targetTimestampUnixMs", "callbackObservedAtUnixMs", "refreshIntervalMs",
+    ]) {
+      if (!Number.isFinite(event[field])) failures.push(`${at}.${field}=finite/${displayValue(event[field])}`);
+    }
+    if (Number.isFinite(event.displayTimestampUnixMs)
+        && event.presentedAtUnixMs !== event.displayTimestampUnixMs) {
+      failures.push(`${at}.presentedAtUnixMs=displayTimestampUnixMs`);
+    }
+    if (Number.isFinite(event.displayTimestampUnixMs)
+        && Number.isFinite(event.targetTimestampUnixMs)
+        && event.targetTimestampUnixMs <= event.displayTimestampUnixMs) {
+      failures.push(`${at}.targetTimestampUnixMs>displayTimestampUnixMs`);
+    }
+    if (Number.isFinite(event.refreshIntervalMs) && event.refreshIntervalMs <= 0) {
+      failures.push(`${at}.refreshIntervalMs>0`);
     }
     previousRevision = event.presentationRevision;
     previousAt = event.presentedAtUnixMs;
@@ -229,6 +249,19 @@ function inspectTransition(transition, index, failures, traceIds) {
   if (requireExactKeys(trace.violations, VIOLATION_KEYS, `${path}.trace.violations`, failures)) {
     for (const key of VIOLATION_KEYS) {
       if (trace.violations[key] !== 0) failures.push(`${path}.trace.violations.${key}=0/${displayValue(trace.violations[key])}`);
+    }
+  }
+
+  if (requireExactKeys(trace.observation, [
+    "callbackIntervalsSkipped", "maxCallbackLatencyMs",
+  ], `${path}.trace.observation`, failures)) {
+    if (!Number.isInteger(trace.observation.callbackIntervalsSkipped)
+        || trace.observation.callbackIntervalsSkipped !== 0) {
+      failures.push(`${path}.trace.observation.callbackIntervalsSkipped=0/${displayValue(trace.observation.callbackIntervalsSkipped)}`);
+    }
+    if (!Number.isFinite(trace.observation.maxCallbackLatencyMs)
+        || trace.observation.maxCallbackLatencyMs < 0) {
+      failures.push(`${path}.trace.observation.maxCallbackLatencyMs=finite>=0/${displayValue(trace.observation.maxCallbackLatencyMs)}`);
     }
   }
 

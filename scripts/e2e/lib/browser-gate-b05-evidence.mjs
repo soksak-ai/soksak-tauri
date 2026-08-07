@@ -29,6 +29,10 @@ function presentationEvents(values) {
     sequence: field(event, "sequence"),
     sourceGeneration: field(event, "sourceGeneration"),
     presentationRevision: field(event, "presentationRevision"),
+    displayTimestampUnixMs: field(event, "displayTimestampUnixMs"),
+    targetTimestampUnixMs: field(event, "targetTimestampUnixMs"),
+    callbackObservedAtUnixMs: field(event, "callbackObservedAtUnixMs"),
+    refreshIntervalMs: field(event, "refreshIntervalMs"),
     presentedAtUnixMs: field(event, "presentedAtUnixMs"),
     surfaces: surfaces(field(event, "surfaces")),
   }));
@@ -85,6 +89,10 @@ function mapTransition(raw) {
         disappearances: field(presentation?.violations, "disappearances"),
         unpresented: field(presentation?.violations, "unpresented"),
         droppedEvents: field(presentation?.violations, "droppedEvents"),
+      },
+      observation: {
+        callbackIntervalsSkipped: field(presentation?.observation, "callbackIntervalsSkipped"),
+        maxCallbackLatencyMs: field(presentation?.observation, "maxCallbackLatencyMs"),
       },
     },
   };

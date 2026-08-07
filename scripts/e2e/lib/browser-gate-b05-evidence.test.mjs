@@ -24,6 +24,10 @@ function rawTransition(direction, targetViewId, offset) {
     sequence,
     sourceGeneration: 2,
     presentationRevision: 10 + sequence,
+    displayTimestampUnixMs: presentedAtUnixMs,
+    targetTimestampUnixMs: presentedAtUnixMs + 40,
+    callbackObservedAtUnixMs: 1002 + sequence * 40 + offset,
+    refreshIntervalMs: 40,
     presentedAtUnixMs,
     surfaces: surfaces(sequence),
   }));
@@ -55,6 +59,7 @@ function rawTransition(direction, targetViewId, offset) {
         surfaces: structuredClone(presentationEvents.at(-1).surfaces),
       },
       violations: { replacements: 0, gaps: 0, disappearances: 0, unpresented: 0, droppedEvents: 0 },
+      observation: { callbackIntervalsSkipped: 0, maxCallbackLatencyMs: 2 },
     },
   };
 }

@@ -33,6 +33,10 @@ function evidence(engine = "browser") {
       sequence,
       sourceGeneration: 3,
       presentationRevision: 20 + sequence,
+      displayTimestampUnixMs: presentedAtUnixMs,
+      targetTimestampUnixMs: presentedAtUnixMs + 40,
+      callbackObservedAtUnixMs: 1002 + sequence * 40 + offset,
+      refreshIntervalMs: 40,
       presentedAtUnixMs,
       surfaces: surfaces(sequence),
     }));
@@ -64,6 +68,7 @@ function evidence(engine = "browser") {
           surfaces: structuredClone(presentationEvents.at(-1).surfaces),
         },
         violations: { replacements: 0, gaps: 0, disappearances: 0, unpresented: 0, droppedEvents: 0 },
+        observation: { callbackIntervalsSkipped: 0, maxCallbackLatencyMs: 2 },
       },
     };
   };
@@ -99,6 +104,14 @@ describe("B05 actual presentation continuity judge", () => {
       const value = evidence(); mutate(value);
       expect(judgeB05MachineEvidence(value).status).toBe("red");
     }
+  });
+
+  it("시각 소실과 별개로 callback coverage 누락도 RED로 남긴다", () => {
+    const value = evidence("browser");
+    value.transitions[0].trace.observation.callbackIntervalsSkipped = 1;
+    const verdict = judgeB05MachineEvidence(value);
+    expect(verdict.status).toBe("red");
+    expect(verdict.evidence.join("\n")).toContain("callbackIntervalsSkipped=0");
   });
 
   it("표면 교체·소실·미표시·DOM 불일치·hold 회귀를 RED로 만든다", () => {
