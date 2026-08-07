@@ -299,6 +299,13 @@
       "note": "실측 표본으로, native producer 가 좌표를 읽은 그 순간으로 표본을 날인해야 궤적 판정이 지연을 좌표 오차로 읽지 않는다는 법을 고정한다."
     },
     {
+      "file": "lib/browser-gate-b04-dom-pair.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "원장이 뒤로 간 자리에서 결합이 실행을 끊지 않고 역행을 이름으로 세며, 그 사실의 판정은 거래 창이 소유한다는 법을 고정한다."
+    },
+    {
       "file": "lib/browser-gate-b04-observed.test.mjs",
       "role": "test",
       "class": "A",
