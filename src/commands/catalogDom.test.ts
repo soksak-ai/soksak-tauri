@@ -523,6 +523,54 @@ describe("ui.measure — 상호작용/가시성 축", () => {
     const r = await execute("ui.measure", { address: ADDR }, {});
     expect((r.data as Record<string, unknown>).occlusion).toBeUndefined();
   });
+
+  // "그 자리를 이 노드가 소유했는가"는 히트가 내려간 길을 그대로 되짚어야 답이 나온다.
+  // 히트테스트는 shadow 를 관통하는데(deepElementFromPoint) 포함 판정만 Node.contains 로
+  // 경계에서 멈추면, shadow 로 마운트한 플러그인 뷰를 담은 노드가 자기 안을 찍고도 "가려졌다"고
+  // 답한다 — 우측 사이드바가 정확히 그 자리다(B09 chromeControl.reachable).
+  it("도달성은 shadow 를 관통해 포함을 읽는다 — 히트가 내려간 길을 되짚는다", async () => {
+    mountNode(`<div data-node="btn"><div id="plugin-host"></div></div>`);
+    const host = document.getElementById("plugin-host") as HTMLElement;
+    const leaf = document.createElement("span");
+    host.attachShadow({ mode: "open" }).appendChild(leaf);
+    const orig = document.elementFromPoint;
+    Object.defineProperty(document, "elementFromPoint", { value: () => host, configurable: true });
+    Object.defineProperty(host.shadowRoot!, "elementFromPoint", {
+      value: () => leaf,
+      configurable: true,
+    });
+    try {
+      const r = await execute("ui.measure", { address: ADDR, occlusion: true }, {});
+      const occ = (r.data as { occlusion?: { reachable: boolean; topTag: string | null } }).occlusion;
+      expect(occ!.topTag).toBe("span");
+      expect(occ!.reachable).toBe(true);
+    } finally {
+      Object.defineProperty(document, "elementFromPoint", { value: orig, configurable: true });
+    }
+  });
+
+  // 반대 방향. 관통이 "무엇이든 통과"가 되면 안 된다 — 남의 shadow 안 요소가 위에 있으면
+  // 그 자리는 가려진 것이고 도달 불가가 답이다.
+  it("남의 shadow 안 요소가 위면 도달 불가다 — 관통은 포함을 넓히지 않는다", async () => {
+    mountNode(`<div data-node="btn"></div>`);
+    const cover = document.createElement("div");
+    document.body.appendChild(cover);
+    const leaf = document.createElement("span");
+    cover.attachShadow({ mode: "open" }).appendChild(leaf);
+    const orig = document.elementFromPoint;
+    Object.defineProperty(document, "elementFromPoint", { value: () => cover, configurable: true });
+    Object.defineProperty(cover.shadowRoot!, "elementFromPoint", {
+      value: () => leaf,
+      configurable: true,
+    });
+    try {
+      const r = await execute("ui.measure", { address: ADDR, occlusion: true }, {});
+      const occ = (r.data as { occlusion?: { reachable: boolean } }).occlusion;
+      expect(occ!.reachable).toBe(false);
+    } finally {
+      Object.defineProperty(document, "elementFromPoint", { value: orig, configurable: true });
+    }
+  });
 });
 
 describe("ui.measure/ui.hit — 스펙 선언", () => {

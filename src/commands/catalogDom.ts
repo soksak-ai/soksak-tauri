@@ -440,6 +440,22 @@ export function declaredOwnerChain(el: Element | null): string[] {
   return owners;
 }
 
+// shadow 경계를 넘는 포함 판정 — `container` 가 `node` 자신이거나 그 조상인가.
+//
+// Node.contains 는 shadow 경계에서 멈춘다. 히트테스트(deepElementFromPoint)는 그 경계를 뚫고
+// 내려가므로, 내려간 길을 같은 걸음으로 되짚지 않으면 자기 안을 찍고도 "남이 가렸다"가 답이 된다
+// (플러그인 뷰는 shadow 안에 마운트된다 — 우측 사이드바가 그 자리다). parentElement 가 끊기면
+// host 로 갈아타며 오른다 — declaredOwnerChain 과 같은 걸음이다.
+export function containsDeep(container: Element | null, node: Element | null): boolean {
+  if (!container || !node) return false;
+  for (let cur: Node | null = node; cur; ) {
+    if (cur === container) return true;
+    const parent: Element | null = cur instanceof Element ? cur.parentElement : null;
+    cur = parent ?? ((cur.getRootNode() as ShadowRoot | null)?.host ?? null);
+  }
+  return false;
+}
+
 // camelCase | kebab-case computed 속성 이름을 읽는다(getPropertyValue 는 kebab 을 원한다).
 function readComputed(cs: CSSStyleDeclaration, name: string): string {
   const kebab = name.replace(/[A-Z]/g, (m) => "-" + m.toLowerCase());
@@ -543,7 +559,7 @@ export function registerDomCatalog(): void {
       occlusion: {
         type: "boolean",
         description:
-          "Also hit-test the node's center (Shadow-DOM-piercing): report the topmost element there and whether it is this node (reachable) or something covers it",
+          "Also hit-test the node's center (Shadow-DOM-piercing): report the topmost element there and whether this node owns that point (reachable) or something covers it. Ownership is containment across shadow boundaries — the topmost element being this node, inside it, or the node it is inside — read the same way the hit-test descends, never by matching names or address prefixes",
         default: false,
       },
       screen: {
@@ -647,7 +663,9 @@ export function registerDomCatalog(): void {
       if (p.occlusion === true) {
         const top = deepElementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
         out.occlusion = {
-          reachable: !!top && (top === el || el.contains(top) || top.contains(el)),
+          // 포함은 shadow 를 관통해 읽는다(containsDeep) — 히트가 뚫고 내려간 경계를
+          // 판정만 안 넘으면 자기 안을 찍고도 도달 불가가 된다.
+          reachable: containsDeep(el, top) || containsDeep(top, el),
           topTag: top ? top.tagName.toLowerCase() : null,
           topNode: top instanceof HTMLElement ? (top.dataset.node ?? null) : null,
         };

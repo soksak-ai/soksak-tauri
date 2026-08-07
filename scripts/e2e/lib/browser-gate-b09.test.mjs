@@ -223,6 +223,27 @@ describe("B09 surface receipt는 생산자 shape 그대로 판정된다", () => 
     );
   });
 
+  // 자손 허용이 "사슬에 이름만 있으면 통과"로 넓어지면 안 된다. target 위에 남을 수 있는 것은
+  // target 의 자손 chrome 뿐이고, native surface 가 그 사이에 끼면 그 자리는 브라우저가 크롬을
+  // 덮은 것이다 — 사슬이 target 을 담아도 RED 다.
+  it("target 위에 native surface 가 끼면 RED 다 — 사슬 포함은 덮임을 사면하지 않는다", () => {
+    const value = producedEvidence(PANE_IMPLEMENTATIONS[0]);
+    const sample = value.samples[1];
+    const native = sample.hit.stack.at(-1);
+    sample.hit.stack = [
+      { kind: "chrome", owner: "search-input", surfaceId: null },
+      { ...native },
+      { kind: "chrome", owner: "sidebar/right", surfaceId: null },
+      { ...native },
+    ];
+    sample.hit.topmostOwner = "search-input";
+    const verdict = judgeB09MachineEvidence(value);
+    expect(verdict.status).toBe("red");
+    expect(verdict.evidence).toContain(
+      'B09:samples[1].hit.stack[1].kind=chrome-above-target/"native-surface"',
+    );
+  });
+
   it("chrome 조작면 도달 불가와 낮은 modal 평면을 RED 이름으로 남긴다", () => {
     const unreachable = producedEvidence(PANE_IMPLEMENTATIONS[0]);
     unreachable.samples[0].chromeControl = { reachable: false, planeZ: 120 };
