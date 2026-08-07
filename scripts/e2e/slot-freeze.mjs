@@ -114,6 +114,7 @@ import {
   unwrapEvalValue,
   viewportGeometryVerdict,
 } from "./lib/browser-matrix.mjs";
+import { b04DomLedgerProducerErrors } from "./lib/browser-gate-b04-slot-timeline.mjs";
 
 const FIXTURE_ROOT = path.join(os.homedir(), ".soksak-e2e", "slot-freeze");
 const EVIDENCE_STORE_ROOT = path.join(os.homedir(), ".soksak-e2e", "evidence", "slot-freeze");
@@ -1340,6 +1341,10 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
             domTraceOpen = false;
             if (domTraceReceipt.timedOut === true) {
               throw new Error(`${engine}/${name}: raw DOM trace가 explicit close 전에 만료됐다`);
+            }
+            const ledgerErrors = b04DomLedgerProducerErrors(domTraceReceipt.samples);
+            if (ledgerErrors.length > 0) {
+              throw new Error(`${engine}/${name}: DOM 원장이 관측자 이름을 안 실었다 — ${ledgerErrors.join(", ")}`);
             }
             await Promise.all([
               writeMachineReport(path.join(dir, "dom-presentation-raw.json"), domTraceReceipt),

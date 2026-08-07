@@ -306,6 +306,20 @@
       "note": "두 producer 가 서로 다른 epoch 로 시각을 발행할 때 B04 가 좌표를 비교하기 전에 관측 구간부터 판정한다는 법을 고정한다."
     },
     {
+      "file": "lib/browser-gate-b04-slot-timeline.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "DOM 원장에서 표시 관측자 한 열만 골라 slot timeline 을 만들고, 세 참가자를 같은 거래 창으로 자르는 순수 함수다."
+    },
+    {
+      "file": "lib/browser-gate-b04-slot-timeline.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "실측 원장 둘로, 관측자를 섞은 열의 간격이 표시 주기가 아니라 맥놀이를 재서 없는 결함을 만들고 있는 결함을 덮는다는 사실을 값으로 고정한다."
+    },
+    {
       "file": "lib/browser-gate-b05-evidence.mjs",
       "role": "lib",
       "class": "A",

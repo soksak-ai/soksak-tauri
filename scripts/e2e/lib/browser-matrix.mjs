@@ -1,6 +1,9 @@
 import { decodePng } from "./png.mjs";
-import { sameRect } from "../../../packages/dom-webview-compositor/src/index.ts";
 import { B04_JOURNAL_ENTRY_KEYS } from "./browser-gates.mjs";
+import {
+  b04SlotDisplayTimeline,
+  b04TransactionWindow,
+} from "./browser-gate-b04-slot-timeline.mjs";
 export { layoutTransactionVerdict } from "./layout-transaction-verdict.mjs";
 
 /**
@@ -404,54 +407,30 @@ export function mapB04PresentationSamples({
     { ...last, sequence: 1, phase: "committed" },
   ];
   const endAtUnixMs = presentationStartAt + durationMs;
-  const transactionWindow = (values, at) => {
-    const before = values.filter((value) => at(value) <= presentationStartAt).at(-1);
-    const during = values.filter((value) => (
-      at(value) > presentationStartAt && at(value) < endAtUnixMs
-    ));
-    const after = values.find((value) => at(value) >= endAtUnixMs);
-    return [before, ...during, after].filter((value, index, all) => (
-      value !== undefined && all.indexOf(value) === index
-    ));
-  };
-  // Preserve every real DOM boundary at the start epoch. The commit and the
-  // one-shot post-commit anchor can share a timestamp, but they are distinct
-  // observations and must not be collapsed by object-identity deduplication.
-  const transactionDomSamples = [
-    ...presentationSamples.filter((sample) => sample.sampledAtUnixMs <= presentationStartAt),
-    ...presentationSamples.filter((sample) => (
-      sample.sampledAtUnixMs > presentationStartAt && sample.sampledAtUnixMs < endAtUnixMs
-    )),
-    ...presentationSamples.filter((sample) => sample.sampledAtUnixMs >= endAtUnixMs).slice(0, 1),
-  ];
+  const transactionWindow = (values, at) => b04TransactionWindow(
+    values,
+    at,
+    { startAtUnixMs: presentationStartAt, endAtUnixMs },
+  );
   const transactionNativeEvents = transactionWindow(events, (event) => event.sampledAtUnixMs);
-  const slotTimeline = transactionDomSamples.map((domSample, sequence) => {
-    const matches = (domSample.nodes ?? []).filter((node) => node?.address === slotAddress);
-    if (matches.length !== 1 || matches[0].connected !== true) {
-      throw new Error(`${targetViewId}: timeline slot[${sequence}]=${matches.length}/1 connected`);
-    }
-    return {
-      sequence,
-      sampledAtUnixMs: domSample.sampledAtUnixMs,
-      frame: finiteB04Rect(matches[0].rect, `${targetViewId}:timeline-slot[${sequence}]`),
-    };
+  const collapsedSlotTimeline = b04SlotDisplayTimeline({
+    presentationSamples,
+    slotAddress,
+    targetViewId,
+    startAtUnixMs: presentationStartAt,
+    endAtUnixMs,
+    finiteRect: finiteB04Rect,
   });
-  // 한 표시 epoch에는 표시된 frame이 하나뿐이다. DOM commit 경계와 그 직후 one-shot
-  // anchor는 서로 다른 관측이지만 같은 epoch를 공유할 수 있고, 같은 rect라면 궤적 위의
-  // 한 점이다. rect가 다르면 한 epoch에 두 frame을 주장하는 것이므로 둘 다 남겨 RED로 센다.
-  const collapsedSlotTimeline = slotTimeline.reduce((rows, row) => {
-    const previous = rows[rows.length - 1];
-    if (previous
-        && previous.sampledAtUnixMs === row.sampledAtUnixMs
-        && sameRect(previous.frame, row.frame)) return rows;
-    rows.push(row);
-    return rows;
-  }, []).map((row, sequence) => ({ ...row, sequence }));
-  const fromSample = collapsedSlotTimeline.filter(({ sampledAtUnixMs }) => (
+  // 선언 궤적의 출발점은 활강 이전의 DOM 사실이지 표시 열의 첫 행이 아니다. 표시 관측자가
+  // 굶은 창에서도 출발점은 같은 자리에서 읽어야 to가 따라 흔들리지 않는다.
+  const startAnchor = presentationSamples.filter(({ sampledAtUnixMs }) => (
     sampledAtUnixMs <= presentationStartAt
   )).at(-1);
-  if (!fromSample) throw new Error(`${targetViewId}: timeline start coverage가 없다`);
-  const from = fromSample.frame;
+  const anchorSlots = (startAnchor?.nodes ?? []).filter((node) => node?.address === slotAddress);
+  if (anchorSlots.length !== 1 || anchorSlots[0].connected !== true) {
+    throw new Error(`${targetViewId}: timeline start coverage=${anchorSlots.length}/1 connected`);
+  }
+  const from = finiteB04Rect(anchorSlots[0].rect, `${targetViewId}:timeline-from`);
   const to = { ...from, x: from.x - moveDx };
   const nativeTimeline = (field) => transactionNativeEvents.map((event, sequence) => ({
     sequence,
