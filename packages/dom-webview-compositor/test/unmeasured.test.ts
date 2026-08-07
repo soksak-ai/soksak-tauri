@@ -15,6 +15,7 @@ const sample = (sequence: number, at: number, x: number) => ({
 });
 
 const timeline = (over: Record<string, unknown> = {}) => ({
+  clocks: { window: "unix-anchored-monotonic", slot: "unix-anchored-monotonic", renderer: "unix-anchored-monotonic", surface: "unix-anchored-monotonic" },
   startAtUnixMs: 1_000,
   durationMs: 100,
   timingFunction: [0, 0, 1, 1] as [number, number, number, number],

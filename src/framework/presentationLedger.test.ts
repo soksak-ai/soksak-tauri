@@ -10,6 +10,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PRESENTATION_CLOCK } from "../lib/presentationClock";
 import { getSpec, unregister } from "../commands/registry";
 import type { CommandContext } from "../commands/registry";
 import {
@@ -44,6 +45,7 @@ function stubHost(): PresentationLedgerHost {
     }]),
     arm: vi.fn(async (input: PresentationLedgerArmInput) => ({
       traceId: input.traceId,
+      clock: PRESENTATION_CLOCK,
       ownerViewIds: input.owners.map((owner) => owner.viewId),
       armedAtUnixMs: 1_000,
       baselineFrameSequence: 0,
@@ -51,6 +53,7 @@ function stubHost(): PresentationLedgerHost {
     })),
     close: vi.fn(async ({ traceId }: { traceId: string }) => ({
       traceId,
+      clock: PRESENTATION_CLOCK,
       closed: true,
       ownerViewIds: ["tab-1"],
       armedAtUnixMs: 1_000,

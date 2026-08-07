@@ -27,7 +27,7 @@ import {
 import { createFiniteDomTraceSampler } from "./finiteDomTrace";
 import { layoutSettlementStatus, waitLayoutSettled } from "./waitLayoutSettled";
 import { declareLayoutCause, onLayoutTransitionJournal } from "../lib/layoutTransitionJournal";
-import { presentationNowUnixMs } from "../lib/presentationClock";
+import { PRESENTATION_CLOCK, presentationNowUnixMs } from "../lib/presentationClock";
 import { stackingPathOf, type StackingComputedStyle } from "../lib/stackingOrder";
 
 type FocusTraceEntry = {
@@ -1504,7 +1504,7 @@ export function registerDomCatalog(): void {
       },
     },
     returns:
-      "{ traceId, addresses, startedAtUnixMs, expiresAtUnixMs, producersEnabled } —"
+      "{ traceId, clock, addresses, startedAtUnixMs, expiresAtUnixMs, producersEnabled } —"
       + " the subscription is installed before this ACK",
     message: () => tmsg("msg.ui.trace", { n: "1" }),
     errors: ["NOT_EXPOSED", "AMBIGUOUS", "INVALID_PARAMS"],
@@ -1595,6 +1595,7 @@ export function registerDomCatalog(): void {
       session.expiryTimer = setTimeout(() => finishMultiDomTrace(session, true), maxMs);
       return {
         traceId,
+        clock: PRESENTATION_CLOCK,
         addresses: [...session.addresses],
         startedAtUnixMs: session.startedAtUnixMs,
         expiresAtUnixMs: session.expiresAtUnixMs,
@@ -1611,7 +1612,7 @@ export function registerDomCatalog(): void {
       traceId: { type: "string", description: "Trace id returned by ui.trace.multi.start", required: true },
     },
     returns:
-      "{ traceId, addresses, startedAtUnixMs, endedAtUnixMs, timedOut, producers:{arm,layout-commit,commit-anchor,frame-callback,interval,animation-end,settlement}, producersEnabled:{interval}, samples:[{sequence,sampledAtUnixMs,trigger:'initial'|'layout-dom-commit'|'presentation-frame',producer,transactionId:string|null,domCommittedAtUnixMs:number|null,nodes:[{address,connected,rect:{x,y,w,h}}]}] }",
+      "{ traceId, clock, addresses, startedAtUnixMs, endedAtUnixMs, timedOut, producers:{arm,layout-commit,commit-anchor,frame-callback,interval,animation-end,settlement}, producersEnabled:{interval}, samples:[{sequence,sampledAtUnixMs,trigger:'initial'|'layout-dom-commit'|'presentation-frame',producer,transactionId:string|null,domCommittedAtUnixMs:number|null,nodes:[{address,connected,rect:{x,y,w,h}}]}] }",
     message: (d) => tmsg("msg.ui.trace", { n: String((d.samples as unknown[])?.length ?? 0) }),
     errors: ["TARGET_NOT_FOUND", "INVALID_PARAMS"],
     handler: (p) => {
@@ -1636,6 +1637,9 @@ export function registerDomCatalog(): void {
       if (session.evictionTimer !== null) clearTimeout(session.evictionTimer);
       return {
         traceId,
+        // 이 원장의 `...UnixMs` 시각을 낸 시계의 이름. 같은 접미사가 같은 시계를 뜻하지 않으므로,
+        // 다른 producer 의 시각과 한 축에서 비교하려면 둘 다 이 이름을 답해야 한다.
+        clock: PRESENTATION_CLOCK,
         addresses: [...session.addresses],
         startedAtUnixMs: session.startedAtUnixMs,
         endedAtUnixMs: session.endedAtUnixMs,

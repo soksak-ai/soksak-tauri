@@ -1,6 +1,7 @@
 {
   "expectedAudit": {
     "errors": [
+      "clock=non-empty/undefined",
       "violations.gaps=1/0"
     ],
     "ok": false

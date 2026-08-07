@@ -3,6 +3,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use objc2_quartz_core::CACurrentMediaTime;
 
+/// 이 시계의 이름 — "unix 로 한 번 고정하고, 그 뒤로는 monotonic 표시 시계로만 나아간다".
+///
+/// `...UnixMs` 라는 접미사는 같은 시계를 뜻하지 않는다. 이 원장의 시각을 다른 producer 의 시각과
+/// 한 축에서 비교하려면 둘 다 이 이름을 답해야 한다. 이름은 프레임워크를 안 싣는다 — 프론트엔드의
+/// `src/lib/presentationClock.ts` 가 같은 성질의 시계를 같은 이름으로 답한다.
+pub(crate) const PRESENTATION_CLOCK: &str = "unix-anchored-monotonic";
+
 // SystemTime과 Core Animation media time의 관계는 프로세스에서 하나만 소유한다. 서로
 // 다른 거래/계측 경로가 각자 `now` 두 개를 빼서 원점을 만들면 호출 간격만큼 같은 표시
 // epoch가 갈라진다. 두 media sample의 중점을 사용해 최초 측정 오차도 한쪽으로 치우치지 않는다.

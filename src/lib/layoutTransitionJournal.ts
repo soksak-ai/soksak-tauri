@@ -3,6 +3,13 @@ import type { LayoutMove, LayoutTransitionMode, PreparedLayoutTransition } from 
 
 export type LayoutTransitionJournalEntry = {
   transactionId: string;
+  /**
+   * 이 거래의 `...UnixMs` 시각을 낸 시계의 이름.
+   *
+   * 이 거래가 선언한 창은 표시 원장의 표본을 판정하는 기준이 된다. 같은 접미사가 같은 시계를
+   * 뜻하지 않으므로, 창과 관측이 같은 이름을 답할 때만 두 시각을 한 축에서 비교할 수 있다.
+   */
+  clock: string;
   /** 이 거래를 연 자극이 선언한 관측 거래 식별자. 선언한 자극이 없으면 없다. */
   causeTraceId?: string;
   sequence: number;
@@ -99,6 +106,7 @@ export function journalPreparedLayoutTransition(
   journal.pendingCauseTraceId = null;
   const entry: LayoutTransitionJournalEntry = {
     transactionId: `layout-${sequence}`,
+    clock: PRESENTATION_CLOCK,
     ...(causeTraceId === null ? {} : { causeTraceId }),
     sequence,
     phase: "prepared",
@@ -160,4 +168,4 @@ export function __resetLayoutTransitionJournalForTest(): void {
   journal.pendingCauseTraceId = null;
   journalListeners.clear();
 }
-import { presentationNowUnixMs } from "./presentationClock";
+import { PRESENTATION_CLOCK, presentationNowUnixMs } from "./presentationClock";

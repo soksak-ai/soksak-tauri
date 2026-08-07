@@ -75,8 +75,22 @@ export interface CompositionTimelineSample {
   frame: CompositionRect;
 }
 
+/** 한 궤적을 함께 관측하는 표시 주체들. 시계 선언은 이 축에서 파생하므로 하나도 못 빠진다. */
+export const COMPOSITION_TIMELINE_PRODUCERS = ["slot", "renderer", "surface"] as const;
+
+export type CompositionTimelineProducer = typeof COMPOSITION_TIMELINE_PRODUCERS[number];
+
+/**
+ * 창과 각 producer 가 선언한 시계 이름.
+ *
+ * 창의 시계는 궤적을 선언한 장부의 것이고, producer 의 시계는 표본을 낸 관측기의 것이다. 둘이
+ * 같은 이름일 때만 두 시각을 한 축에서 비교할 수 있다.
+ */
+export type CompositionTimelineClocks = Record<"window" | CompositionTimelineProducer, string>;
+
 export interface CompositionTimeline {
   coordinateSpace: CompositionCoordinateSpace;
+  clocks: CompositionTimelineClocks;
   startAtUnixMs: number;
   durationMs: number;
   timingFunction: readonly [number, number, number, number];
@@ -162,14 +176,25 @@ function physicalEdgeDelta(
   };
 }
 
+/** 시계를 선언하지 않은 자리의 이름. 값이 아니라 선언의 부재를 뜻한다. */
+const UNDECLARED_CLOCK = "none";
+
+function declaredClock(value: unknown): string | null {
+  return typeof value === "string" && value.trim() !== "" ? value : null;
+}
+
 export interface CompositionObservationWindow {
   startAtUnixMs: number;
   endAtUnixMs: number;
+  /** 이 창의 시각을 낸 시계의 이름. 관측은 같은 이름을 답할 때만 이 창에서 판정된다. */
+  clock: string;
 }
 
 export interface CompositionObservationSpan {
   /** 표본을 낸 관측 주체 이름. framework/engine 이름을 싣지 않는다. */
   producer: string;
+  /** 이 관측의 시각을 낸 시계의 이름. 관측을 내는 자가 선언한다. */
+  clock: string;
   firstSampledAtUnixMs: number;
   lastSampledAtUnixMs: number;
 }
@@ -179,6 +204,10 @@ export interface CompositionObservationSpan {
  * 같은 이름은 같은 epoch를 뜻하지 않으므로, 두 producer의 시각을 빼기 전에 각 관측 구간이
  * 거래 구간과 만나는지 먼저 판정한다. 판정은 tolerance가 아니라 교집합 유무이며, 겹치지 않는
  * 관측은 좌표 delta 대신 그 거리를 그대로 남긴다. 겹치는 구간의 길이는 요구하지 않는다.
+ *
+ * 규칙 — 시계 선언: 관측을 내는 자가 자기 시계를 선언한다. 선언 없는 시계는 판정 입력이 될 수
+ * 없다. 이 선언이 창 밖 표본이 뜻하는 두 사실을 가른다 — 선언이 다르면 계약 위반이고, 선언이
+ * 같은데 창 안 표본이 0 이면 못 잼이다. 거리의 크기로 가르지 않는다.
  */
 export function compositionObservationWindowVerdict(
   window: CompositionObservationWindow,
@@ -194,6 +223,7 @@ export function compositionObservationWindowVerdict(
     errors.push(`window=${window?.startAtUnixMs}/${window?.endAtUnixMs}`);
     return { ok: false, errors, unmeasured, gapMs };
   }
+  const windowClock = declaredClock(window?.clock);
   for (const span of producers ?? []) {
     const producer = span?.producer;
     if (typeof producer !== "string" || producer.length === 0) {
@@ -210,6 +240,15 @@ export function compositionObservationWindowVerdict(
       ? startAtUnixMs - last
       : first > endAtUnixMs ? first - endAtUnixMs : 0;
     gapMs[producer] = gap;
+    const spanClock = declaredClock(span?.clock);
+    // 시계가 갈린 관측은 이 창에서 재지 못한 것이 아니라 이 창에서 잴 수 없는 것이다. 겹침도
+    // 증거가 못 된다 — 서로 다른 두 시계의 구간은 우연히 겹칠 수 있다.
+    if (windowClock === null || spanClock === null || spanClock !== windowClock) {
+      errors.push(
+        `${producer}:clock=${spanClock ?? UNDECLARED_CLOCK}/${windowClock ?? UNDECLARED_CLOCK}`,
+      );
+      continue;
+    }
     // 규칙 — 관측 증명: 창과 겹치는 표본이 하나도 없으면 "어긋났다"가 아니라 "재지 못했다"다.
     // 어긋남을 red 로 답하려면 그 창에서 관측이 있었음을 먼저 증명해야 한다. 관측기가 죽은
     // 실행과 제품이 틀린 실행이 같은 답을 내면, 그 답은 고칠 자리를 가리키지 못한다.
@@ -221,6 +260,7 @@ export function compositionObservationWindowVerdict(
 function observationSpan(
   producer: string,
   samples: readonly CompositionTimelineSample[],
+  clock: string,
 ): CompositionObservationSpan | null {
   const times = (Array.isArray(samples) ? samples : [])
     .map((sample) => Number(sample?.sampledAtUnixMs))
@@ -228,6 +268,7 @@ function observationSpan(
   if (times.length === 0) return null;
   return {
     producer,
+    clock,
     // 순서는 sample 판정이 따로 요구한다. 구간은 관측 집합의 사실이므로 최소/최대로 읽는다.
     firstSampledAtUnixMs: Math.min(...times),
     lastSampledAtUnixMs: Math.max(...times),
@@ -257,23 +298,22 @@ export function compositionTimelineVerdict(timeline: CompositionTimeline) {
   // 좌표 delta보다 먼저 관측 구간을 본다. 거래 밖에서 관측한 producer의 좌표 오차는 궤적이
   // 아니라 epoch 차이를 재는 값이 되어, 실제 결함을 다른 이름으로 덮는다.
   const observation = compositionObservationWindowVerdict(
-    { startAtUnixMs: timeline.startAtUnixMs, endAtUnixMs },
-    (["slot", "renderer", "surface"] as const)
-      .map((name) => observationSpan(name, timeline[name]))
+    {
+      startAtUnixMs: timeline.startAtUnixMs,
+      endAtUnixMs,
+      clock: timeline.clocks?.window,
+    },
+    COMPOSITION_TIMELINE_PRODUCERS
+      .map((name) => observationSpan(name, timeline[name], timeline.clocks?.[name]))
       .filter((span): span is CompositionObservationSpan => span !== null),
   );
   errors.push(...observation.errors);
-  // 궤적은 자기 창을 선언한다. 그 창 밖의 관측은 침묵과 구별되지 않지만, 여기서 못 잼으로
-  // 넘기면 실측된 epoch 위반(native producer 가 4,041,616ms 뒤처진 시계를 같은 `...UnixMs`
-  // 이름으로 낸 사건)이 숨는다. 시계를 선언으로 답하기 전까지 이 자리의 분류는 red 로 둔다.
-  errors.push(...observation.unmeasured
-    .map((name) => name.replace(":no-samples-in-window=", ":window-gap=")));
   // 관측자의 생존은 판정의 입력이 아니다. presentation-frame 표본은 rAF 가 내고, WebKit 은
   // 가려지거나 포커스 없는 창에서 rAF 를 멈춘다 — 그것은 관측의 한계이지 DOM 이 안 움직였다는
   // 증거가 아니다. 표본이 없는 producer 를 실패로 적으면 다른 창이 위에 있느냐가 green/red 를
   // 가른다. 잰 값과 못 잼은 다른 답이므로 다른 자리에 적는다.
-  const unmeasured: string[] = [];
-  const inspect = (name: "slot" | "renderer" | "surface") => {
+  const unmeasured: string[] = [...observation.unmeasured];
+  const inspect = (name: CompositionTimelineProducer) => {
     if (observation.gapMs[name] > 0) return;
     const samples = timeline[name];
     if (samples.length < 3) {
@@ -331,9 +371,7 @@ export function compositionTimelineVerdict(timeline: CompositionTimeline) {
       errors.push(`${name}:skipped-display-epochs=${skipped}`);
     }
   };
-  inspect("slot");
-  inspect("renderer");
-  inspect("surface");
+  for (const producer of COMPOSITION_TIMELINE_PRODUCERS) inspect(producer);
 
   if (timeline.renderer.length !== timeline.surface.length) {
     errors.push(`native-pairs=${timeline.renderer.length}/${timeline.surface.length}`);
