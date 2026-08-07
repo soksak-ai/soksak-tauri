@@ -69,10 +69,13 @@ import { mapB06LiveEvidence } from "./lib/browser-gate-b06-evidence.mjs";
 import { collectB06Checkpoint } from "./lib/browser-gate-b06-collect.mjs";
 import { mapB10LiveEvidence } from "./lib/browser-gate-b10-evidence.mjs";
 import {
-  mapB01TabEvidence,
   mapB11TabEvidence,
   mapImeObservation,
 } from "./lib/browser-live-evidence.mjs";
+import {
+  collectB01LiveEvidence,
+  renderB01IdentityFixture,
+} from "./lib/browser-gate-b01.mjs";
 import {
   browserImplementations,
   browserSurfaceInvariant,
@@ -938,50 +941,37 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
     if (!panes.length) must(await rpc("space.create", {}, win), "space.create");
     const left = must(await rpc("tab.open", { program: engine }, win), "left tab.open");
     const right = must(await rpc("pane.split", { side: "right", program: engine }, win), "right pane.split");
-    if (left.mounted !== true || right.mounted !== true) {
-      throw new Error(`브라우저 뷰 준비 계약 위반: ${JSON.stringify({ left, right })}`);
-    }
     const tabIds = [left.tabId, right.tabId];
     const paneIds = [left.paneId, right.paneId];
     const mountReceipts = [left, right];
-    const expectedUrls = tabIds.map((_, index) => `${page.url}?slot=${index}`);
-    const navigateReceipts = [];
-    const pageIdentities = [];
     const imeEvidence = tabIds.map((viewId, index) => ({
       viewId,
       expectedText: IME_TEXTS[index],
       phases: {},
     }));
     const b11Tabs = [];
-    if (tabIds.some((id) => typeof id !== "string")) throw new Error(`브라우저 탭 id 누락: ${JSON.stringify(tabIds)}`);
     if (paneIds.some((id) => typeof id !== "string")) throw new Error(`브라우저 pane id 누락: ${JSON.stringify(paneIds)}`);
     must(await rpc("sidebar.left.position", { mode: "flow" }, win), "sidebar flow");
+
+    // 마운트 영수증과 실제 항해는 B01 이 소유한다. mounted 가 거짓이거나 탭 id 가 없거나
+    // 주소표시줄이 신원을 안 따라온 사실은 던지지 않고 B01 판정에 이름으로 실린다.
+    const b01 = await collectB01LiveEvidence({
+      rpc, win, plugin, engine, pageUrl: page.url, tabIds, mountReceipts,
+    });
+    const b01Receipt = gateReportStore.recordMachineEvidence({
+      framework: frameworkName,
+      engine,
+      gate: "B01",
+      evidence: b01.evidence,
+    });
+    await gateReportStore.persist();
+    console.log(formatGateVerdict(engine, "B01", b01Receipt));
+    // 판정을 남긴 뒤에만 멈춘다. 뒤 게이트가 딛고 설 정본 문서가 없으면 그때부터는 측정 불가다.
+    if (b01.blockedReason) throw new Error(`브라우저 정본 문서 미도달 — ${b01.blockedReason}`);
 
     for (let index = 0; index < tabIds.length; index += 1) {
       const tabId = tabIds[index];
       must(await rpc("tab.activate", { tab: tabId }, win), `tab.activate ${tabId}`);
-      navigateReceipts[index] = must(
-        await rpc(`plugin.${plugin}.navigate`, { viewId: tabId, url: expectedUrls[index] }, win),
-        `navigate ${tabId}`,
-      );
-      // 최초 CEF 표면은 child readiness(유한 8s) 뒤 페이지 MutationObserver(유한 8s)가 이어진다.
-      // 라우터 기본 10s로 거래를 중간 절단하지 않고 이 장기 명령이 자기 상한을 명시한다.
-      must(
-        await rpc(
-          `plugin.${plugin}.dom.wait-for`,
-          { selector: `html[data-slot="${index}"] #ime`, timeoutMs: 8_000, viewId: tabId },
-          win,
-          { timeoutMs: 30_000 },
-        ),
-        `browser ready ${tabId}`,
-      );
-      const identity = must(await rpc(`plugin.${plugin}.dom.text`, { selector: "h1", viewId: tabId }, win), `browser identity ${tabId}`);
-      if (identity.text !== "Browser Boundary") throw new Error(`${tabId}: 페이지 신원 불일치(${JSON.stringify(identity.text)})`);
-      const pageIdentityResult = must(await rpc(`plugin.${plugin}.eval`, {
-        viewId: tabId,
-        js: "return { url: location.href };",
-      }, win), `page identity ${tabId}`);
-      pageIdentities[index] = { viewId: tabId, ...unwrapEvalValue(pageIdentityResult) };
       imeEvidence[index].phases.initial = await verifyIme(rpc, win, plugin, tabId, IME_TEXTS[index]);
       if (SCENARIOS.has("scroll")) {
         const scroll = await verifyScrollInput(
@@ -1005,41 +995,16 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
       await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, `create-${index}`);
     }
 
-    // Child PluginView의 공개 node projection은 main DOM layout과 별도 renderer 사건이다.
-    // page readiness만으로는 programmatic urlbar value의 projection ACK가 보장되지 않는다.
     // 공용 event-driven layout barrier가 child 측정을 요청하고 native presentation까지
-    // 정착시킨 뒤에만 B01 값을 읽는다(고정 대기·재시도·private DOM 조회 없음).
+    // 정착시킨 뒤에만 주소를 읽는다(고정 대기·재시도·private DOM 조회 없음).
     must(
       await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }),
-      "B01 projected urlbar settled",
+      "projected chrome settled",
     );
     const tree = must(await rpc("ui.tree", { rects: true }, win), "ui.tree");
     const addresses = tabIds.map((id) => addressForTab(tree, id));
     const lightingAddresses = tabIds.map((id) => lightingAddressForTab(tree, id));
     const activationAddresses = tabIds.map((id) => activationAddressForTab(tree, id));
-    const urlbarAddresses = tabIds.map((id) => browserTabNodeAddress(tree, id, "urlbar"));
-    const urlbarMeasures = await Promise.all(urlbarAddresses.map(async (address, index) => must(
-      await rpc("ui.measure", { address }, win),
-      `urlbar measure ${tabIds[index]}`,
-    )));
-    const b01Receipt = gateReportStore.recordMachineEvidence({
-      framework: frameworkName,
-      engine,
-      gate: "B01",
-      evidence: {
-        engine,
-        tabs: tabIds.map((viewId, index) => mapB01TabEvidence({
-          viewId,
-          expectedUrl: expectedUrls[index],
-          mountReceipt: mountReceipts[index],
-          urlbarMeasure: urlbarMeasures[index],
-          pageIdentity: pageIdentities[index],
-          navigateReceipt: navigateReceipts[index],
-        })),
-      },
-    });
-    await gateReportStore.persist();
-    console.log(formatGateVerdict(engine, "B01", b01Receipt));
     // 플러그인 인스턴스와 함께 영속하고 surface와 같은 x축을 소유하는 공개 toolbar가
     // 브라우저 표면 궤적의 기준이다. 앱 크롬 합성은 별도로 persistent rail root와 pane root를
     // 같은 rAF에서 측정한다 — 콘텐츠 표면 검증과 크롬 DOM 검증을 한 값으로 뭉개지 않는다.
@@ -1983,7 +1948,8 @@ async function main() {
   let runError = null;
   try {
     client = await openClient(requireSocket());
-    page = await startHtmlFixture(() => fixtureHtml());
+    // B01 은 view 마다 다른 문서를 요구한다. 그 구간만 자기 문서를 답하고 나머지는 정본이다.
+    page = await startHtmlFixture((request) => renderB01IdentityFixture(request) ?? fixtureHtml());
     const coverage = await runEngineCoverage({
       engines: ENGINES,
       runEngine: (engine) => runEngine(client, page, engine, recordingLedger, gateReportStore),

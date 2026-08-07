@@ -224,64 +224,159 @@ function requireOptionalText(value, field) {
   return value;
 }
 
+export const B01_TAB_KEYS = Object.freeze([
+  "viewId",
+  "expectedUrl",
+  "mounted",
+  "navigations",
+]);
+export const B01_NAVIGATION_KEYS = Object.freeze([
+  "url",
+  "expectedTitle",
+  "expectedBodyIncludes",
+  "requestedViewId",
+  "returnedViewId",
+  "toolbarAddress",
+  "pageIdentity",
+  "observation",
+]);
+const B01_TOOLBAR_KEYS = Object.freeze(["dataNode", "value"]);
+const B01_PAGE_IDENTITY_KEYS = Object.freeze(["url", "title", "bodyText"]);
+const B01_MINIMUM_NAVIGATIONS = 2;
+
+function b01IdentitySignature(navigation) {
+  return displayValue([
+    navigation?.pageIdentity?.url ?? null,
+    navigation?.pageIdentity?.title ?? null,
+    navigation?.pageIdentity?.bodyText ?? null,
+  ]);
+}
+
+function b01Navigations(tab) {
+  return Array.isArray(tab?.navigations) ? tab.navigations : [];
+}
+
+/** 한 값이 증거 전체에서 몇 번 나오는지 센다. 1 은 그 view 만이 답할 수 있는 사실을 뜻한다. */
+function countBy(values) {
+  const counts = new Map();
+  for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1);
+  return counts;
+}
+
+function inspectB01Navigation(navigation, path, viewId, failures) {
+  if (!requireExactKeys(navigation, B01_NAVIGATION_KEYS, path, failures)) return;
+  if (!hasText(navigation.url)) {
+    failures.push(`${path}.url=non-empty/${displayValue(navigation.url)}`);
+  }
+  if (!hasText(navigation.expectedTitle)) {
+    failures.push(`${path}.expectedTitle=non-empty/${displayValue(navigation.expectedTitle)}`);
+  }
+  if (!hasText(navigation.expectedBodyIncludes)) {
+    failures.push(`${path}.expectedBodyIncludes=non-empty/${displayValue(navigation.expectedBodyIncludes)}`);
+  }
+  if (navigation.requestedViewId !== viewId || navigation.returnedViewId !== viewId) {
+    failures.push(`${path}.viewId=${displayValue(viewId)}/${displayValue({
+      requested: navigation.requestedViewId,
+      returned: navigation.returnedViewId,
+    })}`);
+  }
+
+  if (requireExactKeys(navigation.toolbarAddress, B01_TOOLBAR_KEYS, `${path}.toolbarAddress`, failures)) {
+    if (navigation.toolbarAddress.dataNode !== "urlbar") {
+      failures.push(`${path}.toolbarAddress.dataNode=urlbar/${displayValue(navigation.toolbarAddress.dataNode)}`);
+    }
+    // 주소표시줄은 이 항해의 주소를 답해야 한다. 최초 문서에 멈춘 주소창은 여기서 이름으로 남는다.
+    if (navigation.toolbarAddress.value !== navigation.url) {
+      failures.push(`${path}.toolbarAddress.value=${displayValue(navigation.url)}/${displayValue(navigation.toolbarAddress.value)}`);
+    }
+  }
+
+  if (requireExactKeys(navigation.pageIdentity, B01_PAGE_IDENTITY_KEYS, `${path}.pageIdentity`, failures)) {
+    if (navigation.pageIdentity.url !== navigation.url) {
+      failures.push(`${path}.pageIdentity.url=${displayValue(navigation.url)}/${displayValue(navigation.pageIdentity.url)}`);
+    }
+    if (navigation.pageIdentity.title !== navigation.expectedTitle) {
+      failures.push(`${path}.pageIdentity.title=${displayValue(navigation.expectedTitle)}/${displayValue(navigation.pageIdentity.title)}`);
+    }
+    const bodyText = navigation.pageIdentity.bodyText;
+    if (!hasText(bodyText)) {
+      failures.push(`${path}.pageIdentity.bodyText=non-empty/${displayValue(bodyText)}`);
+    } else if (hasText(navigation.expectedBodyIncludes)
+        && !bodyText.includes(navigation.expectedBodyIncludes)) {
+      failures.push(`${path}.pageIdentity.bodyText=includes(${displayValue(navigation.expectedBodyIncludes)})/${displayValue(bodyText)}`);
+    }
+  }
+
+  if (requireExactKeys(navigation.observation, ["error"], `${path}.observation`, failures)
+      && navigation.observation.error !== null) {
+    failures.push(`${path}.observation.error=null/${displayValue(navigation.observation.error)}`);
+  }
+}
+
 /**
  * B01 machine evidence is deliberately DOM/API based. A screenshot may accompany the
  * report through visualReview, but it cannot substitute for any value checked here.
+ *
+ * 한 번만 관측한 신원은 주소표시줄이 그 항해를 따라왔다는 사실을 담지 못한다. 그래서 탭마다
+ * 실제 항해를 최소 두 번 요구하고, 매 항해에서 주소표시줄·문서 제목·본문을 함께 읽는다.
+ * 우리가 물은 view 의 신원이라는 증명은 view 마다 다른 문서를 세워 그 신원이 증거 전체에서
+ * 정확히 한 번만 나오는지로 한다 — 다른 view 의 답을 받아 오면 같은 값이 두 번 나온다.
  */
 export function judgeB01MachineEvidence(value) {
   if (value == null) return notRunVerdict();
   const failures = [];
+  if (!requireExactKeys(value, ["engine", "tabs"], "evidence", failures)) {
+    return finishMachineVerdict("B01", failures, "B01:unreachable");
+  }
   if (!requireEvidenceEnvelope(value, failures)) {
     return finishMachineVerdict("B01", failures, "B01:unreachable");
   }
   if (value.tabs.length !== 2) failures.push(`tabs.length=2/${value.tabs.length}`);
+
+  const titleCounts = countBy(value.tabs.flatMap((tab) => b01Navigations(tab)
+    .map((navigation) => displayValue(navigation?.pageIdentity?.title ?? null))));
+  const bodyCounts = countBy(value.tabs.flatMap((tab) => b01Navigations(tab)
+    .map((navigation) => displayValue(navigation?.pageIdentity?.bodyText ?? null))));
+
   const seen = new Set();
   value.tabs.forEach((tab, index) => {
     const path = `tabs[${index}]`;
-    if (!isRecord(tab)) {
-      failures.push(`${path}=record/${displayValue(tab)}`);
-      return;
-    }
+    if (!requireExactKeys(tab, B01_TAB_KEYS, path, failures)) return;
     const viewId = requireUniqueViewId(tab, path, seen, failures);
     if (!hasText(tab.expectedUrl)) failures.push(`${path}.expectedUrl=non-empty/${displayValue(tab.expectedUrl)}`);
     if (tab.mounted !== true) failures.push(`${path}.mounted=true/${displayValue(tab.mounted)}`);
 
-    if (!isRecord(tab.toolbarAddress)) {
-      failures.push(`${path}.toolbarAddress=record/${displayValue(tab.toolbarAddress)}`);
-    } else {
-      if (tab.toolbarAddress.dataNode !== "urlbar") {
-        failures.push(`${path}.toolbarAddress.dataNode=urlbar/${displayValue(tab.toolbarAddress.dataNode)}`);
-      }
-      if (tab.toolbarAddress.value !== tab.expectedUrl) {
-        failures.push(`${path}.toolbarAddress.value=expectedUrl/${displayValue(tab.toolbarAddress.value)}`);
-      }
+    if (!Array.isArray(tab.navigations) || tab.navigations.length < B01_MINIMUM_NAVIGATIONS) {
+      failures.push(`${path}.navigations=at-least-${B01_MINIMUM_NAVIGATIONS}/${displayValue(tab.navigations?.length)}`);
+      return;
     }
+    tab.navigations.forEach((navigation, step) => {
+      inspectB01Navigation(navigation, `${path}.navigations[${step}]`, viewId, failures);
+    });
 
-    if (!isRecord(tab.pageIdentity)) {
-      failures.push(`${path}.pageIdentity=record/${displayValue(tab.pageIdentity)}`);
-    } else {
-      if (tab.pageIdentity.viewId !== viewId) {
-        failures.push(`${path}.pageIdentity.viewId=${displayValue(viewId)}/${displayValue(tab.pageIdentity.viewId)}`);
-      }
-      if (tab.pageIdentity.url !== tab.expectedUrl) {
-        failures.push(`${path}.pageIdentity.url=expectedUrl/${displayValue(tab.pageIdentity.url)}`);
-      }
+    // 마지막 항해는 뒤 게이트가 딛고 서는 문서다. 여기서 갈리면 뒤 판정 전부가 다른 문서를 잰다.
+    const last = tab.navigations.at(-1);
+    if (last?.url !== tab.expectedUrl) {
+      failures.push(`${path}.navigations.last.url=${displayValue(tab.expectedUrl)}/${displayValue(last?.url)}`);
     }
-
-    if (!isRecord(tab.commandReceipt)) {
-      failures.push(`${path}.commandReceipt=record/${displayValue(tab.commandReceipt)}`);
-    } else if (tab.commandReceipt.requestedViewId !== viewId
-      || tab.commandReceipt.returnedViewId !== viewId) {
-      failures.push(`${path}.commandReceipt.viewId=${displayValue(viewId)}/${displayValue({
-        requested: tab.commandReceipt.requestedViewId,
-        returned: tab.commandReceipt.returnedViewId,
-      })}`);
+    const distinctIdentities = new Set(tab.navigations.map(b01IdentitySignature)).size;
+    if (distinctIdentities < B01_MINIMUM_NAVIGATIONS) {
+      failures.push(`${path}.navigations.identity=at-least-${B01_MINIMUM_NAVIGATIONS}-distinct/${distinctIdentities}`);
     }
+    const viewUnique = tab.navigations.some((navigation) => {
+      const title = displayValue(navigation?.pageIdentity?.title ?? null);
+      const bodyText = displayValue(navigation?.pageIdentity?.bodyText ?? null);
+      return hasText(navigation?.pageIdentity?.title)
+        && hasText(navigation?.pageIdentity?.bodyText)
+        && titleCounts.get(title) === 1
+        && bodyCounts.get(bodyText) === 1;
+    });
+    if (!viewUnique) failures.push(`${path}.pageIdentity=view-unique-missing`);
   });
   return finishMachineVerdict(
     "B01",
     failures,
-    `${value.engine}/B01:tabs=${value.tabs.length};mounted+urlbar+page+explicit-view=exact`,
+    `${value.engine}/B01:tabs=${value.tabs.length};navigations=${value.tabs.map((tab) => b01Navigations(tab).length).join(",")};mounted+urlbar+title+body+explicit-view=exact`,
   );
 }
 
@@ -872,7 +967,7 @@ export function judgeB11MachineEvidence(value) {
 }
 
 const machineEvidenceJudges = new Map([
-  ["B01", { judgeId: "B01-machine-v1", judge: judgeB01MachineEvidence }],
+  ["B01", { judgeId: "B01-machine-v2", judge: judgeB01MachineEvidence }],
   ["B02", { judgeId: "B02-machine-v1", judge: judgeB02MachineEvidence }],
   ["B03", { judgeId: "B03-machine-v1", judge: judgeB03MachineEvidence }],
   ["B04", { judgeId: "B04-machine-v1", judge: judgeB04MachineEvidence }],
