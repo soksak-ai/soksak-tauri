@@ -114,8 +114,16 @@ facts, and DOM-versus-surface frames within 1px. Fixed judge limits are 50ms to 
 50ms between active events, 550ms from click to settled, and a 250ms minimum post-settle hold with
 the identical owner inventory. Replacements, gaps, disappearances, unpresented surfaces, and dropped
 events are all exactly zero. The adapter emits actual display and lifecycle events; the core harness
-consumes the public trace. The finite hold closes through event subscription, never interval/rAF
-polling.
+consumes the public trace.
+
+Three public receipts close the causal chain. `ui.input.click` answers the stimulus epoch
+(`atUnixMs`) and the declared `causeTraceId`, the matching `layout.transactions` entry carries that
+same `causeTraceId`, and `ui.layout.wait-settled` answers the settle epoch and whether a surface
+owner confirmed it (`syncPending`). The hold is a finite window that keeps the observation open past
+settlement, and its contents come only from display-callback events. The waiting itself is not
+evidence: start, end, and surface inventory are all judged from actual presentation event epochs, so
+a window cut short produces RED, never a false GREEN. The hold is never filled from interval/rAF
+samples.
 
 Run the live Tauri/macOS B12 gate with `make e2e-titlebar-dev`. It builds once, hashes that executable, creates one run id, and completes exactly three cold restarts even when an earlier cycle is RED. Every cycle must report the same build id, run id, framework, platform, sorted live-window population, and all three browser acceptance identities. Missing or duplicate cycles and any identity/window drift make the aggregate RED; the aggregate is GREEN only when every window in all three cycles is GREEN.
 

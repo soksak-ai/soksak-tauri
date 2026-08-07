@@ -282,14 +282,28 @@
       "role": "lib",
       "class": "A",
       "surfaces": [],
-      "note": "B05 자극·거래·표시 사건·정착·hold 영수증을 닫힌 봉투로 결합한다. 빠진 시각을 녹화 프레임에서 추정하지 않는다."
+      "note": "클릭·배치·표시·정착 영수증을 B05 judge schema로 결합하며 없는 값은 null로 남기는 순수 mapper다."
     },
     {
       "file": "lib/browser-gate-b05-evidence.test.mjs",
       "role": "test",
       "class": "A",
       "surfaces": [],
-      "note": "B05 매퍼가 없는 시각을 지어내지 않고 null 로 남긴다는 법을 값만으로 고정한다."
+      "note": "영수증이 빠지면 추정 대신 null과 RED가 나오는지, 온전한 영수증이 GREEN인지를 값으로 고정한다."
+    },
+    {
+      "file": "lib/browser-gate-b05-hold.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "코어 정착 영수증과 display 원장을 결합해 정착 프레임·유지 창을 고르고 유지 대기 창을 선언하는 순수 결합기다."
+    },
+    {
+      "file": "lib/browser-gate-b05-hold.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "정착 프레임 선택·유지 창 경계·영수증 결손 시 null 유지와 선언한 유지 대기 값을 고정한다."
     },
     {
       "file": "lib/browser-gate-b05.mjs",

@@ -97,8 +97,14 @@ DOM/status 표본, PNG·녹화, recorder frame 번호, 통계 조회를 표시 �
 live·visible·painted, DOM frame과 실제 surface frame의 1px 이하 차이를 가진다. judge의 고정 상한은
 첫 표시 50ms, 활성 사건 간격 50ms, click→settled 550ms이며 settled 뒤 최소 250ms를 같은 owner
 inventory로 유지한다. replacement, gap, disappearance, unpresented, dropped event는 모두 0이어야
-한다. 어댑터가 실제 사건과 lifecycle을 발행하고 코어 하니스가 공개 trace를 소비한다. hold는
-유한 사건 구독으로 닫으며 interval/rAF 폴링으로 채우지 않는다.
+한다. 어댑터가 실제 사건과 lifecycle을 발행하고 코어 하니스가 공개 trace를 소비한다.
+
+인과 사슬은 세 공개 영수증으로 닫는다. `ui.input.click`이 자극 epoch(`atUnixMs`)와 선언한
+`causeTraceId`를 답하고, `layout.transactions`의 그 거래가 같은 `causeTraceId`를 싣고,
+`ui.layout.wait-settled`가 정착 epoch와 표면 주인의 확인 여부(`syncPending`)를 답한다. hold는
+정착 뒤 관측을 계속 연 상태로 유지하는 유한 창이며 그 내용은 display callback 사건만으로 채운다.
+대기 시간 자체는 증거가 아니다 — 시작·끝·표면 재고를 전부 실제 표시 사건 epoch로 판정하므로
+창을 짧게 잡으면 GREEN이 아니라 RED가 된다. interval/rAF 표본으로 hold를 채우지 않는다.
 
 실제 Tauri/macOS B12 게이트는 `make e2e-titlebar-dev`로 실행한다. 앱을 한 번 빌드해 실행 파일 SHA를 고정하고 하나의 run id를 만든 뒤, 앞 cycle이 RED여도 정확히 세 번 냉재시작을 끝까지 수행한다. 모든 cycle은 같은 build id·run id·framework·platform·정렬된 실제 창 집합과 브라우저 acceptance 3종을 보고해야 한다. cycle 누락·중복, identity 변경, 창 집합 변경은 전체 RED이며 세 cycle의 모든 창이 GREEN일 때만 집계 GREEN이다.
 

@@ -26,7 +26,8 @@ import {
 } from "./windowRecorder";
 import { createFiniteDomTraceSampler } from "./finiteDomTrace";
 import { layoutSettlementStatus, waitLayoutSettled } from "./waitLayoutSettled";
-import { onLayoutTransitionJournal } from "../lib/layoutTransitionJournal";
+import { declareLayoutCause, onLayoutTransitionJournal } from "../lib/layoutTransitionJournal";
+import { presentationNowUnixMs } from "../lib/presentationClock";
 
 type FocusTraceEntry = {
   t: number;
@@ -759,7 +760,7 @@ export function registerDomCatalog(): void {
 
   register("ui.input.click", {
     description:
-      "Dispatch a real-click sequence (mousedown → mouseup → click) to an exposed node (E2E injection). Use to drive UI flows programmatically or in tests. Pass phase:'down' to send only the mousedown, then observe the mid-gesture state (ui.hit / ui.measure), then phase:'up' to finish with mouseup+click — the only way to verify contracts that live BETWEEN down and up. recordDir starts finite framework-neutral visual evidence before the click without focusing the window; recording.status reports its independent outcome, and capture/storage failure never cancels the click transaction. Unexposed addresses return NOT_EXPOSED — no guessing.",
+      "Dispatch a real-click sequence (mousedown → mouseup → click) to an exposed node (E2E injection). Use to drive UI flows programmatically or in tests. atUnixMs is the epoch the stimulus actually left, on the same presentation clock as layout.transactions and native display ledgers — join causality with it instead of inferring the click time from frames. Pass phase:'down' to send only the mousedown, then observe the mid-gesture state (ui.hit / ui.measure), then phase:'up' to finish with mouseup+click — the only way to verify contracts that live BETWEEN down and up. recordDir starts finite framework-neutral visual evidence before the click without focusing the window; recording.status reports its independent outcome, and capture/storage failure never cancels the click transaction. Unexposed addresses return NOT_EXPOSED — no guessing.",
     triggers: { ko: "클릭 주입 ui클릭 버튼클릭 E2E 게스처 다운 업 분해" },
     params: {
       address: { type: "string", description: "Exposed node address from ui.tree", required: true },
@@ -807,8 +808,14 @@ export function registerDomCatalog(): void {
           "Optional exposed node addresses sampled on each saved recording frame. Requires recordDir; every sample maps 1:1 to fNNNN.png.",
         required: false,
       },
+      causeTraceId: {
+        type: "string",
+        description:
+          "Caller-owned observation-transaction id stamped on the layout transaction this stimulus opens; read it back as causeTraceId in layout.transactions. Without it a caller can only guess which journal entry the click caused.",
+        required: false,
+      },
     },
-    returns: "{ clicked, address, phase?, recording:{status:'not-requested'|'complete'|'failed',mode:'realtime',dir?,requestedFrames?,frames?,reason?}, trace?:{frames,samples} }",
+    returns: "{ clicked, address, atUnixMs, phase?, contentView?, recording:{status:'not-requested'|'complete'|'failed',mode:'realtime',dir?,requestedFrames?,frames?,reason?}, trace?:{frames,samples} }",
     message: () => tmsg("msg.ui.input.click"),
     errors: ["NOT_EXPOSED", "AMBIGUOUS", "INVALID_PARAMS"],
     danger: "inject",
@@ -828,6 +835,16 @@ export function registerDomCatalog(): void {
           ok: false,
           code: "INVALID_PARAMS",
           message: `phase must be 'down' or 'up', got: ${phase}`,
+        };
+      }
+      // 빈 사유는 "사유 없음"과 구별할 수 없다. 조용히 사유 없는 거래로 만들면 부른 쪽은
+      // 자기가 선언했다고 믿고 장부에서 남의 거래를 읽는다.
+      const causeTraceId = p.causeTraceId as string | undefined;
+      if (causeTraceId !== undefined && (typeof causeTraceId !== "string" || causeTraceId.length === 0)) {
+        return {
+          ok: false as const,
+          code: "INVALID_PARAMS" as const,
+          message: "causeTraceId는 비어 있지 않은 문자열이어야 한다",
         };
       }
       const recordDir = p.recordDir as string | undefined;
@@ -935,8 +952,16 @@ export function registerDomCatalog(): void {
         };
         // 호스트 계약을 지난다 — 태그를 직접 만지면 그 구현이 바뀌는 날 이 자리만 조용히 죽는다.
         // 못 하는 구현은 그 자리에서 이름을 달고 거절한다(조용한 성공 금지).
+        if (causeTraceId !== undefined) declareLayoutCause(causeTraceId);
+        const atUnixMs = presentationNowUnixMs();
         await contentViewHost().sendInput(cvLabel, at.x, at.y);
-        return { clicked: true, address: addr, contentView: cvLabel, ...(await observationResult()) };
+        return {
+          clicked: true,
+          address: addr,
+          atUnixMs,
+          contentView: cvLabel,
+          ...(await observationResult()),
+        };
       }
       const types =
         phase === "down"
@@ -947,14 +972,17 @@ export function registerDomCatalog(): void {
       const r = el.getBoundingClientRect();
       const x = r.left + r.width / 2;
       const y = r.top + r.height / 2;
+      // 사유 선언은 자극보다 먼저다 — 클릭 핸들러가 같은 tick에 배치 거래를 열 수 있다.
+      if (causeTraceId !== undefined) declareLayoutCause(causeTraceId);
+      const atUnixMs = presentationNowUnixMs();
       for (const type of types) {
         el.dispatchEvent(
           new MouseEvent(type, { clientX: x, clientY: y, bubbles: true, composed: true, button: 0 }),
         );
       }
       return phase
-        ? { clicked: true, address: addr, phase, ...(await observationResult()) }
-        : { clicked: true, address: addr, ...(await observationResult()) };
+        ? { clicked: true, address: addr, atUnixMs, phase, ...(await observationResult()) }
+        : { clicked: true, address: addr, atUnixMs, ...(await observationResult()) };
     },
   });
 
@@ -1152,12 +1180,12 @@ export function registerDomCatalog(): void {
 
   register("ui.layout.wait-settled", {
     description:
-      "Wait until the current layout transaction is fully settled. Event-driven: consumes layout-motion edges and Web Animations finished promises; timeoutMs is only a finite failure bound, never a polling interval.",
+      "Wait until the current layout transaction is fully settled. Event-driven: consumes layout-motion edges and Web Animations finished promises; timeoutMs is only a finite failure bound, never a polling interval. settledAtUnixMs is the settle epoch on the same presentation clock as layout.transactions and native display ledgers. syncPending reports whether a surface owner confirmed this settlement — true means the DOM went quiet with nothing confirming the surface sync, not that the sync finished.",
     triggers: { ko: "레이아웃 거래 정착 대기 애니메이션 완료" },
     params: {
       timeoutMs: { type: "number", description: "Finite failure bound in ms (default 4000, max 30000)" },
     },
-    returns: "{ waitedMs, animations }",
+    returns: "{ waitedMs, animations, settledAtUnixMs, syncPending }",
     message: () => tmsg("msg.ui.motion"),
     errors: ["INVALID_PARAMS", "TIMEOUT"],
     examples: ['ui.layout.wait-settled \'{"timeoutMs":8000}\''],

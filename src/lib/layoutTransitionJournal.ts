@@ -3,6 +3,8 @@ import type { LayoutMove, LayoutTransitionMode, PreparedLayoutTransition } from 
 
 export type LayoutTransitionJournalEntry = {
   transactionId: string;
+  /** 이 거래를 연 자극이 선언한 관측 거래 식별자. 선언한 자극이 없으면 없다. */
+  causeTraceId?: string;
   sequence: number;
   phase: "prepared" | "committed" | "cancelled" | "failed";
   mode: LayoutTransitionMode;
@@ -25,6 +27,8 @@ export type LayoutTransitionJournalEvent = Readonly<{
 const journal = moduleState("lib/layoutTransitionJournal", () => ({
   sequence: 0,
   entries: [] as LayoutTransitionJournalEntry[],
+  /** 다음 거래 하나가 가져갈 사유. 자극이 선언하고 거래가 소비한다. */
+  pendingCauseTraceId: null as string | null,
 }));
 const journalListeners = moduleState(
   "lib/layoutTransitionJournal#listeners",
@@ -51,6 +55,17 @@ function publishLayoutTransitionJournal(event: LayoutTransitionJournalEvent): vo
   }
 }
 
+/**
+ * 다음 배치 거래 하나의 사유를 선언한다.
+ *
+ * 장부를 sequence 창으로 오려내는 것은 "그 사이에 다른 거래가 없었다"는 가정이다. 가정은
+ * 영수증이 아니므로 자극이 자기 관측 거래 식별자를 직접 남기고, 그 자극이 연 거래 하나가
+ * 가져간다. 한 번 소비되면 사라지므로 뒤따르는 남의 거래에 흘러가지 않는다.
+ */
+export function declareLayoutCause(traceId: string): void {
+  journal.pendingCauseTraceId = traceId;
+}
+
 /** 코어/프레임워크 공통 레이아웃 거래 사실. 최대 64개인 유한 장부이며 감시 폴링이 아니다. */
 export function layoutTransitionJournal(): LayoutTransitionJournalEntry[] {
   return journal.entries.map((entry) => ({ ...entry, moves: entry.moves.map((move) => ({ ...move })) }));
@@ -61,8 +76,11 @@ export function journalPreparedLayoutTransition(
   prepared: PreparedLayoutTransition,
 ): PreparedLayoutTransition {
   const sequence = ++journal.sequence;
+  const causeTraceId = journal.pendingCauseTraceId;
+  journal.pendingCauseTraceId = null;
   const entry: LayoutTransitionJournalEntry = {
     transactionId: `layout-${sequence}`,
+    ...(causeTraceId === null ? {} : { causeTraceId }),
     sequence,
     phase: "prepared",
     mode: prepared.mode,
@@ -116,6 +134,7 @@ export function journalPreparedLayoutTransition(
 export function __resetLayoutTransitionJournalForTest(): void {
   journal.sequence = 0;
   journal.entries.length = 0;
+  journal.pendingCauseTraceId = null;
   journalListeners.clear();
 }
 import { presentationNowUnixMs } from "./presentationClock";

@@ -457,7 +457,7 @@ const B04_PARTICIPANT_KEYS = Object.freeze([
   "connected",
   "frame",
 ]);
-const B04_JOURNAL_ENTRY_KEYS = Object.freeze([
+export const B04_JOURNAL_ENTRY_KEYS = Object.freeze([
   "transactionId",
   "sequence",
   "phase",

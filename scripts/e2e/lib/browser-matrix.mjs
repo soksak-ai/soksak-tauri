@@ -1,5 +1,6 @@
 import { decodePng } from "./png.mjs";
 import { sameRect } from "../../../packages/dom-webview-compositor/src/index.ts";
+import { B04_JOURNAL_ENTRY_KEYS } from "./browser-gates.mjs";
 export { layoutTransactionVerdict } from "./layout-transaction-verdict.mjs";
 
 const PANE_PRESENTATION_TRACE = Object.freeze({
@@ -203,6 +204,9 @@ export function resolveB04MovedParticipant({
 /**
  * raw layout journal의 optional field 계약은 바꾸지 않는다. 다만 B04 canonical receipt는
  * snap 거래도 동일한 exact-key schema를 가져야 하므로 누락 epoch를 null로 표현한다.
+ *
+ * 원장을 통째로 펼치지 않는다 — 코어가 장부에 필드를 하나 더 노출하는 날 그 필드가 canonical
+ * receipt로 새어 exact-key 판정이 남의 이유로 깨진다. 투영 목록은 판정이 선언한 그 목록이다.
  */
 export function normalizeB04JournalEntries(entries) {
   if (!Array.isArray(entries)) throw new Error("B04 journal entries는 배열이어야 한다");
@@ -210,11 +214,9 @@ export function normalizeB04JournalEntries(entries) {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
       throw new Error(`B04 journal entry[${index}]가 객체가 아니다`);
     }
-    return {
-      ...entry,
-      startAtUnixMs: entry.startAtUnixMs ?? null,
-      durationMs: entry.durationMs ?? null,
-    };
+    const projected = {};
+    for (const key of B04_JOURNAL_ENTRY_KEYS) projected[key] = entry[key] ?? null;
+    return projected;
   });
 }
 

@@ -34,6 +34,7 @@ import {
   calibrationFrameScale,
 } from "./browser-matrix.mjs";
 import { encodePng } from "./png.mjs";
+import { B04_JOURNAL_ENTRY_KEYS } from "./browser-gates.mjs";
 
 describe("브라우저 구현 행렬", () => {
   it("Tauri plugin chrome와 native surface는 같은 pane presentation root를 공유한다", () => {
@@ -530,6 +531,27 @@ describe("브라우저 구현 행렬", () => {
     expect(canonical[1]).toEqual({ ...rawGlide, durationMs: null });
     expect(Object.hasOwn(rawSnap, "startAtUnixMs")).toBe(false);
     expect(canonical[0]).not.toBe(rawSnap);
+  });
+
+  it("코어가 장부에 필드를 더 노출해도 canonical receipt는 선언한 목록 그대로다", () => {
+    const raw = {
+      sequence: 7,
+      transactionId: "tx-cause",
+      causeTraceId: "browser-01-left-uuid",
+      phase: "committed",
+      mode: "glide",
+      startAtUnixMs: 1_010,
+      durationMs: 340,
+      preparedAtUnixMs: 1_000,
+      domCommittedAtUnixMs: 1_002,
+      closedAtUnixMs: 1_004,
+      moves: [{ viewId: "view-left", dx: 160 }],
+    };
+    const [canonical] = normalizeB04JournalEntries([raw]);
+
+    expect(Object.keys(canonical).sort()).toEqual([...B04_JOURNAL_ENTRY_KEYS].sort());
+    expect(Object.hasOwn(canonical, "causeTraceId")).toBe(false);
+    expect(Object.hasOwn(canonical, "sequence")).toBe(true);
   });
 
   it("B04 raw DOM trace에 initial·DOM-commit·presentation frame 중 하나라도 없으면 RED다", () => {
