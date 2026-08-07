@@ -86,6 +86,31 @@ describe("window.resizeSequence recording contract", () => {
     }));
   });
 
+  it("첫 resize 전의 관측을 baseline으로 공개하고 응답 계약에 적는다", async () => {
+    expect(getSpec("window.resizeSequence")?.returns).toContain("baseline");
+
+    let applied = 0;
+    setPhysicalSize.mockImplementation(async () => { applied += 1; });
+    sampleWindowResizeProbe.mockImplementation(async () => ({ resizesApplied: applied }));
+
+    const result = await execute("window.resizeSequence", {
+      sizes: [{ w: 800, h: 600 }, { w: 1200, h: 800 }],
+      intervalMs: 0,
+    }, {});
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        steps: 2,
+        baseline: { resizesApplied: 0 },
+        samples: [
+          { step: 0, size: { w: 800, h: 600 }, observation: { resizesApplied: 1 } },
+          { step: 1, size: { w: 1200, h: 800 }, observation: { resizesApplied: 2 } },
+        ],
+      },
+    });
+  });
+
   it.each([
     ["recordFrames", 0],
     ["recordFrames", 601],
