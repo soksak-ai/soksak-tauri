@@ -1,4 +1,9 @@
 import { B11_PAGE_KEYS } from "./browser-gate-b11.mjs";
+import {
+  EVIDENCE_WIRING_KEY,
+  isRecord,
+  mapWithWiring,
+} from "./browser-machine-judge-support.mjs";
 
 /**
  * 각 페이지 축을 페이지에서 읽는 식. 축 목록은 판정(B11_PAGE_KEYS)이 소유하고
@@ -31,17 +36,31 @@ export function fullCaptureDocumentProbeJs() {
   return `return {${fields}};`;
 }
 
+const finiteOrNull = (value) => typeof value === "number" && Number.isFinite(value) ? value : null;
+
 /**
  * probe 결과를 판정이 읽는 축으로 옮긴다. 못 읽은 축은 null로 남긴다 — 0으로 채우면
  * 실패가 성공값으로 둔갑한다.
+ *
+ * 읽은 축과 probe가 실제로 내보낸 축은 배선 장부로 맞댄다. eval 응답을 벗기지 않고 넘기면
+ * 여섯 축이 한꺼번에 null이 되는데, 그 원인은 봉투 이름 하나다 — 값 증상 여섯 개가 아니라
+ * 그 이름이 판정에 실려야 한다.
+ *
+ * 이미 장부를 든 상태는 다시 재지 않고 그 장부를 그대로 잇는다. 배선은 probe와 첫 독자 사이의
+ * 사실이라 두 번째 독자가 다시 잴 수 없다 — 다시 재면 두 번째 옮김이 첫 장부를 지운다.
  */
 export function mapPageState(raw) {
-  const state = {};
-  for (const axis of B11_PAGE_KEYS) {
-    const value = raw?.[axis];
-    state[axis] = typeof value === "number" && Number.isFinite(value) ? value : null;
+  if (isRecord(raw) && raw[EVIDENCE_WIRING_KEY] !== undefined) {
+    const state = {};
+    for (const axis of B11_PAGE_KEYS) state[axis] = finiteOrNull(raw[axis]);
+    state[EVIDENCE_WIRING_KEY] = raw[EVIDENCE_WIRING_KEY];
+    return state;
   }
-  return state;
+  return mapWithWiring(raw, "B11.page", (checkpoint) => {
+    const state = {};
+    for (const axis of B11_PAGE_KEYS) state[axis] = finiteOrNull(checkpoint.take(axis));
+    return state;
+  });
 }
 
 /**

@@ -665,13 +665,43 @@ describe("브라우저 구현 행렬", () => {
   });
 
   it("전체 창 resize는 큰 폭의 양방향 교차를 반복하고 정확히 원복한다", () => {
-    const sizes = hostileWindowResizeSizes({ w: 2400, h: 1600 });
+    const original = { w: 2400, h: 1600 };
+    const sizes = hostileWindowResizeSizes(original);
     expect(sizes.length).toBeGreaterThanOrEqual(12);
-    expect(sizes.at(-1)).toEqual({ w: 2400, h: 1600 });
+    expect(sizes.at(-1)).toEqual({ ...original, phase: "restore" });
     const dw = sizes.slice(1).map((size, i) => Math.sign(size.w - sizes[i].w));
     const dh = sizes.slice(1).map((size, i) => Math.sign(size.h - sizes[i].h));
     expect(new Set(dw)).toEqual(new Set([-1, 0, 1]));
     expect(new Set(dh)).toEqual(new Set([-1, 0, 1]));
+    // 매 단계는 앞 단계와 다른 크기여야 왕복이다 — 같은 크기를 다시 요청하면 그 단계는 거래가 아니다.
+    expect(sizes.slice(1).every((size, i) => size.w !== sizes[i].w || size.h !== sizes[i].h)).toBe(true);
+  });
+
+  // 선언한 의도는 그 단계의 크기에 대해 참이어야 한다. 창은 이미 화면을 채운 채 시작하므로
+  // 넓힘·높임은 원본을 넘는 크기가 아니라 원본 대비 한 축만 자른 비율 왜곡이다.
+  it("각 단계는 자기 크기에 대해 참인 phase를 선언한다", () => {
+    const original = { w: 2400, h: 1600 };
+    const sizes = hostileWindowResizeSizes(original);
+    const truthful = {
+      shrink: (size) => size.w < original.w && size.h < original.h,
+      wide: (size) => size.w >= original.w && size.h < original.h,
+      tall: (size) => size.w < original.w && size.h >= original.h,
+      restore: (size) => size.w === original.w && size.h === original.h,
+    };
+    for (const size of sizes) {
+      expect(truthful[size.phase], `unknown phase ${size.phase}`).toBeTypeOf("function");
+      expect(truthful[size.phase](size), `${size.phase} ${JSON.stringify(size)}`).toBe(true);
+    }
+    expect(new Set(sizes.map((size) => size.phase)))
+      .toEqual(new Set(["shrink", "wide", "tall", "restore"]));
+  });
+
+  // 하한에 닿는 작은 창에서는 축소 단계가 원본과 같아진다. 거짓 선언을 실은 시퀀스를 내보내면
+  // 앱이 어기지 않은 계약을 게이트가 앱의 red 로 부른다.
+  it("선언을 참으로 만들 수 없는 원본 크기에는 자극을 만들지 않는다", () => {
+    expect(() => hostileWindowResizeSizes({ w: 2400, h: 1600 })).not.toThrow();
+    expect(() => hostileWindowResizeSizes({ w: 1400, h: 1600 })).toThrow(/hostile window resize/);
+    expect(() => hostileWindowResizeSizes({ w: 2400, h: 900 })).toThrow(/hostile window resize/);
   });
 
   it("windowed view→surface→engine 장부가 창 owner·가시성·presentation까지 일치해야 한다", () => {

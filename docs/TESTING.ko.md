@@ -55,7 +55,11 @@ B10 mapper는 baseline과 각 resize ACK가 낸 window/frame/generation/presenta
 닫힌 transaction으로 변환한다. baseline은 같은 명령이 첫 크기를 요청하기 전에 같은 관측자에게서 읽은
 resize 이전 관측이며, `baseline.status`가 아직 묻지 않음·정착한 native 거래가 없어 거절함·실제
 관측함을 가른다. 거절은 사유를 남기고 유한 resize 거래를 취소하지 않는다. 요청한 `size`를 관측된
-window geometry로 복사하지 않는다.
+window geometry로 복사하지 않는다. 각 단계의 의도(`phase`)는 시퀀스를 만든 하니스가 크기와 같은
+자리에서 선언하고 관측이 그대로 되돌려주며, 판정은 그 선언을 요청 크기와 대조한다. 창은 이미
+화면을 채운 채 시작하므로 `wide`·`tall`은 원본을 넘는 크기가 아니라 원본 대비 한 축만 자른 비율
+왜곡이다. 단계 사이의 오름차순이나 "원복은 마지막 하나뿐"은 요구하지 않는다 — 원본 크기로 여러 번
+돌아오는 것이 왕복 그 자체다.
 
 정본 하니스는 여러 모듈이 나눠 소유한다. 측정 커버리지와 엔진 순차 실행은
 `scripts/e2e/lib/browser-gate-coverage.mjs`가, 센티널 뷰의 마운트 계약은 `browser-sentinel.mjs`가,
@@ -75,7 +79,7 @@ window geometry로 복사하지 않는다.
 | B07 | PIN 좌·우 인접·분리 border/레이아웃 불변 | 세 focus 상태의 border 관계와 rail/pane DOM identity·rect·split tree 불변을 단언한다. 그려진 변은 관계 노드가 내는 레일 상자와 판 상자 사이 거리로 재고, 선언된 border mode 로 읽지 않는다. |
 | B08 | PIN 양방향 maximize/restore/station 불변 | 좌·우 각각 maximize/restore 전후 방향·split·station의 완전 동일성과, 대상 뷰의 native surface rect 를 직전·최대화·복원 세 시점으로 단언한다. 최대화는 실제로 키워야 하고 복원은 반올림 1px 안에서 원래 자리로 돌아와야 한다. |
 | B09 | rail `+`/우측 sidebar/modal이 native 위 | 실제 교집합의 공개 hit/layer 상태가 chrome을 최상단 소유자로 보고하는지 단언한다. |
-| B10 | hostile 전체창 빠른 resize affine + 원복 | 유한 resize transaction마다 DOM/native 좌표 정합과 최종 원래 기하 복원을 단언한다. |
+| B10 | hostile 전체창 빠른 resize affine + 원복 | 유한 resize transaction마다 DOM/native 좌표 정합과 최종 원래 기하 복원을 단언한다. 거래는 4개 이상이고 매 거래가 직전에 관측한 크기와 다른 크기를 요청해야 한다. 각 거래는 자기 의도(`shrink`·`wide`·`tall`·`restore`)를 선언하고 그 선언이 baseline 대비 요청 크기에 대해 참이어야 하며, 네 의도가 각각 최소 한 번 나와야 한다. 마지막 거래는 `restore`이고 그 관측 기하가 baseline과 완전히 같아야 한다. 중간에 원본 크기로 돌아오는 거래는 왕복의 일부라 거절하지 않는다. |
 | B11 | pane resize 왕복 + wheel `0→480→0` + 탭 지정 full capture | 세 축을 각자 실측으로 단언한다. pane: gutter를 끈 요청 dx만큼 pane rect, 그 위 native surface rect, 그 안 문서 뷰포트 폭이 함께 움직이고 함께 되돌아온다(왼쪽 pane은 넓어지고 오른쪽 pane은 같은 만큼 좁아지며 x가 밀린다). wheel: 좌표 `0→480→0`과 함께 페이지가 센 wheel/scroll 사건 수가 구간마다 늘고 누적 델타 방향이 요청과 같다. capture: 명시한 view·경로·바이트가 정확하고, 산출물 PNG의 IHDR 실측 크기가 두 축 같은 배율로 문서 전체를 담는다(영수증의 요청 문서 크기끼리 맞대는 순환을 인정하지 않는다). 네 측정은 서로 다른 layout settle epoch를 싣고, 도장은 pane resize까지 잰 뒤에 한 번 찍는다. |
 | B12 | macOS traffic lights 냉시작·상하 중심·composition·hostile resize·titlebar 높이 변화 | 복원 논리 크기와 저장 zoom이 native 적용 ACK를 받고 post-zoom 공개 titlebar가 GREEN으로 합성된 뒤에만 창을 표시한다. Tauri는 하나의 AppKit 메인 스레드 transaction과 하나의 paint owner만 쓴다. 현재 버튼 프레임에서 그리는 backing 영역 3개, 공개 AppKit button 3개, DOM reservation 3개의 대응·포함·상하 중심·resize 정합을 단언한다. 시작 게이트는 AppKit 표시 transaction을 flush한 다음 실제 프레임과 선언 프레임을 읽기 전용으로 다시 대조한다. 과거의 `lastApplyOk` 영수증만으로는 표시 뒤 button 프레임이나 owner 계층이 유지되지 않은 창의 노출을 승인할 수 없다. 동적 합성기가 설치된 동안 Tauri 설정의 `trafficLightPosition`은 금지한다. 그렇지 않으면 Tao의 고정-y draw owner가 DOM 합성기와 경쟁하고 non-child Wry 경로에도 같은 고정 목표가 전달된다. 어댑터는 최초 AppKit 가로 간격을 유지하고 세로 위치만 공개 DOM titlebar에서 도출한다. 공개 async resize는 `Window`를 awaited oneshot ACK까지 소유하며 timeout 뒤 지연 mutation과 큐에 넘긴 bare `NSWindow` pointer를 금지한다. `titlebar.height.set {height}`은 공개 DOM 높이를 바꾸고 완전한 paint 경계를 지난 뒤 같은 엄격 native 영수증을 반환하며, `titlebar.height.reset`은 직전 inline height/flex-basis를 정확히 복원한다. 모든 냉시작·높이 표본에서 button/backing 중심 차이는 반올림 허용치 안의 0이어야 한다. Electron은 앞으로 `BrowserWindow.getWindowButtonPosition`에 기반한 공개 어댑터에서 같은 계약을 단언해야 한다. 그 어댑터가 없는 현재 B12는 명시적 `blocked`이며, DOM 복제본이나 합성한 native frame으로 대신할 수 없다. macOS가 아니면 정적으로 `not-applicable`이다. |
 

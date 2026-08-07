@@ -105,4 +105,63 @@ describe("B11 live evidence mapper", () => {
     expect(tab.paneResize.requestedDx).toBe(80);
     expect(tab.paneResize.stages.wider.paneWidth).toBe(tab.paneResize.stages.baseline.paneWidth);
   });
+
+  it("green 경로에서는 배선 장부가 깨끗하다", () => {
+    expect(mapB11TabEvidence(harnessTab(0)).evidenceWiring).toEqual({
+      source: "B11.tab",
+      unconsumed: [],
+      unproduced: [],
+      error: null,
+    });
+  });
+
+  it("어긋난 인계 필드를 양쪽 이름으로 부른다", () => {
+    const value = harnessTab(0);
+    value.capture = value.fullCapture;
+    delete value.fullCapture;
+    const tab = mapB11TabEvidence(value);
+    expect(tab.evidenceWiring).toEqual({
+      source: "B11.tab",
+      unconsumed: ["capture"],
+      unproduced: ["fullCapture"],
+      error: null,
+    });
+    const verdict = judgeB11MachineEvidence({ engine, tabs: [tab, mapB11TabEvidence(harnessTab(1))] });
+    expect(verdict.status).toBe("red");
+    expect(verdict.evidence).toContain("B11:wiring.B11.tab.capture=produced-not-consumed");
+    expect(verdict.evidence).toContain("B11:wiring.B11.tab.fullCapture=consumed-not-produced");
+  });
+
+  it("pane 인계 기록이 이름을 갈면 그 이름이 판정에 실린다", () => {
+    // pane resize 반쪽도 같은 인계 기록이다 — 이름이 갈리면 세 stage가 조용히 null이 된다.
+    const value = harnessTab(0);
+    value.pane = value.paneResize;
+    delete value.paneResize;
+    const tab = mapB11TabEvidence(value);
+    const verdict = judgeB11MachineEvidence({ engine, tabs: [tab, mapB11TabEvidence(harnessTab(1))] });
+    expect(verdict.status).toBe("red");
+    expect(verdict.evidence).toContain("B11:wiring.B11.tab.pane=produced-not-consumed");
+    expect(verdict.evidence).toContain("B11:wiring.B11.tab.paneResize=consumed-not-produced");
+  });
+
+  it("던지는 인계 필드가 하니스를 죽이지 않는다", () => {
+    const value = harnessTab(0);
+    Object.defineProperty(value, "scroll", {
+      enumerable: true,
+      get() {
+        throw new TypeError("wheel receipt read failed");
+      },
+    });
+    let verdict;
+    expect(() => {
+      verdict = judgeB11MachineEvidence({
+        engine,
+        tabs: [mapB11TabEvidence(value), mapB11TabEvidence(harnessTab(1))],
+      });
+    }).not.toThrow();
+    expect(verdict.status).toBe("red");
+    expect(verdict.evidence).toContain(
+      'B11:wiring.B11.tab=mapper-threw/"TypeError: wheel receipt read failed"',
+    );
+  });
 });

@@ -44,6 +44,13 @@ function paneStages(index) {
   return { baseline: stage(2_000, 0), wider: stage(3_000, 80), restored: stage(4_000, 0) };
 }
 
+const cleanPageWiring = () => ({
+  source: "B11.page",
+  unconsumed: [],
+  unproduced: [],
+  error: null,
+});
+
 function b11TabsFromProbe(raw) {
   return ["view-0", "view-1"].map((viewId, index) => mapB11TabEvidence({
     viewId,
@@ -93,6 +100,7 @@ describe("full capture page-state probe", () => {
       viewportHeight: 262,
       documentWidth: 608,
       documentHeight: 2140,
+      evidenceWiring: cleanPageWiring(),
     });
     expect(judgeB11MachineEvidence({ engine: "browser", tabs })).toMatchObject({ status: "green" });
   });
@@ -117,6 +125,18 @@ describe("full capture page-state probe", () => {
       viewportHeight: null,
       documentWidth: null,
       documentHeight: null,
+      evidenceWiring: {
+        source: "B11.page",
+        unconsumed: [],
+        unproduced: [
+          "scrollX",
+          "viewportWidth",
+          "viewportHeight",
+          "documentWidth",
+          "documentHeight",
+        ],
+        error: null,
+      },
     });
     expect(mapPageState(undefined).documentHeight).toBeNull();
   });
@@ -126,6 +146,23 @@ describe("full capture page-state probe", () => {
     const once = mapPageState(runPageProbe(fullCaptureDocumentProbeJs(), FIXTURE_PAGE));
     expect(mapPageState(once)).toEqual(once);
     expect(b11TabsFromProbe(once)[0].capture.before).toEqual(once);
+  });
+
+  it("probe 결과가 봉해진 채 오면 소비된 축과 생산된 이름을 둘 다 부른다", () => {
+    // 실제 사고 모양: eval 응답을 벗기지 않고 그대로 넘기면 여섯 축이 조용히 null 이 된다.
+    const wrapped = { value: runPageProbe(fullCaptureDocumentProbeJs(), FIXTURE_PAGE) };
+    const state = mapPageState(wrapped);
+    expect(state.evidenceWiring).toEqual({
+      source: "B11.page",
+      unconsumed: ["value"],
+      unproduced: [...B11_PAGE_KEYS],
+      error: null,
+    });
+    const tabs = b11TabsFromProbe(wrapped);
+    const verdict = judgeB11MachineEvidence({ engine: "browser", tabs });
+    expect(verdict.status).toBe("red");
+    expect(verdict.evidence).toContain("B11:wiring.B11.page.value=produced-not-consumed");
+    expect(verdict.evidence).toContain("B11:wiring.B11.page.scrollY=consumed-not-produced");
   });
 
   it("영수증 판정이 읽는 문서 기하로 같은 축을 옮긴다", () => {

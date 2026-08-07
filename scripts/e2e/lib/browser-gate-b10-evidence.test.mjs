@@ -133,4 +133,48 @@ describe("B10 live evidence mapper", () => {
     expect(evidence.transactions[0].post.windowGeometry.x).toBeNull();
     expect(judgeB10MachineEvidence(evidence).status).toBe("red");
   });
+
+  it("records a clean wiring ledger on the green path", () => {
+    expect(mapB10LiveEvidence(raw()).evidenceWiring).toEqual({
+      source: "B10.live",
+      unconsumed: [],
+      unproduced: [],
+      error: null,
+    });
+  });
+
+  it("names a drifted envelope field on both sides instead of mapping it to null", () => {
+    const value = raw();
+    value.resize = value.resizeSequence;
+    delete value.resizeSequence;
+    const evidence = mapB10LiveEvidence(value);
+    expect(evidence.evidenceWiring).toEqual({
+      source: "B10.live",
+      unconsumed: ["resize"],
+      unproduced: ["resizeSequence"],
+      error: null,
+    });
+    const verdict = judgeB10MachineEvidence(evidence);
+    expect(verdict.status).toBe("red");
+    expect(verdict.evidence).toContain("B10:wiring.B10.live.resize=produced-not-consumed");
+    expect(verdict.evidence).toContain("B10:wiring.B10.live.resizeSequence=consumed-not-produced");
+  });
+
+  it("names an envelope field that throws instead of killing the harness", () => {
+    const value = raw();
+    Object.defineProperty(value, "scaleFactor", {
+      enumerable: true,
+      get() {
+        throw new TypeError("scale factor read failed");
+      },
+    });
+    let verdict;
+    expect(() => {
+      verdict = judgeB10MachineEvidence(mapB10LiveEvidence(value));
+    }).not.toThrow();
+    expect(verdict.status).toBe("red");
+    expect(verdict.evidence).toContain(
+      'B10:wiring.B10.live=mapper-threw/"TypeError: scale factor read failed"',
+    );
+  });
 });

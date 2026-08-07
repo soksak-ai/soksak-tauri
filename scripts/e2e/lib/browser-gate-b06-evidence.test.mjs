@@ -43,4 +43,74 @@ describe("B06 live evidence mapper", () => {
     expect(evidence.checkpoints[0].panes[0].adapterAlpha).toBeNull();
     expect(judgeB06MachineEvidence(evidence).status).toBe("red");
   });
+
+  it("records a clean wiring ledger on both the envelope and every checkpoint", () => {
+    const evidence = mapB06LiveEvidence(raw());
+    expect(evidence.evidenceWiring).toEqual({
+      source: "B06.live",
+      unconsumed: [],
+      unproduced: [],
+      error: null,
+    });
+    expect(evidence.checkpoints.map((checkpoint) => checkpoint.evidenceWiring)).toEqual([
+      { source: "B06.checkpoint[0]", unconsumed: [], unproduced: [], error: null },
+      { source: "B06.checkpoint[1]", unconsumed: [], unproduced: [], error: null },
+    ]);
+  });
+
+  it("names the harness-side rail rename on both sides instead of losing the exemption", () => {
+    // 실제 사고 모양: 하니스가 checkpoint 에 railComposition 을 싣고 mapper 는 rail 을 찾았다.
+    // 생산만 되고 소비되지 않은 이름과 소비만 되고 생산되지 않은 이름이 둘 다 조용했다.
+    const value = raw();
+    value.checkpoints[0].railComposition = value.checkpoints[0].rail;
+    delete value.checkpoints[0].rail;
+    const evidence = mapB06LiveEvidence(value);
+    expect(evidence.checkpoints[0].evidenceWiring).toEqual({
+      source: "B06.checkpoint[0]",
+      unconsumed: ["railComposition"],
+      unproduced: ["rail"],
+      error: null,
+    });
+    const verdict = judgeB06MachineEvidence(evidence);
+    expect(verdict.status).toBe("red");
+    expect(verdict.evidence).toContain(
+      "B06:wiring.B06.checkpoint[0].railComposition=produced-not-consumed",
+    );
+    expect(verdict.evidence).toContain("B06:wiring.B06.checkpoint[0].rail=consumed-not-produced");
+  });
+
+  it("names a drifted envelope field on both sides", () => {
+    const value = raw();
+    value.phases = value.checkpoints;
+    delete value.checkpoints;
+    const evidence = mapB06LiveEvidence(value);
+    expect(evidence.evidenceWiring).toEqual({
+      source: "B06.live",
+      unconsumed: ["phases"],
+      unproduced: ["checkpoints"],
+      error: null,
+    });
+    const verdict = judgeB06MachineEvidence(evidence);
+    expect(verdict.status).toBe("red");
+    expect(verdict.evidence).toContain("B06:wiring.B06.live.phases=produced-not-consumed");
+    expect(verdict.evidence).toContain("B06:wiring.B06.live.checkpoints=consumed-not-produced");
+  });
+
+  it("names a checkpoint field that throws instead of killing the harness", () => {
+    const value = raw();
+    Object.defineProperty(value.checkpoints[0], "phase", {
+      enumerable: true,
+      get() {
+        throw new TypeError("phase checkpoint read failed");
+      },
+    });
+    let verdict;
+    expect(() => {
+      verdict = judgeB06MachineEvidence(mapB06LiveEvidence(value));
+    }).not.toThrow();
+    expect(verdict.status).toBe("red");
+    expect(verdict.evidence).toContain(
+      'B06:wiring.B06.checkpoint[0]=mapper-threw/"TypeError: phase checkpoint read failed"',
+    );
+  });
 });
