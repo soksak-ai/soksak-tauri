@@ -9,6 +9,7 @@ import {
   layoutTransitionJournal,
   onLayoutTransitionJournal,
 } from "./layoutTransitionJournal";
+import { presentationNowUnixMs } from "./presentationClock";
 
 describe("layout transition public journal", () => {
   beforeEach(() => {
@@ -100,6 +101,64 @@ describe("layout transition public journal", () => {
     }
   });
 
+  // 거래는 자기가 예약한 움직임보다 먼저 끝날 수 없다.
+  //
+  // glide 거래는 DOM과 문서 밖 표면이 함께 출발할 절대 epoch(startAtUnixMs)를 선언하고, 그
+  // epoch는 surface ACK보다 뒤다(어댑터가 준비 왕복을 덮을 lead를 준다). 그 ACK 시각을 그대로
+  // closedAtUnixMs로 찍으면 장부는 "닫혔다"고 답하면서 자기가 예약한 출발은 아직 미래에 둔다.
+  // 그 사이 구간을 읽는 쪽은 이 재배치가 끝났는지 알 수 없다.
+  it("선언한 출발 epoch 전에는 glide 거래를 닫지 않는다", async () => {
+    const startAtUnixMs = presentationNowUnixMs() + 250;
+    let releaseSurfaceAck!: () => void;
+    const surfaceAck = new Promise<void>((resolve) => { releaseSurfaceAck = resolve; });
+    registerLayoutTransitionHost({
+      prepareMove: async () => ({
+        mode: "glide",
+        startAtUnixMs,
+        durationMs: 340,
+        commit: () => surfaceAck,
+        cancel: vi.fn(),
+      }),
+    });
+    const prepared = await prepareLayoutMove([{ viewId: "v1", dx: -160 }]);
+    const committing = prepared.commit();
+
+    releaseSurfaceAck();
+    await surfaceAck;
+    await Promise.resolve();
+    // ACK는 끝났지만 예약한 출발은 아직 오지 않았다 — 거래는 열려 있어야 한다.
+    expect(layoutTransitionJournal()[0]).toEqual(expect.objectContaining({
+      phase: "prepared",
+      domCommittedAtUnixMs: expect.any(Number),
+    }));
+    expect(layoutTransitionJournal()[0]?.closedAtUnixMs).toBeUndefined();
+
+    await committing;
+    const entry = layoutTransitionJournal()[0]!;
+    expect(entry.phase).toBe("committed");
+    expect(entry.closedAtUnixMs).toBeGreaterThanOrEqual(startAtUnixMs);
+  });
+
+  it("이미 지난 출발 epoch는 기다리지 않는다 — 낡은 예약이 거래를 붙잡지 못한다", async () => {
+    const startAtUnixMs = presentationNowUnixMs() - 1_000;
+    registerLayoutTransitionHost({
+      prepareMove: async () => ({
+        mode: "glide",
+        startAtUnixMs,
+        durationMs: 340,
+        commit: async () => {},
+        cancel: vi.fn(),
+      }),
+    });
+    const prepared = await prepareLayoutMove([{ viewId: "v1", dx: -160 }]);
+    const before = presentationNowUnixMs();
+    await prepared.commit();
+    const entry = layoutTransitionJournal()[0]!;
+    expect(entry.phase).toBe("committed");
+    expect(entry.closedAtUnixMs).toBeGreaterThanOrEqual(before);
+    expect(entry.closedAtUnixMs! - before).toBeLessThan(100);
+  });
+
   it("surface ACK reject를 prepared에 방치하지 않고 failed terminal 사실로 닫는다", async () => {
     registerLayoutTransitionHost({
       prepareMove: async () => ({
@@ -117,5 +176,24 @@ describe("layout transition public journal", () => {
       closedAtUnixMs: expect.any(Number),
       failure: "surface ACK rejected",
     }));
+  });
+
+  it("실패한 거래는 예약한 출발을 기다리지 않는다 — 움직이지 않을 거래에 미래가 없다", async () => {
+    registerLayoutTransitionHost({
+      prepareMove: async () => ({
+        mode: "glide",
+        startAtUnixMs: presentationNowUnixMs() + 5_000,
+        durationMs: 340,
+        commit: async () => { throw new Error("surface ACK rejected"); },
+        cancel: vi.fn(),
+      }),
+    });
+    const prepared = await prepareLayoutMove([{ viewId: "v1", dx: -160 }]);
+    const before = presentationNowUnixMs();
+
+    await expect(prepared.commit()).rejects.toThrow("surface ACK rejected");
+    const entry = layoutTransitionJournal()[0]!;
+    expect(entry.phase).toBe("failed");
+    expect(entry.closedAtUnixMs! - before).toBeLessThan(100);
   });
 });

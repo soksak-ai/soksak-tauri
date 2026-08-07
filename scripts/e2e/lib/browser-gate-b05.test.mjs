@@ -131,6 +131,47 @@ describe("B05 actual presentation continuity judge", () => {
     }
   });
 
+  // 실측 layout 시각. buildId c437078c / runId slot-freeze-0888b3ec 의 browser-chromium
+  // to-left 거래에서 자극 epoch 대비 간격을 그대로 옮겼다: 자극 1786074192532,
+  // preparedAtUnixMs +52, closedAtUnixMs +63, startAtUnixMs +148. 좌표·표시 사건은 이 판정과
+  // 무관하므로 합성 원장을 그대로 쓴다 — 바꾼 것은 거래 시각 셋뿐이다.
+  const OBSERVED_LAYOUT = Object.freeze({
+    preparedAfterStimulusMs: 52,
+    closedAfterStimulusMs: 63,
+    startAfterStimulusMs: 148,
+  });
+
+  const observedEvidence = (closedAfterStimulusMs) => {
+    const value = evidence("browser-chromium");
+    for (const transition of value.transitions) {
+      const stimulusAtUnixMs = transition.trace.stimulus.atUnixMs;
+      transition.trace.layout.preparedAtUnixMs =
+        stimulusAtUnixMs + OBSERVED_LAYOUT.preparedAfterStimulusMs;
+      transition.trace.layout.closedAtUnixMs = stimulusAtUnixMs + closedAfterStimulusMs;
+      transition.trace.layout.startAtUnixMs =
+        stimulusAtUnixMs + OBSERVED_LAYOUT.startAfterStimulusMs;
+    }
+    return value;
+  };
+
+  it("실측 거래 시각을 그대로 두면 출발 epoch가 거래 밖이라고 이름 짓는다", () => {
+    const verdict = judgeB05MachineEvidence(observedEvidence(OBSERVED_LAYOUT.closedAfterStimulusMs));
+    expect(verdict.status).toBe("red");
+    expect(verdict.evidence).toEqual([
+      "B05:transitions[0].trace.layout.startAtUnixMs=within-transaction",
+      "B05:transitions[1].trace.layout.startAtUnixMs=within-transaction",
+    ]);
+  });
+
+  it("거래가 선언한 출발 epoch까지 열려 있으면 그 실패만 사라진다", () => {
+    // 구현 수정의 모양: surface ACK(+63) 뒤에도 선언한 출발(+148)까지 거래를 열어 둔다.
+    const verdict = judgeB05MachineEvidence(observedEvidence(OBSERVED_LAYOUT.startAfterStimulusMs));
+    expect(verdict.status).toBe("green");
+    expect(verdict.evidence).not.toEqual(expect.arrayContaining([
+      expect.stringContaining("within-transaction"),
+    ]));
+  });
+
   it("증거가 예산·픽셀·누적 counter를 끼워 기준을 바꾸지 못한다", () => {
     const cases = [
       (value) => { value.transitions[0].trace.latencyBudgetMs = 10_000; },
