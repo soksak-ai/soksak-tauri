@@ -9,6 +9,12 @@
 // 닫혀 위반한 수치가 어느 보고서에도 이름으로 남지 않는다.
 //
 // 어느 평면을 읽을지는 프레임워크 이름이 아니라 관측면이 실은 선언(kind·verdict)이 정한다.
+//
+// pane member 의 어긋난 frame 은 관측 시점 문제가 아니다. 비교하는 두 값은 한 답에서 나온다 —
+// 실제 frame 과 계약 frame 을 같은 읽기가 현재 host bounds 로 함께 만든다
+// (frameworks/tauri/src/webview/layer.rs:902). host frame 을 바꾸는 자리는 같은 CATransaction
+// 안에서 member frame 도 다시 쓴다(layer.rs:952·1054 → resize_pane_children layer.rs:1073).
+// 그래서 반쯤 적용된 쌍을 읽을 수 없고, 어긋난 delta 는 그 순간 실제로 그런 상태라는 뜻이다.
 import { tauriSurfaceResizePolicyVerdict } from "./tauri-surface-resize-policy.mjs";
 
 const RECT_KEYS = Object.freeze(["x", "y", "w", "h"]);
