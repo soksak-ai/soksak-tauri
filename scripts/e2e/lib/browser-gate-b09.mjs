@@ -18,6 +18,7 @@ const SAMPLE_KEYS = Object.freeze([
   "target",
   "relation",
   "chromeRect",
+  "chromeControl",
   "nativeSurface",
   "hit",
 ]);
@@ -26,17 +27,26 @@ const TARGET_RELATIONS = Object.freeze({
   "sidebar/right": "point-overlap",
   "modal/project-new": "point-overlap",
 });
+/** modal 만 자기 평면 번호로 chrome 평면 위에 있음을 증명한다(NATIVE-SURFACES §4). */
+const TARGET_MIN_PLANE_Z = Object.freeze({ "modal/project-new": 300 });
 const NATIVE_SURFACE_KEYS = Object.freeze([
   "viewId",
   "surfaceId",
   "topologyPath",
+  "chromeAboveHost",
   "live",
   "visible",
   "presented",
   "rect",
 ]);
+const CHROME_CONTROL_KEYS = Object.freeze(["reachable", "planeZ"]);
 const HIT_KEYS = Object.freeze(["point", "topmostOwner", "stack"]);
 const STACK_LAYER_KEYS = Object.freeze(["kind", "owner", "surfaceId"]);
+
+/** 응답이 답하는 최상위 소유자는 target 자신이거나 그 하위 주소다 — 잎을 target 으로 눕히지 않는다. */
+function ownedByTarget(owner, target) {
+  return owner === target || (typeof owner === "string" && owner.startsWith(`${target}/`));
+}
 
 function inspectRect(value, path, failures) {
   if (!requireExactKeys(value, RECT_KEYS, path, failures)) return false;
@@ -99,6 +109,11 @@ function inspectNativeSurface(value, path, failures) {
   if (!hasText(value.topologyPath)) {
     failures.push(`${path}.topologyPath=non-empty/${displayValue(value.topologyPath)}`);
   }
+  // 실측 형제 순서. 선언이나 class 이름 추측은 증거가 아니다(NATIVE-SURFACES §4) — 이 사실이
+  // 영수증에 실리지 않으면 "chrome 이 위"는 하니스가 적어 넣은 문장일 뿐이다.
+  if (value.chromeAboveHost !== true) {
+    failures.push(`${path}.chromeAboveHost=true/${displayValue(value.chromeAboveHost)}`);
+  }
   for (const field of ["live", "visible", "presented"]) {
     if (value[field] !== true) {
       failures.push(`${path}.${field}=true/${displayValue(value[field])}`);
@@ -132,7 +147,7 @@ function inspectStack(stack, target, topmostOwner, nativeSurface, path, failures
   });
 
   const first = stack[0];
-  if (first?.kind !== "chrome" || first?.owner !== target || first?.surfaceId !== null) {
+  if (first?.kind !== "chrome" || !ownedByTarget(first?.owner, target) || first?.surfaceId !== null) {
     failures.push(`${path}[0]=target-chrome/${displayValue(first)}`);
   }
   if (first?.owner !== topmostOwner) {
@@ -157,6 +172,22 @@ function inspectStack(stack, target, topmostOwner, nativeSurface, path, failures
   }
 }
 
+/**
+ * chrome 조작면 사실. 도달 불가는 "브라우저 위 크롬"이 성립하지 않았다는 뜻이고, 평면 번호는
+ * modal 이 크롬 평면 위에 있다는 증거다. 둘 다 생산자가 던져 지우지 말고 값으로 실어야 한다.
+ */
+function inspectChromeControl(value, target, path, failures) {
+  if (!requireExactKeys(value, CHROME_CONTROL_KEYS, path, failures)) return;
+  if (value.reachable !== true) {
+    failures.push(`${path}.reachable=true/${displayValue(value.reachable)}`);
+  }
+  const minimum = TARGET_MIN_PLANE_Z[target];
+  if (minimum !== undefined
+      && !(Number.isFinite(value.planeZ) && value.planeZ >= minimum)) {
+    failures.push(`${path}.planeZ=>=${minimum}/${displayValue(value.planeZ)}`);
+  }
+}
+
 function inspectSample(value, index, seenTargets, failures) {
   const path = `samples[${index}]`;
   if (!requireExactKeys(value, SAMPLE_KEYS, path, failures)) return;
@@ -173,6 +204,7 @@ function inspectSample(value, index, seenTargets, failures) {
   }
 
   const chromeRectValid = inspectRect(value.chromeRect, `${path}.chromeRect`, failures);
+  inspectChromeControl(value.chromeControl, target, `${path}.chromeControl`, failures);
   const nativeSurface = inspectNativeSurface(
     value.nativeSurface,
     `${path}.nativeSurface`,
@@ -182,7 +214,7 @@ function inspectSample(value, index, seenTargets, failures) {
   const hit = value.hit;
   if (!requireExactKeys(hit, HIT_KEYS, `${path}.hit`, failures)) return;
   const pointValid = inspectPoint(hit.point, `${path}.hit.point`, failures);
-  if (hit.topmostOwner !== target) {
+  if (!ownedByTarget(hit.topmostOwner, target)) {
     failures.push(
       `${path}.hit.topmostOwner=target/`
         + `${displayValue(hit.topmostOwner)}/${displayValue(target)}`,

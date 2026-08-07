@@ -1105,6 +1105,46 @@ describe("ui.input.click — phase 분해(게스처 중간 상태의 검증 가�
     }
   });
 
+  it("ui.hit 이 그 점의 선언 소유자 사슬을 위에서부터 답한다 — 소비자가 사슬을 재발명하지 않는다", async () => {
+    // 층 순서 판정의 입력은 명령 응답이어야 한다. dataset/host/painters 를 소비자가 이어붙이면
+    // 배경이 투명한 조상이 사슬에서 빠져 "누가 위인가"가 소비자마다 달라진다(하니스가 target 을
+    // 그냥 적어 넣게 되는 자리). closest 는 shadow 경계를 못 넘으므로 host 로 올라가며 모은다.
+    const outer = document.createElement("div");
+    outer.dataset.node = "modal/project-new";
+    const card = document.createElement("div");
+    card.dataset.node = "modal/project-new/card";
+    const shadowHost = document.createElement("div");
+    const sr = shadowHost.attachShadow({ mode: "open" });
+    const icon = document.createElement("span"); // 자기 data-node 없음
+    sr.appendChild(icon);
+    card.appendChild(shadowHost);
+    outer.appendChild(card);
+    document.body.appendChild(outer);
+    const orig = document.elementFromPoint;
+    Object.defineProperty(document, "elementFromPoint", { value: () => icon, configurable: true });
+    try {
+      const r = await execute("ui.hit", { x: 5, y: 5 }, {});
+      expect(r.ok).toBe(true);
+      const d = r.data as { owners?: string[] };
+      expect(d.owners).toEqual(["modal/project-new/card", "modal/project-new"]);
+    } finally {
+      Object.defineProperty(document, "elementFromPoint", { value: orig, configurable: true });
+    }
+  });
+
+  it("선언 소유자가 하나도 없는 점은 빈 사슬을 답한다 — 없음을 있음으로 채우지 않는다", async () => {
+    const plain = document.createElement("div");
+    document.body.appendChild(plain);
+    const orig = document.elementFromPoint;
+    Object.defineProperty(document, "elementFromPoint", { value: () => plain, configurable: true });
+    try {
+      const r = await execute("ui.hit", { x: 5, y: 5 }, {});
+      expect((r.data as { owners?: string[] }).owners).toEqual([]);
+    } finally {
+      Object.defineProperty(document, "elementFromPoint", { value: orig, configurable: true });
+    }
+  });
+
   it("phase 를 생략하면 종전과 동일한 3종 시퀀스다(하위호환)", async () => {
     mountNode(`<button data-node="btn">x</button>`);
     const el = document.querySelector('[data-node="btn"]')!;

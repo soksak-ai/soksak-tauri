@@ -57,6 +57,12 @@ import {
 } from "./lib/browser-ui-addresses.mjs";
 import { mapBrowserSurfaceRects } from "./lib/browser-surface-rects.mjs";
 import {
+  buildB09Sample,
+  deriveChromeControl,
+  pickOverlapSurface,
+  probePointFor,
+} from "./lib/browser-gate-b09-evidence.mjs";
+import {
   captureDocumentGeometry,
   fullCaptureDocumentProbeJs,
   mapPageState,
@@ -514,44 +520,42 @@ async function readBrowserSurfaceEvidence(
   });
 }
 
-function pointInOverlap(chromeRect, surfaceRect) {
-  const left = Math.max(chromeRect.x, surfaceRect.x);
-  const top = Math.max(chromeRect.y, surfaceRect.y);
-  const right = Math.min(chromeRect.x + chromeRect.w, surfaceRect.x + surfaceRect.w);
-  const bottom = Math.min(chromeRect.y + chromeRect.h, surfaceRect.y + surfaceRect.h);
-  if (right - left <= 48 || bottom - top <= 48) return null;
-  return { x: left + 24, y: top + 24 };
-}
-
-function browserSurfaceOverlapping(chromeRect, surfaces) {
-  return surfaces.find((surface) => pointInOverlap(chromeRect, surface.rect)) ?? null;
-}
-
-function chromeHitReceipt(target, relation, chromeRect, surface, point, hit) {
-  const owners = [
-    hit?.dataset?.node,
-    hit?.host?.dataset?.node,
-    ...(hit?.painters ?? []).map((painter) => painter?.node),
-  ].filter((owner) => typeof owner === "string");
-  if (!owners.some((owner) => owner === target || owner.startsWith(`${target}/`))) {
-    throw new Error(`${target}: 공개 hit owner 불일치 ${JSON.stringify({ point, owners, hit })}`);
-  }
+/** chrome 한 자리를 재고 그 자리의 히트를 실제로 넣어 표본 하나를 만든다. */
+async function measureChromeOverlaySample(rpc, win, {
+  target, relation, address, surfaces, planeAddress = null,
+}) {
+  const measured = must(await rpc("ui.measure", {
+    address, occlusion: true, props: ["zIndex", "position"],
+  }, win), `chrome measure ${target}`);
+  const planeMeasured = planeAddress === null ? measured : must(await rpc("ui.measure", {
+    address: planeAddress, occlusion: true, props: ["zIndex", "position"],
+  }, win), `chrome plane measure ${target}`);
+  const nativeSurface = pickOverlapSurface(measured.rect, surfaces);
+  const point = probePointFor(measured.rect, nativeSurface?.rect ?? null);
+  const hit = must(await rpc("ui.hit", point, win), `${target} hit`);
   return {
-    target,
-    relation,
-    chromeRect,
-    nativeSurface: surface,
-    hit: {
+    measured,
+    sample: buildB09Sample({
+      target,
+      relation,
+      chromeRect: measured.rect,
+      chromeControl: deriveChromeControl(measured, planeMeasured),
+      nativeSurface,
       point,
-      topmostOwner: target,
-      stack: [
-        { kind: "chrome", owner: target, surfaceId: null },
-        { kind: "native-surface", owner: surface.viewId, surfaceId: surface.surfaceId },
-      ],
-    },
+      hit,
+    }),
   };
 }
 
+/**
+ * B09 — rail +, 우측 overlay sidebar, project modal 이 브라우저 native surface 위에 있는가.
+ *
+ * 판정은 이 함수가 하지 않는다. 잰 값을 표본에 실어 정본 보고서의 judge 가 이름 붙인다. 계약
+ * 위반(도달 불가·겹침 없음·층 순서 역전·소유자 불일치)에 여기서 throw 를 세우면 그 사실이
+ * blocked 로 사라져 보고서에 이름이 남지 않는다 — 측정 불가(명령 무응답)만 must() 로 던진다.
+ * 판정 기록은 픽셀 오라클(observeFrameSequence)보다 먼저 온다. 오라클이 던져도 B09 영수증은
+ * 이미 보고서에 있다.
+ */
 async function assertChromeOverlayContract(
   rpc,
   win,
@@ -564,42 +568,18 @@ async function assertChromeOverlayContract(
   const tree = must(await rpc("ui.tree", { rects: true }, win), "chrome ui.tree");
   const railAdd = nodeAddress(tree, "rail/add");
   const rightSidebar = nodeAddress(tree, "sidebar/right");
-  const chromeMeasures = new Map();
-  for (const [name, address] of [["rail/add", railAdd], ["sidebar/right", rightSidebar]]) {
-    const measured = must(await rpc("ui.measure", {
-      address, occlusion: true, props: ["zIndex", "position"],
-    }, win), `chrome measure ${name}`);
-    chromeMeasures.set(name, measured);
-    if (!measured.occlusion?.reachable || measured.rect.w <= 0 || measured.rect.h <= 0) {
-      throw new Error(`${name}: DOM 크롬 조작면이 도달 불가 ${JSON.stringify(measured)}`);
-    }
-  }
   const surfaces = await readBrowserSurfaceEvidence(rpc, win, {
     frameworkName, implementation, plugin, tabIds, labels, uiNodes: tree.nodes ?? [],
   });
-  const sidebarRect = chromeMeasures.get("sidebar/right").rect;
-  const overlappingSurface = browserSurfaceOverlapping(sidebarRect, surfaces);
-  if (!overlappingSurface) {
-    throw new Error(`오른쪽 overlay sidebar와 겹치는 browser surface가 없다: ${JSON.stringify(sidebarRect)}`);
-  }
-  const sidebarProbePoint = pointInOverlap(sidebarRect, overlappingSurface.rect);
-  const sidebarHit = must(await rpc("ui.hit", sidebarProbePoint, win), "right sidebar hit");
-  const b09Samples = [chromeHitReceipt(
-    "rail/add",
-    "global-layer-order",
-    chromeMeasures.get("rail/add").rect,
-    surfaces[0],
-    {
-      x: chromeMeasures.get("rail/add").rect.x + chromeMeasures.get("rail/add").rect.w / 2,
-      y: chromeMeasures.get("rail/add").rect.y + chromeMeasures.get("rail/add").rect.h / 2,
-    },
-    must(await rpc("ui.hit", {
-      x: chromeMeasures.get("rail/add").rect.x + chromeMeasures.get("rail/add").rect.w / 2,
-      y: chromeMeasures.get("rail/add").rect.y + chromeMeasures.get("rail/add").rect.h / 2,
-    }, win), "rail add hit"),
-  ), chromeHitReceipt(
-    "sidebar/right", "point-overlap", sidebarRect, overlappingSurface, sidebarProbePoint, sidebarHit,
-  )];
+  const rail = await measureChromeOverlaySample(rpc, win, {
+    target: "rail/add", relation: "global-layer-order", address: railAdd, surfaces,
+  });
+  const sidebar = await measureChromeOverlaySample(rpc, win, {
+    target: "sidebar/right", relation: "point-overlap", address: rightSidebar, surfaces,
+  });
+  const b09Samples = [rail.sample, sidebar.sample];
+  const sidebarRect = sidebar.measured.rect;
+  const sidebarProbePoint = sidebar.sample.hit.point;
   const anchorState = must(await rpc("capture.motion-anchors", {
     anchors: [
       { address: railAdd, color: CHROME_MARKERS.railAdd },
@@ -613,46 +593,33 @@ async function assertChromeOverlayContract(
   }, win), "chrome overlay anchors");
   await writeMachineReport(path.join(engineEvidence, "chrome-overlay-contract.json"), {
     sidebarRect,
-    overlappingSurface: overlappingSurface.rect,
+    overlappingSurface: sidebar.sample.nativeSurface?.rect ?? null,
     sidebarProbePoint,
     anchors: anchorState.anchors,
   });
   const before = path.join(engineEvidence, "chrome-overlay.png");
   await captureWindowSnapshot(rpc, win, before, "chrome overlay snapshot");
-  await observeFrameSequence([before], `${path.basename(engineEvidence)}/chrome-overlay`, scale, {
-    requireFixture: false,
-    chromeAnchors: [CHROME_MARKERS.railAdd],
-    pointAnchors: [{ color: CHROME_MARKERS.rightSidebar, point: sidebarProbePoint }],
-  });
 
   must(await rpc("ui.input.click", { address: railAdd }, win), "rail add click");
   const modalTree = must(await rpc("ui.tree", { rects: true }, win), "project modal ui.tree");
   const modal = nodeAddress(modalTree, "modal/project-new");
   const modalCard = nodeAddress(modalTree, "modal/project-new/card");
   const close = nodeAddress(modalTree, "modal/project-new/close");
-  const measuredModal = must(await rpc("ui.measure", {
-    address: modal, occlusion: true, props: ["zIndex", "position"],
-  }, win), "project modal measure");
-  if (!measuredModal.occlusion?.reachable || Number(measuredModal.style.zIndex) < 300) {
-    throw new Error(`project modal이 브라우저 위 크롬 평면에 없다: ${JSON.stringify(measuredModal)}`);
-  }
-  const measuredModalCard = must(await rpc("ui.measure", {
-    address: modalCard, occlusion: true, props: ["zIndex", "position"],
-  }, win), "project modal card measure");
-  if (!measuredModalCard.occlusion?.reachable) {
-    throw new Error(`project modal card가 브라우저 위에서 도달 불가: ${JSON.stringify(measuredModalCard)}`);
-  }
   const modalSurfaces = await readBrowserSurfaceEvidence(rpc, win, {
     frameworkName, implementation, plugin, tabIds, labels, uiNodes: modalTree.nodes ?? [],
   });
-  const modalSurface = browserSurfaceOverlapping(measuredModalCard.rect, modalSurfaces);
-  if (!modalSurface) throw new Error("모달과 겹칠 live browser surface가 공개 상태에서 발견되지 않았다");
-  const surfaceRect = modalSurface.rect;
-  const probePoint = pointInOverlap(measuredModalCard.rect, surfaceRect);
-  const modalHit = must(await rpc("ui.hit", probePoint, win), "project modal hit");
-  b09Samples.push(chromeHitReceipt(
-    "modal/project-new", "point-overlap", measuredModal.rect, modalSurface, probePoint, modalHit,
-  ));
+  // overlay 검증은 보이는 카드를 겨눈다 — 창 전체 backdrop 은 어떤 surface 와도 겹치므로
+  // 그것으로 교집합을 재면 아무 자리나 GREEN 이 된다. 평면 번호는 modal root 가 답한다.
+  const modalSample = await measureChromeOverlaySample(rpc, win, {
+    target: "modal/project-new",
+    relation: "point-overlap",
+    address: modalCard,
+    planeAddress: modal,
+    surfaces: modalSurfaces,
+  });
+  b09Samples.push(modalSample.sample);
+  const measuredModalCard = modalSample.measured;
+  const probePoint = modalSample.sample.hit.point;
   const modalAnchorState = must(await rpc("capture.motion-anchors", {
     anchors: [{
       address: modalCard,
@@ -662,18 +629,14 @@ async function assertChromeOverlayContract(
     }],
   }, win), "modal overlay probe");
   await writeMachineReport(path.join(engineEvidence, "chrome-project-modal-contract.json"), {
-    modalRect: measuredModal.rect,
     modalCardRect: measuredModalCard.rect,
-    surfaceRect,
+    surfaceRect: modalSample.sample.nativeSurface?.rect ?? null,
     probePoint,
     anchors: modalAnchorState.anchors,
   });
   const modalPath = path.join(engineEvidence, "chrome-project-modal.png");
   await captureWindowSnapshot(rpc, win, modalPath, "project modal snapshot");
-  await observeFrameSequence([modalPath], `${path.basename(engineEvidence)}/chrome-project-modal`, scale, {
-    requireFixture: false,
-    pointAnchors: [{ color: CHROME_MARKERS.modalOverlayProbe, point: probePoint }],
-  });
+
   const b09Receipt = gateReportStore.recordMachineEvidence({
     framework: frameworkName,
     engine,
@@ -682,6 +645,17 @@ async function assertChromeOverlayContract(
   });
   await gateReportStore.persist();
   console.log(formatGateVerdict(engine, "B09", b09Receipt));
+
+  // 사람이 볼 증거는 판정 뒤에 읽는다. 오라클이 던져도 B09 영수증은 이미 보고서에 있다.
+  await observeFrameSequence([before], `${path.basename(engineEvidence)}/chrome-overlay`, scale, {
+    requireFixture: false,
+    chromeAnchors: [CHROME_MARKERS.railAdd],
+    pointAnchors: [{ color: CHROME_MARKERS.rightSidebar, point: sidebarProbePoint }],
+  });
+  await observeFrameSequence([modalPath], `${path.basename(engineEvidence)}/chrome-project-modal`, scale, {
+    requireFixture: false,
+    pointAnchors: [{ color: CHROME_MARKERS.modalOverlayProbe, point: probePoint }],
+  });
   must(await rpc("ui.input.click", { address: close }, win), "project modal close");
   must(await rpc("project.rightbar.toggle", { open: false }, win), "right sidebar close");
   must(

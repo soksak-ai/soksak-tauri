@@ -397,6 +397,20 @@
       "note": "B08의 좌·우 case 누락, maximize 방향·station·split·identity drift RED와 세 engine GREEN을 값으로 고정한다."
     },
     {
+      "file": "lib/browser-gate-b09-evidence.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "ui.hit 이 답한 소유자 사슬과 실측 chromeAboveHost 로 B09 표본의 층 순서를 파생한다. 하니스가 최상위 소유자나 층을 적어 넣지 않는다."
+    },
+    {
+      "file": "lib/browser-gate-b09-evidence.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "층 순서가 응답에서만 나오고, 겹침 없음·도달 불가가 던지지 않고 값이 된다는 법을 고정한다."
+    },
+    {
       "file": "lib/browser-gate-b09.mjs",
       "role": "lib",
       "class": "A",

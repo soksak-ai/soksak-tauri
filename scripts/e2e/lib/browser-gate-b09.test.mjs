@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { BROWSER_ACCEPTANCE_ENGINES } from "./browser-gate-identity.mjs";
+import { buildB09Sample } from "./browser-gate-b09-evidence.mjs";
 import { judgeB09MachineEvidence } from "./browser-gate-b09.mjs";
 import { judgeBrowserMachineGateEvidence } from "./browser-gates.mjs";
 import { mapBrowserSurfaceRects } from "./browser-surface-rects.mjs";
@@ -18,6 +19,12 @@ const IDENTITY = Object.freeze({
   runId: "b09-run",
 });
 
+const PLANE_Z = Object.freeze({
+  "rail/add": 120,
+  "sidebar/right": 200,
+  "modal/project-new": 400,
+});
+
 function evidence(engine = "browser") {
   return {
     engine,
@@ -29,10 +36,12 @@ function evidence(engine = "browser") {
         target,
         relation: target === "rail/add" ? "global-layer-order" : "point-overlap",
         chromeRect: { x: 100 + offset, y: 100, w: 40, h: 40 },
+        chromeControl: { reachable: true, planeZ: PLANE_Z[target] },
         nativeSurface: {
           viewId,
           surfaceId,
           topologyPath: `window/w-b09/view/${viewId}/content/${surfaceId}`,
+          chromeAboveHost: true,
           live: true,
           visible: true,
           presented: true,
@@ -82,6 +91,7 @@ function producedSurfaces(surface) {
       matches: PANE_VIEW_IDS.map((viewId, index) => ({
         viewId,
         chromeAboveHost: true,
+        alpha: 1,
         domFrame: { x: index ? 513 : 60, y: 121, w: 281, h: 449 },
         memberMatches: [{
           label: PANE_LABELS[index],
@@ -105,27 +115,15 @@ function producedSurfaces(surface) {
 
 function producedEvidence({ engine, surface }) {
   const surfaces = producedSurfaces(surface);
-  const samples = TARGETS.map((target, index) => {
-    const nativeSurface = surfaces[index === 0 ? 0 : 1];
-    return {
-      target,
-      relation: target === "rail/add" ? "global-layer-order" : "point-overlap",
-      chromeRect: { ...CHROME_RECTS[target] },
-      nativeSurface,
-      hit: {
-        point: { ...PROBE_POINTS[target] },
-        topmostOwner: target,
-        stack: [
-          { kind: "chrome", owner: target, surfaceId: null },
-          {
-            kind: "native-surface",
-            owner: nativeSurface.viewId,
-            surfaceId: nativeSurface.surfaceId,
-          },
-        ],
-      },
-    };
-  });
+  const samples = TARGETS.map((target, index) => buildB09Sample({
+    target,
+    relation: target === "rail/add" ? "global-layer-order" : "point-overlap",
+    chromeRect: { ...CHROME_RECTS[target] },
+    chromeControl: { reachable: true, planeZ: PLANE_Z[target] },
+    nativeSurface: surfaces[index === 0 ? 0 : 1],
+    point: { ...PROBE_POINTS[target] },
+    hit: { owners: [target] },
+  }));
   return { engine, samples };
 }
 
@@ -141,6 +139,77 @@ describe("B09 surface receipt는 생산자 shape 그대로 판정된다", () => 
         reason: null,
       });
     }
+  });
+
+  it("실측 층 순서 사실을 표본마다 싣는다 — 위반은 blocked 가 아니라 이름 붙은 RED다", () => {
+    for (const implementation of PANE_IMPLEMENTATIONS) {
+      const value = producedEvidence(implementation);
+      expect(value.samples.map((sample) => sample.nativeSurface.chromeAboveHost))
+        .toEqual([true, true, true]);
+
+      const inverted = producedEvidence(implementation);
+      inverted.samples[1].nativeSurface = {
+        ...inverted.samples[1].nativeSurface,
+        chromeAboveHost: false,
+      };
+      const verdict = judgeB09MachineEvidence(inverted);
+      expect(verdict.status).toBe("red");
+      expect(verdict.evidence).toContain("B09:samples[1].nativeSurface.chromeAboveHost=true/false");
+    }
+  });
+
+  it("층 순서 사실이 아예 빠지면 누락으로 이름 붙인다 — 침묵으로 통과하지 않는다", () => {
+    const value = producedEvidence(PANE_IMPLEMENTATIONS[0]);
+    const stripped = { ...value.samples[0].nativeSurface };
+    delete stripped.chromeAboveHost;
+    value.samples[0].nativeSurface = stripped;
+    expect(judgeB09MachineEvidence(value).evidence)
+      .toContain("B09:samples[0].nativeSurface.chromeAboveHost=missing");
+  });
+
+  it("target 하위 주소가 최상위 소유자여도 GREEN 이다 — 실제 응답은 잎을 답한다", () => {
+    const value = producedEvidence(PANE_IMPLEMENTATIONS[0]);
+    value.samples[2] = buildB09Sample({
+      target: "modal/project-new",
+      relation: "point-overlap",
+      chromeRect: { ...CHROME_RECTS["modal/project-new"] },
+      chromeControl: { reachable: true, planeZ: PLANE_Z["modal/project-new"] },
+      nativeSurface: value.samples[2].nativeSurface,
+      point: { ...PROBE_POINTS["modal/project-new"] },
+      hit: { owners: ["modal/project-new/card", "modal/project-new"] },
+    });
+    expect(judgeB09MachineEvidence(value).status).toBe("green");
+  });
+
+  it("chrome 조작면 도달 불가와 낮은 modal 평면을 RED 이름으로 남긴다", () => {
+    const unreachable = producedEvidence(PANE_IMPLEMENTATIONS[0]);
+    unreachable.samples[0].chromeControl = { reachable: false, planeZ: 120 };
+    expect(judgeB09MachineEvidence(unreachable).evidence)
+      .toContain("B09:samples[0].chromeControl.reachable=true/false");
+
+    const lowPlane = producedEvidence(PANE_IMPLEMENTATIONS[0]);
+    lowPlane.samples[2].chromeControl = { reachable: true, planeZ: 12 };
+    expect(judgeB09MachineEvidence(lowPlane).evidence)
+      .toContain("B09:samples[2].chromeControl.planeZ=>=300/12");
+
+    const missingPlane = producedEvidence(PANE_IMPLEMENTATIONS[0]);
+    missingPlane.samples[2].chromeControl = { reachable: true, planeZ: null };
+    expect(judgeB09MachineEvidence(missingPlane).evidence)
+      .toContain("B09:samples[2].chromeControl.planeZ=>=300/null");
+
+    const noControl = producedEvidence(PANE_IMPLEMENTATIONS[0]);
+    delete noControl.samples[1].chromeControl;
+    expect(judgeB09MachineEvidence(noControl).evidence)
+      .toContain("B09:samples[1].chromeControl=missing");
+  });
+
+  it("겹침이 없는 overlay 를 좌표로 RED 한다 — 생산자가 던져서 지우지 않는다", () => {
+    const value = producedEvidence(PANE_IMPLEMENTATIONS[0]);
+    value.samples[1].chromeRect = { x: 0, y: 0, w: 20, h: 20 };
+    const verdict = judgeB09MachineEvidence(value);
+    expect(verdict.status).toBe("red");
+    expect(verdict.evidence.some((line) => line.startsWith("B09:samples[1].overlap=positive-area/")))
+      .toBe(true);
   });
 
   it("native surface의 공개 topology 신원이 비면 RED로 이름 붙인다", () => {

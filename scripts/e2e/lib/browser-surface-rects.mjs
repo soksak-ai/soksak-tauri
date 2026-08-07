@@ -14,6 +14,14 @@ const fail = (viewId, detail) => {
   throw new Error(`${viewId}: browser surface evidence ${detail}`);
 };
 
+/**
+ * 소유자를 못 찾는 것과 소유자가 계약을 어긴 것은 다른 사실이다.
+ *
+ * 못 찾는 것(주소·창·응답 부재)은 잴 수 없으므로 던진다 — blocked 가 옳다. 어긴 것(chrome 이
+ * host 위가 아니다, topology 신원이 없다, 멤버가 정확하지 않다, 호스트가 투명하다)은 잰 값이므로
+ * 영수증에 실어 judge 가 이름 붙인 RED 를 내게 한다. 던져서 지우면 그 위반은 보고서에서 이름을
+ * 잃고, 41개 런 전수에서 그랬듯 판정은 한 번도 돌지 못한다.
+ */
 const paneSurface = ({ viewId, label, paneComposition }) => {
   const candidates = (paneComposition?.matches ?? []).flatMap((pane) =>
     (pane.memberMatches ?? [])
@@ -24,25 +32,21 @@ const paneSurface = ({ viewId, label, paneComposition }) => {
   if (pane.viewId !== viewId) {
     fail(viewId, `PaneSurfaceHost owner view mismatch (${String(pane.viewId)})`);
   }
-  if (typeof member.topologyPath !== "string" || member.topologyPath.length === 0) {
-    fail(viewId, "has no public topology path");
-  }
-  if (pane.chromeAboveHost !== true) {
-    fail(viewId, "chrome is not above its PaneSurfaceHost");
-  }
   const paneRect = rect(pane.domFrame);
   const memberRect = rect(member.domFrame);
-  if (!paneRect || !memberRect || member.nativeCount !== 1 || member.ok !== true) {
-    fail(viewId, "has no live, exact PaneSurfaceHost member");
-  }
   return {
-    rect: {
-      x: paneRect.x + memberRect.x,
-      y: paneRect.y + memberRect.y,
-      w: memberRect.w,
-      h: memberRect.h,
-    },
-    topologyPath: member.topologyPath,
+    rect: paneRect && memberRect
+      ? {
+        x: paneRect.x + memberRect.x,
+        y: paneRect.y + memberRect.y,
+        w: memberRect.w,
+        h: memberRect.h,
+      }
+      : null,
+    topologyPath: typeof member.topologyPath === "string" ? member.topologyPath : "",
+    chromeAboveHost: pane.chromeAboveHost === true,
+    live: member.nativeCount === 1,
+    exact: member.ok === true,
   };
 };
 
@@ -99,40 +103,45 @@ export function mapBrowserSurfaceRects({
         viewId,
         surfaceId: label,
         topologyPath: owner.topologyPath,
-        live: true,
+        chromeAboveHost: owner.chromeAboveHost,
+        live: owner.live,
+        // 가시성의 주인은 pane composition 이 아니라 presentation trace 다(live && !hidden &&
+        // alpha>0 을 pane·renderer·surface 셋에 대해 센다). 여기서 alpha 하나로 다시 세우면
+        // 같은 이름의 더 약한 두 번째 정의가 생긴다 — 주인을 읽기 전까지 이 자리는 미측정이다.
         visible: true,
-        presented: true,
+        presented: owner.exact,
         rect: owner.rect,
       };
     }
 
     const owned = engineSurface({ viewId, surface, stats });
-    if (owned.actual.hidden === true) fail(viewId, "owner is hidden");
     if (surface === "engine-windowed") {
       const owner = paneSurface({ viewId, label, paneComposition });
       return {
         viewId,
         surfaceId: String(owned.id),
         topologyPath: owner.topologyPath,
-        live: true,
-        visible: true,
-        presented: owned.actual.composition != null,
+        chromeAboveHost: owner.chromeAboveHost,
+        live: owner.live,
+        // 엔진은 자기 surface 의 숨김을 스스로 답한다 — 그 답만 싣는다(pane 가시성은 미측정).
+        visible: owned.actual.hidden !== true,
+        presented: owner.exact && owned.actual.composition != null,
         rect: owner.rect,
       };
     }
+    // offscreen 은 PaneSurfaceHost 를 안 가지므로 형제 층 순서를 답할 주소가 없다. 여기서
+    // 값을 지어내지 않는다 — 영수증에 그 사실이 빠진 채로 가고 judge 가 누락으로 이름 붙인다.
     if (surface === "engine-offscreen") {
       const bounds = rect(owned.actual.bounds);
       const presentation = rect(owned.actual.presentation);
-      if (!bounds || !presentation || owned.actual.resize?.pending === true
-          || owned.actual.viewport?.matches !== true) {
-        fail(viewId, "offscreen owner has no settled exact presentation");
-      }
       return {
         viewId,
         surfaceId: String(owned.id),
         live: true,
-        visible: true,
-        presented: true,
+        visible: owned.actual.hidden !== true,
+        presented: presentation != null
+          && owned.actual.resize?.pending !== true
+          && owned.actual.viewport?.matches === true,
         rect: bounds,
       };
     }
