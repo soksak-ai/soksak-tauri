@@ -1,4 +1,43 @@
+import type { PluginRealmId } from "../../plugins/realm";
+
 export const PLUGIN_VIEW_READY = "soksak://plugin-view/ready";
+
+/**
+ * view-renderer realm 이 부모에게 부를 수 있는 경로 전수. 이 표가 그 realm 의 RPC 능력이다.
+ *
+ * 부모의 게이트와 자식의 shim 이 각자 목록을 적으면 반드시 갈리고, 갈린 쪽은 조용히 죽는다.
+ * 표는 여기 하나만 있고 양쪽이 이것을 읽는다(짝 테스트 pluginViewRealm.test.ts 가 자식이
+ * 실제로 부르는 경로 전수와 이 표가 같은지 본다).
+ */
+export const VIEW_RENDERER_CALL_PATHS = [
+  "commands.execute",
+  "webview.open", "webview.navigate", "webview.zoom", "webview.openWindow", "webview.history",
+  "webview.present",
+  "webview.stop", "webview.devtools", "webview.eval", "webview.sendInput",
+  "webview.wheel", "webview.captureFull", "webview.typeText", "webview.list", "webview.close",
+  "data.kv.get", "data.kv.set", "data.kv.delete", "data.kv.keys",
+  "sidecar.open", "sidecar.send", "sidecar.close",
+  "bus.emit",
+  "context.setBadge", "context.setStatus", "context.setTitle", "context.setIcon",
+  "context.setRestoreState",
+] as const;
+
+export const VIEW_RENDERER_SUBSCRIBE_PATHS = [
+  "events.on", "webview.on", "data.kv.watch", "bus.on", "settings.onChange",
+  "sidecar.on",
+  "context.onVisibilityChange",
+] as const;
+
+const CALL_PATHS: ReadonlySet<string> = new Set(VIEW_RENDERER_CALL_PATHS);
+const SUBSCRIBE_PATHS: ReadonlySet<string> = new Set(VIEW_RENDERER_SUBSCRIBE_PATHS);
+
+export function isPluginViewCallExposed(path: string): boolean {
+  return CALL_PATHS.has(path);
+}
+
+export function isPluginViewSubscribeExposed(path: string): boolean {
+  return SUBSCRIBE_PATHS.has(path);
+}
 
 export type PluginViewRpcRequest =
   | { id: number; kind: "call"; path: string; args: unknown[] }
@@ -43,6 +82,8 @@ export interface PluginViewInit {
 export interface PluginViewFailure {
   pluginId: string;
   reason: string;
+  /** 어느 realm 에서 죽었는가. 같은 번들이 두 realm 에서 도니 사유만으로는 자리를 못 가른다. */
+  realm: PluginRealmId;
 }
 
 export interface PluginViewSlotFrame {

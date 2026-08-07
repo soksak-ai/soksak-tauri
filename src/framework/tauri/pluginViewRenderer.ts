@@ -8,6 +8,7 @@ import type {
 } from "./pluginViewProtocol";
 import { nodeControlState } from "./pluginViewProtocol";
 import { activatePluginInViewRenderer } from "./pluginViewActivation";
+import { declarePluginRealm } from "../../plugins/realm";
 
 const params = new URLSearchParams(location.search);
 const parent = params.get("parent");
@@ -190,6 +191,9 @@ await listen<PluginViewInit>(event("init"), async ({ payload: init }) => {
         subscribe("webview.on", [label, name], cb),
     };
   }
+  // 이 realm 의 표면은 창 realm 과 같지 않다(등록부는 창이 소유하고 여기는 실행만 소비한다).
+  // 그 차이를 플러그인이 typeof 로 더듬게 두지 않는다 — 다 지은 객체에서 파생해 선언한다.
+  declarePluginRealm("view-renderer", app);
   const moduleUrl = URL.createObjectURL(new Blob([init.source], { type: "text/javascript" }));
   try {
     // 활성 실패는 이 renderer 안에서 끝나면 안 된다 — 부모는 이 뷰를 기다리고 있고, 침묵은
@@ -198,7 +202,10 @@ await listen<PluginViewInit>(event("init"), async ({ payload: init }) => {
       pluginId: init.pluginId,
       load: () => import(/* @vite-ignore */ moduleUrl),
       context: { app, manifest: {}, dir: "", subscriptions },
-      report: (failure) => void emitTo(parent!, event("failure"), failure),
+      report: (failure) => void emitTo(parent!, event("failure"), {
+        ...failure,
+        realm: app.realm.id,
+      }),
     });
   } finally {
     URL.revokeObjectURL(moduleUrl);

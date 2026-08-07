@@ -14,6 +14,7 @@ import type {
   ParamSpec,
 } from "../commands/registry";
 import { createStream, engineProvision } from "../framework";
+import { declarePluginRealm, type PluginRealm } from "./realm";
 import { contentViewHost } from "../lib/contentViews";
 import {
   browserLabel,
@@ -210,6 +211,9 @@ export interface SchedulerJobView {
 export interface SoksakPluginApi {
   appVersion: string;
   pluginId: string;
+  /** 이 app 이 사는 realm 의 신원과 능력 선언(§realm). 표면이 있는지 더듬지 말고 여기에 물어라 —
+   *  같은 번들이 창과 자식 renderer 두 realm 에서 평가되고 둘의 표면은 같지 않다. */
+  realm: PluginRealm;
   // 호스트 표시 언어(권한 불요 컨텍스트 §3.5) — 변경은 locale.changed 이벤트.
   locale: () => string;
   /** 이 플러그인 인스턴스가 사는 창 label(멀티윈도우 — 창별 상태·자격 기록용). */
@@ -1228,7 +1232,9 @@ export function buildPluginApi(
     });
   };
 
-  const api: SoksakPluginApi = {
+  // realm 선언은 표면을 다 지은 뒤 그 객체에서 파생한다 — 여기서 손으로 적으면 권한 게이트가
+  // 지운 표면을 선언이 계속 있다고 답한다.
+  const draft: Omit<SoksakPluginApi, "realm"> = {
     appVersion: deps.appVersion,
     pluginId: id,
     locale: () => useSettings.getState().language,
@@ -1954,6 +1960,7 @@ export function buildPluginApi(
         tracker.wrap(busOn(topic, fn)),
     },
   };
+  const api: SoksakPluginApi = declarePluginRealm("window", draft);
 
   return { api, tracker, registered };
 }

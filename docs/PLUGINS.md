@@ -13,6 +13,8 @@ soksak 의 기능을 JS 플러그인으로 확장한다. 플러그인은 뷰(우
    없음). 기능은 권한 게이트된 `app` capability 표면으로만 받는다 — 미선언 권한의 표면은
    `undefined`, 호스트 DOM·raw Tauri invoke 접근은 금지다. 권한은 동의 고지이자 그 표면의
    허용 목록이다. 프로세스 격리는 v2 완결 프로젝트다 — 「격리 v2 입법」 참조.
+   `nativeSurface` 뷰는 엔트리를 자식 renderer realm에서 한 번 더 평가하며 그 realm의 `app`
+   표면은 창 realm과 같지 않다 — 「realm」 참조.
 3. **검증은 all-or-nothing.** 불량 매니페스트는 부분 수용 없이 사유와 함께 거부된다(관리 패널의 "검증 거부").
 4. **플러그인 실패는 호스트를 죽이지 못한다.** activate/mount/포맷/이벤트 콜백 실패는 격리되고 상태로 표시된다.
 5. **활성화 동의는 사람만 한다.** 원격(`sok`/MCP) `plugin.enable` 은 기록된 동의가 없으면
@@ -500,6 +502,38 @@ export default defineSoksakPlugin({
 (예제: `soksak-icons-tabler`, `soksak-icons-codicons` — main.js 가 생성물).
 전역 셋 id 는 `<pluginId>.<setId>`, 비활성화 시 자동 해제되고 선택돼
 있던 경우 내장 lucide 로 폴백된다.
+
+### realm — 이 `app` 이 어디 살고 무엇을 부를 수 있나
+
+같은 번들이 두 realm에서 평가된다.
+
+| realm | 언제 | 표면 |
+|---|---|---|
+| `"window"` | 플러그인 활성화(창 문서) | 창 단위 등록부의 소유자 — `commands.register`·`ui.registerView`·`ui.openView` 등 전수 |
+| `"view-renderer"` | `nativeSurface` 뷰의 자식 renderer | 등록부를 소유하지 않는다. `commands.execute`는 있고 `commands.register`는 **없다** |
+
+realm은 자기 신원과 능력을 선언으로 답한다. 표면이 있는지 `typeof`로 더듬지 마라 — 이름 하나가
+바뀌면 판정이 통째로 뒤집히고, 그 결과는 뷰가 아예 안 뜨는 것으로만 보인다.
+
+```ts
+export default defineSoksakPlugin({
+  controller: {
+    activate({ app }) {
+      // 부를 이름을 그대로 묻는다. 네임스페이스가 있다고 그 안이 다 있는 것은 아니다.
+      if (app.realm.supports("commands.register")) {
+        app.commands!.register("open", { /* … */ });   // 창 realm에서만
+      }
+      app.ui!.registerView("panel", provider);          // 두 realm 모두
+    },
+  },
+});
+```
+
+`app.realm.capabilities` 는 그 realm이 실제로 들고 있는 이름 전수(점 표기, 정렬)다. 코어가
+`app` 객체에서 파생하므로 표면과 어긋날 수 없다 — 권한 게이트가 지운 표면은 선언에도 없다.
+
+자식 realm에서 활성이 죽으면 그 사실은 부모로 올라와 뷰 상태에 이름과 함께 실린다
+(`플러그인 활성 실패(<id> realm=view-renderer): …`). 침묵하거나 매달리지 않는다.
 
 ### file viewers
 
