@@ -56,6 +56,8 @@ const COUNTER_KEYS = Object.freeze([
 ]);
 const COMPOSITION_KEYS = Object.freeze(["observer", "steps"]);
 const COMPOSITION_STEP_KEYS = Object.freeze(["sequence", "acknowledged", "violations"]);
+/** 유한 resize 거래 전체의 응답 예산. 하니스가 던져서 닫던 같은 수치를 판정이 소유한다. */
+const RESIZE_BUDGET_MS = 4_000;
 
 function canonical(value) {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
@@ -469,7 +471,14 @@ export function judgeB10MachineEvidence(value) {
   const failures = [];
   if (!requireExactKeys(
     value,
-    ["engine", "acknowledgedComposition", "coordinateSpace", "baseline", "transactions"],
+    [
+      "engine",
+      "acknowledgedComposition",
+      "resizeElapsedMs",
+      "coordinateSpace",
+      "baseline",
+      "transactions",
+    ],
     "evidence",
     failures,
   )) return finishMachineVerdict("B10", failures, "B10:unreachable");
@@ -552,10 +561,16 @@ export function judgeB10MachineEvidence(value) {
     Array.isArray(value.transactions) ? value.transactions.length : null,
     failures,
   );
+  if (!Number.isInteger(value.resizeElapsedMs) || value.resizeElapsedMs < 0) {
+    failures.push(`resizeElapsedMs=integer>=0/${displayValue(value.resizeElapsedMs)}`);
+  } else if (value.resizeElapsedMs > RESIZE_BUDGET_MS) {
+    failures.push(`resizeElapsedMs<=${RESIZE_BUDGET_MS}/${value.resizeElapsedMs}`);
+  }
   return finishMachineVerdict(
     "B10",
     failures,
     `${value.engine}/B10:hostile>=4;generation-ordered;slot+renderer+surface=rounding-only;`
-      + "presentation=continuous;replacements=0;restore=exact;composition=acknowledged-green",
+      + "presentation=continuous;replacements=0;restore=exact;composition=acknowledged-green;"
+      + `resize<=${RESIZE_BUDGET_MS}ms`,
   );
 }

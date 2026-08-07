@@ -109,6 +109,7 @@ function evidence(engine = "browser", { extraWide = false } = {}) {
   });
   return {
     engine,
+    resizeElapsedMs: 320,
     acknowledgedComposition: {
       observer: "resize-composition-sample",
       steps: transactions.map((_, sequence) => ({

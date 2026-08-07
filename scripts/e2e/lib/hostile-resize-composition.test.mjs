@@ -110,7 +110,7 @@ function compositionSample({ generation, memberDelta = null, autoresizingMask = 
 /**
  * 다른 모든 평면이 green 인 한 거래. 합성 선언만 바꿔 이 사실 하나가 판정을 움직이는지 본다.
  */
-function raw({ redStep = null, autoresizingMask = 18 } = {}) {
+function raw({ redStep = null, autoresizingMask = 18, resizeElapsedMs = 320 } = {}) {
   const baselineGeometry = { x: 0, y: 0, w: 800, h: 600 };
   const requests = [
     ["shrink", { x: 10, y: 10, w: 620, h: 480 }],
@@ -125,6 +125,7 @@ function raw({ redStep = null, autoresizingMask = 18 } = {}) {
     scaleFactor,
     resizeSequence: {
       steps: requests.length,
+      resizeElapsedMs,
       baseline: {
         status: "observed",
         observation: { snapshot: baseline, ...compositionSample({ generation: 0 }) },
@@ -181,6 +182,14 @@ describe("hostile resize acknowledged composition", () => {
     const receipt = verdictOf(raw({ redStep: 2, autoresizingMask: 0 }));
     expect(receipt.status).toBe("red");
     expect(receipt.evidence.join(" | ")).toContain("autoresizing=0/18");
+  });
+
+  // 응답 정지도 관측면이 답한 수치다. 하니스가 그 자리에서 던지면 같은 엔진의 뒤 게이트가
+  // 닫혀, 멈춘 밀리초가 어느 보고서에도 남지 않는다.
+  it("names a stalled resize transaction as a B10 red", () => {
+    const receipt = verdictOf(raw({ resizeElapsedMs: 5_123 }));
+    expect(receipt.status).toBe("red");
+    expect(receipt.evidence.join(" | ")).toContain("resizeElapsedMs<=4000/5123");
   });
 
   it("names an observation that declares no composition verdict", () => {
@@ -258,6 +267,7 @@ describe("slot-freeze rapid resize block", () => {
   it("does not end the run on an acknowledged composition verdict", () => {
     expect(block).not.toContain("affine 거래 RED");
     expect(block).not.toMatch(/frameworkName === "tauri"/);
+    expect(block).not.toContain("응답 정지");
   });
 
   // 측정 불가는 반대다. 명령이 답하지 않은 것을 red 로 적으면 보고서가 관측하지 않은 사실을

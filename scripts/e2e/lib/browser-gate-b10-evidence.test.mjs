@@ -74,6 +74,7 @@ function raw() {
     engine: "browser",
     scaleFactor,
     resizeSequence: {
+      resizeElapsedMs: 320,
       baseline: { status: "observed", observation: { snapshot: baseline } },
       samples: requests.map(([phase, requestedWindowGeometry], sequence) => {
         const eventGenerationBefore = generation;

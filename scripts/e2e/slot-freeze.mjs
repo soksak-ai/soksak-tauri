@@ -1757,9 +1757,6 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
         name: `${engine}/window-fast`,
       });
       const fastFiles = fastRecordingEvidence.artifacts;
-      if (Number(fastResize.resizeElapsedMs) > 4_000) {
-        throw new Error(`rapid window resize 응답 정지: ${fastResize.resizeElapsedMs}ms/${fastSizes.length}단계`);
-      }
       await writeMachineReport(
         path.join(fastResizeDir, "composition-samples.json"),
         { baseline: fastResize.baseline ?? null, samples: fastResize.samples ?? [] },

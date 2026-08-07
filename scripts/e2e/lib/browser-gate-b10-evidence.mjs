@@ -89,6 +89,7 @@ export function mapB10LiveEvidence(raw = {}) {
   return {
     engine: field(raw, "engine"),
     acknowledgedComposition: hostileResizeCompositionPlane(sequence),
+    resizeElapsedMs: field(sequence, "resizeElapsedMs"),
     coordinateSpace: {
       logical: "css-px",
       physical: "device-px",
