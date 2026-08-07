@@ -42,13 +42,56 @@ function sameList(left, right) {
     && left.every((value, index) => value === right[index]);
 }
 
+const COLD_START_KEYS = Object.freeze([
+  "coldPresentationRevision",
+  "finalPresentationRevision",
+  "generation",
+  "ownerIdentity",
+  "presentedCompositionSequence",
+]);
+
+function counter(value) {
+  return Number.isSafeInteger(value) && value >= 1;
+}
+
+/** 이 창이 실제로 냉시작에서 측정됐다는 수치 영수증. 값이 없으면 측정하지 않은 것이다. */
+function inspectColdStart(value, label, failures) {
+  if (!value || typeof value !== "object" || Array.isArray(value)
+      || !sameList(Object.keys(value).sort(), [...COLD_START_KEYS])) {
+    failures.push(`${label}: coldStart schema mismatch`);
+    return null;
+  }
+  let valid = true;
+  for (const key of COLD_START_KEYS) {
+    if (key === "ownerIdentity") continue;
+    if (!counter(value[key])) {
+      failures.push(`${label}: coldStart.${key} must be an integer >= 1`);
+      valid = false;
+    }
+  }
+  if (!text(value.ownerIdentity)) {
+    failures.push(`${label}: coldStart.ownerIdentity is absent`);
+    valid = false;
+  }
+  if (!valid) return null;
+  if (value.coldPresentationRevision < value.presentedCompositionSequence) {
+    failures.push(`${label}: cold read precedes the presented composition`);
+  }
+  // 높이 3종과 reset은 반드시 합성 거래를 진행시킨다. 멈춘 sequence는 측정하지 않은 cycle이다.
+  if (value.finalPresentationRevision <= value.coldPresentationRevision) {
+    failures.push(`${label}: composition sequence did not advance during the cycle`);
+  }
+  return value;
+}
+
 function inspectMachine(machine, cycle, identity, failures) {
   if (!machine || typeof machine !== "object" || Array.isArray(machine)) {
     failures.push(`cycle ${cycle.cycle}: machine must be an object`);
     return;
   }
   const expectedKeys = [
-    "buildId", "cycle", "framework", "runId", "schemaVersion", "status", "verdicts", "window",
+    "buildId", "coldStart", "cycle", "framework", "runId", "schemaVersion", "status", "verdicts",
+    "window",
   ];
   if (!sameList(Object.keys(machine).sort(), expectedKeys)) {
     failures.push(`cycle ${cycle.cycle}/${String(machine.window)}: machine schema mismatch`);
@@ -65,6 +108,11 @@ function inspectMachine(machine, cycle, identity, failures) {
   if (!cycle.windows.includes(machine.window)) {
     failures.push(`cycle ${cycle.cycle}/${String(machine.window)}: undeclared window`);
   }
+  inspectColdStart(
+    machine.coldStart,
+    `cycle ${cycle.cycle}/${String(machine.window)}`,
+    failures,
+  );
   if (!Array.isArray(machine.verdicts)) {
     failures.push(`cycle ${cycle.cycle}/${String(machine.window)}: verdicts missing`);
     return;
@@ -106,6 +154,29 @@ function inspectCycleIdentity(cycle, value, failures) {
   }
   if (terminal && !text(cycle.reason)) failures.push(`cycle ${String(cycle.cycle)}: reason is absent`);
   return true;
+}
+
+/**
+ * 냉시작은 명령이 아니라 수치로 증명한다. 프로세스가 죽으면 native 합성 sequence를 든
+ * paint owner가 사라지므로 다음 cycle은 낮은 값에서 다시 센다. 앞 cycle의 마지막 값을
+ * 넘겨받은 cycle은 같은 프로세스를 다시 훑은 것이며 냉시작 3회 계약을 깬다.
+ */
+function inspectColdRestarts(sorted, failures) {
+  const previousFinal = new Map();
+  for (const cycle of sorted) {
+    if (!Array.isArray(cycle?.machines)) continue;
+    for (const machine of cycle.machines) {
+      const coldStart = machine?.coldStart;
+      const label = `cycle ${String(cycle.cycle)}/${String(machine?.window)}`;
+      if (!coldStart || !Number.isSafeInteger(coldStart.coldPresentationRevision)
+          || !Number.isSafeInteger(coldStart.finalPresentationRevision)) continue;
+      const earlier = previousFinal.get(machine.window);
+      if (earlier !== undefined && coldStart.coldPresentationRevision > earlier) {
+        failures.push(`${label}: composition sequence continued a live process instead of a cold start`);
+      }
+      previousFinal.set(machine.window, coldStart.finalPresentationRevision);
+    }
+  }
 }
 
 /** Closes three cold processes into one immutable artifact/run verdict. */
@@ -179,5 +250,6 @@ export function judgeTitlebarColdStartRun(value) {
       failures.push(`cycle ${String(cycle.cycle)}: machine window set mismatch`);
     }
   }
+  inspectColdRestarts(sorted, failures);
   return { status: failures.length === 0 ? "green" : "red", evidence: failures };
 }
