@@ -137,11 +137,34 @@ const presenterOrigin = ({ viewId, label, paneComposition }) => {
 };
 
 /**
+ * 표면이 답한 자리를 자리(slot)와 같은 축으로 세운다.
+ *
+ * 두 축을 그냥 맞대면 판정은 좌표계 차이를 합성 결함으로 읽는다(실측: 표면이 presenter 를
+ * 원점으로 답한 y=28 과 자리의 창 좌표 y=149 가 121 만큼 어긋났고, 그 121 은 presenter 가 창
+ * 안에 앉은 자리였다). 문턱으로 덮지 않는다 — 축을 같게 만들거나, 못 만들면 답하지 않는다.
+ *
+ * 세 갈래를 이름으로 가른다. 원점을 안 밝혔거나 모르는 원점이면 **잰 계약 위반**이라 rect 는
+ * null 로 남고 judge 가 이름 붙인다. 밝힌 원점을 창 축으로 옮길 장부가 답하지 않으면 **못 잰**
+ * 것이라 여기서 던진다 — blocked 는 red 와 다른 사실이다.
+ */
+const windowFrameOf = ({ viewId, label, owner, paneComposition }) => {
+  const frame = rect(owner.frame);
+  const space = owner.coordinateSpace;
+  if (frame === null || space?.logical !== "css-px") return null;
+  if (space.origin === "window-absolute") return frame;
+  if (space.origin !== "presenter-local") return null;
+  const origin = presenterOrigin({ viewId, label, paneComposition });
+  if (origin === null) {
+    fail(viewId, `declares a ${space.origin} frame with no readable presenter origin`);
+  }
+  return { x: origin.x + frame.x, y: origin.y + frame.y, w: frame.w, h: frame.h };
+};
+
+/**
  * 표면을 앉힌 원장이 스스로 밝힌 신원과 자리.
  *
  * 주소는 이 표면의 라벨에 매인 것만 받는다 — 매이지 않은 문자열은 이 표면의 신원이 아니라
- * 남의 것이므로 빈 신원이다. 자리는 **원점을 밝힌 것만** 받는다: 원점 없는 숫자는 받는 쪽이
- * 창 좌표로 읽고, 그러면 좌표계 차이가 합성 결함과 같은 값이 된다.
+ * 남의 것이므로 빈 신원이다.
  */
 const declaredSurface = ({ viewId, label, stats, paneComposition }) => {
   const declared = (stats?.surfaces ?? []).filter((item) => item?.viewId === viewId);
@@ -151,20 +174,9 @@ const declaredSurface = ({ viewId, label, stats, paneComposition }) => {
   const owner = declared[0];
   const anchor = `/${encodeURIComponent(label)}`;
   const path = typeof owner.topologyPath === "string" ? owner.topologyPath : "";
-  const frame = rect(owner.frame);
-  const space = owner.coordinateSpace;
-  const origin = space?.logical !== "css-px" || frame === null
-    ? null
-    : space.origin === "window-absolute"
-      ? { x: 0, y: 0 }
-      : space.origin === "presenter-local"
-        ? presenterOrigin({ viewId, label, paneComposition })
-        : null;
   return {
     topologyPath: path.endsWith(anchor) ? path : "",
-    rect: origin === null
-      ? null
-      : { x: origin.x + frame.x, y: origin.y + frame.y, w: frame.w, h: frame.h },
+    rect: windowFrameOf({ viewId, label, owner, paneComposition }),
   };
 };
 

@@ -184,11 +184,30 @@ describe("browser surface rect evidence", () => {
     }))).toMatchObject([{ rect: null }]);
   });
 
-  // 원점의 기준을 못 읽었는데 presenter-local 값을 그대로 실으면, 자리와 다른 축의 숫자가
-  // 자리와 같은 축인 척한다.
-  it("refuses a presenter-local frame with no presenter origin to resolve it against", () => {
-    expect(mapBrowserSurfaceRects(offscreenFact({ paneComposition: { matches: [] } })))
-      .toMatchObject([{ rect: null }]);
+  // 밝힌 원점을 창 축으로 옮길 장부가 답하지 않으면 이 축은 **못 잰** 것이다. 어긴 것과 못 잰
+  // 것은 다른 사실이라 다르게 답한다 — presenter-local 값을 그대로 실으면 자리와 다른 축의
+  // 숫자가 자리와 같은 축인 척한다.
+  it("blocks instead of guessing when no presenter origin answers", () => {
+    expect(() => mapBrowserSurfaceRects(offscreenFact({ paneComposition: { matches: [] } })))
+      .toThrow(/no readable presenter origin/);
+  });
+
+  // 자리(slot)와 표면이 같은 원점을 쓰면 셋은 한 숫자의 사본이다. presenter 는 자리보다 위에
+  // 있고(실측: 자리 y=149, presenter y=121, 그 차이가 표면이 답한 28), 그 차이가 세 관측이
+  // 서로 독립이라는 사실 자체다.
+  it("resolves against the presenter's own window frame, not the slot's", () => {
+    expect(mapBrowserSurfaceRects(offscreenFact())[0].rect).toEqual({
+      x: 513, y: 149, w: 281, h: 421,
+    });
+    expect(mapBrowserSurfaceRects(offscreenFact({
+      paneComposition: {
+        matches: [{
+          viewId: "tab-right",
+          nativeFrame: { x: 513, y: 149, w: 281, h: 449 },
+          memberMatches: [{ label: "offscreen-tab-right", nativeCount: 1, ok: true }],
+        }],
+      },
+    }))[0].rect).toEqual({ x: 513, y: 177, w: 281, h: 421 });
   });
 
   it("carries the owner ledger's own sample time", () => {
