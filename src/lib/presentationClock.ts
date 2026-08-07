@@ -14,6 +14,20 @@ export function presentationNowUnixMs(): number {
   return fallbackUnixFromPerformance + now;
 }
 
+/**
+ * document monotonic clock의 한 시각을 같은 Unix epoch 표기로 옮긴다.
+ *
+ * 프레임 콜백은 `performance.now()` 축의 시각을 인자로 준다. 그것을 원장에 실으려면 지금
+ * 시각과 **같은 축**이어야 한다 — 여기서 옮기지 않고 Date.now()를 섞으면 표시 epoch와 관측
+ * epoch가 서로 다른 시계의 값이 되고, 그 차이는 결함이 아니라 시계 차이를 재게 된다.
+ */
+export function presentationUnixMsFromDocumentTime(documentTimeMs: number): number {
+  const declaredOrigin = performance.timeOrigin;
+  if (Number.isFinite(declaredOrigin)) return declaredOrigin + documentTimeMs;
+  fallbackUnixFromPerformance ??= Date.now() - performance.now();
+  return fallbackUnixFromPerformance + documentTimeMs;
+}
+
 export function __resetPresentationClockForTest(): void {
   fallbackUnixFromPerformance = null;
 }

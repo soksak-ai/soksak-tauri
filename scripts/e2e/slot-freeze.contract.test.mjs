@@ -425,8 +425,10 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(source).not.toContain("maxPairGapMs: flowPresentationTrace.maxPairGapMs");
     expect(source).not.toContain("pairs: flowPresentationTrace.pairs");
     expect(source).not.toMatch(/translatedB04Rect|railBaseline|paneBaseline/);
-    const paneArm = "webview.pane.presentation.trace.arm";
-    const paneRead = "webview.pane.presentation.trace.close";
+    // 표시 원장의 이름은 코어 계약이다 — 프레임워크 이름 공간에 두면 다른 프레임워크에서
+    // 이 게이트가 통째로 안 재지고, 그 부재는 결함이 아니라 "원래 없는 게이트"로 보인다.
+    const paneArm = "view.presentation.trace.arm";
+    const paneRead = "view.presentation.trace.close";
     const offscreenArm = "plugin.soksak-plugin-browser-chromium-offscreen.surface.trace.start";
     const offscreenRead = "plugin.soksak-plugin-browser-chromium-offscreen.surface.trace.read";
     for (const engine of ["browser", "browser-chromium", "browser-chromium-offscreen"]) {

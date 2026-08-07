@@ -36,6 +36,7 @@ import {
   preparePresentedPluginViewMove,
 } from "./pluginViewPresentation";
 import { registerWindowResizeProbe } from "../../lib/windowResizeProbe";
+import { registerPresentationLedgerHost } from "../presentationLedger";
 import {
   combineTauriCompositionProbe,
   nextTauriCompositionProbeGeneration,
@@ -415,43 +416,6 @@ function installPaneSurfaceHostCommands(): void {
     message: (data) => `pane composition committed ${String(data.verdict)}`,
     handler: async (params) => awaitPluginViewComposition(Number(params.settleTimeoutMs ?? 8_000)),
   });
-  register("webview.pane.presentation.trace.arm", {
-    description:
-      "Arm a finite Tauri pane-surface presentation trace and return only after the first real display-link event. Owners are explicit public view/native-host/surface identities; the adapter never parses framework names or DOM paths.",
-    params: {
-      traceId: { type: "string", description: "caller-owned finite trace identity", required: true },
-      owners: {
-        type: "json",
-        description: "array of {viewId,nativeHostId,surfaceId} owner bindings",
-        required: true,
-      },
-      maxEvents: { type: "number", description: "finite event capacity (2..4096, default 256)" },
-    },
-    returns:
-      "{ traceId,ownerViewIds,armedAtUnixMs,baselineFrameSequence,sourceGeneration }",
-    message: (data) => `pane presentation trace ${String(data.traceId)}를 무장했습니다`,
-    handler: async (params) => {
-      if (!Array.isArray(params.owners)) throw new Error("owners는 공개 owner binding 배열이어야 합니다");
-      return invoke("webview_presentation_trace_arm", {
-        traceId: params.traceId,
-        owners: params.owners,
-        ...(params.maxEvents === undefined ? {} : { maxEvents: params.maxEvents }),
-      });
-    },
-  });
-  register("webview.pane.presentation.trace.close", {
-    description:
-      "Close one finite Tauri pane-surface display trace, invalidate its display link, and return the immutable actual-presentation event ledger.",
-    params: {
-      traceId: { type: "string", description: "trace identity returned by arm", required: true },
-    },
-    returns:
-      "{ traceId,closed,ownerViewIds,armedAtUnixMs,baselineFrameSequence,presentationEvents,violations }",
-    message: (data) => `pane presentation trace ${String(data.traceId)}를 닫았습니다`,
-    handler: async (params) => invoke("webview_presentation_trace_close", {
-      traceId: params.traceId,
-    }),
-  });
   register("webview.pane.group", {
     description: "Group one pane renderer and its native members under one PaneSurfaceHost.",
     params: {
@@ -512,6 +476,48 @@ function installPaneSurfaceHostCommands(): void {
       label: params.label,
       result: await invoke<string>("webview_eval", { label: params.label, js: params.js }),
     }),
+  });
+}
+
+/**
+ * 이 프레임워크의 표시 원장 — **원장은 코어 계약이고, 그것을 내는 물건이 여기 있다.**
+ *
+ * 문서 밖 표면이라 표시 사건은 OS 표시 콜백(display link)에서만 나온다. 그 사실을 내는 자리는
+ * 여기지만 이름은 코어의 것이다 — 이름이 이 프레임워크의 것이면 다른 프레임워크에서는 같은
+ * 축이 아예 안 재지고, 그 부재는 결함이 아니라 "원래 없는 게이트"로 보인다.
+ */
+function installPresentationLedger(): void {
+  registerPresentationLedgerHost({
+    async owners() {
+      const hosts = await pluginViewPaneHostsStatus();
+      return hosts.flatMap((host) => {
+        // 아직 어느 view 에도 안 묶인 native host 는 owner 가 아니다 — 이것은 부재이지 결함이 아니다.
+        const viewId = host.viewId;
+        if (typeof viewId !== "string" || !viewId) return [];
+        // 묶였는데 renderer·member identity 가 없으면 그것은 깨진 join 이다. 조용히 빼면 그
+        // view 는 "표시 원장을 걸 수 없는 view" 가 아니라 **없는 view** 로 보인다.
+        if (typeof host.renderer !== "string" || !host.renderer) {
+          throw new Error(`pane host 에 renderer identity 가 없습니다: ${host.nativeHostId}`);
+        }
+        return (host.members ?? []).map((surfaceId) => ({
+          viewId,
+          window: host.window,
+          logicalPaneId: host.logicalPaneId ?? null,
+          rendererId: host.renderer as string,
+          hostId: host.nativeHostId,
+          surfaceId,
+        }));
+      });
+    },
+    arm: ({ traceId, owners, maxEvents }) => invoke("webview_presentation_trace_arm", {
+      traceId,
+      // 네이티브 표면 호스트는 이 프레임워크의 host identity 다. 계약의 hostId 를 그 자리에 넣는다.
+      owners: owners.map(({ viewId, hostId, surfaceId }) => ({
+        viewId, nativeHostId: hostId, surfaceId,
+      })),
+      ...(maxEvents === undefined ? {} : { maxEvents }),
+    }),
+    close: ({ traceId }) => invoke("webview_presentation_trace_close", { traceId }),
   });
 }
 
@@ -622,6 +628,8 @@ export async function installTauri(): Promise<void> {
   installCompositionCommand();
   installHoleAuditCommand();
   installPaneSurfaceHostCommands();
+  // 표시 원장 — 코어 계약에 이 프레임워크의 표시 콜백을 건다.
+  installPresentationLedger();
   installStartupPresentationCommand();
   // Rust 명령은 macOS에서만 등록된다. 최초 조회 성공이 적용 가능성의 유일한 경계이며,
   // 비 macOS에는 unsupported 상태나 빈 명령을 만들지 않는다.

@@ -189,6 +189,33 @@ module.exports = {
     },
   },
 
+  // 이 창이 놓인 디스플레이의 표시 주기 — 표시 원장이 "건너뛴 프레임"을 셀 수 있는 유일한 기준.
+  //
+  // 문서는 이 사실을 모른다. 프레임 콜백 사이의 간격으로 대신하면 건너뛴 프레임이 자기 자신을
+  // 정상 주기라고 답해 **영원히 0** 이 된다. 못 읽으면 이름을 달고 거절한다 — 60 을 채워 넣는
+  // 순간 재지 않은 것을 쟀다고 말하는 것이 된다.
+  window_display_frame_timing: {
+    concept: "이 창이 놓인 디스플레이의 표시 주기",
+    source: "screen.getDisplayMatching(win.getBounds()).displayFrequency",
+    answer: (ctx) => {
+      const win = ctx.window;
+      if (!win || win.isDestroyed()) throw frameworkError("NO_WINDOW", "부른 창이 없다");
+      const display = ctx.screen.getDisplayMatching(win.getBounds());
+      const hz = Number(display?.displayFrequency);
+      if (!(Number.isFinite(hz) && hz > 0)) {
+        throw frameworkError(
+          "DISPLAY_REFRESH_UNAVAILABLE",
+          `디스플레이 표시 주기를 읽을 수 없다: ${String(display?.displayFrequency)}`,
+        );
+      }
+      return {
+        displayId: display?.id ?? null,
+        refreshHz: hz,
+        refreshIntervalMs: 1000 / hz,
+      };
+    },
+  },
+
   // 모니터·창 배치 팩트 — 판단 없이 사실만. 소속 모니터는 창 중심이 어느 모니터 rect 안에
   // 있는가로 정한다(기하이지 판단이 아니다). 어디에도 안 들면 null 이다.
   window_monitors: {

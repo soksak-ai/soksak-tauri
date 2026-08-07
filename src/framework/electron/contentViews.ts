@@ -18,6 +18,7 @@ import {
   type ContentViewHost,
 } from "../../lib/contentViews";
 import { bridgeContentViewEvents } from "../../lib/contentViewEvents";
+import { forgetContentViewSurface, noteContentViewSurface } from "./presentationLedger";
 import { invoke } from "../index";
 
 /** label → 사건 해지. 뷰를 닫을 때 함께 끊는다 — 안 끊으면 죽은 label 로 뿌린다. */
@@ -161,10 +162,14 @@ export const domHost: ContentViewHost = {
     // 사건을 앱이 아는 이름으로 잇는다. 이것이 없으면 app.webview.on(label, "nav") 구독자가
     // 영영 안 불리고, 그 침묵은 오류로 보이지 않는다.
     bridges.set(label, bridgeContentViewEvents(el, label));
+    // 표시 원장이 읽을 실체 사실(세대·그렸는가)도 **여기서** 건다 — `dom-ready` 는 한 번만
+    // 나므로 나중에 구독하면 멀쩡히 그려진 표면이 "안 그렸다"로 기록된다.
+    noteContentViewSurface(label, el);
   },
   async close(label) {
     bridges.get(label)?.();
     bridges.delete(label);
+    forgetContentViewSurface(label);
     find(label, document)?.remove();
   },
   async list() {
