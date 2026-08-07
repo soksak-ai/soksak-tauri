@@ -10,6 +10,10 @@
 //
 // 부르는 쪽(plugins/api.ts)은 어느 쪽인지 모른다. 그것이 이 파일이 있는 이유다.
 import { moduleState } from "../lib/moduleState";
+import {
+  readCompositionParticipant,
+  type CompositionParticipant,
+} from "./compositionParticipants";
 
 /** 콘텐츠 뷰 하나에 할 수 있는 일 — 앱의 webview_* 표면과 이름·인자가 같다. */
 export interface ContentViewHost {
@@ -96,6 +100,11 @@ export interface ContentViewDomFact {
   display: string;
   projectId: string | null;
   projectActive: boolean;
+  /**
+   * 이 표면이 스스로 밝힌 합성 참가 선언. 안 실으면 읽는 쪽이 label 문법에서 뷰를 추론하게
+   * 되고, 그 추론은 문법이 바뀌는 날 조용히 남의 뷰를 가리킨다. 안 찍혔으면 null 이다.
+   */
+  composition: CompositionParticipant | null;
   rect: { x: number; y: number; w: number; h: number };
 }
 
@@ -115,6 +124,7 @@ export function contentViewDomFacts(doc: Document = document): ContentViewDomFac
       display: style?.display ?? "",
       projectId: project?.dataset.projectPlane ?? null,
       projectActive: project?.dataset.projectActive === "1",
+      composition: readCompositionParticipant(el),
       rect: {
         x: +rect.x.toFixed(2),
         y: +rect.y.toFixed(2),

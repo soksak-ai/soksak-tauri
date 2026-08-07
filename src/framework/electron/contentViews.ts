@@ -17,6 +17,15 @@ import {
   findContentViewSlot,
   type ContentViewHost,
 } from "../../lib/contentViews";
+import {
+  clearCompositionParticipant,
+  compositionOwnerViewId,
+  contentCompositionTopologyPath,
+  contentViewNodePath,
+  declareCompositionParticipant,
+  setCompositionParticipantVisible,
+} from "../../lib/compositionParticipants";
+import { currentWindowLabel } from "../../lib/webviewLabels";
 import { bridgeContentViewEvents } from "../../lib/contentViewEvents";
 import { invoke } from "../index";
 
@@ -56,6 +65,32 @@ function placeIn(slot: HTMLElement, el: HTMLElement): void {
   }
   el.style.cssText = "position:absolute;inset:0";
   slot.appendChild(el);
+}
+
+/**
+ * 이 프레임워크가 합성에 내놓는 참가자는 **둘**이다: 선언된 자리와 그 안에 사는 태그.
+ *
+ * 콘텐츠가 문서 밖인 프레임워크는 자리를 네이티브 홀로 투영하고 그 대역을 참가자로 세운다.
+ * 여기서는 그럴 것이 없다 — 태그가 자리의 자식이라 자리가 곧 그 표면의 상자다. 그 차이를
+ * 지우려고 없는 층을 흉내내면 멀쩡한 판에 한 겹이 더 생긴다.
+ *
+ * 뷰는 **공개 앵커에서 읽는다.** label 문법에서 뽑으면 그 문법이 바뀌는 날 조용히 남의 뷰를
+ * 가리키고, 그 오답은 오류가 아니라 "합성이 안 맞는다"로 나타난다. 앵커가 없으면 이 표면은
+ * 소유 뷰를 모르는 것이고, 모르는 것을 지어내지 않는다.
+ */
+function declareComposition(slot: HTMLElement, el: HTMLElement, label: string): void {
+  const viewId = compositionOwnerViewId(slot);
+  if (!viewId) return;
+  const topologyPath = contentCompositionTopologyPath(currentWindowLabel(), viewId, label);
+  const visible = contentViewVisible(slot, el);
+  declareCompositionParticipant(slot, { kind: "slot", viewId, topologyPath, visible });
+  declareCompositionParticipant(el, { kind: "renderer", viewId, topologyPath, visible });
+  el.dataset.node = contentViewNodePath(label);
+}
+
+/** 지금 실제로 합성에 참여하는가 — 자리의 합성 가시성과 이 표면 자신의 숨김을 함께 읽는다. */
+function contentViewVisible(slot: HTMLElement, el: HTMLElement): boolean {
+  return el.style.visibility !== "hidden" && contentViewSlotVisible(slot);
 }
 
 // 셀렉터로 찾지 않는다 — label 은 임의 문자열이라 이스케이프가 필요하고, 그 이스케이프는
@@ -154,6 +189,9 @@ export const domHost: ContentViewHost = {
     // 공개 슬롯이 있으면 그 DOM 합성 가시성을 그대로 따른다. 좌표나 이전 프레임 상태로
     // 추측하지 않는다. 자리 없는 오프스크린 뷰는 보일 이유가 없으므로 숨긴다.
     setShown(el, slot ? contentViewSlotVisible(slot) : false);
+    // 자리에 놓인 표면만 합성 참가자다 — 화면에 놓이지 않은 뷰를 참가자로 세면 판정은
+    // 아무 데도 없는 상자를 자리와 대조한다.
+    if (slot) declareComposition(slot, el, label);
     // **주소는 붙인 뒤에 준다.** 안 붙은 태그에 `src` 를 주면 태그 구현이 내부적으로 적재를
     // 시작하다 "DOM 에 붙고 dom-ready 가 난 뒤에야 부를 수 있다"로 던진다 — 그 예외는
     // **Uncaught 라 부팅 경로를 거기서 끊는다**(실측 2026-08-01: 부팅마다).
@@ -165,7 +203,12 @@ export const domHost: ContentViewHost = {
   async close(label) {
     bridges.get(label)?.();
     bridges.delete(label);
-    find(label, document)?.remove();
+    const el = find(label, document);
+    // 자리는 플러그인의 것이고 표면보다 오래 산다 — 선언을 안 걷으면 원장은 닫힌 뷰의
+    // 자리를 살아 있는 참가자로 세고 없는 표면을 기다린다.
+    const slot = el?.closest<HTMLElement>(`[${CONTENT_VIEW_BODY}]`);
+    if (slot) clearCompositionParticipant(slot);
+    el?.remove();
   },
   async list() {
     return [...document.querySelectorAll("[data-content-view]")].map(
@@ -211,7 +254,16 @@ export const domHost: ContentViewHost = {
     const el = find(label, document);
     // 상자는 건드리지 않는다 — 숨김이 상자를 지우면 복원이 "누가 bounds 를 다시 불러 주는가"에
     // 달리고, 그 우연이 백지 탭으로 나타난다.
-    if (el) setShown(el, visible);
+    if (!el) return;
+    setShown(el, visible);
+    // 선언은 요청이 아니라 결과를 싣는다 — 자리가 이미 접혀 있으면 보이라는 요청 하나로
+    // 참가자가 보인다고 말하게 되고, 그 거짓 참이 합성 판정을 공짜로 통과시킨다.
+    const slot = el.closest<HTMLElement>(`[${CONTENT_VIEW_BODY}]`);
+    if (slot) {
+      const shown = contentViewVisible(slot, el);
+      setCompositionParticipantVisible(slot, shown);
+      setCompositionParticipantVisible(el, shown);
+    }
   },
   // Electron 표면은 슬롯의 DOM 자식이므로 DOM 커밋이 곧 표시 경계다.
   async presentationSettled(_labels) {},

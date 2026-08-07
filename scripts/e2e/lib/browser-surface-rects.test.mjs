@@ -92,6 +92,7 @@ describe("browser surface rect evidence", () => {
           label: "b-w-test-tab-right",
           slotLabel: "b-w-test-tab-right",
           composition: { kind: "renderer", viewId: "tab-right", topologyPath, visible: true },
+          computedVisibility: "visible",
           rect: { x: 513, y: 149, w: 281, h: 421 },
         }],
       },
@@ -122,6 +123,7 @@ describe("browser surface rect evidence", () => {
           label: "b-1",
           slotLabel: "b-1",
           composition: { kind: "renderer", viewId: "tab-right", topologyPath, visible: true },
+          computedVisibility: "visible",
           rect: { x: 513, y: 149, w: 281, h: 421 },
           ...over,
         }],
@@ -138,6 +140,9 @@ describe("browser surface rect evidence", () => {
     expect(() => mapBrowserSurfaceRects(fact({
       composition: { kind: "renderer", viewId: "tab-right", topologyPath, visible: false },
     }))).toThrow(/is not declared visible/);
+    // 도장 하나로는 접힌 표면이 스스로 보인다고 말할 수 있다 — 실제 합성 사실을 함께 본다.
+    expect(() => mapBrowserSurfaceRects(fact({ computedVisibility: "hidden" })))
+      .toThrow(/is not composited/);
     expect(() => mapBrowserSurfaceRects({
       nativeChildWebview: false,
       surface: "framework-native",

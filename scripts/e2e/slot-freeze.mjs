@@ -489,25 +489,31 @@ async function assertRailCompositionContract(
   };
 }
 
+// 원장을 어디서 읽는지는 프레임워크가 선언한 능력이 정한다 — 이름으로 가르면 프레임워크가
+// 하나 늘 때마다 여기가 또 갈라진다.
 async function readBrowserSurfaceEvidence(
   rpc,
   win,
-  { frameworkName, implementation, plugin, tabIds, labels, uiNodes },
+  { nativeChildWebview, implementation, plugin, tabIds, labels },
 ) {
-  const paneComposition = frameworkName === "tauri"
+  const paneComposition = nativeChildWebview
     && implementation.surface !== "engine-offscreen"
     ? must(await rpc("webview.pane.composition", {}, win), "chrome pane composition")
     : null;
+  // 문서 안에 사는 표면의 원장은 content view host 자신의 목록이다.
+  const contentViews = nativeChildWebview
+    ? null
+    : must(await rpc("webview.surfaces", {}, win), "content view surfaces").contentViews;
   const stats = implementation.surface.startsWith("engine-")
     ? must(await rpc(`plugin.${plugin}.stats`, {}, win), "chrome engine stats")
     : null;
   return mapBrowserSurfaceRects({
-    framework: frameworkName,
+    nativeChildWebview,
     surface: implementation.surface,
     windowLabel: win,
     viewIds: tabIds,
     labels,
-    uiNodes,
+    contentViews,
     paneComposition,
     stats,
   });
@@ -556,7 +562,7 @@ async function assertChromeOverlayContract(
   win,
   engineEvidence,
   scale,
-  { frameworkName, implementation, plugin, tabIds, labels, engine, gateReportStore },
+  { frameworkName, nativeChildWebview, implementation, plugin, tabIds, labels, engine, gateReportStore },
 ) {
   must(await rpc("sidebar.right.mode", { mode: "overlay" }, win), "right sidebar overlay mode");
   must(await rpc("project.rightbar.toggle", { open: true }, win), "right sidebar open");
@@ -574,7 +580,7 @@ async function assertChromeOverlayContract(
     }
   }
   const surfaces = await readBrowserSurfaceEvidence(rpc, win, {
-    frameworkName, implementation, plugin, tabIds, labels, uiNodes: tree.nodes ?? [],
+    nativeChildWebview, implementation, plugin, tabIds, labels,
   });
   const sidebarRect = chromeMeasures.get("sidebar/right").rect;
   const overlappingSurface = browserSurfaceOverlapping(sidebarRect, surfaces);
@@ -642,7 +648,7 @@ async function assertChromeOverlayContract(
     throw new Error(`project modal card가 브라우저 위에서 도달 불가: ${JSON.stringify(measuredModalCard)}`);
   }
   const modalSurfaces = await readBrowserSurfaceEvidence(rpc, win, {
-    frameworkName, implementation, plugin, tabIds, labels, uiNodes: modalTree.nodes ?? [],
+    nativeChildWebview, implementation, plugin, tabIds, labels,
   });
   const modalSurface = browserSurfaceOverlapping(measuredModalCard.rect, modalSurfaces);
   if (!modalSurface) throw new Error("모달과 겹칠 live browser surface가 공개 상태에서 발견되지 않았다");
@@ -877,6 +883,8 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
   let originalSettings;
   let originalRightMode;
   let frameworkName = "";
+  // 판정면이 갈리는 축은 이름이 아니라 프레임워크가 선언한 능력이다.
+  let nativeChildWebview = null;
   let runFailure = null;
   try {
     if (implementation.surface !== "framework-native") {
@@ -916,6 +924,11 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
     }
     gateReportStore.bindFramework(frameworkName);
     await gateReportStore.persist();
+    const provision = must(await rpc("framework.provision", {}, win), "framework.provision");
+    if (typeof provision.nativeChildWebview !== "boolean") {
+      throw new Error(`framework가 nativeChildWebview를 선언하지 않았다: ${JSON.stringify(provision)}`);
+    }
+    nativeChildWebview = provision.nativeChildWebview;
     must(await rpc("program.wait", { id: engine, timeoutMs: 20_000 }, win), `program.wait ${engine}`);
     const calibration = must(
       await rpc("capture.calibration", { visible: true }, win),
@@ -1083,12 +1096,11 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
     await observeFrameSequence([firstPaintPath], `${engine}/first-paint`, scale);
     must(await rpc("capture.calibration", { visible: false }, win), "first paint calibration hide");
     const initialSurfaceReceipts = await readBrowserSurfaceEvidence(rpc, win, {
-      frameworkName,
+      nativeChildWebview,
       implementation,
       plugin,
       tabIds,
       labels,
-      uiNodes: tree.nodes ?? [],
     });
     const b03Receipt = gateReportStore.recordMachineEvidence({
       framework: frameworkName,
@@ -1913,7 +1925,8 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
 
     if (SCENARIOS.has("overlay")) {
       await assertChromeOverlayContract(rpc, win, engineEvidence, scale, {
-        frameworkName, implementation, plugin, tabIds, labels, engine, gateReportStore,
+        frameworkName, nativeChildWebview, implementation, plugin, tabIds, labels, engine,
+        gateReportStore,
       });
     }
 

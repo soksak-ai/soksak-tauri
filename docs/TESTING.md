@@ -50,6 +50,11 @@ lacks a required field, the mapper preserves `null` and the gate remains RED; it
 from requested values or PNG pixels.
 The B03 mapper requires an independent owner ledger, exposed `compositionKind=slot|renderer`
 nodes, and the surface receipt's shared `topologyPath`; it never derives one ledger from another.
+The core owns the participant declaration shape (`lib/compositionParticipants`) and each framework
+stamps its own participants. When `framework.provision` reports `nativeChildWebview=false`, the
+surface receipt comes from the content view host's own live list (`contentViews` in
+`webview.surfaces`); a slot node never stands in for a surface. The judge never asks which
+framework it is.
 The B05 mapper joins the click ACK address/time, the layout transaction's trace causality, actual
 presentation events, settlement, and the finite hold receipt. It never estimates a missing time or
 hold from recorded frames.
@@ -64,7 +69,7 @@ observed window geometry.
 |---|---|---|
 | B01 | Initial mount + address bar + page identity in all three engines | Public DOM/status mount, address, and page identity all equal the requested values. |
 | B02 | Korean IME `beforeinput`/`input`, with value retention across transitions and resize | Read both input events and the final value, then assert the same value at every transition and resize checkpoint. |
-| B03 | DOM slot ↔ live surface 1:1, rounding-only frame, shared topology | Assert count, ownership, and coordinate deltas from public DOM rects, native/engine rects, and the identity ledger. On Tauri, a content slot becomes a native hole only through an adapter lifecycle claim (`direct`/`pane`) or the neutral `data-external-surface=<stable identity>` declaration. Undeclared DOM slots are never guessed to be holes. `direct`, `PaneSurfaceHost`, and external-provider geometry are each audited exactly once by their owning plane. Electron does not project this declaration because its browser body remains a DOM child. |
+| B03 | DOM slot ↔ live surface 1:1, rounding-only frame, shared topology | Assert count, ownership, and coordinate deltas from public DOM rects, native/engine rects, and the identity ledger. On Tauri, a content slot becomes a native hole only through an adapter lifecycle claim (`direct`/`pane`) or the neutral `data-external-surface=<stable identity>` declaration. Undeclared DOM slots are never guessed to be holes. `direct`, `PaneSurfaceHost`, and external-provider geometry are each audited exactly once by their owning plane. Electron does not project this declaration because its browser body remains a DOM child. For an in-document surface the participants are the declared slot and the tag inside it, and the third ledger is the content view host's live list. |
 | B04 | One atomic FLOW move for rail, pane, and native surface | An acknowledged finite trace joins the initial raw rect and the exact same-transaction DOM-commit raw rect to actual presentation events, then asserts connectivity, coordinates, and settlement for all three. |
 | B05 | Zero flicker, black frames, ghosts, or post-landing disappearance | The public presentation trace asserts continuous live/visible/painted state and zero replacements, gaps, or disappearances. |
 | B06 | Only active is bright; inactive is dim; rail/sidebar are not dimmed | Public style state asserts one lighting plane and its active aperture, pane dim values, rail/sidebar exclusion from the plane, and adapter alpha 1 (no duplicate dimming). |
