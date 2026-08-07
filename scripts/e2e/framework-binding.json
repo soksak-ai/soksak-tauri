@@ -236,20 +236,6 @@
       "note": "골(gutter) 강조의 대칭을 잰다 — 무장되면 서고 이탈이 오면 반드시 풀린다. 자기 픽스처 창을 세우고 분할까지 스스로 만든다: 포인터를 구동하므로 남의 창을 잡으면 안 되고, gutter 가 없으면 건너뛰어 그 통과가 아무것도 지키지 않는다."
     },
     {
-      "file": "lib/client.mjs",
-      "role": "lib",
-      "class": "A",
-      "surfaces": [],
-      "note": "소켓 클라이언트 한 벌. 경로는 환경에서 받고 없으면 이름을 달고 실패한다 — 지어낸 기본값이 여기 하나면 하니스 전부가 물려 들어간다."
-    },
-    {
-      "file": "lib/client.test.mjs",
-      "role": "test",
-      "class": "A",
-      "surfaces": [],
-      "note": "컨트롤 창 해소의 기준. 굳은 잔재 창이 포커스 폴백을 점유해도 해소가 결정적이어야 한다는 법을 고정한다."
-    },
-    {
       "file": "lib/browser-evidence-plan.mjs",
       "role": "lib",
       "class": "A",
@@ -278,25 +264,32 @@
       "note": "부분 실행이 나머지 gate를 GREEN으로 꾸미지 않고 저장·재로딩 뒤에도 정확한 not-run 행렬을 유지하는지 검증한다."
     },
     {
-      "file": "lib/browser-gates.mjs",
+      "file": "lib/browser-gate-b03-evidence.mjs",
       "role": "lib",
       "class": "A",
       "surfaces": [],
-      "note": "framework·platform을 명시적 실행 identity로 받는 공통 acceptance 스키마와 판정 계약이다. 네이티브 표면을 직접 조회하거나 프레임워크 경로를 추측하지 않는다."
+      "note": "B03 라이브 관측을 판정 봉투로 옮긴다. 독립 원장에서 온 값만 싣고 프레임워크 표면을 직접 읽지 않는다."
     },
     {
-      "file": "lib/browser-gates.test.mjs",
+      "file": "lib/browser-gate-b03-evidence.test.mjs",
       "role": "test",
       "class": "A",
       "surfaces": [],
-      "note": "공통 브라우저 gate 스키마·identity·judge receipt를 순수 증거 값으로 검증한다."
+      "note": "B03 매퍼가 원장을 서로 역산하지 않고 빠진 값을 null 로 보존한다는 법을 값만으로 고정한다."
     },
     {
-      "file": "lib/browser-gate-identity.mjs",
+      "file": "lib/browser-gate-b05-evidence.mjs",
       "role": "lib",
       "class": "A",
       "surfaces": [],
-      "note": "acceptance report가 허용하는 framework·platform·browser engine identity의 단일 목록이다."
+      "note": "B05 자극·거래·표시 사건·정착·hold 영수증을 닫힌 봉투로 결합한다. 빠진 시각을 녹화 프레임에서 추정하지 않는다."
+    },
+    {
+      "file": "lib/browser-gate-b05-evidence.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "B05 매퍼가 없는 시각을 지어내지 않고 null 로 남긴다는 법을 값만으로 고정한다."
     },
     {
       "file": "lib/browser-gate-b05.mjs",
@@ -311,6 +304,20 @@
       "class": "A",
       "surfaces": [],
       "note": "B05의 gap·교체·미표시·미정착 RED와 세 engine receipt GREEN을 값으로 고정한다."
+    },
+    {
+      "file": "lib/browser-gate-b06-evidence.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "B06 pane 별 dim·adapter alpha·단일 조명 평면·면제 사실을 판정 봉투로 옮긴다. 면제 하나로 다른 값을 대신하지 않는다."
+    },
+    {
+      "file": "lib/browser-gate-b06-evidence.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "B06 매퍼가 조명 평면과 면제 사실을 각각 요구한다는 법을 값만으로 고정한다."
     },
     {
       "file": "lib/browser-gate-b06.mjs",
@@ -369,6 +376,20 @@
       "note": "B09의 overlay 누락·비교차·잘못된 hit owner와 실제 surface inventory 누락을 RED로 고정한다."
     },
     {
+      "file": "lib/browser-gate-b10-evidence.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "B10 baseline 과 각 resize 영수증을 닫힌 거래로 옮긴다. 요청한 크기를 관측된 창 기하로 복사하지 않는다."
+    },
+    {
+      "file": "lib/browser-gate-b10-evidence.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "B10 매퍼가 요청값을 관측값으로 승격하지 않는다는 법을 값만으로 고정한다."
+    },
+    {
       "file": "lib/browser-gate-b10.mjs",
       "role": "lib",
       "class": "A",
@@ -397,11 +418,79 @@
       "note": "B12의 시작 지연·후기 drift·중앙선·hole 불일치 RED와 완전한 원장 GREEN을 값으로 고정한다."
     },
     {
+      "file": "lib/browser-gate-coverage.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "36칸 보고서의 측정 커버리지를 소유한다. 판정 실패가 측정을 끊지 않게 엔진을 격리하고, 이어갈 수 없는 셀만 사유와 함께 닫는다. 인수 합계는 프레임워크 축까지 센다."
+    },
+    {
+      "file": "lib/browser-gate-coverage.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "차단은 미측정 셀만 닫고 기록된 판정을 가리지 않으며, 제출되지 않은 프레임워크는 0 이 아니라 이름으로 남는다는 법을 고정한다."
+    },
+    {
+      "file": "lib/browser-gate-identity.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "acceptance report가 허용하는 framework·platform·browser engine identity의 단일 목록이다."
+    },
+    {
+      "file": "lib/browser-gates.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "framework·platform을 명시적 실행 identity로 받는 공통 acceptance 스키마와 판정 계약이다. 네이티브 표면을 직접 조회하거나 프레임워크 경로를 추측하지 않는다."
+    },
+    {
+      "file": "lib/browser-gates.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "공통 브라우저 gate 스키마·identity·judge receipt를 순수 증거 값으로 검증한다."
+    },
+    {
+      "file": "lib/browser-live-evidence.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "B01·B02·B11 의 라이브 응답을 판정 봉투로 옮긴다. 공개 응답에 없는 필드는 null 로 보존하고 요청값이나 픽셀에서 만들지 않는다."
+    },
+    {
+      "file": "lib/browser-live-evidence.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "라이브 매퍼가 빠진 필드를 채워 넣지 않는다는 법을 값만으로 고정한다."
+    },
+    {
       "file": "lib/browser-machine-judge-support.mjs",
       "role": "lib",
       "class": "A",
       "surfaces": [],
       "note": "gate별 순수 판정기가 공유하는 strict schema·engine identity·RED/GREEN 영수증 유틸리티다."
+    },
+    {
+      "file": "lib/browser-matrix.mjs",
+      "role": "lib",
+      "class": "C",
+      "surfaces": [
+        "window.snapshot",
+        "pixel-oracle"
+      ],
+      "note": "세 브라우저 구현에 같은 문서·IME·픽셀 생존 기준을 적용하는 판정 한 벌. 입력은 PNG 바이트지만 그 바이트에는 프레임워크별 창 합성 결과가 들어 있다."
+    },
+    {
+      "file": "lib/browser-matrix.test.mjs",
+      "role": "test",
+      "class": "C",
+      "surfaces": [
+        "window.snapshot"
+      ],
+      "note": "브라우저 matrix의 구현 목록·마커 판정·eval 봉투 해소를 순수 바이트와 값으로 고정하며, 창 캡처 좌표계 계약도 직접 검증하므로 네이티브 표면에 결속된다."
     },
     {
       "file": "lib/browser-surface-rects.mjs",
@@ -432,20 +521,6 @@
       "note": "공개 주소의 누락·중복·잘못된 owner 결부를 RED로 고정한다."
     },
     {
-      "file": "lib/layout-transaction-verdict.mjs",
-      "role": "lib",
-      "class": "A",
-      "surfaces": [],
-      "note": "공개 layout 거래 장부에서 정확히 한 개의 닫힌 거래·유한 이동·대상 identity를 판정하는 순수 계약이다."
-    },
-    {
-      "file": "lib/layout-transaction-verdict.test.mjs",
-      "role": "test",
-      "class": "A",
-      "surfaces": [],
-      "note": "픽셀·프레임워크 없이 layout 거래의 RED/GREEN 기준을 고정한다."
-    },
-    {
       "file": "lib/browser-visual-evidence.mjs",
       "role": "lib",
       "class": "C",
@@ -464,6 +539,20 @@
       "note": "픽셀 관측 공개 진입점에서 읽을 수 없는 artifact가 machine verdict로 승격되지 않고 명시적 human visual 진단으로 남는 오류 경계를 검증한다."
     },
     {
+      "file": "lib/client.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "소켓 클라이언트 한 벌. 경로는 환경에서 받고 없으면 이름을 달고 실패한다 — 지어낸 기본값이 여기 하나면 하니스 전부가 물려 들어간다."
+    },
+    {
+      "file": "lib/client.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "컨트롤 창 해소의 기준. 굳은 잔재 창이 포커스 폴백을 점유해도 해소가 결정적이어야 한다는 법을 고정한다."
+    },
+    {
       "file": "lib/evidence-store.mjs",
       "role": "lib",
       "class": "A",
@@ -476,71 +565,6 @@
       "class": "A",
       "surfaces": [],
       "note": "격리된 OS 임시 디렉터리에서 증거 저장 경계·회전·quota·동시 거래를 검증한다. 앱이나 프레임워크를 실행하지 않는다."
-    },
-    {
-      "file": "lib/recording-evidence-action.mjs",
-      "role": "lib",
-      "class": "A",
-      "surfaces": [],
-      "note": "제품 action callback과 증거 저장 거래를 정확히 한 번 결합한다. 실제 window.record 호출은 소비자가 주입하며 이 모듈은 프레임워크 명령을 알지 않는다."
-    },
-    {
-      "file": "lib/recording-evidence-action.test.mjs",
-      "role": "test",
-      "class": "A",
-      "surfaces": [],
-      "note": "저장 preflight·callback 이후 실패에서도 제품 action이 한 번만 실행되고 artifact identity가 상대경로로 남는지 검증한다."
-    },
-    {
-      "file": "lib/tauri-surface-resize-policy.mjs",
-      "role": "lib",
-      "class": "C",
-      "surfaces": [
-        "tauri-appkit-surface-policy"
-      ],
-      "note": "Tauri macOS 자식 웹뷰의 bounds 소유권과 AppKit autoresizing·CALayer 정책을 판정한다. Electron이나 다른 OS에 적용할 공통 DOM 규칙이 아니다."
-    },
-    {
-      "file": "lib/tauri-surface-resize-policy.test.mjs",
-      "role": "test",
-      "class": "C",
-      "surfaces": [
-        "tauri-appkit-surface-policy"
-      ],
-      "note": "standalone과 PaneSurfaceHost 상태별 AppKit bounds 소유권 및 layer telemetry 기준을 고정한다."
-    },
-    {
-      "file": "lib/visual-recording-review.mjs",
-      "role": "lib",
-      "class": "A",
-      "surfaces": [],
-      "note": "주입된 recording 영수증과 PNG artifact 목록의 검토 가능성만 보고하며 제품의 machine verdict나 프레임워크 캡처를 소유하지 않는다."
-    },
-    {
-      "file": "lib/visual-recording-review.test.mjs",
-      "role": "test",
-      "class": "A",
-      "surfaces": [],
-      "note": "녹화 완결성 오류가 명시적 human visual 상태로 남고 자동 제품 판정으로 오용되지 않는 계약을 값으로 검증한다."
-    },
-    {
-      "file": "lib/browser-matrix.mjs",
-      "role": "lib",
-      "class": "C",
-      "surfaces": [
-        "window.snapshot",
-        "pixel-oracle"
-      ],
-      "note": "세 브라우저 구현에 같은 문서·IME·픽셀 생존 기준을 적용하는 판정 한 벌. 입력은 PNG 바이트지만 그 바이트에는 프레임워크별 창 합성 결과가 들어 있다."
-    },
-    {
-      "file": "lib/browser-matrix.test.mjs",
-      "role": "test",
-      "class": "C",
-      "surfaces": [
-        "window.snapshot"
-      ],
-      "note": "브라우저 matrix의 구현 목록·마커 판정·eval 봉투 해소를 순수 바이트와 값으로 고정하며, 창 캡처 좌표계 계약도 직접 검증하므로 네이티브 표면에 결속된다."
     },
     {
       "file": "lib/fixtureWindow.mjs",
@@ -589,6 +613,20 @@
       "note": "fixture 서버의 응답·no-store·종료 계약을 Node HTTP만으로 검증한다."
     },
     {
+      "file": "lib/layout-transaction-verdict.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "공개 layout 거래 장부에서 정확히 한 개의 닫힌 거래·유한 이동·대상 identity를 판정하는 순수 계약이다."
+    },
+    {
+      "file": "lib/layout-transaction-verdict.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "픽셀·프레임워크 없이 layout 거래의 RED/GREEN 기준을 고정한다."
+    },
+    {
       "file": "lib/png.mjs",
       "role": "lib",
       "class": "C",
@@ -596,6 +634,80 @@
         "pixel-oracle"
       ],
       "note": "PNG 코덱 — 픽셀 오라클의 단일 진실. 오라클이 서는 곳에서만 쓰인다."
+    },
+    {
+      "file": "lib/recording-evidence-action.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "제품 action callback과 증거 저장 거래를 정확히 한 번 결합한다. 실제 window.record 호출은 소비자가 주입하며 이 모듈은 프레임워크 명령을 알지 않는다."
+    },
+    {
+      "file": "lib/recording-evidence-action.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "저장 preflight·callback 이후 실패에서도 제품 action이 한 번만 실행되고 artifact identity가 상대경로로 남는지 검증한다."
+    },
+    {
+      "file": "lib/tauri-surface-resize-policy.mjs",
+      "role": "lib",
+      "class": "C",
+      "surfaces": [
+        "tauri-appkit-surface-policy"
+      ],
+      "note": "Tauri macOS 자식 웹뷰의 bounds 소유권과 AppKit autoresizing·CALayer 정책을 판정한다. Electron이나 다른 OS에 적용할 공통 DOM 규칙이 아니다."
+    },
+    {
+      "file": "lib/tauri-surface-resize-policy.test.mjs",
+      "role": "test",
+      "class": "C",
+      "surfaces": [
+        "tauri-appkit-surface-policy"
+      ],
+      "note": "standalone과 PaneSurfaceHost 상태별 AppKit bounds 소유권 및 layer telemetry 기준을 고정한다."
+    },
+    {
+      "file": "lib/titlebar-cold-start-run.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "냉시작 직후와 로딩 완료 후의 traffic-light 표본 순서와 중간 회귀를 판정한다. 소켓 명령으로 받은 값만 쓰고 네이티브 표면을 직접 읽지 않는다."
+    },
+    {
+      "file": "lib/titlebar-cold-start-run.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "냉시작 실행기의 표본 순서와 중간 회귀 판정을 값만으로 고정한다."
+    },
+    {
+      "file": "lib/visual-recording-review.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "주입된 recording 영수증과 PNG artifact 목록의 검토 가능성만 보고하며 제품의 machine verdict나 프레임워크 캡처를 소유하지 않는다."
+    },
+    {
+      "file": "lib/visual-recording-review.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "녹화 완결성 오류가 명시적 human visual 상태로 남고 자동 제품 판정으로 오용되지 않는 계약을 값으로 검증한다."
+    },
+    {
+      "file": "lib/windowed-surface-composition.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "창 모드 표면 합성의 member 기하 대조. 전달받은 합성 영수증 값만 쓰고 네이티브 장부를 직접 읽지 않는다."
+    },
+    {
+      "file": "lib/windowed-surface-composition.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "창 모드 합성 판정의 좌표 대조와 누락·중복 판별을 값만으로 고정한다."
     },
     {
       "file": "make-frame-fixtures.mjs",
@@ -851,6 +963,13 @@
         "app-home-path"
       ],
       "note": "한 identity 홈의 터미널 엔진 유닛을 정합시킨다. 파일 배치 작업이고, 홈 경로만 밖에서 오면 프레임워크를 모른다."
+    },
+    {
+      "file": "titlebar-composition-summary.mjs",
+      "role": "tool",
+      "class": "A",
+      "surfaces": [],
+      "note": "냉시작 titlebar 실행 결과를 사람이 읽는 표로 요약한다. 판정하지 않고 이미 기록된 값만 읽는다."
     },
     {
       "file": "titlebar-composition.contract.test.mjs",
