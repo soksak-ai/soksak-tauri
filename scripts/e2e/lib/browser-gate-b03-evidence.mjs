@@ -1,4 +1,5 @@
 import { logicalRectToPhysical } from "../../../packages/dom-webview-compositor/src/index.ts";
+import { BROWSER_SURFACE_OBSERVATION_SOURCES } from "./browser-surface-rects.mjs";
 import { mapWithWiring } from "./browser-machine-judge-support.mjs";
 
 const value = (candidate, field) => candidate && typeof candidate === "object"
@@ -64,14 +65,26 @@ export function mapB03LiveEvidence(raw = {}) {
     const scaleFactor = checkpoint.take("scaleFactor") ?? null;
     const uiTree = checkpoint.take("uiTree");
     const visibleViewIds = checkpoint.take("visibleViewIds");
-    const surfaceReceipts = checkpoint.take("surfaceReceipts");
+    const observation = checkpoint.take("surfaceObservation");
+    const settledAtUnixMs = checkpoint.take("settledAtUnixMs") ?? null;
     return {
       engine: checkpoint.take("engine") ?? null,
       coordinateSpace: { logical: "css-px", physical: "device-px", scaleFactor },
+      // slot·renderer 는 이 함수가 공개 DOM 트리에서 읽는다. surface 는 표면을 소유한 원장이
+      // 스스로 이름을 붙인다 — 세 좌표가 어느 관측에서 왔는지가 좌표와 함께 판정에 실린다.
+      observation: {
+        settledAtUnixMs,
+        sampledAtUnixMs: value(observation, "sampledAtUnixMs"),
+        sources: {
+          slot: BROWSER_SURFACE_OBSERVATION_SOURCES.domProjection,
+          renderer: BROWSER_SURFACE_OBSERVATION_SOURCES.domProjection,
+          surface: value(observation, "source"),
+        },
+      },
       visibleViewIds: Array.isArray(visibleViewIds) ? [...visibleViewIds] : null,
       slots: exposedParticipants(uiTree, "slot", scaleFactor),
       renderers: exposedParticipants(uiTree, "renderer", scaleFactor),
-      surfaces: surfaceParticipants(surfaceReceipts, scaleFactor),
+      surfaces: surfaceParticipants(value(observation, "receipts"), scaleFactor),
     };
   });
 }

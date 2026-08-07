@@ -1,3 +1,17 @@
+/**
+ * 표면 관측이 읽은 원장의 이름.
+ *
+ * slot·renderer 는 메인 문서 DOM 을 읽는다. surface 가 같은 DOM 을 한 번 더 읽으면 세 관측은
+ * 한 숫자의 사본 셋이 되고, native 표면이 어디에 있든 1:1 판정이 통과한다. 어느 원장에서
+ * 왔는지는 좌표와 함께 판정에 실린다 — 판정이 두 경우를 가를 축은 그것뿐이다.
+ */
+export const BROWSER_SURFACE_OBSERVATION_SOURCES = Object.freeze({
+  domProjection: "dom-projection",
+  paneMember: "appkit-pane-member",
+  engineLedger: "engine-surface-ledger",
+  contentViewHost: "content-view-host",
+});
+
 const rect = (value) => {
   const result = {
     x: Number(value?.x),
@@ -30,6 +44,17 @@ const displayed = (value) => {
   }
 };
 
+/**
+ * 문서 밖 표면의 자리는 AppKit 장부가 소유한다.
+ *
+ * DOM 투영(domFrame)은 같은 자리를 **예측한** 값이다. 그것을 영수증에 옮겨 적으면 slot·renderer
+ * 와 같은 숫자가 되고, 표면이 실제로 어긋난 순간에도 세 관측이 일치한다. 그래서 여기서 읽는
+ * 것은 host nativeFrame + member nativeFrame 이고, 못 읽으면 rect 는 null 이다 — 예측값으로
+ * 메우지 않는다.
+ *
+ * 공개 topology 문자열은 DOM 이 선언한다. native 로 등재된 member 라벨에 매이지 않으면 그
+ * 문자열은 이 표면의 신원이 아니라 남의 것이므로, 이 원장은 그것을 보증하지 않는다(빈 신원).
+ */
 const paneSurface = ({ viewId, label, paneComposition }) => {
   const candidates = (paneComposition?.matches ?? []).flatMap((pane) =>
     (pane.memberMatches ?? [])
@@ -40,18 +65,20 @@ const paneSurface = ({ viewId, label, paneComposition }) => {
   if (pane.viewId !== viewId) {
     fail(viewId, `PaneSurfaceHost owner view mismatch (${String(pane.viewId)})`);
   }
-  const paneRect = rect(pane.domFrame);
-  const memberRect = rect(member.domFrame);
+  const paneNative = rect(pane.nativeFrame);
+  const memberNative = rect(member.nativeFrame);
+  const declared = typeof member.topologyPath === "string" ? member.topologyPath : "";
+  const anchor = `/${encodeURIComponent(label)}`;
   return {
-    rect: paneRect && memberRect
+    rect: paneNative && memberNative
       ? {
-        x: paneRect.x + memberRect.x,
-        y: paneRect.y + memberRect.y,
-        w: memberRect.w,
-        h: memberRect.h,
+        x: paneNative.x + memberNative.x,
+        y: paneNative.y + memberNative.y,
+        w: memberNative.w,
+        h: memberNative.h,
       }
       : null,
-    topologyPath: typeof member.topologyPath === "string" ? member.topologyPath : "",
+    topologyPath: declared.endsWith(anchor) ? declared : "",
     chromeAboveHost: pane.chromeAboveHost === true,
     live: member.nativeCount === 1,
     exact: member.ok === true,
@@ -110,33 +137,32 @@ const engineSurface = ({ viewId, surface, stats }) => {
 };
 
 /**
- * Maps each browser implementation's public owner facts into one B09 surface receipt.
+ * Maps one browser implementation's public owner facts into one surface receipt.
  * It never infers a native surface from an unrelated root DOM tree.
  *
  * 갈라지는 축은 프레임워크 이름이 아니라 프레임워크가 **선언한 능력**이다. 이름으로 가르면
  * 프레임워크가 하나 늘 때마다 갈래가 늘고, 새 이름은 판정면 어디에서도 자기 자리를 못 찾는다.
  */
-export function mapBrowserSurfaceRects({
-  nativeChildWebview,
-  surface,
-  viewIds,
-  labels,
-  contentViews,
-  paneComposition,
-  stats,
+function observeSurface({
+  nativeChildWebview, surface, viewId, label, contentViews, paneComposition, stats,
 }) {
-  return viewIds.map((viewId, index) => {
-    const label = labels[index];
-    if (typeof nativeChildWebview !== "boolean") {
-      fail(viewId, `has no declared nativeChildWebview provision (${displayed(nativeChildWebview)})`);
-    }
-    // 콘텐츠가 문서 안에 살면 자리의 자식이 곧 표면이다 — 그 선언을 네이티브 홀로 투영하지
-    // 않으므로 네이티브 원장을 찾을 자리도 없다.
-    if (!nativeChildWebview) return documentSurface({ viewId, label, contentViews });
+  if (typeof nativeChildWebview !== "boolean") {
+    fail(viewId, `has no declared nativeChildWebview provision (${displayed(nativeChildWebview)})`);
+  }
+  // 콘텐츠가 문서 안에 살면 자리의 자식이 곧 표면이다 — 그 선언을 네이티브 홀로 투영하지
+  // 않으므로 네이티브 원장을 찾을 자리도 없다. 대신 호스트 자신의 살아 있는 표면 목록이 원장이다.
+  if (!nativeChildWebview) {
+    return {
+      source: BROWSER_SURFACE_OBSERVATION_SOURCES.contentViewHost,
+      receipt: documentSurface({ viewId, label, contentViews }),
+    };
+  }
 
-    if (surface === "framework-native") {
-      const owner = paneSurface({ viewId, label, paneComposition });
-      return {
+  if (surface === "framework-native") {
+    const owner = paneSurface({ viewId, label, paneComposition });
+    return {
+      source: BROWSER_SURFACE_OBSERVATION_SOURCES.paneMember,
+      receipt: {
         viewId,
         surfaceId: label,
         topologyPath: owner.topologyPath,
@@ -148,13 +174,16 @@ export function mapBrowserSurfaceRects({
         visible: true,
         presented: owner.exact,
         rect: owner.rect,
-      };
-    }
+      },
+    };
+  }
 
-    const owned = engineSurface({ viewId, surface, stats });
-    if (surface === "engine-windowed") {
-      const owner = paneSurface({ viewId, label, paneComposition });
-      return {
+  const owned = engineSurface({ viewId, surface, stats });
+  if (surface === "engine-windowed") {
+    const owner = paneSurface({ viewId, label, paneComposition });
+    return {
+      source: BROWSER_SURFACE_OBSERVATION_SOURCES.paneMember,
+      receipt: {
         viewId,
         surfaceId: String(owned.id),
         topologyPath: owner.topologyPath,
@@ -164,14 +193,17 @@ export function mapBrowserSurfaceRects({
         visible: owned.actual.hidden !== true,
         presented: owner.exact && owned.actual.composition != null,
         rect: owner.rect,
-      };
-    }
-    // offscreen 은 PaneSurfaceHost 를 안 가지므로 형제 층 순서를 답할 주소가 없다. 여기서
-    // 값을 지어내지 않는다 — 영수증에 그 사실이 빠진 채로 가고 judge 가 누락으로 이름 붙인다.
-    if (surface === "engine-offscreen") {
-      const bounds = rect(owned.actual.bounds);
-      const presentation = rect(owned.actual.presentation);
-      return {
+      },
+    };
+  }
+  // offscreen 은 PaneSurfaceHost 를 안 가지므로 형제 층 순서를 답할 주소가 없다. 여기서
+  // 값을 지어내지 않는다 — 영수증에 그 사실이 빠진 채로 가고 judge 가 누락으로 이름 붙인다.
+  if (surface === "engine-offscreen") {
+    const bounds = rect(owned.actual.bounds);
+    const presentation = rect(owned.actual.presentation);
+    return {
+      source: BROWSER_SURFACE_OBSERVATION_SOURCES.engineLedger,
+      receipt: {
         viewId,
         surfaceId: String(owned.id),
         live: true,
@@ -180,8 +212,57 @@ export function mapBrowserSurfaceRects({
           && owned.actual.resize?.pending !== true
           && owned.actual.viewport?.matches === true,
         rect: bounds,
-      };
-    }
-    fail(viewId, `uses unsupported surface ${surface}`);
-  });
+      },
+    };
+  }
+  return fail(viewId, `uses unsupported surface ${surface}`);
+}
+
+/** 이 원장이 스스로 적은 표본 시각. 안 적는 원장은 null 이다 — 모름을 아는 값으로 바꾸지 않는다. */
+function sampledAt(source, { paneComposition, contentViews }) {
+  const raw = source === BROWSER_SURFACE_OBSERVATION_SOURCES.paneMember
+    ? paneComposition?.sampledAtUnixMs
+    : source === BROWSER_SURFACE_OBSERVATION_SOURCES.contentViewHost
+      ? contentViews?.sampledAtUnixMs
+      : null;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : null;
+}
+
+/**
+ * 한 브라우저 구현의 살아 있는 표면 원장을 읽고, **무엇을 읽었는지**·언제 그 원장이 스스로를
+ * 표본했는지·뷰별 영수증을 함께 낸다. 좌표만 내면 받는 쪽은 그 숫자가 어느 관측에서 왔는지
+ * 알 수 없고, 그러면 세 관측의 일치는 증명이 아니라 우연과 구분되지 않는다.
+ */
+export function browserSurfaceObservation({
+  nativeChildWebview,
+  surface,
+  viewIds,
+  labels,
+  contentViews,
+  paneComposition,
+  stats,
+}) {
+  const observed = viewIds.map((viewId, index) => observeSurface({
+    nativeChildWebview,
+    surface,
+    viewId,
+    label: labels[index],
+    contentViews,
+    paneComposition,
+    stats,
+  }));
+  const sources = [...new Set(observed.map((item) => item.source))];
+  if (sources.length !== 1) {
+    fail(viewIds[0] ?? "browser", `mixes surface observation ledgers (${sources.join(",")})`);
+  }
+  return {
+    source: sources[0],
+    sampledAtUnixMs: sampledAt(sources[0], { paneComposition, contentViews }),
+    receipts: observed.map((item) => item.receipt),
+  };
+}
+
+export function mapBrowserSurfaceRects(input) {
+  return browserSurfaceObservation(input).receipts;
 }

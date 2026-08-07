@@ -231,6 +231,15 @@ function b03Evidence(engine = "browser") {
   return {
     engine,
     coordinateSpace: { logical: "css-px", physical: "device-px", scaleFactor },
+    observation: {
+      settledAtUnixMs: 1_700_000_000_000,
+      sampledAtUnixMs: 1_700_000_000_012,
+      sources: {
+        slot: "dom-projection",
+        renderer: "dom-projection",
+        surface: "appkit-pane-member",
+      },
+    },
     visibleViewIds: viewFrames.map(([viewId]) => `${engine}-${viewId}`),
     slots: viewFrames.map(([viewId, frame]) => participant("slot", viewId, frame)),
     renderers: viewFrames.map(([viewId, frame]) => participant("renderer", viewId, frame)),
@@ -480,6 +489,52 @@ describe("브라우저 12-gate 정본", () => {
     const pixelContamination = b03Evidence();
     pixelContamination.surfaces[0].markerPixels = { cyan: 64 };
     expect(judgeB03MachineEvidence(pixelContamination).status).toBe("red");
+  });
+
+  // 세 관측이 한 원장에서 나오면 좌표가 같다는 사실은 표면이 제자리에 있다는 뜻이 아니라
+  // 한 숫자를 세 번 적었다는 뜻이다. 판정은 그 사실을 이름으로 거절해야 한다.
+  it("B03은 surface 관측이 slot·renderer 와 다른 원장에서 온 것만 green이다", () => {
+    const copiedLedger = b03Evidence();
+    copiedLedger.observation.sources.surface = "dom-projection";
+    const copied = judgeB03MachineEvidence(copiedLedger);
+    expect(copied.status).toBe("red");
+    expect(copied.evidence).toContain('B03:observation.sources.surface=independent/"dom-projection"');
+
+    const unknownLedger = b03Evidence();
+    unknownLedger.observation.sources.surface = "png-pixels";
+    expect(judgeB03MachineEvidence(unknownLedger).evidence)
+      .toContain('B03:observation.sources.surface=known/"png-pixels"');
+
+    const missingSources = b03Evidence();
+    delete missingSources.observation.sources.renderer;
+    expect(judgeB03MachineEvidence(missingSources).evidence)
+      .toContain("B03:observation.sources.renderer=missing");
+
+    expect(judgeB03MachineEvidence(b03Evidence()).evidence).toEqual([
+      "browser/B03:visible=2;slot+renderer+surface=1:1-physical-rounding;surface-ledger=appkit-pane-member",
+    ]);
+  });
+
+  // 두 원장을 다른 순간에 읽으면 좌표 차이는 합성 결함과 구분되지 않는다. 관측 시점이 없으면
+  // 같은 순간을 봤다는 주장 자체가 미확인이다.
+  it("B03은 정착 epoch 뒤에 표본된 표면 원장만 green이다", () => {
+    const beforeSettle = b03Evidence();
+    beforeSettle.observation.sampledAtUnixMs = beforeSettle.observation.settledAtUnixMs - 1;
+    const stale = judgeB03MachineEvidence(beforeSettle);
+    expect(stale.status).toBe("red");
+    expect(stale.evidence).toContain(
+      "B03:observation.sampledAtUnixMs>=settledAtUnixMs/1699999999999<1700000000000",
+    );
+
+    const noEpoch = b03Evidence();
+    noEpoch.observation.sampledAtUnixMs = null;
+    expect(judgeB03MachineEvidence(noEpoch).evidence)
+      .toContain("B03:observation.sampledAtUnixMs=finite/null");
+
+    const noObservation = b03Evidence();
+    delete noObservation.observation;
+    expect(judgeB03MachineEvidence(noObservation).evidence)
+      .toContain("B03:evidence.observation=missing");
   });
 
   it("B04는 FLOW 양방향에서 한 layout 거래와 같은 유한 tick의 rail·pane·surface 원자 이동만 green이다", () => {

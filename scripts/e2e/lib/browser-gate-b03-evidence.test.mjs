@@ -21,16 +21,21 @@ function raw() {
   return {
     engine: "browser",
     scaleFactor: 2,
+    settledAtUnixMs: 1_700_000_000_000,
     visibleViewIds: viewIds,
     uiTree: { nodes },
-    surfaceReceipts: viewIds.map((viewId, index) => ({
-      viewId,
-      surfaceId: `surface-${viewId}`,
-      topologyPath: `workspace/pane/${viewId}/browser`,
-      live: true,
-      visible: true,
-      rect: rect(50 + index * 340),
-    })),
+    surfaceObservation: {
+      source: "appkit-pane-member",
+      sampledAtUnixMs: 1_700_000_000_010,
+      receipts: viewIds.map((viewId, index) => ({
+        viewId,
+        surfaceId: `surface-${viewId}`,
+        topologyPath: `workspace/pane/${viewId}/browser`,
+        live: true,
+        visible: true,
+        rect: rect(50 + index * 340),
+      })),
+    },
   };
 }
 
@@ -39,9 +44,23 @@ describe("B03 live evidence mapper", () => {
     expect(judgeB03MachineEvidence(mapB03LiveEvidence(raw())).status).toBe("green");
   });
 
+  // slot·renderer 는 메인 문서를 읽고 surface 는 표면 원장을 읽는다. 그 사실이 봉투에 실려야
+  // 판정에 들어간다 — 어느 원장에서 왔는지 모르는 좌표는 일치해도 증명이 아니다.
+  it("carries the ledger each observation came from", () => {
+    expect(mapB03LiveEvidence(raw()).observation).toEqual({
+      settledAtUnixMs: 1_700_000_000_000,
+      sampledAtUnixMs: 1_700_000_000_010,
+      sources: {
+        slot: "dom-projection",
+        renderer: "dom-projection",
+        surface: "appkit-pane-member",
+      },
+    });
+  });
+
   it("does not invent a missing native topology identity", () => {
     const value = raw();
-    delete value.surfaceReceipts[0].topologyPath;
+    delete value.surfaceObservation.receipts[0].topologyPath;
     const evidence = mapB03LiveEvidence(value);
     expect(evidence.surfaces[0].topologyPath).toBeNull();
     expect(judgeB03MachineEvidence(evidence).status).toBe("red");
@@ -49,13 +68,13 @@ describe("B03 live evidence mapper", () => {
 
   it("names a drifted checkpoint field on both sides instead of mapping it to null", () => {
     const value = raw();
-    value.surfaceLedger = value.surfaceReceipts;
-    delete value.surfaceReceipts;
+    value.surfaceLedger = value.surfaceObservation;
+    delete value.surfaceObservation;
     const evidence = mapB03LiveEvidence(value);
     expect(evidence.evidenceWiring).toEqual({
       source: "B03.live",
       unconsumed: ["surfaceLedger"],
-      unproduced: ["surfaceReceipts"],
+      unproduced: ["surfaceObservation"],
       error: null,
     });
     const verdict = judgeB03MachineEvidence(evidence);
@@ -63,7 +82,9 @@ describe("B03 live evidence mapper", () => {
     // 배선 이름이 값 증상보다 앞에 선다. surfaces=non-empty 만 보고 표면 소실을 쫓지 않는다.
     expect(verdict.evidence).toEqual([
       "B03:wiring.B03.live.surfaceLedger=produced-not-consumed",
-      "B03:wiring.B03.live.surfaceReceipts=consumed-not-produced",
+      "B03:wiring.B03.live.surfaceObservation=consumed-not-produced",
+      "B03:observation.sampledAtUnixMs=finite/null",
+      "B03:observation.sources.surface=known/null",
       "B03:surfaces=non-empty/[]",
       "B03:inventory:surfaces=non-empty",
       "B03:inventory:visible-owners=left,right/left,right/left,right/",

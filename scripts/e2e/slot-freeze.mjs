@@ -56,7 +56,7 @@ import {
   browserTabActivationAddress,
   browserTabNodeAddress,
 } from "./lib/browser-ui-addresses.mjs";
-import { mapBrowserSurfaceRects } from "./lib/browser-surface-rects.mjs";
+import { browserSurfaceObservation } from "./lib/browser-surface-rects.mjs";
 import {
   PANE_PRESENTATION_HOST,
   presentationTraceCapability,
@@ -532,7 +532,7 @@ async function assertRailCompositionContract(
 
 // 원장을 어디서 읽는지는 프레임워크가 선언한 능력이 정한다 — 이름으로 가르면 프레임워크가
 // 하나 늘 때마다 여기가 또 갈라진다.
-async function readBrowserSurfaceEvidence(
+async function readBrowserSurfaceObservation(
   rpc,
   win,
   { nativeChildWebview, implementation, plugin, tabIds, labels },
@@ -548,7 +548,7 @@ async function readBrowserSurfaceEvidence(
   const stats = implementation.surface.startsWith("engine-")
     ? must(await rpc(`plugin.${plugin}.stats`, {}, win), "chrome engine stats")
     : null;
-  return mapBrowserSurfaceRects({
+  return browserSurfaceObservation({
     nativeChildWebview,
     surface: implementation.surface,
     windowLabel: win,
@@ -558,6 +558,11 @@ async function readBrowserSurfaceEvidence(
     paneComposition,
     stats,
   });
+}
+
+/** 영수증만 필요한 자리 — 원장 이름·표본 시각은 B03 판정만 소비한다. */
+async function readBrowserSurfaceEvidence(rpc, win, options) {
+  return (await readBrowserSurfaceObservation(rpc, win, options)).receipts;
 }
 
 /**
@@ -1154,7 +1159,15 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
     const scale = scaleEvidence.scale;
     await observeFrameSequence([firstPaintPath], `${engine}/first-paint`, scale);
     must(await rpc("capture.calibration", { visible: false }, win), "first paint calibration hide");
-    const initialSurfaceReceipts = await readBrowserSurfaceEvidence(rpc, win, {
+    // 세 관측은 한 정착 창 안에서 읽는다. 자리를 먼저 재고 표면 원장을 나중에 읽으면 두 숫자는
+    // 서로 다른 순간의 레이아웃이고, 그 차이는 합성 결함과 구분되지 않는다. 표면 원장이 스스로
+    // 적은 표본 시각이 이 창 안에 드는지는 B03 판정이 본다.
+    const b03Settled = must(
+      await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }),
+      "B03 observation window settled",
+    );
+    const b03Tree = must(await rpc("ui.tree", { rects: true }, win), "B03 composition tree");
+    const initialSurfaceObservation = await readBrowserSurfaceObservation(rpc, win, {
       nativeChildWebview,
       implementation,
       plugin,
@@ -1168,9 +1181,10 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
       evidence: mapB03LiveEvidence({
         engine,
         scaleFactor: Number(originalWindow.scale),
+        settledAtUnixMs: Number(b03Settled.settledAtUnixMs),
         visibleViewIds: tabIds,
-        uiTree: tree,
-        surfaceReceipts: initialSurfaceReceipts,
+        uiTree: b03Tree,
+        surfaceObservation: initialSurfaceObservation,
       }),
     });
     await gateReportStore.persist();
