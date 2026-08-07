@@ -125,6 +125,13 @@ evidence: start, end, and surface inventory are all judged from actual presentat
 a window cut short produces RED, never a false GREEN. The hold is never filled from interval/rAF
 samples.
 
+A layout transaction never closes before the start epoch it declared. A glide declares an absolute
+future `startAtUnixMs` so the DOM and the out-of-document surfaces leave together, and that epoch is
+later than the surface ACK. Stamping `closedAtUnixMs` at the ACK would report a motion as over
+before it began, so the transaction stays open until the surface ACK and that declared start have
+both passed; a glide's `startAtUnixMs` therefore always falls inside
+`preparedAtUnixMs`..`closedAtUnixMs`. A snap declares no start and closes at its ACK.
+
 Run the live Tauri/macOS B12 gate with `make e2e-titlebar-dev`. It builds once, hashes that executable, creates one run id, and completes exactly three cold restarts even when an earlier cycle is RED. Every cycle must report the same build id, run id, framework, platform, sorted live-window population, and all three browser acceptance identities. Missing or duplicate cycles and any identity/window drift make the aggregate RED; the aggregate is GREEN only when every window in all three cycles is GREEN.
 
 Each window records the alignment right after the restart and the alignment after the load separately. The runner first reads the startup gate receipt (`window.startup` platform, generation, creationCommitted, rendererGreen, presentationInFlight, presented, and the presented composition sequence), samples the untouched cold composition, then waits for `ui.layout.wait-settled` before taking the baseline again. Any geometry, DOM instance, or inline-style difference between those two samples is RED, and one adapter boolean never stands in for the presented fact. Every sample carries the single paint owner ledger (identity, drawOwnerCount, targetSequence, appliedTargetSequence, mutationSequence, drawSequence, applying, lastApplyOk, lastApplyError). Across any span where the window geometry is unchanged, more mutations than composed transactions mean AppKit moved the buttons and the owner sat them back down, which is the `correct → wrong → correct` intermediate regression and is RED. Each cycle summary carries its cold-start receipt, and a cycle that continues the previous cycle's composition sequence is rejected as a warm run.
