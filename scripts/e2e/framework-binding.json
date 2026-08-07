@@ -278,6 +278,13 @@
       "note": "B03 매퍼가 원장을 서로 역산하지 않고 빠진 값을 null 로 보존한다는 법을 값만으로 고정한다."
     },
     {
+      "file": "lib/browser-gate-b04-observed.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "두 producer 가 서로 다른 epoch 로 시각을 발행할 때 B04 가 좌표를 비교하기 전에 관측 구간부터 판정한다는 법을 고정한다."
+    },
+    {
       "file": "lib/browser-gate-b05-evidence.mjs",
       "role": "lib",
       "class": "A",
@@ -502,6 +509,13 @@
       "note": "gate별 순수 판정기가 공유하는 strict schema·engine identity·RED/GREEN 영수증 유틸리티다."
     },
     {
+      "file": "lib/browser-machine-judge-support.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "증거 봉투의 키 대조가 양방향임을 고정한다 — 빠진 소비 키와 소비되지 않은 생산 키를 둘 다 이름으로 남긴다."
+    },
+    {
       "file": "lib/browser-matrix.mjs",
       "role": "lib",
       "class": "C",
@@ -533,6 +547,20 @@
       "class": "A",
       "surfaces": [],
       "note": "하니스가 보내는 probe 본문을 페이지 스코프에서 실제로 실행해 판정이 요구하는 축이 전부 수치로 채워지는지 본다."
+    },
+    {
+      "file": "lib/browser-sentinel.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "센티널 뷰가 명령 대상이 되기 전에 마운트 계약을 요구한다. 소켓 응답의 mounted 와 status 만 읽고 프레임워크 표면을 직접 보지 않는다."
+    },
+    {
+      "file": "lib/browser-sentinel.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "센티널이 마운트되지 않았을 때 하위 명령의 오류 문자열이 아니라 마운트 사실로 실패한다는 법을 고정한다."
     },
     {
       "file": "lib/browser-surface-rects.mjs",
