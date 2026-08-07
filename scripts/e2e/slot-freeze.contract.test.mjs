@@ -946,3 +946,12 @@ describe("녹화 규모 선언", () => {
     expect(judgeSection).not.toContain("SLOT_FREEZE_RECORD_FRAMES");
   });
 });
+
+// 판정이 요구하는 영수증 모양은 계약이 답한다 — 하니스가 날것을 넘기면 구현마다 red 가 갈린다.
+describe("B05 영수증 모양 배선", () => {
+  const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+
+  it("궤적 영수증을 계약에 물어 넘긴다", () => {
+    expect(source).toContain("implementation.presentationTrace.b05Receipt(presentationReceipt");
+  });
+});

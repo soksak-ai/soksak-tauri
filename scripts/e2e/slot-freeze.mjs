@@ -1579,7 +1579,12 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
               targetViewId,
               clickReceipt,
               layout: layoutVerdict.transaction,
-              presentation: presentationReceipt,
+              // 판정이 요구하는 모양은 계약이 답한다 — 구현별 영수증을 날것으로 넘기면
+              // 자기 궤적을 가진 구현이 제품과 무관한 red 를 낸다.
+              presentation: implementation.presentationTrace.b05Receipt(presentationReceipt, {
+                callerTraceId: causeTraceId,
+                owners: presentationOwners,
+              }),
               settlement: resolveB05Settlement({
                 settleReceipt,
                 presentationReceipt,

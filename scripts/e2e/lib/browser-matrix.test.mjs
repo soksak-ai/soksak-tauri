@@ -1187,3 +1187,46 @@ describe("궤적 손잡이 소유", () => {
       .toThrow(/traceId/);
   });
 });
+
+// 규칙 — 판정이 요구하는 모양은 계약이 답한다.
+//
+// B05 는 궤적 영수증에서 traceId·closed·ownerViewIds·armedAtUnixMs 를 요구한다. 하니스가
+// 구현별 영수증을 날것으로 넘기면, 자기 궤적을 가진 구현(offscreen 사이드카)은 그 모양이 달라
+// 판정이 제품과 무관한 red 를 낸다 — 실측 2026-08-08: `traceId=unique-non-empty/1`,
+// `closed=true/null` 로 offscreen B05 가 red 였다.
+//
+// 모양을 아는 것은 계약이다. 하니스가 구현마다 갈래를 두면 구현이 늘 때마다 그 갈래가 는다.
+describe("궤적 영수증 모양", () => {
+  it("모든 계약이 판정이 요구하는 모양을 답한다", () => {
+    for (const [engine, implementation] of Object.entries(browserImplementations)) {
+      expect(typeof implementation.presentationTrace.b05Receipt, engine).toBe("function");
+    }
+  });
+
+  it("framework 계약은 코어 영수증을 그대로 답한다", () => {
+    const receipt = {
+      traceId: "t-1", closed: true, ownerViewIds: ["v"], armedAtUnixMs: 10, clock: "unix-anchored",
+    };
+    expect(browserImplementations.browser.presentationTrace.b05Receipt(receipt, { callerTraceId: "t-1" }))
+      .toMatchObject({ traceId: "t-1", closed: true, ownerViewIds: ["v"], armedAtUnixMs: 10 });
+  });
+
+  it("offscreen 계약은 자기 영수증을 그 모양으로 옮긴다", () => {
+    const mapped = browserImplementations["browser-chromium-offscreen"].presentationTrace.b05Receipt(
+      { traceId: 1, nativeReceipt: { closed: true, presentationEvents: [] } },
+      { callerTraceId: "engine-01-left-uuid", owners: [{ viewId: "tab-a" }] },
+    );
+    // 부르는 쪽이 소유한 id 가 그 궤적의 이름이다 — 발급물은 손잡이일 뿐이다.
+    expect(mapped.traceId).toBe("engine-01-left-uuid");
+    expect(mapped.closed).toBe(true);
+    expect(mapped.ownerViewIds).toEqual(["tab-a"]);
+  });
+
+  it("사이드카가 안 답한 자리는 지어내지 않는다", () => {
+    const mapped = browserImplementations["browser-chromium-offscreen"].presentationTrace.b05Receipt(
+      { traceId: 1 },
+      { callerTraceId: "t", owners: [] },
+    );
+    expect(mapped.closed).toBeNull();
+  });
+});

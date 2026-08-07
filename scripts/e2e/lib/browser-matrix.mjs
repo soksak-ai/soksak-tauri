@@ -55,6 +55,10 @@ const FRAMEWORK_PRESENTATION_TRACE = Object.freeze({
       maxEvents: 512,
     };
   },
+  // 판정이 요구하는 영수증 모양. 이 계약은 코어 궤적이라 그 모양을 이미 답한다.
+  b05Receipt(receipt) {
+    return receipt;
+  },
   // 이 계약은 부르는 쪽 id 로 궤적을 연다 — 되읽을 때도 그 이름이다.
   traceHandle({ callerTraceId }) {
     return callerTraceId;
@@ -85,6 +89,12 @@ const FRAMEWORK_PRESENTATION_TRACE = Object.freeze({
     });
   },
 });
+
+/** 사이드카가 선언한 궤적 시계. 안 답하면 지어내지 않는다 — 판정이 미선언으로 이름 붙인다. */
+const traceClockOf = (receipt) => {
+  const clock = receipt?.clock;
+  return typeof clock === "string" && clock.trim() !== "" ? clock.trim() : null;
+};
 
 const OFFSCREEN_PRESENTATION_TRACE = Object.freeze({
   ownerCommand: "plugin.soksak-plugin-browser-chromium-offscreen.stats",
@@ -126,6 +136,28 @@ const OFFSCREEN_PRESENTATION_TRACE = Object.freeze({
   },
   observation(receipt) {
     return receipt?.observation;
+  },
+  /**
+   * 판정이 요구하는 영수증 모양으로 옮긴다.
+   *
+   * 이 구현은 자기 사이드카 궤적을 쓰므로 영수증 모양이 코어와 다르다. 모양을 아는 것은
+   * 계약이다 — 하니스가 구현마다 갈래를 두면 구현이 늘 때마다 그 갈래가 는다.
+   *
+   * 사이드카가 안 답한 자리는 지어내지 않는다(판정이 그 사실에 이름을 붙인다).
+   */
+  b05Receipt(receipt, { callerTraceId, owners }) {
+    const native = receipt?.nativeReceipt ?? {};
+    return {
+      // 그 궤적의 이름은 부르는 쪽이 소유한 id 다 — 발급물은 되읽기 손잡이일 뿐이다.
+      traceId: callerTraceId,
+      clock: traceClockOf(native),
+      closed: native.closed ?? null,
+      ownerViewIds: (owners ?? []).map((owner) => owner?.viewId).filter((id) => id != null),
+      armedAtUnixMs: native.armedAtUnixMs ?? null,
+      presentationEvents: native.presentationEvents ?? null,
+      observation: receipt?.observation ?? null,
+      violations: native.violations ?? null,
+    };
   },
   events(receipt, { targetViewId }) {
     return (receipt?.samples ?? []).map((sample, index) => {
