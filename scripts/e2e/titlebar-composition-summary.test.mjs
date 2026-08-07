@@ -135,6 +135,23 @@ describe("titlebar composition summary → canonical 3x12 report", () => {
     expect(report.summary.machine.counts.red).toBe(3);
   });
 
+  it("names the missing identity instead of writing a report it cannot stand behind", () => {
+    const home = temporaryHome();
+    const runId = "b12-empty-run";
+    const { code, output } = runSummary(home, runId);
+    expect(code).toBe(1);
+    expect(output).toMatch(/canonical cells unrecorded/);
+    expect(() => persistedReport(home)).toThrow(/no canonical browser gate report/);
+    const run = JSON.parse(readFileSync(
+      path.join(runRoot(home, runId), "run.json"),
+      "utf8",
+    ));
+    expect(run.canonicalReport).toEqual({
+      status: "unwritable",
+      reason: "no cycle reported a framework/platform identity",
+    });
+  });
+
   it("refuses to record green when the anchor sample does not satisfy the B12 judge", () => {
     const home = temporaryHome();
     const runId = "b12-anchor-run";
