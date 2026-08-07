@@ -750,12 +750,18 @@ pub(super) fn presentation_trace_anchor(
 /// Samples the renderer DOM contract and the native member from their Core Animation
 /// presentation layers in the same parent coordinate system. Model frames are deliberately not a
 /// substitute: this function runs only from the NSView display-link callback for a displayed frame.
+///
+/// `presentationLayer`는 호출한 그 순간의 진행 좌표를 낸다. 그러므로 좌표와 함께 돌려주는 시각은
+/// 읽기를 감싼 구간의 중점이어야 한다. 읽기 전에 미리 재 둔 시각을 붙이면 그 사이 흐른 시간만큼
+/// 궤적이 앞서 보이고, 판정은 그 차이를 좌표 오차로 읽는다(실측: 표시 시각 날인 시 최대
+/// 0.65 물리 px, 같은 표본을 읽은 순간으로 날인하면 0.19 물리 px).
 pub(super) fn capture_pane_presentations(
     owners: &[super::presentation_trace::PresentationTraceOwner],
-) -> Result<Vec<super::presentation_trace::PresentationSurface>, String> {
+) -> Result<(Vec<super::presentation_trace::PresentationSurface>, f64), String> {
     let records = validated_presentation_records(None, owners)?;
     let views = SURFACE_VIEWS.lock().map_err(|_| "surface view 잠금 실패")?.clone();
-    records.into_iter().map(|(owner, record)| {
+    let observation_opened_at_unix_ms = super::presentation_clock::unix_now_ms();
+    let surfaces = records.into_iter().map(|(owner, record)| {
         let pane = unsafe { &*(record.ptr as *const NSView) };
         let parent = unsafe { pane.superview() }
             .ok_or_else(|| format!("pane presentation 부모가 없습니다: {}", owner.native_host_id))?;
@@ -836,7 +842,12 @@ pub(super) fn capture_pane_presentations(
             dom_frame,
             surface_frame: native_frame,
         })
-    }).collect()
+    }).collect::<Result<Vec<_>, String>>()?;
+    let observation_closed_at_unix_ms = super::presentation_clock::unix_now_ms();
+    Ok((
+        surfaces,
+        (observation_opened_at_unix_ms + observation_closed_at_unix_ms) / 2.0,
+    ))
 }
 
 pub fn pane_surface_host_state() -> serde_json::Value {

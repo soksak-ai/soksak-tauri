@@ -266,7 +266,10 @@ describe("브라우저 구현 행렬", () => {
       closed: true,
       violations: { replacements: 0, gaps: 0, disappearances: 0, unpresented: 0, droppedEvents: 0 },
       presentationEvents: [{
+        // 표시 시각과 관측 시각을 다르게 둔다 — 궤적 표본은 좌표를 읽은 순간을 따라야 한다.
         presentedAtUnixMs: 1_000,
+        displayTimestampUnixMs: 1_000,
+        callbackObservedAtUnixMs: 1_000.4,
         surfaces: [{
           viewId: "view-left", live: true, visible: true, painted: true,
           domFrame: { x: 10, y: 20, w: 300, h: 200 },
@@ -274,7 +277,7 @@ describe("브라우저 구현 행렬", () => {
         }],
       }],
     }, { targetViewId: "view-left" })).toEqual([{
-      sampledAtUnixMs: 1_000,
+      sampledAtUnixMs: 1_000.4,
       connected: true,
       slotFrame: { x: 10, y: 20, w: 300, h: 200 },
       rendererFrame: { x: 10, y: 20, w: 300, h: 200 },

@@ -65,6 +65,7 @@ const ALLOWED: { file: string; mark: string; event: string; why: string }[] = [
   { file: "src/commands/catalogDom.ts", mark: "window.setTimeout(resolve, recordLeadMs)", event: "caller-specified", why: "드래그 녹화의 선행 프레임 구간 — 호출자가 recordLeadMs로 발화" },
   { file: "src/commands/catalogDom.ts", mark: "await new Promise<void>((done) => setTimeout(done, ms));", event: "caller-specified", why: "ui.input.observe 관측 창(ms) — 대기 자체가 명령의 기능이다(그 창 동안 도착한 입력을 센다). rAF 는 가려진 창에서 멈춰 명령이 안 끝난다" },
   { file: "src/commands/catalogDom.ts", mark: "else setTimeout(tick, 16);", event: "caller-specified", why: "ui.trace 표본 캐던스 — 호출자 지정 창(ms) 안의 계측 수집. rAF 는 가려진 창에서 멈춰 명령이 영영 안 끝난다(실측 TIMEOUT)" },
+  { file: "src/commands/catalogDom.ts", mark: "session.intervalProducer = setInterval(", event: "layout-dom-commit", why: "ui.trace.multi 최후 관측자 — 주 경로는 frame callback·animationend·정착 사건이고, 가려진 문서가 그 셋을 모두 죽였을 때만 이 관측자가 표본을 남긴다. 시작은 거래 commit 사건이 열고 종료는 trace close/만료가 닫는다. 사슬이 아니라 interval 인 이유는 tick 하나의 실패가 관측자를 영구히 죽이면 안 되기 때문이다(실측: 활강 339ms 구멍)" },
   { file: "src/commands/catalogRemote.ts", mark: "setTimeout(() => {", event: "caller-specified", why: "remote.confirm TTL(ttlSecs 파라미터) — 만료=Deny 가 계약(fail-closed)" },
   { file: "src/commands/catalogPlugins.ts", mark: "const timer = setTimeout(", event: "program-registered", why: "프로그램 등록 사건이 주 경로이고 timeoutMs는 호출자가 정한 유한 deadline — 부트 실패가 명령을 영원히 붙잡지 않게 한다" },
   { file: "src/commands/waitForDomCommit.ts", mark: "const timeout = setTimeout(", event: "dom-commit-observed", why: "MutationObserver의 DOM commit 사건이 주 경로이고 timeoutMs는 공개 호출자가 정한 유한 deadline — 유실된 commit이 명령을 영원히 붙잡지 않게 한다" },
@@ -165,9 +166,14 @@ function unregistered(sites: string[]): string[] {
   });
 }
 
-/** 질의1 — 명령 핸들러의 숫자 리터럴 타이머. */
+/** 질의1 — 명령 핸들러의 숫자 리터럴 타이머.
+ *
+ *  `setInterval(` 도 센다. 프레임워크 질의는 처음부터 그것을 세고 있었고, 여기만 안 세면
+ *  같은 기다림이 setTimeout 사슬을 interval 로 바꾸는 순간 아무도 안 보는 자리가 된다 —
+ *  게이트를 통과시키는 방법이 규칙을 지키는 것 말고 하나 더 생긴다. */
 function tsSites(): string[] {
-  return grepLines("src/commands", /setTimeout\(|sleep\(/).filter((l) => /[0-9]{2,}/.test(l));
+  return grepLines("src/commands", /setTimeout\(|setInterval\(|sleep\(/)
+    .filter((l) => /[0-9]{2,}/.test(l));
 }
 
 /** 질의1b — **다른 프레임워크의** 숫자 리터럴 타이머.

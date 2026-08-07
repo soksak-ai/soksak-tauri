@@ -57,10 +57,24 @@ type MultiDomTraceNode = {
   connected: boolean;
   rect: { x: number; y: number; w: number; h: number };
 };
+/**
+ * 표본을 실제로 낸 관측자. 한 거래의 표본이 비면 "DOM이 멈췄다"와 "아무도 안 봤다"를 갈라야
+ * 하는데, 그 답은 누가 몇 번 봤는지에만 있다. 원장이 관측자를 안 실으면 구멍의 이유를 사람이
+ * 추측하게 된다(실측: frame callback이 한 번도 안 온 실행을 표본 간격 16ms로 역산해야 했다).
+ */
+type MultiDomTraceProducer =
+  | "arm"
+  | "layout-commit"
+  | "commit-anchor"
+  | "frame-callback"
+  | "interval"
+  | "animation-end"
+  | "settlement";
 type MultiDomTraceSample = {
   sequence: number;
   sampledAtUnixMs: number;
   trigger: "initial" | "layout-dom-commit" | "presentation-frame";
+  producer: MultiDomTraceProducer;
   transactionId: string | null;
   domCommittedAtUnixMs: number | null;
   nodes: MultiDomTraceNode[];
@@ -80,11 +94,29 @@ type MultiDomTraceSession = {
   presentationDomCommittedAtUnixMs: number | null;
   animationEndHandler: ((event: AnimationEvent) => void) | null;
   settlementObserver: MutationObserver | null;
-  fallbackTimer: ReturnType<typeof setTimeout> | null;
+  intervalProducer: ReturnType<typeof setInterval> | null;
   unsubscribe: () => void;
   expiryTimer: ReturnType<typeof setTimeout> | null;
   evictionTimer: ReturnType<typeof setTimeout> | null;
+  producerCounts: Record<MultiDomTraceProducer, number>;
 };
+
+/** 관측자 목록은 한 자리에서 파생한다 — 손으로 두 번 나열하면 한쪽이 반드시 빠진다. */
+const MULTI_DOM_TRACE_PRODUCERS = [
+  "arm",
+  "layout-commit",
+  "commit-anchor",
+  "frame-callback",
+  "interval",
+  "animation-end",
+  "settlement",
+] as const satisfies readonly MultiDomTraceProducer[];
+
+function emptyMultiDomProducerCounts(): Record<MultiDomTraceProducer, number> {
+  return Object.fromEntries(
+    MULTI_DOM_TRACE_PRODUCERS.map((producer) => [producer, 0]),
+  ) as Record<MultiDomTraceProducer, number>;
+}
 const multiDomTraceSessions = moduleState(
   "commands/catalogDom#multiDomTraceSessions",
   () => new Map<string, MultiDomTraceSession>(),
@@ -100,16 +132,18 @@ function multiDomTraceNow(session: MultiDomTraceSession): number {
 function appendMultiDomTraceSample(
   session: MultiDomTraceSession,
   trigger: MultiDomTraceSample["trigger"],
+  producer: MultiDomTraceProducer,
   transactionId: string | null,
   domCommittedAtUnixMs: number | null,
   frameTime?: number,
 ): void {
-  session.samples.push({
+  const sample: MultiDomTraceSample = {
     sequence: session.samples.length,
     sampledAtUnixMs: frameTime === undefined
       ? multiDomTraceNow(session)
       : session.unixFromPerformance + frameTime,
     trigger,
+    producer,
     transactionId,
     domCommittedAtUnixMs,
     // 같은 사건 callback 안에서 전 참가자를 읽는다. 보간·이동량 투영은 하지 않는다.
@@ -126,7 +160,10 @@ function appendMultiDomTraceSample(
         },
       };
     }),
-  });
+  };
+  // 계수는 남긴 표본을 센다. 시도를 세면 "봤다"가 부풀어 구멍을 덮는다.
+  session.samples.push(sample);
+  session.producerCounts[producer] += 1;
 }
 
 /**
@@ -149,6 +186,7 @@ function startMultiDomPresentationFrames(
   appendMultiDomTraceSample(
     session,
     "presentation-frame",
+    "commit-anchor",
     transactionId,
     domCommittedAtUnixMs,
   );
@@ -162,6 +200,7 @@ function startMultiDomPresentationFrames(
     appendMultiDomTraceSample(
       session,
       "presentation-frame",
+      "animation-end",
       transactionId,
       domCommittedAtUnixMs,
     );
@@ -178,6 +217,7 @@ function startMultiDomPresentationFrames(
     appendMultiDomTraceSample(
       session,
       "presentation-frame",
+      "settlement",
       transactionId,
       domCommittedAtUnixMs,
     );
@@ -192,19 +232,30 @@ function startMultiDomPresentationFrames(
   // This bounded recorder ends at the trace expiry and is never used for
   // normal DOM observation; it exists to keep that missing evidence RED rather
   // than silently projecting native coordinates into the DOM.
-  const fallbackTick = () => {
+  //
+  // 스스로 다시 거는 setTimeout 사슬로 두지 않는다. 그 사슬은 tick 하나가 안 돌면(늦어서든
+  // 던져서든) 관측자가 영영 죽고, 원장에는 이유 없는 구멍만 남는다 — 실측: 활강 시작과 함께
+  // 표본이 339ms 끊긴 뒤 같은 세션의 event 관측자는 계속 살아 있었다. interval은 tick 하나의
+  // 실패가 다음 tick을 앗아가지 않으며 종료는 finishMultiDomTrace 한 자리가 소유한다.
+  if (session.intervalProducer !== null) clearInterval(session.intervalProducer);
+  session.intervalProducer = setInterval(() => {
     if (session.endedAtUnixMs !== null || session.presentationTransactionId !== transactionId) return;
     if (multiDomTraceNow(session) >= session.expiresAtUnixMs) return;
-    appendMultiDomTraceSample(session, "presentation-frame", transactionId, domCommittedAtUnixMs);
-    session.fallbackTimer = setTimeout(fallbackTick, 8);
-  };
-  session.fallbackTimer = setTimeout(fallbackTick, 16);
+    appendMultiDomTraceSample(
+      session,
+      "presentation-frame",
+      "interval",
+      transactionId,
+      domCommittedAtUnixMs,
+    );
+  }, 8);
   const sample = (frameTime: number) => {
     if (session.endedAtUnixMs !== null
         || session.presentationTransactionId !== transactionId) return;
     appendMultiDomTraceSample(
       session,
       "presentation-frame",
+      "frame-callback",
       transactionId,
       domCommittedAtUnixMs,
       frameTime,
@@ -228,8 +279,8 @@ function finishMultiDomTrace(session: MultiDomTraceSession, timedOut: boolean): 
   }
   session.settlementObserver?.disconnect();
   session.settlementObserver = null;
-  if (session.fallbackTimer !== null) clearTimeout(session.fallbackTimer);
-  session.fallbackTimer = null;
+  if (session.intervalProducer !== null) clearInterval(session.intervalProducer);
+  session.intervalProducer = null;
   session.presentationTransactionId = null;
   session.presentationDomCommittedAtUnixMs = null;
   if (session.expiryTimer !== null) clearTimeout(session.expiryTimer);
@@ -1462,19 +1513,21 @@ export function registerDomCatalog(): void {
         presentationDomCommittedAtUnixMs: null,
         animationEndHandler: null,
         settlementObserver: null,
-        fallbackTimer: null,
+        intervalProducer: null,
         unsubscribe: () => {},
         expiryTimer: null,
         evictionTimer: null,
+        producerCounts: emptyMultiDomProducerCounts(),
       };
       // initial read와 listener 설치 사이에는 await·timer·callback 경계가 없다. 같은 JS stack을
       // 끝낸 뒤에만 start ACK를 내므로, ACK를 받은 자극은 이 구독보다 먼저 끼어들 수 없다.
-      appendMultiDomTraceSample(session, "initial", null, null);
+      appendMultiDomTraceSample(session, "initial", "arm", null, null);
       session.unsubscribe = onLayoutTransitionJournal((event) => {
         if (event.type !== "dom-committed") return;
         appendMultiDomTraceSample(
           session,
           "layout-dom-commit",
+          "layout-commit",
           event.transactionId,
           event.domCommittedAtUnixMs,
         );
@@ -1504,7 +1557,7 @@ export function registerDomCatalog(): void {
       traceId: { type: "string", description: "Trace id returned by ui.trace.multi.start", required: true },
     },
     returns:
-      "{ traceId, addresses, startedAtUnixMs, endedAtUnixMs, timedOut, samples:[{sequence,sampledAtUnixMs,trigger:'initial'|'layout-dom-commit'|'presentation-frame',transactionId:string|null,domCommittedAtUnixMs:number|null,nodes:[{address,connected,rect:{x,y,w,h}}]}] }",
+      "{ traceId, addresses, startedAtUnixMs, endedAtUnixMs, timedOut, producers:{arm,layout-commit,commit-anchor,frame-callback,interval,animation-end,settlement}, samples:[{sequence,sampledAtUnixMs,trigger:'initial'|'layout-dom-commit'|'presentation-frame',producer,transactionId:string|null,domCommittedAtUnixMs:number|null,nodes:[{address,connected,rect:{x,y,w,h}}]}] }",
     message: (d) => tmsg("msg.ui.trace", { n: String((d.samples as unknown[])?.length ?? 0) }),
     errors: ["TARGET_NOT_FOUND", "INVALID_PARAMS"],
     handler: (p) => {
@@ -1533,6 +1586,9 @@ export function registerDomCatalog(): void {
         startedAtUnixMs: session.startedAtUnixMs,
         endedAtUnixMs: session.endedAtUnixMs,
         timedOut: session.timedOut,
+        // 구멍의 이유는 표본 사이가 아니라 관측자 계수에 있다. 0 은 "안 움직였다"가 아니라
+        // "그 관측자는 한 번도 안 왔다"는 사실이다.
+        producers: { ...session.producerCounts },
         samples: session.samples,
       };
     },

@@ -1229,6 +1229,9 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
               targetViewId,
               owner,
               joins: flowPresentationTrace.joins,
+              // 표본 구멍은 간격이 아니라 관측자 계수로 읽는다 — 0 은 "안 움직였다"가 아니라
+              // "그 관측자가 한 번도 안 왔다"다.
+              domProducers: domTraceReceipt.producers ?? null,
               domSamples: domTraceReceipt.samples,
               presentationEvents,
               samples: flowPresentationTrace.samples,
