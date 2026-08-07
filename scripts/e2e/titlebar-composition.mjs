@@ -12,6 +12,7 @@ import { requireBrowserEvidenceBuildId } from "./lib/browser-evidence-store.mjs"
 import { BROWSER_ACCEPTANCE_ENGINES } from "./lib/browser-gate-identity.mjs";
 import { judgeB12MachineEvidence } from "./lib/browser-gate-b12.mjs";
 import { hostileWindowResizeSizes } from "./lib/browser-matrix.mjs";
+import { readProvision } from "./lib/harness-capabilities.mjs";
 import {
   requireB12Cycle,
   requireB12RunId,

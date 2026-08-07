@@ -939,6 +939,20 @@
       "note": "부재 코드가 통과로도 실패로도 뭉개지지 않고, 선언과 답이 어긋나면 그 어긋남이 이름으로 남으며, 판정이 누가 답했는지를 보지 않고, 능력 부재가 정본 보고서의 한 셀만 소유 검사를 지나 닫는다는 법을 고정한다."
     },
     {
+      "file": "lib/harness-symbols.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "하니스가 부르는 라이브러리 이름이 들여온 이름인지 소스에서 센다. node --check 는 구문만 보므로 이 부류는 라이브에서만 죽는다."
+    },
+    {
+      "file": "lib/harness-symbols.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "들여오지 않은 이름을 부르는 실행기가 없는지 고정한다. 위반을 심어 자격도 확인한다."
+    },
+    {
       "file": "lib/hostile-resize-composition.mjs",
       "role": "lib",
       "class": "C",
