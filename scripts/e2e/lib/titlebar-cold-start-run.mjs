@@ -19,6 +19,15 @@ export function requireB12Cycle(value) {
   return cycle;
 }
 
+/** B12 정본 보고서(browser-gates.json)를 담는 증거 저장소 root.
+ * cycle 별 원본 관측은 titlebarEvidenceRunRoot 아래 그대로 두고, 판정 정본만 저장소 계약을 탄다. */
+export function titlebarGateStoreRoot(home) {
+  if (typeof home !== "string" || !path.isAbsolute(home)) {
+    throw new TypeError("B12 evidence home must be an absolute path");
+  }
+  return path.join(home, ".soksak-e2e", "evidence", "titlebar-gates");
+}
+
 export function titlebarEvidenceRunRoot(home, runId) {
   if (typeof home !== "string" || !path.isAbsolute(home)) {
     throw new TypeError("B12 evidence home must be an absolute path");
@@ -252,4 +261,44 @@ export function judgeTitlebarColdStartRun(value) {
   }
   inspectColdRestarts(sorted, failures);
   return { status: failures.length === 0 ? "green" : "red", evidence: failures };
+}
+
+/**
+ * 냉시작 3회 정본 판정을 정본 36칸의 B12 칸 입력으로 옮긴다.
+ *
+ * 칸이 green 이 되는 조건은 judgeTitlebarColdStartRun 이 소유한다 — 냉시작 3회 × 모든 창 ×
+ * 세 엔진이 전부 green 이어야 이 함수가 green 을 낸다. 그때 칸이 드는 영수증은 마지막 냉시작의
+ * 표본이며, 표본 하나가 통과의 근거가 아니라 실행 전체 판정을 기계가 다시 확인할 수 있는 닻이다.
+ * 표본이 없는데 green 을 말하면 배선 오류이므로 던진다 — 없는 증거로 통과를 적을 수는 없다.
+ *
+ * not-applicable 은 보고서 신원이 스스로 정하므로 아무 칸도 만들지 않는다.
+ */
+export function b12ColdStartCells({ verdict, anchors } = {}) {
+  if (!verdict || typeof verdict !== "object") {
+    throw new TypeError("B12 cold-start verdict is required");
+  }
+  if (verdict.status === "not-applicable") return [];
+  const evidence = Array.isArray(verdict.evidence) ? verdict.evidence.filter(text) : [];
+  if (verdict.status === "green") {
+    return BROWSER_ACCEPTANCE_ENGINES.map((engine) => {
+      const anchor = anchors?.[engine];
+      if (!anchor || typeof anchor !== "object") {
+        throw new TypeError(`B12 green needs the last cold start's ${engine} sample as its anchor`);
+      }
+      return { engine, kind: "evidence", evidence: anchor };
+    });
+  }
+  if (verdict.status !== "red" && verdict.status !== "blocked") {
+    throw new TypeError(`unknown B12 cold-start run status: ${String(verdict.status)}`);
+  }
+  const reason = `B12 cold-start run ${verdict.status}`;
+  return BROWSER_ACCEPTANCE_ENGINES.map((engine) => ({
+    engine,
+    kind: "status",
+    status: verdict.status,
+    evidence: verdict.status === "red" && evidence.length === 0
+      ? ["B12 cold-start run red without stated evidence"]
+      : evidence,
+    reason,
+  }));
 }

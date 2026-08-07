@@ -2,7 +2,12 @@
 
 import { describe, expect, it } from "vitest";
 import { createBrowserGateReportStore } from "./browser-evidence-store.mjs";
-import { mergeBrowserGateReports } from "./browser-gate-report-merge.mjs";
+import {
+  BROWSER_GATE_IDS,
+  BROWSER_GATE_OWNERS,
+  browserGatesOwnedBy,
+  mergeBrowserGateReports,
+} from "./browser-gate-report-merge.mjs";
 import { BROWSER_ACCEPTANCE_ENGINES } from "./browser-gate-identity.mjs";
 
 const SLOT_FREEZE_GATES = Object.freeze([
@@ -49,6 +54,17 @@ function recordColdStartBlocked(store, reason) {
     });
   }
 }
+
+describe("BROWSER_GATE_OWNERS", () => {
+  it("splits the twelve gates between the two runners without a gap or an overlap", () => {
+    const declared = Object.values(BROWSER_GATE_OWNERS).flat();
+    expect([...declared].sort()).toEqual([...BROWSER_GATE_IDS].sort());
+    expect(new Set(declared).size).toBe(BROWSER_GATE_IDS.length);
+    expect(browserGatesOwnedBy("titlebar-composition")).toEqual([...TITLEBAR_GATES]);
+    expect(browserGatesOwnedBy("slot-freeze")).toEqual([...SLOT_FREEZE_GATES]);
+    expect(() => browserGatesOwnedBy("nobody")).toThrow(/unknown browser gate runner/);
+  });
+});
 
 describe("browser gate report ownership", () => {
   it("refuses to record a gate the runner did not declare", () => {

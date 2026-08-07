@@ -474,6 +474,20 @@
       "note": "acceptance report가 허용하는 framework·platform·browser engine identity의 단일 목록이다."
     },
     {
+      "file": "lib/browser-gate-report-merge.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "12칸의 소유를 실행기별로 선언하고, 소유가 분할일 때만 두 실행기의 보고서를 한 판으로 잇는다. 값만 다루고 프레임워크 표면을 읽지 않는다."
+    },
+    {
+      "file": "lib/browser-gate-report-merge.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "소유 선언 없는 기록, 분할이 아닌 소유, 다른 artifact 신원, 남의 칸에 적은 판정을 값만으로 거절하는지 고정한다."
+    },
+    {
       "file": "lib/browser-gates.mjs",
       "role": "lib",
       "class": "A",
@@ -1039,7 +1053,14 @@
       "role": "tool",
       "class": "A",
       "surfaces": [],
-      "note": "냉시작 titlebar 실행 결과를 사람이 읽는 표로 요약한다. 판정하지 않고 이미 기록된 값만 읽는다."
+      "note": "냉시작 3회의 관측을 모아 실행 집계를 내고, 그 판정을 정본 36칸 보고서의 B12 칸에 적는다. 파일로 남은 값만 읽고 앱을 부르지 않는다."
+    },
+    {
+      "file": "titlebar-composition-summary.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "cycle 관측을 임시 홈에 세워 두고 요약기를 돌려, B12 판정이 정본 보고서 파일에 실제로 적히는지와 닻 없는 green 이 거절되는지 확인한다."
     },
     {
       "file": "titlebar-composition.contract.test.mjs",
