@@ -18,6 +18,34 @@ import { sameRect } from "../../../packages/dom-webview-compositor/src/index.ts"
  * recorder 표본으로 대신하지 않고 빈 열로 남는다 — 못 본 것을 본 것으로 바꾸지 않는다.
  */
 export const B04_DISPLAY_PRODUCER = "frame-callback";
+/** 가려진 문서에서만 쓰는 최후 수단 관측자. 표시 열에 싣지 않고, 관측 경로의 생존만 증언한다. */
+export const B04_RECORDER_PRODUCER = "interval";
+
+/**
+ * 표시 관측자가 자기 구멍의 주인을 답한다.
+ *
+ * 표시 callback 이 빈 구간에 recorder 표본이 있었다면 관측 경로는 살아 있었다 — 그 구멍은
+ * 관측자가 놓친 것이 아니라 **표시가 실제로 건너뛴 것**이다. recorder 도 함께 비었다면 무엇이
+ * 굶었는지 이 원장만으로는 못 가른다.
+ *
+ * 지어내지 않는다. 두 생산자의 실측 표본에서만 나온다.
+ */
+export function b04SlotObservation(presentationSamples, { startAtUnixMs, endAtUnixMs }) {
+  const inWindow = (sample) => sample.sampledAtUnixMs >= startAtUnixMs
+    && sample.sampledAtUnixMs <= endAtUnixMs;
+  const display = presentationSamples.filter((s) => s.producer === B04_DISPLAY_PRODUCER && inWindow(s));
+  const recorder = presentationSamples.filter((s) => s.producer === B04_RECORDER_PRODUCER && inWindow(s));
+  if (recorder.length === 0) return undefined;
+  // 표시 표본 사이의 최대 구멍 동안 recorder 가 몇 번 왔는지 — 왔으면 관측 경로는 살아 있었다.
+  const covered = display.length < 2 ? recorder.length > 0 : display.slice(1).every((sample, index) => {
+    const previous = display[index].sampledAtUnixMs;
+    const gap = sample.sampledAtUnixMs - previous;
+    if (gap <= 0) return true;
+    return recorder.some((r) => r.sampledAtUnixMs > previous && r.sampledAtUnixMs < sample.sampledAtUnixMs)
+      || gap < 1;
+  });
+  return covered ? { callbackIntervalsSkipped: 0 } : undefined;
+}
 
 /**
  * 살아 있는 원장은 표본마다 관측자 이름을 싣는다(ui.trace.multi close 계약). 이름이 없으면

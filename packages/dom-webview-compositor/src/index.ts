@@ -88,12 +88,20 @@ export type CompositionTimelineProducer = typeof COMPOSITION_TIMELINE_PRODUCERS[
  */
 export type CompositionTimelineClocks = Record<"window" | CompositionTimelineProducer, string>;
 
+/** 한 열의 관측자가 자기에 대해 답한 사실. 건너뜀의 주인을 가르는 유일한 근거다. */
+export interface CompositionTimelineObservation {
+  /** 이 관측자가 놓친 콜백 간격 수. 0 은 "안 놓쳤다"이고, 없음은 "안 답했다"이다. */
+  callbackIntervalsSkipped: number;
+}
+
 export interface CompositionTimeline {
   coordinateSpace: CompositionCoordinateSpace;
   clocks: CompositionTimelineClocks;
   startAtUnixMs: number;
   durationMs: number;
   timingFunction: readonly [number, number, number, number];
+  /** 열마다 그 관측자가 낸 자기보고. 안 실으면 건너뜀의 주인을 답할 수 없다. */
+  observation?: Partial<Record<CompositionTimelineProducer, CompositionTimelineObservation>>;
   from: CompositionRect;
   to: CompositionRect;
   slot: readonly CompositionTimelineSample[];
@@ -368,7 +376,16 @@ export function compositionTimelineVerdict(timeline: CompositionTimeline) {
       return total + Math.max(1, Math.round(delta / interval) - 1);
     }, 0);
     if (skipped > 0) {
-      errors.push(`${name}:skipped-display-epochs=${skipped}`);
+      // 규칙 — 건너뜀의 주인: 관측 콜백이 밀려 표본을 못 낸 것과 합성기가 프레임을 실제로
+      // 건너뛴 것은 다른 사실이다. 앱의 원장이 자기가 놓친 콜백 수를 스스로 답하므로
+      // (callbackIntervalsSkipped) 그 답으로 가른다 — 구별하지 않으면 JS 스레드가 한 번
+      // 밀렸느냐가 green/red 를 가르고, 그건 판정이 아니라 운이다.
+      //
+      // 안 답한 관측자를 "안 놓쳤다" 로 읽지 않는다. 못 잼은 통과가 아니라 다른 이름이다.
+      const missed = Number(timeline.observation?.[name]?.callbackIntervalsSkipped);
+      if (!Number.isFinite(missed)) unmeasured.push(`${name}:skip-owner-undeclared=${skipped}`);
+      else if (missed > 0) unmeasured.push(`${name}:observer-missed-callbacks=${missed}`);
+      else errors.push(`${name}:skipped-display-epochs=${skipped}`);
     }
   };
   for (const producer of COMPOSITION_TIMELINE_PRODUCERS) inspect(producer);

@@ -41,6 +41,13 @@ function timelineWith(skipAt: number[] = []) {
     slot: frames,
     renderer: frames,
     surface: frames,
+    // 이 스위트의 축은 "구멍을 프레임 단위로 세는가" 다. 건너뜀의 주인은 다른 규칙이 가르므로
+    // (관측자 자기보고) 여기서는 관측자가 안 놓쳤다고 답한 판을 쓴다 — 그래야 이 축만 잰다.
+    observation: {
+      slot: { callbackIntervalsSkipped: 0 },
+      renderer: { callbackIntervalsSkipped: 0 },
+      surface: { callbackIntervalsSkipped: 0 },
+    },
   };
 }
 

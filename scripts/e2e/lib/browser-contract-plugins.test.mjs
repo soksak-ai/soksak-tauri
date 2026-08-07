@@ -50,3 +50,30 @@ describe("resolveContractPlugins", () => {
     expect(answer).toEqual([]);
   });
 });
+
+// 실측 2026-08-07: 앱이 계약 선언 축을 아직 안 내는 실행물이었는데, 판정이 그 침묵을 "구현자
+// 없음" 으로 읽어 엔진 실행을 첫 게이트에서 죽였다. 비활성 플러그인을 먼저 거르지 않아 남의
+// 상태 때문에 판정이 죽기도 했다.
+describe("침묵과 미선언은 다른 답이다", () => {
+  it("활성 플러그인이 선언을 안 답하면 아무도 구현하지 않는 것으로 읽지 않는다", async () => {
+    await expect(resolveContractPlugins(listing([
+      { id: "a", status: "enabled" },
+    ]), BROWSER_PLUGIN_CONTRACT)).rejects.toThrow(/implements 를 답하지 않았다/);
+  });
+
+  it("비활성 플러그인의 침묵은 이 판정을 죽이지 않는다", async () => {
+    const answer = await resolveContractPlugins(listing([
+      { id: "a", status: "enabled", implements: [{ id: BROWSER_PLUGIN_CONTRACT }] },
+      { id: "b", status: "disabled" },
+    ]), BROWSER_PLUGIN_CONTRACT);
+    expect(answer).toEqual(["a"]);
+  });
+
+  it("한 구현자라도 답했으면 다른 플러그인의 침묵은 이 판정의 축이 아니다", async () => {
+    const answer = await resolveContractPlugins(listing([
+      { id: "a", status: "enabled", implements: [{ id: BROWSER_PLUGIN_CONTRACT }] },
+      { id: "b", status: "enabled" },
+    ]), BROWSER_PLUGIN_CONTRACT);
+    expect(answer).toEqual(["a"]);
+  });
+});

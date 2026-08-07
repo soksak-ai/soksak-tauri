@@ -4,6 +4,7 @@ import {
   compositionInventoryVerdict,
   compositionObservationWindowVerdict,
   compositionSampleVerdict,
+  compositionTimelineFrameAt,
   compositionTimelineVerdict,
   compositionTransactionVerdict,
   logicalRectToPhysical,
@@ -481,5 +482,66 @@ describe("시계 선언", () => {
     expect(verdict.ok).toBe(true);
     expect(verdict.errors).toEqual([]);
     expect(verdict.unmeasured).toEqual([]);
+  });
+});
+
+// 규칙 — 관측자가 놓친 것과 표시가 건너뛴 것은 다른 사실이다.
+//
+// 궤적의 시각 간격만 보면 두 사실이 같은 모양으로 나온다. 관측 콜백이 밀려 표본을 못 낸 것과
+// 합성기가 프레임을 실제로 건너뛴 것은 다르고, 앱의 원장이 그 구별을 이미 답한다
+// (callbackIntervalsSkipped — Tauri presentation_trace.rs, Electron presentationLedger.ts 둘 다).
+//
+// 구별하지 않으면 JS 스레드가 한 번 밀렸느냐가 green/red 를 가른다 — 그것이 운이다.
+// blocked 는 통과가 아니다. 이름이 달라질 뿐이고 그 이름이 고칠 자리를 가리킨다.
+describe("건너뜀의 주인", () => {
+  const base = {
+    coordinateSpace: { logical: "css-px" as const, scaleFactor: 2 },
+    clocks: { window: "w", slot: "w", renderer: "w", surface: "w" },
+    startAtUnixMs: 1_000,
+    durationMs: 100,
+    refreshIntervalMs: 10,
+    timingFunction: [0, 0, 1, 1] as const,
+    from: { x: 0, y: 0, w: 10, h: 10 },
+    to: { x: 100, y: 0, w: 10, h: 10 },
+  };
+  // 30ms 구멍 하나(주기 10ms → 2 epoch 건너뜀)를 가진 열.
+  const gapped = (name: string) => ({
+    ...base,
+    slot: track(name === "slot"),
+    renderer: track(name === "renderer"),
+    surface: track(name === "surface"),
+  });
+  function track(withGap: boolean) {
+    const times = withGap ? [1_000, 1_010, 1_040, 1_050] : [1_000, 1_010, 1_020, 1_030];
+    return times.map((sampledAtUnixMs, sequence) => ({
+      sequence,
+      sampledAtUnixMs,
+      frame: compositionTimelineFrameAt(base, sampledAtUnixMs),
+    }));
+  }
+
+  it("관측자가 콜백을 놓쳤다고 답하면 그 열은 못 잼이다", () => {
+    const verdict = compositionTimelineVerdict({
+      ...gapped("slot"),
+      observation: { slot: { callbackIntervalsSkipped: 2 } },
+    });
+    expect(verdict.errors.filter((error) => error.includes("skipped-display-epochs"))).toEqual([]);
+    expect(verdict.unmeasured).toContain("slot:observer-missed-callbacks=2");
+  });
+
+  it("관측자가 안 놓쳤다고 답하면 그 구멍은 표시가 건너뛴 것이다", () => {
+    const verdict = compositionTimelineVerdict({
+      ...gapped("slot"),
+      observation: { slot: { callbackIntervalsSkipped: 0 } },
+    });
+    expect(verdict.errors).toContain("slot:skipped-display-epochs=2");
+    expect(verdict.unmeasured).not.toContain("slot:observer-missed-callbacks=0");
+  });
+
+  // 안 답한 관측자를 "안 놓쳤다" 로 읽으면 없는 사실을 만든 것이다.
+  it("자기보고가 없으면 건너뜀의 주인을 답하지 않는다", () => {
+    const verdict = compositionTimelineVerdict(gapped("slot"));
+    expect(verdict.errors.filter((error) => error.includes("skipped-display-epochs"))).toEqual([]);
+    expect(verdict.unmeasured).toContain("slot:skip-owner-undeclared=2");
   });
 });

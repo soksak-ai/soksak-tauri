@@ -675,6 +675,9 @@ const B04_TIMELINE_KEYS = Object.freeze([
   "renderer",
   "surface",
 ]);
+// 원장의 자기보고는 선택 축이다. 안 실은 판을 거절하지 않는다 — 그 판은 건너뜀의 주인을
+// "미선언" 으로 이름 붙여 못 잼으로 답한다(없는 사실을 red 로도 green 으로도 세지 않는다).
+const B04_TIMELINE_OPTIONAL_KEYS = Object.freeze(["observation"]);
 const B04_TIMELINE_SAMPLE_KEYS = Object.freeze(["sequence", "sampledAtUnixMs", "frame"]);
 
 function inspectFiniteRect(rect, path, failures) {
@@ -866,7 +869,11 @@ function inspectB04Transition(transition, index, coordinateSpace, failures, unme
   failures.push(...composition.errors.map((error) => `${path}.composition:${error}`));
 
   if (transition.motionMode === "glide") {
-    if (!requireExactKeys(transition.timeline, B04_TIMELINE_KEYS, `${path}.timeline`, failures)) {
+    const declaredTimelineKeys = [
+      ...B04_TIMELINE_KEYS,
+      ...B04_TIMELINE_OPTIONAL_KEYS.filter((key) => Object.hasOwn(transition.timeline ?? {}, key)),
+    ];
+    if (!requireExactKeys(transition.timeline, declaredTimelineKeys, `${path}.timeline`, failures)) {
       return;
     }
     for (const participant of ["slot", "renderer", "surface"]) {

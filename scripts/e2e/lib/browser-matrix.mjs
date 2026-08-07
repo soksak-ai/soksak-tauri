@@ -124,6 +124,9 @@ const OFFSCREEN_PRESENTATION_TRACE = Object.freeze({
   readParams({ traceId }) {
     return { traceId };
   },
+  observation(receipt) {
+    return receipt?.observation;
+  },
   events(receipt, { targetViewId }) {
     return (receipt?.samples ?? []).map((sample, index) => {
       const surfaces = (sample?.surfaces ?? []).filter((surface) => surface?.viewId === targetViewId);
@@ -242,6 +245,13 @@ export function normalizeB04JournalEntries(entries) {
  */
 export function mapB04PresentationSamples({
   events,
+  // 원장이 스스로 답한 관측 사실. 표시 열(renderer·surface)의 건너뜀이 관측자가 놓친 것인지
+  // 합성기가 건너뛴 것인지는 이 값만이 가른다 — 없으면 판정이 "주인 미선언" 으로 이름 붙인다.
+  observation,
+  // slot 열은 DOM 관측이라 네이티브 원장의 사실이 아니다. 그 열의 주인은 부르는 쪽이 실측에서
+  // 파생해 넘긴다(b04SlotObservation) — 표시 callback 이 빈 구간에 recorder 가 왔으면
+  // 관측 경로는 살아 있었고, 그 구멍은 표시가 실제로 건너뛴 것이다.
+  slotObservation,
   domSamples,
   clocks,
   owner,
@@ -488,6 +498,16 @@ export function mapB04PresentationSamples({
       slot: collapsedSlotTimeline,
       renderer: nativeTimeline("rendererFrame"),
       surface: nativeTimeline("surfaceFrame"),
+      // 네이티브 두 열은 같은 표시 원장이 낸다 — 그 원장의 자기보고가 두 열의 주인이다.
+      // slot 은 DOM 관측이라 이 원장의 사실이 아니다(그 열은 주인 미선언으로 남는다).
+      ...((observation || slotObservation)
+        ? {
+          observation: {
+            ...(slotObservation ? { slot: slotObservation } : {}),
+            ...(observation ? { renderer: observation, surface: observation } : {}),
+          },
+        }
+        : {}),
     },
   };
 }

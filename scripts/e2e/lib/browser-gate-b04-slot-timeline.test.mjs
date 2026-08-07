@@ -4,7 +4,7 @@ import {
   compositionTimelineVerdict,
 } from "../../../packages/dom-webview-compositor/src/index.ts";
 import { mapB04PresentationSamples } from "./browser-matrix.mjs";
-import { b04DomLedgerProducerErrors } from "./browser-gate-b04-slot-timeline.mjs";
+import { b04DomLedgerProducerErrors, b04SlotObservation } from "./browser-gate-b04-slot-timeline.mjs";
 
 // 실측 재현(2026-08-07, buildId d83e0827, tauri/darwin).
 // ~/.soksak-e2e/evidence/slot-freeze/runs/65bac3d9…/<engine>/<name>/dom-presentation-raw.json 의
@@ -149,6 +149,12 @@ function nativeEvents(ledger) {
 function timelineOf(ledger, domSamples) {
   const { timeline, clocks } = mapB04PresentationSamples({
     events: nativeEvents(ledger),
+    // 구멍의 주인은 실측에서 파생한다 — 표시 callback 이 빈 구간에 recorder 가 왔으면 관측
+    // 경로는 살아 있었고, 그 구멍은 표시가 실제로 건너뛴 것이다.
+    slotObservation: b04SlotObservation(domSamples, {
+      startAtUnixMs: ledger.startAtUnixMs,
+      endAtUnixMs: ledger.startAtUnixMs + DURATION_MS,
+    }),
     domSamples,
     owner: { rendererId: "pv-1", surfaceId: "b-tab-a" },
     targetViewId: "tab-a",

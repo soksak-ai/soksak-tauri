@@ -30,16 +30,24 @@ export async function resolveContractPlugins(ask, contractId) {
     throw new Error(`plugin.list 가 plugins 목록을 답하지 않았다: ${JSON.stringify(answer.data)?.slice(0, 240)}`);
   }
   const implementers = [];
+  const silent = [];
   for (const plugin of plugins) {
-    if (!Array.isArray(plugin?.implements)) {
-      throw new Error(
-        `plugin.list 가 ${plugin?.id} 의 implements 를 답하지 않았다`
-        + " — 선언을 못 읽은 것을 아무도 구현하지 않는 것으로 읽지 않는다.",
-      );
+    // 못 부르는 것은 있는 것이 아니다. 비활성·오류 플러그인의 명령은 답하지 않으므로 그 선언을
+    // 묻지도 않는다 — 먼저 거르지 않으면 남의 상태 때문에 이 판정이 죽는다.
+    if (plugin?.status !== "enabled") continue;
+    if (!Array.isArray(plugin.implements)) {
+      silent.push(plugin.id);
+      continue;
     }
-    // 못 부르는 것은 있는 것이 아니다. 비활성·오류 플러그인의 명령은 답하지 않는다.
-    if (plugin.status !== "enabled") continue;
     if (plugin.implements.some((declared) => declared?.id === contractId)) implementers.push(plugin.id);
+  }
+  // 선언을 못 읽은 것을 아무도 구현하지 않는 것으로 읽지 않는다. 다만 그 침묵의 이름을 함께
+  // 낸다 — 앱이 이 축을 아직 안 답하는 실행(옛 실행물)과 진짜 미선언을 부르는 쪽이 가른다.
+  if (implementers.length === 0 && silent.length > 0) {
+    throw new Error(
+      `plugin.list 가 implements 를 답하지 않았다(${silent.join(", ")})`
+      + " — 이 실행물은 계약 선언 축을 아직 내지 않는다.",
+    );
   }
   return implementers;
 }
