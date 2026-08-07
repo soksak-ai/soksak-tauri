@@ -415,7 +415,10 @@ describe("브라우저 구현 행렬", () => {
     expect(trace.timeline).toMatchObject({
       startAtUnixMs: 1_100,
       timingFunction: [0.4, 0, 0.2, 1],
-      slot: [{ sequence: 0, sampledAtUnixMs: 1_100, frame: { x: 430 } }],
+      slot: [
+        { sequence: 0, sampledAtUnixMs: 1_010, frame: { x: 270 } },
+        { sequence: 1, sampledAtUnixMs: 1_100, frame: { x: 430 } },
+      ],
       renderer: expect.any(Array),
       surface: expect.any(Array),
     });

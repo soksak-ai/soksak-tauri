@@ -425,10 +425,16 @@ export function mapB04PresentationSamples({
       value !== undefined && all.indexOf(value) === index
     ));
   };
-  const transactionDomSamples = transactionWindow(
-    presentationSamples,
-    (sample) => sample.sampledAtUnixMs,
-  );
+  // Preserve every real DOM boundary at the start epoch. The commit and the
+  // one-shot post-commit anchor can share a timestamp, but they are distinct
+  // observations and must not be collapsed by object-identity deduplication.
+  const transactionDomSamples = [
+    ...presentationSamples.filter((sample) => sample.sampledAtUnixMs <= presentationStartAt),
+    ...presentationSamples.filter((sample) => (
+      sample.sampledAtUnixMs > presentationStartAt && sample.sampledAtUnixMs < endAtUnixMs
+    )),
+    ...presentationSamples.filter((sample) => sample.sampledAtUnixMs >= endAtUnixMs).slice(0, 1),
+  ];
   const transactionNativeEvents = transactionWindow(events, (event) => event.sampledAtUnixMs);
   const slotTimeline = transactionDomSamples.map((domSample, sequence) => {
     const matches = (domSample.nodes ?? []).filter((node) => node?.address === slotAddress);
