@@ -18,7 +18,7 @@
 | `salvage/718ccdcb-bd1-4` | 71 | **B02 `inputFocus`** — 창 하나에 입력 responder 는 하나뿐이므로, 두 탭이 서로 다른 소유자를 보고하면 그 되읽기는 창의 사실이 아니라 탭이 지어낸 값이다 | **들일 축 있음** |
 | `salvage/d5674020-e82-5` | 81 | input-focus 답의 두 프레임워크 모양 선언 | 위 축과 같은 가족 — 함께 본다 |
 | `salvage/2d26a13d-3ee-1` | 91 | B02 축(718ccdcb 와 중복) | 중복 |
-| `salvage/1286c06b-de8-4` | 91 | 표시 연속성을 관측자마다 자기 캐던스로 잰다 | 오늘 세운 "구멍의 주인" 규칙과 겹침 — 재판별 필요 |
+| ~~`salvage/1286c06b-de8-4`~~ | 91 | 표시 연속성을 관측자마다 자기 캐던스로 잰다 | **이미 반영됨** — main 이 관측자 이름을 표본에 싣고(`B04_DISPLAY_PRODUCER`/`B04_RECORDER_PRODUCER`), 표시 열은 frame-callback 만 쓰며, 코어도 `producerCounts` 를 답한다. 같은 축의 앞선 형태다 |
 | `salvage/4effc522-0cc-1` | 147 | 편집 사건을 들고 세기 | 미판별 |
 | `salvage/4effc522-0cc-2` | 147 | B03 표면 관측을 AppKit 장부에서 읽는다 | 오늘 offscreen 좌표계 작업과 겹침 — 재판별 필요 |
 | `salvage/4effc522-0cc-4` | 147 | B06 세 축 실측 | 미판별 |
