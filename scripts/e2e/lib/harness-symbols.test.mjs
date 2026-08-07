@@ -16,7 +16,9 @@ const ROOT = new URL("../../../", import.meta.url).pathname;
 describe("하니스가 부르는 이름은 선언돼 있다", () => {
   it("들여오지 않은 이름을 부르는 실행기가 없다", () => {
     const offenders = [];
-    for (const file of globSync("scripts/e2e/*.mjs", { cwd: ROOT })) {
+    // 라이브러리도 서로를 부른다 — 실측 2026-08-08: evidence-store.mjs 가 `fs` 라는 없는
+    // 이름을 불러 14건이 죽었다. 실행기만 세면 그 자리를 못 본다.
+    for (const file of globSync("scripts/e2e/**/*.mjs", { cwd: ROOT })) {
       if (file.endsWith(".test.mjs")) continue;
       const source = readFileSync(path.join(ROOT, file), "utf8");
       for (const name of undeclaredImports(source)) offenders.push(`${file}: ${name}`);

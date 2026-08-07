@@ -879,6 +879,20 @@
       "note": "자리 판정 규칙을 고정한다 — 못 읽음은 넉넉함이 아니고, 회수 안내는 이 실행이 다시 만드는 자리를 가리키지 않는다."
     },
     {
+      "file": "lib/evidence-retention.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "새 실행이 잴 자리를 만들기 위해 회수할 지난 실행을 정한다. 한도를 낮추지 않고 자리를 만든다."
+    },
+    {
+      "file": "lib/evidence-retention.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "보존 규칙을 고정한다 — 오래된 것부터, 최신 하나와 지킬 이름은 남기고, 순서를 못 읽은 실행은 회수 대상이 아니다."
+    },
+    {
       "file": "lib/evidence-store.mjs",
       "role": "lib",
       "class": "A",

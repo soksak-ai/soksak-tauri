@@ -33,6 +33,13 @@ function importedNames(source) {
 
 function locallyDeclared(source) {
   const names = new Set();
+  // 인자(기본값 포함)도 이 파일이 든 이름이다 — 들여올 필요가 없다.
+  for (const [, block] of source.matchAll(/\(([^)]*)\)\s*(?:=>|\{)/g)) {
+    for (const piece of block.split(",")) {
+      const named = /^\s*([A-Za-z_$][\w$]*)/.exec(piece);
+      if (named) names.add(named[1]);
+    }
+  }
   for (const [, name] of source.matchAll(/(?:^|\n)\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g)) {
     names.add(name);
   }
@@ -70,8 +77,19 @@ export function undeclaredImports(source, known = null) {
     // 호출로 쓰인 자리만 센다 — 주석·문자열 안의 이름은 부른 것이 아니다.
     const called = new RegExp(`(?<![\\w$.])${name}\\s*\\(`);
     for (const line of source.split("\n")) {
-      const code = line.replace(/\/\/.*$/, "");
+      // 주석과 블록 주석 본문은 부른 것이 아니다.
+      const code = line.replace(/\/\/.*$/, "").replace(/^\s*\*.*$/, "");
       if (called.test(code)) { missing.add(name); break; }
+    }
+  }
+  // 흔한 Node 이름을 들여오지 않고 부르는 자리도 센다 — 실측 2026-08-08: evidence-store.mjs 가
+  // `fs.readdir` 를 불렀는데 그 파일은 node:fs/promises 에서 이름만 골라 들여왔다.
+  for (const name of ["fs", "path", "os", "crypto"]) {
+    if (imported.has(name) || declared.has(name)) continue;
+    const used = new RegExp(`(?<![\\w$.])${name}\\.[A-Za-z_$]`);
+    for (const line of source.split("\n")) {
+      const code = line.replace(/\/\/.*$/, "").replace(/^\s*\*.*$/, "");
+      if (used.test(code)) { missing.add(name); break; }
     }
   }
   return [...missing];

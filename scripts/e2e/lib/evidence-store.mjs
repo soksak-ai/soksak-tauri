@@ -1,6 +1,7 @@
 import { cp, lstat, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import path from "node:path";
+import { runsToReclaim } from "./evidence-retention.mjs";
 
 export const EVIDENCE_RUN_LIMIT_BYTES = 1024 ** 3;
 export const EVIDENCE_STORE_LIMIT_BYTES = 2 * EVIDENCE_RUN_LIMIT_BYTES;
@@ -538,10 +539,50 @@ async function beginEvidenceRunTransaction(root, { runId, keep = false, limits }
     return readRunStateFile(path.join(archivedPath, RUN_FILE));
   }
 
+  // 한도를 지키는 것은 회수의 일이지 판정의 일이다 아니다. 지난 실행을 아무도 회수하지 않으면
+  // 언젠가 모든 실행이 잴 자리를 못 얻는다 — 실측 2026-08-08: 36칸 중 15칸이 "전체 2GiB hard
+  // cap 초과" 로 blocked 였다. 한도를 낮추지 않고 자리를 만든다.
+  await reclaimArchivedRuns(paths, limits);
+
   await resetBucket(paths, "current");
   const state = { schemaVersion: 1, runId: id, status: "running", keep };
   await writeRunState(paths, "current", state, { keep, limits });
   return state;
+}
+
+/** 새 실행이 잴 자리를 만든다. 어느 실행을 비울지는 보존 규칙이 정하고 여기서는 시행만 한다. */
+async function reclaimArchivedRuns(paths, limits) {
+  const storeLimitBytes = limits?.storeLimitBytes ?? EVIDENCE_STORE_LIMIT_BYTES;
+  const entries = await readdir(paths.runs, { withFileTypes: true }).catch(() => []);
+  const rows = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const dir = path.join(paths.runs, entry.name);
+    const state = await readRunStateFile(path.join(dir, RUN_FILE)).catch(() => null);
+    if (!state?.runId) continue;
+    const stat = await checkedStat(dir);
+    rows.push({
+      runId: state.runId,
+      dir,
+      bytes: await measureDirectory(dir),
+      // 순서 근거는 파일시스템이 아는 사실이다 — 보고서가 자기 끝난 시각을 아직 안 적는다.
+      finishedAtUnixMs: stat ? stat.mtimeMs : Number.NaN,
+      keep: state.keep === true,
+    });
+  }
+  const byId = new Map(rows.map((row) => [row.runId, row]));
+  const reclaim = runsToReclaim({
+    runs: rows,
+    storeLimitBytes,
+    // 새 실행 하나가 최대로 쓸 자리를 미리 비운다 — 다 쓰고 나서 알면 이미 늦다.
+    needBytes: limits?.runLimitBytes ?? EVIDENCE_RUN_LIMIT_BYTES,
+    keep: rows.filter((row) => row.keep).map((row) => row.runId),
+  });
+  for (const runId of reclaim) {
+    const row = byId.get(runId);
+    if (row) await rm(row.dir, { recursive: true, force: true });
+  }
+  return reclaim;
 }
 
 export function beginEvidenceRun(root, options = {}) {
