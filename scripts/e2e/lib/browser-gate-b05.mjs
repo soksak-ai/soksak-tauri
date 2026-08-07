@@ -15,16 +15,23 @@ import {
  */
 const B05_CLOCK_KEYS = Object.freeze(["presentation", "stimulus", "layout", "settlement"]);
 
-function sameB05Clock(clocks, path, failures) {
+function sameB05Clock(clocks, path, failures, unmeasured) {
   if (!requireExactKeys(clocks, B05_CLOCK_KEYS, `${path}.clocks`, failures)) return null;
   const declared = B05_CLOCK_KEYS.map((key) => (
     hasText(clocks[key]) ? clocks[key] : null
   ));
+  const named = () => B05_CLOCK_KEYS
+    .map((key, index) => `${key}=${declared[index] ?? "none"}`)
+    .join(",");
+  // 시계가 갈린 것과 안 밝힌 것은 다른 답이다. 갈렸으면 그 둘을 한 창에서 맞댄 것 자체가
+  // 계약 위반이고(red), 안 밝혔으면 맞댈 기준이 없는 것이라 못 잼이다.
+  if (declared.some((value) => value === null)) {
+    unmeasured.push(`${path}.clocks-undeclared=${named()}`);
+    return null;
+  }
   const [expected] = declared;
-  if (expected === null || declared.some((value) => value !== expected)) {
-    failures.push(`${path}.clocks=one/${B05_CLOCK_KEYS
-      .map((key, index) => `${key}=${declared[index] ?? "none"}`)
-      .join(",")}`);
+  if (declared.some((value) => value !== expected)) {
+    failures.push(`${path}.clocks=one/${named()}`);
     return null;
   }
   return expected;
@@ -130,7 +137,7 @@ function inspectTransition(transition, index, failures, unmeasured, traceIds) {
   // `...UnixMs` 라는 같은 이름은 같은 시계를 뜻하지 않으므로, 넷이 같은 이름을 답할 때만 그
   // 사슬이 성립한다. 선언이 갈리면 지연·순서를 재는 대신 그 사실 하나를 이름으로 낸다 —
   // 안 그러면 시계 차이가 flicker·지연·역행이라는 네 증상으로 흩어져 보고된다.
-  const declaredClocks = sameB05Clock(trace.clocks, `${path}.trace`, failures);
+  const declaredClocks = sameB05Clock(trace.clocks, `${path}.trace`, failures, unmeasured);
   if (!hasText(trace.traceId) || traceIds.has(trace.traceId)) {
     failures.push(`${path}.trace.traceId=unique-non-empty/${displayValue(trace.traceId)}`);
   } else traceIds.add(trace.traceId);

@@ -217,14 +217,20 @@ describe("B05 시계 선언", () => {
     ]);
   });
 
-  it("선언이 없는 영수증도 판정 입력이 될 수 없다 — 조용한 통과가 아니다", () => {
+  // 정정 2026-08-08: 이 단언은 시계 미선언을 red 로 고정하고 있었다. compositor 에서 이미 세운
+  // 축과 같다 — 갈린 시계는 계약 위반이지만 안 밝힌 시계는 맞댈 기준이 없는 것이라 못 잼이다.
+  // blocked 도 통과가 아니므로 기준을 낮추는 것이 아니다.
+  it("선언이 없는 영수증도 판정 입력이 될 수 없다 — 조용한 통과가 아니라 못 잼이다", () => {
     const undeclared = evidence("browser");
     undeclared.transitions[0].trace.clocks.settlement = null;
-    expect(judgeB05MachineEvidence(undeclared).evidence).toEqual([
-      "B05:transitions[0].trace.clocks=one/"
+    const verdict = judgeB05MachineEvidence(undeclared);
+    expect(verdict.status).toBe("blocked");
+    expect(verdict.status).not.toBe("green");
+    expect(verdict.reason).toContain(
+      "transitions[0].trace.clocks-undeclared="
       + "presentation=unix-anchored-monotonic,stimulus=unix-anchored-monotonic,"
       + "layout=unix-anchored-monotonic,settlement=none",
-    ]);
+    );
   });
 });
 
@@ -263,5 +269,29 @@ describe("건너뜀의 주인은 관측 자기보고가 가른다", () => {
     value.transitions[0].trace.observation.callbackIntervalsSkipped = 2;
     const verdict = judgeB05MachineEvidence(value);
     expect(verdict.evidence.filter((row) => row.includes("violations.gaps"))).toEqual([]);
+  });
+});
+
+// 규칙 — 시계가 갈린 것과 시계를 안 밝힌 것은 다른 답이다.
+//
+// compositor 에서 이미 세운 축이다(clock-undeclared). B05 도 같은 자리를 한 이름으로 내고 있었다
+// — 실측 2026-08-08: offscreen 이 `clocks=one/presentation=none,stimulus=unix-anchored-...` 로
+// red 였는데, 그건 사이드카가 시계를 안 답한 것이지 두 시계가 어긋난 것이 아니다.
+describe("B05 시계 미선언은 못 잼이다", () => {
+  it("한 축이 시계를 안 밝혔으면 blocked 다", () => {
+    const value = evidence();
+    value.transitions[0].trace.clocks.presentation = null;
+    const verdict = judgeB05MachineEvidence(value);
+    expect(verdict.status).toBe("blocked");
+    expect(verdict.status).not.toBe("green");
+    expect(verdict.reason).toContain("clocks-undeclared");
+  });
+
+  it("선언한 시계가 서로 다르면 red 다", () => {
+    const value = evidence();
+    value.transitions[0].trace.clocks.presentation = "media-time";
+    const verdict = judgeB05MachineEvidence(value);
+    expect(verdict.status).toBe("red");
+    expect(verdict.evidence.some((row) => row.includes("clocks=one"))).toBe(true);
   });
 });
