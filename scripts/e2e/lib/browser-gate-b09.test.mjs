@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { BROWSER_ACCEPTANCE_ENGINES } from "./browser-gate-identity.mjs";
 import { judgeB09MachineEvidence } from "./browser-gate-b09.mjs";
 import { judgeBrowserMachineGateEvidence } from "./browser-gates.mjs";
+import { mapBrowserSurfaceRects } from "./browser-surface-rects.mjs";
 
 const TARGETS = Object.freeze([
   "rail/add",
@@ -48,6 +49,113 @@ function evidence(engine = "browser") {
     }),
   };
 }
+
+const PANE_IMPLEMENTATIONS = Object.freeze([
+  { engine: "browser", surface: "framework-native" },
+  { engine: "browser-chromium", surface: "engine-windowed" },
+]);
+
+const PANE_VIEW_IDS = Object.freeze(["tab-left", "tab-right"]);
+const PANE_LABELS = Object.freeze(["b-w-b09-tab-left", "b-w-b09-tab-right"]);
+
+const CHROME_RECTS = Object.freeze({
+  "rail/add": { x: 8, y: 200, w: 36, h: 36 },
+  "sidebar/right": { x: 600, y: 140, w: 200, h: 400 },
+  "modal/project-new": { x: 400, y: 200, w: 300, h: 200 },
+});
+const PROBE_POINTS = Object.freeze({
+  "rail/add": { x: 26, y: 218 },
+  "sidebar/right": { x: 700, y: 300 },
+  "modal/project-new": { x: 600, y: 300 },
+});
+
+/** slot-freeze가 B09 nativeSurface로 그대로 싣는 공개 surface 영수증을 생산자에서 만든다. */
+function producedSurfaces(surface) {
+  return mapBrowserSurfaceRects({
+    framework: "tauri",
+    surface,
+    windowLabel: "w-b09",
+    viewIds: [...PANE_VIEW_IDS],
+    labels: [...PANE_LABELS],
+    paneComposition: {
+      matches: PANE_VIEW_IDS.map((viewId, index) => ({
+        viewId,
+        chromeAboveHost: true,
+        domFrame: { x: index ? 513 : 60, y: 121, w: 281, h: 449 },
+        memberMatches: [{
+          label: PANE_LABELS[index],
+          topologyPath: `window/w-b09/view/${viewId}/content/${PANE_LABELS[index]}`,
+          nativeCount: 1,
+          ok: true,
+          domFrame: { x: 0, y: 28, w: 281, h: 421 },
+        }],
+      })),
+    },
+    stats: {
+      idMap: { "chromium-tab-left": 11, "chromium-tab-right": 12 },
+      ids: [11, 12],
+      surfaces: [
+        { id: 11, hidden: false, composition: { generation: 4 } },
+        { id: 12, hidden: false, composition: { generation: 4 } },
+      ],
+    },
+  });
+}
+
+function producedEvidence({ engine, surface }) {
+  const surfaces = producedSurfaces(surface);
+  const samples = TARGETS.map((target, index) => {
+    const nativeSurface = surfaces[index === 0 ? 0 : 1];
+    return {
+      target,
+      relation: target === "rail/add" ? "global-layer-order" : "point-overlap",
+      chromeRect: { ...CHROME_RECTS[target] },
+      nativeSurface,
+      hit: {
+        point: { ...PROBE_POINTS[target] },
+        topmostOwner: target,
+        stack: [
+          { kind: "chrome", owner: target, surfaceId: null },
+          {
+            kind: "native-surface",
+            owner: nativeSurface.viewId,
+            surfaceId: nativeSurface.surfaceId,
+          },
+        ],
+      },
+    };
+  });
+  return { engine, samples };
+}
+
+describe("B09 surface receipt는 생산자 shape 그대로 판정된다", () => {
+  it("pane 소유 두 구현의 공개 영수증을 그대로 실어도 GREEN이다", () => {
+    for (const implementation of PANE_IMPLEMENTATIONS) {
+      expect(judgeB09MachineEvidence(producedEvidence(implementation))).toEqual({
+        status: "green",
+        evidence: [
+          `${implementation.engine}/B09:rail-add=global-chrome-above-native;`
+            + "right-sidebar+modal=overlap-hit-topmost",
+        ],
+        reason: null,
+      });
+    }
+  });
+
+  it("native surface의 공개 topology 신원이 비면 RED로 이름 붙인다", () => {
+    const blank = producedEvidence(PANE_IMPLEMENTATIONS[0]);
+    blank.samples[1].nativeSurface = { ...blank.samples[1].nativeSurface, topologyPath: "" };
+    expect(judgeB09MachineEvidence(blank).evidence)
+      .toContain('B09:samples[1].nativeSurface.topologyPath=non-empty/""');
+
+    const absent = producedEvidence(PANE_IMPLEMENTATIONS[1]);
+    const stripped = { ...absent.samples[2].nativeSurface };
+    delete stripped.topologyPath;
+    absent.samples[2].nativeSurface = stripped;
+    expect(judgeB09MachineEvidence(absent).evidence)
+      .toContain("B09:samples[2].nativeSurface.topologyPath=missing");
+  });
+});
 
 describe("B09 chrome-over-native public hit judge", () => {
   it("세 engine의 rail +, right sidebar, modal에 동일 schema를 적용한다", () => {
