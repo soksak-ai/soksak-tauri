@@ -59,18 +59,10 @@ const FRAMEWORK_PRESENTATION_TRACE = Object.freeze({
     return { traceId };
   },
   events(receipt, { targetViewId }) {
-    const violations = receipt?.violations ?? {};
-    const violationTotal = Object.values(violations).reduce(
-      (sum, value) => sum + (Number.isFinite(Number(value)) ? Number(value) : 0),
-      0,
-    );
-    if (receipt?.closed !== true || violationTotal !== 0) {
-      throw new Error(
-        `${targetViewId}: presentation trace가 깨졌습니다 `
-        + `closed=${String(receipt?.closed)} violations=${JSON.stringify(violations)}`,
-      );
-    }
-    return (receipt.presentationEvents ?? []).map((event, index) => {
+    // 위반은 계약 사실이지 측정 불가가 아니다. 여기서 던지면 B05 judge 가 이미 이름으로 부르는
+    // 그 수치(trace.violations.<축>=0/<관측>)에 닿지 못하고, 그 엔진의 남은 칸이 통째로 blocked 가
+    // 된다 — 실측 2026-08-07: gaps=3 하나가 B02 이후 아홉 칸을 삼켰다.
+    return (receipt?.presentationEvents ?? []).map((event, index) => {
       const surfaces = (event?.surfaces ?? []).filter((surface) => surface?.viewId === targetViewId);
       if (surfaces.length !== 1) {
         throw new Error(`${targetViewId}: presentation event ${index} surface=${surfaces.length}/1`);

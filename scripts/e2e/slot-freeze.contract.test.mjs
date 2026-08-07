@@ -591,6 +591,15 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(source).toContain('import { readPinStage } from "./lib/pin-geometry-probe.mjs"');
   });
 
+  it("carries presentation-trace violations to the judge instead of ending the run", () => {
+    const matrix = readFileSync(new URL("./lib/browser-matrix.mjs", import.meta.url), "utf8");
+    // 위반은 계약 사실이다. B05 judge 가 trace.violations.<축>=0/<관측> 으로 이미 이름을 부른다 —
+    // 여기서 던지면 그 이름에 닿지 못하고 그 엔진의 남은 칸이 통째로 blocked 가 된다.
+    expect(matrix).not.toContain("presentation trace가 깨졌습니다");
+    const judge = readFileSync(new URL("./lib/browser-gate-b05.mjs", import.meta.url), "utf8");
+    expect(judge).toContain("trace.violations");
+  });
+
   it("owns its fixture window size before measuring anything that depends on it", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
     // 앱 기본 크기나 앞 엔진이 남긴 크기를 물려받으면 hostile resize 자극이 실행마다 생겼다
