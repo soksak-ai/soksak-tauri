@@ -992,6 +992,20 @@
       "note": "배율 사실이 맨 숫자를 거절하고 못 읽음이 성공값으로 둔갑하지 않는다는 법을 고정한다."
     },
     {
+      "file": "lib/surface-invariant.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "플러그인이 stats 로 답한 표면 원장 불변식을 이름 붙은 위반으로 남긴다. 봉투만 읽으므로 프레임워크를 모른다."
+    },
+    {
+      "file": "lib/surface-invariant.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "답한 불일치가 실행을 세우지 않고 원장에 실려 그 엔진을 RED 로 끝낸다는 법, 그리고 재지 않은 것과 재서 통과한 것이 갈린다는 법을 고정한다."
+    },
+    {
       "file": "lib/surface-settlement.mjs",
       "role": "lib",
       "class": "A",
