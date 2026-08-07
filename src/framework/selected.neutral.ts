@@ -41,6 +41,12 @@ export const selectedFramework: AppFramework = {
     supportsDocumentStart: false,
     supportsInputInjection: false,
   },
+  // 중립 어댑터에는 창이 없다. "없다"고 답하는 것과 "안 밝혔다"는 다른 사실이므로 사유를 단다.
+  titlebarComposition: {
+    buttonPositions: { provided: false, reason: "중립 테스트 어댑터에는 창 크롬이 없습니다" },
+    backingPlane: { provided: false, reason: "중립 테스트 어댑터에는 창 크롬이 없습니다" },
+    paintOwner: { provided: false, reason: "중립 테스트 어댑터에는 창 크롬이 없습니다" },
+  },
   emitLocal: () => {},
   install: async () => {},
   presentWindow: async () => {},

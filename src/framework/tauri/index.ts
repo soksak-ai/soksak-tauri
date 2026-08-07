@@ -24,6 +24,7 @@ import type {
   AppFramework,
   FrameworkWindowHandle,
   Stream,
+  TitlebarCompositionProvision,
   Unlisten,
 } from "../contract";
 
@@ -112,6 +113,24 @@ export const engineProvision: EngineProvision = {
   supportsInputInjection: false,
 };
 
+/**
+ * 신호등 합성 — 이 프레임워크는 세 축을 다 답한다.
+ *
+ * 백엔드가 AppKit 을 직접 쥔다: standardWindowButton 의 물리 frame 을 읽고(titlebar_native_state),
+ * 버튼 뒤에 자기 소유의 백킹 뷰를 깔며, 그 둘을 앉히는 draw owner 를 하나로 두고 센다
+ * (titlebar_compose). 그래서 DOM 예약과 네이티브 버튼을 같은 물리 공간에서 대조할 수 있다.
+ *
+ * macOS 기준이다 — 그쪽 백엔드 모듈 자체가 `#[cfg(target_os = "macos")]` 아래 있다. 다른 OS 에서
+ * 이 값은 참이 아니고, 그 어긋남은 조용히 지나가지 않는다: 있다고 밝힌 명령이 거절되면 위반
+ * 장부에 이름으로 남는다(titlebarProvisionBreaches). engineProvision 과 같은 자리에 같은 공백이
+ * 있다 — 이 값을 실행 중에 OS 로 정하는 갈래는 그것과 함께 들어온다.
+ */
+export const titlebarComposition: TitlebarCompositionProvision = {
+  buttonPositions: { provided: true },
+  backingPlane: { provided: true },
+  paintOwner: { provided: true },
+};
+
 export const tauriFramework: AppFramework = {
   // Tauri 는 자기 통로가 있다 — 현재 창으로 보내면 그 창의 listen 이 받는다.
   emitLocal: (event, payload) => {
@@ -119,6 +138,7 @@ export const tauriFramework: AppFramework = {
   },
   dragRegion,
   engineProvision,
+  titlebarComposition,
   name: "tauri",
   // 거는 코드는 그때 가져온다 — 이 파일은 벤더를 번역하는 잎으로 남는다(contract.install).
   install: () => import("./install").then((m) => m.installTauri()),

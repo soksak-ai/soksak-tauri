@@ -1,4 +1,5 @@
-import { invoke, currentWindow } from "../framework";
+import { invoke, currentWindow, titlebarComposition } from "../framework";
+import { recordTitlebarProvisionBreach } from "../framework/titlebarProvision";
 import { moduleState } from "../lib/moduleState";
 import { create } from "zustand";
 import { createCoreSync } from "./coreSync";
@@ -62,12 +63,16 @@ function loadBuiltins(): {
   return { themes, warnings };
 }
 
-// 네이티브 크롬(macOS 신호등) 테마 동기화 — 두 채널:
+// 네이티브 크롬(신호등) 테마 동기화 — 두 채널:
 //   1) 창 NSAppearance 를 앱 테마 모드로(setTheme) — 비활성 회색 점은 창
 //      appearance 기준으로 그려져서, 시스템 다크 + 앱 라이트 테마처럼 어긋나면
 //      밝은 배경에 묻힌다(역도 동일).
 //   2) 버튼 뒤 불투명 백킹 색(titlebar_backing) — 비활성 위젯의 backdrop 합성은
 //      webview 레이어를 샘플링하지 못해 유령이 되므로 테마색 백킹을 깐다.
+//
+// 둘째 채널은 프레임워크 이름으로 가르지 않는다. **선언을 읽는다**(titlebarComposition):
+// 백킹 평면이 없다고 밝힌 프레임워크에서는 부르지 않고, 있다고 밝힌 프레임워크가 거절하면
+// 그것은 선언과 행동이 갈린 자리라 삼키지 않고 장부에 남긴다.
 function syncTitlebarBacking(theme: ThemeSpec, mode: ThemeMode): void {
   try {
     void currentWindow()
@@ -75,6 +80,8 @@ function syncTitlebarBacking(theme: ThemeSpec, mode: ThemeMode): void {
       .catch(() => {
         // 비지원 플랫폼/권한 부재 — 무시(테마 토큰 렌더에는 영향 없음).
       });
+    // 없다고 밝힌 것은 부르지 않는다. 사유는 선언이 들고 있고 진단이 읽는다(framework.info).
+    if (!titlebarComposition.backingPlane.provided) return;
     const { colors } = colorsForMode(theme, mode);
     const hex = theme.chrome.titlebar === "side" ? colors.side : colors.bg;
     const m = /^#([0-9a-f]{6})$/i.exec(hex.trim());
@@ -84,8 +91,9 @@ function syncTitlebarBacking(theme: ThemeSpec, mode: ThemeMode): void {
       r: ((n >> 16) & 255) / 255,
       g: ((n >> 8) & 255) / 255,
       b: (n & 255) / 255,
-    }).catch(() => {
-      // 비 macOS/명령 부재 — 무시(백킹은 macOS 전용 보정).
+    }).catch((error: unknown) => {
+      // 있다고 적어 두고 거절당했다 — 삼키면 "선언은 있는데 화면은 그대로"가 영영 안 보인다.
+      recordTitlebarProvisionBreach("backingPlane", "titlebar_backing", error);
     });
   } catch {
     // 프레임워크 런타임 없음(jsdom 테스트 등) — 어댑터가 동기 throw 한다.

@@ -64,6 +64,27 @@ function publicHostileOwner(owner) {
   };
 }
 
+/** 프레임워크가 신호등 합성에 대해 스스로 밝힌 것. 하니스는 옮기기만 한다 — 지어내지 않는다. */
+function publicProvision(declaration) {
+  if (!declaration || typeof declaration !== "object") return declaration ?? null;
+  const out = {};
+  for (const [facet, value] of Object.entries(declaration)) {
+    if (!value || typeof value !== "object") {
+      out[facet] = value ?? null;
+      continue;
+    }
+    out[facet] = value.provided === true
+      ? { provided: true }
+      : { provided: value.provided ?? null, reason: value.reason ?? null };
+  }
+  return out;
+}
+
+/** 이 프레임워크가 신호등 위치를 잴 수 있다고 밝혔는가 — 하니스가 실측을 시작할 조건. */
+function composesTrafficLights(provision) {
+  return provision?.buttonPositions?.provided === true;
+}
+
 /** 창을 실제로 드러낸 시작 게이트 영수증. 재시작 직후 정렬의 유일한 공개 기준점이다. */
 function publicStartup(startup) {
   const composition = startup?.composition;
@@ -191,7 +212,58 @@ async function hold(rpc, windowLabel, stage) {
   );
 }
 
-async function inspectWindow(rpc, windowLabel, framework) {
+/**
+ * 능력이 없다고 밝힌 프레임워크의 한 칸 — **잰다**, 건너뛰지 않는다.
+ *
+ * 예전에는 여기서 실행을 통째로 멈췄고(blocked), 그러면 그 칸은 "재지 않은 칸"으로 남아
+ * 인수 장부에서 아예 안 보였다. 선언만 실은 증거를 같은 judge 에 걸면 그 칸은 이름 붙은
+ * RED 가 된다 — 그 이름은 프레임워크가 아니라 없는 능력이다. 나머지 칸은 잰 적이 없으므로
+ * null 로 남는다: 안 잰 것을 0 으로 적으면 그것이 곧 가짜 성공이다.
+ */
+function declaredAbsentReport(windowLabel, framework, provision) {
+  const directory = path.join(evidenceRoot, windowLabel);
+  fs.mkdirSync(directory, { recursive: true });
+  const verdicts = BROWSER_ACCEPTANCE_ENGINES.map((engine) => {
+    const evidence = {
+      engine,
+      provision,
+      coordinateSpace: null,
+      startup: null,
+      cold: null,
+      baseline: null,
+      heights: null,
+      reset: null,
+      hostileResize: null,
+      final: null,
+      held: null,
+    };
+    return { engine, verdict: judgeB12MachineEvidence(evidence, { framework }), evidence };
+  });
+  const report = {
+    schemaVersion: 1,
+    status: "red",
+    buildId,
+    runId,
+    cycle,
+    window: windowLabel,
+    framework,
+    coldStart: {
+      generation: null,
+      ownerIdentity: null,
+      presentedCompositionSequence: null,
+      coldPresentationRevision: null,
+      finalPresentationRevision: null,
+    },
+    verdicts,
+  };
+  fs.writeFileSync(
+    path.join(directory, "machine.json"),
+    `${JSON.stringify(report, null, 2)}\n`,
+  );
+  return report;
+}
+
+async function inspectWindow(rpc, windowLabel, framework, provision) {
   const directory = path.join(evidenceRoot, windowLabel);
   const machineFile = path.join(directory, "machine.json");
   fs.mkdirSync(directory, { recursive: true });
@@ -362,6 +434,7 @@ async function inspectWindow(rpc, windowLabel, framework) {
     for (const engine of BROWSER_ACCEPTANCE_ENGINES) {
       const evidence = {
         engine,
+        provision,
         coordinateSpace: {
           logical: "css-px",
           physical: "device-px",
@@ -463,21 +536,19 @@ async function main() {
     labels = must(await rpc("window.list", {}, control), "window.list").labels;
     if (!Array.isArray(labels) || labels.length === 0) throw new Error("live window list is empty");
     labels = [...labels].sort();
-    framework = must(await rpc("framework.info", {}, control), "framework.info").framework;
-    if (framework === "electron") {
-      const reason = "Electron native traffic-light position adapter is absent";
-      writeCycle({
-        ...cycleIdentity(framework),
-        status: "blocked",
-        windows: [],
-        machines: [],
-        reason,
-      });
-      const error = new Error(reason);
-      error.b12Status = "blocked";
-      throw error;
+    const info = must(await rpc("framework.info", {}, control), "framework.info");
+    framework = info.framework;
+    // 이름으로 가르지 않는다 — 이 프레임워크가 신호등 합성에 대해 밝힌 것을 읽는다.
+    const provision = publicProvision(info.titlebarComposition);
+    if (!composesTrafficLights(provision)) {
+      for (const windowLabel of labels) {
+        reports.push(declaredAbsentReport(windowLabel, framework, provision));
+      }
+      const reason = provision?.buttonPositions?.reason
+        ?? "framework declared no public traffic-light position surface";
+      // 사이클 파일은 아래 catch 한 곳이 쓴다 — 같은 사실을 두 곳이 쓰면 갈린다.
+      throw new Error(`B12 declared-absent RED: provision.buttonPositions — ${reason}`);
     }
-    if (framework !== "tauri") throw new Error(`B12 live harness requires tauri, got ${framework}`);
     if (process.platform !== "darwin") {
       writeCycle({
         ...cycleIdentity(framework),
@@ -490,7 +561,7 @@ async function main() {
       return;
     }
     for (const windowLabel of labels) {
-      const report = await inspectWindow(rpc, windowLabel, framework);
+      const report = await inspectWindow(rpc, windowLabel, framework, provision);
       reports.push(report);
       console.log(`✓ ${windowLabel}: ${report.verdicts.length}/3 B12 machine GREEN`);
     }
@@ -502,15 +573,15 @@ async function main() {
     });
     console.log(`✓ B12 live cycle ${cycle} GREEN — evidence ${evidenceRoot}`);
   } catch (error) {
-    if (error?.b12Status !== "blocked") {
-      writeCycle({
-        ...cycleIdentity(framework),
-        status: "red",
-        windows: labels,
-        machines: reports.map(machineSummary),
-        reason: error instanceof Error ? error.message : String(error),
-      });
-    }
+    // 실행이 멈춘 자리는 전부 RED 다. "blocked" 라는 세 번째 상태는 없다 — 그 상태는 못 잰
+    // 칸을 인수 장부에서 보이지 않게 만들었다(능력 부재도 재서 이름 붙인 RED 로 남긴다).
+    writeCycle({
+      ...cycleIdentity(framework),
+      status: "red",
+      windows: labels,
+      machines: reports.map(machineSummary),
+      reason: error instanceof Error ? error.message : String(error),
+    });
     throw error;
   } finally {
     client?.close();

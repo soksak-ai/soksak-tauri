@@ -12,6 +12,8 @@ export const TITLEBAR_CENTER_TOLERANCE_PHYSICAL_PX = 0.5;
 
 const FRAMEWORKS = new Set(["tauri", "electron"]);
 const ROLES = Object.freeze(["close", "minimize", "zoom"]);
+/** 프레임워크가 스스로 밝히는 신호등 합성 축 — 계약(src/framework/contract.ts)과 한 벌이다. */
+const PROVISION_FACETS = Object.freeze(["buttonPositions", "backingPlane", "paintOwner"]);
 const RECT_KEYS = Object.freeze(["x", "y", "w", "h"]);
 const SIZE_KEYS = Object.freeze(["w", "h"]);
 const REQUIRED_HEIGHTS = Object.freeze([30, 60, 72]);
@@ -72,6 +74,51 @@ const HOSTILE_TITLEBAR_KEYS = Object.freeze([
   "backings",
   "owner",
 ]);
+
+/**
+ * 프레임워크가 이 축에 대해 스스로 밝힌 것. **판정은 이 선언을 읽지 이름을 읽지 않는다.**
+ *
+ * 이름을 읽는 판정은 두 번 틀린다: 능력이 생긴 날에도 계속 거절하고, 세 번째 프레임워크가
+ * 오는 날에는 아무 말도 못 한다. 그리고 그 red 의 이름이 프레임워크 이름이라, 무엇이 없어서
+ * 못 쟀는지가 보고서 어디에도 안 남는다.
+ *
+ * 부재는 반드시 사유를 단다 — 사유 없는 부재는 "없다"가 아니라 "안 밝혔다"이고, 그 둘을 같게
+ * 두면 미신고 프레임워크가 선언된 공백처럼 보인다. 못 읽은 선언은 **미제공**으로 접는다:
+ * 모르는 것을 능력으로 세면 지어낸 rect 가 통과한다.
+ */
+function inspectProvision(value, failures) {
+  const resolved = Object.fromEntries(
+    PROVISION_FACETS.map((facet) => [facet, { provided: false, reason: null }]),
+  );
+  if (!requireExactKeys(value, PROVISION_FACETS, "provision", failures)) return resolved;
+  for (const facet of PROVISION_FACETS) {
+    const path = `provision.${facet}`;
+    const declared = value[facet];
+    if (!isRecord(declared)) {
+      failures.push(`${path}=record/${displayValue(declared)}`);
+      continue;
+    }
+    if (declared.provided === true) {
+      if (requireExactKeys(declared, ["provided"], path, failures)) {
+        resolved[facet] = { provided: true, reason: null };
+      }
+      continue;
+    }
+    if (declared.provided === false) {
+      if (!requireExactKeys(declared, ["provided", "reason"], path, failures)) continue;
+      if (hasText(declared.reason)) resolved[facet] = { provided: false, reason: declared.reason };
+      else failures.push(`${path}.reason=non-empty/${displayValue(declared.reason)}`);
+      continue;
+    }
+    failures.push(`${path}.provided=boolean/${displayValue(declared.provided)}`);
+  }
+  return resolved;
+}
+
+/** 이 프레임워크가 실제로 든 평면들. 없다고 밝힌 평면은 대조 대상이 아니다(값도 비어 있다). */
+function planeNames(provision) {
+  return ["reservations", "buttons", ...(provision.backingPlane.provided ? ["backings"] : [])];
+}
 
 function inspectRect(value, path, failures) {
   if (!requireExactKeys(value, RECT_KEYS, path, failures)) return null;
@@ -184,13 +231,14 @@ function counter(value, path, minimum, failures) {
 }
 
 /**
- * Tauri의 유일한 paint owner 원장. `targetSequence`는 명시적 compose 거래 수,
- * `mutationSequence`는 실제로 버튼을 움직인 apply 수다. 둘의 차이가 AppKit이 스스로
+ * paint owner 를 제공한다고 선언한 프레임워크의 유일한 원장. `targetSequence`는 명시적 compose
+ * 거래 수, `mutationSequence`는 실제로 버튼을 움직인 apply 수다. 둘의 차이가 네이티브가 스스로
  * 옮긴 것을 다시 앉힌 횟수이므로, 정지 구간에서 이 차이가 벌어지면 중간 회귀다.
  */
-function inspectOwner(value, path, { framework, revision }, failures) {
-  if (framework !== "tauri") {
-    if (value !== null) failures.push(`${path}=null-for-electron/${displayValue(value)}`);
+function inspectOwner(value, path, { provision, revision }, failures) {
+  if (!provision.paintOwner.provided) {
+    // 없다고 밝힌 원장을 값으로 채우면 그것은 지어낸 것이다.
+    if (value !== null) failures.push(`${path}=null-when-paintOwner-absent/${displayValue(value)}`);
     return null;
   }
   if (!requireExactKeys(value, OWNER_KEYS, path, failures)) return null;
@@ -231,9 +279,9 @@ function inspectOwner(value, path, { framework, revision }, failures) {
   };
 }
 
-function inspectHostileOwner(value, path, framework, failures) {
-  if (framework !== "tauri") {
-    if (value !== null) failures.push(`${path}=null-for-electron/${displayValue(value)}`);
+function inspectHostileOwner(value, path, provision, failures) {
+  if (!provision.paintOwner.provided) {
+    if (value !== null) failures.push(`${path}=null-when-paintOwner-absent/${displayValue(value)}`);
     return null;
   }
   if (!requireExactKeys(value, HOSTILE_OWNER_KEYS, path, failures)) return null;
@@ -247,9 +295,9 @@ function inspectHostileOwner(value, path, framework, failures) {
 }
 
 /** 창을 실제로 드러낸 시작 게이트 영수증. 어댑터의 boolean 하나가 아니라 각 사실을 읽는다. */
-function inspectStartup(value, framework, failures) {
+function inspectStartup(value, provision, failures) {
   if (!requireExactKeys(value, STARTUP_KEYS, "startup", failures)) return null;
-  if (framework === "tauri" && value.platform !== "macos") {
+  if (provision.buttonPositions.provided && value.platform !== "macos") {
     failures.push(`startup.platform=macos/${displayValue(value.platform)}`);
   }
   const generation = counter(value.generation, "startup.generation", 1, failures);
@@ -267,7 +315,7 @@ function inspectStartup(value, framework, failures) {
   if (!requireExactKeys(value.composition, STARTUP_COMPOSITION_KEYS, "startup.composition", failures)) {
     return { generation, nativeSequence: null };
   }
-  if (framework === "tauri" && value.composition.kind !== "macos-titlebar") {
+  if (provision.buttonPositions.provided && value.composition.kind !== "macos-titlebar") {
     failures.push(`startup.composition.kind=macos-titlebar/${displayValue(value.composition.kind)}`);
   }
   const nativeSequence = counter(
@@ -340,7 +388,7 @@ function cssLength(value) {
 function inspectSample(
   value,
   path,
-  { expectedStage, framework, coordinateSpace },
+  { expectedStage, provision, coordinateSpace },
   failures,
 ) {
   if (!requireExactKeys(value, SAMPLE_KEYS, path, failures)) return null;
@@ -377,20 +425,20 @@ function inspectSample(
   const reservations = inspectElements(value.reservations, `${path}.reservations`, failures);
   const buttons = inspectElements(value.buttons, `${path}.buttons`, failures);
   let backings = null;
-  if (framework === "tauri") {
+  if (provision.backingPlane.provided) {
     backings = inspectElements(value.backings, `${path}.backings`, failures);
-  } else if (framework === "electron" && value.backings !== null) {
-    failures.push(`${path}.backings=null-for-electron/${displayValue(value.backings)}`);
+  } else if (value.backings !== null) {
+    failures.push(`${path}.backings=null-when-backingPlane-absent/${displayValue(value.backings)}`);
   }
 
   inspectTitlebarAgainstViewport(titlebar, viewport, `${path}.titlebarPhysical`, failures);
   inspectPlaneAgainstTitlebar(reservations, titlebar, `${path}.reservations`, failures);
   inspectPlaneAgainstTitlebar(buttons, titlebar, `${path}.buttons`, failures);
-  if (framework === "tauri") {
+  if (provision.backingPlane.provided) {
     inspectPlaneAgainstTitlebar(backings, titlebar, `${path}.backings`, failures);
   }
   inspectMatchingPlanes(reservations, buttons, `${path}.reservationButton`, failures);
-  if (framework === "tauri") {
+  if (provision.backingPlane.provided) {
     inspectMatchingPlanes(backings, buttons, `${path}.backingButton`, failures);
   }
 
@@ -416,7 +464,7 @@ function inspectSample(
   const ownerLedger = inspectOwner(
     value.owner,
     `${path}.owner`,
-    { framework, revision: revisionValid ? value.presentationRevision : null },
+    { provision, revision: revisionValid ? value.presentationRevision : null },
     failures,
   );
 
@@ -463,7 +511,7 @@ function sameInlineStyle(left, rightValue) {
     && left?.flexBasis === rightValue?.flexBasis;
 }
 
-function compareRestoredSample(baseline, restored, path, framework, failures) {
+function compareRestoredSample(baseline, restored, path, provision, failures) {
   if (!(baseline && restored)) return;
   if (baseline.dom && restored.dom) {
     if (restored.dom.nodeIdentity !== baseline.dom.nodeIdentity) {
@@ -481,7 +529,7 @@ function compareRestoredSample(baseline, restored, path, framework, failures) {
       && (baseline.viewport.w !== restored.viewport.w || baseline.viewport.h !== restored.viewport.h)) {
     failures.push(`${path}.viewportPhysical=baseline`);
   }
-  for (const plane of ["reservations", "buttons", ...(framework === "tauri" ? ["backings"] : [])]) {
+  for (const plane of planeNames(provision)) {
     inspectMatchingPlanes(
       baseline.planes[plane],
       restored.planes[plane],
@@ -491,7 +539,7 @@ function compareRestoredSample(baseline, restored, path, framework, failures) {
   }
 }
 
-function compareHeldSample(applied, held, path, framework, failures) {
+function compareHeldSample(applied, held, path, provision, failures) {
   if (!(applied && held)) return;
   if (held.presentationRevision !== applied.presentationRevision) {
     failures.push(`${path}.presentationRevision=applied`);
@@ -514,7 +562,7 @@ function compareHeldSample(applied, held, path, framework, failures) {
       && (applied.viewport.w !== held.viewport.w || applied.viewport.h !== held.viewport.h)) {
     failures.push(`${path}.viewportPhysical=applied`);
   }
-  for (const plane of ["reservations", "buttons", ...(framework === "tauri" ? ["backings"] : [])]) {
+  for (const plane of planeNames(provision)) {
     inspectMatchingPlanes(
       applied.planes[plane],
       held.planes[plane],
@@ -525,7 +573,7 @@ function compareHeldSample(applied, held, path, framework, failures) {
   compareCompositionLedger(applied, held, path, { still: true }, failures);
 }
 
-function inspectHostileTitlebar(value, path, framework, failures) {
+function inspectHostileTitlebar(value, path, provision, failures) {
   if (!requireExactKeys(value, HOSTILE_TITLEBAR_KEYS, path, failures)) return null;
   const revision = Number.isInteger(value.presentationRevision) && value.presentationRevision >= 1
     ? value.presentationRevision
@@ -538,20 +586,20 @@ function inspectHostileTitlebar(value, path, framework, failures) {
   const reservations = inspectElements(value.reservations, `${path}.reservations`, failures);
   const buttons = inspectElements(value.buttons, `${path}.buttons`, failures);
   let backings = null;
-  if (framework === "tauri") {
+  if (provision.backingPlane.provided) {
     backings = inspectElements(value.backings, `${path}.backings`, failures);
   } else if (value.backings !== null) {
-    failures.push(`${path}.backings=null-for-electron/${displayValue(value.backings)}`);
+    failures.push(`${path}.backings=null-when-backingPlane-absent/${displayValue(value.backings)}`);
   }
   inspectTitlebarAgainstViewport(titlebar, viewport, `${path}.titlebarPhysical`, failures);
   inspectPlaneAgainstTitlebar(reservations, titlebar, `${path}.reservations`, failures);
   inspectPlaneAgainstTitlebar(buttons, titlebar, `${path}.buttons`, failures);
   inspectMatchingPlanes(reservations, buttons, `${path}.reservationButton`, failures);
-  if (framework === "tauri") {
+  if (provision.backingPlane.provided) {
     inspectPlaneAgainstTitlebar(backings, titlebar, `${path}.backings`, failures);
     inspectMatchingPlanes(backings, buttons, `${path}.backingButton`, failures);
   }
-  const ownerLedger = inspectHostileOwner(value.owner, `${path}.owner`, framework, failures);
+  const ownerLedger = inspectHostileOwner(value.owner, `${path}.owner`, provision, failures);
   return {
     revision,
     viewport,
@@ -617,7 +665,7 @@ function inspectHostileResize(value, baseline, context, failures) {
       const titlebar = inspectHostileTitlebar(
         transaction.titlebar,
         `${path}.titlebar`,
-        context.framework,
+        context.provision,
         failures,
       );
       if (baseline?.owner?.identity && titlebar?.owner?.identity
@@ -640,7 +688,7 @@ function inspectHostileResize(value, baseline, context, failures) {
           && !withinTolerance(titlebar.titlebar.h - baseline.titlebar.h)) {
         failures.push(`${path}.titlebar.titlebarPhysical.h=baseline`);
       }
-      for (const plane of ["reservations", "buttons", ...(context.framework === "tauri" ? ["backings"] : [])]) {
+      for (const plane of planeNames(context.provision)) {
         inspectMatchingPlanes(
           baseline?.planes?.[plane],
           titlebar?.planes?.[plane],
@@ -681,9 +729,9 @@ function inspectHostileResize(value, baseline, context, failures) {
     { ...context, expectedStage: "resize-restored" },
     failures,
   );
-  compareRestoredSample(baseline, settled, "hostileResize.settledRestore", context.framework, failures);
-  compareRestoredSample(baseline, held, "hostileResize.heldRestore", context.framework, failures);
-  compareHeldSample(settled, held, "hostileResize.heldRestore", context.framework, failures);
+  compareRestoredSample(baseline, settled, "hostileResize.settledRestore", context.provision, failures);
+  compareRestoredSample(baseline, held, "hostileResize.heldRestore", context.provision, failures);
+  compareHeldSample(settled, held, "hostileResize.heldRestore", context.provision, failures);
   return { baselineOuter, restoredOuter, heldOuter, transactions, settled, held };
 }
 
@@ -697,7 +745,7 @@ export function judgeB12MachineEvidence(value, identity = null) {
   if (!requireExactKeys(
     value,
     [
-      "engine", "coordinateSpace", "startup", "cold", "baseline", "heights", "reset",
+      "engine", "provision", "coordinateSpace", "startup", "cold", "baseline", "heights", "reset",
       "hostileResize", "final", "held",
     ],
     "evidence",
@@ -707,19 +755,25 @@ export function judgeB12MachineEvidence(value, identity = null) {
   if (!engineSet.has(value.engine)) {
     failures.push(`engine=known/${displayValue(value.engine)}`);
   }
+  // 이름은 **귀속**에만 쓴다 — 어느 프레임워크에서 난 증거인가. 판정은 아래 선언이 한다.
   const framework = identity?.framework;
   if (!FRAMEWORKS.has(framework)) {
     failures.push(`framework=tauri|electron/${displayValue(framework)}`);
   }
-  if (framework === "electron") {
-    failures.push("electron-native-button-position-adapter=missing");
+  const provision = inspectProvision(value.provision, failures);
+  // 위치 축이 없으면 DOM 예약과 대조할 값 자체가 없다 — 그것이 RED 이고, 그 RED 의 이름은
+  // 프레임워크 이름이 아니라 없는 능력이다. 사유는 그 프레임워크가 적은 문장 그대로 싣는다.
+  if (!provision.buttonPositions.provided) {
+    failures.push(
+      `provision.buttonPositions=declared-absent/${displayValue(provision.buttonPositions.reason)}`,
+    );
   }
   const coordinateSpace = inspectCoordinateSpace(value.coordinateSpace, failures);
   const context = {
-    framework,
+    provision,
     coordinateSpace: coordinateSpace ?? { scaleFactor: Number.NaN },
   };
-  const startup = inspectStartup(value.startup, framework, failures);
+  const startup = inspectStartup(value.startup, provision, failures);
   const cold = inspectSample(
     value.cold,
     "cold",
@@ -833,7 +887,7 @@ export function judgeB12MachineEvidence(value, identity = null) {
       && !(baseline.presentationRevision >= cold.presentationRevision)) {
     failures.push("baseline.presentationRevision=>=cold");
   }
-  compareRestoredSample(cold, baseline, "baseline-vs-cold", framework, failures);
+  compareRestoredSample(cold, baseline, "baseline-vs-cold", provision, failures);
   compareCompositionLedger(cold, baseline, "baseline-vs-cold", { still: true }, failures);
 
   let previousRevision = baseline?.presentationRevision ?? null;
@@ -853,19 +907,23 @@ export function judgeB12MachineEvidence(value, identity = null) {
     failures.push("final.presentationRevision>=reset");
   }
 
-  compareRestoredSample(baseline, reset, "reset", framework, failures);
-  compareRestoredSample(baseline, final, "final", framework, failures);
-  compareHeldSample(baseline, heldBaseline, "held.baseline", framework, failures);
+  compareRestoredSample(baseline, reset, "reset", provision, failures);
+  compareRestoredSample(baseline, final, "final", provision, failures);
+  compareHeldSample(baseline, heldBaseline, "held.baseline", provision, failures);
   heights.forEach((height, index) => {
-    compareHeldSample(height, heldHeights[index], `held.heights[${index}]`, framework, failures);
+    compareHeldSample(height, heldHeights[index], `held.heights[${index}]`, provision, failures);
   });
-  compareHeldSample(reset, heldReset, "held.reset", framework, failures);
-  compareHeldSample(final, heldFinal, "held.final", framework, failures);
+  compareHeldSample(reset, heldReset, "held.reset", provision, failures);
+  compareHeldSample(final, heldFinal, "held.final", provision, failures);
 
   return finishMachineVerdict(
     "B12",
     failures,
-    `${value.engine}/B12:${framework};startup-receipt+cold+baseline+height>=2+reset+final`
+    // GREEN 도 **무엇을 재고 무엇을 안 쟀는지**를 싣는다. 선언에 없는 평면은 통과가 아니라
+    // 대상이 아니었다 — 그 구분이 없으면 좁은 GREEN 과 넓은 GREEN 이 한 더미가 된다.
+    `${value.engine}/B12:${framework};provision=`
+      + `${PROVISION_FACETS.filter((facet) => provision[facet].provided).join("+") || "none"}`
+      + `;startup-receipt+cold+baseline+height>=2+reset+final`
       + `=presented+held;height=30,60,72;hostile-resize>=12+exact-restore;`
       + `center<=${TITLEBAR_CENTER_TOLERANCE_PHYSICAL_PX}px;dom-identity+inline-style=restored;`
       + `one-paint-owner;still-span-mutations<=composed-transactions`,
