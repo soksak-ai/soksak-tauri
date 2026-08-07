@@ -44,3 +44,20 @@ describe("인수 타깃이 부르는 자리는 실재한다", () => {
     expect(missing).toEqual([]);
   });
 });
+
+// 판정이 무엇을 재는지 모른 채 답을 내면 그 답은 거짓이다.
+//
+// 실측 2026-08-08: Electron 인수를 돌렸는데 소켓을 Tauri 가 쥐고 있어 하니스가 Tauri 에 물었고,
+// 열 칸이 green 으로 찍혔지만 보고서 신원은 `framework: tauri` 였다.
+describe("인수 실행은 자기가 무엇을 재는지 지목한다", () => {
+  it("프레임워크 타깃마다 자기 이름을 넘긴다", () => {
+    for (const framework of BROWSER_ACCEPTANCE_FRAMEWORKS) {
+      expect(MAKEFILE).toContain(`ACCEPTANCE_FRAMEWORK=${framework}`);
+    }
+  });
+
+  it("몸통이 그 이름을 두 실행기에 넘긴다", () => {
+    const passes = [...MAKEFILE.matchAll(/BROWSER_TARGET_FRAMEWORK="\$\(ACCEPTANCE_FRAMEWORK\)"/g)];
+    expect(passes.length).toBeGreaterThanOrEqual(2);
+  });
+});

@@ -7,6 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { requireTargetFramework } from "./lib/framework-target.mjs";
 import { openClient, requireSocket, must, resolveControlWindow } from "./lib/client.mjs";
 import { requireBrowserEvidenceBuildId } from "./lib/browser-evidence-store.mjs";
 import { BROWSER_ACCEPTANCE_ENGINES } from "./lib/browser-gate-identity.mjs";
@@ -550,7 +551,8 @@ async function main() {
     if (!Array.isArray(labels) || labels.length === 0) throw new Error("live window list is empty");
     labels = [...labels].sort();
     const info = must(await rpc("framework.info", {}, control), "framework.info");
-    framework = info.framework;
+    // 재려던 것과 답한 것이 같아야 그 판이 그 프레임워크의 판이다.
+    framework = requireTargetFramework(process.env.BROWSER_TARGET_FRAMEWORK, info.framework);
     // 판정 신원은 능력을 담는다(해당 여부가 그 선언에서 파생한다). 사이클이 실측해 실어야
     // 요약이 지어내지 않는다 — 거절 봉투를 값으로 읽지 않는 readProvision 이 그 규칙을 든다.
     nativeChildWebview = (await readProvision(

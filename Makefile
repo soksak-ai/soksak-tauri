@@ -371,12 +371,14 @@ e2e-browser-acceptance-tauri: acceptance-headroom build-dev ## Tauri 위에서 3
 	@$(MAKE) --no-print-directory e2e-browser-acceptance-body \
 		ACCEPTANCE_EXECUTABLE="$(DEV_EXECUTABLE)" \
 		ACCEPTANCE_RESTART=restart-dev \
+		ACCEPTANCE_FRAMEWORK=tauri \
 		ACCEPTANCE_SOCKET="$(DEV_CORED_SOCKET)"
 
 e2e-browser-acceptance-electron: acceptance-headroom ## Electron 위에서 36칸 인수를 판정한다(B01~B11 + B12)
 	@$(MAKE) --no-print-directory e2e-browser-acceptance-body \
 		ACCEPTANCE_EXECUTABLE="$(ELECTRON_EXECUTABLE)" \
 		ACCEPTANCE_RESTART=restart-electron \
+		ACCEPTANCE_FRAMEWORK=electron \
 		ACCEPTANCE_SOCKET="$(DEV_CORED_SOCKET)"
 
 e2e-browser-acceptance-dev: e2e-browser-acceptance-tauri ## 기본 인수 실행(Tauri). 프레임워크를 골라 부르려면 e2e-browser-acceptance-<framework>
@@ -393,12 +395,12 @@ e2e-browser-acceptance-body: ## 한 빌드로 두 실행기를 잇고 36칸 인�
 		slot_run_id="slot-freeze-$$(node -e 'process.stdout.write(require("node:crypto").randomUUID())')"; \
 		b12_run_id="$$(node -e 'process.stdout.write(require("node:crypto").randomUUID())')"; \
 		SOKSAK_SOCKET="$(ACCEPTANCE_SOCKET)" BROWSER_EVIDENCE_BUILD_ID="$$evidence_build_id" \
-			BROWSER_EVIDENCE_RUN_ID="$$slot_run_id" \
+			BROWSER_TARGET_FRAMEWORK="$(ACCEPTANCE_FRAMEWORK)" BROWSER_EVIDENCE_RUN_ID="$$slot_run_id" \
 			node scripts/e2e/slot-freeze.mjs || run_status=1; \
 		for cycle in 1 2 3; do \
 			$(MAKE) --no-print-directory $(ACCEPTANCE_RESTART) || { run_status=1; continue; }; \
 			SOKSAK_SOCKET="$(ACCEPTANCE_SOCKET)" BROWSER_EVIDENCE_BUILD_ID="$$evidence_build_id" \
-				B12_RUN_ID="$$b12_run_id" B12_CYCLE="$$cycle" node scripts/e2e/titlebar-composition.mjs || run_status=1; \
+				BROWSER_TARGET_FRAMEWORK="$(ACCEPTANCE_FRAMEWORK)" B12_RUN_ID="$$b12_run_id" B12_CYCLE="$$cycle" node scripts/e2e/titlebar-composition.mjs || run_status=1; \
 		done; \
 		BROWSER_EVIDENCE_BUILD_ID="$$evidence_build_id" B12_RUN_ID="$$b12_run_id" \
 			node scripts/e2e/titlebar-composition-summary.mjs || run_status=1; \

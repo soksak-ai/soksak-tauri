@@ -130,6 +130,7 @@ import { b04DomLedgerProducerErrors } from "./lib/browser-gate-b04-slot-timeline
 import { BROWSER_PLUGIN_CONTRACT, resolveContractPlugins } from "./lib/browser-contract-plugins.mjs";
 import { createPresentationArmLedger } from "./lib/presentation-arm-ledger.mjs";
 import { b04SlotObservation } from "./lib/browser-gate-b04-slot-timeline.mjs";
+import { requireTargetFramework } from "./lib/framework-target.mjs";
 
 const FIXTURE_ROOT = path.join(os.homedir(), ".soksak-e2e", "slot-freeze");
 const EVIDENCE_STORE_ROOT = path.join(os.homedir(), ".soksak-e2e", "evidence", "slot-freeze");
@@ -1108,7 +1109,12 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
     const acquired = await replaceFixtureWindow(rpc, FIXTURE_ROOT);
     win = acquired.label;
     console.log(`\n[${engine}] 픽스처 창: ${win}${acquired.adopted ? " (재사용)" : " (생성)"}`);
-    frameworkName = String(must(await rpc("framework.info", {}, win), "framework.info").framework ?? "");
+    // 재려던 것과 답한 것이 같아야 그 판이 그 프레임워크의 판이다. 두 프레임워크가 한 홈의
+    // 소켓을 나누므로, 지목한 앱이 그 소켓을 안 쥐었으면 하니스는 다른 앱에 묻게 된다.
+    frameworkName = requireTargetFramework(
+      process.env.BROWSER_TARGET_FRAMEWORK,
+      must(await rpc("framework.info", {}, win), "framework.info").framework,
+    );
     if (frameworkName !== "tauri" && frameworkName !== "electron") {
       throw new Error(`검증하지 않은 framework adapter: ${frameworkName}`);
     }
