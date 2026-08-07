@@ -17,6 +17,7 @@ const IDENTITY = Object.freeze({
   platform: "darwin",
   buildId: "b09-build",
   runId: "b09-run",
+  nativeChildWebview: true,
 });
 
 const PLANE_Z = Object.freeze({

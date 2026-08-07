@@ -25,6 +25,9 @@ export function b12Identity(framework) {
     platform: "darwin",
     buildId: `b12-${framework}-build`,
     runId: `b12-${framework}-run`,
+    // 능력은 프레임워크의 사실이다 — 픽스처가 임의로 정하면 실제와 갈린다.
+    // src/framework/<name>/index.ts 의 engineProvision.nativeChildWebview 를 따른다.
+    nativeChildWebview: framework === "tauri",
   };
 }
 

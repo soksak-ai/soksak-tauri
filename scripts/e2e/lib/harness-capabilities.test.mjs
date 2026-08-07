@@ -235,7 +235,7 @@ describe("recordGateOrCapabilityAbsence", () => {
   // red 를 적거나, 아무것도 안 적어 not-run 으로 묻는다. 둘 다 재지 않은 것을 다른 것으로 말한다.
   it("closes one named cell with the capability's reason and leaves the rest measurable", () => {
     const store = liveStore("run-capability-block");
-    store.bindFramework("tauri");
+    store.bindFramework("tauri", { nativeChildWebview: true });
     const capability = absentTrace();
     const receipt = recordGateOrCapabilityAbsence(store, {
       framework: "tauri",
@@ -257,7 +257,7 @@ describe("recordGateOrCapabilityAbsence", () => {
 
   it("passes the store's gate ownership check instead of bypassing it", () => {
     const store = liveStore("run-capability-ownership");
-    store.bindFramework("tauri");
+    store.bindFramework("tauri", { nativeChildWebview: true });
     // B12 는 냉시작 실행기의 칸이다 — 능력 부재도 남의 칸을 닫지 못한다.
     expect(() => recordGateOrCapabilityAbsence(store, {
       framework: "tauri",
@@ -270,7 +270,7 @@ describe("recordGateOrCapabilityAbsence", () => {
 
   it("refuses to pass an unreadable capability off as an absence", () => {
     const store = liveStore("run-capability-unreadable");
-    store.bindFramework("tauri");
+    store.bindFramework("tauri", { nativeChildWebview: true });
     expect(() => recordGateOrCapabilityAbsence(store, {
       framework: "tauri",
       engine: "browser",

@@ -114,6 +114,7 @@ function cycleIdentity(framework) {
     runId,
     cycle,
     framework,
+    nativeChildWebview,
     platform: process.platform,
   };
 }
@@ -127,6 +128,7 @@ function machineSummary(report) {
     cycle,
     window: report.window,
     framework: report.framework,
+    nativeChildWebview: report.nativeChildWebview,
     coldStart: report.coldStart,
     verdicts: report.verdicts.map(({ engine, verdict }) => ({ engine, status: verdict.status })),
   };
@@ -220,7 +222,7 @@ async function hold(rpc, windowLabel, stage) {
  * RED 가 된다 — 그 이름은 프레임워크가 아니라 없는 능력이다. 나머지 칸은 잰 적이 없으므로
  * null 로 남는다: 안 잰 것을 0 으로 적으면 그것이 곧 가짜 성공이다.
  */
-function declaredAbsentReport(windowLabel, framework, provision) {
+function declaredAbsentReport(windowLabel, framework, provision, nativeChildWebview) {
   const directory = path.join(evidenceRoot, windowLabel);
   fs.mkdirSync(directory, { recursive: true });
   const verdicts = BROWSER_ACCEPTANCE_ENGINES.map((engine) => {
@@ -247,6 +249,7 @@ function declaredAbsentReport(windowLabel, framework, provision) {
     cycle,
     window: windowLabel,
     framework,
+    nativeChildWebview,
     coldStart: {
       generation: null,
       ownerIdentity: null,
@@ -263,7 +266,7 @@ function declaredAbsentReport(windowLabel, framework, provision) {
   return report;
 }
 
-async function inspectWindow(rpc, windowLabel, framework, provision) {
+async function inspectWindow(rpc, windowLabel, framework, provision, nativeChildWebview) {
   const directory = path.join(evidenceRoot, windowLabel);
   const machineFile = path.join(directory, "machine.json");
   fs.mkdirSync(directory, { recursive: true });
@@ -275,6 +278,7 @@ async function inspectWindow(rpc, windowLabel, framework, provision) {
     cycle,
     window: windowLabel,
     framework,
+    nativeChildWebview,
   }, null, 2)}\n`);
   let reportWritten = false;
   const tree = must(await rpc("ui.tree", {}, windowLabel), `${windowLabel} ui.tree`);
@@ -466,6 +470,7 @@ async function inspectWindow(rpc, windowLabel, framework, provision) {
       cycle,
       window: windowLabel,
       framework,
+      nativeChildWebview,
       coldStart: {
         generation: startup.generation,
         ownerIdentity: cold.owner?.identity ?? null,
@@ -497,6 +502,7 @@ async function inspectWindow(rpc, windowLabel, framework, provision) {
         cycle,
         window: windowLabel,
         framework,
+        nativeChildWebview,
         error: error instanceof Error ? error.message : String(error),
       }, null, 2)}\n`);
     }
@@ -527,6 +533,7 @@ async function main() {
   });
   let client = null;
   let framework = "unknown";
+  let nativeChildWebview;
   let labels = [];
   const reports = [];
   try {
@@ -538,11 +545,17 @@ async function main() {
     labels = [...labels].sort();
     const info = must(await rpc("framework.info", {}, control), "framework.info");
     framework = info.framework;
+    // 판정 신원은 능력을 담는다(해당 여부가 그 선언에서 파생한다). 사이클이 실측해 실어야
+    // 요약이 지어내지 않는다 — 거절 봉투를 값으로 읽지 않는 readProvision 이 그 규칙을 든다.
+    nativeChildWebview = (await readProvision(
+      (command, params) => rpc(command, params, control),
+      control,
+    )).nativeChildWebview;
     // 이름으로 가르지 않는다 — 이 프레임워크가 신호등 합성에 대해 밝힌 것을 읽는다.
     const provision = publicProvision(info.titlebarComposition);
     if (!composesTrafficLights(provision)) {
       for (const windowLabel of labels) {
-        reports.push(declaredAbsentReport(windowLabel, framework, provision));
+        reports.push(declaredAbsentReport(windowLabel, framework, provision, nativeChildWebview));
       }
       const reason = provision?.buttonPositions?.reason
         ?? "framework declared no public traffic-light position surface";
@@ -561,7 +574,7 @@ async function main() {
       return;
     }
     for (const windowLabel of labels) {
-      const report = await inspectWindow(rpc, windowLabel, framework, provision);
+      const report = await inspectWindow(rpc, windowLabel, framework, provision, nativeChildWebview);
       reports.push(report);
       console.log(`✓ ${windowLabel}: ${report.verdicts.length}/3 B12 machine GREEN`);
     }

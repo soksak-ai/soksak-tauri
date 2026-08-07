@@ -1084,8 +1084,6 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
     if (frameworkName !== "tauri" && frameworkName !== "electron") {
       throw new Error(`검증하지 않은 framework adapter: ${frameworkName}`);
     }
-    gateReportStore.bindFramework(frameworkName);
-    await gateReportStore.persist();
     // 이 창이 무엇을 할 수 있는지는 이름이 아니라 창에게 묻는다. 선언(framework.provision 의 축)과
     // 답(읽기 전용 witness 명령)이 여기서 만나고, 갈라지는 자리는 전부 이 답을 본다 —
     // 프레임워크가 하나 더 늘어도 이 아래는 그대로다.
@@ -1105,6 +1103,9 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
     const capabilities = await readHarnessCapabilities(rpc, win);
     // 선언을 안 한 답을 거절하는 자리는 readProvision 하나뿐이다 — 여기서 또 재지 않는다.
     nativeChildWebview = capabilities.provision.nativeChildWebview;
+    // 신원은 능력을 담는다 — 해당 여부가 그 선언에서 파생하므로, 능력을 읽은 뒤에 바인딩한다.
+    gateReportStore.bindFramework(frameworkName, { nativeChildWebview });
+    await gateReportStore.persist();
     console.log(`◉ ${engine} capability: ${[...capabilities.entries.values()]
       .map((verdict) => `${verdict.id}=${verdict.status}`).join(" · ")}`);
     must(await rpc("program.wait", { id: engine, timeoutMs: 20_000 }, win), `program.wait ${engine}`);

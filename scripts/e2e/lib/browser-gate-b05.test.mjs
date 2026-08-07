@@ -5,7 +5,7 @@ import { judgeB05MachineEvidence } from "./browser-gate-b05.mjs";
 import { judgeBrowserMachineGateEvidence } from "./browser-gates.mjs";
 
 const IDENTITY = Object.freeze({
-  framework: "tauri", platform: "darwin", buildId: "b05-build", runId: "b05-run",
+  framework: "tauri", platform: "darwin", buildId: "b05-build", runId: "b05-run", nativeChildWebview: true,
 });
 
 const rect = (x) => ({ x, y: 120, w: 320, h: 480 });

@@ -54,6 +54,7 @@ describe("B06 focus lighting judge", () => {
         platform: "darwin",
         buildId: "b06-build",
         runId: "b06-run",
+        nativeChildWebview: true,
         engine,
         gate: "B06",
         evidence: evidence(engine),

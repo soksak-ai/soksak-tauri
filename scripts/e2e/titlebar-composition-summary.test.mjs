@@ -42,6 +42,7 @@ function writeCycle(home, runId, cycle, { windows = ["main"], status = "green" }
     runId,
     cycle,
     framework: "tauri",
+    nativeChildWebview: true,
     platform: "darwin",
     status,
     windows,
@@ -53,6 +54,7 @@ function writeCycle(home, runId, cycle, { windows = ["main"], status = "green" }
       cycle,
       window,
       framework: "tauri",
+      nativeChildWebview: true,
       coldStart: {
         generation: Number(cycle),
         ownerIdentity: `${window}#${cycle}`,
@@ -120,6 +122,7 @@ describe("titlebar composition summary → canonical 3x12 report", () => {
     const report = persistedReport(home);
     expect(report.identity).toMatchObject({
       framework: "tauri",
+      nativeChildWebview: true,
       platform: "darwin",
       buildId: BUILD_ID,
       runId,

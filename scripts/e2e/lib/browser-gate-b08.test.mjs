@@ -105,6 +105,7 @@ describe("B08 PIN maximize/restore judge", () => {
         platform: "darwin",
         buildId: "b08-build",
         runId: "b08-run",
+        nativeChildWebview: true,
         engine,
         gate: "B08",
         evidence: evidence(engine),

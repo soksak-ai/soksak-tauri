@@ -1115,6 +1115,13 @@
       "note": "standalone과 PaneSurfaceHost 상태별 AppKit bounds 소유권 및 layer telemetry 기준을 고정한다."
     },
     {
+      "file": "lib/test-isolation.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "테스트가 고정 경로를 소유하지 않는지 센다. 두 스위트가 같은 자리를 쓰면 판정이 실행 순서에 따라 갈린다."
+    },
+    {
       "file": "lib/titlebar-cold-start-run.mjs",
       "role": "lib",
       "class": "A",

@@ -98,6 +98,7 @@ describe("B07 PIN relation and layout invariance judge", () => {
         platform: "darwin",
         buildId: "b07-build",
         runId: "b07-run",
+        nativeChildWebview: true,
         engine,
         gate: "B07",
         evidence: evidence(engine),

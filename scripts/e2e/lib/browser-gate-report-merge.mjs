@@ -85,7 +85,8 @@ function requireSharedArtifact(contributions) {
   const [first] = contributions;
   const runIds = [];
   for (const { report } of contributions) {
-    for (const field of ["framework", "platform", "buildId"]) {
+    // 어느 축이 공유되어야 하는지도 신원에서 파생한다 — runId 만 기여마다 다르다.
+    for (const field of Object.keys(first.report.identity).filter((key) => key !== "runId")) {
       if (report.identity[field] !== first.report.identity[field]) {
         throw new TypeError(
           `browser gate contributions disagree on ${field}: `
@@ -101,12 +102,9 @@ function requireSharedArtifact(contributions) {
   if (runId.length > RUN_ID_MAX) {
     throw new TypeError(`merged runId exceeds ${RUN_ID_MAX} characters: ${runId.length}`);
   }
-  return {
-    framework: first.report.identity.framework,
-    platform: first.report.identity.platform,
-    buildId: first.report.identity.buildId,
-    runId,
-  };
+  // 신원 축을 손으로 나열하면 축이 하나 늘 때마다 이 자리가 빠진다. 기여의 신원을 그대로 들고
+  // 병합이 실제로 바꾸는 것(runId)만 새로 짓는다.
+  return { ...first.report.identity, runId };
 }
 
 /** 소유하지 않은 칸에 무엇을 적었는지 이름으로 되돌려 준다. 조용히 버리면 그 칸의 사실이 사라진다. */

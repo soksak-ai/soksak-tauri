@@ -21,6 +21,7 @@ const REPORT = serializeBrowserGateReport(createBrowserGateReport({
   platform: "darwin",
   buildId: "build-visual",
   runId: "run-visual",
+  nativeChildWebview: true,
 }));
 
 const present = () => true;
@@ -33,6 +34,7 @@ describe("사람의 시각 검토는 명시된 자리에서만 기록된다", ()
       platform: "darwin",
       buildId: "build-visual",
       runId: "run-visual",
+      nativeChildWebview: true,
     });
     expect(serializeBrowserGateReport(report)).toBe(REPORT);
   });

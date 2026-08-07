@@ -9,12 +9,14 @@ import {
   mergeBrowserGateReports,
 } from "./browser-gate-report-merge.mjs";
 import { BROWSER_ACCEPTANCE_ENGINES } from "./browser-gate-identity.mjs";
+import os from "node:os";
+import path from "node:path";
 
 const SLOT_FREEZE_GATES = Object.freeze([
   "B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B09", "B10", "B11",
 ]);
 const TITLEBAR_GATES = Object.freeze(["B12"]);
-const UNUSED_ROOT = "/tmp/soksak-browser-gate-merge-unused";
+const UNUSED_ROOT = path.join(os.tmpdir(), `soksak-browser-gate-merge-unused-${process.pid}`);
 
 /** B01 봉투를 일부러 깨서 red 영수증을 만든다. 병합이 영수증을 다시 발급해도
  * 판정 수치가 그대로인지 확인하는 데 쓴다. */
@@ -30,7 +32,7 @@ function boundStore({ gates, buildId = "build-1", runId, platform = "darwin" }) 
     platform,
     gates,
   });
-  store.bindFramework("tauri");
+  store.bindFramework("tauri", { nativeChildWebview: true });
   return store;
 }
 
@@ -98,9 +100,10 @@ describe("browser gate report ownership", () => {
       root: UNUSED_ROOT,
       buildId: "build-1",
       runId: "run-undeclared",
+      nativeChildWebview: true,
       platform: "darwin",
     });
-    store.bindFramework("tauri");
+    store.bindFramework("tauri", { nativeChildWebview: true });
     expect(() => store.contribution()).toThrow(/declare/i);
   });
 });

@@ -61,7 +61,13 @@ async function recordCanonicalReport() {
   });
   const anchors = coldStartAnchors();
   try {
-    recordB12ColdStartCells(store, { framework, verdict, anchors });
+    recordB12ColdStartCells(store, {
+      framework,
+      // 능력은 사이클이 실측해 실은 사실이다 — 여기서 지어내지 않는다.
+      provision: { nativeChildWebview: cycles[0]?.nativeChildWebview },
+      verdict,
+      anchors,
+    });
   } catch (error) {
     return { status: "unwritable", reason: error instanceof Error ? error.message : String(error) };
   }

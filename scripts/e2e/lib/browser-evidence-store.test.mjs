@@ -307,19 +307,21 @@ describe("canonical browser gate report store", () => {
 
   it("binds the first live framework and rejects a different framework identity", () => {
     const store = createBrowserGateReportStore({
-      root: "/tmp/soksak-browser-gate-report-contract",
+      root: path.join(os.tmpdir(), `soksak-browser-gate-report-contract-${process.pid}`),
       buildId: "build-1",
       runId: "run-1",
+      nativeChildWebview: true,
       platform: "darwin",
     });
     expect(store.hasReport()).toBe(false);
-    expect(store.bindFramework("tauri").identity).toEqual({
+    expect(store.bindFramework("tauri", { nativeChildWebview: true }).identity).toEqual({
       framework: "tauri",
       platform: "darwin",
       buildId: "build-1",
       runId: "run-1",
+      nativeChildWebview: true,
     });
-    expect(() => store.bindFramework("electron")).toThrow(/identity mismatch/);
+    expect(() => store.bindFramework("electron", { nativeChildWebview: false })).toThrow(/identity mismatch/);
   });
 
   it("writes the full 3x12 report and preserves every unproduced cell as not-run", async () => {
@@ -329,9 +331,10 @@ describe("canonical browser gate report store", () => {
         root,
         buildId: "build-partial",
         runId: "run-partial",
+        nativeChildWebview: true,
         platform: "darwin",
       });
-      store.bindFramework("tauri");
+      store.bindFramework("tauri", { nativeChildWebview: true });
       store.recordMachineEvidence({
         framework: "tauri",
         engine: "browser",
@@ -382,9 +385,10 @@ describe("canonical browser gate report store", () => {
         root,
         buildId: "build-review",
         runId: "run-review",
+        nativeChildWebview: true,
         platform: "darwin",
       });
-      store.bindFramework("tauri");
+      store.bindFramework("tauri", { nativeChildWebview: true });
       expect(store.report().engines.browser.B04.visualReview.status).toBe("pending");
 
       // 사람은 실재하는 캡처만 봤다고 적을 수 있다. 없는 파일을 적으면 기록되지 않는다.
@@ -442,9 +446,10 @@ describe("canonical browser gate report store", () => {
         root,
         buildId: "build-blocked",
         runId: "run-blocked",
+        nativeChildWebview: true,
         platform: "darwin",
       });
-      store.bindFramework("tauri");
+      store.bindFramework("tauri", { nativeChildWebview: true });
       store.recordMachineEvidence({
         framework: "tauri",
         engine: "browser",
@@ -473,9 +478,10 @@ describe("canonical browser gate report store", () => {
 
   it("refuses to block before a live framework identity exists", () => {
     const store = createBrowserGateReportStore({
-      root: "/tmp/soksak-browser-gate-report-block",
+      root: path.join(os.tmpdir(), `soksak-browser-gate-report-block-${process.pid}`),
       buildId: "build-1",
       runId: "run-1",
+      nativeChildWebview: true,
       platform: "darwin",
     });
     expect(() => store.blockPending({ engine: "browser", reason: "mount lost" }))

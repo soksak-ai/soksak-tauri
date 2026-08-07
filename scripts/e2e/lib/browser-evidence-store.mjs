@@ -301,15 +301,21 @@ export function createBrowserGateReportStore({
     return currentReport;
   };
 
-  const bindFramework = (framework) => {
+  // 프레임워크와 함께 그 프레임워크가 **선언한 능력**을 받는다. 해당 여부가 능력에서 파생하므로
+  // 신원이 그것을 들어야 하고, 라이브에서 답한 값만이 그 사실이다.
+  let boundProvision = null;
+  const bindFramework = (framework, provision) => {
+    const nativeChildWebview = provision?.nativeChildWebview ?? boundProvision?.nativeChildWebview;
     const candidate = createBrowserGateReport({
       framework,
       platform,
       buildId: artifactBuildId,
       runId,
+      nativeChildWebview,
     });
     if (!currentReport) {
       currentReport = candidate;
+      boundProvision = { nativeChildWebview };
     } else if (!sameIdentity(currentReport.identity, candidate.identity)) {
       throw new Error(
         `browser gate report identity mismatch: expected=${JSON.stringify(currentReport.identity)} actual=${JSON.stringify(candidate.identity)}`,

@@ -10,6 +10,7 @@ const IDENTITY = Object.freeze({
   platform: "darwin",
   buildId: "b10-build",
   runId: "b10-run",
+  nativeChildWebview: true,
 });
 
 const SCALE_FACTOR = 1.25;

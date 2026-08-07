@@ -99,8 +99,8 @@ function inspectMachine(machine, cycle, identity, failures) {
     return;
   }
   const expectedKeys = [
-    "buildId", "coldStart", "cycle", "framework", "runId", "schemaVersion", "status", "verdicts",
-    "window",
+    "buildId", "coldStart", "cycle", "framework", "nativeChildWebview", "runId", "schemaVersion",
+    "status", "verdicts", "window",
   ];
   if (!sameList(Object.keys(machine).sort(), expectedKeys)) {
     failures.push(`cycle ${cycle.cycle}/${String(machine.window)}: machine schema mismatch`);
@@ -146,7 +146,8 @@ function inspectCycleIdentity(cycle, value, failures) {
   }
   const terminal = new Set(["red", "blocked", "not-applicable"]).has(cycle.status);
   const expectedKeys = [
-    "buildId", "cycle", "framework", "machines", "platform", "runId", "schemaVersion", "status", "windows",
+    "buildId", "cycle", "framework", "machines", "nativeChildWebview", "platform", "runId",
+    "schemaVersion", "status", "windows",
     ...(terminal ? ["reason"] : []),
   ].sort();
   if (!sameList(Object.keys(cycle).sort(), expectedKeys)) {
@@ -314,11 +315,13 @@ export function b12ColdStartCells({ verdict, anchors } = {}) {
  * 프레임워크를 먼저 묶는 것도 이 함수의 일이다. not-applicable 인 실행은 칸을 하나도 만들지
  * 않으므로(b12ColdStartCells), 묶지 않으면 그 실행의 보고서는 신원조차 없이 남는다.
  */
-export function recordB12ColdStartCells(store, { framework, verdict, anchors } = {}) {
+export function recordB12ColdStartCells(store, { framework, provision, verdict, anchors } = {}) {
   if (!store || typeof store.bindFramework !== "function") {
     throw new TypeError("B12 cold-start cells need a browser gate report store");
   }
-  store.bindFramework(framework);
+  // 신원은 그 실행이 무엇을 잰 것인지 말한다 — 능력도 그 사실이다. B12 자체는 이 축과 무관하지만
+  // (두 프레임워크가 각자 자기 방식으로 증명한다) 같은 판에 실리는 다른 칸들이 이 축으로 갈린다.
+  store.bindFramework(framework, provision);
   for (const cell of b12ColdStartCells({ verdict, anchors })) {
     if (cell.kind === "evidence") {
       store.recordMachineEvidence({

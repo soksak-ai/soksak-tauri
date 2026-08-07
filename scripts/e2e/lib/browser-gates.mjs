@@ -116,6 +116,9 @@ export const BROWSER_ACCEPTANCE_GATES = deepFreeze([
     id: "B09",
     name: "chrome-over-native-layering",
     contract: "rail의 + 버튼, 우측 sidebar, modal은 native browser surface 위에 합성된다.",
+    // 이 칸은 네이티브 자식 표면이 있어야 성립한다. 없는 프레임워크에는 그 사실 자체가 없다 —
+    // red 로 칠하면 달성 불가능한 기준이 되고, green 으로 세면 재지 않은 칸이 통과로 잡힌다.
+    requires: Object.freeze({ nativeChildWebview: true }),
   },
   {
     id: "B10",
@@ -151,8 +154,39 @@ function deepFreeze(value) {
 
 const B12_NOT_APPLICABLE_REASON = "B12 applies only to macOS traffic lights";
 
+/**
+ * 이 판정 대상에 이 칸이 해당하는가.
+ *
+ * 프레임워크 이름으로 가르지 않는다 — 이름으로 가르면 프레임워크가 하나 늘 때마다 갈래가 늘고
+ * 새 이름은 자기 자리를 못 찾는다. 칸이 자기 요구를 선언하고(requires), 대상이 선언한 능력과
+ * 만나게 한다. 그 능력은 앱이 framework.provision 으로 답한다.
+ *
+ * 능력을 선언하지 않은 대상에게는 답하지 않는다 — 선언을 못 읽은 것을 "능력 없음" 으로 읽으면
+ * 재야 할 칸이 조용히 사라진다.
+ */
+export function gateAppliesTo(target, gate) {
+  if (gate === "B12" && target?.platform !== "darwin") return false;
+  const required = BROWSER_ACCEPTANCE_GATES.find(({ id }) => id === gate)?.requires;
+  if (!required) return true;
+  for (const [axis, need] of Object.entries(required)) {
+    const declared = target?.[axis];
+    if (typeof declared !== "boolean") {
+      throw new TypeError(`${gate} 의 해당 여부를 답하려면 ${axis} 선언이 필요하다: ${displayValue(declared)}`);
+    }
+    if (declared !== need) return false;
+  }
+  return true;
+}
+
 function gateIsApplicable(identity, gate) {
-  return gate !== "B12" || identity.platform === "darwin";
+  return gateAppliesTo(identity, gate);
+}
+
+function notApplicableReason(identity, gate) {
+  if (gate === "B12" && identity.platform !== "darwin") return B12_NOT_APPLICABLE_REASON;
+  const required = BROWSER_ACCEPTANCE_GATES.find(({ id }) => id === gate)?.requires ?? {};
+  const unmet = Object.keys(required).filter((axis) => identity[axis] !== required[axis]);
+  return `${gate} requires ${unmet.join(", ")}=${unmet.map((axis) => required[axis]).join(", ")}`;
 }
 
 function initialCell(identity, gate) {
@@ -161,13 +195,13 @@ function initialCell(identity, gate) {
       machine: {
         status: "not-applicable",
         evidence: [],
-        reason: B12_NOT_APPLICABLE_REASON,
+        reason: notApplicableReason(identity, gate),
         judgeReceipt: null,
       },
       visualReview: {
         status: "not-applicable",
         artifacts: [],
-        notes: B12_NOT_APPLICABLE_REASON,
+        notes: notApplicableReason(identity, gate),
       },
     };
   }
@@ -187,8 +221,15 @@ function requireIdentityText(value, field) {
 function normalizeReportIdentity(value) {
   if (!isRecord(value)) throw new TypeError("browser gate report identity is required");
   const keys = Object.keys(value).sort();
-  if (keys.join(",") !== "buildId,framework,platform,runId") {
-    throw new TypeError("browser gate report identity must contain exactly framework, platform, buildId, runId");
+  if (keys.join(",") !== "buildId,framework,nativeChildWebview,platform,runId") {
+    throw new TypeError(
+      "browser gate report identity must contain exactly framework, platform, buildId, runId, nativeChildWebview",
+    );
+  }
+  // 해당 여부가 능력에서 파생하므로 신원이 그 능력을 든다. 판정하는 자리마다 능력을 다시 물으면
+  // 그 물음이 갈리고, 같은 칸이 자리마다 다른 답을 받는다.
+  if (typeof value.nativeChildWebview !== "boolean") {
+    throw new TypeError(`identity.nativeChildWebview must be declared: ${displayValue(value.nativeChildWebview)}`);
   }
   if (!frameworkSet.has(value.framework)) {
     throw new TypeError(`unknown browser framework: ${value.framework}`);
@@ -201,6 +242,7 @@ function normalizeReportIdentity(value) {
     platform: value.platform,
     buildId: requireIdentityText(value.buildId, "buildId"),
     runId: requireIdentityText(value.runId, "runId"),
+    nativeChildWebview: value.nativeChildWebview,
   };
 }
 
@@ -956,16 +998,20 @@ function judgeMachineEvidence(entry, gate, engine, evidence, identity) {
 
 export function judgeBrowserMachineGateEvidence(request) {
   if (!isRecord(request)) throw new TypeError("machine judge request must be a record");
-  const allowedKeys = new Set(["framework", "platform", "buildId", "runId", "engine", "gate", "evidence"]);
+  // 신원이 능력을 담으므로 판사 요청도 대칭이다 — 판사가 신원을 다시 조립하면 그 조립이 갈린다.
+  const allowedKeys = new Set([
+    "framework", "platform", "buildId", "runId", "nativeChildWebview", "engine", "gate", "evidence",
+  ]);
   if (Object.keys(request).some((key) => !allowedKeys.has(key))) {
-    throw new TypeError("machine judge request accepts only framework, platform, buildId, runId, engine, gate, evidence");
+    throw new TypeError(
+      "machine judge request accepts only framework, platform, buildId, runId, nativeChildWebview, engine, gate, evidence",
+    );
   }
-  const identity = normalizeReportIdentity({
-    framework: request.framework,
-    platform: request.platform,
-    buildId: request.buildId,
-    runId: request.runId,
-  });
+  // 필드를 손으로 나열하면 축이 하나 늘 때마다 여기가 빠진다 — 실측: nativeChildWebview 를
+  // 신원에 세운 날 이 자리만 안 따라와 모든 판정이 "신원에 그 필드가 없다" 로 죽었다.
+  // 요청에서 신원 축만 덜어낸다(무엇이 신원인지는 normalizeReportIdentity 가 판정한다).
+  const { engine: _engine, gate: _gate, evidence: _evidence, ...identityFields } = request;
+  const identity = normalizeReportIdentity(identityFields);
   requireEngine(request.engine);
   requireGate(request.gate);
   const entry = machineEvidenceJudges.get(request.gate);
@@ -994,31 +1040,34 @@ export function judgeBrowserMachineGateEvidence(request) {
   return receipt;
 }
 
+/**
+ * 영수증의 키 한 벌 — 만드는 자리(judgeBrowserMachineGateEvidence)의 모양에서 파생한다.
+ * 손으로 나열하면 축이 늘 때마다 목록이 빠지고, 빠진 목록은 오류 없이 옛 영수증을 통과시킨다.
+ */
+const JUDGE_RECEIPT_KEYS = Object.keys(judgeBrowserMachineGateEvidence({
+  framework: BROWSER_ACCEPTANCE_FRAMEWORKS[0],
+  platform: BROWSER_ACCEPTANCE_PLATFORMS[0],
+  buildId: "schema-probe",
+  runId: "schema-probe",
+  nativeChildWebview: true,
+  engine: BROWSER_ACCEPTANCE_ENGINES[0],
+  gate: BROWSER_ACCEPTANCE_GATES[0].id,
+  evidence: null,
+})).sort().join(",");
+
 function requireMatchingJudgeReceipt(receipt, report, engine, gate) {
   if (!isRecord(receipt)) throw new TypeError("green requires a judgeReceipt record");
+  // 키를 손으로 나열하면 축이 하나 늘 때마다 이 목록이 빠진다. 영수증을 만드는 자리에서
+  // 파생시킨다 — 만드는 쪽과 검사하는 쪽이 같은 한 벌을 본다.
   const receiptKeys = Object.keys(receipt).sort().join(",");
-  if (receiptKeys !== [
-    "buildId",
-    "engine",
-    "evidence",
-    "framework",
-    "gate",
-    "judgeId",
-    "kind",
-    "machineEvidence",
-    "platform",
-    "reason",
-    "runId",
-    "schemaVersion",
-    "status",
-  ].sort().join(",")) {
-    throw new TypeError("judgeReceipt has an invalid schema");
+  if (receiptKeys !== JUDGE_RECEIPT_KEYS) {
+    throw new TypeError(`judgeReceipt has an invalid schema: ${receiptKeys}`);
   }
   if (receipt.schemaVersion !== JUDGE_RECEIPT_SCHEMA_VERSION
       || receipt.kind !== "browser-machine-judge-receipt") {
     throw new TypeError("judgeReceipt has an invalid schema");
   }
-  for (const field of ["framework", "platform", "buildId", "runId"]) {
+  for (const field of ["framework", "platform", "buildId", "runId", "nativeChildWebview"]) {
     if (receipt[field] !== report.identity[field]) {
       throw new TypeError(`judgeReceipt ${field} does not match report identity`);
     }
@@ -1077,7 +1126,7 @@ function requireReport(report) {
       if (!applicable) {
         if (cell.machine.status !== "not-applicable"
             || cell.machine.evidence.length !== 0
-            || cell.machine.reason !== B12_NOT_APPLICABLE_REASON
+            || cell.machine.reason !== notApplicableReason(identity, id)
             || receipt !== null) {
           throw new TypeError(`${engine}/${id}.machine must preserve static not-applicable status`);
         }
@@ -1123,7 +1172,7 @@ function requireReport(report) {
       if (!applicable) {
         if (cell.visualReview.status !== "not-applicable"
             || cell.visualReview.artifacts.length !== 0
-            || cell.visualReview.notes !== B12_NOT_APPLICABLE_REASON) {
+            || cell.visualReview.notes !== notApplicableReason(identity, id)) {
           throw new TypeError(`${engine}/${id}.visualReview must preserve static not-applicable status`);
         }
       } else if (cell.visualReview.status === "not-applicable") {
@@ -1192,20 +1241,12 @@ export function setMachineGateStatus(report, update) {
     // 방금 낸 영수증이 자기 증거와 안 맞으면 그건 프로그래밍 결함이다 — 저장하지 않는다.
     if (matched.mismatch) throw new TypeError("judgeReceipt verdict does not match machine evidence");
     const receipt = matched.receipt;
+    // 필드를 다시 열거하면 축이 하나 늘 때마다 이 자리가 빠지고, 빠진 영수증은 자기 스키마
+    // 검사에서 걸린다. 영수증을 그대로 들고 사본이 필요한 두 자리만 새로 짓는다.
     const storedReceipt = {
-      schemaVersion: receipt.schemaVersion,
-      kind: receipt.kind,
-      judgeId: receipt.judgeId,
-      framework: receipt.framework,
-      platform: receipt.platform,
-      buildId: receipt.buildId,
-      runId: receipt.runId,
-      engine: receipt.engine,
-      gate: receipt.gate,
+      ...receipt,
       machineEvidence: copyMachineEvidence(receipt.machineEvidence),
-      status: receipt.status,
       evidence: [...receipt.evidence],
-      reason: receipt.reason,
     };
     return replaceCell(report, engine, gate, (cell) => ({
       ...cell,

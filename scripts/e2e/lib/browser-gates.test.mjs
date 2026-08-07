@@ -27,6 +27,7 @@ const TAURI_RUN = Object.freeze({
   platform: "darwin",
   buildId: "tauri-dev-build-a1",
   runId: "browser-gates-tauri-run-1",
+  nativeChildWebview: true,
 });
 
 const ELECTRON_RUN = Object.freeze({
@@ -34,6 +35,7 @@ const ELECTRON_RUN = Object.freeze({
   platform: "darwin",
   buildId: "electron-dev-build-b1",
   runId: "browser-gates-electron-run-1",
+  nativeChildWebview: false,
 });
 
 const LINUX_RUN = Object.freeze({
@@ -41,6 +43,7 @@ const LINUX_RUN = Object.freeze({
   platform: "linux",
   buildId: "tauri-linux-build-c1",
   runId: "browser-gates-linux-run-1",
+  nativeChildWebview: true,
 });
 
 function createReport(identity = TAURI_RUN) {
@@ -811,7 +814,9 @@ describe("브라우저 12-gate 정본", () => {
     expect(() => setMachineGateStatus(report, {
       engine: "browser", gate: "B01", judgeReceipt: tampered,
     })).toThrow(/verdict/);
-    expect(() => setMachineGateStatus(createReport(ELECTRON_RUN), {
+    // 프레임워크가 다르면 능력도 다르다 — 두 축이 함께 움직이므로 이름만 바꾼 신원은 이 판에
+    // 실을 수 없다(그 신원의 실행은 B09 를 아예 재지 않는다). 축 하나만 다른 경우를 각각 잰다.
+    expect(() => setMachineGateStatus(createReport({ ...TAURI_RUN, framework: "electron" }), {
       engine: "browser", gate: "B01", judgeReceipt: valid,
     })).toThrow(/framework/);
     expect(() => setMachineGateStatus(createReport({ ...TAURI_RUN, buildId: "tauri-dev-build-a2" }), {
@@ -823,6 +828,16 @@ describe("브라우저 12-gate 정본", () => {
     expect(() => setMachineGateStatus(createReport({ ...TAURI_RUN, platform: "linux" }), {
       engine: "browser", gate: "B01", judgeReceipt: valid,
     })).toThrow(/platform/);
+    // 능력도 신원 축이다 — 다른 능력의 실행이 낸 영수증은 이 판에 실을 수 없다.
+    expect(() => setMachineGateStatus(createReport({ ...TAURI_RUN, nativeChildWebview: false }), {
+      engine: "browser", gate: "B01", judgeReceipt: valid,
+    })).toThrow(/nativeChildWebview/);
+    // 그리고 그 신원의 판은 애초에 다른 칸을 잰다 — 네이티브 자식 표면이 없으면 B09 는
+    // 재는 칸이 아니라 해당하지 않는 칸이다. 능력이 판을 실제로 가른다는 증거다.
+    const withoutNativeChild = createReport({ ...TAURI_RUN, nativeChildWebview: false });
+    expect(withoutNativeChild.engines.browser.B09.machine.status).toBe("not-applicable");
+    expect(withoutNativeChild.engines.browser.B09.machine.reason).toContain("nativeChildWebview");
+    expect(withoutNativeChild.engines.browser.B01.machine.status).toBe("not-run");
     expect(() => setMachineGateStatus(report, {
       engine: "browser-chromium", gate: "B01", judgeReceipt: valid,
     })).toThrow(/engine/);

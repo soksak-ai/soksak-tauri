@@ -19,13 +19,15 @@ import {
   browserGatesOwnedBy,
   mergeBrowserGateReports,
 } from "./browser-gate-report-merge.mjs";
+import path from "node:path";
+import os from "node:os";
 import {
   judgeTitlebarColdStartRun,
   recordB12ColdStartCells,
 } from "./titlebar-cold-start-run.mjs";
 
 // 이 스위트는 파일을 쓰지 않는다. 저장소 root 는 신원에만 쓰이고 persist 는 부르지 않는다.
-const UNUSED_ROOT = "/tmp/soksak-titlebar-gate-contribution-unused";
+const UNUSED_ROOT = path.join(os.tmpdir(), `soksak-titlebar-gate-contribution-unused-${process.pid}`);
 const BUILD_ID = "d".repeat(64);
 const B12_RUN_ID = "b12-cold-run";
 const SLOT_RUN_ID = "slot-live-run";
@@ -57,8 +59,10 @@ function greenCycle(cycle) {
     status: "green",
     buildId: BUILD_ID,
     runId: B12_RUN_ID,
+    nativeChildWebview: true,
     cycle: String(cycle),
     framework: FRAMEWORK,
+    nativeChildWebview: true,
     platform: "darwin",
     windows: [WINDOW],
     machines: [{
@@ -66,6 +70,7 @@ function greenCycle(cycle) {
       status: "green",
       buildId: BUILD_ID,
       runId: B12_RUN_ID,
+      nativeChildWebview: true,
       cycle: String(cycle),
       window: WINDOW,
       framework: FRAMEWORK,
@@ -80,6 +85,7 @@ function store(runId, gates) {
     root: UNUSED_ROOT,
     buildId: BUILD_ID,
     runId,
+    nativeChildWebview: true,
     platform: "darwin",
     gates,
   });
@@ -93,14 +99,19 @@ function contributionOf(gateStore, gates) {
 function titlebarContribution({ cycles, anchors }) {
   const verdict = judgeTitlebarColdStartRun({ buildId: BUILD_ID, runId: B12_RUN_ID, cycles });
   const gateStore = store(B12_RUN_ID, TITLEBAR_GATES);
-  recordB12ColdStartCells(gateStore, { framework: FRAMEWORK, verdict, anchors });
+  recordB12ColdStartCells(gateStore, {
+    framework: FRAMEWORK,
+    provision: { nativeChildWebview: true },
+    verdict,
+    anchors,
+  });
   return { verdict, contribution: contributionOf(gateStore, TITLEBAR_GATES) };
 }
 
 /** 살아 있는 앱 한 번이 소유한 11칸. 값이 무엇인지는 이 스위트의 축이 아니므로 이름만 단다. */
 function slotFreezeContribution() {
   const gateStore = store(SLOT_RUN_ID, SLOT_GATES);
-  gateStore.bindFramework(FRAMEWORK);
+  gateStore.bindFramework(FRAMEWORK, { nativeChildWebview: true });
   for (const engine of BROWSER_ACCEPTANCE_ENGINES) {
     for (const gate of SLOT_GATES) {
       gateStore.recordMachineStatus({

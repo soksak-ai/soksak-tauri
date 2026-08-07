@@ -3,6 +3,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+  gateAppliesTo,
   BROWSER_ACCEPTANCE_ENGINES,
   BROWSER_ACCEPTANCE_FRAMEWORKS,
   BROWSER_ACCEPTANCE_GATES,
@@ -23,6 +24,7 @@ const IDENTITY = Object.freeze({
   platform: "darwin",
   buildId: "build-id-fixture",
   runId: "run-id-fixture",
+  nativeChildWebview: true,
 });
 
 const ENGINES = ["browser", "browser-chromium", "browser-chromium-offscreen"];
@@ -272,5 +274,78 @@ describe("runEngineCoverage", () => {
     expect(outcome.failures).toHaveLength(1);
     expect(String(outcome.failures[0].error.message)).toContain("mount lost");
     expect(String(outcome.failures[0].error.message)).toContain("report frozen");
+  });
+});
+
+
+// 규칙 — 해당 여부는 선언된 능력에서 파생한다. 프레임워크 이름으로 가르지 않는다.
+//
+// 인수는 프레임워크마다 36칸을 요구하지만, 모든 칸이 모든 프레임워크에 해당하지는 않는다.
+// B09 는 "rail 의 + 버튼, 우측 sidebar, modal 은 **native browser surface 위에** 합성된다" 를
+// 요구한다 — 네이티브 자식 표면이 없는 프레임워크(engineProvision.nativeChildWebview=false)에는
+// 그 사실 자체가 없다. 없는 사실을 red 로 칠하면 달성 불가능한 기준이 되고, green 으로 세면
+// 재지 않은 칸이 통과로 잡힌다. 둘 다 틀렸다 — not-applicable 이 답이다.
+//
+// 이름으로 가르면 프레임워크가 하나 늘 때마다 갈래가 늘고 새 이름은 자기 자리를 못 찾는다.
+// 그래서 선언된 능력으로 가른다. 그 능력은 앱이 framework.provision 으로 답한다.
+describe("게이트 해당 여부", () => {
+  it("네이티브 자식 표면을 요구하는 칸은 그 능력이 없으면 해당하지 않는다", () => {
+    expect(gateAppliesTo({ platform: "darwin", nativeChildWebview: false }, "B09")).toBe(false);
+    expect(gateAppliesTo({ platform: "darwin", nativeChildWebview: true }, "B09")).toBe(true);
+  });
+
+  it("그 능력과 무관한 칸은 두 프레임워크 모두에 해당한다", () => {
+    for (const gate of ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B10", "B11"]) {
+      expect(gateAppliesTo({ platform: "darwin", nativeChildWebview: false }, gate)).toBe(true);
+      expect(gateAppliesTo({ platform: "darwin", nativeChildWebview: true }, gate)).toBe(true);
+    }
+  });
+
+  it("B12 는 플랫폼 축을 그대로 지킨다 — 두 프레임워크 모두 자기 방식으로 증명한다", () => {
+    expect(gateAppliesTo({ platform: "darwin", nativeChildWebview: false }, "B12")).toBe(true);
+    expect(gateAppliesTo({ platform: "linux", nativeChildWebview: true }, "B12")).toBe(false);
+  });
+
+  // 선언을 못 읽은 것을 "능력 없음" 으로 읽으면 재야 할 칸이 조용히 사라진다.
+  it("능력을 선언하지 않았으면 해당 여부를 답하지 않는다", () => {
+    expect(() => gateAppliesTo({ platform: "darwin" }, "B09")).toThrow(/nativeChildWebview/);
+  });
+});
+
+// 규칙 — 판정 대상은 자기 능력을 신원에 담는다.
+//
+// 해당 여부가 능력에서 파생하는데 신원이 그 능력을 안 담으면, 판정하는 자리마다 능력을 다시
+// 물어야 하고 그 물음이 갈리면 같은 칸이 자리마다 다른 답을 받는다. 신원은 buildId·runId 처럼
+// 그 실행이 무엇을 잰 것인지 말하는 자리다 — 능력도 그 사실이다.
+describe("보고서 신원이 능력을 담는다", () => {
+  it("네이티브 자식 표면이 없는 실행에서 B09 는 not-applicable 이다", () => {
+    const report = createBrowserGateReport({
+      framework: "electron",
+      platform: "darwin",
+      buildId: "b",
+      runId: "r",
+      nativeChildWebview: false,
+    });
+    expect(report.engines.browser.B09.machine.status).toBe("not-applicable");
+    expect(report.engines.browser.B09.machine.reason).toContain("nativeChildWebview");
+    // 그 능력과 무관한 칸은 그대로 재야 한다.
+    expect(report.engines.browser.B04.machine.status).toBe("not-run");
+  });
+
+  it("네이티브 자식 표면이 있는 실행에서 B09 는 재야 할 칸이다", () => {
+    const report = createBrowserGateReport({
+      framework: "tauri",
+      platform: "darwin",
+      buildId: "b",
+      runId: "r",
+      nativeChildWebview: true,
+    });
+    expect(report.engines.browser.B09.machine.status).toBe("not-run");
+  });
+
+  it("능력을 선언하지 않은 신원은 보고서를 열지 못한다", () => {
+    expect(() => createBrowserGateReport({
+      framework: "tauri", platform: "darwin", buildId: "b", runId: "r",
+    })).toThrow(/nativeChildWebview/);
   });
 });
