@@ -96,6 +96,9 @@ type MultiDomTraceSession = {
   animationEndHandler: ((event: AnimationEvent) => void) | null;
   settlementObserver: MutationObserver | null;
   intervalProducer: ReturnType<typeof setInterval> | null;
+  /** 이 거래에서 켠 관측자. 관측 장치가 관측 대상을 밀어냈는지 두 실행을 대조해 가르려면
+   *  무엇을 켰는지가 영수증에 남아야 한다. 기본은 전부 켬 — 이 축은 대조를 가능하게 할 뿐이다. */
+  intervalEnabled: boolean;
   unsubscribe: () => void;
   expiryTimer: ReturnType<typeof setTimeout> | null;
   evictionTimer: ReturnType<typeof setTimeout> | null;
@@ -239,7 +242,9 @@ function startMultiDomPresentationFrames(
   // 표본이 339ms 끊긴 뒤 같은 세션의 event 관측자는 계속 살아 있었다. interval은 tick 하나의
   // 실패가 다음 tick을 앗아가지 않으며 종료는 finishMultiDomTrace 한 자리가 소유한다.
   if (session.intervalProducer !== null) clearInterval(session.intervalProducer);
-  session.intervalProducer = setInterval(() => {
+  // 조건은 tick 안이 아니라 설치 자리에 선다 — tick 안에 두면 타이머는 계속 돌고 그 자체가
+  // 재려는 것을 흔든다.
+  if (session.intervalEnabled) session.intervalProducer = setInterval(() => {
     if (session.endedAtUnixMs !== null || session.presentationTransactionId !== transactionId) return;
     if (multiDomTraceNow(session) >= session.expiresAtUnixMs) return;
     appendMultiDomTraceSample(
@@ -1490,9 +1495,17 @@ export function registerDomCatalog(): void {
         type: "number",
         description: `Bounded subscription lifetime in ms (default 5000, max ${MULTI_DOM_TRACE_MAX_MS})`,
       },
+      producers: {
+        type: "json",
+        description:
+          "Which display-column observers to install: { interval?: boolean } (default all on)."
+          + " Turning the 8ms recorder off costs samples but stops its forced layout reads —"
+          + " use it to tell whether the instrument displaced the frames it was measuring.",
+      },
     },
     returns:
-      "{ traceId, addresses, startedAtUnixMs, expiresAtUnixMs } — the subscription is installed before this ACK",
+      "{ traceId, addresses, startedAtUnixMs, expiresAtUnixMs, producersEnabled } —"
+      + " the subscription is installed before this ACK",
     message: () => tmsg("msg.ui.trace", { n: "1" }),
     errors: ["NOT_EXPOSED", "AMBIGUOUS", "INVALID_PARAMS"],
     handler: (p) => {
@@ -1527,6 +1540,10 @@ export function registerDomCatalog(): void {
         Math.max(typeof p.maxMs === "number" ? p.maxMs : 5_000, 50),
         MULTI_DOM_TRACE_MAX_MS,
       );
+      const requested = p.producers as { interval?: unknown } | undefined;
+      const producersParam = {
+        interval: typeof requested?.interval === "boolean" ? requested.interval : true,
+      };
       const t0 = performance.now();
       const unixFromPerformance = Number.isFinite(performance.timeOrigin)
         ? performance.timeOrigin
@@ -1549,6 +1566,7 @@ export function registerDomCatalog(): void {
         animationEndHandler: null,
         settlementObserver: null,
         intervalProducer: null,
+        intervalEnabled: producersParam.interval,
         unsubscribe: () => {},
         expiryTimer: null,
         evictionTimer: null,
@@ -1580,6 +1598,7 @@ export function registerDomCatalog(): void {
         addresses: [...session.addresses],
         startedAtUnixMs: session.startedAtUnixMs,
         expiresAtUnixMs: session.expiresAtUnixMs,
+        producersEnabled: { interval: session.intervalEnabled },
       };
     },
   });
@@ -1592,7 +1611,7 @@ export function registerDomCatalog(): void {
       traceId: { type: "string", description: "Trace id returned by ui.trace.multi.start", required: true },
     },
     returns:
-      "{ traceId, addresses, startedAtUnixMs, endedAtUnixMs, timedOut, producers:{arm,layout-commit,commit-anchor,frame-callback,interval,animation-end,settlement}, samples:[{sequence,sampledAtUnixMs,trigger:'initial'|'layout-dom-commit'|'presentation-frame',producer,transactionId:string|null,domCommittedAtUnixMs:number|null,nodes:[{address,connected,rect:{x,y,w,h}}]}] }",
+      "{ traceId, addresses, startedAtUnixMs, endedAtUnixMs, timedOut, producers:{arm,layout-commit,commit-anchor,frame-callback,interval,animation-end,settlement}, producersEnabled:{interval}, samples:[{sequence,sampledAtUnixMs,trigger:'initial'|'layout-dom-commit'|'presentation-frame',producer,transactionId:string|null,domCommittedAtUnixMs:number|null,nodes:[{address,connected,rect:{x,y,w,h}}]}] }",
     message: (d) => tmsg("msg.ui.trace", { n: String((d.samples as unknown[])?.length ?? 0) }),
     errors: ["TARGET_NOT_FOUND", "INVALID_PARAMS"],
     handler: (p) => {
@@ -1624,6 +1643,8 @@ export function registerDomCatalog(): void {
         // 구멍의 이유는 표본 사이가 아니라 관측자 계수에 있다. 0 은 "안 움직였다"가 아니라
         // "그 관측자는 한 번도 안 왔다"는 사실이다.
         producers: { ...session.producerCounts },
+        // 무엇을 켜고 잰 원장인지 — 두 실행을 나중에 구분하려면 이 사실이 영수증에 있어야 한다.
+        producersEnabled: { interval: session.intervalEnabled },
         samples: session.samples,
       };
     },
