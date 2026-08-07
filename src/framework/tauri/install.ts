@@ -13,6 +13,7 @@
 // 새 프레임워크가 오면 자기 파일에 자기 것을 적는다. 남의 fix 를 물려받지 않는다.
 import { invoke } from "@tauri-apps/api/core";
 import { moduleState } from "../../lib/moduleState";
+import { presentationNowUnixMs } from "../../lib/presentationClock";
 import styles from "./styles.css?inline";
 import {
   installNativeContentViewComposition,
@@ -577,7 +578,7 @@ export async function installTauri(): Promise<void> {
   registerLayoutTransitionHost({
     prepareMove: async (moves) => {
       const timing = {
-        startAtUnixMs: Date.now() + 100,
+        startAtUnixMs: presentationNowUnixMs() + 100,
         durationMs: railTravelDeclaredMs(),
       };
       const [direct, presented] = await Promise.all([
@@ -655,7 +656,7 @@ export async function installTauri(): Promise<void> {
     ]);
     return combineTauriCompositionProbe({
       generation,
-      sampledAtUnixMs: Date.now(),
+      sampledAtUnixMs: presentationNowUnixMs(),
       direct,
       pane,
       ...(titlebarCompositionInstalled ? { titlebar: titlebar ?? null } : {}),

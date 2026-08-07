@@ -1,6 +1,7 @@
 import { emitTo, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { moduleState } from "../../lib/moduleState";
+import { presentationNowUnixMs } from "../../lib/presentationClock";
 import type { ExternalSurfaceTransitionTiming } from "../../lib/externalSurfaceTransition";
 import { currentWindowLabel } from "../../lib/webviewLabels";
 import type { LayoutMove, PreparedLayoutTransition } from "../../lib/layoutTransitionHost";
@@ -690,7 +691,7 @@ export async function pluginViewPaneHostsStatus() {
 
 export async function pluginViewCompositionStatus() {
   const windowLabel = currentWindowLabel();
-  const sampledAtUnixMs = Date.now();
+  const sampledAtUnixMs = presentationNowUnixMs();
   const dom = [...state.views.values()]
     .filter((view) => view.grouped && !view.disposed)
     .map((view) => ({

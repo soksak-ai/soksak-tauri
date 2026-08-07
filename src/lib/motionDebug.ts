@@ -14,6 +14,7 @@
 // 애니메이션의 유일한 신호다. 기본값(1배속, 정지 없음)에서는 리스너가 아무것도 만지지 않는다.
 import { moduleState } from "./moduleState";
 import { invoke } from "../framework";
+import { presentationNowUnixMs } from "./presentationClock";
 
 const listeners = moduleState("lib/motionDebug#listeners", () => new Set<() => void>());
 export interface MotionDebugState {
@@ -657,7 +658,7 @@ export function scheduleMotionAt(
     if (cancelled) return;
     cancelMotion = scheduleMotion(durationMs, cb);
   };
-  const leadMs = Math.max(0, startAtUnixMs - Date.now());
+  const leadMs = Math.max(0, startAtUnixMs - presentationNowUnixMs());
   if (leadMs === 0) {
     begin();
     return () => {

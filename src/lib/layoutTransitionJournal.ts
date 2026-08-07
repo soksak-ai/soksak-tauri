@@ -68,7 +68,7 @@ export function journalPreparedLayoutTransition(
     mode: prepared.mode,
     ...(prepared.startAtUnixMs === undefined ? {} : { startAtUnixMs: prepared.startAtUnixMs }),
     ...(prepared.durationMs === undefined ? {} : { durationMs: prepared.durationMs }),
-    preparedAtUnixMs: Date.now(),
+    preparedAtUnixMs: presentationNowUnixMs(),
     moves: moves.map((move) => ({ ...move })),
   };
   journal.entries.push(entry);
@@ -84,7 +84,7 @@ export function journalPreparedLayoutTransition(
       // PreparedLayoutTransition.commit은 useLayoutEffect에서 목표 DOM이 실제 커밋된 직후
       // 호출된다. 이 시각과 사건은 surface 어댑터 ACK를 기다리기 전에 동기 발행한다.
       // 따라서 DOM 표본은 timer 근사 없이 이 callback 안에서 같은 transaction에 결합된다.
-      entry.domCommittedAtUnixMs = Date.now();
+      entry.domCommittedAtUnixMs = presentationNowUnixMs();
       publishLayoutTransitionJournal(Object.freeze({
         type: "dom-committed",
         transactionId: entry.transactionId,
@@ -94,10 +94,10 @@ export function journalPreparedLayoutTransition(
       try {
         await prepared.commit();
         entry.phase = "committed";
-        entry.closedAtUnixMs = Date.now();
+        entry.closedAtUnixMs = presentationNowUnixMs();
       } catch (error) {
         entry.phase = "failed";
-        entry.closedAtUnixMs = Date.now();
+        entry.closedAtUnixMs = presentationNowUnixMs();
         const message = error instanceof Error ? error.message : String(error);
         entry.failure = message || "layout surface commit failed";
         throw error;
@@ -108,7 +108,7 @@ export function journalPreparedLayoutTransition(
       closed = true;
       prepared.cancel();
       entry.phase = "cancelled";
-      entry.closedAtUnixMs = Date.now();
+      entry.closedAtUnixMs = presentationNowUnixMs();
     },
   };
 }
@@ -118,3 +118,4 @@ export function __resetLayoutTransitionJournalForTest(): void {
   journal.entries.length = 0;
   journalListeners.clear();
 }
+import { presentationNowUnixMs } from "./presentationClock";

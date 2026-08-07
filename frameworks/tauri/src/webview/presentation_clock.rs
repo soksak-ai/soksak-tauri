@@ -25,7 +25,9 @@ fn unix_from_media_ms() -> f64 {
 }
 
 pub(super) fn unix_now_ms() -> f64 {
-    unix_now_raw_ms()
+    // arm과 display callback이 반드시 같은 monotonic 원점을 사용한다. SystemTime을 다시
+    // 읽으면 실행 중 NTP/수동 시각 보정 뒤 armedAt과 CADisplayLink epoch가 갈라진다.
+    unix_ms_from_media_time(CACurrentMediaTime())
 }
 
 pub(super) fn media_time_from_unix_ms(unix_ms: f64) -> f64 {
@@ -36,3 +38,16 @@ pub(super) fn unix_ms_from_media_time(media_time: f64) -> f64 {
     unix_from_media_ms() + media_time * 1000.0
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn arm_now와_display_timestamp는_같은_monotonic_epoch를_쓴다() {
+        let before = CACurrentMediaTime();
+        let armed = unix_now_ms();
+        let after = CACurrentMediaTime();
+        assert!(armed >= unix_ms_from_media_time(before));
+        assert!(armed <= unix_ms_from_media_time(after));
+    }
+}
