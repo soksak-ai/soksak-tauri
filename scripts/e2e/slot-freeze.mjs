@@ -57,6 +57,12 @@ import {
   browserTabNodeAddress,
 } from "./lib/browser-ui-addresses.mjs";
 import { mapBrowserSurfaceRects } from "./lib/browser-surface-rects.mjs";
+import {
+  PANE_PRESENTATION_HOST,
+  presentationTraceCapability,
+  readHarnessCapabilities,
+  recordGateOrCapabilityAbsence,
+} from "./lib/harness-capabilities.mjs";
 import { readPinStage } from "./lib/pin-geometry-probe.mjs";
 import {
   buildB09Sample,
@@ -359,9 +365,14 @@ async function assertEngineSurfaceLedger(rpc, win, implementation, tabIds, stage
   return verdict;
 }
 
-async function resolvePresentationTraceOwners(
+/** presentation 궤적의 소유자 — 먼저 이 창이 그 궤적을 답하는지 묻고, 답할 때만 읽는다.
+ *
+ * 어댑터의 owner 명령이 곧 이 능력의 입구다. 그 이름에 창이 부재 코드로 답하면 그것은 이
+ * 게이트의 실패가 아니라 **잴 자리가 없다**는 사실이고, 부르는 쪽은 그 사실을 이름으로 받는다. */
+async function resolvePresentationTrace(
   rpc,
   win,
+  capabilities,
   implementation,
   viewIds,
   paneIds,
@@ -370,6 +381,15 @@ async function resolvePresentationTraceOwners(
   const adapter = implementation.presentationTrace;
   if (!adapter?.ownerCommand || typeof adapter.resolveOwners !== "function") {
     throw new Error(`${implementation.plugin}: presentation trace adapter가 선언되지 않았다`);
+  }
+  const capability = await capabilities.ask({
+    ...presentationTraceCapability(adapter),
+    witnessParams: adapter.ownerParams({ windowLabel: win, viewIds, paneIds, surfaceIds }),
+  });
+  if (capability.status === "unreadable") throw new Error(capability.reason);
+  if (capability.status === "absent") {
+    console.log(`◉ ${implementation.plugin} ${capability.reason}`);
+    return { capability, owners: [] };
   }
   const facts = must(await rpc(
     adapter.ownerCommand,
@@ -386,7 +406,7 @@ async function resolvePresentationTraceOwners(
   if (!Array.isArray(owners) || owners.length !== viewIds.length) {
     throw new Error(`${implementation.plugin}: presentation owners=${owners?.length ?? 0}/${viewIds.length}`);
   }
-  return owners;
+  return { capability, owners };
 }
 
 async function installPanePresentationMarkers(rpc, win, labels) {
@@ -983,11 +1003,17 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
     }
     gateReportStore.bindFramework(frameworkName);
     await gateReportStore.persist();
-    const provision = must(await rpc("framework.provision", {}, win), "framework.provision");
+    // 이 창이 무엇을 할 수 있는지는 이름이 아니라 창에게 묻는다. 선언(framework.provision 의 축)과
+    // 답(읽기 전용 witness 명령)이 여기서 만나고, 갈라지는 자리는 전부 이 답을 본다 —
+    // 프레임워크가 하나 더 늘어도 이 아래는 그대로다.
+    const capabilities = await readHarnessCapabilities(rpc, win);
+    const provision = capabilities.provision;
     if (typeof provision.nativeChildWebview !== "boolean") {
       throw new Error(`framework가 nativeChildWebview를 선언하지 않았다: ${JSON.stringify(provision)}`);
     }
     nativeChildWebview = provision.nativeChildWebview;
+    console.log(`◉ ${engine} capability: ${[...capabilities.entries.values()]
+      .map((verdict) => `${verdict.id}=${verdict.status}`).join(" · ")}`);
     must(await rpc("program.wait", { id: engine, timeoutMs: 20_000 }, win), `program.wait ${engine}`);
     const calibration = must(
       await rpc("capture.calibration", { visible: true }, win),
@@ -1094,7 +1120,8 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
     }, win), "motion anchors");
     const native = implementation.surface === "framework-native";
     const windowed = implementation.surface === "engine-windowed";
-    const paneOwned = frameworkName === "tauri" && (native || windowed);
+    // pane 표면 층을 이 창이 답하는가 — 그 층이 있어야 pane 소유 합성을 잴 수 있다.
+    const paneOwned = capabilities.has(PANE_PRESENTATION_HOST.id) && (native || windowed);
     const labels = tabIds.map((id) => implementation.label(win, id));
     let initialPaneComposition = null;
     if (paneOwned) {
@@ -1166,9 +1193,13 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
     const b04Transitions = [];
     const b05Transitions = [];
     const b06Checkpoints = [];
-    const presentationOwners = SCENARIOS.has("flow")
-      ? await resolvePresentationTraceOwners(rpc, win, implementation, tabIds, paneIds, labels)
-      : [];
+    const presentationTrace = SCENARIOS.has("flow")
+      ? await resolvePresentationTrace(rpc, win, capabilities, implementation, tabIds, paneIds, labels)
+      : { capability: null, owners: [] };
+    const presentationOwners = presentationTrace.owners;
+    // 궤적을 못 재는 창에서도 클릭·레이아웃 거래·조명·IME 는 그대로 잰다. 못 재는 것은 B04·B05
+    // 두 칸이고, 그 두 칸은 아래에서 능력의 이름을 달고 닫힌다 — 나머지를 함께 묻지 않는다.
+    const presentationTraceMeasurable = presentationTrace.capability?.status !== "absent";
     await assertActivePane(rpc, win, paneIds[1], "교차 클릭 시작 상태");
     await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, "cross-click-initial-right");
     for (let cycle = 0; cycle < (SCENARIOS.has("flow") ? CYCLES : 0); cycle += 1) {
@@ -1191,16 +1222,18 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
         let armedPresentation = null;
         let presentationOpen = false;
         try {
-          armedPresentation = must(await rpc(
-            implementation.presentationTrace.armCommand,
-            implementation.presentationTrace.armParams({
-              traceId: `${engine}-${name}-${randomUUID()}`,
-              owners: presentationOwners,
-            }),
-            win,
-            { timeoutMs: 10_000 },
-          ), `B04 presentation trace arm ${name}`);
-          presentationOpen = true;
+          if (presentationTraceMeasurable) {
+            armedPresentation = must(await rpc(
+              implementation.presentationTrace.armCommand,
+              implementation.presentationTrace.armParams({
+                traceId: `${engine}-${name}-${randomUUID()}`,
+                owners: presentationOwners,
+              }),
+              win,
+              { timeoutMs: 10_000 },
+            ), `B04 presentation trace arm ${name}`);
+            presentationOpen = true;
+          }
           const journalBefore = must(await rpc("layout.transactions", {}, win), `layout journal baseline ${name}`);
           const priorEntries = journalBefore.entries ?? [];
           const afterSequence = Number(priorEntries[priorEntries.length - 1]?.sequence ?? 0);
@@ -1209,8 +1242,10 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
           // 먼저 녹화 없는 실제 클릭을 수치 판정하고 원장을 닫는다. 사람용 녹화는 같은 빌드와
           // 같은 시작/종료 상태를 복원한 별도 반복에서만 수행하며 자동 verdict에는 참여하지 않는다.
           // 자극은 자기 관측 거래를 선언한다 — 장부를 sequence 창으로 오려내는 것은
-          // "그 사이에 다른 거래가 없었다"는 가정이고, 가정은 영수증이 아니다.
-          const causeTraceId = armedPresentation.traceId;
+          // "그 사이에 다른 거래가 없었다"는 가정이고, 가정은 영수증이 아니다. 표시 궤적을 못
+          // 여는 창에서도 자극은 여전히 자기 관측 거래를 선언한다 — 사유가 없는 거래를 만들지
+          // 않으려면 이 자리에 실재하는 부르는 쪽의 id 가 있어야 한다.
+          const causeTraceId = armedPresentation?.traceId ?? domTraceSession.traceId;
           const clickReceipt = must(await rpc("ui.input.click", {
             address: activationAddresses[side],
             causeTraceId,
@@ -1234,103 +1269,120 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
           if (!layoutVerdict.ok) {
             throw new Error(`${engine}/${name}: sidebar/tab layout transaction mismatch — ${layoutVerdict.errors.join(", ")}`);
           }
-          const movedParticipant = resolveB04MovedParticipant({
-            transactions: layoutVerdict.transactions,
-            owners: presentationOwners,
-            viewIds: tabIds,
-            paneAddresses,
-            slotAddresses: addresses,
-          });
-          const {
-            targetViewId,
-            owner,
-            paneAddress,
-            slotAddress,
-          } = movedParticipant;
-          const b04JournalEntries = normalizeB04JournalEntries(layoutVerdict.transactions);
-          // B05 유지 창 — 정착 뒤에도 표면이 그대로 표시되는지가 판정 대상이다. 원장을 정착
-          // 즉시 닫으면 착지 후 빈 브라우저·잔상·사라짐이 관측 밖에서 일어난다.
-          await awaitPostSettleHold();
-          // Native producer를 먼저 닫는다. DOM을 먼저 닫으면 그 다음 native close ACK까지의
-          // CADisplayLink 꼬리에는 대응 DOM frame이 없어 서로 다른 관측 구간을 결합하게 된다.
-          const presentationReceipt = must(await rpc(
-            implementation.presentationTrace.readCommand,
-            implementation.presentationTrace.readParams({ traceId: armedPresentation.traceId }),
-            win,
-            { timeoutMs: 10_000 },
-          ), `B04 presentation trace read ${name}`);
-          presentationOpen = false;
-          const domTraceReceipt = must(await rpc(
-            "ui.trace.multi.close",
-            { traceId: domTraceSession.traceId },
-            win,
-            { timeoutMs: 5_000 },
-          ), `B04 raw DOM trace close ${name}`);
-          domTraceOpen = false;
-          if (domTraceReceipt.timedOut === true) {
-            throw new Error(`${engine}/${name}: raw DOM trace가 explicit close 전에 만료됐다`);
-          }
-          await Promise.all([
-            writeMachineReport(path.join(dir, "dom-presentation-raw.json"), domTraceReceipt),
-            writeMachineReport(path.join(dir, "native-presentation-raw.json"), presentationReceipt),
-          ]);
-          const presentationEvents = implementation.presentationTrace.events(
-            presentationReceipt,
-            { targetViewId, owner },
-          );
-          const flowPresentationTrace = mapB04PresentationSamples({
-            events: presentationEvents,
-            domSamples: domTraceReceipt.samples,
-            owner,
-            targetViewId,
-            transactionId: layoutVerdict.transaction.transactionId,
-            domCommittedAtUnixMs: layoutVerdict.transaction.domCommittedAtUnixMs,
-            presentationStartAtUnixMs: layoutVerdict.transaction.startAtUnixMs,
-            durationMs: layoutVerdict.transaction.durationMs,
-            moveDx: layoutVerdict.transaction.moves.find(({ viewId }) => (
-              viewId === targetViewId
-            ))?.dx,
-            railAddress,
-            paneAddress,
-            slotAddress,
-          });
-          b04Transitions.push({
-            direction: side === 0 ? "to-left" : "to-right",
-            targetViewId,
-            motionMode: layoutVerdict.transaction.mode,
-            journal: {
-              afterSequence,
-              entries: b04JournalEntries,
-            },
-            samples: flowPresentationTrace.samples,
-            timeline: flowPresentationTrace.timeline,
-          });
-          b05Transitions.push({
-            direction: side === 0 ? "to-left" : "to-right",
-            targetViewId,
-            clickReceipt,
-            layout: layoutVerdict.transaction,
-            presentation: presentationReceipt,
-            settlement: resolveB05Settlement({
-              settleReceipt,
-              presentationReceipt,
-            }),
-          });
-          await writeMachineReport(
-            path.join(dir, "composition-trace.json"),
-            {
-              traceId: armedPresentation.traceId,
+          // 표시 궤적을 못 재는 창에서는 이 구간만 건너뛴다 — 클릭·레이아웃 거래·조명·IME 는
+          // 그대로 잰다. 못 잰 B04·B05 두 칸은 아래에서 능력의 이름을 달고 닫힌다.
+          flowPresentationEvidence: {
+            if (!presentationTraceMeasurable) {
+              const unusedDomTrace = must(await rpc(
+                "ui.trace.multi.close",
+                { traceId: domTraceSession.traceId },
+                win,
+                { timeoutMs: 5_000 },
+              ), `B04 raw DOM trace close ${name}`);
+              domTraceOpen = false;
+              if (unusedDomTrace.timedOut === true) {
+                throw new Error(`${engine}/${name}: raw DOM trace가 explicit close 전에 만료됐다`);
+              }
+              break flowPresentationEvidence;
+            }
+            const movedParticipant = resolveB04MovedParticipant({
+              transactions: layoutVerdict.transactions,
+              owners: presentationOwners,
+              viewIds: tabIds,
+              paneAddresses,
+              slotAddresses: addresses,
+            });
+            const {
               targetViewId,
               owner,
-              joins: flowPresentationTrace.joins,
-              // 표본 구멍은 간격이 아니라 관측자 계수로 읽는다 — 0 은 "안 움직였다"가 아니라
-              // "그 관측자가 한 번도 안 왔다"다.
-              domProducers: domTraceReceipt.producers ?? null,
+              paneAddress,
+              slotAddress,
+            } = movedParticipant;
+            const b04JournalEntries = normalizeB04JournalEntries(layoutVerdict.transactions);
+            // B05 유지 창 — 정착 뒤에도 표면이 그대로 표시되는지가 판정 대상이다. 원장을 정착
+            // 즉시 닫으면 착지 후 빈 브라우저·잔상·사라짐이 관측 밖에서 일어난다.
+            await awaitPostSettleHold();
+            // Native producer를 먼저 닫는다. DOM을 먼저 닫으면 그 다음 native close ACK까지의
+            // CADisplayLink 꼬리에는 대응 DOM frame이 없어 서로 다른 관측 구간을 결합하게 된다.
+            const presentationReceipt = must(await rpc(
+              implementation.presentationTrace.readCommand,
+              implementation.presentationTrace.readParams({ traceId: armedPresentation.traceId }),
+              win,
+              { timeoutMs: 10_000 },
+            ), `B04 presentation trace read ${name}`);
+            presentationOpen = false;
+            const domTraceReceipt = must(await rpc(
+              "ui.trace.multi.close",
+              { traceId: domTraceSession.traceId },
+              win,
+              { timeoutMs: 5_000 },
+            ), `B04 raw DOM trace close ${name}`);
+            domTraceOpen = false;
+            if (domTraceReceipt.timedOut === true) {
+              throw new Error(`${engine}/${name}: raw DOM trace가 explicit close 전에 만료됐다`);
+            }
+            await Promise.all([
+              writeMachineReport(path.join(dir, "dom-presentation-raw.json"), domTraceReceipt),
+              writeMachineReport(path.join(dir, "native-presentation-raw.json"), presentationReceipt),
+            ]);
+            const presentationEvents = implementation.presentationTrace.events(
+              presentationReceipt,
+              { targetViewId, owner },
+            );
+            const flowPresentationTrace = mapB04PresentationSamples({
+              events: presentationEvents,
               domSamples: domTraceReceipt.samples,
-              presentationEvents,
+              owner,
+              targetViewId,
+              transactionId: layoutVerdict.transaction.transactionId,
+              domCommittedAtUnixMs: layoutVerdict.transaction.domCommittedAtUnixMs,
+              presentationStartAtUnixMs: layoutVerdict.transaction.startAtUnixMs,
+              durationMs: layoutVerdict.transaction.durationMs,
+              moveDx: layoutVerdict.transaction.moves.find(({ viewId }) => (
+                viewId === targetViewId
+              ))?.dx,
+              railAddress,
+              paneAddress,
+              slotAddress,
+            });
+            b04Transitions.push({
+              direction: side === 0 ? "to-left" : "to-right",
+              targetViewId,
+              motionMode: layoutVerdict.transaction.mode,
+              journal: {
+                afterSequence,
+                entries: b04JournalEntries,
+              },
               samples: flowPresentationTrace.samples,
-            },
-          );
+              timeline: flowPresentationTrace.timeline,
+            });
+            b05Transitions.push({
+              direction: side === 0 ? "to-left" : "to-right",
+              targetViewId,
+              clickReceipt,
+              layout: layoutVerdict.transaction,
+              presentation: presentationReceipt,
+              settlement: resolveB05Settlement({
+                settleReceipt,
+                presentationReceipt,
+              }),
+            });
+            await writeMachineReport(
+              path.join(dir, "composition-trace.json"),
+              {
+                traceId: armedPresentation.traceId,
+                targetViewId,
+                owner,
+                joins: flowPresentationTrace.joins,
+                // 표본 구멍은 간격이 아니라 관측자 계수로 읽는다 — 0 은 "안 움직였다"가 아니라
+                // "그 관측자가 한 번도 안 왔다"다.
+                domProducers: domTraceReceipt.producers ?? null,
+                domSamples: domTraceReceipt.samples,
+                presentationEvents,
+                samples: flowPresentationTrace.samples,
+              },
+            );
+          }
           const sourceSide = side === 0 ? 1 : 0;
           must(await rpc("ui.input.click", {
             address: activationAddresses[sourceSide],
@@ -1405,7 +1457,8 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
             );
             assertNativeLighting(must(await rpc("webview.surfaces", {}, win), `surfaces ${name}`), labels[side], labels);
           }
-          if (windowed) {
+          // 창-엔진 표면의 합성 대조도 pane 표면 층이 있어야 읽는다(그 층이 대조 상대다).
+          if (windowed && paneOwned) {
             await assertWindowedComposition(rpc, win, plugin, tabIds, labels, originalWindow);
           }
           await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, `cross-click-${name}`);
@@ -1449,10 +1502,13 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
       }
     }
     if (SCENARIOS.has("flow")) {
-      const b04Receipt = gateReportStore.recordMachineEvidence({
+      // 궤적을 못 잰 창에서는 이 두 칸이 능력의 이름을 달고 닫힌다. 없는 증거로 red 를 적지도,
+      // 아무 말 없이 not-run 으로 묻지도 않는다.
+      const b04Receipt = recordGateOrCapabilityAbsence(gateReportStore, {
         framework: frameworkName,
         engine,
         gate: "B04",
+        capability: presentationTrace.capability,
         evidence: {
           engine,
           coordinateSpace: { logical: "css-px", scaleFactor: Number(originalWindow.scale) },
@@ -1461,10 +1517,11 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
       });
       await gateReportStore.persist();
       console.log(formatGateVerdict(engine, "B04", b04Receipt));
-      const b05Receipt = gateReportStore.recordMachineEvidence({
+      const b05Receipt = recordGateOrCapabilityAbsence(gateReportStore, {
         framework: frameworkName,
         engine,
         gate: "B05",
+        capability: presentationTrace.capability,
         evidence: mapB05LiveEvidence({ engine, transitions: b05Transitions }),
       });
       const b06Receipt = gateReportStore.recordMachineEvidence({
@@ -1524,7 +1581,8 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
         };
       }));
       let nativeBefore = null;
-      if (frameworkName === "tauri" && native) {
+      // 네이티브 합성 원장은 pane 표면 층을 답하는 창에만 있다.
+      if (paneOwned && native) {
         nativeBefore = must(
           await rpc("webview.composition", {}, win),
           `${pinCase.name} native before`,
@@ -1599,7 +1657,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
       // PIN 클릭이 native surface 좌표를 다시 썼는지는 값이다 — 장부를 그대로 싣는다.
       // 읽는 조건은 nativeBefore 와 같아야 한다: 한쪽만 있으면 장부가 아니라 반쪽이다.
       let nativeAfter = null;
-      if (frameworkName === "tauri" && native) {
+      if (paneOwned && native) {
         nativeAfter = must(await rpc("webview.composition", {}, win), `${pinCase.name} native after`);
       }
       b07Cases.push(mapB07PinCaseEvidence({
