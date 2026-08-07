@@ -330,3 +330,23 @@ describe("B05 원장이 안 답한 자리", () => {
     expect(judgeB05MachineEvidence(other).status).toBe("red");
   });
 });
+
+// 같은 규칙이 사건 안쪽에도 선다 — 사이드카가 안 낸 필드를 "틀린 값" 으로 읽지 않는다.
+//
+// 실측 2026-08-08: offscreen 이 displayTimestampUnixMs·targetTimestampUnixMs·
+// callbackObservedAtUnixMs·refreshIntervalMs 넷을 안 답해 red 였다.
+describe("B05 사건이 안 답한 필드", () => {
+  it("안 답한 표시 시각 필드는 못 잼이다", () => {
+    const value = evidence();
+    value.transitions[0].trace.presentationEvents[0].refreshIntervalMs = null;
+    const verdict = judgeB05MachineEvidence(value);
+    expect(verdict.status).toBe("blocked");
+    expect(verdict.reason).toContain("refreshIntervalMs-unanswered");
+  });
+
+  it("답했는데 유한하지 않으면 red 다", () => {
+    const value = evidence();
+    value.transitions[0].trace.presentationEvents[0].refreshIntervalMs = "빠름";
+    expect(judgeB05MachineEvidence(value).status).toBe("red");
+  });
+});

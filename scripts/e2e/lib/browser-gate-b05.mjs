@@ -217,7 +217,10 @@ function inspectTransition(transition, index, failures, unmeasured, traceIds) {
     for (const field of [
       "displayTimestampUnixMs", "targetTimestampUnixMs", "callbackObservedAtUnixMs", "refreshIntervalMs",
     ]) {
-      if (!Number.isFinite(event[field])) failures.push(`${at}.${field}=finite/${displayValue(event[field])}`);
+      // 안 답한 자리와 틀린 값은 다른 답이다 — 자기 궤적을 가진 구현은 이 필드들을 다 내지
+      // 못할 수 있고, 계약이 null 로 두는 것은 지어내지 않기 위해서다.
+      if (event[field] === null) unmeasured.push(`${at}.${field}-unanswered`);
+      else if (!Number.isFinite(event[field])) failures.push(`${at}.${field}=finite/${displayValue(event[field])}`);
     }
     if (Number.isFinite(event.displayTimestampUnixMs)
         && event.presentedAtUnixMs !== event.displayTimestampUnixMs) {
