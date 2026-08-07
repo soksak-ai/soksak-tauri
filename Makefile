@@ -140,7 +140,13 @@ run-dev: ## 개발 정체성 soksak-tauri-dev.app 실행(새 인스턴스)
 rebuild-dev: build-dev ## 현재 소스를 dev 번들로 다시 만든 뒤 단일 인스턴스로 재실행
 	$(MAKE) --no-print-directory restart-dev
 
-# 준비 대기는 폴링이 아니다 — 등록부를 가진 cored 가 붙음을 알므로 그쪽이 알려준다(host.wait).
+# 준비 대기의 대부분은 폴링이 아니다 — 등록부를 가진 cored 가 붙음을 알므로 그쪽이 알려준다
+# (host_wait). 다만 **붙음과 명령 서빙 준비는 다른 사실**이다: host_wait 이 답한 직후에도 창은
+# 아직 TIMEOUT 을 낼 수 있다(실측 2026-08-08). 그 마지막 구간만 폴링으로 남고, 주기(0.5s)·상한
+# (20s)·종료 조건(내 프레임워크가 답함)을 명시한다. 창이 자기 서빙 준비를 알리는 자리가 생기면
+# 이 구간도 없앤다.
+# 그 뒤에야 IPC 소켓 소유가 교체됐는지 잰다: cored 소켓과 앱 IPC 소켓은 다른 사실이라, 순서를
+# 뒤집으면 아직 등록 전인 순간을 실패로 읽는다.
 # 등록이 일어나는 그 순간 깨어난다. 전에는 0.1 초마다 되물어 사용자 활동 로그가 그 질문으로
 # 도배됐다(실측 2026-08-08).
 #
@@ -175,11 +181,13 @@ restart-dev: ## 이미 빌드·검증된 동일 dev 번들을 빌드 없이 반�
 	  pgrep -f "$(DEV_EXECUTABLE)" >/dev/null 2>&1 && { echo "유령 회수 실패: 같은 앱 프로세스가 남았다"; exit 1; }; \
 	fi; \
 	$(MAKE) --no-print-directory run-dev >/dev/null; \
-	new_pid=""; \
 	"$$CLI" host_wait '"'"'{"timeoutMs":30000}'"'"' >/dev/null 2>&1 || true; \
+	ready=0; \
+	for _ in $$(seq 1 40); do host_ready && { ready=1; break; }; sleep 0.5; done; \
+	[ "$$ready" = 1 ] || { echo "재실행 준비 실패: 창 호스트가 $$RESTART_FRAMEWORK 로 응답하지 않는다"; exit 1; }; \
 	new_pid="$$(owner_pid)"; \
-	[ -n "$$new_pid" ] && [ "$$new_pid" != "$$old_pid" ] && kill -0 "$$new_pid" 2>/dev/null && host_ready || \
-	  { echo "재실행 준비 실패: dev IPC 소유 프로세스가 교체되어 응답하지 않는다"; exit 1; }; \
+	[ -n "$$new_pid" ] && [ "$$new_pid" != "$$old_pid" ] && kill -0 "$$new_pid" 2>/dev/null || \
+	  { echo "재실행 준비 실패: dev IPC 소유 프로세스가 교체되지 않았다(old=$$old_pid new=$$new_pid)"; exit 1; }; \
 	sleep 0.5; \
 	[ "$$(owner_pid)" = "$$new_pid" ] && kill -0 "$$new_pid" 2>/dev/null || \
 	  { echo "재실행 수명 실패: 새 dev PID $$new_pid 가 유지되지 않는다"; exit 1; }; \
@@ -212,7 +220,10 @@ restart-electron: ## 이미 만들어진 Electron 번들을 빌드 없이 반복
 	new_pid=""; \
 	"$$CLI" host_wait '"'"'{"timeoutMs":30000}'"'"' >/dev/null 2>&1 || true; \
 	new_pid="$$(owner_pid)"; \
-	[ -n "$$new_pid" ] && [ "$$new_pid" != "$$old_pid" ] && kill -0 "$$new_pid" 2>/dev/null && host_ready || \
+	ready=0; \
+	for _ in $$(seq 1 40); do host_ready && { ready=1; break; }; sleep 0.5; done; \
+	new_pid="$$(owner_pid)"; \
+	[ "$$ready" = 1 ] && [ -n "$$new_pid" ] && [ "$$new_pid" != "$$old_pid" ] && kill -0 "$$new_pid" 2>/dev/null || \
 	  { echo "재실행 준비 실패: Electron 창 호스트가 $$RESTART_FRAMEWORK 로 응답하지 않는다"; \
 	    echo "  로그: $(DEV_LOG_DIR)/electron-app.log · $(DEV_LOG_DIR)/electron-app.error.log"; \
 	    tail -n 5 "$(DEV_LOG_DIR)/electron-app.error.log" 2>/dev/null | sed 's/^/  /'; \
