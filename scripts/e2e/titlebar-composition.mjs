@@ -40,6 +40,47 @@ function publicSize(value) {
   return value && typeof value === "object" ? { w: value.w, h: value.h } : null;
 }
 
+/** 한 창의 유일한 paint owner 원장. 없는 값은 null로 남겨 판정을 RED로 보낸다. */
+function publicOwner(owner) {
+  if (!owner || typeof owner !== "object") return null;
+  return {
+    identity: owner.identity ?? null,
+    drawOwnerCount: owner.drawOwnerCount ?? null,
+    targetSequence: owner.targetSequence ?? null,
+    appliedTargetSequence: owner.appliedTargetSequence ?? null,
+    mutationSequence: owner.mutationSequence ?? null,
+    drawSequence: owner.drawSequence ?? null,
+    applying: owner.applying ?? null,
+    lastApplyOk: owner.lastApplyOk ?? null,
+    lastApplyError: owner.lastApplyError ?? null,
+  };
+}
+
+function publicHostileOwner(owner) {
+  if (!owner || typeof owner !== "object") return null;
+  return {
+    identity: owner.identity ?? null,
+    drawOwnerCount: owner.drawOwnerCount ?? null,
+  };
+}
+
+/** 창을 실제로 드러낸 시작 게이트 영수증. 재시작 직후 정렬의 유일한 공개 기준점이다. */
+function publicStartup(startup) {
+  const composition = startup?.composition;
+  return {
+    platform: startup?.platform ?? null,
+    generation: startup?.generation ?? null,
+    headless: startup?.headless ?? null,
+    creationCommitted: startup?.creationCommitted ?? null,
+    rendererGreen: startup?.rendererGreen ?? null,
+    presentationInFlight: startup?.presentationInFlight ?? null,
+    presented: startup?.presented ?? null,
+    composition: composition && typeof composition === "object"
+      ? { kind: composition.kind ?? null, nativeSequence: composition.nativeSequence ?? null }
+      : null,
+  };
+}
+
 function writeCycle(value) {
   fs.mkdirSync(evidenceRoot, { recursive: true });
   fs.writeFileSync(cycleFile, `${JSON.stringify(value, null, 2)}\n`);
@@ -65,6 +106,7 @@ function machineSummary(report) {
     cycle,
     window: report.window,
     framework: report.framework,
+    coldStart: report.coldStart,
     verdicts: report.verdicts.map(({ engine, verdict }) => ({ engine, status: verdict.status })),
   };
 }
@@ -87,6 +129,7 @@ function sample(stage, requestedHeightCssPx, composition, measured, startup) {
     reservations: publicElements(composition.reservations),
     buttons: publicElements(composition.buttons),
     backings: publicElements(composition.backings),
+    owner: publicOwner(composition.owner),
   };
 }
 
@@ -101,7 +144,15 @@ function hostileTitlebar(composition) {
     reservations: publicElements(composition.reservations),
     buttons: publicElements(composition.buttons),
     backings: publicElements(composition.backings),
+    owner: publicHostileOwner(composition.owner),
   };
+}
+
+async function readStartup(rpc, windowLabel) {
+  return publicStartup(must(
+    await rpc("window.startup", {}, windowLabel),
+    `${windowLabel} window.startup`,
+  ));
 }
 
 async function readSample(rpc, windowLabel, titlebarAddress, stage, requestedHeightCssPx, mutation) {
@@ -164,6 +215,15 @@ async function inspectWindow(rpc, windowLabel, framework) {
   try {
     const initialWindow = must(await rpc("window.info", {}, windowLabel), `${windowLabel} window.info`);
     originalOuter = { w: initialWindow.w, h: initialWindow.h };
+    // 재시작 직후 정렬과 로딩 완료 후 정렬은 별개 표본이다. 이 창을 드러낸 시작 게이트
+    // 영수증을 먼저 읽고, 아무것도 건드리지 않은 냉시작 합성을 그 다음에 읽는다.
+    const startup = await readStartup(rpc, windowLabel);
+    const cold = await readSample(rpc, windowLabel, titlebar.address, "cold", null);
+    await capture(rpc, windowLabel, "cold");
+    must(
+      await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, windowLabel, { timeoutMs: 10_000 }),
+      `${windowLabel} cold start layout settled`,
+    );
     const baseline = await readSample(rpc, windowLabel, titlebar.address, "baseline", null);
     await hold(rpc, windowLabel, "baseline");
     const heldBaseline = await readSample(
@@ -289,6 +349,8 @@ async function inspectWindow(rpc, windowLabel, framework) {
           physical: "device-px",
           scaleFactor: resetReceipt.cssToPhysicalScale,
         },
+        startup,
+        cold,
         baseline,
         heights,
         reset,
@@ -313,6 +375,13 @@ async function inspectWindow(rpc, windowLabel, framework) {
       cycle,
       window: windowLabel,
       framework,
+      coldStart: {
+        generation: startup.generation,
+        ownerIdentity: cold.owner?.identity ?? null,
+        presentedCompositionSequence: startup.composition?.nativeSequence ?? null,
+        coldPresentationRevision: cold.presentationRevision,
+        finalPresentationRevision: final.presentationRevision,
+      },
       verdicts,
     };
     fs.writeFileSync(
