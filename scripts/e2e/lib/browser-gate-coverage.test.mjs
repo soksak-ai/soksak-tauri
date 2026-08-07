@@ -1,7 +1,11 @@
 // @vitest-environment node
 
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+  BROWSER_ACCEPTANCE_ENGINES,
+  BROWSER_ACCEPTANCE_FRAMEWORKS,
+  BROWSER_ACCEPTANCE_GATES,
   createBrowserGateReport,
   machineGateSummary,
   setMachineGateStatus,
@@ -170,6 +174,40 @@ describe("formatGateVerdict", () => {
       "◉ browser/B04 canonical machine verdict: red"
       + " — B04:transitions[0].pane-dx=-160/0, B04:timeline:renderer:samples=1/3",
     );
+  });
+});
+
+/** 정본 문서가 커버리지 축을 실제로 적었는지 값으로 확인한다.
+ *
+ * 축이 하나 늘면 두 수가 함께 움직인다 — 문서가 옛 수를 들고 있으면 여기서 RED 다.
+ * 이름(`missingFrameworks`)은 재지 않은 프레임워크가 0 이 아니라 이름으로 남는다는 사실의 주소다. */
+const CELLS_PER_FRAMEWORK = BROWSER_ACCEPTANCE_ENGINES.length * BROWSER_ACCEPTANCE_GATES.length;
+const ACCEPTANCE_CELLS = CELLS_PER_FRAMEWORK * BROWSER_ACCEPTANCE_FRAMEWORKS.length;
+
+function acceptanceSections() {
+  return ["../../../docs/TESTING.ko.md", "../../../docs/TESTING.md"].map((path) => {
+    const document = readFileSync(new URL(path, import.meta.url), "utf8");
+    const heading = document.indexOf("B01–B12");
+    expect(heading).toBeGreaterThan(-1);
+    const nextHeading = document.indexOf("\n## ", heading + 1);
+    return document.slice(heading, nextHeading === -1 ? undefined : nextHeading);
+  });
+}
+
+describe("정본 문서의 인수 커버리지 선언", () => {
+  it("한 프레임워크의 칸 수와 프레임워크 전부의 합을 함께 적는다", () => {
+    // 맨 숫자는 titlebar 높이 같은 남의 수치와 구별되지 않는다 — 칸을 세는 자리에서만 인정한다.
+    const cellCount = (count) => new RegExp(`${count}(칸|\\s*cells)`);
+    for (const section of acceptanceSections()) {
+      expect(section).toMatch(cellCount(CELLS_PER_FRAMEWORK));
+      expect(section).toMatch(cellCount(ACCEPTANCE_CELLS));
+    }
+  });
+
+  it("제출되지 않은 프레임워크를 이름으로 남기는 축을 적는다", () => {
+    for (const section of acceptanceSections()) {
+      expect(section).toContain("missingFrameworks");
+    }
   });
 });
 
