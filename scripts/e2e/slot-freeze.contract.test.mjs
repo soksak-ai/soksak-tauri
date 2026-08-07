@@ -293,8 +293,8 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(source).toContain("finishEvidenceRun(EVIDENCE_STORE_ROOT, { runId, status })");
     expect(source).not.toContain("function prepareEvidence");
     expect(source).not.toContain('"slot-freeze", "current"');
-    expect(source.match(/(?:run|start)PlannedRecordingAction\(/g)).toHaveLength(6);
-    expect(source.match(/\.\.\.recordFields/g)).toHaveLength(3);
+    expect(source.match(/runPlannedRecordingAction\(/g)).toHaveLength(5);
+    expect(source.match(/\.\.\.recordFields/g)).toHaveLength(4);
   });
 
   it("모든 JSON evidence를 공통 quota store로 기록한다", () => {
@@ -352,7 +352,7 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(source).toMatch(/domTraceSession\s*=\s*must\(await rpc\("ui\.trace\.multi\.start"/);
     expect(source).not.toContain("domTracePromise");
     const flowRecordingCalls = callFacts(source, (node, file) => (
-      node.expression.getText(file) === "startPlannedRecordingAction"
+      node.expression.getText(file) === "runPlannedRecordingAction"
     )).filter((call) => call.functionName === "runEngine"
       && call.loops.some((loop) => /\bside\b/.test(loop)));
     expect(flowRecordingCalls).toHaveLength(1);
@@ -510,20 +510,12 @@ describe("slot-freeze instrumentation lifecycle", () => {
 
   it("closes the finite native presentation trace before human PNG review", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
-    const flow = source.split("recordingTransaction = startPlannedRecordingAction")[1]
+    const flow = source.split("const recordingOutcome = await runPlannedRecordingAction")[1]
       ?.split("frameCount += files.length")[0] ?? "";
     expect(flow.indexOf("implementation.presentationTrace.readCommand")).toBeGreaterThan(-1);
     expect(flow.indexOf("reviewRecordingOutcome")).toBeGreaterThan(-1);
     expect(flow.indexOf("implementation.presentationTrace.readCommand"))
       .toBeLessThan(flow.indexOf("reviewRecordingOutcome"));
-  });
-
-  it("starts visual recording as a separate finite session from the click and machine trace", () => {
-    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
-    expect(source).toContain("startPlannedRecordingAction");
-    expect(source).toContain('rpc("window.record.start"');
-    expect(source).toContain('rpc("window.record.read"');
-    expect(source).toContain("recordingTransaction.release()");
   });
 
   it("hostile resize waits for child slot native commits before final composition judgment", () => {

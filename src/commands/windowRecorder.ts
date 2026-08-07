@@ -1,5 +1,4 @@
 import { createStream, invoke } from "../framework";
-import { moduleState } from "../lib/moduleState";
 
 export type WindowRecordRequest = {
   dir: string;
@@ -34,31 +33,6 @@ export type WindowRecordingReport =
     };
 
 export type WindowRecorder = (request: WindowRecordRequest) => WindowRecording;
-
-export type WindowRecordingSessionStart = {
-  id: string;
-  ready: boolean;
-  dir: string;
-  requestedFrames: number;
-};
-
-export type WindowRecordingSessionReceipt = {
-  id: string;
-  report: WindowRecordingReport;
-};
-
-type WindowRecordingSession = {
-  requestKey: string;
-  start: Promise<WindowRecordingSessionStart>;
-  receipt: Promise<WindowRecordingSessionReceipt>;
-  completed: boolean;
-};
-
-const WINDOW_RECORDING_SESSION_LIMIT = 8;
-const recordingSessions = moduleState("commands/windowRecorder#sessions", () => ({
-  entries: new Map<string, WindowRecordingSession>(),
-  order: [] as string[],
-}));
 
 export const WINDOW_RECORD_MAX_BYTES = 1_073_741_824;
 export const WINDOW_RECORD_MAX_FRAMES = 600;
@@ -171,72 +145,6 @@ export function startWindowRecording(
     };
     return { ready: Promise.resolve(false), report: Promise.resolve(result) };
   }
-}
-
-/**
- * 시각 녹화의 첫 저장 ACK와 최종 결과를 분리한다. 제품 자극은 start ACK 뒤 실행할 수 있고,
- * 기계 trace는 녹화 완료를 기다리지 않고 자기 거래 끝에서 닫는다. 세션은 caller identity로
- * 멱등하며 완료된 오래된 세션만 유한 용량에서 축출한다.
- */
-export function startWindowRecordingSession(
-  id: string,
-  request: WindowRecordRequest,
-  recorder: WindowRecorder = recordWindowFrames,
-): Promise<WindowRecordingSessionStart> {
-  if (!id) return Promise.reject(new Error("recording session id is required"));
-  const requestKey = JSON.stringify({
-    dir: request.dir,
-    frames: request.frames,
-    intervalMs: request.intervalMs,
-    maxBytes: request.maxBytes ?? null,
-    frameTimeoutMs: request.frameTimeoutMs ?? WINDOW_RECORD_DEFAULT_FRAME_TIMEOUT_MS,
-  });
-  const existing = recordingSessions.entries.get(id);
-  if (existing) {
-    if (existing.requestKey !== requestKey) {
-      return Promise.reject(new Error(`recording session ${id} already has different parameters`));
-    }
-    return existing.start;
-  }
-  while (recordingSessions.entries.size >= WINDOW_RECORDING_SESSION_LIMIT) {
-    const staleId = recordingSessions.order.find((candidate) =>
-      recordingSessions.entries.get(candidate)?.completed === true);
-    if (!staleId) return Promise.reject(new Error("all recording sessions are still active"));
-    recordingSessions.entries.delete(staleId);
-    recordingSessions.order = recordingSessions.order.filter((candidate) => candidate !== staleId);
-  }
-  const recording = startWindowRecording(request, recorder);
-  const start = recording.ready.then((ready) => ({
-    id,
-    ready,
-    dir: request.dir,
-    requestedFrames: request.frames,
-  }));
-  const session: WindowRecordingSession = {
-    requestKey,
-    start,
-    receipt: Promise.resolve(null as never),
-    completed: false,
-  };
-  session.receipt = recording.report.then((report) => {
-    session.completed = true;
-    return { id, report };
-  });
-  recordingSessions.entries.set(id, session);
-  recordingSessions.order.push(id);
-  return start;
-}
-
-/** 같은 유한 세션의 immutable 완료 영수증. 반복 read는 같은 결과를 돌려준다. */
-export function readWindowRecordingSession(id: string): Promise<WindowRecordingSessionReceipt> {
-  const session = recordingSessions.entries.get(id);
-  if (!session) return Promise.reject(new Error(`recording session not found: ${id}`));
-  return session.receipt;
-}
-
-export function __resetWindowRecordingSessionsForTest(): void {
-  recordingSessions.entries.clear();
-  recordingSessions.order = [];
 }
 
 /**

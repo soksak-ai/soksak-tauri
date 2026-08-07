@@ -2,17 +2,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { recordWindowFrames, startWindowRecordingSession, readWindowRecordingSession } = vi.hoisted(() => ({
-  recordWindowFrames: vi.fn(({ frames }: { frames: number }) => Object.assign(
-    Promise.resolve(frames),
-    { ready: Promise.resolve() },
-  )),
-  startWindowRecordingSession: vi.fn(async (id: string, request: { dir: string; frames: number }) => ({
-    id, ready: true, dir: request.dir, requestedFrames: request.frames,
-  })),
-  readWindowRecordingSession: vi.fn(async (id: string) => ({
-    id, report: { status: "complete", mode: "realtime", dir: "/tmp/session-record", requestedFrames: 3, frames: 3 },
-  })),
+const { recordWindowFrames } = vi.hoisted(() => ({
+  recordWindowFrames: vi.fn(async ({ frames }: { frames: number }) => frames),
 }));
 
 vi.mock("../framework", () => ({
@@ -37,8 +28,6 @@ vi.mock("../state/sessions", () => ({ useSessions: { getState: vi.fn() } }));
 vi.mock("./windowRecorder", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./windowRecorder")>()),
   recordWindowFrames,
-  startWindowRecordingSession,
-  readWindowRecordingSession,
 }));
 vi.mock("./captureCalibration", () => ({
   CAPTURE_CALIBRATION_ID: "capture-calibration",
@@ -53,8 +42,6 @@ let registered: string[] = [];
 
 beforeEach(() => {
   recordWindowFrames.mockClear();
-  startWindowRecordingSession.mockClear();
-  readWindowRecordingSession.mockClear();
   const before = new Set(catalogJson().map(({ name }) => name));
   registerCaptureCatalog();
   registered = catalogJson().map(({ name }) => name).filter((name) => !before.has(name));
@@ -192,26 +179,4 @@ describe("window.record strict sequence input", () => {
       expect(recordWindowFrames).not.toHaveBeenCalled();
     },
   );
-});
-
-describe("window.record finite session", () => {
-  it("start는 첫 프레임 ACK를, read는 같은 완료 영수증을 공개한다", async () => {
-    expect(getSpec("window.record.start")).toBeDefined();
-    expect(getSpec("window.record.read")).toBeDefined();
-    const id = `record-session-${crypto.randomUUID()}`;
-    const started = await execute("window.record.start", {
-      id, dir: "/tmp/session-record", frames: 3, intervalMs: 7,
-    }, {});
-    expect(started).toMatchObject({
-      ok: true,
-      data: { id, ready: true, dir: "/tmp/session-record", requestedFrames: 3 },
-    });
-    const first = await execute("window.record.read", { id }, {});
-    const second = await execute("window.record.read", { id }, {});
-    expect(first).toMatchObject({
-      ok: true,
-      data: { id, report: { status: "complete", frames: 3 } },
-    });
-    expect(second).toEqual(first);
-  });
 });

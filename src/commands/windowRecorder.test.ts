@@ -3,10 +3,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { createStream, invoke } from "../framework";
 import {
-  __resetWindowRecordingSessionsForTest,
-  readWindowRecordingSession,
   recordWindowFrames,
-  startWindowRecordingSession,
   startWindowRecording,
   validWindowRecordFrameTimeoutMs,
   validWindowRecordFrames,
@@ -26,7 +23,6 @@ vi.mock("../framework", () => ({
 const readyStream = { onmessage: (_message: number) => {} };
 
 beforeEach(() => {
-  __resetWindowRecordingSessionsForTest();
   vi.mocked(invoke).mockReset();
   vi.mocked(createStream).mockClear();
   vi.mocked(createStream).mockReturnValue(readyStream as never);
@@ -34,35 +30,6 @@ beforeEach(() => {
     if (command !== "plugin:webview-capture|record") return undefined;
     return args?.frames;
   });
-});
-
-it("유한 녹화 세션은 첫 프레임 ACK와 완료 영수증을 분리하고 반복 read에 같은 결과를 낸다", async () => {
-  let resolveReady!: () => void;
-  let resolveFinal!: (frames: number) => void;
-  const ready = new Promise<void>((resolve) => { resolveReady = resolve; });
-  const final = Object.assign(
-    new Promise<number>((resolve) => { resolveFinal = resolve; }),
-    { ready },
-  );
-  const recorder = vi.fn(() => final);
-  const started = startWindowRecordingSession("flow-left", {
-    dir: "/tmp/flow-left", frames: 48, intervalMs: 16,
-  }, recorder);
-  let acknowledged = false;
-  void started.then(() => { acknowledged = true; });
-  await Promise.resolve();
-  expect(acknowledged).toBe(false);
-  resolveReady();
-  await expect(started).resolves.toMatchObject({ id: "flow-left", ready: true });
-
-  const firstRead = readWindowRecordingSession("flow-left");
-  resolveFinal(48);
-  await expect(firstRead).resolves.toMatchObject({
-    id: "flow-left",
-    report: { status: "complete", frames: 48 },
-  });
-  await expect(readWindowRecordingSession("flow-left")).resolves.toEqual(await firstRead);
-  expect(recorder).toHaveBeenCalledOnce();
 });
 
 it("공통 record 계약 한 번으로 유한 프레임 시퀀스를 저장한다", async () => {
