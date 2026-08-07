@@ -15,6 +15,8 @@ import { hostileWindowResizeSizes } from "./browser-matrix.mjs";
 const ROLES = Object.freeze(["close", "minimize", "zoom"]);
 const SCALE_FACTOR = 2;
 const NODE_IDENTITY = "dom-titlebar-instance-1";
+const OWNER_IDENTITY = "main#1";
+const PRESENTED_COMPOSITION = 9;
 const BASELINE_OUTER = Object.freeze({ w: 2_400, h: 1_600 });
 const BASELINE_VIEWPORT = Object.freeze({ w: 2_360, h: 1_560 });
 
@@ -35,6 +37,34 @@ function rectsFor(heightCssPx, viewportWidth = BASELINE_VIEWPORT.w) {
       role,
       rect: { x: 24 + index * 40, y, w: buttonSize, h: buttonSize },
     })),
+  };
+}
+
+function owner(framework, revision) {
+  if (framework !== "tauri") return null;
+  return {
+    identity: OWNER_IDENTITY,
+    drawOwnerCount: 1,
+    targetSequence: revision,
+    appliedTargetSequence: revision,
+    mutationSequence: revision,
+    drawSequence: revision,
+    applying: false,
+    lastApplyOk: true,
+    lastApplyError: null,
+  };
+}
+
+function startupReceipt() {
+  return {
+    platform: "macos",
+    generation: 1,
+    headless: false,
+    creationCommitted: true,
+    rendererGreen: true,
+    presentationInFlight: false,
+    presented: true,
+    composition: { kind: "macos-titlebar", nativeSequence: PRESENTED_COMPOSITION },
   };
 }
 
@@ -62,6 +92,7 @@ function sample({
     reservations: structuredClone(rects.elements),
     buttons: structuredClone(rects.elements),
     backings: framework === "tauri" ? structuredClone(rects.elements) : null,
+    owner: owner(framework, revision),
   };
 }
 
@@ -84,6 +115,7 @@ function hostileResize(framework, baselineStyle) {
         reservations: structuredClone(rects.elements),
         buttons: structuredClone(rects.elements),
         backings: framework === "tauri" ? structuredClone(rects.elements) : null,
+        owner: framework === "tauri" ? { identity: OWNER_IDENTITY, drawOwnerCount: 1 } : null,
       },
     };
   });
@@ -113,6 +145,14 @@ function evidence(engine = "browser", framework = "tauri") {
       physical: "device-px",
       scaleFactor: SCALE_FACTOR,
     },
+    startup: startupReceipt(),
+    cold: sample({
+      framework,
+      stage: "cold",
+      revision: PRESENTED_COMPOSITION,
+      heightCssPx: 45,
+      inlineStyle: baselineStyle,
+    }),
     baseline: sample({
       framework,
       stage: "baseline",
@@ -173,6 +213,7 @@ function evidence(engine = "browser", framework = "tauri") {
 
 function allSamples(value) {
   return [
+    value.cold,
     value.baseline,
     ...value.heights,
     value.reset,
@@ -302,6 +343,72 @@ describe("B12 macOS traffic-light composition machine judge", () => {
       (value) => { value.held.reset.presentationRevision += 1; },
       (value) => { value.held.final.dom.nodeIdentity = "late-remount"; },
       (value) => { value.held.final.dom.inlineStyle.height = "45px"; },
+    ];
+    for (const mutate of cases) {
+      const value = evidence();
+      mutate(value);
+      expect(judgeB12MachineEvidence(value, identity("tauri")).status).toBe("red");
+    }
+  });
+
+  it("냉시작 표시 영수증과 로딩 완료 표본을 각각 요구하고 그 사이 이동을 RED로 잡는다", () => {
+    const cases = [
+      (value) => { delete value.startup; },
+      (value) => { delete value.cold; },
+      (value) => { value.cold.stage = "baseline"; },
+      (value) => { value.startup.platform = "other"; },
+      (value) => { value.startup.generation = 0; },
+      (value) => { value.startup.headless = true; },
+      (value) => { value.startup.creationCommitted = false; },
+      (value) => { value.startup.rendererGreen = false; },
+      (value) => { value.startup.presentationInFlight = true; },
+      (value) => { value.startup.presented = false; },
+      (value) => { value.startup.composition = null; },
+      (value) => { value.startup.composition.kind = "dom"; },
+      (value) => { value.startup.composition.nativeSequence = 0; },
+      // 표시된 합성보다 앞선 표본은 다른 창 수명이거나 낡은 읽기다.
+      (value) => { value.cold.presentationRevision = PRESENTED_COMPOSITION - 1; },
+      (value) => { value.baseline.presentationRevision = PRESENTED_COMPOSITION - 1; },
+      // 재시작 직후 정렬과 로딩 완료 정렬이 다르면 최종 화면만 보고 GREEN이 될 수 없다.
+      (value) => { value.baseline.buttons[0].rect.y += 1; },
+      (value) => { value.baseline.reservations[1].rect.x += 1; },
+      (value) => { value.baseline.backings[2].rect.y += 1; },
+      (value) => { value.baseline.titlebarPhysical.h += 1; },
+      (value) => { value.baseline.dom.nodeIdentity = "remounted-after-load"; },
+      (value) => { value.baseline.dom.inlineStyle.height = "45px"; },
+    ];
+    for (const mutate of cases) {
+      const value = evidence();
+      mutate(value);
+      expect(judgeB12MachineEvidence(value, identity("tauri")).status).toBe("red");
+    }
+  });
+
+  it("정지 구간에서 스스로 다시 앉은 native owner 원장을 RED로 잡는다", () => {
+    const cases = [
+      (value) => { delete value.baseline.owner; },
+      (value) => { value.baseline.owner = null; },
+      (value) => { value.baseline.owner.drawOwnerCount = 2; },
+      (value) => { value.baseline.owner.applying = true; },
+      (value) => { value.baseline.owner.lastApplyOk = false; },
+      (value) => { value.baseline.owner.lastApplyError = "titlebar composition re-entered"; },
+      (value) => { value.baseline.owner.appliedTargetSequence -= 1; },
+      (value) => { value.baseline.owner.targetSequence += 1; },
+      (value) => { value.baseline.owner.identity = ""; },
+      // 하나의 paint owner만 쓴다: 단계 사이에 owner가 바뀌면 RED다.
+      (value) => { value.reset.owner.identity = "main#2"; },
+      (value) => { value.hostileResize.transactions[3].titlebar.owner.identity = "main#2"; },
+      (value) => { value.hostileResize.transactions[4].titlebar.owner.drawOwnerCount = 2; },
+      // 정위치→오차→정위치: 합성 거래 없이 늘어난 mutation은 스스로 다시 앉은 흔적이다.
+      (value) => { value.baseline.owner.mutationSequence += 2; },
+      (value) => { value.held.baseline.owner.mutationSequence += 1; },
+      (value) => { value.held.heights[1].owner.mutationSequence += 1; },
+      (value) => { value.held.reset.owner.mutationSequence += 1; },
+      (value) => { value.held.final.owner.mutationSequence += 1; },
+      (value) => { value.hostileResize.heldRestore.owner.mutationSequence += 1; },
+      // 원장은 되감기지 않는다.
+      (value) => { value.final.owner.mutationSequence -= 1; },
+      (value) => { value.final.owner.drawSequence -= 1; },
     ];
     for (const mutate of cases) {
       const value = evidence();

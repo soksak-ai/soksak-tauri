@@ -26,7 +26,31 @@ const SAMPLE_KEYS = Object.freeze([
   "reservations",
   "buttons",
   "backings",
+  "owner",
 ]);
+const OWNER_KEYS = Object.freeze([
+  "identity",
+  "drawOwnerCount",
+  "targetSequence",
+  "appliedTargetSequence",
+  "mutationSequence",
+  "drawSequence",
+  "applying",
+  "lastApplyOk",
+  "lastApplyError",
+]);
+const HOSTILE_OWNER_KEYS = Object.freeze(["identity", "drawOwnerCount"]);
+const STARTUP_KEYS = Object.freeze([
+  "platform",
+  "generation",
+  "headless",
+  "creationCommitted",
+  "rendererGreen",
+  "presentationInFlight",
+  "presented",
+  "composition",
+]);
+const STARTUP_COMPOSITION_KEYS = Object.freeze(["kind", "nativeSequence"]);
 const HELD_KEYS = Object.freeze(["baseline", "heights", "reset", "final"]);
 const HOSTILE_KEYS = Object.freeze([
   "baselineOuterPhysical",
@@ -46,6 +70,7 @@ const HOSTILE_TITLEBAR_KEYS = Object.freeze([
   "reservations",
   "buttons",
   "backings",
+  "owner",
 ]);
 
 function inspectRect(value, path, failures) {
@@ -150,6 +175,128 @@ function inspectDom(value, path, failures) {
   return identityValid && inlineStyle
     ? { nodeIdentity: value.nodeIdentity, inlineStyle }
     : null;
+}
+
+function counter(value, path, minimum, failures) {
+  if (Number.isSafeInteger(value) && value >= minimum) return value;
+  failures.push(`${path}=integer>=${minimum}/${displayValue(value)}`);
+  return null;
+}
+
+/**
+ * Tauri의 유일한 paint owner 원장. `targetSequence`는 명시적 compose 거래 수,
+ * `mutationSequence`는 실제로 버튼을 움직인 apply 수다. 둘의 차이가 AppKit이 스스로
+ * 옮긴 것을 다시 앉힌 횟수이므로, 정지 구간에서 이 차이가 벌어지면 중간 회귀다.
+ */
+function inspectOwner(value, path, { framework, revision }, failures) {
+  if (framework !== "tauri") {
+    if (value !== null) failures.push(`${path}=null-for-electron/${displayValue(value)}`);
+    return null;
+  }
+  if (!requireExactKeys(value, OWNER_KEYS, path, failures)) return null;
+  if (!hasText(value.identity)) {
+    failures.push(`${path}.identity=non-empty/${displayValue(value.identity)}`);
+  }
+  if (value.drawOwnerCount !== 1) {
+    failures.push(`${path}.drawOwnerCount=1/${displayValue(value.drawOwnerCount)}`);
+  }
+  const targetSequence = counter(value.targetSequence, `${path}.targetSequence`, 1, failures);
+  const appliedTargetSequence = counter(
+    value.appliedTargetSequence,
+    `${path}.appliedTargetSequence`,
+    1,
+    failures,
+  );
+  const mutationSequence = counter(value.mutationSequence, `${path}.mutationSequence`, 0, failures);
+  const drawSequence = counter(value.drawSequence, `${path}.drawSequence`, 0, failures);
+  if (targetSequence !== null && appliedTargetSequence !== null
+      && appliedTargetSequence !== targetSequence) {
+    failures.push(`${path}.appliedTargetSequence=targetSequence`);
+  }
+  if (revision != null && targetSequence !== null && targetSequence !== revision) {
+    failures.push(`${path}.targetSequence=presentationRevision/${displayValue(targetSequence)}`);
+  }
+  if (value.applying !== false) failures.push(`${path}.applying=false/${displayValue(value.applying)}`);
+  if (value.lastApplyOk !== true) {
+    failures.push(`${path}.lastApplyOk=true/${displayValue(value.lastApplyOk)}`);
+  }
+  if (value.lastApplyError !== null) {
+    failures.push(`${path}.lastApplyError=null/${displayValue(value.lastApplyError)}`);
+  }
+  return {
+    identity: hasText(value.identity) ? value.identity : null,
+    targetSequence,
+    mutationSequence,
+    drawSequence,
+  };
+}
+
+function inspectHostileOwner(value, path, framework, failures) {
+  if (framework !== "tauri") {
+    if (value !== null) failures.push(`${path}=null-for-electron/${displayValue(value)}`);
+    return null;
+  }
+  if (!requireExactKeys(value, HOSTILE_OWNER_KEYS, path, failures)) return null;
+  if (!hasText(value.identity)) {
+    failures.push(`${path}.identity=non-empty/${displayValue(value.identity)}`);
+  }
+  if (value.drawOwnerCount !== 1) {
+    failures.push(`${path}.drawOwnerCount=1/${displayValue(value.drawOwnerCount)}`);
+  }
+  return { identity: hasText(value.identity) ? value.identity : null };
+}
+
+/** 창을 실제로 드러낸 시작 게이트 영수증. 어댑터의 boolean 하나가 아니라 각 사실을 읽는다. */
+function inspectStartup(value, framework, failures) {
+  if (!requireExactKeys(value, STARTUP_KEYS, "startup", failures)) return null;
+  if (framework === "tauri" && value.platform !== "macos") {
+    failures.push(`startup.platform=macos/${displayValue(value.platform)}`);
+  }
+  const generation = counter(value.generation, "startup.generation", 1, failures);
+  for (const [key, expected] of [
+    ["headless", false],
+    ["creationCommitted", true],
+    ["rendererGreen", true],
+    ["presentationInFlight", false],
+    ["presented", true],
+  ]) {
+    if (value[key] !== expected) {
+      failures.push(`startup.${key}=${expected}/${displayValue(value[key])}`);
+    }
+  }
+  if (!requireExactKeys(value.composition, STARTUP_COMPOSITION_KEYS, "startup.composition", failures)) {
+    return { generation, nativeSequence: null };
+  }
+  if (framework === "tauri" && value.composition.kind !== "macos-titlebar") {
+    failures.push(`startup.composition.kind=macos-titlebar/${displayValue(value.composition.kind)}`);
+  }
+  const nativeSequence = counter(
+    value.composition.nativeSequence,
+    "startup.composition.nativeSequence",
+    1,
+    failures,
+  );
+  return { generation, nativeSequence };
+}
+
+/** 창 기하가 그대로인 구간에서는 compose 거래 수보다 mutation이 더 늘 수 없다. */
+function compareCompositionLedger(from, to, path, { still }, failures) {
+  const left = from?.owner;
+  const right = to?.owner;
+  if (!(left && right)) return;
+  if (left.identity && right.identity && left.identity !== right.identity) {
+    failures.push(`${path}.owner.identity=one-paint-owner`);
+  }
+  const delta = (key) => (left[key] === null || right[key] === null ? null : right[key] - left[key]);
+  for (const key of ["targetSequence", "mutationSequence", "drawSequence"]) {
+    const value = delta(key);
+    if (value !== null && value < 0) failures.push(`${path}.owner.${key}=>=previous`);
+  }
+  const target = delta("targetSequence");
+  const mutation = delta("mutationSequence");
+  if (still && target !== null && mutation !== null && mutation > target) {
+    failures.push(`${path}.owner.mutationSequence=<=composed-transactions/${displayValue(mutation)}`);
+  }
 }
 
 function inspectPlaneAgainstTitlebar(plane, titlebar, path, failures) {
@@ -266,6 +413,13 @@ function inspectSample(
     }
   }
 
+  const ownerLedger = inspectOwner(
+    value.owner,
+    `${path}.owner`,
+    { framework, revision: revisionValid ? value.presentationRevision : null },
+    failures,
+  );
+
   return {
     stage: value.stage,
     presentationRevision: revisionValid ? value.presentationRevision : null,
@@ -275,6 +429,7 @@ function inspectSample(
     viewport,
     titlebar,
     planes: { reservations, buttons, backings },
+    owner: ownerLedger,
   };
 }
 
@@ -367,6 +522,7 @@ function compareHeldSample(applied, held, path, framework, failures) {
       failures,
     );
   }
+  compareCompositionLedger(applied, held, path, { still: true }, failures);
 }
 
 function inspectHostileTitlebar(value, path, framework, failures) {
@@ -395,7 +551,14 @@ function inspectHostileTitlebar(value, path, framework, failures) {
     inspectPlaneAgainstTitlebar(backings, titlebar, `${path}.backings`, failures);
     inspectMatchingPlanes(backings, buttons, `${path}.backingButton`, failures);
   }
-  return { revision, viewport, titlebar, planes: { reservations, buttons, backings } };
+  const ownerLedger = inspectHostileOwner(value.owner, `${path}.owner`, framework, failures);
+  return {
+    revision,
+    viewport,
+    titlebar,
+    planes: { reservations, buttons, backings },
+    owner: ownerLedger,
+  };
 }
 
 function sameSize(left, rightValue) {
@@ -457,6 +620,10 @@ function inspectHostileResize(value, baseline, context, failures) {
         context.framework,
         failures,
       );
+      if (baseline?.owner?.identity && titlebar?.owner?.identity
+          && titlebar.owner.identity !== baseline.owner.identity) {
+        failures.push(`${path}.titlebar.owner.identity=one-paint-owner`);
+      }
       if (baselineOuter && baseline?.viewport && requested && titlebar?.viewport) {
         const expected = {
           w: baseline.viewport.w + requested.w - baselineOuter.w,
@@ -529,7 +696,10 @@ export function judgeB12MachineEvidence(value, identity = null) {
   const failures = [];
   if (!requireExactKeys(
     value,
-    ["engine", "coordinateSpace", "baseline", "heights", "reset", "hostileResize", "final", "held"],
+    [
+      "engine", "coordinateSpace", "startup", "cold", "baseline", "heights", "reset",
+      "hostileResize", "final", "held",
+    ],
     "evidence",
     failures,
   )) return finishMachineVerdict("B12", failures, "B12:unreachable");
@@ -549,6 +719,13 @@ export function judgeB12MachineEvidence(value, identity = null) {
     framework,
     coordinateSpace: coordinateSpace ?? { scaleFactor: Number.NaN },
   };
+  const startup = inspectStartup(value.startup, framework, failures);
+  const cold = inspectSample(
+    value.cold,
+    "cold",
+    { ...context, expectedStage: "cold" },
+    failures,
+  );
   const baseline = inspectSample(
     value.baseline,
     "baseline",
@@ -628,14 +805,37 @@ export function judgeB12MachineEvidence(value, identity = null) {
     failures.push(`heights.requestedHeightCssPx=30,60,72/${displayValue(requestedHeights)}`);
   }
 
-  const ordered = [baseline, ...heights, reset, final].filter(Boolean);
-  if (baseline?.dom) {
+  const ordered = [cold, baseline, ...heights, reset, final].filter(Boolean);
+  if (cold?.dom) {
     ordered.forEach((sample, index) => {
-      if (sample.dom && sample.dom.nodeIdentity !== baseline.dom.nodeIdentity) {
-        failures.push(`stages[${index}].dom.nodeIdentity=baseline`);
+      if (sample.dom && sample.dom.nodeIdentity !== cold.dom.nodeIdentity) {
+        failures.push(`stages[${index}].dom.nodeIdentity=cold`);
       }
     });
   }
+  for (let index = 1; index < ordered.length; index += 1) {
+    compareCompositionLedger(
+      ordered[index - 1],
+      ordered[index],
+      `stages[${index}]`,
+      { still: false },
+      failures,
+    );
+  }
+
+  // 재시작 직후 정렬(cold)과 로딩 완료 후 정렬(baseline)은 각각 측정하며, 그 사이에는
+  // 명시적 mutation이 없다. 두 표본이 다르면 최종 화면만 보고 GREEN이라 할 수 없다.
+  if (startup?.nativeSequence != null && cold?.presentationRevision != null
+      && !(cold.presentationRevision >= startup.nativeSequence)) {
+    failures.push("cold.presentationRevision=>=startup-presented-composition");
+  }
+  if (cold?.presentationRevision != null && baseline?.presentationRevision != null
+      && !(baseline.presentationRevision >= cold.presentationRevision)) {
+    failures.push("baseline.presentationRevision=>=cold");
+  }
+  compareRestoredSample(cold, baseline, "baseline-vs-cold", framework, failures);
+  compareCompositionLedger(cold, baseline, "baseline-vs-cold", { still: true }, failures);
+
   let previousRevision = baseline?.presentationRevision ?? null;
   for (const [index, height] of heights.entries()) {
     if (previousRevision !== null && height.presentationRevision !== null
@@ -665,8 +865,9 @@ export function judgeB12MachineEvidence(value, identity = null) {
   return finishMachineVerdict(
     "B12",
     failures,
-    `${value.engine}/B12:${framework};baseline+height>=2+reset+final=presented+held;`
-      + `height=30,60,72;hostile-resize>=12+exact-restore;`
-      + `center<=${TITLEBAR_CENTER_TOLERANCE_PHYSICAL_PX}px;dom-identity+inline-style=restored`,
+    `${value.engine}/B12:${framework};startup-receipt+cold+baseline+height>=2+reset+final`
+      + `=presented+held;height=30,60,72;hostile-resize>=12+exact-restore;`
+      + `center<=${TITLEBAR_CENTER_TOLERANCE_PHYSICAL_PX}px;dom-identity+inline-style=restored;`
+      + `one-paint-owner;still-span-mutations<=composed-transactions`,
   );
 }

@@ -102,6 +102,8 @@ inventory로 유지한다. replacement, gap, disappearance, unpresented, dropped
 
 실제 Tauri/macOS B12 게이트는 `make e2e-titlebar-dev`로 실행한다. 앱을 한 번 빌드해 실행 파일 SHA를 고정하고 하나의 run id를 만든 뒤, 앞 cycle이 RED여도 정확히 세 번 냉재시작을 끝까지 수행한다. 모든 cycle은 같은 build id·run id·framework·platform·정렬된 실제 창 집합과 브라우저 acceptance 3종을 보고해야 한다. cycle 누락·중복, identity 변경, 창 집합 변경은 전체 RED이며 세 cycle의 모든 창이 GREEN일 때만 집계 GREEN이다.
 
+각 창은 재시작 직후 정렬과 로딩 완료 후 정렬을 각각 남긴다. 시작 게이트 영수증(`window.startup`의 platform·generation·creationCommitted·rendererGreen·presentationInFlight·presented와 표시된 합성 sequence)을 먼저 읽고, 아무것도 건드리지 않은 냉시작 합성을 표본으로 남긴 다음 `ui.layout.wait-settled`가 닫힌 뒤 baseline을 다시 잰다. 두 표본의 기하·DOM 인스턴스/스타일이 다르면 RED이며, 어댑터가 돌려주는 boolean 하나는 표시 사실을 대신하지 못한다. 모든 표본은 유일한 paint owner 원장(identity·drawOwnerCount·targetSequence·appliedTargetSequence·mutationSequence·drawSequence·applying·lastApplyOk·lastApplyError)을 함께 싣는다. 창 기하가 그대로인 구간에서 mutation이 compose 거래보다 더 늘면 AppKit이 옮긴 버튼을 다시 앉힌 것이므로 `정위치→오차→정위치` 중간 회귀로 RED다. cycle 요약은 냉시작 영수증을 들고, 앞 cycle의 마지막 합성 sequence를 넘겨받은 cycle은 같은 프로세스를 다시 훑은 warm 실행으로 거절한다.
+
 각 창은 공개 커맨드로 30·60·72 CSS px에서 측정한 뒤 유한한 hostile 전체 창 resize 한 회를 수행한다. 각 transaction은 실제 Tauri titlebar probe generation과 raw DOM reservation·AppKit button/backing·titlebar·viewport 사각형을 가진다. 마지막 요청 outer size, 이후 `window.info`, 유지 표본의 outer size와 composition은 모두 baseline으로 정확히 복원되어야 한다. 적용 직후의 모든 표본에는 나중에 읽기만 하는 유지 표본이 대응하며, 그 사이 기하·DOM 인스턴스/스타일·native presentation revision이 정확히 유지되어야 한다. 따라서 프레임워크가 늦게 다시 그려 초기 정위치만 맞는 상태는 통과하지 못한다.
 
 증거는 `~/.soksak-e2e/evidence/titlebar-composition/<run-id>/<cycle>/` 아래에 저장하며 `run.json`이 세 cycle을 닫은 집계 판정이다. 기계 판정은 공개 DOM/AppKit 사각형과 시작 영수증만 사용한다. 저장된 스크린샷과 유한 녹화는 필수 육안 검사 증거이지만 PASS/FAIL 근거로 사용하지 않는다.

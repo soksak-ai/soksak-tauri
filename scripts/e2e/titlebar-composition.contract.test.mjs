@@ -72,6 +72,29 @@ describe("titlebar composition live E2E contract", () => {
     expect(target).not.toContain("break;");
   });
 
+  it("measures the cold start and the settled load as two separate samples", () => {
+    const startupAt = source.indexOf("const startup = await readStartup(");
+    const coldAt = source.indexOf('"cold", null)');
+    const settledAt = source.indexOf('rpc("ui.layout.wait-settled"');
+    const baselineAt = source.indexOf('"baseline", null)');
+    expect(startupAt).toBeGreaterThan(0);
+    expect(coldAt).toBeGreaterThan(startupAt);
+    expect(settledAt).toBeGreaterThan(coldAt);
+    expect(baselineAt).toBeGreaterThan(settledAt);
+    for (const marker of [
+      "publicStartup",
+      "publicOwner",
+      "publicHostileOwner",
+      "startup,",
+      "cold,",
+      "coldStart: {",
+      "presentedCompositionSequence:",
+      "coldPresentationRevision:",
+      "finalPresentationRevision:",
+      "coldStart: report.coldStart,",
+    ]) expect(source).toContain(marker);
+  });
+
   it("persists artifact and cold-run identity in every cycle and window receipt", () => {
     for (const marker of [
       "requireBrowserEvidenceBuildId",
