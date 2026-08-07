@@ -73,6 +73,7 @@ mod macos {
         presentation_revision: u64,
         display_timestamp_unix_ms: f64,
         target_timestamp_unix_ms: f64,
+        /// 이 event의 surface 좌표를 실제로 읽은 순간. 표시 시각이 아니라 관측 시각이다.
         callback_observed_at_unix_ms: f64,
         refresh_interval_ms: f64,
         presented_at_unix_ms: f64,
@@ -184,11 +185,14 @@ mod macos {
             }
             let target_timestamp_unix_ms =
                 super::super::presentation_clock::unix_ms_from_media_time(link.targetTimestamp());
-            let callback_observed_at_unix_ms = super::super::presentation_clock::unix_now_ms();
+            // 이 시각은 callback이 언제 불렸는지의 사실이다. 표본이 어느 순간의 좌표인지는
+            // 읽기를 감싼 capture가 따로 소유한다 — 둘을 한 값으로 겸업시키면 판정이 지연을
+            // 좌표 오차로 읽는다.
+            let callback_entered_at_unix_ms = super::super::presentation_clock::unix_now_ms();
             let refresh_interval_ms = (target_timestamp_unix_ms - displayed_at_unix_ms).max(0.0);
             if let Some(previous_callback) = self.last_callback_observed_at_unix_ms {
                 if refresh_interval_ms > f64::EPSILON {
-                    let callback_interval = callback_observed_at_unix_ms - previous_callback;
+                    let callback_interval = callback_entered_at_unix_ms - previous_callback;
                     let skipped = (callback_interval / refresh_interval_ms).floor() as u64;
                     self.observation.callback_intervals_skipped = self
                         .observation
@@ -196,11 +200,11 @@ mod macos {
                         .saturating_add(skipped.saturating_sub(1));
                 }
             }
-            self.last_callback_observed_at_unix_ms = Some(callback_observed_at_unix_ms);
+            self.last_callback_observed_at_unix_ms = Some(callback_entered_at_unix_ms);
             self.observation.max_callback_latency_ms = self
                 .observation
                 .max_callback_latency_ms
-                .max((callback_observed_at_unix_ms - target_timestamp_unix_ms).max(0.0));
+                .max((callback_entered_at_unix_ms - target_timestamp_unix_ms).max(0.0));
             if let Some(previous) = self.events.last().map(|event| event.presented_at_unix_ms) {
                 if displayed_at_unix_ms <= previous {
                     self.violations.dropped_events =
@@ -213,16 +217,18 @@ mod macos {
                 return;
             }
 
-            let surfaces = match layer::capture_pane_presentations(&self.owners) {
-                Ok(surfaces) => surfaces,
-                Err(error) => {
-                    self.violations.disappearances =
-                        self.violations.disappearances.saturating_add(1);
-                    self.violations.unpresented = self.violations.unpresented.saturating_add(1);
-                    self.fail_baseline(error);
-                    return;
-                }
-            };
+            let (surfaces, callback_observed_at_unix_ms) =
+                match layer::capture_pane_presentations(&self.owners) {
+                    Ok(observation) => observation,
+                    Err(error) => {
+                        self.violations.disappearances =
+                            self.violations.disappearances.saturating_add(1);
+                        self.violations.unpresented =
+                            self.violations.unpresented.saturating_add(1);
+                        self.fail_baseline(error);
+                        return;
+                    }
+                };
             if surfaces
                 .iter()
                 .any(|surface| !surface.live || !surface.visible)

@@ -285,6 +285,13 @@
       "note": "두 producer 가 서로 다른 epoch 로 시각을 발행할 때 B04 가 좌표를 비교하기 전에 관측 구간부터 판정한다는 법을 고정한다."
     },
     {
+      "file": "lib/browser-gate-b04-epoch.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "실측 표본으로, native producer 가 좌표를 읽은 그 순간으로 표본을 날인해야 궤적 판정이 지연을 좌표 오차로 읽지 않는다는 법을 고정한다."
+    },
+    {
       "file": "lib/browser-gate-b05-evidence.mjs",
       "role": "lib",
       "class": "A",

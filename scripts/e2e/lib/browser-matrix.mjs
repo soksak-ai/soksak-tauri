@@ -70,7 +70,10 @@ const PANE_PRESENTATION_TRACE = Object.freeze({
       }
       const surface = surfaces[0];
       return {
-        sampledAtUnixMs: Number(event.presentedAtUnixMs),
+        // 궤적 판정의 시각은 이 좌표를 읽은 순간이다. `presentedAtUnixMs`는 직전 frame이
+        // 화면에 뜬 시각이고 그 사이에도 CA 보간은 흐르므로, 그것으로 날인하면 지연이
+        // 좌표 오차로 둔갑한다(실측 최대 0.65 물리 px).
+        sampledAtUnixMs: Number(event.callbackObservedAtUnixMs),
         connected: surface.live === true && surface.visible === true && surface.painted === true,
         slotFrame: surface.domFrame,
         rendererFrame: surface.domFrame,
