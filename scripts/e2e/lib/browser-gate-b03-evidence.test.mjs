@@ -46,4 +46,55 @@ describe("B03 live evidence mapper", () => {
     expect(evidence.surfaces[0].topologyPath).toBeNull();
     expect(judgeB03MachineEvidence(evidence).status).toBe("red");
   });
+
+  it("names a drifted checkpoint field on both sides instead of mapping it to null", () => {
+    const value = raw();
+    value.surfaceLedger = value.surfaceReceipts;
+    delete value.surfaceReceipts;
+    const evidence = mapB03LiveEvidence(value);
+    expect(evidence.evidenceWiring).toEqual({
+      source: "B03.live",
+      unconsumed: ["surfaceLedger"],
+      unproduced: ["surfaceReceipts"],
+      error: null,
+    });
+    const verdict = judgeB03MachineEvidence(evidence);
+    expect(verdict.status).toBe("red");
+    // 배선 이름이 값 증상보다 앞에 선다. surfaces=non-empty 만 보고 표면 소실을 쫓지 않는다.
+    expect(verdict.evidence).toEqual([
+      "B03:wiring.B03.live.surfaceLedger=produced-not-consumed",
+      "B03:wiring.B03.live.surfaceReceipts=consumed-not-produced",
+      "B03:surfaces=non-empty/[]",
+      "B03:inventory:surfaces=non-empty",
+      "B03:inventory:visible-owners=left,right/left,right/left,right/",
+    ]);
+  });
+
+  it("names a checkpoint field that throws instead of killing the harness", () => {
+    const value = raw();
+    Object.defineProperty(value, "engine", {
+      enumerable: true,
+      get() {
+        throw new TypeError("engine checkpoint read failed");
+      },
+    });
+    let verdict;
+    expect(() => {
+      verdict = judgeB03MachineEvidence(mapB03LiveEvidence(value));
+    }).not.toThrow();
+    expect(verdict.status).toBe("red");
+    expect(verdict.evidence).toContain(
+      'B03:wiring.B03.live=mapper-threw/"TypeError: engine checkpoint read failed"',
+    );
+  });
+
+  it("records a clean wiring ledger on the green path", () => {
+    const evidence = mapB03LiveEvidence(raw());
+    expect(evidence.evidenceWiring).toEqual({
+      source: "B03.live",
+      unconsumed: [],
+      unproduced: [],
+      error: null,
+    });
+  });
 });
