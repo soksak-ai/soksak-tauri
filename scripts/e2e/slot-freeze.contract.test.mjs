@@ -806,6 +806,11 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(source).toContain("measureCapturedImage");
     expect(source).toContain("capturedWidth");
     expect(source).not.toContain("decodePng");
+    // 페이지 답과 eval 봉투를 가르는 자리는 하나다. 구현마다 다른 포장을 읽는 자리에서 직접
+    // 풀면 봉투 축이 페이지 기록에 섞이고, 그 사실은 배선 장부에만 뒤늦게 나타난다
+    // (실측 2026-08-07 browser-chromium B11: wiring.B11.page.viewId=produced-not-consumed).
+    expect(source).toContain("mapPageState(openPageStateReply(");
+    expect(source).not.toContain("mapPageState(unwrapEvalValue(");
   });
 
   it("B11은 pane resize를 실제로 재고 나서 도장을 찍는다", () => {

@@ -74,6 +74,7 @@ import {
   captureDocumentGeometry,
   fullCaptureDocumentProbeJs,
   mapPageState,
+  openPageStateReply,
 } from "./lib/browser-page-state.mjs";
 import { assertSentinelMounted } from "./lib/browser-sentinel.mjs";
 import { windowedSurfaceCompositionVerdict } from "./lib/windowed-surface-composition.mjs";
@@ -620,7 +621,7 @@ async function readB11PaneStage(rpc, win, context, stage) {
       await rpc("ui.measure", { address: paneAddress(tree, paneIds[index]) }, win),
       `B11 ${stage} pane rect ${tabIds[index]}`,
     );
-    const page = mapPageState(unwrapEvalValue(must(await rpc(`plugin.${plugin}.eval`, {
+    const page = mapPageState(openPageStateReply(must(await rpc(`plugin.${plugin}.eval`, {
       viewId: tabIds[index],
       js: fullCaptureDocumentProbeJs(),
     }, win), `B11 ${stage} page state ${tabIds[index]}`)));
@@ -919,7 +920,7 @@ async function verifyFullCapture(rpc, win, plugin, tabId, outputPath, identityMa
       viewId: tabId,
       js: fullCaptureDocumentProbeJs(),
     }, win), `${stage} full capture document ${tabId}`);
-    return mapPageState(unwrapEvalValue(value));
+    return mapPageState(openPageStateReply(value));
   };
   const before = await readDocument("before");
   const result = await produceEvidenceFile(outputPath, async ({ path: capturePath }) => must(

@@ -6,6 +6,7 @@ import {
   captureDocumentGeometry,
   fullCaptureDocumentProbeJs,
   mapPageState,
+  openPageStateReply,
   pageStateReaderAxes,
 } from "./browser-page-state.mjs";
 
@@ -50,6 +51,22 @@ const cleanPageWiring = () => ({
   unproduced: [],
   error: null,
 });
+
+const MAPPED_FIXTURE_PAGE = Object.freeze({
+  scrollX: 0,
+  scrollY: 0,
+  viewportWidth: 608,
+  viewportHeight: 262,
+  documentWidth: 608,
+  documentHeight: 2140,
+});
+
+/**
+ * 두 구현이 같은 질문에 답하는 봉투. WKWebView 구현은 페이지 답을 value 아래 싣고 Chromium
+ * 구현은 봉투에 펼쳐 싣는다 — 어느 쪽이든 봉투는 "누가 답했는가"를 자기 축으로 얹는다.
+ */
+const nestedReply = (page, viewId) => ({ value: page, viewId });
+const flatReply = (page, viewId) => ({ ...page, viewId });
 
 function b11TabsFromProbe(raw) {
   return ["view-0", "view-1"].map((viewId, index) => mapB11TabEvidence({
@@ -163,6 +180,57 @@ describe("full capture page-state probe", () => {
     expect(verdict.status).toBe("red");
     expect(verdict.evidence).toContain("B11:wiring.B11.page.value=produced-not-consumed");
     expect(verdict.evidence).toContain("B11:wiring.B11.page.scrollY=consumed-not-produced");
+  });
+
+  it("봉투를 열지 않으면 봉투 자신의 축이 판정에 이름으로 실린다", () => {
+    // 실측(2026-08-07, browser-chromium B11): 하니스가 펼친 봉투를 그대로 넘겨
+    // B11:wiring.B11.page.viewId=produced-not-consumed 한 줄만 남았다. 장부를 느슨하게 해서
+    // 이 이름을 없애면 두 구현이 다른 모양으로 답하는 사실을 아무도 다시 못 잡는다.
+    const raw = runPageProbe(fullCaptureDocumentProbeJs(), FIXTURE_PAGE);
+    const state = mapPageState(flatReply(raw, "view-0"));
+    expect(state.evidenceWiring.unconsumed).toEqual(["viewId"]);
+    const verdict = judgeB11MachineEvidence({
+      engine: "browser-chromium",
+      tabs: b11TabsFromProbe(flatReply(raw, "view-0")),
+    });
+    expect(verdict.status).toBe("red");
+    expect(verdict.evidence).toContain("B11:wiring.B11.page.viewId=produced-not-consumed");
+  });
+
+  it("구현마다 다른 eval 봉투를 한 자리에서 열어 페이지 답만 남긴다", () => {
+    const raw = runPageProbe(fullCaptureDocumentProbeJs(), FIXTURE_PAGE);
+    const opened = [nestedReply(raw, "view-0"), flatReply(raw, "view-0")].map(openPageStateReply);
+    // 포장이 다르다고 판정이 갈리면 게이트가 엔진마다 다른 질문을 하는 것이다.
+    expect(opened[0]).toEqual(opened[1]);
+    for (const page of opened) {
+      expect(mapPageState(page)).toEqual({ ...MAPPED_FIXTURE_PAGE, evidenceWiring: cleanPageWiring() });
+    }
+  });
+
+  it("펼친 봉투를 연 뒤 B11이 배선 이름 없이 판정한다", () => {
+    const raw = runPageProbe(fullCaptureDocumentProbeJs(), FIXTURE_PAGE);
+    const tabs = b11TabsFromProbe(openPageStateReply(flatReply(raw, "view-0")));
+    expect(judgeB11MachineEvidence({ engine: "browser-chromium", tabs })).toMatchObject({
+      status: "green",
+    });
+  });
+
+  it("봉투가 아닌 답은 열지 않는다", () => {
+    // 봉투 축이 없는 기록은 이미 페이지의 답이다. 여는 자리가 페이지 축을 지우면
+    // 못 읽은 축이 조용히 null 이 되고, 그 실패는 성공값과 구분되지 않는다.
+    const raw = runPageProbe(fullCaptureDocumentProbeJs(), FIXTURE_PAGE);
+    expect(openPageStateReply(raw)).toEqual(raw);
+    expect(openPageStateReply({ documentHight: 2140 })).toEqual({ documentHight: 2140 });
+    expect(openPageStateReply(null)).toBeNull();
+    expect(openPageStateReply("not-a-record")).toBe("not-a-record");
+  });
+
+  it("펼친 봉투에 남은 낯선 축은 계속 이름으로 부른다", () => {
+    // 봉투를 여는 일과 장부를 무르게 하는 일은 다르다 — 봉투 축이 아닌 이름은 그대로 남아
+    // produced-not-consumed 로 실린다.
+    const raw = runPageProbe(fullCaptureDocumentProbeJs(), FIXTURE_PAGE);
+    const opened = openPageStateReply({ ...flatReply(raw, "view-0"), documentHight: 2140 });
+    expect(mapPageState(opened).evidenceWiring.unconsumed).toEqual(["documentHight"]);
   });
 
   it("영수증 판정이 읽는 문서 기하로 같은 축을 옮긴다", () => {
