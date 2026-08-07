@@ -181,6 +181,44 @@ describe("B09 surface receipt는 생산자 shape 그대로 판정된다", () => 
     expect(judgeB09MachineEvidence(value).status).toBe("green");
   });
 
+  // 우측 사이드바 안에는 플러그인 뷰가 산다. 플러그인이 선언한 노드 id 는 자기 이름공간의
+  // 이름이다(contributes.nodes 의 "search-input") — 코어가 그 뷰를 어느 자리에 붙였는지 모르고,
+  // 알아서도 안 된다. 그러니 그 자리를 찍으면 최상위 소유자는 "sidebar/right/..." 모양이 아니다.
+  // 소유는 이름 모양이 아니라 사슬 위치가 답한다.
+  it("사이드바 안 플러그인 노드가 최상위여도 GREEN 이다 — 사슬이 target 을 담으면 그 자리는 target 의 것이다", () => {
+    const value = producedEvidence(PANE_IMPLEMENTATIONS[0]);
+    value.samples[1] = buildB09Sample({
+      target: "sidebar/right",
+      relation: "point-overlap",
+      chromeRect: { ...CHROME_RECTS["sidebar/right"] },
+      chromeControl: { reachable: true, planeZ: PLANE_Z["sidebar/right"] },
+      nativeSurface: value.samples[1].nativeSurface,
+      point: { ...PROBE_POINTS["sidebar/right"] },
+      hit: { owners: ["search-input", "sidebar/right"] },
+    });
+    expect(judgeB09MachineEvidence(value)).toMatchObject({ status: "green", reason: null });
+  });
+
+  // 반대 방향. sidebar/right/resizer 는 이름만 하위지 DOM 형제다(App.tsx — sidebar/right 밖에
+  // 렌더된다). 이름 접두사를 소유로 읽으면 사이드바 밖 자리가 GREEN 이 된다.
+  it("이름만 하위인 형제가 최상위면 RED 다 — 접두사는 포함의 증거가 아니다", () => {
+    const value = producedEvidence(PANE_IMPLEMENTATIONS[0]);
+    value.samples[1] = buildB09Sample({
+      target: "sidebar/right",
+      relation: "point-overlap",
+      chromeRect: { ...CHROME_RECTS["sidebar/right"] },
+      chromeControl: { reachable: true, planeZ: PLANE_Z["sidebar/right"] },
+      nativeSurface: value.samples[1].nativeSurface,
+      point: { ...PROBE_POINTS["sidebar/right"] },
+      hit: { owners: ["sidebar/right/resizer"] },
+    });
+    const verdict = judgeB09MachineEvidence(value);
+    expect(verdict.status).toBe("red");
+    expect(verdict.evidence).toContain(
+      'B09:samples[1].hit.stack=owner-chain-contains-target/["sidebar/right/resizer"]/"sidebar/right"',
+    );
+  });
+
   it("chrome 조작면 도달 불가와 낮은 modal 평면을 RED 이름으로 남긴다", () => {
     const unreachable = producedEvidence(PANE_IMPLEMENTATIONS[0]);
     unreachable.samples[0].chromeControl = { reachable: false, planeZ: 120 };

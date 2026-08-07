@@ -43,9 +43,24 @@ const CHROME_CONTROL_KEYS = Object.freeze(["reachable", "planeZ"]);
 const HIT_KEYS = Object.freeze(["point", "topmostOwner", "stack"]);
 const STACK_LAYER_KEYS = Object.freeze(["kind", "owner", "surfaceId"]);
 
-/** 응답이 답하는 최상위 소유자는 target 자신이거나 그 하위 주소다 — 잎을 target 으로 눕히지 않는다. */
-function ownedByTarget(owner, target) {
-  return owner === target || (typeof owner === "string" && owner.startsWith(`${target}/`));
+/**
+ * 그 자리를 target 이 소유했는가.
+ *
+ * ui.hit 이 답하는 owners 는 그 점의 **조상 경로**다(깊은 것부터, shadow 관통 —
+ * catalogDom.declaredOwnerChain). 그래서 사슬이 target 을 담는다는 것과 최상위 요소가 target
+ * 자신이거나 그 안이라는 것은 같은 말이고, 앞선 항목은 전부 target 의 자손이다.
+ *
+ * 이름 접두사로 읽지 않는다. 주소는 소유를 증명하지 못한다 — `sidebar/right/resizer` 는 이름만
+ * 하위지 DOM 형제이고(사이드바 밖 자리가 GREEN 이 된다), 사이드바 안 플러그인 뷰가 선언한
+ * `search-input` 은 진짜 자손인데 이름에 접두사가 없다(플러그인은 자기가 어느 자리에 붙었는지
+ * 모르고, 알면 그게 강결합이다). 접두사 규칙은 양쪽으로 틀린다.
+ */
+function targetChromeIndex(stack, target) {
+  return stack.findIndex((layer) => layer?.kind === "chrome" && layer?.owner === target);
+}
+
+function chromeOwners(stack) {
+  return stack.filter((layer) => layer?.kind === "chrome").map((layer) => layer?.owner);
 }
 
 function inspectRect(value, path, failures) {
@@ -147,13 +162,31 @@ function inspectStack(stack, target, topmostOwner, nativeSurface, path, failures
   });
 
   const first = stack[0];
-  if (first?.kind !== "chrome" || !ownedByTarget(first?.owner, target) || first?.surfaceId !== null) {
-    failures.push(`${path}[0]=target-chrome/${displayValue(first)}`);
+  if (first?.kind !== "chrome" || first?.surfaceId !== null) {
+    failures.push(`${path}[0]=chrome-layer/${displayValue(first)}`);
   }
   if (first?.owner !== topmostOwner) {
     failures.push(
       `${path}[0].owner=topmostOwner/${displayValue(first?.owner)}/${displayValue(topmostOwner)}`,
     );
+  }
+
+  const targetIndex = targetChromeIndex(stack, target);
+  if (targetIndex < 0) {
+    failures.push(
+      `${path}=owner-chain-contains-target/`
+        + `${displayValue(chromeOwners(stack))}/${displayValue(target)}`,
+    );
+  } else {
+    // target 위에 남는 것은 target 의 자손 chrome 뿐이다. native surface 가 끼면 그 자리는
+    // 브라우저가 크롬을 덮은 것이므로 사슬이 target 을 담아도 계약 위반이다.
+    for (let index = 0; index < targetIndex; index += 1) {
+      if (stack[index]?.kind !== "chrome") {
+        failures.push(
+          `${path}[${index}].kind=chrome-above-target/${displayValue(stack[index]?.kind)}`,
+        );
+      }
+    }
   }
 
   if (nativeSurface) {
@@ -163,9 +196,9 @@ function inspectStack(stack, target, topmostOwner, nativeSurface, path, failures
       && layer?.owner === nativeSurface.viewId
       && layer?.surfaceId === nativeSurface.surfaceId
     ));
-    if (nativeIndex < 1) {
+    if (nativeIndex < 1 || (targetIndex >= 0 && nativeIndex < targetIndex)) {
       failures.push(
-        `${path}.native-surface=matching-below-chrome/`
+        `${path}.native-surface=matching-below-target-chrome/`
           + `${displayValue({ viewId: nativeSurface.viewId, surfaceId: nativeSurface.surfaceId })}`,
       );
     }
@@ -214,12 +247,8 @@ function inspectSample(value, index, seenTargets, failures) {
   const hit = value.hit;
   if (!requireExactKeys(hit, HIT_KEYS, `${path}.hit`, failures)) return;
   const pointValid = inspectPoint(hit.point, `${path}.hit.point`, failures);
-  if (!ownedByTarget(hit.topmostOwner, target)) {
-    failures.push(
-      `${path}.hit.topmostOwner=target/`
-        + `${displayValue(hit.topmostOwner)}/${displayValue(target)}`,
-    );
-  }
+  // topmostOwner 는 stack[0].owner 와 같은 값이어야 하고(inspectStack), 그 자리의 소유는
+  // 사슬 포함이 답한다 — 여기서 이름을 한 번 더 재지 않는다(한 사실 한 자리).
   inspectStack(
     hit.stack,
     target,
@@ -252,6 +281,9 @@ function inspectSample(value, index, seenTargets, failures) {
  * 픽셀이 아니라 공개 rect·hit owner·layer stack으로 chrome/native 합성을 판정한다.
  * nativeSurface는 공개 surface 영수증 그대로이며, 선언된 `topologyPath`를 가진 소유자만
  * chrome 아래 layer로 인정한다. rect만 있는 익명 surface는 RED다.
+ *
+ * "그 자리를 target 이 소유했는가"는 사슬 포함으로 읽는다(targetChromeIndex). target 이
+ * 사슬에 있고, 그 위는 전부 chrome 이고, native surface 는 그 아래여야 GREEN 이다.
  */
 export function judgeB09MachineEvidence(value) {
   if (value == null) return notRunVerdict();
