@@ -432,7 +432,13 @@ function inspectTransaction(
   }
   if (post) {
     if (requestedValid && !sameRect(post.value.windowGeometry, transaction.requestedWindowGeometry)) {
-      failures.push(`${path}.post.windowGeometry=requestedWindowGeometry`);
+      // 비교의 이름만 내면 1px 어긋남과 500px 어긋남이 같은 답이 되고, OS 제약과 제품 결함을
+      // 가를 수 없다. 비교한 두 값을 함께 낸다.
+      failures.push(
+        `${path}.post.windowGeometry=requestedWindowGeometry`
+        + ` requested=${displayValue(transaction.requestedWindowGeometry)}`
+        + ` actual=${displayValue(post.value.windowGeometry)}`,
+      );
     }
     if (eventAfterValid && post.value.eventGeneration !== transaction.eventGenerationAfter) {
       failures.push(`${path}.post.eventGeneration=eventGenerationAfter`);

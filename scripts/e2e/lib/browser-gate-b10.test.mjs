@@ -336,3 +336,21 @@ describe("B10 hostile window resize machine judge", () => {
     }
   });
 });
+
+// 규칙 — 증거는 비교의 이름만이 아니라 비교한 값을 낸다.
+//
+// 실측 2026-08-07: 인수 실행에서 B10 이 여섯 전이에 걸쳐
+// `transactions[N].post.windowGeometry=requestedWindowGeometry` 만 냈다. 1px 어긋난 것인지
+// 500px 어긋난 것인지 그 문자열로는 못 가른다 — 그러면 OS 제약과 제품 결함이 같은 답을 낸다.
+describe("창 기하 실패는 두 값을 함께 낸다", () => {
+  it("요청한 사각형과 얻은 사각형을 이름과 함께 낸다", () => {
+    const value = evidence();
+    value.transactions[1].post.windowGeometry.w -= 7;
+    const receipt = judgeB10MachineEvidence(value);
+    const named = receipt.evidence.find((line) => line.includes("post.windowGeometry"));
+    expect(named).toBeDefined();
+    expect(named).toContain(`requested=`);
+    expect(named).toContain(`actual=`);
+    expect(named).toContain(String(value.transactions[1].post.windowGeometry.w));
+  });
+});
