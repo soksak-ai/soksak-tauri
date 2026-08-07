@@ -376,6 +376,62 @@ describe("ui.trace.multi — 같은 tick의 공개 DOM 참가자 원장", () => 
     }
   });
 
+  // 활강 한가운데서 표본이 339ms 끊겼는데 같은 세션의 event 관측자는 그 뒤에도 살아 있었다.
+  // 원장이 "누가 봤는지"를 안 실으면 그 구멍이 표본 간격 역산으로만 읽힌다. 관측자를 이름으로
+  // 싣고, tick 하나의 실패가 관측자를 죽이지 못하게 한다.
+  it("표본마다 관측자를 싣고, tick 하나가 실패해도 그 관측자는 계속 본다", async () => {
+    try {
+      vi.useFakeTimers();
+      vi.stubGlobal("requestAnimationFrame", vi.fn(() => 1));
+      vi.stubGlobal("cancelAnimationFrame", vi.fn());
+      mountNode(`<div data-node="slot"></div>`);
+      const element = document.querySelector<HTMLElement>('[data-node="slot"]')!;
+      let failNextRead = false;
+      element.getBoundingClientRect = vi.fn(() => {
+        if (failNextRead) {
+          failNextRead = false;
+          throw new Error("layout read가 이 tick에서 실패했다");
+        }
+        return {
+          x: 110, y: 80, width: 560, height: 420,
+          top: 80, left: 110, right: 670, bottom: 500,
+          toJSON: () => ({}),
+        } as DOMRect;
+      });
+      const addresses = ["win/main/content/view/test.v/node/slot"];
+      const armed = await execute("ui.trace.multi.start", { addresses, maxMs: 5_000 }, {});
+      const traceId = (armed.data as { traceId: string }).traceId;
+      const prepared = await prepareLayoutMove([{ viewId: "test.v", dx: -160 }]);
+      await prepared.commit();
+
+      vi.advanceTimersByTime(32);
+      failNextRead = true;
+      // 실패한 tick은 던진다. 던진 tick이 다음 tick까지 앗아가면 관측자는 영영 죽는다.
+      expect(() => vi.advanceTimersByTime(8)).toThrow();
+      vi.advanceTimersByTime(32);
+
+      const result = await execute("ui.trace.multi.close", { traceId }, {});
+      const data = result.data as {
+        producers: Record<string, number>;
+        samples: Array<{ producer: string }>;
+      };
+      expect(data.producers.arm).toBe(1);
+      expect(data.producers["layout-commit"]).toBe(1);
+      expect(data.producers["commit-anchor"]).toBe(1);
+      expect(data.producers["frame-callback"]).toBe(0);
+      // 실패 앞 4 tick, 실패 tick(표본 없음), 실패 뒤 4 tick.
+      expect(data.producers.interval).toBe(8);
+      expect(data.samples.every((sample) => typeof sample.producer === "string")).toBe(true);
+      for (const [producer, count] of Object.entries(data.producers)) {
+        expect(data.samples.filter((sample) => sample.producer === producer)).toHaveLength(count);
+      }
+      expect(getSpec("ui.trace.multi.close")?.returns).toContain("producers");
+    } finally {
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+    }
+  });
+
   it("주소 누락·중복을 추측하지 않고 INVALID_PARAMS로 거부한다", async () => {
     const empty = await execute("ui.trace.multi.start", { addresses: [] }, {});
     expect(empty).toMatchObject({ ok: false, code: "INVALID_PARAMS" });
