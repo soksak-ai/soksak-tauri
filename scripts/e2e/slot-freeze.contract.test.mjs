@@ -38,6 +38,20 @@ function functionBody(source, name) {
   return body;
 }
 
+/** `for (const x of <iterable>)` 한 덩어리의 본문 텍스트. 게이트별 블록을 이름으로 집는다. */
+function forOfBody(source, iterableText) {
+  const file = ts.createSourceFile("slot-freeze.mjs", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  const bodies = [];
+  const visit = (node) => {
+    if (ts.isForOfStatement(node) && node.expression.getText(file) === iterableText) {
+      bodies.push(node.statement.getText(file));
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return bodies;
+}
+
 /** B09 이 사는 두 자리 — 표본을 만드는 자리와 판정을 기록하는 자리. */
 const B09_FUNCTIONS = Object.freeze(["measureChromeOverlaySample", "assertChromeOverlayContract"]);
 
@@ -280,10 +294,21 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(source).toContain("layout-transactions=${unexpected.length}/0");
     expect(source).toContain("rectsBefore");
     expect(source).toContain("rectsAfter");
-    expect(source).toContain("JSON.stringify(before.cells) !== JSON.stringify(after.cells)");
-    expect(source).toContain("PIN 클릭이 native bounds를 기록");
     expect(source).toContain("process.env.CROSS_CLICK_CYCLES ?? 3");
     expect(source).toContain('process.env.BROWSER_SCENARIOS ?? "flow,pin,resize,overlay,scroll"');
+  });
+
+  // 계약 위반은 던지는 것이 아니라 evidence 로 실어 judge 가 이름을 붙인다. 던지면 보고서에
+  // blocked 만 남고 어느 계약이 깨졌는지 수치로 남지 않는다.
+  it("PIN 케이스는 station·분할·transaction·native bounds를 evidence로 실어 판정한다", () => {
+    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    const [pinLoop] = forOfBody(source, "pinCases");
+    expect(pinLoop).toBeDefined();
+    expect(pinLoop).toContain("requestedStation: pinCase.station");
+    expect(pinLoop).toContain("layoutTransactions: unexpected.length");
+    expect(pinLoop).toContain("nativeCompositionBefore: nativeBefore");
+    expect(pinLoop).toContain("nativeCompositionAfter: nativeAfter");
+    expect(pinLoop.match(/throw new Error/g)).toBeNull();
   });
 
   it("선택한 시나리오만 실행하며 resize와 overlay를 서로 독립시킨다", () => {
@@ -485,9 +510,24 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(source).toContain('name: "pin-maximize-left"');
     expect(source).toContain('name: "pin-maximize-right"');
     expect(source).toContain('rpc("tab.maximize"');
-    expect(source).toContain('persisted.leftRailPosition?.station !== 50');
     expect(source).toContain('rpc("tab.restore"');
-    expect(source).toContain('JSON.stringify(restored.cells) !== JSON.stringify(restoredBaseline.cells)');
+    const [maximizeLoop] = forOfBody(source, "maximizeCases");
+    expect(maximizeLoop).toBeDefined();
+    expect(maximizeLoop).toContain('rpc("sidebar.left.position"');
+    expect(maximizeLoop).toContain("restoredPosition");
+    expect(maximizeLoop.match(/throw new Error/g)).toBeNull();
+  });
+
+  // 세 엔진 판정이 byte-identical 이던 이유는 native surface 를 아예 안 물었기 때문이다.
+  it("maximize 세 시점의 native surface·결부·보더를 같은 방법으로 읽어 싣는다", () => {
+    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    const [maximizeLoop] = forOfBody(source, "maximizeCases");
+    for (const stage of ["baseline", "maximized", "restored"]) {
+      expect(maximizeLoop, stage).toContain(`${stage}: stage${stage[0].toUpperCase()}${stage.slice(1)}`);
+    }
+    expect(maximizeLoop.match(/readPinStageEvidence\(/g)).toHaveLength(3);
+    expect(source).toContain("readBrowserSurfaceEvidence");
+    expect(source).toContain('import { readPinStage } from "./lib/pin-geometry-probe.mjs"');
   });
 
   it("B07/B08 live evidence is judged into one canonical 3x12 report without ad-hoc green", () => {

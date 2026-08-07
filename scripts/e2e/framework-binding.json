@@ -727,6 +727,20 @@
       "note": "픽셀·프레임워크 없이 layout 거래의 RED/GREEN 기준을 고정한다."
     },
     {
+      "file": "lib/pin-geometry-probe.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "한 시점의 결부 노드·판 목록·surface rect를 공개 명령만으로 읽는다. 주소가 없으면 던지고, 노드가 답했는데 상자를 안 실은 것은 값으로 흘린다. surface 소유자 해소는 부르는 자리가 준 reader가 한다."
+    },
+    {
+      "file": "lib/pin-geometry-probe.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "잴 자리 없음(throw)과 계약 위반(값)을 가르는 경계를 가짜 rpc로 고정한다."
+    },
+    {
       "file": "lib/png.mjs",
       "role": "lib",
       "class": "C",
@@ -734,6 +748,20 @@
         "pixel-oracle"
       ],
       "note": "PNG 코덱 — 픽셀 오라클의 단일 진실. 오라클이 서는 곳에서만 쓰인다."
+    },
+    {
+      "file": "lib/rail-border-geometry.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "결부 보더가 어느 변에 그려졌는지를 레일 상자와 판 상자 사이 거리로 센다. borderMode·pathCount 선언을 읽지 않는다."
+    },
+    {
+      "file": "lib/rail-border-geometry.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "상자 파싱, 좌·우·분리 판정, 반올림 1px 경계, 복원 드리프트 계산을 값으로 고정한다."
     },
     {
       "file": "lib/recording-evidence-action.mjs",

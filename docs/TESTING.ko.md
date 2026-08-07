@@ -58,8 +58,8 @@ B10 mapper는 baseline과 각 resize ACK가 낸 window/frame/generation/presenta
 | B04 | FLOW rail·pane·native 단일 원자 이동 | ACK된 유한 trace의 initial raw rect와 같은 transaction의 정확한 DOM-commit raw rect를 실제 presentation 사건에 결합해 세 대상의 연결·좌표·정착을 단언한다. |
 | B05 | flicker/black/잔상/착지 후 소실 0 | 공개 presentation trace에서 live·visible·painted 연속성과 replacement/gap/disappearance 0을 단언한다. |
 | B06 | active만 밝음/inactive 감광/rail·sidebar 비감광 | 공개 style 상태에서 단일 lighting plane의 base·active aperture, pane별 dim, rail·sidebar의 plane 비포함, 프레임워크 adapter alpha 1(중복 감광 없음)을 단언한다. |
-| B07 | PIN 좌·우 인접·분리 border/레이아웃 불변 | 세 focus 상태의 border 관계와 rail/pane DOM identity·rect·split tree 불변을 단언한다. |
-| B08 | PIN 양방향 maximize/restore/station 불변 | 좌·우 각각 maximize/restore 전후 방향·split·station의 완전 동일성을 단언한다. |
+| B07 | PIN 좌·우 인접·분리 border/레이아웃 불변 | 세 focus 상태의 border 관계와 rail/pane DOM identity·rect·split tree 불변을 단언한다. 그려진 변은 관계 노드가 내는 레일 상자와 판 상자 사이 거리로 재고, 선언된 border mode 로 읽지 않는다. |
+| B08 | PIN 양방향 maximize/restore/station 불변 | 좌·우 각각 maximize/restore 전후 방향·split·station의 완전 동일성과, 대상 뷰의 native surface rect 를 직전·최대화·복원 세 시점으로 단언한다. 최대화는 실제로 키워야 하고 복원은 반올림 1px 안에서 원래 자리로 돌아와야 한다. |
 | B09 | rail `+`/우측 sidebar/modal이 native 위 | 실제 교집합의 공개 hit/layer 상태가 chrome을 최상단 소유자로 보고하는지 단언한다. |
 | B10 | hostile 전체창 빠른 resize affine + 원복 | 유한 resize transaction마다 DOM/native 좌표 정합과 최종 원래 기하 복원을 단언한다. |
 | B11 | pane resize 왕복 + wheel `0→480→0` + 탭 지정 full capture | 명시한 view의 resize 정착, 실제 scroll 사건, capture 범위·문서 기하·scroll 복원을 단언한다. |

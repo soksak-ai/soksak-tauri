@@ -56,6 +56,7 @@ import {
   browserTabNodeAddress,
 } from "./lib/browser-ui-addresses.mjs";
 import { mapBrowserSurfaceRects } from "./lib/browser-surface-rects.mjs";
+import { readPinStage } from "./lib/pin-geometry-probe.mjs";
 import {
   buildB09Sample,
   deriveChromeControl,
@@ -1515,26 +1516,12 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
         path.join(dir, "pin-layout-transaction.json"),
         { afterSequence, unexpected, verdict: pinTrace },
       );
-      if (!pinTrace.ok) {
-        throw new Error(`${engine}/${pinCase.name}: PIN DOM 고정 불일치 — ${pinTrace.errors.join(", ")}`);
-      }
+      // 여기서 던지지 않는다. rect 고정·station·분할 배치·relation 은 전부 값이라 evidence 로
+      // 실어 judge 가 RED 로 이름을 붙인다 — 던지면 보고서에 blocked 만 남고 위반이 안 남는다.
       const after = must(await rpc("layout.arrangement", {}, win), `${pinCase.name} arrangement after`);
-      if (before.station !== pinCase.station || after.station !== before.station) {
-        throw new Error(`${pinCase.name}: station 변경 ${before.station}→${after.station}, expected=${pinCase.station}`);
-      }
-      if (before.switched || after.switched || JSON.stringify(before.cells) !== JSON.stringify(after.cells)) {
-        throw new Error(`${pinCase.name}: PIN이 분할 배치를 변경 ${JSON.stringify({ before, after })}`);
-      }
       await assertActivePane(rpc, win, paneIds[pinCase.side], pinCase.name);
       const paneState = must(await rpc("pane.list", {}, win), `${pinCase.name} pane.list`);
       const stateTreeAfter = must(await rpc("state.tree", {}, win), `${pinCase.name} state.tree after`);
-      const stateRelation = paneState.railRelation;
-      if (!stateRelation
-          || stateRelation.placement !== "pin"
-          || stateRelation.connected !== pinCase.connected
-          || stateRelation.side !== pinCase.relationSide) {
-        throw new Error(`${pinCase.name}: 공개 relation 판정 불일치 ${JSON.stringify(stateRelation)}`);
-      }
       const railContract = await assertRailCompositionContract(
         rpc,
         win,
@@ -1547,11 +1534,21 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
           placement: "pin",
         },
       );
+      // PIN 클릭이 native surface 좌표를 다시 썼는지는 값이다 — 장부를 그대로 싣는다.
+      // 읽는 조건은 nativeBefore 와 같아야 한다: 한쪽만 있으면 장부가 아니라 반쪽이다.
+      let nativeAfter = null;
+      if (frameworkName === "tauri" && native) {
+        nativeAfter = must(await rpc("webview.composition", {}, win), `${pinCase.name} native after`);
+      }
       b07Cases.push(mapB07PinCaseEvidence({
         position: pinCase.position,
+        requestedStation: pinCase.station,
+        layoutTransactions: unexpected.length,
         stateTreeAfter,
         paneListAfter: paneState,
         relationMeasureAfter: railContract.relationMeasure,
+        nativeCompositionBefore: nativeBefore,
+        nativeCompositionAfter: nativeAfter,
         before: {
           stateTree: stateTreeBefore,
           arrangement: before,
@@ -1577,15 +1574,6 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
         scale,
         { motion: false, chromeAnchors: [CHROME_MARKERS.railAdd] },
       );
-      if (frameworkName === "tauri" && native && nativeBefore) {
-        const nativeAfter = must(await rpc("webview.composition", {}, win), `${pinCase.name} native after`);
-        const beforeWrites = new Map((nativeBefore.placement ?? []).map((item) => [item.label, Number(item.boundsWrites ?? 0)]));
-        for (const item of nativeAfter.placement ?? []) {
-          if (beforeWrites.has(item.label) && Number(item.boundsWrites ?? 0) !== beforeWrites.get(item.label)) {
-            throw new Error(`${pinCase.name}: PIN 클릭이 native bounds를 기록 ${item.label}:${beforeWrites.get(item.label)}→${item.boundsWrites}`);
-          }
-        }
-      }
       frameCount += files.length;
       console.log(`✓ ${pinCase.name}: station=${pinCase.station} side=${pinCase.relationSide} connected=${pinCase.connected} · rect 고정 · ${PIN_FRAMES_PER_CLICK} frames`);
     }
@@ -1631,25 +1619,33 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
           name: "pin-maximize-right",
         },
       ];
+      // 최대화 대상 뷰의 native surface 자리를 세 시점에 같은 방법으로 읽는다. 프레임워크
+      // 이름을 묻지 않는다 — surface 소유자 해소는 이미 공개면 매퍼가 한다.
+      const readPinStageEvidence = (side, stage) => readPinStage(
+        rpc,
+        win,
+        stage,
+        async (tree) => {
+          const [surface] = await readBrowserSurfaceEvidence(rpc, win, {
+            frameworkName,
+            implementation,
+            plugin,
+            tabIds: [tabIds[side]],
+            labels: [labels[side]],
+            uiNodes: tree.nodes ?? [],
+          });
+          return surface?.rect ?? null;
+        },
+      );
       for (const maximizeCase of maximizeCases) {
+        const stageBaseline = await readPinStageEvidence(maximizeCase.side, `${maximizeCase.name} baseline`);
         must(await rpc("tab.maximize", { tab: tabIds[maximizeCase.side] }, win), `${maximizeCase.name} maximize`);
         must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }), `${maximizeCase.name} settled`);
         const maximized = must(await rpc("layout.arrangement", {}, win), `${maximizeCase.name} arrangement`);
-        const maximizedRect = maximized.cells?.[0]?.rect;
-        if (maximized.station !== maximizeCase.station
-            || maximized.cells?.length !== 1
-            || maximized.cells[0]?.id !== paneIds[maximizeCase.side]
-            || Number(maximizedRect?.left) !== 0
-            || Number(maximizedRect?.top) !== 0
-            || Number(maximizedRect?.width) !== 100
-            || Number(maximizedRect?.height) !== 100) {
-          throw new Error(`${maximizeCase.name}: PIN 방향 최대화 불일치 expectedPane=${paneIds[maximizeCase.side]} actual=${JSON.stringify(maximized)}`);
-        }
         const persisted = must(await rpc("sidebar.left.position", {}, win), `${maximizeCase.name} persisted pin`);
         const maximizedPanes = must(await rpc("pane.list", {}, win), `${maximizeCase.name} pane.list`);
-        if (persisted.leftRailPosition?.mode !== "pin" || persisted.leftRailPosition?.station !== 50) {
-          throw new Error(`${maximizeCase.name}: 최대화가 저장 PIN을 변경 ${JSON.stringify(persisted.leftRailPosition)}`);
-        }
+        // 최대화 station·full rect·저장 PIN 은 전부 값이다 — 던지지 않고 judge 가 이름을 붙인다.
+        const stageMaximized = await readPinStageEvidence(maximizeCase.side, `${maximizeCase.name} maximized`);
         await assertRailCompositionContract(rpc, win, railAddress, paneIds[maximizeCase.side], maximizeCase.name, {
           connected: true,
           side: maximizeCase.relationSide,
@@ -1668,9 +1664,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
           `${maximizeCase.name} restored pin`,
         );
         const restoredPanes = must(await rpc("pane.list", {}, win), `${maximizeCase.name} restored pane.list`);
-        if (restored.station !== 50 || JSON.stringify(restored.cells) !== JSON.stringify(restoredBaseline.cells)) {
-          throw new Error(`${maximizeCase.name}: 복원이 PIN/분할을 바꿈 ${JSON.stringify({ baseline: restoredBaseline, restored })}`);
-        }
+        const stageRestored = await readPinStageEvidence(maximizeCase.side, `${maximizeCase.name} restored`);
         b08Cases.push(mapB08MaximizeCaseEvidence({
           direction: maximizeCase.relationSide,
           targetPaneId: maximizeCase.targetPaneId,
@@ -1684,8 +1678,13 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
             arrangement: restored,
             paneList: restoredPanes,
           },
+          stages: {
+            baseline: stageBaseline,
+            maximized: stageMaximized,
+            restored: stageRestored,
+          },
         }));
-        console.log(`✓ ${maximizeCase.name}: station=${maximizeCase.station} · 저장 PIN=50 · 복원 동일`);
+        console.log(`✓ ${maximizeCase.name}: station=${maximized.station} · 저장 PIN=${persisted.leftRailPosition?.station} · surface=${JSON.stringify(stageRestored.surfaceRect)}`);
       }
       const b08Receipt = gateReportStore.recordMachineEvidence({
         framework: frameworkName,
