@@ -106,6 +106,22 @@ export interface PluginViewSlotFrame {
   reportedAtUnixMs: number;
 }
 
+/**
+ * 호스트가 native member surface 에 **실제로 적용한** 프레임. 측정이 아니라 적용의 사실이다.
+ *
+ * 배치는 PaneSurfaceHost 가 소유하므로 그 자리에 사는 표면은 자기 프레임을 스스로 모른다.
+ * 그 표면이 다시 재면 같은 자리를 두 기준으로 재게 되고, 늦은 쪽이 어긋난 채 굳는다.
+ */
+export interface PluginViewPlacementFrame {
+  label: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** 이 적용의 근거가 된 child renderer 측정 번호. 늦게 도착한 옛 적용을 가른다. */
+  revision: number;
+}
+
 export interface PluginViewNodeFrame extends PluginViewSlotFrame {
   node: string;
   /** 노출된 form node의 실제 child-renderer 현재 상태. 좌표 projection이 값을 지어내지 않는다. */

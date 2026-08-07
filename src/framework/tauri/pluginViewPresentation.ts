@@ -28,6 +28,7 @@ import {
   type PluginViewFailure,
   type PluginViewInit,
   type PluginViewNodeFrame,
+  type PluginViewPlacementFrame,
   type PluginViewRpcRequest,
   type PluginViewRpcResponse,
   type PluginViewSlotFrame,
@@ -376,6 +377,12 @@ async function syncPaneFrame(view: PresentedState): Promise<void> {
   }
 }
 
+/**
+ * member surface 의 배치는 이 호스트가 소유한다. 그 자리에 사는 표면은 자기 프레임을 스스로
+ * 알 수 없으므로, 적용한 쪽이 적용한 값을 그대로 알린다 — 표면이 슬롯을 다시 재면 같은 자리를
+ * 두 기준으로 재게 되고, 늦은 쪽이 어긋난 채 굳는다(실측: offscreen 엔진의 applied bounds 가
+ * 생성 시각에 멈춰 표시 원장이 프레임을 세우지 못했다 — 표시 대기는 영원히 타임아웃).
+ */
 async function syncMemberFrame(view: PresentedState, frame: PluginViewSlotFrame): Promise<boolean> {
   if (!view.grouped || !view.members.has(frame.label) || view.disposed) return false;
   await invoke("webview_pane_member_bounds", {
@@ -394,6 +401,14 @@ async function syncMemberFrame(view: PresentedState, frame: PluginViewSlotFrame)
       bottom: Math.max(0, frame.rootH - frame.y - frame.h),
     },
   });
+  void emitTo(view.renderer, event(view.renderer, "placement"), {
+    label: frame.label,
+    x: frame.x,
+    y: frame.y,
+    w: frame.w,
+    h: frame.h,
+    revision: frame.revision,
+  } satisfies PluginViewPlacementFrame).catch(() => {});
   return true;
 }
 
