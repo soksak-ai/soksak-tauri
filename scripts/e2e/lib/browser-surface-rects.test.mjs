@@ -16,6 +16,7 @@ describe("browser surface rect evidence", () => {
         matches: labels.map((label, index) => ({
           viewId: views[index],
           chromeAboveHost: true,
+          alpha: 1,
           domFrame: { x: index ? 513 : 60, y: 121, w: 281, h: 449 },
           memberMatches: [{
             label,
@@ -32,11 +33,13 @@ describe("browser surface rect evidence", () => {
       {
         viewId: "tab-left", surfaceId: "native-tab-left", live: true,
         topologyPath: "window/w-test/view/tab-left/content/native-tab-left",
+        chromeAboveHost: true,
         visible: true, presented: true, rect: { x: 60, y: 149, w: 281, h: 421 },
       },
       {
         viewId: "tab-right", surfaceId: "native-tab-right", live: true,
         topologyPath: "window/w-test/view/tab-right/content/native-tab-right",
+        chromeAboveHost: true,
         visible: true, presented: true, rect: { x: 513, y: 149, w: 281, h: 421 },
       },
     ]);
@@ -104,24 +107,53 @@ describe("browser surface rect evidence", () => {
       labels: ["native-tab-right"],
       paneComposition: { matches: [] },
     })).toThrow(/tab-right.*surface evidence/);
+  });
 
-    expect(() => mapBrowserSurfaceRects({
-      framework: "tauri",
-      surface: "framework-native",
-      windowLabel: "w-test",
-      viewIds: ["tab-right"],
-      labels: ["native-tab-right"],
-      paneComposition: { matches: [{
-        viewId: "tab-right",
-        chromeAboveHost: false,
-        domFrame: { x: 513, y: 121, w: 281, h: 449 },
-        memberMatches: [{
-          label: "native-tab-right",
-          topologyPath: "window/w-test/view/tab-right/content/native-tab-right",
-          nativeCount: 1, ok: true,
-          domFrame: { x: 0, y: 28, w: 281, h: 421 },
-        }],
-      }] },
-    })).toThrow(/chrome is not above/);
+  // 소유자를 못 찾는 것(주소 없음)과 소유자가 계약을 어긴 것은 다른 사실이다. 어긴 사실을
+  // 던져서 지우면 그 실행은 blocked 가 되고 위반은 보고서에서 이름을 잃는다 — 영수증에 실어
+  // judge 가 이름 붙은 RED 를 내게 한다.
+  const violating = (overrides) => mapBrowserSurfaceRects({
+    framework: "tauri",
+    surface: "framework-native",
+    windowLabel: "w-test",
+    viewIds: ["tab-right"],
+    labels: ["native-tab-right"],
+    paneComposition: { matches: [{
+      viewId: "tab-right",
+      chromeAboveHost: true,
+      alpha: 1,
+      domFrame: { x: 513, y: 121, w: 281, h: 449 },
+      memberMatches: [{
+        label: "native-tab-right",
+        topologyPath: "window/w-test/view/tab-right/content/native-tab-right",
+        nativeCount: 1, ok: true,
+        domFrame: { x: 0, y: 28, w: 281, h: 421 },
+        ...(overrides.member ?? {}),
+      }],
+      ...(overrides.pane ?? {}),
+    }] },
+  })[0];
+
+  it("carries the measured sibling order instead of aborting the run", () => {
+    expect(violating({ pane: { chromeAboveHost: false } }))
+      .toMatchObject({ chromeAboveHost: false, rect: { x: 513, y: 149, w: 281, h: 421 } });
+    expect(violating({ pane: { chromeAboveHost: undefined } }))
+      .toMatchObject({ chromeAboveHost: false });
+  });
+
+  it("carries a blank public topology identity instead of aborting the run", () => {
+    expect(violating({ member: { topologyPath: "" } })).toMatchObject({ topologyPath: "" });
+  });
+
+  it("carries host liveness, visibility and exactness as measured values", () => {
+    expect(violating({ member: { nativeCount: 0 } })).toMatchObject({ live: false });
+    expect(violating({ member: { ok: false } })).toMatchObject({ presented: false });
+    expect(violating({ pane: { alpha: 0 } })).toMatchObject({ visible: false });
+    expect(violating({ pane: { alpha: null } })).toMatchObject({ visible: false });
+  });
+
+  it("carries an unreadable frame as a null rect instead of aborting the run", () => {
+    expect(violating({ member: { domFrame: { x: 0, y: 28, w: 0, h: 421 } } }))
+      .toMatchObject({ rect: null });
   });
 });

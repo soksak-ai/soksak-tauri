@@ -24,6 +24,20 @@ function scenarioGateBodies(source, scenario) {
   return bodies;
 }
 
+/** B09 이 사는 함수 본문 하나 — 이름이 아니라 선언에서 잘라 읽는다. */
+function chromeOverlayBlock(source) {
+  const file = ts.createSourceFile("slot-freeze.mjs", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  let body = "";
+  const visit = (node) => {
+    if (ts.isFunctionDeclaration(node) && node.name?.text === "assertChromeOverlayContract") {
+      body = node.body?.getText(file) ?? "";
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return body;
+}
+
 function frameworkGuardedRpcCalls(source, command) {
   const file = ts.createSourceFile("slot-freeze.mjs", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
   const calls = [];
@@ -583,6 +597,33 @@ describe("slot-freeze instrumentation lifecycle", () => {
     }
     // 판정 줄은 한 자리에서 만든다 — 자리마다 다시 쓰면 red 의 수치가 어떤 줄에서는 사라진다.
     expect(source).not.toContain("canonical machine verdict:");
+  });
+
+  // B09 판정은 이 블록 안 어떤 throw 보다 먼저 기록돼야 한다. throw 가 앞서면 계약 위반이
+  // blocked 로 사라지고 41개 런 전수에서 그랬듯 judge 는 한 번도 RED 를 못 낸다.
+  it("records the B09 verdict before any throwing oracle in the same block", () => {
+    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    const block = chromeOverlayBlock(source);
+    expect(block).not.toBe("");
+    const verdict = block.indexOf('gate: "B09"');
+    expect(verdict).toBeGreaterThan(-1);
+    for (const oracle of ["observeFrameSequence(", "throw new Error("]) {
+      const at = block.indexOf(oracle);
+      if (at >= 0) expect(at, oracle).toBeGreaterThan(verdict);
+    }
+  });
+
+  it("names chrome overlay contract violations in evidence instead of throwing", () => {
+    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    const block = chromeOverlayBlock(source);
+    // 측정 불가는 must() 가 blocked 로 남긴다. 계약 위반은 표본에 실려 judge 가 이름 붙인다 —
+    // 이 블록에 남은 throw 는 둘을 다시 뭉뚱그린다.
+    expect(block).not.toContain("throw new Error(");
+    expect(block).toContain("buildB09Sample(");
+    expect(block).toContain("deriveChromeControl(");
+    // 층 순서·최상위 소유자는 하니스 리터럴이 아니라 응답에서 파생된다.
+    expect(block).not.toContain("topmostOwner:");
+    expect(block).not.toContain('kind: "native-surface"');
   });
 
   it("drives and measures real wheel scrolling for every browser implementation", () => {
