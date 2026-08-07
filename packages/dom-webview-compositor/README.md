@@ -16,6 +16,9 @@ after its adapter passes the same conformance suite on that OS and display scale
   Decoding a recording must never turn the automated conformance verdict green or red.
 - A defect discovered in a recording is converted into a numeric transaction invariant before
   the implementation is changed. The same invariant proves RED and GREEN.
+- Two producers' timestamps are comparable only inside one observation window. A producer whose
+  samples do not intersect the declared transaction window is reported by its distance in
+  milliseconds, never by a coordinate delta.
 
 The package deliberately contains no transport. An in-process command adapter, Unix-domain
 socket, Windows named pipe, or another transport may carry the same values without changing

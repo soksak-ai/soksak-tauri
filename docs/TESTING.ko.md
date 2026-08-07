@@ -75,6 +75,12 @@ DOM-commit 1개만 가져야 한다. 누락·중복·다른 transaction 오염�
 commit epoch 전이면 initial rect, 이후면 commit rect에만 결합한다. 16ms timer 근접도, 허용 간격 확대,
 보간·이동량 투영은 합성 판정 근거가 아니다. 종료 timeout은 구독 회수 장벽일 뿐 좌표 polling이 아니다.
 
+두 producer를 시각으로 정렬하는 순간 같은 epoch를 가정하게 되지만, `...UnixMs`라는 이름은 그것을
+증명하지 않는다. 좌표를 대조하기 전에 각 producer의 관측 구간이 layout journal이 그 거래에 선언한
+구간과 겹쳐야 한다. glide는 `startAtUnixMs`~`startAtUnixMs + durationMs`, snap은
+`preparedAtUnixMs`~`closedAtUnixMs`가 그 구간이다. 겹치지 않는 producer는 좌표 delta가 아니라 그
+거리를 밀리초로 남긴다. 교집합은 사실이지 tolerance가 아니며 최소 겹침 길이를 허용하지 않는다.
+
 Tauri pane surface의 owner 원장도 정확해야 한다. `webview.pane.hosts`에서 요청한 window, `viewId`,
 workspace `logicalPaneId`, surface member에 해당하는 host가 정확히 하나여야 하고, trace는 그 사실의
 별도 `nativeHostId`로 무장한다. 결합 누락·중복, null logical identity, 모호한 `pane` 필드,

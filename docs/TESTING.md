@@ -88,6 +88,13 @@ the initial rect, and an event at or after it uses only the commit rect. A neare
 a wider time tolerance, interpolation, or movement projection is never composition authority. The
 expiry timeout only reclaims the finite subscription; it does not poll coordinates.
 
+Ordering two producers by their timestamps assumes one epoch, and the field name `...UnixMs` does not
+prove one. Before any coordinate is compared, each producer's observation span must intersect the
+window the layout journal declared for that transaction: `startAtUnixMs`..`startAtUnixMs + durationMs`
+for a glide, `preparedAtUnixMs`..`closedAtUnixMs` for a snap. A producer that does not intersect it is
+reported by its distance in milliseconds, never by a coordinate delta. Intersection is a fact, not a
+tolerance; no minimum overlap is granted.
+
 For Tauri pane surfaces, the owner inventory is also exact: `webview.pane.hosts` must yield one host
 for the requested window, `viewId`, workspace `logicalPaneId`, and surface member. The trace is armed
 with that fact's separate `nativeHostId`. A missing/duplicate join, a null logical identity, an
