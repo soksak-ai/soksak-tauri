@@ -77,6 +77,7 @@ type MultiDomTraceSession = {
   presentationFrame: number | null;
   presentationTransactionId: string | null;
   presentationDomCommittedAtUnixMs: number | null;
+  animationEndHandler: ((event: AnimationEvent) => void) | null;
   unsubscribe: () => void;
   expiryTimer: ReturnType<typeof setTimeout> | null;
   evictionTimer: ReturnType<typeof setTimeout> | null;
@@ -138,6 +139,21 @@ function startMultiDomPresentationFrames(
   if (session.presentationFrame !== null) cancelAnimationFrame(session.presentationFrame);
   session.presentationTransactionId = transactionId;
   session.presentationDomCommittedAtUnixMs = domCommittedAtUnixMs;
+  // rAF is legitimately suspended for an occluded WebKit document. CSS
+  // animationend is an event from the same compositor transaction and gives
+  // us the real final DOM rect without a timer/polling loop.
+  session.animationEndHandler = (event: AnimationEvent) => {
+    if (session.endedAtUnixMs !== null
+        || session.presentationTransactionId !== transactionId
+        || (event.animationName !== "rail-flip-x" && event.animationName !== "phase")) return;
+    appendMultiDomTraceSample(
+      session,
+      "presentation-frame",
+      transactionId,
+      domCommittedAtUnixMs,
+    );
+  };
+  document.addEventListener("animationend", session.animationEndHandler, true);
   const sample = (frameTime: number) => {
     if (session.endedAtUnixMs !== null
         || session.presentationTransactionId !== transactionId) return;
@@ -161,6 +177,10 @@ function finishMultiDomTrace(session: MultiDomTraceSession, timedOut: boolean): 
   session.unsubscribe = () => {};
   if (session.presentationFrame !== null) cancelAnimationFrame(session.presentationFrame);
   session.presentationFrame = null;
+  if (session.animationEndHandler !== null) {
+    document.removeEventListener("animationend", session.animationEndHandler, true);
+    session.animationEndHandler = null;
+  }
   session.presentationTransactionId = null;
   session.presentationDomCommittedAtUnixMs = null;
   if (session.expiryTimer !== null) clearTimeout(session.expiryTimer);
@@ -1341,6 +1361,7 @@ export function registerDomCatalog(): void {
         presentationFrame: null,
         presentationTransactionId: null,
         presentationDomCommittedAtUnixMs: null,
+        animationEndHandler: null,
         unsubscribe: () => {},
         expiryTimer: null,
         evictionTimer: null,
