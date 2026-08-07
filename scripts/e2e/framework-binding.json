@@ -243,6 +243,20 @@
       "note": "골(gutter) 강조의 대칭을 잰다 — 무장되면 서고 이탈이 오면 반드시 풀린다. 자기 픽스처 창을 세우고 분할까지 스스로 만든다: 포인터를 구동하므로 남의 창을 잡으면 안 되고, gutter 가 없으면 건너뛰어 그 통과가 아무것도 지키지 않는다."
     },
     {
+      "file": "lib/browser-acceptance-frameworks.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "저장소의 실행들에서 프레임워크마다 자기 최신 하나를 고른다. 순서 근거는 부르는 쪽이 준다 — 보고서는 자기가 언제 끝났는지 아직 안 적는다."
+    },
+    {
+      "file": "lib/browser-acceptance-frameworks.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "프레임워크별 최신 선택 규칙을 고정한다 — 못 읽은 순서는 최신 후보가 아니고, 선언 없는 프레임워크는 어느 칸에도 안 실린다."
+    },
+    {
       "file": "lib/browser-evidence-plan.mjs",
       "role": "lib",
       "class": "A",
