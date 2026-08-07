@@ -13,6 +13,7 @@ import { BROWSER_ACCEPTANCE_ENGINES } from "./lib/browser-gate-identity.mjs";
 import { judgeB12MachineEvidence } from "./lib/browser-gate-b12.mjs";
 import { hostileWindowResizeSizes } from "./lib/browser-matrix.mjs";
 import { readProvision } from "./lib/harness-capabilities.mjs";
+import { reclaimCaptureRuns } from "./lib/capture-retention.mjs";
 import {
   requireB12Cycle,
   requireB12RunId,
@@ -104,6 +105,9 @@ function publicStartup(startup) {
 }
 
 function writeCycle(value) {
+  // 사람용 캡처도 자기 자리를 스스로 지킨다 — 아무도 안 비우면 실행마다 쌓여 저장소가 찬다.
+  // 지금 도는 실행은 지우지 않는다(같은 runId 의 다른 사이클이 이미 썼을 수 있다).
+  reclaimCaptureRuns(path.dirname(runRoot), { keepRuns: 2, keep: [path.basename(runRoot)] });
   fs.mkdirSync(evidenceRoot, { recursive: true });
   fs.writeFileSync(cycleFile, `${JSON.stringify(value, null, 2)}\n`);
 }

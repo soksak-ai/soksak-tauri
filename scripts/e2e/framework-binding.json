@@ -851,6 +851,20 @@
       "note": "시각 검토가 사람의 명시 판정으로만 기록되고 없는 artifact 를 검토했다고 적지 못한다는 법을 고정한다."
     },
     {
+      "file": "lib/capture-retention.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "사람용 캡처 저장소에서 최신 N 실행만 남긴다. 바이트가 아니라 되짚을 실행 수로 센다."
+    },
+    {
+      "file": "lib/capture-retention.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "캡처 보존 규칙을 고정한다 — 지금 도는 실행은 지우지 않고, 없는 자리는 조용히 넘어간다."
+    },
+    {
       "file": "lib/client.mjs",
       "role": "lib",
       "class": "A",
