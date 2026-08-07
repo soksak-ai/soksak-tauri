@@ -32,6 +32,7 @@ import {
   planBrowserRecordingEvidence,
 } from "./lib/browser-evidence-plan.mjs";
 import {
+  browserGatesOwnedBy,
   createBrowserGateReportStore,
   mapB07PinCaseEvidence,
   mapB08BaselineEvidence,
@@ -1895,6 +1896,8 @@ async function main() {
     runId,
     platform: process.platform,
     keep: process.env.KEEP === "1",
+    // B12 는 냉시작 실행기의 것이다. 이 실행기는 재지 못한 칸을 차단으로도 적지 않는다.
+    gates: browserGatesOwnedBy("slot-freeze"),
   });
   await beginEvidenceRun(EVIDENCE_STORE_ROOT, {
     runId,

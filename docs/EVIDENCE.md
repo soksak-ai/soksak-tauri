@@ -49,6 +49,43 @@ evidenceWiring = { source, unconsumed, unproduced, error }
 `scripts/e2e/lib/browser-machine-judge-support.test.mjs`가 두 방향, throw, 손상된 장부,
 JSON 왕복을 검증한다. B03 적용은 `scripts/e2e/lib/browser-gate-b03-evidence.test.mjs`가 소유한다.
 
+## 36칸 보고서의 게이트 소유
+
+정본 3x12 보고서는 실행기 하나가 다 채우지 못한다. B12 는 프로세스를 세 번 죽였다 살려야 재는
+냉시작 게이트라 살아 있는 앱 한 번으로 도는 B01~B11 과 같은 실행에 들어갈 수 없다. 그래서
+실행기가 둘이고, 어느 칸이 누구 것인지는 `scripts/e2e/lib/browser-gate-report-merge.mjs` 의
+`BROWSER_GATE_OWNERS` 한 자리에만 산다. 하니스는 목록을 다시 적지 않고 `browserGatesOwnedBy`
+로 읽는다.
+
+`createBrowserGateReportStore({ gates })` 가 그 선언을 시행한다. 선언하지 않은 칸에는
+`recordMachineEvidence` 도 `recordMachineStatus` 도 판정을 적지 못하고, 측정을 잃은 엔진을 닫는
+`blockPending` 도 소유한 칸만 닫는다. 재지 못한 남의 칸을 차단으로 적으면 그 게이트의 소유자가
+낸 판정이 들어갈 자리가 사라진다 — 재지 않은 칸은 `not-run` 으로 남는다.
+
+`mergeBrowserGateReports(contributions)` 가 두 보고서를 한 판으로 잇는다. 기여는
+`{ gates, report }` 이며 다음을 모두 만족해야 한다.
+
+- 소유가 12칸의 분할이다. 빠진 칸도 겹친 칸도 이름으로 거절한다.
+- `framework`, `platform`, `buildId` 가 같다. 다른 artifact 의 측정은 합치지 않는다.
+- 기여가 소유하지 않은 칸은 `not-run` 이거나 `not-applicable` 이다. 소유 없이 적힌 판정은
+  이름으로 거절한다.
+
+병합본의 `runId` 는 기여한 실행 id 를 순서대로 `+` 로 이어 붙인 이름이다. 영수증은 병합 신원으로
+다시 발급되지만 증거는 그대로이고 판정은 같은 판사가 같은 값에서 다시 낸다 — 재판정 결과가 원래
+상태와 다르면 병합이 실패한다.
+
+## B12 냉시작 판정의 기록 경로
+
+`scripts/e2e/titlebar-composition.mjs` 는 cycle 하나를, `scripts/e2e/titlebar-composition-summary.mjs`
+는 냉시작 3회 집계를 소유한다. 집계 판정(`judgeTitlebarColdStartRun`)을 `b12ColdStartCells` 가 B12
+칸 입력으로 옮기고, 요약기가 `titlebarGateStoreRoot(home)` 의 증거 저장소에 정본 형식
+`browser-gates.json` 으로 적는다.
+
+칸이 `green` 이 되는 조건은 집계가 소유한다 — 냉시작 3회 × 모든 창 × 세 엔진이 전부 green 이어야
+한다. 그때 칸이 드는 영수증은 마지막 냉시작의 마지막 창 표본이며, 표본 하나가 통과의 근거가 아니라
+실행 전체 판정을 기계가 다시 확인할 수 있는 닻이다. 닻이 없는데 green 을 말하면 배선 오류이므로
+던진다. 집계가 green 이어도 그 표본이 B12 판사를 통과하지 못하면 칸은 red 이고 요약기는 실패한다.
+
 ## 브라우저 시각 검토
 
 브라우저 canonical report의 `visualReview`는 기본적으로 `pending`이다. 녹화·snapshot 생성이나

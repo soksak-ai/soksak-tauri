@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { judgeTitlebarColdStartRun } from "./titlebar-cold-start-run.mjs";
+import { b12ColdStartCells, judgeTitlebarColdStartRun } from "./titlebar-cold-start-run.mjs";
 
 const ENGINES = Object.freeze(["browser", "browser-chromium", "browser-chromium-offscreen"]);
 const BUILD_ID = "a".repeat(64);
@@ -157,5 +157,57 @@ describe("B12 three-cold-start aggregate verdict", () => {
     });
     cycles[2].runId = "stale-run";
     expect(judgeTitlebarColdStartRun(run(cycles)).status).toBe("red");
+  });
+});
+
+describe("b12ColdStartCells", () => {
+  const anchors = Object.fromEntries(ENGINES.map((engine) => [engine, { engine, marker: 1 }]));
+
+  it("carries the last cold start's sample as the receipt anchor when the run is green", () => {
+    const cells = b12ColdStartCells({ verdict: { status: "green", evidence: [] }, anchors });
+    expect(cells.map((cell) => cell.engine)).toEqual([...ENGINES]);
+    for (const cell of cells) {
+      expect(cell.kind).toBe("evidence");
+      expect(cell.evidence).toEqual(anchors[cell.engine]);
+    }
+  });
+
+  it("refuses to call a run green without the sample that anchors it", () => {
+    expect(() => b12ColdStartCells({ verdict: { status: "green", evidence: [] }, anchors: {} }))
+      .toThrow(/anchor/i);
+  });
+
+  it("writes the aggregate failure into the cell instead of dropping the gate", () => {
+    const cells = b12ColdStartCells({
+      verdict: { status: "red", evidence: ["cycle 2/main: composition sequence did not advance"] },
+      anchors: {},
+    });
+    expect(cells).toHaveLength(ENGINES.length);
+    for (const cell of cells) {
+      expect(cell.kind).toBe("status");
+      expect(cell.status).toBe("red");
+      expect(cell.evidence).toEqual(["cycle 2/main: composition sequence did not advance"]);
+      expect(cell.reason).toMatch(/cold-start/);
+    }
+  });
+
+  it("keeps a blocked run blocked with its stated reason", () => {
+    const cells = b12ColdStartCells({
+      verdict: {
+        status: "blocked",
+        evidence: ["Electron native traffic-light position adapter is absent"],
+      },
+      anchors: {},
+    });
+    for (const cell of cells) {
+      expect(cell.kind).toBe("status");
+      expect(cell.status).toBe("blocked");
+      expect(cell.reason).toMatch(/cold-start/);
+    }
+  });
+
+  it("leaves the statically not-applicable platform alone", () => {
+    expect(b12ColdStartCells({ verdict: { status: "not-applicable", evidence: [] }, anchors: {} }))
+      .toEqual([]);
   });
 });

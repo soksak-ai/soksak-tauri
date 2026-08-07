@@ -25,14 +25,19 @@ export function pendingMachineGates(report, engine) {
     .filter((gate) => cells[gate].machine.status === APPLICABLE_STATUS);
 }
 
-export function blockPendingMachineGates(report, { engine, reason } = {}) {
+/** gates 를 주면 그 실행기가 소유한 칸만 닫는다. 소유하지 않은 칸은 재지 않은 그대로 남는다 —
+ * 남의 칸을 차단으로 적으면 그 게이트의 소유자가 낸 판정을 덮어쓸 자리가 사라진다. */
+export function blockPendingMachineGates(report, { engine, reason, gates } = {}) {
   if (typeof reason !== "string" || reason.trim() === "") {
     throw new TypeError("blocked machine cells require a non-empty reason");
   }
-  return pendingMachineGates(report, engine).reduce(
-    (current, gate) => setMachineGateStatus(current, { engine, gate, status: "blocked", reason }),
-    report,
-  );
+  const owned = gates == null ? null : new Set(gates);
+  return pendingMachineGates(report, engine)
+    .filter((gate) => owned === null || owned.has(gate))
+    .reduce(
+      (current, gate) => setMachineGateStatus(current, { engine, gate, status: "blocked", reason }),
+      report,
+    );
 }
 
 /** 인수는 한 프레임워크의 36칸이 아니라 프레임워크 전부의 합이다.

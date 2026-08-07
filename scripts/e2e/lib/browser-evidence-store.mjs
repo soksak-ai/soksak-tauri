@@ -8,7 +8,22 @@ import {
 } from "./browser-gates.mjs";
 import { blockPendingMachineGates } from "./browser-gate-coverage.mjs";
 import { parseBorderBox } from "./rail-border-geometry.mjs";
+import {
+  BROWSER_GATE_IDS,
+  BROWSER_GATE_OWNERS,
+  browserGatesOwnedBy,
+  mergeBrowserGateReports,
+  requireOwnedGates,
+} from "./browser-gate-report-merge.mjs";
 import { writeEvidenceFile } from "./evidence-store.mjs";
+
+export {
+  BROWSER_GATE_IDS,
+  BROWSER_GATE_OWNERS,
+  browserGatesOwnedBy,
+  mergeBrowserGateReports,
+  requireOwnedGates,
+};
 
 export const BROWSER_GATE_REPORT_FILE = "browser-gates.json";
 
@@ -253,16 +268,30 @@ function sameIdentity(left, right) {
     .every((fieldName) => left[fieldName] === right[fieldName]);
 }
 
-/** Owns one immutable live-run identity and its canonical, always-complete 3x12 report. */
+/** Owns one immutable live-run identity and its canonical, always-complete 3x12 report.
+ *
+ * `gates` 는 이 실행기가 소유한 칸의 이름이다. 선언한 칸에만 판정을 적고, 선언하지 않은 칸은
+ * 재지 않은 그대로 둔다. 선언 없이 만든 저장소는 병합에 낼 기여를 만들지 못한다 — 무엇을 잰
+ * 실행인지 이름으로 말하지 못하는 보고서는 다른 실행기의 보고서와 이을 수 없다.
+ */
 export function createBrowserGateReportStore({
   root,
   buildId,
   runId,
   platform,
   keep = false,
+  gates = null,
 }) {
   const artifactBuildId = requireBrowserEvidenceBuildId(buildId);
+  const ownedGates = gates === null ? null : requireOwnedGates(gates);
   let currentReport = null;
+
+  const requireOwnership = (gate) => {
+    if (ownedGates !== null && !ownedGates.includes(gate)) {
+      throw new TypeError(`${runId} does not own ${gate}; declare it in gates to record a verdict`);
+    }
+    return gate;
+  };
 
   const requireReport = () => {
     if (!currentReport) throw new Error("browser gate report has no live framework identity");
@@ -288,6 +317,7 @@ export function createBrowserGateReportStore({
 
   const recordMachineEvidence = ({ framework, engine, gate, evidence }) => {
     const report = bindFramework(framework);
+    requireOwnership(gate);
     const judgeReceipt = judgeBrowserMachineGateEvidence({
       ...report.identity,
       engine,
@@ -298,8 +328,18 @@ export function createBrowserGateReportStore({
     return judgeReceipt;
   };
 
+  /** 판사가 볼 표본이 없는 판정(red·blocked)을 그 사유와 함께 그 칸에 적는다.
+   * green 은 여기로 들어오지 못한다 — 통과는 영수증 없이 표현할 수 없다. */
+  const recordMachineStatus = ({ framework, engine, gate, status, evidence, reason }) => {
+    const report = bindFramework(framework);
+    requireOwnership(gate);
+    currentReport = setMachineGateStatus(report, { engine, gate, status, evidence, reason });
+    return currentReport.engines[engine][gate].machine;
+  };
+
   const recordVisualReview = ({ framework, engine, gate, status, artifacts, notes }) => {
     const report = bindFramework(framework);
+    requireOwnership(gate);
     currentReport = setVisualReviewStatus(report, {
       engine,
       gate,
@@ -313,16 +353,33 @@ export function createBrowserGateReportStore({
   /** 이 엔진의 측정을 이어갈 수 없을 때 남은 셀만 사유와 함께 차단으로 닫는다.
    * 이미 기록된 판정은 그대로 두고 다른 엔진의 셀은 건드리지 않는다. */
   const blockPending = ({ engine, reason }) => {
-    currentReport = blockPendingMachineGates(requireReport(), { engine, reason });
+    currentReport = blockPendingMachineGates(requireReport(), {
+      engine,
+      reason,
+      gates: ownedGates,
+    });
     return currentReport;
+  };
+
+  /** 병합에 낼 기여. 소유 선언과 그 실행의 보고서를 한 봉투로 묶는다. */
+  const contribution = () => {
+    if (ownedGates === null) {
+      throw new TypeError(
+        `${runId} must declare the gates it owns before it can contribute to a merged report`,
+      );
+    }
+    return { gates: [...ownedGates], report: requireReport() };
   };
 
   return Object.freeze({
     hasReport: () => currentReport !== null,
+    ownedGates: () => (ownedGates === null ? null : [...ownedGates]),
     bindFramework,
     recordMachineEvidence,
+    recordMachineStatus,
     recordVisualReview,
     blockPending,
+    contribution,
     report: () => requireReport(),
     machineSummary: () => machineGateSummary(requireReport()),
     serialize: () => serializeBrowserGateReport(requireReport()),
