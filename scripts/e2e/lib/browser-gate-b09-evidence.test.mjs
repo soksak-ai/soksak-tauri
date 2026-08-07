@@ -4,6 +4,8 @@ import {
   buildB09Sample,
   deriveChromeControl,
   deriveHitOwners,
+  pickOverlapSurface,
+  probePointFor,
 } from "./browser-gate-b09-evidence.mjs";
 
 const SURFACE = Object.freeze({
@@ -78,6 +80,25 @@ describe("B09 표본은 명령 응답에서 파생된다", () => {
       { kind: "chrome", owner: "sidebar/right", surfaceId: null },
     ]);
     expect(sample.nativeSurface.chromeAboveHost).toBe(false);
+  });
+
+  it("겹치는 surface 가 없어도 비교 대상과 히트 좌표를 남긴다 — 던져서 지우지 않는다", () => {
+    const chromeRect = { x: 0, y: 0, w: 20, h: 20 };
+    const far = { ...SURFACE, rect: { x: 500, y: 500, w: 100, h: 100 } };
+    const near = { ...SURFACE, viewId: "tab-left", rect: { x: 10, y: 10, w: 100, h: 100 } };
+    expect(pickOverlapSurface(chromeRect, [far, near])).toBe(near);
+    expect(pickOverlapSurface(chromeRect, [far])).toBe(far);
+    expect(pickOverlapSurface(chromeRect, [])).toBeNull();
+    expect(pickOverlapSurface(chromeRect, [{ ...SURFACE, rect: null }]))
+      .toMatchObject({ rect: null });
+
+    // 겹치면 교집합 중심, 안 겹치면 chrome 중심 — 둘 다 chrome rect 안이다.
+    expect(probePointFor(chromeRect, near.rect)).toEqual({ x: 15, y: 15 });
+    expect(probePointFor(chromeRect, far.rect)).toEqual({ x: 10, y: 10 });
+    expect(probePointFor(chromeRect, null)).toEqual({ x: 10, y: 10 });
+    // 1px 미만 겹침을 반올림으로 밖으로 밀지 않는다.
+    expect(probePointFor(chromeRect, { x: 19.5, y: 0, w: 100, h: 20 }))
+      .toEqual({ x: 19.75, y: 10 });
   });
 
   it("사슬이 비면 최상위 소유자는 null 이다 — target 을 대신 적지 않는다", () => {

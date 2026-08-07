@@ -101,12 +101,10 @@ export function pickOverlapSurface(chromeRect, surfaces) {
 /**
  * 히트를 넣을 점. 겹침이 있으면 그 중심, 없으면 chrome 중심 — 어느 쪽이든 chrome rect 안이라
  * anchor 선언이 노드 밖으로 나가지 않는다. 겹침 부재는 judge 가 좌표로 판정한다.
+ * 반올림하지 않는다 — 1px 미만 겹침에서 중심을 밖으로 밀어 없는 위반을 만든다.
  */
 export function probePointFor(chromeRect, surfaceRect) {
   const overlap = surfaceRect ? overlapOf(chromeRect, surfaceRect) : null;
   const source = overlap && overlap.w > 0 && overlap.h > 0 ? overlap : chromeRect;
-  return {
-    x: Math.round(source.x + source.w / 2),
-    y: Math.round(source.y + source.h / 2),
-  };
+  return { x: source.x + source.w / 2, y: source.y + source.h / 2 };
 }
