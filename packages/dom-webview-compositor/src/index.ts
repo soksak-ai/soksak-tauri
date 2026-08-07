@@ -183,15 +183,16 @@ export interface CompositionObservationSpan {
 export function compositionObservationWindowVerdict(
   window: CompositionObservationWindow,
   producers: readonly CompositionObservationSpan[],
-): { ok: boolean; errors: string[]; gapMs: Record<string, number> } {
+): { ok: boolean; errors: string[]; unmeasured: string[]; gapMs: Record<string, number> } {
   const errors: string[] = [];
+  const unmeasured: string[] = [];
   const gapMs: Record<string, number> = {};
   const startAtUnixMs = Number(window?.startAtUnixMs);
   const endAtUnixMs = Number(window?.endAtUnixMs);
   if (!Number.isFinite(startAtUnixMs) || !Number.isFinite(endAtUnixMs)
       || endAtUnixMs < startAtUnixMs) {
     errors.push(`window=${window?.startAtUnixMs}/${window?.endAtUnixMs}`);
-    return { ok: false, errors, gapMs };
+    return { ok: false, errors, unmeasured, gapMs };
   }
   for (const span of producers ?? []) {
     const producer = span?.producer;
@@ -209,9 +210,12 @@ export function compositionObservationWindowVerdict(
       ? startAtUnixMs - last
       : first > endAtUnixMs ? first - endAtUnixMs : 0;
     gapMs[producer] = gap;
-    if (gap > 0) errors.push(`${producer}:window-gap=${gap}`);
+    // 규칙 — 관측 증명: 창과 겹치는 표본이 하나도 없으면 "어긋났다"가 아니라 "재지 못했다"다.
+    // 어긋남을 red 로 답하려면 그 창에서 관측이 있었음을 먼저 증명해야 한다. 관측기가 죽은
+    // 실행과 제품이 틀린 실행이 같은 답을 내면, 그 답은 고칠 자리를 가리키지 못한다.
+    if (gap > 0) unmeasured.push(`${producer}:no-samples-in-window=${gap}`);
   }
-  return { ok: errors.length === 0, errors, gapMs };
+  return { ok: errors.length === 0 && unmeasured.length === 0, errors, unmeasured, gapMs };
 }
 
 function observationSpan(
@@ -259,6 +263,11 @@ export function compositionTimelineVerdict(timeline: CompositionTimeline) {
       .filter((span): span is CompositionObservationSpan => span !== null),
   );
   errors.push(...observation.errors);
+  // 궤적은 자기 창을 선언한다. 그 창 밖의 관측은 침묵과 구별되지 않지만, 여기서 못 잼으로
+  // 넘기면 실측된 epoch 위반(native producer 가 4,041,616ms 뒤처진 시계를 같은 `...UnixMs`
+  // 이름으로 낸 사건)이 숨는다. 시계를 선언으로 답하기 전까지 이 자리의 분류는 red 로 둔다.
+  errors.push(...observation.unmeasured
+    .map((name) => name.replace(":no-samples-in-window=", ":window-gap=")));
   // 관측자의 생존은 판정의 입력이 아니다. presentation-frame 표본은 rAF 가 내고, WebKit 은
   // 가려지거나 포커스 없는 창에서 rAF 를 멈춘다 — 그것은 관측의 한계이지 DOM 이 안 움직였다는
   // 증거가 아니다. 표본이 없는 producer 를 실패로 적으면 다른 창이 위에 있느냐가 green/red 를

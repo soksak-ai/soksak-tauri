@@ -787,6 +787,11 @@ function inspectB04Transition(transition, index, coordinateSpace, failures, unme
       }],
     );
     failures.push(...observation.errors.map((error) => `${path}.samples:${error}`));
+    // 창 밖 표본은 두 사실을 한 모양으로 낸다 — 관측기가 침묵했거나(못 잼), producer 가 다른
+    // 시계를 같은 `...UnixMs` 이름으로 냈거나(계약 위반). 시계를 선언으로 답하기 전에는
+    // 둘을 가를 수 없고, 못 잼 쪽으로 넘기면 실측된 epoch 결함이 숨는다. 그래서 red 로 둔다.
+    failures.push(...observation.unmeasured
+      .map((name) => `${path}.samples:${name.replace(":no-samples-in-window=", ":window-gap=")}`));
   }
 
   const scaleFactor = Number(coordinateSpace?.scaleFactor);

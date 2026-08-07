@@ -263,8 +263,10 @@ describe("DOM ↔ native webview composition contract", () => {
       { producer: "renderer", firstSampledAtUnixMs: 100, lastSampledAtUnixMs: 900 },
       { producer: "surface", firstSampledAtUnixMs: 1_341, lastSampledAtUnixMs: 2_000 },
     ])).toMatchObject({
+      // 겹치지 않는 관측은 어긋남이 아니라 못 잼이다 — 거리는 그대로 남기고 자리만 옮긴다.
       ok: false,
-      errors: ["renderer:window-gap=100", "surface:window-gap=1"],
+      errors: [],
+      unmeasured: ["renderer:no-samples-in-window=100", "surface:no-samples-in-window=1"],
       gapMs: { renderer: 100, surface: 1 },
     });
 
@@ -337,3 +339,51 @@ describe("DOM ↔ native webview composition contract", () => {
   });
 });
 
+
+// 규칙 — 관측 증명: 잰 어긋남만 red 다.
+//
+// 거래 창과 겹치는 관측이 하나도 없으면 그것은 "어긋났다"가 아니라 "재지 못했다"다. 둘을 같은
+// 칸에 넣으면 관측기가 죽은 실행과 제품이 틀린 실행이 같은 답을 내고, 그 답은 고칠 자리를
+// 가리키지 못한다. 실측 2026-08-07: B04·B05 가 표시 시계 침묵을 red 로 칠했고, 같은 빌드가
+// 실행마다 green/red 를 오갔다.
+//
+// blocked 는 통과가 아니다 — 인수는 72칸 전부 green 을 요구한다. 이름이 달라질 뿐이고,
+// 그 이름이 고칠 자리를 가리킨다.
+describe("관측 증명", () => {
+  const window = { startAtUnixMs: 1_000, endAtUnixMs: 1_340 };
+
+  it("창과 겹치지 않는 관측은 red 가 아니라 못 잼이다", () => {
+    const verdict = compositionObservationWindowVerdict(window, [
+      { producer: "presentation", firstSampledAtUnixMs: 100, lastSampledAtUnixMs: 900 },
+    ]);
+    expect(verdict.errors).toEqual([]);
+    expect(verdict.unmeasured).toEqual(["presentation:no-samples-in-window=100"]);
+    expect(verdict.gapMs).toMatchObject({ presentation: 100 });
+  });
+
+  it("창 뒤로 벗어난 관측도 같은 답이다", () => {
+    const verdict = compositionObservationWindowVerdict(window, [
+      { producer: "presentation", firstSampledAtUnixMs: 1_341, lastSampledAtUnixMs: 2_000 },
+    ]);
+    expect(verdict.errors).toEqual([]);
+    expect(verdict.unmeasured).toEqual(["presentation:no-samples-in-window=1"]);
+  });
+
+  // 모양이 틀린 것은 못 잼이 아니다 — 그건 계약 위반이고 red 로 남는다.
+  it("모양이 틀린 선언은 여전히 red 다", () => {
+    const verdict = compositionObservationWindowVerdict(window, [
+      { producer: "presentation", firstSampledAtUnixMs: 1_400, lastSampledAtUnixMs: 1_100 },
+    ]);
+    expect(verdict.errors).toEqual(["presentation:span=1400/1100"]);
+    expect(verdict.unmeasured).toEqual([]);
+  });
+
+  it("겹치는 관측은 못 잼도 어긋남도 아니다", () => {
+    const verdict = compositionObservationWindowVerdict(window, [
+      { producer: "presentation", firstSampledAtUnixMs: 990, lastSampledAtUnixMs: 1_400 },
+    ]);
+    expect(verdict.ok).toBe(true);
+    expect(verdict.errors).toEqual([]);
+    expect(verdict.unmeasured).toEqual([]);
+  });
+});
