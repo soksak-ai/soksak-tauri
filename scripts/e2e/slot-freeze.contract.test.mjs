@@ -445,7 +445,7 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(presentationCalls.every((call) =>
       /implementation\.presentationTrace\.(?:armCommand|readCommand)/.test(call.text))).toBe(true);
 
-    expect(source).toContain("for (const engine of ENGINES)");
+    expect(source).toContain("engines: ENGINES");
     expect(source).not.toContain("clicked.trace?.samples");
     expect(source).not.toContain("traceAddresses:");
   });
@@ -553,6 +553,14 @@ describe("slot-freeze instrumentation lifecycle", () => {
   it("requires one shared pane presentation owner for plugin chrome and native members", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
     expect(source).toContain("rendererTopologyOwnershipVerdict");
+  });
+
+  it("measures every engine before reporting, and closes a lost engine as blocked", () => {
+    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    expect(source).toContain("runEngineCoverage");
+    expect(source).toContain("blockPending");
+    // 엔진 순회를 직접 돌면 한 엔진의 실패가 남은 엔진의 측정을 통째로 삼킨다.
+    expect(source).not.toMatch(/for\s*\(\s*const\s+engine\s+of\s+ENGINES\s*\)/);
   });
 
   it("drives and measures real wheel scrolling for every browser implementation", () => {

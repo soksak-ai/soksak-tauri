@@ -365,4 +365,51 @@ describe("canonical browser gate report store", () => {
       expect(persisted.summary.visualReview.counts.pending).toBe(35);
     });
   });
+
+  it("blocks only the engine that lost measurement and keeps its recorded verdicts", async () => {
+    await inTemporaryStore(async (root) => {
+      await beginEvidenceRun(root, { runId: "run-blocked" });
+      const store = createBrowserGateReportStore({
+        root,
+        buildId: "build-blocked",
+        runId: "run-blocked",
+        platform: "darwin",
+      });
+      store.bindFramework("tauri");
+      store.recordMachineEvidence({
+        framework: "tauri",
+        engine: "browser",
+        gate: "B07",
+        evidence: b07Evidence("browser"),
+      });
+
+      store.blockPending({ engine: "browser", reason: "native surface host lost" });
+
+      const report = store.report();
+      expect(report.engines.browser.B07.machine.status).toBe("green");
+      expect(report.engines.browser.B04.machine.status).toBe("blocked");
+      expect(report.engines.browser.B04.machine.reason).toBe("native surface host lost");
+      expect(report.engines["browser-chromium"].B04.machine.status).toBe("not-run");
+
+      await store.persist();
+      const persisted = JSON.parse(await readFile(
+        path.join(root, "current", BROWSER_GATE_REPORT_FILE),
+        "utf8",
+      ));
+      expect(persisted.summary.machine.counts.blocked).toBe(11);
+      expect(persisted.summary.machine.counts.green).toBe(1);
+      expect(persisted.summary.machine.status).toBe("blocked");
+    });
+  });
+
+  it("refuses to block before a live framework identity exists", () => {
+    const store = createBrowserGateReportStore({
+      root: "/tmp/soksak-browser-gate-report-block",
+      buildId: "build-1",
+      runId: "run-1",
+      platform: "darwin",
+    });
+    expect(() => store.blockPending({ engine: "browser", reason: "mount lost" }))
+      .toThrow(/live framework identity/);
+  });
 });

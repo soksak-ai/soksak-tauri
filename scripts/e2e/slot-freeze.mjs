@@ -37,6 +37,7 @@ import {
   mapB08MaximizeCaseEvidence,
   requireBrowserEvidenceBuildId,
 } from "./lib/browser-evidence-store.mjs";
+import { runEngineCoverage } from "./lib/browser-gate-coverage.mjs";
 import {
   beginEvidenceRun,
   evidenceStorePaths,
@@ -1960,8 +1961,19 @@ async function main() {
   try {
     client = await openClient(requireSocket());
     page = await startHtmlFixture(() => fixtureHtml());
-    for (const engine of ENGINES) {
-      frames += await runEngine(client, page, engine, recordingLedger, gateReportStore);
+    const coverage = await runEngineCoverage({
+      engines: ENGINES,
+      runEngine: (engine) => runEngine(client, page, engine, recordingLedger, gateReportStore),
+      blockEngine: (engine, reason) => gateReportStore.blockPending({ engine, reason }),
+    });
+    frames += coverage.total;
+    if (coverage.failures.length) {
+      throw new AggregateError(
+        coverage.failures.map(({ error }) => error),
+        `engine coverage RED — ${coverage.failures
+          .map(({ engine, error }) => `${engine}: ${error instanceof Error ? error.message : String(error)}`)
+          .join("; ")}`,
+      );
     }
     recordingLedger.assertComplete();
   } catch (error) {

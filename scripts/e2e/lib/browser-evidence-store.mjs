@@ -6,6 +6,7 @@ import {
   setMachineGateStatus,
   setVisualReviewStatus,
 } from "./browser-gates.mjs";
+import { blockPendingMachineGates } from "./browser-gate-coverage.mjs";
 import { writeEvidenceFile } from "./evidence-store.mjs";
 
 export const BROWSER_GATE_REPORT_FILE = "browser-gates.json";
@@ -250,11 +251,19 @@ export function createBrowserGateReportStore({
     return currentReport.engines[engine][gate].visualReview;
   };
 
+  /** 이 엔진의 측정을 이어갈 수 없을 때 남은 셀만 사유와 함께 차단으로 닫는다.
+   * 이미 기록된 판정은 그대로 두고 다른 엔진의 셀은 건드리지 않는다. */
+  const blockPending = ({ engine, reason }) => {
+    currentReport = blockPendingMachineGates(requireReport(), { engine, reason });
+    return currentReport;
+  };
+
   return Object.freeze({
     hasReport: () => currentReport !== null,
     bindFramework,
     recordMachineEvidence,
     recordVisualReview,
+    blockPending,
     report: () => requireReport(),
     machineSummary: () => machineGateSummary(requireReport()),
     serialize: () => serializeBrowserGateReport(requireReport()),
