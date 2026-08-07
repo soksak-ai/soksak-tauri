@@ -297,6 +297,26 @@ e2e-titlebar-dev: build-dev ## 현재 소스를 한 번 빌드하고 냉재시�
 		BROWSER_EVIDENCE_BUILD_ID="$$evidence_build_id" B12_RUN_ID="$$evidence_run_id" node scripts/e2e/titlebar-composition-summary.mjs || run_status=1; \
 		exit "$$run_status"
 
+
+e2e-browser-acceptance-dev: build-dev ## 한 빌드로 두 실행기를 잇고 36칸 인수를 판정한다(B01~B11 + B12)
+	@# 병합 계약은 같은 artifact 를 요구한다. 각 실행기가 자기 빌드를 만들면 두 기여가 갈려
+	@# 인수 판정이 성립하지 않는다 — 그래서 여기서 한 번만 빌드하고 두 실행기가 그것을 잰다.
+	@test -x "$(DEV_EXECUTABLE)" || { echo "빌드된 dev 앱 실행 파일이 없다: $(DEV_EXECUTABLE)"; exit 1; }
+	@$(MAKE) --no-print-directory restart-dev
+	@evidence_build_id="$$(shasum -a 256 "$(DEV_EXECUTABLE)" | awk '{print $$1}')"; \
+		run_status=0; \
+		SOKSAK_SOCKET="$(DEV_CORED_SOCKET)" BROWSER_EVIDENCE_BUILD_ID="$$evidence_build_id" \
+			node scripts/e2e/slot-freeze.mjs || run_status=1; \
+		b12_run_id="$$(node -e 'process.stdout.write(require("node:crypto").randomUUID())')"; \
+		for cycle in 1 2 3; do \
+			$(MAKE) --no-print-directory restart-dev || { run_status=1; continue; }; \
+			SOKSAK_SOCKET="$(DEV_CORED_SOCKET)" BROWSER_EVIDENCE_BUILD_ID="$$evidence_build_id" \
+				B12_RUN_ID="$$b12_run_id" B12_CYCLE="$$cycle" node scripts/e2e/titlebar-composition.mjs || run_status=1; \
+		done; \
+		BROWSER_EVIDENCE_BUILD_ID="$$evidence_build_id" B12_RUN_ID="$$b12_run_id" \
+			node scripts/e2e/titlebar-composition-summary.mjs || run_status=1; \
+		node scripts/e2e/browser-acceptance.mjs || run_status=1; \
+		exit "$$run_status"
 gates-registry: ## 배포 카탈로그 권위 게이트(네트워크) — 라이브 registry.json 의 GitHub 매니페스트 실측. C2 승격 소용돌이(시행 모집단=측정 모집단) + 의존 그래프 충족(의존 대상이 카탈로그에 함께 배포되는가) + 계약 동기(doctor 발행본 ≡ 코어 contract). 발행 전 GREEN 필수. 로컬(make gates)은 개발 사전점검일 뿐.
 	@node scripts/gates/c2-transparency-scan.mjs --registry
 	@node scripts/gates/dependency-graph-scan.mjs
