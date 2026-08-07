@@ -102,13 +102,36 @@ describe("window.resizeSequence recording contract", () => {
       ok: true,
       data: {
         steps: 2,
-        baseline: { resizesApplied: 0 },
+        baseline: { status: "observed", observation: { resizesApplied: 0 } },
         samples: [
           { step: 0, size: { w: 800, h: 600 }, observation: { resizesApplied: 1 } },
           { step: 1, size: { w: 1200, h: 800 }, observation: { resizesApplied: 2 } },
         ],
       },
     });
+  });
+
+  it("baseline 관측면이 거절하면 사유를 공개하고 resize 단계는 모두 수행한다", async () => {
+    let applied = 0;
+    setPhysicalSize.mockImplementation(async () => { applied += 1; });
+    sampleWindowResizeProbe.mockImplementation(async () => {
+      if (applied === 0) throw new Error("정착한 native resize 거래가 아직 없다");
+      return { resizesApplied: applied };
+    });
+
+    const result = await execute("window.resizeSequence", {
+      sizes: [{ w: 800, h: 600 }, { w: 1200, h: 800 }],
+      intervalMs: 0,
+    }, {});
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        steps: 2,
+        baseline: { status: "unavailable", reason: "정착한 native resize 거래가 아직 없다" },
+      },
+    });
+    expect(setPhysicalSize).toHaveBeenCalledTimes(2);
   });
 
   it.each([

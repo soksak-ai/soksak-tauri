@@ -63,7 +63,7 @@ function raw() {
     engine: "browser",
     scaleFactor,
     resizeSequence: {
-      baseline: { snapshot: baseline },
+      baseline: { status: "observed", observation: { snapshot: baseline } },
       samples: requests.map(([phase, requestedWindowGeometry], sequence) => {
         const eventGenerationBefore = generation;
         generation += 1;
@@ -104,9 +104,9 @@ describe("B10 live evidence mapper", () => {
     expect(evidence.baseline.transactionGeneration).toBe(20);
   });
 
-  it("leaves the baseline null when the command observed nothing before the first resize", () => {
+  it("leaves the baseline null when the command could not observe before the first resize", () => {
     const value = raw();
-    delete value.resizeSequence.baseline;
+    value.resizeSequence.baseline = { status: "unavailable", reason: "no settled transaction" };
     const evidence = mapB10LiveEvidence(value);
     expect(evidence.baseline.windowGeometry).toEqual({ x: null, y: null, w: null, h: null });
     expect(evidence.baseline.eventGeneration).toBeNull();
