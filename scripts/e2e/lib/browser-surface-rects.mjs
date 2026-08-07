@@ -122,6 +122,64 @@ const documentSurface = ({ viewId, label, contentViews }) => {
   };
 };
 
+/**
+ * presenter-local 원점의 기준 — 이 표면을 품은 pane host 가 창의 어디에 앉았는가.
+ *
+ * 표면이 자기 자리를 presenter 기준으로 답했으면, 자리(slot)와 같은 축이 되려면 그 presenter 의
+ * 창 좌표를 더해야 한다. 그 값은 AppKit 장부가 소유하므로 여기서 지어내지 않는다 — 못 읽으면
+ * null 이고, 그러면 좌표는 없는 것이지 0 에서 시작하는 것이 아니다.
+ */
+const presenterOrigin = ({ viewId, label, paneComposition }) => {
+  const candidates = (paneComposition?.matches ?? []).filter((pane) =>
+    pane?.viewId === viewId
+    && (pane.memberMatches ?? []).some((member) => member?.label === label));
+  return candidates.length === 1 ? rect(candidates[0].nativeFrame) : null;
+};
+
+/**
+ * 표면이 답한 자리를 자리(slot)와 같은 축으로 세운다.
+ *
+ * 두 축을 그냥 맞대면 판정은 좌표계 차이를 합성 결함으로 읽는다(실측: 표면이 presenter 를
+ * 원점으로 답한 y=28 과 자리의 창 좌표 y=149 가 121 만큼 어긋났고, 그 121 은 presenter 가 창
+ * 안에 앉은 자리였다). 문턱으로 덮지 않는다 — 축을 같게 만들거나, 못 만들면 답하지 않는다.
+ *
+ * 세 갈래를 이름으로 가른다. 원점을 안 밝혔거나 모르는 원점이면 **잰 계약 위반**이라 rect 는
+ * null 로 남고 judge 가 이름 붙인다. 밝힌 원점을 창 축으로 옮길 장부가 답하지 않으면 **못 잰**
+ * 것이라 여기서 던진다 — blocked 는 red 와 다른 사실이다.
+ */
+const windowFrameOf = ({ viewId, label, owner, paneComposition }) => {
+  const frame = rect(owner.frame);
+  const space = owner.coordinateSpace;
+  if (frame === null || space?.logical !== "css-px") return null;
+  if (space.origin === "window-absolute") return frame;
+  if (space.origin !== "presenter-local") return null;
+  const origin = presenterOrigin({ viewId, label, paneComposition });
+  if (origin === null) {
+    fail(viewId, `declares a ${space.origin} frame with no readable presenter origin`);
+  }
+  return { x: origin.x + frame.x, y: origin.y + frame.y, w: frame.w, h: frame.h };
+};
+
+/**
+ * 표면을 앉힌 원장이 스스로 밝힌 신원과 자리.
+ *
+ * 주소는 이 표면의 라벨에 매인 것만 받는다 — 매이지 않은 문자열은 이 표면의 신원이 아니라
+ * 남의 것이므로 빈 신원이다.
+ */
+const declaredSurface = ({ viewId, label, stats, paneComposition }) => {
+  const declared = (stats?.surfaces ?? []).filter((item) => item?.viewId === viewId);
+  if (declared.length !== 1) {
+    fail(viewId, `must have exactly one declared surface identity (${declared.length})`);
+  }
+  const owner = declared[0];
+  const anchor = `/${encodeURIComponent(label)}`;
+  const path = typeof owner.topologyPath === "string" ? owner.topologyPath : "";
+  return {
+    topologyPath: path.endsWith(anchor) ? path : "",
+    rect: windowFrameOf({ viewId, label, owner, paneComposition }),
+  };
+};
+
 const engineSurface = ({ viewId, surface, stats }) => {
   const offscreen = surface === "engine-offscreen";
   const engine = offscreen ? stats?.engine : stats;
@@ -196,22 +254,24 @@ function observeSurface({
       },
     };
   }
-  // offscreen 은 PaneSurfaceHost 를 안 가지므로 형제 층 순서를 답할 주소가 없다. 여기서
-  // 값을 지어내지 않는다 — 영수증에 그 사실이 빠진 채로 가고 judge 가 누락으로 이름 붙인다.
+  // 문서 밖 offscreen 표면의 신원과 자리는 그 표면을 앉힌 원장이 스스로 답한다. 여기서
+  // 만들지 않는다 — 판정면이 자리(slot)와 같은 공식으로 주소를 채우면 셋은 한 공식의 사본이
+  // 되고, 표면이 엉뚱한 라벨에 붙은 날에도 1:1 이 통과한다.
   if (surface === "engine-offscreen") {
-    const bounds = rect(owned.actual.bounds);
+    const owner = declaredSurface({ viewId, label, stats, paneComposition });
     const presentation = rect(owned.actual.presentation);
     return {
       source: BROWSER_SURFACE_OBSERVATION_SOURCES.engineLedger,
       receipt: {
         viewId,
         surfaceId: String(owned.id),
+        topologyPath: owner.topologyPath,
         live: true,
         visible: owned.actual.hidden !== true,
         presented: presentation != null
           && owned.actual.resize?.pending !== true
           && owned.actual.viewport?.matches === true,
-        rect: bounds,
+        rect: owner.rect,
       },
     };
   }
@@ -219,12 +279,16 @@ function observeSurface({
 }
 
 /** 이 원장이 스스로 적은 표본 시각. 안 적는 원장은 null 이다 — 모름을 아는 값으로 바꾸지 않는다. */
-function sampledAt(source, { paneComposition, contentViews }) {
+function sampledAt(source, { paneComposition, contentViews, stats }) {
   const raw = source === BROWSER_SURFACE_OBSERVATION_SOURCES.paneMember
     ? paneComposition?.sampledAtUnixMs
     : source === BROWSER_SURFACE_OBSERVATION_SOURCES.contentViewHost
       ? contentViews?.sampledAtUnixMs
-      : null;
+      : source === BROWSER_SURFACE_OBSERVATION_SOURCES.engineLedger
+        ? stats?.sampledAtUnixMs
+        : null;
+  // Number(null) 은 0 이고, 그 0 은 정착보다 이른 시각으로 읽힌다 — 안 잰 것이 잰 위반이 된다.
+  if (raw === null || raw === undefined) return null;
   const value = Number(raw);
   return Number.isFinite(value) ? value : null;
 }
@@ -258,7 +322,7 @@ export function browserSurfaceObservation({
   }
   return {
     source: sources[0],
-    sampledAtUnixMs: sampledAt(sources[0], { paneComposition, contentViews }),
+    sampledAtUnixMs: sampledAt(sources[0], { paneComposition, contentViews, stats }),
     receipts: observed.map((item) => item.receipt),
   };
 }

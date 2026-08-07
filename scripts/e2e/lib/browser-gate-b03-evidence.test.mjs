@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { judgeB03MachineEvidence } from "./browser-gates.mjs";
 import { mapB03LiveEvidence } from "./browser-gate-b03-evidence.mjs";
+import { browserSurfaceObservation } from "./browser-surface-rects.mjs";
 
 const rect = (x) => ({ x, y: 40.25, w: 300.5, h: 420.25 });
 
@@ -107,6 +108,82 @@ describe("B03 live evidence mapper", () => {
     expect(verdict.evidence).toContain(
       'B03:wiring.B03.live=mapper-threw/"TypeError: engine checkpoint read failed"',
     );
+  });
+
+  // 실측 재현(run slot-freeze-4aeda1ec · browser-chromium-offscreen): 자리는 창 좌표
+  // {x:60,y:149}, 표면이 답한 자리는 presenter 를 원점으로 한 {x:0,y:28} 이었다. 두 축을 그대로
+  // 맞대면 판정은 좌표계 차이를 합성 결함으로 읽는다 — 이 사슬이 그 둘을 같은 축으로 세운다.
+  it("judges the offscreen engine green from the numbers the run actually measured", () => {
+    const windowLabel = "w-8ee125bf-a8ef-4069-8951-e74c958f5836";
+    const viewIds = ["tab-m5bxed", "tab-7hleas"];
+    const labels = viewIds.map((viewId) => `offscreen-${viewId}`);
+    const slotX = [60, 613];
+    const topology = (index) =>
+      `window/${windowLabel}/view/${viewIds[index]}/content/${labels[index]}`;
+    const settledAtUnixMs = 1_786_102_060_636;
+
+    const observation = browserSurfaceObservation({
+      nativeChildWebview: true,
+      surface: "engine-offscreen",
+      windowLabel,
+      viewIds,
+      labels,
+      paneComposition: {
+        matches: viewIds.map((viewId, index) => ({
+          viewId,
+          nativeFrame: { x: slotX[index], y: 121, w: 381, h: 549 },
+          memberMatches: [{ label: labels[index], nativeCount: 1, ok: true }],
+        })),
+      },
+      stats: {
+        sampledAtUnixMs: settledAtUnixMs + 64,
+        ids: viewIds.map((viewId, index) => ({ viewId, surfaceId: 5 + index })),
+        surfaces: viewIds.map((viewId, index) => ({
+          viewId,
+          surfaceId: 5 + index,
+          label: labels[index],
+          topologyPath: topology(index),
+          coordinateSpace: {
+            logical: "css-px", origin: "presenter-local", referenceId: labels[index],
+          },
+          frame: { x: 0, y: 28, w: 381, h: 521 },
+        })),
+        engine: {
+          ids: [5, 6],
+          surfaces: viewIds.map((_viewId, index) => ({
+            id: 5 + index,
+            hidden: false,
+            presentation: { x: 0, y: 28, w: 381, h: 521 },
+            viewport: { matches: true },
+            resize: { pending: false },
+          })),
+        },
+      },
+    });
+
+    const verdict = judgeB03MachineEvidence(mapB03LiveEvidence({
+      engine: "browser-chromium-offscreen",
+      scaleFactor: 2,
+      settledAtUnixMs,
+      visibleViewIds: viewIds,
+      uiTree: {
+        nodes: viewIds.flatMap((viewId, index) => ["slot", "renderer"].map((kind) => ({
+          nodeIdentity: `${kind}-${viewId}`,
+          dataset: {
+            compositionKind: kind, viewId, visible: "true", topologyPath: topology(index),
+          },
+          rect: { x: slotX[index], y: 149, w: 381, h: 521 },
+        }))),
+      },
+      surfaceObservation: observation,
+    }));
+
+    expect(verdict.evidence).toEqual([
+      "browser-chromium-offscreen/B03:visible=2"
+        + ";slot+renderer+surface=1:1-physical-rounding"
+        + ";surface-ledger=engine-surface-ledger",
+    ]);
+    expect(verdict.status).toBe("green");
   });
 
   it("records a clean wiring ledger on the green path", () => {
