@@ -126,8 +126,10 @@ describe("mergeBrowserGateReports", () => {
     expect(b01.status).toBe("red");
     expect(b01.evidence).toEqual(slot.report().engines.browser.B01.machine.evidence);
     // 영수증은 병합 신원으로 다시 발급되지만 판정 수치는 같은 판사가 같은 증거에서 다시 낸다.
+    // 판사 이름은 정본에서 읽는다 — 여기 베껴 두면 판사가 판올림될 때 조용히 갈린다.
     expect(b01.judgeReceipt.runId).toBe("run-slot+run-titlebar");
-    expect(b01.judgeReceipt.judgeId).toBe("B01-machine-v1");
+    expect(b01.judgeReceipt.judgeId)
+      .toBe(slot.report().engines.browser.B01.machine.judgeReceipt.judgeId);
     expect(b01.judgeReceipt.machineEvidence)
       .toEqual(slot.report().engines.browser.B01.machine.judgeReceipt.machineEvidence);
 

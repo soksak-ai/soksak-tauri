@@ -292,18 +292,18 @@
       "note": "B03 매퍼가 원장을 서로 역산하지 않고 빠진 값을 null 로 보존한다는 법을 값만으로 고정한다."
     },
     {
-      "file": "lib/browser-gate-b04-observed.test.mjs",
-      "role": "test",
-      "class": "A",
-      "surfaces": [],
-      "note": "두 producer 가 서로 다른 epoch 로 시각을 발행할 때 B04 가 좌표를 비교하기 전에 관측 구간부터 판정한다는 법을 고정한다."
-    },
-    {
       "file": "lib/browser-gate-b04-epoch.test.mjs",
       "role": "test",
       "class": "A",
       "surfaces": [],
       "note": "실측 표본으로, native producer 가 좌표를 읽은 그 순간으로 표본을 날인해야 궤적 판정이 지연을 좌표 오차로 읽지 않는다는 법을 고정한다."
+    },
+    {
+      "file": "lib/browser-gate-b04-observed.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "두 producer 가 서로 다른 epoch 로 시각을 발행할 때 B04 가 좌표를 비교하기 전에 관측 구간부터 판정한다는 법을 고정한다."
     },
     {
       "file": "lib/browser-gate-b05-evidence.mjs",
@@ -658,6 +658,20 @@
       "note": "픽셀 관측 공개 진입점에서 읽을 수 없는 artifact가 machine verdict로 승격되지 않고 명시적 human visual 진단으로 남는 오류 경계를 검증한다."
     },
     {
+      "file": "lib/browser-visual-review.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "사람이 남기는 시각 검토 판정의 유일한 검사. 캡처 생성이나 machine 통과가 이 상태를 바꾸지 못하게 하고, 검토한 artifact 경로가 실재하는지 요구한다."
+    },
+    {
+      "file": "lib/browser-visual-review.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "시각 검토가 사람의 명시 판정으로만 기록되고 없는 artifact 를 검토했다고 적지 못한다는 법을 고정한다."
+    },
+    {
       "file": "lib/client.mjs",
       "role": "lib",
       "class": "A",
@@ -811,6 +825,20 @@
       "class": "A",
       "surfaces": [],
       "note": "저장 preflight·callback 이후 실패에서도 제품 action이 한 번만 실행되고 artifact identity가 상대경로로 남는지 검증한다."
+    },
+    {
+      "file": "lib/surface-scale.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "표시 배율의 사실을 창 레코드에서만 받는다. 캡처에서 다시 잰 배율은 사본으로 따로 싣고, 사실이 없으면 1 로 대체하지 않고 측정 불가로 거절한다."
+    },
+    {
+      "file": "lib/surface-scale.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "배율 사실이 맨 숫자를 거절하고 못 읽음이 성공값으로 둔갑하지 않는다는 법을 고정한다."
     },
     {
       "file": "lib/tauri-surface-resize-policy.mjs",
@@ -1205,6 +1233,13 @@
         "pixel-oracle"
       ],
       "note": "뷰 status 축과 닫기 가드를 소켓으로 보고, 마지막에 캡처가 백지가 아님을 픽셀로 확인한다(판정은 lib/png frameColors 한 곳)."
+    },
+    {
+      "file": "visual-review.mjs",
+      "role": "tool",
+      "class": "A",
+      "surfaces": [],
+      "note": "실행이 끝난 정본 보고서 위에서 사람이 시각 검토 판정을 남기는 재사용 진입점. 판정 검사는 lib/browser-visual-review 하나를 쓴다."
     },
     {
       "file": "webview-crash.sh",
