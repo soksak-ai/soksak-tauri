@@ -241,6 +241,15 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(source).toContain("paneIds[side]");
   });
 
+  // B06 은 mapper 가 찾는 이름(lightingPlane·rail·sidebar)을 하니스가 실제로 실어야 성립한다.
+  // 손으로 적은 객체 리터럴은 이름이 어긋나도 조용하다 — 수집을 한 모듈이 소유하게 고정한다.
+  it("builds every B06 checkpoint from the collected plane and exemption facts", () => {
+    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    expect(source).toContain("collectB06Checkpoint");
+    expect(source).toMatch(/b06Checkpoints\.push\(\s*await collectB06Checkpoint\(/);
+    expect(source).not.toMatch(/b06Checkpoints\.push\(\s*\{/);
+  });
+
   it("pins without rearrangement and numerically covers left, right, and detached borders", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
     expect(source).toContain('relationSide: "right"');

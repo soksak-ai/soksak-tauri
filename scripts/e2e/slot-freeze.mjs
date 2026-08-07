@@ -64,6 +64,7 @@ import { windowedSurfaceCompositionVerdict } from "./lib/windowed-surface-compos
 import { mapB03LiveEvidence } from "./lib/browser-gate-b03-evidence.mjs";
 import { mapB05LiveEvidence } from "./lib/browser-gate-b05-evidence.mjs";
 import { mapB06LiveEvidence } from "./lib/browser-gate-b06-evidence.mjs";
+import { collectB06Checkpoint } from "./lib/browser-gate-b06-collect.mjs";
 import { mapB10LiveEvidence } from "./lib/browser-gate-b10-evidence.mjs";
 import {
   mapB01TabEvidence,
@@ -1315,20 +1316,22 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
           const lighting = await assertFocusLighting(
             rpc, win, lightingAddresses, labels, side, paneOwned, `${engine}/${name}`,
           );
-          const railComposition = await assertRailCompositionContract(
+          await assertRailCompositionContract(
             rpc,
             win,
             railAddress,
             paneIds[side],
             `${engine}/${name}`,
           );
-          b06Checkpoints.push({
+          b06Checkpoints.push(await collectB06Checkpoint({
+            rpc,
+            win,
             phase: name,
             activePaneId: paneIds[side],
             paneIds,
             lighting,
-            railComposition,
-          });
+            stage: `${engine}/${name}`,
+          }));
 
           if (paneOwned) {
             assertPaneComposition(
