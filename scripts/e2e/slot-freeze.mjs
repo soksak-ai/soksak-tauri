@@ -55,6 +55,7 @@ import {
   browserTabNodeAddress,
 } from "./lib/browser-ui-addresses.mjs";
 import { mapBrowserSurfaceRects } from "./lib/browser-surface-rects.mjs";
+import { assertSentinelMounted } from "./lib/browser-sentinel.mjs";
 import { windowedSurfaceCompositionVerdict } from "./lib/windowed-surface-composition.mjs";
 import { mapB03LiveEvidence } from "./lib/browser-gate-b03-evidence.mjs";
 import { mapB05LiveEvidence } from "./lib/browser-gate-b05-evidence.mjs";
@@ -848,6 +849,13 @@ async function assertImePersisted(rpc, win, plugin, tabIds, stage) {
   return observations;
 }
 
+/** 뷰가 스스로 보고한 status(R8 회신). 못 읽으면 빈 목록 — 판정을 status 에 걸지 않는다. */
+async function readViewStatuses(rpc, win) {
+  const reply = await rpc("status.query", {}, win).catch(() => null);
+  if (!reply || reply.ok !== true) return [];
+  return (reply.data ?? reply).statuses ?? [];
+}
+
 async function runEngine(client, page, engine, recordingLedger, gateReportStore) {
   const implementation = browserImplementations[engine];
   const plugin = implementation.plugin;
@@ -873,6 +881,13 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
       sentinelHomeOverride = true;
       const sentinelTab = must(await rpc("tab.open", { program: engine }, sentinelWin), "sentinel tab.open");
       sentinelTabId = sentinelTab.tabId;
+      // tab.open 이 이미 답한 마운트 사실을 여기서 읽는다. 안 읽으면 다음 명령의 NO_VIEW 가
+      // 소유자를 가린다(실측: offscreen 12칸이 navigate 실패로 blocked 됐다).
+      assertSentinelMounted({
+        engine,
+        receipt: sentinelTab,
+        statuses: await readViewStatuses(rpc, sentinelWin),
+      });
       must(await rpc(`plugin.${plugin}.navigate`, { viewId: sentinelTabId, url: `${page.url}?slot=0` }, sentinelWin), "sentinel navigate");
       must(await rpc(`plugin.${plugin}.dom.wait-for`, {
         selector: 'html[data-slot="0"] #ime', timeoutMs: 8_000, viewId: sentinelTabId,
