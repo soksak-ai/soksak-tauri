@@ -177,7 +177,7 @@ const recordFramesOf = (fallback) => {
 };
 const FRAMES_PER_CLICK = recordFramesOf(48);
 const PIN_FRAMES_PER_CLICK = recordFramesOf(24);
-const FAST_RESIZE_FRAMES = 64;
+const FAST_RESIZE_FRAMES = recordFramesOf(64);
 const EVIDENCE_PNG_MAX_BYTES = 128 * 1024 ** 2;
 const IME_TEXTS = ["한글 입력 왼쪽", "한글 입력 오른쪽"];
 const CHROME_MARKERS = Object.freeze({

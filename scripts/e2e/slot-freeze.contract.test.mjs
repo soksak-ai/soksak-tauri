@@ -939,6 +939,11 @@ describe("녹화 규모 선언", () => {
   it("프레임 수를 환경에서 고를 수 있고 기본은 지금 값이다", () => {
     expect(source).toContain("SLOT_FREEZE_RECORD_FRAMES");
     expect(source).toMatch(/FRAMES_PER_CLICK\s*=[\s\S]{0,120}48/);
+    // 사람용 녹화는 한 자리도 빠지지 않는다 — 남은 고정값이 있으면 그 자리가 실행을 끝까지
+    // 못 가게 한다(실측 2026-08-08: window-fast 64 프레임에서 또 끊겼다).
+    for (const [, literal] of source.matchAll(/const [A-Z_]*FRAMES[A-Z_]*\s*=\s*([^;]+);/g)) {
+      expect(literal).toContain("recordFramesOf(");
+    }
   });
 
   it("판정 축은 그 값을 읽지 않는다 — 녹화는 판정 근거가 아니다", () => {
