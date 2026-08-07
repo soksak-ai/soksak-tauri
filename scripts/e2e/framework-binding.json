@@ -313,6 +313,20 @@
       "note": "B05의 gap·교체·미표시·미정착 RED와 세 engine receipt GREEN을 값으로 고정한다."
     },
     {
+      "file": "lib/browser-gate-b06-collect.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "ui.tree·ui.measure 공개 표면만으로 lighting plane 농도·aperture 소유자·rail/sidebar 면제와 덮임을 수집한다. 픽셀도 private DOM도 읽지 않는다."
+    },
+    {
+      "file": "lib/browser-gate-b06-collect.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "가라앉은 레일 층·흐려진 면제 표면·미응답 측정·평면 중복 RED와 두 위상 GREEN을 값으로 고정한다."
+    },
+    {
       "file": "lib/browser-gate-b06.mjs",
       "role": "lib",
       "class": "A",
