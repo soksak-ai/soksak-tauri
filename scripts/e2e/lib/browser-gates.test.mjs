@@ -280,6 +280,13 @@ function b04Evidence(engine = "browser") {
       direction,
       targetViewId: target,
       motionMode: mode,
+      clocks: {
+        window: "unix-anchored-monotonic",
+        presentation: "unix-anchored-monotonic",
+        slot: "unix-anchored-monotonic",
+        renderer: "unix-anchored-monotonic",
+        surface: "unix-anchored-monotonic",
+      },
       journal: {
         afterSequence: sequence - 1,
         entries: [{
@@ -580,24 +587,45 @@ describe("브라우저 12-gate 정본", () => {
     expect(judgeB04MachineEvidence(malformedParticipant).status).toBe("red");
   });
 
-  it("B04는 거래 장부 구간 밖에서 관측한 sample을 좌표가 맞아도 epoch 거리로 거절한다", () => {
-    // 실측(evidence/slot-freeze/last-red/browser/01-left): native display producer가
-    // 4,041,616ms 뒤처진 epoch를 냈고, 좌표만 보는 판정은 이 receipt를 green으로 통과시켰다.
+  it("B04는 거래 장부 구간 밖 표본을 선언한 시계로 red 와 blocked 로 가른다", () => {
+    // 실측(evidence/slot-freeze/last-red/browser/01-left): native display producer 가
+    // 4,041,616ms 떨어진 시각을 냈고, 좌표만 보는 판정은 이 receipt 를 green 으로 통과시켰다.
+    // 그 거리 하나는 두 사실을 뜻한다 — 시계가 갈렸거나(계약 위반), 관측기가 침묵했거나(못 잼).
+    // 크기가 아니라 선언이 가른다.
     const skewMs = 4_041_616.4294433594;
-    const foreignEpoch = b04Evidence();
-    for (const sample of foreignEpoch.transitions[0].samples) sample.sampledAtUnixMs -= skewMs;
-    const verdict = judgeB04MachineEvidence(foreignEpoch);
-    expect(verdict.status).toBe("red");
-    // glide 구간은 [startAtUnixMs, startAtUnixMs+durationMs]다.
-    expect(verdict.evidence).toEqual(expect.arrayContaining([
-      "B04:transitions[0].samples:presentation:window-gap=4041584.4294433594",
+
+    // (1) producer 가 창과 다른 시계를 답했다 → 잰 계약 위반이므로 red 다.
+    const foreignClock = b04Evidence();
+    foreignClock.transitions[0].clocks.presentation = "wall";
+    for (const sample of foreignClock.transitions[0].samples) sample.sampledAtUnixMs -= skewMs;
+    const foreignVerdict = judgeB04MachineEvidence(foreignClock);
+    expect(foreignVerdict.status).toBe("red");
+    expect(foreignVerdict.evidence).toEqual(expect.arrayContaining([
+      "B04:transitions[0].samples:presentation:clock=wall/unix-anchored-monotonic",
     ]));
 
-    // snap 거래는 선언된 표시 구간이 없으므로 prepared~closed가 그 거래의 관측 구간이다.
+    // (2) 같은 시계를 답하고도 창 안 표본이 0 이다 → 어긋남을 증명하지 못했으므로 blocked 다.
+    // glide 구간은 [startAtUnixMs, startAtUnixMs+durationMs] 다.
+    const silent = b04Evidence();
+    for (const sample of silent.transitions[0].samples) sample.sampledAtUnixMs -= skewMs;
+    const silentVerdict = judgeB04MachineEvidence(silent);
+    expect(silentVerdict.status).toBe("blocked");
+    expect(silentVerdict.reason).toContain(
+      "transitions[0].samples:presentation:no-samples-in-window=4041584.4294433594",
+    );
+
+    // snap 거래는 선언된 표시 구간이 없으므로 prepared~closed 가 그 거래의 관측 구간이다.
     const lateEpoch = b04Evidence();
     for (const sample of lateEpoch.transitions[1].samples) sample.sampledAtUnixMs += skewMs;
-    expect(judgeB04MachineEvidence(lateEpoch).evidence).toEqual(expect.arrayContaining([
-      "B04:transitions[1].samples:presentation:window-gap=4041568.4294433594",
+    expect(judgeB04MachineEvidence(lateEpoch).reason).toContain(
+      "transitions[1].samples:presentation:no-samples-in-window=4041568.4294433594",
+    );
+
+    // 선언이 아예 없으면 그 관측은 판정 입력이 될 수 없다 — 조용한 통과가 아니라 red 다.
+    const undeclared = b04Evidence();
+    undeclared.transitions[0].clocks.presentation = null;
+    expect(judgeB04MachineEvidence(undeclared).evidence).toEqual(expect.arrayContaining([
+      "B04:transitions[0].samples:presentation:clock=none/unix-anchored-monotonic",
     ]));
   });
 

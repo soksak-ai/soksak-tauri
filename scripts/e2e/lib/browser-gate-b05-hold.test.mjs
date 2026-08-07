@@ -30,9 +30,10 @@ const receipt = (times) => ({
 describe("B05 정착·유지 결합", () => {
   it("정착 epoch 이전의 마지막 표시 프레임을 정착 프레임으로 고른다", () => {
     const value = resolveB05Settlement({
-      settleReceipt: { settledAtUnixMs: 1035, syncPending: false },
+      settleReceipt: { settledAtUnixMs: 1035, clock: "unix-anchored-monotonic", syncPending: false },
       presentationReceipt: receipt([1000, 1016, 1032, 1300, 1316]),
     });
+    expect(value.clock).toBe("unix-anchored-monotonic");
     expect(value.settled).toEqual({ atUnixMs: 1035, frameSequence: 2, syncPending: false });
   });
 
@@ -51,6 +52,8 @@ describe("B05 정착·유지 결합", () => {
       settleReceipt: { waitedMs: 12 },
       presentationReceipt: receipt([1000, 1016]),
     });
+    // 정착 영수증이 시계를 안 답했으면 없는 대로 남긴다 — 지어내면 갈린 시계가 조용히 통과한다.
+    expect(value.clock).toBeNull();
     expect(value.settled).toEqual({ atUnixMs: null, frameSequence: null, syncPending: null });
     expect(value.hold).toEqual({ startedAtUnixMs: null, endedAtUnixMs: 1016, surfaces: surfaces(10) });
   });

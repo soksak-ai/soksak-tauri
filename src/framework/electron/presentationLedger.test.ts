@@ -11,7 +11,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { judgeB05MachineEvidence } from "../../../scripts/e2e/lib/browser-gate-b05.mjs";
 // @ts-expect-error 하니스 매퍼에는 타입 선언이 없다
 import { mapB05LiveEvidence } from "../../../scripts/e2e/lib/browser-gate-b05-evidence.mjs";
-import { presentationUnixMsFromDocumentTime } from "../../lib/presentationClock";
+import { PRESENTATION_CLOCK, presentationUnixMsFromDocumentTime } from "../../lib/presentationClock";
 import {
   __resetContentViewSurfacesForTest,
   createDomPresentationLedger,
@@ -128,9 +128,13 @@ function transitionFrom(
     direction,
     targetViewId,
     presentation: receipt,
-    clickReceipt: { address: `addr/${targetViewId}`, atUnixMs: stimulusAt },
+    // 하니스가 옮기는 네 영수증은 같은 시계를 답한다 — 이 어댑터는 그 시계를 코어에서 받는다.
+    clickReceipt: {
+      address: `addr/${targetViewId}`, atUnixMs: stimulusAt, clock: PRESENTATION_CLOCK,
+    },
     layout: {
       transactionId: `lt-${direction}`,
+      clock: PRESENTATION_CLOCK,
       causeTraceId: receipt.traceId,
       phase: "committed",
       mode: "glide",
@@ -140,6 +144,7 @@ function transitionFrom(
       moves: [{ viewId: targetViewId, dx: -240 }],
     },
     settlement: {
+      clock: PRESENTATION_CLOCK,
       settled: {
         atUnixMs: settledEvent.presentedAtUnixMs,
         frameSequence: settledEvent.sequence,

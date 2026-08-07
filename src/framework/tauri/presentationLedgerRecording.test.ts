@@ -8,6 +8,10 @@
 //
 // 이 파일은 그 사실을 데이터로 못 박는다. 재기록은 expectedAudit 을 새 사실로 갱신해서 한다 —
 // 기대를 지워서 통과시키지 않는다.
+//
+// 이 영수증은 자기 시계도 선언하지 않았다(`clock=non-empty/undefined`). 그래서 이 원장의
+// `...UnixMs` 는 어느 시계의 값인지 답이 없고, 다른 producer 의 시각과 한 축에서 비교될 수
+// 없었다. 지금 producer 는 그 이름을 싣는다 — 기록은 그대로 두고 기대만 새 사실로 옮긴다.
 import { describe, expect, it } from "vitest";
 import recording from "./recorded/presentation-silent-gaps.json";
 import { auditPresentationReceipt } from "../presentationLedgerAudit";

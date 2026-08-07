@@ -10,7 +10,7 @@ import {
   hasContentViewHost,
 } from "../lib/contentViews";
 import { pluginViewPresentationHost } from "../plugins/viewPresentationHost";
-import { presentationNowUnixMs } from "../lib/presentationClock";
+import { PRESENTATION_CLOCK, presentationNowUnixMs } from "../lib/presentationClock";
 
 type NamedAnimation = Animation & { animationName?: string };
 
@@ -64,6 +64,8 @@ export function waitLayoutSettled(timeoutMs = 4_000, settlementKey?: string): Pr
   waitedMs: number;
   animations: number;
   settledAtUnixMs: number;
+  /** 이 영수증의 `...UnixMs` 시각을 낸 시계의 이름. */
+  clock: string;
   syncPending: boolean;
 }> {
   const started = performance.now();
@@ -90,6 +92,9 @@ export function waitLayoutSettled(timeoutMs = 4_000, settlementKey?: string): Pr
           waitedMs: Math.round(performance.now() - started),
           animations: generation,
           settledAtUnixMs: presentationNowUnixMs(),
+          // 이 시각을 낸 시계의 이름. 다른 producer 의 시각과 한 축에서 비교하려면 둘 다 같은
+          // 이름을 답해야 한다.
+          clock: PRESENTATION_CLOCK,
           syncPending: !presentationSettled,
         });
       }

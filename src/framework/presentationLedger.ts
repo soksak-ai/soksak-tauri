@@ -104,6 +104,13 @@ export interface PresentationObservation {
 
 export interface PresentationTraceArmed {
   traceId: string;
+  /**
+   * 이 원장의 `...UnixMs` 시각을 낸 시계의 이름.
+   *
+   * 같은 접미사가 같은 시계를 뜻하지 않는다. 이 원장의 시각을 다른 producer 의 시각과 한 축에서
+   * 비교하려면 둘 다 같은 이름을 답해야 하고, 선언 없는 시계는 판정 입력이 될 수 없다.
+   */
+  clock: string;
   ownerViewIds: string[];
   armedAtUnixMs: number;
   baselineFrameSequence: number;
@@ -112,6 +119,8 @@ export interface PresentationTraceArmed {
 
 export interface PresentationTraceReceipt {
   traceId: string;
+  /** 이 원장의 `...UnixMs` 시각을 낸 시계의 이름. `PresentationTraceArmed.clock` 과 같다. */
+  clock: string;
   closed: boolean;
   ownerViewIds: string[];
   armedAtUnixMs: number;
@@ -226,7 +235,7 @@ function installCommands(): void {
   });
   register("view.presentation.trace.arm", {
     description:
-      "Arm one finite presentation trace over declared view surfaces and return only after the first real display event. Every recorded frame comes from the compositor's own display callback — never a timer, poll, or interpolation.",
+      "Arm one finite presentation trace over declared view surfaces and return only after the first real display event. Every recorded frame comes from the compositor's own display callback — never a timer, poll, or interpolation. The receipt names the clock its `...UnixMs` stamps came from; never compare them against another producer's stamps unless both name the same clock.",
     params: {
       traceId: { type: "string", description: "caller-owned finite trace identity", required: true },
       owners: {
@@ -239,7 +248,7 @@ function installCommands(): void {
         description: `finite event capacity (${PRESENTATION_LEDGER_MIN_EVENTS}..${PRESENTATION_LEDGER_MAX_EVENTS}, default ${PRESENTATION_LEDGER_DEFAULT_EVENTS})`,
       },
     },
-    returns: "{ traceId,ownerViewIds,armedAtUnixMs,baselineFrameSequence,sourceGeneration }",
+    returns: "{ traceId,clock,ownerViewIds,armedAtUnixMs,baselineFrameSequence,sourceGeneration }",
     message: (data) => `표시 원장 ${String(data.traceId)}를 무장했습니다`,
     handler: async (params) => host().arm({
       traceId: String(params.traceId ?? ""),
@@ -254,7 +263,7 @@ function installCommands(): void {
       traceId: { type: "string", description: "trace identity returned by arm", required: true },
     },
     returns:
-      "{ traceId,closed,ownerViewIds,armedAtUnixMs,baselineFrameSequence,presentationEvents,violations,observation,selfAudit }",
+      "{ traceId,clock,closed,ownerViewIds,armedAtUnixMs,baselineFrameSequence,presentationEvents,violations,observation,selfAudit }",
     message: (data) => `표시 원장 ${String(data.traceId)}를 닫았습니다`,
     handler: async (params): Promise<PresentationTraceAuditedReceipt> => {
       const receipt = await host().close({ traceId: String(params.traceId ?? "") });

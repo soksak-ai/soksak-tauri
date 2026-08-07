@@ -243,6 +243,7 @@ export function normalizeB04JournalEntries(entries) {
 export function mapB04PresentationSamples({
   events,
   domSamples,
+  clocks,
   owner,
   targetViewId,
   transactionId,
@@ -263,6 +264,15 @@ export function mapB04PresentationSamples({
   if (typeof transactionId !== "string" || !transactionId) {
     throw new Error(`${targetViewId}: transaction id가 비었습니다`);
   }
+  // 규칙 — 시계 선언: 세 영수증이 각자 자기 시계를 답한다. 하니스는 그 답을 옮기기만 하고
+  // 대신 지어내지 않는다. 답이 없으면 없는 대로 실어 보내고, 판정이 그 부재를 이름으로 낸다.
+  const declaredClocks = Object.freeze({
+    window: clocks?.window ?? null,
+    presentation: clocks?.presentation ?? null,
+    slot: clocks?.slot ?? null,
+    renderer: clocks?.presentation ?? null,
+    surface: clocks?.presentation ?? null,
+  });
   const commitAt = domCommittedAtUnixMs;
   if (!Number.isFinite(commitAt)) {
     throw new Error(`${targetViewId}: DOM commit epoch가 유한하지 않다 ${domCommittedAtUnixMs}`);
@@ -464,6 +474,7 @@ export function mapB04PresentationSamples({
   return {
     samples,
     joins,
+    clocks: declaredClocks,
     pairing: {
       pairs: joins.length,
       domSequenceRegressions,

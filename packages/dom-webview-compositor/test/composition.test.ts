@@ -217,6 +217,7 @@ describe("DOM ↔ native webview composition contract", () => {
     }));
     const input = {
       coordinateSpace: { logical: "css-px" as const, scaleFactor: 2 },
+      clocks: { window: "unix-anchored-monotonic", slot: "unix-anchored-monotonic", renderer: "unix-anchored-monotonic", surface: "unix-anchored-monotonic" },
       startAtUnixMs: 0,
       durationMs: 32,
       timingFunction: [0, 0, 1, 1] as const,
@@ -253,15 +254,21 @@ describe("DOM ↔ native webview composition contract", () => {
   });
 
   it("거래 구간과 겹치지 않는 관측은 좌표를 비교하기 전에 거리로 거절한다", () => {
-    const window = { startAtUnixMs: 1_000, endAtUnixMs: 1_340 };
+    const window = { startAtUnixMs: 1_000, endAtUnixMs: 1_340, clock: "unix-anchored-monotonic" };
+    const on = (producer: string, first: number, last: number) => ({
+      producer,
+      clock: "unix-anchored-monotonic",
+      firstSampledAtUnixMs: first,
+      lastSampledAtUnixMs: last,
+    });
     expect(compositionObservationWindowVerdict(window, [
-      { producer: "slot", firstSampledAtUnixMs: 990, lastSampledAtUnixMs: 1_400 },
-      { producer: "surface", firstSampledAtUnixMs: 1_340, lastSampledAtUnixMs: 1_900 },
+      on("slot", 990, 1_400),
+      on("surface", 1_340, 1_900),
     ])).toMatchObject({ ok: true, errors: [], gapMs: { slot: 0, surface: 0 } });
 
     expect(compositionObservationWindowVerdict(window, [
-      { producer: "renderer", firstSampledAtUnixMs: 100, lastSampledAtUnixMs: 900 },
-      { producer: "surface", firstSampledAtUnixMs: 1_341, lastSampledAtUnixMs: 2_000 },
+      on("renderer", 100, 900),
+      on("surface", 1_341, 2_000),
     ])).toMatchObject({
       // 겹치지 않는 관측은 어긋남이 아니라 못 잼이다 — 거리는 그대로 남기고 자리만 옮긴다.
       ok: false,
@@ -271,12 +278,12 @@ describe("DOM ↔ native webview composition contract", () => {
     });
 
     expect(compositionObservationWindowVerdict(window, [
-      { producer: "surface", firstSampledAtUnixMs: 1_400, lastSampledAtUnixMs: 1_100 },
+      on("surface", 1_400, 1_100),
     ])).toMatchObject({ ok: false, errors: ["surface:span=1400/1100"] });
 
     expect(compositionObservationWindowVerdict(
-      { startAtUnixMs: 1_000, endAtUnixMs: Number.NaN },
-      [{ producer: "slot", firstSampledAtUnixMs: 1_000, lastSampledAtUnixMs: 1_100 }],
+      { startAtUnixMs: 1_000, endAtUnixMs: Number.NaN, clock: "unix-anchored-monotonic" },
+      [on("slot", 1_000, 1_100)],
     )).toMatchObject({ ok: false, errors: ["window=1000/NaN"] });
   });
 
@@ -301,6 +308,14 @@ describe("DOM ↔ native webview composition contract", () => {
     ];
     const timeline = {
       coordinateSpace: { logical: "css-px" as const, scaleFactor: 2 },
+      // 실측 사건에서 두 관측기는 서로 다른 시계를 답했다 — native 는 uptime 에 고정된 표시
+      // 시계를, DOM 장부는 wall clock 을 따라가는 시계를 냈다.
+      clocks: {
+        window: "unix-anchored-monotonic",
+        slot: "unix-anchored-monotonic",
+        renderer: "wall",
+        surface: "wall",
+      },
       startAtUnixMs,
       durationMs,
       timingFunction: [0, 0, 1, 1] as const,
@@ -311,18 +326,20 @@ describe("DOM ↔ native webview composition contract", () => {
       renderer: timelineFor(foreignEpochTimes, [60, 60, 60]),
       surface: timelineFor(foreignEpochTimes, [60, 60, 60]),
     };
+    // 이름은 거리가 아니라 갈라진 시계다 — 거리는 두 시계 사이에서 뜻을 잃는다.
     expect(compositionTimelineVerdict(timeline)).toMatchObject({
       ok: false,
       errors: [
-        "renderer:window-gap=4041616.4294433594",
-        "surface:window-gap=4041616.4294433594",
+        "renderer:clock=wall/unix-anchored-monotonic",
+        "surface:clock=wall/unix-anchored-monotonic",
       ],
     });
 
-    // 같은 좌표를 같은 epoch로 옮기면 epoch 실패가 사라지고 실제 결함(이동하지 않은 native
+    // 같은 좌표를 같은 시계 위로 옮기면 epoch 실패가 사라지고 실제 결함(이동하지 않은 native
     // ledger)이 device pixel 수치로 드러난다. epoch 정렬은 판정을 무르게 하지 않는다.
     const aligned = {
       ...timeline,
+      clocks: { ...timeline.clocks, renderer: "unix-anchored-monotonic", surface: "unix-anchored-monotonic" },
       renderer: timelineFor(domTimes, [60, 60, 60]),
       surface: timelineFor(domTimes, [60, 60, 60]),
     };
@@ -335,7 +352,7 @@ describe("DOM ↔ native webview composition contract", () => {
       expect.stringContaining("renderer[1]="),
       expect.stringContaining("surface[1]="),
     ]));
-    expect(alignedVerdict.errors.some((error) => error.includes("window-gap"))).toBe(false);
+    expect(alignedVerdict.errors.some((error) => error.includes(":clock="))).toBe(false);
   });
 });
 
@@ -350,38 +367,117 @@ describe("DOM ↔ native webview composition contract", () => {
 // blocked 는 통과가 아니다 — 인수는 72칸 전부 green 을 요구한다. 이름이 달라질 뿐이고,
 // 그 이름이 고칠 자리를 가리킨다.
 describe("관측 증명", () => {
-  const window = { startAtUnixMs: 1_000, endAtUnixMs: 1_340 };
+  const window = { startAtUnixMs: 1_000, endAtUnixMs: 1_340, clock: "unix-anchored-monotonic" };
+  // 침묵을 재려면 먼저 같은 시계를 답해야 한다 — 시계가 갈린 관측은 침묵이 아니라 계약 위반이다.
+  const on = (first: number, last: number) => ({
+    producer: "presentation",
+    clock: "unix-anchored-monotonic",
+    firstSampledAtUnixMs: first,
+    lastSampledAtUnixMs: last,
+  });
 
   it("창과 겹치지 않는 관측은 red 가 아니라 못 잼이다", () => {
-    const verdict = compositionObservationWindowVerdict(window, [
-      { producer: "presentation", firstSampledAtUnixMs: 100, lastSampledAtUnixMs: 900 },
-    ]);
+    const verdict = compositionObservationWindowVerdict(window, [on(100, 900)]);
     expect(verdict.errors).toEqual([]);
     expect(verdict.unmeasured).toEqual(["presentation:no-samples-in-window=100"]);
     expect(verdict.gapMs).toMatchObject({ presentation: 100 });
   });
 
   it("창 뒤로 벗어난 관측도 같은 답이다", () => {
-    const verdict = compositionObservationWindowVerdict(window, [
-      { producer: "presentation", firstSampledAtUnixMs: 1_341, lastSampledAtUnixMs: 2_000 },
-    ]);
+    const verdict = compositionObservationWindowVerdict(window, [on(1_341, 2_000)]);
     expect(verdict.errors).toEqual([]);
     expect(verdict.unmeasured).toEqual(["presentation:no-samples-in-window=1"]);
   });
 
   // 모양이 틀린 것은 못 잼이 아니다 — 그건 계약 위반이고 red 로 남는다.
   it("모양이 틀린 선언은 여전히 red 다", () => {
-    const verdict = compositionObservationWindowVerdict(window, [
-      { producer: "presentation", firstSampledAtUnixMs: 1_400, lastSampledAtUnixMs: 1_100 },
-    ]);
+    const verdict = compositionObservationWindowVerdict(window, [on(1_400, 1_100)]);
     expect(verdict.errors).toEqual(["presentation:span=1400/1100"]);
     expect(verdict.unmeasured).toEqual([]);
   });
 
   it("겹치는 관측은 못 잼도 어긋남도 아니다", () => {
-    const verdict = compositionObservationWindowVerdict(window, [
-      { producer: "presentation", firstSampledAtUnixMs: 990, lastSampledAtUnixMs: 1_400 },
-    ]);
+    const verdict = compositionObservationWindowVerdict(window, [on(990, 1_400)]);
+    expect(verdict.ok).toBe(true);
+    expect(verdict.errors).toEqual([]);
+    expect(verdict.unmeasured).toEqual([]);
+  });
+});
+
+// 규칙 — 시계 선언: `...UnixMs` 라는 이름은 같은 시계를 뜻하지 않는다.
+//
+// 관측을 내는 자가 자기 시계를 선언한다. 선언 없는 시계는 판정 입력이 될 수 없다. 이 선언이
+// 서야 창 밖 표본이 뜻하는 두 사실이 기계적으로 갈린다 — 선언이 다르면 계약 위반(red), 선언이
+// 같은데 창 안 표본이 0 이면 못 잼(blocked)이다. 크기로 가르지 않는다.
+//
+// 실측 2026-08-07(tauri/darwin): DOM 시계는 wall clock 을 따라갔고 native 시계는 unix 로 한 번
+// 고정한 뒤 media time 으로만 나아갔다. 그래서 wall clock 이 4.12s 뒤로 밟힌 실행에서 두 시계가
+// 갈라졌고, system sleep 67분이 낀 실행에서는 반대 부호로 4,041,616ms 갈라졌다. 두 사건 다
+// 관측기는 살아 있었다 — 침묵이 아니라 시계가 달랐다.
+describe("시계 선언", () => {
+  const window = { startAtUnixMs: 1_000, endAtUnixMs: 1_340, clock: "unix-anchored-monotonic" };
+
+  it("선언한 시계가 다르면 창 밖 표본은 못 잼이 아니라 red 다", () => {
+    const verdict = compositionObservationWindowVerdict(window, [{
+      producer: "renderer",
+      clock: "wall",
+      firstSampledAtUnixMs: 100,
+      lastSampledAtUnixMs: 900,
+    }]);
+    expect(verdict.errors).toEqual(["renderer:clock=wall/unix-anchored-monotonic"]);
+    expect(verdict.unmeasured).toEqual([]);
+  });
+
+  it("시계가 갈렸으면 표본이 창과 겹쳐도 red 다 — 겹침은 우연일 수 있다", () => {
+    const verdict = compositionObservationWindowVerdict(window, [{
+      producer: "renderer",
+      clock: "wall",
+      firstSampledAtUnixMs: 1_100,
+      lastSampledAtUnixMs: 1_200,
+    }]);
+    expect(verdict.errors).toEqual(["renderer:clock=wall/unix-anchored-monotonic"]);
+  });
+
+  it("선언 없는 시계는 판정 입력이 될 수 없다", () => {
+    const verdict = compositionObservationWindowVerdict(window, [{
+      producer: "renderer",
+      firstSampledAtUnixMs: 1_100,
+      lastSampledAtUnixMs: 1_200,
+    } as never]);
+    expect(verdict.errors).toEqual(["renderer:clock=none/unix-anchored-monotonic"]);
+  });
+
+  it("창이 자기 시계를 선언 안 하면 어느 관측도 그 창에서 판정될 수 없다", () => {
+    const verdict = compositionObservationWindowVerdict(
+      { startAtUnixMs: 1_000, endAtUnixMs: 1_340 } as never,
+      [{
+        producer: "renderer",
+        clock: "unix-anchored-monotonic",
+        firstSampledAtUnixMs: 1_100,
+        lastSampledAtUnixMs: 1_200,
+      }],
+    );
+    expect(verdict.errors).toEqual(["renderer:clock=unix-anchored-monotonic/none"]);
+  });
+
+  it("같은 시계를 선언한 producer 가 창에서 침묵한 것은 못 잼이다", () => {
+    const verdict = compositionObservationWindowVerdict(window, [{
+      producer: "renderer",
+      clock: "unix-anchored-monotonic",
+      firstSampledAtUnixMs: 100,
+      lastSampledAtUnixMs: 900,
+    }]);
+    expect(verdict.errors).toEqual([]);
+    expect(verdict.unmeasured).toEqual(["renderer:no-samples-in-window=100"]);
+  });
+
+  it("같은 시계를 선언하고 창과 겹치면 못 잼도 어긋남도 아니다", () => {
+    const verdict = compositionObservationWindowVerdict(window, [{
+      producer: "renderer",
+      clock: "unix-anchored-monotonic",
+      firstSampledAtUnixMs: 990,
+      lastSampledAtUnixMs: 1_400,
+    }]);
     expect(verdict.ok).toBe(true);
     expect(verdict.errors).toEqual([]);
     expect(verdict.unmeasured).toEqual([]);

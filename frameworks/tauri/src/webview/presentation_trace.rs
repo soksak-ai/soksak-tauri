@@ -101,6 +101,8 @@ mod macos {
     #[serde(rename_all = "camelCase")]
     struct ArmReceipt {
         trace_id: String,
+        /// 이 원장의 `...UnixMs` 시각을 낸 시계의 이름.
+        clock: &'static str,
         owner_view_ids: Vec<String>,
         armed_at_unix_ms: f64,
         baseline_frame_sequence: usize,
@@ -111,6 +113,8 @@ mod macos {
     #[serde(rename_all = "camelCase")]
     struct CloseReceipt {
         trace_id: String,
+        /// 이 원장의 `...UnixMs` 시각을 낸 시계의 이름.
+        clock: &'static str,
         closed: bool,
         owner_view_ids: Vec<String>,
         armed_at_unix_ms: f64,
@@ -146,6 +150,7 @@ mod macos {
         fn arm_receipt(&self) -> ArmReceipt {
             ArmReceipt {
                 trace_id: self.trace_id.clone(),
+                clock: super::super::presentation_clock::PRESENTATION_CLOCK,
                 owner_view_ids: self.owner_view_ids(),
                 armed_at_unix_ms: self.armed_at_unix_ms,
                 baseline_frame_sequence: 0,
@@ -156,6 +161,7 @@ mod macos {
         fn close_receipt(&self) -> CloseReceipt {
             CloseReceipt {
                 trace_id: self.trace_id.clone(),
+                clock: super::super::presentation_clock::PRESENTATION_CLOCK,
                 closed: true,
                 owner_view_ids: self.owner_view_ids(),
                 armed_at_unix_ms: self.armed_at_unix_ms,

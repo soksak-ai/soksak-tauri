@@ -147,7 +147,7 @@ function nativeEvents(ledger) {
 }
 
 function timelineOf(ledger, domSamples) {
-  const { timeline } = mapB04PresentationSamples({
+  const { timeline, clocks } = mapB04PresentationSamples({
     events: nativeEvents(ledger),
     domSamples,
     owner: { rendererId: "pv-1", surfaceId: "b-tab-a" },
@@ -160,8 +160,13 @@ function timelineOf(ledger, domSamples) {
     railAddress: "rail",
     paneAddress: "pane",
     slotAddress: "slot",
+    clocks: {
+      window: "unix-anchored-monotonic",
+      presentation: "unix-anchored-monotonic",
+      slot: "unix-anchored-monotonic",
+    },
   });
-  return timeline;
+  return { ...timeline, clocks };
 }
 
 function displayGapErrors(ledger, domSamples) {

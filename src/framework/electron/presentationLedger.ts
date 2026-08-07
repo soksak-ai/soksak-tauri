@@ -15,6 +15,7 @@ import {
   findContentViewSlot,
 } from "../../lib/contentViews";
 import {
+  PRESENTATION_CLOCK,
   presentationNowUnixMs,
   presentationUnixMsFromDocumentTime,
 } from "../../lib/presentationClock";
@@ -209,6 +210,7 @@ export function createDomPresentationLedger({
 
   const receiptOf = (trace: TraceState, closed: boolean): PresentationTraceReceipt => ({
     traceId: trace.traceId,
+    clock: PRESENTATION_CLOCK,
     closed,
     ownerViewIds: trace.owners.map((owner) => owner.viewId),
     armedAtUnixMs: trace.armedAtUnixMs,
@@ -353,6 +355,7 @@ export function createDomPresentationLedger({
           if (sequence === 0) {
             finish(() => resolve({
               traceId,
+              clock: PRESENTATION_CLOCK,
               ownerViewIds: trace.owners.map((owner) => owner.viewId),
               armedAtUnixMs: trace.armedAtUnixMs,
               baselineFrameSequence: 0,

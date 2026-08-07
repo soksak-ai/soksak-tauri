@@ -16,6 +16,7 @@ import {
   __resetPresentationLedgerForTest,
   registerPresentationLedgerHost,
 } from "./presentationLedger";
+import { PRESENTATION_CLOCK } from "../lib/presentationClock";
 import { getSpec } from "../commands/registry";
 import type { CommandContext } from "../commands/registry";
 import type {
@@ -65,8 +66,9 @@ function ledger(steps: readonly number[], refreshIntervalMs = REFRESH_120HZ) {
 function receipt(
   presentationEvents: PresentationDisplayEvent[],
   violations: Partial<PresentationViolations> = {},
-): Pick<PresentationTraceReceipt, "presentationEvents" | "violations"> {
+): Pick<PresentationTraceReceipt, "clock" | "presentationEvents" | "violations"> {
   return {
+    clock: PRESENTATION_CLOCK,
     presentationEvents,
     violations: {
       replacements: 0, gaps: 0, disappearances: 0, unpresented: 0, droppedEvents: 0, ...violations,
@@ -152,11 +154,12 @@ describe("close 가 감사를 싣는다", () => {
     registerPresentationLedgerHost({
       owners: async () => [],
       arm: async () => ({
-        traceId: "t-1", ownerViewIds: ["tab-k6jivs"], armedAtUnixMs: 0,
+        traceId: "t-1", clock: PRESENTATION_CLOCK, ownerViewIds: ["tab-k6jivs"], armedAtUnixMs: 0,
         baselineFrameSequence: 0, sourceGeneration: 1,
       }),
       close: async ({ traceId }) => ({
         traceId,
+        clock: PRESENTATION_CLOCK,
         closed: true,
         ownerViewIds: ["tab-k6jivs"],
         armedAtUnixMs: 0,
@@ -200,5 +203,23 @@ describe("표시 창을 덮는 용량", () => {
       .toThrow(/coverMs/);
     expect(() => presentationEventsToCover({ coverMs: 100, refreshIntervalMs: 0 }))
       .toThrow(/refreshIntervalMs/);
+  });
+});
+
+// 규칙 — 시계 선언: `...UnixMs` 라는 이름은 같은 시계를 뜻하지 않는다. 원장을 낸 자가 자기
+// 시계를 선언해야 다른 producer 의 시각과 한 축에서 비교할 수 있다. 선언 없는 원장은 판정
+// 입력이 될 수 없고, 그 부재는 조용한 0 이 아니라 이름으로 나와야 한다.
+describe("시계 선언", () => {
+  it("시계를 선언 안 한 영수증은 감사에서 이름으로 걸린다", () => {
+    const base = receipt(ledger([1, 1, 1]));
+    const { clock: _clock, ...withoutClock } = base;
+    const audit = auditPresentationReceipt(withoutClock as typeof base);
+    expect(audit.ok).toBe(false);
+    expect(audit.errors).toEqual(expect.arrayContaining(["clock=non-empty/undefined"]));
+  });
+
+  it("시계를 선언한 영수증은 그 축으로 걸리지 않는다", () => {
+    const audit = auditPresentationReceipt(receipt(ledger([1, 1, 1])));
+    expect(audit.errors.some((error) => error.startsWith("clock="))).toBe(false);
   });
 });

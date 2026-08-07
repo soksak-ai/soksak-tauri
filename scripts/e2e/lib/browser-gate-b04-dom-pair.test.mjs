@@ -121,6 +121,7 @@ function traceInput({ displayEpochs, tailEpochs }) {
     railAddress: "rail",
     paneAddress: "pane",
     slotAddress: "slot",
+    clocks: { window: "unix-anchored-monotonic", presentation: "unix-anchored-monotonic", slot: "unix-anchored-monotonic" },
   };
 }
 
@@ -129,6 +130,7 @@ function evidenceFor(trace) {
     direction,
     targetViewId: VIEW,
     motionMode: TRANSACTION.mode,
+    clocks: trace.clocks,
     journal: { afterSequence: 2, entries: normalizeB04JournalEntries([TRANSACTION]) },
     samples: trace.samples,
     timeline: trace.timeline,

@@ -53,6 +53,9 @@ export function resolveB05Settlement({ settleReceipt, presentationReceipt } = {}
         && event.presentedAtUnixMs <= settledAtUnixMs).at(-1) ?? null;
   const lastFrame = events.at(-1) ?? null;
   return {
+    // 정착 영수증이 답한 시계. 이 시각이 표시 원장의 시각과 비교되므로 여기서 잃으면 안 된다.
+    // 판정 스키마의 `settled` 안이 아니라 옆에 둔다 — 시각이 아니라 그 시각의 출처다.
+    clock: typeof settleReceipt?.clock === "string" ? settleReceipt.clock : null,
     settled: {
       atUnixMs: settledAtUnixMs,
       frameSequence: Number.isInteger(settledFrame?.sequence) ? settledFrame.sequence : null,

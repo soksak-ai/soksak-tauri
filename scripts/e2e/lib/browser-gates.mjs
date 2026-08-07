@@ -1,4 +1,5 @@
 import {
+  COMPOSITION_TIMELINE_PRODUCERS,
   compositionInventoryVerdict,
   compositionObservationWindowVerdict,
   compositionTimelineVerdict,
@@ -582,9 +583,16 @@ const B04_TRANSITION_KEYS = Object.freeze([
   "direction",
   "targetViewId",
   "motionMode",
+  "clocks",
   "journal",
   "samples",
   "timeline",
+]);
+/** 규칙 — 시계 선언: 창과 각 관측기가 자기 시계를 답한다. 축은 하나이므로 하나도 못 빠진다. */
+const B04_CLOCK_KEYS = Object.freeze([
+  "window",
+  "presentation",
+  ...COMPOSITION_TIMELINE_PRODUCERS,
 ]);
 const B04_SAMPLE_KEYS = Object.freeze([
   "transactionId",
@@ -677,6 +685,9 @@ function distinctB04Frames(samples, participant, scaleFactor) {
 function inspectB04Transition(transition, index, coordinateSpace, failures, unmeasured) {
   const path = `transitions[${index}]`;
   if (!requireExactKeys(transition, B04_TRANSITION_KEYS, path, failures)) return;
+  // 선언은 모양부터 요구한다. 축이 하나라도 없으면 그 자리는 판정될 수 없고, 그 부재는
+  // 조용한 통과가 아니라 이름이다.
+  requireExactKeys(transition.clocks, B04_CLOCK_KEYS, `${path}.clocks`, failures);
   if (!B04_DIRECTIONS.includes(transition.direction)) {
     failures.push(`${path}.direction=known/${displayValue(transition.direction)}`);
   }
@@ -779,19 +790,23 @@ function inspectB04Transition(transition, index, coordinateSpace, failures, unme
   if (Number.isFinite(windowStartAtUnixMs) && Number.isFinite(windowEndAtUnixMs)
       && sampleTimes.length > 0) {
     const observation = compositionObservationWindowVerdict(
-      { startAtUnixMs: windowStartAtUnixMs, endAtUnixMs: windowEndAtUnixMs },
+      {
+        startAtUnixMs: windowStartAtUnixMs,
+        endAtUnixMs: windowEndAtUnixMs,
+        clock: transition.clocks?.window,
+      },
       [{
         producer: "presentation",
+        clock: transition.clocks?.presentation,
         firstSampledAtUnixMs: Math.min(...sampleTimes),
         lastSampledAtUnixMs: Math.max(...sampleTimes),
       }],
     );
+    // 시계가 갈렸거나 선언이 없는 것은 잰 계약 위반이다 — red.
     failures.push(...observation.errors.map((error) => `${path}.samples:${error}`));
-    // 창 밖 표본은 두 사실을 한 모양으로 낸다 — 관측기가 침묵했거나(못 잼), producer 가 다른
-    // 시계를 같은 `...UnixMs` 이름으로 냈거나(계약 위반). 시계를 선언으로 답하기 전에는
-    // 둘을 가를 수 없고, 못 잼 쪽으로 넘기면 실측된 epoch 결함이 숨는다. 그래서 red 로 둔다.
-    failures.push(...observation.unmeasured
-      .map((name) => `${path}.samples:${name.replace(":no-samples-in-window=", ":window-gap=")}`));
+    // 같은 시계를 답하고도 창에서 표본이 0 인 것은 재지 못한 것이다 — blocked. 이 자리에 red 를
+    // 적으면 다른 창이 위에 있느냐가 판정을 가른다.
+    unmeasured.push(...observation.unmeasured.map((name) => `${path}.samples:${name}`));
   }
 
   const scaleFactor = Number(coordinateSpace?.scaleFactor);
@@ -829,6 +844,7 @@ function inspectB04Transition(transition, index, coordinateSpace, failures, unme
     const timelineVerdict = compositionTimelineVerdict({
       ...transition.timeline,
       coordinateSpace,
+      clocks: transition.clocks,
     });
     failures.push(...timelineVerdict.errors.map((error) => `${path}.timeline:${error}`));
     // 관측자가 표본을 못 낸 축은 실패가 아니다 — 그 자리에 red 를 적으면 창이 가려졌는지가
