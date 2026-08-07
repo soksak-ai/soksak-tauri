@@ -1,5 +1,6 @@
 import {
   compositionInventoryVerdict,
+  compositionObservationWindowVerdict,
   compositionTimelineVerdict,
   compositionTransactionVerdict,
   logicalRectToPhysical,
@@ -610,6 +611,36 @@ function inspectB04Transition(transition, index, coordinateSpace, failures) {
         failures.push(`${path}.samples[${sampleIndex}].${participant}.id=stable/${displayValue(sample[participant]?.id)}`);
       }
     }
+  }
+
+  // 좌표를 대조하기 전에 표본이 그 거래를 실제로 관측했는지 본다. `...UnixMs`라는 같은
+  // 이름은 같은 epoch를 뜻하지 않으므로, 거래 장부가 소유한 구간과 겹치지 않는 표본은
+  // 좌표가 맞아도 같은 거래의 증거가 아니다. glide는 선언한 표시 구간을, snap은
+  // prepared~closed를 그 거래의 관측 구간으로 쓴다.
+  const transaction = journalVerdict.transaction;
+  const glideWindow = Number.isFinite(transaction?.startAtUnixMs)
+    && Number.isFinite(transaction?.durationMs);
+  const windowStartAtUnixMs = glideWindow
+    ? transaction.startAtUnixMs
+    : transaction?.preparedAtUnixMs;
+  const windowEndAtUnixMs = glideWindow
+    ? transaction.startAtUnixMs + transaction.durationMs
+    : transaction?.closedAtUnixMs;
+  const sampleTimes = transition.samples
+    .map((sample) => Number(sample.sampledAtUnixMs))
+    .filter((value) => Number.isFinite(value));
+  // 장부 epoch 자체의 유한성은 layout 거래 판정이 소유한다. 여기서 다시 세지 않는다.
+  if (Number.isFinite(windowStartAtUnixMs) && Number.isFinite(windowEndAtUnixMs)
+      && sampleTimes.length > 0) {
+    const observation = compositionObservationWindowVerdict(
+      { startAtUnixMs: windowStartAtUnixMs, endAtUnixMs: windowEndAtUnixMs },
+      [{
+        producer: "presentation",
+        firstSampledAtUnixMs: Math.min(...sampleTimes),
+        lastSampledAtUnixMs: Math.max(...sampleTimes),
+      }],
+    );
+    failures.push(...observation.errors.map((error) => `${path}.samples:${error}`));
   }
 
   const scaleFactor = Number(coordinateSpace?.scaleFactor);

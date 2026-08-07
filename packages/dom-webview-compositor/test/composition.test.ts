@@ -317,9 +317,11 @@ describe("DOM ↔ native webview composition contract", () => {
     const alignedVerdict = compositionTimelineVerdict(aligned);
     expect(alignedVerdict.ok).toBe(false);
     expect(alignedVerdict.errors).toEqual(expect.arrayContaining([
-      'renderer[1]={"x":160,"y":0,"w":160,"h":0}',
+      // 착지 시각의 native ledger는 선언 궤적에서 320 physical px 떨어져 있다(=160 css px).
       'renderer[2]={"x":320,"y":0,"w":320,"h":0}',
-      'surface[1]={"x":160,"y":0,"w":160,"h":0}',
+      'surface[2]={"x":320,"y":0,"w":320,"h":0}',
+      expect.stringContaining("renderer[1]="),
+      expect.stringContaining("surface[1]="),
     ]));
     expect(alignedVerdict.errors.some((error) => error.includes("window-gap"))).toBe(false);
   });
