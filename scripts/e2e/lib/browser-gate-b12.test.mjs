@@ -277,9 +277,10 @@ describe("B12 macOS traffic-light composition machine judge", () => {
         for (const element of plane) element.rect.y += 2;
       }
     };
-    const baselineShifted = evidence();
-    coherentShift(baselineShifted.baseline);
-    expect(judgeB12MachineEvidence(baselineShifted, identity("tauri")).status).toBe("red");
+    const heightShifted = evidence();
+    coherentShift(heightShifted.heights[0]);
+    coherentShift(heightShifted.held.heights[0]);
+    expect(judgeB12MachineEvidence(heightShifted, identity("tauri")).status).toBe("red");
 
     const hostileShifted = evidence();
     coherentShift(hostileShifted.hostileResize.transactions[8].titlebar);

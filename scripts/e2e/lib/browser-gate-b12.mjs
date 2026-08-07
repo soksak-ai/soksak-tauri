@@ -168,6 +168,13 @@ function inspectPlaneAgainstTitlebar(plane, titlebar, path, failures) {
   }
 }
 
+function inspectTitlebarAgainstViewport(titlebar, viewport, path, failures) {
+  if (!(titlebar && viewport)) return;
+  if (!withinTolerance(titlebar.x)) failures.push(`${path}.x=viewport-left`);
+  if (!withinTolerance(titlebar.y)) failures.push(`${path}.y=viewport-top`);
+  if (!withinTolerance(titlebar.w - viewport.w)) failures.push(`${path}.w=viewport-width`);
+}
+
 function inspectMatchingPlanes(left, rightPlane, path, failures) {
   if (!(left && rightPlane)) return;
   for (const role of ROLES) {
@@ -229,6 +236,7 @@ function inspectSample(
     failures.push(`${path}.backings=null-for-electron/${displayValue(value.backings)}`);
   }
 
+  inspectTitlebarAgainstViewport(titlebar, viewport, `${path}.titlebarPhysical`, failures);
   inspectPlaneAgainstTitlebar(reservations, titlebar, `${path}.reservations`, failures);
   inspectPlaneAgainstTitlebar(buttons, titlebar, `${path}.buttons`, failures);
   if (framework === "tauri") {
@@ -379,6 +387,7 @@ function inspectHostileTitlebar(value, path, framework, failures) {
   } else if (value.backings !== null) {
     failures.push(`${path}.backings=null-for-electron/${displayValue(value.backings)}`);
   }
+  inspectTitlebarAgainstViewport(titlebar, viewport, `${path}.titlebarPhysical`, failures);
   inspectPlaneAgainstTitlebar(reservations, titlebar, `${path}.reservations`, failures);
   inspectPlaneAgainstTitlebar(buttons, titlebar, `${path}.buttons`, failures);
   inspectMatchingPlanes(reservations, buttons, `${path}.reservationButton`, failures);
@@ -459,6 +468,18 @@ function inspectHostileResize(value, baseline, context, failures) {
         if (!withinTolerance(titlebar.viewport.h - expected.h)) {
           failures.push(`${path}.titlebar.viewportPhysical.h=baseline+outer-delta`);
         }
+      }
+      if (baseline?.titlebar && titlebar?.titlebar
+          && !withinTolerance(titlebar.titlebar.h - baseline.titlebar.h)) {
+        failures.push(`${path}.titlebar.titlebarPhysical.h=baseline`);
+      }
+      for (const plane of ["reservations", "buttons", ...(context.framework === "tauri" ? ["backings"] : [])]) {
+        inspectMatchingPlanes(
+          baseline?.planes?.[plane],
+          titlebar?.planes?.[plane],
+          `${path}.titlebar.${plane}=baseline`,
+          failures,
+        );
       }
       transactions.push({ requested, generation, titlebar });
     });
