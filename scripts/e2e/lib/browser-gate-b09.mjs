@@ -29,6 +29,7 @@ const TARGET_RELATIONS = Object.freeze({
 const NATIVE_SURFACE_KEYS = Object.freeze([
   "viewId",
   "surfaceId",
+  "topologyPath",
   "live",
   "visible",
   "presented",
@@ -94,6 +95,9 @@ function inspectNativeSurface(value, path, failures) {
   }
   if (!hasText(value.surfaceId)) {
     failures.push(`${path}.surfaceId=non-empty/${displayValue(value.surfaceId)}`);
+  }
+  if (!hasText(value.topologyPath)) {
+    failures.push(`${path}.topologyPath=non-empty/${displayValue(value.topologyPath)}`);
   }
   for (const field of ["live", "visible", "presented"]) {
     if (value[field] !== true) {
@@ -212,7 +216,11 @@ function inspectSample(value, index, seenTargets, failures) {
   }
 }
 
-/** 픽셀이 아니라 공개 rect·hit owner·layer stack으로 chrome/native 합성을 판정한다. */
+/**
+ * 픽셀이 아니라 공개 rect·hit owner·layer stack으로 chrome/native 합성을 판정한다.
+ * nativeSurface는 공개 surface 영수증 그대로이며, 선언된 `topologyPath`를 가진 소유자만
+ * chrome 아래 layer로 인정한다. rect만 있는 익명 surface는 RED다.
+ */
 export function judgeB09MachineEvidence(value) {
   if (value == null) return notRunVerdict();
   const failures = [];
@@ -236,6 +244,7 @@ export function judgeB09MachineEvidence(value) {
   return finishMachineVerdict(
     "B09",
     failures,
-    `${value.engine}/B09:rail-add=global-chrome-above-native;right-sidebar+modal=overlap-hit-topmost`,
+    `${value.engine}/B09:rail-add=global-chrome-above-native;`
+      + "right-sidebar+modal=overlap-hit-topmost;native=declared-topology",
   );
 }

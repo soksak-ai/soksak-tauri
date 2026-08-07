@@ -32,6 +32,7 @@ function evidence(engine = "browser") {
         nativeSurface: {
           viewId,
           surfaceId,
+          topologyPath: `window/w-b09/view/${viewId}/content/${surfaceId}`,
           live: true,
           visible: true,
           presented: true,
@@ -135,7 +136,7 @@ describe("B09 surface receipt는 생산자 shape 그대로 판정된다", () => 
         status: "green",
         evidence: [
           `${implementation.engine}/B09:rail-add=global-chrome-above-native;`
-            + "right-sidebar+modal=overlap-hit-topmost",
+            + "right-sidebar+modal=overlap-hit-topmost;native=declared-topology",
         ],
         reason: null,
       });
