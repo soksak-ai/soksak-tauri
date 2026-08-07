@@ -78,6 +78,7 @@ type MultiDomTraceSession = {
   presentationTransactionId: string | null;
   presentationDomCommittedAtUnixMs: number | null;
   animationEndHandler: ((event: AnimationEvent) => void) | null;
+  settlementObserver: MutationObserver | null;
   unsubscribe: () => void;
   expiryTimer: ReturnType<typeof setTimeout> | null;
   evictionTimer: ReturnType<typeof setTimeout> | null;
@@ -145,7 +146,7 @@ function startMultiDomPresentationFrames(
   session.animationEndHandler = (event: AnimationEvent) => {
     if (session.endedAtUnixMs !== null
         || session.presentationTransactionId !== transactionId
-        || (event.animationName !== "rail-flip-x" && event.animationName !== "phase")) return;
+        || !event.animationName) return;
     appendMultiDomTraceSample(
       session,
       "presentation-frame",
@@ -154,6 +155,26 @@ function startMultiDomPresentationFrames(
     );
   };
   document.addEventListener("animationend", session.animationEndHandler, true);
+  // The class removal is the application's explicit animation settlement
+  // event. MutationObserver is event-driven and observes the real DOM; it is
+  // not a coordinate polling loop. This covers WebKit documents where both
+  // rAF and animationend are throttled while a native surface occludes them.
+  session.settlementObserver = new MutationObserver(() => {
+    if (session.endedAtUnixMs !== null
+        || session.presentationTransactionId !== transactionId
+        || session.targets.some(({ el }) => el.classList.contains("flip-move"))) return;
+    appendMultiDomTraceSample(
+      session,
+      "presentation-frame",
+      transactionId,
+      domCommittedAtUnixMs,
+    );
+  });
+  session.settlementObserver.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["class", "style"],
+    subtree: true,
+  });
   const sample = (frameTime: number) => {
     if (session.endedAtUnixMs !== null
         || session.presentationTransactionId !== transactionId) return;
@@ -181,6 +202,8 @@ function finishMultiDomTrace(session: MultiDomTraceSession, timedOut: boolean): 
     document.removeEventListener("animationend", session.animationEndHandler, true);
     session.animationEndHandler = null;
   }
+  session.settlementObserver?.disconnect();
+  session.settlementObserver = null;
   session.presentationTransactionId = null;
   session.presentationDomCommittedAtUnixMs = null;
   if (session.expiryTimer !== null) clearTimeout(session.expiryTimer);
@@ -1362,6 +1385,7 @@ export function registerDomCatalog(): void {
         presentationTransactionId: null,
         presentationDomCommittedAtUnixMs: null,
         animationEndHandler: null,
+        settlementObserver: null,
         unsubscribe: () => {},
         expiryTimer: null,
         evictionTimer: null,
