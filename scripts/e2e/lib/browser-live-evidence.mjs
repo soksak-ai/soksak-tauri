@@ -1,9 +1,18 @@
 import { mapWithWiring } from "./browser-machine-judge-support.mjs";
 
-export function mapImeObservation(value) {
+/**
+ * @param {unknown} value 탭이 자기 안에서 답한 사실
+ * @param {unknown} focus 창이 답한 포커스 소유(`ui.focus.state`) — 탭이 아니라 창의 사실이다
+ */
+export function mapImeObservation(value, focus = null) {
   return {
     value: value?.value ?? null,
     active: value?.active ?? null,
+    // 못 물어본 것과 "소유자가 없다" 는 다른 답이다 — 안 답했으면 이 자리를 비운다.
+    inputFocus: focus == null ? undefined : {
+      owner: focus?.activeElement?.viewId ?? null,
+      self: focus?.activeElement?.viewId === (value?.viewId ?? focus?.viewId),
+    },
     ledger: {
       beforeInput: value?.ledger?.beforeInput ?? null,
       inputEvents: value?.ledger?.inputEvents ?? null,

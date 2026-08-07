@@ -436,6 +436,10 @@ export function judgeB02MachineEvidence(value) {
   if (value.tabs.length !== 2) failures.push(`tabs.length=2/${value.tabs.length}`);
   const seen = new Set();
   const expectedTexts = new Set();
+  // 창 하나에 입력 responder 는 하나다 — phase 마다 두 탭이 같은 소유자를 답해야 그 되읽기가
+  // 창의 사실이다. 서로 다르면 탭이 지어낸 값이다. 코어가 그 사실을 공개면으로 답한다
+  // (`ui.focus.state` — 활성 요소를 담은 뷰).
+  const focusByPhase = new Map(B02_RETENTION_PHASES.map((phase) => [phase, []]));
   value.tabs.forEach((tab, index) => {
     const path = `tabs[${index}]`;
     if (!isRecord(tab)) {
@@ -468,6 +472,9 @@ export function judgeB02MachineEvidence(value) {
     }
 
     for (const phase of B02_RETENTION_PHASES) {
+      const focus = tab.phases?.[phase]?.inputFocus;
+      // 안 답한 것을 "일치한다" 로 읽지 않는다 — 재지 않은 축이 통과로 잡힌다.
+      focusByPhase.get(phase)?.push(isRecord(focus) ? displayValue(focus.owner) : null);
       const sample = tab.phases[phase];
       const phasePath = `${path}.phases.${phase}`;
       if (!isRecord(sample)) {
@@ -495,6 +502,17 @@ export function judgeB02MachineEvidence(value) {
       }
     }
   });
+  for (const [phase, owners] of focusByPhase) {
+    if (owners.length === 0) continue;
+    const path = `phases.${phase}.inputFocus`;
+    if (owners.some((owner) => owner === null)) {
+      failures.push(`${path}=declared/${displayValue(owners)}`);
+      continue;
+    }
+    if (new Set(owners).size !== 1) {
+      failures.push(`${path}=one-window-owner/${displayValue([...new Set(owners)])}`);
+    }
+  }
   return finishMachineVerdict(
     "B02",
     failures,

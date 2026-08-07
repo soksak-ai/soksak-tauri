@@ -877,7 +877,11 @@ async function verifyIme(rpc, win, plugin, tabId, text) {
   if (value.ledger?.values?.at?.(-1) !== text) {
     throw new Error(`${tabId}: input 사건 값 불일치 ${JSON.stringify(value.ledger?.values)}`);
   }
-  return mapImeObservation(value);
+  // 창 하나에 입력 responder 는 하나다 — 그 사실은 탭이 아니라 창이 안다. 코어가 공개면으로
+  // 답하므로(`ui.focus.state`) 여기서 물어 관측에 싣는다. 탭이 스스로 답한 값만 모으면 두 탭이
+  // 서로 다른 소유자를 말해도 판정이 그것을 못 본다.
+  const focus = await rpc("ui.focus.state", { viewId: tabId }, win);
+  return mapImeObservation(value, focus?.ok === true ? focus.data : null);
 }
 
 async function verifyScrollInput(rpc, win, plugin, tabId, evidencePath) {

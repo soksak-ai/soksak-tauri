@@ -133,6 +133,8 @@ function b02Evidence(engine = "browser") {
               inputEvents: 1 + index,
               values: [expectedText, expectedText],
             },
+            // 창 하나에 입력 responder 는 하나다 — 두 탭이 같은 소유자를 답한다.
+            inputFocus: { owner: `${engine}-left`, self: side === "left" },
           },
         ])),
       };
@@ -973,5 +975,47 @@ describe("브라우저 12-gate 정본", () => {
       for (const status of VISUAL_REVIEW_STATUSES) expect(section).toContain(`\`${status}\``);
       expect(section).toMatch(/visualReview/);
     }
+  });
+});
+
+// 규칙 — 창 하나에 입력 responder 는 하나다.
+//
+// 두 탭이 같은 phase 에서 서로 다른 포커스 소유자를 보고하면, 그 되읽기는 창의 사실이 아니라
+// 탭이 지어낸 값이다. 코어는 그 사실을 이미 공개면으로 답한다(`ui.focus.state` — 활성 요소를
+// 담은 뷰). B02 는 그것을 안 읽고 있었다.
+//
+// 건진 축이다: 이전 라운드 에이전트가 salvage/718ccdcb-bd1-4 에 세웠으나 main 에 안 들어왔다.
+// 그 파일은 71 커밋 뒤처져 통째로 못 들이므로 여기서 main 기준으로 다시 세운다.
+describe("B02 포커스 소유", () => {
+  function withFocus(owner) {
+    const value = b02Evidence("browser");
+    value.tabs.forEach((tab, index) => {
+      for (const phase of Object.values(tab.phases)) {
+        phase.inputFocus = { owner: owner(tab, index), self: true };
+      }
+    });
+    return value;
+  }
+
+  it("두 탭이 같은 소유자를 보고하면 통과한다", () => {
+    const value = withFocus(() => "browser-left");
+    expect(judgeB02MachineEvidence(value).evidence.filter((row) => row.includes("inputFocus")))
+      .toEqual([]);
+  });
+
+  it("두 탭이 서로 다른 소유자를 보고하면 red 다", () => {
+    const value = withFocus((tab) => tab.viewId);
+    const verdict = judgeB02MachineEvidence(value);
+    expect(verdict.status).toBe("red");
+    expect(verdict.evidence.some((row) => row.includes("inputFocus=one-window-owner"))).toBe(true);
+  });
+
+  // 안 답한 것을 "일치한다" 로 읽으면 재지 않은 축이 통과로 잡힌다.
+  it("소유자를 안 답한 phase 는 통과가 아니다", () => {
+    const value = b02Evidence("browser");
+    // 한 탭이 그 사실을 안 답한 판 — 나머지가 답했다고 "일치한다" 로 읽으면 안 된다.
+    for (const phase of Object.values(value.tabs[1].phases)) delete phase.inputFocus;
+    const verdict = judgeB02MachineEvidence(value);
+    expect(verdict.evidence.some((row) => row.includes("inputFocus=declared"))).toBe(true);
   });
 });
