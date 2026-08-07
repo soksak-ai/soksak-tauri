@@ -2,11 +2,13 @@ import { emitTo, listen } from "@tauri-apps/api/event";
 import type {
   PluginViewInit,
   PluginViewNodeFrame,
+  PluginViewPlacementFrame,
   PluginViewRpcRequest,
   PluginViewRpcResponse,
   PluginViewSlotFrame,
 } from "./pluginViewProtocol";
 import { nodeControlState } from "./pluginViewProtocol";
+import { PluginViewPlacementRegistry } from "./pluginViewPlacements";
 import { activatePluginInViewRenderer } from "./pluginViewActivation";
 import { declarePluginRealm } from "../../plugins/realm";
 
@@ -32,6 +34,10 @@ await listen<PluginViewRpcResponse>(event("response"), ({ payload }) => {
 await listen<{ subscription: string; payload: unknown }>(event("subscription"), ({ payload }) => {
   listeners.get(payload.subscription)?.(payload.payload);
 });
+// 배치의 소유자가 적용한 프레임. 플러그인이 살아나기 전부터 듣는다 — 표면을 만드는 거래 안에서
+// 일어난 첫 적용이 그 표면의 첫 프레임이고, 그 하나를 놓치면 표면은 자기 자리를 영영 모른다.
+const placements = new PluginViewPlacementRegistry();
+await listen<PluginViewPlacementFrame>(event("placement"), ({ payload }) => placements.commit(payload));
 
 function request(kind: PluginViewRpcRequest["kind"], body: Omit<PluginViewRpcRequest, "id" | "kind">): Promise<any> {
   const id = ++sequence;
@@ -193,6 +199,10 @@ await listen<PluginViewInit>(event("init"), async ({ payload: init }) => {
       list: asyncMethod("list"), close: asyncMethod("close"),
       on: (label: string, name: string, cb: (value: unknown) => void) =>
         subscribe("webview.on", [label, name], cb),
+      // 이 표면에 호스트가 실제로 적용한 프레임. RPC 가 아니라 이 realm 이 이미 받아 둔 사실이라
+      // 구독 왕복이 없다 — 늦게 구독해도 마지막 적용을 먼저 받는다.
+      onPlacement: (label: string, cb: (frame: PluginViewPlacementFrame) => void) =>
+        placements.subscribe(label, cb),
     };
   }
   // 이 realm 의 표면은 창 realm 과 같지 않다(등록부는 창이 소유하고 여기는 실행만 소비한다).
