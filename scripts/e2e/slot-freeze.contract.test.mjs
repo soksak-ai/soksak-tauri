@@ -59,7 +59,18 @@ function chromeOverlayBlock(source) {
   return B09_FUNCTIONS.map((name) => namedFunctionBody(source, name)).join("\n");
 }
 
-function frameworkGuardedRpcCalls(source, command) {
+/** 이 표현식이 **능력의 답**을 긍정으로 읽는가. 부정(`!paneOwned`)은 가드가 아니다 — 없는
+ *  쪽으로 들어가는 문이다. */
+function readsCapabilityAnswer(expression) {
+  if (/!\s*(?:paneOwned|capabilities\.has)/.test(expression)) return false;
+  return expression.includes("capabilities.has(") || /\bpaneOwned\b/.test(expression);
+}
+
+/** 이 명령을 부르는 자리가 **능력 질문** 뒤에 서 있는가.
+ *
+ * 프레임워크 이름을 읽는 가드는 여기서 가드로 세지 않는다 — 이름 분기는 프레임워크가 하나 늘
+ * 때마다 갈리고, 그 갈림은 판정이 아니라 명단 관리다. */
+function capabilityGuardedRpcCalls(source, command) {
   const file = ts.createSourceFile("slot-freeze.mjs", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
   const calls = [];
   const visit = (node) => {
@@ -68,17 +79,15 @@ function frameworkGuardedRpcCalls(source, command) {
         && ts.isStringLiteral(node.arguments[0])
         && node.arguments[0].text === command) {
       let cursor = node.parent;
-      let tauriOnly = false;
+      let capabilityGuarded = false;
       while (cursor) {
-        if (ts.isIfStatement(cursor)
-            && (cursor.expression.getText(file).includes('frameworkName === "tauri"')
-              || cursor.expression.getText(file) === "paneOwned")) {
-          tauriOnly = true;
+        if (ts.isIfStatement(cursor) && readsCapabilityAnswer(cursor.expression.getText(file))) {
+          capabilityGuarded = true;
           break;
         }
         cursor = cursor.parent;
       }
-      calls.push({ text: node.getText(file), tauriOnly });
+      calls.push({ text: node.getText(file), capabilityGuarded });
     }
     ts.forEachChild(node, visit);
   };
@@ -96,7 +105,7 @@ function ownerGuardedFunctionCalls(source, functionName) {
       while (cursor) {
         if (ts.isIfStatement(cursor)
             && (cursor.expression.getText(file).includes("native || windowed")
-              || cursor.expression.getText(file) === "paneOwned")) {
+              || readsCapabilityAnswer(cursor.expression.getText(file)))) {
           paneOwnedOnly = true;
           break;
         }
@@ -158,12 +167,19 @@ function objectStringProperty(node, name) {
     : null;
 }
 
+/** 한 셀을 판정하는 자리 전부. 증거를 적는 자리와 능력 부재로 그 칸을 닫는 자리는 같은 셀의
+ *  같은 판정이므로 함께 센다 — 둘을 따로 세면 "한 번만"이라는 법이 한쪽에서만 선다. */
 function machineGateRecordCalls(source, gate) {
   return callFacts(source, (node, file) => {
-    if (!ts.isPropertyAccessExpression(node.expression)
-        || node.expression.name.text !== "recordMachineEvidence"
-        || node.arguments.length !== 1) return false;
-    return objectStringProperty(node.arguments[0], "gate") === gate;
+    const direct = ts.isPropertyAccessExpression(node.expression)
+      && node.expression.name.text === "recordMachineEvidence"
+      && node.arguments.length === 1
+      && objectStringProperty(node.arguments[0], "gate") === gate;
+    const capabilityAware = ts.isIdentifier(node.expression)
+      && node.expression.text === "recordGateOrCapabilityAbsence"
+      && node.arguments.length === 2
+      && objectStringProperty(node.arguments[1], "gate") === gate;
+    return direct || capabilityAware;
   });
 }
 
@@ -193,14 +209,26 @@ describe("slot-freeze instrumentation lifecycle", () => {
 
   it("installs PaneSurfaceHost presentation probes only for pane-owned surfaces", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
-    expect(source).toContain('frameworkName === "tauri" && (native || windowed)');
+    expect(source).toContain("capabilities.has(PANE_PRESENTATION_HOST.id) && (native || windowed)");
     expect(source).not.toContain('if (frameworkName === "tauri") await installPanePresentationMarkers');
+  });
+
+  // 갈라지는 자리는 창에게 묻는다. 이름 분기는 프레임워크가 하나 늘 때마다 갈리고, 그때 새
+  // 프레임워크는 "판정이 없는" 것이 아니라 "원래 없는 게이트"로 보인다.
+  it("branches on what the window answers, not on who answered", () => {
+    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    expect(source).toContain("readHarnessCapabilities(rpc, win)");
+    expect(source).not.toContain('frameworkName === "tauri"');
+    // 이름은 보고서 신원에만 쓴다 — 판정이 아니라 누가 쟀는지를 적는 자리다.
+    for (const identityUse of source.match(/frameworkName[^\n]*/g) ?? []) {
+      expect(identityUse, identityUse).not.toMatch(/frameworkName\s*===\s*"/);
+    }
   });
 
   it("never judges external engine surfaces as PaneSurfaceHost members", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
     expect(source).toContain(
-      'const paneOwned = frameworkName === "tauri" && (native || windowed);',
+      "const paneOwned = capabilities.has(PANE_PRESENTATION_HOST.id) && (native || windowed);",
     );
     const calls = ownerGuardedFunctionCalls(source, "assertPaneComposition");
     expect(calls.length).toBeGreaterThan(0);
@@ -209,6 +237,15 @@ describe("slot-freeze instrumentation lifecycle", () => {
       ?.split("async function assertRailCompositionContract")[0] ?? "";
     expect(lighting).toContain("if (paneOwned)");
     expect(lighting).not.toContain('if (frameworkName === "tauri")');
+  });
+
+  // 창-엔진 표면의 합성 대조는 pane 표면 층을 대조 상대로 읽는다. 그 층이 없는 창에서 부르면
+  // 그 명령이 UNKNOWN_COMMAND 로 죽고, 그 죽음은 이 엔진의 남은 칸을 통째로 가져간다.
+  it("compares windowed engine composition only where the pane surface layer answers", () => {
+    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    const calls = ownerGuardedFunctionCalls(source, "assertWindowedComposition");
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls.every((call) => call.paneOwnedOnly)).toBe(true);
   });
 
   it("keeps Node alive until the whole scenario and finally cleanup have completed", () => {
@@ -369,11 +406,28 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(source).not.toContain("fs.mkdirSync(engineEvidence");
   });
 
-  it("Tauri composition 진단을 Electron DOM 기준에 호출하지 않는다", () => {
+  it("네이티브 합성 진단을 그 층이 없는 창에 호출하지 않는다", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
-    const calls = frameworkGuardedRpcCalls(source, "webview.composition");
+    const calls = capabilityGuardedRpcCalls(source, "webview.composition");
     expect(calls.length).toBeGreaterThan(0);
-    expect(calls.every((call) => call.tauriOnly)).toBe(true);
+    expect(calls.every((call) => call.capabilityGuarded)).toBe(true);
+  });
+
+  // 못 재는 것은 못 잰다고 말해야 한다. 궤적 증거 구간을 건너뛰는 사유는 능력 부재 하나뿐이고,
+  // 그 부재는 같은 실행에서 B04·B05 셀의 판정으로 실린다 — 조용한 통과도, 지어낸 red 도 없다.
+  it("표시 궤적을 못 재면 그 사실이 두 셀의 판정으로 남는다", () => {
+    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    expect(source).toContain("flowPresentationEvidence: {");
+    expect(source).toContain("if (!presentationTraceMeasurable) {");
+    expect(source).toContain("break flowPresentationEvidence;");
+    for (const gate of ["B04", "B05"]) {
+      const receipts = machineGateRecordCalls(source, gate);
+      expect(receipts, gate).toHaveLength(1);
+      expect(receipts[0].text, gate).toContain("capability: presentationTrace.capability");
+    }
+    // 궤적을 못 재는 실행에서도 나머지 칸은 계속 잰다 — 한 칸의 부재가 판을 멈추지 않는다.
+    expect(machineGateRecordCalls(source, "B06")[0].text)
+      .not.toContain("capability: presentationTrace.capability");
   });
 
   it("교차 이동의 자동 판정은 recorder callback이 아닌 공개 layout 거래 장부를 소비한다", () => {
