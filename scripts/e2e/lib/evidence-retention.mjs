@@ -15,14 +15,20 @@
  * "가장 오래됨" 으로 읽으면 최신 기여가 먼저 사라진다).
  *
  * @param {{runs: readonly {runId: string, bytes: number, finishedAtUnixMs: number}[],
- *          storeLimitBytes: number, needBytes: number, keep?: readonly string[]}} input
+ *          storeLimitBytes: number, needBytes: number, keep?: readonly string[],
+ *          otherBucketBytes?: number}} input
  * @returns {string[]} 회수 순서대로
  */
-export function runsToReclaim({ runs, storeLimitBytes, needBytes, keep = [] }) {
+export function runsToReclaim({ runs, storeLimitBytes, needBytes, keep = [], otherBucketBytes = 0 }) {
   const rows = [...(runs ?? [])];
   const held = new Set(keep);
   const total = rows.reduce((sum, row) => sum + Number(row.bytes ?? 0), 0);
-  let free = Number(storeLimitBytes) - total;
+  // 한도는 저장소 **전체**를 잰다 — runs 만 세면 다른 통이 든 자리를 몰라 넉넉하다고 판단한다.
+  // 못 읽은 자리를 0 으로 읽으면 있는 자리보다 넉넉하다고 읽는 것이라, 그때는 한도를 다 쓴
+  // 것으로 본다(회수는 지울 수 있는 것만 지우므로 과하게 지워도 최신 하나는 남는다).
+  const other = Number(otherBucketBytes);
+  const held$other = Number.isFinite(other) ? other : Number(storeLimitBytes);
+  let free = Number(storeLimitBytes) - total - held$other;
   if (!Number.isFinite(free) || free >= Number(needBytes)) return [];
 
   // 최신 하나는 언제나 남긴다 — 순서를 읽을 수 있는 것 중에서 고른다.

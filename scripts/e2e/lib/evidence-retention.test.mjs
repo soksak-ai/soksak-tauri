@@ -72,3 +72,44 @@ describe("runsToReclaim", () => {
     expect(reclaim).toEqual([]);
   });
 });
+
+// 규칙 — 한도를 먹는 자리를 다 세야 자리가 난다.
+//
+// 저장소 한도는 저장소 **전체**를 잰다(current + last-red + runs). 그런데 회수는 runs 만 세고
+// 다른 두 통이 든 자리를 몰랐다 — 실측 2026-08-08: 한 실행이 471MB 를 쓰는데 last-red 470MB 와
+// runs 1.0GB 가 남아 세 번째 엔진에서 2GiB 한도를 넘었고, offscreen 이 세 칸을 잃었다.
+//
+// 한도를 낮추지 않는다. 세는 자리를 맞춘다.
+describe("한도를 먹는 자리를 다 센다", () => {
+  it("다른 통이 든 자리를 빼고 남은 자리로 판단한다", () => {
+    const reclaim = runsToReclaim({
+      runs: [run("new", 200, 3), run("old", 200, 1)],
+      storeLimitBytes: 1_000,
+      // 다른 통이 500 을 들고 있으면 남은 자리는 1000-500-400 = 100 뿐이다.
+      otherBucketBytes: 500,
+      needBytes: 300,
+    });
+    expect(reclaim).toEqual(["old"]);
+  });
+
+  it("다른 통이 비었으면 지금 계약 그대로다", () => {
+    const reclaim = runsToReclaim({
+      runs: [run("new", 200, 3), run("old", 200, 1)],
+      storeLimitBytes: 1_000,
+      otherBucketBytes: 0,
+      needBytes: 300,
+    });
+    expect(reclaim).toEqual([]);
+  });
+
+  // 못 읽은 자리를 0 으로 읽으면 있는 자리보다 넉넉하다고 판단한다.
+  it("다른 통의 자리를 못 읽었으면 넉넉하다고 읽지 않는다", () => {
+    const reclaim = runsToReclaim({
+      runs: [run("new", 200, 3), run("old", 200, 1)],
+      storeLimitBytes: 1_000,
+      otherBucketBytes: Number.NaN,
+      needBytes: 300,
+    });
+    expect(reclaim).toEqual(["old"]);
+  });
+});

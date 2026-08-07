@@ -571,9 +571,13 @@ async function reclaimArchivedRuns(paths, limits) {
     });
   }
   const byId = new Map(rows.map((row) => [row.runId, row]));
+  // 한도는 저장소 전체를 잰다 — current 와 last-red 가 든 자리도 그 한도를 먹는다.
+  const otherBucketBytes = (await measureDirectory(paths.current))
+    + (await measureDirectory(paths.lastRed));
   const reclaim = runsToReclaim({
     runs: rows,
     storeLimitBytes,
+    otherBucketBytes,
     // 새 실행 하나가 최대로 쓸 자리를 미리 비운다 — 다 쓰고 나서 알면 이미 늦다.
     needBytes: limits?.runLimitBytes ?? EVIDENCE_RUN_LIMIT_BYTES,
     keep: rows.filter((row) => row.keep).map((row) => row.runId),
