@@ -10,8 +10,8 @@ import {
 import { BROWSER_ACCEPTANCE_ENGINES } from "./lib/browser-gate-identity.mjs";
 import { beginEvidenceRun, finishEvidenceRun } from "./lib/evidence-store.mjs";
 import {
-  b12ColdStartCells,
   judgeTitlebarColdStartRun,
+  recordB12ColdStartCells,
   requireB12RunId,
   titlebarEvidenceRunRoot,
   titlebarGateStoreRoot,
@@ -61,26 +61,7 @@ async function recordCanonicalReport() {
   });
   const anchors = coldStartAnchors();
   try {
-    store.bindFramework(framework);
-    for (const cell of b12ColdStartCells({ verdict, anchors })) {
-      if (cell.kind === "evidence") {
-        store.recordMachineEvidence({
-          framework,
-          engine: cell.engine,
-          gate: "B12",
-          evidence: cell.evidence,
-        });
-      } else {
-        store.recordMachineStatus({
-          framework,
-          engine: cell.engine,
-          gate: "B12",
-          status: cell.status,
-          evidence: cell.evidence,
-          reason: cell.reason,
-        });
-      }
-    }
+    recordB12ColdStartCells(store, { framework, verdict, anchors });
   } catch (error) {
     return { status: "unwritable", reason: error instanceof Error ? error.message : String(error) };
   }

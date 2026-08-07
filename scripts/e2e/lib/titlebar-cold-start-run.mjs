@@ -302,3 +302,41 @@ export function b12ColdStartCells({ verdict, anchors } = {}) {
     reason,
   }));
 }
+
+/**
+ * 냉시작 3회 판정을 그 실행기가 소유한 B12 칸에 적는다.
+ *
+ * 실행기(titlebar-composition-summary.mjs)는 파일을 읽고 쓰는 일만 하고, 어느 칸에 무엇이
+ * 적히는가는 여기 한 자리가 정한다. 주입을 실행기 안에 두면 단위로 다시 부를 수 없어, 정본
+ * 36칸에 실제로 실리는지를 앱을 띄우지 않고는 확인할 길이 없다 — 실행해야만 보이는 배선은
+ * 배선이 아니라 소문이다.
+ *
+ * 프레임워크를 먼저 묶는 것도 이 함수의 일이다. not-applicable 인 실행은 칸을 하나도 만들지
+ * 않으므로(b12ColdStartCells), 묶지 않으면 그 실행의 보고서는 신원조차 없이 남는다.
+ */
+export function recordB12ColdStartCells(store, { framework, verdict, anchors } = {}) {
+  if (!store || typeof store.bindFramework !== "function") {
+    throw new TypeError("B12 cold-start cells need a browser gate report store");
+  }
+  store.bindFramework(framework);
+  for (const cell of b12ColdStartCells({ verdict, anchors })) {
+    if (cell.kind === "evidence") {
+      store.recordMachineEvidence({
+        framework,
+        engine: cell.engine,
+        gate: "B12",
+        evidence: cell.evidence,
+      });
+    } else {
+      store.recordMachineStatus({
+        framework,
+        engine: cell.engine,
+        gate: "B12",
+        status: cell.status,
+        evidence: cell.evidence,
+        reason: cell.reason,
+      });
+    }
+  }
+  return store;
+}
