@@ -59,6 +59,35 @@ export interface FrameworkWindowHandle {
   listen<T>(event: string, cb: (e: FrameworkEvent<T>) => void): Promise<Unlisten>;
 }
 
+/**
+ * 한 축에 대한 프레임워크의 답. 없으면 **사유를 달고** 없다고 답한다.
+ *
+ * 부재를 값으로 답하는 이유: 조용한 no-op 을 돌려주면 부른 쪽이 그 기능이 있다고 믿고 그
+ * 믿음대로 그린다. 판정도 마찬가지다 — 못 잰 칸과 재서 틀린 칸이 한 더미가 된다.
+ */
+export type TitlebarCompositionFacet =
+  | { readonly provided: true }
+  | { readonly provided: false; readonly reason: string };
+
+/**
+ * 신호등(창 제어 버튼) 합성 — 이 프레임워크가 창 크롬에 대해 답할 수 있는 사실.
+ *
+ * 계약에 두는 이유: 이 축을 이름으로 가르면(`framework === "electron"`) 판정이 능력이 아니라
+ * 이름을 읽는다. 이름을 읽는 판정은 능력이 생긴 날에도 계속 거절하고, 세 번째 프레임워크가
+ * 오는 날에는 아무 말도 못 한다. 어댑터가 빠뜨리면 컴파일이 막는다.
+ *
+ * 세 축은 서로 다른 사실이라 한 boolean 으로 묶지 않는다: 위치를 못 읽어도 백킹은 깔 수 있고,
+ * 백킹이 없어도 원장은 있을 수 있다.
+ */
+export interface TitlebarCompositionProvision {
+  /** 네이티브 신호등 버튼의 물리 rect 를 공개 표면으로 읽을 수 있는가 — DOM 예약과 대조할 축. */
+  readonly buttonPositions: TitlebarCompositionFacet;
+  /** 신호등 뒤 불투명 백킹 평면을 이 프레임워크가 소유해 그리는가. */
+  readonly backingPlane: TitlebarCompositionFacet;
+  /** 누가 마지막으로 버튼을 앉혔는지 세는 단일 paint owner 원장이 있는가. */
+  readonly paintOwner: TitlebarCompositionFacet;
+}
+
 export interface FrameworkNotification {
   isPermissionGranted(): Promise<boolean>;
   requestPermission(): Promise<string>;
@@ -104,6 +133,14 @@ export interface AppFramework {
    * 조용히 미신고 상태로 붙고, 그때 앱은 "요구가 없다"와 "모른다"를 구분하지 못한다.
    */
   readonly engineProvision: EngineProvision;
+
+  /**
+   * 이 프레임워크가 신호등 합성에 대해 답할 수 있는 것 — 코어와 판정이 읽는 유일한 채널.
+   *
+   * 계약에 두는 이유: 선택으로 두면 새 프레임워크가 미신고로 붙고, 그때 코어는 "능력이 없다"와
+   * "안 밝혔다"를 구분하지 못한다. 안 밝힌 것은 모르는 것이지 없는 것이 아니다.
+   */
+  readonly titlebarComposition: TitlebarCompositionProvision;
 
   /** 어댑터 이름 — 진단·원장에 싣는다("어느 프레임워크에서 난 일인가"). */
   readonly name: string;

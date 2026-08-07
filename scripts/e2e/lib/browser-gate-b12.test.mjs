@@ -40,6 +40,22 @@ function rectsFor(heightCssPx, viewportWidth = BASELINE_VIEWPORT.w) {
   };
 }
 
+/** 프레임워크가 스스로 밝힌 신호등 합성 능력 — 판정이 읽는 것은 이름이 아니라 이 선언이다. */
+function provisionFor(framework) {
+  if (framework === "tauri") {
+    return {
+      buttonPositions: { provided: true },
+      backingPlane: { provided: true },
+      paintOwner: { provided: true },
+    };
+  }
+  return {
+    buttonPositions: { provided: false, reason: "공개 신호등 위치 표면이 없다" },
+    backingPlane: { provided: false, reason: "버튼 뒤에 뷰를 깔 자리가 없다" },
+    paintOwner: { provided: false, reason: "네이티브 paint owner 원장이 없다" },
+  };
+}
+
 function owner(framework, revision) {
   if (framework !== "tauri") return null;
   return {
@@ -140,6 +156,7 @@ function evidence(engine = "browser", framework = "tauri") {
   const baselineStyle = { height: "", flexBasis: "" };
   const value = {
     engine,
+    provision: provisionFor(framework),
     coordinateSpace: {
       logical: "css-px",
       physical: "device-px",
@@ -258,12 +275,13 @@ describe("B12 macOS traffic-light composition machine judge", () => {
     });
   });
 
-  it("Electron native button-position 공개 adapter가 없으면 합성 rect를 지어내지 않고 RED다", () => {
+  it("공개 신호등 위치 표면을 부재로 선언한 프레임워크는 합성 rect를 지어내지 않고 RED다", () => {
     const value = evidence("browser", "electron");
-    expect(judgeB12MachineEvidence(value, identity("electron"))).toMatchObject({
-      status: "red",
-      evidence: [expect.stringContaining("electron-native-button-position-adapter")],
-    });
+    const verdict = judgeB12MachineEvidence(value, identity("electron"));
+    expect(verdict.status).toBe("red");
+    // RED 의 이름은 프레임워크 이름이 아니라 없는 능력이다.
+    expect(verdict.evidence.some((e) => e.includes("provision.buttonPositions=declared-absent")))
+      .toBe(true);
   });
 
   it("baseline → 복수 height → reset → final의 닫힌 단계를 모두 강제한다", () => {

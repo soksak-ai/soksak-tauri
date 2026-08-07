@@ -7,6 +7,7 @@
 // 보고서 어디에도 안 남았다.
 //
 // 기준은 그대로다: 답할 수 없으면 RED 다. 바뀌는 것은 **그 RED 의 이름**뿐이다.
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { judgeB12MachineEvidence } from "./browser-gate-b12.mjs";
 import { hostileWindowResizeSizes } from "./browser-matrix.mjs";
@@ -204,6 +205,15 @@ function declarationOnlyEvidence(provision, engine = "browser") {
 }
 
 describe("B12 는 선언을 읽는다 — 이름이 아니라", () => {
+  // 값 대조만으로는 "지금 이름을 안 본다"까지고, 한 줄이 다시 들어오는 것을 못 막는다.
+  // 이름과의 비교 자체를 소스에서 금지한다. 귀속(FRAMEWORKS.has)은 판정이 아니라 이름표다.
+  it("judge 소스에 프레임워크 이름 비교가 없다", () => {
+    const source = readFileSync(new URL("./browser-gate-b12.mjs", import.meta.url), "utf8");
+    expect(source).not.toMatch(/framework\s*(===|!==|==|!=)\s*["'](tauri|electron)["']/);
+    expect(source).not.toMatch(/["'](tauri|electron)["']\s*(===|!==|==|!=)\s*framework/);
+    expect(source).toContain("inspectProvision");
+  });
+
   it("Electron 이라는 이름으로도 선언한 능력을 다 채우면 GREEN 이다", () => {
     const verdict = judgeB12MachineEvidence(evidence(), identity("electron"));
     expect(verdict).toMatchObject({ status: "green", reason: null });
@@ -216,19 +226,39 @@ describe("B12 는 선언을 읽는다 — 이름이 아니라", () => {
     expect(verdict.evidence.some((e) => e.includes("provision.buttonPositions"))).toBe(true);
   });
 
-  it("RED 의 이름이 프레임워크 이름이 아니라 능력 부재다", () => {
+  // 이름 무관을 직접 잰다: 같은 증거를 다른 이름으로 판정해도 실패 목록이 **한 글자도** 달라지지
+  // 않아야 한다. 한 곳이라도 이름을 보면 이 대조가 갈린다.
+  it("같은 증거는 어느 이름으로 판정해도 같은 실패 목록을 낸다", () => {
+    const declarations = [
+      ALL_PROVIDED,
+      { ...ALL_PROVIDED, buttonPositions: absent("공개 위치 표면이 없다") },
+      { ...ALL_PROVIDED, backingPlane: absent("깔 자리가 없다") },
+      { ...ALL_PROVIDED, paintOwner: absent("원장이 없다") },
+    ];
+    for (const provision of declarations) {
+      for (const value of [evidence(provision), declarationOnlyEvidence(provision)]) {
+        const asTauri = judgeB12MachineEvidence(structuredClone(value), identity("tauri"));
+        const asElectron = judgeB12MachineEvidence(structuredClone(value), identity("electron"));
+        expect(asElectron.status).toBe(asTauri.status);
+        expect(asElectron.evidence.map((e) => e.replace(/B12:(tauri|electron);/, "B12;")))
+          .toEqual(asTauri.evidence.map((e) => e.replace(/B12:(tauri|electron);/, "B12;")));
+      }
+    }
+  });
+
+  it("RED 의 이름이 없는 능력을 가리키고 그 프레임워크가 적은 사유를 싣는다", () => {
+    const reason = "이 프레임워크의 신호등 API 는 위치·가시성뿐이다";
     const value = declarationOnlyEvidence({
-      buttonPositions: absent("Electron 의 신호등 API 는 위치·가시성뿐이다"),
+      buttonPositions: absent(reason),
       backingPlane: absent("버튼 뒤에 뷰를 깔 자리가 없다"),
       paintOwner: absent("네이티브 paint owner 원장이 없다"),
     });
     const verdict = judgeB12MachineEvidence(value, identity("electron"));
     expect(verdict.status).toBe("red");
-    expect(verdict.evidence.some((e) => e.includes("provision.buttonPositions"))).toBe(true);
-    for (const failure of verdict.evidence) {
-      expect(failure).not.toMatch(/\belectron\b/i);
-      expect(failure).not.toMatch(/\btauri\b/i);
-    }
+    const named = verdict.evidence.filter((e) => e.includes("provision.buttonPositions"));
+    expect(named).toHaveLength(1);
+    expect(named[0]).toContain("declared-absent");
+    expect(named[0]).toContain(reason);
   });
 });
 

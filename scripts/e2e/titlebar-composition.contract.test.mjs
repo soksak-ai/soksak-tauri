@@ -95,6 +95,20 @@ describe("titlebar composition live E2E contract", () => {
     ]) expect(source).toContain(marker);
   });
 
+  // 하니스도 이름으로 가르지 않는다. 예전에는 `framework === "electron"` 이면 실행을 통째로
+  // 멈췄고(blocked), 그 칸은 인수 장부에서 "재지 않은 칸"으로 사라졌다.
+  it("reads the framework's own traffic-light declaration instead of its name", () => {
+    for (const marker of [
+      "info.titlebarComposition",
+      "publicProvision(",
+      "composesTrafficLights(",
+      "declaredAbsentReport(",
+      "provision,",
+    ]) expect(source).toContain(marker);
+    expect(source).not.toMatch(/framework\s*===\s*["'](electron|tauri)["']/);
+    expect(source).not.toContain('status: "blocked"');
+  });
+
   it("persists artifact and cold-run identity in every cycle and window receipt", () => {
     for (const marker of [
       "requireBrowserEvidenceBuildId",

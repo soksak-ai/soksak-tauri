@@ -7,7 +7,7 @@
 // 해소되고, 그 잎은 자기 어댑터 하나만 import한다. 런타임 표식으로 둘을 함께 싣고 고르는
 // fallback은 없다 — 선택하지 않은 구현이 평가되지 않는 정도가 아니라 번들 그래프에 없어야 한다.
 
-import type { AppFramework } from "./contract";
+import type { AppFramework, TitlebarCompositionProvision } from "./contract";
 import type { EngineProvision } from "@soksak-ai/plugin-spec";
 import { selectedFramework } from "#framework-adapter";
 
@@ -17,6 +17,8 @@ export type {
   FrameworkNotification,
   FrameworkWindowHandle,
   Stream,
+  TitlebarCompositionFacet,
+  TitlebarCompositionProvision,
   Unlisten,
 } from "./contract";
 
@@ -64,6 +66,15 @@ export const deepLink = framework.deepLink;
  * 매니페스트에 요구로 적는다(engineNeeds.ts) — 여기는 그 요구를 채우는 쪽의 사실이다.
  */
 export const engineProvision: EngineProvision = framework.engineProvision;
+
+/**
+ * 활성 프레임워크가 신호등 합성에 대해 밝힌 것 — 코어가 창 크롬을 만지기 전에 읽는 자리.
+ *
+ * 없다고 적힌 것을 부르지 않는다. 부르고 거절을 삼키면 그 프레임워크에서 무엇이 왜 안 되는지가
+ * 어디에도 안 남고, "선언은 있는데 아무 일도 안 난다"만 남는다.
+ */
+export const titlebarComposition: TitlebarCompositionProvision =
+  framework.titlebarComposition;
 
 /**
  * 창을 끄는 영역임을 표시하는 props — 요소에 그대로 펼친다.

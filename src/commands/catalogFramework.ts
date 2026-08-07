@@ -11,6 +11,7 @@
 // 있으므로(어댑터의 unimplemented), 조회가 능력을 부르면 조회 자체가 앱을 흔든다.
 
 import { framework } from "../framework";
+import { titlebarProvisionBreaches } from "../framework/titlebarProvision";
 import { tmsg } from "../i18n";
 import { register } from "./registry";
 
@@ -37,7 +38,7 @@ export function registerFrameworkCatalog(): void {
     triggers: { ko: "프레임워크 어댑터 플랫폼 활성 런타임 진단 능력 어느프레임워크" },
     params: {},
     returns:
-      "{ framework, capabilities[] } — the active adapter name and the contract capability names it exposes (nested groups flattened as group.member).",
+      "{ framework, capabilities[], titlebarComposition, titlebarBreaches[] } — the active adapter name, the contract capability names it exposes (nested groups flattened as group.member), this framework's own declaration about window-control (traffic light) composition, and the calls it declared as provided yet refused.",
     message: (d) =>
       tmsg("msg.framework.info", {
         framework: String(d.framework ?? ""),
@@ -47,6 +48,11 @@ export function registerFrameworkCatalog(): void {
     handler: () => ({
       framework: framework.name,
       capabilities: capabilityNames(framework as unknown as Record<string, unknown>),
+      // 신호등 합성은 존재 여부만으로는 못 읽는다 — 없는 축은 **사유**가 답이다. 그 선언을
+      // 판정이 읽어야 프레임워크 이름으로 가르는 자리가 사라진다.
+      titlebarComposition: framework.titlebarComposition,
+      // 선언과 행동이 갈린 자리. 비어 있음과 안 잼은 다르므로 항상 싣는다(빈 배열도 답이다).
+      titlebarBreaches: titlebarProvisionBreaches(),
     }),
   });
 }

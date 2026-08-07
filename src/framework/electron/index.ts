@@ -17,8 +17,12 @@ import type {
   AppFramework,
   FrameworkWindowHandle,
   Stream,
+  TitlebarCompositionFacet,
+  TitlebarCompositionProvision,
   Unlisten,
 } from "../contract";
+import type { TitlebarCompositionFacetName } from "../titlebarProvision";
+import titlebarProvisionDeclaration from "../../../frameworks/electron/titlebar-provision.json";
 import {
   activeElectronResizeProbe,
   type ElectronNativeResizeReceipt,
@@ -238,12 +242,38 @@ export const engineProvision: EngineProvision = {
   supportsInputInjection: true,
 };
 
+/**
+ * 신호등 합성 — 이 프레임워크는 세 축 전부를 부재로 답한다.
+ *
+ * 사유는 여기서 짓지 않는다. 같은 문장을 메인 프로세스의 명령표도 읽으므로 선언이 한 자리에
+ * 산다(frameworks/electron/titlebar-provision.json). 읽어 온 데이터는 **검증하고** 쓴다 —
+ * 사유 없는 부재는 "없다"가 아니라 "안 밝혔다"이고, 그 둘을 같게 두면 공백이 안 보인다.
+ */
+function declaredFacet(name: TitlebarCompositionFacetName): TitlebarCompositionFacet {
+  const raw = (titlebarProvisionDeclaration as Record<string, unknown>)[name] as
+    | { provided?: unknown; reason?: unknown }
+    | undefined;
+  if (raw?.provided === true) return { provided: true };
+  if (typeof raw?.reason === "string" && raw.reason.trim() !== "") {
+    return { provided: false, reason: raw.reason };
+  }
+  throw new Error(`titlebar-provision.json: ${name} 축의 부재 사유가 없습니다`);
+}
+
+// 축을 손으로 나열하지만 그 목록은 계약이 강제한다 — 하나 빠지면, 하나 더 적으면 컴파일이 막는다.
+export const titlebarComposition: TitlebarCompositionProvision = {
+  buttonPositions: declaredFacet("buttonPositions"),
+  backingPlane: declaredFacet("backingPlane"),
+  paintOwner: declaredFacet("paintOwner"),
+};
+
 export const electronFramework: AppFramework = {
   emitLocal: (event, payload) => {
     for (const cb of localBus.get(event) ?? []) cb(payload);
   },
   dragRegion,
   engineProvision,
+  titlebarComposition,
   name: "electron",
   // 거는 코드는 그때 가져온다 — 이 파일은 창구를 번역하는 잎으로 남는다(contract.install).
   install: () => import("./install").then((m) => m.installElectron()),

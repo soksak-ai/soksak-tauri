@@ -1,0 +1,15 @@
+{
+  "about": "이 프레임워크가 신호등(창 제어 버튼) 합성에 대해 답할 수 있는 것. 사유는 여기 한 자리에 산다 — 메인 프로세스 명령표(native/titlebar.cjs)와 렌더러의 계약 선언(src/framework/electron)이 같은 문장을 읽는다. 각자 문장을 들면 한쪽만 고쳐지고, 그 어긋남은 '선언은 없다는데 표는 다른 말을 한다'로만 나타난다.",
+  "buttonPositions": {
+    "provided": false,
+    "reason": "Electron 의 신호등 API 는 쓰기뿐이다(trafficLightPosition·setWindowButtonPosition·setWindowButtonVisibility). 세 버튼이 실제로 앉은 물리 rect 를 돌려주는 공개 표면이 없어, DOM 예약과 대조할 값을 잴 수 없다. getWindowButtonPosition 은 설정한 오프셋을 되읽을 뿐 버튼의 frame 이 아니다."
+  },
+  "backingPlane": {
+    "provided": false,
+    "reason": "Electron 의 신호등 API 는 위치·가시성뿐이라 버튼 뒤에 뷰를 깔 자리가 없다. setBackgroundColor 는 창 배경(window_set_background)의 대응이며 색이 다르다(bg vs side) — 겸용하면 창 전체가 타이틀바 색이 된다. setTitleBarOverlay 는 win32/linux 전용이고 Window Controls Overlay 창을 요구한다."
+  },
+  "paintOwner": {
+    "provided": false,
+    "reason": "버튼을 앉히는 주체가 프레임워크 내부라 이 프로세스에 draw owner 가 없다. 누가 마지막으로 앉혔는지 셀 자리가 없으니, 정지 구간에서 스스로 다시 앉은 횟수도 셀 수 없다."
+  }
+}

@@ -453,6 +453,13 @@
       "note": "B12의 시작 지연·후기 drift·중앙선·hole 불일치 RED와 완전한 원장 GREEN을 값으로 고정한다."
     },
     {
+      "file": "lib/browser-gate-b12-provision.test.mjs",
+      "class": "A",
+      "role": "test",
+      "surfaces": [],
+      "note": "B12 판정이 프레임워크 이름이 아니라 프레임워크가 낸 신호등 합성 선언을 읽는다는 법을 값만으로 고정한다. 같은 증거를 다른 이름으로 판정해도 실패 목록이 같아야 한다."
+    },
+    {
       "file": "lib/browser-gate-coverage.mjs",
       "role": "lib",
       "class": "A",
