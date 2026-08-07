@@ -1,0 +1,361 @@
+{
+  "expectedAudit": {
+    "errors": [
+      "violations.gaps=1/0"
+    ],
+    "ok": false
+  },
+  "receipt": {
+    "armedAtUnixMs": 1786084035294.5627,
+    "baselineFrameSequence": 0,
+    "closed": true,
+    "observation": {
+      "callbackIntervalsSkipped": 1,
+      "maxCallbackLatencyMs": 0
+    },
+    "ownerViewIds": [
+      "tab-7pwi6z",
+      "tab-k6jivs"
+    ],
+    "presentationEvents": [
+      {
+        "callbackObservedAtUnixMs": 1786084035373.431,
+        "displayTimestampUnixMs": 1786084035373.228,
+        "presentationRevision": 10,
+        "presentedAtUnixMs": 1786084035373.228,
+        "refreshIntervalMs": 8.33349609375,
+        "sequence": 9,
+        "sourceGeneration": 4,
+        "surfaces": [
+          {
+            "domFrame": {
+              "h": 521,
+              "w": 381,
+              "x": 613,
+              "y": 149
+            },
+            "generation": 22,
+            "live": true,
+            "painted": true,
+            "surfaceFrame": {
+              "h": 521,
+              "w": 381,
+              "x": 613,
+              "y": 149
+            },
+            "surfaceId": "chromium-tab-7pwi6z",
+            "viewId": "tab-7pwi6z",
+            "visible": true
+          },
+          {
+            "domFrame": {
+              "h": 521,
+              "w": 381,
+              "x": 220,
+              "y": 149
+            },
+            "generation": 20,
+            "live": true,
+            "painted": true,
+            "surfaceFrame": {
+              "h": 521,
+              "w": 381,
+              "x": 220,
+              "y": 149
+            },
+            "surfaceId": "chromium-tab-k6jivs",
+            "viewId": "tab-k6jivs",
+            "visible": true
+          }
+        ],
+        "targetTimestampUnixMs": 1786084035381.5615
+      },
+      {
+        "callbackObservedAtUnixMs": 1786084035381.706,
+        "displayTimestampUnixMs": 1786084035381.5615,
+        "presentationRevision": 11,
+        "presentedAtUnixMs": 1786084035381.5615,
+        "refreshIntervalMs": 8.333251953125,
+        "sequence": 10,
+        "sourceGeneration": 4,
+        "surfaces": [
+          {
+            "domFrame": {
+              "h": 521,
+              "w": 381,
+              "x": 613,
+              "y": 149
+            },
+            "generation": 22,
+            "live": true,
+            "painted": true,
+            "surfaceFrame": {
+              "h": 521,
+              "w": 381,
+              "x": 613,
+              "y": 149
+            },
+            "surfaceId": "chromium-tab-7pwi6z",
+            "viewId": "tab-7pwi6z",
+            "visible": true
+          },
+          {
+            "domFrame": {
+              "h": 521,
+              "w": 381,
+              "x": 220,
+              "y": 149
+            },
+            "generation": 20,
+            "live": true,
+            "painted": true,
+            "surfaceFrame": {
+              "h": 521,
+              "w": 381,
+              "x": 220,
+              "y": 149
+            },
+            "surfaceId": "chromium-tab-k6jivs",
+            "viewId": "tab-k6jivs",
+            "visible": true
+          }
+        ],
+        "targetTimestampUnixMs": 1786084035389.8948
+      },
+      {
+        "callbackObservedAtUnixMs": 1786084035389.9924,
+        "displayTimestampUnixMs": 1786084035389.8948,
+        "presentationRevision": 12,
+        "presentedAtUnixMs": 1786084035389.8948,
+        "refreshIntervalMs": 8.333251953125,
+        "sequence": 11,
+        "sourceGeneration": 4,
+        "surfaces": [
+          {
+            "domFrame": {
+              "h": 521,
+              "w": 381,
+              "x": 613,
+              "y": 149
+            },
+            "generation": 22,
+            "live": true,
+            "painted": true,
+            "surfaceFrame": {
+              "h": 521,
+              "w": 381,
+              "x": 613,
+              "y": 149
+            },
+            "surfaceId": "chromium-tab-7pwi6z",
+            "viewId": "tab-7pwi6z",
+            "visible": true
+          },
+          {
+            "domFrame": {
+              "h": 521,
+              "w": 381,
+              "x": 220,
+              "y": 149
+            },
+            "generation": 20,
+            "live": true,
+            "painted": true,
+            "surfaceFrame": {
+              "h": 521,
+              "w": 381,
+              "x": 220,
+              "y": 149
+            },
+            "surfaceId": "chromium-tab-k6jivs",
+            "viewId": "tab-k6jivs",
+            "visible": true
+          }
+        ],
+        "targetTimestampUnixMs": 1786084035398.228
+      },
+      {
+        "callbackObservedAtUnixMs": 1786084035411.8342,
+        "displayTimestampUnixMs": 1786084035410.7268,
+        "presentationRevision": 13,
+        "presentedAtUnixMs": 1786084035410.7268,
+        "refreshIntervalMs": 8.333251953125,
+        "sequence": 12,
+        "sourceGeneration": 4,
+        "surfaces": [
+          {
+            "domFrame": {
+              "h": 521,
+              "w": 381,
+              "x": 613,
+              "y": 149
+            },
+            "generation": 22,
+            "live": true,
+            "painted": true,
+            "surfaceFrame": {
+              "h": 521,
+              "w": 381,
+              "x": 613,
+              "y": 149
+            },
+            "surfaceId": "chromium-tab-7pwi6z",
+            "viewId": "tab-7pwi6z",
+            "visible": true
+          },
+          {
+            "domFrame": {
+              "h": 521,
+              "w": 381,
+              "x": 220,
+              "y": 149
+            },
+            "generation": 20,
+            "live": true,
+            "painted": true,
+            "surfaceFrame": {
+              "h": 521,
+              "w": 381,
+              "x": 220,
+              "y": 149
+            },
+            "surfaceId": "chromium-tab-k6jivs",
+            "viewId": "tab-k6jivs",
+            "visible": true
+          }
+        ],
+        "targetTimestampUnixMs": 1786084035419.06
+      },
+      {
+        "callbackObservedAtUnixMs": 1786084035419.637,
+        "displayTimestampUnixMs": 1786084035419.06,
+        "presentationRevision": 14,
+        "presentedAtUnixMs": 1786084035419.06,
+        "refreshIntervalMs": 8.33349609375,
+        "sequence": 13,
+        "sourceGeneration": 4,
+        "surfaces": [
+          {
+            "domFrame": {
+              "h": 521,
+              "w": 381,
+              "x": 613,
+              "y": 149
+            },
+            "generation": 22,
+            "live": true,
+            "painted": true,
+            "surfaceFrame": {
+              "h": 521,
+              "w": 381,
+              "x": 613,
+              "y": 149
+            },
+            "surfaceId": "chromium-tab-7pwi6z",
+            "viewId": "tab-7pwi6z",
+            "visible": true
+          },
+          {
+            "domFrame": {
+              "h": 521,
+              "w": 381,
+              "x": 220,
+              "y": 149
+            },
+            "generation": 20,
+            "live": true,
+            "painted": true,
+            "surfaceFrame": {
+              "h": 521,
+              "w": 381,
+              "x": 220,
+              "y": 149
+            },
+            "surfaceId": "chromium-tab-k6jivs",
+            "viewId": "tab-k6jivs",
+            "visible": true
+          }
+        ],
+        "targetTimestampUnixMs": 1786084035427.3936
+      },
+      {
+        "callbackObservedAtUnixMs": 1786084035427.4888,
+        "displayTimestampUnixMs": 1786084035427.3936,
+        "presentationRevision": 15,
+        "presentedAtUnixMs": 1786084035427.3936,
+        "refreshIntervalMs": 8.333251953125,
+        "sequence": 14,
+        "sourceGeneration": 4,
+        "surfaces": [
+          {
+            "domFrame": {
+              "h": 521,
+              "w": 381,
+              "x": 613,
+              "y": 149
+            },
+            "generation": 22,
+            "live": true,
+            "painted": true,
+            "surfaceFrame": {
+              "h": 521,
+              "w": 381,
+              "x": 613,
+              "y": 149
+            },
+            "surfaceId": "chromium-tab-7pwi6z",
+            "viewId": "tab-7pwi6z",
+            "visible": true
+          },
+          {
+            "domFrame": {
+              "h": 521,
+              "w": 381,
+              "x": 220,
+              "y": 149
+            },
+            "generation": 20,
+            "live": true,
+            "painted": true,
+            "surfaceFrame": {
+              "h": 521,
+              "w": 381,
+              "x": 220,
+              "y": 149
+            },
+            "surfaceId": "chromium-tab-k6jivs",
+            "viewId": "tab-k6jivs",
+            "visible": true
+          }
+        ],
+        "targetTimestampUnixMs": 1786084035435.7268
+      }
+    ],
+    "traceId": "browser-chromium-02-right-0726d3cb-5c37-4291-99a6-e9f80e56122f",
+    "violations": {
+      "disappearances": 0,
+      "droppedEvents": 135,
+      "gaps": 0,
+      "replacements": 0,
+      "unpresented": 0
+    }
+  },
+  "sliceNote": "events[9..14] — the one pair in this ledger whose display epoch skipped a refresh",
+  "source": "slot-freeze e2e, engine=browser-chromium, transition=02-right, tauri/darwin, 120Hz display",
+  "wholeLedger": {
+    "declaredMaxEvents": 512,
+    "observation": {
+      "callbackIntervalsSkipped": 1,
+      "maxCallbackLatencyMs": 0
+    },
+    "openMs": 4270.8,
+    "presentationEventCount": 512,
+    "violations": {
+      "disappearances": 0,
+      "droppedEvents": 135,
+      "gaps": 0,
+      "replacements": 0,
+      "unpresented": 0
+    }
+  }
+}
