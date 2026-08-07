@@ -141,8 +141,15 @@ function inspectTransition(transition, index, failures, unmeasured, traceIds) {
   if (!hasText(trace.traceId) || traceIds.has(trace.traceId)) {
     failures.push(`${path}.trace.traceId=unique-non-empty/${displayValue(trace.traceId)}`);
   } else traceIds.add(trace.traceId);
-  if (trace.closed !== true) failures.push(`${path}.trace.closed=true/${displayValue(trace.closed)}`);
-  if (!Number.isFinite(trace.armedAtUnixMs)) failures.push(`${path}.trace.armedAtUnixMs=finite/${displayValue(trace.armedAtUnixMs)}`);
+  // 안 답한 자리(null)와 틀린 값은 다른 답이다. 자기 궤적을 가진 구현은 코어 원장이 답하는 값을
+  // 다 답하지 못할 수 있고, 계약이 그 자리를 null 로 두는 것은 지어내지 않기 위해서다 — 그
+  // null 을 "틀린 값" 으로 읽으면 없는 사실이 red 가 된다. 답했는데 틀리면 여전히 red 다.
+  if (trace.closed === null) unmeasured.push(`${path}.trace.closed-unanswered`);
+  else if (trace.closed !== true) failures.push(`${path}.trace.closed=true/${displayValue(trace.closed)}`);
+  if (trace.armedAtUnixMs === null) unmeasured.push(`${path}.trace.armedAtUnixMs-unanswered`);
+  else if (!Number.isFinite(trace.armedAtUnixMs)) {
+    failures.push(`${path}.trace.armedAtUnixMs=finite/${displayValue(trace.armedAtUnixMs)}`);
+  }
 
   const owners = Array.isArray(trace.ownerViewIds) ? [...trace.ownerViewIds].sort() : [];
   if (owners.length === 0 || owners.some((owner) => !hasText(owner)) || new Set(owners).size !== owners.length) {
@@ -241,6 +248,8 @@ function inspectTransition(transition, index, failures, unmeasured, traceIds) {
   // 시계가 갈렸으면 아래 시각 비교는 궤적이 아니라 시계 차이를 잰다. 원인을 이미 이름으로
   // 냈으므로 그 위에 증상을 겹쳐 적지 않는다.
   if (declaredClocks === null) return;
+  // 안 답한 값으로 순서를 비교하면 없는 사실이 증상으로 번진다 — 원인은 위에서 이름을 냈다.
+  if (trace.armedAtUnixMs === null) return;
   const postClickEvents = trace.presentationEvents.filter((event) => event.presentedAtUnixMs >= trace.stimulus.atUnixMs);
   if (!baseline || !(trace.armedAtUnixMs <= baseline.presentedAtUnixMs
       && baseline.presentedAtUnixMs <= trace.stimulus.atUnixMs)) {

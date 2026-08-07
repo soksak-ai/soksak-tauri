@@ -295,3 +295,38 @@ describe("B05 시계 미선언은 못 잼이다", () => {
     expect(verdict.evidence.some((row) => row.includes("clocks=one"))).toBe(true);
   });
 });
+
+// 규칙 — 원장이 안 답한 자리와 원장이 틀린 자리는 다른 답이다.
+//
+// 자기 궤적을 가진 구현은 코어 원장이 답하는 값을 다 답하지 못할 수 있다(offscreen 사이드카는
+// armedAtUnixMs·closed 를 안 낸다). 계약이 그 자리를 null 로 두는 것은 지어내지 않기 위해서다 —
+// 그 null 을 "틀린 값" 으로 읽으면 없는 사실이 red 가 된다.
+//
+// 실측 2026-08-08: `armedAtUnixMs=finite/null`, `closed=true/null` 로 offscreen B05 가 red 였다.
+describe("B05 원장이 안 답한 자리", () => {
+  it("안 답한 armedAtUnixMs 는 못 잼이다", () => {
+    const value = evidence();
+    value.transitions[0].trace.armedAtUnixMs = null;
+    const verdict = judgeB05MachineEvidence(value);
+    expect(verdict.status).toBe("blocked");
+    expect(verdict.reason).toContain("armedAtUnixMs-unanswered");
+  });
+
+  it("안 답한 closed 는 못 잼이다", () => {
+    const value = evidence();
+    value.transitions[0].trace.closed = null;
+    const verdict = judgeB05MachineEvidence(value);
+    expect(verdict.status).toBe("blocked");
+    expect(verdict.reason).toContain("closed-unanswered");
+  });
+
+  // 답했는데 틀린 값은 여전히 red 다 — 안 답함으로 도피하지 않는다.
+  it("답했는데 틀린 값은 red 다", () => {
+    const value = evidence();
+    value.transitions[0].trace.closed = false;
+    expect(judgeB05MachineEvidence(value).status).toBe("red");
+    const other = evidence();
+    other.transitions[0].trace.armedAtUnixMs = "열림";
+    expect(judgeB05MachineEvidence(other).status).toBe("red");
+  });
+});
