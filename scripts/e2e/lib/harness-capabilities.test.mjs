@@ -327,3 +327,46 @@ describe("readProvision", () => {
     ).rejects.toThrow(/nativeChildWebview/);
   });
 });
+
+// 규칙 — 무장을 못 얻은 칸은 red 가 아니라 blocked 다.
+//
+// 표시 궤적 무장이 첫 표시를 못 받으면 그 전이는 못 잰 것이다. 그 사실을 증거로 red 를 적으면
+// 관측 환경이 판정을 가르고, 아무 말 없이 green 을 적으면 재지 않은 칸이 통과로 잡힌다.
+// 실측 2026-08-07: browser-chromium 이 02-right 무장 실패 하나로 12칸을 통째로 잃었다.
+describe("무장 실패는 그 칸에 이름으로 실린다", () => {
+  const store = () => {
+    const rows = [];
+    return {
+      rows,
+      recordMachineStatus(update) { rows.push(update); return update; },
+      recordMachineEvidence(update) { rows.push(update); return update; },
+    };
+  };
+
+  it("무장을 놓친 실행은 그 칸을 blocked 로 답한다", () => {
+    const target = store();
+    recordGateOrCapabilityAbsence(target, {
+      framework: "tauri",
+      engine: "browser",
+      gate: "B04",
+      capability: { status: "available" },
+      unmeasured: ['presentation-arm: 02-right: INTERNAL/"baseline 없음"'],
+      evidence: { engine: "browser" },
+    });
+    expect(target.rows[0].status).toBe("blocked");
+    expect(target.rows[0].reason).toContain("02-right");
+  });
+
+  it("무장을 다 얻은 실행은 지금 계약 그대로다", () => {
+    const target = store();
+    recordGateOrCapabilityAbsence(target, {
+      framework: "tauri",
+      engine: "browser",
+      gate: "B04",
+      capability: { status: "available" },
+      unmeasured: [],
+      evidence: { engine: "browser" },
+    });
+    expect(target.rows[0].status).toBeUndefined();
+  });
+});

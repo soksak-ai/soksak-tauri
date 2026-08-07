@@ -237,10 +237,23 @@ export async function readHarnessCapabilities(rpc, windowLabel, options = {}) {
  */
 export function recordGateOrCapabilityAbsence(
   store,
-  { framework, engine, gate, evidence, capability },
+  { framework, engine, gate, evidence, capability, unmeasured = [] },
 ) {
   const status = capability?.status;
   if (status === "unreadable") throw new Error(capability.reason);
+  // 능력은 있는데 이 실행이 그 축을 못 잰 자리들 — 무장을 못 얻은 전이가 그렇다. 없는 증거로
+  // red 를 적지도, 아무 말 없이 통과시키지도 않는다.
+  if (Array.isArray(unmeasured) && unmeasured.length > 0) {
+    const reason = unmeasured.join(" · ");
+    return store.recordMachineStatus({
+      framework,
+      engine,
+      gate,
+      status: "blocked",
+      evidence: [...unmeasured],
+      reason,
+    });
+  }
   if (status === "absent") {
     return store.recordMachineStatus({
       framework,

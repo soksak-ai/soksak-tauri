@@ -423,7 +423,11 @@ describe("slot-freeze instrumentation lifecycle", () => {
   it("표시 궤적을 못 재면 그 사실이 두 셀의 판정으로 남는다", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
     expect(source).toContain("flowPresentationEvidence: {");
-    expect(source).toContain("if (!presentationTraceMeasurable) {");
+    // 못 잼의 사유는 둘이다 — 능력이 없거나(선언), 이 전이의 무장을 못 얻었거나(실측).
+    // 둘 다 같은 길로 가야 없는 증거로 red 를 적지 않는다.
+    expect(source).toContain("if (!presentationTraceMeasurable || !presentationOpen) {");
+    expect(source).toContain("presentationArmLedger.recordFailure(name, armAnswer)");
+    expect(source).toContain("unmeasured: presentationArmLedger.unmeasured()");
     expect(source).toContain("break flowPresentationEvidence;");
     for (const gate of ["B04", "B05"]) {
       const receipts = machineGateRecordCalls(source, gate);

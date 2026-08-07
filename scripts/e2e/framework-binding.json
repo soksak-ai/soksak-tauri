@@ -1013,6 +1013,20 @@
       "note": "PNG 코덱 — 픽셀 오라클의 단일 진실. 오라클이 서는 곳에서만 쓰인다."
     },
     {
+      "file": "lib/presentation-arm-ledger.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "표시 궤적 무장 실패를 기록하고 실행을 잇는다. 한 전이의 못 잼이 나머지 칸을 데려가지 않는다."
+    },
+    {
+      "file": "lib/presentation-arm-ledger.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "무장 실패가 이름을 달고 못 잼으로 실리는 규칙을 고정한다."
+    },
+    {
       "file": "lib/presentation-occlusion.mjs",
       "role": "lib",
       "class": "A",

@@ -128,6 +128,7 @@ import {
 } from "./lib/browser-matrix.mjs";
 import { b04DomLedgerProducerErrors } from "./lib/browser-gate-b04-slot-timeline.mjs";
 import { BROWSER_PLUGIN_CONTRACT, resolveContractPlugins } from "./lib/browser-contract-plugins.mjs";
+import { createPresentationArmLedger } from "./lib/presentation-arm-ledger.mjs";
 
 const FIXTURE_ROOT = path.join(os.homedir(), ".soksak-e2e", "slot-freeze");
 const EVIDENCE_STORE_ROOT = path.join(os.homedir(), ".soksak-e2e", "evidence", "slot-freeze");
@@ -1030,6 +1031,8 @@ async function readViewStatuses(rpc, win) {
 
 async function runEngine(client, page, engine, recordingLedger, gateReportStore) {
   const implementation = browserImplementations[engine];
+  // 무장 실패는 이 실행의 사실로 남는다 — 던져서 나머지 칸을 데려가지 않는다.
+  const presentationArmLedger = createPresentationArmLedger();
   const plugin = implementation.plugin;
   const engineEvidence = path.join(EVIDENCE_ROOT, engine);
   const rpc = (method, params = {}, window, options) => client.rpc(method, params, window, options);
@@ -1374,7 +1377,10 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
                 + ` (${occlusionAbsence})`,
               );
             }
-            armedPresentation = must(await rpc(
+            // 무장은 첫 표시를 기다린다(FIRST_DISPLAY_TIMEOUT). 그 안에 안 오면 이 전이는 못
+            // 잰 것이지 제품이 틀린 것이 아니다 — 여기서 던지면 같은 실행이 재던 나머지 칸까지
+            // 함께 사라진다(실측: 한 전이의 무장 실패로 12칸을 통째로 잃었다). 기록하고 잇는다.
+            const armAnswer = await rpc(
               implementation.presentationTrace.armCommand,
               implementation.presentationTrace.armParams({
                 traceId: causeTraceId,
@@ -1382,8 +1388,14 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
               }),
               win,
               { timeoutMs: 10_000 },
-            ), `B04 presentation trace arm ${name}`);
-            presentationOpen = true;
+            );
+            if (armAnswer?.ok !== true) {
+              presentationArmLedger.recordFailure(name, armAnswer);
+              console.warn(`${engine}/${name}: 표시 궤적 무장 실패 — 이 전이는 못 잼으로 남는다`);
+            } else {
+              armedPresentation = armAnswer.data ?? armAnswer;
+              presentationOpen = true;
+            }
           }
           const journalBefore = must(await rpc("layout.transactions", {}, win), `layout journal baseline ${name}`);
           const priorEntries = journalBefore.entries ?? [];
@@ -1423,7 +1435,9 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
           // 표시 궤적을 못 재는 창에서는 이 구간만 건너뛴다 — 클릭·레이아웃 거래·조명·IME 는
           // 그대로 잰다. 못 잰 B04·B05 두 칸은 아래에서 능력의 이름을 달고 닫힌다.
           flowPresentationEvidence: {
-            if (!presentationTraceMeasurable) {
+            // 무장을 못 얻은 전이도 같은 길로 간다 — 표시 궤적 없이 이 전이의 표시 증거를
+            // 지을 수 없다. 그 사실은 원장이 이름으로 들고 있고, 판정은 마지막에 한 번 한다.
+            if (!presentationTraceMeasurable || !presentationOpen) {
               const unusedDomTrace = must(await rpc(
                 "ui.trace.multi.close",
                 { traceId: domTraceSession.traceId },
@@ -1685,6 +1699,8 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
         engine,
         gate: "B04",
         capability: presentationTrace.capability,
+        // 무장을 못 얻은 전이는 이 칸의 못 잼이다 — 없는 증거로 red 를 적지 않는다.
+        unmeasured: presentationArmLedger.unmeasured(),
         evidence: {
           engine,
           coordinateSpace: { logical: "css-px", scaleFactor: Number(originalWindow.scale) },
@@ -1698,6 +1714,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
         engine,
         gate: "B05",
         capability: presentationTrace.capability,
+        unmeasured: presentationArmLedger.unmeasured(),
         evidence: mapB05LiveEvidence({ engine, transitions: b05Transitions }),
       });
       const b06Receipt = gateReportStore.recordMachineEvidence({
