@@ -532,6 +532,19 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(source).toContain('import { readPinStage } from "./lib/pin-geometry-probe.mjs"');
   });
 
+  it("asks every surface-evidence caller for the declared provision, not a framework name", () => {
+    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    // 판정면이 갈리는 축은 이름이 아니라 선언된 능력이다. 한 호출자가 옛 이름을 들고 남으면
+    // 그 자리에서만 provision 이 undefined 가 되고, 실행은 그 엔진의 남은 칸을 통째로 잃는다.
+    const calls = source.split("readBrowserSurfaceEvidence(rpc, win, {").slice(1);
+    expect(calls.length).toBeGreaterThanOrEqual(4);
+    for (const [index, call] of calls.entries()) {
+      const args = call.slice(0, call.indexOf("});"));
+      expect(args, `call ${index}`).toContain("nativeChildWebview");
+      expect(args, `call ${index}`).not.toContain("frameworkName");
+    }
+  });
+
   it("B07/B08 live evidence is judged into one canonical 3x12 report without ad-hoc green", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
     const reportStore = readFileSync(new URL("./lib/browser-evidence-store.mjs", import.meta.url), "utf8");

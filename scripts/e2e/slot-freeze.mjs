@@ -1615,12 +1615,11 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
         stage,
         async (tree) => {
           const [surface] = await readBrowserSurfaceEvidence(rpc, win, {
-            frameworkName,
+            nativeChildWebview,
             implementation,
             plugin,
             tabIds: [tabIds[side]],
             labels: [labels[side]],
-            uiNodes: tree.nodes ?? [],
           });
           return surface?.rect ?? null;
         },
