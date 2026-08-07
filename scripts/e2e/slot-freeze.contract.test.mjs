@@ -923,3 +923,26 @@ describe("IME 관측 자리", () => {
     expect(source).not.toMatch(/ui\.focus\.state",\s*\{\s*[A-Za-z]/);
   });
 });
+
+// 규칙 — 사람용 녹화의 규모는 판정을 바꾸지 않는다.
+//
+// 녹화는 사람이 보는 증거다(recording visual review — 제품 machine 판정과 분리). 판정은 수치
+// 영수증이 소유하므로 프레임 수를 줄여도 어느 칸의 답도 달라지지 않는다. 그런데 그 규모가
+// 소스에 박혀 있어, 실행이 긴 환경에서 판정을 끝까지 못 받는 자리가 생겼다 —
+// 실측 2026-08-08: 세 실행이 04-right 녹화 중 같은 지점에서 외부 종료됐다.
+//
+// 규모는 선언으로 고르되, 기본값은 지금 값 그대로다. 기준을 낮추는 것이 아니라 사람용 증거의
+// 분량을 부르는 쪽이 정하는 것이다.
+describe("녹화 규모 선언", () => {
+  const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+
+  it("프레임 수를 환경에서 고를 수 있고 기본은 지금 값이다", () => {
+    expect(source).toContain("SLOT_FREEZE_RECORD_FRAMES");
+    expect(source).toMatch(/FRAMES_PER_CLICK\s*=[\s\S]{0,120}48/);
+  });
+
+  it("판정 축은 그 값을 읽지 않는다 — 녹화는 판정 근거가 아니다", () => {
+    const judgeSection = source.slice(source.indexOf("recordMachineEvidence"));
+    expect(judgeSection).not.toContain("SLOT_FREEZE_RECORD_FRAMES");
+  });
+});

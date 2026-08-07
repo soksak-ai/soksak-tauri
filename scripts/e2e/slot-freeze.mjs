@@ -167,8 +167,16 @@ const FIXTURE_WINDOW_SIZE = Object.freeze({ w: 2000, h: 1400 });
 const DISPLAY_TRACE_PRODUCERS = Object.freeze({
   interval: process.env.SLOT_FREEZE_DOM_RECORDER !== "off",
 });
-const FRAMES_PER_CLICK = 48;
-const PIN_FRAMES_PER_CLICK = 24;
+// 사람용 녹화의 분량. 판정은 수치 영수증이 소유하므로 이 값이 어느 칸의 답도 바꾸지 않는다 —
+// 실행이 긴 환경에서 판정을 끝까지 받으려면 부르는 쪽이 이 분량을 정할 수 있어야 한다.
+// 기본은 지금 값 그대로다(실측 2026-08-08: 세 실행이 04-right 녹화 중 외부 종료됐다).
+const recordFramesOf = (fallback) => {
+  const declared = Number(process.env.SLOT_FREEZE_RECORD_FRAMES);
+  if (!Number.isInteger(declared) || declared < 1) return fallback;
+  return Math.min(declared, fallback);
+};
+const FRAMES_PER_CLICK = recordFramesOf(48);
+const PIN_FRAMES_PER_CLICK = recordFramesOf(24);
 const FAST_RESIZE_FRAMES = 64;
 const EVIDENCE_PNG_MAX_BYTES = 128 * 1024 ** 2;
 const IME_TEXTS = ["한글 입력 왼쪽", "한글 입력 오른쪽"];
