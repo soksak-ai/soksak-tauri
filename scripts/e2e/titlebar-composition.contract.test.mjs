@@ -100,20 +100,32 @@ describe("titlebar composition live E2E contract", () => {
       new URL("./titlebar-composition-summary.mjs", import.meta.url),
       "utf8",
     );
+    // 실행기는 저장소를 열고 닫는다. 어느 칸에 무엇이 적히는가는 라이브러리가 소유하므로,
+    // 그 자리는 앱 없이도 단위로 다시 부를 수 있다(lib/titlebar-gate-contribution.test.mjs).
+    const injection = readFileSync(
+      new URL("./lib/titlebar-cold-start-run.mjs", import.meta.url),
+      "utf8",
+    );
     for (const marker of [
       "createBrowserGateReportStore",
       "TITLEBAR_OWNED_GATES",
-      "b12ColdStartCells",
+      "recordB12ColdStartCells",
       "titlebarGateStoreRoot",
       "beginEvidenceRun",
       "finishEvidenceRun",
-      "recordMachineEvidence",
-      "recordMachineStatus",
       ".persist()",
     ]) expect(summary).toContain(marker);
+    for (const marker of [
+      "b12ColdStartCells",
+      "recordMachineEvidence",
+      "recordMachineStatus",
+      'gate: "B12"',
+    ]) expect(injection).toContain(marker);
     // 정본 보고서는 이 실행기가 소유한 칸만 든다 — 나머지 11칸은 재지 않았다는 사실 그대로 남는다.
     expect(summary).toContain('gates: TITLEBAR_OWNED_GATES');
     expect(summary).not.toMatch(/blockPending/);
+    // 주입이 두 자리에 살면 한쪽만 고쳐진다 — 실행기는 칸에 직접 적지 않는다.
+    expect(summary).not.toMatch(/recordMachine(Evidence|Status)/);
   });
 
   it("anchors a green B12 cell to a real sample from the last cold start", () => {

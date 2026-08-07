@@ -595,6 +595,13 @@
       "note": "B12의 시작 지연·후기 drift·중앙선·hole 불일치 RED와 완전한 원장 GREEN을 값으로 고정한다."
     },
     {
+      "file": "lib/browser-gate-b12-fixture.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "B12 봉투의 정본 표본을 한 자리에 둔다. 판정 짝 테스트와 기여·병합 테스트가 같은 수치를 들어야 한쪽만 고쳐지는 일이 없다. 값만 만들고 명령도 프로세스도 부르지 않는다."
+    },
+    {
       "file": "lib/browser-gate-b12-provision.test.mjs",
       "class": "A",
       "role": "test",
@@ -1020,6 +1027,13 @@
       "class": "A",
       "surfaces": [],
       "note": "냉시작 실행기의 표본 순서와 중간 회귀 판정을 값만으로 고정한다."
+    },
+    {
+      "file": "lib/titlebar-gate-contribution.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "냉시작 3회 판정이 정본 36칸의 B12 칸까지 실려 가고, 살아 있는 앱이 낸 11칸과 한 판으로 병합되는지 값으로 고정한다. 앱도 파일도 쓰지 않는다."
     },
     {
       "file": "lib/visual-recording-review.mjs",
