@@ -1097,6 +1097,20 @@
       "note": "저장 preflight·callback 이후 실패에서도 제품 action이 한 번만 실행되고 artifact identity가 상대경로로 남는지 검증한다."
     },
     {
+      "file": "lib/single-instance.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "소켓을 쥐지 않은 같은 실행물의 프로세스를 지목한다. 소켓 소유는 살아 있음의 증거이지 유일함의 증거가 아니다."
+    },
+    {
+      "file": "lib/single-instance.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "한 홈에 한 인스턴스 규칙을 고정한다 — 소켓 주인을 못 읽었으면 아무도 유령으로 지목하지 않는다."
+    },
+    {
       "file": "lib/surface-invariant.mjs",
       "role": "lib",
       "class": "A",

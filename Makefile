@@ -140,6 +140,10 @@ run-dev: ## 개발 정체성 soksak-tauri-dev.app 실행(새 인스턴스)
 rebuild-dev: build-dev ## 현재 소스를 dev 번들로 다시 만든 뒤 단일 인스턴스로 재실행
 	$(MAKE) --no-print-directory restart-dev
 
+# 한 홈에 한 인스턴스. 소켓 소유는 살아 있음의 증거이지 유일함의 증거가 아니다 — 소켓을 놓친
+# 인스턴스는 이 재시작을 빠져나가 계속 산다. 같은 번들의 다른 실행물(soksak-cored)은 유령이 아니라
+# 짝이므로 실행물 이름으로 가른다. 실측 2026-08-08: 이틀째 떠 있던 인스턴스 때문에
+# 하니스가 한 인스턴스의 창을 잡고 다른 인스턴스에 물어 WINDOW_NOT_FOUND 로 실행이 죽었다.
 restart-dev: ## 이미 빌드·검증된 동일 dev 번들을 빌드 없이 반복 재실행
 	@test -x "$(DEV_EXECUTABLE)" -a -x "$(DEV_CLI)" || { echo "먼저 'make build-dev' 를 실행하세요."; exit 1; }
 	@CLI="$(DEV_CLI)"; SOCKET="$(DEV_HOST_SOCKET)"; \
@@ -152,6 +156,13 @@ restart-dev: ## 이미 빌드·검증된 동일 dev 번들을 빌드 없이 반�
 	if [ -n "$$old_pid" ]; then \
 	  for _ in $$(seq 1 100); do kill -0 "$$old_pid" 2>/dev/null || break; sleep 0.1; done; \
 	  kill -0 "$$old_pid" 2>/dev/null && { echo "종료 실패: dev IPC 소유 PID $$old_pid 가 남았다"; exit 1; }; \
+	fi; \
+	strays="$$(pgrep -f "$(DEV_EXECUTABLE)" 2>/dev/null || true)"; \
+	if [ -n "$$strays" ]; then \
+	  echo "유령 인스턴스 회수: $$strays (소켓을 안 쥔 같은 실행물)"; \
+	  for stray in $$strays; do kill "$$stray" 2>/dev/null || true; done; \
+	  for _ in $$(seq 1 50); do pgrep -f "$(DEV_EXECUTABLE)" >/dev/null 2>&1 || break; sleep 0.1; done; \
+	  pgrep -f "$(DEV_EXECUTABLE)" >/dev/null 2>&1 && { echo "유령 회수 실패: 같은 앱 프로세스가 남았다"; exit 1; }; \
 	fi; \
 	$(MAKE) --no-print-directory run-dev >/dev/null; \
 	new_pid=""; \
