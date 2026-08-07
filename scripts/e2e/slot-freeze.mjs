@@ -20,6 +20,10 @@ import {
 } from "./lib/fixtureWindow.mjs";
 import { closeHtmlFixture, startHtmlFixture } from "./lib/http-fixture.mjs";
 import { tauriSurfaceResizePolicyVerdict } from "./lib/tauri-surface-resize-policy.mjs";
+import {
+  createSurfaceSettlementLedger,
+  surfaceSettlementVerdict,
+} from "./lib/surface-settlement.mjs";
 import { hostileResizeObservationGaps } from "./lib/hostile-resize-composition.mjs";
 import {
   observeFrameSequence as inspectFrameSequence,
@@ -353,16 +357,27 @@ async function assertWindowedComposition(rpc, win, plugin, tabIds, labels, windo
   if (!verdict.ok) throw new Error(`windowed composition 불일치 — ${verdict.errors.join(", ")}`);
 }
 
+/** 이번 엔진 실행이 잰 표시 정착. runEngine 이 시작에서 비우고 끝에서 판정한다 — 위반은 실행을
+ * 세우지 않지만 그 엔진을 RED 로 끝낸다. */
+const SURFACE_SETTLEMENT = createSurfaceSettlementLedger();
+
 async function assertEngineSurfaceLedger(rpc, win, implementation, tabIds, stage) {
   if (implementation.surface === "framework-native") return;
   if (implementation.surface === "engine-offscreen") {
     for (const viewId of tabIds) {
-      must(await rpc(
+      // 답한 실패는 계약 사실이다. 여기서 던지면 그 이름이 보고서에서 사라지고 그 엔진의 남은
+      // 칸이 통째로 blocked 가 된다(실측 2026-08-07 · buildId=2ebb2eb4: 정착 실패 하나가
+      // browser-chromium-offscreen 11칸을 삼켰다). 던지는 것은 응답 부재뿐이다.
+      const reply = await rpc(
         `plugin.${implementation.plugin}.surface.wait-settled`,
         { viewId, timeoutMs: 8_000 },
         win,
         { timeoutMs: 20_000 },
-      ), `${stage} settle ${viewId}`);
+      ).catch(() => null);
+      const settlement = surfaceSettlementVerdict({ stage, viewId, reply });
+      if (!settlement.answered) throw new Error(settlement.reason);
+      SURFACE_SETTLEMENT.record(settlement);
+      if (settlement.violation) console.error(`✗ ${settlement.violation}`);
     }
   }
   const stats = must(await rpc(`plugin.${implementation.plugin}.stats`, {}, win), `${stage} stats`);
@@ -1004,6 +1019,8 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
   // 판정면이 갈리는 축은 이름이 아니라 프레임워크가 선언한 능력이다.
   let nativeChildWebview = null;
   let runFailure = null;
+  // 앞 엔진이 남긴 정착 위반을 이 엔진의 사실로 읽지 않는다.
+  SURFACE_SETTLEMENT.reset();
   try {
     if (implementation.surface !== "framework-native") {
       const sentinelRoot = path.join(FIXTURE_ROOT, "owner-sentinel", engine);
@@ -2115,6 +2132,8 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
     await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, "final-ledger");
     const crossClicks = SCENARIOS.has("flow") ? CYCLES * 2 : 0;
     console.log(`✓ ${engine} evidence collected — 시나리오 ${[...SCENARIOS].join(",")} · 한글 IME 2개 · 교차 클릭 ${crossClicks}회 · ${resizeSummary} · 연속 프레임 ${frameCount}장`);
+    // 모든 칸을 잰 뒤에 판정한다. 기준은 그대로다 — 정착하지 않은 표면은 이 엔진을 RED 로 끝낸다.
+    SURFACE_SETTLEMENT.assertSettled(engine);
     return frameCount;
   } catch (error) {
     runFailure = error;
