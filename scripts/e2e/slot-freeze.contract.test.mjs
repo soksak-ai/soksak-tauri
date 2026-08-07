@@ -586,6 +586,22 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(source).toContain('import { readPinStage } from "./lib/pin-geometry-probe.mjs"');
   });
 
+  it("owns its fixture window size before measuring anything that depends on it", () => {
+    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    // 앱 기본 크기나 앞 엔진이 남긴 크기를 물려받으면 hostile resize 자극이 실행마다 생겼다
+    // 사라진다 — 같은 앱이 실행마다 다른 칸을 잃는다. 크기는 픽스처가 소유한다.
+    expect(source).toContain("FIXTURE_WINDOW_SIZE");
+    expect(source).toContain('rpc("window.resize", FIXTURE_WINDOW_SIZE');
+    // 기준 크기는 자극의 하한보다 커야 한다 — 그 하한은 hostileWindowResizeSizes 가 소유한다.
+    const declared = source.match(/FIXTURE_WINDOW_SIZE = Object\.freeze\(\{ w: (\d+), h: (\d+) \}\)/);
+    expect(declared).not.toBeNull();
+    expect(Number(declared[1])).toBeGreaterThan(1400);
+    expect(Number(declared[2])).toBeGreaterThan(940);
+    // 크기를 세운 뒤에 원본을 읽어야 그 원본이 자극의 기준이 된다.
+    expect(source.indexOf('rpc("window.resize", FIXTURE_WINDOW_SIZE'))
+      .toBeLessThan(source.indexOf('const originalWindow = must(await rpc("window.info"'));
+  });
+
   it("asks every surface-evidence caller for the declared provision, not a framework name", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
     // 판정면이 갈리는 축은 이름이 아니라 선언된 능력이다. 한 호출자가 옛 이름을 들고 남으면

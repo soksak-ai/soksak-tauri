@@ -135,6 +135,9 @@ const RECORDING_PLAN = planBrowserRecordingEvidence({
   scenarios: [...SCENARIOS],
   cycles: CYCLES,
 });
+// hostile resize 자극은 원본이 하한(1280·900·1400·1360·940)보다 충분히 커야 만들어진다.
+// 그 사실은 hostileWindowResizeSizes 가 소유하고, 이 크기는 그 하한에 여유를 둔 픽스처 계약이다.
+const FIXTURE_WINDOW_SIZE = Object.freeze({ w: 2000, h: 1400 });
 const FRAMES_PER_CLICK = 48;
 const PIN_FRAMES_PER_CLICK = 24;
 const FAST_RESIZE_FRAMES = 64;
@@ -1022,6 +1025,12 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
     if (!calibration.visible || calibration.rect?.w !== 40 || calibration.rect?.h !== 40) {
       throw new Error(`DOM compositor calibration 계약 불일치: ${JSON.stringify(calibration)}`);
     }
+    // 픽스처는 자기 창의 크기도 소유한다. 앱 기본 크기나 앞 엔진이 남긴 크기를 물려받으면
+    // hostile resize 자극이 어느 실행에서는 만들어지고 어느 실행에서는 못 만들어져, 같은 앱이
+    // 실행마다 다른 칸을 잃는다. 기준 크기를 먼저 세우고 그 위에서 잰다.
+    must(await rpc("window.resize", FIXTURE_WINDOW_SIZE, win), "fixture window size");
+    must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }),
+      "fixture window size settled");
     const originalWindow = must(await rpc("window.info", {}, win), "window.info");
     originalSettings = must(await rpc("settings.get", {}, win), "settings.get");
     originalRightMode = must(await rpc("sidebar.right.mode", {}, win), "sidebar.right.mode").mode;
