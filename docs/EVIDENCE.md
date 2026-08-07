@@ -21,6 +21,34 @@ E2E 실행 증거는 선언된 절대 root 아래 세 역할로 저장한다.
 `scripts/e2e/lib/evidence-store.test.mjs`가 연속 RED, GREEN 보존, 최신 RED 별칭, 경계,
 quota와 동시 거래를 검증한다.
 
+## 증거 배선 장부
+
+증거 봉투를 만드는 mapper 는 checkpoint 필드를 손으로 나열하지 않는다. 손으로 나열한 목록은
+생산자 이름이 바뀌어도 조용히 어긋난다 — 소비 필드가 없으면 `=null` 로만 새고, 생산 필드를
+아무도 읽지 않으면 아무 신호도 내지 않는다.
+
+`scripts/e2e/lib/browser-machine-judge-support.mjs`의 `mapWithWiring(source, label, build)`이
+그 대조를 소유한다. mapper 는 `checkpoint.take(key)`로만 읽고, 봉인 시점에 checkpoint 자신의
+키 집합과 읽은 키 집합을 맞대 예약 키 `evidenceWiring`에 장부를 싣는다.
+
+```
+evidenceWiring = { source, unconsumed, unproduced, error }
+```
+
+`requireExactKeys`와 `requireEvidenceEnvelope`가 이 예약 키를 각 게이트의 닫힌 스키마 대조에서
+건너뛰고, 대신 장부를 실패 이름으로 펼친다. 어느 게이트도 자기 키 목록에 `evidenceWiring`을
+적지 않는다.
+
+- `wiring.<source>.<name>=produced-not-consumed` — 생산자가 넣었고 아무도 읽지 않았다.
+- `wiring.<source>.<name>=consumed-not-produced` — 소비자가 읽었고 아무도 넣지 않았다.
+- `wiring.<source>=mapper-threw/"<error>"` — mapper 가 던졌다. 하니스는 죽지 않고 판정이 RED 다.
+
+장부가 없는 봉투는 배선을 재지 않은 것이며 아무 실패도 만들지 않는다. 비어 있는 장부와 없는
+장부는 서로 다른 사실이다.
+
+`scripts/e2e/lib/browser-machine-judge-support.test.mjs`가 두 방향, throw, 손상된 장부,
+JSON 왕복을 검증한다. B03 적용은 `scripts/e2e/lib/browser-gate-b03-evidence.test.mjs`가 소유한다.
+
 ## 브라우저 시각 검토
 
 브라우저 canonical report의 `visualReview`는 기본적으로 `pending`이다. 녹화·snapshot 생성이나

@@ -172,6 +172,8 @@ describe("mapWithWiring", () => {
     requireExactKeys(mapped, ["engine"], "evidence", failures);
     expect(failures).toEqual([
       "evidence.engine=missing",
+      // 던지느라 읽지 못한 필드도 사실 그대로 남는다.
+      "wiring.B03.live.engine=produced-not-consumed",
       'wiring.B03.live=mapper-threw/"TypeError: boom"',
     ]);
   });
