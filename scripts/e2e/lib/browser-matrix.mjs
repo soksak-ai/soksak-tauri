@@ -1328,12 +1328,17 @@ export function fixtureHtml() {
       };
       document.documentElement.dataset.scrollY = "0";
       document.documentElement.dataset.scrollSeq = "0";
+      document.documentElement.dataset.wheelSeq = "0";
       addEventListener("scroll", recordScroll, { passive: true });
       // 좌표만 보면 프로그램으로 옮긴 스크롤과 휠이 옮긴 스크롤이 같은 값을 만든다.
       // 실제 wheel 사건이 페이지에 닿았다는 사실은 페이지만 답할 수 있다.
+      // 센 사실은 DOM 에도 적는다. 두 엔진 모두 스크롤을 합성 쪽에서 먼저 옮기고 passive wheel
+      // 발화는 그 뒤에 오므로, scroll 만 기다리고 원장을 읽으면 아직 세지 않은 0 을 읽는다 —
+      // 기다릴 수 없는 사실은 잴 수 없다.
       addEventListener("wheel", (event) => {
         window.__browserFixture.wheelEvents += 1;
         window.__browserFixture.wheelDeltaY += event.deltaY;
+        document.documentElement.dataset.wheelSeq = String(window.__browserFixture.wheelEvents);
       }, { passive: true });
       ime.addEventListener("beforeinput", () => { window.__browserFixture.beforeInput += 1; render(); });
       ime.addEventListener("input", () => { window.__browserFixture.inputEvents += 1; window.__browserFixture.values.push(ime.value); typedMarker.style.background=${JSON.stringify(fixtureInputMarkers)}[slot]; render(); });

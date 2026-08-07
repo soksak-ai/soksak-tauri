@@ -502,6 +502,20 @@
       "note": "매퍼가 하니스 응답 모양을 그대로 받고 없는 축을 0으로 채우지 않는다는 법을 값만으로 고정한다."
     },
     {
+      "file": "lib/browser-gate-b11-scroll.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "B11 휠 반쪽의 프로브·판정 축 대응·대기 선택자를 한 자리에 둔다. 휠이 페이지에 닿은 사실은 스크롤이 옮겨진 사실과 다른 사건이라 따로 기다려야 읽을 수 있다."
+    },
+    {
+      "file": "lib/browser-gate-b11-scroll.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "픽스처 문서를 실제로 실행해 휠 사건을 쏘고, 세는 자리와 기다리는 자리가 같은 사실을 가리키는지 고정한다."
+    },
+    {
       "file": "lib/browser-gate-b11.mjs",
       "role": "lib",
       "class": "A",

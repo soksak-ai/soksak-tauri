@@ -86,6 +86,12 @@ import { collectB06Checkpoint } from "./lib/browser-gate-b06-collect.mjs";
 import { mapB10LiveEvidence } from "./lib/browser-gate-b10-evidence.mjs";
 import { measureCapturedImage } from "./lib/browser-gate-b11-capture.mjs";
 import { mapB11TabEvidence } from "./lib/browser-gate-b11-evidence.mjs";
+import {
+  scrollMovedSelector,
+  wheelLedgerProbeJs,
+  wheelLedgerStage,
+  wheelReachedSelector,
+} from "./lib/browser-gate-b11-scroll.mjs";
 import { mapImeObservation } from "./lib/browser-live-evidence.mjs";
 import {
   collectB01LiveEvidence,
@@ -812,15 +818,18 @@ async function verifyScrollInput(rpc, win, plugin, tabId, evidencePath) {
       viewId: tabId,
       // 좌표(y)와 함께 페이지가 센 실제 사건 수를 읽는다 — 좌표만 보면 프로그램으로 옮긴
       // 스크롤과 휠이 옮긴 스크롤을 가를 수 없다.
-      js: "return { y:scrollY, h:document.documentElement.scrollHeight, v:innerHeight, seq:Number(document.documentElement.dataset.scrollSeq||0), wheelEvents:Number(window.__browserFixture?.wheelEvents), wheelDeltaY:Number(window.__browserFixture?.wheelDeltaY) };",
+      js: wheelLedgerProbeJs(),
     }, win), `${stage} scroll audit ${tabId}`);
     return unwrapEvalValue(result);
   };
-  const wheelLedger = (value) => ({
-    scrollSeq: Number(value?.seq),
-    wheelEvents: Number(value?.wheelEvents),
-    wheelDeltaY: Number(value?.wheelDeltaY),
-  });
+  const waitForPage = async (selector, what) => must(await rpc(`plugin.${plugin}.dom.wait-for`, {
+    viewId: tabId, selector, timeoutMs: 8_000,
+  }, win, { timeoutMs: 10_000 }), `${what} ${tabId}`);
+  // 스크롤이 옮겨진 사실과 휠이 페이지에 닿은 사실은 다른 사건이고, 두 엔진 모두 앞의 것을
+  // 먼저 낸다. 휠 쪽을 기다리지 않고 원장을 읽으면 아직 세지 않은 0 을 읽는다.
+  // 못 오면 던지지 않는다 — 기다린 뒤에도 0 이면 그 0 이 판정의 답이다.
+  const awaitWheelReached = async (seenWheelSeq, leg) =>
+    waitForPage(wheelReachedSelector(seenWheelSeq), `wheel reached page ${leg}`);
   // 이 반쪽(휠·full capture)을 잰 순간. pane resize 반쪽은 나중에 자기 순간을 따로 싣는다.
   const settled = must(
     await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }),
@@ -833,12 +842,13 @@ async function verifyScrollInput(rpc, win, plugin, tabId, evidencePath) {
     throw new Error(`${tabId}: scroll fixture 계약 불일치 ${JSON.stringify(before)}`);
   }
   must(await rpc(`plugin.${plugin}.input.scroll`, forwardRequest, win), `input.scroll forward ${tabId}`);
-  const forwardApplied = must(await rpc(`plugin.${plugin}.dom.wait-for`, {
-    viewId: tabId, selector: 'html[data-scroll-seq]:not([data-scroll-seq="0"])', timeoutMs: 8_000,
-  }, win, { timeoutMs: 10_000 }), `input.scroll forward applied ${tabId}`);
+  const forwardApplied = await waitForPage(
+    scrollMovedSelector(Number(before.seq)), "input.scroll forward applied",
+  );
   if (forwardApplied.found !== true) {
-    throw new Error(`${tabId}: 실제 wheel 전진 사건 미도달 ${JSON.stringify(forwardApplied)}`);
+    throw new Error(`${tabId}: 전진 스크롤 미도달 ${JSON.stringify(forwardApplied)}`);
   }
+  await awaitWheelReached(Number(before.wheelSeq), "forward");
   const after = await readScroll("after");
   const afterY = Number(after?.y);
   if (afterY !== 480) {
@@ -852,12 +862,13 @@ async function verifyScrollInput(rpc, win, plugin, tabId, evidencePath) {
     { tab: tabId },
   );
   must(await rpc(`plugin.${plugin}.input.scroll`, restoreRequest, win), `input.scroll restore ${tabId}`);
-  const restoreApplied = must(await rpc(`plugin.${plugin}.dom.wait-for`, {
-    viewId: tabId, selector: `html[data-scroll-seq]:not([data-scroll-seq="${Number(after.seq)}"])`, timeoutMs: 8_000,
-  }, win, { timeoutMs: 10_000 }), `input.scroll restore applied ${tabId}`);
+  const restoreApplied = await waitForPage(
+    scrollMovedSelector(Number(after.seq)), "input.scroll restore applied",
+  );
   if (restoreApplied.found !== true) {
-    throw new Error(`${tabId}: 실제 wheel 복원 사건 미도달 ${JSON.stringify(restoreApplied)}`);
+    throw new Error(`${tabId}: 복원 스크롤 미도달 ${JSON.stringify(restoreApplied)}`);
   }
+  await awaitWheelReached(Number(after.wheelSeq), "restore");
   const restored = await readScroll("restored");
   const restoredY = Number(restored?.y);
   if (restoredY !== 0) {
@@ -871,9 +882,9 @@ async function verifyScrollInput(rpc, win, plugin, tabId, evidencePath) {
     requestedDy: [forwardRequest.dy, restoreRequest.dy],
     settledAtUnixMs: Number(settled.settledAtUnixMs),
     ledger: {
-      before: wheelLedger(before),
-      after: wheelLedger(after),
-      restored: wheelLedger(restored),
+      before: wheelLedgerStage(before),
+      after: wheelLedgerStage(after),
+      restored: wheelLedgerStage(restored),
     },
   };
 }

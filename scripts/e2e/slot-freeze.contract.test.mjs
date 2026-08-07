@@ -785,8 +785,14 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(source).not.toContain("pngHeight");
     // 휠이 무엇을 움직였는지는 페이지가 센 사건 수가 답한다. 좌표만 보면 프로그램으로 옮긴
     // 스크롤과 휠이 옮긴 스크롤이 같은 값을 만든다.
-    expect(source).toContain("wheelEvents");
+    const wheel = readFileSync(new URL("./lib/browser-gate-b11-scroll.mjs", import.meta.url), "utf8");
+    expect(wheel).toContain("wheelEvents");
+    expect(source).toContain("wheelLedgerStage");
     expect(matrix).toContain('addEventListener("wheel"');
+    // 스크롤이 옮겨진 사실과 휠이 닿은 사실은 다른 사건이고 엔진은 앞의 것을 먼저 낸다.
+    // 앞의 것만 기다리고 원장을 읽으면 언제나 아직 세지 않은 0 을 읽는다.
+    expect(matrix).toContain("dataset.wheelSeq");
+    expect(source).toContain("wheelReachedSelector");
     // 산출물 범위는 산출물 실측으로만 답한다. 픽셀을 푸는 일은 여전히 하니스 밖이다.
     expect(source).toContain("measureCapturedImage");
     expect(source).toContain("capturedWidth");
