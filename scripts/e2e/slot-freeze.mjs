@@ -24,6 +24,10 @@ import {
   createSurfaceSettlementLedger,
   surfaceSettlementVerdict,
 } from "./lib/surface-settlement.mjs";
+import {
+  createSurfaceInvariantLedger,
+  surfaceInvariantVerdict,
+} from "./lib/surface-invariant.mjs";
 import { hostileResizeObservationGaps } from "./lib/hostile-resize-composition.mjs";
 import {
   observeFrameSequence as inspectFrameSequence,
@@ -368,6 +372,10 @@ async function assertWindowedComposition(rpc, win, plugin, tabIds, labels, windo
  * 세우지 않지만 그 엔진을 RED 로 끝낸다. */
 const SURFACE_SETTLEMENT = createSurfaceSettlementLedger();
 
+/** 이번 엔진 실행이 잰 표면 원장 불변식. 정착과 같은 규율이다 — 위반은 실행을 세우지 않고
+ * 원장에 실려 그 엔진을 RED 로 끝낸다(근거는 lib/surface-invariant.mjs 주석). */
+const SURFACE_INVARIANT = createSurfaceInvariantLedger();
+
 async function assertEngineSurfaceLedger(rpc, win, implementation, tabIds, stage) {
   if (implementation.surface === "framework-native") return;
   if (implementation.surface === "engine-offscreen") {
@@ -402,7 +410,8 @@ async function assertEngineSurfaceLedger(rpc, win, implementation, tabIds, stage
     expectedVisible: tabIds.map(() => true),
     stats,
   });
-  if (!verdict.ok) throw new Error(`${stage}: view→surface→engine 불일치 — ${verdict.errors.join(", ")}`);
+  const invariant = SURFACE_INVARIANT.record(surfaceInvariantVerdict({ stage, windowLabel: win, verdict }));
+  if (invariant.violation) console.error(`✗ ${invariant.violation}`);
   return verdict;
 }
 
@@ -1034,6 +1043,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
   let runFailure = null;
   // 앞 엔진이 남긴 정착 위반을 이 엔진의 사실로 읽지 않는다.
   SURFACE_SETTLEMENT.reset();
+  SURFACE_INVARIANT.reset();
   try {
     if (implementation.surface !== "framework-native") {
       const sentinelRoot = path.join(FIXTURE_ROOT, "owner-sentinel", engine);
@@ -2150,6 +2160,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
     console.log(`✓ ${engine} evidence collected — 시나리오 ${[...SCENARIOS].join(",")} · 한글 IME 2개 · 교차 클릭 ${crossClicks}회 · ${resizeSummary} · 연속 프레임 ${frameCount}장`);
     // 모든 칸을 잰 뒤에 판정한다. 기준은 그대로다 — 정착하지 않은 표면은 이 엔진을 RED 로 끝낸다.
     SURFACE_SETTLEMENT.assertSettled(engine);
+    SURFACE_INVARIANT.assertConsistent(engine);
     return frameCount;
   } catch (error) {
     runFailure = error;
