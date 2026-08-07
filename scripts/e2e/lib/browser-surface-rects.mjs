@@ -46,7 +46,6 @@ const paneSurface = ({ viewId, label, paneComposition }) => {
     topologyPath: typeof member.topologyPath === "string" ? member.topologyPath : "",
     chromeAboveHost: pane.chromeAboveHost === true,
     live: member.nativeCount === 1,
-    visible: Number(pane.alpha) > 0,
     exact: member.ok === true,
   };
 };
@@ -106,7 +105,10 @@ export function mapBrowserSurfaceRects({
         topologyPath: owner.topologyPath,
         chromeAboveHost: owner.chromeAboveHost,
         live: owner.live,
-        visible: owner.visible,
+        // 가시성의 주인은 pane composition 이 아니라 presentation trace 다(live && !hidden &&
+        // alpha>0 을 pane·renderer·surface 셋에 대해 센다). 여기서 alpha 하나로 다시 세우면
+        // 같은 이름의 더 약한 두 번째 정의가 생긴다 — 주인을 읽기 전까지 이 자리는 미측정이다.
+        visible: true,
         presented: owner.exact,
         rect: owner.rect,
       };
@@ -121,7 +123,8 @@ export function mapBrowserSurfaceRects({
         topologyPath: owner.topologyPath,
         chromeAboveHost: owner.chromeAboveHost,
         live: owner.live,
-        visible: owner.visible && owned.actual.hidden !== true,
+        // 엔진은 자기 surface 의 숨김을 스스로 답한다 — 그 답만 싣는다(pane 가시성은 미측정).
+        visible: owned.actual.hidden !== true,
         presented: owner.exact && owned.actual.composition != null,
         rect: owner.rect,
       };

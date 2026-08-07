@@ -145,11 +145,35 @@ describe("browser surface rect evidence", () => {
     expect(violating({ member: { topologyPath: "" } })).toMatchObject({ topologyPath: "" });
   });
 
-  it("carries host liveness, visibility and exactness as measured values", () => {
+  it("carries host liveness and exactness as measured values", () => {
     expect(violating({ member: { nativeCount: 0 } })).toMatchObject({ live: false });
     expect(violating({ member: { ok: false } })).toMatchObject({ presented: false });
-    expect(violating({ pane: { alpha: 0 } })).toMatchObject({ visible: false });
-    expect(violating({ pane: { alpha: null } })).toMatchObject({ visible: false });
+  });
+
+  it("reports the engine's own hidden answer instead of a second visibility definition", () => {
+    const engineSurface = (hidden) => mapBrowserSurfaceRects({
+      framework: "tauri",
+      surface: "engine-offscreen",
+      windowLabel: "w-test",
+      viewIds: ["tab-right"],
+      labels: ["offscreen-tab-right"],
+      stats: {
+        ids: [{ viewId: "tab-right", surfaceId: 7 }],
+        engine: {
+          ids: [7],
+          surfaces: [{
+            id: 7,
+            hidden,
+            bounds: { x: 513, y: 149, w: 281, h: 421 },
+            presentation: { x: 513, y: 149, w: 281, h: 421 },
+            viewport: { matches: true },
+            resize: { pending: false },
+          }],
+        },
+      },
+    })[0];
+    expect(engineSurface(true)).toMatchObject({ visible: false });
+    expect(engineSurface(false)).toMatchObject({ visible: true });
   });
 
   it("carries an unreadable frame as a null rect instead of aborting the run", () => {
