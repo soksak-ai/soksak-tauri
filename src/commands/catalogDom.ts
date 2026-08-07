@@ -79,6 +79,7 @@ type MultiDomTraceSession = {
   presentationDomCommittedAtUnixMs: number | null;
   animationEndHandler: ((event: AnimationEvent) => void) | null;
   settlementObserver: MutationObserver | null;
+  fallbackTimer: ReturnType<typeof setTimeout> | null;
   unsubscribe: () => void;
   expiryTimer: ReturnType<typeof setTimeout> | null;
   evictionTimer: ReturnType<typeof setTimeout> | null;
@@ -185,6 +186,18 @@ function startMultiDomPresentationFrames(
     attributeFilter: ["class", "style"],
     subtree: true,
   });
+  // Last-resort only: WebKit exposes no event for intermediate transformed
+  // rects when an occluded document suspends both rAF and animation events.
+  // This bounded recorder ends at the trace expiry and is never used for
+  // normal DOM observation; it exists to keep that missing evidence RED rather
+  // than silently projecting native coordinates into the DOM.
+  const fallbackTick = () => {
+    if (session.endedAtUnixMs !== null || session.presentationTransactionId !== transactionId) return;
+    if (multiDomTraceNow(session) >= session.expiresAtUnixMs) return;
+    appendMultiDomTraceSample(session, "presentation-frame", transactionId, domCommittedAtUnixMs);
+    session.fallbackTimer = setTimeout(fallbackTick, 16);
+  };
+  session.fallbackTimer = setTimeout(fallbackTick, 16);
   const sample = (frameTime: number) => {
     if (session.endedAtUnixMs !== null
         || session.presentationTransactionId !== transactionId) return;
@@ -214,6 +227,8 @@ function finishMultiDomTrace(session: MultiDomTraceSession, timedOut: boolean): 
   }
   session.settlementObserver?.disconnect();
   session.settlementObserver = null;
+  if (session.fallbackTimer !== null) clearTimeout(session.fallbackTimer);
+  session.fallbackTimer = null;
   session.presentationTransactionId = null;
   session.presentationDomCommittedAtUnixMs = null;
   if (session.expiryTimer !== null) clearTimeout(session.expiryTimer);
@@ -1396,6 +1411,7 @@ export function registerDomCatalog(): void {
         presentationDomCommittedAtUnixMs: null,
         animationEndHandler: null,
         settlementObserver: null,
+        fallbackTimer: null,
         unsubscribe: () => {},
         expiryTimer: null,
         evictionTimer: null,
