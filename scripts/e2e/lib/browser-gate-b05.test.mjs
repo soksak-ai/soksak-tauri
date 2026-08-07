@@ -373,3 +373,31 @@ describe("B05 빈 사각형", () => {
     expect(judgeB05MachineEvidence(value).status).toBe("red");
   });
 });
+
+// 안 답한 정체로 유일성을 재면 안 답한 둘이 "중복" 이 된다.
+//
+// 실측 2026-08-08: 두 표면의 viewId 가 다 null 이라 `viewId=unique/null` 과
+// `owners=tab-a,tab-b/` 가 함께 red 였다 — 원인(정체 미응답)은 이미 이름을 냈는데 그 위에
+// 증상 둘이 겹쳐 적혔다.
+describe("B05 안 답한 정체", () => {
+  it("정체를 안 답한 표면끼리 중복으로 세지 않는다", () => {
+    const value = evidence();
+    for (const surface of value.transitions[0].trace.presentationEvents[0].surfaces) {
+      surface.viewId = null;
+    }
+    const verdict = judgeB05MachineEvidence(value);
+    expect(verdict.evidence.filter((row) => row.includes("viewId=unique"))).toEqual([]);
+    expect(verdict.evidence.filter((row) => row.includes(".owners="))).toEqual([]);
+    expect(verdict.status).toBe("blocked");
+  });
+
+  // 답한 정체가 실제로 겹치면 여전히 red 다 — 안 답함으로 도피하지 않는다.
+  it("답한 정체가 겹치면 red 다", () => {
+    const value = evidence();
+    const surfaces = value.transitions[0].trace.presentationEvents[0].surfaces;
+    surfaces[1].viewId = surfaces[0].viewId;
+    const verdict = judgeB05MachineEvidence(value);
+    expect(verdict.status).toBe("red");
+    expect(verdict.evidence.some((row) => row.includes("viewId=unique"))).toBe(true);
+  });
+});

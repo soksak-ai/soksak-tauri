@@ -106,10 +106,15 @@ function inspectInventory(surfaces, owners, path, failures, unmeasured) {
   surfaces.forEach((surface, index) => {
     const at = `${path}[${index}]`;
     if (!inspectSurface(surface, at, failures, unmeasured)) return;
+    // 안 답한 정체로 유일성을 재면 안 답한 둘이 "중복" 이 된다 — 원인은 이미 이름을 냈으므로
+    // 그 위에 증상을 겹쳐 적지 않는다.
+    if (surface.viewId == null) return;
     if (byOwner.has(surface.viewId)) failures.push(`${at}.viewId=unique/${surface.viewId}`);
     else byOwner.set(surface.viewId, surface);
   });
+  // 정체를 하나도 못 읽은 목록으로 소유자를 맞대는 것도 같은 겹침이다.
   const actual = [...byOwner.keys()].sort();
+  if (actual.length === 0 && surfaces.length > 0) return byOwner;
   if (actual.join("\u0000") !== owners.join("\u0000")) {
     failures.push(`${path}.owners=${owners.join(",")}/${actual.join(",")}`);
   }
