@@ -365,6 +365,29 @@ export function deepElementFromPoint(
   return el;
 }
 
+// 한 점 위의 **선언 소유자 사슬** — 최심(=최상단) 요소에서 위로 올라가며 data-node 를 모은다.
+// closest 는 shadow 경계를 못 넘으므로 host 로 갈아타며 오른다(deepElementFromPoint 와 대칭).
+//
+// 층 순서를 판정하는 소비자가 dataset·host·배경 페인터를 자기 규칙으로 이어붙이면, 배경이
+// 투명한 조상이 사슬에서 빠져 "누가 위인가"의 답이 소비자마다 갈린다. 사슬은 코어가 한 자리에서
+// 답한다. 선언 소유자가 없으면 빈 배열이다 — 없음을 다른 값으로 채우지 않는다.
+export function declaredOwnerChain(el: Element | null): string[] {
+  const owners: string[] = [];
+  const seen = new Set<string>();
+  for (let node: Node | null = el; node; ) {
+    if (node instanceof HTMLElement) {
+      const owner = node.dataset.node;
+      if (owner && !seen.has(owner)) {
+        seen.add(owner);
+        owners.push(owner);
+      }
+    }
+    const parent = node instanceof Element ? node.parentElement : null;
+    node = parent ?? ((node.getRootNode() as ShadowRoot | null)?.host ?? null);
+  }
+  return owners;
+}
+
 // camelCase | kebab-case computed 속성 이름을 읽는다(getPropertyValue 는 kebab 을 원한다).
 function readComputed(cs: CSSStyleDeclaration, name: string): string {
   const kebab = name.replace(/[A-Z]/g, (m) => "-" + m.toLowerCase());
@@ -1917,12 +1940,12 @@ export function registerDomCatalog(): void {
 
   register("ui.hit", {
     description:
-      "Return the topmost DOM element at viewport x,y (tag, classes, data-* attrs, rect) — hit-test diagnostics for drag/click E2E (what would elementFromPoint see?). Pierces Shadow DOM: plugin views mount inside a shadow root, so this descends shadowRoots to the real deepest element instead of stopping at the shadow host (symmetric with ui.tree, which collects data-node across shadow boundaries).",
+      "Return the topmost DOM element at viewport x,y (tag, classes, data-* attrs, rect) — hit-test diagnostics for drag/click E2E (what would elementFromPoint see?). Pierces Shadow DOM: plugin views mount inside a shadow root, so this descends shadowRoots to the real deepest element instead of stopping at the shadow host (symmetric with ui.tree, which collects data-node across shadow boundaries). owners is the declared owner chain at that point, topmost first — read layer order from it instead of stitching dataset, host and painters together with your own rule; an empty chain means no exposed node owns that point.",
     params: {
       x: { type: "number", description: "viewport x", required: true },
       y: { type: "number", description: "viewport y", required: true },
     },
-    returns: "{ tag, className, dataset, host, rect } | { tag: null }",
+    returns: "{ tag, className, dataset, owners, host, painters, rect } | { tag: null }",
     message: (d) => (d.tag ? tmsg("msg.ui.hit.found", { tag: String(d.tag) }) : tmsg("msg.ui.hit.none")),
     examples: ['ui.hit \'{"x":200,"y":140}\''],
     handler: (p) => {
@@ -1955,6 +1978,8 @@ export function registerDomCatalog(): void {
         tag: el.tagName.toLowerCase(),
         className: el.getAttribute("class") ?? "",
         dataset: el instanceof HTMLElement ? { ...el.dataset } : {},
+        // 이 점의 선언 소유자 사슬 — 위(최심)에서 아래로. 층 순서 판정의 단일 입력이다.
+        owners: declaredOwnerChain(el),
         host: host
           ? { tag: host.tagName.toLowerCase(), className: host.className, dataset: { ...host.dataset } }
           : null,

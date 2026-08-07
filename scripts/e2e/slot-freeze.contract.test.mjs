@@ -24,18 +24,25 @@ function scenarioGateBodies(source, scenario) {
   return bodies;
 }
 
-/** B09 이 사는 함수 본문 하나 — 이름이 아니라 선언에서 잘라 읽는다. */
-function chromeOverlayBlock(source) {
+/** 이름 붙은 함수의 본문 — 산문이 아니라 선언에서 잘라 읽는다. */
+function functionBody(source, name) {
   const file = ts.createSourceFile("slot-freeze.mjs", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
   let body = "";
   const visit = (node) => {
-    if (ts.isFunctionDeclaration(node) && node.name?.text === "assertChromeOverlayContract") {
+    if (ts.isFunctionDeclaration(node) && node.name?.text === name) {
       body = node.body?.getText(file) ?? "";
     }
     ts.forEachChild(node, visit);
   };
   visit(file);
   return body;
+}
+
+/** B09 이 사는 두 자리 — 표본을 만드는 자리와 판정을 기록하는 자리. */
+const B09_FUNCTIONS = Object.freeze(["measureChromeOverlaySample", "assertChromeOverlayContract"]);
+
+function chromeOverlayBlock(source) {
+  return B09_FUNCTIONS.map((name) => functionBody(source, name)).join("\n");
 }
 
 function frameworkGuardedRpcCalls(source, command) {
@@ -603,7 +610,7 @@ describe("slot-freeze instrumentation lifecycle", () => {
   // blocked 로 사라지고 41개 런 전수에서 그랬듯 judge 는 한 번도 RED 를 못 낸다.
   it("records the B09 verdict before any throwing oracle in the same block", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
-    const block = chromeOverlayBlock(source);
+    const block = functionBody(source, "assertChromeOverlayContract");
     expect(block).not.toBe("");
     const verdict = block.indexOf('gate: "B09"');
     expect(verdict).toBeGreaterThan(-1);
