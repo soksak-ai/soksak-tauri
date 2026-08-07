@@ -295,12 +295,31 @@ export function compositionTimelineVerdict(timeline: CompositionTimeline) {
     if (!samples.some(({ sampledAtUnixMs }) => (
       sampledAtUnixMs > timeline.startAtUnixMs && sampledAtUnixMs < endAtUnixMs
     ))) errors.push(`${name}:intermediate=0`);
-    const gaps = samples.slice(1).map((sample, index) => (
-      sample.sampledAtUnixMs - samples[index].sampledAtUnixMs
-    )).sort((left, right) => left - right);
-    const cadence = gaps[Math.floor(gaps.length / 2)];
-    if (gaps.at(-1)! > cadence * 1.75) {
-      errors.push(`${name}:display-gap=${gaps.at(-1)}/${cadence}`);
+    // 구멍은 프레임 단위로 센다. 고정 비율 문턱은 프레임 하나가 통째로 빠지는 값보다 아래라
+    // "늦은 프레임"과 "빠진 프레임"을 못 가르고, 그 경계에서 지터가 판정을 갈랐다.
+    //
+    // 규칙은 새로 세우지 않는다 — native 표시 원장이 쓰는 것과 같다(presentation_trace.rs):
+    // 직전 표시 시각 + 주기/2 를 넘으면 그 초과분을 주기로 나눠 반올림한 수가 빠진 프레임 수다.
+    // 기준 주기는 그 판이 실어 보낸 refreshIntervalMs 이며, 고정값으로 나누면 가변 주사율에서
+    // 정상 프레임이 건너뜀으로 둔갑한다.
+    // 기준 주기는 이 열 자신의 것이다. 열마다 주기가 다르므로(DOM 60Hz, native 120Hz) 한 값으로
+    // 세 열을 재면 정상 프레임이 건너뜀으로 둔갑한다. 그 판이 주기를 실어 보냈으면 그것을 쓰고,
+    // 없으면 이 열 간격의 중앙값을 쓴다 — 중앙값은 구멍 하나에 끌려가지 않는다.
+    const deltas = samples.slice(1)
+      .map((sample, index) => sample.sampledAtUnixMs - samples[index].sampledAtUnixMs)
+      .sort((left, right) => left - right);
+    const declared = Number(timeline.refreshIntervalMs);
+    const interval = Number.isFinite(declared) && declared > 0
+      ? declared
+      : deltas[Math.floor(deltas.length / 2)];
+    const skipped = samples.slice(1).reduce((total, sample, index) => {
+      const previous = samples[index].sampledAtUnixMs;
+      const delta = sample.sampledAtUnixMs - previous;
+      if (delta <= interval * 1.5) return total;
+      return total + Math.max(1, Math.round(delta / interval) - 1);
+    }, 0);
+    if (skipped > 0) {
+      errors.push(`${name}:skipped-display-epochs=${skipped}`);
     }
   };
   inspect("slot");

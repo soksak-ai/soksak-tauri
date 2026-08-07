@@ -168,7 +168,7 @@ function displayGapErrors(ledger, domSamples) {
   return compositionTimelineVerdict({
     ...timelineOf(ledger, domSamples),
     coordinateSpace: { logical: "css-px", scaleFactor: 2 },
-  }).errors.filter((error) => error.startsWith("slot:display-gap"));
+  }).errors.filter((error) => error.startsWith("slot:skipped-display-epochs"));
 }
 
 describe("B04 slot timeline 은 한 관측자의 표시 열이다", () => {
@@ -184,7 +184,8 @@ describe("B04 slot timeline 은 한 관측자의 표시 열이다", () => {
     const ledger = STARVED_DISPLAY_LEDGER;
     // 활강 시작을 가로질러 표시 callback 이 -31ms 와 +9ms 사이 40ms 를 비웠다. 그 사이에도
     // recorder 는 8ms 마다 왔고, 합집합만 보면 간격은 9/8 로 고르다.
-    expect(displayGapErrors(ledger, domSamplesOf(ledger))).toEqual(["slot:display-gap=40/17"]);
+    // 40ms 는 17ms 주기에서 프레임 하나가 통째로 빠진 것이다(40/17 ≈ 2.35 → 1 epoch 누락).
+    expect(displayGapErrors(ledger, domSamplesOf(ledger))).toEqual(["slot:skipped-display-epochs=1"]);
   });
 
   it("timeline 에는 표시 관측자의 epoch 만 실린다", () => {

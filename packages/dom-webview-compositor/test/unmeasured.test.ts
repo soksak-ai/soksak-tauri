@@ -19,6 +19,7 @@ const timeline = (over: Record<string, unknown> = {}) => ({
   durationMs: 100,
   timingFunction: [0, 0, 1, 1] as [number, number, number, number],
   coordinateSpace: { scaleFactor: 2 },
+  refreshIntervalMs: 50,
   from: rect(0),
   to: rect(100),
   slot: [sample(0, 1_000, 0), sample(1, 1_050, 50), sample(2, 1_100, 100)],
