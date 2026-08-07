@@ -57,8 +57,19 @@ The B06 mapper independently requires each pane's public `--dim`/level, adapter 
 plane's base/aperture ledger, and both rail/sidebar exemption and plane-exclusion facts. One exempt
 attribute cannot stand in for the other observations.
 The B10 mapper closes only the baseline and each resize ACK's observed window/frame/generation/
-presentation/continuity snapshot into transactions. It never copies a requested `size` into the
-observed window geometry.
+presentation/continuity snapshot into transactions. The baseline is the pre-resize observation the
+same command read from the same observer before requesting the first size, and `baseline.status`
+separates an observer that was never asked, one that refused because no settled native transaction
+exists yet, and a real observation; a refusal reports its reason and never cancels the finite resize
+transaction. The mapper never copies a requested `size` into the observed window geometry.
+
+The canonical harness is split across modules. `scripts/e2e/lib/browser-gate-coverage.mjs` owns
+measurement coverage and sequential engine execution, `browser-sentinel.mjs` owns the sentinel
+view's mount contract, `browser-page-state.mjs` owns the probe body for the page axes the judge
+requires, `browser-gate-b05-hold.mjs` owns the B05 post-settle hold, and
+`browser-gate-b06-collect.mjs` owns B06 checkpoint collection. The file inventory itself belongs to
+`scripts/e2e/framework-binding.json`, which `framework-binding.mjs --check` reconciles against the
+sources in both directions — prose never counts them again.
 
 | ID | Fixed rule | Machine evidence |
 |---|---|---|
@@ -139,6 +150,26 @@ public measurement surface. Neither `blocked` nor `not-run` counts as success. `
 is excluded from the required count and is valid only for the static catalog condition above. The
 machine summary is `green` only when every required cell is `green`; otherwise it preserves the
 outstanding state with `red` → `blocked` → `not-run` precedence.
+
+A failed verdict never stops measurement. Judging and measuring are different responsibilities: one
+`red` cell is no reason to leave another cell unmeasured, and writing `red` into a cell nobody
+measured invents evidence that does not exist. Only the cells that cannot be measured any further
+close as `blocked` with their reason; that closure never overwrites a recorded verdict and never
+touches another engine's cells. Engines run strictly one at a time — only one app lifecycle is alive
+at once, so one engine's failure blocks that engine's remaining cells and the run moves on to the
+next engine. A failure to record the block is surfaced together with the failure that caused it. The
+final verdict belongs to the summary, not to an aborted run or an individual cell. The run log's
+verdict line carries the numbers behind any non-`green` verdict on the same line, but the log is a
+signpost to the canonical report, never the evidence.
+
+Acceptance is the sum across every framework, not one framework's 36 cells. A single run carries one
+framework identity, so a `green` summary for that run does not mean acceptance is closed. The
+acceptance total is 2 frameworks × 3 engines × 12 gates = 72 cells, and only the static
+`not-applicable` cells are removed from the required count. A framework that was never submitted is
+not counted as zero; it is named in `missingFrameworks`, because "never measured" and "measured and
+passed" cannot share one value. Re-submitting the same framework does not fill coverage — the axis
+is one per framework — and mixing reports from different `buildId`s into one total is rejected
+outright.
 
 Screenshots and recordings must be inspected during development to discover defects, but they are
 never an input to, or success evidence for, an automated machine gate. Convert every visual finding

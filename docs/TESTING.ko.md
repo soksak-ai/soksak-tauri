@@ -48,7 +48,17 @@ settled 및 유한 hold 영수증을 닫힌 schema로 결합한다. 빠진 시�
 B06 mapper는 pane별 공개 `--dim`/level, adapter alpha, 단일 plane의 base/aperture 원장,
 rail·sidebar 면제와 plane 비포함 사실을 각각 요구한다. 면제 속성 하나로 다른 값을 대신하지 않는다.
 B10 mapper는 baseline과 각 resize ACK가 낸 window/frame/generation/presentation/continuity snapshot만
-닫힌 transaction으로 변환한다. 요청한 `size`를 관측된 window geometry로 복사하지 않는다.
+닫힌 transaction으로 변환한다. baseline은 같은 명령이 첫 크기를 요청하기 전에 같은 관측자에게서 읽은
+resize 이전 관측이며, `baseline.status`가 아직 묻지 않음·정착한 native 거래가 없어 거절함·실제
+관측함을 가른다. 거절은 사유를 남기고 유한 resize 거래를 취소하지 않는다. 요청한 `size`를 관측된
+window geometry로 복사하지 않는다.
+
+정본 하니스는 여러 모듈이 나눠 소유한다. 측정 커버리지와 엔진 순차 실행은
+`scripts/e2e/lib/browser-gate-coverage.mjs`가, 센티널 뷰의 마운트 계약은 `browser-sentinel.mjs`가,
+판정이 요구하는 페이지 축의 probe 본문은 `browser-page-state.mjs`가, B05 정착 뒤 유지 창은
+`browser-gate-b05-hold.mjs`가, B06 체크포인트 수집은 `browser-gate-b06-collect.mjs`가 소유한다.
+파일 목록 자체는 `scripts/e2e/framework-binding.json`이 소유하고 `framework-binding.mjs --check`가
+소스와 양방향으로 대조한다 — 산문으로 다시 세지 않는다.
 
 | ID | 고정 기준 | 기계 판정 근거 |
 |---|---|---|
@@ -119,6 +129,22 @@ inventory로 유지한다. replacement, gap, disappearance, unpresented, dropped
 `not-run`을 성공으로 세지 않는다. `not-applicable`은 위의 정적 catalog 조건일 때만 required 개수에서
 제외한다. machine 전체는 적용되는 모든 칸이 `green`일 때만 `green`이며, 그 외에는 `red` → `blocked`
 → `not-run` 우선순위로 미완료 원인을 보존한다.
+
+판정 실패는 측정을 끊지 않는다. 판정과 측정은 다른 책임이다 — 한 칸이 `red`라는 사실은 다른 칸을
+재지 않을 이유가 아니고, 재지 않은 칸을 `red`로 적으면 없는 증거를 만든 것이다. 측정을 이어갈 수
+없게 된 칸만 사유와 함께 `blocked`로 닫으며, 이미 기록된 판정을 덮지 않고 다른 엔진의 칸도 건드리지
+않는다. 엔진은 순차로 하나씩 돈다 — 앱 수명주기는 한 번에 하나만 살고, 한 엔진의 실패는 그 엔진의
+남은 칸만 차단한 뒤 다음 엔진 측정으로 넘어간다. 차단 기록 자체가 실패하면 원인 실패와 함께
+드러낸다. 최종 판정은 실행 중단이나 개별 칸이 아니라 요약이 소유한다. 실행 로그의 판정 한 줄은
+`green`이 아닐 때 그 판정을 만든 수치를 같은 줄에 남기지만, 로그는 증거가 아니라 정본 보고서로
+가는 이정표다.
+
+인수는 한 프레임워크의 36칸이 아니라 프레임워크 전부의 합이다. 한 실행은 한 프레임워크의 신원만
+담으므로 그 실행의 요약이 `green`이어도 인수가 끝났다는 뜻이 아니다. 인수 합계는 2 프레임워크 ×
+3 엔진 × 12 게이트 = 72칸이고 정적 `not-applicable`만 required에서 뺀다. 제출되지 않은 프레임워크는
+0으로 세어지지 않고 `missingFrameworks`에 이름으로 남는다 — 재지 않은 것과 재서 통과한 것은 같은
+값으로 표현될 수 없다. 같은 프레임워크를 다시 제출해도 축은 하나라 커버리지가 차지 않으며, 서로
+다른 `buildId`의 보고서를 한 합계에 섞으면 합계 자체를 거절한다.
 
 스크린샷과 녹화는 개발 중 반드시 직접 보고 결함을 발견하는 자료지만 자동 machine gate의 입력이나
 성공 근거가 아니다. 관측한 결함은 공개 좌표·상태·사건 trace로 수치화해 같은 gate의 RED로 만든다.
