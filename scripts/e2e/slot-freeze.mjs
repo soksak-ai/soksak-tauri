@@ -1151,22 +1151,13 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
           const journalBefore = must(await rpc("layout.transactions", {}, win), `layout journal baseline ${name}`);
           const priorEntries = journalBefore.entries ?? [];
           const afterSequence = Number(priorEntries[priorEntries.length - 1]?.sequence ?? 0);
-          const recordingOutcome = await runPlannedRecordingAction({
-            recordingLedger,
-            engine,
-            scenario: "flow",
-            name,
-            action: (recordFields) => rpc("ui.input.click", {
-              address: activationAddresses[side],
-              ...(recordFields.recordDir ? {
-                ...recordFields,
-                recordFrames: FRAMES_PER_CLICK,
-                recordIntervalMs: 16,
-                recordLeadMs: 32,
-              } : {}),
-            }, win, { timeoutMs: 60_000 }),
-          });
-          const clickReceipt = must(recordingOutcome.actionResult, `교차 클릭 ${name}`);
+          // 기계 presentation 원장과 PNG 캡처는 같은 네이티브 compositor를 점유한다.
+          // 둘을 겹치면 캡처가 display-link close를 막아 거래 이후 프레임까지 원장에 섞인다.
+          // 먼저 녹화 없는 실제 클릭을 수치 판정하고 원장을 닫는다. 사람용 녹화는 같은 빌드와
+          // 같은 시작/종료 상태를 복원한 별도 반복에서만 수행하며 자동 verdict에는 참여하지 않는다.
+          const clickReceipt = must(await rpc("ui.input.click", {
+            address: activationAddresses[side],
+          }, win, { timeoutMs: 10_000 }), `교차 클릭 ${name}`);
           await assertActivePane(rpc, win, paneIds[side], name);
           must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }), `${name} layout settled`);
           const journalAfter = must(await rpc("layout.transactions", {}, win), `layout journal verdict ${name}`);
@@ -1273,10 +1264,35 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
               samples: flowPresentationTrace.samples,
             },
           );
-          // PNG decode/visual diagnostics는 사람이 볼 증거를 준비하는 별도 후처리다. 실제
-          // display-link 원장은 위에서 이미 explicit close한 뒤에만 수행한다. 그렇지 않으면
-          // 이미지 처리 시간이 유한 native trace를 불필요하게 점유해 정상 프레임을 overflow로
-          // 오판한다. 용량을 키워 숨기지 않고 소유 구간 자체를 실제 거래로 한정한다.
+          const sourceSide = side === 0 ? 1 : 0;
+          must(await rpc("ui.input.click", {
+            address: activationAddresses[sourceSide],
+          }, win, { timeoutMs: 10_000 }), `${name} visual replay source restore`);
+          must(await rpc(
+            "ui.layout.wait-settled",
+            { timeoutMs: 8_000 },
+            win,
+            { timeoutMs: 10_000 },
+          ), `${name} visual replay source settled`);
+          await assertActivePane(rpc, win, paneIds[sourceSide], `${name} visual replay source`);
+          const recordingOutcome = await runPlannedRecordingAction({
+            recordingLedger,
+            engine,
+            scenario: "flow",
+            name,
+            action: (recordFields) => rpc("ui.input.click", {
+              address: activationAddresses[side],
+              ...(recordFields.recordDir ? {
+                ...recordFields,
+                recordFrames: FRAMES_PER_CLICK,
+                recordIntervalMs: 16,
+                recordLeadMs: 32,
+              } : {}),
+            }, win, { timeoutMs: 60_000 }),
+          });
+          must(recordingOutcome.actionResult, `${name} visual replay click`);
+          await assertActivePane(rpc, win, paneIds[side], `${name} visual replay target`);
+          // PNG decode/visual diagnostics는 위에서 닫힌 수치 원장과 분리된 사람용 증거다.
           const recordingEvidence = await reviewRecordingOutcome({
             outcome: recordingOutcome,
             expectedFrames: FRAMES_PER_CLICK,

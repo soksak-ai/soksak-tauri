@@ -357,7 +357,7 @@ describe("slot-freeze instrumentation lifecycle", () => {
       && call.loops.some((loop) => /\bside\b/.test(loop)));
     expect(flowRecordingCalls).toHaveLength(1);
     expect(domTraceStartCalls[0].start).toBeLessThan(flowRecordingCalls[0].start);
-    expect(domTraceCloseCalls.some((call) => call.start > flowRecordingCalls[0].start)).toBe(true);
+    expect(domTraceCloseCalls.some((call) => call.start < flowRecordingCalls[0].start)).toBe(true);
     expect(source.indexOf("const presentationReceipt = must(await rpc("))
       .toBeLessThan(source.indexOf("const domTraceReceipt = must(await rpc("));
     expect(source).toContain("resolveB04MovedParticipant({");
@@ -508,14 +508,20 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(firstBarrier).toBeLessThan(urlbarRead);
   });
 
-  it("closes the finite native presentation trace before human PNG review", () => {
+  it("closes both machine traces before the separately replayed human PNG recording", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
-    const flow = source.split("const recordingOutcome = await runPlannedRecordingAction")[1]
-      ?.split("frameCount += files.length")[0] ?? "";
-    expect(flow.indexOf("implementation.presentationTrace.readCommand")).toBeGreaterThan(-1);
-    expect(flow.indexOf("reviewRecordingOutcome")).toBeGreaterThan(-1);
-    expect(flow.indexOf("implementation.presentationTrace.readCommand"))
-      .toBeLessThan(flow.indexOf("reviewRecordingOutcome"));
+    const machineClose = source.indexOf("const presentationReceipt = must(await rpc(");
+    const domClose = source.indexOf("const domTraceReceipt = must(await rpc(");
+    const replayRestore = source.indexOf("visual replay source restore");
+    const recording = source.indexOf("const recordingOutcome = await runPlannedRecordingAction");
+    const review = source.indexOf("reviewRecordingOutcome", recording);
+    expect(machineClose).toBeGreaterThan(-1);
+    expect(domClose).toBeGreaterThan(machineClose);
+    expect(replayRestore).toBeGreaterThan(domClose);
+    expect(recording).toBeGreaterThan(replayRestore);
+    expect(review).toBeGreaterThan(recording);
+    const machinePhase = source.slice(machineClose, recording);
+    expect(machinePhase).not.toContain("recordFrames");
   });
 
   it("hostile resize waits for child slot native commits before final composition judgment", () => {
