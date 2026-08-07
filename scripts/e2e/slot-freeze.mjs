@@ -48,6 +48,7 @@ import {
 import {
   recordingReportFromCommandResponse,
   runRecordingEvidenceAction,
+  startRecordingEvidenceAction,
 } from "./lib/recording-evidence-action.mjs";
 import {
   browserTabActivationAddress,
@@ -123,6 +124,17 @@ const PRESENTATION_MARKERS = Object.freeze(["#00ff80", "#ff0080"]);
 async function runPlannedRecordingAction({ recordingLedger, engine, scenario, name, action }) {
   const recording = recordingLedger.take(engine, scenario, name);
   return runRecordingEvidenceAction({
+    root: EVIDENCE_STORE_ROOT,
+    relativePath: recording.relativePath,
+    maxBytes: recording.maxBytes,
+    keep: process.env.KEEP === "1",
+    action,
+  });
+}
+
+function startPlannedRecordingAction({ recordingLedger, engine, scenario, name, action }) {
+  const recording = recordingLedger.take(engine, scenario, name);
+  return startRecordingEvidenceAction({
     root: EVIDENCE_STORE_ROOT,
     relativePath: recording.relativePath,
     maxBytes: recording.maxBytes,
@@ -1137,6 +1149,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
         let domTraceOpen = true;
         let armedPresentation = null;
         let presentationOpen = false;
+        let recordingTransaction = null;
         try {
           armedPresentation = must(await rpc(
             implementation.presentationTrace.armCommand,
@@ -1151,22 +1164,44 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
           const journalBefore = must(await rpc("layout.transactions", {}, win), `layout journal baseline ${name}`);
           const priorEntries = journalBefore.entries ?? [];
           const afterSequence = Number(priorEntries[priorEntries.length - 1]?.sequence ?? 0);
-          const recordingOutcome = await runPlannedRecordingAction({
+          recordingTransaction = startPlannedRecordingAction({
             recordingLedger,
             engine,
             scenario: "flow",
             name,
-            action: (recordFields) => rpc("ui.input.click", {
-              address: activationAddresses[side],
-              ...(recordFields.recordDir ? {
-                ...recordFields,
-                recordFrames: FRAMES_PER_CLICK,
-                recordIntervalMs: 16,
-                recordLeadMs: 32,
-              } : {}),
-            }, win, { timeoutMs: 60_000 }),
+            action: async (recordFields) => {
+              const recordingId = recordFields.recordDir
+                ? `${engine}-${name}-${randomUUID()}`
+                : null;
+              if (recordingId) {
+                const started = must(await rpc("window.record.start", {
+                  id: recordingId,
+                  dir: recordFields.recordDir,
+                  frames: FRAMES_PER_CLICK,
+                  intervalMs: 16,
+                  maxBytes: recordFields.recordMaxBytes,
+                }, win, { timeoutMs: 10_000 }), `visual recording start ${name}`);
+                if (started.ready !== true) throw new Error(`${name}: visual recording first frame ACK 실패`);
+              }
+              const actionResult = await rpc("ui.input.click", {
+                address: activationAddresses[side],
+              }, win, { timeoutMs: 10_000 });
+              return {
+                actionResult,
+                finish: async () => {
+                  if (!recordingId) return actionResult;
+                  const completed = must(await rpc("window.record.read", {
+                    id: recordingId,
+                  }, win, { timeoutMs: 60_000 }), `visual recording completion ${name}`);
+                  return {
+                    ...actionResult,
+                    data: { ...(actionResult?.data ?? {}), recording: completed.report },
+                  };
+                },
+              };
+            },
           });
-          const clickReceipt = must(recordingOutcome.actionResult, `교차 클릭 ${name}`);
+          const clickReceipt = must(await recordingTransaction.actionResult, `교차 클릭 ${name}`);
           await assertActivePane(rpc, win, paneIds[side], name);
           must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }), `${name} layout settled`);
           const journalAfter = must(await rpc("layout.transactions", {}, win), `layout journal verdict ${name}`);
@@ -1216,6 +1251,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
             { timeoutMs: 5_000 },
           ), `B04 raw DOM trace close ${name}`);
           domTraceOpen = false;
+          recordingTransaction.release();
           if (domTraceReceipt.timedOut === true) {
             throw new Error(`${engine}/${name}: raw DOM trace가 explicit close 전에 만료됐다`);
           }
@@ -1277,6 +1313,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
           // display-link 원장은 위에서 이미 explicit close한 뒤에만 수행한다. 그렇지 않으면
           // 이미지 처리 시간이 유한 native trace를 불필요하게 점유해 정상 프레임을 overflow로
           // 오판한다. 용량을 키워 숨기지 않고 소유 구간 자체를 실제 거래로 한정한다.
+          const recordingOutcome = await recordingTransaction.outcome;
           const recordingEvidence = await reviewRecordingOutcome({
             outcome: recordingOutcome,
             expectedFrames: FRAMES_PER_CLICK,
@@ -1333,6 +1370,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
           }
           console.log(`✓ ${name}: ${FRAMES_PER_CLICK} frames · 두 live marker · focus dim ${lighting.dims.join("/")} · ${native ? "DOM/native exact" : windowed ? "DOM/CEF exact" : "DOM/native-offscreen exact"}`);
         } catch (flowError) {
+          recordingTransaction?.release();
           if (domTraceOpen) {
             domTraceOpen = false;
             try {
@@ -1357,6 +1395,13 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
               );
             } catch (error) {
               console.error(`${engine}/${name}: presentation trace cleanup 실패`, error);
+            }
+          }
+          if (recordingTransaction) {
+            try {
+              await recordingTransaction.outcome;
+            } catch (error) {
+              console.error(`${engine}/${name}: visual recording cleanup 실패`, error);
             }
           }
           throw flowError;

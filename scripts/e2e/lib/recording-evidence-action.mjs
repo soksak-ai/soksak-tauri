@@ -145,3 +145,61 @@ export async function runRecordingEvidenceAction({
     },
   };
 }
+
+/**
+ * Starts the product stimulus inside the evidence artifact transaction, but exposes its ACK before
+ * PNG completion. The caller closes numeric machine traces at the product transaction boundary,
+ * then calls release(); only then does the visual recorder finish and the artifact store measure it.
+ */
+export function startRecordingEvidenceAction(options = {}) {
+  if (typeof options.action !== "function") {
+    throw new TypeError("recording evidence concurrent action callback이 필요하다");
+  }
+  let releaseBarrier;
+  let released = false;
+  const barrier = new Promise((resolve) => { releaseBarrier = resolve; });
+  let resolveAction;
+  let rejectAction;
+  let actionSettled = false;
+  const actionResult = new Promise((resolve, reject) => {
+    resolveAction = resolve;
+    rejectAction = reject;
+  });
+  const outcome = runRecordingEvidenceAction({
+    ...options,
+    action: async (recordFields) => {
+      try {
+        const transaction = await options.action(recordFields);
+        if (!transaction || typeof transaction !== "object" || typeof transaction.finish !== "function") {
+          throw new TypeError("concurrent recording action must return { actionResult, finish }");
+        }
+        actionSettled = true;
+        resolveAction(transaction.actionResult);
+        await barrier;
+        return await transaction.finish();
+      } catch (error) {
+        if (!actionSettled) {
+          actionSettled = true;
+          rejectAction(error);
+        }
+        throw error;
+      }
+    },
+  });
+  // Artifact preflight can fail before the callback and still routes through the fallback callback,
+  // but a store-level failure must never leave the early product promise unhandled or pending.
+  outcome.catch((error) => {
+    if (actionSettled) return;
+    actionSettled = true;
+    rejectAction(error);
+  });
+  return {
+    actionResult,
+    release() {
+      if (released) return;
+      released = true;
+      releaseBarrier();
+    },
+    outcome,
+  };
+}

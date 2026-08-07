@@ -18,6 +18,8 @@ import { locateTab } from "./catalog";
 import { useSessions } from "../state/sessions";
 import {
   recordWindowFrames,
+  readWindowRecordingSession,
+  startWindowRecordingSession,
   validWindowRecordFrameTimeoutMs,
   validWindowRecordFrames,
   validWindowRecordIntervalMs,
@@ -560,5 +562,45 @@ export function registerCaptureCatalog(): void {
         }),
       };
     },
+  });
+
+  register("window.record.start", {
+    description:
+      "Start one finite window recording and ACK after its first saved frame. The recording continues independently so layout/presentation machine traces can close at their own transaction boundary without waiting for PNG completion.",
+    params: {
+      id: { type: "string", description: "Caller-owned idempotent recording identity", required: true },
+      dir: { type: "string", description: "Output directory for frames", required: true },
+      frames: { type: "number", description: `Number of frames (default 40, range 1..${WINDOW_RECORD_MAX_FRAMES})` },
+      intervalMs: { type: "number", description: `Interval between frames in ms (default 40, range 0..${WINDOW_RECORD_MAX_INTERVAL_MS})` },
+      maxBytes: { type: "number", description: `Optional encoded PNG byte budget (max ${WINDOW_RECORD_MAX_BYTES})` },
+      frameTimeoutMs: { type: "number", description: `Per-frame native completion deadline (max ${WINDOW_RECORD_MAX_FRAME_TIMEOUT_MS})` },
+    },
+    returns: "{ id,ready,dir,requestedFrames }",
+    message: (d) => `recording ${String(d.id)} ready=${String(d.ready)}`,
+    errors: ["INVALID_PARAMS"],
+    handler: async (p) => {
+      const frames = p.frames ?? 40;
+      const intervalMs = p.intervalMs ?? 40;
+      const frameTimeoutMs = p.frameTimeoutMs ?? WINDOW_RECORD_DEFAULT_FRAME_TIMEOUT_MS;
+      if (!validWindowRecordFrames(frames)
+          || !validWindowRecordIntervalMs(intervalMs)
+          || (p.maxBytes !== undefined && !validWindowRecordMaxBytes(p.maxBytes))
+          || !validWindowRecordFrameTimeoutMs(frameTimeoutMs)) {
+        return { ok: false as const, code: "INVALID_PARAMS" as const, message: "window recording parameters are invalid" };
+      }
+      return startWindowRecordingSession(String(p.id), {
+        dir: String(p.dir), frames, intervalMs,
+        ...(p.maxBytes === undefined ? {} : { maxBytes: p.maxBytes }),
+        frameTimeoutMs,
+      });
+    },
+  });
+
+  register("window.record.read", {
+    description: "Wait for and return the immutable final receipt of a finite window.record.start session.",
+    params: { id: { type: "string", description: "Recording identity", required: true } },
+    returns: "{ id,report:{status,mode,dir?,requestedFrames?,frames?,reason?} }",
+    message: (d) => `recording ${String(d.id)} complete`,
+    handler: async (p) => readWindowRecordingSession(String(p.id)),
   });
 }

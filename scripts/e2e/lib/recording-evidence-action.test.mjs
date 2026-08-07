@@ -11,6 +11,7 @@ import {
 import {
   recordingReportFromCommandResponse,
   runRecordingEvidenceAction,
+  startRecordingEvidenceAction,
 } from "./recording-evidence-action.mjs";
 import { reviewVisualRecordingSafely } from "./visual-recording-review.mjs";
 
@@ -28,6 +29,34 @@ async function inRunningStore(run) {
 }
 
 describe("recording evidence product action transaction", () => {
+  it("exposes product ACK before visual completion and keeps artifact open until explicit release", async () => {
+    await inRunningStore(async (root) => {
+      let finishCalls = 0;
+      const transaction = startRecordingEvidenceAction({
+        root,
+        relativePath: "browser/concurrent-flow",
+        maxBytes: 64,
+        action: async ({ recordDir }) => {
+          await writeFile(path.join(recordDir, "f0000.png"), "frame");
+          return {
+            actionResult: { ok: true, data: { clicked: true } },
+            finish: async () => {
+              finishCalls += 1;
+              return { ok: true, data: { clicked: true, recording: { status: "complete" } } };
+            },
+          };
+        },
+      });
+      await expect(transaction.actionResult).resolves.toMatchObject({ data: { clicked: true } });
+      expect(finishCalls).toBe(0);
+      transaction.release();
+      await expect(transaction.outcome).resolves.toMatchObject({
+        actionResult: { data: { recording: { status: "complete" } } },
+      });
+      expect(finishCalls).toBe(1);
+    });
+  });
+
   it("reads the recording receipt from the public command response envelope", async () => {
     await inRunningStore(async (root) => {
       const outcome = await runRecordingEvidenceAction({
