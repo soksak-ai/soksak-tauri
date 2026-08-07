@@ -1,4 +1,5 @@
 import { decodePng } from "./png.mjs";
+import { sameRect } from "../../../packages/dom-webview-compositor/src/index.ts";
 export { layoutTransactionVerdict } from "./layout-transaction-verdict.mjs";
 
 const PANE_PRESENTATION_TRACE = Object.freeze({
@@ -426,7 +427,18 @@ export function mapB04PresentationSamples({
       frame: finiteB04Rect(matches[0].rect, `${targetViewId}:timeline-slot[${sequence}]`),
     };
   });
-  const fromSample = slotTimeline.filter(({ sampledAtUnixMs }) => (
+  // 한 표시 epoch에는 표시된 frame이 하나뿐이다. DOM commit 경계와 그 직후 one-shot
+  // anchor는 서로 다른 관측이지만 같은 epoch를 공유할 수 있고, 같은 rect라면 궤적 위의
+  // 한 점이다. rect가 다르면 한 epoch에 두 frame을 주장하는 것이므로 둘 다 남겨 RED로 센다.
+  const collapsedSlotTimeline = slotTimeline.reduce((rows, row) => {
+    const previous = rows[rows.length - 1];
+    if (previous
+        && previous.sampledAtUnixMs === row.sampledAtUnixMs
+        && sameRect(previous.frame, row.frame)) return rows;
+    rows.push(row);
+    return rows;
+  }, []).map((row, sequence) => ({ ...row, sequence }));
+  const fromSample = collapsedSlotTimeline.filter(({ sampledAtUnixMs }) => (
     sampledAtUnixMs <= presentationStartAt
   )).at(-1);
   if (!fromSample) throw new Error(`${targetViewId}: timeline start coverage가 없다`);
@@ -446,7 +458,7 @@ export function mapB04PresentationSamples({
       timingFunction: [0.4, 0, 0.2, 1],
       from,
       to,
-      slot: slotTimeline,
+      slot: collapsedSlotTimeline,
       renderer: nativeTimeline("rendererFrame"),
       surface: nativeTimeline("surfaceFrame"),
     },
