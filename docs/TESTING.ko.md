@@ -52,7 +52,7 @@ B10 mapper는 baseline과 각 resize ACK가 낸 window/frame/generation/presenta
 
 | ID | 고정 기준 | 기계 판정 근거 |
 |---|---|---|
-| B01 | 3종 최초 mount + 주소표시줄 + 페이지 신원 | 공개 DOM/status의 mount, address, page identity가 모두 요청값과 일치한다. |
+| B01 | 3종 최초 mount + 주소표시줄 + 페이지 신원 | 탭마다 실제 항해를 최소 두 번 밟는다 — view 마다 다른 문서로 한 번, 정본 픽스처로 한 번. 항해마다 공개 주소표시줄 값, `document.title`, 본문 텍스트를 읽고 셋 다 그 항해의 요청값과 일치해야 한다. 두 view 가 같은 신원을 답하면 거절한다 — 자기 문서는 우리가 물은 view 만 답할 수 있다. 항해 실패와 주소표시줄 미노출은 실행을 끝내지 않고 이름 있는 관측 실패로 실린다. |
 | B02 | 한글 IME `beforeinput`/`input` 및 전환·resize 값 유지 | 두 입력 사건과 최종 value를 읽고 모든 전환·resize checkpoint에서 같은 값을 단언한다. |
 | B03 | DOM slot ↔ live surface 1:1 rounding-only frame/shared topology | 공개 DOM rect·native/engine rect·identity ledger의 개수, 소유권, 좌표 차이를 단언한다. Tauri에서는 어댑터 수명주기 claim(`direct`/`pane`) 또는 중립 공개 선언 `data-external-surface=<안정적 identity>`가 있는 content 슬롯만 native hole이 된다. 선언 없는 DOM 슬롯을 hole로 추측하지 않는다. `direct`, `PaneSurfaceHost`, 외부 제공자 기하는 각 소유 판정면에서 정확히 한 번만 감사한다. Electron은 브라우저 본문이 DOM 자식이므로 이 선언을 hole로 투영하지 않는다. |
 | B04 | FLOW rail·pane·native 단일 원자 이동 | ACK된 유한 trace의 initial raw rect와 같은 transaction의 정확한 DOM-commit raw rect를 실제 presentation 사건에 결합해 세 대상의 연결·좌표·정착을 단언한다. |

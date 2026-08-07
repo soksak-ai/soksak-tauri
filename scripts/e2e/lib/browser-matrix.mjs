@@ -1248,9 +1248,12 @@ export function transitionFrameAlignment({ browser, dom }) {
   return { ok: errors.length === 0, errors };
 }
 
+/** 정본 fixture 문서의 제목이자 h1. 신원을 대조하는 쪽이 이 값을 다시 적지 않는다. */
+export const FIXTURE_PAGE_TITLE = "Browser Boundary";
+
 /** 세 구현이 같은 문서·같은 입력 사건을 실행하는 정적 fixture. */
 export function fixtureHtml() {
-  return `<!doctype html><html><head><meta charset="utf-8"><title>Browser Boundary</title>
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${FIXTURE_PAGE_TITLE}</title>
     <style>
       html,body{margin:0;min-height:100%;background:#181818;color:#f7f4df;font:24px system-ui}
       main{min-height:100vh;display:grid;place-items:center;background:linear-gradient(135deg,#181818 0 50%,#242424 50%)}
@@ -1267,7 +1270,7 @@ export function fixtureHtml() {
       output{display:block;min-height:1.4em;margin-top:10px;font-size:18px;color:#f7f4df}
       @media(max-height:520px){h1{font-size:36px}p{font-size:20px;margin-bottom:10px}label{gap:4px}input{font-size:24px;padding:6px 8px}.marker-row{margin-bottom:10px}output{margin-top:4px}#typed-marker{margin-top:4px}}
     </style></head><body>
-    <div id="motion-marker"></div><div id="lighting-marker"></div><main><section><h1>Browser Boundary</h1><p>DOM slot ↔ live browser surface</p><div class="marker-row"><div id="marker" class="fixture-marker"></div><div class="fixture-marker"></div><div class="fixture-marker"></div></div>
+    <div id="motion-marker"></div><div id="lighting-marker"></div><main><section><h1>${FIXTURE_PAGE_TITLE}</h1><p>DOM slot ↔ live browser surface</p><div class="marker-row"><div id="marker" class="fixture-marker"></div><div class="fixture-marker"></div><div class="fixture-marker"></div></div>
       <label>IME input<input id="ime" autocomplete="off" spellcheck="false"></label>
       <output id="events">beforeinput:0 input:0</output><div id="typed-marker"></div>
     </section></main><div id="scroll-track">wheel input track<div id="scroll-tail">full-page tail</div></div>

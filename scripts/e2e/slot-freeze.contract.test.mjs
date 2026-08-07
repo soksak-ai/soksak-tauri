@@ -570,12 +570,22 @@ describe("slot-freeze instrumentation lifecycle", () => {
   });
 
   it("settles child presentation before reading B01 projected urlbar values", () => {
-    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
-    const b01Setup = source.split("const expectedUrls")[1]?.split("const b01Receipt")[0] ?? "";
-    const firstBarrier = b01Setup.indexOf('rpc("ui.layout.wait-settled"');
-    const urlbarRead = b01Setup.indexOf("const urlbarMeasures");
+    // 실측은 lib/browser-gate-b01.mjs 가 소유한다. 이 법은 그 파일에서 계속 성립해야 한다.
+    const source = readFileSync(new URL("./lib/browser-gate-b01.mjs", import.meta.url), "utf8");
+    const step = source.split("async function observeB01Navigation")[1] ?? "";
+    const firstBarrier = step.indexOf('rpc("ui.layout.wait-settled"');
+    const urlbarRead = step.indexOf('rpc("ui.measure"');
     expect(firstBarrier).toBeGreaterThan(-1);
+    expect(urlbarRead).toBeGreaterThan(-1);
     expect(firstBarrier).toBeLessThan(urlbarRead);
+  });
+
+  it("records the B01 verdict before any measurement-impossible stop", () => {
+    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    const record = source.indexOf('gate: "B01"');
+    const stop = source.indexOf("b01.blockedReason");
+    expect(record).toBeGreaterThan(-1);
+    expect(record).toBeLessThan(stop);
   });
 
   it("closes both machine traces before the separately replayed human PNG recording", () => {

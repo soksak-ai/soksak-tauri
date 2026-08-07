@@ -68,19 +68,46 @@ function judgeReceipt(options = {}) {
   });
 }
 
+function b01Navigation({ viewId, url, title, bodyIncludes, bodyText }) {
+  return {
+    url,
+    expectedTitle: title,
+    expectedBodyIncludes: bodyIncludes,
+    requestedViewId: viewId,
+    returnedViewId: viewId,
+    toolbarAddress: { dataNode: "urlbar", value: url },
+    pageIdentity: { url, title, bodyText },
+    observation: { error: null },
+  };
+}
+
 function b01Evidence(engine = "browser") {
   return {
     engine,
     tabs: ["left", "right"].map((side) => {
       const viewId = `${engine}-${side}`;
       const expectedUrl = `https://fixture.invalid/${engine}/${side}`;
+      const nonce = `${engine}-${side}-nonce`;
       return {
         viewId,
         expectedUrl,
         mounted: true,
-        toolbarAddress: { dataNode: "urlbar", value: expectedUrl },
-        pageIdentity: { viewId, url: expectedUrl },
-        commandReceipt: { requestedViewId: viewId, returnedViewId: viewId },
+        navigations: [
+          b01Navigation({
+            viewId,
+            url: `https://fixture.invalid/b01-identity?nonce=${nonce}`,
+            title: `B01 Identity ${nonce}`,
+            bodyIncludes: nonce,
+            bodyText: `B01 identity view ${nonce}`,
+          }),
+          b01Navigation({
+            viewId,
+            url: expectedUrl,
+            title: "Browser Boundary",
+            bodyIncludes: "Browser Boundary",
+            bodyText: "Browser Boundary DOM slot ↔ live browser surface",
+          }),
+        ],
       };
     }),
   };
@@ -291,7 +318,7 @@ describe("브라우저 12-gate 정본", () => {
     expect(BROWSER_ACCEPTANCE_GATES.find(({ id }) => id === "B12")?.contract).toContain("Electron");
   });
 
-  it("B01은 각 engine/tab의 mount·공개 주소 input·페이지 신원·명시 view 영수증이 모두 맞아야 green이다", () => {
+  it("B01은 각 engine/tab의 mount·실제 항해마다의 주소표시줄·제목·본문·명시 view 영수증이 모두 맞아야 green이다", () => {
     for (const engine of BROWSER_ACCEPTANCE_ENGINES) {
       expect(judgeB01MachineEvidence(b01Evidence(engine))).toMatchObject({ status: "green", reason: null });
     }
@@ -301,18 +328,57 @@ describe("브라우저 12-gate 정본", () => {
 
     const cases = [
       (evidence) => { evidence.tabs[0].mounted = false; },
-      (evidence) => { evidence.tabs[0].toolbarAddress.value = "about:blank"; },
-      (evidence) => { evidence.tabs[0].toolbarAddress.dataNode = "private-urlbar"; },
-      (evidence) => { evidence.tabs[0].pageIdentity.url = "about:blank"; },
-      (evidence) => { evidence.tabs[0].pageIdentity.viewId = evidence.tabs[1].viewId; },
-      (evidence) => { evidence.tabs[0].commandReceipt.returnedViewId = evidence.tabs[1].viewId; },
-      (evidence) => { delete evidence.tabs[0].commandReceipt.requestedViewId; },
+      (evidence) => { evidence.tabs[0].navigations[1].toolbarAddress.value = "about:blank"; },
+      (evidence) => { evidence.tabs[0].navigations[1].toolbarAddress.dataNode = "private-urlbar"; },
+      (evidence) => { evidence.tabs[0].navigations[1].pageIdentity.url = "about:blank"; },
+      (evidence) => { evidence.tabs[0].navigations[1].pageIdentity.title = "Untitled"; },
+      (evidence) => { evidence.tabs[0].navigations[1].pageIdentity.bodyText = ""; },
+      (evidence) => { evidence.tabs[0].navigations[1].pageIdentity.bodyText = "다른 문서"; },
+      (evidence) => { evidence.tabs[0].navigations[1].returnedViewId = evidence.tabs[1].viewId; },
+      (evidence) => { delete evidence.tabs[0].navigations[1].requestedViewId; },
+      (evidence) => { evidence.tabs[0].navigations[0].observation.error = "dom.wait-for TIMEOUT"; },
+      // 항해가 한 번뿐이면 주소표시줄이 신원을 따라왔다는 사실이 없다.
+      (evidence) => { evidence.tabs[0].navigations = [evidence.tabs[0].navigations[1]]; },
+      // 마지막 항해는 뒤 게이트가 딛고 서는 정본 문서여야 한다.
+      (evidence) => { evidence.tabs[0].navigations.reverse(); },
     ];
     for (const mutate of cases) {
       const evidence = b01Evidence();
       mutate(evidence);
       expect(judgeB01MachineEvidence(evidence).status).toBe("red");
     }
+
+    // 오타 키는 조용히 통과하지 않고 그 이름 그대로 보고서에 남는다.
+    const typos = [
+      [(evidence) => { evidence.tabs[0].mountedd = true; }, "B01:tabs[0].mountedd=not-machine-schema"],
+      [
+        (evidence) => { evidence.tabs[0].navigations[0].toolbarAdress = {}; },
+        "B01:tabs[0].navigations[0].toolbarAdress=not-machine-schema",
+      ],
+      [
+        (evidence) => { evidence.tabs[0].navigations[0].pageIdentity.bodytext = "x"; },
+        "B01:tabs[0].navigations[0].pageIdentity.bodytext=not-machine-schema",
+      ],
+    ];
+    for (const [mutate, name] of typos) {
+      const evidence = b01Evidence();
+      mutate(evidence);
+      expect(judgeB01MachineEvidence(evidence).evidence).toContain(name);
+    }
+
+    // 두 항해가 같은 신원을 답하면 주소표시줄이 멈춰 있어도 알 수 없다.
+    const frozen = b01Evidence();
+    frozen.tabs[0].navigations[0] = structuredClone(frozen.tabs[0].navigations[1]);
+    expect(judgeB01MachineEvidence(frozen).evidence)
+      .toContain("B01:tabs[0].navigations.identity=at-least-2-distinct/1");
+
+    // 두 탭이 같은 view-고유 신원을 답하면 우리가 물은 view 의 것이라는 증거가 없다.
+    const crossed = b01Evidence();
+    crossed.tabs[1].navigations[0] = structuredClone(crossed.tabs[0].navigations[0]);
+    crossed.tabs[1].navigations[0].requestedViewId = crossed.tabs[1].viewId;
+    crossed.tabs[1].navigations[0].returnedViewId = crossed.tabs[1].viewId;
+    expect(judgeB01MachineEvidence(crossed).evidence)
+      .toContain("B01:tabs[0].pageIdentity=view-unique-missing");
   });
 
   it("B02는 두 탭의 최초·FLOW 양방향·window resize·pane 왕복 전 단계에서 IME ledger를 보존해야 green이다", () => {

@@ -264,6 +264,20 @@
       "note": "부분 실행이 나머지 gate를 GREEN으로 꾸미지 않고 저장·재로딩 뒤에도 정확한 not-run 행렬을 유지하는지 검증한다."
     },
     {
+      "file": "lib/browser-gate-b01.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "B01 의 실측 소유자다. view 마다 다른 문서와 정본 문서로 실제 항해를 두 번 시키고 주소표시줄·제목·본문을 읽는다. 계약 위반은 관측 사실로 싣고 문서가 서지 못한 때만 측정 불가를 알린다."
+    },
+    {
+      "file": "lib/browser-gate-b01.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "멈춘 주소표시줄·미노출 주소 노드·항해 실패·탭 id 부재가 각각 어떤 이름으로 남고 무엇만 뒤 측정을 막는지를 값으로 고정한다."
+    },
+    {
       "file": "lib/browser-gate-b03-evidence.mjs",
       "role": "lib",
       "class": "A",
