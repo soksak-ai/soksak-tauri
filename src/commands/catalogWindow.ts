@@ -78,7 +78,7 @@ export function registerWindowCatalog(): void {
 
   register("window.resizeSequence", {
     description:
-      "Apply a finite sequence of native physical window sizes in order. Before the first size is requested the same observer that answers every step is read once, and that pre-resize observation is returned as baseline; a framework without an observer returns baseline null rather than a value derived from the requested sizes. Optional realtime recording is separate visual evidence: successful readiness places the baseline frame before the first resize, while recording startup/readiness/completion failures are reported in recording.status and never cancel the finite resize transaction. Used to reproduce live-resize stalls, blanks, stale frames, and surface drift without focusing the window.",
+      "Apply a finite sequence of native physical window sizes in order. Before the first size is requested the same observer that answers every step is read once, and that pre-resize observation is returned as baseline; a value is never derived from the requested sizes. baseline.status separates an observer that was never asked, one that refused because no settled native transaction exists yet, and a real observation — a refusal reports its reason and never cancels the finite resize transaction. Optional realtime recording is separate visual evidence: successful readiness places the baseline frame before the first resize, while recording startup/readiness/completion failures are reported in recording.status and never cancel the finite resize transaction. Used to reproduce live-resize stalls, blanks, stale frames, and surface drift without focusing the window.",
     params: {
       sizes: {
         type: "json",
@@ -98,7 +98,7 @@ export function registerWindowCatalog(): void {
       },
     },
     returns:
-      "{ steps, recording:{status:'not-requested'|'complete'|'failed',mode:'realtime',dir?,requestedFrames?,frames?,reason?}, resizeElapsedMs, elapsedMs, final:{w,h}, baseline, samples:[{step,size,observation}] }",
+      "{ steps, recording:{status:'not-requested'|'complete'|'failed',mode:'realtime',dir?,requestedFrames?,frames?,reason?}, resizeElapsedMs, elapsedMs, final:{w,h}, baseline:{status:'not-observed'|'unavailable'|'observed',reason?,observation?}, samples:[{step,size,observation}] }",
     message: (d) => {
       const recording = d.recording as Record<string, unknown> | undefined;
       return tmsg("msg.window.resizeSequence", {

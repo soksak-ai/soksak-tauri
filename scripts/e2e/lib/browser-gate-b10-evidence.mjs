@@ -87,7 +87,7 @@ export function mapB10LiveEvidence(raw = {}) {
       physical: "device-px",
       scaleFactor: field(raw, "scaleFactor"),
     },
-    baseline: snapshot(field(field(sequence, "baseline"), "snapshot")),
+    baseline: snapshot(field(field(field(sequence, "baseline"), "observation"), "snapshot")),
     transactions: Array.isArray(sequence?.samples)
       ? sequence.samples.map(transaction)
       : null,
