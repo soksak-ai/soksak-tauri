@@ -600,8 +600,10 @@ async function readBrowserSurfaceObservation(
   win,
   { nativeChildWebview, implementation, plugin, tabIds, labels },
 ) {
+  // 문서 밖 표면은 전부 PaneSurfaceHost 에 앉는다 — 자기가 소유한 native surface 를 넘긴
+  // 엔진도 그렇다. 그 호스트가 창의 어디에 앉았는지는 presenter 를 원점으로 답한 좌표를
+  // 자리(slot)와 같은 축으로 옮기는 유일한 기준이다.
   const paneComposition = nativeChildWebview
-    && implementation.surface !== "engine-offscreen"
     ? must(await rpc("webview.pane.composition", {}, win), "chrome pane composition")
     : null;
   // 문서 안에 사는 표면의 원장은 content view host 자신의 목록이다.

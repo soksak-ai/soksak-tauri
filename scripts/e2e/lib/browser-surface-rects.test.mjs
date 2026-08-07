@@ -37,6 +37,55 @@ const paneCompositionFact = ({ member = {}, pane = {}, ...rest } = {}) => ({
   ...rest,
 });
 
+/**
+ * 문서 밖 offscreen 표면 한 장의 실측 모양.
+ *
+ * 엔진이 든 자리는 창 좌표가 아니다 — 호스트가 적용해 건넨 presenter-local 프레임(`{x:0,y:28}`)
+ * 이고, 그 presenter 가 창의 어디에 앉았는지(`{x:513,y:121}`)는 AppKit 장부가 소유한다. 픽스처가
+ * 이 둘을 이미 더해진 한 숫자로 두면, 원점을 안 더하는 결함이 초록으로 굳는다.
+ */
+const offscreenFact = ({ declared = {}, engine = {}, stats = {}, paneComposition } = {}) => ({
+  nativeChildWebview: true,
+  surface: "engine-offscreen",
+  windowLabel: "w-test",
+  viewIds: ["tab-right"],
+  labels: ["offscreen-tab-right"],
+  stats: {
+    sampledAtUnixMs: 1_700_000_000_010,
+    ids: [{ viewId: "tab-right", surfaceId: 7 }],
+    surfaces: [{
+      viewId: "tab-right",
+      surfaceId: 7,
+      label: "offscreen-tab-right",
+      topologyPath: "window/w-test/view/tab-right/content/offscreen-tab-right",
+      coordinateSpace: {
+        logical: "css-px", origin: "presenter-local", referenceId: "offscreen-tab-right",
+      },
+      frame: { x: 0, y: 28, w: 281, h: 421 },
+      ...declared,
+    }],
+    engine: {
+      ids: [7],
+      surfaces: [{
+        id: 7,
+        hidden: false,
+        presentation: { x: 0, y: 28, w: 281, h: 421 },
+        viewport: { matches: true },
+        resize: { pending: false },
+        ...engine,
+      }],
+    },
+    ...stats,
+  },
+  paneComposition: paneComposition ?? {
+    matches: [{
+      viewId: "tab-right",
+      nativeFrame: { x: 513, y: 121, w: 281, h: 449 },
+      memberMatches: [{ label: "offscreen-tab-right", nativeCount: 1, ok: true }],
+    }],
+  },
+});
+
 describe("browser surface rect evidence", () => {
   // slot·renderer 는 공개 DOM 을 읽는다. 표면까지 같은 DOM 투영을 옮겨 적으면 세 관측은 한
   // 숫자의 사본 셋이고, native 표면이 어디에 있든 1:1 판정이 통과한다.
@@ -106,33 +155,53 @@ describe("browser surface rect evidence", () => {
     }).sampledAtUnixMs).toBeNull();
   });
 
-  it("uses the owner-published offscreen presentation bounds", () => {
-    const result = mapBrowserSurfaceRects({
-      nativeChildWebview: true,
-      surface: "engine-offscreen",
-      windowLabel: "w-test",
-      viewIds: ["tab-right"],
-      labels: ["offscreen-tab-right"],
-      stats: {
-        ids: [{ viewId: "tab-right", surfaceId: 7 }],
-        engine: {
-          ids: [7],
-          surfaces: [{
-            id: 7,
-            hidden: false,
-            bounds: { x: 513, y: 149, w: 281, h: 421 },
-            presentation: { x: 513, y: 149, w: 281, h: 421 },
-            viewport: { matches: true },
-            resize: { pending: false },
-          }],
-        },
-      },
-    });
-
-    expect(result).toEqual([{
+  // 표면을 앉힌 쪽이 자기 신원과 자리를 답한다. 그 자리의 원점은 창이 아니라 그 표면을 품은
+  // presenter 이고, presenter 가 창의 어디에 앉았는지는 AppKit 장부가 소유한다.
+  it("reads the identity and frame the surface owner declared", () => {
+    expect(mapBrowserSurfaceRects(offscreenFact())).toEqual([{
       viewId: "tab-right", surfaceId: "7", live: true, visible: true, presented: true,
+      topologyPath: "window/w-test/view/tab-right/content/offscreen-tab-right",
       rect: { x: 513, y: 149, w: 281, h: 421 },
     }]);
+  });
+
+  // 판정면이 자리(slot)와 같은 공식으로 주소를 채우면 셋은 한 공식의 사본이고, 표면이 엉뚱한
+  // 라벨에 붙은 날에도 1:1 이 통과한다. 이 원장이 보증하는 것은 자기 라벨에 매인 주소뿐이다.
+  it("never mints a topology path the owner did not answer", () => {
+    expect(mapBrowserSurfaceRects(offscreenFact({ declared: { topologyPath: undefined } })))
+      .toMatchObject([{ topologyPath: "" }]);
+    expect(mapBrowserSurfaceRects(offscreenFact({
+      declared: { topologyPath: "window/w-test/view/tab-right/content/offscreen-tab-other" },
+    }))).toMatchObject([{ topologyPath: "" }]);
+  });
+
+  // 원점을 안 밝힌 숫자는 창 좌표로 읽힌다 — 좌표계 차이가 합성 결함과 같은 값이 된다.
+  it("refuses a frame whose origin the owner never declared", () => {
+    expect(mapBrowserSurfaceRects(offscreenFact({ declared: { coordinateSpace: undefined } })))
+      .toMatchObject([{ rect: null }]);
+    expect(mapBrowserSurfaceRects(offscreenFact({
+      declared: { coordinateSpace: { logical: "css-px", origin: "screen", referenceId: "x" } },
+    }))).toMatchObject([{ rect: null }]);
+  });
+
+  // 원점의 기준을 못 읽었는데 presenter-local 값을 그대로 실으면, 자리와 다른 축의 숫자가
+  // 자리와 같은 축인 척한다.
+  it("refuses a presenter-local frame with no presenter origin to resolve it against", () => {
+    expect(mapBrowserSurfaceRects(offscreenFact({ paneComposition: { matches: [] } })))
+      .toMatchObject([{ rect: null }]);
+  });
+
+  it("carries the owner ledger's own sample time", () => {
+    expect(browserSurfaceObservation(offscreenFact())).toMatchObject({
+      source: BROWSER_SURFACE_OBSERVATION_SOURCES.engineLedger,
+      sampledAtUnixMs: 1_700_000_000_010,
+    });
+  });
+
+  // Number(null) 은 0 이고, 그 0 은 정착보다 이른 시각으로 읽힌다 — 안 잰 것이 잰 위반이 된다.
+  it("never turns an unrecorded sample time into zero", () => {
+    expect(browserSurfaceObservation(offscreenFact({ stats: { sampledAtUnixMs: undefined } })))
+      .toMatchObject({ sampledAtUnixMs: null });
   });
 
   // 콘텐츠가 문서 안에 사는 프레임워크의 표면 원장은 content view host 자신의 목록이다.
@@ -303,26 +372,7 @@ describe("browser surface rect evidence", () => {
   });
 
   it("reports the engine's own hidden answer instead of a second visibility definition", () => {
-    const engineSurface = (hidden) => mapBrowserSurfaceRects({
-      nativeChildWebview: true,
-      surface: "engine-offscreen",      windowLabel: "w-test",
-      viewIds: ["tab-right"],
-      labels: ["offscreen-tab-right"],
-      stats: {
-        ids: [{ viewId: "tab-right", surfaceId: 7 }],
-        engine: {
-          ids: [7],
-          surfaces: [{
-            id: 7,
-            hidden,
-            bounds: { x: 513, y: 149, w: 281, h: 421 },
-            presentation: { x: 513, y: 149, w: 281, h: 421 },
-            viewport: { matches: true },
-            resize: { pending: false },
-          }],
-        },
-      },
-    })[0];
+    const engineSurface = (hidden) => mapBrowserSurfaceRects(offscreenFact({ engine: { hidden } }))[0];
     expect(engineSurface(true)).toMatchObject({ visible: false });
     expect(engineSurface(false)).toMatchObject({ visible: true });
   });
