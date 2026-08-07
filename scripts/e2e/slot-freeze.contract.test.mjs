@@ -859,3 +859,23 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(source).toContain("b11PaneRequestedDx = Number(dragged.dx)");
   });
 });
+
+// 규칙 — 부르는 쪽이 소유한 값은 부르는 쪽이 든다.
+//
+// 원인 id 는 하니스가 만들어 무장에 실어 보낸 값이다. 그것을 상대의 영수증에서 되읽으면
+// 우리가 소유한 값이 상대의 답 모양에 매인다. 실측 2026-08-07: browser-chromium-offscreen 의
+// 무장 영수증이 traceId 를 문자열이 아닌 모양으로 답했고, 하니스가 그것을 그대로
+// ui.input.click 에 넘겨 `causeTraceId: string 이어야 함` 으로 거절당했다. 엔진 실행이 그
+// 자리에서 죽어 11칸 중 9칸이 blocked 로 남았다.
+describe("원인 id 소유", () => {
+  const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+
+  it("무장 영수증에서 원인 id 를 되읽지 않는다", () => {
+    expect(source).not.toContain("armedPresentation?.traceId");
+  });
+
+  it("원인 id 를 만든 자리와 무장에 싣는 자리가 같다", () => {
+    expect(source).toContain("const causeTraceId = `${engine}-${name}-${randomUUID()}`");
+    expect(source).toContain("armParams({\n                traceId: causeTraceId,");
+  });
+});

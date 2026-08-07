@@ -816,6 +816,20 @@
       "note": "컨트롤 창 해소의 기준. 굳은 잔재 창이 포커스 폴백을 점유해도 해소가 결정적이어야 한다는 법을 고정한다."
     },
     {
+      "file": "lib/evidence-headroom.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "인수 실행이 자기 증거를 담을 자리가 있는지 답한다. 여유는 파일시스템 사실이라 앱 홈이 아니라 OS 홈의 여유만 읽는다."
+    },
+    {
+      "file": "lib/evidence-headroom.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "자리 판정 규칙을 고정한다 — 못 읽음은 넉넉함이 아니고, 회수 안내는 이 실행이 다시 만드는 자리를 가리키지 않는다."
+    },
+    {
       "file": "lib/evidence-store.mjs",
       "role": "lib",
       "class": "A",
@@ -978,20 +992,6 @@
       "note": "저장 preflight·callback 이후 실패에서도 제품 action이 한 번만 실행되고 artifact identity가 상대경로로 남는지 검증한다."
     },
     {
-      "file": "lib/surface-scale.mjs",
-      "role": "lib",
-      "class": "A",
-      "surfaces": [],
-      "note": "표시 배율의 사실을 창 레코드에서만 받는다. 캡처에서 다시 잰 배율은 사본으로 따로 싣고, 사실이 없으면 1 로 대체하지 않고 측정 불가로 거절한다."
-    },
-    {
-      "file": "lib/surface-scale.test.mjs",
-      "role": "test",
-      "class": "A",
-      "surfaces": [],
-      "note": "배율 사실이 맨 숫자를 거절하고 못 읽음이 성공값으로 둔갑하지 않는다는 법을 고정한다."
-    },
-    {
       "file": "lib/surface-invariant.mjs",
       "role": "lib",
       "class": "A",
@@ -1004,6 +1004,20 @@
       "class": "A",
       "surfaces": [],
       "note": "답한 불일치가 실행을 세우지 않고 원장에 실려 그 엔진을 RED 로 끝낸다는 법, 그리고 재지 않은 것과 재서 통과한 것이 갈린다는 법을 고정한다."
+    },
+    {
+      "file": "lib/surface-scale.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "표시 배율의 사실을 창 레코드에서만 받는다. 캡처에서 다시 잰 배율은 사본으로 따로 싣고, 사실이 없으면 1 로 대체하지 않고 측정 불가로 거절한다."
+    },
+    {
+      "file": "lib/surface-scale.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "배율 사실이 맨 숫자를 거절하고 못 읽음이 성공값으로 둔갑하지 않는다는 법을 고정한다."
     },
     {
       "file": "lib/surface-settlement.mjs",
@@ -1238,6 +1252,13 @@
       "class": "A",
       "surfaces": [],
       "note": "앞 판들이 두고 간 픽스처 창을 걷는다. 픽스처 밭·이름 규약에 걸리는 창만 닫고, 빈 창은 --empty 로만 — 사용자 창은 어느 규칙에도 걸리지 않는다."
+    },
+    {
+      "file": "require-evidence-headroom.mjs",
+      "role": "tool",
+      "class": "A",
+      "surfaces": [],
+      "note": "빌드 앞과 실행 앞에서 자리를 재고 모자라면 실행을 시작하지 않는다. df 로 OS 홈의 여유만 읽는다 — 프레임워크를 모른다."
     },
     {
       "file": "resize.sh",

@@ -1319,12 +1319,15 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
         let domTraceOpen = true;
         let armedPresentation = null;
         let presentationOpen = false;
+        // 원인 id 는 부르는 쪽이 소유한다 — 만들어 무장에 실어 보내고, 자극에도 같은 값을
+        // 든다. 상대의 영수증에서 되읽으면 우리가 소유한 값이 상대의 답 모양에 매인다.
+        const causeTraceId = `${engine}-${name}-${randomUUID()}`;
         try {
           if (presentationTraceMeasurable) {
             armedPresentation = must(await rpc(
               implementation.presentationTrace.armCommand,
               implementation.presentationTrace.armParams({
-                traceId: `${engine}-${name}-${randomUUID()}`,
+                traceId: causeTraceId,
                 owners: presentationOwners,
               }),
               win,
@@ -1342,8 +1345,8 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
           // 자극은 자기 관측 거래를 선언한다 — 장부를 sequence 창으로 오려내는 것은
           // "그 사이에 다른 거래가 없었다"는 가정이고, 가정은 영수증이 아니다. 표시 궤적을 못
           // 여는 창에서도 자극은 여전히 자기 관측 거래를 선언한다 — 사유가 없는 거래를 만들지
-          // 않으려면 이 자리에 실재하는 부르는 쪽의 id 가 있어야 한다.
-          const causeTraceId = armedPresentation?.traceId ?? domTraceSession.traceId;
+          // 않으려면 이 자리에 실재하는 부르는 쪽의 id 가 있어야 한다 — causeTraceId 는 위에서
+          // 이 하니스가 만들어 무장에 실은 값이다.
           const clickReceipt = must(await rpc("ui.input.click", {
             address: activationAddresses[side],
             causeTraceId,
@@ -1404,7 +1407,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
             // CADisplayLink 꼬리에는 대응 DOM frame이 없어 서로 다른 관측 구간을 결합하게 된다.
             const presentationReceipt = must(await rpc(
               implementation.presentationTrace.readCommand,
-              implementation.presentationTrace.readParams({ traceId: armedPresentation.traceId }),
+              implementation.presentationTrace.readParams({ traceId: causeTraceId }),
               win,
               { timeoutMs: 10_000 },
             ), `B04 presentation trace read ${name}`);
@@ -1472,7 +1475,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
             await writeMachineReport(
               path.join(dir, "composition-trace.json"),
               {
-                traceId: armedPresentation.traceId,
+                traceId: causeTraceId,
                 targetViewId,
                 owner,
                 joins: flowPresentationTrace.joins,
@@ -1594,7 +1597,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
             try {
               await rpc(
                 implementation.presentationTrace.readCommand,
-                implementation.presentationTrace.readParams({ traceId: armedPresentation.traceId }),
+                implementation.presentationTrace.readParams({ traceId: causeTraceId }),
                 win,
                 { timeoutMs: 10_000 },
               );
