@@ -131,8 +131,18 @@ describe("DOM ↔ native webview composition contract", () => {
     topologyDrift.renderers[0].topologyPath = "workspace/pane/wrong/content";
     expect(compositionInventoryVerdict(topologyDrift)).toMatchObject({
       ok: false,
-      errors: expect.arrayContaining([expect.stringContaining("topology=")]),
+      errors: expect.arrayContaining([expect.stringContaining("topology slot=")]),
     });
+
+    // 값 안에 "/" 가 있으므로 "/" 로 이으면 값 경계가 사라진다 — 실측 2026-08-07: 빈 값 하나를
+    // "경로가 두 번 이어붙었다"로 잘못 읽었고, 잘못 읽은 증거는 잘못된 자리를 고치게 한다.
+    const surfaceSilent = structuredClone(inventory);
+    surfaceSilent.surfaces[0].topologyPath = "";
+    const silentTopology = compositionInventoryVerdict(surfaceSilent).errors
+      .find((error) => error.includes(":topology "));
+    expect(silentTopology).toContain("slot=");
+    expect(silentTopology).toContain("renderer=");
+    expect(silentTopology).toContain('surface=""');
 
     const physicalDrift = structuredClone(inventory);
     physicalDrift.surfaces[0].physicalFrame.x += 1;
@@ -326,3 +336,4 @@ describe("DOM ↔ native webview composition contract", () => {
     expect(alignedVerdict.errors.some((error) => error.includes("window-gap"))).toBe(false);
   });
 });
+

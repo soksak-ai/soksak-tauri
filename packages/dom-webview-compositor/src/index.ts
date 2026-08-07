@@ -515,7 +515,12 @@ export function compositionInventoryVerdict(inventory: CompositionInventory) {
     matched += 1;
     const topologies = [slot.topologyPath, renderer.topologyPath, surface.topologyPath];
     if (new Set(topologies).size !== 1) {
-      errors.push(`${viewId}:topology=${topologies.join("/")}`);
+      // 값 안에 "/" 가 있으므로 "/" 로 잇지 않는다 — 그러면 어느 참가자의 값인지도, 빈 값이
+      // 있었다는 사실도 사라진다. 참가자 이름을 달고 값은 따옴표로 닫는다.
+      const named = (["slot", "renderer", "surface"] as const)
+        .map((who, index) => `${who}=${JSON.stringify(topologies[index] ?? null)}`)
+        .join(" ");
+      errors.push(`${viewId}:topology ${named}`);
     }
     if (!sameRect(slot.physicalFrame, renderer.physicalFrame)) {
       errors.push(`${viewId}:renderer-frame=${displayRect(slot.physicalFrame)}/${displayRect(renderer.physicalFrame)}`);
