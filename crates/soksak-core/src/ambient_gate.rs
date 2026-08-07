@@ -146,6 +146,14 @@ pub const ALLOWED: &[AmbientRead] = &[
         why: "비전면 시각 검증이 새 창의 첫 표시 방법을 고른다 — 실제 BrowserWindow를 가진 프로세스만 적용할 수 있다",
         after_split: "창 없는 코어로 옮기면 표시할 대상이 없고, 창 호스트에 전달하지 않으면 검증 창이 포커스를 빼앗는다. 이 값은 Electron 창 호스트에 남는다",
     },
+    AmbientRead {
+        path: "frameworks/electron/displayGeometry.cjs",
+        key: "XDG_SESSION_TYPE",
+        why: "Linux 에서 표시면 기하가 세션 종류로 갈린다(Wayland 는 전역 화면 좌표를 주지 않는다) — \
+              그 값은 창 서버에 붙은 프로세스가 상속한 것이다",
+        after_split: "창 없는 코어는 창 서버에 붙지 않아 이 값을 상속하지 않는다. 갈리면 세션 종류를 \
+                      창 호스트가 읽어 기하와 함께 넘긴다 — 이 읽기는 창 호스트에 남는다",
+    },
 ];
 
 /// 이 파일은 **검사**인가 — 규칙이 아니라 그 증명이다.
