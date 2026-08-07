@@ -302,6 +302,10 @@ e2e-browser-acceptance-dev: build-dev ## 한 빌드로 두 실행기를 잇고 3
 	@# 병합 계약은 같은 artifact 를 요구한다. 각 실행기가 자기 빌드를 만들면 두 기여가 갈려
 	@# 인수 판정이 성립하지 않는다 — 그래서 여기서 한 번만 빌드하고 두 실행기가 그것을 잰다.
 	@test -x "$(DEV_EXECUTABLE)" || { echo "빌드된 dev 앱 실행 파일이 없다: $(DEV_EXECUTABLE)"; exit 1; }
+	@# 증거 저장소는 자기 한도(전체 2GiB)를 지키지만 파일시스템이 먼저 차면 그 한도에 닿기 전에
+	@# 실행이 무너진다 — 실측: ENOSPC 하나가 slot-freeze 중간에 나서 뒤따르는 재시작과 B12
+	@# 두 사이클을 통째로 죽였고, 그 실패들은 제품과 무관했다. 담을 자리를 먼저 확인한다.
+	@free_gib="$$(df -g "$(HOME)" | tail -1 | awk '{print $$4}')"; 		test "$$free_gib" -ge 5 || { 		  echo "디스크 여유 $${free_gib}GiB — 인수 실행은 증거 저장소 한도(2GiB)를 담을 5GiB 이상이 필요하다."; 		  echo "회수: make doctor-fix · 오래된 run 정리 · target/debug(host 캐시, 재생성 가능)"; 		  exit 1; }
 	@$(MAKE) --no-print-directory restart-dev
 	@evidence_build_id="$$(shasum -a 256 "$(DEV_EXECUTABLE)" | awk '{print $$1}')"; \
 		run_status=0; \
