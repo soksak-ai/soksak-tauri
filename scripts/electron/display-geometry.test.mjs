@@ -80,3 +80,27 @@ describe("Electron display geometry", () => {
     });
   });
 });
+
+// 규칙 — 모듈 평가 중에 프레임워크를 만지지 않는다.
+//
+// Electron 의 `screen` 은 app 'ready' 전에 만지면 던진다. createDisplayGeometry 가 인자를
+// 받자마자 `screen.getDisplayMatching` 을 확인해서, main.cjs 가 모듈 평가 중 그것을 부르는
+// 순간 앱이 적재조차 못 했다 — 실측 2026-08-08:
+// `Error: The 'screen' module can't be used before the app 'ready' event`
+// 로 Electron 이 뜨지 못했고, 인수의 절반이 통째로 측정 불가였다.
+//
+// 계약은 그대로다(screen 이 그 능력을 답해야 한다). 확인 시점만 실제로 쓰는 자리로 옮긴다.
+describe("screen 계약 확인 시점", () => {
+  it("만들 때는 screen 을 만지지 않는다", () => {
+    let touched = 0;
+    const screen = new Proxy({}, { get() { touched += 1; return () => ({}); } });
+    createDisplayGeometry({ screen });
+    expect(touched).toBe(0);
+  });
+
+  it("쓸 때 그 능력이 없으면 이름을 달고 거절한다", () => {
+    const geometry = createDisplayGeometry({ screen: {} });
+    expect(() => geometry.snapshot(null, { x: 0, y: 0, width: 1, height: 1 }))
+      .toThrow(/getDisplayMatching/);
+  });
+});

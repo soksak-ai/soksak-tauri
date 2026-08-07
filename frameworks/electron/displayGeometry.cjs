@@ -57,21 +57,27 @@ function createDisplayGeometry({
   platform = process.platform,
   sessionType = process.env.XDG_SESSION_TYPE ?? "",
 } = {}) {
-  if (!screen || typeof screen.getDisplayMatching !== "function") {
-    throw new TypeError("Electron screen.getDisplayMatching이 필요하다");
-  }
+  // 계약은 그대로다 — screen 이 이 능력을 답해야 한다. 다만 **만들 때** 확인하면 app 'ready'
+  // 전에 그 모듈을 만지게 되고, Electron 은 그 순간 던진다(실측 2026-08-08: 앱이 적재조차 못 해
+  // 인수의 절반이 통째로 측정 불가였다). 확인은 실제로 쓰는 자리에서 한다.
+  const requireScreen = () => {
+    if (!screen || typeof screen.getDisplayMatching !== "function") {
+      throw new TypeError("Electron screen.getDisplayMatching이 필요하다");
+    }
+    return screen;
+  };
   const normalizedPlatform = String(platform);
   const wayland = normalizedPlatform === "linux" && String(sessionType).toLowerCase() === "wayland";
 
   function snapshot(win, bounds = win?.getBounds?.()) {
     const dip = rect(bounds, "window bounds");
-    return displaySnapshot(screen.getDisplayMatching(dip));
+    return displaySnapshot(requireScreen().getDisplayMatching(dip));
   }
 
   function rectToPhysical(win, dipRect, display) {
     const input = rect(dipRect);
     if (normalizedPlatform === "win32") {
-      if (typeof screen.dipToScreenRect !== "function") {
+      if (typeof requireScreen().dipToScreenRect !== "function") {
         throw namedError(
           "SCREEN_RECT_CONVERSION_UNAVAILABLE",
           "Windows screen physical 변환에 screen.dipToScreenRect가 없다",
@@ -80,7 +86,7 @@ function createDisplayGeometry({
       return {
         coordinateSpace: "screen-physical",
         method: "electron.screen.dipToScreenRect",
-        rect: rect(screen.dipToScreenRect(win ?? null, input), "screen physical rect"),
+        rect: rect(requireScreen().dipToScreenRect(win ?? null, input), "screen physical rect"),
       };
     }
 
@@ -98,9 +104,9 @@ function createDisplayGeometry({
       };
     }
 
-    if (normalizedPlatform === "linux" && !wayland && typeof screen.dipToScreenPoint === "function") {
-      const topLeft = screen.dipToScreenPoint({ x: input.x, y: input.y });
-      const bottomRight = screen.dipToScreenPoint({
+    if (normalizedPlatform === "linux" && !wayland && typeof requireScreen().dipToScreenPoint === "function") {
+      const topLeft = requireScreen().dipToScreenPoint({ x: input.x, y: input.y });
+      const bottomRight = requireScreen().dipToScreenPoint({
         x: input.x + input.width,
         y: input.y + input.height,
       });

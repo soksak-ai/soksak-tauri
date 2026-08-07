@@ -140,6 +140,10 @@ run-dev: ## 개발 정체성 soksak-tauri-dev.app 실행(새 인스턴스)
 rebuild-dev: build-dev ## 현재 소스를 dev 번들로 다시 만든 뒤 단일 인스턴스로 재실행
 	$(MAKE) --no-print-directory restart-dev
 
+# 준비 대기는 폴링이다 — 앱 부팅 완료를 밖에서 구독할 자리가 아직 없다. 그래서 주기(0.5s)·상한
+# (30s)·종료 조건(내 프레임워크가 답함)을 명시하고, 회차당 호출을 하나로 줄인다. 0.1초로 두 번씩
+# 부르면 사용자 활동 로그가 그 질문으로 도배된다(실측 2026-08-08).
+#
 # 준비됐다는 것은 "누군가 답한다" 가 아니라 "내 앱이 답한다" 다. 두 프레임워크가 한 홈의 소켓을
 # 나누므로, 창이 답하는지만 보면 다른 앱이 답해도 통과한다 — 실측 2026-08-08: Electron 을 띄웠는데
 # Tauri 가 소켓을 쥔 채 인수 판정이 끝까지 돌았고 열 칸이 거짓 green 이었다.
@@ -153,7 +157,6 @@ restart-dev: ## 이미 빌드·검증된 동일 dev 번들을 빌드 없이 반�
 	@CLI="$(DEV_CLI)"; SOCKET="$(DEV_HOST_SOCKET)"; RESTART_FRAMEWORK=tauri; \
 	owner_pid() { lsof -t "$$SOCKET" 2>/dev/null | head -n 1; }; \
 	host_ready() { \
-	  "$$CLI" window.list >/dev/null 2>&1 || return 1; \
 	  "$$CLI" framework.info 2>/dev/null | grep -q "\"framework\": \"$$RESTART_FRAMEWORK\""; \
 	}; \
 	old_pid="$$(owner_pid)"; \
@@ -173,10 +176,10 @@ restart-dev: ## 이미 빌드·검증된 동일 dev 번들을 빌드 없이 반�
 	fi; \
 	$(MAKE) --no-print-directory run-dev >/dev/null; \
 	new_pid=""; \
-	for _ in $$(seq 1 300); do \
+	for _ in $$(seq 1 60); do \
 	  new_pid="$$(owner_pid)"; \
 	  [ -n "$$new_pid" ] && [ "$$new_pid" != "$$old_pid" ] && kill -0 "$$new_pid" 2>/dev/null && host_ready && break; \
-	  sleep 0.1; \
+	  sleep 0.5; \
 	done; \
 	[ -n "$$new_pid" ] && [ "$$new_pid" != "$$old_pid" ] && kill -0 "$$new_pid" 2>/dev/null && host_ready || \
 	  { echo "재실행 준비 실패: dev IPC 소유 프로세스가 교체되어 응답하지 않는다"; exit 1; }; \
@@ -196,7 +199,6 @@ restart-electron: ## 이미 만들어진 Electron 번들을 빌드 없이 반복
 	@CLI="$(DEV_CLI)"; APP="$(ELECTRON_EXECUTABLE)"; RESTART_FRAMEWORK=electron; \
 	owner_pid() { pgrep -f "$$APP" 2>/dev/null | head -n 1; }; \
 	host_ready() { \
-	  "$$CLI" window.list >/dev/null 2>&1 || return 1; \
 	  "$$CLI" framework.info 2>/dev/null | grep -q "\"framework\": \"$$RESTART_FRAMEWORK\""; \
 	}; \
 	old_pid="$$(owner_pid)"; \
@@ -207,15 +209,20 @@ restart-electron: ## 이미 만들어진 Electron 번들을 빌드 없이 반복
 	  for _ in $$(seq 1 100); do kill -0 "$$old_pid" 2>/dev/null || break; sleep 0.1; done; \
 	  kill -0 "$$old_pid" 2>/dev/null && { echo "종료 실패: Electron PID $$old_pid 가 남았다"; exit 1; }; \
 	fi; \
-	"$$APP" frameworks/electron/main.cjs >/dev/null 2>&1 & \
+	mkdir -p "$(DEV_LOG_DIR)"; \
+	"$$APP" frameworks/electron/main.cjs \
+	  >>"$(DEV_LOG_DIR)/electron-app.log" 2>>"$(DEV_LOG_DIR)/electron-app.error.log" & \
 	new_pid=""; \
-	for _ in $$(seq 1 300); do \
+	for _ in $$(seq 1 60); do \
 	  new_pid="$$(owner_pid)"; \
 	  [ -n "$$new_pid" ] && [ "$$new_pid" != "$$old_pid" ] && kill -0 "$$new_pid" 2>/dev/null && host_ready && break; \
-	  sleep 0.1; \
+	  sleep 0.5; \
 	done; \
 	[ -n "$$new_pid" ] && [ "$$new_pid" != "$$old_pid" ] && kill -0 "$$new_pid" 2>/dev/null && host_ready || \
-	  { echo "재실행 준비 실패: Electron 창 호스트가 응답하지 않는다"; exit 1; }; \
+	  { echo "재실행 준비 실패: Electron 창 호스트가 $$RESTART_FRAMEWORK 로 응답하지 않는다"; \
+	    echo "  로그: $(DEV_LOG_DIR)/electron-app.log · $(DEV_LOG_DIR)/electron-app.error.log"; \
+	    tail -n 5 "$(DEV_LOG_DIR)/electron-app.error.log" 2>/dev/null | sed 's/^/  /'; \
+	    exit 1; }; \
 	sleep 0.5; \
 	kill -0 "$$new_pid" 2>/dev/null || { echo "재실행 수명 실패: 새 Electron PID $$new_pid 가 유지되지 않는다"; exit 1; }; \
 	echo "재실행: Electron PID $$old_pid → $$new_pid, 창 호스트 준비 완료"
