@@ -16,8 +16,11 @@ const finite = (value) => (Number.isFinite(value) ? value : null);
 /**
  * 정착 뒤 유지 창을 관측이 덮도록 선언한 유한 대기.
  *
- * 이것은 "되기를 기다리는" 폴링이 아니라 B05가 요구하는 관측 창 자체다. 이 창 동안 표면이
- * 움직이지 않았다는 사실이 곧 판정 대상이다.
+ * "되기를 기다리는" 폴링이 아니라 B05가 요구하는 관측 창 자체다. display link는 스트림으로
+ * 노출되지 않고 원장은 close에서만 답하므로, 창을 여는 수단은 이 유한 대기 하나뿐이다.
+ *
+ * 대기 자체는 증거가 아니다 — 유지 창의 시작·끝·표면 재고는 전부 실제 표시 사건 epoch로
+ * 판정한다. 그래서 이 값을 짧게 잡으면 GREEN이 아니라 RED가 나온다.
  */
 export async function awaitPostSettleHold({
   holdMs = B05_POST_SETTLE_HOLD_MS,
