@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { lstat, mkdtemp, readFile, rm } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -342,17 +342,41 @@ describe("canonical browser gate report store", () => {
       store.bindFramework("tauri");
       expect(store.report().engines.browser.B04.visualReview.status).toBe("pending");
 
+      // 사람은 실재하는 캡처만 봤다고 적을 수 있다. 없는 파일을 적으면 기록되지 않는다.
+      const captures = ["browser/01-left/f0001.png", "browser/02-right/f0048.png"];
+      for (const capture of captures) {
+        const file = path.join(root, "current", capture);
+        await mkdir(path.dirname(file), { recursive: true });
+        await writeFile(file, "png");
+      }
+      expect(() => store.recordVisualReview({
+        framework: "tauri",
+        engine: "browser",
+        gate: "B04",
+        status: "passed",
+        artifacts: ["browser/never-captured.png"],
+        notes: "안 찍힌 것을 봤다고 적는다",
+      })).toThrow(/browser\/never-captured\.png/);
+      expect(() => store.recordVisualReview({
+        framework: "tauri",
+        engine: "browser",
+        gate: "B04",
+        artifacts: captures,
+        notes: "판정을 안 적었다",
+      })).toThrow(/passed/);
+      expect(store.report().engines.browser.B04.visualReview.status).toBe("pending");
+
       const reviewed = store.recordVisualReview({
         framework: "tauri",
         engine: "browser",
         gate: "B04",
         status: "passed",
-        artifacts: ["browser/01-left/f0001.png", "browser/02-right/f0048.png"],
+        artifacts: captures,
         notes: "사람이 양방향 전 프레임을 검토함",
       });
       expect(reviewed).toEqual({
         status: "passed",
-        artifacts: ["browser/01-left/f0001.png", "browser/02-right/f0048.png"],
+        artifacts: captures,
         notes: "사람이 양방향 전 프레임을 검토함",
       });
       await store.persist();

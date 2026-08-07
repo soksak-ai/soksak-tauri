@@ -62,6 +62,7 @@ import {
 } from "./lib/browser-page-state.mjs";
 import { assertSentinelMounted } from "./lib/browser-sentinel.mjs";
 import { windowedSurfaceCompositionVerdict } from "./lib/windowed-surface-composition.mjs";
+import { displayScaleFact } from "./lib/surface-scale.mjs";
 import { mapB03LiveEvidence } from "./lib/browser-gate-b03-evidence.mjs";
 import { mapB05LiveEvidence } from "./lib/browser-gate-b05-evidence.mjs";
 import { awaitPostSettleHold, resolveB05Settlement } from "./lib/browser-gate-b05-hold.mjs";
@@ -300,7 +301,13 @@ function assertTauriSurfaceResizePolicy(data, stage) {
   }
 }
 
-async function assertWindowedComposition(rpc, win, plugin, tabIds, labels, scaleFactor) {
+/**
+ * 배율은 창의 사실이므로 `window.info` 레코드를 받아 여기서 읽는다. 맨 숫자를 받지 않는 것이
+ * 요점이다 — 캡처에서 잰 배율은 맨 숫자로 돌아다니고, 그것이 이 판정의 반올림 기준이 되면
+ * 캡처가 실패할수록 판정이 느슨해진다.
+ */
+async function assertWindowedComposition(rpc, win, plugin, tabIds, labels, windowInfo) {
+  const scaleFactor = displayScaleFact(windowInfo);
   const stats = must(await rpc(`plugin.${plugin}.stats`, {}, win), "windowed stats");
   const paneComposition = must(
     await rpc("webview.pane.composition", {}, win),
@@ -1368,7 +1375,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
             assertNativeLighting(must(await rpc("webview.surfaces", {}, win), `surfaces ${name}`), labels[side], labels);
           }
           if (windowed) {
-            await assertWindowedComposition(rpc, win, plugin, tabIds, labels, scale);
+            await assertWindowedComposition(rpc, win, plugin, tabIds, labels, originalWindow);
           }
           await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, `cross-click-${name}`);
           if (cycle === 0) {

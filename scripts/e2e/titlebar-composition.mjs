@@ -285,10 +285,28 @@ async function inspectWindow(rpc, windowLabel, framework) {
       recordFrames: HOSTILE_RECORD_FRAMES,
       recordIntervalMs: 16,
     }, windowLabel, { timeoutMs: 60_000 }), `${windowLabel} hostile window resize`);
-    if (hostileResult.recording?.status !== "complete"
-        || hostileResult.recording?.frames !== HOSTILE_RECORD_FRAMES) {
-      throw new Error(
-        `${windowLabel}: hostile resize recording incomplete ${JSON.stringify(hostileResult.recording)}`,
+    // 녹화 완결성은 사람이 볼 캡처의 사실이다. B12 machine 판정은 아래 `hostileResize`의
+    // 거래 원장으로만 서고 이 프레임을 입력으로 받지 않는다 — 전에는 63장이면 던져서 judge 가
+    // 아예 닿지 못했고, 그래서 계약 위반이 red 로 남는 대신 칸이 통째로 blocked 였다.
+    const hostileRecording = {
+      kind: "human-visual-evidence",
+      automatedVerdict: false,
+      status: hostileResult.recording?.status ?? null,
+      frames: hostileResult.recording?.frames ?? null,
+      requestedFrames: HOSTILE_RECORD_FRAMES,
+      dir: path.join(directory, "hostile-resize"),
+    };
+    hostileRecording.complete = hostileRecording.status === "complete"
+      && hostileRecording.frames === HOSTILE_RECORD_FRAMES;
+    fs.writeFileSync(
+      path.join(directory, "hostile-resize.visual.json"),
+      `${JSON.stringify(hostileRecording, null, 2)}\n`,
+    );
+    if (!hostileRecording.complete) {
+      console.error(
+        `◉ ${windowLabel}: hostile resize 녹화 불완전 `
+          + `${hostileRecording.frames ?? "absent"}/${HOSTILE_RECORD_FRAMES} `
+          + `status=${hostileRecording.status} — 사람이 볼 캡처의 사실이며 B12 판정은 그대로 선다`,
       );
     }
     must(

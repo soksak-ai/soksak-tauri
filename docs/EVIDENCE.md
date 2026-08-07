@@ -49,10 +49,65 @@ evidenceWiring = { source, unconsumed, unproduced, error }
 `scripts/e2e/lib/browser-machine-judge-support.test.mjs`가 두 방향, throw, 손상된 장부,
 JSON 왕복을 검증한다. B03 적용은 `scripts/e2e/lib/browser-gate-b03-evidence.test.mjs`가 소유한다.
 
+## 배율은 창의 사실이다
+
+판정에 쓰는 배율은 `scripts/e2e/lib/surface-scale.mjs`의 `displayScaleFact(window.info)` 하나를
+지난다. 캡처 산출물은 이 값을 정하지 못한다.
+
+PNG 는 그 사실을 나중에 손실을 거쳐 다시 잰 사본이다. 사본이 정본을 정하면 판정의 허용오차가
+캡처 파이프라인을 따라 흔들린다 — `windowedSurfaceCompositionVerdict`의 `physical()`이 이 값으로
+반올림하므로, 사본이 1 로 내려앉는 순간 서로 다른 두 사각형이 같은 정수가 된다.
+
+`displayScaleFact`는 `window.info` 레코드만 받고 맨 숫자를 거절한다. 캡처에서 잰 배율은 맨
+숫자로 돌아다니므로, 사실을 요구하는 자리가 숫자를 거절하면 그 혼입이 표현 불가능해진다.
+사실이 없으면 **측정 불가**이므로 던진다 — 1 로 대체하지 않는다. 못 읽음은 성공값으로 표현될 수
+없다.
+
+`snapshotScaleForVisualEvidence`는 창의 사실을 `scale`로, 캡처에서 다시 잰 사본을
+`capturedScale`로 함께 싣는다. 둘이 어긋나면 사실을 바꾸는 대신 어긋났다는 사실에 이름을 준다.
+
+녹화 완결성도 같은 축이다. 프레임 수가 모자란 것은 사람이 볼 캡처의 사실이지 machine gate의
+통과 조건이 아니다. 그것으로 던지면 judge 가 닿지 못해 칸이 통째로 `blocked`가 되고, 계약 위반이
+수치로 남을 자리를 잃는다.
+
+던질 것과 실을 것을 가른다.
+
+- **측정 불가**(주소 없음, 창 없음, 명령 무응답, 배율 사실 없음) — 던진다. `blocked`가 옳다.
+- **계약 위반**(station 변경, rect 불일치, z 순서 틀림, 값이 기대와 다름, 녹화 프레임 부족) —
+  던지지 말고 evidence 에 실어 judge 가 `red`로 판정하게 한다. 보고서에 이름이 남아야 한다.
+
+`scripts/gates/visual-judgment-provenance.mjs`가 두 규칙을 소스에서 센다. 캡처에서 나온 이름이
+기계 판정 입구에 인자로 들어갔는지, 녹화 완결성을 기대값과 맞대 던지는지 본다. 봉투 스키마를
+거절하는 throw 와는 구분한다 — 그 throw 는 `reviewVisualRecordingSafely`가 받아 증거로 바꾼다.
+
 ## 브라우저 시각 검토
 
 브라우저 canonical report의 `visualReview`는 기본적으로 `pending`이다. 녹화·snapshot 생성이나
-machine gate 통과는 이 상태를 자동으로 바꾸지 않는다. 사람이 artifact를 직접 확인한 뒤
-`createBrowserGateReportStore(...).recordVisualReview(...)`에 framework, engine, gate,
-`passed|failed`, 검토한 artifact 상대경로와 메모를 명시해야만 판정이 기록된다. 이 경로는
-`setVisualReviewStatus`의 닫힌 schema를 사용하며 machine evidence와 독립적이다.
+machine gate 통과는 이 상태를 자동으로 바꾸지 않는다.
+
+시각 검토는 machine 판정이 닫힌 **다음에**, 사람이 캡처를 열어 본 뒤에 선다. 그래서 검토는 살아
+있는 실행 안이 아니라 저장된 정본 보고서 위에서 이뤄진다.
+
+```
+node scripts/e2e/visual-review.mjs --report <runs/...>/browser-gates.json --list
+
+node scripts/e2e/visual-review.mjs \
+  --report <runs/...>/browser-gates.json \
+  --engine browser-chromium --gate B04 --status passed \
+  --artifact browser-chromium/first-paint.png \
+  --artifact browser-chromium/flow-right/f0048.png \
+  --notes "좌우 전환에서 레일이 붙어 있고 표면이 밀리지 않는다"
+```
+
+`--list`는 아직 사람이 안 본 칸을 machine 상태와 함께 센다. 기록은 `--status`, `--artifact`,
+`--notes`를 전부 사람이 적어야 서고, 적은 artifact 가 보고서 디렉터리 안에 실제로 있는지 확인한
+뒤에만 정본에 쓰인다. 못 본 것을 봤다고 적을 수 없어야 하기 때문이다. 판정이 서기 전에는 정본을
+건드리지 않으며 교체는 원자적이다. 같은 검토를 두 번 적으면 같은 정본이 나온다.
+
+실행 중에 사람이 판정을 남기는 자리는
+`createBrowserGateReportStore(...).recordVisualReview(...)`다. 두 자리가 서로 다른 기준을 들지
+않도록 검사는 `browser-visual-review.mjs`의 `requireHumanVisualReview` 하나뿐이다. 둘 다
+`setVisualReviewStatus`의 닫힌 schema 를 쓰며 machine evidence 와 독립적이다.
+
+자동으로 `passed`가 되는 경로는 어느 쪽에도 없다. 그 경로가 생기면 "모든 UI gate 의
+`visualReview`가 passed"라는 최종 조건은 아무것도 뜻하지 않게 된다.

@@ -7,7 +7,10 @@ import {
   setVisualReviewStatus,
 } from "./browser-gates.mjs";
 import { blockPendingMachineGates } from "./browser-gate-coverage.mjs";
+import { requireHumanVisualReview } from "./browser-visual-review.mjs";
 import { writeEvidenceFile } from "./evidence-store.mjs";
+import fs from "node:fs";
+import path from "node:path";
 
 export const BROWSER_GATE_REPORT_FILE = "browser-gates.json";
 
@@ -239,14 +242,28 @@ export function createBrowserGateReportStore({
     return judgeReceipt;
   };
 
-  const recordVisualReview = ({ framework, engine, gate, status, artifacts, notes }) => {
+  /** 실행 중에 사람이 판정을 남기는 자리. 실행이 끝난 뒤의 검토는 `scripts/e2e/visual-review.mjs`
+   * 가 같은 계약으로 정본 파일 위에서 한다. 두 자리가 서로 다른 기준을 들지 않도록 검사는 하나다. */
+  const recordVisualReview = ({
+    framework,
+    engine,
+    gate,
+    status,
+    artifacts,
+    notes,
+    artifactExists = (artifact) => {
+      const resolved = path.resolve(root, "current", artifact);
+      return fs.existsSync(resolved) && fs.statSync(resolved).isFile();
+    },
+  }) => {
+    const verdict = requireHumanVisualReview({ status, artifacts, notes, artifactExists });
     const report = bindFramework(framework);
     currentReport = setVisualReviewStatus(report, {
       engine,
       gate,
-      status,
-      artifacts,
-      notes,
+      status: verdict.status,
+      artifacts: verdict.artifacts,
+      notes: verdict.notes,
     });
     return currentReport.engines[engine][gate].visualReview;
   };
