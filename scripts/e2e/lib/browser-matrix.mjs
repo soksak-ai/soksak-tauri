@@ -55,6 +55,10 @@ const FRAMEWORK_PRESENTATION_TRACE = Object.freeze({
       maxEvents: 512,
     };
   },
+  // 이 계약은 부르는 쪽 id 로 궤적을 연다 — 되읽을 때도 그 이름이다.
+  traceHandle({ callerTraceId }) {
+    return callerTraceId;
+  },
   readParams({ traceId }) {
     return { traceId };
   },
@@ -106,6 +110,16 @@ const OFFSCREEN_PRESENTATION_TRACE = Object.freeze({
   },
   armParams() {
     return { durationMs: 800 };
+  },
+  // 이 계약은 무장에 부르는 쪽 id 를 싣지 않는다(armParams 를 보라). 손잡이는 플러그인이
+  // 발급해 영수증에 실어 답하므로, 되읽기는 그 발급물이어야 한다 — 부르는 쪽 값으로 대신하면
+  // 남의 발급물을 우리 값으로 덮는 것이고, 상대는 타입부터 다르다(숫자).
+  traceHandle({ armed }) {
+    const traceId = armed?.traceId;
+    if (typeof traceId !== "number" || !Number.isFinite(traceId)) {
+      throw new Error(`offscreen presentation trace가 traceId를 발급하지 않았다: ${JSON.stringify(armed)?.slice(0, 160)}`);
+    }
+    return traceId;
   },
   readParams({ traceId }) {
     return { traceId };

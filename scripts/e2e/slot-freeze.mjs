@@ -1407,7 +1407,9 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
             // CADisplayLink 꼬리에는 대응 DOM frame이 없어 서로 다른 관측 구간을 결합하게 된다.
             const presentationReceipt = must(await rpc(
               implementation.presentationTrace.readCommand,
-              implementation.presentationTrace.readParams({ traceId: causeTraceId }),
+              implementation.presentationTrace.readParams({
+                traceId: implementation.presentationTrace.traceHandle({ armed: armedPresentation, callerTraceId: causeTraceId }),
+              }),
               win,
               { timeoutMs: 10_000 },
             ), `B04 presentation trace read ${name}`);
@@ -1597,7 +1599,9 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
             try {
               await rpc(
                 implementation.presentationTrace.readCommand,
-                implementation.presentationTrace.readParams({ traceId: causeTraceId }),
+                implementation.presentationTrace.readParams({
+                traceId: implementation.presentationTrace.traceHandle({ armed: armedPresentation, callerTraceId: causeTraceId }),
+              }),
                 win,
                 { timeoutMs: 10_000 },
               );

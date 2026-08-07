@@ -1155,3 +1155,35 @@ describe("공통 브라우저 fixture", () => {
     )).toMatchObject({ ok: true, dx: 0 });
   });
 });
+
+// 규칙 — 궤적 손잡이의 주인은 그것을 발급한 쪽이다.
+//
+// 두 계약이 갈린다. Tauri 는 armParams 가 부르는 쪽 traceId 를 받아 그 이름으로 궤적을 연다.
+// offscreen 은 armParams 가 traceId 를 받지 않고 플러그인이 숫자 손잡이를 발급해 영수증에 싣는다.
+// 그런데 readParams 는 둘 다 `traceId` 를 요구한다 — 같은 이름, 다른 소유자다.
+//
+// 실측 2026-08-07: 소비처가 그 둘을 뭉개 readParams 에 부르는 쪽 id 를 넘겼고, offscreen 의
+// surface.trace.read 가 `traceId: number 여야 함` 으로 거절해 엔진 실행이 죽었다. 소비처가
+// 계약마다 어느 값을 쓸지 고르게 두면 그 선택이 또 갈린다 — 계약이 자기 손잡이를 답한다.
+describe("궤적 손잡이 소유", () => {
+  it("계약이 자기 손잡이를 답한다 — 소비처가 고르지 않는다", () => {
+    const armed = { traceId: 7 };
+    const callerTraceId = "caller-id";
+    expect(Object.entries(browserImplementations).map(([engine, implementation]) => [
+      engine,
+      implementation.presentationTrace.traceHandle({ armed, callerTraceId }),
+    ])).toEqual([
+      // 부르는 쪽 id 로 무장한 계약은 그 이름으로 되읽는다.
+      ["browser", "caller-id"],
+      ["browser-chromium", "caller-id"],
+      // 발급받은 계약은 발급물을 되읽는다.
+      ["browser-chromium-offscreen", 7],
+    ]);
+  });
+
+  it("발급받아야 하는 계약이 발급물을 못 받았으면 부르는 쪽 값으로 대신하지 않는다", () => {
+    const trace = browserImplementations["browser-chromium-offscreen"].presentationTrace;
+    expect(() => trace.traceHandle({ armed: {}, callerTraceId: "caller-id" }))
+      .toThrow(/traceId/);
+  });
+});
