@@ -1766,26 +1766,25 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
         path.join(fastResizeDir, "composition-samples.json"),
         { baseline: fastResize.baseline ?? null, samples: fastResize.samples ?? [] },
       );
-      if (frameworkName === "tauri") {
-        const redSamples = (fastResize.samples ?? []).filter((sample) => sample.observation?.verdict !== "green");
-        if (redSamples.length) {
-          const summary = redSamples.map((sample) => {
-            const direct = sample.observation?.direct?.verdict;
-            const directErrors = [
-              ...(direct?.misplaced ?? []).map((item) => `direct-misplaced:${JSON.stringify(item)}`),
-              ...(direct?.stacked ?? []).map((item) => `direct-stacked:${JSON.stringify(item)}`),
-              ...(direct?.missing ?? []).map((item) => `direct-missing:${JSON.stringify(item)}`),
-            ];
-            const failed = (sample.observation?.pane?.matches ?? []).filter((match) => !match.ok);
-            const paneErrors = failed.map((match) => {
-              const member = (match.members ?? []).filter((item) => !item.ok)
-                .map((item) => `${item.label}:${JSON.stringify(item.delta)}`).join("|");
-              return `${match.pane}:${JSON.stringify(match.delta)}${member ? ` member=${member}` : ""}`;
-            });
-            return `s${sample.step}:${[...directErrors, ...paneErrors].join(",")}`;
-          });
-          throw new Error(`rapid window resize affine 거래 RED — ${summary.join("; ")}`);
-        }
+      // 프레임워크 이름으로 가르지 않는다. 어느 프레임워크든 관측면이 코어 계약 봉투를
+      // 답해야 하고, 봉투 안의 사실은 B10 판정면이 이름으로 부른다. 여기서 끝내는 것은
+      // **봉투 자체가 없는 경우**뿐 — 그때는 판정할 사실이 애초에 없다.
+      const shapeless = (fastResize.samples ?? []).filter((sample) => (
+        !Array.isArray(sample.observation?.contractViolations)
+      ));
+      if (shapeless.length) {
+        throw new Error(
+          "rapid window resize 관측면이 계약 봉투를 답하지 않았다 — "
+            + shapeless.map((sample) => `s${sample.step}:${JSON.stringify(sample.observation ?? null)}`)
+              .join("; "),
+        );
+      }
+      for (const sample of fastResize.samples ?? []) {
+        if (sample.observation.contractViolations.length === 0) continue;
+        console.log(
+          `${engine}/resize s${sample.step} 관측 계약 위반: `
+            + sample.observation.contractViolations.join(","),
+        );
       }
       // 최소 높이에서는 입력 아래의 상태 marker가 정상적으로 viewport 밖에 놓일 수 있다. 전이 중에는
       // 상단의 고정 ruler로 live frame을 판정하고, 원복 직후 실제 input 값·event ledger를 다시 읽는다.

@@ -5,6 +5,7 @@
 // 셋이 같은 사각형이어야 한다는 판정은 코어 계약이 하고, 여기서는 **각 평면을 따로** 답한다 —
 // 한 평면의 값을 다른 평면에 베끼면 어긋남은 영영 관측되지 않는다.
 import {
+  resizeTopologyPath,
   type ResizeCompositionObservation,
   type ResizeCompositionParticipant,
   type ResizeContinuityCounters,
@@ -66,10 +67,6 @@ const rectOf = (value: ObservedLogicalRect): ResizeRect => ({
   x: value.x, y: value.y, w: value.width, h: value.height,
 });
 
-export function contentViewTopologyPath(windowLabel: string, viewId: string): string {
-  return `window/${encodeURIComponent(windowLabel)}/view/${encodeURIComponent(viewId)}`;
-}
-
 function participant(
   kind: "slot" | "renderer" | "surface",
   target: ElectronObservedTarget,
@@ -80,7 +77,7 @@ function participant(
   return {
     id: `${kind}/${target.label}`,
     viewId: target.viewId,
-    topologyPath: contentViewTopologyPath(windowLabel, target.viewId),
+    topologyPath: resizeTopologyPath(windowLabel, target.viewId),
     visible: target.visible,
     logicalFrame: frame,
     physicalFrame: physicalFrameOf(frame, scaleFactor),

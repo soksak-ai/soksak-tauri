@@ -113,6 +113,11 @@ const VERDICTS: Record<Scope, Record<string, Verdict>> = {
     paneInvariant: "pane", // 그 불변식 게이트의 파일 이름(주석 인용)
     independentPanelPath: "pane", // 레일과 떨어진 칸을 별도 외곽선으로 그리는 SVG 경로
     paneAnimation: "pane", // 칸 DOM의 Web Animation 테스트 픽스처
+    // ── 새 뜻 — resize 관측이 읽는 칸의 세 평면 사실 ─────────────────────────
+    PaneCompositionMatch: "pane", // 칸 하나의 DOM↔native 대조 한 줄
+    TauriPaneFact: "pane", // 그 대조를 관측 봉투 평면으로 옮길 때의 칸 사실
+    TauriPaneMemberFact: "pane", // 그 칸 안의 콘텐츠 표면 한 장
+    paneFacts: "pane", // 위 둘을 만드는 사상
     // ── 옛 뜻(탭 인스턴스) — 계약면이라 이행 기간 동안 이름이 남는다 ──────────
     // 뜻-분기(감사 적발): 옛 뜻(탭 인스턴스) 사이트는 tabId·callerTab 으로 이행하지만,
     // **개명 후의 pane 축 에코**(targetEcho 표준 AXIS_ECHO pane→paneId, pane.resize 의

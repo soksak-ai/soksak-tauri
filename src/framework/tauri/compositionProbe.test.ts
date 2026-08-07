@@ -118,14 +118,16 @@ describe("Tauri resize composition probe", () => {
     expect(result.verdict).toBe("green");
   });
 
-  it("uses read-only titlebar inspection in every resize sample", () => {
+  it("observes without composing — the resize path never mutates a native plane", () => {
     const source = installSource();
     const resizeProbe = source
-      .split("registerWindowResizeProbe(async () => {")[1]
+      .split("registerWindowResizeProbe(")[1]
       ?.split("registerRectMotionExclusion")[0];
 
-    expect(resizeProbe).toContain("inspectTitlebarComposition()");
+    // 관측이 무엇을 바꾸면 그 다음 관측은 자기가 만든 상태를 재는 것이다.
     expect(resizeProbe).not.toContain("composeTitlebarComposition()");
+    expect(resizeProbe).not.toContain("setTitlebarProbeHeight");
+    expect(resizeProbe).toContain("pluginViewCompositionStatus()");
   });
 
   it("keeps the public inspection command read-only and names mutation separately", () => {

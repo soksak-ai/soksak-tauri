@@ -173,6 +173,14 @@ export type _ObservationKeysComplete = AssertNever<
 
 const RESIZE_RECT_KEYS = ["x", "y", "w", "h"] as const satisfies readonly (keyof ResizeRect)[];
 
+/**
+ * 한 뷰의 세 평면이 공유하는 위상 주소. 세 평면이 서로 다른 주소를 부르면 그것은 애초에
+ * 같은 뷰의 세 평면이 아니다 — 그래서 이 파생은 프레임워크마다 다시 쓰지 않는다.
+ */
+export function resizeTopologyPath(windowLabel: string, viewId: string): string {
+  return `window/${encodeURIComponent(windowLabel)}/view/${encodeURIComponent(viewId)}`;
+}
+
 function displayValue(value: unknown): string {
   if (typeof value === "string") return JSON.stringify(value);
   if (value === undefined) return "undefined";
