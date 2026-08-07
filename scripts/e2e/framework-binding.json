@@ -474,6 +474,13 @@
       "note": "B10의 phase 누락·좌표 drift·generation 교체·viewport 불일치·복원 실패를 RED로 고정한다."
     },
     {
+      "file": "lib/browser-gate-b11.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "B11의 pane 왕복 누락·표면 정체·측정 시점 뭉갬·순환 범위 판정·휠 사건 부재를 RED로 고정한다."
+    },
+    {
       "file": "lib/browser-gate-b12.mjs",
       "role": "lib",
       "class": "A",

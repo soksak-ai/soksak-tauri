@@ -713,5 +713,25 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(matrix).toContain("before?.document");
     expect(matrix).toContain("after?.document");
     expect(source).not.toContain("pngHeight");
+    // 휠이 무엇을 움직였는지는 페이지가 센 사건 수가 답한다. 좌표만 보면 프로그램으로 옮긴
+    // 스크롤과 휠이 옮긴 스크롤이 같은 값을 만든다.
+    expect(source).toContain("wheelEvents");
+    expect(matrix).toContain('addEventListener("wheel"');
+    // 산출물 범위는 산출물 실측으로만 답한다. 픽셀을 푸는 일은 여전히 하니스 밖이다.
+    expect(source).toContain("measureCapturedImage");
+    expect(source).toContain("capturedWidth");
+    expect(source).not.toContain("decodePng");
+  });
+
+  it("B11은 pane resize를 실제로 재고 나서 도장을 찍는다", () => {
+    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    // 재지 않은 축을 뒤에서 도장으로 덮으면 보고서를 읽는 사람이 두 사건을 하나로 읽는다.
+    const baseline = source.indexOf('readB11PaneStage(rpc, win, b11PaneContext, "baseline")');
+    const wider = source.indexOf("b11PaneStages[direction] = await readB11PaneStage");
+    const stamp = source.indexOf('gate: "B11"');
+    expect(baseline).toBeGreaterThan(-1);
+    expect(wider).toBeGreaterThan(baseline);
+    expect(stamp).toBeGreaterThan(wider);
+    expect(source).toContain("b11PaneRequestedDx = Number(dragged.dx)");
   });
 });
