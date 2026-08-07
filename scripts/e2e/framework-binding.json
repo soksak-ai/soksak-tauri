@@ -755,6 +755,20 @@
       "note": "관측면이 스스로 red 라고 선언한 합성 사실이 B10 판정으로 남는지, 측정 불가만 실행을 멈추는지를 값으로 고정한다."
     },
     {
+      "file": "lib/harness-capabilities.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "하니스가 창에 능력을 묻는 자리. 프레임워크 선언(framework.provision 축)과 읽기 전용 witness 명령의 답을 만나게 하고, 부재는 능력 이름과 게이트를 실은 사유로, 못 읽은 답은 다른 이름으로 남긴다. 프레임워크 이름을 읽지 않는다."
+    },
+    {
+      "file": "lib/harness-capabilities.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "부재 코드가 통과로도 실패로도 뭉개지지 않고, 선언과 답이 어긋나면 그 어긋남이 이름으로 남으며, 판정이 누가 답했는지를 보지 않고, 능력 부재가 정본 보고서의 한 셀만 소유 검사를 지나 닫는다는 법을 고정한다."
+    },
+    {
       "file": "lib/http-fixture.mjs",
       "role": "lib",
       "class": "A",
