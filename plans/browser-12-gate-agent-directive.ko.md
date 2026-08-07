@@ -32,17 +32,18 @@
 
 ## 현재 기준과 사실
 
-현재 12개 전체 GREEN은 아니다. 이전 정리 기준으로 완전 GREEN은 0/12이며, 부분 구현은 B01/B02/B03/B04/B09/B10/B11, 미완료 또는 회귀가 남은 항목은 B05/B06/B07/B08/B12다. 실행 시점의 실제 report와 캡처가 이 표보다 우선한다.
+현재 12개 전체 GREEN은 아니다. 실행 시점의 실제 report가 이 문서보다 우선하며, 최신 상태는 반드시 새 실행으로 갱신한다.
 
-최근에 추가된 기반 작업:
+이 게이트를 재는 일 자체가 오래 막혀 있었다. 판정 실패가 측정을 끊어 36칸 중 33칸이 `not-run`으로 남았고, 여러 게이트는 judge 앞의 throw가 모든 실패 축을 선점해 판정이 대상에 닿지 못했다. 그래서 green이 통과의 증거가 아니었다. 지금 측정 구조는 다음을 강제한다.
 
-- `6be34606`: JS/Rust monotonic presentation epoch 공유.
-- `5174ae72`: Tauri presentation trace에 display/target/callback 시각과 callback skip/latency를 노출.
-- `3f8af943`: 기계 trace와 사람용 PNG replay를 분리.
-- `6fcd8d3c`, `31cb8982`, `641d55db`, `a7e67bc2`: 숨겨진 WebKit에서 rAF/animation 이벤트가 생략될 때의 DOM settlement 관측과 bounded last-resort fallback. 이 fallback은 성공 증거 그 자체가 아니다.
-- `8255144d`: producer cadence와 frame alignment를 분리. temporal join gap을 성공 기준으로 삼지 않고, 좌표/타임라인 verdict를 별도로 판정.
+- 판정 실패는 측정을 끊지 않는다. 측정을 이어갈 수 없게 된 셀만 사유와 함께 `blocked`로 닫고 남은 엔진은 계속 잰다. 최종 판정은 요약이 소유한다.
+- 계약 위반은 던지지 않고 evidence에 실어 judge가 이름 붙은 `red`를 내게 한다. 던지는 것은 측정 불가(주소·창·응답 부재)뿐이다.
+- 인수 합계는 프레임워크 축까지 센다. 한 프레임워크만 제출하면 나머지는 0이 아니라 `missingFrameworks`로 이름이 남는다.
+- 증거 봉투의 키 대조는 양방향이다. 소비되지 않은 생산 키와 생산되지 않은 소비 키를 둘 다 이름으로 남긴다.
+- 픽스처는 자기 창 크기를 소유한다. 앱 기본 크기나 앞 엔진이 남긴 크기를 물려받으면 같은 앱이 실행마다 다른 칸을 잃는다.
+- 표시 배율은 창의 사실에서 읽는다. 캡처에서 잰 배율은 사본으로 따로 싣고, 사실이 없으면 1로 대체하지 않고 측정 불가로 거절한다.
 
-가장 최근 실제 실행에서는 Chromium FLOW의 사람용 48프레임 두 방향과 B03은 통과했지만, cross-click 뒤 `webview.pane.composition` 상태가 `matched=false`이고 두 pane의 geometry/member가 `missing-or-misaligned`로 RED가 됐다. `composition-trace.json`의 시작/끝 slot·renderer·surface 좌표는 정확했으므로, 이 실패를 단순 지연으로 덮지 말고 pane composition 상태의 소유권/커밋 순서/member ledger를 조사한다. 최신 상태는 반드시 새 실행으로 갱신한다.
+판정이 대상에 닿기 시작하자 드러난 제품 결함들은 각각 고쳤다. 대표: 휠 사건이 창 좌표를 싣지 않아 스크롤은 움직이는데 DOM `wheel`이 한 번도 발화하지 않던 것, B04가 표시 시각 대신 관측 시각을 보고 가짜 RED를 내던 것, 도달성 판정이 히트가 뚫은 shadow 경계를 같이 넘지 않던 것.
 
 ## 실행 환경과 증거 보존
 
