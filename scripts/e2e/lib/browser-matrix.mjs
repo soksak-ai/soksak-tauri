@@ -303,24 +303,11 @@ export function mapB04PresentationSamples({
   if (presentationSamples.length === 0) {
     throw new Error(`${targetViewId}: DOM presentation boundary sample=0`);
   }
-  const presentationGaps = events.slice(1)
-    .map((event, index) => event.sampledAtUnixMs - events[index].sampledAtUnixMs)
-    .filter((gap) => Number.isFinite(gap) && gap > 0)
-    .sort((a, b) => a - b);
-  const cadenceMs = presentationGaps.length
-    ? presentationGaps[Math.floor(presentationGaps.length / 2)]
-    : Infinity;
-  const domFrameGaps = presentationSamples.slice(1)
-    .map((sample, index) => sample.sampledAtUnixMs - presentationSamples[index].sampledAtUnixMs)
-    .filter((gap) => Number.isFinite(gap) && gap > 0)
-    .sort((a, b) => a - b);
-  const domCadenceMs = domFrameGaps.length
-    ? domFrameGaps[Math.floor(domFrameGaps.length / 2)]
-    : 0;
-  // CADisplayLink(예: 120Hz)와 WebKit rAF(예: 60Hz)는 같은 실제 표시를 서로 다른
-  // callback cadence로 보고한다. 결합 상한은 두 producer가 스스로 밝힌 cadence에서만
-  // 산출하며 고정 시간·좌표 tolerance를 두지 않는다.
-  const maxJoinGapMs = Math.max(cadenceMs * 2.5, domCadenceMs * 1.5);
+  // CADisplayLink와 WebKit DOM observers are independent producers. Their
+  // callback epochs are not a visual contract, so nearest-sample timestamp
+  // distance is recorded in `joins` but never used as a pass/fail shortcut.
+  // The declared timeline validator below checks each producer at its own
+  // actual samples and compares only physical rounded edges.
   const participant = (id, connected, frame) => ({
     id,
     ownerViewId: targetViewId,
@@ -350,14 +337,6 @@ export function mapB04PresentationSamples({
         ));
     const domAt = domSample?.sampledAtUnixMs;
     const gapMs = Math.abs(domAt - presentationAt);
-    if (!beforePresentationStart && gapMs > maxJoinGapMs) {
-      throw new Error(
-        `${targetViewId}: DOM/native presentation join gap=${gapMs.toFixed(3)}/${maxJoinGapMs.toFixed(3)}ms`
-          + ` event=${presentationAt.toFixed(3)} dom=${domAt.toFixed(3)}`
-          + ` trigger=${domSample.trigger} start=${presentationStartAt.toFixed(3)}`
-          + ` cadence=${cadenceMs.toFixed(3)}/${domCadenceMs.toFixed(3)}`,
-      );
-    }
     const domSequence = domSample?.sequence;
     if (!Number.isInteger(domSequence) || domSequence < priorDomSequence) {
       throw new Error(`${targetViewId}: DOM pair sequence[${index}]=${domSequence}/${priorDomSequence}`);
