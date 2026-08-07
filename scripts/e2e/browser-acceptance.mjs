@@ -32,13 +32,29 @@ export function namedRunReport(storeRoot, runId) {
       + " — 인수는 자기 실행을 이름으로 읽는다(BROWSER_EVIDENCE_RUN_ID·B12_RUN_ID).",
     );
   }
+  // 저장소는 실행의 생애에 따라 세 통을 쓴다: 도는 동안 current, green 이면 runs 로 확정,
+  // red 면 last-red 로 회전. 이름이 같으면 어느 통에 있든 그 실행이다 — 한 통만 보면 red 로
+  // 끝난 실행도, 확정이 못 돈 실행도 못 찾는다. 그 둘이야말로 읽어야 할 것이다.
+  // 확정본이 정본이므로 runs 를 먼저 본다.
+  //
   // 경로 규칙은 저장소가 소유한다 — 여기서 다시 세우면 두 번째 정의가 생긴다.
-  const dir = evidenceRunPath(storeRoot, runId);
-  try {
-    return JSON.parse(readFileSync(path.join(dir, "browser-gates.json"), "utf8"));
-  } catch (cause) {
-    throw new Error(`실행 ${runId} 의 보고서를 읽지 못했다: ${dir}`, { cause });
+  const candidates = [
+    evidenceRunPath(storeRoot, runId),
+    path.join(storeRoot, "last-red"),
+    path.join(storeRoot, "current"),
+  ];
+  const failures = [];
+  for (const dir of candidates) {
+    try {
+      const report = JSON.parse(readFileSync(path.join(dir, "browser-gates.json"), "utf8"));
+      // last-red·current 통에는 실행 하나만 산다 — 이름이 다르면 그 실행이 아니다.
+      if (report?.identity?.runId === runId) return report;
+      failures.push(`${dir}: runId=${report?.identity?.runId}`);
+    } catch (cause) {
+      failures.push(`${dir}: ${cause instanceof Error ? cause.message : String(cause)}`);
+    }
   }
+  throw new Error(`실행 ${runId} 의 보고서를 읽지 못했다 — ${failures.join(" · ")}`);
 }
 
 export function browserAcceptanceVerdict({ slotFreeze, titlebar }) {
