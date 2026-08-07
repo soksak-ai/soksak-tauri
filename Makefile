@@ -50,6 +50,13 @@ DEV_LOG_DIR ?= $(HOME)/.soksak-dev/logs
 DEV_HOST_SOCKET := $(HOME)/.soksak-dev/com.soksak.dev.sock
 DEV_CORED_SOCKET := $(HOME)/.soksak-dev/cored.sock
 
+# Electron 실행물 — 이름은 정체성에서 파생한다(frameworks/electron/bundle.sh 와 같은 규칙에
+# 물어본다). 여기 적으면 규칙이 한 벌 더 생기고, 두 벌은 갈릴 때까지 조용하다.
+ELECTRON_IDENTIFIER ?= com.soksak.electron.dev
+ELECTRON_PRODUCT = $(shell node -e "process.stdout.write(require('$(CURDIR)/frameworks/electron/cored.cjs').productName(process.argv[1]))" $(ELECTRON_IDENTIFIER))
+ELECTRON_APP = frameworks/electron/build/$(ELECTRON_PRODUCT).app
+ELECTRON_EXECUTABLE = $(ELECTRON_APP)/Contents/MacOS/$(ELECTRON_PRODUCT)
+
 .DEFAULT_GOAL := help
 
 .PHONY: clean-orphan-target doctor doctor-fix help install icons dev build build-dev build-debug run run-dev rebuild-dev restart-dev run-debug typecheck check test test-front verify gates e2e-framework-binding e2e-slot-freeze-dev e2e-titlebar-dev clean stop cli cli-dev cli-debug install-cli install-cli-dev install-cli-debug docs docs-dev registry
@@ -159,6 +166,38 @@ restart-dev: ## 이미 빌드·검증된 동일 dev 번들을 빌드 없이 반�
 	[ "$$(owner_pid)" = "$$new_pid" ] && kill -0 "$$new_pid" 2>/dev/null || \
 	  { echo "재실행 수명 실패: 새 dev PID $$new_pid 가 유지되지 않는다"; exit 1; }; \
 	echo "재실행: dev PID $$old_pid → $$new_pid, 창 호스트 준비 완료"
+
+# Electron 재실행 — Tauri 의 restart-dev 와 **같은 계약**이다(소켓 소유 PID 교체 → 응답 확인 →
+# 수명 확인). 인수 실행은 냉시동 3회를 요구하므로 이 자리가 없으면 Electron 36칸은 부를 수 없다.
+#
+# 두 프레임워크가 한 홈을 쓰고 cored 소켓도 하나다(frameworkIdentity 가 그렇게 답한다). 창
+# 호스트를 소유한 프로세스만 교체한다.
+restart-electron: ## 이미 만들어진 Electron 번들을 빌드 없이 반복 재실행
+	@test -x "$(ELECTRON_EXECUTABLE)" || { echo "먼저 'frameworks/electron/bundle.sh $(ELECTRON_IDENTIFIER)' 를 실행하세요: $(ELECTRON_EXECUTABLE)"; exit 1; }
+	@test -x "$(DEV_CLI)" || { echo "먼저 'make cli-dev' 를 실행하세요."; exit 1; }
+	@CLI="$(DEV_CLI)"; APP="$(ELECTRON_EXECUTABLE)"; \
+	owner_pid() { pgrep -f "$$APP" 2>/dev/null | head -n 1; }; \
+	host_ready() { "$$CLI" window.list >/dev/null 2>&1; }; \
+	old_pid="$$(owner_pid)"; \
+	if [ -n "$$old_pid" ] && host_ready; then \
+	  "$$CLI" app.quit >/dev/null || true; \
+	fi; \
+	if [ -n "$$old_pid" ]; then \
+	  for _ in $$(seq 1 100); do kill -0 "$$old_pid" 2>/dev/null || break; sleep 0.1; done; \
+	  kill -0 "$$old_pid" 2>/dev/null && { echo "종료 실패: Electron PID $$old_pid 가 남았다"; exit 1; }; \
+	fi; \
+	"$$APP" frameworks/electron/main.cjs >/dev/null 2>&1 & \
+	new_pid=""; \
+	for _ in $$(seq 1 300); do \
+	  new_pid="$$(owner_pid)"; \
+	  [ -n "$$new_pid" ] && [ "$$new_pid" != "$$old_pid" ] && kill -0 "$$new_pid" 2>/dev/null && host_ready && break; \
+	  sleep 0.1; \
+	done; \
+	[ -n "$$new_pid" ] && [ "$$new_pid" != "$$old_pid" ] && kill -0 "$$new_pid" 2>/dev/null && host_ready || \
+	  { echo "재실행 준비 실패: Electron 창 호스트가 응답하지 않는다"; exit 1; }; \
+	sleep 0.5; \
+	kill -0 "$$new_pid" 2>/dev/null || { echo "재실행 수명 실패: 새 Electron PID $$new_pid 가 유지되지 않는다"; exit 1; }; \
+	echo "재실행: Electron PID $$old_pid → $$new_pid, 창 호스트 준비 완료"
 
 run-debug: ## 디버그 soksak-tauri-debug.app 실행(새 인스턴스)
 	@test -d "$(DEBUG_APP)" || { echo "먼저 'make build-debug' 를 실행하세요."; exit 1; }
@@ -280,7 +319,8 @@ e2e-framework-binding: ## e2e 하니스의 프레임워크 결속 분류(A 프�
 	@node scripts/e2e/framework-binding.mjs $(ARGS)
 
 e2e-slot-freeze-dev: build-dev restart-dev ## 현재 소스로 dev 앱 빌드·재시작→실제 탭 교차 클릭·연속 캡처
-	@test -x "$(DEV_EXECUTABLE)" || { echo "빌드된 dev 앱 실행 파일이 없다: $(DEV_EXECUTABLE)"; exit 1; }; \
+	@test -n "$(ACCEPTANCE_EXECUTABLE)" || { echo "인수 실행은 어느 실행물을 재는지 알아야 한다(ACCEPTANCE_EXECUTABLE)"; exit 1; }
+	@test -x "$(ACCEPTANCE_EXECUTABLE)" || { echo "빌드된 앱 실행 파일이 없다: $(ACCEPTANCE_EXECUTABLE)"; exit 1; }; \
 		evidence_build_id="$$(shasum -a 256 "$(DEV_EXECUTABLE)" | awk '{print $$1}')"; \
 		test -n "$$evidence_build_id" || { echo "dev 앱 SHA-256을 계산하지 못했다"; exit 1; }; \
 		SOKSAK_SOCKET="$(DEV_CORED_SOCKET)" BROWSER_EVIDENCE_BUILD_ID="$$evidence_build_id" node scripts/e2e/slot-freeze.mjs
@@ -310,23 +350,43 @@ ACCEPTANCE_HEADROOM_GIB = $(if $(wildcard $(DEV_EXECUTABLE)),4,8)
 acceptance-headroom: ## 인수 실행이 빌드와 증거를 담을 자리가 있는지 먼저 잰다
 	@node scripts/e2e/require-evidence-headroom.mjs --phase before-build --need $(ACCEPTANCE_HEADROOM_GIB)
 
-e2e-browser-acceptance-dev: acceptance-headroom build-dev ## 한 빌드로 두 실행기를 잇고 36칸 인수를 판정한다(B01~B11 + B12)
+# 인수가 세는 프레임워크마다 재는 자리가 있어야 한다(BROWSER_ACCEPTANCE_FRAMEWORKS).
+# 재는 자리가 한 프레임워크에만 있으면 나머지 칸은 하니스가 못 재서가 아니라 부를 자리가 없어서
+# 영원히 missing 이다 — 그러면 인수는 달성 불가능한 채로 조용히 red 를 낸다.
+#
+# 갈리는 것은 실행물·재시작·소켓 셋뿐이고 몸통은 하나다(e2e-browser-acceptance-body).
+# 프레임워크가 하나 더 늘어도 이 아래는 그대로다.
+e2e-browser-acceptance-tauri: acceptance-headroom build-dev ## Tauri 위에서 36칸 인수를 판정한다(B01~B11 + B12)
+	@$(MAKE) --no-print-directory e2e-browser-acceptance-body \
+		ACCEPTANCE_EXECUTABLE="$(DEV_EXECUTABLE)" \
+		ACCEPTANCE_RESTART=restart-dev \
+		ACCEPTANCE_SOCKET="$(DEV_CORED_SOCKET)"
+
+e2e-browser-acceptance-electron: acceptance-headroom ## Electron 위에서 36칸 인수를 판정한다(B01~B11 + B12)
+	@$(MAKE) --no-print-directory e2e-browser-acceptance-body \
+		ACCEPTANCE_EXECUTABLE="$(ELECTRON_EXECUTABLE)" \
+		ACCEPTANCE_RESTART=restart-electron \
+		ACCEPTANCE_SOCKET="$(DEV_CORED_SOCKET)"
+
+e2e-browser-acceptance-dev: e2e-browser-acceptance-tauri ## 기본 인수 실행(Tauri). 프레임워크를 골라 부르려면 e2e-browser-acceptance-<framework>
+
+e2e-browser-acceptance-body: ## 한 빌드로 두 실행기를 잇고 36칸 인수를 판정한다(내부 — 프레임워크 타깃이 부른다)
 	@# 병합 계약은 같은 artifact 를 요구한다. 각 실행기가 자기 빌드를 만들면 두 기여가 갈려
 	@# 인수 판정이 성립하지 않는다 — 그래서 여기서 한 번만 빌드하고 두 실행기가 그것을 잰다.
 	@test -x "$(DEV_EXECUTABLE)" || { echo "빌드된 dev 앱 실행 파일이 없다: $(DEV_EXECUTABLE)"; exit 1; }
 	@# 빌드가 자리를 다 쓰고 나서 재면 늦다 — 빌드 앞(acceptance-headroom)과 실행 앞에서 두 번 잰다.
 	@node scripts/e2e/require-evidence-headroom.mjs --phase before-run --need 4
-	@$(MAKE) --no-print-directory restart-dev
-	@evidence_build_id="$$(shasum -a 256 "$(DEV_EXECUTABLE)" | awk '{print $$1}')"; \
+	@$(MAKE) --no-print-directory $(ACCEPTANCE_RESTART)
+	@evidence_build_id="$$(shasum -a 256 "$(ACCEPTANCE_EXECUTABLE)" | awk '{print $$1}')"; \
 		run_status=0; \
 		slot_run_id="slot-freeze-$$(node -e 'process.stdout.write(require("node:crypto").randomUUID())')"; \
 		b12_run_id="$$(node -e 'process.stdout.write(require("node:crypto").randomUUID())')"; \
-		SOKSAK_SOCKET="$(DEV_CORED_SOCKET)" BROWSER_EVIDENCE_BUILD_ID="$$evidence_build_id" \
+		SOKSAK_SOCKET="$(ACCEPTANCE_SOCKET)" BROWSER_EVIDENCE_BUILD_ID="$$evidence_build_id" \
 			BROWSER_EVIDENCE_RUN_ID="$$slot_run_id" \
 			node scripts/e2e/slot-freeze.mjs || run_status=1; \
 		for cycle in 1 2 3; do \
-			$(MAKE) --no-print-directory restart-dev || { run_status=1; continue; }; \
-			SOKSAK_SOCKET="$(DEV_CORED_SOCKET)" BROWSER_EVIDENCE_BUILD_ID="$$evidence_build_id" \
+			$(MAKE) --no-print-directory $(ACCEPTANCE_RESTART) || { run_status=1; continue; }; \
+			SOKSAK_SOCKET="$(ACCEPTANCE_SOCKET)" BROWSER_EVIDENCE_BUILD_ID="$$evidence_build_id" \
 				B12_RUN_ID="$$b12_run_id" B12_CYCLE="$$cycle" node scripts/e2e/titlebar-composition.mjs || run_status=1; \
 		done; \
 		BROWSER_EVIDENCE_BUILD_ID="$$evidence_build_id" B12_RUN_ID="$$b12_run_id" \

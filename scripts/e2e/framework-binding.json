@@ -250,6 +250,20 @@
       "note": "골(gutter) 강조의 대칭을 잰다 — 무장되면 서고 이탈이 오면 반드시 풀린다. 자기 픽스처 창을 세우고 분할까지 스스로 만든다: 포인터를 구동하므로 남의 창을 잡으면 안 되고, gutter 가 없으면 건너뛰어 그 통과가 아무것도 지키지 않는다."
     },
     {
+      "file": "lib/acceptance-targets.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "Makefile 이 선언한 프레임워크별 인수 실행 타깃을 소스에서 읽는다. 목록을 손으로 적지 않고 인수 축과 대조한다."
+    },
+    {
+      "file": "lib/acceptance-targets.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "세는 프레임워크와 재는 자리가 같은 집합인지, 그 자리가 부르는 변수·타깃이 실재하는지 고정한다."
+    },
+    {
       "file": "lib/browser-acceptance-frameworks.mjs",
       "role": "lib",
       "class": "A",
