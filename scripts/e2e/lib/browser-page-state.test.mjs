@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { B11_PAGE_KEYS, judgeB11MachineEvidence } from "./browser-gates.mjs";
-import { mapB11TabEvidence } from "./browser-live-evidence.mjs";
+import { mapB11TabEvidence } from "./browser-gate-b11-evidence.mjs";
 import {
   captureDocumentGeometry,
   fullCaptureDocumentProbeJs,
@@ -26,10 +26,39 @@ function runPageProbe(js, page) {
   return new Function("__page", `with (__page) { ${js} }`)(page);
 }
 
+/** pane 반쪽은 이 파일의 대상이 아니다 — 페이지 축이 판정을 통과하는 데 필요한 실측만 채운다. */
+function paneStages(index) {
+  const sign = index === 0 ? 1 : -1;
+  const stage = (settledAtUnixMs, dx) => {
+    const paneX = index * 640 + (index === 0 ? 0 : dx);
+    const paneWidth = 640 + sign * dx;
+    return {
+      settledAtUnixMs,
+      paneX,
+      paneWidth,
+      surfaceX: paneX + 8,
+      surfaceWidth: paneWidth - 16,
+      viewportWidth: 608 + sign * dx,
+    };
+  };
+  return { baseline: stage(2_000, 0), wider: stage(3_000, 80), restored: stage(4_000, 0) };
+}
+
 function b11TabsFromProbe(raw) {
-  return ["view-0", "view-1"].map((viewId) => mapB11TabEvidence({
+  return ["view-0", "view-1"].map((viewId, index) => mapB11TabEvidence({
     viewId,
-    scroll: { beforeY: 0, afterY: 480, restoredY: 0 },
+    scroll: {
+      beforeY: 0,
+      afterY: 480,
+      restoredY: 0,
+      requestedDy: [480, -480],
+      settledAtUnixMs: 1_000,
+      ledger: {
+        before: { scrollSeq: 0, wheelEvents: 0, wheelDeltaY: 0 },
+        after: { scrollSeq: 4, wheelEvents: 2, wheelDeltaY: 480 },
+        restored: { scrollSeq: 8, wheelEvents: 4, wheelDeltaY: 0 },
+      },
+    },
     fullCapture: {
       requestedPath: `/evidence/full-${viewId}.png`,
       returnedPath: `/evidence/full-${viewId}.png`,
@@ -37,9 +66,17 @@ function b11TabsFromProbe(raw) {
       fileBytes: 4096,
       width: 608,
       height: 2140,
+      capturedWidth: 1216,
+      capturedHeight: 4280,
       viewId,
       before: raw,
       after: raw,
+    },
+    paneResize: {
+      paneId: `pane-${index}`,
+      side: index === 0 ? "left" : "right",
+      requestedDx: 80,
+      stages: paneStages(index),
     },
   }));
 }

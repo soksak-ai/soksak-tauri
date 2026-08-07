@@ -1,14 +1,9 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import {
-  judgeB01MachineEvidence,
-  judgeB02MachineEvidence,
-  judgeB11MachineEvidence,
-} from "./browser-gates.mjs";
+import { judgeB01MachineEvidence, judgeB02MachineEvidence } from "./browser-gates.mjs";
 import {
   mapB01NavigationEvidence,
   mapB01TabEvidence,
-  mapB11TabEvidence,
   mapImeObservation,
 } from "./browser-live-evidence.mjs";
 
@@ -114,38 +109,5 @@ describe("live browser evidence mappers", () => {
     });
     expect(mapImeObservation({}).ledger.beforeInput).toBeNull();
     expect(judgeB02MachineEvidence(undefined).status).toBe("not-run");
-  });
-
-  it("maps wheel and full-capture command/file receipts into B11", () => {
-    const tabs = [0, 1].map((index) => {
-      const viewId = `view-${index}`;
-      const requestedPath = `/evidence/full-${index}.png`;
-      // probe가 실제로 내보내는 축 이름 그대로다 — mapper가 받아 주는 별도 모양을
-      // 지어내면 fixture만 green이 되고 실측은 null로 남는다.
-      const dimensions = {
-        scrollX: 0,
-        scrollY: 0,
-        viewportWidth: 640,
-        viewportHeight: 480,
-        documentWidth: 640,
-        documentHeight: 1600,
-      };
-      return mapB11TabEvidence({
-        viewId,
-        scroll: { beforeY: 0, afterY: 480, restoredY: 0 },
-        fullCapture: {
-          requestedPath,
-          fileBytes: 4096,
-          before: dimensions,
-          after: dimensions,
-          viewId,
-          returnedPath: requestedPath,
-          reportedBytes: 4096,
-          width: 640,
-          height: 1600,
-        },
-      });
-    });
-    expect(judgeB11MachineEvidence({ engine, tabs }).status).toBe("green");
   });
 });

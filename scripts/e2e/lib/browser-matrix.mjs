@@ -1282,7 +1282,7 @@ export function fixtureHtml() {
       <output id="events">beforeinput:0 input:0</output><div id="typed-marker"></div>
     </section></main><div id="scroll-track">wheel input track<div id="scroll-tail">full-page tail</div></div>
     <script>
-      window.__browserFixture = { beforeInput: 0, inputEvents: 0, values: [] };
+      window.__browserFixture = { beforeInput: 0, inputEvents: 0, values: [], wheelEvents: 0, wheelDeltaY: 0 };
       const slot = Number(new URLSearchParams(location.search).get("slot") || 0);
       document.documentElement.dataset.slot = String(slot);
       document.documentElement.style.setProperty("--marker", ${JSON.stringify(fixtureMarkers)}[slot] || ${JSON.stringify(fixtureMarkers)}[0]);
@@ -1300,6 +1300,12 @@ export function fixtureHtml() {
       document.documentElement.dataset.scrollY = "0";
       document.documentElement.dataset.scrollSeq = "0";
       addEventListener("scroll", recordScroll, { passive: true });
+      // 좌표만 보면 프로그램으로 옮긴 스크롤과 휠이 옮긴 스크롤이 같은 값을 만든다.
+      // 실제 wheel 사건이 페이지에 닿았다는 사실은 페이지만 답할 수 있다.
+      addEventListener("wheel", (event) => {
+        window.__browserFixture.wheelEvents += 1;
+        window.__browserFixture.wheelDeltaY += event.deltaY;
+      }, { passive: true });
       ime.addEventListener("beforeinput", () => { window.__browserFixture.beforeInput += 1; render(); });
       ime.addEventListener("input", () => { window.__browserFixture.inputEvents += 1; window.__browserFixture.values.push(ime.value); typedMarker.style.background=${JSON.stringify(fixtureInputMarkers)}[slot]; render(); });
     </script></body></html>`;

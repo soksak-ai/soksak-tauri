@@ -12,6 +12,7 @@ import { judgeB07MachineEvidence } from "./browser-gate-b07.mjs";
 import { judgeB08MachineEvidence } from "./browser-gate-b08.mjs";
 import { judgeB09MachineEvidence } from "./browser-gate-b09.mjs";
 import { judgeB10MachineEvidence } from "./browser-gate-b10.mjs";
+import { B11_PAGE_KEYS, judgeB11MachineEvidence } from "./browser-gate-b11.mjs";
 import { judgeB12MachineEvidence } from "./browser-gate-b12.mjs";
 import {
   BROWSER_ACCEPTANCE_ENGINES,
@@ -41,6 +42,7 @@ export { judgeB07MachineEvidence };
 export { judgeB08MachineEvidence };
 export { judgeB09MachineEvidence };
 export { judgeB10MachineEvidence };
+export { B11_PAGE_KEYS, judgeB11MachineEvidence };
 export { judgeB12MachineEvidence };
 
 export const MACHINE_GATE_STATUSES = Object.freeze([
@@ -833,136 +835,6 @@ export function judgeB04MachineEvidence(value) {
     "B04",
     failures,
     `${value.engine}/B04:directions=2;layout-transaction+finite-composition-trace=atomic`,
-  );
-}
-
-// B11이 요구하는 페이지 축의 정본. probe와 mapper는 이 목록에서 파생한다 —
-// 손으로 다시 나열하면 반드시 하나가 빠진다.
-export const B11_PAGE_KEYS = Object.freeze([
-  "scrollX",
-  "scrollY",
-  "viewportWidth",
-  "viewportHeight",
-  "documentWidth",
-  "documentHeight",
-]);
-
-function inspectB11Page(page, path, failures) {
-  if (!requireExactKeys(page, B11_PAGE_KEYS, path, failures)) return;
-  for (const field of B11_PAGE_KEYS) {
-    const value = page[field];
-    const positive = !field.startsWith("scroll");
-    if (!Number.isFinite(value) || (positive ? value <= 0 : value < 0)) {
-      failures.push(`${path}.${field}=${positive ? "finite>0" : "finite>=0"}/${displayValue(value)}`);
-    }
-  }
-}
-
-/**
- * B11 accepts only structured page/receipt numbers. Strict keys keep PNG-derived
- * markers, decoded image dimensions and human visual verdicts out of machine input.
- */
-export function judgeB11MachineEvidence(value) {
-  if (value == null) return notRunVerdict();
-  const failures = [];
-  if (!requireExactKeys(value, ["engine", "tabs"], "evidence", failures)) {
-    return finishMachineVerdict("B11", failures, "B11:unreachable");
-  }
-  if (!requireEvidenceEnvelope(value, failures)) {
-    return finishMachineVerdict("B11", failures, "B11:unreachable");
-  }
-  if (value.tabs.length !== 2) failures.push(`tabs.length=2/${value.tabs.length}`);
-  const seen = new Set();
-  value.tabs.forEach((tab, index) => {
-    const path = `tabs[${index}]`;
-    if (!requireExactKeys(tab, ["viewId", "wheel", "capture"], path, failures)) return;
-    const viewId = requireUniqueViewId(tab, path, seen, failures);
-
-    if (requireExactKeys(tab.wheel, ["positions"], `${path}.wheel`, failures)) {
-      const positions = tab.wheel.positions;
-      if (!Array.isArray(positions) || positions.length !== 3
-        || positions[0] !== 0 || positions[1] !== 480 || positions[2] !== 0) {
-        failures.push(`${path}.wheel.positions=0,480,0/${displayValue(positions)}`);
-      }
-    }
-
-    if (!requireExactKeys(tab.capture, ["before", "receipt", "after"], `${path}.capture`, failures)) return;
-    inspectB11Page(tab.capture.before, `${path}.capture.before`, failures);
-    inspectB11Page(tab.capture.after, `${path}.capture.after`, failures);
-    if (isRecord(tab.capture.before) && isRecord(tab.capture.after)) {
-      for (const field of B11_PAGE_KEYS) {
-        if (tab.capture.before[field] !== tab.capture.after[field]) {
-          failures.push(`${path}.capture.${field}=preserved/${displayValue({
-            before: tab.capture.before[field],
-            after: tab.capture.after[field],
-          })}`);
-        }
-      }
-      if (tab.capture.before.scrollY !== 0) {
-        failures.push(`${path}.capture.before.scrollY=0/${displayValue(tab.capture.before.scrollY)}`);
-      }
-    }
-
-    const receiptPath = `${path}.capture.receipt`;
-    const receipt = tab.capture.receipt;
-    if (!requireExactKeys(receipt, [
-      "requestedViewId",
-      "returnedViewId",
-      "requestedPath",
-      "returnedPath",
-      "reportedBytes",
-      "fileBytes",
-      "width",
-      "docHeight",
-    ], receiptPath, failures)) return;
-    if (receipt.requestedViewId !== viewId || receipt.returnedViewId !== viewId) {
-      failures.push(`${receiptPath}.viewId=${displayValue(viewId)}/${displayValue({
-        requested: receipt.requestedViewId,
-        returned: receipt.returnedViewId,
-      })}`);
-    }
-    if (!hasText(receipt.requestedPath) || receipt.returnedPath !== receipt.requestedPath) {
-      failures.push(`${receiptPath}.path=exact/${displayValue({
-        requested: receipt.requestedPath,
-        returned: receipt.returnedPath,
-      })}`);
-    }
-    for (const field of ["reportedBytes", "fileBytes", "width", "docHeight"]) {
-      if (!Number.isInteger(receipt[field]) || receipt[field] <= 0) {
-        failures.push(`${receiptPath}.${field}=integer>0/${displayValue(receipt[field])}`);
-      }
-    }
-    if (receipt.reportedBytes !== receipt.fileBytes) {
-      failures.push(`${receiptPath}.bytes=exact/${displayValue({
-        reported: receipt.reportedBytes,
-        file: receipt.fileBytes,
-      })}`);
-    }
-    if (isRecord(tab.capture.before)) {
-      if (receipt.width !== tab.capture.before.documentWidth) {
-        failures.push(`${receiptPath}.width=documentWidth/${displayValue({
-          receipt: receipt.width,
-          document: tab.capture.before.documentWidth,
-        })}`);
-      }
-      if (receipt.docHeight !== tab.capture.before.documentHeight) {
-        failures.push(`${receiptPath}.docHeight=documentHeight/${displayValue({
-          receipt: receipt.docHeight,
-          document: tab.capture.before.documentHeight,
-        })}`);
-      }
-      if (!(tab.capture.before.documentHeight > tab.capture.before.viewportHeight + 960)) {
-        failures.push(`${path}.capture.document=scrollable/${displayValue({
-          documentHeight: tab.capture.before.documentHeight,
-          viewportHeight: tab.capture.before.viewportHeight,
-        })}`);
-      }
-    }
-  });
-  return finishMachineVerdict(
-    "B11",
-    failures,
-    `${value.engine}/B11:tabs=2;wheel=0,480,0;explicit-full-capture+page-state=exact`,
   );
 }
 

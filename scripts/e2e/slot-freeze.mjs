@@ -78,10 +78,9 @@ import { awaitPostSettleHold, resolveB05Settlement } from "./lib/browser-gate-b0
 import { mapB06LiveEvidence } from "./lib/browser-gate-b06-evidence.mjs";
 import { collectB06Checkpoint } from "./lib/browser-gate-b06-collect.mjs";
 import { mapB10LiveEvidence } from "./lib/browser-gate-b10-evidence.mjs";
-import {
-  mapB11TabEvidence,
-  mapImeObservation,
-} from "./lib/browser-live-evidence.mjs";
+import { measureCapturedImage } from "./lib/browser-gate-b11-capture.mjs";
+import { mapB11TabEvidence } from "./lib/browser-gate-b11-evidence.mjs";
+import { mapImeObservation } from "./lib/browser-live-evidence.mjs";
 import {
   collectB01LiveEvidence,
   renderB01IdentityFixture,
@@ -538,6 +537,52 @@ async function readBrowserSurfaceEvidence(
   });
 }
 
+/**
+ * B11의 pane resize 반쪽 한 순간.
+ *
+ * 같은 정착 epoch 아래에서 pane rect, 그 pane 위 native surface rect, 그 안 문서 뷰포트 폭을
+ * 함께 읽는다. 셋을 따로 재면 하나가 제자리에 남은 사실이 다른 값에 가린다. epoch를 함께
+ * 실어야 이 순간이 wheel/full capture를 잰 순간과 다른 순간임을 보고서가 증명한다.
+ *
+ * 주소는 매 순간 트리에서 다시 찾는다 — 자리가 바뀐 뒤에도 옛 주소를 들고 있으면 재는 대상이
+ * 무엇인지 아무도 답할 수 없다.
+ */
+async function readB11PaneStage(rpc, win, context, stage) {
+  const { nativeChildWebview, implementation, plugin, tabIds, paneIds, labels } = context;
+  const settled = must(
+    await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }),
+    `B11 ${stage} settled`,
+  );
+  const tree = must(await rpc("ui.tree", { rects: true }, win), `B11 ${stage} ui.tree`);
+  const surfaces = await readBrowserSurfaceEvidence(rpc, win, {
+    nativeChildWebview,
+    implementation,
+    plugin,
+    tabIds,
+    labels,
+  });
+  const measured = [];
+  for (let index = 0; index < tabIds.length; index += 1) {
+    const pane = must(
+      await rpc("ui.measure", { address: paneAddress(tree, paneIds[index]) }, win),
+      `B11 ${stage} pane rect ${tabIds[index]}`,
+    );
+    const page = mapPageState(unwrapEvalValue(must(await rpc(`plugin.${plugin}.eval`, {
+      viewId: tabIds[index],
+      js: fullCaptureDocumentProbeJs(),
+    }, win), `B11 ${stage} page state ${tabIds[index]}`)));
+    measured.push({
+      settledAtUnixMs: Number(settled.settledAtUnixMs),
+      paneX: Number(pane.rect?.x),
+      paneWidth: Number(pane.rect?.w),
+      surfaceX: Number(surfaces[index]?.rect?.x),
+      surfaceWidth: Number(surfaces[index]?.rect?.w),
+      viewportWidth: page.viewportWidth,
+    });
+  }
+  return measured;
+}
+
 /** chrome 한 자리를 재고 그 자리의 히트를 실제로 넣어 표본 하나를 만든다. */
 async function measureChromeOverlaySample(rpc, win, {
   target, relation, address, surfaces, planeAddress = null,
@@ -742,17 +787,29 @@ async function verifyScrollInput(rpc, win, plugin, tabId, evidencePath) {
   const readScroll = async (stage) => {
     const result = must(await rpc(`plugin.${plugin}.eval`, {
       viewId: tabId,
-      js: "return { y:scrollY, h:document.documentElement.scrollHeight, v:innerHeight, seq:Number(document.documentElement.dataset.scrollSeq||0) };",
+      // 좌표(y)와 함께 페이지가 센 실제 사건 수를 읽는다 — 좌표만 보면 프로그램으로 옮긴
+      // 스크롤과 휠이 옮긴 스크롤을 가를 수 없다.
+      js: "return { y:scrollY, h:document.documentElement.scrollHeight, v:innerHeight, seq:Number(document.documentElement.dataset.scrollSeq||0), wheelEvents:Number(window.__browserFixture?.wheelEvents), wheelDeltaY:Number(window.__browserFixture?.wheelDeltaY) };",
     }, win), `${stage} scroll audit ${tabId}`);
     return unwrapEvalValue(result);
   };
+  const wheelLedger = (value) => ({
+    scrollSeq: Number(value?.seq),
+    wheelEvents: Number(value?.wheelEvents),
+    wheelDeltaY: Number(value?.wheelDeltaY),
+  });
+  // 이 반쪽(휠·full capture)을 잰 순간. pane resize 반쪽은 나중에 자기 순간을 따로 싣는다.
+  const settled = must(
+    await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }),
+    `scroll phase settled ${tabId}`,
+  );
+  const forwardRequest = { viewId: tabId, selector: "body", dx: 0, dy: 480 };
+  const restoreRequest = { viewId: tabId, selector: "body", dx: 0, dy: -480 };
   const before = await readScroll("before");
   if (Number(before?.y) !== 0 || Number(before?.h) <= Number(before?.v) + 960) {
     throw new Error(`${tabId}: scroll fixture 계약 불일치 ${JSON.stringify(before)}`);
   }
-  must(await rpc(`plugin.${plugin}.input.scroll`, {
-    viewId: tabId, selector: "body", dx: 0, dy: 480,
-  }, win), `input.scroll forward ${tabId}`);
+  must(await rpc(`plugin.${plugin}.input.scroll`, forwardRequest, win), `input.scroll forward ${tabId}`);
   const forwardApplied = must(await rpc(`plugin.${plugin}.dom.wait-for`, {
     viewId: tabId, selector: 'html[data-scroll-seq]:not([data-scroll-seq="0"])', timeoutMs: 8_000,
   }, win, { timeoutMs: 10_000 }), `input.scroll forward applied ${tabId}`);
@@ -771,9 +828,7 @@ async function verifyScrollInput(rpc, win, plugin, tabId, evidencePath) {
     `scroll snapshot ${tabId}`,
     { tab: tabId },
   );
-  must(await rpc(`plugin.${plugin}.input.scroll`, {
-    viewId: tabId, selector: "body", dx: 0, dy: -480,
-  }, win), `input.scroll restore ${tabId}`);
+  must(await rpc(`plugin.${plugin}.input.scroll`, restoreRequest, win), `input.scroll restore ${tabId}`);
   const restoreApplied = must(await rpc(`plugin.${plugin}.dom.wait-for`, {
     viewId: tabId, selector: `html[data-scroll-seq]:not([data-scroll-seq="${Number(after.seq)}"])`, timeoutMs: 8_000,
   }, win, { timeoutMs: 10_000 }), `input.scroll restore applied ${tabId}`);
@@ -785,7 +840,19 @@ async function verifyScrollInput(rpc, win, plugin, tabId, evidencePath) {
   if (restoredY !== 0) {
     throw new Error(`${tabId}: 실제 wheel 복원량 불일치 ${JSON.stringify({ afterY, restoredY })}`);
   }
-  return { beforeY: Number(before.y), afterY, restoredY };
+  return {
+    beforeY: Number(before.y),
+    afterY,
+    restoredY,
+    // 요청은 요청 자리에, 관측은 관측 자리에 남긴다 — 판정이 둘을 맞댄다.
+    requestedDy: [forwardRequest.dy, restoreRequest.dy],
+    settledAtUnixMs: Number(settled.settledAtUnixMs),
+    ledger: {
+      before: wheelLedger(before),
+      after: wheelLedger(after),
+      restored: wheelLedger(restored),
+    },
+  };
 }
 
 async function verifyFullCapture(rpc, win, plugin, tabId, outputPath, identityMarker) {
@@ -819,12 +886,17 @@ async function verifyFullCapture(rpc, win, plugin, tabId, outputPath, identityMa
   }
   const visual = inspectFullCapture(outputPath, `${tabId}/full`, { identityMarker, receipt: result });
   await writeVisualReport(`${outputPath}.visual.json`, visual);
+  // 산출물이 문서 전체를 담았는가는 산출물 자신만 답한다. 영수증의 width/height는 캡처
+  // 요청에 쓴 문서 크기라, 하니스가 같은 식으로 읽은 문서 크기와 맞대면 순환이다.
+  const measured = measureCapturedImage(outputPath);
   return {
     requestedPath: outputPath,
     returnedPath: result.path,
     reportedBytes: result.bytes,
     width: result.width,
     height: result.height,
+    capturedWidth: measured.capturedWidth,
+    capturedHeight: measured.capturedHeight,
     viewId: result.viewId,
     fileBytes,
     before,
@@ -946,7 +1018,9 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
       expectedText: IME_TEXTS[index],
       phases: {},
     }));
-    const b11Tabs = [];
+    // B11의 반쪽. 게이트 이름의 다른 반쪽(pane resize)은 그 사건이 실제로 일어나는 자리에서
+    // 따로 재고, 도장은 둘을 다 쥔 뒤에 한 번 찍는다.
+    const b11ScrollHalves = [];
     if (paneIds.some((id) => typeof id !== "string")) throw new Error(`브라우저 pane id 누락: ${JSON.stringify(paneIds)}`);
     must(await rpc("sidebar.left.position", { mode: "flow" }, win), "sidebar flow");
 
@@ -985,7 +1059,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
           path.join(engineEvidence, `full-${index}.json`),
           full,
         );
-        b11Tabs.push(mapB11TabEvidence({ viewId: tabId, scroll, fullCapture: full }));
+        b11ScrollHalves.push({ viewId: tabId, scroll, fullCapture: full });
       }
       // tab.open + pane.split은 두 view를 먼저 선언하므로 엔진도 둘을 병렬 생성할 수 있다.
       // 부분 prefix를 기대하지 않고 선언된 전체 view 집합과 엔진 장부의 일대일성을 검사한다.
@@ -1784,6 +1858,13 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
         String(node.nodePath ?? "").startsWith("gutter/") && Number(node.rect?.h) > Number(node.rect?.w) * 4,
       );
       if (!gutter?.address) throw new Error("세로 pane gutter가 노출되지 않았다");
+      const b11PaneContext = {
+        nativeChildWebview, implementation, plugin, tabIds, paneIds, labels,
+      };
+      const b11PaneStages = SCENARIOS.has("scroll")
+        ? { baseline: await readB11PaneStage(rpc, win, b11PaneContext, "baseline") }
+        : null;
+      let b11PaneRequestedDx = null;
       for (const [direction, dx] of [["wider", 80], ["restored", -80]]) {
         const dir = path.join(engineEvidence, `resize-pane-${direction}`);
         const recordingOutcome = await runPlannedRecordingAction({
@@ -1834,6 +1915,11 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
         await assertViewportComposition(rpc, win, plugin, tabIds, addresses, scale,
           path.join(engineEvidence, `resize-pane-${direction}.png`), `${engine}/pane-${direction}`);
         await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, `pane-resize-${direction}`);
+        if (b11PaneStages) {
+          // 요청한 pointer 이동량은 drag 영수증이 답한 값이다 — 하니스가 다시 적으면 두 자리가 갈린다.
+          if (direction === "wider") b11PaneRequestedDx = Number(dragged.dx);
+          b11PaneStages[direction] = await readB11PaneStage(rpc, win, b11PaneContext, direction);
+        }
         const phase = direction === "wider" ? "pane-wider" : "pane-restored";
         const paneIme = await assertImePersisted(rpc, win, plugin, tabIds, phase);
         paneIme.forEach((observation, index) => {
@@ -1849,7 +1935,26 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
       });
       await gateReportStore.persist();
       console.log(formatGateVerdict(engine, "B02", b02Receipt));
-      if (SCENARIOS.has("scroll")) {
+      if (b11PaneStages) {
+        // 도장은 두 반쪽을 다 쥔 지금 찍는다. 휠/캡처만 재고 pane resize 뒤에 찍으면 보고서를
+        // 읽는 사람이 재지 않은 축까지 증명된 것으로 읽는다.
+        const b11Tabs = b11ScrollHalves.map((half, index) => mapB11TabEvidence({
+          viewId: half.viewId,
+          scroll: half.scroll,
+          fullCapture: half.fullCapture,
+          paneResize: {
+            paneId: paneIds[index],
+            // 왼쪽 pane은 tab.open이, 오른쪽 pane은 pane.split side:"right"가 만든 것이다.
+            // 이 선언은 판정이 실측 baseline paneX 순서와 맞대 검사한다.
+            side: index === 0 ? "left" : "right",
+            requestedDx: b11PaneRequestedDx,
+            stages: {
+              baseline: b11PaneStages.baseline?.[index],
+              wider: b11PaneStages.wider?.[index],
+              restored: b11PaneStages.restored?.[index],
+            },
+          },
+        }));
         const b11Receipt = gateReportStore.recordMachineEvidence({
           framework: frameworkName,
           engine,

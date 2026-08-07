@@ -1,4 +1,4 @@
-import { B11_PAGE_KEYS } from "./browser-gates.mjs";
+import { B11_PAGE_KEYS } from "./browser-gate-b11.mjs";
 
 /**
  * 각 페이지 축을 페이지에서 읽는 식. 축 목록은 판정(B11_PAGE_KEYS)이 소유하고

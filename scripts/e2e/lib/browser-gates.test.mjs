@@ -14,7 +14,6 @@ import {
   judgeB02MachineEvidence,
   judgeB03MachineEvidence,
   judgeB04MachineEvidence,
-  judgeB11MachineEvidence,
   judgeBrowserMachineGateEvidence,
   machineGateSummary,
   serializeBrowserGateReport,
@@ -138,11 +137,17 @@ function b02Evidence(engine = "browser") {
   };
 }
 
+// B11의 세 축을 실측으로 담은 봉투. 축별 RED/GREEN 법은 browser-gate-b11.test.mjs 가 소유하고,
+// 여기서는 보고서 저장·병합이 완결된 green 영수증 하나를 필요로 할 뿐이다.
 function b11Evidence(engine = "browser") {
+  const dx = 80;
   return {
     engine,
     tabs: ["left", "right"].map((side, index) => {
       const viewId = `${engine}-${side}`;
+      const sign = side === "left" ? 1 : -1;
+      const paneX = index * 700;
+      const paneWidth = 700;
       const page = {
         scrollX: 0,
         scrollY: 0,
@@ -151,9 +156,26 @@ function b11Evidence(engine = "browser") {
         documentWidth: 640 + index * 40,
         documentHeight: 1600 + index * 100,
       };
+      const paneStage = (settledAtUnixMs, moved) => ({
+        settledAtUnixMs,
+        paneX: paneX + (side === "left" ? 0 : moved),
+        paneWidth: paneWidth + sign * moved,
+        surfaceX: paneX + 8 + (side === "left" ? 0 : moved),
+        surfaceWidth: paneWidth - 16 + sign * moved,
+        viewportWidth: page.viewportWidth + sign * moved,
+      });
       return {
         viewId,
-        wheel: { positions: [0, 480, 0] },
+        wheel: {
+          positions: [0, 480, 0],
+          requestedDy: [480, -480],
+          settledAtUnixMs: 1_000 + index,
+          ledger: {
+            before: { scrollSeq: 0, wheelEvents: 0, wheelDeltaY: 0 },
+            after: { scrollSeq: 5, wheelEvents: 3, wheelDeltaY: 480 },
+            restored: { scrollSeq: 9, wheelEvents: 6, wheelDeltaY: 0 },
+          },
+        },
         capture: {
           before: page,
           receipt: {
@@ -165,8 +187,20 @@ function b11Evidence(engine = "browser") {
             fileBytes: 4096 + index,
             width: page.documentWidth,
             docHeight: page.documentHeight,
+            capturedWidth: page.documentWidth * 2,
+            capturedHeight: page.documentHeight * 2,
           },
           after: { ...page },
+        },
+        paneResize: {
+          paneId: `pane-${side}`,
+          side,
+          requestedDx: dx,
+          stages: {
+            baseline: paneStage(2_000 + index, 0),
+            wider: paneStage(3_000 + index, dx),
+            restored: paneStage(4_000 + index, 0),
+          },
         },
       };
     }),
@@ -510,48 +544,6 @@ describe("브라우저 12-gate 정본", () => {
     expect(judgeB04MachineEvidence(lateEpoch).evidence).toEqual(expect.arrayContaining([
       "B04:transitions[1].samples:presentation:window-gap=4041568.4294433594",
     ]));
-  });
-
-  it("B11은 두 탭 모두 exact wheel 왕복과 explicit-view full capture 영수증·전후 페이지 불변성을 증명해야 green이다", () => {
-    for (const engine of BROWSER_ACCEPTANCE_ENGINES) {
-      expect(judgeB11MachineEvidence(b11Evidence(engine)).status).toBe("green");
-    }
-
-    expect(judgeB11MachineEvidence(null)).toEqual({ status: "not-run", evidence: [], reason: null });
-    expect(judgeB11MachineEvidence({ engine: "browser", tabs: [] }).status).toBe("red");
-
-    const wrongWheel = b11Evidence();
-    wrongWheel.tabs[0].wheel.positions = [0, 479, 0];
-    expect(judgeB11MachineEvidence(wrongWheel).status).toBe("red");
-
-    const wrongView = b11Evidence();
-    wrongView.tabs[0].capture.receipt.returnedViewId = wrongView.tabs[1].viewId;
-    expect(judgeB11MachineEvidence(wrongView).status).toBe("red");
-
-    for (const field of [
-      "requestedPath", "returnedPath", "reportedBytes", "fileBytes", "width", "docHeight",
-    ]) {
-      const missingReceipt = b11Evidence();
-      delete missingReceipt.tabs[0].capture.receipt[field];
-      expect(judgeB11MachineEvidence(missingReceipt).status).toBe("red");
-    }
-
-    const wrongPathAndBytes = b11Evidence();
-    wrongPathAndBytes.tabs[0].capture.receipt.returnedPath = "/evidence/wrong.png";
-    wrongPathAndBytes.tabs[0].capture.receipt.fileBytes += 1;
-    expect(judgeB11MachineEvidence(wrongPathAndBytes).status).toBe("red");
-
-    const changedScroll = b11Evidence();
-    changedScroll.tabs[0].capture.after.scrollY = 480;
-    expect(judgeB11MachineEvidence(changedScroll).status).toBe("red");
-
-    const changedDimensions = b11Evidence();
-    changedDimensions.tabs[1].capture.after.documentHeight += 1;
-    expect(judgeB11MachineEvidence(changedDimensions).status).toBe("red");
-
-    const pixelInput = b11Evidence();
-    pixelInput.tabs[0].capture.receipt.markerPixels = { red: 64 };
-    expect(judgeB11MachineEvidence(pixelInput).status).toBe("red");
   });
 
   it("gate별 순수 판정은 evidence가 없으면 not-run, 불완전하면 red이며 visualReview와 PNG를 입력으로 받지 않는다", () => {

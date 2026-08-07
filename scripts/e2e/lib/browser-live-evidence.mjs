@@ -1,4 +1,3 @@
-import { mapPageState } from "./browser-page-state.mjs";
 import { mapWithWiring } from "./browser-machine-judge-support.mjs";
 
 export function mapImeObservation(value) {
@@ -68,25 +67,3 @@ export function mapB01TabEvidence(raw = {}) {
   });
 }
 
-export function mapB11TabEvidence({ viewId, scroll, fullCapture }) {
-  return {
-    viewId,
-    wheel: {
-      positions: [scroll?.beforeY ?? null, scroll?.afterY ?? null, scroll?.restoredY ?? null],
-    },
-    capture: {
-      before: mapPageState(fullCapture?.before),
-      receipt: {
-        requestedViewId: viewId,
-        returnedViewId: fullCapture?.viewId ?? null,
-        requestedPath: fullCapture?.requestedPath ?? null,
-        returnedPath: fullCapture?.returnedPath ?? null,
-        reportedBytes: fullCapture?.reportedBytes ?? null,
-        fileBytes: fullCapture?.fileBytes ?? null,
-        width: fullCapture?.width ?? null,
-        docHeight: fullCapture?.height ?? null,
-      },
-      after: mapPageState(fullCapture?.after),
-    },
-  };
-}

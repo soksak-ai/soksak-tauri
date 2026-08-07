@@ -48,9 +48,11 @@ export const SURFACE_PATTERNS = [
   {
     name: "pixel-oracle",
     kind: "native",
-    re: /\bdecodePng\b|\bframeColors\b|\bjudgeFrame\b|\bcompareFrames\b|\bobserveFrameSequence\b|\bobserveFullCapture\b|\bsnapshotScaleForVisualEvidence\b|\bPIL\b|\bImage\.open\b/,
+    re: /\bdecodePng\b|\breadPngSize\b|\bframeColors\b|\bjudgeFrame\b|\bcompareFrames\b|\bobserveFrameSequence\b|\bobserveFullCapture\b|\bsnapshotScaleForVisualEvidence\b|\bPIL\b|\bImage\.open\b/,
     jsIdentifiers: [
       "decodePng",
+      // 산출물의 실측 크기는 픽셀을 풀지 않지만 답이 파이프라인마다 다르다(1x PDF vs device pixel).
+      "readPngSize",
       "frameColors",
       "judgeFrame",
       "compareFrames",

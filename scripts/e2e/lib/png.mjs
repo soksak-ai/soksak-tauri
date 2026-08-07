@@ -10,6 +10,26 @@
 
 import zlib from "node:zlib";
 
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+/** IHDR 까지의 바이트 수. 크기만 알려면 이만큼만 읽으면 된다. */
+export const PNG_HEADER_BYTES = 24;
+
+/**
+ * 산출물의 실측 크기만 읽는다 — 픽셀을 풀지 않는다.
+ *
+ * 못 읽으면 null 이다. 0 을 돌려주면 "크기가 0 인 이미지"와 "읽지 못했다"가 같은 값이 된다.
+ * @returns {{w:number,h:number}|null}
+ */
+export function readPngSize(buf) {
+  if (!Buffer.isBuffer(buf) || buf.length < PNG_HEADER_BYTES) return null;
+  if (!buf.subarray(0, 8).equals(PNG_SIGNATURE)) return null;
+  if (buf.toString("ascii", 12, 16) !== "IHDR") return null;
+  const w = buf.readUInt32BE(16);
+  const h = buf.readUInt32BE(20);
+  return w > 0 && h > 0 ? { w, h } : null;
+}
+
 /** @returns {{w:number,h:number,ch:number,px:Buffer}} ch = 픽셀당 바이트 수, px = 필터 해제된 원본 */
 export function decodePng(buf) {
   let off = 8;

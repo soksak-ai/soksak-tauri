@@ -474,6 +474,41 @@
       "note": "B10의 phase 누락·좌표 drift·generation 교체·viewport 불일치·복원 실패를 RED로 고정한다."
     },
     {
+      "file": "lib/browser-gate-b11-capture.mjs",
+      "role": "lib",
+      "class": "C",
+      "surfaces": ["pixel-oracle"],
+      "note": "full capture 산출물의 IHDR 실측 크기를 읽는다. 배율은 파이프라인마다 다르므로 여기서 정규화하지 않고 판정에 그대로 넘긴다."
+    },
+    {
+      "file": "lib/browser-gate-b11-capture.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "실물 PNG 바이트로 실측 크기를 고정하고, 못 읽은 크기가 0으로 둔갑하지 않는다는 법을 지킨다."
+    },
+    {
+      "file": "lib/browser-gate-b11-evidence.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "B11의 휠 사건 원장·산출물 실측·pane 왕복 세 축을 판정 봉투로 옮긴다. 요청값과 관측값을 서로 베끼지 않는다."
+    },
+    {
+      "file": "lib/browser-gate-b11-evidence.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "매퍼가 하니스 응답 모양을 그대로 받고 없는 축을 0으로 채우지 않는다는 법을 값만으로 고정한다."
+    },
+    {
+      "file": "lib/browser-gate-b11.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "pane 폭 왕복이 표면·문서까지 닿았는지, 휠 사건이 스크롤을 옮기고 되돌렸는지, full capture 산출물이 문서 전체를 담았는지를 판정하는 B11 순수 judge다."
+    },
+    {
       "file": "lib/browser-gate-b11.test.mjs",
       "role": "test",
       "class": "A",
