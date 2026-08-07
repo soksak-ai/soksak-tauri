@@ -56,6 +56,35 @@ function liveB01Tab(index, { nodePath = "urlbar" } = {}) {
   });
 }
 
+const B11_PAGE = Object.freeze({
+  scrollX: 0,
+  scrollY: 0,
+  viewportWidth: 640,
+  viewportHeight: 480,
+  documentWidth: 640,
+  documentHeight: 1600,
+});
+
+function liveB11Tab(index) {
+  const viewId = `view-${index}`;
+  const requestedPath = `/evidence/full-${index}.png`;
+  return {
+    viewId,
+    scroll: { beforeY: 0, afterY: 480, restoredY: 0 },
+    fullCapture: {
+      requestedPath,
+      fileBytes: 4096,
+      before: B11_PAGE,
+      after: B11_PAGE,
+      viewId,
+      returnedPath: requestedPath,
+      reportedBytes: 4096,
+      width: 640,
+      height: 1600,
+    },
+  };
+}
+
 describe("live browser evidence mappers", () => {
   it("maps every real navigation's mount, address bar, page identity, and navigate receipt into B01", () => {
     const tabs = [0, 1].map((index) => liveB01Tab(index));
@@ -117,35 +146,56 @@ describe("live browser evidence mappers", () => {
   });
 
   it("maps wheel and full-capture command/file receipts into B11", () => {
-    const tabs = [0, 1].map((index) => {
-      const viewId = `view-${index}`;
-      const requestedPath = `/evidence/full-${index}.png`;
-      // probe가 실제로 내보내는 축 이름 그대로다 — mapper가 받아 주는 별도 모양을
-      // 지어내면 fixture만 green이 되고 실측은 null로 남는다.
-      const dimensions = {
-        scrollX: 0,
-        scrollY: 0,
-        viewportWidth: 640,
-        viewportHeight: 480,
-        documentWidth: 640,
-        documentHeight: 1600,
-      };
-      return mapB11TabEvidence({
-        viewId,
-        scroll: { beforeY: 0, afterY: 480, restoredY: 0 },
-        fullCapture: {
-          requestedPath,
-          fileBytes: 4096,
-          before: dimensions,
-          after: dimensions,
-          viewId,
-          returnedPath: requestedPath,
-          reportedBytes: 4096,
-          width: 640,
-          height: 1600,
-        },
-      });
-    });
+    // probe가 실제로 내보내는 축 이름 그대로다 — mapper가 받아 주는 별도 모양을
+    // 지어내면 fixture만 green이 되고 실측은 null로 남는다.
+    const tabs = [0, 1].map((index) => mapB11TabEvidence(liveB11Tab(index)));
     expect(judgeB11MachineEvidence({ engine, tabs }).status).toBe("green");
+  });
+
+  it("records a clean B11 tab wiring ledger on the green path", () => {
+    expect(mapB11TabEvidence(liveB11Tab(0)).evidenceWiring).toEqual({
+      source: "B11.tab",
+      unconsumed: [],
+      unproduced: [],
+      error: null,
+    });
+  });
+
+  it("names a drifted B11 tab field on both sides instead of losing the capture", () => {
+    const value = liveB11Tab(0);
+    value.capture = value.fullCapture;
+    delete value.fullCapture;
+    const tab = mapB11TabEvidence(value);
+    expect(tab.evidenceWiring).toEqual({
+      source: "B11.tab",
+      unconsumed: ["capture"],
+      unproduced: ["fullCapture"],
+      error: null,
+    });
+    const verdict = judgeB11MachineEvidence({ engine, tabs: [tab, mapB11TabEvidence(liveB11Tab(1))] });
+    expect(verdict.status).toBe("red");
+    expect(verdict.evidence).toContain("B11:wiring.B11.tab.capture=produced-not-consumed");
+    expect(verdict.evidence).toContain("B11:wiring.B11.tab.fullCapture=consumed-not-produced");
+  });
+
+  it("names a B11 tab field that throws instead of killing the harness", () => {
+    const value = liveB11Tab(0);
+    Object.defineProperty(value, "scroll", {
+      enumerable: true,
+      get() {
+        throw new TypeError("wheel receipt read failed");
+      },
+    });
+    let verdict;
+    expect(() => {
+      verdict = judgeB11MachineEvidence({
+        engine,
+        tabs: [mapB11TabEvidence(value), mapB11TabEvidence(liveB11Tab(1))],
+      });
+    }).not.toThrow();
+    expect(verdict.status).toBe("red");
+    expect(verdict.evidence).toContain(
+      'B11:wiring.B11.tab=mapper-threw/"TypeError: wheel receipt read failed"',
+    );
   });
 });
