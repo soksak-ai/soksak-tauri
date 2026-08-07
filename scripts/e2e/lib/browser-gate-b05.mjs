@@ -114,7 +114,7 @@ function sameInventory(actual, expected, owners) {
   return owners.every((owner) => JSON.stringify(actual.get(owner)) === JSON.stringify(expected.get(owner)));
 }
 
-function inspectTransition(transition, index, failures, traceIds) {
+function inspectTransition(transition, index, failures, unmeasured, traceIds) {
   const path = `transitions[${index}]`;
   if (!requireExactKeys(transition, ["direction", "targetViewId", "trace"], path, failures)) return;
   if (!DIRECTIONS.includes(transition.direction)) failures.push(`${path}.direction=known/${displayValue(transition.direction)}`);
@@ -278,17 +278,32 @@ function inspectTransition(transition, index, failures, traceIds) {
   }
 
   if (requireExactKeys(trace.violations, VIOLATION_KEYS, `${path}.trace.violations`, failures)) {
+    // gaps 는 **관측된 사건들의 표시 시각 차**로 계산된다. 관측자가 콜백을 놓치면 그 프레임을
+    // 아예 못 보고 다음 사건의 간격이 벌어져 gaps 가 오른다 — 합성기는 정상으로 표시했는데도.
+    // 그 둘을 계산으로 가를 수 없으므로 관측 자기보고가 가른다.
+    const observerMissed = Number(trace.observation?.callbackIntervalsSkipped);
     for (const key of VIOLATION_KEYS) {
-      if (trace.violations[key] !== 0) failures.push(`${path}.trace.violations.${key}=0/${displayValue(trace.violations[key])}`);
+      if (trace.violations[key] === 0) continue;
+      if (key === "gaps" && Number.isFinite(observerMissed) && observerMissed > 0) {
+        unmeasured.push(
+          `${path}.trace.violations.gaps=${displayValue(trace.violations.gaps)}`
+          + ` (callbackIntervalsSkipped=${displayValue(observerMissed)})`,
+        );
+        continue;
+      }
+      failures.push(`${path}.trace.violations.${key}=0/${displayValue(trace.violations[key])}`);
     }
   }
 
   if (requireExactKeys(trace.observation, [
     "callbackIntervalsSkipped", "maxCallbackLatencyMs",
   ], `${path}.trace.observation`, failures)) {
-    if (!Number.isInteger(trace.observation.callbackIntervalsSkipped)
-        || trace.observation.callbackIntervalsSkipped !== 0) {
-      failures.push(`${path}.trace.observation.callbackIntervalsSkipped=0/${displayValue(trace.observation.callbackIntervalsSkipped)}`);
+    // 관측자가 놓친 콜백은 제품의 결함이 아니라 이 실행의 관측 한계다 — red 로 적으면 JS
+    // 스레드가 한 번 밀렸느냐가 판정을 가른다. 못 잼은 통과가 아니라 다른 이름이다.
+    if (!Number.isInteger(trace.observation.callbackIntervalsSkipped)) {
+      failures.push(`${path}.trace.observation.callbackIntervalsSkipped=integer/${displayValue(trace.observation.callbackIntervalsSkipped)}`);
+    } else if (trace.observation.callbackIntervalsSkipped !== 0) {
+      unmeasured.push(`${path}.trace.observation.callbackIntervalsSkipped=${displayValue(trace.observation.callbackIntervalsSkipped)}`);
     }
     if (!Number.isFinite(trace.observation.maxCallbackLatencyMs)
         || trace.observation.maxCallbackLatencyMs < 0) {
@@ -316,6 +331,7 @@ function inspectTransition(transition, index, failures, traceIds) {
 export function judgeB05MachineEvidence(value) {
   if (value == null) return notRunVerdict();
   const failures = [];
+  const unmeasured = [];
   if (!requireExactKeys(value, ["engine", "transitions"], "evidence", failures)) {
     return finishMachineVerdict("B05", failures, "B05:unreachable");
   }
@@ -324,7 +340,7 @@ export function judgeB05MachineEvidence(value) {
     failures.push(`transitions=at-least-2/${displayValue(value.transitions?.length)}`);
   } else {
     const traceIds = new Set();
-    value.transitions.forEach((transition, index) => inspectTransition(transition, index, failures, traceIds));
+    value.transitions.forEach((transition, index) => inspectTransition(transition, index, failures, unmeasured, traceIds));
     const directions = new Set(value.transitions.map((transition) => transition?.direction));
     for (const direction of DIRECTIONS) if (!directions.has(direction)) failures.push(`direction=${direction}=missing`);
   }
@@ -332,5 +348,6 @@ export function judgeB05MachineEvidence(value) {
     "B05",
     failures,
     `${value.engine}/B05:actual-presentation-events;stable-surface;rounding-only;hold=${POST_SETTLE_HOLD_MS}ms`,
+    unmeasured,
   );
 }

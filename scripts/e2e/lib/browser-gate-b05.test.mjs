@@ -112,12 +112,19 @@ describe("B05 actual presentation continuity judge", () => {
     }
   });
 
-  it("시각 소실과 별개로 callback coverage 누락도 RED로 남긴다", () => {
+  // 정정 2026-08-08: 이 단언은 callback coverage 누락을 RED 로 고정하고 있었다. 그 누락은
+  // "재보니 어긋났다" 가 아니라 "못 쟀다" 다 — 관측자가 프레임을 못 본 것이지 제품이 프레임을
+  // 안 그린 것이 아니다. 이 저장소의 계약은 그 둘을 이미 가른다(잰 어긋남=red, 못 잼=blocked).
+  //
+  // 기준을 낮추는 것이 아니다: blocked 도 통과가 아니고 인수는 72칸 전부 green 을 요구한다.
+  // 이름을 바로잡아야 JS 스레드가 한 번 밀렸느냐가 판정을 가르지 않는다.
+  it("시각 소실과 별개로 callback coverage 누락은 이름을 달고 못 잼으로 남긴다", () => {
     const value = evidence("browser");
     value.transitions[0].trace.observation.callbackIntervalsSkipped = 1;
     const verdict = judgeB05MachineEvidence(value);
-    expect(verdict.status).toBe("red");
-    expect(verdict.evidence.join("\n")).toContain("callbackIntervalsSkipped=0");
+    expect(verdict.status).toBe("blocked");
+    expect(verdict.status).not.toBe("green");
+    expect(verdict.reason).toContain("callbackIntervalsSkipped");
   });
 
   it("표면 교체·소실·미표시·DOM 불일치·hold 회귀를 RED로 만든다", () => {
@@ -218,5 +225,43 @@ describe("B05 시계 선언", () => {
       + "presentation=unix-anchored-monotonic,stimulus=unix-anchored-monotonic,"
       + "layout=unix-anchored-monotonic,settlement=none",
     ]);
+  });
+});
+
+// 규칙 — 관측자가 못 본 프레임을 합성기가 안 그린 것으로 세지 않는다.
+//
+// `violations.gaps` 는 **관측된 사건들의 표시 시각 차**로 계산된다. 관측자가 콜백을 놓치면 그
+// 프레임을 아예 못 보고, 다음 사건의 간격이 벌어져 gaps 가 오른다 — 합성기는 정상으로 표시했는데도.
+// 원장 주석은 둘이 다른 사실이라 하지만, 계산은 그 둘을 가르지 못한다.
+//
+// 실측 2026-08-07: 같은 전이가 `violations.gaps=0/1` 과 `callbackIntervalsSkipped=0/1` 을 함께
+// 냈다. 같은 사건을 두 번 센 것이다.
+describe("건너뜀의 주인은 관측 자기보고가 가른다", () => {
+  it("관측자가 콜백을 놓쳤으면 gaps 를 합성기 결함으로 세지 않는다", () => {
+    const value = evidence();
+    const transition = value.transitions[0];
+    transition.trace.violations.gaps = 1;
+    transition.trace.observation.callbackIntervalsSkipped = 1;
+    const verdict = judgeB05MachineEvidence(value);
+    expect(verdict.evidence.filter((row) => row.includes("violations.gaps"))).toEqual([]);
+    expect(verdict.status).toBe("blocked");
+    expect(verdict.reason).toContain("callbackIntervalsSkipped");
+  });
+
+  it("관측자가 안 놓쳤으면 gaps 는 그대로 red 다", () => {
+    const value = evidence();
+    const transition = value.transitions[0];
+    transition.trace.violations.gaps = 1;
+    transition.trace.observation.callbackIntervalsSkipped = 0;
+    const verdict = judgeB05MachineEvidence(value);
+    expect(verdict.evidence.some((row) => row.includes("violations.gaps=0/1"))).toBe(true);
+    expect(verdict.status).toBe("red");
+  });
+
+  it("gaps 가 없으면 관측자가 놓쳤어도 이 축은 조용하다", () => {
+    const value = evidence();
+    value.transitions[0].trace.observation.callbackIntervalsSkipped = 2;
+    const verdict = judgeB05MachineEvidence(value);
+    expect(verdict.evidence.filter((row) => row.includes("violations.gaps"))).toEqual([]);
   });
 });
