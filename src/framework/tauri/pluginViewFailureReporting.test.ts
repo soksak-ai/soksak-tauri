@@ -41,3 +41,15 @@ describe("renderer ↔ 부모 실패 채널", () => {
     expect(protocol).toContain("reason");
   });
 });
+
+// 래칫(RED→GREEN 아님): 자식 renderer 는 command registrar 가 아니다. 플러그인은 이 사실을
+// `typeof app.commands?.register === "function"` 으로 재고, 그 모양이 조용히 바뀌면 세 브라우저
+// 플러그인의 판정이 한꺼번에 뒤집힌다. 모양을 여기 고정한다.
+describe("renderer realm 의 command 표면", () => {
+  it("execute 만 있고 register 는 없다 — 등록은 창 realm 의 일이다", () => {
+    const source = read("pluginViewRenderer.ts");
+    const shim = source.split("commands: {")[1]?.split("}")[0] ?? "";
+    expect(shim).toContain('call("commands.execute"');
+    expect(shim).not.toContain("register");
+  });
+});
