@@ -24,8 +24,8 @@ function scenarioGateBodies(source, scenario) {
   return bodies;
 }
 
-/** 이름 붙은 함수의 본문 — 산문이 아니라 선언에서 잘라 읽는다. */
-function functionBody(source, name) {
+/** 그 이름으로 선언된 함수의 본문. 산문 검색이 아니라 선언에서 잘라 읽는다. */
+function namedFunctionBody(source, name) {
   const file = ts.createSourceFile("slot-freeze.mjs", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
   let body = "";
   const visit = (node) => {
@@ -38,8 +38,8 @@ function functionBody(source, name) {
   return body;
 }
 
-/** `for (const x of <iterable>)` 한 덩어리의 본문 텍스트. 게이트별 블록을 이름으로 집는다. */
-function forOfBody(source, iterableText) {
+/** 그 iterable 로 도는 for-of 들의 본문. 게이트별 블록을 이름으로 집는다. */
+function forOfBodies(source, iterableText) {
   const file = ts.createSourceFile("slot-freeze.mjs", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
   const bodies = [];
   const visit = (node) => {
@@ -56,7 +56,7 @@ function forOfBody(source, iterableText) {
 const B09_FUNCTIONS = Object.freeze(["measureChromeOverlaySample", "assertChromeOverlayContract"]);
 
 function chromeOverlayBlock(source) {
-  return B09_FUNCTIONS.map((name) => functionBody(source, name)).join("\n");
+  return B09_FUNCTIONS.map((name) => namedFunctionBody(source, name)).join("\n");
 }
 
 function frameworkGuardedRpcCalls(source, command) {
@@ -302,7 +302,7 @@ describe("slot-freeze instrumentation lifecycle", () => {
   // blocked 만 남고 어느 계약이 깨졌는지 수치로 남지 않는다.
   it("PIN 케이스는 station·분할·transaction·native bounds를 evidence로 실어 판정한다", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
-    const [pinLoop] = forOfBody(source, "pinCases");
+    const [pinLoop] = forOfBodies(source, "pinCases");
     expect(pinLoop).toBeDefined();
     expect(pinLoop).toContain("requestedStation: pinCase.station");
     expect(pinLoop).toContain("layoutTransactions: unexpected.length");
@@ -511,7 +511,7 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(source).toContain('name: "pin-maximize-right"');
     expect(source).toContain('rpc("tab.maximize"');
     expect(source).toContain('rpc("tab.restore"');
-    const [maximizeLoop] = forOfBody(source, "maximizeCases");
+    const [maximizeLoop] = forOfBodies(source, "maximizeCases");
     expect(maximizeLoop).toBeDefined();
     expect(maximizeLoop).toContain('rpc("sidebar.left.position"');
     expect(maximizeLoop).toContain("restoredPosition");
@@ -521,7 +521,7 @@ describe("slot-freeze instrumentation lifecycle", () => {
   // 세 엔진 판정이 byte-identical 이던 이유는 native surface 를 아예 안 물었기 때문이다.
   it("maximize 세 시점의 native surface·결부·보더를 같은 방법으로 읽어 싣는다", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
-    const [maximizeLoop] = forOfBody(source, "maximizeCases");
+    const [maximizeLoop] = forOfBodies(source, "maximizeCases");
     for (const stage of ["baseline", "maximized", "restored"]) {
       expect(maximizeLoop, stage).toContain(`${stage}: stage${stage[0].toUpperCase()}${stage.slice(1)}`);
     }
@@ -650,7 +650,7 @@ describe("slot-freeze instrumentation lifecycle", () => {
   // blocked 로 사라지고 41개 런 전수에서 그랬듯 judge 는 한 번도 RED 를 못 낸다.
   it("records the B09 verdict before any throwing oracle in the same block", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
-    const block = functionBody(source, "assertChromeOverlayContract");
+    const block = namedFunctionBody(source, "assertChromeOverlayContract");
     expect(block).not.toBe("");
     const verdict = block.indexOf('gate: "B09"');
     expect(verdict).toBeGreaterThan(-1);
