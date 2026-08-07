@@ -37,7 +37,7 @@ import {
   mapB08MaximizeCaseEvidence,
   requireBrowserEvidenceBuildId,
 } from "./lib/browser-evidence-store.mjs";
-import { runEngineCoverage } from "./lib/browser-gate-coverage.mjs";
+import { formatGateVerdict, runEngineCoverage } from "./lib/browser-gate-coverage.mjs";
 import {
   beginEvidenceRun,
   evidenceStorePaths,
@@ -672,10 +672,7 @@ async function assertChromeOverlayContract(
     evidence: { engine, samples: b09Samples },
   });
   await gateReportStore.persist();
-  if (b09Receipt.status !== "green") {
-    throw new Error(`${engine}/B09 machine RED — ${b09Receipt.evidence.join(", ")}`);
-  }
-  console.log(`◉ ${engine}/B09 canonical machine verdict: ${b09Receipt.status}`);
+  console.log(formatGateVerdict(engine, "B09", b09Receipt));
   must(await rpc("ui.input.click", { address: close }, win), "project modal close");
   must(await rpc("project.rightbar.toggle", { open: false }, win), "right sidebar close");
   must(
@@ -1020,9 +1017,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
       },
     });
     await gateReportStore.persist();
-    if (b01Receipt.status !== "green") {
-      throw new Error(`${engine}/B01 machine RED — ${b01Receipt.evidence.join(", ")}`);
-    }
+    console.log(formatGateVerdict(engine, "B01", b01Receipt));
     // 플러그인 인스턴스와 함께 영속하고 surface와 같은 x축을 소유하는 공개 toolbar가
     // 브라우저 표면 궤적의 기준이다. 앱 크롬 합성은 별도로 persistent rail root와 pane root를
     // 같은 rAF에서 측정한다 — 콘텐츠 표면 검증과 크롬 DOM 검증을 한 값으로 뭉개지 않는다.
@@ -1086,7 +1081,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
       }),
     });
     await gateReportStore.persist();
-    console.log(`◉ ${engine}/B03 canonical machine verdict: ${b03Receipt.status}`);
+    console.log(formatGateVerdict(engine, "B03", b03Receipt));
 
     if (sentinelWin && sentinelTabId) {
       must(await rpc(`plugin.${plugin}.gc`, {}, win, { timeoutMs: 20_000 }), "challenger owner-scoped gc");
@@ -1392,10 +1387,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
         },
       });
       await gateReportStore.persist();
-      if (b04Receipt.status !== "green") {
-        throw new Error(`${engine}/B04 machine RED — ${b04Receipt.evidence.join(", ")}`);
-      }
-      console.log(`◉ ${engine}/B04 canonical machine verdict: ${b04Receipt.status}`);
+      console.log(formatGateVerdict(engine, "B04", b04Receipt));
       const b05Receipt = gateReportStore.recordMachineEvidence({
         framework: frameworkName,
         engine,
@@ -1409,8 +1401,8 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
         evidence: mapB06LiveEvidence({ engine, checkpoints: b06Checkpoints }),
       });
       await gateReportStore.persist();
-      console.log(`◉ ${engine}/B05 canonical machine verdict: ${b05Receipt.status}`);
-      console.log(`◉ ${engine}/B06 canonical machine verdict: ${b06Receipt.status}`);
+      console.log(formatGateVerdict(engine, "B05", b05Receipt));
+      console.log(formatGateVerdict(engine, "B06", b06Receipt));
     }
 
     // PIN 계약 — 사이드바와 분할 rect는 포커스 클릭의 입력이 아니다. station 0에서 오른쪽
@@ -1595,7 +1587,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
         evidence: { engine, cases: b07Cases },
       });
       await gateReportStore.persist();
-      console.log(`◉ ${engine}/B07 canonical machine verdict: ${b07Receipt.status}`);
+      console.log(formatGateVerdict(engine, "B07", b07Receipt));
     }
     if (SCENARIOS.has("pin")) {
       must(await rpc("sidebar.left.position", { mode: "pin", station: 50 }, win), "pin maximize station");
@@ -1692,7 +1684,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
         evidence: { engine, baseline: b08Baseline, cases: b08Cases },
       });
       await gateReportStore.persist();
-      console.log(`◉ ${engine}/B08 canonical machine verdict: ${b08Receipt.status}`);
+      console.log(formatGateVerdict(engine, "B08", b08Receipt));
     }
     if (SCENARIOS.has("pin")) {
       must(await rpc("sidebar.left.position", { mode: "flow" }, win), "restore sidebar flow after pin contract");
@@ -1858,9 +1850,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
         evidence: { engine, tabs: imeEvidence },
       });
       await gateReportStore.persist();
-      if (b02Receipt.status !== "green") {
-        throw new Error(`${engine}/B02 machine RED — ${b02Receipt.evidence.join(", ")}`);
-      }
+      console.log(formatGateVerdict(engine, "B02", b02Receipt));
       if (SCENARIOS.has("scroll")) {
         const b11Receipt = gateReportStore.recordMachineEvidence({
           framework: frameworkName,
@@ -1869,9 +1859,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
           evidence: { engine, tabs: b11Tabs },
         });
         await gateReportStore.persist();
-        if (b11Receipt.status !== "green") {
-          throw new Error(`${engine}/B11 machine RED — ${b11Receipt.evidence.join(", ")}`);
-        }
+        console.log(formatGateVerdict(engine, "B11", b11Receipt));
       }
       const b10Receipt = gateReportStore.recordMachineEvidence({
         framework: frameworkName,
@@ -1884,7 +1872,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
         }),
       });
       await gateReportStore.persist();
-      console.log(`◉ ${engine}/B10 canonical machine verdict: ${b10Receipt.status}`);
+      console.log(formatGateVerdict(engine, "B10", b10Receipt));
       resizeSummary = `급격한 창 resize ${fastSizes.length}단계/${fastResize.resizeElapsedMs}ms · 패널 resize 왕복`;
     }
 

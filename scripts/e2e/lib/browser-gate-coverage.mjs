@@ -27,6 +27,13 @@ export function blockPendingMachineGates(report, { engine, reason } = {}) {
   );
 }
 
+/** 실행 로그의 판정 한 줄. green 이 아니면 판정을 만든 수치를 같은 줄에 남겨, 실행 로그만으로
+ * 원인 범위를 좁힐 수 있게 한다. 로그는 증거가 아니라 정본 보고서로 가는 이정표다. */
+export function formatGateVerdict(engine, gate, receipt) {
+  const detail = receipt.status === "green" ? "" : ` — ${receipt.evidence.join(", ")}`;
+  return `◉ ${engine}/${gate} canonical machine verdict: ${receipt.status}${detail}`;
+}
+
 function failureText(error) {
   return error instanceof Error ? error.message : String(error);
 }

@@ -8,6 +8,7 @@ import {
 } from "./browser-gates.mjs";
 import {
   blockPendingMachineGates,
+  formatGateVerdict,
   pendingMachineGates,
   runEngineCoverage,
 } from "./browser-gate-coverage.mjs";
@@ -99,6 +100,23 @@ describe("blockPendingMachineGates", () => {
     const summary = machineGateSummary(report);
     expect(summary.counts.red).toBe(1);
     expect(summary.status).toBe("red");
+  });
+});
+
+describe("formatGateVerdict", () => {
+  it("green 은 판정만 적는다", () => {
+    expect(formatGateVerdict("browser", "B04", { status: "green", evidence: [] }))
+      .toBe("◉ browser/B04 canonical machine verdict: green");
+  });
+
+  it("green 이 아니면 실행 로그에 수치 증거를 함께 적는다", () => {
+    expect(formatGateVerdict("browser", "B04", {
+      status: "red",
+      evidence: ["B04:transitions[0].pane-dx=-160/0", "B04:timeline:renderer:samples=1/3"],
+    })).toBe(
+      "◉ browser/B04 canonical machine verdict: red"
+      + " — B04:transitions[0].pane-dx=-160/0, B04:timeline:renderer:samples=1/3",
+    );
   });
 });
 

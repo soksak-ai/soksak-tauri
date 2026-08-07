@@ -563,6 +563,19 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(source).not.toMatch(/for\s*\(\s*const\s+engine\s+of\s+ENGINES\s*\)/);
   });
 
+  it("reports every gate verdict without ending the engine's remaining measurements", () => {
+    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    // 판정은 정본 보고서가 소유한다. receipt 를 다시 던지면 같은 엔진의 남은 게이트가
+    // 측정되지 않아 보고서에 없는 사실이 생긴다. 최종 판정은 machineSummary 가 한다.
+    expect(source).not.toMatch(/Receipt\.status !== "green"/);
+    for (let number = 1; number <= 11; number += 1) {
+      const gate = `B${String(number).padStart(2, "0")}`;
+      expect(source, gate).toContain(`formatGateVerdict(engine, "${gate}"`);
+    }
+    // 판정 줄은 한 자리에서 만든다 — 자리마다 다시 쓰면 red 의 수치가 어떤 줄에서는 사라진다.
+    expect(source).not.toContain("canonical machine verdict:");
+  });
+
   it("drives and measures real wheel scrolling for every browser implementation", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
     const matrix = readFileSync(new URL("./lib/browser-matrix.mjs", import.meta.url), "utf8");
