@@ -19,6 +19,7 @@ import {
   transitionFrameAlignment,
   viewportPixelDiagnostic,
 } from "./browser-matrix.mjs";
+import { capturedScaleObservation, displayScaleFact, usableFrameScale } from "./surface-scale.mjs";
 
 const MARKER_SAMPLE_STEP = 2;
 const MIN_MARKER_HEIGHT = 16;
@@ -26,23 +27,33 @@ const MIN_MARKER_COMPONENT = 200;
 
 const messageOf = (error) => error instanceof Error ? error.message : String(error);
 
-/** PNG 좌표계 추정 실패도 visual 진단으로 돌리고 machine gate를 던지지 않는다. */
+/**
+ * 이 실행의 배율 사실과, 캡처에서 다시 잰 사본을 맞대 본 진단.
+ *
+ * `scale`은 언제나 창이 말한 사실이다. PNG 좌표계 산출이 실패해도 그 자리를 1로 메우지 않는다 —
+ * 예전에는 메웠고, 그 1이 `windowedSurfaceCompositionVerdict`의 반올림 기준까지 흘러가
+ * 캡처가 실패할수록 기계 판정이 느슨해졌다.
+ *
+ * 창이 배율을 말하지 않으면 그것은 **측정 불가**다. 진단으로 돌리지 않고 던진다.
+ */
 export function snapshotScaleForVisualEvidence(file, windowInfo) {
+  const scale = displayScaleFact(windowInfo);
+  const errors = [];
+  let capturedScale = null;
   try {
-    return {
-      kind: "human-visual-evidence",
-      automatedVerdict: false,
-      scale: snapshotCssScale(fs.readFileSync(file), windowInfo),
-      errors: [],
-    };
+    capturedScale = snapshotCssScale(fs.readFileSync(file), windowInfo);
   } catch (error) {
-    return {
-      kind: "human-visual-evidence",
-      automatedVerdict: false,
-      scale: 1,
-      errors: [messageOf(error)],
-    };
+    errors.push(messageOf(error));
   }
+  const observation = capturedScaleObservation(scale, capturedScale);
+  if (observation.error) errors.push(observation.error);
+  return {
+    kind: "human-visual-evidence",
+    automatedVerdict: false,
+    scale,
+    capturedScale: observation.captured,
+    errors,
+  };
 }
 
 function inspectFixtureMarkers(bytes, name, scale, {
@@ -138,6 +149,11 @@ export function observeFrameSequence(files, name, scale, options = {}) {
     const errors = [];
     let motionDx = 0;
     try {
+      // 쓸 수 없는 배율로 기대 기하를 만들면 0과 NaN이 되어 "마커 소실"이라는 엉뚱한 이름으로
+      // 샌다. 배율을 잃었다는 사실은 그 이름으로 남긴다.
+      if (!usableFrameScale(scale)) {
+        errors.push(`frame scale이 쓸 수 없는 값이다: ${JSON.stringify(scale)}`);
+      }
       const bytes = fs.readFileSync(file);
       let frameScale = scale;
       if (options.requireFixture !== false) {
