@@ -42,6 +42,7 @@ function rawTransition(direction, targetViewId, offset) {
     traceId,
     closed: true,
     ownerViewIds: owners,
+    clock: "unix-anchored-monotonic",
     armedAtUnixMs: 1000 + offset,
     baselineFrameSequence: 0,
     presentationEvents,
@@ -52,14 +53,18 @@ function rawTransition(direction, targetViewId, offset) {
     waitedMs: 270,
     animations: 1,
     settledAtUnixMs: 1310 + offset,
+    clock: "unix-anchored-monotonic",
     syncPending: false,
   };
   return {
     direction,
     targetViewId,
-    clickReceipt: { address: `win/w/tab/${targetViewId}`, atUnixMs: 1040 + offset },
+    clickReceipt: {
+      address: `win/w/tab/${targetViewId}`, atUnixMs: 1040 + offset, clock: "unix-anchored-monotonic",
+    },
     layout: {
       transactionId: `layout-${direction}`,
+      clock: "unix-anchored-monotonic",
       causeTraceId: traceId,
       phase: "committed",
       mode: "glide",

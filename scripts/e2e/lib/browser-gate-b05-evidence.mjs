@@ -66,6 +66,14 @@ function mapTransition(raw, index) {
       targetViewId: checkpoint.take("targetViewId") ?? null,
       trace: {
         traceId: field(presentation, "traceId"),
+        // 규칙 — 시계 선언: 이 인과 사슬은 네 영수증의 시각을 한 줄로 세운다. 같은 접미사가
+        // 같은 시계를 뜻하지 않으므로, 네 영수증이 각자 답한 시계를 그대로 싣는다.
+        clocks: {
+          presentation: field(presentation, "clock"),
+          stimulus: field(click, "clock"),
+          layout: field(layout, "clock"),
+          settlement: field(settlement, "clock"),
+        },
         closed: field(presentation, "closed"),
         ownerViewIds: Array.isArray(presentation?.ownerViewIds)
           ? [...presentation.ownerViewIds]

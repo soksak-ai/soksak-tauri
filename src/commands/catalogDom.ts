@@ -929,7 +929,7 @@ export function registerDomCatalog(): void {
         required: false,
       },
     },
-    returns: "{ clicked, address, atUnixMs, phase?, contentView?, recording:{status:'not-requested'|'complete'|'failed',mode:'realtime',dir?,requestedFrames?,frames?,reason?}, trace?:{frames,samples} }",
+    returns: "{ clicked, address, atUnixMs, clock, phase?, contentView?, recording:{status:'not-requested'|'complete'|'failed',mode:'realtime',dir?,requestedFrames?,frames?,reason?}, trace?:{frames,samples} }",
     message: () => tmsg("msg.ui.input.click"),
     errors: ["NOT_EXPOSED", "AMBIGUOUS", "INVALID_PARAMS"],
     danger: "inject",
@@ -1073,6 +1073,7 @@ export function registerDomCatalog(): void {
           clicked: true,
           address: addr,
           atUnixMs,
+          clock: PRESENTATION_CLOCK,
           contentView: cvLabel,
           ...(await observationResult()),
         };
@@ -1095,8 +1096,14 @@ export function registerDomCatalog(): void {
         );
       }
       return phase
-        ? { clicked: true, address: addr, atUnixMs, phase, ...(await observationResult()) }
-        : { clicked: true, address: addr, atUnixMs, ...(await observationResult()) };
+        ? {
+          clicked: true, address: addr, atUnixMs, clock: PRESENTATION_CLOCK, phase,
+          ...(await observationResult()),
+        }
+        : {
+          clicked: true, address: addr, atUnixMs, clock: PRESENTATION_CLOCK,
+          ...(await observationResult()),
+        };
     },
   });
 
@@ -1299,7 +1306,7 @@ export function registerDomCatalog(): void {
     params: {
       timeoutMs: { type: "number", description: "Finite failure bound in ms (default 4000, max 30000)" },
     },
-    returns: "{ waitedMs, animations, settledAtUnixMs, syncPending }",
+    returns: "{ waitedMs, animations, settledAtUnixMs, clock, syncPending }",
     message: () => tmsg("msg.ui.motion"),
     errors: ["INVALID_PARAMS", "TIMEOUT"],
     examples: ['ui.layout.wait-settled \'{"timeoutMs":8000}\''],

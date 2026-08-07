@@ -7,6 +7,29 @@ import {
   requireExactKeys,
 } from "./browser-machine-judge-support.mjs";
 
+/**
+ * 네 영수증이 같은 시계를 답했는가. 답이 하나면 그 이름을, 갈렸거나 없으면 null 을 낸다.
+ *
+ * 크기로 가르지 않는다 — 4,041,616ms 와 3,630ms 는 크기가 다를 뿐 같은 답을 받을 이유가 없다.
+ * 무엇을 선언했는가가 가른다.
+ */
+const B05_CLOCK_KEYS = Object.freeze(["presentation", "stimulus", "layout", "settlement"]);
+
+function sameB05Clock(clocks, path, failures) {
+  if (!requireExactKeys(clocks, B05_CLOCK_KEYS, `${path}.clocks`, failures)) return null;
+  const declared = B05_CLOCK_KEYS.map((key) => (
+    hasText(clocks[key]) ? clocks[key] : null
+  ));
+  const [expected] = declared;
+  if (expected === null || declared.some((value) => value !== expected)) {
+    failures.push(`${path}.clocks=one/${B05_CLOCK_KEYS
+      .map((key, index) => `${key}=${declared[index] ?? "none"}`)
+      .join(",")}`);
+    return null;
+  }
+  return expected;
+}
+
 const DIRECTIONS = Object.freeze(["to-left", "to-right"]);
 const MAX_FIRST_PRESENTED_MS = 50;
 const MAX_ACTIVE_FRAME_GAP_MS = 50;
@@ -99,10 +122,15 @@ function inspectTransition(transition, index, failures, traceIds) {
 
   const trace = transition.trace;
   if (!requireExactKeys(trace, [
-    "traceId", "closed", "ownerViewIds", "armedAtUnixMs", "stimulus", "layout",
+    "traceId", "clocks", "closed", "ownerViewIds", "armedAtUnixMs", "stimulus", "layout",
     "baselineFrameSequence", "presentationEvents", "settled", "hold", "violations",
     "observation",
   ], `${path}.trace`, failures)) return;
+  // 규칙 — 시계 선언: 이 게이트의 판정은 네 영수증의 시각을 한 줄로 세운 인과 사슬이다.
+  // `...UnixMs` 라는 같은 이름은 같은 시계를 뜻하지 않으므로, 넷이 같은 이름을 답할 때만 그
+  // 사슬이 성립한다. 선언이 갈리면 지연·순서를 재는 대신 그 사실 하나를 이름으로 낸다 —
+  // 안 그러면 시계 차이가 flicker·지연·역행이라는 네 증상으로 흩어져 보고된다.
+  const declaredClocks = sameB05Clock(trace.clocks, `${path}.trace`, failures);
   if (!hasText(trace.traceId) || traceIds.has(trace.traceId)) {
     failures.push(`${path}.trace.traceId=unique-non-empty/${displayValue(trace.traceId)}`);
   } else traceIds.add(trace.traceId);
@@ -203,6 +231,9 @@ function inspectTransition(transition, index, failures, traceIds) {
     failures.push(`${path}.trace.baselineFrameSequence=event/${displayValue(trace.baselineFrameSequence)}`);
   }
   const baseline = eventBySequence.get(trace.baselineFrameSequence)?.event;
+  // 시계가 갈렸으면 아래 시각 비교는 궤적이 아니라 시계 차이를 잰다. 원인을 이미 이름으로
+  // 냈으므로 그 위에 증상을 겹쳐 적지 않는다.
+  if (declaredClocks === null) return;
   const postClickEvents = trace.presentationEvents.filter((event) => event.presentedAtUnixMs >= trace.stimulus.atUnixMs);
   if (!baseline || !(trace.armedAtUnixMs <= baseline.presentedAtUnixMs
       && baseline.presentedAtUnixMs <= trace.stimulus.atUnixMs)) {

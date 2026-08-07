@@ -45,6 +45,12 @@ function evidence(engine = "browser") {
       targetViewId,
       trace: {
         traceId,
+        clocks: {
+          presentation: "unix-anchored-monotonic",
+          stimulus: "unix-anchored-monotonic",
+          layout: "unix-anchored-monotonic",
+          settlement: "unix-anchored-monotonic",
+        },
         closed: true,
         ownerViewIds: owners,
         armedAtUnixMs: 1_000 + offset,
@@ -182,5 +188,35 @@ describe("B05 actual presentation continuity judge", () => {
       const value = evidence(); mutate(value);
       expect(judgeB05MachineEvidence(value).status).toBe("red");
     }
+  });
+});
+
+// 규칙 — 시계 선언: 이 게이트의 판정은 네 영수증의 시각을 한 줄로 세운 인과 사슬이다.
+//
+// 실측 2026-08-07(buildId 02e65703, tauri/darwin): 실행 도중 wall clock 이 4.12s 뒤로 밟혀
+// DOM 시계와 native 표시 시계가 갈라졌다. B05 는 그 한 사실을 네 증상으로 흩어 보고했다 —
+// `trace.baseline=armed<=baseline<=stimulus`, `trace.firstPresentedLatency<=50`,
+// `trace.settled.frameSequence=recent-event`, `trace.causal-times=...`. 넷 다 원인을 안 가리킨다.
+describe("B05 시계 선언", () => {
+  it("영수증들이 서로 다른 시계를 답하면 지연이 아니라 갈라진 선언을 이름으로 낸다", () => {
+    const split = evidence("browser");
+    split.transitions[0].trace.clocks.presentation = "wall";
+    const verdict = judgeB05MachineEvidence(split);
+    expect(verdict.status).toBe("red");
+    expect(verdict.evidence).toEqual([
+      "B05:transitions[0].trace.clocks=one/"
+      + "presentation=wall,stimulus=unix-anchored-monotonic,"
+      + "layout=unix-anchored-monotonic,settlement=unix-anchored-monotonic",
+    ]);
+  });
+
+  it("선언이 없는 영수증도 판정 입력이 될 수 없다 — 조용한 통과가 아니다", () => {
+    const undeclared = evidence("browser");
+    undeclared.transitions[0].trace.clocks.settlement = null;
+    expect(judgeB05MachineEvidence(undeclared).evidence).toEqual([
+      "B05:transitions[0].trace.clocks=one/"
+      + "presentation=unix-anchored-monotonic,stimulus=unix-anchored-monotonic,"
+      + "layout=unix-anchored-monotonic,settlement=none",
+    ]);
   });
 });
