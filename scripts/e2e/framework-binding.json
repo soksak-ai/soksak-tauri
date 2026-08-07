@@ -855,6 +855,13 @@
       "note": "관측면이 스스로 red 라고 선언한 합성 사실이 B10 판정으로 남는지, 측정 불가만 실행을 멈추는지를 값으로 고정한다."
     },
     {
+      "file": "lib/hostile-resize-observer-seam.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "어댑터가 선언한 합성 판정이 코어를 지나 B10 판정면까지 같은 이름으로 도착하는지를 앱 코드로 고정한다. 픽스처가 아니라 실제 probe·봉투를 통과시키므로 세 곳 중 한 곳만 이름이 갈려도 여기서 죽는다."
+    },
+    {
       "file": "lib/harness-capabilities.mjs",
       "role": "lib",
       "class": "A",

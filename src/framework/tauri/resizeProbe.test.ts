@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { resizeCompositionViolations } from "../../lib/windowResizeProbe";
 import { createTauriResizeProbe } from "./resizeProbe";
 
 /**
@@ -44,6 +45,26 @@ function laggingRenderer() {
         }],
       };
     }),
+    /** DOM 홀과 스탠드얼론 AppKit 표면의 일대일. */
+    readDirect: vi.fn(async () => {
+      calls.push("readDirect");
+      return {
+        verdict: { misplaced: [], stacked: [], missing: [], unowned: [] },
+        surfaces: [{ label: "b-w-1-v1", pane: "pane-w-1-v1", autoresizingMask: 18 }],
+      };
+    }),
+    /** PaneSurfaceHost frame 과 그것을 만든 affine 계약의 대조. */
+    readPaneContract: vi.fn(async () => {
+      calls.push("readPaneContract");
+      return {
+        tolerancePx: 1,
+        matches: [],
+        matched: committed.w === host.w && committed.h === host.h,
+        verdict: (committed.w === host.w && committed.h === host.h
+          ? "green"
+          : "red") as "green" | "red",
+      };
+    }),
   };
 }
 
@@ -51,6 +72,7 @@ function probeOver(
   world: ReturnType<typeof laggingRenderer>,
   settle: (timeoutMs: number) => Promise<void>,
   eventGeneration: () => number,
+  overrides: Partial<Parameters<typeof createTauriResizeProbe>[0]> = {},
 ) {
   return createTauriResizeProbe({
     windowLabel: () => "w-1",
@@ -58,6 +80,10 @@ function probeOver(
     eventGeneration,
     settle,
     readComposition: world.readComposition,
+    readDirect: world.readDirect,
+    readPaneContract: world.readPaneContract,
+    now: () => 1_770_000_000_000,
+    ...overrides,
   });
 }
 
@@ -92,7 +118,9 @@ describe("Tauri resize 거래 정착", () => {
     events += 1;
     await observe({ kind: "step", step: 0 });
 
-    expect(world.calls).toEqual(["settle", "readComposition"]);
+    expect(world.calls).toEqual([
+      "settle", "readComposition", "readDirect", "readPaneContract",
+    ]);
   });
 
   it("정착이 시간 안에 못 닫으면 그 사실이 수치로 남는다", async () => {
@@ -109,5 +137,63 @@ describe("Tauri resize 거래 정착", () => {
     expect(world.stall).toHaveBeenCalledTimes(1);
     expect(step.presentations[0].presented).toBe(false);
     expect(step.continuity.countersAfter).toMatchObject({ gaps: 1, unpresented: 1 });
+  });
+});
+
+describe("Tauri resize 합성 선언", () => {
+  it("단계마다 자기 이름으로 판정을 선언한다", async () => {
+    const world = laggingRenderer();
+    let events = 0;
+    const observe = probeOver(world, world.settle, () => events);
+
+    world.resizeTo(1_280, 922);
+    events += 1;
+    const step = await observe({ kind: "step", step: 0 });
+
+    expect(step.composition).toMatchObject({
+      kind: "tauri-resize-composition-sample",
+      verdict: "green",
+      issues: [],
+      checks: { direct: true, pane: true },
+    });
+    expect(resizeCompositionViolations(step)).toEqual([]);
+  });
+
+  it("타이틀바 평면은 이 표본이 세는 축이 아니다", async () => {
+    const world = laggingRenderer();
+    const observe = probeOver(world, world.settle, () => 0);
+    const baseline = await observe({ kind: "baseline" });
+
+    // 안 실은 평면을 세면 이 판정이 남의 게이트를 대신 판정하게 된다.
+    expect(baseline.composition).not.toHaveProperty("titlebar");
+    expect(baseline.composition.issues).not.toContain("titlebar-missing");
+  });
+
+  it("못 읽은 평면은 지어내지 않고 그 자리 이름으로 red 가 된다", async () => {
+    const world = laggingRenderer();
+    const observe = probeOver(world, world.settle, () => 0, {
+      readDirect: async () => { throw new Error("직접 표면을 못 읽는다"); },
+    });
+
+    const baseline = await observe({ kind: "baseline" });
+
+    expect(baseline.composition.verdict).toBe("red");
+    expect(baseline.composition.issues).toContain("direct-missing");
+    // 판정 내용은 코어가 다시 짓지 않는다 — 선언이 성립하기만 하면 계약 위반은 없다.
+    expect(resizeCompositionViolations(baseline, { transaction: false })).toEqual([]);
+  });
+
+  it("어긋난 pane 계약은 그 단계의 판정을 red 로 선언한다", async () => {
+    const world = laggingRenderer();
+    let events = 0;
+    const observe = probeOver(world, world.stall, () => events);
+
+    await observe({ kind: "baseline" });
+    world.resizeTo(1_280, 922);
+    events += 1;
+    const step = await observe({ kind: "step", step: 0 });
+
+    expect(step.composition.verdict).toBe("red");
+    expect(step.composition.issues).toContain("pane-red");
   });
 });

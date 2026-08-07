@@ -673,6 +673,14 @@ export async function installTauri(): Promise<void> {
     // 창 resize 도 host frame 을 바꾸는 거래다 — 최종 합성 배리어와 같은 정착을 쓴다.
     settle: (timeoutMs) => settlePluginViewComposition(timeoutMs),
     readComposition: () => pluginViewCompositionStatus(),
+    // 이 단계의 합성 판정을 지탱하는 두 평면. 공개 진단면(webview.composition ·
+    // webview.pane.composition.contract)이 답하는 것과 같은 읽기이며, 어느 것도 표면을
+    // 바꾸지 않는다 — 관측이 무엇을 바꾸면 다음 관측은 자기가 만든 상태를 재는 것이다.
+    readDirect: async () => {
+      const { verdict, surfaces } = await surfaceCompositionSnapshot();
+      return { verdict, surfaces };
+    },
+    readPaneContract: async () => pluginViewNativeContractStatus(),
   }));
   // 실제 FLIP 추적 프레임(pane·tab-body) 중 native child를 품은 것만 뺀다. bounds 원천인
   // content-view body는 그 자식이라 검사 대상이 아니다. 문서 안 게스트에는 이 표식도 등록도

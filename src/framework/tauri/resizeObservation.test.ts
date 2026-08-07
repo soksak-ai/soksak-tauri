@@ -38,7 +38,10 @@ describe("Tauri resize 관측면", () => {
   it("세 평면을 각자 잰 곳에서 채우고 코어 계약을 지킨다", () => {
     const observation = tauriResizeObservation(facts());
 
-    expect(resizeCompositionViolations(observation)).toEqual([]);
+    // 이 빌더는 기하 평면만 채운다. 합성 판정은 평면을 읽은 probe 가 자기 이름으로 선언하므로,
+    // 남는 위반은 아직 아무도 안 앉은 그 자리 하나뿐이다 — 여기서 지어내면 판정이 두 곳에서
+    // 갈린다.
+    expect(resizeCompositionViolations(observation)).toEqual(["composition=record/undefined"]);
     expect(observation.visibleViewIds).toEqual(["v1"]);
     expect(observation.slots[0]).toMatchObject({
       id: "slot/pane-w-1-v1",

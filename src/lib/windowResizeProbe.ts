@@ -80,8 +80,8 @@ export interface ResizeContinuityCounters {
   unpresented: number;
 }
 
-/** 어댑터가 답하는 관측면. windowGeometry 는 여기 없다 — 코어가 중립 창 표면에서 잰다. */
-export interface ResizeCompositionObservation {
+/** 어댑터가 재는 기하·세대·연속 사실. windowGeometry 는 여기 없다 — 코어가 중립 창 표면에서 잰다. */
+export interface ResizeCompositionFacts {
   eventGeneration: number;
   transactionGeneration: number;
   visibleViewIds: string[];
@@ -97,6 +97,31 @@ export interface ResizeCompositionObservation {
   };
 }
 
+/**
+ * 관측면이 이 단계에 대해 **스스로 낸** 합성 판정.
+ *
+ * 코어가 세는 축은 셋뿐이다 — 누가 답했나(kind), 무엇이라 답했나(verdict), 왜 그렇게
+ * 답했나(issues). 그 판정을 지탱한 평면은 프레임워크마다 재는 물건이 달라(AppKit 직접 표면·
+ * PaneSurfaceHost·문서 안 게스트) 코어가 목록을 세면 코어가 각 프레임워크의 물건을 알아야
+ * 한다. 그래서 평면은 어댑터가 자기 이름으로 같은 기록에 함께 싣고, 코어는 그것을 그대로
+ * 나른다.
+ *
+ * 판정을 선언하지 않은 관측면은 green 이 아니다. 안 물어본 것과 통과한 것은 같은 사실이
+ * 아니므로, 빈 선언은 `composition.*` 자리 이름으로 위반에 남는다.
+ */
+export interface ResizeCompositionDeclaration {
+  /** 이 판정을 낸 관측면의 이름. 프레임워크 이름 분기 대신 이 선언이 어느 평면인지 정한다. */
+  kind: string;
+  verdict: "green" | "red";
+  /** red 인 사유. green 이 사유를 들고 있으면 그 선언은 자기 자신과 모순이다. */
+  issues: readonly string[];
+}
+
+/** 어댑터가 답하는 관측면 — 잰 사실과 그 어댑터가 낸 합성 판정을 한 기록으로 답한다. */
+export interface ResizeCompositionObservation extends ResizeCompositionFacts {
+  composition: ResizeCompositionDeclaration;
+}
+
 export interface ResizeObservationSnapshot {
   windowGeometry: ResizeRect;
   eventGeneration: number;
@@ -108,13 +133,18 @@ export interface ResizeObservationSnapshot {
   presentations: ResizePresentation[];
 }
 
-export interface ResizeObservation {
+/**
+ * 한 단계의 관측 기록. 관측면이 낸 합성 판정(kind·verdict·issues)은 **이 기록의 자기 자리에**
+ * 실린다 — 한 겹 더 감싸면 판정을 읽는 쪽이 그 겹을 알아야 하고, 겹 이름이 한쪽에서만 바뀌면
+ * 판정은 조용히 "선언 없음"이 된다.
+ */
+export interface ResizeObservation extends ResizeCompositionDeclaration {
   phase: ResizeTransactionPhase | null;
   requestedWindowGeometry: ResizeRect | null;
   eventGenerationBefore: number;
   eventGenerationAfter: number;
   transactionGeneration: number;
-  continuity: ResizeCompositionObservation["continuity"];
+  continuity: ResizeCompositionFacts["continuity"];
   snapshot: ResizeObservationSnapshot;
   /** 빈 배열만이 "계약대로"다. 어긴 자리는 그 자리 이름으로 실린다. */
   contractViolations: string[];
@@ -157,6 +187,17 @@ export type _CounterKeysComplete = AssertNever<
   Exclude<keyof ResizeContinuityCounters, (typeof RESIZE_COUNTER_KEYS)[number]>
 >;
 
+/**
+ * 관측면이 낸 판정을 판정면이 읽는 이름. 이 세 이름이 코어와 게이트 사이의 유일한 통로라
+ * 한쪽에서만 바뀌면 판정은 "선언 없음"으로 조용히 red 가 된다 — 그래서 이름을 상수로 든다.
+ */
+export const RESIZE_COMPOSITION_DECLARATION_KEYS = [
+  "kind", "verdict", "issues",
+] as const satisfies readonly (keyof ResizeCompositionDeclaration)[];
+export type _DeclarationKeysComplete = AssertNever<
+  Exclude<keyof ResizeCompositionDeclaration, (typeof RESIZE_COMPOSITION_DECLARATION_KEYS)[number]>
+>;
+
 export const RESIZE_OBSERVATION_KEYS = [
   "phase",
   "requestedWindowGeometry",
@@ -166,6 +207,7 @@ export const RESIZE_OBSERVATION_KEYS = [
   "continuity",
   "snapshot",
   "contractViolations",
+  ...RESIZE_COMPOSITION_DECLARATION_KEYS,
 ] as const satisfies readonly (keyof ResizeObservation)[];
 export type _ObservationKeysComplete = AssertNever<
   Exclude<keyof ResizeObservation, (typeof RESIZE_OBSERVATION_KEYS)[number]>
@@ -308,6 +350,36 @@ function checkCounters(value: unknown, path: string, violations: string[]): void
 }
 
 /**
+ * 관측면이 낸 합성 판정을 계약과 대조한다. 판정의 **내용**은 여기서 다시 계산하지 않는다 —
+ * 그 사실을 잰 것은 어댑터이고, 코어가 같은 판정을 다시 지으면 둘 중 하나는 거짓말이 된다.
+ * 코어가 세는 것은 선언 자체의 성립뿐이다: 이름이 있는가, 판정이 두 값 중 하나인가, 사유가
+ * 이름의 배열인가, 그리고 green 이 사유를 들고 있지 않은가.
+ */
+function checkComposition(value: unknown, path: string, violations: string[]): void {
+  if (!isRecord(value)) {
+    violations.push(`${path}=record/${displayValue(value)}`);
+    return;
+  }
+  if (typeof value.kind !== "string" || value.kind.trim().length === 0) {
+    violations.push(`${path}.kind=non-empty/${displayValue(value.kind)}`);
+  }
+  if (value.verdict !== "green" && value.verdict !== "red") {
+    violations.push(`${path}.verdict=green|red/${displayValue(value.verdict)}`);
+  }
+  const issues = value.issues;
+  if (!Array.isArray(issues)
+    || issues.some((issue) => typeof issue !== "string" || issue.trim().length === 0)) {
+    violations.push(`${path}.issues=non-empty-strings/${displayValue(issues)}`);
+    return;
+  }
+  // 사유를 들고 green 이라 답한 선언은 자기 자신과 모순이다. 그 모순을 통과시키면 어댑터는
+  // 위반을 적어 두고도 합격을 선언할 수 있다.
+  if (value.verdict === "green" && issues.length > 0) {
+    violations.push(`${path}.issues=0/${displayValue(issues)}`);
+  }
+}
+
+/**
  * 어댑터가 답한 관측면을 계약과 대조한다. 반환은 **어긴 자리의 이름**이며, 빈 배열만이
  * 계약을 지켰다는 뜻이다. 같은 축을 다른 이름으로 부르면(transaction·generation) 그 축이
  * 비어 있다는 사실이 축 이름으로 드러난다.
@@ -363,6 +435,7 @@ export function resizeCompositionViolations(
     checkCounters(value.continuity.countersBefore, "continuity.countersBefore", violations);
     checkCounters(value.continuity.countersAfter, "continuity.countersAfter", violations);
   }
+  checkComposition(value.composition, "composition", violations);
   return violations;
 }
 
@@ -389,7 +462,12 @@ export function composeResizeObservation({
     violations.push(`phase=known/${displayValue(request.phase)}`);
   }
   const source = observed as Partial<ResizeCompositionObservation>;
+  // 선언을 먼저 펴고 그 위에 코어의 요청면을 얹는다. 어댑터가 안 냈으면 이 자리는 비고,
+  // 비었다는 사실은 방금 이름으로 적힌 위반과 판정면의 "선언 없음"으로 같이 드러난다 —
+  // 빈 자리를 green 으로 메우지 않는다.
+  const declaration = source.composition;
   return {
+    ...(isRecord(declaration) ? declaration : {}),
     phase: request.kind === "step" ? request.phase ?? null : null,
     requestedWindowGeometry: request.kind === "step"
       ? { x: windowGeometry.x, y: windowGeometry.y, w: request.size.w, h: request.size.h }
@@ -409,7 +487,7 @@ export function composeResizeObservation({
       presentations: source.presentations as ResizePresentation[],
     },
     contractViolations: violations,
-  };
+  } as ResizeObservation;
 }
 
 export type WindowResizeProbe = (

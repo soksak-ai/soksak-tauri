@@ -227,6 +227,41 @@ describe("Electron resize public probe", () => {
     });
     expect(executeJavaScript).toHaveBeenCalled();
     expect(renderer.win.requestAnimationFrame).not.toHaveBeenCalled();
+    // 관측면은 이 단계에 대한 자기 판정을 같은 표본에서 선언한다.
+    expect(fact.composition).toMatchObject({
+      kind: "electron-resize-composition-sample",
+      verdict: "green",
+      issues: [],
+      checks: { generation: true, surfaces: true },
+    });
+    // 첫 거래 전에는 표시를 증명한 영수증이 없다 — 그 사실을 green 으로 답하지 않는다.
+    expect(baseline.composition).toMatchObject({ verdict: "red" });
+    expect(baseline.composition.issues).toContain("presentation-missing:b-1");
+  });
+
+  it("guest 가 답하지 않은 자리를 합성 green 으로 덮지 않는다", async () => {
+    const { surface } = exposeSurface(rect(20, 80, 500, 260));
+    Object.assign(surface, {
+      executeJavaScript: vi.fn(async () => { throw new Error("guest가 답하지 않는다"); }),
+    });
+    const renderer = fakeRendererWindow();
+    const probe = createElectronResizeProbe(renderer.win, document, { timeoutMs: 1_000 });
+
+    const fact = await probe.sample({ kind: "baseline" });
+
+    expect(fact.composition.verdict).toBe("red");
+    expect(fact.composition.issues).toContain("guest-missing:b-1");
+  });
+
+  it("보이는 표면이 하나도 없으면 판정할 합성이 없다고 답한다", async () => {
+    document.body.innerHTML = "";
+    const renderer = fakeRendererWindow();
+    const probe = createElectronResizeProbe(renderer.win, document, { timeoutMs: 1_000 });
+
+    const fact = await probe.sample({ kind: "baseline" });
+
+    expect(fact.composition.verdict).toBe("red");
+    expect(fact.composition.issues).toContain("surfaces-missing");
   });
 
   it("guest 가 자기 viewport 를 답하지 않으면 표면 평면이 비고 그 사실이 이름으로 남는다", async () => {
