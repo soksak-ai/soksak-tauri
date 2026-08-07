@@ -158,7 +158,7 @@ describe("Electron native resize settlement", () => {
     expect(receipt).toMatchObject({
       framework: "electron",
       label: "w-a",
-      transaction: 1,
+      transactionGeneration: 1,
       status: "settled",
       changed: true,
       requested: {
@@ -340,7 +340,7 @@ describe("Electron native resize settlement", () => {
     win.webContents.present();
     const secondReceipt = await second;
 
-    expect([firstReceipt.transaction, secondReceipt.transaction]).toEqual([1, 2]);
+    expect([firstReceipt.transactionGeneration, secondReceipt.transactionGeneration]).toEqual([1, 2]);
     expect([firstReceipt.native.resizeRevision, secondReceipt.native.resizeRevision]).toEqual([1, 2]);
     expect([firstReceipt.native.outerDip.width, secondReceipt.native.outerDip.width]).toEqual([500, 900]);
   });
@@ -355,7 +355,7 @@ describe("Electron native resize settlement", () => {
 
     expect(ledger.observation("w-manual", win)).toMatchObject({
       resizeRevision: 1,
-      pendingTransaction: null,
+      pendingTransactionGeneration: null,
       lastResize: { revision: 1, source: "external", outerDip: { width: 810 } },
     });
 

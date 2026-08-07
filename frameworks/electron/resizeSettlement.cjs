@@ -121,7 +121,7 @@ function createResizeSettlementLedger({ timeoutMs = 2_000, frameSubscriptions, d
     }
     state = {
       label,
-      transaction: 0,
+      transactionGeneration: 0,
       resizeRevision: 0,
       settledRevision: 0,
       presentationRevisions: new Map(),
@@ -143,7 +143,7 @@ function createResizeSettlementLedger({ timeoutMs = 2_000, frameSubscriptions, d
       state.lastResize = {
         revision: state.resizeRevision,
         source: matchesPending ? "transaction" : "external",
-        transaction: matchesPending ? pending.transaction : null,
+        transactionGeneration: matchesPending ? pending.transactionGeneration : null,
         outerDip,
         contentDip,
       };
@@ -185,7 +185,7 @@ function createResizeSettlementLedger({ timeoutMs = 2_000, frameSubscriptions, d
       if (!sameRect(currentOuter, pending.actualOuter) || !sameRect(currentContent, pending.actualContent)) {
         throw namedError(
           "RESIZE_GEOMETRY_CHANGED",
-          `transaction ${pending.transaction} proof 중 창 기하가 다시 바뀌었다`,
+          `transaction ${pending.transactionGeneration} proof 중 창 기하가 다시 바뀌었다`,
         );
       }
       return {
@@ -226,7 +226,7 @@ function createResizeSettlementLedger({ timeoutMs = 2_000, frameSubscriptions, d
     return {
       framework: "electron",
       label: state.label,
-      transaction: pending.transaction,
+      transactionGeneration: pending.transactionGeneration,
       status: "settled",
       changed: pending.changed,
       requested: {
@@ -253,7 +253,7 @@ function createResizeSettlementLedger({ timeoutMs = 2_000, frameSubscriptions, d
   }
 
   function perform(state, job) {
-    const { transaction, win, requestedPhysical, surfaces } = job;
+    const { transactionGeneration, win, requestedPhysical, surfaces } = job;
     if (!win || (typeof win.isDestroyed === "function" && win.isDestroyed())) {
       return Promise.reject(namedError("NO_WINDOW", `resize할 창이 없다: ${state.label}`));
     }
@@ -277,7 +277,7 @@ function createResizeSettlementLedger({ timeoutMs = 2_000, frameSubscriptions, d
       let timer = null;
       const leases = [];
       const pending = {
-        transaction,
+        transactionGeneration,
         changed,
         requestedDip,
         requestedPhysical,
@@ -300,7 +300,7 @@ function createResizeSettlementLedger({ timeoutMs = 2_000, frameSubscriptions, d
             // 닫히므로 다른 lease를 끊지 않는다.
           }
         }
-        if (state.pending?.transaction === transaction) state.pending = null;
+        if (state.pending?.transactionGeneration === transactionGeneration) state.pending = null;
       };
 
       const fail = (error) => {
@@ -316,7 +316,7 @@ function createResizeSettlementLedger({ timeoutMs = 2_000, frameSubscriptions, d
         if (targets.some((target) => (state.presentationRevisions.get(target.id) ?? 0) <= 0)) {
           fail(namedError(
             "PRESENTATION_REVISION_MISSING",
-            `transaction ${transaction}에 revision 0인 presentation이 있다`,
+            `transaction ${transactionGeneration}에 revision 0인 presentation이 있다`,
           ));
           return;
         }
@@ -358,7 +358,7 @@ function createResizeSettlementLedger({ timeoutMs = 2_000, frameSubscriptions, d
                 );
               }
               target.proof = {
-                transactionGeneration: transaction,
+                transactionGeneration,
                 subscriptionGeneration: event.subscriptionGeneration,
                 sequence: event.sequence,
                 frameSize,
@@ -397,7 +397,7 @@ function createResizeSettlementLedger({ timeoutMs = 2_000, frameSubscriptions, d
           }));
           fail(namedError(
             "RESIZE_SETTLEMENT_TIMEOUT",
-            `${state.label} resize transaction ${transaction}이 끝나지 않았다: ` +
+            `${state.label} resize transaction ${transactionGeneration}이 끝나지 않았다: ` +
               `native=${pending.nativeSeen}, presentation=${JSON.stringify(missing)}`,
           ));
         }, timeoutMs);
@@ -446,10 +446,10 @@ function createResizeSettlementLedger({ timeoutMs = 2_000, frameSubscriptions, d
   function resize({ label, win, requestedPhysical: requestedInput, surfaces = [] }) {
     const requestedPhysical = finiteSize(requestedInput, "physical");
     const state = stateFor(String(label), win);
-    state.transaction += 1;
-    const transaction = state.transaction;
+    state.transactionGeneration += 1;
+    const transactionGeneration = state.transactionGeneration;
     return new Promise((resolve, reject) => {
-      state.queue.push({ transaction, win, requestedPhysical, surfaces: [...surfaces], resolve, reject });
+      state.queue.push({ transactionGeneration, win, requestedPhysical, surfaces: [...surfaces], resolve, reject });
       drain(state);
     });
   }
@@ -466,8 +466,8 @@ function createResizeSettlementLedger({ timeoutMs = 2_000, frameSubscriptions, d
         label: state.label,
         resizeRevision: state.resizeRevision,
         settledRevision: state.settledRevision,
-        pendingTransaction: state.pending?.transaction ?? null,
-        queuedTransactions: state.queue.map((job) => job.transaction),
+        pendingTransactionGeneration: state.pending?.transactionGeneration ?? null,
+        queuedTransactionGenerations: state.queue.map((job) => job.transactionGeneration),
         lastResize: state.lastResize,
       };
     },

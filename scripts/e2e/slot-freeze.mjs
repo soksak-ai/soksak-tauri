@@ -1731,6 +1731,26 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
       if (resizeGaps.length) {
         throw new Error(`rapid window resize 관측 불가 — ${resizeGaps.join("; ")}`);
       }
+      // 프레임워크 이름으로 가르지 않는다. 어느 프레임워크든 관측면이 코어 계약 봉투를
+      // 답해야 하고, 봉투 안의 사실은 B10 판정면이 이름으로 부른다. 여기서 끝내는 것은
+      // **봉투 자체가 없는 경우**뿐 — 그때는 판정할 사실이 애초에 없다.
+      const shapeless = (fastResize.samples ?? []).filter((sample) => (
+        !Array.isArray(sample.observation?.contractViolations)
+      ));
+      if (shapeless.length) {
+        throw new Error(
+          "rapid window resize 관측면이 계약 봉투를 답하지 않았다 — "
+            + shapeless.map((sample) => `s${sample.step}:${JSON.stringify(sample.observation ?? null)}`)
+              .join("; "),
+        );
+      }
+      for (const sample of fastResize.samples ?? []) {
+        if (sample.observation.contractViolations.length === 0) continue;
+        console.log(
+          `${engine}/resize s${sample.step} 관측 계약 위반: `
+            + sample.observation.contractViolations.join(","),
+        );
+      }
       // 최소 높이에서는 입력 아래의 상태 marker가 정상적으로 viewport 밖에 놓일 수 있다. 전이 중에는
       // 상단의 고정 ruler로 live frame을 판정하고, 원복 직후 실제 input 값·event ledger를 다시 읽는다.
       await observeFrameSequence(

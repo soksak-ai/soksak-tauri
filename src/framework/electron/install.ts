@@ -30,7 +30,7 @@ export function installElectron(): void {
   registerContentViewHost(domHost);
   // window.resizeSequence의 수치 관측면. 요청 크기를 되풀이하지 않고 native presentation
   // 영수증과 현재 DOM/guest viewport를 같은 Electron 거래로 공개한다.
-  registerWindowResizeProbe(() => activeElectronResizeProbe().sample());
+  registerWindowResizeProbe((request) => activeElectronResizeProbe().sample(request));
   // 표시 원장 — 문서 자신의 프레임 콜백이 표시 사건이고, 게스트는 그 프레임 안에 있다.
   registerPresentationLedgerHost(createDomPresentationLedger({
     source: documentDisplayFrameSource(displayRefreshIntervalMs),

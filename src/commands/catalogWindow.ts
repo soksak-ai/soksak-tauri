@@ -22,11 +22,12 @@ import {
   recordWindowFrames,
   validWindowRecordMaxBytes,
 } from "./windowRecorder";
+import { runWindowResizeSequence } from "./windowResizeSequence";
 import {
-  runWindowResizeSequence,
-  type PhysicalWindowSize,
-} from "./windowResizeSequence";
-import { sampleWindowResizeProbe } from "../lib/windowResizeProbe";
+  RESIZE_TRANSACTION_PHASES,
+  sampleWindowResizeProbe,
+  type ResizeSequenceStep,
+} from "../lib/windowResizeProbe";
 
 export function registerWindowCatalog(): void {
   register("window.info", {
@@ -82,7 +83,11 @@ export function registerWindowCatalog(): void {
     params: {
       sizes: {
         type: "json",
-        description: "Ordered array of physical pixel sizes: [{w,h}, ...] (1..120)",
+        description: "Ordered array of physical pixel sizes: [{w,h,phase?}, ...] (1..120). "
+          + `phase declares what this step is for (${RESIZE_TRANSACTION_PHASES.join("|")}); `
+          + "an observation reports it back beside the geometry it actually measured, so a "
+          + "step whose result contradicts its declared intent is visible. Unknown phase names "
+          + "are refused.",
         required: true,
       },
       intervalMs: {
@@ -112,7 +117,7 @@ export function registerWindowCatalog(): void {
     ],
     handler: async (p) => {
       try {
-        const sizes = p.sizes as PhysicalWindowSize[];
+        const sizes = p.sizes as ResizeSequenceStep[];
         const intervalMs = (p.intervalMs as number | undefined) ?? 8;
         const recordDir = p.recordDir as string | undefined;
         const requestedFrames = (p.recordFrames as number | undefined) ?? 64;
@@ -158,7 +163,7 @@ export function registerWindowCatalog(): void {
           record,
           setSize: (w, h) => win.setPhysicalSize(w, h),
           recordFrames: recordWindowFrames,
-          observe: async () => await sampleWindowResizeProbe(),
+          observe: async (request) => await sampleWindowResizeProbe(request),
         });
       } catch (error) {
         return {

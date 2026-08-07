@@ -142,15 +142,15 @@ describe("Electron live resize settlement", () => {
     const result = await runLive();
     expect(result.error).toBeUndefined();
     expect(result.samples).toHaveLength(4);
-    expect(result.samples.map((sample) => sample.receipt.transaction)).toEqual([1, 2, 3, 4]);
+    expect(result.samples.map((sample) => sample.receipt.transactionGeneration)).toEqual([1, 2, 3, 4]);
     expect(result.samples.map((sample) => sample.receipt.settledRevision)).toEqual([1, 2, 3, 4]);
 
     for (const sample of result.samples) {
       expect(sample.receipt.status).toBe("settled");
       expect(sample.receipt.renderer.presentationRevision).toBeGreaterThan(0);
       expect(sample.receipt.surfaces[0].presentationRevision).toBeGreaterThan(0);
-      expect(sample.receipt.renderer.proof.transactionGeneration).toBe(sample.receipt.transaction);
-      expect(sample.receipt.surfaces[0].proof.transactionGeneration).toBe(sample.receipt.transaction);
+      expect(sample.receipt.renderer.proof.transactionGeneration).toBe(sample.receipt.transactionGeneration);
+      expect(sample.receipt.surfaces[0].proof.transactionGeneration).toBe(sample.receipt.transactionGeneration);
       expect(sample.receipt.renderer.proof.frameSize).toEqual(sample.receipt.renderer.proof.expectedPhysical);
       expect(sample.receipt.surfaces[0].proof.frameSize).toEqual(sample.receipt.surfaces[0].proof.expectedPhysical);
       expect(sample.host.slot).toEqual(sample.host.surface);

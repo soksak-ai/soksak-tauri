@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { resizeCompositionViolations } from "../../lib/windowResizeProbe";
 import {
   createElectronResizeProbe,
   type ElectronNativeResizeReceipt,
@@ -25,7 +26,7 @@ function nativeReceipt({
   return {
     framework: "electron",
     label: "w-a",
-    transaction: 7,
+    transactionGeneration: 7,
     status: "settled",
     changed,
     requested: {
@@ -187,36 +188,75 @@ describe("Electron resize public probe", () => {
       return nativeReceipt();
     });
 
+    const baseline = await probe.sample({ kind: "baseline" });
     await probe.setPhysicalSize(1_200, 800, setNative);
-    const fact = await probe.sample();
+    const fact = await probe.sample({ kind: "step", step: 0 });
 
+    // 첫 거래 전에도 관측면은 답한다 — 기준이 없으면 무엇이 변했는지 잴 수 없다.
+    expect(baseline).toMatchObject({ transactionGeneration: 0, visibleViewIds: ["b-1"] });
+    expect(resizeCompositionViolations(fact)).toEqual([]);
     expect(fact).toMatchObject({
-      framework: "electron",
-      transaction: 7,
-      settled: true,
-      layout: { eventRevision: 1, observerRevision: 1, settledRevision: 1 },
-      rendererViewport: {
-        innerWidth: 600,
-        innerHeight: 372,
-        clientWidth: 600,
-        clientHeight: 372,
-        devicePixelRatio: 2,
-      },
-      surfaces: [{
-        label: "b-1",
-        webContentsId: 17,
-        connected: true,
+      eventGeneration: 1,
+      transactionGeneration: 7,
+      visibleViewIds: ["b-1"],
+      eventGenerationBefore: 0,
+      eventGenerationAfter: 1,
+      slots: [{
+        id: "slot/b-1",
+        viewId: "b-1",
         visible: true,
-        slotRect: { x: 20, y: 80, width: 500, height: 260 },
-        surfaceRect: { x: 20, y: 80, width: 500, height: 260 },
-        physicalCoordinateSpace: "content-local-physical",
-        guestViewport: { innerWidth: 500, innerHeight: 260 },
-        presentationRevision: 8,
+        logicalFrame: { x: 20, y: 80, w: 500, h: 260 },
+        physicalFrame: { x: 40, y: 160, w: 1_000, h: 520 },
       }],
-      violations: [],
+      renderers: [{ id: "renderer/b-1", logicalFrame: { x: 20, y: 80, w: 500, h: 260 } }],
+      // 표면 크기는 guest 가 스스로 답한 값이다.
+      surfaces: [{ id: "surface/b-1", logicalFrame: { x: 20, y: 80, w: 500, h: 260 } }],
+      presentations: [{
+        viewId: "b-1",
+        surfaceId: "surface/b-1",
+        surfaceGeneration: 3,
+        revision: 8,
+        live: true,
+        visible: true,
+        presented: true,
+      }],
+      continuity: {
+        countersBefore: { replacements: 0, gaps: 0, disappearances: 0, unpresented: 0 },
+        countersAfter: { replacements: 0, gaps: 0, disappearances: 0, unpresented: 0 },
+      },
     });
     expect(executeJavaScript).toHaveBeenCalled();
     expect(renderer.win.requestAnimationFrame).not.toHaveBeenCalled();
+  });
+
+  it("guest 가 자기 viewport 를 답하지 않으면 표면 평면이 비고 그 사실이 이름으로 남는다", async () => {
+    const { surface } = exposeSurface(rect(20, 80, 500, 260));
+    Object.assign(surface, {
+      executeJavaScript: vi.fn(async () => { throw new Error("guest가 답하지 않는다"); }),
+    });
+    const renderer = fakeRendererWindow();
+    const probe = createElectronResizeProbe(renderer.win, document, { timeoutMs: 1_000 });
+
+    const fact = await probe.sample({ kind: "baseline" });
+
+    expect(fact.surfaces).toEqual([]);
+    expect(resizeCompositionViolations(fact, { transaction: false }))
+      .toContain("surfaces=non-empty-array/[]");
+  });
+
+  it("표시를 증명하지 못한 표면은 presentation 자리 이름으로 드러난다", async () => {
+    exposeSurface(rect(20, 80, 500, 260));
+    const renderer = fakeRendererWindow();
+    const probe = createElectronResizeProbe(renderer.win, document, { timeoutMs: 1_000 });
+
+    const fact = await probe.sample({ kind: "baseline" });
+
+    expect(resizeCompositionViolations(fact, { transaction: false })).toEqual(expect.arrayContaining([
+      "presentations[0].surfaceGeneration=integer>=1/0",
+      "presentations[0].revision=integer>=1/0",
+      "presentations[0].live=true/false",
+      "presentations[0].presented=true/false",
+    ]));
   });
 
   it("이전 root 크기의 ResizeObserver callback은 새 세대를 settle하지 않는다", async () => {
@@ -287,12 +327,9 @@ describe("Electron resize public probe", () => {
     const probe = createElectronResizeProbe(renderer.win, document, { timeoutMs: 1_000 });
 
     await probe.setPhysicalSize(628, 538, vi.fn(async () => receipt));
-    const fact = await probe.sample() as {
-      surfaces: Array<{ slotPhysicalRect: unknown; surfacePhysicalRect: unknown }>;
-    };
-    expect(fact.surfaces[0]).toMatchObject({
-      slotPhysicalRect: { x: 1, y: 1, width: 627, height: 502 },
-      surfacePhysicalRect: { x: 1, y: 1, width: 627, height: 502 },
-    });
+    const fact = await probe.sample({ kind: "step", step: 0 });
+
+    expect(fact.slots[0].physicalFrame).toEqual({ x: 1, y: 1, w: 627, h: 502 });
+    expect(fact.surfaces[0].physicalFrame).toEqual({ x: 1, y: 1, w: 627, h: 502 });
   });
 });

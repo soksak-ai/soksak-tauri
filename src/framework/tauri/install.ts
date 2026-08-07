@@ -12,6 +12,7 @@
 // 프레임워크다.** 코어는 무엇이 걸렸는지 묻지 않는다 — 안 걸리면 아무 일도 안 일어난다.
 // 새 프레임워크가 오면 자기 파일에 자기 것을 적는다. 남의 fix 를 물려받지 않는다.
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { moduleState } from "../../lib/moduleState";
 import { presentationNowUnixMs } from "../../lib/presentationClock";
 import styles from "./styles.css?inline";
@@ -35,12 +36,10 @@ import {
   pluginViewPresentationStatus,
   preparePresentedPluginViewMove,
 } from "./pluginViewPresentation";
+import { currentWindowLabel } from "../../lib/webviewLabels";
 import { registerWindowResizeProbe } from "../../lib/windowResizeProbe";
 import { registerPresentationLedgerHost } from "../presentationLedger";
-import {
-  combineTauriCompositionProbe,
-  nextTauriCompositionProbeGeneration,
-} from "./compositionProbe";
+import { createTauriResizeProbe } from "./resizeProbe";
 import { installRailHoleClip } from "./railHoleClipHost";
 import { installSurfaceAudit, surfaceCompositionSnapshot } from "./surfaceAudit";
 import {
@@ -407,6 +406,14 @@ function installPaneSurfaceHostCommands(): void {
     message: (data) => `pane composition ${String(data.verdict)}`,
     handler: async () => pluginViewCompositionStatus(),
   });
+  // 즉시 resize 구간의 affine 대조. 두 이벤트 루프가 중간 크기를 합칠 수 있어 최종 DOM↔native
+  // 동등과는 다른 사실이다 — 부를 곳이 없으면 이 사실은 아무도 못 본다.
+  register("webview.pane.composition.contract", {
+    description: "Compare every native PaneSurfaceHost frame with the affine layout contract that produced it (immediate resize phase, distinct from the final DOM/native comparison).",
+    params: {}, returns: "{ window,tolerancePx,matches,matched,verdict }",
+    message: (data) => `pane native contract ${String(data.verdict)}`,
+    handler: async () => pluginViewNativeContractStatus(),
+  });
   register("webview.pane.composition.wait", {
     description: "Wait for child slot events to be committed to native pane members, then compare live frames.",
     params: {
@@ -651,25 +658,19 @@ export async function installTauri(): Promise<void> {
   if (titlebarCompositionInstalled) {
     installTitlebarCompositionCommands();
   }
-  // Every window.resizeSequence step receives one generation containing every applicable native
-  // plane. Query failure is retained as null and therefore RED; it never drops the hostile sample.
-  registerWindowResizeProbe(async () => {
-    const generation = nextTauriCompositionProbeGeneration();
-    const [direct, pane, titlebar] = await Promise.all([
-      surfaceCompositionSnapshot().catch(() => null),
-      pluginViewNativeContractStatus().catch(() => null),
-      titlebarCompositionInstalled
-        ? inspectTitlebarComposition().catch(() => null)
-        : Promise.resolve(undefined),
-    ]);
-    return combineTauriCompositionProbe({
-      generation,
-      sampledAtUnixMs: presentationNowUnixMs(),
-      direct,
-      pane,
-      ...(titlebarCompositionInstalled ? { titlebar: titlebar ?? null } : {}),
-    });
+  // window.resizeSequence 의 관측면. 코어 계약이 요구하는 사실만 답하며, 요청 크기는 받지
+  // 않는다. 창 사건 세대는 프레임워크 창 표면의 실제 resize 사건을 센다 — 관측 횟수를
+  // 사건 수로 대신 쓰면 창이 한 번도 안 움직여도 세대가 오른다.
+  let windowResizeEvents = 0;
+  await getCurrentWebviewWindow().onResized(() => {
+    windowResizeEvents += 1;
   });
+  registerWindowResizeProbe(createTauriResizeProbe({
+    windowLabel: () => currentWindowLabel(),
+    scaleFactor: () => window.devicePixelRatio,
+    eventGeneration: () => windowResizeEvents,
+    readComposition: () => pluginViewCompositionStatus(),
+  }));
   // 실제 FLIP 추적 프레임(pane·tab-body) 중 native child를 품은 것만 뺀다. bounds 원천인
   // content-view body는 그 자식이라 검사 대상이 아니다. 문서 안 게스트에는 이 표식도 등록도
   // 없으므로 Electron의 DOM 보간은 그대로다.
