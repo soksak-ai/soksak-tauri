@@ -16,12 +16,14 @@ import {
 import { viewPresentationRuntime } from "../../plugins/viewRegistry";
 import { TAURI_PANE_RENDERER_ATTR } from "./holeMarkers";
 import {
+  type PluginViewFailure,
   type PluginViewInit,
   type PluginViewNodeFrame,
   type PluginViewRpcRequest,
   type PluginViewRpcResponse,
   type PluginViewSlotFrame,
 } from "./pluginViewProtocol";
+import { createPluginViewReadySignal } from "./pluginViewActivation";
 import { PluginViewSlotRegistry } from "./pluginViewSlots";
 import { PluginViewReadiness } from "./pluginViewReadiness";
 import { PluginViewMemberOwnership } from "./pluginViewMemberOwnership";
@@ -50,6 +52,8 @@ interface PresentedState {
   visible: boolean;
   visibility: PluginViewVisibility;
   markReady(): void;
+  /** 자식 renderer 가 낸 활성 실패를 준비 신호로 옮긴다 — 매달림 대신 이름 붙은 거절. */
+  markFailed(reason: string): void;
   sidecars: PluginViewSidecars;
 }
 
@@ -542,6 +546,7 @@ async function handleCall(view: PresentedState, request: PluginViewRpcRequest): 
 async function createPresentedView(
   input: Parameters<PluginViewPresentationHost["mount"]>[0],
   markReady: () => void,
+  markFailed: (reason: string) => void,
 ): Promise<PresentedState> {
   const runtime = viewPresentationRuntime(input.provider);
   if (!runtime) throw new Error(`nativeSurface view의 renderer 실행 재료가 없습니다: ${input.registration.pluginId}`);
@@ -556,7 +561,7 @@ async function createPresentedView(
     context: input.context, app, members: new Set(), slots: new PluginViewSlotRegistry(),
     projections: new Map(),
     subscriptions: new Map(), unlisten: [], observer: null!, grouped: false,
-    disposed: false, visible: input.context.isVisible(), markReady,
+    disposed: false, visible: input.context.isVisible(), markReady, markFailed,
     visibility: null!,
     sidecars: new PluginViewSidecars(),
   };
@@ -576,6 +581,7 @@ async function createPresentedView(
   state.readiness.set(nativeHostId, false);
 
   const ready = event(renderer, "ready");
+  const failure = event(renderer, "failure");
   const rpc = event(renderer, "rpc");
   const slot = event(renderer, "slot");
   const node = event(renderer, "node");
@@ -599,6 +605,11 @@ async function createPresentedView(
       },
     };
     void emitTo(renderer, event(renderer, "init"), init);
+  }));
+  // 자식이 플러그인을 못 살렸다면 이 뷰는 오지 않는다. 그 사실을 여기서 받아 준비를 끝낸다 —
+  // 듣지 않으면 준비는 영원히 pending 이고 호출자는 이유 없는 mounted:false 만 본다.
+  view.unlisten.push(await listen<PluginViewFailure>(failure, ({ payload }) => {
+    view.markFailed(`플러그인 활성 실패(${payload.pluginId}): ${payload.reason}`);
   }));
   view.unlisten.push(await listen<PluginViewSlotFrame>(slot, ({ payload }) => {
     view.slots.report(payload);
@@ -766,20 +777,16 @@ const host: PluginViewPresentationHost = {
     let desiredContext = input.context;
     let desiredLogicalPaneId = input.logicalPaneId;
     let desiredVisible = input.context.isVisible();
-    let resolveReady!: () => void;
-    let rejectReady!: (error: unknown) => void;
-    let readyDone = false;
-    const ready = new Promise<void>((resolve, reject) => {
-      resolveReady = resolve;
-      rejectReady = reject;
-    });
-    const markReady = () => {
-      if (readyDone) return;
-      readyDone = true;
-      resolveReady();
+    const signal = createPluginViewReadySignal();
+    const markReady = () => void signal.markReady();
+    // 실패 사유는 화면 카드(ready 거절)와 status 축 둘 다로 나간다 — 채널이 하나면 그 채널을
+    // 안 보는 소비자에게는 없는 사실이 된다.
+    const markFailed = (reason: string) => {
+      if (!signal.markFailed(reason)) return;
+      input.context.setStatus({ code: "error", message: reason });
     };
     input.container.setAttribute(TAURI_PANE_RENDERER_ATTR, "pending");
-    void createPresentedView(input, markReady).then((created) => {
+    void createPresentedView(input, markReady, markFailed).then((created) => {
       if (disposed) {
         disposeView(created);
         return;
@@ -798,16 +805,12 @@ const host: PluginViewPresentationHost = {
         restore: desiredContext.restore, visible: desiredVisible,
       });
     }).catch((error) => {
-      if (!readyDone) {
-        readyDone = true;
-        rejectReady(error);
-      }
+      markFailed(String(error));
       input.container.removeAttribute(TAURI_PANE_RENDERER_ATTR);
-      input.context.setStatus({ code: "error", message: String(error) });
       console.error("Tauri plugin view renderer 생성 실패", error);
     });
     return {
-      ready,
+      ready: signal.ready,
       update(context) {
         desiredContext = context;
         if (!view) return;
@@ -832,10 +835,8 @@ const host: PluginViewPresentationHost = {
       },
       dispose() {
         disposed = true;
-        if (!readyDone) {
-          readyDone = true;
-          rejectReady(new Error("plugin presentation이 준비되기 전에 해제되었습니다"));
-        }
+        // 해제는 뷰의 사실이 아니라 호스트의 결정이다 — status 축에 오류로 남기지 않는다.
+        signal.markFailed("plugin presentation이 준비되기 전에 해제되었습니다");
         if (view) disposeView(view);
         else input.container.removeAttribute(TAURI_PANE_RENDERER_ATTR);
       },

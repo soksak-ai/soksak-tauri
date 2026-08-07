@@ -36,6 +36,15 @@ export interface PluginViewInit {
   };
 }
 
+/**
+ * 자식 renderer 가 플러그인을 못 살렸다는 사실. 실패는 침묵으로 표현될 수 없으므로
+ * 준비 신호와 같은 채널로 부모에게 올라오고, 부모는 이 사유로 준비를 거절한다.
+ */
+export interface PluginViewFailure {
+  pluginId: string;
+  reason: string;
+}
+
 export interface PluginViewSlotFrame {
   label: string;
   x: number;
