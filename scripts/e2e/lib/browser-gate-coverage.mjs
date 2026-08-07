@@ -1,4 +1,12 @@
-import { BROWSER_ACCEPTANCE_GATES, setMachineGateStatus } from "./browser-gates.mjs";
+import {
+  BROWSER_ACCEPTANCE_ENGINES,
+  BROWSER_ACCEPTANCE_FRAMEWORKS,
+} from "./browser-gate-identity.mjs";
+import {
+  BROWSER_ACCEPTANCE_GATES,
+  machineGateSummary,
+  setMachineGateStatus,
+} from "./browser-gates.mjs";
 
 /** 36칸 보고서의 측정 커버리지를 소유한다.
  *
@@ -25,6 +33,49 @@ export function blockPendingMachineGates(report, { engine, reason } = {}) {
     (current, gate) => setMachineGateStatus(current, { engine, gate, status: "blocked", reason }),
     report,
   );
+}
+
+/** 인수는 한 프레임워크의 36칸이 아니라 프레임워크 전부의 합이다.
+ *
+ * 한 실행은 한 프레임워크의 신원만 담는다. 그래서 그 실행의 요약이 green 이어도 인수가 끝났다는
+ * 뜻이 아니다. 제출되지 않은 프레임워크는 0 으로 세어지는 것이 아니라 이름으로 남아야 한다 —
+ * 재지 않은 것과 재서 통과한 것은 같은 값으로 표현될 수 없다.
+ */
+export function acceptanceCoverage(reports) {
+  const byFramework = new Map();
+  let buildId = null;
+  for (const report of reports) {
+    const identity = report.identity;
+    if (buildId === null) buildId = identity.buildId;
+    else if (buildId !== identity.buildId) {
+      throw new TypeError(
+        `acceptance coverage mixes builds: expected buildId=${buildId} actual=${identity.buildId}`,
+      );
+    }
+    // 같은 프레임워크를 다시 제출해도 축은 하나다. 재실행이 커버리지를 늘리지 않는다.
+    byFramework.set(identity.framework, report);
+  }
+
+  const cellsPerFramework = BROWSER_ACCEPTANCE_ENGINES.length * BROWSER_ACCEPTANCE_GATES.length;
+  const missingFrameworks = BROWSER_ACCEPTANCE_FRAMEWORKS
+    .filter((framework) => !byFramework.has(framework));
+
+  const counts = { "not-applicable": 0, "not-run": 0, blocked: 0, red: 0, green: 0 };
+  let required = missingFrameworks.length * cellsPerFramework;
+  let measured = 0;
+  for (const report of byFramework.values()) {
+    const summary = machineGateSummary(report);
+    required += summary.required;
+    measured += summary.total - summary.counts["not-applicable"];
+    for (const key of Object.keys(counts)) counts[key] += summary.counts[key];
+  }
+
+  const status = counts.red > 0 ? "red"
+    : counts.blocked > 0 ? "blocked"
+      : (counts["not-run"] > 0 || missingFrameworks.length > 0) ? "not-run"
+        : "green";
+
+  return { status, required, measured, green: counts.green, counts, missingFrameworks };
 }
 
 /** 실행 로그의 판정 한 줄. green 이 아니면 판정을 만든 수치를 같은 줄에 남겨, 실행 로그만으로

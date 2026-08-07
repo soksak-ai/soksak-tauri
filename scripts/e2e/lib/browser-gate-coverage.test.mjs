@@ -7,6 +7,7 @@ import {
   setMachineGateStatus,
 } from "./browser-gates.mjs";
 import {
+  acceptanceCoverage,
   blockPendingMachineGates,
   formatGateVerdict,
   pendingMachineGates,
@@ -100,6 +101,58 @@ describe("blockPendingMachineGates", () => {
     const summary = machineGateSummary(report);
     expect(summary.counts.red).toBe(1);
     expect(summary.status).toBe("red");
+  });
+});
+
+describe("acceptanceCoverage", () => {
+  it("한 프레임워크만 제출하면 나머지 프레임워크를 미측정으로 이름지어 센다", () => {
+    const coverage = acceptanceCoverage([createBrowserGateReport(IDENTITY)]);
+    expect(coverage.required).toBe(72);
+    expect(coverage.measured).toBe(36);
+    expect(coverage.missingFrameworks).toEqual(["electron"]);
+    expect(coverage.status).not.toBe("green");
+  });
+
+  it("같은 프레임워크를 두 번 제출해도 인수 커버리지가 차지 않는다", () => {
+    const coverage = acceptanceCoverage([
+      createBrowserGateReport(IDENTITY),
+      createBrowserGateReport({ ...IDENTITY, runId: "run-id-second" }),
+    ]);
+    expect(coverage.missingFrameworks).toEqual(["electron"]);
+    expect(coverage.measured).toBe(36);
+  });
+
+  it("두 프레임워크가 모두 있어도 green 이 아닌 셀이 있으면 green 이 아니다", () => {
+    const coverage = acceptanceCoverage([
+      createBrowserGateReport(IDENTITY),
+      createBrowserGateReport({ ...IDENTITY, framework: "electron" }),
+    ]);
+    expect(coverage.missingFrameworks).toEqual([]);
+    expect(coverage.required).toBe(72);
+    expect(coverage.green).toBe(0);
+    expect(coverage.status).toBe("not-run");
+  });
+
+  it("적용 대상이 아닌 셀은 요구 수에서 뺀다", () => {
+    const coverage = acceptanceCoverage([
+      createBrowserGateReport({ ...IDENTITY, platform: "linux" }),
+      createBrowserGateReport({ ...IDENTITY, platform: "linux", framework: "electron" }),
+    ]);
+    expect(coverage.required).toBe(66);
+  });
+
+  it("보고서가 하나도 없으면 아무것도 측정되지 않았다고 답한다", () => {
+    const coverage = acceptanceCoverage([]);
+    expect(coverage.measured).toBe(0);
+    expect(coverage.missingFrameworks).toEqual(["tauri", "electron"]);
+    expect(coverage.status).toBe("not-run");
+  });
+
+  it("서로 다른 빌드의 보고서를 한 인수 합계로 섞지 않는다", () => {
+    expect(() => acceptanceCoverage([
+      createBrowserGateReport(IDENTITY),
+      createBrowserGateReport({ ...IDENTITY, framework: "electron", buildId: "other-build" }),
+    ])).toThrow(/buildId/);
   });
 });
 
