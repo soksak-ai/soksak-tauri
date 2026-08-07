@@ -65,6 +65,18 @@ function laggingRenderer() {
           : "red") as "green" | "red",
       };
     }),
+    /** AppKit 신호등 합성 — 같은 표본이 드는 세 번째 평면. */
+    readTitlebar: vi.fn(async () => {
+      calls.push("readTitlebar");
+      return {
+        nativeSequence: 1,
+        verdict: "green" as "green" | "red",
+        checks: {
+          count: true, order: true, nonOverlap: true, containment: true,
+          oneToOne: true, verticalCenter: true, backingMatch: true,
+        },
+      };
+    }),
   };
 }
 
@@ -82,6 +94,7 @@ function probeOver(
     readComposition: world.readComposition,
     readDirect: world.readDirect,
     readPaneContract: world.readPaneContract,
+    readTitlebar: world.readTitlebar,
     now: () => 1_770_000_000_000,
     ...overrides,
   });
@@ -119,7 +132,7 @@ describe("Tauri resize 거래 정착", () => {
     await observe({ kind: "step", step: 0 });
 
     expect(world.calls).toEqual([
-      "settle", "readComposition", "readDirect", "readPaneContract",
+      "settle", "readComposition", "readDirect", "readPaneContract", "readTitlebar",
     ]);
   });
 
@@ -159,14 +172,29 @@ describe("Tauri resize 합성 선언", () => {
     expect(resizeCompositionViolations(step)).toEqual([]);
   });
 
-  it("타이틀바 평면은 이 표본이 세는 축이 아니다", async () => {
+  // 이 표본은 titlebar 평면도 든다. 안 실었을 때 그 사실이 남의 게이트에서 값의 부재로만
+  // 드러났다 — 실측 2026-08-07: B12 가 hostileResize.transactions[N].titlebar=record/null 을
+  // 14건 냈다. 그 red 는 제품 사실이 아니라 관측의 부재였다.
+  it("타이틀바 평면을 같은 표본에서 함께 읽어 싣는다", async () => {
     const world = laggingRenderer();
     const observe = probeOver(world, world.settle, () => 0);
     const baseline = await observe({ kind: "baseline" });
 
-    // 안 실은 평면을 세면 이 판정이 남의 게이트를 대신 판정하게 된다.
-    expect(baseline.composition).not.toHaveProperty("titlebar");
+    expect(baseline.composition).toHaveProperty("titlebar");
+    expect(world.calls).toContain("readTitlebar");
     expect(baseline.composition.issues).not.toContain("titlebar-missing");
+  });
+
+  it("못 읽은 타이틀바 평면은 지어내지 않고 그 자리 이름으로 남는다", async () => {
+    const world = laggingRenderer();
+    const observe = probeOver(world, world.settle, () => 0, {
+      readTitlebar: async () => { throw new Error("titlebar 관측면이 답하지 않는다"); },
+    });
+    const baseline = await observe({ kind: "baseline" });
+
+    // 값이 아니라 이름으로 본다 — 평면은 어댑터가 싣고 코어는 판정 세 축만 센다.
+    expect(baseline.composition).toHaveProperty("titlebar", null);
+    expect(baseline.composition.issues).toContain("titlebar-missing");
   });
 
   it("못 읽은 평면은 지어내지 않고 그 자리 이름으로 red 가 된다", async () => {

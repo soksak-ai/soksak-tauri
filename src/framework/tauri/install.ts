@@ -681,6 +681,8 @@ export async function installTauri(): Promise<void> {
       return { verdict, surfaces };
     },
     readPaneContract: async () => pluginViewNativeContractStatus(),
+    // 읽기 전용 관측면이다 — compose 는 변이라 관측 경로에 두면 관측이 자기가 만든 상태를 잰다.
+    readTitlebar: async () => inspectTitlebarComposition(),
   }));
   // 실제 FLIP 추적 프레임(pane·tab-body) 중 native child를 품은 것만 뺀다. bounds 원천인
   // content-view body는 그 자식이라 검사 대상이 아니다. 문서 안 게스트에는 이 표식도 등록도

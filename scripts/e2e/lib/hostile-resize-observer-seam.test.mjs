@@ -68,6 +68,15 @@ function world({ paneRed = null } = {}) {
         matched: step !== paneRed,
         verdict: step === paneRed ? "red" : "green",
       }),
+      // 같은 표본이 드는 세 번째 평면 — 안 주면 관측면이 titlebar-missing 으로 red 를 낸다.
+      readTitlebar: async () => ({
+        nativeSequence: 1,
+        verdict: "green",
+        checks: {
+          count: true, order: true, nonOverlap: true, containment: true,
+          oneToOne: true, verticalCenter: true, backingMatch: true,
+        },
+      }),
       now: () => 1_770_000_000_000,
     }),
   };

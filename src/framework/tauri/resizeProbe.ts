@@ -70,6 +70,7 @@ export interface TauriResizeProbeDeps {
    */
   readDirect: () => Promise<DirectResizeCompositionPlane | null>;
   readPaneContract: () => Promise<PaneResizeCompositionPlane | null>;
+  readTitlebar: () => Promise<TitlebarCompositionProbe | null>;
   /** 이 표본을 찍은 시각. 시계도 관측면이 답하는 사실이라 이 어댑터가 든다. */
   now?: () => number;
 }
@@ -119,13 +120,14 @@ export function createTauriResizeProbe(deps: TauriResizeProbeDeps) {
     const composition = await deps.readComposition();
     // 판정 평면은 정착이 끝난 뒤 같은 표본에서 읽는다. 관측이 무엇을 바꾸지 않으므로 순서가
     // 다음 관측의 값을 만들지 않는다.
-    const [direct, pane] = [
+    // 세 평면을 같은 표본에서 읽는다. 따로 읽으면 다른 순간의 사실이 한 판정에 섞인다.
+    // titlebar 는 이 관측면을 함께 쓰는 게이트가 요구하는 축이다 — 안 실으면 그 게이트는
+    // 값이 없어 red 가 되고, 그 red 는 제품 사실이 아니라 관측의 부재다.
+    const [direct, pane, titlebar] = [
       await orNull(deps.readDirect),
       await orNull(deps.readPaneContract),
+      await orNull(deps.readTitlebar),
     ];
-    // 이 표본은 titlebar 평면을 들지 않는다. 타이틀바 합성은 자기 관측면과 자기 게이트가
-    // 따로 재는 사실이고, 여기서 그 평면을 안 실었다고 해서 이 판정이 그 사실을 통과시킨 것은
-    // 아니다 — 키 자체가 없으므로 판정은 그 축을 세지 않는다.
     const declared = combineTauriCompositionProbe<
       DirectResizeCompositionPlane, PaneResizeCompositionPlane, TitlebarCompositionProbe
     >({
@@ -133,6 +135,7 @@ export function createTauriResizeProbe(deps: TauriResizeProbeDeps) {
       sampledAtUnixMs: now(),
       direct,
       pane,
+      titlebar,
     });
     const eventGeneration = deps.eventGeneration();
     const eventGenerationBefore = request.kind === "step" ? eventsAtLastObservation : eventGeneration;
