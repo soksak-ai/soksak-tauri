@@ -152,6 +152,13 @@ const RECORDING_PLAN = planBrowserRecordingEvidence({
 // hostile resize 자극은 원본이 하한(1280·900·1400·1360·940)보다 충분히 커야 만들어진다.
 // 그 사실은 hostileWindowResizeSizes 가 소유하고, 이 크기는 그 하한에 여유를 둔 픽스처 계약이다.
 const FIXTURE_WINDOW_SIZE = Object.freeze({ w: 2000, h: 1400 });
+// 표시 열 관측자 선택. 8ms recorder 는 tick 마다 대상 노드 전부의 rect 를 강제로 읽으므로,
+// 그것이 재려는 rendering update 를 밀어냈는지는 끄고 같은 거래를 다시 재야 갈린다.
+// 기본은 켬 — 이 축은 대조를 가능하게 할 뿐 계약을 바꾸지 않는다.
+//   SLOT_FREEZE_DOM_RECORDER=off node scripts/e2e/slot-freeze.mjs
+const DISPLAY_TRACE_PRODUCERS = Object.freeze({
+  interval: process.env.SLOT_FREEZE_DOM_RECORDER !== "off",
+});
 const FRAMES_PER_CLICK = 48;
 const PIN_FRAMES_PER_CLICK = 24;
 const FAST_RESIZE_FRAMES = 64;
@@ -1300,6 +1307,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
             addresses[1],
           ],
           maxMs: 15_000,
+          producers: DISPLAY_TRACE_PRODUCERS,
         }, win, { timeoutMs: 5_000 }), `B04 raw DOM trace arm ${name}`);
         let domTraceOpen = true;
         let armedPresentation = null;

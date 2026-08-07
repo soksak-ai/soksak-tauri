@@ -614,6 +614,17 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(source).toContain("SURFACE_SETTLEMENT.reset()");
   });
 
+  it("can turn the display-column recorder off so the instrument can be ruled out", () => {
+    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    // 8ms recorder 는 tick 마다 대상 노드 전부의 rect 를 강제로 읽는다. 그것이 재려는 rendering
+    // update 를 밀어냈는지는 끄고 같은 거래를 다시 재야 갈린다 — 그 대조가 불가능하면 표시 열의
+    // 구멍을 제품 결함이라고 단정할 수 없다.
+    expect(source).toContain("DISPLAY_TRACE_PRODUCERS");
+    expect(source).toContain("SLOT_FREEZE_DOM_RECORDER");
+    const start = source.split('rpc("ui.trace.multi.start"')[1]?.slice(0, 600) ?? "";
+    expect(start).toContain("producers: DISPLAY_TRACE_PRODUCERS");
+  });
+
   it("owns its fixture window size before measuring anything that depends on it", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
     // 앱 기본 크기나 앞 엔진이 남긴 크기를 물려받으면 hostile resize 자극이 실행마다 생겼다
