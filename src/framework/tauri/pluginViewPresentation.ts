@@ -16,6 +16,8 @@ import {
 import { viewPresentationRuntime } from "../../plugins/viewRegistry";
 import { TAURI_PANE_RENDERER_ATTR } from "./holeMarkers";
 import {
+  isPluginViewCallExposed,
+  isPluginViewSubscribeExposed,
   type PluginViewFailure,
   type PluginViewInit,
   type PluginViewNodeFrame,
@@ -353,28 +355,9 @@ function resolvePath(root: Record<string, any>, path: string): { owner: any; fn:
   return { owner, fn };
 }
 
-const CALL_PATHS = new Set([
-  "commands.execute",
-  "webview.open", "webview.navigate", "webview.zoom", "webview.openWindow", "webview.history",
-  "webview.present",
-  "webview.stop", "webview.devtools", "webview.eval", "webview.sendInput",
-  "webview.wheel", "webview.captureFull", "webview.typeText", "webview.list", "webview.close",
-  "data.kv.get", "data.kv.set", "data.kv.delete", "data.kv.keys",
-  "sidecar.open", "sidecar.send", "sidecar.close",
-  "bus.emit",
-  "context.setBadge", "context.setStatus", "context.setTitle", "context.setIcon",
-  "context.setRestoreState",
-]);
-
-export function isPluginViewCallExposed(path: string): boolean {
-  return CALL_PATHS.has(path);
-}
-
-const SUBSCRIBE_PATHS = new Set([
-  "events.on", "webview.on", "data.kv.watch", "bus.on", "settings.onChange",
-  "sidecar.on",
-  "context.onVisibilityChange",
-]);
+// 자식 realm 이 부를 수 있는 경로는 protocol 이 소유한다 — 부모가 여기 다시 적으면 두 목록이
+// 갈리고, 갈린 쪽은 조용히 죽는다. 기존 소비자를 위해 판정만 이 모듈 이름으로도 내준다.
+export { isPluginViewCallExposed };
 
 async function syncPaneFrame(view: PresentedState): Promise<void> {
   if (view.disposed) return;
@@ -492,7 +475,7 @@ async function handleCall(view: PresentedState, request: PluginViewRpcRequest): 
     return null;
   }
   if (request.kind === "subscribe") {
-    if (!SUBSCRIBE_PATHS.has(request.path)) throw new Error(`구독 RPC 미노출: ${request.path}`);
+    if (!isPluginViewSubscribeExposed(request.path)) throw new Error(`구독 RPC 미노출: ${request.path}`);
     const callback = (payload: unknown) => {
       void emitTo(view.renderer, event(view.renderer, "subscription"), {
         subscription: request.subscription,
@@ -614,7 +597,7 @@ async function createPresentedView(
   // 등록을 마친 뒤 죽은 플러그인의 뷰는 이미 오고 있으므로 사유만 남기고 준비는 뷰가 정한다.
   view.unlisten.push(await listen<PluginViewFailure>(failure, ({ payload }) => {
     view.reportActivationFailure(
-      `플러그인 활성 실패(${payload.pluginId}): ${payload.reason}`,
+      `플러그인 활성 실패(${payload.pluginId} realm=${payload.realm}): ${payload.reason}`,
       payload.registeredViews,
     );
   }));

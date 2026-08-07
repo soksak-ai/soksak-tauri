@@ -1105,3 +1105,29 @@ describe("유닛 선택의 단일진실 — 매니페스트 sidecars[]", () => {
     ).resolves.toBeDefined();
   });
 });
+
+// 창 realm 도 자기 신원을 선언한다. 한쪽만 선언하면 플러그인은 "realm 이란 게 있나"를 다시
+// 더듬어야 하고, 그게 애초에 offscreen 을 죽인 그 더듬기다.
+describe("realm 선언(창 realm)", () => {
+  it("창 realm 은 자기 신원과 실제 능력을 선언한다", () => {
+    const { api } = buildPluginApi(
+      manifestOf({ permissions: ["commands"] }),
+      "/d",
+      fakeDeps(),
+    );
+
+    expect(api.realm.id).toBe("window");
+    expect(api.realm.supports("commands.register")).toBe(true);
+    expect(api.realm.supports("commands.execute")).toBe(true);
+  });
+
+  it("권한이 없어 표면이 없으면 없다고 답한다 — 선언은 객체에서 파생된다", () => {
+    const { api } = buildPluginApi(manifestOf({}), "/d", fakeDeps());
+
+    expect(api.commands).toBeUndefined();
+    expect(api.realm.supports("commands.register")).toBe(false);
+    expect(api.realm.supports("commands.execute")).toBe(false);
+    // 권한과 무관하게 늘 있는 표면은 그대로 있다고 답한다.
+    expect(api.realm.supports("events.on")).toBe(true);
+  });
+});

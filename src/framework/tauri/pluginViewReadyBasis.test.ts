@@ -50,7 +50,9 @@ describe("부모의 실패 처리 배선", () => {
   it("renderer 는 등록한 뷰의 수를 실패와 함께 보낸다", () => {
     const source = read("pluginViewRenderer.ts");
     expect(source).toContain("registeredViews += 1");
-    expect(source).toContain("registeredViews }");
+    // 서식이 아니라 사실을 본다 — 실패 발행부가 그 수를 싣는가.
+    const report = source.split("report:")[1]?.slice(0, 300) ?? "";
+    expect(report).toContain("registeredViews");
     expect(read("pluginViewProtocol.ts")).toContain("registeredViews");
   });
 });
