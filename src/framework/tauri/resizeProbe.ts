@@ -28,11 +28,30 @@ interface PaneCompositionMatch {
   }[];
 }
 
+/**
+ * 한 단계를 정착시키는 상한. 유한 resize 거래 **전체**의 예산은 판정면이 소유하므로
+ * (B10 resizeElapsedMs) 단계 하나의 상한은 그보다 훨씬 작아야 한다. 넘겨도 지어낸 성공이
+ * 되지 않는다 — 못 따라온 평면은 그 단계의 관측에 stale 한 frame 과 presented=false 로 남는다.
+ */
+const SETTLE_TIMEOUT_MS = 1_000;
+
 export interface TauriResizeProbeDeps {
   windowLabel: () => string;
   scaleFactor: () => number;
   /** 이 창의 native resize 사건 세대. 구독은 호출자가 건다. */
   eventGeneration: () => number;
+  /**
+   * 한 거래를 정착시킨다 — 이 어댑터가 그 단계를 **완료로 세기 전에** 부른다.
+   *
+   * 이 프레임워크의 콘텐츠는 문서 밖 자식 renderer 에 산다. 창 크기가 바뀌면 native surface 는
+   * AppKit resize epoch 에서 같이 옮겨지지만, 자식은 자기 ResizeObserver/`resize` 로만 그 사실을
+   * 알게 되고 비전면 WKWebView 에서 그 사건은 미뤄진다. 그래서 정착을 부르지 않으면 renderer
+   * 평면이 직전 거래를 그대로 든 채 이 단계가 완료로 세어진다.
+   *
+   * 정착이 실패해도 던지지 않는다. 못 닫힌 사실은 곧바로 이어지는 관측이 stale 한 frame 과
+   * presented=false 로 답하므로, 이 자리에서 예외로 바꾸면 사실 대신 사고만 남는다.
+   */
+  settle: (timeoutMs: number) => Promise<void>;
   readComposition: () => Promise<{ matches: readonly PaneCompositionMatch[] }>;
 }
 
@@ -64,6 +83,9 @@ export function createTauriResizeProbe(deps: TauriResizeProbeDeps) {
   const generations = new TauriSurfaceGenerations();
 
   return async function observe(request: ResizeProbeRequest): Promise<ResizeCompositionObservation> {
+    // baseline 은 아직 아무 크기도 요청되지 않은 자리라 정착시킬 거래가 없다. 단계는 반대로
+    // 이 어댑터가 "완료된 단계 수"를 올리는 자리이므로, 세기 전에 그 거래를 닫는다.
+    if (request.kind === "step") await deps.settle(SETTLE_TIMEOUT_MS);
     const composition = await deps.readComposition();
     const eventGeneration = deps.eventGeneration();
     const eventGenerationBefore = request.kind === "step" ? eventsAtLastObservation : eventGeneration;

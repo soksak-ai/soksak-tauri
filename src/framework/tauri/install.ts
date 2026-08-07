@@ -35,6 +35,7 @@ import {
   pluginViewPaneHostsStatus,
   pluginViewPresentationStatus,
   preparePresentedPluginViewMove,
+  settlePluginViewComposition,
 } from "./pluginViewPresentation";
 import { currentWindowLabel } from "../../lib/webviewLabels";
 import { registerWindowResizeProbe } from "../../lib/windowResizeProbe";
@@ -669,6 +670,8 @@ export async function installTauri(): Promise<void> {
     windowLabel: () => currentWindowLabel(),
     scaleFactor: () => window.devicePixelRatio,
     eventGeneration: () => windowResizeEvents,
+    // 창 resize 도 host frame 을 바꾸는 거래다 — 최종 합성 배리어와 같은 정착을 쓴다.
+    settle: (timeoutMs) => settlePluginViewComposition(timeoutMs),
     readComposition: () => pluginViewCompositionStatus(),
   }));
   // 실제 FLIP 추적 프레임(pane·tab-body) 중 native child를 품은 것만 뺀다. bounds 원천인
