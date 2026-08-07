@@ -4,6 +4,12 @@
 // 표면은 자기 자리의 자식이고, 좌표를 다시 쓰지 않는다. 그 둘이 갈리면 자리와 표면이 두
 // 기준이 되고 하나는 반드시 늦는다(빈 판·경계의 잔상).
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  contentCompositionTopologyPath,
+  contentViewNodePath,
+  readCompositionParticipant,
+} from "../../lib/compositionParticipants";
+import { currentWindowLabel } from "../../lib/webviewLabels";
 
 const invoke = vi.fn(async (_cmd: string, _args?: unknown) => undefined as unknown);
 /** emitLocal 이 실제로 불렸는지 — 다리가 걸렸는가의 유일한 관측면. */
@@ -200,6 +206,46 @@ describe("DOM 콘텐츠 뷰 구현", () => {
       .querySelector('[data-content-view="b-2"]')!
       .dispatchEvent(new Event("dom-ready"));
     await expect(m.domHost.navigate("b-2", "u")).rejects.toThrow("loadURL");
+  });
+
+  // 합성 판정은 세 원장(자리·carrier·표면)을 따로 열거해 1:1 을 본다. 참가자가 자기를 안
+  // 밝히면 판정하는 쪽은 label 에서 뷰를 추론하거나 자리를 표면이라 부른다 — 둘 다 표면이
+  // 사라져도 통과하는 판정이다.
+  it("자리와 carrier 를 합성 참가자로 선언한다", async () => {
+    const m = await load();
+    const host = document.createElement("div");
+    host.dataset.tabId = "v-7";
+    const slot = document.createElement("div");
+    slot.setAttribute("data-content-view-body", "b-1");
+    host.appendChild(slot);
+    document.body.appendChild(host);
+
+    await m.domHost.open("b-1", {});
+    const el = document.querySelector<HTMLElement>('[data-content-view="b-1"]')!;
+    const topologyPath = contentCompositionTopologyPath(currentWindowLabel(), "v-7", "b-1");
+    expect(readCompositionParticipant(slot)).toEqual({
+      kind: "slot", viewId: "v-7", topologyPath, visible: true,
+    });
+    expect(readCompositionParticipant(el)).toEqual({
+      kind: "renderer", viewId: "v-7", topologyPath, visible: true,
+    });
+    // carrier 가 주소로 발견되지 않으면 원장은 그것을 셀 수 없다.
+    expect(el.dataset.node).toBe(contentViewNodePath("b-1"));
+
+    await m.domHost.visible("b-1", false);
+    expect(readCompositionParticipant(slot)?.visible).toBe(false);
+    expect(readCompositionParticipant(el)?.visible).toBe(false);
+
+    await m.domHost.close("b-1");
+    // 닫힌 뷰의 자리가 참가자로 남으면 원장은 없는 표면을 기다린다.
+    expect(readCompositionParticipant(slot)).toBeNull();
+  });
+
+  it("자리 없는 뷰는 합성 참가자가 아니다 — 화면에 놓이지 않은 것을 참가자로 세지 않는다", async () => {
+    const m = await load();
+    await m.domHost.open("b-9", {});
+    const el = document.querySelector<HTMLElement>('[data-content-view="b-9"]')!;
+    expect(readCompositionParticipant(el)).toBeNull();
   });
 
   it("새 창은 프레임워크의 것이다 — DOM 구현도 그것만은 건넌다", async () => {

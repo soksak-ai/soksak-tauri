@@ -6,6 +6,13 @@ import type { ExternalSurfaceTransitionTiming } from "../../lib/externalSurfaceT
 import { currentWindowLabel } from "../../lib/webviewLabels";
 import type { LayoutMove, PreparedLayoutTransition } from "../../lib/layoutTransitionHost";
 import { surfaceRectOf } from "../../lib/surfaceRect";
+import {
+  COMPOSITION_KIND_ATTR,
+  compositionParticipantSelector,
+  contentCompositionTopologyPath,
+  declareCompositionParticipant,
+  setCompositionParticipantVisible,
+} from "../../lib/compositionParticipants";
 import { surfaceLayoutContractOf } from "./surfaceLayoutContract";
 import { classifyRendererTopology, type RendererTopologyFact } from "./surfaceAudit";
 import {
@@ -275,20 +282,16 @@ export function projectPluginViewSlot(
   const element = existing ?? document.createElement("div");
   element.dataset.node = `tauri/plugin-view/${frame.label}/surface`;
   if (composition) {
-    element.dataset.compositionKind = "slot";
-    element.dataset.viewId = composition.viewId;
-    element.dataset.topologyPath = composition.topologyPath;
-    element.dataset.visible = String(composition.visible);
-    let renderer = element.querySelector<HTMLElement>(":scope > [data-composition-kind=renderer]");
+    declareCompositionParticipant(element, { kind: "slot", ...composition });
+    let renderer = element.querySelector<HTMLElement>(
+      `:scope > ${compositionParticipantSelector("renderer")}`,
+    );
     if (!renderer) {
       renderer = document.createElement("div");
       element.appendChild(renderer);
     }
     renderer.dataset.node = `tauri/plugin-view/${frame.label}/renderer`;
-    renderer.dataset.compositionKind = "renderer";
-    renderer.dataset.viewId = composition.viewId;
-    renderer.dataset.topologyPath = composition.topologyPath;
-    renderer.dataset.visible = String(composition.visible);
+    declareCompositionParticipant(renderer, { kind: "renderer", ...composition });
     renderer.setAttribute("aria-hidden", "true");
     Object.assign(renderer.style, {
       position: "absolute", inset: "0", pointerEvents: "none", background: "transparent",
@@ -308,15 +311,11 @@ export function projectPluginViewSlot(
   return element;
 }
 
-function contentSurfaceTopologyPath(windowLabel: string, viewId: string, label: string): string {
-  return `window/${encodeURIComponent(windowLabel)}/view/${encodeURIComponent(viewId)}/content/${encodeURIComponent(label)}`;
-}
-
 function setProjectedCompositionVisibility(view: PresentedState, visible: boolean): void {
   for (const projection of view.projections.values()) {
-    if (projection.dataset.compositionKind) projection.dataset.visible = String(visible);
-    for (const child of projection.querySelectorAll<HTMLElement>("[data-composition-kind]")) {
-      child.dataset.visible = String(visible);
+    setCompositionParticipantVisible(projection, visible);
+    for (const child of projection.querySelectorAll<HTMLElement>(`[${COMPOSITION_KIND_ATTR}]`)) {
+      setCompositionParticipantVisible(child, visible);
     }
   }
 }
@@ -612,7 +611,7 @@ async function createPresentedView(
       payload,
       view.viewId ? {
         viewId: view.viewId,
-        topologyPath: contentSurfaceTopologyPath(windowLabel, view.viewId, payload.label),
+        topologyPath: contentCompositionTopologyPath(windowLabel, view.viewId, payload.label),
         visible: view.visible,
       } : undefined,
       view.projections.get(payload.label),
@@ -706,7 +705,7 @@ export async function pluginViewCompositionStatus() {
       members: view.slots.frames().map((slot) => ({
         label: slot.label,
         topologyPath: view.viewId
-          ? contentSurfaceTopologyPath(windowLabel, view.viewId, slot.label)
+          ? contentCompositionTopologyPath(windowLabel, view.viewId, slot.label)
           : null,
         frame: { x: slot.x, y: slot.y, w: slot.w, h: slot.h },
         viewport: {

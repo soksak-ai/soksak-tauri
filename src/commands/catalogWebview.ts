@@ -28,7 +28,7 @@ export function registerWebviewCatalog(): void {
     triggers: { ko: "표면 정합 유령 웹뷰 잔존 브라우저 대조 확인" },
     params: {},
     returns:
-      "{ window, actual: [label], ghosts: [label], orphans: [label], engine: {registered, hostPresent}, bodies: [{node,x,y,w,h,children,overlay,…}], contentViews: {inDocument, detached: [label]}, stateViews }",
+      "{ window, actual: [label], ghosts: [label], orphans: [label], engine: {registered, hostPresent}, bodies: [{node,x,y,w,h,children,overlay,…}], contentViews: {inDocument, detached: [label], dom: [{label,slotLabel,computedVisibility,composition:{kind,viewId,topologyPath,visible}|null,rect}]}, stateViews }",
     message: (d) => {
       const bad =
         Number((d.ghosts as string[] | undefined)?.length ?? 0) +

@@ -82,7 +82,7 @@ const PROBE_POINTS = Object.freeze({
 /** slot-freeze가 B09 nativeSurface로 그대로 싣는 공개 surface 영수증을 생산자에서 만든다. */
 function producedSurfaces(surface) {
   return mapBrowserSurfaceRects({
-    framework: "tauri",
+    nativeChildWebview: true,
     surface,
     windowLabel: "w-b09",
     viewIds: [...PANE_VIEW_IDS],

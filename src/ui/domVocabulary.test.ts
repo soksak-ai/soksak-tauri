@@ -29,6 +29,14 @@ const ALLOWED = new Set([
   "data-framework", // 이 스타일시트를 들고 온 프레임워크(framework/styles) — 값=어댑터 이름
   "data-content-view-body", // 콘텐츠 뷰 본문 선언(값=label) — 프레임워크가 각자 읽는다
   "data-external-surface", // 문서 밖 가시 표면 소유 슬롯(값=제공자의 안정적 표면 identity)
+  // ── 합성 참가자 선언(lib/compositionParticipants — 코어가 모양을 정하고 프레임워크가 찍는다) ──
+  "data-composition-kind", // 참가자 종류(slot|renderer) — 표면은 DOM 종류가 아니라 호스트 영수증
+  "data-view-id", // 이 참가자가 그리는 뷰(값=탭 인스턴스 id)
+  "data-topology-path", // 같은 뷰의 참가자 전원이 공유하는 위상 주소
+  "data-visible", // 지금 실제로 합성에 참여하는가(결과 — 요청이 아니다)
+  // ── 자식 renderer 폼 컨트롤 투영(framework/tauri/pluginViewPresentation) ──
+  "data-form-control", // 투영된 폼 컨트롤 종류
+  "data-form-value", // 투영된 폼 컨트롤의 현재 값
   "data-change", // 파일트리 git 상태 축
   "data-view-addr", // 노드 스캔 baseAddress(절대 주소) — view 는 종류 축(생존 어휘)
   "data-tab-id", // 탭 인스턴스 역참조 앵커(정본 — viewHostAnchors)

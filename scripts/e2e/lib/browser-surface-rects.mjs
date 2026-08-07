@@ -22,6 +22,14 @@ const fail = (viewId, detail) => {
  * 영수증에 실어 judge 가 이름 붙인 RED 를 내게 한다. 던져서 지우면 그 위반은 보고서에서 이름을
  * 잃고, 41개 런 전수에서 그랬듯 판정은 한 번도 돌지 못한다.
  */
+const displayed = (value) => {
+  try {
+    return JSON.stringify(value) ?? String(value);
+  } catch {
+    return String(value);
+  }
+};
+
 const paneSurface = ({ viewId, label, paneComposition }) => {
   const candidates = (paneComposition?.matches ?? []).flatMap((pane) =>
     (pane.memberMatches ?? [])
@@ -50,6 +58,43 @@ const paneSurface = ({ viewId, label, paneComposition }) => {
   };
 };
 
+/**
+ * 콘텐츠가 문서 안에 사는 프레임워크의 표면 원장은 content view host 자신의 목록이다.
+ *
+ * 자리(slot) 노드를 표면이라 부르면 표면이 통째로 사라져도 1:1 이 통과한다 — 자리는 표면보다
+ * 오래 살기 때문이다. 그래서 여기서 읽는 것은 호스트가 자기 속성으로 열거한 살아 있는 표면이고,
+ * 그 표면이 스스로 밝힌 선언에서 뷰와 위상 주소를 얻는다. label 문법에서 뷰를 뽑지 않는다.
+ */
+const documentSurface = ({ viewId, label, contentViews }) => {
+  const candidates = (contentViews?.dom ?? []).filter((fact) => fact?.label === label);
+  if (candidates.length !== 1) {
+    fail(viewId, `must have exactly one live content surface (${candidates.length})`);
+  }
+  const fact = candidates[0];
+  const composition = fact.composition ?? null;
+  if (composition?.viewId !== viewId || !composition.topologyPath) {
+    fail(viewId, `declares no composition owner (${JSON.stringify(composition)})`);
+  }
+  // 자리 밖에 있는 표면은 좌표로 밀리고 있다는 뜻이다 — 자리와 표면이 두 기준이 되고
+  // 하나는 반드시 늦는다.
+  if (fact.slotLabel !== label) fail(viewId, "is detached from its declared slot");
+  // 선언은 호스트가 마지막으로 손댄 순간의 값이다. 그 뒤에 자리가 접혔을 수 있으므로 실제
+  // 합성 사실과 함께 본다 — 도장 하나로는 접힌 표면이 스스로 보인다고 말할 수 있다.
+  if (composition.visible !== true) fail(viewId, "is not declared visible");
+  if (fact.computedVisibility === "hidden") fail(viewId, "is not composited");
+  const frame = rect(fact.rect);
+  if (!frame) fail(viewId, "has no live frame");
+  return {
+    viewId,
+    surfaceId: label,
+    topologyPath: composition.topologyPath,
+    live: true,
+    visible: true,
+    presented: true,
+    rect: frame,
+  };
+};
+
 const engineSurface = ({ viewId, surface, stats }) => {
   const offscreen = surface === "engine-offscreen";
   const engine = offscreen ? stats?.engine : stats;
@@ -67,36 +112,28 @@ const engineSurface = ({ viewId, surface, stats }) => {
 /**
  * Maps each browser implementation's public owner facts into one B09 surface receipt.
  * It never infers a native surface from an unrelated root DOM tree.
+ *
+ * 갈라지는 축은 프레임워크 이름이 아니라 프레임워크가 **선언한 능력**이다. 이름으로 가르면
+ * 프레임워크가 하나 늘 때마다 갈래가 늘고, 새 이름은 판정면 어디에서도 자기 자리를 못 찾는다.
  */
 export function mapBrowserSurfaceRects({
-  framework,
+  nativeChildWebview,
   surface,
   viewIds,
   labels,
-  uiNodes = [],
+  contentViews,
   paneComposition,
   stats,
 }) {
   return viewIds.map((viewId, index) => {
     const label = labels[index];
-    if (framework === "electron") {
-      const candidates = uiNodes.filter((node) =>
-        node?.nodePath === "surface"
-        && typeof node.address === "string"
-        && node.address.includes(`/tab/${viewId}/`)
-        && rect(node.rect));
-      if (candidates.length !== 1) fail(viewId, `must expose exactly one DOM surface (${candidates.length})`);
-      return {
-        viewId,
-        surfaceId: candidates[0].address,
-        live: true,
-        visible: true,
-        presented: true,
-        rect: rect(candidates[0].rect),
-      };
+    if (typeof nativeChildWebview !== "boolean") {
+      fail(viewId, `has no declared nativeChildWebview provision (${displayed(nativeChildWebview)})`);
     }
+    // 콘텐츠가 문서 안에 살면 자리의 자식이 곧 표면이다 — 그 선언을 네이티브 홀로 투영하지
+    // 않으므로 네이티브 원장을 찾을 자리도 없다.
+    if (!nativeChildWebview) return documentSurface({ viewId, label, contentViews });
 
-    if (framework !== "tauri") fail(viewId, `uses unsupported framework ${framework}`);
     if (surface === "framework-native") {
       const owner = paneSurface({ viewId, label, paneComposition });
       return {

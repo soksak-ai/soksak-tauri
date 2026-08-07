@@ -1,5 +1,10 @@
+// @vitest-environment node
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { mapBrowserSurfaceRects } from "./browser-surface-rects.mjs";
+
+const MAPPER = resolve(import.meta.dirname, "browser-surface-rects.mjs");
 
 const views = ["tab-left", "tab-right"];
 const labels = ["native-tab-left", "native-tab-right"];
@@ -7,7 +12,7 @@ const labels = ["native-tab-left", "native-tab-right"];
 describe("browser surface rect evidence", () => {
   it("projects PaneSurfaceHost member frames into window coordinates", () => {
     const result = mapBrowserSurfaceRects({
-      framework: "tauri",
+      nativeChildWebview: true,
       surface: "framework-native",
       windowLabel: "w-test",
       viewIds: views,
@@ -47,7 +52,7 @@ describe("browser surface rect evidence", () => {
 
   it("uses the owner-published offscreen presentation bounds", () => {
     const result = mapBrowserSurfaceRects({
-      framework: "tauri",
+      nativeChildWebview: true,
       surface: "engine-offscreen",
       windowLabel: "w-test",
       viewIds: ["tab-right"],
@@ -74,23 +79,32 @@ describe("browser surface rect evidence", () => {
     }]);
   });
 
-  it("uses exposed surface DOM for an Electron implementation", () => {
+  // 콘텐츠가 문서 안에 사는 프레임워크의 표면 원장은 content view host 자신의 목록이다.
+  // 자리(slot) 노드를 표면이라 부르면 표면이 통째로 사라져도 1:1 이 통과한다.
+  it("reads the content view host ledger when content lives in the document", () => {
+    const topologyPath = "window/w-test/view/tab-right/content/b-w-test-tab-right";
     const result = mapBrowserSurfaceRects({
-      framework: "electron",
+      nativeChildWebview: false,
       surface: "framework-native",
       windowLabel: "w-test",
       viewIds: ["tab-right"],
-      labels: ["native-tab-right"],
-      uiNodes: [{
-        address: "win/w-test/content/view/browser/tab/tab-right/node/surface",
-        nodePath: "surface",
-        rect: { x: 513, y: 149, w: 281, h: 421 },
-      }],
+      labels: ["b-w-test-tab-right"],
+      contentViews: {
+        detached: [],
+        dom: [{
+          label: "b-w-test-tab-right",
+          slotLabel: "b-w-test-tab-right",
+          composition: { kind: "renderer", viewId: "tab-right", topologyPath, visible: true },
+          computedVisibility: "visible",
+          rect: { x: 513, y: 149, w: 281, h: 421 },
+        }],
+      },
     });
 
     expect(result).toEqual([{
       viewId: "tab-right",
-      surfaceId: "win/w-test/content/view/browser/tab/tab-right/node/surface",
+      surfaceId: "b-w-test-tab-right",
+      topologyPath,
       live: true,
       visible: true,
       presented: true,
@@ -98,9 +112,62 @@ describe("browser surface rect evidence", () => {
     }]);
   });
 
+  it("rejects an in-document surface that lost its declaration, its slot, or its visibility", () => {
+    const topologyPath = "window/w-test/view/tab-right/content/b-1";
+    const fact = (over) => ({
+      nativeChildWebview: false,
+      surface: "framework-native",
+      windowLabel: "w-test",
+      viewIds: ["tab-right"],
+      labels: ["b-1"],
+      contentViews: {
+        detached: [],
+        dom: [{
+          label: "b-1",
+          slotLabel: "b-1",
+          composition: { kind: "renderer", viewId: "tab-right", topologyPath, visible: true },
+          computedVisibility: "visible",
+          rect: { x: 513, y: 149, w: 281, h: 421 },
+          ...over,
+        }],
+      },
+    });
+
+    expect(() => mapBrowserSurfaceRects(fact({ composition: null })))
+      .toThrow(/declares no composition owner/);
+    expect(() => mapBrowserSurfaceRects(fact({
+      composition: { kind: "renderer", viewId: "tab-left", topologyPath, visible: true },
+    }))).toThrow(/declares no composition owner/);
+    expect(() => mapBrowserSurfaceRects(fact({ slotLabel: null })))
+      .toThrow(/is detached from its declared slot/);
+    expect(() => mapBrowserSurfaceRects(fact({
+      composition: { kind: "renderer", viewId: "tab-right", topologyPath, visible: false },
+    }))).toThrow(/is not declared visible/);
+    // 도장 하나로는 접힌 표면이 스스로 보인다고 말할 수 있다 — 실제 합성 사실을 함께 본다.
+    expect(() => mapBrowserSurfaceRects(fact({ computedVisibility: "hidden" })))
+      .toThrow(/is not composited/);
+    expect(() => mapBrowserSurfaceRects({
+      nativeChildWebview: false,
+      surface: "framework-native",
+      windowLabel: "w-test",
+      viewIds: ["tab-right"],
+      labels: ["b-1"],
+      contentViews: { detached: [], dom: [] },
+    })).toThrow(/exactly one live content surface \(0\)/);
+  });
+
+  it("refuses to guess when the framework declared no provision axis", () => {
+    expect(() => mapBrowserSurfaceRects({
+      surface: "framework-native",
+      windowLabel: "w-test",
+      viewIds: ["tab-right"],
+      labels: ["b-1"],
+    })).toThrow(/nativeChildWebview/);
+  });
+
   it("rejects missing or ambiguous public ownership instead of guessing", () => {
     expect(() => mapBrowserSurfaceRects({
-      framework: "tauri",
+      nativeChildWebview: true,
       surface: "framework-native",
       windowLabel: "w-test",
       viewIds: ["tab-right"],
@@ -113,7 +180,7 @@ describe("browser surface rect evidence", () => {
   // 던져서 지우면 그 실행은 blocked 가 되고 위반은 보고서에서 이름을 잃는다 — 영수증에 실어
   // judge 가 이름 붙은 RED 를 내게 한다.
   const violating = (overrides) => mapBrowserSurfaceRects({
-    framework: "tauri",
+    nativeChildWebview: true,
     surface: "framework-native",
     windowLabel: "w-test",
     viewIds: ["tab-right"],
@@ -152,9 +219,8 @@ describe("browser surface rect evidence", () => {
 
   it("reports the engine's own hidden answer instead of a second visibility definition", () => {
     const engineSurface = (hidden) => mapBrowserSurfaceRects({
-      framework: "tauri",
-      surface: "engine-offscreen",
-      windowLabel: "w-test",
+      nativeChildWebview: true,
+      surface: "engine-offscreen",      windowLabel: "w-test",
       viewIds: ["tab-right"],
       labels: ["offscreen-tab-right"],
       stats: {
@@ -179,5 +245,12 @@ describe("browser surface rect evidence", () => {
   it("carries an unreadable frame as a null rect instead of aborting the run", () => {
     expect(violating({ member: { domFrame: { x: 0, y: 28, w: 0, h: 421 } } }))
       .toMatchObject({ rect: null });
+  });
+
+  // 판정이 능력이 아니라 이름을 보면 프레임워크가 하나 늘 때마다 갈래가 는다.
+  it("never asks which framework it is", () => {
+    const source = readFileSync(MAPPER, "utf8");
+    const code = source.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(code).not.toMatch(/["'`](tauri|electron)["'`]/);
   });
 });
