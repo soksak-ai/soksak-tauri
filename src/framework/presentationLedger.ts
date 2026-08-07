@@ -10,6 +10,10 @@
 // 0 프레임을 "표시가 없었다"로 읽고, 그것은 재지 않은 것을 쟀다고 말하는 것이다.
 import { moduleState } from "../lib/moduleState";
 import { register } from "../commands/registry";
+import {
+  auditPresentationReceipt,
+  type PresentationLedgerAudit,
+} from "./presentationLedgerAudit";
 
 export interface PresentationRect {
   x: number;
@@ -115,6 +119,17 @@ export interface PresentationTraceReceipt {
   presentationEvents: PresentationDisplayEvent[];
   violations: PresentationViolations;
   observation: PresentationObservation;
+}
+
+/**
+ * 회수한 원장 + **그 원장이 자기 사건과 일관되는가.**
+ *
+ * 위반 수는 생산자만 안다. 그래서 한 어댑터가 한 축을 아예 안 세면 그 축은 영원히 0 으로
+ * 답하고, 그 0 은 "그런 일이 없었다"와 구분되지 않는다. 감사는 어느 어댑터가 답했는지 묻지
+ * 않고 영수증 자신만 읽는다 — 그래서 이 자리가 감사의 집이다.
+ */
+export interface PresentationTraceAuditedReceipt extends PresentationTraceReceipt {
+  selfAudit: PresentationLedgerAudit;
 }
 
 export interface PresentationLedgerArmInput {
@@ -239,9 +254,13 @@ function installCommands(): void {
       traceId: { type: "string", description: "trace identity returned by arm", required: true },
     },
     returns:
-      "{ traceId,closed,ownerViewIds,armedAtUnixMs,baselineFrameSequence,presentationEvents,violations,observation }",
+      "{ traceId,closed,ownerViewIds,armedAtUnixMs,baselineFrameSequence,presentationEvents,violations,observation,selfAudit }",
     message: (data) => `표시 원장 ${String(data.traceId)}를 닫았습니다`,
-    handler: async (params) => host().close({ traceId: String(params.traceId ?? "") }),
+    handler: async (params): Promise<PresentationTraceAuditedReceipt> => {
+      const receipt = await host().close({ traceId: String(params.traceId ?? "") });
+      // 감사를 부르지 않으면 감사는 없다. 영수증에 실어야 부르는 쪽이 안 물어도 사실이 간다.
+      return { ...receipt, selfAudit: auditPresentationReceipt(receipt) };
+    },
   });
 }
 

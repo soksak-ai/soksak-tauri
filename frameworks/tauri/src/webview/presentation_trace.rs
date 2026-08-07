@@ -205,8 +205,15 @@ mod macos {
                 .observation
                 .max_callback_latency_ms
                 .max((callback_entered_at_unix_ms - target_timestamp_unix_ms).max(0.0));
-            if let Some(previous) = self.events.last().map(|event| event.presented_at_unix_ms) {
-                if displayed_at_unix_ms <= previous {
+            let previous_display = self.events.last().map(|event| {
+                (
+                    event.presented_at_unix_ms,
+                    event.target_timestamp_unix_ms,
+                    event.refresh_interval_ms,
+                )
+            });
+            if let Some((previous_presented, _, _)) = previous_display {
+                if displayed_at_unix_ms <= previous_presented {
                     self.violations.dropped_events =
                         self.violations.dropped_events.saturating_add(1);
                     return;
@@ -254,6 +261,26 @@ mod macos {
                 }
             } else {
                 self.baseline_identity = Some(identity);
+            }
+
+            // 합성기가 건너뛴 표시. 이 축은 계약이 이름으로 요구하는데 이 구현은 한 번도 세지
+            // 않아 언제나 0 을 답했다 — 실측(2026-08-07, slot-freeze 원장 62벌) 중 9벌이 자기
+            // displayTimestamp 로는 표시를 건너뛰었는데 9벌 전부 gaps=0 이었다. 0 이 "그런 일이
+            // 없었다"와 "이 구현은 안 센다" 둘 다를 뜻하면 소비자는 표시 결함을 관측 지연에서
+            // 되짚으려 하고, 그 값은 표시가 아니라 우리 callback 지연을 잰다.
+            //
+            // 기준은 직전 프레임이 스스로 실어 보낸 다음 표시 시각이다 — 고정 주기로 나누면
+            // 가변 주사율에서 정상 프레임이 건너뜀으로 둔갑한다. 관측 콜백을 놓친 것
+            // (callbackIntervalsSkipped)과는 다른 사실이라 다른 이름으로 센다.
+            if let Some((_, previous_target, previous_interval)) = previous_display {
+                if previous_interval > 0.0
+                    && displayed_at_unix_ms > previous_target + previous_interval / 2.0
+                {
+                    let skipped = ((displayed_at_unix_ms - previous_target) / previous_interval)
+                        .round()
+                        .max(1.0) as u64;
+                    self.violations.gaps = self.violations.gaps.saturating_add(skipped);
+                }
             }
 
             let sequence = self.events.len();

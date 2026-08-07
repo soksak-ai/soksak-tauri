@@ -89,6 +89,10 @@ fn pane_presentation_trace_is_a_finite_native_display_link_contract() {
     assert!(trace.contains("link.targetTimestamp()"));
     assert!(trace.contains("callback_observed_at_unix_ms"));
     assert!(trace.contains("callback_intervals_skipped"));
+    // 합성기가 건너뛴 표시와 관측 콜백을 놓친 것은 다른 사실이라 다른 이름으로 센다. 이 축을
+    // 안 세면 원장은 언제나 gaps=0 을 답하고 그 0 은 "없었다"와 구분되지 않는다.
+    assert!(trace.contains("self.violations.gaps"));
+    assert!(trace.contains("previous_target + previous_interval / 2.0"));
     assert!(trace.contains("link.invalidate()"));
     assert!(!trace.contains("requestAnimationFrame"));
     assert!(!trace.contains("setInterval"));
