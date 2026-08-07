@@ -10,6 +10,7 @@ vi.mock("../framework", () => ({
 }));
 
 import {
+  RESIZE_COMPOSITION_DECLARATION_KEYS,
   RESIZE_COUNTER_KEYS,
   RESIZE_OBSERVATION_KEYS,
   RESIZE_PARTICIPANT_KEYS,
@@ -53,6 +54,7 @@ const observed = (): ResizeCompositionObservation => ({
   eventGenerationBefore: 3,
   eventGenerationAfter: 4,
   continuity: { countersBefore: counters(), countersAfter: counters() },
+  composition: { kind: "test-resize-composition-sample", verdict: "green", issues: [] },
 });
 
 describe("resize 관측 봉투 계약", () => {
@@ -86,7 +88,39 @@ describe("resize 관측 봉투 계약", () => {
       "continuity",
       "snapshot",
       "contractViolations",
+      "kind",
+      "verdict",
+      "issues",
     ]);
+    expect(RESIZE_COMPOSITION_DECLARATION_KEYS).toEqual(["kind", "verdict", "issues"]);
+  });
+
+  it("판정을 선언하지 않은 관측면은 그 자리 이름으로 거절한다", () => {
+    const silent = { ...observed() } as Record<string, unknown>;
+    delete silent.composition;
+    expect(resizeCompositionViolations(silent)).toContain("composition=record/undefined");
+
+    const nameless = observed();
+    nameless.composition = { ...nameless.composition, kind: "  " };
+    expect(resizeCompositionViolations(nameless)).toContain('composition.kind=non-empty/"  "');
+
+    const undecided = { ...observed(), composition: { kind: "k", issues: [] } };
+    expect(resizeCompositionViolations(undecided))
+      .toContain("composition.verdict=green|red/undefined");
+  });
+
+  it("사유를 들고 green 이라 답한 선언은 자기 자신과 모순이다", () => {
+    const lying = {
+      ...observed(),
+      composition: { kind: "k", verdict: "green" as const, issues: ["pane-red"] },
+    };
+    expect(resizeCompositionViolations(lying)).toContain('composition.issues=0/["pane-red"]');
+
+    const named = {
+      ...observed(),
+      composition: { kind: "k", verdict: "red" as const, issues: ["pane-red"] },
+    };
+    expect(resizeCompositionViolations(named)).toEqual([]);
   });
 
   it("계약을 지킨 관측은 위반 이름을 하나도 남기지 않는다", () => {
@@ -160,6 +194,18 @@ describe("계약을 읽는 판정면", () => {
   ])("%s 는 코어 계약과 같은 이름을 센다", (name, keys) => {
     expect(frozenKeys(name)).toEqual([...keys]);
   });
+
+  // 합성 판정은 관측 기록의 자기 자리에 실린다. 판정면이 다른 자리를 읽으면 관측면이 답한
+  // 판정은 "선언 없음"이 되고, 안 물어본 것이 통과한 것으로 보고된다.
+  it("판정면은 관측 기록의 같은 자리에서 합성 선언을 읽는다", () => {
+    const plane = readFileSync(
+      resolve("scripts/e2e/lib/hostile-resize-composition.mjs"),
+      "utf8",
+    );
+    for (const key of RESIZE_COMPOSITION_DECLARATION_KEYS) {
+      expect(plane).toContain(`observation.${key}`);
+    }
+  });
 });
 
 describe("코어가 채우는 요청면", () => {
@@ -183,6 +229,42 @@ describe("코어가 채우는 요청면", () => {
     });
     expect(observation.snapshot.windowGeometry).toEqual({ x: 0, y: 0, w: 640, h: 480 });
     expect(observation.requestedWindowGeometry).toEqual({ x: 0, y: 0, w: 1200, h: 800 });
+  });
+
+  it("관측면이 낸 합성 판정은 그 기록의 자기 자리에 그대로 실린다", () => {
+    const declared = {
+      ...observed(),
+      composition: {
+        kind: "tauri-resize-composition-sample",
+        verdict: "red" as const,
+        issues: ["pane-red"],
+        // 판정을 지탱한 평면은 어댑터의 물건이다 — 코어는 세지 않고 그대로 나른다.
+        pane: { tolerancePx: 1, matches: [] },
+      },
+    };
+    const observation = composeResizeObservation({
+      request: { kind: "step", step: 0, size: { w: 640, h: 480 }, phase: "shrink" },
+      windowGeometry: { x: 0, y: 0, w: 640, h: 480 },
+      observed: declared,
+    });
+    expect(observation.kind).toBe("tauri-resize-composition-sample");
+    expect(observation.verdict).toBe("red");
+    expect(observation.issues).toEqual(["pane-red"]);
+    expect(observation).toMatchObject({ pane: { tolerancePx: 1 } });
+    expect(observation.contractViolations).toEqual([]);
+  });
+
+  it("선언하지 않은 관측면의 자리는 비워 둔다 — green 으로 메우지 않는다", () => {
+    const silent = { ...observed() } as Record<string, unknown>;
+    delete silent.composition;
+    const observation = composeResizeObservation({
+      request: { kind: "step", step: 0, size: { w: 640, h: 480 }, phase: "shrink" },
+      windowGeometry: { x: 0, y: 0, w: 640, h: 480 },
+      observed: silent as unknown as ResizeCompositionObservation,
+    });
+    expect(observation.kind).toBeUndefined();
+    expect(observation.verdict).toBeUndefined();
+    expect(observation.contractViolations).toContain("composition=record/undefined");
   });
 
   it("baseline 은 요청면이 없다", () => {

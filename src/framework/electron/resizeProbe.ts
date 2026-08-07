@@ -15,6 +15,7 @@ import {
   electronResizeObservation,
   type ElectronObservedTarget,
 } from "./resizeObservation";
+import { combineElectronCompositionProbe } from "./compositionProbe";
 
 export interface Size2D {
   width: number;
@@ -215,7 +216,11 @@ function finiteGuestViewport(value: unknown, label: string): GuestViewport {
 export function createElectronResizeProbe(
   win: Window,
   doc: Document,
-  { timeoutMs = 2_000 }: { timeoutMs?: number } = {},
+  { timeoutMs = 2_000, now = () => Date.now() }: {
+    timeoutMs?: number;
+    /** 표본 시각. 시계도 관측면이 답하는 사실이라 이 어댑터가 든다. */
+    now?: () => number;
+  } = {},
 ): ElectronResizeProbe {
   if (!(Number.isFinite(timeoutMs) && timeoutMs > 0)) {
     throw new Error(`Electron renderer settlement timeout이 유효하지 않다: ${timeoutMs}`);
@@ -225,6 +230,9 @@ export function createElectronResizeProbe(
   let observerRevision = 0;
   let layoutSettledRevision = 0;
   let generationRevision = 0;
+  // 관측 표본의 세대. 거래 세대와 다른 축이다 — 한 거래를 여러 번 관측할 수 있고, 관측하지
+  // 않은 거래도 있을 수 있다.
+  let sampleGeneration = 0;
   let lastNative: ElectronNativeResizeReceipt | null = null;
   // 한 거래를 사이에 둔 창 사건 세대. 거래가 없던 자리(baseline)는 두 값이 같은 것이 사실이다.
   let transactionEvents = { before: 0, after: 0 };
@@ -528,7 +536,15 @@ export function createElectronResizeProbe(
       const events = request.kind === "step"
         ? transactionEvents
         : { before: layoutEventRevision, after: layoutEventRevision };
-      return electronResizeObservation({
+      sampleGeneration += 1;
+      // 판정은 방금 잰 그 표본에서만 나온다. 요청 크기도 기대값도 여기 들어오지 않으므로,
+      // 이 선언은 같은 관측과 절대 어긋날 수 없다.
+      const composition = combineElectronCompositionProbe({
+        generation: sampleGeneration,
+        sampledAtUnixMs: now(),
+        targets,
+      });
+      return { ...electronResizeObservation({
         windowLabel: currentWindowLabel(),
         scaleFactor: win.devicePixelRatio,
         eventGeneration: layoutEventRevision,
@@ -537,7 +553,7 @@ export function createElectronResizeProbe(
         transactionGeneration: lastNative?.transactionGeneration ?? 0,
         continuity: { countersBefore, countersAfter },
         targets,
-      });
+      }), composition };
     },
   };
 }

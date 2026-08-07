@@ -6,7 +6,7 @@
 // 한 평면의 값을 다른 평면에 베끼면 어긋남은 영영 관측되지 않는다.
 import {
   resizeTopologyPath,
-  type ResizeCompositionObservation,
+  type ResizeCompositionFacts,
   type ResizeCompositionParticipant,
   type ResizeContinuityCounters,
   type ResizePresentation,
@@ -91,7 +91,7 @@ function participant(
  * 비어 있는 자리를 다른 평면의 값으로 메우면 계약은 통과하고 화면은 어긋난 채로 남는다.
  * 빠진 사실은 계약 판정이 그 평면 이름으로 부른다.
  */
-export function electronResizeObservation(facts: ElectronResizeFacts): ResizeCompositionObservation {
+export function electronResizeObservation(facts: ElectronResizeFacts): ResizeCompositionFacts {
   const visible = facts.targets.filter((target) => target.visible);
   const slots: ResizeCompositionParticipant[] = [];
   const renderers: ResizeCompositionParticipant[] = [];

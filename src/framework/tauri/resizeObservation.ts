@@ -5,7 +5,7 @@
 // 호스트가 잰다. 셋을 한 원천에서 뽑으면 어긋남은 영영 관측되지 않는다.
 import {
   resizeTopologyPath,
-  type ResizeCompositionObservation,
+  type ResizeCompositionFacts,
   type ResizeCompositionParticipant,
   type ResizeContinuityCounters,
   type ResizePresentation,
@@ -84,7 +84,7 @@ function participant(
  * 단계마다 읽어 실제 표시 프레임 세대를 싣는 순간 이 대체를 걷는다. 검증: 그때 이 파일의
  * 테스트가 trace 세대를 요구하도록 바뀐다.
  */
-export function tauriResizeObservation(facts: TauriResizeFacts): ResizeCompositionObservation {
+export function tauriResizeObservation(facts: TauriResizeFacts): ResizeCompositionFacts {
   const visibleViewIds: string[] = [];
   const slots: ResizeCompositionParticipant[] = [];
   const renderers: ResizeCompositionParticipant[] = [];
@@ -165,8 +165,8 @@ export class TauriSurfaceGenerations {
  * 관측에서도 남는다.
  */
 export function countTauriResizeContinuity(
-  before: ResizeCompositionObservation | null,
-  after: ResizeCompositionObservation,
+  before: ResizeCompositionFacts | null,
+  after: ResizeCompositionFacts,
   ledger: ResizeContinuityCounters,
 ): ResizeContinuityCounters {
   let { replacements, gaps, disappearances, unpresented } = ledger;

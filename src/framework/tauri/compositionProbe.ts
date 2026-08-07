@@ -14,6 +14,24 @@ export interface PaneCompositionProbe {
   verdict: "green" | "red";
 }
 
+/**
+ * resize 한 단계가 싣는 direct 평면. 판정(verdict) 옆에 그 판정을 낸 표면 목록을 그대로 둔다 —
+ * bounds 를 누가 쓰는지(autoresizing mask·레이어 재그리기 정책)는 목록에만 있는 사실이라,
+ * 여기서 떨어뜨리면 어긋난 frame 의 소유 축을 아무도 못 읽는다.
+ */
+export interface DirectResizeCompositionPlane extends DirectCompositionProbe {
+  surfaces: readonly unknown[];
+}
+
+/**
+ * resize 한 단계가 싣는 pane 평면. 허용 오차와 대조 목록을 판정과 함께 둔다 — 어긋난 delta 를
+ * 수치로 읽으려면 그 delta 를 잰 기준이 같은 자리에 있어야 한다.
+ */
+export interface PaneResizeCompositionPlane extends PaneCompositionProbe {
+  tolerancePx: number;
+  matches: readonly unknown[];
+}
+
 export interface TitlebarCompositionProbe {
   nativeSequence: number;
   verdict: "green" | "red";
