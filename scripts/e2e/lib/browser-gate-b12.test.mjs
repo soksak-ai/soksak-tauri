@@ -122,7 +122,8 @@ function hostileResize(framework, baselineStyle) {
     const rects = rectsFor(45, viewportPhysical.w);
     return {
       step,
-      requestedOuterPhysical: { ...requestedOuterPhysical },
+      // 정본 하니스와 같은 좁힘. 단계가 선언한 phase 는 B10 의 축이라 B12 봉투에 싣지 않는다.
+      requestedOuterPhysical: { w: requestedOuterPhysical.w, h: requestedOuterPhysical.h },
       probeGeneration: 21 + step,
       titlebar: {
         presentationRevision: 14,

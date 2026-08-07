@@ -1120,19 +1120,48 @@ export function browserSurfaceInvariant({
   return { ok: errors.length === 0, errors, mappedIds: sortedMapped };
 }
 
-/** 같은 원본 크기에는 언제나 같은 급격한 왕복을 만든다. 마지막 단계는 정확한 원복이다. */
+/**
+ * 한 단계의 선언이 그 단계의 크기에 대해 참인지. 창은 이미 화면을 채운 채 시작하므로 넓힘·높임은
+ * 원본을 넘는 크기가 아니라 원본 대비 **한 축만 잘라 비율을 무너뜨리는 것**이다.
+ */
+const hostileResizePhaseHolds = {
+  shrink: (size, original) => size.w < original.w && size.h < original.h,
+  wide: (size, original) => size.w >= original.w && size.h < original.h,
+  tall: (size, original) => size.w < original.w && size.h >= original.h,
+  restore: (size, original) => size.w === original.w && size.h === original.h,
+};
+
+/**
+ * 같은 원본 크기에는 언제나 같은 급격한 왕복을 만든다. 마지막 단계는 정확한 원복이다.
+ *
+ * 각 단계는 자기 의도를 `phase`로 선언하고, 선언은 요청 크기에서 역산하지 않고 여기서 크기와
+ * 같은 자리에 붙어 다닌다.
+ *
+ * 하한(1280·900·1400·1360·940)은 판이 무너지지 않을 최소 크기다. 원본이 그 하한에 닿으면 축소
+ * 단계가 원본과 같아져 선언이 거짓이 된다 — 그때는 거짓 시퀀스를 내보내지 않고 자극 자체를
+ * 만들 수 없다고 던진다. 앱이 어긴 것이 아닌데 게이트가 앱을 red 로 부르면 안 된다.
+ */
 export function hostileWindowResizeSizes(original) {
   const w = Math.round(Number(original.w));
   const h = Math.round(Number(original.h));
-  const compact = { w: Math.max(1280, w - 720), h: Math.max(900, h - 440) };
-  const wide = { w, h: Math.max(900, h - 360) };
-  const tall = { w: Math.max(1400, w - 560), h };
-  const mid = { w: Math.max(1360, w - 420), h: Math.max(940, h - 260) };
-  const originalSize = { w, h };
-  return [
+  const compact = { w: Math.max(1280, w - 720), h: Math.max(900, h - 440), phase: "shrink" };
+  const wide = { w, h: Math.max(900, h - 360), phase: "wide" };
+  const tall = { w: Math.max(1400, w - 560), h, phase: "tall" };
+  const mid = { w: Math.max(1360, w - 420), h: Math.max(940, h - 260), phase: "shrink" };
+  const originalSize = { w, h, phase: "restore" };
+  const sizes = [
     compact, originalSize, wide, tall, compact, mid, originalSize,
     tall, wide, compact, originalSize, mid, compact, originalSize,
   ].map((size) => ({ ...size }));
+  const untruthful = sizes.filter((size) => !hostileResizePhaseHolds[size.phase](size, { w, h }));
+  if (untruthful.length > 0) {
+    throw new Error(
+      `hostile window resize 자극을 만들 수 없다 — 원본 ${w}x${h}가 작아 `
+        + `${[...new Set(untruthful.map((size) => `${size.phase}=${size.w}x${size.h}`))].join(",")}`
+        + " 단계가 자기 선언을 어긴다",
+    );
+  }
+  return sizes;
 }
 
 /** 플러그인 command 봉투의 eval 결과를 구현별 포장 차이 없이 페이지 반환값으로 푼다. */

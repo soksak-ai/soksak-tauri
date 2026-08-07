@@ -9,6 +9,11 @@ import {
   requireExactKeys,
 } from "./browser-machine-judge-support.mjs";
 
+/**
+ * 한 거래가 선언할 수 있는 의도. 이름의 **집합**이지 순서가 아니다 — B10 의 자극은
+ * "큰 크기↔작은 크기로 빠르게 왕복"이라 원본 크기로 돌아오는 단계가 시퀀스 중간에 여러 번
+ * 나오는 것이 계약이다.
+ */
 const PHASES = Object.freeze(["shrink", "wide", "tall", "restore"]);
 const RECT_KEYS = Object.freeze(["x", "y", "w", "h"]);
 const SNAPSHOT_KEYS = Object.freeze([
@@ -307,12 +312,20 @@ function requireNewPresentation(previous, current, path, failures) {
   }
 }
 
+/**
+ * 선언한 의도가 요청 크기에 대해 참인지 본다. 창은 이미 화면을 채운 채로 시작하므로 원본보다
+ * 큰 크기는 요청할 수 없다 — 넓힘·높임은 원본을 넘는 크기가 아니라 원본 대비 **한 축만 잘라
+ * 비율을 무너뜨리는 것**이다. 위치는 요청 축이 아니다(호출자는 `{w,h}`만 요청한다). 원점 복원은
+ * 마지막 거래의 관측 기하가 baseline과 완전히 같은지로 따로 판정한다.
+ */
 function phaseGeometryValid(phase, requested, baselineWindow) {
   if (!(requested && baselineWindow)) return false;
   if (phase === "shrink") return requested.w < baselineWindow.w && requested.h < baselineWindow.h;
-  if (phase === "wide") return requested.w > baselineWindow.w && requested.h < baselineWindow.h;
-  if (phase === "tall") return requested.w < baselineWindow.w && requested.h > baselineWindow.h;
-  return phase === "restore" && sameRect(requested, baselineWindow);
+  if (phase === "wide") return requested.w >= baselineWindow.w && requested.h < baselineWindow.h;
+  if (phase === "tall") return requested.w < baselineWindow.w && requested.h >= baselineWindow.h;
+  return phase === "restore"
+    && requested.w === baselineWindow.w
+    && requested.h === baselineWindow.h;
 }
 
 function geometrySignature(snapshot) {
@@ -358,6 +371,9 @@ function inspectTransaction(
   if (!PHASES.includes(transaction.phase)) {
     failures.push(`${path}.phase=known/${displayValue(transaction.phase)}`);
   }
+  // 요청 봉투는 rect 다. 호출자가 요청하는 축은 `{w,h}` 뿐이고 x/y 는 코어가 같은 표본에서
+  // 중립 창 표면에 직접 물어 얹은 native 영수증이다(`composeResizeObservation`). 그래서 위치는
+  // 요구할 수 있는 사실이고, 판정이 위치를 의도와 대조하지는 않는다.
   const requestedValid = inspectRect(
     transaction.requestedWindowGeometry,
     `${path}.requestedWindowGeometry`,
@@ -387,7 +403,14 @@ function inspectTransaction(
         transaction.requestedWindowGeometry,
         baseline.value.windowGeometry,
       )) {
-    failures.push(`${path}.requestedWindowGeometry=${transaction.phase}-hostile-geometry`);
+    failures.push(`${path}.requestedWindowGeometry=${transaction.phase}-phase-geometry`);
+  }
+  // 왕복은 매 단계가 실제로 창을 움직였을 때만 왕복이다. 직전에 관측한 크기를 그대로 다시
+  // 요청한 단계는 거래가 아니라 빈자리다.
+  if (requestedValid && previous
+      && previous.value.windowGeometry?.w === transaction.requestedWindowGeometry.w
+      && previous.value.windowGeometry?.h === transaction.requestedWindowGeometry.h) {
+    failures.push(`${path}.requestedWindowGeometry=changes-window`);
   }
   if (eventBeforeValid && previous
       && transaction.eventGenerationBefore !== previous.value.eventGeneration) {
@@ -465,6 +488,13 @@ function inspectAcknowledgedComposition(value, transactionCount, failures) {
 /**
  * 픽셀 입력 없이 공개 slot/renderer/surface frame과 유한 generation 원장만으로
  * hostile window resize의 합성 정합·presentation 연속·baseline 복원을 판정한다.
+ *
+ * 계약은 지시서 B10 절이다 — 전체 창을 큰 크기↔작은 크기로 빠르게 왕복하고, 전환 중 표면이
+ * 계속 visible 이며, 최종 기하가 초기 기하로 돌아온다. 그래서 이 판정면이 요구하는 구조는
+ * 네 가지뿐이다: 유한 거래 4개 이상, 매 거래가 실제로 창을 움직임, 네 의도(shrink·wide·tall·
+ * restore)가 각각 최소 한 번 등장, 마지막 거래가 restore 이고 그 관측 기하가 baseline 과 완전히
+ * 같음. 단계 사이의 오름차순이나 "restore 는 마지막 하나뿐"은 왕복 자체를 금지하므로 요구하지
+ * 않는다.
  */
 export function judgeB10MachineEvidence(value) {
   if (value == null) return notRunVerdict();
@@ -520,16 +550,10 @@ export function judgeB10MachineEvidence(value) {
   } else {
     let previous = baseline;
     let lastPost = null;
-    let lastRank = -1;
     const seenPhases = new Set();
     value.transactions.forEach((transaction, index) => {
       const phase = transaction?.phase;
-      const rank = PHASES.indexOf(phase);
-      if (rank >= 0) {
-        if (rank < lastRank) failures.push(`transactions[${index}].phase=ordered/${displayValue(phase)}`);
-        lastRank = Math.max(lastRank, rank);
-        seenPhases.add(phase);
-      }
+      if (PHASES.includes(phase)) seenPhases.add(phase);
       const post = inspectTransaction(
         transaction,
         index,
@@ -547,9 +571,6 @@ export function judgeB10MachineEvidence(value) {
       if (!seenPhases.has(phase)) failures.push(`phase=${phase}=missing`);
     }
     if (value.transactions.at(-1)?.phase !== "restore") failures.push("transactions.final.phase=restore");
-    if (value.transactions.slice(0, -1).some((transaction) => transaction?.phase === "restore")) {
-      failures.push("transactions.restore=final-only");
-    }
     if (baseline && lastPost
         && canonical(geometrySignature(lastPost.value))
           !== canonical(geometrySignature(baseline.value))) {
@@ -569,8 +590,9 @@ export function judgeB10MachineEvidence(value) {
   return finishMachineVerdict(
     "B10",
     failures,
-    `${value.engine}/B10:hostile>=4;generation-ordered;slot+renderer+surface=rounding-only;`
-      + "presentation=continuous;replacements=0;restore=exact;composition=acknowledged-green;"
-      + `resize<=${RESIZE_BUDGET_MS}ms`,
+    `${value.engine}/B10:hostile>=4;every-step-moves-window;`
+      + `phase=declared+matches-baseline(${PHASES.join("+")});generation-ordered;`
+      + "slot+renderer+surface=rounding-only;presentation=continuous;replacements=0;"
+      + `restore=final+exact;composition=acknowledged-green;resize<=${RESIZE_BUDGET_MS}ms`,
   );
 }

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { BROWSER_ACCEPTANCE_ENGINES } from "./browser-gate-identity.mjs";
 import { judgeB10MachineEvidence } from "./browser-gate-b10.mjs";
 import { judgeBrowserMachineGateEvidence } from "./browser-gates.mjs";
+import { hostileWindowResizeSizes } from "./browser-matrix.mjs";
 
 const IDENTITY = Object.freeze({
   framework: "tauri",
@@ -127,6 +128,90 @@ function evidence(engine = "browser", { extraWide = false } = {}) {
     transactions,
   };
 }
+
+/**
+ * 정본 하니스가 실제로 구동하는 시퀀스를 그대로 판정에 태운다. 판정면이 하니스가 만들 수 없는
+ * 모양을 요구하면 두 파일 어느 쪽을 따로 읽어도 안 보이고, 이 자리에서만 RED 로 드러난다.
+ *
+ * 원점은 요청값이 아니라 관측값이다 — macOS 창은 아래 왼쪽이 고정이라 높이가 줄면 위쪽 원점이
+ * 내려오고, 원래 크기로 돌아오면 원점도 함께 돌아온다.
+ */
+function harnessEvidence(engine = "browser") {
+  const baselineWindow = { x: 60, y: 40, w: 2_400, h: 1_600 };
+  const steps = hostileWindowResizeSizes(baselineWindow);
+  const baseline = snapshot(engine, baselineWindow, 100, 10, 20);
+  let eventGeneration = baseline.eventGeneration;
+  const transactions = steps.map((step, sequence) => {
+    const requestedWindowGeometry = {
+      x: baselineWindow.x,
+      y: baselineWindow.y + (baselineWindow.h - step.h),
+      w: step.w,
+      h: step.h,
+    };
+    const eventGenerationBefore = eventGeneration;
+    eventGeneration += 1;
+    const transactionGeneration = baseline.transactionGeneration + sequence + 1;
+    return {
+      sequence,
+      phase: step.phase ?? null,
+      requestedWindowGeometry,
+      eventGenerationBefore,
+      eventGenerationAfter: eventGeneration,
+      transactionGeneration,
+      continuity: { countersBefore: zeroCounters(), countersAfter: zeroCounters() },
+      post: snapshot(
+        engine,
+        requestedWindowGeometry,
+        eventGeneration,
+        transactionGeneration,
+        baseline.presentations[0].revision + sequence + 1,
+      ),
+    };
+  });
+  return {
+    engine,
+    resizeElapsedMs: 320,
+    acknowledgedComposition: {
+      observer: "resize-composition-sample",
+      steps: transactions.map((_, sequence) => ({ sequence, acknowledged: true, violations: [] })),
+    },
+    coordinateSpace: { logical: "css-px", physical: "device-px", scaleFactor: SCALE_FACTOR },
+    baseline,
+    transactions,
+  };
+}
+
+describe("B10 judge와 정본 하니스 시퀀스", () => {
+  it("하니스가 구동하는 왕복 시퀀스를 그대로 GREEN으로 판정한다", () => {
+    for (const engine of BROWSER_ACCEPTANCE_ENGINES) {
+      expect(judgeB10MachineEvidence(harnessEvidence(engine))).toMatchObject({
+        status: "green",
+        reason: null,
+      });
+    }
+  });
+
+  it("창을 실제로 움직이지 않는 단계는 RED다", () => {
+    const value = harnessEvidence();
+    const idle = value.transactions[1];
+    idle.phase = value.transactions[0].phase;
+    idle.requestedWindowGeometry = { ...value.transactions[0].requestedWindowGeometry };
+    idle.post.windowGeometry = { ...value.transactions[0].post.windowGeometry };
+    const receipt = judgeB10MachineEvidence(value);
+    expect(receipt.status).toBe("red");
+    expect(receipt.evidence.join(" | ")).toContain("transactions[1].requestedWindowGeometry=changes-window");
+  });
+
+  it("선언한 phase가 요청 기하와 어긋나면 RED다", () => {
+    const wide = harnessEvidence();
+    const step = wide.transactions.find((transaction) => transaction.phase === "wide");
+    step.requestedWindowGeometry.h = wide.baseline.windowGeometry.h;
+    expect(judgeB10MachineEvidence(wide).status).toBe("red");
+    const undeclared = harnessEvidence();
+    undeclared.transactions[0].phase = null;
+    expect(judgeB10MachineEvidence(undeclared).status).toBe("red");
+  });
+});
 
 describe("B10 hostile window resize machine judge", () => {
   it("세 engine에 동일한 공개 frame·generation·presentation·restore 계약을 적용한다", () => {
