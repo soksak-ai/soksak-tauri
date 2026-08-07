@@ -249,12 +249,22 @@ export function compositionObservationWindowVerdict(
       : first > endAtUnixMs ? first - endAtUnixMs : 0;
     gapMs[producer] = gap;
     const spanClock = declaredClock(span?.clock);
-    // 시계가 갈린 관측은 이 창에서 재지 못한 것이 아니라 이 창에서 잴 수 없는 것이다. 겹침도
-    // 증거가 못 된다 — 서로 다른 두 시계의 구간은 우연히 겹칠 수 있다.
-    if (windowClock === null || spanClock === null || spanClock !== windowClock) {
-      errors.push(
-        `${producer}:clock=${spanClock ?? UNDECLARED_CLOCK}/${windowClock ?? UNDECLARED_CLOCK}`,
+    // 시계가 갈린 관측은 이 창에서 잴 수 없다 — 겹침도 증거가 못 된다(서로 다른 두 시계의
+    // 구간은 우연히 겹칠 수 있다). 다만 **갈린 것과 안 밝힌 것은 다른 답**이다.
+    //
+    // 두 관측이 서로 다른 시계를 선언했으면 그 둘을 한 창에서 맞댄 것 자체가 계약 위반이다(red).
+    // 한쪽이 시계를 안 밝혔으면 맞댈 기준이 없는 것이고, 그건 못 잼이다 — 없는 사실을 red 로
+    // 세면 그 뒤 모든 표본이 어긋나 보여 고칠 자리가 수백 개로 늘어난다(실측 2026-08-08:
+    // offscreen B04 red 556 건 중 514 건이 시계 미선언의 결과였다).
+    if (windowClock === null || spanClock === null) {
+      // 어느 쪽이 안 밝혔는지를 이름에 담는다 — 고칠 자리가 관측인지 창인지 갈린다.
+      unmeasured.push(
+        `${producer}:clock-undeclared=${spanClock ?? UNDECLARED_CLOCK}/${windowClock ?? UNDECLARED_CLOCK}`,
       );
+      continue;
+    }
+    if (spanClock !== windowClock) {
+      errors.push(`${producer}:clock=${spanClock}/${windowClock}`);
       continue;
     }
     // 규칙 — 관측 증명: 창과 겹치는 표본이 하나도 없으면 "어긋났다"가 아니라 "재지 못했다"다.

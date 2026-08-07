@@ -626,12 +626,19 @@ describe("브라우저 12-gate 정본", () => {
       "transitions[1].samples:presentation:no-samples-in-window=4041568.4294433594",
     );
 
-    // 선언이 아예 없으면 그 관측은 판정 입력이 될 수 없다 — 조용한 통과가 아니라 red 다.
+    // (4) 선언이 아예 없으면 그 관측은 판정 입력이 될 수 없다 — 조용한 통과가 아니다.
+    //
+    // 정정 2026-08-08: red 로 고정하고 있었으나 갈린 시계(계약 위반)와 안 밝힌 시계(맞댈 기준
+    // 없음)는 다른 답이다. blocked 도 통과가 아니므로 기준을 낮추는 것이 아니고, 없는 사실을
+    // red 로 세면 그 뒤 모든 표본이 어긋나 보인다(실측: offscreen B04 red 556 건 중 514 건).
     const undeclared = b04Evidence();
     undeclared.transitions[0].clocks.presentation = null;
-    expect(judgeB04MachineEvidence(undeclared).evidence).toEqual(expect.arrayContaining([
-      "B04:transitions[0].samples:presentation:clock=none/unix-anchored-monotonic",
-    ]));
+    const undeclaredVerdict = judgeB04MachineEvidence(undeclared);
+    expect(undeclaredVerdict.status).toBe("blocked");
+    expect(undeclaredVerdict.status).not.toBe("green");
+    expect(undeclaredVerdict.reason).toContain(
+      "transitions[0].samples:presentation:clock-undeclared=none/unix-anchored-monotonic",
+    );
   });
 
   it("gate별 순수 판정은 evidence가 없으면 not-run, 불완전하면 red이며 visualReview와 PNG를 입력으로 받지 않는다", () => {

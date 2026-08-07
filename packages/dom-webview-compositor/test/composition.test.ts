@@ -439,13 +439,19 @@ describe("시계 선언", () => {
     expect(verdict.errors).toEqual(["renderer:clock=wall/unix-anchored-monotonic"]);
   });
 
-  it("선언 없는 시계는 판정 입력이 될 수 없다", () => {
+  // 정정 2026-08-08: 이 단언은 시계 미선언을 red 로 고정하고 있었다. 갈린 시계는 계약 위반이지만
+  // 안 밝힌 시계는 **맞댈 기준이 없는 것**이라 못 잼이다 — 같은 파일의 주석도 "이 창에서 잴 수
+  // 없는 것" 이라 적어 놓고 판정만 red 였다. 기준을 낮추는 것이 아니다: blocked 도 통과가 아니고
+  // 인수는 전 칸 green 을 요구한다. 없는 사실을 red 로 세면 그 뒤 모든 표본이 어긋나 보여
+  // 고칠 자리가 수백 개로 늘어난다(실측: offscreen B04 red 556 건 중 514 건이 그 결과였다).
+  it("선언 없는 시계는 판정 입력이 될 수 없다 — 어긋남이 아니라 못 잼이다", () => {
     const verdict = compositionObservationWindowVerdict(window, [{
       producer: "renderer",
       firstSampledAtUnixMs: 1_100,
       lastSampledAtUnixMs: 1_200,
     } as never]);
-    expect(verdict.errors).toEqual(["renderer:clock=none/unix-anchored-monotonic"]);
+    expect(verdict.errors).toEqual([]);
+    expect(verdict.unmeasured).toEqual(["renderer:clock-undeclared=none/unix-anchored-monotonic"]);
   });
 
   it("창이 자기 시계를 선언 안 하면 어느 관측도 그 창에서 판정될 수 없다", () => {
@@ -458,7 +464,9 @@ describe("시계 선언", () => {
         lastSampledAtUnixMs: 1_200,
       }],
     );
-    expect(verdict.errors).toEqual(["renderer:clock=unix-anchored-monotonic/none"]);
+    // 같은 정정 — 창이 안 밝힌 것도 맞댈 기준이 없는 것이지 어긋난 것이 아니다.
+    expect(verdict.errors).toEqual([]);
+    expect(verdict.unmeasured).toEqual(["renderer:clock-undeclared=unix-anchored-monotonic/none"]);
   });
 
   it("같은 시계를 선언한 producer 가 창에서 침묵한 것은 못 잼이다", () => {
@@ -543,5 +551,50 @@ describe("건너뜀의 주인", () => {
     const verdict = compositionTimelineVerdict(gapped("slot"));
     expect(verdict.errors.filter((error) => error.includes("skipped-display-epochs"))).toEqual([]);
     expect(verdict.unmeasured).toContain("slot:skip-owner-undeclared=2");
+  });
+});
+
+// 규칙 — 시계가 갈린 것과 시계를 안 밝힌 것은 다른 답이다.
+//
+// 두 관측이 서로 다른 시계를 **선언했으면** 그 둘을 한 창에서 맞댄 것 자체가 계약 위반이다(red).
+// 그러나 한쪽이 시계를 **안 밝혔으면** 그건 잴 수 없는 것이지 어긋난 것이 아니다 — 이 코드의
+// 주석도 "이 창에서 잴 수 없는 것" 이라 적어 놓고 판정은 red 로 넣고 있었다.
+//
+// 실측 2026-08-08: offscreen 사이드카가 시계를 안 답해 B04 가 red 556 건을 냈다. 그중 514 건은
+// 시계 미선언의 결과였다 — 시계가 안 맞으면 모든 표본이 어긋나 보인다. 없는 사실을 red 로 세면
+// 고칠 자리가 514 개로 보인다.
+describe("시계 미선언은 못 잼이다", () => {
+  const window = { startAtUnixMs: 1_000, endAtUnixMs: 1_340, clock: "unix-anchored-monotonic" };
+  const span = (clock: string | undefined) => ([{
+    producer: "presentation",
+    ...(clock === undefined ? {} : { clock }),
+    firstSampledAtUnixMs: 1_010,
+    lastSampledAtUnixMs: 1_300,
+  }] as never);
+
+  it("서로 다른 시계를 선언했으면 red 다", () => {
+    const verdict = compositionObservationWindowVerdict(window, span("media-time"));
+    expect(verdict.errors).toEqual(["presentation:clock=media-time/unix-anchored-monotonic"]);
+    expect(verdict.unmeasured).toEqual([]);
+  });
+
+  it("시계를 안 밝혔으면 못 잼이다", () => {
+    const verdict = compositionObservationWindowVerdict(window, span(undefined));
+    expect(verdict.errors).toEqual([]);
+    expect(verdict.unmeasured).toEqual(["presentation:clock-undeclared=none/unix-anchored-monotonic"]);
+  });
+
+  it("창이 시계를 안 밝혔어도 못 잼이다 — 맞댈 기준이 없다", () => {
+    const verdict = compositionObservationWindowVerdict(
+      { startAtUnixMs: 1_000, endAtUnixMs: 1_340 } as never,
+      span("unix-anchored-monotonic"),
+    );
+    expect(verdict.errors).toEqual([]);
+    expect(verdict.unmeasured).toEqual(["presentation:clock-undeclared=unix-anchored-monotonic/none"]);
+  });
+
+  it("같은 시계를 선언했으면 지금 계약 그대로다", () => {
+    const verdict = compositionObservationWindowVerdict(window, span("unix-anchored-monotonic"));
+    expect(verdict.ok).toBe(true);
   });
 });
