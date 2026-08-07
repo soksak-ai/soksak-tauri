@@ -228,21 +228,24 @@ describe("브라우저 구현 행렬", () => {
     expect(browserImplementations["browser-chromium-offscreen"].label("w-a", "tab-1")).toBe("offscreen-tab-1");
   });
 
-  it("native와 windowed는 PaneSurfaceHost의 실제 display-link producer를 공유한다", () => {
+  it("native와 windowed는 프레임워크 표시 원장의 같은 코어 이름을 부른다", () => {
     const native = browserImplementations.browser.presentationTrace;
     const windowed = browserImplementations["browser-chromium"].presentationTrace;
     expect(windowed).toBe(native);
+    // 이름에 프레임워크가 없다 — 있으면 다른 프레임워크에서 이 게이트가 통째로 안 재진다.
     expect(native).toMatchObject({
-      ownerCommand: "webview.pane.hosts",
-      armCommand: "webview.pane.presentation.trace.arm",
-      readCommand: "webview.pane.presentation.trace.close",
+      ownerCommand: "view.presentation.owners",
+      armCommand: "view.presentation.trace.arm",
+      readCommand: "view.presentation.trace.close",
     });
+    for (const command of [native.ownerCommand, native.armCommand, native.readCommand]) {
+      expect(command).not.toMatch(/tauri|electron|webview|appkit/i);
+    }
     const owners = native.resolveOwners({
       facts: {
-        hosts: [{
-          window: "w-a", logicalPaneId: "pane-left",
-          nativeHostId: "pane-w-a-view-left", viewId: "view-left", renderer: "renderer-left",
-          members: ["surface-left"],
+        owners: [{
+          window: "w-a", logicalPaneId: "pane-left", viewId: "view-left",
+          rendererId: "renderer-left", hostId: "host-w-a-view-left", surfaceId: "surface-left",
         }],
       },
       windowLabel: "w-a",
@@ -253,13 +256,13 @@ describe("브라우저 구현 행렬", () => {
     expect(owners).toEqual([{
       viewId: "view-left",
       logicalPaneId: "pane-left",
-      nativeHostId: "pane-w-a-view-left",
+      hostId: "host-w-a-view-left",
       rendererId: "renderer-left",
       surfaceId: "surface-left",
     }]);
     expect(native.armParams({ traceId: "trace-1", owners })).toEqual({
       traceId: "trace-1",
-      owners: [{ viewId: "view-left", nativeHostId: "pane-w-a-view-left", surfaceId: "surface-left" }],
+      owners: [{ viewId: "view-left", hostId: "host-w-a-view-left", surfaceId: "surface-left" }],
       maxEvents: 512,
     });
     expect(native.events({
@@ -342,15 +345,19 @@ describe("브라우저 구현 행렬", () => {
       paneIds: ["pane-left"],
       surfaceIds: ["surface-left"],
     };
-    expect(() => adapter.resolveOwners({ facts: { hosts: [] }, ...input }))
+    expect(() => adapter.resolveOwners({ facts: { owners: [] }, ...input }))
       .toThrow("owner=0/1");
-    const host = {
-      window: "w-a", logicalPaneId: "pane-left",
-      nativeHostId: "pane-w-a-view-left", viewId: "view-left", renderer: "renderer-left",
-      members: ["surface-left"],
+    const owner = {
+      window: "w-a", logicalPaneId: "pane-left", viewId: "view-left",
+      rendererId: "renderer-left", hostId: "host-w-a-view-left", surfaceId: "surface-left",
     };
-    expect(() => adapter.resolveOwners({ facts: { hosts: [host, { ...host }] }, ...input }))
+    expect(() => adapter.resolveOwners({ facts: { owners: [owner, { ...owner }] }, ...input }))
       .toThrow("owner=2/1");
+    // 묶였는데 identity 가 빈 owner 는 부재가 아니라 깨진 join 이다 — 추측으로 메우지 않는다.
+    expect(() => adapter.resolveOwners({
+      facts: { owners: [{ ...owner, rendererId: "" }] },
+      ...input,
+    })).toThrow("renderer identity");
   });
 
   it("B04는 actual DOM presentation frame을 같은 시각의 native surface에 결합한다", () => {

@@ -3,38 +3,44 @@ import { sameRect } from "../../../packages/dom-webview-compositor/src/index.ts"
 import { B04_JOURNAL_ENTRY_KEYS } from "./browser-gates.mjs";
 export { layoutTransactionVerdict } from "./layout-transaction-verdict.mjs";
 
-const PANE_PRESENTATION_TRACE = Object.freeze({
-  ownerCommand: "webview.pane.hosts",
+/**
+ * 프레임워크의 표시 원장 — **이름은 코어 계약이다**(src/framework/presentationLedger.ts).
+ *
+ * 한때 이 자리는 한 프레임워크의 이름 공간(webview.pane.*)을 불렀고, 그래서 다른 프레임워크
+ * 에서는 B04·B05 가 한 칸도 측정되지 않았다. 부재가 결함으로 안 보이고 "원래 없는 게이트"로
+ * 보이는 것이 그 값이다. 하니스는 어느 어댑터가 답하는지 묻지 않는다.
+ */
+const FRAMEWORK_PRESENTATION_TRACE = Object.freeze({
+  ownerCommand: "view.presentation.owners",
   ownerParams: () => ({}),
-  armCommand: "webview.pane.presentation.trace.arm",
-  readCommand: "webview.pane.presentation.trace.close",
+  armCommand: "view.presentation.trace.arm",
+  readCommand: "view.presentation.trace.close",
   resolveOwners({ facts, windowLabel, viewIds, paneIds, surfaceIds }) {
     return viewIds.map((viewId, index) => {
       const surfaceId = surfaceIds[index];
-      const candidates = (facts?.hosts ?? []).filter((host) =>
-        host?.window === windowLabel
-        && host?.logicalPaneId === paneIds[index]
-        && host?.viewId === viewId
-        && Array.isArray(host?.members)
-        && host.members.includes(surfaceId));
+      const candidates = (facts?.owners ?? []).filter((owner) =>
+        owner?.window === windowLabel
+        && owner?.logicalPaneId === paneIds[index]
+        && owner?.viewId === viewId
+        && owner?.surfaceId === surfaceId);
       if (candidates.length !== 1) {
         throw new Error(
-          `${viewId}: pane presentation owner=${candidates.length}/1 `
+          `${viewId}: presentation owner=${candidates.length}/1 `
           + `pane=${paneIds[index]} surface=${surfaceId}`,
         );
       }
-      const host = candidates[0];
-      if (typeof host.nativeHostId !== "string" || host.nativeHostId.length === 0) {
-        throw new Error(`${viewId}: pane presentation nativeHostId가 비었습니다`);
+      const owner = candidates[0];
+      if (typeof owner.hostId !== "string" || owner.hostId.length === 0) {
+        throw new Error(`${viewId}: presentation hostId가 비었습니다`);
       }
-      if (typeof host.renderer !== "string" || host.renderer.length === 0) {
-        throw new Error(`${viewId}: pane presentation renderer identity가 비었습니다`);
+      if (typeof owner.rendererId !== "string" || owner.rendererId.length === 0) {
+        throw new Error(`${viewId}: presentation renderer identity가 비었습니다`);
       }
       return Object.freeze({
         viewId,
-        logicalPaneId: host.logicalPaneId,
-        nativeHostId: host.nativeHostId,
-        rendererId: host.renderer,
+        logicalPaneId: owner.logicalPaneId,
+        hostId: owner.hostId,
+        rendererId: owner.rendererId,
         surfaceId,
       });
     });
@@ -42,9 +48,7 @@ const PANE_PRESENTATION_TRACE = Object.freeze({
   armParams({ traceId, owners }) {
     return {
       traceId,
-      owners: owners.map(({ viewId, nativeHostId, surfaceId }) => ({
-        viewId, nativeHostId, surfaceId,
-      })),
+      owners: owners.map(({ viewId, hostId, surfaceId }) => ({ viewId, hostId, surfaceId })),
       maxEvents: 512,
     };
   },
@@ -59,7 +63,7 @@ const PANE_PRESENTATION_TRACE = Object.freeze({
     );
     if (receipt?.closed !== true || violationTotal !== 0) {
       throw new Error(
-        `${targetViewId}: pane presentation trace가 깨졌습니다 `
+        `${targetViewId}: presentation trace가 깨졌습니다 `
         + `closed=${String(receipt?.closed)} violations=${JSON.stringify(violations)}`,
       );
     }
@@ -472,13 +476,13 @@ export const browserImplementations = Object.freeze({
     plugin: "soksak-plugin-browser-native",
     surface: "framework-native",
     label: (windowLabel, viewId) => `b-${windowLabel}-${viewId}`,
-    presentationTrace: PANE_PRESENTATION_TRACE,
+    presentationTrace: FRAMEWORK_PRESENTATION_TRACE,
   }),
   "browser-chromium": Object.freeze({
     plugin: "soksak-plugin-browser-chromium",
     surface: "engine-windowed",
     label: (_windowLabel, viewId) => `chromium-${viewId}`,
-    presentationTrace: PANE_PRESENTATION_TRACE,
+    presentationTrace: FRAMEWORK_PRESENTATION_TRACE,
   }),
   "browser-chromium-offscreen": Object.freeze({
     plugin: "soksak-plugin-browser-chromium-offscreen",
