@@ -10,6 +10,7 @@ import {
   hasContentViewHost,
 } from "../lib/contentViews";
 import { pluginViewPresentationHost } from "../plugins/viewPresentationHost";
+import { presentationNowUnixMs } from "../lib/presentationClock";
 
 type NamedAnimation = Animation & { animationName?: string };
 
@@ -54,10 +55,16 @@ export function layoutSettlementStatus(settlementKey?: string) {
 /**
  * 레이아웃 거래가 닫히는 에지를 기다린다. 표본 조회나 interval은 없다. 레이아웃 상태 에지와
  * Web Animations finished promise만 소비하며 timeout은 결함 시 명령을 영구 점유하지 않는 상한이다.
+ *
+ * 영수증은 정착 epoch(presentation clock — 배치 장부·native display 원장과 같은 축)와
+ * 표면 주인의 확인 여부를 함께 답한다. 호출자가 자기 시계로 정착 시각을 대신 찍으면 그 값은
+ * RPC 왕복까지 포함한 다른 사실이 된다.
  */
 export function waitLayoutSettled(timeoutMs = 4_000, settlementKey?: string): Promise<{
   waitedMs: number;
   animations: number;
+  settledAtUnixMs: number;
+  syncPending: boolean;
 }> {
   const started = performance.now();
   return new Promise((resolve, reject) => {
@@ -76,7 +83,16 @@ export function waitLayoutSettled(timeoutMs = 4_000, settlementKey?: string): Pr
       unsubscribe();
       unsubscribeSettlement();
       if (error) reject(error);
-      else resolve({ waitedMs: Math.round(performance.now() - started), animations: generation });
+      // syncPending은 "표면 주인이 이 정착을 확인했는가"다. DOM만 조용해지고 아무 표면
+      // 주인도 확인하지 않은 상태를 false로 답하면 "모른다"가 "동기화 끝났다"로 둔갑한다.
+      else {
+        resolve({
+          waitedMs: Math.round(performance.now() - started),
+          animations: generation,
+          settledAtUnixMs: presentationNowUnixMs(),
+          syncPending: !presentationSettled,
+        });
+      }
     };
 
     const inspect = () => {
