@@ -1213,6 +1213,20 @@
       "note": "냉시작 3회 판정이 정본 36칸의 B12 칸까지 실려 가고, 살아 있는 앱이 낸 11칸과 한 판으로 병합되는지 값으로 고정한다. 앱도 파일도 쓰지 않는다."
     },
     {
+      "file": "lib/unanswered.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "원장이 안 답한 자리를 한 자리에서 판별한다. 틀린 값은 답한 것이므로 red 로 남고, 안 답함으로 도피하지 않는다."
+    },
+    {
+      "file": "lib/unanswered.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "안 답함 판별 규칙을 고정한다 — 전부 빈 사각형은 안 답한 것이고 일부만 빈 것은 잘못 답한 것이다."
+    },
+    {
       "file": "lib/visual-recording-review.mjs",
       "role": "lib",
       "class": "A",

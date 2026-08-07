@@ -1,3 +1,4 @@
+import { isUnanswered } from "./unanswered.mjs";
 import {
   displayValue,
   engineSet,
@@ -69,9 +70,9 @@ function inspectSurface(surface, path, failures, unmeasured) {
   ], path, failures)) return false;
   // 안 답한 자리와 틀린 값은 다른 답이다 — 자기 궤적을 가진 구현은 이 자리를 다 채우지 못할
   // 수 있고, 계약이 null 로 두는 것은 지어내지 않기 위해서다.
-  if (surface.viewId === null) unmeasured.push(`${path}.viewId-unanswered`);
+  if (isUnanswered(surface.viewId)) unmeasured.push(`${path}.viewId-unanswered`);
   else if (!hasText(surface.viewId)) failures.push(`${path}.viewId=non-empty/${displayValue(surface.viewId)}`);
-  if (surface.surfaceId === null) unmeasured.push(`${path}.surfaceId-unanswered`);
+  if (isUnanswered(surface.surfaceId)) unmeasured.push(`${path}.surfaceId-unanswered`);
   else if (!hasText(surface.surfaceId)) failures.push(`${path}.surfaceId=non-empty/${displayValue(surface.surfaceId)}`);
   if (!Number.isInteger(surface.generation) || surface.generation < 1) {
     failures.push(`${path}.generation=integer>=1/${displayValue(surface.generation)}`);
@@ -81,8 +82,7 @@ function inspectSurface(surface, path, failures, unmeasured) {
   }
   // 안 답한 사각형은 못 잼이다 — 그 자리로 좌표를 맞대면 없는 사실이 어긋남으로 번진다.
   // 사각형이 있어도 그 안이 비어 있으면 안 답한 것이다 — 껍데기만 보면 null 필드가 red 로 샌다.
-  const domUnanswered = surface.domFrame == null
-    || ["x", "y", "w", "h"].every((axis) => surface.domFrame?.[axis] == null);
+  const domUnanswered = isUnanswered(surface.domFrame, ["x", "y", "w", "h"]);
   if (domUnanswered) unmeasured.push(`${path}.domFrame-unanswered`);
   const domValid = !domUnanswered && inspectRect(surface.domFrame, `${path}.domFrame`, failures);
   const surfaceValid = inspectRect(surface.surfaceFrame, `${path}.surfaceFrame`, failures);
@@ -108,7 +108,7 @@ function inspectInventory(surfaces, owners, path, failures, unmeasured) {
     if (!inspectSurface(surface, at, failures, unmeasured)) return;
     // 안 답한 정체로 유일성을 재면 안 답한 둘이 "중복" 이 된다 — 원인은 이미 이름을 냈으므로
     // 그 위에 증상을 겹쳐 적지 않는다.
-    if (surface.viewId == null) return;
+    if (isUnanswered(surface.viewId)) return;
     if (byOwner.has(surface.viewId)) failures.push(`${at}.viewId=unique/${surface.viewId}`);
     else byOwner.set(surface.viewId, surface);
   });
@@ -158,9 +158,9 @@ function inspectTransition(transition, index, failures, unmeasured, traceIds) {
   // 안 답한 자리(null)와 틀린 값은 다른 답이다. 자기 궤적을 가진 구현은 코어 원장이 답하는 값을
   // 다 답하지 못할 수 있고, 계약이 그 자리를 null 로 두는 것은 지어내지 않기 위해서다 — 그
   // null 을 "틀린 값" 으로 읽으면 없는 사실이 red 가 된다. 답했는데 틀리면 여전히 red 다.
-  if (trace.closed === null) unmeasured.push(`${path}.trace.closed-unanswered`);
+  if (isUnanswered(trace.closed)) unmeasured.push(`${path}.trace.closed-unanswered`);
   else if (trace.closed !== true) failures.push(`${path}.trace.closed=true/${displayValue(trace.closed)}`);
-  if (trace.armedAtUnixMs === null) unmeasured.push(`${path}.trace.armedAtUnixMs-unanswered`);
+  if (isUnanswered(trace.armedAtUnixMs)) unmeasured.push(`${path}.trace.armedAtUnixMs-unanswered`);
   else if (!Number.isFinite(trace.armedAtUnixMs)) {
     failures.push(`${path}.trace.armedAtUnixMs=finite/${displayValue(trace.armedAtUnixMs)}`);
   }
@@ -233,7 +233,7 @@ function inspectTransition(transition, index, failures, unmeasured, traceIds) {
     ]) {
       // 안 답한 자리와 틀린 값은 다른 답이다 — 자기 궤적을 가진 구현은 이 필드들을 다 내지
       // 못할 수 있고, 계약이 null 로 두는 것은 지어내지 않기 위해서다.
-      if (event[field] === null) unmeasured.push(`${at}.${field}-unanswered`);
+      if (isUnanswered(event[field])) unmeasured.push(`${at}.${field}-unanswered`);
       else if (!Number.isFinite(event[field])) failures.push(`${at}.${field}=finite/${displayValue(event[field])}`);
     }
     if (Number.isFinite(event.displayTimestampUnixMs)
@@ -258,6 +258,10 @@ function inspectTransition(transition, index, failures, unmeasured, traceIds) {
     eventBySequence.set(event.sequence, { event, inventory });
   });
 
+  if (isUnanswered(trace.baselineFrameSequence)) {
+    unmeasured.push(`${path}.trace.baselineFrameSequence-unanswered`);
+    return;
+  }
   if (!Number.isInteger(trace.baselineFrameSequence) || !eventBySequence.has(trace.baselineFrameSequence)) {
     failures.push(`${path}.trace.baselineFrameSequence=event/${displayValue(trace.baselineFrameSequence)}`);
   }
@@ -266,7 +270,7 @@ function inspectTransition(transition, index, failures, unmeasured, traceIds) {
   // 냈으므로 그 위에 증상을 겹쳐 적지 않는다.
   if (declaredClocks === null) return;
   // 안 답한 값으로 순서를 비교하면 없는 사실이 증상으로 번진다 — 원인은 위에서 이름을 냈다.
-  if (trace.armedAtUnixMs === null) return;
+  if (isUnanswered(trace.armedAtUnixMs)) return;
   const postClickEvents = trace.presentationEvents.filter((event) => event.presentedAtUnixMs >= trace.stimulus.atUnixMs);
   if (!baseline || !(trace.armedAtUnixMs <= baseline.presentedAtUnixMs
       && baseline.presentedAtUnixMs <= trace.stimulus.atUnixMs)) {
