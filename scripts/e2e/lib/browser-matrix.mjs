@@ -296,7 +296,10 @@ export function mapB04PresentationSamples({
   // it reads the real DOM rect after the state commit, without interpolation
   // or a timer. Prefer display-frame samples when available, otherwise join
   // the native producer to this exact commit sample.
-  const presentationSamples = frameSamples.length > 0 ? frameSamples : commitSamples;
+  // Keep the commit boundary as well as the final frame. Native events during
+  // the glide must join the real DOM start and real DOM end; using only the
+  // final sample would manufacture a large false gap at the first frame.
+  const presentationSamples = [...commitSamples, ...frameSamples];
   if (presentationSamples.length === 0) {
     throw new Error(`${targetViewId}: DOM presentation boundary sample=0`);
   }
