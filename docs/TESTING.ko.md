@@ -151,7 +151,10 @@ ACK와 선언한 출발이 모두 지난 뒤에 닫는다. 그래서 glide의 `s
 증거는 `~/.soksak-e2e/evidence/titlebar-composition/<run-id>/<cycle>/` 아래에 저장하며 `run.json`이 세 cycle을 닫은 집계 판정이다. 기계 판정은 공개 DOM/AppKit 사각형과 시작 영수증만 사용한다. 저장된 스크린샷과 유한 녹화는 필수 육안 검사 증거이지만 PASS/FAIL 근거로 사용하지 않는다.
 
 각 engine×gate의 machine 상태는 `not-applicable`, `not-run`, `blocked`, `red`, `green` 중 하나다. `green`과 `red`는
-기계가 재현한 근거가 필수이고, `blocked`는 누락된 공개 측정면 같은 구체적 이유가 필수다. `blocked`나
+기계가 재현한 근거가 필수이고, `blocked`는 구체적 이유가 필수다. 그 이유는 세 갈래다 — 공개 측정면이
+없거나(능력 부재), 이 실행이 그 축을 못 쟀거나(무장 실패 같은 실측 한계), 잰 값의 주인을 가를 수
+없거나(관측자가 콜백을 놓쳤다고 스스로 답한 경우). 세 갈래 모두 "재보니 어긋났다"가 아니라 "못
+쟀다"이며, 잰 어긋남만 `red`다. `blocked`나
 `not-run`을 성공으로 세지 않는다. `not-applicable`은 정적 catalog 조건이거나, 그 칸이 선언한 요구를
 판정 대상이 채우지 못할 때만 required 개수에서 제외한다 — 칸이 자기 요구를 선언하고(`requires`)
 대상이 선언한 능력과 만난다. 예: B09는 native browser surface 위 합성을 요구하므로 네이티브 자식

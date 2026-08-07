@@ -179,8 +179,11 @@ Each window is measured at 30, 60, and 72 CSS px through public commands, then r
 Evidence is stored below `~/.soksak-e2e/evidence/titlebar-composition/<run-id>/<cycle>/`; `run.json` is the closed three-cycle verdict. Machine verdicts use public DOM/AppKit rectangles and startup receipts. Stored screenshots and finite recordings are mandatory human inspection evidence but never determine PASS/FAIL.
 
 Each engine×gate machine state is one of `not-applicable`, `not-run`, `blocked`, `red`, or `green`. `green` and
-`red` require machine-reproduced evidence; `blocked` requires a concrete reason such as a missing
-public measurement surface. Neither `blocked` nor `not-run` counts as success. `not-applicable`
+`red` require machine-reproduced evidence; `blocked` requires a concrete reason. That reason has three
+shapes — the public measurement surface is absent (capability), this run could not measure the axis
+(an arming failure or similar live limit), or the gap has no attributable owner (the observer itself
+reported missed callbacks). All three mean "could not measure", not "measured a mismatch"; only a
+measured mismatch is `red`. Neither `blocked` nor `not-run` counts as success. `not-applicable`
 is excluded from the required count and is valid only for the static catalog condition above or when
 the judged target does not meet a requirement the cell declares. A cell declares what it needs
 (`requires`) and meets the capability the target declared. B09 requires composition above a native
