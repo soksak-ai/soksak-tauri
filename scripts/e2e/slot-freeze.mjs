@@ -1737,7 +1737,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
       }
       await writeMachineReport(
         path.join(fastResizeDir, "composition-samples.json"),
-        fastResize.samples ?? [],
+        { baseline: fastResize.baseline ?? null, samples: fastResize.samples ?? [] },
       );
       if (frameworkName === "tauri") {
         const redSamples = (fastResize.samples ?? []).filter((sample) => sample.observation?.verdict !== "green");

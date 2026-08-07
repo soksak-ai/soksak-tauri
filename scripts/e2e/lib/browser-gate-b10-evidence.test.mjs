@@ -62,8 +62,8 @@ function raw() {
   return {
     engine: "browser",
     scaleFactor,
-    baseline,
     resizeSequence: {
+      baseline: { status: "observed", observation: { snapshot: baseline } },
       samples: requests.map(([phase, requestedWindowGeometry], sequence) => {
         const eventGenerationBefore = generation;
         generation += 1;
@@ -94,6 +94,23 @@ function raw() {
 describe("B10 live evidence mapper", () => {
   it("closes baseline and every finite resize observation into transactions", () => {
     expect(judgeB10MachineEvidence(mapB10LiveEvidence(raw())).status).toBe("green");
+  });
+
+  it("reads the baseline from the same resize command that produced the samples", () => {
+    const value = raw();
+    const evidence = mapB10LiveEvidence(value);
+    expect(evidence.baseline.windowGeometry).toEqual({ x: 0, y: 0, w: 800, h: 600 });
+    expect(evidence.baseline.eventGeneration).toBe(10);
+    expect(evidence.baseline.transactionGeneration).toBe(20);
+  });
+
+  it("leaves the baseline null when the command could not observe before the first resize", () => {
+    const value = raw();
+    value.resizeSequence.baseline = { status: "unavailable", reason: "no settled transaction" };
+    const evidence = mapB10LiveEvidence(value);
+    expect(evidence.baseline.windowGeometry).toEqual({ x: null, y: null, w: null, h: null });
+    expect(evidence.baseline.eventGeneration).toBeNull();
+    expect(judgeB10MachineEvidence(evidence).status).toBe("red");
   });
 
   it("does not substitute requested size for a missing observed window geometry", () => {

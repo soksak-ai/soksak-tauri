@@ -91,13 +91,14 @@ describe("window resize sequence", () => {
       record: { dir: "/evidence/resize", frames: 20, intervalMs: 16 },
       recordFrames: vi.fn(() => recording),
       setSize: vi.fn(async (w, h) => { order.push(`size:${w}x${h}`); }),
-      observe: vi.fn(async (step) => {
-        order.push(`observe:${step}`);
-        return { step };
+      observe: vi.fn(async (request) => {
+        order.push(request.kind === "baseline" ? "observe:baseline" : `observe:${request.step}`);
+        return { request };
       }),
     });
 
     expect(order).toEqual([
+      "observe:baseline",
       "size:800x600",
       "observe:0",
       "size:1400x900",
@@ -198,12 +199,107 @@ describe("window resize sequence", () => {
       sizes: [{ w: 900, h: 700 }, { w: 1500, h: 900 }],
       intervalMs: 0,
       setSize: vi.fn(async (w, h) => { current = `${w}x${h}`; }),
-      observe: vi.fn(async (step) => ({ step, current })),
+      observe: vi.fn(async (request) => ({ request, current })),
       recordFrames: vi.fn() as never,
     });
     expect(result.samples).toEqual([
-      { step: 0, size: { w: 900, h: 700 }, observation: { step: 0, current: "900x700" } },
-      { step: 1, size: { w: 1500, h: 900 }, observation: { step: 1, current: "1500x900" } },
+      {
+        step: 0,
+        size: { w: 900, h: 700 },
+        observation: { request: { kind: "step", step: 0, size: { w: 900, h: 700 } }, current: "900x700" },
+      },
+      {
+        step: 1,
+        size: { w: 1500, h: 900 },
+        observation: { request: { kind: "step", step: 1, size: { w: 1500, h: 900 } }, current: "1500x900" },
+      },
     ]);
+  });
+
+  it("첫 native resize 전에 같은 관측면으로 baseline을 세운다", async () => {
+    const order: string[] = [];
+    let current = "pre-resize";
+    const observe = vi.fn(async (request: { kind: string; step?: number }) => {
+      order.push(request.kind === "baseline" ? "observe:baseline" : `observe:${request.step}`);
+      return { current };
+    });
+
+    const result = await runWindowResizeSequence({
+      sizes: [{ w: 900, h: 700 }, { w: 1500, h: 900 }],
+      intervalMs: 0,
+      setSize: vi.fn(async (w, h) => { current = `${w}x${h}`; order.push(`size:${w}x${h}`); }),
+      observe,
+      recordFrames: vi.fn() as never,
+    });
+
+    expect(order).toEqual([
+      "observe:baseline",
+      "size:900x700",
+      "observe:0",
+      "size:1500x900",
+      "observe:1",
+    ]);
+    expect(result.baseline).toEqual({
+      status: "observed",
+      observation: { current: "pre-resize" },
+    });
+  });
+
+  it("baseline 관측을 거절당해도 유한 resize 거래를 취소하지 않고 사유를 남긴다", async () => {
+    const order: string[] = [];
+    const result = await runWindowResizeSequence({
+      sizes: [{ w: 900, h: 700 }, { w: 1500, h: 900 }],
+      intervalMs: 0,
+      setSize: vi.fn(async (w, h) => { order.push(`size:${w}x${h}`); }),
+      observe: vi.fn(async (request) => {
+        if (request.kind === "baseline") throw new Error("정착한 native resize 거래가 아직 없다");
+        order.push(`observe:${request.step}`);
+        return { step: request.step };
+      }),
+      recordFrames: vi.fn() as never,
+    });
+
+    expect(order).toEqual(["size:900x700", "observe:0", "size:1500x900", "observe:1"]);
+    expect(result.samples).toHaveLength(2);
+    expect(result.baseline).toEqual({
+      status: "unavailable",
+      reason: "정착한 native resize 거래가 아직 없다",
+    });
+  });
+
+  it("단계 관측 실패는 거래를 계속하지 않고 그대로 드러낸다", async () => {
+    await expect(runWindowResizeSequence({
+      sizes: [{ w: 900, h: 700 }, { w: 1500, h: 900 }],
+      intervalMs: 0,
+      setSize: vi.fn(async () => {}),
+      observe: vi.fn(async (request) => {
+        if (request.kind === "step") throw new Error("step observation failed");
+        return {};
+      }),
+      recordFrames: vi.fn() as never,
+    })).rejects.toThrow("step observation failed");
+  });
+
+  it("baseline 요청은 어떤 요청 크기도 관측면에 넘기지 않는다", async () => {
+    const observe = vi.fn(async () => ({}));
+    await runWindowResizeSequence({
+      sizes: [{ w: 900, h: 700 }],
+      intervalMs: 0,
+      setSize: vi.fn(async () => {}),
+      observe,
+      recordFrames: vi.fn() as never,
+    });
+    expect(observe).toHaveBeenNthCalledWith(1, { kind: "baseline" });
+  });
+
+  it("관측면이 없으면 baseline을 지어내지 않고 안 읽었다고 답한다", async () => {
+    const result = await runWindowResizeSequence({
+      sizes: [{ w: 900, h: 700 }],
+      intervalMs: 0,
+      setSize: vi.fn(async () => {}),
+      recordFrames: vi.fn() as never,
+    });
+    expect(result.baseline).toEqual({ status: "not-observed" });
+    expect(result.samples).toEqual([]);
   });
 });

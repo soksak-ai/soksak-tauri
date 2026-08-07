@@ -73,8 +73,13 @@ function transaction(sample) {
   };
 }
 
-/** Maps one finite resize command's acknowledged observations without using requested sizes as facts. */
+/**
+ * Maps one finite resize command's acknowledged observations without using requested sizes as facts.
+ * The baseline is the same command's pre-resize observation, read from the same envelope and the
+ * same `snapshot` plane as every step; a missing one stays null instead of being reconstructed.
+ */
 export function mapB10LiveEvidence(raw = {}) {
+  const sequence = field(raw, "resizeSequence");
   return {
     engine: field(raw, "engine"),
     coordinateSpace: {
@@ -82,9 +87,9 @@ export function mapB10LiveEvidence(raw = {}) {
       physical: "device-px",
       scaleFactor: field(raw, "scaleFactor"),
     },
-    baseline: snapshot(field(raw, "baseline")),
-    transactions: Array.isArray(raw?.resizeSequence?.samples)
-      ? raw.resizeSequence.samples.map(transaction)
+    baseline: snapshot(field(field(field(sequence, "baseline"), "observation"), "snapshot")),
+    transactions: Array.isArray(sequence?.samples)
+      ? sequence.samples.map(transaction)
       : null,
   };
 }
