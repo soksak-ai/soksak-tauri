@@ -46,4 +46,42 @@ describe("B03 live evidence mapper", () => {
     expect(evidence.surfaces[0].topologyPath).toBeNull();
     expect(judgeB03MachineEvidence(evidence).status).toBe("red");
   });
+
+  it("names a drifted checkpoint field on both sides instead of mapping it to null", () => {
+    const value = raw();
+    value.surfaceLedger = value.surfaceReceipts;
+    delete value.surfaceReceipts;
+    const verdict = judgeB03MachineEvidence(mapB03LiveEvidence(value));
+    expect(verdict.status).toBe("red");
+    expect(verdict.evidence).toContain("B03:wiring.B03.live.surfaceLedger=produced-not-consumed");
+    expect(verdict.evidence).toContain("B03:wiring.B03.live.surfaceReceipts=consumed-not-produced");
+  });
+
+  it("names a checkpoint field that throws instead of killing the harness", () => {
+    const value = raw();
+    Object.defineProperty(value, "engine", {
+      enumerable: true,
+      get() {
+        throw new TypeError("engine checkpoint read failed");
+      },
+    });
+    let verdict;
+    expect(() => {
+      verdict = judgeB03MachineEvidence(mapB03LiveEvidence(value));
+    }).not.toThrow();
+    expect(verdict.status).toBe("red");
+    expect(verdict.evidence).toContain(
+      'B03:wiring.B03.live=mapper-threw/"TypeError: engine checkpoint read failed"',
+    );
+  });
+
+  it("records a clean wiring ledger on the green path", () => {
+    const evidence = mapB03LiveEvidence(raw());
+    expect(evidence.evidenceWiring).toEqual({
+      source: "B03.live",
+      unconsumed: [],
+      unproduced: [],
+      error: null,
+    });
+  });
 });
