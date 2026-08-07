@@ -13,7 +13,8 @@ export function mapImeObservation(value, focus = null) {
       // 창이 답하는 이름은 activeTabId 다 — activeElement 는 그 안의 요소 모양만 답한다.
       // 필드를 지어내면 두 탭이 나란히 null 을 답하고 판정은 "아무도 안 밝혔다" 로 읽는다.
       owner: focus?.activeTabId ?? null,
-      self: focus?.activeTabId != null && focus.activeTabId === focus?.requestedTabId,
+      // 이 관측이 어느 탭에서 났는지는 부르는 쪽이 안다 — 창은 "지금 누가 쥐었나" 만 답한다.
+      self: focus?.activeTabId != null && focus.activeTabId === (value?.tabId ?? null),
     },
     ledger: {
       beforeInput: value?.ledger?.beforeInput ?? null,

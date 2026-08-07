@@ -880,8 +880,11 @@ async function verifyIme(rpc, win, plugin, tabId, text) {
   // 창 하나에 입력 responder 는 하나다 — 그 사실은 탭이 아니라 창이 안다. 코어가 공개면으로
   // 답하므로(`ui.focus.state`) 여기서 물어 관측에 싣는다. 탭이 스스로 답한 값만 모으면 두 탭이
   // 서로 다른 소유자를 말해도 판정이 그것을 못 본다.
-  const focus = await rpc("ui.focus.state", { viewId: tabId }, win);
-  return mapImeObservation(value, focus?.ok === true ? focus.data : null);
+  // 이 명령은 인자를 받지 않는다(params: {}) — 창 하나의 사실이라 "어느 뷰를 볼지" 를 묻지
+  // 않는다. 지어낸 인자를 넘기면 INVALID_PARAMS 로 거절당하고, 그 거절이 "아무도 안 밝혔다" 로
+  // 접힌다(실측 2026-08-08: 두 탭이 나란히 null 을 답해 B02 가 red 였다).
+  const focus = await rpc("ui.focus.state", {}, win);
+  return mapImeObservation({ ...value, tabId }, focus?.ok === true ? focus.data : null);
 }
 
 async function verifyScrollInput(rpc, win, plugin, tabId, evidencePath) {
@@ -1177,6 +1180,13 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
     for (let index = 0; index < tabIds.length; index += 1) {
       const tabId = tabIds[index];
       must(await rpc("tab.activate", { tab: tabId }, win), `tab.activate ${tabId}`);
+      // 활성화는 이 탭이 앞에 섰다는 사실이지 그 문서가 붙었다는 사실이 아니다. 입력할 요소를
+      // 기다린 뒤에 입력한다 — sentinel 경로는 이미 그렇게 한다(dom.wait-for). 실측
+      // 2026-08-08: browser-chromium 만 이 자리에서 `selector 매칭 없음` 으로 죽어 12칸을
+      // 통째로 잃었고, 같은 실패가 두 실행에서 재현됐다.
+      must(await rpc(`plugin.${plugin}.dom.wait-for`, {
+        selector: "#ime", timeoutMs: 8_000, viewId: tabId,
+      }, win, { timeoutMs: 30_000 }), `IME 요소 대기 ${tabId}`);
       imeEvidence[index].phases.initial = await verifyIme(rpc, win, plugin, tabId, IME_TEXTS[index]);
       if (SCENARIOS.has("scroll")) {
         const scroll = await verifyScrollInput(

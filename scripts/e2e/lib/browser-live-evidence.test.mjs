@@ -120,15 +120,15 @@ describe("live browser evidence mappers", () => {
 // 틀렸다.
 describe("포커스 소유는 창이 답한 이름에서 읽는다", () => {
   it("activeTabId 를 소유자로 읽는다", () => {
-    const mapped = mapImeObservation({ value: "가", active: true }, {
+    // 이 관측이 어느 탭에서 났는지는 부르는 쪽이 안다 — 창은 "지금 누가 쥐었나" 만 답한다.
+    const mapped = mapImeObservation({ value: "가", active: true, tabId: "tab-a" }, {
       activeTabId: "tab-a",
-      requestedTabId: "tab-a",
     });
     expect(mapped.inputFocus).toEqual({ owner: "tab-a", self: true });
   });
 
   it("요청한 탭이 아니면 self 가 아니다 — 창의 소유자는 여전히 하나다", () => {
-    const mapped = mapImeObservation({}, { activeTabId: "tab-a", requestedTabId: "tab-b" });
+    const mapped = mapImeObservation({ tabId: "tab-b" }, { activeTabId: "tab-a" });
     expect(mapped.inputFocus).toEqual({ owner: "tab-a", self: false });
   });
 
