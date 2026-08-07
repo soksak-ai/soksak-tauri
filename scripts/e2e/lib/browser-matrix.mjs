@@ -320,6 +320,8 @@ export function mapB04PresentationSamples({
     frame,
   });
   const joins = [];
+  // 결합이 원장에서 뒤로 간 자리. 이름으로 세고, 그 표본은 빼지 않는다.
+  const domSequenceRegressions = [];
   let priorDomSequence = -1;
   let priorPresentationAt = -Infinity;
   const allSamples = events.map((event, index) => {
@@ -343,8 +345,23 @@ export function mapB04PresentationSamples({
     const domAt = domSample?.sampledAtUnixMs;
     const gapMs = Math.abs(domAt - presentationAt);
     const domSequence = domSample?.sequence;
-    if (!Number.isInteger(domSequence) || domSequence < priorDomSequence) {
-      throw new Error(`${targetViewId}: DOM pair sequence[${index}]=${domSequence}/${priorDomSequence}`);
+    if (!Number.isInteger(domSequence)) {
+      // 원장 좌표가 없는 행과는 순서를 물을 수 없다 — 측정 불가.
+      throw new Error(`${targetViewId}: DOM pair sequence[${index}]=${domSequence}`);
+    }
+    // 역행은 계약 사실이지 측정 불가가 아니다. DOM 원장은 관측자 여럿이 함께 적고, 같은 ms 로
+    // 반올림된 행과 시각이 뒤집힌 행이 실제로 있다(실측 2026-08-07 tauri/darwin: 한 거래 원장
+    // 156 행 중 동시각 28, 시각 역전 2). 최근접 결합은 그 자리에서 한 칸 뒤 행을 고른다.
+    // 여기서 던지면 그 엔진의 B02 이후 칸이 통째로 blocked 가 된다 — 실측
+    // "tab-3ujyli: DOM pair sequence[125]=219/220" 한 줄이 아홉 칸을 삼켰다.
+    //
+    // 역행 표본은 빼지 않는다. 빼면 뒤 표본이 앞으로 밀려 자리(index)로 세는 판정에서 구멍이
+    // 사라지고, 재지 않은 것이 재서 통과한 것과 같은 값이 된다. 거래 창 안에서 일어난 같은
+    // 사실은 표시 열이 `slot[i]:sampledAtUnixMs` 라는 이름으로 judge 에 싣고, 창 밖의 역행은
+    // 그 거래의 궤적이 아니므로 이름만 남긴다.
+    const domSequenceRegressed = domSequence < priorDomSequence;
+    if (domSequenceRegressed) {
+      domSequenceRegressions.push(`[${index}]=${domSequence}/${priorDomSequence}`);
     }
     priorDomSequence = domSequence;
     const rawNodes = Array.isArray(domSample?.nodes) ? domSample.nodes : [];
@@ -371,6 +388,7 @@ export function mapB04PresentationSamples({
     joins.push({
       sequence: index,
       domSequence,
+      domSequenceRegressed,
       trigger: domSample.trigger,
       transactionId: domSample.transactionId,
       domSampledAtUnixMs: domAt,
@@ -432,6 +450,10 @@ export function mapB04PresentationSamples({
   return {
     samples,
     joins,
+    pairing: {
+      pairs: joins.length,
+      domSequenceRegressions,
+    },
     timeline: {
       startAtUnixMs: presentationStartAt,
       durationMs,

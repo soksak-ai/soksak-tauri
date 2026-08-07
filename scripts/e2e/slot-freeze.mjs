@@ -1438,6 +1438,8 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
                 targetViewId,
                 owner,
                 joins: flowPresentationTrace.joins,
+                // 결합이 원장에서 뒤로 간 자리는 이름으로 남는다 — 실행을 끊지 않는다.
+                pairing: flowPresentationTrace.pairing,
                 // 표본 구멍은 간격이 아니라 관측자 계수로 읽는다 — 0 은 "안 움직였다"가 아니라
                 // "그 관측자가 한 번도 안 왔다"다.
                 domProducers: domTraceReceipt.producers ?? null,
