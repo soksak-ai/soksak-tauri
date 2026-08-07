@@ -29,17 +29,21 @@ CARGO_TARGET := $(shell cargo metadata --no-deps --format-version 1 --offline 2>
 # target으로 추측하게 두지 않는다(실측: x86 Node가 arm64 Cargo 앱의 sidecar를 x86으로 요구).
 # 교차 빌드는 `make … TAURI_TARGET=<triple>`로 같은 한 값을 양쪽에 넘긴다.
 TAURI_TARGET ?= $(shell rustc -vV | sed -n 's/^host: //p')
-TAURI_TARGET_DIR := $(CARGO_TARGET)/$(TAURI_TARGET)
+# 못 읽은 경로는 값이 아니다. cargo·rustc 를 PATH 에서 못 읽으면 두 조각이 빈 문자열이 되어
+# 이 경로가 조용히 "/" 가 된다 — 실측 2026-08-07: 그 "/" 때문에 헤드룸 가드가 있는 실행물을
+# 없다고 읽고 냉시동 문턱을 요구했다. 지어내지 말고 이름을 달고 멈춘다. 늦은 확장(=)이라
+# 이 경로를 안 쓰는 타깃은 그대로 돈다.
+TAURI_TARGET_DIR = $(if $(and $(CARGO_TARGET),$(TAURI_TARGET)),$(CARGO_TARGET)/$(TAURI_TARGET),$(error cargo/rustc 를 PATH 에서 못 읽어 target 경로를 세울 수 없다. PATH="$$HOME/.cargo/bin:$$PATH" 로 다시 실행하라))
 
 RELEASE_CONFIG := frameworks/tauri/tauri.build-release.conf.json
 RELEASE_CONFIG_GENERATED := $(CARGO_TARGET)/release-config/tauri.conf.json
 DEBUG_CONFIG   := frameworks/tauri/tauri.build-debug.conf.json
 DEV_BUNDLE_CONFIG := frameworks/tauri/tauri.build-dev.conf.json
 
-RELEASE_APP := $(TAURI_TARGET_DIR)/release/bundle/macos/soksak-tauri.app
-DEV_APP     := $(TAURI_TARGET_DIR)/debug/bundle/macos/soksak-tauri-dev.app
-DEBUG_APP   := $(TAURI_TARGET_DIR)/debug/bundle/macos/soksak-tauri-debug.app
-DEV_EXECUTABLE := $(DEV_APP)/Contents/MacOS/soksak-dev
+RELEASE_APP = $(TAURI_TARGET_DIR)/release/bundle/macos/soksak-tauri.app
+DEV_APP      = $(TAURI_TARGET_DIR)/debug/bundle/macos/soksak-tauri-dev.app
+DEBUG_APP    = $(TAURI_TARGET_DIR)/debug/bundle/macos/soksak-tauri-debug.app
+DEV_EXECUTABLE = $(DEV_APP)/Contents/MacOS/soksak-dev
 DEV_CLI := $(CARGO_TARGET)/debug/sok-dev
 DEV_LOG_DIR ?= $(HOME)/.soksak-dev/logs
 # 창 호스트 IPC와 영속 저장소 daemon은 서로 다른 공개 좌석이다.
@@ -298,8 +302,13 @@ e2e-titlebar-dev: build-dev ## 현재 소스를 한 번 빌드하고 냉재시�
 		exit "$$run_status"
 
 
+# 필요한 자리는 냉시동 빌드가 있느냐로 갈린다. 실측: acc6 은 여유 5.9GiB·따뜻한 빌드로 끝까지
+# 돌았고, acc5 는 같은 여유에서 냉시동 빌드가 target 을 다시 채우다 무너졌다. 상수 8 은 재지 않고
+# 찍은 값이라 acc6 같은 실행까지 거절한다 — 갈리는 축을 그대로 묻는다.
+ACCEPTANCE_HEADROOM_GIB = $(if $(wildcard $(DEV_EXECUTABLE)),4,8)
+
 acceptance-headroom: ## 인수 실행이 빌드와 증거를 담을 자리가 있는지 먼저 잰다
-	@node scripts/e2e/require-evidence-headroom.mjs --phase before-build --need 8
+	@node scripts/e2e/require-evidence-headroom.mjs --phase before-build --need $(ACCEPTANCE_HEADROOM_GIB)
 
 e2e-browser-acceptance-dev: acceptance-headroom build-dev ## 한 빌드로 두 실행기를 잇고 36칸 인수를 판정한다(B01~B11 + B12)
 	@# 병합 계약은 같은 artifact 를 요구한다. 각 실행기가 자기 빌드를 만들면 두 기여가 갈려
