@@ -1,4 +1,5 @@
 import { hostileResizeCompositionPlane } from "./hostile-resize-composition.mjs";
+import { mapWithWiring } from "./browser-machine-judge-support.mjs";
 
 const field = (value, key) => value && typeof value === "object" && Object.hasOwn(value, key)
   ? value[key]
@@ -83,21 +84,27 @@ function transaction(sample) {
  * `acknowledgedComposition` is the observer's own per-step verdict, derived from the same samples.
  * The harness never hands that verdict in, so the report cannot disagree with the observations it
  * was made from.
+ *
+ * 하니스가 짓는 인계 봉투의 필드는 손으로 나열하지 않고 배선 장부를 통해 읽는다 — 이름이 한쪽에서만
+ * 바뀌면 값이 null 로 뭉개지는 대신 양쪽 이름이 판정에 실린다. resizeSequence 안쪽은 앱이 낸
+ * 영수증이라 소비보다 넓다. 그 안까지는 장부를 걸지 않는다.
  */
 export function mapB10LiveEvidence(raw = {}) {
-  const sequence = field(raw, "resizeSequence");
-  return {
-    engine: field(raw, "engine"),
-    acknowledgedComposition: hostileResizeCompositionPlane(sequence),
-    resizeElapsedMs: field(sequence, "resizeElapsedMs"),
-    coordinateSpace: {
-      logical: "css-px",
-      physical: "device-px",
-      scaleFactor: field(raw, "scaleFactor"),
-    },
-    baseline: snapshot(field(field(field(sequence, "baseline"), "observation"), "snapshot")),
-    transactions: Array.isArray(sequence?.samples)
-      ? sequence.samples.map(transaction)
-      : null,
-  };
+  return mapWithWiring(raw, "B10.live", (checkpoint) => {
+    const sequence = checkpoint.take("resizeSequence") ?? null;
+    return {
+      engine: checkpoint.take("engine") ?? null,
+      acknowledgedComposition: hostileResizeCompositionPlane(sequence),
+      resizeElapsedMs: field(sequence, "resizeElapsedMs"),
+      coordinateSpace: {
+        logical: "css-px",
+        physical: "device-px",
+        scaleFactor: checkpoint.take("scaleFactor") ?? null,
+      },
+      baseline: snapshot(field(field(field(sequence, "baseline"), "observation"), "snapshot")),
+      transactions: Array.isArray(sequence?.samples)
+        ? sequence.samples.map(transaction)
+        : null,
+    };
+  });
 }

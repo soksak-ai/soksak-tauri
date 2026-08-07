@@ -112,4 +112,71 @@ describe("B05 live evidence mapper", () => {
     const evidence = mapB05LiveEvidence(value);
     expect(evidence.transitions[0].trace.hold.surfaces).toHaveLength(2);
   });
+
+  it("records a clean wiring ledger on both the envelope and every transition", () => {
+    const evidence = mapB05LiveEvidence(raw());
+    expect(evidence.evidenceWiring).toEqual({
+      source: "B05.live",
+      unconsumed: [],
+      unproduced: [],
+      error: null,
+    });
+    expect(evidence.transitions.map((transition) => transition.evidenceWiring)).toEqual([
+      { source: "B05.transition[0]", unconsumed: [], unproduced: [], error: null },
+      { source: "B05.transition[1]", unconsumed: [], unproduced: [], error: null },
+    ]);
+  });
+
+  it("names a drifted envelope field on both sides instead of mapping it to null", () => {
+    const value = raw();
+    value.transitionList = value.transitions;
+    delete value.transitions;
+    const evidence = mapB05LiveEvidence(value);
+    expect(evidence.evidenceWiring).toEqual({
+      source: "B05.live",
+      unconsumed: ["transitionList"],
+      unproduced: ["transitions"],
+      error: null,
+    });
+    const verdict = judgeB05MachineEvidence(evidence);
+    expect(verdict.status).toBe("red");
+    expect(verdict.evidence).toContain("B05:wiring.B05.live.transitionList=produced-not-consumed");
+    expect(verdict.evidence).toContain("B05:wiring.B05.live.transitions=consumed-not-produced");
+  });
+
+  it("names a drifted transition field on both sides instead of losing the settlement", () => {
+    const value = raw();
+    const transition = value.transitions[0];
+    transition.settle = transition.settlement;
+    delete transition.settlement;
+    const evidence = mapB05LiveEvidence(value);
+    expect(evidence.transitions[0].evidenceWiring).toEqual({
+      source: "B05.transition[0]",
+      unconsumed: ["settle"],
+      unproduced: ["settlement"],
+      error: null,
+    });
+    const verdict = judgeB05MachineEvidence(evidence);
+    expect(verdict.status).toBe("red");
+    expect(verdict.evidence).toContain("B05:wiring.B05.transition[0].settle=produced-not-consumed");
+    expect(verdict.evidence).toContain("B05:wiring.B05.transition[0].settlement=consumed-not-produced");
+  });
+
+  it("names a transition field that throws instead of killing the harness", () => {
+    const value = raw();
+    Object.defineProperty(value.transitions[0], "direction", {
+      enumerable: true,
+      get() {
+        throw new TypeError("direction receipt read failed");
+      },
+    });
+    let verdict;
+    expect(() => {
+      verdict = judgeB05MachineEvidence(mapB05LiveEvidence(value));
+    }).not.toThrow();
+    expect(verdict.status).toBe("red");
+    expect(verdict.evidence).toContain(
+      'B05:wiring.B05.transition[0]=mapper-threw/"TypeError: direction receipt read failed"',
+    );
+  });
 });

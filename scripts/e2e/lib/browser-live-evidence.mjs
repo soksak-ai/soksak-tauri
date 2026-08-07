@@ -68,25 +68,37 @@ export function mapB01TabEvidence(raw = {}) {
   });
 }
 
-export function mapB11TabEvidence({ viewId, scroll, fullCapture }) {
-  return {
-    viewId,
-    wheel: {
-      positions: [scroll?.beforeY ?? null, scroll?.afterY ?? null, scroll?.restoredY ?? null],
-    },
-    capture: {
-      before: mapPageState(fullCapture?.before),
-      receipt: {
-        requestedViewId: viewId,
-        returnedViewId: fullCapture?.viewId ?? null,
-        requestedPath: fullCapture?.requestedPath ?? null,
-        returnedPath: fullCapture?.returnedPath ?? null,
-        reportedBytes: fullCapture?.reportedBytes ?? null,
-        fileBytes: fullCapture?.fileBytes ?? null,
-        width: fullCapture?.width ?? null,
-        docHeight: fullCapture?.height ?? null,
+/**
+ * 한 탭의 wheel·full capture 영수증을 판정 스키마로 옮긴다.
+ *
+ * 하니스가 탭마다 짓는 인계 기록의 필드는 손으로 나열하지 않고 배선 장부를 통해 읽는다.
+ * 그 안쪽 영수증(scroll·fullCapture)은 사람 검토용 표시처럼 기계 판정이 쓰지 않는 필드도
+ * 싣는다. 소비보다 넓은 기록에 장부를 걸지 않는다 — 남는 필드는 어긋남이 아니다.
+ */
+export function mapB11TabEvidence(raw = {}) {
+  return mapWithWiring(raw, "B11.tab", (checkpoint) => {
+    const viewId = checkpoint.take("viewId") ?? null;
+    const scroll = checkpoint.take("scroll");
+    const fullCapture = checkpoint.take("fullCapture");
+    return {
+      viewId,
+      wheel: {
+        positions: [scroll?.beforeY ?? null, scroll?.afterY ?? null, scroll?.restoredY ?? null],
       },
-      after: mapPageState(fullCapture?.after),
-    },
-  };
+      capture: {
+        before: mapPageState(fullCapture?.before),
+        receipt: {
+          requestedViewId: viewId,
+          returnedViewId: fullCapture?.viewId ?? null,
+          requestedPath: fullCapture?.requestedPath ?? null,
+          returnedPath: fullCapture?.returnedPath ?? null,
+          reportedBytes: fullCapture?.reportedBytes ?? null,
+          fileBytes: fullCapture?.fileBytes ?? null,
+          width: fullCapture?.width ?? null,
+          docHeight: fullCapture?.height ?? null,
+        },
+        after: mapPageState(fullCapture?.after),
+      },
+    };
+  });
 }

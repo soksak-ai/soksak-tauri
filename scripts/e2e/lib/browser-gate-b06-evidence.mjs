@@ -1,3 +1,5 @@
+import { mapWithWiring } from "./browser-machine-judge-support.mjs";
+
 const field = (value, key) => value && typeof value === "object" && Object.hasOwn(value, key)
   ? value[key]
   : null;
@@ -11,38 +13,52 @@ function exempt(value, node) {
   };
 }
 
-function checkpoint(raw) {
-  const paneIds = Array.isArray(raw?.paneIds) ? raw.paneIds : [];
-  const dims = Array.isArray(raw?.lighting?.dims) ? raw.lighting.dims : [];
-  const levels = Array.isArray(raw?.lighting?.levels) ? raw.lighting.levels : [];
-  const adapterAlphas = Array.isArray(raw?.lighting?.adapterAlphas)
-    ? raw.lighting.adapterAlphas
-    : [];
-  return {
-    phase: field(raw, "phase"),
-    activePaneId: field(raw, "activePaneId"),
-    panes: paneIds.map((paneId, index) => ({
-      paneId,
-      active: paneId === raw?.activePaneId,
-      level: levels[index] ?? null,
-      styleDim: dims[index] ?? null,
-      adapterAlpha: adapterAlphas[index] ?? null,
-    })),
-    lightingPlane: {
-      count: field(raw?.lightingPlane, "count"),
-      baseAmount: field(raw?.lightingPlane, "baseAmount"),
-      aperturePaneId: field(raw?.lightingPlane, "aperturePaneId"),
-      apertureCount: field(raw?.lightingPlane, "apertureCount"),
-    },
-    rail: exempt(raw?.rail, "rail"),
-    sidebar: exempt(raw?.sidebar, "sidebar"),
-  };
+/**
+ * 한 조명 checkpoint 인계 기록을 판정 스키마로 옮긴다.
+ *
+ * 하니스가 checkpoint 에 railComposition 을 싣고 이쪽은 rail 을 찾던 사고가 실제로 있었다. 그때
+ * 소비되지 않은 생산 이름과 생산되지 않은 소비 이름이 둘 다 조용했다. 그래서 이 기록의 필드는
+ * 손으로 나열하지 않고 배선 장부를 통해 읽는다.
+ */
+function mapCheckpoint(raw, index) {
+  return mapWithWiring(raw, `B06.checkpoint[${index}]`, (checkpoint) => {
+    const paneIdsValue = checkpoint.take("paneIds");
+    const paneIds = Array.isArray(paneIdsValue) ? paneIdsValue : [];
+    const lighting = checkpoint.take("lighting");
+    const dims = Array.isArray(lighting?.dims) ? lighting.dims : [];
+    const levels = Array.isArray(lighting?.levels) ? lighting.levels : [];
+    const adapterAlphas = Array.isArray(lighting?.adapterAlphas) ? lighting.adapterAlphas : [];
+    const activePaneId = checkpoint.take("activePaneId") ?? null;
+    const plane = checkpoint.take("lightingPlane");
+    return {
+      phase: checkpoint.take("phase") ?? null,
+      activePaneId,
+      panes: paneIds.map((paneId, paneIndex) => ({
+        paneId,
+        active: paneId === activePaneId,
+        level: levels[paneIndex] ?? null,
+        styleDim: dims[paneIndex] ?? null,
+        adapterAlpha: adapterAlphas[paneIndex] ?? null,
+      })),
+      lightingPlane: {
+        count: field(plane, "count"),
+        baseAmount: field(plane, "baseAmount"),
+        aperturePaneId: field(plane, "aperturePaneId"),
+        apertureCount: field(plane, "apertureCount"),
+      },
+      rail: exempt(checkpoint.take("rail"), "rail"),
+      sidebar: exempt(checkpoint.take("sidebar"), "sidebar"),
+    };
+  });
 }
 
 /** Maps only independently measured style, plane, adapter, and exemption facts. */
 export function mapB06LiveEvidence(raw = {}) {
-  return {
-    engine: field(raw, "engine"),
-    checkpoints: Array.isArray(raw?.checkpoints) ? raw.checkpoints.map(checkpoint) : null,
-  };
+  return mapWithWiring(raw, "B06.live", (checkpoint) => {
+    const checkpoints = checkpoint.take("checkpoints");
+    return {
+      engine: checkpoint.take("engine") ?? null,
+      checkpoints: Array.isArray(checkpoints) ? checkpoints.map(mapCheckpoint) : null,
+    };
+  });
 }
