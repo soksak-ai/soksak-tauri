@@ -129,6 +129,7 @@ import {
 import { b04DomLedgerProducerErrors } from "./lib/browser-gate-b04-slot-timeline.mjs";
 import { BROWSER_PLUGIN_CONTRACT, resolveContractPlugins } from "./lib/browser-contract-plugins.mjs";
 import { createPresentationArmLedger } from "./lib/presentation-arm-ledger.mjs";
+import { b04SlotObservation } from "./lib/browser-gate-b04-slot-timeline.mjs";
 
 const FIXTURE_ROOT = path.join(os.homedir(), ".soksak-e2e", "slot-freeze");
 const EVIDENCE_STORE_ROOT = path.join(os.homedir(), ".soksak-e2e", "evidence", "slot-freeze");
@@ -1503,6 +1504,15 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
             );
             const flowPresentationTrace = mapB04PresentationSamples({
               events: presentationEvents,
+              // 건너뜀의 주인은 원장이 답한다 — 계약이 자기 영수증에서 그 사실을 꺼낸다.
+              observation: implementation.presentationTrace.observation?.(presentationReceipt),
+              // slot 열은 DOM 관측이라 네이티브 원장의 사실이 아니다. 그 주인은 두 생산자의
+              // 실측에서 파생한다(표시 callback 이 빈 구간에 recorder 가 왔는가).
+              slotObservation: b04SlotObservation(domTraceReceipt.samples, {
+                startAtUnixMs: layoutVerdict.transaction.startAtUnixMs,
+                endAtUnixMs: layoutVerdict.transaction.startAtUnixMs
+                  + Number(layoutVerdict.transaction.durationMs ?? 0),
+              }),
               domSamples: domTraceReceipt.samples,
               // 규칙 — 시계 선언: 세 영수증이 각자 답한 시계를 그대로 옮긴다. 하니스는 어느
               // 시계였는지 추측하지 않는다 — 못 읽으면 못 읽은 채로 판정에 실린다.

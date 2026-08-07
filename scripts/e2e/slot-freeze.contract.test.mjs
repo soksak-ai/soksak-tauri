@@ -883,3 +883,20 @@ describe("원인 id 소유", () => {
     expect(source).toContain("armParams({\n                traceId: causeTraceId,");
   });
 });
+
+// 규칙 — 계약이 답하는 사실은 부르는 쪽이 실제로 읽어야 한다.
+//
+// 실측 2026-08-08: 계약에 observation 축을 세우고 판정도 그것을 읽게 했는데, 하니스가 그 계약을
+// 한 번도 부르지 않았다. 단위 테스트는 전부 통과했고 라이브에서만 모든 전이가
+// `skip-owner-undeclared` 로 blocked 가 됐다 — 적어 둔 계약은 읽혀야 한다.
+describe("관측 자기보고 배선", () => {
+  const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+
+  it("네이티브 원장의 자기보고를 계약에 물어 넘긴다", () => {
+    expect(source).toContain("implementation.presentationTrace.observation?.(presentationReceipt)");
+  });
+
+  it("slot 열의 주인은 두 생산자의 실측에서 파생한다", () => {
+    expect(source).toContain("slotObservation: b04SlotObservation(");
+  });
+});

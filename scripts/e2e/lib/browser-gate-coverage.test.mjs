@@ -349,3 +349,38 @@ describe("보고서 신원이 능력을 담는다", () => {
     })).toThrow(/nativeChildWebview/);
   });
 });
+
+// 규칙 — 통과가 아닌 판정은 왜인지 함께 낸다.
+//
+// blocked 의 사유는 reason 에 산다(evidence 는 잰 어긋남의 자리다). 그런데 출력이 evidence 만
+// 읽어 실행 로그에 `blocked — ` 만 남았다 — 못 잼을 답하면서 이유를 안 내면 그 칸은 고칠 자리를
+// 가리키지 못한다. 실측 2026-08-08: B04·B05 가 사유 없이 blocked 로만 찍혔다.
+describe("판정 출력은 사유를 잃지 않는다", () => {
+  it("blocked 는 reason 을 낸다", () => {
+    expect(formatGateVerdict("browser", "B04", {
+      status: "blocked",
+      evidence: [],
+      reason: "presentation-arm: 02-right: INTERNAL",
+    })).toContain("presentation-arm: 02-right: INTERNAL");
+  });
+
+  it("evidence 와 reason 이 둘 다 있으면 둘 다 낸다", () => {
+    const line = formatGateVerdict("browser", "B04", {
+      status: "blocked",
+      evidence: ["B04:x=1/0"],
+      reason: "관측자가 놓쳤다",
+    });
+    expect(line).toContain("B04:x=1/0");
+    expect(line).toContain("관측자가 놓쳤다");
+  });
+
+  it("사유도 증거도 없는 비-green 판정은 그 사실을 이름으로 낸다", () => {
+    expect(formatGateVerdict("browser", "B04", { status: "blocked", evidence: [] }))
+      .toContain("사유 없음");
+  });
+
+  it("green 은 지금 계약 그대로다", () => {
+    expect(formatGateVerdict("browser", "B04", { status: "green", evidence: [] }))
+      .toBe("◉ browser/B04 canonical machine verdict: green");
+  });
+});

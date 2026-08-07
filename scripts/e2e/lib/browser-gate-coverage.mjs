@@ -86,8 +86,15 @@ export function acceptanceCoverage(reports) {
 /** 실행 로그의 판정 한 줄. green 이 아니면 판정을 만든 수치를 같은 줄에 남겨, 실행 로그만으로
  * 원인 범위를 좁힐 수 있게 한다. 로그는 증거가 아니라 정본 보고서로 가는 이정표다. */
 export function formatGateVerdict(engine, gate, receipt) {
-  const detail = receipt.status === "green" ? "" : ` — ${receipt.evidence.join(", ")}`;
-  return `◉ ${engine}/${gate} canonical machine verdict: ${receipt.status}${detail}`;
+  // 통과가 아닌 판정은 왜인지 함께 낸다. 잰 어긋남은 evidence 에, 못 잼의 사유는 reason 에
+  // 산다 — 한쪽만 읽으면 blocked 가 이유 없이 찍히고 그 칸은 고칠 자리를 가리키지 못한다.
+  if (receipt.status === "green") {
+    return `◉ ${engine}/${gate} canonical machine verdict: green`;
+  }
+  const parts = [...(receipt.evidence ?? [])];
+  if (typeof receipt.reason === "string" && receipt.reason.trim() !== "") parts.push(receipt.reason);
+  const detail = parts.length > 0 ? parts.join(", ") : "사유 없음(판정이 이유를 안 냈다)";
+  return `◉ ${engine}/${gate} canonical machine verdict: ${receipt.status} — ${detail}`;
 }
 
 function failureText(error) {
