@@ -1,0 +1,149 @@
+# 브라우저 12 게이트 인수인계 지시서
+
+## 이 문서의 목적
+
+이 문서는 새 에이전트가 브라우저 합성/레이아웃 문제를 처음부터 다시 추측하지 않고, 현재 기준과 증거를 이어서 작업하기 위한 실행 지시서다. 목표는 12개 게이트를 세 브라우저 구현에서 모두 `machine=green` 및 필요한 경우 `visualReview=passed`로 만드는 것이다.
+
+완료 선언은 마지막에 한 번만 한다. `partial`, `blocked`, `not-run`, 시각 검토 미완료는 완료가 아니다. 기준을 낮추거나 실패한 증거를 삭제하지 않는다.
+
+## 반드시 지킬 원칙
+
+1. **관측 → 수치화된 RED → 원인 수정 → 동일 기준 GREEN** 순서를 지킨다.
+2. 캡처와 녹화는 결함을 발견하고 사람이 화면을 확인하는 개발 증거다. 성공 판정은 좌표, 크기, 위상, 이벤트, 상태, 프레임 간격 등 기계적으로 재현 가능한 수치 영수증으로 한다.
+3. DOM, native surface, slot, pane, sidebar, rail, overlay의 책임을 섞지 않는다. Electron은 DOM 자식으로만 동작하고 Tauri의 bounds/veil/drag/native composition hack은 Tauri 어댑터에만 둔다.
+4. 프레임워크 이름으로 코어를 분기하지 않는다. 공개 capability와 어댑터 인터페이스로 경계를 표현한다.
+5. 한 번에 하나의 앱 수명주기만 실행한다. 테스트를 병렬로 실행하거나 앱을 두 번 띄워 stale window/native surface를 만들지 않는다.
+6. `make rebuild-dev`는 현재 소스를 빌드한 뒤 dev 앱을 재시작한다. `make restart-built-dev`는 이미 검증한 동일 번들을 빌드 없이 재시작할 때만 쓴다. debug 앱을 검증 대상으로 사용하지 않는다.
+7. 임시 스크립트, symlink, 기준 완화, 숨김 폴백을 만들지 않는다. 반복 작업은 Git에 남는 테스트/커맨드로 만든다. 폴링은 이벤트/구독이 불가능하다는 근거와 종료 조건이 있는 bounded last resort일 때만 허용한다.
+8. 변경은 작은 커밋으로 남긴다. GREEN을 만들지 못한 커밋을 알려진 RED 상태로 누적하지 말고 수정하거나 명시적으로 되돌린다.
+
+## 시작 전에 읽을 것
+
+- `AGENTS.md`
+- `docs/TESTING.ko.md`, `docs/EVIDENCE.md`, `docs/NATIVE-SURFACES.ko.md`
+- `docs/multiplatform-engine-strategy.ko.md`
+- `scripts/e2e/lib/browser-gates.mjs`
+- `scripts/e2e/slot-freeze.mjs`
+- `scripts/e2e/lib/browser-matrix.mjs`
+- `packages/dom-webview-compositor/`
+- `frameworks/tauri/`와 Electron 어댑터 경계
+
+게이트 정본은 `scripts/e2e/lib/browser-gates.mjs`다. 이름이나 판정을 문서에서 임의로 바꾸지 않는다.
+
+## 현재 기준과 사실
+
+현재 12개 전체 GREEN은 아니다. 이전 정리 기준으로 완전 GREEN은 0/12이며, 부분 구현은 B01/B02/B03/B04/B09/B10/B11, 미완료 또는 회귀가 남은 항목은 B05/B06/B07/B08/B12다. 실행 시점의 실제 report와 캡처가 이 표보다 우선한다.
+
+최근에 추가된 기반 작업:
+
+- `6be34606`: JS/Rust monotonic presentation epoch 공유.
+- `5174ae72`: Tauri presentation trace에 display/target/callback 시각과 callback skip/latency를 노출.
+- `3f8af943`: 기계 trace와 사람용 PNG replay를 분리.
+- `6fcd8d3c`, `31cb8982`, `641d55db`, `a7e67bc2`: 숨겨진 WebKit에서 rAF/animation 이벤트가 생략될 때의 DOM settlement 관측과 bounded last-resort fallback. 이 fallback은 성공 증거 그 자체가 아니다.
+- `8255144d`: producer cadence와 frame alignment를 분리. temporal join gap을 성공 기준으로 삼지 않고, 좌표/타임라인 verdict를 별도로 판정.
+
+가장 최근 실제 실행에서는 Chromium FLOW의 사람용 48프레임 두 방향과 B03은 통과했지만, cross-click 뒤 `webview.pane.composition` 상태가 `matched=false`이고 두 pane의 geometry/member가 `missing-or-misaligned`로 RED가 됐다. `composition-trace.json`의 시작/끝 slot·renderer·surface 좌표는 정확했으므로, 이 실패를 단순 지연으로 덮지 말고 pane composition 상태의 소유권/커밋 순서/member ledger를 조사한다. 최신 상태는 반드시 새 실행으로 갱신한다.
+
+## 실행 환경과 증거 보존
+
+소켓:
+
+```sh
+export SOKSAK_SOCKET=<machine-path>/.soksak-dev/cored.sock
+```
+
+앱을 조작하기 전에 `sok state.tree`로 실제 target을 발견한다. 브라우저/DOM/상태/커맨드는 `sok commands`, `sok help <command>`로 공개된 경로만 사용한다. 캡처는 창에 포커스를 주지 않고 `window.capture`/공개 capture 경로로 남긴다.
+
+단일 엔진 FLOW 재현 예:
+
+```sh
+BROWSER_EVIDENCE_BUILD_ID="$(shasum -a 256 target/aarch64-apple-darwin/debug/bundle/macos/soksak-tauri-dev.app/Contents/MacOS/soksak-dev | awk '{print $1}')" \
+SOKSAK_SOCKET=<machine-path>/.soksak-dev/cored.sock \
+BROWSER_ENGINES=browser-chromium \
+BROWSER_SCENARIOS=flow \
+CROSS_CLICK_CYCLES=1 \
+node scripts/e2e/slot-freeze.mjs
+```
+
+세 구현의 acceptance engine은 `browser`, `browser-chromium`, `browser-chromium-offscreen`이다. 하나만 GREEN이어도 전체 GREEN이 아니다. 앱 lifecycle 테스트는 순차 실행한다. RED artifact는 `<machine-path>/.soksak-e2e/evidence/slot-freeze/last-red/`를 덮어쓰지 않도록 커밋 또는 별도 run id로 보존한다.
+
+## 12개 게이트의 완료 계약
+
+### B01 — initial mount/address/page identity
+
+세 구현 모두 최초 mount에서 주소표시줄이 존재하고 요청한 실제 페이지의 URL/title/body identity를 노출해야 한다. `about:blank`, Example Domain, IANA 등 실제 navigation을 각각 확인한다. 빈 흰 화면, 주소표시줄 없는 Chromium, stale 페이지는 RED다.
+
+### B02 — Korean IME/state retention
+
+주소표시줄과 페이지 input에 한글을 입력하고 `beforeinput` 및 `input` 이벤트 수, 최종 값, focus target을 수치로 기록한다. FLOW 좌/우, hostile window resize, pane resize, scroll 뒤 값이 보존되어야 한다. 세 엔진 각각 최소 2회 반복한다.
+
+### B03 — DOM/live surface one-to-one
+
+각 `data-content-view-body` DOM slot에 정확히 하나의 live renderer/native surface가 대응해야 한다. view id, pane id, topology, logical/physical rect, width/height, visibility/live 상태를 내보내고 물리 픽셀 반올림만 허용한다. 누락, 중복, stale member, DOM만 존재하는 빈 hole은 RED다.
+
+### B04 — FLOW atomic composition
+
+탭을 좌→우, 우→좌로 교차 클릭한다. rail, pane, DOM slot, native surface가 하나의 layout transaction으로 이동하고 commit/settlement/display frame의 좌표가 동일해야 한다. 두 방향 각각 48프레임 사람용 캡처를 남기되, verdict는 transaction/timeline/composition 숫자로 한다. `webview.pane.composition matched=false`는 즉시 RED다.
+
+### B05 — continuous visible presentation
+
+이동 중 surface disappearance, black frame, flicker, 잔상, 착지 후 빈 브라우저를 금지한다. native presentation trace의 callback skip/latency, visible frame 수, live surface 수, commit/settlement 경계를 기록한다. callback cadence와 surface continuity를 혼동하지 않는다.
+
+### B06 — focus lighting
+
+active pane만 밝고 inactive pane만 감광된다. rail/sidebar는 절대 감광되지 않는다. `brightness(...)`를 제거해 기준을 낮추지 않는다. 픽셀 샘플과 DOM computed style을 함께 남기고 active/inactive 전환 양방향을 검사한다.
+
+### B07 — PIN border/layout invariance
+
+sidebar 고정 상태에서 탭이 sidebar 왼쪽 인접, 오른쪽 인접, 어느 쪽에도 붙지 않는 세 경우를 만든다. 왼쪽이면 왼쪽 경계로 하나의 border, 오른쪽이면 오른쪽 경계로 하나의 border, 분리면 sidebar와 tabview가 각각 독립 border여야 한다. 고정 sidebar 자체의 위치나 활성 상태를 탭 교체 때문에 이동시키지 않는다.
+
+### B08 — PIN maximize/restore station
+
+PIN 상태에서 전체 창 maximize/restore를 빠르게 반복하고 좌/우 방향을 모두 검사한다. sidebar가 고정되어 있으면 최대화 후에도 sidebar는 기준 위치를 유지하고 tabview가 계약된 반대 영역에 놓여야 한다. restore 뒤 station, adjacency, border, native surface가 원래 geometry로 돌아와야 한다.
+
+### B09 — chrome-over-native layering
+
+브라우저 native surface 위에 우측 sidebar, rail의 `+` 버튼, 메뉴/modal이 올라와야 한다. z-index는 Electron에서 필요한 경우에만 DOM stacking으로 사용하고, Tauri veil/overlay/hole은 Tauri 어댑터에만 둔다. 클릭 가능 영역, topmost 순서, capture pixel을 함께 검증한다.
+
+### B10 — hostile window resize
+
+전체 창을 큰 크기↔작은 크기로 빠르게 왕복한다. pane/native surface가 중간 위치에 남거나 늘어나 보이거나 사라지면 RED다. 최종 geometry가 초기 geometry와 rounding-only로 일치하고, 전환 중 surface가 계속 visible이어야 한다. HMR/옛 번들을 원인으로 추정하지 말고 build id와 lifecycle을 증명한다.
+
+### B11 — pane resize/scroll/full capture
+
+지정된 탭을 활성화한 뒤 pane 폭/높이를 빠르게 변경하고 wheel `0→480→0`을 실행한다. 브라우저 내부 스크롤이 실제로 움직이고 복귀해야 하며, 같은 탭을 대상으로 full scroll capture를 남긴다. capture는 시각 증거일 뿐 pass/fail은 scrollTop, content height, viewport rect, native rect 수치로 판정한다.
+
+### B12 — traffic-light composition (macOS)
+
+traffic-light DOM reservation/hole과 AppKit button/backing surface가 3:3으로 대응하고, 상하 중앙 정렬과 hostile resize를 유지해야 한다. 앱 재시작 직후 정렬→로딩 완료 후 정렬을 각각 측정한다. `정위치→오차→정위치`처럼 중간 회귀가 있으면 RED이며 최종 화면만 보고 GREEN으로 만들지 않는다. Electron은 공개 traffic-light position과 DOM reservation 정합을 증명한다.
+
+## RED/GREEN 작성 규칙
+
+각 결함마다 다음을 한 커밋 단위로 남긴다.
+
+1. 재현 fixture와 명시적 command를 추가하고 기준을 실패시키는 RED 테스트를 먼저 커밋한다.
+2. RED report에 run id, build id, engine, platform, 좌표/크기/epoch/event/status와 artifact 경로를 남긴다.
+3. 원인 소유권을 찾는다. 예: DOM layout, Tauri native member bounds, Electron DOM adapter, pane composition ledger, overlay layer.
+4. 한 책임만 수정하고 같은 테스트를 GREEN으로 만든다.
+5. 세 엔진 누적 matrix와 시각 캡처를 다시 실행한다. 다른 게이트 회귀가 있으면 완료로 표시하지 않는다.
+
+## 감사 에이전트에게 제출할 보고서
+
+각 실행 후 다음 표를 제출한다.
+
+| Gate | engine/platform | machine | visual | RED 재현/현재 GREEN 근거 | commit | artifact |
+|---|---|---|---|---|---|---|
+
+`machine=green`만으로 UI 완료라고 쓰지 않는다. 모든 게이트의 세 엔진 행, B12의 macOS 행, 미실행/차단 사유, 마지막 RED를 함께 적는다. 새 에이전트가 “거의 완료”, “조금 기다리면 됨”, “옛 빌드 탓” 같은 표현으로 수치 증거를 대체하는 것은 금지한다.
+
+## 최종 완료 조건
+
+- B01~B12의 적용 가능한 모든 engine/platform cell이 machine GREEN.
+- 모든 UI gate의 visualReview가 passed이며 capture를 사람이 확인.
+- 세 엔진에서 cross-click, resize, layer, scroll/full-capture, IME를 누적 matrix로 통과.
+- Electron에 Tauri 추종 루프/veil/hole hack/z-index workaround가 없음.
+- Tauri 전용 composition 계약과 공개 command/status/event가 문서·테스트와 일치.
+- RED→GREEN 커밋 이력이 작고 추적 가능하며 known RED가 worktree와 증거 디렉터리에 남아 있지 않음.
+- `docs/TESTING.ko.md`, `docs/EVIDENCE.md`, 멀티플랫폼 전략 문서가 현재 계약과 검증 명령을 반영.
+
+이 조건을 하나라도 충족하지 못하면 완료 선언 대신 정확한 RED와 다음 원인 조사 범위를 보고한다.
