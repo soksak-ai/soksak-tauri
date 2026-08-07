@@ -95,6 +95,39 @@ describe("titlebar composition live E2E contract", () => {
     ]) expect(source).toContain(marker);
   });
 
+  it("records the cold-start verdict into the canonical 3x12 report", () => {
+    const summary = readFileSync(
+      new URL("./titlebar-composition-summary.mjs", import.meta.url),
+      "utf8",
+    );
+    for (const marker of [
+      "createBrowserGateReportStore",
+      "TITLEBAR_OWNED_GATES",
+      "b12ColdStartCells",
+      "titlebarGateStoreRoot",
+      "beginEvidenceRun",
+      "finishEvidenceRun",
+      "recordMachineEvidence",
+      "recordMachineStatus",
+      ".persist()",
+    ]) expect(summary).toContain(marker);
+    // 정본 보고서는 이 실행기가 소유한 칸만 든다 — 나머지 11칸은 재지 않았다는 사실 그대로 남는다.
+    expect(summary).toContain('gates: TITLEBAR_OWNED_GATES');
+    expect(summary).not.toMatch(/blockPending/);
+  });
+
+  it("anchors a green B12 cell to a real sample from the last cold start", () => {
+    const summary = readFileSync(
+      new URL("./titlebar-composition-summary.mjs", import.meta.url),
+      "utf8",
+    );
+    expect(summary).toContain('"machine.json"');
+    expect(summary).toContain("anchors");
+    // 마지막 냉시작의 표본만 영수증이 된다 — 아무 cycle 이나 집으면 어느 실행인지 알 수 없다.
+    expect(summary).toContain("cycles.at(-1)");
+    expect(summary).toContain("verdicts");
+  });
+
   it("persists artifact and cold-run identity in every cycle and window receipt", () => {
     for (const marker of [
       "requireBrowserEvidenceBuildId",
