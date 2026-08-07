@@ -1,8 +1,13 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { judgeB11MachineEvidence } from "./browser-gates.mjs";
+import { B11_PAGE_KEYS, judgeB11MachineEvidence } from "./browser-gates.mjs";
 import { mapB11TabEvidence } from "./browser-live-evidence.mjs";
-import { fullCaptureDocumentProbeJs } from "./browser-page-state.mjs";
+import {
+  captureDocumentGeometry,
+  fullCaptureDocumentProbeJs,
+  mapPageState,
+  pageStateReaderAxes,
+} from "./browser-page-state.mjs";
 
 // 실측 fixture 기하 — 문서가 뷰포트보다 960px 넘게 길어야 B11이 스크롤 가능으로 인정한다.
 const FIXTURE_PAGE = Object.freeze({
@@ -61,5 +66,37 @@ describe("full capture page-state probe", () => {
 
     expect(tabs[0].capture.before.scrollX).toBe(37);
     expect(judgeB11MachineEvidence({ engine: "browser", tabs })).toMatchObject({ status: "green" });
+  });
+
+  it("probe가 읽는 축과 판정이 요구하는 축이 정확히 같다", () => {
+    expect([...pageStateReaderAxes()].sort()).toEqual([...B11_PAGE_KEYS].sort());
+  });
+
+  it("못 읽은 축을 0으로 채우지 않는다", () => {
+    expect(mapPageState({ scrollY: 0 })).toEqual({
+      scrollX: null,
+      scrollY: 0,
+      viewportWidth: null,
+      viewportHeight: null,
+      documentWidth: null,
+      documentHeight: null,
+    });
+    expect(mapPageState(undefined).documentHeight).toBeNull();
+  });
+
+  it("이미 옮긴 상태를 다시 옮겨도 같다", () => {
+    // 하니스는 probe 직후 한 번, mapB11TabEvidence가 다시 한 번 옮긴다.
+    const once = mapPageState(runPageProbe(fullCaptureDocumentProbeJs(), FIXTURE_PAGE));
+    expect(mapPageState(once)).toEqual(once);
+    expect(b11TabsFromProbe(once)[0].capture.before).toEqual(once);
+  });
+
+  it("영수증 판정이 읽는 문서 기하로 같은 축을 옮긴다", () => {
+    const state = mapPageState(runPageProbe(fullCaptureDocumentProbeJs(), FIXTURE_PAGE));
+    expect(captureDocumentGeometry(state)).toEqual({
+      y: 0,
+      viewport: { w: 608, h: 262 },
+      document: { w: 608, h: 2140 },
+    });
   });
 });

@@ -292,6 +292,20 @@
       "note": "공통 브라우저 gate 스키마·identity·judge receipt를 순수 증거 값으로 검증한다."
     },
     {
+      "file": "lib/browser-page-state.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "B11이 판정하는 페이지 축을 읽는 eval 본문과 그 결과의 축 옮김을 소유한다. 읽는 축은 판정 목록에서 파생하고, 네이티브 표면이나 프레임워크 경로는 알지 않는다."
+    },
+    {
+      "file": "lib/browser-page-state.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "하니스가 보내는 probe 본문을 페이지 스코프에서 실제로 실행해 판정이 요구하는 축이 전부 수치로 채워지는지 본다."
+    },
+    {
       "file": "lib/browser-gate-identity.mjs",
       "role": "lib",
       "class": "A",

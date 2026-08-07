@@ -71,11 +71,15 @@ describe("live browser evidence mappers", () => {
     const tabs = [0, 1].map((index) => {
       const viewId = `view-${index}`;
       const requestedPath = `/evidence/full-${index}.png`;
+      // probe가 실제로 내보내는 축 이름 그대로다 — mapper가 받아 주는 별도 모양을
+      // 지어내면 fixture만 green이 되고 실측은 null로 남는다.
       const dimensions = {
-        y: 0,
-        x: 0,
-        viewport: { w: 640, h: 480 },
-        document: { w: 640, h: 1600 },
+        scrollX: 0,
+        scrollY: 0,
+        viewportWidth: 640,
+        viewportHeight: 480,
+        documentWidth: 640,
+        documentHeight: 1600,
       };
       return mapB11TabEvidence({
         viewId,

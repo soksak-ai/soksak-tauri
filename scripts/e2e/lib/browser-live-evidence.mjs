@@ -1,3 +1,5 @@
+import { mapPageState } from "./browser-page-state.mjs";
+
 export function mapImeObservation(value) {
   return {
     value: value?.value ?? null,
@@ -46,17 +48,6 @@ export function mapB01TabEvidence({
   };
 }
 
-function page(value) {
-  return {
-    scrollX: value?.x ?? value?.scrollX ?? null,
-    scrollY: value?.y ?? value?.scrollY ?? null,
-    viewportWidth: value?.viewport?.w ?? null,
-    viewportHeight: value?.viewport?.h ?? null,
-    documentWidth: value?.document?.w ?? null,
-    documentHeight: value?.document?.h ?? null,
-  };
-}
-
 export function mapB11TabEvidence({ viewId, scroll, fullCapture }) {
   return {
     viewId,
@@ -64,7 +55,7 @@ export function mapB11TabEvidence({ viewId, scroll, fullCapture }) {
       positions: [scroll?.beforeY ?? null, scroll?.afterY ?? null, scroll?.restoredY ?? null],
     },
     capture: {
-      before: page(fullCapture?.before),
+      before: mapPageState(fullCapture?.before),
       receipt: {
         requestedViewId: viewId,
         returnedViewId: fullCapture?.viewId ?? null,
@@ -75,7 +66,7 @@ export function mapB11TabEvidence({ viewId, scroll, fullCapture }) {
         width: fullCapture?.width ?? null,
         docHeight: fullCapture?.height ?? null,
       },
-      after: page(fullCapture?.after),
+      after: mapPageState(fullCapture?.after),
     },
   };
 }
