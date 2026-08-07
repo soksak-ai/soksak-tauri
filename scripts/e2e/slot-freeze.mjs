@@ -55,6 +55,11 @@ import {
   browserTabNodeAddress,
 } from "./lib/browser-ui-addresses.mjs";
 import { mapBrowserSurfaceRects } from "./lib/browser-surface-rects.mjs";
+import {
+  captureDocumentGeometry,
+  fullCaptureDocumentProbeJs,
+  mapPageState,
+} from "./lib/browser-page-state.mjs";
 import { windowedSurfaceCompositionVerdict } from "./lib/windowed-surface-composition.mjs";
 import { mapB03LiveEvidence } from "./lib/browser-gate-b03-evidence.mjs";
 import { mapB05LiveEvidence } from "./lib/browser-gate-b05-evidence.mjs";
@@ -791,9 +796,9 @@ async function verifyFullCapture(rpc, win, plugin, tabId, outputPath, identityMa
   const readDocument = async (stage) => {
     const value = must(await rpc(`plugin.${plugin}.eval`, {
       viewId: tabId,
-      js: "return { y:scrollY, viewport:{w:innerWidth,h:innerHeight}, document:{w:Math.max(innerWidth,document.documentElement.scrollWidth),h:Math.max(innerHeight,document.documentElement.scrollHeight)} };",
+      js: fullCaptureDocumentProbeJs(),
     }, win), `${stage} full capture document ${tabId}`);
-    return unwrapEvalValue(value);
+    return mapPageState(unwrapEvalValue(value));
   };
   const before = await readDocument("before");
   const result = await produceEvidenceFile(outputPath, async ({ path: capturePath }) => must(
@@ -809,8 +814,8 @@ async function verifyFullCapture(rpc, win, plugin, tabId, outputPath, identityMa
     requestedViewId: tabId,
     outputPath,
     fileBytes,
-    before,
-    after,
+    before: captureDocumentGeometry(before),
+    after: captureDocumentGeometry(after),
     result,
   });
   if (!verdict.ok) {

@@ -710,7 +710,9 @@ export function judgeB04MachineEvidence(value) {
   );
 }
 
-const B11_PAGE_KEYS = Object.freeze([
+// B11이 요구하는 페이지 축의 정본. probe와 mapper는 이 목록에서 파생한다 —
+// 손으로 다시 나열하면 반드시 하나가 빠진다.
+export const B11_PAGE_KEYS = Object.freeze([
   "scrollX",
   "scrollY",
   "viewportWidth",

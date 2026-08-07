@@ -493,6 +493,20 @@
       "note": "브라우저 matrix의 구현 목록·마커 판정·eval 봉투 해소를 순수 바이트와 값으로 고정하며, 창 캡처 좌표계 계약도 직접 검증하므로 네이티브 표면에 결속된다."
     },
     {
+      "file": "lib/browser-page-state.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "B11이 판정하는 페이지 축을 읽는 eval 본문과 그 결과의 축 옮김을 소유한다. 읽는 축은 판정 목록에서 파생하고, 네이티브 표면이나 프레임워크 경로는 알지 않는다."
+    },
+    {
+      "file": "lib/browser-page-state.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "하니스가 보내는 probe 본문을 페이지 스코프에서 실제로 실행해 판정이 요구하는 축이 전부 수치로 채워지는지 본다."
+    },
+    {
       "file": "lib/browser-surface-rects.mjs",
       "role": "lib",
       "class": "A",
