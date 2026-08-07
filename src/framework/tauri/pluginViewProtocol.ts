@@ -43,6 +43,11 @@ export interface PluginViewInit {
 export interface PluginViewFailure {
   pluginId: string;
   reason: string;
+  /**
+   * 실패 시점까지 이 renderer 가 등록한 뷰의 수. 활성 실패는 사유이지 준비의 부재가 아니다 —
+   * 뷰를 하나라도 등록했다면 그 뷰는 온다. 0 일 때만 준비가 거절된다.
+   */
+  registeredViews: number;
 }
 
 export interface PluginViewSlotFrame {

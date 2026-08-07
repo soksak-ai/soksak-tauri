@@ -115,6 +115,9 @@ document.addEventListener("change", reportSlots, true);
 await listen<PluginViewInit>(event("init"), async ({ payload: init }) => {
   activeLabel = init.label;
   const subscriptions: { dispose(): void }[] = [];
+  // 활성 실패가 준비의 부재인지 아닌지는 이 수가 정한다 — 등록을 마친 뒤 죽은 플러그인의
+  // 뷰는 이미 오고 있다. 부모가 이 사실 없이 실패만 보면 살아 있는 뷰를 거절한다.
+  let registeredViews = 0;
   let visible = init.context.visible;
   const context = {
     ...init.context,
@@ -147,6 +150,7 @@ await listen<PluginViewInit>(event("init"), async ({ payload: init }) => {
     },
     ui: {
       registerView(_id: string, provider: any) {
+        registeredViews += 1;
         provider.mount(document.getElementById("root")!, context);
         subscriptions.push({ dispose: () => provider.unmount?.(document.getElementById("root")!) });
         queueMicrotask(observeSlots);
@@ -198,7 +202,7 @@ await listen<PluginViewInit>(event("init"), async ({ payload: init }) => {
       pluginId: init.pluginId,
       load: () => import(/* @vite-ignore */ moduleUrl),
       context: { app, manifest: {}, dir: "", subscriptions },
-      report: (failure) => void emitTo(parent!, event("failure"), failure),
+      report: (failure) => void emitTo(parent!, event("failure"), { ...failure, registeredViews }),
     });
   } finally {
     URL.revokeObjectURL(moduleUrl);

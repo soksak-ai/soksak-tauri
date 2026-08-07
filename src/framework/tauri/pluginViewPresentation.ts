@@ -54,6 +54,8 @@ interface PresentedState {
   markReady(): void;
   /** 자식 renderer 가 낸 활성 실패를 준비 신호로 옮긴다 — 매달림 대신 이름 붙은 거절. */
   markFailed(reason: string): void;
+  /** 활성 실패를 사유로 남긴다. 등록된 뷰가 하나도 없을 때만 준비를 거절한다. */
+  reportActivationFailure(reason: string, registeredViews: number): void;
   sidecars: PluginViewSidecars;
 }
 
@@ -547,6 +549,7 @@ async function createPresentedView(
   input: Parameters<PluginViewPresentationHost["mount"]>[0],
   markReady: () => void,
   markFailed: (reason: string) => void,
+  reportActivationFailure: (reason: string, registeredViews: number) => void,
 ): Promise<PresentedState> {
   const runtime = viewPresentationRuntime(input.provider);
   if (!runtime) throw new Error(`nativeSurface view의 renderer 실행 재료가 없습니다: ${input.registration.pluginId}`);
@@ -561,7 +564,7 @@ async function createPresentedView(
     context: input.context, app, members: new Set(), slots: new PluginViewSlotRegistry(),
     projections: new Map(),
     subscriptions: new Map(), unlisten: [], observer: null!, grouped: false,
-    disposed: false, visible: input.context.isVisible(), markReady, markFailed,
+    disposed: false, visible: input.context.isVisible(), markReady, markFailed, reportActivationFailure,
     visibility: null!,
     sidecars: new PluginViewSidecars(),
   };
@@ -606,10 +609,14 @@ async function createPresentedView(
     };
     void emitTo(renderer, event(renderer, "init"), init);
   }));
-  // 자식이 플러그인을 못 살렸다면 이 뷰는 오지 않는다. 그 사실을 여기서 받아 준비를 끝낸다 —
-  // 듣지 않으면 준비는 영원히 pending 이고 호출자는 이유 없는 mounted:false 만 본다.
+  // 자식이 플러그인을 못 살렸다는 사실을 여기서 받는다. 듣지 않으면 준비는 영원히 pending 이고
+  // 호출자는 이유 없는 mounted:false 만 본다. 다만 활성 실패가 곧 준비의 부재는 아니다 —
+  // 등록을 마친 뒤 죽은 플러그인의 뷰는 이미 오고 있으므로 사유만 남기고 준비는 뷰가 정한다.
   view.unlisten.push(await listen<PluginViewFailure>(failure, ({ payload }) => {
-    view.markFailed(`플러그인 활성 실패(${payload.pluginId}): ${payload.reason}`);
+    view.reportActivationFailure(
+      `플러그인 활성 실패(${payload.pluginId}): ${payload.reason}`,
+      payload.registeredViews,
+    );
   }));
   view.unlisten.push(await listen<PluginViewSlotFrame>(slot, ({ payload }) => {
     view.slots.report(payload);
@@ -785,8 +792,17 @@ const host: PluginViewPresentationHost = {
       if (!signal.markFailed(reason)) return;
       input.context.setStatus({ code: "error", message: reason });
     };
+    // 활성 실패는 언제나 사유로 남는다. 준비를 거절하는 것은 등록된 뷰가 하나도 없을 때뿐이다 —
+    // 등록을 마친 뒤 죽은 플러그인의 뷰는 이미 오고 있고, 그것을 거절하면 살아 있는 표면을 죽인다.
+    const reportActivationFailure = (reason: string, registeredViews: number) => {
+      if (registeredViews > 0) {
+        input.context.setStatus({ code: "error", message: reason });
+        return;
+      }
+      markFailed(reason);
+    };
     input.container.setAttribute(TAURI_PANE_RENDERER_ATTR, "pending");
-    void createPresentedView(input, markReady, markFailed).then((created) => {
+    void createPresentedView(input, markReady, markFailed, reportActivationFailure).then((created) => {
       if (disposed) {
         disposeView(created);
         return;
