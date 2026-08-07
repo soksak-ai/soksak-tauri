@@ -109,6 +109,14 @@ function evidence(engine = "browser", { extraWide = false } = {}) {
   });
   return {
     engine,
+    acknowledgedComposition: {
+      observer: "resize-composition-sample",
+      steps: transactions.map((_, sequence) => ({
+        sequence,
+        acknowledged: true,
+        violations: [],
+      })),
+    },
     coordinateSpace: {
       logical: "css-px",
       physical: "device-px",

@@ -669,6 +669,15 @@
       "note": "오라클의 기준. 어디까지가 백지고 어디부터가 렌더인지를 실물 바이트(fixtures/frames)로 고정한다."
     },
     {
+      "file": "lib/hostile-resize-composition.mjs",
+      "role": "lib",
+      "class": "C",
+      "surfaces": [
+        "tauri-appkit-surface-policy"
+      ],
+      "note": "급격한 창 resize 의 단계 관측을 측정 불가와 계약 위반으로 가른다. 위반한 frame 의 소유 축을 이름 붙일 때 AppKit autoresize 정책 판정을 쓴다 — 그 축은 프레임워크마다 답이 다르다."
+    },
+    {
       "file": "lib/hostile-resize-composition.test.mjs",
       "role": "test",
       "class": "A",

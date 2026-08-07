@@ -8,6 +8,10 @@ import { describe, expect, it } from "vitest";
 
 import { judgeB10MachineEvidence } from "./browser-gate-b10.mjs";
 import { mapB10LiveEvidence } from "./browser-gate-b10-evidence.mjs";
+import {
+  hostileResizeCompositionPlane,
+  hostileResizeObservationGaps,
+} from "./hostile-resize-composition.mjs";
 
 const scaleFactor = 2;
 const physical = (frame) => ({
@@ -120,6 +124,7 @@ function raw({ redStep = null, autoresizingMask = 18 } = {}) {
     engine: "browser",
     scaleFactor,
     resizeSequence: {
+      steps: requests.length,
       baseline: {
         status: "observed",
         observation: { snapshot: baseline, ...compositionSample({ generation: 0 }) },
@@ -187,6 +192,54 @@ describe("hostile resize acknowledged composition", () => {
     const receipt = verdictOf(value);
     expect(receipt.status).toBe("red");
     expect(receipt.evidence.join(" | ")).toContain("acknowledgedComposition.observer=declared");
+  });
+});
+
+describe("measurement gaps", () => {
+  const sequenceOf = (value) => ({ steps: 4, ...value });
+
+  it("reports no gap when the observer answered every requested step", () => {
+    expect(hostileResizeObservationGaps({
+      requestedSteps: 4,
+      resizeSequence: raw({ redStep: 2 }).resizeSequence,
+    })).toEqual([]);
+  });
+
+  it("names a missing step ledger instead of judging it", () => {
+    expect(hostileResizeObservationGaps({ requestedSteps: 4, resizeSequence: null }))
+      .toEqual(["resizeSequence=record/null"]);
+    expect(hostileResizeObservationGaps({
+      requestedSteps: 4,
+      resizeSequence: sequenceOf({ samples: undefined }),
+    })).toEqual(["samples=array/undefined"]);
+  });
+
+  it("names a step count the command did not answer", () => {
+    const resizeSequence = raw().resizeSequence;
+    resizeSequence.samples.pop();
+    resizeSequence.steps = 3;
+    expect(hostileResizeObservationGaps({ requestedSteps: 4, resizeSequence }))
+      .toEqual(["steps=4/3", "samples.length=4/3"]);
+  });
+
+  it("names an empty observation seat, and never turns it into a verdict", () => {
+    const resizeSequence = raw().resizeSequence;
+    resizeSequence.samples[1].observation = null;
+    expect(hostileResizeObservationGaps({ requestedSteps: 4, resizeSequence }))
+      .toEqual(["s1.observation=record/null"]);
+    const plane = hostileResizeCompositionPlane(resizeSequence);
+    expect(plane.steps[1]).toEqual({
+      sequence: 1,
+      acknowledged: null,
+      violations: ["s1:observation=record/null"],
+    });
+  });
+
+  // 관측면이 답한 red 는 측정 불가가 아니다 — 실행을 멈출 사유가 없다.
+  it("does not treat an acknowledged red as a gap", () => {
+    const resizeSequence = raw({ redStep: 0 }).resizeSequence;
+    expect(hostileResizeObservationGaps({ requestedSteps: 4, resizeSequence })).toEqual([]);
+    expect(hostileResizeCompositionPlane(resizeSequence).steps[0].acknowledged).toBe(false);
   });
 });
 
