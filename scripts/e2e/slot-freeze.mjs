@@ -850,8 +850,11 @@ async function assertViewportComposition(rpc, win, plugin, tabIds, addresses, sc
     });
     if (!verdict.ok) errors.push(`${tabIds[index]}:${verdict.errors.join("|")}`);
   }
-  if (errors.length) throw new Error(`${name}: resize composition 불일치 — ${errors.join(", ")}`);
+  // 잰 어긋남은 그 칸의 사실이지 실행의 끝이 아니다 — 던지면 같은 실행이 재던 나머지 칸까지
+  // 함께 사라진다(실측 2026-08-08: offscreen 이 pane-wider 한 자리에서 다섯 칸을 잃었다).
+  // 부르는 쪽이 그 사실을 자기 칸에 싣고, 판정은 마지막에 한 번 한다.
   await observeFrameSequence([file], name, scale);
+  return errors;
 }
 
 async function verifyIme(rpc, win, plugin, tabId, text) {
@@ -1339,6 +1342,8 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
     let frameCount = 0;
     const b04Transitions = [];
     const b05Transitions = [];
+    // resize 합성의 잰 어긋남 — B11 이 자기 칸에 싣는다. 던져서 나머지를 데려가지 않는다.
+    const viewportCompositionErrors = [];
     const b06Checkpoints = [];
     const presentationTrace = SCENARIOS.has("flow")
       ? await resolvePresentationTrace(rpc, win, capabilities, implementation, tabIds, paneIds, labels)
@@ -2136,8 +2141,10 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
           labels,
         );
       }
-      await assertViewportComposition(rpc, win, plugin, tabIds, addresses, scale,
-        path.join(engineEvidence, "resize-window-restored.png"), `${engine}/window-restored`);
+      viewportCompositionErrors.push(...(await assertViewportComposition(
+        rpc, win, plugin, tabIds, addresses, scale,
+        path.join(engineEvidence, "resize-window-restored.png"), `${engine}/window-restored`,
+      )).map((row) => `window-restored: ${row}`));
       await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, "window-resize-restored");
       const hostileIme = await assertImePersisted(
         rpc, win, plugin, tabIds, "window-resize-restored",
@@ -2206,8 +2213,10 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
             composition,
           );
         }
-        await assertViewportComposition(rpc, win, plugin, tabIds, addresses, scale,
-          path.join(engineEvidence, `resize-pane-${direction}.png`), `${engine}/pane-${direction}`);
+        viewportCompositionErrors.push(...(await assertViewportComposition(
+          rpc, win, plugin, tabIds, addresses, scale,
+          path.join(engineEvidence, `resize-pane-${direction}.png`), `${engine}/pane-${direction}`,
+        )).map((row) => `pane-${direction}: ${row}`));
         await assertEngineSurfaceLedger(rpc, win, implementation, tabIds, `pane-resize-${direction}`);
         if (b11PaneStages) {
           // 요청한 pointer 이동량은 drag 영수증이 답한 값이다 — 하니스가 다시 적으면 두 자리가 갈린다.
@@ -2253,7 +2262,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
           framework: frameworkName,
           engine,
           gate: "B11",
-          evidence: { engine, tabs: b11Tabs },
+          evidence: { engine, tabs: b11Tabs, viewportComposition: viewportCompositionErrors },
         });
         await gateReportStore.persist();
         console.log(formatGateVerdict(engine, "B11", b11Receipt));

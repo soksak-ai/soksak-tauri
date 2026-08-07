@@ -75,7 +75,7 @@ function harnessTab(index) {
 describe("B11 live evidence mapper", () => {
   it("휠 사건·산출물 실측·pane 왕복을 판정 봉투로 옮긴다", () => {
     const tabs = [0, 1].map((index) => mapB11TabEvidence(harnessTab(index)));
-    expect(judgeB11MachineEvidence({ engine, tabs }).status).toBe("green");
+    expect(judgeB11MachineEvidence({ engine, tabs, viewportComposition: [] }).status).toBe("green");
     expect(tabs[0].capture.receipt.capturedHeight).toBe(3200);
     expect(tabs[1].paneResize.side).toBe("right");
     // 축 목록은 판정이 소유한다 — mapper가 손으로 다시 나열하면 하나가 빠진다.

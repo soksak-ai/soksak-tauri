@@ -27,6 +27,7 @@ function paneStage(settledAtUnixMs, { paneX, paneWidth, viewportWidth }) {
 function b11Evidence(engine = "browser") {
   return {
     engine,
+    viewportComposition: [],
     tabs: ["left", "right"].map((side, index) => {
       const viewId = `${engine}-${side}`;
       const sign = side === "left" ? 1 : -1;
@@ -93,7 +94,7 @@ describe("B11 pane-resize/scroll/full-capture judge", () => {
       expect(judgeB11MachineEvidence(b11Evidence(engine))).toMatchObject({ status: "green", reason: null });
     }
     expect(judgeB11MachineEvidence(null)).toEqual({ status: "not-run", evidence: [], reason: null });
-    expect(judgeB11MachineEvidence({ engine: "browser", tabs: [] }).status).toBe("red");
+    expect(judgeB11MachineEvidence({ engine: "browser", tabs: [] , viewportComposition: [] }).status).toBe("red");
   });
 
   it("자기 자신만 맞대는 옛 봉투는 green이 될 수 없다", () => {
@@ -293,5 +294,36 @@ describe("B11 pane-resize/scroll/full-capture judge", () => {
     const pixelInput = b11Evidence();
     pixelInput.tabs[0].capture.receipt.markerPixels = { red: 64 };
     expect(judgeB11MachineEvidence(pixelInput).status).toBe("red");
+  });
+});
+
+// 규칙 — 잰 어긋남은 그 칸의 사실이지 실행의 끝이 아니다.
+//
+// resize 합성의 어긋남(viewport 와 slot 이 다르다)을 하니스가 던져 왔다. 그러면 같은 실행이
+// 재던 나머지 칸까지 함께 사라진다 — 실측 2026-08-08: offscreen 이 pane-wider 한 자리에서
+// `viewport.w=341/slot.w=301` 로 던져 다섯 칸을 잃었다.
+//
+// 그 어긋남을 B11 이 자기 칸에 싣는다. 판정은 모든 칸을 잰 뒤 마지막에 한 번 한다.
+describe("B11 resize 합성 어긋남", () => {
+  it("어긋남을 이름과 함께 red 로 낸다", () => {
+    const value = b11Evidence();
+    value.viewportComposition = ["pane-wider: tab-a:viewport.w=341/slot.w=301"];
+    const verdict = judgeB11MachineEvidence(value);
+    expect(verdict.status).toBe("red");
+    expect(verdict.evidence.some((row) => row.includes("viewport.w=341/slot.w=301"))).toBe(true);
+  });
+
+  it("어긋남이 없으면 지금 계약 그대로다", () => {
+    const value = b11Evidence();
+    value.viewportComposition = [];
+    expect(judgeB11MachineEvidence(value).status).toBe("green");
+  });
+
+  // 안 실은 것을 "어긋남이 없다" 로 읽으면 재지 않은 축이 통과로 잡힌다.
+  it("그 축을 안 실은 봉투는 통과가 아니다", () => {
+    const value = b11Evidence();
+    delete value.viewportComposition;
+    const verdict = judgeB11MachineEvidence(value);
+    expect(verdict.status).not.toBe("green");
   });
 });

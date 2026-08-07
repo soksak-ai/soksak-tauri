@@ -119,7 +119,7 @@ describe("full capture page-state probe", () => {
       documentHeight: 2140,
       evidenceWiring: cleanPageWiring(),
     });
-    expect(judgeB11MachineEvidence({ engine: "browser", tabs })).toMatchObject({ status: "green" });
+    expect(judgeB11MachineEvidence({ engine: "browser", tabs , viewportComposition: [] })).toMatchObject({ status: "green" });
   });
 
   it("가로로 스크롤된 페이지의 scrollX를 0으로 지어내지 않는다", () => {
@@ -127,7 +127,7 @@ describe("full capture page-state probe", () => {
     const tabs = b11TabsFromProbe(raw);
 
     expect(tabs[0].capture.before.scrollX).toBe(37);
-    expect(judgeB11MachineEvidence({ engine: "browser", tabs })).toMatchObject({ status: "green" });
+    expect(judgeB11MachineEvidence({ engine: "browser", tabs , viewportComposition: [] })).toMatchObject({ status: "green" });
   });
 
   it("probe가 읽는 축과 판정이 요구하는 축이 정확히 같다", () => {
@@ -176,7 +176,7 @@ describe("full capture page-state probe", () => {
       error: null,
     });
     const tabs = b11TabsFromProbe(wrapped);
-    const verdict = judgeB11MachineEvidence({ engine: "browser", tabs });
+    const verdict = judgeB11MachineEvidence({ engine: "browser", tabs , viewportComposition: [] });
     expect(verdict.status).toBe("red");
     expect(verdict.evidence).toContain("B11:wiring.B11.page.value=produced-not-consumed");
     expect(verdict.evidence).toContain("B11:wiring.B11.page.scrollY=consumed-not-produced");
@@ -192,6 +192,7 @@ describe("full capture page-state probe", () => {
     const verdict = judgeB11MachineEvidence({
       engine: "browser-chromium",
       tabs: b11TabsFromProbe(flatReply(raw, "view-0")),
+      viewportComposition: [],
     });
     expect(verdict.status).toBe("red");
     expect(verdict.evidence).toContain("B11:wiring.B11.page.viewId=produced-not-consumed");
@@ -210,7 +211,7 @@ describe("full capture page-state probe", () => {
   it("펼친 봉투를 연 뒤 B11이 배선 이름 없이 판정한다", () => {
     const raw = runPageProbe(fullCaptureDocumentProbeJs(), FIXTURE_PAGE);
     const tabs = b11TabsFromProbe(openPageStateReply(flatReply(raw, "view-0")));
-    expect(judgeB11MachineEvidence({ engine: "browser-chromium", tabs })).toMatchObject({
+    expect(judgeB11MachineEvidence({ engine: "browser-chromium", tabs , viewportComposition: [] })).toMatchObject({
       status: "green",
     });
   });

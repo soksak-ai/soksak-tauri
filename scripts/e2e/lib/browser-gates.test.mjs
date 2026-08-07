@@ -148,6 +148,7 @@ function b11Evidence(engine = "browser") {
   const dx = 80;
   return {
     engine,
+    viewportComposition: [],
     tabs: ["left", "right"].map((side, index) => {
       const viewId = `${engine}-${side}`;
       const sign = side === "left" ? 1 : -1;

@@ -348,7 +348,7 @@ function inspectPaneSides(panes, failures) {
 export function judgeB11MachineEvidence(value) {
   if (value == null) return notRunVerdict();
   const failures = [];
-  if (!requireExactKeys(value, ["engine", "tabs"], "evidence", failures)) {
+  if (!requireExactKeys(value, ["engine", "tabs", "viewportComposition"], "evidence", failures)) {
     return finishMachineVerdict("B11", failures, "B11:unreachable");
   }
   if (!requireEvidenceEnvelope(value, failures)) {
@@ -367,6 +367,13 @@ export function judgeB11MachineEvidence(value) {
     if (pane !== null) panes.push(pane);
   });
   inspectPaneSides(panes, failures);
+  // 잰 어긋남은 그 칸의 사실이다 — 하니스가 던지면 나머지 칸까지 함께 사라진다.
+  if (!Array.isArray(value.viewportComposition)) {
+    failures.push(`viewportComposition=names/${displayValue(value.viewportComposition)}`);
+  } else {
+    for (const row of value.viewportComposition) failures.push(`viewportComposition:${row}`);
+  }
+
   return finishMachineVerdict(
     "B11",
     failures,
