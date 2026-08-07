@@ -5,7 +5,11 @@
 // 자극·배치·정착은 하니스가 만드는 사실이라 여기서는 합성하되, **trace 쪽 전부는 실제 어댑터가
 // 낸 값**이다 — 그 축이 이 유닛의 것이다.
 import { beforeEach, describe, expect, it } from "vitest";
+// 판정기와 매퍼는 하니스의 .mjs 다 — 타입 선언 없이 **정본 그대로** 부른다. 여기서 모양을
+// 다시 적으면 판정기가 바뀌는 날 두 기준이 갈리고, 갈린 쪽은 조용하다.
+// @ts-expect-error 하니스 판정기에는 타입 선언이 없다
 import { judgeB05MachineEvidence } from "../../../scripts/e2e/lib/browser-gate-b05.mjs";
+// @ts-expect-error 하니스 매퍼에는 타입 선언이 없다
 import { mapB05LiveEvidence } from "../../../scripts/e2e/lib/browser-gate-b05-evidence.mjs";
 import { presentationUnixMsFromDocumentTime } from "../../lib/presentationClock";
 import {
@@ -94,9 +98,10 @@ async function runTrace(
   const owners = domPresentationOwners(WINDOW_LABEL).map(({ viewId, hostId, surfaceId }) => ({
     viewId, hostId, surfaceId,
   }));
-  const start = performance.now() + REFRESH_MS;
   const armed = ledger.arm({ traceId: `t-${direction}`, owners, maxEvents: 64 });
   await frames.subscribed();
+  // 무장 시각을 확정한 뒤에 표시 시각을 정한다 — 무장보다 이른 프레임은 이 거래의 것이 아니다.
+  const start = performance.now() + REFRESH_MS;
   frames.emit(start);
   await armed;
   for (let index = 1; index < frameCount; index += 1) {
@@ -231,9 +236,9 @@ describe("Electron 표시 원장", () => {
     const owners = domPresentationOwners(WINDOW_LABEL).map(({ viewId, hostId, surfaceId }) => ({
       viewId, hostId, surfaceId,
     }));
-    const start = performance.now() + REFRESH_MS;
     const armed = ledger.arm({ traceId: "t-gap", owners });
     await frames.subscribed();
+    const start = performance.now() + REFRESH_MS;
     frames.emit(start);
     await armed;
     // 두 주기를 건너뛴 프레임 — 표시가 한 번 빠졌다는 뜻이다.
@@ -256,9 +261,9 @@ describe("Electron 표시 원장", () => {
     const owners = domPresentationOwners(WINDOW_LABEL).map(({ viewId, hostId, surfaceId }) => ({
       viewId, hostId, surfaceId,
     }));
-    const start = performance.now() + REFRESH_MS;
     const armed = ledger.arm({ traceId: "t-dead", owners });
     await frames.subscribed();
+    const start = performance.now() + REFRESH_MS;
     frames.emit(start);
     await armed;
     document.querySelector(`[data-content-view="${label("tab-left")}"]`)!

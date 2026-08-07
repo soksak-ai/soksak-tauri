@@ -161,11 +161,15 @@ describe("Tauri native-composition ownership", () => {
     expect(trace).toMatch(/recordPresentation:/);
     expect(trace).toMatch(/presentationLayer/);
     expect(trace).not.toMatch(/setInterval|requestAnimationFrame|thread::sleep/);
-    expect(tauriInstall).toMatch(/webview\.pane\.presentation\.trace\.arm/);
+    // 원장의 **이름**은 코어 계약이고(framework/presentationLedger), 그것을 내는 물건만 여기
+    // 있다. 이름이 이 프레임워크의 것이면 다른 프레임워크에서 같은 축이 한 칸도 안 재진다.
+    expect(tauriInstall).toMatch(/registerPresentationLedgerHost\(/);
     expect(tauriInstall).toMatch(/webview_presentation_trace_arm/);
-    expect(tauriInstall).toMatch(/webview\.pane\.presentation\.trace\.close/);
     expect(tauriInstall).toMatch(/webview_presentation_trace_close/);
-    expect(electron).not.toMatch(/webview_presentation_trace|webview\.pane\.presentation\.trace/);
+    expect(tauriInstall).not.toMatch(/register\("webview\.pane\.presentation\.trace/);
+    // Electron 은 같은 계약을 자기 방식으로 채운다 — 이 프레임워크의 네이티브 이름은 안 부른다.
+    expect(electron).toMatch(/registerPresentationLedgerHost\(/);
+    expect(electron).not.toMatch(/webview_presentation_trace|webview\.pane\./);
   });
 
   it("native bounds command는 main-thread frame 설치 ACK 뒤에만 반환한다", () => {

@@ -85,6 +85,10 @@ type DomPaneFact = {
 type NativePaneFact = {
   pane: string;
   window: string;
+  /** 이 host가 품은 pane renderer의 native identity. */
+  renderer?: string;
+  /** 이 host가 품은 native member surface identity 전부. */
+  members?: string[];
   cssFrame: PaneRect;
   contractFrame?: PaneRect | null;
   memberFrames?: { label: string; cssFrame: PaneRect | null; contractFrame?: PaneRect | null }[];

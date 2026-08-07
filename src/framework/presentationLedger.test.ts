@@ -11,6 +11,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getSpec, unregister } from "../commands/registry";
+import type { CommandContext } from "../commands/registry";
 import {
   PRESENTATION_LEDGER_DEFAULT_EVENTS,
   __resetPresentationLedgerForTest,
@@ -18,6 +19,7 @@ import {
   parsePresentationMaxEvents,
   parsePresentationOwners,
   registerPresentationLedgerHost,
+  type PresentationLedgerArmInput,
   type PresentationLedgerHost,
 } from "./presentationLedger";
 
@@ -40,14 +42,14 @@ function stubHost(): PresentationLedgerHost {
       hostId: "host-1",
       surfaceId: "surface-1",
     }]),
-    arm: vi.fn(async (input) => ({
+    arm: vi.fn(async (input: PresentationLedgerArmInput) => ({
       traceId: input.traceId,
       ownerViewIds: input.owners.map((owner) => owner.viewId),
       armedAtUnixMs: 1_000,
       baselineFrameSequence: 0,
       sourceGeneration: 1,
     })),
-    close: vi.fn(async ({ traceId }) => ({
+    close: vi.fn(async ({ traceId }: { traceId: string }) => ({
       traceId,
       closed: true,
       ownerViewIds: ["tab-1"],
@@ -78,10 +80,12 @@ describe("표시 원장 계약", () => {
     registerPresentationLedgerHost(host);
     for (const name of COMMANDS) expect(getSpec(name), name).toBeDefined();
 
-    const owners = await getSpec("view.presentation.owners")!.handler({});
+    const call = (name: string, params: Record<string, unknown>) =>
+      getSpec(name)!.handler(params, {} as CommandContext);
+    const owners = await call("view.presentation.owners", {});
     expect(owners).toMatchObject({ count: 1 });
 
-    const armed = await getSpec("view.presentation.trace.arm")!.handler({
+    const armed = await call("view.presentation.trace.arm", {
       traceId: "t-1",
       owners: [{ viewId: "tab-1", hostId: "host-1", surfaceId: "surface-1" }],
     });
@@ -92,7 +96,7 @@ describe("표시 원장 계약", () => {
       maxEvents: PRESENTATION_LEDGER_DEFAULT_EVENTS,
     });
 
-    const receipt = await getSpec("view.presentation.trace.close")!.handler({ traceId: "t-1" });
+    const receipt = await call("view.presentation.trace.close", { traceId: "t-1" });
     expect(receipt).toMatchObject({ traceId: "t-1", closed: true });
   });
 
