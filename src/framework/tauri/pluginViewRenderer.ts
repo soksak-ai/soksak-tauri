@@ -7,6 +7,7 @@ import type {
   PluginViewSlotFrame,
 } from "./pluginViewProtocol";
 import { nodeControlState } from "./pluginViewProtocol";
+import { activatePluginInViewRenderer } from "./pluginViewActivation";
 
 const params = new URLSearchParams(location.search);
 const parent = params.get("parent");
@@ -191,9 +192,14 @@ await listen<PluginViewInit>(event("init"), async ({ payload: init }) => {
   }
   const moduleUrl = URL.createObjectURL(new Blob([init.source], { type: "text/javascript" }));
   try {
-    const mod = await import(/* @vite-ignore */ moduleUrl);
-    const plugin = mod.default ?? mod;
-    plugin.activate({ app, manifest: {}, dir: "", subscriptions });
+    // 활성 실패는 이 renderer 안에서 끝나면 안 된다 — 부모는 이 뷰를 기다리고 있고, 침묵은
+    // 이유 없는 mounted:false 와 한참 뒤 엉뚱한 명령의 오류로만 드러난다.
+    await activatePluginInViewRenderer({
+      pluginId: init.pluginId,
+      load: () => import(/* @vite-ignore */ moduleUrl),
+      context: { app, manifest: {}, dir: "", subscriptions },
+      report: (failure) => void emitTo(parent!, event("failure"), failure),
+    });
   } finally {
     URL.revokeObjectURL(moduleUrl);
   }
