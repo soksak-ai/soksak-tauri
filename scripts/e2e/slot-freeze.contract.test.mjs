@@ -600,6 +600,20 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(judge).toContain("trace.violations");
   });
 
+  it("carries an answered surface-settlement failure to the report instead of ending the run", () => {
+    const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
+    // 앱이 답했으면 그것은 측정이다. `{"ok":false,"code":"TIMEOUT","message":"surface 12 actual
+    // presentation timeout"}` 은 계약 사실이지 측정 불가가 아니다 — 던지면 그 이름이 사라지고
+    // 그 엔진의 남은 칸이 통째로 blocked 가 된다(실측 2026-08-07: 정착 실패 하나가 11칸을 삼켰다).
+    expect(source).toContain('from "./lib/surface-settlement.mjs"');
+    expect(source).toContain("surfaceSettlementVerdict({ stage, viewId, reply })");
+    expect(source).toContain("SURFACE_SETTLEMENT.record(");
+    expect(source).not.toContain("`${stage} settle ${viewId}`");
+    // 위반은 실행을 세우지 않는다. 다만 그 엔진은 모든 칸을 잰 뒤 RED 로 끝난다 — 기준은 그대로다.
+    expect(source).toContain("SURFACE_SETTLEMENT.assertSettled(engine)");
+    expect(source).toContain("SURFACE_SETTLEMENT.reset()");
+  });
+
   it("owns its fixture window size before measuring anything that depends on it", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
     // 앱 기본 크기나 앞 엔진이 남긴 크기를 물려받으면 hostile resize 자극이 실행마다 생겼다

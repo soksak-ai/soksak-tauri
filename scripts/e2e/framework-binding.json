@@ -976,6 +976,20 @@
       "note": "배율 사실이 맨 숫자를 거절하고 못 읽음이 성공값으로 둔갑하지 않는다는 법을 고정한다."
     },
     {
+      "file": "lib/surface-settlement.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "offscreen 표면의 표시 정착 답을 계약 위반과 측정 불가로 가른다. 봉투만 읽으므로 프레임워크를 모른다 — 어느 엔진이 답했는지도 묻지 않는다."
+    },
+    {
+      "file": "lib/surface-settlement.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "답한 실패가 이름 붙은 위반으로 남고 응답 부재만 실행을 멈춘다는 법, 그리고 재지 않은 것과 재서 통과한 것이 갈린다는 법을 고정한다."
+    },
+    {
       "file": "lib/tauri-surface-resize-policy.mjs",
       "role": "lib",
       "class": "C",
