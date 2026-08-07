@@ -105,6 +105,15 @@ export interface ContentViewDomFact {
    * 되고, 그 추론은 문법이 바뀌는 날 조용히 남의 뷰를 가리킨다. 안 찍혔으면 null 이다.
    */
   composition: CompositionParticipant | null;
+  /**
+   * 이 표면이 통과시키는 빛 — 어댑터가 자기 표면에 건 감광이 여기 드러난다.
+   *
+   * 조명은 작업면 평면 하나가 소유한다. 어댑터가 자기 표면을 한 번 더 어둡게 하면 같은 화면이
+   * 두 번 감광되는데, 물을 자리가 없으면 판정하는 쪽은 "안 걸었을 것"이라고 써 넣는 수밖에
+   * 없다 — 그 순간 그 축은 무엇이 걸려 있어도 영원히 통과한다.
+   */
+  opacity: string;
+  filter: string;
   rect: { x: number; y: number; w: number; h: number };
 }
 
@@ -125,6 +134,8 @@ export function contentViewDomFacts(doc: Document = document): ContentViewDomFac
       projectId: project?.dataset.projectPlane ?? null,
       projectActive: project?.dataset.projectActive === "1",
       composition: readCompositionParticipant(el),
+      opacity: style?.opacity ?? "",
+      filter: style?.filter ?? "",
       rect: {
         x: +rect.x.toFixed(2),
         y: +rect.y.toFixed(2),

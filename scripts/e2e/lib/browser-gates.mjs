@@ -6,6 +6,7 @@ import {
   logicalRectToPhysical,
 } from "../../../packages/dom-webview-compositor/src/index.ts";
 import { layoutTransactionVerdict } from "./layout-transaction-verdict.mjs";
+import { BROWSER_SURFACE_OBSERVATION_SOURCES } from "./browser-surface-rects.mjs";
 import { judgeB05MachineEvidence } from "./browser-gate-b05.mjs";
 import { judgeB06MachineEvidence } from "./browser-gate-b06.mjs";
 import { judgeB07MachineEvidence } from "./browser-gate-b07.mjs";
@@ -83,7 +84,7 @@ export const BROWSER_ACCEPTANCE_GATES = deepFreeze([
   {
     id: "B03",
     name: "dom-live-surface-one-to-one",
-    contract: "DOM slot과 live surface는 1:1이고 공유 topology와 frame은 rounding-only로 일치한다.",
+    contract: "DOM slot·renderer는 공개 DOM을, live surface는 자기 표면 원장을 각각 관측해 1:1이고, 두 좌표는 물리 픽셀 반올림 외에 다르지 않다.",
   },
   {
     id: "B04",
@@ -461,11 +462,19 @@ export function judgeB02MachineEvidence(value) {
 const B03_EVIDENCE_KEYS = Object.freeze([
   "engine",
   "coordinateSpace",
+  "observation",
   "visibleViewIds",
   "slots",
   "renderers",
   "surfaces",
 ]);
+const B03_OBSERVATION_KEYS = Object.freeze([
+  "settledAtUnixMs",
+  "sampledAtUnixMs",
+  "sources",
+]);
+const B03_OBSERVATION_KINDS = Object.freeze(["slot", "renderer", "surface"]);
+const B03_OBSERVATION_SOURCES = new Set(Object.values(BROWSER_SURFACE_OBSERVATION_SOURCES));
 const B03_PARTICIPANT_KEYS = Object.freeze([
   "id",
   "viewId",
@@ -490,6 +499,43 @@ function inspectB03Participants(values, kind, failures) {
 }
 
 /**
+ * 세 관측이 같은 정착 창에서, 서로 다른 원장에서 왔는지 판정한다.
+ *
+ * 좌표가 같다는 사실은 표면이 제자리에 있다는 뜻이 될 수도 있고 한 숫자를 세 번 적었다는
+ * 뜻이 될 수도 있다. 원장 이름과 표본 시점이 없으면 두 경우를 가를 수 없다.
+ */
+function inspectB03Observation(value, failures) {
+  if (!requireExactKeys(value, B03_OBSERVATION_KEYS, "observation", failures)) return null;
+  const settledAtUnixMs = value.settledAtUnixMs;
+  const sampledAtUnixMs = value.sampledAtUnixMs;
+  if (!Number.isFinite(settledAtUnixMs)) {
+    failures.push(`observation.settledAtUnixMs=finite/${displayValue(settledAtUnixMs)}`);
+  }
+  if (!Number.isFinite(sampledAtUnixMs)) {
+    failures.push(`observation.sampledAtUnixMs=finite/${displayValue(sampledAtUnixMs)}`);
+  }
+  if (Number.isFinite(settledAtUnixMs) && Number.isFinite(sampledAtUnixMs)
+      && sampledAtUnixMs < settledAtUnixMs) {
+    failures.push(
+      `observation.sampledAtUnixMs>=settledAtUnixMs/${sampledAtUnixMs}<${settledAtUnixMs}`,
+    );
+  }
+  if (!requireExactKeys(value.sources, B03_OBSERVATION_KINDS, "observation.sources", failures)) {
+    return null;
+  }
+  for (const kind of B03_OBSERVATION_KINDS) {
+    if (!B03_OBSERVATION_SOURCES.has(value.sources[kind])) {
+      failures.push(`observation.sources.${kind}=known/${displayValue(value.sources[kind])}`);
+    }
+  }
+  const surface = value.sources.surface;
+  if (surface === value.sources.slot || surface === value.sources.renderer) {
+    failures.push(`observation.sources.surface=independent/${displayValue(surface)}`);
+  }
+  return value.sources;
+}
+
+/**
  * B03은 independently enumerated inventory만 받는다. paired 결과만 받으면 producer가
  * 누락 surface를 숨길 수 있으므로 visible owner ledger와 세 집합을 따로 요구한다.
  */
@@ -510,6 +556,7 @@ export function judgeB03MachineEvidence(value) {
       failures.push(`coordinateSpace.physical=device-px/${displayValue(value.coordinateSpace.physical)}`);
     }
   }
+  const sources = inspectB03Observation(value.observation, failures);
   if (!Array.isArray(value.visibleViewIds)
       || value.visibleViewIds.length === 0
       || value.visibleViewIds.some((viewId) => !hasText(viewId))) {
@@ -524,7 +571,9 @@ export function judgeB03MachineEvidence(value) {
   return finishMachineVerdict(
     "B03",
     failures,
-    `${value.engine}/B03:visible=${inventoryVerdict.matched};slot+renderer+surface=1:1-rounding-only`,
+    `${value.engine}/B03:visible=${inventoryVerdict.matched}`
+      + ";slot+renderer+surface=1:1-physical-rounding"
+      + `;surface-ledger=${sources?.surface}`,
   );
 }
 

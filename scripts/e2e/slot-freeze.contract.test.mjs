@@ -235,7 +235,9 @@ describe("slot-freeze instrumentation lifecycle", () => {
     expect(calls.every((call) => call.paneOwnedOnly)).toBe(true);
     const lighting = source.split("async function assertFocusLighting")[1]
       ?.split("async function assertRailCompositionContract")[0] ?? "";
-    expect(lighting).toContain("if (paneOwned)");
+    // pane composition 장부는 그 장부가 픽셀을 소유할 때만 읽는다. 옛 판은 그 갈래를
+    // paneOwned 로 적었고, 지금은 같은 사실을 근거 이름(adapterBasis)이 든다.
+    expect(lighting).toContain('adapterBasis === "pane-host"');
     expect(lighting).not.toContain('if (frameworkName === "tauri")');
   });
 
@@ -302,7 +304,10 @@ describe("slot-freeze instrumentation lifecycle", () => {
     const lighting = source.split("async function assertFocusLighting")[1]?.split("async function assertRailCompositionContract")[0] ?? "";
     expect(lighting).toContain('props: ["--dim"]');
     expect(lighting).toContain("dataset?.dim");
-    expect(lighting).toContain("Math.abs(Number(match.alpha) - 1)");
+    // 투과율의 문턱은 judge 가 든다(adapterAlpha≈1). 하니스는 장부에서 읽어 근거와 함께 싣는다 —
+    // 하니스가 문턱을 들면 못 읽은 자리를 통과값으로 메우고 싶은 자리가 생긴다.
+    expect(lighting).toContain("readAdapterAlpha");
+    expect(lighting).toContain("adapterBases");
     expect(lighting).not.toContain("1 - dims[index]");
     expect(lighting).not.toContain('rpc("window.pixels"');
     expect(source).toContain("lightingAddressForTab");
@@ -606,7 +611,11 @@ describe("slot-freeze instrumentation lifecycle", () => {
     const source = readFileSync(new URL("./slot-freeze.mjs", import.meta.url), "utf8");
     // 판정면이 갈리는 축은 이름이 아니라 선언된 능력이다. 한 호출자가 옛 이름을 들고 남으면
     // 그 자리에서만 provision 이 undefined 가 되고, 실행은 그 엔진의 남은 칸을 통째로 잃는다.
-    const calls = source.split("readBrowserSurfaceEvidence(rpc, win, {").slice(1);
+    // 표면 원장을 읽는 입구는 둘이다(영수증만 받는 쪽과 원장 이름·표본 시각까지 받는 쪽) —
+    // 한쪽만 세면 나머지 입구가 이 법 밖에서 자란다.
+    const calls = source
+      .split(/read(?:BrowserSurfaceEvidence|BrowserSurfaceObservation)\(rpc, win, \{/)
+      .slice(1);
     expect(calls.length).toBeGreaterThanOrEqual(4);
     for (const [index, call] of calls.entries()) {
       const args = call.slice(0, call.indexOf("});"));

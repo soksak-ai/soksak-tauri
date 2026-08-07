@@ -10,6 +10,7 @@ import { tmsg } from "../i18n";
 import { allViews, useSessions } from "../state/sessions";
 import { browserLabelPrefix, browserViewIdFromLabel, orphanBrowserLabels } from "../lib/webviewLabels";
 import { CONTENT_VIEW_BODY, contentViewDomFacts, contentViewHost } from "../lib/contentViews";
+import { presentationNowUnixMs } from "../lib/presentationClock";
 
 interface LabelHealth {
   label: string;
@@ -28,7 +29,7 @@ export function registerWebviewCatalog(): void {
     triggers: { ko: "표면 정합 유령 웹뷰 잔존 브라우저 대조 확인" },
     params: {},
     returns:
-      "{ window, actual: [label], ghosts: [label], orphans: [label], engine: {registered, hostPresent}, bodies: [{node,x,y,w,h,children,overlay,…}], contentViews: {inDocument, detached: [label], dom: [{label,slotLabel,computedVisibility,composition:{kind,viewId,topologyPath,visible}|null,rect}]}, stateViews }",
+      "{ window, actual: [label], ghosts: [label], orphans: [label], engine: {registered, hostPresent, surfaces:[{label,hidden,effectivelyHidden,alpha,effectiveAlpha,frame}]}, bodies: [{node,x,y,w,h,children,overlay,…}], contentViews: {inDocument, detached: [label], dom: [{label,slotLabel,computedVisibility,opacity,filter,composition:{kind,viewId,topologyPath,visible}|null,rect}], sampledAtUnixMs}, stateViews } — sampledAtUnixMs is when this ledger read itself, on the same presentation clock as ui.layout.wait-settled, so a caller can tell one settled observation window from two; opacity/filter are how much light the adapter lets through its own surface, so a second dimming on top of the focus lighting plane is readable instead of assumed absent",
     message: (d) => {
       const bad =
         Number((d.ghosts as string[] | undefined)?.length ?? 0) +
@@ -126,7 +127,15 @@ export function registerWebviewCatalog(): void {
         engine,
         bodies,
         stateViews: viewIds.size,
-        contentViews: { inDocument: inDocument.length, detached, dom: contentViewDomFacts() },
+        contentViews: {
+          inDocument: inDocument.length,
+          detached,
+          dom: contentViewDomFacts(),
+          // 이 원장이 스스로를 표본한 순간. 자리를 읽은 시각과 표면을 읽은 시각이 다르면 두
+          // 좌표의 차이는 합성 결함과 구분되지 않는다 — 물을 자리가 없으면 판정하는 쪽은
+          // "같은 순간에 봤다"를 가정으로 쓰게 된다.
+          sampledAtUnixMs: presentationNowUnixMs(),
+        },
       };
     },
   });

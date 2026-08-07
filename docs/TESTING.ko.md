@@ -41,16 +41,26 @@
 `ui.measure.value`로 읽는다. IME·wheel·full-capture도 각각 사건 원장과 명시 view/path 영수증을
 그대로 mapper에 전달한다. 공개 응답에 필드가 없으면 mapper는 `null`을 보존해 RED로 판정하며,
 요청값이나 PNG 픽셀에서 값을 만들어 채우지 않는다.
-B03 mapper는 독립 owner 원장, `compositionKind=slot|renderer` 공개 노드, surface 영수증의
-공유 `topologyPath`를 요구한다. 어느 원장도 다른 원장에서 역산하지 않는다. 참가자 선언의 모양은
+B03 mapper는 독립 owner 원장, `compositionKind=slot|renderer` 공개 노드, 표면을 소유한 원장이
+스스로 낸 영수증을 요구한다. 어느 원장도 다른 원장에서 역산하지 않는다. slot·renderer는 공개
+DOM을 읽고 native surface는 AppKit PaneSurfaceHost 장부(host frame + member frame)를 읽는다 —
+그 자리를 예측한 DOM 투영을 옮겨 적지 않으며, 공개 topology 문자열은 native로 등재된 member
+라벨에 매인 것만 받는다. 세 관측이 읽은 원장 이름과 표면 원장의 표본 시각은 봉투에 실려 같은
+정착 창에서 읽었는지 판정에 들어가고, 좌표 차이는 물리 픽셀 반올림만 허용한다. 참가자 선언의 모양은
 코어(`lib/compositionParticipants`)가 소유하고 각 프레임워크가 자기 참가자에 찍는다.
 `framework.provision`의 `nativeChildWebview=false`인 프레임워크에서 surface 영수증의 원장은
 content view host 자신의 목록(`webview.surfaces`의 `contentViews`)이며, 자리 노드를 표면으로
 대신하지 않는다. 판정면은 프레임워크 이름을 묻지 않는다.
 B05 mapper는 click ACK의 주소·시각, layout 거래의 trace 인과관계, 실제 presentation 사건,
 settled 및 유한 hold 영수증을 닫힌 schema로 결합한다. 빠진 시각이나 hold를 녹화 프레임에서 추정하지 않는다.
-B06 mapper는 pane별 공개 `--dim`/level, adapter alpha, 단일 plane의 base/aperture 원장,
+B06 mapper는 pane별 공개 `--dim`/level, adapter alpha, 화면에 선 단일 plane의 base/aperture 원장,
 rail·sidebar 면제와 plane 비포함 사실을 각각 요구한다. 면제 속성 하나로 다른 값을 대신하지 않는다.
+adapter alpha는 그 픽셀을 소유한 장부의 이름(`pane-host`·`engine-surface`·`content-view-dom`,
+선언된 `nativeChildWebview`와 엔진의 합성 축이 고른다)과 함께 온다 — 장부 이름 없는 alpha는
+측정이 아니라 선언이므로 judge가 이름을 달아 RED를 낸다. "단일 평면"은 화면에 선 평면을 센다:
+파킹된 공간의 평면은 `parked`로 장부에 남고, 가시성을 못 읽은 평면은 파킹이 아니라
+`unreadable`로 센다. rail·sidebar 덮임은 공개 stacking 사슬(`ui.measure stacking:true`)이 가른다 —
+두 z의 뺄셈은 사이에 낀 stacking context를 건너뛰어 화면과 반대되는 답을 낼 수 있다.
 B10 mapper는 baseline과 각 resize ACK가 낸 window/frame/generation/presentation/continuity snapshot만
 닫힌 transaction으로 변환한다. baseline은 같은 명령이 첫 크기를 요청하기 전에 같은 관측자에게서 읽은
 resize 이전 관측이며, `baseline.status`가 아직 묻지 않음·정착한 native 거래가 없어 거절함·실제
@@ -64,7 +74,9 @@ window geometry로 복사하지 않는다. 각 단계의 의도(`phase`)는 시�
 정본 하니스는 여러 모듈이 나눠 소유한다. 측정 커버리지와 엔진 순차 실행은
 `scripts/e2e/lib/browser-gate-coverage.mjs`가, 센티널 뷰의 마운트 계약은 `browser-sentinel.mjs`가,
 판정이 요구하는 페이지 축의 probe 본문은 `browser-page-state.mjs`가, B05 정착 뒤 유지 창은
-`browser-gate-b05-hold.mjs`가, B06 체크포인트 수집은 `browser-gate-b06-collect.mjs`가 소유한다.
+`browser-gate-b05-hold.mjs`가, B06 체크포인트 수집은 `browser-gate-b06-collect.mjs`가, 어댑터
+투과율이 어느 장부에 있는지는 `browser-gate-b06-adapter.mjs`가, 공개 stacking 사슬로 가르는 칠하는
+순서는 `browser-gate-b06-stacking.mjs`가 소유한다.
 파일 목록 자체는 `scripts/e2e/framework-binding.json`이 소유하고 `framework-binding.mjs --check`가
 소스와 양방향으로 대조한다 — 산문으로 다시 세지 않는다.
 
@@ -72,10 +84,10 @@ window geometry로 복사하지 않는다. 각 단계의 의도(`phase`)는 시�
 |---|---|---|
 | B01 | 3종 최초 mount + 주소표시줄 + 페이지 신원 | 탭마다 실제 항해를 최소 두 번 밟는다 — view 마다 다른 문서로 한 번, 정본 픽스처로 한 번. 항해마다 공개 주소표시줄 값, `document.title`, 본문 텍스트를 읽고 셋 다 그 항해의 요청값과 일치해야 한다. 두 view 가 같은 신원을 답하면 거절한다 — 자기 문서는 우리가 물은 view 만 답할 수 있다. 항해 실패와 주소표시줄 미노출은 실행을 끝내지 않고 이름 있는 관측 실패로 실린다. |
 | B02 | 한글 IME `beforeinput`/`input` 및 전환·resize 값 유지 | 두 입력 사건과 최종 value를 읽고 모든 전환·resize checkpoint에서 같은 값을 단언한다. |
-| B03 | DOM slot ↔ live surface 1:1 rounding-only frame/shared topology | 공개 DOM rect·native/engine rect·identity ledger의 개수, 소유권, 좌표 차이를 단언한다. Tauri에서는 어댑터 수명주기 claim(`direct`/`pane`) 또는 중립 공개 선언 `data-external-surface=<안정적 identity>`가 있는 content 슬롯만 native hole이 된다. 선언 없는 DOM 슬롯을 hole로 추측하지 않는다. `direct`, `PaneSurfaceHost`, 외부 제공자 기하는 각 소유 판정면에서 정확히 한 번만 감사한다. Electron은 브라우저 본문이 DOM 자식이므로 이 선언을 hole로 투영하지 않는다. 문서 안에 사는 표면의 참가자는 선언된 자리와 그 안의 태그 둘이고, 세 번째 원장은 content view host의 live 목록이다. |
+| B03 | DOM slot ↔ live surface 1:1, 물리 픽셀 반올림 frame, native 원장에 매인 topology | 공개 DOM rect와 표면 원장이 낸 rect(AppKit host+member frame, engine presentation, content view host의 live 목록)를 각각 읽어 개수, 소유권, 좌표 차이를 단언한다. 표면 rect를 DOM 투영에서 옮겨 적지 않으며, 공개 topology 문자열은 native로 등재된 member 라벨에 매인 것만 받는다. Tauri에서는 어댑터 수명주기 claim(`direct`/`pane`) 또는 중립 공개 선언 `data-external-surface=<안정적 identity>`가 있는 content 슬롯만 native hole이 된다. 선언 없는 DOM 슬롯을 hole로 추측하지 않는다. `direct`, `PaneSurfaceHost`, 외부 제공자 기하는 각 소유 판정면에서 정확히 한 번만 감사한다. Electron은 브라우저 본문이 DOM 자식이므로 이 선언을 hole로 투영하지 않는다. 문서 안에 사는 표면의 참가자는 선언된 자리와 그 안의 태그 둘이고, 세 번째 원장은 content view host의 live 목록이다. |
 | B04 | FLOW rail·pane·native 단일 원자 이동 | ACK된 유한 trace의 initial raw rect와 같은 transaction의 정확한 DOM-commit raw rect를 실제 presentation 사건에 결합해 세 대상의 연결·좌표·정착을 단언한다. |
 | B05 | flicker/black/잔상/착지 후 소실 0 | 공개 presentation trace에서 live·visible·painted 연속성과 replacement/gap/disappearance 0을 단언한다. |
-| B06 | active만 밝음/inactive 감광/rail·sidebar 비감광 | 공개 style 상태에서 단일 lighting plane의 base·active aperture, pane별 dim, rail·sidebar의 plane 비포함, 프레임워크 adapter alpha 1(중복 감광 없음)을 단언한다. |
+| B06 | active만 밝음/inactive 감광/rail·sidebar 비감광 | 공개 style 상태에서 화면에 선 lighting plane 하나의 base·active aperture, pane별 dim, 공개 stacking 사슬로 가른 rail·sidebar의 plane 비포함, 그리고 픽셀을 소유한 장부에서 읽은 adapter alpha 1(중복 감광 없음, 하니스가 써 넣은 상수 없음)을 단언한다. |
 | B07 | PIN 좌·우 인접·분리 border/레이아웃 불변 | 세 focus 상태의 border 관계와 rail/pane DOM identity·rect·split tree 불변을 단언한다. 그려진 변은 관계 노드가 내는 레일 상자와 판 상자 사이 거리로 재고, 선언된 border mode 로 읽지 않는다. |
 | B08 | PIN 양방향 maximize/restore/station 불변 | 좌·우 각각 maximize/restore 전후 방향·split·station의 완전 동일성과, 대상 뷰의 native surface rect 를 직전·최대화·복원 세 시점으로 단언한다. 최대화는 실제로 키워야 하고 복원은 반올림 1px 안에서 원래 자리로 돌아와야 한다. |
 | B09 | rail `+`/우측 sidebar/modal이 native 위 | 실제 교집합의 공개 hit/layer 상태가 chrome을 최상단 소유자로 보고하는지 단언한다. |

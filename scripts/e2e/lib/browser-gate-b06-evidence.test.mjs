@@ -15,9 +15,12 @@ function checkpoint(activeIndex) {
       dims: activeIndex === 0 ? [0, 0.7] : [0.7, 0],
       levels: activeIndex === 0 ? ["clear", "dimmed"] : ["dimmed", "clear"],
       adapterAlphas: [1, 1],
+      adapterBases: ["pane-host", "pane-host"],
     },
     lightingPlane: {
-      count: 1,
+      presented: 1,
+      parked: 0,
+      unreadable: 0,
       baseAmount: 0.7,
       aperturePaneId: paneIds[activeIndex],
       apertureCount: 1,
@@ -41,6 +44,17 @@ describe("B06 live evidence mapper", () => {
     delete value.checkpoints[0].lighting.adapterAlphas;
     const evidence = mapB06LiveEvidence(value);
     expect(evidence.checkpoints[0].panes[0].adapterAlpha).toBeNull();
+    expect(judgeB06MachineEvidence(evidence).status).toBe("red");
+  });
+
+  // 값과 그 값을 낸 장부의 이름은 함께 온다 — 이름 없이 실린 alpha 는 측정이 아니라 선언이다.
+  it("carries the ledger each adapter alpha came from", () => {
+    expect(mapB06LiveEvidence(raw()).checkpoints[0].panes[0].adapterBasis).toBe("pane-host");
+
+    const value = raw();
+    delete value.checkpoints[0].lighting.adapterBases;
+    const evidence = mapB06LiveEvidence(value);
+    expect(evidence.checkpoints[0].panes[0].adapterBasis).toBeNull();
     expect(judgeB06MachineEvidence(evidence).status).toBe("red");
   });
 

@@ -362,18 +362,48 @@
       "note": "B05의 gap·교체·미표시·미정착 RED와 세 engine receipt GREEN을 값으로 고정한다."
     },
     {
+      "file": "lib/browser-gate-b06-adapter.mjs",
+      "role": "lib",
+      "class": "C",
+      "surfaces": [
+        "webview.surfaces"
+      ],
+      "note": "어댑터가 통과시키는 빛을 픽셀 소유 장부에서 읽는다. 어느 장부인지는 선언된 능력이 정하고, 장부의 모양은 프레임워크마다 다른 것이 정상이다(문서 밖 pane host·엔진 표면 대 문서 안 표면). 못 읽으면 null 이다."
+    },
+    {
+      "file": "lib/browser-gate-b06-adapter.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "근거 선택, 필터 투과율, 세 장부의 읽기와 못 읽음을 값으로 고정한다."
+    },
+    {
       "file": "lib/browser-gate-b06-collect.mjs",
       "role": "lib",
       "class": "A",
       "surfaces": [],
-      "note": "ui.tree·ui.measure 공개 표면만으로 lighting plane 농도·aperture 소유자·rail/sidebar 면제와 덮임을 수집한다. 픽셀도 private DOM도 읽지 않는다."
+      "note": "ui.tree·ui.snapshot.dom·ui.measure 공개 표면만으로 화면에 선 lighting plane·농도·aperture 소유자·rail/sidebar 면제와 덮임을 수집한다. 픽셀도 private DOM도 읽지 않는다."
     },
     {
       "file": "lib/browser-gate-b06-collect.test.mjs",
       "role": "test",
       "class": "A",
       "surfaces": [],
-      "note": "가라앉은 레일 층·흐려진 면제 표면·미응답 측정·평면 중복 RED와 두 위상 GREEN을 값으로 고정한다."
+      "note": "베일 아래로 가라앉은 레일·흐려진 면제 표면·미응답 측정·화면에 선 평면 중복 RED와 두 위상 GREEN을 값으로 고정한다."
+    },
+    {
+      "file": "lib/browser-gate-b06-stacking.mjs",
+      "role": "lib",
+      "class": "A",
+      "surfaces": [],
+      "note": "공개 stacking 사슬로 칠하는 순서를 가른다. 두 z 의 뺄셈은 사이 문맥을 건너뛰므로 쓰지 않는다."
+    },
+    {
+      "file": "lib/browser-gate-b06-stacking.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "갈림길의 층, 문서 순서, 조상-자손 못 가름을 값으로 고정한다."
     },
     {
       "file": "lib/browser-gate-b06-evidence.mjs",

@@ -2,36 +2,52 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { mapBrowserSurfaceRects } from "./browser-surface-rects.mjs";
+import {
+  BROWSER_SURFACE_OBSERVATION_SOURCES,
+  browserSurfaceObservation,
+  mapBrowserSurfaceRects,
+} from "./browser-surface-rects.mjs";
 
 const MAPPER = resolve(import.meta.dirname, "browser-surface-rects.mjs");
 
 const views = ["tab-left", "tab-right"];
 const labels = ["native-tab-left", "native-tab-right"];
 
+const paneCompositionFact = ({ member = {}, pane = {}, ...rest } = {}) => ({
+  sampledAtUnixMs: 1_700_000_000_010,
+  matches: labels.map((label, index) => ({
+    viewId: views[index],
+    chromeAboveHost: true,
+    alpha: 1,
+    // DOM 투영은 자리가 예측한 값이고, native 는 AppKit 이 실제로 놓은 값이다. 픽스처는 둘을
+    // 다르게 둔다 — 같은 숫자를 두 칸에 적으면 어느 쪽을 읽었는지 값으로 가릴 수 없다.
+    domFrame: { x: index ? 900 : 900, y: 900, w: 281, h: 449 },
+    nativeFrame: { x: index ? 513 : 60, y: 121, w: 281, h: 449 },
+    memberMatches: [{
+      label,
+      topologyPath: `window/w-test/view/${views[index]}/content/${label}`,
+      nativeCount: 1,
+      ok: true,
+      domFrame: { x: 900, y: 900, w: 281, h: 421 },
+      nativeFrame: { x: 0, y: 28, w: 281, h: 421 },
+      ...member,
+    }],
+    ...pane,
+  })),
+  ...rest,
+});
+
 describe("browser surface rect evidence", () => {
-  it("projects PaneSurfaceHost member frames into window coordinates", () => {
+  // slot·renderer 는 공개 DOM 을 읽는다. 표면까지 같은 DOM 투영을 옮겨 적으면 세 관측은 한
+  // 숫자의 사본 셋이고, native 표면이 어디에 있든 1:1 판정이 통과한다.
+  it("reads the AppKit ledger frames, never the DOM projection it predicted", () => {
     const result = mapBrowserSurfaceRects({
       nativeChildWebview: true,
       surface: "framework-native",
       windowLabel: "w-test",
       viewIds: views,
       labels,
-      paneComposition: {
-        matches: labels.map((label, index) => ({
-          viewId: views[index],
-          chromeAboveHost: true,
-          alpha: 1,
-          domFrame: { x: index ? 513 : 60, y: 121, w: 281, h: 449 },
-          memberMatches: [{
-            label,
-            topologyPath: `window/w-test/view/${views[index]}/content/${label}`,
-            nativeCount: 1,
-            ok: true,
-            domFrame: { x: 0, y: 28, w: 281, h: 421 },
-          }],
-        })),
-      },
+      paneComposition: paneCompositionFact(),
     });
 
     expect(result).toEqual([
@@ -48,6 +64,46 @@ describe("browser surface rect evidence", () => {
         visible: true, presented: true, rect: { x: 513, y: 149, w: 281, h: 421 },
       },
     ]);
+  });
+
+  // 공개 topology 문자열은 DOM 이 선언한다. native 로 등재된 member 라벨에 매이지 않으면 세
+  // 관측의 topology 동일성은 "한 출처에서 복사됐다"만 증명한다 — 그 자리에 신원은 없다.
+  it("accepts a public topology identity only when it is anchored to the native member label", () => {
+    const [receipt] = mapBrowserSurfaceRects({
+      nativeChildWebview: true,
+      surface: "framework-native",
+      windowLabel: "w-test",
+      viewIds: views,
+      labels,
+      paneComposition: paneCompositionFact({
+        member: { topologyPath: "window/w-test/view/tab-left/content/some-other-member" },
+      }),
+    });
+    expect(receipt.topologyPath).toBe("");
+  });
+
+  it("names the ledger it read and when that ledger sampled itself", () => {
+    expect(browserSurfaceObservation({
+      nativeChildWebview: true,
+      surface: "framework-native",
+      windowLabel: "w-test",
+      viewIds: views,
+      labels,
+      paneComposition: paneCompositionFact(),
+    })).toMatchObject({
+      source: BROWSER_SURFACE_OBSERVATION_SOURCES.paneMember,
+      sampledAtUnixMs: 1_700_000_000_010,
+    });
+
+    // 표본 시각이 없는 원장은 null 로 남는다 — 모른다는 사실을 아는 값으로 바꾸지 않는다.
+    expect(browserSurfaceObservation({
+      nativeChildWebview: true,
+      surface: "framework-native",
+      windowLabel: "w-test",
+      viewIds: views,
+      labels,
+      paneComposition: paneCompositionFact({ sampledAtUnixMs: undefined }),
+    }).sampledAtUnixMs).toBeNull();
   });
 
   it("uses the owner-published offscreen presentation bounds", () => {
@@ -110,6 +166,33 @@ describe("browser surface rect evidence", () => {
       presented: true,
       rect: { x: 513, y: 149, w: 281, h: 421 },
     }]);
+  });
+
+  // 문서 안 표면의 원장은 콘텐츠 뷰 호스트 자신의 목록이다 — 자리를 읽는 DOM 트리와 다른
+  // 원장이므로 이름도 달라야 한다. 같은 이름을 쓰면 판정이 두 원장을 하나로 읽는다.
+  it("names the content view host ledger and its sample epoch", () => {
+    const topologyPath = "window/w-test/view/tab-right/content/b-w-test-tab-right";
+    expect(browserSurfaceObservation({
+      nativeChildWebview: false,
+      surface: "framework-native",
+      windowLabel: "w-test",
+      viewIds: ["tab-right"],
+      labels: ["b-w-test-tab-right"],
+      contentViews: {
+        sampledAtUnixMs: 1_700_000_000_020,
+        detached: [],
+        dom: [{
+          label: "b-w-test-tab-right",
+          slotLabel: "b-w-test-tab-right",
+          composition: { kind: "renderer", viewId: "tab-right", topologyPath, visible: true },
+          computedVisibility: "visible",
+          rect: { x: 513, y: 149, w: 281, h: 421 },
+        }],
+      },
+    })).toMatchObject({
+      source: BROWSER_SURFACE_OBSERVATION_SOURCES.contentViewHost,
+      sampledAtUnixMs: 1_700_000_000_020,
+    });
   });
 
   it("rejects an in-document surface that lost its declaration, its slot, or its visibility", () => {
@@ -189,12 +272,14 @@ describe("browser surface rect evidence", () => {
       viewId: "tab-right",
       chromeAboveHost: true,
       alpha: 1,
-      domFrame: { x: 513, y: 121, w: 281, h: 449 },
+      domFrame: { x: 900, y: 900, w: 281, h: 449 },
+      nativeFrame: { x: 513, y: 121, w: 281, h: 449 },
       memberMatches: [{
         label: "native-tab-right",
         topologyPath: "window/w-test/view/tab-right/content/native-tab-right",
         nativeCount: 1, ok: true,
-        domFrame: { x: 0, y: 28, w: 281, h: 421 },
+        domFrame: { x: 900, y: 900, w: 281, h: 421 },
+        nativeFrame: { x: 0, y: 28, w: 281, h: 421 },
         ...(overrides.member ?? {}),
       }],
       ...(overrides.pane ?? {}),
@@ -243,8 +328,10 @@ describe("browser surface rect evidence", () => {
   });
 
   it("carries an unreadable frame as a null rect instead of aborting the run", () => {
-    expect(violating({ member: { domFrame: { x: 0, y: 28, w: 0, h: 421 } } }))
+    expect(violating({ member: { nativeFrame: { x: 0, y: 28, w: 0, h: 421 } } }))
       .toMatchObject({ rect: null });
+    // native 자리를 아예 못 읽었는데 DOM 투영을 대신 적으면, 표면이 사라진 순간에도 좌표가 산다.
+    expect(violating({ member: { nativeFrame: null } })).toMatchObject({ rect: null });
   });
 
   // 판정이 능력이 아니라 이름을 보면 프레임워크가 하나 늘 때마다 갈래가 는다.

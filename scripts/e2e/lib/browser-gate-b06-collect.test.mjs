@@ -7,7 +7,7 @@ import {
   resolveBaseAmount,
   resolveCoveredByPlane,
   resolveExemptDim,
-  resolveLayerZ,
+  resolvePresented,
 } from "./browser-gate-b06-collect.mjs";
 
 const WIN = "w-fixture";
@@ -15,10 +15,20 @@ const PANE_IDS = ["pan-left", "pan-right"];
 const SPACE = "spc-1";
 
 // 실측 기하 — 조명 평면은 space-body 전체를 덮고, 레일은 그 안의 복도에 선다.
-// 따라서 rect 교차만으로는 레일이 "덮였다"가 되고, 덮이지 않는 사실은 선언된 층에서만 읽힌다.
+// 따라서 rect 교차만으로는 레일이 "덮였다"가 되고, 덮이지 않는 사실은 칠하는 순서에서만 읽힌다.
 const PLANE_RECT = { x: 0, y: 100, w: 1200, h: 700 };
 const RAIL_RECT = { x: 0, y: 100, w: 240, h: 700 };
 const CLOSED_SIDEBAR_RECT = { x: 1200, y: 100, w: 0, h: 700 };
+
+// 실 DOM 의 사슬 — 베일은 .space-plane 안에 갇혀 있고 레일 평면은 그 바깥 형제다.
+// 두 z(7,6)는 같은 문맥에서 만나지 않는다.
+const ROOT = Object.freeze({
+  identity: "root", node: "root", zIndex: null, positioned: false, order: [0],
+});
+const chain = (...entries) => [ROOT, ...entries];
+const link = (identity, zIndex, order) => ({
+  identity, node: identity, zIndex, positioned: true, order,
+});
 
 function treeNode(nodePath, rect, dataset = {}) {
   return {
@@ -34,17 +44,20 @@ function treeNode(nodePath, rect, dataset = {}) {
 function domFixture({
   activePaneId = PANE_IDS[0],
   planes = [SPACE],
+  presentedPlanes = null,
+  planeStyles = {},
   aperturePaneId = activePaneId,
   apertureCount = 1,
-  railLayerZ = "7",
-  planeZ = "6",
+  railLayerZ = 7,
+  spacePlaneZ = 1,
   railDim = "",
   railExempt = "exempt",
   baseFillOpacity = "0.5",
   sidebarRect = CLOSED_SIDEBAR_RECT,
-  sidebarZ = "20",
+  sidebarZ = 20,
   drop = [],
 } = {}) {
+  const presented = presentedPlanes ?? [planes[0]];
   const nodes = [];
   for (const scope of planes) {
     nodes.push(treeNode(`focus-lighting/${scope}`, PLANE_RECT));
@@ -54,7 +67,7 @@ function domFixture({
   for (let index = 0; index < apertureCount; index += 1) {
     const id = index === 0 ? aperturePaneId : `${aperturePaneId}-extra-${index}`;
     nodes.push(treeNode(
-      `focus-lighting/${planes[0]}/aperture/${id}`,
+      `focus-lighting/${presented[0] ?? planes[0]}/aperture/${id}`,
       { x: 240, y: 110, w: 470, h: 680 },
       { lightingAperture: id },
     ));
@@ -63,16 +76,39 @@ function domFixture({
   nodes.push(treeNode("rail/left", RAIL_RECT, { focusLighting: railExempt, station: "0" }));
   nodes.push(treeNode("sidebar/right", sidebarRect, { focusLighting: "exempt" }));
 
-  const measures = new Map([
-    [`focus-lighting/${planes[0]}`, { style: { zIndex: planeZ } }],
-    [`focus-lighting/${planes[0]}/base`, { style: { fillOpacity: baseFillOpacity } }],
-    ["rail/plane", { style: { zIndex: railLayerZ } }],
-    ["rail/left", { dataset: { focusLighting: railExempt }, style: { "--dim": railDim } }],
-    ["sidebar/right", { dataset: { focusLighting: "exempt" }, style: { "--dim": "", zIndex: sidebarZ } }],
-  ]);
+  const veilChain = (scope) => chain(
+    link(`space-plane-${scope}`, spacePlaneZ, [0, 0]),
+    link(`veil-${scope}`, 6, [0, 0, 3]),
+  );
+  const measures = new Map();
+  for (const scope of planes) {
+    measures.set(`focus-lighting/${scope}/base`, {
+      style: { fillOpacity: baseFillOpacity },
+      stacking: veilChain(scope),
+    });
+  }
+  measures.set("rail/plane", { stacking: chain(link("rail-plane", railLayerZ, [0, 1])) });
+  measures.set("rail/left", {
+    dataset: { focusLighting: railExempt },
+    style: { "--dim": railDim },
+  });
+  measures.set("sidebar/right", {
+    dataset: { focusLighting: "exempt" },
+    style: { "--dim": "" },
+    stacking: chain(link("sidebar-right", sidebarZ, [0, 2])),
+  });
   for (const nodePath of drop) measures.set(nodePath, { style: {} });
 
-  return { nodes, measures, activePaneId };
+  // 평면이 화면에 서 있는가 — 한 순간에 한꺼번에 읽는 가시성 원장.
+  const presence = new Map();
+  for (const scope of planes) {
+    presence.set(`focus-lighting/${scope}`, planeStyles[scope] ?? {
+      visibility: presented.includes(scope) ? "visible" : "hidden",
+      display: "block",
+    });
+  }
+
+  return { nodes, measures, presence, activePaneId };
 }
 
 function fakeRpc(fixture) {
@@ -81,6 +117,22 @@ function fakeRpc(fixture) {
     calls.push({ command, params });
     if (command === "ui.tree") {
       return { ok: true, data: { window: WIN, count: fixture.nodes.length, duplicates: [], nodes: fixture.nodes } };
+    }
+    if (command === "ui.snapshot.dom") {
+      const filter = typeof params.filter === "string" ? params.filter : "";
+      return {
+        ok: true,
+        data: {
+          nodes: fixture.nodes
+            .filter((node) => node.address.includes(filter))
+            .map((node) => ({
+              address: node.address,
+              nodePath: node.nodePath,
+              rect: node.rect,
+              style: fixture.presence.get(node.nodePath) ?? {},
+            })),
+        },
+      };
     }
     if (command === "ui.measure") {
       const node = fixture.nodes.find((item) => item.address === params.address);
@@ -94,6 +146,7 @@ function fakeRpc(fixture) {
           dataset: measure.dataset ?? node.dataset,
           rect: node.rect,
           style: measure.style ?? {},
+          ...(params.stacking === true && measure.stacking ? { stacking: measure.stacking } : {}),
         },
       };
     }
@@ -106,6 +159,7 @@ const lightingFor = (activeIndex) => ({
   dims: activeIndex === 0 ? [0, 0.5] : [0.5, 0],
   levels: activeIndex === 0 ? ["clear", "idle"] : ["idle", "clear"],
   adapterAlphas: [1, 1],
+  adapterBases: ["pane-host", "pane-host"],
 });
 
 async function checkpointFor(activeIndex, overrides = {}) {
@@ -134,7 +188,9 @@ describe("B06 checkpoint collection", () => {
   it("reads the plane, aperture, and exemption facts the judge names", async () => {
     const checkpoint = await checkpointFor(0);
     expect(checkpoint.lightingPlane).toEqual({
-      count: 1,
+      presented: 1,
+      parked: 0,
+      unreadable: 0,
       baseAmount: 0.5,
       aperturePaneId: PANE_IDS[0],
       apertureCount: 1,
@@ -147,13 +203,21 @@ describe("B06 checkpoint collection", () => {
     expect((await verdictFor()).status).toBe("green");
   });
 
-  it("calls the rail an overlapped surface once its layer sinks under the veil", async () => {
-    const verdict = await verdictFor({ railLayerZ: "5" });
+  it("calls the rail an overlapped surface once it paints under the veil", async () => {
+    const verdict = await verdictFor({ railLayerZ: 0 });
     expect(verdict.status).toBe("red");
     expect(verdict.evidence).toContain("B06:checkpoints[0].rail.coveredByPlane=false/true");
   });
 
-  it("keeps the right sidebar uncovered while it overlays the plane above the veil", async () => {
+  // 옛 판정은 레일 7 > 베일 6 을 직접 뺐다. 두 수는 같은 문맥에 없어서, 사이의 판이 레일보다
+  // 위로 올라가면 화면에서는 베일이 레일을 덮는데 그 뺄셈은 그대로 통과한다.
+  it("sees the veil rise with the plane that contains it, not with its own z", async () => {
+    const verdict = await verdictFor({ spacePlaneZ: 8 });
+    expect(verdict.status).toBe("red");
+    expect(verdict.evidence).toContain("B06:checkpoints[0].rail.coveredByPlane=false/true");
+  });
+
+  it("keeps the right sidebar uncovered while it paints above the veil", async () => {
     const verdict = await verdictFor({ sidebarRect: { x: 900, y: 100, w: 300, h: 700 } });
     expect(verdict.status).toBe("green");
   });
@@ -176,10 +240,31 @@ describe("B06 checkpoint collection", () => {
     expect(verdict.evidence).toContain("B06:checkpoints[0].lightingPlane.baseAmount=0<amount<1/null");
   });
 
-  it("counts every lighting plane the window exposes", async () => {
-    const verdict = await verdictFor({ planes: [SPACE, "spc-2"] });
+  // 단일 평면은 **화면에 선 것**을 센다. 파킹된 공간의 평면은 DOM 에 남지만 픽셀을 칠하지
+  // 않으므로 이중 감광이 될 수 없다.
+  it("counts the plane that stands on screen and leaves the parked one in the ledger", async () => {
+    const checkpoint = await checkpointFor(0, { planes: [SPACE, "spc-2"] });
+    expect(checkpoint.lightingPlane).toMatchObject({ presented: 1, parked: 1, unreadable: 0 });
+    expect((await verdictFor({ planes: [SPACE, "spc-2"] })).status).toBe("green");
+  });
+
+  it("refuses a second plane that actually stands on screen", async () => {
+    const verdict = await verdictFor({
+      planes: [SPACE, "spc-2"],
+      presentedPlanes: [SPACE, "spc-2"],
+    });
     expect(verdict.status).toBe("red");
-    expect(verdict.evidence).toContain("B06:checkpoints[0].lightingPlane.count=1/2");
+    expect(verdict.evidence).toContain("B06:checkpoints[0].lightingPlane.presented=1/2");
+  });
+
+  // 못 읽음을 파킹으로 적으면 두 번째 평면이 조용히 숨는다.
+  it("counts an unreadable plane as unreadable, never as parked", async () => {
+    const verdict = await verdictFor({
+      planes: [SPACE, "spc-2"],
+      planeStyles: { "spc-2": {} },
+    });
+    expect(verdict.status).toBe("red");
+    expect(verdict.evidence).toContain("B06:checkpoints[0].lightingPlane.unreadable=0/1");
   });
 
   it("names the aperture owner instead of assuming the active pane", async () => {
@@ -218,31 +303,37 @@ describe("B06 measurement resolvers", () => {
     expect(resolveBaseAmount({ style: {} })).toBeNull();
   });
 
-  it("reads auto as no declared layer", () => {
-    expect(resolveLayerZ({ style: { zIndex: "7" } })).toBe(7);
-    expect(resolveLayerZ({ style: { zIndex: "auto" } })).toBeNull();
-    expect(resolveLayerZ({ style: {} })).toBeNull();
+  it("separates a parked plane from one it could not read", () => {
+    expect(resolvePresented({ visibility: "visible", display: "block" })).toBe(true);
+    expect(resolvePresented({ visibility: "hidden", display: "block" })).toBe(false);
+    expect(resolvePresented({ visibility: "visible", display: "none" })).toBe(false);
+    expect(resolvePresented({ visibility: "visible" })).toBeNull();
+    expect(resolvePresented({})).toBeNull();
+    expect(resolvePresented(undefined)).toBeNull();
   });
 
-  it("decides coverage by overlap first and by declared layer second", () => {
-    const planeRect = PLANE_RECT;
+  it("decides coverage by overlap first and by paint order second", () => {
+    const veilStack = chain(link("space-plane", 1, [0, 0]), link("veil", 6, [0, 0, 3]));
+    const above = chain(link("rail-plane", 7, [0, 1]));
+    const below = chain(link("rail-plane", 0, [0, 1]));
     expect(resolveCoveredByPlane({
-      planeRect, targetRect: CLOSED_SIDEBAR_RECT, planeZ: 6, layerZ: null,
+      planeRect: PLANE_RECT, targetRect: CLOSED_SIDEBAR_RECT, veilStack, targetStack: above,
     })).toBe(false);
     expect(resolveCoveredByPlane({
-      planeRect, targetRect: RAIL_RECT, planeZ: 6, layerZ: 7,
+      planeRect: PLANE_RECT, targetRect: RAIL_RECT, veilStack, targetStack: above,
     })).toBe(false);
     expect(resolveCoveredByPlane({
-      planeRect, targetRect: RAIL_RECT, planeZ: 6, layerZ: 6,
+      planeRect: PLANE_RECT, targetRect: RAIL_RECT, veilStack, targetStack: below,
     })).toBe(true);
+    // 못 읽은 축이 있으면 null 이다 — 못 읽음은 0 도 false 도 아니다.
     expect(resolveCoveredByPlane({
-      planeRect, targetRect: RAIL_RECT, planeZ: 6, layerZ: null,
-    })).toBe(true);
-    expect(resolveCoveredByPlane({
-      planeRect: null, targetRect: RAIL_RECT, planeZ: 6, layerZ: 7,
+      planeRect: null, targetRect: RAIL_RECT, veilStack, targetStack: above,
     })).toBeNull();
     expect(resolveCoveredByPlane({
-      planeRect, targetRect: RAIL_RECT, planeZ: null, layerZ: 7,
+      planeRect: PLANE_RECT, targetRect: RAIL_RECT, veilStack: null, targetStack: above,
+    })).toBeNull();
+    expect(resolveCoveredByPlane({
+      planeRect: PLANE_RECT, targetRect: RAIL_RECT, veilStack, targetStack: null,
     })).toBeNull();
   });
 });

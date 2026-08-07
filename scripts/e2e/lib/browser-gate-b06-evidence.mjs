@@ -28,6 +28,8 @@ function mapCheckpoint(raw, index) {
     const dims = Array.isArray(lighting?.dims) ? lighting.dims : [];
     const levels = Array.isArray(lighting?.levels) ? lighting.levels : [];
     const adapterAlphas = Array.isArray(lighting?.adapterAlphas) ? lighting.adapterAlphas : [];
+    // 값과 그 값을 낸 장부의 이름은 함께 온다. 이름 없이 실린 alpha 는 측정이 아니라 선언이다.
+    const adapterBases = Array.isArray(lighting?.adapterBases) ? lighting.adapterBases : [];
     const activePaneId = checkpoint.take("activePaneId") ?? null;
     const plane = checkpoint.take("lightingPlane");
     return {
@@ -39,9 +41,12 @@ function mapCheckpoint(raw, index) {
         level: levels[paneIndex] ?? null,
         styleDim: dims[paneIndex] ?? null,
         adapterAlpha: adapterAlphas[paneIndex] ?? null,
+        adapterBasis: adapterBases[paneIndex] ?? null,
       })),
       lightingPlane: {
-        count: field(plane, "count"),
+        presented: field(plane, "presented"),
+        parked: field(plane, "parked"),
+        unreadable: field(plane, "unreadable"),
         baseAmount: field(plane, "baseAmount"),
         aperturePaneId: field(plane, "aperturePaneId"),
         apertureCount: field(plane, "apertureCount"),

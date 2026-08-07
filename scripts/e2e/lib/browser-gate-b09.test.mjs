@@ -92,13 +92,17 @@ function producedSurfaces(surface) {
         viewId,
         chromeAboveHost: true,
         alpha: 1,
-        domFrame: { x: index ? 513 : 60, y: 121, w: 281, h: 449 },
+        // 표면 영수증의 자리는 AppKit 장부(nativeFrame)가 답한다. DOM 투영은 그 자리를 예측한
+        // 값일 뿐이라 픽스처에서도 다른 숫자로 둔다.
+        domFrame: { x: 900, y: 900, w: 281, h: 449 },
+        nativeFrame: { x: index ? 513 : 60, y: 121, w: 281, h: 449 },
         memberMatches: [{
           label: PANE_LABELS[index],
           topologyPath: `window/w-b09/view/${viewId}/content/${PANE_LABELS[index]}`,
           nativeCount: 1,
           ok: true,
-          domFrame: { x: 0, y: 28, w: 281, h: 421 },
+          domFrame: { x: 900, y: 900, w: 281, h: 421 },
+          nativeFrame: { x: 0, y: 28, w: 281, h: 421 },
         }],
       })),
     },
