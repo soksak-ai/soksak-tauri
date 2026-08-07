@@ -177,3 +177,40 @@ describe("mergeBrowserGateReports", () => {
     ])).toThrow(/B12/);
   });
 });
+
+// 규칙 — 한 칸의 상함이 판을 못 보게 만들지 않는다.
+//
+// 병합은 저장된 증거로 판정을 다시 낸다. 판정 규칙이 바뀐 뒤 옛 실행을 읽으면 그 재판정이
+// 저장된 상태와 어긋나는데, 지금은 그 순간 판 전체를 던진다 — 36칸 중 35칸의 잰 값까지 사라진다.
+// 실측 2026-08-07: B10 증거 문자열을 고친 뒤 집계가 던져, 끝까지 돈 실행의 표가 한 줄도 안 나왔다.
+// 어긋남은 그 칸의 사실이다. 그 칸에 이름을 달고 나머지는 그대로 낸다.
+describe("재판정이 저장된 판정과 어긋나면", () => {
+  function reportWithStaleCell() {
+    const store = slotFreezeStore();
+    for (const engine of BROWSER_ACCEPTANCE_ENGINES) {
+      store.recordMachineEvidence({ framework: "tauri", engine, gate: "B01", evidence: redB01Evidence(engine) });
+    }
+    const report = structuredClone(store.report());
+    // 판정 규칙이 바뀐 실행을 그대로 흉내낸다 — 원자료(machineEvidence)는 그대로 두고, 저장된
+    // 판정 문자열만 옛 모양으로 남긴다. 다시 판정하면 지금 규칙이 다른 문자열을 낸다.
+    const cell = report.engines.browser.B01.machine;
+    cell.evidence = ["B01:옛 규칙이 내던 문자열"];
+    cell.judgeReceipt.evidence = ["B01:옛 규칙이 내던 문자열"];
+    return report;
+  }
+
+  it("어긋난 칸을 blocked 로 이름 붙이고 나머지 칸은 그대로 낸다", () => {
+    const titlebar = titlebarStore();
+    recordColdStartBlocked(titlebar, "cold start blocked");
+    const merged = mergeBrowserGateReports([
+      { gates: SLOT_FREEZE_GATES, report: reportWithStaleCell() },
+      { gates: TITLEBAR_GATES, report: titlebar.report() },
+    ]);
+    const cell = merged.engines.browser.B01.machine;
+    expect(cell.status).toBe("blocked");
+    expect(cell.reason).toContain("re-judged");
+    // 같은 판의 다른 칸은 살아 있다.
+    expect(merged.engines["browser-chromium"].B01.machine.status).toBe("red");
+    expect(merged.engines.browser.B12.machine.status).toBe("blocked");
+  });
+});

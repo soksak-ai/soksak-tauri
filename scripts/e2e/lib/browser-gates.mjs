@@ -1026,9 +1026,11 @@ function requireMatchingJudgeReceipt(receipt, report, engine, gate) {
       || receiptReason !== verdict.reason
       || receiptEvidence.length !== verdict.evidence.length
       || receiptEvidence.some((item, index) => item !== verdict.evidence[index])) {
-    throw new TypeError("judgeReceipt verdict does not match machine evidence");
+    // 사실만 낸다 — 판정 규칙이 바뀐 뒤 옛 실행을 읽는 자리와, 방금 낸 영수증을 쓰는 자리는
+    // 같은 어긋남을 다르게 다뤄야 한다. 분류는 부르는 쪽이 한다.
+    return { receipt, mismatch: `stored judgeReceipt re-judged as ${verdict.status} instead of ${receipt.status}` };
   }
-  return receipt;
+  return { receipt, mismatch: null };
 }
 
 function requireReport(report) {
@@ -1070,6 +1072,9 @@ function requireReport(report) {
         throw new TypeError(`${engine}/${id}.machine green requires judgeReceipt`);
       }
       if (receipt != null) {
+        // 읽는 자리다. 판정 규칙이 바뀐 뒤 옛 실행을 읽으면 재판정이 저장된 판정과 어긋나는데,
+        // 그건 이 칸의 사실이지 판 전체의 사실이 아니다 — 병합이 그 칸에 이름을 달고 나머지
+        // 35칸의 잰 값은 그대로 낸다.
         requireMatchingJudgeReceipt(receipt, { identity }, engine, id);
         if (receipt.status !== cell.machine.status) {
           throw new TypeError(`${engine}/${id}.machine status does not match judgeReceipt`);
@@ -1167,7 +1172,10 @@ export function setMachineGateStatus(report, update) {
     if (Object.hasOwn(update, "status") || Object.hasOwn(update, "evidence") || Object.hasOwn(update, "reason")) {
       throw new TypeError("judgeReceipt supplies status, evidence, and reason");
     }
-    const receipt = requireMatchingJudgeReceipt(update.judgeReceipt, report, engine, gate);
+    const matched = requireMatchingJudgeReceipt(update.judgeReceipt, report, engine, gate);
+    // 방금 낸 영수증이 자기 증거와 안 맞으면 그건 프로그래밍 결함이다 — 저장하지 않는다.
+    if (matched.mismatch) throw new TypeError("judgeReceipt verdict does not match machine evidence");
+    const receipt = matched.receipt;
     const storedReceipt = {
       schemaVersion: receipt.schemaVersion,
       kind: receipt.kind,

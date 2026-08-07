@@ -136,10 +136,19 @@ function applyMachineCell(report, engine, gate, cell) {
       gate,
       evidence: machine.judgeReceipt.machineEvidence,
     });
-    if (judgeReceipt.status !== machine.status) {
-      throw new TypeError(
-        `${engine}/${gate} re-judged as ${judgeReceipt.status} instead of ${machine.status}`,
-      );
+    // 저장된 판정 문자열과 재판정이 다르면(규칙이 바뀐 뒤 옛 실행) 그것도 같은 어긋남이다.
+    const evidenceDrifted = judgeReceipt.evidence.length !== machine.evidence.length
+      || judgeReceipt.evidence.some((item, index) => item !== machine.evidence[index]);
+    if (judgeReceipt.status !== machine.status || evidenceDrifted) {
+      // 판정 규칙이 바뀐 뒤 옛 실행을 읽으면 재판정이 저장된 판정과 어긋난다. 그것은 이 칸의
+      // 사실이지 판 전체의 사실이 아니다 — 던지면 나머지 35칸의 잰 값까지 함께 사라진다.
+      return setMachineGateStatus(report, {
+        engine,
+        gate,
+        status: "blocked",
+        evidence: [],
+        reason: `stored judgeReceipt re-judged as ${judgeReceipt.status} instead of ${machine.status}`,
+      });
     }
     return setMachineGateStatus(report, { engine, gate, judgeReceipt });
   }
