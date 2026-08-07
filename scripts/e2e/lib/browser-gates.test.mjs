@@ -425,6 +425,27 @@ describe("브라우저 12-gate 정본", () => {
     expect(judgeB04MachineEvidence(malformedParticipant).status).toBe("red");
   });
 
+  it("B04는 거래 장부 구간 밖에서 관측한 sample을 좌표가 맞아도 epoch 거리로 거절한다", () => {
+    // 실측(evidence/slot-freeze/last-red/browser/01-left): native display producer가
+    // 4,041,616ms 뒤처진 epoch를 냈고, 좌표만 보는 판정은 이 receipt를 green으로 통과시켰다.
+    const skewMs = 4_041_616.4294433594;
+    const foreignEpoch = b04Evidence();
+    for (const sample of foreignEpoch.transitions[0].samples) sample.sampledAtUnixMs -= skewMs;
+    const verdict = judgeB04MachineEvidence(foreignEpoch);
+    expect(verdict.status).toBe("red");
+    // glide 구간은 [startAtUnixMs, startAtUnixMs+durationMs]다.
+    expect(verdict.evidence).toEqual(expect.arrayContaining([
+      "B04:transitions[0].samples:presentation:window-gap=4041584.4294433594",
+    ]));
+
+    // snap 거래는 선언된 표시 구간이 없으므로 prepared~closed가 그 거래의 관측 구간이다.
+    const lateEpoch = b04Evidence();
+    for (const sample of lateEpoch.transitions[1].samples) sample.sampledAtUnixMs += skewMs;
+    expect(judgeB04MachineEvidence(lateEpoch).evidence).toEqual(expect.arrayContaining([
+      "B04:transitions[1].samples:presentation:window-gap=4041568.4294433594",
+    ]));
+  });
+
   it("B11은 두 탭 모두 exact wheel 왕복과 explicit-view full capture 영수증·전후 페이지 불변성을 증명해야 green이다", () => {
     for (const engine of BROWSER_ACCEPTANCE_ENGINES) {
       expect(judgeB11MachineEvidence(b11Evidence(engine)).status).toBe("green");

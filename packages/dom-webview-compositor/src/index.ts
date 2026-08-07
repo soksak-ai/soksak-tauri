@@ -152,6 +152,74 @@ function physicalEdgeDelta(
   };
 }
 
+export interface CompositionObservationWindow {
+  startAtUnixMs: number;
+  endAtUnixMs: number;
+}
+
+export interface CompositionObservationSpan {
+  /** 표본을 낸 관측 주체 이름. framework/engine 이름을 싣지 않는다. */
+  producer: string;
+  firstSampledAtUnixMs: number;
+  lastSampledAtUnixMs: number;
+}
+
+/**
+ * 한 거래를 함께 관측했다는 주장은 그 거래 구간과 겹치는 표본으로만 성립한다. `...UnixMs`라는
+ * 같은 이름은 같은 epoch를 뜻하지 않으므로, 두 producer의 시각을 빼기 전에 각 관측 구간이
+ * 거래 구간과 만나는지 먼저 판정한다. 판정은 tolerance가 아니라 교집합 유무이며, 겹치지 않는
+ * 관측은 좌표 delta 대신 그 거리를 그대로 남긴다. 겹치는 구간의 길이는 요구하지 않는다.
+ */
+export function compositionObservationWindowVerdict(
+  window: CompositionObservationWindow,
+  producers: readonly CompositionObservationSpan[],
+): { ok: boolean; errors: string[]; gapMs: Record<string, number> } {
+  const errors: string[] = [];
+  const gapMs: Record<string, number> = {};
+  const startAtUnixMs = Number(window?.startAtUnixMs);
+  const endAtUnixMs = Number(window?.endAtUnixMs);
+  if (!Number.isFinite(startAtUnixMs) || !Number.isFinite(endAtUnixMs)
+      || endAtUnixMs < startAtUnixMs) {
+    errors.push(`window=${window?.startAtUnixMs}/${window?.endAtUnixMs}`);
+    return { ok: false, errors, gapMs };
+  }
+  for (const span of producers ?? []) {
+    const producer = span?.producer;
+    if (typeof producer !== "string" || producer.length === 0) {
+      errors.push("producer=non-empty");
+      continue;
+    }
+    const first = Number(span?.firstSampledAtUnixMs);
+    const last = Number(span?.lastSampledAtUnixMs);
+    if (!Number.isFinite(first) || !Number.isFinite(last) || last < first) {
+      errors.push(`${producer}:span=${span?.firstSampledAtUnixMs}/${span?.lastSampledAtUnixMs}`);
+      continue;
+    }
+    const gap = last < startAtUnixMs
+      ? startAtUnixMs - last
+      : first > endAtUnixMs ? first - endAtUnixMs : 0;
+    gapMs[producer] = gap;
+    if (gap > 0) errors.push(`${producer}:window-gap=${gap}`);
+  }
+  return { ok: errors.length === 0, errors, gapMs };
+}
+
+function observationSpan(
+  producer: string,
+  samples: readonly CompositionTimelineSample[],
+): CompositionObservationSpan | null {
+  const times = (Array.isArray(samples) ? samples : [])
+    .map((sample) => Number(sample?.sampledAtUnixMs))
+    .filter((value) => Number.isFinite(value));
+  if (times.length === 0) return null;
+  return {
+    producer,
+    // 순서는 sample 판정이 따로 요구한다. 구간은 관측 집합의 사실이므로 최소/최대로 읽는다.
+    firstSampledAtUnixMs: Math.min(...times),
+    lastSampledAtUnixMs: Math.max(...times),
+  };
+}
+
 /**
  * 서로 다른 display cadence를 nearest-neighbour로 가짜 1:1 결합하지 않는다. 각 producer의
  * 실제 표시 epoch에서 같은 선언 궤적을 device-pixel exact로 따르는지 독립 판정하고, native
@@ -172,7 +240,17 @@ export function compositionTimelineVerdict(timeline: CompositionTimeline) {
   if (errors.length) return { ok: false, errors };
 
   const endAtUnixMs = timeline.startAtUnixMs + timeline.durationMs;
+  // 좌표 delta보다 먼저 관측 구간을 본다. 거래 밖에서 관측한 producer의 좌표 오차는 궤적이
+  // 아니라 epoch 차이를 재는 값이 되어, 실제 결함을 다른 이름으로 덮는다.
+  const observation = compositionObservationWindowVerdict(
+    { startAtUnixMs: timeline.startAtUnixMs, endAtUnixMs },
+    (["slot", "renderer", "surface"] as const)
+      .map((name) => observationSpan(name, timeline[name]))
+      .filter((span): span is CompositionObservationSpan => span !== null),
+  );
+  errors.push(...observation.errors);
   const inspect = (name: "slot" | "renderer" | "surface") => {
+    if (observation.gapMs[name] > 0) return;
     const samples = timeline[name];
     if (samples.length < 3) {
       errors.push(`${name}:samples=${samples.length}/3`);

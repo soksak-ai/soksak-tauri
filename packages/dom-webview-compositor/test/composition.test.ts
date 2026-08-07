@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   compositionFrameComparisonVerdict,
   compositionInventoryVerdict,
+  compositionObservationWindowVerdict,
   compositionSampleVerdict,
   compositionTimelineVerdict,
   compositionTransactionVerdict,
@@ -239,5 +240,89 @@ describe("DOM ↔ native webview composition contract", () => {
       ok: false,
       errors: expect.arrayContaining([expect.stringContaining("slot[1]")]),
     });
+  });
+
+  it("거래 구간과 겹치지 않는 관측은 좌표를 비교하기 전에 거리로 거절한다", () => {
+    const window = { startAtUnixMs: 1_000, endAtUnixMs: 1_340 };
+    expect(compositionObservationWindowVerdict(window, [
+      { producer: "slot", firstSampledAtUnixMs: 990, lastSampledAtUnixMs: 1_400 },
+      { producer: "surface", firstSampledAtUnixMs: 1_340, lastSampledAtUnixMs: 1_900 },
+    ])).toMatchObject({ ok: true, errors: [], gapMs: { slot: 0, surface: 0 } });
+
+    expect(compositionObservationWindowVerdict(window, [
+      { producer: "renderer", firstSampledAtUnixMs: 100, lastSampledAtUnixMs: 900 },
+      { producer: "surface", firstSampledAtUnixMs: 1_341, lastSampledAtUnixMs: 2_000 },
+    ])).toMatchObject({
+      ok: false,
+      errors: ["renderer:window-gap=100", "surface:window-gap=1"],
+      gapMs: { renderer: 100, surface: 1 },
+    });
+
+    expect(compositionObservationWindowVerdict(window, [
+      { producer: "surface", firstSampledAtUnixMs: 1_400, lastSampledAtUnixMs: 1_100 },
+    ])).toMatchObject({ ok: false, errors: ["surface:span=1400/1100"] });
+
+    expect(compositionObservationWindowVerdict(
+      { startAtUnixMs: 1_000, endAtUnixMs: Number.NaN },
+      [{ producer: "slot", firstSampledAtUnixMs: 1_000, lastSampledAtUnixMs: 1_100 }],
+    )).toMatchObject({ ok: false, errors: ["window=1000/NaN"] });
+  });
+
+  it("native producer가 다른 epoch를 쓰면 좌표 delta 대신 epoch 거리를 이름으로 남긴다", () => {
+    // 실측(evidence/slot-freeze/last-red/browser/01-left): DOM/journal은 wall clock,
+    // native display producer는 4,041,616ms 뒤처진 epoch를 같은 `...UnixMs` 이름으로 냈다.
+    const startAtUnixMs = 1_786_071_385_870;
+    const durationMs = 340;
+    const frame = (x: number) => ({ x, y: 149, w: 281, h: 421 });
+    const timelineFor = (times: readonly number[], xs: readonly number[]) => (
+      times.map((sampledAtUnixMs, sequence) => ({
+        sequence,
+        sampledAtUnixMs,
+        frame: frame(xs[sequence]),
+      }))
+    );
+    const domTimes = [startAtUnixMs, startAtUnixMs + 170, startAtUnixMs + durationMs];
+    const foreignEpochTimes = [
+      1_786_067_343_619.7163,
+      1_786_067_343_936.6433,
+      1_786_067_344_253.5706,
+    ];
+    const timeline = {
+      coordinateSpace: { logical: "css-px" as const, scaleFactor: 2 },
+      startAtUnixMs,
+      durationMs,
+      timingFunction: [0, 0, 1, 1] as const,
+      from: frame(60),
+      to: frame(220),
+      slot: timelineFor(domTimes, [60, 140, 220]),
+      // 실측 native ledger는 거래 내내 이동 전 x를 들고 있었다.
+      renderer: timelineFor(foreignEpochTimes, [60, 60, 60]),
+      surface: timelineFor(foreignEpochTimes, [60, 60, 60]),
+    };
+    expect(compositionTimelineVerdict(timeline)).toMatchObject({
+      ok: false,
+      errors: [
+        "renderer:window-gap=4041616.4294433594",
+        "surface:window-gap=4041616.4294433594",
+      ],
+    });
+
+    // 같은 좌표를 같은 epoch로 옮기면 epoch 실패가 사라지고 실제 결함(이동하지 않은 native
+    // ledger)이 device pixel 수치로 드러난다. epoch 정렬은 판정을 무르게 하지 않는다.
+    const aligned = {
+      ...timeline,
+      renderer: timelineFor(domTimes, [60, 60, 60]),
+      surface: timelineFor(domTimes, [60, 60, 60]),
+    };
+    const alignedVerdict = compositionTimelineVerdict(aligned);
+    expect(alignedVerdict.ok).toBe(false);
+    expect(alignedVerdict.errors).toEqual(expect.arrayContaining([
+      // 착지 시각의 native ledger는 선언 궤적에서 320 physical px 떨어져 있다(=160 css px).
+      'renderer[2]={"x":320,"y":0,"w":320,"h":0}',
+      'surface[2]={"x":320,"y":0,"w":320,"h":0}',
+      expect.stringContaining("renderer[1]="),
+      expect.stringContaining("surface[1]="),
+    ]));
+    expect(alignedVerdict.errors.some((error) => error.includes("window-gap"))).toBe(false);
   });
 });
