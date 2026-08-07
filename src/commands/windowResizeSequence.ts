@@ -11,6 +11,14 @@ export interface PhysicalWindowSize {
   h: number;
 }
 
+/**
+ * 관측면에 넘기는 요청. baseline은 아직 어떤 크기도 요청되지 않은 순간이므로 크기를 싣지
+ * 않는다 — 요청값이 관측값 자리에 복사될 통로 자체를 두지 않는다.
+ */
+export type ResizeObservationRequest =
+  | { readonly kind: "baseline" }
+  | { readonly kind: "step"; readonly step: number; readonly size: PhysicalWindowSize };
+
 export type WindowResizeRecording = Pick<
   WindowRecordRequest,
   "dir" | "frames" | "intervalMs" | "maxBytes"
@@ -24,7 +32,7 @@ interface ResizeSequenceRequest {
   record?: WindowResizeRecording;
   setSize: (w: number, h: number) => Promise<void>;
   recordFrames: WindowRecorder;
-  observe?: (step: number, size: PhysicalWindowSize) => Promise<unknown>;
+  observe?: (request: ResizeObservationRequest) => Promise<unknown> | unknown;
 }
 
 const MAX_STEPS = 120;
@@ -53,6 +61,10 @@ function validateRecording(record: WindowResizeRecording): void {
  * 녹화가 준비되면 첫 기준 프레임 뒤에 물리 크기를 입력 순서 그대로 적용한다. 녹화는 사람이
  * 전이를 검토하기 위한 별도 증거이므로 시작·준비·완료 실패가 resize 거래를 취소하지 않는다.
  * 상태를 폴링하거나 재시도하지 않으며, 호출자가 명시한 cadence만 사용한다.
+ *
+ * 첫 크기를 적용하기 전에 각 단계와 같은 관측면으로 baseline을 한 번 읽는다. 변화는 이전
+ * 상태 없이 판정할 수 없고, 그 이전 상태는 요청 크기에서 역산할 수 없다. 관측면이 없는
+ * 프레임워크는 baseline도 null이며, 이 null은 사실 없음을 그대로 뜻한다.
  */
 export async function runWindowResizeSequence({
   sizes,
@@ -67,6 +79,7 @@ export async function runWindowResizeSequence({
   resizeElapsedMs: number;
   elapsedMs: number;
   final: PhysicalWindowSize;
+  baseline: unknown;
   samples: { step: number; size: PhysicalWindowSize; observation: unknown }[];
 }> {
   if (!Array.isArray(sizes) || sizes.length === 0) throw new Error("sizes must not be empty");
@@ -89,12 +102,21 @@ export async function runWindowResizeSequence({
   // resize를 그대로 진행한다.
   await (recording?.ready ?? Promise.resolve(false));
 
+  // 첫 크기를 요청하기 전의 관측. resize 시간 예산 밖이어야 stall 판정이 resize만 잰다.
+  const baseline = observe ? await observe({ kind: "baseline" }) : null;
+
   const resizeStartedAt = performance.now();
   const samples: { step: number; size: PhysicalWindowSize; observation: unknown }[] = [];
   for (let index = 0; index < sizes.length; index += 1) {
     const size = sizes[index];
     await setSize(size.w, size.h);
-    if (observe) samples.push({ step: index, size, observation: await observe(index, size) });
+    if (observe) {
+      samples.push({
+        step: index,
+        size,
+        observation: await observe({ kind: "step", step: index, size }),
+      });
+    }
     if (index + 1 < sizes.length) await delay(intervalMs);
   }
   const resizeElapsedMs = Math.round(performance.now() - resizeStartedAt);
@@ -109,6 +131,7 @@ export async function runWindowResizeSequence({
     resizeElapsedMs,
     elapsedMs: Math.round(performance.now() - startedAt),
     final: sizes[sizes.length - 1],
+    baseline,
     samples,
   };
 }
