@@ -7,6 +7,7 @@ import {
   setVisualReviewStatus,
 } from "./browser-gates.mjs";
 import { blockPendingMachineGates } from "./browser-gate-coverage.mjs";
+import { parseBorderBox } from "./rail-border-geometry.mjs";
 import { writeEvidenceFile } from "./evidence-store.mjs";
 
 export const BROWSER_GATE_REPORT_FILE = "browser-gates.json";
@@ -98,10 +99,39 @@ function percentRect(value) {
   };
 }
 
+/** 관계 노드가 실제로 그린 두 상자. 없으면 null 이다 — 안 그린 것을 0 으로 적지 않는다. */
+function borderBoxes(relationMeasure) {
+  const dataset = relationMeasure?.dataset ?? relationMeasure;
+  return {
+    railBox: parseBorderBox(field(dataset, "rail")),
+    paneBox: parseBorderBox(field(dataset, "box")),
+  };
+}
+
+/**
+ * PIN 클릭 전후의 native bounds 기록 수. 두 composition 중 하나라도 없으면 이 실행물은
+ * 장부를 내지 않는다는 뜻이라 null 이다 — 빈 장부와 없는 장부는 다른 사실이다.
+ */
+function nativeBoundsWriteLedger(before, after) {
+  if (before == null || after == null) return null;
+  const beforeWrites = new Map(
+    (before.placement ?? []).map((item) => [field(item, "label"), Number(field(item, "boundsWrites"))]),
+  );
+  return (after.placement ?? [])
+    .filter((item) => beforeWrites.has(field(item, "label")))
+    .map((item) => ({
+      label: field(item, "label"),
+      before: beforeWrites.get(field(item, "label")),
+      after: Number(field(item, "boundsWrites")),
+    }));
+}
+
 function b07Snapshot({ stateTree, arrangement, railMeasure, paneMeasures }) {
   const { space } = activeProjectAndSpace(stateTree);
   return {
     station: field(arrangement, "station"),
+    switched: field(arrangement, "switched"),
+    cells: arrangementValue(arrangement).cells,
     rail: {
       domIdentity: field(railMeasure, "nodeIdentity"),
       rect: xywhRect(railMeasure),
@@ -123,18 +153,29 @@ function b07Snapshot({ stateTree, arrangement, railMeasure, paneMeasures }) {
  */
 export function mapB07PinCaseEvidence({
   position,
+  requestedStation,
+  layoutTransactions,
   stateTreeAfter,
   paneListAfter,
   relationMeasureAfter,
+  nativeCompositionBefore,
+  nativeCompositionAfter,
   before,
   after,
 }) {
   const { space } = activeProjectAndSpace(stateTreeAfter);
   return {
     position,
+    requestedStation: requestedStation ?? null,
+    layoutTransactions: layoutTransactions ?? null,
     stateTreeRelation: relationValue(space?.railRelation),
     paneListRelation: relationValue(paneListAfter?.railRelation),
     domRelation: relationDataset(relationMeasureAfter),
+    border: borderBoxes(relationMeasureAfter),
+    nativeBoundsWrites: nativeBoundsWriteLedger(
+      nativeCompositionBefore ?? null,
+      nativeCompositionAfter ?? null,
+    ),
     before: b07Snapshot(before ?? {}),
     after: b07Snapshot(after ?? {}),
   };
@@ -168,24 +209,42 @@ export function mapB08BaselineEvidence({ railPosition, arrangement, paneList }) 
   };
 }
 
+/**
+ * 한 시점의 native surface 자리·결부·그려진 보더를 한 장으로 묶는다.
+ * 세 시점(직전·최대화·복원)이 같은 모양이라 시점끼리 바로 맞댈 수 있다.
+ */
+export function mapB08PinStageEvidence({ surfaceRect, paneList, relationMeasure }) {
+  return {
+    surfaceRect: xywhRect(surfaceRect),
+    relation: relationValue(paneList?.railRelation),
+    border: borderBoxes(relationMeasure),
+  };
+}
+
 export function mapB08MaximizeCaseEvidence({
   direction,
   targetPaneId,
   maximized,
   restored,
+  stages,
 }) {
   return {
     direction,
     targetPaneId,
     maximized: {
       persistedPin: pinValue(maximized?.railPosition),
+      arrangementStation: field(maximized?.arrangement, "station"),
       effectiveStation: field(maximized?.railPosition?.leftRailPosition, "effectiveStation"),
       maximizedPaneId: field(maximized?.paneList, "activePaneId"),
       cells: arrangementValue(maximized?.arrangement).cells,
       splitTree: maximized?.paneList?.canonicalLayout ?? null,
-      relation: relationValue(maximized?.paneList?.railRelation),
     },
     restored: mapB08BaselineEvidence(restored ?? {}),
+    pinGeometry: {
+      baseline: mapB08PinStageEvidence(stages?.baseline ?? {}),
+      maximized: mapB08PinStageEvidence(stages?.maximized ?? {}),
+      restored: mapB08PinStageEvidence(stages?.restored ?? {}),
+    },
   };
 }
 

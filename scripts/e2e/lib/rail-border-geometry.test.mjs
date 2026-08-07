@@ -40,16 +40,16 @@ describe("rail border geometry", () => {
     expect(drawnBorderSide(rail(0), null)).toBeNull();
   });
 
-  it("레일이 허용오차보다 얇으면 어느 변인지 셀 수 없다고 답한다", () => {
-    expect(drawnBorderSide({ x: 100, y: 0, w: 1, h: 700 }, { x: 0, y: 0, w: 100, h: 700 }))
-      .toBe("ambiguous");
+  it("판이 레일을 덮고 있으면 어느 변에도 닿지 않은 것이다", () => {
+    expect(drawnBorderSide({ x: 100, y: 0, w: 20, h: 700 }, { x: 100, y: 0, w: 20, h: 700 }))
+      .toBe("detached");
   });
 
   it("반올림 1px 은 붙은 것이고 2px 은 떨어진 것이다", () => {
     expect(RAIL_BORDER_ADJACENT_TOLERANCE_PX).toBe(1);
     expect(drawnBorderSide(rail(500), { x: 0, y: 0, w: 499, h: 700 })).toBe("left");
     expect(drawnBorderSide(rail(500), { x: 0, y: 0, w: 498, h: 700 })).toBe("detached");
-    expect(borderGapsPx(rail(500), { x: 0, y: 0, w: 498, h: 700 })).toEqual({ left: 2, right: 478 });
+    expect(borderGapsPx(rail(500), { x: 0, y: 0, w: 498, h: 700 })).toEqual({ left: 2, right: 520 });
     expect(borderGapsPx(null, { x: 0, y: 0, w: 498, h: 700 })).toBeNull();
   });
 

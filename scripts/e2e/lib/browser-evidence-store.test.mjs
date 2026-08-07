@@ -92,8 +92,16 @@ function measures(station) {
   };
 }
 
-function relationMeasure(side) {
+// 호스트 1020px, 레일 20px — station 은 레일 왼쪽 변의 px 자리다.
+const railLeftPx = (station) => ((1020 - 20) * station) / 100;
+
+/** 선언(dataset)과 실제로 그린 두 상자(data-rail·data-box)를 함께 내는 관계 노드. */
+function relationMeasure(side, station, paneWidth = 500) {
   const value = relation(side);
+  const railLeft = railLeftPx(station);
+  const paneX = side === "left"
+    ? railLeft - paneWidth
+    : side === "right" ? railLeft + 20 : railLeft + 20 + 500;
   return {
     address: "win/w/relation/rail/space-1",
     nodeIdentity: "dom-node:relation:1",
@@ -106,9 +114,18 @@ function relationMeasure(side) {
       side: value.side,
       borderMode: value.borderMode,
       pathCount: String(value.pathCount),
+      rail: `${railLeft},0,20,700`,
+      box: `${paneX},0,${paneWidth},700`,
     },
   };
 }
+
+const nativeComposition = (writes) => ({
+  placement: [
+    { label: "b-w-1-left", boundsWrites: writes },
+    { label: "b-w-1-right", boundsWrites: writes },
+  ],
+});
 
 function b07Case(position, side, station) {
   const beforeState = publicState(side, station);
@@ -117,9 +134,13 @@ function b07Case(position, side, station) {
   const afterMeasures = structuredClone(beforeMeasures);
   return mapB07PinCaseEvidence({
     position,
+    requestedStation: station,
+    layoutTransactions: 0,
     stateTreeAfter: afterState.stateTree,
     paneListAfter: afterState.paneList,
-    relationMeasureAfter: relationMeasure(side),
+    relationMeasureAfter: relationMeasure(side, station),
+    nativeCompositionBefore: nativeComposition(4),
+    nativeCompositionAfter: nativeComposition(4),
     before: {
       stateTree: beforeState.stateTree,
       arrangement: beforeState.arrangement,
@@ -144,6 +165,10 @@ function b07Evidence(engine = "browser") {
   };
 }
 
+const restingSurface = (paneId) => paneId === "left"
+  ? { x: 0, y: 0, w: 500, h: 700 }
+  : { x: 520, y: 0, w: 500, h: 700 };
+
 function b08Evidence(engine = "browser") {
   const baselineRaw = publicState("left", 50);
   const baseline = mapB08BaselineEvidence(baselineRaw);
@@ -162,11 +187,31 @@ function b08Evidence(engine = "browser") {
     maximized.paneList.railRelation.boundPaneId = targetPaneId;
     maximized.paneList.railRelation.boundTabId = `tab-${targetPaneId}`;
     maximized.paneList.railRelation.relationId = `rail-relation/space/${targetPaneId}/tab-${targetPaneId}`;
+    const restoredRaw = publicState(direction, 50);
     return mapB08MaximizeCaseEvidence({
       direction,
       targetPaneId,
       maximized,
       restored: baselineRaw,
+      stages: {
+        baseline: {
+          surfaceRect: restingSurface(targetPaneId),
+          paneList: baselineRaw.paneList,
+          relationMeasure: relationMeasure("left", 50),
+        },
+        maximized: {
+          surfaceRect: direction === "left"
+            ? { x: 0, y: 0, w: 1000, h: 700 }
+            : { x: 20, y: 0, w: 1000, h: 700 },
+          paneList: maximized.paneList,
+          relationMeasure: relationMeasure(direction, station, 1000),
+        },
+        restored: {
+          surfaceRect: restingSurface(targetPaneId),
+          paneList: restoredRaw.paneList,
+          relationMeasure: relationMeasure(direction, 50),
+        },
+      },
     });
   };
   return {
