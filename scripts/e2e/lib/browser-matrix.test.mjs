@@ -36,6 +36,14 @@ import {
 import { encodePng } from "./png.mjs";
 import { B04_JOURNAL_ENTRY_KEYS } from "./browser-gates.mjs";
 
+// 원장 표본은 언제나 관측자 이름을 싣는다(ui.trace.multi 의 producers). 이 픽스처의
+// presentation-frame 은 표시 callback 이 읽은 frame 을 뜻한다.
+const ledgerProducer = (trigger) => ({
+  initial: "arm",
+  "layout-dom-commit": "layout-commit",
+  "presentation-frame": "frame-callback",
+}[trigger]);
+
 describe("브라우저 구현 행렬", () => {
   it("Tauri plugin chrome와 native surface는 같은 pane presentation root를 공유한다", () => {
     expect(rendererTopologyOwnershipVerdict({
@@ -377,6 +385,7 @@ describe("브라우저 구현 행렬", () => {
       sequence,
       sampledAtUnixMs,
       trigger,
+      producer: ledgerProducer(trigger),
       transactionId: sampleTransactionId,
       domCommittedAtUnixMs,
       nodes: [
@@ -426,9 +435,11 @@ describe("브라우저 구현 행렬", () => {
     expect(trace.timeline).toMatchObject({
       startAtUnixMs: 1_100,
       timingFunction: [0.4, 0, 0.2, 1],
+      // timeline 은 표시 관측자 한 열이다. DOM commit 경계는 join 표본으로 남되 표시 열에는
+      // 실리지 않는다 — 서로 다른 주기 둘을 한 열에 섞으면 display-gap 이 표시 주기가 아니라
+      // 두 주기의 맥놀이를 재게 된다.
       slot: [
-        { sequence: 0, sampledAtUnixMs: 1_010, frame: { x: 270 } },
-        { sequence: 1, sampledAtUnixMs: 1_100, frame: { x: 430 } },
+        { sequence: 0, sampledAtUnixMs: 1_100, frame: { x: 430 } },
       ],
       renderer: expect.any(Array),
       surface: expect.any(Array),
@@ -484,6 +495,7 @@ describe("브라우저 구현 행렬", () => {
       sequence,
       sampledAtUnixMs,
       trigger,
+      producer: ledgerProducer(trigger),
       transactionId: sampleTransactionId,
       domCommittedAtUnixMs,
       nodes: [
@@ -575,6 +587,7 @@ describe("브라우저 구현 행렬", () => {
           sequence: 0,
           sampledAtUnixMs: 900,
           trigger: "initial",
+          producer: ledgerProducer("initial"),
           transactionId: null,
           domCommittedAtUnixMs: null,
           nodes: ["rail", "pane", "slot"].map((address) => ({
@@ -585,6 +598,7 @@ describe("브라우저 구현 행렬", () => {
           sequence: 1,
           sampledAtUnixMs: 1_100,
           trigger: "layout-dom-commit",
+          producer: ledgerProducer("layout-dom-commit"),
           transactionId: "wrong-tx",
           domCommittedAtUnixMs: 1_000,
           nodes: ["rail", "pane", "slot"].map((address) => ({
@@ -619,6 +633,7 @@ describe("브라우저 구현 행렬", () => {
           ...input.domSamples[1],
           sequence: 2,
           trigger: "presentation-frame",
+          producer: ledgerProducer("presentation-frame"),
           transactionId: "tx",
           domCommittedAtUnixMs: 1_000,
           sampledAtUnixMs: 1_000,
@@ -646,8 +661,8 @@ describe("브라우저 구현 행렬", () => {
         { sampledAtUnixMs: 1_020, connected: true, rendererFrame: { x: 260, y: 20, w: 280, h: 160 }, surfaceFrame: { x: 260, y: 20, w: 280, h: 160 } },
       ],
       domSamples: [
-        { sequence: 0, sampledAtUnixMs: 990, trigger: "initial", transactionId: null, domCommittedAtUnixMs: null, nodes: [node("rail", 10), node("pane", 80), node("slot", 100)] },
-        { sequence: 1, sampledAtUnixMs: 1_010, trigger: "layout-dom-commit", transactionId: "tx", domCommittedAtUnixMs: 1_010, nodes: [node("rail", 10), node("pane", 240), node("slot", 260)] },
+        { sequence: 0, sampledAtUnixMs: 990, trigger: "initial", producer: ledgerProducer("initial"), transactionId: null, domCommittedAtUnixMs: null, nodes: [node("rail", 10), node("pane", 80), node("slot", 100)] },
+        { sequence: 1, sampledAtUnixMs: 1_010, trigger: "layout-dom-commit", producer: ledgerProducer("layout-dom-commit"), transactionId: "tx", domCommittedAtUnixMs: 1_010, nodes: [node("rail", 10), node("pane", 240), node("slot", 260)] },
       ],
       owner: { rendererId: "renderer", surfaceId: "surface" },
       targetViewId: "view",

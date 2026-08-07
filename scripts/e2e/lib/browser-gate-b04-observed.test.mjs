@@ -19,10 +19,19 @@ const TRANSACTION = Object.freeze({
   transactionId: "layout-3",
 });
 
+// 원장 표본은 언제나 관측자 이름을 싣는다(ui.trace.multi 의 producers). 이 픽스처가 남긴
+// presentation-frame 은 표시 callback 이 읽은 frame 이다.
+const LEDGER_PRODUCER = Object.freeze({
+  initial: "arm",
+  "layout-dom-commit": "layout-commit",
+  "presentation-frame": "frame-callback",
+});
+
 const domSample = (sequence, sampledAtUnixMs, trigger, railX, paneX, slotX) => ({
   sequence,
   sampledAtUnixMs,
   trigger,
+  producer: LEDGER_PRODUCER[trigger],
   transactionId: trigger === "initial" ? null : TRANSACTION.transactionId,
   domCommittedAtUnixMs: trigger === "initial" ? null : TRANSACTION.domCommittedAtUnixMs,
   nodes: [

@@ -125,7 +125,17 @@ function cubicBezierProgress(
   return cubicBezierCoordinate((low + high) / 2, y1, y2);
 }
 
-function timelineFrameAt(timeline: CompositionTimeline, sampledAtUnixMs: number): CompositionRect {
+/**
+ * 선언된 궤적이 한 epoch에서 주장하는 frame. 관측을 이 값과 대조하는 쪽과 이 값으로
+ * 픽스처를 짓는 쪽이 서로 다른 곡선을 쓰면 판정은 자기 자신을 검사하지 못한다.
+ */
+export function compositionTimelineFrameAt(
+  timeline: Pick<
+    CompositionTimeline,
+    "startAtUnixMs" | "durationMs" | "timingFunction" | "from" | "to"
+  >,
+  sampledAtUnixMs: number,
+): CompositionRect {
   const linear = Math.max(0, Math.min(
     1,
     (sampledAtUnixMs - timeline.startAtUnixMs) / timeline.durationMs,
@@ -263,7 +273,7 @@ export function compositionTimelineVerdict(timeline: CompositionTimeline) {
         errors.push(`${name}[${index}]:sampledAtUnixMs=${sample.sampledAtUnixMs}`);
         continue;
       }
-      const expected = timelineFrameAt(timeline, sample.sampledAtUnixMs);
+      const expected = compositionTimelineFrameAt(timeline, sample.sampledAtUnixMs);
       const delta = physicalEdgeDelta(expected, sample.frame, scaleFactor);
       // 두 독립 compositor가 같은 연속 좌표를 각각 nearest device pixel로 양자화한다.
       // 0.5 physical px는 임의 tolerance가 아니라 반올림 자체가 만들 수 있는 최대 오차다.
