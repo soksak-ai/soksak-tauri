@@ -1086,11 +1086,8 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
     // 답(읽기 전용 witness 명령)이 여기서 만나고, 갈라지는 자리는 전부 이 답을 본다 —
     // 프레임워크가 하나 더 늘어도 이 아래는 그대로다.
     const capabilities = await readHarnessCapabilities(rpc, win);
-    const provision = capabilities.provision;
-    if (typeof provision.nativeChildWebview !== "boolean") {
-      throw new Error(`framework가 nativeChildWebview를 선언하지 않았다: ${JSON.stringify(provision)}`);
-    }
-    nativeChildWebview = provision.nativeChildWebview;
+    // 선언을 안 한 답을 거절하는 자리는 readProvision 하나뿐이다 — 여기서 또 재지 않는다.
+    nativeChildWebview = capabilities.provision.nativeChildWebview;
     console.log(`◉ ${engine} capability: ${[...capabilities.entries.values()]
       .map((verdict) => `${verdict.id}=${verdict.status}`).join(" · ")}`);
     must(await rpc("program.wait", { id: engine, timeoutMs: 20_000 }, win), `program.wait ${engine}`);

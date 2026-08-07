@@ -183,15 +183,29 @@ export function presentationTraceCapability(adapter, gates = ["B04", "B05"]) {
  * 이 창의 능력을 한 번에 읽는다. 선언은 한 번만 묻고(창마다 하나의 사실), 능력마다 witness 를
  * 부른다. 못 읽은 능력은 이름을 달고 던진다 — 재지 못한 것을 없는 것으로 읽지 않는다.
  */
-export async function readHarnessCapabilities(rpc, windowLabel, options = {}) {
-  const declared = options.capabilities ?? HARNESS_CAPABILITIES;
-  const provisionAnswer = await Promise.resolve(rpc("framework.provision", {}, windowLabel));
-  if (provisionAnswer?.ok !== true) {
+/**
+ * 이 창이 무엇을 대주는지 창에게 묻고, 그 답을 값으로만 돌려준다.
+ *
+ * 거절도 침묵도 값이 아니다 — 못 물어본 실행이 물어보고 확인한 실행과 같은 값을 내면, 그 뒤에
+ * 나는 red 에 엉뚱한 이름이 붙는다. 갈라지는 자리는 전부 이 한 자리를 통해 읽는다.
+ */
+export async function readProvision(rpc, windowLabel) {
+  const answer = await Promise.resolve(rpc("framework.provision", {}, windowLabel));
+  if (answer?.ok !== true) {
+    throw new Error(`framework.provision 을 읽지 못했다: ${JSON.stringify(answer)?.slice(0, 240)}`);
+  }
+  const provision = answer.data ?? {};
+  if (typeof provision.nativeChildWebview !== "boolean") {
     throw new Error(
-      `framework.provision 을 읽지 못했다: ${JSON.stringify(provisionAnswer)?.slice(0, 240)}`,
+      `framework 가 nativeChildWebview 를 선언하지 않았다: ${JSON.stringify(provision)?.slice(0, 240)}`,
     );
   }
-  const provision = provisionAnswer.data ?? {};
+  return provision;
+}
+
+export async function readHarnessCapabilities(rpc, windowLabel, options = {}) {
+  const declared = options.capabilities ?? HARNESS_CAPABILITIES;
+  const provision = await readProvision(rpc, windowLabel);
   const entries = new Map();
   for (const capability of declared) {
     const verdict = await askCapability(rpc, windowLabel, capability, provision);

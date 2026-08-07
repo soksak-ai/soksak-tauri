@@ -6,6 +6,7 @@ import { browserGatesOwnedBy } from "./browser-gate-report-merge.mjs";
 import {
   CAPABILITY_ABSENCE_CODES,
   PANE_PRESENTATION_HOST,
+  readProvision,
   askCapability,
   judgeCapabilityAnswer,
   presentationTraceCapability,
@@ -289,5 +290,40 @@ describe("the capability question itself", () => {
     // 판정이 이름을 보면 프레임워크가 하나 늘 때마다 이 파일이 갈린다.
     expect(source).not.toMatch(/tauri/i);
     expect(source).not.toMatch(/electron/i);
+  });
+});
+
+// 못 물어본 실행이 물어보고 확인한 실행과 같은 값을 내면 안 된다.
+//
+// 실측 2026-08-07: gutter-drag.mjs:165 와 surface-park.mjs:96 이 `provision.nativeChildWebview
+// !== false` 로 읽었다. 그 헬퍼는 거절 봉투를 조용히 통과시키므로, framework.provision 이
+// UNKNOWN_COMMAND 로 거절돼도 두 줄 다 "네이티브 자식 표면이 있다"로 접혔다 — 그 뒤 네이티브
+// 표면을 못 찾은 red 에 "child 판독 실패"라는 엉뚱한 이름이 붙는다.
+describe("readProvision", () => {
+  it("선언된 축을 그대로 답한다", async () => {
+    const provision = await readProvision(
+      async () => ({ ok: true, data: { name: "tauri", nativeChildWebview: true } }),
+      "main",
+    );
+    expect(provision.nativeChildWebview).toBe(true);
+    expect(provision.name).toBe("tauri");
+  });
+
+  it("거절 봉투를 값으로 읽지 않는다", async () => {
+    await expect(
+      readProvision(async () => ({ ok: false, code: "UNKNOWN_COMMAND" }), "main"),
+    ).rejects.toThrow(/framework\.provision/);
+  });
+
+  it("축을 선언하지 않은 답을 있음으로 읽지 않는다", async () => {
+    await expect(
+      readProvision(async () => ({ ok: true, data: { name: "electron" } }), "main"),
+    ).rejects.toThrow(/nativeChildWebview/);
+  });
+
+  it("boolean 이 아닌 선언을 통과시키지 않는다", async () => {
+    await expect(
+      readProvision(async () => ({ ok: true, data: { nativeChildWebview: "yes" } }), "main"),
+    ).rejects.toThrow(/nativeChildWebview/);
   });
 });

@@ -19,6 +19,7 @@ import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
 import { requireSocket, resolveControlWindow } from "./lib/client.mjs";
+import { readProvision } from "./lib/harness-capabilities.mjs";
 
 const SOCKET = requireSocket();
 const FIXTURE = path.join(os.homedir(), ".soksak-e2e", "gutter-drag");
@@ -161,8 +162,8 @@ async function main() {
     }
   }
   // 판정 축은 프레임워크가 선언한다 — 이름 분기는 프레임워크가 늘 때마다 갈라진다.
-  const provision = data(await rpc("framework.provision", {}, win));
-  const nativeChildWebview = provision.nativeChildWebview !== false;
+  const provision = await readProvision(rpc, win);
+  const nativeChildWebview = provision.nativeChildWebview;
   console.log(`framework: ${provision.name} · content views ${nativeChildWebview ? "native" : "in-page"}`);
 
   let term = null;
