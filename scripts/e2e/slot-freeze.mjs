@@ -126,6 +126,7 @@ import {
   viewportGeometryVerdict,
 } from "./lib/browser-matrix.mjs";
 import { b04DomLedgerProducerErrors } from "./lib/browser-gate-b04-slot-timeline.mjs";
+import { BROWSER_PLUGIN_CONTRACT, resolveContractPlugins } from "./lib/browser-contract-plugins.mjs";
 
 const FIXTURE_ROOT = path.join(os.homedir(), ".soksak-e2e", "slot-freeze");
 const EVIDENCE_STORE_ROOT = path.join(os.homedir(), ".soksak-e2e", "evidence", "slot-freeze");
@@ -1085,6 +1086,19 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
     // 이 창이 무엇을 할 수 있는지는 이름이 아니라 창에게 묻는다. 선언(framework.provision 의 축)과
     // 답(읽기 전용 witness 명령)이 여기서 만나고, 갈라지는 자리는 전부 이 답을 본다 —
     // 프레임워크가 하나 더 늘어도 이 아래는 그대로다.
+    // 손으로 적은 플러그인 id 를 앱의 선언과 대조한다. 이 표는 하니스가 플러그인에 결합된
+    // 자리다 — 표가 갈리면 조용히 넘어가지 않고 여기서 이름을 달고 멈춘다. 선언의 주인은
+    // 플러그인 매니페스트(implements)이고 코어가 plugin.list 로 그것을 답한다.
+    const contractPlugins = await resolveContractPlugins(
+      (command, params) => rpc(command, params, win),
+      BROWSER_PLUGIN_CONTRACT,
+    );
+    if (!contractPlugins.includes(plugin)) {
+      throw new Error(
+        `${engine}: ${plugin} 이 ${BROWSER_PLUGIN_CONTRACT} 구현자로 선언되지 않았다`
+        + ` — 선언한 구현자: ${contractPlugins.join(", ") || "없음"}`,
+      );
+    }
     const capabilities = await readHarnessCapabilities(rpc, win);
     // 선언을 안 한 답을 거절하는 자리는 readProvision 하나뿐이다 — 여기서 또 재지 않는다.
     nativeChildWebview = capabilities.provision.nativeChildWebview;

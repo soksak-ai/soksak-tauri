@@ -105,6 +105,9 @@ function serializeRuntime(p: PluginRuntime) {
       placements: v.placements,
     })),
     commands: p.manifest.contributes.commands.map((c) => c.name),
+    // 계약 구현 선언은 매니페스트의 사실이다. 안 내면 "이 계약을 누가 구현하는가" 를 물을 자리가
+    // 없고, 소비처가 플러그인 id 를 손으로 적은 표를 들게 된다 — 그 표는 조용히 갈린다.
+    implements: manifestImplements(p.manifest),
     dir: p.dir,
   };
 }

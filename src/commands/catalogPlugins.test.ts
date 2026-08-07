@@ -305,3 +305,35 @@ describe("plugin.view.open — rail 배치는 열기 대상이 아니다(좌 레
     expect(String(r.message)).toContain("투영");
   });
 });
+
+// 규칙 — 매니페스트에 있는 사실은 상태면에도 있어야 한다.
+//
+// 계약 구현 선언(implements)은 매니페스트에 사는데 plugin.list 가 그것을 안 냈다. 그래서 "이
+// 계약을 누가 구현하는가" 를 물을 자리가 없었고, 소비처(E2E 하니스)가 플러그인 id 를 손으로 적은
+// 표를 들었다 — 플러그인이 늘면 그 표를 고쳐야 하고, 플러그인이 계약을 바꾸면 조용히 갈린다.
+// 실측 2026-08-07: 그 조용한 갈림이 `traceId: number 여야 함` 거절로 엔진 실행을 죽였다.
+describe("plugin.list 가 계약 구현 선언을 낸다", () => {
+  it("매니페스트의 implements 를 그대로 답한다", async () => {
+    const id = "soksak-plugin-demo";
+    usePlugins.setState({
+      plugins: {
+        [id]: runtimeOf(manifestOf(id, {
+          implements: [{ id: "soksak-spec-plugin-browser", version: "0.0.1" }],
+        })),
+      },
+    });
+    const answer = await execute("plugin.list", {}, {});
+    const entry = (answer.data as { plugins: { id: string; implements: unknown }[] })
+      .plugins.find((p) => p.id === id);
+    expect(entry!.implements).toEqual([{ id: "soksak-spec-plugin-browser", version: "0.0.1" }]);
+  });
+
+  it("아무 계약도 선언하지 않은 플러그인은 빈 목록이다 — 없는 것을 지어내지 않는다", async () => {
+    const id = "soksak-plugin-plain";
+    usePlugins.setState({ plugins: { [id]: runtimeOf(manifestOf(id)) } });
+    const answer = await execute("plugin.list", {}, {});
+    const entry = (answer.data as { plugins: { id: string; implements: unknown }[] })
+      .plugins.find((p) => p.id === id);
+    expect(entry!.implements).toEqual([]);
+  });
+});
