@@ -132,6 +132,13 @@ describe("resize 관측 봉투 계약", () => {
       "eventGenerationAfter=>eventGenerationBefore/3/3",
     ]));
   });
+
+  it("baseline 은 거래가 없으므로 같은 사건 세대에 머문다", () => {
+    const still = { ...observed(), eventGenerationBefore: 3, eventGenerationAfter: 3 };
+    expect(resizeCompositionViolations(still, { transaction: false })).toEqual([]);
+    expect(resizeCompositionViolations({ ...still, eventGenerationAfter: 2 }, { transaction: false }))
+      .toContain("eventGenerationAfter=>=eventGenerationBefore/3/2");
+  });
 });
 
 describe("계약을 읽는 판정면", () => {

@@ -304,7 +304,10 @@ function checkCounters(value: unknown, path: string, violations: string[]): void
  * 계약을 지켰다는 뜻이다. 같은 축을 다른 이름으로 부르면(transaction·generation) 그 축이
  * 비어 있다는 사실이 축 이름으로 드러난다.
  */
-export function resizeCompositionViolations(value: unknown): string[] {
+export function resizeCompositionViolations(
+  value: unknown,
+  { transaction = true }: { transaction?: boolean } = {},
+): string[] {
   const violations: string[] = [];
   if (!isRecord(value)) {
     violations.push(`observation=record/${displayValue(value)}`);
@@ -322,12 +325,18 @@ export function resizeCompositionViolations(value: unknown): string[] {
     "eventGenerationAfter",
     violations,
   );
-  if (beforeValid && afterValid
-    && !((value.eventGenerationAfter as number) > (value.eventGenerationBefore as number))) {
-    violations.push(
-      "eventGenerationAfter=>eventGenerationBefore"
-        + `/${displayValue(value.eventGenerationBefore)}/${displayValue(value.eventGenerationAfter)}`,
-    );
+  // 거래를 관측한 단계는 창 사건이 반드시 하나 이상 지나갔어야 한다. baseline 은 아직 아무
+  // 거래도 없던 자리라 같은 세대에 머무는 것이 사실이다 — 이 둘을 한 기준으로 재면 둘 중
+  // 하나는 거짓말이 된다.
+  if (beforeValid && afterValid) {
+    const before = value.eventGenerationBefore as number;
+    const after = value.eventGenerationAfter as number;
+    if (transaction ? !(after > before) : after < before) {
+      violations.push(
+        `eventGenerationAfter=${transaction ? ">" : ">="}eventGenerationBefore`
+          + `/${displayValue(before)}/${displayValue(after)}`,
+      );
+    }
   }
   const visibleViewIds = value.visibleViewIds;
   if (!Array.isArray(visibleViewIds)
@@ -365,7 +374,7 @@ export function composeResizeObservation({
   windowGeometry: ResizeRect;
   observed: ResizeCompositionObservation;
 }): ResizeObservation {
-  const violations = resizeCompositionViolations(observed);
+  const violations = resizeCompositionViolations(observed, { transaction: request.kind === "step" });
   checkRect(windowGeometry, "snapshot.windowGeometry", violations);
   if (request.kind === "step" && request.phase !== undefined
     && !(RESIZE_TRANSACTION_PHASES as readonly string[]).includes(request.phase)) {

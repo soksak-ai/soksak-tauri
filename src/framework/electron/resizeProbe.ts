@@ -4,6 +4,17 @@
 // 거래 세대에 renderer resize·ResizeObserver·slot·<webview>·guest viewport를 결합한다.
 // rAF 횟수나 재시도는 settlement 근거가 아니다.
 import { moduleState } from "../../lib/moduleState";
+import { browserViewIdFromLabel, currentWindowLabel } from "../../lib/webviewLabels";
+import type {
+  ResizeCompositionObservation,
+  ResizeContinuityCounters,
+  ResizeProbeRequest,
+} from "../../lib/windowResizeProbe";
+import {
+  countResizeContinuity,
+  electronResizeObservation,
+  type ElectronObservedTarget,
+} from "./resizeObservation";
 
 export interface Size2D {
   width: number;
@@ -41,7 +52,7 @@ interface PresentationReceipt {
 export interface ElectronNativeResizeReceipt {
   framework: "electron";
   label: string;
-  transaction: number;
+  transactionGeneration: number;
   status: "settled";
   changed: boolean;
   requested: { dip: Size2D; physical: Size2D; display: DisplaySnapshot };
@@ -98,7 +109,8 @@ export interface ElectronResizeProbe {
     height: number,
     setNative: ElectronNativePhysicalResize,
   ): Promise<void>;
-  sample(): Promise<unknown>;
+  /** 코어 resize 관측 봉투의 관측면. 요청 크기는 받지 않는다. */
+  sample(request: ResizeProbeRequest): Promise<ResizeCompositionObservation>;
 }
 
 function rectOf(value: DOMRect | DOMRectReadOnly): Rect2D {
@@ -214,10 +226,67 @@ export function createElectronResizeProbe(
   let layoutSettledRevision = 0;
   let generationRevision = 0;
   let lastNative: ElectronNativeResizeReceipt | null = null;
+  // 한 거래를 사이에 둔 창 사건 세대. 거래가 없던 자리(baseline)는 두 값이 같은 것이 사실이다.
+  let transactionEvents = { before: 0, after: 0 };
+  // 끊긴 사실은 누적한다 — 다음 프레임이 멀쩡하다고 끊겼던 사실이 사라지지 않는다.
+  let continuityLedger: ResizeContinuityCounters = {
+    replacements: 0, gaps: 0, disappearances: 0, unpresented: 0,
+  };
+  let lastObservedTargets: ElectronObservedTarget[] | null = null;
 
   win.addEventListener("resize", () => {
     layoutEventRevision += 1;
   });
+
+  /**
+   * 지금 이 문서가 볼 수 있는 콘텐츠 뷰 세 평면. native 영수증이 아직 없어도 잰다 —
+   * 첫 거래 전의 관측(baseline)이 없으면 무엇이 변했는지 판정할 수 없다.
+   */
+  const observeTargets = async (): Promise<ElectronObservedTarget[]> => {
+    const native = lastNative;
+    const presentationById = new Map(
+      (native?.surfaces ?? []).map((surface) => [surface.webContentsId, surface]),
+    );
+    return Promise.all(targetFacts(doc).map(async (target) => {
+      let guestViewport: GuestViewport | null = null;
+      if (target.visible && typeof target.element.executeJavaScript === "function") {
+        try {
+          guestViewport = finiteGuestViewport(await target.element.executeJavaScript(`(() => ({
+            innerWidth: window.innerWidth,
+            innerHeight: window.innerHeight,
+            clientWidth: document.documentElement.clientWidth,
+            clientHeight: document.documentElement.clientHeight,
+            devicePixelRatio: window.devicePixelRatio
+          }))()`), target.label);
+        } catch {
+          // 못 물은 사실은 없는 평면으로 남는다. 요소 상자로 대신 채우면 guest 가 따라오지
+          // 못한 프레임이 그대로 GREEN 이 된다.
+          guestViewport = null;
+        }
+      }
+      const receipt = target.webContentsId === null
+        ? null
+        : presentationById.get(target.webContentsId) ?? null;
+      return {
+        label: target.label,
+        // 뷰 이름은 label 문법 소유자가 답한다. 접두사로 소유를 추측하지 않는다.
+        viewId: browserViewIdFromLabel(target.label) ?? target.label,
+        visible: target.visible,
+        slotRect: target.slotRect,
+        elementRect: target.surfaceRect,
+        guestViewport,
+        presentation: receipt && native
+          ? {
+              revision: receipt.presentationRevision,
+              // frame 구독 세대가 바뀌면 그 표면은 교체된 것이다.
+              surfaceGeneration: receipt.proof.subscriptionGeneration,
+              presented: receipt.presentationRevision > 0
+                && receipt.proof.transactionGeneration === native.transactionGeneration,
+            }
+          : null,
+      } satisfies ElectronObservedTarget;
+    }));
+  };
 
   const collect = async (native: ElectronNativeResizeReceipt) => {
     const presentationById = new Map(
@@ -238,11 +307,11 @@ export function createElectronResizeProbe(
     }
     if (
       native.renderer.presentationRevision <= 0
-      || native.renderer.proof.transactionGeneration !== native.transaction
+      || native.renderer.proof.transactionGeneration !== native.transactionGeneration
     ) {
       violations.push({
         code: "RENDERER_PRESENTATION_UNPROVEN",
-        message: `renderer presentation이 transaction ${native.transaction}을 증명하지 않는다`,
+        message: `renderer presentation이 transaction ${native.transactionGeneration}을 증명하지 않는다`,
       });
     }
 
@@ -295,7 +364,7 @@ export function createElectronResizeProbe(
         if (
           !presentation
           || presentation.presentationRevision <= 0
-          || presentation.proof.transactionGeneration !== native.transaction
+          || presentation.proof.transactionGeneration !== native.transactionGeneration
           || (guestViewport && (
             presentation.proof.expectedDip.width !== guestViewport.innerWidth
             || presentation.proof.expectedDip.height !== guestViewport.innerHeight
@@ -303,7 +372,7 @@ export function createElectronResizeProbe(
         ) {
           violations.push({
             code: "SURFACE_PRESENTATION_UNPROVEN",
-            message: `surface presentation이 transaction ${native.transaction}의 guest 기하를 증명하지 않는다`,
+            message: `surface presentation이 transaction ${native.transactionGeneration}의 guest 기하를 증명하지 않는다`,
             label: target.label,
           });
         }
@@ -338,7 +407,7 @@ export function createElectronResizeProbe(
 
     return {
       framework: "electron" as const,
-      transaction: native.transaction,
+      transactionGeneration: native.transactionGeneration,
       settled: native.status === "settled" && violations.length === 0,
       requested: native.requested,
       native: native.native,
@@ -416,7 +485,7 @@ export function createElectronResizeProbe(
                 wake = null;
                 reject(namedError(
                   "ELECTRON_RESIZE_SETTLEMENT_TIMEOUT",
-                  `transaction ${native.transaction}의 renderer resize/ResizeObserver 기하가 ` +
+                  `transaction ${native.transactionGeneration}의 renderer resize/ResizeObserver 기하가 ` +
                     `${timeoutMs}ms 안에 일치하지 않았다`,
                 ));
               }, timeoutMs);
@@ -435,21 +504,40 @@ export function createElectronResizeProbe(
         if (facts.violations.length > 0) {
           throw namedError(
             "ELECTRON_RESIZE_GEOMETRY_MISMATCH",
-            `transaction ${native.transaction} 기하 불일치: ${JSON.stringify(facts.violations)}`,
+            `transaction ${native.transactionGeneration} 기하 불일치: ${JSON.stringify(facts.violations)}`,
           );
         }
         layoutSettledRevision += 1;
         lastNative = native;
+        transactionEvents = { before: beforeLayoutRevision, after: layoutEventRevision };
       } finally {
         wake = null;
         observer.disconnect();
       }
     },
-    async sample() {
-      if (!lastNative) {
-        throw new Error("Electron resize settlement가 아직 없다 — 먼저 실제 resize 거래를 실행해야 한다");
+    async sample(request) {
+      const targets = await observeTargets();
+      const countersBefore = { ...continuityLedger };
+      if (lastObservedTargets) {
+        continuityLedger = countResizeContinuity(lastObservedTargets, targets, continuityLedger);
       }
-      return collect(lastNative);
+      const countersAfter = { ...continuityLedger };
+      lastObservedTargets = targets;
+      // 아직 아무 거래도 없던 자리는 그 사실 그대로 답한다 — 거절하면 무엇이 변했는지 잴
+      // 기준 자체가 사라지고, 지어내면 첫 거래가 항상 성공한 것이 된다.
+      const events = request.kind === "step"
+        ? transactionEvents
+        : { before: layoutEventRevision, after: layoutEventRevision };
+      return electronResizeObservation({
+        windowLabel: currentWindowLabel(),
+        scaleFactor: win.devicePixelRatio,
+        eventGeneration: layoutEventRevision,
+        eventGenerationBefore: events.before,
+        eventGenerationAfter: events.after,
+        transactionGeneration: lastNative?.transactionGeneration ?? 0,
+        continuity: { countersBefore, countersAfter },
+        targets,
+      });
     },
   };
 }
