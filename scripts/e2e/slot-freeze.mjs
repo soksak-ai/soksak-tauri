@@ -1437,6 +1437,13 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
             const flowPresentationTrace = mapB04PresentationSamples({
               events: presentationEvents,
               domSamples: domTraceReceipt.samples,
+              // 규칙 — 시계 선언: 세 영수증이 각자 답한 시계를 그대로 옮긴다. 하니스는 어느
+              // 시계였는지 추측하지 않는다 — 못 읽으면 못 읽은 채로 판정에 실린다.
+              clocks: {
+                window: layoutVerdict.transaction.clock,
+                presentation: presentationReceipt.clock,
+                slot: domTraceReceipt.clock,
+              },
               owner,
               targetViewId,
               transactionId: layoutVerdict.transaction.transactionId,
@@ -1454,6 +1461,7 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
               direction: side === 0 ? "to-left" : "to-right",
               targetViewId,
               motionMode: layoutVerdict.transaction.mode,
+              clocks: flowPresentationTrace.clocks,
               journal: {
                 afterSequence,
                 entries: b04JournalEntries,

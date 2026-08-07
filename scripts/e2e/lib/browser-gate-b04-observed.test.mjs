@@ -70,7 +70,7 @@ const NATIVE_EVENTS = Object.freeze([
   surfaceFrame: { x, y: 149, w: 281, h: 421 },
 })));
 
-function observedEvidence(events) {
+function observedEvidence(events, presentationClock = "unix-anchored-monotonic") {
   const trace = mapB04PresentationSamples({
     events,
     domSamples: [...DOM_SAMPLES],
@@ -84,11 +84,15 @@ function observedEvidence(events) {
     railAddress: "rail",
     paneAddress: "pane",
     slotAddress: "slot",
+    // 기록된 사건의 시계 선언. native 표시 원장은 unix 로 한 번 고정한 뒤 media time 으로만
+    // 나아가는 시계를 답했고, layout 장부와 DOM 원장은 wall clock 을 따라가는 시계를 답했다.
+    clocks: { window: "wall", presentation: presentationClock, slot: "wall" },
   });
   const transition = (direction) => ({
     direction,
     targetViewId: TRANSACTION.moves[0].viewId,
     motionMode: TRANSACTION.mode,
+    clocks: trace.clocks,
     journal: { afterSequence: 2, entries: normalizeB04JournalEntries([TRANSACTION]) },
     samples: trace.samples,
     timeline: trace.timeline,
@@ -119,10 +123,11 @@ describe("B04 실측 FLOW trace", () => {
     const verdict = judgeB04MachineEvidence(evidence);
     expect(verdict.status).toBe("red");
     expect(verdict.evidence).toEqual(expect.arrayContaining([
-      // 원인: 두 producer가 같은 거래를 관측했다고 볼 수 없다.
-      "B04:transitions[0].samples:presentation:window-gap=4041616.4294433594",
-      "B04:transitions[0].timeline:renderer:window-gap=4041616.4294433594",
-      "B04:transitions[0].timeline:surface:window-gap=4041616.4294433594",
+      // 원인: 두 producer 가 서로 다른 시계를 같은 `...UnixMs` 이름으로 냈다. 거리(4,041,616ms)는
+      // 두 시계 사이에서 뜻을 잃으므로 이름은 거리가 아니라 갈라진 선언이다.
+      "B04:transitions[0].samples:presentation:clock=unix-anchored-monotonic/wall",
+      "B04:transitions[0].timeline:renderer:clock=unix-anchored-monotonic/wall",
+      "B04:transitions[0].timeline:surface:clock=unix-anchored-monotonic/wall",
       // 그 결과로 보고되던 증상들. 원인 없이 이 값들만 보면 native 표본이 모자란다거나
       // pane이 움직이지 않았다는 잘못된 결론에 이른다.
       'B04:transitions[0].composition:s0:renderer={"x":160,"y":0,"w":0,"h":0}',
@@ -132,13 +137,14 @@ describe("B04 실측 FLOW trace", () => {
     ]));
   });
 
-  it("같은 좌표를 같은 epoch로 옮기면 증상이 사라지고 이동하지 않은 native ledger가 남는다", () => {
-    // 기록된 native 시각을 실측 skew만큼 되돌린다. 좌표는 하나도 바꾸지 않는다.
+  it("같은 시계 위로 옮기면 증상이 사라지고 이동하지 않은 native ledger가 남는다", () => {
+    // 기록된 native 시각을 실측 skew만큼 되돌리고 같은 시계를 선언한다. 좌표는 하나도 바꾸지
+    // 않는다 — 시계를 맞추는 것은 관측을 비교 가능하게 할 뿐 판정을 무르게 하지 않는다.
     const skewMs = 1_786_071_385_725 - 1_786_067_343_619.7163;
     const { evidence, trace } = observedEvidence(NATIVE_EVENTS.map((event) => ({
       ...event,
       sampledAtUnixMs: event.sampledAtUnixMs + skewMs,
-    })));
+    })), "wall");
     // 이제 prepared 표본은 클릭 이전 DOM에, committed 표본은 착지 DOM에 붙는다.
     expect(trace.samples.map(({ pane }) => pane.frame.x)).toEqual([60, 220]);
     expect(trace.timeline.renderer.length).toBeGreaterThanOrEqual(3);
@@ -146,7 +152,7 @@ describe("B04 실측 FLOW trace", () => {
     const verdict = judgeB04MachineEvidence(evidence);
     const failures = verdict.evidence;
     expect(failures).not.toEqual(expect.arrayContaining([
-      expect.stringContaining("window-gap"),
+      expect.stringContaining(":clock="),
     ]));
     expect(failures).not.toEqual(expect.arrayContaining([
       expect.stringContaining("pane-dx"),

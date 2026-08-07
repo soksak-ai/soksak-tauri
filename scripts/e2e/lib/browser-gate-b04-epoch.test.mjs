@@ -30,13 +30,15 @@ function traceFrom(presentationReceipt) {
     railAddress: FIXTURE.railAddress,
     paneAddress: FIXTURE.paneAddress,
     slotAddress: FIXTURE.slotAddress,
+    clocks: { window: "unix-anchored-monotonic", presentation: "unix-anchored-monotonic", slot: "unix-anchored-monotonic" },
   });
 }
 
 function nativeErrors(presentationReceipt) {
-  const { timeline } = traceFrom(presentationReceipt);
+  const { timeline, clocks } = traceFrom(presentationReceipt);
   return compositionTimelineVerdict({
     ...timeline,
+    clocks,
     coordinateSpace: { logical: "css-px", scaleFactor: FIXTURE.scaleFactor },
   }).errors.filter((error) => error.startsWith("renderer") || error.startsWith("surface"));
 }
