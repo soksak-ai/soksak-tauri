@@ -1188,6 +1188,42 @@ describe("ui.input.click — phase 분해(게스처 중간 상태의 검증 가�
     }
   });
 
+  // 사슬은 조상 경로다. 소비자(B09 게이트)가 "이 자리를 누가 소유했나"를 사슬 포함으로 읽으려면
+  // 이름 모양과 포함이 다른 사실이라는 것을 코어가 답해야 한다 — 양쪽으로 갈린다.
+  it("이름 접두사는 포함이 아니다 — 형제는 빠지고, 이름공간이 다른 자손은 들어온다", async () => {
+    const sidebar = document.createElement("div");
+    sidebar.dataset.node = "sidebar/right";
+    // 플러그인 뷰가 선언한 노드 id. 자기 이름공간의 이름이라 접두사가 없지만 진짜 자손이다.
+    const pluginNode = document.createElement("input");
+    pluginNode.dataset.node = "search-input";
+    sidebar.appendChild(pluginNode);
+    // 이름만 하위인 형제(App.tsx 의 resizer 배치). 접두사를 소유로 읽으면 사이드바 밖이 안이 된다.
+    const resizer = document.createElement("div");
+    resizer.dataset.node = "sidebar/right/resizer";
+    document.body.append(sidebar, resizer);
+    const orig = document.elementFromPoint;
+    try {
+      Object.defineProperty(document, "elementFromPoint", {
+        value: () => pluginNode,
+        configurable: true,
+      });
+      const inside = await execute("ui.hit", { x: 5, y: 5 }, {});
+      expect((inside.data as { owners?: string[] }).owners).toEqual([
+        "search-input",
+        "sidebar/right",
+      ]);
+
+      Object.defineProperty(document, "elementFromPoint", {
+        value: () => resizer,
+        configurable: true,
+      });
+      const sibling = await execute("ui.hit", { x: 5, y: 5 }, {});
+      expect((sibling.data as { owners?: string[] }).owners).toEqual(["sidebar/right/resizer"]);
+    } finally {
+      Object.defineProperty(document, "elementFromPoint", { value: orig, configurable: true });
+    }
+  });
+
   it("선언 소유자가 하나도 없는 점은 빈 사슬을 답한다 — 없음을 있음으로 채우지 않는다", async () => {
     const plain = document.createElement("div");
     document.body.appendChild(plain);
