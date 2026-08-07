@@ -23,13 +23,26 @@ export function notRunVerdict() {
   return { status: "not-run", evidence: [], reason: null };
 }
 
-export function finishMachineVerdict(gate, failures, greenEvidence) {
+/** 잰 어긋남은 red, 못 잰 축은 blocked, 둘 다 없으면 green.
+ *
+ * 관측자가 표본을 못 낸 것을 실패로 적으면 없는 사실을 만든 것이고, 그 판정은 관측 환경에 따라
+ * green/red 를 오간다. 잰 어긋남이 함께 있으면 red 가 이긴다 — 실측한 위반이 못 잼에 가려지면
+ * 안 된다. */
+export function finishMachineVerdict(gate, failures, greenEvidence, unmeasured = []) {
   if (failures.length > 0) {
     const unique = [...new Set(failures)];
     return {
       status: "red",
       evidence: unique.map((failure) => `${gate}:${failure}`),
       reason: `${gate} machine contract failed (${unique.length})`,
+    };
+  }
+  if (unmeasured.length > 0) {
+    const names = [...new Set(unmeasured)].join(",");
+    return {
+      status: "blocked",
+      evidence: [],
+      reason: `${gate} could not be measured: ${names}`,
     };
   }
   return { status: "green", evidence: [greenEvidence], reason: null };

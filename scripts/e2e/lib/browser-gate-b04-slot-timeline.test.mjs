@@ -206,10 +206,15 @@ describe("B04 slot timeline 은 한 관측자의 표시 열이다", () => {
     expect(timeline.slot).toEqual([]);
     // 출발점은 표시 열이 아니라 활강 이전 DOM 사실에서 읽으므로 굶은 창에서도 그대로다.
     expect(timeline.from).toEqual(ledger.from);
-    expect(compositionTimelineVerdict({
+    // 표시 관측자가 안 온 것은 관측의 한계이지 DOM 이 안 움직였다는 증거가 아니다. 그것을
+    // 실패로 적으면 창이 가려졌는지가 green/red 를 가른다 — 잰 값과 못 잼은 다른 답이다.
+    const verdict = compositionTimelineVerdict({
       ...timeline,
       coordinateSpace: { logical: "css-px", scaleFactor: 2 },
-    }).errors).toEqual(["slot:samples=0/3"]);
+    });
+    expect(verdict.errors).toEqual([]);
+    expect(verdict.unmeasured).toEqual(["slot"]);
+    expect(verdict.ok).toBe(false);
   });
 
   it("관측자 이름 없는 원장 표본은 표시 열로 읽지 않는다", () => {

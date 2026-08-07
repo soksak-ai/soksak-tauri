@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import {
   EVIDENCE_WIRING_KEY,
+  finishMachineVerdict,
   mapWithWiring,
   readCheckpoint,
   requireEvidenceEnvelope,
@@ -193,5 +194,30 @@ describe("mapWithWiring", () => {
       "wiring.B06.live.railComposition=produced-not-consumed",
       "wiring.B06.live.rail=consumed-not-produced",
     ]);
+  });
+});
+
+// 잰 값과 못 잼은 다른 답이다.
+//
+// 관측자가 표본을 못 낸 것을 실패로 적으면 없는 사실을 만든 것이고, 그 판정은 관측 환경에 따라
+// green/red 를 오간다 — 실측 2026-08-07: presentation-frame 표본이 rAF 에 달려 있어 창이
+// 가려지면 B04 가 red, 아니면 green 이었다. 제품은 그대로였다.
+describe("측정 불가는 실패가 아니다", () => {
+  it("못 잰 축이 있으면 사유와 함께 blocked 를 답한다", () => {
+    const verdict = finishMachineVerdict("B04", [], "B04:ok", ["slot"]);
+    expect(verdict.status).toBe("blocked");
+    expect(verdict.reason).toContain("slot");
+    expect(verdict.evidence).toEqual([]);
+  });
+
+  it("실패가 함께 있으면 red 가 이긴다 — 잰 어긋남은 못 잼에 가려지지 않는다", () => {
+    const verdict = finishMachineVerdict("B04", ["pane-dx=1/0"], "B04:ok", ["slot"]);
+    expect(verdict.status).toBe("red");
+    expect(verdict.evidence).toEqual(["B04:pane-dx=1/0"]);
+  });
+
+  it("못 잰 축이 없으면 지금 계약 그대로다", () => {
+    expect(finishMachineVerdict("B04", [], "B04:ok", []).status).toBe("green");
+    expect(finishMachineVerdict("B04", ["x=1/0"], "B04:ok").status).toBe("red");
   });
 });

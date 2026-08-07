@@ -259,11 +259,16 @@ export function compositionTimelineVerdict(timeline: CompositionTimeline) {
       .filter((span): span is CompositionObservationSpan => span !== null),
   );
   errors.push(...observation.errors);
+  // 관측자의 생존은 판정의 입력이 아니다. presentation-frame 표본은 rAF 가 내고, WebKit 은
+  // 가려지거나 포커스 없는 창에서 rAF 를 멈춘다 — 그것은 관측의 한계이지 DOM 이 안 움직였다는
+  // 증거가 아니다. 표본이 없는 producer 를 실패로 적으면 다른 창이 위에 있느냐가 green/red 를
+  // 가른다. 잰 값과 못 잼은 다른 답이므로 다른 자리에 적는다.
+  const unmeasured: string[] = [];
   const inspect = (name: "slot" | "renderer" | "surface") => {
     if (observation.gapMs[name] > 0) return;
     const samples = timeline[name];
     if (samples.length < 3) {
-      errors.push(`${name}:samples=${samples.length}/3`);
+      unmeasured.push(name);
       return;
     }
     for (const [index, sample] of samples.entries()) {
@@ -317,7 +322,7 @@ export function compositionTimelineVerdict(timeline: CompositionTimeline) {
       }
     }
   }
-  return { ok: errors.length === 0, errors };
+  return { ok: errors.length === 0 && unmeasured.length === 0, errors, unmeasured };
 }
 
 /**

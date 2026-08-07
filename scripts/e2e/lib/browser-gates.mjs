@@ -674,7 +674,7 @@ function distinctB04Frames(samples, participant, scaleFactor) {
   })).size;
 }
 
-function inspectB04Transition(transition, index, coordinateSpace, failures) {
+function inspectB04Transition(transition, index, coordinateSpace, failures, unmeasured) {
   const path = `transitions[${index}]`;
   if (!requireExactKeys(transition, B04_TRANSITION_KEYS, path, failures)) return;
   if (!B04_DIRECTIONS.includes(transition.direction)) {
@@ -826,6 +826,9 @@ function inspectB04Transition(transition, index, coordinateSpace, failures) {
       coordinateSpace,
     });
     failures.push(...timelineVerdict.errors.map((error) => `${path}.timeline:${error}`));
+    // 관측자가 표본을 못 낸 축은 실패가 아니다 — 그 자리에 red 를 적으면 창이 가려졌는지가
+    // 판정을 가른다. 못 잼은 못 잼으로 답한다.
+    unmeasured.push(...timelineVerdict.unmeasured.map((name) => `${path}.timeline:${name}`));
   } else if (transition.timeline !== null) {
     failures.push(`${path}.timeline=null/${displayValue(transition.timeline)}`);
   }
@@ -857,6 +860,7 @@ function inspectB04Transition(transition, index, coordinateSpace, failures) {
 export function judgeB04MachineEvidence(value) {
   if (value == null) return notRunVerdict();
   const failures = [];
+  const unmeasured = [];
   if (!requireExactKeys(value, ["engine", "coordinateSpace", "transitions"], "evidence", failures)) {
     return finishMachineVerdict("B04", failures, "B04:unreachable");
   }
@@ -873,7 +877,7 @@ export function judgeB04MachineEvidence(value) {
     failures.push(`transitions=at-least-2/${displayValue(value.transitions?.length)}`);
   } else {
     value.transitions.forEach((transition, index) => {
-      inspectB04Transition(transition, index, value.coordinateSpace, failures);
+      inspectB04Transition(transition, index, value.coordinateSpace, failures, unmeasured);
     });
     const directions = new Set(value.transitions.map((transition) => transition?.direction));
     for (const direction of B04_DIRECTIONS) {
@@ -884,6 +888,7 @@ export function judgeB04MachineEvidence(value) {
     "B04",
     failures,
     `${value.engine}/B04:directions=2;layout-transaction+finite-composition-trace=atomic`,
+    unmeasured,
   );
 }
 
