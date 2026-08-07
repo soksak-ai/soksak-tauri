@@ -58,6 +58,7 @@ import { mapBrowserSurfaceRects } from "./lib/browser-surface-rects.mjs";
 import { windowedSurfaceCompositionVerdict } from "./lib/windowed-surface-composition.mjs";
 import { mapB03LiveEvidence } from "./lib/browser-gate-b03-evidence.mjs";
 import { mapB05LiveEvidence } from "./lib/browser-gate-b05-evidence.mjs";
+import { awaitPostSettleHold, resolveB05Settlement } from "./lib/browser-gate-b05-hold.mjs";
 import { mapB06LiveEvidence } from "./lib/browser-gate-b06-evidence.mjs";
 import { mapB10LiveEvidence } from "./lib/browser-gate-b10-evidence.mjs";
 import {
@@ -1151,11 +1152,15 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
           // 둘을 겹치면 캡처가 display-link close를 막아 거래 이후 프레임까지 원장에 섞인다.
           // 먼저 녹화 없는 실제 클릭을 수치 판정하고 원장을 닫는다. 사람용 녹화는 같은 빌드와
           // 같은 시작/종료 상태를 복원한 별도 반복에서만 수행하며 자동 verdict에는 참여하지 않는다.
+          // 자극은 자기 관측 거래를 선언한다 — 장부를 sequence 창으로 오려내는 것은
+          // "그 사이에 다른 거래가 없었다"는 가정이고, 가정은 영수증이 아니다.
+          const causeTraceId = armedPresentation.traceId;
           const clickReceipt = must(await rpc("ui.input.click", {
             address: activationAddresses[side],
+            causeTraceId,
           }, win, { timeoutMs: 10_000 }), `교차 클릭 ${name}`);
           await assertActivePane(rpc, win, paneIds[side], name);
-          must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }), `${name} layout settled`);
+          const settleReceipt = must(await rpc("ui.layout.wait-settled", { timeoutMs: 8_000 }, win, { timeoutMs: 10_000 }), `${name} layout settled`);
           const journalAfter = must(await rpc("layout.transactions", {}, win), `layout journal verdict ${name}`);
           const layoutVerdict = layoutTransactionVerdict(journalAfter.entries, {
             afterSequence,
@@ -1187,6 +1192,9 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
             slotAddress,
           } = movedParticipant;
           const b04JournalEntries = normalizeB04JournalEntries(layoutVerdict.transactions);
+          // B05 유지 창 — 정착 뒤에도 표면이 그대로 표시되는지가 판정 대상이다. 원장을 정착
+          // 즉시 닫으면 착지 후 빈 브라우저·잔상·사라짐이 관측 밖에서 일어난다.
+          await awaitPostSettleHold();
           // Native producer를 먼저 닫는다. DOM을 먼저 닫으면 그 다음 native close ACK까지의
           // CADisplayLink 꼬리에는 대응 DOM frame이 없어 서로 다른 관측 구간을 결합하게 된다.
           const presentationReceipt = must(await rpc(
@@ -1247,6 +1255,10 @@ async function runEngine(client, page, engine, recordingLedger, gateReportStore)
             clickReceipt,
             layout: layoutVerdict.transaction,
             presentation: presentationReceipt,
+            settlement: resolveB05Settlement({
+              settleReceipt,
+              presentationReceipt,
+            }),
           });
           await writeMachineReport(
             path.join(dir, "composition-trace.json"),

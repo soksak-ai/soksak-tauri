@@ -47,6 +47,9 @@ function mapTransition(raw) {
   const presentation = raw?.presentation?.trace ?? raw?.presentation ?? null;
   const click = raw?.clickReceipt ?? null;
   const layout = raw?.layout ?? null;
+  // 정착·유지는 코어 정착 영수증과 display 원장을 결합한 것이다(browser-gate-b05-hold.mjs).
+  // 그 결합을 여기서 다시 하지 않는다 — 한 사실은 한 자리에서만 만든다.
+  const settlement = raw?.settlement ?? null;
   return {
     direction: field(raw, "direction"),
     targetViewId: field(raw, "targetViewId"),
@@ -74,14 +77,14 @@ function mapTransition(raw) {
       baselineFrameSequence: field(presentation, "baselineFrameSequence"),
       presentationEvents: presentationEvents(field(presentation, "presentationEvents")),
       settled: {
-        atUnixMs: field(presentation?.settled, "atUnixMs"),
-        frameSequence: field(presentation?.settled, "frameSequence"),
-        syncPending: field(presentation?.settled, "syncPending"),
+        atUnixMs: field(settlement?.settled, "atUnixMs"),
+        frameSequence: field(settlement?.settled, "frameSequence"),
+        syncPending: field(settlement?.settled, "syncPending"),
       },
       hold: {
-        startedAtUnixMs: field(presentation?.hold, "startedAtUnixMs"),
-        endedAtUnixMs: field(presentation?.hold, "endedAtUnixMs"),
-        surfaces: surfaces(field(presentation?.hold, "surfaces")),
+        startedAtUnixMs: field(settlement?.hold, "startedAtUnixMs"),
+        endedAtUnixMs: field(settlement?.hold, "endedAtUnixMs"),
+        surfaces: surfaces(field(settlement?.hold, "surfaces")),
       },
       violations: {
         replacements: field(presentation?.violations, "replacements"),
@@ -98,7 +101,7 @@ function mapTransition(raw) {
   };
 }
 
-/** Joins only acknowledged public click/layout/presentation receipts. */
+/** Joins only acknowledged public click/layout/presentation/settlement receipts. */
 export function mapB05LiveEvidence(raw = {}) {
   return {
     engine: field(raw, "engine"),
