@@ -368,12 +368,18 @@ async function assertEngineSurfaceLedger(rpc, win, implementation, tabIds, stage
       // 답한 실패는 계약 사실이다. 여기서 던지면 그 이름이 보고서에서 사라지고 그 엔진의 남은
       // 칸이 통째로 blocked 가 된다(실측 2026-08-07 · buildId=2ebb2eb4: 정착 실패 하나가
       // browser-chromium-offscreen 11칸을 삼켰다). 던지는 것은 응답 부재뿐이다.
+      // 응답 부재도 조용히 넘기지 않는다 — 왜 답이 없었는지가 그 blocked 의 사유다.
       const reply = await rpc(
         `plugin.${implementation.plugin}.surface.wait-settled`,
         { viewId, timeoutMs: 8_000 },
         win,
         { timeoutMs: 20_000 },
-      ).catch(() => null);
+      ).catch((error) => {
+        throw new Error(
+          `${stage} settle ${viewId}: 응답 없음 — ${error instanceof Error ? error.message : String(error)}`,
+          { cause: error },
+        );
+      });
       const settlement = surfaceSettlementVerdict({ stage, viewId, reply });
       if (!settlement.answered) throw new Error(settlement.reason);
       SURFACE_SETTLEMENT.record(settlement);
