@@ -49,7 +49,10 @@ soksak 은 뼈대다. 공통 인터페이스를 관리하며, 그 외에는 아�
 네이티브 계층이 뼈대에 남는 이유는 PTY 커널 객체와 플랫폼 webview(WKWebView / WebView2)가 플러그인 경계를 넘을 수 없기 때문이다. 뼈대는 이를 범용 capability 로 노출하고, 플러그인은 얇은 클라이언트로 소비한다.
 
 child-webview 입력과 캡처도 같은 경계를 따른다. `app.webview.wheel(label, {x,y,dx,dy})`은
-포커스를 훔치지 않는 실제 엔진 wheel 입력이고, `app.webview.captureFull(label, path, width,
+포커스를 훔치지 않는 실제 엔진 wheel 입력이다. 프레임워크는 사건을 보내기 전에 그 사건이 엔진이
+읽는 좌표계로 요청한 지점을 싣고 있는지 확인한다. 자리가 틀린 휠은 조용히 빗나가지 않는다 —
+엔진은 root 노드를 그대로 스크롤하고 DOM `wheel` 사건만 나지 않아서, 스크롤 좌표만 보면 성공으로
+보인다. 자리를 싣지 못한 휠은 두 지점을 함께 실어 실패한다. `app.webview.captureFull(label, path, width,
 height)`는 명시한 child webview의 문서 전체 PNG다. 프레임워크는 자기 엔진의 거래만 소유한다.
 Electron guest처럼 전체 문서 surface primitive가 없는 엔진은 프레임워크 안에서 유한 viewport
 집합을 사건으로 합성한다. 각 viewport의 실제 scroll 착지와 presentation frame을 기다리고, 캡처에

@@ -11,7 +11,9 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde::{Deserialize, Serialize};
-use soksak_core::geometry::{rect_delta, scale_rect, top_left_rect_to_parent_frame};
+use soksak_core::geometry::{
+    realign_carried_point, rect_delta, same_point, scale_rect, top_left_rect_to_parent_frame,
+};
 use soksak_core::native_surface_ledger::{NativeSurfaceLayout, SurfaceHole as Hole};
 
 static SURFACE_LAYOUT: std::sync::LazyLock<NativeSurfaceLayout> = std::sync::LazyLock::new(NativeSurfaceLayout::default);
@@ -212,6 +214,11 @@ pub async fn webview_type_text(_app: AppHandle, _label: String, _text: String) -
     Err("webview_type_text는 현재 macOS 입력 구현이 필요합니다".into())
 }
 
+/// 사건이 실은 위치가 창 base 좌표를 실었다고 볼 문턱(pt). AppKit이 정수로 반올림해도
+/// 통과하고, 창 원점만 한 어긋남은 잡는다.
+#[cfg(target_os = "macos")]
+const WHEEL_POINT_TOLERANCE: f64 = 1.0;
+
 /// child WKWebView에 실제 scroll-wheel 사건을 전달한다.
 ///
 /// x/y는 WKWebView의 좌상단 기준 CSS px이고 dx/dy의 부호는 DOM WheelEvent와 같다
@@ -294,15 +301,45 @@ pub async fn webview_send_wheel(
                     return;
                 }
             };
-            event.set_location(CGPoint::new(
-                screen_point.x,
-                main_frame.size.height - screen_point.y,
-            ));
+            // WebKit은 이 사건의 자리를 -[NSEvent locationInWindow] 하나로만 읽고, 그 값을 창
+            // base 좌표로 여겨 뷰 안 지점을 만든다. 그 지점이 뷰 밖으로 떨어지면 스크롤 트리는
+            // root로 폴백해 문서를 옮기지만, wheel 추적 영역 밖이라 DOM에는 아무것도 닿지 않는다.
+            // 실측(2026-08-07, B11/tauri): 스크롤 좌표는 0→480→0으로 정확히 움직이는데
+            // 페이지가 센 wheel 사건은 0이었다 — 자리가 조용히 틀리면 그 모습으로 나타난다.
+            //
+            // 그 사건이 어느 좌표계를 답하는지는 우리가 정하지 못한다(창에 붙지 않은 사건이다).
+            // 그래서 가정하지 않고 요구한다: 자리를 실어 만들고, AppKit이 답하는 값을 읽고,
+            // 어긋난 만큼 한 번 옮긴다. 그러고도 어긋나면 보내지 않는다 — 닿지 못한 휠을
+            // 보냈다고 답할 수는 없다.
             let event_class = objc2::class!(NSEvent);
             let event_ref = event.as_ptr().cast::<std::ffi::c_void>();
-            let ns_event: *mut AnyObject = msg_send![event_class, eventWithCGEvent: event_ref];
+            let wanted = (window_point.x, window_point.y);
+            let mut location = (screen_point.x, main_frame.size.height - screen_point.y);
+            event.set_location(CGPoint::new(location.0, location.1));
+            let mut ns_event: *mut AnyObject = msg_send![event_class, eventWithCGEvent: event_ref];
             if ns_event.is_null() {
                 let _ = tx.try_send(Err("NSEvent 변환 실패".to_string()));
+                return;
+            }
+            let first: NSPoint = msg_send![&*ns_event, locationInWindow];
+            let mut carried = (first.x, first.y);
+            if !same_point(carried, wanted, WHEEL_POINT_TOLERANCE) {
+                location = realign_carried_point(location, carried, wanted, true);
+                event.set_location(CGPoint::new(location.0, location.1));
+                let retry: *mut AnyObject = msg_send![event_class, eventWithCGEvent: event_ref];
+                if retry.is_null() {
+                    let _ = tx.try_send(Err("NSEvent 변환 실패".to_string()));
+                    return;
+                }
+                ns_event = retry;
+                let again: NSPoint = msg_send![&*ns_event, locationInWindow];
+                carried = (again.x, again.y);
+            }
+            if !same_point(carried, wanted, WHEEL_POINT_TOLERANCE) {
+                let _ = tx.try_send(Err(format!(
+                    "휠 사건이 창 좌표를 싣지 못했습니다: 창 ({:.1},{:.1}) 사건 ({:.1},{:.1})",
+                    wanted.0, wanted.1, carried.0, carried.1,
+                )));
                 return;
             }
             let _: () = msg_send![&*wk, scrollWheel: &*ns_event];

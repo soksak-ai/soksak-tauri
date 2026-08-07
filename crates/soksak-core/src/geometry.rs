@@ -60,6 +60,27 @@ pub fn top_left_rect_to_parent_frame(
     (x, if parent_flipped { y } else { parent_height - y - h }, w, h)
 }
 
+/// 두 점이 같은 자리인가 — 문턱은 부르는 쪽이 정한다(무엇이 "같다"인지는 자리마다 다르다).
+pub fn same_point(a: (f64, f64), b: (f64, f64), tolerance: f64) -> bool {
+    (a.0 - b.0).abs() <= tolerance && (a.1 - b.1).abs() <= tolerance
+}
+
+/// 실어 보낸 위치(location)를, 읽는 쪽이 답한 값(carried)이 실려야 할 값(wanted)과 어긋난
+/// 만큼 옮긴다. y_inverted 면 두 좌표계의 y 가 서로 반대로 자란다.
+///
+/// 두 좌표계 사이가 평행이동이면 한 번에 닫힌다. 닫혔는지는 부르는 쪽이 **다시 읽어서**
+/// 확인한다 — 이 함수는 옮길 자리만 답하고 닿았다고 답하지 않는다.
+pub fn realign_carried_point(
+    location: (f64, f64),
+    carried: (f64, f64),
+    wanted: (f64, f64),
+    y_inverted: bool,
+) -> (f64, f64) {
+    let dx = wanted.0 - carried.0;
+    let dy = wanted.1 - carried.1;
+    (location.0 + dx, if y_inverted { location.1 - dy } else { location.1 + dy })
+}
+
 /// 이전 rect와 다음 rect 사이에서 위치·크기 축이 각각 변했는지 판정한다.
 pub fn rect_delta(
     previous: Option<(f64, f64, f64, f64)>,
@@ -129,6 +150,40 @@ mod tests {
             top_left_rect_to_parent_frame(600.0, true, (120.0, 50.0, 720.0, 410.0)),
             (120.0, 50.0, 720.0, 410.0),
         );
+    }
+
+    /// y 가 반대로 자라는 두 좌표계 사이에서, 읽힌 값이 목표보다 아래에 있으면 실어 보낸
+    /// 값은 위로 가야 한다. 부호를 한 번 잘못 두면 어긋남이 두 배가 되고, 그것은 오류가 아니라
+    /// "더 엉뚱한 자리를 친다"로 나타난다.
+    #[test]
+    fn realigning_a_carried_point_closes_the_gap_in_one_step() {
+        // 실어 보낸 (300,700) 을 읽는 쪽이 (500,400) 이라 답했고, 실려야 할 값은 (120,900).
+        assert_eq!(
+            realign_carried_point((300.0, 700.0), (500.0, 400.0), (120.0, 900.0), true),
+            (-80.0, 200.0),
+        );
+        assert_eq!(
+            realign_carried_point((300.0, 700.0), (500.0, 400.0), (120.0, 900.0), false),
+            (-80.0, 1200.0),
+        );
+    }
+
+    /// 이미 맞은 자리는 움직이지 않는다 — 맞는데도 옮기면 한 번 더 부르는 쪽이 어긋난다.
+    #[test]
+    fn realigning_an_already_carried_point_moves_nothing() {
+        assert_eq!(
+            realign_carried_point((10.0, 20.0), (7.0, 9.0), (7.0, 9.0), true),
+            (10.0, 20.0),
+        );
+    }
+
+    /// 문턱은 정수 반올림을 견디고 창 원점만 한 어긋남은 잡는다.
+    #[test]
+    fn the_same_point_threshold_belongs_to_the_caller() {
+        assert!(same_point((10.4, 20.6), (10.0, 21.0), 1.0));
+        assert!(!same_point((10.0, 20.0), (10.0, 21.5), 1.0));
+        assert!(!same_point((10.0, 20.0), (120.0, 380.0), 1.0));
+        assert!(same_point((10.0, 20.0), (10.0, 21.5), 2.0));
     }
 
     #[test]

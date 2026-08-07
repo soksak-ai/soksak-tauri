@@ -279,6 +279,10 @@ the original extraction plan it was carried out under.
 - `app.webview.label(hint) → label` — app-level, Tauri-global-unique label coordination across windows (gap D1, risk E1).
 - `app.webview.wheel(label, {x,y,dx,dy})` — real engine wheel input without focus theft. A
   plugin exposes it through its own `input.scroll` command and uses the page event as completion.
+  The framework must confirm the event carries the requested point in the coordinate space the
+  engine reads before dispatching it. A mislocated wheel is not a quiet miss: the engine still
+  scrolls the root node while the DOM `wheel` event never fires, so scroll position alone reports
+  success. A wheel that cannot be placed fails with both points instead of being sent.
 - `app.webview.captureFull(label, path, width, height)` — a full-document PNG of the explicit
   child webview. Each framework owns its engine's full-document rendering transaction. When an
   Electron guest exposes no full-document surface primitive, the framework composes a finite,
