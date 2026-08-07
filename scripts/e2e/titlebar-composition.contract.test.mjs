@@ -165,3 +165,33 @@ describe("titlebar composition live E2E contract", () => {
     ]) expect(source).toContain(marker);
   });
 });
+
+// 규칙 — 실행해야만 보이는 배선은 배선이 아니다.
+//
+// 실측 2026-08-08: 사이클 신원에 능력 축을 실으면서 변수 선언을 참조보다 아래에 뒀다.
+// 구문은 통과했고 단위 테스트도 통과했으며, 라이브 실행에서만 `nativeChildWebview is not defined`
+// 로 세 사이클이 전부 죽었다 — B12 는 시작조차 못 했다.
+describe("사이클 신원 배선", () => {
+  const source = readFileSync(new URL("./titlebar-composition.mjs", import.meta.url), "utf8");
+
+  it("cycleIdentity 는 능력을 인자로 받는다 — 바깥 변수를 더듬지 않는다", () => {
+    expect(source).toContain("function cycleIdentity(framework, nativeChildWebview) {");
+  });
+
+  it("모든 호출이 두 인자를 준다", () => {
+    const calls = [...source.matchAll(/cycleIdentity\(([^)]*)\)/g)]
+      .map(([, args]) => args)
+      .filter((args) => !args.startsWith("framework, nativeChildWebview") || false);
+    for (const args of calls) {
+      expect(args.split(",")).toHaveLength(2);
+    }
+  });
+
+  it("선언이 첫 참조보다 앞선다", () => {
+    const declaredAt = source.indexOf("let nativeChildWebview;");
+    // 정의가 아니라 **호출**이 기준이다 — 정의는 호이스팅되고 let 은 안 된다.
+    const firstUse = source.indexOf("...cycleIdentity(");
+    expect(declaredAt).toBeGreaterThan(-1);
+    expect(declaredAt).toBeLessThan(firstUse);
+  });
+});

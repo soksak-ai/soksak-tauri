@@ -107,7 +107,7 @@ function writeCycle(value) {
   fs.writeFileSync(cycleFile, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-function cycleIdentity(framework) {
+function cycleIdentity(framework, nativeChildWebview) {
   return {
     schemaVersion: 1,
     buildId,
@@ -524,16 +524,17 @@ async function inspectWindow(rpc, windowLabel, framework, provision, nativeChild
 }
 
 async function main() {
+  // 능력은 창에 붙은 뒤에야 읽는다 — 그 전 사이클 기록은 "아직 안 물어봤다" 로 남는다(미선언).
+  let nativeChildWebview;
   fs.mkdirSync(evidenceRoot, { recursive: true });
   writeCycle({
-    ...cycleIdentity("unknown"),
+    ...cycleIdentity("unknown", undefined),
     status: "running",
     windows: [],
     machines: [],
   });
   let client = null;
   let framework = "unknown";
-  let nativeChildWebview;
   let labels = [];
   const reports = [];
   try {
@@ -564,7 +565,7 @@ async function main() {
     }
     if (process.platform !== "darwin") {
       writeCycle({
-        ...cycleIdentity(framework),
+        ...cycleIdentity(framework, nativeChildWebview),
         status: "not-applicable",
         windows: [],
         machines: [],
@@ -579,7 +580,7 @@ async function main() {
       console.log(`✓ ${windowLabel}: ${report.verdicts.length}/3 B12 machine GREEN`);
     }
     writeCycle({
-      ...cycleIdentity(framework),
+      ...cycleIdentity(framework, nativeChildWebview),
       status: "green",
       windows: labels,
       machines: reports.map(machineSummary),
@@ -589,7 +590,7 @@ async function main() {
     // 실행이 멈춘 자리는 전부 RED 다. "blocked" 라는 세 번째 상태는 없다 — 그 상태는 못 잰
     // 칸을 인수 장부에서 보이지 않게 만들었다(능력 부재도 재서 이름 붙인 RED 로 남긴다).
     writeCycle({
-      ...cycleIdentity(framework),
+      ...cycleIdentity(framework, nativeChildWebview),
       status: "red",
       windows: labels,
       machines: reports.map(machineSummary),
