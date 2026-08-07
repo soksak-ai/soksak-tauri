@@ -195,7 +195,7 @@ function startMultiDomPresentationFrames(
     if (session.endedAtUnixMs !== null || session.presentationTransactionId !== transactionId) return;
     if (multiDomTraceNow(session) >= session.expiresAtUnixMs) return;
     appendMultiDomTraceSample(session, "presentation-frame", transactionId, domCommittedAtUnixMs);
-    session.fallbackTimer = setTimeout(fallbackTick, 16);
+    session.fallbackTimer = setTimeout(fallbackTick, 8);
   };
   session.fallbackTimer = setTimeout(fallbackTick, 16);
   const sample = (frameTime: number) => {
