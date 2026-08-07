@@ -729,8 +729,17 @@ export async function pluginViewCompositionStatus() {
 /**
  * 메인 DOM settle과 별개인 child renderer→native member 거래가 현재 pane viewport에
  * 커밋될 때까지 사건으로 기다린다. timeout은 실패를 유한하게 만들 뿐 상태를 폴링하지 않는다.
+ *
+ * **호스트 frame을 바꾼 거래는 전부 이 배리어로 닫는다.** child renderer는 자기
+ * ResizeObserver/`resize`로만 새 크기를 알게 되고 비전면 WKWebView에서 그 사건은 미뤄지므로,
+ * 부르지 않은 거래는 renderer 평면이 직전 거래를 그대로 든 채 끝난다(창 resize에서 실측:
+ * host/native는 새 크기, renderer는 한 거래 전 크기).
+ *
+ * 기다림이 시간 안에 안 닫혀도 던지지 않는다 — 못 닫힌 사실은 이어지는 관측이 stale한 frame과
+ * `presented=false`로 답한다. 여기서 예외로 바꾸면 정착 하나 때문에 거래 자체가 죽고, 남는 것은
+ * 사실이 아니라 사고다. 판정은 부른 쪽이 한다.
  */
-export async function awaitPluginViewComposition(timeoutMs = 10_000) {
+export async function settlePluginViewComposition(timeoutMs = 10_000): Promise<void> {
   const views = [...state.views.values()].filter((view) => view.grouped && !view.disposed);
   await Promise.all(views.map(async (view) => {
     // Main renderer가 소유한 host frame을 현재 공개 DOM에 먼저 확정한다.
@@ -741,8 +750,13 @@ export async function awaitPluginViewComposition(timeoutMs = 10_000) {
     const committed = [...view.members].map((label) =>
       view.slots.waitCommittedRoot(label, root.w, root.h, timeoutMs));
     await emitTo(view.renderer, event(view.renderer, "measure"), null);
-    await Promise.all(committed);
+    await Promise.allSettled(committed);
   }));
+}
+
+/** 같은 배리어로 정착시킨 뒤 live DOM↔native를 판정한다. 안 맞으면 그 delta를 이름으로 던진다. */
+export async function awaitPluginViewComposition(timeoutMs = 10_000) {
+  await settlePluginViewComposition(timeoutMs);
   const result = await pluginViewCompositionStatus();
   if (result.verdict !== "green") {
     throw new Error(`pane composition commit 불일치: ${JSON.stringify(result)}`);

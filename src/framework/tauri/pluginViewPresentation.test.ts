@@ -87,11 +87,23 @@ describe("Tauri plugin renderer RPC surface", () => {
     expect(renderer).toContain('subscribe("sidecar.on"');
   });
 
-  it("최종 합성 배리어는 child 측정을 사건으로 요청한 뒤 native commit을 기다린다", () => {
+  it("합성 배리어는 child 측정을 사건으로 요청한 뒤 native commit을 기다린다", () => {
     const source = readFileSync(resolve(import.meta.dirname, "pluginViewPresentation.ts"), "utf8");
-    const barrier = source.split("export async function awaitPluginViewComposition")[1] ?? "";
+    const barrier = (source.split("export async function settlePluginViewComposition")[1] ?? "")
+      .split("export async function")[0];
     expect(barrier).toContain('emitTo(view.renderer, event(view.renderer, "measure")');
     expect(barrier.indexOf("waitCommittedRoot")).toBeLessThan(barrier.indexOf("emitTo(view.renderer"));
+    // 배리어를 우회하는 두 번째 경로를 만들지 않는다 — 최종 판정도 같은 정착을 부른다.
+    const judge = (source.split("export async function awaitPluginViewComposition")[1] ?? "")
+      .split("export async function")[0];
+    expect(judge).toContain("await settlePluginViewComposition(timeoutMs)");
+    expect(judge).not.toContain("waitCommittedRoot");
+  });
+
+  it("창 resize 거래도 같은 배리어로 닫는다", () => {
+    const install = readFileSync(resolve(import.meta.dirname, "install.ts"), "utf8");
+    const probe = (install.split("createTauriResizeProbe({")[1] ?? "").split("}));")[0];
+    expect(probe).toContain("settle: (timeoutMs) => settlePluginViewComposition(timeoutMs)");
   });
 
   it("pane presentation ready는 group·member frame·visibility ACK 뒤에만 공개한다", () => {
