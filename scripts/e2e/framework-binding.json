@@ -669,6 +669,13 @@
       "note": "오라클의 기준. 어디까지가 백지고 어디부터가 렌더인지를 실물 바이트(fixtures/frames)로 고정한다."
     },
     {
+      "file": "lib/hostile-resize-composition.test.mjs",
+      "role": "test",
+      "class": "A",
+      "surfaces": [],
+      "note": "관측면이 스스로 red 라고 선언한 합성 사실이 B10 판정으로 남는지, 측정 불가만 실행을 멈추는지를 값으로 고정한다."
+    },
+    {
       "file": "lib/http-fixture.mjs",
       "role": "lib",
       "class": "A",
