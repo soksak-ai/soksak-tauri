@@ -317,7 +317,7 @@ describe("ui.trace.multi — 같은 tick의 공개 DOM 참가자 원장", () => 
         }>;
       };
       expect(data.addresses).toEqual(addresses);
-      expect(data.samples).toHaveLength(3);
+      expect(data.samples).toHaveLength(4);
       expect(data.samples[0]).toMatchObject({
         sequence: 0,
         trigger: "initial",
@@ -342,6 +342,17 @@ describe("ui.trace.multi — 같은 tick의 공개 DOM 참가자 원장", () => 
       });
       expect(data.samples[2]).toMatchObject({
         sequence: 2,
+        trigger: "presentation-frame",
+        transactionId: "layout-1",
+        domCommittedAtUnixMs: layoutTransitionJournal()[0]?.domCommittedAtUnixMs,
+        nodes: [
+          { address: addresses[0], connected: true, rect: { x: 170, y: 20, w: 80, h: 500 } },
+          { address: addresses[1], connected: true, rect: { x: 250, y: 20, w: 600, h: 500 } },
+          { address: addresses[2], connected: true, rect: { x: 270, y: 80, w: 560, h: 420 } },
+        ],
+      });
+      expect(data.samples[3]).toMatchObject({
+        sequence: 3,
         trigger: "presentation-frame",
         transactionId: "layout-1",
         domCommittedAtUnixMs: layoutTransitionJournal()[0]?.domCommittedAtUnixMs,

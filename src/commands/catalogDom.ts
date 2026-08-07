@@ -140,6 +140,16 @@ function startMultiDomPresentationFrames(
   if (session.presentationFrame !== null) cancelAnimationFrame(session.presentationFrame);
   session.presentationTransactionId = transactionId;
   session.presentationDomCommittedAtUnixMs = domCommittedAtUnixMs;
+  // One-shot post-commit DOM anchor. It is a real layout read at the
+  // transaction boundary, not a timer sample; keeping it alongside the
+  // settlement anchor gives the mapper start/middle/end coverage even when
+  // WebKit suppresses all frame callbacks for an occluded document.
+  appendMultiDomTraceSample(
+    session,
+    "presentation-frame",
+    transactionId,
+    domCommittedAtUnixMs,
+  );
   // rAF is legitimately suspended for an occluded WebKit document. CSS
   // animationend is an event from the same compositor transaction and gives
   // us the real final DOM rect without a timer/polling loop.
