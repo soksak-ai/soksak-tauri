@@ -68,9 +68,16 @@ const ALLOWED: { file: string; mark: string; event: string; why: string }[] = [
   { file: "src/commands/catalogDom.ts", mark: "session.intervalProducer = setInterval(", event: "layout-dom-commit", why: "ui.trace.multi 최후 관측자 — 주 경로는 frame callback·animationend·정착 사건이고, 가려진 문서가 그 셋을 모두 죽였을 때만 이 관측자가 표본을 남긴다. 시작은 거래 commit 사건이 열고 종료는 trace close/만료가 닫는다. 사슬이 아니라 interval 인 이유는 tick 하나의 실패가 관측자를 영구히 죽이면 안 되기 때문이다(실측: 활강 339ms 구멍)" },
   { file: "src/commands/catalogRemote.ts", mark: "setTimeout(() => {", event: "caller-specified", why: "remote.confirm TTL(ttlSecs 파라미터) — 만료=Deny 가 계약(fail-closed)" },
   { file: "src/commands/catalogPlugins.ts", mark: "const timer = setTimeout(", event: "program-registered", why: "프로그램 등록 사건이 주 경로이고 timeoutMs는 호출자가 정한 유한 deadline — 부트 실패가 명령을 영원히 붙잡지 않게 한다" },
+  { file: "src/commands/catalogDom.ts", mark: "session.expiryTimer = setTimeout(() => finishMultiDomTrace(session, true), maxMs);", event: "caller-specified", why: "ui.trace.multi 구독 수명(maxMs) — 호출자가 발화한 값이고, 가려진 창에서 frame callback 이 죽어도 반드시 닫히는 단일 장벽이다" },
   { file: "src/commands/waitForDomCommit.ts", mark: "const timeout = setTimeout(", event: "dom-commit-observed", why: "MutationObserver의 DOM commit 사건이 주 경로이고 timeoutMs는 공개 호출자가 정한 유한 deadline — 유실된 commit이 명령을 영원히 붙잡지 않게 한다" },
   // ── ② 프로토콜·OS 경계 유예(TS) ──
   { file: "src/commands/catalogDom.ts", mark: "new Promise((r) => setTimeout(r, 50))", event: "dnd-frame-pacing", why: "합성 DragEvent 시퀀스의 프레임 간격 — 브라우저 DnD 상태기계가 같은 틱의 연속 이벤트를 접는다" },
+  // ── ③ 유한 안전망 ──
+  { file: "src/commands/catalogDom.ts", mark: "session.evictionTimer = setTimeout(", event: "trace-close-receipt-read", why: "만료된 trace 의 영수증을 close 가 읽어 가는 것이 주 경로다 — 안 읽으러 오는 호출자 때문에 세션이 영원히 남지 않게 하는 세션별 단발 회수다(주기 감시 아님)" },
+  { file: "frameworks/tauri/src/titlebar.rs", mark: "tokio::time::timeout(std::time::Duration::from_secs(1), rx)", event: "titlebar-native-ack", why: "메인 스레드가 돌려주는 ACK 가 종결 사건 — 그 스레드가 막히면 이 명령이 영원히 안 끝난다" },
+  { file: "frameworks/tauri/src/webview/presentation_trace.rs", mark: "const FIRST_DISPLAY_TIMEOUT: Duration = Duration::from_secs(1);", event: "first-display", why: "첫 표시 사건이 종결 — 표시되지 않는 표면이 추적을 영원히 붙잡지 않게 하는 상한" },
+  { file: "frameworks/tauri/src/webview/presentation_trace.rs", mark: "const MAIN_THREAD_TIMEOUT: Duration = Duration::from_secs(1);", event: "main-thread-reply", why: "메인 스레드 회신이 종결 — 회신 유실 시 관측 명령의 무한 대기를 막는다" },
+  { file: "frameworks/electron/resizeSettlement.cjs", mark: "timer = setTimeout(() => {", event: "frame-proof-observed", why: "프레임 증거 구독이 주 경로 — 증거가 안 오는 대상을 이름으로 실어 실패로 끝낸다(무한 대기 금지)" },
   // ── ② 프로토콜·OS 경계 유예 ──
   { file: "src/commands/catalogWindow.ts", mark: "setTimeout(() => {", event: "self-destruct-reply-flush", why: "자기 파괴 명령은 답을 먼저 흘린다 — 통로가 파괴로 함께 죽는다(window.reload). 파괴 자체는 프레임워크가 하고 자국도 거기서 남는다" },
   { file: "src/commands/catalogWindow.ts", mark: "setTimeout(() => void invoke(\"window_close\", { label }), 30);", event: "self-destruct-reply-flush", why: "동일 계약(window.close 자기 창)" },
@@ -112,7 +119,6 @@ const ALLOWED: { file: string; mark: string; event: string; why: string }[] = [
   { file: "frameworks/tauri/src/webview.rs", mark: "recv_timeout(Duration::from_secs(15))", event: "main-thread-dispatch-cap", why: "동일(15s — 콜드 부트 포함)" },
   { file: "frameworks/tauri/src/webview.rs", mark: "rx.recv_timeout(Duration::from_secs(20))", event: "full-document-capture-returned", why: "WebKit 전체 문서 PDF 생성·래스터 완료 회신이 종결 사건 — 캡처 드라이버가 응답하지 않을 때 명령을 영구 점유하지 않는 유한 안전망" },
   { file: "frameworks/tauri/src/webview.rs", mark: "rx.recv_timeout(Duration::from_secs(5))", event: "main-thread-surface-reply", why: "메인 스레드 네이티브 표면 조회 회신이 종결 사건 — 창 해체 중 회신 유실 시 관측 명령의 무한 대기를 막는다" },
-  { file: "frameworks/tauri/src/window.rs", mark: ".recv_timeout(std::time::Duration::from_secs(2))", event: "main-thread-window-reply", why: "메인 스레드 창 속성 조회 회신이 종결 사건 — 창 해체 중 회신 유실 시 관측 명령의 무한 대기를 막는다" },
   { file: "src/commands/waitLayoutSettled.ts", mark: "timer = window.setTimeout(", event: "layout-settled-deadline", why: "레이아웃·애니메이션·외부 표면 presentation 사건이 주 경로이고 timeoutMs는 공개 명령 호출자가 정한 유한 deadline" },
   { file: "src/commands/windowResizeSequence.ts", mark: "ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms))", event: "caller-specified", why: "창 resize 재현 cadence 자체를 호출자가 intervalMs로 발화하며 상태 성공 판정에는 사용하지 않는다" },
   { file: "crates/soksak-core/src/ptyd.rs", mark: "from_millis(150)", event: "pty.stream.reattached", why: "데몬 인계 전이(구 데몬 exit → 신 데몬 소켓 bind) 대기 — 세션 확인·재부착 성공이 종결, 상한 20회" },

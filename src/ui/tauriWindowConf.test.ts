@@ -45,8 +45,14 @@ describe("tauri.conf.json 창 계약", () => {
   it("실행 명령의 앱 이름은 Tauri productName과 같다", () => {
     const makefile = readFileSync(resolve(__dirname, "../../Makefile"), "utf8");
     expect(makefile).toContain("soksak-tauri-dev.app");
-    expect(makefile).toContain("RELEASE_APP := $(TAURI_TARGET_DIR)/release/bundle/macos/soksak-tauri.app");
-    expect(makefile).toContain("DEBUG_APP   := $(TAURI_TARGET_DIR)/debug/bundle/macos/soksak-tauri-debug.app");
+    // 이름이 같은가를 본다. 대입 연산자(`=` 대 `:=`)와 정렬 공백은 이 계약이 아니다 —
+    // 그것까지 못 박으면 늦은 확장이 필요해질 때 이 검사가 무관한 이유로 죽는다.
+    expect(makefile).toMatch(
+      /^RELEASE_APP\s*:?=\s*\$\(TAURI_TARGET_DIR\)\/release\/bundle\/macos\/soksak-tauri\.app$/m,
+    );
+    expect(makefile).toMatch(
+      /^DEBUG_APP\s*:?=\s*\$\(TAURI_TARGET_DIR\)\/debug\/bundle\/macos\/soksak-tauri-debug\.app$/m,
+    );
   });
 
   it("run-dev는 개발 볼트 환경을 LaunchServices 소유 앱 프로세스에 직접 전달한다", () => {
