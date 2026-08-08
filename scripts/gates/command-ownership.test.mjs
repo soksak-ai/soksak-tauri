@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { duplicateProblems, frameworkTable, survey, verify,
-  gapProblems,
+  gapProblems, appInvokes, adapterOf,
 } from "./command-ownership.mjs";
 
 /** 실제 장부 — 상한만 바꿔 심을 때 나머지 항목을 그대로 쓴다. */
@@ -313,5 +313,54 @@ describe("계측은 파일 배치에 기대지 않는다", () => {
     // 읽히는가만 본다: unserved.rs 에 사는 이름 하나가 답에 있으면 그 표는 읽힌 것이다.
     expect(refused.size).toBeGreaterThan(0);
     expect(refused.has("app_relaunch")).toBe(true);
+  });
+});
+
+// 한 어댑터 안에서만 불리는 이름은 이식 공백이 아니다.
+//
+// 그 코드는 그 프레임워크를 고른 판에서만 돈다 — 다른 프레임워크가 답할 일이 없다. 세면
+// "이식이 남았다"는 수가 부풀고, 부푼 수는 진짜 공백을 그 안에 숨긴다(실측 2026-08-08:
+// 공백으로 잡힌 12 건이 전부 `src/framework/tauri/` 안의 호출이었다).
+//
+// 규칙이 자격을 잃지 않도록 **위반을 심어 확인한다** — 프레임워크-무관 코드가 부르면 다시
+// 세어져야 하고, 두 어댑터가 함께 부르면 그것은 공통 표면이다.
+describe("어댑터 전용 호출은 공백이 아니다", () => {
+  /** src 트리 하나를 심고 그 안의 호출 이름을 읽는다. */
+  function srcAt(files) {
+    const root = mkdtempSync(join(tmpdir(), "cmd-own-src-"));
+    for (const [rel, body] of Object.entries(files)) {
+      const p = join(root, "src", rel);
+      mkdirSync(join(p, ".."), { recursive: true });
+      writeFileSync(p, body);
+    }
+    return root;
+  }
+
+  it("한 어댑터만 부르는 이름은 세지 않는다", () => {
+    const root = srcAt({ "framework/tauri/a.ts": 'invoke("only_tauri_knows");' });
+    expect([...appInvokes(root)]).toEqual([]);
+  });
+
+  it("프레임워크-무관 코드가 부르면 센다 — 그때가 진짜 공백이다", () => {
+    const root = srcAt({
+      "framework/tauri/a.ts": 'invoke("shared_name");',
+      "lib/core.ts": 'invoke("shared_name");',
+    });
+    expect([...appInvokes(root)]).toEqual(["shared_name"]);
+  });
+
+  it("두 어댑터가 함께 부르면 공통 표면이다", () => {
+    const root = srcAt({
+      "framework/tauri/a.ts": 'invoke("both_call_this");',
+      "framework/electron/b.ts": 'invoke("both_call_this");',
+    });
+    expect([...appInvokes(root)]).toEqual(["both_call_this"]);
+  });
+
+  it("어댑터 폴더 판정은 경로로 한다", () => {
+    expect(adapterOf("src/framework/tauri/install.ts")).toBe("tauri");
+    expect(adapterOf("src/framework/electron/index.ts")).toBe("electron");
+    expect(adapterOf("src/lib/zoomIntent.ts")).toBe(null);
+    expect(adapterOf("src/framework/index.ts")).toBe(null);
   });
 });

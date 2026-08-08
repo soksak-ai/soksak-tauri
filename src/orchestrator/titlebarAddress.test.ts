@@ -23,7 +23,7 @@ describe("공통 titlebar 공개 주소", () => {
     expect(tag).not.toMatch(/data-tauri-/);
   });
 
-  it("두 셸의 공개 titlebar는 같은 45px border-box를 계산한다", () => {
+  it("두 창의 공개 titlebar는 같은 45px border-box를 계산한다", () => {
     const style = document.createElement("style");
     style.textContent = APP_CSS;
     document.head.append(style);

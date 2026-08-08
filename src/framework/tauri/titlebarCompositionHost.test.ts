@@ -56,7 +56,7 @@ const nativeState = (sequence = 7): NativeTitlebarState => ({
 
 function titlebar(): HTMLElement {
   const element = document.createElement("header");
-  element.className = "arbitrary-shell-header";
+  element.className = "arbitrary-chrome-header";
   element.dataset.node = TITLEBAR_NODE_ADDRESS;
   document.body.appendChild(element);
   return element;

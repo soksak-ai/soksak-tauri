@@ -4,8 +4,8 @@ import { describe, expect, it } from "vitest";
 
 const ROOT = resolve(import.meta.dirname, "../..");
 
-describe("shell overlay contract", () => {
-  it("exposes every shell surface that must remain above embedded browsers", () => {
+describe("chrome overlay contract", () => {
+  it("exposes every chrome surface that must remain above embedded browsers", () => {
     const app = readFileSync(resolve(ROOT, "src/App.tsx"), "utf8");
     const modal = readFileSync(resolve(ROOT, "src/components/NewProjectModal.tsx"), "utf8");
 

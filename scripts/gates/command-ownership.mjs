@@ -49,9 +49,24 @@ function walk(dir, out = []) {
 
 const read = (p) => readFileSync(p, "utf8");
 
-/** 앱이 부르는 백엔드 이름 — invoke("...") 의 리터럴만. 변수 호출은 이름을 알 수 없다. */
+/** 이 파일이 한 프레임워크의 어댑터 안인가 — `src/framework/<이름>/…`. */
+export function adapterOf(rel) {
+  const m = rel.replace(/\\/g, "/").match(/(?:^|\/)src\/framework\/([^/]+)\//);
+  return m && m[1] !== "tauri.ts" ? m[1] : null;
+}
+
+/** 앱이 부르는 백엔드 이름 — invoke("...") 의 리터럴만. 변수 호출은 이름을 알 수 없다.
+ *
+ * **한 어댑터 안에서만 불리는 이름은 세지 않는다.** 그 코드는 그 프레임워크를 고른 판에서만
+ * 돌므로 다른 프레임워크가 답할 일이 없다 — 이식 공백이 아니라 그 프레임워크의 몸이다.
+ * 세면 "이식이 남았다"는 수가 부풀고, 부푼 수는 진짜 공백을 그 안에 숨긴다(실측 2026-08-08:
+ * 공백 12 건이 전부 `src/framework/tauri/` 안의 호출이었다).
+ *
+ * 프레임워크-무관 코드가 그 이름을 부르는 순간 다시 세어진다 — 그때가 진짜 공백이다.
+ */
 export function appInvokes(root = ROOT) {
   const names = new Set();
+  const adapterOnly = new Map();
   for (const f of walk(join(root, "src"))) {
     if (!/\.tsx?$/.test(f) || /\.test\.tsx?$/.test(f)) continue;
     // 주석 속 invoke("...") 는 호출이 아니다 — 세면 이미 없어진 이름이 영원히 공백으로 남는다
@@ -59,9 +74,21 @@ export function appInvokes(root = ROOT) {
     const code = read(f)
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/(^|[^:])\/\/.*$/gm, "$1");
+    const adapter = adapterOf(relative(root, f));
     for (const m of code.matchAll(/\binvoke\s*(?:<[^>]*>)?\s*\(\s*"([a-z_0-9]+)"/g)) {
-      names.add(m[1]);
+      const name = m[1];
+      if (adapter) {
+        const seen = adapterOnly.get(name);
+        // 두 어댑터가 같은 이름을 부르면 그것은 공통 표면이다 — 어느 한쪽의 몸이 아니다.
+        adapterOnly.set(name, seen === undefined || seen === adapter ? adapter : null);
+        continue;
+      }
+      names.add(name);
+      adapterOnly.set(name, null);
     }
+  }
+  for (const [name, adapter] of adapterOnly) {
+    if (adapter === null) names.add(name);
   }
   return names;
 }

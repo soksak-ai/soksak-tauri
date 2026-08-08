@@ -4016,7 +4016,7 @@ select.dctl {
   font-size: 13px;
 }
 .orch-header {
-  /* 창 프레임의 titlebar 주소는 셸 종류와 무관하게 같은 물리 정책을 소비한다.
+  /* 창 프레임의 titlebar 주소는 창 종류와 무관하게 같은 물리 정책을 소비한다.
      padding/자식 높이의 우연한 합이 아니라 border-box 45px가 공개 기하 계약이다. */
   box-sizing: border-box;
   flex: 0 0 45px;
