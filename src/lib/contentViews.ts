@@ -96,6 +96,17 @@ export interface ContentViewHost {
   captureFull(label: string, path: string, width: number, height: number): Promise<{ path: string; bytes: number }>;
   /** 현재 포커스된 편집 요소에 확정 문자열을 엔진의 텍스트 입력 경로로 넣는다. */
   typeText(label: string, text: string): Promise<void>;
+  /**
+   * **조합 중**인 글자를 넣는다 — 확정과 다른 사실이다.
+   *
+   * 한글·일본어·중국어는 확정 전에 조합 상태를 지나고, 그 동안 페이지는 `compositionstart`/
+   * `compositionupdate` 를 받으며 아직 값이 아닌 글자를 보여 준다. 확정만 넣을 수 있으면 그
+   * 구간을 한 번도 안 지나고 "한글이 들어간다" 고 말하게 된다.
+   *
+   * 빈 문자열은 조합을 **푼다**(확정) — 사람이 스페이스·엔터로 끝내는 그 자리다. 푸는 자리가
+   * 없으면 조합이 열린 채 남아 다음 입력이 그 위에 얹힌다.
+   */
+  markText(label: string, text: string): Promise<void>;
 }
 
 /**

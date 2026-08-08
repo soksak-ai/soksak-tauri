@@ -142,6 +142,89 @@ pub async fn webview_wait_loaded(
         .and_then(|state| serde_json::to_value(state).map_err(|error| error.to_string()))
 }
 
+/// **조합 중**인 글자를 넣는다 — 확정 입력과 다른 사실이다.
+///
+/// 한글·일본어·중국어는 확정 전에 조합 상태를 지나고, 그 동안 페이지는 `compositionstart`/
+/// `compositionupdate` 를 받으며 아직 값이 아닌 글자를 보여 준다. 확정 문자열만 넣을 수 있으면
+/// 그 구간은 검증할 수 없고, "한글이 들어간다" 는 조합을 지나지 않은 반쪽 증명이 된다.
+///
+/// `text` 가 비면 조합을 **푼다**(확정). 사람이 스페이스나 엔터로 끝내는 그 자리다.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub async fn webview_mark_text(app: AppHandle, label: String, text: String) -> Result<(), String> {
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let webview = registered_webview(&app, &label)
+        .ok_or_else(|| format!("webview 없음: {label}"))?;
+    let (tx, rx) = mpsc::sync_channel::<Result<(), String>>(1);
+    webview
+        .with_webview(move |platform| unsafe {
+            use objc2::runtime::AnyObject;
+            use objc2::{msg_send, sel};
+            use objc2_foundation::{NSNotFound, NSRange, NSString};
+
+            let wk = platform.inner() as *mut AnyObject;
+            if wk.is_null() {
+                let _ = tx.try_send(Err("WKWebView 핸들이 비어 있습니다".to_string()));
+                return;
+            }
+            let window: *mut AnyObject = msg_send![&*wk, window];
+            if window.is_null() {
+                let _ = tx.try_send(Err("WKWebView가 창에 붙어 있지 않습니다".to_string()));
+                return;
+            }
+            let accepted: bool = msg_send![&*window, makeFirstResponder: &*wk];
+            if !accepted {
+                let _ = tx.try_send(Err("child 웹뷰를 입력 responder로 지정하지 못했습니다".to_string()));
+                return;
+            }
+            let responder: *mut AnyObject = msg_send![&*window, firstResponder];
+            if responder.is_null() {
+                let _ = tx.try_send(Err("child 웹뷰에 포커스된 입력자가 없습니다".to_string()));
+                return;
+            }
+            let marks: bool = msg_send![&*responder,
+                respondsToSelector: sel!(setMarkedText:selectedRange:replacementRange:)
+            ];
+            if !marks {
+                let _ = tx.try_send(Err(
+                    "child 웹뷰의 현재 입력자가 조합을 받지 않습니다(NSTextInputClient 아님)".to_string(),
+                ));
+                return;
+            }
+            let nothing = NSRange::new(NSNotFound as usize, 0);
+            if text.is_empty() {
+                // 조합을 푼다 — 사람이 스페이스·엔터로 끝내는 그 자리와 같은 경로다.
+                let _: () = msg_send![&*responder, unmarkText];
+            } else {
+                let value = NSString::from_str(&text);
+                // 커서는 조합 문자열 끝에 둔다 — 사람이 치는 동안 IME 가 그렇게 잡는다.
+                let caret = NSRange::new(text.chars().count(), 0);
+                let _: () = msg_send![
+                    &*responder,
+                    setMarkedText: &*value,
+                    selectedRange: caret,
+                    replacementRange: nothing
+                ];
+            }
+            let _ = tx.try_send(Ok(()));
+        })
+        .map_err(|error| error.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        rx.recv_timeout(Duration::from_secs(3))
+            .map_err(|_| "조합 입력자 응답 시간 초과".to_string())?
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+pub async fn webview_mark_text(_app: AppHandle, _label: String, _text: String) -> Result<(), String> {
+    Err("webview_mark_text는 현재 macOS 구현이 필요합니다".into())
+}
+
 /// 포커스된 child 웹뷰 편집자에 확정 문자열을 전달한다.
 ///
 /// DOM 값을 쓰는 자동화 명령이 아니다. AppKit responder chain의 NSTextInputClient 진입점으로

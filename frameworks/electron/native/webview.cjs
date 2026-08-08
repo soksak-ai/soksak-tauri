@@ -252,6 +252,34 @@ module.exports = {
     },
   },
 
+  // **조합 중**인 글자를 세운다 — 확정 입력과 다른 사실이다. 빈 문자열은 조합을 푼다.
+  webview_mark_text: {
+    concept: "콘텐츠 뷰 조합 입력",
+    source: "게스트 CDP Input.imeSetComposition / insertText",
+    answer: async (ctx, args) => {
+      const guest = ctx.webContentsById(Number(args.id));
+      if (!guest) throw frameworkError("NO_CONTENT_VIEW", `그 콘텐츠 뷰가 없다: ${args.id}`);
+      const text = String(args.text ?? "");
+      const attached = guest.debugger.isAttached();
+      if (!attached) guest.debugger.attach("1.3");
+      try {
+        if (text.length === 0) {
+          // 푸는 것은 조합을 지우고 끝내는 것이다 — 빈 조합을 세워 두면 열린 채로 남는다.
+          await guest.debugger.sendCommand("Input.imeSetComposition", {
+            text: "", selectionStart: -1, selectionEnd: -1,
+          });
+        } else {
+          await guest.debugger.sendCommand("Input.imeSetComposition", {
+            text, selectionStart: text.length, selectionEnd: text.length,
+          });
+        }
+      } finally {
+        if (!attached && guest.debugger.isAttached()) guest.debugger.detach();
+      }
+      return null;
+    },
+  },
+
   // 이 표면이 지금 포인터를 받을 수 있는 상태인가 — 게스트 프로세스만 아는 사실.
   webview_input_state: {
     concept: "콘텐츠 뷰 입력 배달 조건",

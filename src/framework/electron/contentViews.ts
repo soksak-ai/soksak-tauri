@@ -343,6 +343,11 @@ export const domHost: ContentViewHost = {
       id: getId(), x: Math.round(x), y: Math.round(y), kind, button, clickCount,
     });
   },
+  async markText(label, text) {
+    // 이쪽은 게스트에 조합을 직접 세운다 — 태그에는 그 자리가 없고, 그 핸들은 프레임워크만 쥔다.
+    const getId = await onReady<() => number>(label, "getWebContentsId");
+    await invoke("webview_mark_text", { id: getId(), text });
+  },
   async inputState(label, at) {
     // 이쪽 표면은 문서 안의 태그다 — 배달을 가르는 사실도 문서의 사실이다: 그 자리가 지금
     // 문서에 있고 얼마만큼 보이는가. 게스트 자신의 상태는 그 프로세스만 안다.

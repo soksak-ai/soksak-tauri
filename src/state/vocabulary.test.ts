@@ -99,7 +99,6 @@ const VERDICTS: Record<Scope, Record<string, Verdict>> = {
     emptyPane: "pane", // "빈 칸" 메시지 키
     emptyActivePane: "pane",
     emptyPanelContext: "pane",
-    emptypanel: "pane", // 그 테스트의 픽스처 루트 이름
     // ── 새 뜻 — 칸의 시각 토큰(테마가 소유) ──────────────────────────────────
     paneStyle: "pane",
     PaneStyle: "pane",
@@ -233,7 +232,23 @@ const VERDICTS: Record<Scope, Record<string, Verdict>> = {
   },
 };
 
-const IDENT = /(?:[A-Za-z_][A-Za-z0-9_]*)?(?:[Pp]ane|[Pp]anel)[A-Za-z0-9_]*/g;
+const IDENT = /[A-Za-z_][A-Za-z0-9_]*/g;
+
+/**
+ * 이 이름이 `pane`/`panel` 을 **형태소로** 지고 있는가.
+ *
+ * 글자가 우연히 이어진 것은 이 어휘가 아니다 — 실측 2026-08-08: 부분 문자열로 훑던 질의가
+ * 산문의 `Japanese` 를 식별자로 세워 게이트가 붉어졌다. 판정표에 그것을 "pane"(칸) 으로 적으면
+ * 뜻을 거짓으로 적는 것이고, "tab"(탭 인스턴스) 으로 적으면 있지도 않은 개명 대상이 생긴다.
+ * 어느 쪽도 판정이 아니므로 **세는 자리**를 고친다.
+ *
+ * 이름을 camelCase 와 `_` 로 쪼개, 그 조각 하나가 `pane` 으로 시작할 때만 이 어휘로 센다.
+ */
+function carriesPane(name: string): boolean {
+  return name
+    .split(/(?=[A-Z])|_/)
+    .some((part) => part.toLowerCase().startsWith("pane"));
+}
 
 function filesUnder(dir: string, exts: string[]): string[] {
   const out: string[] = [];
@@ -250,7 +265,9 @@ function identifiersIn(scope: Scope): string[] {
   const { dir, exts } = ROOTS[scope];
   const found = new Set<string>();
   for (const f of filesUnder(dir, exts)) {
-    for (const m of readFileSync(f, "utf8").matchAll(IDENT)) found.add(m[0]);
+    for (const m of readFileSync(f, "utf8").matchAll(IDENT)) {
+      if (carriesPane(m[0])) found.add(m[0]);
+    }
   }
   return [...found].sort();
 }

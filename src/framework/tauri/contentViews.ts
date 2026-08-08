@@ -668,6 +668,7 @@ export const nativeHost: ContentViewHost = {
       clickCount: input.clickCount,
     });
   },
+  markText: (label, text) => call("webview_mark_text", { label, text }),
   inputState: (label, at) => call<Record<string, unknown>>("webview_input_state", {
     label,
     ...(at === undefined ? {} : { x: at.x, y: at.y }),

@@ -1297,6 +1297,50 @@ async function inProjectedRealm(
     },
   });
 
+  // 확정 문자열만 넣을 수 있으면 조합 구간을 한 번도 안 지나고 "한글이 들어간다" 고 말하게 된다.
+  register("ui.input.compose", {
+    description:
+      "Set the in-progress composition (IME preedit) on a surface, or end it. Korean, Japanese and Chinese pass through a composition state before anything is committed: the page receives compositionstart/compositionupdate, shows characters that are not yet its value, and backspace removes a jamo rather than a character. ui.input.fill and typing commit finished text and never enter that state, so they cannot prove the composition path. Call with text to set what is being composed, and without text to unmark it — the place a person reaches with space or enter. Leaving a composition open makes the next input stack on top of it. Addresses that are not a surface return NOT_A_SURFACE.",
+    triggers: { ko: "조합 IME 한글 미확정 preedit 입력중 컴포지션 주입" },
+    params: {
+      address: { type: "string", description: "Exposed surface address from ui.tree", required: true },
+      text: { type: "string", description: "What is being composed. Omit to end the composition.", required: false },
+    },
+    returns: "{ address, surface, composing }",
+    message: (d) => tmsg(d.composing == null ? "msg.ui.input.compose.end" : "msg.ui.input.compose"),
+    errors: ["NOT_EXPOSED", "AMBIGUOUS", "NOT_A_SURFACE", "SURFACE_INPUT_UNAVAILABLE"],
+    danger: "inject",
+    examples: [
+      'ui.input.compose \'{"address":"win/main/…/surface","text":"한"}\'',
+      'ui.input.compose \'{"address":"win/main/…/surface"}\'   # 조합을 끝낸다',
+    ],
+    handler: async (p) => {
+      const addr = p.address as string;
+      const found = resolveExposed(addr);
+      if (!("el" in found)) return found;
+      const surface = gestureSurface(found.el);
+      if (surface === null) {
+        return {
+          ok: false as const,
+          code: "NOT_A_SURFACE" as const,
+          message: `이 노드는 표면이 아닙니다 — 조합을 넣을 편집자가 없습니다: ${addr}`,
+        };
+      }
+      if (!hasContentViewHost()) return noGesturePath(addr);
+      const text = typeof p.text === "string" ? (p.text as string) : "";
+      try {
+        await contentViewHost().markText(surface.label, text);
+      } catch (error) {
+        return {
+          ok: false as const,
+          code: "SURFACE_INPUT_UNAVAILABLE" as const,
+          message: `이 표면에 조합을 넣지 못했습니다(${surface.label}): ${error instanceof Error ? error.message : String(error)}`,
+        };
+      }
+      return { address: addr, surface: surface.label, composing: text.length === 0 ? null : text };
+    },
+  });
+
   // 포인터가 표면에 도착하지 않을 때, 그 사실만으로는 아무것도 못 고친다. 배달을 가르는
   // 조건은 전부 그 표면과 창의 상태다 — 물을 자리가 없으면 원인은 영영 추측이다.
   register("ui.input.state", {
