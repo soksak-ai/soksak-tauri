@@ -1,4 +1,5 @@
 import { emitTo, listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { presentationBarrierLabels } from "./presentationBarrierScope";
 import { invoke } from "@tauri-apps/api/core";
 import { moduleState } from "../../lib/moduleState";
 import { presentationNowUnixMs } from "../../lib/presentationClock";
@@ -24,6 +25,7 @@ import {
 } from "../../plugins/viewPresentationHost";
 import { viewPresentationRuntime } from "../../plugins/viewRegistry";
 import { TAURI_PANE_RENDERER_ATTR } from "./holeMarkers";
+import { CONTENT_VIEW_BODY } from "../../lib/contentViews";
 import {
   isPluginViewCallExposed,
   isPluginViewSubscribeExposed,
@@ -936,9 +938,17 @@ const host: PluginViewPresentationHost = {
     await awaitPluginViewComposition();
     const compositionMs = Math.round(performance.now() - compositionAt);
     const presentedAt = performance.now();
-    const labels = views
-      .filter((view) => view.visible)
-      .flatMap((view) => [view.renderer, ...view.members]);
+    // 무엇이 지금 화면에 있는가는 문서의 선언이 안다 — 뷰의 기억만 믿으면 사라진 표면을
+    // 계속 기다린다(실측 2026-08-09: 탭 목록에 없는 표면 하나를 100ms 기다리고 있었다).
+    const declared = new Set<string>([
+      ...[...document.querySelectorAll<HTMLElement>(`[${TAURI_PANE_RENDERER_ATTR}]`)]
+        .map((node) => node.getAttribute(TAURI_PANE_RENDERER_ATTR) ?? "")
+        .filter(Boolean),
+      ...[...document.querySelectorAll<HTMLElement>(`[${CONTENT_VIEW_BODY}]`)]
+        .map((node) => node.getAttribute(CONTENT_VIEW_BODY) ?? "")
+        .filter(Boolean),
+    ]);
+    const labels = presentationBarrierLabels(views, declared);
     const each: Array<[string, number]> = [];
     await Promise.all(labels.map(async (label) => {
       const one = performance.now();

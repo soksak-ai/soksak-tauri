@@ -84,7 +84,8 @@ describe("UI 정렬 헌법 게이트 (docs/UI.md)", () => {
       expect(sync!.selector).toContain(sel);
     }
     expect(sync!.decls).not.toMatch(/transition\s*:/);
-    expect(RAIL_TRAVEL_MS).toBe(340);
+    // 선언과 CSS 가 같은 하나를 쓴다는 것이 이 줄의 뜻이다 — 값 자체는 사람이 보고 정한다.
+    expect(RAIL_TRAVEL_MS).toBe(180);
     expect(sync!.decls).toMatch(/animation:\s*rail-flip-x var\(--rail-travel-ms\) cubic-bezier\(0\.4, 0, 0\.2, 1\)/);
     // 이동량 합성은 한 변수(--flip-x)에서 끝난다 — 두 축을 CSS 에서 더하면 배열 교환과 주행이
     // 겹치는 위상에서 어긋난다(해결기가 px 로 접어 준다).
