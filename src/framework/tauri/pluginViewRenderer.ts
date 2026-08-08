@@ -108,24 +108,6 @@ function reportSlots(): void {
 // 거래는 같은 측정 함수를 사건으로 호출하며, 별도 좌표 경로나 타이머를 만들지 않는다.
 await listen(event("measure"), reportSlots);
 
-// 호스트가 받은 포인터를 이 realm 에서 되살린다.
-//
-// 이 문서가 사는 웹뷰는 메인 DOM 웹뷰 **아래**에 깔린다(그 순서는 옳다 — 위로 올리면
-// 사이드바·모달을 덮는다). 그래서 이 자리의 마우스는 위에 있는 웹뷰가 받는다: 아래 표면의
-// 입력은 통과가 아니라 **전달**이다(kit 의 input-forward 가 offscreen 셀에 하는 것과 같은 축).
-//
-// 실측 2026-08-08: 브라우저 세 종의 주소줄이 눌리지 않았다. 페이지는 전달이 걸려 있었고
-// 크롬(툴바·주소줄)에는 걸려 있지 않았다.
-await listen<{ x: number; y: number }>(event("pointer"), ({ payload }) => {
-  const el = document.elementFromPoint(payload.x, payload.y);
-  if (!(el instanceof HTMLElement)) return;
-  el.focus();
-  // 실클릭 등가 — mousedown 기반 위젯도 반응한다. 단발 click 만 보내면 그런 자리가 죽는다.
-  for (const type of ["mousedown", "mouseup", "click"]) {
-    el.dispatchEvent(new MouseEvent(type, { bubbles: true, composed: true, clientX: payload.x, clientY: payload.y }));
-  }
-});
-
 let slotResize: ResizeObserver | null = null;
 function observeSlots(): void {
   slotResize?.disconnect();
@@ -138,16 +120,6 @@ function observeSlots(): void {
 }
 new MutationObserver(observeSlots).observe(document.documentElement, { childList: true, subtree: true });
 window.addEventListener("resize", reportSlots);
-// 사용자 입력은 layout을 바꾸지 않아 ResizeObserver가 발행하지 않는다. 공개 node 상태는
-// 실제 input/change 사건에서 같은 reporter로 즉시 갱신한다(폴링 없음).
-document.addEventListener("input", reportSlots, true);
-document.addEventListener("change", reportSlots, true);
-// 포커스가 옮겨 다니는 것도 보고할 사실이다 — 안 보내면 밖에서는 "왜 글자가 안 들어가는가" 를
-// 눈으로만 말하게 된다.
-document.addEventListener("focusin", reportSlots, true);
-document.addEventListener("focusout", reportSlots, true);
-window.addEventListener("focus", reportSlots);
-window.addEventListener("blur", reportSlots);
 
 await listen<PluginViewInit>(event("init"), async ({ payload: init }) => {
   // 이 문서에는 앱 스타일시트가 없다 — 테마 변수를 먼저 걸어야 이 안에서 그리는 것이 값을

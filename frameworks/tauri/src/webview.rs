@@ -219,6 +219,145 @@ pub async fn webview_type_text(_app: AppHandle, _label: String, _text: String) -
 #[cfg(target_os = "macos")]
 const WHEEL_POINT_TOLERANCE: f64 = 1.0;
 
+/// child WKWebView 에 **실제** 마우스 사건을 전달한다.
+///
+/// 합성 DOM 사건이 아니다. 자식 표면은 메인 DOM 웹뷰 아래에 깔리므로 그 자리의 마우스는 위에
+/// 있는 웹뷰가 받는다 — 아래로 내려보내는 길은 이것뿐이고, 호스트에서 `MouseEvent` 를 지어
+/// 보내면 그 realm 은 **사용자 활성화가 없는** 입력을 받는다(창-열기·클립보드가 막히고,
+/// 히트테스트가 엔진 것과 우리 것 두 벌이 된다). kit 도 같은 이유로 합성 조합을 금한다.
+///
+/// x/y 는 WKWebView 좌상단 기준 CSS px. 창을 key/front 로 만들지 않는다.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub async fn webview_send_mouse(
+    app: AppHandle,
+    label: String,
+    x: i32,
+    y: i32,
+    kind: String,
+) -> Result<(), String> {
+    use core_graphics::event::{CGEvent, CGEventType, CGMouseButton};
+    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+    use core_graphics::geometry::CGPoint;
+    use foreign_types::ForeignType;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let event_type = match kind.as_str() {
+        "down" => CGEventType::LeftMouseDown,
+        "up" => CGEventType::LeftMouseUp,
+        "move" => CGEventType::MouseMoved,
+        other => return Err(format!("모르는 마우스 사건: {other} (down|up|move)")),
+    };
+    let webview = registered_webview(&app, &label)
+        .ok_or_else(|| format!("webview 없음: {label}"))?;
+    let (tx, rx) = mpsc::sync_channel::<Result<(), String>>(1);
+    webview
+        .with_webview(move |platform| unsafe {
+            use objc2::msg_send;
+            use objc2::runtime::AnyObject;
+            use objc2_foundation::{NSPoint, NSRect};
+
+            let wk = platform.inner() as *mut AnyObject;
+            if wk.is_null() {
+                let _ = tx.try_send(Err("WKWebView 핸들이 비어 있습니다".to_string()));
+                return;
+            }
+            let window: *mut AnyObject = msg_send![&*wk, window];
+            if window.is_null() {
+                let _ = tx.try_send(Err("WKWebView가 창에 붙어 있지 않습니다".to_string()));
+                return;
+            }
+            let bounds: NSRect = msg_send![&*wk, bounds];
+            let flipped: bool = msg_send![&*wk, isFlipped];
+            let local = NSPoint::new(
+                x as f64,
+                if flipped { y as f64 } else { bounds.size.height - y as f64 },
+            );
+            let nil_view: *mut AnyObject = std::ptr::null_mut();
+            let window_point: NSPoint = msg_send![&*wk, convertPoint: local, toView: nil_view];
+            let screen_point: NSPoint = msg_send![&*window, convertPointToScreen: window_point];
+            let screen_class = objc2::class!(NSScreen);
+            let main_screen: *mut AnyObject = msg_send![screen_class, mainScreen];
+            if main_screen.is_null() {
+                let _ = tx.try_send(Err("주 화면 좌표계를 찾지 못했습니다".to_string()));
+                return;
+            }
+            let main_frame: NSRect = msg_send![&*main_screen, frame];
+
+            let source = match CGEventSource::new(CGEventSourceStateID::HIDSystemState) {
+                Ok(source) => source,
+                Err(()) => {
+                    let _ = tx.try_send(Err("CGEventSource 생성 실패".to_string()));
+                    return;
+                }
+            };
+            let mut location = (screen_point.x, main_frame.size.height - screen_point.y);
+            let event = match CGEvent::new_mouse_event(
+                source,
+                event_type,
+                CGPoint::new(location.0, location.1),
+                CGMouseButton::Left,
+            ) {
+                Ok(event) => event,
+                Err(()) => {
+                    let _ = tx.try_send(Err("mouse CGEvent 생성 실패".to_string()));
+                    return;
+                }
+            };
+            // 자리는 가정하지 않고 요구한다 — 휠과 같은 규율이다(webview_send_wheel 머리말).
+            // 창에 안 붙은 사건이라 어느 좌표계를 답하는지 우리가 정하지 못한다: 실어 만들고,
+            // AppKit 이 답하는 값을 읽고, 어긋난 만큼 한 번 옮긴다. 그러고도 어긋나면 안 보낸다.
+            let event_class = objc2::class!(NSEvent);
+            let event_ref = event.as_ptr().cast::<std::ffi::c_void>();
+            let wanted = (window_point.x, window_point.y);
+            let mut ns_event: *mut AnyObject = msg_send![event_class, eventWithCGEvent: event_ref];
+            if ns_event.is_null() {
+                let _ = tx.try_send(Err("NSEvent 변환 실패".to_string()));
+                return;
+            }
+            let first: NSPoint = msg_send![&*ns_event, locationInWindow];
+            let mut carried = (first.x, first.y);
+            if !same_point(carried, wanted, WHEEL_POINT_TOLERANCE) {
+                location = realign_carried_point(location, carried, wanted, true);
+                event.set_location(CGPoint::new(location.0, location.1));
+                let retry: *mut AnyObject = msg_send![event_class, eventWithCGEvent: event_ref];
+                if retry.is_null() {
+                    let _ = tx.try_send(Err("NSEvent 변환 실패".to_string()));
+                    return;
+                }
+                ns_event = retry;
+                let again: NSPoint = msg_send![&*ns_event, locationInWindow];
+                carried = (again.x, again.y);
+            }
+            if !same_point(carried, wanted, WHEEL_POINT_TOLERANCE) {
+                let _ = tx.try_send(Err(format!(
+                    "마우스 사건이 창 좌표를 싣지 못했습니다: 창 ({:.1},{:.1}) 사건 ({:.1},{:.1})",
+                    wanted.0, wanted.1, carried.0, carried.1,
+                )));
+                return;
+            }
+            // 누름은 그 뷰를 입력 responder 로 만든다 — 사람이 누른 것과 같은 순서다.
+            if matches!(event_type, CGEventType::LeftMouseDown) {
+                let _: bool = msg_send![&*window, makeFirstResponder: &*wk];
+            }
+            let selector_sent: () = match event_type {
+                CGEventType::LeftMouseDown => msg_send![&*wk, mouseDown: &*ns_event],
+                CGEventType::LeftMouseUp => msg_send![&*wk, mouseUp: &*ns_event],
+                _ => msg_send![&*wk, mouseMoved: &*ns_event],
+            };
+            let _ = selector_sent;
+            let _ = tx.try_send(Ok(()));
+        })
+        .map_err(|error| error.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        rx.recv_timeout(Duration::from_secs(3))
+            .map_err(|_| "마우스 입력자 응답 시간 초과".to_string())?
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
 /// child WKWebView에 실제 scroll-wheel 사건을 전달한다.
 ///
 /// x/y는 WKWebView의 좌상단 기준 CSS px이고 dx/dy의 부호는 DOM WheelEvent와 같다

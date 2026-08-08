@@ -472,6 +472,32 @@ function installPaneSurfaceHostCommands(): void {
       return { count: hosts.length, hosts };
     },
   });
+  register("webview.send.mouse", {
+    description:
+      "Deliver a real mouse event to a child webview by label, in that webview's own CSS px. Not a synthetic DOM event: a surface that lives below the main webview never receives the pointer, and a MouseEvent made in the host arrives without user activation and hit-tests twice (once by us, once by the engine). Pair down and up to make a click; the press also hands that webview the input responder, in the same order a person's click does.",
+    triggers: { ko: "자식 웹뷰 마우스 주입 클릭 네이티브 입력" },
+    params: {
+      label: { type: "string", description: "child webview label", required: true },
+      x: { type: "number", description: "that webview's own CSS px, from its top-left", required: true },
+      y: { type: "number", description: "that webview's own CSS px, from its top-left", required: true },
+      kind: { type: "string", description: "down | up | move", required: true },
+    },
+    danger: "inject",
+    returns: "{ label, kind }",
+    message: (data) => `${String(data.label)} 에 마우스 ${String(data.kind)} 를 보냈습니다`,
+    errors: ["INVALID_PARAMS", "TARGET_NOT_FOUND"],
+    examples: ['webview.send.mouse \'{"label":"pv-w-1-2","x":100,"y":14,"kind":"down"}\''],
+    handler: async (params) => {
+      await invoke("webview_send_mouse", {
+        label: params.label,
+        x: Math.round(Number(params.x)),
+        y: Math.round(Number(params.y)),
+        kind: String(params.kind),
+      });
+      return { label: params.label, kind: params.kind };
+    },
+  });
+
   register("webview.pane.eval", {
     description: "Evaluate a diagnostic expression in an explicitly named pane renderer.",
     params: {

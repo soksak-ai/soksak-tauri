@@ -594,11 +594,14 @@ async function createPresentedView(
   // 요청한다(뜰 때가 아니라 눌릴 때다: 뜰 때 뺏으면 사용자가 치던 곳에서 커서가 튄다).
   const forwardPointer = (e: MouseEvent) => {
     const rect = input.container.getBoundingClientRect();
-    void invoke("webview_visible", { label: renderer, visible: true, focus: true }).catch(() => {});
-    void emitTo(renderer, event(renderer, "pointer"), {
-      x: Math.round(e.clientX - rect.left),
-      y: Math.round(e.clientY - rect.top),
-    }).catch(() => {});
+    const x = Math.round(e.clientX - rect.left);
+    const y = Math.round(e.clientY - rect.top);
+    // **진짜 사건을 내려보낸다.** 호스트에서 `MouseEvent` 를 지어 그 realm 에 뿌리면 사용자
+    // 활성화가 없는 입력이 되고(창-열기·클립보드가 막힌다), 히트테스트가 엔진 것과 우리 것
+    // 두 벌이 된다. 누름/뗌을 짝으로 보내야 클릭이 성립한다.
+    void invoke("webview_send_mouse", { label: renderer, x, y, kind: "down" })
+      .then(() => invoke("webview_send_mouse", { label: renderer, x, y, kind: "up" }))
+      .catch(() => {});
   };
   //  으로 듣는다 — 실클릭도 이것을 내고, 합성 클릭(ui.input.click)도 같은 이름을 낸다.
   // 이름이 갈리면 사람 경로와 검증 경로가 달라져 "검증은 되는데 손으로는 안 되는" 자리가 생긴다.
