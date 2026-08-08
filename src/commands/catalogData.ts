@@ -341,6 +341,22 @@ export function registerDataCatalog(): void {
     },
   });
 
+  // 백업 작업 파일 회수 — 백업 한 번은 저장소만 한 파일을 짓고, 짓다 죽으면 그 크기가 그대로
+  // 남는다. 이름이 pid 로 갈려 있어 **살아 있는 주인의 것은 안 만진다**(그래서 파괴 아님).
+  register("data.reclaim", {
+    description:
+      "Delete backup scratch files whose owning process is gone, and report how many. Each backup builds a file the size of the store, so a run that dies mid-snapshot leaves that size behind. Scratch files carry their owner's pid, and a live owner's file is never touched. Rotation reclaims on its own schedule; call this when backups are not running or the space is needed now.",
+    triggers: { ko: "백업 임시 파일 회수 정리 공간" },
+    params: {},
+    // 답은 주인이 정한다 — 어느 창에서 돌든 같다(registry.ts windowScoped).
+    windowScoped: false,
+    returns: "{ reclaimed: number }",
+    message: (d) => tmsg("msg.data.reclaim", { n: Number(d.reclaimed) }),
+    errors: ["INTERNAL"],
+    examples: ["data.reclaim"],
+    handler: async () => await invoke<{ reclaimed: number }>("data_reclaim"),
+  });
+
   // 치유 — 인덱스를 테이블에서 다시 만든다(REINDEX). 데이터 행은 건드리지 않으므로 파괴적이지
   // 않지만, 저장소를 고쳐 쓰는 일이라 danger 로 둔다(원격 호출은 권한 게이트를 지난다).
   register("data.repair", {

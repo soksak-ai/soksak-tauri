@@ -754,6 +754,7 @@ pub fn run() {
             data::commands::data_stats,
             data::commands::data_verify,
             data::commands::data_canary,
+            data::commands::data_reclaim,
             data::commands::data_repair,
             data::commands::data_restore,
             data::commands::data_export,

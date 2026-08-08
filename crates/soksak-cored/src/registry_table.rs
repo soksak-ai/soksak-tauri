@@ -1112,6 +1112,13 @@ pub const COMMANDS: &[Command] = &[
         returns: "object — 치유 결과",
         run: run_data_repair,
     },
+    // 주인이 죽은 백업 작업 파일 회수 — 살아 있는 주인의 것은 안 만진다(파괴 아님).
+    Command {
+        name: "data_reclaim",
+        args: &[],
+        returns: "{ reclaimed: number } — 회수한 작업 파일 수",
+        run: run_data_reclaim,
+    },
     Command {
         name: "data_canary",
         args: &[],

@@ -672,6 +672,18 @@ pub fn data_canary(state: State<'_, DbState>) -> Result<(), String> {
     })
 }
 
+// 주인이 죽은 백업 작업 파일 회수 — 백업 한 번은 저장소만 한 파일을 짓고, 짓다 죽으면 그
+// 크기가 그대로 남는다(실측 2026-08-08: 십수 개, 500MB). 이름이 pid 로 갈려 있어 살아 있는
+// 주인의 것은 안 만진다. 답은 저장소를 소유한 쪽이 낸다 — 그 파일들이 사는 자리의 주인이다.
+#[tauri::command]
+pub fn data_reclaim(state: State<'_, DbState>) -> Result<Value, String> {
+    store_op(&state, "data_reclaim", serde_json::json!({}), |_c| {
+        let path = crate::data::db_path()?;
+        let reclaimed = soksak_store::ring::reclaim_abandoned_scratch(&path);
+        Ok(serde_json::json!({ "reclaimed": reclaimed }))
+    })
+}
+
 // 저장소 자기 진단 — 전수 대조(integrity_check). 부팅 게이트(quick_check)는 인덱스↔테이블 대조를
 // 하지 않아 인덱스 손상을 통과시킨다(integrity.rs 머리말). 읽기 전용.
 // 진단이 끝내지 못하면 그 사유를 문제 목록에 실어 돌려준다 — 오류로 던지면 저장소가 아프다는

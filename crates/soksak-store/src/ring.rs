@@ -43,6 +43,60 @@ fn snapshot_tmp_path(db_path: &Path) -> PathBuf {
     ))
 }
 
+/// 그 pid 가 아직 살아 있는가. 못 물어보는 판이면 **살아 있다고 본다** — 모르는 것을 죽었다고
+/// 읽으면 남이 짓고 있는 파일을 지운다.
+fn owner_alive(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        // 신호 0 은 아무것도 보내지 않고 존재·권한만 판정한다. errno 는 표준 라이브러리로
+        // 읽는다 — 그 심볼 이름은 OS 마다 다르다(macOS `__error`, glibc `__errno_location`).
+        if unsafe { libc::kill(pid as libc::pid_t, 0) } == 0 {
+            return true;
+        }
+        // EPERM = 그 프로세스는 있는데 신호를 보낼 권한이 없다 = 살아 있다.
+        std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = pid;
+        true
+    }
+}
+
+/// 이 작업 파일 이름이 밝히는 주인 pid. 모양이 다르면 이 규칙이 만든 파일이 아니다.
+fn scratch_owner(file_name: &str, prefix: &str) -> Option<u32> {
+    let rest = file_name.strip_prefix(prefix)?;
+    rest.split('.').next()?.parse().ok()
+}
+
+/// 주인이 죽은 작업 파일을 회수한다. 회수한 건수를 돌린다.
+///
+/// 이름이 pid 로 갈리는 것은 **살아 있는 남의 작업을 밟지 않기 위해서**다. 그 규칙만 있고 죽은
+/// 주인의 잔재를 거두는 규칙이 없으면 아무도 안 거둔다 — 실측 2026-08-08: 사용자 데이터
+/// 폴더에 십수 개, 500MB 가량이 남아 있었다. 한 번의 백업이 저장소만 한 파일을 짓고, 짓다
+/// 죽으면 그 크기가 그대로 남는다.
+///
+/// 살아 있는 주인의 것과 이름 모양이 다른 것은 안 만진다.
+pub fn reclaim_abandoned_scratch(db_path: &Path) -> usize {
+    let Some(dir) = db_path.parent() else { return 0 };
+    let Some(stem) = db_path.file_name().and_then(|n| n.to_str()) else { return 0 };
+    let prefix = format!("{stem}.bak.tmp.");
+    let Ok(entries) = std::fs::read_dir(dir) else { return 0 };
+    let mut reclaimed = 0;
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else { continue };
+        let Some(owner) = scratch_owner(name, &prefix) else { continue };
+        if owner_alive(owner) {
+            continue;
+        }
+        if std::fs::remove_file(entry.path()).is_ok() {
+            reclaimed += 1;
+        }
+    }
+    reclaimed
+}
+
 /// 게이트(순수) — 최신 슬롯 mtime 과 now 주입으로 결정적. 슬롯 없음=즉시 due,
 /// 1시간 경과=due, 미래 mtime(시계 역행)=보류.
 pub fn due(slot0_mtime: Option<SystemTime>, now: SystemTime) -> bool {
@@ -74,6 +128,8 @@ pub fn tick(db_path: &Path, now: SystemTime) -> Result<bool, String> {
 /// 스냅샷+회전 — read-only 커넥션의 VACUUM INTO 가 작업 파일을 만들고, 성공 쓰기
 /// 이후에만 회전(.bak.3→4 … .bak.0→1) 뒤 tmp→.bak.0 rename 으로 원자 편입한다.
 fn snapshot_rotate(db_path: &Path) -> Result<(), String> {
+    reclaim_abandoned_scratch(db_path);
+    // 주인이 죽은 잔재를 먼저 거둔다 — 이 파일들을 만든 것이 이 절차이므로 거두는 것도 여기다.
     let tmp = snapshot_tmp_path(db_path);
     // 이 이름은 이 호출만의 것이다 — 남의 작업 파일을 지울 여지가 없다. 그래도 지우는 이유는
     // VACUUM INTO 가 기존 파일을 거부하기 때문이다(같은 pid·같은 번호가 다시 나오는 재시작 잔재).

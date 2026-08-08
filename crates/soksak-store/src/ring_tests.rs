@@ -173,3 +173,43 @@ fn each_rotation_claims_its_own_scratch_name() {
         "이름이 프로세스를 가르지 않는다: {a:?}"
     );
 }
+
+// 죽은 프로세스의 작업 파일은 아무도 안 지웠다.
+//
+// 작업 파일 이름은 pid 로 갈린다 — 살아 있는 남의 작업을 밟지 않기 위해서다. 그 규칙만 있고
+// **죽은 pid 의 잔재를 회수하는 규칙이 없었다.** 실측 2026-08-08: 사용자 데이터 폴더에
+// `soksak.db.bak.tmp.*` 가 십수 개, 500MB 가량 남아 있었다(하나는 이틀 전 것). 백업 한 번이
+// 저장소만 한 파일을 짓는데, 짓다 죽으면 그 크기가 그대로 남는다.
+//
+// pid 가 살아 있으면 안 만진다. 그것이 이 이름의 목적이다.
+#[test]
+fn a_dead_writers_scratch_file_is_reclaimed() {
+    let root = temp_root("reclaim");
+    let db = root.join("soksak.db");
+    let conn = open::open(&db).unwrap();
+    store::kv_set(&conn, "core", "marker", &json!(1)).unwrap();
+
+    // 살아 있는 주인(이 프로세스)의 잔재와, 죽은 주인의 잔재.
+    let mine = PathBuf::from(format!("{}.bak.tmp.{}.99", db.to_string_lossy(), std::process::id()));
+    let dead = PathBuf::from(format!("{}.bak.tmp.{}.0", db.to_string_lossy(), dead_pid()));
+    std::fs::write(&mine, b"in progress").unwrap();
+    std::fs::write(&dead, b"abandoned").unwrap();
+
+    // 함수가 아니라 **회전**이 거두는지 본다 — 함수만 검사하면 아무도 안 부르는 채로 통과한다.
+    assert!(tick(&db, SystemTime::now()).unwrap(), "스냅샷 수행");
+
+    assert!(!dead.exists(), "죽은 주인의 잔재는 남지 않는다");
+    assert!(mine.exists(), "살아 있는 주인의 작업 파일은 안 만진다");
+
+    drop(conn);
+    let _ = std::fs::remove_file(&mine);
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// 확실히 없는 pid — 자식을 하나 낳아 거두고 그 번호를 쓴다(임의의 큰 수는 살아 있을 수 있다).
+fn dead_pid() -> u32 {
+    let mut child = std::process::Command::new("true").spawn().expect("spawn");
+    let pid = child.id();
+    let _ = child.wait();
+    pid
+}

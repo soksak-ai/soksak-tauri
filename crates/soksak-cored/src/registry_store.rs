@@ -224,6 +224,20 @@ pub(crate) fn run_data_repair(ctx: &Ctx, _params: &Value) -> Outcome {
     }
 }
 
+/// 주인이 죽은 백업 작업 파일을 회수한다 — 자리를 되찾는 유일한 표면.
+///
+/// 백업 한 번은 저장소만 한 파일을 짓는다. 짓다 죽으면 그 크기가 그대로 남고, 이름이 pid 로
+/// 갈려 있어 **살아 있는 남의 작업을 밟지 않는다**. 그 규칙만으로는 죽은 주인의 것을 아무도
+/// 안 거둔다 — 실측 2026-08-08: 사용자 데이터 폴더에 십수 개, 500MB 가량.
+///
+/// 회전이 주기마다 거두지만, 백업이 안 도는 홈에서는 그 기회가 오지 않는다. 그래서 부를 수
+/// 있는 자리를 둔다.
+pub(crate) fn run_data_reclaim(ctx: &Ctx, _params: &Value) -> Outcome {
+    let path = ctx.identity().db_path();
+    let reclaimed = soksak_store::ring::reclaim_abandoned_scratch(&path);
+    Outcome::Ok(serde_json::json!({ "reclaimed": reclaimed }))
+}
+
 pub(crate) fn run_data_canary(ctx: &Ctx, _params: &Value) -> Outcome {
     if let Err(e) = deny_without_write_ownership(ctx) {
         return Outcome::Failed(e);
