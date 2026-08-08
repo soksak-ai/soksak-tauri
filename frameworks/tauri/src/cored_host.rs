@@ -801,6 +801,22 @@ pub fn current() -> Option<Arc<CoredHost>> {
 ///
 /// 그래도 물을 곳이 없으면 **이름을 달고** 실패한다. 조용한 실패는 "명령이 사라진다"로만
 /// 보이고, 그때 사람은 저장소가 아니라 명령을 의심한다.
+/// 답이 필요 없는 사실을 주인에게 넘긴다.
+///
+/// 이 연결은 양방향이라, 배달을 처리하는 중에 이쪽에서 답을 기다리면 서로를 기다린다(`tell` 의
+/// 주석을 보라). 부르는 쪽이 답을 안 쓰는 자리(catalog.ts 는 `void invoke`)는 기다릴 이유가
+/// 없다 — 기다리면 그 상한만큼 그 창이 붙잡힌다.
+pub fn tell_owner(method: &str, params: &Value) -> Result<Value, String> {
+    let Some(host) = HOST.live() else {
+        return Err(format!(
+            "cored 에 붙지 않았다 — {method} 를 넘길 곳이 없다(이 프로세스는 저장소를 위임했다)"
+        ));
+    };
+    host.tell(method, params)?;
+    // 답을 안 받으므로 받은 값은 없다 — 넘겼다는 사실만 답한다. 없는 답을 지어내지 않는다.
+    Ok(json!({ "told": true }))
+}
+
 pub fn ask_owner(method: &str, params: &Value) -> Result<Value, String> {
     let Some(host) = HOST.live() else {
         return Err(format!(
@@ -818,7 +834,8 @@ pub fn ask_owner(method: &str, params: &Value) -> Result<Value, String> {
 pub fn control_owner_answered(names: Vec<String>) -> Result<Value, String> {
     // 쥐고 나서 넘긴다 — 다음에 다시 붙을 때 이 목록이 없으면 그 주인은 아무것도 모른다.
     *OWNER_ANSWERED.lock().unwrap_or_else(|e| e.into_inner()) = names.clone();
-    ask_owner("control_owner_answered", &json!({ "names": names }))
+    // 넘기기만 하는 사실이다 — 답을 기다리면 그 상한이 부팅을 통째로 붙잡는다.
+    tell_owner("control_owner_answered", &json!({ "names": names }))
 }
 
 /// 주인의 답을 기다리는 상한. 없으면 답하지 않는 cored 하나가 그 명령을 부른 창을 영원히

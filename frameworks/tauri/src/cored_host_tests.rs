@@ -572,3 +572,27 @@ fn a_closed_connection_says_it_is_closed() {
     }
     assert!(!host.is_open(), "연결이 끝났는데 살아 있다고 한다");
 }
+
+/// 규칙 — 답이 필요 없는 통보는 답을 기다리지 않는다.
+///
+/// 이 연결은 양방향이다: cored 가 명령을 밀고 이 프로세스가 답을 돌려준다. 그 배달을 처리하는
+/// 중에 이쪽에서 답을 기다리면 서로를 기다린다 — 이 파일의 `tell` 주석이 그 사실을 이미 적어
+/// 두었다("기다리면 교착한다").
+///
+/// `control_owner_answered` 는 부르는 쪽이 답을 안 쓴다(catalog.ts 는 `void invoke`). 그런데
+/// `ask` 로 보내 상한 10 초를 기다릴 수 있었다 — 기다리면 그 시간만큼 그 창이 붙잡힌다.
+mod 통보는_기다리지_않는다 {
+    #[test]
+    fn 주인_목록_전달은_tell_로_보낸다() {
+        let source = include_str!("cored_host.rs");
+        let at = source
+            .find("pub fn control_owner_answered")
+            .expect("control_owner_answered");
+        let body = &source[at..at + 600];
+        assert!(
+            body.contains("tell_owner("),
+            "답이 필요 없는 통보는 tell 로 보낸다 — ask 는 상한까지 기다린다"
+        );
+        assert!(!body.contains("ask_owner("), "이 자리는 답을 기다리지 않는다");
+    }
+}
