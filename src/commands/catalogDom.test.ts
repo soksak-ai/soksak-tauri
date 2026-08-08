@@ -23,14 +23,14 @@ import { recordWindowFrames } from "./windowRecorder";
 
 // 모듈을 통째로 대체하면 **나중에 늘어난 수출이 조용히 undefined 가 된다** — 목은 그 모듈이
 // 실제로 주는 것을 따라가야 한다(실측 2026-08-02: browserLabel 을 안 넣어 핸들러가 죽었다).
-const sentInput: [string, number, number][] = [];
+const sentInput: [string, number, number, string][] = [];
 vi.mock("../lib/contentViews", () => ({
   CONTENT_VIEW_BODY: "data-content-view-body",
   contentViewSlotVisible: () => true,
   hasContentViewHost: () => false,
   contentViewHost: () => ({
-    sendInput: async (label: string, x: number, y: number) => {
-      sentInput.push([label, x, y]);
+    sendInput: async (label: string, input: { x: number; y: number; kind: string }) => {
+      sentInput.push([label, input.x, input.y, input.kind]);
     },
   }),
 }));
@@ -1453,7 +1453,11 @@ describe("ui.input.click — 콘텐츠 뷰를 가리키면 그 안으로 넣는�
     };
     expect(r.ok).toBe(true);
     expect(r.data?.contentView).toBe("b-main-tab-probe");
-    expect(sentInput).toEqual([["b-main-tab-probe", 100, 50]]);
+    // 누름과 뗌이 짝이어야 클릭이 성립한다 — 누름만 보내면 그 표면은 눌리다 만다.
+    expect(sentInput).toEqual([
+      ["b-main-tab-probe", 100, 50, "down"],
+      ["b-main-tab-probe", 100, 50, "up"],
+    ]);
     expect(domClicks).toBe(0);
   });
 
@@ -1461,6 +1465,9 @@ describe("ui.input.click — 콘텐츠 뷰를 가리키면 그 안으로 넣는�
     plantContentView();
     const address = await probeAddress();
     await execute("ui.input.click", { address, x: 7, y: 9 }, {});
-    expect(sentInput).toEqual([["b-main-tab-probe", 7, 9]]);
+    expect(sentInput).toEqual([
+      ["b-main-tab-probe", 7, 9, "down"],
+      ["b-main-tab-probe", 7, 9, "up"],
+    ]);
   });
 });

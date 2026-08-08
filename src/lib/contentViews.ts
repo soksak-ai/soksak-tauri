@@ -16,6 +16,21 @@ import {
 } from "./compositionParticipants";
 
 /** 콘텐츠 뷰 하나에 할 수 있는 일 — 앱의 webview_* 표면과 이름·인자가 같다. */
+/** 표면에 넣는 포인터 한 사건 — **무엇이 일어났는지**까지 나른다.
+ *
+ * 좌표만 나르면 누름·뗌·이동·더블클릭·오른버튼이 전부 같은 값이 되고, 받는 쪽은 하나만
+ * 흉내낼 수 있다. 그러면 그 표면은 "눌리기는 하는데 끌리지도 우클릭되지도 않는" 자리가 된다.
+ */
+export interface SurfacePointerInput {
+  /** 표면 자기 좌상단 기준 CSS px. */
+  x: number;
+  y: number;
+  kind: "down" | "up" | "move";
+  button: "left" | "right";
+  /** 1=단발, 2=더블 — 엔진이 이 수로 더블클릭을 만든다. */
+  clickCount: number;
+}
+
 export interface ContentViewHost {
   open(label: string, opts: Record<string, unknown>): Promise<void>;
   close(label: string): Promise<void>;
@@ -53,7 +68,7 @@ export interface ContentViewHost {
    *
    * 못 하는 구현은 이름을 달고 거절한다. 조용히 성공하면 부른 쪽은 눌렀다고 믿는다.
    */
-  sendInput(label: string, x: number, y: number): Promise<void>;
+  sendInput(label: string, input: SurfacePointerInput): Promise<void>;
   /** 콘텐츠 뷰 안으로 실제 휠 입력을 넣는다 — 뷰 좌표와 DOM WheelEvent 부호(+아래/+오른쪽). */
   wheel(label: string, x: number, y: number, dx: number, dy: number): Promise<void>;
   captureFull(label: string, path: string, width: number, height: number): Promise<{ path: string; bytes: number }>;

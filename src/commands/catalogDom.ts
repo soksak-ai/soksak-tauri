@@ -1166,7 +1166,10 @@ async function inProjectedRealm(
         // 못 하는 구현은 그 자리에서 이름을 달고 거절한다(조용한 성공 금지).
         if (causeTraceId !== undefined) declareLayoutCause(causeTraceId);
         const atUnixMs = presentationNowUnixMs();
-        await contentViewHost().sendInput(cvLabel, at.x, at.y);
+        // 사람이 누른 것과 같은 짝 — 누름만 보내면 클릭이 성립하지 않는다.
+        const press = { x: at.x, y: at.y, button: "left" as const, clickCount: 1 };
+        await contentViewHost().sendInput(cvLabel, { ...press, kind: "down" });
+        await contentViewHost().sendInput(cvLabel, { ...press, kind: "up" });
         return {
           clicked: true,
           address: addr,

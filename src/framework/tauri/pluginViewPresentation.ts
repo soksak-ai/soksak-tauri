@@ -593,19 +593,35 @@ async function createPresentedView(
   //
   // 키보드까지 그 realm 으로 가려면 그 웹뷰가 입력 responder 여야 한다 — 눌린 순간 그것을
   // 요청한다(뜰 때가 아니라 눌릴 때다: 뜰 때 뺏으면 사용자가 치던 곳에서 커서가 튄다).
+  // 호스트가 받은 사건을 **그대로** 내려보낸다 — 무엇이 일어났는지까지(누름·뗌·이동·버튼·
+  // 클릭 수). 누름만 보내면 그 표면은 끌리지도 우클릭되지도 않는다.
+  const KIND: Record<string, "down" | "up" | "move"> = {
+    mousedown: "down", mouseup: "up", mousemove: "move",
+  };
   const forwardPointer = (e: MouseEvent) => {
+    const kind = KIND[e.type];
+    if (kind === undefined) return;
     const rect = input.container.getBoundingClientRect();
-    const x = Math.round(e.clientX - rect.left);
-    const y = Math.round(e.clientY - rect.top);
     // 계약의 축으로 보낸다 — 표면에 포인터를 넣는 자리는 이미 `sendInput` 이다. 여기서
     // 프레임워크 명령 이름을 부르면 그 축이 둘이 되고, 두 벌은 갈릴 때까지 조용하다.
-    void contentViewHost().sendInput(renderer, x, y).catch(() => {});
+    void contentViewHost().sendInput(renderer, {
+      x: Math.round(e.clientX - rect.left),
+      y: Math.round(e.clientY - rect.top),
+      kind,
+      button: e.button === 2 ? "right" : "left",
+      clickCount: Math.max(1, e.detail),
+    }).catch(() => {});
   };
   //  으로 듣는다 — 실클릭도 이것을 내고, 합성 클릭(ui.input.click)도 같은 이름을 낸다.
   // 이름이 갈리면 사람 경로와 검증 경로가 달라져 "검증은 되는데 손으로는 안 되는" 자리가 생긴다.
-  input.container.addEventListener("mousedown", forwardPointer, true);
+  // 세 사건을 다 듣는다 — 누름만 들으면 드래그도 우클릭도 성립하지 않는다. 실클릭과 합성
+  // 클릭이 같은 이름을 내므로 사람 경로와 검증 경로가 같은 경로다.
+  const POINTER_EVENTS = ["mousedown", "mouseup", "mousemove"] as const;
+  for (const name of POINTER_EVENTS) input.container.addEventListener(name, forwardPointer, true);
   // 뷰가 사라지면 이 구독도 사라진다 — 남기면 죽은 realm 으로 계속 보낸다.
-  view.unlisten.push(() => input.container.removeEventListener("mousedown", forwardPointer, true));
+  view.unlisten.push(() => {
+    for (const name of POINTER_EVENTS) input.container.removeEventListener(name, forwardPointer, true);
+  });
   state.views.set(nativeHostId, view);
   state.readiness.set(nativeHostId, false);
 

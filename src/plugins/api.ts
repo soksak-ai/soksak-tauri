@@ -15,6 +15,7 @@ import type {
 } from "../commands/registry";
 import { createStream, engineProvision } from "../framework";
 import { declarePluginRealm, type PluginRealm } from "./realm";
+import type { SurfacePointerInput } from "../lib/contentViews";
 import { contentViewHost } from "../lib/contentViews";
 import {
   browserLabel,
@@ -496,7 +497,7 @@ export interface SoksakPluginApi {
       phase?: "document-start" | "document-end",
     ) => Disposable;
     /** 실제 엔진 입력 경로. capability가 false면 구현이 이름을 달고 거절한다. */
-    sendInput: (label: string, x: number, y: number) => Promise<void>;
+    sendInput: (label: string, input: SurfacePointerInput) => Promise<void>;
     /** 실제 엔진 휠 입력. 좌표는 뷰 CSS px, 델타 부호는 DOM WheelEvent와 같다. */
     wheel: (label: string, x: number, y: number, dx: number, dy: number) => Promise<void>;
     captureFull: (label: string, path: string, width: number, height: number) => Promise<{ path: string; bytes: number }>;
@@ -1931,7 +1932,7 @@ export function buildPluginApi(
             tracker.wrap(
               contentViewHost().injectScript(label, code, phase ?? "document-start"),
             ),
-          sendInput: (label, x, y) => contentViewHost().sendInput(label, x, y),
+          sendInput: (label, input) => contentViewHost().sendInput(label, input),
           wheel: (label, x, y, dx, dy) => contentViewHost().wheel(label, x, y, dx, dy),
           captureFull: (label, path, width, height) => contentViewHost().captureFull(label, path, width, height),
           typeText: (label, text) => contentViewHost().typeText(label, text),

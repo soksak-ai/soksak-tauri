@@ -285,20 +285,28 @@ pub async fn webview_send_mouse(
     x: i32,
     y: i32,
     kind: String,
+    button: Option<String>,
+    click_count: Option<u32>,
 ) -> Result<(), String> {
-    use core_graphics::event::{CGEvent, CGEventType, CGMouseButton};
+    use core_graphics::event::{CGEvent, CGEventField, CGEventType, CGMouseButton};
     use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
     use core_graphics::geometry::CGPoint;
     use foreign_types::ForeignType;
     use std::sync::mpsc;
     use std::time::Duration;
 
-    let event_type = match kind.as_str() {
-        "down" => CGEventType::LeftMouseDown,
-        "up" => CGEventType::LeftMouseUp,
-        "move" => CGEventType::MouseMoved,
-        other => return Err(format!("모르는 마우스 사건: {other} (down|up|move)")),
+    let right = button.as_deref() == Some("right");
+    let event_type = match (kind.as_str(), right) {
+        ("down", false) => CGEventType::LeftMouseDown,
+        ("up", false) => CGEventType::LeftMouseUp,
+        ("down", true) => CGEventType::RightMouseDown,
+        ("up", true) => CGEventType::RightMouseUp,
+        ("move", _) => CGEventType::MouseMoved,
+        (other, _) => return Err(format!("모르는 마우스 사건: {other} (down|up|move)")),
     };
+    let cg_button = if right { CGMouseButton::Right } else { CGMouseButton::Left };
+    // 더블클릭은 별개의 사건이 아니라 **같은 누름이 든 수**다 — 엔진이 이 수로 만든다.
+    let clicks = click_count.unwrap_or(1).max(1) as i64;
     let webview = registered_webview(&app, &label)
         .ok_or_else(|| format!("webview 없음: {label}"))?;
     let (tx, rx) = mpsc::sync_channel::<Result<(), String>>(1);
@@ -347,7 +355,7 @@ pub async fn webview_send_mouse(
                 source,
                 event_type,
                 CGPoint::new(location.0, location.1),
-                CGMouseButton::Left,
+                cg_button,
             ) {
                 Ok(event) => event,
                 Err(()) => {
@@ -362,13 +370,20 @@ pub async fn webview_send_mouse(
                     return;
                 }
             };
+            // 이동 사건은 창이 받도록 켜져 있어야 도착한다 — 기본값은 꺼짐이고, 안 켜면
+            // 보냈다고 답하면서 아무 데도 안 닿는다.
+            if matches!(event_type, CGEventType::MouseMoved) {
+                let _: () = msg_send![&*window, setAcceptsMouseMovedEvents: true];
+            }
             // 누름은 그 뷰를 입력 responder 로 만든다 — 사람이 누른 것과 같은 순서다.
-            if matches!(event_type, CGEventType::LeftMouseDown) {
+            if matches!(event_type, CGEventType::LeftMouseDown | CGEventType::RightMouseDown) {
                 let _: bool = msg_send![&*window, makeFirstResponder: &*wk];
             }
             let selector_sent: () = match event_type {
                 CGEventType::LeftMouseDown => msg_send![&*wk, mouseDown: &*ns_event],
                 CGEventType::LeftMouseUp => msg_send![&*wk, mouseUp: &*ns_event],
+                CGEventType::RightMouseDown => msg_send![&*wk, rightMouseDown: &*ns_event],
+                CGEventType::RightMouseUp => msg_send![&*wk, rightMouseUp: &*ns_event],
                 _ => msg_send![&*wk, mouseMoved: &*ns_event],
             };
             let _ = selector_sent;
@@ -583,6 +598,8 @@ pub async fn webview_send_mouse(
     _x: i32,
     _y: i32,
     _kind: String,
+    _button: Option<String>,
+    _click_count: Option<u32>,
 ) -> Result<(), String> {
     Err("webview_send_mouse는 현재 macOS 구현이 필요합니다".into())
 }

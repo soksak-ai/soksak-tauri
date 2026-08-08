@@ -481,6 +481,8 @@ function installPaneSurfaceHostCommands(): void {
       x: { type: "number", description: "that webview's own CSS px, from its top-left", required: true },
       y: { type: "number", description: "that webview's own CSS px, from its top-left", required: true },
       kind: { type: "string", description: "down | up | move", required: true },
+      button: { type: "string", description: "left (default) | right" },
+      clickCount: { type: "number", description: "1 (default) | 2 for a double click — the engine builds it from this count" },
     },
     danger: "inject",
     returns: "{ label, kind }",
@@ -493,6 +495,8 @@ function installPaneSurfaceHostCommands(): void {
         x: Math.round(Number(params.x)),
         y: Math.round(Number(params.y)),
         kind: String(params.kind),
+        button: params.button === undefined ? "left" : String(params.button),
+        clickCount: params.clickCount === undefined ? 1 : Math.round(Number(params.clickCount)),
       });
       return { label: params.label, kind: params.kind };
     },

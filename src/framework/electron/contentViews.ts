@@ -329,7 +329,7 @@ export const domHost: ContentViewHost = {
     // 또 도는 스크립트를 본다.
     return () => el.removeEventListener("dom-ready", run);
   },
-  async sendInput(label, x, y) {
+  async sendInput(label, { x, y }) {
     // **태그는 전달하지 않는다**(계측 2026-08-02: 게스트에 arm 한 리스너가 아무것도 못 받았다).
     // 게스트의 webContents 에 직접 보내야 하고, 그 핸들은 프레임워크만 쥔다. 태그가 아는 것은
     // 자기 손잡이(id)뿐이라 그것을 넘긴다.

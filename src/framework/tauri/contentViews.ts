@@ -657,9 +657,15 @@ export const nativeHost: ContentViewHost = {
   evalJs: (label, js) => call("webview_eval", { label, js }),
   // 진짜 마우스 사건을 그 표면에 배달한다 — 누름과 뗌이 짝이어야 클릭이 성립한다.
   // 합성 DOM 사건이 아니다: 호스트에서 지어 보내면 사용자 활성화가 없고 히트테스트가 두 벌이 된다.
-  sendInput: async (label, x, y) => {
-    await call("webview_send_mouse", { label, x: Math.round(x), y: Math.round(y), kind: "down" });
-    await call("webview_send_mouse", { label, x: Math.round(x), y: Math.round(y), kind: "up" });
+  sendInput: async (label, input) => {
+    await call("webview_send_mouse", {
+      label,
+      x: Math.round(input.x),
+      y: Math.round(input.y),
+      kind: input.kind,
+      button: input.button,
+      clickCount: input.clickCount,
+    });
   },
   wheel: (label, x, y, dx, dy) => call("webview_send_wheel", {
     label,
